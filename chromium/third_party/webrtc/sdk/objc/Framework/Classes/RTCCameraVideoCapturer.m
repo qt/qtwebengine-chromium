@@ -115,12 +115,12 @@ static inline BOOL IsMediaSubTypeSupported(FourCharCode mediaSubType) {
 
 - (void)startCaptureWithDevice:(AVCaptureDevice *)device
                         format:(AVCaptureDeviceFormat *)format
-                           fps:(int)fps {
+                           fps:(NSInteger)fps {
   _willBeRunning = true;
   [RTCDispatcher
       dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
                     block:^{
-                      RTCLogInfo("startCaptureWithDevice %@ @ %d fps", format, fps);
+                      RTCLogInfo("startCaptureWithDevice %@ @ %zd fps", format, fps);
 
 #if TARGET_OS_IPHONE
                       [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
@@ -360,7 +360,9 @@ static inline BOOL IsMediaSubTypeSupported(FourCharCode mediaSubType) {
 
 #pragma mark - Private, called inside capture queue
 
-- (void)updateDeviceCaptureFormat:(AVCaptureDeviceFormat *)format fps:(int)fps {
+- (void)updateDeviceCaptureFormat:(AVCaptureDeviceFormat *)format fps:(NSInteger)fps {
+  NSAssert([RTCDispatcher isOnQueueForType:RTCDispatcherTypeCaptureSession],
+           @"updateDeviceCaptureFormat must be called on the capture queue.");
   @try {
     _currentDevice.activeFormat = format;
     _currentDevice.activeVideoMinFrameDuration = CMTimeMake(1, fps);
@@ -371,6 +373,8 @@ static inline BOOL IsMediaSubTypeSupported(FourCharCode mediaSubType) {
 }
 
 - (void)reconfigureCaptureSessionInput {
+  NSAssert([RTCDispatcher isOnQueueForType:RTCDispatcherTypeCaptureSession],
+           @"reconfigureCaptureSessionInput must be called on the capture queue.");
   NSError *error = nil;
   AVCaptureDeviceInput *input =
       [AVCaptureDeviceInput deviceInputWithDevice:_currentDevice error:&error];
@@ -378,6 +382,7 @@ static inline BOOL IsMediaSubTypeSupported(FourCharCode mediaSubType) {
     RTCLogError(@"Failed to create front camera input: %@", error.localizedDescription);
     return;
   }
+  [_captureSession beginConfiguration];
   for (AVCaptureDeviceInput *oldInput in [_captureSession.inputs copy]) {
     [_captureSession removeInput:oldInput];
   }
@@ -385,11 +390,13 @@ static inline BOOL IsMediaSubTypeSupported(FourCharCode mediaSubType) {
     [_captureSession addInput:input];
   } else {
     RTCLogError(@"Cannot add camera as an input to the session.");
-    return;
   }
+  [_captureSession commitConfiguration];
 }
 
 - (void)updateOrientation {
+  NSAssert([RTCDispatcher isOnQueueForType:RTCDispatcherTypeCaptureSession],
+           @"updateOrientation must be called on the capture queue.");
 #if TARGET_OS_IPHONE
   BOOL usingFrontCamera = _currentDevice.position == AVCaptureDevicePositionFront;
   switch ([UIDevice currentDevice].orientation) {

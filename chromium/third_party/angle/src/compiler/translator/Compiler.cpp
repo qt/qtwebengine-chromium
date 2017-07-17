@@ -144,7 +144,7 @@ class TScopedPoolAllocator
     }
     ~TScopedPoolAllocator()
     {
-        SetGlobalPoolAllocator(NULL);
+        SetGlobalPoolAllocator(nullptr);
         mAllocator->pop();
     }
 
@@ -199,7 +199,7 @@ TShHandleBase::TShHandleBase()
 
 TShHandleBase::~TShHandleBase()
 {
-    SetGlobalPoolAllocator(NULL);
+    SetGlobalPoolAllocator(nullptr);
     allocator.popAll();
 }
 
@@ -216,7 +216,7 @@ TCompiler::TCompiler(sh::GLenum type, ShShaderSpec spec, ShShaderOutput output)
       clampingStrategy(SH_CLAMP_WITH_CLAMP_INTRINSIC),
       builtInFunctionEmulator(),
       mDiagnostics(infoSink.info),
-      mSourcePath(NULL),
+      mSourcePath(nullptr),
       mComputeShaderLocalSizeDeclared(false),
       mTemporaryIndex(0)
 {
@@ -362,7 +362,7 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success)
             PruneEmptyDeclarations(root);
 
-        if (success && shaderVersion == 300 && shaderType == GL_FRAGMENT_SHADER)
+        if (success && shaderVersion >= 300 && shaderType == GL_FRAGMENT_SHADER)
             success = validateOutputs(root);
 
         if (success && shouldRunLoopAndIndexingValidation(compileOptions))
@@ -479,7 +479,7 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
     if (success)
         return root;
 
-    return NULL;
+    return nullptr;
 }
 
 bool TCompiler::compile(const char *const shaderStrings[],
@@ -677,7 +677,7 @@ void TCompiler::clearResults()
 
     nameMap.clear();
 
-    mSourcePath     = NULL;
+    mSourcePath     = nullptr;
     mTemporaryIndex = 0;
 }
 
@@ -852,7 +852,7 @@ bool TCompiler::validateOutputs(TIntermNode *root)
     return (mDiagnostics.numErrors() == 0);
 }
 
-bool TCompiler::limitExpressionComplexity(TIntermNode *root)
+bool TCompiler::limitExpressionComplexity(TIntermBlock *root)
 {
     TMaxDepthTraverser traverser(maxExpressionComplexity + 1);
     root->traverse(&traverser);
@@ -863,7 +863,7 @@ bool TCompiler::limitExpressionComplexity(TIntermNode *root)
         return false;
     }
 
-    if (!ValidateMaxParameters::validate(root, maxFunctionParameters))
+    if (!ValidateMaxParameters(root, maxFunctionParameters))
     {
         mDiagnostics.globalError("Function has too many parameters.");
         return false;
@@ -903,7 +903,7 @@ bool TCompiler::enforcePackingRestrictions()
     return packer.CheckVariablesWithinPackingLimits(maxUniformVectors, expandedUniforms);
 }
 
-void TCompiler::initializeGLPosition(TIntermNode *root)
+void TCompiler::initializeGLPosition(TIntermBlock *root)
 {
     InitVariableList list;
     sh::ShaderVariable var(GL_FLOAT_VEC4, 0);
@@ -912,7 +912,7 @@ void TCompiler::initializeGLPosition(TIntermNode *root)
     InitializeVariables(root, list, symbolTable);
 }
 
-void TCompiler::useAllMembersInUnusedStandardAndSharedBlocks(TIntermNode *root)
+void TCompiler::useAllMembersInUnusedStandardAndSharedBlocks(TIntermBlock *root)
 {
     sh::InterfaceBlockList list;
 
@@ -928,7 +928,7 @@ void TCompiler::useAllMembersInUnusedStandardAndSharedBlocks(TIntermNode *root)
     sh::UseInterfaceBlockFields(root, list, symbolTable);
 }
 
-void TCompiler::initializeOutputVariables(TIntermNode *root)
+void TCompiler::initializeOutputVariables(TIntermBlock *root)
 {
     InitVariableList list;
     if (shaderType == GL_VERTEX_SHADER)

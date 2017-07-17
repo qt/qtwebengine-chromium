@@ -11,6 +11,7 @@
 
 #include <memory>
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/ifx_renderdevicedriver.h"
 #include "core/fxge/win32/cfx_psrenderer.h"
@@ -156,7 +157,6 @@ class CGdiDeviceDriver : public IFX_RenderDeviceDriver {
                         uint32_t color,
                         int blend_type) override;
   bool GetClipBox(FX_RECT* pRect) override;
-  void* GetPlatformSurface() const override;
 
   void DrawLine(float x1, float y1, float x2, float y2);
 
@@ -322,7 +322,6 @@ class CPSPrinterDriver : public IFX_RenderDeviceDriver {
                       const CFX_Matrix* pObject2Device,
                       float font_size,
                       uint32_t color) override;
-  void* GetPlatformSurface() const override;
 
   HDC m_hDC;
   bool m_bCmykOutput;
@@ -331,7 +330,6 @@ class CPSPrinterDriver : public IFX_RenderDeviceDriver {
   int m_nBitsPerPixel;
   int m_HorzSize;
   int m_VertSize;
-  std::unique_ptr<CPSOutput> m_pPSOutput;
   CFX_PSRenderer m_PSRenderer;
 };
 

@@ -131,7 +131,7 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
     mInsideDiscontinuousLoop = false;
     mNestedLoopDepth         = 0;
 
-    mExcessiveLoopIndex = NULL;
+    mExcessiveLoopIndex = nullptr;
 
     mStructureHLSL       = new StructureHLSL;
     mUniformHLSL         = new UniformHLSL(mStructureHLSL, outputType, uniforms);
@@ -639,13 +639,16 @@ void OutputHLSL::header(TInfoSinkBase &out, const BuiltInFunctionEmulator *built
     else  // Compute shader
     {
         ASSERT(mShaderType == GL_COMPUTE_SHADER);
+
+        out << "cbuffer DriverConstants : register(b1)\n"
+               "{\n";
         if (mUsesNumWorkGroups)
         {
-            out << "cbuffer DriverConstants : register(b1)\n"
-                   "{\n";
             out << "    uint3 gl_NumWorkGroups : packoffset(c0);\n";
-            out << "};\n";
         }
+        ASSERT(mOutputType == SH_HLSL_4_1_OUTPUT);
+        mUniformHLSL->samplerMetadataUniforms(out, "c1");
+        out << "};\n";
 
         // Follow built-in variables would be initialized in
         // DynamicHLSL::generateComputeShaderLinkHLSL, if they
@@ -1846,92 +1849,47 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
 
             return false;
         }
-        case EOpConstructFloat:
-            outputConstructor(out, visit, node->getType(), "vec1", node->getSequence());
-            break;
-        case EOpConstructVec2:
-            outputConstructor(out, visit, node->getType(), "vec2", node->getSequence());
-            break;
-        case EOpConstructVec3:
-            outputConstructor(out, visit, node->getType(), "vec3", node->getSequence());
-            break;
-        case EOpConstructVec4:
-            outputConstructor(out, visit, node->getType(), "vec4", node->getSequence());
-            break;
-        case EOpConstructBool:
-            outputConstructor(out, visit, node->getType(), "bvec1", node->getSequence());
-            break;
-        case EOpConstructBVec2:
-            outputConstructor(out, visit, node->getType(), "bvec2", node->getSequence());
-            break;
-        case EOpConstructBVec3:
-            outputConstructor(out, visit, node->getType(), "bvec3", node->getSequence());
-            break;
-        case EOpConstructBVec4:
-            outputConstructor(out, visit, node->getType(), "bvec4", node->getSequence());
-            break;
-        case EOpConstructInt:
-            outputConstructor(out, visit, node->getType(), "ivec1", node->getSequence());
-            break;
-        case EOpConstructIVec2:
-            outputConstructor(out, visit, node->getType(), "ivec2", node->getSequence());
-            break;
-        case EOpConstructIVec3:
-            outputConstructor(out, visit, node->getType(), "ivec3", node->getSequence());
-            break;
-        case EOpConstructIVec4:
-            outputConstructor(out, visit, node->getType(), "ivec4", node->getSequence());
-            break;
-        case EOpConstructUInt:
-            outputConstructor(out, visit, node->getType(), "uvec1", node->getSequence());
-            break;
-        case EOpConstructUVec2:
-            outputConstructor(out, visit, node->getType(), "uvec2", node->getSequence());
-            break;
-        case EOpConstructUVec3:
-            outputConstructor(out, visit, node->getType(), "uvec3", node->getSequence());
-            break;
-        case EOpConstructUVec4:
-            outputConstructor(out, visit, node->getType(), "uvec4", node->getSequence());
-            break;
-        case EOpConstructMat2:
-            outputConstructor(out, visit, node->getType(), "mat2", node->getSequence());
-            break;
-        case EOpConstructMat2x3:
-            outputConstructor(out, visit, node->getType(), "mat2x3", node->getSequence());
-            break;
-        case EOpConstructMat2x4:
-            outputConstructor(out, visit, node->getType(), "mat2x4", node->getSequence());
-            break;
-        case EOpConstructMat3x2:
-            outputConstructor(out, visit, node->getType(), "mat3x2", node->getSequence());
-            break;
-        case EOpConstructMat3:
-            outputConstructor(out, visit, node->getType(), "mat3", node->getSequence());
-            break;
-        case EOpConstructMat3x4:
-            outputConstructor(out, visit, node->getType(), "mat3x4", node->getSequence());
-            break;
-        case EOpConstructMat4x2:
-            outputConstructor(out, visit, node->getType(), "mat4x2", node->getSequence());
-            break;
-        case EOpConstructMat4x3:
-            outputConstructor(out, visit, node->getType(), "mat4x3", node->getSequence());
-            break;
-        case EOpConstructMat4:
-            outputConstructor(out, visit, node->getType(), "mat4", node->getSequence());
-            break;
-        case EOpConstructStruct:
-        {
-            if (node->getType().isArray())
+        case EOpConstruct:
+            if (node->getBasicType() == EbtStruct)
             {
-                UNIMPLEMENTED();
+                if (node->getType().isArray())
+                {
+                    UNIMPLEMENTED();
+                }
+                const TString &structName = StructNameString(*node->getType().getStruct());
+                mStructureHLSL->addConstructor(node->getType(), structName, node->getSequence());
+                outputTriplet(out, visit, (structName + "_ctor(").c_str(), ", ", ")");
             }
-            const TString &structName = StructNameString(*node->getType().getStruct());
-            mStructureHLSL->addConstructor(node->getType(), structName, node->getSequence());
-            outputTriplet(out, visit, (structName + "_ctor(").c_str(), ", ", ")");
-        }
-        break;
+            else
+            {
+                const char *name = "";
+                if (node->getType().getNominalSize() == 1)
+                {
+                    switch (node->getBasicType())
+                    {
+                        case EbtFloat:
+                            name = "vec1";
+                            break;
+                        case EbtInt:
+                            name = "ivec1";
+                            break;
+                        case EbtUInt:
+                            name = "uvec1";
+                            break;
+                        case EbtBool:
+                            name = "bvec1";
+                            break;
+                        default:
+                            UNREACHABLE();
+                    }
+                }
+                else
+                {
+                    name = node->getType().getBuiltInTypeNameString();
+                }
+                outputConstructor(out, visit, node->getType(), name, node->getSequence());
+            }
+            break;
         case EOpEqualComponentWise:
             outputTriplet(out, visit, "(", " == ", ")");
             break;
@@ -2317,7 +2275,7 @@ bool OutputHLSL::handleExcessiveLoop(TInfoSinkBase &out, TIntermLoop *node)
 
     // Parse loops of the form:
     // for(int index = initial; index [comparator] limit; index += increment)
-    TIntermSymbol *index = NULL;
+    TIntermSymbol *index = nullptr;
     TOperator comparator = EOpNull;
     int initial          = 0;
     int limit            = 0;
@@ -2356,7 +2314,7 @@ bool OutputHLSL::handleExcessiveLoop(TInfoSinkBase &out, TIntermLoop *node)
     }
 
     // Parse comparator and limit value
-    if (index != NULL && node->getCondition())
+    if (index != nullptr && node->getCondition())
     {
         TIntermBinary *test = node->getCondition()->getAsBinaryNode();
 
@@ -2376,7 +2334,7 @@ bool OutputHLSL::handleExcessiveLoop(TInfoSinkBase &out, TIntermLoop *node)
     }
 
     // Parse increment
-    if (index != NULL && comparator != EOpNull && node->getExpression())
+    if (index != nullptr && comparator != EOpNull && node->getExpression())
     {
         TIntermBinary *binaryTerminal = node->getExpression()->getAsBinaryNode();
         TIntermUnary *unaryTerminal   = node->getExpression()->getAsUnaryNode();
@@ -2430,7 +2388,7 @@ bool OutputHLSL::handleExcessiveLoop(TInfoSinkBase &out, TIntermLoop *node)
         }
     }
 
-    if (index != NULL && comparator != EOpNull && increment != 0)
+    if (index != nullptr && comparator != EOpNull && increment != 0)
     {
         if (comparator == EOpLessThanEqual)
         {
@@ -2472,7 +2430,7 @@ bool OutputHLSL::handleExcessiveLoop(TInfoSinkBase &out, TIntermLoop *node)
 
                 if (iterations <= MAX_LOOP_ITERATIONS)  // Last loop fragment
                 {
-                    mExcessiveLoopIndex = NULL;  // Stops setting the Break flag
+                    mExcessiveLoopIndex = nullptr;  // Stops setting the Break flag
                 }
 
                 // for(int index = initial; index < clampedLimit; index += increment)

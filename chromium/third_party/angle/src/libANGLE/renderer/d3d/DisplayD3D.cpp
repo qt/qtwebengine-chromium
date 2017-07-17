@@ -187,11 +187,11 @@ SurfaceImpl *DisplayD3D::createPixmapSurface(const egl::SurfaceState &state,
     return nullptr;
 }
 
-ImageImpl *DisplayD3D::createImage(EGLenum target,
-                                   egl::ImageSibling *buffer,
+ImageImpl *DisplayD3D::createImage(const egl::ImageState &state,
+                                   EGLenum target,
                                    const egl::AttributeMap &attribs)
 {
-    return new EGLImageD3D(mRenderer, target, buffer, attribs);
+    return new EGLImageD3D(state, target, attribs, mRenderer);
 }
 
 egl::Error DisplayD3D::getDevice(DeviceImpl **device)
@@ -293,8 +293,8 @@ egl::Error DisplayD3D::validateClientBuffer(const egl::Config *configuration,
                                                   attribs);
 
         case EGL_D3D_TEXTURE_ANGLE:
-            return mRenderer->getD3DTextureInfo(static_cast<IUnknown *>(clientBuffer), nullptr,
-                                                nullptr, nullptr);
+            return mRenderer->getD3DTextureInfo(
+                configuration, static_cast<IUnknown *>(clientBuffer), nullptr, nullptr, nullptr);
 
         default:
             return DisplayImpl::validateClientBuffer(configuration, buftype, clientBuffer, attribs);

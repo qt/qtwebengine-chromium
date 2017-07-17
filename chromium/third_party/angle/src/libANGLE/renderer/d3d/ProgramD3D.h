@@ -32,7 +32,7 @@ class ShaderExecutableD3D;
 #endif
 
 // Helper struct representing a single shader uniform
-struct D3DUniform : angle::NonCopyable
+struct D3DUniform : private angle::NonCopyable
 {
     D3DUniform(GLenum typeIn,
                const std::string &nameIn,
@@ -177,10 +177,7 @@ class ProgramD3D : public ProgramImpl
                                                     GLenum drawMode,
                                                     ShaderExecutableD3D **outExecutable,
                                                     gl::InfoLog *infoLog);
-    gl::Error getComputeExecutable(const gl::ContextState &data,
-                                   ShaderExecutableD3D **outExecutable,
-                                   gl::InfoLog *infoLog);
-
+    gl::Error getComputeExecutable(ShaderExecutableD3D **outExecutable);
     LinkResult link(ContextImpl *contextImpl,
                     const gl::VaryingPacking &packing,
                     gl::InfoLog &infoLog) override;
@@ -196,6 +193,7 @@ class ProgramD3D : public ProgramImpl
 
     void initializeUniformStorage();
     gl::Error applyUniforms(GLenum drawMode);
+    gl::Error applyComputeUniforms();
     gl::Error applyUniformBuffers(const gl::ContextState &data);
     void dirtyAllUniforms();
 

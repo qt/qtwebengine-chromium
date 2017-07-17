@@ -55,7 +55,7 @@ gl::Error RenderbufferD3D::setStorageMultisample(size_t samples, GLenum internal
                          samples, formatCaps.getMaxSamples());
     }
 
-    RenderTargetD3D *newRT = NULL;
+    RenderTargetD3D *newRT = nullptr;
     ANGLE_TRY(mRenderer->createRenderTarget(static_cast<int>(width), static_cast<int>(height),
                                             creationFormat, static_cast<GLsizei>(samples), &newRT));
 
@@ -87,7 +87,8 @@ gl::Error RenderbufferD3D::getRenderTarget(RenderTargetD3D **outRenderTarget)
     }
 }
 
-gl::Error RenderbufferD3D::getAttachmentRenderTarget(const gl::FramebufferAttachment::Target &target,
+gl::Error RenderbufferD3D::getAttachmentRenderTarget(GLenum /*binding*/,
+                                                     const gl::ImageIndex & /*imageIndex*/,
                                                      FramebufferAttachmentRenderTarget **rtOut)
 {
     return getRenderTarget(reinterpret_cast<RenderTargetD3D **>(rtOut));

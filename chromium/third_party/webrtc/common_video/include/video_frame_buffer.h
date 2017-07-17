@@ -14,9 +14,6 @@
 #include <memory>
 
 #include "webrtc/api/video/video_frame_buffer.h"
-// TODO(nisse): For backwards compatibility, files including this file
-// expect it to declare I420Buffer. Delete after callers are updated.
-#include "webrtc/api/video/i420_buffer.h"
 #include "webrtc/base/callback.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 
@@ -30,6 +27,7 @@ class NativeHandleBuffer : public VideoFrameBuffer {
  public:
   NativeHandleBuffer(void* native_handle, int width, int height);
 
+  Type type() const override;
   int width() const override;
   int height() const override;
   const uint8_t* DataY() const override;
@@ -47,7 +45,7 @@ class NativeHandleBuffer : public VideoFrameBuffer {
   const int height_;
 };
 
-class WrappedI420Buffer : public webrtc::VideoFrameBuffer {
+class WrappedI420Buffer : public PlanarYuvBuffer {
  public:
   WrappedI420Buffer(int width,
                     int height,
@@ -58,6 +56,8 @@ class WrappedI420Buffer : public webrtc::VideoFrameBuffer {
                     const uint8_t* v_plane,
                     int v_stride,
                     const rtc::Callback0<void>& no_longer_used);
+  Type type() const override;
+
   int width() const override;
   int height() const override;
 
@@ -67,10 +67,6 @@ class WrappedI420Buffer : public webrtc::VideoFrameBuffer {
   int StrideY() const override;
   int StrideU() const override;
   int StrideV() const override;
-
-  void* native_handle() const override;
-
-  rtc::scoped_refptr<VideoFrameBuffer> NativeToI420Buffer() override;
 
  private:
   friend class rtc::RefCountedObject<WrappedI420Buffer>;

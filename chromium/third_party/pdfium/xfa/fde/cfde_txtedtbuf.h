@@ -15,8 +15,6 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/ifx_chariter.h"
 
-class IFX_Pause;
-
 class CFDE_TxtEdtBuf {
  public:
   class Iterator : public IFX_CharIter {
@@ -31,7 +29,7 @@ class CFDE_TxtEdtBuf {
     int32_t GetAt() const override;
 
     bool IsEOF(bool bTail = true) const override;
-    IFX_CharIter* Clone() override;
+    std::unique_ptr<IFX_CharIter> Clone() override;
 
    private:
     CFDE_TxtEdtBuf* m_pBuf;

@@ -8,8 +8,7 @@
 
 #include <memory>
 
-#include "core/fxge/cfx_fxgedevice.h"
-#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/cfx_unicodeencoding.h"
 #include "third_party/base/ptr_util.h"
@@ -328,14 +327,15 @@ void CFX_Graphics::RenderDeviceStretchImage(
     m1.Concat(*matrix);
   }
   CFX_RetainPtr<CFX_DIBitmap> bmp1 =
-      source->StretchTo((int32_t)rect.Width(), (int32_t)rect.Height());
+      source->StretchTo(static_cast<int32_t>(rect.Width()),
+                        static_cast<int32_t>(rect.Height()), 0, nullptr);
   CFX_Matrix m2(rect.Width(), 0.0, 0.0, rect.Height(), rect.left, rect.top);
   m2.Concat(m1);
 
   int32_t left;
   int32_t top;
   CFX_RetainPtr<CFX_DIBitmap> bmp2 = bmp1->FlipImage(false, true);
-  CFX_RetainPtr<CFX_DIBitmap> bmp3 = bmp2->TransformTo(&m2, left, top);
+  CFX_RetainPtr<CFX_DIBitmap> bmp3 = bmp2->TransformTo(&m2, &left, &top);
   CFX_RectF r = GetClipRect();
   CFX_RetainPtr<CFX_DIBitmap> bitmap = m_renderDevice->GetBitmap();
   bitmap->CompositeBitmap(FXSYS_round(r.left), FXSYS_round(r.top),
@@ -366,7 +366,7 @@ void CFX_Graphics::FillPathWithPattern(CFX_Path* path,
 
   FX_RECT rect(FXSYS_round(rectf.left), FXSYS_round(rectf.top),
                FXSYS_round(rectf.right), FXSYS_round(rectf.bottom));
-  CFX_FxgeDevice device;
+  CFX_DefaultRenderDevice device;
   device.Attach(bmp, false, nullptr, false);
   device.FillRect(&rect, m_info.fillColor->m_info.pattern->m_backArgb);
   for (int32_t j = rect.bottom; j < rect.top; j += mask->GetHeight()) {
@@ -375,11 +375,9 @@ void CFX_Graphics::FillPathWithPattern(CFX_Path* path,
                         m_info.fillColor->m_info.pattern->m_foreArgb);
     }
   }
-
-  m_renderDevice->SaveState();
+  CFX_RenderDevice::StateRestorer restorer(m_renderDevice);
   m_renderDevice->SetClip_PathFill(path->GetPathData(), matrix, fillMode);
   SetDIBitsWithMatrix(bmp, &pattern->m_matrix);
-  m_renderDevice->RestoreState(false);
 }
 
 void CFX_Graphics::FillPathWithShading(CFX_Path* path,
@@ -494,10 +492,9 @@ void CFX_Graphics::FillPathWithShading(CFX_Path* path,
     }
   }
   if (result) {
-    m_renderDevice->SaveState();
+    CFX_RenderDevice::StateRestorer restorer(m_renderDevice);
     m_renderDevice->SetClip_PathFill(path->GetPathData(), matrix, fillMode);
     SetDIBitsWithMatrix(bmp, matrix);
-    m_renderDevice->RestoreState(false);
   }
 }
 
@@ -513,7 +510,7 @@ void CFX_Graphics::SetDIBitsWithMatrix(
     int32_t left;
     int32_t top;
     CFX_RetainPtr<CFX_DIBitmap> bmp1 = source->FlipImage(false, true);
-    CFX_RetainPtr<CFX_DIBitmap> bmp2 = bmp1->TransformTo(&m, left, top);
+    CFX_RetainPtr<CFX_DIBitmap> bmp2 = bmp1->TransformTo(&m, &left, &top);
     m_renderDevice->SetDIBits(bmp2, left, top);
   }
 }

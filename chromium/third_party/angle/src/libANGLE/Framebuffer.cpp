@@ -9,8 +9,8 @@
 
 #include "libANGLE/Framebuffer.h"
 
-#include "common/bitset_utils.h"
 #include "common/Optional.h"
+#include "common/bitset_utils.h"
 #include "common/utilities.h"
 #include "libANGLE/Config.h"
 #include "libANGLE/Context.h"
@@ -37,6 +37,108 @@ namespace
 void BindResourceChannel(OnAttachmentDirtyBinding *binding, FramebufferAttachmentObject *resource)
 {
     binding->bind(resource ? resource->getDirtyChannel() : nullptr);
+}
+
+bool CheckAttachmentCompleteness(const Context *context, const FramebufferAttachment &attachment)
+{
+    ASSERT(attachment.isAttached());
+
+    const Extents &size = attachment.getSize();
+    if (size.width == 0 || size.height == 0)
+    {
+        return false;
+    }
+
+    const InternalFormat &format = *attachment.getFormat().info;
+    if (!format.renderSupport(context->getClientVersion(), context->getExtensions()))
+    {
+        return false;
+    }
+
+    if (attachment.type() == GL_TEXTURE)
+    {
+        if (attachment.layer() >= size.depth)
+        {
+            return false;
+        }
+
+        // ES3 specifies that cube map texture attachments must be cube complete.
+        // This language is missing from the ES2 spec, but we enforce it here because some
+        // desktop OpenGL drivers also enforce this validation.
+        // TODO(jmadill): Check if OpenGL ES2 drivers enforce cube completeness.
+        const Texture *texture = attachment.getTexture();
+        ASSERT(texture);
+        if (texture->getTarget() == GL_TEXTURE_CUBE_MAP &&
+            !texture->getTextureState().isCubeComplete())
+        {
+            return false;
+        }
+    }
+
+    return true;
+};
+
+bool CheckAttachmentSampleCompleteness(const Context *context,
+                                       const FramebufferAttachment &attachment,
+                                       bool colorAttachment,
+                                       Optional<int> *samples,
+                                       Optional<GLboolean> *fixedSampleLocations)
+{
+    ASSERT(attachment.isAttached());
+
+    if (attachment.type() == GL_TEXTURE)
+    {
+        const Texture *texture = attachment.getTexture();
+        ASSERT(texture);
+
+        const ImageIndex &attachmentImageIndex = attachment.getTextureImageIndex();
+
+        // ES3.1 (section 9.4) requires that the value of TEXTURE_FIXED_SAMPLE_LOCATIONS should be
+        // the same for all attached textures.
+        GLboolean fixedSampleloc = texture->getFixedSampleLocations(attachmentImageIndex.type,
+                                                                    attachmentImageIndex.mipIndex);
+        if (fixedSampleLocations->valid() && fixedSampleloc != fixedSampleLocations->value())
+        {
+            return false;
+        }
+        else
+        {
+            *fixedSampleLocations = fixedSampleloc;
+        }
+    }
+
+    if (samples->valid())
+    {
+        if (attachment.getSamples() != samples->value())
+        {
+            if (colorAttachment)
+            {
+                // APPLE_framebuffer_multisample, which EXT_draw_buffers refers to, requires that
+                // all color attachments have the same number of samples for the FBO to be complete.
+                return false;
+            }
+            else
+            {
+                // CHROMIUM_framebuffer_mixed_samples allows a framebuffer to be considered complete
+                // when its depth or stencil samples are a multiple of the number of color samples.
+                if (!context->getExtensions().framebufferMixedSamples)
+                {
+                    return false;
+                }
+
+                if ((attachment.getSamples() % std::max(samples->value(), 1)) != 0)
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    else
+    {
+        *samples = attachment.getSamples();
+    }
+
+    return true;
 }
 
 }  // anonymous namespace
@@ -115,8 +217,11 @@ const FramebufferAttachment *FramebufferState::getReadAttachment() const
     {
         return nullptr;
     }
-    ASSERT(mReadBufferState == GL_BACK || (mReadBufferState >= GL_COLOR_ATTACHMENT0 && mReadBufferState <= GL_COLOR_ATTACHMENT15));
-    size_t readIndex = (mReadBufferState == GL_BACK ? 0 : static_cast<size_t>(mReadBufferState - GL_COLOR_ATTACHMENT0));
+    ASSERT(mReadBufferState == GL_BACK ||
+           (mReadBufferState >= GL_COLOR_ATTACHMENT0 && mReadBufferState <= GL_COLOR_ATTACHMENT15));
+    size_t readIndex = (mReadBufferState == GL_BACK
+                            ? 0
+                            : static_cast<size_t>(mReadBufferState - GL_COLOR_ATTACHMENT0));
     ASSERT(readIndex < mColorAttachments.size());
     return mColorAttachments[readIndex].isAttached() ? &mColorAttachments[readIndex] : nullptr;
 }
@@ -169,9 +274,8 @@ const FramebufferAttachment *FramebufferState::getStencilOrDepthStencilAttachmen
 const FramebufferAttachment *FramebufferState::getColorAttachment(size_t colorAttachment) const
 {
     ASSERT(colorAttachment < mColorAttachments.size());
-    return mColorAttachments[colorAttachment].isAttached() ?
-           &mColorAttachments[colorAttachment] :
-           nullptr;
+    return mColorAttachments[colorAttachment].isAttached() ? &mColorAttachments[colorAttachment]
+                                                           : nullptr;
 }
 
 const FramebufferAttachment *FramebufferState::getDepthAttachment() const
@@ -201,8 +305,7 @@ bool FramebufferState::attachmentsHaveSameDimensions() const
 {
     Optional<Extents> attachmentSize;
 
-    auto hasMismatchedSize = [&attachmentSize](const FramebufferAttachment &attachment)
-    {
+    auto hasMismatchedSize = [&attachmentSize](const FramebufferAttachment &attachment) {
         if (!attachment.isAttached())
         {
             return false;
@@ -601,9 +704,9 @@ GLenum Framebuffer::checkStatusImpl(const Context *context)
 
     ASSERT(mId != 0);
 
-    unsigned int colorbufferSize = 0;
-    int samples = -1;
-    bool missingAttachment = true;
+    bool hasAttachments = false;
+    Optional<unsigned int> colorbufferSize;
+    Optional<int> samples;
     Optional<GLboolean> fixedSampleLocations;
     bool hasRenderbuffer = false;
 
@@ -611,201 +714,98 @@ GLenum Framebuffer::checkStatusImpl(const Context *context)
     {
         if (colorAttachment.isAttached())
         {
-            const Extents &size = colorAttachment.getSize();
-            if (size.width == 0 || size.height == 0)
+            if (!CheckAttachmentCompleteness(context, colorAttachment))
             {
                 return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
             }
 
-            const Format &format          = colorAttachment.getFormat();
-            const TextureCaps &formatCaps = state.getTextureCap(format.asSized());
-            if (colorAttachment.type() == GL_TEXTURE)
+            const InternalFormat &format = *colorAttachment.getFormat().info;
+            if (format.depthBits > 0 || format.stencilBits > 0)
             {
-                if (!formatCaps.renderable)
-                {
-                    return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-                }
-
-                if (format.info->depthBits > 0 || format.info->stencilBits > 0)
-                {
-                    return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-                }
-
-                if (colorAttachment.layer() >= size.depth)
-                {
-                    return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-                }
-
-                // ES3 specifies that cube map texture attachments must be cube complete.
-                // This language is missing from the ES2 spec, but we enforce it here because some
-                // desktop OpenGL drivers also enforce this validation.
-                // TODO(jmadill): Check if OpenGL ES2 drivers enforce cube completeness.
-                const Texture *texture = colorAttachment.getTexture();
-                ASSERT(texture);
-                if (texture->getTarget() == GL_TEXTURE_CUBE_MAP &&
-                    !texture->getTextureState().isCubeComplete())
-                {
-                    return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-                }
-
-                // ES3.1 (section 9.4) requires that the value of TEXTURE_FIXED_SAMPLE_LOCATIONS
-                // should be the same for all attached textures.
-                GLboolean fixedSampleloc = colorAttachment.getTexture()->getFixedSampleLocations(
-                    colorAttachment.getTextureImageIndex().type, 0);
-                if (fixedSampleLocations.valid() && fixedSampleloc != fixedSampleLocations.value())
-                {
-                    return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE;
-                }
-                else
-                {
-                    fixedSampleLocations = fixedSampleloc;
-                }
-            }
-            else if (colorAttachment.type() == GL_RENDERBUFFER)
-            {
-                hasRenderbuffer = true;
-                if (!formatCaps.renderable || format.info->depthBits > 0 ||
-                    format.info->stencilBits > 0)
-                {
-                    return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-                }
+                return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
             }
 
-            if (!missingAttachment)
+            if (!CheckAttachmentSampleCompleteness(context, colorAttachment, true, &samples,
+                                                   &fixedSampleLocations))
             {
-                // APPLE_framebuffer_multisample, which EXT_draw_buffers refers to, requires that
-                // all color attachments have the same number of samples for the FBO to be complete.
-                if (colorAttachment.getSamples() != samples)
-                {
-                    return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE_EXT;
-                }
+                return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE;
+            }
 
-                // in GLES 2.0, all color attachments attachments must have the same number of bitplanes
-                // in GLES 3.0, there is no such restriction
-                if (state.getClientMajorVersion() < 3)
+            // in GLES 2.0, all color attachments attachments must have the same number of bitplanes
+            // in GLES 3.0, there is no such restriction
+            if (state.getClientMajorVersion() < 3)
+            {
+                if (colorbufferSize.valid())
                 {
-                    if (format.info->pixelBytes != colorbufferSize)
+                    if (format.pixelBytes != colorbufferSize.value())
                     {
                         return GL_FRAMEBUFFER_UNSUPPORTED;
                     }
                 }
+                else
+                {
+                    colorbufferSize = format.pixelBytes;
+                }
             }
-            else
-            {
-                samples           = colorAttachment.getSamples();
-                colorbufferSize   = format.info->pixelBytes;
-                missingAttachment = false;
-            }
+
+            hasRenderbuffer = hasRenderbuffer || (colorAttachment.type() == GL_RENDERBUFFER);
+            hasAttachments  = true;
         }
     }
 
     const FramebufferAttachment &depthAttachment = mState.mDepthAttachment;
     if (depthAttachment.isAttached())
     {
-        const Extents &size = depthAttachment.getSize();
-        if (size.width == 0 || size.height == 0)
+        if (!CheckAttachmentCompleteness(context, depthAttachment))
         {
             return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
         }
 
-        const Format &format          = depthAttachment.getFormat();
-        const TextureCaps &formatCaps = state.getTextureCap(format.asSized());
-        if (depthAttachment.type() == GL_TEXTURE)
+        const InternalFormat &format = *depthAttachment.getFormat().info;
+        if (format.depthBits == 0)
         {
-            if (!formatCaps.renderable)
-            {
-                return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-            }
-
-            if (format.info->depthBits == 0)
-            {
-                return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-            }
-        }
-        else if (depthAttachment.type() == GL_RENDERBUFFER)
-        {
-            if (!formatCaps.renderable || format.info->depthBits == 0)
-            {
-                return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-            }
+            return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
         }
 
-        if (missingAttachment)
+        if (!CheckAttachmentSampleCompleteness(context, depthAttachment, false, &samples,
+                                               &fixedSampleLocations))
         {
-            samples = depthAttachment.getSamples();
-            missingAttachment = false;
+            return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE;
         }
-        else if (samples != depthAttachment.getSamples())
-        {
-            // CHROMIUM_framebuffer_mixed_samples allows a framebuffer to be
-            // considered complete when its depth or stencil samples are a
-            // multiple of the number of color samples.
-            const bool mixedSamples = state.getExtensions().framebufferMixedSamples;
-            if (!mixedSamples)
-                return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE_ANGLE;
 
-            const int colorSamples = samples ? samples : 1;
-            const int depthSamples = depthAttachment.getSamples();
-            if ((depthSamples % colorSamples) != 0)
-                return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE_ANGLE;
-        }
+        hasRenderbuffer = hasRenderbuffer || (depthAttachment.type() == GL_RENDERBUFFER);
+        hasAttachments  = true;
     }
 
     const FramebufferAttachment &stencilAttachment = mState.mStencilAttachment;
     if (stencilAttachment.isAttached())
     {
-        const Extents &size = stencilAttachment.getSize();
-        if (size.width == 0 || size.height == 0)
+        if (!CheckAttachmentCompleteness(context, stencilAttachment))
         {
             return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
         }
 
-        const Format &format          = stencilAttachment.getFormat();
-        const TextureCaps &formatCaps = state.getTextureCap(format.asSized());
-        if (stencilAttachment.type() == GL_TEXTURE)
+        const InternalFormat &format = *stencilAttachment.getFormat().info;
+        if (format.stencilBits == 0)
         {
-            if (!formatCaps.renderable)
-            {
-                return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-            }
-
-            if (format.info->stencilBits == 0)
-            {
-                return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-            }
-        }
-        else if (stencilAttachment.type() == GL_RENDERBUFFER)
-        {
-            if (!formatCaps.renderable || format.info->stencilBits == 0)
-            {
-                return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-            }
+            return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
         }
 
-        if (missingAttachment)
+        if (!CheckAttachmentSampleCompleteness(context, stencilAttachment, false, &samples,
+                                               &fixedSampleLocations))
         {
-            samples = stencilAttachment.getSamples();
-            missingAttachment = false;
-        }
-        else if (samples != stencilAttachment.getSamples())
-        {
-            // see the comments in depth attachment check.
-            const bool mixedSamples = state.getExtensions().framebufferMixedSamples;
-            if (!mixedSamples)
-                return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE_ANGLE;
-
-            const int colorSamples   = samples ? samples : 1;
-            const int stencilSamples = stencilAttachment.getSamples();
-            if ((stencilSamples % colorSamples) != 0)
-                return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE_ANGLE;
+            return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE;
         }
 
-        // Starting from ES 3.0 stencil and depth, if present, should be the same image
-        if (state.getClientMajorVersion() >= 3 && depthAttachment.isAttached() &&
-            stencilAttachment != depthAttachment)
-        {
-            return GL_FRAMEBUFFER_UNSUPPORTED;
-        }
+        hasRenderbuffer = hasRenderbuffer || (stencilAttachment.type() == GL_RENDERBUFFER);
+        hasAttachments  = true;
+    }
+
+    // Starting from ES 3.0 stencil and depth, if present, should be the same image
+    if (state.getClientMajorVersion() >= 3 && depthAttachment.isAttached() &&
+        stencilAttachment.isAttached() && stencilAttachment != depthAttachment)
+    {
+        return GL_FRAMEBUFFER_UNSUPPORTED;
     }
 
     // Special additional validation for WebGL 1 DEPTH/STENCIL/DEPTH_STENCIL.
@@ -836,28 +836,26 @@ GLenum Framebuffer::checkStatusImpl(const Context *context)
         }
     }
 
-    // ES3.1(section 9.4) requires that if no image is attached to the
-    // framebuffer, and either the value of the framebuffer's FRAMEBUFFER_DEFAULT_WIDTH
-    // or FRAMEBUFFER_DEFAULT_HEIGHT parameters is zero, the framebuffer is
-    // considered incomplete.
+    // ES3.1(section 9.4) requires that if no image is attached to the framebuffer, and either the
+    // value of the framebuffer's FRAMEBUFFER_DEFAULT_WIDTH or FRAMEBUFFER_DEFAULT_HEIGHT parameters
+    // is zero, the framebuffer is considered incomplete.
     GLint defaultWidth  = mState.getDefaultWidth();
     GLint defaultHeight = mState.getDefaultHeight();
-
-    if (missingAttachment && (defaultWidth == 0 || defaultHeight == 0))
+    if (!hasAttachments && (defaultWidth == 0 || defaultHeight == 0))
     {
         return GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
     }
 
-    // In ES 2.0, all color attachments must have the same width and height.
+    // In ES 2.0 and WebGL, all color attachments must have the same width and height.
     // In ES 3.0, there is no such restriction.
-    if (state.getClientMajorVersion() < 3 && !mState.attachmentsHaveSameDimensions())
+    if ((state.getClientMajorVersion() < 3 || state.getExtensions().webglCompatibility) &&
+        !mState.attachmentsHaveSameDimensions())
     {
         return GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS;
     }
 
-    // ES3.1(section 9.4) requires that if the attached images are a mix of renderbuffers
-    // and textures, the value of TEXTURE_FIXED_SAMPLE_LOCATIONS must be TRUE for all
-    // attached textures.
+    // ES3.1(section 9.4) requires that if the attached images are a mix of renderbuffers and
+    // textures, the value of TEXTURE_FIXED_SAMPLE_LOCATIONS must be TRUE for all attached textures.
     if (fixedSampleLocations.valid() && hasRenderbuffer && !fixedSampleLocations.value())
     {
         return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE;
@@ -964,7 +962,7 @@ Error Framebuffer::readPixels(rx::ContextImpl *context,
                               const Rectangle &area,
                               GLenum format,
                               GLenum type,
-                              GLvoid *pixels) const
+                              void *pixels) const
 {
     ANGLE_TRY(mImpl->readPixels(context, area, format, type, pixels));
 
@@ -1142,62 +1140,78 @@ void Framebuffer::setAttachmentImpl(GLenum type,
                                     const ImageIndex &textureIndex,
                                     FramebufferAttachmentObject *resource)
 {
-    if (binding == GL_DEPTH_STENCIL || binding == GL_DEPTH_STENCIL_ATTACHMENT)
-    {
-        // ensure this is a legitimate depth+stencil format
-        FramebufferAttachmentObject *attachmentObj = resource;
-        if (resource)
-        {
-            FramebufferAttachment::Target target(binding, textureIndex);
-            const Format &format = resource->getAttachmentFormat(target);
-            if (format.info->depthBits == 0 || format.info->stencilBits == 0)
-            {
-                // Attaching nullptr detaches the current attachment.
-                attachmentObj = nullptr;
-            }
-        }
-
-        mState.mDepthAttachment.attach(type, binding, textureIndex, attachmentObj);
-        mState.mStencilAttachment.attach(type, binding, textureIndex, attachmentObj);
-        mDirtyBits.set(DIRTY_BIT_DEPTH_ATTACHMENT);
-        mDirtyBits.set(DIRTY_BIT_STENCIL_ATTACHMENT);
-        BindResourceChannel(&mDirtyDepthAttachmentBinding, resource);
-        BindResourceChannel(&mDirtyStencilAttachmentBinding, resource);
-        return;
-    }
-
     switch (binding)
     {
+        case GL_DEPTH_STENCIL:
+        case GL_DEPTH_STENCIL_ATTACHMENT:
+        {
+            // ensure this is a legitimate depth+stencil format
+            FramebufferAttachmentObject *attachmentObj = resource;
+            if (resource)
+            {
+                const Format &format = resource->getAttachmentFormat(binding, textureIndex);
+                if (format.info->depthBits == 0 || format.info->stencilBits == 0)
+                {
+                    // Attaching nullptr detaches the current attachment.
+                    attachmentObj = nullptr;
+                }
+            }
+
+            updateAttachment(&mState.mDepthAttachment, DIRTY_BIT_DEPTH_ATTACHMENT,
+                             &mDirtyDepthAttachmentBinding, type, binding, textureIndex,
+                             attachmentObj);
+            updateAttachment(&mState.mStencilAttachment, DIRTY_BIT_STENCIL_ATTACHMENT,
+                             &mDirtyStencilAttachmentBinding, type, binding, textureIndex,
+                             attachmentObj);
+            return;
+        }
+
         case GL_DEPTH:
         case GL_DEPTH_ATTACHMENT:
-            mState.mDepthAttachment.attach(type, binding, textureIndex, resource);
-            mDirtyBits.set(DIRTY_BIT_DEPTH_ATTACHMENT);
-            BindResourceChannel(&mDirtyDepthAttachmentBinding, resource);
+            updateAttachment(&mState.mDepthAttachment, DIRTY_BIT_DEPTH_ATTACHMENT,
+                             &mDirtyDepthAttachmentBinding, type, binding, textureIndex, resource);
             break;
+
         case GL_STENCIL:
         case GL_STENCIL_ATTACHMENT:
-            mState.mStencilAttachment.attach(type, binding, textureIndex, resource);
-            mDirtyBits.set(DIRTY_BIT_STENCIL_ATTACHMENT);
-            BindResourceChannel(&mDirtyStencilAttachmentBinding, resource);
+            updateAttachment(&mState.mStencilAttachment, DIRTY_BIT_STENCIL_ATTACHMENT,
+                             &mDirtyStencilAttachmentBinding, type, binding, textureIndex,
+                             resource);
             break;
+
         case GL_BACK:
             mState.mColorAttachments[0].attach(type, binding, textureIndex, resource);
             mDirtyBits.set(DIRTY_BIT_COLOR_ATTACHMENT_0);
             // No need for a resource binding for the default FBO, it's always complete.
             break;
+
         default:
         {
             size_t colorIndex = binding - GL_COLOR_ATTACHMENT0;
             ASSERT(colorIndex < mState.mColorAttachments.size());
-            mState.mColorAttachments[colorIndex].attach(type, binding, textureIndex, resource);
-            mDirtyBits.set(DIRTY_BIT_COLOR_ATTACHMENT_0 + colorIndex);
-            BindResourceChannel(&mDirtyColorAttachmentBindings[colorIndex], resource);
+            size_t dirtyBit = DIRTY_BIT_COLOR_ATTACHMENT_0 + colorIndex;
+            updateAttachment(&mState.mColorAttachments[colorIndex], dirtyBit,
+                             &mDirtyColorAttachmentBindings[colorIndex], type, binding,
+                             textureIndex, resource);
 
             bool enabled = (type != GL_NONE && getDrawBufferState(colorIndex) != GL_NONE);
             mState.mEnabledDrawBuffers.set(colorIndex, enabled);
         }
         break;
     }
+}
+
+void Framebuffer::updateAttachment(FramebufferAttachment *attachment,
+                                   size_t dirtyBit,
+                                   OnAttachmentDirtyBinding *onDirtyBinding,
+                                   GLenum type,
+                                   GLenum binding,
+                                   const ImageIndex &textureIndex,
+                                   FramebufferAttachmentObject *resource)
+{
+    attachment->attach(type, binding, textureIndex, resource);
+    mDirtyBits.set(dirtyBit);
+    BindResourceChannel(onDirtyBinding, resource);
 }
 
 void Framebuffer::resetAttachment(const Context *context, GLenum binding)
@@ -1245,7 +1259,7 @@ bool Framebuffer::formsRenderingFeedbackLoopWith(const State &state) const
     }
 
     // The bitset will skip inactive draw buffers.
-    for (GLuint drawIndex : angle::IterateBitSet(mState.mEnabledDrawBuffers))
+    for (size_t drawIndex : mState.mEnabledDrawBuffers)
     {
         const FramebufferAttachment *attachment = getDrawBuffer(drawIndex);
         if (attachment && attachment->type() == GL_TEXTURE)

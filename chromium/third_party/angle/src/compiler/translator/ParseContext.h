@@ -113,7 +113,6 @@ class TParseContext : angle::NonCopyable
     bool checkIsAtGlobalLevel(const TSourceLoc &line, const char *token);
     bool checkConstructorArguments(const TSourceLoc &line,
                                    const TIntermSequence *arguments,
-                                   TOperator op,
                                    const TType &type);
 
     // Returns a sanitized array size to use (the size is at least 1).
@@ -123,12 +122,9 @@ class TParseContext : angle::NonCopyable
     bool checkIsNonVoid(const TSourceLoc &line, const TString &identifier, const TBasicType &type);
     void checkIsScalarBool(const TSourceLoc &line, const TIntermTyped *type);
     void checkIsScalarBool(const TSourceLoc &line, const TPublicType &pType);
-    bool checkIsNotSampler(const TSourceLoc &line,
-                           const TTypeSpecifierNonArray &pType,
-                           const char *reason);
-    bool checkIsNotImage(const TSourceLoc &line,
-                         const TTypeSpecifierNonArray &pType,
-                         const char *reason);
+    bool checkIsNotOpaqueType(const TSourceLoc &line,
+                              const TTypeSpecifierNonArray &pType,
+                              const char *reason);
     void checkDeclaratorLocationIsNotSpecified(const TSourceLoc &line, const TPublicType &pType);
     void checkLocationIsNotSpecified(const TSourceLoc &location,
                                      const TLayoutQualifier &layoutQualifier);
@@ -136,9 +132,17 @@ class TParseContext : angle::NonCopyable
                                         const TTypeQualifierBuilder &typeQualifierBuilder,
                                         TType *type);
     bool checkCanUseExtension(const TSourceLoc &line, const TString &extension);
-    void singleDeclarationErrorCheck(const TPublicType &publicType,
-                                     const TSourceLoc &identifierLocation);
+
+    // Done for all declarations, whether empty or not.
+    void declarationQualifierErrorCheck(const sh::TQualifier qualifier,
+                                        const sh::TLayoutQualifier &layoutQualifier,
+                                        const TSourceLoc &location);
+    // Done for the first non-empty declarator in a declaration.
+    void nonEmptyDeclarationErrorCheck(const TPublicType &publicType,
+                                       const TSourceLoc &identifierLocation);
+    // Done only for empty declarations.
     void emptyDeclarationErrorCheck(const TPublicType &publicType, const TSourceLoc &location);
+
     void checkLayoutQualifierSupported(const TSourceLoc &location,
                                        const TString &layoutQualifierName,
                                        int versionRequired);
@@ -376,15 +380,9 @@ class TParseContext : angle::NonCopyable
     // Assumes that multiplication op has already been set based on the types.
     bool isMultiplicationTypeCombinationValid(TOperator op, const TType &left, const TType &right);
 
-    void checkOutParameterIsNotImage(const TSourceLoc &line,
-                                     TQualifier qualifier,
-                                     const TType &type);
     void checkOutParameterIsNotOpaqueType(const TSourceLoc &line,
                                           TQualifier qualifier,
                                           const TType &type);
-    void checkOutParameterIsNotSampler(const TSourceLoc &line,
-                                       TQualifier qualifier,
-                                       const TType &type);
 
     void checkInternalFormatIsNotSpecified(const TSourceLoc &location,
                                            TLayoutImageInternalFormat internalFormat);
@@ -416,7 +414,6 @@ class TParseContext : angle::NonCopyable
                             TIntermNode *thisNode,
                             const TSourceLoc &loc);
     TIntermTyped *addConstructor(TIntermSequence *arguments,
-                                 TOperator op,
                                  TType type,
                                  const TSourceLoc &line);
     TIntermTyped *addNonConstructorFunctionCall(TFunction *fnCall,
@@ -433,8 +430,10 @@ class TParseContext : angle::NonCopyable
                                                               const TSourceLoc &location,
                                                               bool insertParametersToSymbolTable);
 
-    // Set to true when the last/current declarator list was started with an empty declaration.
-    bool mDeferredSingleDeclarationErrorCheck;
+    // Set to true when the last/current declarator list was started with an empty declaration. The
+    // non-empty declaration error check will need to be performed if the empty declaration is
+    // followed by a declarator.
+    bool mDeferredNonEmptyDeclarationErrorCheck;
 
     sh::GLenum mShaderType;    // vertex or fragment language (future: pack or unpack)
     ShShaderSpec mShaderSpec;  // The language specification compiler conforms to - GLES2 or WebGL.

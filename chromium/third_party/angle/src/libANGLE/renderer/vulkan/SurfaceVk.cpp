@@ -137,7 +137,8 @@ EGLint OffscreenSurfaceVk::getSwapBehavior() const
 }
 
 gl::Error OffscreenSurfaceVk::getAttachmentRenderTarget(
-    const gl::FramebufferAttachment::Target & /*target*/,
+    GLenum /*binding*/,
+    const gl::ImageIndex & /*imageIndex*/,
     FramebufferAttachmentRenderTarget ** /*rtOut*/)
 {
     UNREACHABLE();
@@ -151,6 +152,7 @@ WindowSurfaceVk::WindowSurfaceVk(const egl::SurfaceState &surfaceState,
     : SurfaceImpl(surfaceState),
       mNativeWindowType(window),
       mSurface(VK_NULL_HANDLE),
+      mInstance(VK_NULL_HANDLE),
       mSwapchain(VK_NULL_HANDLE),
       mRenderTarget(),
       mCurrentSwapchainImageIndex(0)
@@ -216,15 +218,8 @@ egl::Error WindowSurfaceVk::initialize(const DisplayImpl *displayImpl)
 
 vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
 {
-    // TODO(jmadill): Make this platform-specific.
-    VkWin32SurfaceCreateInfoKHR createInfo;
-
-    createInfo.sType     = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    createInfo.pNext     = nullptr;
-    createInfo.flags     = 0;
-    createInfo.hinstance = GetModuleHandle(nullptr);
-    createInfo.hwnd      = mNativeWindowType;
-    ANGLE_VK_TRY(vkCreateWin32SurfaceKHR(renderer->getInstance(), &createInfo, nullptr, &mSurface));
+    gl::Extents windowSize;
+    ANGLE_TRY_RESULT(createSurfaceVk(renderer), windowSize);
 
     uint32_t presentQueue = 0;
     ANGLE_TRY_RESULT(renderer->selectPresentQueueForSurface(mSurface), presentQueue);
@@ -246,16 +241,13 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
     {
         ASSERT(surfaceCaps.currentExtent.height == 0xFFFFFFFFu);
 
-        RECT rect;
-        ANGLE_VK_CHECK(GetClientRect(mNativeWindowType, &rect) == TRUE,
-                       VK_ERROR_INITIALIZATION_FAILED);
         if (mRenderTarget.extents.width == 0)
         {
-            width = static_cast<uint32_t>(rect.right - rect.left);
+            width = windowSize.width;
         }
         if (mRenderTarget.extents.height == 0)
         {
-            height = static_cast<uint32_t>(rect.bottom - rect.top);
+            height = windowSize.height;
         }
     }
 
@@ -358,8 +350,8 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
     ANGLE_VK_TRY(vkGetSwapchainImagesKHR(device, mSwapchain, &imageCount, swapchainImages.data()));
 
     // CommandBuffer is a singleton in the Renderer.
-    vk::CommandBuffer *commandBuffer = renderer->getCommandBuffer();
-    ANGLE_TRY(commandBuffer->begin(device));
+    vk::CommandBuffer *commandBuffer = nullptr;
+    ANGLE_TRY(renderer->getStartedCommandBuffer(&commandBuffer));
 
     VkClearColorValue transparentBlack;
     transparentBlack.float32[0] = 0.0f;
@@ -404,8 +396,7 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
         mSwapchainImageViews[imageIndex].retain(device, std::move(imageView));
     }
 
-    ANGLE_TRY(commandBuffer->end());
-    ANGLE_TRY(renderer->submitAndFinishCommandBuffer(*commandBuffer));
+    ANGLE_TRY(renderer->submitAndFinishCommandBuffer(commandBuffer));
 
     ANGLE_TRY(mImageAvailableSemaphore.init(device));
     ANGLE_TRY(mRenderingCompleteSemaphore.init(device));
@@ -429,17 +420,16 @@ egl::Error WindowSurfaceVk::swap(const DisplayImpl *displayImpl)
 
 vk::Error WindowSurfaceVk::swapImpl(RendererVk *renderer)
 {
-    vk::CommandBuffer *currentCB = renderer->getCommandBuffer();
+    vk::CommandBuffer *currentCB = nullptr;
+    ANGLE_TRY(renderer->getStartedCommandBuffer(&currentCB));
 
     auto *image = &mSwapchainImages[mCurrentSwapchainImageIndex];
 
-    currentCB->begin(renderer->getDevice());
     image->changeLayoutWithStages(VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                                   VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                   VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, currentCB);
-    currentCB->end();
 
-    ANGLE_TRY(renderer->submitCommandsWithSync(*currentCB, mImageAvailableSemaphore,
+    ANGLE_TRY(renderer->submitCommandsWithSync(currentCB, mImageAvailableSemaphore,
                                                mRenderingCompleteSemaphore));
 
     VkPresentInfoKHR presentInfo;
@@ -531,9 +521,9 @@ EGLint WindowSurfaceVk::getSwapBehavior() const
     return EGL_BUFFER_DESTROYED;
 }
 
-gl::Error WindowSurfaceVk::getAttachmentRenderTarget(
-    const gl::FramebufferAttachment::Target & /*target*/,
-    FramebufferAttachmentRenderTarget **rtOut)
+gl::Error WindowSurfaceVk::getAttachmentRenderTarget(GLenum /*binding*/,
+                                                     const gl::ImageIndex & /*target*/,
+                                                     FramebufferAttachmentRenderTarget **rtOut)
 {
     *rtOut = &mRenderTarget;
     return gl::NoError();

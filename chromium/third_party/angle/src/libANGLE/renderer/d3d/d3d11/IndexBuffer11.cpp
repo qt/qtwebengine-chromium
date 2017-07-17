@@ -16,7 +16,7 @@ namespace rx
 
 IndexBuffer11::IndexBuffer11(Renderer11 *const renderer) : mRenderer(renderer)
 {
-    mBuffer = NULL;
+    mBuffer       = nullptr;
     mBufferSize = 0;
     mDynamicUsage = false;
 }
@@ -44,7 +44,7 @@ gl::Error IndexBuffer11::initialize(unsigned int bufferSize, GLenum indexType, b
         bufferDesc.MiscFlags = 0;
         bufferDesc.StructureByteStride = 0;
 
-        HRESULT result = dxDevice->CreateBuffer(&bufferDesc, NULL, &mBuffer);
+        HRESULT result = dxDevice->CreateBuffer(&bufferDesc, nullptr, &mBuffer);
         if (FAILED(result))
         {
             return gl::Error(GL_OUT_OF_MEMORY, "Failed to allocate internal index buffer of size, %lu.", bufferSize);

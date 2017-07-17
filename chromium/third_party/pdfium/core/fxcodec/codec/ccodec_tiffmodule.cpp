@@ -14,6 +14,7 @@
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/fx_dib.h"
+#include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
 
 extern "C" {
@@ -61,6 +62,10 @@ class CCodec_TiffContext {
   uint32_t m_offset;
   TIFF* m_tif_ctx;
 };
+
+void* _TIFFcalloc(tmsize_t nmemb, tmsize_t siz) {
+  return FXMEM_DefaultCalloc(nmemb, siz);
+}
 
 void* _TIFFmalloc(tmsize_t size) {
   return FXMEM_DefaultAlloc(size, 0);
@@ -115,7 +120,7 @@ tsize_t tiff_read(thandle_t context, tdata_t buf, tsize_t length) {
 }
 
 tsize_t tiff_write(thandle_t context, tdata_t buf, tsize_t length) {
-  ASSERT(false);
+  NOTREACHED();
   return 0;
 }
 
@@ -340,7 +345,7 @@ void CCodec_TiffContext::SetPalette(
     uint32_t b = blue_orig[index] & 0xFF;
     uint32_t color = (uint32_t)b | ((uint32_t)g << 8) | ((uint32_t)r << 16) |
                      (((uint32)0xffL) << 24);
-    pDIBitmap->SetPaletteEntry(index, color);
+    pDIBitmap->SetPaletteArgb(index, color);
   }
 }
 

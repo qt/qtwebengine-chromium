@@ -147,20 +147,43 @@
   {
 
 #define TRICK_NAMES_MAX_CHARACTERS  19
-#define TRICK_NAMES_COUNT            9
+#define TRICK_NAMES_COUNT           18
 
     static const char trick_names[TRICK_NAMES_COUNT]
                                  [TRICK_NAMES_MAX_CHARACTERS + 1] =
     {
+      /*
+         PostScript names are given in brackets if they differ from the
+         family name.  The version numbers, together with the copyright or
+         release year data, are taken from fonts available to the
+         developers.
+
+         Note that later versions of the fonts might be no longer tricky;
+         for example, `MingLiU' version 7.00 (file `mingliu.ttc' from
+         Windows 7) is an ordinary TTC with non-tricky subfonts.
+       */
+
+      "cpop",               /* dftt-p7.ttf; version 1.00, 1992 [DLJGyShoMedium] */
+      "DFGirl-W6-WIN-BF",   /* dftt-h6.ttf; version 1.00, 1993 */
       "DFKaiSho-SB",        /* dfkaisb.ttf */
       "DFKaiShu",
-      "DFKai-SB",           /* kaiu.ttf */
+      "DFKai-SB",           /* kaiu.ttf; version 3.00, 1998 [DFKaiShu-SB-Estd-BF] */
+      "DLC",                /* dftt-m7.ttf; version 1.00, 1993 [DLCMingBold] */
+                            /* dftt-f5.ttf; version 1.00, 1993 [DLCFongSung] */
+      "DLCHayMedium",       /* dftt-b5.ttf; version 1.00, 1993 */
+      "DLCHayBold",         /* dftt-b7.ttf; version 1.00, 1993 */
+      "DLCKaiMedium",       /* dftt-k5.ttf; version 1.00, 1992 */
+      "DLCLiShu",           /* dftt-l5.ttf; version 1.00, 1992 */
+      "DLCRoundBold",       /* dftt-r7.ttf; version 1.00, 1993 */
       "HuaTianKaiTi?",      /* htkt2.ttf */
       "HuaTianSongTi?",     /* htst3.ttf */
-      "Ming(for ISO10646)", /* hkscsiic.ttf & iicore.ttf */
-      "MingLiU",            /* mingliu.ttf & mingliu.ttc */
-      "PMingLiU",           /* mingliu.ttc */
-      "MingLi43",           /* mingli.ttf */
+      "Ming(for ISO10646)", /* hkscsiic.ttf; version 0.12, 2007 [Ming] */
+                            /* iicore.ttf; version 0.07, 2007 [Ming] */
+      "MingLiU",            /* mingliu.ttf */
+                            /* mingliu.ttc; version 3.21, 2001 */
+      "MingMedium",         /* dftt-m5.ttf; version 1.00, 1993 [DLCMingMedium] */
+      "PMingLiU",           /* mingliu.ttc; version 3.21, 2001 */
+      "MingLi43",           /* mingli.ttf; version 1.00, 1992 */
     };
 
     int  nn;
@@ -242,7 +265,7 @@
   tt_check_trickyness_sfnt_ids( TT_Face  face )
   {
 #define TRICK_SFNT_IDS_PER_FACE   3
-#define TRICK_SFNT_IDS_NUM_FACES  18
+#define TRICK_SFNT_IDS_NUM_FACES  19
 
     static const tt_sfnt_id_rec sfnt_id[TRICK_SFNT_IDS_NUM_FACES]
                                        [TRICK_SFNT_IDS_PER_FACE] = {
@@ -266,7 +289,7 @@
         { 0x5A30CA3BUL, 0x00009063UL }, /* fpgm */
         { 0x13A42602UL, 0x0000007EUL }  /* prep */
       },
-      { /* DFKaiShu2 */
+      { /* DFKaiShu, variant */
         { 0x11E5EAD4UL, 0x00000350UL }, /* cvt  */
         { 0xA6E78C01UL, 0x00008998UL }, /* fpgm */
         { 0x13A42602UL, 0x0000007EUL }  /* prep */
@@ -340,6 +363,11 @@
         { 0x00000000UL, 0x00000000UL }, /* cvt  */
         { 0xF055FC48UL, 0x000001C2UL }, /* fpgm */
         { 0x3900DED3UL, 0x00001E18UL }  /* prep */
+      },
+        { /* MINGLI.TTF, 1992 */
+        { 0x00170003UL, 0x00000060UL }, /* cvt  */
+        { 0xDBB4306EUL, 0x000058AAUL }, /* fpgm */
+        { 0xD643482AUL, 0x00000035UL }  /* prep */
       }
     };
 
@@ -1220,7 +1248,7 @@
 
     size->ttmetrics.valid = FALSE;
 
-    size_metrics = &size->metrics;
+    size_metrics = &size->hinted_metrics;
 
     /* copy the result from base layer */
     *size_metrics = size->root.metrics;
@@ -1234,6 +1262,7 @@
     /*                                                               */
     if ( face->header.Flags & 8 )
     {
+      /* the TT spec always asks for ROUND, not FLOOR or CEIL */
       size_metrics->ascender = FT_PIX_ROUND(
                                  FT_MulFix( face->root.ascender,
                                             size_metrics->y_scale ) );
@@ -1252,6 +1281,8 @@
 
     if ( face->header.Flags & 8 )
     {
+      /* base scaling values on integer ppem values, */
+      /* as mandated by the TrueType specification   */
       size_metrics->x_scale = FT_DivFix( size_metrics->x_ppem << 6,
                                          face->root.units_per_EM );
       size_metrics->y_scale = FT_DivFix( size_metrics->y_ppem << 6,
@@ -1279,6 +1310,8 @@
                                            size_metrics->y_ppem );
       size->ttmetrics.y_ratio = 0x10000L;
     }
+
+    size->metrics = size_metrics;
 
 #ifdef TT_USE_BYTECODE_INTERPRETER
     size->cvt_ready = -1;

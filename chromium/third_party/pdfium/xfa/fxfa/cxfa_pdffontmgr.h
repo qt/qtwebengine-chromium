@@ -11,15 +11,16 @@
 
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fxcrt/cfx_observable.h"
 #include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_string.h"
-#include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 
+class CFGAS_GEFont;
 class CPDF_Font;
 class CXFA_FFDoc;
 
-class CXFA_PDFFontMgr {
+class CXFA_PDFFontMgr : public CFX_Observable<CXFA_PDFFontMgr> {
  public:
   explicit CXFA_PDFFontMgr(CXFA_FFDoc* pDoc);
   ~CXFA_PDFFontMgr();
@@ -49,7 +50,7 @@ class CXFA_PDFFontMgr {
                              const CFX_ByteString& bsDRFontName,
                              bool bStrictMatch);
 
-  CXFA_FFDoc* const m_pDoc;
+  CFX_UnownedPtr<CXFA_FFDoc> const m_pDoc;
   std::map<CFX_RetainPtr<CFGAS_GEFont>, CPDF_Font*> m_FDE2PDFFont;
   std::map<CFX_ByteString, CFX_RetainPtr<CFGAS_GEFont>> m_FontMap;
 };

@@ -43,7 +43,8 @@ class OffscreenSurfaceVk : public SurfaceImpl
     EGLint isPostSubBufferSupported() const override;
     EGLint getSwapBehavior() const override;
 
-    gl::Error getAttachmentRenderTarget(const gl::FramebufferAttachment::Target &target,
+    gl::Error getAttachmentRenderTarget(GLenum binding,
+                                        const gl::ImageIndex &imageIndex,
                                         FramebufferAttachmentRenderTarget **rtOut) override;
 
   private:
@@ -79,20 +80,25 @@ class WindowSurfaceVk : public SurfaceImpl, public ResourceVk
     EGLint isPostSubBufferSupported() const override;
     EGLint getSwapBehavior() const override;
 
-    gl::Error getAttachmentRenderTarget(const gl::FramebufferAttachment::Target &target,
+    gl::Error getAttachmentRenderTarget(GLenum binding,
+                                        const gl::ImageIndex &imageIndex,
                                         FramebufferAttachmentRenderTarget **rtOut) override;
 
     gl::ErrorOrResult<vk::Framebuffer *> getCurrentFramebuffer(
         VkDevice device,
         const vk::RenderPass &compatibleRenderPass);
 
+  protected:
+    EGLNativeWindowType mNativeWindowType;
+    VkSurfaceKHR mSurface;
+    VkInstance mInstance;
+
   private:
+    virtual vk::ErrorOrResult<gl::Extents> createSurfaceVk(RendererVk *renderer) = 0;
     vk::Error initializeImpl(RendererVk *renderer);
     vk::Error nextSwapchainImage(RendererVk *renderer);
     vk::Error swapImpl(RendererVk *renderer);
 
-    EGLNativeWindowType mNativeWindowType;
-    VkSurfaceKHR mSurface;
     VkSwapchainKHR mSwapchain;
 
     RenderTargetVk mRenderTarget;

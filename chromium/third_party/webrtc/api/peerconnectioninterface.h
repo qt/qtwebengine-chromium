@@ -73,6 +73,7 @@
 #include <vector>
 
 #include "webrtc/api/audio_codecs/audio_decoder_factory.h"
+#include "webrtc/api/audio_codecs/audio_encoder_factory.h"
 #include "webrtc/api/datachannelinterface.h"
 #include "webrtc/api/dtmfsenderinterface.h"
 #include "webrtc/api/jsep.h"
@@ -91,9 +92,6 @@
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/media/base/mediachannel.h"
 #include "webrtc/media/base/videocapturer.h"
-#include "webrtc/modules/audio_coding/codecs/audio_encoder_factory.h"
-// TODO(ossu): Remove this once downstream projects have been updated.
-#include "webrtc/modules/audio_coding/codecs/builtin_audio_encoder_factory.h"
 #include "webrtc/p2p/base/portallocator.h"
 
 namespace rtc {
@@ -753,6 +751,10 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
 
   // Terminates all media, closes the transports, and in general releases any
   // resources used by the PeerConnection. This is an irreversible operation.
+  //
+  // Note that after this method completes, the PeerConnection will no longer
+  // use the PeerConnectionObserver interface passed in on construction, and
+  // thus the observer object can be safely destroyed.
   virtual void Close() = 0;
 
  protected:
@@ -878,8 +880,18 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
     rtc::CryptoOptions crypto_options;
   };
 
+  // Set the options to be used for subsequently created PeerConnections.
   virtual void SetOptions(const Options& options) = 0;
 
+  // |allocator| and |cert_generator| may be null, in which case default
+  // implementations will be used.
+  //
+  // |observer| must not be null.
+  //
+  // Note that this method does not take ownership of |observer|; it's the
+  // responsibility of the caller to delete it. It can be safely deleted after
+  // Close has been called on the returned PeerConnection, which ensures no
+  // more observer callbacks will be invoked.
   virtual rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection(
       const PeerConnectionInterface::RTCConfiguration& configuration,
       std::unique_ptr<cricket::PortAllocator> allocator,

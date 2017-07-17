@@ -49,6 +49,7 @@ rtc_static_library("audio_device") {
   public_configs = [ ":audio_device_config" ]
 
   deps = [
+    "..:module_api",
     "../..:webrtc_common",
     "../../base:rtc_base_approved",
     "../../base:rtc_task_queue",
@@ -173,6 +174,7 @@ rtc_static_library("audio_device") {
       }
       if (is_ios) {
         public_deps = [
+          "../../base:gtest_prod",
           "../../base:rtc_base",
           "../../sdk:rtc_sdk_common_objc",
         ]
@@ -192,8 +194,6 @@ rtc_static_library("audio_device") {
           "ios/voice_processing_audio_unit.h",
           "ios/voice_processing_audio_unit.mm",
         ]
-        configs += [ "//build/config/compiler:enable_arc" ]
-
         libs = [
           "AudioToolbox.framework",
           "AVFoundation.framework",
@@ -257,6 +257,13 @@ config("mock_audio_device_config") {
 if (rtc_include_tests) {
   rtc_source_set("audio_device_unittests") {
     testonly = true
+
+    # Skip restricting visibility on mobile platforms since the tests on those
+    # gets additional generated targets which would require many lines here to
+    # cover (which would be confusing to read and hard to maintain).
+    if (!is_android && !is_ios) {
+      visibility = [ "//webrtc/modules:modules_unittests" ]
+    }
     sources = [
       "fine_audio_buffer_unittest.cc",
     ]
@@ -291,10 +298,10 @@ if (rtc_include_tests) {
     }
     if (is_ios) {
       sources += [ "ios/objc/RTCAudioSessionTest.mm" ]
-      configs += [ "//build/config/compiler:enable_arc" ]
       if (target_cpu != "x64") {
-        sources += [ "ios/audio_device_unittest_ios.cc" ]
+        sources += [ "ios/audio_device_unittest_ios.mm" ]
       }
+      deps += [ "//third_party/ocmock" ]
     }
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).

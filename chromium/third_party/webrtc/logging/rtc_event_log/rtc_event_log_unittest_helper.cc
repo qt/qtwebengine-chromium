@@ -163,10 +163,32 @@ rtclog::BweProbeResult::ResultType GetProbeResultType(
   return ::testing::AssertionSuccess();
 }
 
+void VerifyStreamConfigsAreEqual(const rtclog::StreamConfig& config_1,
+                                 const rtclog::StreamConfig& config_2) {
+  EXPECT_EQ(config_1.remote_ssrc, config_2.remote_ssrc);
+  EXPECT_EQ(config_1.local_ssrc, config_2.local_ssrc);
+  EXPECT_EQ(config_1.rtx_ssrc, config_2.rtx_ssrc);
+  EXPECT_EQ(config_1.rtcp_mode, config_2.rtcp_mode);
+  EXPECT_EQ(config_1.remb, config_2.remb);
+
+  ASSERT_EQ(config_1.rtp_extensions.size(), config_2.rtp_extensions.size());
+  for (size_t i = 0; i < config_2.rtp_extensions.size(); i++) {
+    EXPECT_EQ(config_1.rtp_extensions[i].uri, config_2.rtp_extensions[i].uri);
+    EXPECT_EQ(config_1.rtp_extensions[i].id, config_2.rtp_extensions[i].id);
+  }
+  ASSERT_EQ(config_1.codecs.size(), config_2.codecs.size());
+  for (size_t i = 0; i < config_2.codecs.size(); i++) {
+    EXPECT_EQ(config_1.codecs[i].payload_name, config_2.codecs[i].payload_name);
+    EXPECT_EQ(config_1.codecs[i].payload_type, config_2.codecs[i].payload_type);
+    EXPECT_EQ(config_1.codecs[i].rtx_payload_type,
+              config_2.codecs[i].rtx_payload_type);
+  }
+}
+
 void RtcEventLogTestHelper::VerifyVideoReceiveStreamConfig(
     const ParsedRtcEventLog& parsed_log,
     size_t index,
-    const VideoReceiveStream::Config& config) {
+    const rtclog::StreamConfig& config) {
   const rtclog::Event& event = parsed_log.events_[index];
   ASSERT_TRUE(IsValidBasicEvent(event));
   ASSERT_EQ(rtclog::Event::VIDEO_RECEIVER_CONFIG_EVENT, event.type());
@@ -174,12 +196,12 @@ void RtcEventLogTestHelper::VerifyVideoReceiveStreamConfig(
       event.video_receiver_config();
   // Check SSRCs.
   ASSERT_TRUE(receiver_config.has_remote_ssrc());
-  EXPECT_EQ(config.rtp.remote_ssrc, receiver_config.remote_ssrc());
+  EXPECT_EQ(config.remote_ssrc, receiver_config.remote_ssrc());
   ASSERT_TRUE(receiver_config.has_local_ssrc());
-  EXPECT_EQ(config.rtp.local_ssrc, receiver_config.local_ssrc());
+  EXPECT_EQ(config.local_ssrc, receiver_config.local_ssrc());
   // Check RTCP settings.
   ASSERT_TRUE(receiver_config.has_rtcp_mode());
-  if (config.rtp.rtcp_mode == RtcpMode::kCompound) {
+  if (config.rtcp_mode == RtcpMode::kCompound) {
     EXPECT_EQ(rtclog::VideoReceiveConfig::RTCP_COMPOUND,
               receiver_config.rtcp_mode());
   } else {
@@ -187,154 +209,97 @@ void RtcEventLogTestHelper::VerifyVideoReceiveStreamConfig(
               receiver_config.rtcp_mode());
   }
   ASSERT_TRUE(receiver_config.has_remb());
-  EXPECT_EQ(config.rtp.remb, receiver_config.remb());
+  EXPECT_EQ(config.remb, receiver_config.remb());
   // Check RTX map.
-  ASSERT_EQ(static_cast<int>(config.rtp.rtx_payload_types.size()),
-            receiver_config.rtx_map_size());
   for (const rtclog::RtxMap& rtx_map : receiver_config.rtx_map()) {
     ASSERT_TRUE(rtx_map.has_payload_type());
     ASSERT_TRUE(rtx_map.has_config());
-    EXPECT_EQ(1u, config.rtp.rtx_payload_types.count(rtx_map.payload_type()));
     const rtclog::RtxConfig& rtx_config = rtx_map.config();
     ASSERT_TRUE(rtx_config.has_rtx_ssrc());
     ASSERT_TRUE(rtx_config.has_rtx_payload_type());
-    EXPECT_EQ(config.rtp.rtx_ssrc, rtx_config.rtx_ssrc());
-    EXPECT_EQ(config.rtp.rtx_payload_types.at(rtx_map.payload_type()),
-              rtx_config.rtx_payload_type());
+
+    EXPECT_EQ(config.rtx_ssrc, rtx_config.rtx_ssrc());
+    auto codec_found =
+        std::find_if(config.codecs.begin(), config.codecs.end(),
+                     [&rtx_map](const rtclog::StreamConfig::Codec& codec) {
+                       return rtx_map.payload_type() == codec.payload_type;
+                     });
+    ASSERT_TRUE(codec_found != config.codecs.end());
+    EXPECT_EQ(rtx_config.rtx_payload_type(), codec_found->rtx_payload_type);
   }
   // Check header extensions.
-  ASSERT_EQ(static_cast<int>(config.rtp.extensions.size()),
+  ASSERT_EQ(static_cast<int>(config.rtp_extensions.size()),
             receiver_config.header_extensions_size());
   for (int i = 0; i < receiver_config.header_extensions_size(); i++) {
     ASSERT_TRUE(receiver_config.header_extensions(i).has_name());
     ASSERT_TRUE(receiver_config.header_extensions(i).has_id());
     const std::string& name = receiver_config.header_extensions(i).name();
     int id = receiver_config.header_extensions(i).id();
-    EXPECT_EQ(config.rtp.extensions[i].id, id);
-    EXPECT_EQ(config.rtp.extensions[i].uri, name);
+    EXPECT_EQ(config.rtp_extensions[i].id, id);
+    EXPECT_EQ(config.rtp_extensions[i].uri, name);
   }
   // Check decoders.
-  ASSERT_EQ(static_cast<int>(config.decoders.size()),
+  ASSERT_EQ(static_cast<int>(config.codecs.size()),
             receiver_config.decoders_size());
   for (int i = 0; i < receiver_config.decoders_size(); i++) {
     ASSERT_TRUE(receiver_config.decoders(i).has_name());
     ASSERT_TRUE(receiver_config.decoders(i).has_payload_type());
     const std::string& decoder_name = receiver_config.decoders(i).name();
     int decoder_type = receiver_config.decoders(i).payload_type();
-    EXPECT_EQ(config.decoders[i].payload_name, decoder_name);
-    EXPECT_EQ(config.decoders[i].payload_type, decoder_type);
+    EXPECT_EQ(config.codecs[i].payload_name, decoder_name);
+    EXPECT_EQ(config.codecs[i].payload_type, decoder_type);
   }
 
   // Check consistency of the parser.
-  VideoReceiveStream::Config parsed_config(nullptr);
+  rtclog::StreamConfig parsed_config;
   parsed_log.GetVideoReceiveConfig(index, &parsed_config);
-  EXPECT_EQ(config.rtp.remote_ssrc, parsed_config.rtp.remote_ssrc);
-  EXPECT_EQ(config.rtp.local_ssrc, parsed_config.rtp.local_ssrc);
-  // Check RTCP settings.
-  EXPECT_EQ(config.rtp.rtcp_mode, parsed_config.rtp.rtcp_mode);
-  EXPECT_EQ(config.rtp.remb, parsed_config.rtp.remb);
-  // Check RTX map.
-  EXPECT_EQ(config.rtp.rtx_ssrc, parsed_config.rtp.rtx_ssrc);
-  EXPECT_EQ(config.rtp.rtx_payload_types.size(),
-            parsed_config.rtp.rtx_payload_types.size());
-  for (const auto& kv : config.rtp.rtx_payload_types) {
-    auto parsed_kv = parsed_config.rtp.rtx_payload_types.find(kv.first);
-    EXPECT_EQ(kv.first, parsed_kv->first);
-    EXPECT_EQ(kv.second, parsed_kv->second);
-  }
-  // Check header extensions.
-  EXPECT_EQ(config.rtp.extensions.size(), parsed_config.rtp.extensions.size());
-  for (size_t i = 0; i < parsed_config.rtp.extensions.size(); i++) {
-    EXPECT_EQ(config.rtp.extensions[i].uri,
-              parsed_config.rtp.extensions[i].uri);
-    EXPECT_EQ(config.rtp.extensions[i].id, parsed_config.rtp.extensions[i].id);
-  }
-  // Check decoders.
-  EXPECT_EQ(config.decoders.size(), parsed_config.decoders.size());
-  for (size_t i = 0; i < parsed_config.decoders.size(); i++) {
-    EXPECT_EQ(config.decoders[i].payload_name,
-              parsed_config.decoders[i].payload_name);
-    EXPECT_EQ(config.decoders[i].payload_type,
-              parsed_config.decoders[i].payload_type);
-  }
+  VerifyStreamConfigsAreEqual(config, parsed_config);
 }
 
 void RtcEventLogTestHelper::VerifyVideoSendStreamConfig(
     const ParsedRtcEventLog& parsed_log,
     size_t index,
-    const VideoSendStream::Config& config) {
+    const rtclog::StreamConfig& config) {
   const rtclog::Event& event = parsed_log.events_[index];
   ASSERT_TRUE(IsValidBasicEvent(event));
   ASSERT_EQ(rtclog::Event::VIDEO_SENDER_CONFIG_EVENT, event.type());
   const rtclog::VideoSendConfig& sender_config = event.video_sender_config();
-  // Check SSRCs.
-  ASSERT_EQ(static_cast<int>(config.rtp.ssrcs.size()),
-            sender_config.ssrcs_size());
-  for (int i = 0; i < sender_config.ssrcs_size(); i++) {
-    EXPECT_EQ(config.rtp.ssrcs[i], sender_config.ssrcs(i));
-  }
+
+  EXPECT_EQ(config.local_ssrc, sender_config.ssrcs(0));
+  EXPECT_EQ(config.rtx_ssrc, sender_config.rtx_ssrcs(0));
+
   // Check header extensions.
-  ASSERT_EQ(static_cast<int>(config.rtp.extensions.size()),
+  ASSERT_EQ(static_cast<int>(config.rtp_extensions.size()),
             sender_config.header_extensions_size());
   for (int i = 0; i < sender_config.header_extensions_size(); i++) {
     ASSERT_TRUE(sender_config.header_extensions(i).has_name());
     ASSERT_TRUE(sender_config.header_extensions(i).has_id());
     const std::string& name = sender_config.header_extensions(i).name();
     int id = sender_config.header_extensions(i).id();
-    EXPECT_EQ(config.rtp.extensions[i].id, id);
-    EXPECT_EQ(config.rtp.extensions[i].uri, name);
-  }
-  // Check RTX settings.
-  ASSERT_EQ(static_cast<int>(config.rtp.rtx.ssrcs.size()),
-            sender_config.rtx_ssrcs_size());
-  for (int i = 0; i < sender_config.rtx_ssrcs_size(); i++) {
-    EXPECT_EQ(config.rtp.rtx.ssrcs[i], sender_config.rtx_ssrcs(i));
-  }
-  if (sender_config.rtx_ssrcs_size() > 0) {
-    ASSERT_TRUE(sender_config.has_rtx_payload_type());
-    EXPECT_EQ(config.rtp.rtx.payload_type, sender_config.rtx_payload_type());
+    EXPECT_EQ(config.rtp_extensions[i].id, id);
+    EXPECT_EQ(config.rtp_extensions[i].uri, name);
   }
   // Check encoder.
   ASSERT_TRUE(sender_config.has_encoder());
   ASSERT_TRUE(sender_config.encoder().has_name());
   ASSERT_TRUE(sender_config.encoder().has_payload_type());
-  EXPECT_EQ(config.encoder_settings.payload_name,
-            sender_config.encoder().name());
-  EXPECT_EQ(config.encoder_settings.payload_type,
+  EXPECT_EQ(config.codecs[0].payload_name, sender_config.encoder().name());
+  EXPECT_EQ(config.codecs[0].payload_type,
             sender_config.encoder().payload_type());
 
+  EXPECT_EQ(config.codecs[0].rtx_payload_type,
+            sender_config.rtx_payload_type());
+
   // Check consistency of the parser.
-  VideoSendStream::Config parsed_config(nullptr);
+  rtclog::StreamConfig parsed_config;
   parsed_log.GetVideoSendConfig(index, &parsed_config);
-  // Check SSRCs
-  EXPECT_EQ(config.rtp.ssrcs.size(), parsed_config.rtp.ssrcs.size());
-  for (size_t i = 0; i < config.rtp.ssrcs.size(); i++) {
-    EXPECT_EQ(config.rtp.ssrcs[i], parsed_config.rtp.ssrcs[i]);
-  }
-  // Check header extensions.
-  EXPECT_EQ(config.rtp.extensions.size(), parsed_config.rtp.extensions.size());
-  for (size_t i = 0; i < parsed_config.rtp.extensions.size(); i++) {
-    EXPECT_EQ(config.rtp.extensions[i].uri,
-              parsed_config.rtp.extensions[i].uri);
-    EXPECT_EQ(config.rtp.extensions[i].id, parsed_config.rtp.extensions[i].id);
-  }
-  // Check RTX settings.
-  EXPECT_EQ(config.rtp.rtx.ssrcs.size(), parsed_config.rtp.rtx.ssrcs.size());
-  for (size_t i = 0; i < config.rtp.rtx.ssrcs.size(); i++) {
-    EXPECT_EQ(config.rtp.rtx.ssrcs[i], parsed_config.rtp.rtx.ssrcs[i]);
-  }
-  EXPECT_EQ(config.rtp.rtx.payload_type, parsed_config.rtp.rtx.payload_type);
-  // Check encoder.
-  EXPECT_EQ(config.encoder_settings.payload_name,
-            parsed_config.encoder_settings.payload_name);
-  EXPECT_EQ(config.encoder_settings.payload_type,
-            parsed_config.encoder_settings.payload_type);
+  VerifyStreamConfigsAreEqual(config, parsed_config);
 }
 
 void RtcEventLogTestHelper::VerifyAudioReceiveStreamConfig(
     const ParsedRtcEventLog& parsed_log,
     size_t index,
-    const AudioReceiveStream::Config& config) {
+    const rtclog::StreamConfig& config) {
   const rtclog::Event& event = parsed_log.events_[index];
   ASSERT_TRUE(IsValidBasicEvent(event));
   ASSERT_EQ(rtclog::Event::AUDIO_RECEIVER_CONFIG_EVENT, event.type());
@@ -342,69 +307,61 @@ void RtcEventLogTestHelper::VerifyAudioReceiveStreamConfig(
       event.audio_receiver_config();
   // Check SSRCs.
   ASSERT_TRUE(receiver_config.has_remote_ssrc());
-  EXPECT_EQ(config.rtp.remote_ssrc, receiver_config.remote_ssrc());
+  EXPECT_EQ(config.remote_ssrc, receiver_config.remote_ssrc());
   ASSERT_TRUE(receiver_config.has_local_ssrc());
-  EXPECT_EQ(config.rtp.local_ssrc, receiver_config.local_ssrc());
+  EXPECT_EQ(config.local_ssrc, receiver_config.local_ssrc());
   // Check header extensions.
-  ASSERT_EQ(static_cast<int>(config.rtp.extensions.size()),
+  ASSERT_EQ(static_cast<int>(config.rtp_extensions.size()),
             receiver_config.header_extensions_size());
   for (int i = 0; i < receiver_config.header_extensions_size(); i++) {
     ASSERT_TRUE(receiver_config.header_extensions(i).has_name());
     ASSERT_TRUE(receiver_config.header_extensions(i).has_id());
     const std::string& name = receiver_config.header_extensions(i).name();
     int id = receiver_config.header_extensions(i).id();
-    EXPECT_EQ(config.rtp.extensions[i].id, id);
-    EXPECT_EQ(config.rtp.extensions[i].uri, name);
+    EXPECT_EQ(config.rtp_extensions[i].id, id);
+    EXPECT_EQ(config.rtp_extensions[i].uri, name);
   }
 
   // Check consistency of the parser.
-  AudioReceiveStream::Config parsed_config;
+  rtclog::StreamConfig parsed_config;
   parsed_log.GetAudioReceiveConfig(index, &parsed_config);
-  EXPECT_EQ(config.rtp.remote_ssrc, parsed_config.rtp.remote_ssrc);
-  EXPECT_EQ(config.rtp.local_ssrc, parsed_config.rtp.local_ssrc);
+  EXPECT_EQ(config.remote_ssrc, parsed_config.remote_ssrc);
+  EXPECT_EQ(config.local_ssrc, parsed_config.local_ssrc);
   // Check header extensions.
-  EXPECT_EQ(config.rtp.extensions.size(), parsed_config.rtp.extensions.size());
-  for (size_t i = 0; i < parsed_config.rtp.extensions.size(); i++) {
-    EXPECT_EQ(config.rtp.extensions[i].uri,
-              parsed_config.rtp.extensions[i].uri);
-    EXPECT_EQ(config.rtp.extensions[i].id, parsed_config.rtp.extensions[i].id);
+  EXPECT_EQ(config.rtp_extensions.size(), parsed_config.rtp_extensions.size());
+  for (size_t i = 0; i < parsed_config.rtp_extensions.size(); i++) {
+    EXPECT_EQ(config.rtp_extensions[i].uri,
+              parsed_config.rtp_extensions[i].uri);
+    EXPECT_EQ(config.rtp_extensions[i].id, parsed_config.rtp_extensions[i].id);
   }
 }
 
 void RtcEventLogTestHelper::VerifyAudioSendStreamConfig(
     const ParsedRtcEventLog& parsed_log,
     size_t index,
-    const AudioSendStream::Config& config) {
+    const rtclog::StreamConfig& config) {
   const rtclog::Event& event = parsed_log.events_[index];
   ASSERT_TRUE(IsValidBasicEvent(event));
   ASSERT_EQ(rtclog::Event::AUDIO_SENDER_CONFIG_EVENT, event.type());
   const rtclog::AudioSendConfig& sender_config = event.audio_sender_config();
   // Check SSRCs.
-  EXPECT_EQ(config.rtp.ssrc, sender_config.ssrc());
+  EXPECT_EQ(config.local_ssrc, sender_config.ssrc());
   // Check header extensions.
-  ASSERT_EQ(static_cast<int>(config.rtp.extensions.size()),
+  ASSERT_EQ(static_cast<int>(config.rtp_extensions.size()),
             sender_config.header_extensions_size());
   for (int i = 0; i < sender_config.header_extensions_size(); i++) {
     ASSERT_TRUE(sender_config.header_extensions(i).has_name());
     ASSERT_TRUE(sender_config.header_extensions(i).has_id());
     const std::string& name = sender_config.header_extensions(i).name();
     int id = sender_config.header_extensions(i).id();
-    EXPECT_EQ(config.rtp.extensions[i].id, id);
-    EXPECT_EQ(config.rtp.extensions[i].uri, name);
+    EXPECT_EQ(config.rtp_extensions[i].id, id);
+    EXPECT_EQ(config.rtp_extensions[i].uri, name);
   }
 
   // Check consistency of the parser.
-  AudioSendStream::Config parsed_config(nullptr);
+  rtclog::StreamConfig parsed_config;
   parsed_log.GetAudioSendConfig(index, &parsed_config);
-  // Check SSRCs
-  EXPECT_EQ(config.rtp.ssrc, parsed_config.rtp.ssrc);
-  // Check header extensions.
-  EXPECT_EQ(config.rtp.extensions.size(), parsed_config.rtp.extensions.size());
-  for (size_t i = 0; i < parsed_config.rtp.extensions.size(); i++) {
-    EXPECT_EQ(config.rtp.extensions[i].uri,
-              parsed_config.rtp.extensions[i].uri);
-    EXPECT_EQ(config.rtp.extensions[i].id, parsed_config.rtp.extensions[i].id);
-  }
+  VerifyStreamConfigsAreEqual(config, parsed_config);
 }
 
 void RtcEventLogTestHelper::VerifyRtpEvent(const ParsedRtcEventLog& parsed_log,

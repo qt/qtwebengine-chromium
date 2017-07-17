@@ -9,6 +9,8 @@
 
 #include <memory>
 
+#include "core/fpdfapi/page/cpdf_pattern.h"
+#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 
@@ -27,6 +29,14 @@
 class CPDF_Array;
 class CPDF_Document;
 class CPDF_Object;
+
+#define MAX_PATTERN_COLORCOMPS 16
+struct PatternValue {
+  CPDF_Pattern* m_pPattern;
+  CPDF_CountedPattern* m_pCountedPattern;
+  int m_nComps;
+  float m_Comps[MAX_PATTERN_COLORCOMPS];
+};
 
 class CPDF_ColorSpace {
  public:
@@ -60,13 +70,11 @@ class CPDF_ColorSpace {
                                   int image_width,
                                   int image_height,
                                   bool bTransMask) const;
-
-  CPDF_Array*& GetArray() { return m_pArray; }
   virtual CPDF_ColorSpace* GetBaseCS() const;
-
   virtual void EnableStdConversion(bool bEnabled);
 
-  CPDF_Document* const m_pDocument;
+  CPDF_Array* GetArray() const { return m_pArray.Get(); }
+  CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
 
  protected:
   CPDF_ColorSpace(CPDF_Document* pDoc, int family, uint32_t nComponents);
@@ -80,11 +88,13 @@ class CPDF_ColorSpace {
                          float* k) const;
   virtual bool v_SetCMYK(float* pBuf, float c, float m, float y, float k) const;
 
+  CFX_UnownedPtr<CPDF_Document> const m_pDocument;
   int m_Family;
   uint32_t m_nComponents;
-  CPDF_Array* m_pArray;
+  CFX_UnownedPtr<CPDF_Array> m_pArray;
   uint32_t m_dwStdConversion;
 };
+using CPDF_CountedColorSpace = CPDF_CountedObject<CPDF_ColorSpace>;
 
 namespace std {
 

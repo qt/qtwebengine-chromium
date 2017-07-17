@@ -7,6 +7,7 @@
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 
 #include <memory>
+#include <utility>
 
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfdoc/cpdf_docjsactions.h"
@@ -114,14 +115,14 @@ CFX_WideString CPDFSDK_FormFillEnvironment::JS_fieldBrowse() {
   if (nRequiredLen <= 0)
     return CFX_WideString();
 
-  std::unique_ptr<char[]> pBuff(new char[nRequiredLen]);
-  memset(pBuff.get(), 0, nRequiredLen);
+  std::vector<uint8_t> pBuff(nRequiredLen);
   const int nActualLen = m_pInfo->m_pJsPlatform->Field_browse(
-      m_pInfo->m_pJsPlatform, pBuff.get(), nRequiredLen);
+      m_pInfo->m_pJsPlatform, pBuff.data(), nRequiredLen);
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
     return CFX_WideString();
 
-  return CFX_WideString::FromLocal(CFX_ByteStringC(pBuff.get(), nActualLen));
+  pBuff.resize(nActualLen);
+  return CFX_WideString::FromLocal(CFX_ByteStringC(pBuff));
 }
 
 CFX_WideString CPDFSDK_FormFillEnvironment::JS_docGetFilePath() {
@@ -134,14 +135,14 @@ CFX_WideString CPDFSDK_FormFillEnvironment::JS_docGetFilePath() {
   if (nRequiredLen <= 0)
     return CFX_WideString();
 
-  std::unique_ptr<char[]> pBuff(new char[nRequiredLen]);
-  memset(pBuff.get(), 0, nRequiredLen);
+  std::vector<uint8_t> pBuff(nRequiredLen);
   const int nActualLen = m_pInfo->m_pJsPlatform->Doc_getFilePath(
-      m_pInfo->m_pJsPlatform, pBuff.get(), nRequiredLen);
+      m_pInfo->m_pJsPlatform, pBuff.data(), nRequiredLen);
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
     return CFX_WideString();
 
-  return CFX_WideString::FromLocal(CFX_ByteStringC(pBuff.get(), nActualLen));
+  pBuff.resize(nActualLen);
+  return CFX_WideString::FromLocal(CFX_ByteStringC(pBuff));
 }
 
 void CPDFSDK_FormFillEnvironment::JS_docSubmitForm(void* formData,
@@ -232,7 +233,7 @@ CPDFSDK_FormFillEnvironment::GetInteractiveFormFiller() {
   return m_pFormFiller.get();
 }
 
-void CPDFSDK_FormFillEnvironment::Invalidate(FPDF_PAGE page,
+void CPDFSDK_FormFillEnvironment::Invalidate(UnderlyingPageType* page,
                                              const FX_RECT& rect) {
   if (m_pInfo && m_pInfo->FFI_Invalidate) {
     m_pInfo->FFI_Invalidate(m_pInfo, page, rect.left, rect.top, rect.right,
@@ -241,7 +242,7 @@ void CPDFSDK_FormFillEnvironment::Invalidate(FPDF_PAGE page,
 }
 
 void CPDFSDK_FormFillEnvironment::OutputSelectedRect(
-    FPDF_PAGE page,
+    UnderlyingPageType* page,
     const CFX_FloatRect& rect) {
   if (m_pInfo && m_pInfo->FFI_OutputSelectedRect) {
     m_pInfo->FFI_OutputSelectedRect(m_pInfo, page, rect.left, rect.top,
@@ -300,14 +301,15 @@ bool CPDFSDK_FormFillEnvironment::IsALTKeyDown(uint32_t nFlag) const {
   return (nFlag & FWL_EVENTFLAG_AltKey) != 0;
 }
 
-FPDF_PAGE CPDFSDK_FormFillEnvironment::GetPage(FPDF_DOCUMENT document,
+FPDF_PAGE CPDFSDK_FormFillEnvironment::GetPage(UnderlyingDocumentType* document,
                                                int nPageIndex) {
   if (m_pInfo && m_pInfo->FFI_GetPage)
     return m_pInfo->FFI_GetPage(m_pInfo, document, nPageIndex);
   return nullptr;
 }
 
-FPDF_PAGE CPDFSDK_FormFillEnvironment::GetCurrentPage(FPDF_DOCUMENT document) {
+FPDF_PAGE CPDFSDK_FormFillEnvironment::GetCurrentPage(
+    UnderlyingDocumentType* document) {
   if (m_pInfo && m_pInfo->FFI_GetCurrentPage)
     return m_pInfo->FFI_GetCurrentPage(m_pInfo, document);
   return nullptr;
@@ -342,7 +344,7 @@ void CPDFSDK_FormFillEnvironment::DoGoToAction(int nPageIndex,
 }
 
 #ifdef PDF_ENABLE_XFA
-void CPDFSDK_FormFillEnvironment::DisplayCaret(FPDF_PAGE page,
+void CPDFSDK_FormFillEnvironment::DisplayCaret(CPDFXFA_Page* page,
                                                FPDF_BOOL bVisible,
                                                double left,
                                                double top,
@@ -354,13 +356,14 @@ void CPDFSDK_FormFillEnvironment::DisplayCaret(FPDF_PAGE page,
   }
 }
 
-int CPDFSDK_FormFillEnvironment::GetCurrentPageIndex(FPDF_DOCUMENT document) {
+int CPDFSDK_FormFillEnvironment::GetCurrentPageIndex(
+    CPDFXFA_Context* document) {
   if (!m_pInfo || !m_pInfo->FFI_GetCurrentPageIndex)
     return -1;
   return m_pInfo->FFI_GetCurrentPageIndex(m_pInfo, document);
 }
 
-void CPDFSDK_FormFillEnvironment::SetCurrentPage(FPDF_DOCUMENT document,
+void CPDFSDK_FormFillEnvironment::SetCurrentPage(CPDFXFA_Context* document,
                                                  int iCurPage) {
   if (m_pInfo && m_pInfo->FFI_SetCurrentPage)
     m_pInfo->FFI_SetCurrentPage(m_pInfo, document, iCurPage);
@@ -368,28 +371,23 @@ void CPDFSDK_FormFillEnvironment::SetCurrentPage(FPDF_DOCUMENT document,
 
 CFX_WideString CPDFSDK_FormFillEnvironment::GetPlatform() {
   if (!m_pInfo || !m_pInfo->FFI_GetPlatform)
-    return L"";
+    return CFX_WideString();
 
   int nRequiredLen = m_pInfo->FFI_GetPlatform(m_pInfo, nullptr, 0);
   if (nRequiredLen <= 0)
-    return L"";
+    return CFX_WideString();
 
-  char* pbuff = new char[nRequiredLen];
-  memset(pbuff, 0, nRequiredLen);
-  int nActualLen = m_pInfo->FFI_GetPlatform(m_pInfo, pbuff, nRequiredLen);
-  if (nActualLen <= 0 || nActualLen > nRequiredLen) {
-    delete[] pbuff;
-    return L"";
-  }
-  CFX_ByteString bsRet = CFX_ByteString(pbuff, nActualLen);
-  CFX_WideString wsRet = CFX_WideString::FromUTF16LE(
-      (unsigned short*)bsRet.GetBuffer(bsRet.GetLength()),
-      bsRet.GetLength() / sizeof(unsigned short));
-  delete[] pbuff;
-  return wsRet;
+  std::vector<uint8_t> pBuff(nRequiredLen);
+  int nActualLen =
+      m_pInfo->FFI_GetPlatform(m_pInfo, pBuff.data(), nRequiredLen);
+  if (nActualLen <= 0 || nActualLen > nRequiredLen)
+    return CFX_WideString();
+
+  return CFX_WideString::FromUTF16LE(reinterpret_cast<uint16_t*>(pBuff.data()),
+                                     nActualLen / sizeof(uint16_t));
 }
 
-void CPDFSDK_FormFillEnvironment::GotoURL(FPDF_DOCUMENT document,
+void CPDFSDK_FormFillEnvironment::GotoURL(CPDFXFA_Context* document,
                                           const CFX_WideStringC& wsURL) {
   if (!m_pInfo || !m_pInfo->FFI_GotoURL)
     return;
@@ -400,7 +398,7 @@ void CPDFSDK_FormFillEnvironment::GotoURL(FPDF_DOCUMENT document,
   bsTo.ReleaseBuffer();
 }
 
-void CPDFSDK_FormFillEnvironment::GetPageViewRect(FPDF_PAGE page,
+void CPDFSDK_FormFillEnvironment::GetPageViewRect(CPDFXFA_Page* page,
                                                   FS_RECTF& dstRect) {
   if (!m_pInfo || !m_pInfo->FFI_GetPageViewRect)
     return;
@@ -417,7 +415,7 @@ void CPDFSDK_FormFillEnvironment::GetPageViewRect(FPDF_PAGE page,
   dstRect.right = static_cast<float>(right);
 }
 
-bool CPDFSDK_FormFillEnvironment::PopupMenu(FPDF_PAGE page,
+bool CPDFSDK_FormFillEnvironment::PopupMenu(CPDFXFA_Page* page,
                                             FPDF_WIDGET hWidget,
                                             int menuFlag,
                                             CFX_PointF pt) {
@@ -533,25 +531,20 @@ FPDF_BOOL CPDFSDK_FormFillEnvironment::PutRequestURL(const wchar_t* wsURL,
 
 CFX_WideString CPDFSDK_FormFillEnvironment::GetLanguage() {
   if (!m_pInfo || !m_pInfo->FFI_GetLanguage)
-    return L"";
+    return CFX_WideString();
 
   int nRequiredLen = m_pInfo->FFI_GetLanguage(m_pInfo, nullptr, 0);
   if (nRequiredLen <= 0)
-    return L"";
+    return CFX_WideString();
 
-  char* pbuff = new char[nRequiredLen];
-  memset(pbuff, 0, nRequiredLen);
-  int nActualLen = m_pInfo->FFI_GetLanguage(m_pInfo, pbuff, nRequiredLen);
-  if (nActualLen <= 0 || nActualLen > nRequiredLen) {
-    delete[] pbuff;
-    return L"";
-  }
-  CFX_ByteString bsRet = CFX_ByteString(pbuff, nActualLen);
-  CFX_WideString wsRet = CFX_WideString::FromUTF16LE(
-      (FPDF_WIDESTRING)bsRet.GetBuffer(bsRet.GetLength()),
-      bsRet.GetLength() / sizeof(FPDF_WIDESTRING));
-  delete[] pbuff;
-  return wsRet;
+  std::vector<uint8_t> pBuff(nRequiredLen);
+  int nActualLen =
+      m_pInfo->FFI_GetLanguage(m_pInfo, pBuff.data(), nRequiredLen);
+  if (nActualLen <= 0 || nActualLen > nRequiredLen)
+    return CFX_WideString();
+
+  return CFX_WideString::FromUTF16LE(reinterpret_cast<uint16_t*>(pBuff.data()),
+                                     nActualLen / sizeof(uint16_t));
 }
 
 void CPDFSDK_FormFillEnvironment::PageEvent(int iPageCount,
@@ -578,8 +571,10 @@ CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageView(
   if (!renew)
     return nullptr;
 
-  CPDFSDK_PageView* pPageView = new CPDFSDK_PageView(this, pUnderlyingPage);
-  m_PageMap[pUnderlyingPage].reset(pPageView);
+  auto pNew = pdfium::MakeUnique<CPDFSDK_PageView>(this, pUnderlyingPage);
+  CPDFSDK_PageView* pPageView = pNew.get();
+  m_PageMap[pUnderlyingPage] = std::move(pNew);
+
   // Delay to load all the annotations, to avoid endless loop.
   pPageView->LoadFXAnnots();
   return pPageView;
@@ -587,13 +582,13 @@ CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageView(
 
 CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetCurrentView() {
   UnderlyingPageType* pPage =
-      UnderlyingFromFPDFPage(GetCurrentPage(m_pUnderlyingDoc));
+      UnderlyingFromFPDFPage(GetCurrentPage(m_pUnderlyingDoc.Get()));
   return pPage ? GetPageView(pPage, true) : nullptr;
 }
 
 CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageView(int nIndex) {
   UnderlyingPageType* pTempPage =
-      UnderlyingFromFPDFPage(GetPage(m_pUnderlyingDoc, nIndex));
+      UnderlyingFromFPDFPage(GetPage(m_pUnderlyingDoc.Get(), nIndex));
   if (!pTempPage)
     return nullptr;
 
@@ -672,7 +667,7 @@ void CPDFSDK_FormFillEnvironment::RemovePageView(
 }
 
 UnderlyingPageType* CPDFSDK_FormFillEnvironment::GetPage(int nIndex) {
-  return UnderlyingFromFPDFPage(GetPage(m_pUnderlyingDoc, nIndex));
+  return UnderlyingFromFPDFPage(GetPage(m_pUnderlyingDoc.Get(), nIndex));
 }
 
 CPDFSDK_InterForm* CPDFSDK_FormFillEnvironment::GetInterForm() {

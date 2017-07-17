@@ -12,8 +12,9 @@
 #include <vector>
 
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_facecache.h"
-#include "core/fxge/cfx_fxgedevice.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/dib/cfx_imagerenderer.h"
@@ -626,7 +627,7 @@ bool CFX_RenderDevice::DrawFillStrokePath(const CFX_PathData* pPathData,
       return false;
     Backdrop->Copy(bitmap);
   }
-  CFX_FxgeDevice bitmap_device;
+  CFX_DefaultRenderDevice bitmap_device;
   bitmap_device.Attach(bitmap, false, Backdrop, true);
 
   CFX_Matrix matrix;
@@ -960,7 +961,7 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
   if (anti_alias < FXFT_RENDER_MODE_LCD && glyphs.size() > 1)
     AdjustGlyphSpace(&glyphs);
 
-  FX_RECT bmp_rect1 = FXGE_GetGlyphsBBox(glyphs, anti_alias);
+  FX_RECT bmp_rect1 = FXGE_GetGlyphsBBox(glyphs, anti_alias, 1.0f, 1.0f);
   if (scale_x > 1 && scale_y > 1) {
     bmp_rect1.left--;
     bmp_rect1.top--;
@@ -1018,7 +1019,7 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
   int g = 0;
   int b = 0;
   if (anti_alias == FXFT_RENDER_MODE_LCD)
-    ArgbDecode(fill_color, a, r, g, b);
+    std::tie(a, r, g, b) = ArgbDecode(fill_color);
 
   for (const FXTEXT_GLYPHPOS& glyph : glyphs) {
     if (!glyph.m_pGlyph)

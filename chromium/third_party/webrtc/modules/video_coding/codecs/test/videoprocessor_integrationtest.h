@@ -248,7 +248,7 @@ class VideoProcessorIntegrationTest : public testing::Test {
         test::OutputPath(), "videoprocessor_integrationtest");
 
     config_.frame_length_in_bytes =
-        CalcBufferSize(kI420, process.width, process.height);
+        CalcBufferSize(VideoType::kI420, process.width, process.height);
     config_.verbose = process.verbose_logging;
     config_.use_single_core = process.use_single_core;
     // Key frame interval and packet loss are set for each test.
@@ -431,10 +431,12 @@ class VideoProcessorIntegrationTest : public testing::Test {
         " Frame rate: %d \n",
         update_index, bit_rate_, encoding_bitrate_total_, frame_rate_);
     printf(
+        " Number of processed frames: %d, \n"
         " Number of frames to approach target rate: %d, \n"
         " Number of dropped frames: %d, \n"
         " Number of spatial resizes: %d, \n",
-        num_frames_to_hit_target_, num_dropped_frames, num_resize_actions);
+        num_frames_total_, num_frames_to_hit_target_, num_dropped_frames,
+        num_resize_actions);
     EXPECT_LE(perc_encoding_rate_mismatch_,
               rc_expected.max_encoding_rate_mismatch);
     if (num_key_frames_ > 0) {

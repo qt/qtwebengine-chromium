@@ -10,9 +10,9 @@
 
 #include "libANGLE/Context.h"
 #include "libANGLE/Framebuffer.h"
+#include "libANGLE/VertexArray.h"
 #include "libANGLE/validationES.h"
 #include "libANGLE/validationES3.h"
-#include "libANGLE/VertexArray.h"
 
 #include "common/utilities.h"
 
@@ -117,7 +117,7 @@ bool ValidateGetBooleani_vRobustANGLE(Context *context,
     return true;
 }
 
-bool ValidateDrawIndirectBase(Context *context, GLenum mode, const GLvoid *indirect)
+bool ValidateDrawIndirectBase(Context *context, GLenum mode, const void *indirect)
 {
     if (context->getClientVersion() < ES_3_1)
     {
@@ -162,7 +162,7 @@ bool ValidateDrawIndirectBase(Context *context, GLenum mode, const GLvoid *indir
     return true;
 }
 
-bool ValidateDrawArraysIndirect(Context *context, GLenum mode, const GLvoid *indirect)
+bool ValidateDrawArraysIndirect(Context *context, GLenum mode, const void *indirect)
 {
     const State &state                          = context->getGLState();
     gl::TransformFeedback *curTransformFeedback = state.getCurrentTransformFeedback();
@@ -195,10 +195,7 @@ bool ValidateDrawArraysIndirect(Context *context, GLenum mode, const GLvoid *ind
     return true;
 }
 
-bool ValidateDrawElementsIndirect(Context *context,
-                                  GLenum mode,
-                                  GLenum type,
-                                  const GLvoid *indirect)
+bool ValidateDrawElementsIndirect(Context *context, GLenum mode, GLenum type, const void *indirect)
 {
     if (!ValidateDrawElementsBase(context, type))
         return false;
@@ -378,8 +375,8 @@ bool ValidateTexStorage2DMultiSample(Context *context,
 
     // The ES3.1 spec(section 8.8) states that an INVALID_ENUM error is generated if internalformat
     // is one of the unsized base internalformats listed in table 8.11.
-    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalFormat);
-    if (formatInfo.pixelBytes == 0)
+    const InternalFormat &formatInfo = GetSizedInternalFormatInfo(internalFormat);
+    if (formatInfo.internalFormat == GL_NONE)
     {
         context->handleError(
             Error(GL_INVALID_ENUM,

@@ -260,7 +260,7 @@ class ProgramState final : angle::NonCopyable
     UniformBlockBindingMask mActiveUniformBlockBindings;
 
     std::vector<sh::Attribute> mAttributes;
-    std::bitset<MAX_VERTEX_ATTRIBS> mActiveAttribLocationsMask;
+    angle::BitSet<MAX_VERTEX_ATTRIBS> mActiveAttribLocationsMask;
 
     // Uniforms are sorted in order:
     //  1. Non-sampler uniforms
@@ -298,7 +298,7 @@ class Program final : angle::NonCopyable, public LabeledObject
     rx::ProgramImpl *getImplementation() const { return mProgram; }
 
     void attachShader(Shader *shader);
-    bool detachShader(const Context *context, Shader *shader);
+    void detachShader(const Context *context, Shader *shader);
     int getAttachedShadersCount() const;
 
     const Shader *getAttachedVertexShader() const { return mState.mAttachedVertexShader; }

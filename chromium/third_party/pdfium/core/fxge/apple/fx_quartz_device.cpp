@@ -4,14 +4,13 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
 
 #if !defined _SKIA_SUPPORT_ && !defined _SKIA_SUPPORT_PATHS_
 #include "core/fxge/agg/fx_agg_driver.h"
 #endif
 
 #include "core/fxcrt/fx_memory.h"
-#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -94,8 +93,11 @@ bool CQuartz2D::drawGraphicsString(void* graphics,
                                  matrix->e, matrix->f));
     CGContextSetTextMatrix(context, m);
   }
-  int32_t a, r, g, b;
-  ArgbDecode(argb, a, r, g, b);
+  int32_t a;
+  int32_t r;
+  int32_t g;
+  int32_t b;
+  std::tie(a, r, g, b) = ArgbDecode(argb);
   CGContextSetRGBFillColor(context, r / 255.f, g / 255.f, b / 255.f, a / 255.f);
   CGContextSaveGState(context);
 #if CGFLOAT_IS_DOUBLE

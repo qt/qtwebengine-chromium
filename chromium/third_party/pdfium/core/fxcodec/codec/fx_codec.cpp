@@ -12,20 +12,19 @@
 #include <utility>
 
 #include "core/fxcodec/codec/codec_int.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
 
 CCodec_ModuleMgr::CCodec_ModuleMgr()
-    : m_pBasicModule(new CCodec_BasicModule),
-      m_pFaxModule(new CCodec_FaxModule),
-      m_pJpegModule(new CCodec_JpegModule),
-      m_pJpxModule(new CCodec_JpxModule),
-      m_pJbig2Module(new CCodec_Jbig2Module),
-      m_pIccModule(new CCodec_IccModule),
-      m_pFlateModule(new CCodec_FlateModule) {
-}
+    : m_pBasicModule(pdfium::MakeUnique<CCodec_BasicModule>()),
+      m_pFaxModule(pdfium::MakeUnique<CCodec_FaxModule>()),
+      m_pJpegModule(pdfium::MakeUnique<CCodec_JpegModule>()),
+      m_pJpxModule(pdfium::MakeUnique<CCodec_JpxModule>()),
+      m_pJbig2Module(pdfium::MakeUnique<CCodec_Jbig2Module>()),
+      m_pIccModule(pdfium::MakeUnique<CCodec_IccModule>()),
+      m_pFlateModule(pdfium::MakeUnique<CCodec_FlateModule>()) {}
 
 CCodec_ModuleMgr::~CCodec_ModuleMgr() {}
 
@@ -253,9 +252,8 @@ CFX_DIBAttribute::CFX_DIBAttribute()
       m_nGifTop(0),
       m_pGifLocalPalette(nullptr),
       m_nGifLocalPalNum(0),
-      m_nBmpCompressType(0) {
-  memset(m_strTime, 0, sizeof(m_strTime));
-}
+      m_nBmpCompressType(0) {}
+
 CFX_DIBAttribute::~CFX_DIBAttribute() {
   for (const auto& pair : m_Exif)
     FX_Free(pair.second);

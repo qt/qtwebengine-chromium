@@ -16,11 +16,13 @@
 #include <string>
 #include <vector>
 
+#include "webrtc/api/audio_codecs/audio_encoder_factory.h"
 #include "webrtc/api/rtpreceiverinterface.h"
 #include "webrtc/base/buffer.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/networkroute.h"
 #include "webrtc/base/scoped_ref_ptr.h"
+#include "webrtc/base/task_queue.h"
 #include "webrtc/base/thread_checker.h"
 #include "webrtc/call/audio_state.h"
 #include "webrtc/call/call.h"
@@ -51,16 +53,15 @@ class WebRtcVoiceMediaChannel;
 class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
   friend class WebRtcVoiceMediaChannel;
  public:
-  // Exposed for the WVoE/MC unit test.
-  static bool ToCodecInst(const AudioCodec& in, webrtc::CodecInst* out);
-
   WebRtcVoiceEngine(
       webrtc::AudioDeviceModule* adm,
+      const rtc::scoped_refptr<webrtc::AudioEncoderFactory>& encoder_factory,
       const rtc::scoped_refptr<webrtc::AudioDecoderFactory>& decoder_factory,
       rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer);
   // Dependency injection for testing.
   WebRtcVoiceEngine(
       webrtc::AudioDeviceModule* adm,
+      const rtc::scoped_refptr<webrtc::AudioEncoderFactory>& encoder_factory,
       const rtc::scoped_refptr<webrtc::AudioDecoderFactory>& decoder_factory,
       rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer,
       VoEWrapper* voe_wrapper);
@@ -110,17 +111,22 @@ class WebRtcVoiceEngine final : public webrtc::TraceCallback  {
 
   void StartAecDump(const std::string& filename);
   int CreateVoEChannel();
+
+  rtc::TaskQueue low_priority_worker_queue_;
+
   webrtc::AudioDeviceModule* adm();
   webrtc::AudioProcessing* apm();
   webrtc::voe::TransmitMixer* transmit_mixer();
 
-  AudioCodecs CollectRecvCodecs() const;
+  AudioCodecs CollectCodecs(
+      const std::vector<webrtc::AudioCodecSpec>& specs) const;
 
   rtc::ThreadChecker signal_thread_checker_;
   rtc::ThreadChecker worker_thread_checker_;
 
   // The audio device manager.
   rtc::scoped_refptr<webrtc::AudioDeviceModule> adm_;
+  rtc::scoped_refptr<webrtc::AudioEncoderFactory> encoder_factory_;
   rtc::scoped_refptr<webrtc::AudioDecoderFactory> decoder_factory_;
   // Reference to the APM, owned by VoE.
   webrtc::AudioProcessing* apm_ = nullptr;
@@ -291,7 +297,8 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
   std::map<uint32_t, WebRtcAudioReceiveStream*> recv_streams_;
   std::vector<webrtc::RtpExtension> recv_rtp_extensions_;
 
-  webrtc::AudioSendStream::Config::SendCodecSpec send_codec_spec_;
+  rtc::Optional<webrtc::AudioSendStream::Config::SendCodecSpec>
+      send_codec_spec_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(WebRtcVoiceMediaChannel);
 };

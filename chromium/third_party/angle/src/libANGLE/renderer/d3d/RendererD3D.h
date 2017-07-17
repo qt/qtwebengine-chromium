@@ -135,8 +135,10 @@ class RendererD3D : public BufferFactoryD3D
                                           IUnknown *d3dTexture,
                                           GLenum backBufferFormat,
                                           GLenum depthBufferFormat,
-                                          EGLint orientation) = 0;
-    virtual egl::Error getD3DTextureInfo(IUnknown *d3dTexture,
+                                          EGLint orientation,
+                                          EGLint samples) = 0;
+    virtual egl::Error getD3DTextureInfo(const egl::Config *configuration,
+                                         IUnknown *d3dTexture,
                                          EGLint *width,
                                          EGLint *height,
                                          GLenum *fboFormat) const = 0;
@@ -269,6 +271,9 @@ class RendererD3D : public BufferFactoryD3D
     virtual gl::Version getMaxSupportedESVersion() const = 0;
 
     angle::WorkerThreadPool *getWorkerThreadPool();
+
+    virtual gl::Error applyComputeUniforms(const ProgramD3D &programD3D,
+                                           const std::vector<D3DUniform *> &uniformArray) = 0;
 
   protected:
     virtual bool getLUID(LUID *adapterLuid) const = 0;

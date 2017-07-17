@@ -33,6 +33,7 @@
 #include "platform/loader/fetch/FetchContext.h"
 #include "platform/loader/fetch/FetchInitiatorInfo.h"
 #include "platform/loader/fetch/FetchParameters.h"
+#include "platform/loader/fetch/PreloadKey.h"
 #include "platform/loader/fetch/Resource.h"
 #include "platform/loader/fetch/ResourceError.h"
 #include "platform/loader/fetch/ResourceLoadPriority.h"
@@ -104,9 +105,8 @@ class PLATFORM_EXPORT ResourceFetcher
   void EnableIsPreloadedForTest();
   bool IsPreloadedForTest(const KURL&) const;
 
-  int CountPreloads() const { return preloads_ ? preloads_->size() : 0; }
+  int CountPreloads() const { return preloads_.size(); }
   void ClearPreloads(ClearPreloadsPolicy = kClearAllPreloads);
-  void PreloadStarted(Resource*);
   void LogPreloadStats(ClearPreloadsPolicy);
   void WarnUnusedPreloads();
 
@@ -130,10 +130,13 @@ class PLATFORM_EXPORT ResourceFetcher
 
   String GetCacheIdentifier() const;
 
+  enum IsImageSet { kImageNotImageSet, kImageIsImageSet };
+
   WARN_UNUSED_RESULT static WebURLRequest::RequestContext
-  DetermineRequestContext(Resource::Type, bool is_main_frame);
+  DetermineRequestContext(Resource::Type, IsImageSet, bool is_main_frame);
   WARN_UNUSED_RESULT WebURLRequest::RequestContext DetermineRequestContext(
-      Resource::Type) const;
+      Resource::Type,
+      IsImageSet) const;
 
   void UpdateAllImageResourcePriorities();
 
@@ -142,9 +145,10 @@ class PLATFORM_EXPORT ResourceFetcher
   // Calling this method before main document resource is fetched is invalid.
   ResourceTimingInfo* GetNavigationTimingInfo();
 
-  bool ContainsAsPreloadForTesting(Resource* resource) const {
-    return preloads_ && preloads_->Contains(resource);
-  }
+  // Returns whether the given resource is contained as a preloaded resource.
+  bool ContainsAsPreload(Resource*) const;
+
+  void RemovePreload(Resource*);
 
   // Workaround for https://crbug.com/666214.
   // TODO(hiroshige): Remove this hack.
@@ -187,6 +191,14 @@ class PLATFORM_EXPORT ResourceFetcher
                                       const ResourceFactory&,
                                       ResourceRequestBlockedReason);
 
+  Resource* MatchPreload(const FetchParameters& params, Resource::Type);
+  void InsertAsPreloadIfNecessary(Resource*,
+                                  const FetchParameters& params,
+                                  Resource::Type);
+
+  bool IsReusableAlsoForPreloading(const FetchParameters&,
+                                   Resource*,
+                                   bool is_static_data) const;
   // RevalidationPolicy enum values are used in UMAs https://crbug.com/579496.
   enum RevalidationPolicy { kUse, kRevalidate, kReload, kLoad };
   RevalidationPolicy DetermineRevalidationPolicy(Resource::Type,
@@ -230,7 +242,8 @@ class PLATFORM_EXPORT ResourceFetcher
   HashSet<String> validated_urls_;
   mutable DocumentResourceMap document_resources_;
 
-  Member<HeapListHashSet<Member<Resource>>> preloads_;
+  HeapHashMap<PreloadKey, Member<Resource>> preloads_;
+  HeapVector<Member<Resource>> matched_preloads_;
   Member<MHTMLArchive> archive_;
 
   TaskRunnerTimer<ResourceFetcher> resource_timing_report_timer_;
@@ -245,23 +258,6 @@ class PLATFORM_EXPORT ResourceFetcher
 
   HeapHashSet<Member<ResourceLoader>> loaders_;
   HeapHashSet<Member<ResourceLoader>> non_blocking_loaders_;
-
-  // Used in hit rate histograms.
-  class DeadResourceStatsRecorder {
-    DISALLOW_NEW();
-
-   public:
-    DeadResourceStatsRecorder();
-    ~DeadResourceStatsRecorder();
-
-    void Update(RevalidationPolicy);
-
-   private:
-    int use_count_;
-    int revalidate_count_;
-    int load_count_;
-  };
-  DeadResourceStatsRecorder dead_stats_recorder_;
 
   std::unique_ptr<HashSet<String>> preloaded_urls_for_test_;
 

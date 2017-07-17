@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "webrtc/api/audio/audio_mixer.h"
+#include "webrtc/api/audio_codecs/audio_encoder.h"
 #include "webrtc/api/call/audio_sink.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/event.h"
@@ -23,7 +24,6 @@
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/acm2/codec_manager.h"
 #include "webrtc/modules/audio_coding/acm2/rent_a_codec.h"
-#include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module.h"
 #include "webrtc/modules/audio_conference_mixer/include/audio_conference_mixer_defines.h"
 #include "webrtc/modules/audio_processing/rms_level.h"
@@ -175,6 +175,8 @@ class Channel
 
   // Send using this encoder, with this payload type.
   bool SetEncoder(int payload_type, std::unique_ptr<AudioEncoder> encoder);
+  void ModifyEncoder(
+      rtc::FunctionView<void(std::unique_ptr<AudioEncoder>*)> modifier);
 
   // API methods
 
@@ -543,6 +545,10 @@ class Channel
   rtc::ThreadChecker construction_thread_;
 
   const bool use_twcc_plr_for_ana_;
+
+  rtc::CriticalSection encoder_queue_lock_;
+
+  bool encoder_queue_is_active_ GUARDED_BY(encoder_queue_lock_) = false;
 
   rtc::TaskQueue* encoder_queue_ = nullptr;
 };

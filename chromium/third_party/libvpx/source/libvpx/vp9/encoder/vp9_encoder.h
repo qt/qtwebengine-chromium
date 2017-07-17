@@ -137,6 +137,7 @@ typedef enum {
   kLowSadHighSumdiff = 2,
   kHighSadLowSumdiff = 3,
   kHighSadHighSumdiff = 4,
+  kLowVarHighSumdiff = 5,
 } CONTENT_STATE_SB;
 
 typedef struct VP9EncoderConfig {
@@ -268,7 +269,6 @@ typedef struct VP9EncoderConfig {
   VP9E_TEMPORAL_LAYERING_MODE temporal_layering_mode;
 
   int row_mt;
-  unsigned int row_mt_bit_exact;
   unsigned int motion_vector_unit_test;
 } VP9EncoderConfig;
 
@@ -281,17 +281,11 @@ typedef struct TileDataEnc {
   TileInfo tile_info;
   int thresh_freq_fact[BLOCK_SIZES][MAX_MODES];
   int mode_map[BLOCK_SIZES][MAX_MODES];
-  int m_search_count;
-  int ex_search_count;
   FIRSTPASS_DATA fp_data;
   VP9RowMTSync row_mt_sync;
 
   // Used for adaptive_rd_thresh with row multithreading
   int *row_base_thresh_freq_fact;
-#if CONFIG_MULTITHREAD
-  pthread_mutex_t *search_count_mutex;
-  pthread_mutex_t *enc_row_mt_mutex;
-#endif
 } TileDataEnc;
 
 typedef struct RowMTInfo {
@@ -695,7 +689,9 @@ typedef struct VP9_COMP {
   void (*row_mt_sync_read_ptr)(VP9RowMTSync *const, int, int);
   void (*row_mt_sync_write_ptr)(VP9RowMTSync *const, int, int, const int);
   ARNRFilterData arnr_filter_data;
+
   int row_mt;
+  unsigned int row_mt_bit_exact;
 
   // Previous Partition Info
   BLOCK_SIZE *prev_partition;
@@ -708,6 +704,8 @@ typedef struct VP9_COMP {
   uint8_t *prev_variance_low;
   uint8_t *copied_frame_cnt;
   uint8_t max_copied_frame;
+  // If the last frame is dropped, we don't copy partition.
+  uint8_t last_frame_dropped;
 
   // For each superblock: keeps track of the last time (in frame distance) the
   // the superblock did not have low source sad.
@@ -840,15 +838,14 @@ void vp9_update_reference_frames(VP9_COMP *cpi);
 
 void vp9_set_high_precision_mv(VP9_COMP *cpi, int allow_high_precision_mv);
 
-YV12_BUFFER_CONFIG *vp9_svc_twostage_scale(VP9_COMMON *cm,
-                                           YV12_BUFFER_CONFIG *unscaled,
-                                           YV12_BUFFER_CONFIG *scaled,
-                                           YV12_BUFFER_CONFIG *scaled_temp);
+YV12_BUFFER_CONFIG *vp9_svc_twostage_scale(
+    VP9_COMMON *cm, YV12_BUFFER_CONFIG *unscaled, YV12_BUFFER_CONFIG *scaled,
+    YV12_BUFFER_CONFIG *scaled_temp, INTERP_FILTER filter_type,
+    int phase_scaler, INTERP_FILTER filter_type2, int phase_scaler2);
 
-YV12_BUFFER_CONFIG *vp9_scale_if_required(VP9_COMMON *cm,
-                                          YV12_BUFFER_CONFIG *unscaled,
-                                          YV12_BUFFER_CONFIG *scaled,
-                                          int use_normative_scaler);
+YV12_BUFFER_CONFIG *vp9_scale_if_required(
+    VP9_COMMON *cm, YV12_BUFFER_CONFIG *unscaled, YV12_BUFFER_CONFIG *scaled,
+    int use_normative_scaler, INTERP_FILTER filter_type, int phase_scaler);
 
 void vp9_apply_encoding_flags(VP9_COMP *cpi, vpx_enc_frame_flags_t flags);
 

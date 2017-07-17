@@ -16,7 +16,7 @@
 #include "xfa/fde/cfde_txtedtparag.h"
 #include "xfa/fde/cfde_txtedttextset.h"
 #include "xfa/fde/ifde_txtedtengine.h"
-#include "xfa/fgas/layout/fgas_textbreak.h"
+#include "xfa/fgas/layout/cfx_txtbreak.h"
 
 namespace {
 
@@ -38,7 +38,7 @@ CFDE_TxtEdtPage::CFDE_TxtEdtPage(CFDE_TxtEdtEngine* pEngine, int32_t nPageIndex)
 CFDE_TxtEdtPage::~CFDE_TxtEdtPage() {}
 
 CFDE_TxtEdtEngine* CFDE_TxtEdtPage::GetEngine() const {
-  return m_pEditEngine;
+  return m_pEditEngine.Get();
 }
 
 FDE_VISUALOBJTYPE CFDE_TxtEdtPage::GetType() {
@@ -226,18 +226,18 @@ bool CFDE_TxtEdtPage::IsLoaded(const CFX_RectF* pClipBox) {
   return m_bLoaded;
 }
 
-int32_t CFDE_TxtEdtPage::LoadPage(const CFX_RectF* pClipBox,
-                                  IFX_Pause* pPause) {
+int32_t CFDE_TxtEdtPage::LoadPage(const CFX_RectF* pClipBox) {
   if (m_nRefCount > 0) {
     m_nRefCount++;
     return m_nRefCount;
   }
+
   CFDE_TxtEdtBuf* pBuf = m_pEditEngine->GetTextBuf();
   const FDE_TXTEDTPARAMS* pParams = m_pEditEngine->GetEditParams();
   wchar_t wcAlias = 0;
-  if (pParams->dwMode & FDE_TEXTEDITMODE_Password) {
+  if (pParams->dwMode & FDE_TEXTEDITMODE_Password)
     wcAlias = m_pEditEngine->GetAliasChar();
-  }
+
   m_pIter = pdfium::MakeUnique<CFDE_TxtEdtBuf::Iterator>(
       static_cast<CFDE_TxtEdtBuf*>(pBuf), wcAlias);
   CFX_TxtBreak* pBreak = m_pEditEngine->GetTextBreak();
@@ -279,7 +279,7 @@ int32_t CFDE_TxtEdtPage::LoadPage(const CFX_RectF* pClipBox,
   m_nCharCount = nPageEnd - nPageStart + 1;
   bool bReload = false;
   float fDefCharWidth = 0;
-  std::unique_ptr<IFX_CharIter> pIter(m_pIter->Clone());
+  std::unique_ptr<IFX_CharIter> pIter = m_pIter->Clone();
   pIter->SetAt(nPageStart);
   m_pIter->SetAt(nPageStart);
   bool bFirstPiece = true;

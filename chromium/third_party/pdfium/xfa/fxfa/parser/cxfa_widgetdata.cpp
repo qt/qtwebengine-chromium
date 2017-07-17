@@ -7,7 +7,7 @@
 #include "xfa/fxfa/parser/cxfa_widgetdata.h"
 
 #include "core/fxcrt/cfx_decimal.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
 #include "fxbarcode/BC_Library.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fxfa/app/xfa_ffnotify.h"
@@ -51,24 +51,12 @@ bool SplitDateTime(const CFX_WideString& wsDateTime,
 
   wsDate = wsDateTime.Left(nSplitIndex);
   if (!wsDate.IsEmpty()) {
-    int32_t iCount = wsDate.GetLength();
-    int32_t i = 0;
-    for (i = 0; i < iCount; i++) {
-      if (wsDate[i] >= '0' && wsDate[i] <= '9')
-        break;
-    }
-    if (i == iCount)
+    if (!std::any_of(wsDate.begin(), wsDate.end(), std::iswdigit))
       return false;
   }
   wsTime = wsDateTime.Right(wsDateTime.GetLength() - nSplitIndex - 1);
   if (!wsTime.IsEmpty()) {
-    int32_t iCount = wsTime.GetLength();
-    int32_t i = 0;
-    for (i = 0; i < iCount; i++) {
-      if (wsTime[i] >= '0' && wsTime[i] <= '9')
-        break;
-    }
-    if (i == iCount)
+    if (!std::any_of(wsTime.begin(), wsTime.end(), std::iswdigit))
       return false;
   }
   return true;
@@ -268,13 +256,7 @@ CFX_WideString CXFA_WidgetData::GetRawValue() {
   return m_pNode->GetContent();
 }
 
-int32_t CXFA_WidgetData::GetAccess(bool bTemplate) {
-  if (bTemplate) {
-    CXFA_Node* pNode = m_pNode->GetTemplateNode();
-    if (pNode)
-      return pNode->GetEnum(XFA_ATTRIBUTE_Access);
-    return XFA_ATTRIBUTEENUM_Open;
-  }
+int32_t CXFA_WidgetData::GetAccess() {
   CXFA_Node* pNode = m_pNode;
   while (pNode) {
     int32_t iAcc = pNode->GetEnum(XFA_ATTRIBUTE_Access);
@@ -301,20 +283,20 @@ CXFA_Border CXFA_WidgetData::GetBorder(bool bModified) {
   return CXFA_Border(m_pNode->GetProperty(0, XFA_Element::Border, bModified));
 }
 
-CXFA_Caption CXFA_WidgetData::GetCaption(bool bModified) {
-  return CXFA_Caption(m_pNode->GetProperty(0, XFA_Element::Caption, bModified));
+CXFA_Caption CXFA_WidgetData::GetCaption() {
+  return CXFA_Caption(m_pNode->GetProperty(0, XFA_Element::Caption, false));
 }
 
 CXFA_Font CXFA_WidgetData::GetFont(bool bModified) {
   return CXFA_Font(m_pNode->GetProperty(0, XFA_Element::Font, bModified));
 }
 
-CXFA_Margin CXFA_WidgetData::GetMargin(bool bModified) {
-  return CXFA_Margin(m_pNode->GetProperty(0, XFA_Element::Margin, bModified));
+CXFA_Margin CXFA_WidgetData::GetMargin() {
+  return CXFA_Margin(m_pNode->GetProperty(0, XFA_Element::Margin, false));
 }
 
-CXFA_Para CXFA_WidgetData::GetPara(bool bModified) {
-  return CXFA_Para(m_pNode->GetProperty(0, XFA_Element::Para, bModified));
+CXFA_Para CXFA_WidgetData::GetPara() {
+  return CXFA_Para(m_pNode->GetProperty(0, XFA_Element::Para, false));
 }
 
 std::vector<CXFA_Node*> CXFA_WidgetData::GetEventList() {
@@ -345,20 +327,18 @@ std::vector<CXFA_Node*> CXFA_WidgetData::GetEventByActivity(int32_t iActivity,
   return events;
 }
 
-CXFA_Value CXFA_WidgetData::GetDefaultValue(bool bModified) {
+CXFA_Value CXFA_WidgetData::GetDefaultValue() {
   CXFA_Node* pTemNode = m_pNode->GetTemplateNode();
   return CXFA_Value(
-      pTemNode ? pTemNode->GetProperty(0, XFA_Element::Value, bModified)
-               : nullptr);
+      pTemNode ? pTemNode->GetProperty(0, XFA_Element::Value, false) : nullptr);
 }
 
-CXFA_Value CXFA_WidgetData::GetFormValue(bool bModified) {
-  return CXFA_Value(m_pNode->GetProperty(0, XFA_Element::Value, bModified));
+CXFA_Value CXFA_WidgetData::GetFormValue() {
+  return CXFA_Value(m_pNode->GetProperty(0, XFA_Element::Value, false));
 }
 
-CXFA_Calculate CXFA_WidgetData::GetCalculate(bool bModified) {
-  return CXFA_Calculate(
-      m_pNode->GetProperty(0, XFA_Element::Calculate, bModified));
+CXFA_Calculate CXFA_WidgetData::GetCalculate() {
+  return CXFA_Calculate(m_pNode->GetProperty(0, XFA_Element::Calculate, false));
 }
 
 CXFA_Validate CXFA_WidgetData::GetValidate(bool bModified) {
@@ -366,12 +346,12 @@ CXFA_Validate CXFA_WidgetData::GetValidate(bool bModified) {
       m_pNode->GetProperty(0, XFA_Element::Validate, bModified));
 }
 
-CXFA_Bind CXFA_WidgetData::GetBind(bool bModified) {
-  return CXFA_Bind(m_pNode->GetProperty(0, XFA_Element::Bind, bModified));
+CXFA_Bind CXFA_WidgetData::GetBind() {
+  return CXFA_Bind(m_pNode->GetProperty(0, XFA_Element::Bind, false));
 }
 
-CXFA_Assist CXFA_WidgetData::GetAssist(bool bModified) {
-  return CXFA_Assist(m_pNode->GetProperty(0, XFA_Element::Assist, bModified));
+CXFA_Assist CXFA_WidgetData::GetAssist() {
+  return CXFA_Assist(m_pNode->GetProperty(0, XFA_Element::Assist, false));
 }
 
 bool CXFA_WidgetData::GetWidth(float& fWidth) {
@@ -980,8 +960,8 @@ void CXFA_WidgetData::ClearAllSelections() {
 
 void CXFA_WidgetData::InsertItem(const CFX_WideString& wsLabel,
                                  const CFX_WideString& wsValue,
-                                 int32_t nIndex,
                                  bool bNotify) {
+  int32_t nIndex = -1;
   CFX_WideString wsNewValue(wsValue);
   if (wsNewValue.IsEmpty())
     wsNewValue = wsLabel;
@@ -1126,8 +1106,7 @@ void CXFA_WidgetData::GetItemValue(const CFX_WideStringC& wsLabel,
 
 bool CXFA_WidgetData::DeleteItem(int32_t nIndex,
                                  bool bNotify,
-                                 bool bScriptModify,
-                                 bool bSyncData) {
+                                 bool bScriptModify) {
   bool bSetValue = false;
   CXFA_Node* pItems = m_pNode->GetNodeItem(XFA_NODEITEM_FirstChild);
   for (; pItems; pItems = pItems->GetNodeItem(XFA_NODEITEM_NextSibling)) {
@@ -1140,7 +1119,7 @@ bool CXFA_WidgetData::DeleteItem(int32_t nIndex,
       }
     } else {
       if (!bSetValue && pItems->GetBoolean(XFA_ATTRIBUTE_Save)) {
-        SetItemState(nIndex, false, true, bScriptModify, bSyncData);
+        SetItemState(nIndex, false, true, bScriptModify, true);
         bSetValue = true;
       }
       int32_t i = 0;
@@ -1182,32 +1161,32 @@ CFX_WideString CXFA_WidgetData::GetBarcodeType() {
                   : CFX_WideString();
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_CharEncoding(int32_t& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_CharEncoding(int32_t* val) {
   CXFA_Node* pUIChild = GetUIChild();
   CFX_WideString wsCharEncoding;
   if (pUIChild->TryCData(XFA_ATTRIBUTE_CharEncoding, wsCharEncoding)) {
     if (wsCharEncoding.CompareNoCase(L"UTF-16")) {
-      val = CHAR_ENCODING_UNICODE;
+      *val = CHAR_ENCODING_UNICODE;
       return true;
     }
     if (wsCharEncoding.CompareNoCase(L"UTF-8")) {
-      val = CHAR_ENCODING_UTF8;
+      *val = CHAR_ENCODING_UTF8;
       return true;
     }
   }
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_Checksum(bool& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_Checksum(bool* val) {
   CXFA_Node* pUIChild = GetUIChild();
   XFA_ATTRIBUTEENUM eChecksum;
   if (pUIChild->TryEnum(XFA_ATTRIBUTE_Checksum, eChecksum)) {
     switch (eChecksum) {
       case XFA_ATTRIBUTEENUM_None:
-        val = false;
+        *val = false;
         return true;
       case XFA_ATTRIBUTEENUM_Auto:
-        val = true;
+        *val = true;
         return true;
       case XFA_ATTRIBUTEENUM_1mod10:
         break;
@@ -1222,99 +1201,99 @@ bool CXFA_WidgetData::GetBarcodeAttribute_Checksum(bool& val) {
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_DataLength(int32_t& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_DataLength(int32_t* val) {
   CXFA_Node* pUIChild = GetUIChild();
   CFX_WideString wsDataLength;
   if (pUIChild->TryCData(XFA_ATTRIBUTE_DataLength, wsDataLength)) {
-    val = FXSYS_wtoi(wsDataLength.c_str());
+    *val = FXSYS_wtoi(wsDataLength.c_str());
     return true;
   }
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_StartChar(char& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_StartChar(char* val) {
   CXFA_Node* pUIChild = GetUIChild();
   CFX_WideStringC wsStartEndChar;
   if (pUIChild->TryCData(XFA_ATTRIBUTE_StartChar, wsStartEndChar)) {
     if (wsStartEndChar.GetLength()) {
-      val = (char)wsStartEndChar.GetAt(0);
+      *val = static_cast<char>(wsStartEndChar.GetAt(0));
       return true;
     }
   }
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_EndChar(char& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_EndChar(char* val) {
   CXFA_Node* pUIChild = GetUIChild();
   CFX_WideStringC wsStartEndChar;
   if (pUIChild->TryCData(XFA_ATTRIBUTE_EndChar, wsStartEndChar)) {
     if (wsStartEndChar.GetLength()) {
-      val = (char)wsStartEndChar.GetAt(0);
+      *val = static_cast<char>(wsStartEndChar.GetAt(0));
       return true;
     }
   }
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_ECLevel(int32_t& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_ECLevel(int32_t* val) {
   CXFA_Node* pUIChild = GetUIChild();
   CFX_WideString wsECLevel;
   if (pUIChild->TryCData(XFA_ATTRIBUTE_ErrorCorrectionLevel, wsECLevel)) {
-    val = FXSYS_wtoi(wsECLevel.c_str());
+    *val = FXSYS_wtoi(wsECLevel.c_str());
     return true;
   }
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_ModuleWidth(int32_t& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_ModuleWidth(int32_t* val) {
   CXFA_Node* pUIChild = GetUIChild();
   CXFA_Measurement mModuleWidthHeight;
   if (pUIChild->TryMeasure(XFA_ATTRIBUTE_ModuleWidth, mModuleWidthHeight)) {
-    val = (int32_t)mModuleWidthHeight.ToUnit(XFA_UNIT_Pt);
+    *val = static_cast<int32_t>(mModuleWidthHeight.ToUnit(XFA_UNIT_Pt));
     return true;
   }
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_ModuleHeight(int32_t& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_ModuleHeight(int32_t* val) {
   CXFA_Node* pUIChild = GetUIChild();
   CXFA_Measurement mModuleWidthHeight;
   if (pUIChild->TryMeasure(XFA_ATTRIBUTE_ModuleHeight, mModuleWidthHeight)) {
-    val = (int32_t)mModuleWidthHeight.ToUnit(XFA_UNIT_Pt);
+    *val = static_cast<int32_t>(mModuleWidthHeight.ToUnit(XFA_UNIT_Pt));
     return true;
   }
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_PrintChecksum(bool& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_PrintChecksum(bool* val) {
   CXFA_Node* pUIChild = GetUIChild();
   bool bPrintCheckDigit;
   if (pUIChild->TryBoolean(XFA_ATTRIBUTE_PrintCheckDigit, bPrintCheckDigit)) {
-    val = bPrintCheckDigit;
+    *val = bPrintCheckDigit;
     return true;
   }
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_TextLocation(int32_t& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_TextLocation(int32_t* val) {
   CXFA_Node* pUIChild = GetUIChild();
   XFA_ATTRIBUTEENUM eTextLocation;
   if (pUIChild->TryEnum(XFA_ATTRIBUTE_TextLocation, eTextLocation)) {
     switch (eTextLocation) {
       case XFA_ATTRIBUTEENUM_None:
-        val = BC_TEXT_LOC_NONE;
+        *val = BC_TEXT_LOC_NONE;
         return true;
       case XFA_ATTRIBUTEENUM_Above:
-        val = BC_TEXT_LOC_ABOVE;
+        *val = BC_TEXT_LOC_ABOVE;
         return true;
       case XFA_ATTRIBUTEENUM_Below:
-        val = BC_TEXT_LOC_BELOW;
+        *val = BC_TEXT_LOC_BELOW;
         return true;
       case XFA_ATTRIBUTEENUM_AboveEmbedded:
-        val = BC_TEXT_LOC_ABOVEEMBED;
+        *val = BC_TEXT_LOC_ABOVEEMBED;
         return true;
       case XFA_ATTRIBUTEENUM_BelowEmbedded:
-        val = BC_TEXT_LOC_BELOWEMBED;
+        *val = BC_TEXT_LOC_BELOWEMBED;
         return true;
       default:
         break;
@@ -1323,17 +1302,17 @@ bool CXFA_WidgetData::GetBarcodeAttribute_TextLocation(int32_t& val) {
   return false;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_Truncate(bool& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_Truncate(bool* val) {
   CXFA_Node* pUIChild = GetUIChild();
   bool bTruncate;
-  if (pUIChild->TryBoolean(XFA_ATTRIBUTE_Truncate, bTruncate)) {
-    val = bTruncate;
-    return true;
-  }
-  return false;
+  if (!pUIChild->TryBoolean(XFA_ATTRIBUTE_Truncate, bTruncate))
+    return false;
+
+  *val = bTruncate;
+  return true;
 }
 
-bool CXFA_WidgetData::GetBarcodeAttribute_WideNarrowRatio(float& val) {
+bool CXFA_WidgetData::GetBarcodeAttribute_WideNarrowRatio(float* val) {
   CXFA_Node* pUIChild = GetUIChild();
   CFX_WideString wsWideNarrowRatio;
   if (pUIChild->TryCData(XFA_ATTRIBUTE_WideNarrowRatio, wsWideNarrowRatio)) {
@@ -1348,7 +1327,7 @@ bool CXFA_WidgetData::GetBarcodeAttribute_WideNarrowRatio(float& val) {
       if (fB)
         fRatio = (float)fA / fB;
     }
-    val = fRatio;
+    *val = fRatio;
     return true;
   }
   return false;

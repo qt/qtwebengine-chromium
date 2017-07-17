@@ -5,11 +5,14 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include <memory>
+#include <utility>
 
+#include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/apple/apple_int.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/ge/cfx_folderfontinfo.h"
 #include "core/fxge/ifx_systemfontinfo.h"
+#include "third_party/base/ptr_util.h"
 
 namespace {
 
@@ -87,45 +90,45 @@ void* CFX_MacFontInfo::MapFont(int weight,
       new_face += " Italic";
     auto it = m_FontList.find(new_face);
     if (it != m_FontList.end())
-      return it->second;
+      return it->second.get();
   }
 
   auto it = m_FontList.find(face);
   if (it != m_FontList.end())
-    return it->second;
+    return it->second.get();
 
-  if (charset == FXFONT_ANSI_CHARSET && (pitch_family & FXFONT_FF_FIXEDPITCH))
+  if (charset == FX_CHARSET_ANSI && (pitch_family & FXFONT_FF_FIXEDPITCH))
     return GetFont("Courier New");
 
-  if (charset == FXFONT_ANSI_CHARSET || charset == FXFONT_SYMBOL_CHARSET)
+  if (charset == FX_CHARSET_ANSI || charset == FX_CHARSET_Symbol)
     return nullptr;
 
   switch (charset) {
-    case FXFONT_SHIFTJIS_CHARSET:
+    case FX_CHARSET_ShiftJIS:
       GetJapanesePreference(&face, weight, pitch_family);
       break;
-    case FXFONT_GB2312_CHARSET:
+    case FX_CHARSET_ChineseSimplified:
       face = "STSong";
       break;
-    case FXFONT_HANGUL_CHARSET:
+    case FX_CHARSET_Hangul:
       face = "AppleMyungjo";
       break;
-    case FXFONT_CHINESEBIG5_CHARSET:
+    case FX_CHARSET_ChineseTraditional:
       face = "LiSong Pro Light";
   }
   it = m_FontList.find(face);
-  return it != m_FontList.end() ? it->second : nullptr;
+  return it != m_FontList.end() ? it->second.get() : nullptr;
 }
 
 }  // namespace
 
 std::unique_ptr<IFX_SystemFontInfo> IFX_SystemFontInfo::CreateDefault(
     const char** pUnused) {
-  CFX_MacFontInfo* pInfo(new CFX_MacFontInfo);
+  auto pInfo = pdfium::MakeUnique<CFX_MacFontInfo>();
   pInfo->AddPath("~/Library/Fonts");
   pInfo->AddPath("/Library/Fonts");
   pInfo->AddPath("/System/Library/Fonts");
-  return std::unique_ptr<CFX_MacFontInfo>(pInfo);
+  return std::move(pInfo);
 }
 
 void CFX_GEModule::InitPlatform() {

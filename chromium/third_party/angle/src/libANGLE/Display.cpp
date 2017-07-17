@@ -59,7 +59,13 @@
 #endif  // defined(ANGLE_ENABLE_NULL)
 
 #if defined(ANGLE_ENABLE_VULKAN)
-#include "libANGLE/renderer/vulkan/DisplayVk.h"
+#if defined(ANGLE_PLATFORM_WINDOWS)
+#include "libANGLE/renderer/vulkan/win32/DisplayVkWin32.h"
+#elif defined(ANGLE_PLATFORM_LINUX)
+#include "libANGLE/renderer/vulkan/xcb/DisplayVkXcb.h"
+#else
+#error Unsupported Vulkan platform.
+#endif
 #endif  // defined(ANGLE_ENABLE_VULKAN)
 
 namespace egl
@@ -199,7 +205,13 @@ rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap, const D
 
         case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
 #if defined(ANGLE_ENABLE_VULKAN)
-            impl = new rx::DisplayVk(state);
+#if defined(ANGLE_PLATFORM_WINDOWS)
+            impl = new rx::DisplayVkWin32(state);
+#elif defined(ANGLE_PLATFORM_LINUX)
+            impl = new rx::DisplayVkXcb(state);
+#else
+#error Unsupported Vulkan platform.
+#endif
 #else
             // No display available
             UNREACHABLE();
@@ -273,7 +285,7 @@ Display *Display::GetDisplayFromNativeDisplay(EGLNativeDisplayType nativeDisplay
         // Validate the native display
         if (!Display::isValidNativeDisplay(nativeDisplay))
         {
-            return NULL;
+            return nullptr;
         }
 
         display = new Display(EGL_PLATFORM_ANGLE_ANGLE, nativeDisplay, nullptr);
@@ -635,12 +647,10 @@ Error Display::createImage(gl::Context *context,
     }
     ASSERT(sibling != nullptr);
 
-    rx::ImageImpl *imageImpl = mImplementation->createImage(target, sibling, attribs);
-    ASSERT(imageImpl != nullptr);
+    std::unique_ptr<Image> imagePtr(new Image(mImplementation, target, sibling, attribs));
+    ANGLE_TRY(imagePtr->initialize());
 
-    ANGLE_TRY(imageImpl->initialize());
-
-    Image *image = new Image(imageImpl, target, sibling, attribs);
+    Image *image = imagePtr.release();
 
     ASSERT(outImage != nullptr);
     *outImage = image;
@@ -649,7 +659,7 @@ Error Display::createImage(gl::Context *context,
     image->addRef();
     mImageSet.insert(image);
 
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 Error Display::createStream(const AttributeMap &attribs, Stream **outStream)
@@ -1008,7 +1018,7 @@ bool Display::isValidNativeDisplay(EGLNativeDisplayType display)
     {
         return true;
     }
-    return (WindowFromDC(display) != NULL);
+    return (WindowFromDC(display) != nullptr);
 #else
     return true;
 #endif

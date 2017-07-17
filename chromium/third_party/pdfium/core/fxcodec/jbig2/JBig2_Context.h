@@ -71,7 +71,7 @@ class CJBig2_Context {
   int32_t parseSegmentData(CJBig2_Segment* pSegment, IFX_Pause* pPause);
   int32_t ProcessingParseSegmentData(CJBig2_Segment* pSegment,
                                      IFX_Pause* pPause);
-  int32_t parseSymbolDict(CJBig2_Segment* pSegment, IFX_Pause* pPause);
+  int32_t parseSymbolDict(CJBig2_Segment* pSegment);
   int32_t parseTextRegion(CJBig2_Segment* pSegment);
   int32_t parsePatternDict(CJBig2_Segment* pSegment, IFX_Pause* pPause);
   int32_t parseHalftoneRegion(CJBig2_Segment* pSegment, IFX_Pause* pPause);
@@ -95,7 +95,7 @@ class CJBig2_Context {
   bool m_bInPage;
   bool m_bBufSpecified;
   int32_t m_PauseStep;
-  IFX_Pause* const m_pPause;
+  CFX_UnownedPtr<IFX_Pause> const m_pPause;
   FXCODEC_STATUS m_ProcessingStatus;
   std::vector<JBig2ArithCtx> m_gbContext;
   std::unique_ptr<CJBig2_ArithDecoder> m_pArithDecoder;

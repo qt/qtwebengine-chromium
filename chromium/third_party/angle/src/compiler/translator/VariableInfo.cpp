@@ -60,7 +60,7 @@ VarT *FindVariable(const TString &name, std::vector<VarT> *infoList)
             return &((*infoList)[ii]);
     }
 
-    return NULL;
+    return nullptr;
 }
 }
 
@@ -106,8 +106,8 @@ CollectVariables::CollectVariables(std::vector<sh::Attribute> *attribs,
 // shader.
 void CollectVariables::visitSymbol(TIntermSymbol *symbol)
 {
-    ASSERT(symbol != NULL);
-    ShaderVariable *var       = NULL;
+    ASSERT(symbol != nullptr);
+    ShaderVariable *var       = nullptr;
     const TString &symbolName = symbol->getSymbol();
 
     if (IsVarying(symbol->getQualifier()))

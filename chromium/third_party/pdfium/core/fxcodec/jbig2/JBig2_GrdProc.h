@@ -29,8 +29,7 @@ class CJBig2_GRDProc {
                                     JBig2ArithCtx* gbContext,
                                     IFX_Pause* pPause);
   FXCODEC_STATUS Start_decode_MMR(CJBig2_Image** pImage,
-                                  CJBig2_BitStream* pStream,
-                                  IFX_Pause* pPause);
+                                  CJBig2_BitStream* pStream);
   FXCODEC_STATUS Continue_decode(IFX_Pause* pPause);
   FX_RECT GetReplaceRect() const { return m_ReplaceRect; }
 
@@ -111,7 +110,6 @@ class CJBig2_GRDProc {
 
   uint32_t m_loopIndex;
   uint8_t* m_pLine;
-  IFX_Pause* m_pPause;
   FXCODEC_STATUS m_ProssiveStatus;
   CJBig2_Image** m_pImage;
   CJBig2_ArithDecoder* m_pArithDecoder;

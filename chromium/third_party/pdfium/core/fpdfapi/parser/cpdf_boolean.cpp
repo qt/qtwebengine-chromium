@@ -44,3 +44,8 @@ CPDF_Boolean* CPDF_Boolean::AsBoolean() {
 const CPDF_Boolean* CPDF_Boolean::AsBoolean() const {
   return this;
 }
+
+bool CPDF_Boolean::WriteTo(IFX_ArchiveStream* archive) const {
+  return archive->WriteString(" ") &&
+         archive->WriteString(GetString().AsStringC());
+}

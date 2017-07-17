@@ -153,77 +153,67 @@ rtc::Buffer GenerateRtcpPacket(Random* prng) {
 }
 
 void GenerateVideoReceiveConfig(uint32_t extensions_bitvector,
-                                VideoReceiveStream::Config* config,
+                                rtclog::StreamConfig* config,
                                 Random* prng) {
-  // Create a map from a payload type to an encoder name.
-  VideoReceiveStream::Decoder decoder;
-  decoder.payload_type = prng->Rand(0, 127);
-  decoder.payload_name = (prng->Rand<bool>() ? "VP8" : "H264");
-  config->decoders.push_back(decoder);
   // Add SSRCs for the stream.
-  config->rtp.remote_ssrc = prng->Rand<uint32_t>();
-  config->rtp.local_ssrc = prng->Rand<uint32_t>();
+  config->remote_ssrc = prng->Rand<uint32_t>();
+  config->local_ssrc = prng->Rand<uint32_t>();
   // Add extensions and settings for RTCP.
-  config->rtp.rtcp_mode =
+  config->rtcp_mode =
       prng->Rand<bool>() ? RtcpMode::kCompound : RtcpMode::kReducedSize;
-  config->rtp.remb = prng->Rand<bool>();
-  config->rtp.rtx_ssrc = prng->Rand<uint32_t>();
-  // Add a map from a payload type to a new payload type for RTX.
-  config->rtp.rtx_payload_types.insert(
-      std::make_pair(prng->Rand(0, 127), prng->Rand(0, 127)));
+  config->remb = prng->Rand<bool>();
+  config->rtx_ssrc = prng->Rand<uint32_t>();
+  config->codecs.emplace_back(prng->Rand<bool>() ? "VP8" : "H264",
+                              prng->Rand(1, 127), prng->Rand(1, 127));
   // Add header extensions.
   for (unsigned i = 0; i < kNumExtensions; i++) {
     if (extensions_bitvector & (1u << i)) {
-      config->rtp.extensions.push_back(
-          RtpExtension(kExtensionNames[i], prng->Rand<int>()));
+      config->rtp_extensions.emplace_back(kExtensionNames[i],
+                                          prng->Rand<int>());
     }
   }
 }
 
 void GenerateVideoSendConfig(uint32_t extensions_bitvector,
-                             VideoSendStream::Config* config,
+                             rtclog::StreamConfig* config,
                              Random* prng) {
-  // Create a map from a payload type to an encoder name.
-  config->encoder_settings.payload_type = prng->Rand(0, 127);
-  config->encoder_settings.payload_name = (prng->Rand<bool>() ? "VP8" : "H264");
-  // Add SSRCs for the stream.
-  config->rtp.ssrcs.push_back(prng->Rand<uint32_t>());
-  // Add a map from a payload type to new ssrcs and a new payload type for RTX.
-  config->rtp.rtx.ssrcs.push_back(prng->Rand<uint32_t>());
-  config->rtp.rtx.payload_type = prng->Rand(0, 127);
+  config->codecs.emplace_back(prng->Rand<bool>() ? "VP8" : "H264",
+                              prng->Rand(1, 127), prng->Rand(1, 127));
+  config->local_ssrc = prng->Rand<uint32_t>();
+  config->rtx_ssrc = prng->Rand<uint32_t>();
   // Add header extensions.
   for (unsigned i = 0; i < kNumExtensions; i++) {
     if (extensions_bitvector & (1u << i)) {
-      config->rtp.extensions.push_back(
+      config->rtp_extensions.push_back(
           RtpExtension(kExtensionNames[i], prng->Rand<int>()));
     }
   }
 }
 
 void GenerateAudioReceiveConfig(uint32_t extensions_bitvector,
-                                AudioReceiveStream::Config* config,
+                                rtclog::StreamConfig* config,
                                 Random* prng) {
   // Add SSRCs for the stream.
-  config->rtp.remote_ssrc = prng->Rand<uint32_t>();
-  config->rtp.local_ssrc = prng->Rand<uint32_t>();
+  config->remote_ssrc = prng->Rand<uint32_t>();
+  config->local_ssrc = prng->Rand<uint32_t>();
   // Add header extensions.
   for (unsigned i = 0; i < kNumExtensions; i++) {
     if (extensions_bitvector & (1u << i)) {
-      config->rtp.extensions.push_back(
+      config->rtp_extensions.push_back(
           RtpExtension(kExtensionNames[i], prng->Rand<int>()));
     }
   }
 }
 
 void GenerateAudioSendConfig(uint32_t extensions_bitvector,
-                             AudioSendStream::Config* config,
+                             rtclog::StreamConfig* config,
                              Random* prng) {
   // Add SSRC to the stream.
-  config->rtp.ssrc = prng->Rand<uint32_t>();
+  config->local_ssrc = prng->Rand<uint32_t>();
   // Add header extensions.
   for (unsigned i = 0; i < kNumExtensions; i++) {
     if (extensions_bitvector & (1u << i)) {
-      config->rtp.extensions.push_back(
+      config->rtp_extensions.push_back(
           RtpExtension(kExtensionNames[i], prng->Rand<int>()));
     }
   }
@@ -258,8 +248,8 @@ void LogSessionAndReadBack(size_t rtp_count,
   std::vector<uint32_t> playout_ssrcs;
   std::vector<std::pair<int32_t, uint8_t> > bwe_loss_updates;
 
-  VideoReceiveStream::Config receiver_config(nullptr);
-  VideoSendStream::Config sender_config(nullptr);
+  rtclog::StreamConfig receiver_config;
+  rtclog::StreamConfig sender_config;
 
   Random prng(random_seed);
 
@@ -793,12 +783,12 @@ class AudioReceiveConfigReadWriteTest : public ConfigReadWriteTest {
     RtcEventLogTestHelper::VerifyAudioReceiveStreamConfig(parsed_log, index,
                                                           config);
   }
-  AudioReceiveStream::Config config;
+  rtclog::StreamConfig config;
 };
 
 class AudioSendConfigReadWriteTest : public ConfigReadWriteTest {
  public:
-  AudioSendConfigReadWriteTest() : config(nullptr) {}
+  AudioSendConfigReadWriteTest() {}
   void GenerateConfig(uint32_t extensions_bitvector) override {
     GenerateAudioSendConfig(extensions_bitvector, &config, &prng);
   }
@@ -810,12 +800,12 @@ class AudioSendConfigReadWriteTest : public ConfigReadWriteTest {
     RtcEventLogTestHelper::VerifyAudioSendStreamConfig(parsed_log, index,
                                                        config);
   }
-  AudioSendStream::Config config;
+  rtclog::StreamConfig config;
 };
 
 class VideoReceiveConfigReadWriteTest : public ConfigReadWriteTest {
  public:
-  VideoReceiveConfigReadWriteTest() : config(nullptr) {}
+  VideoReceiveConfigReadWriteTest() {}
   void GenerateConfig(uint32_t extensions_bitvector) override {
     GenerateVideoReceiveConfig(extensions_bitvector, &config, &prng);
   }
@@ -827,12 +817,12 @@ class VideoReceiveConfigReadWriteTest : public ConfigReadWriteTest {
     RtcEventLogTestHelper::VerifyVideoReceiveStreamConfig(parsed_log, index,
                                                           config);
   }
-  VideoReceiveStream::Config config;
+  rtclog::StreamConfig config;
 };
 
 class VideoSendConfigReadWriteTest : public ConfigReadWriteTest {
  public:
-  VideoSendConfigReadWriteTest() : config(nullptr) {}
+  VideoSendConfigReadWriteTest() {}
   void GenerateConfig(uint32_t extensions_bitvector) override {
     GenerateVideoSendConfig(extensions_bitvector, &config, &prng);
   }
@@ -844,7 +834,7 @@ class VideoSendConfigReadWriteTest : public ConfigReadWriteTest {
     RtcEventLogTestHelper::VerifyVideoSendStreamConfig(parsed_log, index,
                                                        config);
   }
-  VideoSendStream::Config config;
+  rtclog::StreamConfig config;
 };
 
 class AudioNetworkAdaptationReadWriteTest : public ConfigReadWriteTest {

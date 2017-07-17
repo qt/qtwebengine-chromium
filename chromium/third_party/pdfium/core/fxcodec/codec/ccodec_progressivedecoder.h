@@ -7,13 +7,15 @@
 #ifndef CORE_FXCODEC_CODEC_CCODEC_PROGRESSIVEDECODER_H_
 #define CORE_FXCODEC_CODEC_CCODEC_PROGRESSIVEDECODER_H_
 
+#include <memory>
 #include <vector>
 
-#include "core/fxcodec/codec/icodec_bmpmodule.h"
-#include "core/fxcodec/codec/icodec_gifmodule.h"
-#include "core/fxcodec/codec/icodec_pngmodule.h"
-#include "core/fxcodec/codec/icodec_tiffmodule.h"
+#include "core/fxcodec/codec/ccodec_bmpmodule.h"
+#include "core/fxcodec/codec/ccodec_gifmodule.h"
+#include "core/fxcodec/codec/ccodec_pngmodule.h"
+#include "core/fxcodec/codec/ccodec_tiffmodule.h"
 #include "core/fxcodec/fx_codec_def.h"
+#include "core/fxcodec/lgif/cgifcontext.h"
 #include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxge/fx_dib.h"
@@ -22,12 +24,11 @@ class CCodec_JpegModule;
 class CCodec_ModuleMgr;
 class CFX_DIBAttribute;
 class IFX_SeekableReadStream;
-class IFX_Pause;
 struct FXJPEG_Context;
 
-class CCodec_ProgressiveDecoder : public ICodec_BmpModule::Delegate,
-                                  public ICodec_GifModule::Delegate,
-                                  public ICodec_PngModule::Delegate {
+class CCodec_ProgressiveDecoder : public CCodec_BmpModule::Delegate,
+                                  public CCodec_GifModule::Delegate,
+                                  public CCodec_PngModule::Delegate {
  public:
   enum FXCodec_Format {
     FXCodec_Invalid = 0,
@@ -57,7 +58,7 @@ class CCodec_ProgressiveDecoder : public ICodec_BmpModule::Delegate,
   int32_t GetBPC() const { return m_SrcBPC; }
   void SetClipBox(FX_RECT* clip);
 
-  FXCODEC_STATUS GetFrames(int32_t& frames, IFX_Pause* pPause = nullptr);
+  FXCODEC_STATUS GetFrames(int32_t& frames);
   FXCODEC_STATUS StartDecode(const CFX_RetainPtr<CFX_DIBitmap>& pDIBitmap,
                              int start_x,
                              int start_y,
@@ -66,7 +67,7 @@ class CCodec_ProgressiveDecoder : public ICodec_BmpModule::Delegate,
                              int32_t frames = 0,
                              bool bInterpol = true);
 
-  FXCODEC_STATUS ContinueDecode(IFX_Pause* pPause = nullptr);
+  FXCODEC_STATUS ContinueDecode();
 
   struct PixelWeight {
     int m_SrcStart;
@@ -129,7 +130,7 @@ class CCodec_ProgressiveDecoder : public ICodec_BmpModule::Delegate,
   CCodec_ModuleMgr* m_pCodecMgr;
   FXJPEG_Context* m_pJpegContext;
   FXPNG_Context* m_pPngContext;
-  FXGIF_Context* m_pGifContext;
+  std::unique_ptr<CGifContext> m_pGifContext;
   FXBMP_Context* m_pBmpContext;
   CCodec_TiffContext* m_pTiffContext;
   FXCODEC_IMAGE_TYPE m_imagType;
@@ -168,7 +169,7 @@ class CCodec_ProgressiveDecoder : public ICodec_BmpModule::Delegate,
   bool m_BmpIsTopBottom;
   FXCODEC_STATUS m_status;
 
-  // ICodec_PngModule::Delegate
+  // CCodec_PngModule::Delegate
   bool PngReadHeader(int width,
                      int height,
                      int bpc,
@@ -178,9 +179,8 @@ class CCodec_ProgressiveDecoder : public ICodec_BmpModule::Delegate,
   bool PngAskScanlineBuf(int line, uint8_t*& src_buf) override;
   void PngFillScanlineBufCompleted(int pass, int line) override;
 
-  // ICodec_GifModule::Delegate
+  // CCodec_GifModule::Delegate
   void GifRecordCurrentPosition(uint32_t& cur_pos) override;
-  uint8_t* GifAskLocalPaletteBuf(int32_t frame_num, int32_t pal_size) override;
   bool GifInputRecordPositionBuf(uint32_t rcd_pos,
                                  const FX_RECT& img_rc,
                                  int32_t pal_num,
@@ -192,14 +192,14 @@ class CCodec_ProgressiveDecoder : public ICodec_BmpModule::Delegate,
                                  bool interlace) override;
   void GifReadScanline(int32_t row_num, uint8_t* row_buf) override;
 
-  // ICodec_BmpModule::Delegate
+  // CCodec_BmpModule::Delegate
   bool BmpInputImagePositionBuf(uint32_t rcd_pos) override;
   void BmpReadScanline(int32_t row_num, uint8_t* row_buf) override;
 
  protected:
-  bool BmpReadMoreData(ICodec_BmpModule* pBmpModule,
+  bool BmpReadMoreData(CCodec_BmpModule* pBmpModule,
                        FXCODEC_STATUS& err_status);
-  bool GifReadMoreData(ICodec_GifModule* pGifModule,
+  bool GifReadMoreData(CCodec_GifModule* pGifModule,
                        FXCODEC_STATUS& err_status);
   void GifDoubleLineResampleVert(
       const CFX_RetainPtr<CFX_DIBitmap>& pDeviceBitmap,

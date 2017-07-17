@@ -9,6 +9,8 @@
 
 #include <memory>
 
+#include "core/fxcrt/cfx_retain_ptr.h"
+#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_system.h"
 
 class CFX_Matrix;
@@ -17,19 +19,14 @@ class CPDF_Dictionary;
 class CPDF_Page;
 class CXFA_FFPageView;
 
-class CPDFXFA_Page {
+class CPDFXFA_Page : public CFX_Retainable {
  public:
-  CPDFXFA_Page(CPDFXFA_Context* pContext, int page_index);
-
-  void Retain() { m_iRef++; }
-  void Release() {
-    if (--m_iRef <= 0)
-      delete this;
-  }
+  template <typename T, typename... Args>
+  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
   bool LoadPage();
   bool LoadPDFPage(CPDF_Dictionary* pageDict);
-  CPDFXFA_Context* GetContext() const { return m_pContext; }
+  CPDFXFA_Context* GetContext() const { return m_pContext.Get(); }
   int GetPageIndex() const { return m_iPageIndex; }
   CPDF_Page* GetPDFPage() const { return m_pPDFPage.get(); }
   CXFA_FFPageView* GetXFAPageView() const { return m_pXFAPageView; }
@@ -68,7 +65,8 @@ class CPDFXFA_Page {
 
  protected:
   // Refcounted class.
-  ~CPDFXFA_Page();
+  CPDFXFA_Page(CPDFXFA_Context* pContext, int page_index);
+  ~CPDFXFA_Page() override;
 
   bool LoadPDFPage();
   bool LoadXFAPageView();
@@ -76,7 +74,7 @@ class CPDFXFA_Page {
  private:
   std::unique_ptr<CPDF_Page> m_pPDFPage;
   CXFA_FFPageView* m_pXFAPageView;
-  CPDFXFA_Context* const m_pContext;
+  CFX_UnownedPtr<CPDFXFA_Context> const m_pContext;
   const int m_iPageIndex;
   int m_iRef;
 };

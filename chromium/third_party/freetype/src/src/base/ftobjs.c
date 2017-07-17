@@ -702,7 +702,7 @@
         /* check the size of the `fpgm' and `prep' tables, too --    */
         /* the assumption is that there don't exist real TTFs where  */
         /* both `fpgm' and `prep' tables are missing                 */
-        if ( ( mode == FT_RENDER_MODE_LIGHT                   &&
+        if ( ( mode == FT_RENDER_MODE_LIGHT       &&
                !FT_DRIVER_HINTS_LIGHTLY( driver ) )             ||
              ( FT_IS_SFNT( face )                             &&
                ttface->num_locations                          &&
@@ -2605,6 +2605,8 @@
     FT_Size          size = NULL;
     FT_ListNode      node = NULL;
 
+    FT_Size_Internal  internal = NULL;
+
 
     if ( !face )
       return FT_THROW( Invalid_Face_Handle );
@@ -2627,8 +2629,10 @@
 
     size->face = face;
 
-    /* for now, do not use any internal fields in size objects */
-    size->internal = NULL;
+    if ( FT_NEW( internal ) )
+      goto Exit;
+
+    size->internal = internal;
 
     if ( clazz->init_size )
       error = clazz->init_size( size );
@@ -3055,6 +3059,10 @@
     if ( !req || req->width < 0 || req->height < 0 ||
          req->type >= FT_SIZE_REQUEST_TYPE_MAX )
       return FT_THROW( Invalid_Argument );
+
+    /* signal the auto-hinter to recompute its size metrics */
+    /* (if requested)                                       */
+    face->size->internal->autohint_metrics.x_scale = 0;
 
     clazz = face->driver->clazz;
 
@@ -3709,12 +3717,14 @@
 
         if ( charcode > 0xFFFFFFFFUL )
         {
-          FT_TRACE1(( "FT_Get_Char_Index: too large charcode" ));
+          FT_TRACE1(( "FT_Face_GetCharVariantIndex:"
+                      " too large charcode" ));
           FT_TRACE1(( " 0x%x is truncated\n", charcode ));
         }
         if ( variantSelector > 0xFFFFFFFFUL )
         {
-          FT_TRACE1(( "FT_Get_Char_Index: too large variantSelector" ));
+          FT_TRACE1(( "FT_Face_GetCharVariantIndex:"
+                      " too large variantSelector" ));
           FT_TRACE1(( " 0x%x is truncated\n", variantSelector ));
         }
 
@@ -3750,12 +3760,14 @@
 
         if ( charcode > 0xFFFFFFFFUL )
         {
-          FT_TRACE1(( "FT_Get_Char_Index: too large charcode" ));
+          FT_TRACE1(( "FT_Face_GetCharVariantIsDefault:"
+                      " too large charcode" ));
           FT_TRACE1(( " 0x%x is truncated\n", charcode ));
         }
         if ( variantSelector > 0xFFFFFFFFUL )
         {
-          FT_TRACE1(( "FT_Get_Char_Index: too large variantSelector" ));
+          FT_TRACE1(( "FT_Face_GetCharVariantIsDefault:"
+                      " too large variantSelector" ));
           FT_TRACE1(( " 0x%x is truncated\n", variantSelector ));
         }
 
@@ -3818,7 +3830,7 @@
 
         if ( charcode > 0xFFFFFFFFUL )
         {
-          FT_TRACE1(( "FT_Get_Char_Index: too large charcode" ));
+          FT_TRACE1(( "FT_Face_GetVariantsOfChar: too large charcode" ));
           FT_TRACE1(( " 0x%x is truncated\n", charcode ));
         }
 

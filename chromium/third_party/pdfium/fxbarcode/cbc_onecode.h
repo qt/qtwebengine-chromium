@@ -7,17 +7,18 @@
 #ifndef FXBARCODE_CBC_ONECODE_H_
 #define FXBARCODE_CBC_ONECODE_H_
 
+#include <memory>
+
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 #include "fxbarcode/cbc_codebase.h"
 
-class CFX_DIBitmap;
+class CBC_OneDimWriter;
 class CFX_Font;
-class CFX_RenderDevice;
 
 class CBC_OneCode : public CBC_CodeBase {
  public:
-  explicit CBC_OneCode(CBC_Writer* pWriter);
+  explicit CBC_OneCode(std::unique_ptr<CBC_Writer> pWriter);
   ~CBC_OneCode() override;
 
   virtual bool CheckContentValidity(const CFX_WideStringC& contents);
@@ -30,6 +31,9 @@ class CBC_OneCode : public CBC_CodeBase {
   virtual void SetFontSize(float size);
   virtual void SetFontStyle(int32_t style);
   virtual void SetFontColor(FX_ARGB color);
+
+ private:
+  CBC_OneDimWriter* GetOneDimWriter();
 };
 
 #endif  // FXBARCODE_CBC_ONECODE_H_

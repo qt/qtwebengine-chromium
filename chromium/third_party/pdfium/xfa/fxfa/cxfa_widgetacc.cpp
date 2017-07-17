@@ -9,10 +9,10 @@
 #include <algorithm>
 #include <vector>
 
+#include "core/fxcrt/xml/cfx_xmlelement.h"
+#include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
-#include "xfa/fde/xml/cfde_xmlelement.h"
-#include "xfa/fde/xml/cfde_xmlnode.h"
 #include "xfa/fxfa/app/cxfa_textlayout.h"
 #include "xfa/fxfa/app/xfa_ffwidgetacc.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
@@ -108,8 +108,8 @@ class CXFA_FieldLayoutData : public CXFA_WidgetLayoutData {
     CXFA_Caption caption = pAcc->GetCaption();
     if (!caption || caption.GetPresence() == XFA_ATTRIBUTEENUM_Hidden)
       return false;
-    m_pCapTextProvider.reset(
-        new CXFA_TextProvider(pAcc, XFA_TEXTPROVIDERTYPE_Caption));
+    m_pCapTextProvider = pdfium::MakeUnique<CXFA_TextProvider>(
+        pAcc, XFA_TEXTPROVIDERTYPE_Caption);
     m_pCapTextLayout =
         pdfium::MakeUnique<CXFA_TextLayout>(m_pCapTextProvider.get());
     return true;
@@ -265,9 +265,9 @@ void CXFA_WidgetAcc::SetImageEdit(const CFX_WideString& wsContentType,
   if (pHrefNode) {
     pHrefNode->SetCData(XFA_ATTRIBUTE_Value, wsHref);
   } else {
-    CFDE_XMLNode* pXMLNode = pBind->GetXMLMappingNode();
-    ASSERT(pXMLNode && pXMLNode->GetType() == FDE_XMLNODE_Element);
-    static_cast<CFDE_XMLElement*>(pXMLNode)->SetString(L"href", wsHref);
+    CFX_XMLNode* pXMLNode = pBind->GetXMLMappingNode();
+    ASSERT(pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element);
+    static_cast<CFX_XMLElement*>(pXMLNode)->SetString(L"href", wsHref);
   }
 }
 
@@ -554,7 +554,7 @@ int32_t CXFA_WidgetAcc::ProcessValidate(int32_t iFlags) {
   if (GetElementType() == XFA_Element::Draw)
     return XFA_EVENTERROR_NotExist;
 
-  CXFA_Validate validate = GetValidate();
+  CXFA_Validate validate = GetValidate(false);
   if (!validate)
     return XFA_EVENTERROR_NotExist;
 
@@ -626,8 +626,7 @@ int32_t CXFA_WidgetAcc::ExecuteScript(CXFA_Script script,
       pEventParam->m_eType == XFA_EVENT_Calculate) {
     pContext->SetNodesOfRunScript(&refNodes);
   }
-  std::unique_ptr<CFXJSE_Value> pTmpRetValue(
-      new CFXJSE_Value(pContext->GetRuntime()));
+  auto pTmpRetValue = pdfium::MakeUnique<CFXJSE_Value>(pContext->GetRuntime());
   ++m_nRecursionDepth;
   bool bRet = pContext->RunScript((XFA_SCRIPTLANGTYPE)eScriptType,
                                   wsExpression.AsStringC(), pTmpRetValue.get(),
@@ -725,7 +724,7 @@ void CXFA_WidgetAcc::CalcCaptionSize(CFX_SizeF& szCap) {
     float fFontSize = 10.0f;
     if (CXFA_Font font = caption.GetFont())
       fFontSize = font.GetFontSize();
-    else if (CXFA_Font widgetfont = GetFont())
+    else if (CXFA_Font widgetfont = GetFont(false))
       fFontSize = widgetfont.GetFontSize();
 
     if (bVert) {
@@ -1496,7 +1495,7 @@ CXFA_WidgetLayoutData* CXFA_WidgetAcc::GetWidgetLayoutData() {
 CFX_RetainPtr<CFGAS_GEFont> CXFA_WidgetAcc::GetFDEFont() {
   CFX_WideStringC wsFontName = L"Courier";
   uint32_t dwFontStyle = 0;
-  if (CXFA_Font font = GetFont()) {
+  if (CXFA_Font font = GetFont(false)) {
     if (font.IsBold())
       dwFontStyle |= FX_FONTSTYLE_Bold;
     if (font.IsItalic())
@@ -1511,7 +1510,7 @@ CFX_RetainPtr<CFGAS_GEFont> CXFA_WidgetAcc::GetFDEFont() {
 
 float CXFA_WidgetAcc::GetFontSize() {
   float fFontSize = 10.0f;
-  if (CXFA_Font font = GetFont())
+  if (CXFA_Font font = GetFont(false))
     fFontSize = font.GetFontSize();
   return fFontSize < 0.1f ? 10.0f : fFontSize;
 }
@@ -1526,8 +1525,7 @@ float CXFA_WidgetAcc::GetLineHeight() {
 }
 
 FX_ARGB CXFA_WidgetAcc::GetTextColor() {
-  if (CXFA_Font font = GetFont()) {
+  if (CXFA_Font font = GetFont(false))
     return font.GetColor();
-  }
   return 0xFF000000;
 }

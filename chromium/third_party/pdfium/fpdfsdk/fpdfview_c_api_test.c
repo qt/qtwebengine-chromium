@@ -83,7 +83,6 @@ int CheckPDFiumCApi() {
     CHK(FPDFPageObj_Transform);
     CHK(FPDFPage_TransformAnnots);
     CHK(FPDFPageObj_NewImageObj);
-    CHK(FPDFPageObj_NewImgeObj);
     CHK(FPDFImageObj_LoadJpegFile);
     CHK(FPDFImageObj_LoadJpegFileInline);
     CHK(FPDFImageObj_SetMatrix);
@@ -102,6 +101,8 @@ int CheckPDFiumCApi() {
     CHK(FPDFPageObj_NewTextObj);
     CHK(FPDFText_SetText);
     CHK(FPDFText_LoadFont);
+    CHK(FPDFFont_Close);
+    CHK(FPDFPageObj_CreateTextObj);
 
     // fpdf_ext.h
     CHK(FSDK_SetUnSpObjProcessHandler);

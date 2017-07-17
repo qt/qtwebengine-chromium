@@ -77,6 +77,7 @@
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/obj.h>
+#include <openssl/pkcs7.h>
 #include <openssl/pool.h>
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
@@ -110,6 +111,7 @@ struct X509_objects_st
 	int (*i2a)(void);
 	} /* X509_OBJECTS */;
 
+DEFINE_STACK_OF(X509_ALGOR)
 DECLARE_ASN1_SET_OF(X509_ALGOR)
 
 typedef STACK_OF(X509_ALGOR) X509_ALGORS;
@@ -141,7 +143,7 @@ struct X509_name_entry_st
 	int size; 	/* temp variable */
 	} /* X509_NAME_ENTRY */;
 
-DECLARE_STACK_OF(X509_NAME_ENTRY)
+DEFINE_STACK_OF(X509_NAME_ENTRY)
 DECLARE_ASN1_SET_OF(X509_NAME_ENTRY)
 
 /* we always keep X509_NAMEs in 2 forms. */
@@ -159,7 +161,7 @@ struct X509_name_st
 	int canon_enclen;
 	} /* X509_NAME */;
 
-DECLARE_STACK_OF(X509_NAME)
+DEFINE_STACK_OF(X509_NAME)
 
 #define X509_EX_V_NETSCAPE_HACK		0x8000
 #define X509_EX_V_INIT			0x0001
@@ -172,7 +174,7 @@ struct X509_extension_st
 
 typedef STACK_OF(X509_EXTENSION) X509_EXTENSIONS;
 
-DECLARE_STACK_OF(X509_EXTENSION)
+DEFINE_STACK_OF(X509_EXTENSION)
 DECLARE_ASN1_SET_OF(X509_EXTENSION)
 
 /* a sequence of these are used */
@@ -187,7 +189,7 @@ struct x509_attributes_st
 		} value;
 	} /* X509_ATTRIBUTE */;
 
-DECLARE_STACK_OF(X509_ATTRIBUTE)
+DEFINE_STACK_OF(X509_ATTRIBUTE)
 DECLARE_ASN1_SET_OF(X509_ATTRIBUTE)
 
 
@@ -239,6 +241,9 @@ struct x509_cert_aux_st
 	STACK_OF(X509_ALGOR) *other;		/* other unspecified info */
 	} /* X509_CERT_AUX */;
 
+DECLARE_STACK_OF(DIST_POINT)
+DECLARE_STACK_OF(GENERAL_NAME)
+
 struct x509_st
 	{
 	X509_CINF *cert_info;
@@ -266,7 +271,7 @@ struct x509_st
 	CRYPTO_MUTEX lock;
 	} /* X509 */;
 
-DECLARE_STACK_OF(X509)
+DEFINE_STACK_OF(X509)
 DECLARE_ASN1_SET_OF(X509)
 
 /* This is used for a table of trust checking functions */
@@ -280,7 +285,7 @@ struct x509_trust_st {
 	void *arg2;
 } /* X509_TRUST */;
 
-DECLARE_STACK_OF(X509_TRUST)
+DEFINE_STACK_OF(X509_TRUST)
 
 struct x509_cert_pair_st {
 	X509 *forward;
@@ -402,7 +407,7 @@ struct x509_revoked_st
 	int sequence; /* load sequence */
 	};
 
-DECLARE_STACK_OF(X509_REVOKED)
+DEFINE_STACK_OF(X509_REVOKED)
 DECLARE_ASN1_SET_OF(X509_REVOKED)
 
 struct X509_crl_info_st
@@ -416,6 +421,8 @@ struct X509_crl_info_st
 	STACK_OF(X509_EXTENSION) /* [0] */ *extensions;
 	ASN1_ENCODING enc;
 	} /* X509_CRL_INFO */;
+
+DECLARE_STACK_OF(GENERAL_NAMES)
 
 struct X509_crl_st
 	{
@@ -440,7 +447,7 @@ struct X509_crl_st
 	void *meth_data;
 	} /* X509_CRL */;
 
-DECLARE_STACK_OF(X509_CRL)
+DEFINE_STACK_OF(X509_CRL)
 DECLARE_ASN1_SET_OF(X509_CRL)
 
 struct private_key_st
@@ -475,7 +482,7 @@ struct X509_info_st
 
 	} /* X509_INFO */;
 
-DECLARE_STACK_OF(X509_INFO)
+DEFINE_STACK_OF(X509_INFO)
 #endif
 
 /* The next 2 structures and their 8 routines were sent to me by
@@ -772,7 +779,7 @@ DECLARE_ASN1_FUNCTIONS(X509_CERT_PAIR)
 OPENSSL_EXPORT int X509_up_ref(X509 *x);
 
 OPENSSL_EXPORT int X509_get_ex_new_index(long argl, void *argp, CRYPTO_EX_unused *unused,
-	     CRYPTO_EX_dup *dup_func, CRYPTO_EX_free *free_func);
+	     CRYPTO_EX_dup *dup_unused, CRYPTO_EX_free *free_func);
 OPENSSL_EXPORT int X509_set_ex_data(X509 *r, int idx, void *arg);
 OPENSSL_EXPORT void *X509_get_ex_data(X509 *r, int idx);
 OPENSSL_EXPORT int		i2d_X509_AUX(X509 *a,unsigned char **pp);
@@ -1115,37 +1122,6 @@ typedef struct rsa_pss_params_st {
 DECLARE_ASN1_FUNCTIONS(RSA_PSS_PARAMS)
 
 
-/* PKCS7_get_certificates parses a PKCS#7, SignedData structure from |cbs| and
- * appends the included certificates to |out_certs|. It returns one on success
- * and zero on error. */
-OPENSSL_EXPORT int PKCS7_get_certificates(STACK_OF(X509) *out_certs, CBS *cbs);
-
-/* PKCS7_bundle_certificates appends a PKCS#7, SignedData structure containing
- * |certs| to |out|. It returns one on success and zero on error. */
-OPENSSL_EXPORT int PKCS7_bundle_certificates(
-    CBB *out, const STACK_OF(X509) *certs);
-
-/* PKCS7_get_CRLs parses a PKCS#7, SignedData structure from |cbs| and appends
- * the included CRLs to |out_crls|. It returns one on success and zero on
- * error. */
-OPENSSL_EXPORT int PKCS7_get_CRLs(STACK_OF(X509_CRL) *out_crls, CBS *cbs);
-
-/* PKCS7_bundle_CRLs appends a PKCS#7, SignedData structure containing
- * |crls| to |out|. It returns one on success and zero on error. */
-OPENSSL_EXPORT int PKCS7_bundle_CRLs(CBB *out, const STACK_OF(X509_CRL) *crls);
-
-/* PKCS7_get_PEM_certificates reads a PEM-encoded, PKCS#7, SignedData structure
- * from |pem_bio| and appends the included certificates to |out_certs|. It
- * returns one on success and zero on error. */
-OPENSSL_EXPORT int PKCS7_get_PEM_certificates(STACK_OF(X509) *out_certs,
-                                              BIO *pem_bio);
-
-/* PKCS7_get_PEM_CRLs reads a PEM-encoded, PKCS#7, SignedData structure from
- * |pem_bio| and appends the included CRLs to |out_crls|. It returns one on
- * success and zero on error. */
-OPENSSL_EXPORT int PKCS7_get_PEM_CRLs(STACK_OF(X509_CRL) *out_crls,
-                                      BIO *pem_bio);
-
 /* EVP_PK values indicate the algorithm of the public key in a certificate. */
 
 #define EVP_PK_RSA	0x0001
@@ -1246,5 +1222,6 @@ BORINGSSL_MAKE_DELETER(X509_VERIFY_PARAM, X509_VERIFY_PARAM_free)
 #define X509_R_WRONG_LOOKUP_TYPE 133
 #define X509_R_WRONG_TYPE 134
 #define X509_R_NAME_TOO_LONG 135
+#define X509_R_INVALID_PARAMETER 136
 
 #endif

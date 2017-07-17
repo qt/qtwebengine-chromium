@@ -228,42 +228,42 @@ void State::reset(const Context *context)
         TextureBindingVector &textureVector = bindingVec->second;
         for (size_t textureIdx = 0; textureIdx < textureVector.size(); textureIdx++)
         {
-            textureVector[textureIdx].set(NULL);
+            textureVector[textureIdx].set(nullptr);
         }
     }
     for (size_t samplerIdx = 0; samplerIdx < mSamplers.size(); samplerIdx++)
     {
-        mSamplers[samplerIdx].set(NULL);
+        mSamplers[samplerIdx].set(nullptr);
     }
 
-    mArrayBuffer.set(NULL);
-    mDrawIndirectBuffer.set(NULL);
-    mRenderbuffer.set(NULL);
+    mArrayBuffer.set(nullptr);
+    mDrawIndirectBuffer.set(nullptr);
+    mRenderbuffer.set(nullptr);
 
     if (mProgram)
     {
         mProgram->release(context);
     }
-    mProgram = NULL;
+    mProgram = nullptr;
 
-    mTransformFeedback.set(NULL);
+    mTransformFeedback.set(nullptr);
 
     for (State::ActiveQueryMap::iterator i = mActiveQueries.begin(); i != mActiveQueries.end(); i++)
     {
-        i->second.set(NULL);
+        i->second.set(nullptr);
     }
 
-    mGenericUniformBuffer.set(NULL);
+    mGenericUniformBuffer.set(nullptr);
     for (BufferVector::iterator bufItr = mUniformBuffers.begin(); bufItr != mUniformBuffers.end(); ++bufItr)
     {
-        bufItr->set(NULL);
+        bufItr->set(nullptr);
     }
 
-    mCopyReadBuffer.set(NULL);
-    mCopyWriteBuffer.set(NULL);
+    mCopyReadBuffer.set(nullptr);
+    mCopyWriteBuffer.set(nullptr);
 
-    mPack.pixelBuffer.set(NULL);
-    mUnpack.pixelBuffer.set(NULL);
+    mPack.pixelBuffer.set(nullptr);
+    mUnpack.pixelBuffer.set(nullptr);
 
     mGenericAtomicCounterBuffer.set(nullptr);
     for (auto &buf : mAtomicCounterBuffers)
@@ -277,7 +277,7 @@ void State::reset(const Context *context)
         buf.set(nullptr);
     }
 
-    mProgram = NULL;
+    mProgram = nullptr;
 
     angle::Matrix<GLfloat>::setToIdentity(mPathMatrixProj);
     angle::Matrix<GLfloat>::setToIdentity(mPathMatrixMV);
@@ -884,7 +884,7 @@ void State::detachSampler(GLuint sampler)
         BindingPointer<Sampler> &samplerBinding = mSamplers[textureUnit];
         if (samplerBinding.id() == sampler)
         {
-            samplerBinding.set(NULL);
+            samplerBinding.set(nullptr);
         }
     }
 }
@@ -912,7 +912,7 @@ void State::detachRenderbuffer(const Context *context, GLuint renderbuffer)
 
     if (mRenderbuffer.id() == renderbuffer)
     {
-        mRenderbuffer.set(NULL);
+        mRenderbuffer.set(nullptr);
     }
 
     // [OpenGL ES 2.0.24] section 4.4 page 111:
@@ -974,7 +974,7 @@ Framebuffer *State::getTargetFramebuffer(GLenum target) const
             return mDrawFramebuffer;
         default:
             UNREACHABLE();
-            return NULL;
+            return nullptr;
     }
 }
 
@@ -1025,13 +1025,13 @@ void State::setVertexArrayBinding(VertexArray *vertexArray)
 
 GLuint State::getVertexArrayId() const
 {
-    ASSERT(mVertexArray != NULL);
+    ASSERT(mVertexArray != nullptr);
     return mVertexArray->id();
 }
 
 VertexArray *State::getVertexArray() const
 {
-    ASSERT(mVertexArray != NULL);
+    ASSERT(mVertexArray != nullptr);
     return mVertexArray;
 }
 
@@ -1039,7 +1039,7 @@ bool State::removeVertexArrayBinding(GLuint vertexArray)
 {
     if (mVertexArray->id() == vertexArray)
     {
-        mVertexArray = NULL;
+        mVertexArray = nullptr;
         mDirtyBits.set(DIRTY_BIT_VERTEX_ARRAY_BINDING);
         mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
         return true;
@@ -1297,7 +1297,9 @@ Buffer *State::getTargetBuffer(GLenum target) const
           return mGenericShaderStorageBuffer.get();
       case GL_DRAW_INDIRECT_BUFFER:
           return mDrawIndirectBuffer.get();
-      default: UNREACHABLE();            return NULL;
+      default:
+          UNREACHABLE();
+          return nullptr;
     }
 }
 
@@ -1370,9 +1372,9 @@ void State::setVertexAttribDivisor(GLuint index, GLuint divisor)
     mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
 }
 
-const VertexAttribCurrentValueData &State::getVertexAttribCurrentValue(unsigned int attribNum) const
+const VertexAttribCurrentValueData &State::getVertexAttribCurrentValue(size_t attribNum) const
 {
-    ASSERT(static_cast<size_t>(attribNum) < mVertexAttribCurrentValues.size());
+    ASSERT(attribNum < mVertexAttribCurrentValues.size());
     return mVertexAttribCurrentValues[attribNum];
 }
 
@@ -2114,7 +2116,7 @@ void State::syncDirtyObjects(const Context *context)
 
 void State::syncDirtyObjects(const Context *context, const DirtyObjects &bitset)
 {
-    for (auto dirtyObject : angle::IterateBitSet(bitset))
+    for (auto dirtyObject : bitset)
     {
         switch (dirtyObject)
         {

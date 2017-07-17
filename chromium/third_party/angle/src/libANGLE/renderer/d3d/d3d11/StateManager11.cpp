@@ -89,7 +89,7 @@ bool ImageIndexConflictsWithSRV(const gl::ImageIndex &index, D3D11_SHADER_RESOUR
 // Does *not* increment the resource ref count!!
 ID3D11Resource *GetViewResource(ID3D11View *view)
 {
-    ID3D11Resource *resource = NULL;
+    ID3D11Resource *resource = nullptr;
     ASSERT(view);
     view->GetResource(&resource);
     resource->Release();
@@ -246,6 +246,13 @@ void StateManager11::updatePresentPath(bool presentPathFastActive,
     }
 }
 
+void StateManager11::setComputeConstants(GLuint numGroupsX, GLuint numGroupsY, GLuint numGroupsZ)
+{
+    mComputeConstants.numWorkGroups[0] = numGroupsX;
+    mComputeConstants.numWorkGroups[1] = numGroupsY;
+    mComputeConstants.numWorkGroups[2] = numGroupsZ;
+}
+
 void StateManager11::syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits)
 {
     if (!dirtyBits.any())
@@ -253,7 +260,7 @@ void StateManager11::syncState(const gl::State &state, const gl::State::DirtyBit
         return;
     }
 
-    for (auto dirtyBit : angle::IterateBitSet(dirtyBits))
+    for (auto dirtyBit : dirtyBits)
     {
         switch (dirtyBit)
         {
@@ -570,7 +577,7 @@ gl::Error StateManager11::setDepthStencilState(const gl::State &glState)
     ASSERT((mCurDepthStencilState.stencilMask & maxStencil) ==
            (mCurDepthStencilState.stencilBackMask & maxStencil));
 
-    ID3D11DepthStencilState *dxDepthStencilState = NULL;
+    ID3D11DepthStencilState *dxDepthStencilState = nullptr;
     gl::DepthStencilState dsStateKey             = glState.getDepthStencilState();
 
     if (disableDepth)
@@ -943,7 +950,7 @@ void StateManager11::unsetConflictingSRVs(gl::SamplerType samplerType,
         if (record.srv && record.resource == resource &&
             ImageIndexConflictsWithSRV(index, record.desc))
         {
-            setShaderResource(samplerType, static_cast<UINT>(resourceIndex), NULL);
+            setShaderResource(samplerType, static_cast<UINT>(resourceIndex), nullptr);
         }
     }
 }
@@ -1039,7 +1046,7 @@ gl::Error StateManager11::syncFramebuffer(ContextImpl *contextImpl, gl::Framebuf
 
         if (renderTarget)
         {
-            framebufferRTVs[appliedRTIndex] = renderTarget->getRenderTargetView();
+            framebufferRTVs[appliedRTIndex] = renderTarget->getRenderTargetView().get();
             ASSERT(framebufferRTVs[appliedRTIndex]);
             maxExistingRT = static_cast<UINT>(appliedRTIndex) + 1;
 
@@ -1064,7 +1071,7 @@ gl::Error StateManager11::syncFramebuffer(ContextImpl *contextImpl, gl::Framebuf
     const auto *depthStencilRenderTarget = framebuffer11->getCachedDepthStencilRenderTarget();
     if (depthStencilRenderTarget)
     {
-        framebufferDSV = depthStencilRenderTarget->getDepthStencilView();
+        framebufferDSV = depthStencilRenderTarget->getDepthStencilView().get();
         ASSERT(framebufferDSV);
 
         // If there is no render buffer, the width, height and format values come from
@@ -1102,19 +1109,21 @@ gl::Error StateManager11::updateCurrentValueAttribs(const gl::State &state,
     const auto &activeAttribsMask  = state.getProgram()->getActiveAttribLocationsMask();
     const auto &dirtyActiveAttribs = (activeAttribsMask & mDirtyCurrentValueAttribs);
     const auto &vertexAttributes   = state.getVertexArray()->getVertexAttributes();
+    const auto &vertexBindings     = state.getVertexArray()->getVertexBindings();
 
-    for (auto attribIndex : angle::IterateBitSet(dirtyActiveAttribs))
+    for (auto attribIndex : dirtyActiveAttribs)
     {
         if (vertexAttributes[attribIndex].enabled)
             continue;
 
         mDirtyCurrentValueAttribs.reset(attribIndex);
 
-        const auto &currentValue =
-            state.getVertexAttribCurrentValue(static_cast<unsigned int>(attribIndex));
+        const auto *attrib                   = &vertexAttributes[attribIndex];
+        const auto &currentValue             = state.getVertexAttribCurrentValue(attribIndex);
         auto currentValueAttrib              = &mCurrentValueAttribs[attribIndex];
         currentValueAttrib->currentValueType = currentValue.Type;
-        currentValueAttrib->attribute        = &vertexAttributes[attribIndex];
+        currentValueAttrib->attribute        = attrib;
+        currentValueAttrib->binding          = &vertexBindings[attrib->bindingIndex];
 
         ANGLE_TRY(vertexDataManager->storeCurrentValue(currentValue, currentValueAttrib,
                                                        static_cast<size_t>(attribIndex)));

@@ -65,12 +65,12 @@ class AutomationApiTest : public ExtensionApiTest {
         test_data.AppendASCII("extensions/api_test")
         .AppendASCII(kSitesDir));
     ASSERT_TRUE(ExtensionApiTest::StartEmbeddedTestServer());
-    host_resolver()->AddRule("*", embedded_test_server()->base_url().host());
   }
 
  public:
-  void SetUpInProcessBrowserTestFixture() override {
-    ExtensionApiTest::SetUpInProcessBrowserTestFixture();
+  void SetUpOnMainThread() override {
+    ExtensionApiTest::SetUpOnMainThread();
+    host_resolver()->AddRule("*", "127.0.0.1");
   }
 };
 
@@ -193,7 +193,8 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopFocusWeb) {
       << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopFocusIframe) {
+// Flaky, see https://crbug.com/724923.
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DISABLED_DesktopFocusIframe) {
   StartEmbeddedTestServer();
   ASSERT_TRUE(
       RunExtensionSubtest("automation/tests/desktop", "focus_iframe.html"))
@@ -210,6 +211,11 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopFocusViews) {
       RunExtensionSubtest("automation/tests/desktop", "focus_views.html"))
       << message_;
 }
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, LocationInWebView) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(RunPlatformAppTest("automation/tests/webview")) << message_;
+}
 #endif
 
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopNotRequested) {
@@ -225,6 +231,11 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopActions) {
       ash::FOCUS_SHELF);
 
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop", "actions.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopHitTest) {
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop", "hit_test.html"))
       << message_;
 }
 
@@ -261,7 +272,8 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, Find) {
       << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, Attributes) {
+// TODO(crbug.com/725420) Flaky
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DISABLED_Attributes) {
   StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "attributes.html"))
       << message_;

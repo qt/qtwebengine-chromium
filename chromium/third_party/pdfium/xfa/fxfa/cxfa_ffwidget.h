@@ -136,10 +136,11 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   virtual void SelectAll();
   virtual void Delete();
   virtual void DeSelect();
-  virtual bool GetSuggestWords(CFX_PointF pointf,
-                               std::vector<CFX_ByteString>& sSuggest);
-  virtual bool ReplaceSpellCheckWord(CFX_PointF pointf,
-                                     const CFX_ByteStringC& bsReplace);
+
+  // TODO(tsepez): Implement or remove.
+  void GetSuggestWords(CFX_PointF pointf, std::vector<CFX_ByteString>* pWords);
+  bool ReplaceSpellCheckWord(CFX_PointF pointf,
+                             const CFX_ByteStringC& bsReplace);
 
   CXFA_FFPageView* GetPageView() const { return m_pPageView; }
   void SetPageView(CXFA_FFPageView* pPageView) { m_pPageView = pPageView; }
@@ -184,7 +185,7 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
 
   CXFA_FFDocView* m_pDocView;
   CXFA_FFPageView* m_pPageView;
-  CXFA_WidgetAcc* const m_pDataAcc;
+  CFX_UnownedPtr<CXFA_WidgetAcc> const m_pDataAcc;
   mutable CFX_RectF m_rtWidget;
 };
 

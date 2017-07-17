@@ -7,7 +7,6 @@
 #include "core/fxge/dib/cfx_bitmapcomposer.h"
 
 #include "core/fxcodec/fx_codec.h"
-#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/ge/cfx_cliprgn.h"
 
@@ -45,6 +44,7 @@ void CFX_BitmapComposer::Compose(const CFX_RetainPtr<CFX_DIBitmap>& pDest,
   m_bRgbByteOrder = bRgbByteOrder;
   m_BlendType = blend_type;
 }
+
 bool CFX_BitmapComposer::SetInfo(int width,
                                  int height,
                                  FXDIB_Format src_format,
@@ -107,11 +107,12 @@ void CFX_BitmapComposer::ComposeScanline(int line,
     return;
   }
   const uint8_t* clip_scan = nullptr;
-  if (m_pClipMask)
+  if (m_pClipMask) {
     clip_scan = m_pClipMask->GetBuffer() +
                 (m_DestTop + line - m_pClipRgn->GetBox().top) *
                     m_pClipMask->GetPitch() +
                 (m_DestLeft - m_pClipRgn->GetBox().left);
+  }
   uint8_t* dest_scan =
       const_cast<uint8_t*>(m_pBitmap->GetScanline(line + m_DestTop)) +
       m_DestLeft * m_pBitmap->GetBPP() / 8;

@@ -7,6 +7,7 @@ print <<EOF
 #include "vpx/vpx_integer.h"
 #include "vp9/common/vp9_common.h"
 #include "vp9/common/vp9_enums.h"
+#include "vp9/common/vp9_filter.h"
 
 struct macroblockd;
 
@@ -101,11 +102,11 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
   #
   # Note as optimized versions of these functions are added we need to add a check to ensure
   # that when CONFIG_EMULATE_HARDWARE is on, it defaults to the C versions only.
-  add_proto qw/void vp9_highbd_iht4x4_16_add/, "const tran_low_t *input, uint8_t *dest, int stride, int tx_type, int bd";
+  add_proto qw/void vp9_highbd_iht4x4_16_add/, "const tran_low_t *input, uint16_t *dest, int stride, int tx_type, int bd";
 
-  add_proto qw/void vp9_highbd_iht8x8_64_add/, "const tran_low_t *input, uint8_t *dest, int stride, int tx_type, int bd";
+  add_proto qw/void vp9_highbd_iht8x8_64_add/, "const tran_low_t *input, uint16_t *dest, int stride, int tx_type, int bd";
 
-  add_proto qw/void vp9_highbd_iht16x16_256_add/, "const tran_low_t *input, uint8_t *output, int pitch, int tx_type, int bd";
+  add_proto qw/void vp9_highbd_iht16x16_256_add/, "const tran_low_t *input, uint16_t *output, int pitch, int tx_type, int bd";
 }
 
 #
@@ -120,7 +121,7 @@ if (vpx_config("CONFIG_VP9_ENCODER") eq "yes") {
 #
 if (vpx_config("CONFIG_VP9_TEMPORAL_DENOISING") eq "yes") {
   add_proto qw/int vp9_denoiser_filter/, "const uint8_t *sig, int sig_stride, const uint8_t *mc_avg, int mc_avg_stride, uint8_t *avg, int avg_stride, int increase_denoising, BLOCK_SIZE bs, int motion_magnitude";
-  specialize qw/vp9_denoiser_filter sse2/;
+  specialize qw/vp9_denoiser_filter neon sse2/;
 }
 
 if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
@@ -197,8 +198,8 @@ $vp9_full_search_sad_sse4_1=vp9_full_search_sadx8;
 add_proto qw/int vp9_diamond_search_sad/, "const struct macroblock *x, const struct search_site_config *cfg,  struct mv *ref_mv, struct mv *best_mv, int search_param, int sad_per_bit, int *num00, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv";
 specialize qw/vp9_diamond_search_sad avx/;
 
-add_proto qw/void vp9_temporal_filter_apply/, "const uint8_t *frame1, unsigned int stride, const uint8_t *frame2, unsigned int block_width, unsigned int block_height, int strength, int filter_weight, unsigned int *accumulator, uint16_t *count";
-specialize qw/vp9_temporal_filter_apply sse2 msa/;
+add_proto qw/void vp9_temporal_filter_apply/, "const uint8_t *frame1, unsigned int stride, const uint8_t *frame2, unsigned int block_width, unsigned int block_height, int strength, int filter_weight, uint32_t *accumulator, uint16_t *count";
+specialize qw/vp9_temporal_filter_apply sse4_1/;
 
 if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
 
@@ -217,7 +218,7 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
 
   add_proto qw/void vp9_highbd_fwht4x4/, "const int16_t *input, tran_low_t *output, int stride";
 
-  add_proto qw/void vp9_highbd_temporal_filter_apply/, "const uint8_t *frame1, unsigned int stride, const uint8_t *frame2, unsigned int block_width, unsigned int block_height, int strength, int filter_weight, unsigned int *accumulator, uint16_t *count";
+  add_proto qw/void vp9_highbd_temporal_filter_apply/, "const uint8_t *frame1, unsigned int stride, const uint8_t *frame2, unsigned int block_width, unsigned int block_height, int strength, int filter_weight, uint32_t *accumulator, uint16_t *count";
 
 }
 # End vp9_high encoder functions
@@ -225,7 +226,7 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
 #
 # frame based scale
 #
-add_proto qw/void vp9_scale_and_extend_frame/, "const struct yv12_buffer_config *src, struct yv12_buffer_config *dst";
+add_proto qw/void vp9_scale_and_extend_frame/, "const struct yv12_buffer_config *src, struct yv12_buffer_config *dst, INTERP_FILTER filter_type, int phase_scaler";
 specialize qw/vp9_scale_and_extend_frame ssse3/;
 
 }

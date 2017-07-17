@@ -525,6 +525,12 @@ TEST_F(TestFrameBuffer2, ForwardJumps) {
   ExtractFrame();
 }
 
+TEST_F(TestFrameBuffer2, DuplicateFrames) {
+  EXPECT_EQ(22256, InsertFrame(22256, 0, 1, false));
+  ExtractFrame();
+  EXPECT_EQ(22256, InsertFrame(22256, 0, 1, false));
+}
+
 // TODO(philipel): implement more unittests related to invalid references.
 TEST_F(TestFrameBuffer2, InvalidReferences) {
   EXPECT_EQ(-1, InsertFrame(0, 0, 1000, false, 2));

@@ -179,7 +179,8 @@ class MockDemuxerStream : public DemuxerStream {
 
 class MockVideoDecoder : public VideoDecoder {
  public:
-  MockVideoDecoder();
+  explicit MockVideoDecoder(
+      const std::string& decoder_name = "MockVideoDecoder");
   virtual ~MockVideoDecoder();
 
   // VideoDecoder implementation.
@@ -197,12 +198,14 @@ class MockVideoDecoder : public VideoDecoder {
   MOCK_CONST_METHOD0(CanReadWithoutStalling, bool());
 
  private:
+  std::string decoder_name_;
   DISALLOW_COPY_AND_ASSIGN(MockVideoDecoder);
 };
 
 class MockAudioDecoder : public AudioDecoder {
  public:
-  MockAudioDecoder();
+  explicit MockAudioDecoder(
+      const std::string& decoder_name = "MockAudioDecoder");
   virtual ~MockAudioDecoder();
 
   // AudioDecoder implementation.
@@ -218,6 +221,7 @@ class MockAudioDecoder : public AudioDecoder {
   MOCK_METHOD1(Reset, void(const base::Closure&));
 
  private:
+  std::string decoder_name_;
   DISALLOW_COPY_AND_ASSIGN(MockAudioDecoder);
 };
 
@@ -347,7 +351,7 @@ class MockCdmClient {
 
   MOCK_METHOD3(OnSessionMessage,
                void(const std::string& session_id,
-                    ContentDecryptionModule::MessageType message_type,
+                    CdmMessageType message_type,
                     const std::vector<uint8_t>& message));
   MOCK_METHOD1(OnSessionClosed, void(const std::string& session_id));
 
@@ -507,7 +511,7 @@ class MockCdm : public ContentDecryptionModule {
   MOCK_METHOD0(GetCdmContext, CdmContext*());
 
   void CallSessionMessageCB(const std::string& session_id,
-                            ContentDecryptionModule::MessageType message_type,
+                            CdmMessageType message_type,
                             const std::vector<uint8_t>& message);
   void CallSessionClosedCB(const std::string& session_id);
   void CallSessionKeysChangeCB(const std::string& session_id,
@@ -578,7 +582,7 @@ class MockStreamParser : public StreamParser {
            const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
            const NewMediaSegmentCB& new_segment_cb,
            const EndMediaSegmentCB& end_of_segment_cb,
-           const scoped_refptr<MediaLog>& media_log));
+           MediaLog* media_log));
   MOCK_METHOD0(Flush, void());
   MOCK_METHOD2(Parse, bool(const uint8_t*, int));
 

@@ -191,7 +191,9 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
     int increase_denoising, int mi_row, int mi_col, PICK_MODE_CONTEXT *ctx,
     int motion_magnitude, int is_skin, int *zeromv_filter, int consec_zeromv,
     int num_spatial_layers, int width) {
-  int sse_diff = ctx->zeromv_sse - ctx->newmv_sse;
+  const int sse_diff = (ctx->newmv_sse == UINT_MAX)
+                           ? 0
+                           : ((int)ctx->zeromv_sse - (int)ctx->newmv_sse);
   MV_REFERENCE_FRAME frame;
   MACROBLOCKD *filter_mbd = &mb->e_mbd;
   MODE_INFO *mi = filter_mbd->mi[0];
@@ -217,7 +219,6 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
   // difference in sum-squared-error, use it.
   if (frame != INTRA_FRAME &&
       (frame != GOLDEN_FRAME || num_spatial_layers == 1) &&
-      ctx->newmv_sse != UINT_MAX &&
       sse_diff > sse_diff_thresh(bs, increase_denoising, motion_magnitude)) {
     mi->ref_frame[0] = ctx->best_reference_frame;
     mi->mode = ctx->best_sse_inter_mode;
@@ -571,20 +572,26 @@ void vp9_denoiser_set_noise_level(VP9_DENOISER *denoiser, int noise_level) {
 
 // Scale/increase the partition threshold for denoiser speed-up.
 int64_t vp9_scale_part_thresh(int64_t threshold, VP9_DENOISER_LEVEL noise_level,
-                              int content_state) {
+                              int content_state, int temporal_layer_id) {
   if ((content_state == kLowSadLowSumdiff) ||
-      (content_state == kHighSadLowSumdiff) || noise_level == kDenHigh)
-    return (3 * threshold) >> 1;
-  else
+      (content_state == kHighSadLowSumdiff) ||
+      (content_state == kLowVarHighSumdiff) || (noise_level == kDenHigh) ||
+      (temporal_layer_id != 0)) {
+    int64_t scaled_thr =
+        (temporal_layer_id < 2) ? (3 * threshold) >> 1 : (7 * threshold) >> 2;
+    return scaled_thr;
+  } else {
     return (5 * threshold) >> 2;
+  }
 }
 
 //  Scale/increase the ac skip threshold for denoiser speed-up.
 int64_t vp9_scale_acskip_thresh(int64_t threshold,
-                                VP9_DENOISER_LEVEL noise_level,
-                                int abs_sumdiff) {
+                                VP9_DENOISER_LEVEL noise_level, int abs_sumdiff,
+                                int temporal_layer_id) {
   if (noise_level >= kDenLow && abs_sumdiff < 5)
-    return threshold *= (noise_level == kDenLow) ? 2 : 6;
+    return threshold *=
+           (noise_level == kDenLow) ? 2 : (temporal_layer_id == 2) ? 10 : 6;
   else
     return threshold;
 }

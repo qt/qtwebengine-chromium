@@ -38,7 +38,6 @@
 #include "webrtc/system_wrappers/include/metrics.h"
 #include "webrtc/system_wrappers/include/timestamp_extrapolator.h"
 #include "webrtc/video/receive_statistics_proxy.h"
-#include "webrtc/video/vie_remb.h"
 
 namespace webrtc {
 
@@ -83,7 +82,6 @@ RtpStreamReceiver::RtpStreamReceiver(
     Transport* transport,
     RtcpRttStats* rtt_stats,
     PacketRouter* packet_router,
-    VieRemb* remb,
     const VideoReceiveStream::Config* config,
     ReceiveStatisticsProxy* receive_stats_proxy,
     ProcessThread* process_thread,
@@ -94,7 +92,6 @@ RtpStreamReceiver::RtpStreamReceiver(
     : clock_(Clock::GetRealTimeClock()),
       config_(*config),
       packet_router_(packet_router),
-      remb_(remb),
       process_thread_(process_thread),
       ntp_estimator_(clock_),
       rtp_header_parser_(RtpHeaderParser::Create()),
@@ -114,7 +111,8 @@ RtpStreamReceiver::RtpStreamReceiver(
                                     packet_router)),
       complete_frame_callback_(complete_frame_callback),
       keyframe_request_sender_(keyframe_request_sender),
-      timing_(timing) {
+      timing_(timing),
+      has_received_frame_(false) {
   packet_router_->AddReceiveRtpModule(rtp_rtcp_.get());
   rtp_receive_statistics_->RegisterRtpStatisticsCallback(receive_stats_proxy);
   rtp_receive_statistics_->RegisterRtcpStatisticsCallback(receive_stats_proxy);
@@ -130,10 +128,6 @@ RtpStreamReceiver::RtpStreamReceiver(
   rtp_rtcp_->SetRTCPStatus(config_.rtp.rtcp_mode);
   rtp_rtcp_->SetSSRC(config_.rtp.local_ssrc);
   rtp_rtcp_->SetKeyFrameRequestMethod(kKeyFrameReqPliRtcp);
-  if (config_.rtp.remb) {
-    rtp_rtcp_->SetREMBStatus(true);
-    remb_->AddReceiveChannel(rtp_rtcp_.get());
-  }
 
   for (size_t i = 0; i < config_.rtp.extensions.size(); ++i) {
     EnableReceiveRtpHeaderExtension(config_.rtp.extensions[i].uri,
@@ -203,10 +197,6 @@ RtpStreamReceiver::~RtpStreamReceiver() {
   process_thread_->DeRegisterModule(rtp_rtcp_.get());
 
   packet_router_->RemoveReceiveRtpModule(rtp_rtcp_.get());
-  rtp_rtcp_->SetREMBStatus(false);
-  if (config_.rtp.remb) {
-    remb_->RemoveReceiveChannel(rtp_rtcp_.get());
-  }
   UpdateHistograms();
 }
 
@@ -254,6 +244,7 @@ int32_t RtpStreamReceiver::OnReceivedPayloadData(
   // correctly calculate frame references.
   if (packet.sizeBytes == 0) {
     reference_finder_->PaddingReceived(packet.seqNum);
+    packet_buffer_->PaddingReceived(packet.seqNum);
     return 0;
   }
 
@@ -286,6 +277,9 @@ int32_t RtpStreamReceiver::OnReceivedPayloadData(
   return 0;
 }
 
+// TODO(nisse): Try to delete this method. Obstacles: It is used by
+// ParseAndHandleEncapsulatingHeader, for handling Rtx packets. And
+// it's part of the RtpData interface which we implement.
 bool RtpStreamReceiver::OnRecoveredPacket(const uint8_t* rtp_packet,
                                           size_t rtp_packet_length) {
   RTPHeader header;
@@ -313,36 +307,37 @@ void RtpStreamReceiver::OnIncomingSSRCChanged(const uint32_t ssrc) {
   rtp_rtcp_->SetRemoteSSRC(ssrc);
 }
 
+// This method handles both regular RTP packets and packets recovered
+// via FlexFEC.
 void RtpStreamReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
   {
     rtc::CritScope lock(&receive_cs_);
     if (!receiving_) {
       return;
     }
-  }
 
-  int64_t now_ms = clock_->TimeInMilliseconds();
+    if (!packet.recovered()) {
+      int64_t now_ms = clock_->TimeInMilliseconds();
 
-  {
-    // Periodically log the RTP header of incoming packets.
-    rtc::CritScope lock(&receive_cs_);
-    if (now_ms - last_packet_log_ms_ > kPacketLogIntervalMs) {
-      std::stringstream ss;
-      ss << "Packet received on SSRC: " << packet.Ssrc()
-         << " with payload type: " << static_cast<int>(packet.PayloadType())
-         << ", timestamp: " << packet.Timestamp()
-         << ", sequence number: " << packet.SequenceNumber()
-         << ", arrival time: " << packet.arrival_time_ms();
-      int32_t time_offset;
-      if (packet.GetExtension<TransmissionOffset>(&time_offset)) {
-        ss << ", toffset: " << time_offset;
+      // Periodically log the RTP header of incoming packets.
+      if (now_ms - last_packet_log_ms_ > kPacketLogIntervalMs) {
+        std::stringstream ss;
+        ss << "Packet received on SSRC: " << packet.Ssrc()
+           << " with payload type: " << static_cast<int>(packet.PayloadType())
+           << ", timestamp: " << packet.Timestamp()
+           << ", sequence number: " << packet.SequenceNumber()
+           << ", arrival time: " << packet.arrival_time_ms();
+        int32_t time_offset;
+        if (packet.GetExtension<TransmissionOffset>(&time_offset)) {
+          ss << ", toffset: " << time_offset;
+        }
+        uint32_t send_time;
+        if (packet.GetExtension<AbsoluteSendTime>(&send_time)) {
+          ss << ", abs send time: " << send_time;
+        }
+        LOG(LS_INFO) << ss.str();
+        last_packet_log_ms_ = now_ms;
       }
-      uint32_t send_time;
-      if (packet.GetExtension<AbsoluteSendTime>(&send_time)) {
-        ss << ", abs send time: " << send_time;
-      }
-      LOG(LS_INFO) << ss.str();
-      last_packet_log_ms_ = now_ms;
     }
   }
 
@@ -354,13 +349,20 @@ void RtpStreamReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
   header.payload_type_frequency = kVideoPayloadTypeFrequency;
 
   bool in_order = IsPacketInOrder(header);
-  rtp_payload_registry_.SetIncomingPayloadType(header);
+  if (!packet.recovered()) {
+    // TODO(nisse): Why isn't this done for recovered packets?
+    rtp_payload_registry_.SetIncomingPayloadType(header);
+  }
   ReceivePacket(packet.data(), packet.size(), header, in_order);
   // Update receive statistics after ReceivePacket.
   // Receive statistics will be reset if the payload type changes (make sure
   // that the first packet is included in the stats).
-  rtp_receive_statistics_->IncomingPacket(
-      header, packet.size(), IsPacketRetransmitted(header, in_order));
+  if (!packet.recovered()) {
+    // TODO(nisse): We should pass a recovered flag to stats, to aid
+    // fixing bug bugs.webrtc.org/6339.
+    rtp_receive_statistics_->IncomingPacket(
+        header, packet.size(), IsPacketRetransmitted(header, in_order));
+  }
 }
 
 int32_t RtpStreamReceiver::RequestKeyFrame() {
@@ -391,6 +393,13 @@ int32_t RtpStreamReceiver::ResendPackets(const uint16_t* sequence_numbers,
 
 void RtpStreamReceiver::OnReceivedFrame(
     std::unique_ptr<video_coding::RtpFrameObject> frame) {
+
+  if (!has_received_frame_) {
+    has_received_frame_ = true;
+    if (frame->FrameType() != kVideoFrameKey)
+      keyframe_request_sender_->RequestKeyFrame();
+  }
+
   if (!frame->delayed_by_retransmission())
     timing_->IncomingTimestamp(frame->timestamp, clock_->TimeInMilliseconds());
   reference_finder_->ManageFrame(std::move(frame));
@@ -410,6 +419,14 @@ void RtpStreamReceiver::OnCompleteFrame(
 void RtpStreamReceiver::OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) {
   if (nack_module_)
     nack_module_->UpdateRtt(max_rtt_ms);
+}
+
+rtc::Optional<int64_t> RtpStreamReceiver::LastReceivedPacketMs() const {
+  return packet_buffer_->LastReceivedPacketMs();
+}
+
+rtc::Optional<int64_t> RtpStreamReceiver::LastReceivedKeyframePacketMs() const {
+  return packet_buffer_->LastReceivedKeyframePacketMs();
 }
 
 // TODO(nisse): Drop return value.
@@ -501,6 +518,10 @@ void RtpStreamReceiver::NotifyReceiverOfFecPacket(const RTPHeader& header) {
   rtp_header.type.Video.rotation = kVideoRotation_0;
   if (header.extension.hasVideoRotation) {
     rtp_header.type.Video.rotation = header.extension.videoRotation;
+  }
+  rtp_header.type.Video.content_type = VideoContentType::UNSPECIFIED;
+  if (header.extension.hasVideoContentType) {
+    rtp_header.type.Video.content_type = header.extension.videoContentType;
   }
   rtp_header.type.Video.playout_delay = header.extension.playout_delay;
 

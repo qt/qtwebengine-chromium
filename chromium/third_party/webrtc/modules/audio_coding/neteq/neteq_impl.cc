@@ -131,7 +131,7 @@ NetEqImpl::NetEqImpl(const NetEq::Config& config,
 
 NetEqImpl::~NetEqImpl() = default;
 
-int NetEqImpl::InsertPacket(const WebRtcRTPHeader& rtp_header,
+int NetEqImpl::InsertPacket(const RTPHeader& rtp_header,
                             rtc::ArrayView<const uint8_t> payload,
                             uint32_t receive_timestamp) {
   rtc::MsanCheckInitialized(payload);
@@ -144,6 +144,14 @@ int NetEqImpl::InsertPacket(const WebRtcRTPHeader& rtp_header,
     return kFail;
   }
   return kOK;
+}
+
+void NetEqImpl::InsertEmptyPacket(const RTPHeader& /*rtp_header*/) {
+  // TODO(henrik.lundin) Handle NACK as well. This will make use of the
+  // rtp_header parameter.
+  // https://bugs.chromium.org/p/webrtc/issues/detail?id=7611
+  rtc::CritScope lock(&crit_sect_);
+  delay_manager_->RegisterEmptyPacket();
 }
 
 namespace {
@@ -364,8 +372,14 @@ int NetEqImpl::SetTargetDelay() {
   return kNotImplemented;
 }
 
-int NetEqImpl::TargetDelay() {
-  return kNotImplemented;
+int NetEqImpl::TargetDelayMs() {
+  rtc::CritScope lock(&crit_sect_);
+  RTC_DCHECK(delay_manager_.get());
+  // The value from TargetLevel() is in number of packets, represented in Q8.
+  const size_t target_delay_samples =
+      (delay_manager_->TargetLevel() * decoder_frame_length_) >> 8;
+  return static_cast<int>(target_delay_samples) /
+         rtc::CheckedDivExact(fs_hz_, 1000);
 }
 
 int NetEqImpl::CurrentDelayMs() const {
@@ -569,6 +583,17 @@ std::vector<uint16_t> NetEqImpl::GetNackList(int64_t round_trip_time_ms) const {
   return nack_->GetNackList(round_trip_time_ms);
 }
 
+std::vector<uint32_t> NetEqImpl::LastDecodedTimestamps() const {
+  rtc::CritScope lock(&crit_sect_);
+  return last_decoded_timestamps_;
+}
+
+int NetEqImpl::SyncBufferSizeMs() const {
+  rtc::CritScope lock(&crit_sect_);
+  return rtc::dchecked_cast<int>(sync_buffer_->FutureLength() /
+                                 rtc::CheckedDivExact(fs_hz_, 1000));
+}
+
 const SyncBuffer* NetEqImpl::sync_buffer_for_test() const {
   rtc::CritScope lock(&crit_sect_);
   return sync_buffer_.get();
@@ -581,7 +606,7 @@ Operations NetEqImpl::last_operation_for_test() const {
 
 // Methods below this line are private.
 
-int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
+int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
                                     rtc::ArrayView<const uint8_t> payload,
                                     uint32_t receive_timestamp) {
   if (payload.empty()) {
@@ -594,24 +619,24 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
   packet_list.push_back([&rtp_header, &payload] {
     // Convert to Packet.
     Packet packet;
-    packet.payload_type = rtp_header.header.payloadType;
-    packet.sequence_number = rtp_header.header.sequenceNumber;
-    packet.timestamp = rtp_header.header.timestamp;
+    packet.payload_type = rtp_header.payloadType;
+    packet.sequence_number = rtp_header.sequenceNumber;
+    packet.timestamp = rtp_header.timestamp;
     packet.payload.SetData(payload.data(), payload.size());
     // Waiting time will be set upon inserting the packet in the buffer.
     RTC_DCHECK(!packet.waiting_time);
     return packet;
   }());
 
-  bool update_sample_rate_and_channels = first_packet_ ||
-    (rtp_header.header.ssrc != ssrc_);
+  bool update_sample_rate_and_channels =
+      first_packet_ || (rtp_header.ssrc != ssrc_);
 
   if (update_sample_rate_and_channels) {
     // Reset timestamp scaling.
     timestamp_scaler_->Reset();
   }
 
-  if (!decoder_database_->IsRed(rtp_header.header.payloadType)) {
+  if (!decoder_database_->IsRed(rtp_header.payloadType)) {
     // Scale timestamp to internal domain (only for some codecs).
     timestamp_scaler_->ToInternal(&packet_list);
   }
@@ -627,14 +652,14 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     // Note: |first_packet_| will be cleared further down in this method, once
     // the packet has been successfully inserted into the packet buffer.
 
-    rtcp_.Init(rtp_header.header.sequenceNumber);
+    rtcp_.Init(rtp_header.sequenceNumber);
 
     // Flush the packet buffer and DTMF buffer.
     packet_buffer_->Flush();
     dtmf_buffer_->Flush();
 
     // Store new SSRC.
-    ssrc_ = rtp_header.header.ssrc;
+    ssrc_ = rtp_header.ssrc;
 
     // Update audio buffer timestamp.
     sync_buffer_->IncreaseEndTimestamp(main_timestamp - timestamp_);
@@ -644,19 +669,19 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
   }
 
   // Update RTCP statistics, only for regular packets.
-  rtcp_.Update(rtp_header.header, receive_timestamp);
+  rtcp_.Update(rtp_header, receive_timestamp);
 
   if (nack_enabled_) {
     RTC_DCHECK(nack_);
     if (update_sample_rate_and_channels) {
       nack_->Reset();
     }
-    nack_->UpdateLastReceivedPacket(rtp_header.header.sequenceNumber,
-                                    rtp_header.header.timestamp);
+    nack_->UpdateLastReceivedPacket(rtp_header.sequenceNumber,
+                                    rtp_header.timestamp);
   }
 
   // Check for RED payload type, and separate payloads into several packets.
-  if (decoder_database_->IsRed(rtp_header.header.payloadType)) {
+  if (decoder_database_->IsRed(rtp_header.payloadType)) {
     if (!red_payload_splitter_->SplitRed(&packet_list)) {
       return kRedundancySplitError;
     }
@@ -675,7 +700,7 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
 
   // Update main_timestamp, if new packets appear in the list
   // after RED splitting.
-  if (decoder_database_->IsRed(rtp_header.header.payloadType)) {
+  if (decoder_database_->IsRed(rtp_header.payloadType)) {
     timestamp_scaler_->ToInternal(&packet_list);
     main_timestamp = packet_list.front().timestamp;
     main_payload_type = packet_list.front().payload_type;
@@ -873,6 +898,7 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame, bool* muted) {
   Operations operation;
   bool play_dtmf;
   *muted = false;
+  last_decoded_timestamps_.clear();
   tick_timer_->Increment();
   stats_.IncreaseCounter(output_size_samples_, fs_hz_);
 
@@ -1498,6 +1524,8 @@ int NetEqImpl::DecodeCng(AudioDecoder* decoder, int* decoded_length,
 int NetEqImpl::DecodeLoop(PacketList* packet_list, const Operations& operation,
                           AudioDecoder* decoder, int* decoded_length,
                           AudioDecoder::SpeechType* speech_type) {
+  RTC_DCHECK(last_decoded_timestamps_.empty());
+
   // Do decoding.
   while (
       !packet_list->empty() &&
@@ -1514,6 +1542,7 @@ int NetEqImpl::DecodeLoop(PacketList* packet_list, const Operations& operation,
     auto opt_result = packet_list->front().frame->Decode(
         rtc::ArrayView<int16_t>(&decoded_buffer_[*decoded_length],
                                 decoded_buffer_length_ - *decoded_length));
+    last_decoded_timestamps_.push_back(packet_list->front().timestamp);
     packet_list->pop_front();
     if (opt_result) {
       const auto& result = *opt_result;
@@ -1579,16 +1608,18 @@ void NetEqImpl::DoMerge(int16_t* decoded_buffer, size_t decoded_length,
   size_t new_length = merge_->Process(decoded_buffer, decoded_length,
                                       mute_factor_array_.get(),
                                       algorithm_buffer_.get());
-  size_t expand_length_correction = new_length -
-      decoded_length / algorithm_buffer_->Channels();
+  // Correction can be negative.
+  int expand_length_correction =
+      rtc::dchecked_cast<int>(new_length) -
+      rtc::dchecked_cast<int>(decoded_length / algorithm_buffer_->Channels());
 
   // Update in-call and post-call statistics.
   if (expand_->MuteFactor(0) == 0) {
     // Expand generates only noise.
-    stats_.ExpandedNoiseSamples(expand_length_correction);
+    stats_.ExpandedNoiseSamplesCorrection(expand_length_correction);
   } else {
     // Expansion generates more than only noise.
-    stats_.ExpandedVoiceSamples(expand_length_correction);
+    stats_.ExpandedVoiceSamplesCorrection(expand_length_correction);
   }
 
   last_mode_ = kModeMerge;

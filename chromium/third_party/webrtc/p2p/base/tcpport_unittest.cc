@@ -11,7 +11,6 @@
 #include <memory>
 
 #include "webrtc/base/gunit.h"
-#include "webrtc/base/physicalsocketserver.h"
 #include "webrtc/base/thread.h"
 #include "webrtc/base/virtualsocketserver.h"
 #include "webrtc/p2p/base/basicpacketsocketfactory.h"
@@ -31,10 +30,8 @@ static const SocketAddress kRemoteAddr("22.22.22.22", 2);
 class TCPPortTest : public testing::Test, public sigslot::has_slots<> {
  public:
   TCPPortTest()
-      : main_(rtc::Thread::Current()),
-        pss_(new rtc::PhysicalSocketServer),
-        ss_(new rtc::VirtualSocketServer(pss_.get())),
-        ss_scope_(ss_.get()),
+      : ss_(new rtc::VirtualSocketServer()),
+        main_(ss_.get()),
         network_("unittest", "unittest", rtc::IPAddress(INADDR_ANY), 32),
         socket_factory_(rtc::Thread::Current()),
         username_(rtc::CreateRandomString(ICE_UFRAG_LENGTH)),
@@ -59,15 +56,13 @@ class TCPPortTest : public testing::Test, public sigslot::has_slots<> {
   }
 
   TCPPort* CreateTCPPort(const SocketAddress& addr) {
-    return TCPPort::Create(main_, &socket_factory_, &network_, addr.ipaddr(), 0,
-                           0, username_, password_, true);
+    return TCPPort::Create(&main_, &socket_factory_, &network_, addr.ipaddr(),
+                           0, 0, username_, password_, true);
   }
 
  protected:
-  rtc::Thread* main_;
-  std::unique_ptr<rtc::PhysicalSocketServer> pss_;
   std::unique_ptr<rtc::VirtualSocketServer> ss_;
-  rtc::SocketServerScope ss_scope_;
+  rtc::AutoSocketServerThread main_;
   rtc::Network network_;
   rtc::BasicPacketSocketFactory socket_factory_;
   std::string username_;

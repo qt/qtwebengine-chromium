@@ -11,8 +11,8 @@
 #include "common/bitset_utils.h"
 #include "common/debug.h"
 #include "libANGLE/ContextState.h"
-#include "libANGLE/State.h"
 #include "libANGLE/FramebufferAttachment.h"
+#include "libANGLE/State.h"
 #include "libANGLE/angletypes.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/ContextImpl.h"
@@ -94,12 +94,15 @@ static void BindFramebufferAttachment(const FunctionsGL *functions,
             }
             else if (texture->getTarget() == GL_TEXTURE_CUBE_MAP)
             {
-                functions->framebufferTexture2D(GL_FRAMEBUFFER, attachmentPoint, attachment->cubeMapFace(),
+                functions->framebufferTexture2D(GL_FRAMEBUFFER, attachmentPoint,
+                                                attachment->cubeMapFace(),
                                                 textureGL->getTextureID(), attachment->mipLevel());
             }
-            else if (texture->getTarget() == GL_TEXTURE_2D_ARRAY || texture->getTarget() == GL_TEXTURE_3D)
+            else if (texture->getTarget() == GL_TEXTURE_2D_ARRAY ||
+                     texture->getTarget() == GL_TEXTURE_3D)
             {
-                functions->framebufferTextureLayer(GL_FRAMEBUFFER, attachmentPoint, textureGL->getTextureID(),
+                functions->framebufferTextureLayer(GL_FRAMEBUFFER, attachmentPoint,
+                                                   textureGL->getTextureID(),
                                                    attachment->mipLevel(), attachment->layer());
             }
             else
@@ -173,7 +176,8 @@ Error FramebufferGL::invalidateSub(size_t count,
         finalAttachmentsPtr = modifiedAttachments.data();
     }
 
-    // Since this function is just a hint and not available until OpenGL 4.3, only call it if it is available.
+    // Since this function is just a hint and not available until OpenGL 4.3, only call it if it is
+    // available.
     if (mFunctions->invalidateSubFramebuffer)
     {
         mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
@@ -261,7 +265,7 @@ Error FramebufferGL::readPixels(ContextImpl *context,
                                 const gl::Rectangle &area,
                                 GLenum format,
                                 GLenum type,
-                                GLvoid *pixels) const
+                                void *pixels) const
 {
     // TODO: don't sync the pixel pack state here once the dirty bits contain the pixel pack buffer
     // binding
@@ -307,8 +311,8 @@ Error FramebufferGL::blit(ContextImpl *context,
                           GLbitfield mask,
                           GLenum filter)
 {
-    const Framebuffer *sourceFramebuffer     = context->getGLState().getReadFramebuffer();
-    const Framebuffer *destFramebuffer       = context->getGLState().getDrawFramebuffer();
+    const Framebuffer *sourceFramebuffer = context->getGLState().getReadFramebuffer();
+    const Framebuffer *destFramebuffer   = context->getGLState().getDrawFramebuffer();
 
     const FramebufferAttachment *colorReadAttachment = sourceFramebuffer->getReadColorbuffer();
 
@@ -332,8 +336,8 @@ Error FramebufferGL::blit(ContextImpl *context,
     //      corresponding to the read buffer is SRGB, the red, green, and blue components are
     //      converted from the non-linear sRGB color space according [...].
     {
-        bool sourceSRGB = colorReadAttachment != nullptr &&
-                          colorReadAttachment->getColorEncoding() == GL_SRGB;
+        bool sourceSRGB =
+            colorReadAttachment != nullptr && colorReadAttachment->getColorEncoding() == GL_SRGB;
         needManualColorBlit =
             needManualColorBlit || (sourceSRGB && mFunctions->isAtMostGL(gl::Version(4, 3)));
     }
@@ -417,7 +421,7 @@ void FramebufferGL::syncState(ContextImpl *contextImpl, const Framebuffer::Dirty
 
     mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mFramebufferID);
 
-    for (auto dirtyBit : angle::IterateBitSet(dirtyBits))
+    for (auto dirtyBit : dirtyBits)
     {
         switch (dirtyBit)
         {
@@ -582,13 +586,12 @@ gl::Error FramebufferGL::readPixelsRowByRowWorkaround(const gl::Rectangle &area,
                                                       GLenum format,
                                                       GLenum type,
                                                       const gl::PixelPackState &pack,
-                                                      GLvoid *pixels) const
+                                                      void *pixels) const
 {
     intptr_t offset = reinterpret_cast<intptr_t>(pixels);
 
-    const gl::InternalFormat &glFormat =
-        gl::GetInternalFormatInfo(gl::GetSizedInternalFormat(format, type));
-    GLuint rowBytes = 0;
+    const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(format, type);
+    GLuint rowBytes                    = 0;
     ANGLE_TRY_RESULT(glFormat.computeRowPitch(type, area.width, pack.alignment, pack.rowLength),
                      rowBytes);
     GLuint skipBytes = 0;
@@ -604,7 +607,7 @@ gl::Error FramebufferGL::readPixelsRowByRowWorkaround(const gl::Rectangle &area,
     for (GLint row = 0; row < area.height; ++row)
     {
         mFunctions->readPixels(area.x, row + area.y, area.width, 1, format, type,
-                               reinterpret_cast<GLvoid *>(offset));
+                               reinterpret_cast<void *>(offset));
         offset += row * rowBytes;
     }
 
@@ -615,11 +618,10 @@ gl::Error FramebufferGL::readPixelsPaddingWorkaround(const gl::Rectangle &area,
                                                      GLenum format,
                                                      GLenum type,
                                                      const gl::PixelPackState &pack,
-                                                     GLvoid *pixels) const
+                                                     void *pixels) const
 {
-    const gl::InternalFormat &glFormat =
-        gl::GetInternalFormatInfo(gl::GetSizedInternalFormat(format, type));
-    GLuint rowBytes = 0;
+    const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(format, type);
+    GLuint rowBytes                    = 0;
     ANGLE_TRY_RESULT(glFormat.computeRowPitch(type, area.width, pack.alignment, pack.rowLength),
                      rowBytes);
     GLuint skipBytes = 0;
@@ -641,7 +643,7 @@ gl::Error FramebufferGL::readPixelsPaddingWorkaround(const gl::Rectangle &area,
     intptr_t lastRowOffset =
         reinterpret_cast<intptr_t>(pixels) + skipBytes + (area.height - 1) * rowBytes;
     mFunctions->readPixels(area.x, area.y + area.height - 1, area.width, 1, format, type,
-                           reinterpret_cast<GLvoid *>(lastRowOffset));
+                           reinterpret_cast<void *>(lastRowOffset));
 
     return gl::NoError();
 }

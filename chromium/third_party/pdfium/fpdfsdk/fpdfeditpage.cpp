@@ -26,6 +26,7 @@
 #include "core/fpdfdoc/cpdf_annotlist.h"
 #include "fpdfsdk/fsdk_define.h"
 #include "public/fpdf_formfill.h"
+#include "third_party/base/logging.h"
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
@@ -63,14 +64,13 @@ bool IsPageObject(CPDF_Page* pPage) {
 }  // namespace
 
 DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_CreateNewDocument() {
-  CPDF_Document* pDoc = new CPDF_Document(nullptr);
+  auto pDoc = pdfium::MakeUnique<CPDF_Document>(nullptr);
   pDoc->CreateNewDoc();
+
   time_t currentTime;
-
   CFX_ByteString DateStr;
-
   if (FSDK_IsSandBoxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS)) {
-    if (-1 != time(&currentTime)) {
+    if (time(&currentTime) != -1) {
       tm* pTM = localtime(&currentTime);
       if (pTM) {
         DateStr.Format("D:%04d%02d%02d%02d%02d%02d", pTM->tm_year + 1900,
@@ -80,15 +80,15 @@ DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_CreateNewDocument() {
     }
   }
 
-  CPDF_Dictionary* pInfoDict = nullptr;
-  pInfoDict = pDoc->GetInfo();
+  CPDF_Dictionary* pInfoDict = pDoc->GetInfo();
   if (pInfoDict) {
     if (FSDK_IsSandBoxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS))
       pInfoDict->SetNewFor<CPDF_String>("CreationDate", DateStr, false);
     pInfoDict->SetNewFor<CPDF_String>("Creator", L"PDFium");
   }
 
-  return FPDFDocumentFromCPDFDocument(pDoc);
+  // Caller takes ownership of pDoc.
+  return FPDFDocumentFromCPDFDocument(pDoc.release());
 }
 
 DLLEXPORT void STDCALL FPDFPage_Delete(FPDF_DOCUMENT document, int page_index) {
@@ -118,40 +118,25 @@ DLLEXPORT FPDF_PAGE STDCALL FPDFPage_New(FPDF_DOCUMENT document,
   pPageDict->SetNewFor<CPDF_Dictionary>("Resources");
 
 #ifdef PDF_ENABLE_XFA
-  CPDFXFA_Page* pPage =
-      new CPDFXFA_Page(static_cast<CPDFXFA_Context*>(document), page_index);
-  pPage->LoadPDFPage(pPageDict);
+  auto pXFAPage = pdfium::MakeRetain<CPDFXFA_Page>(
+      static_cast<CPDFXFA_Context*>(document), page_index);
+  pXFAPage->LoadPDFPage(pPageDict);
+  return pXFAPage.Leak();  // Caller takes ownership.
 #else   // PDF_ENABLE_XFA
-  CPDF_Page* pPage = new CPDF_Page(pDoc, pPageDict, true);
+  auto pPage = pdfium::MakeUnique<CPDF_Page>(pDoc, pPageDict, true);
   pPage->ParseContent();
+  return pPage.release();  // Caller takes ownership.
 #endif  // PDF_ENABLE_XFA
-
-  return pPage;
 }
 
 DLLEXPORT int STDCALL FPDFPage_GetRotation(FPDF_PAGE page) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
-  if (!IsPageObject(pPage))
-    return -1;
-
-  CPDF_Dictionary* pDict = pPage->m_pFormDict;
-  while (pDict) {
-    if (pDict->KeyExist("Rotate")) {
-      CPDF_Object* pRotateObj = pDict->GetObjectFor("Rotate")->GetDirect();
-      return pRotateObj ? pRotateObj->GetInteger() / 90 : 0;
-    }
-    if (!pDict->KeyExist("Parent"))
-      break;
-
-    pDict = ToDictionary(pDict->GetObjectFor("Parent")->GetDirect());
-  }
-
-  return 0;
+  return IsPageObject(pPage) ? pPage->GetPageRotation() : -1;
 }
 
 DLLEXPORT void STDCALL FPDFPage_InsertObject(FPDF_PAGE page,
                                              FPDF_PAGEOBJECT page_obj) {
-  CPDF_PageObject* pPageObj = reinterpret_cast<CPDF_PageObject*>(page_obj);
+  CPDF_PageObject* pPageObj = static_cast<CPDF_PageObject*>(page_obj);
   if (!pPageObj)
     return;
 
@@ -186,7 +171,7 @@ DLLEXPORT void STDCALL FPDFPage_InsertObject(FPDF_PAGE page,
       break;
     }
     default: {
-      ASSERT(false);
+      NOTREACHED();
       break;
     }
   }
@@ -217,7 +202,7 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject) {
   if (!pageObject)
     return false;
 
-  CPDF_PageObject* pPageObj = reinterpret_cast<CPDF_PageObject*>(pageObject);
+  CPDF_PageObject* pPageObj = static_cast<CPDF_PageObject*>(pageObject);
   int blend_type = pPageObj->m_GeneralState.GetBlendType();
   if (blend_type != FXDIB_BLEND_NORMAL)
     return true;
@@ -250,7 +235,7 @@ DLLEXPORT int STDCALL FPDFPageObj_GetType(FPDF_PAGEOBJECT pageObject) {
   if (!pageObject)
     return FPDF_PAGEOBJ_UNKNOWN;
 
-  CPDF_PageObject* pPageObj = reinterpret_cast<CPDF_PageObject*>(pageObject);
+  CPDF_PageObject* pPageObj = static_cast<CPDF_PageObject*>(pageObject);
   return pPageObj->GetType();
 }
 
@@ -271,7 +256,7 @@ DLLEXPORT void STDCALL FPDFPageObj_Transform(FPDF_PAGEOBJECT page_object,
                                              double d,
                                              double e,
                                              double f) {
-  CPDF_PageObject* pPageObj = reinterpret_cast<CPDF_PageObject*>(page_object);
+  CPDF_PageObject* pPageObj = static_cast<CPDF_PageObject*>(page_object);
   if (!pPageObj)
     return;
 
@@ -316,7 +301,6 @@ DLLEXPORT void STDCALL FPDFPage_SetRotation(FPDF_PAGE page, int rotate) {
   if (!IsPageObject(pPage))
     return;
 
-  CPDF_Dictionary* pDict = pPage->m_pFormDict;
   rotate %= 4;
-  pDict->SetNewFor<CPDF_Number>("Rotate", rotate * 90);
+  pPage->m_pFormDict->SetNewFor<CPDF_Number>("Rotate", rotate * 90);
 }

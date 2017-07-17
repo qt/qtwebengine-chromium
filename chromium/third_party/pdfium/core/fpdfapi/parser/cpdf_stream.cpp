@@ -131,3 +131,13 @@ CFX_WideString CPDF_Stream::GetUnicodeText() const {
   pAcc->LoadAllData(false);
   return PDF_DecodeText(pAcc->GetData(), pAcc->GetSize());
 }
+
+bool CPDF_Stream::WriteTo(IFX_ArchiveStream* archive) const {
+  if (!GetDict()->WriteTo(archive) || !archive->WriteString("stream\r\n"))
+    return false;
+
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(this);
+  pAcc->LoadAllData(true);
+  return archive->WriteBlock(pAcc->GetData(), pAcc->GetSize()) &&
+         archive->WriteString("\r\nendstream");
+}

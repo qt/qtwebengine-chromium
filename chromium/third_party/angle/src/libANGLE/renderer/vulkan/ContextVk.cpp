@@ -99,9 +99,9 @@ gl::Error ContextVk::initPipeline()
     std::vector<VkVertexInputBindingDescription> vertexBindings;
     std::vector<VkVertexInputAttributeDescription> vertexAttribs;
 
-    for (auto attribIndex : angle::IterateBitSet(programGL->getActiveAttribLocationsMask()))
+    for (auto attribIndex : programGL->getActiveAttribLocationsMask())
     {
-        const auto &attrib = attribs[attribIndex];
+        const auto &attrib  = attribs[attribIndex];
         const auto &binding = bindings[attrib.bindingIndex];
         if (attrib.enabled)
         {
@@ -293,7 +293,7 @@ gl::Error ContextVk::drawArrays(GLenum mode, GLint first, GLsizei count)
     std::vector<VkBuffer> vertexHandles;
     std::vector<VkDeviceSize> vertexOffsets;
 
-    for (auto attribIndex : angle::IterateBitSet(programGL->getActiveAttribLocationsMask()))
+    for (auto attribIndex : programGL->getActiveAttribLocationsMask())
     {
         const auto &attrib  = attribs[attribIndex];
         const auto &binding = bindings[attrib.bindingIndex];
@@ -314,16 +314,14 @@ gl::Error ContextVk::drawArrays(GLenum mode, GLint first, GLsizei count)
         }
     }
 
-    vk::CommandBuffer *commandBuffer = mRenderer->getCommandBuffer();
+    vk::CommandBuffer *commandBuffer = nullptr;
+    ANGLE_TRY(mRenderer->getStartedCommandBuffer(&commandBuffer));
     ANGLE_TRY(vkFBO->beginRenderPass(device, commandBuffer, queueSerial, state));
 
     commandBuffer->bindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, mCurrentPipeline);
     commandBuffer->bindVertexBuffers(0, vertexHandles, vertexOffsets);
     commandBuffer->draw(count, 1, first, 0);
     commandBuffer->endRenderPass();
-    ANGLE_TRY(commandBuffer->end());
-
-    ANGLE_TRY(submitCommands(*commandBuffer));
 
     return gl::NoError();
 }
@@ -340,7 +338,7 @@ gl::Error ContextVk::drawArraysInstanced(GLenum mode,
 gl::Error ContextVk::drawElements(GLenum mode,
                                   GLsizei count,
                                   GLenum type,
-                                  const GLvoid *indices,
+                                  const void *indices,
                                   const gl::IndexRange &indexRange)
 {
     UNIMPLEMENTED();
@@ -350,7 +348,7 @@ gl::Error ContextVk::drawElements(GLenum mode,
 gl::Error ContextVk::drawElementsInstanced(GLenum mode,
                                            GLsizei count,
                                            GLenum type,
-                                           const GLvoid *indices,
+                                           const void *indices,
                                            GLsizei instances,
                                            const gl::IndexRange &indexRange)
 {
@@ -363,7 +361,7 @@ gl::Error ContextVk::drawRangeElements(GLenum mode,
                                        GLuint end,
                                        GLsizei count,
                                        GLenum type,
-                                       const GLvoid *indices,
+                                       const void *indices,
                                        const gl::IndexRange &indexRange)
 {
     return gl::NoError();
@@ -374,25 +372,25 @@ VkDevice ContextVk::getDevice() const
     return mRenderer->getDevice();
 }
 
-vk::CommandBuffer *ContextVk::getCommandBuffer()
+vk::Error ContextVk::getStartedCommandBuffer(vk::CommandBuffer **commandBufferOut)
 {
-    return mRenderer->getCommandBuffer();
+    return mRenderer->getStartedCommandBuffer(commandBufferOut);
 }
 
-vk::Error ContextVk::submitCommands(const vk::CommandBuffer &commandBuffer)
+vk::Error ContextVk::submitCommands(vk::CommandBuffer *commandBuffer)
 {
     setQueueSerial(mRenderer->getCurrentQueueSerial());
     ANGLE_TRY(mRenderer->submitCommandBuffer(commandBuffer));
     return vk::NoError();
 }
 
-gl::Error ContextVk::drawArraysIndirect(GLenum mode, const GLvoid *indirect)
+gl::Error ContextVk::drawArraysIndirect(GLenum mode, const void *indirect)
 {
     UNIMPLEMENTED();
     return gl::InternalError() << "DrawArraysIndirect hasn't been implemented for vulkan backend.";
 }
 
-gl::Error ContextVk::drawElementsIndirect(GLenum mode, GLenum type, const GLvoid *indirect)
+gl::Error ContextVk::drawElementsIndirect(GLenum mode, GLenum type, const void *indirect)
 {
     UNIMPLEMENTED();
     return gl::InternalError()

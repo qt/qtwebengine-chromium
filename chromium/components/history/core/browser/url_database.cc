@@ -248,6 +248,9 @@ bool URLDatabase::InitURLEnumeratorForSignificant(URLEnumerator* enumerator) {
   sql.append(kURLRowFields);
   sql.append(" FROM urls WHERE last_visit_time >= ? OR visit_count >= ? OR "
              "typed_count >= ?");
+  sql.append(
+      " ORDER BY typed_count DESC, last_visit_time DESC, visit_count "
+      "DESC");
   enumerator->statement_.Assign(GetDB().GetUniqueStatement(sql.c_str()));
   enumerator->statement_.BindInt64(
       0, AutocompleteAgeThreshold().ToInternalValue());
@@ -652,6 +655,9 @@ base::Time AutocompleteAgeThreshold() {
 
 bool RowQualifiesAsSignificant(const URLRow& row,
                                const base::Time& threshold) {
+  if (row.hidden())
+    return false;
+
   const base::Time& real_threshold =
       threshold.is_null() ? AutocompleteAgeThreshold() : threshold;
   return (row.typed_count() >= kLowQualityMatchTypedLimit) ||

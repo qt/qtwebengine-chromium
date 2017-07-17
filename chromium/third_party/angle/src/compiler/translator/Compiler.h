@@ -139,24 +139,24 @@ class TCompiler : public TShHandleBase
     virtual void initBuiltInFunctionEmulator(BuiltInFunctionEmulator *emu,
                                              ShCompileOptions compileOptions){};
     // Translate to object code.
-    virtual void translate(TIntermNode *root, ShCompileOptions compileOptions) = 0;
+    virtual void translate(TIntermBlock *root, ShCompileOptions compileOptions) = 0;
     // Returns true if, after applying the packing rules in the GLSL 1.017 spec
     // Appendix A, section 7, the shader does not use too many uniforms.
     bool enforcePackingRestrictions();
     // Insert statements to reference all members in unused uniform blocks with standard and shared
     // layout. This is to work around a Mac driver that treats unused standard/shared
     // uniform blocks as inactive.
-    void useAllMembersInUnusedStandardAndSharedBlocks(TIntermNode *root);
+    void useAllMembersInUnusedStandardAndSharedBlocks(TIntermBlock *root);
     // Insert statements to initialize output variables in the beginning of main().
     // This is to avoid undefined behaviors.
-    void initializeOutputVariables(TIntermNode *root);
+    void initializeOutputVariables(TIntermBlock *root);
     // Insert gl_Position = vec4(0,0,0,0) to the beginning of main().
     // It is to work around a Linux driver bug where missing this causes compile failure
     // while spec says it is allowed.
     // This function should only be applied to vertex shaders.
-    void initializeGLPosition(TIntermNode *root);
+    void initializeGLPosition(TIntermBlock *root);
     // Return true if the maximum expression complexity is below the limit.
-    bool limitExpressionComplexity(TIntermNode *root);
+    bool limitExpressionComplexity(TIntermBlock *root);
     // Get built-in extensions with default behavior.
     const TExtensionBehavior &getExtensionBehavior() const;
     const char *getSourcePath() const;

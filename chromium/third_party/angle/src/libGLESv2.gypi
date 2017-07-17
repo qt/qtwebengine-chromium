@@ -202,12 +202,15 @@
             'libANGLE/angletypes.cpp',
             'libANGLE/angletypes.h',
             'libANGLE/angletypes.inl',
+            'libANGLE/entry_points_enum_autogen.h',
             'libANGLE/es3_copy_conversion_table_autogen.cpp',
             'libANGLE/features.h',
             'libANGLE/format_map_autogen.cpp',
             'libANGLE/formatutils.cpp',
             'libANGLE/formatutils.h',
             'libANGLE/histogram_macros.h',
+            'libANGLE/params.cpp',
+            'libANGLE/params.h',
             'libANGLE/queryconversions.cpp',
             'libANGLE/queryconversions.h',
             'libANGLE/queryutils.cpp',
@@ -405,6 +408,8 @@
             'libANGLE/renderer/d3d/d3d11/Query11.h',
             'libANGLE/renderer/d3d/d3d11/Renderer11.cpp',
             'libANGLE/renderer/d3d/d3d11/Renderer11.h',
+            'libANGLE/renderer/d3d/d3d11/ResourceManager11.cpp',
+            'libANGLE/renderer/d3d/d3d11/ResourceManager11.h',
             'libANGLE/renderer/d3d/d3d11/renderer11_utils.cpp',
             'libANGLE/renderer/d3d/d3d11/renderer11_utils.h',
             'libANGLE/renderer/d3d/d3d11/RenderStateCache.cpp',
@@ -418,12 +423,22 @@
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/buffertotexture11_ps_4i.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/buffertotexture11_ps_4ui.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/buffertotexture11_vs.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11_fl9vs.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11vs.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11_fl9ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps.h',
-            'libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11vs.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps.h',
-            'libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11vs.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps.h',
-            'libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11vs.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftof_pm_rgba_ps.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftof_um_rgba_ps.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftof_pm_rgb_ps.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftof_um_rgb_ps.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftou_pm_rgba_ps.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftou_pt_rgba_ps.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftou_um_rgba_ps.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftou_pm_rgb_ps.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftou_pt_rgb_ps.h',
+            'libANGLE/renderer/d3d/d3d11/shaders/compiled/multiplyalpha_ftou_um_rgb_ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthrough2d11vs.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthrough3d11gs.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthrough3d11vs.h',
@@ -445,16 +460,12 @@
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrg3di11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrg3dui11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgb2d11ps.h',
-            'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgbpremultiply2d11ps.h',
-            'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgbunmultiply2d11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgb2di11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgb2dui11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgb3d11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgb3di11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgb3dui11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgba2d11ps.h',
-            'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgbapremultiply2d11ps.h',
-            'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgbaunmultiply2d11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgba2di11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgba2dui11ps.h',
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughrgba3d11ps.h',
@@ -683,6 +694,20 @@
             'libANGLE/renderer/vulkan/renderervk_utils.h',
             'libANGLE/renderer/vulkan/vk_format_table_autogen.cpp',
         ],
+        'libangle_vulkan_win32_sources':
+        [
+            'libANGLE/renderer/vulkan/win32/DisplayVkWin32.cpp',
+            'libANGLE/renderer/vulkan/win32/DisplayVkWin32.h',
+            'libANGLE/renderer/vulkan/win32/WindowSurfaceVkWin32.cpp',
+            'libANGLE/renderer/vulkan/win32/WindowSurfaceVkWin32.h',
+        ],
+        'libangle_vulkan_xcb_sources':
+        [
+            'libANGLE/renderer/vulkan/xcb/DisplayVkXcb.cpp',
+            'libANGLE/renderer/vulkan/xcb/DisplayVkXcb.h',
+            'libANGLE/renderer/vulkan/xcb/WindowSurfaceVkXcb.cpp',
+            'libANGLE/renderer/vulkan/xcb/WindowSurfaceVkXcb.h',
+        ],
         'libangle_null_sources':
         [
             'libANGLE/renderer/null/BufferNULL.cpp',
@@ -732,8 +757,8 @@
             'libGLESv2/entry_points_egl.h',
             'libGLESv2/entry_points_egl_ext.cpp',
             'libGLESv2/entry_points_egl_ext.h',
-            'libGLESv2/entry_points_gles_2_0.cpp',
-            'libGLESv2/entry_points_gles_2_0.h',
+            'libGLESv2/entry_points_gles_2_0_autogen.cpp',
+            'libGLESv2/entry_points_gles_2_0_autogen.h',
             'libGLESv2/entry_points_gles_2_0_ext.cpp',
             'libGLESv2/entry_points_gles_2_0_ext.h',
             'libGLESv2/entry_points_gles_3_0.cpp',
@@ -1009,10 +1034,10 @@
                             ],
                             'link_settings': {
                                 'ldflags': [
-                                    '<!@(<(pkg-config) --libs-only-L --libs-only-other x11 xi xext)',
+                                    '<!@(<(pkg-config) --libs-only-L --libs-only-other x11 xi xext xcb)',
                                 ],
                                 'libraries': [
-                                    '<!@(<(pkg-config) --libs-only-l x11 xi xext) -ldl',
+                                    '<!@(<(pkg-config) --libs-only-l x11 xi xext xcb) -ldl',
                                 ],
                             },
                         }],
@@ -1085,6 +1110,23 @@
                     'sources':
                     [
                         '<@(libangle_vulkan_sources)',
+                    ],
+                    'conditions':
+                    [
+                        ['OS=="win"',
+                        {
+                            'sources':
+                            [
+                                '<@(libangle_vulkan_win32_sources)',
+                            ],
+                        }],
+                        ['OS=="linux"',
+                        {
+                            'sources':
+                            [
+                                '<@(libangle_vulkan_xcb_sources)',
+                            ],
+                        }],
                     ],
                     'dependencies':
                     [

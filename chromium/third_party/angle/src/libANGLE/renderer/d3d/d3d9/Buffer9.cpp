@@ -14,7 +14,8 @@ namespace rx
 
 Buffer9::Buffer9(const gl::BufferState &state, Renderer9 *renderer)
     : BufferD3D(state, renderer), mSize(0)
-{}
+{
+}
 
 Buffer9::~Buffer9()
 {
@@ -86,7 +87,7 @@ gl::Error Buffer9::copySubData(ContextImpl *context,
                                GLsizeiptr size)
 {
     // Note: this method is currently unreachable
-    Buffer9* sourceBuffer = GetAs<Buffer9>(source);
+    Buffer9 *sourceBuffer = GetAs<Buffer9>(source);
     ASSERT(sourceBuffer);
 
     memcpy(mMemory.data() + destOffset, sourceBuffer->mMemory.data() + sourceOffset, size);
@@ -97,7 +98,7 @@ gl::Error Buffer9::copySubData(ContextImpl *context,
 }
 
 // We do not support buffer mapping in D3D9
-gl::Error Buffer9::map(ContextImpl *context, GLenum access, GLvoid **mapPtr)
+gl::Error Buffer9::map(ContextImpl *context, GLenum access, void **mapPtr)
 {
     UNREACHABLE();
     return gl::Error(GL_INVALID_OPERATION);
@@ -107,7 +108,7 @@ gl::Error Buffer9::mapRange(ContextImpl *context,
                             size_t offset,
                             size_t length,
                             GLbitfield access,
-                            GLvoid **mapPtr)
+                            void **mapPtr)
 {
     UNREACHABLE();
     return gl::Error(GL_INVALID_OPERATION);

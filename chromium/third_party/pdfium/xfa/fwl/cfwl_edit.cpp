@@ -439,7 +439,7 @@ bool CFWL_Edit::OnPageLoad(int32_t nPageIndex) {
   if (!pPage)
     return false;
 
-  pPage->LoadPage(nullptr, nullptr);
+  pPage->LoadPage(nullptr);
   return true;
 }
 
@@ -566,11 +566,12 @@ void CFWL_Edit::DrawContent(CFX_Graphics* pGraphics,
   if (!pRenderDev)
     return;
 
-  auto pRenderDevice = pdfium::MakeUnique<CFDE_RenderDevice>(pRenderDev, false);
-  auto pRenderContext = pdfium::MakeUnique<CFDE_RenderContext>();
+  auto pRenderDevice = pdfium::MakeUnique<CFDE_RenderDevice>(pRenderDev);
   pRenderDevice->SetClipRect(rtClip);
+
+  auto pRenderContext = pdfium::MakeUnique<CFDE_RenderContext>();
   pRenderContext->StartRender(pRenderDevice.get(), pPage, mt);
-  pRenderContext->DoRender(nullptr);
+  pRenderContext->DoRender();
 
   if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_CombText) {
     pGraphics->RestoreGraphState();
@@ -698,11 +699,11 @@ void CFWL_Edit::UpdateEditLayout() {
     pPage->UnloadPage(nullptr);
 
   m_EdtEngine.StartLayout();
-  m_EdtEngine.DoLayout(nullptr);
+  m_EdtEngine.DoLayout();
   m_EdtEngine.EndLayout();
   pPage = m_EdtEngine.GetPage(0);
   if (pPage)
-    pPage->LoadPage(nullptr, nullptr);
+    pPage->LoadPage(nullptr);
 }
 
 bool CFWL_Edit::UpdateOffset() {
@@ -1062,8 +1063,8 @@ void CFWL_Edit::InitVerticalScrollBar() {
   prop->m_dwStates = FWL_WGTSTATE_Disabled | FWL_WGTSTATE_Invisible;
   prop->m_pParent = this;
   prop->m_pThemeProvider = m_pProperties->m_pThemeProvider;
-  m_pVertScrollBar =
-      pdfium::MakeUnique<CFWL_ScrollBar>(m_pOwnerApp, std::move(prop), this);
+  m_pVertScrollBar = pdfium::MakeUnique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
+                                                        std::move(prop), this);
 }
 
 void CFWL_Edit::InitHorizontalScrollBar() {
@@ -1075,8 +1076,8 @@ void CFWL_Edit::InitHorizontalScrollBar() {
   prop->m_dwStates = FWL_WGTSTATE_Disabled | FWL_WGTSTATE_Invisible;
   prop->m_pParent = this;
   prop->m_pThemeProvider = m_pProperties->m_pThemeProvider;
-  m_pHorzScrollBar =
-      pdfium::MakeUnique<CFWL_ScrollBar>(m_pOwnerApp, std::move(prop), this);
+  m_pHorzScrollBar = pdfium::MakeUnique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
+                                                        std::move(prop), this);
 }
 
 void CFWL_Edit::ShowCaret(CFX_RectF* pRect) {

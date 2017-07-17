@@ -71,14 +71,14 @@ const std::vector<VarT> *GetShaderVariables(const ShHandle handle)
 {
     if (!handle)
     {
-        return NULL;
+        return nullptr;
     }
 
     TShHandleBase *base = static_cast<TShHandleBase *>(handle);
     TCompiler *compiler = base->getAsCompiler();
     if (!compiler)
     {
-        return NULL;
+        return nullptr;
     }
 
     return GetVariableList<VarT>(compiler);
@@ -87,7 +87,7 @@ const std::vector<VarT> *GetShaderVariables(const ShHandle handle)
 TCompiler *GetCompilerFromHandle(ShHandle handle)
 {
     if (!handle)
-        return NULL;
+        return nullptr;
     TShHandleBase *base = static_cast<TShHandleBase *>(handle);
     return base->getAsCompiler();
 }
@@ -96,7 +96,7 @@ TCompiler *GetCompilerFromHandle(ShHandle handle)
 TranslatorHLSL *GetTranslatorHLSLFromHandle(ShHandle handle)
 {
     if (!handle)
-        return NULL;
+        return nullptr;
     TShHandleBase *base = static_cast<TShHandleBase *>(handle);
     return base->getAsTranslatorHLSL();
 }
@@ -182,7 +182,7 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxViewsOVR = 2;
 
     // Disable name hashing by default.
-    resources->HashFunction = NULL;
+    resources->HashFunction = nullptr;
 
     resources->ArrayIndexClampingStrategy = SH_CLAMP_WITH_CLAMP_INTRINSIC;
 

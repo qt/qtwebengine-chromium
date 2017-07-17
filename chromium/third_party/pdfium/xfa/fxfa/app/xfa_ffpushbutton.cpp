@@ -6,6 +6,9 @@
 
 #include "xfa/fxfa/app/xfa_ffpushbutton.h"
 
+#include <utility>
+
+#include "third_party/base/ptr_util.h"
 #include "xfa/fwl/cfwl_notedriver.h"
 #include "xfa/fwl/cfwl_pushbutton.h"
 #include "xfa/fwl/cfwl_widgetmgr.h"
@@ -41,27 +44,30 @@ void CXFA_FFPushButton::RenderWidget(CFX_Graphics* pGS,
   CFX_RectF rtWidget = GetRectWithoutRotate();
   CFX_Matrix mt(1, 0, 0, 1, rtWidget.left, rtWidget.top);
   mt.Concat(mtRotate);
-  GetApp()->GetWidgetMgrDelegate()->OnDrawWidget(m_pNormalWidget, pGS, &mt);
+  GetApp()->GetWidgetMgrDelegate()->OnDrawWidget(m_pNormalWidget.get(), pGS,
+                                                 &mt);
 }
 
 bool CXFA_FFPushButton::LoadWidget() {
   ASSERT(!m_pNormalWidget);
-  CFWL_PushButton* pPushButton = new CFWL_PushButton(GetFWLApp());
+  auto pNew = pdfium::MakeUnique<CFWL_PushButton>(GetFWLApp());
+  CFWL_PushButton* pPushButton = pNew.get();
   m_pOldDelegate = pPushButton->GetDelegate();
   pPushButton->SetDelegate(this);
-
-  m_pNormalWidget = pPushButton;
+  m_pNormalWidget = std::move(pNew);
   m_pNormalWidget->SetLayoutItem(this);
 
   CFWL_NoteDriver* pNoteDriver =
       m_pNormalWidget->GetOwnerApp()->GetNoteDriver();
-  pNoteDriver->RegisterEventTarget(m_pNormalWidget, m_pNormalWidget);
+  pNoteDriver->RegisterEventTarget(m_pNormalWidget.get(),
+                                   m_pNormalWidget.get());
   m_pNormalWidget->LockUpdate();
   UpdateWidgetProperty();
   LoadHighlightCaption();
   m_pNormalWidget->UnlockUpdate();
   return CXFA_FFField::LoadWidget();
 }
+
 void CXFA_FFPushButton::UpdateWidgetProperty() {
   uint32_t dwStyleEx = 0;
   switch (m_pDataAcc->GetButtonHighlight()) {
@@ -109,7 +115,7 @@ bool CXFA_FFPushButton::PerformLayout() {
   return true;
 }
 float CXFA_FFPushButton::GetLineWidth() {
-  CXFA_Border border = m_pDataAcc->GetBorder();
+  CXFA_Border border = m_pDataAcc->GetBorder(false);
   if (border && border.GetPresence() == XFA_ATTRIBUTEENUM_Visible) {
     CXFA_Edge edge = border.GetEdge(0);
     return edge.GetThickness();
@@ -135,7 +141,7 @@ void CXFA_FFPushButton::LoadHighlightCaption() {
   if (m_pDataAcc->GetButtonRollover(wsRollover, bRichText)) {
     if (!m_pRollProvider) {
       m_pRollProvider = pdfium::MakeUnique<CXFA_TextProvider>(
-          m_pDataAcc, XFA_TEXTPROVIDERTYPE_Rollover);
+          m_pDataAcc.Get(), XFA_TEXTPROVIDERTYPE_Rollover);
     }
     m_pRolloverTextLayout =
         pdfium::MakeUnique<CXFA_TextLayout>(m_pRollProvider.get());
@@ -144,7 +150,7 @@ void CXFA_FFPushButton::LoadHighlightCaption() {
   if (m_pDataAcc->GetButtonDown(wsDown, bRichText)) {
     if (!m_pDownProvider) {
       m_pDownProvider = pdfium::MakeUnique<CXFA_TextProvider>(
-          m_pDataAcc, XFA_TEXTPROVIDERTYPE_Down);
+          m_pDataAcc.Get(), XFA_TEXTPROVIDERTYPE_Down);
     }
     m_pDownTextLayout =
         pdfium::MakeUnique<CXFA_TextLayout>(m_pDownProvider.get());
@@ -154,13 +160,12 @@ void CXFA_FFPushButton::LoadHighlightCaption() {
 void CXFA_FFPushButton::LayoutHighlightCaption() {
   CFX_SizeF sz(m_rtCaption.width, m_rtCaption.height);
   LayoutCaption();
-  if (m_pRolloverTextLayout) {
+  if (m_pRolloverTextLayout)
     m_pRolloverTextLayout->Layout(sz);
-  }
-  if (m_pDownTextLayout) {
+  if (m_pDownTextLayout)
     m_pDownTextLayout->Layout(sz);
-  }
 }
+
 void CXFA_FFPushButton::RenderHighlightCaption(CFX_Graphics* pGS,
                                                CFX_Matrix* pMatrix) {
   CXFA_TextLayout* pCapTextLayout = m_pDataAcc->GetCaptionTextLayout();
@@ -215,8 +220,10 @@ void CXFA_FFPushButton::OnDrawWidget(CFX_Graphics* pGraphics,
       path.AddRectangle(rtFill.left, rtFill.top, rtFill.width, rtFill.height);
       pGraphics->FillPath(&path, FXFILL_WINDING, (CFX_Matrix*)pMatrix);
     }
-  } else if (m_pNormalWidget->GetStylesEx() &
-             XFA_FWL_PSBSTYLEEXT_HiliteOutLine) {
+    return;
+  }
+
+  if (m_pNormalWidget->GetStylesEx() & XFA_FWL_PSBSTYLEEXT_HiliteOutLine) {
     if ((m_pNormalWidget->GetStates() & FWL_STATE_PSB_Pressed) &&
         (m_pNormalWidget->GetStates() & FWL_STATE_PSB_Hovered)) {
       float fLineWidth = GetLineWidth();

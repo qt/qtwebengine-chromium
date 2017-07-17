@@ -148,9 +148,9 @@ class StateManagerGL final : angle::NonCopyable
     gl::Error setDrawElementsState(const gl::ContextState &data,
                                    GLsizei count,
                                    GLenum type,
-                                   const GLvoid *indices,
+                                   const void *indices,
                                    GLsizei instanceCount,
-                                   const GLvoid **outIndices);
+                                   const void **outIndices);
     gl::Error setDrawIndirectState(const gl::ContextState &data, GLenum type);
 
     gl::Error setDispatchComputeState(const gl::ContextState &data);
@@ -295,7 +295,6 @@ class StateManagerGL final : angle::NonCopyable
 
     gl::State::DirtyBits mLocalDirtyBits;
 };
-
 }
 
-#endif // LIBANGLE_RENDERER_GL_STATEMANAGERGL_H_
+#endif  // LIBANGLE_RENDERER_GL_STATEMANAGERGL_H_

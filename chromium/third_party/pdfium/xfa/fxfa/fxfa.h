@@ -63,11 +63,6 @@ enum class XFA_DocType { PDF = 0, Dynamic = 1, Static = 2 };
 #define XFA_EVENTERROR_NotExist 0
 #define XFA_EVENTERROR_Disabled 2
 
-#define XFA_RENDERSTATUS_Ready 1
-#define XFA_RENDERSTATUS_ToBeContinued 2
-#define XFA_RENDERSTATUS_Done 3
-#define XFA_RENDERSTATUS_Failed -1
-
 #define XFA_TRAVERSEWAY_Tranvalse 0x0001
 #define XFA_TRAVERSEWAY_Form 0x0002
 
@@ -84,10 +79,6 @@ enum XFA_WidgetStatus {
   XFA_WidgetStatus_TextEditValueChanged = 1 << 7,
   XFA_WidgetStatus_Viewable = 1 << 8,
   XFA_WidgetStatus_Visible = 1 << 9
-};
-
-enum XFA_WIDGETORDER {
-  XFA_WIDGETORDER_PreOrder,
 };
 
 enum XFA_WIDGETTYPE {

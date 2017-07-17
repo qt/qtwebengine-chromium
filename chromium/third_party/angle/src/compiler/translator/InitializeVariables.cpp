@@ -8,6 +8,7 @@
 
 #include "angle_gl.h"
 #include "common/debug.h"
+#include "compiler/translator/FindMain.h"
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/util.h"
@@ -18,54 +19,11 @@ namespace sh
 namespace
 {
 
-class VariableInitializer : public TIntermTraverser
+void InsertInitCode(TIntermSequence *sequence,
+                    const InitVariableList &variables,
+                    const TSymbolTable &symbolTable)
 {
-  public:
-    VariableInitializer(const InitVariableList &vars, const TSymbolTable &symbolTable)
-        : TIntermTraverser(true, false, false),
-          mVariables(vars),
-          mSymbolTable(symbolTable),
-          mCodeInserted(false)
-    {
-        ASSERT(mSymbolTable.atGlobalLevel());
-    }
-
-  protected:
-    bool visitBinary(Visit, TIntermBinary *node) override { return false; }
-    bool visitUnary(Visit, TIntermUnary *node) override { return false; }
-    bool visitIfElse(Visit, TIntermIfElse *node) override { return false; }
-    bool visitLoop(Visit, TIntermLoop *node) override { return false; }
-    bool visitBranch(Visit, TIntermBranch *node) override { return false; }
-    bool visitAggregate(Visit, TIntermAggregate *node) override { return false; }
-
-    bool visitFunctionDefinition(Visit visit, TIntermFunctionDefinition *node) override;
-
-  private:
-    void insertInitCode(TIntermSequence *sequence);
-
-    const InitVariableList &mVariables;
-    const TSymbolTable &mSymbolTable;
-    bool mCodeInserted;
-};
-
-// VariableInitializer implementation.
-
-bool VariableInitializer::visitFunctionDefinition(Visit visit, TIntermFunctionDefinition *node)
-{
-    // Function definition.
-    ASSERT(visit == PreVisit);
-    if (node->getFunctionSymbolInfo()->isMain())
-    {
-        TIntermBlock *body = node->getBody();
-        insertInitCode(body->getSequence());
-        mCodeInserted = true;
-    }
-    return false;
-}
-
-void VariableInitializer::insertInitCode(TIntermSequence *sequence)
-{
-    for (const auto &var : mVariables)
+    for (const auto &var : variables)
     {
         TString name = TString(var.name.c_str());
 
@@ -82,11 +40,17 @@ void VariableInitializer::insertInitCode(TIntermSequence *sequence)
             TType arrayType   = elementType;
             arrayType.setArraySize(var.elementCount());
 
-            for (unsigned int i = 0; i < var.arraySize; ++i)
+            // Workaround for http://crbug.com/709317
+            //   This loop is reversed to initialize elements in increasing
+            // order [0 1 2 ...]. Otherwise, they're initialized in
+            // decreasing order [... 2 1 0], due to
+            // `sequence->insert(sequence->begin(), ...)` below.
+            for (unsigned int i = var.arraySize; i > 0; --i)
             {
+                unsigned int index = i - 1;
                 TIntermSymbol *arraySymbol = new TIntermSymbol(0, name, arrayType);
                 TIntermBinary *element     = new TIntermBinary(EOpIndexDirect, arraySymbol,
-                                                           TIntermTyped::CreateIndexNode(i));
+                                                           TIntermTyped::CreateIndexNode(index));
 
                 TIntermTyped *zero        = TIntermTyped::CreateZero(elementType);
                 TIntermBinary *assignment = new TIntermBinary(EOpAssign, element, zero);
@@ -96,7 +60,7 @@ void VariableInitializer::insertInitCode(TIntermSequence *sequence)
         }
         else if (var.isStruct())
         {
-            TVariable *structInfo = reinterpret_cast<TVariable *>(mSymbolTable.findGlobal(name));
+            TVariable *structInfo = reinterpret_cast<TVariable *>(symbolTable.findGlobal(name));
             ASSERT(structInfo);
 
             TIntermSymbol *symbol = new TIntermSymbol(0, name, structInfo->getType());
@@ -119,12 +83,14 @@ void VariableInitializer::insertInitCode(TIntermSequence *sequence)
 
 }  // namespace anonymous
 
-void InitializeVariables(TIntermNode *root,
+void InitializeVariables(TIntermBlock *root,
                          const InitVariableList &vars,
                          const TSymbolTable &symbolTable)
 {
-    VariableInitializer initializer(vars, symbolTable);
-    root->traverse(&initializer);
+    TIntermFunctionDefinition *main = FindMain(root);
+    ASSERT(main != nullptr);
+    TIntermBlock *body = main->getBody();
+    InsertInitCode(body->getSequence(), vars, symbolTable);
 }
 
 }  // namespace sh

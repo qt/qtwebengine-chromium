@@ -23,6 +23,7 @@ class CFX_ByteString;
 class CFX_WideString {
  public:
   using CharType = wchar_t;
+  using const_iterator = const CharType*;
 
   CFX_WideString();
   CFX_WideString(const CFX_WideString& other);
@@ -33,6 +34,10 @@ class CFX_WideString {
   CFX_WideString(wchar_t ch);
   // NOLINTNEXTLINE(runtime/explicit)
   CFX_WideString(const wchar_t* ptr);
+
+  // No implicit conversions from byte strings.
+  // NOLINTNEXTLINE(runtime/explicit)
+  CFX_WideString(char) = delete;
 
   CFX_WideString(const wchar_t* ptr, FX_STRSIZE len);
 
@@ -59,6 +64,12 @@ class CFX_WideString {
   // Note: Any subsequent modification of |this| will invalidate the result.
   CFX_WideStringC AsStringC() const {
     return CFX_WideStringC(c_str(), GetLength());
+  }
+
+  // Note: Any subsequent modification of |this| will invalidate iterators.
+  const_iterator begin() const { return m_pData ? m_pData->m_String : nullptr; }
+  const_iterator end() const {
+    return m_pData ? m_pData->m_String + m_pData->m_nDataLength : nullptr;
   }
 
   void clear() { m_pData.Reset(); }

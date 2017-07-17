@@ -208,6 +208,7 @@ class Bazel(object):
       out.write(self.header)
 
       self.PrintVariableSection(out, 'ssl_headers', files['ssl_headers'])
+      self.PrintVariableSection(out, 'fips_fragments', files['fips_fragments'])
       self.PrintVariableSection(
           out, 'ssl_internal_headers', files['ssl_internal_headers'])
       self.PrintVariableSection(out, 'ssl_sources', files['ssl'])
@@ -249,21 +250,31 @@ class Bazel(object):
         name_counts[name] = name_counts.get(name, 0) + 1
 
       first = True
+      test_names = set()
       for test in files['tests']:
         name = os.path.basename(test[0])
         if name_counts[name] > 1:
-          if '/' in test[1]:
-            name += '_' + os.path.splitext(os.path.basename(test[1]))[0]
+          if '/' in test[-1]:
+            arg = test[-1].replace('crypto/cipher/test/','')  # boooring
+            arg = arg.replace('/', '_')
+            arg = os.path.splitext(arg)[0]  # remove .txt
+            arg = arg.replace('_tests', '')
+            name += '_' + arg
           else:
-            name += '_' + test[1].replace('-', '_')
+            name += '_' + test[-1].replace('-', '_')
+
+        if name in test_names:
+          raise ValueError("test name %s is not unique" % name)
+        test_names.add(name)
 
         if not first:
           out.write('\n')
         first = False
 
-        src_prefix = 'src/' + test[0]
         for src in files['test']:
-          if src.startswith(src_prefix):
+          # For example, basename(src/crypto/fipsmodule/aes/aes_test.cc)
+          # startswith basename(crypto/fipsmodule/aes_test).
+          if os.path.basename(src).startswith(os.path.basename(test[0]) + '.'):
             src = src
             break
         else:
@@ -376,7 +387,8 @@ class GN(object):
         out.write('      configs -= invoker.configs_exclude\n')
         out.write('    }\n')
         out.write('    configs += invoker.configs\n')
-        out.write('    deps = invoker.deps\n')
+        out.write('    deps = invoker.deps + ')
+        out.write('[ "//build/config:exe_and_shlib_deps" ]\n')
         out.write('  }\n')
         out.write('\n')
 
@@ -436,8 +448,16 @@ def FindCMakeFiles(directory):
 
   return cmakefiles
 
+def OnlyFIPSFragments(path, dent, is_dir):
+  return is_dir or (path.startswith(
+      os.path.join('src', 'crypto', 'fipsmodule', '')) and
+      NoTests(path, dent, is_dir))
 
-def NoTests(dent, is_dir):
+def NoTestsNorFIPSFragments(path, dent, is_dir):
+  return (NoTests(path, dent, is_dir) and
+      (is_dir or not OnlyFIPSFragments(path, dent, is_dir)))
+
+def NoTests(path, dent, is_dir):
   """Filter function that can be passed to FindCFiles in order to remove test
   sources."""
   if is_dir:
@@ -445,7 +465,7 @@ def NoTests(dent, is_dir):
   return 'test.' not in dent and not dent.startswith('example_')
 
 
-def OnlyTests(dent, is_dir):
+def OnlyTests(path, dent, is_dir):
   """Filter function that can be passed to FindCFiles in order to remove
   non-test sources."""
   if is_dir:
@@ -453,13 +473,13 @@ def OnlyTests(dent, is_dir):
   return '_test.' in dent or dent.startswith('example_')
 
 
-def AllFiles(dent, is_dir):
+def AllFiles(path, dent, is_dir):
   """Filter function that can be passed to FindCFiles in order to include all
   sources."""
   return True
 
 
-def NoTestRunnerFiles(dent, is_dir):
+def NoTestRunnerFiles(path, dent, is_dir):
   """Filter function that can be passed to FindCFiles or FindHeaderFiles in
   order to exclude test runner files."""
   # NOTE(martinkr): This prevents .h/.cc files in src/ssl/test/runner, which
@@ -467,11 +487,11 @@ def NoTestRunnerFiles(dent, is_dir):
   return not is_dir or dent != 'runner'
 
 
-def NotGTestMain(dent, is_dir):
-  return dent != 'gtest_main.cc'
+def NotGTestSupport(path, dent, is_dir):
+  return 'gtest' not in dent
 
 
-def SSLHeaderFiles(dent, is_dir):
+def SSLHeaderFiles(path, dent, is_dir):
   return dent in ['ssl.h', 'tls1.h', 'ssl23.h', 'ssl3.h', 'dtls1.h']
 
 
@@ -484,12 +504,12 @@ def FindCFiles(directory, filter_func):
     for filename in filenames:
       if not filename.endswith('.c') and not filename.endswith('.cc'):
         continue
-      if not filter_func(filename, False):
+      if not filter_func(path, filename, False):
         continue
       cfiles.append(os.path.join(path, filename))
 
     for (i, dirname) in enumerate(dirnames):
-      if not filter_func(dirname, True):
+      if not filter_func(path, dirname, True):
         del dirnames[i]
 
   return cfiles
@@ -503,12 +523,12 @@ def FindHeaderFiles(directory, filter_func):
     for filename in filenames:
       if not filename.endswith('.h'):
         continue
-      if not filter_func(filename, False):
+      if not filter_func(path, filename, False):
         continue
       hfiles.append(os.path.join(path, filename))
 
       for (i, dirname) in enumerate(dirnames):
-        if not filter_func(dirname, True):
+        if not filter_func(path, dirname, True):
           del dirnames[i]
 
   return hfiles
@@ -611,13 +631,44 @@ def WriteAsmFiles(perlasms):
   return asmfiles
 
 
+def ExtractVariablesFromCMakeFile(cmakefile):
+  """Parses the contents of the CMakeLists.txt file passed as an argument and
+  returns a dictionary of exported source lists."""
+  variables = {}
+  in_set_command = False
+  set_command = []
+  with open(cmakefile) as f:
+    for line in f:
+      if '#' in line:
+        line = line[:line.index('#')]
+      line = line.strip()
+
+      if not in_set_command:
+        if line.startswith('set('):
+          in_set_command = True
+          set_command = []
+      elif line == ')':
+        in_set_command = False
+        if not set_command:
+          raise ValueError('Empty set command')
+        variables[set_command[0]] = set_command[1:]
+      else:
+        set_command.extend([c for c in line.split(' ') if c])
+
+  if in_set_command:
+    raise ValueError('Unfinished set command')
+  return variables
+
+
 def IsGTest(path):
   with open(path) as f:
     return "#include <gtest/gtest.h>" in f.read()
 
 
 def main(platforms):
-  crypto_c_files = FindCFiles(os.path.join('src', 'crypto'), NoTests)
+  cmake = ExtractVariablesFromCMakeFile(os.path.join('src', 'sources.cmake'))
+  crypto_c_files = FindCFiles(os.path.join('src', 'crypto'), NoTestsNorFIPSFragments)
+  fips_fragments = FindCFiles(os.path.join('src', 'crypto', 'fipsmodule'), OnlyFIPSFragments)
   ssl_source_files = FindCFiles(os.path.join('src', 'ssl'), NoTests)
   tool_c_files = FindCFiles(os.path.join('src', 'tool'), NoTests)
   tool_h_files = FindHeaderFiles(os.path.join('src', 'tool'), AllFiles)
@@ -630,13 +681,24 @@ def main(platforms):
   crypto_c_files.append('err_data.c')
 
   test_support_c_files = FindCFiles(os.path.join('src', 'crypto', 'test'),
-                                    NotGTestMain)
+                                    NotGTestSupport)
   test_support_h_files = (
       FindHeaderFiles(os.path.join('src', 'crypto', 'test'), AllFiles) +
       FindHeaderFiles(os.path.join('src', 'ssl', 'test'), NoTestRunnerFiles))
 
+  # Generate crypto_test_data.cc
+  with open('crypto_test_data.cc', 'w+') as out:
+    subprocess.check_call(
+        ['go', 'run', 'util/embed_test_data.go'] + cmake['CRYPTO_TEST_DATA'],
+        cwd='src',
+        stdout=out)
+
   test_c_files = []
-  crypto_test_files = ['src/crypto/test/gtest_main.cc']
+  crypto_test_files = [
+      'crypto_test_data.cc',
+      'src/crypto/test/file_test_gtest.cc',
+      'src/crypto/test/gtest_main.cc',
+  ]
   # TODO(davidben): Remove this loop once all tests are converted.
   for path in FindCFiles(os.path.join('src', 'crypto'), OnlyTests):
     if IsGTest(path):
@@ -654,8 +716,8 @@ def main(platforms):
           os.path.join('src', 'include', 'openssl'),
           SSLHeaderFiles))
 
-  def NotSSLHeaderFiles(filename, is_dir):
-    return not SSLHeaderFiles(filename, is_dir)
+  def NotSSLHeaderFiles(path, filename, is_dir):
+    return not SSLHeaderFiles(path, filename, is_dir)
   crypto_h_files = (
       FindHeaderFiles(
           os.path.join('src', 'include', 'openssl'),
@@ -671,12 +733,22 @@ def main(platforms):
   tests = [test for test in tests if test[0] not in ['crypto/crypto_test',
                                                      'decrepit/decrepit_test',
                                                      'ssl/ssl_test']]
-  test_binaries = set([test[0] for test in tests])
-  test_sources = set([
+  # The same test name can appear multiple times with different arguments.  So,
+  # make a set to get a list of unique test binaries.
+  test_names = set([test[0] for test in tests])
+  test_binaries = set(map(os.path.basename, test_names))
+  # Make sure the test basenames are unique.
+  if len(test_binaries) != len(set(test_names)):
+    raise ValueError('non-unique test basename')
+  # Ensure a 1:1 correspondence between test sources and tests.  This
+  # guarantees that the Bazel output includes everything in the JSON.
+  # Sometimes, a test's source isn't in the same directory as the test,
+  # which we handle by considering only the basename.
+  test_sources = set(map(os.path.basename, [
       test.replace('.cc', '').replace('.c', '').replace(
           'src/',
           '')
-      for test in test_c_files])
+      for test in test_c_files]))
   if test_binaries != test_sources:
     print 'Test sources and configured tests do not match'
     a = test_binaries.difference(test_sources)
@@ -691,6 +763,7 @@ def main(platforms):
       'crypto_headers': crypto_h_files,
       'crypto_internal_headers': crypto_internal_h_files,
       'crypto_test': sorted(crypto_test_files),
+      'fips_fragments': fips_fragments,
       'fuzz': fuzz_c_files,
       'ssl': ssl_source_files,
       'ssl_c': [s for s in ssl_source_files if s.endswith('.c')],

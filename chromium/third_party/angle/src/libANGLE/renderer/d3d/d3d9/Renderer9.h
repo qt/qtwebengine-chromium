@@ -12,12 +12,12 @@
 #include "common/angleutils.h"
 #include "common/mathutil.h"
 #include "libANGLE/renderer/d3d/HLSLCompiler.h"
-#include "libANGLE/renderer/d3d/RendererD3D.h"
 #include "libANGLE/renderer/d3d/RenderTargetD3D.h"
+#include "libANGLE/renderer/d3d/RendererD3D.h"
 #include "libANGLE/renderer/d3d/d3d9/DebugAnnotator9.h"
 #include "libANGLE/renderer/d3d/d3d9/ShaderCache.h"
-#include "libANGLE/renderer/d3d/d3d9/VertexDeclarationCache.h"
 #include "libANGLE/renderer/d3d/d3d9/StateManager9.h"
+#include "libANGLE/renderer/d3d/d3d9/VertexDeclarationCache.h"
 #include "libANGLE/renderer/driver_utils.h"
 
 namespace gl
@@ -91,8 +91,10 @@ class Renderer9 : public RendererD3D
                                   IUnknown *d3dTexture,
                                   GLenum backBufferFormat,
                                   GLenum depthBufferFormat,
-                                  EGLint orientation) override;
-    egl::Error getD3DTextureInfo(IUnknown *d3dTexture,
+                                  EGLint orientation,
+                                  EGLint samples) override;
+    egl::Error getD3DTextureInfo(const egl::Config *configuration,
+                                 IUnknown *d3dTexture,
                                  EGLint *width,
                                  EGLint *height,
                                  GLenum *fboFormat) const override;
@@ -103,13 +105,20 @@ class Renderer9 : public RendererD3D
     ContextImpl *createContext(const gl::ContextState &state) override;
 
     gl::Error allocateEventQuery(IDirect3DQuery9 **outQuery);
-    void freeEventQuery(IDirect3DQuery9* query);
+    void freeEventQuery(IDirect3DQuery9 *query);
 
     // resource creation
-    gl::Error createVertexShader(const DWORD *function, size_t length, IDirect3DVertexShader9 **outShader);
-    gl::Error createPixelShader(const DWORD *function, size_t length, IDirect3DPixelShader9 **outShader);
+    gl::Error createVertexShader(const DWORD *function,
+                                 size_t length,
+                                 IDirect3DVertexShader9 **outShader);
+    gl::Error createPixelShader(const DWORD *function,
+                                size_t length,
+                                IDirect3DPixelShader9 **outShader);
     HRESULT createVertexBuffer(UINT Length, DWORD Usage, IDirect3DVertexBuffer9 **ppVertexBuffer);
-    HRESULT createIndexBuffer(UINT Length, DWORD Usage, D3DFORMAT Format, IDirect3DIndexBuffer9 **ppIndexBuffer);
+    HRESULT createIndexBuffer(UINT Length,
+                              DWORD Usage,
+                              D3DFORMAT Format,
+                              IDirect3DIndexBuffer9 **ppIndexBuffer);
     gl::Error setSamplerState(gl::SamplerType type,
                               int index,
                               gl::Texture *texture,
@@ -145,7 +154,7 @@ class Renderer9 : public RendererD3D
                                 GLsizei instances,
                                 TranslatedIndexData *indexInfo);
     gl::Error applyIndexBuffer(const gl::ContextState &data,
-                               const GLvoid *indices,
+                               const void *indices,
                                GLsizei count,
                                GLenum mode,
                                GLenum type,
@@ -311,7 +320,8 @@ class Renderer9 : public RendererD3D
     D3DPOOL getTexturePool(DWORD usage) const;
 
     bool getLUID(LUID *adapterLuid) const override;
-    VertexConversionType getVertexConversionType(gl::VertexFormatType vertexFormatType) const override;
+    VertexConversionType getVertexConversionType(
+        gl::VertexFormatType vertexFormatType) const override;
     GLenum getVertexComponentType(gl::VertexFormatType vertexFormatType) const override;
 
     // Warning: you should ensure binding really matches attrib.bindingIndex before using this
@@ -321,7 +331,9 @@ class Renderer9 : public RendererD3D
                                                            GLsizei count,
                                                            GLsizei instances) const override;
 
-    gl::Error copyToRenderTarget(IDirect3DSurface9 *dest, IDirect3DSurface9 *source, bool fromManaged);
+    gl::Error copyToRenderTarget(IDirect3DSurface9 *dest,
+                                 IDirect3DSurface9 *source,
+                                 bool fromManaged);
 
     RendererClass getRendererClass() const override { return RENDERER_D3D9; }
 
@@ -341,7 +353,7 @@ class Renderer9 : public RendererD3D
                                   GLenum mode,
                                   GLsizei count,
                                   GLenum type,
-                                  const GLvoid *indices,
+                                  const void *indices,
                                   GLsizei instances,
                                   const gl::IndexRange &indexRange);
 
@@ -352,8 +364,13 @@ class Renderer9 : public RendererD3D
 
     gl::Version getMaxSupportedESVersion() const override;
 
+    gl::Error applyComputeUniforms(const ProgramD3D &programD3D,
+                                   const std::vector<D3DUniform *> &uniformArray) override;
+
   protected:
-    gl::Error clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd) override;
+    gl::Error clearTextures(gl::SamplerType samplerType,
+                            size_t rangeStart,
+                            size_t rangeEnd) override;
 
   private:
     gl::Error drawArraysImpl(const gl::ContextState &data,
@@ -366,12 +383,13 @@ class Renderer9 : public RendererD3D
                                GLenum mode,
                                GLsizei count,
                                GLenum type,
-                               const GLvoid *indices,
+                               const void *indices,
                                GLsizei instances);
 
     gl::Error applyShaders(const gl::ContextState &data, GLenum drawMode);
 
-    void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps,
+    void generateCaps(gl::Caps *outCaps,
+                      gl::TextureCapsMap *outTextureCaps,
                       gl::Extensions *outExtensions,
                       gl::Limitations *outLimitations) const override;
 
@@ -385,8 +403,16 @@ class Renderer9 : public RendererD3D
     void applyUniformniv(const D3DUniform *targetUniform, const GLint *v);
     void applyUniformnbv(const D3DUniform *targetUniform, const GLint *v);
 
-    gl::Error drawLineLoop(GLsizei count, GLenum type, const GLvoid *indices, int minIndex, gl::Buffer *elementArrayBuffer);
-    gl::Error drawIndexedPoints(GLsizei count, GLenum type, const GLvoid *indices, int minIndex, gl::Buffer *elementArrayBuffer);
+    gl::Error drawLineLoop(GLsizei count,
+                           GLenum type,
+                           const void *indices,
+                           int minIndex,
+                           gl::Buffer *elementArrayBuffer);
+    gl::Error drawIndexedPoints(GLsizei count,
+                                GLenum type,
+                                const void *indices,
+                                int minIndex,
+                                gl::Buffer *elementArrayBuffer);
 
     gl::Error getCountingIB(size_t count, StaticIndexBufferInterface **outIB);
 
@@ -408,7 +434,7 @@ class Renderer9 : public RendererD3D
 
     UINT mAdapter;
     D3DDEVTYPE mDeviceType;
-    IDirect3D9 *mD3d9;  // Always valid after successful initialization.
+    IDirect3D9 *mD3d9;      // Always valid after successful initialization.
     IDirect3D9Ex *mD3d9Ex;  // Might be null if D3D9Ex is not supported.
     IDirect3DDevice9 *mDevice;
     IDirect3DDevice9Ex *mDeviceEx;  // Might be null if D3D9Ex is not supported.
@@ -462,7 +488,7 @@ class Renderer9 : public RendererD3D
     unsigned int mAppliedProgramSerial;
 
     // A pool of event queries that are currently unused.
-    std::vector<IDirect3DQuery9*> mEventQueryPool;
+    std::vector<IDirect3DQuery9 *> mEventQueryPool;
     VertexShaderCache mVertexShaderCache;
     PixelShaderCache mPixelShaderCache;
 
@@ -473,7 +499,10 @@ class Renderer9 : public RendererD3D
     StreamingIndexBufferInterface *mLineLoopIB;
     StaticIndexBufferInterface *mCountingIB;
 
-    enum { NUM_NULL_COLORBUFFER_CACHE_ENTRIES = 12 };
+    enum
+    {
+        NUM_NULL_COLORBUFFER_CACHE_ENTRIES = 12
+    };
     struct NullColorbufferCacheEntry
     {
         UINT lruCount;
@@ -491,4 +520,4 @@ class Renderer9 : public RendererD3D
 
 }  // namespace rx
 
-#endif // LIBANGLE_RENDERER_D3D_D3D9_RENDERER9_H_
+#endif  // LIBANGLE_RENDERER_D3D_D3D9_RENDERER9_H_

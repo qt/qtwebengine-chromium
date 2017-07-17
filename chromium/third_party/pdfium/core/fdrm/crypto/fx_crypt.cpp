@@ -6,6 +6,8 @@
 
 #include "core/fdrm/crypto/fx_crypt.h"
 
+#include <utility>
+
 #define GET_UINT32(n, b, i)                            \
   {                                                    \
     (n) = (uint32_t)((uint8_t*)b)[(i)] |               \
@@ -139,42 +141,25 @@ void md5_process(CRYPT_md5_context* ctx, const uint8_t data[64]) {
 void CRYPT_ArcFourSetup(CRYPT_rc4_context* s,
                         const uint8_t* key,
                         uint32_t length) {
-  int i, j, k, *m, a;
   s->x = 0;
   s->y = 0;
-  m = s->m;
-  for (i = 0; i < 256; i++) {
-    m[i] = i;
-  }
-  j = k = 0;
-  for (i = 0; i < 256; i++) {
-    a = m[i];
-    j = (j + a + key[k]) & 0xFF;
-    m[i] = m[j];
-    m[j] = a;
-    if (++k >= (int)length) {
-      k = 0;
-    }
+  for (int i = 0; i < kRC4ContextPermutationLength; ++i)
+    s->m[i] = i;
+
+  int j = 0;
+  for (int i = 0; i < kRC4ContextPermutationLength; ++i) {
+    j = (j + s->m[i] + (length ? key[i % length] : 0)) & 0xFF;
+    std::swap(s->m[i], s->m[j]);
   }
 }
 
-void CRYPT_ArcFourCrypt(CRYPT_rc4_context* s,
-                        unsigned char* data,
-                        uint32_t length) {
-  int i, x, y, *m, a, b;
-  x = s->x;
-  y = s->y;
-  m = s->m;
-  for (i = 0; i < (int)length; i++) {
-    x = (x + 1) & 0xFF;
-    a = m[x];
-    y = (y + a) & 0xFF;
-    m[x] = b = m[y];
-    m[y] = a;
-    data[i] ^= m[(a + b) & 0xFF];
+void CRYPT_ArcFourCrypt(CRYPT_rc4_context* s, uint8_t* data, uint32_t length) {
+  for (uint32_t i = 0; i < length; ++i) {
+    s->x = (s->x + 1) & 0xFF;
+    s->y = (s->y + s->m[s->x]) & 0xFF;
+    std::swap(s->m[s->x], s->m[s->y]);
+    data[i] ^= s->m[(s->m[s->x] + s->m[s->y]) & 0xFF];
   }
-  s->x = x;
-  s->y = y;
 }
 
 void CRYPT_ArcFourCryptBlock(uint8_t* pData,

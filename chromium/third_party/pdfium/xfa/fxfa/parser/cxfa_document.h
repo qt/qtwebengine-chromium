@@ -9,7 +9,7 @@
 
 #include <map>
 #include <memory>
-#include <unordered_set>
+#include <set>
 #include <vector>
 
 #include "xfa/fxfa/fxfa.h"
@@ -40,7 +40,7 @@ enum XFA_DocFlag {
   XFA_DOCFLAG_Scripting = 0x0008
 };
 
-class CFDE_XMLDoc;
+class CFX_XMLDoc;
 class CScript_DataWindow;
 class CScript_EventPseudoModel;
 class CScript_HostPseudoModel;
@@ -66,7 +66,7 @@ class CXFA_Document {
 
   CXFA_Node* GetRoot() const { return m_pRootNode; }
 
-  CFDE_XMLDoc* GetXMLDoc() const;
+  CFX_XMLDoc* GetXMLDoc() const;
   CXFA_FFNotify* GetNotify() const;
   CXFA_LocaleMgr* GetLocalMgr();
   CXFA_Object* GetXFAObject(XFA_HashCode wsNodeNameHash);
@@ -120,7 +120,7 @@ class CXFA_Document {
   std::unique_ptr<CScript_LogPseudoModel> m_pScriptLog;
   std::unique_ptr<CScript_LayoutPseudoModel> m_pScriptLayout;
   std::unique_ptr<CScript_SignaturePseudoModel> m_pScriptSignature;
-  std::unordered_set<CXFA_Node*> m_PurgeNodes;
+  std::set<CXFA_Node*> m_PurgeNodes;
   XFA_VERSION m_eCurVersionMode;
   uint32_t m_dwDocFlags;
 };

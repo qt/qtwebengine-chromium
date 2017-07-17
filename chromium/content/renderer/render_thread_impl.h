@@ -23,6 +23,7 @@
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "base/threading/thread_checker.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "components/variations/child_process_field_trial_syncer.h"
@@ -46,6 +47,7 @@
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/thread_safe_interface_ptr.h"
 #include "net/base/network_change_notifier.h"
+#include "net/nqe/effective_connection_type.h"
 #include "third_party/WebKit/public/platform/WebConnectionType.h"
 #include "third_party/WebKit/public/platform/scheduler/renderer/renderer_scheduler.h"
 #include "third_party/WebKit/public/web/WebMemoryStatistics.h"
@@ -62,7 +64,6 @@ namespace blink {
 namespace scheduler {
 class WebThreadBase;
 }
-class WebGamepads;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
 }
@@ -77,6 +78,10 @@ class BeginFrameSource;
 class CompositorFrameSink;
 class SyntheticBeginFrameSource;
 class TaskGraphRunner;
+}
+
+namespace device {
+class Gamepads;
 }
 
 namespace discardable_memory {
@@ -119,7 +124,6 @@ class CompositorForwardingMessageFilter;
 class DBMessageFilter;
 class DevToolsAgentFilter;
 class DomStorageDispatcher;
-class EmbeddedWorkerDispatcher;
 class FrameSwapMessageQueue;
 class IndexedDBDispatcher;
 class InputHandlerManager;
@@ -171,9 +175,12 @@ class CONTENT_EXPORT RenderThreadImpl
       std::unique_ptr<blink::scheduler::RendererScheduler> renderer_scheduler);
   static RenderThreadImpl* current();
   static mojom::RenderMessageFilter* current_render_message_filter();
+  static RendererBlinkPlatformImpl* current_blink_platform_impl();
 
   static void SetRenderMessageFilterForTesting(
       mojom::RenderMessageFilter* render_message_filter);
+  static void SetRendererBlinkPlatformImplForTesting(
+      RendererBlinkPlatformImpl* blink_platform_impl);
 
   ~RenderThreadImpl() override;
   void Shutdown() override;
@@ -188,7 +195,6 @@ class CONTENT_EXPORT RenderThreadImpl
   IPC::SyncChannel* GetChannel() override;
   std::string GetLocale() override;
   IPC::SyncMessageFilter* GetSyncMessageFilter() override;
-  scoped_refptr<base::SingleThreadTaskRunner> GetIOTaskRunner() override;
   void AddRoute(int32_t routing_id, IPC::Listener* listener) override;
   void RemoveRoute(int32_t routing_id) override;
   int GenerateRoutingID() override;
@@ -221,6 +227,9 @@ class CONTENT_EXPORT RenderThreadImpl
       const std::string& name,
       mojo::ScopedInterfaceEndpointHandle handle) override;
 
+  // ChildThread implementation via ChildThreadImpl:
+  scoped_refptr<base::SingleThreadTaskRunner> GetIOTaskRunner() override;
+
   // CompositorDependencies implementation.
   bool IsGpuRasterizationForced() override;
   bool IsAsyncWorkerContextEnabled() override;
@@ -238,7 +247,6 @@ class CONTENT_EXPORT RenderThreadImpl
   GetCompositorImplThreadTaskRunner() override;
   blink::scheduler::RendererScheduler* GetRendererScheduler() override;
   cc::TaskGraphRunner* GetTaskGraphRunner() override;
-  bool AreImageDecodeTasksEnabled() override;
   bool IsThreadedAnimationEnabled() override;
   bool IsScrollAnimatorEnabled() override;
   bool IsSurfaceSynchronizationEnabled() override;
@@ -309,10 +317,6 @@ class CONTENT_EXPORT RenderThreadImpl
     return dom_storage_dispatcher_.get();
   }
 
-  EmbeddedWorkerDispatcher* embedded_worker_dispatcher() const {
-    return embedded_worker_dispatcher_.get();
-  }
-
   AudioInputMessageFilter* audio_input_message_filter() {
     return audio_input_message_filter_.get();
   }
@@ -336,7 +340,7 @@ class CONTENT_EXPORT RenderThreadImpl
 
   // Creates the embedder implementation of WebMediaStreamCenter.
   // The resulting object is owned by WebKit and deleted by WebKit at tear-down.
-  blink::WebMediaStreamCenter* CreateMediaStreamCenter(
+  std::unique_ptr<blink::WebMediaStreamCenter> CreateMediaStreamCenter(
       blink::WebMediaStreamCenterClient* client);
 
   BrowserPluginManager* browser_plugin_manager() const {
@@ -466,7 +470,7 @@ class CONTENT_EXPORT RenderThreadImpl
   }
 
   // Retrieve current gamepad data.
-  void SampleGamepads(blink::WebGamepads* data);
+  void SampleGamepads(device::Gamepads* data);
 
   // Called by a RenderWidget when it is created or destroyed. This
   // allows the process to know when there are no visible widgets.
@@ -480,9 +484,11 @@ class CONTENT_EXPORT RenderThreadImpl
   void AddEmbeddedWorkerRoute(int32_t routing_id, IPC::Listener* listener);
   void RemoveEmbeddedWorkerRoute(int32_t routing_id);
 
-  void RegisterPendingFrameCreate(int routing_id,
-                                  mojom::FrameRequest frame,
-                                  mojom::FrameHostPtr host);
+  void RegisterPendingFrameCreate(
+      const service_manager::BindSourceInfo& source_info,
+      int routing_id,
+      mojom::FrameRequest frame,
+      mojom::FrameHostInterfaceBrokerPtr host);
 
   mojom::StoragePartitionService* GetStoragePartitionService();
 
@@ -503,10 +509,6 @@ class CONTENT_EXPORT RenderThreadImpl
 
   bool NeedsToRecordFirstActivePaint() const {
     return needs_to_record_first_active_paint_;
-  }
-
-  mojom::FrameSinkProvider* GetFrameSinkProvider() {
-    return frame_sink_provider_.get();
   }
 
  protected:
@@ -565,6 +567,10 @@ class CONTENT_EXPORT RenderThreadImpl
   void OnNetworkConnectionChanged(
       net::NetworkChangeNotifier::ConnectionType type,
       double max_bandwidth_mbps) override;
+  void OnNetworkQualityChanged(net::EffectiveConnectionType type,
+                               base::TimeDelta http_rtt,
+                               base::TimeDelta transport_rtt,
+                               double bandwidth_kbps) override;
   void SetWebKitSharedTimersSuspended(bool suspend) override;
   void UpdateScrollbarTheme(
       mojom::UpdateScrollbarThemeParamsPtr params) override;
@@ -582,8 +588,9 @@ class CONTENT_EXPORT RenderThreadImpl
   void OnRendererHidden();
   void OnRendererVisible();
 
-  void RecordPurgeAndSuspendMetrics();
-  void RecordPurgeAndSuspendMemoryGrowthMetrics() const;
+  void RecordPurgeAndSuspendMemoryGrowthMetrics(
+      const char* suffix,
+      int foregrounded_count_when_purged);
 
   void ReleaseFreeMemory();
 
@@ -609,10 +616,6 @@ class CONTENT_EXPORT RenderThreadImpl
   std::unique_ptr<RendererBlinkPlatformImpl> blink_platform_impl_;
   std::unique_ptr<ResourceDispatchThrottler> resource_dispatch_throttler_;
   std::unique_ptr<CacheStorageDispatcher> main_thread_cache_storage_dispatcher_;
-  std::unique_ptr<EmbeddedWorkerDispatcher> embedded_worker_dispatcher_;
-
-  // Used on the render thread and deleted by WebKit at shutdown.
-  blink::WebMediaStreamCenter* media_stream_center_;
 
   // Used on the renderer and IPC threads.
   scoped_refptr<BlobMessageFilter> blob_message_filter_;
@@ -739,21 +742,26 @@ class CONTENT_EXPORT RenderThreadImpl
   bool is_partial_raster_enabled_;
   bool is_elastic_overscroll_enabled_;
   cc::BufferToTextureTargetMap buffer_to_texture_target_map_;
-  bool are_image_decode_tasks_enabled_;
   bool is_threaded_animation_enabled_;
   bool is_scroll_animator_enabled_;
   bool is_surface_synchronization_enabled_;
 
   class PendingFrameCreate : public base::RefCounted<PendingFrameCreate> {
    public:
-     PendingFrameCreate(int routing_id,
-                        mojom::FrameRequest frame_request,
-                        mojom::FrameHostPtr frame_host);
+    PendingFrameCreate(
+        const service_manager::BindSourceInfo& source_info,
+        int routing_id,
+        mojom::FrameRequest frame_request,
+        mojom::FrameHostInterfaceBrokerPtr frame_host_interface_broker);
 
+    const service_manager::BindSourceInfo& browser_info() const {
+      return browser_info_;
+    }
     mojom::FrameRequest TakeFrameRequest() { return std::move(frame_request_); }
-    mojom::FrameHostPtr TakeFrameHost() {
-      frame_host_.set_connection_error_handler(base::Closure());
-      return std::move(frame_host_);
+    mojom::FrameHostInterfaceBrokerPtr TakeInterfaceBroker() {
+      frame_host_interface_broker_.set_connection_error_handler(
+          base::Closure());
+      return std::move(frame_host_interface_broker_);
     }
 
    private:
@@ -764,9 +772,10 @@ class CONTENT_EXPORT RenderThreadImpl
     // Mojo error handler.
     void OnConnectionError();
 
+    service_manager::BindSourceInfo browser_info_;
     int routing_id_;
     mojom::FrameRequest frame_request_;
-    mojom::FrameHostPtr frame_host_;
+    mojom::FrameHostInterfaceBrokerPtr frame_host_interface_broker_;
   };
 
   using PendingFrameCreateMap =
@@ -782,10 +791,9 @@ class CONTENT_EXPORT RenderThreadImpl
   mojom::RenderFrameMessageFilterAssociatedPtr render_frame_message_filter_;
   mojom::RenderMessageFilterAssociatedPtr render_message_filter_;
 
-  base::CancelableClosure record_purge_suspend_metric_closure_;
   RendererMemoryMetrics purge_and_suspend_memory_metrics_;
-  base::CancelableClosure record_purge_suspend_growth_metric_closure_;
   bool needs_to_record_first_active_paint_;
+  int process_foregrounded_count_;
 
   int32_t client_id_;
 

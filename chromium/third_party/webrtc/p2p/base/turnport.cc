@@ -376,7 +376,11 @@ bool TurnPort::CreateTurnClientSocket() {
 }
 
 void TurnPort::OnSocketConnect(rtc::AsyncPacketSocket* socket) {
-  RTC_DCHECK(server_address_.proto == PROTO_TCP);
+  // This slot should only be invoked if we're using a connection-oriented
+  // protocol.
+  RTC_DCHECK(server_address_.proto == PROTO_TCP ||
+             server_address_.proto == PROTO_TLS);
+
   // Do not use this port if the socket bound to a different address than
   // the one we asked for. This is seen in Chrome, where TCP sockets cannot be
   // given a binding address, and the platform is expected to pick the
@@ -1165,19 +1169,18 @@ void TurnAllocateRequest::OnResponse(StunMessage* response) {
 
 void TurnAllocateRequest::OnErrorResponse(StunMessage* response) {
   // Process error response according to RFC5766, Section 6.4.
-  const StunErrorCodeAttribute* error_code = response->GetErrorCode();
+  int error_code = response->GetErrorCodeValue();
 
   LOG_J(LS_INFO, port_) << "Received TURN allocate error response"
                         << ", id=" << rtc::hex_encode(id())
-                        << ", code=" << error_code->code()
-                        << ", rtt=" << Elapsed();
+                        << ", code=" << error_code << ", rtt=" << Elapsed();
 
-  switch (error_code->code()) {
+  switch (error_code) {
     case STUN_ERROR_UNAUTHORIZED:       // Unauthrorized.
-      OnAuthChallenge(response, error_code->code());
+      OnAuthChallenge(response, error_code);
       break;
     case STUN_ERROR_TRY_ALTERNATE:
-      OnTryAlternate(response, error_code->code());
+      OnTryAlternate(response, error_code);
       break;
     case STUN_ERROR_ALLOCATION_MISMATCH:
       // We must handle this error async because trying to delete the socket in
@@ -1186,10 +1189,10 @@ void TurnAllocateRequest::OnErrorResponse(StunMessage* response) {
                             TurnPort::MSG_ALLOCATE_MISMATCH);
       break;
     default:
-      LOG_J(LS_WARNING, port_) << "Received TURN allocate error response"
-                               << ", id=" << rtc::hex_encode(id())
-                               << ", code=" << error_code->code()
-                               << ", rtt=" << Elapsed();
+      LOG_J(LS_WARNING, port_)
+          << "Received TURN allocate error response"
+          << ", id=" << rtc::hex_encode(id()) << ", code=" << error_code
+          << ", rtt=" << Elapsed();
       port_->OnAllocateError();
   }
 }
@@ -1321,20 +1324,20 @@ void TurnRefreshRequest::OnResponse(StunMessage* response) {
 }
 
 void TurnRefreshRequest::OnErrorResponse(StunMessage* response) {
-  const StunErrorCodeAttribute* error_code = response->GetErrorCode();
+  int error_code = response->GetErrorCodeValue();
 
-  if (error_code->code() == STUN_ERROR_STALE_NONCE) {
+  if (error_code == STUN_ERROR_STALE_NONCE) {
     if (port_->UpdateNonce(response)) {
       // Send RefreshRequest immediately.
       port_->SendRequest(new TurnRefreshRequest(port_), 0);
     }
   } else {
-    LOG_J(LS_WARNING, port_) << "Received TURN refresh error response"
-                             << ", id=" << rtc::hex_encode(id())
-                             << ", code=" << error_code->code()
-                             << ", rtt=" << Elapsed();
+    LOG_J(LS_WARNING, port_)
+        << "Received TURN refresh error response"
+        << ", id=" << rtc::hex_encode(id()) << ", code=" << error_code
+        << ", rtt=" << Elapsed();
     port_->OnRefreshError();
-    port_->SignalTurnRefreshResult(port_, error_code->code());
+    port_->SignalTurnRefreshResult(port_, error_code);
   }
 }
 
@@ -1380,13 +1383,12 @@ void TurnCreatePermissionRequest::OnResponse(StunMessage* response) {
 }
 
 void TurnCreatePermissionRequest::OnErrorResponse(StunMessage* response) {
-  const StunErrorCodeAttribute* error_code = response->GetErrorCode();
+  int error_code = response->GetErrorCodeValue();
   LOG_J(LS_WARNING, port_) << "Received TURN create permission error response"
                            << ", id=" << rtc::hex_encode(id())
-                           << ", code=" << error_code->code()
-                           << ", rtt=" << Elapsed();
+                           << ", code=" << error_code << ", rtt=" << Elapsed();
   if (entry_) {
-    entry_->OnCreatePermissionError(response, error_code->code());
+    entry_->OnCreatePermissionError(response, error_code);
   }
 }
 
@@ -1450,13 +1452,12 @@ void TurnChannelBindRequest::OnResponse(StunMessage* response) {
 }
 
 void TurnChannelBindRequest::OnErrorResponse(StunMessage* response) {
-  const StunErrorCodeAttribute* error_code = response->GetErrorCode();
+  int error_code = response->GetErrorCodeValue();
   LOG_J(LS_WARNING, port_) << "Received TURN channel bind error response"
                            << ", id=" << rtc::hex_encode(id())
-                           << ", code=" << error_code->code()
-                           << ", rtt=" << Elapsed();
+                           << ", code=" << error_code << ", rtt=" << Elapsed();
   if (entry_) {
-    entry_->OnChannelBindError(response, error_code->code());
+    entry_->OnChannelBindError(response, error_code);
   }
 }
 

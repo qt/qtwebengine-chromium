@@ -64,8 +64,11 @@ if (pdf_bundle_freetype) {
       "//third_party/freetype/src/include",
     ]
     defines = [
-      "FT_CONFIG_MODULES_H=<freetype-custom-config/ftmodule.h>",
-      "FT_CONFIG_OPTIONS_H=<freetype-custom-config/ftoption.h>",
+      # GN currently does not escape '<' and '>' when generating xml based
+      # Visual Studio project files. As a result, use quotes instead of pointy
+      # brackets in these defines.
+      "FT_CONFIG_MODULES_H=\"freetype-custom-config/ftmodule.h\"",
+      "FT_CONFIG_OPTIONS_H=\"freetype-custom-config/ftoption.h\"",
     ]
   }
 
@@ -318,6 +321,36 @@ if (!build_with_chromium) {
   }
 }
 
+config("system_zlib_config") {
+  libs = [ "z" ]
+  defines = [ "USE_SYSTEM_ZLIB" ]
+}
+
+group("zlib") {
+  if (use_system_zlib) {
+    public_configs = [ ":system_zlib_config" ]
+  } else {
+    public_deps = [
+      "//third_party/zlib",
+    ]
+  }
+}
+
+config("system_lcms2_config") {
+  libs = [ "lcms2" ]
+  defines = [ "USE_SYSTEM_LCMS2" ]
+}
+
+group("lcms2") {
+  if (use_system_lcms2) {
+    public_configs = [ ":system_lcms2_config" ]
+  } else {
+    public_deps = [
+      ":fx_lcms2",
+    ]
+  }
+}
+
 config("fx_libopenjpeg_warnings") {
   visibility = [ ":*" ]
   if (is_win) {
@@ -395,7 +428,7 @@ static_library("fx_lpng") {
   defines = []
   cflags = []
   deps = [
-    "//third_party/zlib",
+    ":zlib",
   ]
 
   if (current_cpu == "x86" || current_cpu == "x64") {
@@ -434,8 +467,8 @@ if (pdf_enable_xfa) {
       configs -= [ "//build/config/win:lean_and_mean" ]
     }
     deps = [
+      ":zlib",
       "//third_party:jpeg",
-      "//third_party/zlib",
     ]
     sources = [
       "libtiff/tif_aux.c",

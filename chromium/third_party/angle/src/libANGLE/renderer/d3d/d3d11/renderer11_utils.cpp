@@ -83,7 +83,7 @@ gl::TextureCaps GenerateTextureFormatCaps(gl::Version maxClientVersion,
     DXGISupportHelper support(device, renderer11DeviceCaps.featureLevel);
     const d3d11::Format &formatInfo = d3d11::Format::Get(internalFormat, renderer11DeviceCaps);
 
-    const gl::InternalFormat &internalFormatInfo = gl::GetInternalFormatInfo(internalFormat);
+    const gl::InternalFormat &internalFormatInfo = gl::GetSizedInternalFormatInfo(internalFormat);
 
     UINT texSupportMask = D3D11_FORMAT_SUPPORT_TEXTURE2D;
     if (internalFormatInfo.depthBits == 0 && internalFormatInfo.stencilBits == 0)
@@ -1142,17 +1142,17 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
     GLuint maxSamples = 0;
     D3D_FEATURE_LEVEL featureLevel = renderer11DeviceCaps.featureLevel;
     const gl::FormatSet &allFormats = gl::GetAllSizedInternalFormats();
-    for (gl::FormatSet::const_iterator internalFormat = allFormats.begin(); internalFormat != allFormats.end(); ++internalFormat)
+    for (GLenum internalFormat : allFormats)
     {
         gl::TextureCaps textureCaps = GenerateTextureFormatCaps(
-            GetMaximumClientVersion(featureLevel), *internalFormat, device, renderer11DeviceCaps);
-        textureCapsMap->insert(*internalFormat, textureCaps);
+            GetMaximumClientVersion(featureLevel), internalFormat, device, renderer11DeviceCaps);
+        textureCapsMap->insert(internalFormat, textureCaps);
 
         maxSamples = std::max(maxSamples, textureCaps.getMaxSamples());
 
-        if (gl::GetInternalFormatInfo(*internalFormat).compressed)
+        if (gl::GetSizedInternalFormatInfo(internalFormat).compressed)
         {
-            caps->compressedTextureFormats.push_back(*internalFormat);
+            caps->compressedTextureFormats.push_back(internalFormat);
         }
     }
 
@@ -1700,26 +1700,10 @@ D3D11_QUERY ConvertQueryType(GLenum queryType)
 }
 
 // Get the D3D11 write mask covering all color channels of a given format
-UINT8 GetColorMask(const gl::InternalFormat *formatInfo)
+UINT8 GetColorMask(const gl::InternalFormat &format)
 {
-    UINT8 mask = 0;
-    if (formatInfo->redBits > 0)
-    {
-        mask |= D3D11_COLOR_WRITE_ENABLE_RED;
-    }
-    if (formatInfo->greenBits > 0)
-    {
-        mask |= D3D11_COLOR_WRITE_ENABLE_GREEN;
-    }
-    if (formatInfo->blueBits > 0)
-    {
-        mask |= D3D11_COLOR_WRITE_ENABLE_BLUE;
-    }
-    if (formatInfo->alphaBits > 0)
-    {
-        mask |= D3D11_COLOR_WRITE_ENABLE_ALPHA;
-    }
-    return mask;
+    return ConvertColorMask(format.redBits > 0, format.greenBits > 0, format.blueBits > 0,
+                            format.alphaBits > 0);
 }
 
 }  // namespace gl_d3d11
@@ -1822,7 +1806,7 @@ void GenerateInitialTextureData(GLint internalFormat,
                                 std::vector<std::vector<BYTE>> *outData)
 {
     const d3d11::Format &d3dFormatInfo = d3d11::Format::Get(internalFormat, renderer11DeviceCaps);
-    ASSERT(d3dFormatInfo.dataInitializerFunction != NULL);
+    ASSERT(d3dFormatInfo.dataInitializerFunction != nullptr);
 
     const d3d11::DXGIFormatSize &dxgiFormatInfo =
         d3d11::GetDXGIFormatSizeInfo(d3dFormatInfo.texFormat);
@@ -1920,14 +1904,17 @@ LazyInputLayout::LazyInputLayout(const D3D11_INPUT_ELEMENT_DESC *inputDesc,
       mByteCode(byteCode),
       mDebugName(debugName)
 {
-    memcpy(&mInputDesc[0], inputDesc, sizeof(D3D11_INPUT_ELEMENT_DESC) * inputDescLen);
+    if (inputDesc)
+    {
+        memcpy(&mInputDesc[0], inputDesc, sizeof(D3D11_INPUT_ELEMENT_DESC) * inputDescLen);
+    }
 }
 
 ID3D11InputLayout *LazyInputLayout::resolve(ID3D11Device *device)
 {
     checkAssociatedDevice(device);
 
-    if (mResource == nullptr)
+    if (mResource == nullptr && mByteCode != nullptr)
     {
         HRESULT result =
             device->CreateInputLayout(&mInputDesc[0], static_cast<UINT>(mInputDesc.size()),
@@ -2005,8 +1992,12 @@ angle::WorkaroundsD3D GenerateWorkarounds(const Renderer11DeviceCaps &deviceCaps
                 d3d11_gl::GetIntelDriverVersion(deviceCaps.driverVersion) <
                 IntelDriverVersion(4542);
         }
-        workarounds.rewriteUnaryMinusOperator =
-            IsBroadwell(adapterDesc.DeviceId) || IsHaswell(adapterDesc.DeviceId);
+        else if (IsBroadwell(adapterDesc.DeviceId) || IsHaswell(adapterDesc.DeviceId))
+        {
+            workarounds.rewriteUnaryMinusOperator =
+                d3d11_gl::GetIntelDriverVersion(deviceCaps.driverVersion) <
+                IntelDriverVersion(4624);
+        }
     }
 
     // TODO(jmadill): Disable when we have a fixed driver version.
@@ -2170,66 +2161,6 @@ void TextureHelper11::reset()
 bool TextureHelper11::valid() const
 {
     return (mTextureType != GL_NONE);
-}
-
-gl::ErrorOrResult<TextureHelper11> CreateStagingTexture(GLenum textureType,
-                                                        const d3d11::Format &formatSet,
-                                                        const gl::Extents &size,
-                                                        StagingAccess readAndWriteAccess,
-                                                        ID3D11Device *device)
-{
-    if (textureType == GL_TEXTURE_2D)
-    {
-        D3D11_TEXTURE2D_DESC stagingDesc;
-        stagingDesc.Width              = size.width;
-        stagingDesc.Height             = size.height;
-        stagingDesc.MipLevels          = 1;
-        stagingDesc.ArraySize          = 1;
-        stagingDesc.Format             = formatSet.texFormat;
-        stagingDesc.SampleDesc.Count   = 1;
-        stagingDesc.SampleDesc.Quality = 0;
-        stagingDesc.Usage              = D3D11_USAGE_STAGING;
-        stagingDesc.BindFlags          = 0;
-        stagingDesc.CPUAccessFlags     = D3D11_CPU_ACCESS_READ;
-        stagingDesc.MiscFlags          = 0;
-
-        if (readAndWriteAccess == StagingAccess::READ_WRITE)
-        {
-            stagingDesc.CPUAccessFlags |= D3D11_CPU_ACCESS_WRITE;
-        }
-
-        ID3D11Texture2D *stagingTex = nullptr;
-        HRESULT result = device->CreateTexture2D(&stagingDesc, nullptr, &stagingTex);
-        if (FAILED(result))
-        {
-            return gl::Error(GL_OUT_OF_MEMORY, "CreateStagingTextureFor failed, HRESULT: 0x%X.",
-                             result);
-        }
-
-        return TextureHelper11::MakeAndPossess2D(stagingTex, formatSet);
-    }
-    ASSERT(textureType == GL_TEXTURE_3D);
-
-    D3D11_TEXTURE3D_DESC stagingDesc;
-    stagingDesc.Width          = size.width;
-    stagingDesc.Height         = size.height;
-    stagingDesc.Depth          = 1;
-    stagingDesc.MipLevels      = 1;
-    stagingDesc.Format         = formatSet.texFormat;
-    stagingDesc.Usage          = D3D11_USAGE_STAGING;
-    stagingDesc.BindFlags      = 0;
-    stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    stagingDesc.MiscFlags      = 0;
-
-    ID3D11Texture3D *stagingTex = nullptr;
-    HRESULT result = device->CreateTexture3D(&stagingDesc, nullptr, &stagingTex);
-    if (FAILED(result))
-    {
-        return gl::Error(GL_OUT_OF_MEMORY, "CreateStagingTextureFor failed, HRESULT: 0x%X.",
-                         result);
-    }
-
-    return TextureHelper11::MakeAndPossess3D(stagingTex, formatSet);
 }
 
 bool UsePresentPathFast(const Renderer11 *renderer,

@@ -65,6 +65,10 @@
 #include <stdio.h>
 #endif
 
+/* Include a BoringSSL-only header so consumers including this header without
+ * setting up include paths do not accidentally pick up the system
+ * opensslconf.h. */
+#include <openssl/is_boringssl.h>
 #include <openssl/opensslconf.h>
 
 #if defined(BORINGSSL_PREFIX)
@@ -141,7 +145,7 @@ extern "C" {
  * A consumer may use this symbol in the preprocessor to temporarily build
  * against multiple revisions of BoringSSL at the same time. It is not
  * recommended to do so for longer than is necessary. */
-#define BORINGSSL_API_VERSION 3
+#define BORINGSSL_API_VERSION 4
 
 #if defined(BORINGSSL_SHARED_LIBRARY)
 
@@ -193,9 +197,21 @@ extern "C" {
 #define OPENSSL_MSVC_PRAGMA(arg)
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+#define OPENSSL_UNUSED __attribute__((unused))
+#else
+#define OPENSSL_UNUSED
+#endif
+
 #if defined(BORINGSSL_UNSAFE_FUZZER_MODE) && \
     !defined(BORINGSSL_UNSAFE_DETERMINISTIC_MODE)
 #define BORINGSSL_UNSAFE_DETERMINISTIC_MODE
+#endif
+
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define OPENSSL_ASAN
+#endif
 #endif
 
 /* CRYPTO_THREADID is a dummy value. */
@@ -223,7 +239,6 @@ typedef struct asn1_string_st ASN1_UTCTIME;
 typedef struct asn1_string_st ASN1_UTF8STRING;
 typedef struct asn1_string_st ASN1_VISIBLESTRING;
 typedef struct asn1_type_st ASN1_TYPE;
-
 typedef struct AUTHORITY_KEYID_st AUTHORITY_KEYID;
 typedef struct BASIC_CONSTRAINTS_st BASIC_CONSTRAINTS;
 typedef struct DIST_POINT_st DIST_POINT;
@@ -425,7 +440,7 @@ class StackAllocated {
   }
 
 // Holds ownership of heap-allocated BoringSSL structures. Sample usage:
-//   bssl::UniquePtr<BIO> rsa(RSA_new());
+//   bssl::UniquePtr<RSA> rsa(RSA_new());
 //   bssl::UniquePtr<BIO> bio(BIO_new(BIO_s_mem()));
 template <typename T>
 using UniquePtr = std::unique_ptr<T, internal::Deleter<T>>;

@@ -7,6 +7,8 @@
 #ifndef CORE_FPDFAPI_PAGE_CPDF_PATTERN_H_
 #define CORE_FPDFAPI_PAGE_CPDF_PATTERN_H_
 
+#include "core/fpdfapi/page/cpdf_countedobject.h"
+#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
 
@@ -24,22 +26,25 @@ class CPDF_Pattern {
   virtual CPDF_TilingPattern* AsTilingPattern() = 0;
   virtual CPDF_ShadingPattern* AsShadingPattern() = 0;
 
-  CPDF_Document* document() { return m_pDocument; }
-  CPDF_Object* pattern_obj() { return m_pPatternObj; }
+  // All the getters that return pointers return non-NULL pointers.
+  CPDF_Document* document() const { return m_pDocument.Get(); }
+  CPDF_Object* pattern_obj() const { return m_pPatternObj.Get(); }
   CFX_Matrix* pattern_to_form() { return &m_Pattern2Form; }
   const CFX_Matrix& parent_matrix() const { return m_ParentMatrix; }
 
  protected:
-  CPDF_Pattern(PatternType type,
-               CPDF_Document* pDoc,
+  CPDF_Pattern(CPDF_Document* pDoc,
                CPDF_Object* pObj,
                const CFX_Matrix& parentMatrix);
 
-  const PatternType m_PatternType;
-  CPDF_Document* const m_pDocument;
-  CPDF_Object* const m_pPatternObj;
+  void SetPatternToFormMatrix();
+
+ private:
+  CFX_UnownedPtr<CPDF_Document> const m_pDocument;
+  CFX_UnownedPtr<CPDF_Object> const m_pPatternObj;
   CFX_Matrix m_Pattern2Form;
   const CFX_Matrix m_ParentMatrix;
 };
+using CPDF_CountedPattern = CPDF_CountedObject<CPDF_Pattern>;
 
 #endif  // CORE_FPDFAPI_PAGE_CPDF_PATTERN_H_

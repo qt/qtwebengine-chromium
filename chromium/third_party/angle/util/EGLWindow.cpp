@@ -117,7 +117,8 @@ EGLWindow::EGLWindow(EGLint glesMajorVersion,
       mBindGeneratesResource(true),
       mClientArraysEnabled(true),
       mRobustResourceInit(false),
-      mSwapInterval(-1)
+      mSwapInterval(-1),
+      mSamples(-1)
 {
 }
 
@@ -160,13 +161,7 @@ bool EGLWindow::initializeGL(OSWindow *osWindow)
 
 bool EGLWindow::initializeDisplayAndSurface(OSWindow *osWindow)
 {
-    PFNEGLGETPLATFORMDISPLAYEXTPROC eglGetPlatformDisplayEXT = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(eglGetProcAddress("eglGetPlatformDisplayEXT"));
-    if (!eglGetPlatformDisplayEXT)
-    {
-        return false;
-    }
-
-    std::vector<EGLint> displayAttributes;
+    std::vector<EGLAttrib> displayAttributes;
     displayAttributes.push_back(EGL_PLATFORM_ANGLE_TYPE_ANGLE);
     displayAttributes.push_back(mPlatform.renderer);
     displayAttributes.push_back(EGL_PLATFORM_ANGLE_MAX_VERSION_MAJOR_ANGLE);
@@ -203,9 +198,9 @@ bool EGLWindow::initializeDisplayAndSurface(OSWindow *osWindow)
 
     displayAttributes.push_back(EGL_NONE);
 
-    mDisplay = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
-                                        reinterpret_cast<void *>(osWindow->getNativeDisplay()),
-                                        &displayAttributes[0]);
+    mDisplay = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
+                                     reinterpret_cast<void *>(osWindow->getNativeDisplay()),
+                                     &displayAttributes[0]);
     if (mDisplay == EGL_NO_DISPLAY)
     {
         destroyGL();
@@ -228,6 +223,7 @@ bool EGLWindow::initializeDisplayAndSurface(OSWindow *osWindow)
         EGL_DEPTH_SIZE,     (mDepthBits >= 0) ? mDepthBits : EGL_DONT_CARE,
         EGL_STENCIL_SIZE,   (mStencilBits >= 0) ? mStencilBits : EGL_DONT_CARE,
         EGL_SAMPLE_BUFFERS, mMultisample ? 1 : 0,
+        EGL_SAMPLES,        (mSamples >= 0) ? mSamples : EGL_DONT_CARE,
     };
 
     // Add dynamic attributes
@@ -258,6 +254,7 @@ bool EGLWindow::initializeDisplayAndSurface(OSWindow *osWindow)
     eglGetConfigAttrib(mDisplay, mConfig, EGL_ALPHA_SIZE, &mAlphaBits);
     eglGetConfigAttrib(mDisplay, mConfig, EGL_DEPTH_SIZE, &mDepthBits);
     eglGetConfigAttrib(mDisplay, mConfig, EGL_STENCIL_SIZE, &mStencilBits);
+    eglGetConfigAttrib(mDisplay, mConfig, EGL_SAMPLES, &mSamples);
 
     std::vector<EGLint> surfaceAttributes;
     if (strstr(displayExtensions, "EGL_NV_post_sub_buffer") != nullptr)

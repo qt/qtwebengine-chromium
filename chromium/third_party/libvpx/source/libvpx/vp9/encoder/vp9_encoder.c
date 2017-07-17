@@ -73,6 +73,9 @@
                                        // chosen.
 // #define OUTPUT_YUV_REC
 
+#define FRAME_SIZE_FACTOR 128  // empirical params for context model threshold
+#define FRAME_RATE_FACTOR 8
+
 #ifdef OUTPUT_YUV_DENOISED
 FILE *yuv_denoised_file = NULL;
 #endif
@@ -100,6 +103,331 @@ static int is_spatial_denoise_enabled(VP9_COMP *cpi) {
 }
 #endif
 
+// compute adaptive threshold for skip recoding
+static int compute_context_model_thresh(const VP9_COMP *const cpi) {
+  const VP9_COMMON *const cm = &cpi->common;
+  const VP9EncoderConfig *const oxcf = &cpi->oxcf;
+  const int frame_size = (cm->width * cm->height) >> 10;
+  const int bitrate = (int)(oxcf->target_bandwidth >> 10);
+  const int qindex_factor = cm->base_qindex + (MAXQ >> 1);
+
+  // This equation makes the threshold adaptive to frame size.
+  // Coding gain obtained by recoding comes from alternate frames of large
+  // content change. We skip recoding if the difference of previous and current
+  // frame context probability model is less than a certain threshold.
+  // The first component is the most critical part to guarantee adaptivity.
+  // Other parameters are estimated based on normal setting of hd resolution
+  // parameters. e.g frame_size = 1920x1080, bitrate = 8000, qindex_factor < 50
+  const int thresh =
+      ((FRAME_SIZE_FACTOR * frame_size - FRAME_RATE_FACTOR * bitrate) *
+       qindex_factor) >>
+      9;
+
+  return thresh;
+}
+
+// compute the total cost difference between current
+// and previous frame context prob model.
+static int compute_context_model_diff(const VP9_COMMON *const cm) {
+  const FRAME_CONTEXT *const pre_fc =
+      &cm->frame_contexts[cm->frame_context_idx];
+  const FRAME_CONTEXT *const cur_fc = cm->fc;
+  const FRAME_COUNTS *counts = &cm->counts;
+  vpx_prob pre_last_prob, cur_last_prob;
+  int diff = 0;
+  int i, j, k, l, m, n;
+
+  // y_mode_prob
+  for (i = 0; i < BLOCK_SIZE_GROUPS; ++i) {
+    for (j = 0; j < INTRA_MODES - 1; ++j) {
+      diff += (int)counts->y_mode[i][j] *
+              (pre_fc->y_mode_prob[i][j] - cur_fc->y_mode_prob[i][j]);
+    }
+    pre_last_prob = MAX_PROB - pre_fc->y_mode_prob[i][INTRA_MODES - 2];
+    cur_last_prob = MAX_PROB - cur_fc->y_mode_prob[i][INTRA_MODES - 2];
+
+    diff += (int)counts->y_mode[i][INTRA_MODES - 1] *
+            (pre_last_prob - cur_last_prob);
+  }
+
+  // uv_mode_prob
+  for (i = 0; i < INTRA_MODES; ++i) {
+    for (j = 0; j < INTRA_MODES - 1; ++j) {
+      diff += (int)counts->uv_mode[i][j] *
+              (pre_fc->uv_mode_prob[i][j] - cur_fc->uv_mode_prob[i][j]);
+    }
+    pre_last_prob = MAX_PROB - pre_fc->uv_mode_prob[i][INTRA_MODES - 2];
+    cur_last_prob = MAX_PROB - cur_fc->uv_mode_prob[i][INTRA_MODES - 2];
+
+    diff += (int)counts->uv_mode[i][INTRA_MODES - 1] *
+            (pre_last_prob - cur_last_prob);
+  }
+
+  // partition_prob
+  for (i = 0; i < PARTITION_CONTEXTS; ++i) {
+    for (j = 0; j < PARTITION_TYPES - 1; ++j) {
+      diff += (int)counts->partition[i][j] *
+              (pre_fc->partition_prob[i][j] - cur_fc->partition_prob[i][j]);
+    }
+    pre_last_prob = MAX_PROB - pre_fc->partition_prob[i][PARTITION_TYPES - 2];
+    cur_last_prob = MAX_PROB - cur_fc->partition_prob[i][PARTITION_TYPES - 2];
+
+    diff += (int)counts->partition[i][PARTITION_TYPES - 1] *
+            (pre_last_prob - cur_last_prob);
+  }
+
+  // coef_probs
+  for (i = 0; i < TX_SIZES; ++i) {
+    for (j = 0; j < PLANE_TYPES; ++j) {
+      for (k = 0; k < REF_TYPES; ++k) {
+        for (l = 0; l < COEF_BANDS; ++l) {
+          for (m = 0; m < BAND_COEFF_CONTEXTS(l); ++m) {
+            for (n = 0; n < UNCONSTRAINED_NODES; ++n) {
+              diff += (int)counts->coef[i][j][k][l][m][n] *
+                      (pre_fc->coef_probs[i][j][k][l][m][n] -
+                       cur_fc->coef_probs[i][j][k][l][m][n]);
+            }
+
+            pre_last_prob =
+                MAX_PROB -
+                pre_fc->coef_probs[i][j][k][l][m][UNCONSTRAINED_NODES - 1];
+            cur_last_prob =
+                MAX_PROB -
+                cur_fc->coef_probs[i][j][k][l][m][UNCONSTRAINED_NODES - 1];
+
+            diff += (int)counts->coef[i][j][k][l][m][UNCONSTRAINED_NODES] *
+                    (pre_last_prob - cur_last_prob);
+          }
+        }
+      }
+    }
+  }
+
+  // switchable_interp_prob
+  for (i = 0; i < SWITCHABLE_FILTER_CONTEXTS; ++i) {
+    for (j = 0; j < SWITCHABLE_FILTERS - 1; ++j) {
+      diff += (int)counts->switchable_interp[i][j] *
+              (pre_fc->switchable_interp_prob[i][j] -
+               cur_fc->switchable_interp_prob[i][j]);
+    }
+    pre_last_prob =
+        MAX_PROB - pre_fc->switchable_interp_prob[i][SWITCHABLE_FILTERS - 2];
+    cur_last_prob =
+        MAX_PROB - cur_fc->switchable_interp_prob[i][SWITCHABLE_FILTERS - 2];
+
+    diff += (int)counts->switchable_interp[i][SWITCHABLE_FILTERS - 1] *
+            (pre_last_prob - cur_last_prob);
+  }
+
+  // inter_mode_probs
+  for (i = 0; i < INTER_MODE_CONTEXTS; ++i) {
+    for (j = 0; j < INTER_MODES - 1; ++j) {
+      diff += (int)counts->inter_mode[i][j] *
+              (pre_fc->inter_mode_probs[i][j] - cur_fc->inter_mode_probs[i][j]);
+    }
+    pre_last_prob = MAX_PROB - pre_fc->inter_mode_probs[i][INTER_MODES - 2];
+    cur_last_prob = MAX_PROB - cur_fc->inter_mode_probs[i][INTER_MODES - 2];
+
+    diff += (int)counts->inter_mode[i][INTER_MODES - 1] *
+            (pre_last_prob - cur_last_prob);
+  }
+
+  // intra_inter_prob
+  for (i = 0; i < INTRA_INTER_CONTEXTS; ++i) {
+    diff += (int)counts->intra_inter[i][0] *
+            (pre_fc->intra_inter_prob[i] - cur_fc->intra_inter_prob[i]);
+
+    pre_last_prob = MAX_PROB - pre_fc->intra_inter_prob[i];
+    cur_last_prob = MAX_PROB - cur_fc->intra_inter_prob[i];
+
+    diff += (int)counts->intra_inter[i][1] * (pre_last_prob - cur_last_prob);
+  }
+
+  // comp_inter_prob
+  for (i = 0; i < COMP_INTER_CONTEXTS; ++i) {
+    diff += (int)counts->comp_inter[i][0] *
+            (pre_fc->comp_inter_prob[i] - cur_fc->comp_inter_prob[i]);
+
+    pre_last_prob = MAX_PROB - pre_fc->comp_inter_prob[i];
+    cur_last_prob = MAX_PROB - cur_fc->comp_inter_prob[i];
+
+    diff += (int)counts->comp_inter[i][1] * (pre_last_prob - cur_last_prob);
+  }
+
+  // single_ref_prob
+  for (i = 0; i < REF_CONTEXTS; ++i) {
+    for (j = 0; j < 2; ++j) {
+      diff += (int)counts->single_ref[i][j][0] *
+              (pre_fc->single_ref_prob[i][j] - cur_fc->single_ref_prob[i][j]);
+
+      pre_last_prob = MAX_PROB - pre_fc->single_ref_prob[i][j];
+      cur_last_prob = MAX_PROB - cur_fc->single_ref_prob[i][j];
+
+      diff +=
+          (int)counts->single_ref[i][j][1] * (pre_last_prob - cur_last_prob);
+    }
+  }
+
+  // comp_ref_prob
+  for (i = 0; i < REF_CONTEXTS; ++i) {
+    diff += (int)counts->comp_ref[i][0] *
+            (pre_fc->comp_ref_prob[i] - cur_fc->comp_ref_prob[i]);
+
+    pre_last_prob = MAX_PROB - pre_fc->comp_ref_prob[i];
+    cur_last_prob = MAX_PROB - cur_fc->comp_ref_prob[i];
+
+    diff += (int)counts->comp_ref[i][1] * (pre_last_prob - cur_last_prob);
+  }
+
+  // tx_probs
+  for (i = 0; i < TX_SIZE_CONTEXTS; ++i) {
+    // p32x32
+    for (j = 0; j < TX_SIZES - 1; ++j) {
+      diff += (int)counts->tx.p32x32[i][j] *
+              (pre_fc->tx_probs.p32x32[i][j] - cur_fc->tx_probs.p32x32[i][j]);
+    }
+    pre_last_prob = MAX_PROB - pre_fc->tx_probs.p32x32[i][TX_SIZES - 2];
+    cur_last_prob = MAX_PROB - cur_fc->tx_probs.p32x32[i][TX_SIZES - 2];
+
+    diff += (int)counts->tx.p32x32[i][TX_SIZES - 1] *
+            (pre_last_prob - cur_last_prob);
+
+    // p16x16
+    for (j = 0; j < TX_SIZES - 2; ++j) {
+      diff += (int)counts->tx.p16x16[i][j] *
+              (pre_fc->tx_probs.p16x16[i][j] - cur_fc->tx_probs.p16x16[i][j]);
+    }
+    pre_last_prob = MAX_PROB - pre_fc->tx_probs.p16x16[i][TX_SIZES - 3];
+    cur_last_prob = MAX_PROB - cur_fc->tx_probs.p16x16[i][TX_SIZES - 3];
+
+    diff += (int)counts->tx.p16x16[i][TX_SIZES - 2] *
+            (pre_last_prob - cur_last_prob);
+
+    // p8x8
+    for (j = 0; j < TX_SIZES - 3; ++j) {
+      diff += (int)counts->tx.p8x8[i][j] *
+              (pre_fc->tx_probs.p8x8[i][j] - cur_fc->tx_probs.p8x8[i][j]);
+    }
+    pre_last_prob = MAX_PROB - pre_fc->tx_probs.p8x8[i][TX_SIZES - 4];
+    cur_last_prob = MAX_PROB - cur_fc->tx_probs.p8x8[i][TX_SIZES - 4];
+
+    diff +=
+        (int)counts->tx.p8x8[i][TX_SIZES - 3] * (pre_last_prob - cur_last_prob);
+  }
+
+  // skip_probs
+  for (i = 0; i < SKIP_CONTEXTS; ++i) {
+    diff += (int)counts->skip[i][0] *
+            (pre_fc->skip_probs[i] - cur_fc->skip_probs[i]);
+
+    pre_last_prob = MAX_PROB - pre_fc->skip_probs[i];
+    cur_last_prob = MAX_PROB - cur_fc->skip_probs[i];
+
+    diff += (int)counts->skip[i][1] * (pre_last_prob - cur_last_prob);
+  }
+
+  // mv
+  for (i = 0; i < MV_JOINTS - 1; ++i) {
+    diff += (int)counts->mv.joints[i] *
+            (pre_fc->nmvc.joints[i] - cur_fc->nmvc.joints[i]);
+  }
+  pre_last_prob = MAX_PROB - pre_fc->nmvc.joints[MV_JOINTS - 2];
+  cur_last_prob = MAX_PROB - cur_fc->nmvc.joints[MV_JOINTS - 2];
+
+  diff +=
+      (int)counts->mv.joints[MV_JOINTS - 1] * (pre_last_prob - cur_last_prob);
+
+  for (i = 0; i < 2; ++i) {
+    const nmv_component_counts *nmv_count = &counts->mv.comps[i];
+    const nmv_component *pre_nmv_prob = &pre_fc->nmvc.comps[i];
+    const nmv_component *cur_nmv_prob = &cur_fc->nmvc.comps[i];
+
+    // sign
+    diff += (int)nmv_count->sign[0] * (pre_nmv_prob->sign - cur_nmv_prob->sign);
+
+    pre_last_prob = MAX_PROB - pre_nmv_prob->sign;
+    cur_last_prob = MAX_PROB - cur_nmv_prob->sign;
+
+    diff += (int)nmv_count->sign[1] * (pre_last_prob - cur_last_prob);
+
+    // classes
+    for (j = 0; j < MV_CLASSES - 1; ++j) {
+      diff += (int)nmv_count->classes[j] *
+              (pre_nmv_prob->classes[j] - cur_nmv_prob->classes[j]);
+    }
+    pre_last_prob = MAX_PROB - pre_nmv_prob->classes[MV_CLASSES - 2];
+    cur_last_prob = MAX_PROB - cur_nmv_prob->classes[MV_CLASSES - 2];
+
+    diff += (int)nmv_count->classes[MV_CLASSES - 1] *
+            (pre_last_prob - cur_last_prob);
+
+    // class0
+    for (j = 0; j < CLASS0_SIZE - 1; ++j) {
+      diff += (int)nmv_count->class0[j] *
+              (pre_nmv_prob->class0[j] - cur_nmv_prob->class0[j]);
+    }
+    pre_last_prob = MAX_PROB - pre_nmv_prob->class0[CLASS0_SIZE - 2];
+    cur_last_prob = MAX_PROB - cur_nmv_prob->class0[CLASS0_SIZE - 2];
+
+    diff += (int)nmv_count->class0[CLASS0_SIZE - 1] *
+            (pre_last_prob - cur_last_prob);
+
+    // bits
+    for (j = 0; j < MV_OFFSET_BITS; ++j) {
+      diff += (int)nmv_count->bits[j][0] *
+              (pre_nmv_prob->bits[j] - cur_nmv_prob->bits[j]);
+
+      pre_last_prob = MAX_PROB - pre_nmv_prob->bits[j];
+      cur_last_prob = MAX_PROB - cur_nmv_prob->bits[j];
+
+      diff += (int)nmv_count->bits[j][1] * (pre_last_prob - cur_last_prob);
+    }
+
+    // class0_fp
+    for (j = 0; j < CLASS0_SIZE; ++j) {
+      for (k = 0; k < MV_FP_SIZE - 1; ++k) {
+        diff += (int)nmv_count->class0_fp[j][k] *
+                (pre_nmv_prob->class0_fp[j][k] - cur_nmv_prob->class0_fp[j][k]);
+      }
+      pre_last_prob = MAX_PROB - pre_nmv_prob->class0_fp[j][MV_FP_SIZE - 2];
+      cur_last_prob = MAX_PROB - cur_nmv_prob->class0_fp[j][MV_FP_SIZE - 2];
+
+      diff += (int)nmv_count->class0_fp[j][MV_FP_SIZE - 1] *
+              (pre_last_prob - cur_last_prob);
+    }
+
+    // fp
+    for (j = 0; j < MV_FP_SIZE - 1; ++j) {
+      diff +=
+          (int)nmv_count->fp[j] * (pre_nmv_prob->fp[j] - cur_nmv_prob->fp[j]);
+    }
+    pre_last_prob = MAX_PROB - pre_nmv_prob->fp[MV_FP_SIZE - 2];
+    cur_last_prob = MAX_PROB - cur_nmv_prob->fp[MV_FP_SIZE - 2];
+
+    diff +=
+        (int)nmv_count->fp[MV_FP_SIZE - 1] * (pre_last_prob - cur_last_prob);
+
+    // class0_hp
+    diff += (int)nmv_count->class0_hp[0] *
+            (pre_nmv_prob->class0_hp - cur_nmv_prob->class0_hp);
+
+    pre_last_prob = MAX_PROB - pre_nmv_prob->class0_hp;
+    cur_last_prob = MAX_PROB - cur_nmv_prob->class0_hp;
+
+    diff += (int)nmv_count->class0_hp[1] * (pre_last_prob - cur_last_prob);
+
+    // hp
+    diff += (int)nmv_count->hp[0] * (pre_nmv_prob->hp - cur_nmv_prob->hp);
+
+    pre_last_prob = MAX_PROB - pre_nmv_prob->hp;
+    cur_last_prob = MAX_PROB - cur_nmv_prob->hp;
+
+    diff += (int)nmv_count->hp[1] * (pre_last_prob - cur_last_prob);
+  }
+
+  return -diff;
+}
+
 // Test for whether to calculate metrics for the frame.
 static int is_psnr_calc_enabled(VP9_COMP *cpi) {
   VP9_COMMON *const cm = &cpi->common;
@@ -110,22 +438,22 @@ static int is_psnr_calc_enabled(VP9_COMP *cpi) {
 
 /* clang-format off */
 const Vp9LevelSpec vp9_level_defs[VP9_LEVELS] = {
-  { LEVEL_1,   829440,      36864,    200,    400,   2, 1,  4,  8 },
-  { LEVEL_1_1, 2764800,     73728,    800,    1000,  2, 1,  4,  8 },
-  { LEVEL_2,   4608000,     122880,   1800,   1500,  2, 1,  4,  8 },
-  { LEVEL_2_1, 9216000,     245760,   3600,   2800,  2, 2,  4,  8 },
-  { LEVEL_3,   20736000,    552960,   7200,   6000,  2, 4,  4,  8 },
-  { LEVEL_3_1, 36864000,    983040,   12000,  10000, 2, 4,  4,  8 },
-  { LEVEL_4,   83558400,    2228224,  18000,  16000, 4, 4,  4,  8 },
-  { LEVEL_4_1, 160432128,   2228224,  30000,  18000, 4, 4,  5,  6 },
-  { LEVEL_5,   311951360,   8912896,  60000,  36000, 6, 8,  6,  4 },
-  { LEVEL_5_1, 588251136,   8912896,  120000, 46000, 8, 8,  10, 4 },
+  { LEVEL_1,   829440,      36864,    200,    400,    2, 1,  4,  8 },
+  { LEVEL_1_1, 2764800,     73728,    800,    1000,   2, 1,  4,  8 },
+  { LEVEL_2,   4608000,     122880,   1800,   1500,   2, 1,  4,  8 },
+  { LEVEL_2_1, 9216000,     245760,   3600,   2800,   2, 2,  4,  8 },
+  { LEVEL_3,   20736000,    552960,   7200,   6000,   2, 4,  4,  8 },
+  { LEVEL_3_1, 36864000,    983040,   12000,  10000,  2, 4,  4,  8 },
+  { LEVEL_4,   83558400,    2228224,  18000,  16000,  4, 4,  4,  8 },
+  { LEVEL_4_1, 160432128,   2228224,  30000,  18000,  4, 4,  5,  6 },
+  { LEVEL_5,   311951360,   8912896,  60000,  36000,  6, 8,  6,  4 },
+  { LEVEL_5_1, 588251136,   8912896,  120000, 46000,  8, 8,  10, 4 },
   // TODO(huisu): update max_cpb_size for level 5_2 ~ 6_2 when
-  // they are finalized (currently TBD).
-  { LEVEL_5_2, 1176502272,  8912896,  180000, 0,     8, 8,  10, 4 },
-  { LEVEL_6,   1176502272,  35651584, 180000, 0,     8, 16, 10, 4 },
-  { LEVEL_6_1, 2353004544u, 35651584, 240000, 0,     8, 16, 10, 4 },
-  { LEVEL_6_2, 4706009088u, 35651584, 480000, 0,     8, 16, 10, 4 },
+  // they are finalized (currently tentative).
+  { LEVEL_5_2, 1176502272,  8912896,  180000, 90000,  8, 8,  10, 4 },
+  { LEVEL_6,   1176502272,  35651584, 180000, 90000,  8, 16, 10, 4 },
+  { LEVEL_6_1, 2353004544u, 35651584, 240000, 180000, 8, 16, 10, 4 },
+  { LEVEL_6_2, 4706009088u, 35651584, 480000, 360000, 8, 16, 10, 4 },
 };
 /* clang-format on */
 
@@ -2390,7 +2718,9 @@ static void scale_and_extend_frame_nonnormative(const YV12_BUFFER_CONFIG *src,
 
 #if CONFIG_VP9_HIGHBITDEPTH
 static void scale_and_extend_frame(const YV12_BUFFER_CONFIG *src,
-                                   YV12_BUFFER_CONFIG *dst, int bd) {
+                                   YV12_BUFFER_CONFIG *dst, int bd,
+                                   INTERP_FILTER filter_type,
+                                   int phase_scaler) {
   const int src_w = src->y_crop_width;
   const int src_h = src->y_crop_height;
   const int dst_w = dst->y_crop_width;
@@ -2400,7 +2730,7 @@ static void scale_and_extend_frame(const YV12_BUFFER_CONFIG *src,
   const int src_strides[3] = { src->y_stride, src->uv_stride, src->uv_stride };
   uint8_t *const dsts[3] = { dst->y_buffer, dst->u_buffer, dst->v_buffer };
   const int dst_strides[3] = { dst->y_stride, dst->uv_stride, dst->uv_stride };
-  const InterpKernel *const kernel = vp9_filter_kernels[EIGHTTAP];
+  const InterpKernel *const kernel = vp9_filter_kernels[filter_type];
   int x, y, i;
 
   for (i = 0; i < MAX_MB_PLANE; ++i) {
@@ -2408,16 +2738,17 @@ static void scale_and_extend_frame(const YV12_BUFFER_CONFIG *src,
     const int src_stride = src_strides[i];
     const int dst_stride = dst_strides[i];
     for (y = 0; y < dst_h; y += 16) {
-      const int y_q4 = y * (16 / factor) * src_h / dst_h;
+      const int y_q4 = y * (16 / factor) * src_h / dst_h + phase_scaler;
       for (x = 0; x < dst_w; x += 16) {
-        const int x_q4 = x * (16 / factor) * src_w / dst_w;
+        const int x_q4 = x * (16 / factor) * src_w / dst_w + phase_scaler;
         const uint8_t *src_ptr = srcs[i] +
                                  (y / factor) * src_h / dst_h * src_stride +
                                  (x / factor) * src_w / dst_w;
         uint8_t *dst_ptr = dsts[i] + (y / factor) * dst_stride + (x / factor);
 
         if (src->flags & YV12_FLAG_HIGHBITDEPTH) {
-          vpx_highbd_convolve8(src_ptr, src_stride, dst_ptr, dst_stride,
+          vpx_highbd_convolve8(CONVERT_TO_SHORTPTR(src_ptr), src_stride,
+                               CONVERT_TO_SHORTPTR(dst_ptr), dst_stride,
                                kernel[x_q4 & 0xf], 16 * src_w / dst_w,
                                kernel[y_q4 & 0xf], 16 * src_h / dst_h,
                                16 / factor, 16 / factor, bd);
@@ -2618,6 +2949,10 @@ static void loopfilter_frame(VP9_COMP *cpi, VP9_COMMON *cm) {
   MACROBLOCKD *xd = &cpi->td.mb.e_mbd;
   struct loopfilter *lf = &cm->lf;
 
+  const int is_reference_frame =
+      (cm->frame_type == KEY_FRAME || cpi->refresh_last_frame ||
+       cpi->refresh_golden_frame || cpi->refresh_alt_ref_frame);
+
   if (xd->lossless) {
     lf->filter_level = 0;
     lf->last_filt_level = 0;
@@ -2643,7 +2978,7 @@ static void loopfilter_frame(VP9_COMP *cpi, VP9_COMMON *cm) {
     cpi->time_pick_lpf += vpx_usec_timer_elapsed(&timer);
   }
 
-  if (lf->filter_level > 0) {
+  if (lf->filter_level > 0 && is_reference_frame) {
     vp9_build_mask_frame(cm, lf->filter_level, 0);
 
     if (cpi->num_workers > 1)
@@ -2708,7 +3043,8 @@ void vp9_scale_references(VP9_COMP *cpi) {
                                        cm->byte_alignment, NULL, NULL, NULL))
             vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
                                "Failed to allocate frame buffer");
-          scale_and_extend_frame(ref, &new_fb_ptr->buf, (int)cm->bit_depth);
+          scale_and_extend_frame(ref, &new_fb_ptr->buf, (int)cm->bit_depth,
+                                 EIGHTTAP, 0);
           cpi->scaled_ref_idx[ref_frame - 1] = new_fb;
           alloc_frame_mvs(cm, new_fb);
         }
@@ -2731,7 +3067,7 @@ void vp9_scale_references(VP9_COMP *cpi) {
                                        cm->byte_alignment, NULL, NULL, NULL))
             vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
                                "Failed to allocate frame buffer");
-          vp9_scale_and_extend_frame(ref, &new_fb_ptr->buf);
+          vp9_scale_and_extend_frame(ref, &new_fb_ptr->buf, EIGHTTAP, 0);
           cpi->scaled_ref_idx[ref_frame - 1] = new_fb;
           alloc_frame_mvs(cm, new_fb);
         }
@@ -3118,6 +3454,15 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
                                        uint8_t *dest) {
   VP9_COMMON *const cm = &cpi->common;
   int q = 0, bottom_index = 0, top_index = 0;  // Dummy variables.
+  const INTERP_FILTER filter_scaler =
+      (is_one_pass_cbr_svc(cpi))
+          ? cpi->svc.downsample_filter_type[cpi->svc.spatial_layer_id]
+          : EIGHTTAP;
+  const int phase_scaler =
+      (is_one_pass_cbr_svc(cpi))
+          ? cpi->svc.downsample_filter_phase[cpi->svc.spatial_layer_id]
+          : 0;
+
   // Flag to check if its valid to compute the source sad (used for
   // scene detection and for superblock content state in CBR mode).
   // The flag may get reset below based on SVC or resizing state.
@@ -3136,8 +3481,11 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
     // For svc, if it is a 1/4x1/4 downscaling, do a two-stage scaling to take
     // advantage of the 1:2 optimized scaler. In the process, the 1/2x1/2
     // result will be saved in scaled_temp and might be used later.
+    const INTERP_FILTER filter_scaler2 = cpi->svc.downsample_filter_type[1];
+    const int phase_scaler2 = cpi->svc.downsample_filter_phase[1];
     cpi->Source = vp9_svc_twostage_scale(
-        cm, cpi->un_scaled_source, &cpi->scaled_source, &cpi->svc.scaled_temp);
+        cm, cpi->un_scaled_source, &cpi->scaled_source, &cpi->svc.scaled_temp,
+        filter_scaler, phase_scaler, filter_scaler2, phase_scaler2);
     cpi->svc.scaled_one_half = 1;
   } else if (is_one_pass_cbr_svc(cpi) &&
              cpi->un_scaled_source->y_width == cm->width << 1 &&
@@ -3149,16 +3497,17 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
     cpi->svc.scaled_one_half = 0;
   } else {
     cpi->Source = vp9_scale_if_required(
-        cm, cpi->un_scaled_source, &cpi->scaled_source, (cpi->oxcf.pass == 0));
+        cm, cpi->un_scaled_source, &cpi->scaled_source, (cpi->oxcf.pass == 0),
+        filter_scaler, phase_scaler);
   }
   // Unfiltered raw source used in metrics calculation if the source
   // has been filtered.
   if (is_psnr_calc_enabled(cpi)) {
 #ifdef ENABLE_KF_DENOISE
     if (is_spatial_denoise_enabled(cpi)) {
-      cpi->raw_source_frame =
-          vp9_scale_if_required(cm, &cpi->raw_unscaled_source,
-                                &cpi->raw_scaled_source, (cpi->oxcf.pass == 0));
+      cpi->raw_source_frame = vp9_scale_if_required(
+          cm, &cpi->raw_unscaled_source, &cpi->raw_scaled_source,
+          (cpi->oxcf.pass == 0), EIGHTTAP, phase_scaler);
     } else {
       cpi->raw_source_frame = cpi->Source;
     }
@@ -3190,9 +3539,9 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
        cpi->sf.partition_search_type == SOURCE_VAR_BASED_PARTITION ||
        (cpi->noise_estimate.enabled && !cpi->oxcf.noise_sensitivity) ||
        cpi->compute_source_sad_onepass))
-    cpi->Last_Source =
-        vp9_scale_if_required(cm, cpi->unscaled_last_source,
-                              &cpi->scaled_last_source, (cpi->oxcf.pass == 0));
+    cpi->Last_Source = vp9_scale_if_required(
+        cm, cpi->unscaled_last_source, &cpi->scaled_last_source,
+        (cpi->oxcf.pass == 0), EIGHTTAP, 0);
 
   if (cpi->Last_Source == NULL ||
       cpi->Last_Source->y_width != cpi->Source->y_width ||
@@ -3214,10 +3563,11 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
        cpi->oxcf.content == VP9E_CONTENT_SCREEN))
     vp9_scene_detection_onepass(cpi);
 
-  // For 1 pass SVC, since only ZEROMV is allowed for upsampled reference
-  // frame (i.e, svc->force_zero_mode_spatial_ref = 0), we can avoid this
-  // frame-level upsampling.
-  if (frame_is_intra_only(cm) == 0 && !is_one_pass_cbr_svc(cpi)) {
+  // For 1 pass CBR SVC, only ZEROMV is allowed for spatial reference frame
+  // when svc->force_zero_mode_spatial_ref = 1. Under those conditions we can
+  // avoid this frame-level upsampling (for non intra_only frames).
+  if (frame_is_intra_only(cm) == 0 &&
+      !(is_one_pass_cbr_svc(cpi) && cpi->svc.force_zero_mode_spatial_ref)) {
     vp9_scale_references(cpi);
   }
 
@@ -3374,8 +3724,9 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
                                        &frame_over_shoot_limit);
     }
 
-    cpi->Source = vp9_scale_if_required(
-        cm, cpi->un_scaled_source, &cpi->scaled_source, (cpi->oxcf.pass == 0));
+    cpi->Source =
+        vp9_scale_if_required(cm, cpi->un_scaled_source, &cpi->scaled_source,
+                              (cpi->oxcf.pass == 0), EIGHTTAP, 0);
 
     // Unfiltered raw source used in metrics calculation if the source
     // has been filtered.
@@ -3384,7 +3735,7 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
       if (is_spatial_denoise_enabled(cpi)) {
         cpi->raw_source_frame = vp9_scale_if_required(
             cm, &cpi->raw_unscaled_source, &cpi->raw_scaled_source,
-            (cpi->oxcf.pass == 0));
+            (cpi->oxcf.pass == 0), EIGHTTAP, 0);
       } else {
         cpi->raw_source_frame = cpi->Source;
       }
@@ -3394,9 +3745,9 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
     }
 
     if (cpi->unscaled_last_source != NULL)
-      cpi->Last_Source = vp9_scale_if_required(cm, cpi->unscaled_last_source,
-                                               &cpi->scaled_last_source,
-                                               (cpi->oxcf.pass == 0));
+      cpi->Last_Source = vp9_scale_if_required(
+          cm, cpi->unscaled_last_source, &cpi->scaled_last_source,
+          (cpi->oxcf.pass == 0), EIGHTTAP, 0);
 
     if (frame_is_intra_only(cm) == 0) {
       if (loop_count > 0) {
@@ -3625,6 +3976,15 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
 #endif
 
   if (enable_acl) {
+    // Skip recoding, if model diff is below threshold
+    const int thresh = compute_context_model_thresh(cpi);
+    const int diff = compute_context_model_diff(cm);
+    if (diff < thresh) {
+      vpx_clear_system_state();
+      restore_coding_context(cpi);
+      return;
+    }
+
     vp9_encode_frame(cpi);
     vpx_clear_system_state();
     restore_coding_context(cpi);
@@ -3674,23 +4034,28 @@ static void set_ext_overrides(VP9_COMP *cpi) {
   }
 }
 
-YV12_BUFFER_CONFIG *vp9_svc_twostage_scale(VP9_COMMON *cm,
-                                           YV12_BUFFER_CONFIG *unscaled,
-                                           YV12_BUFFER_CONFIG *scaled,
-                                           YV12_BUFFER_CONFIG *scaled_temp) {
+YV12_BUFFER_CONFIG *vp9_svc_twostage_scale(
+    VP9_COMMON *cm, YV12_BUFFER_CONFIG *unscaled, YV12_BUFFER_CONFIG *scaled,
+    YV12_BUFFER_CONFIG *scaled_temp, INTERP_FILTER filter_type,
+    int phase_scaler, INTERP_FILTER filter_type2, int phase_scaler2) {
   if (cm->mi_cols * MI_SIZE != unscaled->y_width ||
       cm->mi_rows * MI_SIZE != unscaled->y_height) {
 #if CONFIG_VP9_HIGHBITDEPTH
     if (cm->bit_depth == VPX_BITS_8) {
-      vp9_scale_and_extend_frame(unscaled, scaled_temp);
-      vp9_scale_and_extend_frame(scaled_temp, scaled);
+      vp9_scale_and_extend_frame(unscaled, scaled_temp, filter_type2,
+                                 phase_scaler2);
+      vp9_scale_and_extend_frame(scaled_temp, scaled, filter_type,
+                                 phase_scaler);
     } else {
-      scale_and_extend_frame(unscaled, scaled_temp, (int)cm->bit_depth);
-      scale_and_extend_frame(scaled_temp, scaled, (int)cm->bit_depth);
+      scale_and_extend_frame(unscaled, scaled_temp, (int)cm->bit_depth,
+                             filter_type2, phase_scaler2);
+      scale_and_extend_frame(scaled_temp, scaled, (int)cm->bit_depth,
+                             filter_type, phase_scaler);
     }
 #else
-    vp9_scale_and_extend_frame(unscaled, scaled_temp);
-    vp9_scale_and_extend_frame(scaled_temp, scaled);
+    vp9_scale_and_extend_frame(unscaled, scaled_temp, filter_type2,
+                               phase_scaler2);
+    vp9_scale_and_extend_frame(scaled_temp, scaled, filter_type, phase_scaler);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
     return scaled;
   } else {
@@ -3698,25 +4063,25 @@ YV12_BUFFER_CONFIG *vp9_svc_twostage_scale(VP9_COMMON *cm,
   }
 }
 
-YV12_BUFFER_CONFIG *vp9_scale_if_required(VP9_COMMON *cm,
-                                          YV12_BUFFER_CONFIG *unscaled,
-                                          YV12_BUFFER_CONFIG *scaled,
-                                          int use_normative_scaler) {
+YV12_BUFFER_CONFIG *vp9_scale_if_required(
+    VP9_COMMON *cm, YV12_BUFFER_CONFIG *unscaled, YV12_BUFFER_CONFIG *scaled,
+    int use_normative_scaler, INTERP_FILTER filter_type, int phase_scaler) {
   if (cm->mi_cols * MI_SIZE != unscaled->y_width ||
       cm->mi_rows * MI_SIZE != unscaled->y_height) {
 #if CONFIG_VP9_HIGHBITDEPTH
     if (use_normative_scaler && unscaled->y_width <= (scaled->y_width << 1) &&
         unscaled->y_height <= (scaled->y_height << 1))
       if (cm->bit_depth == VPX_BITS_8)
-        vp9_scale_and_extend_frame(unscaled, scaled);
+        vp9_scale_and_extend_frame(unscaled, scaled, filter_type, phase_scaler);
       else
-        scale_and_extend_frame(unscaled, scaled, (int)cm->bit_depth);
+        scale_and_extend_frame(unscaled, scaled, (int)cm->bit_depth,
+                               filter_type, phase_scaler);
     else
       scale_and_extend_frame_nonnormative(unscaled, scaled, (int)cm->bit_depth);
 #else
     if (use_normative_scaler && unscaled->y_width <= (scaled->y_width << 1) &&
         unscaled->y_height <= (scaled->y_height << 1))
-      vp9_scale_and_extend_frame(unscaled, scaled);
+      vp9_scale_and_extend_frame(unscaled, scaled, filter_type, phase_scaler);
     else
       scale_and_extend_frame_nonnormative(unscaled, scaled);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
@@ -4049,12 +4414,14 @@ static void encode_frame_to_data_rate(VP9_COMP *cpi, size_t *size,
       ++cm->current_video_frame;
       cpi->ext_refresh_frame_flags_pending = 0;
       cpi->svc.rc_drop_superframe = 1;
+      cpi->last_frame_dropped = 1;
       // TODO(marpan): Advancing the svc counters on dropped frames can break
       // the referencing scheme for the fixed svc patterns defined in
       // vp9_one_pass_cbr_svc_start_layer(). Look into fixing this issue, but
       // for now, don't advance the svc frame counters on dropped frame.
       // if (cpi->use_svc)
       //   vp9_inc_frame_in_layer(cpi);
+
       return;
     }
   }
@@ -4071,6 +4438,8 @@ static void encode_frame_to_data_rate(VP9_COMP *cpi, size_t *size,
   } else {
     encode_with_recode_loop(cpi, size, dest);
   }
+
+  cpi->last_frame_dropped = 0;
 
   // Disable segmentation if it decrease rate/distortion ratio
   if (cpi->oxcf.aq_mode == LOOKAHEAD_AQ)
@@ -5261,4 +5630,9 @@ void vp9_set_row_mt(VP9_COMP *cpi) {
   if (cpi->oxcf.mode == REALTIME && cpi->oxcf.speed >= 5 && cpi->oxcf.row_mt) {
     cpi->row_mt = 1;
   }
+
+  if (cpi->row_mt && cpi->oxcf.max_threads > 1)
+    cpi->row_mt_bit_exact = 1;
+  else
+    cpi->row_mt_bit_exact = 0;
 }

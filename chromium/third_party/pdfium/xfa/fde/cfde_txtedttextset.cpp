@@ -9,7 +9,7 @@
 #include "xfa/fde/cfde_txtedtengine.h"
 #include "xfa/fde/cfde_txtedtpage.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
-#include "xfa/fgas/layout/fgas_textbreak.h"
+#include "xfa/fgas/layout/cfx_txtbreak.h"
 
 CFDE_TxtEdtTextSet::CFDE_TxtEdtTextSet(CFDE_TxtEdtPage* pPage)
     : m_pPage(pPage) {}
@@ -60,7 +60,7 @@ int32_t CFDE_TxtEdtTextSet::GetDisplayPos(const FDE_TEXTEDITPIECE& piece,
   CFX_TxtBreak* pBreak = pEngine->GetTextBreak();
   uint32_t dwLayoutStyle = pBreak->GetLayoutStyles();
   FX_TXTRUN tr;
-  tr.pAccess = m_pPage;
+  tr.pAccess = m_pPage.Get();
   tr.pIdentity = &piece;
   tr.iLength = nLength;
   tr.pFont = pTextParams->pFont;
@@ -82,7 +82,7 @@ std::vector<CFX_RectF> CFDE_TxtEdtTextSet::GetCharRects(
   const FDE_TXTEDTPARAMS* pTextParams = pEngine->GetEditParams();
   uint32_t dwLayoutStyle = pEngine->GetTextBreak()->GetLayoutStyles();
   FX_TXTRUN tr;
-  tr.pAccess = m_pPage;
+  tr.pAccess = m_pPage.Get();
   tr.pIdentity = pPiece;
   tr.iLength = pPiece->nCount;
   tr.pFont = pTextParams->pFont;

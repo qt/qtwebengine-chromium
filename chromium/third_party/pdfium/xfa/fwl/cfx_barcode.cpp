@@ -6,6 +6,8 @@
 
 #include "xfa/fwl/cfx_barcode.h"
 
+#include <memory>
+
 #include "fxbarcode/cbc_codabar.h"
 #include "fxbarcode/cbc_code128.h"
 #include "fxbarcode/cbc_code39.h"
@@ -17,33 +19,34 @@
 #include "fxbarcode/cbc_qrcode.h"
 #include "fxbarcode/cbc_upca.h"
 #include "fxbarcode/utils.h"
+#include "third_party/base/ptr_util.h"
 
 namespace {
 
-CBC_CodeBase* CreateBarCodeEngineObject(BC_TYPE type) {
+std::unique_ptr<CBC_CodeBase> CreateBarCodeEngineObject(BC_TYPE type) {
   switch (type) {
     case BC_CODE39:
-      return new CBC_Code39();
+      return pdfium::MakeUnique<CBC_Code39>();
     case BC_CODABAR:
-      return new CBC_Codabar();
+      return pdfium::MakeUnique<CBC_Codabar>();
     case BC_CODE128:
-      return new CBC_Code128(BC_CODE128_B);
+      return pdfium::MakeUnique<CBC_Code128>(BC_CODE128_B);
     case BC_CODE128_B:
-      return new CBC_Code128(BC_CODE128_B);
+      return pdfium::MakeUnique<CBC_Code128>(BC_CODE128_B);
     case BC_CODE128_C:
-      return new CBC_Code128(BC_CODE128_C);
+      return pdfium::MakeUnique<CBC_Code128>(BC_CODE128_C);
     case BC_EAN8:
-      return new CBC_EAN8();
+      return pdfium::MakeUnique<CBC_EAN8>();
     case BC_UPCA:
-      return new CBC_UPCA();
+      return pdfium::MakeUnique<CBC_UPCA>();
     case BC_EAN13:
-      return new CBC_EAN13();
+      return pdfium::MakeUnique<CBC_EAN13>();
     case BC_QR_CODE:
-      return new CBC_QRCode();
+      return pdfium::MakeUnique<CBC_QRCode>();
     case BC_PDF417:
-      return new CBC_PDF417I();
+      return pdfium::MakeUnique<CBC_PDF417I>();
     case BC_DATAMATRIX:
-      return new CBC_DataMatrix();
+      return pdfium::MakeUnique<CBC_DataMatrix>();
     case BC_UNKNOWN:
     default:
       return nullptr;
@@ -57,7 +60,7 @@ CFX_Barcode::CFX_Barcode() {}
 CFX_Barcode::~CFX_Barcode() {}
 
 bool CFX_Barcode::Create(BC_TYPE type) {
-  m_pBCEngine.reset(CreateBarCodeEngineObject(type));
+  m_pBCEngine = CreateBarCodeEngineObject(type);
   return !!m_pBCEngine;
 }
 
@@ -219,8 +222,8 @@ bool CFX_Barcode::SetTextLocation(BC_TEXT_LOC location) {
   return m_pBCEngine && memptr ? (m_pBCEngine.get()->*memptr)(location) : false;
 }
 
-bool CFX_Barcode::SetWideNarrowRatio(int32_t ratio) {
-  typedef bool (CBC_CodeBase::*memptrtype)(int32_t);
+bool CFX_Barcode::SetWideNarrowRatio(int8_t ratio) {
+  typedef bool (CBC_CodeBase::*memptrtype)(int8_t);
   memptrtype memptr = nullptr;
   switch (GetType()) {
     case BC_CODE39:
@@ -276,6 +279,7 @@ bool CFX_Barcode::SetErrorCorrectionLevel(int32_t level) {
   }
   return m_pBCEngine && memptr ? (m_pBCEngine.get()->*memptr)(level) : false;
 }
+
 bool CFX_Barcode::SetTruncated(bool truncated) {
   typedef void (CBC_CodeBase::*memptrtype)(bool);
   memptrtype memptr = nullptr;
@@ -290,14 +294,11 @@ bool CFX_Barcode::SetTruncated(bool truncated) {
                                : false;
 }
 
-bool CFX_Barcode::Encode(const CFX_WideStringC& contents,
-                         bool isDevice,
-                         int32_t& e) {
-  return m_pBCEngine && m_pBCEngine->Encode(contents, isDevice, e);
+bool CFX_Barcode::Encode(const CFX_WideStringC& contents, bool isDevice) {
+  return m_pBCEngine && m_pBCEngine->Encode(contents, isDevice);
 }
 
 bool CFX_Barcode::RenderDevice(CFX_RenderDevice* device,
-                               const CFX_Matrix* matrix,
-                               int32_t& e) {
-  return m_pBCEngine && m_pBCEngine->RenderDevice(device, matrix, e);
+                               const CFX_Matrix* matrix) {
+  return m_pBCEngine && m_pBCEngine->RenderDevice(device, matrix);
 }

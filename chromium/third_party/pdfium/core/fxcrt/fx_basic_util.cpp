@@ -10,7 +10,7 @@
 #include <memory>
 
 #include "core/fxcrt/fx_basic.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
 #include "third_party/base/ptr_util.h"
 
 bool FX_atonum(const CFX_ByteStringC& strc, void* pData) {
@@ -39,7 +39,7 @@ bool FX_atonum(const CFX_ByteStringC& strc, void* pData) {
   }
 
   while (cc < strc.GetLength() && std::isdigit(strc[cc])) {
-    integer = integer * 10 + FXSYS_toDecimalDigit(strc.CharAt(cc));
+    integer = integer * 10 + FXSYS_DecimalCharToInt(strc.CharAt(cc));
     if (!integer.IsValid())
       break;
     cc++;
@@ -105,7 +105,7 @@ float FX_atof(const CFX_ByteStringC& strc) {
   while (cc < len) {
     if (strc[cc] == '.')
       break;
-    value = value * 10 + FXSYS_toDecimalDigit(strc.CharAt(cc));
+    value = value * 10 + FXSYS_DecimalCharToInt(strc.CharAt(cc));
     cc++;
   }
   int scale = 0;
@@ -113,7 +113,7 @@ float FX_atof(const CFX_ByteStringC& strc) {
     cc++;
     while (cc < len) {
       value +=
-          FXSYS_FractionalScale(scale, FXSYS_toDecimalDigit(strc.CharAt(cc)));
+          FXSYS_FractionalScale(scale, FXSYS_DecimalCharToInt(strc.CharAt(cc)));
       scale++;
       if (scale == FXSYS_FractionalScaleCount())
         break;

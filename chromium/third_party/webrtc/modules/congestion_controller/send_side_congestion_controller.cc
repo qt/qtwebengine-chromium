@@ -177,6 +177,10 @@ int64_t SendSideCongestionController::GetPacerQueuingDelayMs() const {
   return IsNetworkDown() ? 0 : pacer_->QueueInMs();
 }
 
+int64_t SendSideCongestionController::GetFirstPacketTimeMs() const {
+  return pacer_->FirstSentPacketTimeMs();
+}
+
 void SendSideCongestionController::SignalNetworkState(NetworkState state) {
   LOG(LS_INFO) << "SignalNetworkState "
                << (state == kNetworkUp ? "Up" : "Down");
@@ -240,8 +244,6 @@ void SendSideCongestionController::OnTransportFeedback(
   transport_feedback_adapter_.OnTransportFeedback(feedback);
   std::vector<PacketFeedback> feedback_vector =
       transport_feedback_adapter_.GetTransportFeedbackVector();
-  if (feedback_vector.empty())
-    return;
   DelayBasedBwe::Result result;
   {
     rtc::CritScope cs(&bwe_lock_);
@@ -275,7 +277,7 @@ void SendSideCongestionController::MaybeTriggerOnNetworkChanged() {
     int64_t probing_interval_ms;
     {
       rtc::CritScope cs(&bwe_lock_);
-      probing_interval_ms = delay_based_bwe_->GetProbingIntervalMs();
+      probing_interval_ms = delay_based_bwe_->GetExpectedBwePeriodMs();
     }
     {
       rtc::CritScope cs(&observer_lock_);

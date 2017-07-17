@@ -304,12 +304,9 @@ TIntermAggregate *TIntermAggregate::CreateBuiltInFunctionCall(const TFunction &f
 }
 
 TIntermAggregate *TIntermAggregate::CreateConstructor(const TType &type,
-                                                      TOperator op,
                                                       TIntermSequence *arguments)
 {
-    TIntermAggregate *constructorNode = new TIntermAggregate(type, op, arguments);
-    ASSERT(constructorNode->isConstructor());
-    return constructorNode;
+    return new TIntermAggregate(type, EOpConstruct, arguments);
 }
 
 TIntermAggregate *TIntermAggregate::Create(const TType &type,
@@ -343,7 +340,7 @@ void TIntermAggregate::setTypePrecisionAndQualifier(const TType &type)
         {
             // Structs should not be precision qualified, the individual members may be.
             // Built-in types on the other hand should be precision qualified.
-            if (mOp != EOpConstructStruct)
+            if (getBasicType() != EbtStruct)
             {
                 setPrecisionFromChildren();
             }
@@ -564,8 +561,6 @@ TIntermTyped *TIntermTyped::CreateZero(const TType &type)
 
     if (!type.isArray() && type.getBasicType() != EbtStruct)
     {
-        ASSERT(type.isScalar() || type.isVector() || type.isMatrix());
-
         size_t size       = constType.getObjectSize();
         TConstantUnion *u = new TConstantUnion[size];
         for (size_t i = 0; i < size; ++i)
@@ -599,6 +594,15 @@ TIntermTyped *TIntermTyped::CreateZero(const TType &type)
         return node;
     }
 
+    if (type.getBasicType() == EbtVoid)
+    {
+        // Void array. This happens only on error condition, similarly to the case above. We don't
+        // have a constructor operator for void, so this needs special handling. We'll end up with a
+        // value without the array type, but that should not be a problem.
+        constType.clearArrayness();
+        return CreateZero(constType);
+    }
+
     TIntermSequence *arguments = new TIntermSequence();
 
     if (type.isArray())
@@ -623,8 +627,7 @@ TIntermTyped *TIntermTyped::CreateZero(const TType &type)
         }
     }
 
-    return TIntermAggregate::CreateConstructor(constType, sh::TypeToConstructorOperator(type),
-                                               arguments);
+    return TIntermAggregate::CreateConstructor(constType, arguments);
 }
 
 // static
@@ -770,43 +773,9 @@ bool TIntermOperator::isMultiplication() const
     }
 }
 
-//
-// returns true if the operator is for one of the constructors
-//
 bool TIntermOperator::isConstructor() const
 {
-    switch (mOp)
-    {
-        case EOpConstructVec2:
-        case EOpConstructVec3:
-        case EOpConstructVec4:
-        case EOpConstructMat2:
-        case EOpConstructMat2x3:
-        case EOpConstructMat2x4:
-        case EOpConstructMat3x2:
-        case EOpConstructMat3:
-        case EOpConstructMat3x4:
-        case EOpConstructMat4x2:
-        case EOpConstructMat4x3:
-        case EOpConstructMat4:
-        case EOpConstructFloat:
-        case EOpConstructIVec2:
-        case EOpConstructIVec3:
-        case EOpConstructIVec4:
-        case EOpConstructInt:
-        case EOpConstructUVec2:
-        case EOpConstructUVec3:
-        case EOpConstructUVec4:
-        case EOpConstructUInt:
-        case EOpConstructBVec2:
-        case EOpConstructBVec3:
-        case EOpConstructBVec4:
-        case EOpConstructBool:
-        case EOpConstructStruct:
-            return true;
-        default:
-            return false;
-    }
+    return (mOp == EOpConstruct);
 }
 
 bool TIntermOperator::isFunctionCall() const
@@ -1026,6 +995,22 @@ TIntermTernary::TIntermTernary(TIntermTyped *cond,
 {
     getTypePointer()->setQualifier(
         TIntermTernary::DetermineQualifier(cond, trueExpression, falseExpression));
+}
+
+TIntermLoop::TIntermLoop(TLoopType type,
+                         TIntermNode *init,
+                         TIntermTyped *cond,
+                         TIntermTyped *expr,
+                         TIntermBlock *body)
+    : mType(type), mInit(init), mCond(cond), mExpr(expr), mBody(body)
+{
+    // Declaration nodes with no children can appear if all the declarators just added constants to
+    // the symbol table instead of generating code. They're no-ops so don't add them to the tree.
+    if (mInit && mInit->getAsDeclarationNode() &&
+        mInit->getAsDeclarationNode()->getSequence()->empty())
+    {
+        mInit = nullptr;
+    }
 }
 
 // static
@@ -3306,7 +3291,7 @@ TConstantUnion *TIntermConstantUnion::FoldAggregateBuiltIn(TIntermAggregate *agg
 // static
 TString TIntermTraverser::hash(const TString &name, ShHashFunction64 hashFunction)
 {
-    if (hashFunction == NULL || name.empty())
+    if (hashFunction == nullptr || name.empty())
         return name;
     khronos_uint64_t number = (*hashFunction)(name.c_str(), name.length());
     TStringStream stream;
@@ -3315,10 +3300,27 @@ TString TIntermTraverser::hash(const TString &name, ShHashFunction64 hashFunctio
     return hashedName;
 }
 
+bool TIntermTraverser::CompareInsertion(const NodeInsertMultipleEntry &a,
+                                        const NodeInsertMultipleEntry &b)
+{
+    if (a.parent != b.parent)
+    {
+        return a.parent > b.parent;
+    }
+    return a.position > b.position;
+}
+
 void TIntermTraverser::updateTree()
 {
+    // Sort the insertions so that insertion position is decreasing. This way multiple insertions to
+    // the same parent node are handled correctly.
+    std::sort(mInsertions.begin(), mInsertions.end(), CompareInsertion);
     for (size_t ii = 0; ii < mInsertions.size(); ++ii)
     {
+        // We can't know here what the intended ordering of two insertions to the same position is,
+        // so it is not supported.
+        ASSERT(ii == 0 || mInsertions[ii].position != mInsertions[ii - 1].position ||
+               mInsertions[ii].parent != mInsertions[ii - 1].parent);
         const NodeInsertMultipleEntry &insertion = mInsertions[ii];
         ASSERT(insertion.parent);
         if (!insertion.insertionsAfter.empty())

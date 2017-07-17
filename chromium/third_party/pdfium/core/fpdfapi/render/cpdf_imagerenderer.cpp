@@ -27,7 +27,7 @@
 #include "core/fpdfdoc/cpdf_occontext.h"
 #include "core/fxcrt/cfx_maybe_owned.h"
 #include "core/fxcrt/fx_safe_types.h"
-#include "core/fxge/cfx_fxgedevice.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/cfx_dibsource.h"
@@ -59,14 +59,10 @@ bool CPDF_ImageRenderer::StartLoadDIBSource() {
   if (!image_rect.Valid())
     return false;
 
-  int dest_width =
-      m_ImageMatrix.a >= 0 ? image_rect.Width() : -image_rect.Width();
-  int dest_height =
-      m_ImageMatrix.d <= 0 ? image_rect.Height() : -image_rect.Height();
-  if (m_Loader.Start(
-          m_pImageObject, m_pRenderStatus->m_pContext->GetPageCache(), m_bStdCS,
-          m_pRenderStatus->m_GroupFamily, m_pRenderStatus->m_bLoadMask,
-          m_pRenderStatus, dest_width, dest_height)) {
+  if (m_Loader.Start(m_pImageObject.Get(),
+                     m_pRenderStatus->m_pContext->GetPageCache(), m_bStdCS,
+                     m_pRenderStatus->m_GroupFamily,
+                     m_pRenderStatus->m_bLoadMask, m_pRenderStatus.Get())) {
     m_Status = 4;
     return true;
   }
@@ -77,26 +73,22 @@ bool CPDF_ImageRenderer::StartRenderDIBSource() {
   if (!m_Loader.m_pBitmap)
     return false;
 
-  m_BitmapAlpha =
-      FXSYS_round(255 * m_pImageObject->m_GeneralState.GetFillAlpha());
+  CPDF_GeneralState& state = m_pImageObject->m_GeneralState;
+  m_BitmapAlpha = FXSYS_round(255 * state.GetFillAlpha());
   m_pDIBSource = m_Loader.m_pBitmap;
   if (m_pRenderStatus->m_Options.m_ColorMode == RENDER_COLOR_ALPHA &&
       !m_Loader.m_pMask) {
     return StartBitmapAlpha();
   }
-  if (m_pImageObject->m_GeneralState.GetTR()) {
-    if (!m_pImageObject->m_GeneralState.GetTransferFunc()) {
-      m_pImageObject->m_GeneralState.SetTransferFunc(
-          m_pRenderStatus->GetTransferFunc(
-              m_pImageObject->m_GeneralState.GetTR()));
-    }
-    if (m_pImageObject->m_GeneralState.GetTransferFunc() &&
-        !m_pImageObject->m_GeneralState.GetTransferFunc()->m_bIdentity) {
+  if (state.GetTR()) {
+    if (!state.GetTransferFunc())
+      state.SetTransferFunc(m_pRenderStatus->GetTransferFunc(state.GetTR()));
+
+    if (state.GetTransferFunc() && !state.GetTransferFunc()->m_bIdentity) {
       m_pDIBSource = m_Loader.m_pBitmap =
-          m_pImageObject->m_GeneralState.GetTransferFunc()->TranslateImage(
-              m_Loader.m_pBitmap);
+          state.GetTransferFunc()->TranslateImage(m_Loader.m_pBitmap);
       if (m_Loader.m_bCached && m_Loader.m_pMask)
-        m_Loader.m_pMask = m_Loader.m_pMask->Clone();
+        m_Loader.m_pMask = m_Loader.m_pMask->Clone(nullptr);
       m_Loader.m_bCached = false;
     }
   }
@@ -110,9 +102,9 @@ bool CPDF_ImageRenderer::StartRenderDIBSource() {
       if (m_pPattern)
         m_bPatternColor = true;
     }
-    m_FillArgb = m_pRenderStatus->GetFillArgb(m_pImageObject);
+    m_FillArgb = m_pRenderStatus->GetFillArgb(m_pImageObject.Get());
   } else if (m_pRenderStatus->m_Options.m_ColorMode == RENDER_COLOR_GRAY) {
-    m_pClone = m_pDIBSource->Clone();
+    m_pClone = m_pDIBSource->Clone(nullptr);
     m_pClone->ConvertColorScale(m_pRenderStatus->m_Options.m_BackColor,
                                 m_pRenderStatus->m_Options.m_ForeColor);
     m_pDIBSource = m_pClone;
@@ -122,53 +114,36 @@ bool CPDF_ImageRenderer::StartRenderDIBSource() {
     m_Flags |= RENDER_FORCE_DOWNSAMPLE;
   else if (m_pRenderStatus->m_Options.m_Flags & RENDER_FORCE_HALFTONE)
     m_Flags |= RENDER_FORCE_HALFTONE;
-  if (m_pRenderStatus->m_pDevice->GetDeviceClass() != FXDC_DISPLAY) {
-    CPDF_Object* pFilters =
-        m_pImageObject->GetImage()->GetStream()->GetDict()->GetDirectObjectFor(
-            "Filter");
-    if (pFilters) {
-      if (pFilters->IsName()) {
-        CFX_ByteString bsDecodeType = pFilters->GetString();
-        if (bsDecodeType == "DCTDecode" || bsDecodeType == "JPXDecode")
-          m_Flags |= FXRENDER_IMAGE_LOSSY;
-      } else if (CPDF_Array* pArray = pFilters->AsArray()) {
-        for (size_t i = 0; i < pArray->GetCount(); i++) {
-          CFX_ByteString bsDecodeType = pArray->GetStringAt(i);
-          if (bsDecodeType == "DCTDecode" || bsDecodeType == "JPXDecode") {
-            m_Flags |= FXRENDER_IMAGE_LOSSY;
-            break;
-          }
-        }
-      }
-    }
-  }
+
+  if (m_pRenderStatus->m_pDevice->GetDeviceClass() != FXDC_DISPLAY)
+    HandleFilters();
+
   if (m_pRenderStatus->m_Options.m_Flags & RENDER_NOIMAGESMOOTH)
     m_Flags |= FXDIB_NOSMOOTH;
   else if (m_pImageObject->GetImage()->IsInterpol())
     m_Flags |= FXDIB_INTERPOL;
+
   if (m_Loader.m_pMask)
     return DrawMaskedImage();
 
   if (m_bPatternColor)
-    return DrawPatternImage(m_pObj2Device);
+    return DrawPatternImage(m_pObj2Device.Get());
 
-  if (m_BitmapAlpha != 255 || !m_pImageObject->m_GeneralState ||
-      !m_pImageObject->m_GeneralState.GetFillOP() ||
-      m_pImageObject->m_GeneralState.GetOPMode() != 0 ||
-      m_pImageObject->m_GeneralState.GetBlendType() != FXDIB_BLEND_NORMAL ||
-      m_pImageObject->m_GeneralState.GetStrokeAlpha() != 1.0f ||
-      m_pImageObject->m_GeneralState.GetFillAlpha() != 1.0f) {
+  if (m_BitmapAlpha != 255 || !state.HasRef() || !state.GetFillOP() ||
+      state.GetOPMode() != 0 || state.GetBlendType() != FXDIB_BLEND_NORMAL ||
+      state.GetStrokeAlpha() != 1.0f || state.GetFillAlpha() != 1.0f) {
     return StartDIBSource();
   }
   CPDF_Document* pDocument = nullptr;
   CPDF_Page* pPage = nullptr;
-  if (m_pRenderStatus->m_pContext->GetPageCache()) {
-    pPage = m_pRenderStatus->m_pContext->GetPageCache()->GetPage();
-    pDocument = pPage->m_pDocument;
+  if (auto* pPageCache = m_pRenderStatus->m_pContext->GetPageCache()) {
+    pPage = pPageCache->GetPage();
+    pDocument = pPage->m_pDocument.Get();
   } else {
     pDocument = m_pImageObject->GetImage()->GetDocument();
   }
-  CPDF_Dictionary* pPageResources = pPage ? pPage->m_pPageResources : nullptr;
+  CPDF_Dictionary* pPageResources =
+      pPage ? pPage->m_pPageResources.Get() : nullptr;
   CPDF_Object* pCSObj =
       m_pImageObject->GetImage()->GetStream()->GetDict()->GetDirectObjectFor(
           "ColorSpace");
@@ -244,8 +219,8 @@ CFX_Matrix CPDF_ImageRenderer::GetDrawMatrix(const FX_RECT& rect) const {
 }
 
 void CPDF_ImageRenderer::CalculateDrawImage(
-    CFX_FxgeDevice* pBitmapDevice1,
-    CFX_FxgeDevice* pBitmapDevice2,
+    CFX_DefaultRenderDevice* pBitmapDevice1,
+    CFX_DefaultRenderDevice* pBitmapDevice2,
     const CFX_RetainPtr<CFX_DIBSource>& pDIBSource,
     CFX_Matrix* pNewMatrix,
     const FX_RECT& rect) const {
@@ -295,7 +270,7 @@ bool CPDF_ImageRenderer::DrawPatternImage(const CFX_Matrix* pObj2Device) {
     return false;
 
   CFX_Matrix new_matrix = GetDrawMatrix(rect);
-  CFX_FxgeDevice bitmap_device1;
+  CFX_DefaultRenderDevice bitmap_device1;
   if (!bitmap_device1.Create(rect.Width(), rect.Height(), FXDIB_Rgb32, nullptr))
     return true;
 
@@ -306,17 +281,18 @@ bool CPDF_ImageRenderer::DrawPatternImage(const CFX_Matrix* pObj2Device) {
                            &m_pRenderStatus->m_Options, 0,
                            m_pRenderStatus->m_bDropObjects, nullptr, true);
   CFX_Matrix patternDevice = *pObj2Device;
-  patternDevice.Translate((float)-rect.left, (float)-rect.top);
+  patternDevice.Translate(static_cast<float>(-rect.left),
+                          static_cast<float>(-rect.top));
   if (CPDF_TilingPattern* pTilingPattern = m_pPattern->AsTilingPattern()) {
-    bitmap_render.DrawTilingPattern(pTilingPattern, m_pImageObject,
+    bitmap_render.DrawTilingPattern(pTilingPattern, m_pImageObject.Get(),
                                     &patternDevice, false);
   } else if (CPDF_ShadingPattern* pShadingPattern =
                  m_pPattern->AsShadingPattern()) {
-    bitmap_render.DrawShadingPattern(pShadingPattern, m_pImageObject,
+    bitmap_render.DrawShadingPattern(pShadingPattern, m_pImageObject.Get(),
                                      &patternDevice, false);
   }
 
-  CFX_FxgeDevice bitmap_device2;
+  CFX_DefaultRenderDevice bitmap_device2;
   if (!bitmap_device2.Create(rect.Width(), rect.Height(), FXDIB_8bppRgb,
                              nullptr)) {
     return true;
@@ -343,7 +319,7 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
     return false;
 
   CFX_Matrix new_matrix = GetDrawMatrix(rect);
-  CFX_FxgeDevice bitmap_device1;
+  CFX_DefaultRenderDevice bitmap_device1;
   if (!bitmap_device1.Create(rect.Width(), rect.Height(), FXDIB_Rgb32, nullptr))
     return true;
 
@@ -361,7 +337,7 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
                          m_Flags, true, FXDIB_BLEND_NORMAL)) {
     image_render.Continue(nullptr);
   }
-  CFX_FxgeDevice bitmap_device2;
+  CFX_DefaultRenderDevice bitmap_device2;
   if (!bitmap_device2.Create(rect.Width(), rect.Height(), FXDIB_8bppRgb,
                              nullptr))
     return true;
@@ -403,7 +379,7 @@ bool CPDF_ImageRenderer::StartDIBSource() {
     }
   }
 #ifdef _SKIA_SUPPORT_
-  CFX_RetainPtr<CFX_DIBitmap> premultiplied = m_pDIBSource->Clone();
+  CFX_RetainPtr<CFX_DIBitmap> premultiplied = m_pDIBSource->Clone(nullptr);
   if (m_pDIBSource->HasAlpha())
     CFX_SkiaDeviceDriver::PreMultiply(premultiplied);
   if (m_pRenderStatus->m_pDevice->StartDIBitsWithBlend(
@@ -511,7 +487,7 @@ bool CPDF_ImageRenderer::StartBitmapAlpha() {
     int left;
     int top;
     CFX_RetainPtr<CFX_DIBitmap> pTransformed =
-        pAlphaMask->TransformTo(&m_ImageMatrix, left, top);
+        pAlphaMask->TransformTo(&m_ImageMatrix, &left, &top);
     if (!pTransformed)
       return true;
 
@@ -563,11 +539,38 @@ bool CPDF_ImageRenderer::Continue(IFX_Pause* pPause) {
                                                       pPause);
 
   if (m_Status == 4) {
-    if (m_Loader.Continue(pPause))
+    if (m_Loader.Continue(pPause, m_pRenderStatus.Get()))
       return true;
 
     if (StartRenderDIBSource())
       return Continue(pPause);
   }
   return false;
+}
+
+void CPDF_ImageRenderer::HandleFilters() {
+  CPDF_Object* pFilters =
+      m_pImageObject->GetImage()->GetStream()->GetDict()->GetDirectObjectFor(
+          "Filter");
+  if (!pFilters)
+    return;
+
+  if (pFilters->IsName()) {
+    CFX_ByteString bsDecodeType = pFilters->GetString();
+    if (bsDecodeType == "DCTDecode" || bsDecodeType == "JPXDecode")
+      m_Flags |= FXRENDER_IMAGE_LOSSY;
+    return;
+  }
+
+  CPDF_Array* pArray = pFilters->AsArray();
+  if (!pArray)
+    return;
+
+  for (size_t i = 0; i < pArray->GetCount(); i++) {
+    CFX_ByteString bsDecodeType = pArray->GetStringAt(i);
+    if (bsDecodeType == "DCTDecode" || bsDecodeType == "JPXDecode") {
+      m_Flags |= FXRENDER_IMAGE_LOSSY;
+      break;
+    }
+  }
 }

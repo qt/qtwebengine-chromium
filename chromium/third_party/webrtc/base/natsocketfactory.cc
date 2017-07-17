@@ -230,7 +230,6 @@ class NATSocket : public AsyncSocket, public sigslot::has_slots<> {
   ConnState GetState() const override {
     return connected_ ? CS_CONNECTED : CS_CLOSED;
   }
-  int EstimateMTU(uint16_t* mtu) override { return socket_->EstimateMTU(mtu); }
   int GetOption(Option opt, int* value) override {
     return socket_->GetOption(opt, value);
   }
@@ -415,7 +414,7 @@ NATSocketServer::Translator::Translator(
   // Create a new private network, and a NATServer running on the private
   // network that bridges to the external network. Also tell the private
   // network to use the same message queue as us.
-  VirtualSocketServer* internal_server = new VirtualSocketServer(server_);
+  VirtualSocketServer* internal_server = new VirtualSocketServer();
   internal_server->SetMessageQueue(server_->queue());
   internal_factory_.reset(internal_server);
   nat_server_.reset(new NATServer(type, internal_server, int_ip, int_ip,

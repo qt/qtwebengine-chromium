@@ -224,6 +224,27 @@ config("common_objc") {
   libs = [ "Foundation.framework" ]
 }
 
+rtc_source_set("video_stream_api") {
+  sources = [
+    "video_receive_stream.h",
+    "video_send_stream.h",
+  ]
+}
+
+# Contents of video_frame.h is moved from top-level down to common_video/.
+# Nothing in webrtc includes the backwards-compatibility header, so this target
+# is only for completeness.
+# TODO(nisse): Delete together with the header file once downstream applications
+# no longer use it.
+rtc_source_set("video_frame_deprecated") {
+  sources = [
+    "video_frame.h",
+  ]
+  deps = [
+    "common_video",
+  ]
+}
+
 if (!build_with_chromium) {
   # Target to build all the WebRTC production code.
   rtc_static_library("webrtc") {
@@ -234,7 +255,6 @@ if (!build_with_chromium) {
       # TODO(ossu): Keep this here until donwstream projects have updated.
       # http://bugs.webrtc.org/6716
       "call.h",
-      "config.h",
     ]
     complete_static_lib = true
     defines = []
@@ -257,7 +277,7 @@ if (!build_with_chromium) {
       "pc",
       "sdk",
       "stats",
-      "system_wrappers",
+      "system_wrappers:system_wrappers_default",
       "video",
       "voice_engine",
     ]
@@ -282,7 +302,6 @@ if (!build_with_chromium) {
         ":video_engine_tests",
         ":webrtc_nonparallel_tests",
         ":webrtc_perf_tests",
-        "api:rtc_api_unittests",
         "base:rtc_base_tests_utils",
         "common_audio:common_audio_unittests",
         "common_video:common_video_unittests",
@@ -303,7 +322,6 @@ if (!build_with_chromium) {
         "test",
         "video:screenshare_loopback",
         "video:video_loopback",
-        "video:video_tests",
         "voice_engine:voice_engine_unittests",
       ]
       if (is_android) {
@@ -475,7 +493,6 @@ if (rtc_include_tests) {
       "modules/remote_bitrate_estimator:remote_bitrate_estimator_perf_tests",
       "test:test_main",
       "video:video_full_stack_tests",
-      "video:video_quality_test",
     ]
 
     data = webrtc_perf_tests_resources

@@ -54,7 +54,7 @@ gl::Error MarkAttachmentsDirty(const gl::FramebufferAttachment *attachment)
 
 void UpdateCachedRenderTarget(const gl::FramebufferAttachment *attachment,
                               RenderTarget11 *&cachedRenderTarget,
-                              gl::OnAttachmentDirtyBinding *channelBinding)
+                              OnRenderTargetDirtyBinding *channelBinding)
 {
     RenderTarget11 *newRenderTarget = nullptr;
     if (attachment)
@@ -78,8 +78,7 @@ Framebuffer11::Framebuffer11(const gl::FramebufferState &data, Renderer11 *rende
 {
     ASSERT(mRenderer != nullptr);
     mCachedColorRenderTargets.fill(nullptr);
-    for (uint32_t colorIndex = 0;
-         colorIndex < static_cast<uint32_t>(data.getColorAttachments().size()); ++colorIndex)
+    for (size_t colorIndex = 0; colorIndex < data.getColorAttachments().size(); ++colorIndex)
     {
         mColorRenderTargetsDirty.emplace_back(this, colorIndex);
     }
@@ -242,11 +241,11 @@ gl::Error Framebuffer11::invalidateAttachment(const gl::FramebufferAttachment *a
 
     RenderTarget11 *renderTarget = nullptr;
     ANGLE_TRY(attachment->getRenderTarget(&renderTarget));
-    ID3D11View *view = renderTarget->getRenderTargetView();
+    const auto &rtv = renderTarget->getRenderTargetView();
 
-    if (view != nullptr)
+    if (rtv.valid())
     {
-        deviceContext1->DiscardView(view);
+        deviceContext1->DiscardView(rtv.get());
     }
 
     return gl::NoError();
@@ -384,7 +383,7 @@ void Framebuffer11::syncState(ContextImpl *contextImpl, const gl::Framebuffer::D
     const auto &mergedDirtyBits = dirtyBits | mInternalDirtyBits;
     mInternalDirtyBits.reset();
 
-    for (auto dirtyBit : IterateBitSet(mergedDirtyBits))
+    for (auto dirtyBit : mergedDirtyBits)
     {
         switch (dirtyBit)
         {
@@ -413,7 +412,7 @@ void Framebuffer11::syncState(ContextImpl *contextImpl, const gl::Framebuffer::D
     FramebufferD3D::syncState(contextImpl, dirtyBits);
 }
 
-void Framebuffer11::signal(uint32_t channelID)
+void Framebuffer11::signal(size_t channelID)
 {
     if (channelID == gl::IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS)
     {

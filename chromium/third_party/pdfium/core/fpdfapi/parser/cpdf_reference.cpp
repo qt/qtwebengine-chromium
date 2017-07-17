@@ -65,7 +65,7 @@ std::unique_ptr<CPDF_Object> CPDF_Reference::CloneNonCyclic(
                ? pDirect->CloneNonCyclic(true, pVisited)
                : nullptr;
   }
-  return pdfium::MakeUnique<CPDF_Reference>(m_pObjList, m_RefObjNum);
+  return pdfium::MakeUnique<CPDF_Reference>(m_pObjList.Get(), m_RefObjNum);
 }
 
 CPDF_Object* CPDF_Reference::SafeGetDirect() const {
@@ -81,4 +81,9 @@ void CPDF_Reference::SetRef(CPDF_IndirectObjectHolder* pDoc, uint32_t objnum) {
 CPDF_Object* CPDF_Reference::GetDirect() const {
   return m_pObjList ? m_pObjList->GetOrParseIndirectObject(m_RefObjNum)
                     : nullptr;
+}
+
+bool CPDF_Reference::WriteTo(IFX_ArchiveStream* archive) const {
+  return archive->WriteString(" ") && archive->WriteDWord(GetRefObjNum()) &&
+         archive->WriteString(" 0 R ");
 }

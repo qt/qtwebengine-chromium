@@ -1,4 +1,4 @@
-// Copyright (C) 2016 and later: Unicode, Inc. and others.
+// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
 /*
 ******************************************************************************
@@ -132,6 +132,8 @@
 #define U_PF_BROWSER_NATIVE_CLIENT 4020
 /** Android is based on Linux. @internal */
 #define U_PF_ANDROID 4050
+/** Fuchsia is a POSIX-ish platform. @internal */
+#define U_PF_FUCHSIA 4100
 /* Maximum value for Linux-based platform is 4499 */
 /** z/OS is the successor to OS/390 which was the successor to MVS. @internal */
 #define U_PF_OS390 9000
@@ -150,8 +152,10 @@
 #   define U_PLATFORM U_PF_ANDROID
     /* Android wchar_t support depends on the API level. */
 #   include <android/api-level.h>
-#elif defined(__native_client__)
+#elif defined(__pnacl__) || defined(__native_client__)
 #   define U_PLATFORM U_PF_BROWSER_NATIVE_CLIENT
+#elif defined(__Fuchsia__)
+#   define U_PLATFORM U_PF_FUCHSIA
 #elif defined(linux) || defined(__linux__) || defined(__linux)
 #   define U_PLATFORM U_PF_LINUX
 #elif defined(__APPLE__) && defined(__MACH__)
@@ -231,6 +235,18 @@
 #   define U_PLATFORM_HAS_WIN32_API 1
 #else
 #   define U_PLATFORM_HAS_WIN32_API 0
+#endif
+
+/**
+ * \def U_PLATFORM_HAS_WINUWP_API
+ * Defines whether target is intended for Universal Windows Platform API
+ * Set to 1 for Windows10 Release Solution Configuration
+ * @internal
+ */
+#ifdef U_PLATFORM_HAS_WINUWP_API
+    /* Use the predefined value. */
+#else
+#   define U_PLATFORM_HAS_WINUWP_API 0
 #endif
 
 /**
@@ -343,17 +359,6 @@
 #define U_IOSTREAM_SOURCE 199711
 #endif
 
-/**
- * \def U_HAVE_STD_STRING
- * Defines whether the standard C++ (STL) &lt;string&gt; header is available.
- * @internal
- */
-#ifdef U_HAVE_STD_STRING
-    /* Use the predefined value. */
-#else
-#   define U_HAVE_STD_STRING 1
-#endif
-
 /*===========================================================================*/
 /** @{ Compiler and environment features                                     */
 /*===========================================================================*/
@@ -430,7 +435,7 @@
 #   define U_HAVE_DEBUG_LOCATION_NEW 0
 #endif
 
-/* Compatibility with non clang compilers: http://clang.llvm.org/docs/LanguageExtensions.html */
+/* Compatibility with compilers other than clang: http://clang.llvm.org/docs/LanguageExtensions.html */
 #ifndef __has_attribute
 #    define __has_attribute(x) 0
 #endif
@@ -497,6 +502,13 @@
 #   define U_CPLUSPLUS_VERSION 1
 #endif
 
+#if (U_PLATFORM == U_PF_AIX || U_PLATFORM == U_PF_OS390) && defined(__cplusplus) &&(U_CPLUSPLUS_VERSION < 11)
+// add in std::nullptr_t
+namespace std {
+  typedef decltype(nullptr) nullptr_t;
+};
+#endif
+
 /**
  * \def U_HAVE_RVALUE_REFERENCES
  * Set to 1 if the compiler supports rvalue references.
@@ -537,17 +549,22 @@
  * http://clang.llvm.org/docs/AttributeReference.html#fallthrough-clang-fallthrough
  * @internal
  */
-#ifdef __cplusplus
+#ifndef __cplusplus
+    // Not for C.
+#elif defined(U_FALLTHROUGH)
+    // Use the predefined value.
+#elif defined(__clang__)
+    // Test for compiler vs. feature separately.
+    // Other compilers might choke on the feature test.
 #   if __has_cpp_attribute(clang::fallthrough) || \
             (__has_feature(cxx_attributes) && __has_warning("-Wimplicit-fallthrough"))
 #       define U_FALLTHROUGH [[clang::fallthrough]]
-#   else
-#       define U_FALLTHROUGH
 #   endif
-#else
-#   define U_FALLTHROUGH
 #endif
 
+#ifndef U_FALLTHROUGH
+#   define U_FALLTHROUGH
+#endif
 
 /** @} */
 
@@ -764,6 +781,7 @@
      * gcc 4.4 defines the __CHAR16_TYPE__ macro to a usable type but
      * does not support u"abc" string literals.
      * C++11 and C11 require support for UTF-16 literals
+     * TODO: Fix for plain C. Doesn't work on Mac.
      */
 #   if U_CPLUSPLUS_VERSION >= 11 || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L)
 #       define U_HAVE_CHAR16_T 1

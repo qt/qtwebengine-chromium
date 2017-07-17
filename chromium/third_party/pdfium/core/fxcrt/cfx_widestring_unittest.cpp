@@ -4,6 +4,9 @@
 
 #include "core/fxcrt/cfx_widestring.h"
 
+#include <algorithm>
+#include <vector>
+
 #include "testing/fx_string_testhelpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -689,6 +692,25 @@ TEST(fxcrt, WideStringUTF16LE_Encode) {
   }
 }
 
+TEST(fxcrt, WideStringCFromVector) {
+  std::vector<CFX_WideStringC::UnsignedType> null_vec;
+  CFX_WideStringC null_string(null_vec);
+  EXPECT_EQ(0, null_string.GetLength());
+
+  std::vector<CFX_WideStringC::UnsignedType> lower_a_vec(
+      10, static_cast<CFX_WideStringC::UnsignedType>(L'a'));
+  CFX_WideStringC lower_a_string(lower_a_vec);
+  EXPECT_EQ(10, lower_a_string.GetLength());
+  EXPECT_EQ(L"aaaaaaaaaa", lower_a_string);
+
+  std::vector<CFX_WideStringC::UnsignedType> cleared_vec;
+  cleared_vec.push_back(42);
+  cleared_vec.pop_back();
+  CFX_WideStringC cleared_string(cleared_vec);
+  EXPECT_EQ(0, cleared_string.GetLength());
+  EXPECT_EQ(nullptr, cleared_string.raw_str());
+}
+
 TEST(fxcrt, WideStringCOperatorSubscript) {
   // CFX_WideStringC includes the NUL terminator for non-empty strings.
   CFX_WideStringC abc(L"abc");
@@ -857,6 +879,70 @@ TEST(fxcrt, WideStringCFind) {
   EXPECT_EQ(2, hibyte_string.Find(L'\xff08'));
 }
 
+TEST(fxcrt, WideStringCNullIterator) {
+  CFX_WideStringC null_str;
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : null_str) {
+    sum += c;  // Avoid unused arg warnings.
+    any_present = true;
+  }
+  EXPECT_FALSE(any_present);
+  EXPECT_EQ(0, sum);
+}
+
+TEST(fxcrt, WideStringCEmptyIterator) {
+  CFX_WideStringC empty_str(L"");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : empty_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_FALSE(any_present);
+  EXPECT_EQ(0, sum);
+}
+
+TEST(fxcrt, WideStringCOneCharIterator) {
+  CFX_WideStringC one_str(L"a");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : one_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_TRUE(any_present);
+  EXPECT_EQ(static_cast<int32_t>(L'a'), sum);
+}
+
+TEST(fxcrt, WideStringCMultiCharIterator) {
+  CFX_WideStringC one_str(L"abc");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : one_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_TRUE(any_present);
+  EXPECT_EQ(static_cast<int32_t>(L'a' + L'b' + L'c'), sum);
+}
+
+TEST(fxcrt, WideStringCAnyAllNoneOf) {
+  CFX_WideStringC str(L"aaaaaaaaaaaaaaaaab");
+  EXPECT_FALSE(std::all_of(str.begin(), str.end(),
+                           [](const wchar_t& c) { return c == L'a'; }));
+
+  EXPECT_FALSE(std::none_of(str.begin(), str.end(),
+                            [](const wchar_t& c) { return c == L'a'; }));
+
+  EXPECT_TRUE(std::any_of(str.begin(), str.end(),
+                          [](const wchar_t& c) { return c == L'a'; }));
+
+  EXPECT_TRUE(pdfium::ContainsValue(str, L'a'));
+  EXPECT_TRUE(pdfium::ContainsValue(str, L'b'));
+  EXPECT_FALSE(pdfium::ContainsValue(str, L'z'));
+}
+
 TEST(fxcrt, WideStringFormatWidth) {
   {
     CFX_WideString str;
@@ -951,4 +1037,68 @@ TEST(fxcrt, WidStringInitializerList) {
   EXPECT_EQ(L"clams and oysters", many_str);
   many_str = {L"fish", L" and ", L"chips", L" and ", L"soda"};
   EXPECT_EQ(L"fish and chips and soda", many_str);
+}
+
+TEST(fxcrt, WideStringNullIterator) {
+  CFX_WideString null_str;
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : null_str) {
+    sum += c;  // Avoid unused arg warnings.
+    any_present = true;
+  }
+  EXPECT_FALSE(any_present);
+  EXPECT_EQ(0, sum);
+}
+
+TEST(fxcrt, WideStringEmptyIterator) {
+  CFX_WideString empty_str(L"");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : empty_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_FALSE(any_present);
+  EXPECT_EQ(0, sum);
+}
+
+TEST(fxcrt, WideStringOneCharIterator) {
+  CFX_WideString one_str(L"a");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : one_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_TRUE(any_present);
+  EXPECT_EQ(static_cast<int32_t>(L'a'), sum);
+}
+
+TEST(fxcrt, WideStringMultiCharIterator) {
+  CFX_WideString one_str(L"abc");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : one_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_TRUE(any_present);
+  EXPECT_EQ(static_cast<int32_t>(L'a' + L'b' + L'c'), sum);
+}
+
+TEST(fxcrt, WideStringAnyAllNoneOf) {
+  CFX_WideString str(L"aaaaaaaaaaaaaaaaab");
+  EXPECT_FALSE(std::all_of(str.begin(), str.end(),
+                           [](const wchar_t& c) { return c == L'a'; }));
+
+  EXPECT_FALSE(std::none_of(str.begin(), str.end(),
+                            [](const wchar_t& c) { return c == L'a'; }));
+
+  EXPECT_TRUE(std::any_of(str.begin(), str.end(),
+                          [](const wchar_t& c) { return c == L'a'; }));
+
+  EXPECT_TRUE(pdfium::ContainsValue(str, L'a'));
+  EXPECT_TRUE(pdfium::ContainsValue(str, L'b'));
+  EXPECT_FALSE(pdfium::ContainsValue(str, L'z'));
 }

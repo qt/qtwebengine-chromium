@@ -7,10 +7,13 @@
 #ifndef CORE_FPDFDOC_CPDF_FORMFIELD_H_
 #define CORE_FPDFDOC_CPDF_FORMFIELD_H_
 
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "core/fpdfdoc/cpdf_aaction.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
+#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
@@ -35,7 +38,7 @@ class CPDF_FormControl;
 class CPDF_InterForm;
 class CPDF_String;
 
-CPDF_Object* FPDF_GetFieldAttr(CPDF_Dictionary* pFieldDict,
+CPDF_Object* FPDF_GetFieldAttr(const CPDF_Dictionary* pFieldDict,
                                const char* name,
                                int nLevel = 0);
 CFX_WideString FPDF_GetFullName(CPDF_Dictionary* pFieldDict);
@@ -63,7 +66,7 @@ class CPDF_FormField {
   Type GetType() const { return m_Type; }
   uint32_t GetFlags() const { return m_Flags; }
 
-  CPDF_Dictionary* GetFieldDict() const { return m_pDict; }
+  CPDF_Dictionary* GetFieldDict() const { return m_pDict.Get(); }
   void SetFieldDict(CPDF_Dictionary* pDict) { m_pDict = pDict; }
 
   bool ResetField(bool bNotify = false);
@@ -72,7 +75,9 @@ class CPDF_FormField {
     return pdfium::CollectionSize<int>(m_ControlList);
   }
 
-  CPDF_FormControl* GetControl(int index) const { return m_ControlList[index]; }
+  CPDF_FormControl* GetControl(int index) const {
+    return m_ControlList[index].Get();
+  }
 
   int GetControlIndex(const CPDF_FormControl* pControl) const;
   int GetFieldType() const;
@@ -131,10 +136,20 @@ class CPDF_FormField {
   float GetFontSize() const { return m_FontSize; }
   CPDF_Font* GetFont() const { return m_pFont; }
 
- private:
-  friend class CPDF_InterForm;
-  friend class CPDF_FormControl;
+  const CPDF_Dictionary* GetDict() const { return m_pDict.Get(); }
+  const CPDF_InterForm* GetForm() const { return m_pForm.Get(); }
 
+  CFX_WideString GetCheckValue(bool bDefault) const;
+
+  void AddFormControl(CPDF_FormControl* pFormControl) {
+    m_ControlList.emplace_back(pFormControl);
+  }
+
+  void SetOpt(std::unique_ptr<CPDF_Object> pOpt) {
+    m_pDict->SetFor("Opt", std::move(pOpt));
+  }
+
+ private:
   CFX_WideString GetValue(bool bDefault) const;
   bool SetValue(const CFX_WideString& value, bool bDefault, bool bNotify);
 
@@ -143,7 +158,6 @@ class CPDF_FormField {
   CFX_WideString GetOptionText(int index, int sub_index) const;
 
   void LoadDA();
-  CFX_WideString GetCheckValue(bool bDefault) const;
   bool SetCheckValue(const CFX_WideString& value, bool bDefault, bool bNotify);
 
   bool NotifyBeforeSelectionChange(const CFX_WideString& value);
@@ -157,9 +171,10 @@ class CPDF_FormField {
 
   CPDF_FormField::Type m_Type;
   uint32_t m_Flags;
-  CPDF_InterForm* const m_pForm;
-  CPDF_Dictionary* m_pDict;
-  std::vector<CPDF_FormControl*> m_ControlList;  // Owned by InterForm parent.
+  CFX_UnownedPtr<CPDF_InterForm> const m_pForm;
+  CFX_UnownedPtr<CPDF_Dictionary> m_pDict;
+  // Owned by InterForm parent.
+  std::vector<CFX_UnownedPtr<CPDF_FormControl>> m_ControlList;
   float m_FontSize;
   CPDF_Font* m_pFont;
 };

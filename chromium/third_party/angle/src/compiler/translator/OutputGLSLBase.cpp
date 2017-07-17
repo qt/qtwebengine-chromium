@@ -368,7 +368,7 @@ void TOutputGLSLBase::writeFunctionParameters(const TIntermSequence &args)
     for (TIntermSequence::const_iterator iter = args.begin(); iter != args.end(); ++iter)
     {
         const TIntermSymbol *arg = (*iter)->getAsSymbolNode();
-        ASSERT(arg != NULL);
+        ASSERT(arg != nullptr);
 
         const TType &type = arg->getType();
         writeVariableType(type);
@@ -398,7 +398,7 @@ const TConstantUnion *TOutputGLSLBase::writeConstantUnion(const TType &type,
         for (size_t i = 0; i < fields.size(); ++i)
         {
             const TType *fieldType = fields[i]->type();
-            ASSERT(fieldType != NULL);
+            ASSERT(fieldType != nullptr);
             pConstUnion = writeConstantUnion(*fieldType, pConstUnion);
             if (i != fields.size() - 1)
                 out << ", ";
@@ -546,7 +546,7 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
             break;
 
         case EOpIndexDirect:
-            writeTriplet(visit, NULL, "[", "]");
+            writeTriplet(visit, nullptr, "[", "]");
             break;
         case EOpIndexIndirect:
             if (node->getAddIndexClamp())
@@ -582,7 +582,7 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
             }
             else
             {
-                writeTriplet(visit, NULL, "[", "]");
+                writeTriplet(visit, nullptr, "[", "]");
             }
             break;
         case EOpIndexDirectStruct:
@@ -799,7 +799,7 @@ bool TOutputGLSLBase::visitUnary(Visit visit, TIntermUnary *node)
             UNREACHABLE();
     }
 
-    writeTriplet(visit, preString.c_str(), NULL, postString.c_str());
+    writeTriplet(visit, preString.c_str(), nullptr, postString.c_str());
 
     return true;
 }
@@ -962,32 +962,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
             else
                 out << ")";
             break;
-        case EOpConstructFloat:
-        case EOpConstructVec2:
-        case EOpConstructVec3:
-        case EOpConstructVec4:
-        case EOpConstructBool:
-        case EOpConstructBVec2:
-        case EOpConstructBVec3:
-        case EOpConstructBVec4:
-        case EOpConstructInt:
-        case EOpConstructIVec2:
-        case EOpConstructIVec3:
-        case EOpConstructIVec4:
-        case EOpConstructUInt:
-        case EOpConstructUVec2:
-        case EOpConstructUVec3:
-        case EOpConstructUVec4:
-        case EOpConstructMat2:
-        case EOpConstructMat2x3:
-        case EOpConstructMat2x4:
-        case EOpConstructMat3x2:
-        case EOpConstructMat3:
-        case EOpConstructMat3x4:
-        case EOpConstructMat4x2:
-        case EOpConstructMat4x3:
-        case EOpConstructMat4:
-        case EOpConstructStruct:
+        case EOpConstruct:
             writeConstructorTriplet(visit, node->getType());
             break;
 
@@ -1090,7 +1065,7 @@ bool TOutputGLSLBase::visitLoop(Visit visit, TIntermLoop *node)
     else if (loopType == ELoopWhile)  // while loop
     {
         out << "while (";
-        ASSERT(node->getCondition() != NULL);
+        ASSERT(node->getCondition() != nullptr);
         node->getCondition()->traverse(this);
         out << ")\n";
 
@@ -1104,7 +1079,7 @@ bool TOutputGLSLBase::visitLoop(Visit visit, TIntermLoop *node)
         visitCodeBlock(node->getBody());
 
         out << "while (";
-        ASSERT(node->getCondition() != NULL);
+        ASSERT(node->getCondition() != nullptr);
         node->getCondition()->traverse(this);
         out << ");\n";
     }
@@ -1119,16 +1094,16 @@ bool TOutputGLSLBase::visitBranch(Visit visit, TIntermBranch *node)
     switch (node->getFlowOp())
     {
         case EOpKill:
-            writeTriplet(visit, "discard", NULL, NULL);
+            writeTriplet(visit, "discard", nullptr, nullptr);
             break;
         case EOpBreak:
-            writeTriplet(visit, "break", NULL, NULL);
+            writeTriplet(visit, "break", nullptr, nullptr);
             break;
         case EOpContinue:
-            writeTriplet(visit, "continue", NULL, NULL);
+            writeTriplet(visit, "continue", nullptr, nullptr);
             break;
         case EOpReturn:
-            writeTriplet(visit, "return ", NULL, NULL);
+            writeTriplet(visit, "return ", nullptr, nullptr);
             break;
         default:
             UNREACHABLE();
@@ -1140,7 +1115,7 @@ bool TOutputGLSLBase::visitBranch(Visit visit, TIntermBranch *node)
 void TOutputGLSLBase::visitCodeBlock(TIntermBlock *node)
 {
     TInfoSinkBase &out = objSink();
-    if (node != NULL)
+    if (node != nullptr)
     {
         node->traverse(this);
         // Single statements not part of a sequence need to be terminated
@@ -1192,7 +1167,7 @@ TString TOutputGLSLBase::hashName(const TName &name)
 
 TString TOutputGLSLBase::hashVariableName(const TName &name)
 {
-    if (mSymbolTable.findBuiltIn(name.getString(), mShaderVersion) != NULL)
+    if (mSymbolTable.findBuiltIn(name.getString(), mShaderVersion) != nullptr)
     {
         if (mCompileOptions & SH_TRANSLATE_VIEWID_OVR_TO_UNIFORM &&
             name.getString() == "gl_ViewID_OVR")

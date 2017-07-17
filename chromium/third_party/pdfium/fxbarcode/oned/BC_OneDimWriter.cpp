@@ -24,15 +24,14 @@
 
 #include <algorithm>
 #include <memory>
+#include <vector>
 
-#include "core/fxge/cfx_fxgedevice.h"
-#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/cfx_unicodeencodingex.h"
 #include "fxbarcode/BC_Writer.h"
-#include "fxbarcode/common/BC_CommonBitMatrix.h"
 #include "third_party/base/ptr_util.h"
 
 CBC_OneDimWriter::CBC_OneDimWriter() {
@@ -90,44 +89,25 @@ wchar_t CBC_OneDimWriter::Upper(wchar_t ch) {
   return ch;
 }
 
-uint8_t* CBC_OneDimWriter::Encode(const CFX_ByteString& contents,
-                                  BCFORMAT format,
-                                  int32_t& outWidth,
-                                  int32_t& outHeight,
-                                  int32_t hints,
-                                  int32_t& e) {
-  uint8_t* ret = nullptr;
+uint8_t* CBC_OneDimWriter::EncodeWithHint(const CFX_ByteString& contents,
+                                          BCFORMAT format,
+                                          int32_t& outWidth,
+                                          int32_t& outHeight,
+                                          int32_t hints) {
   outHeight = 1;
-  if (m_Width >= 20) {
-    ret = Encode(contents, outWidth, e);
-  } else {
-    ret = Encode(contents, outWidth, e);
-  }
-  if (e != BCExceptionNO)
-    return nullptr;
-  return ret;
+  return EncodeImpl(contents, outWidth);
 }
 
 uint8_t* CBC_OneDimWriter::Encode(const CFX_ByteString& contents,
                                   BCFORMAT format,
                                   int32_t& outWidth,
-                                  int32_t& outHeight,
-                                  int32_t& e) {
-  uint8_t* ret = Encode(contents, format, outWidth, outHeight, 0, e);
-  if (e != BCExceptionNO)
-    return nullptr;
-  return ret;
-}
-
-uint8_t* CBC_OneDimWriter::Encode(const CFX_ByteString& contents,
-                                  int32_t& outLength,
-                                  int32_t& e) {
-  return nullptr;
+                                  int32_t& outHeight) {
+  return EncodeWithHint(contents, format, outWidth, outHeight, 0);
 }
 
 int32_t CBC_OneDimWriter::AppendPattern(uint8_t* target,
                                         int32_t pos,
-                                        const int32_t* pattern,
+                                        const int8_t* pattern,
                                         int32_t patternLength,
                                         int32_t startColor,
                                         int32_t& e) {
@@ -139,8 +119,7 @@ int32_t CBC_OneDimWriter::AppendPattern(uint8_t* target,
   int32_t numAdded = 0;
   for (int32_t i = 0; i < patternLength; i++) {
     for (int32_t j = 0; j < pattern[i]; j++) {
-      target[pos] = color;
-      pos += 1;
+      target[pos++] = color;
       numAdded += 1;
     }
     color ^= 1;
@@ -154,8 +133,8 @@ void CBC_OneDimWriter::CalcTextInfo(const CFX_ByteString& text,
                                     float geWidth,
                                     int32_t fontSize,
                                     float& charsLen) {
-  std::unique_ptr<CFX_UnicodeEncodingEx> encoding(
-      FX_CreateFontEncodingEx(cFont));
+  std::unique_ptr<CFX_UnicodeEncodingEx> encoding =
+      FX_CreateFontEncodingEx(cFont, FXFM_ENCODING_NONE);
 
   int32_t length = text.GetLength();
   uint32_t* pCharCode = FX_Alloc(uint32_t, text.GetLength());
@@ -223,49 +202,17 @@ void CBC_OneDimWriter::ShowDeviceChars(CFX_RenderDevice* device,
                          m_fontColor, FXTEXT_CLEARTYPE);
 }
 
-void CBC_OneDimWriter::ShowBitmapChars(
-    const CFX_RetainPtr<CFX_DIBitmap>& pOutBitmap,
-    const CFX_ByteString str,
-    float geWidth,
-    FXTEXT_CHARPOS* pCharPos,
-    float locX,
-    float locY,
-    int32_t barWidth) {
-  int32_t iFontSize = (int32_t)fabs(m_fFontSize);
-  int32_t iTextHeight = iFontSize + 1;
-  CFX_FxgeDevice ge;
-  ge.Create((int)geWidth, iTextHeight, m_colorSpace, nullptr);
-  FX_RECT geRect(0, 0, (int)geWidth, iTextHeight);
-  ge.FillRect(&geRect, m_backgroundColor);
-  CFX_Matrix affine_matrix(1.0, 0.0, 0.0, -1.0, 0.0,
-                           static_cast<float>(iFontSize));
-  ge.DrawNormalText(str.GetLength(), pCharPos, m_pFont,
-                    static_cast<float>(iFontSize), &affine_matrix, m_fontColor,
-                    FXTEXT_CLEARTYPE);
-  CFX_FxgeDevice geBitmap;
-  geBitmap.Attach(pOutBitmap, false, nullptr, false);
-  geBitmap.SetDIBits(ge.GetBitmap(), (int)locX, (int)locY);
-}
-
-void CBC_OneDimWriter::ShowChars(const CFX_WideStringC& contents,
-                                 const CFX_RetainPtr<CFX_DIBitmap>& pOutBitmap,
+bool CBC_OneDimWriter::ShowChars(const CFX_WideStringC& contents,
                                  CFX_RenderDevice* device,
                                  const CFX_Matrix* matrix,
                                  int32_t barWidth,
-                                 int32_t multiple,
-                                 int32_t& e) {
-  if (!device && !pOutBitmap) {
-    e = BCExceptionIllegalArgument;
-    return;
-  }
-  if (!m_pFont) {
-    e = BCExceptionNullPointer;
-    return;
-  }
+                                 int32_t multiple) {
+  if (!device || !m_pFont)
+    return false;
+
   CFX_ByteString str = FX_UTF8Encode(contents);
   int32_t iLen = str.GetLength();
-  FXTEXT_CHARPOS* pCharPos = FX_Alloc(FXTEXT_CHARPOS, iLen);
-  memset(pCharPos, 0, sizeof(FXTEXT_CHARPOS) * iLen);
+  std::vector<FXTEXT_CHARPOS> charpos(iLen);
   float charsLen = 0;
   float geWidth = 0;
   if (m_locTextLoc == BC_TEXT_LOC_ABOVEEMBED ||
@@ -277,10 +224,10 @@ void CBC_OneDimWriter::ShowChars(const CFX_WideStringC& contents,
   }
   int32_t iFontSize = (int32_t)fabs(m_fFontSize);
   int32_t iTextHeight = iFontSize + 1;
-  CalcTextInfo(str, pCharPos, m_pFont, geWidth, iFontSize, charsLen);
-  if (charsLen < 1) {
-    return;
-  }
+  CalcTextInfo(str, charpos.data(), m_pFont, geWidth, iFontSize, charsLen);
+  if (charsLen < 1)
+    return true;
+
   int32_t locX = 0;
   int32_t locY = 0;
   switch (m_locTextLoc) {
@@ -306,177 +253,103 @@ void CBC_OneDimWriter::ShowChars(const CFX_WideStringC& contents,
       geWidth = (float)barWidth;
       break;
   }
-  if (device) {
-    ShowDeviceChars(device, matrix, str, geWidth, pCharPos, (float)locX,
-                    (float)locY, barWidth);
-  } else {
-    ShowBitmapChars(pOutBitmap, str, geWidth, pCharPos, (float)locX,
-                    (float)locY, barWidth);
-  }
-  FX_Free(pCharPos);
+  ShowDeviceChars(device, matrix, str, geWidth, charpos.data(), (float)locX,
+                  (float)locY, barWidth);
+  return true;
 }
 
-void CBC_OneDimWriter::RenderBitmapResult(
-    CFX_RetainPtr<CFX_DIBitmap>& pOutBitmap,
-    const CFX_WideStringC& contents,
-    int32_t& e) {
-  if (!m_output)
-    if (e != BCExceptionNO)
-      return;
-
-  pOutBitmap = CreateDIBitmap(m_output->GetWidth(), m_output->GetHeight());
-  pOutBitmap->Clear(m_backgroundColor);
-  if (!pOutBitmap) {
-    e = BCExceptionFailToCreateBitmap;
-    return;
-  }
-  for (int32_t x = 0; x < m_output->GetWidth(); x++) {
-    for (int32_t y = 0; y < m_output->GetHeight(); y++) {
-      if (m_output->Get(x, y)) {
-        pOutBitmap->SetPixel(x, y, m_barColor);
-      }
-    }
-  }
-  int32_t i = 0;
-  for (; i < contents.GetLength(); i++) {
-    if (contents.GetAt(i) != ' ')
-      break;
-  }
-  if (m_locTextLoc != BC_TEXT_LOC_NONE && i < contents.GetLength()) {
-    ShowChars(contents, pOutBitmap, nullptr, nullptr, m_barWidth, m_multiple,
-              e);
-    if (e != BCExceptionNO)
-      return;
-  }
-  pOutBitmap = pOutBitmap->StretchTo(m_Width, m_Height);
-}
-
-void CBC_OneDimWriter::RenderDeviceResult(CFX_RenderDevice* device,
+bool CBC_OneDimWriter::RenderDeviceResult(CFX_RenderDevice* device,
                                           const CFX_Matrix* matrix,
-                                          const CFX_WideStringC& contents,
-                                          int32_t& e) {
-  if (!m_output)
-    if (e != BCExceptionNO)
-      return;
+                                          const CFX_WideStringC& contents) {
+  if (m_output.empty())
+    return false;
 
   CFX_GraphStateData stateData;
   CFX_PathData path;
-  path.AppendRect(0, 0, (float)m_Width, (float)m_Height);
+  path.AppendRect(0, 0, static_cast<float>(m_Width),
+                  static_cast<float>(m_Height));
   device->DrawPath(&path, matrix, &stateData, m_backgroundColor,
                    m_backgroundColor, FXFILL_ALTERNATE);
-  CFX_Matrix matri(m_outputHScale, 0.0, 0.0, (float)m_Height, 0.0, 0.0);
-  matri.Concat(*matrix);
-  for (int32_t x = 0; x < m_output->GetWidth(); x++) {
-    for (int32_t y = 0; y < m_output->GetHeight(); y++) {
-      CFX_PathData rect;
-      rect.AppendRect((float)x, (float)y, (float)(x + 1), (float)(y + 1));
-      if (m_output->Get(x, y)) {
-        CFX_GraphStateData data;
-        device->DrawPath(&rect, &matri, &data, m_barColor, 0, FXFILL_WINDING);
-      }
-    }
+  CFX_Matrix scaledMatrix(m_outputHScale, 0.0, 0.0,
+                          static_cast<float>(m_Height), 0.0, 0.0);
+  scaledMatrix.Concat(*matrix);
+  for (auto& rect : m_output) {
+    CFX_GraphStateData data;
+    device->DrawPath(&rect, &scaledMatrix, &data, m_barColor, 0,
+                     FXFILL_WINDING);
   }
-  int32_t i = 0;
-  for (; i < contents.GetLength(); i++)
-    if (contents.GetAt(i) != ' ') {
-      break;
-    }
-  if (m_locTextLoc != BC_TEXT_LOC_NONE && i < contents.GetLength()) {
-    ShowChars(contents, nullptr, device, matrix, m_barWidth, m_multiple, e);
-    if (e != BCExceptionNO)
-      return;
-  }
+
+  return m_locTextLoc == BC_TEXT_LOC_NONE || contents.Find(' ') == -1 ||
+         ShowChars(contents, device, matrix, m_barWidth, m_multiple);
 }
 
-void CBC_OneDimWriter::RenderResult(const CFX_WideStringC& contents,
+bool CBC_OneDimWriter::RenderResult(const CFX_WideStringC& contents,
                                     uint8_t* code,
                                     int32_t codeLength,
-                                    bool isDevice,
-                                    int32_t& e) {
-  if (codeLength < 1) {
-    if (e != BCExceptionNO)
-      return;
-  }
-  if (m_ModuleHeight < 20.0) {
-    m_ModuleHeight = 20;
-  }
-  int32_t codeOldLength = codeLength;
-  int32_t leftPadding = 0;
-  int32_t rightPadding = 0;
-  if (m_bLeftPadding) {
-    leftPadding = 7;
-  }
-  if (m_bRightPadding) {
-    rightPadding = 7;
-  }
+                                    bool isDevice) {
+  if (codeLength < 1)
+    return false;
+
+  m_ModuleHeight = std::max(m_ModuleHeight, 20);
+  const int32_t codeOldLength = codeLength;
+  const int32_t leftPadding = m_bLeftPadding ? 7 : 0;
+  const int32_t rightPadding = m_bRightPadding ? 7 : 0;
   codeLength += leftPadding;
   codeLength += rightPadding;
-  m_outputHScale = 1.0;
-  if (m_Width > 0) {
-    m_outputHScale = (float)m_Width / (float)codeLength;
-  }
+  m_outputHScale =
+      m_Width > 0 ? static_cast<float>(m_Width) / static_cast<float>(codeLength)
+                  : 1.0;
   if (!isDevice) {
     m_outputHScale =
         std::max(m_outputHScale, static_cast<float>(m_ModuleWidth));
   }
   float dataLengthScale = 1.0;
-  if (m_iDataLenth > 0 && contents.GetLength() != 0) {
+  if (m_iDataLenth > 0 && contents.GetLength() != 0)
     dataLengthScale = float(contents.GetLength()) / float(m_iDataLenth);
-  }
-  if (m_iDataLenth > 0 && contents.GetLength() == 0) {
+  if (m_iDataLenth > 0 && contents.GetLength() == 0)
     dataLengthScale = float(1) / float(m_iDataLenth);
-  }
   m_multiple = 1;
   if (!isDevice) {
     m_multiple = (int32_t)ceil(m_outputHScale * dataLengthScale);
   }
   int32_t outputHeight = 1;
-  if (!isDevice) {
-    if (m_Height == 0) {
-      outputHeight = std::max(20, m_ModuleHeight);
-    } else {
-      outputHeight = m_Height;
-    }
-  }
+  if (!isDevice)
+    outputHeight = m_Height ? m_Height : std::max(20, m_ModuleHeight);
   int32_t outputWidth = codeLength;
-  if (!isDevice) {
+  if (!isDevice)
     outputWidth = (int32_t)(codeLength * m_multiple / dataLengthScale);
-  }
   m_barWidth = m_Width;
-  if (!isDevice) {
+  if (!isDevice)
     m_barWidth = codeLength * m_multiple;
-  }
-  m_output = pdfium::MakeUnique<CBC_CommonBitMatrix>();
-  m_output->Init(outputWidth, outputHeight);
-  int32_t outputX = leftPadding * m_multiple;
-  for (int32_t inputX = 0; inputX < codeOldLength; inputX++) {
-    if (code[inputX] == 1) {
-      if (outputX >= outputWidth) {
-        break;
-      }
-      if (outputX + m_multiple > outputWidth && outputWidth - outputX > 0) {
-        if (!m_output->SetRegion(outputX, 0, outputWidth - outputX,
-                                 outputHeight)) {
-          e = BCExceptionGeneric;
-        }
-        break;
-      }
-      if (!m_output->SetRegion(outputX, 0, m_multiple, outputHeight)) {
-        e = BCExceptionGeneric;
-        return;
-      }
-    }
-    outputX += m_multiple;
-  }
-}
 
-bool CBC_OneDimWriter::CheckContentValidity(const CFX_WideStringC& contents) {
+  m_output.clear();
+  for (int32_t inputX = 0, outputX = leftPadding * m_multiple;
+       inputX < codeOldLength; ++inputX, outputX += m_multiple) {
+    if (code[inputX] != 1)
+      continue;
+
+    if (outputX >= outputWidth)
+      return true;
+
+    if (outputX + m_multiple > outputWidth && outputWidth - outputX > 0) {
+      RenderVerticalBars(outputX, outputWidth - outputX, outputHeight);
+      return true;
+    }
+
+    RenderVerticalBars(outputX, m_multiple, outputHeight);
+  }
   return true;
 }
 
-CFX_WideString CBC_OneDimWriter::FilterContents(
-    const CFX_WideStringC& contents) {
-  return CFX_WideString();
+void CBC_OneDimWriter::RenderVerticalBars(int32_t outputX,
+                                          int32_t width,
+                                          int32_t height) {
+  for (int i = 0; i < width; ++i) {
+    float x = outputX + i;
+    CFX_PathData rect;
+    rect.AppendRect(x, 0.0f, x + 1, static_cast<float>(height));
+    m_output.push_back(rect);
+  }
 }
 
 CFX_WideString CBC_OneDimWriter::RenderTextContents(

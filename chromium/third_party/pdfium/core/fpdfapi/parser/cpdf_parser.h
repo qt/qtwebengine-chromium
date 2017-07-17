@@ -12,6 +12,7 @@
 #include <set>
 #include <vector>
 
+#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_basic.h"
 
 class CPDF_Array;
@@ -58,7 +59,7 @@ class CPDF_Parser {
   uint32_t GetInfoObjNum();
   CPDF_Array* GetIDArray();
 
-  CPDF_Dictionary* GetEncryptDict() const { return m_pEncryptDict; }
+  CPDF_Dictionary* GetEncryptDict() const { return m_pEncryptDict.Get(); }
 
   std::unique_ptr<CPDF_Object> ParseIndirectObject(
       CPDF_IndirectObjectHolder* pObjList,
@@ -150,12 +151,12 @@ class CPDF_Parser {
   // the objects.
   bool VerifyCrossRefV4();
 
-  CPDF_Document* m_pDocument;  // not owned
+  CFX_UnownedPtr<CPDF_Document> m_pDocument;
   bool m_bHasParsed;
   bool m_bXRefStream;
   bool m_bVersionUpdated;
   int m_FileVersion;
-  CPDF_Dictionary* m_pEncryptDict;
+  CFX_UnownedPtr<CPDF_Dictionary> m_pEncryptDict;
   FX_FILESIZE m_LastXRefOffset;
   std::unique_ptr<CPDF_SecurityHandler> m_pSecurityHandler;
   CFX_ByteString m_Password;

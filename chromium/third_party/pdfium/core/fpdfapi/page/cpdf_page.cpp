@@ -12,7 +12,6 @@
 #include "core/fpdfapi/cpdf_pagerendercontext.h"
 #include "core/fpdfapi/page/cpdf_contentparser.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
-#include "core/fpdfapi/page/pageint.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
@@ -23,22 +22,19 @@
 CPDF_Page::CPDF_Page(CPDF_Document* pDocument,
                      CPDF_Dictionary* pPageDict,
                      bool bPageCache)
-    : m_PageWidth(100),
+    : CPDF_PageObjectHolder(pDocument, pPageDict),
+      m_PageWidth(100),
       m_PageHeight(100),
-      m_pView(nullptr),
-      m_pPageRender(bPageCache ? new CPDF_PageRenderCache(this) : nullptr) {
-  m_pFormDict = pPageDict;
-  m_pDocument = pDocument;
+      m_pView(nullptr) {
+  if (bPageCache)
+    m_pPageRender = pdfium::MakeUnique<CPDF_PageRenderCache>(this);
   if (!pPageDict)
     return;
 
   CPDF_Object* pageAttr = GetPageAttr("Resources");
   m_pResources = pageAttr ? pageAttr->GetDict() : nullptr;
   m_pPageResources = m_pResources;
-  CPDF_Object* pRotate = GetPageAttr("Rotate");
-  int rotate = pRotate ? pRotate->GetInteger() / 90 % 4 : 0;
-  if (rotate < 0)
-    rotate += 4;
+  int rotate = GetPageRotation();
 
   CPDF_Array* pMediaBox = ToArray(GetPageAttr("MediaBox"));
   CFX_FloatRect mediabox;
@@ -106,7 +102,7 @@ void CPDF_Page::SetRenderContext(
 }
 
 CPDF_Object* CPDF_Page::GetPageAttr(const CFX_ByteString& name) const {
-  CPDF_Dictionary* pPageDict = m_pFormDict;
+  CPDF_Dictionary* pPageDict = m_pFormDict.Get();
   std::set<CPDF_Dictionary*> visited;
   while (1) {
     visited.insert(pPageDict);
@@ -174,6 +170,12 @@ CFX_Matrix CPDF_Page::GetDisplayMatrix(int xPos,
                            (x1 - x0) / m_PageHeight, (y1 - y0) / m_PageHeight,
                            x0, y0));
   return matrix;
+}
+
+int CPDF_Page::GetPageRotation() const {
+  CPDF_Object* pRotate = GetPageAttr("Rotate");
+  int rotate = pRotate ? (pRotate->GetInteger() / 90) % 4 : 0;
+  return (rotate < 0) ? (rotate + 4) : rotate;
 }
 
 bool GraphicsData::operator<(const GraphicsData& other) const {

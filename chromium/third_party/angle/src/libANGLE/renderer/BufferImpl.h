@@ -28,7 +28,7 @@ class BufferImpl : angle::NonCopyable
 {
   public:
     BufferImpl(const gl::BufferState &state) : mState(state) {}
-    virtual ~BufferImpl() { }
+    virtual ~BufferImpl() {}
     virtual void destroy(ContextImpl *contextImpl) {}
 
     virtual gl::Error setData(ContextImpl *context,
@@ -46,12 +46,12 @@ class BufferImpl : angle::NonCopyable
                                   GLintptr sourceOffset,
                                   GLintptr destOffset,
                                   GLsizeiptr size) = 0;
-    virtual gl::Error map(ContextImpl *contextImpl, GLenum access, GLvoid **mapPtr) = 0;
+    virtual gl::Error map(ContextImpl *contextImpl, GLenum access, void **mapPtr) = 0;
     virtual gl::Error mapRange(ContextImpl *contextImpl,
                                size_t offset,
                                size_t length,
                                GLbitfield access,
-                               GLvoid **mapPtr) = 0;
+                               void **mapPtr) = 0;
     virtual gl::Error unmap(ContextImpl *contextImpl, GLboolean *result) = 0;
 
     virtual gl::Error getIndexRange(GLenum type,
@@ -63,7 +63,6 @@ class BufferImpl : angle::NonCopyable
   protected:
     const gl::BufferState &mState;
 };
-
 }
 
-#endif // LIBANGLE_RENDERER_BUFFERIMPL_H_
+#endif  // LIBANGLE_RENDERER_BUFFERIMPL_H_

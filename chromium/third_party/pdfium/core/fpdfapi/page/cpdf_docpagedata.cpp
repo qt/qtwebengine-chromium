@@ -15,6 +15,7 @@
 #include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fpdfapi/font/cpdf_type1font.h"
 #include "core/fpdfapi/font/font_int.h"
+#include "core/fpdfapi/page/cpdf_iccprofile.h"
 #include "core/fpdfapi/page/cpdf_image.h"
 #include "core/fpdfapi/page/cpdf_pagemodule.h"
 #include "core/fpdfapi/page/cpdf_pattern.h"
@@ -28,7 +29,9 @@
 #include "third_party/base/stl_util.h"
 
 CPDF_DocPageData::CPDF_DocPageData(CPDF_Document* pPDFDoc)
-    : m_pPDFDoc(pPDFDoc), m_bForceClear(false) {}
+    : m_bForceClear(false), m_pPDFDoc(pPDFDoc) {
+  assert(m_pPDFDoc);
+}
 
 CPDF_DocPageData::~CPDF_DocPageData() {
   Clear(false);
@@ -115,7 +118,8 @@ CPDF_Font* CPDF_DocPageData::GetFont(CPDF_Dictionary* pFontDict) {
       return pFontData->AddRef();
     }
   }
-  std::unique_ptr<CPDF_Font> pFont = CPDF_Font::Create(m_pPDFDoc, pFontDict);
+  std::unique_ptr<CPDF_Font> pFont =
+      CPDF_Font::Create(m_pPDFDoc.Get(), pFontDict);
   if (!pFont)
     return nullptr;
 
@@ -163,7 +167,7 @@ CPDF_Font* CPDF_DocPageData::GetStandardFont(const CFX_ByteString& fontName,
                   pEncoding->Realize(m_pPDFDoc->GetByteStringPool()));
   }
 
-  std::unique_ptr<CPDF_Font> pFont = CPDF_Font::Create(m_pPDFDoc, pDict);
+  std::unique_ptr<CPDF_Font> pFont = CPDF_Font::Create(m_pPDFDoc.Get(), pDict);
   if (!pFont)
     return nullptr;
 
@@ -266,7 +270,7 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceImpl(
   }
 
   std::unique_ptr<CPDF_ColorSpace> pCS =
-      CPDF_ColorSpace::Load(m_pPDFDoc, pArray);
+      CPDF_ColorSpace::Load(m_pPDFDoc.Get(), pArray);
   if (!pCS)
     return nullptr;
 
@@ -327,18 +331,18 @@ CPDF_Pattern* CPDF_DocPageData::GetPattern(CPDF_Object* pPatternObj,
   }
   std::unique_ptr<CPDF_Pattern> pPattern;
   if (bShading) {
-    pPattern = pdfium::MakeUnique<CPDF_ShadingPattern>(m_pPDFDoc, pPatternObj,
-                                                       true, matrix);
+    pPattern = pdfium::MakeUnique<CPDF_ShadingPattern>(
+        m_pPDFDoc.Get(), pPatternObj, true, matrix);
   } else {
-    CPDF_Dictionary* pDict = pPatternObj ? pPatternObj->GetDict() : nullptr;
+    CPDF_Dictionary* pDict = pPatternObj->GetDict();
     if (pDict) {
       int type = pDict->GetIntegerFor("PatternType");
       if (type == CPDF_Pattern::TILING) {
-        pPattern = pdfium::MakeUnique<CPDF_TilingPattern>(m_pPDFDoc,
+        pPattern = pdfium::MakeUnique<CPDF_TilingPattern>(m_pPDFDoc.Get(),
                                                           pPatternObj, matrix);
       } else if (type == CPDF_Pattern::SHADING) {
         pPattern = pdfium::MakeUnique<CPDF_ShadingPattern>(
-            m_pPDFDoc, pPatternObj, false, matrix);
+            m_pPDFDoc.Get(), pPatternObj, false, matrix);
       }
     }
   }
@@ -380,7 +384,7 @@ CFX_RetainPtr<CPDF_Image> CPDF_DocPageData::GetImage(uint32_t dwStreamObjNum) {
   if (it != m_ImageMap.end())
     return it->second;
 
-  auto pImage = pdfium::MakeRetain<CPDF_Image>(m_pPDFDoc, dwStreamObjNum);
+  auto pImage = pdfium::MakeRetain<CPDF_Image>(m_pPDFDoc.Get(), dwStreamObjNum);
   m_ImageMap[dwStreamObjNum] = pImage;
   return pImage;
 }

@@ -13,12 +13,15 @@
 #include <set>
 #include <vector>
 
+#include "core/fxcrt/cfx_crtfileaccess.h"
+#include "core/fxcrt/cfx_observable.h"
 #include "core/fxcrt/cfx_retain_ptr.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/cfx_seekablestreamproxy.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/fx_freetype.h"
 #include "core/fxge/ifx_systemfontinfo.h"
-#include "xfa/fgas/crt/ifgas_stream.h"
+#include "xfa/fxfa/cxfa_pdffontmgr.h"
 
 #define FX_FONTSTYLE_Normal 0x00
 #define FX_FONTSTYLE_FixedPitch 0x01
@@ -31,8 +34,6 @@
 #define FX_FONTSTYLE_ExactMatch 0x80000000
 
 class CFX_FontSourceEnum_File;
-class CXFA_PDFFontMgr;
-class CFGAS_FontMgr;
 class CFGAS_GEFont;
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
@@ -80,7 +81,7 @@ typedef void (*FX_LPEnumAllFonts)(std::deque<FX_FONTDESCRIPTOR>* fonts,
 
 FX_LPEnumAllFonts FX_GetDefFontEnumerator();
 
-class CFGAS_FontMgr {
+class CFGAS_FontMgr : public CFX_Observable<CFGAS_FontMgr> {
  public:
   static std::unique_ptr<CFGAS_FontMgr> Create(FX_LPEnumAllFonts pEnumerator);
 
@@ -169,7 +170,7 @@ class CFX_FontSourceEnum_File {
   ~CFX_FontSourceEnum_File();
 
   bool HasStartPosition();
-  CFX_RetainPtr<IFX_FileAccess> GetNext();
+  CFX_RetainPtr<CFX_CRTFileAccess> GetNext();
 
  private:
   CFX_ByteString GetNextFile();
@@ -179,7 +180,7 @@ class CFX_FontSourceEnum_File {
   std::vector<CFX_ByteString> m_FolderPaths;
 };
 
-class CFGAS_FontMgr {
+class CFGAS_FontMgr : public CFX_Observable<CFGAS_FontMgr> {
  public:
   static std::unique_ptr<CFGAS_FontMgr> Create(
       CFX_FontSourceEnum_File* pFontEnum);

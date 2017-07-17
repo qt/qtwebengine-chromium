@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/render/cpdf_progressiverenderer.h"
 
+#include "core/fpdfapi/page/cpdf_image.h"
+#include "core/fpdfapi/page/cpdf_imageobject.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/page/cpdf_pageobjectholder.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
@@ -51,8 +53,9 @@ void CPDF_ProgressiveRenderer::Continue(IFX_Pause* pPause) {
           m_pCurrentLayer->m_pObjectHolder->GetPageObjectList()->end();
       m_pRenderStatus = pdfium::MakeUnique<CPDF_RenderStatus>();
       m_pRenderStatus->Initialize(
-          m_pContext, m_pDevice, nullptr, nullptr, nullptr, nullptr, m_pOptions,
-          m_pCurrentLayer->m_pObjectHolder->m_Transparency, false, nullptr);
+          m_pContext.Get(), m_pDevice.Get(), nullptr, nullptr, nullptr, nullptr,
+          m_pOptions, m_pCurrentLayer->m_pObjectHolder->m_Transparency, false,
+          nullptr);
       m_pDevice->SaveState();
       m_ClipRect = CFX_FloatRect(m_pDevice->GetClipBox());
       CFX_Matrix device2object;
@@ -94,6 +97,10 @@ void CPDF_ProgressiveRenderer::Continue(IFX_Pause* pPause) {
         if (pPause && pPause->NeedToPauseNow())
           return;
         nObjsToGo = kStepLimit;
+      }
+      if (pCurObj->IsImage() && pCurObj->AsImage()->GetImage()->IsMask() &&
+          (m_pOptions->m_Flags & RENDER_BREAKFORMASKS)) {
+        return;
       }
       ++iter;
     }

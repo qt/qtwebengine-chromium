@@ -82,6 +82,7 @@ inline namespace fundamentals_v1 {
 #include <typeinfo>
 #include <type_traits>
 #include <cstdlib>
+#include <cassert>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #pragma GCC system_header
@@ -97,13 +98,13 @@ public:
 
 #if _LIBCPP_STD_VER > 11                                            // C++ > 11
 
-_LIBCPP_NORETURN inline _LIBCPP_ALWAYS_INLINE
-void __throw_bad_any_cast()
+_LIBCPP_NORETURN _LIBCPP_INLINE_VISIBILITY
+inline void __throw_bad_any_cast()
 {
 #ifndef _LIBCPP_NO_EXCEPTIONS
     throw bad_any_cast();
 #else
-    _VSTD::abort();
+    assert(!"bad_any_cast");
 #endif
 }
 
@@ -112,12 +113,10 @@ class any;
 
 template <class _ValueType>
 typename add_pointer<typename add_const<_ValueType>::type>::type
-_LIBCPP_INLINE_VISIBILITY
 any_cast(any const *) _NOEXCEPT;
 
 template <class _ValueType>
 typename add_pointer<_ValueType>::type
-_LIBCPP_INLINE_VISIBILITY
 any_cast(any *) _NOEXCEPT;
 
 namespace __any_imp
@@ -186,7 +185,6 @@ public:
       class _ValueType
     , class = __any_imp::_EnableIfNotAny<_ValueType>
     >
-  _LIBCPP_INLINE_VISIBILITY
   any(_ValueType && __value);
 
   _LIBCPP_INLINE_VISIBILITY
@@ -214,7 +212,6 @@ public:
       class _ValueType
     , class = __any_imp::_EnableIfNotAny<_ValueType>
     >
-  _LIBCPP_INLINE_VISIBILITY
   any & operator=(_ValueType && __rhs);
 
   // 6.3.3 any modifiers
@@ -224,7 +221,6 @@ public:
     if (__h) this->__call(_Action::_Destroy);
   }
 
-  _LIBCPP_INLINE_VISIBILITY
   void swap(any & __rhs) _NOEXCEPT;
 
   // 6.3.4 any observers
@@ -292,7 +288,7 @@ namespace __any_imp
 {
 
   template <class _Tp>
-  struct _LIBCPP_TEMPLATE_VIS _SmallHandler
+  struct _LIBCPP_TYPE_VIS_ONLY _SmallHandler
   {
      _LIBCPP_INLINE_VISIBILITY
      static void* __handle(_Action __act, any const * __this, any * __other,
@@ -373,7 +369,7 @@ namespace __any_imp
   };
 
   template <class _Tp>
-  struct _LIBCPP_TEMPLATE_VIS _LargeHandler
+  struct _LIBCPP_TYPE_VIS_ONLY _LargeHandler
   {
     _LIBCPP_INLINE_VISIBILITY
     static void* __handle(_Action __act, any const * __this, any * __other,
@@ -461,6 +457,7 @@ namespace __any_imp
 
 
 template <class _ValueType, class>
+_LIBCPP_INLINE_VISIBILITY
 any::any(_ValueType && __v) : __h(nullptr)
 {
   typedef typename decay<_ValueType>::type _Tp;
@@ -471,6 +468,7 @@ any::any(_ValueType && __v) : __h(nullptr)
 }
 
 template <class _ValueType, class>
+_LIBCPP_INLINE_VISIBILITY
 any & any::operator=(_ValueType && __v)
 {
   typedef typename decay<_ValueType>::type _Tp;
@@ -480,7 +478,7 @@ any & any::operator=(_ValueType && __v)
   return *this;
 }
 
-inline
+inline _LIBCPP_INLINE_VISIBILITY
 void any::swap(any & __rhs) _NOEXCEPT
 {
     if (__h && __rhs.__h) {
@@ -552,7 +550,7 @@ _ValueType any_cast(any && __v)
 }
 
 template <class _ValueType>
-inline
+inline _LIBCPP_INLINE_VISIBILITY
 typename add_pointer<typename add_const<_ValueType>::type>::type
 any_cast(any const * __any) _NOEXCEPT
 {
@@ -562,6 +560,7 @@ any_cast(any const * __any) _NOEXCEPT
 }
 
 template <class _ValueType>
+_LIBCPP_INLINE_VISIBILITY
 typename add_pointer<_ValueType>::type
 any_cast(any * __any) _NOEXCEPT
 {

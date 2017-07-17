@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 
+#include "webrtc/api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/thread_annotations.h"
@@ -167,27 +168,6 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
 
   VideoRtcpAndSyncObserver observer(Clock::GetRealTimeClock());
 
-  // Helper class to ensure we deliver correct media_type to the receiving call.
-  class MediaTypePacketReceiver : public PacketReceiver {
-   public:
-    MediaTypePacketReceiver(PacketReceiver* packet_receiver,
-                            MediaType media_type)
-        : packet_receiver_(packet_receiver), media_type_(media_type) {}
-
-    DeliveryStatus DeliverPacket(MediaType media_type,
-                                 const uint8_t* packet,
-                                 size_t length,
-                                 const PacketTime& packet_time) override {
-      return packet_receiver_->DeliverPacket(media_type_, packet, length,
-                                             packet_time);
-    }
-   private:
-    PacketReceiver* packet_receiver_;
-    const MediaType media_type_;
-
-    RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(MediaTypePacketReceiver);
-  };
-
   FakeNetworkPipe::Config audio_net_config;
   audio_net_config.queue_delay_ms = 500;
   audio_net_config.loss_percent = 5;
@@ -208,16 +188,12 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
   test::PacketTransport audio_send_transport(sender_call_.get(), &observer,
                                              test::PacketTransport::kSender,
                                              audio_pt_map, audio_net_config);
-  MediaTypePacketReceiver audio_receiver(receiver_call_->Receiver(),
-                                         MediaType::AUDIO);
-  audio_send_transport.SetReceiver(&audio_receiver);
+  audio_send_transport.SetReceiver(receiver_call_->Receiver());
 
   test::PacketTransport video_send_transport(
       sender_call_.get(), &observer, test::PacketTransport::kSender,
       video_pt_map, FakeNetworkPipe::Config());
-  MediaTypePacketReceiver video_receiver(receiver_call_->Receiver(),
-                                         MediaType::VIDEO);
-  video_send_transport.SetReceiver(&video_receiver);
+  video_send_transport.SetReceiver(receiver_call_->Receiver());
 
   test::PacketTransport receive_transport(
       receiver_call_.get(), &observer, test::PacketTransport::kReceiver,
@@ -232,8 +208,10 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
   AudioSendStream::Config audio_send_config(&audio_send_transport);
   audio_send_config.voe_channel_id = send_channel_id;
   audio_send_config.rtp.ssrc = kAudioSendSsrc;
-  audio_send_config.send_codec_spec.codec_inst =
-      CodecInst{kAudioSendPayloadType, "ISAC", 16000, 480, 1, 32000};
+  audio_send_config.send_codec_spec =
+      rtc::Optional<AudioSendStream::Config::SendCodecSpec>(
+          {kAudioSendPayloadType, {"ISAC", 16000, 1}});
+  audio_send_config.encoder_factory = CreateBuiltinAudioEncoderFactory();
   AudioSendStream* audio_send_stream =
       sender_call_->CreateAudioSendStream(audio_send_config);
 

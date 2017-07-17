@@ -1087,7 +1087,8 @@
             '<(deqp_path)/framework/qphelper/qpCrashHandler.c',
             '<(deqp_path)/framework/qphelper/qpDebugOut.c',
             '<(deqp_path)/framework/qphelper/qpInfo.c',
-            '<(deqp_path)/framework/qphelper/qpTestLog.c',
+            # TODO(jmadill): Restore this when we upstream the change.
+            #'<(deqp_path)/framework/qphelper/qpTestLog.c',
             '<(deqp_path)/framework/qphelper/qpWatchDog.c',
             '<(deqp_path)/framework/qphelper/qpXmlWriter.c',
             '<(deqp_path)/framework/randomshaders/rsgBinaryOps.cpp',
@@ -1156,6 +1157,8 @@
             '<(deqp_path)/modules/glshared/glsTextureTestUtil.cpp',
             '<(deqp_path)/modules/glshared/glsUniformBlockCase.cpp',
             '<(deqp_path)/modules/glshared/glsVertexArrayTests.cpp',
+            # TODO(jmadill): Remove this when we upstream the change.
+            '<(angle_path)/src/tests/deqp_support/qpTestLog.c',
             '<(angle_path)/src/tests/deqp_support/tcuANGLENativeDisplayFactory.cpp',
             '<(angle_path)/src/tests/deqp_support/tcuANGLENativeDisplayFactory.h',
             # TODO(jmadill): integrate with dEQP
@@ -1284,6 +1287,8 @@
                             [
                                 '/wd4131', # old-style declarator
                                 '/wd4244', # Conversion from 'type1' to 'type2', possible loss of data
+                                '/wd4245', # argument signed/unsigned mismatch
+                                '/wd4267', # size_t to 'type', possible loss of data
                                 '/wd4324', # structure was padded
                                 '/wd4701', # potentially uninit used
                                 '/wd4996', # deprecated
@@ -1324,7 +1329,6 @@
                         '<(zlib_path)/inflate.h',
                         '<(zlib_path)/inftrees.c',
                         '<(zlib_path)/inftrees.h',
-                        '<(zlib_path)/mozzconf.h',
                         '<(zlib_path)/trees.c',
                         '<(zlib_path)/trees.h',
                         '<(zlib_path)/uncompr.c',

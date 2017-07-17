@@ -31,19 +31,19 @@ static const SocketAddress kBogusProxyIntAddr("1.2.3.4", 999);
 // Sets up a virtual socket server and HTTPS/SOCKS5 proxy servers.
 class ProxyTest : public testing::Test {
  public:
-  ProxyTest() : ss_(new rtc::VirtualSocketServer(nullptr)) {
-    Thread::Current()->set_socketserver(ss_.get());
+  ProxyTest() : ss_(new rtc::VirtualSocketServer()), thread_(ss_.get()) {
     socks_.reset(new rtc::SocksProxyServer(
         ss_.get(), kSocksProxyIntAddr, ss_.get(), kSocksProxyExtAddr));
     https_.reset(new rtc::HttpListenServer());
     https_->Listen(kHttpsProxyIntAddr);
   }
-  ~ProxyTest() { Thread::Current()->set_socketserver(nullptr); }
+  ~ProxyTest() {}
 
   rtc::SocketServer* ss() { return ss_.get(); }
 
  private:
   std::unique_ptr<rtc::SocketServer> ss_;
+  rtc::AutoSocketServerThread thread_;
   std::unique_ptr<rtc::SocksProxyServer> socks_;
   // TODO: Make this a real HTTPS proxy server.
   std::unique_ptr<rtc::HttpListenServer> https_;
@@ -61,10 +61,11 @@ TEST_F(ProxyTest, TestSocks5Connect) {
   rtc::TestEchoServer server(Thread::Current(),
                                    SocketAddress(INADDR_ANY, 0));
 
-  rtc::AsyncTCPSocket* packet_socket = rtc::AsyncTCPSocket::Create(
-      proxy_socket, SocketAddress(INADDR_ANY, 0), server.address());
+  std::unique_ptr<rtc::AsyncTCPSocket> packet_socket(
+      rtc::AsyncTCPSocket::Create(proxy_socket, SocketAddress(INADDR_ANY, 0),
+                                  server.address()));
   EXPECT_TRUE(packet_socket != nullptr);
-  rtc::TestClient client(packet_socket);
+  rtc::TestClient client(std::move(packet_socket));
 
   EXPECT_EQ(Socket::CS_CONNECTING, proxy_socket->GetState());
   EXPECT_TRUE(client.CheckConnected());

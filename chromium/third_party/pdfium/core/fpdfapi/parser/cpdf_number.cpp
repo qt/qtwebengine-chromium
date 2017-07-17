@@ -55,3 +55,8 @@ CFX_ByteString CPDF_Number::GetString() const {
   return m_bInteger ? CFX_ByteString::FormatInteger(m_Integer, FXFORMAT_SIGNED)
                     : CFX_ByteString::FormatFloat(m_Float);
 }
+
+bool CPDF_Number::WriteTo(IFX_ArchiveStream* archive) const {
+  return archive->WriteString(" ") &&
+         archive->WriteString(GetString().AsStringC());
+}

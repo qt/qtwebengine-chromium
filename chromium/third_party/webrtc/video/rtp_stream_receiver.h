@@ -50,7 +50,6 @@ class RtpReceiver;
 class Transport;
 class UlpfecReceiver;
 class VCMTiming;
-class VieRemb;
 
 namespace vcm {
 class VideoReceiver;
@@ -68,7 +67,6 @@ class RtpStreamReceiver : public RtpData,
       Transport* transport,
       RtcpRttStats* rtt_stats,
       PacketRouter* packet_router,
-      VieRemb* remb,
       const VideoReceiveStream::Config* config,
       ReceiveStatisticsProxy* receive_stats_proxy,
       ProcessThread* process_thread,
@@ -137,6 +135,9 @@ class RtpStreamReceiver : public RtpData,
 
   void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) override;
 
+  rtc::Optional<int64_t> LastReceivedPacketMs() const;
+  rtc::Optional<int64_t> LastReceivedKeyframePacketMs() const;
+
  private:
   bool AddReceiveCodec(const VideoCodec& video_codec);
   bool ReceivePacket(const uint8_t* packet,
@@ -160,7 +161,6 @@ class RtpStreamReceiver : public RtpData,
   // Ownership of this object lies with VideoReceiveStream, which owns |this|.
   const VideoReceiveStream::Config& config_;
   PacketRouter* const packet_router_;
-  VieRemb* const remb_;
   ProcessThread* const process_thread_;
 
   RemoteNtpTimeEstimator ntp_estimator_;
@@ -195,6 +195,8 @@ class RtpStreamReceiver : public RtpData,
   // Maps a payload type to a map of out-of-band supplied codec parameters.
   std::map<uint8_t, std::map<std::string, std::string>> pt_codec_params_;
   int16_t last_payload_type_ = -1;
+
+  bool has_received_frame_;
 };
 
 }  // namespace webrtc

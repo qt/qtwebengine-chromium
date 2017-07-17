@@ -88,23 +88,25 @@ VideoRotation MockDemuxerStream::video_rotation() {
   return VIDEO_ROTATION_0;
 }
 
-std::string MockVideoDecoder::GetDisplayName() const {
-  return "MockVideoDecoder";
-}
-
-MockVideoDecoder::MockVideoDecoder() {
+MockVideoDecoder::MockVideoDecoder(const std::string& decoder_name)
+    : decoder_name_(decoder_name) {
   ON_CALL(*this, CanReadWithoutStalling()).WillByDefault(Return(true));
-}
-
-std::string MockAudioDecoder::GetDisplayName() const {
-  return "MockAudioDecoder";
 }
 
 MockVideoDecoder::~MockVideoDecoder() {}
 
-MockAudioDecoder::MockAudioDecoder() {}
+std::string MockVideoDecoder::GetDisplayName() const {
+  return decoder_name_;
+}
+
+MockAudioDecoder::MockAudioDecoder(const std::string& decoder_name)
+    : decoder_name_(decoder_name) {}
 
 MockAudioDecoder::~MockAudioDecoder() {}
+
+std::string MockAudioDecoder::GetDisplayName() const {
+  return decoder_name_;
+}
 
 MockRendererClient::MockRendererClient() {}
 
@@ -228,10 +230,9 @@ void MockCdm::RemoveSession(const std::string& session_id,
   OnRemoveSession(session_id, promise);
 }
 
-void MockCdm::CallSessionMessageCB(
-    const std::string& session_id,
-    ContentDecryptionModule::MessageType message_type,
-    const std::vector<uint8_t>& message) {
+void MockCdm::CallSessionMessageCB(const std::string& session_id,
+                                   CdmMessageType message_type,
+                                   const std::vector<uint8_t>& message) {
   session_message_cb_.Run(session_id, message_type, message);
 }
 

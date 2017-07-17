@@ -93,11 +93,6 @@ struct macroblock {
   int rddiv;
   int rdmult;
   int mb_energy;
-  int *m_search_count_ptr;
-  int *ex_search_count_ptr;
-#if CONFIG_MULTITHREAD
-  pthread_mutex_t *search_count_mutex;
-#endif
 
   // These are set to their default values at the beginning, and then adjusted
   // further in the encoding process.
@@ -173,6 +168,8 @@ struct macroblock {
 
   uint8_t skip_low_source_sad;
 
+  uint8_t lowvar_highsumdiff;
+
   uint8_t last_sb_high_content;
 
   // For each superblock: saves the content value (e.g., low/high sad/sumdiff)
@@ -187,7 +184,7 @@ struct macroblock {
   void (*fwd_txm4x4)(const int16_t *input, tran_low_t *output, int stride);
   void (*itxm_add)(const tran_low_t *input, uint8_t *dest, int stride, int eob);
 #if CONFIG_VP9_HIGHBITDEPTH
-  void (*highbd_itxm_add)(const tran_low_t *input, uint8_t *dest, int stride,
+  void (*highbd_itxm_add)(const tran_low_t *input, uint16_t *dest, int stride,
                           int eob, int bd);
 #endif
 };

@@ -237,7 +237,7 @@ bool CPDF_TextPageFind::FindPrev() {
     m_IsFind = false;
     return m_IsFind;
   }
-  CPDF_TextPageFind findEngine(m_pTextPage);
+  CPDF_TextPageFind findEngine(m_pTextPage.Get());
   bool ret = findEngine.FindFirst(m_findWhat, m_flags);
   if (!ret) {
     m_IsFind = false;
@@ -348,15 +348,10 @@ bool CPDF_TextPageFind::IsMatchWholeWord(const CFX_WideString& csPageText,
     return false;
   }
   if (char_count > 0) {
-    if (csPageText.GetAt(startPos) >= L'0' &&
-        csPageText.GetAt(startPos) <= L'9' && char_left >= L'0' &&
-        char_left <= L'9') {
+    if (std::iswdigit(char_left) && std::iswdigit(csPageText.GetAt(startPos)))
       return false;
-    }
-    if (csPageText.GetAt(endPos) >= L'0' && csPageText.GetAt(endPos) <= L'9' &&
-        char_right >= L'0' && char_right <= L'9') {
+    if (std::iswdigit(char_right) && std::iswdigit(csPageText.GetAt(endPos)))
       return false;
-    }
   }
   return true;
 }

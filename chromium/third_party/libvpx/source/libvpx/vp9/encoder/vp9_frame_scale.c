@@ -16,7 +16,8 @@
 #include "vpx_scale/yv12config.h"
 
 void vp9_scale_and_extend_frame_c(const YV12_BUFFER_CONFIG *src,
-                                  YV12_BUFFER_CONFIG *dst) {
+                                  YV12_BUFFER_CONFIG *dst,
+                                  INTERP_FILTER filter_type, int phase_scaler) {
   const int src_w = src->y_crop_width;
   const int src_h = src->y_crop_height;
   const int dst_w = dst->y_crop_width;
@@ -26,7 +27,7 @@ void vp9_scale_and_extend_frame_c(const YV12_BUFFER_CONFIG *src,
   const int src_strides[3] = { src->y_stride, src->uv_stride, src->uv_stride };
   uint8_t *const dsts[3] = { dst->y_buffer, dst->u_buffer, dst->v_buffer };
   const int dst_strides[3] = { dst->y_stride, dst->uv_stride, dst->uv_stride };
-  const InterpKernel *const kernel = vp9_filter_kernels[EIGHTTAP];
+  const InterpKernel *const kernel = vp9_filter_kernels[filter_type];
   int x, y, i;
 
   for (i = 0; i < MAX_MB_PLANE; ++i) {
@@ -34,9 +35,9 @@ void vp9_scale_and_extend_frame_c(const YV12_BUFFER_CONFIG *src,
     const int src_stride = src_strides[i];
     const int dst_stride = dst_strides[i];
     for (y = 0; y < dst_h; y += 16) {
-      const int y_q4 = y * (16 / factor) * src_h / dst_h;
+      const int y_q4 = y * (16 / factor) * src_h / dst_h + phase_scaler;
       for (x = 0; x < dst_w; x += 16) {
-        const int x_q4 = x * (16 / factor) * src_w / dst_w;
+        const int x_q4 = x * (16 / factor) * src_w / dst_w + phase_scaler;
         const uint8_t *src_ptr = srcs[i] +
                                  (y / factor) * src_h / dst_h * src_stride +
                                  (x / factor) * src_w / dst_w;

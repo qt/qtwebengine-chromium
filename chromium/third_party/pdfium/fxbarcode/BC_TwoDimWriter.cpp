@@ -57,40 +57,9 @@ int32_t CBC_TwoDimWriter::GetErrorCorrectionLevel() const {
   return m_iCorrectLevel;
 }
 
-void CBC_TwoDimWriter::RenderBitmapResult(
-    CFX_RetainPtr<CFX_DIBitmap>& pOutBitmap,
-    int32_t& e) {
-  if (m_bFixedSize) {
-    pOutBitmap = CreateDIBitmap(m_Width, m_Height);
-  } else {
-    pOutBitmap = CreateDIBitmap(m_output->GetWidth(), m_output->GetHeight());
-  }
-  if (!pOutBitmap) {
-    e = BCExceptionFailToCreateBitmap;
-    return;
-  }
-  pOutBitmap->Clear(m_backgroundColor);
-  int32_t leftPos = 0;
-  int32_t topPos = 0;
-  if (m_bFixedSize) {
-    leftPos = (m_Width - m_output->GetWidth()) / 2;
-    topPos = (m_Height - m_output->GetHeight()) / 2;
-  }
-  for (int32_t x = 0; x < m_output->GetWidth(); x++) {
-    for (int32_t y = 0; y < m_output->GetHeight(); y++) {
-      if (m_output->Get(x, y)) {
-        pOutBitmap->SetPixel(leftPos + x, topPos + y, m_barColor);
-      }
-    }
-  }
-  if (!m_bFixedSize)
-    pOutBitmap = pOutBitmap->StretchTo(m_Width, m_Height);
-}
-
-void CBC_TwoDimWriter::RenderResult(uint8_t* code,
+bool CBC_TwoDimWriter::RenderResult(uint8_t* code,
                                     int32_t codeWidth,
-                                    int32_t codeHeight,
-                                    int32_t& e) {
+                                    int32_t codeHeight) {
   int32_t inputWidth = codeWidth;
   int32_t inputHeight = codeHeight;
   int32_t tempWidth = inputWidth + 2;
@@ -107,8 +76,7 @@ void CBC_TwoDimWriter::RenderResult(uint8_t* code,
   int32_t outputHeight = scaledHeight.ValueOrDie();
   if (m_bFixedSize) {
     if (m_Width < outputWidth || m_Height < outputHeight) {
-      e = BCExceptionBitmapSizeError;
-      return;
+      return false;
     }
   } else {
     if (m_Width > outputWidth || m_Height > outputHeight) {
@@ -134,12 +102,11 @@ void CBC_TwoDimWriter::RenderResult(uint8_t* code,
     for (int32_t inputX = 0, outputX = leftPadding;
          (inputX < inputWidth) && (outputX < outputWidth - multiX);
          inputX++, outputX += multiX) {
-      if (code[inputX + inputY * inputWidth] == 1) {
-        if (!m_output->SetRegion(outputX, outputY, multiX, multiY)) {
-          e = BCExceptionGeneric;
-          return;
-        }
+      if (code[inputX + inputY * inputWidth] == 1 &&
+          !m_output->SetRegion(outputX, outputY, multiX, multiY)) {
+        return false;
       }
     }
   }
+  return true;
 }

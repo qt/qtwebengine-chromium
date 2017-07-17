@@ -191,10 +191,10 @@ class IdentityTestDataGenerator(TestDataGenerator):
 
   def _Generate(
       self, input_signal_filepath, input_noise_cache_path, base_output_path):
-    CONFIG_NAME = 'default'
-    output_path = self._MakeDir(base_output_path, CONFIG_NAME)
+    config_name = 'default'
+    output_path = self._MakeDir(base_output_path, config_name)
     self._AddNoiseReferenceFilesPair(
-        config_name=CONFIG_NAME,
+        config_name=config_name,
         noisy_signal_filepath=input_signal_filepath,
         reference_signal_filepath=input_signal_filepath,
         output_path=output_path)
@@ -297,10 +297,11 @@ class EnvironmentalNoiseTestDataGenerator(TestDataGenerator):
   _NOISY_SIGNAL_FILENAME_TEMPLATE = '{0}_{1:d}_SNR.wav'
 
   # TODO(alessiob): allow the user to store the noise tracks in a custom path.
-  _NOISE_TRACKS_PATH = os.path.join(os.getcwd(), 'noise_tracks')
+  _NOISE_TRACKS_PATH = os.path.join(
+      os.path.dirname(__file__), os.pardir, 'noise_tracks')
 
-  # TODO(alessiob): allow the user to have custom noise tracks.
-  # TODO(alessiob): exploit TestDataGeneratorFactory.GetInstance().
+  # TODO(alessiob): Allow the user to have custom noise tracks.
+  # TODO(alessiob): Exploit TestDataGeneratorFactory.GetInstance().
   _NOISE_TRACKS = [
       'city.wav'
   ]
@@ -436,7 +437,7 @@ class ReverberationTestDataGenerator(TestDataGenerator):
         # Load noise track.
         noise_signal = signal_processing.SignalProcessingUtils.LoadWav(
             noise_track_filepath)
-      except IOError:  # File not found.
+      except exceptions.FileNotFoundError:
         # Generate noise track by applying the impulse response.
         impulse_response_filepath = os.path.join(
             self._aechen_ir_database_path,

@@ -11,60 +11,38 @@
 #include "core/fxcrt/fx_system.h"
 #include "fxbarcode/datamatrix/BC_SymbolShapeHint.h"
 
-class CBC_Dimension;
-
-class CBC_SymbolInfo : public CBC_SymbolShapeHint {
+class CBC_SymbolInfo {
  public:
-  CBC_SymbolInfo(bool rectangular,
-                 int32_t dataCapacity,
+  CBC_SymbolInfo(int32_t dataCapacity,
                  int32_t errorCodewords,
                  int32_t matrixWidth,
                  int32_t matrixHeight,
                  int32_t dataRegions);
-  ~CBC_SymbolInfo() override;
+  virtual ~CBC_SymbolInfo();
 
   static void Initialize();
   static void Finalize();
   static void overrideSymbolSet(CBC_SymbolInfo* override);
-  static CBC_SymbolInfo* lookup(int32_t dataCodewords, int32_t& e);
   static CBC_SymbolInfo* lookup(int32_t dataCodewords,
                                 SymbolShapeHint shape,
                                 int32_t& e);
-  static CBC_SymbolInfo* lookup(int32_t dataCodewords,
-                                bool allowRectangular,
-                                bool fail,
-                                int32_t& e);
-  static CBC_SymbolInfo* lookup(int32_t dataCodewords,
-                                SymbolShapeHint shape,
-                                bool fail,
-                                int32_t& e);
-  static CBC_SymbolInfo* lookup(int32_t dataCodewords,
-                                SymbolShapeHint shape,
-                                CBC_Dimension* minSize,
-                                CBC_Dimension* maxSize,
-                                bool fail,
-                                int32_t& e);
-  int32_t getHorizontalDataRegions(int32_t& e);
-  int32_t getVerticalDataRegions(int32_t& e);
-  int32_t getSymbolDataWidth(int32_t& e);
-  int32_t getSymbolDataHeight(int32_t& e);
-  int32_t getSymbolWidth(int32_t& e);
-  int32_t getSymbolHeight(int32_t& e);
-  int32_t getCodewordCount();
-  int32_t getInterleavedBlockCount();
-  int32_t getDataLengthForInterleavedBlock(int32_t index);
-  int32_t getErrorLengthForInterleavedBlock(int32_t index);
 
-  int32_t m_dataCapacity;
-  int32_t m_errorCodewords;
-  int32_t m_matrixWidth;
-  int32_t m_matrixHeight;
-  int32_t m_rsBlockData;
-  int32_t m_rsBlockError;
+  int32_t getSymbolDataWidth() const;
+  int32_t getSymbolDataHeight() const;
+  int32_t getSymbolWidth() const;
+  int32_t getSymbolHeight() const;
+  int32_t getCodewordCount() const;
+  virtual int32_t getInterleavedBlockCount() const;
+  int32_t getDataLengthForInterleavedBlock(int32_t index) const;
+  int32_t getErrorLengthForInterleavedBlock(int32_t index) const;
 
- private:
-  CBC_SymbolInfo(bool rectangular,
-                 int32_t dataCapacity,
+  int32_t dataCapacity() const { return m_dataCapacity; }
+  int32_t errorCodewords() const { return m_errorCodewords; }
+  int32_t matrixWidth() const { return m_matrixWidth; }
+  int32_t matrixHeight() const { return m_matrixHeight; }
+
+ protected:
+  CBC_SymbolInfo(int32_t dataCapacity,
                  int32_t errorCodewords,
                  int32_t matrixWidth,
                  int32_t matrixHeight,
@@ -72,8 +50,18 @@ class CBC_SymbolInfo : public CBC_SymbolShapeHint {
                  int32_t rsBlockData,
                  int32_t rsBlockError);
 
-  bool m_rectangular;
-  int32_t m_dataRegions;
+ private:
+  int32_t getHorizontalDataRegions() const;
+  int32_t getVerticalDataRegions() const;
+
+  const bool m_rectangular;
+  const int32_t m_dataCapacity;
+  const int32_t m_errorCodewords;
+  const int32_t m_matrixWidth;
+  const int32_t m_matrixHeight;
+  const int32_t m_dataRegions;
+  const int32_t m_rsBlockData;
+  const int32_t m_rsBlockError;
 };
 
 #endif  // FXBARCODE_DATAMATRIX_BC_SYMBOLINFO_H_

@@ -9,7 +9,6 @@
 #include "core/fpdfapi/page/cpdf_contentparser.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/page/cpdf_pageobjectholder.h"
-#include "core/fpdfapi/page/pageint.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "third_party/base/ptr_util.h"
@@ -17,10 +16,10 @@
 CPDF_Form::CPDF_Form(CPDF_Document* pDoc,
                      CPDF_Dictionary* pPageResources,
                      CPDF_Stream* pFormStream,
-                     CPDF_Dictionary* pParentResources) {
-  m_pDocument = pDoc;
+                     CPDF_Dictionary* pParentResources)
+    : CPDF_PageObjectHolder(pDoc,
+                            pFormStream ? pFormStream->GetDict() : nullptr) {
   m_pFormStream = pFormStream;
-  m_pFormDict = pFormStream ? pFormStream->GetDict() : nullptr;
   m_pResources = m_pFormDict->GetDictFor("Resources");
   m_pPageResources = pPageResources;
   if (!m_pResources)

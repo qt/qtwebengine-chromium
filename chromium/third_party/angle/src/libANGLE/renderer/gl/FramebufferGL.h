@@ -41,7 +41,9 @@ class FramebufferGL : public FramebufferImpl
 
     gl::Error discard(size_t count, const GLenum *attachments) override;
     gl::Error invalidate(size_t count, const GLenum *attachments) override;
-    gl::Error invalidateSub(size_t count, const GLenum *attachments, const gl::Rectangle &area) override;
+    gl::Error invalidateSub(size_t count,
+                            const GLenum *attachments,
+                            const gl::Rectangle &area) override;
 
     gl::Error clear(ContextImpl *context, GLbitfield mask) override;
     gl::Error clearBufferfv(ContextImpl *context,
@@ -68,7 +70,7 @@ class FramebufferGL : public FramebufferImpl
                          const gl::Rectangle &area,
                          GLenum format,
                          GLenum type,
-                         GLvoid *pixels) const override;
+                         void *pixels) const override;
 
     gl::Error blit(ContextImpl *context,
                    const gl::Rectangle &sourceArea,
@@ -98,13 +100,13 @@ class FramebufferGL : public FramebufferImpl
                                            GLenum format,
                                            GLenum type,
                                            const gl::PixelPackState &pack,
-                                           GLvoid *pixels) const;
+                                           void *pixels) const;
 
     gl::Error readPixelsPaddingWorkaround(const gl::Rectangle &area,
                                           GLenum format,
                                           GLenum type,
                                           const gl::PixelPackState &pack,
-                                          GLvoid *pixels) const;
+                                          void *pixels) const;
 
     const FunctionsGL *mFunctions;
     StateManagerGL *mStateManager;
@@ -114,7 +116,6 @@ class FramebufferGL : public FramebufferImpl
     GLuint mFramebufferID;
     bool mIsDefault;
 };
-
 }
 
-#endif // LIBANGLE_RENDERER_GL_FRAMEBUFFERGL_H_
+#endif  // LIBANGLE_RENDERER_GL_FRAMEBUFFERGL_H_

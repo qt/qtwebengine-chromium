@@ -10,20 +10,77 @@
 #include <memory>
 #include <utility>
 
-#include "core/fxcrt/fx_stream.h"
+#include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/ifx_systemfontinfo.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
-#include "xfa/fgas/crt/fgas_codepage.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fgas/font/fgas_fontutils.h"
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
 
 namespace {
+
+struct FX_CHARSET_MAP {
+  uint16_t charset;
+  uint16_t codepage;
+};
+
+const FX_CHARSET_MAP g_FXCharset2CodePageTable[] = {
+    {FX_CHARSET_ANSI, FX_CODEPAGE_MSWin_WesternEuropean},
+    {FX_CHARSET_Default, FX_CODEPAGE_DefANSI},
+    {FX_CHARSET_Symbol, FX_CODEPAGE_Symbol},
+    {FX_CHARSET_MAC_Roman, FX_CODEPAGE_MAC_Roman},
+    {FX_CHARSET_MAC_ShiftJIS, FX_CODEPAGE_MAC_ShiftJIS},
+    {FX_CHARSET_MAC_Korean, FX_CODEPAGE_MAC_Korean},
+    {FX_CHARSET_MAC_ChineseSimplified, FX_CODEPAGE_MAC_ChineseSimplified},
+    {FX_CHARSET_MAC_ChineseTraditional, FX_CODEPAGE_MAC_ChineseTraditional},
+    {FX_CHARSET_MAC_Hebrew, FX_CODEPAGE_MAC_Hebrew},
+    {FX_CHARSET_MAC_Arabic, FX_CODEPAGE_MAC_Arabic},
+    {FX_CHARSET_MAC_Greek, FX_CODEPAGE_MAC_Greek},
+    {FX_CHARSET_MAC_Turkish, FX_CODEPAGE_MAC_Turkish},
+    {FX_CHARSET_MAC_Thai, FX_CODEPAGE_MAC_Thai},
+    {FX_CHARSET_MAC_EasternEuropean, FX_CODEPAGE_MAC_EasternEuropean},
+    {FX_CHARSET_MAC_Cyrillic, FX_CODEPAGE_MAC_Cyrillic},
+    {FX_CHARSET_ShiftJIS, FX_CODEPAGE_ShiftJIS},
+    {FX_CHARSET_Hangul, FX_CODEPAGE_Hangul},
+    {FX_CHARSET_Johab, FX_CODEPAGE_Johab},
+    {FX_CHARSET_ChineseSimplified, FX_CODEPAGE_ChineseSimplified},
+    {FX_CHARSET_ChineseTraditional, FX_CODEPAGE_ChineseTraditional},
+    {FX_CHARSET_MSWin_Greek, FX_CODEPAGE_MSWin_Greek},
+    {FX_CHARSET_MSWin_Turkish, FX_CODEPAGE_MSWin_Turkish},
+    {FX_CHARSET_MSWin_Vietnamese, FX_CODEPAGE_MSWin_Vietnamese},
+    {FX_CHARSET_MSWin_Hebrew, FX_CODEPAGE_MSWin_Hebrew},
+    {FX_CHARSET_MSWin_Arabic, FX_CODEPAGE_MSWin_Arabic},
+    {FX_CHARSET_MSWin_Baltic, FX_CODEPAGE_MSWin_Baltic},
+    {FX_CHARSET_MSWin_Cyrillic, FX_CODEPAGE_MSWin_Cyrillic},
+    {FX_CHARSET_Thai, FX_CODEPAGE_MSDOS_Thai},
+    {FX_CHARSET_MSWin_EasternEuropean, FX_CODEPAGE_MSWin_EasternEuropean},
+    {FX_CHARSET_US, FX_CODEPAGE_MSDOS_US},
+    {FX_CHARSET_OEM, FX_CODEPAGE_MSDOS_WesternEuropean},
+};
+
+uint16_t GetCodePageFromCharset(uint8_t charset) {
+  int32_t iEnd = sizeof(g_FXCharset2CodePageTable) / sizeof(FX_CHARSET_MAP) - 1;
+  ASSERT(iEnd >= 0);
+
+  int32_t iStart = 0, iMid;
+  do {
+    iMid = (iStart + iEnd) / 2;
+    const FX_CHARSET_MAP& cp = g_FXCharset2CodePageTable[iMid];
+    if (charset == cp.charset)
+      return cp.codepage;
+    if (charset < cp.charset)
+      iEnd = iMid - 1;
+    else
+      iStart = iMid + 1;
+  } while (iStart <= iEnd);
+  return 0xFFFF;
+}
 
 int32_t GetSimilarityScore(FX_FONTDESCRIPTOR const* pFont,
                            uint32_t dwFontStyles) {
@@ -67,7 +124,7 @@ const FX_FONTDESCRIPTOR* MatchDefaultFont(
     if (font.uCharSet == FX_CHARSET_Symbol)
       continue;
     if (pParams->wCodePage != 0xFFFF) {
-      if (FX_GetCodePageFromCharset(font.uCharSet) != pParams->wCodePage)
+      if (GetCodePageFromCharset(font.uCharSet) != pParams->wCodePage)
         continue;
     } else {
       if (pParams->dwUSB < 128) {
@@ -195,7 +252,7 @@ CFX_RetainPtr<CFGAS_GEFont> CFGAS_FontMgr::GetFontByUnicode(
   if (!pFD)
     return nullptr;
 
-  uint16_t wCodePage = FX_GetCodePageFromCharset(pFD->uCharSet);
+  uint16_t wCodePage = GetCodePageFromCharset(pFD->uCharSet);
   const wchar_t* pFontFace = pFD->wsFontFace;
   CFX_RetainPtr<CFGAS_GEFont> pFont =
       CFGAS_GEFont::LoadFont(pFontFace, dwFontStyles, wCodePage, this);
@@ -227,7 +284,7 @@ CFX_RetainPtr<CFGAS_GEFont> CFGAS_FontMgr::LoadFont(
     return nullptr;
 
   if (wCodePage == 0xFFFF)
-    wCodePage = FX_GetCodePageFromCharset(pFD->uCharSet);
+    wCodePage = GetCodePageFromCharset(pFD->uCharSet);
 
   pFont =
       CFGAS_GEFont::LoadFont(pFD->wsFontFace, dwFontStyles, wCodePage, this);
@@ -416,7 +473,7 @@ const uint16_t g_CodePages[] = {FX_CODEPAGE_MSWin_WesternEuropean,
                                 FX_CODEPAGE_MSDOS_Thai,
                                 FX_CODEPAGE_ShiftJIS,
                                 FX_CODEPAGE_ChineseSimplified,
-                                FX_CODEPAGE_Korean,
+                                FX_CODEPAGE_Hangul,
                                 FX_CODEPAGE_ChineseTraditional,
                                 FX_CODEPAGE_Johab,
                                 FX_CODEPAGE_DefANSI,
@@ -490,7 +547,7 @@ struct FX_BIT2CHARSET {
 
 const FX_BIT2CHARSET g_FX_Bit2Charset[4][16] = {
     {{1 << 0, FX_CHARSET_ANSI},
-     {1 << 1, FX_CHARSET_MSWin_EasterEuropean},
+     {1 << 1, FX_CHARSET_MSWin_EasternEuropean},
      {1 << 2, FX_CHARSET_MSWin_Cyrillic},
      {1 << 3, FX_CHARSET_MSWin_Greek},
      {1 << 4, FX_CHARSET_MSWin_Turkish},
@@ -508,8 +565,8 @@ const FX_BIT2CHARSET g_FX_Bit2Charset[4][16] = {
     {{1 << 0, FX_CHARSET_Thai},
      {1 << 1, FX_CHARSET_ShiftJIS},
      {1 << 2, FX_CHARSET_ChineseSimplified},
-     {1 << 3, FX_CHARSET_Korean},
-     {1 << 4, FX_CHARSET_ChineseTriditional},
+     {1 << 3, FX_CHARSET_Hangul},
+     {1 << 4, FX_CHARSET_ChineseTraditional},
      {1 << 5, FX_CHARSET_Johab},
      {1 << 6, FX_CHARSET_Default},
      {1 << 7, FX_CHARSET_Default},
@@ -621,12 +678,11 @@ bool CFX_FontSourceEnum_File::HasStartPosition() {
   return m_wsNext.GetLength() != 0;
 }
 
-CFX_RetainPtr<IFX_FileAccess> CFX_FontSourceEnum_File::GetNext() {
+CFX_RetainPtr<CFX_CRTFileAccess> CFX_FontSourceEnum_File::GetNext() {
   if (m_wsNext.GetLength() == 0)
     return nullptr;
 
-  CFX_RetainPtr<IFX_FileAccess> pAccess =
-      IFX_FileAccess::CreateDefault(m_wsNext.AsStringC());
+  auto pAccess = pdfium::MakeRetain<CFX_CRTFileAccess>(m_wsNext.AsStringC());
   m_wsNext = GetNextFile().UTF8Decode();
   return pAccess;
 }
@@ -676,7 +732,8 @@ bool CFGAS_FontMgr::EnumFontsFromFiles() {
   if (!m_pFontSource->HasStartPosition())
     return !m_InstalledFonts.empty();
 
-  while (CFX_RetainPtr<IFX_FileAccess> pFontSource = m_pFontSource->GetNext()) {
+  while (CFX_RetainPtr<CFX_CRTFileAccess> pFontSource =
+             m_pFontSource->GetNext()) {
     CFX_RetainPtr<IFX_SeekableReadStream> pFontStream =
         pFontSource->CreateFileStream(FX_FILEMODE_ReadOnly);
     if (pFontStream)
@@ -913,7 +970,7 @@ CFX_RetainPtr<IFX_SeekableReadStream> CFGAS_FontMgr::CreateFontStream(
     uint32_t index) {
   int iExact = 0;
   void* hFont =
-      pSystemFontInfo->MapFont(0, 0, FXFONT_DEFAULT_CHARSET, 0,
+      pSystemFontInfo->MapFont(0, 0, FX_CHARSET_Default, 0,
                                pFontMapper->GetFaceName(index).c_str(), iExact);
   if (!hFont)
     return nullptr;
@@ -925,7 +982,7 @@ CFX_RetainPtr<IFX_SeekableReadStream> CFGAS_FontMgr::CreateFontStream(
   uint8_t* pBuffer = FX_Alloc(uint8_t, dwFileSize + 1);
   dwFileSize = pSystemFontInfo->GetFontData(hFont, 0, pBuffer, dwFileSize);
 
-  return IFX_MemoryStream::Create(pBuffer, dwFileSize, true);
+  return pdfium::MakeRetain<CFX_MemoryStream>(pBuffer, dwFileSize, true);
 }
 
 CFX_RetainPtr<IFX_SeekableReadStream> CFGAS_FontMgr::CreateFontStream(

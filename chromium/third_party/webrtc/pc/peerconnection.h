@@ -390,6 +390,9 @@ class PeerConnection : public PeerConnectionInterface,
   // This function should only be called from the worker thread.
   void StopRtcEventLog_w();
 
+  // Creates the |*call_| object. Must only be called from the worker thread.
+  void CreateCall_w();
+
   // Storing the factory as a scoped reference pointer ensures that the memory
   // in the PeerConnectionFactoryImpl remains available as long as the
   // PeerConnection is running. It is passed to PeerConnection as a raw pointer.
@@ -399,15 +402,16 @@ class PeerConnection : public PeerConnectionInterface,
   rtc::scoped_refptr<PeerConnectionFactory> factory_;
   PeerConnectionObserver* observer_;
   UMAObserver* uma_observer_;
+
+  // The EventLog needs to outlive |call_| (and any other object that uses it).
+  std::unique_ptr<RtcEventLog> event_log_;
+
   SignalingState signaling_state_;
   IceConnectionState ice_connection_state_;
   IceGatheringState ice_gathering_state_;
   PeerConnectionInterface::RTCConfiguration configuration_;
 
   std::unique_ptr<cricket::PortAllocator> port_allocator_;
-  // The EventLog needs to outlive the media controller.
-  std::unique_ptr<RtcEventLog> event_log_;
-  std::unique_ptr<MediaControllerInterface> media_controller_;
 
   // One PeerConnection has only one RTCP CNAME.
   // https://tools.ietf.org/html/draft-ietf-rtcweb-rtp-usage-26#section-4.9
@@ -434,14 +438,16 @@ class PeerConnection : public PeerConnectionInterface,
 
   bool remote_peer_supports_msid_ = false;
 
+  std::unique_ptr<Call> call_;
+  std::unique_ptr<WebRtcSession> session_;
+  std::unique_ptr<StatsCollector> stats_;  // A pointer is passed to senders_
+  rtc::scoped_refptr<RTCStatsCollector> stats_collector_;
+
   std::vector<rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>>
       senders_;
   std::vector<
       rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>>
       receivers_;
-  std::unique_ptr<WebRtcSession> session_;
-  std::unique_ptr<StatsCollector> stats_;
-  rtc::scoped_refptr<RTCStatsCollector> stats_collector_;
 };
 
 }  // namespace webrtc

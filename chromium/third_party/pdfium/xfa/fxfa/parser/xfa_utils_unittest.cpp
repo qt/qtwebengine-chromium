@@ -11,9 +11,7 @@
 #include "testing/test_support.h"
 #include "third_party/base/ptr_util.h"
 
-class XfaUtilsImpTest : public pdfium::FPDF_Test {};
-
-TEST_F(XfaUtilsImpTest, XFA_MapRotation) {
+TEST(XfaUtilsImpTest, XFA_MapRotation) {
   struct TestCase {
     int input;
     int expected_output;
@@ -29,7 +27,7 @@ TEST_F(XfaUtilsImpTest, XFA_MapRotation) {
   }
 }
 
-class XFANodeIteratorTest : public pdfium::FPDF_Test {
+class XFANodeIteratorTest : public testing::Test {
  public:
   class Node {
    public:
@@ -272,4 +270,24 @@ TEST_F(XFANodeIteratorTest, ChildAsRootNext) {
   EXPECT_EQ(child5(), iter.MoveToNext());
   EXPECT_EQ(child6(), iter.MoveToNext());
   EXPECT_EQ(nullptr, iter.MoveToNext());
+}
+
+TEST(XFAUtilsTest, GetAttributeByName) {
+  EXPECT_EQ(nullptr, XFA_GetAttributeByName(L""));
+  EXPECT_EQ(nullptr, XFA_GetAttributeByName(L"nonesuch"));
+  EXPECT_EQ(XFA_ATTRIBUTE_H, XFA_GetAttributeByName(L"h")->eName);
+  EXPECT_EQ(XFA_ATTRIBUTE_Short, XFA_GetAttributeByName(L"short")->eName);
+  EXPECT_EQ(XFA_ATTRIBUTE_DecipherOnly,
+            XFA_GetAttributeByName(L"decipherOnly")->eName);
+}
+
+TEST(XFAUtilsTest, GetAttributeEnumByName) {
+  EXPECT_EQ(nullptr, XFA_GetAttributeEnumByName(L""));
+  EXPECT_EQ(nullptr, XFA_GetAttributeEnumByName(L"nonesuch"));
+  EXPECT_EQ(XFA_ATTRIBUTEENUM_Asterisk,
+            XFA_GetAttributeEnumByName(L"*")->eName);
+  EXPECT_EQ(XFA_ATTRIBUTEENUM_Visible,
+            XFA_GetAttributeEnumByName(L"visible")->eName);
+  EXPECT_EQ(XFA_ATTRIBUTEENUM_Lowered,
+            XFA_GetAttributeEnumByName(L"lowered")->eName);
 }

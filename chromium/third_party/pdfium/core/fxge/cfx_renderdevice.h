@@ -9,7 +9,6 @@
 
 #include <memory>
 
-#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/fx_dib.h"
 #include "core/fxge/fx_font.h"
 
@@ -83,6 +82,17 @@ class FXTEXT_CHARPOS {
 
 class CFX_RenderDevice {
  public:
+  class StateRestorer {
+   public:
+    explicit StateRestorer(CFX_RenderDevice* pDevice) : m_pDevice(pDevice) {
+      m_pDevice->SaveState();
+    }
+    ~StateRestorer() { m_pDevice->RestoreState(false); }
+
+   private:
+    CFX_RenderDevice* m_pDevice;
+  };
+
   CFX_RenderDevice();
   virtual ~CFX_RenderDevice();
 

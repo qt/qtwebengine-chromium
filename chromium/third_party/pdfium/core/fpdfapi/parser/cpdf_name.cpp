@@ -49,3 +49,8 @@ const CPDF_Name* CPDF_Name::AsName() const {
 CFX_WideString CPDF_Name::GetUnicodeText() const {
   return PDF_DecodeText(m_Name);
 }
+
+bool CPDF_Name::WriteTo(IFX_ArchiveStream* archive) const {
+  return archive->WriteString("/") &&
+         archive->WriteString(PDF_NameEncode(GetString()).AsStringC());
+}

@@ -11,7 +11,7 @@
 
 #include "core/fxcrt/cfx_shared_copy_on_write.h"
 #include "core/fxcrt/fx_system.h"
-#include "core/fxge/cfx_fxgedevice.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 
@@ -22,7 +22,7 @@ class CPDF_Path {
   ~CPDF_Path();
 
   void Emplace() { m_Ref.Emplace(); }
-  explicit operator bool() const { return !!m_Ref; }
+  bool HasRef() const { return !!m_Ref; }
 
   const std::vector<FX_PATHPOINT>& GetPoints() const;
   void ClosePath();

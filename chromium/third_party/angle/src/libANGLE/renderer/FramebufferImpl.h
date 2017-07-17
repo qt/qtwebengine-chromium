@@ -30,13 +30,15 @@ class FramebufferImpl : angle::NonCopyable
 {
   public:
     explicit FramebufferImpl(const gl::FramebufferState &state) : mState(state) {}
-    virtual ~FramebufferImpl() { }
+    virtual ~FramebufferImpl() {}
     virtual void destroy(ContextImpl *contextImpl) {}
     virtual void destroyDefault(DisplayImpl *displayImpl) {}
 
-    virtual gl::Error discard(size_t count, const GLenum *attachments) = 0;
+    virtual gl::Error discard(size_t count, const GLenum *attachments)    = 0;
     virtual gl::Error invalidate(size_t count, const GLenum *attachments) = 0;
-    virtual gl::Error invalidateSub(size_t count, const GLenum *attachments, const gl::Rectangle &area) = 0;
+    virtual gl::Error invalidateSub(size_t count,
+                                    const GLenum *attachments,
+                                    const gl::Rectangle &area) = 0;
 
     virtual gl::Error clear(ContextImpl *context, GLbitfield mask) = 0;
     virtual gl::Error clearBufferfv(ContextImpl *context,
@@ -58,12 +60,12 @@ class FramebufferImpl : angle::NonCopyable
                                     GLint stencil) = 0;
 
     virtual GLenum getImplementationColorReadFormat() const = 0;
-    virtual GLenum getImplementationColorReadType() const = 0;
+    virtual GLenum getImplementationColorReadType() const   = 0;
     virtual gl::Error readPixels(ContextImpl *context,
                                  const gl::Rectangle &area,
                                  GLenum format,
                                  GLenum type,
-                                 GLvoid *pixels) const = 0;
+                                 void *pixels) const = 0;
 
     virtual gl::Error blit(ContextImpl *context,
                            const gl::Rectangle &sourceArea,
@@ -83,7 +85,6 @@ class FramebufferImpl : angle::NonCopyable
   protected:
     const gl::FramebufferState &mState;
 };
-
 }
 
-#endif // LIBANGLE_RENDERER_FRAMEBUFFERIMPL_H_
+#endif  // LIBANGLE_RENDERER_FRAMEBUFFERIMPL_H_

@@ -20,19 +20,14 @@ static MESH_PATTERN best_quality_mesh_pattern[MAX_MESH_STEP] = {
   { 64, 4 }, { 28, 2 }, { 15, 1 }, { 7, 1 }
 };
 
-#define MAX_MESH_SPEED 5  // Max speed setting for mesh motion method
+// Define 3 mesh density levels to control the number of searches.
+#define MESH_DENSITY_LEVELS 3
 static MESH_PATTERN
-    good_quality_mesh_patterns[MAX_MESH_SPEED + 1][MAX_MESH_STEP] = {
-      { { 64, 8 }, { 28, 4 }, { 15, 1 }, { 7, 1 } },
+    good_quality_mesh_patterns[MESH_DENSITY_LEVELS][MAX_MESH_STEP] = {
       { { 64, 8 }, { 28, 4 }, { 15, 1 }, { 7, 1 } },
       { { 64, 8 }, { 14, 2 }, { 7, 1 }, { 7, 1 } },
       { { 64, 16 }, { 24, 8 }, { 12, 4 }, { 7, 1 } },
-      { { 64, 16 }, { 24, 8 }, { 12, 4 }, { 7, 1 } },
-      { { 64, 16 }, { 24, 8 }, { 12, 4 }, { 7, 1 } },
     };
-static unsigned char good_quality_max_mesh_pct[MAX_MESH_SPEED + 1] = {
-  50, 25, 15, 5, 1, 1
-};
 
 // Intra only frames, golden frames (except alt ref overlays) and
 // alt ref frames tend to be coded at a higher than ambient quality
@@ -163,13 +158,28 @@ static void set_good_speed_feature_framesize_independent(VP9_COMP *cpi,
                                                          SPEED_FEATURES *sf,
                                                          int speed) {
   const int boosted = frame_is_boosted(cpi);
+  int i;
 
   sf->tx_size_search_breakout = 1;
   sf->adaptive_rd_thresh = 1;
+  sf->adaptive_rd_thresh_row_mt = 0;
   sf->allow_skip_recode = 1;
   sf->less_rectangular_check = 1;
   sf->use_square_partition_only = !frame_is_boosted(cpi);
   sf->use_square_only_threshold = BLOCK_16X16;
+
+  if (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION) {
+    sf->exhaustive_searches_thresh = (1 << 22);
+    for (i = 0; i < MAX_MESH_STEP; ++i) {
+      int mesh_density_level = 0;
+      sf->mesh_patterns[i].range =
+          good_quality_mesh_patterns[mesh_density_level][i].range;
+      sf->mesh_patterns[i].interval =
+          good_quality_mesh_patterns[mesh_density_level][i].interval;
+    }
+  } else {
+    sf->exhaustive_searches_thresh = INT_MAX;
+  }
 
   if (speed >= 1) {
     if (cpi->oxcf.pass == 2) {
@@ -208,6 +218,10 @@ static void set_good_speed_feature_framesize_independent(VP9_COMP *cpi,
 
     sf->recode_tolerance_low = 15;
     sf->recode_tolerance_high = 30;
+
+    sf->exhaustive_searches_thresh =
+        (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION) ? (1 << 23)
+                                                                : INT_MAX;
   }
 
   if (speed >= 2) {
@@ -229,6 +243,16 @@ static void set_good_speed_feature_framesize_independent(VP9_COMP *cpi,
     sf->allow_partition_search_skip = 1;
     sf->recode_tolerance_low = 15;
     sf->recode_tolerance_high = 45;
+
+    if (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION) {
+      for (i = 0; i < MAX_MESH_STEP; ++i) {
+        int mesh_density_level = 1;
+        sf->mesh_patterns[i].range =
+            good_quality_mesh_patterns[mesh_density_level][i].range;
+        sf->mesh_patterns[i].interval =
+            good_quality_mesh_patterns[mesh_density_level][i].interval;
+      }
+    }
   }
 
   if (speed >= 3) {
@@ -247,6 +271,16 @@ static void set_good_speed_feature_framesize_independent(VP9_COMP *cpi,
     sf->intra_y_mode_mask[TX_32X32] = INTRA_DC;
     sf->intra_uv_mode_mask[TX_32X32] = INTRA_DC;
     sf->adaptive_interp_filter_search = 1;
+
+    if (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION) {
+      for (i = 0; i < MAX_MESH_STEP; ++i) {
+        int mesh_density_level = 2;
+        sf->mesh_patterns[i].range =
+            good_quality_mesh_patterns[mesh_density_level][i].range;
+        sf->mesh_patterns[i].interval =
+            good_quality_mesh_patterns[mesh_density_level][i].interval;
+      }
+    }
   }
 
   if (speed >= 4) {
@@ -325,7 +359,6 @@ static void set_rt_speed_feature_framesize_independent(
   sf->adaptive_rd_thresh = 1;
   sf->adaptive_rd_thresh_row_mt = 0;
   sf->use_fast_coef_costing = 1;
-  sf->allow_exhaustive_searches = 0;
   sf->exhaustive_searches_thresh = INT_MAX;
   sf->allow_acl = 0;
   sf->copy_partition_flag = 0;
@@ -498,7 +531,15 @@ static void set_rt_speed_feature_framesize_independent(
       // Enable short circuit for low temporal variance.
       sf->short_circuit_low_temp_var = 1;
     }
-    if (cpi->use_svc) sf->base_mv_aggressive = 1;
+    if (cpi->svc.temporal_layer_id > 0) {
+      sf->adaptive_rd_thresh = 4;
+      sf->limit_newmv_early_exit = 0;
+      sf->mv.subpel_force_stop = (cpi->svc.temporal_layer_id == 1) ? 1 : 2;
+      sf->base_mv_aggressive =
+          (cpi->svc.temporal_layer_id == cpi->svc.number_temporal_layers - 1)
+              ? 1
+              : 0;
+    }
   }
 
   if (speed >= 7) {
@@ -523,9 +564,11 @@ static void set_rt_speed_feature_framesize_independent(
 
   if (speed >= 8) {
     sf->adaptive_rd_thresh = 4;
-    // Enable partition copy
-    if (!cpi->use_svc && !cpi->resize_pending && cpi->resize_state == ORIG &&
-        !cpi->external_resize && cpi->oxcf.resize_mode == RESIZE_NONE) {
+    // Enable partition copy. For SVC, only enabled for top resolution layer,
+    if (!cpi->last_frame_dropped && cpi->resize_state == ORIG &&
+        !cpi->external_resize &&
+        (!cpi->use_svc ||
+         cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1)) {
       sf->copy_partition_flag = 1;
       cpi->max_copied_frame = 4;
     }
@@ -533,7 +576,11 @@ static void set_rt_speed_feature_framesize_independent(
     if (cpi->row_mt && cpi->oxcf.max_threads > 1)
       sf->adaptive_rd_thresh_row_mt = 1;
 
-    sf->mv.subpel_force_stop = (content == VP9E_CONTENT_SCREEN) ? 3 : 2;
+    if (content == VP9E_CONTENT_SCREEN)
+      sf->mv.subpel_force_stop = 3;
+    else if (cm->width * cm->height > 352 * 288)
+      sf->mv.subpel_force_stop = 2;
+
     if (content == VP9E_CONTENT_SCREEN) sf->lpf_pick = LPF_PICK_MINIMAL_LPF;
     // Only keep INTRA_DC mode for speed 8.
     if (!is_keyframe) {
@@ -555,18 +602,13 @@ static void set_rt_speed_feature_framesize_independent(
       }
       // Since the short_circuit_low_temp_var is used, reduce the
       // adaptive_rd_thresh level.
-      if (cm->width > 320 && cm->height > 240)
+      if (cm->width * cm->height > 352 * 288)
         sf->adaptive_rd_thresh = 1;
       else
         sf->adaptive_rd_thresh = 2;
     }
     sf->limit_newmv_early_exit = 0;
-    if (cm->width > 320 && cm->height > 240) sf->use_simple_block_yrd = 1;
-  }
-  // Turn off adaptive_rd_thresh if row_mt is on for speed 5, 6, 7.
-  if (speed >= 5 && speed < 8 && cpi->row_mt && cpi->num_workers > 1) {
-    sf->adaptive_rd_thresh = 0;
-    sf->adaptive_rd_thresh_row_mt = 0;
+    sf->use_simple_block_yrd = 1;
   }
 }
 
@@ -606,12 +648,11 @@ void vp9_set_speed_features_framesize_dependent(VP9_COMP *cpi) {
 
   // With row based multi-threading, the following speed features
   // have to be disabled to guarantee that bitstreams encoded with single thread
-  // and multiple threads match
-  if (cpi->oxcf.row_mt_bit_exact) {
+  // and multiple threads match.
+  // It can be used in realtime when adaptive_rd_thresh_row_mt is enabled since
+  // adaptive_rd_thresh is defined per-row for non-rd pickmode.
+  if (!sf->adaptive_rd_thresh_row_mt && cpi->row_mt_bit_exact)
     sf->adaptive_rd_thresh = 0;
-    sf->allow_exhaustive_searches = 0;
-    sf->adaptive_pred_interp_filter = 0;
-  }
 
   // This is only used in motion vector unit test.
   if (cpi->oxcf.motion_vector_unit_test == 1)
@@ -711,6 +752,16 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi) {
   sf->adaptive_rd_thresh = 1;
   sf->tx_size_search_breakout = 1;
 
+  sf->exhaustive_searches_thresh =
+      (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION) ? (1 << 20)
+                                                              : INT_MAX;
+  if (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION) {
+    for (i = 0; i < MAX_MESH_STEP; ++i) {
+      sf->mesh_patterns[i].range = best_quality_mesh_pattern[i].range;
+      sf->mesh_patterns[i].interval = best_quality_mesh_pattern[i].interval;
+    }
+  }
+
   if (oxcf->mode == REALTIME)
     set_rt_speed_feature_framesize_independent(cpi, sf, oxcf->speed,
                                                oxcf->content);
@@ -719,34 +770,6 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi) {
 
   cpi->full_search_sad = vp9_full_search_sad;
   cpi->diamond_search_sad = vp9_diamond_search_sad;
-
-  sf->allow_exhaustive_searches = 1;
-  if (oxcf->mode == BEST) {
-    if (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION)
-      sf->exhaustive_searches_thresh = (1 << 20);
-    else
-      sf->exhaustive_searches_thresh = (1 << 21);
-    sf->max_exaustive_pct = 100;
-    for (i = 0; i < MAX_MESH_STEP; ++i) {
-      sf->mesh_patterns[i].range = best_quality_mesh_pattern[i].range;
-      sf->mesh_patterns[i].interval = best_quality_mesh_pattern[i].interval;
-    }
-  } else {
-    int speed = (oxcf->speed > MAX_MESH_SPEED) ? MAX_MESH_SPEED : oxcf->speed;
-    if (cpi->twopass.fr_content_type == FC_GRAPHICS_ANIMATION)
-      sf->exhaustive_searches_thresh = (1 << 22);
-    else
-      sf->exhaustive_searches_thresh = (1 << 23);
-    sf->max_exaustive_pct = good_quality_max_mesh_pct[speed];
-    if (speed > 0)
-      sf->exhaustive_searches_thresh = sf->exhaustive_searches_thresh << 1;
-
-    for (i = 0; i < MAX_MESH_STEP; ++i) {
-      sf->mesh_patterns[i].range = good_quality_mesh_patterns[speed][i].range;
-      sf->mesh_patterns[i].interval =
-          good_quality_mesh_patterns[speed][i].interval;
-    }
-  }
 
   // Slow quant, dct and trellis not worthwhile for first pass
   // so make sure they are always turned off.
@@ -782,12 +805,11 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi) {
 
   // With row based multi-threading, the following speed features
   // have to be disabled to guarantee that bitstreams encoded with single thread
-  // and multiple threads match
-  if (cpi->oxcf.row_mt_bit_exact) {
+  // and multiple threads match.
+  // It can be used in realtime when adaptive_rd_thresh_row_mt is enabled since
+  // adaptive_rd_thresh is defined per-row for non-rd pickmode.
+  if (!sf->adaptive_rd_thresh_row_mt && cpi->row_mt_bit_exact)
     sf->adaptive_rd_thresh = 0;
-    sf->allow_exhaustive_searches = 0;
-    sf->adaptive_pred_interp_filter = 0;
-  }
 
   // This is only used in motion vector unit test.
   if (cpi->oxcf.motion_vector_unit_test == 1)

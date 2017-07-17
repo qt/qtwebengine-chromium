@@ -21,6 +21,7 @@
 #include "webrtc/base/gtest_prod_util.h"
 #include "webrtc/base/ignore_wundef.h"
 #include "webrtc/base/protobuf_utils.h"
+#include "webrtc/base/safe_minmax.h"
 #include "webrtc/common_audio/include/audio_util.h"
 #include "webrtc/common_audio/resampler/include/push_resampler.h"
 #include "webrtc/common_audio/resampler/push_sinc_resampler.h"
@@ -678,7 +679,7 @@ void ApmTest::ProcessDelayVerificationTest(int delay_ms, int system_delay_ms,
   // Calculate expected delay estimate and acceptable regions. Further,
   // limit them w.r.t. AEC delay estimation support.
   const size_t samples_per_ms =
-      std::min(static_cast<size_t>(16), frame_->samples_per_channel_ / 10);
+      rtc::SafeMin<size_t>(16u, frame_->samples_per_channel_ / 10);
   int expected_median = std::min(std::max(delay_ms - system_delay_ms,
                                           delay_min), delay_max);
   int expected_median_high = std::min(
@@ -861,8 +862,6 @@ TEST_F(ApmTest, ChannelsInt16Interface) {
   for (size_t i = 1; i < 4; i++) {
     TestChangingChannelsInt16Interface(i, kNoErr);
     EXPECT_EQ(i, apm_->num_input_channels());
-    // We always force the number of reverse channels used for processing to 1.
-    EXPECT_EQ(1u, apm_->num_reverse_channels());
   }
 }
 

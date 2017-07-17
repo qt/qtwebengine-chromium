@@ -21,16 +21,17 @@
 #include "libyuv/convert.h"  // NOLINT
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/random.h"
 #include "webrtc/base/timeutils.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8_common_types.h"
 #include "webrtc/modules/video_coding/codecs/vp8/screenshare_layers.h"
 #include "webrtc/modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
 #include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
+#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
 #include "webrtc/system_wrappers/include/metrics.h"
@@ -131,6 +132,30 @@ VP8Decoder* VP8Decoder::Create() {
   return new VP8DecoderImpl();
 }
 
+vpx_enc_frame_flags_t VP8EncoderImpl::EncodeFlags(
+    const TemporalLayers::FrameConfig& references) {
+  RTC_DCHECK(!references.drop_frame);
+
+  vpx_enc_frame_flags_t flags = 0;
+
+  if ((references.last_buffer_flags & TemporalLayers::kReference) == 0)
+    flags |= VP8_EFLAG_NO_REF_LAST;
+  if ((references.last_buffer_flags & TemporalLayers::kUpdate) == 0)
+    flags |= VP8_EFLAG_NO_UPD_LAST;
+  if ((references.golden_buffer_flags & TemporalLayers::kReference) == 0)
+    flags |= VP8_EFLAG_NO_REF_GF;
+  if ((references.golden_buffer_flags & TemporalLayers::kUpdate) == 0)
+    flags |= VP8_EFLAG_NO_UPD_GF;
+  if ((references.arf_buffer_flags & TemporalLayers::kReference) == 0)
+    flags |= VP8_EFLAG_NO_REF_ARF;
+  if ((references.arf_buffer_flags & TemporalLayers::kUpdate) == 0)
+    flags |= VP8_EFLAG_NO_UPD_ARF;
+  if (references.freeze_entropy)
+    flags |= VP8_EFLAG_NO_UPD_ENTROPY;
+
+  return flags;
+}
+
 VP8EncoderImpl::VP8EncoderImpl()
     : use_gf_boost_(webrtc::field_trial::IsEnabled(kVp8GfBoostFieldTrial)),
       encoded_complete_callback_(nullptr),
@@ -141,11 +166,12 @@ VP8EncoderImpl::VP8EncoderImpl()
       number_of_cores_(0),
       rc_max_intra_target_(0),
       key_frame_request_(kMaxSimulcastStreams, false) {
-  uint32_t seed = rtc::Time32();
-  srand(seed);
-
+  Random random(rtc::TimeMicros());
   picture_id_.reserve(kMaxSimulcastStreams);
-  last_key_frame_picture_id_.reserve(kMaxSimulcastStreams);
+  for (int i = 0; i < kMaxSimulcastStreams; ++i) {
+    picture_id_.push_back(random.Rand<uint16_t>() & 0x7FFF);
+    tl0_pic_idx_.push_back(random.Rand<uint8_t>());
+  }
   temporal_layers_.reserve(kMaxSimulcastStreams);
   raw_images_.reserve(kMaxSimulcastStreams);
   encoded_images_.reserve(kMaxSimulcastStreams);
@@ -182,10 +208,10 @@ int VP8EncoderImpl::Release() {
     vpx_img_free(&raw_images_.back());
     raw_images_.pop_back();
   }
-  while (!temporal_layers_.empty()) {
-    delete temporal_layers_.back();
-    temporal_layers_.pop_back();
+  for (size_t i = 0; i < temporal_layers_.size(); ++i) {
+    tl0_pic_idx_[i] = temporal_layers_[i]->Tl0PicIdx();
   }
+  temporal_layers_.clear();
   inited_ = false;
   return ret_val;
 }
@@ -270,14 +296,15 @@ void VP8EncoderImpl::SetupTemporalLayers(int num_streams,
   RTC_DCHECK(codec.VP8().tl_factory != nullptr);
   const TemporalLayersFactory* tl_factory = codec.VP8().tl_factory;
   if (num_streams == 1) {
-    temporal_layers_.push_back(
-        tl_factory->Create(0, num_temporal_layers, rand()));
+    temporal_layers_.emplace_back(
+        tl_factory->Create(0, num_temporal_layers, tl0_pic_idx_[0]));
   } else {
     for (int i = 0; i < num_streams; ++i) {
       RTC_CHECK_GT(num_temporal_layers, 0);
       int layers = std::max(static_cast<uint8_t>(1),
                             codec.simulcastStream[i].numberOfTemporalLayers);
-      temporal_layers_.push_back(tl_factory->Create(i, layers, rand()));
+      temporal_layers_.emplace_back(
+          tl_factory->Create(i, layers, tl0_pic_idx_[i]));
     }
   }
 }
@@ -334,8 +361,6 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
     codec_.simulcastStream[0].height = codec_.height;
   }
 
-  picture_id_.resize(number_of_streams);
-  last_key_frame_picture_id_.resize(number_of_streams);
   encoded_images_.resize(number_of_streams);
   encoders_.resize(number_of_streams);
   configurations_.resize(number_of_streams);
@@ -360,15 +385,12 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
     downsampling_factors_[number_of_streams - 1].den = 1;
   }
   for (int i = 0; i < number_of_streams; ++i) {
-    // Random start, 16 bits is enough.
-    picture_id_[i] = static_cast<uint16_t>(rand()) & 0x7FFF;  // NOLINT
-    last_key_frame_picture_id_[i] = -1;
     // allocate memory for encoded image
     if (encoded_images_[i]._buffer != NULL) {
       delete[] encoded_images_[i]._buffer;
     }
     encoded_images_[i]._size =
-        CalcBufferSize(kI420, codec_.width, codec_.height);
+        CalcBufferSize(VideoType::kI420, codec_.width, codec_.height);
     encoded_images_[i]._buffer = new uint8_t[encoded_images_[i]._size];
     encoded_images_[i]._completeFrame = true;
   }
@@ -648,9 +670,7 @@ int VP8EncoderImpl::Encode(const VideoFrame& frame,
 
   rtc::scoped_refptr<VideoFrameBuffer> input_image = frame.video_frame_buffer();
   // Since we are extracting raw pointers from |input_image| to
-  // |raw_images_[0]|, the resolution of these frames must match. Note that
-  // |input_image| might be scaled from |frame|. In that case, the resolution of
-  // |raw_images_[0]| should have been updated in UpdateCodecFrameSize.
+  // |raw_images_[0]|, the resolution of these frames must match.
   RTC_DCHECK_EQ(input_image->width(), raw_images_[0].d_w);
   RTC_DCHECK_EQ(input_image->height(), raw_images_[0].d_h);
 
@@ -683,13 +703,15 @@ int VP8EncoderImpl::Encode(const VideoFrame& frame,
         raw_images_[i].d_h, libyuv::kFilterBilinear);
   }
   vpx_enc_frame_flags_t flags[kMaxSimulcastStreams];
+  TemporalLayers::FrameConfig tl_configs[kMaxSimulcastStreams];
   for (size_t i = 0; i < encoders_.size(); ++i) {
-    int ret = temporal_layers_[i]->EncodeFlags(frame.timestamp());
-    if (ret < 0) {
+    tl_configs[i] = temporal_layers_[i]->UpdateLayerConfig(frame.timestamp());
+
+    if (tl_configs[i].drop_frame) {
       // Drop this frame.
       return WEBRTC_VIDEO_CODEC_OK;
     }
-    flags[i] = ret;
+    flags[i] = EncodeFlags(tl_configs[i]);
   }
   bool send_key_frame = false;
   for (size_t i = 0; i < key_frame_request_.size() && i < send_stream_.size();
@@ -742,8 +764,9 @@ int VP8EncoderImpl::Encode(const VideoFrame& frame,
     }
 
     vpx_codec_control(&encoders_[i], VP8E_SET_FRAME_FLAGS, flags[stream_idx]);
-    vpx_codec_control(&encoders_[i], VP8E_SET_TEMPORAL_LAYER_ID,
-                      temporal_layers_[stream_idx]->CurrentLayerId());
+    vpx_codec_control(
+        &encoders_[i], VP8E_SET_TEMPORAL_LAYER_ID,
+        temporal_layers_[stream_idx]->GetTemporalLayerId(tl_configs[i]));
   }
   // TODO(holmer): Ideally the duration should be the timestamp diff of this
   // frame and the next frame to be encoded, which we don't have. Instead we
@@ -766,39 +789,12 @@ int VP8EncoderImpl::Encode(const VideoFrame& frame,
     return WEBRTC_VIDEO_CODEC_ERROR;
   timestamp_ += duration;
   // Examines frame timestamps only.
-  return GetEncodedPartitions(frame);
-}
-
-// TODO(pbos): Make sure this works for properly for >1 encoders.
-int VP8EncoderImpl::UpdateCodecFrameSize(int width, int height) {
-  codec_.width = width;
-  codec_.height = height;
-  if (codec_.numberOfSimulcastStreams <= 1) {
-    // For now scaling is only used for single-layer streams.
-    codec_.simulcastStream[0].width = width;
-    codec_.simulcastStream[0].height = height;
-  }
-  // Update the cpu_speed setting for resolution change.
-  vpx_codec_control(&(encoders_[0]), VP8E_SET_CPUUSED,
-                    SetCpuSpeed(codec_.width, codec_.height));
-  raw_images_[0].w = codec_.width;
-  raw_images_[0].h = codec_.height;
-  raw_images_[0].d_w = codec_.width;
-  raw_images_[0].d_h = codec_.height;
-  vpx_img_set_rect(&raw_images_[0], 0, 0, codec_.width, codec_.height);
-
-  // Update encoder context for new frame size.
-  // Change of frame size will automatically trigger a key frame.
-  configurations_[0].g_w = codec_.width;
-  configurations_[0].g_h = codec_.height;
-  if (vpx_codec_enc_config_set(&encoders_[0], &configurations_[0])) {
-    return WEBRTC_VIDEO_CODEC_ERROR;
-  }
-  return WEBRTC_VIDEO_CODEC_OK;
+  return GetEncodedPartitions(tl_configs, frame);
 }
 
 void VP8EncoderImpl::PopulateCodecSpecific(
     CodecSpecificInfo* codec_specific,
+    const TemporalLayers::FrameConfig& tl_config,
     const vpx_codec_cx_pkt_t& pkt,
     int stream_idx,
     uint32_t timestamp) {
@@ -807,19 +803,19 @@ void VP8EncoderImpl::PopulateCodecSpecific(
   codec_specific->codec_name = ImplementationName();
   CodecSpecificInfoVP8* vp8Info = &(codec_specific->codecSpecific.VP8);
   vp8Info->pictureId = picture_id_[stream_idx];
-  if (pkt.data.frame.flags & VPX_FRAME_IS_KEY) {
-    last_key_frame_picture_id_[stream_idx] = picture_id_[stream_idx];
-  }
   vp8Info->simulcastIdx = stream_idx;
   vp8Info->keyIdx = kNoKeyIdx;  // TODO(hlundin) populate this
   vp8Info->nonReference = (pkt.data.frame.flags & VPX_FRAME_IS_DROPPABLE) != 0;
   temporal_layers_[stream_idx]->PopulateCodecSpecific(
-      (pkt.data.frame.flags & VPX_FRAME_IS_KEY) != 0, vp8Info, timestamp);
+      (pkt.data.frame.flags & VPX_FRAME_IS_KEY) != 0, tl_config, vp8Info,
+      timestamp);
   // Prepare next.
   picture_id_[stream_idx] = (picture_id_[stream_idx] + 1) & 0x7FFF;
 }
 
-int VP8EncoderImpl::GetEncodedPartitions(const VideoFrame& input_image) {
+int VP8EncoderImpl::GetEncodedPartitions(
+    const TemporalLayers::FrameConfig tl_configs[],
+    const VideoFrame& input_image) {
   int bw_resolutions_disabled =
       (encoders_.size() > 1) ? NumStreamsDisabled(send_stream_) : -1;
 
@@ -869,8 +865,8 @@ int VP8EncoderImpl::GetEncodedPartitions(const VideoFrame& input_image) {
         if (pkt->data.frame.flags & VPX_FRAME_IS_KEY) {
           encoded_images_[encoder_idx]._frameType = kVideoFrameKey;
         }
-        PopulateCodecSpecific(&codec_specific, *pkt, stream_idx,
-                              input_image.timestamp());
+        PopulateCodecSpecific(&codec_specific, tl_configs[stream_idx], *pkt,
+                              stream_idx, input_image.timestamp());
         break;
       }
     }
@@ -878,6 +874,9 @@ int VP8EncoderImpl::GetEncodedPartitions(const VideoFrame& input_image) {
     encoded_images_[encoder_idx].capture_time_ms_ =
         input_image.render_time_ms();
     encoded_images_[encoder_idx].rotation_ = input_image.rotation();
+    encoded_images_[encoder_idx].content_type_ =
+        (codec_.mode == kScreensharing) ? VideoContentType::SCREENSHARE
+                                        : VideoContentType::UNSPECIFIED;
 
     int qp = -1;
     vpx_codec_control(&encoders_[encoder_idx], VP8E_GET_LAST_QUANTIZER_64, &qp);

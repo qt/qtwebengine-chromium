@@ -909,11 +909,13 @@ class VideoAnalyzer : public PacketReceiver,
       // Frames from the capturer does not have a rtp timestamp.
       // Create one so it can be used for comparison.
       RTC_DCHECK_EQ(0, video_frame.timestamp());
+      if (copy.ntp_time_ms() == 0)
+        copy.set_ntp_time_ms(rtc::TimeMillis());
       copy.set_timestamp(copy.ntp_time_ms() * 90);
       analyzer_->AddCapturedFrameForComparison(copy);
       rtc::CritScope lock(&crit_);
       if (send_stream_input_)
-        send_stream_input_->OnFrame(video_frame);
+        send_stream_input_->OnFrame(copy);
     }
 
     // Called when |send_stream_.SetSource()| is called.
@@ -1301,6 +1303,8 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
     video_send_config_.rtp.extensions.push_back(RtpExtension(
         RtpExtension::kAbsSendTimeUri, test::kAbsSendTimeExtensionId));
   }
+  video_send_config_.rtp.extensions.push_back(RtpExtension(
+      RtpExtension::kVideoContentTypeUri, test::kVideoContentTypeExtensionId));
 
   video_encoder_config_.min_transmit_bitrate_bps =
       params_.video.min_transmit_bps;
@@ -1328,6 +1332,8 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
         kSendRtxPayloadType;
     video_receive_configs_[i].rtp.transport_cc = params_.call.send_side_bwe;
     video_receive_configs_[i].rtp.remb = !params_.call.send_side_bwe;
+    // Enable RTT calculation so NTP time estimator will work.
+    video_receive_configs_[i].rtp.rtcp_xr.receiver_reference_time_report = true;
     // Force fake decoders on non-selected simulcast streams.
     if (i != params_.ss.selected_stream) {
       VideoReceiveStream::Decoder decoder;
@@ -1501,12 +1507,13 @@ void VideoQualityTest::SetupScreenshareOrSVC() {
     // Setup frame generator.
     const size_t kWidth = 1850;
     const size_t kHeight = 1110;
-    std::vector<std::string> slides;
-    slides.push_back(test::ResourcePath("web_screenshot_1850_1110", "yuv"));
-    slides.push_back(test::ResourcePath("presentation_1850_1110", "yuv"));
-    slides.push_back(test::ResourcePath("photo_1850_1110", "yuv"));
-    slides.push_back(test::ResourcePath("difficult_photo_1850_1110", "yuv"));
-
+    std::vector<std::string> slides = params_.screenshare.slides;
+    if (slides.size() == 0) {
+      slides.push_back(test::ResourcePath("web_screenshot_1850_1110", "yuv"));
+      slides.push_back(test::ResourcePath("presentation_1850_1110", "yuv"));
+      slides.push_back(test::ResourcePath("photo_1850_1110", "yuv"));
+      slides.push_back(test::ResourcePath("difficult_photo_1850_1110", "yuv"));
+    }
     if (params_.screenshare.scroll_duration == 0) {
       // Cycle image every slide_change_interval seconds.
       frame_generator_ = test::FrameGenerator::CreateFromYuvFile(
@@ -1723,9 +1730,13 @@ void VideoQualityTest::SetupAudio(int send_channel_id,
     audio_send_config_.min_bitrate_bps = kOpusMinBitrateBps;
     audio_send_config_.max_bitrate_bps = kOpusBitrateFbBps;
   }
-  audio_send_config_.send_codec_spec.codec_inst =
-      CodecInst{kAudioSendPayloadType, "OPUS", 48000, 960, 2, 64000};
-  audio_send_config_.send_codec_spec.enable_opus_dtx = params_.audio.dtx;
+  audio_send_config_.send_codec_spec =
+      rtc::Optional<AudioSendStream::Config::SendCodecSpec>(
+          {kAudioSendPayloadType,
+           {"OPUS", 48000, 2,
+            {{"usedtx", (params_.audio.dtx ? "1" : "0")},
+              {"stereo", "1"}}}});
+  audio_send_config_.encoder_factory = encoder_factory_;
   audio_send_stream_ = call->CreateAudioSendStream(audio_send_config_);
 
   AudioReceiveStream::Config audio_config;

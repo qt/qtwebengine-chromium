@@ -110,57 +110,19 @@ class CFX_WideTextBuf : public CFX_BinaryBuf {
   CFX_WideTextBuf& operator<<(const CFX_WideTextBuf& buf);
 };
 
-class CFX_FileBufferArchive {
- public:
-  CFX_FileBufferArchive();
-  ~CFX_FileBufferArchive();
-
-  void Clear();
-  bool Flush();
-  int32_t AppendBlock(const void* pBuf, size_t size);
-  int32_t AppendByte(uint8_t byte);
-  int32_t AppendDWord(uint32_t i);
-  int32_t AppendString(const CFX_ByteStringC& lpsz);
-  void AttachFile(const CFX_RetainPtr<IFX_WriteStream>& pFile);
-
- private:
-  static const size_t kBufSize = 32768;
-
-  size_t m_Length;
-  std::unique_ptr<uint8_t, FxFreeDeleter> m_pBuffer;
-  CFX_RetainPtr<IFX_WriteStream> m_pFile;
-};
-
-class CFX_CharMap {
- public:
-  static CFX_ByteString GetByteString(uint16_t codepage,
-                                      const CFX_WideStringC& wstr);
-
-  static CFX_WideString GetWideString(uint16_t codepage,
-                                      const CFX_ByteStringC& bstr);
-
-  CFX_CharMap() = delete;
-};
-
 class CFX_UTF8Decoder {
  public:
   CFX_UTF8Decoder() { m_PendingBytes = 0; }
 
   void Clear();
-
   void Input(uint8_t byte);
-
   void AppendChar(uint32_t ch);
-
   void ClearStatus() { m_PendingBytes = 0; }
-
   CFX_WideStringC GetResult() const { return m_Buffer.AsStringC(); }
 
- protected:
+ private:
   int m_PendingBytes;
-
   uint32_t m_PendingChar;
-
   CFX_WideTextBuf m_Buffer;
 };
 
@@ -172,7 +134,7 @@ class CFX_UTF8Encoder {
   void AppendStr(const CFX_ByteStringC& str) { m_Buffer << str; }
   CFX_ByteStringC GetResult() const { return m_Buffer.AsStringC(); }
 
- protected:
+ private:
   CFX_ByteTextBuf m_Buffer;
 };
 
@@ -207,7 +169,7 @@ class CFX_BitStream {
     return m_BitSize >= m_BitPos ? m_BitSize - m_BitPos : 0;
   }
 
- protected:
+ private:
   uint32_t m_BitPos;
   uint32_t m_BitSize;
   const uint8_t* m_pData;

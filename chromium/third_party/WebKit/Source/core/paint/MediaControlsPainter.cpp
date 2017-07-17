@@ -32,7 +32,6 @@
 #include "core/html/TimeRanges.h"
 #include "core/html/media/MediaControls.h"
 #include "core/html/shadow/MediaControlElementTypes.h"
-#include "core/html/shadow/MediaControlElements.h"
 #include "core/layout/LayoutBox.h"
 #include "core/paint/PaintInfo.h"
 #include "core/style/ComputedStyle.h"
@@ -69,7 +68,7 @@ static Image* PlatformResource(const char* name) {
     g_media_control_image_map->Set(name, image);
     return image;
   }
-  ASSERT_NOT_REACHED();
+  NOTREACHED();
   return 0;
 }
 
@@ -181,7 +180,9 @@ bool MediaControlsPainter::PaintMediaOverlayPlayButton(
   if (!HasSource(media_element) || !media_element->paused())
     return false;
 
-  MediaControlPanelElement* panel_element = nullptr;
+  // TODO(mlamouri): it might be possible to use the PanelLayoutObject() call
+  // instead.
+  HTMLDivElement* panel_element = nullptr;
   if (media_element->GetMediaControls())
     panel_element = media_element->GetMediaControls()->PanelElement();
 
@@ -547,7 +548,7 @@ bool MediaControlsPainter::PaintMediaCastButton(const LayoutObject& object,
     case kMediaOverlayCastOffButton:
       return PaintMediaButton(paint_info.context, rect, media_overlay_cast_off);
     default:
-      ASSERT_NOT_REACHED();
+      NOTREACHED();
       return false;
   }
 }

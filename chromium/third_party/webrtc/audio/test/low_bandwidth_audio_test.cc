@@ -10,18 +10,30 @@
 
 #include <algorithm>
 
+#include "gflags/gflags.h"
 #include "webrtc/audio/test/low_bandwidth_audio_test.h"
 #include "webrtc/common_audio/wav_file.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
+
+DEFINE_int32(sample_rate_hz, 16000,
+             "Sample rate (Hz) of the produced audio files.");
+
+DEFINE_bool(quick, false,
+            "Don't do the full audio recording. "
+            "Used to quickly check that the test runs without crashing.");
+
 namespace {
+
 // Wait half a second between stopping sending and stopping receiving audio.
 constexpr int kExtraRecordTimeMs = 500;
 
-// The best that can be done with PESQ.
-constexpr int kAudioFileBitRate = 16000;
+std::string FileSampleRateSuffix() {
+  return std::to_string(FLAGS_sample_rate_hz / 1000);
+}
+
 }  // namespace
 
 namespace webrtc {
@@ -41,14 +53,15 @@ size_t AudioQualityTest::GetNumFlexfecStreams() const {
 }
 
 std::string AudioQualityTest::AudioInputFile() {
-  return test::ResourcePath("voice_engine/audio_tiny16", "wav");
+  return test::ResourcePath("voice_engine/audio_tiny" + FileSampleRateSuffix(),
+                            "wav");
 }
 
 std::string AudioQualityTest::AudioOutputFile() {
   const ::testing::TestInfo* const test_info =
       ::testing::UnitTest::GetInstance()->current_test_info();
-  return webrtc::test::OutputPath() +
-      "LowBandwidth_" + test_info->name() + ".wav";
+  return webrtc::test::OutputPath() + "LowBandwidth_" + test_info->name() +
+      "_" + FileSampleRateSuffix() + ".wav";
 }
 
 std::unique_ptr<test::FakeAudioDevice::Capturer>
@@ -59,7 +72,7 @@ std::unique_ptr<test::FakeAudioDevice::Capturer>
 std::unique_ptr<test::FakeAudioDevice::Renderer>
     AudioQualityTest::CreateRenderer() {
   return test::FakeAudioDevice::CreateBoundedWavFileWriter(
-      AudioOutputFile(), kAudioFileBitRate);
+      AudioOutputFile(), FLAGS_sample_rate_hz);
 }
 
 void AudioQualityTest::OnFakeAudioDevicesCreated(
@@ -88,15 +101,24 @@ test::PacketTransport* AudioQualityTest::CreateReceiveTransport() {
 void AudioQualityTest::ModifyAudioConfigs(
   AudioSendStream::Config* send_config,
   std::vector<AudioReceiveStream::Config>* receive_configs) {
-  send_config->send_codec_spec.codec_inst = webrtc::CodecInst{
-      test::CallTest::kAudioSendPayloadType, "OPUS", 48000, 960, 2, 64000};
+  // Large bitrate by default.
+  const webrtc::SdpAudioFormat kDefaultFormat("OPUS", 48000, 2,
+                                              {{"stereo", "1"}});
+  send_config->send_codec_spec =
+      rtc::Optional<AudioSendStream::Config::SendCodecSpec>(
+          {test::CallTest::kAudioSendPayloadType, kDefaultFormat});
 }
 
 void AudioQualityTest::PerformTest() {
-  // Wait until the input audio file is done...
-  send_audio_device_->WaitForRecordingEnd();
-  // and some extra time to account for network delay.
-  SleepMs(GetNetworkPipeConfig().queue_delay_ms + kExtraRecordTimeMs);
+  if (FLAGS_quick) {
+    // Let the recording run for a small amount of time to check if it works.
+    SleepMs(1000);
+  } else {
+    // Wait until the input audio file is done...
+    send_audio_device_->WaitForRecordingEnd();
+    // and some extra time to account for network delay.
+    SleepMs(GetNetworkPipeConfig().queue_delay_ms + kExtraRecordTimeMs);
+  }
 }
 
 void AudioQualityTest::OnTestFinished() {
@@ -121,14 +143,15 @@ TEST_F(LowBandwidthAudioTest, GoodNetworkHighBitrate) {
 class Mobile2GNetworkTest : public AudioQualityTest {
   void ModifyAudioConfigs(AudioSendStream::Config* send_config,
       std::vector<AudioReceiveStream::Config>* receive_configs) override {
-    send_config->send_codec_spec.codec_inst = CodecInst{
-        test::CallTest::kAudioSendPayloadType,  // pltype
-        "OPUS",                                 // plname
-        48000,                                  // plfreq
-        2880,                                   // pacsize
-        1,                                      // channels
-        6000                                    // rate bits/sec
-    };
+    send_config->send_codec_spec =
+        rtc::Optional<AudioSendStream::Config::SendCodecSpec>(
+            {test::CallTest::kAudioSendPayloadType,
+             {"OPUS",
+              48000,
+              2,
+              {{"maxaveragebitrate", "6000"},
+               {"ptime", "60"},
+               {"stereo", "1"}}}});
   }
 
   FakeNetworkPipe::Config GetNetworkPipeConfig() override {

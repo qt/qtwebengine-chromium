@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "core/fxcrt/fx_system.h"
-#include "core/fxge/cfx_fxgedevice.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/fx_dib.h"
@@ -104,7 +104,7 @@ class CFX_Graphics {
   void SetDIBitsWithMatrix(const CFX_RetainPtr<CFX_DIBSource>& source,
                            CFX_Matrix* matrix);
 
-  CFX_RenderDevice* m_renderDevice;
+  CFX_RenderDevice* const m_renderDevice;  // Not owned.
   std::vector<std::unique_ptr<TInfo>> m_infoStack;
 };
 

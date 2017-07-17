@@ -29,10 +29,11 @@ using Microsoft::WRL::ComPtr;
 
 class NonCopyable
 {
-  public:
+  protected:
     NonCopyable() = default;
     ~NonCopyable() = default;
-  protected:
+
+  private:
     NonCopyable(const NonCopyable&) = delete;
     void operator=(const NonCopyable&) = delete;
 };
@@ -61,7 +62,7 @@ void SafeRelease(T& resource)
     if (resource)
     {
         resource->Release();
-        resource = NULL;
+        resource = nullptr;
     }
 }
 
@@ -69,7 +70,7 @@ template <typename T>
 void SafeDelete(T *&resource)
 {
     delete resource;
-    resource = NULL;
+    resource = nullptr;
 }
 
 template <typename T>
@@ -86,7 +87,7 @@ template <typename T>
 void SafeDeleteArray(T*& resource)
 {
     delete[] resource;
-    resource = NULL;
+    resource = nullptr;
 }
 
 // Provide a less-than function for comparing structs

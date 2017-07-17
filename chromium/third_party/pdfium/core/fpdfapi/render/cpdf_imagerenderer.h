@@ -15,7 +15,7 @@
 
 class CFX_DIBitmap;
 class CFX_DIBSource;
-class CFX_FxgeDevice;
+class CFX_DefaultRenderDevice;
 class CFX_ImageTransformer;
 class CPDF_ImageObject;
 class CPDF_PageObject;
@@ -55,16 +55,17 @@ class CPDF_ImageRenderer {
   bool NotDrawing() const;
   FX_RECT GetDrawRect() const;
   CFX_Matrix GetDrawMatrix(const FX_RECT& rect) const;
-  void CalculateDrawImage(CFX_FxgeDevice* bitmap_device1,
-                          CFX_FxgeDevice* bitmap_device2,
+  void CalculateDrawImage(CFX_DefaultRenderDevice* bitmap_device1,
+                          CFX_DefaultRenderDevice* bitmap_device2,
                           const CFX_RetainPtr<CFX_DIBSource>& pDIBSource,
                           CFX_Matrix* pNewMatrix,
                           const FX_RECT& rect) const;
+  void HandleFilters();
 
-  CPDF_RenderStatus* m_pRenderStatus;
-  CPDF_ImageObject* m_pImageObject;
+  CFX_UnownedPtr<CPDF_RenderStatus> m_pRenderStatus;
+  CFX_UnownedPtr<CPDF_ImageObject> m_pImageObject;
   int m_Status;
-  const CFX_Matrix* m_pObj2Device;
+  CFX_UnownedPtr<const CFX_Matrix> m_pObj2Device;
   CFX_Matrix m_ImageMatrix;
   CPDF_ImageLoader m_Loader;
   CFX_RetainPtr<CFX_DIBSource> m_pDIBSource;

@@ -204,10 +204,7 @@ class TIntermLoop : public TIntermNode
                 TIntermNode *init,
                 TIntermTyped *cond,
                 TIntermTyped *expr,
-                TIntermBlock *body)
-        : mType(type), mInit(init), mCond(cond), mExpr(expr), mBody(body)
-    {
-    }
+                TIntermBlock *body);
 
     TIntermLoop *getAsLoopNode() override { return this; }
     void traverse(TIntermTraverser *it) override;
@@ -607,7 +604,6 @@ class TIntermAggregate : public TIntermOperator, public TIntermAggregateBase
     static TIntermAggregate *CreateBuiltInFunctionCall(const TFunction &func,
                                                        TIntermSequence *arguments);
     static TIntermAggregate *CreateConstructor(const TType &type,
-                                               TOperator op,
                                                TIntermSequence *arguments);
     static TIntermAggregate *Create(const TType &type, TOperator op, TIntermSequence *arguments);
     ~TIntermAggregate() {}
@@ -1091,9 +1087,7 @@ class TIntermTraverser : angle::NonCopyable
     // traversed.
     // The statements will be inserted before the node being traversed once updateTree is called.
     // Should only be called during PreVisit or PostVisit from sequence nodes.
-    // Note that inserting more than one set of nodes to the same parent node on a single updateTree
-    // call is not
-    // supported.
+    // Note that two insertions to the same position in the same block are not supported.
     void insertStatementsInParentBlock(const TIntermSequence &insertions);
 
     // Same as above, but supports simultaneous insertion of statements before and after the node
@@ -1152,6 +1146,9 @@ class TIntermTraverser : angle::NonCopyable
 
   private:
     static TName GetInternalFunctionName(const char *name);
+
+    static bool CompareInsertion(const NodeInsertMultipleEntry &a,
+                                 const NodeInsertMultipleEntry &b);
 
     // To replace a single node with another on the parent node
     struct NodeUpdateEntry

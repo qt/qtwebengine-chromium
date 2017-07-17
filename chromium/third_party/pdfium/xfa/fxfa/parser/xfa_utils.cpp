@@ -6,11 +6,13 @@
 
 #include "xfa/fxfa/parser/xfa_utils.h"
 
-#include "core/fxcrt/fx_ext.h"
-#include "xfa/fde/xml/cfde_xmlchardata.h"
-#include "xfa/fde/xml/cfde_xmlelement.h"
-#include "xfa/fde/xml/cfde_xmlnode.h"
-#include "xfa/fde/xml/cfde_xmltext.h"
+#include <algorithm>
+
+#include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/xml/cfx_xmlchardata.h"
+#include "core/fxcrt/xml/cfx_xmlelement.h"
+#include "core/fxcrt/xml/cfx_xmlnode.h"
+#include "core/fxcrt/xml/cfx_xmltext.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
 #include "xfa/fxfa/parser/cxfa_localevalue.h"
@@ -169,14 +171,14 @@ CXFA_LocaleValue XFA_GetLocaleValue(CXFA_WidgetData* pWidgetData) {
   return CXFA_LocaleValue(iVTType, pWidgetData->GetRawValue(),
                           pWidgetData->GetNode()->GetDocument()->GetLocalMgr());
 }
-void XFA_GetPlainTextFromRichText(CFDE_XMLNode* pXMLNode,
+void XFA_GetPlainTextFromRichText(CFX_XMLNode* pXMLNode,
                                   CFX_WideString& wsPlainText) {
   if (!pXMLNode) {
     return;
   }
   switch (pXMLNode->GetType()) {
-    case FDE_XMLNODE_Element: {
-      CFDE_XMLElement* pXMLElement = static_cast<CFDE_XMLElement*>(pXMLNode);
+    case FX_XMLNODE_Element: {
+      CFX_XMLElement* pXMLElement = static_cast<CFX_XMLElement*>(pXMLNode);
       CFX_WideString wsTag = pXMLElement->GetLocalTagName();
       uint32_t uTag = FX_HashCode_GetW(wsTag.AsStringC(), true);
       if (uTag == 0x0001f714) {
@@ -193,20 +195,18 @@ void XFA_GetPlainTextFromRichText(CFDE_XMLNode* pXMLNode,
       }
       break;
     }
-    case FDE_XMLNODE_Text:
-    case FDE_XMLNODE_CharData: {
-      CFX_WideString wsContent =
-          static_cast<CFDE_XMLText*>(pXMLNode)->GetText();
+    case FX_XMLNODE_Text:
+    case FX_XMLNODE_CharData: {
+      CFX_WideString wsContent = static_cast<CFX_XMLText*>(pXMLNode)->GetText();
       wsPlainText += wsContent;
       break;
     }
     default:
       break;
   }
-  for (CFDE_XMLNode* pChildXML =
-           pXMLNode->GetNodeItem(CFDE_XMLNode::FirstChild);
+  for (CFX_XMLNode* pChildXML = pXMLNode->GetNodeItem(CFX_XMLNode::FirstChild);
        pChildXML;
-       pChildXML = pChildXML->GetNodeItem(CFDE_XMLNode::NextSibling)) {
+       pChildXML = pChildXML->GetNodeItem(CFX_XMLNode::NextSibling)) {
     XFA_GetPlainTextFromRichText(pChildXML, wsPlainText);
   }
 }
@@ -432,19 +432,14 @@ const XFA_ATTRIBUTEINFO* XFA_GetAttributeByName(const CFX_WideStringC& wsName) {
   if (wsName.IsEmpty())
     return nullptr;
 
-  uint32_t uHash = FX_HashCode_GetW(wsName, false);
-  int32_t iStart = 0;
-  int32_t iEnd = g_iXFAAttributeCount - 1;
-  do {
-    int32_t iMid = (iStart + iEnd) / 2;
-    const XFA_ATTRIBUTEINFO* pInfo = g_XFAAttributeData + iMid;
-    if (uHash == pInfo->uHash)
-      return pInfo;
-    if (uHash < pInfo->uHash)
-      iEnd = iMid - 1;
-    else
-      iStart = iMid + 1;
-  } while (iStart <= iEnd);
+  auto* it = std::lower_bound(g_XFAAttributeData,
+                              g_XFAAttributeData + g_iXFAAttributeCount,
+                              FX_HashCode_GetW(wsName, false),
+                              [](const XFA_ATTRIBUTEINFO& arg, uint32_t hash) {
+                                return arg.uHash < hash;
+                              });
+  if (it != g_XFAAttributeData + g_iXFAAttributeCount && wsName == it->pName)
+    return it;
   return nullptr;
 }
 
@@ -458,19 +453,12 @@ const XFA_ATTRIBUTEENUMINFO* XFA_GetAttributeEnumByName(
   if (wsName.IsEmpty())
     return nullptr;
 
-  uint32_t uHash = FX_HashCode_GetW(wsName, false);
-  int32_t iStart = 0;
-  int32_t iEnd = g_iXFAEnumCount - 1;
-  do {
-    int32_t iMid = (iStart + iEnd) / 2;
-    const XFA_ATTRIBUTEENUMINFO* pInfo = g_XFAEnumData + iMid;
-    if (uHash == pInfo->uHash)
-      return pInfo;
-    if (uHash < pInfo->uHash)
-      iEnd = iMid - 1;
-    else
-      iStart = iMid + 1;
-  } while (iStart <= iEnd);
+  auto* it = std::lower_bound(g_XFAEnumData, g_XFAEnumData + g_iXFAEnumCount,
+                              FX_HashCode_GetW(wsName, false),
+                              [](const XFA_ATTRIBUTEENUMINFO& arg,
+                                 uint32_t hash) { return arg.uHash < hash; });
+  if (it != g_XFAEnumData + g_iXFAEnumCount && wsName == it->pName)
+    return it;
   return nullptr;
 }
 

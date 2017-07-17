@@ -15,11 +15,11 @@
 namespace {
 
 CPDF_StructTree* ToStructTree(FPDF_STRUCTTREE struct_tree) {
-  return reinterpret_cast<CPDF_StructTree*>(struct_tree);
+  return static_cast<CPDF_StructTree*>(struct_tree);
 }
 
 CPDF_StructElement* ToStructTreeElement(FPDF_STRUCTELEMENT struct_element) {
-  return reinterpret_cast<CPDF_StructElement*>(struct_element);
+  return static_cast<CPDF_StructElement*>(struct_element);
 }
 
 unsigned long WideStringToBuffer(const CFX_WideString& str,
@@ -41,7 +41,8 @@ DLLEXPORT FPDF_STRUCTTREE STDCALL FPDF_StructTree_GetForPage(FPDF_PAGE page) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage)
     return nullptr;
-  return CPDF_StructTree::LoadPage(pPage->m_pDocument, pPage->m_pFormDict)
+  return CPDF_StructTree::LoadPage(pPage->m_pDocument.Get(),
+                                   pPage->m_pFormDict.Get())
       .release();
 }
 

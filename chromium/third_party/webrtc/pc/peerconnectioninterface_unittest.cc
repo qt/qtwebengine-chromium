@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "webrtc/api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "webrtc/api/jsepsessiondescription.h"
 #include "webrtc/api/mediastreaminterface.h"
 #include "webrtc/api/peerconnectioninterface.h"
@@ -25,9 +26,9 @@
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/base/stringutils.h"
 #include "webrtc/base/thread.h"
+#include "webrtc/base/virtualsocketserver.h"
 #include "webrtc/media/base/fakevideocapturer.h"
 #include "webrtc/media/sctp/sctptransportinternal.h"
-#include "webrtc/modules/audio_coding/codecs/builtin_audio_encoder_factory.h"
 #include "webrtc/p2p/base/fakeportallocator.h"
 #include "webrtc/pc/audiotrack.h"
 #include "webrtc/pc/mediasession.h"
@@ -634,10 +635,10 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
 
 }  // namespace
 
-// The PeerConnectionMediaConfig tests below verify that configuration
-// and constraints are propagated into the MediaConfig passed to
-// CreateMediaController. These settings are intended for MediaChannel
-// constructors, but that is not exercised by these unittest.
+// The PeerConnectionMediaConfig tests below verify that configuration and
+// constraints are propagated into the PeerConnection's MediaConfig. These
+// settings are intended for MediaChannel constructors, but that is not
+// exercised by these unittest.
 class PeerConnectionFactoryForTest : public webrtc::PeerConnectionFactory {
  public:
   PeerConnectionFactoryForTest()
@@ -645,36 +646,22 @@ class PeerConnectionFactoryForTest : public webrtc::PeerConnectionFactory {
             webrtc::CreateBuiltinAudioEncoderFactory(),
             webrtc::CreateBuiltinAudioDecoderFactory()) {}
 
-  webrtc::MediaControllerInterface* CreateMediaController(
-      const cricket::MediaConfig& config,
-      webrtc::RtcEventLog* event_log) const override {
-    create_media_controller_called_ = true;
-    create_media_controller_config_ = config;
-
-    webrtc::MediaControllerInterface* mc =
-        PeerConnectionFactory::CreateMediaController(config, event_log);
-    EXPECT_TRUE(mc != nullptr);
-    return mc;
-  }
-
   cricket::TransportController* CreateTransportController(
       cricket::PortAllocator* port_allocator,
       bool redetermine_role_on_ice_restart) override {
     transport_controller = new cricket::TransportController(
         rtc::Thread::Current(), rtc::Thread::Current(), port_allocator,
-        redetermine_role_on_ice_restart);
+        redetermine_role_on_ice_restart, rtc::CryptoOptions());
     return transport_controller;
   }
 
   cricket::TransportController* transport_controller;
-  // Mutable, so they can be modified in the above const-declared method.
-  mutable bool create_media_controller_called_ = false;
-  mutable cricket::MediaConfig create_media_controller_config_;
 };
 
 class PeerConnectionInterfaceTest : public testing::Test {
  protected:
-  PeerConnectionInterfaceTest() {
+  PeerConnectionInterfaceTest()
+      : vss_(new rtc::VirtualSocketServer()), main_(vss_.get()) {
 #ifdef WEBRTC_ANDROID
     webrtc::InitializeAndroidObjects();
 #endif
@@ -1138,6 +1125,8 @@ class PeerConnectionInterfaceTest : public testing::Test {
     return audio_desc->streams()[0].cname;
   }
 
+  std::unique_ptr<rtc::VirtualSocketServer> vss_;
+  rtc::AutoSocketServerThread main_;
   cricket::FakePortAllocator* port_allocator_ = nullptr;
   FakeRTCCertificateGenerator* fake_certificate_generator_ = nullptr;
   rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory_;
@@ -3165,6 +3154,31 @@ TEST_F(PeerConnectionInterfaceTest,
   pc_->StopRtcEventLog();
 }
 
+// Test that generated offers/answers include "ice-option:trickle".
+TEST_F(PeerConnectionInterfaceTest, OffersAndAnswersHaveTrickleIceOption) {
+  CreatePeerConnection();
+
+  // First, create an offer with audio/video.
+  FakeConstraints constraints;
+  constraints.SetMandatoryReceiveAudio(true);
+  constraints.SetMandatoryReceiveVideo(true);
+  std::unique_ptr<SessionDescriptionInterface> offer;
+  ASSERT_TRUE(DoCreateOffer(&offer, &constraints));
+  cricket::SessionDescription* desc = offer->description();
+  ASSERT_EQ(2u, desc->transport_infos().size());
+  EXPECT_TRUE(desc->transport_infos()[0].description.HasOption("trickle"));
+  EXPECT_TRUE(desc->transport_infos()[1].description.HasOption("trickle"));
+
+  // Apply the offer as a remote description, then create an answer.
+  EXPECT_TRUE(DoSetRemoteDescription(offer.release()));
+  std::unique_ptr<SessionDescriptionInterface> answer;
+  ASSERT_TRUE(DoCreateAnswer(&answer, &constraints));
+  desc = answer->description();
+  ASSERT_EQ(2u, desc->transport_infos().size());
+  EXPECT_TRUE(desc->transport_infos()[0].description.HasOption("trickle"));
+  EXPECT_TRUE(desc->transport_infos()[1].description.HasOption("trickle"));
+}
+
 // Test that ICE renomination isn't offered if it's not enabled in the PC's
 // RTCConfiguration.
 TEST_F(PeerConnectionInterfaceTest, IceRenominationNotOffered) {
@@ -3293,16 +3307,14 @@ class PeerConnectionMediaConfigTest : public testing::Test {
     pcf_ = new rtc::RefCountedObject<PeerConnectionFactoryForTest>();
     pcf_->Initialize();
   }
-  const cricket::MediaConfig& TestCreatePeerConnection(
+  const cricket::MediaConfig TestCreatePeerConnection(
       const PeerConnectionInterface::RTCConfiguration& config,
       const MediaConstraintsInterface *constraints) {
-    pcf_->create_media_controller_called_ = false;
 
     rtc::scoped_refptr<PeerConnectionInterface> pc(pcf_->CreatePeerConnection(
         config, constraints, nullptr, nullptr, &observer_));
     EXPECT_TRUE(pc.get());
-    EXPECT_TRUE(pcf_->create_media_controller_called_);
-    return pcf_->create_media_controller_config_;
+    return pc->GetConfiguration().media_config;
   }
 
   rtc::scoped_refptr<PeerConnectionFactoryForTest> pcf_;
@@ -3325,7 +3337,7 @@ TEST_F(PeerConnectionMediaConfigTest, TestDefaults) {
 }
 
 // This test verifies the DSCP constraint is recognized and passed to
-// the CreateMediaController call.
+// the PeerConnection.
 TEST_F(PeerConnectionMediaConfigTest, TestDscpConstraintTrue) {
   PeerConnectionInterface::RTCConfiguration config;
   FakeConstraints constraints;
@@ -3338,7 +3350,7 @@ TEST_F(PeerConnectionMediaConfigTest, TestDscpConstraintTrue) {
 }
 
 // This test verifies the cpu overuse detection constraint is
-// recognized and passed to the CreateMediaController call.
+// recognized and passed to the PeerConnection.
 TEST_F(PeerConnectionMediaConfigTest, TestCpuOveruseConstraintFalse) {
   PeerConnectionInterface::RTCConfiguration config;
   FakeConstraints constraints;
@@ -3352,7 +3364,7 @@ TEST_F(PeerConnectionMediaConfigTest, TestCpuOveruseConstraintFalse) {
 }
 
 // This test verifies that the disable_prerenderer_smoothing flag is
-// propagated from RTCConfiguration to the CreateMediaController call.
+// propagated from RTCConfiguration to the PeerConnection.
 TEST_F(PeerConnectionMediaConfigTest, TestDisablePrerendererSmoothingTrue) {
   PeerConnectionInterface::RTCConfiguration config;
   FakeConstraints constraints;
@@ -3365,7 +3377,7 @@ TEST_F(PeerConnectionMediaConfigTest, TestDisablePrerendererSmoothingTrue) {
 }
 
 // This test verifies the suspend below min bitrate constraint is
-// recognized and passed to the CreateMediaController call.
+// recognized and passed to the PeerConnection.
 TEST_F(PeerConnectionMediaConfigTest,
        TestSuspendBelowMinBitrateConstraintTrue) {
   PeerConnectionInterface::RTCConfiguration config;

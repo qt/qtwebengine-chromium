@@ -22,7 +22,8 @@
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
@@ -51,8 +52,7 @@ int32_t GetStreamFirst(const CFX_RetainPtr<CPDF_StreamAcc>& pObjStream) {
 }  // namespace
 
 CPDF_Parser::CPDF_Parser()
-    : m_pDocument(nullptr),
-      m_bHasParsed(false),
+    : m_bHasParsed(false),
       m_bXRefStream(false),
       m_bVersionUpdated(false),
       m_FileVersion(0),
@@ -143,23 +143,23 @@ CPDF_Parser::Error CPDF_Parser::StartParse(
     return FORMAT_ERROR;
 
   if (std::isdigit(ch))
-    m_FileVersion = FXSYS_toDecimalDigit(static_cast<wchar_t>(ch)) * 10;
+    m_FileVersion = FXSYS_DecimalCharToInt(static_cast<wchar_t>(ch)) * 10;
 
   if (!m_pSyntax->GetCharAt(7, ch))
     return FORMAT_ERROR;
 
   if (std::isdigit(ch))
-    m_FileVersion += FXSYS_toDecimalDigit(static_cast<wchar_t>(ch));
+    m_FileVersion += FXSYS_DecimalCharToInt(static_cast<wchar_t>(ch));
 
   if (m_pSyntax->m_FileLen < m_pSyntax->m_HeaderOffset + 9)
     return FORMAT_ERROR;
 
-  m_pSyntax->RestorePos(m_pSyntax->m_FileLen - m_pSyntax->m_HeaderOffset - 9);
+  m_pSyntax->SetPos(m_pSyntax->m_FileLen - m_pSyntax->m_HeaderOffset - 9);
   m_pDocument = pDocument;
 
   bool bXRefRebuilt = false;
-  if (m_pSyntax->SearchWord("startxref", true, false, 4096)) {
-    m_SortedOffset.insert(m_pSyntax->SavePos());
+  if (m_pSyntax->BackwardsSearchToWord("startxref", 4096)) {
+    m_SortedOffset.insert(m_pSyntax->GetPos());
     m_pSyntax->GetKeyword();
 
     bool bNumber;
@@ -245,12 +245,12 @@ CPDF_Parser::Error CPDF_Parser::SetEncryptHandler() {
 
     std::unique_ptr<CPDF_SecurityHandler> pSecurityHandler =
         pdfium::MakeUnique<CPDF_SecurityHandler>();
-    if (!pSecurityHandler->OnInit(this, m_pEncryptDict))
+    if (!pSecurityHandler->OnInit(this, m_pEncryptDict.Get()))
       return PASSWORD_ERROR;
 
     m_pSecurityHandler = std::move(pSecurityHandler);
     auto pCryptoHandler = pdfium::MakeRetain<CPDF_CryptoHandler>();
-    if (!pCryptoHandler->Init(m_pEncryptDict, m_pSecurityHandler.get()))
+    if (!pCryptoHandler->Init(m_pEncryptDict.Get(), m_pSecurityHandler.get()))
       return HANDLER_ERROR;
     m_pSyntax->SetEncrypt(pCryptoHandler);
   }
@@ -285,11 +285,11 @@ bool CPDF_Parser::VerifyCrossRefV4() {
     if (it.second.pos == 0)
       continue;
     // Find the first non-zero position.
-    FX_FILESIZE SavedPos = m_pSyntax->SavePos();
-    m_pSyntax->RestorePos(it.second.pos);
+    FX_FILESIZE SavedPos = m_pSyntax->GetPos();
+    m_pSyntax->SetPos(it.second.pos);
     bool is_num = false;
     CFX_ByteString num_str = m_pSyntax->GetNextWord(&is_num);
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     if (!is_num || num_str.IsEmpty() ||
         FXSYS_atoui(num_str.c_str()) != it.first) {
       // If the object number read doesn't match the one stored,
@@ -413,12 +413,12 @@ bool CPDF_Parser::LoadLinearizedCrossRefV4(FX_FILESIZE pos,
                                            uint32_t dwObjCount) {
   FX_FILESIZE dwStartPos = pos - m_pSyntax->m_HeaderOffset;
 
-  m_pSyntax->RestorePos(dwStartPos);
+  m_pSyntax->SetPos(dwStartPos);
   m_SortedOffset.insert(pos);
 
   uint32_t start_objnum = 0;
   uint32_t count = dwObjCount;
-  FX_FILESIZE SavedPos = m_pSyntax->SavePos();
+  FX_FILESIZE SavedPos = m_pSyntax->GetPos();
 
   const int32_t recordsize = 20;
   std::vector<char> buf(1024 * recordsize + 1);
@@ -464,14 +464,14 @@ bool CPDF_Parser::LoadLinearizedCrossRefV4(FX_FILESIZE pos,
       }
     }
   }
-  m_pSyntax->RestorePos(SavedPos + count * recordsize);
+  m_pSyntax->SetPos(SavedPos + count * recordsize);
   return true;
 }
 
 bool CPDF_Parser::LoadCrossRefV4(FX_FILESIZE pos,
                                  FX_FILESIZE streampos,
                                  bool bSkip) {
-  m_pSyntax->RestorePos(pos);
+  m_pSyntax->SetPos(pos);
   if (m_pSyntax->GetKeyword() != "xref")
     return false;
 
@@ -480,14 +480,14 @@ bool CPDF_Parser::LoadCrossRefV4(FX_FILESIZE pos,
     m_SortedOffset.insert(streampos);
 
   while (1) {
-    FX_FILESIZE SavedPos = m_pSyntax->SavePos();
+    FX_FILESIZE SavedPos = m_pSyntax->GetPos();
     bool bIsNumber;
     CFX_ByteString word = m_pSyntax->GetNextWord(&bIsNumber);
     if (word.IsEmpty())
       return false;
 
     if (!bIsNumber) {
-      m_pSyntax->RestorePos(SavedPos);
+      m_pSyntax->SetPos(SavedPos);
       break;
     }
 
@@ -497,7 +497,7 @@ bool CPDF_Parser::LoadCrossRefV4(FX_FILESIZE pos,
 
     uint32_t count = m_pSyntax->GetDirectNum();
     m_pSyntax->ToNextWord();
-    SavedPos = m_pSyntax->SavePos();
+    SavedPos = m_pSyntax->GetPos();
     const int32_t recordsize = 20;
 
     m_dwXrefStartObjNum = start_objnum;
@@ -540,7 +540,7 @@ bool CPDF_Parser::LoadCrossRefV4(FX_FILESIZE pos,
         }
       }
     }
-    m_pSyntax->RestorePos(SavedPos + count * recordsize);
+    m_pSyntax->SetPos(SavedPos + count * recordsize);
   }
   return !streampos || LoadCrossRefV5(&streampos, false);
 }
@@ -622,7 +622,7 @@ bool CPDF_Parser::RebuildCrossRef() {
           if (std::isdigit(byte)) {
             start_pos = pos + i;
             state = ParserState::kObjNum;
-            objnum = FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
+            objnum = FXSYS_DecimalCharToInt(static_cast<wchar_t>(byte));
           } else if (byte == 't') {
             state = ParserState::kTrailer;
             inside_index = 1;
@@ -637,8 +637,8 @@ bool CPDF_Parser::RebuildCrossRef() {
 
         case ParserState::kObjNum:
           if (std::isdigit(byte)) {
-            objnum =
-                objnum * 10 + FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
+            objnum = objnum * 10 +
+                     FXSYS_DecimalCharToInt(static_cast<wchar_t>(byte));
           } else if (PDFCharIsWhitespace(byte)) {
             state = ParserState::kPostObjNum;
           } else {
@@ -652,7 +652,7 @@ bool CPDF_Parser::RebuildCrossRef() {
           if (std::isdigit(byte)) {
             start_pos1 = pos + i;
             state = ParserState::kGenNum;
-            gennum = FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
+            gennum = FXSYS_DecimalCharToInt(static_cast<wchar_t>(byte));
           } else if (byte == 't') {
             state = ParserState::kTrailer;
             inside_index = 1;
@@ -664,8 +664,8 @@ bool CPDF_Parser::RebuildCrossRef() {
 
         case ParserState::kGenNum:
           if (std::isdigit(byte)) {
-            gennum =
-                gennum * 10 + FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
+            gennum = gennum * 10 +
+                     FXSYS_DecimalCharToInt(static_cast<wchar_t>(byte));
           } else if (PDFCharIsWhitespace(byte)) {
             state = ParserState::kPostGenNum;
           } else {
@@ -680,7 +680,7 @@ bool CPDF_Parser::RebuildCrossRef() {
             inside_index = 1;
           } else if (std::isdigit(byte)) {
             objnum = gennum;
-            gennum = FXSYS_toDecimalDigit(static_cast<wchar_t>(byte));
+            gennum = FXSYS_DecimalCharToInt(static_cast<wchar_t>(byte));
             start_pos = start_pos1;
             start_pos1 = pos + i;
             state = ParserState::kGenNum;
@@ -718,8 +718,8 @@ bool CPDF_Parser::RebuildCrossRef() {
                 last_obj = start_pos;
                 FX_FILESIZE obj_end = 0;
                 std::unique_ptr<CPDF_Object> pObject =
-                    ParseIndirectObjectAtByStrict(m_pDocument, obj_pos, objnum,
-                                                  &obj_end);
+                    ParseIndirectObjectAtByStrict(m_pDocument.Get(), obj_pos,
+                                                  objnum, &obj_end);
                 if (CPDF_Stream* pStream = ToStream(pObject.get())) {
                   if (CPDF_Dictionary* pDict = pStream->GetDict()) {
                     if ((pDict->KeyExist("Type")) &&
@@ -735,7 +735,7 @@ bool CPDF_Parser::RebuildCrossRef() {
                 }
 
                 FX_FILESIZE offset = 0;
-                m_pSyntax->RestorePos(obj_pos);
+                m_pSyntax->SetPos(obj_pos);
                 offset = m_pSyntax->FindTag("obj", 0);
                 if (offset == -1)
                   offset = 0;
@@ -775,10 +775,10 @@ bool CPDF_Parser::RebuildCrossRef() {
           if (inside_index == 7) {
             if (PDFCharIsWhitespace(byte) || PDFCharIsDelimiter(byte)) {
               last_trailer = pos + i - 7;
-              m_pSyntax->RestorePos(pos + i - m_pSyntax->m_HeaderOffset);
+              m_pSyntax->SetPos(pos + i - m_pSyntax->m_HeaderOffset);
 
               std::unique_ptr<CPDF_Object> pObj =
-                  m_pSyntax->GetObject(m_pDocument, 0, 0, true);
+                  m_pSyntax->GetObject(m_pDocument.Get(), 0, 0, true);
               if (pObj) {
                 if (pObj->IsDictionary() || pObj->AsStream()) {
                   CPDF_Stream* pStream = pObj->AsStream();
@@ -799,7 +799,7 @@ bool CPDF_Parser::RebuildCrossRef() {
                               pElement ? pElement->GetObjNum() : 0;
                           if (dwObjNum) {
                             m_pTrailer->SetNewFor<CPDF_Reference>(
-                                key, m_pDocument, dwObjNum);
+                                key, m_pDocument.Get(), dwObjNum);
                           } else {
                             m_pTrailer->SetFor(key, pElement->Clone());
                           }
@@ -812,7 +812,7 @@ bool CPDF_Parser::RebuildCrossRef() {
                         m_pTrailer = ToDictionary(std::move(pObj));
                       }
 
-                      FX_FILESIZE dwSavePos = m_pSyntax->SavePos();
+                      FX_FILESIZE dwSavePos = m_pSyntax->GetPos();
                       CFX_ByteString strWord = m_pSyntax->GetKeyword();
                       if (!strWord.Compare("startxref")) {
                         bool bNumber;
@@ -821,7 +821,7 @@ bool CPDF_Parser::RebuildCrossRef() {
                         if (bNumber)
                           m_LastXRefOffset = FXSYS_atoi(bsOffset.c_str());
                       }
-                      m_pSyntax->RestorePos(dwSavePos);
+                      m_pSyntax->SetPos(dwSavePos);
                     }
                   }
                 }
@@ -919,7 +919,7 @@ bool CPDF_Parser::RebuildCrossRef() {
 
 bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
   std::unique_ptr<CPDF_Object> pObject(
-      ParseIndirectObjectAt(m_pDocument, *pos, 0));
+      ParseIndirectObjectAt(m_pDocument.Get(), *pos, 0));
   if (!pObject)
     return false;
 
@@ -1114,8 +1114,9 @@ std::unique_ptr<CPDF_Object> CPDF_Parser::ParseIndirectObject(
   if (!pObjStream)
     return nullptr;
 
-  CFX_RetainPtr<IFX_MemoryStream> file = IFX_MemoryStream::Create(
-      (uint8_t*)pObjStream->GetData(), (size_t)pObjStream->GetSize(), false);
+  auto file = pdfium::MakeRetain<CFX_MemoryStream>(
+      const_cast<uint8_t*>(pObjStream->GetData()),
+      static_cast<size_t>(pObjStream->GetSize()), false);
   CPDF_SyntaxParser syntax;
   syntax.InitParser(file, 0);
   const int32_t offset = GetStreamFirst(pObjStream);
@@ -1133,7 +1134,7 @@ std::unique_ptr<CPDF_Object> CPDF_Parser::ParseIndirectObject(
   if (it == m_ObjCache[pObjStream].end())
     return nullptr;
 
-  syntax.RestorePos(offset + it->second);
+  syntax.SetPos(offset + it->second);
   return syntax.GetObject(pObjList, 0, 0, true);
 }
 
@@ -1194,8 +1195,8 @@ void CPDF_Parser::GetIndirectBinary(uint32_t objnum,
     int32_t offset = GetStreamFirst(pObjStream);
     const uint8_t* pData = pObjStream->GetData();
     uint32_t totalsize = pObjStream->GetSize();
-    CFX_RetainPtr<IFX_MemoryStream> file =
-        IFX_MemoryStream::Create((uint8_t*)pData, (size_t)totalsize, false);
+    auto file = pdfium::MakeRetain<CFX_MemoryStream>(
+        const_cast<uint8_t*>(pData), static_cast<size_t>(totalsize), false);
     CPDF_SyntaxParser syntax;
     syntax.InitParser(file, 0);
 
@@ -1227,43 +1228,43 @@ void CPDF_Parser::GetIndirectBinary(uint32_t objnum,
   if (pos == 0)
     return;
 
-  FX_FILESIZE SavedPos = m_pSyntax->SavePos();
-  m_pSyntax->RestorePos(pos);
+  FX_FILESIZE SavedPos = m_pSyntax->GetPos();
+  m_pSyntax->SetPos(pos);
 
   bool bIsNumber;
   CFX_ByteString word = m_pSyntax->GetNextWord(&bIsNumber);
   if (!bIsNumber) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return;
   }
 
   uint32_t parser_objnum = FXSYS_atoui(word.c_str());
   if (parser_objnum && parser_objnum != objnum) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return;
   }
 
   word = m_pSyntax->GetNextWord(&bIsNumber);
   if (!bIsNumber) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return;
   }
 
   if (m_pSyntax->GetKeyword() != "obj") {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return;
   }
 
   auto it = m_SortedOffset.find(pos);
   if (it == m_SortedOffset.end() || ++it == m_SortedOffset.end()) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return;
   }
 
   FX_FILESIZE nextoff = *it;
   bool bNextOffValid = false;
   if (nextoff != pos) {
-    m_pSyntax->RestorePos(nextoff);
+    m_pSyntax->SetPos(nextoff);
     word = m_pSyntax->GetNextWord(&bIsNumber);
     if (word == "xref") {
       bNextOffValid = true;
@@ -1276,66 +1277,66 @@ void CPDF_Parser::GetIndirectBinary(uint32_t objnum,
   }
 
   if (!bNextOffValid) {
-    m_pSyntax->RestorePos(pos);
+    m_pSyntax->SetPos(pos);
     while (1) {
       if (m_pSyntax->GetKeyword() == "endobj")
         break;
 
-      if (m_pSyntax->SavePos() == m_pSyntax->m_FileLen)
+      if (m_pSyntax->GetPos() == m_pSyntax->m_FileLen)
         break;
     }
-    nextoff = m_pSyntax->SavePos();
+    nextoff = m_pSyntax->GetPos();
   }
 
   size = (uint32_t)(nextoff - pos);
   pBuffer = FX_Alloc(uint8_t, size);
-  m_pSyntax->RestorePos(pos);
+  m_pSyntax->SetPos(pos);
   m_pSyntax->ReadBlock(pBuffer, size);
-  m_pSyntax->RestorePos(SavedPos);
+  m_pSyntax->SetPos(SavedPos);
 }
 
 std::unique_ptr<CPDF_Object> CPDF_Parser::ParseIndirectObjectAt(
     CPDF_IndirectObjectHolder* pObjList,
     FX_FILESIZE pos,
     uint32_t objnum) {
-  FX_FILESIZE SavedPos = m_pSyntax->SavePos();
-  m_pSyntax->RestorePos(pos);
+  FX_FILESIZE SavedPos = m_pSyntax->GetPos();
+  m_pSyntax->SetPos(pos);
   bool bIsNumber;
   CFX_ByteString word = m_pSyntax->GetNextWord(&bIsNumber);
   if (!bIsNumber) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return nullptr;
   }
 
-  FX_FILESIZE objOffset = m_pSyntax->SavePos();
+  FX_FILESIZE objOffset = m_pSyntax->GetPos();
   objOffset -= word.GetLength();
   uint32_t parser_objnum = FXSYS_atoui(word.c_str());
   if (objnum && parser_objnum != objnum) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return nullptr;
   }
 
   word = m_pSyntax->GetNextWord(&bIsNumber);
   if (!bIsNumber) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return nullptr;
   }
 
   uint32_t parser_gennum = FXSYS_atoui(word.c_str());
   if (m_pSyntax->GetKeyword() != "obj") {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return nullptr;
   }
 
   std::unique_ptr<CPDF_Object> pObj =
       m_pSyntax->GetObject(pObjList, objnum, parser_gennum, true);
-  m_pSyntax->SavePos();
+  m_pSyntax->GetPos();
 
   CFX_ByteString bsWord = m_pSyntax->GetKeyword();
   if (bsWord == "endobj")
-    m_pSyntax->SavePos();
+    m_pSyntax->GetPos();
 
-  m_pSyntax->RestorePos(SavedPos);
+  m_pSyntax->SetPos(SavedPos);
   if (pObj) {
     if (!objnum)
       pObj->m_ObjNum = parser_objnum;
@@ -1349,31 +1350,31 @@ std::unique_ptr<CPDF_Object> CPDF_Parser::ParseIndirectObjectAtByStrict(
     FX_FILESIZE pos,
     uint32_t objnum,
     FX_FILESIZE* pResultPos) {
-  FX_FILESIZE SavedPos = m_pSyntax->SavePos();
-  m_pSyntax->RestorePos(pos);
+  FX_FILESIZE SavedPos = m_pSyntax->GetPos();
+  m_pSyntax->SetPos(pos);
 
   bool bIsNumber;
   CFX_ByteString word = m_pSyntax->GetNextWord(&bIsNumber);
   if (!bIsNumber) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return nullptr;
   }
 
   uint32_t parser_objnum = FXSYS_atoui(word.c_str());
   if (objnum && parser_objnum != objnum) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return nullptr;
   }
 
   word = m_pSyntax->GetNextWord(&bIsNumber);
   if (!bIsNumber) {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return nullptr;
   }
 
   uint32_t gennum = FXSYS_atoui(word.c_str());
   if (m_pSyntax->GetKeyword() != "obj") {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return nullptr;
   }
 
@@ -1383,7 +1384,7 @@ std::unique_ptr<CPDF_Object> CPDF_Parser::ParseIndirectObjectAtByStrict(
   if (pResultPos)
     *pResultPos = m_pSyntax->m_Pos;
 
-  m_pSyntax->RestorePos(SavedPos);
+  m_pSyntax->SetPos(SavedPos);
   return pObj;
 }
 
@@ -1395,7 +1396,7 @@ std::unique_ptr<CPDF_Dictionary> CPDF_Parser::LoadTrailerV4() {
   if (m_pSyntax->GetKeyword() != "trailer")
     return nullptr;
 
-  return ToDictionary(m_pSyntax->GetObject(m_pDocument, 0, 0, true));
+  return ToDictionary(m_pSyntax->GetObject(m_pDocument.Get(), 0, 0, true));
 }
 
 uint32_t CPDF_Parser::GetPermissions() const {
@@ -1415,9 +1416,9 @@ bool CPDF_Parser::IsLinearizedFile(
     const CFX_RetainPtr<IFX_SeekableReadStream>& pFileAccess,
     uint32_t offset) {
   m_pSyntax->InitParser(pFileAccess, offset);
-  m_pSyntax->RestorePos(m_pSyntax->m_HeaderOffset + 9);
+  m_pSyntax->SetPos(m_pSyntax->m_HeaderOffset + 9);
 
-  FX_FILESIZE SavedPos = m_pSyntax->SavePos();
+  FX_FILESIZE SavedPos = m_pSyntax->GetPos();
   bool bIsNumber;
   CFX_ByteString word = m_pSyntax->GetNextWord(&bIsNumber);
   if (!bIsNumber)
@@ -1430,7 +1431,7 @@ bool CPDF_Parser::IsLinearizedFile(
 
   uint32_t gennum = FXSYS_atoui(word.c_str());
   if (m_pSyntax->GetKeyword() != "obj") {
-    m_pSyntax->RestorePos(SavedPos);
+    m_pSyntax->SetPos(SavedPos);
     return false;
   }
 
@@ -1463,7 +1464,7 @@ CPDF_Parser::Error CPDF_Parser::StartLinearizedParse(
   m_bHasParsed = true;
   m_pDocument = pDocument;
 
-  FX_FILESIZE dwFirstXRefOffset = m_pSyntax->SavePos();
+  FX_FILESIZE dwFirstXRefOffset = m_pSyntax->GetPos();
   bool bXRefRebuilt = false;
   bool bLoadV4 = LoadCrossRefV4(dwFirstXRefOffset, 0, false);
   if (!bLoadV4 && !LoadCrossRefV5(&dwFirstXRefOffset, true)) {
@@ -1547,7 +1548,7 @@ CPDF_Parser::Error CPDF_Parser::LoadLinearizedMainXRefTable() {
   uint32_t dwSaveMetadataObjnum = m_pSyntax->m_MetadataObjnum;
   m_pSyntax->m_MetadataObjnum = 0;
   m_pTrailer.reset();
-  m_pSyntax->RestorePos(m_LastXRefOffset - m_pSyntax->m_HeaderOffset);
+  m_pSyntax->SetPos(m_LastXRefOffset - m_pSyntax->m_HeaderOffset);
 
   uint8_t ch = 0;
   uint32_t dwCount = 0;
@@ -1555,7 +1556,7 @@ CPDF_Parser::Error CPDF_Parser::LoadLinearizedMainXRefTable() {
   while (PDFCharIsWhitespace(ch)) {
     ++dwCount;
     if (m_pSyntax->m_FileLen <=
-        (FX_FILESIZE)(m_pSyntax->SavePos() + m_pSyntax->m_HeaderOffset)) {
+        (FX_FILESIZE)(m_pSyntax->GetPos() + m_pSyntax->m_HeaderOffset)) {
       break;
     }
     m_pSyntax->GetNextChar(ch);

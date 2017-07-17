@@ -68,6 +68,22 @@ if (is_win) {
   }
 }
 
+# Dependencies which must accompany ChromeMainDelegate when embedded
+# Mash services are enabled.
+if (enable_package_mash_services) {
+  embedded_mash_service_deps = [
+    "//chrome/app/mash:chrome_mash_catalog",
+    "//chrome/app/mash:embedded_services",
+    "//mash/common",
+    "//mash/quick_launch/public/interfaces:constants",
+    "//services/ui/public/interfaces:constants",
+  ]
+
+  if (is_chromeos) {
+    embedded_mash_service_deps += [ "//chrome/app/mash:chrome_mus_catalog" ]
+  }
+}
+
 # This target exists above chrome and it's main components in the dependency
 # tree as a central place to put assert_no_deps annotations. Since this depends
 # on Chrome and the main DLLs it uses, it will transitively assert that those
@@ -136,7 +152,7 @@ if (!is_android && !is_mac) {
     defines = []
     public_deps = []
     deps = [
-      "//build/config/sanitizers:deps",
+      "//build/config:exe_and_shlib_deps",
       "//printing/features",
     ]
 
@@ -243,9 +259,11 @@ if (!is_android && !is_mac) {
         # Needed to use the master_preferences functions
         "//chrome/installer/util:with_no_strings",
         "//content/public/app:both",
+        "//content/public/common:service_names",
 
         # For headless mode.
         "//headless:headless_shell_lib",
+        "//services/service_manager/embedder",
       ]
 
       public_deps = [
@@ -274,8 +292,7 @@ if (!is_android && !is_mac) {
       }
 
       if (enable_package_mash_services) {
-        deps += [ "//chrome/app/mash" ]
-        data_deps += [ "//chrome/app:service_manifests" ]
+        deps += embedded_mash_service_deps
       }
     }
 
@@ -330,7 +347,7 @@ if (is_win) {
       ":chrome_dll_manifest",
       ":chrome_dll_version",
       "//base/trace_event/etw_manifest:chrome_events_win",
-      "//build/config/sanitizers:deps",
+      "//build/config:exe_and_shlib_deps",
       "//chrome/app:chrome_dll_resources",
       "//chrome/app:command_ids",
       "//chrome/app/theme:chrome_unscaled_resources",
@@ -341,9 +358,12 @@ if (is_win) {
       "//components/crash/content/app",
       "//components/policy:generated",
       "//content/app/resources",
+      "//content/public/common:service_names",
       "//crypto",
+      "//headless:headless_shell_browser_lib",
       "//net:net_resources",
       "//ppapi/features",
+      "//services/service_manager/embedder",
       "//third_party/cld",
       "//third_party/wtl",
       "//ui/views",
@@ -396,7 +416,7 @@ if (is_win) {
     }
 
     if (enable_package_mash_services) {
-      deps += [ "//chrome/app/mash" ]
+      deps += embedded_mash_service_deps
     }
   }
 
@@ -423,7 +443,7 @@ if (is_win) {
         ":child_dependencies",
         ":chrome_child_manifest",
         ":chrome_dll_version",
-        "//build/config/sanitizers:deps",
+        "//build/config:exe_and_shlib_deps",
         "//chrome/browser/policy:path_parser",
         "//chrome/common:features",
         "//chrome/install_static:install_static_util",
@@ -432,6 +452,9 @@ if (is_win) {
         "//components/browser_watcher:browser_watcher_client",
         "//components/crash/content/app",
         "//content/public/app:child",
+        "//content/public/common:service_names",
+        "//headless:headless_shell_child_lib",
+        "//services/service_manager/embedder",
       ]
 
       ldflags = [
@@ -526,7 +549,7 @@ if (is_win) {
     ]
 
     sources = [
-      "app/chrome_exe_main_mac.c",
+      "app/chrome_exe_main_mac.cc",
     ]
 
     extra_configs = [ "//build/config/compiler:wexit_time_destructors" ]
@@ -535,7 +558,7 @@ if (is_win) {
       ":chrome_app_strings_bundle_data",
       ":chrome_resources",
       ":chrome_versioned_bundle_data",
-      "//build/config/sanitizers:deps",
+      "//build/config:exe_and_shlib_deps",
       "//chrome/common:version_header",
     ]
 
@@ -713,7 +736,7 @@ if (is_win) {
     ]
 
     sources = [
-      "app/chrome_exe_main_mac.c",
+      "app/chrome_exe_main_mac.cc",
     ]
 
     extra_configs = [ "//build/config/compiler:wexit_time_destructors" ]
@@ -721,7 +744,7 @@ if (is_win) {
     defines = [ "HELPER_EXECUTABLE" ]
 
     deps = [
-      "//build/config/sanitizers:deps",
+      "//build/config:exe_and_shlib_deps",
       "//chrome/common:version_header",
     ]
 
@@ -1088,7 +1111,9 @@ if (is_win) {
       "//components/crash/content/app",
       "//components/policy:generated",
       "//content/public/app:both",
+      "//content/public/common:service_names",
       "//headless:headless_shell_lib",
+      "//services/service_manager/embedder",
       "//third_party/cld",
     ]
 
@@ -1103,7 +1128,7 @@ if (is_win) {
     ]
 
     if (enable_package_mash_services) {
-      deps += [ "//chrome/app/mash" ]
+      deps += embedded_mash_service_deps
     }
 
     configs += [ "//build/config/compiler:wexit_time_destructors" ]
@@ -1153,7 +1178,7 @@ if (is_win) {
       ":chrome_framework_services",
       ":packed_resources",
       ":widevine_cdm_library",
-      "//build/config/sanitizers:deps",
+      "//build/config:exe_and_shlib_deps",
       "//chrome/app/nibs:chrome_xibs",
     ]
 
@@ -1428,8 +1453,12 @@ copy("visual_elements_resources") {
 
   if (is_chrome_branded) {
     sources += [
+      "//chrome/app/theme/$branding_path_component/win/tiles/LogoBeta.png",
       "//chrome/app/theme/$branding_path_component/win/tiles/LogoCanary.png",
+      "//chrome/app/theme/$branding_path_component/win/tiles/LogoDev.png",
+      "//chrome/app/theme/$branding_path_component/win/tiles/SmallLogoBeta.png",
       "//chrome/app/theme/$branding_path_component/win/tiles/SmallLogoCanary.png",
+      "//chrome/app/theme/$branding_path_component/win/tiles/SmallLogoDev.png",
     ]
   }
 
@@ -1600,6 +1629,12 @@ if (is_android) {
     ]
   }
 
+  java_cpp_enum("payments_journey_logger_enum_javagen") {
+    sources = [
+      "../components/payments/core/journey_logger.h",
+    ]
+  }
+
   java_cpp_enum("quick_action_category_enum_javagen") {
     sources = [
       "browser/android/contextualsearch/resolved_search_term.h",
@@ -1609,6 +1644,12 @@ if (is_android) {
   java_cpp_enum("offline_pages_enum_javagen") {
     sources = [
       "browser/android/offline_pages/offline_page_utils.h",
+    ]
+  }
+
+  java_cpp_enum("sad_tab_event_enum_javagen") {
+    sources = [
+      "browser/ui/sad_tab.cc",
     ]
   }
 
@@ -1641,6 +1682,8 @@ if (is_android) {
       "//chrome/utility",
       "//components/safe_browsing_db:safe_browsing_db_mobile",
       "//content/public/app:both",
+      "//content/public/common:service_names",
+      "//services/service_manager/embedder",
     ]
   }
 }

@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "core/fpdfapi/font/cpdf_font.h"
+#include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 
 namespace {
@@ -67,7 +68,7 @@ CFX_RetainPtr<CFGAS_GEFont> CXFA_PDFFontMgr::FindFont(
       *pDstPDFFont = pPDFFont;
       return nullptr;
     }
-    return CFGAS_GEFont::LoadFont(&pPDFFont->m_Font, pFDEFontMgr);
+    return CFGAS_GEFont::LoadFont(pPDFFont->GetFont(), pFDEFontMgr);
   }
   return nullptr;
 }

@@ -248,8 +248,8 @@ bool TextureState::computeSamplerCompleteness(const SamplerState &samplerState,
         return false;
     }
 
-    const TextureCaps &textureCaps = data.getTextureCap(baseImageDesc.format.asSized());
-    if (!textureCaps.filterable && !IsPointSampled(samplerState))
+    if (!baseImageDesc.format.info->filterSupport(data.getClientVersion(), data.getExtensions()) &&
+        !IsPointSampled(samplerState))
     {
         return false;
     }
@@ -318,7 +318,7 @@ bool TextureState::computeSamplerCompleteness(const SamplerState &samplerState,
         // extension, due to some underspecification problems, we must allow linear filtering
         // for legacy compatibility with WebGL 1.
         // See http://crbug.com/649200
-        if (samplerState.compareMode == GL_NONE && baseImageDesc.format.sized)
+        if (samplerState.compareMode == GL_NONE && baseImageDesc.format.info->sized)
         {
             if ((samplerState.minFilter != GL_NEAREST &&
                  samplerState.minFilter != GL_NEAREST_MIPMAP_NEAREST) ||
@@ -453,6 +453,11 @@ void TextureState::setImageDesc(GLenum target, size_t level, const ImageDesc &de
     ASSERT(descIndex < mImageDescs.size());
     mImageDescs[descIndex] = desc;
     invalidateCompletenessCache();
+}
+
+const ImageDesc &TextureState::getImageDesc(const ImageIndex &imageIndex) const
+{
+    return getImageDesc(imageIndex.type, imageIndex.mipIndex);
 }
 
 void TextureState::setImageDescChain(GLuint baseLevel,
@@ -875,7 +880,7 @@ Error Texture::setImage(const Context *context,
     ANGLE_TRY(mTexture->setImage(rx::SafeGetImpl(context), target, level, internalFormat, size,
                                  format, type, unpackState, pixels));
 
-    mState.setImageDesc(target, level, ImageDesc(size, Format(internalFormat, format, type)));
+    mState.setImageDesc(target, level, ImageDesc(size, Format(internalFormat, type)));
     mDirtyChannel.signal();
 
     return NoError();
@@ -954,9 +959,10 @@ Error Texture::copyImage(const Context *context,
     ANGLE_TRY(mTexture->copyImage(rx::SafeGetImpl(context), target, level, sourceArea,
                                   internalFormat, source));
 
-    const GLenum sizedFormat = GetSizedInternalFormat(internalFormat, GL_UNSIGNED_BYTE);
+    const InternalFormat &internalFormatInfo =
+        GetInternalFormatInfo(internalFormat, GL_UNSIGNED_BYTE);
     mState.setImageDesc(target, level, ImageDesc(Extents(sourceArea.width, sourceArea.height, 1),
-                                                 Format(sizedFormat)));
+                                                 Format(internalFormatInfo)));
     mDirtyChannel.signal();
 
     return NoError();
@@ -999,8 +1005,8 @@ Error Texture::copyTexture(const Context *context,
                                     unpackUnmultiplyAlpha, source));
 
     const auto &sourceDesc   = source->mState.getImageDesc(source->getTarget(), 0);
-    const GLenum sizedFormat = GetSizedInternalFormat(internalFormat, type);
-    mState.setImageDesc(target, level, ImageDesc(sourceDesc.size, Format(sizedFormat)));
+    const InternalFormat &internalFormatInfo = GetInternalFormatInfo(internalFormat, type);
+    mState.setImageDesc(target, level, ImageDesc(sourceDesc.size, Format(internalFormatInfo)));
     mDirtyChannel.signal();
 
     return NoError();
@@ -1233,19 +1239,19 @@ Error Texture::setEGLImageTarget(GLenum target, egl::Image *imageTarget)
     return NoError();
 }
 
-Extents Texture::getAttachmentSize(const FramebufferAttachment::Target &target) const
+Extents Texture::getAttachmentSize(const ImageIndex &imageIndex) const
 {
-    return mState.getImageDesc(target.textureIndex().type, target.textureIndex().mipIndex).size;
+    return mState.getImageDesc(imageIndex).size;
 }
 
-const Format &Texture::getAttachmentFormat(const FramebufferAttachment::Target &target) const
+const Format &Texture::getAttachmentFormat(GLenum /*binding*/, const ImageIndex &imageIndex) const
 {
-    return getFormat(target.textureIndex().type, target.textureIndex().mipIndex);
+    return mState.getImageDesc(imageIndex).format;
 }
 
-GLsizei Texture::getAttachmentSamples(const FramebufferAttachment::Target &target) const
+GLsizei Texture::getAttachmentSamples(const ImageIndex &imageIndex) const
 {
-    return getSamples(target.textureIndex().type, 0);
+    return getSamples(imageIndex.type, 0);
 }
 
 void Texture::onAttach()

@@ -12,7 +12,6 @@
 #include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fpdfapi/page/cpdf_form.h"
 #include "core/fpdfapi/page/cpdf_pagemodule.h"
-#include "core/fpdfapi/page/pageint.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
@@ -20,7 +19,7 @@
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_simple_parser.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/fx_freetype.h"
 #include "third_party/base/numerics/safe_conversions.h"
@@ -142,12 +141,12 @@ uint32_t CPDF_ToUnicodeMap::StringToCode(const CFX_ByteStringC& str) {
   uint32_t result = 0;
   if (str[0] == '<') {
     for (int i = 1; i < len && std::isxdigit(str[i]); ++i)
-      result = result * 16 + FXSYS_toHexDigit(str.CharAt(i));
+      result = result * 16 + FXSYS_HexCharToInt(str.CharAt(i));
     return result;
   }
 
   for (int i = 0; i < len && std::isdigit(str[i]); ++i)
-    result = result * 10 + FXSYS_toDecimalDigit(str.CharAt(i));
+    result = result * 10 + FXSYS_DecimalCharToInt(str.CharAt(i));
 
   return result;
 }
@@ -183,7 +182,7 @@ CFX_WideString CPDF_ToUnicodeMap::StringToWideString(
     int byte_pos = 0;
     wchar_t ch = 0;
     for (int i = 1; i < len && std::isxdigit(str[i]); ++i) {
-      ch = ch * 16 + FXSYS_toHexDigit(str[i]);
+      ch = ch * 16 + FXSYS_HexCharToInt(str[i]);
       byte_pos++;
       if (byte_pos == 4) {
         result += ch;

@@ -173,6 +173,12 @@ cmsBool ReadPositionTable(struct _cms_typehandler_struct* self,
 {
     cmsUInt32Number i;
     cmsUInt32Number *ElementOffsets = NULL, *ElementSizes = NULL;
+    cmsUInt32Number currentPosition;
+
+    currentPosition = io->Tell(io);
+    // Verify there is enough space left to read two cmsUInt32Number items for Count items.
+    if (((io->ReportedSize - currentPosition) / (2 * sizeof(cmsUInt32Number))) < Count)
+        return FALSE;
 
     // Let's take the offsets to each element
     ElementOffsets = (cmsUInt32Number *) _cmsCalloc(io ->ContextID, Count, sizeof(cmsUInt32Number));
@@ -4460,17 +4466,18 @@ void *Type_MPE_Read(struct _cms_typehandler_struct* self, cmsIOHANDLER* io, cmsU
     NewLUT = cmsPipelineAlloc(self ->ContextID, InputChans, OutputChans);
     if (NewLUT == NULL) return NULL;
 
-    if (!_cmsReadUInt32Number(io, &ElementCount)) return NULL;
-
-    if (!ReadPositionTable(self, io, ElementCount, BaseOffset, NewLUT, ReadMPEElem)) {
-        if (NewLUT != NULL) cmsPipelineFree(NewLUT);
-        *nItems = 0;
-        return NULL;
-    }
+    if (!_cmsReadUInt32Number(io, &ElementCount)) goto Error;
+    if (!ReadPositionTable(self, io, ElementCount, BaseOffset, NewLUT, ReadMPEElem)) goto Error;
 
     // Success
     *nItems = 1;
     return NewLUT;
+
+    // Error
+Error:
+    if (NewLUT != NULL) cmsPipelineFree(NewLUT);
+    *nItems = 0;
+    return NULL;
 
     cmsUNUSED_PARAMETER(SizeOfTag);
 }

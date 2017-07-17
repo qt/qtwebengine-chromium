@@ -4,8 +4,12 @@
 
 #include "core/fxcrt/cfx_bytestring.h"
 
+#include <algorithm>
+#include <vector>
+
 #include "testing/fx_string_testhelpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/base/stl_util.h"
 
 TEST(fxcrt, ByteStringOperatorSubscript) {
   // CFX_ByteString includes the NUL terminator for non-empty strings.
@@ -773,6 +777,24 @@ TEST(fxcrt, ByteStringCFromChar) {
   EXPECT_NE(longer_string, lower_a_string_from_char);
 }
 
+TEST(fxcrt, ByteStringCFromVector) {
+  std::vector<uint8_t> null_vec;
+  CFX_ByteStringC null_string(null_vec);
+  EXPECT_EQ(0, null_string.GetLength());
+
+  std::vector<uint8_t> lower_a_vec(10, static_cast<uint8_t>('a'));
+  CFX_ByteStringC lower_a_string(lower_a_vec);
+  EXPECT_EQ(10, lower_a_string.GetLength());
+  EXPECT_EQ("aaaaaaaaaa", lower_a_string);
+
+  std::vector<uint8_t> cleared_vec;
+  cleared_vec.push_back(42);
+  cleared_vec.pop_back();
+  CFX_ByteStringC cleared_string(cleared_vec);
+  EXPECT_EQ(0, cleared_string.GetLength());
+  EXPECT_EQ(nullptr, cleared_string.raw_str());
+}
+
 TEST(fxcrt, ByteStringCGetID) {
   CFX_ByteStringC null_string;
   EXPECT_EQ(0u, null_string.GetID());
@@ -1018,6 +1040,70 @@ TEST(fxcrt, ByteStringCOperatorNE) {
   EXPECT_TRUE(c_string3 != byte_string_c);
 }
 
+TEST(fxcrt, ByteStringCNullIterator) {
+  CFX_ByteStringC null_str;
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : null_str) {
+    sum += c;  // Avoid unused arg warnings.
+    any_present = true;
+  }
+  EXPECT_FALSE(any_present);
+  EXPECT_EQ(0, sum);
+}
+
+TEST(fxcrt, ByteStringCEmptyIterator) {
+  CFX_ByteStringC empty_str("");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : empty_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_FALSE(any_present);
+  EXPECT_EQ(0, sum);
+}
+
+TEST(fxcrt, ByteStringCOneCharIterator) {
+  CFX_ByteStringC one_str("a");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : one_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_TRUE(any_present);
+  EXPECT_EQ('a', sum);
+}
+
+TEST(fxcrt, ByteStringCMultiCharIterator) {
+  CFX_ByteStringC one_str("abc");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : one_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_TRUE(any_present);
+  EXPECT_EQ('a' + 'b' + 'c', sum);
+}
+
+TEST(fxcrt, ByteStringCAnyAllNoneOf) {
+  CFX_ByteStringC str("aaaaaaaaaaaaaaaaab");
+  EXPECT_FALSE(std::all_of(str.begin(), str.end(),
+                           [](const char& c) { return c == 'a'; }));
+
+  EXPECT_FALSE(std::none_of(str.begin(), str.end(),
+                            [](const char& c) { return c == 'a'; }));
+
+  EXPECT_TRUE(std::any_of(str.begin(), str.end(),
+                          [](const char& c) { return c == 'a'; }));
+
+  EXPECT_TRUE(pdfium::ContainsValue(str, 'a'));
+  EXPECT_TRUE(pdfium::ContainsValue(str, 'b'));
+  EXPECT_FALSE(pdfium::ContainsValue(str, 'z'));
+}
+
 TEST(fxcrt, ByteStringFormatWidth) {
   {
     CFX_ByteString str;
@@ -1095,4 +1181,81 @@ TEST(fxcrt, ByteStringInitializerList) {
   EXPECT_EQ("clams and oysters", many_str);
   many_str = {"fish", " and ", "chips", " and ", "soda"};
   EXPECT_EQ("fish and chips and soda", many_str);
+}
+
+TEST(fxcrt, ByteStringNullIterator) {
+  CFX_ByteString null_str;
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : null_str) {
+    sum += c;  // Avoid unused arg warnings.
+    any_present = true;
+  }
+  EXPECT_FALSE(any_present);
+  EXPECT_EQ(0, sum);
+}
+
+TEST(fxcrt, ByteStringEmptyIterator) {
+  CFX_ByteString empty_str("");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : empty_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_FALSE(any_present);
+  EXPECT_EQ(0, sum);
+}
+
+TEST(fxcrt, ByteStringOneCharIterator) {
+  CFX_ByteString one_str("a");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : one_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_TRUE(any_present);
+  EXPECT_EQ('a', sum);
+}
+
+TEST(fxcrt, ByteStringMultiCharIterator) {
+  CFX_ByteString one_str("abc");
+  int32_t sum = 0;
+  bool any_present = false;
+  for (const auto& c : one_str) {
+    any_present = true;
+    sum += c;  // Avoid unused arg warnings.
+  }
+  EXPECT_TRUE(any_present);
+  EXPECT_EQ('a' + 'b' + 'c', sum);
+}
+
+TEST(fxcrt, ByteStringAnyAllNoneOf) {
+  CFX_ByteString str("aaaaaaaaaaaaaaaaab");
+  EXPECT_FALSE(std::all_of(str.begin(), str.end(),
+                           [](const char& c) { return c == 'a'; }));
+
+  EXPECT_FALSE(std::none_of(str.begin(), str.end(),
+                            [](const char& c) { return c == 'a'; }));
+
+  EXPECT_TRUE(std::any_of(str.begin(), str.end(),
+                          [](const char& c) { return c == 'a'; }));
+
+  EXPECT_TRUE(pdfium::ContainsValue(str, 'a'));
+  EXPECT_TRUE(pdfium::ContainsValue(str, 'b'));
+  EXPECT_FALSE(pdfium::ContainsValue(str, 'z'));
+}
+
+TEST(fxcrt, EqualNoCase) {
+  CFX_ByteString str("aaa");
+  EXPECT_TRUE(str.EqualNoCase("aaa"));
+  EXPECT_TRUE(str.EqualNoCase("AAA"));
+  EXPECT_TRUE(str.EqualNoCase("aaA"));
+  EXPECT_TRUE(str.EqualNoCase("Aaa"));
+  EXPECT_FALSE(str.EqualNoCase("aab"));
+  EXPECT_FALSE(str.EqualNoCase("aaaa"));
+  EXPECT_FALSE(str.EqualNoCase("BBBB"));
+  EXPECT_FALSE(str.EqualNoCase("a"));
+  EXPECT_FALSE(str.EqualNoCase(""));
 }

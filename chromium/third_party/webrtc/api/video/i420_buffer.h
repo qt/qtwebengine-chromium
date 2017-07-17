@@ -20,7 +20,7 @@
 namespace webrtc {
 
 // Plain I420 buffer in standard memory.
-class I420Buffer : public VideoFrameBuffer {
+class I420Buffer : public PlanarYuvBuffer {
  public:
   static rtc::scoped_refptr<I420Buffer> Create(int width, int height);
   static rtc::scoped_refptr<I420Buffer> Create(int width,
@@ -53,9 +53,7 @@ class I420Buffer : public VideoFrameBuffer {
   // are resolved in a better way. Or in the mean time, use SetBlack.
   void InitializeData();
 
-  // TODO(nisse): Deprecated, use static method instead.
-  void SetToBlack() { SetBlack(this); }
-
+  Type type() const override;
   int width() const override;
   int height() const override;
   const uint8_t* DataY() const override;
@@ -65,9 +63,6 @@ class I420Buffer : public VideoFrameBuffer {
   int StrideY() const override;
   int StrideU() const override;
   int StrideV() const override;
-
-  void* native_handle() const override;
-  rtc::scoped_refptr<VideoFrameBuffer> NativeToI420Buffer() override;
 
   uint8_t* MutableDataY();
   uint8_t* MutableDataU();
@@ -87,14 +82,6 @@ class I420Buffer : public VideoFrameBuffer {
 
   // Scale all of |src| to the size of |this| buffer, with no cropping.
   void ScaleFrom(const VideoFrameBuffer& src);
-
-  // TODO(nisse): Deprecated, delete once downstream applications are updated.
-  // Returns a rotated versions of |src|. Native buffers are not
-  // supported. The reason this function doesn't return an I420Buffer,
-  // is that it returns |src| unchanged in case |rotation| is zero.
-  static rtc::scoped_refptr<VideoFrameBuffer> Rotate(
-      rtc::scoped_refptr<VideoFrameBuffer> src,
-      VideoRotation rotation);
 
  protected:
   I420Buffer(int width, int height);

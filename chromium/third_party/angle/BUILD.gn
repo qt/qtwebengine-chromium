@@ -59,6 +59,13 @@ config("internal_config") {
     "GL_GLEXT_PROTOTYPES",
     "EGL_EGLEXT_PROTOTYPES",
   ]
+
+  if (target_cpu == "x86") {
+    defines += [ "ANGLE_X86_CPU" ]
+  }
+  if (target_cpu == "x64") {
+    defines += [ "ANGLE_X64_CPU" ]
+  }
 }
 
 config("extra_warnings") {
@@ -160,10 +167,8 @@ static_library("angle_common") {
   public_deps = [
     ":commit_id",
   ]
-  public_configs = [
-    ":angle_release_asserts_config",
-    ":angle_common_config",
-  ]
+  public_configs = [ ":angle_common_config" ]
+  all_dependent_configs = [ ":angle_release_asserts_config" ]
 }
 
 config("angle_image_util_config") {
@@ -464,6 +469,13 @@ static_library("libANGLE") {
 
   if (angle_enable_vulkan) {
     sources += rebase_path(gles_gypi.libangle_vulkan_sources, ".", "src")
+    if (is_win) {
+      sources +=
+          rebase_path(gles_gypi.libangle_vulkan_win32_sources, ".", "src")
+    }
+    if (is_linux) {
+      sources += rebase_path(gles_gypi.libangle_vulkan_xcb_sources, ".", "src")
+    }
     deps += [ "//third_party/angle/src/vulkan_support:angle_vulkan" ]
   }
 
@@ -550,6 +562,7 @@ shared_library("libGLESv2") {
   deps = [
     ":includes",
     ":libANGLE",
+    "//build/config:exe_and_shlib_deps",
   ]
 }
 
@@ -607,6 +620,7 @@ shared_library("libEGL") {
   deps = [
     ":includes",
     ":libGLESv2",
+    "//build/config:exe_and_shlib_deps",
   ]
 }
 
@@ -720,6 +734,8 @@ foreach(is_shared_library,
 
     if (is_shared_library) {
       defines = [ "LIBANGLE_UTIL_IMPLEMENTATION" ]
+
+      deps += [ "//build/config:exe_and_shlib_deps" ]
 
       if (is_mac && !is_component_build) {
         ldflags = [

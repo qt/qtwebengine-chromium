@@ -12,7 +12,7 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 if (rtc_use_memcheck) {
-  import("//tools-webrtc/valgrind/valgrind-webrtc.gni")
+  import("//tools_webrtc/valgrind/valgrind-webrtc.gni")
 }
 
 group("test") {
@@ -22,12 +22,17 @@ group("test") {
     ":field_trial",
     ":rtp_test_utils",
     ":test_common",
-    ":test_main",
     ":test_renderer",
     ":test_support",
-    ":test_support_unittests",
     ":video_test_common",
   ]
+
+  if (!build_with_chromium) {
+    deps += [
+      ":test_main",
+      ":test_support_unittests",
+    ]
+  }
 }
 
 rtc_source_set("video_test_common") {
@@ -96,91 +101,12 @@ rtc_source_set("field_trial") {
   ]
 }
 
-rtc_source_set("test_main") {
-  testonly = true
-  sources = [
-    "test_main.cc",
-  ]
-
-  public_deps = [
-    ":test_support",
-  ]
-  deps = [
-    ":field_trial",
-    "../system_wrappers:metrics_default",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/gflags",
-  ]
-}
-
-rtc_source_set("fileutils") {
-  testonly = true
-  sources = [
-    "testsupport/fileutils.cc",
-    "testsupport/fileutils.h",
-  ]
-  if (is_ios) {
-    sources += [ "testsupport/iosfileutils.mm" ]
-    configs += [ "//build/config/compiler:enable_arc" ]
-  }
-  visibility = [ ":*" ]
-}
-
-rtc_source_set("video_test_support") {
-  testonly = true
-
-  sources = [
-    "testsupport/frame_reader.h",
-    "testsupport/frame_writer.h",
-    "testsupport/metrics/video_metrics.cc",
-    "testsupport/metrics/video_metrics.h",
-    "testsupport/mock/mock_frame_reader.h",
-    "testsupport/mock/mock_frame_writer.h",
-    "testsupport/y4m_frame_writer.cc",
-    "testsupport/yuv_frame_reader.cc",
-    "testsupport/yuv_frame_writer.cc",
-  ]
-
-  deps = [
-    "../base:rtc_base_approved",
-    "../common_video",
-    "../system_wrappers",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/gflags",
-  ]
-
-  public_deps = [
-    ":fileutils",
-  ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
-  if (is_android) {
-    deps += [ "//base:base" ]
-  }
-
-  if (is_ios) {
-    deps += [ "//webrtc/sdk:rtc_sdk_common_objc" ]
-  }
-
-  if (rtc_use_memcheck) {
-    data = valgrind_webrtc_dependencies
-  }
-}
-
 rtc_source_set("test_support") {
   testonly = true
 
   sources = [
     "gmock.h",
     "gtest.h",
-    "testsupport/isolated_output.cc",
-    "testsupport/isolated_output.h",
     "testsupport/packet_reader.cc",
     "testsupport/packet_reader.h",
     "testsupport/perf_test.cc",
@@ -191,13 +117,13 @@ rtc_source_set("test_support") {
   ]
 
   deps = [
+    "..:webrtc_common",
     "../base:gtest_prod",
     "../base:rtc_base_approved",
     "../common_video",
     "../system_wrappers",
     "//testing/gmock",
     "//testing/gtest",
-    "//third_party/gflags",
   ]
 
   public_deps = [
@@ -213,13 +139,185 @@ rtc_source_set("test_support") {
     deps += [ "//base:base" ]
   }
 
-  if (is_ios) {
+  if (is_ios && !build_with_chromium) {
     deps += [ "//webrtc/sdk:rtc_sdk_common_objc" ]
   }
 
   if (rtc_use_memcheck) {
     data = valgrind_webrtc_dependencies
   }
+}
+
+if (!build_with_chromium) {
+  # This target depends on //third_party/gflags and since chromium does not
+  # have gflags it causes an error when Gn parses this BUILD.gn file.
+  # It seems that Gn eagerly tries to understand if all the targets are
+  # buildable (even deps). Obviously gflags is not buildable in chromium
+  # so if a target depends on this BUILD.gn file we hit this error.
+  rtc_source_set("test_main") {
+    testonly = true
+    sources = [
+      "test_main.cc",
+    ]
+
+    public_deps = [
+      ":test_support",
+    ]
+    deps = [
+      ":field_trial",
+      "../system_wrappers:metrics_default",
+      "//testing/gmock",
+      "//testing/gtest",
+      "//third_party/gflags",
+    ]
+  }
+
+  rtc_source_set("video_test_support") {
+    testonly = true
+
+    sources = [
+      "testsupport/frame_reader.h",
+      "testsupport/frame_writer.h",
+      "testsupport/metrics/video_metrics.cc",
+      "testsupport/metrics/video_metrics.h",
+      "testsupport/mock/mock_frame_reader.h",
+      "testsupport/mock/mock_frame_writer.h",
+      "testsupport/y4m_frame_writer.cc",
+      "testsupport/yuv_frame_reader.cc",
+      "testsupport/yuv_frame_writer.cc",
+    ]
+
+    deps = [
+      "../base:rtc_base_approved",
+      "../common_video",
+      "../system_wrappers",
+      "//testing/gmock",
+      "//testing/gtest",
+      "//third_party/gflags",
+    ]
+
+    public_deps = [
+      ":fileutils",
+    ]
+
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+    }
+
+    if (is_android) {
+      deps += [ "//base:base" ]
+    }
+
+    if (is_ios) {
+      deps += [ "//webrtc/sdk:rtc_sdk_common_objc" ]
+    }
+
+    if (rtc_use_memcheck) {
+      data = valgrind_webrtc_dependencies
+    }
+  }
+
+  rtc_source_set("test_support_isolated_output") {
+    testonly = true
+    sources = [
+      "testsupport/isolated_output.cc",
+      "testsupport/isolated_output.h",
+    ]
+    deps = [
+      ":fileutils",
+      "../base:rtc_base_approved",
+      "//third_party/gflags",
+    ]
+  }
+
+  test_support_unittests_resources = [
+    "//resources/foreman_cif_short.yuv",
+    "//resources/video_coding/frame-ethernet-ii.pcap",
+    "//resources/video_coding/frame-loopback.pcap",
+    "//resources/video_coding/pltype103.rtp",
+    "//resources/video_coding/pltype103_header_only.rtp",
+    "//resources/video_coding/ssrcs-2.pcap",
+    "//resources/video_coding/ssrcs-3.pcap",
+  ]
+
+  if (is_ios) {
+    bundle_data("test_support_unittests_bundle_data") {
+      testonly = true
+      sources = test_support_unittests_resources
+      outputs = [
+        "{{bundle_resources_dir}}/{{source_file_part}}",
+      ]
+    }
+  }
+
+  rtc_test("test_support_unittests") {
+    deps = []
+    sources = [
+      "fake_audio_device_unittest.cc",
+      "fake_network_pipe_unittest.cc",
+      "frame_generator_unittest.cc",
+      "rtp_file_reader_unittest.cc",
+      "rtp_file_writer_unittest.cc",
+      "testsupport/always_passing_unittest.cc",
+      "testsupport/isolated_output_unittest.cc",
+      "testsupport/metrics/video_metrics_unittest.cc",
+      "testsupport/packet_reader_unittest.cc",
+      "testsupport/perf_test_unittest.cc",
+      "testsupport/y4m_frame_writer_unittest.cc",
+      "testsupport/yuv_frame_reader_unittest.cc",
+      "testsupport/yuv_frame_writer_unittest.cc",
+    ]
+
+    # TODO(jschuh): Bug 1348: fix this warning.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+
+    if (is_win) {
+      # virtual override w/different const/volatile signature.
+      cflags = [ "/wd4373" ]
+    }
+
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+    }
+
+    data = test_support_unittests_resources
+    if (is_android) {
+      deps += [ "//testing/android/native_test:native_test_support" ]
+      shard_timeout = 900
+    }
+
+    if (is_ios) {
+      deps += [ ":test_support_unittests_bundle_data" ]
+    }
+
+    deps += [
+      ":direct_transport",
+      ":fileutils_unittests",
+      ":test_common",
+      ":test_main",
+      ":test_support_isolated_output",
+      ":video_test_common",
+      ":video_test_support",
+      "../modules/video_capture",
+      "//testing/gmock",
+      "//testing/gtest",
+      "//third_party/gflags",
+    ]
+  }
+}
+
+rtc_source_set("fileutils") {
+  testonly = true
+  sources = [
+    "testsupport/fileutils.cc",
+    "testsupport/fileutils.h",
+  ]
+  if (is_ios) {
+    sources += [ "testsupport/iosfileutils.mm" ]
+  }
+  visibility = [ ":*" ]
 }
 
 rtc_source_set("run_test") {
@@ -234,81 +332,9 @@ rtc_source_set("run_test") {
   }
 }
 
-test_support_unittests_resources = [
-  "//resources/foreman_cif_short.yuv",
-  "//resources/video_coding/frame-ethernet-ii.pcap",
-  "//resources/video_coding/frame-loopback.pcap",
-  "//resources/video_coding/pltype103.rtp",
-  "//resources/video_coding/pltype103_header_only.rtp",
-  "//resources/video_coding/ssrcs-2.pcap",
-  "//resources/video_coding/ssrcs-3.pcap",
-]
-
-if (is_ios) {
-  bundle_data("test_support_unittests_bundle_data") {
-    testonly = true
-    sources = test_support_unittests_resources
-    outputs = [
-      "{{bundle_resources_dir}}/{{source_file_part}}",
-    ]
-  }
-}
-
-rtc_test("test_support_unittests") {
-  deps = []
-  sources = [
-    "fake_audio_device_unittest.cc",
-    "fake_network_pipe_unittest.cc",
-    "frame_generator_unittest.cc",
-    "rtp_file_reader_unittest.cc",
-    "rtp_file_writer_unittest.cc",
-    "testsupport/always_passing_unittest.cc",
-    "testsupport/isolated_output_unittest.cc",
-    "testsupport/metrics/video_metrics_unittest.cc",
-    "testsupport/packet_reader_unittest.cc",
-    "testsupport/perf_test_unittest.cc",
-    "testsupport/y4m_frame_writer_unittest.cc",
-    "testsupport/yuv_frame_reader_unittest.cc",
-    "testsupport/yuv_frame_writer_unittest.cc",
-  ]
-
-  # TODO(jschuh): Bug 1348: fix this warning.
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
-
-  if (is_win) {
-    cflags = [ "/wd4373" ]  # virtual override w/different const/volatile signature.
-  }
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
-  data = test_support_unittests_resources
-  if (is_android) {
-    deps += [ "//testing/android/native_test:native_test_support" ]
-    shard_timeout = 900
-  }
-
-  if (is_ios) {
-    deps += [ ":test_support_unittests_bundle_data" ]
-  }
-
-  deps += [
-    ":direct_transport",
-    ":fileutils_unittests",
-    ":test_common",
-    ":test_main",
-    ":video_test_common",
-    ":video_test_support",
-    "../modules/video_capture",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/gflags",
-  ]
-}
 rtc_source_set("fileutils_unittests") {
   testonly = true
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
   sources = [
     "testsupport/fileutils_unittest.cc",
   ]
@@ -403,6 +429,7 @@ rtc_source_set("test_common") {
     ":test_support",
     ":video_test_common",
     "..:webrtc_common",
+    "../api/audio_codecs:builtin_audio_encoder_factory",
     "../api/video_codecs:video_codecs_api",
     "../audio",
     "../base:rtc_base_approved",
@@ -413,7 +440,7 @@ rtc_source_set("test_common") {
     "//testing/gmock",
     "//testing/gtest",
   ]
-  if (!is_android) {
+  if (!is_android && !build_with_chromium) {
     deps += [ "../modules/video_capture:video_capture_internal_impl" ]
   }
 }
@@ -495,5 +522,27 @@ rtc_source_set("audio_codec_mocks") {
   sources = [
     "mock_audio_decoder.h",
     "mock_audio_decoder_factory.h",
+    "mock_audio_encoder.cc",
+    "mock_audio_encoder.h",
+    "mock_audio_encoder_factory.h",
   ]
+
+  deps = [
+    "../api/audio_codecs:audio_codecs_api",
+    "//testing/gmock",
+  ]
+}
+
+if (!build_with_chromium && is_android) {
+  android_library("native_test_java") {
+    testonly = true
+    java_files = [
+      "android/org/webrtc/native_test/RTCNativeUnitTest.java",
+      "android/org/webrtc/native_test/RTCNativeUnitTestActivity.java",
+    ]
+    deps = [
+      "//testing/android/native_test:native_test_java",
+      "//webrtc/base:base_java",
+    ]
+  }
 }

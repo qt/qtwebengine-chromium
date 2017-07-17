@@ -25,6 +25,7 @@
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxge/fx_freetype.h"
+#include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
@@ -61,8 +62,11 @@ CPDF_Font::CPDF_Font()
 
 CPDF_Font::~CPDF_Font() {
   if (m_pFontFile) {
-    m_pDocument->GetPageData()->MaybePurgeFontFileStreamAcc(
-        m_pFontFile->GetStream()->AsStream());
+    auto* pPageData = m_pDocument->GetPageData();
+    if (pPageData) {
+      pPageData->MaybePurgeFontFileStreamAcc(
+          m_pFontFile->GetStream()->AsStream());
+    }
   }
 }
 
@@ -287,6 +291,7 @@ int CPDF_Font::GetStringWidth(const char* pString, int size) {
   return width;
 }
 
+// static
 CPDF_Font* CPDF_Font::GetStockFont(CPDF_Document* pDoc,
                                    const CFX_ByteStringC& name) {
   CFX_ByteString fontname(name);
@@ -430,7 +435,7 @@ const char* CPDF_Font::GetAdobeCharName(
     const std::vector<CFX_ByteString>& charnames,
     int charcode) {
   if (charcode < 0 || charcode >= 256) {
-    ASSERT(false);
+    NOTREACHED();
     return nullptr;
   }
 
@@ -465,4 +470,10 @@ int CPDF_Font::FallbackGlyphFromCharcode(int fallbackFont, uint32_t charcode) {
     return -1;
 
   return glyph;
+}
+
+CFX_Font* CPDF_Font::GetFontFallback(int position) {
+  if (position < 0 || static_cast<size_t>(position) >= m_FontFallbacks.size())
+    return nullptr;
+  return m_FontFallbacks[position].get();
 }

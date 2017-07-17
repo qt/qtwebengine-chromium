@@ -23,7 +23,7 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/thread.h"
-#include "webrtc/common_video/include/corevideo_frame_buffer.h"
+#include "webrtc/sdk/objc/Framework/Classes/corevideo_frame_buffer.h"
 
 namespace webrtc {
 
@@ -160,7 +160,7 @@ void AVFoundationVideoCapturer::CaptureSampleBuffer(
   // Applying rotation is only supported for legacy reasons and performance is
   // not critical here.
   if (apply_rotation() && rotation != kVideoRotation_0) {
-    buffer = I420Buffer::Rotate(buffer->NativeToI420Buffer(),
+    buffer = I420Buffer::Rotate(*buffer->NativeToI420Buffer(),
                                 rotation);
     if (rotation == kVideoRotation_90 || rotation == kVideoRotation_270) {
       std::swap(captured_width, captured_height);

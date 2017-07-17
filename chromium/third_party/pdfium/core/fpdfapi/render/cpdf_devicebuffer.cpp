@@ -9,13 +9,12 @@
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/render/cpdf_rendercontext.h"
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
-#include "core/fxge/cfx_fxgedevice.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/fx_dib.h"
 #include "third_party/base/ptr_util.h"
 
-CPDF_DeviceBuffer::CPDF_DeviceBuffer()
-    : m_pDevice(nullptr), m_pContext(nullptr), m_pObject(nullptr) {}
+CPDF_DeviceBuffer::CPDF_DeviceBuffer() {}
 
 CPDF_DeviceBuffer::~CPDF_DeviceBuffer() {}
 
@@ -68,7 +67,7 @@ void CPDF_DeviceBuffer::OutputToDevice() {
   auto pBuffer = pdfium::MakeRetain<CFX_DIBitmap>();
   m_pDevice->CreateCompatibleBitmap(pBuffer, m_pBitmap->GetWidth(),
                                     m_pBitmap->GetHeight());
-  m_pContext->GetBackground(pBuffer, m_pObject, nullptr, &m_Matrix);
+  m_pContext->GetBackground(pBuffer, m_pObject.Get(), nullptr, &m_Matrix);
   pBuffer->CompositeBitmap(0, 0, pBuffer->GetWidth(), pBuffer->GetHeight(),
                            m_pBitmap, 0, 0);
   m_pDevice->StretchDIBits(pBuffer, m_Rect.left, m_Rect.top, m_Rect.Width(),

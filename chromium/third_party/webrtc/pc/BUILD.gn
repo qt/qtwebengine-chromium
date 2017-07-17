@@ -81,7 +81,6 @@ config("libjingle_peerconnection_warnings_config") {
 }
 
 rtc_static_library("libjingle_peerconnection") {
-  check_includes = false  # TODO(kjellander): Remove (bugs.webrtc.org/6828)
   cflags = []
   sources = [
     "audiotrack.cc",
@@ -96,8 +95,6 @@ rtc_static_library("libjingle_peerconnection") {
     "jsepsessiondescription.cc",
     "localaudiosource.cc",
     "localaudiosource.h",
-    "mediacontroller.cc",
-    "mediacontroller.h",
     "mediastream.cc",
     "mediastream.h",
     "mediastreamobserver.cc",
@@ -191,6 +188,7 @@ if (rtc_include_tests) {
       "currentspeakermonitor_unittest.cc",
       "mediasession_unittest.cc",
       "rtcpmuxfilter_unittest.cc",
+      "rtptransport_unittest.cc",
       "srtpfilter_unittest.cc",
     ]
 
@@ -210,8 +208,9 @@ if (rtc_include_tests) {
     deps = [
       ":libjingle_peerconnection",
       ":rtc_pc",
+      "../base:rtc_base_tests_main",
       "../base:rtc_base_tests_utils",
-      "../media:rtc_unittest_main",
+      "../media:rtc_media_tests_utils",
       "../system_wrappers:metrics_default",
     ]
 
@@ -282,7 +281,6 @@ if (rtc_include_tests) {
     sources = [
       "datachannel_unittest.cc",
       "dtmfsender_unittest.cc",
-      "fakemediacontroller.h",
       "iceserverparsing_unittest.cc",
       "jsepsessiondescription_unittest.cc",
       "localaudiosource_unittest.cc",
@@ -356,8 +354,9 @@ if (rtc_include_tests) {
       ":pc_test_utils",
       "..:webrtc_common",
       "../api:fakemetricsobserver",
+      "../base:rtc_base_tests_main",
       "../base:rtc_base_tests_utils",
-      "../media:rtc_unittest_main",
+      "../media:rtc_media_tests_utils",
       "../pc:rtc_pc",
       "../system_wrappers:metrics_default",
       "//testing/gmock",

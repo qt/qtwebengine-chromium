@@ -231,9 +231,11 @@ typedef struct SPEED_FEATURES {
 
   // This variable is used to cap the maximum number of times we skip testing a
   // mode to be evaluated. A high value means we will be faster.
+  // Turned off when (row_mt_bit_exact == 1 && adaptive_rd_thresh_row_mt == 0).
   int adaptive_rd_thresh;
 
-  // Flag to use adaptive_rd_thresh when row-mt it enabled.
+  // Flag to use adaptive_rd_thresh when row-mt it enabled, only for non-rd
+  // pickmode.
   int adaptive_rd_thresh_row_mt;
 
   // Enables skipping the reconstruction step (idct, recon) in the
@@ -325,14 +327,8 @@ typedef struct SPEED_FEATURES {
   // point for this motion search and limits the search range around it.
   int adaptive_motion_search;
 
-  // Flag for allowing some use of exhaustive searches;
-  int allow_exhaustive_searches;
-
   // Threshold for allowing exhaistive motion search.
   int exhaustive_searches_thresh;
-
-  // Maximum number of exhaustive searches for a frame.
-  int max_exaustive_pct;
 
   // Pattern to be used for any exhaustive mesh searches.
   MESH_PATTERN mesh_patterns[MAX_MESH_STEP];

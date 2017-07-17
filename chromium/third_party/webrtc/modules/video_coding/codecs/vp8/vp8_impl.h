@@ -25,10 +25,11 @@
 
 #include "webrtc/api/video/video_frame.h"
 #include "webrtc/common_video/include/i420_buffer_pool.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
+#include "webrtc/common_video/include/video_frame.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
+#include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
+#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/utility/quality_scaler.h"
-#include "webrtc/video_frame.h"
 
 namespace webrtc {
 
@@ -61,6 +62,9 @@ class VP8EncoderImpl : public VP8Encoder {
 
   const char* ImplementationName() const override;
 
+  static vpx_enc_frame_flags_t EncodeFlags(
+      const TemporalLayers::FrameConfig& references);
+
  private:
   void SetupTemporalLayers(int num_streams,
                            int num_temporal_layers,
@@ -75,15 +79,14 @@ class VP8EncoderImpl : public VP8Encoder {
   // Call encoder initialize function and set control settings.
   int InitAndSetControlSettings();
 
-  // Update frame size for codec.
-  int UpdateCodecFrameSize(int width, int height);
-
   void PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
+                             const TemporalLayers::FrameConfig& tl_config,
                              const vpx_codec_cx_pkt& pkt,
                              int stream_idx,
                              uint32_t timestamp);
 
-  int GetEncodedPartitions(const VideoFrame& input_image);
+  int GetEncodedPartitions(const TemporalLayers::FrameConfig tl_configs[],
+                           const VideoFrame& input_image);
 
   // Set the stream state for stream |stream_idx|.
   void SetStreamState(bool send_stream, int stream_idx);
@@ -100,9 +103,9 @@ class VP8EncoderImpl : public VP8Encoder {
   int cpu_speed_default_;
   int number_of_cores_;
   uint32_t rc_max_intra_target_;
-  std::vector<TemporalLayers*> temporal_layers_;
+  std::vector<std::unique_ptr<TemporalLayers>> temporal_layers_;
   std::vector<uint16_t> picture_id_;
-  std::vector<int> last_key_frame_picture_id_;
+  std::vector<uint8_t> tl0_pic_idx_;
   std::vector<bool> key_frame_request_;
   std::vector<bool> send_stream_;
   std::vector<int> cpu_speed_;

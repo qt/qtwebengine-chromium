@@ -6,6 +6,7 @@
 
 #include "public/fpdf_transformpage.h"
 
+#include <memory>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_clippath.h"
@@ -118,7 +119,7 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFPage_TransFormWithClip(FPDF_PAGE page,
                  matrix->d, matrix->e, matrix->f);
   textBuf << bsMatix;
 
-  CPDF_Dictionary* pPageDic = pPage->m_pFormDict;
+  CPDF_Dictionary* pPageDic = pPage->m_pFormDict.Get();
   CPDF_Object* pContentObj =
       pPageDic ? pPageDic->GetObjectFor("Contents") : nullptr;
   if (!pContentObj)
@@ -126,7 +127,7 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFPage_TransFormWithClip(FPDF_PAGE page,
   if (!pContentObj)
     return false;
 
-  CPDF_Document* pDoc = pPage->m_pDocument;
+  CPDF_Document* pDoc = pPage->m_pDocument.Get();
   if (!pDoc)
     return false;
 
@@ -222,13 +223,14 @@ DLLEXPORT FPDF_CLIPPATH STDCALL FPDF_CreateClipPath(float left,
   CPDF_Path Path;
   Path.AppendRect(left, bottom, right, top);
 
-  CPDF_ClipPath* pNewClipPath = new CPDF_ClipPath();
+  auto pNewClipPath = pdfium::MakeUnique<CPDF_ClipPath>();
   pNewClipPath->AppendPath(Path, FXFILL_ALTERNATE, false);
-  return pNewClipPath;
+  return pNewClipPath.release();  // Caller takes ownership.
 }
 
 DLLEXPORT void STDCALL FPDF_DestroyClipPath(FPDF_CLIPPATH clipPath) {
-  delete (CPDF_ClipPath*)clipPath;
+  // Take ownership back from caller and destroy.
+  std::unique_ptr<CPDF_ClipPath>(static_cast<CPDF_ClipPath*>(clipPath));
 }
 
 void OutputPath(CFX_ByteTextBuf& buf, CPDF_Path path) {
@@ -274,7 +276,7 @@ DLLEXPORT void STDCALL FPDFPage_InsertClipPath(FPDF_PAGE page,
   if (!pPage)
     return;
 
-  CPDF_Dictionary* pPageDic = pPage->m_pFormDict;
+  CPDF_Dictionary* pPageDic = pPage->m_pFormDict.Get();
   CPDF_Object* pContentObj =
       pPageDic ? pPageDic->GetObjectFor("Contents") : nullptr;
   if (!pContentObj)
@@ -299,7 +301,7 @@ DLLEXPORT void STDCALL FPDFPage_InsertClipPath(FPDF_PAGE page,
         strClip << "W* n\n";
     }
   }
-  CPDF_Document* pDoc = pPage->m_pDocument;
+  CPDF_Document* pDoc = pPage->m_pDocument.Get();
   if (!pDoc)
     return;
 

@@ -10,8 +10,9 @@
 #define LIBANGLE_RENDERER_D3D_D3D11_BLIT11_H_
 
 #include "common/angleutils.h"
-#include "libANGLE/angletypes.h"
 #include "libANGLE/Error.h"
+#include "libANGLE/angletypes.h"
+#include "libANGLE/renderer/d3d/d3d11/ResourceManager11.h"
 #include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 
 #include <map>
@@ -26,15 +27,16 @@ class Blit11 : angle::NonCopyable
     explicit Blit11(Renderer11 *renderer);
     ~Blit11();
 
-    gl::Error swizzleTexture(ID3D11ShaderResourceView *source,
-                             ID3D11RenderTargetView *dest,
+    gl::Error swizzleTexture(const d3d11::SharedSRV &source,
+                             const d3d11::RenderTargetView &dest,
                              const gl::Extents &size,
                              const gl::SwizzleState &swizzleTarget);
 
-    gl::Error copyTexture(ID3D11ShaderResourceView *source,
+    gl::Error copyTexture(const d3d11::SharedSRV &source,
                           const gl::Box &sourceArea,
                           const gl::Extents &sourceSize,
-                          ID3D11RenderTargetView *dest,
+                          GLenum sourceFormat,
+                          const d3d11::RenderTargetView &dest,
                           const gl::Box &destArea,
                           const gl::Extents &destSize,
                           const gl::Rectangle *scissor,
@@ -54,10 +56,10 @@ class Blit11 : angle::NonCopyable
                           const gl::Extents &destSize,
                           const gl::Rectangle *scissor);
 
-    gl::Error copyDepth(ID3D11ShaderResourceView *source,
+    gl::Error copyDepth(const d3d11::SharedSRV &source,
                         const gl::Box &sourceArea,
                         const gl::Extents &sourceSize,
-                        ID3D11DepthStencilView *dest,
+                        const d3d11::DepthStencilView &dest,
                         const gl::Box &destArea,
                         const gl::Extents &destSize,
                         const gl::Rectangle *scissor);
@@ -94,15 +96,11 @@ class Blit11 : angle::NonCopyable
     enum BlitShaderType
     {
         BLITSHADER_INVALID,
+
+        // Passthrough shaders
         BLITSHADER_2D_RGBAF,
-        BLITSHADER_2D_RGBAF_PREMULTIPLY,
-        BLITSHADER_2D_RGBAF_UNMULTIPLY,
         BLITSHADER_2D_BGRAF,
-        BLITSHADER_2D_BGRAF_PREMULTIPLY,
-        BLITSHADER_2D_BGRAF_UNMULTIPLY,
         BLITSHADER_2D_RGBF,
-        BLITSHADER_2D_RGBF_PREMULTIPLY,
-        BLITSHADER_2D_RGBF_UNMULTIPLY,
         BLITSHADER_2D_RGF,
         BLITSHADER_2D_RF,
         BLITSHADER_2D_ALPHA,
@@ -132,6 +130,21 @@ class Blit11 : angle::NonCopyable
         BLITSHADER_3D_ALPHA,
         BLITSHADER_3D_LUMA,
         BLITSHADER_3D_LUMAALPHA,
+
+        // Multiply alpha shaders
+        BLITSHADER_2D_RGBAF_PREMULTIPLY,
+        BLITSHADER_2D_RGBAF_UNMULTIPLY,
+
+        BLITSHADER_2D_RGBF_PREMULTIPLY,
+        BLITSHADER_2D_RGBF_UNMULTIPLY,
+
+        BLITSHADER_2D_RGBAF_TOUI,
+        BLITSHADER_2D_RGBAF_TOUI_PREMULTIPLY,
+        BLITSHADER_2D_RGBAF_TOUI_UNMULTIPLY,
+
+        BLITSHADER_2D_RGBF_TOUI,
+        BLITSHADER_2D_RGBF_TOUI_PREMULTIPLY,
+        BLITSHADER_2D_RGBF_TOUI_UNMULTIPLY,
     };
 
     enum SwizzleShaderType
@@ -185,6 +198,7 @@ class Blit11 : angle::NonCopyable
     ShaderSupport getShaderSupport(const Shader &shader);
 
     static BlitShaderType GetBlitShaderType(GLenum destinationFormat,
+                                            GLenum sourceFormat,
                                             bool isSigned,
                                             bool unpackPremultiplyAlpha,
                                             bool unpackUnmultiplyAlpha,
@@ -238,6 +252,7 @@ class Blit11 : angle::NonCopyable
                             ID3D11PixelShader *ps);
 
     gl::Error getBlitShader(GLenum destFormat,
+                            GLenum sourceFormat,
                             bool isSigned,
                             bool unpackPremultiplyAlpha,
                             bool unpackUnmultiplyAlpha,
@@ -285,11 +300,11 @@ class Blit11 : angle::NonCopyable
     d3d11::LazyShader<ID3D11PixelShader> mResolveDepthPS;
     d3d11::LazyShader<ID3D11PixelShader> mResolveDepthStencilPS;
     d3d11::LazyShader<ID3D11PixelShader> mResolveStencilPS;
-    angle::ComPtr<ID3D11ShaderResourceView> mStencilSRV;
+    d3d11::ShaderResourceView mStencilSRV;
     TextureHelper11 mResolvedDepthStencil;
-    angle::ComPtr<ID3D11RenderTargetView> mResolvedDepthStencilRTView;
+    d3d11::RenderTargetView mResolvedDepthStencilRTView;
     TextureHelper11 mResolvedDepth;
-    angle::ComPtr<ID3D11DepthStencilView> mResolvedDepthDSView;
+    d3d11::DepthStencilView mResolvedDepthDSView;
 };
 
 }  // namespace rx

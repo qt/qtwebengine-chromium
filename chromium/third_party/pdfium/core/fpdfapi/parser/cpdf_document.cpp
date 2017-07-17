@@ -14,8 +14,8 @@
 #include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fpdfapi/font/cpdf_fontencoding.h"
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
+#include "core/fpdfapi/page/cpdf_iccprofile.h"
 #include "core/fpdfapi/page/cpdf_pagemodule.h"
-#include "core/fpdfapi/page/pageint.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_linearized_header.h"
@@ -28,6 +28,7 @@
 #include "core/fpdfapi/render/cpdf_dibsource.h"
 #include "core/fpdfapi/render/cpdf_docrenderdata.h"
 #include "core/fxcodec/JBig2_DocumentContext.h"
+#include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/cfx_unicodeencoding.h"
 #include "core/fxge/fx_font.h"
 #include "third_party/base/ptr_util.h"
@@ -37,7 +38,7 @@ namespace {
 
 const int FX_MAX_PAGE_LEVEL = 1024;
 
-const uint16_t g_FX_CP874Unicodes[128] = {
+const uint16_t g_FX_MSDOSThaiUnicodes[128] = {
     0x20AC, 0x0000, 0x0000, 0x0000, 0x0000, 0x2026, 0x0000, 0x0000, 0x0000,
     0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x2018,
     0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x0000, 0x0000, 0x0000,
@@ -54,7 +55,7 @@ const uint16_t g_FX_CP874Unicodes[128] = {
     0x0E55, 0x0E56, 0x0E57, 0x0E58, 0x0E59, 0x0E5A, 0x0E5B, 0x0000, 0x0000,
     0x0000, 0x0000,
 };
-const uint16_t g_FX_CP1250Unicodes[128] = {
+const uint16_t g_FX_MSWinEasternEuropeanUnicodes[128] = {
     0x20AC, 0x0000, 0x201A, 0x0000, 0x201E, 0x2026, 0x2020, 0x2021, 0x0000,
     0x2030, 0x0160, 0x2039, 0x015A, 0x0164, 0x017D, 0x0179, 0x0000, 0x2018,
     0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x0000, 0x2122, 0x0161,
@@ -71,7 +72,7 @@ const uint16_t g_FX_CP1250Unicodes[128] = {
     0x0151, 0x00F6, 0x00F7, 0x0159, 0x016F, 0x00FA, 0x0171, 0x00FC, 0x00FD,
     0x0163, 0x02D9,
 };
-const uint16_t g_FX_CP1251Unicodes[128] = {
+const uint16_t g_FX_MSWinCyrillicUnicodes[128] = {
     0x0402, 0x0403, 0x201A, 0x0453, 0x201E, 0x2026, 0x2020, 0x2021, 0x20AC,
     0x2030, 0x0409, 0x2039, 0x040A, 0x040C, 0x040B, 0x040F, 0x0452, 0x2018,
     0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x0000, 0x2122, 0x0459,
@@ -88,7 +89,7 @@ const uint16_t g_FX_CP1251Unicodes[128] = {
     0x0445, 0x0446, 0x0447, 0x0448, 0x0449, 0x044A, 0x044B, 0x044C, 0x044D,
     0x044E, 0x044F,
 };
-const uint16_t g_FX_CP1253Unicodes[128] = {
+const uint16_t g_FX_MSWinGreekUnicodes[128] = {
     0x20AC, 0x0000, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x0000,
     0x2030, 0x0000, 0x2039, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x2018,
     0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x0000, 0x2122, 0x0000,
@@ -105,7 +106,7 @@ const uint16_t g_FX_CP1253Unicodes[128] = {
     0x03C5, 0x03C6, 0x03C7, 0x03C8, 0x03C9, 0x03CA, 0x03CB, 0x03CC, 0x03CD,
     0x03CE, 0x0000,
 };
-const uint16_t g_FX_CP1254Unicodes[128] = {
+const uint16_t g_FX_MSWinTurkishUnicodes[128] = {
     0x20AC, 0x0000, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
     0x2030, 0x0160, 0x2039, 0x0152, 0x0000, 0x0000, 0x0000, 0x0000, 0x2018,
     0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161,
@@ -122,7 +123,7 @@ const uint16_t g_FX_CP1254Unicodes[128] = {
     0x00F5, 0x00F6, 0x00F7, 0x00F8, 0x00F9, 0x00FA, 0x00FB, 0x00FC, 0x0131,
     0x015F, 0x00FF,
 };
-const uint16_t g_FX_CP1255Unicodes[128] = {
+const uint16_t g_FX_MSWinHebrewUnicodes[128] = {
     0x20AC, 0x0000, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
     0x2030, 0x0000, 0x2039, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x2018,
     0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0000,
@@ -139,7 +140,7 @@ const uint16_t g_FX_CP1255Unicodes[128] = {
     0x05E5, 0x05E6, 0x05E7, 0x05E8, 0x05E9, 0x05EA, 0x0000, 0x0000, 0x200E,
     0x200F, 0x0000,
 };
-const uint16_t g_FX_CP1256Unicodes[128] = {
+const uint16_t g_FX_MSWinArabicUnicodes[128] = {
     0x20AC, 0x067E, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
     0x2030, 0x0679, 0x2039, 0x0152, 0x0686, 0x0698, 0x0688, 0x06AF, 0x2018,
     0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x06A9, 0x2122, 0x0691,
@@ -156,7 +157,7 @@ const uint16_t g_FX_CP1256Unicodes[128] = {
     0x064F, 0x0650, 0x00F7, 0x0651, 0x00F9, 0x0652, 0x00FB, 0x00FC, 0x200E,
     0x200F, 0x06D2,
 };
-const uint16_t g_FX_CP1257Unicodes[128] = {
+const uint16_t g_FX_MSWinBalticUnicodes[128] = {
     0x20AC, 0x0000, 0x201A, 0x0000, 0x201E, 0x2026, 0x2020, 0x2021, 0x0000,
     0x2030, 0x0000, 0x2039, 0x0000, 0x00A8, 0x02C7, 0x00B8, 0x0000, 0x2018,
     0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x0000, 0x2122, 0x0000,
@@ -180,14 +181,14 @@ struct FX_CharsetUnicodes {
 };
 
 const FX_CharsetUnicodes g_FX_CharsetUnicodes[] = {
-    {FXFONT_THAI_CHARSET, g_FX_CP874Unicodes},
-    {FXFONT_EASTEUROPE_CHARSET, g_FX_CP1250Unicodes},
-    {FXFONT_RUSSIAN_CHARSET, g_FX_CP1251Unicodes},
-    {FXFONT_GREEK_CHARSET, g_FX_CP1253Unicodes},
-    {FXFONT_TURKISH_CHARSET, g_FX_CP1254Unicodes},
-    {FXFONT_HEBREW_CHARSET, g_FX_CP1255Unicodes},
-    {FXFONT_ARABIC_CHARSET, g_FX_CP1256Unicodes},
-    {FXFONT_BALTIC_CHARSET, g_FX_CP1257Unicodes},
+    {FX_CHARSET_Thai, g_FX_MSDOSThaiUnicodes},
+    {FX_CHARSET_MSWin_EasternEuropean, g_FX_MSWinEasternEuropeanUnicodes},
+    {FX_CHARSET_MSWin_Cyrillic, g_FX_MSWinCyrillicUnicodes},
+    {FX_CHARSET_MSWin_Greek, g_FX_MSWinGreekUnicodes},
+    {FX_CHARSET_MSWin_Turkish, g_FX_MSWinTurkishUnicodes},
+    {FX_CHARSET_MSWin_Hebrew, g_FX_MSWinHebrewUnicodes},
+    {FX_CHARSET_MSWin_Arabic, g_FX_MSWinArabicUnicodes},
+    {FX_CHARSET_MSWin_Baltic, g_FX_MSWinBalticUnicodes},
 };
 
 void InsertWidthArrayImpl(int* widths, int size, CPDF_Array* pWidthArray) {
@@ -347,14 +348,13 @@ CPDF_Document::CPDF_Document(std::unique_ptr<CPDF_Parser> pParser)
       m_bLinearized(false),
       m_iFirstPageNo(0),
       m_dwFirstPageObjNum(0),
-      m_pDocPage(new CPDF_DocPageData(this)),
-      m_pDocRender(new CPDF_DocRenderData(this)) {
+      m_pDocPage(pdfium::MakeUnique<CPDF_DocPageData>(this)),
+      m_pDocRender(pdfium::MakeUnique<CPDF_DocRenderData>(this)) {
   if (pParser)
     SetLastObjNum(m_pParser->GetLastObjNum());
 }
 
 CPDF_Document::~CPDF_Document() {
-  delete m_pDocPage;
   CPDF_ModuleMgr::Get()->GetPageModule()->ClearStockFont(this);
 }
 
@@ -817,14 +817,14 @@ CPDF_Dictionary* CPDF_Document::ProcessbCJK(
   int supplement = 0;
   CPDF_Array* pWidthArray = pFontDict->SetNewFor<CPDF_Array>("W");
   switch (charset) {
-    case FXFONT_CHINESEBIG5_CHARSET:
+    case FX_CHARSET_ChineseTraditional:
       cmap = bVert ? "ETenms-B5-V" : "ETenms-B5-H";
       ordering = "CNS1";
       supplement = 4;
       pWidthArray->AddNew<CPDF_Number>(1);
       Insert(0x20, 0x7e, pWidthArray);
       break;
-    case FXFONT_GB2312_CHARSET:
+    case FX_CHARSET_ChineseSimplified:
       cmap = bVert ? "GBK-EUC-V" : "GBK-EUC-H";
       ordering = "GB1";
       supplement = 2;
@@ -833,14 +833,14 @@ CPDF_Dictionary* CPDF_Document::ProcessbCJK(
       pWidthArray->AddNew<CPDF_Number>(814);
       Insert(0x21, 0x7e, pWidthArray);
       break;
-    case FXFONT_HANGUL_CHARSET:
+    case FX_CHARSET_Hangul:
       cmap = bVert ? "KSCms-UHC-V" : "KSCms-UHC-H";
       ordering = "Korea1";
       supplement = 2;
       pWidthArray->AddNew<CPDF_Number>(1);
       Insert(0x20, 0x7e, pWidthArray);
       break;
-    case FXFONT_SHIFTJIS_CHARSET:
+    case FX_CHARSET_ShiftJIS:
       cmap = bVert ? "90ms-RKSJ-V" : "90ms-RKSJ-H";
       ordering = "Japan1";
       supplement = 5;
@@ -876,20 +876,18 @@ CPDF_Font* CPDF_Document::AddFont(CFX_Font* pFont, int charset, bool bVert) {
   if (!pFont)
     return nullptr;
 
-  bool bCJK = charset == FXFONT_CHINESEBIG5_CHARSET ||
-              charset == FXFONT_GB2312_CHARSET ||
-              charset == FXFONT_HANGUL_CHARSET ||
-              charset == FXFONT_SHIFTJIS_CHARSET;
+  bool bCJK = charset == FX_CHARSET_ChineseTraditional ||
+              charset == FX_CHARSET_ChineseSimplified ||
+              charset == FX_CHARSET_Hangul || charset == FX_CHARSET_ShiftJIS;
   CFX_ByteString basefont = pFont->GetFamilyName();
   basefont.Replace(" ", "");
   int flags =
       CalculateFlags(pFont->IsBold(), pFont->IsItalic(), pFont->IsFixedWidth(),
-                     false, false, charset == FXFONT_SYMBOL_CHARSET);
+                     false, false, charset == FX_CHARSET_Symbol);
 
   CPDF_Dictionary* pBaseDict = NewIndirect<CPDF_Dictionary>();
   pBaseDict->SetNewFor<CPDF_Name>("Type", "Font");
-  std::unique_ptr<CFX_UnicodeEncoding> pEncoding(
-      new CFX_UnicodeEncoding(pFont));
+  auto pEncoding = pdfium::MakeUnique<CFX_UnicodeEncoding>(pFont);
   CPDF_Dictionary* pFontDict = pBaseDict;
   if (!bCJK) {
     auto pWidths = pdfium::MakeUnique<CPDF_Array>();
@@ -898,8 +896,8 @@ CPDF_Font* CPDF_Document::AddFont(CFX_Font* pFont, int charset, bool bVert) {
       int char_width = pFont->GetGlyphWidth(glyph_index);
       pWidths->AddNew<CPDF_Number>(char_width);
     }
-    if (charset == FXFONT_ANSI_CHARSET || charset == FXFONT_DEFAULT_CHARSET ||
-        charset == FXFONT_SYMBOL_CHARSET) {
+    if (charset == FX_CHARSET_ANSI || charset == FX_CHARSET_Default ||
+        charset == FX_CHARSET_Symbol) {
       pBaseDict->SetNewFor<CPDF_Name>("Encoding", "WinAnsiEncoding");
       for (int charcode = 128; charcode <= 255; charcode++) {
         int glyph_index = pEncoding->GlyphFromCharCode(charcode);
@@ -996,12 +994,12 @@ CPDF_Font* CPDF_Document::AddWindowsFont(LOGFONTA* pLogFont,
                              (pLogFont->lfPitchAndFamily & 3) == FIXED_PITCH,
                              (pLogFont->lfPitchAndFamily & 0xf8) == FF_ROMAN,
                              (pLogFont->lfPitchAndFamily & 0xf8) == FF_SCRIPT,
-                             pLogFont->lfCharSet == FXFONT_SYMBOL_CHARSET);
+                             pLogFont->lfCharSet == FX_CHARSET_Symbol);
 
-  bool bCJK = pLogFont->lfCharSet == FXFONT_CHINESEBIG5_CHARSET ||
-              pLogFont->lfCharSet == FXFONT_GB2312_CHARSET ||
-              pLogFont->lfCharSet == FXFONT_HANGUL_CHARSET ||
-              pLogFont->lfCharSet == FXFONT_SHIFTJIS_CHARSET;
+  bool bCJK = pLogFont->lfCharSet == FX_CHARSET_ChineseTraditional ||
+              pLogFont->lfCharSet == FX_CHARSET_ChineseSimplified ||
+              pLogFont->lfCharSet == FX_CHARSET_Hangul ||
+              pLogFont->lfCharSet == FX_CHARSET_ShiftJIS;
   CFX_ByteString basefont;
   if (bTranslateName && bCJK)
     basefont = FPDF_GetPSNameFromTT(hDC);
@@ -1021,9 +1019,9 @@ CPDF_Font* CPDF_Document::AddWindowsFont(LOGFONTA* pLogFont,
   pBaseDict->SetNewFor<CPDF_Name>("Type", "Font");
   CPDF_Dictionary* pFontDict = pBaseDict;
   if (!bCJK) {
-    if (pLogFont->lfCharSet == FXFONT_ANSI_CHARSET ||
-        pLogFont->lfCharSet == FXFONT_DEFAULT_CHARSET ||
-        pLogFont->lfCharSet == FXFONT_SYMBOL_CHARSET) {
+    if (pLogFont->lfCharSet == FX_CHARSET_ANSI ||
+        pLogFont->lfCharSet == FX_CHARSET_Default ||
+        pLogFont->lfCharSet == FX_CHARSET_Symbol) {
       pBaseDict->SetNewFor<CPDF_Name>("Encoding", "WinAnsiEncoding");
     } else {
       CalculateEncodingDict(pLogFont->lfCharSet, pBaseDict);

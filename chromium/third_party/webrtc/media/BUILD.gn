@@ -73,7 +73,6 @@ rtc_static_library("rtc_media_base") {
     "base/videocapturerfactory.h",
     "base/videocommon.cc",
     "base/videocommon.h",
-    "base/videoframe.h",
     "base/videosourcebase.cc",
     "base/videosourcebase.h",
   ]
@@ -101,12 +100,17 @@ rtc_static_library("rtc_media_base") {
     "../api:libjingle_peerconnection_api",
     "../api:video_frame_api",
     "../api/audio_codecs:audio_codecs_api",
+    "../api/audio_codecs:builtin_audio_encoder_factory",
     "../base:rtc_base",
     "../base:rtc_base_approved",
     "../call:call_interfaces",
     "../common_video:common_video",
     "../p2p",
   ]
+
+  if (is_nacl) {
+    deps += [ "//native_client_sdk/src/libraries/nacl_io" ]
+  }
 }
 
 rtc_static_library("rtc_media") {
@@ -146,11 +150,9 @@ rtc_static_library("rtc_media") {
     "engine/webrtcvideocapturerfactory.cc",
     "engine/webrtcvideocapturerfactory.h",
     "engine/webrtcvideodecoderfactory.h",
-    "engine/webrtcvideoencoderfactory.cc",
     "engine/webrtcvideoencoderfactory.h",
     "engine/webrtcvideoengine2.cc",
     "engine/webrtcvideoengine2.h",
-    "engine/webrtcvideoframe.h",
     "engine/webrtcvoe.h",
     "engine/webrtcvoiceengine.cc",
     "engine/webrtcvoiceengine.h",
@@ -218,6 +220,11 @@ rtc_static_library("rtc_media") {
     public_configs += [ ":rtc_media_defines_config" ]
     deps += [ "../modules/video_capture:video_capture_internal_impl" ]
   }
+  if (rtc_enable_protobuf) {
+    deps += [ "../modules/audio_processing/aec_dump:aec_dump_impl" ]
+  } else {
+    deps += [ "../modules/audio_processing/aec_dump:null_aec_dump_factory" ]
+  }
   deps += [
     ":rtc_media_base",
     "..:webrtc_common",
@@ -235,6 +242,7 @@ rtc_static_library("rtc_media") {
     "../modules/audio_device:audio_device",
     "../modules/audio_mixer:audio_mixer_impl",
     "../modules/audio_processing:audio_processing",
+    "../modules/audio_processing/aec_dump",
     "../modules/video_capture:video_capture_module",
     "../modules/video_coding",
     "../modules/video_coding:webrtc_h264",
@@ -257,12 +265,13 @@ if (rtc_include_tests) {
     }
   }
 
-  rtc_source_set("rtc_unittest_main") {
+  rtc_source_set("rtc_media_tests_utils") {
     testonly = true
 
     include_dirs = []
     public_deps = []
     deps = [
+      "..:video_stream_api",
       "../modules/audio_coding:rent_a_codec",
       "../modules/audio_processing:audio_processing",
       "../p2p:rtc_p2p",
@@ -309,7 +318,6 @@ if (rtc_include_tests) {
       "../api/video_codecs:video_codecs_api",
       "../base:rtc_base",
       "../base:rtc_base_approved",
-      "../base:rtc_base_tests_main",
       "../base:rtc_base_tests_utils",
       "../call:call_interfaces",
       "../test:test_support",
@@ -437,13 +445,15 @@ if (rtc_include_tests) {
     deps += [
       ":rtc_media",
       ":rtc_media_base",
-      ":rtc_unittest_main",
+      ":rtc_media_tests_utils",
       "../api:video_frame_api",
       "../api/audio_codecs:builtin_audio_decoder_factory",
+      "../api/audio_codecs:builtin_audio_encoder_factory",
       "../api/video_codecs:video_codecs_api",
       "../audio",
       "../base:rtc_base",
       "../base:rtc_base_approved",
+      "../base:rtc_base_tests_main",
       "../base:rtc_base_tests_utils",
       "../call:call_interfaces",
       "../common_video:common_video",
@@ -452,7 +462,7 @@ if (rtc_include_tests) {
       "../modules/audio_processing:audio_processing",
       "../modules/video_coding:video_coding_utility",
       "../modules/video_coding:webrtc_vp8",
-      "../p2p:rtc_p2p_unittests",
+      "../p2p:p2p_test_utils",
       "../system_wrappers:metrics_default",
       "../test:audio_codec_mocks",
       "../test:test_support",

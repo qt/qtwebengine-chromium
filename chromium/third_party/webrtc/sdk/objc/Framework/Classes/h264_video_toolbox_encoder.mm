@@ -23,7 +23,7 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/common_video/h264/profile_level_id.h"
-#include "webrtc/common_video/include/corevideo_frame_buffer.h"
+#include "webrtc/sdk/objc/Framework/Classes/corevideo_frame_buffer.h"
 #include "webrtc/sdk/objc/Framework/Classes/h264_video_toolbox_nalu.h"
 #include "webrtc/system_wrappers/include/clock.h"
 
@@ -364,6 +364,7 @@ int H264VideoToolboxEncoder::InitEncode(const VideoCodec* codec_settings,
 
   width_ = codec_settings->width;
   height_ = codec_settings->height;
+  mode_ = codec_settings->mode;
   // We can only set average bitrate on the HW encoder.
   target_bitrate_bps_ = codec_settings->startBitrate;
   bitrate_adjuster_.SetTargetBitrateBps(target_bitrate_bps_);
@@ -721,6 +722,9 @@ void H264VideoToolboxEncoder::OnEncodedFrame(
   frame.capture_time_ms_ = render_time_ms;
   frame._timeStamp = timestamp;
   frame.rotation_ = rotation;
+
+  frame.content_type_ =
+      (mode_ == kScreensharing) ? VideoContentType::SCREENSHARE : VideoContentType::UNSPECIFIED;
 
   h264_bitstream_parser_.ParseBitstream(buffer->data(), buffer->size());
   h264_bitstream_parser_.GetLastSliceQp(&frame.qp_);

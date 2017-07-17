@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
-#include "base/threading/worker_pool.h"
+#include "base/task_scheduler/post_task.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/ozone/common/egl_util.h"
 #include "ui/ozone/platform/drm/gpu/drm_vsync_provider.h"
@@ -37,8 +37,6 @@ GbmSurfaceless::GbmSurfaceless(GbmSurfaceFactory* surface_factory,
       widget_(widget),
       has_implicit_external_sync_(
           HasEGLExtension("EGL_ARM_implicit_external_sync")),
-      has_image_flush_external_(
-          HasEGLExtension("EGL_EXT_image_flush_external")),
       weak_factory_(this) {
   surface_factory_->RegisterSurface(window_->widget(), this);
   unsubmitted_frames_.push_back(base::MakeUnique<PendingFrame>());
@@ -105,6 +103,8 @@ void GbmSurfaceless::SwapBuffersAsync(const SwapCompletionCallback& callback) {
     return;
   }
 
+  // TODO(dcastagna): remove glFlush since eglImageFlushExternalEXT called on
+  // the image should be enough (crbug.com/720045).
   glFlush();
   unsubmitted_frames_.back()->Flush();
 
@@ -117,27 +117,22 @@ void GbmSurfaceless::SwapBuffersAsync(const SwapCompletionCallback& callback) {
 
   // TODO: the following should be replaced by a per surface flush as it gets
   // implemented in GL drivers.
-  if (has_implicit_external_sync_ || has_image_flush_external_) {
-    EGLSyncKHR fence = InsertFence(has_implicit_external_sync_);
-    if (!fence) {
-      callback.Run(gfx::SwapResult::SWAP_FAILED);
-      return;
-    }
-
-    base::Closure fence_wait_task =
-        base::Bind(&WaitForFence, GetDisplay(), fence);
-
-    base::Closure fence_retired_callback =
-        base::Bind(&GbmSurfaceless::FenceRetired, weak_factory_.GetWeakPtr(),
-                   fence, frame);
-
-    base::WorkerPool::PostTaskAndReply(FROM_HERE, fence_wait_task,
-                                       fence_retired_callback, false);
-    return;  // Defer frame submission until fence signals.
+  EGLSyncKHR fence = InsertFence(has_implicit_external_sync_);
+  if (!fence) {
+    callback.Run(gfx::SwapResult::SWAP_FAILED);
+    return;
   }
 
-  frame->ready = true;
-  SubmitFrame();
+  base::Closure fence_wait_task =
+      base::Bind(&WaitForFence, GetDisplay(), fence);
+
+  base::Closure fence_retired_callback = base::Bind(
+      &GbmSurfaceless::FenceRetired, weak_factory_.GetWeakPtr(), fence, frame);
+
+  base::PostTaskWithTraitsAndReply(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
+      fence_wait_task, fence_retired_callback);
 }
 
 void GbmSurfaceless::PostSubBufferAsync(
@@ -209,9 +204,6 @@ void GbmSurfaceless::SubmitFrame() {
       return;
     }
 
-    if (IsUniversalDisplayLinkDevice())
-      glFinish();
-
     window_->SchedulePageFlip(planes_, frame->callback);
     planes_.clear();
   }
@@ -241,10 +233,6 @@ void GbmSurfaceless::SwapCompleted(const SwapCompletionCallback& callback,
   }
 
   SubmitFrame();
-}
-
-bool GbmSurfaceless::IsUniversalDisplayLinkDevice() {
-  return planes_.empty() ? false : planes_[0].buffer->RequiresGlFinish();
 }
 
 }  // namespace ui

@@ -133,12 +133,12 @@ EGLBoolean Initialize(EGLDisplay dpy, EGLint *major, EGLint *minor)
 	TRACE("(EGLDisplay dpy = %p, EGLint *major = %p, EGLint *minor = %p)",
 		  dpy, major, minor);
 
-	if(dpy == EGL_NO_DISPLAY)
+	egl::Display *display = egl::Display::get(dpy);
+
+	if(!display)
 	{
 		return error(EGL_BAD_DISPLAY, EGL_FALSE);
 	}
-
-	egl::Display *display = egl::Display::get(dpy);
 
 	if(!display->initialize())
 	{
@@ -871,9 +871,25 @@ EGLBoolean QueryContext(EGLDisplay dpy, EGLContext ctx, EGLint attribute, EGLint
 		return EGL_FALSE;
 	}
 
-	UNIMPLEMENTED();   // FIXME
+	switch(attribute)
+	{
+	case EGL_CONFIG_ID:
+		*value = context->getConfigID();
+		break;
+	case EGL_CONTEXT_CLIENT_TYPE:
+		*value = egl::getCurrentAPI();
+		break;
+	case EGL_CONTEXT_CLIENT_VERSION:
+		*value = context->getClientVersion();
+		break;
+	case EGL_RENDER_BUFFER:
+		*value = EGL_BACK_BUFFER;
+		break;
+	default:
+		return error(EGL_BAD_ATTRIBUTE, EGL_FALSE);
+	}
 
-	return success(0);
+	return success(EGL_TRUE);
 }
 
 EGLBoolean WaitGL(void)

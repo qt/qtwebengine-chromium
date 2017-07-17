@@ -17,18 +17,6 @@
 #include "core/fxge/fx_font.h"
 #include "core/fxge/fx_freetype.h"
 
-class CFX_GlyphMap {
- public:
-  CFX_GlyphMap();
-  ~CFX_GlyphMap();
-
-  void SetAt(int key, int value);
-  bool Lookup(int key, int& value);
-
- protected:
-  CFX_BinaryBuf m_Buffer;
-};
-
 class CFX_CTTGSUBTable {
  public:
   CFX_CTTGSUBTable();
@@ -154,7 +142,6 @@ class CFX_CTTGSUBTable {
     virtual ~TCoverageFormatBase() {}
 
     uint16_t CoverageFormat;
-    CFX_GlyphMap m_glyphMap;
 
    private:
     TCoverageFormatBase(const TCoverageFormatBase&);
@@ -278,7 +265,7 @@ class CFX_CTTGSUBTable {
   void ParseFeature(FT_Bytes raw, TFeature* rec);
   void ParseLookupList(FT_Bytes raw, TLookupList* rec);
   void ParseLookup(FT_Bytes raw, TLookup* rec);
-  TCoverageFormatBase* ParseCoverage(FT_Bytes raw);
+  std::unique_ptr<TCoverageFormatBase> ParseCoverage(FT_Bytes raw);
   void ParseCoverageFormat1(FT_Bytes raw, TCoverageFormat1* rec);
   void ParseCoverageFormat2(FT_Bytes raw, TCoverageFormat2* rec);
   void ParseSingleSubst(FT_Bytes raw, std::unique_ptr<TSubTableBase>* rec);

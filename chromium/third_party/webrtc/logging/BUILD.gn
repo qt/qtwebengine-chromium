@@ -27,6 +27,7 @@ rtc_source_set("rtc_event_log_api") {
     "rtc_event_log/rtc_event_log.h",
   ]
   deps = [
+    "..:video_stream_api",
     "../base:rtc_base_approved",
     "../call:call_interfaces",
   ]
@@ -94,6 +95,7 @@ if (rtc_enable_protobuf) {
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
     deps = [
+      "..:video_stream_api",
       "../base:protobuf_utils",
       "../base:rtc_base_approved",
     ]
@@ -165,6 +167,25 @@ if (rtc_enable_protobuf) {
         # TODO(kwiberg): Remove this dependency.
         "../api/audio_codecs:audio_codecs_api",
         "../modules/rtp_rtcp:rtp_rtcp",
+        "//third_party/gflags",
+      ]
+      if (!build_with_chromium && is_clang) {
+        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+      }
+    }
+  }
+  if (rtc_include_tests) {
+    rtc_executable("rtc_event_log2stats") {
+      testonly = true
+      sources = [
+        "rtc_event_log/rtc_event_log2stats.cc",
+      ]
+      deps = [
+        ":rtc_event_log_api",
+        ":rtc_event_log_impl",
+        ":rtc_event_log_proto",
+        "../base:rtc_base_approved",
         "//third_party/gflags",
       ]
       if (!build_with_chromium && is_clang) {

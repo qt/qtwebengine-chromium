@@ -15,13 +15,14 @@
 #include "libANGLE/angletypes.h"
 #include "libANGLE/renderer/d3d/HLSLCompiler.h"
 #include "libANGLE/renderer/d3d/ProgramD3D.h"
-#include "libANGLE/renderer/d3d/RendererD3D.h"
 #include "libANGLE/renderer/d3d/RenderTargetD3D.h"
+#include "libANGLE/renderer/d3d/RendererD3D.h"
 #include "libANGLE/renderer/d3d/d3d11/DebugAnnotator11.h"
 #include "libANGLE/renderer/d3d/d3d11/InputLayoutCache.h"
-#include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 #include "libANGLE/renderer/d3d/d3d11/RenderStateCache.h"
+#include "libANGLE/renderer/d3d/d3d11/ResourceManager11.h"
 #include "libANGLE/renderer/d3d/d3d11/StateManager11.h"
+#include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 
 namespace gl
 {
@@ -46,18 +47,18 @@ class VertexDataManager;
 struct Renderer11DeviceCaps
 {
     D3D_FEATURE_LEVEL featureLevel;
-    bool supportsDXGI1_2;               // Support for DXGI 1.2
-    bool supportsClearView;             // Support for ID3D11DeviceContext1::ClearView
-    bool supportsConstantBufferOffsets; // Support for Constant buffer offset
-    UINT B5G6R5support;                 // Bitfield of D3D11_FORMAT_SUPPORT values for DXGI_FORMAT_B5G6R5_UNORM
-    UINT B4G4R4A4support;               // Bitfield of D3D11_FORMAT_SUPPORT values for DXGI_FORMAT_B4G4R4A4_UNORM
-    UINT B5G5R5A1support;               // Bitfield of D3D11_FORMAT_SUPPORT values for DXGI_FORMAT_B5G5R5A1_UNORM
+    bool supportsDXGI1_2;                // Support for DXGI 1.2
+    bool supportsClearView;              // Support for ID3D11DeviceContext1::ClearView
+    bool supportsConstantBufferOffsets;  // Support for Constant buffer offset
+    UINT B5G6R5support;    // Bitfield of D3D11_FORMAT_SUPPORT values for DXGI_FORMAT_B5G6R5_UNORM
+    UINT B4G4R4A4support;  // Bitfield of D3D11_FORMAT_SUPPORT values for DXGI_FORMAT_B4G4R4A4_UNORM
+    UINT B5G5R5A1support;  // Bitfield of D3D11_FORMAT_SUPPORT values for DXGI_FORMAT_B5G5R5A1_UNORM
     Optional<LARGE_INTEGER> driverVersion;  // Four-part driver version number.
 };
 
 enum
 {
-    MAX_VERTEX_UNIFORM_VECTORS_D3D11 = 1024,
+    MAX_VERTEX_UNIFORM_VECTORS_D3D11   = 1024,
     MAX_FRAGMENT_UNIFORM_VECTORS_D3D11 = 1024
 };
 
@@ -126,8 +127,10 @@ class Renderer11 : public RendererD3D
                                   IUnknown *d3dTexture,
                                   GLenum backBufferFormat,
                                   GLenum depthBufferFormat,
-                                  EGLint orientation) override;
-    egl::Error getD3DTextureInfo(IUnknown *d3dTexture,
+                                  EGLint orientation,
+                                  EGLint samples) override;
+    egl::Error getD3DTextureInfo(const egl::Config *configuration,
+                                 IUnknown *d3dTexture,
                                  EGLint *width,
                                  EGLint *height,
                                  GLenum *fboFormat) const override;
@@ -158,7 +161,7 @@ class Renderer11 : public RendererD3D
                                 GLsizei instances,
                                 TranslatedIndexData *indexInfo);
     gl::Error applyIndexBuffer(const gl::ContextState &data,
-                               const GLvoid *indices,
+                               const void *indices,
                                GLsizei count,
                                GLenum mode,
                                GLenum type,
@@ -325,7 +328,8 @@ class Renderer11 : public RendererD3D
                          uint8_t *pixelsOut);
 
     bool getLUID(LUID *adapterLuid) const override;
-    VertexConversionType getVertexConversionType(gl::VertexFormatType vertexFormatType) const override;
+    VertexConversionType getVertexConversionType(
+        gl::VertexFormatType vertexFormatType) const override;
     GLenum getVertexComponentType(gl::VertexFormatType vertexFormatType) const override;
 
     // Warning: you should ensure binding really matches attrib.bindingIndex before using this
@@ -343,9 +347,15 @@ class Renderer11 : public RendererD3D
                                  const gl::PixelPackState &pack,
                                  uint8_t *pixels);
 
-    gl::Error blitRenderbufferRect(const gl::Rectangle &readRect, const gl::Rectangle &drawRect, RenderTargetD3D *readRenderTarget,
-                                   RenderTargetD3D *drawRenderTarget, GLenum filter, const gl::Rectangle *scissor,
-                                   bool colorBlit, bool depthBlit, bool stencilBlit);
+    gl::Error blitRenderbufferRect(const gl::Rectangle &readRect,
+                                   const gl::Rectangle &drawRect,
+                                   RenderTargetD3D *readRenderTarget,
+                                   RenderTargetD3D *drawRenderTarget,
+                                   GLenum filter,
+                                   const gl::Rectangle *scissor,
+                                   bool colorBlit,
+                                   bool depthBlit,
+                                   bool stencilBlit);
 
     bool isES3Capable() const;
     const Renderer11DeviceCaps &getRenderer11DeviceCaps() const { return mRenderer11DeviceCaps; };
@@ -370,14 +380,14 @@ class Renderer11 : public RendererD3D
                                   GLenum mode,
                                   GLsizei count,
                                   GLenum type,
-                                  const GLvoid *indices,
+                                  const void *indices,
                                   GLsizei instances,
                                   const gl::IndexRange &indexRange);
 
     gl::Error genericDrawIndirect(Context11 *context,
                                   GLenum mode,
                                   GLenum type,
-                                  const GLvoid *indirect);
+                                  const void *indirect);
 
     // Necessary hack for default framebuffers in D3D.
     FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
@@ -386,8 +396,35 @@ class Renderer11 : public RendererD3D
 
     gl::Version getMaxSupportedESVersion() const override;
 
+    gl::Error dispatchCompute(Context11 *context,
+                              GLuint numGroupsX,
+                              GLuint numGroupsY,
+                              GLuint numGroupsZ);
+    gl::Error applyComputeUniforms(const ProgramD3D &programD3D,
+                                   const std::vector<D3DUniform *> &uniformArray) override;
+    gl::Error applyComputeShader(const gl::ContextState &data);
+
+    gl::ErrorOrResult<TextureHelper11> createStagingTexture(GLenum textureType,
+                                                            const d3d11::Format &formatSet,
+                                                            const gl::Extents &size,
+                                                            StagingAccess readAndWriteAccess);
+
+    template <typename DescT, typename InitDataT, typename ResourceT>
+    gl::Error allocateResource(const DescT &desc, InitDataT *initData, ResourceT *resourceOut)
+    {
+        return mResourceManager11.allocate(this, &desc, initData, resourceOut);
+    }
+
+    template <typename InitDataT, typename ResourceT>
+    gl::Error allocateResourceNoDesc(InitDataT *initData, ResourceT *resourceOut)
+    {
+        return mResourceManager11.allocate(this, nullptr, initData, resourceOut);
+    }
+
   protected:
-    gl::Error clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd) override;
+    gl::Error clearTextures(gl::SamplerType samplerType,
+                            size_t rangeStart,
+                            size_t rangeEnd) override;
 
   private:
     gl::Error drawArraysImpl(const gl::ContextState &data,
@@ -400,15 +437,15 @@ class Renderer11 : public RendererD3D
                                GLenum mode,
                                GLsizei count,
                                GLenum type,
-                               const GLvoid *indices,
+                               const void *indices,
                                GLsizei instances);
     gl::Error drawArraysIndirectImpl(const gl::ContextState &data,
                                      GLenum mode,
-                                     const GLvoid *indirect);
+                                     const void *indirect);
     gl::Error drawElementsIndirectImpl(const gl::ContextState &data,
                                        GLenum mode,
                                        GLenum type,
-                                       const GLvoid *indirect);
+                                       const void *indirect);
 
     // Support directly using indirect draw buffer.
     bool supportsFastIndirectDraw(const gl::State &state, GLenum mode, GLenum type);
@@ -423,13 +460,13 @@ class Renderer11 : public RendererD3D
     gl::Error drawLineLoop(const gl::ContextState &data,
                            GLsizei count,
                            GLenum type,
-                           const GLvoid *indices,
+                           const void *indices,
                            int baseVertex,
                            int instances);
     gl::Error drawTriangleFan(const gl::ContextState &data,
                               GLsizei count,
                               GLenum type,
-                              const GLvoid *indices,
+                              const void *indices,
                               int baseVertex,
                               int instances);
 
@@ -488,6 +525,10 @@ class Renderer11 : public RendererD3D
                                 const gl::Offset &destOffset,
                                 RenderTargetD3D *destRenderTarget);
 
+    gl::SupportedSampleSet generateSampleSetFromCaps(
+        const gl::TextureCaps &colorBufferFormatCaps,
+        const gl::TextureCaps &depthStencilBufferFormatCaps) const;
+
     HMODULE mD3d11Module;
     HMODULE mDxgiModule;
     HMODULE mDCompModule;
@@ -514,6 +555,9 @@ class Renderer11 : public RendererD3D
     std::vector<bool> mForceSetPixelSamplerStates;
     std::vector<gl::SamplerState> mCurPixelSamplerStates;
 
+    std::vector<bool> mForceSetComputeSamplerStates;
+    std::vector<gl::SamplerState> mCurComputeSamplerStates;
+
     StateManager11 mStateManager;
 
     // Currently applied primitive topology
@@ -532,6 +576,7 @@ class Renderer11 : public RendererD3D
     uintptr_t mAppliedVertexShader;
     uintptr_t mAppliedGeometryShader;
     uintptr_t mAppliedPixelShader;
+    uintptr_t mAppliedComputeShader;
 
     dx_VertexConstants11 mAppliedVertexConstants;
     ID3D11Buffer *mDriverConstantBufferVS;
@@ -548,6 +593,11 @@ class Renderer11 : public RendererD3D
     unsigned int mCurrentConstantBufferPS[gl::IMPLEMENTATION_MAX_FRAGMENT_SHADER_UNIFORM_BUFFERS];
     GLintptr mCurrentConstantBufferPSOffset[gl::IMPLEMENTATION_MAX_FRAGMENT_SHADER_UNIFORM_BUFFERS];
     GLsizeiptr mCurrentConstantBufferPSSize[gl::IMPLEMENTATION_MAX_FRAGMENT_SHADER_UNIFORM_BUFFERS];
+
+    dx_ComputeConstants11 mAppliedComputeConstants;
+    ID3D11Buffer *mDriverConstantBufferCS;
+    SamplerMetadataD3D11 mSamplerMetadataCS;
+    ID3D11Buffer *mCurrentComputeConstantBuffer;
 
     ID3D11Buffer *mCurrentGeometryConstantBuffer;
 
@@ -573,7 +623,7 @@ class Renderer11 : public RendererD3D
     ID3D11Query *mSyncQuery;
 
     // Created objects state tracking
-    std::set<const Buffer11*> mAliveBuffers;
+    std::set<const Buffer11 *> mAliveBuffers;
 
     double mLastHistogramUpdateTime;
 
@@ -594,7 +644,8 @@ class Renderer11 : public RendererD3D
     gl::DebugAnnotator *mAnnotator;
 
     mutable Optional<bool> mSupportsShareHandles;
+    ResourceManager11 mResourceManager11;
 };
 
 }  // namespace rx
-#endif // LIBANGLE_RENDERER_D3D_D3D11_RENDERER11_H_
+#endif  // LIBANGLE_RENDERER_D3D_D3D11_RENDERER11_H_

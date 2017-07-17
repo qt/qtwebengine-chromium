@@ -1,7 +1,11 @@
 
-CHANGES BETWEEN 2.7.1 and 2.7.2
+CHANGES BETWEEN 2.7.1 and 2.8
 
   I. IMPORTANT CHANGES
+
+    - Support for OpenType Variation Fonts is now complete.   The last
+      missing part was handling the `VVAR' and `MVAR' tables, which is
+      available with this release.
 
     - A new  function `FT_Face_Properties' allows the  control of some
       module  and   library  properties  per  font.    Currently,  the
@@ -17,11 +21,42 @@ CHANGES BETWEEN 2.7.1 and 2.7.2
 
         FREETYPE_PROPERTIES=pcf:no-long-family-names=1
 
-    - Variations font support now takes care of the `VVAR' and  `MVAR'
-      tables also.
+    - Support  for  the  following  scripts  has  been  added  to  the
+      auto-hinter.
+
+        Adlam, Avestan, Bamum, Buhid, Carian, Chakma, Coptic, Cypriot,
+        Deseret, Glagolitic, Gothic, Kayah, Lisu, N'Ko, Ol Chiki, Old
+        Turkic, Osage, Osmanya, Saurashtra, Shavian, Sundanese, Tai
+        Viet, Tifinagh, Unified Canadian Syllabics, Vai
 
 
-  II. MISCELLANEOUS
+  II. IMPORTANT BUG FIXES
+
+    - `Light' auto-hinting  mode no  longer uses TrueType  metrics for
+      TrueType  fonts.   This bug  was  introduced  in version  2.4.6,
+      causing   horizontal  scaling   also.    Almost  all   GNU/Linux
+      distributions (with Fedora as  a notable exception) disabled the
+      corresponding patch for good reasons; chances are thus high that
+      you won't notice a difference.
+
+      If  optical backward  compatibility for  legacy applications  is
+      necessary, you might enable the AF_CONFIG_OPTION_TT_SIZE_METRICS
+      configuration option.   However, it  is strongly  recommended to
+      avoid that, adjusting font sizes instead.
+
+    - If a TrueType font gets loaded with FT_LOAD_NO_HINTING, FreeType
+      now scales  the font linearly  again (bug introduced  in version
+      2.4.6).
+
+    - CVE-2017-8105,  CVE-2017-8287:  Older   FreeType  versions  have
+      out-of-bounds  writes  caused  by  heap-based  buffer  overflows
+      related to Type 1 fonts.
+
+        https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-8105
+        https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-8287
+
+
+  III. MISCELLANEOUS
 
     - A  new function  `FT_Set_Default_Properties' has  been added  to
       parse    the    `FREETYPE_PROPERTIES'    environment    variable
@@ -62,6 +97,12 @@ CHANGES BETWEEN 2.7.1 and 2.7.2
     - The `freetype-config' script is now a wrapper of `pkg-config' if
       this program is available in the path.
 
+    - FT_LOAD_TARGET_LCD  is now  a  variant of  FT_LOAD_TARGET_LIGHT;
+      this should provide better rendering results.
+
+    - A mode to display  light auto-hinting with sub-pixel positioning
+      has been added to `ftdiff'.
+
 
 ======================================================================
 
@@ -83,6 +124,12 @@ CHANGES BETWEEN 2.7 and 2.7.1
 
     - Handling of  raw CID fonts was partially  broken (bug introduced
       in 2.6.4).
+
+    - CVE-2016-10328:  Older  FreeType versions had  an  out-of-bounds
+      write caused by a heap-based  buffer overflow related to the CFF
+      fonts.
+
+        http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-10328
 
 
   III. MISCELLANEOUS
@@ -306,7 +353,7 @@ CHANGES BETWEEN 2.6.2 and 2.6.3
       to the user.   The exception to this  is `__FTERRORS_H__', which
       must be  sometimes undefined by  the user to get  FreeType error
       strings:  Both this  form and  the new  `FTERRORS_H_' macro  are
-      accepted for backwards compatibility.
+      accepted for backward compatibility.
 
     - Minor improvements mainly to the Type 1 driver.
 
@@ -547,17 +594,17 @@ CHANGES BETWEEN 2.5.5 and 2.6
       compiler warnings.
 
     - Function `FT_Bitmap_New'  has been renamed  to `FT_Bitmap_Init',
-      since  this name  better reflects  its function.   For backwards
+      since  this name  better reflects  its  function.   For backward
       compatibility, the old function name is still available.
 
     - Function   `FT_Get_X11_Font_Format'   has    been   renamed   to
       `FT_Get_Font_Format',  since  this   name  better  reflects  its
-      function.  For backwards compatibility, the old function name is
+      function.  For backward compatibility,  the old function name is
       still available.
 
       Additionally, the header  file macro for this  function has been
       renamed to  `FT_FONT_FORMATS_H' (the old name  `FT_XFREE86_H' is
-      retained for backwards compatibility).
+      retained for backward compatibility).
 
     - Various improvements to the `ftgrid' demo program.
 
@@ -991,7 +1038,7 @@ index ebcf189..3f2ce6b 100644
   II. MISCELLANEOUS
 
     - The  (top-level)  `configure'  script   now  respects  the  MAKE
-      environment variable to specify a `make' binary.   For backwards
+      environment variable  to specify a `make' binary.   For backward
       compatibility, GNUMAKE still overrides MAKE, though.
 
     - The `ftview'  and `ftdiff'  demo programs have  been redesigned,
@@ -2329,7 +2376,7 @@ CHANGES BETWEEN 2.1.8 and 2.1.7
       correctly  treated as a  CID, similar  to FreeType's  CID driver
       module.  Note that CID CMap support is still missing.
 
-    - The FT_FACE_FLAGS_GLYPH_NAMES flag is now  set correctly for all
+    - The FT_FACE_FLAG_GLYPH_NAMES flag  is now  set correctly for all
       font formats.
 
     - Some subsetted Type 1  fonts weren't parsed correctly.  This bug

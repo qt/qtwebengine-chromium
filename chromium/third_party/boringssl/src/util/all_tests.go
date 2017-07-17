@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,8 +37,9 @@ var (
 	useCallgrind    = flag.Bool("callgrind", false, "If true, run code under valgrind to generate callgrind traces.")
 	useGDB          = flag.Bool("gdb", false, "If true, run BoringSSL code under gdb")
 	useSDE          = flag.Bool("sde", false, "If true, run BoringSSL code under Intel's SDE for each supported chip")
+	sdePath         = flag.String("sde-path", "sde", "The path to find the sde binary.")
 	buildDir        = flag.String("build-dir", "build", "The build directory to run the tests from.")
-	numWorkers      = flag.Int("num-workers", 1, "Runs the given number of workers when testing.")
+	numWorkers      = flag.Int("num-workers", runtime.NumCPU(), "Runs the given number of workers when testing.")
 	jsonOutput      = flag.String("json-output", "", "The file to output JSON results to.")
 	mallocTest      = flag.Int64("malloc-test", -1, "If non-negative, run each test with each malloc in turn failing from the given number onwards.")
 	mallocTestDebug = flag.Bool("malloc-test-debug", false, "If true, ask each test to abort rather than fail a malloc. This can be used with a specific value for --malloc-test to identity the malloc failing that is causing problems.")
@@ -160,7 +162,7 @@ func gdbOf(path string, args ...string) *exec.Cmd {
 func sdeOf(cpu, path string, args ...string) *exec.Cmd {
 	sdeArgs := []string{"-" + cpu, "--", path}
 	sdeArgs = append(sdeArgs, args...)
-	return exec.Command("sde", sdeArgs...)
+	return exec.Command(*sdePath, sdeArgs...)
 }
 
 type moreMallocsError struct{}
@@ -245,13 +247,13 @@ func runTest(test test) (bool, error) {
 	}
 }
 
-// shortTestName returns the short name of a test. Except for evp_test, it
-// assumes that any argument which ends in .txt is a path to a data file and not
-// relevant to the test's uniqueness.
+// shortTestName returns the short name of a test. Except for evp_test and
+// cipher_test, it assumes that any argument which ends in .txt is a path to a
+// data file and not relevant to the test's uniqueness.
 func shortTestName(test test) string {
 	var args []string
 	for _, arg := range test.args {
-		if test.args[0] == "crypto/evp/evp_test" || !strings.HasSuffix(arg, ".txt") {
+		if test.args[0] == "crypto/evp/evp_test" || test.args[0] == "crypto/cipher_extra/cipher_test" || test.args[0] == "crypto/cipher_extra/aead_test" || !strings.HasSuffix(arg, ".txt") {
 			args = append(args, arg)
 		}
 	}
@@ -374,7 +376,7 @@ func main() {
 	if len(failed) > 0 {
 		fmt.Printf("\n%d of %d tests failed:\n", len(failed), len(testCases))
 		for _, test := range failed {
-			fmt.Printf("\t%s%s\n", strings.Join(test.args, ""), test.cpuMsg())
+			fmt.Printf("\t%s%s\n", strings.Join(test.args, " "), test.cpuMsg())
 		}
 		os.Exit(1)
 	}

@@ -53,7 +53,7 @@ CPDF_LinkList* GetLinkList(CPDF_Page* page) {
   if (!page)
     return nullptr;
 
-  CPDF_Document* pDoc = page->m_pDocument;
+  CPDF_Document* pDoc = page->m_pDocument.Get();
   std::unique_ptr<CPDF_LinkList>* pHolder = pDoc->LinksContext();
   if (!pHolder->get())
     *pHolder = pdfium::MakeUnique<CPDF_LinkList>();
@@ -230,8 +230,7 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFDest_GetLocationInPage(FPDF_DEST pDict,
   if (!pDict)
     return false;
 
-  std::unique_ptr<CPDF_Dest> dest(
-      new CPDF_Dest(static_cast<CPDF_Object*>(pDict)));
+  auto dest = pdfium::MakeUnique<CPDF_Dest>(static_cast<CPDF_Object*>(pDict));
 
   // FPDF_BOOL is an int, GetXYZ expects bools.
   bool bHasX;

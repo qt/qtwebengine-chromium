@@ -43,10 +43,23 @@ using DegradationPreference = webrtc::VideoSendStream::DegradationPreference;
 namespace cricket {
 namespace {
 // If this field trial is enabled, we will enable sending FlexFEC and disable
-// sending ULPFEC whenever the former has been negotiated. Receiving FlexFEC
-// is enabled whenever FlexFEC has been negotiated.
+// sending ULPFEC whenever the former has been negotiated in the SDPs.
 bool IsFlexfecFieldTrialEnabled() {
-  return webrtc::field_trial::FindFullName("WebRTC-FlexFEC-03") == "Enabled";
+  return webrtc::field_trial::IsEnabled("WebRTC-FlexFEC-03");
+}
+
+// If this field trial is enabled, the "flexfec-03" codec may have been
+// advertised as being supported in the local SDP. That means that we must be
+// ready to receive FlexFEC packets. See internalencoderfactory.cc.
+bool IsFlexfecAdvertisedFieldTrialEnabled() {
+  return webrtc::field_trial::IsEnabled("WebRTC-FlexFEC-03-Advertised");
+}
+
+// If this field trial is enabled, we will report VideoContentType RTP extension
+// in capabilities (thus, it will end up in the default SDP and extension will
+// be sent for all key-frames).
+bool IsVideoContentTypeExtensionFieldTrialEnabled() {
+  return webrtc::field_trial::IsEnabled("WebRTC-VideoContentTypeExtension");
 }
 
 // Wrap cricket::WebRtcVideoEncoderFactory as a webrtc::VideoEncoderFactory.
@@ -135,10 +148,6 @@ class WebRtcSimulcastEncoderFactory
   }
 
  private:
-  // Disable overloaded virtual function warning. TODO(magjed): Remove once
-  // http://crbug/webrtc/6402 is fixed.
-  using cricket::WebRtcVideoEncoderFactory::CreateVideoEncoder;
-
   cricket::WebRtcVideoEncoderFactory* factory_;
   // A list of encoders that were created without being wrapped in a
   // SimulcastEncoderAdapter.
@@ -419,14 +428,18 @@ WebRtcVideoChannel2::WebRtcVideoSendStream::ConfigureVideoEncoderSettings(
 }
 
 DefaultUnsignalledSsrcHandler::DefaultUnsignalledSsrcHandler()
-    : default_recv_ssrc_(0), default_sink_(NULL) {}
+    : default_sink_(nullptr) {}
 
 UnsignalledSsrcHandler::Action DefaultUnsignalledSsrcHandler::OnUnsignalledSsrc(
     WebRtcVideoChannel2* channel,
     uint32_t ssrc) {
-  if (default_recv_ssrc_ != 0) {  // Already one default stream, so replace it.
-    channel->RemoveRecvStream(default_recv_ssrc_);
-    default_recv_ssrc_ = 0;
+  rtc::Optional<uint32_t> default_recv_ssrc =
+      channel->GetDefaultReceiveStreamSsrc();
+
+  if (default_recv_ssrc) {
+    LOG(LS_INFO) << "Destroying old default receive stream for SSRC=" << ssrc
+                 << ".";
+    channel->RemoveRecvStream(*default_recv_ssrc);
   }
 
   StreamParams sp;
@@ -437,7 +450,6 @@ UnsignalledSsrcHandler::Action DefaultUnsignalledSsrcHandler::OnUnsignalledSsrc(
   }
 
   channel->SetSink(ssrc, default_sink_);
-  default_recv_ssrc_ = ssrc;
   return kDeliverPacket;
 }
 
@@ -447,11 +459,13 @@ DefaultUnsignalledSsrcHandler::GetDefaultSink() const {
 }
 
 void DefaultUnsignalledSsrcHandler::SetDefaultSink(
-    VideoMediaChannel* channel,
+    WebRtcVideoChannel2* channel,
     rtc::VideoSinkInterface<webrtc::VideoFrame>* sink) {
   default_sink_ = sink;
-  if (default_recv_ssrc_ != 0) {
-    channel->SetSink(default_recv_ssrc_, default_sink_);
+  rtc::Optional<uint32_t> default_recv_ssrc =
+      channel->GetDefaultReceiveStreamSsrc();
+  if (default_recv_ssrc) {
+    channel->SetSink(*default_recv_ssrc, default_sink_);
   }
 }
 
@@ -503,6 +517,11 @@ RtpCapabilities WebRtcVideoEngine2::GetCapabilities() const {
   capabilities.header_extensions.push_back(
       webrtc::RtpExtension(webrtc::RtpExtension::kPlayoutDelayUri,
                            webrtc::RtpExtension::kPlayoutDelayDefaultId));
+  if (IsVideoContentTypeExtensionFieldTrialEnabled()) {
+    capabilities.header_extensions.push_back(
+        webrtc::RtpExtension(webrtc::RtpExtension::kVideoContentTypeUri,
+                             webrtc::RtpExtension::kVideoContentTypeDefaultId));
+  }
   return capabilities;
 }
 
@@ -695,12 +714,21 @@ bool WebRtcVideoChannel2::GetChangedSendParameters(
   }
 
   // Select one of the remote codecs that will be used as send codec.
-  const rtc::Optional<VideoCodecSettings> selected_send_codec =
+  rtc::Optional<VideoCodecSettings> selected_send_codec =
       SelectSendVideoCodec(MapCodecs(params.codecs));
 
   if (!selected_send_codec) {
     LOG(LS_ERROR) << "No video codecs supported.";
     return false;
+  }
+
+  // Never enable sending FlexFEC, unless we are in the experiment.
+  if (!IsFlexfecFieldTrialEnabled()) {
+    if (selected_send_codec->flexfec_payload_type != -1) {
+      LOG(LS_INFO) << "Remote supports flexfec-03, but we will not send since "
+                   << "WebRTC-FlexFEC-03 field trial is not enabled.";
+    }
+    selected_send_codec->flexfec_payload_type = -1;
   }
 
   if (!send_codec_ || *selected_send_codec != *send_codec_)
@@ -865,20 +893,33 @@ bool WebRtcVideoChannel2::SetRtpSendParameters(
 
 webrtc::RtpParameters WebRtcVideoChannel2::GetRtpReceiveParameters(
     uint32_t ssrc) const {
+  webrtc::RtpParameters rtp_params;
   rtc::CritScope stream_lock(&stream_crit_);
-  auto it = receive_streams_.find(ssrc);
-  if (it == receive_streams_.end()) {
-    LOG(LS_WARNING) << "Attempting to get RTP receive parameters for stream "
-                    << "with ssrc " << ssrc << " which doesn't exist.";
-    return webrtc::RtpParameters();
+  // SSRC of 0 represents an unsignaled receive stream.
+  if (ssrc == 0) {
+    if (!default_unsignalled_ssrc_handler_.GetDefaultSink()) {
+      LOG(LS_WARNING) << "Attempting to get RTP parameters for the default, "
+                         "unsignaled video receive stream, but not yet "
+                         "configured to receive such a stream.";
+      return rtp_params;
+    }
+    rtp_params.encodings.emplace_back();
+  } else {
+    auto it = receive_streams_.find(ssrc);
+    if (it == receive_streams_.end()) {
+      LOG(LS_WARNING) << "Attempting to get RTP receive parameters for stream "
+                      << "with SSRC " << ssrc << " which doesn't exist.";
+      return webrtc::RtpParameters();
+    }
+    // TODO(deadbeef): Return stream-specific parameters, beyond just SSRC.
+    rtp_params.encodings.emplace_back();
+    rtp_params.encodings[0].ssrc = it->second->GetFirstPrimarySsrc();
   }
 
-  // TODO(deadbeef): Return stream-specific parameters.
-  webrtc::RtpParameters rtp_params = CreateRtpParametersWithOneEncoding();
+  // Add codecs, which any stream is prepared to receive.
   for (const VideoCodec& codec : recv_params_.codecs) {
     rtp_params.codecs.push_back(codec.ToCodecParameters());
   }
-  rtp_params.encodings[0].ssrc = it->second->GetFirstPrimarySsrc();
   return rtp_params;
 }
 
@@ -887,11 +928,22 @@ bool WebRtcVideoChannel2::SetRtpReceiveParameters(
     const webrtc::RtpParameters& parameters) {
   TRACE_EVENT0("webrtc", "WebRtcVideoChannel2::SetRtpReceiveParameters");
   rtc::CritScope stream_lock(&stream_crit_);
-  auto it = receive_streams_.find(ssrc);
-  if (it == receive_streams_.end()) {
-    LOG(LS_ERROR) << "Attempting to set RTP receive parameters for stream "
-                  << "with ssrc " << ssrc << " which doesn't exist.";
-    return false;
+
+  // SSRC of 0 represents an unsignaled receive stream.
+  if (ssrc == 0) {
+    if (!default_unsignalled_ssrc_handler_.GetDefaultSink()) {
+      LOG(LS_WARNING) << "Attempting to set RTP parameters for the default, "
+                         "unsignaled video receive stream, but not yet "
+                         "configured to receive such a stream.";
+      return false;
+    }
+  } else {
+    auto it = receive_streams_.find(ssrc);
+    if (it == receive_streams_.end()) {
+      LOG(LS_WARNING) << "Attempting to set RTP receive parameters for stream "
+                      << "with SSRC " << ssrc << " which doesn't exist.";
+      return false;
+    }
   }
 
   webrtc::RtpParameters current_parameters = GetRtpReceiveParameters(ssrc);
@@ -1236,7 +1288,8 @@ void WebRtcVideoChannel2::ConfigureReceiverRtp(
   config->rtp.extensions = recv_rtp_extensions_;
 
   // TODO(brandtr): Generalize when we add support for multistream protection.
-  if (sp.GetFecFrSsrc(ssrc, &flexfec_config->remote_ssrc)) {
+  if (IsFlexfecAdvertisedFieldTrialEnabled() &&
+      sp.GetFecFrSsrc(ssrc, &flexfec_config->remote_ssrc)) {
     flexfec_config->protected_media_ssrcs = {ssrc};
     flexfec_config->local_ssrc = config->rtp.local_ssrc;
     flexfec_config->rtcp_mode = config->rtp.rtcp_mode;
@@ -1273,6 +1326,8 @@ bool WebRtcVideoChannel2::SetSink(
   LOG(LS_INFO) << "SetSink: ssrc:" << ssrc << " "
                << (sink ? "(ptr)" : "nullptr");
   if (ssrc == 0) {
+    // Do not hold |stream_crit_| here, since SetDefaultSink will call
+    // WebRtcVideoChannel2::GetDefaultReceiveStreamSsrc().
     default_unsignalled_ssrc_handler_.SetDefaultSink(this, sink);
     return true;
   }
@@ -1481,6 +1536,18 @@ void WebRtcVideoChannel2::SetInterface(NetworkInterface* iface) {
                           kVideoRtpBufferSize);
 }
 
+rtc::Optional<uint32_t> WebRtcVideoChannel2::GetDefaultReceiveStreamSsrc() {
+  rtc::CritScope stream_lock(&stream_crit_);
+  rtc::Optional<uint32_t> ssrc;
+  for (auto it = receive_streams_.begin(); it != receive_streams_.end(); ++it) {
+    if (it->second->IsDefaultStream()) {
+      ssrc.emplace(it->first);
+      break;
+    }
+  }
+  return ssrc;
+}
+
 bool WebRtcVideoChannel2::SendRtp(const uint8_t* data,
                                   size_t len,
                                   const webrtc::PacketOptions& options) {
@@ -1572,7 +1639,7 @@ WebRtcVideoChannel2::WebRtcVideoSendStream::WebRtcVideoSendStream(
     for (uint32_t primary_ssrc : parameters_.config.rtp.ssrcs) {
       if (sp.GetFecFrSsrc(primary_ssrc, &flexfec_ssrc)) {
         if (flexfec_enabled) {
-          LOG(LS_INFO) << "Multiple FlexFEC streams proposed by remote, but "
+          LOG(LS_INFO) << "Multiple FlexFEC streams in local SDP, but "
                           "our implementation only supports a single FlexFEC "
                           "stream. Will not enable FlexFEC for proposed "
                           "stream with SSRC: "
@@ -1747,10 +1814,8 @@ void WebRtcVideoChannel2::WebRtcVideoSendStream::SetCodec(
     parameters_.config.encoder_settings.internal_source = false;
   }
   parameters_.config.rtp.ulpfec = codec_settings.ulpfec;
-  if (IsFlexfecFieldTrialEnabled()) {
-    parameters_.config.rtp.flexfec.payload_type =
-        codec_settings.flexfec_payload_type;
-  }
+  parameters_.config.rtp.flexfec.payload_type =
+      codec_settings.flexfec_payload_type;
 
   // Set RTX payload type if RTX is enabled.
   if (!parameters_.config.rtp.rtx.ssrcs.empty()) {

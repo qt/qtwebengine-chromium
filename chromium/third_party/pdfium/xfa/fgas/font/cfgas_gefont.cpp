@@ -9,11 +9,11 @@
 #include <memory>
 #include <utility>
 
+#include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/cfx_substfont.h"
 #include "core/fxge/cfx_unicodeencoding.h"
 #include "core/fxge/cfx_unicodeencodingex.h"
 #include "third_party/base/ptr_util.h"
-#include "xfa/fgas/crt/fgas_codepage.h"
 #include "xfa/fgas/font/fgas_fontutils.h"
 #include "xfa/fxfa/cxfa_fontmgr.h"
 
@@ -61,9 +61,8 @@ CFGAS_GEFont::CFGAS_GEFont(CFGAS_FontMgr* pFontMgr)
       m_dwLogFontStyle(0),
 #endif
       m_pFont(nullptr),
-      m_pFontMgr(pFontMgr),
       m_bExternalFont(false),
-      m_pProvider(nullptr) {
+      m_pFontMgr(pFontMgr) {
 }
 
 CFGAS_GEFont::CFGAS_GEFont(const CFX_RetainPtr<CFGAS_GEFont>& src,
@@ -74,10 +73,9 @@ CFGAS_GEFont::CFGAS_GEFont(const CFX_RetainPtr<CFGAS_GEFont>& src,
       m_dwLogFontStyle(0),
 #endif
       m_pFont(nullptr),
-      m_pSrcFont(src),
-      m_pFontMgr(src->m_pFontMgr),
       m_bExternalFont(false),
-      m_pProvider(nullptr) {
+      m_pSrcFont(src),
+      m_pFontMgr(src->m_pFontMgr) {
   ASSERT(m_pSrcFont->m_pFont);
   m_pFont = new CFX_Font;
   m_pFont->LoadClone(m_pSrcFont->m_pFont);
@@ -160,12 +158,11 @@ bool CFGAS_GEFont::InitFont() {
   if (!m_pFont)
     return false;
 
-  if (!m_pFontEncoding) {
-    m_pFontEncoding.reset(FX_CreateFontEncodingEx(m_pFont));
-    if (!m_pFontEncoding)
-      return false;
-  }
-  return true;
+  if (m_pFontEncoding)
+    return true;
+
+  m_pFontEncoding = FX_CreateFontEncodingEx(m_pFont, FXFM_ENCODING_NONE);
+  return !!m_pFontEncoding;
 }
 
 CFX_RetainPtr<CFGAS_GEFont> CFGAS_GEFont::Derive(uint32_t dwFontStyles,

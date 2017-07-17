@@ -9,7 +9,6 @@
 #include "SkColorSpaceXformPriv.h"
 #include "SkColorTable.h"
 #include "SkConvertPixels.h"
-#include "SkDither.h"
 #include "SkHalf.h"
 #include "SkImageInfoPriv.h"
 #include "SkOpts.h"
@@ -17,6 +16,7 @@
 #include "SkRasterPipeline.h"
 #include "SkUnPreMultiply.h"
 #include "SkUnPreMultiplyPriv.h"
+#include "../jumper/SkJumper.h"
 
 // Fast Path 1: The memcpy() case.
 static inline bool can_memcpy(const SkImageInfo& dstInfo, const SkImageInfo& srcInfo) {
@@ -277,7 +277,7 @@ static void convert_to_alpha8(uint8_t* dst, size_t dstRB, const SkImageInfo& src
 static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size_t dstRB,
                                   const SkImageInfo& srcInfo, const void* srcRow, size_t srcRB,
                                   bool isColorAware, SkTransferFunctionBehavior behavior) {
-    SkRasterPipeline pipeline;
+    SkRasterPipeline_<256> pipeline;
     switch (srcInfo.colorType()) {
         case kRGBA_8888_SkColorType:
             pipeline.append(SkRasterPipeline::load_8888, &srcRow);
@@ -311,12 +311,18 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
 
     if (isColorAware && srcInfo.gammaCloseToSRGB()) {
         pipeline.append_from_srgb(srcInfo.alphaType());
+    } else if (isColorAware && !srcInfo.colorSpace()->gammaIsLinear()) {
+        SkColorSpaceTransferFn fn;
+        SkAssertResult(srcInfo.colorSpace()->isNumericalTransferFn(&fn));
+        pipeline.append(SkRasterPipeline::parametric_r, &fn);
+        pipeline.append(SkRasterPipeline::parametric_g, &fn);
+        pipeline.append(SkRasterPipeline::parametric_b, &fn);
     }
 
     float matrix[12];
     if (isColorAware) {
-        SkAssertResult(append_gamut_transform(&pipeline, matrix, srcInfo.colorSpace(),
-                                              dstInfo.colorSpace()));
+        append_gamut_transform(&pipeline, matrix, srcInfo.colorSpace(), dstInfo.colorSpace(),
+                               premulState);
     }
 
     SkAlphaType dat = dstInfo.alphaType();
@@ -332,6 +338,13 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
 
     if (isColorAware && dstInfo.gammaCloseToSRGB()) {
         pipeline.append(SkRasterPipeline::to_srgb);
+    } else if (isColorAware && !dstInfo.colorSpace()->gammaIsLinear()) {
+        SkColorSpaceTransferFn fn;
+        SkAssertResult(dstInfo.colorSpace()->isNumericalTransferFn(&fn));
+        fn = fn.invert();
+        pipeline.append(SkRasterPipeline::parametric_r, &fn);
+        pipeline.append(SkRasterPipeline::parametric_g, &fn);
+        pipeline.append(SkRasterPipeline::parametric_b, &fn);
     }
 
     if (kUnpremul_SkAlphaType == premulState && kPremul_SkAlphaType == dat &&
@@ -344,6 +357,20 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
     // The final premul state must equal the dst alpha type.  Note that if we are "converting"
     // opaque to another alpha type, there's no need to worry about multiplication.
     SkASSERT(premulState == dat || kOpaque_SkAlphaType == srcInfo.alphaType());
+
+    // We'll dither if we're decreasing precision below 32-bit.
+    int y;
+    SkJumper_DitherCtx dither = {&y, 0.0f};
+    if (srcInfo.bytesPerPixel() > dstInfo.bytesPerPixel()) {
+        switch (dstInfo.colorType()) {
+            case   kRGB_565_SkColorType: dither.rate = 1/63.0f; break;
+            case kARGB_4444_SkColorType: dither.rate = 1/15.0f; break;
+            default:                     dither.rate =    0.0f; break;
+        }
+    }
+    if (dither.rate > 0) {
+        pipeline.append(SkRasterPipeline::dither, &dither);
+    }
 
     switch (dstInfo.colorType()) {
         case kRGBA_8888_SkColorType:
@@ -367,7 +394,8 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
             break;
     }
 
-    for (int y = 0; y < srcInfo.height(); ++y) {
+    // This y is declared above when handling dither (which needs to know y).
+    for (y = 0; y < srcInfo.height(); ++y) {
         pipeline.run(0,srcInfo.width());
         // The pipeline has pointers to srcRow and dstRow, so we just need to update them in the
         // loop to move between rows of src/dst.
@@ -414,25 +442,6 @@ void SkConvertPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRB,
     // Fast Path 5: Alpha 8 dsts.
     if (kAlpha_8_SkColorType == dstInfo.colorType()) {
         convert_to_alpha8((uint8_t*) dstPixels, dstRB, srcInfo, srcPixels, srcRB, ctable);
-        return;
-    }
-
-    // Chrome M59 Bug Fix: Convert to 4444 with dithering.
-    // This code is unnecessary in Skia for M60, since the raster pipeline implementation
-    // will dither.
-    if (kARGB_4444_SkColorType == dstInfo.colorType() && kN32_SkColorType == srcInfo.colorType() &&
-            kUnpremul_SkAlphaType != srcInfo.alphaType()) {
-        for (int y = 0; y < srcInfo.height(); y++) {
-            DITHER_4444_SCAN(y);
-            SkPMColor16* SK_RESTRICT dstRow = (SkPMColor16*)dstPixels;
-            const SkPMColor* SK_RESTRICT srcRow = (const SkPMColor*)srcPixels;
-            for (int x = 0; x < srcInfo.width(); ++x) {
-                dstRow[x] = SkDitherARGB32To4444(srcRow[x], DITHER_VALUE(x));
-            }
-            dstPixels = (char*)dstPixels + dstRB;
-            srcPixels = (const char*)srcPixels + srcRB;
-        }
-
         return;
     }
 

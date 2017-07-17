@@ -7,6 +7,7 @@
 #include "fpdfsdk/fsdk_actionhandler.h"
 
 #include <set>
+#include <vector>
 
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
@@ -16,6 +17,7 @@
 #include "fpdfsdk/fsdk_define.h"
 #include "fpdfsdk/javascript/ijs_event_context.h"
 #include "fpdfsdk/javascript/ijs_runtime.h"
+#include "third_party/base/logging.h"
 #include "third_party/base/stl_util.h"
 
 bool CPDFSDK_ActionHandler::DoAction_DocOpen(
@@ -386,7 +388,7 @@ void CPDFSDK_ActionHandler::DoAction_NoJs(
       DoAction_ImportData(action, pFormFillEnv);
       break;
     case CPDF_Action::JavaScript:
-      ASSERT(false);
+      NOTREACHED();
       break;
     case CPDF_Action::SetOCGState:
       DoAction_SetOCGState(pFormFillEnv, action);
@@ -420,19 +422,13 @@ void CPDFSDK_ActionHandler::DoAction_GoTo(
   int nPageIndex = MyDest.GetPageIndex(pPDFDocument);
   int nFitType = MyDest.GetZoomMode();
   const CPDF_Array* pMyArray = ToArray(MyDest.GetObject());
-  float* pPosAry = nullptr;
-  int sizeOfAry = 0;
+  std::vector<float> posArray;
   if (pMyArray) {
-    pPosAry = new float[pMyArray->GetCount()];
-    int j = 0;
-    for (size_t i = 2; i < pMyArray->GetCount(); i++) {
-      pPosAry[j++] = pMyArray->GetFloatAt(i);
-    }
-    sizeOfAry = j;
+    for (size_t i = 2; i < pMyArray->GetCount(); i++)
+      posArray.push_back(pMyArray->GetFloatAt(i));
   }
-
-  pFormFillEnv->DoGoToAction(nPageIndex, nFitType, pPosAry, sizeOfAry);
-  delete[] pPosAry;
+  pFormFillEnv->DoGoToAction(nPageIndex, nFitType, posArray.data(),
+                             posArray.size());
 }
 
 void CPDFSDK_ActionHandler::DoAction_GoToR(
@@ -509,7 +505,7 @@ void CPDFSDK_ActionHandler::RunFieldJavaScript(
                                  data.sValue, data.bRC);
       break;
     default:
-      ASSERT(false);
+      NOTREACHED();
       break;
   }
 
@@ -572,7 +568,7 @@ void CPDFSDK_ActionHandler::RunDocumentPageJavaScript(
       pContext->OnPage_OutView(pFormFillEnv);
       break;
     default:
-      ASSERT(false);
+      NOTREACHED();
       break;
   }
 

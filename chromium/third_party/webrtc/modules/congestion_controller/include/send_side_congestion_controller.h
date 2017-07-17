@@ -57,7 +57,8 @@ class SendSideCongestionController : public CallStatsObserver,
    protected:
     virtual ~Observer() {}
   };
-  // TODO(nisse): Consider deleting the |observer| argument to constructors.
+  // TODO(nisse): Consider deleting the |observer| argument to constructors
+  // once CongestionController is deleted.
   SendSideCongestionController(const Clock* clock,
                                Observer* observer,
                                RtcEventLog* event_log,
@@ -88,6 +89,7 @@ class SendSideCongestionController : public CallStatsObserver,
 
   virtual BitrateController* GetBitrateController() const;
   virtual int64_t GetPacerQueuingDelayMs() const;
+  virtual int64_t GetFirstPacketTimeMs() const;
   // TODO(nisse): Delete this accessor function. The pacer should be
   // internal to the congestion controller.
   virtual PacedSender* pacer() { return pacer_.get(); }

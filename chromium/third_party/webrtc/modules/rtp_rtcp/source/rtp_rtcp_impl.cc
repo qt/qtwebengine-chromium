@@ -40,6 +40,8 @@ RTPExtensionType StringToRtpExtensionType(const std::string& extension) {
     return kRtpExtensionTransportSequenceNumber;
   if (extension == RtpExtension::kPlayoutDelayUri)
     return kRtpExtensionPlayoutDelay;
+  if (extension == RtpExtension::kVideoContentTypeUri)
+    return kRtpExtensionVideoContentType;
   RTC_NOTREACHED() << "Looking up unsupported RTP extension.";
   return kRtpExtensionNone;
 }
@@ -413,10 +415,6 @@ size_t ModuleRtpRtcpImpl::TimeToSendPadding(
     size_t bytes,
     const PacedPacketInfo& pacing_info) {
   return rtp_sender_->TimeToSendPadding(bytes, pacing_info);
-}
-
-size_t ModuleRtpRtcpImpl::MaxPayloadSize() const {
-  return rtp_sender_->MaxPayloadSize();
 }
 
 size_t ModuleRtpRtcpImpl::MaxRtpPacketSize() const {

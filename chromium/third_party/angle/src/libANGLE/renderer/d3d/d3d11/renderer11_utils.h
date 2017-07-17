@@ -55,7 +55,7 @@ UINT ConvertMaxAnisotropy(float maxAnisotropy, D3D_FEATURE_LEVEL featureLevel);
 
 D3D11_QUERY ConvertQueryType(GLenum queryType);
 
-UINT8 GetColorMask(const gl::InternalFormat *formatInfo);
+UINT8 GetColorMask(const gl::InternalFormat &formatInfo);
 
 }  // namespace gl_d3d11
 
@@ -114,25 +114,10 @@ struct PositionLayerTexCoord3DVertex
 void SetPositionLayerTexCoord3DVertex(PositionLayerTexCoord3DVertex* vertex, float x, float y,
                                       unsigned int layer, float u, float v, float s);
 
-template <typename T>
-struct PositionDepthColorVertex
+struct PositionVertex
 {
-    float x, y, z;
-    T r, g, b, a;
+    float x, y, z, w;
 };
-
-template <typename T>
-void SetPositionDepthColorVertex(PositionDepthColorVertex<T>* vertex, float x, float y, float z,
-                                 const gl::Color<T> &color)
-{
-    vertex->x = x;
-    vertex->y = y;
-    vertex->z = z;
-    vertex->r = color.red;
-    vertex->g = color.green;
-    vertex->b = color.blue;
-    vertex->a = color.alpha;
-}
 
 struct BlendStateKey
 {
@@ -152,7 +137,7 @@ HRESULT SetDebugName(angle::ComPtr<T> &resource, const char *name)
 template <typename outType>
 outType* DynamicCastComObject(IUnknown* object)
 {
-    outType *outObject = NULL;
+    outType *outObject = nullptr;
     HRESULT result = object->QueryInterface(__uuidof(outType), reinterpret_cast<void**>(&outObject));
     if (SUCCEEDED(result))
     {
@@ -161,7 +146,7 @@ outType* DynamicCastComObject(IUnknown* object)
     else
     {
         SafeRelease(outObject);
-        return NULL;
+        return nullptr;
     }
 }
 
@@ -238,7 +223,7 @@ ID3D11PixelShader *CompilePS(ID3D11Device *device, const BYTE (&byteCode)[N], co
 }
 
 template <typename ResourceType>
-class LazyResource : public angle::NonCopyable
+class LazyResource : angle::NonCopyable
 {
   public:
     LazyResource() : mResource(nullptr), mAssociatedDevice(nullptr) {}
@@ -420,13 +405,17 @@ enum class StagingAccess
     READ_WRITE,
 };
 
-gl::ErrorOrResult<TextureHelper11> CreateStagingTexture(GLenum textureType,
-                                                        const d3d11::Format &formatSet,
-                                                        const gl::Extents &size,
-                                                        StagingAccess readAndWriteAccess,
-                                                        ID3D11Device *device);
-
 bool UsePresentPathFast(const Renderer11 *renderer, const gl::FramebufferAttachment *colorbuffer);
+
+// Used for state change notifications between buffers and vertex arrays.
+using OnBufferDataDirtyBinding  = angle::ChannelBinding<size_t>;
+using OnBufferDataDirtyChannel  = angle::BroadcastChannel<size_t>;
+using OnBufferDataDirtyReceiver = angle::SignalReceiver<size_t>;
+
+// Used for state change notifications between RenderTarget11 and Framebuffer11.
+using OnRenderTargetDirtyBinding  = angle::ChannelBinding<size_t>;
+using OnRenderTargetDirtyChannel  = angle::BroadcastChannel<size_t>;
+using OnRenderTargetDirtyReceiver = angle::SignalReceiver<size_t>;
 
 }  // namespace rx
 

@@ -21,7 +21,8 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/numerics/safe_conversions.h"
 #include "third_party/base/ptr_util.h"
@@ -71,7 +72,6 @@ CPDF_DataAvail::CPDF_DataAvail(
   m_bLinearizedFormParamLoad = false;
   m_pTrailer = nullptr;
   m_pCurrentParser = nullptr;
-  m_pAcroForm = nullptr;
   m_pPageDict = nullptr;
   m_pPageResource = nullptr;
   m_docStatus = PDF_DATAAVAIL_HEADER;
@@ -83,8 +83,6 @@ CPDF_DataAvail::CPDF_DataAvail(
 
 CPDF_DataAvail::~CPDF_DataAvail() {
   m_pHintTables.reset();
-  for (CPDF_Object* pObject : m_arrayAcroforms)
-    delete pObject;
 }
 
 void CPDF_DataAvail::SetDocument(CPDF_Document* pDoc) {
@@ -206,8 +204,12 @@ CPDF_DataAvail::DocAvailStatus CPDF_DataAvail::IsDocAvail(
 
 bool CPDF_DataAvail::CheckAcroFormSubObject(DownloadHints* pHints) {
   if (m_objs_array.empty()) {
+    std::vector<CPDF_Object*> obj_array(m_Acroforms.size());
+    std::transform(
+        m_Acroforms.begin(), m_Acroforms.end(), obj_array.begin(),
+        [](const std::unique_ptr<CPDF_Object>& pObj) { return pObj.get(); });
+
     m_ObjectSet.clear();
-    std::vector<CPDF_Object*> obj_array = m_arrayAcroforms;
     if (!AreObjectsAvailable(obj_array, false, pHints, m_objs_array))
       return false;
 
@@ -221,30 +223,28 @@ bool CPDF_DataAvail::CheckAcroFormSubObject(DownloadHints* pHints) {
     return false;
   }
 
-  for (CPDF_Object* pObject : m_arrayAcroforms)
-    delete pObject;
-
-  m_arrayAcroforms.clear();
+  m_Acroforms.clear();
   return true;
 }
 
 bool CPDF_DataAvail::CheckAcroForm(DownloadHints* pHints) {
   bool bExist = false;
-  m_pAcroForm = GetObject(m_dwAcroFormObjNum, pHints, &bExist).release();
+  std::unique_ptr<CPDF_Object> pAcroForm =
+      GetObject(m_dwAcroFormObjNum, pHints, &bExist);
   if (!bExist) {
     m_docStatus = PDF_DATAAVAIL_PAGETREE;
     return true;
   }
 
-  if (!m_pAcroForm) {
-    if (m_docStatus == PDF_DATAAVAIL_ERROR) {
-      m_docStatus = PDF_DATAAVAIL_LOADALLFILE;
-      return true;
-    }
-    return false;
+  if (!pAcroForm) {
+    if (m_docStatus != PDF_DATAAVAIL_ERROR)
+      return false;
+
+    m_docStatus = PDF_DATAAVAIL_LOADALLFILE;
+    return true;
   }
 
-  m_arrayAcroforms.push_back(m_pAcroForm);
+  m_Acroforms.push_back(std::move(pAcroForm));
   m_docStatus = PDF_DATAAVAIL_PAGETREE;
   return true;
 }
@@ -563,21 +563,20 @@ bool CPDF_DataAvail::CheckPages(DownloadHints* pHints) {
 bool CPDF_DataAvail::CheckHeader(DownloadHints* pHints) {
   ASSERT(m_dwFileLen >= 0);
   const uint32_t kReqSize = std::min(static_cast<uint32_t>(m_dwFileLen), 1024U);
-
   if (!m_pFileAvail->IsDataAvail(0, kReqSize)) {
     pHints->AddSegment(0, kReqSize);
     return false;
   }
-
-  uint8_t buffer[1024];
-  m_pFileRead->ReadBlock(buffer, 0, kReqSize);
-  if (IsLinearizedFile(buffer, kReqSize)) {
+  std::vector<uint8_t> buffer(kReqSize);
+  m_pFileRead->ReadBlock(buffer.data(), 0, kReqSize);
+  if (IsLinearizedFile(buffer.data(), kReqSize)) {
     m_docStatus = PDF_DATAAVAIL_FIRSTPAGE;
-  } else {
-    if (m_docStatus == PDF_DATAAVAIL_ERROR)
-      return false;
-    m_docStatus = PDF_DATAAVAIL_END;
+    return true;
   }
+  if (m_docStatus == PDF_DATAAVAIL_ERROR)
+    return false;
+
+  m_docStatus = PDF_DATAAVAIL_END;
   return true;
 }
 
@@ -645,10 +644,10 @@ bool CPDF_DataAvail::CheckHintTables(DownloadHints* pHints) {
 
   m_syntaxParser.InitParser(m_pFileRead, m_dwHeaderOffset);
 
-  std::unique_ptr<CPDF_HintTables> pHintTables(
-      new CPDF_HintTables(this, m_pLinearized.get()));
-  std::unique_ptr<CPDF_Object> pHintStream(
-      ParseIndirectObjectAt(szHintStart, 0));
+  auto pHintTables =
+      pdfium::MakeUnique<CPDF_HintTables>(this, m_pLinearized.get());
+  std::unique_ptr<CPDF_Object> pHintStream =
+      ParseIndirectObjectAt(szHintStart, 0);
   CPDF_Stream* pStream = ToStream(pHintStream.get());
   if (pStream && pHintTables->LoadHintStream(pStream))
     m_pHintTables = std::move(pHintTables);
@@ -661,8 +660,8 @@ std::unique_ptr<CPDF_Object> CPDF_DataAvail::ParseIndirectObjectAt(
     FX_FILESIZE pos,
     uint32_t objnum,
     CPDF_IndirectObjectHolder* pObjList) {
-  FX_FILESIZE SavedPos = m_syntaxParser.SavePos();
-  m_syntaxParser.RestorePos(pos);
+  FX_FILESIZE SavedPos = m_syntaxParser.GetPos();
+  m_syntaxParser.SetPos(pos);
 
   bool bIsNumber;
   CFX_ByteString word = m_syntaxParser.GetNextWord(&bIsNumber);
@@ -679,13 +678,13 @@ std::unique_ptr<CPDF_Object> CPDF_DataAvail::ParseIndirectObjectAt(
 
   uint32_t gennum = FXSYS_atoui(word.c_str());
   if (m_syntaxParser.GetKeyword() != "obj") {
-    m_syntaxParser.RestorePos(SavedPos);
+    m_syntaxParser.SetPos(SavedPos);
     return nullptr;
   }
 
   std::unique_ptr<CPDF_Object> pObj =
       m_syntaxParser.GetObject(pObjList, parser_objnum, gennum, true);
-  m_syntaxParser.RestorePos(SavedPos);
+  m_syntaxParser.SetPos(SavedPos);
   return pObj;
 }
 
@@ -701,9 +700,9 @@ CPDF_DataAvail::DocLinearizationStatus CPDF_DataAvail::IsLinearizedPDF() {
   if (dwSize < (FX_FILESIZE)kReqSize)
     return LinearizationUnknown;
 
-  uint8_t buffer[1024];
-  m_pFileRead->ReadBlock(buffer, 0, kReqSize);
-  if (IsLinearizedFile(buffer, kReqSize))
+  std::vector<uint8_t> buffer(kReqSize);
+  m_pFileRead->ReadBlock(buffer.data(), 0, kReqSize);
+  if (IsLinearizedFile(buffer.data(), kReqSize))
     return Linearized;
 
   return NotLinearized;
@@ -717,8 +716,8 @@ bool CPDF_DataAvail::IsLinearizedFile(uint8_t* pData, uint32_t dwLen) {
   if (m_pLinearized)
     return true;
 
-  CFX_RetainPtr<IFX_MemoryStream> file =
-      IFX_MemoryStream::Create(pData, (size_t)dwLen, false);
+  auto file = pdfium::MakeRetain<CFX_MemoryStream>(
+      pData, static_cast<size_t>(dwLen), false);
   int32_t offset = GetHeaderOffset(file);
   if (offset == -1) {
     m_docStatus = PDF_DATAAVAIL_ERROR;
@@ -727,7 +726,7 @@ bool CPDF_DataAvail::IsLinearizedFile(uint8_t* pData, uint32_t dwLen) {
 
   m_dwHeaderOffset = offset;
   m_syntaxParser.InitParser(file, offset);
-  m_syntaxParser.RestorePos(m_syntaxParser.m_HeaderOffset + 9);
+  m_syntaxParser.SetPos(m_syntaxParser.m_HeaderOffset + 9);
 
   bool bNumber;
   CFX_ByteString wordObjNum = m_syntaxParser.GetNextWord(&bNumber);
@@ -748,25 +747,22 @@ bool CPDF_DataAvail::IsLinearizedFile(uint8_t* pData, uint32_t dwLen) {
 bool CPDF_DataAvail::CheckEnd(DownloadHints* pHints) {
   uint32_t req_pos = (uint32_t)(m_dwFileLen > 1024 ? m_dwFileLen - 1024 : 0);
   uint32_t dwSize = (uint32_t)(m_dwFileLen - req_pos);
-
   if (!m_pFileAvail->IsDataAvail(req_pos, dwSize)) {
     pHints->AddSegment(req_pos, dwSize);
     return false;
   }
 
-  uint8_t buffer[1024];
-  m_pFileRead->ReadBlock(buffer, req_pos, dwSize);
+  std::vector<uint8_t> buffer(dwSize);
+  m_pFileRead->ReadBlock(buffer.data(), req_pos, dwSize);
 
-  CFX_RetainPtr<IFX_MemoryStream> file =
-      IFX_MemoryStream::Create(buffer, (size_t)dwSize, false);
+  auto file = pdfium::MakeRetain<CFX_MemoryStream>(
+      buffer.data(), static_cast<size_t>(dwSize), false);
   m_syntaxParser.InitParser(file, 0);
-  m_syntaxParser.RestorePos(dwSize - 1);
-
-  if (!m_syntaxParser.SearchWord("startxref", true, false, dwSize)) {
+  m_syntaxParser.SetPos(dwSize - 1);
+  if (!m_syntaxParser.BackwardsSearchToWord("startxref", dwSize)) {
     m_docStatus = PDF_DATAAVAIL_LOADALLFILE;
     return true;
   }
-
   m_syntaxParser.GetNextWord(nullptr);
 
   bool bNumber;
@@ -775,13 +771,11 @@ bool CPDF_DataAvail::CheckEnd(DownloadHints* pHints) {
     m_docStatus = PDF_DATAAVAIL_ERROR;
     return false;
   }
-
   m_dwXRefOffset = (FX_FILESIZE)FXSYS_atoi64(xrefpos_str.c_str());
   if (!m_dwXRefOffset || m_dwXRefOffset > m_dwFileLen) {
     m_docStatus = PDF_DATAAVAIL_LOADALLFILE;
     return true;
   }
-
   m_dwLastXRefOffset = m_dwXRefOffset;
   SetStartOffset(m_dwXRefOffset);
   m_docStatus = PDF_DATAAVAIL_CROSSREF;
@@ -800,13 +794,11 @@ int32_t CPDF_DataAvail::CheckCrossRefStream(DownloadHints* pHints,
   }
 
   int32_t iSize = (int32_t)(m_Pos + req_size - m_dwCurrentXRefSteam);
-  CFX_BinaryBuf buf(iSize);
-  uint8_t* pBuf = buf.GetBuffer();
+  std::vector<uint8_t> buf(iSize);
+  m_pFileRead->ReadBlock(buf.data(), m_dwCurrentXRefSteam, iSize);
 
-  m_pFileRead->ReadBlock(pBuf, m_dwCurrentXRefSteam, iSize);
-
-  CFX_RetainPtr<IFX_MemoryStream> file =
-      IFX_MemoryStream::Create(pBuf, (size_t)iSize, false);
+  auto file = pdfium::MakeRetain<CFX_MemoryStream>(
+      buf.data(), static_cast<size_t>(iSize), false);
   m_parser.m_pSyntax->InitParser(file, 0);
 
   bool bNumber;
@@ -819,14 +811,14 @@ int32_t CPDF_DataAvail::CheckCrossRefStream(DownloadHints* pHints,
       m_parser.ParseIndirectObjectAt(nullptr, 0, objNum);
 
   if (!pObj) {
-    m_Pos += m_parser.m_pSyntax->SavePos();
+    m_Pos += m_parser.m_pSyntax->GetPos();
     return 0;
   }
 
   CPDF_Dictionary* pDict = pObj->GetDict();
   CPDF_Name* pName = ToName(pDict ? pDict->GetObjectFor("Type") : nullptr);
   if (pName && pName->GetString() == "XRef") {
-    m_Pos += m_parser.m_pSyntax->SavePos();
+    m_Pos += m_parser.m_pSyntax->GetPos();
     xref_offset = pObj->GetDict()->GetIntegerFor("Prev");
     return 1;
   }
@@ -1012,7 +1004,7 @@ bool CPDF_DataAvail::CheckCrossRef(DownloadHints* pHints) {
 
 bool CPDF_DataAvail::CheckTrailerAppend(DownloadHints* pHints) {
   if (m_Pos < m_dwFileLen) {
-    FX_FILESIZE dwAppendPos = m_Pos + m_syntaxParser.SavePos();
+    FX_FILESIZE dwAppendPos = m_Pos + m_syntaxParser.GetPos();
     int32_t iSize = (int32_t)(
         dwAppendPos + 512 > m_dwFileLen ? m_dwFileLen - dwAppendPos : 512);
 
@@ -1040,24 +1032,18 @@ bool CPDF_DataAvail::CheckTrailer(DownloadHints* pHints) {
   }
 
   int32_t iSize = (int32_t)(m_Pos + iTrailerSize - m_dwTrailerOffset);
-  CFX_BinaryBuf buf(iSize);
-  uint8_t* pBuf = buf.GetBuffer();
-  if (!pBuf) {
-    m_docStatus = PDF_DATAAVAIL_ERROR;
-    return false;
-  }
-
-  if (!m_pFileRead->ReadBlock(pBuf, m_dwTrailerOffset, iSize))
+  std::vector<uint8_t> buf(iSize);
+  if (!m_pFileRead->ReadBlock(buf.data(), m_dwTrailerOffset, iSize))
     return false;
 
-  CFX_RetainPtr<IFX_MemoryStream> file =
-      IFX_MemoryStream::Create(pBuf, (size_t)iSize, false);
+  auto file = pdfium::MakeRetain<CFX_MemoryStream>(
+      buf.data(), static_cast<size_t>(iSize), false);
   m_syntaxParser.InitParser(file, 0);
 
   std::unique_ptr<CPDF_Object> pTrailer(
       m_syntaxParser.GetObject(nullptr, 0, 0, true));
   if (!pTrailer) {
-    m_Pos += m_syntaxParser.SavePos();
+    m_Pos += m_syntaxParser.GetPos();
     pHints->AddSegment(m_Pos, iTrailerSize);
     return false;
   }

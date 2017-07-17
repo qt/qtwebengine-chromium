@@ -1148,6 +1148,11 @@ void Connection::Prune() {
 }
 
 void Connection::Destroy() {
+  // TODO(deadbeef, nisse): This may leak if an application closes a
+  // PeerConnection and then quickly destroys the PeerConnectionFactory (along
+  // with the networking thread on which this message is posted). Also affects
+  // tests, with a workaround in
+  // AutoSocketServerThread::~AutoSocketServerThread.
   LOG_J(LS_VERBOSE, this) << "Connection destroyed";
   port_->thread()->Post(RTC_FROM_HERE, this, MSG_DELETE);
 }
@@ -1411,12 +1416,7 @@ void Connection::OnConnectionRequestResponse(ConnectionRequest* request,
 
 void Connection::OnConnectionRequestErrorResponse(ConnectionRequest* request,
                                                   StunMessage* response) {
-  const StunErrorCodeAttribute* error_attr = response->GetErrorCode();
-  int error_code = STUN_ERROR_GLOBAL_FAILURE;
-  if (error_attr) {
-    error_code = error_attr->code();
-  }
-
+  int error_code = response->GetErrorCodeValue();
   LOG_J(LS_INFO, this) << "Received STUN error response"
                        << " id=" << rtc::hex_encode(request->id())
                        << " code=" << error_code

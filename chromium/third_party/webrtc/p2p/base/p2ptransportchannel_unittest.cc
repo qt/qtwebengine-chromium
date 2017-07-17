@@ -22,7 +22,6 @@
 #include "webrtc/base/logging.h"
 #include "webrtc/base/natserver.h"
 #include "webrtc/base/natsocketfactory.h"
-#include "webrtc/base/physicalsocketserver.h"
 #include "webrtc/base/proxyserver.h"
 #include "webrtc/base/ptr_util.h"
 #include "webrtc/base/socketaddress.h"
@@ -182,14 +181,12 @@ class P2PTransportChannelTestBase : public testing::Test,
                                     public sigslot::has_slots<> {
  public:
   P2PTransportChannelTestBase()
-      : main_(rtc::Thread::Current()),
-        pss_(new rtc::PhysicalSocketServer),
-        vss_(new rtc::VirtualSocketServer(pss_.get())),
+      : vss_(new rtc::VirtualSocketServer()),
         nss_(new rtc::NATSocketServer(vss_.get())),
         ss_(new rtc::FirewallSocketServer(nss_.get())),
-        ss_scope_(ss_.get()),
-        stun_server_(TestStunServer::Create(main_, kStunAddr)),
-        turn_server_(main_, kTurnUdpIntAddr, kTurnUdpExtAddr),
+        main_(ss_.get()),
+        stun_server_(TestStunServer::Create(&main_, kStunAddr)),
+        turn_server_(&main_, kTurnUdpIntAddr, kTurnUdpExtAddr),
         socks_server1_(ss_.get(),
                        kSocksProxyAddrs[0],
                        ss_.get(),
@@ -696,8 +693,8 @@ class P2PTransportChannelTestBase : public testing::Test,
       GetEndpoint(ch)->saved_candidates_.push_back(
           std::unique_ptr<CandidatesData>(new CandidatesData(ch, c)));
     } else {
-      main_->Post(RTC_FROM_HERE, this, MSG_ADD_CANDIDATES,
-                  new CandidatesData(ch, c));
+      main_.Post(RTC_FROM_HERE, this, MSG_ADD_CANDIDATES,
+                 new CandidatesData(ch, c));
     }
   }
   void OnSelectedCandidatePairChanged(
@@ -726,7 +723,7 @@ class P2PTransportChannelTestBase : public testing::Test,
                            const std::vector<Candidate>& candidates) {
     // Candidate removals are not paused.
     CandidatesData* candidates_data = new CandidatesData(ch, candidates);
-    main_->Post(RTC_FROM_HERE, this, MSG_REMOVE_CANDIDATES, candidates_data);
+    main_.Post(RTC_FROM_HERE, this, MSG_REMOVE_CANDIDATES, candidates_data);
   }
 
   // Tcp candidate verification has to be done when they are generated.
@@ -749,7 +746,7 @@ class P2PTransportChannelTestBase : public testing::Test,
   void ResumeCandidates(int endpoint) {
     Endpoint* ed = GetEndpoint(endpoint);
     for (auto& candidate : ed->saved_candidates_) {
-      main_->Post(RTC_FROM_HERE, this, MSG_ADD_CANDIDATES, candidate.release());
+      main_.Post(RTC_FROM_HERE, this, MSG_ADD_CANDIDATES, candidate.release());
     }
     ed->saved_candidates_.clear();
     ed->save_candidates_ = false;
@@ -875,12 +872,10 @@ class P2PTransportChannelTestBase : public testing::Test,
   bool nominated() { return nominated_; }
 
  private:
-  rtc::Thread* main_;
-  std::unique_ptr<rtc::PhysicalSocketServer> pss_;
   std::unique_ptr<rtc::VirtualSocketServer> vss_;
   std::unique_ptr<rtc::NATSocketServer> nss_;
   std::unique_ptr<rtc::FirewallSocketServer> ss_;
-  rtc::SocketServerScope ss_scope_;
+  rtc::AutoSocketServerThread main_;
   std::unique_ptr<TestStunServer> stun_server_;
   TestTurnServer turn_server_;
   rtc::SocksProxyServer socks_server1_;
@@ -2932,9 +2927,7 @@ class P2PTransportChannelPingTest : public testing::Test,
                                     public sigslot::has_slots<> {
  public:
   P2PTransportChannelPingTest()
-      : pss_(new rtc::PhysicalSocketServer),
-        vss_(new rtc::VirtualSocketServer(pss_.get())),
-        ss_scope_(vss_.get()) {}
+      : vss_(new rtc::VirtualSocketServer()), thread_(vss_.get()) {}
 
  protected:
   void PrepareChannel(P2PTransportChannel* ch) {
@@ -3082,9 +3075,8 @@ class P2PTransportChannelPingTest : public testing::Test,
   }
 
  private:
-  std::unique_ptr<rtc::PhysicalSocketServer> pss_;
   std::unique_ptr<rtc::VirtualSocketServer> vss_;
-  rtc::SocketServerScope ss_scope_;
+  rtc::AutoSocketServerThread thread_;
   CandidatePairInterface* last_selected_candidate_pair_ = nullptr;
   int selected_candidate_pair_switches_ = 0;
   int last_sent_packet_id_ = -1;

@@ -20,11 +20,13 @@
  * limitations under the License.
  */
 
+#include "fxbarcode/oned/BC_OnedCodaBarWriter.h"
+
 #include "fxbarcode/BC_Writer.h"
 #include "fxbarcode/common/BC_CommonBitArray.h"
 #include "fxbarcode/common/BC_CommonBitMatrix.h"
 #include "fxbarcode/oned/BC_OneDimWriter.h"
-#include "fxbarcode/oned/BC_OnedCodaBarWriter.h"
+#include "third_party/base/stl_util.h"
 
 namespace {
 
@@ -42,34 +44,31 @@ const char CONTENT_CHARS[] = {'0', '1', '2', '3', '4', '5', '6', '7',
 
 }  // namespace
 
-CBC_OnedCodaBarWriter::CBC_OnedCodaBarWriter() {
-  m_chStart = 'A';
-  m_chEnd = 'B';
-  m_iWideNarrRatio = 2;
-}
+CBC_OnedCodaBarWriter::CBC_OnedCodaBarWriter()
+    : m_chStart('A'), m_chEnd('B'), m_iWideNarrRatio(2) {}
+
 CBC_OnedCodaBarWriter::~CBC_OnedCodaBarWriter() {}
+
 bool CBC_OnedCodaBarWriter::SetStartChar(char start) {
-  for (size_t i = 0; i < FX_ArraySize(START_END_CHARS); ++i) {
-    if (START_END_CHARS[i] == start) {
-      m_chStart = start;
-      return true;
-    }
-  }
-  return false;
+  if (!pdfium::ContainsValue(START_END_CHARS, start))
+    return false;
+
+  m_chStart = start;
+  return true;
 }
 
 bool CBC_OnedCodaBarWriter::SetEndChar(char end) {
-  for (size_t i = 0; i < FX_ArraySize(START_END_CHARS); ++i) {
-    if (START_END_CHARS[i] == end) {
-      m_chEnd = end;
-      return true;
-    }
-  }
-  return false;
+  if (!pdfium::ContainsValue(START_END_CHARS, end))
+    return false;
+
+  m_chEnd = end;
+  return true;
 }
+
 void CBC_OnedCodaBarWriter::SetDataLength(int32_t length) {
   m_iDataLenth = length + 2;
 }
+
 bool CBC_OnedCodaBarWriter::SetTextLocation(BC_TEXT_LOC location) {
   if (location < BC_TEXT_LOC_NONE || location > BC_TEXT_LOC_BELOWEMBED) {
     return false;
@@ -77,49 +76,31 @@ bool CBC_OnedCodaBarWriter::SetTextLocation(BC_TEXT_LOC location) {
   m_locTextLoc = location;
   return true;
 }
-bool CBC_OnedCodaBarWriter::SetWideNarrowRatio(int32_t ratio) {
-  if (ratio < 2 || ratio > 3) {
+
+bool CBC_OnedCodaBarWriter::SetWideNarrowRatio(int8_t ratio) {
+  if (ratio < 2 || ratio > 3)
     return false;
-  }
+
   m_iWideNarrRatio = ratio;
   return true;
 }
+
 bool CBC_OnedCodaBarWriter::FindChar(wchar_t ch, bool isContent) {
-  if (isContent) {
-    for (size_t i = 0; i < FX_ArraySize(CONTENT_CHARS); ++i) {
-      if (ch == (wchar_t)CONTENT_CHARS[i]) {
-        return true;
-      }
-    }
-    for (size_t j = 0; j < FX_ArraySize(START_END_CHARS); ++j) {
-      if (ch == (wchar_t)START_END_CHARS[j]) {
-        return true;
-      }
-    }
+  if (ch > 0x7F)
     return false;
-  } else {
-    for (size_t i = 0; i < FX_ArraySize(CONTENT_CHARS); ++i) {
-      if (ch == (wchar_t)CONTENT_CHARS[i]) {
-        return true;
-      }
-    }
-    return false;
-  }
+
+  char narrow_ch = static_cast<char>(ch);
+  return pdfium::ContainsValue(CONTENT_CHARS, narrow_ch) ||
+         (isContent && pdfium::ContainsValue(START_END_CHARS, narrow_ch));
 }
+
 bool CBC_OnedCodaBarWriter::CheckContentValidity(
     const CFX_WideStringC& contents) {
-  wchar_t ch;
-  int32_t index = 0;
-  for (index = 0; index < contents.GetLength(); index++) {
-    ch = contents.GetAt(index);
-    if (FindChar(ch, false)) {
-      continue;
-    } else {
-      return false;
-    }
-  }
-  return true;
+  return std::all_of(
+      contents.begin(), contents.end(),
+      [this](const wchar_t& ch) { return this->FindChar(ch, false); });
 }
+
 CFX_WideString CBC_OnedCodaBarWriter::FilterContents(
     const CFX_WideStringC& contents) {
   CFX_WideString filtercontents;
@@ -130,43 +111,26 @@ CFX_WideString CBC_OnedCodaBarWriter::FilterContents(
       index++;
       continue;
     }
-    if (FindChar(ch, true)) {
-      filtercontents += ch;
-    } else {
+    if (!FindChar(ch, true))
       continue;
-    }
+    filtercontents += ch;
   }
   return filtercontents;
 }
-uint8_t* CBC_OnedCodaBarWriter::Encode(const CFX_ByteString& contents,
-                                       BCFORMAT format,
-                                       int32_t& outWidth,
-                                       int32_t& outHeight,
-                                       int32_t& e) {
-  uint8_t* ret = Encode(contents, format, outWidth, outHeight, 0, e);
-  if (e != BCExceptionNO)
+
+uint8_t* CBC_OnedCodaBarWriter::EncodeWithHint(const CFX_ByteString& contents,
+                                               BCFORMAT format,
+                                               int32_t& outWidth,
+                                               int32_t& outHeight,
+                                               int32_t hints) {
+  if (format != BCFORMAT_CODABAR)
     return nullptr;
-  return ret;
+  return CBC_OneDimWriter::EncodeWithHint(contents, format, outWidth, outHeight,
+                                          hints);
 }
-uint8_t* CBC_OnedCodaBarWriter::Encode(const CFX_ByteString& contents,
-                                       BCFORMAT format,
-                                       int32_t& outWidth,
-                                       int32_t& outHeight,
-                                       int32_t hints,
-                                       int32_t& e) {
-  if (format != BCFORMAT_CODABAR) {
-    e = BCExceptionOnlyEncodeCODEBAR;
-    return nullptr;
-  }
-  uint8_t* ret =
-      CBC_OneDimWriter::Encode(contents, format, outWidth, outHeight, hints, e);
-  if (e != BCExceptionNO)
-    return nullptr;
-  return ret;
-}
-uint8_t* CBC_OnedCodaBarWriter::Encode(const CFX_ByteString& contents,
-                                       int32_t& outLength,
-                                       int32_t& e) {
+
+uint8_t* CBC_OnedCodaBarWriter::EncodeImpl(const CFX_ByteString& contents,
+                                           int32_t& outLength) {
   CFX_ByteString data = m_chStart + contents + m_chEnd;
   m_iContentLen = data.GetLength();
   uint8_t* result = FX_Alloc2D(uint8_t, m_iWideNarrRatio * 7, data.GetLength());
@@ -194,8 +158,8 @@ uint8_t* CBC_OnedCodaBarWriter::Encode(const CFX_ByteString& contents,
         break;
     }
     int32_t code = 0;
-    int32_t len = (int32_t)strlen(ALPHABET_STRING);
-    for (int32_t i = 0; i < len; i++) {
+    size_t len = strlen(ALPHABET_STRING);
+    for (size_t i = 0; i < len; i++) {
       if (ch == ALPHABET_STRING[i]) {
         code = CHARACTER_ENCODINGS[i];
         break;
@@ -223,17 +187,18 @@ uint8_t* CBC_OnedCodaBarWriter::Encode(const CFX_ByteString& contents,
   outLength = position;
   return result;
 }
+
 CFX_WideString CBC_OnedCodaBarWriter::encodedContents(
     const CFX_WideStringC& contents) {
-  CFX_WideString strStart(m_chStart);
-  CFX_WideString strEnd(m_chEnd);
+  CFX_WideString strStart(static_cast<wchar_t>(m_chStart));
+  CFX_WideString strEnd(static_cast<wchar_t>(m_chEnd));
   return strStart + contents + strEnd;
 }
-void CBC_OnedCodaBarWriter::RenderResult(const CFX_WideStringC& contents,
+
+bool CBC_OnedCodaBarWriter::RenderResult(const CFX_WideStringC& contents,
                                          uint8_t* code,
                                          int32_t codeLength,
-                                         bool isDevice,
-                                         int32_t& e) {
-  CBC_OneDimWriter::RenderResult(encodedContents(contents).AsStringC(), code,
-                                 codeLength, isDevice, e);
+                                         bool isDevice) {
+  return CBC_OneDimWriter::RenderResult(encodedContents(contents).AsStringC(),
+                                        code, codeLength, isDevice);
 }

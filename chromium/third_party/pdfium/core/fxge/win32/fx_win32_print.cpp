@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "core/fxcrt/fx_system.h"
-#include "core/fxge/cfx_windowsdevice.h"
+#include "core/fxge/cfx_windowsrenderdevice.h"
 #include "core/fxge/dib/cfx_dibextractor.h"
 #include "core/fxge/dib/cfx_imagerenderer.h"
 #include "core/fxge/dib/cstretchengine.h"
@@ -211,7 +211,7 @@ bool CGdiPrinterDriver::DrawDeviceText(int nChars,
     return false;
 
   // Scale factor used to minimize the kerning problems caused by rounding
-  // errors below. Value choosen based on the title of https://crbug.com/18383
+  // errors below. Value chosen based on the title of https://crbug.com/18383
   const double kScaleFactor = 10;
 
   // Font
@@ -282,7 +282,7 @@ bool CGdiPrinterDriver::DrawDeviceText(int nChars,
   // Color
   int iUnusedAlpha;
   FX_COLORREF rgb;
-  ArgbDecode(color, iUnusedAlpha, rgb);
+  std::tie(iUnusedAlpha, rgb) = ArgbToColorRef(color);
   SetTextColor(m_hDC, rgb);
   SetBkMode(m_hDC, TRANSPARENT);
 
@@ -337,8 +337,9 @@ CPSPrinterDriver::CPSPrinterDriver(HDC hDC, int pslevel, bool bCmykOutput)
   m_Width = ::GetDeviceCaps(m_hDC, HORZRES);
   m_Height = ::GetDeviceCaps(m_hDC, VERTRES);
   m_nBitsPerPixel = ::GetDeviceCaps(m_hDC, BITSPIXEL);
-  m_pPSOutput = pdfium::MakeUnique<CPSOutput>(m_hDC);
-  m_PSRenderer.Init(m_pPSOutput.get(), pslevel, m_Width, m_Height, bCmykOutput);
+
+  m_PSRenderer.Init(pdfium::MakeRetain<CPSOutput>(m_hDC), pslevel, m_Width,
+                    m_Height, bCmykOutput);
   HRGN hRgn = ::CreateRectRgn(0, 0, 1, 1);
   int ret = ::GetClipRgn(hDC, hRgn);
   if (ret == 1) {
@@ -490,8 +491,4 @@ bool CPSPrinterDriver::DrawDeviceText(int nChars,
                                       uint32_t color) {
   return m_PSRenderer.DrawText(nChars, pCharPos, pFont, pObject2Device,
                                font_size, color);
-}
-
-void* CPSPrinterDriver::GetPlatformSurface() const {
-  return m_hDC;
 }

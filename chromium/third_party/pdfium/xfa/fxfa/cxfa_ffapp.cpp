@@ -23,10 +23,10 @@
 #include "xfa/fxfa/cxfa_ffwidgethandler.h"
 #include "xfa/fxfa/cxfa_fontmgr.h"
 
-CXFA_FFApp::CXFA_FFApp(IXFA_AppProvider* pProvider)
-    : m_pProvider(pProvider),
-      m_pWidgetMgrDelegate(nullptr),
-      m_pFWLApp(new CFWL_App(this)) {}
+CXFA_FFApp::CXFA_FFApp(IXFA_AppProvider* pProvider) : m_pProvider(pProvider) {
+  // Ensure fully initialized before making an app based on |this|.
+  m_pFWLApp = pdfium::MakeUnique<CFWL_App>(this);
+}
 
 CXFA_FFApp::~CXFA_FFApp() {}
 
@@ -92,5 +92,5 @@ IFWL_AdapterTimerMgr* CXFA_FFApp::GetTimerMgr() const {
 }
 
 void CXFA_FFApp::ClearEventTargets() {
-  m_pFWLApp->GetNoteDriver()->ClearEventTargets(false);
+  m_pFWLApp->GetNoteDriver()->ClearEventTargets();
 }

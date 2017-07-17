@@ -36,11 +36,11 @@ namespace rx
 PixelTransfer11::PixelTransfer11(Renderer11 *renderer)
     : mRenderer(renderer),
       mResourcesLoaded(false),
-      mBufferToTextureVS(NULL),
-      mBufferToTextureGS(NULL),
-      mParamsConstantBuffer(NULL),
-      mCopyRasterizerState(NULL),
-      mCopyDepthStencilState(NULL)
+      mBufferToTextureVS(nullptr),
+      mBufferToTextureGS(nullptr),
+      mParamsConstantBuffer(nullptr),
+      mCopyRasterizerState(nullptr),
+      mCopyDepthStencilState(nullptr)
 {
 }
 
@@ -120,7 +120,7 @@ gl::Error PixelTransfer11::loadResources()
     constantBufferDesc.MiscFlags = 0;
     constantBufferDesc.StructureByteStride = 0;
 
-    result = device->CreateBuffer(&constantBufferDesc, NULL, &mParamsConstantBuffer);
+    result = device->CreateBuffer(&constantBufferDesc, nullptr, &mParamsConstantBuffer);
     ASSERT(SUCCEEDED(result));
     if (FAILED(result))
     {
@@ -158,7 +158,7 @@ void PixelTransfer11::setBufferToTextureCopyParams(const gl::Box &destArea, cons
     float texelCenterX = 0.5f / static_cast<float>(destSize.width - 1);
     float texelCenterY = 0.5f / static_cast<float>(destSize.height - 1);
 
-    unsigned int bytesPerPixel = gl::GetInternalFormatInfo(internalFormat).pixelBytes;
+    unsigned int bytesPerPixel   = gl::GetSizedInternalFormatInfo(internalFormat).pixelBytes;
     unsigned int alignmentBytes = static_cast<unsigned int>(unpack.alignment);
     unsigned int alignmentPixels = (alignmentBytes <= bytesPerPixel ? 1 : alignmentBytes / bytesPerPixel);
 
@@ -193,11 +193,12 @@ gl::Error PixelTransfer11::copyBufferToTexture(const gl::PixelUnpackState &unpac
 
     // The SRV must be in the proper read format, which may be different from the destination format
     // EG: for half float data, we can load full precision floats with implicit conversion
-    GLenum unsizedFormat = gl::GetInternalFormatInfo(destinationFormat).format;
-    GLenum sourceFormat = gl::GetSizedInternalFormat(unsizedFormat, sourcePixelsType);
+    GLenum unsizedFormat = gl::GetUnsizedFormat(destinationFormat);
+    const gl::InternalFormat &sourceglFormatInfo =
+        gl::GetInternalFormatInfo(unsizedFormat, sourcePixelsType);
 
-    const d3d11::Format &sourceFormatInfo =
-        d3d11::Format::Get(sourceFormat, mRenderer->getRenderer11DeviceCaps());
+    const d3d11::Format &sourceFormatInfo = d3d11::Format::Get(
+        sourceglFormatInfo.sizedInternalFormat, mRenderer->getRenderer11DeviceCaps());
     DXGI_FORMAT srvFormat = sourceFormatInfo.srvFormat;
     ASSERT(srvFormat != DXGI_FORMAT_UNKNOWN);
     Buffer11 *bufferStorage11 = GetAs<Buffer11>(sourceBuffer.getImplementation());
@@ -205,11 +206,13 @@ gl::Error PixelTransfer11::copyBufferToTexture(const gl::PixelUnpackState &unpac
     ANGLE_TRY_RESULT(bufferStorage11->getSRV(srvFormat), bufferSRV);
     ASSERT(bufferSRV != nullptr);
 
-    ID3D11RenderTargetView *textureRTV = GetAs<RenderTarget11>(destRenderTarget)->getRenderTargetView();
-    ASSERT(textureRTV != nullptr);
+    const d3d11::RenderTargetView &textureRTV =
+        GetAs<RenderTarget11>(destRenderTarget)->getRenderTargetView();
+    ASSERT(textureRTV.valid());
 
     CopyShaderParams shaderParams;
-    setBufferToTextureCopyParams(destArea, destSize, sourceFormat, unpack, offset, &shaderParams);
+    setBufferToTextureCopyParams(destArea, destSize, sourceglFormatInfo.sizedInternalFormat, unpack,
+                                 offset, &shaderParams);
 
     ID3D11DeviceContext *deviceContext = mRenderer->getDeviceContext();
 
@@ -217,22 +220,22 @@ gl::Error PixelTransfer11::copyBufferToTexture(const gl::PixelUnpackState &unpac
     UINT zero = 0;
 
     // Are we doing a 2D or 3D copy?
-    ID3D11GeometryShader *geometryShader = ((destSize.depth > 1) ? mBufferToTextureGS : NULL);
+    ID3D11GeometryShader *geometryShader = ((destSize.depth > 1) ? mBufferToTextureGS : nullptr);
     auto stateManager                    = mRenderer->getStateManager();
 
-    deviceContext->VSSetShader(mBufferToTextureVS, NULL, 0);
-    deviceContext->GSSetShader(geometryShader, NULL, 0);
-    deviceContext->PSSetShader(pixelShader, NULL, 0);
+    deviceContext->VSSetShader(mBufferToTextureVS, nullptr, 0);
+    deviceContext->GSSetShader(geometryShader, nullptr, 0);
+    deviceContext->PSSetShader(pixelShader, nullptr, 0);
     stateManager->setShaderResource(gl::SAMPLER_PIXEL, 0, bufferSRV);
-    deviceContext->IASetInputLayout(NULL);
+    deviceContext->IASetInputLayout(nullptr);
     deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
 
     deviceContext->IASetVertexBuffers(0, 1, &nullBuffer, &zero, &zero);
-    deviceContext->OMSetBlendState(NULL, NULL, 0xFFFFFFF);
+    deviceContext->OMSetBlendState(nullptr, nullptr, 0xFFFFFFF);
     deviceContext->OMSetDepthStencilState(mCopyDepthStencilState, 0xFFFFFFFF);
     deviceContext->RSSetState(mCopyRasterizerState);
 
-    stateManager->setOneTimeRenderTarget(textureRTV, nullptr);
+    stateManager->setOneTimeRenderTarget(textureRTV.get(), nullptr);
 
     if (!StructEquals(mParamsData, shaderParams))
     {
@@ -256,7 +259,7 @@ gl::Error PixelTransfer11::copyBufferToTexture(const gl::PixelUnpackState &unpac
     deviceContext->Draw(numPixels, 0);
 
     // Unbind textures and render targets and vertex buffer
-    stateManager->setShaderResource(gl::SAMPLER_PIXEL, 0, NULL);
+    stateManager->setShaderResource(gl::SAMPLER_PIXEL, 0, nullptr);
     deviceContext->VSSetConstantBuffers(0, 1, &nullBuffer);
 
     mRenderer->markAllStateDirty();
@@ -275,7 +278,7 @@ gl::Error PixelTransfer11::buildShaderMap()
     // Check that all the shaders were created successfully
     for (auto shaderMapIt = mBufferToTexturePSMap.begin(); shaderMapIt != mBufferToTexturePSMap.end(); shaderMapIt++)
     {
-        if (shaderMapIt->second == NULL)
+        if (shaderMapIt->second == nullptr)
         {
             return gl::Error(GL_OUT_OF_MEMORY, "Failed to create internal buffer to texture pixel shader.");
         }
@@ -286,14 +289,14 @@ gl::Error PixelTransfer11::buildShaderMap()
 
 ID3D11PixelShader *PixelTransfer11::findBufferToTexturePS(GLenum internalFormat) const
 {
-    GLenum componentType = gl::GetInternalFormatInfo(internalFormat).componentType;
+    GLenum componentType = gl::GetSizedInternalFormatInfo(internalFormat).componentType;
     if (componentType == GL_SIGNED_NORMALIZED || componentType == GL_UNSIGNED_NORMALIZED)
     {
         componentType = GL_FLOAT;
     }
 
     auto shaderMapIt = mBufferToTexturePSMap.find(componentType);
-    return (shaderMapIt == mBufferToTexturePSMap.end() ? NULL : shaderMapIt->second);
+    return (shaderMapIt == mBufferToTexturePSMap.end() ? nullptr : shaderMapIt->second);
 }
 
 }  // namespace rx

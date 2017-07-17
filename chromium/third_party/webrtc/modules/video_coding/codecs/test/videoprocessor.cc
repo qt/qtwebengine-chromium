@@ -139,6 +139,7 @@ VideoProcessorImpl::VideoProcessorImpl(webrtc::VideoEncoder* encoder,
       source_frame_writer_(source_frame_writer),
       encoded_frame_writer_(encoded_frame_writer),
       decoded_frame_writer_(decoded_frame_writer),
+      bit_rate_factor_(config.codec_settings->maxFramerate * 0.001 * 8),
       initialized_(false),
       last_encoded_frame_num_(-1),
       last_decoded_frame_num_(-1),
@@ -146,8 +147,7 @@ VideoProcessorImpl::VideoProcessorImpl(webrtc::VideoEncoder* encoder,
       last_decoded_frame_buffer_(0, analysis_frame_reader->FrameLength()),
       stats_(stats),
       num_dropped_frames_(0),
-      num_spatial_resizes_(0),
-      bit_rate_factor_(0.0) {
+      num_spatial_resizes_(0) {
   RTC_DCHECK(encoder);
   RTC_DCHECK(decoder);
   RTC_DCHECK(packet_manipulator);
@@ -161,9 +161,6 @@ VideoProcessorImpl::VideoProcessorImpl(webrtc::VideoEncoder* encoder,
 bool VideoProcessorImpl::Init() {
   RTC_DCHECK(!initialized_)
       << "This VideoProcessor has already been initialized.";
-
-  // Calculate a factor used for bit rate calculations.
-  bit_rate_factor_ = config_.codec_settings->maxFramerate * 0.001 * 8;  // bits
 
   // Setup required callbacks for the encoder/decoder.
   RTC_CHECK_EQ(encoder_->RegisterEncodeCompleteCallback(encode_callback_.get()),
@@ -195,6 +192,13 @@ bool VideoProcessorImpl::Init() {
            encoder_->ImplementationName());
     printf("    Decoder implementation name: %s\n",
            decoder_->ImplementationName());
+    if (strcmp(encoder_->ImplementationName(),
+               decoder_->ImplementationName()) == 0) {
+      printf("    Codec implementation name: %s_%s\n",
+             CodecTypeToPayloadName(config_.codec_settings->codecType)
+                 .value_or("Unknown"),
+             encoder_->ImplementationName());
+    }
     PrintCodecSettings(config_.codec_settings);
   }
 
@@ -251,7 +255,8 @@ bool VideoProcessorImpl::ProcessFrame(int frame_number) {
   }
 
   if (source_frame_writer_) {
-    size_t length = CalcBufferSize(kI420, buffer->width(), buffer->height());
+    size_t length =
+        CalcBufferSize(VideoType::kI420, buffer->width(), buffer->height());
     rtc::Buffer extracted_buffer(length);
     int extracted_length =
         ExtractBuffer(buffer, length, extracted_buffer.data());
@@ -467,14 +472,15 @@ void VideoProcessorImpl::FrameDecoded(const VideoFrame& image) {
       scaled_buffer->ScaleFrom(*image.video_frame_buffer());
     }
 
-    size_t length =
-        CalcBufferSize(kI420, scaled_buffer->width(), scaled_buffer->height());
+    size_t length = CalcBufferSize(VideoType::kI420, scaled_buffer->width(),
+                                   scaled_buffer->height());
     extracted_buffer.SetSize(length);
     extracted_length =
         ExtractBuffer(scaled_buffer, length, extracted_buffer.data());
   } else {
     // No resize.
-    size_t length = CalcBufferSize(kI420, image.width(), image.height());
+    size_t length =
+        CalcBufferSize(VideoType::kI420, image.width(), image.height());
     extracted_buffer.SetSize(length);
     if (image.video_frame_buffer()->native_handle()) {
       extracted_length =

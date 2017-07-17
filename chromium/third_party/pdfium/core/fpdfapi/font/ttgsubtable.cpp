@@ -6,58 +6,11 @@
 
 #include "core/fpdfapi/font/ttgsubtable.h"
 
+#include <utility>
+
 #include "core/fxge/fx_freetype.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
-
-CFX_GlyphMap::CFX_GlyphMap() {}
-
-CFX_GlyphMap::~CFX_GlyphMap() {}
-
-extern "C" {
-static int _CompareInt(const void* p1, const void* p2) {
-  return (*(uint32_t*)p1) - (*(uint32_t*)p2);
-}
-};
-
-struct _IntPair {
-  int32_t key;
-  int32_t value;
-};
-
-void CFX_GlyphMap::SetAt(int key, int value) {
-  uint32_t count = m_Buffer.GetSize() / sizeof(_IntPair);
-  _IntPair* buf = (_IntPair*)m_Buffer.GetBuffer();
-  _IntPair pair = {key, value};
-  if (count == 0 || key > buf[count - 1].key) {
-    m_Buffer.AppendBlock(&pair, sizeof(_IntPair));
-    return;
-  }
-  int low = 0, high = count - 1;
-  while (low <= high) {
-    int mid = (low + high) / 2;
-    if (buf[mid].key < key) {
-      low = mid + 1;
-    } else if (buf[mid].key > key) {
-      high = mid - 1;
-    } else {
-      buf[mid].value = value;
-      return;
-    }
-  }
-  m_Buffer.InsertBlock(low * sizeof(_IntPair), &pair, sizeof(_IntPair));
-}
-
-bool CFX_GlyphMap::Lookup(int key, int& value) {
-  void* pResult =
-      bsearch(&key, m_Buffer.GetBuffer(), m_Buffer.GetSize() / sizeof(_IntPair),
-              sizeof(_IntPair), _CompareInt);
-  if (!pResult) {
-    return false;
-  }
-  value = ((uint32_t*)pResult)[1];
-  return true;
-}
 
 CFX_CTTGSUBTable::CFX_CTTGSUBTable()
     : m_bFeautureMapLoad(false), loaded(false) {}
@@ -298,19 +251,21 @@ void CFX_CTTGSUBTable::ParseLookup(FT_Bytes raw, TLookup* rec) {
     ParseSingleSubst(&raw[GetUInt16(sp)], &subTable);
 }
 
-CFX_CTTGSUBTable::TCoverageFormatBase* CFX_CTTGSUBTable::ParseCoverage(
-    FT_Bytes raw) {
+std::unique_ptr<CFX_CTTGSUBTable::TCoverageFormatBase>
+CFX_CTTGSUBTable::ParseCoverage(FT_Bytes raw) {
   FT_Bytes sp = raw;
   uint16_t format = GetUInt16(sp);
-  TCoverageFormatBase* rec = nullptr;
   if (format == 1) {
-    rec = new TCoverageFormat1();
-    ParseCoverageFormat1(raw, static_cast<TCoverageFormat1*>(rec));
-  } else if (format == 2) {
-    rec = new TCoverageFormat2();
-    ParseCoverageFormat2(raw, static_cast<TCoverageFormat2*>(rec));
+    auto rec = pdfium::MakeUnique<TCoverageFormat1>();
+    ParseCoverageFormat1(raw, rec.get());
+    return std::move(rec);
   }
-  return rec;
+  if (format == 2) {
+    auto rec = pdfium::MakeUnique<TCoverageFormat2>();
+    ParseCoverageFormat2(raw, rec.get());
+    return std::move(rec);
+  }
+  return nullptr;
 }
 
 void CFX_CTTGSUBTable::ParseCoverageFormat1(FT_Bytes raw,
@@ -357,7 +312,7 @@ void CFX_CTTGSUBTable::ParseSingleSubstFormat1(FT_Bytes raw,
   FT_Bytes sp = raw;
   GetUInt16(sp);
   uint16_t offset = GetUInt16(sp);
-  rec->Coverage.reset(ParseCoverage(&raw[offset]));
+  rec->Coverage = ParseCoverage(&raw[offset]);
   rec->DeltaGlyphID = GetInt16(sp);
 }
 
@@ -366,7 +321,7 @@ void CFX_CTTGSUBTable::ParseSingleSubstFormat2(FT_Bytes raw,
   FT_Bytes sp = raw;
   (void)GetUInt16(sp);
   uint16_t offset = GetUInt16(sp);
-  rec->Coverage.reset(ParseCoverage(&raw[offset]));
+  rec->Coverage = ParseCoverage(&raw[offset]);
   rec->Substitutes = std::vector<uint16_t>(GetUInt16(sp));
   for (auto& substitute : rec->Substitutes)
     substitute = GetUInt16(sp);

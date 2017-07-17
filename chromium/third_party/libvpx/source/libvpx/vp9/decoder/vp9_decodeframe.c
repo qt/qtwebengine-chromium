@@ -189,21 +189,22 @@ static void inverse_transform_block_inter(MACROBLOCKD *xd, int plane,
   assert(eob > 0);
 #if CONFIG_VP9_HIGHBITDEPTH
   if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
+    uint16_t *const dst16 = CONVERT_TO_SHORTPTR(dst);
     if (xd->lossless) {
-      vp9_highbd_iwht4x4_add(dqcoeff, dst, stride, eob, xd->bd);
+      vp9_highbd_iwht4x4_add(dqcoeff, dst16, stride, eob, xd->bd);
     } else {
       switch (tx_size) {
         case TX_4X4:
-          vp9_highbd_idct4x4_add(dqcoeff, dst, stride, eob, xd->bd);
+          vp9_highbd_idct4x4_add(dqcoeff, dst16, stride, eob, xd->bd);
           break;
         case TX_8X8:
-          vp9_highbd_idct8x8_add(dqcoeff, dst, stride, eob, xd->bd);
+          vp9_highbd_idct8x8_add(dqcoeff, dst16, stride, eob, xd->bd);
           break;
         case TX_16X16:
-          vp9_highbd_idct16x16_add(dqcoeff, dst, stride, eob, xd->bd);
+          vp9_highbd_idct16x16_add(dqcoeff, dst16, stride, eob, xd->bd);
           break;
         case TX_32X32:
-          vp9_highbd_idct32x32_add(dqcoeff, dst, stride, eob, xd->bd);
+          vp9_highbd_idct32x32_add(dqcoeff, dst16, stride, eob, xd->bd);
           break;
         default: assert(0 && "Invalid transform size");
       }
@@ -256,21 +257,22 @@ static void inverse_transform_block_intra(MACROBLOCKD *xd, int plane,
   assert(eob > 0);
 #if CONFIG_VP9_HIGHBITDEPTH
   if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
+    uint16_t *const dst16 = CONVERT_TO_SHORTPTR(dst);
     if (xd->lossless) {
-      vp9_highbd_iwht4x4_add(dqcoeff, dst, stride, eob, xd->bd);
+      vp9_highbd_iwht4x4_add(dqcoeff, dst16, stride, eob, xd->bd);
     } else {
       switch (tx_size) {
         case TX_4X4:
-          vp9_highbd_iht4x4_add(tx_type, dqcoeff, dst, stride, eob, xd->bd);
+          vp9_highbd_iht4x4_add(tx_type, dqcoeff, dst16, stride, eob, xd->bd);
           break;
         case TX_8X8:
-          vp9_highbd_iht8x8_add(tx_type, dqcoeff, dst, stride, eob, xd->bd);
+          vp9_highbd_iht8x8_add(tx_type, dqcoeff, dst16, stride, eob, xd->bd);
           break;
         case TX_16X16:
-          vp9_highbd_iht16x16_add(tx_type, dqcoeff, dst, stride, eob, xd->bd);
+          vp9_highbd_iht16x16_add(tx_type, dqcoeff, dst16, stride, eob, xd->bd);
           break;
         case TX_32X32:
-          vp9_highbd_idct32x32_add(dqcoeff, dst, stride, eob, xd->bd);
+          vp9_highbd_idct32x32_add(dqcoeff, dst16, stride, eob, xd->bd);
           break;
         default: assert(0 && "Invalid transform size");
       }
@@ -451,24 +453,19 @@ static void extend_and_predict(const uint8_t *buf_ptr1, int pre_buf_stride,
                                const struct scale_factors *sf, MACROBLOCKD *xd,
                                int w, int h, int ref, int xs, int ys) {
   DECLARE_ALIGNED(16, uint16_t, mc_buf_high[80 * 2 * 80 * 2]);
-  const uint8_t *buf_ptr;
 
   if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
     high_build_mc_border(buf_ptr1, pre_buf_stride, mc_buf_high, b_w, x0, y0,
                          b_w, b_h, frame_width, frame_height);
-    buf_ptr = CONVERT_TO_BYTEPTR(mc_buf_high) + border_offset;
+    highbd_inter_predictor(mc_buf_high + border_offset, b_w,
+                           CONVERT_TO_SHORTPTR(dst), dst_buf_stride, subpel_x,
+                           subpel_y, sf, w, h, ref, kernel, xs, ys, xd->bd);
   } else {
     build_mc_border(buf_ptr1, pre_buf_stride, (uint8_t *)mc_buf_high, b_w, x0,
                     y0, b_w, b_h, frame_width, frame_height);
-    buf_ptr = ((uint8_t *)mc_buf_high) + border_offset;
-  }
-
-  if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
-    highbd_inter_predictor(buf_ptr, b_w, dst, dst_buf_stride, subpel_x,
-                           subpel_y, sf, w, h, ref, kernel, xs, ys, xd->bd);
-  } else {
-    inter_predictor(buf_ptr, b_w, dst, dst_buf_stride, subpel_x, subpel_y, sf,
-                    w, h, ref, kernel, xs, ys);
+    inter_predictor(((uint8_t *)mc_buf_high) + border_offset, b_w, dst,
+                    dst_buf_stride, subpel_x, subpel_y, sf, w, h, ref, kernel,
+                    xs, ys);
   }
 }
 #else
@@ -631,7 +628,8 @@ static void dec_build_inter_predictors(
   }
 #if CONFIG_VP9_HIGHBITDEPTH
   if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
-    highbd_inter_predictor(buf_ptr, buf_stride, dst, dst_buf->stride, subpel_x,
+    highbd_inter_predictor(CONVERT_TO_SHORTPTR(buf_ptr), buf_stride,
+                           CONVERT_TO_SHORTPTR(dst), dst_buf->stride, subpel_x,
                            subpel_y, sf, w, h, ref, kernel, xs, ys, xd->bd);
   } else {
     inter_predictor(buf_ptr, buf_stride, dst, dst_buf->stride, subpel_x,

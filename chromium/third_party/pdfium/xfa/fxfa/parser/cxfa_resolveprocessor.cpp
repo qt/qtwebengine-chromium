@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
@@ -23,7 +23,7 @@
 #include "xfa/fxfa/parser/xfa_utils.h"
 
 CXFA_ResolveProcessor::CXFA_ResolveProcessor()
-    : m_iCurStart(0), m_pNodeHelper(new CXFA_NodeHelper) {}
+    : m_iCurStart(0), m_pNodeHelper(pdfium::MakeUnique<CXFA_NodeHelper>()) {}
 
 CXFA_ResolveProcessor::~CXFA_ResolveProcessor() {}
 
@@ -103,7 +103,7 @@ int32_t CXFA_ResolveProcessor::ResolveAnyChild(CXFA_ResolveNodesData& rnd) {
     return pdfium::CollectionSize<int32_t>(rnd.m_Objects);
   }
   std::vector<CXFA_Node*> tempNodes;
-  for (CXFA_Object* pObject : rnd.m_Objects)
+  for (auto* pObject : rnd.m_Objects)
     tempNodes.push_back(pObject->AsNode());
   m_pNodeHelper->CountSiblings(findNode, XFA_LOGIC_Transparent, &tempNodes,
                                bClassName);

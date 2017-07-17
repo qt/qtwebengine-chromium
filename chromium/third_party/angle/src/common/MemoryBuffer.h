@@ -9,8 +9,8 @@
 
 #include "common/angleutils.h"
 
-#include <cstddef>
 #include <stdint.h>
+#include <cstddef>
 
 namespace angle
 {
@@ -27,6 +27,8 @@ class MemoryBuffer final : NonCopyable
 
     const uint8_t *data() const;
     uint8_t *data();
+
+    void fill(uint8_t datum);
 
   private:
     size_t mSize;
@@ -58,4 +60,4 @@ class ScratchBuffer final : NonCopyable
 
 }  // namespace angle
 
-#endif // COMMON_MEMORYBUFFER_H_
+#endif  // COMMON_MEMORYBUFFER_H_

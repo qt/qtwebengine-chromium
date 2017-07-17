@@ -15,6 +15,7 @@ extern "C" {
 
 // For external C libraries to malloc through PDFium. These may return nullptr.
 void* FXMEM_DefaultAlloc(size_t byte_size, int flags);
+void* FXMEM_DefaultCalloc(size_t num_elems, size_t byte_size);
 void* FXMEM_DefaultRealloc(void* pointer, size_t new_size, int flags);
 void FXMEM_DefaultFree(void* pointer, int flags);
 
@@ -31,7 +32,7 @@ void FXMEM_DefaultFree(void* pointer, int flags);
 extern pdfium::base::PartitionAllocatorGeneric gArrayBufferPartitionAllocator;
 extern pdfium::base::PartitionAllocatorGeneric gStringPartitionAllocator;
 
-void FXMEM_InitalizePartitionAlloc();
+void FXMEM_InitializePartitionAlloc();
 NEVER_INLINE void FX_OutOfMemoryTerminate();
 
 inline void* FX_SafeRealloc(void* ptr, size_t num_members, size_t member_size) {

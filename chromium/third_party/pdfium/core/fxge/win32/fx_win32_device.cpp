@@ -12,9 +12,11 @@
 
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/cfx_maybe_owned.h"
+#include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_system.h"
-#include "core/fxge/cfx_windowsdevice.h"
+#include "core/fxge/cfx_gemodule.h"
+#include "core/fxge/cfx_windowsrenderdevice.h"
 #include "core/fxge/dib/cfx_dibextractor.h"
 #include "core/fxge/dib/cfx_imagerenderer.h"
 #include "core/fxge/dib/cstretchengine.h"
@@ -136,7 +138,7 @@ HPEN CreatePen(const CFX_GraphStateData* pGraphState,
   }
   int a;
   FX_COLORREF rgb;
-  ArgbDecode(argb, a, rgb);
+  std::tie(a, rgb) = ArgbToColorRef(argb);
   LOGBRUSH lb;
   lb.lbColor = rgb;
   lb.lbStyle = BS_SOLID;
@@ -159,7 +161,7 @@ HPEN CreatePen(const CFX_GraphStateData* pGraphState,
 HBRUSH CreateBrush(uint32_t argb) {
   int a;
   FX_COLORREF rgb;
-  ArgbDecode(argb, a, rgb);
+  std::tie(a, rgb) = ArgbToColorRef(argb);
   return CreateSolidBrush(rgb);
 }
 
@@ -448,7 +450,7 @@ bool CFX_Win32FontInfo::EnumFontList(CFX_FontMapper* pMapper) {
   m_pMapper = pMapper;
   LOGFONTA lf;
   memset(&lf, 0, sizeof(LOGFONTA));
-  lf.lfCharSet = FXFONT_DEFAULT_CHARSET;
+  lf.lfCharSet = FX_CHARSET_Default;
   lf.lfFaceName[0] = 0;
   lf.lfPitchAndFamily = 0;
   EnumFontFamiliesExA(m_hDC, &lf, (FONTENUMPROCA)FontEnumProc, (uintptr_t) this,
@@ -486,10 +488,10 @@ void* CFX_Win32FallbackFontInfo::MapFont(int weight,
   }
   bool bCJK = true;
   switch (charset) {
-    case FXFONT_SHIFTJIS_CHARSET:
-    case FXFONT_GB2312_CHARSET:
-    case FXFONT_CHINESEBIG5_CHARSET:
-    case FXFONT_HANGUL_CHARSET:
+    case FX_CHARSET_ShiftJIS:
+    case FX_CHARSET_ChineseSimplified:
+    case FX_CHARSET_ChineseTraditional:
+    case FX_CHARSET_Hangul:
       break;
     default:
       bCJK = false;
@@ -582,17 +584,17 @@ void* CFX_Win32FontInfo::MapFont(int weight,
       iExact = true;
       break;
     }
-  if (charset == FXFONT_ANSI_CHARSET || charset == FXFONT_SYMBOL_CHARSET) {
-    charset = FXFONT_DEFAULT_CHARSET;
-  }
+  if (charset == FX_CHARSET_ANSI || charset == FX_CHARSET_Symbol)
+    charset = FX_CHARSET_Default;
+
   int subst_pitch_family = pitch_family;
   switch (charset) {
-    case FXFONT_SHIFTJIS_CHARSET:
+    case FX_CHARSET_ShiftJIS:
       subst_pitch_family = FF_ROMAN;
       break;
-    case FXFONT_CHINESEBIG5_CHARSET:
-    case FXFONT_HANGUL_CHARSET:
-    case FXFONT_GB2312_CHARSET:
+    case FX_CHARSET_ChineseTraditional:
+    case FX_CHARSET_Hangul:
+    case FX_CHARSET_ChineseSimplified:
       subst_pitch_family = 0;
       break;
   }
@@ -619,20 +621,20 @@ void* CFX_Win32FontInfo::MapFont(int weight,
       return hFont;
   }
   ::DeleteObject(hFont);
-  if (charset == FXFONT_DEFAULT_CHARSET)
+  if (charset == FX_CHARSET_Default)
     return nullptr;
 
   switch (charset) {
-    case FXFONT_SHIFTJIS_CHARSET:
+    case FX_CHARSET_ShiftJIS:
       GetJapanesePreference(face, weight, pitch_family);
       break;
-    case FXFONT_GB2312_CHARSET:
+    case FX_CHARSET_ChineseSimplified:
       GetGBPreference(face, weight, pitch_family);
       break;
-    case FXFONT_HANGUL_CHARSET:
+    case FX_CHARSET_Hangul:
       face = "Gulim";
       break;
-    case FXFONT_CHINESEBIG5_CHARSET:
+    case FX_CHARSET_ChineseTraditional:
       if (face.Find("MSung") >= 0) {
         face = "MingLiU";
       } else {
@@ -703,7 +705,7 @@ std::unique_ptr<IFX_SystemFontInfo> IFX_SystemFontInfo::CreateDefault(
   if (path_len > 0 && path_len < MAX_PATH) {
     CFX_ByteString fonts_path(windows_path);
     fonts_path += "\\Fonts";
-    pInfoFallback->AddPath(fonts_path.AsStringC());
+    pInfoFallback->AddPath(fonts_path);
   }
   return std::unique_ptr<IFX_SystemFontInfo>(pInfoFallback);
 }
@@ -851,7 +853,7 @@ bool CGdiDeviceDriver::GDI_StretchDIBits(
   if (m_DeviceClass == FXDC_PRINTER &&
       ((int64_t)pBitmap->GetWidth() * pBitmap->GetHeight() >
        (int64_t)abs(dest_width) * abs(dest_height))) {
-    pToStrechBitmap = pBitmap->StretchTo(dest_width, dest_height);
+    pToStrechBitmap = pBitmap->StretchTo(dest_width, dest_height, 0, nullptr);
   }
   CFX_ByteString toStrechBitmapInfo =
       CFX_WindowsDIB::GetBitmapInfo(pToStrechBitmap);
@@ -926,10 +928,6 @@ bool CGdiDeviceDriver::GDI_StretchBitMask(
 
 bool CGdiDeviceDriver::GetClipBox(FX_RECT* pRect) {
   return !!(::GetClipBox(m_hDC, (RECT*)pRect));
-}
-
-void* CGdiDeviceDriver::GetPlatformSurface() const {
-  return (void*)m_hDC;
 }
 
 void CGdiDeviceDriver::DrawLine(float x1, float y1, float x2, float y2) {
@@ -1089,7 +1087,7 @@ bool CGdiDeviceDriver::FillRectWithBlend(const FX_RECT* pRect,
 
   int alpha;
   FX_COLORREF rgb;
-  ArgbDecode(fill_color, alpha, rgb);
+  std::tie(alpha, rgb) = ArgbToColorRef(fill_color);
   if (alpha == 0)
     return true;
 
@@ -1145,7 +1143,7 @@ bool CGdiDeviceDriver::DrawCosmeticLine(float x1,
 
   int a;
   FX_COLORREF rgb;
-  ArgbDecode(color, a, rgb);
+  std::tie(a, rgb) = ArgbToColorRef(color);
   if (a == 0)
     return true;
 
@@ -1361,19 +1359,14 @@ bool CGdiDisplayDriver::StartDIBits(const CFX_RetainPtr<CFX_DIBSource>& pBitmap,
   return false;
 }
 
-CFX_WindowsDevice::CFX_WindowsDevice(HDC hDC) {
+CFX_WindowsRenderDevice::CFX_WindowsRenderDevice(HDC hDC) {
   SetDeviceDriver(pdfium::WrapUnique(CreateDriver(hDC)));
 }
 
-CFX_WindowsDevice::~CFX_WindowsDevice() {}
-
-HDC CFX_WindowsDevice::GetDC() const {
-  IFX_RenderDeviceDriver* pRDD = GetDeviceDriver();
-  return pRDD ? reinterpret_cast<HDC>(pRDD->GetPlatformSurface()) : nullptr;
-}
+CFX_WindowsRenderDevice::~CFX_WindowsRenderDevice() {}
 
 // static
-IFX_RenderDeviceDriver* CFX_WindowsDevice::CreateDriver(HDC hDC) {
+IFX_RenderDeviceDriver* CFX_WindowsRenderDevice::CreateDriver(HDC hDC) {
   int device_type = ::GetDeviceCaps(hDC, TECHNOLOGY);
   int obj_type = ::GetObjectType(hDC);
   bool use_printer = device_type == DT_RASPRINTER ||

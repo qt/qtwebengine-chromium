@@ -15,10 +15,10 @@
 #include <vector>
 
 #include "webrtc/api/video/video_frame.h"
+// For EncodedImage
+#include "webrtc/common_video/include/video_frame.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/typedefs.h"
-// For EncodedImage
-#include "webrtc/video_frame.h"
 
 namespace webrtc {
 
@@ -62,7 +62,9 @@ struct VCMFrameCount {
 class VCMReceiveCallback {
  public:
   virtual int32_t FrameToRender(VideoFrame& videoFrame,  // NOLINT
-                                rtc::Optional<uint8_t> qp) = 0;
+                                rtc::Optional<uint8_t> qp,
+                                VideoContentType /*content_type*/) = 0;
+
   virtual int32_t ReceivedDecodedReferenceFrame(const uint64_t pictureId) {
     return -1;
   }

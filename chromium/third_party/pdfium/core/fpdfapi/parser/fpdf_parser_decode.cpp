@@ -17,7 +17,7 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcodec/fx_codec.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
@@ -174,7 +174,7 @@ uint32_t HexDecode(const uint8_t* src_buf,
     if (!std::isxdigit(ch))
       continue;
 
-    int digit = FXSYS_toHexDigit(ch);
+    int digit = FXSYS_HexCharToInt(ch);
     if (bFirst)
       dest_buf[dest_size] = digit * 16;
     else
@@ -517,8 +517,10 @@ CFX_ByteString PDF_EncodeString(const CFX_ByteString& src, bool bHex) {
   if (bHex) {
     result.AppendChar('<');
     for (int i = 0; i < srclen; i++) {
-      result.AppendChar("0123456789ABCDEF"[src[i] / 16]);
-      result.AppendChar("0123456789ABCDEF"[src[i] % 16]);
+      char buf[2];
+      FXSYS_IntToTwoHexChars(src[i], buf);
+      result.AppendChar(buf[0]);
+      result.AppendChar(buf[1]);
     }
     result.AppendChar('>');
     return result.MakeString();
@@ -547,8 +549,7 @@ bool FlateEncode(const uint8_t* src_buf,
                  uint8_t** dest_buf,
                  uint32_t* dest_size) {
   CCodec_ModuleMgr* pEncoders = CPDF_ModuleMgr::Get()->GetCodecModule();
-  return pEncoders &&
-         pEncoders->GetFlateModule()->Encode(src_buf, src_size, dest_buf,
+  return pEncoders->GetFlateModule()->Encode(src_buf, src_size, dest_buf,
                                              dest_size);
 }
 
@@ -557,8 +558,7 @@ bool PngEncode(const uint8_t* src_buf,
                uint8_t** dest_buf,
                uint32_t* dest_size) {
   CCodec_ModuleMgr* pEncoders = CPDF_ModuleMgr::Get()->GetCodecModule();
-  return pEncoders &&
-         pEncoders->GetFlateModule()->PngEncode(src_buf, src_size, dest_buf,
+  return pEncoders->GetFlateModule()->PngEncode(src_buf, src_size, dest_buf,
                                                 dest_size);
 }
 
@@ -567,9 +567,6 @@ uint32_t FlateDecode(const uint8_t* src_buf,
                      uint8_t*& dest_buf,
                      uint32_t& dest_size) {
   CCodec_ModuleMgr* pEncoders = CPDF_ModuleMgr::Get()->GetCodecModule();
-  if (pEncoders) {
-    return pEncoders->GetFlateModule()->FlateOrLZWDecode(
-        false, src_buf, src_size, false, 0, 0, 0, 0, 0, dest_buf, dest_size);
-  }
-  return 0;
+  return pEncoders->GetFlateModule()->FlateOrLZWDecode(
+      false, src_buf, src_size, false, 0, 0, 0, 0, 0, dest_buf, dest_size);
 }

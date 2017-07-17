@@ -20,13 +20,14 @@
  * limitations under the License.
  */
 
-#include "fxbarcode/BC_Dimension.h"
 #include "fxbarcode/datamatrix/BC_Base256Encoder.h"
+
 #include "fxbarcode/datamatrix/BC_Encoder.h"
 #include "fxbarcode/datamatrix/BC_EncoderContext.h"
 #include "fxbarcode/datamatrix/BC_HighLevelEncoder.h"
 #include "fxbarcode/datamatrix/BC_SymbolInfo.h"
 #include "fxbarcode/datamatrix/BC_SymbolShapeHint.h"
+#include "fxbarcode/utils.h"
 
 CBC_Base256Encoder::CBC_Base256Encoder() {}
 CBC_Base256Encoder::~CBC_Base256Encoder() {}
@@ -58,7 +59,7 @@ void CBC_Base256Encoder::Encode(CBC_EncoderContext& context, int32_t& e) {
   if (e != BCExceptionNO) {
     return;
   }
-  bool mustPad = (context.m_symbolInfo->m_dataCapacity - currentSize) > 0;
+  bool mustPad = (context.m_symbolInfo->dataCapacity() - currentSize) > 0;
   if (context.hasMoreCharacters() || mustPad) {
     if (dataCount <= 249) {
       buffer.SetAt(0, (wchar_t)dataCount);
@@ -70,9 +71,8 @@ void CBC_Base256Encoder::Encode(CBC_EncoderContext& context, int32_t& e) {
       return;
     }
   }
-  for (int32_t i = 0, c = buffer.GetLength(); i < c; i++) {
-    context.writeCodeword(
-        randomize255State(buffer.GetAt(i), context.getCodewordCount() + 1));
+  for (const auto& c : buffer) {
+    context.writeCodeword(randomize255State(c, context.getCodewordCount() + 1));
   }
 }
 wchar_t CBC_Base256Encoder::randomize255State(wchar_t ch,

@@ -88,6 +88,13 @@ typedef struct {
   int force_zero_mode_spatial_ref;
   int current_superframe;
   int use_base_mv;
+  // Used to control the downscaling filter for source scaling, for 1 pass CBR.
+  // downsample_filter_phase: = 0 will do sub-sampling (no weighted average),
+  // = 8 will center the target pixel and get a symmetric averaging filter.
+  // downsample_filter_type: 4 filters may be used: eighttap_regular,
+  // eighttap_smooth, eighttap_sharp, and bilinear.
+  INTERP_FILTER downsample_filter_type[VPX_SS_MAX_LAYERS];
+  int downsample_filter_phase[VPX_SS_MAX_LAYERS];
 } SVC;
 
 struct VP9_COMP;

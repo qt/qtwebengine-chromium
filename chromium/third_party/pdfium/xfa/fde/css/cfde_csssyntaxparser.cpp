@@ -8,15 +8,16 @@
 
 #include <algorithm>
 
+#include "core/fxcrt/fx_codepage.h"
+#include "core/fxcrt/fx_extension.h"
+#include "third_party/base/logging.h"
 #include "xfa/fde/css/cfde_cssdeclaration.h"
 #include "xfa/fde/css/fde_cssdatatable.h"
-#include "xfa/fgas/crt/fgas_codepage.h"
 
 namespace {
 
 bool IsSelectorStart(wchar_t wch) {
-  return wch == '.' || wch == '#' || wch == '*' || (wch >= 'a' && wch <= 'z') ||
-         (wch >= 'A' && wch <= 'Z');
+  return wch == '.' || wch == '#' || wch == '*' || FXSYS_iswalpha(wch);
 }
 
 }  // namespace
@@ -182,7 +183,7 @@ FDE_CSSSyntaxStatus CFDE_CSSSyntaxParser::DoSyntaxParse() {
           m_TextPlane.MoveNext();
           break;
         default:
-          ASSERT(false);
+          NOTREACHED();
           break;
       }
     }

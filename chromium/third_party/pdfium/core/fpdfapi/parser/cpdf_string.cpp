@@ -64,3 +64,8 @@ const CPDF_String* CPDF_String::AsString() const {
 CFX_WideString CPDF_String::GetUnicodeText() const {
   return PDF_DecodeText(m_String);
 }
+
+bool CPDF_String::WriteTo(IFX_ArchiveStream* archive) const {
+  return archive->WriteString(
+      PDF_EncodeString(GetString(), IsHex()).AsStringC());
+}

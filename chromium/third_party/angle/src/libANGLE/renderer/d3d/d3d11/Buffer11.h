@@ -14,7 +14,7 @@
 
 #include "libANGLE/angletypes.h"
 #include "libANGLE/renderer/d3d/BufferD3D.h"
-#include "libANGLE/signal_utils.h"
+#include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 
 namespace gl
 {
@@ -91,20 +91,20 @@ class Buffer11 : public BufferD3D
                           GLintptr sourceOffset,
                           GLintptr destOffset,
                           GLsizeiptr size) override;
-    gl::Error map(ContextImpl *contextImpl, GLenum access, GLvoid **mapPtr) override;
+    gl::Error map(ContextImpl *contextImpl, GLenum access, void **mapPtr) override;
     gl::Error mapRange(ContextImpl *contextImpl,
                        size_t offset,
                        size_t length,
                        GLbitfield access,
-                       GLvoid **mapPtr) override;
+                       void **mapPtr) override;
     gl::Error unmap(ContextImpl *contextImpl, GLboolean *result) override;
     gl::Error markTransformFeedbackUsage() override;
 
     // We use two set of dirty events. Static buffers are marked dirty whenever
     // data changes, because they must be re-translated. Direct buffers only need to be
     // updated when the underlying ID3D11Buffer pointer changes - hopefully far less often.
-    angle::BroadcastChannel<> *getStaticBroadcastChannel();
-    angle::BroadcastChannel<> *getDirectBroadcastChannel();
+    OnBufferDataDirtyChannel *getStaticBroadcastChannel();
+    OnBufferDataDirtyChannel *getDirectBroadcastChannel();
 
   private:
     class BufferStorage;
@@ -115,7 +115,7 @@ class Buffer11 : public BufferD3D
 
     struct ConstantBufferCacheEntry
     {
-        ConstantBufferCacheEntry() : storage(nullptr), lruCount(0) { }
+        ConstantBufferCacheEntry() : storage(nullptr), lruCount(0) {}
 
         BufferStorage *storage;
         unsigned int lruCount;
@@ -162,10 +162,10 @@ class Buffer11 : public BufferD3D
     size_t mConstantBufferStorageAdditionalSize;
     unsigned int mMaxConstantBufferLruCount;
 
-    angle::BroadcastChannel<> mStaticBroadcastChannel;
-    angle::BroadcastChannel<> mDirectBroadcastChannel;
+    OnBufferDataDirtyChannel mStaticBroadcastChannel;
+    OnBufferDataDirtyChannel mDirectBroadcastChannel;
 };
 
 }  // namespace rx
 
-#endif // LIBANGLE_RENDERER_D3D_D3D11_BUFFER11_H_
+#endif  // LIBANGLE_RENDERER_D3D_D3D11_BUFFER11_H_

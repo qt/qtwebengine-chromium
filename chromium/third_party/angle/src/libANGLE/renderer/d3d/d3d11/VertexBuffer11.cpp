@@ -21,15 +21,15 @@ namespace rx
 
 VertexBuffer11::VertexBuffer11(Renderer11 *const renderer) : mRenderer(renderer)
 {
-    mBuffer             = NULL;
+    mBuffer             = nullptr;
     mBufferSize         = 0;
     mDynamicUsage       = false;
-    mMappedResourceData = NULL;
+    mMappedResourceData = nullptr;
 }
 
 VertexBuffer11::~VertexBuffer11()
 {
-    ASSERT(mMappedResourceData == NULL);
+    ASSERT(mMappedResourceData == nullptr);
     SafeRelease(mBuffer);
 }
 
@@ -51,7 +51,7 @@ gl::Error VertexBuffer11::initialize(unsigned int size, bool dynamicUsage)
         bufferDesc.MiscFlags           = 0;
         bufferDesc.StructureByteStride = 0;
 
-        HRESULT result = dxDevice->CreateBuffer(&bufferDesc, NULL, &mBuffer);
+        HRESULT result = dxDevice->CreateBuffer(&bufferDesc, nullptr, &mBuffer);
         if (FAILED(result))
         {
             return gl::Error(GL_OUT_OF_MEMORY,
@@ -76,7 +76,7 @@ gl::Error VertexBuffer11::initialize(unsigned int size, bool dynamicUsage)
 
 gl::Error VertexBuffer11::mapResource()
 {
-    if (mMappedResourceData == NULL)
+    if (mMappedResourceData == nullptr)
     {
         ID3D11DeviceContext *dxContext = mRenderer->getDeviceContext();
 
@@ -98,12 +98,12 @@ gl::Error VertexBuffer11::mapResource()
 
 void VertexBuffer11::hintUnmapResource()
 {
-    if (mMappedResourceData != NULL)
+    if (mMappedResourceData != nullptr)
     {
         ID3D11DeviceContext *dxContext = mRenderer->getDeviceContext();
         dxContext->Unmap(mBuffer, 0);
 
-        mMappedResourceData = NULL;
+        mMappedResourceData = nullptr;
     }
 }
 
@@ -139,7 +139,7 @@ gl::Error VertexBuffer11::storeVertexAttributes(const gl::VertexAttribute &attri
     const D3D_FEATURE_LEVEL featureLevel  = mRenderer->getRenderer11DeviceCaps().featureLevel;
     const d3d11::VertexFormat &vertexFormatInfo =
         d3d11::GetVertexFormatInfo(vertexFormatType, featureLevel);
-    ASSERT(vertexFormatInfo.copyFunction != NULL);
+    ASSERT(vertexFormatInfo.copyFunction != nullptr);
     vertexFormatInfo.copyFunction(input, inputStride, count, output);
 
     return gl::NoError();

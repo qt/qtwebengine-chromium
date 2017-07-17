@@ -11,13 +11,17 @@
 //  
 //===----------------------------------------------------------------------===//
 
+#include "config.h"
 #include "cxxabi.h"
 
 #include <exception>        // for std::terminate
+#include <cstdlib>          // for malloc, free
 #include <cstring>          // for memset
+#if !LIBCXXABI_HAS_NO_THREADS
+#  include <pthread.h>      // for fallback_malloc.ipp's mutexes
+#endif
 #include "cxa_exception.hpp"
 #include "cxa_handlers.hpp"
-#include "fallback_malloc.h"
 
 // +---------------------------+-----------------------------+---------------+
 // | __cxa_exception           | _Unwind_Exception CLNGC++\0 | thrown object |
@@ -31,6 +35,8 @@
 // +---------------------------+-----------------------------+
 
 namespace __cxxabiv1 {
+
+#pragma GCC visibility push(default)
 
 //  Utility routines
 static
@@ -62,16 +68,12 @@ cxa_exception_from_exception_unwind_exception(_Unwind_Exception* unwind_exceptio
     return cxa_exception_from_thrown_object(unwind_exception + 1 );
 }
 
-// Round s up to next multiple of a.
-static inline
-size_t aligned_allocation_size(size_t s, size_t a) {
-    return (s + a - 1) & ~(a - 1);
-}
-
-static inline
-size_t cxa_exception_size_from_exception_thrown_size(size_t size) {
-    return aligned_allocation_size(size + sizeof (__cxa_exception),
-                                   alignof(__cxa_exception));
+static
+inline
+size_t
+cxa_exception_size_from_exception_thrown_size(size_t size)
+{
+    return size + sizeof (__cxa_exception);
 }
 
 static void setExceptionClass(_Unwind_Exception* unwind_exception) {
@@ -102,6 +104,20 @@ static inline  int decrementHandlerCount(__cxa_exception *exception) {
     return --exception->handlerCount;
 }
 
+#include "fallback_malloc.ipp"
+
+//  Allocate some memory from _somewhere_
+static void *do_malloc(size_t size) {
+    void *ptr = std::malloc(size);
+    if (NULL == ptr) // if malloc fails, fall back to emergency stash
+        ptr = fallback_malloc(size);
+    return ptr;
+}
+
+static void do_free(void *ptr) {
+    is_fallback_ptr(ptr) ? fallback_free(ptr) : std::free(ptr);
+}
+
 /*
     If reason isn't _URC_FOREIGN_EXCEPTION_CAUGHT, then the terminateHandler
     stored in exc is called.  Otherwise the exceptionDestructor stored in 
@@ -121,7 +137,7 @@ exception_cleanup_func(_Unwind_Reason_Code reason, _Unwind_Exception* unwind_exc
     __cxa_decrement_exception_refcount(unwind_exception + 1);
 }
 
-static _LIBCXXABI_NORETURN void failed_throw(__cxa_exception* exception_header) {
+static LIBCXXABI_NORETURN void failed_throw(__cxa_exception* exception_header) {
 //  Section 2.5.3 says:
 //      * For purposes of this ABI, several things are considered exception handlers:
 //      ** A terminate() call due to a throw.
@@ -140,10 +156,9 @@ extern "C" {
 //  object. Zero-fill the object. If memory can't be allocated, call
 //  std::terminate. Return a pointer to the memory to be used for the
 //  user's exception object.
-void *__cxa_allocate_exception(size_t thrown_size) throw() {
+_LIBCXXABI_FUNC_VIS void *__cxa_allocate_exception(size_t thrown_size) throw() {
     size_t actual_size = cxa_exception_size_from_exception_thrown_size(thrown_size);
-    __cxa_exception *exception_header =
-        static_cast<__cxa_exception *>(__aligned_malloc_with_fallback(actual_size));
+    __cxa_exception* exception_header = static_cast<__cxa_exception*>(do_malloc(actual_size));
     if (NULL == exception_header)
         std::terminate();
     std::memset(exception_header, 0, actual_size);
@@ -152,8 +167,8 @@ void *__cxa_allocate_exception(size_t thrown_size) throw() {
 
 
 //  Free a __cxa_exception object allocated with __cxa_allocate_exception.
-void __cxa_free_exception(void *thrown_object) throw() {
-    __aligned_free_with_fallback(cxa_exception_from_thrown_object(thrown_object));
+_LIBCXXABI_FUNC_VIS void __cxa_free_exception(void *thrown_object) throw() {
+    do_free(cxa_exception_from_thrown_object(thrown_object));
 }
 
 
@@ -162,7 +177,7 @@ void __cxa_free_exception(void *thrown_object) throw() {
 //  Otherwise, it will work like __cxa_allocate_exception.
 void * __cxa_allocate_dependent_exception () {
     size_t actual_size = sizeof(__cxa_dependent_exception);
-    void *ptr = __aligned_malloc_with_fallback(actual_size);
+    void *ptr = do_malloc(actual_size);
     if (NULL == ptr)
         std::terminate();
     std::memset(ptr, 0, actual_size);
@@ -173,7 +188,7 @@ void * __cxa_allocate_dependent_exception () {
 //  This function shall free a dependent_exception.
 //  It does not affect the reference count of the primary exception.
 void __cxa_free_dependent_exception (void * dependent_exception) {
-    __aligned_free_with_fallback(dependent_exception);
+    do_free(dependent_exception);
 }
 
 
@@ -203,7 +218,7 @@ handler, _Unwind_RaiseException may return. In that case, __cxa_throw
 will call terminate, assuming that there was no handler for the
 exception.
 */
-void
+_LIBCXXABI_FUNC_VIS LIBCXXABI_NORETURN void
 __cxa_throw(void *thrown_object, std::type_info *tinfo, void (*dest)(void *)) {
     __cxa_eh_globals *globals = __cxa_get_globals();
     __cxa_exception* exception_header = cxa_exception_from_thrown_object(thrown_object);
@@ -236,8 +251,9 @@ The adjusted pointer is computed by the personality routine during phase 1
 
   Requires:  exception is native
 */
+_LIBCXXABI_FUNC_VIS
 void *__cxa_get_exception_ptr(void *unwind_exception) throw() {
-#if defined(_LIBCXXABI_ARM_EHABI)
+#if LIBCXXABI_ARM_EHABI
     return reinterpret_cast<void*>(
         static_cast<_Unwind_Control_Block*>(unwind_exception)->barrier_cache.bitpattern[0]);
 #else
@@ -246,11 +262,12 @@ void *__cxa_get_exception_ptr(void *unwind_exception) throw() {
 #endif
 }
 
-#if defined(_LIBCXXABI_ARM_EHABI)
+#if LIBCXXABI_ARM_EHABI
 /*
 The routine to be called before the cleanup.  This will save __cxa_exception in
 __cxa_eh_globals, so that __cxa_end_cleanup() can recover later.
 */
+_LIBCXXABI_FUNC_VIS
 bool __cxa_begin_cleanup(void *unwind_arg) throw() {
     _Unwind_Exception* unwind_exception = static_cast<_Unwind_Exception*>(unwind_arg);
     __cxa_eh_globals* globals = __cxa_get_globals();
@@ -328,7 +345,7 @@ asm (
     "	bl	abort\n"
     "	.popsection"
 );
-#endif  // defined(_LIBCXXABI_ARM_EHABI)
+#endif  // LIBCXXABI_ARM_EHABI
     
 /*
 This routine can catch foreign or native exceptions.  If native, the exception
@@ -388,7 +405,7 @@ __cxa_begin_catch(void* unwind_arg) throw()
             globals->caughtExceptions = exception_header;
         }
         globals->uncaughtExceptions -= 1;   // Not atomically, since globals are thread-local
-#if defined(_LIBCXXABI_ARM_EHABI)
+#if LIBCXXABI_ARM_EHABI
         return reinterpret_cast<void*>(exception_header->unwindHeader.barrier_cache.bitpattern[0]);
 #else
         return exception_header->adjustedPtr;
@@ -422,7 +439,7 @@ For a foreign exception:
 * If it has been rethrown, there is nothing to do.
 * Otherwise delete the exception and pop the catch stack to empty.
 */
-void __cxa_end_catch() {
+_LIBCXXABI_FUNC_VIS void __cxa_end_catch() {
   static_assert(sizeof(__cxa_exception) == sizeof(__cxa_dependent_exception),
                 "sizeof(__cxa_exception) must be equal to "
                 "sizeof(__cxa_dependent_exception)");
@@ -499,7 +516,7 @@ void __cxa_end_catch() {
 // Note:  exception_header may be masquerading as a __cxa_dependent_exception
 //        and that's ok.  exceptionType is there too.
 //        However watch out for foreign exceptions.  Return null for them.
-std::type_info *__cxa_current_exception_type() {
+_LIBCXXABI_FUNC_VIS std::type_info *__cxa_current_exception_type() {
 //  get the current exception
     __cxa_eh_globals *globals = __cxa_get_globals_fast();
     if (NULL == globals)
@@ -524,7 +541,7 @@ If the exception is native:
   Note:  exception_header may be masquerading as a __cxa_dependent_exception
          and that's ok.
 */
-void __cxa_rethrow() {
+_LIBCXXABI_FUNC_VIS LIBCXXABI_NORETURN void __cxa_rethrow() {
     __cxa_eh_globals* globals = __cxa_get_globals();
     __cxa_exception* exception_header = globals->caughtExceptions;
     if (NULL == exception_header)
@@ -569,7 +586,7 @@ void __cxa_rethrow() {
 
     Requires:  If thrown_object is not NULL, it is a native exception.
 */
-void
+_LIBCXXABI_FUNC_VIS void
 __cxa_increment_exception_refcount(void *thrown_object) throw() {
     if (thrown_object != NULL )
     {
@@ -586,7 +603,7 @@ __cxa_increment_exception_refcount(void *thrown_object) throw() {
 
     Requires:  If thrown_object is not NULL, it is a native exception.
 */
-void
+_LIBCXXABI_FUNC_VIS void
 __cxa_decrement_exception_refcount(void *thrown_object) throw() {
     if (thrown_object != NULL )
     {
@@ -610,7 +627,7 @@ __cxa_decrement_exception_refcount(void *thrown_object) throw() {
     been no exceptions thrown, ever, on this thread, we can return NULL without 
     the need to allocate the exception-handling globals.
 */
-void *__cxa_current_primary_exception() throw() {
+_LIBCXXABI_FUNC_VIS void *__cxa_current_primary_exception() throw() {
 //  get the current exception
     __cxa_eh_globals* globals = __cxa_get_globals_fast();
     if (NULL == globals)
@@ -695,5 +712,7 @@ __cxa_uncaught_exceptions() throw()
 }
 
 }  // extern "C"
+
+#pragma GCC visibility pop
 
 }  // abi

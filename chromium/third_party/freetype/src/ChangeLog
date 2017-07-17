@@ -1,3 +1,636 @@
+2017-05-13  Werner Lemberg  <wl@gnu.org>
+
+	* Version 2.8 released.
+	=======================
+
+
+	Tag sources with `VER-2-8'.
+
+	* docs/VERSION.TXT: Add entry for version 2.8.
+	* docs/CHANGES: Updated.
+
+	* README, Jamfile (RefDoc), builds/windows/vc2005/freetype.vcproj,
+	builds/windows/vc2005/index.html,
+	builds/windows/vc2008/freetype.vcproj,
+	builds/windows/vc2008/index.html,
+	builds/windows/vc2010/freetype.vcxproj,
+	builds/windows/vc2010/index.html,
+	builds/windows/visualc/freetype.dsp,
+	builds/windows/visualc/freetype.vcproj,
+	builds/windows/visualc/index.html,
+	builds/windows/visualce/freetype.dsp,
+	builds/windows/visualce/freetype.vcproj,
+	builds/windows/visualce/index.html,
+	builds/wince/vc2005-ce/freetype.vcproj,
+	builds/wince/vc2005-ce/index.html,
+	builds/wince/vc2008-ce/freetype.vcproj,
+	builds/wince/vc2008-ce/index.html: s/2.7.1/2.8/, s/271/28/.
+
+	* include/freetype/freetype.h (FREETYPE_MINOR): Set to 8.
+	(FREETYPE_PATCH): Set to 0.
+
+	* builds/unix/configure.raw (version_info): Set to 20:0:14.
+	* CMakeLists.txt (VERSION_MINOR): Set to 8.
+	(VERSION_PATCH): Set to 0.
+
+2017-05-12  Hin-Tak Leung  <htl10@users.sourceforge.net>
+
+	Fix `FT_UINT_TO_POINTER' macro for Windows.
+
+	* builds/unix/ftconfig.in, builds/vms/ftconfig.h,
+	include/freetype/config/ftconfig.h (FT_UINT_TO_POINTER) [_WIN64]:
+	Fix definition.
+
+2017-05-11  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Chakma script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Chakma.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Chakma standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Chakma data.
+
+2017-05-10  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Kayah Li script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Kayah Li.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Kayah Li standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Kayah Li data.
+
+2017-05-10  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Bamum script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Bamum.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Bamum standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Bamum data.
+
+2017-05-10  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Saurashtra script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Saurashtra.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Saurashtra standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Saurashtra
+	data.
+
+2017-05-10  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Buhid script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Buhid.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Buhid standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Buhid data.
+
+2017-05-08  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Shavian script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Shavian.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Shavian standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Shavian data.
+
+2017-05-08  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Vai script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Vai.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Vai standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Vai data.
+
+2017-05-08  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Osmanya script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Osmanya.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Osmanya standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Osmanya data.
+
+2017-05-08  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Coptic script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Coptic.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Coptic standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Coptic data.
+
+2017-05-08  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Carian script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Carian.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Carian standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Carian data.
+
+2017-05-07  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Add tricky font `DFGirl-W6-WIN-BF' (from Dynalab).
+
+	Reported by Roy Tam <roytam@gmail.com>.
+
+	* src/truetype/ttobjs.c (tt_check_trickyness_family): Implement it.
+
+2017-05-07  Roy Tam  <roytam@gmail.com>
+	    Werner Lemberg  <wl@gnu.org>
+
+	[truetype] More tricky fonts (mainly from Dynalab).
+
+	* src/truetype/ttobjs.c (tt_check_trickyness_family,
+	tt_check_trickyness_sfnt_ids): Add them.
+
+2017-05-07  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Add tricky font `DLCHayMedium' (from Dynalab).
+
+	Reported by Roy Tam <roytam@gmail.com>.
+
+	* src/truetype/ttobjs.c (tt_check_trickyness_family): Implement it.
+
+2017-05-03  Werner Lemberg  <wl@gnu.org>
+
+	*/*: s/backwards compatibility/backward compatibility/.
+
+2017-05-03  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Unified Canadian Syllabics script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Unified Canadian
+	Syllabics.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Unified Canadian Syllabics standard
+	character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Unified
+	Canadian Syllabics data.
+
+2017-05-03  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org>
+
+	[autofit] Add blue-zone support for Sundanese script.
+
+	This essentially moves the Sundanese script from the `Indic' hinter
+	to the `Latin' hinter.
+
+	* src/autofit/afblue.dat: Add blue zone data for Sundanese.
+
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Sundanese standard character and move
+	data out of AF_CONFIG_OPTION_INDIC block.
+
+	* src/autofit/afranges.c: Move Sundanese data out of
+	AF_CONFIG_OPTION_INDIC block.
+
+	* src/autofit/afstyles.h: Update Sundanese data; in particular, use
+	AF_WRITING_SYSTEM_LATIN.
+
+2017-05-03  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Avestan script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Avestan.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Avestan standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Avestan data.
+
+2017-05-02  Behdad Esfahbod  <behdad@behdad.org>
+
+	[truetype] Make `IUP' gvar deltas do the same as Apple (#50832).
+
+	When points are not touched by gvar interpolation deltas, FreeType
+	gave a slightly different result than Apple's CoreText.
+
+	The OpenType working group will update the specification to document
+	the following behaviour: If the two points with deltas to the `left'
+	and `right' of the untouched point have the same coordinate, then
+	the inferred delta for the untouched point should be zero.
+
+	* src/truetype/ttgxvar.c (tt_delta_interpolate): Implement new
+	behaviour.
+
+2017-05-02  Werner Lemberg  <wl@gnu.org>
+
+	[autofit] Remove `slight' auto-hint mode again.
+
+	A poll on freetype-devel favoured changes directly applied to
+	`light'.
+
+	* include/freetype/freetype.h (FT_LOAD_TARGET_SLIGHT,
+	FT_RENDER_MODE_SLIGHT): Removed.
+
+	* src/autofit/afcjk.c (af_cjk_hints_init), src/autofit/aflatin.c
+	(af_latin_hints_init), src/autofit/aflatin2.c
+	(af_latin2_hints_init): Revert change from 2017-04-22.
+
+	* src/autofit/afloader.c (af_loader_load_glyph) Remove references to
+	FT_RENDER_MODE_SLIGHT.
+	[AF_CONFIG_OPTION_TT_SIZE_METRICS]: Enable TrueType-like metrics
+	unconditionally.
+
+	* src/base/ftadvanc.c (LOAD_ADVANCE_FAST_CHECK): Revert change from
+	2017-04-22.
+
+	* src/base/ftobjs.c (FT_Load_Glyph): Revert change from 2017-04-22.
+
+	* src/pshinter/pshalgo.c (ps_hints_apply): Revert change from
+	2017-04-22.
+
+	* src/smooth/ftsmooth.c (ft_smooth_render): Revert change from
+	2017-04-22.
+
+	* docs/CHANGES: Updated.
+
+2017-04-30  Werner Lemberg  <wl@gnu.org>
+
+	[autofit] Fix metrics computation.
+
+	Problem reported by Markus Trippelsdorf <markus@trippelsdorf.de> and
+	Nikolaus Waxweiler <madigens@gmail.com>.
+
+	* src/base/ftobjs.c (FT_Request_Size): Trigger recomputation of
+	auto-hinter metrics.  Without this change, multiple size changing
+	calls for a single face fail.
+
+2017-04-29  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttdriver.c (tt_size_request): Properly check `error'.
+
+	Reported by Earnestly <zibeon@googlemail.com> in
+
+	  http://lists.nongnu.org/archive/html/freetype/2017-04/msg00031.html
+
+2017-04-27  Werner Lemberg  <wl@gnu.org>
+
+	Introduce AF_CONFIG_OPTION_TT_SIZE_METRICS configuration option.
+
+	* include/freetype/config/ftoption.h
+	(AF_CONFIG_OPTION_TT_SIZE_METRICS): New option, commented out by
+	default.
+
+	* src/autofit/afloader.c (af_loader_load_glyph): Use
+	AF_CONFIG_OPTION_TT_SIZE_METRICS to guard the corresponding code.
+
+2017-04-26  Werner Lemberg  <wl@gnu.org>
+
+	* include/freetype/freetype.h (FT_Render_Mode): Fix order.
+
+	This retains backward compatibility.
+
+	Noted by Alexei.
+
+2017-04-22  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Do linear scaling for FT_LOAD_NO_HINTING (#50470).
+
+	* src/truetype/ttobs.h (TT_SizeRec): Add field `hinted_metrics' to
+	hold hinted metrics.
+	Make `metrics' a pointer so that `tt_glyph_load' can easily switch
+	between metrics.
+
+	* src/truetype/ttdriver.c (tt_size_request): Updated.
+	(tt_glyph_load): Use top-level metrics if FT_LOAD_NO_HINTING is
+	used.
+
+	* src/truetype/ttgload.c (TT_Hint_Glyph, TT_Process_Simple_Glyph,
+	TT_Process_Composite_Component, load_truetype_glyph,
+	compute_glyph_metrics, TT_Load_Glyph): Updated.
+
+	* src/truetype/ttinterp.c (TT_Load_Context): Updated.
+
+	* src/truetype/ttobjs.c (tt_size_reset): Updated.
+
+	* src/truetype/ttsubpix.c (sph_set_tweaks): Updated.
+
+2017-04-22  Werner Lemberg  <wl@gnu.org>
+
+	Add new `slight' auto-hinting mode.
+
+	This mode uses fractional advance widths and doesn't scale glyphs
+	horizontally, only applying vertical scaling and hinting.
+
+	At the same time, the behaviour of the `light' auto-hinter gets
+	restored for backward compatibility: Both vertical and horizontal
+	scaling is again based on rounded metrics values (this was changed
+	in a commit from 2017-03-30 as a side effect).  To be more precise,
+	the behaviour is restored for TrueType fonts only; for other font
+	formats like Type 1, this is a new feature of the `light' hinting
+	mode.
+
+	* include/freetype/freetype.h (FT_LOAD_TARGET_SLIGHT): New macro.
+	(FT_RENDER_MODE_SLIGHT): New render mode.
+
+	* include/freetype/internal/ftobjs.h (FT_Size_InternalRec): Add
+	`autohint_mode' and `autohint_metrics' fields.
+
+	* src/autofit/afcjk.c (af_cjk_hints_init), src/autofit/aflatin.c
+	(af_latin_hints_init), src/autofit/aflatin2 (af_latin2_hints_init):
+	Updated.
+
+	* src/autofit/afloader.c (af_loader_embolden_glyph_in_slot): Use
+	`autohint_metrics'.
+	(af_loader_load_glyph): s/internal/slot_internal/.
+	Initialize `autohint_metrics' and `autohint_mode' depending on
+	current auto-hint mode.
+	Use `autohint_metrics'.
+	Updated.
+
+	* src/base/ftadvanc.c (LOAD_ADVANCE_FAST_CHECK): Updated.
+
+	* src/base/ftobjs.c (FT_Load_Glyph): Updated.
+	(FT_New_Size): Allocate `internal' object.
+
+	* src/pshinter/pshalgo.c (ps_hints_apply): Updated.
+
+	* src/smooth/ftsmooth.c (ft_smooth_render): Updated.
+
+2017-04-22  Werner Lemberg  <wl@gnu.org>
+
+	Introduce `FT_Size_InternalRec' structure.
+
+	We are going to extend this later on.
+
+	* include/freetype/internal/ftobjs.h (FT_Size_InternalRec): New
+	structure with a single field `module_data'.
+
+	* src/base/ftobjs.c (FT_New_Size): Allocate `internal' field of
+	`FT_Size' structure.
+
+	* src/cff/cffgload.c (cff_builder_init, cff_decoder_prepare): Use
+	`size->internal->module_data' instead of `size->internal'.
+
+	* src/cff/cffobjs.c (cff_size_done): Deallocate `module_data'.
+	(cff_size_init, cff_size_select, cff_size_request): Use
+	`size->internal->module_data' instead of `size->internal'.
+
+	* src/cif/cidobjs.c (cid_size_done, cid_size_init,
+	cid_size_request): Use `size->internal->module_data' instead of
+	`size->internal'.
+
+	* src/psaux/psobjs.c (t1_builder_ini): Use
+	`size->internal->module_data' instead of `size->internal'.
+
+	* src/type1/t1objs.c (T1_Size_Done, T1_Size_Init, T1_Size_Request):
+	Use `size->internal->module_data' instead of `size->internal'.
+
+2017-04-21  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	* src/smooth/ftsmooth.h: Remove unused guards and declaration.
+
+2017-04-16  Hin-Tak Leung  <htl10@users.sourceforge.net>
+
+	Fix tracing messages.
+
+	* src/base/ftobjs.c (FT_Face_GetCharVariantIndex,
+	FT_Face_GetCharVariantIsDefault, FT_Face_GetVariantsOfChar): Print
+	correct function name.
+
+2017-04-08  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Old Turkic script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Old Turkic.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Old Turkic standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Old Turkic data.
+
+2017-04-08  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Gothic script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Gothic.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Gothic standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Gothic data.
+
+2017-04-08  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Cypriot script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Cypriot.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Cypriot standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Cypriot data.
+
+2017-04-08  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Deseret script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Deseret.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Deseret standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Deseret data.
+
+2017-04-07  Werner Lemberg  <wl@gnu.org>
+
+	[autofit] Fix invalid character range description (#50745).
+
+	Also reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=1034
+
+	* src/autofit/afranges.c (af_glag_nonbase_uniranges): Fix typo in
+	recent commit.
+
+2017-04-07  Werner Lemberg  <wl@gnu.org>
+
+	[ftfuzzer] Fix clang warnings.
+
+	* src/tools/ftfuzzer/ftfuzzer.cc (LLVMFuzzerTestOneInput): Add
+	casts.
+
+2017-04-06  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Lisu script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Lisu.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Lisu standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Lisu data.
+
+2017-04-06  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Osage script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Osage.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Osage standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Osage data.
+
+2017-04-06  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Glagolitic script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Glagolitic.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Glagolitic standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Glagolitic data.
+
+2017-04-06  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Tai Viet script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Tai Viet.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Tai Viet standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Tai Viet data.
+
+2017-04-06  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for Tifinagh script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Tifinagh.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Tifinagh standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Tifinagh data.
+
+2017-04-06  Sascha Brawer  <sascha@google.com>
+	    Werner Lemberg  <wl@gnu.org
+
+	[autofit] Add support for N'Ko script.
+
+	* src/autofit/afblue.dat: Add blue zone data for N'Ko.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add N'Ko standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add N'Ko data.
+
+2017-04-06  Sascha Brawer  <sascha@google.com>
+
+	[autofit] Add support for Adlam script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Adlam.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Adlam standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Adlam data.
+
+2017-04-06  Sascha Brawer  <sascha@google.com>
+
+	[autofit] Add support for Ol Chiki script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Ol Chiki.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Ol Chiki standard character.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Ol Chiki data.
+
+2017-04-03  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Avoid reexecution of `fpgm' and `prep' in case of error.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=981
+
+	* include/freetype/fterrdef.h (FT_Err_DEF_In_Glyf_Bytecode): New
+	error code.
+
+	* src/truetype/ttinterp.c (Ins_FDEF, Ins_IDEF): Prohibit execution
+	of these two opcodes in `glyf' bytecode.
+	(TT_RunIns): Don't enforce reexecution of `fpgm' and `prep' bytecode
+	in case of error since function tables can no longer be modified
+	(due to the changes in `Ins_FDEF' and `Ins_IDEF').  This change can
+	enormously speed up handling of broken fonts.
+
+2017-04-02  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[autofit] Disable metrics adjustment for `FT_LOAD_TARGET_LCD'.
+
+	* src/autofit/aflatin.c (af_latin_hints_init): Updated.
+	* src/autofit/aflatin2.c (af_latin2_hints_init): Ditto.
+
+2017-04-01  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttgload.c: Include FT_CONFIG_CONFIG_H.
+
+	Otherwise FT_UINT_TO_POINTER might not be defined.
+
+	Problem reported by Alexei.
+
+2017-03-31  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[autofit] Disable stem adjustment for `FT_LOAD_TARGET_LCD'.
+
+	* include/freetype/freetype.h (FT_LOAD_TARGET_LCD): Document it.
+	* src/autofit/afcjk.c (af_cjk_hints_init): Updated.
+	* src/autofit/aflatin.c (af_latin_hints_init): Ditto.
+	* src/autofit/aflatin2.c (af_latin2_hints_init): Ditto.
+
 2017-03-31  Werner Lemberg  <wl@gnu.org>
 
 	* src/cff/cffload.c (cff_font_load): Improve fix from 2017-01-04.
@@ -119,7 +752,7 @@
 
 	* src/truetype/ttdriver.c (tt_size_select): s/metrics/size_metrics/.
 
-	* src/truetype/ttgload.c (tt_get_metrics_incr_overrids,
+	* src/truetype/ttgload.c (tt_get_metrics_incr_overrides,
 	compute_glyph_metrics): s/metrics/incr_metrics/.
 	(load_sbit_image): s/metrics/sbit_metrics/.
 
@@ -650,7 +1283,7 @@
 	(FT_LibraryRec): Updated.
 
 	* src/base/ftlcdfil.c (_ft_lcd_filter_fir): Renamed to...
-	(ft_lcd_filter_dir): ... this base function.
+	(ft_lcd_filter_fir): ... this base function.
 	Updated.
 	(_ft_lcd_filter_legacy): Updated.
 	(FT_Library_SetLcdFilterWeights, FT_Library_SetLcdFilter): Updated.
@@ -929,7 +1562,7 @@
 	(TT_Name_ConvertFunc): This.
 	(tt_face_get_name): Updated.
 
-	* src/sfnt/ttload.c (tt_face_load_name, tt_face_free_names):
+	* src/sfnt/ttload.c (tt_face_load_name, tt_face_free_name):
 	Updated.
 
 2017-01-24  Werner Lemberg  <wl@gnu.org>

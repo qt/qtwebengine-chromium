@@ -131,20 +131,13 @@ rtc::scoped_refptr<I420Buffer> I420Buffer::Rotate(
   return buffer;
 }
 
-// static
-rtc::scoped_refptr<VideoFrameBuffer> I420Buffer::Rotate(
-    rtc::scoped_refptr<VideoFrameBuffer> src,
-    VideoRotation rotation) {
-  if (rotation == webrtc::kVideoRotation_0) {
-    return src;
-  } else {
-    return Rotate(*src, rotation);
-  }
-}
-
 void I420Buffer::InitializeData() {
   memset(data_.get(), 0,
          I420DataSize(height_, stride_y_, stride_u_, stride_v_));
+}
+
+VideoFrameBuffer::Type I420Buffer::type() const {
+  return Type::kI420;
 }
 
 int I420Buffer::width() const {
@@ -173,14 +166,6 @@ int I420Buffer::StrideU() const {
 }
 int I420Buffer::StrideV() const {
   return stride_v_;
-}
-
-void* I420Buffer::native_handle() const {
-  return nullptr;
-}
-
-rtc::scoped_refptr<VideoFrameBuffer> I420Buffer::NativeToI420Buffer() {
-  return this;
 }
 
 uint8_t* I420Buffer::MutableDataY() {

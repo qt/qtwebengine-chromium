@@ -98,7 +98,6 @@ class TStructure : public TFieldListCollection
     bool containsArrays() const;
     bool containsType(TBasicType t) const;
     bool containsSamplers() const;
-    bool containsImages() const;
 
     void createSamplerSymbols(const TString &structName,
                               const TString &structAPIName,
@@ -163,7 +162,7 @@ class TInterfaceBlock : public TFieldListCollection
     }
 
     const TString &instanceName() const { return *mInstanceName; }
-    bool hasInstanceName() const { return mInstanceName != NULL; }
+    bool hasInstanceName() const { return mInstanceName != nullptr; }
     bool isArray() const { return mArraySize > 0; }
     int arraySize() const { return mArraySize; }
     TLayoutBlockStorage blockStorage() const { return mBlockStorage; }
@@ -319,6 +318,7 @@ class TType
     {
         if (primarySize != ps)
         {
+            ASSERT(ps <= 4);
             primarySize = ps;
             invalidateMangledName();
         }
@@ -327,6 +327,7 @@ class TType
     {
         if (secondarySize != ss)
         {
+            ASSERT(ss <= 4);
             secondarySize = ss;
             invalidateMangledName();
         }
@@ -377,6 +378,8 @@ class TType
     bool isScalar() const { return primarySize == 1 && secondarySize == 1 && !structure; }
     bool isScalarFloat() const { return isScalar() && type == EbtFloat; }
     bool isScalarInt() const { return isScalar() && (type == EbtInt || type == EbtUInt); }
+
+    bool canBeConstructed() const;
 
     TStructure *getStruct() const { return structure; }
     void setStruct(TStructure *s)
@@ -466,11 +469,6 @@ class TType
     bool isStructureContainingSamplers() const
     {
         return structure ? structure->containsSamplers() : false;
-    }
-
-    bool isStructureContainingImages() const
-    {
-        return structure ? structure->containsImages() : false;
     }
 
     void createSamplerSymbols(const TString &structName,

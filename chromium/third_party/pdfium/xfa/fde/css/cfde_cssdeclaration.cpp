@@ -6,7 +6,8 @@
 
 #include "xfa/fde/css/cfde_cssdeclaration.h"
 
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
+#include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
 #include "xfa/fde/css/cfde_csscolorvalue.h"
 #include "xfa/fde/css/cfde_csscustomproperty.h"
@@ -20,7 +21,7 @@
 namespace {
 
 uint8_t Hex2Dec(uint8_t hexHigh, uint8_t hexLow) {
-  return (FXSYS_toHexDigit(hexHigh) << 4) + FXSYS_toHexDigit(hexLow);
+  return (FXSYS_HexCharToInt(hexHigh) << 4) + FXSYS_HexCharToInt(hexLow);
 }
 
 bool ParseCSSNumber(const wchar_t* pszValue,
@@ -265,7 +266,7 @@ void CFDE_CSSDeclaration::AddProperty(const FDE_CSSPropertyTable* pTable,
       ParseValueListProperty(pTable, pszValue, iValueLen, bImportant);
       return;
     default:
-      ASSERT(false);
+      NOTREACHED();
       break;
   }
 }

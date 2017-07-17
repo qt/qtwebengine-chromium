@@ -94,6 +94,8 @@ rtc_static_library("video_coding") {
     ":webrtc_i420",
     ":webrtc_vp8",
     ":webrtc_vp9",
+    "..:module_api",
+    "../..:video_stream_api",
     "../..:webrtc_common",
     "../../base:rtc_base",
     "../../base:rtc_base_approved",
@@ -128,6 +130,7 @@ rtc_static_library("video_coding_utility") {
   }
 
   deps = [
+    "..:module_api",
     "../..:webrtc_common",
     "../../api/video_codecs:video_codecs_api",
     "../../base:rtc_base_approved",
@@ -224,9 +227,11 @@ rtc_static_library("webrtc_vp8") {
 
   deps = [
     ":video_coding_utility",
+    "..:module_api",
     "../..:webrtc_common",
     "../../api/video_codecs:video_codecs_api",
     "../../base:rtc_base_approved",
+    "../../base:rtc_task_queue",
     "../../common_video",
     "../../system_wrappers",
   ]
@@ -259,6 +264,7 @@ rtc_static_library("webrtc_vp9") {
 
   deps = [
     ":video_coding_utility",
+    "..:module_api",
     "../../base:rtc_base_approved",
     "../../common_video",
     "../../system_wrappers",
@@ -379,6 +385,12 @@ if (rtc_include_tests) {
   rtc_source_set("video_coding_modules_tests") {
     testonly = true
 
+    # Skip restricting visibility on mobile platforms since the tests on those
+    # gets additional generated targets which would require many lines here to
+    # cover (which would be confusing to read and hard to maintain).
+    if (!is_android && !is_ios) {
+      visibility = [ "//webrtc/modules:modules_tests" ]
+    }
     sources = [
       "codecs/h264/test/h264_impl_unittest.cc",
       "codecs/test/videoprocessor_integrationtest.cc",
@@ -479,6 +491,13 @@ if (rtc_include_tests) {
 
   rtc_source_set("video_coding_unittests") {
     testonly = true
+
+    # Skip restricting visibility on mobile platforms since the tests on those
+    # gets additional generated targets which would require many lines here to
+    # cover (which would be confusing to read and hard to maintain).
+    if (!is_android && !is_ios) {
+      visibility = [ "//webrtc/modules:modules_unittests" ]
+    }
     sources = [
       "codecs/test/packet_manipulator_unittest.cc",
       "codecs/test/stats_unittest.cc",
@@ -529,6 +548,7 @@ if (rtc_include_tests) {
       ":webrtc_h264",
       ":webrtc_vp8",
       ":webrtc_vp9",
+      "..:module_api",
       "../..:webrtc_common",
       "../../api:video_frame_api",
       "../../api/video_codecs:video_codecs_api",

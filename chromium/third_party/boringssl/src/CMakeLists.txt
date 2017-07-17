@@ -9,6 +9,8 @@ if(WIN32)
   set(CMAKE_GENERATOR_CC cl)
 endif()
 
+include(sources.cmake)
+
 enable_language(C)
 enable_language(CXX)
 
@@ -34,13 +36,13 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(C_CXX_FLAGS "-Wall -Werror -Wformat=2 -Wsign-compare -Wmissing-field-initializers -Wwrite-strings -ggdb -fvisibility=hidden -fno-common")
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wnewline-eof")
+  else()
+    # GCC (at least 4.8.4) has a bug where it'll find unreachable free() calls
+    # and declare that the code is trying to free a stack pointer.
+    set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wno-free-nonheap-object")
   endif()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${C_CXX_FLAGS} -Wmissing-prototypes -Wold-style-definition -Wstrict-prototypes")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 ${C_CXX_FLAGS} -Wmissing-declarations")
-  # Clang's integerated assembler does not support debug symbols.
-  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -Wa,-g")
-  endif()
 elseif(MSVC)
   set(MSVC_DISABLED_WARNINGS_LIST
       "C4061" # enumerator 'identifier' in switch of enum 'enumeration' is not
@@ -143,8 +145,8 @@ if(FUZZ)
     set(RUNNER_ARGS ${RUNNER_ARGS} "-fuzzer" "-shim-config" "fuzzer_mode.json")
   endif()
 
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize-coverage=edge,indirect-calls,8bit-counters")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize-coverage=edge,indirect-calls,8bit-counters")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize-coverage=edge,indirect-calls,trace-pc-guard")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize-coverage=edge,indirect-calls,trace-pc-guard")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
   link_directories(.)
 endif()
@@ -156,50 +158,6 @@ if (BUILD_SHARED_LIBS)
   # Enable position-independent code globally. This is needed because
   # some library targets are OBJECT libraries.
   set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
-endif()
-
-if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
-  set(ARCH "x86_64")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "amd64")
-  set(ARCH "x86_64")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64")
-  # cmake reports AMD64 on Windows, but we might be building for 32-bit.
-  if (CMAKE_CL_64)
-    set(ARCH "x86_64")
-  else()
-    set(ARCH "x86")
-  endif()
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86")
-  set(ARCH "x86")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i386")
-  set(ARCH "x86")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i686")
-  set(ARCH "x86")
-elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "^arm*")
-  set(ARCH "arm")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64")
-  set(ARCH "aarch64")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "mips")
-  # Just to avoid the “unknown processor” error.
-  set(ARCH "generic")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "ppc64le")
-  set(ARCH "ppc64le")
-else()
-  message(FATAL_ERROR "Unknown processor:" ${CMAKE_SYSTEM_PROCESSOR})
-endif()
-
-if (ANDROID AND ${ARCH} STREQUAL "arm")
-  # The Android-NDK CMake files somehow fail to set the -march flag for
-  # assembly files. Without this flag, the compiler believes that it's
-  # building for ARMv5.
-  set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -march=${CMAKE_SYSTEM_PROCESSOR}")
-endif()
-
-if (${ARCH} STREQUAL "x86" AND APPLE)
-  # With CMake 2.8.x, ${CMAKE_SYSTEM_PROCESSOR} evalutes to i386 on OS X,
-  # but clang defaults to 64-bit builds on OS X unless otherwise told.
-  # Set ARCH to x86_64 so clang and CMake agree. This is fixed in CMake 3.
-  set(ARCH "x86_64")
 endif()
 
 if (MSAN)
@@ -231,9 +189,71 @@ if (GCOV)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
 endif()
 
+if(FIPS)
+  add_definitions(-DBORINGSSL_FIPS)
+endif()
+
+# CMake's iOS support uses Apple's multiple-architecture toolchain. It takes an
+# architecture list from CMAKE_OSX_ARCHITECTURES, leaves CMAKE_SYSTEM_PROCESSOR
+# alone, and expects all architecture-specific logic to be conditioned within
+# the source files rather than the build. This does not work for our assembly
+# files, so we fix CMAKE_SYSTEM_PROCESSOR and only support single-architecture
+# builds.
+if (NOT OPENSSL_NO_ASM AND CMAKE_OSX_ARCHITECTURES)
+  list(LENGTH CMAKE_OSX_ARCHITECTURES NUM_ARCHES)
+  if (NOT ${NUM_ARCHES} EQUAL 1)
+    message(FATAL_ERROR "Universal binaries not supported.")
+  endif()
+  list(GET CMAKE_OSX_ARCHITECTURES 0 CMAKE_SYSTEM_PROCESSOR)
+endif()
+
 if (OPENSSL_NO_ASM)
   add_definitions(-DOPENSSL_NO_ASM)
   set(ARCH "generic")
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
+  set(ARCH "x86_64")
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "amd64")
+  set(ARCH "x86_64")
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64")
+  # cmake reports AMD64 on Windows, but we might be building for 32-bit.
+  if (CMAKE_CL_64)
+    set(ARCH "x86_64")
+  else()
+    set(ARCH "x86")
+  endif()
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86")
+  set(ARCH "x86")
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i386")
+  set(ARCH "x86")
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i686")
+  set(ARCH "x86")
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64")
+  set(ARCH "aarch64")
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64")
+  set(ARCH "aarch64")
+elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "^arm*")
+  set(ARCH "arm")
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "mips")
+  # Just to avoid the “unknown processor” error.
+  set(ARCH "generic")
+elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "ppc64le")
+  set(ARCH "ppc64le")
+else()
+  message(FATAL_ERROR "Unknown processor:" ${CMAKE_SYSTEM_PROCESSOR})
+endif()
+
+if (ANDROID AND ${ARCH} STREQUAL "arm")
+  # The Android-NDK CMake files somehow fail to set the -march flag for
+  # assembly files. Without this flag, the compiler believes that it's
+  # building for ARMv5.
+  set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -march=${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
+if (${ARCH} STREQUAL "x86" AND APPLE)
+  # With CMake 2.8.x, ${CMAKE_SYSTEM_PROCESSOR} evalutes to i386 on OS X,
+  # but clang defaults to 64-bit builds on OS X unless otherwise told.
+  # Set ARCH to x86_64 so clang and CMake agree. This is fixed in CMake 3.
+  set(ARCH "x86_64")
 endif()
 
 # Add minimal googletest targets. The provided one has many side-effects, and
@@ -247,13 +267,31 @@ include_directories(third_party/googletest/include)
 # themselves as dependencies next to the target definition.
 add_custom_target(all_tests)
 
+add_custom_command(
+  OUTPUT crypto_test_data.cc
+  COMMAND ${GO_EXECUTABLE} run util/embed_test_data.go ${CRYPTO_TEST_DATA} >
+  ${CMAKE_CURRENT_BINARY_DIR}/crypto_test_data.cc
+  DEPENDS util/embed_test_data.go ${CRYPTO_TEST_DATA}
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_library(crypto_test_data OBJECT crypto_test_data.cc)
+
 add_subdirectory(crypto)
 add_subdirectory(ssl)
 add_subdirectory(ssl/test)
+add_subdirectory(fipstools)
 add_subdirectory(tool)
 add_subdirectory(decrepit)
 
 if(FUZZ)
+  if(LIBFUZZER_FROM_DEPS)
+    file(GLOB LIBFUZZER_SOURCES "util/bot/libFuzzer/*.cpp")
+    add_library(Fuzzer STATIC ${LIBFUZZER_SOURCES})
+    # libFuzzer does not pass our aggressive warnings. It also must be built
+    # without -fsanitize-coverage options or clang crashes.
+    set_target_properties(Fuzzer PROPERTIES COMPILE_FLAGS "-Wno-shadow -Wno-format-nonliteral -fsanitize-coverage=0")
+  endif()
+
   add_subdirectory(fuzz)
 endif()
 

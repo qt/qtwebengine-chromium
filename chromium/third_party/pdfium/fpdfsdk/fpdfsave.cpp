@@ -16,8 +16,10 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/fx_extension.h"
 #include "fpdfsdk/fsdk_define.h"
+#include "fpdfsdk/fsdk_filewriteadapter.h"
 #include "public/fpdf_edit.h"
 
 #ifdef PDF_ENABLE_XFA
@@ -37,45 +39,6 @@
 #else
 #include <ctime>
 #endif
-
-class CFX_IFileWrite final : public IFX_WriteStream {
- public:
-  static CFX_RetainPtr<CFX_IFileWrite> Create();
-
-  bool Init(FPDF_FILEWRITE* pFileWriteStruct);
-  bool WriteBlock(const void* pData, size_t size) override;
-
- protected:
-  template <typename T, typename... Args>
-  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
-  CFX_IFileWrite();
-  ~CFX_IFileWrite() override {}
-
-  FPDF_FILEWRITE* m_pFileWriteStruct;
-};
-
-CFX_RetainPtr<CFX_IFileWrite> CFX_IFileWrite::Create() {
-  return pdfium::MakeRetain<CFX_IFileWrite>();
-}
-
-CFX_IFileWrite::CFX_IFileWrite() : m_pFileWriteStruct(nullptr) {}
-
-bool CFX_IFileWrite::Init(FPDF_FILEWRITE* pFileWriteStruct) {
-  if (!pFileWriteStruct)
-    return false;
-
-  m_pFileWriteStruct = pFileWriteStruct;
-  return true;
-}
-
-bool CFX_IFileWrite::WriteBlock(const void* pData, size_t size) {
-  if (!m_pFileWriteStruct)
-    return false;
-
-  m_pFileWriteStruct->WriteBlock(m_pFileWriteStruct, pData, size);
-  return true;
-}
 
 namespace {
 
@@ -139,8 +102,9 @@ bool SaveXFADocumentData(
     CPDF_Stream* pTemplateStream = pArray->GetStreamAt(iTemplate);
     auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pTemplateStream);
     pAcc->LoadAllData();
-    CFX_RetainPtr<IFX_SeekableStream> pTemplate = IFX_MemoryStream::Create(
-        const_cast<uint8_t*>(pAcc->GetData()), pAcc->GetSize());
+    CFX_RetainPtr<IFX_SeekableStream> pTemplate =
+        pdfium::MakeRetain<CFX_MemoryStream>(
+            const_cast<uint8_t*>(pAcc->GetData()), pAcc->GetSize(), false);
     pChecksum->UpdateChecksum(pTemplate);
   }
   CPDF_Stream* pFormStream = nullptr;
@@ -173,7 +137,8 @@ bool SaveXFADocumentData(
   }
   // L"datasets"
   {
-    CFX_RetainPtr<IFX_SeekableStream> pDsfileWrite = IFX_MemoryStream::Create();
+    CFX_RetainPtr<IFX_SeekableStream> pDsfileWrite =
+        pdfium::MakeRetain<CFX_MemoryStream>(false);
     if (pXFADocView->GetDoc()->SavePackage(XFA_HASHCODE_Datasets, pDsfileWrite,
                                            nullptr) &&
         pDsfileWrite->GetSize() > 0) {
@@ -200,7 +165,8 @@ bool SaveXFADocumentData(
   }
   // L"form"
   {
-    CFX_RetainPtr<IFX_SeekableStream> pfileWrite = IFX_MemoryStream::Create();
+    CFX_RetainPtr<IFX_SeekableStream> pfileWrite =
+        pdfium::MakeRetain<CFX_MemoryStream>(false);
     if (pXFADocView->GetDoc()->SavePackage(XFA_HASHCODE_Form, pfileWrite,
                                            pChecksum.get()) &&
         pfileWrite->GetSize() > 0) {
@@ -236,8 +202,8 @@ bool SendPostSaveToXFADoc(CPDFXFA_Context* pContext) {
     return false;
 
   CXFA_FFWidgetHandler* pWidgetHander = pXFADocView->GetWidgetHandler();
-  std::unique_ptr<CXFA_WidgetAccIterator> pWidgetAccIterator(
-      pXFADocView->CreateWidgetAccIterator());
+  std::unique_ptr<CXFA_WidgetAccIterator> pWidgetAccIterator =
+      pXFADocView->CreateWidgetAccIterator();
   while (CXFA_WidgetAcc* pWidgetAcc = pWidgetAccIterator->MoveToNext()) {
     CXFA_EventParam preParam;
     preParam.m_eType = XFA_EVENT_PostSave;
@@ -260,8 +226,8 @@ bool SendPreSaveToXFADoc(
     return true;
 
   CXFA_FFWidgetHandler* pWidgetHander = pXFADocView->GetWidgetHandler();
-  std::unique_ptr<CXFA_WidgetAccIterator> pWidgetAccIterator(
-      pXFADocView->CreateWidgetAccIterator());
+  std::unique_ptr<CXFA_WidgetAccIterator> pWidgetAccIterator =
+      pXFADocView->CreateWidgetAccIterator();
   while (CXFA_WidgetAcc* pWidgetAcc = pWidgetAccIterator->MoveToNext()) {
     CXFA_EventParam preParam;
     preParam.m_eType = XFA_EVENT_PreSave;
@@ -290,17 +256,16 @@ bool FPDF_Doc_Save(FPDF_DOCUMENT document,
   if (flags < FPDF_INCREMENTAL || flags > FPDF_REMOVE_SECURITY)
     flags = 0;
 
-  CPDF_Creator FileMaker(pPDFDoc);
+  CPDF_Creator fileMaker(pPDFDoc,
+                         pdfium::MakeRetain<FSDK_FileWriteAdapter>(pFileWrite));
   if (bSetVersion)
-    FileMaker.SetFileVersion(fileVerion);
+    fileMaker.SetFileVersion(fileVerion);
   if (flags == FPDF_REMOVE_SECURITY) {
     flags = 0;
-    FileMaker.RemoveSecurity();
+    fileMaker.RemoveSecurity();
   }
 
-  CFX_RetainPtr<CFX_IFileWrite> pStreamWrite = CFX_IFileWrite::Create();
-  pStreamWrite->Init(pFileWrite);
-  bool bRet = FileMaker.Create(pStreamWrite, flags);
+  bool bRet = fileMaker.Create(flags);
 #ifdef PDF_ENABLE_XFA
   SendPostSaveToXFADoc(pContext);
 #endif  // PDF_ENABLE_XFA

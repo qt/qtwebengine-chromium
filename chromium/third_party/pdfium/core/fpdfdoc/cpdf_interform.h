@@ -64,18 +64,18 @@ class CPDF_InterForm {
   CPDF_FormField* GetFieldInCalculationOrder(int index);
   int FindFieldInCalculationOrder(const CPDF_FormField* pField);
 
-  CPDF_Font* GetFormFont(CFX_ByteString csNameTag);
+  CPDF_Font* GetFormFont(CFX_ByteString csNameTag) const;
   CPDF_DefaultAppearance GetDefaultAppearance() const;
   int GetFormAlignment() const;
 
   bool CheckRequiredFields(const std::vector<CPDF_FormField*>* fields,
                            bool bIncludeOrExclude) const;
 
-  std::unique_ptr<CFDF_Document> ExportToFDF(const CFX_WideStringC& pdf_path,
+  std::unique_ptr<CFDF_Document> ExportToFDF(const CFX_WideString& pdf_path,
                                              bool bSimpleFileSpec) const;
 
   std::unique_ptr<CFDF_Document> ExportToFDF(
-      const CFX_WideStringC& pdf_path,
+      const CFX_WideString& pdf_path,
       const std::vector<CPDF_FormField*>& fields,
       bool bIncludeOrExclude,
       bool bSimpleFileSpec) const;
@@ -108,7 +108,7 @@ class CPDF_InterForm {
 
   static bool s_bUpdateAP;
 
-  CPDF_Document* const m_pDocument;
+  CFX_UnownedPtr<CPDF_Document> const m_pDocument;
   CPDF_Dictionary* m_pFormDict;
   std::map<const CPDF_Dictionary*, std::unique_ptr<CPDF_FormControl>>
       m_ControlMap;

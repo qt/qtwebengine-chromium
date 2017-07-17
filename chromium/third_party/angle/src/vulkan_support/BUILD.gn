@@ -9,7 +9,7 @@ glslang_dir = "$third_party_dir/glslang-angle/src"
 spirv_headers_dir = "$third_party_dir/spirv-headers/src"
 spirv_tools_dir = "$third_party_dir/spirv-tools-angle/src"
 vulkan_layers_dir = "$third_party_dir/vulkan-validation-layers/src"
-raw_vulkan_layers_dir = rebase_path(vulkan_layers_dir)
+raw_vulkan_layers_dir = rebase_path(vulkan_layers_dir, root_build_dir)
 
 vulkan_gypi =
     exec_script("//build/gypi_to_gn.py",
@@ -45,7 +45,7 @@ if (is_win) {
 }
 
 vulkan_gen_dir = "$target_gen_dir/angle/vulkan"
-raw_vulkan_gen_dir = rebase_path(vulkan_gen_dir)
+raw_vulkan_gen_dir = rebase_path(vulkan_gen_dir, root_build_dir)
 
 # Vulkan helper scripts
 # ---------------------
@@ -162,6 +162,12 @@ config("vulkan_config") {
       "VK_USE_PLATFORM_WIN32_KHX",
     ]
   }
+  if (is_linux) {
+    defines = [
+      "VK_USE_PLATFORM_XCB_KHR",
+      "VK_USE_PLATFORM_XCB_KHX",
+    ]
+  }
 }
 
 config("vulkan_internal_config") {
@@ -172,6 +178,13 @@ config("vulkan_internal_config") {
     # See https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/1649
     # TODO(jmadill): Lift this once github issue is fixed.
     cflags += [ "-Wno-ignored-attributes" ]
+  }
+  if (is_linux) {
+    defines += [
+      "SYSCONFDIR=\"/etc\"",
+      "FALLBACK_CONFIG_DIRS=\"/etc/xdg\"",
+      "FALLBACK_DATA_DIRS=\"/usr/local/share:/usr/share\"",
+    ]
   }
 }
 
@@ -189,6 +202,10 @@ config("vulkan_loader_config") {
 
   if (is_win) {
     cflags = [ "/wd4201" ]
+  }
+  if (is_linux) {
+    # assume secure_getenv() is available
+    defines += [ "HAVE_SECURE_GETENV" ]
   }
 }
 
@@ -216,9 +233,9 @@ static_library("vulkan_loader") {
 
 spirv_source_dir = "$spirv_tools_dir/source"
 spirv_include_dir = "$spirv_headers_dir/include/spirv"
-raw_spirv_source_dir = rebase_path(spirv_source_dir)
-raw_spirv_include_dir = rebase_path(spirv_include_dir)
-raw_spirv_headers_dir = rebase_path(spirv_headers_dir)
+raw_spirv_source_dir = rebase_path(spirv_source_dir, root_build_dir)
+raw_spirv_include_dir = rebase_path(spirv_include_dir, root_build_dir)
+raw_spirv_headers_dir = rebase_path(spirv_headers_dir, root_build_dir)
 
 action("spirv_tools_gen_tables_1_0") {
   script = "$spirv_tools_dir/utils/generate_grammar_tables.py"
@@ -316,8 +333,8 @@ config("glslang_config") {
 config("glslang_internal_config") {
   if (is_clang || !is_win) {
     cflags = [
-      "-Wno-reorder",
       "-Wno-ignored-qualifiers",
+      "-Wno-reorder",
     ]
   }
 }
@@ -338,6 +355,9 @@ static_library("glslang") {
     ]
 
     sources += rebase_path(vulkan_gypi.glslang_win_sources, ".", "src")
+  }
+  if (is_linux) {
+    sources += rebase_path(vulkan_gypi.glslang_unix_sources, ".", "src")
   }
 }
 
@@ -401,16 +421,21 @@ layers = [
 
 action("vulkan_gen_json_files") {
   script = "$third_party_dir/angle/scripts/generate_vulkan_layers_json.py"
-  sources =
-      rebase_path(vulkan_gypi.vulkan_gen_json_files_sources_win, ".", "src")
+  if (is_win) {
+    sources =
+        rebase_path(vulkan_gypi.vulkan_gen_json_files_sources_win, ".", "src")
+    args = [ "$raw_vulkan_layers_dir/layers/windows" ]
+  }
+  if (is_linux) {
+    sources =
+        rebase_path(vulkan_gypi.vulkan_gen_json_files_sources_linux, ".", "src")
+    args = [ "$raw_vulkan_layers_dir/layers/linux" ]
+  }
 
   # The layer JSON files are part of the necessary data deps.
   outputs = vulkan_gen_json_files_outputs
   data = vulkan_gen_json_files_outputs
-  args = [
-    "$raw_vulkan_layers_dir/layers/windows",
-    rebase_path("$root_out_dir/$data_dir"),
-  ]
+  args += [ rebase_path("$root_out_dir/$data_dir", root_build_dir) ]
 }
 
 source_set("vulkan_layer_utils") {
@@ -444,6 +469,7 @@ foreach(layer_info, layers) {
     deps = [
       ":vulkan_layer_table",
       ":vulkan_layer_utils",
+      "//build/config:exe_and_shlib_deps",
     ]
     if (layer_info[2] != "") {
       deps += [ layer_info[2] ]

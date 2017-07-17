@@ -204,6 +204,7 @@ rtc_source_set("common_audio_c") {
   deps = [
     ":common_audio_cc",
     "..:webrtc_common",
+    "../base:compile_assert_c",
     "../base:rtc_base_approved",
     "../system_wrappers:system_wrappers",
   ]
@@ -396,6 +397,7 @@ if (rtc_include_tests) {
       ":sinc_resampler",
       "..:webrtc_common",
       "../base:rtc_base_approved",
+      "../base:rtc_base_tests_utils",
       "../system_wrappers",
       "../test:test_main",
       "//testing/gmock",

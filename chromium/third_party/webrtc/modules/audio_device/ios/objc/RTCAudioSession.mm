@@ -688,7 +688,7 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
   if (![self setConfiguration:webRTCConfig active:YES error:&error]) {
     RTCLogError(@"Failed to set WebRTC audio configuration: %@",
                 error.localizedDescription);
-    [self unconfigureWebRTCSession:nil];
+    // Do not call setActive:NO if setActive:YES failed.
     if (outError) {
       *outError = error;
     }
@@ -785,6 +785,22 @@ NSInteger const kRTCAudioSessionErrorConfiguration = -2;
   if (shouldNotify) {
     [self notifyDidChangeCanPlayOrRecord:canPlayOrRecord];
   }
+}
+
+- (void)audioSessionDidActivate:(AVAudioSession *)session {
+  if (_session != session) {
+    RTCLogError(@"audioSessionDidActivate called on different AVAudioSession");
+  }
+  [self incrementActivationCount];
+  self.isActive = YES;
+}
+
+- (void)audioSessionDidDeactivate:(AVAudioSession *)session {
+  if (_session != session) {
+    RTCLogError(@"audioSessionDidDeactivate called on different AVAudioSession");
+  }
+  self.isActive = NO;
+  [self decrementActivationCount];
 }
 
 - (void)notifyDidBeginInterruption {

@@ -11,13 +11,13 @@
 #include "base/numerics/safe_conversions.h"
 #include "common/mathutil.h"
 #include "common/utilities.h"
-#include "libANGLE/validationES.h"
 #include "libANGLE/Context.h"
-#include "libANGLE/Texture.h"
 #include "libANGLE/Framebuffer.h"
-#include "libANGLE/Renderbuffer.h"
-#include "libANGLE/formatutils.h"
 #include "libANGLE/FramebufferAttachment.h"
+#include "libANGLE/Renderbuffer.h"
+#include "libANGLE/Texture.h"
+#include "libANGLE/formatutils.h"
+#include "libANGLE/validationES.h"
 
 using namespace angle;
 
@@ -25,32 +25,60 @@ namespace gl
 {
 
 static bool ValidateTexImageFormatCombination(gl::Context *context,
+                                              GLenum target,
                                               GLenum internalFormat,
                                               GLenum format,
                                               GLenum type)
 {
+
+    // The type and format are valid if any supported internal format has that type and format
+    if (!ValidES3Format(format))
+    {
+        context->handleError(Error(GL_INVALID_ENUM, "Invalid format."));
+        return false;
+    }
+
+    if (!ValidES3Type(type))
+    {
+        context->handleError(Error(GL_INVALID_ENUM, "Invalid type."));
+        return false;
+    }
+
     // For historical reasons, glTexImage2D and glTexImage3D pass in their internal format as a
     // GLint instead of a GLenum. Therefor an invalid internal format gives a GL_INVALID_VALUE
     // error instead of a GL_INVALID_ENUM error. As this validation function is only called in
     // the validation codepaths for glTexImage2D/3D, we record a GL_INVALID_VALUE error.
-    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalFormat);
-    if (!formatInfo.textureSupport(context->getClientVersion(), context->getExtensions()))
+    if (!ValidES3InternalFormat(internalFormat))
     {
-        context->handleError(Error(GL_INVALID_VALUE));
+        context->handleError(Error(GL_INVALID_VALUE, "Invalid internalFormat."));
         return false;
     }
 
-    // The type and format are valid if any supported internal format has that type and format
-    if (!ValidES3Format(format) || !ValidES3Type(type))
+    // From the ES 3.0 spec section 3.8.3:
+    // Textures with a base internal format of DEPTH_COMPONENT or DEPTH_STENCIL are supported by
+    // texture image specification commands only if target is TEXTURE_2D, TEXTURE_2D_ARRAY, or
+    // TEXTURE_CUBE_MAP.Using these formats in conjunction with any other target will result in an
+    // INVALID_OPERATION error.
+    if (target == GL_TEXTURE_3D && (format == GL_DEPTH_COMPONENT || format == GL_DEPTH_STENCIL))
     {
-        context->handleError(Error(GL_INVALID_ENUM));
+        context->handleError(Error(
+            GL_INVALID_OPERATION,
+            "Format cannot be GL_DEPTH_COMPONENT or GL_DEPTH_STENCIL if target is GL_TEXTURE_3D"));
         return false;
     }
 
     // Check if this is a valid format combination to load texture data
     if (!ValidES3FormatCombination(format, type, internalFormat))
     {
-        context->handleError(Error(GL_INVALID_OPERATION));
+        context->handleError(
+            Error(GL_INVALID_OPERATION, "Invalid combination of format, type and internalFormat."));
+        return false;
+    }
+
+    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalFormat, type);
+    if (!formatInfo.textureSupport(context->getClientVersion(), context->getExtensions()))
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Unsupported internal format."));
         return false;
     }
 
@@ -73,7 +101,7 @@ bool ValidateES3TexImageParametersBase(Context *context,
                                        GLenum format,
                                        GLenum type,
                                        GLsizei imageSize,
-                                       const GLvoid *pixels)
+                                       const void *pixels)
 {
     // Validate image size
     if (!ValidImageSizeParameters(context, target, level, width, height, depth, isSubImage))
@@ -171,14 +199,16 @@ bool ValidateES3TexImageParametersBase(Context *context,
 
     // Validate texture formats
     GLenum actualInternalFormat =
-        isSubImage ? texture->getFormat(target, level).asSized() : internalformat;
+        isSubImage ? texture->getFormat(target, level).info->internalFormat : internalformat;
     if (isSubImage && actualInternalFormat == GL_NONE)
     {
         context->handleError(Error(GL_INVALID_OPERATION, "Texture level does not exist."));
         return false;
     }
 
-    const gl::InternalFormat &actualFormatInfo = gl::GetInternalFormatInfo(actualInternalFormat);
+    const gl::InternalFormat &actualFormatInfo = isSubImage
+                                                     ? *texture->getFormat(target, level).info
+                                                     : GetInternalFormatInfo(internalformat, type);
     if (isCompressed)
     {
         if (!actualFormatInfo.compressed)
@@ -188,11 +218,32 @@ bool ValidateES3TexImageParametersBase(Context *context,
             return false;
         }
 
-        if (!ValidCompressedImageSize(context, actualInternalFormat, xoffset, yoffset, width,
-                                      height))
+        if (isSubImage)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
-            return false;
+            if (!ValidCompressedSubImageSize(
+                    context, actualFormatInfo.internalFormat, xoffset, yoffset, width, height,
+                    texture->getWidth(target, level), texture->getHeight(target, level)))
+            {
+                context->handleError(
+                    Error(GL_INVALID_OPERATION, "Invalid compressed format dimension."));
+                return false;
+            }
+
+            if (format != actualInternalFormat)
+            {
+                context->handleError(Error(
+                    GL_INVALID_OPERATION, "Format must match the internal format of the texture."));
+                return false;
+            }
+        }
+        else
+        {
+            if (!ValidCompressedImageSize(context, actualInternalFormat, level, width, height))
+            {
+                context->handleError(
+                    Error(GL_INVALID_OPERATION, "Invalid compressed format dimension."));
+                return false;
+            }
         }
 
         if (!actualFormatInfo.textureSupport(context->getClientVersion(), context->getExtensions()))
@@ -209,14 +260,8 @@ bool ValidateES3TexImageParametersBase(Context *context,
     }
     else
     {
-        if (!ValidateTexImageFormatCombination(context, actualInternalFormat, format, type))
+        if (!ValidateTexImageFormatCombination(context, target, actualInternalFormat, format, type))
         {
-            return false;
-        }
-
-        if (target == GL_TEXTURE_3D && (format == GL_DEPTH_COMPONENT || format == GL_DEPTH_STENCIL))
-        {
-            context->handleError(Error(GL_INVALID_OPERATION));
             return false;
         }
     }
@@ -227,11 +272,6 @@ bool ValidateES3TexImageParametersBase(Context *context,
         if (isCompressed != actualFormatInfo.compressed)
         {
             context->handleError(Error(GL_INVALID_OPERATION));
-            return false;
-        }
-
-        if (width == 0 || height == 0 || depth == 0)
-        {
             return false;
         }
 
@@ -258,8 +298,8 @@ bool ValidateES3TexImageParametersBase(Context *context,
         }
     }
 
-    if (!ValidImageDataSize(context, target, width, height, 1, actualInternalFormat, type, pixels,
-                            imageSize))
+    if (!ValidImageDataSize(context, target, width, height, depth, actualInternalFormat, type,
+                            pixels, imageSize))
     {
         return false;
     }
@@ -311,7 +351,7 @@ bool ValidateES3TexImage2DParameters(Context *context,
                                      GLenum format,
                                      GLenum type,
                                      GLsizei imageSize,
-                                     const GLvoid *pixels)
+                                     const void *pixels)
 {
     if (!ValidTexture2DDestinationTarget(context, target))
     {
@@ -340,7 +380,7 @@ bool ValidateES3TexImage3DParameters(Context *context,
                                      GLenum format,
                                      GLenum type,
                                      GLsizei bufSize,
-                                     const GLvoid *pixels)
+                                     const void *pixels)
 {
     if (!ValidTexture3DDestinationTarget(context, target))
     {
@@ -452,7 +492,7 @@ static bool GetEffectiveInternalFormat(const InternalFormat &srcFormat,
                                        const InternalFormat &destFormat,
                                        GLenum *outEffectiveFormat)
 {
-    if (destFormat.pixelBytes > 0)
+    if (destFormat.sized)
     {
         return GetSizedEffectiveInternalFormatInfo(srcFormat, outEffectiveFormat);
     }
@@ -467,13 +507,10 @@ static bool EqualOrFirstZero(GLuint first, GLuint second)
     return first == 0 || first == second;
 }
 
-static bool IsValidES3CopyTexImageCombination(const Format &textureFormat,
-                                              const Format &framebufferFormat,
+static bool IsValidES3CopyTexImageCombination(const InternalFormat &textureFormatInfo,
+                                              const InternalFormat &framebufferFormatInfo,
                                               GLuint readBufferHandle)
 {
-    const auto &textureFormatInfo     = *textureFormat.info;
-    const auto &framebufferFormatInfo = *framebufferFormat.info;
-
     if (!ValidES3CopyConversion(textureFormatInfo.format, framebufferFormatInfo.format))
     {
         return false;
@@ -522,12 +559,12 @@ static bool IsValidES3CopyTexImageCombination(const Format &textureFormat,
     //      sizes] are consistent with the values of the source buffer's [channel sizes]. Table 3.17
     //      is used if the FRAMEBUFFER_ATTACHMENT_ENCODING is LINEAR and table 3.18 is used if the
     //      FRAMEBUFFER_ATTACHMENT_ENCODING is SRGB.
-    const InternalFormat *sourceEffectiveFormat = NULL;
+    const InternalFormat *sourceEffectiveFormat = nullptr;
     if (readBufferHandle != 0)
     {
         // Not the default framebuffer, therefore the read buffer must be a user-created texture or
         // renderbuffer
-        if (framebufferFormat.sized)
+        if (framebufferFormatInfo.sized)
         {
             sourceEffectiveFormat = &framebufferFormatInfo;
         }
@@ -536,9 +573,8 @@ static bool IsValidES3CopyTexImageCombination(const Format &textureFormat,
             // Renderbuffers cannot be created with an unsized internal format, so this must be an
             // unsized-format texture. We can use the same table we use when creating textures to
             // get its effective sized format.
-            GLenum sizedInternalFormat =
-                GetSizedInternalFormat(framebufferFormatInfo.format, framebufferFormatInfo.type);
-            sourceEffectiveFormat = &GetInternalFormatInfo(sizedInternalFormat);
+            sourceEffectiveFormat =
+                &GetSizedInternalFormatInfo(framebufferFormatInfo.sizedInternalFormat);
         }
     }
     else
@@ -551,7 +587,7 @@ static bool IsValidES3CopyTexImageCombination(const Format &textureFormat,
             if (GetEffectiveInternalFormat(framebufferFormatInfo, textureFormatInfo,
                                            &effectiveFormat))
             {
-                sourceEffectiveFormat = &GetInternalFormatInfo(effectiveFormat);
+                sourceEffectiveFormat = &GetSizedInternalFormatInfo(effectiveFormat);
             }
             else
             {
@@ -561,13 +597,13 @@ static bool IsValidES3CopyTexImageCombination(const Format &textureFormat,
         else if (framebufferFormatInfo.colorEncoding == GL_SRGB)
         {
             // SRGB buffers can only be copied to sized format destinations according to table 3.18
-            if (textureFormat.sized &&
+            if (textureFormatInfo.sized &&
                 (framebufferFormatInfo.redBits >= 1 && framebufferFormatInfo.redBits <= 8) &&
                 (framebufferFormatInfo.greenBits >= 1 && framebufferFormatInfo.greenBits <= 8) &&
                 (framebufferFormatInfo.blueBits >= 1 && framebufferFormatInfo.blueBits <= 8) &&
                 (framebufferFormatInfo.alphaBits >= 1 && framebufferFormatInfo.alphaBits <= 8))
             {
-                sourceEffectiveFormat = &GetInternalFormatInfo(GL_SRGB8_ALPHA8);
+                sourceEffectiveFormat = &GetSizedInternalFormatInfo(GL_SRGB8_ALPHA8);
             }
             else
             {
@@ -581,7 +617,7 @@ static bool IsValidES3CopyTexImageCombination(const Format &textureFormat,
         }
     }
 
-    if (textureFormat.sized)
+    if (textureFormatInfo.sized)
     {
         // Section 3.8.5 of the GLES 3.0.3 spec, pg 139, requires that, if the destination format is
         // sized, component sizes of the source and destination formats must exactly match if the
@@ -642,7 +678,7 @@ bool ValidateES3CopyTexImageParametersBase(ValidationContext *context,
 
     if (isSubImage)
     {
-        if (!IsValidES3CopyTexImageCombination(textureFormat, source->getFormat(),
+        if (!IsValidES3CopyTexImageCombination(*textureFormat.info, *source->getFormat().info,
                                                readFramebufferID))
         {
             context->handleError(Error(GL_INVALID_OPERATION));
@@ -652,8 +688,8 @@ bool ValidateES3CopyTexImageParametersBase(ValidationContext *context,
     else
     {
         // Use format/type from the source FBO. (Might not be perfect for all cases?)
-        const auto framebufferFormat = source->getFormat();
-        Format copyFormat(internalformat, framebufferFormat.format, framebufferFormat.type);
+        const InternalFormat &framebufferFormat = *source->getFormat().info;
+        const InternalFormat &copyFormat = GetInternalFormatInfo(internalformat, GL_UNSIGNED_BYTE);
         if (!IsValidES3CopyTexImageCombination(copyFormat, framebufferFormat, readFramebufferID))
         {
             context->handleError(Error(GL_INVALID_OPERATION));
@@ -814,14 +850,14 @@ bool ValidateES3TexStorageParametersBase(Context *context,
         return false;
     }
 
-    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalformat);
+    const gl::InternalFormat &formatInfo = gl::GetSizedInternalFormatInfo(internalformat);
     if (!formatInfo.textureSupport(context->getClientVersion(), context->getExtensions()))
     {
         context->handleError(Error(GL_INVALID_ENUM));
         return false;
     }
 
-    if (formatInfo.pixelBytes == 0)
+    if (!formatInfo.sized)
     {
         context->handleError(Error(GL_INVALID_ENUM));
         return false;
@@ -1045,8 +1081,7 @@ bool ValidateDrawRangeElements(Context *context,
                                GLuint end,
                                GLsizei count,
                                GLenum type,
-                               const GLvoid *indices,
-                               IndexRange *indexRange)
+                               const void *indices)
 {
     if (context->getClientMajorVersion() < 3)
     {
@@ -1060,12 +1095,21 @@ bool ValidateDrawRangeElements(Context *context,
         return false;
     }
 
-    if (!ValidateDrawElements(context, mode, count, type, indices, 0, indexRange))
+    if (!ValidateDrawElementsCommon(context, mode, count, type, indices, 0))
     {
         return false;
     }
 
-    if (indexRange->end > end || indexRange->start < start)
+    // Use the parameter buffer to retrieve and cache the index range.
+    const auto &params        = context->getParams<HasIndexRange>();
+    const auto &indexRangeOpt = params.getIndexRange();
+    if (!indexRangeOpt.valid())
+    {
+        // Unexpected error.
+        return false;
+    }
+
+    if (indexRangeOpt.value().end > end || indexRangeOpt.value().start < start)
     {
         // GL spec says that behavior in this case is undefined - generating an error is fine.
         context->handleError(
@@ -1147,7 +1191,7 @@ bool ValidateCompressedTexImage3D(Context *context,
                                   GLsizei depth,
                                   GLint border,
                                   GLsizei imageSize,
-                                  const GLvoid *data)
+                                  const void *data)
 {
     if (context->getClientMajorVersion() < 3)
     {
@@ -1168,7 +1212,7 @@ bool ValidateCompressedTexImage3D(Context *context,
         return false;
     }
 
-    const InternalFormat &formatInfo = GetInternalFormatInfo(internalformat);
+    const InternalFormat &formatInfo = GetSizedInternalFormatInfo(internalformat);
     if (!formatInfo.compressed)
     {
         context->handleError(Error(GL_INVALID_ENUM, "Not a valid compressed texture format"));
@@ -1205,6 +1249,27 @@ bool ValidateCompressedTexImage3D(Context *context,
     }
 
     return true;
+}
+
+bool ValidateCompressedTexImage3DRobustANGLE(Context *context,
+                                             GLenum target,
+                                             GLint level,
+                                             GLenum internalformat,
+                                             GLsizei width,
+                                             GLsizei height,
+                                             GLsizei depth,
+                                             GLint border,
+                                             GLsizei imageSize,
+                                             GLsizei dataSize,
+                                             const void *data)
+{
+    if (!ValidateRobustCompressedTexImageBase(context, imageSize, dataSize))
+    {
+        return false;
+    }
+
+    return ValidateCompressedTexImage3D(context, target, level, internalformat, width, height,
+                                        depth, border, imageSize, data);
 }
 
 bool ValidateBindVertexArray(Context *context, GLuint array)
@@ -1662,7 +1727,7 @@ bool ValidateTexImage3D(Context *context,
                         GLint border,
                         GLenum format,
                         GLenum type,
-                        const GLvoid *pixels)
+                        const void *pixels)
 {
     if (context->getClientMajorVersion() < 3)
     {
@@ -1686,7 +1751,7 @@ bool ValidateTexImage3DRobustANGLE(Context *context,
                                    GLenum format,
                                    GLenum type,
                                    GLsizei bufSize,
-                                   const GLvoid *pixels)
+                                   const void *pixels)
 {
     if (context->getClientMajorVersion() < 3)
     {
@@ -1715,7 +1780,7 @@ bool ValidateTexSubImage3D(Context *context,
                            GLsizei depth,
                            GLenum format,
                            GLenum type,
-                           const GLvoid *pixels)
+                           const void *pixels)
 {
     if (context->getClientMajorVersion() < 3)
     {
@@ -1740,7 +1805,7 @@ bool ValidateTexSubImage3DRobustANGLE(Context *context,
                                       GLenum format,
                                       GLenum type,
                                       GLsizei bufSize,
-                                      const GLvoid *pixels)
+                                      const void *pixels)
 {
     if (context->getClientMajorVersion() < 3)
     {
@@ -1769,7 +1834,7 @@ bool ValidateCompressedTexSubImage3D(Context *context,
                                      GLsizei depth,
                                      GLenum format,
                                      GLsizei imageSize,
-                                     const GLvoid *data)
+                                     const void *data)
 {
     if (context->getClientMajorVersion() < 3)
     {
@@ -1777,7 +1842,7 @@ bool ValidateCompressedTexSubImage3D(Context *context,
         return false;
     }
 
-    const InternalFormat &formatInfo = GetInternalFormatInfo(format);
+    const InternalFormat &formatInfo = GetSizedInternalFormatInfo(format);
     if (!formatInfo.compressed)
     {
         context->handleError(Error(GL_INVALID_ENUM, "Not a valid compressed texture format"));
@@ -1804,7 +1869,29 @@ bool ValidateCompressedTexSubImage3D(Context *context,
     }
 
     return ValidateES3TexImage3DParameters(context, target, level, GL_NONE, true, true, 0, 0, 0,
-                                           width, height, depth, 0, GL_NONE, GL_NONE, -1, data);
+                                           width, height, depth, 0, format, GL_NONE, -1, data);
+}
+bool ValidateCompressedTexSubImage3DRobustANGLE(Context *context,
+                                                GLenum target,
+                                                GLint level,
+                                                GLint xoffset,
+                                                GLint yoffset,
+                                                GLint zoffset,
+                                                GLsizei width,
+                                                GLsizei height,
+                                                GLsizei depth,
+                                                GLenum format,
+                                                GLsizei imageSize,
+                                                GLsizei dataSize,
+                                                const void *data)
+{
+    if (!ValidateRobustCompressedTexImageBase(context, imageSize, dataSize))
+    {
+        return false;
+    }
+
+    return ValidateCompressedTexSubImage3D(context, target, level, xoffset, yoffset, zoffset, width,
+                                           height, depth, format, imageSize, data);
 }
 
 bool ValidateGenQueries(Context *context, GLint n, GLuint *)
@@ -1917,7 +2004,7 @@ bool ValidateBeginTransformFeedback(Context *context, GLenum primitiveMode)
     return true;
 }
 
-bool ValidateGetBufferPointerv(Context *context, GLenum target, GLenum pname, GLvoid **params)
+bool ValidateGetBufferPointerv(Context *context, GLenum target, GLenum pname, void **params)
 {
     return ValidateGetBufferPointervBase(context, target, pname, nullptr, params);
 }
@@ -1927,7 +2014,7 @@ bool ValidateGetBufferPointervRobustANGLE(Context *context,
                                           GLenum pname,
                                           GLsizei bufSize,
                                           GLsizei *length,
-                                          GLvoid **params)
+                                          void **params)
 {
     if (!ValidateRobustEntryPoint(context, bufSize))
     {
@@ -2343,7 +2430,7 @@ bool ValidateRenderbufferStorageMultisample(ValidationContext *context,
 
     // The ES3 spec(section 4.4.2) states that the internal format must be sized and not an integer
     // format if samples is greater than zero.
-    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalformat);
+    const gl::InternalFormat &formatInfo = gl::GetSizedInternalFormatInfo(internalformat);
     if ((formatInfo.componentType == GL_UNSIGNED_INT || formatInfo.componentType == GL_INT) &&
         samples > 0)
     {
@@ -2369,7 +2456,7 @@ bool ValidateVertexAttribIPointer(ValidationContext *context,
                                   GLint size,
                                   GLenum type,
                                   GLsizei stride,
-                                  const GLvoid *pointer)
+                                  const void *pointer)
 {
     if (context->getClientMajorVersion() < 3)
     {
@@ -2475,6 +2562,22 @@ bool ValidateGetSynciv(Context *context,
     }
 
     return true;
+}
+
+bool ValidateDrawElementsInstanced(ValidationContext *context,
+                                   GLenum mode,
+                                   GLsizei count,
+                                   GLenum type,
+                                   const void *indices,
+                                   GLsizei instanceCount)
+{
+    if (context->getClientMajorVersion() < 3)
+    {
+        context->handleError(Error(GL_INVALID_OPERATION, "Requires a GLES 3.0 or higher context."));
+        return false;
+    }
+
+    return ValidateDrawElementsInstancedCommon(context, mode, count, type, indices, instanceCount);
 }
 
 }  // namespace gl

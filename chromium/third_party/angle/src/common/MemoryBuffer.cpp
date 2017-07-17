@@ -41,7 +41,7 @@ bool MemoryBuffer::resize(size_t size)
     }
 
     // Only reallocate if the size has changed.
-    uint8_t *newMemory = reinterpret_cast<uint8_t*>(malloc(sizeof(uint8_t) * size));
+    uint8_t *newMemory = reinterpret_cast<uint8_t *>(malloc(sizeof(uint8_t) * size));
     if (newMemory == nullptr)
     {
         return false;
@@ -74,6 +74,14 @@ uint8_t *MemoryBuffer::data()
 {
     ASSERT(mData);
     return mData;
+}
+
+void MemoryBuffer::fill(uint8_t datum)
+{
+    if (!empty())
+    {
+        std::fill(mData, mData + mSize, datum);
+    }
 }
 
 // ScratchBuffer implementation.

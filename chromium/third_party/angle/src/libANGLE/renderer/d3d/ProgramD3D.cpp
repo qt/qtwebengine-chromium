@@ -122,8 +122,8 @@ void GetUniformBlockInfo(const std::vector<VarT> &fields,
 template <typename T>
 static inline void SetIfDirty(T *dest, const T &source, bool *dirtyFlag)
 {
-    ASSERT(dest != NULL);
-    ASSERT(dirtyFlag != NULL);
+    ASSERT(dest != nullptr);
+    ASSERT(dirtyFlag != nullptr);
 
     *dirtyFlag = *dirtyFlag || (memcmp(dest, &source, sizeof(T)) != 0);
     *dest      = source;
@@ -1176,7 +1176,7 @@ gl::Error ProgramD3D::getPixelExecutableForOutputLayout(const std::vector<GLenum
         mPixelHLSL, mPixelShaderKey, mUsesFragDepth, outputSignature);
 
     // Generate new pixel executable
-    ShaderExecutableD3D *pixelExecutable = NULL;
+    ShaderExecutableD3D *pixelExecutable = nullptr;
 
     gl::InfoLog tempInfoLog;
     gl::InfoLog *currentInfoLog = infoLog ? infoLog : &tempInfoLog;
@@ -1221,7 +1221,7 @@ gl::Error ProgramD3D::getVertexExecutableForInputLayout(const gl::InputLayout &i
         mVertexHLSL, inputLayout, mState.getAttributes());
 
     // Generate new vertex executable
-    ShaderExecutableD3D *vertexExecutable = NULL;
+    ShaderExecutableD3D *vertexExecutable = nullptr;
 
     gl::InfoLog tempInfoLog;
     gl::InfoLog *currentInfoLog = infoLog ? infoLog : &tempInfoLog;
@@ -1383,6 +1383,16 @@ class ProgramD3D::GetGeometryExecutableTask : public ProgramD3D::GetExecutableTa
   private:
     const gl::ContextState &mContextState;
 };
+
+gl::Error ProgramD3D::getComputeExecutable(ShaderExecutableD3D **outExecutable)
+{
+    if (outExecutable)
+    {
+        *outExecutable = mComputeExecutable.get();
+    }
+
+    return gl::NoError();
+}
 
 LinkResult ProgramD3D::compileProgramExecutables(const gl::ContextState &contextState,
                                                  gl::InfoLog &infoLog)
@@ -1686,6 +1696,19 @@ gl::Error ProgramD3D::applyUniforms(GLenum drawMode)
     ASSERT(!mDirtySamplerMapping);
 
     ANGLE_TRY(mRenderer->applyUniforms(*this, drawMode, mD3DUniforms));
+
+    for (D3DUniform *d3dUniform : mD3DUniforms)
+    {
+        d3dUniform->dirty = false;
+    }
+
+    return gl::NoError();
+}
+
+gl::Error ProgramD3D::applyComputeUniforms()
+{
+    ASSERT(!mDirtySamplerMapping);
+    ANGLE_TRY(mRenderer->applyComputeUniforms(*this, mD3DUniforms));
 
     for (D3DUniform *d3dUniform : mD3DUniforms)
     {
@@ -2359,7 +2382,7 @@ void ProgramD3D::updateCachedInputLayout(const gl::State &state)
     mCachedInputLayout.clear();
     const auto &vertexAttributes = state.getVertexArray()->getVertexAttributes();
 
-    for (unsigned int locationIndex : IterateBitSet(mState.getActiveAttribLocationsMask()))
+    for (size_t locationIndex : mState.getActiveAttribLocationsMask())
     {
         int d3dSemantic = mAttribLocationToD3DSemantic[locationIndex];
 

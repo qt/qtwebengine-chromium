@@ -31,7 +31,7 @@ namespace gl
 {
 class Buffer;
 
-class VertexArrayState final : public angle::NonCopyable
+class VertexArrayState final : angle::NonCopyable
 {
   public:
     VertexArrayState(size_t maxAttribs, size_t maxBindings);
@@ -168,9 +168,9 @@ class VertexArray final : public LabeledObject
         DIRTY_BIT_MAX     = DIRTY_BIT_UNKNOWN,
     };
 
-    typedef std::bitset<DIRTY_BIT_MAX> DirtyBits;
+    using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
 
-    static size_t GetAttribIndex(unsigned long dirtyBit);
+    static size_t GetAttribIndex(size_t dirtyBit);
 
     void syncImplState(const Context *context);
     bool hasAnyDirtyBit() const { return mDirtyBits.any(); }

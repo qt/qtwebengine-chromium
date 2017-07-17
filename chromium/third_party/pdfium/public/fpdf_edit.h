@@ -196,15 +196,6 @@ DLLEXPORT void STDCALL FPDFPage_TransformAnnots(FPDF_PAGE page,
 DLLEXPORT FPDF_PAGEOBJECT STDCALL
 FPDFPageObj_NewImageObj(FPDF_DOCUMENT document);
 
-// Create a new image object.
-// DEPRECATED. Please use FPDFPageObj_NewImageObj() above.
-//
-//   document - handle to a document.
-//
-// Returns a handle to a new image object.
-DLLEXPORT FPDF_PAGEOBJECT STDCALL
-FPDFPageObj_NewImgeObj(FPDF_DOCUMENT document);
-
 // Load an image from a JPEG image file and then set it into |image_object|.
 //
 //   pages        - pointer to the start of all loaded pages, may be NULL.
@@ -436,14 +427,14 @@ DLLEXPORT FPDF_PAGEOBJECT STDCALL FPDFPageObj_NewTextObj(FPDF_DOCUMENT document,
 // Set the text for a textobject. If it had text, it will be replaced.
 //
 // text_object  - handle to the text object.
-// text         - string containing the text to be added.
+// text         - the UTF-16LE encoded string containing the text to be added.
 //
 // Returns TRUE on success
 DLLEXPORT FPDF_BOOL STDCALL FPDFText_SetText(FPDF_PAGEOBJECT text_object,
-                                             FPDF_BYTESTRING text);
+                                             FPDF_WIDESTRING text);
 
 // Returns a font object loaded from a stream of data. The font is loaded
-// into the document. The caller does not need to free the returned object.
+// into the document.
 //
 // document   - handle to the document.
 // data       - the stream of data, which will be copied by the font object.
@@ -452,12 +443,31 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFText_SetText(FPDF_PAGEOBJECT text_object,
 // type.
 // cid        - a boolean specifying if the font is a CID font or not.
 //
+// The loaded font can be closed using FPDF_Font_Close.
+//
 // Returns NULL on failure
 DLLEXPORT FPDF_FONT STDCALL FPDFText_LoadFont(FPDF_DOCUMENT document,
                                               const uint8_t* data,
                                               uint32_t size,
                                               int font_type,
                                               FPDF_BOOL cid);
+
+// Close a loaded PDF font.
+//
+// font   - Handle to the loaded font.
+DLLEXPORT void STDCALL FPDFFont_Close(FPDF_FONT font);
+
+// Create a new text object using a loaded font.
+//
+// document   - handle to the document.
+// font       - handle to the font object.
+// font_size  - the font size for the new text object.
+//
+// Returns a handle to a new text object, or NULL on failure
+DLLEXPORT FPDF_PAGEOBJECT STDCALL
+FPDFPageObj_CreateTextObj(FPDF_DOCUMENT document,
+                          FPDF_FONT font,
+                          float font_size);
 
 #ifdef __cplusplus
 }  // extern "C"

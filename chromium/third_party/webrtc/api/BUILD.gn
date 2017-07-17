@@ -29,13 +29,14 @@ rtc_source_set("call_api") {
     ":transport_api",
     "..:webrtc_common",
     "../base:rtc_base_approved",
-    "../modules/audio_coding:audio_encoder_interface",
     "audio_codecs:audio_codecs_api",
   ]
 }
 
 rtc_static_library("libjingle_peerconnection_api") {
-  check_includes = false  # TODO(kjellander): Remove (bugs.webrtc.org/6828)
+  # Cannot have GN check enabled since that would introduce dependency cycles
+  # TODO(kjellander): Remove (bugs.webrtc.org/7504)
+  check_includes = false
   cflags = []
   sources = [
     "datachannel.h",
@@ -46,7 +47,6 @@ rtc_static_library("libjingle_peerconnection_api") {
     "jsepsessiondescription.h",
     "mediaconstraintsinterface.cc",
     "mediaconstraintsinterface.h",
-    "mediacontroller.h",
     "mediastream.h",
     "mediastreaminterface.cc",
     "mediastreaminterface.h",
@@ -82,7 +82,18 @@ rtc_static_library("libjingle_peerconnection_api") {
 
   deps = [
     ":rtc_stats_api",
+    "..:webrtc_common",
+    "../base:rtc_base",
+    "../base:rtc_base_approved",
+    "audio_codecs:audio_codecs_api",
   ]
+
+  # This is needed until bugs.webrtc.org/7504 is removed so this target can
+  # properly depend on ../media:rtc_media_base
+  # TODO(kjellander): Remove this dependency.
+  if (is_nacl) {
+    deps += [ "//native_client_sdk/src/libraries/nacl_io" ]
+  }
 }
 
 rtc_source_set("ortc_api") {
@@ -143,6 +154,7 @@ rtc_source_set("audio_mixer_api") {
 
   deps = [
     "../base:rtc_base_approved",
+    "../modules:module_api",
   ]
 }
 
@@ -158,6 +170,7 @@ rtc_source_set("video_frame_api") {
     "video/i420_buffer.h",
     "video/video_frame.cc",
     "video/video_frame.h",
+    "video/video_frame_buffer.cc",
     "video/video_frame_buffer.h",
     "video/video_rotation.h",
   ]
@@ -230,6 +243,13 @@ if (rtc_include_tests) {
 
   rtc_source_set("rtc_api_unittests") {
     testonly = true
+
+    # Skip restricting visibility on mobile platforms since the tests on those
+    # gets additional generated targets which would require many lines here to
+    # cover (which would be confusing to read and hard to maintain).
+    if (!is_android && !is_ios) {
+      visibility = [ "//webrtc:rtc_unittests" ]
+    }
     sources = [
       "ortc/mediadescription_unittest.cc",
       "ortc/sessiondescription_unittest.cc",

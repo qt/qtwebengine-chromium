@@ -9,8 +9,8 @@
 #ifndef LIBANGLE_RENDERER_D3D_FRAMBUFFERD3D_H_
 #define LIBANGLE_RENDERER_D3D_FRAMBUFFERD3D_H_
 
-#include <vector>
 #include <cstdint>
+#include <vector>
 
 #include "common/Color.h"
 #include "common/Optional.h"
@@ -23,7 +23,6 @@ class FramebufferAttachment;
 struct PixelPackState;
 
 typedef std::vector<const FramebufferAttachment *> AttachmentList;
-
 }
 
 namespace rx
@@ -34,20 +33,20 @@ class RenderTargetD3D;
 struct ClearParameters
 {
     bool clearColor[gl::IMPLEMENTATION_MAX_DRAW_BUFFERS];
-    gl::ColorF colorFClearValue;
-    gl::ColorI colorIClearValue;
-    gl::ColorUI colorUIClearValue;
-    GLenum colorClearType;
+    gl::ColorF colorF;
+    gl::ColorI colorI;
+    gl::ColorUI colorUI;
+    GLenum colorType;
     bool colorMaskRed;
     bool colorMaskGreen;
     bool colorMaskBlue;
     bool colorMaskAlpha;
 
     bool clearDepth;
-    float depthClearValue;
+    float depthValue;
 
     bool clearStencil;
-    GLint stencilClearValue;
+    GLint stencilValue;
     GLuint stencilWriteMask;
 
     bool scissorEnabled;
@@ -85,7 +84,7 @@ class FramebufferD3D : public FramebufferImpl
                          const gl::Rectangle &area,
                          GLenum format,
                          GLenum type,
-                         GLvoid *pixels) const override;
+                         void *pixels) const override;
 
     gl::Error blit(ContextImpl *impl,
                    const gl::Rectangle &sourceArea,
@@ -125,7 +124,6 @@ class FramebufferD3D : public FramebufferImpl
     RendererD3D *mRenderer;
     Optional<gl::AttachmentList> mColorAttachmentsForRender;
 };
-
 }
 
-#endif // LIBANGLE_RENDERER_D3D_FRAMBUFFERD3D_H_
+#endif  // LIBANGLE_RENDERER_D3D_FRAMBUFFERD3D_H_

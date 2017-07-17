@@ -4,7 +4,9 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxcrt/fx_ext.h"
+#include "xfa/fxfa/parser/cxfa_document.h"
+
+#include "core/fxcrt/fx_extension.h"
 #include "xfa/fxfa/app/xfa_ffnotify.h"
 #include "xfa/fxfa/parser/cscript_datawindow.h"
 #include "xfa/fxfa/parser/cscript_eventpseudomodel.h"
@@ -12,7 +14,6 @@
 #include "xfa/fxfa/parser/cscript_layoutpseudomodel.h"
 #include "xfa/fxfa/parser/cscript_logpseudomodel.h"
 #include "xfa/fxfa/parser/cscript_signaturepseudomodel.h"
-#include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_document_parser.h"
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
@@ -127,7 +128,7 @@ void CXFA_Document::SetRoot(CXFA_Node* pNewRoot) {
   RemovePurgeNode(pNewRoot);
 }
 
-CFDE_XMLDoc* CXFA_Document::GetXMLDoc() const {
+CFX_XMLDoc* CXFA_Document::GetXMLDoc() const {
   return m_pParser->GetXMLDoc();
 }
 
@@ -344,7 +345,7 @@ void CXFA_Document::DoProtoMerge() {
     return;
 
   std::map<uint32_t, CXFA_Node*> mIDMap;
-  std::unordered_set<CXFA_Node*> sUseNodes;
+  std::set<CXFA_Node*> sUseNodes;
   CXFA_NodeIterator sIterator(pTemplateRoot);
   for (CXFA_Node* pNode = sIterator.GetCurrent(); pNode;
        pNode = sIterator.MoveToNext()) {

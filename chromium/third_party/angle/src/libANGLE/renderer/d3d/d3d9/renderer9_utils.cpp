@@ -309,7 +309,7 @@ GLsizei GetSamplesCount(D3DMULTISAMPLE_TYPE type)
 bool IsFormatChannelEquivalent(D3DFORMAT d3dformat, GLenum format)
 {
     GLenum internalFormat  = d3d9::GetD3DFormatInfo(d3dformat).info().glInternalFormat;
-    GLenum convertedFormat = gl::GetInternalFormatInfo(internalFormat).format;
+    GLenum convertedFormat = gl::GetSizedInternalFormatInfo(internalFormat).format;
     return convertedFormat == format;
 }
 
@@ -319,7 +319,7 @@ static gl::TextureCaps GenerateTextureFormatCaps(GLenum internalFormat, IDirect3
     gl::TextureCaps textureCaps;
 
     const d3d9::TextureFormat &d3dFormatInfo = d3d9::GetTextureFormatInfo(internalFormat);
-    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalFormat);
+    const gl::InternalFormat &formatInfo     = gl::GetSizedInternalFormatInfo(internalFormat);
 
     if (d3dFormatInfo.texFormat != D3DFMT_UNKNOWN)
     {
@@ -350,7 +350,8 @@ static gl::TextureCaps GenerateTextureFormatCaps(GLenum internalFormat, IDirect3
         {
             D3DMULTISAMPLE_TYPE multisampleType = D3DMULTISAMPLE_TYPE(i);
 
-            HRESULT result = d3d9->CheckDeviceMultiSampleType(adapter, deviceType, d3dFormatInfo.renderFormat, TRUE, multisampleType, NULL);
+            HRESULT result = d3d9->CheckDeviceMultiSampleType(
+                adapter, deviceType, d3dFormatInfo.renderFormat, TRUE, multisampleType, nullptr);
             if (SUCCEEDED(result))
             {
                 textureCaps.sampleCounts.insert(i);
@@ -381,18 +382,17 @@ void GenerateCaps(IDirect3D9 *d3d9,
     d3d9->GetAdapterDisplayMode(adapter, &currentDisplayMode);
 
     GLuint maxSamples = 0;
-    const gl::FormatSet &allFormats = gl::GetAllSizedInternalFormats();
-    for (gl::FormatSet::const_iterator internalFormat = allFormats.begin(); internalFormat != allFormats.end(); ++internalFormat)
+    for (GLenum internalFormat : gl::GetAllSizedInternalFormats())
     {
-        gl::TextureCaps textureCaps = GenerateTextureFormatCaps(*internalFormat, d3d9, deviceType, adapter,
-                                                                currentDisplayMode.Format);
-        textureCapsMap->insert(*internalFormat, textureCaps);
+        gl::TextureCaps textureCaps = GenerateTextureFormatCaps(internalFormat, d3d9, deviceType,
+                                                                adapter, currentDisplayMode.Format);
+        textureCapsMap->insert(internalFormat, textureCaps);
 
         maxSamples = std::max(maxSamples, textureCaps.getMaxSamples());
 
-        if (gl::GetInternalFormatInfo(*internalFormat).compressed)
+        if (gl::GetSizedInternalFormatInfo(internalFormat).compressed)
         {
-            caps->compressedTextureFormats.push_back(*internalFormat);
+            caps->compressedTextureFormats.push_back(internalFormat);
         }
     }
 
@@ -567,12 +567,12 @@ void GenerateCaps(IDirect3D9 *d3d9,
     extensions->maxTextureAnisotropy = static_cast<GLfloat>(deviceCaps.MaxAnisotropy);
 
     // Check occlusion query support by trying to create one
-    IDirect3DQuery9 *occlusionQuery = NULL;
+    IDirect3DQuery9 *occlusionQuery = nullptr;
     extensions->occlusionQueryBoolean = SUCCEEDED(device->CreateQuery(D3DQUERYTYPE_OCCLUSION, &occlusionQuery)) && occlusionQuery;
     SafeRelease(occlusionQuery);
 
     // Check event query support by trying to create one
-    IDirect3DQuery9 *eventQuery = NULL;
+    IDirect3DQuery9 *eventQuery = nullptr;
     extensions->fence = SUCCEEDED(device->CreateQuery(D3DQUERYTYPE_EVENT, &eventQuery)) && eventQuery;
     SafeRelease(eventQuery);
 

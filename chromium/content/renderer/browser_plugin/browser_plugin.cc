@@ -29,6 +29,7 @@
 #include "content/renderer/drop_data_builder.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/sad_plugin.h"
+#include "third_party/WebKit/public/platform/WebCoalescedInputEvent.h"
 #include "third_party/WebKit/public/platform/WebGestureEvent.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "third_party/WebKit/public/platform/WebMouseWheelEvent.h"
@@ -383,7 +384,6 @@ bool BrowserPlugin::ShouldForwardToBrowserPlugin(
 void BrowserPlugin::UpdateGeometry(const WebRect& plugin_rect_in_viewport,
                                    const WebRect& clip_rect,
                                    const WebRect& unobscured_rect,
-                                   const WebVector<WebRect>& cut_outs_rects,
                                    bool is_visible) {
   gfx::Rect old_view_rect = view_rect_;
   // Convert the plugin_rect_in_viewport to window coordinates, which is css.
@@ -441,8 +441,9 @@ void BrowserPlugin::UpdateVisibility(bool visible) {
 }
 
 blink::WebInputEventResult BrowserPlugin::HandleInputEvent(
-    const blink::WebInputEvent& event,
+    const blink::WebCoalescedInputEvent& coalesced_event,
     blink::WebCursorInfo& cursor_info) {
+  const blink::WebInputEvent& event = coalesced_event.Event();
   if (guest_crashed_ || !attached())
     return blink::WebInputEventResult::kNotHandled;
 
@@ -603,7 +604,8 @@ bool BrowserPlugin::FinishComposingText(
   bool keep_selection =
       (selection_behavior == blink::WebInputMethodController::kKeepSelection);
   BrowserPluginManager::Get()->Send(
-      new BrowserPluginHostMsg_ImeFinishComposingText(keep_selection));
+      new BrowserPluginHostMsg_ImeFinishComposingText(
+          browser_plugin_instance_id_, keep_selection));
   // TODO(kochi): This assumes the IPC handling always succeeds.
   return true;
 }

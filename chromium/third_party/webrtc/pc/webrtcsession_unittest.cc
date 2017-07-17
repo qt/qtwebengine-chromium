@@ -21,7 +21,6 @@
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/network.h"
-#include "webrtc/base/physicalsocketserver.h"
 #include "webrtc/base/ssladapter.h"
 #include "webrtc/base/sslidentity.h"
 #include "webrtc/base/sslstreamadapter.h"
@@ -41,7 +40,6 @@
 #include "webrtc/p2p/client/basicportallocator.h"
 #include "webrtc/pc/audiotrack.h"
 #include "webrtc/pc/channelmanager.h"
-#include "webrtc/pc/fakemediacontroller.h"
 #include "webrtc/pc/mediasession.h"
 #include "webrtc/pc/peerconnection.h"
 #include "webrtc/pc/sctputils.h"
@@ -255,7 +253,10 @@ class FakeSctpTransportFactory : public cricket::SctpTransportInternalFactory {
 class WebRtcSessionForTest : public webrtc::WebRtcSession {
  public:
   WebRtcSessionForTest(
-      webrtc::MediaControllerInterface* media_controller,
+      webrtc::Call* fake_call,
+      cricket::ChannelManager* channel_manager,
+      const cricket::MediaConfig& media_config,
+      webrtc::RtcEventLog* event_log,
       rtc::Thread* network_thread,
       rtc::Thread* worker_thread,
       rtc::Thread* signaling_thread,
@@ -263,7 +264,7 @@ class WebRtcSessionForTest : public webrtc::WebRtcSession {
       webrtc::IceObserver* ice_observer,
       std::unique_ptr<cricket::TransportController> transport_controller,
       std::unique_ptr<FakeSctpTransportFactory> sctp_factory)
-      : WebRtcSession(media_controller,
+      : WebRtcSession(fake_call, channel_manager, media_config, event_log,
                       network_thread,
                       worker_thread,
                       signaling_thread,
@@ -368,26 +369,20 @@ class WebRtcSessionTest
   // TODO Investigate why ChannelManager crashes, if it's created
   // after stun_server.
   WebRtcSessionTest()
-      : media_engine_(new cricket::FakeMediaEngine()),
+      : vss_(new rtc::VirtualSocketServer()),
+        fss_(new rtc::FirewallSocketServer(vss_.get())),
+        thread_(fss_.get()),
+        media_engine_(new cricket::FakeMediaEngine()),
         data_engine_(new cricket::FakeDataEngine()),
         channel_manager_(new cricket::ChannelManager(
             std::unique_ptr<cricket::MediaEngineInterface>(media_engine_),
             std::unique_ptr<cricket::DataEngineInterface>(data_engine_),
             rtc::Thread::Current())),
         fake_call_(webrtc::Call::Config(&event_log_)),
-        media_controller_(
-            webrtc::MediaControllerInterface::Create(cricket::MediaConfig(),
-                                                     rtc::Thread::Current(),
-                                                     channel_manager_.get(),
-                                                     &event_log_)),
         tdesc_factory_(new cricket::TransportDescriptionFactory()),
         desc_factory_(
             new cricket::MediaSessionDescriptionFactory(channel_manager_.get(),
                                                         tdesc_factory_.get())),
-        pss_(new rtc::PhysicalSocketServer),
-        vss_(new rtc::VirtualSocketServer(pss_.get())),
-        fss_(new rtc::FirewallSocketServer(vss_.get())),
-        ss_scope_(fss_.get()),
         stun_socket_addr_(
             rtc::SocketAddress(kStunAddrHost, cricket::STUN_SERVER_PORT)),
         stun_server_(cricket::TestStunServer::Create(Thread::Current(),
@@ -420,16 +415,19 @@ class WebRtcSessionTest
   // otherwise one will be generated using the |cert_generator|.
   void Init(
       std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
-      PeerConnectionInterface::RtcpMuxPolicy rtcp_mux_policy) {
+      PeerConnectionInterface::RtcpMuxPolicy rtcp_mux_policy,
+      const rtc::CryptoOptions& crypto_options) {
     ASSERT_TRUE(session_.get() == NULL);
     fake_sctp_transport_factory_ = new FakeSctpTransportFactory();
-    session_.reset(new WebRtcSessionForTest(
-        media_controller_.get(), rtc::Thread::Current(), rtc::Thread::Current(),
+    session_.reset(new WebRtcSessionForTest(&fake_call_,
+        channel_manager_.get(), cricket::MediaConfig(), &event_log_,
+        rtc::Thread::Current(), rtc::Thread::Current(),
         rtc::Thread::Current(), allocator_.get(), &observer_,
         std::unique_ptr<cricket::TransportController>(
-            new cricket::TransportController(rtc::Thread::Current(),
-                                             rtc::Thread::Current(),
-                                             allocator_.get())),
+            new cricket::TransportController(
+                rtc::Thread::Current(), rtc::Thread::Current(),
+                allocator_.get(),
+                /*redetermine_role_on_ice_restart=*/true, crypto_options)),
         std::unique_ptr<FakeSctpTransportFactory>(
             fake_sctp_transport_factory_)));
     session_->SignalDataChannelOpenMessage.connect(
@@ -444,6 +442,7 @@ class WebRtcSessionTest
     EXPECT_TRUE(session_->Initialize(options_, std::move(cert_generator),
                                      configuration_));
     session_->set_metrics_observer(metrics_observer_);
+    crypto_options_ = crypto_options;
   }
 
   void OnDataChannelOpenMessage(const std::string& label,
@@ -453,11 +452,8 @@ class WebRtcSessionTest
   }
 
   void Init() {
-    Init(nullptr, PeerConnectionInterface::kRtcpMuxPolicyNegotiate);
-  }
-
-  void Init(PeerConnectionInterface::RtcpMuxPolicy rtcp_mux_policy) {
-    Init(nullptr, rtcp_mux_policy);
+    Init(nullptr, PeerConnectionInterface::kRtcpMuxPolicyNegotiate,
+         rtc::CryptoOptions());
   }
 
   void InitWithBundlePolicy(
@@ -469,7 +465,12 @@ class WebRtcSessionTest
   void InitWithRtcpMuxPolicy(
       PeerConnectionInterface::RtcpMuxPolicy rtcp_mux_policy) {
     PeerConnectionInterface::RTCConfiguration configuration;
-    Init(rtcp_mux_policy);
+    Init(nullptr, rtcp_mux_policy, rtc::CryptoOptions());
+  }
+
+  void InitWithCryptoOptions(const rtc::CryptoOptions& crypto_options) {
+    Init(nullptr, PeerConnectionInterface::kRtcpMuxPolicyNegotiate,
+         crypto_options);
   }
 
   // Successfully init with DTLS; with a certificate generated and supplied or
@@ -486,7 +487,8 @@ class WebRtcSessionTest
       RTC_CHECK(false);
     }
     Init(std::move(cert_generator),
-         PeerConnectionInterface::kRtcpMuxPolicyNegotiate);
+         PeerConnectionInterface::kRtcpMuxPolicyNegotiate,
+         rtc::CryptoOptions());
   }
 
   // Init with DTLS with a store that will fail to generate a certificate.
@@ -495,15 +497,14 @@ class WebRtcSessionTest
         new FakeRTCCertificateGenerator());
     cert_generator->set_should_fail(true);
     Init(std::move(cert_generator),
-         PeerConnectionInterface::kRtcpMuxPolicyNegotiate);
+         PeerConnectionInterface::kRtcpMuxPolicyNegotiate,
+         rtc::CryptoOptions());
   }
 
   void InitWithGcm() {
     rtc::CryptoOptions crypto_options;
     crypto_options.enable_gcm_crypto_suites = true;
-    channel_manager_->SetCryptoOptions(crypto_options);
-    with_gcm_ = true;
-    Init();
+    InitWithCryptoOptions(crypto_options);
   }
 
   void SendAudioVideoStream1() {
@@ -599,9 +600,7 @@ class WebRtcSessionTest
       session_options->data_channel_type = cricket::DCT_QUIC;
     }
 
-    if (with_gcm_) {
-      session_options->crypto_options.enable_gcm_crypto_suites = true;
-    }
+    session_options->crypto_options = crypto_options_;
   }
 
   void GetOptionsForAnswer(cricket::MediaSessionOptions* session_options) {
@@ -618,9 +617,7 @@ class WebRtcSessionTest
       session_options->data_channel_type = session_->data_channel_type();
     }
 
-    if (with_gcm_) {
-      session_options->crypto_options.enable_gcm_crypto_suites = true;
-    }
+    session_options->crypto_options = crypto_options_;
   }
 
   // Creates a local offer and applies it. Starts ICE.
@@ -1379,8 +1376,6 @@ class WebRtcSessionTest
   }
 
   void TestPacketOptions() {
-    media_controller_.reset(
-        new cricket::FakeMediaController(channel_manager_.get(), &fake_call_));
     LoopbackNetworkConfiguration config;
     LoopbackNetworkManager loopback_network_manager(this, config);
 
@@ -1506,6 +1501,9 @@ class WebRtcSessionTest
   }
 
   webrtc::RtcEventLogNullImpl event_log_;
+  std::unique_ptr<rtc::VirtualSocketServer> vss_;
+  std::unique_ptr<rtc::FirewallSocketServer> fss_;
+  rtc::AutoSocketServerThread thread_;
   // |media_engine_| and |data_engine_| are actually owned by
   // |channel_manager_|.
   cricket::FakeMediaEngine* media_engine_;
@@ -1514,13 +1512,8 @@ class WebRtcSessionTest
   FakeSctpTransportFactory* fake_sctp_transport_factory_ = nullptr;
   std::unique_ptr<cricket::ChannelManager> channel_manager_;
   cricket::FakeCall fake_call_;
-  std::unique_ptr<webrtc::MediaControllerInterface> media_controller_;
   std::unique_ptr<cricket::TransportDescriptionFactory> tdesc_factory_;
   std::unique_ptr<cricket::MediaSessionDescriptionFactory> desc_factory_;
-  std::unique_ptr<rtc::PhysicalSocketServer> pss_;
-  std::unique_ptr<rtc::VirtualSocketServer> vss_;
-  std::unique_ptr<rtc::FirewallSocketServer> fss_;
-  rtc::SocketServerScope ss_scope_;
   rtc::SocketAddress stun_socket_addr_;
   std::unique_ptr<cricket::TestStunServer> stun_server_;
   cricket::TestTurnServer turn_server_;
@@ -1542,7 +1535,7 @@ class WebRtcSessionTest
   // Last values received from data channel creation signal.
   std::string last_data_channel_label_;
   InternalDataChannelInit last_data_channel_config_;
-  bool with_gcm_ = false;
+  rtc::CryptoOptions crypto_options_;
 };
 
 TEST_P(WebRtcSessionTest, TestInitializeWithDtls) {
@@ -3370,7 +3363,7 @@ TEST_F(WebRtcSessionTest, TestAddChannelToConnectedBundle) {
   configuration_.bundle_policy =
       PeerConnectionInterface::kBundlePolicyMaxBundle;
   options_.disable_encryption = true;
-  Init(PeerConnectionInterface::kRtcpMuxPolicyRequire);
+  InitWithRtcpMuxPolicy(PeerConnectionInterface::kRtcpMuxPolicyRequire);
 
   // Negotiate an audio channel with MAX_BUNDLE enabled.
   SendAudioOnlyStream2();

@@ -78,6 +78,7 @@ if (is_win) {
     deps = [
       "//base",
       "//chrome/install_static:install_static_util",
+      "//components/browser_watcher:crash_stability",
       "//third_party/crashpad/crashpad/client",
       "//third_party/crashpad/crashpad/handler:handler_lib",
       "//third_party/crashpad/crashpad/minidump",
@@ -238,7 +239,6 @@ source_set("unit_tests") {
       ":run_as_crashpad_handler",
       "//breakpad:client",
       "//third_party/crashpad/crashpad/client:client",
-      "//third_party/crashpad/crashpad/compat",
       "//third_party/crashpad/crashpad/snapshot:snapshot",
       "//third_party/crashpad/crashpad/util",
     ]

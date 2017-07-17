@@ -13,6 +13,7 @@
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfdoc/cpvt_word.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxcrt/xml/cxml_content.h"
 #include "core/fxcrt/xml/cxml_element.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
@@ -32,7 +33,7 @@ CPWL_Edit::CPWL_Edit()
     : m_pFillerNotify(nullptr), m_bFocus(false), m_pFormFiller(nullptr) {}
 
 CPWL_Edit::~CPWL_Edit() {
-  ASSERT(m_bFocus == false);
+  ASSERT(!m_bFocus);
 }
 
 CFX_ByteString CPWL_Edit::GetClassName() const {
@@ -55,30 +56,27 @@ void CPWL_Edit::SetText(const CFX_WideString& csText) {
     m_pEdit->SetText(swText);
     return;
   }
-
-  int32_t nCount = pXML->CountChildren();
-  bool bFirst = true;
-
   swText.clear();
 
+  bool bFirst = true;
+  int32_t nCount = pXML->CountChildren();
   for (int32_t i = 0; i < nCount; i++) {
-    CXML_Element* pSubElement = pXML->GetElement(i);
-    if (!pSubElement)
+    CXML_Element* pSubElement = ToElement(pXML->GetChild(i));
+    if (!pSubElement || !pSubElement->GetTagName().EqualNoCase("p"))
       continue;
 
-    CFX_ByteString tag = pSubElement->GetTagName();
-    if (tag.EqualNoCase("p")) {
-      int nChild = pSubElement->CountChildren();
-      CFX_WideString swSection;
-      for (int32_t j = 0; j < nChild; j++)
-        swSection += pSubElement->GetContent(j);
-
-      if (bFirst)
-        bFirst = false;
-      else
-        swText += FWL_VKEY_Return;
-      swText += swSection;
+    CFX_WideString swSection;
+    int nSubChild = pSubElement->CountChildren();
+    for (int32_t j = 0; j < nSubChild; j++) {
+      CXML_Content* pSubContent = ToContent(pSubElement->GetChild(j));
+      if (pSubContent)
+        swSection += pSubContent->m_Content;
     }
+    if (bFirst)
+      bFirst = false;
+    else
+      swText += FWL_VKEY_Return;
+    swText += swSection;
   }
 
   m_pEdit->SetText(swText);
@@ -400,7 +398,7 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
   CFX_SystemHandler* pSysHandler = GetSystemHandler();
   CFX_Edit::DrawEdit(pDevice, pUser2Device, m_pEdit.get(),
                      GetTextColor().ToFXColor(GetTransparency()), rcClip,
-                     CFX_PointF(), pRange, pSysHandler, m_pFormFiller);
+                     CFX_PointF(), pRange, pSysHandler, m_pFormFiller.Get());
 }
 
 bool CPWL_Edit::OnLButtonDown(const CFX_PointF& point, uint32_t nFlag) {
@@ -460,7 +458,7 @@ void CPWL_Edit::OnKillFocus() {
   ShowVScrollBar(false);
   m_pEdit->SelectNone();
   SetCaret(false, CFX_PointF(), CFX_PointF());
-  SetCharSet(FXFONT_ANSI_CHARSET);
+  SetCharSet(FX_CHARSET_ANSI);
   m_bFocus = false;
 }
 
@@ -569,7 +567,7 @@ void CPWL_Edit::SetLimitChar(int32_t nLimitChar) {
 
 void CPWL_Edit::ReplaceSel(const CFX_WideString& wsText) {
   m_pEdit->Clear();
-  m_pEdit->InsertText(wsText, FXFONT_DEFAULT_CHARSET);
+  m_pEdit->InsertText(wsText, FX_CHARSET_Default);
 }
 
 CFX_FloatRect CPWL_Edit::GetFocusRect() const {
@@ -714,7 +712,7 @@ bool CPWL_Edit::OnChar(uint16_t nChar, uint32_t nFlag) {
   if (IPVT_FontMap* pFontMap = GetFontMap()) {
     int32_t nOldCharSet = GetCharSet();
     int32_t nNewCharSet =
-        pFontMap->CharSetFromUnicode(nChar, FXFONT_DEFAULT_CHARSET);
+        pFontMap->CharSetFromUnicode(nChar, FX_CHARSET_Default);
     if (nOldCharSet != nNewCharSet) {
       SetCharSet(nNewCharSet);
     }

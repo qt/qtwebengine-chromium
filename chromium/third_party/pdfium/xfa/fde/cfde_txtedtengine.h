@@ -31,7 +31,7 @@ class CFDE_TxtEdtEngine {
   int32_t CountPages() const;
   CFDE_TxtEdtPage* GetPage(int32_t nIndex);
 
-  void SetTextByStream(const CFX_RetainPtr<IFGAS_Stream>& pStream);
+  void SetTextByStream(const CFX_RetainPtr<CFX_SeekableStreamProxy>& pStream);
   void SetText(const CFX_WideString& wsText);
   int32_t GetTextLength() const;
   CFX_WideString GetText(int32_t nStart, int32_t nCount) const;
@@ -68,12 +68,11 @@ class CFDE_TxtEdtEngine {
   bool Undo(const IFDE_TxtEdtDoRecord* pRecord);
 
   int32_t StartLayout();
-  int32_t DoLayout(IFX_Pause* pPause);
+  int32_t DoLayout();
   void EndLayout();
 
   int32_t CountParags() const;
   CFDE_TxtEdtParag* GetParag(int32_t nParagIndex) const;
-  IFX_CharIter* CreateCharIter();
   CFDE_TxtEdtBuf* GetTextBuf() const;
   int32_t GetTextBufLength() const;
   CFX_TxtBreak* GetTextBreak() const;

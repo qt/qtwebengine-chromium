@@ -47,7 +47,6 @@
 #include "webrtc/base/networkmonitor.h"
 #include "webrtc/base/nullsocketserver.h"
 #include "webrtc/base/timeutils.h"
-#include "webrtc/base/winping.h"
 #include "webrtc/base/win32socketinit.h"
 
 #if defined(WEBRTC_POSIX)
@@ -122,7 +121,7 @@ static const int ICMP_PING_TIMEOUT_MILLIS = 10000u;
 #endif
 
 PhysicalSocket::PhysicalSocket(PhysicalSocketServer* ss, SOCKET s)
-  : ss_(ss), s_(s), enabled_events_(0), error_(0),
+  : ss_(ss), s_(s), error_(0),
     state_((s == INVALID_SOCKET) ? CS_CLOSED : CS_CONNECTED),
     resolver_(nullptr) {
 #if defined(WEBRTC_WIN)
@@ -134,7 +133,7 @@ PhysicalSocket::PhysicalSocket(PhysicalSocketServer* ss, SOCKET s)
   EnsureWinsockInit();
 #endif
   if (s_ != INVALID_SOCKET) {
-    enabled_events_ = DE_READ | DE_WRITE;
+    SetEnabledEvents(DE_READ | DE_WRITE);
 
     int type = SOCK_STREAM;
     socklen_t len = sizeof(type);
@@ -154,8 +153,9 @@ bool PhysicalSocket::Create(int family, int type) {
   s_ = ::socket(family, type, 0);
   udp_ = (SOCK_DGRAM == type);
   UpdateLastError();
-  if (udp_)
-    enabled_events_ = DE_READ | DE_WRITE;
+  if (udp_) {
+    SetEnabledEvents(DE_READ | DE_WRITE);
+  }
   return s_ != INVALID_SOCKET;
 }
 
@@ -267,16 +267,17 @@ int PhysicalSocket::DoConnect(const SocketAddress& connect_addr) {
   sockaddr* addr = reinterpret_cast<sockaddr*>(&addr_storage);
   int err = ::connect(s_, addr, static_cast<int>(len));
   UpdateLastError();
+  uint8_t events = DE_READ | DE_WRITE;
   if (err == 0) {
     state_ = CS_CONNECTED;
   } else if (IsBlockingError(GetError())) {
     state_ = CS_CONNECTING;
-    enabled_events_ |= DE_CONNECT;
+    events |= DE_CONNECT;
   } else {
     return SOCKET_ERROR;
   }
 
-  enabled_events_ |= DE_READ | DE_WRITE;
+  EnableEvents(events);
   return 0;
 }
 
@@ -342,7 +343,7 @@ int PhysicalSocket::Send(const void* pv, size_t cb) {
   RTC_DCHECK(sent <= static_cast<int>(cb));
   if ((sent > 0 && sent < static_cast<int>(cb)) ||
       (sent < 0 && IsBlockingError(GetError()))) {
-    enabled_events_ |= DE_WRITE;
+    EnableEvents(DE_WRITE);
   }
   return sent;
 }
@@ -367,7 +368,7 @@ int PhysicalSocket::SendTo(const void* buffer,
   RTC_DCHECK(sent <= static_cast<int>(length));
   if ((sent > 0 && sent < static_cast<int>(length)) ||
       (sent < 0 && IsBlockingError(GetError()))) {
-    enabled_events_ |= DE_WRITE;
+    EnableEvents(DE_WRITE);
   }
   return sent;
 }
@@ -382,7 +383,7 @@ int PhysicalSocket::Recv(void* buffer, size_t length, int64_t* timestamp) {
     LOG(LS_WARNING) << "EOF from socket; deferring close event";
     // Must turn this back on so that the select() loop will notice the close
     // event.
-    enabled_events_ |= DE_READ;
+    EnableEvents(DE_READ);
     SetError(EWOULDBLOCK);
     return SOCKET_ERROR;
   }
@@ -393,7 +394,7 @@ int PhysicalSocket::Recv(void* buffer, size_t length, int64_t* timestamp) {
   int error = GetError();
   bool success = (received >= 0) || IsBlockingError(error);
   if (udp_ || success) {
-    enabled_events_ |= DE_READ;
+    EnableEvents(DE_READ);
   }
   if (!success) {
     LOG_F(LS_VERBOSE) << "Error = " << error;
@@ -419,7 +420,7 @@ int PhysicalSocket::RecvFrom(void* buffer,
   int error = GetError();
   bool success = (received >= 0) || IsBlockingError(error);
   if (udp_ || success) {
-    enabled_events_ |= DE_READ;
+    EnableEvents(DE_READ);
   }
   if (!success) {
     LOG_F(LS_VERBOSE) << "Error = " << error;
@@ -432,7 +433,7 @@ int PhysicalSocket::Listen(int backlog) {
   UpdateLastError();
   if (err == 0) {
     state_ = CS_CONNECTING;
-    enabled_events_ |= DE_ACCEPT;
+    EnableEvents(DE_ACCEPT);
 #if !defined(NDEBUG)
     dbg_addr_ = "Listening @ ";
     dbg_addr_.append(GetLocalAddress().ToString());
@@ -444,7 +445,7 @@ int PhysicalSocket::Listen(int backlog) {
 AsyncSocket* PhysicalSocket::Accept(SocketAddress* out_addr) {
   // Always re-subscribe DE_ACCEPT to make sure new incoming connections will
   // trigger an event even if DoAccept returns an error here.
-  enabled_events_ |= DE_ACCEPT;
+  EnableEvents(DE_ACCEPT);
   sockaddr_storage addr_storage;
   socklen_t addr_len = sizeof(addr_storage);
   sockaddr* addr = reinterpret_cast<sockaddr*>(&addr_storage);
@@ -464,76 +465,12 @@ int PhysicalSocket::Close() {
   UpdateLastError();
   s_ = INVALID_SOCKET;
   state_ = CS_CLOSED;
-  enabled_events_ = 0;
+  SetEnabledEvents(0);
   if (resolver_) {
     resolver_->Destroy(false);
     resolver_ = nullptr;
   }
   return err;
-}
-
-int PhysicalSocket::EstimateMTU(uint16_t* mtu) {
-  SocketAddress addr = GetRemoteAddress();
-  if (addr.IsAnyIP()) {
-    SetError(ENOTCONN);
-    return -1;
-  }
-
-#if defined(WEBRTC_WIN)
-  // Gets the interface MTU (TTL=1) for the interface used to reach |addr|.
-  WinPing ping;
-  if (!ping.IsValid()) {
-    SetError(EINVAL);  // can't think of a better error ID
-    return -1;
-  }
-  int header_size = ICMP_HEADER_SIZE;
-  if (addr.family() == AF_INET6) {
-    header_size += IPV6_HEADER_SIZE;
-  } else if (addr.family() == AF_INET) {
-    header_size += IP_HEADER_SIZE;
-  }
-
-  for (int level = 0; PACKET_MAXIMUMS[level + 1] > 0; ++level) {
-    int32_t size = PACKET_MAXIMUMS[level] - header_size;
-    WinPing::PingResult result = ping.Ping(addr.ipaddr(), size,
-                                           ICMP_PING_TIMEOUT_MILLIS,
-                                           1, false);
-    if (result == WinPing::PING_FAIL) {
-      SetError(EINVAL);  // can't think of a better error ID
-      return -1;
-    } else if (result != WinPing::PING_TOO_LARGE) {
-      *mtu = PACKET_MAXIMUMS[level];
-      return 0;
-    }
-  }
-
-  RTC_NOTREACHED();
-  return -1;
-#elif defined(WEBRTC_MAC)
-  // No simple way to do this on Mac OS X.
-  // SIOCGIFMTU would work if we knew which interface would be used, but
-  // figuring that out is pretty complicated. For now we'll return an error
-  // and let the caller pick a default MTU.
-  SetError(EINVAL);
-  return -1;
-#elif defined(WEBRTC_LINUX)
-  // Gets the path MTU.
-  int value;
-  socklen_t vlen = sizeof(value);
-  int err = getsockopt(s_, IPPROTO_IP, IP_MTU, &value, &vlen);
-  if (err < 0) {
-    UpdateLastError();
-    return err;
-  }
-
-  RTC_DCHECK((0 <= value) && (value <= 65536));
-  *mtu = value;
-  return 0;
-#elif defined(__native_client__)
-  // Most socket operations, including this, will fail in NaCl's sandbox.
-  error_ = EACCES;
-  return -1;
-#endif
 }
 
 SOCKET PhysicalSocket::DoAccept(SOCKET socket,
@@ -588,6 +525,18 @@ void PhysicalSocket::MaybeRemapSendError() {
     SetError(EWOULDBLOCK);
   }
 #endif
+}
+
+void PhysicalSocket::SetEnabledEvents(uint8_t events) {
+  enabled_events_ = events;
+}
+
+void PhysicalSocket::EnableEvents(uint8_t events) {
+  enabled_events_ |= events;
+}
+
+void PhysicalSocket::DisableEvents(uint8_t events) {
+  enabled_events_ &= ~events;
 }
 
 int PhysicalSocket::TranslateOption(Option opt, int* slevel, int* sopt) {
@@ -764,7 +713,7 @@ bool SocketDispatcher::IsDescriptorClosed() {
 #endif // WEBRTC_POSIX
 
 uint32_t SocketDispatcher::GetRequestedEvents() {
-  return enabled_events_;
+  return enabled_events();
 }
 
 void SocketDispatcher::OnPreEvent(uint32_t ff) {
@@ -788,7 +737,7 @@ void SocketDispatcher::OnEvent(uint32_t ff, int err) {
   if (((ff & DE_CONNECT) != 0) && (id_ == cache_id)) {
     if (ff != DE_CONNECT)
       LOG(LS_VERBOSE) << "Signalled with DE_CONNECT: " << ff;
-    enabled_events_ &= ~DE_CONNECT;
+    DisableEvents(DE_CONNECT);
 #if !defined(NDEBUG)
     dbg_addr_ = "Connected @ ";
     dbg_addr_.append(GetRemoteAddress().ToString());
@@ -796,15 +745,15 @@ void SocketDispatcher::OnEvent(uint32_t ff, int err) {
     SignalConnectEvent(this);
   }
   if (((ff & DE_ACCEPT) != 0) && (id_ == cache_id)) {
-    enabled_events_ &= ~DE_ACCEPT;
+    DisableEvents(DE_ACCEPT);
     SignalReadEvent(this);
   }
   if ((ff & DE_READ) != 0) {
-    enabled_events_ &= ~DE_READ;
+    DisableEvents(DE_READ);
     SignalReadEvent(this);
   }
   if (((ff & DE_WRITE) != 0) && (id_ == cache_id)) {
-    enabled_events_ &= ~DE_WRITE;
+    DisableEvents(DE_WRITE);
     SignalWriteEvent(this);
   }
   if (((ff & DE_CLOSE) != 0) && (id_ == cache_id)) {
@@ -819,24 +768,24 @@ void SocketDispatcher::OnEvent(uint32_t ff, int err) {
   // Make sure we deliver connect/accept first. Otherwise, consumers may see
   // something like a READ followed by a CONNECT, which would be odd.
   if ((ff & DE_CONNECT) != 0) {
-    enabled_events_ &= ~DE_CONNECT;
+    DisableEvents(DE_CONNECT);
     SignalConnectEvent(this);
   }
   if ((ff & DE_ACCEPT) != 0) {
-    enabled_events_ &= ~DE_ACCEPT;
+    DisableEvents(DE_ACCEPT);
     SignalReadEvent(this);
   }
   if ((ff & DE_READ) != 0) {
-    enabled_events_ &= ~DE_READ;
+    DisableEvents(DE_READ);
     SignalReadEvent(this);
   }
   if ((ff & DE_WRITE) != 0) {
-    enabled_events_ &= ~DE_WRITE;
+    DisableEvents(DE_WRITE);
     SignalWriteEvent(this);
   }
   if ((ff & DE_CLOSE) != 0) {
     // The socket is now dead to us, so stop checking it.
-    enabled_events_ = 0;
+    SetEnabledEvents(0);
     SignalCloseEvent(this, err);
   }
 }

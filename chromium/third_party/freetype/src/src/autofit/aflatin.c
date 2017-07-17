@@ -2575,23 +2575,23 @@
       other_flags |= AF_LATIN_HINTS_VERT_SNAP;
 
     /*
-     *  We adjust stems to full pixels only if we don't use the `light' mode.
+     *  We adjust stems to full pixels unless in `light' or `lcd' mode.
      */
-    if ( mode != FT_RENDER_MODE_LIGHT )
+    if ( mode != FT_RENDER_MODE_LIGHT && mode != FT_RENDER_MODE_LCD )
       other_flags |= AF_LATIN_HINTS_STEM_ADJUST;
 
     if ( mode == FT_RENDER_MODE_MONO )
       other_flags |= AF_LATIN_HINTS_MONO;
 
     /*
-     *  In `light' hinting mode we disable horizontal hinting completely.
+     *  In `light' or `lcd' mode we disable horizontal hinting completely.
      *  We also do it if the face is italic.
      *
      *  However, if warping is enabled (which only works in `light' hinting
      *  mode), advance widths get adjusted, too.
      */
-    if ( mode == FT_RENDER_MODE_LIGHT                      ||
-         ( face->style_flags & FT_STYLE_FLAG_ITALIC ) != 0 )
+    if ( mode == FT_RENDER_MODE_LIGHT || mode == FT_RENDER_MODE_LCD ||
+         ( face->style_flags & FT_STYLE_FLAG_ITALIC ) != 0          )
       scaler_flags |= AF_SCALER_FLAG_NO_HORIZONTAL;
 
 #ifdef AF_CONFIG_OPTION_USE_WARPER

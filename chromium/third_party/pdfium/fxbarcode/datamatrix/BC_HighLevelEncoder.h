@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "core/fxcrt/cfx_widestring.h"
 #include "fxbarcode/datamatrix/BC_SymbolShapeHint.h"
 
 #define ASCII_ENCODATION 0
@@ -18,10 +19,10 @@
 #define EDIFACT_ENCODATION 4
 #define BASE256_ENCODATION 5
 
-class CBC_HighLevelEncoder : public CBC_SymbolShapeHint {
+class CBC_HighLevelEncoder {
  public:
   CBC_HighLevelEncoder();
-  ~CBC_HighLevelEncoder() override;
+  ~CBC_HighLevelEncoder();
 
   std::vector<uint8_t>& getBytesForMessage(CFX_WideString msg);
   static CFX_WideString encodeHighLevel(CFX_WideString msg,
@@ -30,8 +31,6 @@ class CBC_HighLevelEncoder : public CBC_SymbolShapeHint {
   static CFX_WideString encodeHighLevel(CFX_WideString msg,
                                         CFX_WideString ecLevel,
                                         SymbolShapeHint shape,
-                                        CBC_Dimension* minSize,
-                                        CBC_Dimension* maxSize,
                                         int32_t& e);
   static int32_t lookAheadTest(CFX_WideString msg,
                                int32_t startpos,
@@ -40,26 +39,15 @@ class CBC_HighLevelEncoder : public CBC_SymbolShapeHint {
   static bool isExtendedASCII(wchar_t ch);
   static int32_t determineConsecutiveDigitCount(CFX_WideString msg,
                                                 int32_t startpos);
-  static void illegalCharacter(wchar_t c, int32_t& e);
 
- public:
-  static wchar_t LATCH_TO_C40;
-  static wchar_t LATCH_TO_BASE256;
-  static wchar_t UPPER_SHIFT;
-  static wchar_t LATCH_TO_ANSIX12;
-  static wchar_t LATCH_TO_TEXT;
-  static wchar_t LATCH_TO_EDIFACT;
-  static wchar_t C40_UNLATCH;
-  static wchar_t X12_UNLATCH;
-
- private:
-  static wchar_t PAD;
-  static wchar_t MACRO_05;
-  static wchar_t MACRO_06;
-  static const wchar_t* MACRO_05_HEADER;
-  static const wchar_t* MACRO_06_HEADER;
-  static const wchar_t MACRO_TRAILER;
-  std::vector<uint8_t> m_bytearray;
+  static const wchar_t LATCH_TO_C40;
+  static const wchar_t LATCH_TO_BASE256;
+  static const wchar_t UPPER_SHIFT;
+  static const wchar_t LATCH_TO_ANSIX12;
+  static const wchar_t LATCH_TO_TEXT;
+  static const wchar_t LATCH_TO_EDIFACT;
+  static const wchar_t C40_UNLATCH;
+  static const wchar_t X12_UNLATCH;
 
  private:
   static wchar_t randomize253State(wchar_t ch, int32_t codewordPosition);
@@ -73,7 +61,15 @@ class CBC_HighLevelEncoder : public CBC_SymbolShapeHint {
   static bool isNativeX12(wchar_t ch);
   static bool isX12TermSep(wchar_t ch);
   static bool isNativeEDIFACT(wchar_t ch);
-  static bool isSpecialB256(wchar_t ch);
+
+  static const wchar_t PAD;
+  static const wchar_t MACRO_05;
+  static const wchar_t MACRO_06;
+  static const wchar_t MACRO_05_HEADER[];
+  static const wchar_t MACRO_06_HEADER[];
+  static const wchar_t MACRO_TRAILER;
+
+  std::vector<uint8_t> m_bytearray;
 };
 
 #endif  // FXBARCODE_DATAMATRIX_BC_HIGHLEVELENCODER_H_

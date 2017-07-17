@@ -20,7 +20,7 @@
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdftext/unicodenormalizationdata.h"
 #include "core/fxcrt/fx_bidi.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_ucd.h"
 #include "third_party/base/stl_util.h"
 
@@ -248,10 +248,10 @@ std::vector<CFX_FloatRect> CPDF_TextPage::GetRectArray(int start,
       continue;
     }
     if (!pCurObj)
-      pCurObj = info_curchar.m_pTextObj;
+      pCurObj = info_curchar.m_pTextObj.Get();
     if (pCurObj != info_curchar.m_pTextObj) {
       rectArray.push_back(rect);
-      pCurObj = info_curchar.m_pTextObj;
+      pCurObj = info_curchar.m_pTextObj.Get();
       bFlagNewRect = true;
     }
     if (bFlagNewRect) {
@@ -800,7 +800,7 @@ void CPDF_TextPage::ProcessTextObject(
 
 FPDFText_MarkedContent CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
   CPDF_TextObject* pTextObj = Obj.m_pTextObj;
-  if (!pTextObj->m_ContentMark)
+  if (!pTextObj->m_ContentMark.HasRef())
     return FPDFText_MarkedContent::Pass;
 
   int nContentMark = pTextObj->m_ContentMark.CountItems();
@@ -825,7 +825,7 @@ FPDFText_MarkedContent CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
   if (!bExist)
     return FPDFText_MarkedContent::Pass;
 
-  if (m_pPreTextObj && m_pPreTextObj->m_ContentMark &&
+  if (m_pPreTextObj && m_pPreTextObj->m_ContentMark.HasRef() &&
       m_pPreTextObj->m_ContentMark.CountItems() == n &&
       pDict == m_pPreTextObj->m_ContentMark.GetItem(n - 1).GetParam()) {
     return FPDFText_MarkedContent::Done;
@@ -863,7 +863,7 @@ FPDFText_MarkedContent CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
 
 void CPDF_TextPage::ProcessMarkedContent(PDFTEXT_Obj Obj) {
   CPDF_TextObject* pTextObj = Obj.m_pTextObj;
-  if (!pTextObj->m_ContentMark)
+  if (!pTextObj->m_ContentMark.HasRef())
     return;
 
   int nContentMark = pTextObj->m_ContentMark.CountItems();
@@ -1226,12 +1226,8 @@ bool CPDF_TextPage::IsHyphen(wchar_t curChar) {
   if (0x2D == wcTmp || 0xAD == wcTmp) {
     if (--nIndex > 0) {
       wchar_t preChar = strCurText.GetAt((nIndex));
-      if (((preChar >= L'A' && preChar <= L'Z') ||
-           (preChar >= L'a' && preChar <= L'z')) &&
-          ((curChar >= L'A' && curChar <= L'Z') ||
-           (curChar >= L'a' && curChar <= L'z'))) {
+      if (FXSYS_iswalpha(preChar) && FXSYS_iswalpha(curChar))
         return true;
-      }
     }
     const PAGECHAR_INFO* preInfo;
     if (!m_TempCharList.empty())
@@ -1254,7 +1250,7 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
   FindPreviousTextObject();
   TextOrientation WritingMode = GetTextObjectWritingMode(pObj);
   if (WritingMode == TextOrientation::Unknown)
-    WritingMode = GetTextObjectWritingMode(m_pPreTextObj);
+    WritingMode = GetTextObjectWritingMode(m_pPreTextObj.Get());
 
   CFX_FloatRect this_rect = pObj->GetRect();
   CFX_FloatRect prev_rect = m_pPreTextObj->GetRect();

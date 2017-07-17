@@ -48,9 +48,11 @@ RenderStateCache::RenderStateCache(Renderer11 *renderer)
       mCounter(0),
       mBlendStateCache(kMaxBlendStates, HashBlendState, CompareBlendStates),
       mRasterizerStateCache(kMaxRasterizerStates, HashRasterizerState, CompareRasterizerStates),
-      mDepthStencilStateCache(kMaxDepthStencilStates, HashDepthStencilState, CompareDepthStencilStates),
+      mDepthStencilStateCache(kMaxDepthStencilStates,
+                              HashDepthStencilState,
+                              CompareDepthStencilStates),
       mSamplerStateCache(kMaxSamplerStates, HashSamplerState, CompareSamplerStates),
-      mDevice(NULL)
+      mDevice(nullptr)
 {
 }
 
@@ -116,7 +118,7 @@ d3d11::BlendStateKey RenderStateCache::GetBlendStateKey(const gl::Framebuffer *f
             }
 
             key.rtvMasks[i] =
-                (gl_d3d11::GetColorMask(attachment->getFormat().info)) & blendStateMask;
+                (gl_d3d11::GetColorMask(*attachment->getFormat().info)) & blendStateMask;
         }
         else
         {
@@ -292,7 +294,7 @@ gl::Error RenderStateCache::getRasterizerState(const gl::RasterizerState &raster
             rasterDesc.DepthBias = 0;
         }
 
-        ID3D11RasterizerState *dx11RasterizerState = NULL;
+        ID3D11RasterizerState *dx11RasterizerState = nullptr;
         HRESULT result = mDevice->CreateRasterizerState(&rasterDesc, &dx11RasterizerState);
         if (FAILED(result) || !dx11RasterizerState)
         {
@@ -372,7 +374,7 @@ gl::Error RenderStateCache::getDepthStencilState(const gl::DepthStencilState &gl
     dsDesc.BackFace.StencilPassOp       = ConvertStencilOp(glState.stencilBackPassDepthPass);
     dsDesc.BackFace.StencilFunc         = ConvertComparison(glState.stencilBackFunc);
 
-    ID3D11DepthStencilState *dx11DepthStencilState = NULL;
+    ID3D11DepthStencilState *dx11DepthStencilState = nullptr;
     HRESULT result = mDevice->CreateDepthStencilState(&dsDesc, &dx11DepthStencilState);
     if (FAILED(result) || !dx11DepthStencilState)
     {
@@ -464,7 +466,7 @@ gl::Error RenderStateCache::getSamplerState(const gl::SamplerState &samplerState
             samplerDesc.MaxLOD = FLT_MAX;
         }
 
-        ID3D11SamplerState *dx11SamplerState = NULL;
+        ID3D11SamplerState *dx11SamplerState = nullptr;
         HRESULT result = mDevice->CreateSamplerState(&samplerDesc, &dx11SamplerState);
         if (FAILED(result) || !dx11SamplerState)
         {

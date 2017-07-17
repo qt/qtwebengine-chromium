@@ -35,9 +35,8 @@
 
 namespace media {
 
-typedef bool (*CodecIDValidatorFunction)(
-    const std::string& codecs_id,
-    const scoped_refptr<MediaLog>& media_log);
+typedef bool (*CodecIDValidatorFunction)(const std::string& codecs_id,
+                                         MediaLog* media_log);
 
 struct CodecInfo {
   enum Type {
@@ -73,7 +72,7 @@ struct CodecInfo {
 
 typedef StreamParser* (*ParserFactoryFunction)(
     const std::vector<std::string>& codecs,
-    const scoped_refptr<MediaLog>& media_log);
+    MediaLog* media_log);
 
 struct SupportedTypeInfo {
   const char* type;
@@ -103,16 +102,11 @@ static const CodecInfo* kAudioWebMCodecs[] = {
 };
 
 static StreamParser* BuildWebMParser(const std::vector<std::string>& codecs,
-                                     const scoped_refptr<MediaLog>& media_log) {
+                                     MediaLog* media_log) {
   return new WebMStreamParser();
 }
 
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
-bool CheckIfMp4Vp9DemuxingEnabled(const std::string& codec_id,
-                                  const scoped_refptr<MediaLog>& media_log) {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableVp9InMp4);
-}
 
 // AAC Object Type IDs that Chrome supports.
 static const int kAACLCObjectType = 2;
@@ -120,7 +114,7 @@ static const int kAACSBRObjectType = 5;
 static const int kAACPSObjectType = 29;
 
 static int GetMP4AudioObjectType(const std::string& codec_id,
-                                 const scoped_refptr<MediaLog>& media_log) {
+                                 MediaLog* media_log) {
   // From RFC 6381 section 3.3 (ISO Base Media File Format Name Space):
   // When the first element of a ['codecs' parameter value] is 'mp4a' ...,
   // the second element is a hexadecimal representation of the MP4 Registration
@@ -143,8 +137,7 @@ static int GetMP4AudioObjectType(const std::string& codec_id,
   return -1;
 }
 
-bool ValidateMP4ACodecID(const std::string& codec_id,
-                         const scoped_refptr<MediaLog>& media_log) {
+bool ValidateMP4ACodecID(const std::string& codec_id, MediaLog* media_log) {
   int audio_object_type = GetMP4AudioObjectType(codec_id, media_log);
   if (audio_object_type == kAACLCObjectType ||
       audio_object_type == kAACSBRObjectType ||
@@ -180,8 +173,7 @@ static const CodecInfo kDolbyVisionHEVCCodecInfo2 = {
     "dvhe.*", CodecInfo::VIDEO, NULL, CodecInfo::HISTOGRAM_DOLBYVISION};
 #endif
 #endif
-static const CodecInfo kMPEG4VP09CodecInfo = {"vp09.*", CodecInfo::VIDEO,
-                                              &CheckIfMp4Vp9DemuxingEnabled,
+static const CodecInfo kMPEG4VP09CodecInfo = {"vp09.*", CodecInfo::VIDEO, NULL,
                                               CodecInfo::HISTOGRAM_VP9};
 static const CodecInfo kMPEG4AACCodecInfo = { "mp4a.40.*", CodecInfo::AUDIO,
                                               &ValidateMP4ACodecID,
@@ -237,7 +229,7 @@ static const CodecInfo* kAudioMP4Codecs[] = {&kMPEG4AACCodecInfo,
                                              NULL};
 
 static StreamParser* BuildMP4Parser(const std::vector<std::string>& codecs,
-                                    const scoped_refptr<MediaLog>& media_log) {
+                                    MediaLog* media_log) {
   std::set<int> audio_object_types;
 
   bool has_sbr = false;
@@ -281,7 +273,7 @@ static const CodecInfo* kAudioMP3Codecs[] = {
 };
 
 static StreamParser* BuildMP3Parser(const std::vector<std::string>& codecs,
-                                    const scoped_refptr<MediaLog>& media_log) {
+                                    MediaLog* media_log) {
   return new MPEG1AudioStreamParser();
 }
 
@@ -293,7 +285,7 @@ static const CodecInfo* kAudioADTSCodecs[] = {
 };
 
 static StreamParser* BuildADTSParser(const std::vector<std::string>& codecs,
-                                     const scoped_refptr<MediaLog>& media_log) {
+                                     MediaLog* media_log) {
   return new ADTSStreamParser();
 }
 
@@ -317,7 +309,7 @@ static const CodecInfo* kVideoMP2TCodecs[] = {&kH264AVC1CodecInfo,
                                               NULL};
 
 static StreamParser* BuildMP2TParser(const std::vector<std::string>& codecs,
-                                     const scoped_refptr<MediaLog>& media_log) {
+                                     MediaLog* media_log) {
   bool has_sbr = false;
   for (size_t i = 0; i < codecs.size(); ++i) {
     std::string codec_id = codecs[i];
@@ -404,7 +396,7 @@ static bool VerifyCodec(
 static bool CheckTypeAndCodecs(
     const std::string& type,
     const std::vector<std::string>& codecs,
-    const scoped_refptr<MediaLog>& media_log,
+    MediaLog* media_log,
     ParserFactoryFunction* factory_function,
     std::vector<CodecInfo::HistogramTag>* audio_codecs,
     std::vector<CodecInfo::HistogramTag>* video_codecs) {
@@ -464,14 +456,17 @@ static bool CheckTypeAndCodecs(
 }
 
 bool StreamParserFactory::IsTypeSupported(
-    const std::string& type, const std::vector<std::string>& codecs) {
-  return CheckTypeAndCodecs(type, codecs, new MediaLog(), NULL, NULL, NULL);
+    const std::string& type,
+    const std::vector<std::string>& codecs) {
+  // TODO(wolenetz): Questionable MediaLog usage, http://crbug.com/712310
+  MediaLog media_log;
+  return CheckTypeAndCodecs(type, codecs, &media_log, NULL, NULL, NULL);
 }
 
 std::unique_ptr<StreamParser> StreamParserFactory::Create(
     const std::string& type,
     const std::vector<std::string>& codecs,
-    const scoped_refptr<MediaLog>& media_log) {
+    MediaLog* media_log) {
   std::unique_ptr<StreamParser> stream_parser;
   ParserFactoryFunction factory_function;
   std::vector<CodecInfo::HistogramTag> audio_codecs;
@@ -490,6 +485,13 @@ std::unique_ptr<StreamParser> StreamParserFactory::Create(
       UMA_HISTOGRAM_ENUMERATION("Media.MSE.VideoCodec",
                                 video_codecs[i],
                                 CodecInfo::HISTOGRAM_MAX + 1);
+      if (type == "video/mp4") {
+        UMA_HISTOGRAM_ENUMERATION("Media.MSE.VideoCodec.MP4", video_codecs[i],
+                                  CodecInfo::HISTOGRAM_MAX + 1);
+      } else if (type == "video/webm") {
+        UMA_HISTOGRAM_ENUMERATION("Media.MSE.VideoCodec.WebM", video_codecs[i],
+                                  CodecInfo::HISTOGRAM_MAX + 1);
+      }
     }
 
     stream_parser.reset(factory_function(codecs, media_log));

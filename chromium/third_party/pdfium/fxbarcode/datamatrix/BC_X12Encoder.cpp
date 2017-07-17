@@ -20,7 +20,8 @@
  * limitations under the License.
  */
 
-#include "fxbarcode/BC_Dimension.h"
+#include "fxbarcode/datamatrix/BC_X12Encoder.h"
+
 #include "fxbarcode/common/BC_CommonBitMatrix.h"
 #include "fxbarcode/datamatrix/BC_C40Encoder.h"
 #include "fxbarcode/datamatrix/BC_Encoder.h"
@@ -28,7 +29,7 @@
 #include "fxbarcode/datamatrix/BC_HighLevelEncoder.h"
 #include "fxbarcode/datamatrix/BC_SymbolInfo.h"
 #include "fxbarcode/datamatrix/BC_SymbolShapeHint.h"
-#include "fxbarcode/datamatrix/BC_X12Encoder.h"
+#include "fxbarcode/utils.h"
 
 CBC_X12Encoder::CBC_X12Encoder() {}
 CBC_X12Encoder::~CBC_X12Encoder() {}
@@ -65,7 +66,7 @@ void CBC_X12Encoder::handleEOD(CBC_EncoderContext& context,
     return;
   }
   int32_t available =
-      context.m_symbolInfo->m_dataCapacity - context.getCodewordCount();
+      context.m_symbolInfo->dataCapacity() - context.getCodewordCount();
   int32_t count = buffer.GetLength();
   if (count == 2) {
     context.writeCodeword(CBC_HighLevelEncoder::X12_UNLATCH);
@@ -93,9 +94,8 @@ int32_t CBC_X12Encoder::encodeChar(wchar_t c, CFX_WideString& sb, int32_t& e) {
   } else if (c >= 'A' && c <= 'Z') {
     sb += (wchar_t)(c - 65 + 14);
   } else {
-    CBC_HighLevelEncoder::illegalCharacter(c, e);
-    if (e != BCExceptionNO)
-      return -1;
+    e = BCExceptionIllegalArgument;
+    return -1;
   }
   return 1;
 }

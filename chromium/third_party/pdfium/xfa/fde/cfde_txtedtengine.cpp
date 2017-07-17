@@ -17,7 +17,7 @@
 #include "xfa/fde/cfde_txtedtdorecord_insert.h"
 #include "xfa/fde/cfde_txtedtpage.h"
 #include "xfa/fde/cfde_txtedtparag.h"
-#include "xfa/fgas/layout/fgas_textbreak.h"
+#include "xfa/fgas/layout/cfx_txtbreak.h"
 #include "xfa/fwl/cfwl_edit.h"
 
 namespace {
@@ -106,7 +106,7 @@ CFDE_TxtEdtPage* CFDE_TxtEdtEngine::GetPage(int32_t nIndex) {
 }
 
 void CFDE_TxtEdtEngine::SetTextByStream(
-    const CFX_RetainPtr<IFGAS_Stream>& pStream) {
+    const CFX_RetainPtr<CFX_SeekableStreamProxy>& pStream) {
   ResetEngine();
   int32_t nIndex = 0;
   if (pStream && pStream->GetLength()) {
@@ -118,12 +118,12 @@ void CFDE_TxtEdtEngine::SetTextByStream(
     bool bPreIsCR = false;
     if (bValid) {
       int32_t nPos = pStream->GetBOMLength();
-      pStream->Seek(FX_STREAMSEEK_Begin, nPos);
+      pStream->Seek(CFX_SeekableStreamProxy::Pos::Begin, nPos);
       int32_t nPlateSize = std::min(nStreamLength, m_pTxtBuf->GetChunkSize());
       wchar_t* lpwstr = FX_Alloc(wchar_t, nPlateSize);
       bool bEos = false;
       while (!bEos) {
-        int32_t nRead = pStream->ReadString(lpwstr, nPlateSize, bEos);
+        int32_t nRead = pStream->ReadString(lpwstr, nPlateSize, &bEos);
         bPreIsCR = ReplaceParagEnd(lpwstr, nRead, bPreIsCR);
         m_pTxtBuf->Insert(nIndex, lpwstr, nRead);
         nIndex += nRead;
@@ -622,7 +622,7 @@ int32_t CFDE_TxtEdtEngine::StartLayout() {
   return 0;
 }
 
-int32_t CFDE_TxtEdtEngine::DoLayout(IFX_Pause* pPause) {
+int32_t CFDE_TxtEdtEngine::DoLayout() {
   int32_t nCount = pdfium::CollectionSize<int32_t>(m_ParagPtrArray);
   CFDE_TxtEdtParag* pParag = nullptr;
   int32_t nLineCount = 0;
@@ -630,10 +630,6 @@ int32_t CFDE_TxtEdtEngine::DoLayout(IFX_Pause* pPause) {
     pParag = m_ParagPtrArray[m_nLayoutPos].get();
     pParag->CalcLines();
     nLineCount += pParag->GetLineCount();
-    if (nLineCount > m_nPageLineCount && pPause && pPause->NeedToPauseNow()) {
-      m_nLineCount += nLineCount;
-      return (++m_nLayoutPos * 100) / nCount;
-    }
   }
   m_nLineCount += nLineCount;
   return 100;
@@ -679,12 +675,6 @@ int32_t CFDE_TxtEdtEngine::CountParags() const {
 
 CFDE_TxtEdtParag* CFDE_TxtEdtEngine::GetParag(int32_t nParagIndex) const {
   return m_ParagPtrArray[nParagIndex].get();
-}
-
-IFX_CharIter* CFDE_TxtEdtEngine::CreateCharIter() {
-  if (!m_pTxtBuf)
-    return nullptr;
-  return new CFDE_TxtEdtBuf::Iterator(m_pTxtBuf.get());
 }
 
 int32_t CFDE_TxtEdtEngine::Line2Parag(int32_t nStartParag,

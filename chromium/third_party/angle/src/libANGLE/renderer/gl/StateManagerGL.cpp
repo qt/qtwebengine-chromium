@@ -8,26 +8,26 @@
 
 #include "libANGLE/renderer/gl/StateManagerGL.h"
 
-#include <limits>
 #include <string.h>
+#include <limits>
 
 #include "common/bitset_utils.h"
 #include "common/mathutil.h"
 #include "common/matrix_utils.h"
 #include "libANGLE/ContextState.h"
 #include "libANGLE/Framebuffer.h"
+#include "libANGLE/Query.h"
 #include "libANGLE/TransformFeedback.h"
 #include "libANGLE/VertexArray.h"
-#include "libANGLE/Query.h"
 #include "libANGLE/renderer/gl/BufferGL.h"
 #include "libANGLE/renderer/gl/FramebufferGL.h"
 #include "libANGLE/renderer/gl/FunctionsGL.h"
 #include "libANGLE/renderer/gl/ProgramGL.h"
+#include "libANGLE/renderer/gl/QueryGL.h"
 #include "libANGLE/renderer/gl/SamplerGL.h"
 #include "libANGLE/renderer/gl/TextureGL.h"
 #include "libANGLE/renderer/gl/TransformFeedbackGL.h"
 #include "libANGLE/renderer/gl/VertexArrayGL.h"
-#include "libANGLE/renderer/gl/QueryGL.h"
 
 namespace rx
 {
@@ -195,7 +195,8 @@ void StateManagerGL::deleteTexture(GLuint texture)
         for (const auto &textureTypeIter : mTextures)
         {
             const std::vector<GLuint> &textureVector = textureTypeIter.second;
-            for (size_t textureUnitIndex = 0; textureUnitIndex < textureVector.size(); textureUnitIndex++)
+            for (size_t textureUnitIndex = 0; textureUnitIndex < textureVector.size();
+                 textureUnitIndex++)
             {
                 if (textureVector[textureUnitIndex] == texture)
                 {
@@ -335,7 +336,7 @@ void StateManagerGL::bindVertexArray(GLuint vao, GLuint elementArrayBuffer)
 {
     if (mVAO != vao)
     {
-        mVAO = vao;
+        mVAO                              = vao;
         mBuffers[GL_ELEMENT_ARRAY_BUFFER] = elementArrayBuffer;
         mFunctions->bindVertexArray(vao);
     }
@@ -358,7 +359,7 @@ void StateManagerGL::bindBufferBase(GLenum type, size_t index, GLuint buffer)
     {
         binding.buffer = buffer;
         binding.offset = static_cast<size_t>(-1);
-        binding.size = static_cast<size_t>(-1);
+        binding.size   = static_cast<size_t>(-1);
         mFunctions->bindBufferBase(type, static_cast<GLuint>(index), buffer);
     }
 }
@@ -374,7 +375,7 @@ void StateManagerGL::bindBufferRange(GLenum type,
     {
         binding.buffer = buffer;
         binding.offset = offset;
-        binding.size = size;
+        binding.size   = size;
         mFunctions->bindBufferRange(type, static_cast<GLuint>(index), buffer, offset, size);
     }
 }
@@ -638,9 +639,9 @@ gl::Error StateManagerGL::setDrawArraysState(const gl::ContextState &data,
 gl::Error StateManagerGL::setDrawElementsState(const gl::ContextState &data,
                                                GLsizei count,
                                                GLenum type,
-                                               const GLvoid *indices,
+                                               const void *indices,
                                                GLsizei instanceCount,
-                                               const GLvoid **outIndices)
+                                               const void **outIndices)
 {
     const gl::State &state = data.getState();
 
@@ -804,8 +805,14 @@ void StateManagerGL::setGenericShaderState(const gl::ContextState &data)
         GLenum textureType = samplerUniform.textureType;
         for (GLuint textureUnitIndex : samplerUniform.boundTextureUnits)
         {
-            gl::Texture *texture = state.getSamplerTexture(textureUnitIndex, textureType);
-            if (texture != nullptr)
+            gl::Texture *texture       = state.getSamplerTexture(textureUnitIndex, textureType);
+            const gl::Sampler *sampler = state.getSampler(textureUnitIndex);
+
+            const gl::SamplerState &samplerState =
+                sampler ? sampler->getSamplerState() : texture->getSamplerState();
+
+            if (texture != nullptr &&
+                texture->getTextureState().isSamplerComplete(samplerState, data))
             {
                 const TextureGL *textureGL = GetImplAs<TextureGL>(texture);
 
@@ -829,7 +836,6 @@ void StateManagerGL::setGenericShaderState(const gl::ContextState &data)
                 }
             }
 
-            const gl::Sampler *sampler = state.getSampler(textureUnitIndex);
             if (sampler != nullptr)
             {
                 const SamplerGL *samplerGL = GetImplAs<SamplerGL>(sampler);
@@ -889,13 +895,14 @@ void StateManagerGL::setAttributeCurrentData(size_t index,
                 break;
             case GL_INT:
                 mFunctions->vertexAttribI4iv(static_cast<GLuint>(index),
-                                            mVertexAttribCurrentValues[index].IntValues);
+                                             mVertexAttribCurrentValues[index].IntValues);
                 break;
             case GL_UNSIGNED_INT:
                 mFunctions->vertexAttribI4uiv(static_cast<GLuint>(index),
-                                             mVertexAttribCurrentValues[index].UnsignedIntValues);
+                                              mVertexAttribCurrentValues[index].UnsignedIntValues);
                 break;
-          default: UNREACHABLE();
+            default:
+                UNREACHABLE();
         }
 
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_CURRENT_VALUE_0 + index);
@@ -947,7 +954,7 @@ void StateManagerGL::setDepthRange(float near, float far)
     if (mNear != near || mFar != far)
     {
         mNear = near;
-        mFar = far;
+        mFar  = far;
 
         // The glDepthRangef function isn't available until OpenGL 4.1.  Prefer it when it is
         // available because OpenGL ES only works in floats.
@@ -988,7 +995,8 @@ void StateManagerGL::setBlendColor(const gl::ColorF &blendColor)
     if (mBlendColor != blendColor)
     {
         mBlendColor = blendColor;
-        mFunctions->blendColor(mBlendColor.red, mBlendColor.green, mBlendColor.blue, mBlendColor.alpha);
+        mFunctions->blendColor(mBlendColor.red, mBlendColor.green, mBlendColor.blue,
+                               mBlendColor.alpha);
 
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_BLEND_COLOR);
     }
@@ -1002,12 +1010,13 @@ void StateManagerGL::setBlendFuncs(GLenum sourceBlendRGB,
     if (mSourceBlendRGB != sourceBlendRGB || mDestBlendRGB != destBlendRGB ||
         mSourceBlendAlpha != sourceBlendAlpha || mDestBlendAlpha != destBlendAlpha)
     {
-        mSourceBlendRGB = sourceBlendRGB;
-        mDestBlendRGB = destBlendRGB;
+        mSourceBlendRGB   = sourceBlendRGB;
+        mDestBlendRGB     = destBlendRGB;
         mSourceBlendAlpha = sourceBlendAlpha;
-        mDestBlendAlpha = destBlendAlpha;
+        mDestBlendAlpha   = destBlendAlpha;
 
-        mFunctions->blendFuncSeparate(mSourceBlendRGB, mDestBlendRGB, mSourceBlendAlpha, mDestBlendAlpha);
+        mFunctions->blendFuncSeparate(mSourceBlendRGB, mDestBlendRGB, mSourceBlendAlpha,
+                                      mDestBlendAlpha);
 
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_BLEND_FUNCS);
     }
@@ -1017,7 +1026,7 @@ void StateManagerGL::setBlendEquations(GLenum blendEquationRGB, GLenum blendEqua
 {
     if (mBlendEquationRGB != blendEquationRGB || mBlendEquationAlpha != blendEquationAlpha)
     {
-        mBlendEquationRGB = blendEquationRGB;
+        mBlendEquationRGB   = blendEquationRGB;
         mBlendEquationAlpha = blendEquationAlpha;
 
         mFunctions->blendEquationSeparate(mBlendEquationRGB, mBlendEquationAlpha);
@@ -1028,11 +1037,12 @@ void StateManagerGL::setBlendEquations(GLenum blendEquationRGB, GLenum blendEqua
 
 void StateManagerGL::setColorMask(bool red, bool green, bool blue, bool alpha)
 {
-    if (mColorMaskRed != red || mColorMaskGreen != green || mColorMaskBlue != blue || mColorMaskAlpha != alpha)
+    if (mColorMaskRed != red || mColorMaskGreen != green || mColorMaskBlue != blue ||
+        mColorMaskAlpha != alpha)
     {
-        mColorMaskRed = red;
+        mColorMaskRed   = red;
         mColorMaskGreen = green;
-        mColorMaskBlue = blue;
+        mColorMaskBlue  = blue;
         mColorMaskAlpha = alpha;
         mFunctions->colorMask(mColorMaskRed, mColorMaskGreen, mColorMaskBlue, mColorMaskAlpha);
 
@@ -1080,7 +1090,7 @@ void StateManagerGL::setSampleCoverage(float value, bool invert)
 {
     if (mSampleCoverageValue != value || mSampleCoverageInvert != invert)
     {
-        mSampleCoverageValue = value;
+        mSampleCoverageValue  = value;
         mSampleCoverageInvert = invert;
         mFunctions->sampleCoverage(mSampleCoverageValue, mSampleCoverageInvert);
 
@@ -1172,10 +1182,11 @@ void StateManagerGL::setStencilFrontFuncs(GLenum func, GLint ref, GLuint mask)
 {
     if (mStencilFrontFunc != func || mStencilFrontRef != ref || mStencilFrontValueMask != mask)
     {
-        mStencilFrontFunc = func;
-        mStencilFrontRef = ref;
+        mStencilFrontFunc      = func;
+        mStencilFrontRef       = ref;
         mStencilFrontValueMask = mask;
-        mFunctions->stencilFuncSeparate(GL_FRONT, mStencilFrontFunc, mStencilFrontRef, mStencilFrontValueMask);
+        mFunctions->stencilFuncSeparate(GL_FRONT, mStencilFrontFunc, mStencilFrontRef,
+                                        mStencilFrontValueMask);
 
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_STENCIL_FUNCS_FRONT);
     }
@@ -1185,10 +1196,11 @@ void StateManagerGL::setStencilBackFuncs(GLenum func, GLint ref, GLuint mask)
 {
     if (mStencilBackFunc != func || mStencilBackRef != ref || mStencilBackValueMask != mask)
     {
-        mStencilBackFunc = func;
-        mStencilBackRef = ref;
+        mStencilBackFunc      = func;
+        mStencilBackRef       = ref;
         mStencilBackValueMask = mask;
-        mFunctions->stencilFuncSeparate(GL_BACK, mStencilBackFunc, mStencilBackRef, mStencilBackValueMask);
+        mFunctions->stencilFuncSeparate(GL_BACK, mStencilBackFunc, mStencilBackRef,
+                                        mStencilBackValueMask);
 
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_STENCIL_FUNCS_BACK);
     }
@@ -1196,12 +1208,15 @@ void StateManagerGL::setStencilBackFuncs(GLenum func, GLint ref, GLuint mask)
 
 void StateManagerGL::setStencilFrontOps(GLenum sfail, GLenum dpfail, GLenum dppass)
 {
-    if (mStencilFrontStencilFailOp != sfail || mStencilFrontStencilPassDepthFailOp != dpfail || mStencilFrontStencilPassDepthPassOp != dppass)
+    if (mStencilFrontStencilFailOp != sfail || mStencilFrontStencilPassDepthFailOp != dpfail ||
+        mStencilFrontStencilPassDepthPassOp != dppass)
     {
-        mStencilFrontStencilFailOp = sfail;
+        mStencilFrontStencilFailOp          = sfail;
         mStencilFrontStencilPassDepthFailOp = dpfail;
         mStencilFrontStencilPassDepthPassOp = dppass;
-        mFunctions->stencilOpSeparate(GL_FRONT, mStencilFrontStencilFailOp, mStencilFrontStencilPassDepthFailOp, mStencilFrontStencilPassDepthPassOp);
+        mFunctions->stencilOpSeparate(GL_FRONT, mStencilFrontStencilFailOp,
+                                      mStencilFrontStencilPassDepthFailOp,
+                                      mStencilFrontStencilPassDepthPassOp);
 
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_STENCIL_OPS_FRONT);
     }
@@ -1209,12 +1224,15 @@ void StateManagerGL::setStencilFrontOps(GLenum sfail, GLenum dpfail, GLenum dppa
 
 void StateManagerGL::setStencilBackOps(GLenum sfail, GLenum dpfail, GLenum dppass)
 {
-    if (mStencilBackStencilFailOp != sfail || mStencilBackStencilPassDepthFailOp != dpfail || mStencilBackStencilPassDepthPassOp != dppass)
+    if (mStencilBackStencilFailOp != sfail || mStencilBackStencilPassDepthFailOp != dpfail ||
+        mStencilBackStencilPassDepthPassOp != dppass)
     {
-        mStencilBackStencilFailOp = sfail;
+        mStencilBackStencilFailOp          = sfail;
         mStencilBackStencilPassDepthFailOp = dpfail;
         mStencilBackStencilPassDepthPassOp = dppass;
-        mFunctions->stencilOpSeparate(GL_BACK, mStencilBackStencilFailOp, mStencilBackStencilPassDepthFailOp, mStencilBackStencilPassDepthPassOp);
+        mFunctions->stencilOpSeparate(GL_BACK, mStencilBackStencilFailOp,
+                                      mStencilBackStencilPassDepthFailOp,
+                                      mStencilBackStencilPassDepthPassOp);
 
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_STENCIL_OPS_BACK);
     }
@@ -1283,7 +1301,7 @@ void StateManagerGL::setPolygonOffset(float factor, float units)
     if (mPolygonOffsetFactor != factor || mPolygonOffsetUnits != units)
     {
         mPolygonOffsetFactor = factor;
-        mPolygonOffsetUnits = units;
+        mPolygonOffsetUnits  = units;
         mFunctions->polygonOffset(mPolygonOffsetFactor, mPolygonOffsetUnits);
 
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_POLYGON_OFFSET);
@@ -1365,7 +1383,8 @@ void StateManagerGL::setClearColor(const gl::ColorF &clearColor)
     if (mClearColor != clearColor)
     {
         mClearColor = clearColor;
-        mFunctions->clearColor(mClearColor.red, mClearColor.green, mClearColor.blue, mClearColor.alpha);
+        mFunctions->clearColor(mClearColor.red, mClearColor.green, mClearColor.blue,
+                               mClearColor.alpha);
 
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_CLEAR_COLOR);
     }
@@ -1394,7 +1413,7 @@ void StateManagerGL::syncState(const gl::ContextState &data,
         mLocalDirtyBits.set(gl::State::DIRTY_BIT_FRAMEBUFFER_SRGB);
     }
 
-    const auto &glAndLocalDirtyBits = (glDirtyBits | mLocalDirtyBits);
+    const gl::State::DirtyBits &glAndLocalDirtyBits = (glDirtyBits | mLocalDirtyBits);
 
     if (!glAndLocalDirtyBits.any())
     {
@@ -1402,7 +1421,7 @@ void StateManagerGL::syncState(const gl::ContextState &data,
     }
 
     // TODO(jmadill): Investigate only syncing vertex state for active attributes
-    for (auto dirtyBit : angle::IterateBitSet(glAndLocalDirtyBits))
+    for (auto dirtyBit : glAndLocalDirtyBits)
     {
         switch (dirtyBit)
         {
@@ -1648,8 +1667,8 @@ void StateManagerGL::syncState(const gl::ContextState &data,
                        dirtyBit < gl::State::DIRTY_BIT_CURRENT_VALUE_MAX);
                 size_t attribIndex =
                     static_cast<size_t>(dirtyBit) - gl::State::DIRTY_BIT_CURRENT_VALUE_0;
-                setAttributeCurrentData(attribIndex, state.getVertexAttribCurrentValue(
-                                                         static_cast<unsigned int>(attribIndex)));
+                setAttributeCurrentData(attribIndex,
+                                        state.getVertexAttribCurrentValue(attribIndex));
                 break;
             }
         }
@@ -1810,5 +1829,4 @@ void StateManagerGL::setTextureCubemapSeamlessEnabled(bool enabled)
         }
     }
 }
-
 }

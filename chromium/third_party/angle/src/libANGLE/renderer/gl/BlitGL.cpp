@@ -53,7 +53,7 @@ gl::Error CheckLinkStatus(const rx::FunctionsGL *functions, GLuint program)
     return gl::NoError();
 }
 
-class ScopedGLState : public angle::NonCopyable
+class ScopedGLState : angle::NonCopyable
 {
   public:
     enum
@@ -175,13 +175,13 @@ gl::Error BlitGL::copyImageToLUMAWorkaroundTexture(GLuint texture,
     mStateManager->bindTexture(textureType, texture);
 
     // Allocate the texture memory
-    const gl::InternalFormat &internalFormatInfo = gl::GetInternalFormatInfo(internalFormat);
+    GLenum format = gl::GetUnsizedFormat(internalFormat);
 
     gl::PixelUnpackState unpack;
     mStateManager->setPixelUnpackState(unpack);
     mFunctions->texImage2D(target, static_cast<GLint>(level), internalFormat, sourceArea.width,
-                           sourceArea.height, 0, internalFormatInfo.format,
-                           source->getImplementationColorReadType(), nullptr);
+                           sourceArea.height, 0, format, source->getImplementationColorReadType(),
+                           nullptr);
 
     return copySubImageToLUMAWorkaroundTexture(texture, textureType, target, lumaFormat, level,
                                                gl::Offset(0, 0, 0), sourceArea, source);
@@ -205,8 +205,6 @@ gl::Error BlitGL::copySubImageToLUMAWorkaroundTexture(GLuint texture,
     nativegl::CopyTexImageImageFormat copyTexImageFormat = nativegl::GetCopyTexImageImageFormat(
         mFunctions, mWorkarounds, source->getImplementationColorReadFormat(),
         source->getImplementationColorReadType());
-    const gl::InternalFormat &internalFormatInfo =
-        gl::GetInternalFormatInfo(copyTexImageFormat.internalFormat);
 
     mStateManager->bindTexture(GL_TEXTURE_2D, mScratchTextures[0]);
     mFunctions->copyTexImage2D(GL_TEXTURE_2D, 0, copyTexImageFormat.internalFormat, sourceArea.x,
@@ -224,7 +222,8 @@ gl::Error BlitGL::copySubImageToLUMAWorkaroundTexture(GLuint texture,
     // to.
     mStateManager->bindTexture(GL_TEXTURE_2D, mScratchTextures[1]);
     mFunctions->texImage2D(GL_TEXTURE_2D, 0, copyTexImageFormat.internalFormat, sourceArea.width,
-                           sourceArea.height, 0, internalFormatInfo.format,
+                           sourceArea.height, 0,
+                           gl::GetUnsizedFormat(copyTexImageFormat.internalFormat),
                            source->getImplementationColorReadType(), nullptr);
 
     mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mScratchFBO);
@@ -514,7 +513,10 @@ gl::Error BlitGL::copySubTexture(TextureGL *source,
 }
 
 gl::Error BlitGL::copyTexSubImage(TextureGL *source,
+                                  size_t sourceLevel,
                                   TextureGL *dest,
+                                  GLenum destTarget,
+                                  size_t destLevel,
                                   const gl::Rectangle &sourceArea,
                                   const gl::Offset &destOffset)
 {
@@ -522,12 +524,13 @@ gl::Error BlitGL::copyTexSubImage(TextureGL *source,
 
     mStateManager->bindFramebuffer(GL_FRAMEBUFFER, mScratchFBO);
     mFunctions->framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                                     source->getTextureID(), 0);
+                                     source->getTextureID(), static_cast<GLint>(sourceLevel));
 
     mStateManager->bindTexture(dest->getTarget(), dest->getTextureID());
 
-    mFunctions->copyTexSubImage2D(dest->getTarget(), 0, destOffset.x, destOffset.y, sourceArea.x,
-                                  sourceArea.y, sourceArea.width, sourceArea.height);
+    mFunctions->copyTexSubImage2D(destTarget, static_cast<GLint>(destLevel), destOffset.x,
+                                  destOffset.y, sourceArea.x, sourceArea.y, sourceArea.width,
+                                  sourceArea.height);
 
     return gl::NoError();
 }

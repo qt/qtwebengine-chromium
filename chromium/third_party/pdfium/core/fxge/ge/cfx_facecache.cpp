@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <utility>
 
+#include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_pathdata.h"
@@ -17,6 +19,7 @@
 #include "core/fxge/fx_freetype.h"
 #include "core/fxge/ge/fx_text_int.h"
 #include "third_party/base/numerics/safe_math.h"
+#include "third_party/base/ptr_util.h"
 
 #if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
 #include "third_party/skia/include/core/SkStream.h"
@@ -32,14 +35,10 @@ namespace {
 
 constexpr uint32_t kInvalidGlyphIndex = static_cast<uint32_t>(-1);
 
-void GammaAdjust(uint8_t* pData,
-                 int nHeight,
-                 int src_pitch,
-                 const uint8_t* gammaTable) {
-  int count = nHeight * src_pitch;
-  for (int i = 0; i < count; i++)
-    pData[i] = gammaTable[pData[i]];
-}
+constexpr int kMinPixel = 0;
+constexpr int kMaxPixel = 255;
+
+constexpr int kMaxGlyphDimension = 2048;
 
 void ContrastAdjust(uint8_t* pDataIn,
                     uint8_t* pDataOut,
@@ -47,38 +46,37 @@ void ContrastAdjust(uint8_t* pDataIn,
                     int nHeight,
                     int nSrcRowBytes,
                     int nDstRowBytes) {
-  int col, row, temp;
-  int max = 0, min = 255;
-  float rate;
-  for (row = 0; row < nHeight; row++) {
+  int max = kMinPixel;
+  int min = kMaxPixel;
+  for (int row = 0; row < nHeight; row++) {
     uint8_t* pRow = pDataIn + row * nSrcRowBytes;
-    for (col = 0; col < nWidth; col++) {
-      temp = *pRow++;
-      max = std::max(temp, max);
-      min = std::min(temp, min);
+    for (int col = 0; col < nWidth; col++) {
+      int val = pRow[col];
+      max = std::max(val, max);
+      min = std::min(val, min);
     }
   }
-  temp = max - min;
-  if (temp == 0 || temp == 255) {
+  int diff = max - min;
+  if (diff == kMinPixel || diff == kMaxPixel) {
     int rowbytes = std::min(abs(nSrcRowBytes), nDstRowBytes);
-    for (row = 0; row < nHeight; row++) {
+    for (int row = 0; row < nHeight; row++) {
       memcpy(pDataOut + row * nDstRowBytes, pDataIn + row * nSrcRowBytes,
              rowbytes);
     }
     return;
   }
-  rate = 255.f / temp;
-  for (row = 0; row < nHeight; row++) {
+  float rate = 255.f / diff;
+  for (int row = 0; row < nHeight; row++) {
     uint8_t* pSrcRow = pDataIn + row * nSrcRowBytes;
     uint8_t* pDstRow = pDataOut + row * nDstRowBytes;
-    for (col = 0; col < nWidth; col++) {
-      temp = static_cast<int>((*(pSrcRow++) - min) * rate + 0.5);
-      temp = std::min(temp, 255);
-      temp = std::max(temp, 0);
-      *pDstRow++ = (uint8_t)temp;
+    for (int col = 0; col < nWidth; col++) {
+      int val = static_cast<int>((pSrcRow[col] - min) * rate + 0.5);
+      pDstRow[col] =
+          static_cast<uint8_t>(pdfium::clamp(val, kMinPixel, kMaxPixel));
     }
   }
 }
+
 }  // namespace
 
 CFX_FaceCache::CFX_FaceCache(FXFT_Face face)
@@ -96,12 +94,13 @@ CFX_FaceCache::~CFX_FaceCache() {
 #endif
 }
 
-CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(const CFX_Font* pFont,
-                                            uint32_t glyph_index,
-                                            bool bFontStyle,
-                                            const CFX_Matrix* pMatrix,
-                                            int dest_width,
-                                            int anti_alias) {
+std::unique_ptr<CFX_GlyphBitmap> CFX_FaceCache::RenderGlyph(
+    const CFX_Font* pFont,
+    uint32_t glyph_index,
+    bool bFontStyle,
+    const CFX_Matrix* pMatrix,
+    int dest_width,
+    int anti_alias) {
   if (!m_Face)
     return nullptr;
 
@@ -165,7 +164,7 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(const CFX_Font* pFont,
     if (index >= CFX_Font::kWeightPowArraySize)
       return nullptr;
     pdfium::base::CheckedNumeric<signed long> level = 0;
-    if (pSubstFont->m_Charset == FXFONT_SHIFTJIS_CHARSET)
+    if (pSubstFont->m_Charset == FX_CHARSET_ShiftJIS)
       level = CFX_Font::s_WeightPow_SHIFTJIS[index] * 2;
     else
       level = CFX_Font::s_WeightPow_11[index];
@@ -184,10 +183,10 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(const CFX_Font* pFont,
     return nullptr;
   int bmwidth = FXFT_Get_Bitmap_Width(FXFT_Get_Glyph_Bitmap(m_Face));
   int bmheight = FXFT_Get_Bitmap_Rows(FXFT_Get_Glyph_Bitmap(m_Face));
-  if (bmwidth > 2048 || bmheight > 2048)
+  if (bmwidth > kMaxGlyphDimension || bmheight > kMaxGlyphDimension)
     return nullptr;
   int dib_width = bmwidth;
-  CFX_GlyphBitmap* pGlyphBitmap = new CFX_GlyphBitmap;
+  auto pGlyphBitmap = pdfium::MakeUnique<CFX_GlyphBitmap>();
   pGlyphBitmap->m_pBitmap->Create(
       dib_width, bmheight,
       anti_alias == FXFT_RENDER_MODE_MONO ? FXDIB_1bppMask : FXDIB_8bppMask);
@@ -223,8 +222,6 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(const CFX_Font* pFont,
     } else {
       ContrastAdjust(pSrcBuf, pDestBuf, bmwidth, bmheight, src_pitch,
                      dest_pitch);
-      GammaAdjust(pDestBuf, bmheight, dest_pitch,
-                  CFX_GEModule::Get()->GetTextGammaTable());
     }
   }
   return pGlyphBitmap;
@@ -269,7 +266,7 @@ const CFX_GlyphBitmap* CFX_FaceCache::LoadGlyphBitmap(const CFX_Font* pFont,
   if (glyph_index == kInvalidGlyphIndex)
     return nullptr;
 
-  _CFX_UniqueKeyGen keygen;
+  CFX_UniqueKeyGen keygen;
   int nMatrixA = static_cast<int>(pMatrix->a * 10000);
   int nMatrixB = static_cast<int>(pMatrix->b * 10000);
   int nMatrixC = static_cast<int>(pMatrix->c * 10000);
@@ -316,29 +313,31 @@ const CFX_GlyphBitmap* CFX_FaceCache::LoadGlyphBitmap(const CFX_Font* pFont,
     return LookUpGlyphBitmap(pFont, pMatrix, FaceGlyphsKey, glyph_index,
                              bFontStyle, dest_width, anti_alias);
   }
-  CFX_GlyphBitmap* pGlyphBitmap;
+  std::unique_ptr<CFX_GlyphBitmap> pGlyphBitmap;
   auto it = m_SizeMap.find(FaceGlyphsKey);
   if (it != m_SizeMap.end()) {
     CFX_SizeGlyphCache* pSizeCache = it->second.get();
     auto it2 = pSizeCache->m_GlyphMap.find(glyph_index);
     if (it2 != pSizeCache->m_GlyphMap.end())
-      return it2->second;
+      return it2->second.get();
 
     pGlyphBitmap = RenderGlyph_Nativetext(pFont, glyph_index, pMatrix,
                                           dest_width, anti_alias);
     if (pGlyphBitmap) {
-      pSizeCache->m_GlyphMap[glyph_index] = pGlyphBitmap;
-      return pGlyphBitmap;
+      CFX_GlyphBitmap* pResult = pGlyphBitmap.get();
+      pSizeCache->m_GlyphMap[glyph_index] = std::move(pGlyphBitmap);
+      return pResult;
     }
   } else {
     pGlyphBitmap = RenderGlyph_Nativetext(pFont, glyph_index, pMatrix,
                                           dest_width, anti_alias);
     if (pGlyphBitmap) {
-      CFX_SizeGlyphCache* pSizeCache = new CFX_SizeGlyphCache;
-      m_SizeMap[FaceGlyphsKey] =
-          std::unique_ptr<CFX_SizeGlyphCache>(pSizeCache);
-      pSizeCache->m_GlyphMap[glyph_index] = pGlyphBitmap;
-      return pGlyphBitmap;
+      auto pNewCache = pdfium::MakeUnique<CFX_SizeGlyphCache>();
+      CFX_SizeGlyphCache* pSizeCache = pNewCache.get();
+      m_SizeMap[FaceGlyphsKey] = std::move(pNewCache);
+      CFX_GlyphBitmap* pResult = pGlyphBitmap.get();
+      pSizeCache->m_GlyphMap[glyph_index] = std::move(pGlyphBitmap);
+      return pResult;
     }
   }
   if (pFont->GetSubstFont()) {
@@ -390,17 +389,19 @@ CFX_GlyphBitmap* CFX_FaceCache::LookUpGlyphBitmap(
   CFX_SizeGlyphCache* pSizeCache;
   auto it = m_SizeMap.find(FaceGlyphsKey);
   if (it == m_SizeMap.end()) {
-    pSizeCache = new CFX_SizeGlyphCache;
-    m_SizeMap[FaceGlyphsKey] = std::unique_ptr<CFX_SizeGlyphCache>(pSizeCache);
+    auto pNewCache = pdfium::MakeUnique<CFX_SizeGlyphCache>();
+    pSizeCache = pNewCache.get();
+    m_SizeMap[FaceGlyphsKey] = std::move(pNewCache);
   } else {
     pSizeCache = it->second.get();
   }
   auto it2 = pSizeCache->m_GlyphMap.find(glyph_index);
   if (it2 != pSizeCache->m_GlyphMap.end())
-    return it2->second;
+    return it2->second.get();
 
-  CFX_GlyphBitmap* pGlyphBitmap = RenderGlyph(pFont, glyph_index, bFontStyle,
-                                              pMatrix, dest_width, anti_alias);
-  pSizeCache->m_GlyphMap[glyph_index] = pGlyphBitmap;
-  return pGlyphBitmap;
+  std::unique_ptr<CFX_GlyphBitmap> pGlyphBitmap = RenderGlyph(
+      pFont, glyph_index, bFontStyle, pMatrix, dest_width, anti_alias);
+  CFX_GlyphBitmap* pResult = pGlyphBitmap.get();
+  pSizeCache->m_GlyphMap[glyph_index] = std::move(pGlyphBitmap);
+  return pResult;
 }

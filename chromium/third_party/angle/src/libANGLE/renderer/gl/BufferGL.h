@@ -41,12 +41,12 @@ class BufferGL : public BufferImpl
                           GLintptr sourceOffset,
                           GLintptr destOffset,
                           GLsizeiptr size) override;
-    gl::Error map(ContextImpl *contextImpl, GLenum access, GLvoid **mapPtr) override;
+    gl::Error map(ContextImpl *contextImpl, GLenum access, void **mapPtr) override;
     gl::Error mapRange(ContextImpl *contextImpl,
                        size_t offset,
                        size_t length,
                        GLbitfield access,
-                       GLvoid **mapPtr) override;
+                       void **mapPtr) override;
     gl::Error unmap(ContextImpl *contextImpl, GLboolean *result) override;
 
     gl::Error getIndexRange(GLenum type,
@@ -75,4 +75,4 @@ class BufferGL : public BufferImpl
 
 }  // namespace rx
 
-#endif // LIBANGLE_RENDERER_GL_BUFFERGL_H_
+#endif  // LIBANGLE_RENDERER_GL_BUFFERGL_H_

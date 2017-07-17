@@ -35,30 +35,12 @@ bool ContainsSampler(const TType &type)
     if (IsSampler(type.getBasicType()))
         return true;
 
-    if (type.getBasicType() == EbtStruct || type.isInterfaceBlock())
+    if (type.getBasicType() == EbtStruct)
     {
         const TFieldList &fields = type.getStruct()->fields();
         for (unsigned int i = 0; i < fields.size(); ++i)
         {
             if (ContainsSampler(*fields[i]->type()))
-                return true;
-        }
-    }
-
-    return false;
-}
-
-bool ContainsImage(const TType &type)
-{
-    if (IsImage(type.getBasicType()))
-        return true;
-
-    if (type.getBasicType() == EbtStruct || type.isInterfaceBlock())
-    {
-        const TFieldList &fields = type.getStruct()->fields();
-        for (unsigned int i = 0; i < fields.size(); ++i)
-        {
-            if (ContainsImage(*fields[i]->type()))
                 return true;
         }
     }
@@ -96,7 +78,7 @@ TParseContext::TParseContext(TSymbolTable &symt,
                              const ShBuiltInResources &resources)
     : intermediate(),
       symbolTable(symt),
-      mDeferredSingleDeclarationErrorCheck(false),
+      mDeferredNonEmptyDeclarationErrorCheck(false),
       mShaderType(type),
       mShaderSpec(spec),
       mCompileOptions(options),
@@ -340,14 +322,9 @@ void TParseContext::checkPrecisionSpecified(const TSourceLoc &line,
                 error(line, "No precision specified (int)", "");
                 return;
             default:
-                if (IsSampler(type))
+                if (IsOpaqueType(type))
                 {
-                    error(line, "No precision specified (sampler)", "");
-                    return;
-                }
-                if (IsImage(type))
-                {
-                    error(line, "No precision specified (image)", "");
+                    error(line, "No precision specified", getBasicString(type));
                     return;
                 }
         }
@@ -389,7 +366,7 @@ bool TParseContext::checkCanBeLValue(const TSourceLoc &line, const char *op, TIn
         return false;
     }
 
-    const char *message = 0;
+    std::string message;
     switch (node->getQualifier())
     {
         case EvqConst:
@@ -440,6 +417,9 @@ bool TParseContext::checkCanBeLValue(const TSourceLoc &line, const char *op, TIn
         case EvqLocalInvocationIndex:
             message = "can't modify gl_LocalInvocationIndex";
             break;
+        case EvqViewIDOVR:
+            message = "can't modify gl_ViewID_OVR";
+            break;
         case EvqComputeIn:
             message = "can't modify work group size variable";
             break;
@@ -451,17 +431,14 @@ bool TParseContext::checkCanBeLValue(const TSourceLoc &line, const char *op, TIn
             {
                 message = "can't modify void";
             }
-            if (IsSampler(node->getBasicType()))
+            if (IsOpaqueType(node->getBasicType()))
             {
-                message = "can't modify a sampler";
-            }
-            if (IsImage(node->getBasicType()))
-            {
-                message = "can't modify an image";
+                message = "can't modify a variable with type ";
+                message += getBasicString(node->getBasicType());
             }
     }
 
-    if (message == 0 && binaryNode == 0 && symNode == 0)
+    if (message.empty() && binaryNode == 0 && symNode == 0)
     {
         error(line, "l-value required", op);
 
@@ -471,7 +448,7 @@ bool TParseContext::checkCanBeLValue(const TSourceLoc &line, const char *op, TIn
     //
     // Everything else is okay, no error.
     //
-    if (message == 0)
+    if (message.empty())
         return true;
 
     //
@@ -569,128 +546,26 @@ bool TParseContext::checkIsNotReserved(const TSourceLoc &line, const TString &id
     return true;
 }
 
-// Make sure there is enough data provided to the constructor to build
-// something of the type of the constructor.  Also returns the type of
-// the constructor.
+// Make sure the argument types are correct for constructing a specific type.
 bool TParseContext::checkConstructorArguments(const TSourceLoc &line,
                                               const TIntermSequence *arguments,
-                                              TOperator op,
                                               const TType &type)
 {
-    bool constructingMatrix = false;
-    switch (op)
-    {
-        case EOpConstructMat2:
-        case EOpConstructMat2x3:
-        case EOpConstructMat2x4:
-        case EOpConstructMat3x2:
-        case EOpConstructMat3:
-        case EOpConstructMat3x4:
-        case EOpConstructMat4x2:
-        case EOpConstructMat4x3:
-        case EOpConstructMat4:
-            constructingMatrix = true;
-            break;
-        default:
-            break;
-    }
-
-    //
-    // Note: It's okay to have too many components available, but not okay to have unused
-    // arguments.  'full' will go to true when enough args have been seen.  If we loop
-    // again, there is an extra argument, so 'overfull' will become true.
-    //
-
-    size_t size         = 0;
-    bool full           = false;
-    bool overFull       = false;
-    bool matrixInMatrix = false;
-    bool arrayArg       = false;
-    for (TIntermNode *arg : *arguments)
-    {
-        const TIntermTyped *argTyped = arg->getAsTyped();
-        size += argTyped->getType().getObjectSize();
-
-        if (constructingMatrix && argTyped->getType().isMatrix())
-            matrixInMatrix = true;
-        if (full)
-            overFull = true;
-        if (op != EOpConstructStruct && !type.isArray() && size >= type.getObjectSize())
-            full = true;
-        if (argTyped->getType().isArray())
-            arrayArg = true;
-    }
-
-    if (type.isArray())
-    {
-        // The size of an unsized constructor should already have been determined.
-        ASSERT(!type.isUnsizedArray());
-        if (static_cast<size_t>(type.getArraySize()) != arguments->size())
-        {
-            error(line, "array constructor needs one argument per array element", "constructor");
-            return false;
-        }
-    }
-
-    if (arrayArg && op != EOpConstructStruct)
-    {
-        error(line, "constructing from a non-dereferenced array", "constructor");
-        return false;
-    }
-
-    if (matrixInMatrix && !type.isArray())
-    {
-        if (arguments->size() != 1)
-        {
-            error(line, "constructing matrix from matrix can only take one argument",
-                  "constructor");
-            return false;
-        }
-    }
-
-    if (overFull)
-    {
-        error(line, "too many arguments", "constructor");
-        return false;
-    }
-
-    if (op == EOpConstructStruct && !type.isArray() &&
-        type.getStruct()->fields().size() != arguments->size())
-    {
-        error(line,
-              "Number of constructor parameters does not match the number of structure fields",
-              "constructor");
-        return false;
-    }
-
-    if (!type.isMatrix() || !matrixInMatrix)
-    {
-        if ((op != EOpConstructStruct && size != 1 && size < type.getObjectSize()) ||
-            (op == EOpConstructStruct && size < type.getObjectSize()))
-        {
-            error(line, "not enough data provided for construction", "constructor");
-            return false;
-        }
-    }
-
     if (arguments->empty())
     {
         error(line, "constructor does not have any arguments", "constructor");
         return false;
     }
 
-    for (TIntermNode *const &argNode : *arguments)
+    for (TIntermNode *arg : *arguments)
     {
-        TIntermTyped *argTyped = argNode->getAsTyped();
+        const TIntermTyped *argTyped = arg->getAsTyped();
         ASSERT(argTyped != nullptr);
-        if (op != EOpConstructStruct && IsSampler(argTyped->getBasicType()))
+        if (type.getBasicType() != EbtStruct && IsOpaqueType(argTyped->getBasicType()))
         {
-            error(line, "cannot convert a sampler", "constructor");
-            return false;
-        }
-        if (op != EOpConstructStruct && IsImage(argTyped->getBasicType()))
-        {
-            error(line, "cannot convert an image", "constructor");
+            std::string reason("cannot convert a variable with type ");
+            reason += getBasicString(argTyped->getBasicType());
+            error(line, reason.c_str(), "constructor");
             return false;
         }
         if (argTyped->getBasicType() == EbtVoid)
@@ -702,15 +577,21 @@ bool TParseContext::checkConstructorArguments(const TSourceLoc &line,
 
     if (type.isArray())
     {
+        // The size of an unsized constructor should already have been determined.
+        ASSERT(!type.isUnsizedArray());
+        if (static_cast<size_t>(type.getArraySize()) != arguments->size())
+        {
+            error(line, "array constructor needs one argument per array element", "constructor");
+            return false;
+        }
         // GLSL ES 3.00 section 5.4.4: Each argument must be the same type as the element type of
         // the array.
         for (TIntermNode *const &argNode : *arguments)
         {
             const TType &argType = argNode->getAsTyped()->getType();
-            // It has already been checked that the argument is not an array, but we can arrive
-            // here due to prior error conditions.
             if (argType.isArray())
             {
+                error(line, "constructing from a non-dereferenced array", "constructor");
                 return false;
             }
             if (!argType.sameElementType(type))
@@ -720,9 +601,16 @@ bool TParseContext::checkConstructorArguments(const TSourceLoc &line,
             }
         }
     }
-    else if (op == EOpConstructStruct)
+    else if (type.getBasicType() == EbtStruct)
     {
         const TFieldList &fields = type.getStruct()->fields();
+        if (fields.size() != arguments->size())
+        {
+            error(line,
+                  "Number of constructor parameters does not match the number of structure fields",
+                  "constructor");
+            return false;
+        }
 
         for (size_t i = 0; i < fields.size(); i++)
         {
@@ -731,6 +619,73 @@ bool TParseContext::checkConstructorArguments(const TSourceLoc &line,
             {
                 error(line, "Structure constructor arguments do not match structure fields",
                       "constructor");
+                return false;
+            }
+        }
+    }
+    else
+    {
+        // We're constructing a scalar, vector, or matrix.
+
+        // Note: It's okay to have too many components available, but not okay to have unused
+        // arguments. 'full' will go to true when enough args have been seen. If we loop again,
+        // there is an extra argument, so 'overFull' will become true.
+
+        size_t size    = 0;
+        bool full      = false;
+        bool overFull  = false;
+        bool matrixArg = false;
+        for (TIntermNode *arg : *arguments)
+        {
+            const TIntermTyped *argTyped = arg->getAsTyped();
+            ASSERT(argTyped != nullptr);
+
+            if (argTyped->getBasicType() == EbtStruct)
+            {
+                error(line, "a struct cannot be used as a constructor argument for this type",
+                      "constructor");
+                return false;
+            }
+            if (argTyped->getType().isArray())
+            {
+                error(line, "constructing from a non-dereferenced array", "constructor");
+                return false;
+            }
+            if (argTyped->getType().isMatrix())
+            {
+                matrixArg = true;
+            }
+
+            size += argTyped->getType().getObjectSize();
+            if (full)
+            {
+                overFull = true;
+            }
+            if (size >= type.getObjectSize())
+            {
+                full = true;
+            }
+        }
+
+        if (type.isMatrix() && matrixArg)
+        {
+            if (arguments->size() != 1)
+            {
+                error(line, "constructing matrix from matrix can only take one argument",
+                      "constructor");
+                return false;
+            }
+        }
+        else
+        {
+            if (size != 1 && size < type.getObjectSize())
+            {
+                error(line, "not enough data provided for construction", "constructor");
+                return false;
+            }
+            if (overFull)
+            {
+                error(line, "too many arguments", "constructor");
                 return false;
             }
         }
@@ -777,9 +732,9 @@ void TParseContext::checkIsScalarBool(const TSourceLoc &line, const TPublicType 
     }
 }
 
-bool TParseContext::checkIsNotSampler(const TSourceLoc &line,
-                                      const TTypeSpecifierNonArray &pType,
-                                      const char *reason)
+bool TParseContext::checkIsNotOpaqueType(const TSourceLoc &line,
+                                         const TTypeSpecifierNonArray &pType,
+                                         const char *reason)
 {
     if (pType.type == EbtStruct)
     {
@@ -791,40 +746,13 @@ bool TParseContext::checkIsNotSampler(const TSourceLoc &line,
             error(line, reasonStr.c_str(), getBasicString(pType.type));
             return false;
         }
-
+        // only samplers need to be checked from structs, since other opaque types can't be struct
+        // members.
         return true;
     }
-    else if (IsSampler(pType.type))
+    else if (IsOpaqueType(pType.type))
     {
         error(line, reason, getBasicString(pType.type));
-        return false;
-    }
-
-    return true;
-}
-
-bool TParseContext::checkIsNotImage(const TSourceLoc &line,
-                                    const TTypeSpecifierNonArray &pType,
-                                    const char *reason)
-{
-    if (pType.type == EbtStruct)
-    {
-        if (ContainsImage(*pType.userDef))
-        {
-            std::stringstream reasonStream;
-            reasonStream << reason << " (structure contains an image)";
-            std::string reasonStr = reasonStream.str();
-            error(line, reasonStr.c_str(), getBasicString(pType.type));
-
-            return false;
-        }
-
-        return true;
-    }
-    else if (IsImage(pType.type))
-    {
-        error(line, reason, getBasicString(pType.type));
-
         return false;
     }
 
@@ -860,29 +788,10 @@ void TParseContext::checkOutParameterIsNotOpaqueType(const TSourceLoc &line,
                                                      TQualifier qualifier,
                                                      const TType &type)
 {
-    checkOutParameterIsNotSampler(line, qualifier, type);
-    checkOutParameterIsNotImage(line, qualifier, type);
-}
-
-void TParseContext::checkOutParameterIsNotSampler(const TSourceLoc &line,
-                                                  TQualifier qualifier,
-                                                  const TType &type)
-{
     ASSERT(qualifier == EvqOut || qualifier == EvqInOut);
-    if (IsSampler(type.getBasicType()))
+    if (IsOpaqueType(type.getBasicType()))
     {
-        error(line, "samplers cannot be output parameters", type.getBasicString());
-    }
-}
-
-void TParseContext::checkOutParameterIsNotImage(const TSourceLoc &line,
-                                                TQualifier qualifier,
-                                                const TType &type)
-{
-    ASSERT(qualifier == EvqOut || qualifier == EvqInOut);
-    if (IsImage(type.getBasicType()))
-    {
-        error(line, "images cannot be output parameters", type.getBasicString());
+        error(line, "opaque types cannot be output parameters", type.getBasicString());
     }
 }
 
@@ -1136,6 +1045,60 @@ bool TParseContext::checkCanUseExtension(const TSourceLoc &line, const TString &
     return true;
 }
 
+// ESSL 3.00.6 section 4.8 Empty Declarations: "The combinations of qualifiers that cause
+// compile-time or link-time errors are the same whether or not the declaration is empty".
+// This function implements all the checks that are done on qualifiers regardless of if the
+// declaration is empty.
+void TParseContext::declarationQualifierErrorCheck(const sh::TQualifier qualifier,
+                                                   const sh::TLayoutQualifier &layoutQualifier,
+                                                   const TSourceLoc &location)
+{
+    if (qualifier == EvqShared && !layoutQualifier.isEmpty())
+    {
+        error(location, "Shared memory declarations cannot have layout specified", "layout");
+    }
+
+    if (layoutQualifier.matrixPacking != EmpUnspecified)
+    {
+        error(location, "layout qualifier only valid for interface blocks",
+              getMatrixPackingString(layoutQualifier.matrixPacking));
+        return;
+    }
+
+    if (layoutQualifier.blockStorage != EbsUnspecified)
+    {
+        error(location, "layout qualifier only valid for interface blocks",
+              getBlockStorageString(layoutQualifier.blockStorage));
+        return;
+    }
+
+    if (qualifier == EvqFragmentOut)
+    {
+        if (layoutQualifier.location != -1 && layoutQualifier.yuv == true)
+        {
+            error(location, "invalid layout qualifier combination", "yuv");
+            return;
+        }
+    }
+    else
+    {
+        checkYuvIsNotSpecified(location, layoutQualifier.yuv);
+    }
+
+    bool canHaveLocation = qualifier == EvqVertexIn || qualifier == EvqFragmentOut;
+    if (mShaderVersion >= 310 && qualifier == EvqUniform)
+    {
+        canHaveLocation = true;
+        // We're not checking whether the uniform location is in range here since that depends on
+        // the type of the variable.
+        // The type can only be fully determined for non-empty declarations.
+    }
+    if (!canHaveLocation)
+    {
+        checkLocationIsNotSpecified(location, layoutQualifier);
+    }
+}
+
 void TParseContext::emptyDeclarationErrorCheck(const TPublicType &publicType,
                                                const TSourceLoc &location)
 {
@@ -1145,16 +1108,12 @@ void TParseContext::emptyDeclarationErrorCheck(const TPublicType &publicType,
         // error. It is assumed that this applies to empty declarations as well.
         error(location, "empty array declaration needs to specify a size", "");
     }
-    if (publicType.qualifier == EvqShared && !publicType.layoutQualifier.isEmpty())
-    {
-        error(location, "Shared memory declarations cannot have layout specified", "layout");
-    }
 }
 
-// These checks are common for all declarations starting a declarator list, and declarators that
-// follow an empty declaration.
-void TParseContext::singleDeclarationErrorCheck(const TPublicType &publicType,
-                                                const TSourceLoc &identifierLocation)
+// These checks are done for all declarations that are non-empty. They're done for non-empty
+// declarations starting a declarator list, and declarators that follow an empty declaration.
+void TParseContext::nonEmptyDeclarationErrorCheck(const TPublicType &publicType,
+                                                  const TSourceLoc &identifierLocation)
 {
     switch (publicType.qualifier)
     {
@@ -1174,16 +1133,10 @@ void TParseContext::singleDeclarationErrorCheck(const TPublicType &publicType,
         default:
             break;
     }
-
+    std::string reason(getBasicString(publicType.getBasicType()));
+    reason += "s must be uniform";
     if (publicType.qualifier != EvqUniform &&
-        !checkIsNotSampler(identifierLocation, publicType.typeSpecifierNonArray,
-                           "samplers must be uniform"))
-    {
-        return;
-    }
-    if (publicType.qualifier != EvqUniform &&
-        !checkIsNotImage(identifierLocation, publicType.typeSpecifierNonArray,
-                         "images must be uniform"))
+        !checkIsNotOpaqueType(identifierLocation, publicType.typeSpecifierNonArray, reason.c_str()))
     {
         return;
     }
@@ -1197,30 +1150,8 @@ void TParseContext::singleDeclarationErrorCheck(const TPublicType &publicType,
         return;
     }
 
-    // check for layout qualifier issues
-    const TLayoutQualifier layoutQualifier = publicType.layoutQualifier;
-
-    if (layoutQualifier.matrixPacking != EmpUnspecified)
-    {
-        error(identifierLocation, "layout qualifier only valid for interface blocks",
-              getMatrixPackingString(layoutQualifier.matrixPacking));
-        return;
-    }
-
-    if (layoutQualifier.blockStorage != EbsUnspecified)
-    {
-        error(identifierLocation, "layout qualifier only valid for interface blocks",
-              getBlockStorageString(layoutQualifier.blockStorage));
-        return;
-    }
-
-    bool canHaveLocation =
-        publicType.qualifier == EvqVertexIn || publicType.qualifier == EvqFragmentOut;
-
     if (mShaderVersion >= 310 && publicType.qualifier == EvqUniform)
     {
-        canHaveLocation = true;
-
         // Valid uniform declarations can't be unsized arrays since uniforms can't be initialized.
         // But invalid shaders may still reach here with an unsized array declaration.
         if (!publicType.isUnsizedArray())
@@ -1230,23 +1161,9 @@ void TParseContext::singleDeclarationErrorCheck(const TPublicType &publicType,
                                         publicType.layoutQualifier);
         }
     }
-    if (!canHaveLocation)
-    {
-        checkLocationIsNotSpecified(identifierLocation, publicType.layoutQualifier);
-    }
 
-    if (publicType.qualifier == EvqFragmentOut)
-    {
-        if (layoutQualifier.location != -1 && layoutQualifier.yuv == true)
-        {
-            error(identifierLocation, "invalid layout qualifier combination", "yuv");
-            return;
-        }
-    }
-    else
-    {
-        checkYuvIsNotSpecified(identifierLocation, layoutQualifier.yuv);
-    }
+    // check for layout qualifier issues
+    const TLayoutQualifier layoutQualifier = publicType.layoutQualifier;
 
     if (IsImage(publicType.getBasicType()))
     {
@@ -1536,7 +1453,7 @@ const TVariable *TParseContext::getNamedVariable(const TSourceLoc &location,
                                                  const TString *name,
                                                  const TSymbol *symbol)
 {
-    const TVariable *variable = NULL;
+    const TVariable *variable = nullptr;
 
     if (!symbol)
     {
@@ -1880,7 +1797,7 @@ void TParseContext::checkInputOutputTypeIsValidES3(const TQualifier qualifier,
             {
                 error(qualifierLocation, "cannot be array", getQualifierString(qualifier));
             }
-            // Vertex inputs with a struct type are disallowed in singleDeclarationErrorCheck
+            // Vertex inputs with a struct type are disallowed in nonEmptyDeclarationErrorCheck
             return;
         case EvqFragmentOut:
             // ESSL 3.00 section 4.3.6
@@ -1888,7 +1805,7 @@ void TParseContext::checkInputOutputTypeIsValidES3(const TQualifier qualifier,
             {
                 error(qualifierLocation, "cannot be matrix", getQualifierString(qualifier));
             }
-            // Fragment outputs with a struct type are disallowed in singleDeclarationErrorCheck
+            // Fragment outputs with a struct type are disallowed in nonEmptyDeclarationErrorCheck
             return;
         default:
             break;
@@ -2007,38 +1924,45 @@ TIntermDeclaration *TParseContext::parseSingleDeclaration(
         }
     }
 
-    TIntermSymbol *symbol = intermediate.addSymbol(0, identifier, type, identifierOrTypeLocation);
+    declarationQualifierErrorCheck(publicType.qualifier, publicType.layoutQualifier,
+                                   identifierOrTypeLocation);
 
     bool emptyDeclaration = (identifier == "");
+    mDeferredNonEmptyDeclarationErrorCheck = emptyDeclaration;
 
-    mDeferredSingleDeclarationErrorCheck = emptyDeclaration;
-
-    TIntermDeclaration *declaration = new TIntermDeclaration();
-    declaration->setLine(identifierOrTypeLocation);
-
+    TIntermSymbol *symbol = nullptr;
     if (emptyDeclaration)
     {
         emptyDeclarationErrorCheck(publicType, identifierOrTypeLocation);
+        // In most cases we don't need to create a symbol node for an empty declaration.
+        // But if the empty declaration is declaring a struct type, the symbol node will store that.
+        if (type.getBasicType() == EbtStruct)
+        {
+            symbol = intermediate.addSymbol(0, "", type, identifierOrTypeLocation);
+        }
     }
     else
     {
-        singleDeclarationErrorCheck(publicType, identifierOrTypeLocation);
+        nonEmptyDeclarationErrorCheck(publicType, identifierOrTypeLocation);
 
         checkCanBeDeclaredWithoutInitializer(identifierOrTypeLocation, identifier, &publicType);
 
         TVariable *variable = nullptr;
         declareVariable(identifierOrTypeLocation, identifier, type, &variable);
 
-        if (variable && symbol)
+        if (variable)
         {
-            symbol->setId(variable->getUniqueId());
+            symbol = intermediate.addSymbol(variable->getUniqueId(), identifier, type,
+                                            identifierOrTypeLocation);
         }
     }
 
-    // We append the symbol even if the declaration is empty, mainly because of struct declarations
-    // that may just declare a type.
-    declaration->appendDeclarator(symbol);
-
+    TIntermDeclaration *declaration = new TIntermDeclaration();
+    declaration->setLine(identifierOrTypeLocation);
+    if (symbol)
+    {
+        declaration->appendDeclarator(symbol);
+    }
     return declaration;
 }
 
@@ -2048,9 +1972,12 @@ TIntermDeclaration *TParseContext::parseSingleArrayDeclaration(TPublicType &publ
                                                                const TSourceLoc &indexLocation,
                                                                TIntermTyped *indexExpression)
 {
-    mDeferredSingleDeclarationErrorCheck = false;
+    mDeferredNonEmptyDeclarationErrorCheck = false;
 
-    singleDeclarationErrorCheck(publicType, identifierLocation);
+    declarationQualifierErrorCheck(publicType.qualifier, publicType.layoutQualifier,
+                                   identifierLocation);
+
+    nonEmptyDeclarationErrorCheck(publicType, identifierLocation);
 
     checkCanBeDeclaredWithoutInitializer(identifierLocation, identifier, &publicType);
 
@@ -2085,9 +2012,12 @@ TIntermDeclaration *TParseContext::parseSingleInitDeclaration(const TPublicType 
                                                               const TSourceLoc &initLocation,
                                                               TIntermTyped *initializer)
 {
-    mDeferredSingleDeclarationErrorCheck = false;
+    mDeferredNonEmptyDeclarationErrorCheck = false;
 
-    singleDeclarationErrorCheck(publicType, identifierLocation);
+    declarationQualifierErrorCheck(publicType.qualifier, publicType.layoutQualifier,
+                                   identifierLocation);
+
+    nonEmptyDeclarationErrorCheck(publicType, identifierLocation);
 
     TIntermDeclaration *declaration = new TIntermDeclaration();
     declaration->setLine(identifierLocation);
@@ -2112,9 +2042,12 @@ TIntermDeclaration *TParseContext::parseSingleArrayInitDeclaration(
     const TSourceLoc &initLocation,
     TIntermTyped *initializer)
 {
-    mDeferredSingleDeclarationErrorCheck = false;
+    mDeferredNonEmptyDeclarationErrorCheck = false;
 
-    singleDeclarationErrorCheck(publicType, identifierLocation);
+    declarationQualifierErrorCheck(publicType.qualifier, publicType.layoutQualifier,
+                                   identifierLocation);
+
+    nonEmptyDeclarationErrorCheck(publicType, identifierLocation);
 
     checkIsValidTypeAndQualifierForArray(indexLocation, publicType);
 
@@ -2207,10 +2140,10 @@ void TParseContext::parseDeclarator(TPublicType &publicType,
 {
     // If the declaration starting this declarator list was empty (example: int,), some checks were
     // not performed.
-    if (mDeferredSingleDeclarationErrorCheck)
+    if (mDeferredNonEmptyDeclarationErrorCheck)
     {
-        singleDeclarationErrorCheck(publicType, identifierLocation);
-        mDeferredSingleDeclarationErrorCheck = false;
+        nonEmptyDeclarationErrorCheck(publicType, identifierLocation);
+        mDeferredNonEmptyDeclarationErrorCheck = false;
     }
 
     checkDeclaratorLocationIsNotSpecified(identifierLocation, publicType);
@@ -2238,10 +2171,10 @@ void TParseContext::parseArrayDeclarator(TPublicType &publicType,
 {
     // If the declaration starting this declarator list was empty (example: int,), some checks were
     // not performed.
-    if (mDeferredSingleDeclarationErrorCheck)
+    if (mDeferredNonEmptyDeclarationErrorCheck)
     {
-        singleDeclarationErrorCheck(publicType, identifierLocation);
-        mDeferredSingleDeclarationErrorCheck = false;
+        nonEmptyDeclarationErrorCheck(publicType, identifierLocation);
+        mDeferredNonEmptyDeclarationErrorCheck = false;
     }
 
     checkDeclaratorLocationIsNotSpecified(identifierLocation, publicType);
@@ -2275,10 +2208,10 @@ void TParseContext::parseInitDeclarator(const TPublicType &publicType,
 {
     // If the declaration starting this declarator list was empty (example: int,), some checks were
     // not performed.
-    if (mDeferredSingleDeclarationErrorCheck)
+    if (mDeferredNonEmptyDeclarationErrorCheck)
     {
-        singleDeclarationErrorCheck(publicType, identifierLocation);
-        mDeferredSingleDeclarationErrorCheck = false;
+        nonEmptyDeclarationErrorCheck(publicType, identifierLocation);
+        mDeferredNonEmptyDeclarationErrorCheck = false;
     }
 
     checkDeclaratorLocationIsNotSpecified(identifierLocation, publicType);
@@ -2307,10 +2240,10 @@ void TParseContext::parseArrayInitDeclarator(const TPublicType &publicType,
 {
     // If the declaration starting this declarator list was empty (example: int,), some checks were
     // not performed.
-    if (mDeferredSingleDeclarationErrorCheck)
+    if (mDeferredNonEmptyDeclarationErrorCheck)
     {
-        singleDeclarationErrorCheck(publicType, identifierLocation);
-        mDeferredSingleDeclarationErrorCheck = false;
+        nonEmptyDeclarationErrorCheck(publicType, identifierLocation);
+        mDeferredNonEmptyDeclarationErrorCheck = false;
     }
 
     checkDeclaratorLocationIsNotSpecified(identifierLocation, publicType);
@@ -2724,10 +2657,10 @@ TFunction *TParseContext::parseFunctionHeader(const TPublicType &type,
     {
         error(location, "no qualifiers allowed for function return", "layout");
     }
-    // make sure a sampler or an image is not involved as well...
-    checkIsNotSampler(location, type.typeSpecifierNonArray,
-                      "samplers can't be function return values");
-    checkIsNotImage(location, type.typeSpecifierNonArray, "images can't be function return values");
+    // make sure an opaque type is not involved as well...
+    std::string reason(getBasicString(type.getBasicType()));
+    reason += "s can't be function return values";
+    checkIsNotOpaqueType(location, type.typeSpecifierNonArray, reason.c_str());
     if (mShaderVersion < 300)
     {
         // Array return values are forbidden, but there's also no valid syntax for declaring array
@@ -2746,34 +2679,23 @@ TFunction *TParseContext::parseFunctionHeader(const TPublicType &type,
     return new TFunction(name, new TType(type));
 }
 
-TFunction *TParseContext::addConstructorFunc(const TPublicType &publicTypeIn)
+TFunction *TParseContext::addConstructorFunc(const TPublicType &publicType)
 {
-    TPublicType publicType = publicTypeIn;
     if (publicType.isStructSpecifier())
     {
         error(publicType.getLine(), "constructor can't be a structure definition",
               getBasicString(publicType.getBasicType()));
     }
 
-    TOperator op = EOpNull;
-    if (publicType.getUserDef())
+    TType *type = new TType(publicType);
+    if (!type->canBeConstructed())
     {
-        op = EOpConstructStruct;
-    }
-    else
-    {
-        op = sh::TypeToConstructorOperator(TType(publicType));
-        if (op == EOpNull)
-        {
-            error(publicType.getLine(), "cannot construct this type",
-                  getBasicString(publicType.getBasicType()));
-            publicType.setBasicType(EbtFloat);
-            op = EOpConstructFloat;
-        }
+        error(publicType.getLine(), "cannot construct this type",
+              getBasicString(publicType.getBasicType()));
+        type->setBasicType(EbtFloat);
     }
 
-    const TType *type = new TType(publicType);
-    return new TFunction(nullptr, type, op);
+    return new TFunction(nullptr, type, EOpConstruct);
 }
 
 // This function is used to test for the correctness of the parameters passed to various constructor
@@ -2782,7 +2704,6 @@ TFunction *TParseContext::addConstructorFunc(const TPublicType &publicTypeIn)
 // Returns a node to add to the tree regardless of if an error was generated or not.
 //
 TIntermTyped *TParseContext::addConstructor(TIntermSequence *arguments,
-                                            TOperator op,
                                             TType type,
                                             const TSourceLoc &line)
 {
@@ -2797,12 +2718,12 @@ TIntermTyped *TParseContext::addConstructor(TIntermSequence *arguments,
         type.setArraySize(static_cast<unsigned int>(arguments->size()));
     }
 
-    if (!checkConstructorArguments(line, arguments, op, type))
+    if (!checkConstructorArguments(line, arguments, type))
     {
         return TIntermTyped::CreateZero(type);
     }
 
-    TIntermAggregate *constructorNode = TIntermAggregate::CreateConstructor(type, op, arguments);
+    TIntermAggregate *constructorNode = TIntermAggregate::CreateConstructor(type, arguments);
     constructorNode->setLine(line);
 
     TIntermTyped *constConstructor =
@@ -2878,18 +2799,12 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
     {
         TField *field    = (*fieldList)[memberIndex];
         TType *fieldType = field->type();
-        if (IsSampler(fieldType->getBasicType()))
+        if (IsOpaqueType(fieldType->getBasicType()))
         {
-            error(field->line(),
-                  "unsupported type - sampler types are not allowed in interface blocks",
-                  fieldType->getBasicString());
-        }
-
-        if (IsImage(fieldType->getBasicType()))
-        {
-            error(field->line(),
-                  "unsupported type - image types are not allowed in interface blocks",
-                  fieldType->getBasicString());
+            std::string reason("unsupported type - ");
+            reason += fieldType->getBasicString();
+            reason += " types are not allowed in interface blocks";
+            error(field->line(), reason.c_str(), fieldType->getBasicString());
         }
 
         const TQualifier qualifier = fieldType->getQualifier();
@@ -3779,8 +3694,9 @@ TIntermTyped *TParseContext::createUnaryMath(TOperator op,
         case EOpPreDecrement:
         case EOpNegative:
         case EOpPositive:
-            if (child->getBasicType() == EbtStruct || child->getBasicType() == EbtBool ||
-                child->isArray() || IsOpaqueType(child->getBasicType()))
+            if (child->getBasicType() == EbtStruct || child->isInterfaceBlock() ||
+                child->getBasicType() == EbtBool || child->isArray() ||
+                IsOpaqueType(child->getBasicType()))
             {
                 unaryOpError(loc, GetOperatorString(op), child->getCompleteString());
                 return nullptr;
@@ -3823,6 +3739,25 @@ bool TParseContext::binaryOpCommonCheck(TOperator op,
                                         TIntermTyped *right,
                                         const TSourceLoc &loc)
 {
+    // Check opaque types are not allowed to be operands in expressions other than array indexing
+    // and structure member selection.
+    if (IsOpaqueType(left->getBasicType()) || IsOpaqueType(right->getBasicType()))
+    {
+        switch (op)
+        {
+            case EOpIndexDirect:
+            case EOpIndexIndirect:
+                break;
+            case EOpIndexDirectStruct:
+                UNREACHABLE();
+
+            default:
+                error(loc, "Invalid operation for variables with an opaque type",
+                      GetOperatorString(op));
+                return false;
+        }
+    }
+
     if (left->getType().getStruct() || right->getType().getStruct())
     {
         switch (op)
@@ -3841,6 +3776,19 @@ bool TParseContext::binaryOpCommonCheck(TOperator op,
                 break;
             default:
                 error(loc, "Invalid operation for structs", GetOperatorString(op));
+                return false;
+        }
+    }
+
+    if (left->isInterfaceBlock() || right->isInterfaceBlock())
+    {
+        switch (op)
+        {
+            case EOpIndexDirectInterfaceBlock:
+                ASSERT(left->getType().getInterfaceBlock());
+                break;
+            default:
+                error(loc, "Invalid operation for interface blocks", GetOperatorString(op));
                 return false;
         }
     }
@@ -3946,13 +3894,6 @@ bool TParseContext::binaryOpCommonCheck(TOperator op,
                 return false;
             }
 
-            if ((op == EOpAssign || op == EOpInitialize) &&
-                left->getType().isStructureContainingImages())
-            {
-                error(loc, "undefined operation for structs containing images",
-                      GetOperatorString(op));
-                return false;
-            }
             if ((left->getNominalSize() != right->getNominalSize()) ||
                 (left->getSecondarySize() != right->getSecondarySize()))
             {
@@ -4425,12 +4366,13 @@ TIntermTyped *TParseContext::addFunctionCallOrMethod(TFunction *fnCall,
     }
 
     TOperator op = fnCall->getBuiltInOp();
-    if (op != EOpNull)
+    if (op == EOpConstruct)
     {
-        return addConstructor(arguments, op, fnCall->getReturnType(), loc);
+        return addConstructor(arguments, fnCall->getReturnType(), loc);
     }
     else
     {
+        ASSERT(op == EOpNull);
         return addNonConstructorFunctionCall(fnCall, arguments, loc);
     }
 }
@@ -4587,34 +4529,43 @@ TIntermTyped *TParseContext::addTernarySelection(TIntermTyped *cond,
 
     if (trueExpression->getType() != falseExpression->getType())
     {
-        binaryOpError(loc, ":", trueExpression->getCompleteString(),
+        binaryOpError(loc, "?:", trueExpression->getCompleteString(),
                       falseExpression->getCompleteString());
         return falseExpression;
     }
     if (IsOpaqueType(trueExpression->getBasicType()))
     {
         // ESSL 1.00 section 4.1.7
-        // ESSL 3.00 section 4.1.7
+        // ESSL 3.00.6 section 4.1.7
         // Opaque/sampler types are not allowed in most types of expressions, including ternary.
         // Note that structs containing opaque types don't need to be checked as structs are
         // forbidden below.
-        error(loc, "ternary operator is not allowed for opaque types", ":");
+        error(loc, "ternary operator is not allowed for opaque types", "?:");
         return falseExpression;
     }
 
-    // ESSL1 sections 5.2 and 5.7:
-    // ESSL3 section 5.7:
+    // ESSL 1.00.17 sections 5.2 and 5.7:
     // Ternary operator is not among the operators allowed for structures/arrays.
+    // ESSL 3.00.6 section 5.7:
+    // Ternary operator support is optional for arrays. No certainty that it works across all
+    // devices with struct either, so we err on the side of caution here. TODO (oetuaho@nvidia.com):
+    // Would be nice to make the spec and implementation agree completely here.
     if (trueExpression->isArray() || trueExpression->getBasicType() == EbtStruct)
     {
-        error(loc, "ternary operator is not allowed for structures or arrays", ":");
+        error(loc, "ternary operator is not allowed for structures or arrays", "?:");
         return falseExpression;
     }
+    if (trueExpression->getBasicType() == EbtInterfaceBlock)
+    {
+        error(loc, "ternary operator is not allowed for interface blocks", "?:");
+        return falseExpression;
+    }
+
     // WebGL2 section 5.26, the following results in an error:
     // "Ternary operator applied to void, arrays, or structs containing arrays"
     if (mShaderSpec == SH_WEBGL2_SPEC && trueExpression->getBasicType() == EbtVoid)
     {
-        error(loc, "ternary operator is not allowed for void", ":");
+        error(loc, "ternary operator is not allowed for void", "?:");
         return falseExpression;
     }
 
@@ -4631,7 +4582,7 @@ int PaParseStrings(size_t count,
                    const int length[],
                    TParseContext *context)
 {
-    if ((count == 0) || (string == NULL))
+    if ((count == 0) || (string == nullptr))
         return 1;
 
     if (glslang_initialize(context))

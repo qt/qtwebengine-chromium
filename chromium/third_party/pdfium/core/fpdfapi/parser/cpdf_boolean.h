@@ -28,6 +28,7 @@ class CPDF_Boolean : public CPDF_Object {
   bool IsBoolean() const override;
   CPDF_Boolean* AsBoolean() override;
   const CPDF_Boolean* AsBoolean() const override;
+  bool WriteTo(IFX_ArchiveStream* archive) const override;
 
  protected:
   bool m_bValue;

@@ -12,8 +12,9 @@
 #include <bitset>
 #include <memory>
 
-#include "common/angleutils.h"
 #include "common/Color.h"
+#include "common/angleutils.h"
+#include "common/bitset_utils.h"
 #include "libANGLE/Debug.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/RefCountObject.h"
@@ -104,8 +105,12 @@ class State : angle::NonCopyable
     void setStencilBackParams(GLenum stencilBackFunc, GLint stencilBackRef, GLuint stencilBackMask);
     void setStencilWritemask(GLuint stencilWritemask);
     void setStencilBackWritemask(GLuint stencilBackWritemask);
-    void setStencilOperations(GLenum stencilFail, GLenum stencilPassDepthFail, GLenum stencilPassDepthPass);
-    void setStencilBackOperations(GLenum stencilBackFail, GLenum stencilBackPassDepthFail, GLenum stencilBackPassDepthPass);
+    void setStencilOperations(GLenum stencilFail,
+                              GLenum stencilPassDepthFail,
+                              GLenum stencilPassDepthPass);
+    void setStencilBackOperations(GLenum stencilBackFail,
+                                  GLenum stencilBackPassDepthFail,
+                                  GLenum stencilBackPassDepthPass);
     GLint getStencilRef() const;
     GLint getStencilBackRef() const;
 
@@ -119,8 +124,8 @@ class State : angle::NonCopyable
     void setSampleAlphaToCoverage(bool enabled);
     bool isSampleCoverageEnabled() const;
     void setSampleCoverage(bool enabled);
-    void setSampleCoverageParams(GLclampf value, bool invert);
-    GLclampf getSampleCoverageValue() const;
+    void setSampleCoverageParams(GLfloat value, bool invert);
+    GLfloat getSampleCoverageValue() const;
     bool getSampleCoverageInvert() const;
 
     // Multisampling/alpha to one manipulation.
@@ -225,7 +230,10 @@ class State : angle::NonCopyable
 
     // GL_UNIFORM_BUFFER - Both indexed and generic targets
     void setGenericUniformBufferBinding(Buffer *buffer);
-    void setIndexedUniformBufferBinding(GLuint index, Buffer *buffer, GLintptr offset, GLsizeiptr size);
+    void setIndexedUniformBufferBinding(GLuint index,
+                                        Buffer *buffer,
+                                        GLintptr offset,
+                                        GLsizeiptr size);
     const OffsetBindingPointer<Buffer> &getIndexedUniformBuffer(size_t index) const;
 
     // GL_ATOMIC_COUNTER_BUFFER - Both indexed and generic targets
@@ -263,10 +271,16 @@ class State : angle::NonCopyable
     void setVertexAttribf(GLuint index, const GLfloat values[4]);
     void setVertexAttribu(GLuint index, const GLuint values[4]);
     void setVertexAttribi(GLuint index, const GLint values[4]);
-    void setVertexAttribState(unsigned int attribNum, Buffer *boundBuffer, GLint size, GLenum type,
-                              bool normalized, bool pureInteger, GLsizei stride, const void *pointer);
+    void setVertexAttribState(unsigned int attribNum,
+                              Buffer *boundBuffer,
+                              GLint size,
+                              GLenum type,
+                              bool normalized,
+                              bool pureInteger,
+                              GLsizei stride,
+                              const void *pointer);
     void setVertexAttribDivisor(GLuint index, GLuint divisor);
-    const VertexAttribCurrentValueData &getVertexAttribCurrentValue(unsigned int attribNum) const;
+    const VertexAttribCurrentValueData &getVertexAttribCurrentValue(size_t attribNum) const;
     const void *getVertexAttribPointer(unsigned int attribNum) const;
     void bindVertexBuffer(GLuint bindingIndex,
                           Buffer *boundBuffer,
@@ -425,13 +439,13 @@ class State : angle::NonCopyable
         DIRTY_OBJECT_MAX = DIRTY_OBJECT_UNKNOWN,
     };
 
-    typedef std::bitset<DIRTY_BIT_MAX> DirtyBits;
+    typedef angle::BitSet<DIRTY_BIT_MAX> DirtyBits;
     const DirtyBits &getDirtyBits() const { return mDirtyBits; }
     void clearDirtyBits() { mDirtyBits.reset(); }
     void clearDirtyBits(const DirtyBits &bitset) { mDirtyBits &= ~bitset; }
     void setAllDirtyBits() { mDirtyBits.set(); }
 
-    typedef std::bitset<DIRTY_OBJECT_MAX> DirtyObjects;
+    typedef angle::BitSet<DIRTY_OBJECT_MAX> DirtyObjects;
     void clearDirtyObjects() { mDirtyObjects.reset(); }
     void setAllDirtyObjects() { mDirtyObjects.set(); }
     void syncDirtyObjects(const Context *context);
@@ -445,7 +459,7 @@ class State : angle::NonCopyable
     GLuint mMaxCombinedTextureImageUnits;
 
     ColorF mColorClearValue;
-    GLclampf mDepthClearValue;
+    GLfloat mDepthClearValue;
     int mStencilClearValue;
 
     RasterizerState mRasterizer;
@@ -455,7 +469,7 @@ class State : angle::NonCopyable
     BlendState mBlend;
     ColorF mBlendColor;
     bool mSampleCoverage;
-    GLclampf mSampleCoverageValue;
+    GLfloat mSampleCoverageValue;
     bool mSampleCoverageInvert;
 
     DepthStencilState mDepthStencil;
@@ -482,11 +496,11 @@ class State : angle::NonCopyable
     Program *mProgram;
 
     typedef std::vector<VertexAttribCurrentValueData> VertexAttribVector;
-    VertexAttribVector mVertexAttribCurrentValues; // From glVertexAttrib
+    VertexAttribVector mVertexAttribCurrentValues;  // From glVertexAttrib
     VertexArray *mVertexArray;
 
     // Texture and sampler bindings
-    size_t mActiveSampler;   // Active texture unit selector - GL_TEXTURE0
+    size_t mActiveSampler;  // Active texture unit selector - GL_TEXTURE0
 
     typedef std::vector<BindingPointer<Texture>> TextureBindingVector;
     typedef std::map<GLenum, TextureBindingVector> TextureBindingMap;
@@ -544,4 +558,4 @@ class State : angle::NonCopyable
 
 }  // namespace gl
 
-#endif // LIBANGLE_STATE_H_
+#endif  // LIBANGLE_STATE_H_

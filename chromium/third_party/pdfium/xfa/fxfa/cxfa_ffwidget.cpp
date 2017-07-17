@@ -10,11 +10,12 @@
 #include <memory>
 #include <vector>
 
+#include "core/fpdfapi/cpdf_modulemgr.h"
 #include "core/fpdfapi/page/cpdf_pageobjectholder.h"
 #include "core/fxcodec/codec/ccodec_progressivedecoder.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/cfx_maybe_owned.h"
-#include "core/fxge/cfx_gemodule.h"
+#include "core/fxcrt/cfx_memorystream.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_imagerenderer.h"
@@ -97,7 +98,7 @@ CFX_RectF CXFA_FFWidget::GetBBox(uint32_t dwStatus, bool bDrawFocus) {
 }
 
 CXFA_WidgetAcc* CXFA_FFWidget::GetDataAcc() {
-  return m_pDataAcc;
+  return m_pDataAcc.Get();
 }
 
 bool CXFA_FFWidget::GetToolTip(CFX_WideString& wsToolTip) {
@@ -115,7 +116,7 @@ void CXFA_FFWidget::RenderWidget(CFX_Graphics* pGS,
   if (!IsMatchVisibleStatus(dwStatus))
     return;
 
-  CXFA_Border border = m_pDataAcc->GetBorder();
+  CXFA_Border border = m_pDataAcc->GetBorder(false);
   if (!border)
     return;
 
@@ -237,7 +238,7 @@ bool CXFA_FFWidget::OnSetFocus(CXFA_FFWidget* pOldWidget) {
   m_dwStatus |= XFA_WidgetStatus_Focused;
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Enter;
-  eParam.m_pTarget = m_pDataAcc;
+  eParam.m_pTarget = m_pDataAcc.Get();
   m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Enter, &eParam);
   return true;
 }
@@ -332,10 +333,11 @@ void CXFA_FFWidget::Delete() {}
 
 void CXFA_FFWidget::DeSelect() {}
 
-bool CXFA_FFWidget::GetSuggestWords(CFX_PointF pointf,
-                                    std::vector<CFX_ByteString>& sSuggest) {
-  return false;
+void CXFA_FFWidget::GetSuggestWords(CFX_PointF pointf,
+                                    std::vector<CFX_ByteString>* pWords) {
+  pWords->clear();
 }
+
 bool CXFA_FFWidget::ReplaceSpellCheckWord(CFX_PointF pointf,
                                           const CFX_ByteStringC& bsReplace) {
   return false;
@@ -488,7 +490,7 @@ void CXFA_FFWidget::EventKillFocus() {
   }
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Exit;
-  eParam.m_pTarget = m_pDataAcc;
+  eParam.m_pTarget = m_pDataAcc.Get();
   m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Exit, &eParam);
 }
 bool CXFA_FFWidget::IsButtonDown() {
@@ -567,7 +569,7 @@ class CXFA_ImageRenderer {
              const CFX_Matrix* pImage2Device,
              uint32_t flags,
              int blendType = FXDIB_BLEND_NORMAL);
-  bool Continue(IFX_Pause* pPause);
+  bool Continue();
 
  protected:
   bool StartDIBSource();
@@ -708,9 +710,9 @@ bool CXFA_ImageRenderer::StartDIBSource() {
   return false;
 }
 
-bool CXFA_ImageRenderer::Continue(IFX_Pause* pPause) {
+bool CXFA_ImageRenderer::Continue() {
   if (m_Status == 2) {
-    if (m_pTransformer->Continue(pPause))
+    if (m_pTransformer->Continue(nullptr))
       return true;
 
     CFX_RetainPtr<CFX_DIBitmap> pBitmap = m_pTransformer->DetachBitmap();
@@ -733,7 +735,7 @@ bool CXFA_ImageRenderer::Continue(IFX_Pause* pPause) {
     return false;
   }
   if (m_Status == 3)
-    return m_pDevice->ContinueDIBits(m_DeviceHandle.get(), pPause);
+    return m_pDevice->ContinueDIBits(m_DeviceHandle.get(), nullptr);
 
   return false;
 }
@@ -827,7 +829,7 @@ void CXFA_ImageRenderer::CompositeDIBitmap(
                          &m_ImageMatrix, m_Flags)) {
     return;
   }
-  while (imageRender.Continue(nullptr))
+  while (imageRender.Continue())
     continue;
 }
 
@@ -885,8 +887,7 @@ void XFA_DrawImage(CFX_Graphics* pGS,
     rtFit.top = rtImage.bottom() - rtImage.height;
   }
   CFX_RenderDevice* pRenderDevice = pGS->GetRenderDevice();
-  pRenderDevice->SaveState();
-
+  CFX_RenderDevice::StateRestorer restorer(pRenderDevice);
   CFX_PathData path;
   path.AppendRect(rtImage.left, rtImage.bottom(), rtImage.right(), rtImage.top);
   pRenderDevice->SetClip_PathFill(&path, pMatrix, FXFILL_WINDING);
@@ -897,12 +898,12 @@ void XFA_DrawImage(CFX_Graphics* pGS,
   mtImage.Concat(*pMatrix);
 
   CXFA_ImageRenderer imageRender;
-  bool bRet = imageRender.Start(pRenderDevice, pDIBitmap, 0, 255, &mtImage,
-                                FXDIB_INTERPOL);
-  while (bRet)
-    bRet = imageRender.Continue(nullptr);
-
-  pRenderDevice->RestoreState(false);
+  if (!imageRender.Start(pRenderDevice, pDIBitmap, 0, 255, &mtImage,
+                         FXDIB_INTERPOL)) {
+    return;
+  }
+  while (imageRender.Continue())
+    continue;
 }
 
 static const uint8_t g_inv_base64[128] = {
@@ -1062,12 +1063,14 @@ CFX_RetainPtr<CFX_DIBitmap> XFA_LoadImageData(CXFA_FFDoc* pDoc,
       pImageBuffer = FX_Alloc(uint8_t, iLength);
       int32_t iRead = XFA_Base64Decode(bsData.c_str(), pImageBuffer);
       if (iRead > 0) {
-        pImageFileRead = IFX_MemoryStream::Create(pImageBuffer, iRead);
+        pImageFileRead =
+            pdfium::MakeRetain<CFX_MemoryStream>(pImageBuffer, iRead, false);
       }
     } else {
       bsContent = CFX_ByteString::FromUnicode(wsImage);
-      pImageFileRead = IFX_MemoryStream::Create(
-          const_cast<uint8_t*>(bsContent.raw_str()), bsContent.GetLength());
+      pImageFileRead = pdfium::MakeRetain<CFX_MemoryStream>(
+          const_cast<uint8_t*>(bsContent.raw_str()), bsContent.GetLength(),
+          false);
     }
   } else {
     CFX_WideString wsURL = wsHref;
@@ -1117,18 +1120,11 @@ CFX_RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
     FXCODEC_IMAGE_TYPE type,
     int32_t& iImageXDpi,
     int32_t& iImageYDpi) {
-  CFX_GEModule* pGeModule = CFX_GEModule::Get();
-  if (!pGeModule)
-    return nullptr;
-
-  CCodec_ModuleMgr* pCodecMgr = pGeModule->GetCodecModule();
-  if (!pCodecMgr)
-    return nullptr;
-
-  CFX_DIBAttribute dibAttr;
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap;
+  CCodec_ModuleMgr* pCodecMgr = CPDF_ModuleMgr::Get()->GetCodecModule();
   std::unique_ptr<CCodec_ProgressiveDecoder> pProgressiveDecoder =
       pCodecMgr->CreateProgressiveDecoder();
+
+  CFX_DIBAttribute dibAttr;
   pProgressiveDecoder->LoadImageInfo(pImageFileRead, type, &dibAttr, false);
   switch (dibAttr.m_wDPIUnit) {
     case FXCODEC_RESUNIT_CENTIMETER:
@@ -1144,24 +1140,26 @@ CFX_RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
   }
   iImageXDpi = dibAttr.m_nXDPI > 1 ? dibAttr.m_nXDPI : (96);
   iImageYDpi = dibAttr.m_nYDPI > 1 ? dibAttr.m_nYDPI : (96);
-  if (pProgressiveDecoder->GetWidth() > 0 &&
-      pProgressiveDecoder->GetHeight() > 0) {
-    type = pProgressiveDecoder->GetType();
-    int32_t iComponents = pProgressiveDecoder->GetNumComponents();
-    int32_t iBpc = pProgressiveDecoder->GetBPC();
-    FXDIB_Format dibFormat = XFA_GetDIBFormat(type, iComponents, iBpc);
-    pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
-    pBitmap->Create(pProgressiveDecoder->GetWidth(),
-                    pProgressiveDecoder->GetHeight(), dibFormat);
-    pBitmap->Clear(0xffffffff);
-    int32_t nFrames;
-    if ((pProgressiveDecoder->GetFrames(nFrames) ==
-         FXCODEC_STATUS_DECODE_READY) &&
-        (nFrames > 0)) {
-      pProgressiveDecoder->StartDecode(pBitmap, 0, 0, pBitmap->GetWidth(),
-                                       pBitmap->GetHeight());
-      pProgressiveDecoder->ContinueDecode();
-    }
+  if (pProgressiveDecoder->GetWidth() <= 0 ||
+      pProgressiveDecoder->GetHeight() <= 0) {
+    return nullptr;
+  }
+
+  type = pProgressiveDecoder->GetType();
+  int32_t iComponents = pProgressiveDecoder->GetNumComponents();
+  int32_t iBpc = pProgressiveDecoder->GetBPC();
+  FXDIB_Format dibFormat = XFA_GetDIBFormat(type, iComponents, iBpc);
+  CFX_RetainPtr<CFX_DIBitmap> pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
+  pBitmap->Create(pProgressiveDecoder->GetWidth(),
+                  pProgressiveDecoder->GetHeight(), dibFormat);
+  pBitmap->Clear(0xffffffff);
+  int32_t nFrames;
+  if ((pProgressiveDecoder->GetFrames(nFrames) ==
+       FXCODEC_STATUS_DECODE_READY) &&
+      (nFrames > 0)) {
+    pProgressiveDecoder->StartDecode(pBitmap, 0, 0, pBitmap->GetWidth(),
+                                     pBitmap->GetHeight());
+    pProgressiveDecoder->ContinueDecode();
   }
   return pBitmap;
 }
@@ -1657,12 +1655,11 @@ static void XFA_BOX_Fill(CXFA_Box box,
       FX_ARGB cr;
       if (eType == XFA_Element::Stipple) {
         int32_t iRate = fill.GetStipple(cr);
-        if (iRate == 0) {
+        if (iRate == 0)
           iRate = 100;
-        }
-        int32_t a = 0;
+        int32_t a;
         FX_COLORREF rgb;
-        ArgbDecode(cr, a, rgb);
+        std::tie(a, rgb) = ArgbToColorRef(cr);
         cr = ArgbEncode(iRate * a / 100, rgb);
       } else {
         cr = fill.GetColor();

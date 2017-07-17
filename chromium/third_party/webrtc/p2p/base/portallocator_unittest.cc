@@ -12,6 +12,7 @@
 
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/thread.h"
+#include "webrtc/base/virtualsocketserver.h"
 #include "webrtc/p2p/base/fakeportallocator.h"
 #include "webrtc/p2p/base/portallocator.h"
 
@@ -25,7 +26,8 @@ static const char kTurnPassword[] = "test";
 
 class PortAllocatorTest : public testing::Test, public sigslot::has_slots<> {
  public:
-  PortAllocatorTest() {
+  PortAllocatorTest()
+      : vss_(new rtc::VirtualSocketServer()), main_(vss_.get()) {
     allocator_.reset(
         new cricket::FakePortAllocator(rtc::Thread::Current(), nullptr));
   }
@@ -76,6 +78,8 @@ class PortAllocatorTest : public testing::Test, public sigslot::has_slots<> {
     return count;
   }
 
+  std::unique_ptr<rtc::VirtualSocketServer> vss_;
+  rtc::AutoSocketServerThread main_;
   std::unique_ptr<cricket::FakePortAllocator> allocator_;
   rtc::SocketAddress stun_server_1{"11.11.11.11", 3478};
   rtc::SocketAddress stun_server_2{"22.22.22.22", 3478};

@@ -17,6 +17,7 @@
 #include "core/fxge/dib/cfx_imagestretcher.h"
 #include "core/fxge/dib/cfx_imagetransformer.h"
 #include "core/fxge/ge/cfx_cliprgn.h"
+#include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
 
 namespace {
@@ -707,24 +708,24 @@ bool CFX_DIBSource::BuildAlphaMask() {
   return true;
 }
 
-uint32_t CFX_DIBSource::GetPaletteEntry(int index) const {
+uint32_t CFX_DIBSource::GetPaletteArgb(int index) const {
   ASSERT((GetBPP() == 1 || GetBPP() == 8) && !IsAlphaMask());
-  if (m_pPalette) {
+  if (m_pPalette)
     return m_pPalette.get()[index];
-  }
+
   if (IsCmykImage()) {
-    if (GetBPP() == 1) {
+    if (GetBPP() == 1)
       return index ? 0 : 0xff;
-    }
+
     return 0xff - index;
   }
-  if (GetBPP() == 1) {
+  if (GetBPP() == 1)
     return index ? 0xffffffff : 0xff000000;
-  }
+
   return index * 0x10101 | 0xff000000;
 }
 
-void CFX_DIBSource::SetPaletteEntry(int index, uint32_t color) {
+void CFX_DIBSource::SetPaletteArgb(int index, uint32_t color) {
   ASSERT((GetBPP() == 1 || GetBPP() == 8) && !IsAlphaMask());
   if (!m_pPalette) {
     BuildPalette();
@@ -825,15 +826,9 @@ void CFX_DIBSource::GetPalette(uint32_t* pal, int alpha) const {
   }
 }
 
-CFX_RetainPtr<CFX_DIBitmap> CFX_DIBSource::CloneAlphaMask(
-    const FX_RECT* pClip) const {
+CFX_RetainPtr<CFX_DIBitmap> CFX_DIBSource::CloneAlphaMask() const {
   ASSERT(GetFormat() == FXDIB_Argb);
   FX_RECT rect(0, 0, m_Width, m_Height);
-  if (pClip) {
-    rect.Intersect(*pClip);
-    if (rect.IsEmpty())
-      return nullptr;
-  }
   auto pMask = pdfium::MakeRetain<CFX_DIBitmap>();
   if (!pMask->Create(rect.Width(), rect.Height(), FXDIB_8bppMask))
     return nullptr;
@@ -975,7 +970,7 @@ CFX_RetainPtr<CFX_DIBitmap> CFX_DIBSource::CloneConvert(
       ret = pSrcAlpha ? pClone->LoadChannel(FXDIB_Alpha, pSrcAlpha, FXDIB_Alpha)
                       : pClone->LoadChannel(FXDIB_Alpha, 0xff);
     } else {
-      ret = pClone->SetAlphaMask(pSrcAlpha);
+      ret = pClone->SetAlphaMask(pSrcAlpha, nullptr);
     }
   }
   if (!ret)
@@ -993,13 +988,9 @@ CFX_RetainPtr<CFX_DIBitmap> CFX_DIBSource::CloneConvert(
   return pClone;
 }
 
-CFX_RetainPtr<CFX_DIBitmap> CFX_DIBSource::SwapXY(
-    bool bXFlip,
-    bool bYFlip,
-    const FX_RECT* pDestClip) const {
+CFX_RetainPtr<CFX_DIBitmap> CFX_DIBSource::SwapXY(bool bXFlip,
+                                                  bool bYFlip) const {
   FX_RECT dest_clip(0, 0, m_Height, m_Width);
-  if (pDestClip)
-    dest_clip.Intersect(*pDestClip);
   if (dest_clip.IsEmpty())
     return nullptr;
 
@@ -1094,16 +1085,14 @@ CFX_RetainPtr<CFX_DIBitmap> CFX_DIBSource::SwapXY(
 
 CFX_RetainPtr<CFX_DIBitmap> CFX_DIBSource::TransformTo(
     const CFX_Matrix* pDestMatrix,
-    int& result_left,
-    int& result_top,
-    uint32_t flags,
-    const FX_RECT* pDestClip) {
+    int* result_left,
+    int* result_top) {
   CFX_RetainPtr<CFX_DIBSource> holder(this);
-  CFX_ImageTransformer transformer(holder, pDestMatrix, flags, pDestClip);
+  CFX_ImageTransformer transformer(holder, pDestMatrix, 0, nullptr);
   transformer.Start();
   transformer.Continue(nullptr);
-  result_left = transformer.result().left;
-  result_top = transformer.result().top;
+  *result_left = transformer.result().left;
+  *result_top = transformer.result().top;
   return transformer.DetachBitmap();
 }
 
@@ -1148,7 +1137,7 @@ bool CFX_DIBSource::ConvertBuffer(
     case FXDIB_1bppCmyk:
     case FXDIB_1bppMask:
     case FXDIB_1bppRgb:
-      ASSERT(false);
+      NOTREACHED();
       return false;
     case FXDIB_8bppMask: {
       if ((src_format & 0xff) == 1) {

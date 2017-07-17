@@ -9,6 +9,7 @@
 #include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_wallet_data_type_controller.h"
 #include "components/autofill/core/browser/webdata/autocomplete_sync_bridge.h"
@@ -49,6 +50,7 @@
 #include "google_apis/gaia/oauth2_token_service_request.h"
 #include "net/url_request/url_request_context_getter.h"
 
+using base::FeatureList;
 using bookmarks::BookmarkModel;
 using sync_bookmarks::BookmarkChangeProcessor;
 using sync_bookmarks::BookmarkDataTypeController;
@@ -139,7 +141,7 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
       base::Bind(&syncer::ReportUnrecoverableError, channel_);
 
   // TODO(stanisc): can DEVICE_INFO be one of disabled datatypes?
-  if (base::FeatureList::IsEnabled(switches::kSyncUSSDeviceInfo)) {
+  if (FeatureList::IsEnabled(switches::kSyncUSSDeviceInfo)) {
     // Use an error callback that always uploads a stacktrace if it can to help
     // get USS as stable as possible.
     sync_service->RegisterDataTypeController(
@@ -155,7 +157,7 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
   // Autocomplete sync is enabled by default.  Register unless explicitly
   // disabled.
   if (!disabled_types.Has(syncer::AUTOFILL)) {
-    if (base::FeatureList::IsEnabled(switches::kSyncUSSAutocomplete)) {
+    if (FeatureList::IsEnabled(switches::kSyncUSSAutocomplete)) {
       sync_service->RegisterDataTypeController(
           base::MakeUnique<autofill::WebDataModelTypeController>(
               syncer::AUTOFILL, sync_client_, db_thread_, web_data_service_,
@@ -307,6 +309,13 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
     sync_service->RegisterDataTypeController(
         base::MakeUnique<ModelTypeController>(syncer::READING_LIST,
                                               sync_client_, ui_thread_));
+  }
+
+  if (!disabled_types.Has(syncer::USER_EVENTS) &&
+      FeatureList::IsEnabled(switches::kSyncUserEvents)) {
+    sync_service->RegisterDataTypeController(
+        base::MakeUnique<ModelTypeController>(syncer::USER_EVENTS, sync_client_,
+                                              ui_thread_));
   }
 }
 

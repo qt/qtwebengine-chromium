@@ -496,8 +496,6 @@ class ProfileSyncService : public syncer::SyncServiceBase,
   // Returns true if the syncer is waiting for new datatypes to be encrypted.
   virtual bool encryption_pending() const;
 
-  SigninManagerBase* signin() const;
-
   syncer::SyncErrorController* sync_error_controller() {
     return sync_error_controller_.get();
   }
@@ -559,12 +557,9 @@ class ProfileSyncService : public syncer::SyncServiceBase,
 
   // Returns a function for |type| that will create a ModelTypeStore that shares
   // the sync LevelDB backend. |base_path| should be set to profile path.
-  // |sequenced_worker_pool| is obtained from content::BrowserThread or
-  // web::WebThread depending on platform.
   static syncer::ModelTypeStoreFactory GetModelTypeStoreFactory(
       syncer::ModelType type,
-      const base::FilePath& base_path,
-      base::SequencedWorkerPool* sequenced_worker_pool);
+      const base::FilePath& base_path);
 
   // Needed to test whether the directory is deleted properly.
   base::FilePath GetDirectoryPathForTest() const;

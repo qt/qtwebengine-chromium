@@ -15,7 +15,8 @@
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
-#include "core/fxcrt/fx_ext.h"
+#include "core/fxcrt/fx_extension.h"
+#include "third_party/base/logging.h"
 
 // Indexed by 8-bit character code, contains either:
 //   'W' - for whitespace: NUL, TAB, CR, LF, FF, SPACE, 0x80, 0xff
@@ -97,8 +98,8 @@ CFX_ByteString PDF_NameDecode(const CFX_ByteStringC& bstr) {
   char* pDest = pDestStart;
   for (int i = 0; i < size; i++) {
     if (bstr[i] == '#' && i < size - 2) {
-      *pDest++ =
-          FXSYS_toHexDigit(bstr[i + 1]) * 16 + FXSYS_toHexDigit(bstr[i + 2]);
+      *pDest++ = FXSYS_HexCharToInt(bstr[i + 1]) * 16 +
+                 FXSYS_HexCharToInt(bstr[i + 2]);
       i += 2;
     } else {
       *pDest++ = bstr[i];
@@ -139,8 +140,8 @@ CFX_ByteString PDF_NameEncode(const CFX_ByteString& orig) {
     if (ch >= 0x80 || PDFCharIsWhitespace(ch) || ch == '#' ||
         PDFCharIsDelimiter(ch)) {
       dest_buf[dest_len++] = '#';
-      dest_buf[dest_len++] = "0123456789ABCDEF"[ch / 16];
-      dest_buf[dest_len++] = "0123456789ABCDEF"[ch % 16];
+      FXSYS_IntToTwoHexChars(ch, dest_buf + dest_len);
+      dest_len += 2;
     } else {
       dest_buf[dest_len++] = ch;
     }
@@ -215,7 +216,7 @@ CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& buf, const CPDF_Object* pObj) {
       break;
     }
     default:
-      ASSERT(false);
+      NOTREACHED();
       break;
   }
   return buf;

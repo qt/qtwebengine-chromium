@@ -599,28 +599,28 @@ static void dist_block(const VP9_COMP *cpi, MACROBLOCK *x, int plane,
 
 #if CONFIG_VP9_HIGHBITDEPTH
       if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
-        recon = CONVERT_TO_BYTEPTR(recon);
-        vpx_highbd_convolve_copy(dst, dst_stride, recon, 32, NULL, 0, NULL, 0,
-                                 bs, bs, xd->bd);
+        vpx_highbd_convolve_copy(CONVERT_TO_SHORTPTR(dst), dst_stride, recon16,
+                                 32, NULL, 0, NULL, 0, bs, bs, xd->bd);
         if (xd->lossless) {
-          vp9_highbd_iwht4x4_add(dqcoeff, recon, 32, *eob, xd->bd);
+          vp9_highbd_iwht4x4_add(dqcoeff, recon16, 32, *eob, xd->bd);
         } else {
           switch (tx_size) {
             case TX_4X4:
-              vp9_highbd_idct4x4_add(dqcoeff, recon, 32, *eob, xd->bd);
+              vp9_highbd_idct4x4_add(dqcoeff, recon16, 32, *eob, xd->bd);
               break;
             case TX_8X8:
-              vp9_highbd_idct8x8_add(dqcoeff, recon, 32, *eob, xd->bd);
+              vp9_highbd_idct8x8_add(dqcoeff, recon16, 32, *eob, xd->bd);
               break;
             case TX_16X16:
-              vp9_highbd_idct16x16_add(dqcoeff, recon, 32, *eob, xd->bd);
+              vp9_highbd_idct16x16_add(dqcoeff, recon16, 32, *eob, xd->bd);
               break;
             case TX_32X32:
-              vp9_highbd_idct32x32_add(dqcoeff, recon, 32, *eob, xd->bd);
+              vp9_highbd_idct32x32_add(dqcoeff, recon16, 32, *eob, xd->bd);
               break;
             default: assert(0 && "Invalid transform size");
           }
         }
+        recon = CONVERT_TO_BYTEPTR(recon16);
       } else {
 #endif  // CONFIG_VP9_HIGHBITDEPTH
         vpx_convolve_copy(dst, dst_stride, recon, 32, NULL, 0, NULL, 0, bs, bs);
@@ -1004,6 +1004,7 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
           const int block = (row + idy) * 2 + (col + idx);
           const uint8_t *const src = &src_init[idx * 4 + idy * 4 * src_stride];
           uint8_t *const dst = &dst_init[idx * 4 + idy * 4 * dst_stride];
+          uint16_t *const dst16 = CONVERT_TO_SHORTPTR(dst);
           int16_t *const src_diff =
               vp9_raster_block_offset_int16(BLOCK_8X8, block, p->src_diff);
           tran_low_t *const coeff = BLOCK_OFFSET(x->plane[0].coeff, block);
@@ -1025,7 +1026,7 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
             tempa[idx] = templ[idy] = (x->plane[0].eobs[block] > 0 ? 1 : 0);
             if (RDCOST(x->rdmult, x->rddiv, ratey, distortion) >= best_rd)
               goto next_highbd;
-            vp9_highbd_iwht4x4_add(BLOCK_OFFSET(pd->dqcoeff, block), dst,
+            vp9_highbd_iwht4x4_add(BLOCK_OFFSET(pd->dqcoeff, block), dst16,
                                    dst_stride, p->eobs[block], xd->bd);
           } else {
             int64_t unused;
@@ -1048,7 +1049,7 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int row,
             if (RDCOST(x->rdmult, x->rddiv, ratey, distortion) >= best_rd)
               goto next_highbd;
             vp9_highbd_iht4x4_add(tx_type, BLOCK_OFFSET(pd->dqcoeff, block),
-                                  dst, dst_stride, p->eobs[block], xd->bd);
+                                  dst16, dst_stride, p->eobs[block], xd->bd);
           }
         }
       }
@@ -1528,7 +1529,8 @@ static int64_t encode_inter_mb_segment(VP9_COMP *cpi, MACROBLOCK *x,
 #if CONFIG_VP9_HIGHBITDEPTH
     if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
       vp9_highbd_build_inter_predictor(
-          pre, y_stride, dst, pd->dst.stride, &mi->bmi[i].as_mv[ref].as_mv,
+          CONVERT_TO_SHORTPTR(pre), y_stride, CONVERT_TO_SHORTPTR(dst),
+          pd->dst.stride, &mi->bmi[i].as_mv[ref].as_mv,
           &xd->block_refs[ref]->sf, width, height, ref, kernel, MV_PRECISION_Q3,
           mi_col * MI_SIZE + 4 * (i % 2), mi_row * MI_SIZE + 4 * (i / 2),
           xd->bd);
@@ -1783,9 +1785,9 @@ static void joint_motion_search(VP9_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
     if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
       second_pred = CONVERT_TO_BYTEPTR(second_pred_alloc_16);
       vp9_highbd_build_inter_predictor(
-          ref_yv12[!id].buf, ref_yv12[!id].stride, second_pred, pw,
-          &frame_mv[refs[!id]].as_mv, &sf, pw, ph, 0, kernel, MV_PRECISION_Q3,
-          mi_col * MI_SIZE, mi_row * MI_SIZE, xd->bd);
+          CONVERT_TO_SHORTPTR(ref_yv12[!id].buf), ref_yv12[!id].stride,
+          second_pred_alloc_16, pw, &frame_mv[refs[!id]].as_mv, &sf, pw, ph, 0,
+          kernel, MV_PRECISION_Q3, mi_col * MI_SIZE, mi_row * MI_SIZE, xd->bd);
     } else {
       second_pred = (uint8_t *)second_pred_alloc_16;
       vp9_build_inter_predictor(ref_yv12[!id].buf, ref_yv12[!id].stride,
@@ -3160,11 +3162,6 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
 
   for (i = 0; i <= LAST_NEW_MV_INDEX; ++i) mode_threshold[i] = 0;
 
-#if CONFIG_MULTITHREAD
-  if (NULL != tile_data->enc_row_mt_mutex)
-    pthread_mutex_lock(tile_data->enc_row_mt_mutex);
-#endif
-
   for (i = LAST_NEW_MV_INDEX + 1; i < MAX_MODES; ++i)
     mode_threshold[i] = ((int64_t)rd_threshes[i] * rd_thresh_freq_fact[i]) >> 5;
 
@@ -3185,11 +3182,6 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
   }
 
   memcpy(mode_map, tile_mode_map, sizeof(mode_map));
-
-#if CONFIG_MULTITHREAD
-  if (NULL != tile_data->enc_row_mt_mutex)
-    pthread_mutex_unlock(tile_data->enc_row_mt_mutex);
-#endif
 
   for (midx = 0; midx < MAX_MODES; ++midx) {
     int mode_index = mode_map[midx];
@@ -3627,11 +3619,7 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
 
   if (!cpi->rc.is_src_frame_alt_ref)
     vp9_update_rd_thresh_fact(tile_data->thresh_freq_fact,
-                              sf->adaptive_rd_thresh, bsize,
-#if CONFIG_MULTITHREAD
-                              tile_data->enc_row_mt_mutex,
-#endif
-                              best_mode_index);
+                              sf->adaptive_rd_thresh, bsize, best_mode_index);
 
   // macroblock modes
   *mi = best_mbmode;
@@ -3771,11 +3759,7 @@ void vp9_rd_pick_inter_mode_sb_seg_skip(VP9_COMP *cpi, TileDataEnc *tile_data,
          (cm->interp_filter == mi->interp_filter));
 
   vp9_update_rd_thresh_fact(tile_data->thresh_freq_fact,
-                            cpi->sf.adaptive_rd_thresh, bsize,
-#if CONFIG_MULTITHREAD
-                            tile_data->enc_row_mt_mutex,
-#endif
-                            THR_ZEROMV);
+                            cpi->sf.adaptive_rd_thresh, bsize, THR_ZEROMV);
 
   vp9_zero(best_pred_diff);
   vp9_zero(best_filter_diff);
@@ -3921,9 +3905,6 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
     if (!internal_active_edge &&
         rd_less_than_thresh(best_rd,
                             rd_opt->threshes[segment_id][bsize][ref_index],
-#if CONFIG_MULTITHREAD
-                            tile_data->enc_row_mt_mutex,
-#endif
                             &rd_thresh_freq_fact[ref_index]))
       continue;
 
@@ -4373,11 +4354,7 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
          !is_inter_block(&best_mbmode));
 
   vp9_update_rd_thresh_fact(tile_data->thresh_freq_fact, sf->adaptive_rd_thresh,
-                            bsize,
-#if CONFIG_MULTITHREAD
-                            tile_data->enc_row_mt_mutex,
-#endif
-                            best_ref_index);
+                            bsize, best_ref_index);
 
   // macroblock modes
   *mi = best_mbmode;

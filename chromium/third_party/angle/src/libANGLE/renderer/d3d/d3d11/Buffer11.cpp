@@ -11,13 +11,13 @@
 #include <memory>
 
 #include "common/MemoryBuffer.h"
-#include "libANGLE/renderer/renderer_utils.h"
 #include "libANGLE/renderer/d3d/IndexDataManager.h"
 #include "libANGLE/renderer/d3d/VertexDataManager.h"
-#include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
 #include "libANGLE/renderer/d3d/d3d11/RenderTarget11.h"
-#include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
+#include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
 #include "libANGLE/renderer/d3d/d3d11/formatutils11.h"
+#include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
+#include "libANGLE/renderer/renderer_utils.h"
 
 namespace rx
 {
@@ -123,7 +123,7 @@ class Buffer11::BufferStorage : angle::NonCopyable
                           size_t length,
                           GLbitfield access,
                           uint8_t **mapPointerOut) = 0;
-    virtual void unmap() = 0;
+    virtual void unmap()                           = 0;
 
     gl::Error setData(const uint8_t *data, size_t offset, size_t size);
 
@@ -143,7 +143,7 @@ class Buffer11::NativeStorage : public Buffer11::BufferStorage
   public:
     NativeStorage(Renderer11 *renderer,
                   BufferUsage usage,
-                  const angle::BroadcastChannel<> *onStorageChanged);
+                  const OnBufferDataDirtyChannel *onStorageChanged);
     ~NativeStorage() override;
 
     bool isMappable(GLbitfield access) const override;
@@ -171,8 +171,8 @@ class Buffer11::NativeStorage : public Buffer11::BufferStorage
     void clearSRVs();
 
     ID3D11Buffer *mNativeStorage;
-    const angle::BroadcastChannel<> *mOnStorageChanged;
-    std::map<DXGI_FORMAT, ID3D11ShaderResourceView *> mBufferResourceViews;
+    const OnBufferDataDirtyChannel *mOnStorageChanged;
+    std::map<DXGI_FORMAT, d3d11::ShaderResourceView> mBufferResourceViews;
 };
 
 // A emulated indexed buffer storage represents an underlying D3D11 buffer for data
@@ -204,8 +204,8 @@ class Buffer11::EmulatedIndexedStorage : public Buffer11::BufferStorage
     void unmap() override;
 
   private:
-    ID3D11Buffer *mNativeStorage;       // contains expanded data for use by D3D
-    angle::MemoryBuffer mMemoryBuffer;  // original data (not expanded)
+    ID3D11Buffer *mNativeStorage;              // contains expanded data for use by D3D
+    angle::MemoryBuffer mMemoryBuffer;         // original data (not expanded)
     angle::MemoryBuffer mIndicesMemoryBuffer;  // indices data
 };
 
@@ -452,7 +452,7 @@ gl::Error Buffer11::copySubData(ContextImpl *context,
     return gl::NoError();
 }
 
-gl::Error Buffer11::map(ContextImpl *context, GLenum access, GLvoid **mapPtr)
+gl::Error Buffer11::map(ContextImpl *context, GLenum access, void **mapPtr)
 {
     // GL_OES_mapbuffer uses an enum instead of a bitfield for it's access, convert to a bitfield
     // and call mapRange.
@@ -464,7 +464,7 @@ gl::Error Buffer11::mapRange(ContextImpl *context,
                              size_t offset,
                              size_t length,
                              GLbitfield access,
-                             GLvoid **mapPtr)
+                             void **mapPtr)
 {
     ASSERT(!mMappedStorage);
 
@@ -500,7 +500,7 @@ gl::Error Buffer11::mapRange(ContextImpl *context,
     ANGLE_TRY(mMappedStorage->map(offset, length, access, &mappedBuffer));
     ASSERT(mappedBuffer);
 
-    *mapPtr = static_cast<GLvoid *>(mappedBuffer);
+    *mapPtr = static_cast<void *>(mappedBuffer);
     return gl::NoError();
 }
 
@@ -770,8 +770,7 @@ gl::ErrorOrResult<Buffer11::BufferStorage *> Buffer11::getConstantBufferRangeSto
             auto iter = std::min_element(std::begin(mConstantBufferRangeStoragesCache),
                                          std::end(mConstantBufferRangeStoragesCache),
                                          [](const ConstantBufferCache::value_type &a,
-                                            const ConstantBufferCache::value_type &b)
-                                         {
+                                            const ConstantBufferCache::value_type &b) {
                                              return a.second.lruCount < b.second.lruCount;
                                          });
 
@@ -846,7 +845,7 @@ gl::ErrorOrResult<Buffer11::BufferStorage *> Buffer11::getLatestBufferStorage() 
     // Even though we iterate over all the direct buffers, it is expected that only
     // 1 or 2 will be present.
     BufferStorage *latestStorage = nullptr;
-    DataRevision latestRevision = 0;
+    DataRevision latestRevision  = 0;
     for (auto &storage : mBufferStorages)
     {
         if (storage && (!latestStorage || storage->getDataRevision() > latestRevision))
@@ -902,12 +901,12 @@ void Buffer11::invalidateStaticData()
     mStaticBroadcastChannel.signal();
 }
 
-angle::BroadcastChannel<> *Buffer11::getStaticBroadcastChannel()
+OnBufferDataDirtyChannel *Buffer11::getStaticBroadcastChannel()
 {
     return &mStaticBroadcastChannel;
 }
 
-angle::BroadcastChannel<> *Buffer11::getDirectBroadcastChannel()
+OnBufferDataDirtyChannel *Buffer11::getDirectBroadcastChannel()
 {
     return &mDirectBroadcastChannel;
 }
@@ -941,7 +940,7 @@ gl::Error Buffer11::BufferStorage::setData(const uint8_t *data, size_t offset, s
 
 Buffer11::NativeStorage::NativeStorage(Renderer11 *renderer,
                                        BufferUsage usage,
-                                       const angle::BroadcastChannel<> *onStorageChanged)
+                                       const OnBufferDataDirtyChannel *onStorageChanged)
     : BufferStorage(renderer, usage), mNativeStorage(nullptr), mOnStorageChanged(onStorageChanged)
 {
 }
@@ -1154,7 +1153,7 @@ gl::Error Buffer11::NativeStorage::map(size_t offset,
     D3D11_MAPPED_SUBRESOURCE mappedResource;
     ID3D11DeviceContext *context = mRenderer->getDeviceContext();
     D3D11_MAP d3dMapType         = gl_d3d11::GetD3DMapTypeFromBits(mUsage, access);
-    UINT d3dMapFlag              = ((access & GL_MAP_UNSYNCHRONIZED_BIT) != 0 ? D3D11_MAP_FLAG_DO_NOT_WAIT : 0);
+    UINT d3dMapFlag = ((access & GL_MAP_UNSYNCHRONIZED_BIT) != 0 ? D3D11_MAP_FLAG_DO_NOT_WAIT : 0);
 
     HRESULT result = context->Map(mNativeStorage, 0, d3dMapType, d3dMapFlag, &mappedResource);
     ASSERT(SUCCEEDED(result));
@@ -1182,11 +1181,8 @@ gl::ErrorOrResult<ID3D11ShaderResourceView *> Buffer11::NativeStorage::getSRVFor
 
     if (bufferSRVIt != mBufferResourceViews.end())
     {
-        return bufferSRVIt->second;
+        return bufferSRVIt->second.get();
     }
-
-    ID3D11Device *device                = mRenderer->getDevice();
-    ID3D11ShaderResourceView *bufferSRV = nullptr;
 
     const d3d11::DXGIFormatSize &dxgiFormatInfo = d3d11::GetDXGIFormatSizeInfo(srvFormat);
 
@@ -1196,25 +1192,14 @@ gl::ErrorOrResult<ID3D11ShaderResourceView *> Buffer11::NativeStorage::getSRVFor
     bufferSRVDesc.ViewDimension        = D3D11_SRV_DIMENSION_BUFFER;
     bufferSRVDesc.Format               = srvFormat;
 
-    HRESULT result = device->CreateShaderResourceView(mNativeStorage, &bufferSRVDesc, &bufferSRV);
-    ASSERT(SUCCEEDED(result));
-    if (FAILED(result))
-    {
-        return gl::Error(GL_OUT_OF_MEMORY,
-                         "Error creating buffer SRV in Buffer11::NativeStorage::getSRVForFormat");
-    }
+    ANGLE_TRY(mRenderer->allocateResource(bufferSRVDesc, mNativeStorage,
+                                          &mBufferResourceViews[srvFormat]));
 
-    mBufferResourceViews[srvFormat] = bufferSRV;
-
-    return bufferSRV;
+    return mBufferResourceViews[srvFormat].get();
 }
 
 void Buffer11::NativeStorage::clearSRVs()
 {
-    for (auto &srv : mBufferResourceViews)
-    {
-        SafeRelease(srv.second);
-    }
     mBufferResourceViews.clear();
 }
 
@@ -1480,8 +1465,8 @@ gl::Error Buffer11::PackStorage::packPixels(const gl::FramebufferAttachment &rea
         mStagingTexture.getExtents() != srcTextureSize)
     {
         ANGLE_TRY_RESULT(
-            CreateStagingTexture(srcTexture.getTextureType(), srcTexture.getFormatSet(),
-                                 srcTextureSize, StagingAccess::READ, mRenderer->getDevice()),
+            mRenderer->createStagingTexture(srcTexture.getTextureType(), srcTexture.getFormatSet(),
+                                            srcTextureSize, StagingAccess::READ),
             mStagingTexture);
     }
 

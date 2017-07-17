@@ -162,7 +162,7 @@ CPDF_Object* CPDF_Array::SetAt(size_t i, std::unique_ptr<CPDF_Object> pObj) {
   ASSERT(IsArray());
   ASSERT(!pObj || pObj->IsInline());
   if (i >= m_Objects.size()) {
-    ASSERT(false);
+    NOTREACHED();
     return nullptr;
   }
   CPDF_Object* pRet = pObj.get();
@@ -192,4 +192,23 @@ CPDF_Object* CPDF_Array::Add(std::unique_ptr<CPDF_Object> pObj) {
   CPDF_Object* pRet = pObj.get();
   m_Objects.push_back(std::move(pObj));
   return pRet;
+}
+
+bool CPDF_Array::WriteTo(IFX_ArchiveStream* archive) const {
+  if (!archive->WriteString("["))
+    return false;
+
+  for (size_t i = 0; i < GetCount(); ++i) {
+    CPDF_Object* pElement = GetObjectAt(i);
+    if (!pElement->IsInline()) {
+      if (!archive->WriteString(" ") ||
+          !archive->WriteDWord(pElement->GetObjNum()) ||
+          !archive->WriteString(" 0 R")) {
+        return false;
+      }
+    } else if (!pElement->WriteTo(archive)) {
+      return false;
+    }
+  }
+  return archive->WriteString("]");
 }

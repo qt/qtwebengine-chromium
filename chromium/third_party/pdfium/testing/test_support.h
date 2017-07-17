@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "core/fdrm/crypto/fx_crypt.h"
 #include "public/fpdf_save.h"
 #include "public/fpdfview.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -59,12 +60,6 @@ struct FreeDeleter {
   inline void operator()(void* ptr) const { free(ptr); }
 };
 
-class FPDF_Test : public ::testing::Test {
- public:
-  void SetUp() override;
-  void TearDown() override;
-};
-
 }  // namespace pdfium
 
 // Reads the entire contents of a file into a newly alloc'd buffer.
@@ -81,6 +76,9 @@ std::wstring GetPlatformWString(const FPDF_WIDESTRING wstr);
 // Deals with differences between UTF16LE and wchar_t.
 std::unique_ptr<unsigned short, pdfium::FreeDeleter> GetFPDFWideString(
     const std::wstring& wstr);
+
+std::string CryptToBase16(const uint8_t* digest);
+std::string GenerateMD5Base16(const uint8_t* data, uint32_t size);
 
 #ifdef PDF_ENABLE_V8
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
@@ -114,6 +112,12 @@ class TestSaver : public FPDF_FILEWRITE {
 
   void ClearString();
   const std::string& GetString() const { return m_String; }
+
+ protected:
+  static int GetBlockFromString(void* param,
+                                unsigned long pos,
+                                unsigned char* buf,
+                                unsigned long size);
 
  private:
   static int WriteBlockCallback(FPDF_FILEWRITE* pFileWrite,

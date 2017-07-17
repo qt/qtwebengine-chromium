@@ -197,7 +197,7 @@ void GenerateCaps(const FunctionsGL *functions,
         gl::TextureCaps textureCaps = GenerateTextureFormatCaps(functions, internalFormat);
         textureCapsMap->insert(internalFormat, textureCaps);
 
-        if (gl::GetInternalFormatInfo(internalFormat).compressed)
+        if (gl::GetSizedInternalFormatInfo(internalFormat).compressed)
         {
             caps->compressedTextureFormats.push_back(internalFormat);
         }
@@ -813,7 +813,8 @@ void GenerateCaps(const FunctionsGL *functions,
     extensions->drawBuffers = functions->isAtLeastGL(gl::Version(2, 0)) ||
                               functions->hasGLExtension("ARB_draw_buffers") ||
                               functions->hasGLESExtension("GL_EXT_draw_buffers");
-    extensions->textureStorage = true;
+    extensions->textureStorage = functions->standard == STANDARD_GL_DESKTOP ||
+                                 functions->hasGLESExtension("GL_EXT_texture_storage");
     extensions->textureFilterAnisotropic = functions->hasGLExtension("GL_EXT_texture_filter_anisotropic") || functions->hasGLESExtension("GL_EXT_texture_filter_anisotropic");
     extensions->occlusionQueryBoolean    = nativegl::SupportsOcclusionQueries(functions);
     extensions->maxTextureAnisotropy = extensions->textureFilterAnisotropic ? QuerySingleGLFloat(functions, GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT) : 0.0f;
@@ -822,12 +823,14 @@ void GenerateCaps(const FunctionsGL *functions,
                               functions->isAtLeastGLES(gl::Version(3, 0)) || functions->hasGLESExtension("GL_EXT_blend_minmax");
     extensions->framebufferBlit = (functions->blitFramebuffer != nullptr);
     extensions->framebufferMultisample = caps->maxSamples > 0;
-    extensions->standardDerivatives = functions->isAtLeastGL(gl::Version(2, 0)) || functions->hasGLExtension("GL_ARB_fragment_shader") ||
-                                      functions->isAtLeastGLES(gl::Version(3, 0)) || functions->hasGLESExtension("GL_OES_standard_derivatives");
-    extensions->shaderTextureLOD = functions->isAtLeastGL(gl::Version(3, 0)) || functions->hasGLExtension("GL_ARB_shader_texture_lod") ||
-                                   functions->isAtLeastGLES(gl::Version(3, 0)) || functions->hasGLESExtension("GL_EXT_shader_texture_lod");
+    extensions->standardDerivatives    = functions->isAtLeastGL(gl::Version(2, 0)) ||
+                                      functions->hasGLExtension("GL_ARB_fragment_shader") ||
+                                      functions->hasGLESExtension("GL_OES_standard_derivatives");
+    extensions->shaderTextureLOD = functions->isAtLeastGL(gl::Version(3, 0)) ||
+                                   functions->hasGLExtension("GL_ARB_shader_texture_lod") ||
+                                   functions->hasGLESExtension("GL_EXT_shader_texture_lod");
     extensions->fragDepth = functions->standard == STANDARD_GL_DESKTOP ||
-                            functions->isAtLeastGLES(gl::Version(3, 0)) || functions->hasGLESExtension("GL_EXT_frag_depth");
+                            functions->hasGLESExtension("GL_EXT_frag_depth");
     extensions->fboRenderMipmap = functions->isAtLeastGL(gl::Version(3, 0)) || functions->hasGLExtension("GL_EXT_framebuffer_object") ||
                                   functions->isAtLeastGLES(gl::Version(3, 0)) || functions->hasGLESExtension("GL_OES_fbo_render_mipmap");
     extensions->instancedArrays = functions->isAtLeastGL(gl::Version(3, 1)) ||
@@ -952,6 +955,7 @@ void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workaround
 #if defined(ANGLE_PLATFORM_LINUX)
     workarounds->emulateMaxVertexAttribStride =
         functions->standard == STANDARD_GL_DESKTOP && IsAMD(vendor);
+    workarounds->useUnusedBlocksWithStandardOrSharedLayout = IsAMD(vendor);
 #endif
 
 #if defined(ANGLE_PLATFORM_APPLE)
@@ -1085,8 +1089,7 @@ gl::ErrorOrResult<bool> ShouldApplyLastRowPaddingWorkaround(const gl::Extents &s
     CheckedNumeric<size_t> pixelBytes;
     size_t rowPitch;
 
-    const gl::InternalFormat &glFormat =
-        gl::GetInternalFormatInfo(gl::GetSizedInternalFormat(format, type));
+    const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(format, type);
     ANGLE_TRY_RESULT(glFormat.computePackUnpackEndByte(type, size, state, is3D), checkedEndByte);
     ANGLE_TRY_RESULT(glFormat.computeRowPitch(type, size.width, state.alignment, state.rowLength),
                      rowPitch);

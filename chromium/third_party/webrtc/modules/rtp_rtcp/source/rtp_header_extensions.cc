@@ -215,4 +215,101 @@ bool PlayoutDelayLimits::Write(uint8_t* data,
   return true;
 }
 
+// Video Content Type.
+//
+// E.g. default video or screenshare.
+//
+//    0                   1
+//    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |  ID   | len=0 | Content type  |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+constexpr RTPExtensionType VideoContentTypeExtension::kId;
+constexpr uint8_t VideoContentTypeExtension::kValueSizeBytes;
+constexpr const char* VideoContentTypeExtension::kUri;
+
+bool VideoContentTypeExtension::Parse(rtc::ArrayView<const uint8_t> data,
+                                      VideoContentType* content_type) {
+  if (data.size() == 1 &&
+      data[0] < static_cast<uint8_t>(VideoContentType::TOTAL_CONTENT_TYPES)) {
+    *content_type = static_cast<VideoContentType>(data[0]);
+    return true;
+  }
+  return false;
+}
+
+bool VideoContentTypeExtension::Write(uint8_t* data,
+                                      VideoContentType content_type) {
+  data[0] = static_cast<uint8_t>(content_type);
+  return true;
+}
+
+// RtpStreamId.
+constexpr RTPExtensionType RtpStreamId::kId;
+constexpr const char* RtpStreamId::kUri;
+
+bool RtpStreamId::Parse(rtc::ArrayView<const uint8_t> data, StreamId* rsid) {
+  if (data.empty() || data[0] == 0)  // Valid rsid can't be empty.
+    return false;
+  rsid->Set(data);
+  RTC_DCHECK(!rsid->empty());
+  return true;
+}
+
+bool RtpStreamId::Write(uint8_t* data, const StreamId& rsid) {
+  RTC_DCHECK_GE(rsid.size(), 1);
+  RTC_DCHECK_LE(rsid.size(), StreamId::kMaxSize);
+  memcpy(data, rsid.data(), rsid.size());
+  return true;
+}
+
+bool RtpStreamId::Parse(rtc::ArrayView<const uint8_t> data, std::string* rsid) {
+  if (data.empty() || data[0] == 0)  // Valid rsid can't be empty.
+    return false;
+  const char* str = reinterpret_cast<const char*>(data.data());
+  // If there is a \0 character in the middle of the |data|, treat it as end of
+  // the string. Well-formed rsid shouldn't contain it.
+  rsid->assign(str, strnlen(str, data.size()));
+  RTC_DCHECK(!rsid->empty());
+  return true;
+}
+
+bool RtpStreamId::Write(uint8_t* data, const std::string& rsid) {
+  RTC_DCHECK_GE(rsid.size(), 1);
+  RTC_DCHECK_LE(rsid.size(), StreamId::kMaxSize);
+  memcpy(data, rsid.data(), rsid.size());
+  return true;
+}
+
+// RepairedRtpStreamId.
+constexpr RTPExtensionType RepairedRtpStreamId::kId;
+constexpr const char* RepairedRtpStreamId::kUri;
+
+// RtpStreamId and RepairedRtpStreamId use the same format to store rsid.
+bool RepairedRtpStreamId::Parse(rtc::ArrayView<const uint8_t> data,
+                                StreamId* rsid) {
+  return RtpStreamId::Parse(data, rsid);
+}
+
+size_t RepairedRtpStreamId::ValueSize(const StreamId& rsid) {
+  return RtpStreamId::ValueSize(rsid);
+}
+
+bool RepairedRtpStreamId::Write(uint8_t* data, const StreamId& rsid) {
+  return RtpStreamId::Write(data, rsid);
+}
+
+bool RepairedRtpStreamId::Parse(rtc::ArrayView<const uint8_t> data,
+                                std::string* rsid) {
+  return RtpStreamId::Parse(data, rsid);
+}
+
+size_t RepairedRtpStreamId::ValueSize(const std::string& rsid) {
+  return RtpStreamId::ValueSize(rsid);
+}
+
+bool RepairedRtpStreamId::Write(uint8_t* data, const std::string& rsid) {
+  return RtpStreamId::Write(data, rsid);
+}
+
 }  // namespace webrtc

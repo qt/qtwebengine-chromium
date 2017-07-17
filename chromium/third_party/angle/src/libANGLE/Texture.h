@@ -82,7 +82,7 @@ struct SwizzleState final
 };
 
 // State from Table 6.9 (state per texture object) in the OpenGL ES 3.0.2 spec.
-struct TextureState final : public angle::NonCopyable
+struct TextureState final : private angle::NonCopyable
 {
     TextureState(GLenum target);
 
@@ -103,6 +103,7 @@ struct TextureState final : public angle::NonCopyable
     void invalidateCompletenessCache();
 
     const ImageDesc &getImageDesc(GLenum target, size_t level) const;
+    const ImageDesc &getImageDesc(const ImageIndex &imageIndex) const;
 
     GLenum getTarget() const { return mTarget; }
     const SwizzleState &getSwizzleState() const { return mSwizzleState; }
@@ -174,7 +175,6 @@ bool operator==(const TextureState &a, const TextureState &b);
 bool operator!=(const TextureState &a, const TextureState &b);
 
 class Texture final : public egl::ImageSibling,
-                      public FramebufferAttachmentObject,
                       public LabeledObject
 {
   public:
@@ -357,9 +357,9 @@ class Texture final : public egl::ImageSibling,
     rx::TextureImpl *getImplementation() const { return mTexture; }
 
     // FramebufferAttachmentObject implementation
-    Extents getAttachmentSize(const FramebufferAttachment::Target &target) const override;
-    const Format &getAttachmentFormat(const FramebufferAttachment::Target &target) const override;
-    GLsizei getAttachmentSamples(const FramebufferAttachment::Target &target) const override;
+    Extents getAttachmentSize(const ImageIndex &imageIndex) const override;
+    const Format &getAttachmentFormat(GLenum binding, const ImageIndex &imageIndex) const override;
+    GLsizei getAttachmentSamples(const ImageIndex &imageIndex) const override;
 
     void onAttach() override;
     void onDetach() override;
@@ -394,7 +394,7 @@ class Texture final : public egl::ImageSibling,
 
         DIRTY_BIT_COUNT,
     };
-    using DirtyBits = std::bitset<DIRTY_BIT_COUNT>;
+    using DirtyBits = angle::BitSet<DIRTY_BIT_COUNT>;
 
     void syncImplState();
     bool hasAnyDirtyBit() const { return mDirtyBits.any(); }

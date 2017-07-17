@@ -11,16 +11,16 @@
 #include <memory>
 #include <string>
 
-#include "webrtc/p2p/base/relayserver.h"
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
-#include "webrtc/base/physicalsocketserver.h"
+#include "webrtc/base/ptr_util.h"
 #include "webrtc/base/socketaddress.h"
 #include "webrtc/base/ssladapter.h"
 #include "webrtc/base/testclient.h"
 #include "webrtc/base/thread.h"
 #include "webrtc/base/virtualsocketserver.h"
+#include "webrtc/p2p/base/relayserver.h"
 
 using rtc::SocketAddress;
 using namespace cricket;
@@ -39,9 +39,8 @@ static const char* msg2 = "Lobster Thermidor a Crevette with a mornay sauce...";
 class RelayServerTest : public testing::Test {
  public:
   RelayServerTest()
-      : pss_(new rtc::PhysicalSocketServer),
-        ss_(new rtc::VirtualSocketServer(pss_.get())),
-        ss_scope_(ss_.get()),
+      : ss_(new rtc::VirtualSocketServer()),
+        thread_(ss_.get()),
         username_(rtc::CreateRandomString(12)),
         password_(rtc::CreateRandomString(12)) {}
 
@@ -55,9 +54,9 @@ class RelayServerTest : public testing::Test {
         rtc::AsyncUDPSocket::Create(ss_.get(), server_ext_addr));
 
     client1_.reset(new rtc::TestClient(
-        rtc::AsyncUDPSocket::Create(ss_.get(), client1_addr)));
+        WrapUnique(rtc::AsyncUDPSocket::Create(ss_.get(), client1_addr))));
     client2_.reset(new rtc::TestClient(
-        rtc::AsyncUDPSocket::Create(ss_.get(), client2_addr)));
+        WrapUnique(rtc::AsyncUDPSocket::Create(ss_.get(), client2_addr))));
   }
 
   void Allocate() {
@@ -116,24 +115,22 @@ class RelayServerTest : public testing::Test {
   }
   StunMessage* Receive(rtc::TestClient* client) {
     StunMessage* msg = NULL;
-    rtc::TestClient::Packet* packet =
+    std::unique_ptr<rtc::TestClient::Packet> packet =
         client->NextPacket(rtc::TestClient::kTimeoutMs);
     if (packet) {
       rtc::ByteBufferWriter buf(packet->buf, packet->size);
       rtc::ByteBufferReader read_buf(buf);
       msg = new RelayMessage();
       msg->Read(&read_buf);
-      delete packet;
     }
     return msg;
   }
   std::string ReceiveRaw(rtc::TestClient* client) {
     std::string raw;
-    rtc::TestClient::Packet* packet =
+    std::unique_ptr<rtc::TestClient::Packet> packet =
         client->NextPacket(rtc::TestClient::kTimeoutMs);
     if (packet) {
       raw = std::string(packet->buf, packet->size);
-      delete packet;
     }
     return raw;
   }
@@ -167,9 +164,8 @@ class RelayServerTest : public testing::Test {
     msg->AddAttribute(std::move(attr));
   }
 
-  std::unique_ptr<rtc::PhysicalSocketServer> pss_;
   std::unique_ptr<rtc::VirtualSocketServer> ss_;
-  rtc::SocketServerScope ss_scope_;
+  rtc::AutoSocketServerThread thread_;
   std::unique_ptr<RelayServer> server_;
   std::unique_ptr<rtc::TestClient> client1_;
   std::unique_ptr<rtc::TestClient> client2_;

@@ -42,7 +42,7 @@ class CFDE_TxtEdtPage : public IFDE_VisualSet {
                         FXTEXT_CHARPOS*& pCharPos,
                         CFX_RectF* pBBox) const;
   bool IsLoaded(const CFX_RectF* pClipBox);
-  int32_t LoadPage(const CFX_RectF* pClipBox, IFX_Pause* pPause);
+  int32_t LoadPage(const CFX_RectF* pClipBox);
   void UnloadPage(const CFX_RectF* pClipBox);
   const CFX_RectF& GetContentsBox();
 
@@ -59,7 +59,7 @@ class CFDE_TxtEdtPage : public IFDE_VisualSet {
 
   std::unique_ptr<IFX_CharIter> m_pIter;
   std::unique_ptr<CFDE_TxtEdtTextSet> m_pTextSet;
-  CFDE_TxtEdtEngine* const m_pEditEngine;
+  CFX_UnownedPtr<CFDE_TxtEdtEngine> const m_pEditEngine;
   std::deque<FDE_TEXTEDITPIECE> m_Pieces;
   CFDE_TxtEdtParag* m_pBgnParag;
   CFDE_TxtEdtParag* m_pEndParag;

@@ -16,7 +16,7 @@
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fpdfdoc/cpdf_interform.h"
 #include "core/fpdfdoc/cpdf_occontext.h"
-#include "core/fxge/cfx_fxgedevice.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_interform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
@@ -67,11 +67,11 @@ CPDFSDK_PageView* FormHandleToPageView(FPDF_FORMHANDLE hHandle,
 
 #ifdef PDF_ENABLE_XFA
 std::vector<CFX_ByteString>* FromFPDFStringHandle(FPDF_STRINGHANDLE handle) {
-  return reinterpret_cast<std::vector<CFX_ByteString>*>(handle);
+  return static_cast<std::vector<CFX_ByteString>*>(handle);
 }
 
 FPDF_STRINGHANDLE ToFPDFStringHandle(std::vector<CFX_ByteString>* strings) {
-  return reinterpret_cast<FPDF_STRINGHANDLE>(strings);
+  return static_cast<FPDF_STRINGHANDLE>(strings);
 }
 #endif  // PDF_ENABLE_XFA
 
@@ -109,43 +109,43 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
       pPage->GetDisplayMatrix(start_x, start_y, size_x, size_y, rotate);
   FX_RECT clip(start_x, start_y, start_x + size_x, start_y + size_y);
 
-  auto pDevice = pdfium::MakeUnique<CFX_FxgeDevice>();
+  auto pDevice = pdfium::MakeUnique<CFX_DefaultRenderDevice>();
 #ifdef _SKIA_SUPPORT_
   pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
 #endif
   CFX_RetainPtr<CFX_DIBitmap> holder(CFXBitmapFromFPDFBitmap(bitmap));
   pDevice->Attach(holder, false, nullptr, false);
-  pDevice->SaveState();
-  pDevice->SetClip_Rect(clip);
+  {
+    CFX_RenderDevice::StateRestorer restorer(pDevice.get());
+    pDevice->SetClip_Rect(clip);
 
-  CPDF_RenderOptions options;
-  if (flags & FPDF_LCD_TEXT)
-    options.m_Flags |= RENDER_CLEARTYPE;
-  else
-    options.m_Flags &= ~RENDER_CLEARTYPE;
+    CPDF_RenderOptions options;
+    if (flags & FPDF_LCD_TEXT)
+      options.m_Flags |= RENDER_CLEARTYPE;
+    else
+      options.m_Flags &= ~RENDER_CLEARTYPE;
 
-  // Grayscale output
-  if (flags & FPDF_GRAYSCALE) {
-    options.m_ColorMode = RENDER_COLOR_GRAY;
-    options.m_ForeColor = 0;
-    options.m_BackColor = 0xffffff;
-  }
-  options.m_AddFlags = flags >> 8;
-  options.m_bDrawAnnots = flags & FPDF_ANNOT;
+    // Grayscale output
+    if (flags & FPDF_GRAYSCALE) {
+      options.m_ColorMode = RENDER_COLOR_GRAY;
+      options.m_ForeColor = 0;
+      options.m_BackColor = 0xffffff;
+    }
+    options.m_AddFlags = flags >> 8;
+    options.m_bDrawAnnots = flags & FPDF_ANNOT;
 
 #ifdef PDF_ENABLE_XFA
-  options.m_pOCContext =
-      pdfium::MakeRetain<CPDF_OCContext>(pPDFDoc, CPDF_OCContext::View);
-  if (CPDFSDK_PageView* pPageView = pFormFillEnv->GetPageView(pPage, true))
-    pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options, clip);
+    options.m_pOCContext =
+        pdfium::MakeRetain<CPDF_OCContext>(pPDFDoc, CPDF_OCContext::View);
+    if (CPDFSDK_PageView* pPageView = pFormFillEnv->GetPageView(pPage, true))
+      pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options, clip);
 #else   // PDF_ENABLE_XFA
-  options.m_pOCContext = pdfium::MakeRetain<CPDF_OCContext>(
-      pPage->m_pDocument, CPDF_OCContext::View);
-  if (CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, pPage))
-    pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options);
+    options.m_pOCContext = pdfium::MakeRetain<CPDF_OCContext>(
+        pPage->m_pDocument.Get(), CPDF_OCContext::View);
+    if (CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, pPage))
+      pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options);
 #endif  // PDF_ENABLE_XFA
-
-  pDevice->RestoreState(false);
+  }
 #ifdef _SKIA_SUPPORT_PATHS_
   pDevice->Flush();
   holder->UnPreMultiply();
@@ -162,7 +162,7 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
     return -1;
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (pPage) {
-    CPDF_InterForm interform(pPage->m_pDocument);
+    CPDF_InterForm interform(pPage->m_pDocument.Get());
     CPDF_FormControl* pFormCtrl = interform.GetControlAtPoint(
         pPage,
         CFX_PointF(static_cast<float>(page_x), static_cast<float>(page_y)),
@@ -232,7 +232,7 @@ DLLEXPORT int STDCALL FPDFPage_FormFieldZOrderAtPoint(FPDF_FORMHANDLE hHandle,
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage)
     return -1;
-  CPDF_InterForm interform(pPage->m_pDocument);
+  CPDF_InterForm interform(pPage->m_pDocument.Get());
   int z_order = -1;
   (void)interform.GetControlAtPoint(
       pPage, CFX_PointF(static_cast<float>(page_x), static_cast<float>(page_y)),
@@ -263,14 +263,14 @@ FPDFDOC_InitFormFillEnvironment(FPDF_DOCUMENT document,
     return pDocument->GetFormFillEnv();
 #endif
 
-  CPDFSDK_FormFillEnvironment* pFormFillEnv =
-      new CPDFSDK_FormFillEnvironment(pDocument, formInfo);
+  auto pFormFillEnv =
+      pdfium::MakeUnique<CPDFSDK_FormFillEnvironment>(pDocument, formInfo);
 
 #ifdef PDF_ENABLE_XFA
-  pDocument->SetFormFillEnv(pFormFillEnv);
+  pDocument->SetFormFillEnv(pFormFillEnv.get());
 #endif  // PDF_ENABLE_XFA
 
-  return pFormFillEnv;
+  return pFormFillEnv.release();  // Caller takes ownership.
 }
 
 DLLEXPORT void STDCALL
@@ -575,18 +575,20 @@ FPDF_Widget_GetSpellCheckWords(FPDF_DOCUMENT document,
   if (!hWidget || !document)
     return;
 
-  CPDFXFA_Context* pContext = static_cast<CPDFXFA_Context*>(document);
+  auto* pContext = static_cast<CPDFXFA_Context*>(document);
   if (pContext->GetDocType() != XFA_DocType::Dynamic &&
       pContext->GetDocType() != XFA_DocType::Static)
     return;
 
-  std::vector<CFX_ByteString>* sSuggestWords = new std::vector<CFX_ByteString>;
   CFX_PointF ptPopup;
   ptPopup.x = x;
   ptPopup.y = y;
-  static_cast<CXFA_FFWidget*>(hWidget)
-      ->GetSuggestWords(ptPopup, *sSuggestWords);
-  *stringHandle = ToFPDFStringHandle(sSuggestWords);
+  auto sSuggestWords = pdfium::MakeUnique<std::vector<CFX_ByteString>>();
+  static_cast<CXFA_FFWidget*>(hWidget)->GetSuggestWords(ptPopup,
+                                                        sSuggestWords.get());
+
+  // Caller takes ownership.
+  *stringHandle = ToFPDFStringHandle(sSuggestWords.release());
 }
 
 DLLEXPORT int STDCALL FPDF_StringHandleCounts(FPDF_STRINGHANDLE sHandle) {
@@ -739,7 +741,7 @@ DLLEXPORT void STDCALL FORM_DoPageAAction(FPDF_PAGE page,
     return;
 
   CPDFSDK_ActionHandler* pActionHandler = pFormFillEnv->GetActionHander();
-  CPDF_Dictionary* pPageDict = pPDFPage->m_pFormDict;
+  CPDF_Dictionary* pPageDict = pPDFPage->m_pFormDict.Get();
   CPDF_AAction aa(pPageDict->GetDictFor("AA"));
   if (FPDFPAGE_AACTION_OPEN == aaType) {
     if (aa.ActionExist(CPDF_AAction::OpenPage)) {
