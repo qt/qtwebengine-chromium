@@ -2,6 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/chrome_build.gni")
+import("//build/config/ui.gni")
+import("//ui/ozone/ozone.gni")
+
 import("//build/config/chromecast_build.gni")
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/chromeos/ui_mode.gni")
@@ -32,3 +36,5 @@ declare_args() {
                         target_cpu == "arm" || target_cpu == "arm64" ||
                         target_cpu == "mipsel" || target_cpu == "mips64el")
 }
+
+use_glx = use_x11 || ozone_platform_x11
