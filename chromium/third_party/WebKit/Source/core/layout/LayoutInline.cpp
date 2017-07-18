@@ -1029,11 +1029,18 @@ LayoutRect LayoutInline::absoluteClippedOverflowRect() const
         endContinuation = nextContinuation;
 
     for (LayoutBlock* currBlock = containingBlock(); currBlock && currBlock->isAnonymousBlock(); currBlock = toLayoutBlock(currBlock->nextSibling())) {
+        bool walkChildrenOnly = !currBlock->childrenInline();
         for (LayoutObject* curr = currBlock->firstChild(); curr; curr = curr->nextSibling()) {
             LayoutRect rect(curr->clippedOverflowRectForPaintInvalidation(view()));
             context(FloatRect(rect));
-            if (curr == endContinuation)
+            if (walkChildrenOnly)
+              continue;
+            for (LayoutObject* walker = curr; walker;
+               walker = walker->nextInPreOrder(curr)) {
+                if (walker != endContinuation)
+                    continue;
                 return LayoutRect(enclosingIntRect(floatResult));
+	    }
         }
     }
     return LayoutRect();
