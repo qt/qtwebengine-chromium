@@ -17281,7 +17281,7 @@ bool HashTable<Derived, Shape, Key>::HasSufficientCapacity(int n) {
   // Return true if:
   //   50% is still free after adding n elements and
   //   at most 50% of the free elements are deleted elements.
-  if (nod <= (capacity - nof) >> 1) {
+  if ((nof < capacity) && ((nod <= (capacity - nof) >> 1))) {
     int needed_free = nof >> 1;
     if (nof + needed_free <= capacity) return true;
   }
@@ -18171,7 +18171,7 @@ Handle<Derived> Dictionary<Derived, Shape, Key>::NewEmpty(
     Isolate* isolate, PretenureFlag pretenure) {
   Handle<Derived> dict = DerivedHashTable::New(isolate, 1, pretenure);
   // Attempt to add one element to the empty dictionary must cause reallocation.
-  DCHECK(!dict->HasSufficientCapacityToAdd(1));
+  DCHECK(!dict->HasSufficientCapacity(1));
   // Initialize the next enumeration index.
   dict->SetNextEnumerationIndex(PropertyDetails::kInitialIndex);
   return dict;
