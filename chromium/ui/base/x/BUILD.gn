@@ -77,7 +77,6 @@ component("x") {
     "//build:chromeos_buildflags",
     "//net",
     "//skia",
-    "//ui/base:data_exchange",
     "//ui/base:features",
     "//ui/base/clipboard:clipboard_types",
     "//ui/base/clipboard:file_info",
@@ -96,7 +95,7 @@ component("x") {
     "//ui/platform_window/common",
   ]
 
-  if (is_linux || is_chromeos) {
+  if ((is_linux || is_chromeos) && !use_qt) {
     sources += [
       "selection_owner.cc",
       "selection_owner.h",
@@ -110,6 +109,7 @@ component("x") {
     public_deps += [ "//ui/base/dragdrop/mojom:mojom_shared" ]
     deps += [
       "//ui/base",
+      "//ui/base:data_exchange",
       "//ui/base/dragdrop:types",
       "//ui/base/dragdrop/mojom",
     ]
