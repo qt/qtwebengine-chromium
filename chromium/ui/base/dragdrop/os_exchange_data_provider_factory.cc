@@ -18,6 +18,7 @@
 
 namespace ui {
 
+#if !defined(TOOLKIT_QT)
 // static
 std::unique_ptr<OSExchangeDataProvider>
 OSExchangeDataProviderFactory::CreateProvider() {
@@ -42,5 +43,6 @@ OSExchangeDataProviderFactory::CreateProvider() {
 #error "Unknown operating system"
 #endif
 }
+#endif // !defined(TOOLKIT_QT)
 
 }  // namespace ui
