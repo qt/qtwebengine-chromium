@@ -73,7 +73,6 @@ jumbo_component("x") {
     "//components/device_event_log",
     "//net",
     "//skia",
-    "//ui/base:data_exchange",
     "//ui/base:features",
     "//ui/base/clipboard:clipboard_types",
     "//ui/base/clipboard:file_info",
@@ -96,7 +95,7 @@ jumbo_component("x") {
   if (is_linux) {
     public_deps += [ "//ui/linux:linux_ui" ]
   }
-  if (is_linux || is_chromeos) {
+  if ((is_linux || is_chromeos) && !is_qtwebengine) {
     sources += [
       "selection_owner.cc",
       "selection_owner.h",
@@ -110,6 +109,7 @@ jumbo_component("x") {
     public_deps += [ "//ui/base/dragdrop/mojom:mojom_shared" ]
     deps += [
       "//ui/base",
+      "//ui/base:data_exchange",
       "//ui/base/dragdrop:types",
       "//ui/base/dragdrop/mojom",
     ]
