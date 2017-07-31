@@ -26,7 +26,7 @@ namespace ui {
 
 namespace {
 
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if (defined(OS_LINUX) || defined(OS_CHROMEOS)) && !defined(TOOLKIT_QT)
 std::unique_ptr<OSExchangeDataProvider> CreateProviderForLinux() {
 #if defined(USE_OZONE)
   // The instance can be nullptr in tests that do not instantiate the platform,
@@ -47,6 +47,7 @@ std::unique_ptr<OSExchangeDataProvider> CreateProviderForLinux() {
 
 }  // namespace
 
+#if !defined(TOOLKIT_QT)
 // static
 std::unique_ptr<OSExchangeDataProvider>
 OSExchangeDataProviderFactory::CreateProvider() {
@@ -70,5 +71,6 @@ OSExchangeDataProviderFactory::CreateProvider() {
 #error "Unknown operating system"
 #endif
 }
+#endif // !defined(TOOLKIT_QT)
 
 }  // namespace ui
