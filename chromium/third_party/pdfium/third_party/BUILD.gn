@@ -327,7 +327,7 @@ config("system_zlib_config") {
 }
 
 group("zlib") {
-  if (use_system_zlib) {
+  if (pdfium_use_system_zlib) {
     public_configs = [ ":system_zlib_config" ]
   } else {
     public_deps = [
