@@ -35,12 +35,11 @@
         'proto_out_dir': 'include/power_manager/proto_bindings',
       },
       'sources': [
+        '<(proto_in_dir)/suspend.proto',
         '<(proto_in_dir)/input_event.proto',
         '<(proto_in_dir)/peripheral_battery_status.proto',
         '<(proto_in_dir)/policy.proto',
         '<(proto_in_dir)/power_supply_properties.proto',
-        '<(proto_in_dir)/suspend.proto',
-        '<(proto_in_dir)/switch_states.proto',
       ],
       'includes': ['../../platform2/common-mk/protoc.gypi'],
     },
@@ -52,12 +51,11 @@
         'system_api-power_manager-protos-gen',
       ],
       'sources': [
+        '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/suspend.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/input_event.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/peripheral_battery_status.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/policy.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/power_supply_properties.pb.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/suspend.pb.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/include/power_manager/proto_bindings/switch_states.pb.cc',
       ]
     },
     {
@@ -85,106 +83,6 @@
         '<(SHARED_INTERMEDIATE_DIR)/include/cryptohome/proto_bindings/key.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/cryptohome/proto_bindings/rpc.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/cryptohome/proto_bindings/signed_secret.pb.cc',
-      ]
-    },
-    {
-      'target_name': 'system_api-authpolicy-protos-gen',
-      'type': 'none',
-      'variables': {
-        'proto_in_dir': 'dbus/authpolicy',
-        'proto_out_dir': 'include/authpolicy/proto_bindings',
-      },
-      'sources': [
-        # TODO(ljusten): Remove this file as soon as Chrome uses
-        # active_directory_info.proto. crbug.com/712720.
-        '<(proto_in_dir)/active_directory_account_data.proto',
-        '<(proto_in_dir)/active_directory_info.proto',
-      ],
-      'includes': ['../../platform2/common-mk/protoc.gypi'],
-    },
-    {
-      'target_name': 'system_api-authpolicy-protos',
-      'type': 'static_library',
-      'standalone_static_library': 1,
-      'dependencies': [
-        'system_api-authpolicy-protos-gen',
-      ],
-      'sources': [
-        # TODO(ljusten): Remove this file as soon as Chrome uses
-        # active_directory_info.proto. crbug.com/712720.
-        '<(SHARED_INTERMEDIATE_DIR)/include/authpolicy/proto_bindings/active_directory_account_data.pb.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/include/authpolicy/proto_bindings/active_directory_info.pb.cc',
-      ]
-    },
-    {
-      'target_name': 'system_api-biod-protos-gen',
-      'type': 'none',
-      'variables': {
-        'proto_in_dir': 'dbus/biod',
-        'proto_out_dir': 'include/biod/proto_bindings',
-      },
-      'sources': [
-        '<(proto_in_dir)/constants.proto',
-        '<(proto_in_dir)/messages.proto',
-      ],
-      'includes': ['../../platform2/common-mk/protoc.gypi'],
-    },
-    {
-      'target_name': 'system_api-biod-protos',
-      'type': 'static_library',
-      'standalone_static_library': 1,
-      'dependencies': [
-        'system_api-biod-protos-gen',
-      ],
-      'sources': [
-        '<(SHARED_INTERMEDIATE_DIR)/include/biod/proto_bindings/constants.pb.cc',
-        '<(SHARED_INTERMEDIATE_DIR)/include/biod/proto_bindings/messages.pb.cc',
-      ]
-    },
-    {
-      'target_name': 'system_api-login_manager-protos-gen',
-      'type': 'none',
-      'variables': {
-        'proto_in_dir': 'dbus/login_manager',
-        'proto_out_dir': 'include/login_manager/proto_bindings',
-      },
-      'sources': [
-        '<(proto_in_dir)/arc.proto',
-      ],
-      'includes': ['../../platform2/common-mk/protoc.gypi'],
-    },
-    {
-      'target_name': 'system_api-login_manager-protos',
-      'type': 'static_library',
-      'standalone_static_library': 1,
-      'dependencies': [
-        'system_api-login_manager-protos-gen',
-      ],
-      'sources': [
-        '<(SHARED_INTERMEDIATE_DIR)/include/login_manager/proto_bindings/arc.pb.cc',
-      ]
-    },
-    {
-      'target_name': 'system_api-chaps-protos-gen',
-      'type': 'none',
-      'variables': {
-        'proto_in_dir': 'dbus/chaps',
-        'proto_out_dir': 'include/chaps/proto_bindings',
-      },
-      'sources': [
-        '<(proto_in_dir)/ck_structs.proto',
-      ],
-      'includes': ['../../platform2/common-mk/protoc.gypi'],
-    },
-    {
-      'target_name': 'system_api-chaps-protos',
-      'type': 'static_library',
-      'standalone_static_library': 1,
-      'dependencies': [
-        'system_api-chaps-protos-gen',
-      ],
-      'sources': [
-        '<(SHARED_INTERMEDIATE_DIR)/include/chaps/proto_bindings/ck_structs.pb.cc',
       ]
     },
   ]

@@ -57,50 +57,11 @@ struct g2d_context {
 	unsigned int			cmd_nr;
 	unsigned int			cmd_buf_nr;
 	unsigned int			cmdlist_nr;
-	void				*event_userdata;
 };
 
 enum g2d_base_addr_reg {
 	g2d_dst = 0,
 	g2d_src
-};
-
-enum e_g2d_dir_mode {
-	G2D_DIR_MODE_POSITIVE = 0,
-	G2D_DIR_MODE_NEGATIVE = 1
-};
-
-union g2d_direction_val {
-	unsigned int val[2];
-	struct {
-		/* SRC_MSK_DIRECT_REG [0:1] (source) */
-		enum e_g2d_dir_mode		src_x_direction:1;
-		enum e_g2d_dir_mode		src_y_direction:1;
-
-		/* SRC_MSK_DIRECT_REG [2:3] */
-		unsigned int			reversed1:2;
-
-		/* SRC_MSK_DIRECT_REG [4:5] (mask) */
-		enum e_g2d_dir_mode		mask_x_direction:1;
-		enum e_g2d_dir_mode		mask_y_direction:1;
-
-		/* SRC_MSK_DIRECT_REG [6:31] */
-		unsigned int			padding1:26;
-
-		/* DST_PAT_DIRECT_REG [0:1] (destination) */
-		enum e_g2d_dir_mode		dst_x_direction:1;
-		enum e_g2d_dir_mode		dst_y_direction:1;
-
-		/* DST_PAT_DIRECT_REG [2:3] */
-		unsigned int			reversed2:2;
-
-		/* DST_PAT_DIRECT_REG [4:5] (pattern) */
-		enum e_g2d_dir_mode		pat_x_direction:1;
-		enum e_g2d_dir_mode		pat_y_direction:1;
-
-		/* DST_PAT_DIRECT_REG [6:31] */
-		unsigned int			padding2:26;
-	} data;
 };
 
 static unsigned int g2d_get_scaling(unsigned int src, unsigned int dst)
@@ -280,19 +241,6 @@ static void g2d_add_base_addr(struct g2d_context *ctx, struct g2d_image *img,
 }
 
 /*
- * g2d_set_direction - setup direction register (useful for overlapping blits).
- *
- * @ctx: a pointer to g2d_context structure.
- * @dir: a pointer to the g2d_direction_val structure.
- */
-static void g2d_set_direction(struct g2d_context *ctx,
-			const union g2d_direction_val *dir)
-{
-	g2d_add_cmd(ctx, SRC_MASK_DIRECT_REG, dir->val[0]);
-	g2d_add_cmd(ctx, DST_PAT_DIRECT_REG, dir->val[1]);
-}
-
-/*
  * g2d_reset - reset fimg2d hardware.
  *
  * @ctx: a pointer to g2d_context structure.
@@ -332,15 +280,8 @@ static int g2d_flush(struct g2d_context *ctx)
 	cmdlist.cmd_buf = (uint64_t)(uintptr_t)&ctx->cmd_buf[0];
 	cmdlist.cmd_nr = ctx->cmd_nr;
 	cmdlist.cmd_buf_nr = ctx->cmd_buf_nr;
-
-	if (ctx->event_userdata) {
-		cmdlist.event_type = G2D_EVENT_NONSTOP;
-		cmdlist.user_data = (uint64_t)(uintptr_t)(ctx->event_userdata);
-		ctx->event_userdata = NULL;
-	} else {
-		cmdlist.event_type = G2D_EVENT_NOT;
-		cmdlist.user_data = 0;
-	}
+	cmdlist.event_type = G2D_EVENT_NOT;
+	cmdlist.user_data = 0;
 
 	ctx->cmd_nr = 0;
 	ctx->cmd_buf_nr = 0;
@@ -392,22 +333,6 @@ struct g2d_context *g2d_init(int fd)
 void g2d_fini(struct g2d_context *ctx)
 {
 	free(ctx);
-}
-
-/**
- * g2d_config_event - setup userdata configuration for a g2d event.
- *		The next invocation of a g2d call (e.g. g2d_solid_fill) is
- *		then going to flag the command buffer as 'nonstop'.
- *		Completion of the command buffer execution can then be
- *		determined by using drmHandleEvent on the DRM fd.
- *		The userdata is 'consumed' in the process.
- *
- * @ctx: a pointer to g2d_context structure.
- * @userdata: a pointer to the user data
- */
-void g2d_config_event(struct g2d_context *ctx, void *userdata)
-{
-	ctx->event_userdata = userdata;
 }
 
 /**
@@ -544,101 +469,6 @@ g2d_copy(struct g2d_context *ctx, struct g2d_image *src,
 	g2d_add_cmd(ctx, SRC_COLOR_MODE_REG, src->color_mode);
 	g2d_add_base_addr(ctx, src, g2d_src);
 	g2d_add_cmd(ctx, SRC_STRIDE_REG, src->stride);
-
-	pt.data.x = src_x;
-	pt.data.y = src_y;
-	g2d_add_cmd(ctx, SRC_LEFT_TOP_REG, pt.val);
-	pt.data.x = src_x + w;
-	pt.data.y = src_y + h;
-	g2d_add_cmd(ctx, SRC_RIGHT_BOTTOM_REG, pt.val);
-
-	pt.data.x = dst_x;
-	pt.data.y = dst_y;
-	g2d_add_cmd(ctx, DST_LEFT_TOP_REG, pt.val);
-	pt.data.x = dst_x + w;
-	pt.data.y = dst_y + h;
-	g2d_add_cmd(ctx, DST_RIGHT_BOTTOM_REG, pt.val);
-
-	rop4.val = 0;
-	rop4.data.unmasked_rop3 = G2D_ROP3_SRC;
-	g2d_add_cmd(ctx, ROP4_REG, rop4.val);
-
-	return g2d_flush(ctx);
-}
-
-/**
- * g2d_move - copy content inside single buffer.
- *	Similar to libc's memmove() this copies a rectangular
- *	region of the provided buffer to another location, while
- *	properly handling the situation where source and
- *	destination rectangle overlap.
- *
- * @ctx: a pointer to g2d_context structure.
- * @img: a pointer to g2d_image structure providing
- *	buffer information.
- * @src_x: x position of source rectangle.
- * @src_y: y position of source rectangle.
- * @dst_x: x position of destination rectangle.
- * @dst_y: y position of destination rectangle.
- * @w: width of rectangle to move.
- * @h: height of rectangle to move.
- */
-int
-g2d_move(struct g2d_context *ctx, struct g2d_image *img,
-		unsigned int src_x, unsigned int src_y,
-		unsigned int dst_x, unsigned dst_y, unsigned int w,
-		unsigned int h)
-{
-	union g2d_rop4_val rop4;
-	union g2d_point_val pt;
-	union g2d_direction_val dir;
-	unsigned int src_w, src_h, dst_w, dst_h;
-
-	src_w = w;
-	src_h = h;
-	if (src_x + img->width > w)
-		src_w = img->width - src_x;
-	if (src_y + img->height > h)
-		src_h = img->height - src_y;
-
-	dst_w = w;
-	dst_h = w;
-	if (dst_x + img->width > w)
-		dst_w = img->width - dst_x;
-	if (dst_y + img->height > h)
-		dst_h = img->height - dst_y;
-
-	w = MIN(src_w, dst_w);
-	h = MIN(src_h, dst_h);
-
-	if (w == 0 || h == 0) {
-		fprintf(stderr, MSG_PREFIX "invalid width or height.\n");
-		return -EINVAL;
-	}
-
-	if (g2d_check_space(ctx, 13, 2))
-		return -ENOSPC;
-
-	g2d_add_cmd(ctx, DST_SELECT_REG, G2D_SELECT_MODE_BGCOLOR);
-	g2d_add_cmd(ctx, SRC_SELECT_REG, G2D_SELECT_MODE_NORMAL);
-
-	g2d_add_cmd(ctx, DST_COLOR_MODE_REG, img->color_mode);
-	g2d_add_cmd(ctx, SRC_COLOR_MODE_REG, img->color_mode);
-
-	g2d_add_base_addr(ctx, img, g2d_dst);
-	g2d_add_base_addr(ctx, img, g2d_src);
-
-	g2d_add_cmd(ctx, DST_STRIDE_REG, img->stride);
-	g2d_add_cmd(ctx, SRC_STRIDE_REG, img->stride);
-
-	dir.val[0] = dir.val[1] = 0;
-
-	if (dst_x >= src_x)
-		dir.data.src_x_direction = dir.data.dst_x_direction = 1;
-	if (dst_y >= src_y)
-		dir.data.src_y_direction = dir.data.dst_y_direction = 1;
-
-	g2d_set_direction(ctx, &dir);
 
 	pt.data.x = src_x;
 	pt.data.y = src_y;

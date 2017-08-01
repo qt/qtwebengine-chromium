@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 The Chromium OS Authors. All rights reserved.
+ * Copyright (c) 2016 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -91,12 +91,6 @@ drv_bo_new(struct driver *drv, uint32_t width, uint32_t height,
 struct bo *
 drv_bo_create(struct driver *drv, uint32_t width, uint32_t height,
 	      uint32_t format, uint64_t flags);
-
-struct bo *
-drv_bo_create_with_modifiers(struct driver *drv,
-			     uint32_t width, uint32_t height,
-			     uint32_t format,
-			     const uint64_t *modifiers, uint32_t count);
 
 void
 drv_bo_destroy(struct bo *bo);

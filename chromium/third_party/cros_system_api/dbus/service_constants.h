@@ -11,7 +11,6 @@
 // Chromium OS and Chromium environment.
 #include "apmanager/dbus-constants.h"
 #include "authpolicy/dbus-constants.h"
-#include "biod/dbus-constants.h"
 #include "cros-disks/dbus-constants.h"
 #include "cryptohome/dbus-constants.h"
 #include "debugd/dbus-constants.h"
@@ -62,7 +61,6 @@ const char kImageLoaderServiceName[] = "org.chromium.ImageLoader";
 const char kImageLoaderServicePath[] = "/org/chromium/ImageLoader";
 // Methods
 const char kRegisterComponent[] = "RegisterComponent";
-const char kLoadComponent[] = "LoadComponent";
 const char kGetComponentVersion[] = "GetComponentVersion";
 // Constants
 const char kBadResult[] = "";
@@ -93,8 +91,6 @@ const char kLibCrosServicePath[] = "/org/chromium/LibCrosService";
 const char kLibCrosServiceInterface[] = "org.chromium.LibCrosServiceInterface";
 // Methods
 const char kResolveNetworkProxy[] = "ResolveNetworkProxy";
-// TODO(teravest): Remove this once CheckLiveness is removed from
-// LibCrosService.
 const char kCheckLiveness[] = "CheckLiveness";
 const char kGetKioskAppRequiredPlatforVersion[] =
     "GetKioskAppRequiredPlatformVersion";
@@ -110,27 +106,6 @@ enum DisplayPowerState {
   DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON = 2,
   DISPLAY_POWER_INTERNAL_ON_EXTERNAL_OFF = 3,
 };
-
-const char kNetworkProxyServiceName[] = "org.chromium.NetworkProxyService";
-const char kNetworkProxyServicePath[] = "/org/chromium/NetworkProxyService";
-const char kNetworkProxyServiceInterface[] =
-    "org.chromium.NetworkProxyServiceInterface";
-const char kNetworkProxyServiceResolveProxyMethod[] = "ResolveProxy";
-
-const char kLivenessServiceName[] = "org.chromium.LivenessService";
-const char kLivenessServicePath[] = "/org/chromium/LivenessService";
-const char kLivenessServiceInterface[] =
-    "org.chromium.LivenessServiceInterface";
-const char kLivenessServiceCheckLivenessMethod[] = "CheckLiveness";
-
-const char kKioskAppServiceName[] = "org.chromium.KioskAppService";
-const char kKioskAppServicePath[] = "/org/chromium/KioskAppService";
-const char kKioskAppServiceInterface[] =
-    "org.chromium.KioskAppServiceInterface";
-// Methods
-const char kKioskAppServiceGetRequiredPlatformVersionMethod[] =
-    "GetRequiredPlatformVersion";
-
 }  // namespace chromeos
 
 namespace cromo {
@@ -150,18 +125,6 @@ const char kModemGsmNetworkInterface[] =
     "org.freedesktop.ModemManager.Modem.Gsm.Network";
 const char kModemGobiInterface[] = "org.chromium.ModemManager.Modem.Gobi";
 }  // namespace cromo
-
-namespace media_perception {
-
-const char kMediaPerceptionServiceName[] = "org.chromium.MediaPerception";
-const char kMediaPerceptionServicePath[] = "/org/chromium/MediaPerception";
-const char kMediaPerceptionInterface[] = "org.chromium.MediaPerception";
-
-const char kStateFunction[] = "State";
-const char kGetDiagnosticsFunction[] = "GetDiagnostics";
-const char kDetectionSignal[] = "MediaPerceptionDetection";
-
-}  // namespace media_perception
 
 namespace modemmanager {
 // ModemManager D-Bus service identifiers

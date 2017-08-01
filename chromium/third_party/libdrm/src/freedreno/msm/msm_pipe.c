@@ -32,25 +32,6 @@
 
 #include "msm_priv.h"
 
-static int query_param(struct fd_pipe *pipe, uint32_t param,
-		uint64_t *value)
-{
-	struct msm_pipe *msm_pipe = to_msm_pipe(pipe);
-	struct drm_msm_param req = {
-			.pipe = msm_pipe->pipe,
-			.param = param,
-	};
-	int ret;
-
-	ret = drmCommandWriteRead(pipe->dev->fd, DRM_MSM_GET_PARAM,
-			&req, sizeof(req));
-	if (ret)
-		return ret;
-
-	*value = req.value;
-
-	return 0;
-}
 
 static int msm_pipe_get_param(struct fd_pipe *pipe,
 		enum fd_param_id param, uint64_t *value)
@@ -67,10 +48,6 @@ static int msm_pipe_get_param(struct fd_pipe *pipe,
 	case FD_CHIP_ID:
 		*value = msm_pipe->chip_id;
 		return 0;
-	case FD_MAX_FREQ:
-		return query_param(pipe, MSM_PARAM_MAX_FREQ, value);
-	case FD_TIMESTAMP:
-		return query_param(pipe, MSM_PARAM_TIMESTAMP, value);
 	default:
 		ERROR_MSG("invalid param id: %d", param);
 		return -1;
@@ -110,15 +87,21 @@ static const struct fd_pipe_funcs funcs = {
 		.destroy = msm_pipe_destroy,
 };
 
-static uint64_t get_param(struct fd_pipe *pipe, uint32_t param)
+static uint64_t get_param(struct fd_device *dev, uint32_t pipe, uint32_t param)
 {
-	uint64_t value;
-	int ret = query_param(pipe, param, &value);
+	struct drm_msm_param req = {
+			.pipe = pipe,
+			.param = param,
+	};
+	int ret;
+
+	ret = drmCommandWriteRead(dev->fd, DRM_MSM_GET_PARAM, &req, sizeof(req));
 	if (ret) {
 		ERROR_MSG("get-param failed! %d (%s)", ret, strerror(errno));
 		return 0;
 	}
-	return value;
+
+	return req.value;
 }
 
 drm_private struct fd_pipe * msm_pipe_new(struct fd_device *dev,
@@ -140,14 +123,10 @@ drm_private struct fd_pipe * msm_pipe_new(struct fd_device *dev,
 	pipe = &msm_pipe->base;
 	pipe->funcs = &funcs;
 
-	/* initialize before get_param(): */
-	pipe->dev = dev;
 	msm_pipe->pipe = pipe_id[id];
-
-	/* these params should be supported since the first version of drm/msm: */
-	msm_pipe->gpu_id = get_param(pipe, MSM_PARAM_GPU_ID);
-	msm_pipe->gmem   = get_param(pipe, MSM_PARAM_GMEM_SIZE);
-	msm_pipe->chip_id = get_param(pipe, MSM_PARAM_CHIP_ID);
+	msm_pipe->gpu_id = get_param(dev, pipe_id[id], MSM_PARAM_GPU_ID);
+	msm_pipe->gmem   = get_param(dev, pipe_id[id], MSM_PARAM_GMEM_SIZE);
+	msm_pipe->chip_id = get_param(dev, pipe_id[id], MSM_PARAM_CHIP_ID);
 
 	if (! msm_pipe->gpu_id)
 		goto fail;

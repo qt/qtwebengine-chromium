@@ -8,13 +8,11 @@
 #include "helpers.h"
 #include "util.h"
 
-static struct supported_combination combos[2] = {
-	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+static struct supported_combination combos[4] = {
+	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE, BO_USE_CURSOR | BO_USE_LINEAR},
+	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE, BO_USE_RENDERING},
+	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE, BO_USE_CURSOR | BO_USE_LINEAR},
+	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE, BO_USE_RENDERING},
 };
 
 static int evdi_init(struct driver *drv)
@@ -29,7 +27,6 @@ struct backend backend_evdi =
 	.init = evdi_init,
 	.bo_create = drv_dumb_bo_create,
 	.bo_destroy = drv_dumb_bo_destroy,
-	.bo_import = drv_prime_bo_import,
 	.bo_map = drv_dumb_bo_map,
 };
 

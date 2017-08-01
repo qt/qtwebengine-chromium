@@ -3155,6 +3155,10 @@ bool GLES2DecoderImpl::Initialize(
   context_ = context;
   surface_ = surface;
 
+  // Set workarounds for the surface.
+  if (workarounds().rely_on_implicit_sync_for_swap_buffers)
+    surface_->SetRelyOnImplicitSync();
+
   // Create GPU Tracer for timing values.
   gpu_tracer_.reset(new GPUTracer(this));
 

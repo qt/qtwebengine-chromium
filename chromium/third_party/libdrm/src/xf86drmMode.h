@@ -328,9 +328,6 @@ typedef struct _drmModePlane {
 
 	uint32_t possible_crtcs;
 	uint32_t gamma_size;
-
-	uint32_t count_format_modifiers;
-	struct drm_format_modifier *format_modifiers;
 } drmModePlane, *drmModePlanePtr;
 
 typedef struct _drmModePlaneRes {
@@ -372,13 +369,6 @@ extern int drmModeAddFB2(int fd, uint32_t width, uint32_t height,
 			 uint32_t pixel_format, uint32_t bo_handles[4],
 			 uint32_t pitches[4], uint32_t offsets[4],
 			 uint32_t *buf_id, uint32_t flags);
-
-/* ...with format modifiers */
-int drmModeAddFB2WithModifiers(int fd, uint32_t width, uint32_t height,
-			       uint32_t pixel_format, uint32_t bo_handles[4],
-			       uint32_t pitches[4], uint32_t offsets[4],
-			       uint64_t modifier[4], uint32_t *buf_id, uint32_t flags);
-
 /**
  * Destroies the given framebuffer.
  */
@@ -479,7 +469,6 @@ extern int drmModePageFlip(int fd, uint32_t crtc_id, uint32_t fb_id,
 
 extern drmModePlaneResPtr drmModeGetPlaneResources(int fd);
 extern drmModePlanePtr drmModeGetPlane(int fd, uint32_t plane_id);
-extern drmModePlanePtr drmModeGetPlane2(int fd, uint32_t plane_id);
 extern int drmModeSetPlane(int fd, uint32_t plane_id, uint32_t crtc_id,
 			   uint32_t fb_id, uint32_t flags,
 			   int32_t crtc_x, int32_t crtc_y,

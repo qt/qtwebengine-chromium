@@ -34,7 +34,7 @@
  */
 
 /*
- * TODO the types we are after are defined in different headers on different
+ * TODO the types we are after are defined in diffrent headers on diffrent
  * platforms find which headers to include to get uint32_t
  */
 
@@ -270,10 +270,10 @@ int drmModeAddFB(int fd, uint32_t width, uint32_t height, uint8_t depth,
 	return 0;
 }
 
-int drmModeAddFB2WithModifiers(int fd, uint32_t width, uint32_t height,
-                               uint32_t pixel_format, uint32_t bo_handles[4],
-                               uint32_t pitches[4], uint32_t offsets[4],
-                               uint64_t modifier[4], uint32_t *buf_id, uint32_t flags)
+int drmModeAddFB2(int fd, uint32_t width, uint32_t height,
+		  uint32_t pixel_format, uint32_t bo_handles[4],
+		  uint32_t pitches[4], uint32_t offsets[4],
+		  uint32_t *buf_id, uint32_t flags)
 {
 	struct drm_mode_fb_cmd2 f;
 	int ret;
@@ -286,25 +286,12 @@ int drmModeAddFB2WithModifiers(int fd, uint32_t width, uint32_t height,
 	memcpy(f.handles, bo_handles, 4 * sizeof(bo_handles[0]));
 	memcpy(f.pitches, pitches, 4 * sizeof(pitches[0]));
 	memcpy(f.offsets, offsets, 4 * sizeof(offsets[0]));
-	if (modifier)
-		memcpy(f.modifier, modifier, 4 * sizeof(modifier[0]));
 
 	if ((ret = DRM_IOCTL(fd, DRM_IOCTL_MODE_ADDFB2, &f)))
 		return ret;
 
 	*buf_id = f.fb_id;
 	return 0;
-}
-
-int drmModeAddFB2(int fd, uint32_t width, uint32_t height,
-                  uint32_t pixel_format, uint32_t bo_handles[4],
-                  uint32_t pitches[4], uint32_t offsets[4],
-                  uint32_t *buf_id, uint32_t flags)
-{
-	return drmModeAddFB2WithModifiers(fd, width, height,
-					  pixel_format, bo_handles,
-					  pitches, offsets, NULL,
-					  buf_id, flags);
 }
 
 int drmModeRmFB(int fd, uint32_t bufferId)
@@ -488,13 +475,12 @@ _drmModeGetConnector(int fd, uint32_t connector_id, int probe)
 {
 	struct drm_mode_get_connector conn, counts;
 	drmModeConnectorPtr r = NULL;
-	struct drm_mode_modeinfo stack_mode;
 
 	memclear(conn);
 	conn.connector_id = connector_id;
 	if (!probe) {
 		conn.count_modes = 1;
-		conn.modes_ptr = VOID2U64(&stack_mode);
+		conn.modes_ptr = VOID2U64(drmMalloc(sizeof(struct drm_mode_modeinfo)));
 	}
 
 	if (drmIoctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &conn))
@@ -518,7 +504,7 @@ retry:
 			goto err_allocs;
 	} else {
 		conn.count_modes = 1;
-		conn.modes_ptr = VOID2U64(&stack_mode);
+		conn.modes_ptr = VOID2U64(drmMalloc(sizeof(struct drm_mode_modeinfo)));
 	}
 
 	if (conn.count_encoders) {
@@ -539,8 +525,7 @@ retry:
 	    counts.count_encoders < conn.count_encoders) {
 		drmFree(U642VOID(conn.props_ptr));
 		drmFree(U642VOID(conn.prop_values_ptr));
-		if (U642VOID(conn.modes_ptr) != &stack_mode)
-			drmFree(U642VOID(conn.modes_ptr));
+		drmFree(U642VOID(conn.modes_ptr));
 		drmFree(U642VOID(conn.encoders_ptr));
 
 		goto retry;
@@ -582,8 +567,7 @@ retry:
 err_allocs:
 	drmFree(U642VOID(conn.prop_values_ptr));
 	drmFree(U642VOID(conn.props_ptr));
-	if (U642VOID(conn.modes_ptr) != &stack_mode)
-		drmFree(U642VOID(conn.modes_ptr));
+	drmFree(U642VOID(conn.modes_ptr));
 	drmFree(U642VOID(conn.encoders_ptr));
 
 	return r;
@@ -974,15 +958,15 @@ int drmModeSetPlane(int fd, uint32_t plane_id, uint32_t crtc_id,
 	return DRM_IOCTL(fd, DRM_IOCTL_MODE_SETPLANE, &s);
 }
 
-static drmModePlanePtr get_plane(unsigned long cmd, int fd, uint32_t plane_id)
+drmModePlanePtr drmModeGetPlane(int fd, uint32_t plane_id)
 {
-	struct drm_mode_get_plane2 ovr, counts;
+	struct drm_mode_get_plane ovr, counts;
 	drmModePlanePtr r = 0;
 
 retry:
 	memclear(ovr);
 	ovr.plane_id = plane_id;
-	if (drmIoctl(fd, cmd, &ovr))
+	if (drmIoctl(fd, DRM_IOCTL_MODE_GETPLANE, &ovr))
 		return 0;
 
 	counts = ovr;
@@ -994,21 +978,11 @@ retry:
 			goto err_allocs;
 	}
 
-	if (ovr.count_format_modifiers) {
-		ovr.format_modifier_ptr =
-			VOID2U64(drmMalloc(ovr.count_format_modifiers *
-					   sizeof(struct drm_format_modifier)));
-		if (!ovr.format_modifier_ptr)
-			goto err_allocs;
-	}
-
-	if (drmIoctl(fd, cmd, &ovr))
+	if (drmIoctl(fd, DRM_IOCTL_MODE_GETPLANE, &ovr))
 		goto err_allocs;
 
-	if (counts.count_format_types < ovr.count_format_types ||
-	    counts.count_format_modifiers < ovr.count_format_modifiers) {
+	if (counts.count_format_types < ovr.count_format_types) {
 		drmFree(U642VOID(ovr.format_type_ptr));
-		drmFree(U642VOID(ovr.format_modifier_ptr));
 		goto retry;
 	}
 
@@ -1016,7 +990,6 @@ retry:
 		goto err_allocs;
 
 	r->count_formats = ovr.count_format_types;
-	r->count_format_modifiers = ovr.count_format_modifiers;
 	r->plane_id = ovr.plane_id;
 	r->crtc_id = ovr.crtc_id;
 	r->fb_id = ovr.fb_id;
@@ -1028,39 +1001,12 @@ retry:
 		drmFree(r->formats);
 		drmFree(r);
 		r = 0;
-		goto err_allocs;
-	}
-
-	r->format_modifiers =
-		drmAllocCpy(U642VOID(ovr.format_modifier_ptr),
-			    ovr.count_format_modifiers,
-			    sizeof(struct drm_format_modifier));
-	if (ovr.count_format_modifiers && !r->format_modifiers) {
-		drmFree(r->formats);
-		drmFree(r);
-		r = 0;
 	}
 
 err_allocs:
 	drmFree(U642VOID(ovr.format_type_ptr));
-	drmFree(U642VOID(ovr.format_modifier_ptr));
 
 	return r;
-}
-
-drmModePlanePtr drmModeGetPlane2(int fd, uint32_t plane_id)
-{
-	drmModePlanePtr r = get_plane(DRM_IOCTL_MODE_GETPLANE2, fd, plane_id);
-
-	if (r || errno != EINVAL)
-		return r;
-
-	return get_plane(DRM_IOCTL_MODE_GETPLANE, fd, plane_id);
-}
-
-drmModePlanePtr drmModeGetPlane(int fd, uint32_t plane_id)
-{
-	return get_plane(DRM_IOCTL_MODE_GETPLANE, fd, plane_id);
 }
 
 void drmModeFreePlane(drmModePlanePtr ptr)
@@ -1069,7 +1015,6 @@ void drmModeFreePlane(drmModePlanePtr ptr)
 		return;
 
 	drmFree(ptr->formats);
-	drmFree(ptr->format_modifiers);
 	drmFree(ptr);
 }
 

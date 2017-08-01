@@ -37,11 +37,6 @@ libkms_la_SOURCES += $(LIBKMS_EXYNOS_FILES)
 AM_CFLAGS += -I$(top_srcdir)/exynos
 endif
 
-if HAVE_MEDIATEK
-libkms_la_SOURCES += $(LIBKMS_MEDIATEK_FILES)
-AM_CFLAGS += -I$(top_srcdir)/mediatek
-endif
-
 libkmsincludedir = ${includedir}/libkms
 libkmsinclude_HEADERS = $(LIBKMS_H_FILES)
 
@@ -49,4 +44,4 @@ pkgconfigdir = @pkgconfigdir@
 pkgconfig_DATA = libkms.pc
 
 TESTS = kms-symbol-check
-EXTRA_DIST = $(TESTS)
+EXTRA_DIST = Android.mk $(TESTS)

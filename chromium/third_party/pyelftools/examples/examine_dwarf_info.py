@@ -9,10 +9,14 @@
 from __future__ import print_function
 import sys
 
-# If pyelftools is not installed, the example can also run from the root or
-# examples/ dir of the source distribution.
-sys.path[0:0] = ['.', '..']
+# If elftools is not installed, maybe we're running from the root or examples
+# dir of the source distribution
+try:
+    import elftools
+except ImportError:
+    sys.path.extend(['.', '..'])
 
+from elftools.common.py3compat import bytes2str
 from elftools.elf.elffile import ELFFile
 
 
@@ -42,8 +46,15 @@ def process_file(filename):
             top_DIE = CU.get_top_DIE()
             print('    Top DIE with tag=%s' % top_DIE.tag)
 
-            # We're interested in the filename...
-            print('    name=%s' % top_DIE.get_full_path())
+            # Each DIE holds an OrderedDict of attributes, mapping names to
+            # values. Values are represented by AttributeValue objects in
+            # elftools/dwarf/die.py
+            # We're interested in the DW_AT_name attribute. Note that its value
+            # is usually a string taken from the .debug_str section. This
+            # is done transparently by the library, and such a value will be
+            # simply given as a string.
+            name_attr = top_DIE.attributes['DW_AT_name']
+            print('    name=%s' % bytes2str(name_attr.value))
 
 if __name__ == '__main__':
     for filename in sys.argv[1:]:

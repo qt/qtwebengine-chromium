@@ -54,6 +54,7 @@ class GbmSurfaceless : public gl::SurfacelessEGL {
                           int height,
                           const SwapCompletionCallback& callback) override;
   EGLConfig GetConfig() override;
+  void SetRelyOnImplicitSync() override;
 
  protected:
   ~GbmSurfaceless() override;
@@ -93,6 +94,8 @@ class GbmSurfaceless : public gl::SurfacelessEGL {
   bool has_implicit_external_sync_;
   bool last_swap_buffers_result_ = true;
   bool swap_buffers_pending_ = false;
+  bool rely_on_implicit_sync_ = false;
+  bool is_on_external_drm_device_ = false;
 
   base::WeakPtrFactory<GbmSurfaceless> weak_factory_;
 

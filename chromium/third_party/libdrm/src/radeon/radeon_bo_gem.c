@@ -103,7 +103,7 @@ static struct radeon_bo *bo_open(struct radeon_bo_manager *bom,
         args.size = size;
         args.alignment = alignment;
         args.initial_domain = bo->base.domains;
-        args.flags = flags;
+        args.flags = 0;
         args.handle = 0;
         r = drmCommandWriteRead(bom->fd, DRM_RADEON_GEM_CREATE,
                                 &args, sizeof(args));

@@ -46,6 +46,7 @@ const char kDevicePresentationHide[] = "DevicePresentationHide";
 const char kDeviceSize[] = "DeviceSize";
 const char kDriveIsRotational[] = "DriveIsRotational";
 const char kDriveModel[] = "DriveModel";
+const char kExperimentalFeaturesEnabled[] = "ExperimentalFeaturesEnabled";
 const char kIdLabel[] = "IdLabel";
 const char kIdUuid[] = "IdUuid";
 const char kVendorId[] = "VendorId";

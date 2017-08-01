@@ -142,12 +142,64 @@ struct wl_message {
 	const struct wl_interface **types;
 };
 
+/**
+ * Protocol object interface
+ *
+ * A wl_interface describes the API of a protocol object defined in the Wayland
+ * protocol specification. The protocol implementation uses a wl_interface
+ * within its marshalling machinery for encoding client requests.
+ *
+ * The `name` of a wl_interface is the name of the corresponding protocol
+ * interface, and `version` represents the version of the interface. The members
+ * `method_count` and `event_count` represent the number of `methods` (requests)
+ * and `events` in the respective wl_message members.
+ *
+ * For example, consider a protocol interface `foo`, marked as version `1`, with
+ * two requests and one event.
+ *
+ * \code
+ * <interface name="foo" version="1">
+ *   <request name="a"></request>
+ *   <request name="b"></request>
+ *   <event name="c"></event>
+ * </interface>
+ * \endcode
+ *
+ * Given two wl_message arrays `foo_requests` and `foo_events`, a wl_interface
+ * for `foo` might be:
+ *
+ * \code
+ * struct wl_interface foo_interface = {
+ *         "foo", 1,
+ *         2, foo_requests,
+ *         1, foo_events
+ * };
+ * \endcode
+ *
+ * \note The server side of the protocol may define interface <em>implementation
+ *       types</em> that incorporate the term `interface` in their name. Take
+ *       care to not confuse these server-side `struct`s with a wl_interface
+ *       variable whose name also ends in `interface`. For example, while the
+ *       server may define a type `struct wl_foo_interface`, the client may
+ *       define a `struct wl_interface wl_foo_interface`.
+ *
+ * \sa wl_message
+ * \sa wl_proxy
+ * \sa <a href="https://wayland.freedesktop.org/docs/html/ch04.html#sect-Protocol-Interfaces">Interfaces</a>
+ * \sa <a href="https://wayland.freedesktop.org/docs/html/ch04.html#sect-Protocol-Versioning">Versioning</a>
+ */
 struct wl_interface {
+	/** Interface name */
 	const char *name;
+	/** Interface version */
 	int version;
+	/** Number of methods (requests) */
 	int method_count;
+	/** Method (request) signatures */
 	const struct wl_message *methods;
+	/** Number of events */
 	int event_count;
+	/** Event signatures */
 	const struct wl_message *events;
 };
 
@@ -209,7 +261,9 @@ struct wl_interface {
  * \sa http://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/tree/include/linux/list.h
  */
 struct wl_list {
+	/** Previous list element */
 	struct wl_list *prev;
+	/** Next list element */
 	struct wl_list *next;
 };
 
@@ -438,8 +492,11 @@ wl_list_insert_list(struct wl_list *list, struct wl_list *other);
  *
  */
 struct wl_array {
+	/** Array size */
 	size_t size;
+	/** Allocated space */
 	size_t alloc;
+	/** Array data */
 	void *data;
 };
 
@@ -588,50 +645,86 @@ wl_fixed_from_int(int i)
 }
 
 /**
- * \brief A union representing all of the basic data types that can be passed
- * along the wayland wire format.
+ * Protocol message argument data types
  *
- * This union represents all of the basic data types that can be passed in the
- * wayland wire format.  It is used by dispatchers and runtime-friendly
- * versions of the event and request marshaling functions.
+ * This union represents all of the argument types in the Wayland protocol wire
+ * format. The protocol implementation uses wl_argument within its marshalling
+ * machinery for dispatching messages between a client and a compositor.
+ *
+ * \sa wl_message
+ * \sa wl_interface
+ * \sa <a href="https://wayland.freedesktop.org/docs/html/ch04.html#sect-Protocol-wire-Format">Wire Format</a>
  */
 union wl_argument {
-	int32_t i; /**< signed integer */
-	uint32_t u; /**< unsigned integer */
-	wl_fixed_t f; /**< fixed point */
-	const char *s; /**< string */
-	struct wl_object *o; /**< object */
-	uint32_t n; /**< new_id */
-	struct wl_array *a; /**< array */
-	int32_t h; /**< file descriptor */
+	int32_t i;           /**< `int`    */
+	uint32_t u;          /**< `uint`   */
+	wl_fixed_t f;        /**< `fixed`  */
+	const char *s;       /**< `string` */
+	struct wl_object *o; /**< `object` */
+	uint32_t n;          /**< `new_id` */
+	struct wl_array *a;  /**< `array`  */
+	int32_t h;           /**< `fd`     */
 };
 
 /**
- * \brief A function pointer type for a dispatcher.
+ * Dispatcher function type alias
  *
  * A dispatcher is a function that handles the emitting of callbacks in client
- * code.  For programs directly using the C library, this is done by using
- * libffi to call function pointers.  When binding to languages other than C,
+ * code. For programs directly using the C library, this is done by using
+ * libffi to call function pointers. When binding to languages other than C,
  * dispatchers provide a way to abstract the function calling process to be
  * friendlier to other function calling systems.
  *
- * A dispatcher takes five arguments:  The first is the dispatcher-specific
- * implementation data associated with the target object.  The second is the
- * object on which the callback is being invoked (either wl_proxy or
- * wl_resource).  The third and fourth arguments are the opcode the wl_message
- * structure corresponding to the callback being emitted.  The final argument
- * is an array of arguments received from the other process via the wire
- * protocol.
+ * A dispatcher takes five arguments: The first is the dispatcher-specific
+ * implementation associated with the target object. The second is the object
+ * upon which the callback is being invoked (either wl_proxy or wl_resource).
+ * The third and fourth arguments are the opcode and the wl_message
+ * corresponding to the callback. The final argument is an array of arguments
+ * received from the other process via the wire protocol.
+ *
+ * \param "const void *" Dispatcher-specific implementation data
+ * \param "void *" Callback invocation target (wl_proxy or `wl_resource`)
+ * \param uint32_t Callback opcode
+ * \param "const struct wl_message *" Callback message signature
+ * \param "union wl_argument *" Array of received arguments
+ *
+ * \return 0 on success, or -1 on failure
  */
 typedef int (*wl_dispatcher_func_t)(const void *, void *, uint32_t,
 				    const struct wl_message *,
 				    union wl_argument *);
 
+/**
+ * Log function type alias
+ *
+ * The C implementation of the Wayland protocol abstracts the details of
+ * logging. Users may customize the logging behavior, with a function conforming
+ * to the `wl_log_func_t` type, via `wl_log_set_handler_client` and
+ * `wl_log_set_handler_server`.
+ *
+ * A `wl_log_func_t` must conform to the expectations of `vprintf`, and
+ * expects two arguments: a string to write and a corresponding variable
+ * argument list. While the string to write may contain format specifiers and
+ * use values in the variable argument list, the behavior of any `wl_log_func_t`
+ * depends on the implementation.
+ *
+ * \note Take care to not confuse this with `wl_protocol_logger_func_t`, which
+ *       is a specific server-side logger for requests and events.
+ *
+ * \param "const char *" String to write to the log, containing optional format
+ *                       specifiers
+ * \param "va_list" Variable argument list
+ *
+ * \sa wl_log_set_handler_client
+ * \sa wl_log_set_handler_server
+ */
 typedef void (*wl_log_func_t)(const char *, va_list) WL_PRINTF(1, 0);
 
-/** \enum wl_iterator_result
+/**
+ * Return value of an iterator function
  *
- * This enum represents the return value of an iterator function.
+ * \sa wl_client_for_each_resource_iterator_func_t
+ * \sa wl_client_for_each_resource
  */
 enum wl_iterator_result {
 	/** Stop the iteration */

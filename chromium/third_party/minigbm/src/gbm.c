@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 The Chromium OS Authors. All rights reserved.
+ * Copyright (c) 2014 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -128,32 +128,6 @@ PUBLIC struct gbm_bo *gbm_bo_create(struct gbm_device *gbm, uint32_t width,
 
 	bo->bo = drv_bo_create(gbm->drv, width, height, format,
 			       gbm_convert_flags(flags));
-
-	if (!bo->bo) {
-		free(bo);
-		return NULL;
-	}
-
-	return bo;
-}
-
-PUBLIC struct gbm_bo *gbm_bo_create_with_modifiers(struct gbm_device *gbm,
-						   uint32_t width,
-						   uint32_t height,
-						   uint32_t format,
-						   const uint64_t *modifiers,
-						   uint32_t count)
-{
-	struct gbm_bo *bo;
-
-	bo = gbm_bo_new(gbm, format);
-
-	if (!bo)
-		return NULL;
-
-	bo->bo = drv_bo_create_with_modifiers(gbm->drv,
-					      width, height, format,
-					      modifiers, count);
 
 	if (!bo->bo) {
 		free(bo);

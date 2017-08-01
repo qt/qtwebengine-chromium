@@ -43,7 +43,7 @@ const char kSessionManagerInitMachineInfo[] = "InitMachineInfo";
 const char kSessionManagerCheckArcAvailability[] = "CheckArcAvailability";
 const char kSessionManagerStartArcInstance[] = "StartArcInstance";
 const char kSessionManagerStopArcInstance[] = "StopArcInstance";
-const char kSessionManagerSetArcCpuRestriction[] = "SetArcCpuRestriction";
+const char kSessionManagerPrioritizeArcInstance[] = "PrioritizeArcInstance";
 const char kSessionManagerEmitArcBooted[] = "EmitArcBooted";
 const char kSessionManagerGetArcStartTimeTicks[] = "GetArcStartTimeTicks";
 const char kSessionManagerRemoveArcData[] = "RemoveArcData";
@@ -61,46 +61,6 @@ const char kPropertyChangeCompleteSignal[] = "PropertyChangeComplete";
 // ARC instance signals.
 const char kArcInstanceStopped[] = "ArcInstanceStopped";
 const char kArcInstanceRebooted[] = "ArcInstanceRebooted";
-
-// D-Bus error codes
-namespace dbus_error {
-#define INTERFACE "org.chromium.SessionManagerInterface"
-
-const char kNone[] = INTERFACE ".None";
-const char kArcCpuCgroupFail[] = INTERFACE ".ArcCpuCgroupFail";
-const char kArcInstanceRunning[] = INTERFACE ".ArcInstanceRunning";
-const char kContainerStartupFail[] = INTERFACE ".ContainerStartupFail";
-const char kContainerShutdownFail[] = INTERFACE ".ContainerShutdownFail";
-const char kEmitFailed[] = INTERFACE ".EmitFailed";
-const char kInitMachineInfoFail[] = INTERFACE ".InitMachineInfoFail";
-const char kInvalidAccount[] = INTERFACE ".InvalidAccount";
-const char kLowFreeDisk[] = INTERFACE ".LowFreeDisk";
-const char kNoOwnerKey[] = INTERFACE ".NoOwnerKey";
-const char kNoUserNssDb[] = INTERFACE ".NoUserNssDb";
-const char kNotAvailable[] = INTERFACE ".NotAvailable";
-const char kNotStarted[] = INTERFACE ".NotStarted";
-const char kPolicyInitFail[] = INTERFACE ".PolicyInitFail";
-const char kPubkeySetIllegal[] = INTERFACE ".PubkeySetIllegal";
-const char kPolicySignatureRequired[] = INTERFACE ".PolicySignatureRequired";
-const char kSessionDoesNotExist[] = INTERFACE ".SessionDoesNotExist";
-const char kSessionExists[] = INTERFACE ".SessionExists";
-const char kSigDecodeFail[] = INTERFACE ".SigDecodeFail";
-const char kSigEncodeFail[] = INTERFACE ".SigEncodeFail";
-const char kTestingChannelError[] = INTERFACE ".TestingChannelError";
-const char kUnknownPid[] = INTERFACE ".UnknownPid";
-const char kVerifyFail[] = INTERFACE ".VerifyFail";
-const char kVpdUpdateFailed[] = INTERFACE ".VpdUpdateFailed";
-
-#undef INTERFACE
-}  // namespace dbus_error
-
-// Values
-enum ContainerCpuRestrictionState {
-  CONTAINER_CPU_RESTRICTION_FOREGROUND = 0,
-  CONTAINER_CPU_RESTRICTION_BACKGROUND = 1,
-  NUM_CONTAINER_CPU_RESTRICTION_STATES = 2,
-};
-
 }  // namespace login_manager
 
 #endif  // SYSTEM_API_DBUS_LOGIN_MANAGER_DBUS_CONSTANTS_H_

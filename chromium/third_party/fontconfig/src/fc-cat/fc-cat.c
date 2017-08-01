@@ -298,6 +298,7 @@ main (int argc, char **argv)
 	return 1;
     }
     FcConfigSetCurrent (config);
+    FcConfigDestroy (config);
     
     args = FcStrSetCreate ();
     if (!args)
@@ -314,12 +315,6 @@ main (int argc, char **argv)
 		fprintf (stderr, "%s: malloc failure\n", argv[0]);
 		return 1;
 	    }
-	}
-	arglist = FcStrListCreate (args);
-	if (!arglist)
-	{
-	    fprintf (stderr, "%s: malloc failure\n", argv[0]);
-	    return 1;
 	}
     }
     else
@@ -340,20 +335,26 @@ main (int argc, char **argv)
 	fprintf (stderr, "%s: malloc failure\n", argv[0]);
 	return 1;
     }
+    FcStrSetDestroy (args);
 
     while ((arg = FcStrListNext (arglist)))
     {
 	int	    j;
 	FcChar8	    *cache_file = NULL;
 	struct stat file_stat;
-	
+
+	/* reset errno */
+	errno = 0;
 	if (FcFileIsDir (arg))
 	    cache = FcDirCacheLoad (arg, config, &cache_file);
 	else
 	    cache = FcDirCacheLoadFile (arg, &file_stat);
 	if (!cache)
 	{
-	    perror ((char *) arg);
+	    if (errno != 0)
+		perror ((char *) arg);
+	    else
+		fprintf (stderr, "%s: Unable to load the cache: %s\n", argv[0], arg);
 	    ret++;
 	    continue;
 	}
@@ -384,6 +385,7 @@ main (int argc, char **argv)
 	if (cache_file)
 	    FcStrFree (cache_file);
     }
+    FcStrListDone (arglist);
 
     FcFini ();
     return 0;

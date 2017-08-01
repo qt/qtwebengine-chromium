@@ -41,11 +41,8 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#ifdef MAJOR_IN_MKDEV
+#ifdef HAVE_SYS_MKDEV_H
 #include <sys/mkdev.h>
-#endif
-#ifdef MAJOR_IN_SYSMACROS
-#include <sys/sysmacros.h>
 #endif
 
 #include "libdrm_macros.h"
@@ -134,11 +131,6 @@ linux_from_sysfs(int fd, struct kms_driver **out)
 	if (!strcmp(name, "exynos"))
 		ret = exynos_create(fd, out);
 	else
-#endif
-#ifdef HAVE_MEDIATEK
-        if (!strcmp(name, "mediatek"))
-                ret = mediatek_create(fd, out);
-        else
 #endif
 		ret = -ENOSYS;
 

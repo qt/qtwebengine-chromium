@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 The Chromium OS Authors. All rights reserved.
+ * Copyright (c) 2016 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -46,7 +46,6 @@ struct map_info {
 	size_t length;
 	uint32_t handle;
 	int32_t refcount;
-	void *priv;
 };
 
 struct supported_combination {
@@ -67,15 +66,8 @@ struct backend
 	void (*close)(struct driver *drv);
 	int (*bo_create)(struct bo *bo, uint32_t width, uint32_t height,
 			 uint32_t format, uint32_t flags);
-	int (*bo_create_with_modifiers)(struct bo *bo,
-					uint32_t width, uint32_t height,
-					uint32_t format,
-					const uint64_t *modifiers,
-					uint32_t count);
-	int (*bo_destroy)(struct bo *bo);
-	int (*bo_import)(struct bo *bo, struct drv_import_fd_data *data);
 	void* (*bo_map)(struct bo *bo, struct map_info *data, size_t plane);
-	int (*bo_unmap)(struct bo *bo, struct map_info *data);
+	int (*bo_destroy)(struct bo *bo);
 	uint32_t (*resolve_format)(uint32_t format);
 	struct list_head combinations;
 };

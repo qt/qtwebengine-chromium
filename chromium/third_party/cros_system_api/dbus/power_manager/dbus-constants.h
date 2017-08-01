@@ -21,7 +21,6 @@ const char kRequestRestartMethod[] = "RequestRestart";
 const char kRequestShutdownMethod[] = "RequestShutdown";
 const char kRequestSuspendMethod[] = "RequestSuspend";
 const char kGetPowerSupplyPropertiesMethod[] = "GetPowerSupplyProperties";
-const char kGetSwitchStatesMethod[] = "GetSwitchStates";
 const char kHandleUserActivityMethod[] = "HandleUserActivity";
 const char kHandleVideoActivityMethod[] = "HandleVideoActivity";
 const char kSetIsProjectingMethod[] = "SetIsProjecting";

@@ -1,9 +1,11 @@
-#-------------------------------------------------------------------------------
-# elftools: port of OrderedDict to work on Python < 2.7
+# http://code.activestate.com/recipes/576693/ (r9)
+# 	Created by Raymond Hettinger on Wed, 18 Mar 2009 (MIT) 
 #
-# Taken from http://code.activestate.com/recipes/576693/ , revision 9
-# Code by Raymond Hettinger. License: MIT
-#-------------------------------------------------------------------------------
+# Backport of OrderedDict() class that runs on Python 2.4, 2.5, 2.6, 2.7 
+# and pypy.
+# Passes Python2.7's test suite and incorporates all the latest updates.
+#
+
 try:
     from thread import get_ident as _get_ident
 except ImportError:

@@ -10,10 +10,12 @@
 from __future__ import print_function
 import sys
 
-# If pyelftools is not installed, the example can also run from the root or
-# examples/ dir of the source distribution.
-sys.path[0:0] = ['.', '..']
-
+# If elftools is not installed, maybe we're running from the root or examples
+# dir of the source distribution
+try:
+    import elftools
+except ImportError:
+    sys.path.extend(['.', '..'])
 
 from elftools.common.py3compat import itervalues
 from elftools.elf.elffile import ELFFile
@@ -84,7 +86,7 @@ def show_loclist(loclist, dwarfinfo, indent):
         else:
             d.append(str(loc_entity))
     return '\n'.join(indent + s for s in d)
-
+    
 
 def attribute_has_location_list(attr):
     """ Only some attributes can have location list values, if they have the
