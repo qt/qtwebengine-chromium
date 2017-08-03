@@ -307,7 +307,7 @@ component("gl") {
         "//third_party/mesa:osmesa",
       ]
     }
-    if (is_linux) {
+    if (is_linux || is_win) {
       sources -= [
         "gl_surface_egl.cc",
         "gl_surface_egl.h",
