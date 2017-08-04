@@ -685,7 +685,7 @@ inline LinkedHashSet<T, U, V, W>& LinkedHashSet<T, U, V, W>::operator=(
   return *this;
 }
 
-inline void swapAnchor(LinkedHashSetNodeBase& a, LinkedHashSetNodeBase& b);
+inline void SwapAnchor(LinkedHashSetNodeBase& a, LinkedHashSetNodeBase& b);
 
 template <typename T, typename U, typename V, typename W>
 inline void LinkedHashSet<T, U, V, W>::Swap(LinkedHashSet& other) {
