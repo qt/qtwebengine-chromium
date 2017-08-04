@@ -1387,7 +1387,9 @@ DXVAVideoDecodeAccelerator::GetSupportedProfiles(
     if (!::GetModuleHandle(mfdll)) {
       // Windows N is missing the media foundation DLLs unless the media
       // feature pack is installed.
+#if !defined(TOOLKIT_QT)
       PLOG(ERROR) << "DXVAVDA fatal error: Could not load " << mfdll;
+#endif
       return profiles;
     }
   }
@@ -1422,8 +1424,11 @@ DXVAVideoDecodeAccelerator::GetSupportedProfiles(
 // static
 void DXVAVideoDecodeAccelerator::PreSandboxInitialization() {
   for (const wchar_t* mfdll : kMediaFoundationVideoDecoderDLLs) {
-    if (!::LoadLibrary(mfdll))
+    if (!::LoadLibrary(mfdll)) {
+#if !defined(TOOLKIT_QT)
       PLOG(ERROR) << "DXVAVDA fatal error: could not LoadLibrary: " << mfdll;
+#endif
+    }
   }
 
   if (!::LoadLibrary(L"dxva2.dll"))
