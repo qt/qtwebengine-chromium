@@ -589,7 +589,9 @@ uint32_t MediaFoundationVideoEncodeAccelerator::EnumerateHardwareEncoders(
 
   for (const wchar_t* mfdll : kMediaFoundationVideoEncoderDLLs) {
     if (!::GetModuleHandle(mfdll)) {
+#if !defined(TOOLKIT_QT)
       DVLOG(ERROR) << mfdll << " is required for encoding";
+#endif
       return 0;
     }
   }
