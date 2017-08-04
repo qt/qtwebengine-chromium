@@ -1225,7 +1225,9 @@ DXVAVideoDecodeAccelerator::GetSupportedProfiles(
     if (!::GetModuleHandle(mfdll)) {
       // Windows N is missing the media foundation DLLs unless the media
       // feature pack is installed.
+#if !defined(TOOLKIT_QT)
       DVLOG(ERROR) << mfdll << " is required for hardware video decoding";
+#endif
       return profiles;
     }
   }
