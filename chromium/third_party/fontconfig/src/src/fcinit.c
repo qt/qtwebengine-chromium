@@ -36,14 +36,13 @@
 #endif
 
 static FcConfig *
-FcInitFallbackConfig (const FcChar8 *sysroot)
+FcInitFallbackConfig (void)
 {
     FcConfig	*config;
 
     config = FcConfigCreate ();
     if (!config)
 	goto bail0;
-    FcConfigSetSysRoot (config, sysroot);
     if (!FcConfigAddDir (config, (FcChar8 *) FC_DEFAULT_FONTS))
 	goto bail1;
     if (!FcConfigAddCacheDir (config, (FcChar8 *) FC_CACHEDIR))
@@ -79,35 +78,20 @@ FcInitLoadOwnConfig (FcConfig *config)
 
     if (!FcConfigParseAndLoad (config, 0, FcTrue))
     {
-	const FcChar8 *sysroot = FcConfigGetSysRoot (config);
-	FcConfig *fallback = FcInitFallbackConfig (sysroot);
-
 	FcConfigDestroy (config);
-
-	return fallback;
+	return FcInitFallbackConfig ();
     }
 
     if (config->cacheDirs && config->cacheDirs->num == 0)
     {
 	FcChar8 *prefix, *p;
 	size_t plen;
-	FcBool have_own = FcFalse;
-	char *env_file, *env_path;
 
-	env_file = getenv ("FONTCONFIG_FILE");
-	env_path = getenv ("FONTCONFIG_PATH");
-	if ((env_file != NULL && env_file[0] != 0) ||
-	    (env_path != NULL && env_path[0] != 0))
-	    have_own = FcTrue;
-
-	if (!have_own)
-	{
-	    fprintf (stderr,
-		     "Fontconfig warning: no <cachedir> elements found. Check configuration.\n");
-	    fprintf (stderr,
-		     "Fontconfig warning: adding <cachedir>%s</cachedir>\n",
-		     FC_CACHEDIR);
-	}
+	fprintf (stderr,
+		 "Fontconfig warning: no <cachedir> elements found. Check configuration.\n");
+	fprintf (stderr,
+		 "Fontconfig warning: adding <cachedir>%s</cachedir>\n",
+		 FC_CACHEDIR);
 	prefix = FcConfigXdgCacheHome ();
 	if (!prefix)
 	    goto bail;
@@ -118,26 +102,19 @@ FcInitLoadOwnConfig (FcConfig *config)
 	prefix = p;
 	memcpy (&prefix[plen], FC_DIR_SEPARATOR_S "fontconfig", 11);
 	prefix[plen + 11] = 0;
-	if (!have_own)
-	    fprintf (stderr,
-		     "Fontconfig warning: adding <cachedir prefix=\"xdg\">fontconfig</cachedir>\n");
+	fprintf (stderr,
+		 "Fontconfig warning: adding <cachedir prefix=\"xdg\">fontconfig</cachedir>\n");
 
 	if (!FcConfigAddCacheDir (config, (FcChar8 *) FC_CACHEDIR) ||
 	    !FcConfigAddCacheDir (config, (FcChar8 *) prefix))
 	{
-	    FcConfig *fallback;
-	    const FcChar8 *sysroot;
-
 	  bail:
-	    sysroot = FcConfigGetSysRoot (config);
 	    fprintf (stderr,
 		     "Fontconfig error: out of memory");
 	    if (prefix)
 		FcStrFree (prefix);
-	    fallback = FcInitFallbackConfig (sysroot);
 	    FcConfigDestroy (config);
-
-	    return fallback;
+	    return FcInitFallbackConfig ();
 	}
 	FcStrFree (prefix);
     }
@@ -192,8 +169,6 @@ FcFini (void)
     FcConfigFini ();
     FcCacheFini ();
     FcDefaultFini ();
-    FcObjectFini ();
-    FcConfigPathFini ();
 }
 
 /*
@@ -203,18 +178,11 @@ FcBool
 FcInitReinitialize (void)
 {
     FcConfig	*config;
-    FcBool	ret;
 
     config = FcInitLoadConfigAndFonts ();
     if (!config)
 	return FcFalse;
-    ret = FcConfigSetCurrent (config);
-    /* FcConfigSetCurrent() increases the refcount.
-     * decrease it here to avoid the memory leak.
-     */
-    FcConfigDestroy (config);
-
-    return ret;
+    return FcConfigSetCurrent (config);
 }
 
 FcBool
@@ -223,8 +191,6 @@ FcInitBringUptoDate (void)
     FcConfig	*config = FcConfigGetCurrent ();
     time_t	now;
 
-    if (!config)
-	return FcFalse;
     /*
      * rescanInterval == 0 disables automatic up to date
      */

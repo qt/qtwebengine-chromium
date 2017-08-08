@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 The Chromium OS Authors. All rights reserved.
+ * Copyright 2014 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -16,6 +16,7 @@ int drv_dumb_bo_create(struct bo *bo, uint32_t width, uint32_t height,
 		       uint32_t format, uint32_t flags);
 int drv_dumb_bo_destroy(struct bo *bo);
 int drv_gem_bo_destroy(struct bo *bo);
+int drv_prime_bo_import(struct bo *bo, struct drv_import_fd_data *data);
 void *drv_dumb_bo_map(struct bo *bo, struct map_info *data, size_t plane);
 uintptr_t drv_get_reference_count(struct driver *drv, struct bo *bo,
 				  size_t plane);

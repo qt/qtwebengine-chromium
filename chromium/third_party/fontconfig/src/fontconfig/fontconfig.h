@@ -51,8 +51,8 @@ typedef int		FcBool;
  */
 
 #define FC_MAJOR	2
-#define FC_MINOR	12
-#define FC_REVISION	1
+#define FC_MINOR	11
+#define FC_REVISION	0
 
 #define FC_VERSION	((FC_MAJOR * 10000) + (FC_MINOR * 100) + (FC_REVISION))
 
@@ -66,10 +66,7 @@ typedef int		FcBool;
  * it means multiple copies of the font information.
  */
 
-#define FC_CACHE_VERSION_NUMBER	7
-#define _FC_STRINGIFY_(s)    	#s
-#define _FC_STRINGIFY(s)    	_FC_STRINGIFY_(s)
-#define FC_CACHE_VERSION    	_FC_STRINGIFY(FC_CACHE_VERSION_NUMBER)
+#define FC_CACHE_VERSION    "4"
 
 #define FcTrue		1
 #define FcFalse		0
@@ -78,7 +75,7 @@ typedef int		FcBool;
 #define FC_STYLE	    "style"		/* String */
 #define FC_SLANT	    "slant"		/* Int */
 #define FC_WEIGHT	    "weight"		/* Int */
-#define FC_SIZE		    "size"		/* Range (double) */
+#define FC_SIZE		    "size"		/* Double */
 #define FC_ASPECT	    "aspect"		/* Double */
 #define FC_PIXEL_SIZE	    "pixelsize"		/* Double */
 #define FC_SPACING	    "spacing"		/* Int */
@@ -97,9 +94,7 @@ typedef int		FcBool;
 #define FC_RASTERIZER	    "rasterizer"	/* String (deprecated) */
 #define FC_OUTLINE	    "outline"		/* Bool */
 #define FC_SCALABLE	    "scalable"		/* Bool */
-#define FC_COLOR	    "color"		/* Bool */
-#define FC_SCALE	    "scale"		/* double (deprecated) */
-#define FC_SYMBOL	    "symbol"		/* Bool */
+#define FC_SCALE	    "scale"		/* double */
 #define FC_DPI		    "dpi"		/* double */
 #define FC_RGBA		    "rgba"		/* Int */
 #define FC_MINSPACE	    "minspace"		/* Bool use minimum line spacing */
@@ -120,7 +115,7 @@ typedef int		FcBool;
 #define FC_FONT_FEATURES    "fontfeatures"	/* String */
 #define FC_NAMELANG	    "namelang"		/* String RFC 3866 langs */
 #define FC_PRGNAME	    "prgname"		/* String */
-#define FC_HASH		    "hash"		/* String (deprecated) */
+#define FC_HASH		    "hash"		/* String */
 #define FC_POSTSCRIPT_NAME  "postscriptname"	/* String */
 
 #define FC_CACHE_SUFFIX		    ".cache-" FC_CACHE_VERSION
@@ -136,8 +131,6 @@ typedef int		FcBool;
 #define FC_WEIGHT_EXTRALIGHT	    40
 #define FC_WEIGHT_ULTRALIGHT	    FC_WEIGHT_EXTRALIGHT
 #define FC_WEIGHT_LIGHT		    50
-#define FC_WEIGHT_DEMILIGHT	    55
-#define FC_WEIGHT_SEMILIGHT	    FC_WEIGHT_DEMILIGHT
 #define FC_WEIGHT_BOOK		    75
 #define FC_WEIGHT_REGULAR	    80
 #define FC_WEIGHT_NORMAL	    FC_WEIGHT_REGULAR
@@ -201,8 +194,7 @@ typedef enum _FcType {
     FcTypeMatrix,
     FcTypeCharSet,
     FcTypeFTFace,
-    FcTypeLangSet,
-    FcTypeRange
+    FcTypeLangSet
 } FcType;
 
 typedef struct _FcMatrix {
@@ -220,7 +212,7 @@ typedef struct _FcMatrix {
 typedef struct _FcCharSet FcCharSet;
 
 typedef struct _FcObjectType {
-    char	*object;
+    const char	*object;
     FcType	type;
 } FcObjectType;
 
@@ -239,8 +231,6 @@ typedef struct _FcPattern   FcPattern;
 
 typedef struct _FcLangSet   FcLangSet;
 
-typedef struct _FcRange	    FcRange;
-
 typedef struct _FcValue {
     FcType	type;
     union {
@@ -252,7 +242,6 @@ typedef struct _FcValue {
 	const FcCharSet	*c;
 	void		*f;
 	const FcLangSet	*l;
-	const FcRange	*r;
     } u;
 } FcValue;
 
@@ -552,9 +541,6 @@ FcDirSave (FcFontSet *set, FcStrSet *dirs, const FcChar8 *dir);
 
 FcPublic FcCache *
 FcDirCacheLoad (const FcChar8 *dir, FcConfig *config, FcChar8 **cache_file);
-
-FcPublic FcCache *
-FcDirCacheRescan (const FcChar8 *dir, FcConfig *config);
     
 FcPublic FcCache *
 FcDirCacheRead (const FcChar8 *dir, FcBool force, FcConfig *config);
@@ -864,9 +850,6 @@ FcPatternAddBool (FcPattern *p, const char *object, FcBool b);
 FcPublic FcBool
 FcPatternAddLangSet (FcPattern *p, const char *object, const FcLangSet *ls);
 
-FcPublic FcBool
-FcPatternAddRange (FcPattern *p, const char *object, const FcRange *r);
-
 FcPublic FcResult
 FcPatternGetInteger (const FcPattern *p, const char *object, int n, int *i);
 
@@ -888,9 +871,6 @@ FcPatternGetBool (const FcPattern *p, const char *object, int n, FcBool *b);
 FcPublic FcResult
 FcPatternGetLangSet (const FcPattern *p, const char *object, int n, FcLangSet **ls);
 
-FcPublic FcResult
-FcPatternGetRange (const FcPattern *p, const char *object, int id, FcRange **r);
-
 FcPublic FcPattern *
 FcPatternVaBuild (FcPattern *p, va_list va);
     
@@ -899,30 +879,6 @@ FcPatternBuild (FcPattern *p, ...) FC_ATTRIBUTE_SENTINEL(0);
 
 FcPublic FcChar8 *
 FcPatternFormat (FcPattern *pat, const FcChar8 *format);
-
-/* fcrange.c */
-FcPublic FcRange *
-FcRangeCreateDouble (double begin, double end);
-
-FcPublic FcRange *
-FcRangeCreateInteger (FcChar32 begin, FcChar32 end);
-
-FcPublic void
-FcRangeDestroy (FcRange *range);
-
-FcPublic FcRange *
-FcRangeCopy (const FcRange *r);
-
-FcPublic FcBool
-FcRangeGetDouble(const FcRange *range, double *begin, double *end);
-
-/* fcweight.c */
-
-FcPublic int
-FcWeightFromOpenType (int ot_weight);
-
-FcPublic int
-FcWeightToOpenType (int fc_weight);
 
 /* fcstr.c */
 

@@ -43,6 +43,7 @@ namespace blink {
 
 class PagePopup;
 class PagePopupClient;
+class WebAutofillClient;
 class WebViewBase;
 struct WebCursorInfo;
 
@@ -247,6 +248,10 @@ class WEB_EXPORT ChromeClientImpl final : public ChromeClient {
   bool IsChromeClientImpl() const override { return true; }
 
   void SetCursor(const WebCursorInfo&, LocalFrame*);
+
+  // Returns WebAutofillClient associated with the WebLocalFrame. This takes and
+  // returns nullable.
+  WebAutofillClient* AutofillClientFromFrame(LocalFrame*);
 
   WebViewBase* web_view_;  // Weak pointer.
   WindowFeatures window_features_;

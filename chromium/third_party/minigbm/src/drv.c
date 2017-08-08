@@ -1,9 +1,10 @@
 /*
- * Copyright (c) 2016 The Chromium OS Authors. All rights reserved.
+ * Copyright 2016 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
 #include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -35,6 +36,7 @@ extern struct backend backend_marvell;
 #ifdef DRV_MEDIATEK
 extern struct backend backend_mediatek;
 #endif
+extern struct backend backend_nouveau;
 #ifdef DRV_ROCKCHIP
 extern struct backend backend_rockchip;
 #endif
@@ -42,6 +44,9 @@ extern struct backend backend_rockchip;
 extern struct backend backend_tegra;
 #endif
 extern struct backend backend_udl;
+#ifdef DRV_VC4
+extern struct backend backend_vc4;
+#endif
 extern struct backend backend_vgem;
 extern struct backend backend_virtio_gpu;
 
@@ -74,6 +79,7 @@ static struct backend *drv_get_backend(int fd)
 #ifdef DRV_MEDIATEK
 		&backend_mediatek,
 #endif
+		&backend_nouveau,
 #ifdef DRV_ROCKCHIP
 		&backend_rockchip,
 #endif
@@ -81,6 +87,9 @@ static struct backend *drv_get_backend(int fd)
 		&backend_tegra,
 #endif
 		&backend_udl,
+#ifdef DRV_VC4
+		&backend_vc4,
+#endif
 		&backend_vgem,
 		&backend_virtio_gpu,
 	};
@@ -247,6 +256,44 @@ struct bo *drv_bo_create(struct driver *drv, uint32_t width, uint32_t height,
 	return bo;
 }
 
+struct bo *drv_bo_create_with_modifiers(struct driver *drv,
+					uint32_t width, uint32_t height,
+					uint32_t format,
+					const uint64_t *modifiers, uint32_t count)
+{
+	int ret;
+	size_t plane;
+	struct bo *bo;
+
+	if (!drv->backend->bo_create_with_modifiers) {
+		errno = ENOENT;
+		return NULL;
+	}
+
+	bo = drv_bo_new(drv, width, height, format);
+
+	if (!bo)
+		return NULL;
+
+	ret = drv->backend->bo_create_with_modifiers(bo, width, height,
+						     format, modifiers, count);
+
+	if (ret) {
+		free(bo);
+		return NULL;
+	}
+
+	pthread_mutex_lock(&drv->driver_lock);
+
+	for (plane = 0; plane < bo->num_planes; plane++)
+		drv_increment_reference_count(drv, bo, plane);
+
+	pthread_mutex_unlock(&drv->driver_lock);
+
+	return bo;
+}
+
+
 void drv_bo_destroy(struct bo *bo)
 {
 	size_t plane;
@@ -274,45 +321,24 @@ struct bo *drv_bo_import(struct driver *drv, struct drv_import_fd_data *data)
 	int ret;
 	size_t plane;
 	struct bo *bo;
-	struct drm_prime_handle prime_handle;
 
 	bo = drv_bo_new(drv, data->width, data->height, data->format);
 
 	if (!bo)
 		return NULL;
 
+	ret = drv->backend->bo_import(bo, data);
+	if (ret) {
+		free(bo);
+		return NULL;
+	}
+
 	for (plane = 0; plane < bo->num_planes; plane++) {
-
-		memset(&prime_handle, 0, sizeof(prime_handle));
-		prime_handle.fd = data->fds[plane];
-
-		ret = drmIoctl(drv->fd, DRM_IOCTL_PRIME_FD_TO_HANDLE,
-			       &prime_handle);
-
-		if (ret) {
-			fprintf(stderr, "drv: DRM_IOCTL_PRIME_FD_TO_HANDLE failed "
-				"(fd=%u)\n", prime_handle.fd);
-
-			if (plane > 0) {
-				bo->num_planes = plane;
-				drv_bo_destroy(bo);
-			} else {
-				free(bo);
-			}
-
-			return NULL;
-		}
-
-		bo->handles[plane].u32 = prime_handle.handle;
 		bo->strides[plane] = data->strides[plane];
 		bo->offsets[plane] = data->offsets[plane];
 		bo->sizes[plane] = data->sizes[plane];
 		bo->format_modifiers[plane] = data->format_modifiers[plane];
 		bo->total_size += data->sizes[plane];
-
-		pthread_mutex_lock(&drv->driver_lock);
-		drv_increment_reference_count(drv, bo, plane);
-		pthread_mutex_unlock(&drv->driver_lock);
 	}
 
 	return bo;
@@ -376,7 +402,10 @@ int drv_bo_unmap(struct bo *bo, void *map_data)
 	pthread_mutex_lock(&bo->drv->driver_lock);
 
 	if (!--data->refcount) {
-		ret = munmap(data->addr, data->length);
+		if (bo->drv->backend->bo_unmap)
+			ret = bo->drv->backend->bo_unmap(bo, data);
+		else
+			ret = munmap(data->addr, data->length);
 		drmHashDelete(bo->drv->map_table, data->handle);
 		free(data);
 	}

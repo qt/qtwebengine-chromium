@@ -29,6 +29,7 @@ AM_DISTCHECK_CONFIGURE_FLAGS = \
 	--enable-radeon \
 	--enable-amdgpu \
 	--enable-nouveau \
+	--enable-vc4 \
 	--enable-vmwgfx \
 	--enable-omap-experimental-api \
 	--enable-exynos-experimental-api \
@@ -79,6 +80,18 @@ if HAVE_TEGRA
 TEGRA_SUBDIR = tegra
 endif
 
+if HAVE_VC4
+VC4_SUBDIR = vc4
+endif
+
+if HAVE_ROCKCHIP
+ROCKCHIP_SUBDIR = rockchip
+endif
+
+if HAVE_MEDIATEK
+MEDIATEK_SUBDIR = mediatek
+endif
+
 if BUILD_MANPAGES
 if HAVE_MANPAGES_STYLESHEET
 MAN_SUBDIR = man
@@ -96,6 +109,9 @@ SUBDIRS = \
 	$(EXYNOS_SUBDIR) \
 	$(FREEDRENO_SUBDIR) \
 	$(TEGRA_SUBDIR) \
+	$(VC4_SUBDIR) \
+	$(ROCKCHIP_SUBDIR) \
+	$(MEDIATEK_SUBDIR) \
 	tests \
 	$(MAN_SUBDIR)
 
@@ -113,8 +129,6 @@ libdrm_la_SOURCES = $(LIBDRM_FILES)
 
 libdrmincludedir = ${includedir}
 libdrminclude_HEADERS = $(LIBDRM_H_FILES)
-
-EXTRA_DIST = Android.mk
 
 klibdrmincludedir = ${includedir}/libdrm
 klibdrminclude_HEADERS = $(LIBDRM_INCLUDE_H_FILES)

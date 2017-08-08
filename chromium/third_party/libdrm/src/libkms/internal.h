@@ -81,4 +81,6 @@ drm_private int radeon_create(int fd, struct kms_driver **out);
 
 drm_private int exynos_create(int fd, struct kms_driver **out);
 
+drm_private int mediatek_create(int fd, struct kms_driver **out);
+
 #endif

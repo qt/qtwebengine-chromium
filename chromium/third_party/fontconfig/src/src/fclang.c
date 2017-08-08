@@ -720,22 +720,19 @@ FcLangSetPromote (const FcChar8 *lang, FcValuePromotionBuffer *vbuf)
     memset (buf->ls.map, '\0', sizeof (buf->ls.map));
     buf->ls.map_size = NUM_LANG_SET_MAP;
     buf->ls.extra = 0;
-    if (lang)
+    id = FcLangSetIndex (lang);
+    if (id > 0)
     {
-	id = FcLangSetIndex (lang);
-	if (id > 0)
-	{
-	    FcLangSetBitSet (&buf->ls, id);
-	}
-	else
-	{
-	    buf->ls.extra = &buf->strs;
-	    buf->strs.num = 1;
-	    buf->strs.size = 1;
-	    buf->strs.strs = &buf->str;
-	    FcRefInit (&buf->strs.ref, 1);
-	    buf->str = (FcChar8 *) lang;
-	}
+	FcLangSetBitSet (&buf->ls, id);
+    }
+    else
+    {
+	buf->ls.extra = &buf->strs;
+	buf->strs.num = 1;
+	buf->strs.size = 1;
+	buf->strs.strs = &buf->str;
+	FcRefInit (&buf->strs.ref, 1);
+	buf->str = (FcChar8 *) lang;
     }
     return &buf->ls;
 }

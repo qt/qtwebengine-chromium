@@ -151,7 +151,6 @@ built_test_programs =				\
 	connection-test				\
 	event-loop-test				\
 	fixed-test				\
-	interface-test				\
 	list-test				\
 	map-test				\
 	os-wrappers-test			\
@@ -169,22 +168,16 @@ if ENABLE_CPP_TEST
 built_test_programs += cpp-compile-test
 endif
 
-AM_TESTS_ENVIRONMENT =							\
-	export WAYLAND_SCANNER='$(top_builddir)/wayland-scanner'	\
-	TEST_DATA_DIR='$(top_srcdir)/tests/data'			\
-	TEST_OUTPUT_DIR='$(top_builddir)/tests/output'			\
-	SED=$(SED)							\
-	;
+TESTS = $(built_test_programs)
 
-TESTS = $(built_test_programs)			\
-	tests/scanner-test.sh
+check_PROGRAMS =				\
+	$(built_test_programs)			\
+	exec-fd-leak-checker
 
 noinst_PROGRAMS =				\
-	$(built_test_programs)			\
-	exec-fd-leak-checker			\
 	fixed-benchmark
 
-noinst_LTLIBRARIES += libtest-runner.la
+check_LTLIBRARIES = libtest-runner.la
 
 libtest_runner_la_SOURCES =			\
 	tests/test-runner.c			\
@@ -212,8 +205,6 @@ event_loop_test_SOURCES = tests/event-loop-test.c
 event_loop_test_LDADD = libtest-runner.la
 fixed_test_SOURCES = tests/fixed-test.c
 fixed_test_LDADD = libtest-runner.la
-interface_test_SOURCES = tests/interface-test.c
-interface_test_LDADD = libtest-runner.la
 list_test_SOURCES = tests/list-test.c
 list_test_LDADD = libtest-runner.la
 map_test_SOURCES = tests/map-test.c
@@ -254,23 +245,4 @@ os_wrappers_test_LDADD = libtest-runner.la
 
 exec_fd_leak_checker_SOURCES = tests/exec-fd-leak-checker.c
 exec_fd_leak_checker_LDADD = libtest-runner.la
-
-EXTRA_DIST += tests/scanner-test.sh			\
-	tests/data/example.xml				\
-	tests/data/example-client.h			\
-	tests/data/example-server.h			\
-	tests/data/example-code.c			\
-	tests/data/small.xml				\
-	tests/data/small-code.c				\
-	tests/data/small-client.h			\
-	tests/data/small-server.h			\
-	tests/data/small-code-core.c			\
-	tests/data/small-client-core.h			\
-	tests/data/small-server-core.h
-
-tests/scanner-test.sh: $(top_builddir)/wayland-scanner
-
-clean-local:
-	-rm -rf tests/output
-
 endif #ENABLE_LIBRARIES

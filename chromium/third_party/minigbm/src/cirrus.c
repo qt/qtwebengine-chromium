@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 The Chromium OS Authors. All rights reserved.
+ * Copyright 2014 The Chromium OS Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -8,12 +8,16 @@
 #include "helpers.h"
 #include "util.h"
 
-static struct supported_combination combos[5] = {
-	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE, BO_USE_CURSOR | BO_USE_LINEAR},
-	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE, BO_USE_RENDERING},
-	{DRM_FORMAT_RGB888,   DRM_FORMAT_MOD_NONE, BO_USE_RENDERING},
-	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE, BO_USE_CURSOR | BO_USE_LINEAR},
-	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE, BO_USE_RENDERING},
+static struct supported_combination combos[3] = {
+	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
+		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_RGB888, DRM_FORMAT_MOD_NONE,
+		BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
+		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
+	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
+		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
+		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
 };
 
 static int cirrus_init(struct driver *drv)
@@ -28,5 +32,6 @@ struct backend backend_cirrus =
 	.init = cirrus_init,
 	.bo_create = drv_dumb_bo_create,
 	.bo_destroy = drv_dumb_bo_destroy,
+	.bo_import = drv_prime_bo_import,
 	.bo_map = drv_dumb_bo_map,
 };
