@@ -4110,6 +4110,11 @@ void WebContentsImpl::RunJavaScriptMessage(
     const GURL& frame_url,
     JavaScriptMessageType javascript_message_type,
     IPC::Message* reply_msg) {
+  // Running a dialog causes an exit to webpage-initiated fullscreen.
+  // http://crbug.com/728276
+  if (IsFullscreenForCurrentTab())
+    ExitFullscreen(true);
+
   // Suppress JavaScript dialogs when requested. Also suppress messages when
   // showing an interstitial as it's shown over the previous page and we don't
   // want the hidden page's dialogs to interfere with the interstitial.
@@ -4145,6 +4150,11 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
     RenderFrameHost* render_frame_host,
     bool is_reload,
     IPC::Message* reply_msg) {
+  // Running a dialog causes an exit to webpage-initiated fullscreen.
+  // http://crbug.com/728276
+  if (IsFullscreenForCurrentTab())
+    ExitFullscreen(true);
+
   RenderFrameHostImpl* rfhi =
       static_cast<RenderFrameHostImpl*>(render_frame_host);
   if (delegate_)
