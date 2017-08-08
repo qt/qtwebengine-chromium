@@ -304,15 +304,18 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
     pRes->SetFor("XObject", pPageXObject);
   }
 
-  CFX_ByteString key = "";
+  CFX_ByteString key;
   int nStreams = pdfium::CollectionSize<int>(ObjectArray);
   if (nStreams > 0) {
-    for (int iKey = 0; /*iKey < 100*/; iKey++) {
-      char sExtend[5] = {};
-      FXSYS_itoa(iKey, sExtend, 10);
-      key = CFX_ByteString("FFT") + CFX_ByteString(sExtend);
-      if (!pPageXObject->KeyExist(key))
+    CFX_ByteString sKey;
+    int i = 0;
+    while (i < INT_MAX) {
+      sKey.Format("FFT%d", i);
+      if (!pPageXObject->KeyExist(sKey)) {
+        key = sKey;
         break;
+      }
+      ++i;
     }
   }
 
