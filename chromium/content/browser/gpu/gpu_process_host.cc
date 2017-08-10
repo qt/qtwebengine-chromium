@@ -622,7 +622,7 @@ bool GpuProcessHost::Init() {
             process_->GetInProcessBrokerClientInvitation(),
             process_->child_connection()->service_token())));
     base::Thread::Options options;
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
     // WGL needs to create its own window and pump messages on it.
     options.message_loop_type = base::MessageLoop::TYPE_UI;
 #endif

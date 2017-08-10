@@ -1126,7 +1126,7 @@ int BrowserMainLoop::CreateThreads() {
         LOG(FATAL) << "Failed to start the browser thread: id == " << id;
     } else {
       scoped_refptr<base::SingleThreadTaskRunner> redirection_task_runner;
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
       // On Windows, the FILE thread needs to have a UI message loop which
       // pumps messages in such a way that Google Update can communicate back
       // to us. The COM STA task runner provides this service.
