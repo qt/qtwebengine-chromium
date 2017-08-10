@@ -602,10 +602,15 @@ Resource* ResourceFetcher::RequestResource(
                                     params.Options().initiator_info.name);
   }
 
-  // An URL with the "cid" scheme can only be handled by an MHTML Archive.
-  // Abort the request when there is none.
-  if (!archive_ && resource_request.Url().ProtocolIs(kContentIdScheme))
+  // A main resource request with the "cid" scheme can only be handled by an
+  // MHTML Archive. Abort the request when there is none.
+  // Note: There are some embedders of WebView that are using Content-ID
+  // URLs for sub-resources, even without any MHTMLArchive. Please see
+  // https://crbug.com/739658.
+  if (!archive_ && factory.GetType() == Resource::kMainResource &&
+      resource_request.Url().ProtocolIs(kContentIdScheme)) {
     return nullptr;
+  }
 
   bool is_data_url = resource_request.Url().ProtocolIsData();
   bool is_static_data = is_data_url || substitute_data.IsValid() || archive_;
@@ -1369,10 +1374,8 @@ bool ResourceFetcher::StartLoad(Resource* resource) {
   ResourceLoader* loader = nullptr;
 
   {
-    // Forbids JavaScript/addClient/removeClient/revalidation until start()
+    // Forbids JavaScript/revalidation until start()
     // to prevent unintended state transitions.
-    Resource::ProhibitAddRemoveClientInScope
-        prohibit_add_remove_client_in_scope(resource);
     Resource::RevalidationStartForbiddenScope
         revalidation_start_forbidden_scope(resource);
     ScriptForbiddenIfMainThreadScope script_forbidden_scope;
@@ -1413,6 +1416,10 @@ bool ResourceFetcher::StartLoad(Resource* resource) {
 
     StorePerformanceTimingInitiatorInformation(resource);
     resource->SetFetcherSecurityOrigin(source_origin);
+
+    // NotifyStartLoad() shouldn't cause AddClient/RemoveClient().
+    Resource::ProhibitAddRemoveClientInScope
+        prohibit_add_remove_client_in_scope(resource);
 
     resource->NotifyStartLoad();
     loader->ActivateCacheAwareLoadingIfNeeded(request);

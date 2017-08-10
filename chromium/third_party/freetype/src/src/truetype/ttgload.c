@@ -2100,8 +2100,8 @@
     }
 
     /* set glyph dimensions */
-    glyph->metrics.width  = bbox.xMax - bbox.xMin;
-    glyph->metrics.height = bbox.yMax - bbox.yMin;
+    glyph->metrics.width  = SUB_LONG( bbox.xMax, bbox.xMin );
+    glyph->metrics.height = SUB_LONG( bbox.yMax, bbox.yMin );
 
     /* Now take care of vertical metrics.  In the case where there is */
     /* no vertical information within the font (relatively common),   */
@@ -2137,7 +2137,8 @@
         /*       table in the font.  Otherwise, we use the     */
         /*       values defined in the horizontal header.      */
 
-        height = (FT_Short)FT_DivFix( bbox.yMax - bbox.yMin,
+        height = (FT_Short)FT_DivFix( SUB_LONG( bbox.yMax,
+                                                bbox.yMin ),
                                       y_scale );
         if ( face->os2.version != 0xFFFFU )
           advance = (FT_Pos)( face->os2.sTypoAscender -
@@ -2339,13 +2340,19 @@
 #ifdef TT_SUPPORT_SUBPIXEL_HINTING_MINIMAL
       if ( driver->interpreter_version == TT_INTERPRETER_VERSION_40 )
       {
-        subpixel_hinting_lean   = TRUE;
-        grayscale_cleartype     = !FT_BOOL( load_flags         &
-                                            FT_LOAD_TARGET_LCD     ||
-                                            load_flags           &
-                                            FT_LOAD_TARGET_LCD_V   );
-        exec->vertical_lcd_lean = FT_BOOL( load_flags           &
-                                           FT_LOAD_TARGET_LCD_V );
+        subpixel_hinting_lean =
+          FT_BOOL( FT_LOAD_TARGET_MODE( load_flags ) !=
+                   FT_RENDER_MODE_MONO               );
+        grayscale_cleartype =
+          FT_BOOL( subpixel_hinting_lean         &&
+                   !( ( load_flags         &
+                        FT_LOAD_TARGET_LCD )   ||
+                      ( load_flags           &
+                        FT_LOAD_TARGET_LCD_V ) ) );
+        exec->vertical_lcd_lean =
+          FT_BOOL( subpixel_hinting_lean    &&
+                   ( load_flags           &
+                     FT_LOAD_TARGET_LCD_V ) );
       }
       else
       {
@@ -2621,7 +2628,13 @@
          IS_DEFAULT_INSTANCE                     )
     {
       error = load_sbit_image( size, glyph, glyph_index, load_flags );
-      if ( !error )
+      if ( error )
+      {
+        /* return error if font is not scalable */
+        if ( !FT_IS_SCALABLE( glyph->face ) )
+          return error;
+      }
+      else
       {
         if ( FT_IS_SCALABLE( glyph->face ) )
         {

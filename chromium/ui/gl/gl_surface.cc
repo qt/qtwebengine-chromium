@@ -194,6 +194,12 @@ void GLSurface::WaitForSnapshotRendering() {
   // By default, just executing the SwapBuffers is normally enough.
 }
 
+void GLSurface::SetRelyOnImplicitSync() {
+  // Some GLSurface derived classes might not implement this workaround while
+  // still being allocated on devices where the workaround is enabled.
+  // It is fine to ignore this call in those cases.
+}
+
 GLSurface* GLSurface::GetCurrent() {
   return current_surface_.Pointer()->Get();
 }
@@ -395,6 +401,10 @@ gfx::Vector2d GLSurfaceAdapter::GetDrawOffset() const {
 
 void GLSurfaceAdapter::WaitForSnapshotRendering() {
   surface_->WaitForSnapshotRendering();
+}
+
+void GLSurfaceAdapter::SetRelyOnImplicitSync() {
+  surface_->SetRelyOnImplicitSync();
 }
 
 GLSurfaceAdapter::~GLSurfaceAdapter() {}

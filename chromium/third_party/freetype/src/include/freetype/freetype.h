@@ -575,7 +575,8 @@ FT_BEGIN_HEADER
   /* <Note>                                                                */
   /*    When a new face is created (either through @FT_New_Face or         */
   /*    @FT_Open_Face), the library looks for a Unicode charmap within     */
-  /*    the list and automatically activates it.                           */
+  /*    the list and automatically activates it.  If there is no Unicode   */
+  /*    charmap, FreeType doesn't set an `active' charmap.                 */
   /*                                                                       */
   /* <Also>                                                                */
   /*    See @FT_CharMapRec for the publicly accessible fields of a given   */
@@ -4327,6 +4328,9 @@ FT_BEGIN_HEADER
   /*    `a' rounded to the nearest 16.16 fixed integer, halfway cases away */
   /*    from zero.                                                         */
   /*                                                                       */
+  /* <Note>                                                                */
+  /*    The function uses wrap-around arithmetic.                          */
+  /*                                                                       */
   FT_EXPORT( FT_Fixed )
   FT_RoundFix( FT_Fixed  a );
 
@@ -4344,6 +4348,9 @@ FT_BEGIN_HEADER
   /*                                                                       */
   /* <Return>                                                              */
   /*    `a' rounded towards plus infinity.                                 */
+  /*                                                                       */
+  /* <Note>                                                                */
+  /*    The function uses wrap-around arithmetic.                          */
   /*                                                                       */
   FT_EXPORT( FT_Fixed )
   FT_CeilFix( FT_Fixed  a );

@@ -229,13 +229,12 @@ void PrintJobWorker::GetSettingsWithUI(
     bool is_scripted) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-#if !defined(TOOLKIT_QT)
+  PrintingContextDelegate* printing_context_delegate =
+      static_cast<PrintingContextDelegate*>(printing_context_delegate_.get());
+  content::WebContents* web_contents =
+      printing_context_delegate->GetWebContents();
 #if defined(OS_ANDROID)
   if (is_scripted) {
-    PrintingContextDelegate* printing_context_delegate =
-        static_cast<PrintingContextDelegate*>(printing_context_delegate_.get());
-    content::WebContents* web_contents =
-        printing_context_delegate->GetWebContents();
     TabAndroid* tab =
         web_contents ? TabAndroid::FromWebContents(web_contents) : nullptr;
 
@@ -246,7 +245,11 @@ void PrintJobWorker::GetSettingsWithUI(
       tab->SetPendingPrint();
   }
 #endif
-#endif
+
+  // Running a dialog causes an exit to webpage-initiated fullscreen.
+  // http://crbug.com/728276
+  if (web_contents->IsFullscreenForCurrentTab())
+    web_contents->ExitFullscreen(true);
 
   // weak_factory_ creates pointers valid only on owner_ thread.
   printing_context_->AskUserForSettings(
