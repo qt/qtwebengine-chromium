@@ -29,7 +29,9 @@ void InitLogging() {
 
 void InitErrorHandling(const base::CommandLine& command_line) {
   base::EnableTerminationOnHeapCorruption();
+#if !defined(TOOLKIT_QT)
   base::EnableTerminationOnOutOfMemory();
+#endif
 #if defined(OS_WIN)
   base::win::RegisterInvalidParamHandler();
   base::win::SetupCRT(command_line);

@@ -228,7 +228,9 @@ int RunContentProcess(const ContentMainParams& params,
 #if defined(OS_MAC) && BUILDFLAG(USE_ALLOCATOR_SHIM)
     base::allocator::InitializeAllocatorShim();
 #endif
+#if !defined(TOOLKIT_QT)
     base::EnableTerminationOnOutOfMemory();
+#endif
 
 #if defined(OS_LINUX) || defined(OS_CHROMEOS)
     // The various desktop environments set this environment variable that
