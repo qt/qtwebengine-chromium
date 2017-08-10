@@ -836,7 +836,7 @@ bool GpuProcessHost::Init() {
             process_->child_connection()->service_token()),
         gpu_preferences));
     base::Thread::Options options;
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if (defined(OS_WIN) || defined(OS_MACOSX)) && !defined(TOOLKIT_QT)
     // WGL needs to create its own window and pump messages on it.
     options.message_pump_type = base::MessagePumpType::UI;
 #endif

@@ -1661,7 +1661,7 @@ bool RenderProcessHostImpl::Init() {
             &mojo_invitation_, child_connection_->service_token())));
 
     base::Thread::Options options;
-#if defined(OS_WIN) && !defined(OS_MACOSX)
+#if defined(OS_WIN) && !defined(OS_MACOSX) && !defined(TOOLKIT_QT)
     // In-process plugins require this to be a UI message loop.
     options.message_pump_type = base::MessagePumpType::UI;
 #else
