@@ -224,7 +224,9 @@ RunContentProcess(ContentMainParams params,
 #if BUILDFLAG(IS_MAC) && BUILDFLAG(USE_ALLOCATOR_SHIM)
     allocator_shim::InitializeAllocatorShim();
 #endif
+#if !defined(TOOLKIT_QT)
     base::EnableTerminationOnOutOfMemory();
+#endif
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
     // The various desktop environments set this environment variable that
