@@ -224,7 +224,9 @@ NO_STACK_PROTECTOR int RunContentProcess(
 #if BUILDFLAG(IS_APPLE) && PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
     allocator_shim::InitializeAllocatorShim();
 #endif
+#if !BUILDFLAG(IS_QTWEBENGINE)
     base::EnableTerminationOnOutOfMemory();
+#endif
     logging::RegisterAbslAbortHook();
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
