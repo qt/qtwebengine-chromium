@@ -28,7 +28,9 @@ void InitLogging() {
 
 void InitErrorHandling(const base::CommandLine& command_line) {
   base::EnableTerminationOnHeapCorruption();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   base::EnableTerminationOnOutOfMemory();
+#endif
   logging::RegisterAbslAbortHook();
 #if BUILDFLAG(IS_WIN)
   base::win::RegisterInvalidParamHandler();
