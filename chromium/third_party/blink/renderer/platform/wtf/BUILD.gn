@@ -245,7 +245,7 @@ jumbo_component("wtf") {
   configs += [
     "//third_party/blink/renderer:config",
     "//third_party/blink/renderer:non_test_config",
-    "//third_party/blink/renderer:blink_pch",
+    "//third_party/blink/renderer/platform:blink_platform_pch",
   ]
 
   defines = [ "WTF_IMPLEMENTATION=1" ]
@@ -356,7 +356,7 @@ jumbo_source_set("wtf_unittests_sources") {
 
   configs += [
     "//third_party/blink/renderer:config",
-    "//third_party/blink/renderer:blink_pch",
+    "//third_party/blink/renderer/platform:blink_platform_pch",
   ]
 
   deps = [
