@@ -661,7 +661,6 @@ void RenderThreadImpl::Init(
       base::BindRepeating(&CreateSingleSampleMetricsProvider,
                           message_loop()->task_runner(), GetConnector()));
 
-  // QTFIXME!
   gpu_ = ui::Gpu::Create(
       GetConnector(),
       IsRunningInMash() ? ui::mojom::kServiceName : mojom::kBrowserServiceName,
