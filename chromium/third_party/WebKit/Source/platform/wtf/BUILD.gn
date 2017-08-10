@@ -255,7 +255,7 @@ component("wtf") {
   configs += [
     "//third_party/WebKit/Source:config",
     "//third_party/WebKit/Source:non_test_config",
-    "//third_party/WebKit/Source:blink_pch",
+    "//third_party/WebKit/Source/platform:blink_platform_pch",
   ]
 
   defines = [ "WTF_IMPLEMENTATION=1" ]
@@ -371,7 +371,7 @@ test("wtf_unittests") {
 
   configs += [
     "//third_party/WebKit/Source:config",
-    "//third_party/WebKit/Source:blink_pch",
+    "//third_party/WebKit/Source/platform:blink_platform_pch",
   ]
 
   deps = [
