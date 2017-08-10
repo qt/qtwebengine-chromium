@@ -115,6 +115,8 @@ void SkValidatingReadBuffer::readColor4f(SkColor4f* color) {
     const void* ptr = this->skip(sizeof(SkColor4f));
     if (!fError) {
         memcpy(color, ptr, sizeof(SkColor4f));
+    } else {
+        *color = SkColor4f::FromColor(SK_ColorBLACK);
     }
 }
 
