@@ -881,7 +881,7 @@ bool GpuProcessHost::Init() {
                                    process_->GetInProcessMojoInvitation()),
         gpu_preferences));
     base::Thread::Options options;
-#if defined(OS_WIN) || defined(OS_MAC)
+#if (defined(OS_WIN) || defined(OS_MAC)) && !defined(TOOLKIT_QT)
     // WGL needs to create its own window and pump messages on it.
     options.message_pump_type = base::MessagePumpType::UI;
 #endif
