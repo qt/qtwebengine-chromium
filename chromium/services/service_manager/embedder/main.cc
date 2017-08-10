@@ -273,7 +273,9 @@ int Main(const MainParams& params) {
 #if defined(OS_MACOSX) && BUILDFLAG(USE_ALLOCATOR_SHIM)
     base::allocator::InitializeAllocatorShim();
 #endif
+#if !defined(TOOLKIT_QT)
     base::EnableTerminationOnOutOfMemory();
+#endif
 
 #if defined(OS_LINUX)
     // The various desktop environments set this environment variable that
