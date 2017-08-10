@@ -1757,7 +1757,7 @@ bool RenderProcessHostImpl::Init() {
         base::checked_cast<int32_t>(id_)));
 
     base::Thread::Options options;
-#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_MAC) && !defined(TOOLKIT_QT)
     // In-process plugins require this to be a UI message loop.
     options.message_pump_type = base::MessagePumpType::UI;
 #else
