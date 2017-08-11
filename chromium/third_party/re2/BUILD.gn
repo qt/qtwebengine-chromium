@@ -2,11 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/shim_headers.gni")
+
+declare_args() {
+  use_system_re2 = false
+}
+
 config("re2_config") {
   include_dirs = [ "src" ]
 }
 
-static_library("re2") {
+static_library("bundled_re2") {
   sources = [
     "src/re2/bitstate.cc",
     "src/re2/compile.cc",
@@ -60,4 +66,30 @@ static_library("re2") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
   public_configs = [ ":re2_config" ]
+}
+
+shim_headers("re2_shim") {
+  root_path = "src"
+  headers = [
+    "re2/filtered_re2.h",
+    "re2/re2.h",
+    "re2/set.h",
+    "re2/stringpiece.h",
+    "re2/variadic_function.h",
+  ]
+}
+
+source_set("system_re2") {
+  deps = [
+      ":re2_shim",
+  ]
+  libs = [ "re2" ]
+}
+
+group("re2") {
+  if (use_system_re2) {
+    public_deps = [ ":system_re2" ]
+  } else {
+    public_deps = [ ":bundled_re2" ]
+  }
 }
