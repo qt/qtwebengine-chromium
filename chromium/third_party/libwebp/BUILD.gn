@@ -367,7 +367,7 @@ if (!use_system_libwebp) {
       ":libwebp_demux",
       ":libwebp_dsp",
       ":libwebp_enc",
-    ":libwebp_mux",
+      ":libwebp_mux",
       ":libwebp_utils",
     ]
     public_configs = [ ":libwebp_config" ]
@@ -379,7 +379,7 @@ if (!use_system_libwebp) {
 
 if (use_system_libwebp) {
   pkg_config("system_libwebp") {
-    packages = [ "libwebp", "libwebpdemux" ]
+    packages = [ "libwebp", "libwebpmux", "libwebpdemux" ]
   }
   group("libwebp") {
     public_configs = [ ":system_libwebp" ]
