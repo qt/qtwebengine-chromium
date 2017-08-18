@@ -121,7 +121,7 @@ boolean EmptyOutputBuffer(jpeg_compress_struct* cinfo) {
   // tell libjpeg where to write the next data
   cinfo->dest->next_output_byte = &(*state->out)[state->image_buffer_used];
   cinfo->dest->free_in_buffer = state->out->size() - state->image_buffer_used;
-  return 1;
+  return TRUE;
 }
 
 // Cleans up the JpegEncoderState to prepare for returning in the final form.
@@ -262,7 +262,7 @@ bool JPEGCodec::Encode(const unsigned char* input, ColorFormat format,
   cinfo.data_precision = 8;
 
   jpeg_set_defaults(&cinfo);
-  jpeg_set_quality(&cinfo, quality, 1);  // quality here is 0-100
+  jpeg_set_quality(&cinfo, quality, TRUE);  // quality here is 0-100
 
   // set up the destination manager
   jpeg_destination_mgr destmgr;
@@ -274,7 +274,7 @@ bool JPEGCodec::Encode(const unsigned char* input, ColorFormat format,
   JpegEncoderState state(output);
   cinfo.client_data = &state;
 
-  jpeg_start_compress(&cinfo, 1);
+  jpeg_start_compress(&cinfo, TRUE);
 
   // feed it the rows, doing necessary conversions for the color format
 #ifdef JCS_EXTENSIONS
@@ -360,7 +360,7 @@ void InitSource(j_decompress_ptr cinfo) {
 //   set to a positive value if TRUE is returned. A FALSE return should only
 //   be used when I/O suspension is desired."
 boolean FillInputBuffer(j_decompress_ptr cinfo) {
-  return false;
+  return FALSE;
 }
 
 // Skip data in the buffer. Since we have all the data at once, this operation
@@ -488,7 +488,7 @@ bool JPEGCodec::Decode(const unsigned char* input, size_t input_size,
   cinfo.client_data = &state;
 
   // fill the file metadata into our buffer
-  if (jpeg_read_header(&cinfo, true) != JPEG_HEADER_OK)
+  if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK)
     return false;
 
   // we want to always get RGB data out
