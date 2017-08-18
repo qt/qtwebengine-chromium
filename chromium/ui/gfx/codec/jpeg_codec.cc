@@ -115,7 +115,7 @@ void InitSource(j_decompress_ptr cinfo) {
 //   set to a positive value if TRUE is returned. A FALSE return should only
 //   be used when I/O suspension is desired."
 boolean FillInputBuffer(j_decompress_ptr cinfo) {
-  return false;
+  return FALSE;
 }
 
 // Skip data in the buffer. Since we have all the data at once, this operation
@@ -199,7 +199,7 @@ bool JPEGCodec::Decode(const unsigned char* input, size_t input_size,
   cinfo->client_data = &state;
 
   // fill the file metadata into our buffer
-  if (jpeg_read_header(cinfo.get(), true) != JPEG_HEADER_OK)
+  if (jpeg_read_header(cinfo.get(), TRUE) != JPEG_HEADER_OK)
     return false;
 
   // we want to always get RGB data out
