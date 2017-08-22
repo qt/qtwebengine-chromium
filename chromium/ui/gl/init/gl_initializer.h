@@ -19,6 +19,10 @@ namespace init {
 // InitializeGLOneOffPlatformImplementation() instead.
 bool InitializeGLOneOffPlatform();
 
+#if defined(TOOLKIT_QT)
+bool usingSoftwareDynamicGL();
+#endif
+
 // Initializes a particular GL implementation.
 bool InitializeStaticGLBindings(GLImplementation implementation);
 
