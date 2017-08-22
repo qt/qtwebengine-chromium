@@ -169,6 +169,13 @@ extern template class EXPORT_TEMPLATE_DECLARE(GL_EXPORT)
     GLDisplayManager<GLDisplayX11>;
 #endif
 
+#if BUILDFLAG(IS_WIN)
+using GLDisplayManagerWGL = GLDisplayManager<GLDisplayWGL>;
+
+extern template class EXPORT_TEMPLATE_DECLARE(GL_EXPORT)
+    GLDisplayManager<GLDisplayWGL>;
+#endif
+
 }  // namespace gl
 
 #endif  // UI_GL_GL_DISPLAY_MANAGER_H_

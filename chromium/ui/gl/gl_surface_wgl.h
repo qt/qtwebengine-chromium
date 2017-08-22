@@ -10,6 +10,7 @@
 #include "ui/gl/gl_surface.h"
 
 namespace gl {
+class GLDisplayWGL;
 
 // Base interface for WGL surfaces.
 class GL_EXPORT GLSurfaceWGL : public GLSurface {
@@ -17,7 +18,7 @@ class GL_EXPORT GLSurfaceWGL : public GLSurface {
   GLSurfaceWGL();
 
   // Implement GLSurface.
-  void* GetDisplay() override;
+  GLDisplay* GetGLDisplay() override;
 
   static bool InitializeOneOff();
   static bool InitializeExtensionSettingsOneOff();
@@ -27,8 +28,9 @@ class GL_EXPORT GLSurfaceWGL : public GLSurface {
  protected:
   ~GLSurfaceWGL() override;
 
- private:
+ protected:
   static bool initialized_;
+  GLDisplayWGL* display_;
 };
 
 // A surface used to render to a view.
@@ -45,7 +47,8 @@ class GL_EXPORT NativeViewGLSurfaceWGL : public GLSurfaceWGL {
               bool has_alpha) override;
   bool Recreate() override;
   bool IsOffscreen() override;
-  gfx::SwapResult SwapBuffers(PresentationCallback callback) override;
+  gfx::SwapResult SwapBuffers(PresentationCallback callback,
+                              gfx::FrameData data) override;
   gfx::Size GetSize() override;
   void* GetHandle() override;
   GLSurfaceFormat GetFormat() override;
@@ -71,7 +74,8 @@ class GL_EXPORT PbufferGLSurfaceWGL : public GLSurfaceWGL {
   bool Initialize(GLSurfaceFormat format) override;
   void Destroy() override;
   bool IsOffscreen() override;
-  gfx::SwapResult SwapBuffers(PresentationCallback callback) override;
+  gfx::SwapResult SwapBuffers(PresentationCallback callback,
+                              gfx::FrameData data) override;
   gfx::Size GetSize() override;
   void* GetHandle() override;
   GLSurfaceFormat GetFormat() override;

@@ -126,12 +126,25 @@ bool InitializeStaticEGLInternal(GLImplementationParts implementation) {
 }
 
 bool InitializeStaticWGLInternal() {
+#if BUILDFLAG(IS_QTWEBENGINE)
+  const wchar_t *libraryName = L"opengl32.dll";
+  if (usingSoftwareDynamicGL())
+      libraryName = L"opengl32sw.dll";
+
+  base::NativeLibrary library =
+      base::LoadNativeLibrary(base::FilePath(libraryName), nullptr);
+  if (!library) {
+    DVLOG(1) << libraryName << " not found";
+    return false;
+  }
+#else
   base::NativeLibrary library =
       base::LoadNativeLibrary(base::FilePath(L"opengl32.dll"), nullptr);
   if (!library) {
     DVLOG(1) << "opengl32.dll not found";
     return false;
   }
+#endif
 
   GLGetProcAddressProc get_proc_address =
       reinterpret_cast<GLGetProcAddressProc>(
@@ -192,7 +205,7 @@ bool InitializeStaticWGLInternal() {
 
 }  // namespace
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 GLDisplay* InitializeGLOneOffPlatform(gl::GpuPreference gpu_preference) {
   VSyncProviderWin::InitializeOneOff();
 
