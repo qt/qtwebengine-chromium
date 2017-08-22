@@ -22,6 +22,10 @@ namespace init {
 // If its value is 0, use the default GPU of the system.
 bool InitializeGLOneOffPlatform(uint64_t system_device_id);
 
+#if defined(TOOLKIT_QT)
+bool usingSoftwareDynamicGL();
+#endif
+
 // Initializes a particular GL implementation.
 bool InitializeStaticGLBindings(GLImplementationParts implementation);
 
