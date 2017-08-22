@@ -126,7 +126,22 @@ class DisplayWGL {
       LOG(ERROR) << "Unable to get the pixel format for GL context.";
       return false;
     }
+
+#ifdef TOOLKIT_QT
+    // wglSetPixelFormat needs to be called instead of SetPixelFormat to allow a differently
+    // named software GL implementation library to set up its internal data.
+    // The windows gdi.dll SetPixelFormat call directly calls into the stock opengl32.dll,
+    // instead of opengl32sw.dll for example.
+    typedef BOOL (WINAPI *wglSetPixelFormatProc)(HDC, int, const PIXELFORMATDESCRIPTOR *);
+    wglSetPixelFormatProc wglSetPixelFormatFn =
+        reinterpret_cast<wglSetPixelFormatProc>(
+            GetGLProcAddress("wglSetPixelFormat"));
+
+    if (!wglSetPixelFormatFn(device_context_,
+
+#else
     if (!SetPixelFormat(device_context_,
+#endif
                         pixel_format_,
                         &kPixelFormatDescriptor)) {
       LOG(ERROR) << "Unable to set the pixel format for temporary GL context.";
