@@ -77,6 +77,7 @@ enum DisplayPlatform {
   NONE = 0,
   EGL = 1,
   X11 = 2,
+  WGL = 3,
 };
 
 class GL_EXPORT GLDisplay {
@@ -214,6 +215,32 @@ class GL_EXPORT GLDisplayX11 : public GLDisplay {
 
 };
 #endif  // defined(USE_GLX)
+
+#if BUILDFLAG(IS_WIN)
+class GLDisplayWGL : public GLDisplay {
+ public:
+  ~GLDisplayWGL() override;
+
+  void* GetDisplay() const override;
+  bool IsInitialized() const override;
+  void Shutdown() override;
+  bool InitializeFromDisplay(GLDisplay* display) override;
+
+  bool Init(bool software_rendering);
+
+  ATOM window_class() const { return window_class_; }
+  HDC device_context() const { return device_context_; }
+  int pixel_format() const { return pixel_format_; }
+
+  GLDisplayWGL(uint64_t system_device_id, DisplayKey display_key);
+ private:
+  HINSTANCE module_handle_;
+  ATOM window_class_;
+  HWND window_handle_;
+  HDC device_context_;
+  int pixel_format_;
+};
+#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace gl
 
