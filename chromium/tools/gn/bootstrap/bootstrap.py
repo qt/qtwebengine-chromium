@@ -346,6 +346,9 @@ def write_gn_ninja(path, root_gen_dir, options):
       # logic inside //build/toolchain.
       cflags.extend(['-O2', '-g0'])
 
+    # Always set TOOLKIT_QT define, because use_qt GN argument is not used for the initial GN build.
+    cflags.extend(['-DTOOLKIT_QT'])
+
     cflags.extend([
         '-D_FILE_OFFSET_BITS=64',
         '-D__STDC_CONSTANT_MACROS', '-D__STDC_FORMAT_MACROS',
