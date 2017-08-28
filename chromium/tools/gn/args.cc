@@ -268,6 +268,7 @@ void Args::SetSystemVarsLocked(Scope* dest) const {
   static const char kArm[] = "arm";
   static const char kArm64[] = "arm64";
   static const char kMips[] = "mipsel";
+  static const char kMips64[] = "mips64el";
   static const char kS390X[] = "s390x";
   static const char kPPC64[] = "ppc64";
   const char* arch = nullptr;
@@ -285,6 +286,8 @@ void Args::SetSystemVarsLocked(Scope* dest) const {
     arch = kArm64;
   else if (os_arch == "mips")
     arch = kMips;
+  else if (os_arch == "mips64")
+    arch = kMips64;
   else if (os_arch == "s390x")
     arch = kS390X;
   else if (os_arch == "mips")
