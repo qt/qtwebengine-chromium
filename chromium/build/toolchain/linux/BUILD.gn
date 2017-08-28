@@ -171,6 +171,22 @@ gcc_toolchain("mipsel") {
   }
 }
 
+gcc_toolchain("mips64el") {
+  cc = "gcc"
+  cxx = "g++"
+
+  readelf = "readelf"
+  nm = "nm"
+  ar = "ar"
+  ld = cxx
+
+  toolchain_args = {
+    current_cpu = "mips64el"
+    current_os = "linux"
+    is_clang = false
+  }
+}
+
 gcc_toolchain("s390x") {
   cc = "gcc"
   cxx = "g++"

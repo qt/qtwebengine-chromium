@@ -213,6 +213,7 @@ group("gn_all") {
         "//chrome/test:telemetry_perf_unittests",
         "//chrome/test:unit_tests",
         "//third_party/catapult/telemetry:bitmaptools($host_toolchain)",
+        "//tools/imagediff($host_toolchain)",
       ]
     }
   } else if (is_ios) {
