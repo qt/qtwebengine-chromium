@@ -97,9 +97,15 @@ source_set("system_libevent") {
 }
 
 group("libevent") {
-  if (use_system_libevent) {
-    public_deps = [ ":system_libevent" ]
+  if (host_toolchain != current_toolchain) {
+    if (use_system_libevent) {
+       public_deps = [ ":system_libevent" ]
+    } else {
+       public_deps = [ ":bundled_libevent" ]
+    }
   } else {
+    # Fix me: unbundle for host build
+    # this requires host pkg-config besides sysroot one.
     public_deps = [ ":bundled_libevent" ]
   }
 }
