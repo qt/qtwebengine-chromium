@@ -21,13 +21,13 @@ import("//build/config/compiler/compiler.gni")
 assert(is_win)
 
 config("chrome") {
-  ldflags = [ "/NATVIS:" + rebase_path("chrome.natvis", root_build_dir) ]
+  ldflags = [ "/NATVIS:" + rebase_path(get_path_info("chrome.natvis", "abspath")) ]
 }
 
 config("skia") {
-  ldflags = [ "/NATVIS:" + rebase_path("skia.natvis", root_build_dir) ]
+  ldflags = [ "/NATVIS:" + rebase_path(get_path_info("skia.natvis", "abspath")) ]
 }
 
 config("webkit") {
-  ldflags = [ "/NATVIS:" + rebase_path("webkit.natvis", root_build_dir) ]
+  ldflags = [ "/NATVIS:" + rebase_path(get_path_info("webkit.natvis", "abspath")) ]
 }
