@@ -381,8 +381,8 @@ NGLogicalOffset NGBlockLayoutAlgorithm::PrepareChildLayout(
   }
 
   NGLogicalOffset child_bfc_offset = curr_bfc_offset_;
-  child_bfc_offset.inline_offset +=
-      {border_and_padding_.inline_start + curr_child_margins_.inline_start};
+  LayoutUnit tmp = {border_and_padding_.inline_start + curr_child_margins_.inline_start};
+  child_bfc_offset.inline_offset += tmp;
 
   // Append the current margin strut with child's block start margin.
   // Non empty border/padding, and new FC use cases are handled inside of the
