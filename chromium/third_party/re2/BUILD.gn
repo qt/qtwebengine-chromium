@@ -69,13 +69,14 @@ static_library("bundled_re2") {
 }
 
 shim_headers("re2_shim") {
-  root_path = "src"
+  root_path = "src/re2"
+  prefix = "re2/"
   headers = [
-    "re2/filtered_re2.h",
-    "re2/re2.h",
-    "re2/set.h",
-    "re2/stringpiece.h",
-    "re2/variadic_function.h",
+    "filtered_re2.h",
+    "re2.h",
+    "set.h",
+    "stringpiece.h",
+    "variadic_function.h",
   ]
 }
 
