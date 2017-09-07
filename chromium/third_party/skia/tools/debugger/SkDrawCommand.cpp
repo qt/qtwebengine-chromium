@@ -7,7 +7,7 @@
 
 #include "SkDrawCommand.h"
 
-#include "png.h"
+#include "third_party/libpng/png.h"
 
 #include "SkAutoMalloc.h"
 #include "SkBlurMaskFilter.h"
