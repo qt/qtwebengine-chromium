@@ -23,7 +23,7 @@
 #include "SkTemplates.h"
 #include "SkUtils.h"
 
-#include "png.h"
+#include "third_party/libpng/png.h"
 #include <algorithm>
 
 // This warning triggers false postives way too often in here.
