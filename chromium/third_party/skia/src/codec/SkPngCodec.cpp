@@ -32,8 +32,8 @@
 #include <cstring>
 #include <utility>
 
-#include <png.h>
-#include <pngconf.h>
+#include "third_party/libpng/png.h"
+#include "third_party/libpng/pngconf.h"
 
 class SkSampler;
 
