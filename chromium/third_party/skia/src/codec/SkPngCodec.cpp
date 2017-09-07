@@ -22,7 +22,7 @@
 #include "SkTemplates.h"
 #include "SkUtils.h"
 
-#include "png.h"
+#include "third_party/libpng/png.h"
 #include <algorithm>
 
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
