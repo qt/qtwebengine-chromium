@@ -4,6 +4,7 @@
 
 import("//build/config/chrome_build.gni")
 import("//build/config/features.gni")
+import("//build/config/freetype/freetype.gni")
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/ui.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -18,6 +19,13 @@ if (use_system_harfbuzz) {
     public_configs = [ ":harfbuzz_pkgconfig" ]
   }
 } else {
+
+  if (use_system_freetype) {
+    pkg_config("freetype2_pkgconfig") {
+        packages = [ "freetype2" ]
+    }
+  }
+
   # The :harfbuzz-ng target combines the staged build steps required to resolve
   # the cyclic dependency between parts of FreeType and HarfBuzz.
   group("harfbuzz-ng") {
@@ -232,9 +240,13 @@ if (use_system_harfbuzz) {
       "HB_NO_MT",
     ]
 
-    deps = [
-      "//third_party/freetype:bootstrap_freetype_for_harfbuzz",
-    ]
+    if (use_system_freetype) {
+      public_configs += [ ":freetype2_pkgconfig" ]
+    } else {
+      deps = [
+        "//third_party/freetype:bootstrap_freetype_for_harfbuzz",
+      ]
+    }
   }
 }
 
