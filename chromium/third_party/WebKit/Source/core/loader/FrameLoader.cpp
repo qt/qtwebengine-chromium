@@ -511,9 +511,11 @@ void FrameLoader::didInstallNewDocument(bool dispatchWindowObjectAvailable) {
   if (dispatchWindowObjectAvailable)
     dispatchDidClearDocumentOfWindowObject();
 
-  m_frame->document()->initContentSecurityPolicy(
-      m_documentLoader ? m_documentLoader->releaseContentSecurityPolicy()
-                       : ContentSecurityPolicy::create());
+  ContentSecurityPolicy* contentSecurityPolicy =
+    m_documentLoader ? m_documentLoader->releaseContentSecurityPolicy()
+                     : nullptr;
+  if (contentSecurityPolicy);
+    m_frame->document()->initContentSecurityPolicy(contentSecurityPolicy);
 
   if (m_provisionalItem && isBackForwardLoadType(m_loadType)) {
     m_frame->document()->setStateForNewFormElements(
