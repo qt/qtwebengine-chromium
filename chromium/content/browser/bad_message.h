@@ -180,6 +180,8 @@ enum BadMessageReason {
   MDDH_INVALID_UNSUBSCRIPTION_REQUEST = 156,
   AOAH_NONSENSE_DEVICE_ID = 157,
   BDH_INVALID_OPTIONS = 158,
+  RFH_ILLEGAL_UPLOAD_PARAMS = 170,
+  RFPH_ILLEGAL_UPLOAD_PARAMS = 172,
 
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
