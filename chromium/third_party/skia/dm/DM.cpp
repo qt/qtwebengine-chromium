@@ -49,7 +49,7 @@
 extern void SkPDFImageDumpStats();
 #endif
 
-#include "png.h"
+#include "third_party/libpng/png.h"
 
 #include <stdlib.h>
 
