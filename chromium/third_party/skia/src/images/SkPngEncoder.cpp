@@ -15,7 +15,7 @@
 #include "SkString.h"
 #include "SkPngEncoder.h"
 
-#include "png.h"
+#include "third_party/libpng/png.h"
 
 static_assert(PNG_FILTER_NONE  == (int)SkPngEncoder::FilterFlag::kNone,  "Skia libpng filter err.");
 static_assert(PNG_FILTER_SUB   == (int)SkPngEncoder::FilterFlag::kSub,   "Skia libpng filter err.");
