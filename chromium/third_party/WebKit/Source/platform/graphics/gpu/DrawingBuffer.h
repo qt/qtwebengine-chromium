@@ -83,12 +83,15 @@ class PLATFORM_EXPORT DrawingBuffer
     virtual void DrawingBufferClientRestoreScissorTest() = 0;
     // Restores the mask and clear value for color, depth, and stencil buffers.
     virtual void DrawingBufferClientRestoreMaskAndClearValues() = 0;
-    virtual void DrawingBufferClientRestorePixelPackAlignment() = 0;
+    // Assume client knows the GL/WebGL version and restore necessary params
+    // accordingly.
+    virtual void DrawingBufferClientRestorePixelPackParameters() = 0;
     // Restores the GL_TEXTURE_2D binding for the active texture unit only.
     virtual void DrawingBufferClientRestoreTexture2DBinding() = 0;
     virtual void DrawingBufferClientRestoreRenderbufferBinding() = 0;
     virtual void DrawingBufferClientRestoreFramebufferBinding() = 0;
     virtual void DrawingBufferClientRestorePixelUnpackBufferBinding() = 0;
+    virtual void DrawingBufferClientRestorePixelPackBufferBinding() = 0;
   };
 
   enum PreserveDrawingBuffer {
@@ -261,12 +264,15 @@ class PLATFORM_EXPORT DrawingBuffer
 
     // Mark parts of the state that are dirty and need to be restored.
     void setClearStateDirty() { m_clearStateDirty = true; }
-    void setPixelPackAlignmentDirty() { m_pixelPackAlignmentDirty = true; }
+    void setPixelPackParametersDirty() { m_pixelPackParametersDirty = true; }
     void setTextureBindingDirty() { m_textureBindingDirty = true; }
     void setRenderbufferBindingDirty() { m_renderbufferBindingDirty = true; }
     void setFramebufferBindingDirty() { m_framebufferBindingDirty = true; }
     void setPixelUnpackBufferBindingDirty() {
       m_pixelUnpackBufferBindingDirty = true;
+    }
+    void setPixelPackBufferBindingDirty() {
+      m_pixelPackBufferBindingDirty = true;
     }
 
    private:
@@ -274,11 +280,12 @@ class PLATFORM_EXPORT DrawingBuffer
     // The previous state restorer, in case restorers are nested.
     ScopedStateRestorer* m_previousStateRestorer = nullptr;
     bool m_clearStateDirty = false;
-    bool m_pixelPackAlignmentDirty = false;
+    bool m_pixelPackParametersDirty = false;
     bool m_textureBindingDirty = false;
     bool m_renderbufferBindingDirty = false;
     bool m_framebufferBindingDirty = false;
     bool m_pixelUnpackBufferBindingDirty = false;
+    bool m_pixelPackBufferBindingDirty = false;
   };
 
   // All parameters necessary to generate the texture for the ColorBuffer.

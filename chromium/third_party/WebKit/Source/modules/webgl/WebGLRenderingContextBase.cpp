@@ -6300,7 +6300,8 @@ void WebGLRenderingContextBase::DrawingBufferClientRestoreMaskAndClearValues() {
   contextGL()->ClearStencil(m_clearStencil);
 }
 
-void WebGLRenderingContextBase::DrawingBufferClientRestorePixelPackAlignment() {
+void WebGLRenderingContextBase::
+    DrawingBufferClientRestorePixelPackParameters() {
   if (!contextGL())
     return;
   contextGL()->PixelStorei(GL_PACK_ALIGNMENT, m_packAlignment);
@@ -6328,6 +6329,8 @@ void WebGLRenderingContextBase::DrawingBufferClientRestoreFramebufferBinding() {
 
 void WebGLRenderingContextBase::
     DrawingBufferClientRestorePixelUnpackBufferBinding() {}
+void WebGLRenderingContextBase::
+    DrawingBufferClientRestorePixelPackBufferBinding() {}
 
 ScriptValue WebGLRenderingContextBase::getBooleanParameter(
     ScriptState* scriptState,

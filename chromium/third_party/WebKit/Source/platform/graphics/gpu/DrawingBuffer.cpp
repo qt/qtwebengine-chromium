@@ -999,11 +999,12 @@ void DrawingBuffer::restoreFramebufferBindings() {
 void DrawingBuffer::restoreAllState() {
   m_client->DrawingBufferClientRestoreScissorTest();
   m_client->DrawingBufferClientRestoreMaskAndClearValues();
-  m_client->DrawingBufferClientRestorePixelPackAlignment();
+  m_client->DrawingBufferClientRestorePixelPackParameters();
   m_client->DrawingBufferClientRestoreTexture2DBinding();
   m_client->DrawingBufferClientRestoreRenderbufferBinding();
   m_client->DrawingBufferClientRestoreFramebufferBinding();
   m_client->DrawingBufferClientRestorePixelUnpackBufferBinding();
+  m_client->DrawingBufferClientRestorePixelPackBufferBinding();
 }
 
 bool DrawingBuffer::multisample() const {
@@ -1068,8 +1069,16 @@ void DrawingBuffer::readBackFramebuffer(unsigned char* pixels,
                                         ReadbackOrder readbackOrder,
                                         WebGLImageConversion::AlphaOp op) {
   DCHECK(m_stateRestorer);
-  m_stateRestorer->setPixelPackAlignmentDirty();
+  m_stateRestorer->setPixelPackParametersDirty();
   m_gl->PixelStorei(GL_PACK_ALIGNMENT, 1);
+  if (m_webGLVersion > WebGL1) {
+    m_gl->PixelStorei(GL_PACK_SKIP_ROWS, 0);
+    m_gl->PixelStorei(GL_PACK_SKIP_PIXELS, 0);
+    m_gl->PixelStorei(GL_PACK_ROW_LENGTH, 0);
+
+    m_stateRestorer->setPixelPackBufferBindingDirty();
+    m_gl->BindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  }
   m_gl->ReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 
   size_t bufferSize = 4 * width * height;
@@ -1246,8 +1255,8 @@ DrawingBuffer::ScopedStateRestorer::~ScopedStateRestorer() {
     client->DrawingBufferClientRestoreScissorTest();
     client->DrawingBufferClientRestoreMaskAndClearValues();
   }
-  if (m_pixelPackAlignmentDirty)
-    client->DrawingBufferClientRestorePixelPackAlignment();
+  if (m_pixelPackParametersDirty)
+    client->DrawingBufferClientRestorePixelPackParameters();
   if (m_textureBindingDirty)
     client->DrawingBufferClientRestoreTexture2DBinding();
   if (m_renderbufferBindingDirty)
@@ -1256,6 +1265,8 @@ DrawingBuffer::ScopedStateRestorer::~ScopedStateRestorer() {
     client->DrawingBufferClientRestoreFramebufferBinding();
   if (m_pixelUnpackBufferBindingDirty)
     client->DrawingBufferClientRestorePixelUnpackBufferBinding();
+  if (m_pixelPackBufferBindingDirty)
+    client->DrawingBufferClientRestorePixelPackBufferBinding();
 }
 
 bool DrawingBuffer::shouldUseChromiumImage() {

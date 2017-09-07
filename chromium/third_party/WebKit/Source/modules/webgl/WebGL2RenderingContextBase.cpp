@@ -4946,4 +4946,24 @@ void WebGL2RenderingContextBase::
                           objectOrZero(m_boundPixelUnpackBuffer.get()));
 }
 
+void WebGL2RenderingContextBase::
+    DrawingBufferClientRestorePixelPackBufferBinding() {
+  if (!contextGL())
+    return;
+  contextGL()->BindBuffer(GL_PIXEL_PACK_BUFFER,
+                          objectOrZero(m_boundPixelPackBuffer.get()));
+}
+
+void WebGL2RenderingContextBase::
+    DrawingBufferClientRestorePixelPackParameters() {
+  if (!contextGL())
+    return;
+
+  contextGL()->PixelStorei(GL_PACK_ROW_LENGTH, m_packRowLength);
+  contextGL()->PixelStorei(GL_PACK_SKIP_ROWS, m_packSkipRows);
+  contextGL()->PixelStorei(GL_PACK_SKIP_PIXELS, m_packSkipPixels);
+
+  WebGLRenderingContextBase::DrawingBufferClientRestorePixelPackParameters();
+}
+
 }  // namespace blink

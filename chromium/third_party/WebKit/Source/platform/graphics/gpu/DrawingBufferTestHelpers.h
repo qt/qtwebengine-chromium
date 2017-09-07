@@ -186,8 +186,16 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
   }
 
   void BindBuffer(GLenum target, GLuint buffer) override {
-    if (target == GL_PIXEL_UNPACK_BUFFER)
-      m_state.pixelUnpackBufferBinding = buffer;
+    switch (target) {
+      case GL_PIXEL_UNPACK_BUFFER:
+        m_state.pixelUnpackBufferBinding = buffer;
+        break;
+      case GL_PIXEL_PACK_BUFFER:
+        m_state.pixelPackBufferBinding = buffer;
+        break;
+      default:
+        break;
+    }
   }
 
   GLuint64 InsertFenceSyncCHROMIUM() override {
@@ -289,6 +297,9 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
     for (GLsizei i = 0; i < n; ++i)
       textures[i] = id++;
   }
+  void DrawingBufferClientRestorePixelPackBufferBinding() override {
+    state_.pixel_pack_buffer_binding = saved_state_.pixel_pack_buffer_binding;
+  }
 
   // DrawingBuffer::Client implementation.
   bool DrawingBufferClientIsBoundForDraw() override {
@@ -308,7 +319,8 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
     m_state.depthMask = m_savedState.depthMask;
     m_state.stencilMask = m_savedState.stencilMask;
   }
-  void DrawingBufferClientRestorePixelPackAlignment() override {
+  void DrawingBufferClientRestorePixelPackParameters() override {
+    // TODO(zmo): restore ES3 pack parameters?
     m_state.packAlignment = m_savedState.packAlignment;
   }
   void DrawingBufferClientRestoreTexture2DBinding() override {
@@ -359,6 +371,8 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
               m_savedState.readFramebufferBinding);
     EXPECT_EQ(m_state.pixelUnpackBufferBinding,
               m_savedState.pixelUnpackBufferBinding);
+    EXPECT_EQ(m_state.pixelPackBufferBinding,
+              m_savedState.pixelPackBufferBinding);
   }
 
  private:
@@ -384,6 +398,7 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
     GLuint drawFramebufferBinding = 0;
     GLuint readFramebufferBinding = 0;
     GLuint pixelUnpackBufferBinding = 0;
+    GLuint pixelPackBufferBinding = 0;
   };
   State m_state;
   State m_savedState;

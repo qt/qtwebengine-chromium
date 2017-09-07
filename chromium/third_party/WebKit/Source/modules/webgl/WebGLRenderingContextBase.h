@@ -641,11 +641,12 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   bool DrawingBufferClientIsBoundForDraw() override;
   void DrawingBufferClientRestoreScissorTest() override;
   void DrawingBufferClientRestoreMaskAndClearValues() override;
-  void DrawingBufferClientRestorePixelPackAlignment() override;
+  void DrawingBufferClientRestorePixelPackParameters() override;
   void DrawingBufferClientRestoreTexture2DBinding() override;
   void DrawingBufferClientRestoreRenderbufferBinding() override;
   void DrawingBufferClientRestoreFramebufferBinding() override;
   void DrawingBufferClientRestorePixelUnpackBufferBinding() override;
+  void DrawingBufferClientRestorePixelPackBufferBinding() override;
 
   void addSharedObject(WebGLSharedObject*);
   void addContextObject(WebGLContextObject*);
