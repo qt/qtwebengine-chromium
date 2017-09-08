@@ -283,7 +283,7 @@ SkPathRef* SkPathRef::CreateFromBuffer(SkRBuffer* buffer) {
             return nullptr;
         }
     }
-    
+
     ref->fBoundsIsDirty = false;
 
     // resetToSize clears fSegmentMask and fIsOval
@@ -675,6 +675,11 @@ void SkPathRef::Iter::setPathRef(const SkPathRef& path) {
     fConicWeights = path.conicWeights();
     if (fConicWeights) {
       fConicWeights -= 1;  // begin one behind
+    }
+
+    // Don't allow iteration through non-finite points.
+    if (!path.isFinite()) {
+        fVerbStop = fVerbs;
     }
 }
 
