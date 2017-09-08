@@ -676,6 +676,11 @@ void SkPathRef::Iter::setPathRef(const SkPathRef& path) {
     if (fConicWeights) {
       fConicWeights -= 1;  // begin one behind
     }
+
+    // Don't allow iteration through non-finite points.
+    if (!path.isFinite()) {
+        fVerbStop = fVerbs;
+    }
 }
 
 uint8_t SkPathRef::Iter::next(SkPoint pts[4]) {
