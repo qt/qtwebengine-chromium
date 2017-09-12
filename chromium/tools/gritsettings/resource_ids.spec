@@ -718,18 +718,22 @@
     "includes": [3840],
   },
 
+  "qtwebengine/browser/qt_webengine_resources.grd": {
+    "includes": [3860],
+  },
+
   # This file is generated during the build.
   "<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd": {
     # In debug build, devtools frontend sources are not bundled and therefore
     # includes a lot of individual resources
     "META": {"sizes": {"includes": [2000],}},
-    "includes": [3860],
+    "includes": [3880],
   },
 
   # This file is generated during the build.
   "<(SHARED_INTERMEDIATE_DIR)/resources/inspector_overlay/inspector_overlay_resources.grd": {
     "META": {"sizes": {"includes": [50],}},
-    "includes": [3880],
+    "includes": [3900],
   },
 
   # END "everything else" section.
