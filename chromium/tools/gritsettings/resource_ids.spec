@@ -1297,6 +1297,10 @@
     "includes": [8420],
   },
 
+  "qtwebengine/browser/qt_webengine_resources.grd": {
+    "includes": [8420],
+  },
+
   # This file is generated during the build.
   # .grd extension is required because it's checked before var interpolation.
   "<(DEVTOOLS_GRD_PATH).grd": {
