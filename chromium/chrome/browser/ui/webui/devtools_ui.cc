@@ -12,7 +12,9 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/devtools/url_constants.h"
+#endif
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_context.h"
@@ -176,6 +178,7 @@ void DevToolsDataSource::StartDataRequest(
     return;
   }
 
+#ifndef TOOLKIT_QT
   // Serve request from remote location.
   std::string remote_path_prefix(chrome::kChromeUIDevToolsRemotePath);
   remote_path_prefix += "/";
@@ -192,6 +195,7 @@ void DevToolsDataSource::StartDataRequest(
     }
     return;
   }
+#endif
 
   std::string custom_frontend_url =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
@@ -253,6 +257,7 @@ void DevToolsDataSource::StartBundledDataRequest(
 void DevToolsDataSource::StartRemoteDataRequest(
     const GURL& url,
     const content::URLDataSource::GotDataCallback& callback) {
+#ifndef TOOLKIT_QT
   CHECK(url.is_valid());
   net::NetworkTrafficAnnotationTag traffic_annotation =
       net::DefineNetworkTrafficAnnotation("devtools_hard_coded_data_source", R"(
@@ -279,6 +284,7 @@ void DevToolsDataSource::StartRemoteDataRequest(
         })");
 
   StartNetworkRequest(url, traffic_annotation, net::LOAD_NORMAL, callback);
+#endif
 }
 
 void DevToolsDataSource::StartCustomDataRequest(
@@ -356,6 +362,7 @@ void DevToolsDataSource::OnLoadComplete(
 
 // static
 GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
+#ifndef TOOLKIT_QT
   GURL url(frontend_url);
   if (url.scheme() == content::kChromeDevToolsScheme &&
       url.host() == chrome::kChromeUIDevToolsHost)
@@ -367,21 +374,30 @@ GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
               chrome::kChromeUIDevToolsHost,
               chrome::kChromeUIDevToolsRemotePath,
               url.path().substr(1).c_str()));
+#else
+  return GURL();
+#endif
 }
 
 // static
 GURL DevToolsUI::GetRemoteBaseURL() {
+#ifndef TOOLKIT_QT
   return GURL(base::StringPrintf(
       "%s%s/%s/",
       kRemoteFrontendBase,
       kRemoteFrontendPath,
       content::GetWebKitRevision().c_str()));
+#else
+  return GURL();
+#endif
 }
 
 // static
 bool DevToolsUI::IsFrontendResourceURL(const GURL& url) {
+#ifndef TOOLKIT_QT
   if (url.host_piece() == kRemoteFrontendDomain)
     return true;
+#endif
 
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   if (cmd_line->HasSwitch(switches::kCustomDevtoolsFrontend)) {
@@ -400,7 +416,11 @@ bool DevToolsUI::IsFrontendResourceURL(const GURL& url) {
 }
 
 DevToolsUI::DevToolsUI(content::WebUI* web_ui)
-    : WebUIController(web_ui), bindings_(web_ui->GetWebContents()) {
+    : WebUIController(web_ui)
+#ifndef TOOLKIT_QT
+    , bindings_(web_ui->GetWebContents())
+#endif
+{
   web_ui->SetBindings(0);
   auto factory = content::BrowserContext::GetDefaultStoragePartition(
                      web_ui->GetWebContents()->GetBrowserContext())
