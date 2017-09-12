@@ -22,7 +22,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
-#include "chrome/grit/dev_ui_browser_resources.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/ax_event_notification_details.h"
@@ -43,10 +42,16 @@
 #include "ui/accessibility/platform/inspect/tree_formatter.h"
 #include "ui/base/webui/web_ui_util.h"
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#endif
+
+#if defined(TOOLKIT_QT)
+#include "qtwebengine/grit/qt_webengine_resources.h"
+#else
+#include "chrome/grit/dev_ui_browser_resources.h"
 #endif
 
 static const char kTargetsDataFile[] = "targets-data.json";
@@ -147,7 +152,7 @@ std::unique_ptr<base::DictionaryValue> BuildTargetDescriptor(
                                accessibility_mode);
 }
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
 std::unique_ptr<base::DictionaryValue> BuildTargetDescriptor(Browser* browser) {
   std::unique_ptr<base::DictionaryValue> target_data(
       new base::DictionaryValue());
@@ -157,7 +162,7 @@ std::unique_ptr<base::DictionaryValue> BuildTargetDescriptor(Browser* browser) {
   target_data->SetString(kTypeField, kBrowser);
   return target_data;
 }
-#endif  // !defined(OS_ANDROID)
+#endif  // !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
 
 bool ShouldHandleAccessibilityRequestCallback(const std::string& path) {
   return path == kTargetsDataFile;
@@ -247,11 +252,11 @@ void HandleAccessibilityRequestCallback(
   data.Set(kPagesField, std::move(rvh_list));
 
   std::unique_ptr<base::ListValue> browser_list(new base::ListValue());
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
   for (Browser* browser : *BrowserList::GetInstance()) {
     browser_list->Append(BuildTargetDescriptor(browser));
   }
-#endif  // !defined(OS_ANDROID)
+#endif  // !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
   data.Set(kBrowsersField, std::move(browser_list));
 
   std::string json_string;
@@ -579,7 +584,7 @@ void AccessibilityUIMessageHandler::RequestNativeUITree(
 
   AllowJavascript();
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
   std::vector<AXPropertyFilter> property_filters;
   AddPropertyFilters(property_filters, allow, AXPropertyFilter::ALLOW);
   AddPropertyFilters(property_filters, allow_empty,
