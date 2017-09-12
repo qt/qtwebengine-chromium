@@ -16,12 +16,8 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
-#include "chrome/grit/browser_resources.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_accessibility_state.h"
@@ -39,6 +35,18 @@
 #include "ui/accessibility/platform/ax_platform_node.h"
 #include "ui/accessibility/platform/ax_platform_node_delegate.h"
 #include "ui/base/webui/web_ui_util.h"
+
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window.h"
+#endif
+
+#if defined(TOOLKIT_QT)
+#include "qtwebengine/grit/qt_webengine_resources.h"
+#else
+#include "chrome/grit/browser_resources.h"
+#endif
 
 static const char kTargetsDataFile[] = "targets-data.json";
 
@@ -393,7 +401,7 @@ void AccessibilityUIMessageHandler::RequestNativeUITree(
   AllowJavascript();
   base::Value browser_list(base::Value::Type::LIST);
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
   for (Browser* browser : *BrowserList::GetInstance()) {
     base::Value browser_tree(base::Value::Type::DICTIONARY);
     browser_tree.SetKey("id", base::Value(browser->session_id().id()));

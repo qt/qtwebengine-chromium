@@ -6,4 +6,10 @@
 
 namespace prefs {
 const char kAcceptLanguages[] = "intl.accept_languages";
+
+// Boolean that indicates whether chrome://accessibility should show the
+// internal accessibility tree.
+const char kShowInternalAccessibilityTree[] =
+    "accessibility.show_internal_accessibility_tree";
+
 }  // namespace prefs
