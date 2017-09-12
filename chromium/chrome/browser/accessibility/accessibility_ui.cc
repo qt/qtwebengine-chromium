@@ -24,7 +24,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
-#include "chrome/grit/dev_ui_browser_resources.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/ax_event_notification_details.h"
@@ -48,13 +47,19 @@
 #include "ui/base/webui/web_ui_util.h"
 #include "ui/views/accessibility/view_accessibility.h"
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "ui/views/accessibility/widget_ax_tree_id_map.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#endif
+
+#if defined(TOOLKIT_QT)
+#include "qtwebengine/grit/qt_webengine_resources.h"
+#else
+#include "chrome/grit/dev_ui_browser_resources.h"
 #endif
 
 static const char kTargetsDataFile[] = "targets-data.json";
@@ -162,7 +167,7 @@ base::Value::Dict BuildTargetDescriptor(content::RenderViewHost* rvh) {
                                accessibility_mode);
 }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
 base::Value::Dict BuildTargetDescriptor(Browser* browser) {
   base::Value::Dict target_data;
   target_data.Set(kSessionIdField, browser->session_id().id());
@@ -264,7 +269,7 @@ void HandleAccessibilityRequestCallback(
   data.Set(kPagesField, std::move(page_list));
 
   base::Value::List browser_list;
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
   for (Browser* browser : *BrowserList::GetInstance()) {
     browser_list.Append(BuildTargetDescriptor(browser));
   }
@@ -606,7 +611,7 @@ void AccessibilityUIMessageHandler::RequestNativeUITree(
 
   AllowJavascript();
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
   std::vector<AXPropertyFilter> property_filters;
   AddPropertyFilters(property_filters, allow, AXPropertyFilter::ALLOW);
   AddPropertyFilters(property_filters, allow_empty,
