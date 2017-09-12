@@ -7,13 +7,21 @@
 #include <string>
 
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/grit/browser_resources.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+
+#if defined(TOOLKIT_QT)
+#include "chrome/grit/qt_webengine_resources.h"
+#else
+#include "chrome/grit/browser_resources.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "chrome/common/render_messages.h"
+#endif
 
 #if defined(OS_LINUX)
 #include "content/public/browser/zygote_host_linux.h"

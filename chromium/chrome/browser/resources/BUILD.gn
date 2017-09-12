@@ -7,6 +7,16 @@ import("//tools/grit/grit_rule.gni")
 
 assert(!is_ios, "Chromium/iOS shouldn't use anything in //chrome")
 
+grit("qt_webengine_resources") {
+  source = "qt_webengine_resources.grd"
+  defines = chrome_grit_defines
+  outputs = [
+    "grit/qt_webengine_resources.h",
+    "qt_webengine_resources.pak",
+  ]
+  output_dir = "$root_gen_dir/chrome"
+}
+
 grit("invalidations_resources") {
   source = "invalidations_resources.grd"
   defines = chrome_grit_defines

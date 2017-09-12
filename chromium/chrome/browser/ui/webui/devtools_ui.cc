@@ -227,6 +227,7 @@ void DevToolsDataSource::StartBundledDataRequest(
 void DevToolsDataSource::StartRemoteDataRequest(
     const std::string& path,
     const content::URLDataSource::GotDataCallback& callback) {
+#ifndef TOOLKIT_QT
   GURL url = GURL(kRemoteFrontendBase + path);
   CHECK_EQ(url.host(), kRemoteFrontendDomain);
   if (!url.is_valid()) {
@@ -263,6 +264,10 @@ void DevToolsDataSource::StartRemoteDataRequest(
   pending_[fetcher] = callback;
   fetcher->SetRequestContext(request_context_.get());
   fetcher->Start();
+#else
+  callback.Run(
+      new base::RefCountedStaticMemory(kHttpNotFound, strlen(kHttpNotFound)));
+#endif
 }
 
 void DevToolsDataSource::StartCustomDataRequest(
@@ -327,6 +332,7 @@ void DevToolsDataSource::OnURLFetchComplete(const net::URLFetcher* source) {
 
 // static
 GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
+#ifndef TOOLKIT_QT
   GURL url(frontend_url);
   if (url.scheme() == content::kChromeDevToolsScheme &&
       url.host() == chrome::kChromeUIDevToolsHost)
@@ -338,19 +344,30 @@ GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
               chrome::kChromeUIDevToolsHost,
               chrome::kChromeUIDevToolsRemotePath,
               url.path().substr(1).c_str()));
+#else
+  return GURL();
+#endif
 }
 
 // static
 GURL DevToolsUI::GetRemoteBaseURL() {
+#ifndef TOOLKIT_QT
   return GURL(base::StringPrintf(
       "%s%s/%s/",
       kRemoteFrontendBase,
       kRemoteFrontendPath,
       content::GetWebKitRevision().c_str()));
+#else
+  return GURL();
+#endif
 }
 
 DevToolsUI::DevToolsUI(content::WebUI* web_ui)
-    : WebUIController(web_ui), bindings_(web_ui->GetWebContents()) {
+    : WebUIController(web_ui)
+#ifndef TOOLKIT_QT
+    , bindings_(web_ui->GetWebContents())
+#endif
+{
   web_ui->SetBindings(0);
   Profile* profile = Profile::FromWebUI(web_ui);
   content::URLDataSource::Add(

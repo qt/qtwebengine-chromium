@@ -4348,7 +4348,6 @@ grit("resources") {
     "//chrome/app:chrome_content_manifest_overlays",
     "//chrome/browser/engagement:mojo_bindings_js",
     "//chrome/browser/media:mojo_bindings_js",
-    "//chrome/browser/resources/ssl/ssl_error_assistant:make_ssl_error_assistant_protobuf",
     "//chrome/browser/ui/webui/interventions_internals:mojo_bindings_js",
     "//chrome/browser/ui/webui/omnibox:mojo_bindings_js",
     "//chrome/browser/ui/webui/usb_internals:mojo_bindings_js",
@@ -4370,6 +4369,7 @@ grit("resources") {
     deps +=
         [ "//chrome/browser/resources/safe_browsing:make_file_types_protobuf" ]
   }
+  deps += [ "//chrome/browser/resources/ssl/ssl_error_assistant:make_ssl_error_assistant_protobuf" ]
 }
 
 if (is_chrome_branded) {
