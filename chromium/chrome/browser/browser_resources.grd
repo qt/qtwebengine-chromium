@@ -13,7 +13,7 @@
         <structure name="IDR_APP_LIST_START_PAGE_HTML" file="resources\app_list\start_page.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_APP_LIST_START_PAGE_JS" file="resources\app_list\start_page.js" flattenhtml="true" type="chrome_html" />
       </if>
-      <if expr="is_win">
+      <if expr="is_win and false">
         <structure name="IDR_CLEANUP_TOOL_BROWSER_PROXY_HTML" file="resources\cleanup_tool\cleanup_browser_proxy.html" type="chrome_html" />
         <structure name="IDR_CLEANUP_TOOL_BROWSER_PROXY_JS" file="resources\cleanup_tool\cleanup_browser_proxy.js" type="chrome_html" />
         <structure name="IDR_CLEANUP_TOOL_ICONS_HTML" file="resources\cleanup_tool\icons.html" type="chrome_html" />
@@ -23,7 +23,7 @@
         <structure name="IDR_CLEANUP_TOOL_TOOLBAR_HTML" file="resources\cleanup_tool\toolbar.html" type="chrome_html" />
         <structure name="IDR_CLEANUP_TOOL_TOOLBAR_JS" file="resources\cleanup_tool\toolbar.js" type="chrome_html" />
       </if>
-      <if expr="enable_extensions">
+      <if expr="enable_extensions and false">
         <structure name="IDR_EXTENSIONS_HTML" file="resources\extensions\extensions.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_MD_EXTENSIONS_EXTENSIONS_HTML" file="resources\md_extensions\extensions.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
       </if>
@@ -31,7 +31,7 @@
         <structure name="IDR_FIRST_RUN_HTML" file="resources\chromeos\first_run\first_run.html" flattenhtml="true" type="chrome_html"/>
         <structure name="IDR_FIRST_RUN_JS" file="resources\chromeos\first_run\first_run.js" flattenhtml="true" type="chrome_html" />
       </if>
-      <if expr="not is_android">
+      <if expr="not is_android and false">
         <structure name="IDR_HELP_CSS" file="resources\help\help.css" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_HELP_HTML" file="resources\help\help.html" flattenhtml="true" type="chrome_html" />
         <structure name="IDR_HELP_CONTENT_CSS" file="resources\help\help_content.css" flattenhtml="true" type="chrome_html" />
@@ -154,7 +154,7 @@
       <if expr="safe_browsing_mode != 0">
         <include name="IDR_DOWNLOAD_FILE_TYPES_PB" file="${root_gen_dir}\chrome\browser\resources\safe_browsing\download_file_types.pb" use_base_dir="false" type="BINDATA" />
       </if>
-      <if expr="not is_android">
+      <if expr="not is_android and false">
         <include name="IDR_MD_DOWNLOADS_1X_INCOGNITO_MARKER_PNG" file="resources\md_downloads\1x\incognito_marker.png" type="BINDATA" />
         <include name="IDR_MD_DOWNLOADS_2X_INCOGNITO_MARKER_PNG" file="resources\md_downloads\2x\incognito_marker.png" type="BINDATA" />
         <include name="IDR_MD_DOWNLOADS_1X_NO_DOWNLOADS_PNG" file="resources\md_downloads\1x\no_downloads.png" type="BINDATA" />
@@ -182,7 +182,7 @@
           </else>
         </if>
       </if>
-      <if expr="enable_extensions">
+      <if expr="enable_extensions and false">
         <include name="IDR_EXTENSION_COMMAND_LIST_JS" file="resources\extensions\extension_command_list.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_EXTENSION_LIST_JS" file="resources\extensions\extension_list.js" flattenhtml="true" type="BINDATA" />
         <include name="IDR_EXTENSIONS_JS" file="resources\extensions\extensions.js" flattenhtml="true" type="BINDATA" />
@@ -231,7 +231,7 @@
         <include name="IDR_MD_EXTENSIONS_STRINGS_HTML" file="resources\md_extensions\strings.html" type="BINDATA" />
       </if>
       <include name="IDR_FEEDBACK_MANIFEST" file="resources\feedback\manifest.json" type="BINDATA" />
-      <if expr="not is_android">
+      <if expr="not is_android and false">
         <include name="IDR_MD_FEEDBACK_FEEDBACK_HTML" file="resources\md_feedback\feedback.html" type="BINDATA" />
         <include name="IDR_MD_FEEDBACK_FEEDBACK_JS" file="resources\md_feedback\feedback.js" type="BINDATA" />
         <include name="IDR_MD_FEEDBACK_FEEDBACK_CONTAINER_HTML" file="resources\md_feedback\feedback_container.html" type="BINDATA" />
@@ -648,6 +648,7 @@
       <include name="IDR_CHROME_CONTENT_PACKAGED_SERVICES_MANIFEST_OVERLAY" file="${root_gen_dir}\chrome\app\chrome_content_packaged_services_manifest_overlay.json" type="BINDATA" use_base_dir="false"/>
       <include name="IDR_CHROME_CONTENT_RENDERER_MANIFEST_OVERLAY" file="${root_gen_dir}\chrome\app\chrome_content_renderer_manifest_overlay.json" type="BINDATA" use_base_dir="false" />
       <include name="IDR_CHROME_CONTENT_UTILITY_MANIFEST_OVERLAY" file="${root_gen_dir}\chrome\app\chrome_content_utility_manifest_overlay.json" type="BINDATA" use_base_dir="false" />
+      <!--
       <include name="IDR_NACL_LOADER_MANIFEST" file="../../components/nacl/loader/nacl_loader_manifest.json" type="BINDATA" />
       <if expr="is_win">
         <include name="IDR_NACL_BROKER_MANIFEST" file="../../components/nacl/broker/nacl_broker_manifest.json" type="BINDATA" />
@@ -661,6 +662,7 @@
       <if expr="not is_android and not is_ios">
         <include name="IDR_SSL_ERROR_ASSISTANT_PB" file="${root_gen_dir}/chrome/browser/resources/ssl/ssl_error_assistant/ssl_error_assistant.pb" use_base_dir="false" type="BINDATA" />
       </if>
+      -->
       <if expr="is_android or is_linux">
         <include name="IDR_SANDBOX_INTERNALS_HTML" file="resources\sandbox_internals\sandbox_internals.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" compress="gzip" />
         <include name="IDR_SANDBOX_INTERNALS_JS" file="resources\sandbox_internals\sandbox_internals.js" type="BINDATA" compress="gzip" />

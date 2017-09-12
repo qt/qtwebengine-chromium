@@ -4429,7 +4429,9 @@ grit("resources") {
     deps +=
         [ "//chrome/browser/resources/safe_browsing:make_file_types_protobuf" ]
   }
-  deps += [ "//chrome/browser/resources/ssl/ssl_error_assistant:make_ssl_error_assistant_protobuf" ]
+  if (!use_qt) {
+    deps += [ "//chrome/browser/resources/ssl/ssl_error_assistant:make_ssl_error_assistant_protobuf" ]
+  }
 }
 
 if (is_chrome_branded) {
