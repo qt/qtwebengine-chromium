@@ -8,14 +8,15 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "build/config/chromebox_for_meetings/buildflags.h"
-#include "components/history_clusters/history_clusters_internals/webui/url_constants.h"
 #include "components/nacl/common/buildflags.h"
-#include "components/optimization_guide/optimization_guide_internals/webui/url_constants.h"
-#if !defined(TOOLKIT_QT)
-#include "components/safe_browsing/core/common/web_ui_constants.h"
-#endif
 #include "extensions/buildflags/buildflags.h"
 #include "third_party/blink/public/common/chrome_debug_urls.h"
+
+#if !defined(TOOLKIT_QT)
+#include "components/history_clusters/history_clusters_internals/webui/url_constants.h"
+#include "components/optimization_guide/optimization_guide_internals/webui/url_constants.h"
+#include "components/safe_browsing/core/common/web_ui_constants.h"
+#endif // !defined(TOOLKIT_QT)
 
 namespace chrome {
 
@@ -649,7 +650,9 @@ const char* const kChromeHostURLs[] = {
     kChromeUIFlagsHost,
     kChromeUIGCMInternalsHost,
     kChromeUIHistoryHost,
+#if !defined(TOOLKIT_QT)
     history_clusters_internals::kChromeUIHistoryClustersInternalsHost,
+#endif // !defined(TOOLKIT_QT)
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     kChromeUIHumanPresenceInternalsHost,
 #endif
@@ -664,7 +667,9 @@ const char* const kChromeHostURLs[] = {
     kChromeUINetInternalsHost,
     kChromeUINewTabHost,
     kChromeUIOmniboxHost,
+#if !defined(TOOLKIT_QT)
     optimization_guide_internals::kChromeUIOptimizationGuideInternalsHost,
+#endif // !defined(TOOLKIT_QT)
     kChromeUIPasswordManagerInternalsHost,
     kChromeUIPasswordManagerHost,
     kChromeUIPolicyHost,
@@ -677,7 +682,7 @@ const char* const kChromeHostURLs[] = {
     kChromeUINTPTilesInternalsHost,
 #if !defined(TOOLKIT_QT)
     safe_browsing::kChromeUISafeBrowsingHost,
-#endif
+#endif // !defined(TOOLKIT_QT)
     kChromeUISyncInternalsHost,
 #if !BUILDFLAG(IS_ANDROID)
     kChromeUITermsHost,
