@@ -11,12 +11,6 @@
 #include "base/no_destructor.h"
 #include "build/build_config.h"
 #include "components/commerce/core/commerce_constants.h"
-#include "components/history_clusters/history_clusters_internals/webui/url_constants.h"
-#include "components/optimization_guide/optimization_guide_internals/webui/url_constants.h"
-#include "components/password_manager/content/common/web_ui_constants.h"
-#if !BUILDFLAG(IS_QTWEBENGINE)
-#include "components/safe_browsing/core/common/web_ui_constants.h"
-#endif
 #include "device/vr/buildflags/buildflags.h"
 #include "extensions/buildflags/buildflags.h"
 #include "third_party/blink/public/common/chrome_debug_urls.h"
@@ -25,6 +19,13 @@
 #include "ash/constants/chrome_webui_url_constants.h"
 #include "ash/constants/webui_url_constants.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
+#if !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/history_clusters/history_clusters_internals/webui/url_constants.h"
+#include "components/optimization_guide/optimization_guide_internals/webui/url_constants.h"
+#include "components/password_manager/content/common/web_ui_constants.h"
+#include "components/safe_browsing/core/common/web_ui_constants.h"
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
 namespace chrome {
 
@@ -133,7 +134,9 @@ base::span<const base::cstring_view> ChromeURLHosts() {
       kChromeUIChromeFindsInternalsHost,
       kChromeUIChromeURLsHost,
       kChromeUIComponentsHost,
+#if !BUILDFLAG(IS_QTWEBENGINE)
       commerce::kChromeUICommerceInternalsHost,
+#endif
       kChromeUIConnectorsInternalsHost,
 #if !BUILDFLAG(IS_ANDROID)
       kChromeUIContextualCueingInternalsHost,
@@ -147,7 +150,9 @@ base::span<const base::cstring_view> ChromeURLHosts() {
       kChromeUIFlagsHost,
       kChromeUIGCMInternalsHost,
       kChromeUIHistoryHost,
+#if !BUILDFLAG(IS_QTWEBENGINE)
       history_clusters_internals::kChromeUIHistoryClustersInternalsHost,
+#endif
       kChromeUIInterstitialHost,
 #if !BUILDFLAG(IS_ANDROID)
       kChromeUIIwaDevHost,
@@ -157,7 +162,9 @@ base::span<const base::cstring_view> ChromeURLHosts() {
       kChromeUIManagementHost,
 #endif
       kChromeUIMediaEngagementHost,
+#if !BUILDFLAG(IS_QTWEBENGINE)
       kChromeUIMetricsInternalsHost,
+#endif
       kChromeUINetExportHost,
       kChromeUINetInternalsHost,
       kChromeUINewTabHost,
@@ -165,9 +172,13 @@ base::span<const base::cstring_view> ChromeURLHosts() {
 #if !BUILDFLAG(IS_ANDROID)
       kChromeUIOnDeviceInternalsHost,
 #endif
+#if !BUILDFLAG(IS_QTWEBENGINE)
       optimization_guide_internals::kChromeUIOptimizationGuideInternalsHost,
+#endif
       kChromeUIPasswordManagerInternalsHost,
+#if !BUILDFLAG(IS_QTWEBENGINE)
       password_manager::kChromeUIPasswordManagerHost,
+#endif
       kChromeUIPolicyHost,
       kChromeUIPredictorsHost,
       kChromeUIPrefsInternalsHost,
