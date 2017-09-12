@@ -6,7 +6,10 @@
 #define CHROME_BROWSER_UI_WEBUI_DEVTOOLS_UI_H_
 
 #include "base/macros.h"
+#include "base/values.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/devtools/devtools_ui_bindings.h"
+#endif
 #include "content/public/browser/web_ui_controller.h"
 
 class DevToolsUI : public content::WebUIController {
@@ -19,7 +22,9 @@ class DevToolsUI : public content::WebUIController {
   ~DevToolsUI() override;
 
  private:
+#ifndef TOOLKIT_QT
   DevToolsUIBindings bindings_;
+#endif
   DISALLOW_COPY_AND_ASSIGN(DevToolsUI);
 };
 

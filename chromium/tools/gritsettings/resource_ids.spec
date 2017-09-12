@@ -588,10 +588,14 @@
     "includes": [3840],
   },
 
+  "qtwebengine/browser/qt_webengine_resources.grd": {
+    "includes": [3860],
+  },
+
   # This file is generated during the build.
   "<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd": {
-    "META": {"sizes": {"includes": [500],}},
-    "includes": [3860],
+    "META": {"sizes": {"includes": [1000],}},
+    "includes": [3880],
   },
 
   # END "everything else" section.
