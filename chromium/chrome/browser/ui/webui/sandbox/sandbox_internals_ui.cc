@@ -9,11 +9,16 @@
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/grit/dev_ui_browser_resources.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+
+#if defined(TOOLKIT_QT)
+#include "qtwebengine/grit/qt_webengine_resources.h"
+#else
+#include "chrome/grit/dev_ui_browser_resources.h"
+#endif
 
 #if defined(OS_WIN)
 #include "chrome/browser/ui/webui/sandbox/sandbox_handler.h"
