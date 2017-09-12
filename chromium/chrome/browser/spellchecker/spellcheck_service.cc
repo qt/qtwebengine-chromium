@@ -16,10 +16,14 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#if defined (TOOLKIT_QT)
+#include "service_qt.h"
+#else
 #include "chrome/browser/chrome_service.h"
+#include "chrome/common/constants.mojom.h"
+#endif
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
-#include "chrome/common/constants.mojom.h"
 #include "chrome/common/pref_names.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_member.h"
@@ -212,11 +216,19 @@ void SpellcheckService::InitForRenderer(
   }
 
   spellcheck::mojom::SpellCheckerPtr spellchecker;
+#if defined (TOOLKIT_QT)
+  ServiceQt::GetInstance()->connector()->BindInterface(
+      service_manager::ServiceFilter::ByNameWithIdInGroup(
+          "qtwebengine_renderer", renderer_identity.instance_id(),
+          renderer_identity.instance_group()),
+      &spellchecker);
+#else
   ChromeService::GetInstance()->connector()->BindInterface(
       service_manager::ServiceFilter::ByNameWithIdInGroup(
           chrome::mojom::kRendererServiceName, renderer_identity.instance_id(),
           renderer_identity.instance_group()),
       &spellchecker);
+#endif
   spellchecker->Initialize(std::move(dictionaries), custom_words, enable);
 }
 
@@ -314,12 +326,21 @@ void SpellcheckService::OnCustomDictionaryChanged(
 
     service_manager::Identity renderer_identity = process->GetChildIdentity();
     spellcheck::mojom::SpellCheckerPtr spellchecker;
+#if defined (TOOLKIT_QT)
+    ServiceQt::GetInstance()->connector()->BindInterface(
+        service_manager::ServiceFilter::ByNameWithIdInGroup(
+            "qtwebengine_renderer",
+            renderer_identity.instance_id(),
+            renderer_identity.instance_group()),
+        &spellchecker);
+#else
     ChromeService::GetInstance()->connector()->BindInterface(
         service_manager::ServiceFilter::ByNameWithIdInGroup(
             chrome::mojom::kRendererServiceName,
             renderer_identity.instance_id(),
             renderer_identity.instance_group()),
         &spellchecker);
+#endif
     spellchecker->CustomDictionaryChanged(additions, deletions);
   }
 }

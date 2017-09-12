@@ -9,7 +9,6 @@
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/grit/browser_resources.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -18,6 +17,12 @@
 #if defined(OS_ANDROID)
 #include "chrome/common/sandbox_status_extension_android.mojom.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#endif
+
+#if defined(TOOLKIT_QT)
+#include "qtwebengine/grit/qt_webengine_resources.h"
+#else
+#include "chrome/grit/browser_resources.h"
 #endif
 
 #if defined(OS_LINUX)
