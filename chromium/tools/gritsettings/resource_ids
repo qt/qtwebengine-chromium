@@ -570,6 +570,10 @@
     "includes": [20060],
   },
 
+  "qtwebengine/browser/qt_webengine_resources.grd": {
+    "includes": [30210],
+  },
+
   # END "everything else" section.
   # Everything but chrome/, components/, content/, and ios/
 
