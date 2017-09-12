@@ -16,8 +16,11 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/task/thread_pool.h"
+#include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/devtools_ui_bindings.h"
 #include "chrome/browser/devtools/url_constants.h"
+#endif
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
@@ -176,6 +179,7 @@ void DevToolsDataSource::StartDataRequest(
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Serve request to devtools://remote from remote location.
   std::string remote_path_prefix(chrome::kChromeUIDevToolsRemotePath);
   remote_path_prefix += "/";
@@ -198,6 +202,7 @@ void DevToolsDataSource::StartDataRequest(
     }
     return;
   }
+#endif
 
   // Serve request to devtools://custom from custom URL.
   std::string custom_path_prefix(chrome::kChromeUIDevToolsCustomPath);
@@ -254,6 +259,7 @@ void DevToolsDataSource::StartBundledDataRequest(
 void DevToolsDataSource::StartRemoteDataRequest(
     const GURL& url,
     content::URLDataSource::GotDataCallback callback) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   CHECK(url.is_valid());
   net::NetworkTrafficAnnotationTag traffic_annotation =
       net::DefineNetworkTrafficAnnotation("devtools_hard_coded_data_source",
@@ -281,6 +287,7 @@ void DevToolsDataSource::StartRemoteDataRequest(
 
   StartNetworkRequest(url, traffic_annotation, net::LOAD_NORMAL,
                       std::move(callback));
+#endif
 }
 
 void DevToolsDataSource::StartCustomDataRequest(
