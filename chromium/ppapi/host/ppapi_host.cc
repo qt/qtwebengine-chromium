@@ -238,7 +238,13 @@ void PpapiHost::OnHostMsgResourceCreated(
       CreateResourceHost(params.pp_resource(), instance, nested_msg);
 
   if (!resource_host.get()) {
+#ifndef TOOLKIT_QT
     NOTREACHED();
+#else
+    LOG(INFO) << "Failed to create PPAPI resource host"
+              << IPC_MESSAGE_ID_CLASS(nested_msg.type())
+              << IPC_MESSAGE_ID_LINE(nested_msg.type());
+#endif
     return;
   }
 
