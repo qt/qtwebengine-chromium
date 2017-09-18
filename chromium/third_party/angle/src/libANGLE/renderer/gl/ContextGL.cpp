@@ -51,7 +51,9 @@ CompilerImpl *ContextGL::createCompiler()
 
 ShaderImpl *ContextGL::createShader(const gl::ShaderState &data)
 {
-    return new ShaderGL(data, getFunctions(), getWorkaroundsGL());
+    return new ShaderGL(data, getFunctions(), getWorkaroundsGL(),
+                        getExtensions().webglCompatibility,
+                        mRenderer->getMultiviewImplementationType());
 }
 
 ProgramImpl *ContextGL::createProgram(const gl::ProgramState &data)
@@ -150,40 +152,44 @@ gl::Error ContextGL::finish()
     return mRenderer->finish();
 }
 
-gl::Error ContextGL::drawArrays(GLenum mode, GLint first, GLsizei count)
+gl::Error ContextGL::drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count)
 {
-    return mRenderer->drawArrays(mState, mode, first, count);
+    return mRenderer->drawArrays(context, mode, first, count);
 }
 
-gl::Error ContextGL::drawArraysInstanced(GLenum mode,
+gl::Error ContextGL::drawArraysInstanced(const gl::Context *context,
+                                         GLenum mode,
                                          GLint first,
                                          GLsizei count,
                                          GLsizei instanceCount)
 {
-    return mRenderer->drawArraysInstanced(mState, mode, first, count, instanceCount);
+    return mRenderer->drawArraysInstanced(context, mode, first, count, instanceCount);
 }
 
-gl::Error ContextGL::drawElements(GLenum mode,
+gl::Error ContextGL::drawElements(const gl::Context *context,
+                                  GLenum mode,
                                   GLsizei count,
                                   GLenum type,
                                   const void *indices,
                                   const gl::IndexRange &indexRange)
 {
-    return mRenderer->drawElements(mState, mode, count, type, indices, indexRange);
+    return mRenderer->drawElements(context, mode, count, type, indices, indexRange);
 }
 
-gl::Error ContextGL::drawElementsInstanced(GLenum mode,
+gl::Error ContextGL::drawElementsInstanced(const gl::Context *context,
+                                           GLenum mode,
                                            GLsizei count,
                                            GLenum type,
                                            const void *indices,
                                            GLsizei instances,
                                            const gl::IndexRange &indexRange)
 {
-    return mRenderer->drawElementsInstanced(mState, mode, count, type, indices, instances,
+    return mRenderer->drawElementsInstanced(context, mode, count, type, indices, instances,
                                             indexRange);
 }
 
-gl::Error ContextGL::drawRangeElements(GLenum mode,
+gl::Error ContextGL::drawRangeElements(const gl::Context *context,
+                                       GLenum mode,
                                        GLuint start,
                                        GLuint end,
                                        GLsizei count,
@@ -191,17 +197,23 @@ gl::Error ContextGL::drawRangeElements(GLenum mode,
                                        const void *indices,
                                        const gl::IndexRange &indexRange)
 {
-    return mRenderer->drawRangeElements(mState, mode, start, end, count, type, indices, indexRange);
+    return mRenderer->drawRangeElements(context, mode, start, end, count, type, indices,
+                                        indexRange);
 }
 
-gl::Error ContextGL::drawArraysIndirect(GLenum mode, const void *indirect)
+gl::Error ContextGL::drawArraysIndirect(const gl::Context *context,
+                                        GLenum mode,
+                                        const void *indirect)
 {
-    return mRenderer->drawArraysIndirect(mState, mode, indirect);
+    return mRenderer->drawArraysIndirect(context, mode, indirect);
 }
 
-gl::Error ContextGL::drawElementsIndirect(GLenum mode, GLenum type, const void *indirect)
+gl::Error ContextGL::drawElementsIndirect(const gl::Context *context,
+                                          GLenum mode,
+                                          GLenum type,
+                                          const void *indirect)
 {
-    return mRenderer->drawElementsIndirect(mState, mode, type, indirect);
+    return mRenderer->drawElementsIndirect(context, mode, type, indirect);
 }
 
 void ContextGL::stencilFillPath(const gl::Path *path, GLenum fillMode, GLuint mask)
@@ -328,9 +340,9 @@ void ContextGL::popGroupMarker()
     mRenderer->popGroupMarker();
 }
 
-void ContextGL::syncState(const gl::State::DirtyBits &dirtyBits)
+void ContextGL::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
 {
-    mRenderer->getStateManager()->syncState(mState, dirtyBits);
+    mRenderer->getStateManager()->syncState(context, dirtyBits);
 }
 
 GLint ContextGL::getGPUDisjoint()
@@ -343,10 +355,10 @@ GLint64 ContextGL::getTimestamp()
     return mRenderer->getTimestamp();
 }
 
-void ContextGL::onMakeCurrent(const gl::ContextState &data)
+void ContextGL::onMakeCurrent(const gl::Context *context)
 {
     // Queries need to be paused/resumed on context switches
-    mRenderer->getStateManager()->onMakeCurrent(data);
+    mRenderer->getStateManager()->onMakeCurrent(context);
 }
 
 const gl::Caps &ContextGL::getNativeCaps() const
@@ -369,6 +381,11 @@ const gl::Limitations &ContextGL::getNativeLimitations() const
     return mRenderer->getNativeLimitations();
 }
 
+void ContextGL::applyNativeWorkarounds(gl::Workarounds *workarounds) const
+{
+    return mRenderer->applyNativeWorkarounds(workarounds);
+}
+
 const FunctionsGL *ContextGL::getFunctions() const
 {
     return mRenderer->getFunctions();
@@ -384,9 +401,12 @@ const WorkaroundsGL &ContextGL::getWorkaroundsGL() const
     return mRenderer->getWorkarounds();
 }
 
-gl::Error ContextGL::dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGroupsZ)
+gl::Error ContextGL::dispatchCompute(const gl::Context *context,
+                                     GLuint numGroupsX,
+                                     GLuint numGroupsY,
+                                     GLuint numGroupsZ)
 {
-    return mRenderer->dispatchCompute(mState, numGroupsX, numGroupsY, numGroupsZ);
+    return mRenderer->dispatchCompute(context, numGroupsX, numGroupsY, numGroupsZ);
 }
 
 }  // namespace rx

@@ -251,6 +251,10 @@ struct Extensions
     // GL_EXT_frag_depth
     bool fragDepth;
 
+    // ANGLE_multiview
+    bool multiview;
+    GLuint maxViews;
+
     // GL_ANGLE_texture_usage
     bool textureUsage;
 
@@ -363,6 +367,9 @@ struct Extensions
 
     // GL_ANGLE_robust_resource_initialization
     bool robustResourceInitialization;
+
+    // GL_ANGLE_program_cache_control
+    bool programCacheControl;
 };
 
 struct ExtensionInfo
@@ -668,8 +675,8 @@ struct DisplayExtensions
     // EGL_ANGLE_create_context_client_arrays
     bool createContextClientArrays;
 
-    // EGL_ANGLE_create_context_robust_resource_initialization
-    bool createContextRobustResourceInitialization;
+    // EGL_ANGLE_program_cache_control
+    bool programCacheControl;
 };
 
 struct DeviceExtensions
@@ -728,6 +735,9 @@ struct ClientExtensions
 
     // EGL_KHR_client_get_all_proc_addresses
     bool clientGetAllProcAddresses;
+
+    // EGL_ANGLE_display_robust_resource_initialization
+    bool displayRobustResourceInitialization;
 };
 
 }  // namespace egl

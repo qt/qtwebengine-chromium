@@ -9,6 +9,8 @@
 
 #include "fpdfsdk/fpdfview_c_api_test.h"
 
+#include "public/fpdf_annot.h"
+#include "public/fpdf_attachment.h"
 #include "public/fpdf_dataavail.h"
 #include "public/fpdf_doc.h"
 #include "public/fpdf_edit.h"
@@ -33,6 +35,44 @@ fnptr g_c_api_test_fnptr = NULL;  // Extern, so can't know it doesn't change.
 
 // Function to call from gtest harness to ensure linker resolution.
 int CheckPDFiumCApi() {
+    // fpdf_annot.h
+    CHK(FPDFAnnot_IsSupportedSubtype);
+    CHK(FPDFPage_CreateAnnot);
+    CHK(FPDFPage_GetAnnotCount);
+    CHK(FPDFPage_GetAnnot);
+    CHK(FPDFPage_CloseAnnot);
+    CHK(FPDFPage_RemoveAnnot);
+    CHK(FPDFAnnot_GetSubtype);
+    CHK(FPDFAnnot_IsObjectSupportedSubtype);
+    CHK(FPDFAnnot_UpdateObject);
+    CHK(FPDFAnnot_AppendObject);
+    CHK(FPDFAnnot_GetObjectCount);
+    CHK(FPDFAnnot_GetObject);
+    CHK(FPDFAnnot_RemoveObject);
+    CHK(FPDFAnnot_SetColor);
+    CHK(FPDFAnnot_GetColor);
+    CHK(FPDFAnnot_HasAttachmentPoints);
+    CHK(FPDFAnnot_SetAttachmentPoints);
+    CHK(FPDFAnnot_GetAttachmentPoints);
+    CHK(FPDFAnnot_SetRect);
+    CHK(FPDFAnnot_GetRect);
+    CHK(FPDFAnnot_HasKey);
+    CHK(FPDFAnnot_SetStringValue);
+    CHK(FPDFAnnot_GetStringValue);
+    CHK(FPDFAnnot_GetFlags);
+    CHK(FPDFAnnot_SetFlags);
+    CHK(FPDFAnnot_GetFormFieldFlags);
+    CHK(FPDFAnnot_GetFormFieldAtPoint);
+
+    // fpdf_attachment.h
+    CHK(FPDFDoc_GetAttachmentCount);
+    CHK(FPDFDoc_GetAttachment);
+    CHK(FPDFAttachment_GetName);
+    CHK(FPDFAttachment_HasKey);
+    CHK(FPDFAttachment_GetValueType);
+    CHK(FPDFAttachment_GetStringValue);
+    CHK(FPDFAttachment_GetFile);
+
     // fpdf_dataavail.h
     CHK(FPDFAvail_Create);
     CHK(FPDFAvail_Destroy);
@@ -79,7 +119,9 @@ int CheckPDFiumCApi() {
     CHK(FPDFPage_HasTransparency);
     CHK(FPDFPage_GenerateContent);
     CHK(FPDFPageObj_HasTransparency);
+    CHK(FPDFPageObj_GetBounds);
     CHK(FPDFPageObj_GetType);
+    CHK(FPDFPageObj_SetBlendMode);
     CHK(FPDFPageObj_Transform);
     CHK(FPDFPage_TransformAnnots);
     CHK(FPDFPageObj_NewImageObj);
@@ -90,6 +132,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFPageObj_CreateNewPath);
     CHK(FPDFPageObj_CreateNewRect);
     CHK(FPDFPath_SetStrokeColor);
+    CHK(FPDFPath_GetStrokeColor);
     CHK(FPDFPath_SetStrokeWidth);
     CHK(FPDFPath_SetFillColor);
     CHK(FPDFPath_GetFillColor);
@@ -98,8 +141,11 @@ int CheckPDFiumCApi() {
     CHK(FPDFPath_BezierTo);
     CHK(FPDFPath_Close);
     CHK(FPDFPath_SetDrawMode);
+    CHK(FPDFPath_SetLineCap);
+    CHK(FPDFPath_SetLineJoin);
     CHK(FPDFPageObj_NewTextObj);
     CHK(FPDFText_SetText);
+    CHK(FPDFText_SetFillColor);
     CHK(FPDFText_LoadFont);
     CHK(FPDFFont_Close);
     CHK(FPDFPageObj_CreateTextObj);
@@ -132,9 +178,9 @@ int CheckPDFiumCApi() {
     CHK(FORM_OnKeyDown);
     CHK(FORM_OnKeyUp);
     CHK(FORM_OnChar);
+    CHK(FORM_GetSelectedText);
     CHK(FORM_ForceToKillFocus);
     CHK(FPDFPage_HasFormFieldAtPoint);
-    CHK(FPDPage_HasFormFieldAtPoint);  // DEPRECATED. Remove in the future.
     CHK(FPDFPage_FormFieldZOrderAtPoint);
     CHK(FPDF_SetFormFieldHighlightColor);
     CHK(FPDF_SetFormFieldHighlightAlpha);

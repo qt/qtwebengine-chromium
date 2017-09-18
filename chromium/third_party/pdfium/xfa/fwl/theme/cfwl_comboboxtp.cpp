@@ -10,8 +10,8 @@
 #include "xfa/fwl/cfwl_themebackground.h"
 #include "xfa/fwl/cfwl_widget.h"
 #include "xfa/fwl/ifwl_themeprovider.h"
-#include "xfa/fxgraphics/cfx_color.h"
-#include "xfa/fxgraphics/cfx_path.h"
+#include "xfa/fxgraphics/cxfa_color.h"
+#include "xfa/fxgraphics/cxfa_path.h"
 
 CFWL_ComboBoxTP::CFWL_ComboBoxTP() {}
 
@@ -27,7 +27,7 @@ void CFWL_ComboBoxTP::DrawBackground(CFWL_ThemeBackground* pParams) {
       break;
     }
     case CFWL_Part::Background: {
-      CFX_Path path;
+      CXFA_Path path;
       CFX_RectF& rect = pParams->m_rtPart;
       path.AddRectangle(rect.left, rect.top, rect.width, rect.height);
       FX_ARGB argb_color;
@@ -42,7 +42,7 @@ void CFWL_ComboBoxTP::DrawBackground(CFWL_ThemeBackground* pParams) {
           argb_color = 0xFFFFFFFF;
       }
       pParams->m_pGraphics->SaveGraphState();
-      CFX_Color cr(argb_color);
+      CXFA_Color cr(argb_color);
       pParams->m_pGraphics->SetFillColor(&cr);
       pParams->m_pGraphics->FillPath(&path, FXFILL_WINDING, &pParams->m_matrix);
       pParams->m_pGraphics->RestoreGraphState();
@@ -64,10 +64,10 @@ void CFWL_ComboBoxTP::DrawBackground(CFWL_ThemeBackground* pParams) {
 void CFWL_ComboBoxTP::DrawStrethHandler(CFWL_ThemeBackground* pParams,
                                         uint32_t dwStates,
                                         CFX_Matrix* pMatrix) {
-  CFX_Path path;
+  CXFA_Path path;
   path.AddRectangle(pParams->m_rtPart.left, pParams->m_rtPart.top,
                     pParams->m_rtPart.width - 1, pParams->m_rtPart.height);
-  CFX_Color cr(ArgbEncode(0xff, 0xff, 0, 0));
+  CXFA_Color cr(ArgbEncode(0xff, 0xff, 0, 0));
   pParams->m_pGraphics->SetFillColor(&cr);
   pParams->m_pGraphics->FillPath(&path, FXFILL_WINDING, &pParams->m_matrix);
 }

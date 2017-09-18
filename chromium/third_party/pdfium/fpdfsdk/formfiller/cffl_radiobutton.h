@@ -7,16 +7,17 @@
 #ifndef FPDFSDK_FORMFILLER_CFFL_RADIOBUTTON_H_
 #define FPDFSDK_FORMFILLER_CFFL_RADIOBUTTON_H_
 
-#include "fpdfsdk/formfiller/cffl_formfiller.h"
+#include "fpdfsdk/formfiller/cffl_button.h"
+
+class CPWL_RadioButton;
 
 class CFFL_RadioButton : public CFFL_Button {
  public:
-  CFFL_RadioButton(CPDFSDK_FormFillEnvironment* pApp, CPDFSDK_Annot* pAnnot);
+  CFFL_RadioButton(CPDFSDK_FormFillEnvironment* pApp, CPDFSDK_Widget* pWidget);
   ~CFFL_RadioButton() override;
 
   // CFFL_Button
-  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
-                         CPDFSDK_PageView* pPageView) override;
+  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp) override;
   bool OnKeyDown(CPDFSDK_Annot* pAnnot,
                  uint32_t nKeyCode,
                  uint32_t nFlags) override;
@@ -27,6 +28,9 @@ class CFFL_RadioButton : public CFFL_Button {
                    const CFX_PointF& point) override;
   bool IsDataChanged(CPDFSDK_PageView* pPageView) override;
   void SaveData(CPDFSDK_PageView* pPageView) override;
+
+ private:
+  CPWL_RadioButton* GetRadioButton(CPDFSDK_PageView* pPageView, bool bNew);
 };
 
 #endif  // FPDFSDK_FORMFILLER_CFFL_RADIOBUTTON_H_

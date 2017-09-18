@@ -13,11 +13,11 @@
 #include <algorithm>
 #include <sstream>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/stringencode.h"
-#include "webrtc/base/stringutils.h"
-#include "webrtc/common_video/h264/profile_level_id.h"
+#include "webrtc/media/base/h264_profile_level_id.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/stringencode.h"
+#include "webrtc/rtc_base/stringutils.h"
 
 namespace cricket {
 

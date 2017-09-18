@@ -18,12 +18,12 @@
 #include <utility>
 
 #include "webrtc/api/call/transport.h"
-#include "webrtc/base/platform_file.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/config.h"
 #include "webrtc/media/base/videosinkinterface.h"
 #include "webrtc/media/base/videosourceinterface.h"
+#include "webrtc/rtc_base/platform_file.h"
 
 namespace webrtc {
 
@@ -224,9 +224,9 @@ class VideoSendStream {
   enum class DegradationPreference {
     // Don't take any actions based on over-utilization signals.
     kDegradationDisabled,
-    // On over-use, request lost resolution, possibly causing down-scaling.
+    // On over-use, request lower frame rate, possibly causing frame drops.
     kMaintainResolution,
-    // On over-use, request lower frame rate, possible causing frame drops.
+    // On over-use, request lower resolution, possibly causing down-scaling.
     kMaintainFramerate,
     // Try to strike a "pleasing" balance between frame rate or resolution.
     kBalanced,

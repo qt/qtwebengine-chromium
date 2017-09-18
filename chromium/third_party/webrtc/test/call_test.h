@@ -50,6 +50,9 @@ class CallTest : public ::testing::Test {
   static const uint8_t kUlpfecPayloadType;
   static const uint8_t kFlexfecPayloadType;
   static const uint8_t kAudioSendPayloadType;
+  static const uint8_t kPayloadTypeH264;
+  static const uint8_t kPayloadTypeVP8;
+  static const uint8_t kPayloadTypeVP9;
   static const uint32_t kSendRtxSsrcs[kNumSsrcs];
   static const uint32_t kVideoSendSsrcs[kNumSsrcs];
   static const uint32_t kAudioSendSsrc;
@@ -57,6 +60,7 @@ class CallTest : public ::testing::Test {
   static const uint32_t kReceiverLocalVideoSsrc;
   static const uint32_t kReceiverLocalAudioSsrc;
   static const int kNackRtpHistoryMs;
+  static const uint8_t kDefaultKeepalivePayloadType;
   static const std::map<uint8_t, MediaType> payload_type_map_;
 
  protected:
@@ -146,6 +150,8 @@ class CallTest : public ::testing::Test {
 
   VoiceEngineState voe_send_;
   VoiceEngineState voe_recv_;
+  rtc::scoped_refptr<AudioProcessing> apm_send_;
+  rtc::scoped_refptr<AudioProcessing> apm_recv_;
 
   // The audio devices must outlive the voice engines.
   std::unique_ptr<test::FakeAudioDevice> fake_send_audio_device_;

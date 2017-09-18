@@ -181,7 +181,6 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
         case GL_PACK_REVERSE_ROW_ORDER_ANGLE:
         case GL_UNPACK_ALIGNMENT:
         case GL_GENERATE_MIPMAP_HINT:
-        case GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES:
         case GL_RED_BITS:
         case GL_GREEN_BITS:
         case GL_BLUE_BITS:
@@ -434,6 +433,13 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
         return true;
     }
 
+    if (getExtensions().programCacheControl && pname == GL_PROGRAM_CACHE_ENABLED_ANGLE)
+    {
+        *type      = GL_BOOL;
+        *numParams = 1;
+        return true;
+    }
+
     // Check for ES3.0+ parameter names which are also exposed as ES2 extensions
     switch (pname)
     {
@@ -485,6 +491,15 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
             *type      = GL_INT;
             *numParams = 1;
             return true;
+
+            case GL_FRAGMENT_SHADER_DERIVATIVE_HINT:
+                if ((getClientMajorVersion() < 3) && !getExtensions().standardDerivatives)
+                {
+                    return false;
+                }
+                *type      = GL_INT;
+                *numParams = 1;
+                return true;
         }
     }
 
@@ -494,6 +509,13 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
         {
             return false;
         }
+        *type      = GL_INT;
+        *numParams = 1;
+        return true;
+    }
+
+    if (getExtensions().multiview && pname == GL_MAX_VIEWS_ANGLE)
+    {
         *type      = GL_INT;
         *numParams = 1;
         return true;
@@ -637,6 +659,7 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
         case GL_MAX_COMBINED_SHADER_STORAGE_BLOCKS:
         case GL_SHADER_STORAGE_BUFFER_BINDING:
         case GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT:
+        case GL_TEXTURE_BINDING_2D_MULTISAMPLE:
             *type      = GL_INT;
             *numParams = 1;
             return true;
@@ -724,22 +747,22 @@ Shader *ValidationContext::getShader(GLuint handle) const
 
 bool ValidationContext::isTextureGenerated(GLuint texture) const
 {
-    return mState.mTextures->isTextureGenerated(texture);
+    return mState.mTextures->isHandleGenerated(texture);
 }
 
 bool ValidationContext::isBufferGenerated(GLuint buffer) const
 {
-    return mState.mBuffers->isBufferGenerated(buffer);
+    return mState.mBuffers->isHandleGenerated(buffer);
 }
 
 bool ValidationContext::isRenderbufferGenerated(GLuint renderbuffer) const
 {
-    return mState.mRenderbuffers->isRenderbufferGenerated(renderbuffer);
+    return mState.mRenderbuffers->isHandleGenerated(renderbuffer);
 }
 
 bool ValidationContext::isFramebufferGenerated(GLuint framebuffer) const
 {
-    return mState.mFramebuffers->isFramebufferGenerated(framebuffer);
+    return mState.mFramebuffers->isHandleGenerated(framebuffer);
 }
 
 bool ValidationContext::usingDisplayTextureShareGroup() const

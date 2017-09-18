@@ -14,14 +14,14 @@
 #include "webrtc/p2p/base/dtlstransportchannel.h"
 #include "webrtc/p2p/base/fakeicetransport.h"
 #include "webrtc/p2p/base/packettransportinternal.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/dscp.h"
-#include "webrtc/base/gunit.h"
-#include "webrtc/base/helpers.h"
-#include "webrtc/base/ssladapter.h"
-#include "webrtc/base/sslidentity.h"
-#include "webrtc/base/sslstreamadapter.h"
-#include "webrtc/base/stringutils.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/dscp.h"
+#include "webrtc/rtc_base/gunit.h"
+#include "webrtc/rtc_base/helpers.h"
+#include "webrtc/rtc_base/ssladapter.h"
+#include "webrtc/rtc_base/sslidentity.h"
+#include "webrtc/rtc_base/sslstreamadapter.h"
+#include "webrtc/rtc_base/stringutils.h"
 
 #define MAYBE_SKIP_TEST(feature)                              \
   if (!(rtc::SSLStreamAdapter::feature())) {                  \
@@ -668,6 +668,22 @@ TEST_F(DtlsTransportChannelTest, TestTransferDtlsTwoChannels) {
   ASSERT_TRUE(Connect());
   TestTransfer(0, 1000, 100, false);
   TestTransfer(1, 1000, 100, false);
+}
+
+// Connect with DTLS, combine multiple DTLS records into one packet.
+// Our DTLS implementation doesn't do this, but other implementations may;
+// see https://tools.ietf.org/html/rfc6347#section-4.1.1.
+// This has caused interoperability problems with ORTCLib in the past.
+TEST_F(DtlsTransportChannelTest, TestTransferDtlsCombineRecords) {
+  PrepareDtls(true, true, rtc::KT_DEFAULT);
+  ASSERT_TRUE(Connect());
+  // Our DTLS implementation always sends one record per packet, so to simulate
+  // an endpoint that sends multiple records per packet, we configure the fake
+  // ICE transport to combine every two consecutive packets into a single
+  // packet.
+  cricket::FakeIceTransport* transport = client1_.GetFakeIceTransort(0);
+  transport->combine_outgoing_packets(true);
+  TestTransfer(0, 500, 100, false);
 }
 
 // Connect with A doing DTLS and B not, and transfer some data.

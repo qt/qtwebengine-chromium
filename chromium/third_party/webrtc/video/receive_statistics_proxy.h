@@ -14,13 +14,13 @@
 #include <map>
 #include <string>
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/rate_statistics.h"
-#include "webrtc/base/ratetracker.h"
-#include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/rate_statistics.h"
+#include "webrtc/rtc_base/ratetracker.h"
+#include "webrtc/rtc_base/thread_annotations.h"
 #include "webrtc/video/quality_threshold.h"
 #include "webrtc/video/report_block_stats.h"
 #include "webrtc/video/stats_counter.h"
@@ -46,6 +46,8 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
 
   VideoReceiveStream::Stats GetStats() const;
 
+  rtc::Optional<TimingFrameInfo> GetAndResetTimingFrameInfo();
+
   void OnDecodedFrame(rtc::Optional<uint8_t> qp, VideoContentType content_type);
   void OnSyncOffsetUpdated(int64_t sync_offset_ms, double estimated_freq_khz);
   void OnRenderedFrame(const VideoFrame& frame);
@@ -68,6 +70,8 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
                                    int jitter_buffer_ms,
                                    int min_playout_delay_ms,
                                    int render_delay_ms) override;
+
+  void OnTimingFrameInfoUpdated(const TimingFrameInfo& info) override;
 
   // Overrides RtcpStatisticsCallback.
   void StatisticsUpdated(const webrtc::RtcpStatistics& statistics,
@@ -142,8 +146,12 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
   SampleCounter delay_counter_ GUARDED_BY(crit_);
   SampleCounter e2e_delay_counter_video_ GUARDED_BY(crit_);
   SampleCounter e2e_delay_counter_screenshare_ GUARDED_BY(crit_);
+  SampleCounter interframe_delay_counter_video_ GUARDED_BY(crit_);
+  SampleCounter interframe_delay_counter_screenshare_ GUARDED_BY(crit_);
   int64_t e2e_delay_max_ms_video_ GUARDED_BY(crit_);
   int64_t e2e_delay_max_ms_screenshare_ GUARDED_BY(crit_);
+  int64_t interframe_delay_max_ms_video_  GUARDED_BY(crit_);
+  int64_t interframe_delay_max_ms_screenshare_  GUARDED_BY(crit_);
   MaxCounter freq_offset_counter_ GUARDED_BY(crit_);
   int64_t first_report_block_time_ms_ GUARDED_BY(crit_);
   ReportBlockStats report_block_stats_ GUARDED_BY(crit_);
@@ -152,6 +160,8 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
   int64_t avg_rtt_ms_ GUARDED_BY(crit_);
   mutable std::map<int64_t, size_t> frame_window_ GUARDED_BY(&crit_);
   VideoContentType last_content_type_ GUARDED_BY(&crit_);
+  rtc::Optional<int64_t> last_decoded_frame_time_ms_;
+  rtc::Optional<TimingFrameInfo> timing_frame_info_ GUARDED_BY(&crit_);
 };
 
 }  // namespace webrtc

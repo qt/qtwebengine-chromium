@@ -186,11 +186,7 @@ GLenum GLVariableType(const TType &type)
 {
     if (type.getBasicType() == EbtFloat)
     {
-        if (type.isScalar())
-        {
-            return GL_FLOAT;
-        }
-        else if (type.isVector())
+        if (type.isVector())
         {
             switch (type.getNominalSize())
             {
@@ -252,15 +248,13 @@ GLenum GLVariableType(const TType &type)
             }
         }
         else
-            UNREACHABLE();
+        {
+            return GL_FLOAT;
+        }
     }
     else if (type.getBasicType() == EbtInt)
     {
-        if (type.isScalar())
-        {
-            return GL_INT;
-        }
-        else if (type.isVector())
+        if (type.isVector())
         {
             switch (type.getNominalSize())
             {
@@ -275,15 +269,14 @@ GLenum GLVariableType(const TType &type)
             }
         }
         else
-            UNREACHABLE();
+        {
+            ASSERT(!type.isMatrix());
+            return GL_INT;
+        }
     }
     else if (type.getBasicType() == EbtUInt)
     {
-        if (type.isScalar())
-        {
-            return GL_UNSIGNED_INT;
-        }
-        else if (type.isVector())
+        if (type.isVector())
         {
             switch (type.getNominalSize())
             {
@@ -298,15 +291,14 @@ GLenum GLVariableType(const TType &type)
             }
         }
         else
-            UNREACHABLE();
+        {
+            ASSERT(!type.isMatrix());
+            return GL_UNSIGNED_INT;
+        }
     }
     else if (type.getBasicType() == EbtBool)
     {
-        if (type.isScalar())
-        {
-            return GL_BOOL;
-        }
-        else if (type.isVector())
+        if (type.isVector())
         {
             switch (type.getNominalSize())
             {
@@ -321,7 +313,10 @@ GLenum GLVariableType(const TType &type)
             }
         }
         else
-            UNREACHABLE();
+        {
+            ASSERT(!type.isMatrix());
+            return GL_BOOL;
+        }
     }
 
     switch (type.getBasicType())
@@ -392,6 +387,8 @@ GLenum GLVariableType(const TType &type)
             return GL_INT_IMAGE_CUBE;
         case EbtUImageCube:
             return GL_UNSIGNED_INT_IMAGE_CUBE;
+        case EbtAtomicCounter:
+            return GL_UNSIGNED_INT_ATOMIC_COUNTER;
         default:
             UNREACHABLE();
     }
@@ -623,4 +620,49 @@ bool IsBuiltinFragmentInputVariable(TQualifier qualifier)
     }
     return false;
 }
+
+bool IsOutputESSL(ShShaderOutput output)
+{
+    return output == SH_ESSL_OUTPUT;
+}
+
+bool IsOutputGLSL(ShShaderOutput output)
+{
+    switch (output)
+    {
+        case SH_GLSL_130_OUTPUT:
+        case SH_GLSL_140_OUTPUT:
+        case SH_GLSL_150_CORE_OUTPUT:
+        case SH_GLSL_330_CORE_OUTPUT:
+        case SH_GLSL_400_CORE_OUTPUT:
+        case SH_GLSL_410_CORE_OUTPUT:
+        case SH_GLSL_420_CORE_OUTPUT:
+        case SH_GLSL_430_CORE_OUTPUT:
+        case SH_GLSL_440_CORE_OUTPUT:
+        case SH_GLSL_450_CORE_OUTPUT:
+        case SH_GLSL_COMPATIBILITY_OUTPUT:
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
+bool IsOutputHLSL(ShShaderOutput output)
+{
+    switch (output)
+    {
+        case SH_HLSL_3_0_OUTPUT:
+        case SH_HLSL_4_1_OUTPUT:
+        case SH_HLSL_4_0_FL9_3_OUTPUT:
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
+bool IsOutputVulkan(ShShaderOutput output)
+{
+    return output == SH_GLSL_VULKAN_OUTPUT;
+}
+
 }  // namespace sh

@@ -16,13 +16,15 @@
 #include <vector>
 
 #include "webrtc/api/video/video_frame.h"
-#include "webrtc/base/buffer.h"
-#include "webrtc/base/checks.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/codecs/test/packet_manipulator.h"
 #include "webrtc/modules/video_coding/codecs/test/stats.h"
+#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/utility/ivf_file_writer.h"
+#include "webrtc/modules/video_coding/utility/vp8_header_parser.h"
+#include "webrtc/modules/video_coding/utility/vp9_uncompressed_header_parser.h"
+#include "webrtc/rtc_base/buffer.h"
+#include "webrtc/rtc_base/checks.h"
 #include "webrtc/test/testsupport/frame_reader.h"
 #include "webrtc/test/testsupport/frame_writer.h"
 
@@ -47,22 +49,18 @@ const char* ExcludeFrameTypesToStr(ExcludeFrameTypes e);
 
 // Test configuration for a test run.
 struct TestConfig {
-  TestConfig();
-  ~TestConfig();
-
-  // Name of the test. This is purely metadata and does not affect
-  // the test in any way.
+  // Name of the test. This is purely metadata and does not affect the test.
   std::string name;
 
   // More detailed description of the test. This is purely metadata and does
-  // not affect the test in any way.
+  // not affect the test.
   std::string description;
 
   // Number of this test. Useful if multiple runs of the same test with
   // different configurations shall be managed.
-  int test_number;
+  int test_number = 0;
 
-  // File to process for the test. This must be a video file in the YUV format.
+  // File to process. This must be a video file in the YUV format.
   std::string input_filename;
 
   // File to write to during processing for the test. Will be a video file
@@ -70,20 +68,20 @@ struct TestConfig {
   std::string output_filename;
 
   // Path to the directory where encoded files will be put
-  // (absolute or relative to the executable). Default: "out".
-  std::string output_dir;
+  // (absolute or relative to the executable).
+  std::string output_dir = "out";
 
   // Configurations related to networking.
   NetworkingConfig networking_config;
 
   // Decides how the packet loss simulations shall exclude certain frames
-  // from packet loss. Default: kExcludeOnlyFirstKeyFrame.
-  ExcludeFrameTypes exclude_frame_types;
+  // from packet loss.
+  ExcludeFrameTypes exclude_frame_types = kExcludeOnlyFirstKeyFrame;
 
   // The length of a single frame of the input video file. This value is
   // calculated out of the width and height according to the video format
   // specification. Must be set before processing.
-  size_t frame_length_in_bytes;
+  size_t frame_length_in_bytes = 0;
 
   // Force the encoder and decoder to use a single core for processing.
   // Using a single core is necessary to get a deterministic behavior for the
@@ -91,8 +89,7 @@ struct TestConfig {
   // since multiple cores are competing to consume the byte budget for each
   // frame in parallel.
   // If set to false, the maximum number of available cores will be used.
-  // Default: false.
-  bool use_single_core;
+  bool use_single_core = false;
 
   // If set to a value >0 this setting forces the encoder to create a keyframe
   // every Nth frame. Note that the encoder may create a keyframe in other
@@ -100,16 +97,15 @@ struct TestConfig {
   // Forcing key frames may also affect encoder planning optimizations in
   // a negative way, since it will suddenly be forced to produce an expensive
   // key frame.
-  // Default: 0.
-  int keyframe_interval;
+  int keyframe_interval = 0;
 
   // The codec settings to use for the test (target bitrate, video size,
   // framerate and so on). This struct must be created and filled in using
   // the VideoCodingModule::Codec() method.
-  webrtc::VideoCodec* codec_settings;
+  webrtc::VideoCodec* codec_settings = nullptr;
 
   // If printing of information to stdout shall be performed during processing.
-  bool verbose;
+  bool verbose = true;
 };
 
 // Handles encoding/decoding of video using the VideoEncoder/VideoDecoder
@@ -134,16 +130,15 @@ class VideoProcessor {
  public:
   virtual ~VideoProcessor() {}
 
-  // Performs initial calculations about frame size, sets up callbacks etc.
-  // Returns false if an error has occurred, in addition to printing to stderr.
-  virtual bool Init() = 0;
+  // Sets up callbacks and initializes the encoder and decoder.
+  virtual void Init() = 0;
 
   // Processes a single frame. Returns true as long as there's more frames
   // available in the source clip.
-  // Frame number must be an integer >= 0.
+  // |frame_number| must be an integer >= 0.
   virtual bool ProcessFrame(int frame_number) = 0;
 
-  // Updates the encoder with the target bit rate and the frame rate.
+  // Updates the encoder with the target |bit_rate| and the |frame_rate|.
   virtual void SetRates(int bit_rate, int frame_rate) = 0;
 
   // Return the size of the encoded frame in bytes. Dropped frames by the
@@ -152,6 +147,12 @@ class VideoProcessor {
 
   // Return the encoded frame type (key or delta).
   virtual FrameType EncodedFrameType(int frame_number) = 0;
+
+  // Return the qp used by encoder.
+  virtual int GetQpFromEncoder(int frame_number) = 0;
+
+  // Return the qp from the qp parser.
+  virtual int GetQpFromBitstream(int frame_number) = 0;
 
   // Return the number of dropped frames.
   virtual int NumberDroppedFrames() = 0;
@@ -173,7 +174,7 @@ class VideoProcessorImpl : public VideoProcessor {
                      IvfFileWriter* encoded_frame_writer,
                      FrameWriter* decoded_frame_writer);
   virtual ~VideoProcessorImpl();
-  bool Init() override;
+  void Init() override;
   bool ProcessFrame(int frame_number) override;
 
  private:
@@ -189,7 +190,9 @@ class VideoProcessorImpl : public VideoProcessor {
           encoded_frame_type(kVideoFrameDelta),
           decoded_width(0),
           decoded_height(0),
-          manipulated_length(0) {}
+          manipulated_length(0),
+          qp_encoder(0),
+          qp_bitstream(0) {}
 
     uint32_t timestamp;
     int64_t encode_start_ns;
@@ -199,6 +202,8 @@ class VideoProcessorImpl : public VideoProcessor {
     int decoded_width;
     int decoded_height;
     size_t manipulated_length;
+    int qp_encoder;
+    int qp_bitstream;
   };
 
   // Callback class required to implement according to the VideoEncoder API.
@@ -265,6 +270,12 @@ class VideoProcessorImpl : public VideoProcessor {
   // Return the encoded frame type (key or delta).
   FrameType EncodedFrameType(int frame_number) override;
 
+  // Return the qp used by encoder.
+  int GetQpFromEncoder(int frame_number) override;
+
+  // Return the qp from the qp parser.
+  int GetQpFromBitstream(int frame_number) override;
+
   // Return the number of dropped frames.
   int NumberDroppedFrames() override;
 
@@ -286,7 +297,6 @@ class VideoProcessorImpl : public VideoProcessor {
   // SSIM calculations at the end of a test run.
   FrameReader* const analysis_frame_reader_;
   FrameWriter* const analysis_frame_writer_;
-  const int num_frames_;
 
   // These (optional) file writers are used for persistently storing the output
   // of the coding pipeline at different stages: pre encode (source), post
@@ -297,9 +307,6 @@ class VideoProcessorImpl : public VideoProcessor {
   FrameWriter* const source_frame_writer_;
   IvfFileWriter* const encoded_frame_writer_;
   FrameWriter* const decoded_frame_writer_;
-
-  // Multiply frame length with this to get bit rate.
-  const double bit_rate_factor_;
 
   bool initialized_;
 

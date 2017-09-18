@@ -17,7 +17,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "base/single_thread_task_runner.h"
-#include "base/threading/thread_checker.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "build/build_config.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
@@ -46,7 +45,6 @@ class SyncPointManager;
 class GpuChannelManager;
 class GpuChannelMessageFilter;
 class GpuChannelMessageQueue;
-class GpuWatchdogThread;
 
 class GPU_EXPORT FilteredSender : public IPC::Sender {
  public:
@@ -84,10 +82,7 @@ class GPU_EXPORT GpuChannel : public IPC::Listener, public FilteredSender {
   GpuChannel(GpuChannelManager* gpu_channel_manager,
              Scheduler* scheduler,
              SyncPointManager* sync_point_manager,
-             GpuWatchdogThread* watchdog,
              scoped_refptr<gl::GLShareGroup> share_group,
-             scoped_refptr<gles2::MailboxManager> mailbox_manager,
-             ServiceDiscardableManager* discardable_manager_,
              scoped_refptr<PreemptionFlag> preempting_flag,
              scoped_refptr<PreemptionFlag> preempted_flag,
              scoped_refptr<base::SingleThreadTaskRunner> task_runner,
@@ -114,11 +109,7 @@ class GPU_EXPORT GpuChannel : public IPC::Listener, public FilteredSender {
 
   SyncPointManager* sync_point_manager() const { return sync_point_manager_; }
 
-  GpuWatchdogThread* watchdog() const { return watchdog_; }
-
-  const scoped_refptr<gles2::MailboxManager>& mailbox_manager() const {
-    return mailbox_manager_;
-  }
+  gles2::ImageManager* image_manager() const { return image_manager_.get(); }
 
   const scoped_refptr<base::SingleThreadTaskRunner>& task_runner() const {
     return task_runner_;
@@ -155,12 +146,9 @@ class GPU_EXPORT GpuChannel : public IPC::Listener, public FilteredSender {
 
   gl::GLShareGroup* share_group() const { return share_group_.get(); }
 
-  ServiceDiscardableManager* discardable_manager() const {
-    return discardable_manager_;
-  }
-
   GpuCommandBufferStub* LookupCommandBuffer(int32_t route_id);
 
+  bool HasActiveWebGLContext() const;
   void LoseAllContexts();
   void MarkAllContextsLost();
 
@@ -273,11 +261,7 @@ class GPU_EXPORT GpuChannel : public IPC::Listener, public FilteredSender {
   // process use.
   scoped_refptr<gl::GLShareGroup> share_group_;
 
-  scoped_refptr<gles2::MailboxManager> mailbox_manager_;
-
-  GpuWatchdogThread* const watchdog_;
-
-  ServiceDiscardableManager* discardable_manager_;
+  std::unique_ptr<gles2::ImageManager> image_manager_;
 
   const bool is_gpu_host_;
 

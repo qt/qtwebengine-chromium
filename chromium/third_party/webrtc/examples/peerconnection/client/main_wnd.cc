@@ -15,9 +15,9 @@
 #include "libyuv/convert_argb.h"
 #include "webrtc/api/video/i420_buffer.h"
 #include "webrtc/examples/peerconnection/client/defaults.h"
-#include "webrtc/base/arraysize.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
+#include "webrtc/rtc_base/arraysize.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 ATOM MainWnd::wnd_class_ = 0;
 const wchar_t MainWnd::kClassName[] = L"WebRTC_MainWnd";
@@ -606,8 +606,8 @@ void MainWnd::VideoRenderer::OnFrame(
   {
     AutoLock<VideoRenderer> lock(this);
 
-    rtc::scoped_refptr<webrtc::VideoFrameBuffer> buffer(
-        video_frame.video_frame_buffer());
+    rtc::scoped_refptr<webrtc::I420BufferInterface> buffer(
+        video_frame.video_frame_buffer()->ToI420());
     if (video_frame.rotation() != webrtc::kVideoRotation_0) {
       buffer = webrtc::I420Buffer::Rotate(*buffer, video_frame.rotation());
     }

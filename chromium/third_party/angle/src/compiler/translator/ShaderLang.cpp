@@ -179,7 +179,7 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     // Extensions constants.
     resources->MaxDualSourceDrawBuffers = 0;
 
-    resources->MaxViewsOVR = 2;
+    resources->MaxViewsOVR = 4;
 
     // Disable name hashing by default.
     resources->HashFunction = nullptr;
@@ -222,6 +222,8 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxFragmentAtomicCounterBuffers = 0;
     resources->MaxCombinedAtomicCounterBuffers = 1;
     resources->MaxAtomicCounterBufferSize      = 32;
+
+    resources->MaxUniformBufferBindings = 32;
 }
 
 //

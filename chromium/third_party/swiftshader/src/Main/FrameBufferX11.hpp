@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Surface.cpp: Implements the egl::Surface class, representing a drawing surface
-// such as the client area of a window, including any back buffers.
-// Implements EGLSurface and related functionality. [EGL 1.4] section 2.2 page 3.
-
 #ifndef sw_FrameBufferX11_hpp
 #define sw_FrameBufferX11_hpp
 
@@ -33,7 +29,7 @@ namespace sw
 	public:
 		FrameBufferX11(Display *display, Window window, int width, int height);
 
-		~FrameBufferX11();
+		~FrameBufferX11() override;
 
 		void flip(void *source, Format sourceFormat, size_t sourceStride) override {blit(source, 0, 0, sourceFormat, sourceStride);};
 		void blit(void *source, const Rect *sourceRect, const Rect *destRect, Format sourceFormat, size_t sourceStride) override;

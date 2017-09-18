@@ -15,7 +15,6 @@
 #include <set>
 
 #include "webrtc/api/call/transport.h"
-#include "webrtc/base/rate_limiter.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
@@ -23,6 +22,7 @@
 #include "webrtc/modules/rtp_rtcp/include/rtp_receiver.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "webrtc/rtc_base/rate_limiter.h"
 #include "webrtc/test/gtest.h"
 
 namespace webrtc {
@@ -37,7 +37,7 @@ const int kPayloadType = 123;
 const int kRtxPayloadType = 98;
 const int64_t kMaxRttMs = 1000;
 
-class VerifyingRtxReceiver : public NullRtpData {
+class VerifyingRtxReceiver : public RtpData {
  public:
   VerifyingRtxReceiver() {}
 

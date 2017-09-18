@@ -52,16 +52,16 @@ gl::Error ContextVk::initialize()
 gl::Error ContextVk::flush()
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
 gl::Error ContextVk::finish()
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
-gl::Error ContextVk::initPipeline()
+gl::Error ContextVk::initPipeline(const gl::Context *context)
 {
     ASSERT(!mCurrentPipeline.valid());
 
@@ -108,8 +108,8 @@ gl::Error ContextVk::initPipeline()
             VkVertexInputBindingDescription bindingDesc;
             bindingDesc.binding = static_cast<uint32_t>(vertexBindings.size());
             bindingDesc.stride  = static_cast<uint32_t>(gl::ComputeVertexAttributeTypeSize(attrib));
-            bindingDesc.inputRate =
-                (binding.divisor > 0 ? VK_VERTEX_INPUT_RATE_INSTANCE : VK_VERTEX_INPUT_RATE_VERTEX);
+            bindingDesc.inputRate = (binding.getDivisor() > 0 ? VK_VERTEX_INPUT_RATE_INSTANCE
+                                                              : VK_VERTEX_INPUT_RATE_VERTEX);
 
             gl::VertexFormatType vertexFormatType = gl::GetVertexFormatType(attrib);
 
@@ -228,7 +228,7 @@ gl::Error ContextVk::initPipeline()
 
     // TODO(jmadill): Dynamic state.
     vk::RenderPass *renderPass = nullptr;
-    ANGLE_TRY_RESULT(vkFBO->getRenderPass(device), renderPass);
+    ANGLE_TRY_RESULT(vkFBO->getRenderPass(context, device), renderPass);
     ASSERT(renderPass && renderPass->valid());
 
     vk::PipelineLayout *pipelineLayout = nullptr;
@@ -264,7 +264,7 @@ gl::Error ContextVk::initPipeline()
     return gl::NoError();
 }
 
-gl::Error ContextVk::drawArrays(GLenum mode, GLint first, GLsizei count)
+gl::Error ContextVk::drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count)
 {
     if (mode != mCurrentDrawMode)
     {
@@ -274,7 +274,7 @@ gl::Error ContextVk::drawArrays(GLenum mode, GLint first, GLsizei count)
 
     if (!mCurrentPipeline.valid())
     {
-        ANGLE_TRY(initPipeline());
+        ANGLE_TRY(initPipeline(context));
         ASSERT(mCurrentPipeline.valid());
     }
 
@@ -300,7 +300,7 @@ gl::Error ContextVk::drawArrays(GLenum mode, GLint first, GLsizei count)
         if (attrib.enabled)
         {
             // TODO(jmadill): Offset handling.
-            gl::Buffer *bufferGL = binding.buffer.get();
+            gl::Buffer *bufferGL = binding.getBuffer().get();
             ASSERT(bufferGL);
             BufferVk *bufferVk = GetImplAs<BufferVk>(bufferGL);
             vertexHandles.push_back(bufferVk->getVkBuffer().getHandle());
@@ -316,7 +316,7 @@ gl::Error ContextVk::drawArrays(GLenum mode, GLint first, GLsizei count)
 
     vk::CommandBuffer *commandBuffer = nullptr;
     ANGLE_TRY(mRenderer->getStartedCommandBuffer(&commandBuffer));
-    ANGLE_TRY(vkFBO->beginRenderPass(device, commandBuffer, queueSerial, state));
+    ANGLE_TRY(vkFBO->beginRenderPass(context, device, commandBuffer, queueSerial, state));
 
     commandBuffer->bindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, mCurrentPipeline);
     commandBuffer->bindVertexBuffers(0, vertexHandles, vertexOffsets);
@@ -326,26 +326,29 @@ gl::Error ContextVk::drawArrays(GLenum mode, GLint first, GLsizei count)
     return gl::NoError();
 }
 
-gl::Error ContextVk::drawArraysInstanced(GLenum mode,
+gl::Error ContextVk::drawArraysInstanced(const gl::Context *context,
+                                         GLenum mode,
                                          GLint first,
                                          GLsizei count,
                                          GLsizei instanceCount)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
-gl::Error ContextVk::drawElements(GLenum mode,
+gl::Error ContextVk::drawElements(const gl::Context *context,
+                                  GLenum mode,
                                   GLsizei count,
                                   GLenum type,
                                   const void *indices,
                                   const gl::IndexRange &indexRange)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
-gl::Error ContextVk::drawElementsInstanced(GLenum mode,
+gl::Error ContextVk::drawElementsInstanced(const gl::Context *context,
+                                           GLenum mode,
                                            GLsizei count,
                                            GLenum type,
                                            const void *indices,
@@ -353,10 +356,11 @@ gl::Error ContextVk::drawElementsInstanced(GLenum mode,
                                            const gl::IndexRange &indexRange)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
-gl::Error ContextVk::drawRangeElements(GLenum mode,
+gl::Error ContextVk::drawRangeElements(const gl::Context *context,
+                                       GLenum mode,
                                        GLuint start,
                                        GLuint end,
                                        GLsizei count,
@@ -384,13 +388,18 @@ vk::Error ContextVk::submitCommands(vk::CommandBuffer *commandBuffer)
     return vk::NoError();
 }
 
-gl::Error ContextVk::drawArraysIndirect(GLenum mode, const void *indirect)
+gl::Error ContextVk::drawArraysIndirect(const gl::Context *context,
+                                        GLenum mode,
+                                        const void *indirect)
 {
     UNIMPLEMENTED();
     return gl::InternalError() << "DrawArraysIndirect hasn't been implemented for vulkan backend.";
 }
 
-gl::Error ContextVk::drawElementsIndirect(GLenum mode, GLenum type, const void *indirect)
+gl::Error ContextVk::drawElementsIndirect(const gl::Context *context,
+                                          GLenum mode,
+                                          GLenum type,
+                                          const void *indirect)
 {
     UNIMPLEMENTED();
     return gl::InternalError()
@@ -429,7 +438,7 @@ void ContextVk::popGroupMarker()
     UNIMPLEMENTED();
 }
 
-void ContextVk::syncState(const gl::State::DirtyBits &dirtyBits)
+void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
 {
     // TODO(jmadill): Vulkan dirty bits.
     if (dirtyBits.any())
@@ -450,7 +459,7 @@ GLint64 ContextVk::getTimestamp()
     return GLint64();
 }
 
-void ContextVk::onMakeCurrent(const gl::ContextState & /*data*/)
+void ContextVk::onMakeCurrent(const gl::Context * /*context*/)
 {
 }
 
@@ -550,10 +559,13 @@ void ContextVk::invalidateCurrentPipeline()
     mRenderer->enqueueGarbageOrDeleteNow(*this, mCurrentPipeline);
 }
 
-gl::Error ContextVk::dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGroupsZ)
+gl::Error ContextVk::dispatchCompute(const gl::Context *context,
+                                     GLuint numGroupsX,
+                                     GLuint numGroupsY,
+                                     GLuint numGroupsZ)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
 }  // namespace rx

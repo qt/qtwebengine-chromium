@@ -1,11 +1,11 @@
 m4_define([snappy_major], [1])
 m4_define([snappy_minor], [1])
-m4_define([snappy_patchlevel], [4])
+m4_define([snappy_patchlevel], [5])
 
 # Libtool shared library interface versions (current:revision:age)
 # Update this value for every release!  (A:B:C will map to foo.so.(A-C).C.B)
 # http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-m4_define([snappy_ltversion], [4:1:3])
+m4_define([snappy_ltversion], [4:1:4])
 
 AC_INIT([snappy], [snappy_major.snappy_minor.snappy_patchlevel])
 AC_CONFIG_MACRO_DIR([m4])
@@ -21,7 +21,7 @@ AC_LANG([C++])
 AC_C_BIGENDIAN
 AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
-AC_CHECK_HEADERS([stdint.h stddef.h sys/mman.h sys/resource.h windows.h byteswap.h sys/byteswap.h sys/endian.h sys/time.h])
+AC_CHECK_HEADERS([stdint.h stddef.h sys/mman.h sys/resource.h sys/uio.h windows.h byteswap.h sys/byteswap.h sys/endian.h sys/time.h])
 
 # Don't use AC_FUNC_MMAP, as it checks for mappings of already-mapped memory,
 # which we don't need (and does not exist on Windows).
@@ -49,7 +49,7 @@ fi
 # See if we have __builtin_expect.
 # TODO: Use AC_CACHE.
 AC_MSG_CHECKING([if the compiler supports __builtin_expect])
- 
+
 AC_TRY_COMPILE(, [
     return __builtin_expect(1, 1) ? 1 : 0
 ], [
@@ -97,9 +97,6 @@ AC_DEFUN([CHECK_EXT_COMPRESSION_LIB], [
 ])
 CHECK_EXT_COMPRESSION_LIB([z], [zlibVersion])
 CHECK_EXT_COMPRESSION_LIB([lzo2], [lzo1x_1_15_compress])
-CHECK_EXT_COMPRESSION_LIB([lzf], [lzf_compress])
-CHECK_EXT_COMPRESSION_LIB([fastlz], [fastlz_compress])
-CHECK_EXT_COMPRESSION_LIB([quicklz], [qlz_compress])
 AC_SUBST([UNITTEST_LIBS])
 
 # These are used by snappy-stubs-public.h.in.

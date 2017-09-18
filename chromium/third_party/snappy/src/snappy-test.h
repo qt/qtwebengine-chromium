@@ -116,19 +116,11 @@ extern "C" {
 }
 #endif
 
-#ifdef HAVE_LIBFASTLZ
-#include "fastlz.h"
-#endif
-
 #ifdef HAVE_LIBQUICKLZ
 #include "quicklz.h"
 #endif
 
 namespace {
-
-namespace File {
-  void Init() { }
-}  // namespace File
 
 namespace file {
   int Defaults() { return 0; }
@@ -162,9 +154,8 @@ namespace file {
     return DummyStatus();
   }
 
-  DummyStatus SetContents(const std::string& filename,
-                          const std::string& str,
-                          int unused) {
+  inline DummyStatus SetContents(
+      const std::string& filename, const std::string& str, int unused) {
     FILE* fp = fopen(filename.c_str(), "wb");
     if (fp == NULL) {
       perror(filename.c_str());
@@ -468,7 +459,7 @@ class ZLib {
 
 DECLARE_bool(run_microbenchmarks);
 
-static void RunSpecifiedBenchmarks() {
+static inline void RunSpecifiedBenchmarks() {
   if (!FLAGS_run_microbenchmarks) {
     return;
   }
@@ -515,10 +506,6 @@ static inline int RUN_ALL_TESTS() {
 
 // For main().
 namespace snappy {
-
-static void CompressFile(const char* fname);
-static void UncompressFile(const char* fname);
-static void MeasureFile(const char* fname);
 
 // Logging.
 
@@ -591,10 +578,6 @@ class LogMessageVoidify {
 #define CHECK_GT(a, b) CRASH_UNLESS((a) > (b))
 #define CHECK_OK(cond) (cond).CheckSuccess()
 
-}  // namespace
-
-using snappy::CompressFile;
-using snappy::UncompressFile;
-using snappy::MeasureFile;
+}  // namespace snappy
 
 #endif  // THIRD_PARTY_SNAPPY_OPENSOURCE_SNAPPY_TEST_H_

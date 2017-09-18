@@ -138,10 +138,10 @@ DLLEXPORT FPDF_DEST STDCALL FPDFAction_GetDest(FPDF_DOCUMENT document,
 //   buffer - a buffer for output the path string. May be NULL.
 //   buflen - the length of the buffer, in bytes. May be 0.
 //
-// Returns the number of bytes in the file path, including the trailing UTF16
-// NUL character.
+// Returns the number of bytes in the file path, including the trailing NUL
+// character.
 //
-// Regardless of the platform, the |buffer| is always in UTF-16LE encoding.
+// Regardless of the platform, the |buffer| is always in UTF-8 encoding.
 // If |buflen| is less than the returned length, or |buffer| is NULL, |buffer|
 // will not be modified.
 DLLEXPORT unsigned long STDCALL
@@ -296,6 +296,10 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFLink_GetQuadPoints(FPDF_LINK linkAnnot,
 // The |buffer| is always encoded in UTF-16LE. The |buffer| is followed by two
 // bytes of zeros indicating the end of the string.  If |buflen| is less than
 // the returned length, or |buffer| is NULL, |buffer| will not be modified.
+//
+// For linearized files, FPDFAvail_IsFormAvail must be called before this, and
+// it must have returned PDF_FORM_AVAIL or PDF_FORM_NOTEXIST. Before that, there
+// is no guarantee the metadata has been loaded.
 DLLEXPORT unsigned long STDCALL FPDF_GetMetaText(FPDF_DOCUMENT document,
                                                  FPDF_BYTESTRING tag,
                                                  void* buffer,

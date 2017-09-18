@@ -17,6 +17,11 @@ class CFX_DIBAttribute;
 
 class CCodec_GifModule {
  public:
+  class Context {
+   public:
+    virtual ~Context() {}
+  };
+
   class Delegate {
    public:
     virtual void GifRecordCurrentPosition(uint32_t& cur_pos) = 0;
@@ -35,31 +40,20 @@ class CCodec_GifModule {
   CCodec_GifModule();
   ~CCodec_GifModule();
 
-  std::unique_ptr<CGifContext> Start();
-  uint32_t GetAvailInput(CGifContext* context,
-                         uint8_t** avail_buf_ptr = nullptr);
-
-  void Input(CGifContext* context, const uint8_t* src_buf, uint32_t src_size);
-
-  GifDecodeStatus ReadHeader(CGifContext* context,
+  std::unique_ptr<Context> Start(Delegate* pDelegate);
+  uint32_t GetAvailInput(Context* context, uint8_t** avail_buf_ptr = nullptr);
+  void Input(Context* context, const uint8_t* src_buf, uint32_t src_size);
+  GifDecodeStatus ReadHeader(Context* context,
                              int* width,
                              int* height,
                              int* pal_num,
                              void** pal_pp,
                              int* bg_index,
                              CFX_DIBAttribute* pAttribute);
-
-  GifDecodeStatus LoadFrameInfo(CGifContext* context, int* frame_num);
-  GifDecodeStatus LoadFrame(CGifContext* context,
+  GifDecodeStatus LoadFrameInfo(Context* context, int* frame_num);
+  GifDecodeStatus LoadFrame(Context* context,
                             int frame_num,
                             CFX_DIBAttribute* pAttribute);
-
-  Delegate* GetDelegate() const { return m_pDelegate; }
-  void SetDelegate(Delegate* pDelegate) { m_pDelegate = pDelegate; }
-
- protected:
-  Delegate* m_pDelegate;
-  char m_szLastError[256];
 };
 
 #endif  // CORE_FXCODEC_CODEC_CCODEC_GIFMODULE_H_

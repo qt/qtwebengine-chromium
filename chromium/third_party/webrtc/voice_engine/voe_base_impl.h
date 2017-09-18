@@ -13,8 +13,8 @@
 
 #include "webrtc/voice_engine/include/voe_base.h"
 
-#include "webrtc/base/criticalsection.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/rtc_base/criticalsection.h"
 #include "webrtc/voice_engine/shared_data.h"
 
 namespace webrtc {
@@ -28,13 +28,10 @@ class VoEBaseImpl : public VoEBase,
   int RegisterVoiceEngineObserver(VoiceEngineObserver& observer) override;
   int DeRegisterVoiceEngineObserver() override;
 
-  int Init(AudioDeviceModule* external_adm = nullptr,
-           AudioProcessing* audioproc = nullptr,
-           const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory =
-               nullptr) override;
-  AudioProcessing* audio_processing() override {
-    return shared_->audio_processing();
-  }
+  int Init(
+      AudioDeviceModule* external_adm,
+      AudioProcessing* audio_processing,
+      const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory) override;
   AudioDeviceModule* audio_device_module() override {
     return shared_->audio_device();
   }

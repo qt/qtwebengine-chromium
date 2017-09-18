@@ -9,7 +9,7 @@
 
 #include "compiler/translator/ArrayReturnValueToOutParameter.h"
 
-#include "compiler/translator/IntermNode.h"
+#include "compiler/translator/IntermTraverse.h"
 
 namespace sh
 {
@@ -60,10 +60,10 @@ TIntermAggregate *CreateReplacementCall(TIntermAggregate *originalCall,
 class ArrayReturnValueToOutParameterTraverser : private TIntermTraverser
 {
   public:
-    static void apply(TIntermNode *root, unsigned int *temporaryIndex);
+    static void apply(TIntermNode *root, TSymbolTable *symbolTable);
 
   private:
-    ArrayReturnValueToOutParameterTraverser();
+    ArrayReturnValueToOutParameterTraverser(TSymbolTable *symbolTable);
 
     bool visitFunctionPrototype(Visit visit, TIntermFunctionPrototype *node) override;
     bool visitFunctionDefinition(Visit visit, TIntermFunctionDefinition *node) override;
@@ -74,16 +74,16 @@ class ArrayReturnValueToOutParameterTraverser : private TIntermTraverser
     bool mInFunctionWithArrayReturnValue;
 };
 
-void ArrayReturnValueToOutParameterTraverser::apply(TIntermNode *root, unsigned int *temporaryIndex)
+void ArrayReturnValueToOutParameterTraverser::apply(TIntermNode *root, TSymbolTable *symbolTable)
 {
-    ArrayReturnValueToOutParameterTraverser arrayReturnValueToOutParam;
-    arrayReturnValueToOutParam.useTemporaryIndex(temporaryIndex);
+    ArrayReturnValueToOutParameterTraverser arrayReturnValueToOutParam(symbolTable);
     root->traverse(&arrayReturnValueToOutParam);
     arrayReturnValueToOutParam.updateTree();
 }
 
-ArrayReturnValueToOutParameterTraverser::ArrayReturnValueToOutParameterTraverser()
-    : TIntermTraverser(true, false, true), mInFunctionWithArrayReturnValue(false)
+ArrayReturnValueToOutParameterTraverser::ArrayReturnValueToOutParameterTraverser(
+    TSymbolTable *symbolTable)
+    : TIntermTraverser(true, false, true, symbolTable), mInFunctionWithArrayReturnValue(false)
 {
 }
 
@@ -117,7 +117,7 @@ bool ArrayReturnValueToOutParameterTraverser::visitFunctionPrototype(Visit visit
         *replacement->getFunctionSymbolInfo() = *node->getFunctionSymbolInfo();
         replacement->setLine(node->getLine());
 
-        queueReplacement(node, replacement, OriginalNode::IS_DROPPED);
+        queueReplacement(replacement, OriginalNode::IS_DROPPED);
     }
     return false;
 }
@@ -139,7 +139,7 @@ bool ArrayReturnValueToOutParameterTraverser::visitAggregate(Visit visit, TInter
         TIntermBlock *parentBlock = getParentNode()->getAsBlock();
         if (parentBlock)
         {
-            nextTemporaryIndex();
+            nextTemporaryId();
             TIntermSequence replacements;
             replacements.push_back(createTempDeclaration(node->getType()));
             TIntermSymbol *returnSymbol = createTempSymbol(node->getType());
@@ -186,7 +186,7 @@ bool ArrayReturnValueToOutParameterTraverser::visitBinary(Visit visit, TIntermBi
         if (rightAgg != nullptr && rightAgg->getOp() == EOpCallFunctionInAST)
         {
             TIntermAggregate *replacementCall = CreateReplacementCall(rightAgg, node->getLeft());
-            queueReplacement(node, replacementCall, OriginalNode::IS_DROPPED);
+            queueReplacement(replacementCall, OriginalNode::IS_DROPPED);
         }
     }
     return false;
@@ -194,9 +194,9 @@ bool ArrayReturnValueToOutParameterTraverser::visitBinary(Visit visit, TIntermBi
 
 }  // namespace
 
-void ArrayReturnValueToOutParameter(TIntermNode *root, unsigned int *temporaryIndex)
+void ArrayReturnValueToOutParameter(TIntermNode *root, TSymbolTable *symbolTable)
 {
-    ArrayReturnValueToOutParameterTraverser::apply(root, temporaryIndex);
+    ArrayReturnValueToOutParameterTraverser::apply(root, symbolTable);
 }
 
 }  // namespace sh

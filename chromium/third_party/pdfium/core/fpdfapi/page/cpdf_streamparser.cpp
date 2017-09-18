@@ -8,7 +8,9 @@
 
 #include <limits.h>
 
+#include <algorithm>
 #include <memory>
+#include <sstream>
 #include <utility>
 
 #include "core/fpdfapi/cpdf_modulemgr.h"
@@ -34,8 +36,8 @@ const uint32_t kMaxWordBuffer = 256;
 const FX_STRSIZE kMaxStringLength = 32767;
 
 uint32_t DecodeAllScanlines(std::unique_ptr<CCodec_ScanlineDecoder> pDecoder,
-                            uint8_t*& dest_buf,
-                            uint32_t& dest_size) {
+                            uint8_t** dest_buf,
+                            uint32_t* dest_size) {
   if (!pDecoder)
     return FX_INVALID_OFFSET;
   int ncomps = pDecoder->CountComps();
@@ -46,26 +48,29 @@ uint32_t DecodeAllScanlines(std::unique_ptr<CCodec_ScanlineDecoder> pDecoder,
   if (height == 0 || pitch > (1 << 30) / height)
     return FX_INVALID_OFFSET;
 
-  dest_buf = FX_Alloc2D(uint8_t, pitch, height);
-  dest_size = pitch * height;  // Safe since checked alloc returned.
-  for (int row = 0; row < height; row++) {
+  *dest_buf = FX_Alloc2D(uint8_t, pitch, height);
+  *dest_size = pitch * height;  // Safe since checked alloc returned.
+  for (int row = 0; row < height; ++row) {
     const uint8_t* pLine = pDecoder->GetScanline(row);
     if (!pLine)
       break;
 
-    memcpy(dest_buf + row * pitch, pLine, pitch);
+    memcpy(*dest_buf + row * pitch, pLine, pitch);
   }
   return pDecoder->GetSrcOffset();
 }
 
-uint32_t PDF_DecodeInlineStream(const uint8_t* src_buf,
-                                uint32_t limit,
-                                int width,
-                                int height,
-                                const CFX_ByteString& decoder,
-                                CPDF_Dictionary* pParam,
-                                uint8_t*& dest_buf,
-                                uint32_t& dest_size) {
+}  // namespace
+
+// Static
+uint32_t CPDF_StreamParser::DecodeInlineStream(const uint8_t* src_buf,
+                                               uint32_t limit,
+                                               int width,
+                                               int height,
+                                               const CFX_ByteString& decoder,
+                                               CPDF_Dictionary* pParam,
+                                               uint8_t** dest_buf,
+                                               uint32_t* dest_size) {
   if (decoder == "CCITTFaxDecode" || decoder == "CCF") {
     std::unique_ptr<CCodec_ScanlineDecoder> pDecoder =
         FPDFAPI_CreateFaxDecoder(src_buf, limit, width, height, pParam);
@@ -76,7 +81,7 @@ uint32_t PDF_DecodeInlineStream(const uint8_t* src_buf,
   if (decoder == "ASCIIHexDecode" || decoder == "AHx")
     return HexDecode(src_buf, limit, dest_buf, dest_size);
   if (decoder == "FlateDecode" || decoder == "Fl") {
-    return FPDFAPI_FlateOrLZWDecode(false, src_buf, limit, pParam, dest_size,
+    return FPDFAPI_FlateOrLZWDecode(false, src_buf, limit, pParam, *dest_size,
                                     dest_buf, dest_size);
   }
   if (decoder == "LZWDecode" || decoder == "LZW") {
@@ -92,27 +97,19 @@ uint32_t PDF_DecodeInlineStream(const uint8_t* src_buf,
   }
   if (decoder == "RunLengthDecode" || decoder == "RL")
     return RunLengthDecode(src_buf, limit, dest_buf, dest_size);
-  dest_size = 0;
-  dest_buf = 0;
+  *dest_size = 0;
+  *dest_buf = 0;
   return 0xFFFFFFFF;
 }
 
-}  // namespace
-
 CPDF_StreamParser::CPDF_StreamParser(const uint8_t* pData, uint32_t dwSize)
-    : m_pBuf(pData),
-      m_Size(dwSize),
-      m_Pos(0),
-      m_pPool(nullptr) {}
+    : m_pBuf(pData), m_Size(dwSize), m_Pos(0), m_pPool(nullptr) {}
 
 CPDF_StreamParser::CPDF_StreamParser(
     const uint8_t* pData,
     uint32_t dwSize,
     const CFX_WeakPtr<CFX_ByteStringPool>& pPool)
-    : m_pBuf(pData),
-      m_Size(dwSize),
-      m_Pos(0),
-      m_pPool(pPool) {}
+    : m_pBuf(pData), m_Size(dwSize), m_Pos(0), m_pPool(pPool) {}
 
 CPDF_StreamParser::~CPDF_StreamParser() {}
 
@@ -191,8 +188,8 @@ std::unique_ptr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
     uint8_t* pIgnore = nullptr;
     uint32_t dwDestSize = OrigSize;
     dwStreamSize =
-        PDF_DecodeInlineStream(m_pBuf + m_Pos, m_Size - m_Pos, width, height,
-                               Decoder, pParam, pIgnore, dwDestSize);
+        DecodeInlineStream(m_pBuf + m_Pos, m_Size - m_Pos, width, height,
+                           Decoder, pParam, &pIgnore, &dwDestSize);
     FX_Free(pIgnore);
     if (static_cast<int>(dwStreamSize) < 0)
       return nullptr;
@@ -220,7 +217,7 @@ std::unique_ptr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
     memcpy(pData.get(), m_pBuf + m_Pos, dwStreamSize);
     m_Pos += dwStreamSize;
   }
-  pDict->SetNewFor<CPDF_Number>("Length", (int)dwStreamSize);
+  pDict->SetNewFor<CPDF_Number>("Length", static_cast<int>(dwStreamSize));
   return pdfium::MakeUnique<CPDF_Stream>(std::move(pData), dwStreamSize,
                                          std::move(pDict));
 }
@@ -473,7 +470,7 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
     return CFX_ByteString();
 
   uint8_t ch = m_pBuf[m_Pos++];
-  CFX_ByteTextBuf buf;
+  std::ostringstream buf;
   int parlevel = 0;
   int status = 0;
   int iEscCode = 0;
@@ -482,20 +479,19 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
       case 0:
         if (ch == ')') {
           if (parlevel == 0) {
-            if (buf.GetLength() > kMaxStringLength) {
-              return CFX_ByteString(buf.GetBuffer(), kMaxStringLength);
-            }
-            return buf.MakeString();
+            return CFX_ByteString(
+                buf.str().c_str(),
+                std::min(static_cast<int>(buf.tellp()), kMaxStringLength));
           }
           parlevel--;
-          buf.AppendChar(')');
+          buf << ')';
         } else if (ch == '(') {
           parlevel++;
-          buf.AppendChar('(');
+          buf << '(';
         } else if (ch == '\\') {
           status = 1;
         } else {
-          buf.AppendChar((char)ch);
+          buf << static_cast<char>(ch);
         }
         break;
       case 1:
@@ -505,21 +501,21 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
           break;
         }
         if (ch == 'n') {
-          buf.AppendChar('\n');
+          buf << '\n';
         } else if (ch == 'r') {
-          buf.AppendChar('\r');
+          buf << '\r';
         } else if (ch == 't') {
-          buf.AppendChar('\t');
+          buf << '\t';
         } else if (ch == 'b') {
-          buf.AppendChar('\b');
+          buf << '\b';
         } else if (ch == 'f') {
-          buf.AppendChar('\f');
+          buf << '\f';
         } else if (ch == '\r') {
           status = 4;
           break;
         } else if (ch == '\n') {
         } else {
-          buf.AppendChar(ch);
+          buf << static_cast<char>(ch);
         }
         status = 0;
         break;
@@ -529,7 +525,7 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
               iEscCode * 8 + FXSYS_DecimalCharToInt(static_cast<char>(ch));
           status = 3;
         } else {
-          buf.AppendChar(iEscCode);
+          buf << static_cast<char>(iEscCode);
           status = 0;
           continue;
         }
@@ -538,19 +534,18 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
         if (ch >= '0' && ch <= '7') {
           iEscCode =
               iEscCode * 8 + FXSYS_DecimalCharToInt(static_cast<char>(ch));
-          buf.AppendChar(iEscCode);
+          buf << static_cast<char>(iEscCode);
           status = 0;
         } else {
-          buf.AppendChar(iEscCode);
+          buf << static_cast<char>(iEscCode);
           status = 0;
           continue;
         }
         break;
       case 4:
         status = 0;
-        if (ch != '\n') {
+        if (ch != '\n')
           continue;
-        }
         break;
     }
     if (!PositionIsInBounds())
@@ -561,17 +556,16 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
   if (PositionIsInBounds())
     ++m_Pos;
 
-  if (buf.GetLength() > kMaxStringLength) {
-    return CFX_ByteString(buf.GetBuffer(), kMaxStringLength);
-  }
-  return buf.MakeString();
+  return CFX_ByteString(
+      buf.str().c_str(),
+      std::min(static_cast<int>(buf.tellp()), kMaxStringLength));
 }
 
 CFX_ByteString CPDF_StreamParser::ReadHexString() {
   if (!PositionIsInBounds())
     return CFX_ByteString();
 
-  CFX_ByteTextBuf buf;
+  std::ostringstream buf;
   bool bFirst = true;
   int code = 0;
   while (PositionIsInBounds()) {
@@ -588,17 +582,16 @@ CFX_ByteString CPDF_StreamParser::ReadHexString() {
       code = val * 16;
     } else {
       code += val;
-      buf.AppendByte((uint8_t)code);
+      buf << static_cast<uint8_t>(code);
     }
     bFirst = !bFirst;
   }
   if (!bFirst)
-    buf.AppendChar((char)code);
+    buf << static_cast<char>(code);
 
-  if (buf.GetLength() > kMaxStringLength)
-    return CFX_ByteString(buf.GetBuffer(), kMaxStringLength);
-
-  return buf.MakeString();
+  return CFX_ByteString(
+      buf.str().c_str(),
+      std::min(static_cast<int>(buf.tellp()), kMaxStringLength));
 }
 
 bool CPDF_StreamParser::PositionIsInBounds() const {

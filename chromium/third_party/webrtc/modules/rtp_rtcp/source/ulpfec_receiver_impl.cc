@@ -13,21 +13,24 @@
 #include <memory>
 #include <utility>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_receiver_video.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 #include "webrtc/system_wrappers/include/clock.h"
 
 namespace webrtc {
 
-UlpfecReceiver* UlpfecReceiver::Create(RtpData* callback) {
-  return new UlpfecReceiverImpl(callback);
+UlpfecReceiver* UlpfecReceiver::Create(uint32_t ssrc,
+                                       RecoveredPacketReceiver* callback) {
+  return new UlpfecReceiverImpl(ssrc, callback);
 }
 
-UlpfecReceiverImpl::UlpfecReceiverImpl(RtpData* callback)
-    : recovered_packet_callback_(callback),
-      fec_(ForwardErrorCorrection::CreateUlpfec()) {}
+UlpfecReceiverImpl::UlpfecReceiverImpl(uint32_t ssrc,
+                                       RecoveredPacketReceiver* callback)
+    : ssrc_(ssrc),
+      recovered_packet_callback_(callback),
+      fec_(ForwardErrorCorrection::CreateUlpfec(ssrc_)) {}
 
 UlpfecReceiverImpl::~UlpfecReceiverImpl() {
   received_packets_.clear();
@@ -72,6 +75,12 @@ int32_t UlpfecReceiverImpl::AddReceivedRedPacket(
     const uint8_t* incoming_rtp_packet,
     size_t packet_length,
     uint8_t ulpfec_payload_type) {
+  if (header.ssrc != ssrc_) {
+    LOG(LS_WARNING)
+        << "Received RED packet with different SSRC than expected; dropping.";
+    return -1;
+  }
+
   rtc::CritScope cs(&crit_sect_);
 
   uint8_t red_header_length = 1;
@@ -90,6 +99,7 @@ int32_t UlpfecReceiverImpl::AddReceivedRedPacket(
   // Get payload type from RED header and sequence number from RTP header.
   uint8_t payload_type = incoming_rtp_packet[header.headerLength] & 0x7f;
   received_packet->is_fec = payload_type == ulpfec_payload_type;
+  received_packet->ssrc = header.ssrc;
   received_packet->seq_num = header.sequenceNumber;
 
   uint16_t block_length = 0;
@@ -155,6 +165,7 @@ int32_t UlpfecReceiverImpl::AddReceivedRedPacket(
     second_received_packet->pkt = new ForwardErrorCorrection::Packet;
 
     second_received_packet->is_fec = true;
+    second_received_packet->ssrc = header.ssrc;
     second_received_packet->seq_num = header.sequenceNumber;
     ++packet_counter_.num_fec_packets;
 
@@ -212,10 +223,8 @@ int32_t UlpfecReceiverImpl::ProcessReceivedFec() {
     if (!received_packets_.front()->is_fec) {
       ForwardErrorCorrection::Packet* packet = received_packets_.front()->pkt;
       crit_sect_.Leave();
-      if (!recovered_packet_callback_->OnRecoveredPacket(packet->data,
-                                                         packet->length)) {
-        return -1;
-      }
+      recovered_packet_callback_->OnRecoveredPacket(packet->data,
+                                                    packet->length);
       crit_sect_.Enter();
     }
     if (fec_->DecodeFec(&received_packets_, &recovered_packets_) != 0) {
@@ -233,10 +242,8 @@ int32_t UlpfecReceiverImpl::ProcessReceivedFec() {
     ForwardErrorCorrection::Packet* packet = recovered_packet->pkt;
     ++packet_counter_.num_recovered_packets;
     crit_sect_.Leave();
-    if (!recovered_packet_callback_->OnRecoveredPacket(packet->data,
-                                                       packet->length)) {
-      return -1;
-    }
+    recovered_packet_callback_->OnRecoveredPacket(packet->data,
+                                                  packet->length);
     crit_sect_.Enter();
     recovered_packet->returned = true;
   }

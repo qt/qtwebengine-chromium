@@ -20,21 +20,10 @@
 #include "webrtc/audio/audio_send_stream.h"
 #include "webrtc/audio/audio_state.h"
 #include "webrtc/audio/scoped_voe_interface.h"
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/location.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/optional.h"
-#include "webrtc/base/ptr_util.h"
-#include "webrtc/base/task_queue.h"
-#include "webrtc/base/thread_annotations.h"
-#include "webrtc/base/thread_checker.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/call/bitrate_allocator.h"
 #include "webrtc/call/call.h"
 #include "webrtc/call/flexfec_receive_stream_impl.h"
-#include "webrtc/call/rtp_demuxer.h"
+#include "webrtc/call/rtp_stream_receiver_controller.h"
 #include "webrtc/call/rtp_transport_controller_send.h"
 #include "webrtc/config.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
@@ -42,11 +31,22 @@
 #include "webrtc/modules/congestion_controller/include/receive_side_congestion_controller.h"
 #include "webrtc/modules/pacing/paced_sender.h"
 #include "webrtc/modules/rtp_rtcp/include/flexfec_receiver.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_header_extension.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "webrtc/modules/utility/include/process_thread.h"
+#include "webrtc/rtc_base/basictypes.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/location.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/optional.h"
+#include "webrtc/rtc_base/ptr_util.h"
+#include "webrtc/rtc_base/task_queue.h"
+#include "webrtc/rtc_base/thread_annotations.h"
+#include "webrtc/rtc_base/thread_checker.h"
+#include "webrtc/rtc_base/trace_event.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/cpu_info.h"
 #include "webrtc/system_wrappers/include/metrics.h"
@@ -59,8 +59,6 @@
 #include "webrtc/video/video_send_stream.h"
 
 namespace webrtc {
-
-const int Call::Config::kDefaultStartBitrateBps = 300000;
 
 namespace {
 
@@ -200,6 +198,9 @@ class Call : public webrtc::Call,
   void SetBitrateConfig(
       const webrtc::Call::Config::BitrateConfig& bitrate_config) override;
 
+  void SetBitrateConfigMask(
+      const webrtc::Call::Config::BitrateConfigMask& bitrate_config) override;
+
   void SignalChannelNetworkState(MediaType media, NetworkState state) override;
 
   void OnTransportOverheadChanged(MediaType media,
@@ -235,16 +236,20 @@ class Call : public webrtc::Call,
                                  MediaType media_type)
       SHARED_LOCKS_REQUIRED(receive_crit_);
 
-  rtc::Optional<RtpPacketReceived> ParseRtpPacket(const uint8_t* packet,
-                                                  size_t length,
-                                                  const PacketTime* packet_time)
-      SHARED_LOCKS_REQUIRED(receive_crit_);
+  rtc::Optional<RtpPacketReceived> ParseRtpPacket(
+      const uint8_t* packet,
+      size_t length,
+      const PacketTime* packet_time) const;
 
   void UpdateSendHistograms(int64_t first_sent_packet_ms)
       EXCLUSIVE_LOCKS_REQUIRED(&bitrate_crit_);
   void UpdateReceiveHistograms();
   void UpdateHistograms();
   void UpdateAggregateNetworkState();
+
+  // Applies update to the BitrateConfig cached in |config_|, restarting
+  // bandwidth estimation from |new_start| if set.
+  void UpdateCurrentBitrateConfig(const rtc::Optional<int>& new_start);
 
   Clock* const clock_;
 
@@ -270,10 +275,10 @@ class Call : public webrtc::Call,
   std::map<std::string, AudioReceiveStream*> sync_stream_mapping_
       GUARDED_BY(receive_crit_);
 
-  // TODO(nisse): Should eventually be part of injected
-  // RtpTransportControllerReceive, with a single demuxer in the bundled case.
-  RtpDemuxer audio_rtp_demuxer_ GUARDED_BY(receive_crit_);
-  RtpDemuxer video_rtp_demuxer_ GUARDED_BY(receive_crit_);
+  // TODO(nisse): Should eventually be injected at creation,
+  // with a single object in the bundled case.
+  RtpStreamReceiverController audio_receiver_controller_;
+  RtpStreamReceiverController video_receiver_controller_;
 
   // This extra map is used for receive processing which is
   // independent of media type.
@@ -320,6 +325,10 @@ class Call : public webrtc::Call,
   RateCounter received_audio_bytes_per_second_counter_;
   RateCounter received_video_bytes_per_second_counter_;
   RateCounter received_rtcp_bytes_per_second_counter_;
+  rtc::Optional<int64_t> first_received_rtp_audio_ms_;
+  rtc::Optional<int64_t> last_received_rtp_audio_ms_;
+  rtc::Optional<int64_t> first_received_rtp_video_ms_;
+  rtc::Optional<int64_t> last_received_rtp_video_ms_;
 
   // TODO(holmer): Remove this lock once BitrateController no longer calls
   // OnNetworkChanged from multiple threads.
@@ -340,6 +349,14 @@ class Call : public webrtc::Call,
   // |worker_queue| is defined last to ensure all pending tasks are cancelled
   // and deleted before any other members.
   rtc::TaskQueue worker_queue_;
+
+  // The config mask set by SetBitrateConfigMask.
+  // 0 <= min <= start <= max
+  Config::BitrateConfigMask bitrate_config_mask_;
+
+  // The config set by SetBitrateConfig.
+  // min >= 0, start != 0, max == -1 || max > 0
+  Config::BitrateConfig base_bitrate_config_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(Call);
 };
@@ -396,8 +413,9 @@ Call::Call(const Call::Config& config,
       receive_side_cc_(clock_, transport_send->packet_router()),
       video_send_delay_stats_(new SendDelayStats(clock_)),
       start_ms_(clock_->TimeInMilliseconds()),
-      worker_queue_("call_worker_queue") {
-  RTC_DCHECK_RUN_ON(&configuration_thread_checker_);
+      worker_queue_("call_worker_queue"),
+      base_bitrate_config_(config.bitrate_config) {
+  RTC_DCHECK(&configuration_thread_checker_);
   RTC_DCHECK(config.event_log != nullptr);
   RTC_DCHECK_GE(config.bitrate_config.min_bitrate_bps, 0);
   RTC_DCHECK_GE(config.bitrate_config.start_bitrate_bps,
@@ -467,14 +485,10 @@ Call::~Call() {
 rtc::Optional<RtpPacketReceived> Call::ParseRtpPacket(
     const uint8_t* packet,
     size_t length,
-    const PacketTime* packet_time) {
+    const PacketTime* packet_time) const {
   RtpPacketReceived parsed_packet;
   if (!parsed_packet.Parse(packet, length))
     return rtc::Optional<RtpPacketReceived>();
-
-  auto it = receive_rtp_config_.find(parsed_packet.Ssrc());
-  if (it != receive_rtp_config_.end())
-    parsed_packet.IdentifyExtensions(it->second.extensions);
 
   int64_t arrival_time_ms;
   if (packet_time && packet_time->timestamp != -1) {
@@ -520,6 +534,16 @@ void Call::UpdateSendHistograms(int64_t first_sent_packet_ms) {
 }
 
 void Call::UpdateReceiveHistograms() {
+  if (first_received_rtp_audio_ms_) {
+    RTC_HISTOGRAM_COUNTS_100000(
+        "WebRTC.Call.TimeReceivingAudioRtpPacketsInSeconds",
+        (*last_received_rtp_audio_ms_ - *first_received_rtp_audio_ms_) / 1000);
+  }
+  if (first_received_rtp_video_ms_) {
+    RTC_HISTOGRAM_COUNTS_100000(
+        "WebRTC.Call.TimeReceivingVideoRtpPacketsInSeconds",
+        (*last_received_rtp_video_ms_ - *first_received_rtp_video_ms_) / 1000);
+  }
   const int kMinRequiredPeriodicSamples = 5;
   AggregatedStats video_bytes_per_sec =
       received_video_bytes_per_second_counter_.GetStats();
@@ -632,12 +656,11 @@ webrtc::AudioReceiveStream* Call::CreateAudioReceiveStream(
   TRACE_EVENT0("webrtc", "Call::CreateAudioReceiveStream");
   RTC_DCHECK_RUN_ON(&configuration_thread_checker_);
   event_log_->LogAudioReceiveStreamConfig(CreateRtcLogStreamConfig(config));
-  AudioReceiveStream* receive_stream =
-      new AudioReceiveStream(transport_send_->packet_router(), config,
-                             config_.audio_state, event_log_);
+  AudioReceiveStream* receive_stream = new AudioReceiveStream(
+      &audio_receiver_controller_, transport_send_->packet_router(), config,
+      config_.audio_state, event_log_);
   {
     WriteLockScoped write_lock(*receive_crit_);
-    audio_rtp_demuxer_.AddSink(config.rtp.remote_ssrc, receive_stream);
     receive_rtp_config_[config.rtp.remote_ssrc] =
         ReceiveRtpConfig(config.rtp.extensions, UseSendSideBwe(config));
     audio_receive_streams_.insert(receive_stream);
@@ -669,8 +692,6 @@ void Call::DestroyAudioReceiveStream(
     uint32_t ssrc = config.rtp.remote_ssrc;
     receive_side_cc_.GetRemoteBitrateEstimator(UseSendSideBwe(config))
         ->RemoveStream(ssrc);
-    size_t num_deleted = audio_rtp_demuxer_.RemoveSink(audio_receive_stream);
-    RTC_DCHECK(num_deleted == 1);
     audio_receive_streams_.erase(audio_receive_stream);
     const std::string& sync_group = audio_receive_stream->config().sync_group;
     const auto it = sync_stream_mapping_.find(sync_group);
@@ -706,7 +727,8 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
       num_cpu_cores_, module_process_thread_.get(), &worker_queue_,
       call_stats_.get(), transport_send_.get(), bitrate_allocator_.get(),
       video_send_delay_stats_.get(), event_log_, std::move(config),
-      std::move(encoder_config), suspended_video_send_ssrcs_);
+      std::move(encoder_config), suspended_video_send_ssrcs_,
+      config_.keepalive_config);
 
   {
     WriteLockScoped write_lock(*send_crit_);
@@ -762,19 +784,17 @@ webrtc::VideoReceiveStream* Call::CreateVideoReceiveStream(
   TRACE_EVENT0("webrtc", "Call::CreateVideoReceiveStream");
   RTC_DCHECK_RUN_ON(&configuration_thread_checker_);
 
-  VideoReceiveStream* receive_stream =
-      new VideoReceiveStream(num_cpu_cores_, transport_send_->packet_router(),
-                             std::move(configuration),
-                             module_process_thread_.get(), call_stats_.get());
+  VideoReceiveStream* receive_stream = new VideoReceiveStream(
+      &video_receiver_controller_, num_cpu_cores_,
+      transport_send_->packet_router(), std::move(configuration),
+      module_process_thread_.get(), call_stats_.get());
 
   const webrtc::VideoReceiveStream::Config& config = receive_stream->config();
   ReceiveRtpConfig receive_config(config.rtp.extensions,
                                   UseSendSideBwe(config));
   {
     WriteLockScoped write_lock(*receive_crit_);
-    video_rtp_demuxer_.AddSink(config.rtp.remote_ssrc, receive_stream);
     if (config.rtp.rtx_ssrc) {
-      video_rtp_demuxer_.AddSink(config.rtp.rtx_ssrc, receive_stream);
       // We record identical config for the rtx stream as for the main
       // stream. Since the transport_send_cc negotiation is per payload
       // type, we may get an incorrect value for the rtx stream, but
@@ -803,8 +823,6 @@ void Call::DestroyVideoReceiveStream(
     WriteLockScoped write_lock(*receive_crit_);
     // Remove all ssrcs pointing to a receive stream. As RTX retransmits on a
     // separate SSRC there can be either one or two.
-    size_t num_deleted = video_rtp_demuxer_.RemoveSink(receive_stream_impl);
-    RTC_DCHECK_GE(num_deleted, 1);
     receive_rtp_config_.erase(config.rtp.remote_ssrc);
     if (config.rtp.rtx_ssrc) {
       receive_rtp_config_.erase(config.rtp.rtx_ssrc);
@@ -826,16 +844,22 @@ FlexfecReceiveStream* Call::CreateFlexfecReceiveStream(
   RTC_DCHECK_RUN_ON(&configuration_thread_checker_);
 
   RecoveredPacketReceiver* recovered_packet_receiver = this;
-  FlexfecReceiveStreamImpl* receive_stream = new FlexfecReceiveStreamImpl(
-      config, recovered_packet_receiver, call_stats_->rtcp_rtt_stats(),
-      module_process_thread_.get());
 
+  FlexfecReceiveStreamImpl* receive_stream;
   {
     WriteLockScoped write_lock(*receive_crit_);
-    video_rtp_demuxer_.AddSink(config.remote_ssrc, receive_stream);
-
-    for (auto ssrc : config.protected_media_ssrcs)
-      video_rtp_demuxer_.AddSink(ssrc, receive_stream);
+    // Unlike the video and audio receive streams,
+    // FlexfecReceiveStream implements RtpPacketSinkInterface itself,
+    // and hence its constructor passes its |this| pointer to
+    // video_receiver_controller_->CreateStream(). Calling the
+    // constructor while holding |receive_crit_| ensures that we don't
+    // call OnRtpPacket until the constructor is finished and the
+    // object is in a valid state.
+    // TODO(nisse): Fix constructor so that it can be moved outside of
+    // this locked scope.
+    receive_stream = new FlexfecReceiveStreamImpl(
+        &video_receiver_controller_, config, recovered_packet_receiver,
+        call_stats_->rtcp_rtt_stats(), module_process_thread_.get());
 
     RTC_DCHECK(receive_rtp_config_.find(config.remote_ssrc) ==
                receive_rtp_config_.end());
@@ -867,7 +891,6 @@ void Call::DestroyFlexfecReceiveStream(FlexfecReceiveStream* receive_stream) {
 
     // Remove all SSRCs pointing to the FlexfecReceiveStreamImpl to be
     // destroyed.
-    video_rtp_demuxer_.RemoveSink(receive_stream_impl);
     receive_side_cc_.GetRemoteBitrateEstimator(UseSendSideBwe(config))
         ->RemoveStream(ssrc);
   }
@@ -905,28 +928,80 @@ void Call::SetBitrateConfig(
   TRACE_EVENT0("webrtc", "Call::SetBitrateConfig");
   RTC_DCHECK_RUN_ON(&configuration_thread_checker_);
   RTC_DCHECK_GE(bitrate_config.min_bitrate_bps, 0);
-  if (bitrate_config.max_bitrate_bps != -1)
+  RTC_DCHECK_NE(bitrate_config.start_bitrate_bps, 0);
+  if (bitrate_config.max_bitrate_bps != -1) {
     RTC_DCHECK_GT(bitrate_config.max_bitrate_bps, 0);
-  if (config_.bitrate_config.min_bitrate_bps ==
-          bitrate_config.min_bitrate_bps &&
-      (bitrate_config.start_bitrate_bps <= 0 ||
-       config_.bitrate_config.start_bitrate_bps ==
-           bitrate_config.start_bitrate_bps) &&
-      config_.bitrate_config.max_bitrate_bps ==
-          bitrate_config.max_bitrate_bps) {
-    // Nothing new to set, early abort to avoid encoder reconfigurations.
+  }
+
+  rtc::Optional<int> new_start;
+  // Only update the "start" bitrate if it's set, and different from the old
+  // value. In practice, this value comes from the x-google-start-bitrate codec
+  // parameter in SDP, and setting the same remote description twice shouldn't
+  // restart bandwidth estimation.
+  if (bitrate_config.start_bitrate_bps != -1 &&
+      bitrate_config.start_bitrate_bps !=
+          base_bitrate_config_.start_bitrate_bps) {
+    new_start.emplace(bitrate_config.start_bitrate_bps);
+  }
+  base_bitrate_config_ = bitrate_config;
+  UpdateCurrentBitrateConfig(new_start);
+}
+
+void Call::SetBitrateConfigMask(
+    const webrtc::Call::Config::BitrateConfigMask& mask) {
+  TRACE_EVENT0("webrtc", "Call::SetBitrateConfigMask");
+  RTC_DCHECK(configuration_thread_checker_.CalledOnValidThread());
+
+  bitrate_config_mask_ = mask;
+  UpdateCurrentBitrateConfig(mask.start_bitrate_bps);
+}
+
+void Call::UpdateCurrentBitrateConfig(const rtc::Optional<int>& new_start) {
+  Config::BitrateConfig updated;
+  updated.min_bitrate_bps =
+      std::max(bitrate_config_mask_.min_bitrate_bps.value_or(0),
+               base_bitrate_config_.min_bitrate_bps);
+
+  updated.max_bitrate_bps =
+      MinPositive(bitrate_config_mask_.max_bitrate_bps.value_or(-1),
+                  base_bitrate_config_.max_bitrate_bps);
+
+  // If the combined min ends up greater than the combined max, the max takes
+  // priority.
+  if (updated.max_bitrate_bps != -1 &&
+      updated.min_bitrate_bps > updated.max_bitrate_bps) {
+    updated.min_bitrate_bps = updated.max_bitrate_bps;
+  }
+
+  // If there is nothing to update (min/max unchanged, no new bandwidth
+  // estimation start value), return early.
+  if (updated.min_bitrate_bps == config_.bitrate_config.min_bitrate_bps &&
+      updated.max_bitrate_bps == config_.bitrate_config.max_bitrate_bps &&
+      !new_start) {
+    LOG(LS_VERBOSE) << "WebRTC.Call.UpdateCurrentBitrateConfig: "
+                    << "nothing to update";
     return;
   }
-  config_.bitrate_config.min_bitrate_bps = bitrate_config.min_bitrate_bps;
-  // Start bitrate of -1 means we should keep the old bitrate, which there is
-  // no point in remembering for the future.
-  if (bitrate_config.start_bitrate_bps > 0)
-    config_.bitrate_config.start_bitrate_bps = bitrate_config.start_bitrate_bps;
-  config_.bitrate_config.max_bitrate_bps = bitrate_config.max_bitrate_bps;
-  RTC_DCHECK_NE(bitrate_config.start_bitrate_bps, 0);
-  transport_send_->send_side_cc()->SetBweBitrates(
-      bitrate_config.min_bitrate_bps, bitrate_config.start_bitrate_bps,
-      bitrate_config.max_bitrate_bps);
+
+  if (new_start) {
+    // Clamp start by min and max.
+    updated.start_bitrate_bps = MinPositive(
+        std::max(*new_start, updated.min_bitrate_bps), updated.max_bitrate_bps);
+  } else {
+    updated.start_bitrate_bps = -1;
+  }
+
+  LOG(INFO) << "WebRTC.Call.UpdateCurrentBitrateConfig: "
+            << "calling SetBweBitrates with args (" << updated.min_bitrate_bps
+            << ", " << updated.start_bitrate_bps << ", "
+            << updated.max_bitrate_bps << ")";
+  transport_send_->send_side_cc()->SetBweBitrates(updated.min_bitrate_bps,
+                                                  updated.start_bitrate_bps,
+                                                  updated.max_bitrate_bps);
+  if (!new_start) {
+    updated.start_bitrate_bps = config_.bitrate_config.start_bitrate_bps;
+  }
+  config_.bitrate_config = updated;
 }
 
 void Call::SignalChannelNetworkState(MediaType media, NetworkState state) {
@@ -1214,7 +1289,7 @@ PacketReceiver::DeliveryStatus Call::DeliverRtcp(MediaType media_type,
   }
 
   if (rtcp_delivered)
-    event_log_->LogRtcpPacket(kIncomingPacket, media_type, packet, length);
+    event_log_->LogRtcpPacket(kIncomingPacket, packet, length);
 
   return rtcp_delivered ? DELIVERY_OK : DELIVERY_PACKET_ERROR;
 }
@@ -1225,31 +1300,62 @@ PacketReceiver::DeliveryStatus Call::DeliverRtp(MediaType media_type,
                                                 const PacketTime& packet_time) {
   TRACE_EVENT0("webrtc", "Call::DeliverRtp");
 
-  RTC_DCHECK(media_type == MediaType::AUDIO || media_type == MediaType::VIDEO);
-
-  ReadLockScoped read_lock(*receive_crit_);
   // TODO(nisse): We should parse the RTP header only here, and pass
   // on parsed_packet to the receive streams.
   rtc::Optional<RtpPacketReceived> parsed_packet =
       ParseRtpPacket(packet, length, &packet_time);
 
+  // We might get RTP keep-alive packets in accordance with RFC6263 section 4.6.
+  // These are empty (zero length payload) RTP packets with an unsignaled
+  // payload type.
+  const bool is_keep_alive_packet =
+      parsed_packet && parsed_packet->payload_size() == 0;
+
+  RTC_DCHECK(media_type == MediaType::AUDIO || media_type == MediaType::VIDEO ||
+             is_keep_alive_packet);
+
   if (!parsed_packet)
     return DELIVERY_PACKET_ERROR;
+
+  ReadLockScoped read_lock(*receive_crit_);
+  auto it = receive_rtp_config_.find(parsed_packet->Ssrc());
+  if (it == receive_rtp_config_.end()) {
+    LOG(LS_ERROR) << "receive_rtp_config_ lookup failed for ssrc "
+                  << parsed_packet->Ssrc();
+    // Destruction of the receive stream, including deregistering from the
+    // RtpDemuxer, is not protected by the |receive_crit_| lock. But
+    // deregistering in the |receive_rtp_config_| map is protected by that lock.
+    // So by not passing the packet on to demuxing in this case, we prevent
+    // incoming packets to be passed on via the demuxer to a receive stream
+    // which is being torned down.
+    return DELIVERY_UNKNOWN_SSRC;
+  }
+  parsed_packet->IdentifyExtensions(it->second.extensions);
 
   NotifyBweOfReceivedPacket(*parsed_packet, media_type);
 
   if (media_type == MediaType::AUDIO) {
-    if (audio_rtp_demuxer_.OnRtpPacket(*parsed_packet)) {
+    if (audio_receiver_controller_.OnRtpPacket(*parsed_packet)) {
       received_bytes_per_second_counter_.Add(static_cast<int>(length));
       received_audio_bytes_per_second_counter_.Add(static_cast<int>(length));
-      event_log_->LogRtpHeader(kIncomingPacket, media_type, packet, length);
+      event_log_->LogRtpHeader(kIncomingPacket, packet, length);
+      const int64_t arrival_time_ms = parsed_packet->arrival_time_ms();
+      if (!first_received_rtp_audio_ms_) {
+        first_received_rtp_audio_ms_.emplace(arrival_time_ms);
+      }
+      last_received_rtp_audio_ms_.emplace(arrival_time_ms);
       return DELIVERY_OK;
     }
   } else if (media_type == MediaType::VIDEO) {
-    if (video_rtp_demuxer_.OnRtpPacket(*parsed_packet)) {
+    if (video_receiver_controller_.OnRtpPacket(*parsed_packet)) {
       received_bytes_per_second_counter_.Add(static_cast<int>(length));
       received_video_bytes_per_second_counter_.Add(static_cast<int>(length));
-      event_log_->LogRtpHeader(kIncomingPacket, media_type, packet, length);
+      event_log_->LogRtpHeader(kIncomingPacket, packet, length);
+      const int64_t arrival_time_ms = parsed_packet->arrival_time_ms();
+      if (!first_received_rtp_video_ms_) {
+        first_received_rtp_video_ms_.emplace(arrival_time_ms);
+      }
+      last_received_rtp_video_ms_.emplace(arrival_time_ms);
       return DELIVERY_OK;
     }
   }
@@ -1282,7 +1388,7 @@ void Call::OnRecoveredPacket(const uint8_t* packet, size_t length) {
 
   parsed_packet->set_recovered(true);
 
-  video_rtp_demuxer_.OnRtpPacket(*parsed_packet);
+  video_receiver_controller_.OnRtpPacket(*parsed_packet);
 }
 
 void Call::NotifyBweOfReceivedPacket(const RtpPacketReceived& packet,

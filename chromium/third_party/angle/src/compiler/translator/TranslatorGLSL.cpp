@@ -53,7 +53,7 @@ void TranslatorGLSL::translate(TIntermBlock *root, ShCompileOptions compileOptio
     writeVersion(root);
 
     // Write extension behaviour as needed
-    writeExtensionBehavior(root);
+    writeExtensionBehavior(root, compileOptions);
 
     // Write pragmas after extensions because some drivers consider pragmas
     // like non-preprocessor tokens.
@@ -107,7 +107,7 @@ void TranslatorGLSL::translate(TIntermBlock *root, ShCompileOptions compileOptio
 
     if (precisionEmulation)
     {
-        EmulatePrecision emulatePrecision(getSymbolTable(), getShaderVersion());
+        EmulatePrecision emulatePrecision(&getSymbolTable(), getShaderVersion());
         root->traverse(&emulatePrecision);
         emulatePrecision.updateTree();
         emulatePrecision.writeEmulationHelpers(sink, getShaderVersion(), getOutputType());
@@ -202,7 +202,7 @@ void TranslatorGLSL::translate(TIntermBlock *root, ShCompileOptions compileOptio
 
     // Write translated shader.
     TOutputGLSL outputGLSL(sink, getArrayIndexClampingStrategy(), getHashFunction(), getNameMap(),
-                           getSymbolTable(), getShaderType(), getShaderVersion(), getOutputType(),
+                           &getSymbolTable(), getShaderType(), getShaderVersion(), getOutputType(),
                            compileOptions);
 
     if (compileOptions & SH_TRANSLATE_VIEWID_OVR_TO_UNIFORM)
@@ -242,7 +242,7 @@ void TranslatorGLSL::writeVersion(TIntermNode *root)
     }
 }
 
-void TranslatorGLSL::writeExtensionBehavior(TIntermNode *root)
+void TranslatorGLSL::writeExtensionBehavior(TIntermNode *root, ShCompileOptions compileOptions)
 {
     TInfoSinkBase &sink                   = getInfoSink().obj;
     const TExtensionBehavior &extBehavior = getExtensionBehavior();
@@ -268,6 +268,17 @@ void TranslatorGLSL::writeExtensionBehavior(TIntermNode *root)
                 sink << "#extension GL_ARB_draw_buffers : " << getBehaviorString(iter.second)
                      << "\n";
             }
+        }
+
+        const bool isMultiview =
+            iter.first == "GL_OVR_multiview" || iter.first == "GL_OVR_multiview2";
+        if (isMultiview && getShaderType() == GL_VERTEX_SHADER &&
+            (compileOptions & SH_SELECT_VIEW_IN_NV_GLSL_VERTEX_SHADER) != 0u)
+        {
+            // Emit the NV_viewport_array2 extension in a vertex shader if the
+            // SH_SELECT_VIEW_IN_NV_GLSL_VERTEX_SHADER option is set and the OVR_multiview(2)
+            // extension is requested.
+            sink << "#extension GL_NV_viewport_array2 : require\n";
         }
     }
 

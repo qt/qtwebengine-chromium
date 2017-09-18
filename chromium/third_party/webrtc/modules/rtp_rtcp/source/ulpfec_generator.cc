@@ -13,11 +13,11 @@
 #include <memory>
 #include <utility>
 
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/checks.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/forward_error_correction.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
+#include "webrtc/rtc_base/basictypes.h"
+#include "webrtc/rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -48,6 +48,13 @@ constexpr uint8_t kHighProtectionThreshold = 80;
 // packets per frame (as given by this threshold), at least
 // |kMinMediaPackets| + 1 packets are sent to the FEC code.
 constexpr float kMinMediaPacketsAdaptationThreshold = 2.0f;
+
+// At construction time, we don't know the SSRC that is used for the generated
+// FEC packets, but we still need to give it to the ForwardErrorCorrection ctor
+// to be used in the decoding.
+// TODO(brandtr): Get rid of this awkwardness by splitting
+// ForwardErrorCorrection in two objects -- one encoder and one decoder.
+constexpr uint32_t kUnknownSsrc = 0;
 
 }  // namespace
 
@@ -94,7 +101,7 @@ size_t RedPacket::length() const {
 }
 
 UlpfecGenerator::UlpfecGenerator()
-    : UlpfecGenerator(ForwardErrorCorrection::CreateUlpfec()) {}
+    : UlpfecGenerator(ForwardErrorCorrection::CreateUlpfec(kUnknownSsrc)) {}
 
 UlpfecGenerator::UlpfecGenerator(std::unique_ptr<ForwardErrorCorrection> fec)
     : fec_(std::move(fec)),

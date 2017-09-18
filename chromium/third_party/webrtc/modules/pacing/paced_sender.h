@@ -15,11 +15,11 @@
 #include <memory>
 #include <set>
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/optional.h"
-#include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/include/module.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/optional.h"
+#include "webrtc/rtc_base/thread_annotations.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -28,9 +28,9 @@ class BitrateProber;
 class Clock;
 class ProbeClusterCreatedObserver;
 class RtcEventLog;
+class IntervalBudget;
 
 namespace paced_sender {
-class IntervalBudget;
 struct Packet;
 class PacketQueue;
 }  // namespace paced_sender
@@ -73,7 +73,7 @@ class PacedSender : public Module, public RtpPacketSender {
               PacketSender* packet_sender,
               RtcEventLog* event_log);
 
-  virtual ~PacedSender();
+  ~PacedSender() override;
 
   virtual void CreateProbeCluster(int bitrate_bps);
 
@@ -149,6 +149,9 @@ class PacedSender : public Module, public RtpPacketSender {
   // Called when the prober is associated with a process thread.
   void ProcessThreadAttached(ProcessThread* process_thread) override;
 
+  void SetPacingFactor(float pacing_factor);
+  void SetQueueTimeLimit(int limit_ms);
+
  private:
   // Updates the number of bytes that can be sent for the next time interval.
   void UpdateBudgetWithElapsedTime(int64_t delta_time_in_ms)
@@ -170,13 +173,11 @@ class PacedSender : public Module, public RtpPacketSender {
   bool paused_ GUARDED_BY(critsect_);
   // This is the media budget, keeping track of how many bits of media
   // we can pace out during the current interval.
-  std::unique_ptr<paced_sender::IntervalBudget> media_budget_
-      GUARDED_BY(critsect_);
+  std::unique_ptr<IntervalBudget> media_budget_ GUARDED_BY(critsect_);
   // This is the padding budget, keeping track of how many bits of padding we're
   // allowed to send out during the current interval. This budget will be
   // utilized when there's no media to send.
-  std::unique_ptr<paced_sender::IntervalBudget> padding_budget_
-      GUARDED_BY(critsect_);
+  std::unique_ptr<IntervalBudget> padding_budget_ GUARDED_BY(critsect_);
 
   std::unique_ptr<BitrateProber> prober_ GUARDED_BY(critsect_);
   bool probing_send_failure_;
@@ -193,6 +194,9 @@ class PacedSender : public Module, public RtpPacketSender {
   std::unique_ptr<paced_sender::PacketQueue> packets_ GUARDED_BY(critsect_);
   uint64_t packet_counter_;
   ProcessThread* process_thread_ = nullptr;
+
+  float pacing_factor_ GUARDED_BY(critsect_);
+  int64_t queue_time_limit GUARDED_BY(critsect_);
 };
 }  // namespace webrtc
 #endif  // WEBRTC_MODULES_PACING_PACED_SENDER_H_

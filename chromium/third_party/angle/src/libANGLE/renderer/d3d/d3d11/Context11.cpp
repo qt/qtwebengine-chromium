@@ -149,39 +149,44 @@ gl::Error Context11::finish()
     return mRenderer->finish();
 }
 
-gl::Error Context11::drawArrays(GLenum mode, GLint first, GLsizei count)
+gl::Error Context11::drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count)
 {
-    return mRenderer->genericDrawArrays(this, mode, first, count, 0);
+    return mRenderer->genericDrawArrays(context, mode, first, count, 0);
 }
 
-gl::Error Context11::drawArraysInstanced(GLenum mode,
+gl::Error Context11::drawArraysInstanced(const gl::Context *context,
+                                         GLenum mode,
                                          GLint first,
                                          GLsizei count,
                                          GLsizei instanceCount)
 {
-    return mRenderer->genericDrawArrays(this, mode, first, count, instanceCount);
+    return mRenderer->genericDrawArrays(context, mode, first, count, instanceCount);
 }
 
-gl::Error Context11::drawElements(GLenum mode,
+gl::Error Context11::drawElements(const gl::Context *context,
+                                  GLenum mode,
                                   GLsizei count,
                                   GLenum type,
                                   const void *indices,
                                   const gl::IndexRange &indexRange)
 {
-    return mRenderer->genericDrawElements(this, mode, count, type, indices, 0, indexRange);
+    return mRenderer->genericDrawElements(context, mode, count, type, indices, 0, indexRange);
 }
 
-gl::Error Context11::drawElementsInstanced(GLenum mode,
+gl::Error Context11::drawElementsInstanced(const gl::Context *context,
+                                           GLenum mode,
                                            GLsizei count,
                                            GLenum type,
                                            const void *indices,
                                            GLsizei instances,
                                            const gl::IndexRange &indexRange)
 {
-    return mRenderer->genericDrawElements(this, mode, count, type, indices, instances, indexRange);
+    return mRenderer->genericDrawElements(context, mode, count, type, indices, instances,
+                                          indexRange);
 }
 
-gl::Error Context11::drawRangeElements(GLenum mode,
+gl::Error Context11::drawRangeElements(const gl::Context *context,
+                                       GLenum mode,
                                        GLuint start,
                                        GLuint end,
                                        GLsizei count,
@@ -189,17 +194,22 @@ gl::Error Context11::drawRangeElements(GLenum mode,
                                        const void *indices,
                                        const gl::IndexRange &indexRange)
 {
-    return mRenderer->genericDrawElements(this, mode, count, type, indices, 0, indexRange);
+    return mRenderer->genericDrawElements(context, mode, count, type, indices, 0, indexRange);
 }
 
-gl::Error Context11::drawArraysIndirect(GLenum mode, const void *indirect)
+gl::Error Context11::drawArraysIndirect(const gl::Context *context,
+                                        GLenum mode,
+                                        const void *indirect)
 {
-    return mRenderer->genericDrawIndirect(this, mode, GL_NONE, indirect);
+    return mRenderer->genericDrawIndirect(context, mode, GL_NONE, indirect);
 }
 
-gl::Error Context11::drawElementsIndirect(GLenum mode, GLenum type, const void *indirect)
+gl::Error Context11::drawElementsIndirect(const gl::Context *context,
+                                          GLenum mode,
+                                          GLenum type,
+                                          const void *indirect)
 {
-    return mRenderer->genericDrawIndirect(this, mode, type, indirect);
+    return mRenderer->genericDrawIndirect(context, mode, type, indirect);
 }
 
 GLenum Context11::getResetStatus()
@@ -240,9 +250,9 @@ void Context11::popGroupMarker()
     mRenderer->getAnnotator()->endEvent();
 }
 
-void Context11::syncState(const gl::State::DirtyBits &dirtyBits)
+void Context11::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
 {
-    mRenderer->getStateManager()->syncState(mState.getState(), dirtyBits);
+    mRenderer->getStateManager()->syncState(context, dirtyBits);
 }
 
 GLint Context11::getGPUDisjoint()
@@ -255,9 +265,9 @@ GLint64 Context11::getTimestamp()
     return mRenderer->getTimestamp();
 }
 
-void Context11::onMakeCurrent(const gl::ContextState &data)
+void Context11::onMakeCurrent(const gl::Context *context)
 {
-    mRenderer->getStateManager()->onMakeCurrent(data);
+    mRenderer->getStateManager()->onMakeCurrent(context);
 }
 
 const gl::Caps &Context11::getNativeCaps() const
@@ -280,9 +290,12 @@ const gl::Limitations &Context11::getNativeLimitations() const
     return mRenderer->getNativeLimitations();
 }
 
-gl::Error Context11::dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGroupsZ)
+gl::Error Context11::dispatchCompute(const gl::Context *context,
+                                     GLuint numGroupsX,
+                                     GLuint numGroupsY,
+                                     GLuint numGroupsZ)
 {
-    return mRenderer->dispatchCompute(this, numGroupsX, numGroupsY, numGroupsZ);
+    return mRenderer->dispatchCompute(context, numGroupsX, numGroupsY, numGroupsZ);
 }
 
 }  // namespace rx

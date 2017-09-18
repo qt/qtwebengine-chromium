@@ -13,14 +13,14 @@
 
 #include <memory>
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/scoped_ref_ptr.h"
-#include "webrtc/base/task_queue.h"
-#include "webrtc/base/thread_annotations.h"
-#include "webrtc/base/thread_checker.h"
 #include "webrtc/modules/audio_device/include/audio_device.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/modules/utility/include/process_thread.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/scoped_ref_ptr.h"
+#include "webrtc/rtc_base/task_queue.h"
+#include "webrtc/rtc_base/thread_annotations.h"
+#include "webrtc/rtc_base/thread_checker.h"
 #include "webrtc/voice_engine/channel_manager.h"
 #include "webrtc/voice_engine/statistics.h"
 #include "webrtc/voice_engine/voice_engine_defines.h"
@@ -43,7 +43,6 @@ public:
     AudioDeviceModule* audio_device() { return _audioDevicePtr.get(); }
     void set_audio_device(
         const rtc::scoped_refptr<AudioDeviceModule>& audio_device);
-    AudioProcessing* audio_processing() { return audioproc_.get(); }
     void set_audio_processing(AudioProcessing* audio_processing);
     TransmitMixer* transmit_mixer() { return _transmitMixerPtr; }
     OutputMixer* output_mixer() { return _outputMixerPtr; }
@@ -69,7 +68,6 @@ protected:
  rtc::scoped_refptr<AudioDeviceModule> _audioDevicePtr;
  OutputMixer* _outputMixerPtr;
  TransmitMixer* _transmitMixerPtr;
- std::unique_ptr<AudioProcessing> audioproc_;
  std::unique_ptr<ProcessThread> _moduleProcessThreadPtr;
  // |encoder_queue| is defined last to ensure all pending tasks are cancelled
  // and deleted before any other members.

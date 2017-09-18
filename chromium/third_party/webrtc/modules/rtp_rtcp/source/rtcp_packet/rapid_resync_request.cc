@@ -10,9 +10,9 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/rapid_resync_request.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -42,6 +42,10 @@ bool RapidResyncRequest::Parse(const CommonHeader& packet) {
 
   ParseCommonFeedback(packet.payload());
   return true;
+}
+
+size_t RapidResyncRequest::BlockLength() const {
+  return kHeaderLength + kCommonFeedbackLength;
 }
 
 bool RapidResyncRequest::Create(

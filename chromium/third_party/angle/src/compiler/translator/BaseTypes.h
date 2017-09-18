@@ -123,6 +123,8 @@ enum TBasicType
     EbtInterfaceBlock,
     EbtAddress,  // should be deprecated??
 
+    EbtAtomicCounter,
+
     // end of list
     EbtLast
 };
@@ -198,10 +200,14 @@ inline bool IsGImage(TBasicType type)
     return type > EbtGuardGImageBegin && type < EbtGuardGImageEnd;
 }
 
+inline bool IsAtomicCounter(TBasicType type)
+{
+    return type == EbtAtomicCounter;
+}
+
 inline bool IsOpaqueType(TBasicType type)
 {
-    // TODO (mradev): add atomic types as opaque.
-    return IsSampler(type) || IsImage(type);
+    return IsSampler(type) || IsImage(type) || IsAtomicCounter(type);
 }
 
 inline bool IsIntegerSampler(TBasicType type)
@@ -496,6 +502,7 @@ enum TQualifier
     EvqVaryingIn,   // readonly, fragment shaders only
     EvqVaryingOut,  // vertex shaders only  read/write
     EvqUniform,     // Readonly, vertex and fragment
+    EvqBuffer,      // read/write, vertex, fragment and compute shader
 
     EvqVertexIn,     // Vertex shader input
     EvqFragmentOut,  // Fragment shader output
@@ -531,7 +538,8 @@ enum TQualifier
     EvqSecondaryFragColorEXT,  // EXT_blend_func_extended
     EvqSecondaryFragDataEXT,   // EXT_blend_func_extended
 
-    EvqViewIDOVR,  // OVR_multiview
+    EvqViewIDOVR,      // OVR_multiview
+    EvqViewportIndex,  // gl_ViewportIndex
 
     // built-ins written by the shader_framebuffer_fetch extension(s)
     EvqLastFragColor,
@@ -626,6 +634,7 @@ struct TLayoutQualifier
     sh::WorkGroupSize localSize;
 
     int binding;
+    int offset;
 
     // Image format layout qualifier
     TLayoutImageInternalFormat imageInternalFormat;
@@ -647,6 +656,7 @@ struct TLayoutQualifier
 
         layoutQualifier.localSize.fill(-1);
         layoutQualifier.binding  = -1;
+        layoutQualifier.offset   = -1;
         layoutQualifier.numViews = -1;
         layoutQualifier.yuv      = false;
 
@@ -656,7 +666,7 @@ struct TLayoutQualifier
 
     bool isEmpty() const
     {
-        return location == -1 && binding == -1 && numViews == -1 && yuv == false &&
+        return location == -1 && binding == -1 && offset == -1 && numViews == -1 && yuv == false &&
                matrixPacking == EmpUnspecified && blockStorage == EbsUnspecified &&
                !localSize.isAnyValueSet() && imageInternalFormat == EiifUnspecified;
     }
@@ -730,7 +740,7 @@ inline const char *getWorkGroupSizeString(size_t dimension)
 }
 
 //
-// This is just for debug print out, carried along with the definitions above.
+// This is just for debug and error message print out, carried along with the definitions above.
 //
 inline const char *getQualifierString(TQualifier q)
 {
@@ -744,6 +754,7 @@ inline const char *getQualifierString(TQualifier q)
     case EvqVaryingIn:              return "varying";
     case EvqVaryingOut:             return "varying";
     case EvqUniform:                return "uniform";
+    case EvqBuffer:                 return "buffer";
     case EvqVertexIn:               return "in";
     case EvqFragmentOut:            return "out";
     case EvqVertexOut:              return "out";
@@ -766,6 +777,7 @@ inline const char *getQualifierString(TQualifier q)
     case EvqSecondaryFragColorEXT:  return "SecondaryFragColorEXT";
     case EvqSecondaryFragDataEXT:   return "SecondaryFragDataEXT";
     case EvqViewIDOVR:              return "ViewIDOVR";
+    case EvqViewportIndex:          return "ViewportIndex";
     case EvqLastFragColor:          return "LastFragColor";
     case EvqLastFragData:           return "LastFragData";
     case EvqSmoothOut:              return "smooth out";

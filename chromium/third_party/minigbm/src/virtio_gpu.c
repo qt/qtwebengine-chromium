@@ -8,28 +8,64 @@
 #include "helpers.h"
 #include "util.h"
 
-static struct supported_combination combos[2] = {
-	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-};
+#define MESA_LLVMPIPE_TILE_ORDER 6
+#define MESA_LLVMPIPE_TILE_SIZE (1 << MESA_LLVMPIPE_TILE_ORDER)
+
+static const uint32_t render_target_formats[] = { DRM_FORMAT_ABGR8888, DRM_FORMAT_ARGB8888,
+						  DRM_FORMAT_RGB565, DRM_FORMAT_XBGR8888,
+						  DRM_FORMAT_XRGB8888 };
+
+static const uint32_t texture_source_formats[] = { DRM_FORMAT_R8, DRM_FORMAT_YVU420,
+						   DRM_FORMAT_YVU420_ANDROID };
 
 static int virtio_gpu_init(struct driver *drv)
 {
-	drv_insert_combinations(drv, combos, ARRAY_SIZE(combos));
-	return drv_add_kms_flags(drv);
+	int ret;
+	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+				   &LINEAR_METADATA, BO_USE_RENDER_MASK);
+	if (ret)
+		return ret;
+
+	ret = drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
+				   &LINEAR_METADATA, BO_USE_TEXTURE_MASK);
+	if (ret)
+		return ret;
+
+	return drv_modify_linear_combinations(drv);
 }
 
-struct backend backend_virtio_gpu =
+static int virtio_gpu_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+				uint32_t flags)
 {
+	width = ALIGN(width, MESA_LLVMPIPE_TILE_SIZE);
+	height = ALIGN(height, MESA_LLVMPIPE_TILE_SIZE);
+
+	/* HAL_PIXEL_FORMAT_YV12 requires that the buffer's height not be aligned. */
+	if (bo->format == DRM_FORMAT_YVU420_ANDROID)
+		height = bo->height;
+
+	return drv_dumb_bo_create(bo, width, height, format, flags);
+}
+
+static uint32_t virtio_gpu_resolve_format(uint32_t format)
+{
+	switch (format) {
+	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
+		/*HACK: See b/28671744 */
+		return DRM_FORMAT_XBGR8888;
+	case DRM_FORMAT_FLEX_YCbCr_420_888:
+		return DRM_FORMAT_YVU420;
+	default:
+		return format;
+	}
+}
+
+struct backend backend_virtio_gpu = {
 	.name = "virtio_gpu",
 	.init = virtio_gpu_init,
-	.bo_create = drv_dumb_bo_create,
+	.bo_create = virtio_gpu_bo_create,
 	.bo_destroy = drv_dumb_bo_destroy,
 	.bo_import = drv_prime_bo_import,
 	.bo_map = drv_dumb_bo_map,
+	.resolve_format = virtio_gpu_resolve_format,
 };
-

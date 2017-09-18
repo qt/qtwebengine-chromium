@@ -12,10 +12,11 @@
 
 #import <AVFoundation/AVFoundation.h>
 
+#import "WebRTC/RTCAudioSession.h"
+#import "WebRTC/RTCAudioSessionConfiguration.h"
 #import "WebRTC/RTCDispatcher.h"
 #import "WebRTC/RTCLogging.h"
-#import "webrtc/modules/audio_device/ios/objc/RTCAudioSession.h"
-#import "webrtc/modules/audio_device/ios/objc/RTCAudioSessionConfiguration.h"
+
 
 #import "ARDAppClient.h"
 #import "ARDMainView.h"
@@ -43,13 +44,7 @@ static NSString *const loopbackLaunchProcessArgument = @"loopback";
 - (void)viewDidLoad {
   [super viewDidLoad];
   if ([[[NSProcessInfo processInfo] arguments] containsObject:loopbackLaunchProcessArgument]) {
-    [self mainView:nil
-                 didInputRoom:@""
-                   isLoopback:YES
-                  isAudioOnly:NO
-            shouldMakeAecDump:NO
-        shouldUseLevelControl:NO
-               useManualAudio:NO];
+    [self mainView:nil didInputRoom:@"" isLoopback:YES];
   }
 }
 
@@ -90,13 +85,7 @@ static NSString *const loopbackLaunchProcessArgument = @"loopback";
 
 #pragma mark - ARDMainViewDelegate
 
-- (void)mainView:(ARDMainView *)mainView
-             didInputRoom:(NSString *)room
-               isLoopback:(BOOL)isLoopback
-              isAudioOnly:(BOOL)isAudioOnly
-        shouldMakeAecDump:(BOOL)shouldMakeAecDump
-    shouldUseLevelControl:(BOOL)shouldUseLevelControl
-           useManualAudio:(BOOL)useManualAudio {
+- (void)mainView:(ARDMainView *)mainView didInputRoom:(NSString *)room isLoopback:(BOOL)isLoopback {
   if (!room.length) {
     if (isLoopback) {
       // If this is a loopback call, allow a generated room name.
@@ -131,17 +120,16 @@ static NSString *const loopbackLaunchProcessArgument = @"loopback";
     return;
   }
 
+  ARDSettingsModel *settingsModel = [[ARDSettingsModel alloc] init];
+
   RTCAudioSession *session = [RTCAudioSession sharedInstance];
-  session.useManualAudio = useManualAudio;
+  session.useManualAudio = [settingsModel currentUseManualAudioConfigSettingFromStore];
   session.isAudioEnabled = NO;
 
   // Kick off the video call.
   ARDVideoCallViewController *videoCallViewController =
       [[ARDVideoCallViewController alloc] initForRoom:trimmedRoom
                                            isLoopback:isLoopback
-                                          isAudioOnly:isAudioOnly
-                                    shouldMakeAecDump:shouldMakeAecDump
-                                shouldUseLevelControl:shouldUseLevelControl
                                              delegate:self];
   videoCallViewController.modalTransitionStyle =
       UIModalTransitionStyleCrossDissolve;
@@ -247,9 +235,9 @@ static NSString *const loopbackLaunchProcessArgument = @"loopback";
 }
 
 - (void)restartAudioPlayerIfNeeded {
+  [self configureAudioSession];
   if (_mainView.isAudioLoopPlaying && !self.presentedViewController) {
     RTCLog(@"Starting audio loop due to WebRTC end.");
-    [self configureAudioSession];
     [_audioPlayer play];
   }
 }

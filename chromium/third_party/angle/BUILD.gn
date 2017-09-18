@@ -138,7 +138,7 @@ config("angle_release_asserts_config") {
 }
 
 config("angle_common_config") {
-  include_dirs = [ "src/common/third_party/numerics" ]
+  include_dirs = [ "src/common/third_party/base" ]
 }
 
 static_library("angle_common") {
@@ -746,4 +746,20 @@ foreach(is_shared_library,
       }
     }
   }
+}
+
+# Convenience targets for some of the samples so they can be built
+# with Chromium's toolchain.
+
+executable("angle_shader_translator") {
+  testonly = true
+
+  sources = [
+    "samples/shader_translator/shader_translator.cpp",
+  ]
+
+  deps = [
+    ":translator",
+    "//build/config:exe_and_shlib_deps",
+  ]
 }

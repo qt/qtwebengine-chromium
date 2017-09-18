@@ -13,11 +13,11 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/optional.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/optional.h"
 #ifdef WEBRTC_CODEC_G722
 #include "webrtc/modules/audio_coding/codecs/g722/audio_encoder_g722.h"
 #endif
@@ -62,10 +62,10 @@ struct NamedEncoderFactory {
 
 NamedEncoderFactory encoder_factories[] = {
 #ifdef WEBRTC_CODEC_G722
-    NamedEncoderFactory::ForEncoder<AudioEncoderG722>(),
+    NamedEncoderFactory::ForEncoder<AudioEncoderG722Impl>(),
 #endif
 #ifdef WEBRTC_CODEC_ILBC
-    NamedEncoderFactory::ForEncoder<AudioEncoderIlbc>(),
+    NamedEncoderFactory::ForEncoder<AudioEncoderIlbcImpl>(),
 #endif
 #if defined(WEBRTC_CODEC_ISACFX)
     NamedEncoderFactory::ForEncoder<AudioEncoderIsacFix>(),

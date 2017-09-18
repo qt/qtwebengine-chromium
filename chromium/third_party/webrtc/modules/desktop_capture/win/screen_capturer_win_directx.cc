@@ -13,11 +13,11 @@
 #include <string>
 #include <utility>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/ptr_util.h"
-#include "webrtc/base/timeutils.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/ptr_util.h"
+#include "webrtc/rtc_base/timeutils.h"
 
 namespace webrtc {
 
@@ -36,11 +36,15 @@ bool ScreenCapturerWinDirectx::RetrieveD3dInfo(D3dInfo* info) {
   return DxgiDuplicatorController::Instance()->RetrieveD3dInfo(info);
 }
 
-ScreenCapturerWinDirectx::ScreenCapturerWinDirectx(
-    const DesktopCaptureOptions& options)
-    : callback_(nullptr) {}
+// static
+bool ScreenCapturerWinDirectx::IsCurrentSessionSupported() {
+  return DxgiDuplicatorController::IsCurrentSessionSupported();
+}
 
-ScreenCapturerWinDirectx::~ScreenCapturerWinDirectx() {}
+ScreenCapturerWinDirectx::ScreenCapturerWinDirectx()
+    : controller_(DxgiDuplicatorController::Instance()) {}
+
+ScreenCapturerWinDirectx::~ScreenCapturerWinDirectx() = default;
 
 void ScreenCapturerWinDirectx::Start(Callback* callback) {
   RTC_DCHECK(!callback_);
@@ -67,15 +71,20 @@ void ScreenCapturerWinDirectx::CaptureFrame() {
 
   DxgiDuplicatorController::Result result;
   if (current_screen_id_ == kFullDesktopScreenId) {
-    result = DxgiDuplicatorController::Instance()->Duplicate(
-        frames_.current_frame());
+    result = controller_->Duplicate(frames_.current_frame());
   } else {
-    result = DxgiDuplicatorController::Instance()->DuplicateMonitor(
+    result = controller_->DuplicateMonitor(
         frames_.current_frame(), current_screen_id_);
   }
 
   using DuplicateResult = DxgiDuplicatorController::Result;
   switch (result) {
+    case DuplicateResult::UNSUPPORTED_SESSION: {
+      LOG(LS_ERROR) << "Current binary is running on a session not supported "
+                       "by DirectX screen capturer.";
+      callback_->OnCaptureResult(Result::ERROR_PERMANENT, nullptr);
+      break;
+    }
     case DuplicateResult::FRAME_PREPARE_FAILED: {
       LOG(LS_ERROR) << "Failed to allocate a new DesktopFrame.";
       // This usually means we do not have enough memory or SharedMemoryFactory
@@ -106,7 +115,7 @@ void ScreenCapturerWinDirectx::CaptureFrame() {
 }
 
 bool ScreenCapturerWinDirectx::GetSourceList(SourceList* sources) {
-  int screen_count = DxgiDuplicatorController::Instance()->ScreenCount();
+  int screen_count = controller_->ScreenCount();
   for (int i = 0; i < screen_count; i++) {
     sources->push_back({i});
   }
@@ -123,7 +132,7 @@ bool ScreenCapturerWinDirectx::SelectSource(SourceId id) {
     return true;
   }
 
-  int screen_count = DxgiDuplicatorController::Instance()->ScreenCount();
+  int screen_count = controller_->ScreenCount();
   if (id >= 0 && id < screen_count) {
     current_screen_id_ = id;
     return true;

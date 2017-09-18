@@ -22,7 +22,7 @@ Buffer9::~Buffer9()
     mSize = 0;
 }
 
-gl::Error Buffer9::setData(ContextImpl * /*context*/,
+gl::Error Buffer9::setData(const gl::Context * /*context*/,
                            GLenum /*target*/,
                            const void *data,
                            size_t size,
@@ -32,7 +32,7 @@ gl::Error Buffer9::setData(ContextImpl * /*context*/,
     {
         if (!mMemory.resize(size))
         {
-            return gl::Error(GL_OUT_OF_MEMORY, "Failed to resize internal buffer.");
+            return gl::OutOfMemory() << "Failed to resize internal buffer.";
         }
     }
 
@@ -55,7 +55,7 @@ gl::Error Buffer9::getData(const uint8_t **outData)
     return gl::NoError();
 }
 
-gl::Error Buffer9::setSubData(ContextImpl * /*context*/,
+gl::Error Buffer9::setSubData(const gl::Context * /*context*/,
                               GLenum /*target*/,
                               const void *data,
                               size_t size,
@@ -65,7 +65,7 @@ gl::Error Buffer9::setSubData(ContextImpl * /*context*/,
     {
         if (!mMemory.resize(offset + size))
         {
-            return gl::Error(GL_OUT_OF_MEMORY, "Failed to resize internal buffer.");
+            return gl::OutOfMemory() << "Failed to resize internal buffer.";
         }
     }
 
@@ -80,7 +80,7 @@ gl::Error Buffer9::setSubData(ContextImpl * /*context*/,
     return gl::NoError();
 }
 
-gl::Error Buffer9::copySubData(ContextImpl *context,
+gl::Error Buffer9::copySubData(const gl::Context *context,
                                BufferImpl *source,
                                GLintptr sourceOffset,
                                GLintptr destOffset,
@@ -98,32 +98,32 @@ gl::Error Buffer9::copySubData(ContextImpl *context,
 }
 
 // We do not support buffer mapping in D3D9
-gl::Error Buffer9::map(ContextImpl *context, GLenum access, void **mapPtr)
+gl::Error Buffer9::map(const gl::Context *context, GLenum access, void **mapPtr)
 {
     UNREACHABLE();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
-gl::Error Buffer9::mapRange(ContextImpl *context,
+gl::Error Buffer9::mapRange(const gl::Context *context,
                             size_t offset,
                             size_t length,
                             GLbitfield access,
                             void **mapPtr)
 {
     UNREACHABLE();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
-gl::Error Buffer9::unmap(ContextImpl *context, GLboolean *result)
+gl::Error Buffer9::unmap(const gl::Context *context, GLboolean *result)
 {
     UNREACHABLE();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
 gl::Error Buffer9::markTransformFeedbackUsage()
 {
     UNREACHABLE();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
 }  // namespace rx

@@ -25,18 +25,20 @@ group("logging") {
 rtc_source_set("rtc_event_log_api") {
   sources = [
     "rtc_event_log/rtc_event_log.h",
+    "rtc_event_log/rtc_event_log_factory_interface.h",
   ]
   deps = [
     "..:video_stream_api",
+    "..:webrtc_common",
     "../base:rtc_base_approved",
-    "../call:call_interfaces",
   ]
 }
 
 rtc_static_library("rtc_event_log_impl") {
   sources = [
-    "rtc_event_log/ringbuffer.h",
     "rtc_event_log/rtc_event_log.cc",
+    "rtc_event_log/rtc_event_log_factory.cc",
+    "rtc_event_log/rtc_event_log_factory.h",
     "rtc_event_log/rtc_event_log_helper_thread.cc",
     "rtc_event_log/rtc_event_log_helper_thread.h",
   ]
@@ -48,7 +50,6 @@ rtc_static_library("rtc_event_log_impl") {
     "..:webrtc_common",
     "../base:protobuf_utils",
     "../base:rtc_base_approved",
-    "../call:call_interfaces",
     "../modules/audio_coding:audio_network_adaptor",
     "../modules/remote_bitrate_estimator:remote_bitrate_estimator",
     "../modules/rtp_rtcp",
@@ -83,7 +84,6 @@ if (rtc_enable_protobuf) {
       ":rtc_event_log_api",
       ":rtc_event_log_proto",
       "..:webrtc_common",
-      "../call:call_interfaces",
       "../modules/audio_coding:audio_network_adaptor",
       "../modules/remote_bitrate_estimator:remote_bitrate_estimator",
       "../modules/rtp_rtcp:rtp_rtcp",
@@ -105,7 +105,6 @@ if (rtc_enable_protobuf) {
     rtc_source_set("rtc_event_log_tests") {
       testonly = true
       sources = [
-        "rtc_event_log/ringbuffer_unittest.cc",
         "rtc_event_log/rtc_event_log_unittest.cc",
         "rtc_event_log/rtc_event_log_unittest_helper.cc",
       ]
@@ -138,7 +137,6 @@ if (rtc_enable_protobuf) {
         ":rtc_event_log_impl",
         ":rtc_event_log_parser",
         "../base:rtc_base_approved",
-        "../call:call_interfaces",
         "../modules/rtp_rtcp:rtp_rtcp",
         "../system_wrappers:field_trial_default",
         "../system_wrappers:metrics_default",
@@ -162,7 +160,6 @@ if (rtc_enable_protobuf) {
         ":rtc_event_log_impl",
         ":rtc_event_log_parser",
         "../base:rtc_base_approved",
-        "../call:call_interfaces",
 
         # TODO(kwiberg): Remove this dependency.
         "../api/audio_codecs:audio_codecs_api",

@@ -19,10 +19,10 @@
 #include "third_party/openh264/src/codec/api/svc/codec_def.h"
 #include "third_party/openh264/src/codec/api/svc/codec_ver.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/media/base/mediaconstants.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/timeutils.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 
 namespace webrtc {
@@ -332,8 +332,8 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
     // (If every frame is a key frame we get lag/delays.)
     openh264_encoder_->ForceIntraFrame(true);
   }
-  rtc::scoped_refptr<const VideoFrameBuffer> frame_buffer =
-      input_frame.video_frame_buffer();
+  rtc::scoped_refptr<const I420BufferInterface> frame_buffer =
+      input_frame.video_frame_buffer()->ToI420();
   // EncodeFrame input.
   SSourcePicture picture;
   memset(&picture, 0, sizeof(SSourcePicture));
@@ -370,6 +370,7 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
   encoded_image_.content_type_ = (mode_ == kScreensharing)
                                      ? VideoContentType::SCREENSHARE
                                      : VideoContentType::UNSPECIFIED;
+  encoded_image_.timing_.is_timing_frame = false;
   encoded_image_._frameType = ConvertToVideoFrameType(info.eFrameType);
 
   // Split encoded image up into fragments. This also updates |encoded_image_|.

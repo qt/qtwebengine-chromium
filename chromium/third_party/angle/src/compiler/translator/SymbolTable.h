@@ -46,7 +46,7 @@ class TSymbolUniqueId
 {
   public:
     POOL_ALLOCATOR_NEW_DELETE();
-    TSymbolUniqueId();
+    TSymbolUniqueId(TSymbolTable *symbolTable);
     TSymbolUniqueId(const TSymbol &symbol);
     TSymbolUniqueId(const TSymbolUniqueId &) = default;
     TSymbolUniqueId &operator=(const TSymbolUniqueId &) = default;
@@ -62,7 +62,7 @@ class TSymbol : angle::NonCopyable
 {
   public:
     POOL_ALLOCATOR_NEW_DELETE();
-    TSymbol(const TString *n);
+    TSymbol(TSymbolTable *symbolTable, const TString *n);
 
     virtual ~TSymbol()
     {
@@ -83,21 +83,12 @@ class TSymbol : angle::NonCopyable
     TString extension;
 };
 
-// Variable class, meaning a symbol that's not a function.
+// Variable, meaning a symbol that's not a function.
 //
-// There could be a separate class heirarchy for Constant variables;
-// Only one of int, bool, or float, (or none) is correct for
-// any particular use, but it's easy to do this way, and doesn't
-// seem worth having separate classes, and "getConst" can't simply return
-// different values for different types polymorphically, so this is
-// just simple and pragmatic.
+// May store the value of a constant variable of any type (float, int, bool or struct).
 class TVariable : public TSymbol
 {
   public:
-    TVariable(const TString *name, const TType &t, bool uT = false)
-        : TSymbol(name), type(t), userType(uT), unionArray(0)
-    {
-    }
     ~TVariable() override {}
     bool isVariable() const override { return true; }
     TType &getType() { return type; }
@@ -110,8 +101,21 @@ class TVariable : public TSymbol
     void shareConstPointer(const TConstantUnion *constArray) { unionArray = constArray; }
 
   private:
+    friend class TSymbolTable;
+
+    TVariable(TSymbolTable *symbolTable,
+              const TString *name,
+              const TType &t,
+              bool isUserTypeDefinition = false)
+        : TSymbol(symbolTable, name), type(t), userType(isUserTypeDefinition), unionArray(0)
+    {
+    }
+
     TType type;
+
+    // Set to true if this represents a struct type, as opposed to a variable.
     bool userType;
+
     // we are assuming that Pool Allocator will free the memory
     // allocated to unionArray when this object is destroyed.
     const TConstantUnion *unionArray;
@@ -130,8 +134,8 @@ struct TConstParameter
     TConstParameter(const TString *n, TType *t) = delete;
     TConstParameter(TString *n, const TType *t) = delete;
 
-    const TString *name;
-    const TType *type;
+    const TString *const name;
+    const TType *const type;
 };
 
 // The function sub-class of symbols and the parser will need to
@@ -150,7 +154,7 @@ struct TParameter
         return TConstParameter(constName, constType);
     }
 
-    TString *name;
+    const TString *name;
     TType *type;
 };
 
@@ -158,11 +162,12 @@ struct TParameter
 class TFunction : public TSymbol
 {
   public:
-    TFunction(const TString *name,
+    TFunction(TSymbolTable *symbolTable,
+              const TString *name,
               const TType *retType,
               TOperator tOp   = EOpNull,
               const char *ext = "")
-        : TSymbol(name),
+        : TSymbol(symbolTable, name),
           returnType(retType),
           mangledName(nullptr),
           op(tOp),
@@ -224,9 +229,13 @@ class TFunction : public TSymbol
 class TInterfaceBlockName : public TSymbol
 {
   public:
-    TInterfaceBlockName(const TString *name) : TSymbol(name) {}
-
     virtual ~TInterfaceBlockName() {}
+
+  private:
+    friend class TSymbolTable;
+    TInterfaceBlockName(TSymbolTable *symbolTable, const TString *name) : TSymbol(symbolTable, name)
+    {
+    }
 };
 
 class TSymbolTableLevel
@@ -289,7 +298,7 @@ const int GLOBAL_LEVEL       = 4;
 class TSymbolTable : angle::NonCopyable
 {
   public:
-    TSymbolTable()
+    TSymbolTable() : mUniqueIdCounter(0)
     {
         // The symbol table cannot be used until push() is called, but
         // the lack of an initial call to push() can be used to detect
@@ -319,20 +328,27 @@ class TSymbolTable : angle::NonCopyable
         precisionStack.pop_back();
     }
 
-    bool declare(TSymbol *symbol) { return insert(currentLevel(), symbol); }
+    // The declare* entry points are used when parsing and declare symbols at the current scope.
+    // They return the created symbol in case the declaration was successful, and nullptr if the
+    // declaration failed due to redefinition.
+    TVariable *declareVariable(const TString *name, const TType &type);
+    TVariable *declareStructType(TStructure *str);
+    TInterfaceBlockName *declareInterfaceBlockName(const TString *name);
 
-    bool insert(ESymbolLevel level, TSymbol *symbol) { return table[level]->insert(symbol); }
-
-    bool insert(ESymbolLevel level, const char *ext, TSymbol *symbol)
-    {
-        symbol->relateToExtension(ext);
-        return table[level]->insert(symbol);
-    }
+    // The insert* entry points are used when initializing the symbol table with built-ins.
+    // They return the created symbol in case the declaration was successful, and nullptr if the
+    // declaration failed due to redefinition.
+    TVariable *insertVariable(ESymbolLevel level, const char *name, const TType &type);
+    TVariable *insertVariableExt(ESymbolLevel level,
+                                 const char *ext,
+                                 const char *name,
+                                 const TType &type);
+    TVariable *insertStructType(ESymbolLevel level, TStructure *str);
 
     bool insertConstInt(ESymbolLevel level, const char *name, int value, TPrecision precision)
     {
         TVariable *constant =
-            new TVariable(NewPoolTString(name), TType(EbtInt, precision, EvqConst, 1));
+            new TVariable(this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 1));
         TConstantUnion *unionArray = new TConstantUnion[1];
         unionArray[0].setIConst(value);
         constant->shareConstPointer(unionArray);
@@ -342,7 +358,7 @@ class TSymbolTable : angle::NonCopyable
     bool insertConstIntExt(ESymbolLevel level, const char *ext, const char *name, int value)
     {
         TVariable *constant =
-            new TVariable(NewPoolTString(name), TType(EbtInt, EbpUndefined, EvqConst, 1));
+            new TVariable(this, NewPoolTString(name), TType(EbtInt, EbpUndefined, EvqConst, 1));
         TConstantUnion *unionArray = new TConstantUnion[1];
         unionArray[0].setIConst(value);
         constant->shareConstPointer(unionArray);
@@ -355,7 +371,7 @@ class TSymbolTable : angle::NonCopyable
                           TPrecision precision)
     {
         TVariable *constantIvec3 =
-            new TVariable(NewPoolTString(name), TType(EbtInt, precision, EvqConst, 3));
+            new TVariable(this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 3));
 
         TConstantUnion *unionArray = new TConstantUnion[3];
         for (size_t index = 0u; index < 3u; ++index)
@@ -444,20 +460,11 @@ class TSymbolTable : angle::NonCopyable
         return table[currentLevel() - 1];
     }
 
-    void dump(TInfoSink &infoSink) const;
-
-    bool setDefaultPrecision(const TPublicType &type, TPrecision prec)
+    void setDefaultPrecision(TBasicType type, TPrecision prec)
     {
-        if (!SupportsPrecision(type.getBasicType()))
-            return false;
-        if (type.getBasicType() == EbtUInt)
-            return false;  // ESSL 3.00.4 section 4.5.4
-        if (type.isAggregate())
-            return false;  // Not allowed to set for aggregate types
         int indexOfLastElement = static_cast<int>(precisionStack.size()) - 1;
         // Uses map operator [], overwrites the current value
-        (*precisionStack[indexOfLastElement])[type.getBasicType()] = prec;
-        return true;
+        (*precisionStack[indexOfLastElement])[type] = prec;
     }
 
     // Searches down the precisionStack for a precision qualifier
@@ -487,13 +494,23 @@ class TSymbolTable : angle::NonCopyable
         table[currentLevel()]->setGlobalInvariant(invariant);
     }
 
-    static int nextUniqueId() { return ++uniqueIdCounter; }
+    int nextUniqueId() { return ++mUniqueIdCounter; }
 
     // Checks whether there is a built-in accessible by a shader with the specified version.
     bool hasUnmangledBuiltInForShaderVersion(const char *name, int shaderVersion);
 
   private:
     ESymbolLevel currentLevel() const { return static_cast<ESymbolLevel>(table.size() - 1); }
+
+    TVariable *insertVariable(ESymbolLevel level, const TString *name, const TType &type);
+
+    bool insert(ESymbolLevel level, TSymbol *symbol) { return table[level]->insert(symbol); }
+
+    bool insert(ESymbolLevel level, const char *ext, TSymbol *symbol)
+    {
+        symbol->relateToExtension(ext);
+        return table[level]->insert(symbol);
+    }
 
     // Used to insert unmangled functions to check redeclaration of built-ins in ESSL 3.00 and
     // above.
@@ -505,7 +522,7 @@ class TSymbolTable : angle::NonCopyable
     typedef TMap<TBasicType, TPrecision> PrecisionStackLevel;
     std::vector<PrecisionStackLevel *> precisionStack;
 
-    static int uniqueIdCounter;
+    int mUniqueIdCounter;
 };
 
 }  // namespace sh

@@ -698,6 +698,20 @@ ANGLE_EXPORT void GL_APIENTRY GetQueryObjectui64vRobustANGLE(GLuint id,
                                                              GLsizei *length,
                                                              GLuint64 *params);
 
+// GL_ANGLE_multiview
+ANGLE_EXPORT void GL_APIENTRY FramebufferTextureMultiviewLayeredANGLE(GLenum target,
+                                                                      GLenum attachment,
+                                                                      GLuint texture,
+                                                                      GLint level,
+                                                                      GLint baseViewIndex,
+                                                                      GLsizei numViews);
+ANGLE_EXPORT void GL_APIENTRY
+FramebufferTextureMultiviewSideBySideANGLE(GLenum target,
+                                           GLenum attachment,
+                                           GLuint texture,
+                                           GLint level,
+                                           GLsizei numViews,
+                                           const GLint *viewportOffsets);
 }  // namespace gl
 
 #endif  // LIBGLESV2_ENTRYPOINTGLES20EXT_H_

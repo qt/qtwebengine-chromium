@@ -15,9 +15,9 @@
 #include <iterator>
 #include <utility>
 
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/audio_mixer/audio_frame_manipulator.h"
 #include "webrtc/modules/audio_mixer/default_output_rate_calculator.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace webrtc {
 namespace {
@@ -116,12 +116,6 @@ rtc::scoped_refptr<AudioMixerImpl> AudioMixerImpl::Create() {
   return Create(std::unique_ptr<DefaultOutputRateCalculator>(
                     new DefaultOutputRateCalculator()),
                 true);
-}
-
-rtc::scoped_refptr<AudioMixerImpl>
-AudioMixerImpl::CreateWithOutputRateCalculator(
-    std::unique_ptr<OutputRateCalculator> output_rate_calculator) {
-  return Create(std::move(output_rate_calculator), true);
 }
 
 rtc::scoped_refptr<AudioMixerImpl> AudioMixerImpl::Create(

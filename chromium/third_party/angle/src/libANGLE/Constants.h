@@ -9,8 +9,13 @@
 #ifndef LIBANGLE_CONSTANTS_H_
 #define LIBANGLE_CONSTANTS_H_
 
+#include "common/platform.h"
+
 namespace gl
 {
+
+// The binary cache is currently left disable by default, and the application can enable it.
+const size_t kDefaultMaxProgramCacheMemoryBytes = 0;
 
 enum
 {

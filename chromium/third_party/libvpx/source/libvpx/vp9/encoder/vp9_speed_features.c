@@ -534,11 +534,7 @@ static void set_rt_speed_feature_framesize_independent(
     if (cpi->svc.temporal_layer_id > 0) {
       sf->adaptive_rd_thresh = 4;
       sf->limit_newmv_early_exit = 0;
-      sf->mv.subpel_force_stop = (cpi->svc.temporal_layer_id == 1) ? 1 : 2;
-      sf->base_mv_aggressive =
-          (cpi->svc.temporal_layer_id == cpi->svc.number_temporal_layers - 1)
-              ? 1
-              : 0;
+      sf->base_mv_aggressive = 1;
     }
   }
 
@@ -551,6 +547,11 @@ static void set_rt_speed_feature_framesize_independent(
       sf->mv.search_method = NSTEP;
       sf->mv.fullpel_search_step_param = 6;
     }
+    if (cpi->svc.temporal_layer_id > 0) {
+      sf->use_simple_block_yrd = 1;
+      if (cpi->svc.non_reference_frame)
+        sf->mv.subpel_search_method = SUBPEL_TREE_PRUNED_EVENMORE;
+    }
     if (!cpi->external_resize) sf->use_source_sad = 1;
     if (sf->use_source_sad) {
       if (cpi->content_state_sb_fd == NULL &&
@@ -560,27 +561,30 @@ static void set_rt_speed_feature_framesize_independent(
             (cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1), sizeof(uint8_t));
       }
     }
-  }
-
-  if (speed >= 8) {
-    sf->adaptive_rd_thresh = 4;
-    // Enable partition copy. For SVC, only enabled for top resolution layer,
+    // Enable partition copy. For SVC only enabled for top spatial resolution
+    // layer.
+    cpi->max_copied_frame = 0;
     if (!cpi->last_frame_dropped && cpi->resize_state == ORIG &&
         !cpi->external_resize &&
         (!cpi->use_svc ||
          cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1)) {
       sf->copy_partition_flag = 1;
-      cpi->max_copied_frame = 4;
+      cpi->max_copied_frame = 2;
+      // The top temporal enhancement layer (for number of temporal layers > 1)
+      // are non-reference frames, so use large/max value for max_copied_frame.
+      if (cpi->svc.number_temporal_layers > 1 &&
+          cpi->svc.temporal_layer_id == cpi->svc.number_temporal_layers - 1)
+        cpi->max_copied_frame = 255;
     }
+  }
 
+  if (speed >= 8) {
+    sf->adaptive_rd_thresh = 4;
+    if (!cpi->use_svc) cpi->max_copied_frame = 4;
     if (cpi->row_mt && cpi->oxcf.max_threads > 1)
       sf->adaptive_rd_thresh_row_mt = 1;
 
-    if (content == VP9E_CONTENT_SCREEN)
-      sf->mv.subpel_force_stop = 3;
-    else if (cm->width * cm->height > 352 * 288)
-      sf->mv.subpel_force_stop = 2;
-
+    if (content == VP9E_CONTENT_SCREEN) sf->mv.subpel_force_stop = 3;
     if (content == VP9E_CONTENT_SCREEN) sf->lpf_pick = LPF_PICK_MINIMAL_LPF;
     // Only keep INTRA_DC mode for speed 8.
     if (!is_keyframe) {
@@ -768,7 +772,6 @@ void vp9_set_speed_features_framesize_independent(VP9_COMP *cpi) {
   else if (oxcf->mode == GOOD)
     set_good_speed_feature_framesize_independent(cpi, cm, sf, oxcf->speed);
 
-  cpi->full_search_sad = vp9_full_search_sad;
   cpi->diamond_search_sad = vp9_diamond_search_sad;
 
   // Slow quant, dct and trellis not worthwhile for first pass

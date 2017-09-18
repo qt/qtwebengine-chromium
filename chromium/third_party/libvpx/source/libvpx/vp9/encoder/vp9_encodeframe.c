@@ -489,8 +489,9 @@ static int set_vt_partitioning(VP9_COMP *cpi, MACROBLOCK *const x,
   return 0;
 }
 
-int64_t scale_part_thresh_sumdiff(int64_t threshold_base, int speed, int width,
-                                  int height, int content_state) {
+static int64_t scale_part_thresh_sumdiff(int64_t threshold_base, int speed,
+                                         int width, int height,
+                                         int content_state) {
   if (speed >= 8) {
     if (width <= 640 && height <= 480)
       return (5 * threshold_base) >> 2;
@@ -742,16 +743,7 @@ static int skin_sb_split(VP9_COMP *cpi, MACROBLOCK *x, const int low_res,
     for (i = 0; i < ymis; i += 2) {
       for (j = 0; j < xmis; j += 2) {
         int bl_index = block_index + i * cm->mi_cols + j;
-        int bl_index1 = bl_index + 1;
-        int bl_index2 = bl_index + cm->mi_cols;
-        int bl_index3 = bl_index2 + 1;
-        int consec_zeromv =
-            VPXMIN(cpi->consec_zero_mv[bl_index],
-                   VPXMIN(cpi->consec_zero_mv[bl_index1],
-                          VPXMIN(cpi->consec_zero_mv[bl_index2],
-                                 cpi->consec_zero_mv[bl_index3])));
-        int is_skin = vp9_compute_skin_block(
-            ysignal, usignal, vsignal, sp, spuv, BLOCK_16X16, consec_zeromv, 0);
+        int is_skin = cpi->skin_map[bl_index];
         num_16x16_skin += is_skin;
         num_16x16_nonskin += (1 - is_skin);
         if (num_16x16_nonskin > 3) {
@@ -1022,6 +1014,9 @@ static void avg_source_sad(VP9_COMP *cpi, MACROBLOCK *x, int shift,
   if (tmp_variance < (tmp_sse >> 3) && (tmp_sse - tmp_variance) > 10000)
     x->content_state_sb = kLowVarHighSumdiff;
 
+  if (tmp_sad > (avg_source_sad_threshold << 1))
+    x->content_state_sb = kVeryHighSad;
+
   if (cpi->content_state_sb_fd != NULL) {
     if (tmp_sad < avg_source_sad_threshold2) {
       // Cap the increment to 255.
@@ -1171,7 +1166,7 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
     mi->mv[0].as_int = 0;
     mi->interp_filter = BILINEAR;
 
-    if (cpi->oxcf.speed >= 8 && !low_res)
+    if (cpi->oxcf.speed >= 8 && !low_res && x->content_state_sb != kVeryHighSad)
       y_sad = cpi->fn_ptr[bsize].sdf(
           x->plane[0].src.buf, x->plane[0].src.stride, xd->plane[0].pre[0].buf,
           xd->plane[0].pre[0].stride);
@@ -1197,7 +1192,9 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
     set_ref_ptrs(cm, xd, mi->ref_frame[0], mi->ref_frame[1]);
     vp9_build_inter_predictors_sb(xd, mi_row, mi_col, BLOCK_64X64);
 
-    x->sb_is_skin = skin_sb_split(cpi, x, low_res, mi_row, mi_col, force_split);
+    if (cpi->use_skin_detection)
+      x->sb_is_skin =
+          skin_sb_split(cpi, x, low_res, mi_row, mi_col, force_split);
 
     d = xd->plane[0].dst.buf;
     dp = xd->plane[0].dst.stride;
@@ -4132,6 +4129,10 @@ static void encode_nonrd_sb_row(VP9_COMP *cpi, ThreadData *td,
     (*(cpi->row_mt_sync_read_ptr))(&tile_data->row_mt_sync, sb_row,
                                    sb_col_in_tile);
 
+    if (cpi->use_skin_detection) {
+      vp9_compute_skin_sb(cpi, BLOCK_16X16, mi_row, mi_col);
+    }
+
     x->source_variance = UINT_MAX;
     vp9_zero(x->pred_mv);
     vp9_rd_cost_init(&dummy_rdc);
@@ -4482,15 +4483,15 @@ static void encode_frame_internal(VP9_COMP *cpi) {
 
 #if CONFIG_VP9_HIGHBITDEPTH
   if (cm->use_highbitdepth)
-    x->fwd_txm4x4 = xd->lossless ? vp9_highbd_fwht4x4 : vpx_highbd_fdct4x4;
+    x->fwd_txfm4x4 = xd->lossless ? vp9_highbd_fwht4x4 : vpx_highbd_fdct4x4;
   else
-    x->fwd_txm4x4 = xd->lossless ? vp9_fwht4x4 : vpx_fdct4x4;
-  x->highbd_itxm_add =
+    x->fwd_txfm4x4 = xd->lossless ? vp9_fwht4x4 : vpx_fdct4x4;
+  x->highbd_inv_txfm_add =
       xd->lossless ? vp9_highbd_iwht4x4_add : vp9_highbd_idct4x4_add;
 #else
-  x->fwd_txm4x4 = xd->lossless ? vp9_fwht4x4 : vpx_fdct4x4;
+  x->fwd_txfm4x4 = xd->lossless ? vp9_fwht4x4 : vpx_fdct4x4;
 #endif  // CONFIG_VP9_HIGHBITDEPTH
-  x->itxm_add = xd->lossless ? vp9_iwht4x4_add : vp9_idct4x4_add;
+  x->inv_txfm_add = xd->lossless ? vp9_iwht4x4_add : vp9_idct4x4_add;
 
   if (xd->lossless) x->optimize = 0;
 

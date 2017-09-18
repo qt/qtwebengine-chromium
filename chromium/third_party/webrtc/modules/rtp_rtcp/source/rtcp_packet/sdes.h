@@ -14,8 +14,8 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/base/basictypes.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet.h"
+#include "webrtc/rtc_base/basictypes.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -40,9 +40,8 @@ class Sdes : public RtcpPacket {
 
   const std::vector<Chunk>& chunks() const { return chunks_; }
 
-  size_t BlockLength() const override { return block_length_; }
+  size_t BlockLength() const override;
 
- protected:
   bool Create(uint8_t* packet,
               size_t* index,
               size_t max_length,

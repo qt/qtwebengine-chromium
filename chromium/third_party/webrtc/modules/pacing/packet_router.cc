@@ -10,21 +10,19 @@
 
 #include "webrtc/modules/pacing/packet_router.h"
 
-#include "webrtc/base/atomicops.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/timeutils.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
+#include "webrtc/rtc_base/atomicops.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/timeutils.h"
 
 namespace webrtc {
 
 PacketRouter::PacketRouter()
     : last_remb_time_ms_(rtc::TimeMillis()),
       last_send_bitrate_bps_(0),
-      transport_seq_(0) {
-  pacer_thread_checker_.DetachFromThread();
-}
+      transport_seq_(0) {}
 
 PacketRouter::~PacketRouter() {
   RTC_DCHECK(rtp_send_modules_.empty());
@@ -98,7 +96,7 @@ bool PacketRouter::TimeToSendPacket(uint32_t ssrc,
                                     int64_t capture_timestamp,
                                     bool retransmission,
                                     const PacedPacketInfo& pacing_info) {
-  RTC_DCHECK(pacer_thread_checker_.CalledOnValidThread());
+  RTC_DCHECK_RUNS_SERIALIZED(&pacer_race_);
   rtc::CritScope cs(&modules_crit_);
   for (auto* rtp_module : rtp_send_modules_) {
     if (!rtp_module->SendingMedia())
@@ -114,7 +112,7 @@ bool PacketRouter::TimeToSendPacket(uint32_t ssrc,
 
 size_t PacketRouter::TimeToSendPadding(size_t bytes_to_send,
                                        const PacedPacketInfo& pacing_info) {
-  RTC_DCHECK(pacer_thread_checker_.CalledOnValidThread());
+  RTC_DCHECK_RUNS_SERIALIZED(&pacer_race_);
   size_t total_bytes_sent = 0;
   rtc::CritScope cs(&modules_crit_);
   // Rtp modules are ordered by which stream can most benefit from padding.
@@ -208,7 +206,7 @@ bool PacketRouter::SendRemb(uint32_t bitrate_bps,
 }
 
 bool PacketRouter::SendTransportFeedback(rtcp::TransportFeedback* packet) {
-  RTC_DCHECK(pacer_thread_checker_.CalledOnValidThread());
+  RTC_DCHECK_RUNS_SERIALIZED(&pacer_race_);
   rtc::CritScope cs(&modules_crit_);
   // Prefer send modules.
   for (auto* rtp_module : rtp_send_modules_) {

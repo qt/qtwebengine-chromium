@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <vector>
 
-#include "webrtc/base/constructormagic.h"
 #include "webrtc/modules/audio_processing/aec3/adaptive_fir_filter.h"
 #include "webrtc/modules/audio_processing/aec3/aec3_common.h"
 #include "webrtc/modules/audio_processing/aec3/aec3_fft.h"
@@ -27,6 +26,7 @@
 #include "webrtc/modules/audio_processing/aec3/subtractor_output.h"
 #include "webrtc/modules/audio_processing/logging/apm_data_dumper.h"
 #include "webrtc/modules/audio_processing/utility/ooura_fft.h"
+#include "webrtc/rtc_base/constructormagic.h"
 
 namespace webrtc {
 
@@ -45,10 +45,16 @@ class Subtractor {
 
   void HandleEchoPathChange(const EchoPathVariability& echo_path_variability);
 
-  // Returns the block-wise frequency response of the main adaptive filter.
+  // Returns the block-wise frequency response for the main adaptive filter.
   const std::vector<std::array<float, kFftLengthBy2Plus1>>&
   FilterFrequencyResponse() const {
     return main_filter_.FilterFrequencyResponse();
+  }
+
+  // Returns the estimate of the impulse response for the main adaptive filter.
+  const std::array<float, kAdaptiveFilterTimeDomainLength>&
+  FilterImpulseResponse() const {
+    return main_filter_.FilterImpulseResponse();
   }
 
  private:

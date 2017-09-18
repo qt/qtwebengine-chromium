@@ -481,14 +481,6 @@ cr.define('extensions', function() {
         e.preventDefault();
       });
 
-      // The 'Show Browser Action' button.
-      wrapper.setupColumn('showButton', '.show-button', 'click', function(e) {
-        chrome.developerPrivate.updateExtensionConfiguration({
-          extensionId: extension.id,
-          showActionButton: true
-        });
-      });
-
       // The 'allow in incognito' checkbox.
       wrapper.setupColumn('incognito', '.incognito-control input', 'change',
                           function(e) {
@@ -630,10 +622,6 @@ cr.define('extensions', function() {
       this.setText_(wrapper, '.location-text', extension.locationText || '');
       this.setText_(wrapper, '.blacklist-text', extension.blacklistText || '');
       this.setText_(wrapper, '.extension-description', extension.description);
-
-      // The 'Show Browser Action' button.
-      this.updateVisibility_(wrapper, '.show-button',
-                             isActive && extension.actionButtonHidden);
 
       // The 'allow in incognito' checkbox.
       this.updateVisibility_(wrapper, '.incognito-control',
@@ -996,7 +984,7 @@ cr.define('extensions', function() {
       // Add the options query string. Corner case: the 'options' query string
       // will clobber the 'id' query string if the options link is clicked when
       // 'id' is in the URL, or if both query strings are in the URL.
-      uber.replaceState({}, '?options=' + extensionId);
+      window.history.replaceState({}, '', '/?options=' + extensionId);
 
       var overlay = extensions.ExtensionOptionsOverlay.getInstance();
       var shownCallback = function() {
@@ -1015,7 +1003,7 @@ cr.define('extensions', function() {
         $('overlay').removeEventListener('cancelOverlay', f);
 
         // Remove the options query string.
-        uber.replaceState({}, '');
+        window.history.replaceState({}, '', '/');
       });
 
       // TODO(dbeam): why do we need to focus <extensionoptions> before and

@@ -13,16 +13,19 @@
 
 #include <vector>
 
-#include "webrtc/base/optional.h"
 #include "webrtc/modules/audio_processing/aec3/echo_path_variability.h"
 #include "webrtc/modules/audio_processing/aec3/render_buffer.h"
+#include "webrtc/modules/audio_processing/include/audio_processing.h"
+#include "webrtc/rtc_base/optional.h"
 
 namespace webrtc {
 
 // Class for removing the echo from the capture signal.
 class EchoRemover {
  public:
-  static EchoRemover* Create(int sample_rate_hz);
+  static EchoRemover* Create(
+      const AudioProcessing::Config::EchoCanceller3& config,
+      int sample_rate_hz);
   virtual ~EchoRemover() = default;
 
   // Removes the echo from a block of samples from the capture signal. The

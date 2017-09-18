@@ -15,13 +15,13 @@
 
 #include "webrtc/p2p/base/common.h"
 #include "webrtc/p2p/base/packettransportinternal.h"
-#include "webrtc/base/buffer.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/dscp.h"
-#include "webrtc/base/messagequeue.h"
-#include "webrtc/base/sslstreamadapter.h"
-#include "webrtc/base/stream.h"
-#include "webrtc/base/thread.h"
+#include "webrtc/rtc_base/buffer.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/dscp.h"
+#include "webrtc/rtc_base/messagequeue.h"
+#include "webrtc/rtc_base/sslstreamadapter.h"
+#include "webrtc/rtc_base/stream.h"
+#include "webrtc/rtc_base/thread.h"
 
 namespace cricket {
 
@@ -117,7 +117,8 @@ DtlsTransport::DtlsTransport(IceTransportInternal* ice_transport,
       downward_(NULL),
       srtp_ciphers_(GetSupportedDtlsSrtpCryptoSuites(crypto_options)),
       ssl_role_(rtc::SSL_CLIENT),
-      ssl_max_version_(rtc::SSL_PROTOCOL_DTLS_12) {
+      ssl_max_version_(rtc::SSL_PROTOCOL_DTLS_12),
+      crypto_options_(crypto_options) {
   ice_transport_->SignalWritableState.connect(this,
                                               &DtlsTransport::OnWritableState);
   ice_transport_->SignalReadPacket.connect(this, &DtlsTransport::OnReadPacket);
@@ -536,20 +537,25 @@ void DtlsTransport::OnDtlsEvent(rtc::StreamInterface* dtls, int sig, int err) {
     char buf[kMaxDtlsPacketLen];
     size_t read;
     int read_error;
-    rtc::StreamResult ret = dtls_->Read(buf, sizeof(buf), &read, &read_error);
-    if (ret == rtc::SR_SUCCESS) {
-      SignalReadPacket(this, buf, read, rtc::CreatePacketTime(0), 0);
-    } else if (ret == rtc::SR_EOS) {
-      // Remote peer shut down the association with no error.
-      LOG_J(LS_INFO, this) << "DTLS transport closed";
-      set_writable(false);
-      set_dtls_state(DTLS_TRANSPORT_CLOSED);
-    } else if (ret == rtc::SR_ERROR) {
-      // Remote peer shut down the association with an error.
-      LOG_J(LS_INFO, this) << "DTLS transport error, code=" << read_error;
-      set_writable(false);
-      set_dtls_state(DTLS_TRANSPORT_FAILED);
-    }
+    rtc::StreamResult ret;
+    // The underlying DTLS stream may have received multiple DTLS records in
+    // one packet, so read all of them.
+    do {
+      ret = dtls_->Read(buf, sizeof(buf), &read, &read_error);
+      if (ret == rtc::SR_SUCCESS) {
+        SignalReadPacket(this, buf, read, rtc::CreatePacketTime(0), 0);
+      } else if (ret == rtc::SR_EOS) {
+        // Remote peer shut down the association with no error.
+        LOG_J(LS_INFO, this) << "DTLS transport closed";
+        set_writable(false);
+        set_dtls_state(DTLS_TRANSPORT_CLOSED);
+      } else if (ret == rtc::SR_ERROR) {
+        // Remote peer shut down the association with an error.
+        LOG_J(LS_INFO, this) << "DTLS transport error, code=" << read_error;
+        set_writable(false);
+        set_dtls_state(DTLS_TRANSPORT_FAILED);
+      }
+    } while (ret == rtc::SR_SUCCESS);
   }
   if (sig & rtc::SE_CLOSE) {
     RTC_DCHECK(sig == rtc::SE_CLOSE);  // SE_CLOSE should be by itself.

@@ -20,7 +20,7 @@
 namespace webrtc {
 
 // Plain I420 buffer in standard memory.
-class I420Buffer : public PlanarYuvBuffer {
+class I420Buffer : public I420BufferInterface {
  public:
   static rtc::scoped_refptr<I420Buffer> Create(int width, int height);
   static rtc::scoped_refptr<I420Buffer> Create(int width,
@@ -30,7 +30,11 @@ class I420Buffer : public PlanarYuvBuffer {
                                                int stride_v);
 
   // Create a new buffer and copy the pixel data.
-  static rtc::scoped_refptr<I420Buffer> Copy(const VideoFrameBuffer& buffer);
+  static rtc::scoped_refptr<I420Buffer> Copy(const I420BufferInterface& buffer);
+  // Deprecated.
+  static rtc::scoped_refptr<I420Buffer> Copy(const VideoFrameBuffer& buffer) {
+    return Copy(*buffer.GetI420());
+  }
 
   static rtc::scoped_refptr<I420Buffer> Copy(
       int width, int height,
@@ -39,8 +43,13 @@ class I420Buffer : public PlanarYuvBuffer {
       const uint8_t* data_v, int stride_v);
 
   // Returns a rotated copy of |src|.
-  static rtc::scoped_refptr<I420Buffer> Rotate(const VideoFrameBuffer& src,
+  static rtc::scoped_refptr<I420Buffer> Rotate(const I420BufferInterface& src,
                                                VideoRotation rotation);
+  // Deprecated.
+  static rtc::scoped_refptr<I420Buffer> Rotate(const VideoFrameBuffer& src,
+                                               VideoRotation rotation) {
+    return Rotate(*src.GetI420(), rotation);
+  }
 
   // Sets the buffer to all black.
   static void SetBlack(I420Buffer* buffer);
@@ -53,7 +62,6 @@ class I420Buffer : public PlanarYuvBuffer {
   // are resolved in a better way. Or in the mean time, use SetBlack.
   void InitializeData();
 
-  Type type() const override;
   int width() const override;
   int height() const override;
   const uint8_t* DataY() const override;
@@ -70,7 +78,7 @@ class I420Buffer : public PlanarYuvBuffer {
 
   // Scale the cropped area of |src| to the size of |this| buffer, and
   // write the result into |this|.
-  void CropAndScaleFrom(const VideoFrameBuffer& src,
+  void CropAndScaleFrom(const I420BufferInterface& src,
                         int offset_x,
                         int offset_y,
                         int crop_width,
@@ -78,10 +86,10 @@ class I420Buffer : public PlanarYuvBuffer {
 
   // The common case of a center crop, when needed to adjust the
   // aspect ratio without distorting the image.
-  void CropAndScaleFrom(const VideoFrameBuffer& src);
+  void CropAndScaleFrom(const I420BufferInterface& src);
 
   // Scale all of |src| to the size of |this| buffer, with no cropping.
-  void ScaleFrom(const VideoFrameBuffer& src);
+  void ScaleFrom(const I420BufferInterface& src);
 
  protected:
   I420Buffer(int width, int height);

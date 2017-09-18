@@ -16,18 +16,13 @@
 #include <vector>
 
 #include "webrtc/api/video_codecs/video_encoder.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/event.h"
-#include "webrtc/base/file.h"
-#include "webrtc/base/optional.h"
-#include "webrtc/base/random.h"
-#include "webrtc/base/rate_limiter.h"
 #include "webrtc/call/call.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/media/base/fakevideorenderer.h"
 #include "webrtc/media/base/mediaconstants.h"
 #include "webrtc/media/engine/internalencoderfactory.h"
+#include "webrtc/media/engine/simulcast_encoder_adapter.h"
 #include "webrtc/media/engine/webrtcvideoencoderfactory.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
@@ -38,9 +33,14 @@
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 #include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
-#include "webrtc/modules/video_coding/codecs/vp8/simulcast_encoder_adapter.h"
 #include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/event.h"
+#include "webrtc/rtc_base/file.h"
+#include "webrtc/rtc_base/optional.h"
+#include "webrtc/rtc_base/random.h"
+#include "webrtc/rtc_base/rate_limiter.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 #include "webrtc/system_wrappers/include/metrics_default.h"
 #include "webrtc/system_wrappers/include/sleep.h"
@@ -61,9 +61,11 @@
 #include "webrtc/test/testsupport/perf_test.h"
 #include "webrtc/video/transport_adapter.h"
 
+// Flaky under MemorySanitizer: bugs.webrtc.org/7419
 #if defined(MEMORY_SANITIZER)
-// Flaky under MemorySanitizer, see
-// https://bugs.chromium.org/p/webrtc/issues/detail?id=7419
+#define MAYBE_InitialProbing DISABLED_InitialProbing
+// Fails on iOS bots: bugs.webrtc.org/7851
+#elif defined(TARGET_IPHONE_SIMULATOR) && TARGET_IPHONE_SIMULATOR
 #define MAYBE_InitialProbing DISABLED_InitialProbing
 #else
 #define MAYBE_InitialProbing InitialProbing
@@ -137,7 +139,6 @@ class EndToEndTest : public test::CallTest {
   void RespectsRtcpMode(RtcpMode rtcp_mode);
   void TestSendsSetSsrcs(size_t num_ssrcs, bool send_single_ssrc_first);
   void TestRtpStatePreservation(bool use_rtx, bool provoke_rtcpsr_before_rtp);
-  void TestPictureIdStatePreservation(VideoEncoder* encoder);
   void VerifyHistogramStats(bool use_rtx, bool use_red, bool screenshare);
   void VerifyNewVideoSendStreamsRespectNetworkState(
       MediaType network_to_bring_up,
@@ -2343,6 +2344,9 @@ TEST_F(EndToEndTest, MAYBE_InitialProbing) {
 // Fails on Linux MSan: bugs.webrtc.org/7428
 #if defined(MEMORY_SANITIZER)
 TEST_F(EndToEndTest, DISABLED_TriggerMidCallProbing) {
+// Fails on iOS bots: bugs.webrtc.org/7851
+#elif defined(TARGET_IPHONE_SIMULATOR) && TARGET_IPHONE_SIMULATOR
+TEST_F(EndToEndTest, DISABLED_TriggerMidCallProbing) {
 #else
 TEST_F(EndToEndTest, TriggerMidCallProbing) {
 #endif
@@ -2640,6 +2644,8 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
 
   // Verify that stats have been updated once.
   EXPECT_EQ(2, metrics::NumSamples("WebRTC.Call.LifetimeInSeconds"));
+  EXPECT_EQ(1, metrics::NumSamples(
+                   "WebRTC.Call.TimeReceivingVideoRtpPacketsInSeconds"));
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Call.VideoBitrateReceivedInKbps"));
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Call.RtcpBitrateReceivedInBps"));
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Call.BitrateReceivedInKbps"));
@@ -2699,6 +2705,9 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
 
   EXPECT_EQ(1, metrics::NumSamples(video_prefix + "EndToEndDelayInMs"));
   EXPECT_EQ(1, metrics::NumSamples(video_prefix + "EndToEndDelayMaxInMs"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "InterframeDelayInMs"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "InterframeDelayMaxInMs"));
+
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.RenderSqrtPixelsPerSecond"));
 
   EXPECT_EQ(1, metrics::NumSamples(video_prefix + "EncodeTimeInMs"));
@@ -2791,6 +2800,8 @@ TEST_F(EndToEndTest, MAYBE_ContentTypeSwitches) {
     int num_frames_received_ GUARDED_BY(&crit_);
   } test;
 
+  test::ScopedFieldTrials override_field_trials(
+      "WebRTC-VideoContentTypeExtension/Enabled/");
   metrics::Reset();
 
   Call::Config send_config(test.GetSenderCallConfig());
@@ -2855,6 +2866,14 @@ TEST_F(EndToEndTest, MAYBE_ContentTypeSwitches) {
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.EndToEndDelayMaxInMs"));
   EXPECT_EQ(
       1, metrics::NumSamples("WebRTC.Video.Screenshare.EndToEndDelayMaxInMs"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.InterframeDelayInMs"));
+  EXPECT_EQ(1,
+            metrics::NumSamples(
+                "WebRTC.Video.Screenshare.InterframeDelayInMs"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.InterframeDelayMaxInMs"));
+  EXPECT_EQ(1,
+            metrics::NumSamples(
+                "WebRTC.Video.Screenshare.InterframeDelayMaxInMs"));
 }
 
 TEST_F(EndToEndTest, VerifyHistogramStatsWithRtx) {
@@ -2875,6 +2894,8 @@ TEST_F(EndToEndTest, VerifyHistogramStatsWithScreenshare) {
   const bool kEnabledRtx = false;
   const bool kEnabledRed = false;
   const bool kScreenshare = true;
+  test::ScopedFieldTrials override_field_trials(
+      "WebRTC-VideoContentTypeExtension/Enabled/");
   VerifyHistogramStats(kEnabledRtx, kEnabledRed, kScreenshare);
 }
 
@@ -3421,6 +3442,59 @@ TEST_F(EndToEndTest, GetStats) {
   RunBaseTest(&test);
 }
 
+TEST_F(EndToEndTest, GetTimingFrameInfoReportsTimingFrames) {
+  static const int kExtensionId = 5;
+
+  class StatsObserver : public test::EndToEndTest {
+   public:
+    StatsObserver() : EndToEndTest(kLongTimeoutMs) {}
+
+   private:
+    std::string CompoundKey(const char* name, uint32_t ssrc) {
+      std::ostringstream oss;
+      oss << name << "_" << ssrc;
+      return oss.str();
+    }
+
+    void ModifyVideoConfigs(
+        VideoSendStream::Config* send_config,
+        std::vector<VideoReceiveStream::Config>* receive_configs,
+        VideoEncoderConfig* encoder_config) override {
+      send_config->rtp.extensions.clear();
+      send_config->rtp.extensions.push_back(
+          RtpExtension(RtpExtension::kVideoTimingUri, kExtensionId));
+      for (size_t i = 0; i < receive_configs->size(); ++i) {
+        (*receive_configs)[i].rtp.extensions.clear();
+        (*receive_configs)[i].rtp.extensions.push_back(
+            RtpExtension(RtpExtension::kVideoTimingUri, kExtensionId));
+      }
+    }
+
+    void OnVideoStreamsCreated(
+        VideoSendStream* send_stream,
+        const std::vector<VideoReceiveStream*>& receive_streams) override {
+      receive_streams_ = receive_streams;
+    }
+
+    void PerformTest() override {
+      // No frames reported initially.
+      for (size_t i = 0; i < receive_streams_.size(); ++i) {
+        EXPECT_FALSE(receive_streams_[i]->GetAndResetTimingFrameInfo());
+      }
+      // Wait for at least one timing frame to be sent with 100ms grace period.
+      SleepMs(kDefaultTimingFramesDelayMs + 100);
+      // Check that timing frames are reported for each stream.
+      for (size_t i = 0; i < receive_streams_.size(); ++i) {
+        EXPECT_TRUE(receive_streams_[i]->GetAndResetTimingFrameInfo());
+      }
+    }
+
+    std::vector<VideoReceiveStream*> receive_streams_;
+  } test;
+
+  RunBaseTest(&test);
+}
+
 class RtcpXrObserver : public test::EndToEndTest {
  public:
   RtcpXrObserver(bool enable_rrtr, bool enable_target_bitrate)
@@ -3931,248 +4005,172 @@ TEST_F(EndToEndTest, RestartingSendStreamKeepsRtpAndRtcpTimestampsSynced) {
   TestRtpStatePreservation(true, true);
 }
 
-void EndToEndTest::TestPictureIdStatePreservation(VideoEncoder* encoder) {
-  const size_t kFrameMaxWidth = 1280;
-  const size_t kFrameMaxHeight = 720;
-  const size_t kFrameRate = 30;
-
-  // Use a special stream factory in this test to ensure that all simulcast
-  // streams are being sent.
-  class VideoStreamFactory
-      : public VideoEncoderConfig::VideoStreamFactoryInterface {
+// This test is flaky on linux_memcheck. Disable on all linux bots until
+// flakyness has been fixed.
+// https://bugs.chromium.org/p/webrtc/issues/detail?id=7737
+#if defined(WEBRTC_LINUX)
+#define MAYBE_TestFlexfecRtpStatePreservation \
+  DISABLED_TestFlexfecRtpStatePreservation
+#else
+#define MAYBE_TestFlexfecRtpStatePreservation TestFlexfecRtpStatePreservation
+#endif
+TEST_F(EndToEndTest, MAYBE_TestFlexfecRtpStatePreservation) {
+  class RtpSequenceObserver : public test::RtpRtcpObserver {
    public:
-    VideoStreamFactory() = default;
+    RtpSequenceObserver()
+        : test::RtpRtcpObserver(kDefaultTimeoutMs),
+          num_flexfec_packets_sent_(0) {}
 
-   private:
-    std::vector<VideoStream> CreateEncoderStreams(
-        int width,
-        int height,
-        const VideoEncoderConfig& encoder_config) override {
-      std::vector<VideoStream> streams =
-          test::CreateVideoStreams(width, height, encoder_config);
-
-      const size_t kBitrate = 100000;
-
-      if (encoder_config.number_of_streams > 1) {
-        RTC_DCHECK_EQ(3, encoder_config.number_of_streams);
-
-        for (size_t i = 0; i < encoder_config.number_of_streams; ++i) {
-          streams[i].min_bitrate_bps = kBitrate;
-          streams[i].target_bitrate_bps = kBitrate;
-          streams[i].max_bitrate_bps = kBitrate;
-        }
-
-        // test::CreateVideoStreams does not return frame sizes for the lower
-        // streams that are accepted by VP8Impl::InitEncode.
-        // TODO(brandtr): Fix the problem in test::CreateVideoStreams, rather
-        // than overriding the values here.
-        streams[1].width = streams[2].width / 2;
-        streams[1].height = streams[2].height / 2;
-        streams[0].width = streams[1].width / 2;
-        streams[0].height = streams[1].height / 2;
-      } else {
-        // Use the same total bitrates when sending a single stream to avoid
-        // lowering the bitrate estimate and requiring a subsequent rampup.
-        streams[0].min_bitrate_bps = 3 * kBitrate;
-        streams[0].target_bitrate_bps = 3 * kBitrate;
-        streams[0].max_bitrate_bps = 3 * kBitrate;
-      }
-
-      return streams;
-    }
-  };
-
-  class PictureIdObserver : public test::RtpRtcpObserver {
-   public:
-    PictureIdObserver()
-        : test::RtpRtcpObserver(kDefaultTimeoutMs), num_ssrcs_to_observe_(1) {}
-
-    void ResetExpectations(size_t num_expected_ssrcs) {
+    void ResetPacketCount() {
       rtc::CritScope lock(&crit_);
-      // Do not clear the timestamp and picture_id, to ensure that we check
-      // consistency between reinits and recreations.
-      num_packets_sent_.clear();
-      num_ssrcs_to_observe_ = num_expected_ssrcs;
-      ssrc_observed_.clear();
+      num_flexfec_packets_sent_ = 0;
     }
 
    private:
     Action OnSendRtp(const uint8_t* packet, size_t length) override {
       rtc::CritScope lock(&crit_);
 
-      // RTP header.
       RTPHeader header;
       EXPECT_TRUE(parser_->Parse(packet, length, &header));
+      const uint16_t sequence_number = header.sequenceNumber;
       const uint32_t timestamp = header.timestamp;
       const uint32_t ssrc = header.ssrc;
 
-      const bool known_ssrc =
-          (ssrc == kVideoSendSsrcs[0] || ssrc == kVideoSendSsrcs[1] ||
-           ssrc == kVideoSendSsrcs[2]);
-      EXPECT_TRUE(known_ssrc) << "Unknown SSRC sent.";
-
-      const bool is_padding =
-          (length == header.headerLength + header.paddingLength);
-      if (is_padding) {
+      if (ssrc == kVideoSendSsrcs[0] || ssrc == kSendRtxSsrcs[0]) {
         return SEND_PACKET;
       }
+      EXPECT_EQ(kFlexfecSendSsrc, ssrc) << "Unknown SSRC sent.";
 
-      // VP8 header.
-      std::unique_ptr<RtpDepacketizer> depacketizer(
-          RtpDepacketizer::Create(kRtpVideoVp8));
-      RtpDepacketizer::ParsedPayload parsed_payload;
-      EXPECT_TRUE(depacketizer->Parse(
-          &parsed_payload, &packet[header.headerLength],
-          length - header.headerLength - header.paddingLength));
-      const uint16_t picture_id =
-          parsed_payload.type.Video.codecHeader.VP8.pictureId;
+      ++num_flexfec_packets_sent_;
 
       // If this is the first packet, we have nothing to compare to.
-      if (last_observed_timestamp_.find(ssrc) ==
-          last_observed_timestamp_.end()) {
-        last_observed_timestamp_[ssrc] = timestamp;
-        last_observed_picture_id_[ssrc] = picture_id;
-        ++num_packets_sent_[ssrc];
+      if (!last_observed_sequence_number_) {
+        last_observed_sequence_number_.emplace(sequence_number);
+        last_observed_timestamp_.emplace(timestamp);
 
         return SEND_PACKET;
       }
 
-      // Verify continuity and monotonicity of picture_id sequence.
-      if (last_observed_timestamp_[ssrc] == timestamp) {
-        // Packet belongs to same frame as before.
-        EXPECT_EQ(last_observed_picture_id_[ssrc], picture_id);
-      } else {
-        // Packet is a new frame.
-        EXPECT_EQ((last_observed_picture_id_[ssrc] + 1) % (1 << 15),
-                  picture_id);
-      }
-      last_observed_timestamp_[ssrc] = timestamp;
-      last_observed_picture_id_[ssrc] = picture_id;
+      // Verify continuity and monotonicity of RTP sequence numbers.
+      EXPECT_EQ(static_cast<uint16_t>(*last_observed_sequence_number_ + 1),
+                sequence_number);
+      last_observed_sequence_number_.emplace(sequence_number);
 
-      // Pass the test when enough media packets have been received
-      // on all streams.
-      if (++num_packets_sent_[ssrc] >= 10 && !ssrc_observed_[ssrc]) {
-        ssrc_observed_[ssrc] = true;
-        if (--num_ssrcs_to_observe_ == 0) {
-          observation_complete_.Set();
-        }
+      // Timestamps should be non-decreasing...
+      const bool timestamp_is_same_or_newer =
+          timestamp == *last_observed_timestamp_ ||
+          IsNewerTimestamp(timestamp, *last_observed_timestamp_);
+      EXPECT_TRUE(timestamp_is_same_or_newer);
+      // ...but reasonably close in time.
+      const int k10SecondsInRtpTimestampBase = 10 * kVideoPayloadTypeFrequency;
+      EXPECT_TRUE(IsNewerTimestamp(
+          *last_observed_timestamp_ + k10SecondsInRtpTimestampBase, timestamp));
+      last_observed_timestamp_.emplace(timestamp);
+
+      // Pass test when enough packets have been let through.
+      if (num_flexfec_packets_sent_ >= 10) {
+        observation_complete_.Set();
       }
 
       return SEND_PACKET;
     }
 
+    rtc::Optional<uint16_t> last_observed_sequence_number_ GUARDED_BY(crit_);
+    rtc::Optional<uint32_t> last_observed_timestamp_ GUARDED_BY(crit_);
+    size_t num_flexfec_packets_sent_ GUARDED_BY(crit_);
     rtc::CriticalSection crit_;
-    std::map<uint32_t, uint32_t> last_observed_timestamp_ GUARDED_BY(crit_);
-    std::map<uint32_t, uint16_t> last_observed_picture_id_ GUARDED_BY(crit_);
-    std::map<uint32_t, size_t> num_packets_sent_ GUARDED_BY(crit_);
-    size_t num_ssrcs_to_observe_ GUARDED_BY(crit_);
-    std::map<uint32_t, bool> ssrc_observed_ GUARDED_BY(crit_);
   } observer;
 
   Call::Config config(event_log_.get());
   CreateCalls(config, config);
 
-  test::PacketTransport send_transport(
-      sender_call_.get(), &observer, test::PacketTransport::kSender,
-      payload_type_map_, FakeNetworkPipe::Config());
-  test::PacketTransport receive_transport(
-      nullptr, &observer, test::PacketTransport::kReceiver, payload_type_map_,
-      FakeNetworkPipe::Config());
+  FakeNetworkPipe::Config lossy_delayed_link;
+  lossy_delayed_link.loss_percent = 2;
+  lossy_delayed_link.queue_delay_ms = 50;
+  test::PacketTransport send_transport(sender_call_.get(), &observer,
+                                       test::PacketTransport::kSender,
+                                       payload_type_map_, lossy_delayed_link);
   send_transport.SetReceiver(receiver_call_->Receiver());
+
+  FakeNetworkPipe::Config flawless_link;
+  test::PacketTransport receive_transport(nullptr, &observer,
+                                          test::PacketTransport::kReceiver,
+                                          payload_type_map_, flawless_link);
   receive_transport.SetReceiver(sender_call_->Receiver());
 
-  CreateSendConfig(kNumSsrcs, 0, 0, &send_transport);
-  video_send_config_.encoder_settings.encoder = encoder;
+  // For reduced flakyness, we use a real VP8 encoder together with NACK
+  // and RTX.
+  const int kNumVideoStreams = 1;
+  const int kNumFlexfecStreams = 1;
+  CreateSendConfig(kNumVideoStreams, 0, kNumFlexfecStreams, &send_transport);
+  std::unique_ptr<VideoEncoder> encoder(VP8Encoder::Create());
+  video_send_config_.encoder_settings.encoder = encoder.get();
   video_send_config_.encoder_settings.payload_name = "VP8";
-  video_encoder_config_.video_stream_factory =
-      new rtc::RefCountedObject<VideoStreamFactory>();
-  video_encoder_config_.number_of_streams = 1;
-  CreateMatchingReceiveConfigs(&receive_transport);
+  video_send_config_.encoder_settings.payload_type = kVideoSendPayloadType;
+  video_send_config_.rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
+  video_send_config_.rtp.rtx.ssrcs.push_back(kSendRtxSsrcs[0]);
+  video_send_config_.rtp.rtx.payload_type = kSendRtxPayloadType;
 
+  CreateMatchingReceiveConfigs(&receive_transport);
+  video_receive_configs_[0].rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
+  video_receive_configs_[0].rtp.rtx_ssrc = kSendRtxSsrcs[0];
+  video_receive_configs_[0].rtp.rtx_payload_types[kVideoSendPayloadType] =
+      kSendRtxPayloadType;
+
+  // The matching FlexFEC receive config is not created by
+  // CreateMatchingReceiveConfigs since this is not a test::BaseTest.
+  // Set up the receive config manually instead.
+  FlexfecReceiveStream::Config flexfec_receive_config(&receive_transport);
+  flexfec_receive_config.payload_type =
+      video_send_config_.rtp.flexfec.payload_type;
+  flexfec_receive_config.remote_ssrc = video_send_config_.rtp.flexfec.ssrc;
+  flexfec_receive_config.protected_media_ssrcs =
+      video_send_config_.rtp.flexfec.protected_media_ssrcs;
+  flexfec_receive_config.local_ssrc = kReceiverLocalVideoSsrc;
+  flexfec_receive_config.transport_cc = true;
+  flexfec_receive_config.rtp_header_extensions.emplace_back(
+      RtpExtension::kTransportSequenceNumberUri,
+      test::kTransportSequenceNumberExtensionId);
+  flexfec_receive_configs_.push_back(flexfec_receive_config);
+
+  CreateFlexfecStreams();
   CreateVideoStreams();
+
+  // RTCP might be disabled if the network is "down".
+  sender_call_->SignalChannelNetworkState(MediaType::VIDEO, kNetworkUp);
+  receiver_call_->SignalChannelNetworkState(MediaType::VIDEO, kNetworkUp);
+
+  const int kFrameMaxWidth = 320;
+  const int kFrameMaxHeight = 180;
+  const int kFrameRate = 15;
   CreateFrameGeneratorCapturer(kFrameRate, kFrameMaxWidth, kFrameMaxHeight);
 
-  auto reinit_encoder_and_test = [this, &observer](int num_expected_ssrcs) {
-    video_send_stream_->ReconfigureVideoEncoder(video_encoder_config_.Copy());
-    observer.ResetExpectations(num_expected_ssrcs);
-    EXPECT_TRUE(observer.Wait()) << "Timed out waiting for packets.";
-  };
-
-  // TODO(brandtr): Add tests where we recreate the whole VideoSendStream. This
-  // requires synchronizing the frame generator output with the packetization
-  // output, to not have any timing-dependent gaps in the picture_id sequence.
-
-  // Initial test with a single stream.
+  // Initial test.
   Start();
   EXPECT_TRUE(observer.Wait()) << "Timed out waiting for packets.";
 
-  // Reinit the encoder and make sure the picture_id sequence is continuous.
-  reinit_encoder_and_test(1);
+  // Ensure monotonicity when the VideoSendStream is restarted.
+  Stop();
+  observer.ResetPacketCount();
+  Start();
+  EXPECT_TRUE(observer.Wait()) << "Timed out waiting for packets.";
 
-  // Go up to three streams.
-  video_encoder_config_.number_of_streams = 3;
-  reinit_encoder_and_test(3);
-  reinit_encoder_and_test(3);
+  // Ensure monotonicity when the VideoSendStream is recreated.
+  frame_generator_capturer_->Stop();
+  sender_call_->DestroyVideoSendStream(video_send_stream_);
+  observer.ResetPacketCount();
+  video_send_stream_ = sender_call_->CreateVideoSendStream(
+      video_send_config_.Copy(), video_encoder_config_.Copy());
+  video_send_stream_->Start();
+  CreateFrameGeneratorCapturer(kFrameRate, kFrameMaxWidth, kFrameMaxHeight);
+  frame_generator_capturer_->Start();
+  EXPECT_TRUE(observer.Wait()) << "Timed out waiting for packets.";
 
-  // Go back to one stream.
-  video_encoder_config_.number_of_streams = 1;
-  reinit_encoder_and_test(1);
-  reinit_encoder_and_test(1);
-
+  // Cleanup.
   send_transport.StopSending();
   receive_transport.StopSending();
-
   Stop();
   DestroyStreams();
-}
-
-// These tests exposed a race in libvpx, see
-// https://bugs.chromium.org/p/webrtc/issues/detail?id=7663. Disabling the tests
-// on tsan until the race has been fixed.
-#if defined(THREAD_SANITIZER)
-#define MAYBE_PictureIdStateRetainedAfterReinitingVp8 \
-  DISABLED_PictureIdStateRetainedAfterReinitingVp8
-#define MAYBE_PictureIdStateRetainedAfterReinitingSimulcastEncoderAdapter \
-  DISABLED_PictureIdStateRetainedAfterReinitingSimulcastEncoderAdapter
-#else
-#define MAYBE_PictureIdStateRetainedAfterReinitingVp8 \
-  PictureIdStateRetainedAfterReinitingVp8
-#define MAYBE_PictureIdStateRetainedAfterReinitingSimulcastEncoderAdapter \
-  PictureIdStateRetainedAfterReinitingSimulcastEncoderAdapter
-#endif
-TEST_F(EndToEndTest, MAYBE_PictureIdStateRetainedAfterReinitingVp8) {
-  std::unique_ptr<VideoEncoder> encoder(VP8Encoder::Create());
-  TestPictureIdStatePreservation(encoder.get());
-}
-
-TEST_F(EndToEndTest,
-       MAYBE_PictureIdStateRetainedAfterReinitingSimulcastEncoderAdapter) {
-  class VideoEncoderFactoryAdapter : public webrtc::VideoEncoderFactory {
-   public:
-    explicit VideoEncoderFactoryAdapter(
-        cricket::WebRtcVideoEncoderFactory* factory)
-        : factory_(factory) {}
-    virtual ~VideoEncoderFactoryAdapter() {}
-
-    // Implements webrtc::VideoEncoderFactory.
-    webrtc::VideoEncoder* Create() override {
-      return factory_->CreateVideoEncoder(
-          cricket::VideoCodec(cricket::kVp8CodecName));
-    }
-
-    void Destroy(webrtc::VideoEncoder* encoder) override {
-      return factory_->DestroyVideoEncoder(encoder);
-    }
-
-   private:
-    cricket::WebRtcVideoEncoderFactory* const factory_;
-  };
-
-  cricket::InternalEncoderFactory internal_encoder_factory;
-  SimulcastEncoderAdapter simulcast_encoder_adapter(
-      new VideoEncoderFactoryAdapter(&internal_encoder_factory));
-
-  TestPictureIdStatePreservation(&simulcast_encoder_adapter);
 }
 
 TEST_F(EndToEndTest, RespectsNetworkState) {

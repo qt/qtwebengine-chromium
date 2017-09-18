@@ -23,6 +23,11 @@ namespace gl
 
 ////// FramebufferAttachment::Target Implementation //////
 
+const GLint FramebufferAttachment::kDefaultNumViews           = 1;
+const GLenum FramebufferAttachment::kDefaultMultiviewLayout   = GL_NONE;
+const GLint FramebufferAttachment::kDefaultBaseViewIndex      = 0;
+const GLint FramebufferAttachment::kDefaultViewportOffsets[2] = {0};
+
 FramebufferAttachment::Target::Target()
     : mBinding(GL_NONE),
       mTextureIndex(ImageIndex::MakeInvalid())
@@ -51,67 +56,98 @@ FramebufferAttachment::Target &FramebufferAttachment::Target::operator=(const Ta
 ////// FramebufferAttachment Implementation //////
 
 FramebufferAttachment::FramebufferAttachment()
-    : mType(GL_NONE), mResource(nullptr)
+    : mType(GL_NONE),
+      mResource(nullptr),
+      mNumViews(kDefaultNumViews),
+      mMultiviewLayout(kDefaultMultiviewLayout),
+      mBaseViewIndex(kDefaultBaseViewIndex),
+      mViewportOffsets(1u)
 {
 }
 
-FramebufferAttachment::FramebufferAttachment(GLenum type,
+FramebufferAttachment::FramebufferAttachment(const Context *context,
+                                             GLenum type,
                                              GLenum binding,
                                              const ImageIndex &textureIndex,
                                              FramebufferAttachmentObject *resource)
     : mResource(nullptr)
 {
-    attach(type, binding, textureIndex, resource);
+    attach(context, type, binding, textureIndex, resource, kDefaultNumViews, kDefaultBaseViewIndex,
+           kDefaultMultiviewLayout, kDefaultViewportOffsets);
 }
 
-FramebufferAttachment::FramebufferAttachment(const FramebufferAttachment &other)
-    : mResource(nullptr)
+FramebufferAttachment::FramebufferAttachment(FramebufferAttachment &&other)
+    : FramebufferAttachment()
 {
-    attach(other.mType, other.mTarget.binding(), other.mTarget.textureIndex(), other.mResource);
+    *this = std::move(other);
 }
 
-FramebufferAttachment &FramebufferAttachment::operator=(const FramebufferAttachment &other)
+FramebufferAttachment &FramebufferAttachment::operator=(FramebufferAttachment &&other)
 {
-    attach(other.mType, other.mTarget.binding(), other.mTarget.textureIndex(), other.mResource);
+    std::swap(mType, other.mType);
+    std::swap(mTarget, other.mTarget);
+    std::swap(mResource, other.mResource);
+    std::swap(mNumViews, other.mNumViews);
+    std::swap(mMultiviewLayout, other.mMultiviewLayout);
+    std::swap(mBaseViewIndex, other.mBaseViewIndex);
+    std::swap(mViewportOffsets, other.mViewportOffsets);
     return *this;
 }
 
 FramebufferAttachment::~FramebufferAttachment()
 {
-    detach();
+    ASSERT(!isAttached());
 }
 
-void FramebufferAttachment::detach()
+void FramebufferAttachment::detach(const Context *context)
 {
     mType = GL_NONE;
     if (mResource != nullptr)
     {
-        mResource->onDetach();
+        mResource->onDetach(context);
         mResource = nullptr;
     }
+    mNumViews        = kDefaultNumViews;
+    mMultiviewLayout = kDefaultMultiviewLayout;
+    mBaseViewIndex   = kDefaultBaseViewIndex;
+    mViewportOffsets.resize(1u);
+    mViewportOffsets[0] = Offset();
 
     // not technically necessary, could omit for performance
     mTarget = Target();
 }
 
-void FramebufferAttachment::attach(GLenum type,
+void FramebufferAttachment::attach(const Context *context,
+                                   GLenum type,
                                    GLenum binding,
                                    const ImageIndex &textureIndex,
-                                   FramebufferAttachmentObject *resource)
+                                   FramebufferAttachmentObject *resource,
+                                   GLsizei numViews,
+                                   GLuint baseViewIndex,
+                                   GLenum multiviewLayout,
+                                   const GLint *viewportOffsets)
 {
     if (resource == nullptr)
     {
-        detach();
+        detach(context);
         return;
     }
 
     mType = type;
     mTarget = Target(binding, textureIndex);
-    resource->onAttach();
+    mNumViews        = numViews;
+    mBaseViewIndex   = baseViewIndex;
+    mMultiviewLayout = multiviewLayout;
+    mViewportOffsets.resize(numViews);
+    for (size_t i = 0u; i < mViewportOffsets.size(); ++i)
+    {
+        mViewportOffsets[i] = Offset(viewportOffsets[i * 2u], viewportOffsets[i * 2u + 1u], 0);
+    }
+    resource->onAttach(context);
 
     if (mResource != nullptr)
     {
-        mResource->onDetach();
+        mResource->onDetach(context);
     }
 
     mResource = resource;
@@ -195,6 +231,26 @@ GLint FramebufferAttachment::layer() const
     return 0;
 }
 
+GLint FramebufferAttachment::getNumViews() const
+{
+    return mNumViews;
+}
+
+GLenum FramebufferAttachment::getMultiviewLayout() const
+{
+    return mMultiviewLayout;
+}
+
+GLint FramebufferAttachment::getBaseViewIndex() const
+{
+    return mBaseViewIndex;
+}
+
+const std::vector<Offset> &FramebufferAttachment::getMultiviewViewportOffsets() const
+{
+    return mViewportOffsets;
+}
+
 Texture *FramebufferAttachment::getTexture() const
 {
     return rx::GetAs<Texture>(mResource);
@@ -217,7 +273,9 @@ FramebufferAttachmentObject *FramebufferAttachment::getResource() const
 
 bool FramebufferAttachment::operator==(const FramebufferAttachment &other) const
 {
-    if (mResource != other.mResource || mType != other.mType)
+    if (mResource != other.mResource || mType != other.mType || mNumViews != other.mNumViews ||
+        mMultiviewLayout != other.mMultiviewLayout || mBaseViewIndex != other.mBaseViewIndex ||
+        mViewportOffsets != other.mViewportOffsets)
     {
         return false;
     }
@@ -236,11 +294,12 @@ bool FramebufferAttachment::operator!=(const FramebufferAttachment &other) const
 }
 
 Error FramebufferAttachmentObject::getAttachmentRenderTarget(
+    const Context *context,
     GLenum binding,
     const ImageIndex &imageIndex,
     rx::FramebufferAttachmentRenderTarget **rtOut) const
 {
-    return getAttachmentImpl()->getAttachmentRenderTarget(binding, imageIndex, rtOut);
+    return getAttachmentImpl()->getAttachmentRenderTarget(context, binding, imageIndex, rtOut);
 }
 
 angle::BroadcastChannel<> *FramebufferAttachmentObject::getDirtyChannel()

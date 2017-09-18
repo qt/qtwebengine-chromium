@@ -16,12 +16,12 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/media/base/videosinkinterface.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/platform_thread.h"
+#include "webrtc/rtc_base/scoped_ref_ptr.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -77,6 +77,8 @@ class VideoStreamDecoder : public VCMReceiveCallback,
                                    int jitter_buffer_ms,
                                    int min_playout_delay_ms,
                                    int render_delay_ms) override;
+
+  void OnTimingFrameInfoUpdated(const TimingFrameInfo& info) override;
 
   void RegisterReceiveStatisticsProxy(
       ReceiveStatisticsProxy* receive_statistics_proxy);

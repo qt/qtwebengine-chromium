@@ -171,15 +171,16 @@ void V8TemplateMapTraits::Dispose(v8::Isolate* isolate,
   v8::Local<v8::Object> obj = value.Get(isolate);
   if (obj.IsEmpty())
     return;
-  CFXJS_Engine* pEngine = CFXJS_Engine::CurrentEngineFromIsolate(isolate);
-  int id = pEngine->GetObjDefnID(obj);
+  int id = CFXJS_Engine::GetObjDefnID(obj);
   if (id == -1)
     return;
   CFXJS_ObjDefinition* pObjDef = CFXJS_ObjDefinition::ForID(isolate, id);
   if (!pObjDef)
     return;
-  if (pObjDef->m_pDestructor)
-    pObjDef->m_pDestructor(pEngine, obj);
+  if (pObjDef->m_pDestructor) {
+    pObjDef->m_pDestructor(CFXJS_Engine::CurrentEngineFromIsolate(isolate),
+                           obj);
+  }
   CFXJS_Engine::FreeObjectPrivate(obj);
 }
 
@@ -310,11 +311,8 @@ void CFXJS_Engine::DefineObjMethod(int nObjDefnID,
   v8::Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(
       m_isolate, pMethodCall, v8::Local<v8::Value>(), pObjDef->GetSignature());
   fun->RemovePrototype();
-  pObjDef->GetInstanceTemplate()->Set(
-      v8::String::NewFromUtf8(m_isolate, sMethodName,
-                              v8::NewStringType::kNormal)
-          .ToLocalChecked(),
-      fun, v8::ReadOnly);
+  pObjDef->GetInstanceTemplate()->Set(NewString(sMethodName), fun,
+                                      v8::ReadOnly);
 }
 
 void CFXJS_Engine::DefineObjProperty(int nObjDefnID,
@@ -325,10 +323,8 @@ void CFXJS_Engine::DefineObjProperty(int nObjDefnID,
   v8::HandleScope handle_scope(m_isolate);
   CFXJS_ObjDefinition* pObjDef =
       CFXJS_ObjDefinition::ForID(m_isolate, nObjDefnID);
-  pObjDef->GetInstanceTemplate()->SetAccessor(
-      v8::String::NewFromUtf8(m_isolate, sPropName, v8::NewStringType::kNormal)
-          .ToLocalChecked(),
-      pPropGet, pPropPut);
+  pObjDef->GetInstanceTemplate()->SetAccessor(NewString(sPropName), pPropGet,
+                                              pPropPut);
 }
 
 void CFXJS_Engine::DefineObjAllProperties(
@@ -362,26 +358,19 @@ void CFXJS_Engine::DefineGlobalMethod(const char* sMethodName,
   v8::Local<v8::FunctionTemplate> fun =
       v8::FunctionTemplate::New(m_isolate, pMethodCall);
   fun->RemovePrototype();
-  GetGlobalObjectTemplate(m_isolate)->Set(
-      v8::String::NewFromUtf8(m_isolate, sMethodName,
-                              v8::NewStringType::kNormal)
-          .ToLocalChecked(),
-      fun, v8::ReadOnly);
+  GetGlobalObjectTemplate(m_isolate)->Set(NewString(sMethodName), fun,
+                                          v8::ReadOnly);
 }
 
 void CFXJS_Engine::DefineGlobalConst(const wchar_t* sConstName,
                                      v8::FunctionCallback pConstGetter) {
   v8::Isolate::Scope isolate_scope(m_isolate);
   v8::HandleScope handle_scope(m_isolate);
-  CFX_ByteString bsConst = FX_UTF8Encode(CFX_WideStringC(sConstName));
   v8::Local<v8::FunctionTemplate> fun =
       v8::FunctionTemplate::New(m_isolate, pConstGetter);
   fun->RemovePrototype();
-  GetGlobalObjectTemplate(m_isolate)->SetAccessorProperty(
-      v8::String::NewFromUtf8(m_isolate, bsConst.c_str(),
-                              v8::NewStringType::kNormal)
-          .ToLocalChecked(),
-      fun);
+  GetGlobalObjectTemplate(m_isolate)->SetAccessorProperty(NewString(sConstName),
+                                                          fun);
 }
 
 void CFXJS_Engine::InitializeEngine() {
@@ -418,12 +407,7 @@ void CFXJS_Engine::InitializeEngine() {
                                           .ToLocalChecked());
       }
     } else if (pObjDef->m_ObjType == FXJSOBJTYPE_STATIC) {
-      v8::Local<v8::String> pObjName =
-          v8::String::NewFromUtf8(m_isolate, pObjDef->m_ObjName,
-                                  v8::NewStringType::kNormal,
-                                  strlen(pObjDef->m_ObjName))
-              .ToLocalChecked();
-
+      v8::Local<v8::String> pObjName = NewString(pObjDef->m_ObjName);
       v8::Local<v8::Object> obj = NewFxDynamicObj(i, true);
       v8Context->Global()->Set(v8Context, pObjName, obj).FromJust();
       m_StaticObjects[i] = new v8::Global<v8::Object>(m_isolate, obj);
@@ -438,7 +422,6 @@ void CFXJS_Engine::ReleaseEngine() {
   v8::Local<v8::Context> context =
       v8::Local<v8::Context>::New(m_isolate, m_V8PersistentContext);
   v8::Context::Scope context_scope(context);
-
   FXJS_PerIsolateData* pData = FXJS_PerIsolateData::Get(m_isolate);
   if (!pData)
     return;
@@ -477,14 +460,9 @@ void CFXJS_Engine::ReleaseEngine() {
 int CFXJS_Engine::Execute(const CFX_WideString& script, FXJSErr* pError) {
   v8::Isolate::Scope isolate_scope(m_isolate);
   v8::TryCatch try_catch(m_isolate);
-  CFX_ByteString bsScript = script.UTF8Encode();
   v8::Local<v8::Context> context = m_isolate->GetCurrentContext();
   v8::Local<v8::Script> compiled_script;
-  if (!v8::Script::Compile(context,
-                           v8::String::NewFromUtf8(m_isolate, bsScript.c_str(),
-                                                   v8::NewStringType::kNormal,
-                                                   bsScript.GetLength())
-                               .ToLocalChecked())
+  if (!v8::Script::Compile(context, NewString(script.AsStringC()))
            .ToLocal(&compiled_script)) {
     v8::String::Utf8Value error(try_catch.Exception());
     // TODO(tsepez): return error via pError->message.
@@ -547,14 +525,7 @@ v8::Local<v8::Object> CFXJS_Engine::GetThisObj() {
 }
 
 void CFXJS_Engine::Error(const CFX_WideString& message) {
-  // Conversion from pdfium's wchar_t wide-strings to v8's uint16_t
-  // wide-strings isn't handled by v8, so use UTF8 as a common
-  // intermediate format.
-  CFX_ByteString utf8_message = message.UTF8Encode();
-  m_isolate->ThrowException(v8::String::NewFromUtf8(m_isolate,
-                                                    utf8_message.c_str(),
-                                                    v8::NewStringType::kNormal)
-                                .ToLocalChecked());
+  m_isolate->ThrowException(NewString(message.AsStringC()));
 }
 
 void CFXJS_Engine::SetObjectPrivate(v8::Local<v8::Object> pObj, void* p) {
@@ -659,30 +630,33 @@ v8::Local<v8::Context> CFXJS_Engine::GetPersistentContext() {
   return m_V8PersistentContext.Get(m_isolate);
 }
 
-v8::Local<v8::Value> CFXJS_Engine::NewNumber(int number) {
+v8::Local<v8::Number> CFXJS_Engine::NewNumber(int number) {
   return v8::Int32::New(m_isolate, number);
 }
 
-v8::Local<v8::Value> CFXJS_Engine::NewNumber(double number) {
+v8::Local<v8::Number> CFXJS_Engine::NewNumber(double number) {
   return v8::Number::New(m_isolate, number);
 }
 
-v8::Local<v8::Value> CFXJS_Engine::NewNumber(float number) {
+v8::Local<v8::Number> CFXJS_Engine::NewNumber(float number) {
   return v8::Number::New(m_isolate, (float)number);
 }
 
-v8::Local<v8::Value> CFXJS_Engine::NewBoolean(bool b) {
+v8::Local<v8::Boolean> CFXJS_Engine::NewBoolean(bool b) {
   return v8::Boolean::New(m_isolate, b);
 }
 
-v8::Local<v8::Value> CFXJS_Engine::NewString(const CFX_ByteStringC& str) {
+v8::Local<v8::String> CFXJS_Engine::NewString(const CFX_ByteStringC& str) {
   v8::Isolate* pIsolate = m_isolate ? m_isolate : v8::Isolate::GetCurrent();
-  return v8::String::NewFromUtf8(pIsolate, str.c_str(),
+  return v8::String::NewFromUtf8(pIsolate, str.unterminated_c_str(),
                                  v8::NewStringType::kNormal, str.GetLength())
       .ToLocalChecked();
 }
 
-v8::Local<v8::Value> CFXJS_Engine::NewString(const CFX_WideStringC& str) {
+v8::Local<v8::String> CFXJS_Engine::NewString(const CFX_WideStringC& str) {
+  // Conversion from pdfium's wchar_t wide-strings to v8's uint16_t
+  // wide-strings isn't handled by v8, so use UTF8 as a common
+  // intermediate format.
   return NewString(FX_UTF8Encode(str).AsStringC());
 }
 
@@ -700,28 +674,40 @@ int CFXJS_Engine::ToInt32(v8::Local<v8::Value> pValue) {
   if (pValue.IsEmpty())
     return 0;
   v8::Local<v8::Context> context = m_isolate->GetCurrentContext();
-  return pValue->ToInt32(context).ToLocalChecked()->Value();
+  v8::MaybeLocal<v8::Int32> maybe_int32 = pValue->ToInt32(context);
+  if (maybe_int32.IsEmpty())
+    return 0;
+  return maybe_int32.ToLocalChecked()->Value();
 }
 
 bool CFXJS_Engine::ToBoolean(v8::Local<v8::Value> pValue) {
   if (pValue.IsEmpty())
     return false;
   v8::Local<v8::Context> context = m_isolate->GetCurrentContext();
-  return pValue->ToBoolean(context).ToLocalChecked()->Value();
+  v8::MaybeLocal<v8::Boolean> maybe_boolean = pValue->ToBoolean(context);
+  if (maybe_boolean.IsEmpty())
+    return false;
+  return maybe_boolean.ToLocalChecked()->Value();
 }
 
 double CFXJS_Engine::ToDouble(v8::Local<v8::Value> pValue) {
   if (pValue.IsEmpty())
     return 0.0;
   v8::Local<v8::Context> context = m_isolate->GetCurrentContext();
-  return pValue->ToNumber(context).ToLocalChecked()->Value();
+  v8::MaybeLocal<v8::Number> maybe_number = pValue->ToNumber(context);
+  if (maybe_number.IsEmpty())
+    return 0.0;
+  return maybe_number.ToLocalChecked()->Value();
 }
 
 CFX_WideString CFXJS_Engine::ToWideString(v8::Local<v8::Value> pValue) {
   if (pValue.IsEmpty())
     return CFX_WideString();
   v8::Local<v8::Context> context = m_isolate->GetCurrentContext();
-  v8::String::Utf8Value s(pValue->ToString(context).ToLocalChecked());
+  v8::MaybeLocal<v8::String> maybe_string = pValue->ToString(context);
+  if (maybe_string.IsEmpty())
+    return CFX_WideString();
+  v8::String::Utf8Value s(maybe_string.ToLocalChecked());
   return CFX_WideString::FromUTF8(CFX_ByteStringC(*s, s.length()));
 }
 

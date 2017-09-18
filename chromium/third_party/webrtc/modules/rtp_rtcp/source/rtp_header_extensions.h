@@ -15,8 +15,9 @@
 
 #include "webrtc/api/video/video_content_type.h"
 #include "webrtc/api/video/video_rotation.h"
-#include "webrtc/base/array_view.h"
+#include "webrtc/api/video/video_timing.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "webrtc/rtc_base/array_view.h"
 
 namespace webrtc {
 
@@ -28,8 +29,8 @@ class AbsoluteSendTime {
       "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time";
 
   static bool Parse(rtc::ArrayView<const uint8_t> data, uint32_t* time_24bits);
-  static size_t ValueSize(int64_t time_ms) { return kValueSizeBytes; }
-  static bool Write(uint8_t* data, int64_t time_ms);
+  static size_t ValueSize(uint32_t time_24bits) { return kValueSizeBytes; }
+  static bool Write(uint8_t* data, uint32_t time_24bits);
 
   static constexpr uint32_t MsTo24Bits(int64_t time_ms) {
     return static_cast<uint32_t>(((time_ms << 18) + 500) / 1000) & 0x00FFFFFF;
@@ -124,6 +125,25 @@ class VideoContentTypeExtension {
     return kValueSizeBytes;
   }
   static bool Write(uint8_t* data, VideoContentType content_type);
+};
+
+class VideoTimingExtension {
+ public:
+  static constexpr RTPExtensionType kId = kRtpExtensionVideoTiming;
+  static constexpr uint8_t kValueSizeBytes = 12;
+  static constexpr const char* kUri =
+      "http://www.webrtc.org/experiments/rtp-hdrext/video-timing";
+
+  static bool Parse(rtc::ArrayView<const uint8_t> data,
+                    VideoSendTiming* timing);
+  static size_t ValueSize(const VideoSendTiming&) { return kValueSizeBytes; }
+  static bool Write(uint8_t* data, const VideoSendTiming& timing);
+
+  static size_t ValueSize(uint16_t time_delta_ms, uint8_t idx) {
+    return kValueSizeBytes;
+  }
+  // Writes only single time delta to position idx.
+  static bool Write(uint8_t* data, uint16_t time_delta_ms, uint8_t idx);
 };
 
 class RtpStreamId {

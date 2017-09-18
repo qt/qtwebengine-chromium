@@ -14,18 +14,18 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/base/thread_checker.h"
-#include "webrtc/call/rtp_demuxer.h"
+#include "webrtc/call/rtp_packet_sink_interface.h"
 #include "webrtc/call/syncable.h"
 #include "webrtc/common_video/include/incoming_video_stream.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/rtp_rtcp/include/flexfec_receiver.h"
 #include "webrtc/modules/video_coding/frame_buffer2.h"
 #include "webrtc/modules/video_coding/video_coding_impl.h"
+#include "webrtc/rtc_base/thread_checker.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/video/receive_statistics_proxy.h"
-#include "webrtc/video/rtp_stream_receiver.h"
 #include "webrtc/video/rtp_streams_synchronizer.h"
+#include "webrtc/video/rtp_video_stream_receiver.h"
 #include "webrtc/video/transport_adapter.h"
 #include "webrtc/video/video_stream_decoder.h"
 #include "webrtc/video_receive_stream.h"
@@ -36,6 +36,8 @@ class CallStats;
 class IvfFileWriter;
 class ProcessThread;
 class RTPFragmentationHeader;
+class RtpStreamReceiverInterface;
+class RtpStreamReceiverControllerInterface;
 class VCMTiming;
 class VCMJitterEstimator;
 
@@ -47,10 +49,10 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
                            public NackSender,
                            public KeyFrameRequestSender,
                            public video_coding::OnCompleteFrameCallback,
-                           public Syncable,
-                           public RtpPacketSinkInterface {
+                           public Syncable {
  public:
-  VideoReceiveStream(int num_cpu_cores,
+  VideoReceiveStream(RtpStreamReceiverControllerInterface* receiver_controller,
+                     int num_cpu_cores,
                      PacketRouter* packet_router,
                      VideoReceiveStream::Config config,
                      ProcessThread* process_thread,
@@ -70,6 +72,8 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
 
   webrtc::VideoReceiveStream::Stats GetStats() const override;
 
+  rtc::Optional<TimingFrameInfo> GetAndResetTimingFrameInfo() override;
+
   // Takes ownership of the file, is responsible for closing it later.
   // Calling this method will close and finalize any current log.
   // Giving rtc::kInvalidPlatformFileValue disables logging.
@@ -77,9 +81,6 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   // the log is closed and finalized. A |byte_limit| of 0 means no limit.
   void EnableEncodedFrameRecording(rtc::PlatformFile file,
                                    size_t byte_limit) override;
-
-  // RtpPacketSinkInterface.
-  void OnRtpPacket(const RtpPacketReceived& packet) override;
 
   // Implements rtc::VideoSinkInterface<VideoFrame>.
   void OnFrame(const VideoFrame& video_frame) override;
@@ -107,7 +108,7 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   void SetMinimumPlayoutDelay(int delay_ms) override;
 
  private:
-  static bool DecodeThreadFunction(void* ptr);
+  static void DecodeThreadFunction(void* ptr);
   bool Decode();
 
   rtc::ThreadChecker worker_thread_checker_;
@@ -127,7 +128,7 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   vcm::VideoReceiver video_receiver_;
   std::unique_ptr<rtc::VideoSinkInterface<VideoFrame>> incoming_video_stream_;
   ReceiveStatisticsProxy stats_proxy_;
-  RtpStreamReceiver rtp_stream_receiver_;
+  RtpVideoStreamReceiver rtp_video_stream_receiver_;
   std::unique_ptr<VideoStreamDecoder> video_stream_decoder_;
   RtpStreamsSynchronizer rtp_stream_sync_;
 
@@ -137,6 +138,9 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   // Members for the new jitter buffer experiment.
   std::unique_ptr<VCMJitterEstimator> jitter_estimator_;
   std::unique_ptr<video_coding::FrameBuffer> frame_buffer_;
+
+  std::unique_ptr<RtpStreamReceiverInterface> media_receiver_;
+  std::unique_ptr<RtpStreamReceiverInterface> rtx_receiver_;
 };
 }  // namespace internal
 }  // namespace webrtc

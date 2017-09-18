@@ -15,7 +15,8 @@
 
 #include "angle_gl.h"
 #include "common/angleutils.h"
-#include "compiler/translator/IntermNode.h"
+#include "compiler/translator/IntermNode_util.h"
+#include "compiler/translator/IntermTraverse.h"
 
 namespace sh
 {
@@ -47,15 +48,14 @@ bool ContainsVectorNode(const TIntermSequence &sequence)
 
 TIntermBinary *ConstructVectorIndexBinaryNode(TIntermSymbol *symbolNode, int index)
 {
-    return new TIntermBinary(EOpIndexDirect, symbolNode, TIntermTyped::CreateIndexNode(index));
+    return new TIntermBinary(EOpIndexDirect, symbolNode, CreateIndexNode(index));
 }
 
 TIntermBinary *ConstructMatrixIndexBinaryNode(TIntermSymbol *symbolNode, int colIndex, int rowIndex)
 {
     TIntermBinary *colVectorNode = ConstructVectorIndexBinaryNode(symbolNode, colIndex);
 
-    return new TIntermBinary(EOpIndexDirect, colVectorNode,
-                             TIntermTyped::CreateIndexNode(rowIndex));
+    return new TIntermBinary(EOpIndexDirect, colVectorNode, CreateIndexNode(rowIndex));
 }
 
 class ScalarizeArgsTraverser : public TIntermTraverser
@@ -63,12 +63,11 @@ class ScalarizeArgsTraverser : public TIntermTraverser
   public:
     ScalarizeArgsTraverser(sh::GLenum shaderType,
                            bool fragmentPrecisionHigh,
-                           unsigned int *temporaryIndex)
-        : TIntermTraverser(true, false, false),
+                           TSymbolTable *symbolTable)
+        : TIntermTraverser(true, false, false, symbolTable),
           mShaderType(shaderType),
           mFragmentPrecisionHigh(fragmentPrecisionHigh)
     {
-        useTemporaryIndex(temporaryIndex);
     }
 
   protected:
@@ -204,7 +203,7 @@ void ScalarizeArgsTraverser::scalarizeArgs(TIntermAggregate *aggregate,
 void ScalarizeArgsTraverser::createTempVariable(TIntermTyped *original)
 {
     ASSERT(original);
-    nextTemporaryIndex();
+    nextTemporaryId();
     TIntermDeclaration *decl = createTempInitDeclaration(original);
 
     TType type = original->getType();
@@ -230,9 +229,9 @@ void ScalarizeArgsTraverser::createTempVariable(TIntermTyped *original)
 void ScalarizeVecAndMatConstructorArgs(TIntermBlock *root,
                                        sh::GLenum shaderType,
                                        bool fragmentPrecisionHigh,
-                                       unsigned int *temporaryIndex)
+                                       TSymbolTable *symbolTable)
 {
-    ScalarizeArgsTraverser scalarizer(shaderType, fragmentPrecisionHigh, temporaryIndex);
+    ScalarizeArgsTraverser scalarizer(shaderType, fragmentPrecisionHigh, symbolTable);
     root->traverse(&scalarizer);
 }
 

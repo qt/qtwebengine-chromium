@@ -60,16 +60,6 @@ CPDF_LinkList* GetLinkList(CPDF_Page* page) {
   return pHolder->get();
 }
 
-unsigned long Utf16EncodeMaybeCopyAndReturnLength(const CFX_WideString& text,
-                                                  void* buffer,
-                                                  unsigned long buflen) {
-  CFX_ByteString encodedText = text.UTF16LE_Encode();
-  unsigned long len = encodedText.GetLength();
-  if (buffer && len <= buflen)
-    memcpy(buffer, encodedText.c_str(), len);
-  return len;
-}
-
 }  // namespace
 
 DLLEXPORT FPDF_BOOKMARK STDCALL
@@ -394,6 +384,7 @@ DLLEXPORT unsigned long STDCALL FPDF_GetMetaText(FPDF_DOCUMENT document,
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
   if (!pDoc)
     return 0;
+  pDoc->LoadDocumentInfo();
   CPDF_Dictionary* pInfo = pDoc->GetInfo();
   if (!pInfo)
     return 0;

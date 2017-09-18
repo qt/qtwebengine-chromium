@@ -14,14 +14,14 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/base/array_view.h"
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/event.h"
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/base/random.h"
 #include "webrtc/config.h"
 #include "webrtc/modules/audio_processing/test/test_utils.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/rtc_base/array_view.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/event.h"
+#include "webrtc/rtc_base/platform_thread.h"
+#include "webrtc/rtc_base/random.h"
 #include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/gtest.h"
 
@@ -479,11 +479,12 @@ void PopulateAudioFrame(AudioFrame* frame,
                         RandomGenerator* rand_gen) {
   ASSERT_GT(amplitude, 0);
   ASSERT_LE(amplitude, 32767);
+  int16_t* frame_data = frame->mutable_data();
   for (size_t ch = 0; ch < frame->num_channels_; ch++) {
     for (size_t k = 0; k < frame->samples_per_channel_; k++) {
       // Store random 16 bit number between -(amplitude+1) and
       // amplitude.
-      frame->data_[k * ch] =
+      frame_data[k * ch] =
           rand_gen->RandInt(2 * amplitude + 1) - amplitude - 1;
     }
   }

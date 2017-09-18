@@ -67,8 +67,8 @@
 #include "webrtc/p2p/base/tcpport.h"
 
 #include "webrtc/p2p/base/common.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace cricket {
 
@@ -96,23 +96,9 @@ TCPPort::TCPPort(rtc::Thread* thread,
       error_(0) {
   // TODO(mallinath) - Set preference value as per RFC 6544.
   // http://b/issue?id=7141794
-}
-
-bool TCPPort::Init() {
   if (allow_listen_) {
-    // Treat failure to create or bind a TCP socket as fatal.  This
-    // should never happen.
-    socket_ = socket_factory()->CreateServerTcpSocket(
-        rtc::SocketAddress(ip(), 0), min_port(), max_port(),
-        false /* ssl */);
-    if (!socket_) {
-      LOG_J(LS_ERROR, this) << "TCP socket creation failed.";
-      return false;
-    }
-    socket_->SignalNewConnection.connect(this, &TCPPort::OnNewConnection);
-    socket_->SignalAddressReady.connect(this, &TCPPort::OnAddressReady);
+    TryCreateServerSocket();
   }
-  return true;
 }
 
 TCPPort::~TCPPort() {
@@ -272,6 +258,18 @@ void TCPPort::OnNewConnection(rtc::AsyncPacketSocket* socket,
   LOG_J(LS_VERBOSE, this) << "Accepted connection from "
                           << incoming.addr.ToSensitiveString();
   incoming_.push_back(incoming);
+}
+
+void TCPPort::TryCreateServerSocket() {
+  socket_ = socket_factory()->CreateServerTcpSocket(
+      rtc::SocketAddress(ip(), 0), min_port(), max_port(), false /* ssl */);
+  if (!socket_) {
+    LOG_J(LS_WARNING, this)
+        << "TCP server socket creation failed; continuing anyway.";
+    return;
+  }
+  socket_->SignalNewConnection.connect(this, &TCPPort::OnNewConnection);
+  socket_->SignalAddressReady.connect(this, &TCPPort::OnAddressReady);
 }
 
 rtc::AsyncPacketSocket* TCPPort::GetIncoming(

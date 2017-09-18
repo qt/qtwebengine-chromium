@@ -15,6 +15,7 @@ rtc_static_library("rtp_rtcp") {
     "include/receive_statistics.h",
     "include/remote_ntp_time_estimator.h",
     "include/rtp_cvo.h",
+    "include/rtp_header_extension_map.h",
     "include/rtp_header_parser.h",
     "include/rtp_payload_registry.h",
     "include/rtp_receiver.h",
@@ -109,8 +110,7 @@ rtc_static_library("rtp_rtcp") {
     "source/rtp_format_vp8.h",
     "source/rtp_format_vp9.cc",
     "source/rtp_format_vp9.h",
-    "source/rtp_header_extension.cc",
-    "source/rtp_header_extension.h",
+    "source/rtp_header_extension_map.cc",
     "source/rtp_header_extensions.cc",
     "source/rtp_header_extensions.h",
     "source/rtp_header_parser.cc",
@@ -172,8 +172,7 @@ rtc_static_library("rtp_rtcp") {
     "../../api/audio_codecs:audio_codecs_api",
     "../../base:gtest_prod",
     "../../base:rtc_base_approved",
-    "../../base:rtc_task_queue",
-    "../../call:call_interfaces",
+    "../../base:sequenced_task_checker",
     "../../common_video",
     "../../logging:rtc_event_log_api",
     "../../system_wrappers",
@@ -212,6 +211,21 @@ rtc_source_set("fec_test_helper") {
   }
 }
 
+rtc_source_set("mock_rtp_rtcp") {
+  testonly = true
+  sources = [
+    "mocks/mock_recovered_packet_receiver.h",
+    "mocks/mock_rtcp_rtt_stats.h",
+    "mocks/mock_rtp_rtcp.h",
+  ]
+  deps = [
+    ":rtp_rtcp",
+    "..:module_api",
+    "../../base:rtc_base_approved",
+    "../../test:test_support",
+  ]
+}
+
 if (rtc_include_tests) {
   rtc_executable("test_packet_masks_metrics") {
     testonly = true
@@ -223,8 +237,8 @@ if (rtc_include_tests) {
 
     deps = [
       ":rtp_rtcp",
+      "../../test:test_main",
       "//testing/gtest",
-      "//webrtc/test:test_main",
     ]
   }  # test_packet_masks_metrics
 
@@ -235,7 +249,7 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc/modules:modules_tests" ]
+      visibility = [ "../../modules:modules_tests" ]
     }
     sources = [
       "test/testFec/test_fec.cc",
@@ -249,21 +263,6 @@ if (rtc_include_tests) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
-  }
-
-  rtc_source_set("mock_rtp_rtcp") {
-    testonly = true
-    sources = [
-      "mocks/mock_recovered_packet_receiver.h",
-      "mocks/mock_rtcp_rtt_stats.h",
-      "mocks/mock_rtp_rtcp.h",
-    ]
-    deps = [
-      ":rtp_rtcp",
-      "..:module_api",
-      "../../base:rtc_base_approved",
-      "../../test:test_support",
-    ]
   }
 
   rtc_source_set("rtp_rtcp_unittests") {
@@ -318,7 +317,7 @@ if (rtc_include_tests) {
       "source/rtp_format_vp8_test_helper.h",
       "source/rtp_format_vp8_unittest.cc",
       "source/rtp_format_vp9_unittest.cc",
-      "source/rtp_header_extension_unittest.cc",
+      "source/rtp_header_extension_map_unittest.cc",
       "source/rtp_packet_history_unittest.cc",
       "source/rtp_packet_unittest.cc",
       "source/rtp_payload_registry_unittest.cc",

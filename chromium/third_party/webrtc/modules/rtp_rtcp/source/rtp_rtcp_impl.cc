@@ -12,13 +12,14 @@
 
 #include <string.h>
 
+#include <algorithm>
 #include <set>
 #include <string>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/common_types.h"
 #include "webrtc/config.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 #ifdef _WIN32
 // Disable warning C4355: 'this' : used in base member initializer list.
@@ -26,6 +27,11 @@
 #endif
 
 namespace webrtc {
+namespace {
+const int64_t kRtpRtcpMaxIdleTimeProcessMs = 5;
+const int64_t kRtpRtcpRttProcessTimeMs = 1000;
+const int64_t kRtpRtcpBitrateProcessTimeMs = 10;
+}  // namespace
 
 RTPExtensionType StringToRtpExtensionType(const std::string& extension) {
   if (extension == RtpExtension::kTimestampOffsetUri)
@@ -42,6 +48,8 @@ RTPExtensionType StringToRtpExtensionType(const std::string& extension) {
     return kRtpExtensionPlayoutDelay;
   if (extension == RtpExtension::kVideoContentTypeUri)
     return kRtpExtensionVideoContentType;
+  if (extension == RtpExtension::kVideoTimingUri)
+    return kRtpExtensionVideoTiming;
   RTC_NOTREACHED() << "Looking up unsupported RTP extension.";
   return kRtpExtensionNone;
 }
@@ -87,9 +95,12 @@ ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
                      this),
       clock_(configuration.clock),
       audio_(configuration.audio),
-      last_process_time_(configuration.clock->TimeInMilliseconds()),
-      last_bitrate_process_time_(configuration.clock->TimeInMilliseconds()),
-      last_rtt_process_time_(configuration.clock->TimeInMilliseconds()),
+      keepalive_config_(configuration.keepalive_config),
+      last_bitrate_process_time_(clock_->TimeInMilliseconds()),
+      last_rtt_process_time_(clock_->TimeInMilliseconds()),
+      next_process_time_(clock_->TimeInMilliseconds() +
+                         kRtpRtcpMaxIdleTimeProcessMs),
+      next_keepalive_time_(-1),
       packet_overhead_(28),  // IPV4 UDP.
       nack_last_time_sent_full_(0),
       nack_last_time_sent_full_prev_(0),
@@ -116,6 +127,11 @@ ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
         configuration.overhead_observer));
     // Make sure rtcp sender use same timestamp offset as rtp sender.
     rtcp_sender_.SetTimestampOffset(rtp_sender_->TimestampOffset());
+
+    if (keepalive_config_.timeout_interval_ms != -1) {
+      next_keepalive_time_ =
+          clock_->TimeInMilliseconds() + keepalive_config_.timeout_interval_ms;
+    }
   }
 
   // Set default packet size limit.
@@ -128,24 +144,38 @@ ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
 // Returns the number of milliseconds until the module want a worker thread
 // to call Process.
 int64_t ModuleRtpRtcpImpl::TimeUntilNextProcess() {
-  const int64_t now = clock_->TimeInMilliseconds();
-  const int64_t kRtpRtcpMaxIdleTimeProcessMs = 5;
-  return kRtpRtcpMaxIdleTimeProcessMs - (now - last_process_time_);
+  return std::max<int64_t>(0,
+                           next_process_time_ - clock_->TimeInMilliseconds());
 }
 
 // Process any pending tasks such as timeouts (non time critical events).
 void ModuleRtpRtcpImpl::Process() {
   const int64_t now = clock_->TimeInMilliseconds();
-  last_process_time_ = now;
+  next_process_time_ = now + kRtpRtcpMaxIdleTimeProcessMs;
 
   if (rtp_sender_) {
-    const int64_t kRtpRtcpBitrateProcessTimeMs = 10;
     if (now >= last_bitrate_process_time_ + kRtpRtcpBitrateProcessTimeMs) {
       rtp_sender_->ProcessBitrate();
       last_bitrate_process_time_ = now;
+      next_process_time_ =
+          std::min(next_process_time_, now + kRtpRtcpBitrateProcessTimeMs);
+    }
+    if (keepalive_config_.timeout_interval_ms > 0 &&
+        now >= next_keepalive_time_) {
+      int64_t last_send_time_ms = rtp_sender_->LastTimestampTimeMs();
+      // If no packet has been sent, |last_send_time_ms| will be 0, and so the
+      // keep-alive will be triggered as expected.
+      if (now >= last_send_time_ms + keepalive_config_.timeout_interval_ms) {
+        rtp_sender_->SendKeepAlive(keepalive_config_.payload_type);
+        next_keepalive_time_ = now + keepalive_config_.timeout_interval_ms;
+      } else {
+        next_keepalive_time_ =
+            last_send_time_ms + keepalive_config_.timeout_interval_ms;
+      }
+      next_process_time_ = std::min(next_process_time_, next_keepalive_time_);
     }
   }
-  const int64_t kRtpRtcpRttProcessTimeMs = 1000;
+
   bool process_rtt = now >= last_rtt_process_time_ + kRtpRtcpRttProcessTimeMs;
   if (rtcp_sender_.Sending()) {
     // Process RTT if we have received a receiver report and we haven't
@@ -199,6 +229,8 @@ void ModuleRtpRtcpImpl::Process() {
   // Get processed rtt.
   if (process_rtt) {
     last_rtt_process_time_ = now;
+    next_process_time_ = std::min(
+        next_process_time_, last_rtt_process_time_ + kRtpRtcpRttProcessTimeMs);
     if (rtt_stats_) {
       // Make sure we have a valid RTT before setting.
       int64_t last_rtt = rtt_stats_->LastProcessedRtt();
@@ -233,7 +265,9 @@ void ModuleRtpRtcpImpl::SetRtxSendPayloadType(int payload_type,
 }
 
 rtc::Optional<uint32_t> ModuleRtpRtcpImpl::FlexfecSsrc() const {
-  return rtp_sender_->FlexfecSsrc();
+  if (rtp_sender_)
+    return rtp_sender_->FlexfecSsrc();
+  return rtc::Optional<uint32_t>();
 }
 
 int32_t ModuleRtpRtcpImpl::IncomingRtcpPacket(
@@ -863,6 +897,9 @@ void ModuleRtpRtcpImpl::SetRtcpReceiverSsrcs(uint32_t main_ssrc) {
   ssrcs.insert(main_ssrc);
   if (RtxSendStatus() != kRtxOff)
     ssrcs.insert(rtp_sender_->RtxSsrc());
+  rtc::Optional<uint32_t> flexfec_ssrc = FlexfecSsrc();
+  if (flexfec_ssrc)
+    ssrcs.insert(*flexfec_ssrc);
   rtcp_receiver_.SetSsrcs(main_ssrc, ssrcs);
 }
 

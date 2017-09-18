@@ -12,25 +12,57 @@
 #include <array>
 #include <memory>
 
+#include "common/MemoryBuffer.h"
 #include "common/angleutils.h"
 #include "common/debug.h"
 #include "libANGLE/Error.h"
+#include "libANGLE/renderer/renderer_utils.h"
 
 namespace rx
 {
+// These two methods are declared here to prevent circular includes.
+namespace d3d11
+{
+HRESULT SetDebugName(ID3D11DeviceChild *resource, const char *name);
+
+template <typename T>
+HRESULT SetDebugName(angle::ComPtr<T> &resource, const char *name)
+{
+    return SetDebugName(resource.Get(), name);
+}
+}  // namespace d3d11
+
 class Renderer11;
 class ResourceManager11;
 template <typename T>
 class SharedResource11;
+class TextureHelper11;
+
+using InputElementArray = WrappedArray<D3D11_INPUT_ELEMENT_DESC>;
+using ShaderData        = WrappedArray<uint8_t>;
 
 // Format: ResourceType, D3D11 type, DESC type, init data type.
-#define ANGLE_RESOURCE_TYPE_OP(NAME, OP)                                                    \
-    OP(NAME, DepthStencilView, ID3D11DepthStencilView, D3D11_DEPTH_STENCIL_VIEW_DESC,       \
-       ID3D11Resource)                                                                      \
-    OP(NAME, RenderTargetView, ID3D11RenderTargetView, D3D11_RENDER_TARGET_VIEW_DESC,       \
-       ID3D11Resource)                                                                      \
-    OP(NAME, ShaderResourceView, ID3D11ShaderResourceView, D3D11_SHADER_RESOURCE_VIEW_DESC, \
-       ID3D11Resource)
+#define ANGLE_RESOURCE_TYPE_OP(NAME, OP)                                                     \
+    OP(NAME, BlendState, ID3D11BlendState, D3D11_BLEND_DESC, void)                           \
+    OP(NAME, Buffer, ID3D11Buffer, D3D11_BUFFER_DESC, const D3D11_SUBRESOURCE_DATA)          \
+    OP(NAME, ComputeShader, ID3D11ComputeShader, ShaderData, void)                           \
+    OP(NAME, DepthStencilState, ID3D11DepthStencilState, D3D11_DEPTH_STENCIL_DESC, void)     \
+    OP(NAME, DepthStencilView, ID3D11DepthStencilView, D3D11_DEPTH_STENCIL_VIEW_DESC,        \
+       ID3D11Resource)                                                                       \
+    OP(NAME, GeometryShader, ID3D11GeometryShader, ShaderData,                               \
+       const std::vector<D3D11_SO_DECLARATION_ENTRY>)                                        \
+    OP(NAME, InputLayout, ID3D11InputLayout, InputElementArray, const ShaderData)            \
+    OP(NAME, PixelShader, ID3D11PixelShader, ShaderData, void)                               \
+    OP(NAME, Query, ID3D11Query, D3D11_QUERY_DESC, void)                                     \
+    OP(NAME, RasterizerState, ID3D11RasterizerState, D3D11_RASTERIZER_DESC, void)            \
+    OP(NAME, RenderTargetView, ID3D11RenderTargetView, D3D11_RENDER_TARGET_VIEW_DESC,        \
+       ID3D11Resource)                                                                       \
+    OP(NAME, SamplerState, ID3D11SamplerState, D3D11_SAMPLER_DESC, void)                     \
+    OP(NAME, ShaderResourceView, ID3D11ShaderResourceView, D3D11_SHADER_RESOURCE_VIEW_DESC,  \
+       ID3D11Resource)                                                                       \
+    OP(NAME, Texture2D, ID3D11Texture2D, D3D11_TEXTURE2D_DESC, const D3D11_SUBRESOURCE_DATA) \
+    OP(NAME, Texture3D, ID3D11Texture3D, D3D11_TEXTURE3D_DESC, const D3D11_SUBRESOURCE_DATA) \
+    OP(NAME, VertexShader, ID3D11VertexShader, ShaderData, void)
 
 #define ANGLE_RESOURCE_TYPE_LIST(NAME, RESTYPE, D3D11TYPE, DESCTYPE, INITDATATYPE) RESTYPE,
 
@@ -156,7 +188,14 @@ class Resource11Base : angle::NonCopyable
 
     void reset() { mData.reset(new DataT()); }
 
+    ResourceSerial getSerial() const
+    {
+        return ResourceSerial(reinterpret_cast<uintptr_t>(mData->object));
+    }
+
   protected:
+    friend class TextureHelper11;
+
     Resource11Base() : mData(new DataT()) {}
 
     Resource11Base(Resource11Base &&movedObj) : mData(new DataT())
@@ -221,12 +260,11 @@ class SharedResource11 : public Resource11Base<T, std::shared_ptr, TypedData<T>>
         return *this;
     }
 
-    SharedResource11(const SharedResource11 &sharedObj) { this->mData = sharedObj.mData; }
-
-    SharedResource11 &operator=(const SharedResource11 &sharedObj)
+    SharedResource11 makeCopy() const
     {
-        this->mData = sharedObj.mData;
-        return *this;
+        SharedResource11 copy;
+        copy.mData = this->mData;
+        return std::move(copy);
     }
 
   private:
@@ -267,14 +305,25 @@ class ResourceManager11 final : angle::NonCopyable
     }
 
     template <typename T>
-    void onRelease(T *resource);
+    void onRelease(T *resource)
+    {
+        onReleaseGeneric(GetResourceTypeFromD3D11<T>(), resource);
+    }
+
+    void onReleaseGeneric(ResourceType resourceType, ID3D11DeviceChild *resource);
 
   private:
     void incrResource(ResourceType resourceType, size_t memorySize);
     void decrResource(ResourceType resourceType, size_t memorySize);
 
+    template <typename T>
+    GetInitDataFromD3D11<T> *createInitDataIfNeeded(const GetDescFromD3D11<T> *desc);
+
     std::array<size_t, NumResourceTypes> mAllocatedResourceCounts;
     std::array<size_t, NumResourceTypes> mAllocatedResourceDeviceMemory;
+    angle::MemoryBuffer mZeroMemory;
+
+    std::vector<D3D11_SUBRESOURCE_DATA> mShadowInitData;
 };
 
 template <typename ResourceT>

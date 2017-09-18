@@ -14,7 +14,7 @@
 #include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
-#include "xfa/fxfa/app/xfa_ffnotify.h"
+#include "xfa/fxfa/app/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_containerlayoutitem.h"
 #include "xfa/fxfa/parser/cxfa_contentlayoutitem.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
@@ -1748,7 +1748,7 @@ void CXFA_ItemLayoutProcessor::DoLayoutTableContainer(CXFA_Node* pLayoutNode) {
                               : containerSize.width - fLeftInset - fRightInset;
   CFX_WideStringC wsColumnWidths;
   if (pLayoutNode->TryCData(XFA_ATTRIBUTE_ColumnWidths, wsColumnWidths)) {
-    auto widths = SeparateStringW(wsColumnWidths.c_str(),
+    auto widths = SeparateStringW(wsColumnWidths.unterminated_c_str(),
                                   wsColumnWidths.GetLength(), L' ');
     for (auto& width : widths) {
       width.TrimLeft(L' ');

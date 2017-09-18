@@ -8,6 +8,7 @@
 
 #include "angle_gl.h"
 #include "compiler/translator/Diagnostics.h"
+#include "compiler/translator/IntermTraverse.h"
 #include "compiler/translator/ParseContext.h"
 
 namespace sh
@@ -70,7 +71,7 @@ class ValidateLimitationsTraverser : public TLValueTrackingTraverser
 {
   public:
     ValidateLimitationsTraverser(sh::GLenum shaderType,
-                                 const TSymbolTable &symbolTable,
+                                 TSymbolTable *symbolTable,
                                  int shaderVersion,
                                  TDiagnostics *diagnostics);
 
@@ -103,7 +104,7 @@ class ValidateLimitationsTraverser : public TLValueTrackingTraverser
 };
 
 ValidateLimitationsTraverser::ValidateLimitationsTraverser(sh::GLenum shaderType,
-                                                           const TSymbolTable &symbolTable,
+                                                           TSymbolTable *symbolTable,
                                                            int shaderVersion,
                                                            TDiagnostics *diagnostics)
     : TLValueTrackingTraverser(true, false, false, symbolTable, shaderVersion),
@@ -431,7 +432,7 @@ bool ValidateLimitationsTraverser::validateIndexing(TIntermBinary *node)
 
 bool ValidateLimitations(TIntermNode *root,
                          GLenum shaderType,
-                         const TSymbolTable &symbolTable,
+                         TSymbolTable *symbolTable,
                          int shaderVersion,
                          TDiagnostics *diagnostics)
 {

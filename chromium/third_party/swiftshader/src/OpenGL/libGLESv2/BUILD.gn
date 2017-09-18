@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//build/toolchain/toolchain.gni")
-
 # Need a separate config to ensure the warnings are added to the end.
 config("swiftshader_libGLESv2_private_config") {
   defines = [
@@ -49,13 +47,8 @@ config("swiftshader_libGLESv2_private_config") {
       "LOG_TAG=\"swiftshader_libGLESv2\"",
       "__STDC_CONSTANT_MACROS",
       "__STDC_LIMIT_MACROS",
+      "GL_APICALL=__attribute__((visibility(\"default\")))",
     ]
-
-    if (is_linux) {
-      defines += [ "GL_APICALL=__attribute__((visibility(\"protected\")))" ]
-    } else {
-      defines += [ "GL_APICALL=__attribute__((visibility(\"default\")))" ]
-    }
   }
 }
 
@@ -69,6 +62,7 @@ shared_library("swiftshader_libGLESv2") {
     "../../OpenGL/compiler:swiftshader_opengl_compiler",
     "../../Reactor:swiftshader_reactor",
     "../../Renderer:swiftshader_renderer",
+    "//build/config:exe_and_shlib_deps",
   ]
 
   sources = [
@@ -99,22 +93,11 @@ shared_library("swiftshader_libGLESv2") {
   if (is_win) {
     configs -= [ "//build/config/win:unicode" ]
     ldflags = [ "/DEF:" + rebase_path("libGLESv2.def", root_build_dir) ]
+  } else if (is_mac) {
+    ldflags = [ "-Wl,-install_name,@rpath/libswiftshader_libGLESv2.dylib" ]
   } else if (is_linux) {
-    sources += [ "TypeInfo.cpp" ]
     ldflags =
         [ "-Wl,--version-script=" + rebase_path("exports.map", root_build_dir) ]
-  }
-
-  if (use_thin_lto) {
-    # https://crbug.com/686980
-    # This target relies on the linker to be smart and garbage collect unused symbols.
-    # It is not the case for LLD + ThinLTO, so we have to use this ugly workaround.
-    cflags = [
-      "-Xclang",
-      "-fno-lto-unit",
-      "-fno-whole-program-vtables",
-      "-fno-sanitize=cfi",
-    ]
   }
 
   configs -= [ "//build/config/compiler:chromium_code" ]

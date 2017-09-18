@@ -12,14 +12,14 @@
 
 #include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "webrtc/base/gunit.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/ptr_util.h"
-#include "webrtc/base/ssladapter.h"
-#include "webrtc/base/sslstreamadapter.h"
-#include "webrtc/base/stringencode.h"
-#include "webrtc/base/stringutils.h"
-#include "webrtc/base/thread.h"
+#include "webrtc/rtc_base/gunit.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/ptr_util.h"
+#include "webrtc/rtc_base/ssladapter.h"
+#include "webrtc/rtc_base/sslstreamadapter.h"
+#include "webrtc/rtc_base/stringencode.h"
+#include "webrtc/rtc_base/stringutils.h"
+#include "webrtc/rtc_base/thread.h"
 #ifdef WEBRTC_ANDROID
 #include "webrtc/pc/test/androidtestinitializer.h"
 #endif
@@ -54,12 +54,14 @@ class PeerConnectionEndToEndTest
       DataChannelList;
 
   PeerConnectionEndToEndTest() {
-    RTC_CHECK(network_thread_.Start());
-    RTC_CHECK(worker_thread_.Start());
+    network_thread_ = rtc::Thread::CreateWithSocketServer();
+    worker_thread_ = rtc::Thread::Create();
+    RTC_CHECK(network_thread_->Start());
+    RTC_CHECK(worker_thread_->Start());
     caller_ = new rtc::RefCountedObject<PeerConnectionTestWrapper>(
-        "caller", &network_thread_, &worker_thread_);
+        "caller", network_thread_.get(), worker_thread_.get());
     callee_ = new rtc::RefCountedObject<PeerConnectionTestWrapper>(
-        "callee", &network_thread_, &worker_thread_);
+        "callee", network_thread_.get(), worker_thread_.get());
     webrtc::PeerConnectionInterface::IceServer ice_server;
     ice_server.uri = "stun:stun.l.google.com:19302";
     config_.servers.push_back(ice_server);
@@ -165,8 +167,8 @@ class PeerConnectionEndToEndTest
   }
 
  protected:
-  rtc::Thread network_thread_;
-  rtc::Thread worker_thread_;
+  std::unique_ptr<rtc::Thread> network_thread_;
+  std::unique_ptr<rtc::Thread> worker_thread_;
   rtc::scoped_refptr<PeerConnectionTestWrapper> caller_;
   rtc::scoped_refptr<PeerConnectionTestWrapper> callee_;
   DataChannelList caller_signaled_data_channels_;

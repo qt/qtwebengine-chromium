@@ -48,27 +48,29 @@ struct SurfaceState final : private angle::NonCopyable
 class Surface : public gl::FramebufferAttachmentObject
 {
   public:
-    virtual ~Surface();
-
     rx::SurfaceImpl *getImplementation() const { return mImplementation; }
 
     EGLint getType() const;
 
-    Error initialize(const Display &display);
-    Error swap(const Display &display);
-    Error swapWithDamage(EGLint *rects, EGLint n_rects);
-    Error postSubBuffer(EGLint x, EGLint y, EGLint width, EGLint height);
+    Error initialize(const Display *display);
+    Error swap(const gl::Context *context);
+    Error swapWithDamage(const gl::Context *context, EGLint *rects, EGLint n_rects);
+    Error postSubBuffer(const gl::Context *context,
+                        EGLint x,
+                        EGLint y,
+                        EGLint width,
+                        EGLint height);
     Error querySurfacePointerANGLE(EGLint attribute, void **value);
-    Error bindTexImage(gl::Texture *texture, EGLint buffer);
-    Error releaseTexImage(EGLint buffer);
+    Error bindTexImage(const gl::Context *context, gl::Texture *texture, EGLint buffer);
+    Error releaseTexImage(const gl::Context *context, EGLint buffer);
 
     Error getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc);
 
     EGLint isPostSubBufferSupported() const;
 
     void setSwapInterval(EGLint interval);
-    void setIsCurrent(Display *display, bool isCurrent);
-    void onDestroy(Display *display);
+    Error setIsCurrent(const gl::Context *context, bool isCurrent);
+    Error onDestroy(const Display *display);
 
     const Config *getConfig() const;
 
@@ -92,8 +94,8 @@ class Surface : public gl::FramebufferAttachmentObject
                                           const gl::ImageIndex &imageIndex) const override;
     GLsizei getAttachmentSamples(const gl::ImageIndex &imageIndex) const override;
 
-    void onAttach() override {}
-    void onDetach() override {}
+    void onAttach(const gl::Context *context) override {}
+    void onDetach(const gl::Context *context) override {}
     GLuint getId() const override;
 
     bool flexibleSurfaceCompatibilityRequested() const
@@ -106,13 +108,14 @@ class Surface : public gl::FramebufferAttachmentObject
 
   protected:
     Surface(EGLint surfaceType, const egl::Config *config, const AttributeMap &attributes);
+    virtual ~Surface();
     rx::FramebufferAttachmentObjectImpl *getAttachmentImpl() const override { return mImplementation; }
 
-    gl::Framebuffer *createDefaultFramebuffer();
+    gl::Framebuffer *createDefaultFramebuffer(const Display *display);
 
     // ANGLE-only method, used internally
     friend class gl::Texture;
-    void releaseTexImageFromTexture();
+    void releaseTexImageFromTexture(const gl::Context *context);
 
     SurfaceState mState;
     rx::SurfaceImpl *mImplementation;
@@ -139,13 +142,13 @@ class Surface : public gl::FramebufferAttachmentObject
 
     EGLint mOrientation;
 
-    BindingPointer<gl::Texture> mTexture;
+    gl::BindingPointer<gl::Texture> mTexture;
 
     gl::Format mBackFormat;
     gl::Format mDSFormat;
 
   private:
-    void destroy(const egl::Display *display);
+    Error destroyImpl(const Display *display);
 };
 
 class WindowSurface final : public Surface
@@ -169,6 +172,8 @@ class PbufferSurface final : public Surface
                    EGLenum buftype,
                    EGLClientBuffer clientBuffer,
                    const AttributeMap &attribs);
+
+  protected:
     ~PbufferSurface() override;
 };
 
@@ -179,8 +184,12 @@ class PixmapSurface final : public Surface
                   const Config *config,
                   NativePixmapType nativePixmap,
                   const AttributeMap &attribs);
+
+  protected:
     ~PixmapSurface() override;
 };
+
+using SurfacePointer = angle::UniqueObjectPointer<Surface, Display>;
 
 }  // namespace egl
 

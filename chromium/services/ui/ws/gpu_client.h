@@ -9,13 +9,15 @@
 #include "gpu/config/gpu_info.h"
 #include "services/ui/public/interfaces/gpu.mojom.h"
 
+namespace viz {
+class ServerGpuMemoryBufferManager;
+}
+
 namespace ui {
 
 namespace mojom {
 class GpuService;
 }  // namespace mojom
-
-class ServerGpuMemoryBufferManager;
 
 namespace ws {
 
@@ -29,7 +31,7 @@ class GpuClient : public mojom::Gpu {
  public:
   GpuClient(int client_id,
             gpu::GPUInfo* gpu_info,
-            ServerGpuMemoryBufferManager* gpu_memory_buffer_manager,
+            viz::ServerGpuMemoryBufferManager* gpu_memory_buffer_manager,
             mojom::GpuService* gpu_service);
   ~GpuClient() override;
 
@@ -42,6 +44,10 @@ class GpuClient : public mojom::Gpu {
   // mojom::Gpu overrides:
   void EstablishGpuChannel(
       const EstablishGpuChannelCallback& callback) override;
+  void CreateJpegDecodeAccelerator(
+      media::mojom::GpuJpegDecodeAcceleratorRequest jda_request) override;
+  void CreateVideoEncodeAccelerator(
+      media::mojom::VideoEncodeAcceleratorRequest vea_request) override;
   void CreateGpuMemoryBuffer(
       gfx::GpuMemoryBufferId id,
       const gfx::Size& size,
@@ -55,7 +61,7 @@ class GpuClient : public mojom::Gpu {
 
   // The objects these pointers refer to are owned by the GpuHost object.
   const gpu::GPUInfo* gpu_info_;
-  ServerGpuMemoryBufferManager* gpu_memory_buffer_manager_;
+  viz::ServerGpuMemoryBufferManager* gpu_memory_buffer_manager_;
   mojom::GpuService* gpu_service_;
 
   base::WeakPtrFactory<GpuClient> weak_factory_;

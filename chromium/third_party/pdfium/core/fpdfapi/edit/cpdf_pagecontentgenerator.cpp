@@ -17,6 +17,7 @@
 #include "core/fpdfapi/page/cpdf_path.h"
 #include "core/fpdfapi/page/cpdf_pathobject.h"
 #include "core/fpdfapi/page/cpdf_textobject.h"
+#include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
@@ -27,7 +28,7 @@
 
 namespace {
 
-CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& ar, const CFX_Matrix& matrix) {
+std::ostream& operator<<(std::ostream& ar, const CFX_Matrix& matrix) {
   ar << matrix.a << " " << matrix.b << " " << matrix.c << " " << matrix.d << " "
      << matrix.e << " " << matrix.f;
   return ar;
@@ -48,9 +49,10 @@ bool GetColor(const CPDF_Color* pColor, float* rgb) {
 
 }  // namespace
 
-CPDF_PageContentGenerator::CPDF_PageContentGenerator(CPDF_Page* pPage)
-    : m_pPage(pPage), m_pDocument(m_pPage->m_pDocument.Get()) {
-  for (const auto& pObj : *pPage->GetPageObjectList()) {
+CPDF_PageContentGenerator::CPDF_PageContentGenerator(
+    CPDF_PageObjectHolder* pObjHolder)
+    : m_pObjHolder(pObjHolder), m_pDocument(pObjHolder->m_pDocument.Get()) {
+  for (const auto& pObj : *pObjHolder->GetPageObjectList()) {
     if (pObj)
       m_pageObjects.emplace_back(pObj.get());
   }
@@ -59,23 +61,62 @@ CPDF_PageContentGenerator::CPDF_PageContentGenerator(CPDF_Page* pPage)
 CPDF_PageContentGenerator::~CPDF_PageContentGenerator() {}
 
 void CPDF_PageContentGenerator::GenerateContent() {
-  CFX_ByteTextBuf buf;
-  for (auto& pPageObj : m_pageObjects) {
-    if (CPDF_ImageObject* pImageObject = pPageObj->AsImage())
-      ProcessImage(&buf, pImageObject);
-    else if (CPDF_PathObject* pPathObj = pPageObj->AsPath())
-      ProcessPath(&buf, pPathObj);
-    else if (CPDF_TextObject* pTextObj = pPageObj->AsText())
-      ProcessText(&buf, pTextObj);
-  }
-  CPDF_Dictionary* pPageDict = m_pPage->m_pFormDict.Get();
-  CPDF_Object* pContent =
-      pPageDict ? pPageDict->GetDirectObjectFor("Contents") : nullptr;
-  if (pContent)
-    pPageDict->RemoveFor("Contents");
+  ASSERT(m_pObjHolder->IsPage());
 
-  CPDF_Stream* pStream = m_pDocument->NewIndirect<CPDF_Stream>();
-  pStream->SetData(buf.GetBuffer(), buf.GetLength());
+  CPDF_Document* pDoc = m_pDocument.Get();
+  std::ostringstream buf;
+
+  // Set the default graphic state values
+  buf << "q\n";
+  if (!m_pObjHolder->GetLastCTM().IsIdentity())
+    buf << m_pObjHolder->GetLastCTM().GetInverse() << " cm\n";
+  ProcessDefaultGraphics(&buf);
+
+  // Process the page objects
+  if (!ProcessPageObjects(&buf))
+    return;
+
+  // Return graphics to original state
+  buf << "Q\n";
+
+  // Add buffer to a stream in page's 'Contents'
+  CPDF_Dictionary* pPageDict = m_pObjHolder->m_pFormDict.Get();
+  CPDF_Object* pContent =
+      pPageDict ? pPageDict->GetObjectFor("Contents") : nullptr;
+  CPDF_Stream* pStream = pDoc->NewIndirect<CPDF_Stream>();
+  pStream->SetData(&buf);
+  if (pContent) {
+    CPDF_Array* pArray = ToArray(pContent);
+    if (pArray) {
+      pArray->AddNew<CPDF_Reference>(pDoc, pStream->GetObjNum());
+      return;
+    }
+    CPDF_Reference* pReference = ToReference(pContent);
+    if (!pReference) {
+      pPageDict->SetNewFor<CPDF_Reference>("Contents", m_pDocument.Get(),
+                                           pStream->GetObjNum());
+      return;
+    }
+    CPDF_Object* pDirectObj = pReference->GetDirect();
+    if (!pDirectObj) {
+      pPageDict->SetNewFor<CPDF_Reference>("Contents", m_pDocument.Get(),
+                                           pStream->GetObjNum());
+      return;
+    }
+    CPDF_Array* pObjArray = pDirectObj->AsArray();
+    if (pObjArray) {
+      pObjArray->AddNew<CPDF_Reference>(pDoc, pStream->GetObjNum());
+      return;
+    }
+    if (pDirectObj->IsStream()) {
+      CPDF_Array* pContentArray = pDoc->NewIndirect<CPDF_Array>();
+      pContentArray->AddNew<CPDF_Reference>(pDoc, pDirectObj->GetObjNum());
+      pContentArray->AddNew<CPDF_Reference>(pDoc, pStream->GetObjNum());
+      pPageDict->SetNewFor<CPDF_Reference>("Contents", pDoc,
+                                           pContentArray->GetObjNum());
+      return;
+    }
+  }
   pPageDict->SetNewFor<CPDF_Reference>("Contents", m_pDocument.Get(),
                                        pStream->GetObjNum());
 }
@@ -84,14 +125,15 @@ CFX_ByteString CPDF_PageContentGenerator::RealizeResource(
     uint32_t dwResourceObjNum,
     const CFX_ByteString& bsType) {
   ASSERT(dwResourceObjNum);
-  if (!m_pPage->m_pResources) {
-    m_pPage->m_pResources = m_pDocument->NewIndirect<CPDF_Dictionary>();
-    m_pPage->m_pFormDict->SetNewFor<CPDF_Reference>(
-        "Resources", m_pDocument.Get(), m_pPage->m_pResources->GetObjNum());
+  if (!m_pObjHolder->m_pResources) {
+    m_pObjHolder->m_pResources = m_pDocument->NewIndirect<CPDF_Dictionary>();
+    m_pObjHolder->m_pFormDict->SetNewFor<CPDF_Reference>(
+        "Resources", m_pDocument.Get(),
+        m_pObjHolder->m_pResources->GetObjNum());
   }
-  CPDF_Dictionary* pResList = m_pPage->m_pResources->GetDictFor(bsType);
+  CPDF_Dictionary* pResList = m_pObjHolder->m_pResources->GetDictFor(bsType);
   if (!pResList)
-    pResList = m_pPage->m_pResources->SetNewFor<CPDF_Dictionary>(bsType);
+    pResList = m_pObjHolder->m_pResources->SetNewFor<CPDF_Dictionary>(bsType);
 
   CFX_ByteString name;
   int idnum = 1;
@@ -107,7 +149,25 @@ CFX_ByteString CPDF_PageContentGenerator::RealizeResource(
   return name;
 }
 
-void CPDF_PageContentGenerator::ProcessImage(CFX_ByteTextBuf* buf,
+bool CPDF_PageContentGenerator::ProcessPageObjects(std::ostringstream* buf) {
+  bool bDirty = false;
+  for (auto& pPageObj : m_pageObjects) {
+    if (m_pObjHolder->IsPage() && !pPageObj->IsDirty())
+      continue;
+
+    bDirty = true;
+    if (CPDF_ImageObject* pImageObject = pPageObj->AsImage())
+      ProcessImage(buf, pImageObject);
+    else if (CPDF_PathObject* pPathObj = pPageObj->AsPath())
+      ProcessPath(buf, pPathObj);
+    else if (CPDF_TextObject* pTextObj = pPageObj->AsText())
+      ProcessText(buf, pTextObj);
+    pPageObj->SetDirty(false);
+  }
+  return bDirty;
+}
+
+void CPDF_PageContentGenerator::ProcessImage(std::ostringstream* buf,
                                              CPDF_ImageObject* pImageObj) {
   if ((pImageObj->matrix().a == 0 && pImageObj->matrix().b == 0) ||
       (pImageObj->matrix().c == 0 && pImageObj->matrix().d == 0)) {
@@ -146,9 +206,12 @@ void CPDF_PageContentGenerator::ProcessImage(CFX_ByteTextBuf* buf,
 // Path painting operators: "S", "n", "B", "f", "B*", "f*", depending on
 // the filling mode and whether we want stroking the path or not.
 // "Q" restores the graphics state imposed by the ProcessGraphics method.
-void CPDF_PageContentGenerator::ProcessPath(CFX_ByteTextBuf* buf,
+void CPDF_PageContentGenerator::ProcessPath(std::ostringstream* buf,
                                             CPDF_PathObject* pPathObj) {
   ProcessGraphics(buf, pPathObj);
+
+  *buf << pPathObj->m_Matrix << " cm ";
+
   auto& pPoints = pPathObj->m_Path.GetPoints();
   if (pPathObj->m_Path.IsRect()) {
     CFX_PointF diff = pPoints[2].m_Point - pPoints[0].m_Point;
@@ -199,7 +262,7 @@ void CPDF_PageContentGenerator::ProcessPath(CFX_ByteTextBuf* buf,
 // "w" sets the stroke line width.
 // "ca" sets the fill alpha, "CA" sets the stroke alpha.
 // "q" saves the graphics state, so that the settings can later be reversed
-void CPDF_PageContentGenerator::ProcessGraphics(CFX_ByteTextBuf* buf,
+void CPDF_PageContentGenerator::ProcessGraphics(std::ostringstream* buf,
                                                 CPDF_PageObject* pPageObj) {
   *buf << "q ";
   float fillColor[3];
@@ -215,34 +278,79 @@ void CPDF_PageContentGenerator::ProcessGraphics(CFX_ByteTextBuf* buf,
   float lineWidth = pPageObj->m_GraphState.GetLineWidth();
   if (lineWidth != 1.0f)
     *buf << lineWidth << " w ";
+  CFX_GraphStateData::LineCap lineCap = pPageObj->m_GraphState.GetLineCap();
+  if (lineCap != CFX_GraphStateData::LineCapButt)
+    *buf << static_cast<int>(lineCap) << " J ";
+  CFX_GraphStateData::LineJoin lineJoin = pPageObj->m_GraphState.GetLineJoin();
+  if (lineJoin != CFX_GraphStateData::LineJoinMiter)
+    *buf << static_cast<int>(lineJoin) << " j ";
 
   GraphicsData graphD;
   graphD.fillAlpha = pPageObj->m_GeneralState.GetFillAlpha();
   graphD.strokeAlpha = pPageObj->m_GeneralState.GetStrokeAlpha();
-  if (graphD.fillAlpha == 1.0f && graphD.strokeAlpha == 1.0f)
+  graphD.blendType = pPageObj->m_GeneralState.GetBlendType();
+  if (graphD.fillAlpha == 1.0f && graphD.strokeAlpha == 1.0f &&
+      (graphD.blendType == FXDIB_BLEND_UNSUPPORTED ||
+       graphD.blendType == FXDIB_BLEND_NORMAL)) {
     return;
+  }
 
   CFX_ByteString name;
-  auto it = m_pPage->m_GraphicsMap.find(graphD);
-  if (it != m_pPage->m_GraphicsMap.end()) {
+  auto it = m_pObjHolder->m_GraphicsMap.find(graphD);
+  if (it != m_pObjHolder->m_GraphicsMap.end()) {
     name = it->second;
   } else {
     auto gsDict = pdfium::MakeUnique<CPDF_Dictionary>();
-    gsDict->SetNewFor<CPDF_Number>("ca", graphD.fillAlpha);
-    gsDict->SetNewFor<CPDF_Number>("CA", graphD.strokeAlpha);
+    if (graphD.fillAlpha != 1.0f)
+      gsDict->SetNewFor<CPDF_Number>("ca", graphD.fillAlpha);
+
+    if (graphD.strokeAlpha != 1.0f)
+      gsDict->SetNewFor<CPDF_Number>("CA", graphD.strokeAlpha);
+
+    if (graphD.blendType != FXDIB_BLEND_UNSUPPORTED &&
+        graphD.blendType != FXDIB_BLEND_NORMAL) {
+      gsDict->SetNewFor<CPDF_Name>("BM",
+                                   pPageObj->m_GeneralState.GetBlendMode());
+    }
     CPDF_Object* pDict = m_pDocument->AddIndirectObject(std::move(gsDict));
     uint32_t dwObjNum = pDict->GetObjNum();
     name = RealizeResource(dwObjNum, "ExtGState");
-    m_pPage->m_GraphicsMap[graphD] = name;
+    m_pObjHolder->m_GraphicsMap[graphD] = name;
   }
   *buf << "/" << PDF_NameEncode(name) << " gs ";
+}
+
+void CPDF_PageContentGenerator::ProcessDefaultGraphics(
+    std::ostringstream* buf) {
+  *buf << "0 0 0 RG 0 0 0 rg 1 w "
+       << static_cast<int>(CFX_GraphStateData::LineCapButt) << " J "
+       << static_cast<int>(CFX_GraphStateData::LineJoinMiter) << " j\n";
+  GraphicsData defaultGraphics;
+  defaultGraphics.fillAlpha = 1.0f;
+  defaultGraphics.strokeAlpha = 1.0f;
+  defaultGraphics.blendType = FXDIB_BLEND_NORMAL;
+  auto it = m_pObjHolder->m_GraphicsMap.find(defaultGraphics);
+  CFX_ByteString name;
+  if (it != m_pObjHolder->m_GraphicsMap.end()) {
+    name = it->second;
+  } else {
+    auto gsDict = pdfium::MakeUnique<CPDF_Dictionary>();
+    gsDict->SetNewFor<CPDF_Number>("ca", defaultGraphics.fillAlpha);
+    gsDict->SetNewFor<CPDF_Number>("CA", defaultGraphics.strokeAlpha);
+    gsDict->SetNewFor<CPDF_Name>("BM", "Normal");
+    CPDF_Object* pDict = m_pDocument->AddIndirectObject(std::move(gsDict));
+    uint32_t dwObjNum = pDict->GetObjNum();
+    name = RealizeResource(dwObjNum, "ExtGState");
+    m_pObjHolder->m_GraphicsMap[defaultGraphics] = name;
+  }
+  *buf << "/" << PDF_NameEncode(name).c_str() << " gs ";
 }
 
 // This method adds text to the buffer, BT begins the text object, ET ends it.
 // Tm sets the text matrix (allows positioning and transforming text).
 // Tf sets the font name (from Font in Resources) and font size.
 // Tj sets the actual text, <####...> is used when specifying charcodes.
-void CPDF_PageContentGenerator::ProcessText(CFX_ByteTextBuf* buf,
+void CPDF_PageContentGenerator::ProcessText(std::ostringstream* buf,
                                             CPDF_TextObject* pTextObj) {
   *buf << "BT " << pTextObj->GetTextMatrix() << " Tm ";
   CPDF_Font* pFont = pTextObj->GetFont();
@@ -258,9 +366,9 @@ void CPDF_PageContentGenerator::ProcessText(CFX_ByteTextBuf* buf,
   else
     return;
   fontD.baseFont = pFont->GetBaseFont();
-  auto it = m_pPage->m_FontsMap.find(fontD);
+  auto it = m_pObjHolder->m_FontsMap.find(fontD);
   CFX_ByteString dictName;
-  if (it != m_pPage->m_FontsMap.end()) {
+  if (it != m_pObjHolder->m_FontsMap.end()) {
     dictName = it->second;
   } else {
     uint32_t dwObjNum = pFont->GetFontDict()->GetObjNum();
@@ -274,7 +382,7 @@ void CPDF_PageContentGenerator::ProcessText(CFX_ByteTextBuf* buf,
       dwObjNum = pDict->GetObjNum();
     }
     dictName = RealizeResource(dwObjNum, "Font");
-    m_pPage->m_FontsMap[fontD] = dictName;
+    m_pObjHolder->m_FontsMap[fontD] = dictName;
   }
   *buf << "/" << PDF_NameEncode(dictName) << " " << pTextObj->GetFontSize()
        << " Tf ";
@@ -283,5 +391,7 @@ void CPDF_PageContentGenerator::ProcessText(CFX_ByteTextBuf* buf,
     if (charcode != CPDF_Font::kInvalidCharCode)
       pFont->AppendChar(&text, charcode);
   }
-  *buf << PDF_EncodeString(text, true) << " Tj ET\n";
+  ProcessGraphics(buf, pTextObj);
+  *buf << PDF_EncodeString(text, true) << " Tj ET";
+  *buf << " Q\n";
 }

@@ -14,7 +14,6 @@
 #include <numeric>
 #include <string>
 
-#include "webrtc/base/random.h"
 #include "webrtc/modules/audio_processing/aec3/adaptive_fir_filter.h"
 #include "webrtc/modules/audio_processing/aec3/aec_state.h"
 #include "webrtc/modules/audio_processing/aec3/render_buffer.h"
@@ -23,6 +22,8 @@
 #include "webrtc/modules/audio_processing/aec3/subtractor_output.h"
 #include "webrtc/modules/audio_processing/logging/apm_data_dumper.h"
 #include "webrtc/modules/audio_processing/test/echo_canceller_test_tools.h"
+#include "webrtc/rtc_base/random.h"
+#include "webrtc/rtc_base/safe_minmax.h"
 #include "webrtc/test/gtest.h"
 
 namespace webrtc {
@@ -52,9 +53,10 @@ void RunFilterUpdateTest(int num_blocks_to_process,
   Random random_generator(42U);
   std::vector<std::vector<float>> x(3, std::vector<float>(kBlockSize, 0.f));
   std::vector<float> y(kBlockSize, 0.f);
-  AecState aec_state;
+  AecState aec_state(0.f);
   RenderSignalAnalyzer render_signal_analyzer;
-  std::array<float, kFftLength> s;
+  std::array<float, kFftLength> s_scratch;
+  std::array<float, kBlockSize> s;
   FftData S;
   FftData G;
   SubtractorOutput output;
@@ -95,24 +97,25 @@ void RunFilterUpdateTest(int num_blocks_to_process,
 
     // Apply the main filter.
     main_filter.Filter(render_buffer, &S);
-    fft.Ifft(S, &s);
-    std::transform(y.begin(), y.end(), s.begin() + kFftLengthBy2,
+    fft.Ifft(S, &s_scratch);
+    std::transform(y.begin(), y.end(), s_scratch.begin() + kFftLengthBy2,
                    e_main.begin(),
                    [&](float a, float b) { return a - b * kScale; });
-    std::for_each(e_main.begin(), e_main.end(), [](float& a) {
-      a = std::max(std::min(a, 32767.0f), -32768.0f);
-    });
+    std::for_each(e_main.begin(), e_main.end(),
+                  [](float& a) { a = rtc::SafeClamp(a, -32768.f, 32767.f); });
     fft.ZeroPaddedFft(e_main, &E_main);
+    for (size_t k = 0; k < kBlockSize; ++k) {
+      s[k] = kScale * s_scratch[k + kFftLengthBy2];
+    }
 
     // Apply the shadow filter.
     shadow_filter.Filter(render_buffer, &S);
-    fft.Ifft(S, &s);
-    std::transform(y.begin(), y.end(), s.begin() + kFftLengthBy2,
+    fft.Ifft(S, &s_scratch);
+    std::transform(y.begin(), y.end(), s_scratch.begin() + kFftLengthBy2,
                    e_shadow.begin(),
                    [&](float a, float b) { return a - b * kScale; });
-    std::for_each(e_shadow.begin(), e_shadow.end(), [](float& a) {
-      a = std::max(std::min(a, 32767.0f), -32768.0f);
-    });
+    std::for_each(e_shadow.begin(), e_shadow.end(),
+                  [](float& a) { a = rtc::SafeClamp(a, -32768.f, 32767.f); });
     fft.ZeroPaddedFft(e_shadow, &E_shadow);
 
     // Compute spectra for future use.
@@ -132,8 +135,9 @@ void RunFilterUpdateTest(int num_blocks_to_process,
     // Update the delay.
     aec_state.HandleEchoPathChange(EchoPathVariability(false, false));
     aec_state.Update(main_filter.FilterFrequencyResponse(),
+                     main_filter.FilterImpulseResponse(),
                      rtc::Optional<size_t>(), render_buffer, E2_main, Y2, x[0],
-                     false);
+                     s, false);
   }
 
   std::copy(e_main.begin(), e_main.end(), e_last_block->begin());

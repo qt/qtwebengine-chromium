@@ -15,14 +15,14 @@
 
 #include <memory>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_cvo.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_payload_registry.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_video_generic.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -91,6 +91,7 @@ int32_t RTPReceiverVideo::ParseRtpPacket(WebRtcRTPHeader* rtp_header,
   rtp_header->type = parsed_payload.type;
   rtp_header->type.Video.rotation = kVideoRotation_0;
   rtp_header->type.Video.content_type = VideoContentType::UNSPECIFIED;
+  rtp_header->type.Video.video_timing.is_timing_frame = false;
 
   // Retrieve the video rotation information.
   if (rtp_header->header.extension.hasVideoRotation) {
@@ -101,6 +102,12 @@ int32_t RTPReceiverVideo::ParseRtpPacket(WebRtcRTPHeader* rtp_header,
   if (rtp_header->header.extension.hasVideoContentType) {
     rtp_header->type.Video.content_type =
         rtp_header->header.extension.videoContentType;
+  }
+
+  if (rtp_header->header.extension.has_video_timing) {
+    rtp_header->type.Video.video_timing =
+        rtp_header->header.extension.video_timing;
+    rtp_header->type.Video.video_timing.is_timing_frame = true;
   }
 
   rtp_header->type.Video.playout_delay =

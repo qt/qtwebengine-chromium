@@ -12,7 +12,7 @@
 
 #include <string.h>
 
-#include "webrtc/base/checks.h"
+#include "webrtc/rtc_base/checks.h"
 
 // TODO(tommi): Could we have a static map of value name -> expected type
 // and use this to RTC_DCHECK on correct usage (somewhat strongly typed values)?
@@ -538,6 +538,8 @@ const char* StatsReport::Value::display_name() const {
       return "googFrameWidthSent";
     case kStatsValueNameInitiator:
       return "googInitiator";
+    case kStatsValueNameInterframeDelaySumMs:
+      return "googInterframeDelaySum";
     case kStatsValueNameIssuerId:
       return "googIssuerId";
     case kStatsValueNameJitterReceived:
@@ -592,12 +594,18 @@ const char* StatsReport::Value::display_name() const {
       return "srtpCipher";
     case kStatsValueNameTargetEncBitrate:
       return "googTargetEncBitrate";
+    case kStatsValueNameTotalAudioEnergy:
+      return "totalAudioEnergy";
+    case kStatsValueNameTotalSamplesDuration:
+      return "totalSamplesDuration";
     case kStatsValueNameTransmitBitrate:
       return "googTransmitBitrate";
     case kStatsValueNameTransportType:
       return "googTransportType";
     case kStatsValueNameTrackId:
       return "googTrackId";
+    case kStatsValueNameTimingFrameInfo:
+      return "googTimingFrameInfo";
     case kStatsValueNameTypingNoiseState:
       return "googTypingNoiseState";
     case kStatsValueNameWritable:

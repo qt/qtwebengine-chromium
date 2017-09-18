@@ -9,22 +9,16 @@
 #include <algorithm>
 #include <limits>
 
+#include "core/fxcrt/fx_system.h"
+#include "third_party/base/ptr_util.h"
+
+static_assert(sizeof(BmpFileHeader) == 14,
+              "BmpFileHeader should have a size of 14");
+
 namespace {
 
 const size_t kBmpCoreHeaderSize = 12;
 const size_t kBmpInfoHeaderSize = 40;
-
-// TODO(thestig): Replace with FXDWORD_GET_LSBFIRST?
-uint32_t GetDWord_LSBFirst(uint8_t* p) {
-  return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
-}
-
-void SetDWord_LSBFirst(uint8_t* p, uint32_t v) {
-  p[0] = (uint8_t)v;
-  p[1] = (uint8_t)(v >> 8);
-  p[2] = (uint8_t)(v >> 16);
-  p[3] = (uint8_t)(v >> 24);
-}
 
 uint8_t HalfRoundUp(uint8_t value) {
   uint16_t value16 = value;
@@ -36,323 +30,339 @@ uint8_t HalfRoundUp(uint8_t value) {
 uint16_t GetWord_LSBFirst(uint8_t* p) {
   return p[0] | (p[1] << 8);
 }
-void SetWord_LSBFirst(uint8_t* p, uint16_t v) {
-  p[0] = (uint8_t)v;
-  p[1] = (uint8_t)(v >> 8);
-}
-void bmp_error(bmp_decompress_struct_p bmp_ptr, const char* err_msg) {
-  if (bmp_ptr && bmp_ptr->bmp_error_fn) {
-    bmp_ptr->bmp_error_fn(bmp_ptr, err_msg);
-  }
-}
-bmp_decompress_struct_p bmp_create_decompress() {
-  bmp_decompress_struct_p bmp_ptr = FX_Alloc(bmp_decompress_struct, 1);
-  memset(bmp_ptr, 0, sizeof(bmp_decompress_struct));
-  bmp_ptr->decode_status = BMP_D_STATUS_HEADER;
-  bmp_ptr->bmp_header_ptr = FX_Alloc(BmpFileHeader, 1);
-  return bmp_ptr;
-}
-void bmp_destroy_decompress(bmp_decompress_struct_pp bmp_ptr_ptr) {
-  if (!bmp_ptr_ptr || !*bmp_ptr_ptr)
-    return;
 
-  bmp_decompress_struct_p bmp_ptr = *bmp_ptr_ptr;
-  *bmp_ptr_ptr = nullptr;
-  FX_Free(bmp_ptr->out_row_buffer);
-  FX_Free(bmp_ptr->pal_ptr);
-  FX_Free(bmp_ptr->bmp_header_ptr);
-  FX_Free(bmp_ptr);
-}
-int32_t bmp_read_header(bmp_decompress_struct_p bmp_ptr) {
-  if (!bmp_ptr)
-    return 0;
+BMPDecompressor::BMPDecompressor()
+    : err_ptr(nullptr),
+      context_ptr(nullptr),
+      next_in(nullptr),
+      header_offset(0),
+      width(0),
+      height(0),
+      compress_flag(0),
+      components(0),
+      src_row_bytes(0),
+      out_row_bytes(0),
+      bitCounts(0),
+      color_used(0),
+      imgTB_flag(false),
+      pal_num(0),
+      pal_type(0),
+      data_size(0),
+      img_data_offset(0),
+      img_ifh_size(0),
+      row_num(0),
+      col_num(0),
+      dpi_x(0),
+      dpi_y(0),
+      mask_red(0),
+      mask_green(0),
+      mask_blue(0),
+      avail_in(0),
+      skip_size(0),
+      decode_status(BMP_D_STATUS_HEADER) {}
 
-  uint32_t skip_size_org = bmp_ptr->skip_size;
-  if (bmp_ptr->decode_status == BMP_D_STATUS_HEADER) {
-    ASSERT(sizeof(BmpFileHeader) == 14);
-    BmpFileHeader* bmp_header_ptr = nullptr;
-    if (!bmp_read_data(bmp_ptr, (uint8_t**)&bmp_header_ptr, 14))
+BMPDecompressor::~BMPDecompressor() {}
+
+void BMPDecompressor::Error(const char* err_msg) {
+  strncpy(err_ptr, err_msg, BMP_MAX_ERROR_SIZE - 1);
+  longjmp(jmpbuf, 1);
+}
+
+void BMPDecompressor::ReadScanline(uint32_t row_num,
+                                   const std::vector<uint8_t>& row_buf) {
+  auto* p = reinterpret_cast<CBmpContext*>(context_ptr);
+  p->m_pDelegate->BmpReadScanline(row_num, row_buf);
+}
+
+bool BMPDecompressor::GetDataPosition(uint32_t rcd_pos) {
+  auto* p = reinterpret_cast<CBmpContext*>(context_ptr);
+  return p->m_pDelegate->BmpInputImagePositionBuf(rcd_pos);
+}
+
+int32_t BMPDecompressor::ReadHeader() {
+  uint32_t skip_size_org = skip_size;
+  if (decode_status == BMP_D_STATUS_HEADER) {
+    BmpFileHeader* pBmp_header = nullptr;
+    if (!ReadData(reinterpret_cast<uint8_t**>(&pBmp_header),
+                  sizeof(BmpFileHeader))) {
       return 2;
-
-    bmp_ptr->bmp_header_ptr->bfType =
-        GetWord_LSBFirst((uint8_t*)&bmp_header_ptr->bfType);
-    bmp_ptr->bmp_header_ptr->bfOffBits =
-        GetDWord_LSBFirst((uint8_t*)&bmp_header_ptr->bfOffBits);
-    bmp_ptr->data_size = GetDWord_LSBFirst((uint8_t*)&bmp_header_ptr->bfSize);
-    if (bmp_ptr->bmp_header_ptr->bfType != BMP_SIGNATURE) {
-      bmp_error(bmp_ptr, "Not A Bmp Image");
-      return 0;
     }
-    if (bmp_ptr->avail_in < sizeof(uint32_t)) {
-      bmp_ptr->skip_size = skip_size_org;
+
+    pBmp_header->bfType =
+        GetWord_LSBFirst(reinterpret_cast<uint8_t*>(&pBmp_header->bfType));
+    pBmp_header->bfOffBits = FXDWORD_GET_LSBFIRST(
+        reinterpret_cast<uint8_t*>(&pBmp_header->bfOffBits));
+    data_size =
+        FXDWORD_GET_LSBFIRST(reinterpret_cast<uint8_t*>(&pBmp_header->bfSize));
+    if (pBmp_header->bfType != BMP_SIGNATURE) {
+      Error("Not A Bmp Image");
+      NOTREACHED();
+    }
+    if (avail_in < sizeof(uint32_t)) {
+      skip_size = skip_size_org;
       return 2;
     }
-    bmp_ptr->img_ifh_size =
-        GetDWord_LSBFirst(bmp_ptr->next_in + bmp_ptr->skip_size);
-    bmp_ptr->pal_type = 0;
+    img_ifh_size =
+        FXDWORD_GET_LSBFIRST(static_cast<uint8_t*>(next_in + skip_size));
+    pal_type = 0;
     static_assert(sizeof(BmpCoreHeader) == kBmpCoreHeaderSize,
                   "BmpCoreHeader has wrong size");
     static_assert(sizeof(BmpInfoHeader) == kBmpInfoHeaderSize,
                   "BmpInfoHeader has wrong size");
-    switch (bmp_ptr->img_ifh_size) {
+    switch (img_ifh_size) {
       case kBmpCoreHeaderSize: {
-        bmp_ptr->pal_type = 1;
-        BmpCoreHeaderPtr bmp_core_header_ptr = nullptr;
-        if (!bmp_read_data(bmp_ptr, (uint8_t**)&bmp_core_header_ptr,
-                           bmp_ptr->img_ifh_size)) {
-          bmp_ptr->skip_size = skip_size_org;
+        pal_type = 1;
+        BmpCoreHeader* pBmp_core_header = nullptr;
+        if (!ReadData(reinterpret_cast<uint8_t**>(&pBmp_core_header),
+                      img_ifh_size)) {
+          skip_size = skip_size_org;
           return 2;
         }
-        bmp_ptr->width =
-            GetWord_LSBFirst((uint8_t*)&bmp_core_header_ptr->bcWidth);
-        bmp_ptr->height =
-            GetWord_LSBFirst((uint8_t*)&bmp_core_header_ptr->bcHeight);
-        bmp_ptr->bitCounts =
-            GetWord_LSBFirst((uint8_t*)&bmp_core_header_ptr->bcBitCount);
-        bmp_ptr->compress_flag = BMP_RGB;
-        bmp_ptr->imgTB_flag = false;
+        width = GetWord_LSBFirst(
+            reinterpret_cast<uint8_t*>(&pBmp_core_header->bcWidth));
+        height = GetWord_LSBFirst(
+            reinterpret_cast<uint8_t*>(&pBmp_core_header->bcHeight));
+        bitCounts = GetWord_LSBFirst(
+            reinterpret_cast<uint8_t*>(&pBmp_core_header->bcBitCount));
+        compress_flag = BMP_RGB;
+        imgTB_flag = false;
       } break;
       case kBmpInfoHeaderSize: {
-        BmpInfoHeaderPtr bmp_info_header_ptr = nullptr;
-        if (!bmp_read_data(bmp_ptr, (uint8_t**)&bmp_info_header_ptr,
-                           bmp_ptr->img_ifh_size)) {
-          bmp_ptr->skip_size = skip_size_org;
+        BmpInfoHeader* pBmp_info_header = nullptr;
+        if (!ReadData(reinterpret_cast<uint8_t**>(&pBmp_info_header),
+                      img_ifh_size)) {
+          skip_size = skip_size_org;
           return 2;
         }
-        bmp_ptr->width =
-            GetDWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biWidth);
-        bmp_ptr->height =
-            GetDWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biHeight);
-        bmp_ptr->bitCounts =
-            GetWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biBitCount);
-        bmp_ptr->compress_flag =
-            GetDWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biCompression);
-        bmp_ptr->color_used =
-            GetDWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biClrUsed);
-        bmp_ptr->dpi_x = (int32_t)GetDWord_LSBFirst(
-            (uint8_t*)&bmp_info_header_ptr->biXPelsPerMeter);
-        bmp_ptr->dpi_y = (int32_t)GetDWord_LSBFirst(
-            (uint8_t*)&bmp_info_header_ptr->biYPelsPerMeter);
-        if (bmp_ptr->height < 0) {
-          if (bmp_ptr->height == std::numeric_limits<int>::min()) {
-            bmp_error(bmp_ptr, "Unsupported height");
-            return 0;
-          }
-          bmp_ptr->height = -bmp_ptr->height;
-          bmp_ptr->imgTB_flag = true;
-        }
+        width = FXDWORD_GET_LSBFIRST(
+            reinterpret_cast<uint8_t*>(&pBmp_info_header->biWidth));
+        int32_t signed_height = FXDWORD_GET_LSBFIRST(
+            reinterpret_cast<uint8_t*>(&pBmp_info_header->biHeight));
+        bitCounts = GetWord_LSBFirst(
+            reinterpret_cast<uint8_t*>(&pBmp_info_header->biBitCount));
+        compress_flag = FXDWORD_GET_LSBFIRST(
+            reinterpret_cast<uint8_t*>(&pBmp_info_header->biCompression));
+        color_used = FXDWORD_GET_LSBFIRST(
+            reinterpret_cast<uint8_t*>(&pBmp_info_header->biClrUsed));
+        dpi_x = static_cast<int32_t>(FXDWORD_GET_LSBFIRST(
+            reinterpret_cast<uint8_t*>(&pBmp_info_header->biXPelsPerMeter)));
+        dpi_y = static_cast<int32_t>(FXDWORD_GET_LSBFIRST(
+            reinterpret_cast<uint8_t*>(&pBmp_info_header->biYPelsPerMeter)));
+        SetHeight(signed_height);
       } break;
       default: {
-        if (bmp_ptr->img_ifh_size >
+        if (img_ifh_size >
             std::min(kBmpInfoHeaderSize, sizeof(BmpInfoHeader))) {
-          BmpInfoHeaderPtr bmp_info_header_ptr = nullptr;
-          if (!bmp_read_data(bmp_ptr, (uint8_t**)&bmp_info_header_ptr,
-                             bmp_ptr->img_ifh_size)) {
-            bmp_ptr->skip_size = skip_size_org;
+          BmpInfoHeader* pBmp_info_header = nullptr;
+          if (!ReadData(reinterpret_cast<uint8_t**>(&pBmp_info_header),
+                        img_ifh_size)) {
+            skip_size = skip_size_org;
             return 2;
           }
           uint16_t biPlanes;
-          bmp_ptr->width =
-              GetDWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biWidth);
-          bmp_ptr->height =
-              GetDWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biHeight);
-          bmp_ptr->bitCounts =
-              GetWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biBitCount);
-          bmp_ptr->compress_flag =
-              GetDWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biCompression);
-          bmp_ptr->color_used =
-              GetDWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biClrUsed);
-          biPlanes = GetWord_LSBFirst((uint8_t*)&bmp_info_header_ptr->biPlanes);
-          bmp_ptr->dpi_x = GetDWord_LSBFirst(
-              (uint8_t*)&bmp_info_header_ptr->biXPelsPerMeter);
-          bmp_ptr->dpi_y = GetDWord_LSBFirst(
-              (uint8_t*)&bmp_info_header_ptr->biYPelsPerMeter);
-          if (bmp_ptr->height < 0) {
-            if (bmp_ptr->height == std::numeric_limits<int>::min()) {
-              bmp_error(bmp_ptr, "Unsupported height");
-              return 0;
-            }
-            bmp_ptr->height = -bmp_ptr->height;
-            bmp_ptr->imgTB_flag = true;
-          }
-          if (bmp_ptr->compress_flag == BMP_RGB && biPlanes == 1 &&
-              bmp_ptr->color_used == 0) {
+          width = FXDWORD_GET_LSBFIRST(
+              reinterpret_cast<uint8_t*>(&pBmp_info_header->biWidth));
+          int32_t signed_height = FXDWORD_GET_LSBFIRST(
+              reinterpret_cast<uint8_t*>(&pBmp_info_header->biHeight));
+          bitCounts = GetWord_LSBFirst(
+              reinterpret_cast<uint8_t*>(&pBmp_info_header->biBitCount));
+          compress_flag = FXDWORD_GET_LSBFIRST(
+              reinterpret_cast<uint8_t*>(&pBmp_info_header->biCompression));
+          color_used = FXDWORD_GET_LSBFIRST(
+              reinterpret_cast<uint8_t*>(&pBmp_info_header->biClrUsed));
+          biPlanes = GetWord_LSBFirst(
+              reinterpret_cast<uint8_t*>(&pBmp_info_header->biPlanes));
+          dpi_x = FXDWORD_GET_LSBFIRST(
+              reinterpret_cast<uint8_t*>(&pBmp_info_header->biXPelsPerMeter));
+          dpi_y = FXDWORD_GET_LSBFIRST(
+              reinterpret_cast<uint8_t*>(&pBmp_info_header->biYPelsPerMeter));
+          SetHeight(signed_height);
+          if (compress_flag == BMP_RGB && biPlanes == 1 && color_used == 0)
             break;
-          }
         }
-        bmp_error(bmp_ptr, "Unsupported Bmp File");
-        return 0;
+        Error("Unsupported Bmp File");
+        NOTREACHED();
       }
     }
-    if (bmp_ptr->width <= 0 || bmp_ptr->width > BMP_MAX_WIDTH ||
-        bmp_ptr->compress_flag > BMP_BITFIELDS) {
-      bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-      return 0;
+    if (width > BMP_MAX_WIDTH || compress_flag > BMP_BITFIELDS) {
+      Error("The Bmp File Is Corrupt");
+      NOTREACHED();
     }
-    switch (bmp_ptr->bitCounts) {
+    switch (bitCounts) {
       case 1:
       case 4:
       case 8:
       case 16:
       case 24: {
-        if (bmp_ptr->color_used > ((uint32_t)1) << bmp_ptr->bitCounts) {
-          bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-          return 0;
+        if (color_used > 1U << bitCounts) {
+          Error("The Bmp File Is Corrupt");
+          NOTREACHED();
         }
       }
       case 32:
         break;
       default:
-        bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-        return 0;
+        Error("The Bmp File Is Corrupt");
+        NOTREACHED();
     }
-    bmp_ptr->src_row_bytes = BMP_WIDTHBYTES(bmp_ptr->width, bmp_ptr->bitCounts);
-    switch (bmp_ptr->bitCounts) {
+    src_row_bytes = BMP_WIDTHBYTES(width, bitCounts);
+    switch (bitCounts) {
       case 1:
       case 4:
       case 8:
-        bmp_ptr->out_row_bytes = BMP_WIDTHBYTES(bmp_ptr->width, 8);
-        bmp_ptr->components = 1;
+        out_row_bytes = BMP_WIDTHBYTES(width, 8);
+        components = 1;
         break;
       case 16:
       case 24:
-        bmp_ptr->out_row_bytes = BMP_WIDTHBYTES(bmp_ptr->width, 24);
-        bmp_ptr->components = 3;
+        out_row_bytes = BMP_WIDTHBYTES(width, 24);
+        components = 3;
         break;
       case 32:
-        bmp_ptr->out_row_bytes = bmp_ptr->src_row_bytes;
-        bmp_ptr->components = 4;
+        out_row_bytes = src_row_bytes;
+        components = 4;
         break;
     }
-    FX_Free(bmp_ptr->out_row_buffer);
-    bmp_ptr->out_row_buffer = nullptr;
+    out_row_buffer.clear();
 
-    if (bmp_ptr->out_row_bytes <= 0) {
-      bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-      return 0;
+    if (out_row_bytes <= 0) {
+      Error("The Bmp File Is Corrupt");
+      NOTREACHED();
     }
 
-    bmp_ptr->out_row_buffer = FX_Alloc(uint8_t, bmp_ptr->out_row_bytes);
-    memset(bmp_ptr->out_row_buffer, 0, bmp_ptr->out_row_bytes);
-    bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_PAL);
+    out_row_buffer.resize(out_row_bytes);
+    SaveDecodingStatus(BMP_D_STATUS_PAL);
   }
-  if (bmp_ptr->decode_status == BMP_D_STATUS_PAL) {
-    skip_size_org = bmp_ptr->skip_size;
-    if (bmp_ptr->compress_flag == BMP_BITFIELDS) {
-      if (bmp_ptr->bitCounts != 16 && bmp_ptr->bitCounts != 32) {
-        bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-        return 0;
+  if (decode_status == BMP_D_STATUS_PAL) {
+    skip_size_org = skip_size;
+    if (compress_flag == BMP_BITFIELDS) {
+      if (bitCounts != 16 && bitCounts != 32) {
+        Error("The Bmp File Is Corrupt");
+        NOTREACHED();
       }
       uint32_t* mask;
-      if (bmp_read_data(bmp_ptr, (uint8_t**)&mask, 3 * sizeof(uint32_t)) ==
+      if (ReadData(reinterpret_cast<uint8_t**>(&mask), 3 * sizeof(uint32_t)) ==
           nullptr) {
-        bmp_ptr->skip_size = skip_size_org;
+        skip_size = skip_size_org;
         return 2;
       }
-      bmp_ptr->mask_red = GetDWord_LSBFirst((uint8_t*)&mask[0]);
-      bmp_ptr->mask_green = GetDWord_LSBFirst((uint8_t*)&mask[1]);
-      bmp_ptr->mask_blue = GetDWord_LSBFirst((uint8_t*)&mask[2]);
-      if (bmp_ptr->mask_red & bmp_ptr->mask_green ||
-          bmp_ptr->mask_red & bmp_ptr->mask_blue ||
-          bmp_ptr->mask_green & bmp_ptr->mask_blue) {
-        bmp_error(bmp_ptr, "The Bitfield Bmp File Is Corrupt");
-        return 0;
+      mask_red = FXDWORD_GET_LSBFIRST(reinterpret_cast<uint8_t*>(&mask[0]));
+      mask_green = FXDWORD_GET_LSBFIRST(reinterpret_cast<uint8_t*>(&mask[1]));
+      mask_blue = FXDWORD_GET_LSBFIRST(reinterpret_cast<uint8_t*>(&mask[2]));
+      if (mask_red & mask_green || mask_red & mask_blue ||
+          mask_green & mask_blue) {
+        Error("The Bitfield Bmp File Is Corrupt");
+        NOTREACHED();
       }
-      if (bmp_ptr->bmp_header_ptr->bfOffBits < 26 + bmp_ptr->img_ifh_size) {
-        bmp_ptr->bmp_header_ptr->bfOffBits = 26 + bmp_ptr->img_ifh_size;
-      }
-      bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_DATA_PRE);
+      header_offset = std::max(header_offset, 26 + img_ifh_size);
+      SaveDecodingStatus(BMP_D_STATUS_DATA_PRE);
       return 1;
-    } else if (bmp_ptr->bitCounts == 16) {
-      bmp_ptr->mask_red = 0x7C00;
-      bmp_ptr->mask_green = 0x03E0;
-      bmp_ptr->mask_blue = 0x001F;
+    } else if (bitCounts == 16) {
+      mask_red = 0x7C00;
+      mask_green = 0x03E0;
+      mask_blue = 0x001F;
     }
-    bmp_ptr->pal_num = 0;
-    if (bmp_ptr->bitCounts < 16) {
-      bmp_ptr->pal_num = 1 << bmp_ptr->bitCounts;
-      if (bmp_ptr->color_used != 0) {
-        bmp_ptr->pal_num = bmp_ptr->color_used;
-      }
+    pal_num = 0;
+    if (bitCounts < 16) {
+      pal_num = 1 << bitCounts;
+      if (color_used != 0)
+        pal_num = color_used;
       uint8_t* src_pal_ptr = nullptr;
-      uint32_t src_pal_size = bmp_ptr->pal_num * (bmp_ptr->pal_type ? 3 : 4);
-      if (bmp_read_data(bmp_ptr, (uint8_t**)&src_pal_ptr, src_pal_size) ==
-          nullptr) {
-        bmp_ptr->skip_size = skip_size_org;
+      uint32_t src_pal_size = pal_num * (pal_type ? 3 : 4);
+      if (ReadData(&src_pal_ptr, src_pal_size) == nullptr) {
+        skip_size = skip_size_org;
         return 2;
       }
-      FX_Free(bmp_ptr->pal_ptr);
-      bmp_ptr->pal_ptr = FX_Alloc(uint32_t, bmp_ptr->pal_num);
+      palette.resize(pal_num);
       int32_t src_pal_index = 0;
-      if (bmp_ptr->pal_type == BMP_PAL_OLD) {
-        while (src_pal_index < bmp_ptr->pal_num) {
-          bmp_ptr->pal_ptr[src_pal_index++] = BMP_PAL_ENCODE(
+      if (pal_type == BMP_PAL_OLD) {
+        while (src_pal_index < pal_num) {
+          palette[src_pal_index++] = BMP_PAL_ENCODE(
               0x00, src_pal_ptr[2], src_pal_ptr[1], src_pal_ptr[0]);
           src_pal_ptr += 3;
         }
       } else {
-        while (src_pal_index < bmp_ptr->pal_num) {
-          bmp_ptr->pal_ptr[src_pal_index++] = BMP_PAL_ENCODE(
+        while (src_pal_index < pal_num) {
+          palette[src_pal_index++] = BMP_PAL_ENCODE(
               src_pal_ptr[3], src_pal_ptr[2], src_pal_ptr[1], src_pal_ptr[0]);
           src_pal_ptr += 4;
         }
       }
     }
-    if (bmp_ptr->bmp_header_ptr->bfOffBits <
-        14 + bmp_ptr->img_ifh_size +
-            bmp_ptr->pal_num * (bmp_ptr->pal_type ? 3 : 4)) {
-      bmp_ptr->bmp_header_ptr->bfOffBits =
-          14 + bmp_ptr->img_ifh_size +
-          bmp_ptr->pal_num * (bmp_ptr->pal_type ? 3 : 4);
-    }
-    bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_DATA_PRE);
+    header_offset = std::max(header_offset,
+                             14 + img_ifh_size + pal_num * (pal_type ? 3 : 4));
+    SaveDecodingStatus(BMP_D_STATUS_DATA_PRE);
   }
   return 1;
 }
-int32_t bmp_decode_image(bmp_decompress_struct_p bmp_ptr) {
-  if (bmp_ptr->decode_status == BMP_D_STATUS_DATA_PRE) {
-    bmp_ptr->avail_in = 0;
-    if (!bmp_ptr->bmp_get_data_position_fn(
-            bmp_ptr, bmp_ptr->bmp_header_ptr->bfOffBits)) {
-      bmp_ptr->decode_status = BMP_D_STATUS_TAIL;
-      bmp_error(bmp_ptr, "The Bmp File Is Corrupt, Unexpected Stream Offset");
-      return 0;
-    }
-    bmp_ptr->row_num = 0;
-    bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_DATA);
+
+bool BMPDecompressor::ValidateFlag() const {
+  switch (compress_flag) {
+    case BMP_RGB:
+    case BMP_BITFIELDS:
+    case BMP_RLE8:
+    case BMP_RLE4:
+      return true;
+    default:
+      return false;
   }
-  if (bmp_ptr->decode_status == BMP_D_STATUS_DATA) {
-    switch (bmp_ptr->compress_flag) {
-      case BMP_RGB:
-      case BMP_BITFIELDS:
-        return bmp_decode_rgb(bmp_ptr);
-      case BMP_RLE8:
-        return bmp_decode_rle8(bmp_ptr);
-      case BMP_RLE4:
-        return bmp_decode_rle4(bmp_ptr);
-    }
-  }
-  bmp_error(bmp_ptr, "Any Uncontrol Error");
-  return 0;
 }
-int32_t bmp_decode_rgb(bmp_decompress_struct_p bmp_ptr) {
-  uint8_t* row_buf = bmp_ptr->out_row_buffer;
+
+int32_t BMPDecompressor::DecodeImage() {
+  if (decode_status == BMP_D_STATUS_DATA_PRE) {
+    avail_in = 0;
+    if (!GetDataPosition(header_offset)) {
+      decode_status = BMP_D_STATUS_TAIL;
+      Error("The Bmp File Is Corrupt, Unexpected Stream Offset");
+      NOTREACHED();
+    }
+    row_num = 0;
+    SaveDecodingStatus(BMP_D_STATUS_DATA);
+  }
+  if (decode_status != BMP_D_STATUS_DATA || !ValidateFlag()) {
+    Error("Any Uncontrol Error");
+    NOTREACHED();
+  }
+  switch (compress_flag) {
+    case BMP_RGB:
+    case BMP_BITFIELDS:
+      return DecodeRGB();
+    case BMP_RLE8:
+      return DecodeRLE8();
+    case BMP_RLE4:
+      return DecodeRLE4();
+    default:
+      return 0;
+  }
+}
+
+bool BMPDecompressor::ValidateColorIndex(uint8_t val) {
+  if (val >= pal_num) {
+    Error("A color index exceeds range determined by pal_num");
+    NOTREACHED();
+  }
+  return true;
+}
+
+int32_t BMPDecompressor::DecodeRGB() {
   uint8_t* des_buf = nullptr;
-  while (bmp_ptr->row_num < bmp_ptr->height) {
-    if (!bmp_read_data(bmp_ptr, &des_buf, bmp_ptr->src_row_bytes))
+  while (row_num < height) {
+    size_t idx = 0;
+    if (!ReadData(&des_buf, src_row_bytes))
       return 2;
 
-    bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_DATA);
-    switch (bmp_ptr->bitCounts) {
+    SaveDecodingStatus(BMP_D_STATUS_DATA);
+    switch (bitCounts) {
       case 1: {
-        for (int32_t col = 0; col < bmp_ptr->width; col++) {
-          *row_buf++ = des_buf[col >> 3] & (0x80 >> (col % 8)) ? 0x01 : 0x00;
-        }
+        for (uint32_t col = 0; col < width; ++col)
+          out_row_buffer[idx++] =
+              des_buf[col >> 3] & (0x80 >> (col % 8)) ? 0x01 : 0x00;
       } break;
       case 4: {
-        for (int32_t col = 0; col < bmp_ptr->width; col++) {
-          *row_buf++ = (col & 0x01) ? (des_buf[col >> 1] & 0x0F)
-                                    : ((des_buf[col >> 1] & 0xF0) >> 4);
+        for (uint32_t col = 0; col < width; ++col) {
+          out_row_buffer[idx++] = (col & 0x01)
+                                      ? (des_buf[col >> 1] & 0x0F)
+                                      : ((des_buf[col >> 1] & 0xF0) >> 4);
         }
       } break;
       case 16: {
@@ -361,15 +371,12 @@ int32_t bmp_decode_rgb(bmp_decompress_struct_p bmp_ptr) {
         uint8_t green_bits = 0;
         uint8_t red_bits = 0;
         for (int32_t i = 0; i < 16; i++) {
-          if ((bmp_ptr->mask_blue >> i) & 0x01) {
+          if ((mask_blue >> i) & 0x01)
             blue_bits++;
-          }
-          if ((bmp_ptr->mask_green >> i) & 0x01) {
+          if ((mask_green >> i) & 0x01)
             green_bits++;
-          }
-          if ((bmp_ptr->mask_red >> i) & 0x01) {
+          if ((mask_red >> i) & 0x01)
             red_bits++;
-          }
         }
         green_bits += blue_bits;
         red_bits += green_bits;
@@ -378,584 +385,292 @@ int32_t bmp_decode_rgb(bmp_decompress_struct_p bmp_ptr) {
         blue_bits = 8 - blue_bits;
         green_bits -= 8;
         red_bits -= 8;
-        for (int32_t col = 0; col < bmp_ptr->width; col++) {
-          *buf = GetWord_LSBFirst((uint8_t*)buf);
-          *row_buf++ = (uint8_t)((*buf & bmp_ptr->mask_blue) << blue_bits);
-          *row_buf++ = (uint8_t)((*buf & bmp_ptr->mask_green) >> green_bits);
-          *row_buf++ = (uint8_t)((*buf++ & bmp_ptr->mask_red) >> red_bits);
+        for (uint32_t col = 0; col < width; ++col) {
+          *buf = GetWord_LSBFirst(reinterpret_cast<uint8_t*>(buf));
+          out_row_buffer[idx++] =
+              static_cast<uint8_t>((*buf & mask_blue) << blue_bits);
+          out_row_buffer[idx++] =
+              static_cast<uint8_t>((*buf & mask_green) >> green_bits);
+          out_row_buffer[idx++] =
+              static_cast<uint8_t>((*buf++ & mask_red) >> red_bits);
         }
       } break;
       case 8:
       case 24:
       case 32:
-        memcpy(bmp_ptr->out_row_buffer, des_buf, bmp_ptr->src_row_bytes);
+        std::copy(des_buf, des_buf + src_row_bytes, out_row_buffer.begin());
+        idx += src_row_bytes;
         break;
     }
-    row_buf = bmp_ptr->out_row_buffer;
-    bmp_ptr->bmp_get_row_fn(bmp_ptr,
-                            bmp_ptr->imgTB_flag
-                                ? bmp_ptr->row_num++
-                                : (bmp_ptr->height - 1 - bmp_ptr->row_num++),
-                            bmp_ptr->out_row_buffer);
+    for (uint8_t byte : out_row_buffer) {
+      if (!ValidateColorIndex(byte))
+        return 0;
+    }
+    ReadScanline(imgTB_flag ? row_num++ : (height - 1 - row_num++),
+                 out_row_buffer);
   }
-  bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_TAIL);
+  SaveDecodingStatus(BMP_D_STATUS_TAIL);
   return 1;
 }
-int32_t bmp_decode_rle8(bmp_decompress_struct_p bmp_ptr) {
+
+int32_t BMPDecompressor::DecodeRLE8() {
   uint8_t* first_byte_ptr = nullptr;
   uint8_t* second_byte_ptr = nullptr;
-  bmp_ptr->col_num = 0;
+  col_num = 0;
   while (true) {
-    uint32_t skip_size_org = bmp_ptr->skip_size;
-    if (!bmp_read_data(bmp_ptr, &first_byte_ptr, 1))
+    uint32_t skip_size_org = skip_size;
+    if (!ReadData(&first_byte_ptr, 1))
       return 2;
 
     switch (*first_byte_ptr) {
       case RLE_MARKER: {
-        if (!bmp_read_data(bmp_ptr, &first_byte_ptr, 1)) {
-          bmp_ptr->skip_size = skip_size_org;
+        if (!ReadData(&first_byte_ptr, 1)) {
+          skip_size = skip_size_org;
           return 2;
         }
         switch (*first_byte_ptr) {
           case RLE_EOL: {
-            if (bmp_ptr->row_num >= bmp_ptr->height) {
-              bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_TAIL);
-              bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-              return 0;
+            if (row_num >= height) {
+              SaveDecodingStatus(BMP_D_STATUS_TAIL);
+              Error("The Bmp File Is Corrupt");
+              NOTREACHED();
             }
-            bmp_ptr->bmp_get_row_fn(
-                bmp_ptr, bmp_ptr->imgTB_flag
-                             ? bmp_ptr->row_num++
-                             : (bmp_ptr->height - 1 - bmp_ptr->row_num++),
-                bmp_ptr->out_row_buffer);
-            bmp_ptr->col_num = 0;
-            memset(bmp_ptr->out_row_buffer, 0, bmp_ptr->out_row_bytes);
-            bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_DATA);
+            ReadScanline(imgTB_flag ? row_num++ : (height - 1 - row_num++),
+                         out_row_buffer);
+            col_num = 0;
+            std::fill(out_row_buffer.begin(), out_row_buffer.end(), 0);
+            SaveDecodingStatus(BMP_D_STATUS_DATA);
             continue;
           }
           case RLE_EOI: {
-            if (bmp_ptr->row_num < bmp_ptr->height) {
-              bmp_ptr->bmp_get_row_fn(
-                  bmp_ptr, bmp_ptr->imgTB_flag
-                               ? bmp_ptr->row_num++
-                               : (bmp_ptr->height - 1 - bmp_ptr->row_num++),
-                  bmp_ptr->out_row_buffer);
+            if (row_num < height) {
+              ReadScanline(imgTB_flag ? row_num++ : (height - 1 - row_num++),
+                           out_row_buffer);
             }
-            bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_TAIL);
+            SaveDecodingStatus(BMP_D_STATUS_TAIL);
             return 1;
           }
           case RLE_DELTA: {
             uint8_t* delta_ptr;
-            if (!bmp_read_data(bmp_ptr, &delta_ptr, 2)) {
-              bmp_ptr->skip_size = skip_size_org;
+            if (!ReadData(&delta_ptr, 2)) {
+              skip_size = skip_size_org;
               return 2;
             }
-            bmp_ptr->col_num += (int32_t)delta_ptr[0];
-            int32_t bmp_row_num_next = bmp_ptr->row_num + (int32_t)delta_ptr[1];
-            if (bmp_ptr->col_num >= bmp_ptr->out_row_bytes ||
-                bmp_row_num_next >= bmp_ptr->height) {
-              bmp_error(bmp_ptr, "The Bmp File Is Corrupt Or Not Supported");
-              return 0;
+            col_num += delta_ptr[0];
+            size_t bmp_row_num_next = row_num + delta_ptr[1];
+            if (col_num >= out_row_bytes || bmp_row_num_next >= height) {
+              Error("The Bmp File Is Corrupt Or Not Supported");
+              NOTREACHED();
             }
-            while (bmp_ptr->row_num < bmp_row_num_next) {
-              memset(bmp_ptr->out_row_buffer, 0, bmp_ptr->out_row_bytes);
-              bmp_ptr->bmp_get_row_fn(
-                  bmp_ptr, bmp_ptr->imgTB_flag
-                               ? bmp_ptr->row_num++
-                               : (bmp_ptr->height - 1 - bmp_ptr->row_num++),
-                  bmp_ptr->out_row_buffer);
+            while (row_num < bmp_row_num_next) {
+              std::fill(out_row_buffer.begin(), out_row_buffer.end(), 0);
+              ReadScanline(imgTB_flag ? row_num++ : (height - 1 - row_num++),
+                           out_row_buffer);
             }
           } break;
           default: {
-            int32_t avail_size = bmp_ptr->out_row_bytes - bmp_ptr->col_num;
+            int32_t avail_size = out_row_bytes - col_num;
             if (!avail_size ||
                 static_cast<int32_t>(*first_byte_ptr) > avail_size) {
-              bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-              return 0;
+              Error("The Bmp File Is Corrupt");
+              NOTREACHED();
             }
-            if (!bmp_read_data(bmp_ptr, &second_byte_ptr,
-                               *first_byte_ptr & 1 ? *first_byte_ptr + 1
-                                                   : *first_byte_ptr)) {
-              bmp_ptr->skip_size = skip_size_org;
+            if (!ReadData(&second_byte_ptr, *first_byte_ptr & 1
+                                                ? *first_byte_ptr + 1
+                                                : *first_byte_ptr)) {
+              skip_size = skip_size_org;
               return 2;
             }
-            memcpy(bmp_ptr->out_row_buffer + bmp_ptr->col_num, second_byte_ptr,
-                   *first_byte_ptr);
-            bmp_ptr->col_num += (int32_t)(*first_byte_ptr);
+            std::copy(second_byte_ptr, second_byte_ptr + *first_byte_ptr,
+                      out_row_buffer.begin() + col_num);
+            for (size_t i = col_num; i < col_num + *first_byte_ptr; ++i) {
+              if (!ValidateColorIndex(out_row_buffer[i]))
+                return 0;
+            }
+            col_num += *first_byte_ptr;
           }
         }
       } break;
       default: {
-        int32_t avail_size = bmp_ptr->out_row_bytes - bmp_ptr->col_num;
+        int32_t avail_size = out_row_bytes - col_num;
         if (!avail_size || static_cast<int32_t>(*first_byte_ptr) > avail_size) {
-          bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-          return 0;
+          Error("The Bmp File Is Corrupt");
+          NOTREACHED();
         }
-        if (!bmp_read_data(bmp_ptr, &second_byte_ptr, 1)) {
-          bmp_ptr->skip_size = skip_size_org;
+        if (!ReadData(&second_byte_ptr, 1)) {
+          skip_size = skip_size_org;
           return 2;
         }
-        memset(bmp_ptr->out_row_buffer + bmp_ptr->col_num, *second_byte_ptr,
-               *first_byte_ptr);
-        bmp_ptr->col_num += (int32_t)(*first_byte_ptr);
+        std::fill(out_row_buffer.begin() + col_num,
+                  out_row_buffer.begin() + col_num + *first_byte_ptr,
+                  *second_byte_ptr);
+        if (!ValidateColorIndex(out_row_buffer[col_num]))
+          return 0;
+        col_num += *first_byte_ptr;
       }
     }
   }
-  bmp_error(bmp_ptr, "Any Uncontrol Error");
-  return 0;
+  Error("Any Uncontrol Error");
+  NOTREACHED();
 }
 
-int32_t bmp_decode_rle4(bmp_decompress_struct_p bmp_ptr) {
+int32_t BMPDecompressor::DecodeRLE4() {
   uint8_t* first_byte_ptr = nullptr;
   uint8_t* second_byte_ptr = nullptr;
-  bmp_ptr->col_num = 0;
+  col_num = 0;
   while (true) {
-    uint32_t skip_size_org = bmp_ptr->skip_size;
-    if (!bmp_read_data(bmp_ptr, &first_byte_ptr, 1))
+    uint32_t skip_size_org = skip_size;
+    if (!ReadData(&first_byte_ptr, 1))
       return 2;
 
     switch (*first_byte_ptr) {
       case RLE_MARKER: {
-        if (!bmp_read_data(bmp_ptr, &first_byte_ptr, 1)) {
-          bmp_ptr->skip_size = skip_size_org;
+        if (!ReadData(&first_byte_ptr, 1)) {
+          skip_size = skip_size_org;
           return 2;
         }
         switch (*first_byte_ptr) {
           case RLE_EOL: {
-            if (bmp_ptr->row_num >= bmp_ptr->height) {
-              bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_TAIL);
-              bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-              return 0;
+            if (row_num >= height) {
+              SaveDecodingStatus(BMP_D_STATUS_TAIL);
+              Error("The Bmp File Is Corrupt");
+              NOTREACHED();
             }
-            bmp_ptr->bmp_get_row_fn(
-                bmp_ptr, bmp_ptr->imgTB_flag
-                             ? bmp_ptr->row_num++
-                             : (bmp_ptr->height - 1 - bmp_ptr->row_num++),
-                bmp_ptr->out_row_buffer);
-            bmp_ptr->col_num = 0;
-            memset(bmp_ptr->out_row_buffer, 0, bmp_ptr->out_row_bytes);
-            bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_DATA);
+            ReadScanline(imgTB_flag ? row_num++ : (height - 1 - row_num++),
+                         out_row_buffer);
+            col_num = 0;
+            std::fill(out_row_buffer.begin(), out_row_buffer.end(), 0);
+            SaveDecodingStatus(BMP_D_STATUS_DATA);
             continue;
           }
           case RLE_EOI: {
-            if (bmp_ptr->row_num < bmp_ptr->height) {
-              bmp_ptr->bmp_get_row_fn(
-                  bmp_ptr, bmp_ptr->imgTB_flag
-                               ? bmp_ptr->row_num++
-                               : (bmp_ptr->height - 1 - bmp_ptr->row_num++),
-                  bmp_ptr->out_row_buffer);
+            if (row_num < height) {
+              ReadScanline(imgTB_flag ? row_num++ : (height - 1 - row_num++),
+                           out_row_buffer);
             }
-            bmp_save_decoding_status(bmp_ptr, BMP_D_STATUS_TAIL);
+            SaveDecodingStatus(BMP_D_STATUS_TAIL);
             return 1;
           }
           case RLE_DELTA: {
             uint8_t* delta_ptr;
-            if (!bmp_read_data(bmp_ptr, &delta_ptr, 2)) {
-              bmp_ptr->skip_size = skip_size_org;
+            if (!ReadData(&delta_ptr, 2)) {
+              skip_size = skip_size_org;
               return 2;
             }
-            bmp_ptr->col_num += (int32_t)delta_ptr[0];
-            int32_t bmp_row_num_next = bmp_ptr->row_num + (int32_t)delta_ptr[1];
-            if (bmp_ptr->col_num >= bmp_ptr->out_row_bytes ||
-                bmp_row_num_next >= bmp_ptr->height) {
-              bmp_error(bmp_ptr, "The Bmp File Is Corrupt Or Not Supported");
-              return 0;
+            col_num += delta_ptr[0];
+            size_t bmp_row_num_next = row_num + delta_ptr[1];
+            if (col_num >= out_row_bytes || bmp_row_num_next >= height) {
+              Error("The Bmp File Is Corrupt Or Not Supported");
+              NOTREACHED();
             }
-            while (bmp_ptr->row_num < bmp_row_num_next) {
-              memset(bmp_ptr->out_row_buffer, 0, bmp_ptr->out_row_bytes);
-              bmp_ptr->bmp_get_row_fn(
-                  bmp_ptr, bmp_ptr->imgTB_flag
-                               ? bmp_ptr->row_num++
-                               : (bmp_ptr->height - 1 - bmp_ptr->row_num++),
-                  bmp_ptr->out_row_buffer);
+            while (row_num < bmp_row_num_next) {
+              std::fill(out_row_buffer.begin(), out_row_buffer.end(), 0);
+              ReadScanline(imgTB_flag ? row_num++ : (height - 1 - row_num++),
+                           out_row_buffer);
             }
           } break;
           default: {
-            int32_t avail_size = bmp_ptr->out_row_bytes - bmp_ptr->col_num;
+            int32_t avail_size = out_row_bytes - col_num;
             if (!avail_size) {
-              bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-              return 0;
+              Error("The Bmp File Is Corrupt");
+              NOTREACHED();
             }
             uint8_t size = HalfRoundUp(*first_byte_ptr);
             if (static_cast<int32_t>(*first_byte_ptr) > avail_size) {
-              if (size + (bmp_ptr->col_num >> 1) > bmp_ptr->src_row_bytes) {
-                bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-                return 0;
+              if (size + (col_num >> 1) > src_row_bytes) {
+                Error("The Bmp File Is Corrupt");
+                NOTREACHED();
               }
               *first_byte_ptr = avail_size - 1;
             }
-            if (!bmp_read_data(bmp_ptr, &second_byte_ptr,
-                               size & 1 ? size + 1 : size)) {
-              bmp_ptr->skip_size = skip_size_org;
+            if (!ReadData(&second_byte_ptr, size & 1 ? size + 1 : size)) {
+              skip_size = skip_size_org;
               return 2;
             }
             for (uint8_t i = 0; i < *first_byte_ptr; i++) {
-              if (i & 0x01) {
-                *(bmp_ptr->out_row_buffer + bmp_ptr->col_num++) =
-                    (*second_byte_ptr++ & 0x0F);
-              } else {
-                *(bmp_ptr->out_row_buffer + bmp_ptr->col_num++) =
-                    ((*second_byte_ptr & 0xF0) >> 4);
-              }
+              uint8_t color = (i & 0x01) ? (*second_byte_ptr++ & 0x0F)
+                                         : (*second_byte_ptr & 0xF0) >> 4;
+              if (!ValidateColorIndex(color))
+                return 0;
+
+              out_row_buffer[col_num++] = color;
             }
           }
         }
       } break;
       default: {
-        int32_t avail_size = bmp_ptr->out_row_bytes - bmp_ptr->col_num;
+        int32_t avail_size = out_row_bytes - col_num;
         if (!avail_size) {
-          bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-          return 0;
+          Error("The Bmp File Is Corrupt");
+          NOTREACHED();
         }
         if (static_cast<int32_t>(*first_byte_ptr) > avail_size) {
           uint8_t size = HalfRoundUp(*first_byte_ptr);
-          if (size + (bmp_ptr->col_num >> 1) > bmp_ptr->src_row_bytes) {
-            bmp_error(bmp_ptr, "The Bmp File Is Corrupt");
-            return 0;
+          if (size + (col_num >> 1) > src_row_bytes) {
+            Error("The Bmp File Is Corrupt");
+            NOTREACHED();
           }
           *first_byte_ptr = avail_size - 1;
         }
-        if (!bmp_read_data(bmp_ptr, &second_byte_ptr, 1)) {
-          bmp_ptr->skip_size = skip_size_org;
+        if (!ReadData(&second_byte_ptr, 1)) {
+          skip_size = skip_size_org;
           return 2;
         }
         for (uint8_t i = 0; i < *first_byte_ptr; i++) {
           uint8_t second_byte = *second_byte_ptr;
           second_byte =
               i & 0x01 ? (second_byte & 0x0F) : (second_byte & 0xF0) >> 4;
-          *(bmp_ptr->out_row_buffer + bmp_ptr->col_num++) = second_byte;
+          if (!ValidateColorIndex(second_byte))
+            return 0;
+          out_row_buffer[col_num++] = second_byte;
         }
       }
     }
   }
-  bmp_error(bmp_ptr, "Any Uncontrol Error");
-  return 0;
+  Error("Any Uncontrol Error");
+  NOTREACHED();
 }
 
-uint8_t* bmp_read_data(bmp_decompress_struct_p bmp_ptr,
-                       uint8_t** des_buf_pp,
-                       uint32_t data_size) {
-  if (!bmp_ptr || bmp_ptr->avail_in < bmp_ptr->skip_size + data_size)
+uint8_t* BMPDecompressor::ReadData(uint8_t** des_buf, uint32_t data_size) {
+  if (avail_in < skip_size + data_size)
     return nullptr;
 
-  *des_buf_pp = bmp_ptr->next_in + bmp_ptr->skip_size;
-  bmp_ptr->skip_size += data_size;
-  return *des_buf_pp;
-}
-void bmp_save_decoding_status(bmp_decompress_struct_p bmp_ptr, int32_t status) {
-  bmp_ptr->decode_status = status;
-  bmp_ptr->next_in += bmp_ptr->skip_size;
-  bmp_ptr->avail_in -= bmp_ptr->skip_size;
-  bmp_ptr->skip_size = 0;
-}
-void bmp_input_buffer(bmp_decompress_struct_p bmp_ptr,
-                      uint8_t* src_buf,
-                      uint32_t src_size) {
-  bmp_ptr->next_in = src_buf;
-  bmp_ptr->avail_in = src_size;
-  bmp_ptr->skip_size = 0;
-}
-uint32_t bmp_get_avail_input(bmp_decompress_struct_p bmp_ptr,
-                             uint8_t** avail_buf_ptr) {
-  if (avail_buf_ptr) {
-    *avail_buf_ptr = nullptr;
-    if (bmp_ptr->avail_in > 0) {
-      *avail_buf_ptr = bmp_ptr->next_in;
-    }
-  }
-  return bmp_ptr->avail_in;
-}
-bmp_compress_struct_p bmp_create_compress() {
-  bmp_compress_struct_p bmp_ptr;
-  bmp_ptr = FX_Alloc(bmp_compress_struct, 1);
-  if (bmp_ptr) {
-    memset(bmp_ptr, 0, sizeof(bmp_compress_struct));
-  }
-  return bmp_ptr;
-}
-void bmp_destroy_compress(bmp_compress_struct_p bmp_ptr) {
-  if (bmp_ptr) {
-    if (bmp_ptr->src_free && bmp_ptr->src_buf) {
-      FX_Free(bmp_ptr->src_buf);
-    }
-    FX_Free(bmp_ptr);
-  }
-}
-static void WriteFileHeader(BmpFileHeaderPtr head_ptr, uint8_t* dst_buf) {
-  uint32_t offset;
-  offset = 0;
-  SetWord_LSBFirst(&dst_buf[offset], head_ptr->bfType);
-  offset += 2;
-  SetDWord_LSBFirst(&dst_buf[offset], head_ptr->bfSize);
-  offset += 4;
-  SetWord_LSBFirst(&dst_buf[offset], head_ptr->bfReserved1);
-  offset += 2;
-  SetWord_LSBFirst(&dst_buf[offset], head_ptr->bfReserved2);
-  offset += 2;
-  SetDWord_LSBFirst(&dst_buf[offset], head_ptr->bfOffBits);
-  offset += 4;
-}
-static void WriteInfoHeader(BmpInfoHeaderPtr info_head_ptr, uint8_t* dst_buf) {
-  uint32_t offset;
-  offset = sizeof(BmpFileHeader);
-  SetDWord_LSBFirst(&dst_buf[offset], info_head_ptr->biSize);
-  offset += 4;
-  SetDWord_LSBFirst(&dst_buf[offset], info_head_ptr->biWidth);
-  offset += 4;
-  SetDWord_LSBFirst(&dst_buf[offset], info_head_ptr->biHeight);
-  offset += 4;
-  SetWord_LSBFirst(&dst_buf[offset], info_head_ptr->biPlanes);
-  offset += 2;
-  SetWord_LSBFirst(&dst_buf[offset], info_head_ptr->biBitCount);
-  offset += 2;
-  SetDWord_LSBFirst(&dst_buf[offset], info_head_ptr->biCompression);
-  offset += 4;
-  SetDWord_LSBFirst(&dst_buf[offset], info_head_ptr->biSizeImage);
-  offset += 4;
-  SetDWord_LSBFirst(&dst_buf[offset], info_head_ptr->biXPelsPerMeter);
-  offset += 4;
-  SetDWord_LSBFirst(&dst_buf[offset], info_head_ptr->biYPelsPerMeter);
-  offset += 4;
-  SetDWord_LSBFirst(&dst_buf[offset], info_head_ptr->biClrUsed);
-  offset += 4;
-  SetDWord_LSBFirst(&dst_buf[offset], info_head_ptr->biClrImportant);
-  offset += 4;
-}
-static void bmp_encode_bitfields(bmp_compress_struct_p bmp_ptr,
-                                 uint8_t*& dst_buf,
-                                 uint32_t& dst_size) {
-  if (bmp_ptr->info_header.biBitCount != 16 &&
-      bmp_ptr->info_header.biBitCount != 32) {
-    return;
-  }
-  uint32_t size, dst_pos, i;
-  size = bmp_ptr->src_pitch * bmp_ptr->src_row *
-         bmp_ptr->info_header.biBitCount / 16;
-  dst_pos = bmp_ptr->file_header.bfOffBits;
-  dst_size += size;
-  dst_buf = FX_Realloc(uint8_t, dst_buf, dst_size);
-  memset(&dst_buf[dst_pos], 0, size);
-  uint32_t mask_red;
-  uint32_t mask_green;
-  uint32_t mask_blue;
-  mask_red = 0x7C00;
-  mask_green = 0x03E0;
-  mask_blue = 0x001F;
-  if (bmp_ptr->info_header.biCompression == BMP_BITFIELDS) {
-    if (bmp_ptr->bit_type == BMP_BIT_565) {
-      mask_red = 0xF800;
-      mask_green = 0x07E0;
-      mask_blue = 0x001F;
-    }
-    if (bmp_ptr->info_header.biBitCount == 32) {
-      mask_red = 0xFF0000;
-      mask_green = 0x00FF00;
-      mask_blue = 0x0000FF;
-    }
-    SetDWord_LSBFirst(&dst_buf[dst_pos], mask_red);
-    dst_pos += 4;
-    SetDWord_LSBFirst(&dst_buf[dst_pos], mask_green);
-    dst_pos += 4;
-    SetDWord_LSBFirst(&dst_buf[dst_pos], mask_blue);
-    dst_pos += 4;
-    bmp_ptr->file_header.bfOffBits = dst_pos;
-  }
-  uint8_t blue_bits = 0;
-  uint8_t green_bits = 0;
-  uint8_t red_bits = 0;
-  for (i = 0; i < bmp_ptr->info_header.biBitCount; i++) {
-    if ((mask_blue >> i) & 0x01) {
-      blue_bits++;
-    }
-    if ((mask_green >> i) & 0x01) {
-      green_bits++;
-    }
-    if ((mask_red >> i) & 0x01) {
-      red_bits++;
-    }
-  }
-  green_bits += blue_bits;
-  red_bits += green_bits;
-  blue_bits = 8 - blue_bits;
-  green_bits -= 8;
-  red_bits -= 8;
-  i = 0;
-  for (int32_t row_num = bmp_ptr->src_row - 1; row_num > -1; row_num--, i = 0) {
-    while (i < bmp_ptr->src_width * bmp_ptr->src_bpp / 8) {
-      uint8_t b = bmp_ptr->src_buf[row_num * bmp_ptr->src_pitch + i++];
-      uint8_t g = bmp_ptr->src_buf[row_num * bmp_ptr->src_pitch + i++];
-      uint8_t r = bmp_ptr->src_buf[row_num * bmp_ptr->src_pitch + i++];
-      if (bmp_ptr->src_bpp == 32) {
-        i++;
-      }
-      uint32_t pix_val = 0;
-      pix_val |= (b >> blue_bits) & mask_blue;
-      pix_val |= (g << green_bits) & mask_green;
-      pix_val |= (r << red_bits) & mask_red;
-      if (bmp_ptr->info_header.biBitCount == 16) {
-        SetWord_LSBFirst(&dst_buf[dst_pos], pix_val);
-        dst_pos += 2;
-      } else {
-        SetDWord_LSBFirst(&dst_buf[dst_pos], pix_val);
-        dst_pos += 4;
-      }
-    }
-  }
-  dst_size = dst_pos;
+  *des_buf = next_in + skip_size;
+  skip_size += data_size;
+  return *des_buf;
 }
 
-static void bmp_encode_rgb(bmp_compress_struct_p bmp_ptr,
-                           uint8_t*& dst_buf,
-                           uint32_t& dst_size) {
-  if (bmp_ptr->info_header.biBitCount == 16) {
-    bmp_encode_bitfields(bmp_ptr, dst_buf, dst_size);
+void BMPDecompressor::SaveDecodingStatus(int32_t status) {
+  decode_status = status;
+  next_in += skip_size;
+  avail_in -= skip_size;
+  skip_size = 0;
+}
+
+void BMPDecompressor::SetInputBuffer(uint8_t* src_buf, uint32_t src_size) {
+  next_in = src_buf;
+  avail_in = src_size;
+  skip_size = 0;
+}
+
+uint32_t BMPDecompressor::GetAvailInput(uint8_t** avail_buf) {
+  if (avail_buf) {
+    *avail_buf = nullptr;
+    if (avail_in > 0)
+      *avail_buf = next_in;
+  }
+  return avail_in;
+}
+
+void BMPDecompressor::SetHeight(int32_t signed_height) {
+  if (signed_height >= 0) {
+    height = signed_height;
     return;
   }
-  uint32_t size, dst_pos;
-  uint32_t dst_pitch =
-      (bmp_ptr->src_width * bmp_ptr->info_header.biBitCount + 31) / 32 * 4;
-  size = dst_pitch * bmp_ptr->src_row;
-  dst_pos = bmp_ptr->file_header.bfOffBits;
-  dst_size += size;
-  dst_buf = FX_Realloc(uint8_t, dst_buf, dst_size);
-  memset(&dst_buf[dst_pos], 0, size);
-  for (int32_t row_num = bmp_ptr->src_row - 1; row_num > -1; row_num--) {
-    memcpy(&dst_buf[dst_pos], &bmp_ptr->src_buf[row_num * bmp_ptr->src_pitch],
-           bmp_ptr->src_pitch);
-    dst_pos += dst_pitch;
+  if (signed_height == std::numeric_limits<int>::min()) {
+    Error("Unsupported height");
+    NOTREACHED();
   }
-  dst_size = dst_pos;
-}
-static uint8_t bmp_rle8_search(const uint8_t* buf, int32_t len) {
-  uint8_t num;
-  num = 1;
-  while (num < len) {
-    if (buf[num - 1] != buf[num] || num == 0xFF) {
-      break;
-    }
-    num++;
-  }
-  return num;
-}
-static void bmp_encode_rle8(bmp_compress_struct_p bmp_ptr,
-                            uint8_t*& dst_buf,
-                            uint32_t& dst_size) {
-  uint32_t size, dst_pos, index;
-  uint8_t rle[2] = {0};
-  size = bmp_ptr->src_pitch * bmp_ptr->src_row * 2;
-  dst_pos = bmp_ptr->file_header.bfOffBits;
-  dst_size += size;
-  dst_buf = FX_Realloc(uint8_t, dst_buf, dst_size);
-  memset(&dst_buf[dst_pos], 0, size);
-  for (int32_t row_num = bmp_ptr->src_row - 1, i = 0; row_num > -1;) {
-    index = row_num * bmp_ptr->src_pitch;
-    rle[0] = bmp_rle8_search(&bmp_ptr->src_buf[index + i], size - index - i);
-    rle[1] = bmp_ptr->src_buf[index + i];
-    if (i + rle[0] >= (int32_t)bmp_ptr->src_pitch) {
-      rle[0] = uint8_t(bmp_ptr->src_pitch - i);
-      if (rle[0]) {
-        dst_buf[dst_pos++] = rle[0];
-        dst_buf[dst_pos++] = rle[1];
-      }
-      dst_buf[dst_pos++] = RLE_MARKER;
-      dst_buf[dst_pos++] = RLE_EOL;
-      i = 0;
-      row_num--;
-    } else {
-      i += rle[0];
-      dst_buf[dst_pos++] = rle[0];
-      dst_buf[dst_pos++] = rle[1];
-    }
-  }
-  dst_buf[dst_pos++] = RLE_MARKER;
-  dst_buf[dst_pos++] = RLE_EOI;
-  dst_size = dst_pos;
-}
-static uint8_t bmp_rle4_search(const uint8_t* buf, int32_t len) {
-  uint8_t num;
-  num = 2;
-  while (num < len) {
-    if (buf[num - 2] != buf[num] || num == 0xFF) {
-      break;
-    }
-    num++;
-  }
-  return num;
-}
-static void bmp_encode_rle4(bmp_compress_struct_p bmp_ptr,
-                            uint8_t*& dst_buf,
-                            uint32_t& dst_size) {
-  uint32_t size, dst_pos, index;
-  uint8_t rle[2] = {0};
-  size = bmp_ptr->src_pitch * bmp_ptr->src_row;
-  dst_pos = bmp_ptr->file_header.bfOffBits;
-  dst_size += size;
-  dst_buf = FX_Realloc(uint8_t, dst_buf, dst_size);
-  memset(&dst_buf[dst_pos], 0, size);
-  for (int32_t row_num = bmp_ptr->src_row - 1, i = 0; row_num > -1;
-       rle[1] = 0) {
-    index = row_num * bmp_ptr->src_pitch;
-    rle[0] = bmp_rle4_search(&bmp_ptr->src_buf[index + i], size - index - i);
-    rle[1] |= (bmp_ptr->src_buf[index + i] & 0x0f) << 4;
-    rle[1] |= bmp_ptr->src_buf[index + i + 1] & 0x0f;
-    if (i + rle[0] >= (int32_t)bmp_ptr->src_pitch) {
-      rle[0] = uint8_t(bmp_ptr->src_pitch - i);
-      if (rle[0]) {
-        dst_buf[dst_pos++] = rle[0];
-        dst_buf[dst_pos++] = rle[1];
-      }
-      dst_buf[dst_pos++] = RLE_MARKER;
-      dst_buf[dst_pos++] = RLE_EOL;
-      i = 0;
-      row_num--;
-    } else {
-      i += rle[0];
-      dst_buf[dst_pos++] = rle[0];
-      dst_buf[dst_pos++] = rle[1];
-    }
-  }
-  dst_buf[dst_pos++] = RLE_MARKER;
-  dst_buf[dst_pos++] = RLE_EOI;
-  dst_size = dst_pos;
-}
-bool bmp_encode_image(bmp_compress_struct_p bmp_ptr,
-                      uint8_t*& dst_buf,
-                      uint32_t& dst_size) {
-  uint32_t head_size = sizeof(BmpFileHeader) + sizeof(BmpInfoHeader);
-  uint32_t pal_size = sizeof(uint32_t) * bmp_ptr->pal_num;
-  if (bmp_ptr->info_header.biClrUsed > 0 &&
-      bmp_ptr->info_header.biClrUsed < bmp_ptr->pal_num) {
-    pal_size = sizeof(uint32_t) * bmp_ptr->info_header.biClrUsed;
-  }
-  dst_size = head_size + sizeof(uint32_t) * bmp_ptr->pal_num;
-  dst_buf = FX_TryAlloc(uint8_t, dst_size);
-  if (!dst_buf)
-    return false;
-
-  memset(dst_buf, 0, dst_size);
-  bmp_ptr->file_header.bfOffBits = head_size;
-  if (bmp_ptr->pal_ptr && pal_size) {
-    memcpy(&dst_buf[head_size], bmp_ptr->pal_ptr, pal_size);
-    bmp_ptr->file_header.bfOffBits += pal_size;
-  }
-  WriteInfoHeader(&bmp_ptr->info_header, dst_buf);
-  switch (bmp_ptr->info_header.biCompression) {
-    case BMP_RGB:
-      bmp_encode_rgb(bmp_ptr, dst_buf, dst_size);
-      break;
-    case BMP_BITFIELDS:
-      bmp_encode_bitfields(bmp_ptr, dst_buf, dst_size);
-      break;
-    case BMP_RLE8:
-      bmp_encode_rle8(bmp_ptr, dst_buf, dst_size);
-      break;
-    case BMP_RLE4:
-      bmp_encode_rle4(bmp_ptr, dst_buf, dst_size);
-      break;
-    default:
-      break;
-  }
-  bmp_ptr->file_header.bfSize = dst_size;
-  WriteFileHeader(&bmp_ptr->file_header, dst_buf);
-  return true;
+  height = -signed_height;
+  imgTB_flag = true;
 }

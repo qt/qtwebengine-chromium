@@ -10,13 +10,13 @@
 
 #include "webrtc/modules/video_coding/codec_database.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
 #include "webrtc/modules/video_coding/codecs/i420/include/i420.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
 #include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
 #include "webrtc/modules/video_coding/internal_defines.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace {
 const size_t kDefaultPayloadSize = 1440;
@@ -44,9 +44,9 @@ VideoCodecVP9 VideoEncoder::GetDefaultVp9Settings() {
   VideoCodecVP9 vp9_settings;
   memset(&vp9_settings, 0, sizeof(vp9_settings));
 
-  vp9_settings.resilience = 1;
+  vp9_settings.resilienceOn = true;
   vp9_settings.numberOfTemporalLayers = 1;
-  vp9_settings.denoisingOn = false;
+  vp9_settings.denoisingOn = true;
   vp9_settings.frameDroppingOn = true;
   vp9_settings.keyFrameInterval = 3000;
   vp9_settings.adaptiveQpMode = true;
@@ -69,6 +69,31 @@ VideoCodecH264 VideoEncoder::GetDefaultH264Settings() {
   h264_settings.profile = H264::kProfileConstrainedBaseline;
 
   return h264_settings;
+}
+
+// Create an internal Decoder given a codec type
+static std::unique_ptr<VCMGenericDecoder> CreateDecoder(VideoCodecType type) {
+  switch (type) {
+    case kVideoCodecVP8:
+      return std::unique_ptr<VCMGenericDecoder>(
+          new VCMGenericDecoder(VP8Decoder::Create()));
+    case kVideoCodecVP9:
+      return std::unique_ptr<VCMGenericDecoder>(
+          new VCMGenericDecoder(VP9Decoder::Create()));
+    case kVideoCodecI420:
+      return std::unique_ptr<VCMGenericDecoder>(
+          new VCMGenericDecoder(new I420Decoder()));
+    case kVideoCodecH264:
+      if (H264Decoder::IsSupported()) {
+        return std::unique_ptr<VCMGenericDecoder>(
+            new VCMGenericDecoder(H264Decoder::Create()));
+      }
+      break;
+    default:
+      break;
+  }
+  LOG(LS_WARNING) << "No internal decoder of this type exists.";
+  return std::unique_ptr<VCMGenericDecoder>();
 }
 
 VCMDecoderMapItem::VCMDecoderMapItem(VideoCodec* settings,
@@ -98,13 +123,12 @@ VCMCodecDataBase::VCMCodecDataBase(
       external_encoder_(nullptr),
       internal_source_(false),
       encoded_frame_callback_(encoded_frame_callback),
-      ptr_decoder_(nullptr),
       dec_map_(),
       dec_external_map_() {}
 
 VCMCodecDataBase::~VCMCodecDataBase() {
   DeleteEncoder();
-  ReleaseDecoder(ptr_decoder_);
+  ptr_decoder_.reset();
   for (auto& kv : dec_map_)
     delete kv.second;
   for (auto& kv : dec_external_map_)
@@ -127,6 +151,9 @@ void VCMCodecDataBase::Codec(VideoCodecType codec_type, VideoCodec* settings) {
       settings->height = VCM_DEFAULT_CODEC_HEIGHT;
       settings->numberOfSimulcastStreams = 0;
       settings->qpMax = 56;
+      settings->timing_frame_thresholds = {
+          kDefaultTimingFramesDelayMs, kDefaultOutlierFrameSizePercent,
+      };
       *(settings->VP8()) = VideoEncoder::GetDefaultVp8Settings();
       return;
     case kVideoCodecVP9:
@@ -142,6 +169,9 @@ void VCMCodecDataBase::Codec(VideoCodecType codec_type, VideoCodec* settings) {
       settings->height = VCM_DEFAULT_CODEC_HEIGHT;
       settings->numberOfSimulcastStreams = 0;
       settings->qpMax = 56;
+      settings->timing_frame_thresholds = {
+          kDefaultTimingFramesDelayMs, kDefaultOutlierFrameSizePercent,
+      };
       *(settings->VP9()) = VideoEncoder::GetDefaultVp9Settings();
       return;
     case kVideoCodecH264:
@@ -157,6 +187,9 @@ void VCMCodecDataBase::Codec(VideoCodecType codec_type, VideoCodec* settings) {
       settings->height = VCM_DEFAULT_CODEC_HEIGHT;
       settings->numberOfSimulcastStreams = 0;
       settings->qpMax = 56;
+      settings->timing_frame_thresholds = {
+          kDefaultTimingFramesDelayMs, kDefaultOutlierFrameSizePercent,
+      };
       *(settings->H264()) = VideoEncoder::GetDefaultH264Settings();
       return;
     case kVideoCodecI420:
@@ -391,11 +424,10 @@ bool VCMCodecDataBase::DeregisterExternalDecoder(uint8_t payload_type) {
   // We can't use payload_type to check if the decoder is currently in use,
   // because payload type may be out of date (e.g. before we decode the first
   // frame after RegisterReceiveCodec)
-  if (ptr_decoder_ != nullptr &&
-      ptr_decoder_->_decoder == (*it).second->external_decoder_instance) {
+  if (ptr_decoder_ &&
+      ptr_decoder_->IsSameDecoder((*it).second->external_decoder_instance)) {
     // Release it if it was registered and in use.
-    ReleaseDecoder(ptr_decoder_);
-    ptr_decoder_ = nullptr;
+    ptr_decoder_.reset();
   }
   DeregisterReceiveCodec(payload_type);
   delete it->second;
@@ -455,12 +487,11 @@ VCMGenericDecoder* VCMCodecDataBase::GetDecoder(
   RTC_DCHECK(decoded_frame_callback->UserReceiveCallback());
   uint8_t payload_type = frame.PayloadType();
   if (payload_type == receive_codec_.plType || payload_type == 0) {
-    return ptr_decoder_;
+    return ptr_decoder_.get();
   }
   // Check for exisitng decoder, if exists - delete.
   if (ptr_decoder_) {
-    ReleaseDecoder(ptr_decoder_);
-    ptr_decoder_ = nullptr;
+    ptr_decoder_.reset();
     memset(&receive_codec_, 0, sizeof(VideoCodec));
   }
   ptr_decoder_ = CreateAndInitDecoder(frame, &receive_codec_);
@@ -471,36 +502,26 @@ VCMGenericDecoder* VCMCodecDataBase::GetDecoder(
   callback->OnIncomingPayloadType(receive_codec_.plType);
   if (ptr_decoder_->RegisterDecodeCompleteCallback(decoded_frame_callback) <
       0) {
-    ReleaseDecoder(ptr_decoder_);
-    ptr_decoder_ = nullptr;
+    ptr_decoder_.reset();
     memset(&receive_codec_, 0, sizeof(VideoCodec));
     return nullptr;
   }
-  return ptr_decoder_;
+  return ptr_decoder_.get();
 }
 
-void VCMCodecDataBase::ReleaseDecoder(VCMGenericDecoder* decoder) const {
-  if (decoder) {
-    RTC_DCHECK(decoder->_decoder);
-    decoder->Release();
-    if (!decoder->External()) {
-      delete decoder->_decoder;
-    }
-    delete decoder;
-  }
+VCMGenericDecoder* VCMCodecDataBase::GetCurrentDecoder() {
+  return ptr_decoder_.get();
 }
 
 bool VCMCodecDataBase::PrefersLateDecoding() const {
-  if (!ptr_decoder_)
-    return true;
-  return ptr_decoder_->PrefersLateDecoding();
+  return ptr_decoder_ ? ptr_decoder_->PrefersLateDecoding() : true;
 }
 
 bool VCMCodecDataBase::MatchesCurrentResolution(int width, int height) const {
   return send_codec_.width == width && send_codec_.height == height;
 }
 
-VCMGenericDecoder* VCMCodecDataBase::CreateAndInitDecoder(
+std::unique_ptr<VCMGenericDecoder> VCMCodecDataBase::CreateAndInitDecoder(
     const VCMEncodedFrame& frame,
     VideoCodec* new_codec) const {
   uint8_t payload_type = frame.PayloadType();
@@ -513,13 +534,13 @@ VCMGenericDecoder* VCMCodecDataBase::CreateAndInitDecoder(
                   << static_cast<int>(payload_type);
     return nullptr;
   }
-  VCMGenericDecoder* ptr_decoder = nullptr;
+  std::unique_ptr<VCMGenericDecoder> ptr_decoder;
   const VCMExtDecoderMapItem* external_dec_item =
       FindExternalDecoderItem(payload_type);
   if (external_dec_item) {
     // External codec.
-    ptr_decoder = new VCMGenericDecoder(
-        external_dec_item->external_decoder_instance, true);
+    ptr_decoder.reset(new VCMGenericDecoder(
+        external_dec_item->external_decoder_instance, true));
   } else {
     // Create decoder.
     ptr_decoder = CreateDecoder(decoder_item->settings->codecType);
@@ -538,7 +559,6 @@ VCMGenericDecoder* VCMCodecDataBase::CreateAndInitDecoder(
   }
   if (ptr_decoder->InitDecode(decoder_item->settings.get(),
                               decoder_item->number_of_cores) < 0) {
-    ReleaseDecoder(ptr_decoder);
     return nullptr;
   }
   memcpy(new_codec, decoder_item->settings.get(), sizeof(VideoCodec));
@@ -550,26 +570,6 @@ void VCMCodecDataBase::DeleteEncoder() {
     return;
   ptr_encoder_->Release();
   ptr_encoder_.reset();
-}
-
-VCMGenericDecoder* VCMCodecDataBase::CreateDecoder(VideoCodecType type) const {
-  switch (type) {
-    case kVideoCodecVP8:
-      return new VCMGenericDecoder(VP8Decoder::Create());
-    case kVideoCodecVP9:
-      return new VCMGenericDecoder(VP9Decoder::Create());
-    case kVideoCodecI420:
-      return new VCMGenericDecoder(new I420Decoder());
-    case kVideoCodecH264:
-      if (H264Decoder::IsSupported()) {
-        return new VCMGenericDecoder(H264Decoder::Create());
-      }
-      break;
-    default:
-      break;
-  }
-  LOG(LS_WARNING) << "No internal decoder of this type exists.";
-  return nullptr;
 }
 
 const VCMDecoderMapItem* VCMCodecDataBase::FindDecoderItem(

@@ -63,7 +63,7 @@ void vpx_highbd_idct8x8_64_add_sse2(const tran_low_t *input, uint16_t *dest,
     test = _mm_movemask_epi8(temp1);
 
     if (test) {
-      array_transpose_8x8(inptr, inptr);
+      transpose_16bit_8x8(inptr, inptr);
       for (i = 0; i < 8; i++) {
         sign_bits = _mm_cmplt_epi16(inptr[i], zero);
         temp1 = _mm_unpackhi_epi16(inptr[i], sign_bits);
@@ -94,7 +94,7 @@ void vpx_highbd_idct8x8_64_add_sse2(const tran_low_t *input, uint16_t *dest,
         inptr[i] = _mm_add_epi16(inptr[i], sixteen);
         d[i] = _mm_loadu_si128((const __m128i *)(dest + stride * i));
         inptr[i] = _mm_srai_epi16(inptr[i], 5);
-        d[i] = clamp_high_sse2(_mm_adds_epi16(d[i], inptr[i]), bd);
+        d[i] = add_clamp(d[i], inptr[i], bd);
         // Store
         _mm_storeu_si128((__m128i *)(dest + stride * i), d[i]);
       }
@@ -165,7 +165,7 @@ void vpx_highbd_idct8x8_12_add_sse2(const tran_low_t *input, uint16_t *dest,
 
     if (test) {
       // Use fact only first 4 rows contain non-zero coeffs
-      array_transpose_4X8(inptr, inptr);
+      transpose_16bit_4x8(inptr, inptr);
       for (i = 0; i < 4; i++) {
         sign_bits = _mm_cmplt_epi16(inptr[i], zero);
         temp1 = _mm_unpackhi_epi16(inptr[i], sign_bits);
@@ -196,7 +196,7 @@ void vpx_highbd_idct8x8_12_add_sse2(const tran_low_t *input, uint16_t *dest,
         inptr[i] = _mm_add_epi16(inptr[i], sixteen);
         d[i] = _mm_loadu_si128((const __m128i *)(dest + stride * i));
         inptr[i] = _mm_srai_epi16(inptr[i], 5);
-        d[i] = clamp_high_sse2(_mm_adds_epi16(d[i], inptr[i]), bd);
+        d[i] = add_clamp(d[i], inptr[i], bd);
         // Store
         _mm_storeu_si128((__m128i *)(dest + stride * i), d[i]);
       }
@@ -213,4 +213,9 @@ void vpx_highbd_idct8x8_12_add_sse2(const tran_low_t *input, uint16_t *dest,
       }
     }
   }
+}
+
+void vpx_highbd_idct8x8_1_add_sse2(const tran_low_t *input, uint16_t *dest,
+                                   int stride, int bd) {
+  highbd_idct_1_add_kernel(input, dest, stride, bd, 8);
 }

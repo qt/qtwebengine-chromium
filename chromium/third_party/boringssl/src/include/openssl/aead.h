@@ -117,16 +117,6 @@ OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_gcm_siv(void);
  * https://tools.ietf.org/html/draft-irtf-cfrg-gcmsiv-02 */
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_gcm_siv(void);
 
-/* EVP_aead_aes_128_gcm_fips_testonly is AES-128 in Galois Counter Mode with
- * an internally-generated random nonce. This is unsafe and should not be
- * used. */
-OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_gcm_fips_testonly(void);
-
-/* EVP_aead_aes_256_gcm_fips_testonly is AES-256 in Galois Counter Mode with
- * an internally-generated random nonce. This is unsafe and should not be
- * used. */
-OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_gcm_fips_testonly(void);
-
 /* EVP_has_aes_hardware returns one if we enable hardware support for fast and
  * constant-time AES-GCM. */
 OPENSSL_EXPORT int EVP_has_aes_hardware(void);
@@ -161,6 +151,9 @@ typedef struct evp_aead_ctx_st {
   /* aead_state is an opaque pointer to whatever state the AEAD needs to
    * maintain. */
   void *aead_state;
+  /* tag_len may contain the actual length of the authentication tag if it is
+   * known at initialization time. */
+  uint8_t tag_len;
 } EVP_AEAD_CTX;
 
 /* EVP_AEAD_MAX_KEY_LENGTH contains the maximum key length used by
@@ -218,8 +211,8 @@ OPENSSL_EXPORT void EVP_AEAD_CTX_cleanup(EVP_AEAD_CTX *ctx);
  * authenticates |ad_len| bytes from |ad| and writes the result to |out|. It
  * returns one on success and zero otherwise.
  *
- * This function may be called (with the same |EVP_AEAD_CTX|) concurrently with
- * itself or |EVP_AEAD_CTX_open|.
+ * This function may be called concurrently with itself or any other seal/open
+ * function on the same |EVP_AEAD_CTX|.
  *
  * At most |max_out_len| bytes are written to |out| and, in order to ensure
  * success, |max_out_len| should be |in_len| plus the result of
@@ -230,8 +223,8 @@ OPENSSL_EXPORT void EVP_AEAD_CTX_cleanup(EVP_AEAD_CTX *ctx);
  * |EVP_AEAD_nonce_length| for this AEAD.
  *
  * |EVP_AEAD_CTX_seal| never results in a partial output. If |max_out_len| is
- * insufficient, zero will be returned. (In this case, |*out_len| is set to
- * zero.)
+ * insufficient, zero will be returned. If any error occurs, |out| will be
+ * filled with zero bytes and |*out_len| set to zero.
  *
  * If |in| and |out| alias then |out| must be == |in|. */
 OPENSSL_EXPORT int EVP_AEAD_CTX_seal(const EVP_AEAD_CTX *ctx, uint8_t *out,
@@ -244,8 +237,8 @@ OPENSSL_EXPORT int EVP_AEAD_CTX_seal(const EVP_AEAD_CTX *ctx, uint8_t *out,
  * from |ad| and decrypts at most |in_len| bytes into |out|. It returns one on
  * success and zero otherwise.
  *
- * This function may be called (with the same |EVP_AEAD_CTX|) concurrently with
- * itself or |EVP_AEAD_CTX_seal|.
+ * This function may be called concurrently with itself or any other seal/open
+ * function on the same |EVP_AEAD_CTX|.
  *
  * At most |in_len| bytes are written to |out|. In order to ensure success,
  * |max_out_len| should be at least |in_len|. On successful return, |*out_len|
@@ -255,8 +248,8 @@ OPENSSL_EXPORT int EVP_AEAD_CTX_seal(const EVP_AEAD_CTX *ctx, uint8_t *out,
  * |EVP_AEAD_nonce_length| for this AEAD.
  *
  * |EVP_AEAD_CTX_open| never results in a partial output. If |max_out_len| is
- * insufficient, zero will be returned. (In this case, |*out_len| is set to
- * zero.)
+ * insufficient, zero will be returned. If any error occurs, |out| will be
+ * filled with zero bytes and |*out_len| set to zero.
  *
  * If |in| and |out| alias then |out| must be == |in|. */
 OPENSSL_EXPORT int EVP_AEAD_CTX_open(const EVP_AEAD_CTX *ctx, uint8_t *out,
@@ -264,6 +257,63 @@ OPENSSL_EXPORT int EVP_AEAD_CTX_open(const EVP_AEAD_CTX *ctx, uint8_t *out,
                                      const uint8_t *nonce, size_t nonce_len,
                                      const uint8_t *in, size_t in_len,
                                      const uint8_t *ad, size_t ad_len);
+
+/* EVP_AEAD_CTX_seal_scatter encrypts and authenticates |in_len| bytes from |in|
+ * and authenticates |ad_len| bytes from |ad|. It writes |in_len| bytes of
+ * ciphertext to |out| and the authentication tag to |out_tag|. It returns one
+ * on success and zero otherwise.
+ *
+ * This function may be called concurrently with itself or any other seal/open
+ * function on the same |EVP_AEAD_CTX|.
+ *
+ * Exactly |in_len| bytes are written to |out|, and up to
+ * |EVP_AEAD_max_overhead+extra_in_len| bytes to |out_tag|. On successful
+ * return, |*out_tag_len| is set to the actual number of bytes written to
+ * |out_tag|.
+ *
+ * |extra_in| may point to an additional plaintext input buffer if the cipher
+ * supports it. If present, |extra_in_len| additional bytes of plaintext are
+ * encrypted and authenticated, and the ciphertext is written (before the tag)
+ * to |out_tag|. |max_out_tag_len| must be sized to allow for the additional
+ * |extra_in_len| bytes.
+ *
+ * The length of |nonce|, |nonce_len|, must be equal to the result of
+ * |EVP_AEAD_nonce_length| for this AEAD.
+ *
+ * |EVP_AEAD_CTX_seal_scatter| never results in a partial output. If
+ * |max_out_tag_len| is insufficient, zero will be returned. If any error
+ * occurs, |out| and |out_tag| will be filled with zero bytes and |*out_tag_len|
+ * set to zero.
+ *
+ * If |in| and |out| alias then |out| must be == |in|. |out_tag| may not alias
+ * any other argument. */
+OPENSSL_EXPORT int EVP_AEAD_CTX_seal_scatter(
+    const EVP_AEAD_CTX *ctx, uint8_t *out,
+    uint8_t *out_tag, size_t *out_tag_len, size_t max_out_tag_len,
+    const uint8_t *nonce, size_t nonce_len,
+    const uint8_t *in, size_t in_len,
+    const uint8_t *extra_in, size_t extra_in_len,
+    const uint8_t *ad, size_t ad_len);
+
+/* EVP_AEAD_CTX_open_gather decrypts and authenticates |in_len| bytes from |in|
+ * and authenticates |ad_len| bytes from |ad| using |in_tag_len| bytes of
+ * authentication tag from |in_tag|. If successful, it writes |in_len| bytes of
+ * plaintext to |out|. It returns one on success and zero otherwise.
+ *
+ * This function may be called concurrently with itself or any other seal/open
+ * function on the same |EVP_AEAD_CTX|.
+ *
+ * The length of |nonce|, |nonce_len|, must be equal to the result of
+ * |EVP_AEAD_nonce_length| for this AEAD.
+ *
+ * |EVP_AEAD_CTX_open_gather| never results in a partial output. If any error
+ * occurs, |out| will be filled with zero bytes.
+ *
+ * If |in| and |out| alias then |out| must be == |in|. */
+OPENSSL_EXPORT int EVP_AEAD_CTX_open_gather(
+    const EVP_AEAD_CTX *ctx, uint8_t *out, const uint8_t *nonce,
+    size_t nonce_len, const uint8_t *in, size_t in_len, const uint8_t *in_tag,
+    size_t in_tag_len, const uint8_t *ad, size_t ad_len);
 
 /* EVP_AEAD_CTX_aead returns the underlying AEAD for |ctx|, or NULL if one has
  * not been set. */
@@ -292,6 +342,14 @@ OPENSSL_EXPORT const EVP_AEAD *EVP_aead_des_ede3_cbc_sha1_tls(void);
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_des_ede3_cbc_sha1_tls_implicit_iv(void);
 
 OPENSSL_EXPORT const EVP_AEAD *EVP_aead_null_sha1_tls(void);
+
+/* EVP_aead_aes_128_gcm_tls12 is AES-128 in Galois Counter Mode using the TLS
+ * 1.2 nonce construction. */
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_128_gcm_tls12(void);
+
+/* EVP_aead_aes_256_gcm_tls12 is AES-256 in Galois Counter Mode using the TLS
+ * 1.2 nonce construction. */
+OPENSSL_EXPORT const EVP_AEAD *EVP_aead_aes_256_gcm_tls12(void);
 
 
 /* SSLv3-specific AEAD algorithms.

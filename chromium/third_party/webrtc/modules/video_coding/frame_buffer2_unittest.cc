@@ -15,12 +15,12 @@
 #include <limits>
 #include <vector>
 
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/base/random.h"
 #include "webrtc/modules/video_coding/frame_object.h"
 #include "webrtc/modules/video_coding/jitter_estimator.h"
 #include "webrtc/modules/video_coding/sequence_number_util.h"
 #include "webrtc/modules/video_coding/timing.h"
+#include "webrtc/rtc_base/platform_thread.h"
+#include "webrtc/rtc_base/random.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/test/gmock.h"
 #include "webrtc/test/gtest.h"
@@ -116,6 +116,7 @@ class VCMReceiveStatisticsCallbackMock : public VCMReceiveStatisticsCallback {
                     int jitter_buffer_ms,
                     int min_playout_delay_ms,
                     int render_delay_ms));
+  MOCK_METHOD1(OnTimingFrameInfoUpdated, void(const TimingFrameInfo& info));
 };
 
 class TestFrameBuffer2 : public ::testing::Test {

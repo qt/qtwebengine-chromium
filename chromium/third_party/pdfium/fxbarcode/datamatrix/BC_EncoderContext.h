@@ -7,8 +7,8 @@
 #ifndef FXBARCODE_DATAMATRIX_BC_ENCODERCONTEXT_H_
 #define FXBARCODE_DATAMATRIX_BC_ENCODERCONTEXT_H_
 
+#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/cfx_widestring.h"
-#include "fxbarcode/datamatrix/BC_SymbolShapeHint.h"
 
 class CBC_SymbolInfo;
 
@@ -19,7 +19,7 @@ class CBC_EncoderContext {
                      int32_t& e);
   ~CBC_EncoderContext();
 
-  void setSymbolShape(SymbolShapeHint shape);
+  void setAllowRectangular(bool allow);
   void setSkipAtEnd(int32_t count);
   wchar_t getCurrentChar();
   wchar_t getCurrent();
@@ -38,12 +38,12 @@ class CBC_EncoderContext {
   CFX_WideString m_codewords;
   int32_t m_pos;
   int32_t m_newEncoding;
-  CBC_SymbolInfo* m_symbolInfo;
+  CFX_UnownedPtr<CBC_SymbolInfo> m_symbolInfo;
 
  private:
   int32_t getTotalMessageCharCount();
 
-  SymbolShapeHint m_shape;
+  bool m_allowRectangular;  // Force square when false.
   int32_t m_skipAtEnd;
 };
 

@@ -2,14 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-config("libc++abi_warnings") {
-  if (is_clang) {
-    # http://llvm.org/PR25978
-    cflags = [ "-Wno-unused-function" ]
-  }
-}
+source_set("libc++abi") {
+  visibility = [ "//buildtools/third_party/libc++" ]
 
-static_library("libc++abi") {
+  # This condition should match the one in build/config/c++.
+  if ((is_linux && current_cpu == "arm") || is_fuchsia) {
+    deps = [
+      "//buildtools/third_party/libunwind",
+    ]
+  }
   sources = [
     "trunk/src/abort_message.cpp",
     "trunk/src/cxa_aux_runtime.cpp",
@@ -24,17 +25,20 @@ static_library("libc++abi") {
     # libc++abi.  We build lib++/libc++abi with exceptions enabled.
     #"trunk/src/cxa_noexception.cpp",
     "trunk/src/cxa_personality.cpp",
-    "trunk/src/cxa_thread_atexit.cpp",
     "trunk/src/cxa_unexpected.cpp",
     "trunk/src/cxa_vector.cpp",
     "trunk/src/cxa_virtual.cpp",
     "trunk/src/fallback_malloc.cpp",
     "trunk/src/private_typeinfo.cpp",
     "trunk/src/stdlib_exception.cpp",
-    "trunk/src/stdlib_new_delete.cpp",
     "trunk/src/stdlib_stdexcept.cpp",
     "trunk/src/stdlib_typeinfo.cpp",
   ]
+  # This file should really be included on linux as well, but that
+  # would introduce an unwanted glibc 2.18 dependency.
+  if (is_posix && !is_mac && !is_linux) {
+    sources += [ "trunk/src/cxa_thread_atexit.cpp" ]
+  }
   configs -= [
     "//build/config/compiler:chromium_code",
     "//build/config/compiler:no_rtti",
@@ -44,7 +48,5 @@ static_library("libc++abi") {
     "//build/config/compiler:no_chromium_code",
     "//build/config/compiler:rtti",
     "//buildtools/third_party/libc++:config",
-    # Must be after no_chromium_code.
-    ":libc++abi_warnings",
   ]
 }

@@ -16,12 +16,13 @@
 #include <set>
 #include <vector>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/pacing/alr_detector.h"
 #include "webrtc/modules/pacing/bitrate_prober.h"
+#include "webrtc/modules/pacing/interval_budget.h"
 #include "webrtc/modules/utility/include/process_thread.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
 
@@ -35,7 +36,7 @@ const int64_t kMaxIntervalTimeMs = 30;
 
 }  // namespace
 
-// TODO(sprang): Move at least PacketQueue and MediaBudget out to separate
+// TODO(sprang): Move at least PacketQueue out to separate
 // files, so that we can more easily test them.
 
 namespace webrtc {
@@ -201,46 +202,6 @@ class PacketQueue {
   int64_t time_last_updated_;
 };
 
-class IntervalBudget {
- public:
-  explicit IntervalBudget(int initial_target_rate_kbps)
-      : target_rate_kbps_(initial_target_rate_kbps),
-        bytes_remaining_(0) {}
-
-  void set_target_rate_kbps(int target_rate_kbps) {
-    target_rate_kbps_ = target_rate_kbps;
-    bytes_remaining_ =
-        std::max(-kWindowMs * target_rate_kbps_ / 8, bytes_remaining_);
-  }
-
-  void IncreaseBudget(int64_t delta_time_ms) {
-    int64_t bytes = target_rate_kbps_ * delta_time_ms / 8;
-    if (bytes_remaining_ < 0) {
-      // We overused last interval, compensate this interval.
-      bytes_remaining_ = bytes_remaining_ + bytes;
-    } else {
-      // If we underused last interval we can't use it this interval.
-      bytes_remaining_ = bytes;
-    }
-  }
-
-  void UseBudget(size_t bytes) {
-    bytes_remaining_ = std::max(bytes_remaining_ - static_cast<int>(bytes),
-                                -kWindowMs * target_rate_kbps_ / 8);
-  }
-
-  size_t bytes_remaining() const {
-    return static_cast<size_t>(std::max(0, bytes_remaining_));
-  }
-
-  int target_rate_kbps() const { return target_rate_kbps_; }
-
- private:
-  static const int kWindowMs = 500;
-
-  int target_rate_kbps_;
-  int bytes_remaining_;
-};
 }  // namespace paced_sender
 
 const int64_t PacedSender::kMaxQueueLengthMs = 2000;
@@ -253,8 +214,8 @@ PacedSender::PacedSender(const Clock* clock,
       packet_sender_(packet_sender),
       alr_detector_(new AlrDetector()),
       paused_(false),
-      media_budget_(new paced_sender::IntervalBudget(0)),
-      padding_budget_(new paced_sender::IntervalBudget(0)),
+      media_budget_(new IntervalBudget(0)),
+      padding_budget_(new IntervalBudget(0)),
       prober_(new BitrateProber(event_log)),
       probing_send_failure_(false),
       estimated_bitrate_bps_(0),
@@ -264,7 +225,9 @@ PacedSender::PacedSender(const Clock* clock,
       time_last_update_us_(clock->TimeInMicroseconds()),
       first_sent_packet_ms_(-1),
       packets_(new paced_sender::PacketQueue(clock)),
-      packet_counter_(0) {
+      packet_counter_(0),
+      pacing_factor_(kDefaultPaceMultiplier),
+      queue_time_limit(kMaxQueueLengthMs) {
   UpdateBudgetWithElapsedTime(kMinPacketLimitMs);
 }
 
@@ -314,7 +277,7 @@ void PacedSender::SetEstimatedBitrate(uint32_t bitrate_bps) {
       std::min(estimated_bitrate_bps_ / 1000, max_padding_bitrate_kbps_));
   pacing_bitrate_kbps_ =
       std::max(min_send_bitrate_kbps_, estimated_bitrate_bps_ / 1000) *
-      kDefaultPaceMultiplier;
+      pacing_factor_;
   alr_detector_->SetEstimatedBitrate(bitrate_bps);
 }
 
@@ -324,7 +287,7 @@ void PacedSender::SetSendBitrateLimits(int min_send_bitrate_bps,
   min_send_bitrate_kbps_ = min_send_bitrate_bps / 1000;
   pacing_bitrate_kbps_ =
       std::max(min_send_bitrate_kbps_, estimated_bitrate_bps_ / 1000) *
-      kDefaultPaceMultiplier;
+      pacing_factor_;
   max_padding_bitrate_kbps_ = padding_bitrate / 1000;
   padding_budget_->set_target_rate_kbps(
       std::min(estimated_bitrate_bps_ / 1000, max_padding_bitrate_kbps_));
@@ -419,7 +382,7 @@ void PacedSender::Process() {
       // time constraint shall be met. Determine bitrate needed for that.
       packets_->UpdateQueueTime(clock_->TimeInMilliseconds());
       int64_t avg_time_left_ms = std::max<int64_t>(
-          1, kMaxQueueLengthMs - packets_->AverageQueueTimeMs());
+          1, queue_time_limit - packets_->AverageQueueTimeMs());
       int min_bitrate_needed_kbps =
           static_cast<int>(queue_size_bytes * 8 / avg_time_left_ms);
       if (min_bitrate_needed_kbps > target_bitrate_kbps)
@@ -478,7 +441,7 @@ void PacedSender::Process() {
     if (!probing_send_failure_)
       prober_->ProbeSent(clock_->TimeInMilliseconds(), bytes_sent);
   }
-  alr_detector_->OnBytesSent(bytes_sent, now_us / 1000);
+  alr_detector_->OnBytesSent(bytes_sent, elapsed_time_ms);
 }
 
 void PacedSender::ProcessThreadAttached(ProcessThread* process_thread) {
@@ -535,4 +498,15 @@ void PacedSender::UpdateBudgetWithBytesSent(size_t bytes_sent) {
   media_budget_->UseBudget(bytes_sent);
   padding_budget_->UseBudget(bytes_sent);
 }
+
+void PacedSender::SetPacingFactor(float pacing_factor) {
+  rtc::CritScope cs(&critsect_);
+  pacing_factor_ = pacing_factor;
+}
+
+void PacedSender::SetQueueTimeLimit(int limit_ms) {
+  rtc::CritScope cs(&critsect_);
+  queue_time_limit = limit_ms;
+}
+
 }  // namespace webrtc

@@ -9,7 +9,7 @@
 #include <memory>
 #include <utility>
 
-#include "core/fxcodec/codec/codec_int.h"
+#include "core/fxcodec/codec/ccodec_jpegmodule.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/dib/cfx_dibsource.h"
@@ -26,7 +26,21 @@ extern "C" {
 #else
 #include "third_party/libjpeg/jpeglib.h"
 #endif
-}
+}  // extern "C"
+
+class CJpegContext : public CCodec_JpegModule::Context {
+ public:
+  CJpegContext();
+  ~CJpegContext() override;
+
+  jmp_buf m_JumpMark;
+  jpeg_decompress_struct m_Info;
+  jpeg_error_mgr m_ErrMgr;
+  jpeg_source_mgr m_SrcMgr;
+  unsigned int m_SkipSize;
+  void* (*m_AllocFunc)(unsigned int);
+  void (*m_FreeFunc)(void*);
+};
 
 extern "C" {
 
@@ -80,7 +94,7 @@ static boolean _dest_empty(j_compress_ptr cinfo) {
   return false;
 }
 #endif
-};
+}  // extern "C"
 
 #define JPEG_MARKER_ICC (JPEG_APP0 + 2)
 #define JPEG_MARKER_MAXSIZE 0xFFFF
@@ -346,71 +360,75 @@ bool CCodec_JpegModule::LoadInfo(const uint8_t* src_buf,
                       bits_per_components, color_transform);
 }
 
-struct FXJPEG_Context {
-  jmp_buf m_JumpMark;
-  jpeg_decompress_struct m_Info;
-  jpeg_error_mgr m_ErrMgr;
-  jpeg_source_mgr m_SrcMgr;
-  unsigned int m_SkipSize;
-  void* (*m_AllocFunc)(unsigned int);
-  void (*m_FreeFunc)(void*);
-};
 extern "C" {
+
 static void _error_fatal1(j_common_ptr cinfo) {
-  longjmp(((FXJPEG_Context*)cinfo->client_data)->m_JumpMark, -1);
+  auto* pContext = reinterpret_cast<CJpegContext*>(cinfo->client_data);
+  longjmp(pContext->m_JumpMark, -1);
 }
-};
-extern "C" {
+
 static void _src_skip_data1(struct jpeg_decompress_struct* cinfo, long num) {
   if (cinfo->src->bytes_in_buffer < (size_t)num) {
-    ((FXJPEG_Context*)cinfo->client_data)->m_SkipSize =
-        (unsigned int)(num - cinfo->src->bytes_in_buffer);
+    auto* pContext = reinterpret_cast<CJpegContext*>(cinfo->client_data);
+    pContext->m_SkipSize = (unsigned int)(num - cinfo->src->bytes_in_buffer);
     cinfo->src->bytes_in_buffer = 0;
   } else {
     cinfo->src->next_input_byte += num;
     cinfo->src->bytes_in_buffer -= num;
   }
 }
-};
+
 static void* jpeg_alloc_func(unsigned int size) {
   return FX_Alloc(char, size);
 }
+
 static void jpeg_free_func(void* p) {
   FX_Free(p);
 }
-FXJPEG_Context* CCodec_JpegModule::Start() {
-  FXJPEG_Context* p = FX_Alloc(FXJPEG_Context, 1);
-  p->m_AllocFunc = jpeg_alloc_func;
-  p->m_FreeFunc = jpeg_free_func;
-  p->m_ErrMgr.error_exit = _error_fatal1;
-  p->m_ErrMgr.emit_message = _error_do_nothing1;
-  p->m_ErrMgr.output_message = _error_do_nothing;
-  p->m_ErrMgr.format_message = _error_do_nothing2;
-  p->m_ErrMgr.reset_error_mgr = _error_do_nothing;
-  p->m_SrcMgr.init_source = _src_do_nothing;
-  p->m_SrcMgr.term_source = _src_do_nothing;
-  p->m_SrcMgr.skip_input_data = _src_skip_data1;
-  p->m_SrcMgr.fill_input_buffer = _src_fill_buffer;
-  p->m_SrcMgr.resync_to_restart = _src_resync;
-  p->m_Info.client_data = p;
-  p->m_Info.err = &p->m_ErrMgr;
-  if (setjmp(p->m_JumpMark) == -1) {
-    return 0;
-  }
-  jpeg_create_decompress(&p->m_Info);
-  p->m_Info.src = &p->m_SrcMgr;
-  p->m_SkipSize = 0;
-  return p;
+
+}  // extern "C"
+
+CJpegContext::CJpegContext()
+    : m_SkipSize(0), m_AllocFunc(jpeg_alloc_func), m_FreeFunc(jpeg_free_func) {
+  memset(&m_Info, 0, sizeof(m_Info));
+  m_Info.client_data = this;
+  m_Info.err = &m_ErrMgr;
+
+  memset(&m_ErrMgr, 0, sizeof(m_ErrMgr));
+  m_ErrMgr.error_exit = _error_fatal1;
+  m_ErrMgr.emit_message = _error_do_nothing1;
+  m_ErrMgr.output_message = _error_do_nothing;
+  m_ErrMgr.format_message = _error_do_nothing2;
+  m_ErrMgr.reset_error_mgr = _error_do_nothing;
+
+  memset(&m_SrcMgr, 0, sizeof(m_SrcMgr));
+  m_SrcMgr.init_source = _src_do_nothing;
+  m_SrcMgr.term_source = _src_do_nothing;
+  m_SrcMgr.skip_input_data = _src_skip_data1;
+  m_SrcMgr.fill_input_buffer = _src_fill_buffer;
+  m_SrcMgr.resync_to_restart = _src_resync;
 }
 
-void CCodec_JpegModule::Finish(FXJPEG_Context* ctx) {
-  jpeg_destroy_decompress(&ctx->m_Info);
-  ctx->m_FreeFunc(ctx);
+CJpegContext::~CJpegContext() {
+  jpeg_destroy_decompress(&m_Info);
 }
 
-void CCodec_JpegModule::Input(FXJPEG_Context* ctx,
+std::unique_ptr<CCodec_JpegModule::Context> CCodec_JpegModule::Start() {
+  // Use ordinary pointer until past the fear of a longjump.
+  auto* pContext = new CJpegContext();
+  if (setjmp(pContext->m_JumpMark) == -1)
+    return nullptr;
+
+  jpeg_create_decompress(&pContext->m_Info);
+  pContext->m_Info.src = &pContext->m_SrcMgr;
+  pContext->m_SkipSize = 0;
+  return pdfium::WrapUnique(pContext);
+}
+
+void CCodec_JpegModule::Input(Context* pContext,
                               const unsigned char* src_buf,
                               uint32_t src_size) {
+  auto* ctx = static_cast<CJpegContext*>(pContext);
   if (ctx->m_SkipSize) {
     if (ctx->m_SkipSize > src_size) {
       ctx->m_SrcMgr.bytes_in_buffer = 0;
@@ -426,17 +444,18 @@ void CCodec_JpegModule::Input(FXJPEG_Context* ctx,
 }
 
 #ifdef PDF_ENABLE_XFA
-int CCodec_JpegModule::ReadHeader(FXJPEG_Context* ctx,
+int CCodec_JpegModule::ReadHeader(Context* pContext,
                                   int* width,
                                   int* height,
                                   int* nComps,
                                   CFX_DIBAttribute* pAttribute) {
 #else   // PDF_ENABLE_XFA
-int CCodec_JpegModule::ReadHeader(FXJPEG_Context* ctx,
+int CCodec_JpegModule::ReadHeader(Context* pContext,
                                   int* width,
                                   int* height,
                                   int* nComps) {
 #endif  // PDF_ENABLE_XFA
+  auto* ctx = static_cast<CJpegContext*>(pContext);
   if (setjmp(ctx->m_JumpMark) == -1)
     return 1;
 
@@ -455,7 +474,8 @@ int CCodec_JpegModule::ReadHeader(FXJPEG_Context* ctx,
   return 0;
 }
 
-bool CCodec_JpegModule::StartScanline(FXJPEG_Context* ctx, int down_scale) {
+bool CCodec_JpegModule::StartScanline(Context* pContext, int down_scale) {
+  auto* ctx = static_cast<CJpegContext*>(pContext);
   if (setjmp(ctx->m_JumpMark) == -1)
     return false;
 
@@ -463,8 +483,9 @@ bool CCodec_JpegModule::StartScanline(FXJPEG_Context* ctx, int down_scale) {
   return !!jpeg_start_decompress(&ctx->m_Info);
 }
 
-bool CCodec_JpegModule::ReadScanline(FXJPEG_Context* ctx,
+bool CCodec_JpegModule::ReadScanline(Context* pContext,
                                      unsigned char* dest_buf) {
+  auto* ctx = static_cast<CJpegContext*>(pContext);
   if (setjmp(ctx->m_JumpMark) == -1)
     return false;
 
@@ -472,8 +493,9 @@ bool CCodec_JpegModule::ReadScanline(FXJPEG_Context* ctx,
   return nlines == 1;
 }
 
-uint32_t CCodec_JpegModule::GetAvailInput(FXJPEG_Context* ctx,
+uint32_t CCodec_JpegModule::GetAvailInput(Context* pContext,
                                           uint8_t** avail_buf_ptr) {
+  auto* ctx = static_cast<CJpegContext*>(pContext);
   if (avail_buf_ptr) {
     *avail_buf_ptr = nullptr;
     if (ctx->m_SrcMgr.bytes_in_buffer > 0) {

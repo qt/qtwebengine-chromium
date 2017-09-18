@@ -194,6 +194,9 @@ endif
 DSP_SRCS-$(HAVE_AVX2)   += x86/fwd_txfm_avx2.c
 DSP_SRCS-$(HAVE_AVX2)   += x86/fwd_dct32x32_impl_avx2.h
 DSP_SRCS-$(HAVE_NEON)   += arm/fdct_neon.c
+DSP_SRCS-$(HAVE_NEON)   += arm/fdct16x16_neon.c
+DSP_SRCS-$(HAVE_NEON)   += arm/fdct32x32_neon.c
+DSP_SRCS-$(HAVE_NEON)   += arm/fdct_partial_neon.c
 DSP_SRCS-$(HAVE_NEON)   += arm/fwd_txfm_neon.c
 DSP_SRCS-$(HAVE_MSA)    += mips/fwd_txfm_msa.h
 DSP_SRCS-$(HAVE_MSA)    += mips/fwd_txfm_msa.c
@@ -207,9 +210,12 @@ DSP_SRCS-yes            += inv_txfm.c
 DSP_SRCS-$(HAVE_SSE2)   += x86/inv_txfm_sse2.h
 DSP_SRCS-$(HAVE_SSE2)   += x86/inv_txfm_sse2.c
 DSP_SRCS-$(HAVE_SSE2)   += x86/inv_wht_sse2.asm
+DSP_SRCS-$(HAVE_SSSE3)  += x86/inv_txfm_ssse3.h
 DSP_SRCS-$(HAVE_SSSE3)  += x86/inv_txfm_ssse3.c
 
 DSP_SRCS-$(HAVE_NEON_ASM) += arm/save_reg_neon$(ASM)
+
+DSP_SRCS-$(HAVE_VSX) += ppc/inv_txfm_vsx.c
 
 ifneq ($(CONFIG_VP9_HIGHBITDEPTH),yes)
 DSP_SRCS-$(HAVE_MSA)   += mips/inv_txfm_msa.h
@@ -237,6 +243,9 @@ DSP_SRCS-$(HAVE_SSE2)  += x86/highbd_idct4x4_add_sse2.c
 DSP_SRCS-$(HAVE_SSE2)  += x86/highbd_idct8x8_add_sse2.c
 DSP_SRCS-$(HAVE_SSE2)  += x86/highbd_idct16x16_add_sse2.c
 DSP_SRCS-$(HAVE_SSE2)  += x86/highbd_idct32x32_add_sse2.c
+DSP_SRCS-$(HAVE_SSE4_1) += x86/highbd_inv_txfm_sse4.h
+DSP_SRCS-$(HAVE_SSE4_1) += x86/highbd_idct4x4_add_sse4.c
+DSP_SRCS-$(HAVE_SSE4_1) += x86/highbd_idct8x8_add_sse4.c
 endif  # !CONFIG_VP9_HIGHBITDEPTH
 
 ifeq ($(HAVE_NEON_ASM),yes)
@@ -286,6 +295,10 @@ DSP_SRCS-$(HAVE_VSX)   += ppc/hadamard_vsx.c
 
 endif  # CONFIG_VP9_ENCODER
 
+# skin detection
+DSP_SRCS-yes            += skin_detection.h
+DSP_SRCS-yes            += skin_detection.c
+
 ifeq ($(CONFIG_ENCODERS),yes)
 DSP_SRCS-yes            += sad.c
 DSP_SRCS-yes            += subtract.c
@@ -325,6 +338,7 @@ ifneq ($(filter yes,$(CONFIG_ENCODERS) $(CONFIG_POSTPROC) $(CONFIG_VP9_POSTPROC)
 DSP_SRCS-yes            += variance.c
 DSP_SRCS-yes            += variance.h
 
+DSP_SRCS-$(HAVE_NEON)   += arm/avg_pred_neon.c
 DSP_SRCS-$(HAVE_NEON)   += arm/subpel_variance_neon.c
 DSP_SRCS-$(HAVE_NEON)   += arm/variance_neon.c
 
@@ -354,6 +368,7 @@ endif  # CONFIG_ENCODERS || CONFIG_POSTPROC || CONFIG_VP9_POSTPROC
 
 # Neon utilities
 DSP_SRCS-$(HAVE_NEON) += arm/mem_neon.h
+DSP_SRCS-$(HAVE_NEON) += arm/sum_neon.h
 DSP_SRCS-$(HAVE_NEON) += arm/transpose_neon.h
 
 # PPC VSX utilities

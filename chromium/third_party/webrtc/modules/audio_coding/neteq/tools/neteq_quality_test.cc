@@ -12,11 +12,11 @@
 #include <stdio.h>
 
 #include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "webrtc/base/checks.h"
 #include "webrtc/modules/audio_coding/neteq/tools/neteq_quality_test.h"
 #include "webrtc/modules/audio_coding/neteq/tools/output_audio_file.h"
 #include "webrtc/modules/audio_coding/neteq/tools/output_wav_file.h"
 #include "webrtc/modules/audio_coding/neteq/tools/resample_input_audio_file.h"
+#include "webrtc/rtc_base/checks.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 namespace webrtc {
@@ -406,7 +406,7 @@ int NetEqQualityTest::DecodeBlock() {
     RTC_DCHECK_EQ(out_frame_.samples_per_channel_,
                   static_cast<size_t>(kOutputSizeMs * out_sampling_khz_));
     RTC_CHECK(output_->WriteArray(
-        out_frame_.data_,
+        out_frame_.data(),
         out_frame_.samples_per_channel_ * out_frame_.num_channels_));
     return static_cast<int>(out_frame_.samples_per_channel_);
   }

@@ -1530,7 +1530,13 @@ FT_BEGIN_HEADER
   /*    values of the corresponding fields in @FT_FaceRec.  Some values    */
   /*    like ascender or descender are rounded for historical reasons;     */
   /*    more precise values (for outline fonts) can be derived by scaling  */
-  /*    the corresponding @FT_FaceRec values manually.                     */
+  /*    the corresponding @FT_FaceRec values manually, with code similar   */
+  /*    to the following.                                                  */
+  /*                                                                       */
+  /*    {                                                                  */
+  /*      scaled_ascender = FT_MulFix( face->root.ascender,                */
+  /*                                   size_metrics->y_scale );            */
+  /*    }                                                                  */
   /*                                                                       */
   /*    Note that due to glyph hinting and the selected rendering mode     */
   /*    these values are usually not exact; consequently, they must be     */
@@ -1795,9 +1801,9 @@ FT_BEGIN_HEADER
   /*                                                                       */
   /*        <load glyph with `FT_Load_Glyph'>                              */
   /*                                                                       */
-  /*        if ( prev_rsb_delta - slot->lsb_delta >= 32 )                  */
+  /*        if ( prev_rsb_delta - slot->lsb_delta >  32 )                  */
   /*          origin_x -= 64;                                              */
-  /*        else if ( prev_rsb_delta - slot->lsb_delta < -32 )             */
+  /*        else if ( prev_rsb_delta - slot->lsb_delta < -31 )             */
   /*          origin_x += 64;                                              */
   /*                                                                       */
   /*        prev_rsb_delta = slot->rsb_delta;                              */

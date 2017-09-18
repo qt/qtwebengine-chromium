@@ -783,8 +783,7 @@ void OutputHLSL::visitSymbol(TIntermSymbol *node)
 
             ensureStructDefined(nodeType);
 
-            const TName &nameWithMetadata = node->getName();
-            out << DecorateUniform(nameWithMetadata, nodeType);
+            out << DecorateVariableIfNeeded(node->getName());
         }
         else if (qualifier == EvqAttribute || qualifier == EvqVertexIn)
         {
@@ -873,7 +872,7 @@ void OutputHLSL::visitSymbol(TIntermSymbol *node)
         }
         else
         {
-            out << DecorateIfNeeded(node->getName());
+            out << DecorateVariableIfNeeded(node->getName());
         }
     }
 }
@@ -1593,7 +1592,7 @@ bool OutputHLSL::visitFunctionDefinition(Visit visit, TIntermFunctionDefinition 
     }
     else
     {
-        out << DecorateIfNeeded(node->getFunctionSymbolInfo()->getNameObj())
+        out << DecorateFunctionIfNeeded(node->getFunctionSymbolInfo()->getNameObj())
             << DisambiguateFunctionName(parameters) << (mOutputLod0Function ? "Lod0(" : "(");
     }
 
@@ -1645,9 +1644,9 @@ bool OutputHLSL::visitDeclaration(Visit visit, TIntermDeclaration *node)
         TIntermSequence *sequence = node->getSequence();
         TIntermTyped *variable    = (*sequence)[0]->getAsTyped();
         ASSERT(sequence->size() == 1);
+        ASSERT(variable);
 
-        if (variable &&
-            (variable->getQualifier() == EvqTemporary || variable->getQualifier() == EvqGlobal ||
+        if ((variable->getQualifier() == EvqTemporary || variable->getQualifier() == EvqGlobal ||
              variable->getQualifier() == EvqConst))
         {
             ensureStructDefined(variable->getType());
@@ -1683,23 +1682,14 @@ bool OutputHLSL::visitDeclaration(Visit visit, TIntermDeclaration *node)
             else
                 UNREACHABLE();
         }
-        else if (variable && IsVaryingOut(variable->getQualifier()))
+        else if (IsVaryingOut(variable->getQualifier()))
         {
-            for (TIntermSequence::iterator sit = sequence->begin(); sit != sequence->end(); sit++)
-            {
-                TIntermSymbol *symbol = (*sit)->getAsSymbolNode();
+            TIntermSymbol *symbol = variable->getAsSymbolNode();
+            ASSERT(symbol);  // Varying declarations can't have initializers.
 
-                if (symbol)
-                {
-                    // Vertex (output) varyings which are declared but not written to should
-                    // still be declared to allow successful linking
-                    mReferencedVaryings[symbol->getSymbol()] = symbol;
-                }
-                else
-                {
-                    (*sit)->traverse(this);
-                }
-            }
+            // Vertex outputs which are declared but not written to should still be declared to
+            // allow successful linking.
+            mReferencedVaryings[symbol->getSymbol()] = symbol;
         }
     }
     return false;
@@ -1725,7 +1715,7 @@ bool OutputHLSL::visitFunctionPrototype(Visit visit, TIntermFunctionPrototype *n
 
     TIntermSequence *arguments = node->getSequence();
 
-    TString name = DecorateIfNeeded(node->getFunctionSymbolInfo()->getNameObj());
+    TString name = DecorateFunctionIfNeeded(node->getFunctionSymbolInfo()->getNameObj());
     out << TypeString(node->getType()) << " " << name << DisambiguateFunctionName(arguments)
         << (mOutputLod0Function ? "Lod0(" : "(");
 
@@ -1779,7 +1769,7 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
                 ASSERT(index != CallDAG::InvalidIndex);
                 lod0 &= mASTMetadataList[index].mNeedsLod0;
 
-                out << DecorateIfNeeded(node->getFunctionSymbolInfo()->getNameObj());
+                out << DecorateFunctionIfNeeded(node->getFunctionSymbolInfo()->getNameObj());
                 out << DisambiguateFunctionName(node->getSequence());
                 out << (lod0 ? "Lod0(" : "(");
             }
@@ -1787,7 +1777,7 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
             {
                 // This path is used for internal functions that don't have their definitions in the
                 // AST, such as precision emulation functions.
-                out << DecorateIfNeeded(node->getFunctionSymbolInfo()->getNameObj()) << "(";
+                out << DecorateFunctionIfNeeded(node->getFunctionSymbolInfo()->getNameObj()) << "(";
             }
             else
             {
@@ -1969,7 +1959,7 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpCross:
             outputTriplet(out, visit, "cross(", ", ", ")");
             break;
-        case EOpFaceForward:
+        case EOpFaceforward:
             ASSERT(node->getUseEmulatedFunction());
             writeEmulatedFunctionTriplet(out, visit, node->getOp());
             break;
@@ -2537,7 +2527,7 @@ TString OutputHLSL::argumentString(const TIntermSymbol *symbol)
     }
     else
     {
-        nameStr = DecorateIfNeeded(name);
+        nameStr = DecorateVariableIfNeeded(name);
     }
 
     if (IsSampler(type.getBasicType()))
@@ -2567,34 +2557,33 @@ TString OutputHLSL::argumentString(const TIntermSymbol *symbol)
     {
         ASSERT(qualifier != EvqOut && qualifier != EvqInOut);
         TVector<TIntermSymbol *> samplerSymbols;
-        type.createSamplerSymbols("angle" + nameStr, "", 0u, &samplerSymbols, nullptr);
+        type.createSamplerSymbols("angle" + nameStr, "", type.isArray() ? type.getArraySize() : 0u,
+                                  &samplerSymbols, nullptr);
         for (const TIntermSymbol *sampler : samplerSymbols)
         {
             if (mOutputType == SH_HLSL_4_1_OUTPUT)
             {
-                argString << ", const uint " << sampler->getSymbol() << ArrayString(type);
+                ASSERT(!sampler->getType().isArray());
+                argString << ", const uint " << sampler->getSymbol();
             }
             else if (mOutputType == SH_HLSL_4_0_FL9_3_OUTPUT)
             {
                 const TType &samplerType = sampler->getType();
-                ASSERT((!type.isArray() && !samplerType.isArray()) ||
-                       type.getArraySize() == samplerType.getArraySize());
+                ASSERT(!samplerType.isArray());
                 ASSERT(IsSampler(samplerType.getBasicType()));
                 argString << ", " << QualifierString(qualifier) << " "
                           << TextureString(samplerType.getBasicType()) << " texture_"
-                          << sampler->getSymbol() << ArrayString(type) << ", "
-                          << QualifierString(qualifier) << " "
+                          << sampler->getSymbol() << ", " << QualifierString(qualifier) << " "
                           << SamplerString(samplerType.getBasicType()) << " sampler_"
-                          << sampler->getSymbol() << ArrayString(type);
+                          << sampler->getSymbol();
             }
             else
             {
                 const TType &samplerType = sampler->getType();
-                ASSERT((!type.isArray() && !samplerType.isArray()) ||
-                       type.getArraySize() == samplerType.getArraySize());
+                ASSERT(!samplerType.isArray());
                 ASSERT(IsSampler(samplerType.getBasicType()));
                 argString << ", " << QualifierString(qualifier) << " " << TypeString(samplerType)
-                          << " " << sampler->getSymbol() << ArrayString(type);
+                          << " " << sampler->getSymbol();
             }
         }
     }

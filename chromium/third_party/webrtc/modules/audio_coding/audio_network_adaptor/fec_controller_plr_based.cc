@@ -13,7 +13,7 @@
 #include <limits>
 #include <utility>
 
-#include "webrtc/base/checks.h"
+#include "webrtc/rtc_base/checks.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
 
 namespace webrtc {
@@ -107,8 +107,8 @@ bool FecControllerPlrBased::FecDisablingDecision(
   if (!uplink_bandwidth_bps_ || !packet_loss) {
     return false;
   } else {
-    // Disable when below the curve or exactly on it.
-    return !config_.fec_disabling_threshold.IsAboveCurve(
+    // Disable when below the curve.
+    return config_.fec_disabling_threshold.IsBelowCurve(
         {static_cast<float>(*uplink_bandwidth_bps_), *packet_loss});
   }
 }

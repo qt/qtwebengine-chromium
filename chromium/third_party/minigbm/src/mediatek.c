@@ -6,59 +6,64 @@
 
 #ifdef DRV_MEDIATEK
 
+// clang-format off
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <xf86drm.h>
 #include <mediatek_drm.h>
+// clang-format on
 
 #include "drv_priv.h"
 #include "helpers.h"
 #include "util.h"
 
-static struct supported_combination combos[6] = {
-	{DRM_FORMAT_ABGR8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
-		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_RGB565, DRM_FORMAT_MOD_NONE,
-		BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
-		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_XBGR8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
-		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_YVU420, DRM_FORMAT_MOD_NONE,
-		BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
-		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-};
+static const uint32_t render_target_formats[] = { DRM_FORMAT_ABGR8888, DRM_FORMAT_ARGB8888,
+						  DRM_FORMAT_RGB565, DRM_FORMAT_XBGR8888,
+						  DRM_FORMAT_XRGB8888 };
+
+static const uint32_t texture_source_formats[] = { DRM_FORMAT_R8, DRM_FORMAT_YVU420,
+						   DRM_FORMAT_YVU420_ANDROID };
 
 static int mediatek_init(struct driver *drv)
 {
-	drv_insert_combinations(drv, combos, ARRAY_SIZE(combos));
-	return drv_add_kms_flags(drv);
+	int ret;
+	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+				   &LINEAR_METADATA, BO_USE_RENDER_MASK);
+	if (ret)
+		return ret;
+
+	ret = drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
+				   &LINEAR_METADATA, BO_USE_TEXTURE_MASK);
+	if (ret)
+		return ret;
+
+	return drv_modify_linear_combinations(drv);
 }
 
-static int mediatek_bo_create(struct bo *bo, uint32_t width, uint32_t height,
-			      uint32_t format, uint32_t flags)
+static int mediatek_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+			      uint32_t flags)
 {
 	int ret;
 	size_t plane;
+	uint32_t stride;
 	struct drm_mtk_gem_create gem_create;
 
-	drv_bo_from_format(bo, width, height, format);
+	/*
+	 * Since the ARM L1 cache line size is 64 bytes, align to that as a
+	 * performance optimization.
+	 */
+	stride = drv_stride_from_format(format, width, 0);
+	stride = ALIGN(stride, 64);
+	drv_bo_from_format(bo, stride, height, format);
 
 	memset(&gem_create, 0, sizeof(gem_create));
 	gem_create.size = bo->total_size;
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MTK_GEM_CREATE, &gem_create);
 	if (ret) {
-		fprintf(stderr, "drv: DRM_IOCTL_MTK_GEM_CREATE failed "
-				"(size=%llu)\n", gem_create.size);
+		fprintf(stderr, "drv: DRM_IOCTL_MTK_GEM_CREATE failed (size=%llu)\n",
+			gem_create.size);
 		return ret;
 	}
 
@@ -78,14 +83,14 @@ static void *mediatek_bo_map(struct bo *bo, struct map_info *data, size_t plane)
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MTK_GEM_MAP_OFFSET, &gem_map);
 	if (ret) {
-		fprintf(stderr,"drv: DRM_IOCTL_MTK_GEM_MAP_OFFSET failed\n");
+		fprintf(stderr, "drv: DRM_IOCTL_MTK_GEM_MAP_OFFSET failed\n");
 		return MAP_FAILED;
 	}
 
 	data->length = bo->total_size;
 
-	return mmap(0, bo->total_size, PROT_READ | PROT_WRITE, MAP_SHARED,
-		    bo->drv->fd, gem_map.offset);
+	return mmap(0, bo->total_size, PROT_READ | PROT_WRITE, MAP_SHARED, bo->drv->fd,
+		    gem_map.offset);
 }
 
 static uint32_t mediatek_resolve_format(uint32_t format)
@@ -101,8 +106,7 @@ static uint32_t mediatek_resolve_format(uint32_t format)
 	}
 }
 
-struct backend backend_mediatek =
-{
+struct backend backend_mediatek = {
 	.name = "mediatek",
 	.init = mediatek_init,
 	.bo_create = mediatek_bo_create,

@@ -13,11 +13,11 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/optional.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/codecs/cng/webrtc_cng.h"
 #include "webrtc/modules/audio_coding/codecs/g711/audio_decoder_pcm.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/optional.h"
 #ifdef WEBRTC_CODEC_G722
 #include "webrtc/modules/audio_coding/codecs/g722/audio_decoder_g722.h"
 #endif
@@ -78,7 +78,7 @@ NamedDecoderConstructor decoder_constructors[] = {
      [](const SdpAudioFormat& format, std::unique_ptr<AudioDecoder>* out) {
        if (format.clockrate_hz == 8000 && format.num_channels == 1) {
          if (out) {
-           out->reset(new AudioDecoderIlbc);
+           out->reset(new AudioDecoderIlbcImpl);
          }
          return true;
        } else {
@@ -130,12 +130,12 @@ NamedDecoderConstructor decoder_constructors[] = {
        if (format.clockrate_hz == 8000) {
          if (format.num_channels == 1) {
            if (out) {
-             out->reset(new AudioDecoderG722);
+             out->reset(new AudioDecoderG722Impl);
            }
            return true;
          } else if (format.num_channels == 2) {
            if (out) {
-             out->reset(new AudioDecoderG722Stereo);
+             out->reset(new AudioDecoderG722StereoImpl);
            }
            return true;
          }
@@ -162,7 +162,7 @@ NamedDecoderConstructor decoder_constructors[] = {
        if (format.clockrate_hz == 48000 && format.num_channels == 2 &&
            num_channels) {
          if (out) {
-           out->reset(new AudioDecoderOpus(*num_channels));
+           out->reset(new AudioDecoderOpusImpl(*num_channels));
          }
          return true;
        } else {

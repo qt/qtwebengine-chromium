@@ -1,6 +1,6 @@
 {
   "name": "software rendering list",
-  "version": "13.9",
+  "version": "13.10",
   "entries": [
     {
       "id": 1,
@@ -1505,22 +1505,32 @@
       ]
     },
     {
-      "id": 148,
-      "description": "Explicit multisample resolve is broken on Adreno 4xx on Android 8.0",
-      "comment": "Corresponds to GPU driver bug #231",
-      "cr_bugs": [722962],
+      "id": 147,
+      "description": "GPU raster broken on Mali-T760 on KitKat",
+      "cr_bugs": [737048],
       "os": {
         "type": "android",
         "version": {
-          "op": "between",
-          "value": "8.0.0",
-          "value2": "8.0.99",
-          "comment": "Only initial version of O."
+          "op": "<=",
+          "value": "4.4.4"
         }
       },
-      "gl_renderer": "Adreno \\(TM\\) 4.*",
+      "gl_renderer": "Mali-T760.*",
       "features": [
-        "webgl2"
+        "accelerated_2d_canvas",
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 148,
+      "description": "VideoCore V has corrupt rendering with GPU Rasterization",
+      "cr_bugs": [710273],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": ".*VideoCore V.*",
+      "features": [
+        "gpu_rasterization"
       ]
     }
   ],

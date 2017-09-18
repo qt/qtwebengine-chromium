@@ -14,11 +14,11 @@
 #include <algorithm>
 #include <utility>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/keep_ref_until_done.h"
 #include "libyuv/convert.h"
 #include "libyuv/planar_functions.h"
 #include "libyuv/scale.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/keep_ref_until_done.h"
 
 // Aligning pointer to 64 bytes for improved performance, e.g. use SIMD.
 static const int kBufferAlignment = 64;
@@ -77,7 +77,7 @@ rtc::scoped_refptr<I420Buffer> I420Buffer::Create(int width,
 
 // static
 rtc::scoped_refptr<I420Buffer> I420Buffer::Copy(
-    const VideoFrameBuffer& source) {
+    const I420BufferInterface& source) {
   return Copy(source.width(), source.height(),
               source.DataY(), source.StrideY(),
               source.DataU(), source.StrideU(),
@@ -104,7 +104,8 @@ rtc::scoped_refptr<I420Buffer> I420Buffer::Copy(
 
 // static
 rtc::scoped_refptr<I420Buffer> I420Buffer::Rotate(
-    const VideoFrameBuffer& src, VideoRotation rotation) {
+    const I420BufferInterface& src,
+    VideoRotation rotation) {
   RTC_CHECK(src.DataY());
   RTC_CHECK(src.DataU());
   RTC_CHECK(src.DataV());
@@ -134,10 +135,6 @@ rtc::scoped_refptr<I420Buffer> I420Buffer::Rotate(
 void I420Buffer::InitializeData() {
   memset(data_.get(), 0,
          I420DataSize(height_, stride_y_, stride_u_, stride_v_));
-}
-
-VideoFrameBuffer::Type I420Buffer::type() const {
-  return Type::kI420;
 }
 
 int I420Buffer::width() const {
@@ -187,12 +184,11 @@ void I420Buffer::SetBlack(I420Buffer* buffer) {
                              0, 128, 128) == 0);
 }
 
-void I420Buffer::CropAndScaleFrom(
-    const VideoFrameBuffer& src,
-    int offset_x,
-    int offset_y,
-    int crop_width,
-    int crop_height) {
+void I420Buffer::CropAndScaleFrom(const I420BufferInterface& src,
+                                  int offset_x,
+                                  int offset_y,
+                                  int crop_width,
+                                  int crop_height) {
   RTC_CHECK_LE(crop_width, src.width());
   RTC_CHECK_LE(crop_height, src.height());
   RTC_CHECK_LE(crop_width + offset_x, src.width());
@@ -224,8 +220,7 @@ void I420Buffer::CropAndScaleFrom(
   RTC_DCHECK_EQ(res, 0);
 }
 
-void I420Buffer::CropAndScaleFrom(
-    const VideoFrameBuffer& src) {
+void I420Buffer::CropAndScaleFrom(const I420BufferInterface& src) {
   const int crop_width =
       std::min(src.width(), width() * src.height() / height());
   const int crop_height =
@@ -237,7 +232,7 @@ void I420Buffer::CropAndScaleFrom(
       crop_width, crop_height);
 }
 
-void I420Buffer::ScaleFrom(const VideoFrameBuffer& src) {
+void I420Buffer::ScaleFrom(const I420BufferInterface& src) {
   CropAndScaleFrom(src, 0, 0, src.width(), src.height());
 }
 

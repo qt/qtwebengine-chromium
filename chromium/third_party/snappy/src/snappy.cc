@@ -30,7 +30,16 @@
 #include "snappy-internal.h"
 #include "snappy-sinksource.h"
 
-#ifdef __SSE2__
+#ifndef SNAPPY_HAVE_SSE2
+#if defined(__SSE2__) || defined(_M_X64) || \
+    (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+#define SNAPPY_HAVE_SSE2 1
+#else
+#define SNAPPY_HAVE_SSE2 0
+#endif
+#endif
+
+#if SNAPPY_HAVE_SSE2
 #include <emmintrin.h>
 #endif
 #include <stdio.h>
@@ -47,7 +56,6 @@ using internal::COPY_2_BYTE_OFFSET;
 using internal::LITERAL;
 using internal::char_table;
 using internal::kMaximumTagLength;
-using internal::wordmask;
 
 // Any hash function will produce a valid compressed bitstream, but a good
 // hash function reduces the number of collisions and thus yields better
@@ -97,7 +105,7 @@ void UnalignedCopy64(const void* src, void* dst) {
 void UnalignedCopy128(const void* src, void* dst) {
   // TODO(alkis): Remove this when we upgrade to a recent compiler that emits
   // SSE2 moves for memcpy(dst, src, 16).
-#ifdef __SSE2__
+#if SNAPPY_HAVE_SSE2
   __m128i x = _mm_loadu_si128(static_cast<const __m128i*>(src));
   _mm_storeu_si128(static_cast<__m128i*>(dst), x);
 #else
@@ -575,6 +583,14 @@ static inline void Report(const char *algorithm, size_t compressed_size,
 //   bool TryFastAppend(const char* ip, size_t available, size_t length);
 // };
 
+namespace internal {
+
+// Mapping from i in range [0,4] to a mask to extract the bottom 8*i bits
+static const uint32 wordmask[] = {
+  0u, 0xffu, 0xffffu, 0xffffffu, 0xffffffffu
+};
+
+}  // end namespace internal
 
 // Helper class for decompression
 class SnappyDecompressor {
@@ -646,7 +662,16 @@ class SnappyDecompressor {
     // For position-independent executables, accessing global arrays can be
     // slow.  Move wordmask array onto the stack to mitigate this.
     uint32 wordmask[sizeof(internal::wordmask)/sizeof(uint32)];
-    memcpy(wordmask, internal::wordmask, sizeof(wordmask));
+    // Do not use memcpy to copy internal::wordmask to
+    // wordmask.  LLVM converts stack arrays to global arrays if it detects
+    // const stack arrays and this hurts the performance of position
+    // independent code. This change is temporary and can be reverted when
+    // https://reviews.llvm.org/D30759 is approved.
+    wordmask[0] = internal::wordmask[0];
+    wordmask[1] = internal::wordmask[1];
+    wordmask[2] = internal::wordmask[2];
+    wordmask[3] = internal::wordmask[3];
+    wordmask[4] = internal::wordmask[4];
 
     // We could have put this refill fragment only at the beginning of the loop.
     // However, duplicating it at the end of each branch gives the compiler more

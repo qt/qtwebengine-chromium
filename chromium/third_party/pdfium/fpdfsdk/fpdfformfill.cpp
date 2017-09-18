@@ -126,12 +126,9 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
       options.m_Flags &= ~RENDER_CLEARTYPE;
 
     // Grayscale output
-    if (flags & FPDF_GRAYSCALE) {
-      options.m_ColorMode = RENDER_COLOR_GRAY;
-      options.m_ForeColor = 0;
-      options.m_BackColor = 0xffffff;
-    }
-    options.m_AddFlags = flags >> 8;
+    if (flags & FPDF_GRAYSCALE)
+      options.m_ColorMode = CPDF_RenderOptions::kGray;
+
     options.m_bDrawAnnots = flags & FPDF_ANNOT;
 
 #ifdef PDF_ENABLE_XFA
@@ -201,11 +198,7 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
     CFX_RectF rcBBox = pXFAAnnot->GetBBox(0);
     CFX_FloatRect rcWidget(rcBBox.left, rcBBox.top, rcBBox.left + rcBBox.width,
                            rcBBox.top + rcBBox.height);
-    rcWidget.left -= 1.0f;
-    rcWidget.right += 1.0f;
-    rcWidget.bottom -= 1.0f;
-    rcWidget.top += 1.0f;
-
+    rcWidget.Inflate(1.0f, 1.0f);
     if (rcWidget.Contains(CFX_PointF(static_cast<float>(page_x),
                                      static_cast<float>(page_y)))) {
       return FPDF_FORMFIELD_XFA;
@@ -214,13 +207,6 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
   }
 #endif  // PDF_ENABLE_XFA
   return -1;
-}
-
-DLLEXPORT int STDCALL FPDPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
-                                                  FPDF_PAGE page,
-                                                  double page_x,
-                                                  double page_y) {
-  return FPDFPage_HasFormFieldAtPoint(hHandle, page, page_x, page_y);
 }
 
 DLLEXPORT int STDCALL FPDFPage_FormFieldZOrderAtPoint(FPDF_FORMHANDLE hHandle,
@@ -275,11 +261,10 @@ FPDFDOC_InitFormFillEnvironment(FPDF_DOCUMENT document,
 
 DLLEXPORT void STDCALL
 FPDFDOC_ExitFormFillEnvironment(FPDF_FORMHANDLE hHandle) {
-  if (!hHandle)
-    return;
-
   CPDFSDK_FormFillEnvironment* pFormFillEnv =
       HandleToCPDFSDKEnvironment(hHandle);
+  if (!pFormFillEnv)
+    return;
 
 #ifdef PDF_ENABLE_XFA
   // Reset the focused annotations and remove the SDK document from the
@@ -290,7 +275,6 @@ FPDFDOC_ExitFormFillEnvironment(FPDF_FORMHANDLE hHandle) {
   if (pFormFillEnv->GetXFAContext())
     pFormFillEnv->GetXFAContext()->SetFormFillEnv(nullptr);
 #endif  // PDF_ENABLE_XFA
-
   delete pFormFillEnv;
 }
 
@@ -324,9 +308,7 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnLButtonUp(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-
-  CFX_PointF pt((float)page_x, (float)page_y);
-  return pPageView->OnLButtonUp(pt, modifier);
+  return pPageView->OnLButtonUp(CFX_PointF(page_x, page_y), modifier);
 }
 
 #ifdef PDF_ENABLE_XFA
@@ -349,9 +331,7 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-
-  CFX_PointF pt((float)page_x, (float)page_y);
-  return pPageView->OnRButtonUp(pt, modifier);
+  return pPageView->OnRButtonUp(CFX_PointF(page_x, page_y), modifier);
 }
 #endif  // PDF_ENABLE_XFA
 
@@ -362,7 +342,6 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnKeyDown(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-
   return pPageView->OnKeyDown(nKeyCode, modifier);
 }
 
@@ -373,7 +352,6 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnKeyUp(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-
   return pPageView->OnKeyUp(nKeyCode, modifier);
 }
 
@@ -384,8 +362,25 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnChar(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-
   return pPageView->OnChar(nChar, modifier);
+}
+
+DLLEXPORT unsigned long STDCALL FORM_GetSelectedText(FPDF_FORMHANDLE hHandle,
+                                                     FPDF_PAGE page,
+                                                     void* buffer,
+                                                     unsigned long buflen) {
+  CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
+  if (!pPageView)
+    return 0;
+
+  CFX_WideString wide_str_form_text = pPageView->GetSelectedText();
+  CFX_ByteString encoded_form_text = wide_str_form_text.UTF16LE_Encode();
+  unsigned long form_text_len = encoded_form_text.GetLength();
+
+  if (buffer && buflen >= form_text_len)
+    memcpy(buffer, encoded_form_text.c_str(), form_text_len);
+
+  return form_text_len;
 }
 
 DLLEXPORT FPDF_BOOL STDCALL FORM_ForceToKillFocus(FPDF_FORMHANDLE hHandle) {
@@ -665,9 +660,6 @@ DLLEXPORT void STDCALL FORM_OnAfterLoadPage(FPDF_PAGE page,
 
 DLLEXPORT void STDCALL FORM_OnBeforeClosePage(FPDF_PAGE page,
                                               FPDF_FORMHANDLE hHandle) {
-  if (!hHandle)
-    return;
-
   CPDFSDK_FormFillEnvironment* pFormFillEnv =
       HandleToCPDFSDKEnvironment(hHandle);
   if (!pFormFillEnv)
@@ -707,26 +699,23 @@ DLLEXPORT void STDCALL FORM_DoDocumentAAction(FPDF_FORMHANDLE hHandle,
     return;
 
   CPDF_Document* pDoc = pFormFillEnv->GetPDFDocument();
-  CPDF_Dictionary* pDic = pDoc->GetRoot();
-  if (!pDic)
+  CPDF_Dictionary* pDict = pDoc->GetRoot();
+  if (!pDict)
     return;
 
-  CPDF_AAction aa(pDic->GetDictFor("AA"));
-  if (aa.ActionExist((CPDF_AAction::AActionType)aaType)) {
-    CPDF_Action action = aa.GetAction((CPDF_AAction::AActionType)aaType);
+  CPDF_AAction aa(pDict->GetDictFor("AA"));
+  auto type = static_cast<CPDF_AAction::AActionType>(aaType);
+  if (aa.ActionExist(type)) {
+    CPDF_Action action = aa.GetAction(type);
     CPDFSDK_ActionHandler* pActionHandler =
-        HandleToCPDFSDKEnvironment(hHandle)->GetActionHander();
-    pActionHandler->DoAction_Document(action, (CPDF_AAction::AActionType)aaType,
-                                      pFormFillEnv);
+        HandleToCPDFSDKEnvironment(hHandle)->GetActionHandler();
+    pActionHandler->DoAction_Document(action, type, pFormFillEnv);
   }
 }
 
 DLLEXPORT void STDCALL FORM_DoPageAAction(FPDF_PAGE page,
                                           FPDF_FORMHANDLE hHandle,
                                           int aaType) {
-  if (!hHandle)
-    return;
-
   CPDFSDK_FormFillEnvironment* pFormFillEnv =
       HandleToCPDFSDKEnvironment(hHandle);
   if (!pFormFillEnv)
@@ -740,20 +729,14 @@ DLLEXPORT void STDCALL FORM_DoPageAAction(FPDF_PAGE page,
   if (!pFormFillEnv->GetPageView(pPage, false))
     return;
 
-  CPDFSDK_ActionHandler* pActionHandler = pFormFillEnv->GetActionHander();
+  CPDFSDK_ActionHandler* pActionHandler = pFormFillEnv->GetActionHandler();
   CPDF_Dictionary* pPageDict = pPDFPage->m_pFormDict.Get();
   CPDF_AAction aa(pPageDict->GetDictFor("AA"));
-  if (FPDFPAGE_AACTION_OPEN == aaType) {
-    if (aa.ActionExist(CPDF_AAction::OpenPage)) {
-      CPDF_Action action = aa.GetAction(CPDF_AAction::OpenPage);
-      pActionHandler->DoAction_Page(action, CPDF_AAction::OpenPage,
-                                    pFormFillEnv);
-    }
-  } else {
-    if (aa.ActionExist(CPDF_AAction::ClosePage)) {
-      CPDF_Action action = aa.GetAction(CPDF_AAction::ClosePage);
-      pActionHandler->DoAction_Page(action, CPDF_AAction::ClosePage,
-                                    pFormFillEnv);
-    }
+  CPDF_AAction::AActionType type = aaType == FPDFPAGE_AACTION_OPEN
+                                       ? CPDF_AAction::OpenPage
+                                       : CPDF_AAction::ClosePage;
+  if (aa.ActionExist(type)) {
+    CPDF_Action action = aa.GetAction(type);
+    pActionHandler->DoAction_Page(action, type, pFormFillEnv);
   }
 }

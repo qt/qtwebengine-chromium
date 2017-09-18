@@ -9,6 +9,8 @@ import test_runner
 
 def main():
   runner = test_runner.TestRunner('corpus')
+  runner.SetEnforceExpectedImages(True)
+  runner.SetOneShotRenderer(True)
   return runner.Run()
 
 if __name__ == '__main__':

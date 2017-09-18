@@ -14,10 +14,6 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/networkroute.h"
-#include "webrtc/base/thread_checker.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/congestion_controller/delay_based_bwe.h"
 #include "webrtc/modules/congestion_controller/transport_feedback_adapter.h"
@@ -25,6 +21,10 @@
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/pacing/paced_sender.h"
 #include "webrtc/modules/pacing/packet_router.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/networkroute.h"
+#include "webrtc/rtc_base/race_checker.h"
 
 namespace rtc {
 struct SentPacket;
@@ -34,6 +34,7 @@ namespace webrtc {
 
 class BitrateController;
 class Clock;
+class AcknowledgedBitrateEstimator;
 class ProbeController;
 class RateLimiter;
 class RtcEventLog;
@@ -67,7 +68,7 @@ class SendSideCongestionController : public CallStatsObserver,
                                Observer* observer,
                                RtcEventLog* event_log,
                                std::unique_ptr<PacedSender> pacer);
-  virtual ~SendSideCongestionController();
+  ~SendSideCongestionController() override;
 
   void RegisterPacketFeedbackObserver(PacketFeedbackObserver* observer);
   void DeRegisterPacketFeedbackObserver(PacketFeedbackObserver* observer);
@@ -92,10 +93,9 @@ class SendSideCongestionController : public CallStatsObserver,
   virtual int64_t GetFirstPacketTimeMs() const;
   // TODO(nisse): Delete this accessor function. The pacer should be
   // internal to the congestion controller.
-  virtual PacedSender* pacer() { return pacer_.get(); }
-  virtual TransportFeedbackObserver* GetTransportFeedbackObserver() {
-    return this;
-  }
+  virtual PacedSender* pacer();
+  virtual TransportFeedbackObserver* GetTransportFeedbackObserver();
+
   RateLimiter* GetRetransmissionRateLimiter();
   void EnablePeriodicAlrProbing(bool enable);
 
@@ -142,6 +142,7 @@ class SendSideCongestionController : public CallStatsObserver,
   RtcEventLog* const event_log_;
   const std::unique_ptr<PacedSender> pacer_;
   const std::unique_ptr<BitrateController> bitrate_controller_;
+  std::unique_ptr<AcknowledgedBitrateEstimator> acknowledged_bitrate_estimator_;
   const std::unique_ptr<ProbeController> probe_controller_;
   const std::unique_ptr<RateLimiter> retransmission_rate_limiter_;
   TransportFeedbackAdapter transport_feedback_adapter_;
@@ -153,8 +154,9 @@ class SendSideCongestionController : public CallStatsObserver,
   rtc::CriticalSection bwe_lock_;
   int min_bitrate_bps_ GUARDED_BY(bwe_lock_);
   std::unique_ptr<DelayBasedBwe> delay_based_bwe_ GUARDED_BY(bwe_lock_);
+  bool was_in_alr_;
 
-  rtc::ThreadChecker worker_thread_checker_;
+  rtc::RaceChecker worker_race_;
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(SendSideCongestionController);
 };

@@ -12,10 +12,12 @@
 #include "./vpx_scale_rtcd.h"
 #include "./vpx_dsp_rtcd.h"
 #include "./vp8_rtcd.h"
+#include "bitstream.h"
 #include "vp8/common/onyxc_int.h"
 #include "vp8/common/blockd.h"
 #include "onyx_int.h"
 #include "vp8/common/systemdependent.h"
+#include "vp8/common/vp8_skin_detection.h"
 #include "vp8/encoder/quantize.h"
 #include "vp8/common/alloccommon.h"
 #include "mcomp.h"
@@ -42,6 +44,13 @@
 #include "mr_dissim.h"
 #endif
 #include "encodeframe.h"
+#if CONFIG_MULTITHREAD
+#include "ethreading.h"
+#endif
+#include "picklpf.h"
+#if !CONFIG_REALTIME_ONLY
+#include "temporal_filter.h"
+#endif
 
 #include <assert.h>
 #include <math.h>
@@ -50,12 +59,7 @@
 
 #if CONFIG_REALTIME_ONLY & CONFIG_ONTHEFLY_BITPACKING
 extern int vp8_update_coef_context(VP8_COMP *cpi);
-extern void vp8_update_coef_probs(VP8_COMP *cpi);
 #endif
-
-extern void vp8cx_pick_filter_level_fast(YV12_BUFFER_CONFIG *sd, VP8_COMP *cpi);
-extern void vp8cx_set_alt_lf_level(VP8_COMP *cpi, int filt_val);
-extern void vp8cx_pick_filter_level(YV12_BUFFER_CONFIG *sd, VP8_COMP *cpi);
 
 extern void vp8_deblock_frame(YV12_BUFFER_CONFIG *source,
                               YV12_BUFFER_CONFIG *post, int filt_lvl,
@@ -63,14 +67,8 @@ extern void vp8_deblock_frame(YV12_BUFFER_CONFIG *source,
 extern void print_parms(VP8_CONFIG *ocf, char *filenam);
 extern unsigned int vp8_get_processor_freq();
 extern void print_tree_update_probs();
-extern int vp8cx_create_encoder_threads(VP8_COMP *cpi);
-extern void vp8cx_remove_encoder_threads(VP8_COMP *cpi);
-
-int vp8_estimate_entropy_savings(VP8_COMP *cpi);
 
 int vp8_calc_ss_err(YV12_BUFFER_CONFIG *source, YV12_BUFFER_CONFIG *dest);
-
-extern void vp8_temporal_filter_prepare_c(VP8_COMP *cpi, int distance);
 
 static void set_default_lf_deltas(VP8_COMP *cpi);
 
@@ -86,6 +84,9 @@ FILE *yuv_file;
 #endif
 #ifdef OUTPUT_YUV_DENOISED
 FILE *yuv_denoised_file;
+#endif
+#ifdef OUTPUT_YUV_SKINMAP
+static FILE *yuv_skinmap_file = NULL;
 #endif
 
 #if 0
@@ -614,6 +615,37 @@ static void cyclic_background_refresh(VP8_COMP *cpi, int Q, int lf_adjustment) {
 
   /* Initialise the feature data structure */
   set_segment_data(cpi, &feature_data[0][0], SEGMENT_DELTADATA);
+}
+
+static void compute_skin_map(VP8_COMP *cpi) {
+  int mb_row, mb_col, num_bl;
+  VP8_COMMON *cm = &cpi->common;
+  const uint8_t *src_y = cpi->Source->y_buffer;
+  const uint8_t *src_u = cpi->Source->u_buffer;
+  const uint8_t *src_v = cpi->Source->v_buffer;
+  const int src_ystride = cpi->Source->y_stride;
+  const int src_uvstride = cpi->Source->uv_stride;
+
+  const SKIN_DETECTION_BLOCK_SIZE bsize =
+      (cm->Width * cm->Height <= 352 * 288) ? SKIN_8X8 : SKIN_16X16;
+  int offset = 0;
+  for (mb_row = 0; mb_row < cm->mb_rows; mb_row++) {
+    num_bl = 0;
+    for (mb_col = 0; mb_col < cm->mb_cols; mb_col++) {
+      const int bl_index = mb_row * cm->mb_cols + mb_col;
+      cpi->skin_map[offset] =
+          vp8_compute_skin_block(src_y, src_u, src_v, src_ystride, src_uvstride,
+                                 bsize, cpi->consec_zero_last[bl_index], 0);
+      num_bl++;
+      offset++;
+      src_y += 16;
+      src_u += 8;
+      src_v += 8;
+    }
+    src_y += (src_ystride << 4) - (num_bl << 4);
+    src_u += (src_uvstride << 3) - (num_bl << 3);
+    src_v += (src_uvstride << 3) - (num_bl << 3);
+  }
 }
 
 static void set_default_lf_deltas(VP8_COMP *cpi) {
@@ -1857,6 +1889,9 @@ struct VP8_COMP *vp8_create_compressor(VP8_CONFIG *oxcf) {
     cpi->cyclic_refresh_map = (signed char *)NULL;
   }
 
+  CHECK_MEM_ERROR(cpi->skin_map, vpx_calloc(cm->mb_rows * cm->mb_cols,
+                                            sizeof(cpi->skin_map[0])));
+
   CHECK_MEM_ERROR(cpi->consec_zero_last,
                   vpx_calloc(cm->mb_rows * cm->mb_cols, 1));
   CHECK_MEM_ERROR(cpi->consec_zero_last_mvbias,
@@ -1932,6 +1967,9 @@ struct VP8_COMP *vp8_create_compressor(VP8_CONFIG *oxcf) {
 #endif
 #ifdef OUTPUT_YUV_DENOISED
   yuv_denoised_file = fopen("denoised.yuv", "ab");
+#endif
+#ifdef OUTPUT_YUV_SKINMAP
+  yuv_skinmap_file = fopen("skinmap.yuv", "wb");
 #endif
 
 #if 0
@@ -2284,6 +2322,7 @@ void vp8_remove_compressor(VP8_COMP **ptr) {
   dealloc_compressor_data(cpi);
   vpx_free(cpi->mb.ss);
   vpx_free(cpi->tok);
+  vpx_free(cpi->skin_map);
   vpx_free(cpi->cyclic_refresh_map);
   vpx_free(cpi->consec_zero_last);
   vpx_free(cpi->consec_zero_last_mvbias);
@@ -2297,6 +2336,9 @@ void vp8_remove_compressor(VP8_COMP **ptr) {
 #endif
 #ifdef OUTPUT_YUV_DENOISED
   fclose(yuv_denoised_file);
+#endif
+#ifdef OUTPUT_YUV_SKINMAP
+  fclose(yuv_skinmap_file);
 #endif
 
 #if 0
@@ -2473,34 +2515,6 @@ int vp8_update_entropy(VP8_COMP *cpi, int update) {
 
   return 0;
 }
-
-#if defined(OUTPUT_YUV_SRC) || defined(OUTPUT_YUV_DENOISED)
-void vp8_write_yuv_frame(FILE *yuv_file, YV12_BUFFER_CONFIG *s) {
-  unsigned char *src = s->y_buffer;
-  int h = s->y_height;
-
-  do {
-    fwrite(src, s->y_width, 1, yuv_file);
-    src += s->y_stride;
-  } while (--h);
-
-  src = s->u_buffer;
-  h = s->uv_height;
-
-  do {
-    fwrite(src, s->uv_width, 1, yuv_file);
-    src += s->uv_stride;
-  } while (--h);
-
-  src = s->v_buffer;
-  h = s->uv_height;
-
-  do {
-    fwrite(src, s->uv_width, 1, yuv_file);
-    src += s->uv_stride;
-  } while (--h);
-}
-#endif
 
 static void scale_and_extend_source(YV12_BUFFER_CONFIG *sd, VP8_COMP *cpi) {
   VP8_COMMON *cm = &cpi->common;
@@ -3788,6 +3802,8 @@ static void encode_frame_to_data_rate(VP8_COMP *cpi, size_t *size,
   }
 #endif
 
+  compute_skin_map(cpi);
+
   /* Setup background Q adjustment for error resilient mode.
    * For multi-layer encodes only enable this for the base layer.
   */
@@ -4418,6 +4434,12 @@ static void encode_frame_to_data_rate(VP8_COMP *cpi, size_t *size,
   if (cpi->oxcf.noise_sensitivity == 4 && !cpi->oxcf.screen_content_mode &&
       cpi->frames_since_key % 8 == 0 && cm->frame_type != KEY_FRAME) {
     process_denoiser_mode_change(cpi);
+  }
+#endif
+
+#ifdef OUTPUT_YUV_SKINMAP
+  if (cpi->common.current_video_frame > 1) {
+    vp8_compute_skin_map(cpi, yuv_skinmap_file);
   }
 #endif
 

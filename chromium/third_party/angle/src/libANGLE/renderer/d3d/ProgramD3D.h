@@ -158,14 +158,15 @@ class ProgramD3D : public ProgramImpl
     bool usesGeometryShader(GLenum drawMode) const;
     bool usesInstancedPointSpriteEmulation() const;
 
-    LinkResult load(const ContextImpl *contextImpl,
-                    gl::InfoLog &infoLog,
-                    gl::BinaryInputStream *stream) override;
-    gl::Error save(gl::BinaryOutputStream *stream) override;
+    gl::LinkResult load(const gl::Context *context,
+                        gl::InfoLog &infoLog,
+                        gl::BinaryInputStream *stream) override;
+    void save(const gl::Context *context, gl::BinaryOutputStream *stream) override;
     void setBinaryRetrievableHint(bool retrievable) override;
     void setSeparable(bool separable) override;
 
-    gl::Error getPixelExecutableForFramebuffer(const gl::Framebuffer *fbo,
+    gl::Error getPixelExecutableForFramebuffer(const gl::Context *context,
+                                               const gl::Framebuffer *fbo,
                                                ShaderExecutableD3D **outExectuable);
     gl::Error getPixelExecutableForOutputLayout(const std::vector<GLenum> &outputLayout,
                                                 ShaderExecutableD3D **outExectuable,
@@ -178,9 +179,9 @@ class ProgramD3D : public ProgramImpl
                                                     ShaderExecutableD3D **outExecutable,
                                                     gl::InfoLog *infoLog);
     gl::Error getComputeExecutable(ShaderExecutableD3D **outExecutable);
-    LinkResult link(ContextImpl *contextImpl,
-                    const gl::VaryingPacking &packing,
-                    gl::InfoLog &infoLog) override;
+    gl::LinkResult link(const gl::Context *context,
+                        const gl::VaryingPacking &packing,
+                        gl::InfoLog &infoLog) override;
     GLboolean validate(const gl::Caps &caps, gl::InfoLog *infoLog) override;
 
     bool getUniformBlockSize(const std::string &blockName, size_t *sizeOut) const override;
@@ -248,18 +249,9 @@ class ProgramD3D : public ProgramImpl
 
     void setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding) override;
 
-    const UniformStorageD3D &getVertexUniformStorage() const
-    {
-        return *mVertexUniformStorage.get();
-    }
-    const UniformStorageD3D &getFragmentUniformStorage() const
-    {
-        return *mFragmentUniformStorage.get();
-    }
-    const UniformStorageD3D &getComputeUniformStorage() const
-    {
-        return *mComputeUniformStorage.get();
-    }
+    UniformStorageD3D &getVertexUniformStorage() const { return *mVertexUniformStorage.get(); }
+    UniformStorageD3D &getFragmentUniformStorage() const { return *mFragmentUniformStorage.get(); }
+    UniformStorageD3D &getComputeUniformStorage() const { return *mComputeUniformStorage.get(); }
 
     unsigned int getSerial() const;
 
@@ -345,7 +337,7 @@ class ProgramD3D : public ProgramImpl
 
     typedef std::map<std::string, D3DUniform *> D3DUniformMap;
 
-    void defineUniformsAndAssignRegisters();
+    void defineUniformsAndAssignRegisters(const gl::Context *context);
     void defineUniformBase(const gl::Shader *shader,
                            const sh::Uniform &uniform,
                            D3DUniformMap *uniformMap);
@@ -373,20 +365,20 @@ class ProgramD3D : public ProgramImpl
                             const GLfloat *value,
                             GLenum targetUniformType);
 
-    LinkResult compileProgramExecutables(const gl::ContextState &data, gl::InfoLog &infoLog);
-    LinkResult compileComputeExecutable(gl::InfoLog &infoLog);
+    gl::LinkResult compileProgramExecutables(const gl::Context *context, gl::InfoLog &infoLog);
+    gl::LinkResult compileComputeExecutable(const gl::Context *context, gl::InfoLog &infoLog);
 
     void gatherTransformFeedbackVaryings(const gl::VaryingPacking &varyings,
                                          const BuiltinInfo &builtins);
     D3DUniform *getD3DUniformByName(const std::string &name);
     D3DUniform *getD3DUniformFromLocation(GLint location);
 
-    void initAttribLocationsToD3DSemantic();
+    void initAttribLocationsToD3DSemantic(const gl::Context *context);
 
     void reset();
     void ensureUniformBlocksInitialized();
 
-    void initUniformBlockInfo(const gl::Shader *shader);
+    void initUniformBlockInfo(const gl::Context *context, gl::Shader *shader);
     size_t getUniformBlockInfo(const sh::InterfaceBlock &interfaceBlock);
 
     RendererD3D *mRenderer;

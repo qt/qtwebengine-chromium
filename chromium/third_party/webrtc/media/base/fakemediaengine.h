@@ -19,15 +19,16 @@
 #include <vector>
 
 #include "webrtc/api/call/audio_sink.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/copyonwritebuffer.h"
-#include "webrtc/base/networkroute.h"
-#include "webrtc/base/stringutils.h"
 #include "webrtc/media/base/audiosource.h"
 #include "webrtc/media/base/mediaengine.h"
 #include "webrtc/media/base/rtputils.h"
 #include "webrtc/media/base/streamparams.h"
+#include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/p2p/base/sessiondescription.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/copyonwritebuffer.h"
+#include "webrtc/rtc_base/networkroute.h"
+#include "webrtc/rtc_base/stringutils.h"
 
 using webrtc::RtpExtension;
 
@@ -424,6 +425,10 @@ class FakeVoiceMediaChannel : public RtpHelper<VoiceMediaChannel> {
     sink_ = std::move(sink);
   }
 
+  virtual std::vector<webrtc::RtpSource> GetSources(uint32_t ssrc) const {
+    return std::vector<webrtc::RtpSource>();
+  }
+
  private:
   class VoiceChannelAudioSink : public AudioSource::Sink {
    public:
@@ -604,6 +609,7 @@ class FakeVideoMediaChannel : public RtpHelper<VideoMediaChannel> {
     return true;
   }
 
+  void FillBitrateInfo(BandwidthEstimationInfo* bwe_info) override {}
   bool GetStats(VideoMediaInfo* info) override { return false; }
 
  private:
@@ -769,11 +775,13 @@ class FakeVoiceEngine : public FakeBaseEngine {
                       audio_encoder_factory,
                   const rtc::scoped_refptr<webrtc::AudioDecoderFactory>&
                       audio_decoder_factory,
-                  rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer) {
+                  rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer,
+                  rtc::scoped_refptr<webrtc::AudioProcessing> apm) {
     // Add a fake audio codec. Note that the name must not be "" as there are
     // sanity checks against that.
     codecs_.push_back(AudioCodec(101, "fake_audio_codec", 0, 0, 1));
   }
+  void Init() {}
   rtc::scoped_refptr<webrtc::AudioState> GetAudioState() const {
     return rtc::scoped_refptr<webrtc::AudioState>();
   }
@@ -877,6 +885,7 @@ class FakeMediaEngine :
  public:
   FakeMediaEngine()
       : CompositeMediaEngine<FakeVoiceEngine, FakeVideoEngine>(nullptr,
+                                                               nullptr,
                                                                nullptr,
                                                                nullptr,
                                                                nullptr) {}

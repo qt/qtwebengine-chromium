@@ -11,7 +11,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
-#include "cc/output/in_process_context_provider.h"
+#include "components/viz/common/gpu/in_process_context_provider.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/scheduler.h"
@@ -29,7 +29,7 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
-#include "media/gpu/ipc/service/gpu_jpeg_decode_accelerator.h"
+#include "media/gpu/ipc/service/gpu_jpeg_decode_accelerator_factory_provider.h"
 #include "media/gpu/ipc/service/gpu_video_decode_accelerator.h"
 #include "media/gpu/ipc/service/gpu_video_encode_accelerator.h"
 #include "media/gpu/ipc/service/media_gpu_channel_manager.h"
@@ -186,8 +186,8 @@ void GpuService::InitializeWithHost(mojom::GpuHostPtr gpu_host,
   // initialization has succeeded.
   gpu_channel_manager_.reset(new gpu::GpuChannelManager(
       gpu_preferences_, gpu_workarounds_, this, watchdog_thread_.get(),
-      base::ThreadTaskRunnerHandle::Get(), io_runner_, scheduler_.get(),
-      sync_point_manager_, gpu_memory_buffer_factory_.get(), gpu_feature_info_,
+      main_runner_, io_runner_, scheduler_.get(), sync_point_manager_,
+      gpu_memory_buffer_factory_.get(), gpu_feature_info_,
       std::move(activity_flags)));
 
   media_gpu_channel_manager_.reset(
@@ -220,6 +220,20 @@ void GpuService::RecordLogMessage(int severity,
   std::string header = str.substr(0, message_start);
   std::string message = str.substr(message_start);
   (*gpu_host_)->RecordLogMessage(severity, header, message);
+}
+
+void GpuService::CreateJpegDecodeAccelerator(
+    media::mojom::GpuJpegDecodeAcceleratorRequest jda_request) {
+  DCHECK(io_runner_->BelongsToCurrentThread());
+  // TODO(c.padhi): Implement this, see https://crbug.com/699255.
+  NOTIMPLEMENTED();
+}
+
+void GpuService::CreateVideoEncodeAccelerator(
+    media::mojom::VideoEncodeAcceleratorRequest vea_request) {
+  DCHECK(io_runner_->BelongsToCurrentThread());
+  // TODO(mcasas): Create a mojom::VideoEncodeAccelerator implementation,
+  // https://crbug.com/736517.
 }
 
 void GpuService::CreateGpuMemoryBuffer(
@@ -415,13 +429,13 @@ void GpuService::CloseChannel(int32_t client_id) {
   gpu_channel_manager_->RemoveChannel(client_id);
 }
 
-void GpuService::LoadedShader(const std::string& data) {
+void GpuService::LoadedShader(const std::string& key, const std::string& data) {
   if (io_runner_->BelongsToCurrentThread()) {
     main_runner_->PostTask(
-        FROM_HERE, base::Bind(&GpuService::LoadedShader, weak_ptr_, data));
+        FROM_HERE, base::Bind(&GpuService::LoadedShader, weak_ptr_, key, data));
     return;
   }
-  gpu_channel_manager_->PopulateShaderCache(data);
+  gpu_channel_manager_->PopulateShaderCache(key, data);
 }
 
 void GpuService::DestroyingVideoSurface(

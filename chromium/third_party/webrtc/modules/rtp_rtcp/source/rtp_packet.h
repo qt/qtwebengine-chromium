@@ -12,10 +12,10 @@
 
 #include <vector>
 
-#include "webrtc/base/array_view.h"
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/copyonwritebuffer.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "webrtc/rtc_base/array_view.h"
+#include "webrtc/rtc_base/basictypes.h"
+#include "webrtc/rtc_base/copyonwritebuffer.h"
 
 namespace webrtc {
 struct RTPHeader;
@@ -125,7 +125,7 @@ class Packet {
   // provided via constructor or IdentifyExtensions function.
   Packet();
   explicit Packet(const ExtensionManager* extensions);
-  Packet(const Packet&) = default;
+  Packet(const Packet&);
   Packet(const ExtensionManager* extensions, size_t capacity);
   virtual ~Packet();
 

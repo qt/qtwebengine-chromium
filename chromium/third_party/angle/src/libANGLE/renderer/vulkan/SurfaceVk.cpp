@@ -10,6 +10,8 @@
 #include "libANGLE/renderer/vulkan/SurfaceVk.h"
 
 #include "common/debug.h"
+#include "libANGLE/Context.h"
+#include "libANGLE/Display.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/renderer/vulkan/DisplayVk.h"
 #include "libANGLE/renderer/vulkan/FramebufferVk.h"
@@ -47,7 +49,8 @@ VkPresentModeKHR GetDesiredPresentMode(const std::vector<VkPresentModeKHR> &pres
         }
     }
 
-    ERR() << "Desired present mode not available. Falling back to " << presentModes[0];
+    WARN() << "Present mode " << bestChoice << " not available. Falling back to "
+           << presentModes[0];
     return presentModes[0];
 }
 
@@ -64,9 +67,9 @@ OffscreenSurfaceVk::~OffscreenSurfaceVk()
 {
 }
 
-egl::Error OffscreenSurfaceVk::initialize(const DisplayImpl *displayImpl)
+egl::Error OffscreenSurfaceVk::initialize(const egl::Display *display)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 FramebufferImpl *OffscreenSurfaceVk::createDefaultFramebuffer(const gl::FramebufferState &state)
@@ -75,33 +78,34 @@ FramebufferImpl *OffscreenSurfaceVk::createDefaultFramebuffer(const gl::Framebuf
     return FramebufferVk::CreateUserFBO(state);
 }
 
-egl::Error OffscreenSurfaceVk::swap(const DisplayImpl *displayImpl)
+egl::Error OffscreenSurfaceVk::swap(const gl::Context *context)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
-egl::Error OffscreenSurfaceVk::postSubBuffer(EGLint /*x*/,
+egl::Error OffscreenSurfaceVk::postSubBuffer(const gl::Context * /*context*/,
+                                             EGLint /*x*/,
                                              EGLint /*y*/,
                                              EGLint /*width*/,
                                              EGLint /*height*/)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 egl::Error OffscreenSurfaceVk::querySurfacePointerANGLE(EGLint /*attribute*/, void ** /*value*/)
 {
     UNREACHABLE();
-    return egl::Error(EGL_BAD_CURRENT_SURFACE);
+    return egl::EglBadCurrentSurface();
 }
 
 egl::Error OffscreenSurfaceVk::bindTexImage(gl::Texture * /*texture*/, EGLint /*buffer*/)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 egl::Error OffscreenSurfaceVk::releaseTexImage(EGLint /*buffer*/)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 egl::Error OffscreenSurfaceVk::getSyncValues(EGLuint64KHR * /*ust*/,
@@ -109,7 +113,7 @@ egl::Error OffscreenSurfaceVk::getSyncValues(EGLuint64KHR * /*ust*/,
                                              EGLuint64KHR * /*sbc*/)
 {
     UNIMPLEMENTED();
-    return egl::Error(EGL_BAD_ACCESS);
+    return egl::EglBadAccess();
 }
 
 void OffscreenSurfaceVk::setSwapInterval(EGLint /*interval*/)
@@ -137,12 +141,13 @@ EGLint OffscreenSurfaceVk::getSwapBehavior() const
 }
 
 gl::Error OffscreenSurfaceVk::getAttachmentRenderTarget(
+    const gl::Context * /*context*/,
     GLenum /*binding*/,
     const gl::ImageIndex & /*imageIndex*/,
     FramebufferAttachmentRenderTarget ** /*rtOut*/)
 {
     UNREACHABLE();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
 WindowSurfaceVk::WindowSurfaceVk(const egl::SurfaceState &surfaceState,
@@ -169,9 +174,9 @@ WindowSurfaceVk::~WindowSurfaceVk()
     ASSERT(mSwapchain == VK_NULL_HANDLE);
 }
 
-void WindowSurfaceVk::destroy(const DisplayImpl *displayImpl)
+void WindowSurfaceVk::destroy(const egl::Display *display)
 {
-    const DisplayVk *displayVk = GetAs<DisplayVk>(displayImpl);
+    const DisplayVk *displayVk = GetImplAs<DisplayVk>(display);
     RendererVk *rendererVk     = displayVk->getRenderer();
     VkDevice device            = rendererVk->getDevice();
     VkInstance instance        = rendererVk->getInstance();
@@ -210,9 +215,9 @@ void WindowSurfaceVk::destroy(const DisplayImpl *displayImpl)
     }
 }
 
-egl::Error WindowSurfaceVk::initialize(const DisplayImpl *displayImpl)
+egl::Error WindowSurfaceVk::initialize(const egl::Display *display)
 {
-    const DisplayVk *displayVk = GetAs<DisplayVk>(displayImpl);
+    const DisplayVk *displayVk = GetImplAs<DisplayVk>(display);
     return initializeImpl(displayVk->getRenderer()).toEGL(EGL_BAD_SURFACE);
 }
 
@@ -412,9 +417,9 @@ FramebufferImpl *WindowSurfaceVk::createDefaultFramebuffer(const gl::Framebuffer
     return FramebufferVk::CreateDefaultFBO(state, this);
 }
 
-egl::Error WindowSurfaceVk::swap(const DisplayImpl *displayImpl)
+egl::Error WindowSurfaceVk::swap(const gl::Context *context)
 {
-    const DisplayVk *displayVk = GetAs<DisplayVk>(displayImpl);
+    const DisplayVk *displayVk = GetImplAs<DisplayVk>(context->getCurrentDisplay());
     return swapImpl(displayVk->getRenderer()).toEGL(EGL_BAD_ALLOC);
 }
 
@@ -465,26 +470,30 @@ vk::Error WindowSurfaceVk::nextSwapchainImage(RendererVk *renderer)
     return vk::NoError();
 }
 
-egl::Error WindowSurfaceVk::postSubBuffer(EGLint x, EGLint y, EGLint width, EGLint height)
+egl::Error WindowSurfaceVk::postSubBuffer(const gl::Context *context,
+                                          EGLint x,
+                                          EGLint y,
+                                          EGLint width,
+                                          EGLint height)
 {
     // TODO(jmadill)
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 egl::Error WindowSurfaceVk::querySurfacePointerANGLE(EGLint attribute, void **value)
 {
     UNREACHABLE();
-    return egl::Error(EGL_BAD_CURRENT_SURFACE);
+    return egl::EglBadCurrentSurface();
 }
 
 egl::Error WindowSurfaceVk::bindTexImage(gl::Texture *texture, EGLint buffer)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 egl::Error WindowSurfaceVk::releaseTexImage(EGLint buffer)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 egl::Error WindowSurfaceVk::getSyncValues(EGLuint64KHR * /*ust*/,
@@ -492,7 +501,7 @@ egl::Error WindowSurfaceVk::getSyncValues(EGLuint64KHR * /*ust*/,
                                           EGLuint64KHR * /*sbc*/)
 {
     UNIMPLEMENTED();
-    return egl::Error(EGL_BAD_ACCESS);
+    return egl::EglBadAccess();
 }
 
 void WindowSurfaceVk::setSwapInterval(EGLint interval)
@@ -521,7 +530,8 @@ EGLint WindowSurfaceVk::getSwapBehavior() const
     return EGL_BUFFER_DESTROYED;
 }
 
-gl::Error WindowSurfaceVk::getAttachmentRenderTarget(GLenum /*binding*/,
+gl::Error WindowSurfaceVk::getAttachmentRenderTarget(const gl::Context * /*context*/,
+                                                     GLenum /*binding*/,
                                                      const gl::ImageIndex & /*target*/,
                                                      FramebufferAttachmentRenderTarget **rtOut)
 {

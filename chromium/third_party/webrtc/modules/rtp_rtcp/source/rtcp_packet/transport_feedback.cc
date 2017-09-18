@@ -12,12 +12,12 @@
 
 #include <algorithm>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/trace_event.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -545,6 +545,11 @@ bool TransportFeedback::IsConsistent() const {
   return true;
 }
 
+size_t TransportFeedback::BlockLength() const {
+  // Round size_bytes_ up to multiple of 32bits.
+  return (size_bytes_ + 3) & (~static_cast<size_t>(3));
+}
+
 // Serialize packet.
 bool TransportFeedback::Create(uint8_t* packet,
                                size_t* position,
@@ -600,11 +605,6 @@ bool TransportFeedback::Create(uint8_t* packet,
 
   RTC_DCHECK_EQ(*position, position_end);
   return true;
-}
-
-size_t TransportFeedback::BlockLength() const {
-  // Round size_bytes_ up to multiple of 32bits.
-  return (size_bytes_ + 3) & (~static_cast<size_t>(3));
 }
 
 void TransportFeedback::Clear() {

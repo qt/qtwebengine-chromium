@@ -13,10 +13,10 @@
 #include <algorithm>
 #include <numeric>
 
-#include "webrtc/typedefs.h"
-#include "webrtc/base/random.h"
+#include "webrtc/rtc_base/random.h"
 #include "webrtc/system_wrappers/include/cpu_features_wrapper.h"
 #include "webrtc/test/gtest.h"
+#include "webrtc/typedefs.h"
 
 namespace webrtc {
 namespace aec3 {
@@ -36,7 +36,7 @@ TEST(ComfortNoiseGenerator, NullLowerBandNoise) {
   std::array<float, kFftLengthBy2Plus1> N2;
   FftData noise;
   EXPECT_DEATH(ComfortNoiseGenerator(DetectOptimization())
-                   .Compute(AecState(), N2, nullptr, &noise),
+                   .Compute(AecState(0.f), N2, nullptr, &noise),
                "");
 }
 
@@ -44,7 +44,7 @@ TEST(ComfortNoiseGenerator, NullUpperBandNoise) {
   std::array<float, kFftLengthBy2Plus1> N2;
   FftData noise;
   EXPECT_DEATH(ComfortNoiseGenerator(DetectOptimization())
-                   .Compute(AecState(), N2, &noise, nullptr),
+                   .Compute(AecState(0.f), N2, &noise, nullptr),
                "");
 }
 
@@ -91,7 +91,7 @@ TEST(ComfortNoiseGenerator, TestOptimizations) {
 
 TEST(ComfortNoiseGenerator, CorrectLevel) {
   ComfortNoiseGenerator cng(DetectOptimization());
-  AecState aec_state;
+  AecState aec_state(0.f);
 
   std::array<float, kFftLengthBy2Plus1> N2;
   N2.fill(1000.f * 1000.f);

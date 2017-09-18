@@ -22,7 +22,7 @@ class CPDFSDK_Widget;
 class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
  public:
   CFFL_FormFiller(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                  CPDFSDK_Annot* pAnnot);
+                  CPDFSDK_Widget* pWidget);
   ~CFFL_FormFiller() override;
 
   virtual FX_RECT GetViewBBox(CPDFSDK_PageView* pPageView,
@@ -74,6 +74,8 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
                          uint32_t nFlags);
   virtual bool OnChar(CPDFSDK_Annot* pAnnot, uint32_t nChar, uint32_t nFlags);
 
+  CFX_WideString GetSelectedText(CPDFSDK_Annot* pAnnot);
+
   void SetFocusForAnnot(CPDFSDK_Annot* pAnnot, uint32_t nFlag);
   void KillFocusForAnnot(CPDFSDK_Annot* pAnnot, uint32_t nFlag);
 
@@ -83,7 +85,6 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
 
   // IPWL_Provider
   CFX_Matrix GetWindowMatrix(void* pAttachedData) override;
-  CFX_WideString LoadPopupMenuString(int nIndex) override;
 
   virtual void GetActionData(CPDFSDK_PageView* pPageView,
                              CPDF_AAction::AActionType type,
@@ -129,8 +130,7 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   void EscapeFiller(CPDFSDK_PageView* pPageView, bool bDestroyPDFWindow);
 
   virtual PWL_CREATEPARAM GetCreateParam();
-  virtual CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
-                                 CPDFSDK_PageView* pPageView) = 0;
+  virtual CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp) = 0;
   virtual CFX_FloatRect GetFocusBox(CPDFSDK_PageView* pPageView);
 
   bool IsValid() const;
@@ -140,7 +140,7 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   void SetChangeMark();
 
   virtual void InvalidateRect(const FX_RECT& rect);
-  CPDFSDK_Annot* GetSDKAnnot() { return m_pAnnot; }
+  CPDFSDK_Annot* GetSDKAnnot() { return m_pWidget.Get(); }
 
  protected:
   using CFFL_PageView2PDFWindow = std::map<CPDFSDK_PageView*, CPWL_Wnd*>;
@@ -154,47 +154,10 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   void DestroyWindows();
 
   CFX_UnownedPtr<CPDFSDK_FormFillEnvironment> const m_pFormFillEnv;
-  CPDFSDK_Widget* m_pWidget;
-  CPDFSDK_Annot* m_pAnnot;
+  CFX_UnownedPtr<CPDFSDK_Widget> m_pWidget;
   bool m_bValid;
   CFFL_PageView2PDFWindow m_Maps;
   CFX_PointF m_ptOldPos;
-};
-
-class CFFL_Button : public CFFL_FormFiller {
- public:
-  CFFL_Button(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-              CPDFSDK_Annot* pWidget);
-  ~CFFL_Button() override;
-
-  // CFFL_FormFiller
-  void OnMouseEnter(CPDFSDK_PageView* pPageView,
-                    CPDFSDK_Annot* pAnnot) override;
-  void OnMouseExit(CPDFSDK_PageView* pPageView, CPDFSDK_Annot* pAnnot) override;
-  bool OnLButtonDown(CPDFSDK_PageView* pPageView,
-                     CPDFSDK_Annot* pAnnot,
-                     uint32_t nFlags,
-                     const CFX_PointF& point) override;
-  bool OnLButtonUp(CPDFSDK_PageView* pPageView,
-                   CPDFSDK_Annot* pAnnot,
-                   uint32_t nFlags,
-                   const CFX_PointF& point) override;
-  bool OnMouseMove(CPDFSDK_PageView* pPageView,
-                   CPDFSDK_Annot* pAnnot,
-                   uint32_t nFlags,
-                   const CFX_PointF& point) override;
-  void OnDraw(CPDFSDK_PageView* pPageView,
-              CPDFSDK_Annot* pAnnot,
-              CFX_RenderDevice* pDevice,
-              CFX_Matrix* pUser2Device) override;
-  void OnDrawDeactive(CPDFSDK_PageView* pPageView,
-                      CPDFSDK_Annot* pAnnot,
-                      CFX_RenderDevice* pDevice,
-                      CFX_Matrix* pUser2Device) override;
-
- protected:
-  bool m_bMouseIn;
-  bool m_bMouseDown;
 };
 
 #endif  // FPDFSDK_FORMFILLER_CFFL_FORMFILLER_H_

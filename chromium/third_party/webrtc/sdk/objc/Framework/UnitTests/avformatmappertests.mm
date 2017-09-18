@@ -11,9 +11,9 @@
 #import <Foundation/Foundation.h>
 #import <OCMock/OCMock.h>
 
-#include "webrtc/base/gunit.h"
+#include "webrtc/rtc_base/gunit.h"
 
-#include "avfoundationformatmapper.h"
+#include "Video/avfoundationformatmapper.h"
 
 
 // Width and height don't play any role so lets use predefined values throughout

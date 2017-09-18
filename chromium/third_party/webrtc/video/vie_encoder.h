@@ -18,10 +18,6 @@
 
 #include "webrtc/api/video/video_rotation.h"
 #include "webrtc/api/video_codecs/video_encoder.h"
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/event.h"
-#include "webrtc/base/sequenced_task_checker.h"
-#include "webrtc/base/task_queue.h"
 #include "webrtc/call/call.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/include/video_bitrate_allocator.h"
@@ -29,6 +25,10 @@
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
 #include "webrtc/modules/video_coding/utility/quality_scaler.h"
 #include "webrtc/modules/video_coding/video_coding_impl.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/event.h"
+#include "webrtc/rtc_base/sequenced_task_checker.h"
+#include "webrtc/rtc_base/task_queue.h"
 #include "webrtc/system_wrappers/include/atomic32.h"
 #include "webrtc/typedefs.h"
 #include "webrtc/video/overuse_frame_detector.h"
@@ -77,7 +77,8 @@ class ViEEncoder : public rtc::VideoSinkInterface<VideoFrame>,
              SendStatisticsProxy* stats_proxy,
              const VideoSendStream::Config::EncoderSettings& settings,
              rtc::VideoSinkInterface<VideoFrame>* pre_encode_callback,
-             EncodedFrameObserver* encoder_timing);
+             EncodedFrameObserver* encoder_timing,
+             std::unique_ptr<OveruseFrameDetector> overuse_detector);
   ~ViEEncoder();
   // RegisterProcessThread register |module_process_thread| with those objects
   // that use it. Registration has to happen on the thread where
@@ -129,6 +130,7 @@ class ViEEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   // These methods are protected for easier testing.
   void AdaptUp(AdaptReason reason) override;
   void AdaptDown(AdaptReason reason) override;
+  static CpuOveruseOptions GetCpuOveruseOptions(bool full_overuse_time);
 
  private:
   class ConfigureEncoderTask;
@@ -189,13 +191,15 @@ class ViEEncoder : public rtc::VideoSinkInterface<VideoFrame>,
 
     std::string ToString() const;
 
-    void IncrementFramerate(int reason, int delta);
-    void IncrementResolution(int reason, int delta);
+    void IncrementFramerate(int reason);
+    void IncrementResolution(int reason);
+    void DecrementFramerate(int reason);
+    void DecrementResolution(int reason);
+    void DecrementFramerate(int reason, int cur_fps);
 
     // Gets the total number of downgrades (for all adapt reasons).
     int FramerateCount() const;
     int ResolutionCount() const;
-    int TotalCount() const;
 
     // Gets the total number of downgrades for |reason|.
     int FramerateCount(int reason) const;
@@ -205,6 +209,7 @@ class ViEEncoder : public rtc::VideoSinkInterface<VideoFrame>,
    private:
     std::string ToString(const std::vector<int>& counters) const;
     int Count(const std::vector<int>& counters) const;
+    void MoveCount(std::vector<int>* counters, int from_reason);
 
     // Degradation counters holding number of framerate/resolution reductions
     // per adapt reason.
@@ -229,7 +234,8 @@ class ViEEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   const VideoCodecType codec_type_;
 
   vcm::VideoSender video_sender_ ACCESS_ON(&encoder_queue_);
-  OveruseFrameDetector overuse_detector_ ACCESS_ON(&encoder_queue_);
+  std::unique_ptr<OveruseFrameDetector> overuse_detector_
+      ACCESS_ON(&encoder_queue_);
   std::unique_ptr<QualityScaler> quality_scaler_ ACCESS_ON(&encoder_queue_);
 
   SendStatisticsProxy* const stats_proxy_;
@@ -243,11 +249,16 @@ class ViEEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   VideoEncoderConfig encoder_config_ ACCESS_ON(&encoder_queue_);
   std::unique_ptr<VideoBitrateAllocator> rate_allocator_
       ACCESS_ON(&encoder_queue_);
+  // The maximum frame rate of the current codec configuration, as determined
+  // at the last ReconfigureEncoder() call.
+  int max_framerate_ ACCESS_ON(&encoder_queue_);
 
   // Set when ConfigureEncoder has been called in order to lazy reconfigure the
   // encoder on the next frame.
   bool pending_encoder_reconfiguration_ ACCESS_ON(&encoder_queue_);
   rtc::Optional<VideoFrameInfo> last_frame_info_ ACCESS_ON(&encoder_queue_);
+  int crop_width_ ACCESS_ON(&encoder_queue_);
+  int crop_height_ ACCESS_ON(&encoder_queue_);
   uint32_t encoder_start_bitrate_bps_ ACCESS_ON(&encoder_queue_);
   size_t max_data_payload_length_ ACCESS_ON(&encoder_queue_);
   bool nack_enabled_ ACCESS_ON(&encoder_queue_);

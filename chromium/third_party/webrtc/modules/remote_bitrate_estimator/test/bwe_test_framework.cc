@@ -14,7 +14,8 @@
 
 #include <sstream>
 
-#include "webrtc/base/constructormagic.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/safe_minmax.h"
 
 namespace webrtc {
 namespace testing {
@@ -151,6 +152,14 @@ void MediaPacket::SetAbsSendTimeMs(int64_t abs_send_time_ms) {
   header_.extension.absoluteSendTime = ((static_cast<int64_t>(abs_send_time_ms *
     (1 << 18)) + 500) / 1000) & 0x00fffffful;
 }
+
+BbrBweFeedback::BbrBweFeedback(
+    int flow_id,
+    int64_t send_time_us,
+    int64_t latest_send_time_ms,
+    const std::vector<uint64_t>& packet_feedback_vector)
+    : FeedbackPacket(flow_id, send_time_us, latest_send_time_ms),
+      packet_feedback_vector_(packet_feedback_vector) {}
 
 RembFeedback::RembFeedback(int flow_id,
                            int64_t send_time_us,
@@ -398,8 +407,8 @@ namespace {
 inline int64_t TruncatedNSigmaGaussian(Random* const random,
                                        int64_t mean,
                                        int64_t std_dev) {
-  int64_t gaussian_random = random->Gaussian(mean, std_dev);
-  return std::max(std::min(gaussian_random, kN * std_dev), -kN * std_dev);
+  const int64_t gaussian_random = random->Gaussian(mean, std_dev);
+  return rtc::SafeClamp(gaussian_random, -kN * std_dev, kN * std_dev);
 }
 }
 

@@ -18,10 +18,10 @@ class CFWL_CaretTP : public CFWL_WidgetTP {
   void DrawBackground(CFWL_ThemeBackground* pParams) override;
 
  protected:
-  void DrawCaretBK(CFX_Graphics* pGraphics,
+  void DrawCaretBK(CXFA_Graphics* pGraphics,
                    uint32_t dwStates,
                    const CFX_RectF* pRect,
-                   CFX_Color* crFill,
+                   CXFA_Color* crFill,
                    CFX_Matrix* pMatrix = nullptr);
 };
 

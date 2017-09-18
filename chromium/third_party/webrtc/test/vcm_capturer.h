@@ -12,11 +12,11 @@
 
 #include <memory>
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_capture/video_capture.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/scoped_ref_ptr.h"
 #include "webrtc/test/video_capturer.h"
 
 namespace webrtc {
@@ -26,7 +26,10 @@ class VcmCapturer
     : public VideoCapturer,
       public rtc::VideoSinkInterface<VideoFrame> {
  public:
-  static VcmCapturer* Create(size_t width, size_t height, size_t target_fps);
+  static VcmCapturer* Create(size_t width,
+                             size_t height,
+                             size_t target_fps,
+                             size_t capture_device_index);
   virtual ~VcmCapturer();
 
   void Start() override;
@@ -39,7 +42,10 @@ class VcmCapturer
 
  private:
   VcmCapturer();
-  bool Init(size_t width, size_t height, size_t target_fps);
+  bool Init(size_t width,
+            size_t height,
+            size_t target_fps,
+            size_t capture_device_index);
   void Destroy();
 
   rtc::CriticalSection crit_;

@@ -12,23 +12,83 @@
 
 #include <cstdint>
 
+#include <limits>
 #include <map>
 
+#include "common/angleutils.h"
 #include "libANGLE/angletypes.h"
 
 namespace angle
 {
 struct Format;
-}
+}  // namespace angle
 
 namespace gl
 {
 struct FormatType;
 struct InternalFormat;
-}
+}  // namespace gl
+
+namespace egl
+{
+class AttributeMap;
+}  // namespace egl
 
 namespace rx
 {
+
+class ResourceSerial
+{
+  public:
+    constexpr ResourceSerial() : mValue(kDirty) {}
+    constexpr ResourceSerial(uintptr_t value) : mValue(value) {}
+    constexpr bool operator==(ResourceSerial other) const { return mValue == other.mValue; }
+    constexpr bool operator!=(ResourceSerial other) const { return mValue != other.mValue; }
+
+    void dirty() { mValue = kDirty; }
+
+  private:
+    constexpr static uintptr_t kDirty = std::numeric_limits<uintptr_t>::max();
+
+    uintptr_t mValue;
+};
+
+class SerialFactory;
+
+class Serial final
+{
+  public:
+    constexpr Serial() : mValue(0) {}
+    constexpr Serial(const Serial &other) = default;
+    Serial &operator=(const Serial &other) = default;
+
+    constexpr bool operator==(const Serial &other) const { return mValue == other.mValue; }
+    constexpr bool operator!=(const Serial &other) const { return mValue != other.mValue; }
+    constexpr bool operator>(const Serial &other) const { return mValue > other.mValue; }
+    constexpr bool operator>=(const Serial &other) const { return mValue >= other.mValue; }
+    constexpr bool operator<(const Serial &other) const { return mValue < other.mValue; }
+    constexpr bool operator<=(const Serial &other) const { return mValue <= other.mValue; }
+
+  private:
+    friend class SerialFactory;
+    constexpr explicit Serial(uint64_t value) : mValue(value) {}
+    uint64_t mValue;
+};
+
+class SerialFactory final : angle::NonCopyable
+{
+  public:
+    SerialFactory() : mSerial(1) {}
+
+    Serial generate()
+    {
+        ASSERT(mSerial != std::numeric_limits<uint64_t>::max());
+        return Serial(mSerial++);
+    }
+
+  private:
+    uint64_t mSerial;
+};
 
 using MipGenerationFunction = void (*)(size_t sourceWidth,
                                        size_t sourceHeight,
@@ -66,7 +126,7 @@ class FastCopyFunctionMap
     const Entry *mData;
 };
 
-struct PackPixelsParams
+struct PackPixelsParams : private angle::NonCopyable
 {
     PackPixelsParams();
     PackPixelsParams(const gl::Rectangle &area,
@@ -75,6 +135,7 @@ struct PackPixelsParams
                      GLuint outputPitch,
                      const gl::PixelPackState &pack,
                      ptrdiff_t offset);
+    PackPixelsParams(const gl::Context *context, const PackPixelsParams &other);
 
     gl::Rectangle area;
     GLenum format;
@@ -125,6 +186,8 @@ struct LoadImageFunctionInfo
 };
 
 using LoadFunctionMap = LoadImageFunctionInfo (*)(GLenum);
+
+bool ShouldUseDebugLayers(const egl::AttributeMap &attribs);
 
 }  // namespace rx
 

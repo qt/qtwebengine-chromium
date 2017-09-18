@@ -31,6 +31,7 @@
             '<(angle_path)/src/libANGLE/ImageIndexIterator_unittest.cpp',
             '<(angle_path)/src/libANGLE/Program_unittest.cpp',
             '<(angle_path)/src/libANGLE/ResourceManager_unittest.cpp',
+            '<(angle_path)/src/libANGLE/SizedMRUCache_unittest.cpp',
             '<(angle_path)/src/libANGLE/Surface_unittest.cpp',
             '<(angle_path)/src/libANGLE/TransformFeedback_unittest.cpp',
             '<(angle_path)/src/libANGLE/VaryingPacking_unittest.cpp',
@@ -48,6 +49,8 @@
             '<(angle_path)/src/tests/angle_unittests_utils.h',
             '<(angle_path)/src/tests/compiler_tests/API_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/AppendixALimitations_test.cpp',
+            '<(angle_path)/src/tests/compiler_tests/AtomicCounter_test.cpp',
+            '<(angle_path)/src/tests/compiler_tests/BufferVariables_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/CollectVariables_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/ConstantFolding_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/ConstantFoldingNaN_test.cpp',
@@ -61,6 +64,7 @@
             '<(angle_path)/src/tests/compiler_tests/FloatLex_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/FragDepth_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/GLSLCompatibilityOutput_test.cpp',
+            '<(angle_path)/src/tests/compiler_tests/InitOutputVariables_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/IntermNode_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/NV_draw_buffers_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/Pack_Unpack_test.cpp',
@@ -110,6 +114,7 @@
         # TODO(jmadill): should probably call this windows sources
         'angle_unittests_hlsl_sources':
         [
+            '<(angle_path)/src/tests/compiler_tests/HLSLOutput_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/UnrollFlatten_test.cpp',
         ],
     },

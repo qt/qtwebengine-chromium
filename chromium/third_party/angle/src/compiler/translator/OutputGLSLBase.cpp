@@ -8,6 +8,7 @@
 
 #include "common/debug.h"
 #include "common/mathutil.h"
+#include "compiler/translator/Compiler.h"
 
 #include <cfloat>
 
@@ -120,18 +121,17 @@ TOutputGLSLBase::TOutputGLSLBase(TInfoSinkBase &objSink,
                                  ShArrayIndexClampingStrategy clampingStrategy,
                                  ShHashFunction64 hashFunction,
                                  NameMap &nameMap,
-                                 TSymbolTable &symbolTable,
+                                 TSymbolTable *symbolTable,
                                  sh::GLenum shaderType,
                                  int shaderVersion,
                                  ShShaderOutput output,
                                  ShCompileOptions compileOptions)
-    : TIntermTraverser(true, true, true),
+    : TIntermTraverser(true, true, true, symbolTable),
       mObjSink(objSink),
       mDeclaringVariables(false),
       mClampingStrategy(clampingStrategy),
       mHashFunction(hashFunction),
       mNameMap(nameMap),
-      mSymbolTable(symbolTable),
       mShaderType(shaderType),
       mShaderVersion(shaderVersion),
       mOutput(output),
@@ -599,7 +599,7 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
                 const TField *field               = structure->fields()[index->getIConst(0)];
 
                 TString fieldName = field->name();
-                if (!mSymbolTable.findBuiltIn(structure->name(), mShaderVersion))
+                if (!mSymbolTable->findBuiltIn(structure->name(), mShaderVersion))
                     fieldName = hashName(TName(fieldName));
 
                 out << fieldName;
@@ -616,7 +616,7 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
                 const TField *field               = interfaceBlock->fields()[index->getIConst(0)];
 
                 TString fieldName = field->name();
-                ASSERT(!mSymbolTable.findBuiltIn(interfaceBlock->name(), mShaderVersion));
+                ASSERT(!mSymbolTable->findBuiltIn(interfaceBlock->name(), mShaderVersion));
                 fieldName = hashName(TName(fieldName));
 
                 out << fieldName;
@@ -987,7 +987,7 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpDistance:
         case EOpDot:
         case EOpCross:
-        case EOpFaceForward:
+        case EOpFaceforward:
         case EOpReflect:
         case EOpRefract:
         case EOpMulMatrixComponentWise:
@@ -1160,14 +1160,14 @@ TString TOutputGLSLBase::hashName(const TName &name)
     NameMap::const_iterator it = mNameMap.find(name.getString().c_str());
     if (it != mNameMap.end())
         return it->second.c_str();
-    TString hashedName                 = TIntermTraverser::hash(name.getString(), mHashFunction);
+    TString hashedName                 = HashName(name.getString(), mHashFunction);
     mNameMap[name.getString().c_str()] = hashedName.c_str();
     return hashedName;
 }
 
 TString TOutputGLSLBase::hashVariableName(const TName &name)
 {
-    if (mSymbolTable.findBuiltIn(name.getString(), mShaderVersion) != nullptr)
+    if (mSymbolTable->findBuiltIn(name.getString(), mShaderVersion) != nullptr)
     {
         if (mCompileOptions & SH_TRANSLATE_VIEWID_OVR_TO_UNIFORM &&
             name.getString() == "gl_ViewID_OVR")

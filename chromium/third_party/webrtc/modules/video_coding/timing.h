@@ -13,9 +13,9 @@
 
 #include <memory>
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/video_coding/codec_timer.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/thread_annotations.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -102,6 +102,9 @@ class VCMTiming {
                           int* min_playout_delay_ms,
                           int* render_delay_ms) const;
 
+  void SetTimingFrameInfo(const TimingFrameInfo& info);
+  rtc::Optional<TimingFrameInfo> GetTimingFrameInfo();
+
   enum { kDefaultRenderDelayMs = 10 };
   enum { kDelayMaxChangeMsPerS = 100 };
 
@@ -131,6 +134,7 @@ class VCMTiming {
   int current_delay_ms_ GUARDED_BY(crit_sect_);
   int last_decode_ms_ GUARDED_BY(crit_sect_);
   uint32_t prev_frame_timestamp_ GUARDED_BY(crit_sect_);
+  rtc::Optional<TimingFrameInfo> timing_frame_info_ GUARDED_BY(crit_sect_);
 
   // Statistics.
   size_t num_decoded_frames_ GUARDED_BY(crit_sect_);

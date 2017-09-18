@@ -35,11 +35,13 @@
 #include <winbase.h>
 #include <direct.h>
 #else
-#include <sys/stat.h>
 #include <limits.h>
 #endif
+#include <sys/types.h>
+#include <sys/stat.h>
 
-#include "flatbuffers/flatbuffers.h"
+#include "flatbuffers/base.h"
+
 
 namespace flatbuffers {
 
@@ -94,20 +96,22 @@ inline std::string IntToStringHex(int i, int xdigits) {
 }
 
 // Portable implementation of strtoll().
-inline int64_t StringToInt(const char *str, int base = 10) {
+inline int64_t StringToInt(const char *str, char **endptr = nullptr,
+                           int base = 10) {
   #ifdef _MSC_VER
-    return _strtoi64(str, nullptr, base);
+    return _strtoi64(str, endptr, base);
   #else
-    return strtoll(str, nullptr, base);
+    return strtoll(str, endptr, base);
   #endif
 }
 
 // Portable implementation of strtoull().
-inline int64_t StringToUInt(const char *str, int base = 10) {
+inline uint64_t StringToUInt(const char *str, char **endptr = nullptr,
+                             int base = 10) {
   #ifdef _MSC_VER
-    return _strtoui64(str, nullptr, base);
+    return _strtoui64(str, endptr, base);
   #else
-    return strtoull(str, nullptr, base);
+    return strtoull(str, endptr, base);
   #endif
 }
 
@@ -123,6 +127,9 @@ FileExistsFunction SetFileExistsFunction(FileExistsFunction
 
 // Check if file "name" exists.
 bool FileExists(const char *name);
+
+// Check if "name" exists and it is also a directory.
+bool DirExists(const char *name);
 
 // Load file "name" into "buf" returning true if successful
 // false otherwise.  If "binary" is false data is read
@@ -151,16 +158,20 @@ inline bool SaveFile(const char *name, const std::string &buf, bool binary) {
   return SaveFile(name, buf.c_str(), buf.size(), binary);
 }
 
-// Functionality for minimalistic portable path handling:
+// Functionality for minimalistic portable path handling.
 
-static const char kPosixPathSeparator = '/';
-#ifdef _WIN32
-static const char kPathSeparator = '\\';
+// The functions below behave correctly regardless of whether posix ('/') or
+// Windows ('/' or '\\') separators are used.
+
+// Any new separators inserted are always posix.
+
+// We internally store paths in posix format ('/'). Paths supplied
+// by the user should go through PosixPath to ensure correct behavior
+// on Windows when paths are string-compared.
+
+static const char kPathSeparator = '/';
+static const char kPathSeparatorWindows = '\\';
 static const char *PathSeparatorSet = "\\/";  // Intentionally no ':'
-#else
-static const char kPathSeparator = kPosixPathSeparator;
-static const char *PathSeparatorSet = "/";
-#endif // _WIN32
 
 // Returns the path with the extension, if any, removed.
 inline std::string StripExtension(const std::string &filepath) {
@@ -191,11 +202,22 @@ inline std::string StripFileName(const std::string &filepath) {
 inline std::string ConCatPathFileName(const std::string &path,
                                       const std::string &filename) {
   std::string filepath = path;
-  if (path.length() && path[path.size() - 1] != kPathSeparator &&
-                       path[path.size() - 1] != kPosixPathSeparator)
-    filepath += kPathSeparator;
+  if (filepath.length()) {
+    if (filepath.back() == kPathSeparatorWindows) {
+      filepath.back() = kPathSeparator;
+    } else if (filepath.back() != kPathSeparator) {
+      filepath += kPathSeparator;
+    }
+  }
   filepath += filename;
   return filepath;
+}
+
+// Replaces any '\\' separators with '/'
+inline std::string PosixPath(const char *path) {
+  std::string p = path;
+  std::replace(p.begin(), p.end(), '\\', '/');
+  return p;
 }
 
 // This function ensure a directory exists, by recursively
@@ -272,12 +294,42 @@ inline int FromUTF8(const char **in) {
   }
   if ((**in << len) & 0x80) return -1;  // Bit after leading 1's must be 0.
   if (!len) return *(*in)++;
+  // UTF-8 encoded values with a length are between 2 and 4 bytes.
+  if (len < 2 || len > 4) {
+    return -1;
+  }
   // Grab initial bits of the code.
   int ucc = *(*in)++ & ((1 << (7 - len)) - 1);
   for (int i = 0; i < len - 1; i++) {
     if ((**in & 0xC0) != 0x80) return -1;  // Upper bits must 1 0.
     ucc <<= 6;
     ucc |= *(*in)++ & 0x3F;  // Grab 6 more bits of the code.
+  }
+  // UTF-8 cannot encode values between 0xD800 and 0xDFFF (reserved for
+  // UTF-16 surrogate pairs).
+  if (ucc >= 0xD800 && ucc <= 0xDFFF) {
+    return -1;
+  }
+  // UTF-8 must represent code points in their shortest possible encoding.
+  switch (len) {
+    case 2:
+      // Two bytes of UTF-8 can represent code points from U+0080 to U+07FF.
+      if (ucc < 0x0080 || ucc > 0x07FF) {
+        return -1;
+      }
+      break;
+    case 3:
+      // Three bytes of UTF-8 can represent code points from U+0800 to U+FFFF.
+      if (ucc < 0x0800 || ucc > 0xFFFF) {
+        return -1;
+      }
+      break;
+    case 4:
+      // Four bytes of UTF-8 can represent code points from U+10000 to U+10FFFF.
+      if (ucc < 0x10000 || ucc > 0x10FFFF) {
+        return -1;
+      }
+      break;
   }
   return ucc;
 }

@@ -18,12 +18,13 @@
 #include "webrtc/modules/bitrate_controller/include/bitrate_controller.h"
 
 #include <list>
+#include <map>
 #include <utility>
 #include <vector>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/criticalsection.h"
 #include "webrtc/modules/bitrate_controller/send_side_bandwidth_estimation.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/criticalsection.h"
 
 namespace webrtc {
 
@@ -70,12 +71,12 @@ class BitrateControllerImpl : public BitrateController {
   class RtcpBandwidthObserverImpl;
 
   // Called by BitrateObserver's direct from the RTCP module.
-  void OnReceiverEstimatedBitrate(uint32_t bitrate);
+  // Implements RtcpBandwidthObserver.
+  void OnReceivedEstimatedBitrate(uint32_t bitrate) override;
 
-  void OnReceivedRtcpReceiverReport(uint8_t fraction_loss,
+  void OnReceivedRtcpReceiverReport(const ReportBlockList& report_blocks,
                                     int64_t rtt,
-                                    int number_of_packets,
-                                    int64_t now_ms);
+                                    int64_t now_ms) override;
 
   // Deprecated
   void MaybeTriggerOnNetworkChanged();
@@ -91,6 +92,8 @@ class BitrateControllerImpl : public BitrateController {
   RtcEventLog* const event_log_;
 
   rtc::CriticalSection critsect_;
+  std::map<uint32_t, uint32_t> ssrc_to_last_received_extended_high_seq_num_
+      GUARDED_BY(critsect_);
   SendSideBandwidthEstimation bandwidth_estimation_ GUARDED_BY(critsect_);
   uint32_t reserved_bitrate_bps_ GUARDED_BY(critsect_);
 

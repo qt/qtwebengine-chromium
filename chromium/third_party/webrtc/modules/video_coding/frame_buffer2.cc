@@ -14,12 +14,12 @@
 #include <cstring>
 #include <queue>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
 #include "webrtc/modules/video_coding/jitter_estimator.h"
 #include "webrtc/modules/video_coding/timing.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/trace_event.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 
@@ -149,6 +149,7 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
       }
 
       UpdateJitterDelay();
+      UpdateTimingFrameInfo();
       PropagateDecodability(next_frame_it_->second);
 
       // Sanity check for RTP timestamp monotonicity.
@@ -534,8 +535,15 @@ void FrameBuffer::UpdateJitterDelay() {
   }
 }
 
+void FrameBuffer::UpdateTimingFrameInfo() {
+  TRACE_EVENT0("webrtc", "FrameBuffer::UpdateTimingFrameInfo");
+  rtc::Optional<TimingFrameInfo> info = timing_->GetTimingFrameInfo();
+  if (info)
+    stats_callback_->OnTimingFrameInfoUpdated(*info);
+}
+
 void FrameBuffer::ClearFramesAndHistory() {
-  TRACE_EVENT0("webrtc", "FrameBuffer::UpdateJitterDelay");
+  TRACE_EVENT0("webrtc", "FrameBuffer::ClearFramesAndHistory");
   frames_.clear();
   last_decoded_frame_it_ = frames_.end();
   last_continuous_frame_it_ = frames_.end();

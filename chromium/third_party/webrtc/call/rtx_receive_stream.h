@@ -13,7 +13,7 @@
 
 #include <map>
 
-#include "webrtc/call/rtp_demuxer.h"
+#include "webrtc/call/rtp_packet_sink_interface.h"
 
 namespace webrtc {
 
@@ -22,7 +22,7 @@ class RtxReceiveStream : public RtpPacketSinkInterface {
   RtxReceiveStream(RtpPacketSinkInterface* media_sink,
                    std::map<int, int> rtx_payload_type_map,
                    uint32_t media_ssrc);
-
+  ~RtxReceiveStream() override;
   // RtpPacketSinkInterface.
   void OnRtpPacket(const RtpPacketReceived& packet) override;
 

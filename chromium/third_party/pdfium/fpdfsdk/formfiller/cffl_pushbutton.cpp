@@ -7,16 +7,15 @@
 #include "fpdfsdk/formfiller/cffl_pushbutton.h"
 
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
-#include "fpdfsdk/pdfwindow/PWL_SpecialButton.h"
+#include "fpdfsdk/pdfwindow/cpwl_special_button.h"
 
 CFFL_PushButton::CFFL_PushButton(CPDFSDK_FormFillEnvironment* pApp,
-                                 CPDFSDK_Annot* pAnnot)
-    : CFFL_Button(pApp, pAnnot) {}
+                                 CPDFSDK_Widget* pWidget)
+    : CFFL_Button(pApp, pWidget) {}
 
 CFFL_PushButton::~CFFL_PushButton() {}
 
-CPWL_Wnd* CFFL_PushButton::NewPDFWindow(const PWL_CREATEPARAM& cp,
-                                        CPDFSDK_PageView* pPageView) {
+CPWL_Wnd* CFFL_PushButton::NewPDFWindow(const PWL_CREATEPARAM& cp) {
   CPWL_PushButton* pWnd = new CPWL_PushButton();
   pWnd->Create(cp);
 

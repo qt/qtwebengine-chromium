@@ -23,7 +23,9 @@
 
 class CPDF_Annot;
 class CPDF_Page;
+class CPDF_PageObject;
 class CPDF_PageRenderContext;
+class CPDF_PathObject;
 class IFSDK_PAUSE_Adapter;
 
 // Layering prevents fxcrt from knowing about FPDF_FILEACCESS, so this can't
@@ -61,7 +63,19 @@ FPDF_DOCUMENT FPDFDocumentFromCPDFDocument(CPDF_Document* doc);
 
 CPDF_Page* CPDFPageFromFPDFPage(FPDF_PAGE page);
 
+CPDF_PathObject* CPDFPathObjectFromFPDFPageObject(FPDF_PAGEOBJECT page_object);
+
+CPDF_PageObject* CPDFPageObjectFromFPDFPageObject(FPDF_PAGEOBJECT page_object);
+
+CPDF_Object* CPDFObjectFromFPDFAttachment(FPDF_ATTACHMENT attachment);
+
+CFX_ByteString CFXByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
+
 CFX_DIBitmap* CFXBitmapFromFPDFBitmap(FPDF_BITMAP bitmap);
+
+unsigned long Utf16EncodeMaybeCopyAndReturnLength(const CFX_WideString& text,
+                                                  void* buffer,
+                                                  unsigned long buflen);
 
 void FSDK_SetSandBoxPolicy(FPDF_DWORD policy, FPDF_BOOL enable);
 FPDF_BOOL FSDK_IsSandBoxPolicyEnabled(FPDF_DWORD policy);
@@ -79,5 +93,10 @@ void FPDF_RenderPage_Retail(CPDF_PageRenderContext* pContext,
 void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code);
 void CheckUnSupportAnnot(CPDF_Document* pDoc, const CPDF_Annot* pPDFAnnot);
 void ProcessParseError(CPDF_Parser::Error err);
+FPDF_BOOL FPDFPageObj_SetFillColor(FPDF_PAGEOBJECT page_object,
+                                   unsigned int R,
+                                   unsigned int G,
+                                   unsigned int B,
+                                   unsigned int A);
 
 #endif  // FPDFSDK_FSDK_DEFINE_H_

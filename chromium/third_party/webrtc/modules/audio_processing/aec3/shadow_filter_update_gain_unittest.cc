@@ -15,11 +15,12 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/base/random.h"
 #include "webrtc/modules/audio_processing/aec3/adaptive_fir_filter.h"
-#include "webrtc/modules/audio_processing/aec3/aec_state.h"
 #include "webrtc/modules/audio_processing/aec3/aec3_common.h"
+#include "webrtc/modules/audio_processing/aec3/aec_state.h"
 #include "webrtc/modules/audio_processing/test/echo_canceller_test_tools.h"
+#include "webrtc/rtc_base/random.h"
+#include "webrtc/rtc_base/safe_minmax.h"
 #include "webrtc/test/gtest.h"
 
 namespace webrtc {
@@ -46,7 +47,7 @@ void RunFilterUpdateTest(int num_blocks_to_process,
   Random random_generator(42U);
   std::vector<std::vector<float>> x(3, std::vector<float>(kBlockSize, 0.f));
   std::vector<float> y(kBlockSize, 0.f);
-  AecState aec_state;
+  AecState aec_state(0.f);
   RenderSignalAnalyzer render_signal_analyzer;
   std::array<float, kFftLength> s;
   FftData S;
@@ -75,9 +76,8 @@ void RunFilterUpdateTest(int num_blocks_to_process,
     std::transform(y.begin(), y.end(), s.begin() + kFftLengthBy2,
                    e_shadow.begin(),
                    [&](float a, float b) { return a - b * kScale; });
-    std::for_each(e_shadow.begin(), e_shadow.end(), [](float& a) {
-      a = std::max(std::min(a, 32767.0f), -32768.0f);
-    });
+    std::for_each(e_shadow.begin(), e_shadow.end(),
+                  [](float& a) { a = rtc::SafeClamp(a, -32768.f, 32767.f); });
     fft.ZeroPaddedFft(e_shadow, &E_shadow);
 
     shadow_gain.Compute(render_buffer, render_signal_analyzer, E_shadow,

@@ -10,6 +10,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/fpdfapi/font/cpdf_tounicodemap.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_string.h"
@@ -60,6 +61,7 @@ class CPDF_Font {
   virtual int GlyphFromCharCodeExt(uint32_t charcode);
   virtual CFX_WideString UnicodeFromCharCode(uint32_t charcode) const;
   virtual uint32_t CharCodeFromUnicode(wchar_t Unicode) const;
+  virtual bool HasFontWidths() const;
 
   const CFX_ByteString& GetBaseFont() const { return m_BaseFont; }
   CFX_SubstFont* GetSubstFont() const { return m_Font.GetSubstFont(); }
@@ -86,6 +88,9 @@ class CPDF_Font {
 
  protected:
   CPDF_Font();
+
+  static int TT2PDF(int m, FXFT_Face face);
+  static bool FT_UseTTCharmap(FXFT_Face face, int platform_id, int encoding_id);
 
   virtual bool Load() = 0;
 

@@ -17,13 +17,13 @@
 #include "webrtc/api/peerconnectioninterface.h"
 #include "webrtc/api/stats/rtcstats_objects.h"
 #include "webrtc/api/stats/rtcstatsreport.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/gunit.h"
-#include "webrtc/base/refcountedobject.h"
-#include "webrtc/base/scoped_ref_ptr.h"
-#include "webrtc/base/virtualsocketserver.h"
 #include "webrtc/pc/test/peerconnectiontestwrapper.h"
 #include "webrtc/pc/test/rtcstatsobtainer.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/gunit.h"
+#include "webrtc/rtc_base/refcountedobject.h"
+#include "webrtc/rtc_base/scoped_ref_ptr.h"
+#include "webrtc/rtc_base/virtualsocketserver.h"
 
 namespace webrtc {
 
@@ -34,14 +34,15 @@ const int64_t kGetStatsTimeoutMs = 10000;
 class RTCStatsIntegrationTest : public testing::Test {
  public:
   RTCStatsIntegrationTest()
-      : network_thread_(&virtual_socket_server_), worker_thread_() {
-    RTC_CHECK(network_thread_.Start());
-    RTC_CHECK(worker_thread_.Start());
+      : network_thread_(new rtc::Thread(&virtual_socket_server_)),
+        worker_thread_(rtc::Thread::Create()) {
+    RTC_CHECK(network_thread_->Start());
+    RTC_CHECK(worker_thread_->Start());
 
     caller_ = new rtc::RefCountedObject<PeerConnectionTestWrapper>(
-        "caller", &network_thread_, &worker_thread_);
+        "caller", network_thread_.get(), worker_thread_.get());
     callee_ = new rtc::RefCountedObject<PeerConnectionTestWrapper>(
-        "callee", &network_thread_, &worker_thread_);
+        "callee", network_thread_.get(), worker_thread_.get());
   }
 
   void StartCall() {
@@ -96,8 +97,8 @@ class RTCStatsIntegrationTest : public testing::Test {
   // |network_thread_| uses |virtual_socket_server_| so they must be
   // constructed/destructed in the correct order.
   rtc::VirtualSocketServer virtual_socket_server_;
-  rtc::Thread network_thread_;
-  rtc::Thread worker_thread_;
+  std::unique_ptr<rtc::Thread> network_thread_;
+  std::unique_ptr<rtc::Thread> worker_thread_;
   rtc::scoped_refptr<PeerConnectionTestWrapper> caller_;
   rtc::scoped_refptr<PeerConnectionTestWrapper> callee_;
 };
@@ -379,6 +380,8 @@ class RTCStatsReportVerifier {
     if (is_selected_pair) {
       verifier.TestMemberIsNonNegative<double>(
           candidate_pair.available_outgoing_bitrate);
+      // A pair should be nominated in order to be selected.
+      EXPECT_TRUE(*candidate_pair.nominated);
     } else {
       verifier.TestMemberIsUndefined(candidate_pair.available_outgoing_bitrate);
     }
@@ -473,6 +476,8 @@ class RTCStatsReportVerifier {
       verifier.TestMemberIsUndefined(media_stream_track.echo_return_loss);
       verifier.TestMemberIsUndefined(
           media_stream_track.echo_return_loss_enhancement);
+      verifier.TestMemberIsUndefined(media_stream_track.total_audio_energy);
+      verifier.TestMemberIsUndefined(media_stream_track.total_samples_duration);
     } else {
       RTC_DCHECK_EQ(*media_stream_track.kind,
                     RTCMediaStreamTrackKind::kAudio);
@@ -489,6 +494,10 @@ class RTCStatsReportVerifier {
       verifier.TestMemberIsUndefined(media_stream_track.full_frames_lost);
       // Audio-only members
       verifier.TestMemberIsNonNegative<double>(media_stream_track.audio_level);
+      verifier.TestMemberIsNonNegative<double>(
+          media_stream_track.total_audio_energy);
+      verifier.TestMemberIsNonNegative<double>(
+          media_stream_track.total_samples_duration);
       // TODO(hbos): |echo_return_loss| and |echo_return_loss_enhancement| are
       // flaky on msan bot (sometimes defined, sometimes undefined). Should the
       // test run until available or is there a way to have it always be

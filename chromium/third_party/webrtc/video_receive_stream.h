@@ -17,11 +17,11 @@
 #include <vector>
 
 #include "webrtc/api/call/transport.h"
-#include "webrtc/base/platform_file.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/config.h"
 #include "webrtc/media/base/videosinkinterface.h"
+#include "webrtc/rtc_base/platform_file.h"
 
 namespace webrtc {
 
@@ -69,6 +69,7 @@ class VideoReceiveStream {
     int jitter_buffer_ms = 0;
     int min_playout_delay_ms = 0;
     int render_delay_ms = 10;
+    uint64_t interframe_delay_sum_ms = 0;
     uint32_t frames_decoded = 0;
     rtc::Optional<uint64_t> qp_sum;
 
@@ -206,6 +207,8 @@ class VideoReceiveStream {
 
   // TODO(pbos): Add info on currently-received codec to Stats.
   virtual Stats GetStats() const = 0;
+
+  virtual rtc::Optional<TimingFrameInfo> GetAndResetTimingFrameInfo() = 0;
 
   // Takes ownership of the file, is responsible for closing it later.
   // Calling this method will close and finalize any current log.

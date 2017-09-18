@@ -17,11 +17,12 @@
 #include <sstream>
 #include <string>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/bwe_defines.h"
 #include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/safe_minmax.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
 
 namespace webrtc {
@@ -89,8 +90,8 @@ BandwidthUsage OveruseDetector::Detect(double offset,
     return BandwidthUsage::kBwNormal;
   }
   const double T = std::min(num_of_deltas, kMinNumDeltas) * offset;
-  BWE_TEST_LOGGING_PLOT(1, "offset_ms#1", now_ms, offset);
-  BWE_TEST_LOGGING_PLOT(1, "gamma_ms#1", now_ms, threshold_ / kMinNumDeltas);
+  BWE_TEST_LOGGING_PLOT(1, "T", now_ms, T);
+  BWE_TEST_LOGGING_PLOT(1, "threshold", now_ms, threshold_);
   if (T > threshold_) {
     if (time_over_using_ == -1) {
       // Initialize the timer. Assume that we've been
@@ -144,11 +145,7 @@ void OveruseDetector::UpdateThreshold(double modified_offset, int64_t now_ms) {
   int64_t time_delta_ms = std::min(now_ms - last_update_ms_, kMaxTimeDeltaMs);
   threshold_ +=
       k * (fabs(modified_offset) - threshold_) * time_delta_ms;
-
-  const double kMinThreshold = 6;
-  const double kMaxThreshold = 600;
-  threshold_ = std::min(std::max(threshold_, kMinThreshold), kMaxThreshold);
-
+  threshold_ = rtc::SafeClamp(threshold_, 6.f, 600.f);
   last_update_ms_ = now_ms;
 }
 

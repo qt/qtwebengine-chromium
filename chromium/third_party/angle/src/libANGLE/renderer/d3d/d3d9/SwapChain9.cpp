@@ -79,13 +79,16 @@ static DWORD convertInterval(EGLint interval)
 #endif
 }
 
-EGLint SwapChain9::resize(int backbufferWidth, int backbufferHeight)
+EGLint SwapChain9::resize(const gl::Context *context, int backbufferWidth, int backbufferHeight)
 {
     // D3D9 does not support resizing swap chains without recreating them
-    return reset(backbufferWidth, backbufferHeight, mSwapInterval);
+    return reset(context, backbufferWidth, backbufferHeight, mSwapInterval);
 }
 
-EGLint SwapChain9::reset(int backbufferWidth, int backbufferHeight, EGLint swapInterval)
+EGLint SwapChain9::reset(const gl::Context *context,
+                         int backbufferWidth,
+                         int backbufferHeight,
+                         EGLint swapInterval)
 {
     IDirect3DDevice9 *device = mRenderer->getDevice();
 
@@ -265,7 +268,11 @@ EGLint SwapChain9::reset(int backbufferWidth, int backbufferHeight, EGLint swapI
 }
 
 // parameters should be validated/clamped by caller
-EGLint SwapChain9::swapRect(EGLint x, EGLint y, EGLint width, EGLint height)
+EGLint SwapChain9::swapRect(const gl::Context *context,
+                            EGLint x,
+                            EGLint y,
+                            EGLint width,
+                            EGLint height)
 {
     if (!mSwapChain)
     {
@@ -413,7 +420,7 @@ void *SwapChain9::getKeyedMutex()
 egl::Error SwapChain9::getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc)
 {
     UNREACHABLE();
-    return egl::Error(EGL_BAD_SURFACE);
+    return egl::EglBadSurface();
 }
 
 void SwapChain9::recreate()

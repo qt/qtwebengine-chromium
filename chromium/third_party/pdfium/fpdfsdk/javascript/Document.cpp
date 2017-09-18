@@ -273,11 +273,6 @@ bool Document::exportAsXFDF(CJS_Runtime* pRuntime,
   return true;
 }
 
-// Maps a field object in PDF document to a JavaScript variable
-// comment:
-// note: the paremter cName, this is clue how to treat if the cName is not a
-// valiable filed name in this document
-
 bool Document::getField(CJS_Runtime* pRuntime,
                         const std::vector<CJS_Value>& params,
                         CJS_Value& vRet,
@@ -1211,7 +1206,7 @@ bool Document::addIcon(CJS_Runtime* pRuntime,
   }
 
   v8::Local<v8::Object> pJSIcon = params[1].ToV8Object(pRuntime);
-  if (pRuntime->GetObjDefnID(pJSIcon) != CJS_Icon::g_nObjDefnID) {
+  if (CFXJS_Engine::GetObjDefnID(pJSIcon) != CJS_Icon::g_nObjDefnID) {
     sError = JSGetStringFromID(IDS_STRING_JSTYPEERROR);
     return false;
   }
@@ -1599,13 +1594,12 @@ bool Document::gotoNamedDest(CJS_Runtime* pRuntime,
     return false;
   }
   CFX_WideString wideName = params[0].ToCFXWideString(pRuntime);
-  CFX_ByteString utf8Name = wideName.UTF8Encode();
   CPDF_Document* pDocument = m_pFormFillEnv->GetPDFDocument();
   if (!pDocument)
     return false;
 
   CPDF_NameTree nameTree(pDocument, "Dests");
-  CPDF_Array* destArray = nameTree.LookupNamedDest(pDocument, utf8Name);
+  CPDF_Array* destArray = nameTree.LookupNamedDest(pDocument, wideName);
   if (!destArray)
     return false;
 

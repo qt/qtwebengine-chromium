@@ -8,7 +8,7 @@
 
 #include "core/fxcrt/fx_extension.h"
 #include "fxjs/cfxjse_value.h"
-#include "xfa/fxfa/app/xfa_ffnotify.h"
+#include "xfa/fxfa/app/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/cxfa_nodelist.h"
@@ -17,7 +17,8 @@ CXFA_Object::CXFA_Object(CXFA_Document* pDocument,
                          XFA_ObjectType objectType,
                          XFA_Element elementType,
                          const CFX_WideStringC& elementName)
-    : m_pDocument(pDocument),
+    : CFXJSE_HostObject(kXFA),
+      m_pDocument(pDocument),
       m_objectType(objectType),
       m_elementType(elementType),
       m_elementNameHash(FX_HashCode_GetW(elementName, false)),

@@ -10,6 +10,7 @@
 #include "libANGLE/renderer/d3d/d3d11/InputLayoutCache.h"
 
 #include "common/bitset_utils.h"
+#include "common/third_party/murmurhash/MurmurHash3.h"
 #include "common/utilities.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/VertexArray.h"
@@ -22,7 +23,6 @@
 #include "libANGLE/renderer/d3d/d3d11/ShaderExecutable11.h"
 #include "libANGLE/renderer/d3d/d3d11/VertexBuffer11.h"
 #include "libANGLE/renderer/d3d/d3d11/formatutils11.h"
-#include "third_party/murmurhash/MurmurHash3.h"
 
 namespace rx
 {
@@ -71,8 +71,6 @@ GLenum GetGLSLAttributeType(const std::vector<sh::Attribute> &shaderAttributes, 
     UNREACHABLE();
     return GL_NONE;
 }
-
-const unsigned int kDefaultCacheSize = 1024;
 
 struct PackedAttribute
 {
@@ -132,11 +130,14 @@ void SortAttributesByLayout(const gl::Program *program,
 
 } // anonymous namespace
 
-void InputLayoutCache::PackedAttributeLayout::addAttributeData(
-    GLenum glType,
-    UINT semanticIndex,
-    gl::VertexFormatType vertexFormatType,
-    unsigned int divisor)
+PackedAttributeLayout::PackedAttributeLayout() : numAttributes(0), flags(0), attributeData({})
+{
+}
+
+void PackedAttributeLayout::addAttributeData(GLenum glType,
+                                             UINT semanticIndex,
+                                             gl::VertexFormatType vertexFormatType,
+                                             unsigned int divisor)
 {
     gl::AttributeType attribType = gl::GetAttributeType(glType);
 
@@ -156,64 +157,27 @@ void InputLayoutCache::PackedAttributeLayout::addAttributeData(
     attributeData[numAttributes++] = gl::bitCast<uint32_t>(packedAttrib);
 }
 
-bool InputLayoutCache::PackedAttributeLayout::operator<(const PackedAttributeLayout &other) const
+bool PackedAttributeLayout::operator==(const PackedAttributeLayout &other) const
 {
-    if (numAttributes != other.numAttributes)
-    {
-        return numAttributes < other.numAttributes;
-    }
-
-    if (flags != other.flags)
-    {
-        return flags < other.flags;
-    }
-
-    return memcmp(attributeData, other.attributeData, sizeof(uint32_t) * numAttributes) < 0;
+    return (numAttributes == other.numAttributes) && (flags == other.flags) &&
+           (attributeData == other.attributeData);
 }
 
 InputLayoutCache::InputLayoutCache()
-    : mCurrentIL(angle::DirtyPointer),
-      mPointSpriteVertexBuffer(nullptr),
-      mPointSpriteIndexBuffer(nullptr),
-      mCacheSize(kDefaultCacheSize)
+    : mLayoutCache(kDefaultCacheSize * 2), mPointSpriteVertexBuffer(), mPointSpriteIndexBuffer()
 {
-    mCurrentBuffers.fill(nullptr);
-    mCurrentVertexStrides.fill(std::numeric_limits<UINT>::max());
-    mCurrentVertexOffsets.fill(std::numeric_limits<UINT>::max());
     mCurrentAttributes.reserve(gl::MAX_VERTEX_ATTRIBS);
 }
 
 InputLayoutCache::~InputLayoutCache()
 {
-    clear();
-}
-
-void InputLayoutCache::initialize()
-{
-    clear();
 }
 
 void InputLayoutCache::clear()
 {
-    for (auto &layout : mLayoutMap)
-    {
-        SafeRelease(layout.second);
-    }
-    mLayoutMap.clear();
-    SafeRelease(mPointSpriteVertexBuffer);
-    SafeRelease(mPointSpriteIndexBuffer);
-    markDirty();
-}
-
-void InputLayoutCache::markDirty()
-{
-    mCurrentIL = angle::DirtyPointer;
-    for (unsigned int i = 0; i < gl::MAX_VERTEX_ATTRIBS; i++)
-    {
-        mCurrentBuffers[i]       = nullptr;
-        mCurrentVertexStrides[i] = static_cast<UINT>(-1);
-        mCurrentVertexOffsets[i] = static_cast<UINT>(-1);
-    }
+    mLayoutCache.Clear();
+    mPointSpriteVertexBuffer.reset();
+    mPointSpriteIndexBuffer.reset();
 }
 
 gl::Error InputLayoutCache::applyVertexBuffers(
@@ -227,7 +191,7 @@ gl::Error InputLayoutCache::applyVertexBuffers(
     GLsizei numIndicesPerInstance)
 {
     ID3D11DeviceContext *deviceContext = renderer->getDeviceContext();
-    ID3D11Device *device               = renderer->getDevice();
+    auto *stateManager                 = renderer->getStateManager();
 
     gl::Program *program   = state.getProgram();
     ProgramD3D *programD3D = GetImplAs<ProgramD3D>(program);
@@ -259,10 +223,6 @@ gl::Error InputLayoutCache::applyVertexBuffers(
     ANGLE_TRY(
         updateInputLayout(renderer, state, mode, sortedSemanticIndices, numIndicesPerInstance));
 
-    bool dirtyBuffers = false;
-    size_t minDiff    = gl::MAX_VERTEX_ATTRIBS;
-    size_t maxDiff    = 0;
-
     // Note that if we use instance emulation, we reserve the first buffer slot.
     size_t reservedBuffers = GetReservedBufferCount(programUsesInstancedPointSprites);
 
@@ -285,7 +245,7 @@ gl::Error InputLayoutCache::applyVertexBuffers(
             if (bufferStorage == nullptr)
             {
                 ASSERT(attrib.vertexBuffer.get());
-                buffer = GetAs<VertexBuffer11>(attrib.vertexBuffer.get())->getBuffer();
+                buffer = GetAs<VertexBuffer11>(attrib.vertexBuffer.get())->getBuffer().get();
             }
             else if (instancedPointSpritesActive && (indexInfo != nullptr))
             {
@@ -317,18 +277,7 @@ gl::Error InputLayoutCache::applyVertexBuffers(
 
         size_t bufferIndex = reservedBuffers + attribIndex;
 
-        if (buffer != mCurrentBuffers[bufferIndex] ||
-            vertexStride != mCurrentVertexStrides[bufferIndex] ||
-            vertexOffset != mCurrentVertexOffsets[bufferIndex])
-        {
-            dirtyBuffers = true;
-            minDiff      = std::min(minDiff, bufferIndex);
-            maxDiff      = std::max(maxDiff, bufferIndex);
-
-            mCurrentBuffers[bufferIndex]       = buffer;
-            mCurrentVertexStrides[bufferIndex] = vertexStride;
-            mCurrentVertexOffsets[bufferIndex] = vertexOffset;
-        }
+        stateManager->queueVertexBufferChange(bufferIndex, buffer, vertexStride, vertexOffset);
     }
 
     // Instanced PointSprite emulation requires two additional ID3D11Buffers. A vertex buffer needs
@@ -342,7 +291,7 @@ gl::Error InputLayoutCache::applyVertexBuffers(
     {
         const UINT pointSpriteVertexStride = sizeof(float) * 5;
 
-        if (!mPointSpriteVertexBuffer)
+        if (!mPointSpriteVertexBuffer.valid())
         {
             static const float pointSpriteVertices[] =
             {
@@ -364,26 +313,16 @@ gl::Error InputLayoutCache::applyVertexBuffers(
             vertexBufferDesc.MiscFlags = 0;
             vertexBufferDesc.StructureByteStride = 0;
 
-            HRESULT result = device->CreateBuffer(&vertexBufferDesc, &vertexBufferData,
-                                                  &mPointSpriteVertexBuffer);
-            if (FAILED(result))
-            {
-                return gl::Error(GL_OUT_OF_MEMORY, "Failed to create instanced pointsprite emulation vertex buffer, HRESULT: 0x%08x", result);
-            }
+            ANGLE_TRY(renderer->allocateResource(vertexBufferDesc, &vertexBufferData,
+                                                 &mPointSpriteVertexBuffer));
         }
 
-        mCurrentBuffers[0] = mPointSpriteVertexBuffer;
         // Set the stride to 0 if GL_POINTS mode is not being used to instruct the driver to avoid
         // indexing into the vertex buffer.
-        mCurrentVertexStrides[0] = instancedPointSpritesActive ? pointSpriteVertexStride : 0;
-        mCurrentVertexOffsets[0] = 0;
+        UINT stride = instancedPointSpritesActive ? pointSpriteVertexStride : 0;
+        stateManager->queueVertexBufferChange(0, mPointSpriteVertexBuffer.get(), stride, 0);
 
-        // Update maxDiff to include the additional point sprite vertex buffer
-        // to ensure that IASetVertexBuffers uses the correct buffer count.
-        minDiff = 0;
-        maxDiff = std::max(maxDiff, static_cast<size_t>(0));
-
-        if (!mPointSpriteIndexBuffer)
+        if (!mPointSpriteIndexBuffer.valid())
         {
             // Create an index buffer and set it for pointsprite rendering
             static const unsigned short pointSpriteIndices[] =
@@ -400,13 +339,8 @@ gl::Error InputLayoutCache::applyVertexBuffers(
             indexBufferDesc.MiscFlags = 0;
             indexBufferDesc.StructureByteStride = 0;
 
-            HRESULT result =
-                device->CreateBuffer(&indexBufferDesc, &indexBufferData, &mPointSpriteIndexBuffer);
-            if (FAILED(result))
-            {
-                SafeRelease(mPointSpriteVertexBuffer);
-                return gl::Error(GL_OUT_OF_MEMORY, "Failed to create instanced pointsprite emulation index buffer, HRESULT: 0x%08x", result);
-            }
+            ANGLE_TRY(renderer->allocateResource(indexBufferDesc, &indexBufferData,
+                                                 &mPointSpriteIndexBuffer));
         }
 
         if (instancedPointSpritesActive)
@@ -415,19 +349,11 @@ gl::Error InputLayoutCache::applyVertexBuffers(
             // non-indexed rendering path in ANGLE (DrawArrays). This means that applyIndexBuffer()
             // on the renderer will not be called and setting this buffer here ensures that the
             // rendering path will contain the correct index buffers.
-            deviceContext->IASetIndexBuffer(mPointSpriteIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+            deviceContext->IASetIndexBuffer(mPointSpriteIndexBuffer.get(), DXGI_FORMAT_R16_UINT, 0);
         }
     }
 
-    if (dirtyBuffers)
-    {
-        ASSERT(minDiff <= maxDiff && maxDiff < gl::MAX_VERTEX_ATTRIBS);
-        deviceContext->IASetVertexBuffers(
-            static_cast<UINT>(minDiff), static_cast<UINT>(maxDiff - minDiff + 1),
-            &mCurrentBuffers[minDiff], &mCurrentVertexStrides[minDiff],
-            &mCurrentVertexOffsets[minDiff]);
-    }
-
+    stateManager->applyVertexBufferChanges();
     return gl::NoError();
 }
 
@@ -435,6 +361,8 @@ gl::Error InputLayoutCache::updateVertexOffsetsForPointSpritesEmulation(Renderer
                                                                         GLint startVertex,
                                                                         GLsizei emulatedInstanceId)
 {
+    auto *stateManager = renderer->getStateManager();
+
     size_t reservedBuffers = GetReservedBufferCount(true);
     for (size_t attribIndex = 0; attribIndex < mCurrentAttributes.size(); ++attribIndex)
     {
@@ -445,15 +373,12 @@ gl::Error InputLayoutCache::updateVertexOffsetsForPointSpritesEmulation(Renderer
         {
             unsigned int offset = 0;
             ANGLE_TRY_RESULT(attrib.computeOffset(startVertex), offset);
-            mCurrentVertexOffsets[bufferIndex] =
-                offset + (attrib.stride * (emulatedInstanceId / attrib.divisor));
+            offset += (attrib.stride * (emulatedInstanceId / attrib.divisor));
+            stateManager->queueVertexOffsetChange(bufferIndex, offset);
         }
     }
 
-    ID3D11DeviceContext *deviceContext = renderer->getDeviceContext();
-    deviceContext->IASetVertexBuffers(0, gl::MAX_VERTEX_ATTRIBS, mCurrentBuffers.data(),
-                                      mCurrentVertexStrides.data(), mCurrentVertexOffsets.data());
-
+    stateManager->applyVertexBufferChanges();
     return gl::NoError();
 }
 
@@ -505,51 +430,32 @@ gl::Error InputLayoutCache::updateInputLayout(Renderer11 *renderer,
             state.getVertexAttribCurrentValue(static_cast<unsigned int>(attribIndex));
         gl::VertexFormatType vertexFormatType = gl::GetVertexFormatType(attrib, currentValue.Type);
 
-        layout.addAttributeData(glslElementType, d3dSemantic, vertexFormatType, binding.divisor);
+        layout.addAttributeData(glslElementType, d3dSemantic, vertexFormatType,
+                                binding.getDivisor());
     }
 
-    ID3D11InputLayout *inputLayout = nullptr;
+    const d3d11::InputLayout *inputLayout = nullptr;
     if (layout.numAttributes > 0 || layout.flags != 0)
     {
-        auto layoutMapIt = mLayoutMap.find(layout);
-        if (layoutMapIt != mLayoutMap.end())
+        auto it = mLayoutCache.Get(layout);
+        if (it != mLayoutCache.end())
         {
-            inputLayout = layoutMapIt->second;
+            inputLayout = &it->second;
         }
         else
         {
+            angle::TrimCache(mLayoutCache.max_size() / 2, kGCLimit, "input layout", &mLayoutCache);
+
+            d3d11::InputLayout newInputLayout;
             ANGLE_TRY(createInputLayout(renderer, sortedSemanticIndices, mode, program,
-                                        numIndicesPerInstance, &inputLayout));
-            if (mLayoutMap.size() >= mCacheSize)
-            {
-                WARN() << "Overflowed the limit of " << mCacheSize
-                       << " input layouts, purging half the cache.";
+                                        numIndicesPerInstance, &newInputLayout));
 
-                // Randomly release every second element
-                auto it = mLayoutMap.begin();
-                while (it != mLayoutMap.end())
-                {
-                    it++;
-                    if (it != mLayoutMap.end())
-                    {
-                        // c++11 erase allows us to easily delete the current iterator.
-                        SafeRelease(it->second);
-                        it = mLayoutMap.erase(it);
-                    }
-                }
-            }
-
-            mLayoutMap[layout] = inputLayout;
+            auto insertIt = mLayoutCache.Put(layout, std::move(newInputLayout));
+            inputLayout   = &insertIt->second;
         }
     }
 
-    if (reinterpret_cast<uintptr_t>(inputLayout) != mCurrentIL)
-    {
-        ID3D11DeviceContext *deviceContext = renderer->getDeviceContext();
-        deviceContext->IASetInputLayout(inputLayout);
-        mCurrentIL = reinterpret_cast<uintptr_t>(inputLayout);
-    }
-
+    renderer->getStateManager()->setInputLayout(inputLayout);
     return gl::NoError();
 }
 
@@ -558,7 +464,7 @@ gl::Error InputLayoutCache::createInputLayout(Renderer11 *renderer,
                                               GLenum mode,
                                               gl::Program *program,
                                               GLsizei numIndicesPerInstance,
-                                              ID3D11InputLayout **inputLayoutOut)
+                                              d3d11::InputLayout *inputLayoutOut)
 {
     ProgramD3D *programD3D = GetImplAs<ProgramD3D>(program);
     auto featureLevel      = renderer->getRenderer11DeviceCaps().featureLevel;
@@ -648,16 +554,18 @@ gl::Error InputLayoutCache::createInputLayout(Renderer11 *renderer,
 
     ShaderExecutableD3D *shader11 = GetAs<ShaderExecutable11>(shader);
 
-    ID3D11Device *device = renderer->getDevice();
-    HRESULT result =
-        device->CreateInputLayout(inputElements.data(), inputElementCount, shader11->getFunction(),
-                                  shader11->getLength(), inputLayoutOut);
-    if (FAILED(result))
-    {
-        return gl::Error(GL_OUT_OF_MEMORY,
-                         "Failed to create internal input layout, HRESULT: 0x%08x", result);
-    }
+    InputElementArray inputElementArray(inputElements.data(), inputElementCount);
+    ShaderData vertexShaderData(shader11->getFunction(), shader11->getLength());
+
+    ANGLE_TRY(renderer->allocateResource(inputElementArray, &vertexShaderData, inputLayoutOut));
     return gl::NoError();
+}
+
+void InputLayoutCache::setCacheSize(size_t newCacheSize)
+{
+    // Forces a reset of the cache.
+    LayoutCache newCache(newCacheSize);
+    mLayoutCache.Swap(newCache);
 }
 
 }  // namespace rx

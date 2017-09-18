@@ -15,17 +15,16 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/base/array_view.h"
-#include "webrtc/base/atomicops.h"
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/base/random.h"
-#include "webrtc/base/safe_conversions.h"
 #include "webrtc/config.h"
 #include "webrtc/modules/audio_processing/test/test_utils.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/rtc_base/array_view.h"
+#include "webrtc/rtc_base/atomicops.h"
+#include "webrtc/rtc_base/platform_thread.h"
+#include "webrtc/rtc_base/random.h"
+#include "webrtc/rtc_base/safe_conversions.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/event_wrapper.h"
-#include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/perf_test.h"
 
@@ -714,7 +713,8 @@ const float CallSimulator::kRenderInputFloatLevel = 0.5f;
 const float CallSimulator::kCaptureInputFloatLevel = 0.03125f;
 }  // anonymous namespace
 
-TEST_P(CallSimulator, ApiCallDurationTest) {
+// TODO(peah): Reactivate once issue 7712 has been resolved.
+TEST_P(CallSimulator, DISABLED_ApiCallDurationTest) {
   // Run test and verify that it did not time out.
   EXPECT_EQ(kEventSignaled, Run());
 }

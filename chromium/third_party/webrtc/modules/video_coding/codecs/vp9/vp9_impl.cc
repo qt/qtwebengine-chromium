@@ -21,16 +21,15 @@
 #include "vpx/vp8cx.h"
 #include "vpx/vp8dx.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/keep_ref_until_done.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/random.h"
-#include "webrtc/base/timeutils.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/common_video/include/video_frame_buffer.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/video_coding/codecs/vp9/screenshare_layers.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/keep_ref_until_done.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/random.h"
+#include "webrtc/rtc_base/timeutils.h"
+#include "webrtc/rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -297,7 +296,7 @@ int VP9EncoderImpl::InitEncode(const VideoCodec* inst,
   config_->g_w = codec_.width;
   config_->g_h = codec_.height;
   config_->rc_target_bitrate = inst->startBitrate;  // in kbit/s
-  config_->g_error_resilient = 1;
+  config_->g_error_resilient = inst->VP9().resilienceOn ? 1 : 0;
   // Setting the time base of the codec.
   config_->g_timebase.num = 1;
   config_->g_timebase.den = 90000;
@@ -382,7 +381,7 @@ int VP9EncoderImpl::NumberOfThreads(int width,
   // tiles, which is (1, 2, 4, 8). See comments below for VP9E_SET_TILE_COLUMNS.
   if (width * height >= 1280 * 720 && number_of_cores > 4) {
     return 4;
-  } else if (width * height >= 640 * 480 && number_of_cores > 2) {
+  } else if (width * height >= 640 * 360 && number_of_cores > 2) {
     return 2;
   } else {
     // 1 thread less than VGA.
@@ -428,6 +427,7 @@ int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
   vpx_codec_control(encoder_, VP9E_SET_AQ_MODE,
                     inst->VP9().adaptiveQpMode ? 3 : 0);
 
+  vpx_codec_control(encoder_, VP9E_SET_FRAME_PARALLEL_DECODING, 0);
   vpx_codec_control(
       encoder_, VP9E_SET_SVC,
       (num_temporal_layers_ > 1 || num_spatial_layers_ > 1) ? 1 : 0);
@@ -450,13 +450,15 @@ int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
 
   // Turn on row-based multithreading.
   vpx_codec_control(encoder_, VP9E_SET_ROW_MT, 1);
+
 #if !defined(WEBRTC_ARCH_ARM) && !defined(WEBRTC_ARCH_ARM64) && \
   !defined(ANDROID)
-  // Note denoiser is still off by default until further testing/optimization,
-  // i.e., VP9().denoisingOn == 0.
+  // Do not enable the denoiser on ARM since optimization is pending.
+  // Denoiser is on by default on other platforms.
   vpx_codec_control(encoder_, VP9E_SET_NOISE_SENSITIVITY,
                     inst->VP9().denoisingOn ? 1 : 0);
 #endif
+
   if (codec_.mode == kScreensharing) {
     // Adjust internal parameters to screen content.
     vpx_codec_control(encoder_, VP9E_SET_TUNE_CONTENT, 1);
@@ -505,17 +507,16 @@ int VP9EncoderImpl::Encode(const VideoFrame& input_image,
   // doing this.
   input_image_ = &input_image;
 
+  rtc::scoped_refptr<I420BufferInterface> i420_buffer =
+      input_image.video_frame_buffer()->ToI420();
   // Image in vpx_image_t format.
   // Input image is const. VPX's raw image is not defined as const.
-  raw_->planes[VPX_PLANE_Y] =
-      const_cast<uint8_t*>(input_image.video_frame_buffer()->DataY());
-  raw_->planes[VPX_PLANE_U] =
-      const_cast<uint8_t*>(input_image.video_frame_buffer()->DataU());
-  raw_->planes[VPX_PLANE_V] =
-      const_cast<uint8_t*>(input_image.video_frame_buffer()->DataV());
-  raw_->stride[VPX_PLANE_Y] = input_image.video_frame_buffer()->StrideY();
-  raw_->stride[VPX_PLANE_U] = input_image.video_frame_buffer()->StrideU();
-  raw_->stride[VPX_PLANE_V] = input_image.video_frame_buffer()->StrideV();
+  raw_->planes[VPX_PLANE_Y] = const_cast<uint8_t*>(i420_buffer->DataY());
+  raw_->planes[VPX_PLANE_U] = const_cast<uint8_t*>(i420_buffer->DataU());
+  raw_->planes[VPX_PLANE_V] = const_cast<uint8_t*>(i420_buffer->DataV());
+  raw_->stride[VPX_PLANE_Y] = i420_buffer->StrideY();
+  raw_->stride[VPX_PLANE_U] = i420_buffer->StrideU();
+  raw_->stride[VPX_PLANE_V] = i420_buffer->StrideV();
 
   vpx_enc_frame_flags_t flags = 0;
   bool send_keyframe = (frame_type == kVideoFrameKey);
@@ -709,9 +710,11 @@ int VP9EncoderImpl::GetEncodedLayerFrame(const vpx_codec_cx_pkt* pkt) {
                                        : VideoContentType::UNSPECIFIED;
     encoded_image_._encodedHeight = raw_->d_h;
     encoded_image_._encodedWidth = raw_->d_w;
+    encoded_image_.timing_.is_timing_frame = false;
     int qp = -1;
     vpx_codec_control(encoder_, VP8E_GET_LAST_QUANTIZER, &qp);
     encoded_image_.qp_ = qp;
+
     encoded_complete_callback_->OnEncodedImage(encoded_image_, &codec_specific,
                                                &frag_info);
   }

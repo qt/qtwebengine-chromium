@@ -73,6 +73,8 @@ EmbedderTest::EmbedderTest()
   InitializeV8ForPDFium(g_exe_path, &platform_);
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 #endif  // FPDF_ENABLE_V8
+  FPDF_FILEWRITE::version = 1;
+  FPDF_FILEWRITE::WriteBlock = WriteBlockCallback;
 }
 
 EmbedderTest::~EmbedderTest() {
@@ -106,7 +108,6 @@ void EmbedderTest::TearDown() {
 
   FPDFAvail_Destroy(avail_);
   FPDF_DestroyLibrary();
-
   delete loader_;
 }
 
@@ -115,7 +116,7 @@ bool EmbedderTest::CreateEmptyDocument() {
   if (!document_)
     return false;
 
-  SetupFormFillEnvironment();
+  form_handle_ = SetupFormFillEnvironment(document_);
   return true;
 }
 
@@ -134,68 +135,73 @@ bool EmbedderTest::OpenDocument(const std::string& filename,
   file_access_.m_FileLen = static_cast<unsigned long>(file_length_);
   file_access_.m_GetBlock = TestLoader::GetBlock;
   file_access_.m_Param = loader_;
+  return OpenDocumentHelper(password, must_linearize, &file_avail_, &hints_,
+                            &file_access_, &document_, &avail_, &form_handle_);
+}
 
-  file_avail_.version = 1;
-  file_avail_.IsDataAvail = Is_Data_Avail;
+bool EmbedderTest::OpenDocumentHelper(const char* password,
+                                      bool must_linearize,
+                                      FX_FILEAVAIL* file_avail,
+                                      FX_DOWNLOADHINTS* hints,
+                                      FPDF_FILEACCESS* file_access,
+                                      FPDF_DOCUMENT* document,
+                                      FPDF_AVAIL* avail,
+                                      FPDF_FORMHANDLE* form_handle) {
+  file_avail->version = 1;
+  file_avail->IsDataAvail = Is_Data_Avail;
 
-  hints_.version = 1;
-  hints_.AddSegment = Add_Segment;
+  hints->version = 1;
+  hints->AddSegment = Add_Segment;
 
-  avail_ = FPDFAvail_Create(&file_avail_, &file_access_);
+  *avail = FPDFAvail_Create(file_avail, file_access);
 
-  if (FPDFAvail_IsLinearized(avail_) == PDF_LINEARIZED) {
-    document_ = FPDFAvail_GetDocument(avail_, password);
-    if (!document_) {
+  if (FPDFAvail_IsLinearized(*avail) == PDF_LINEARIZED) {
+    *document = FPDFAvail_GetDocument(*avail, password);
+    if (!*document)
       return false;
-    }
+
     int32_t nRet = PDF_DATA_NOTAVAIL;
-    while (nRet == PDF_DATA_NOTAVAIL) {
-      nRet = FPDFAvail_IsDocAvail(avail_, &hints_);
-    }
-    if (nRet == PDF_DATA_ERROR) {
+    while (nRet == PDF_DATA_NOTAVAIL)
+      nRet = FPDFAvail_IsDocAvail(*avail, hints);
+    if (nRet == PDF_DATA_ERROR)
       return false;
-    }
-    nRet = FPDFAvail_IsFormAvail(avail_, &hints_);
-    if (nRet == PDF_FORM_ERROR || nRet == PDF_FORM_NOTAVAIL) {
+
+    nRet = FPDFAvail_IsFormAvail(*avail, hints);
+    if (nRet == PDF_FORM_ERROR || nRet == PDF_FORM_NOTAVAIL)
       return false;
-    }
-    int page_count = FPDF_GetPageCount(document_);
+
+    int page_count = FPDF_GetPageCount(*document);
     for (int i = 0; i < page_count; ++i) {
       nRet = PDF_DATA_NOTAVAIL;
-      while (nRet == PDF_DATA_NOTAVAIL) {
-        nRet = FPDFAvail_IsPageAvail(avail_, i, &hints_);
-      }
-      if (nRet == PDF_DATA_ERROR) {
+      while (nRet == PDF_DATA_NOTAVAIL)
+        nRet = FPDFAvail_IsPageAvail(*avail, i, hints);
+
+      if (nRet == PDF_DATA_ERROR)
         return false;
-      }
     }
   } else {
-    if (must_linearize) {
+    if (must_linearize)
       return false;
-    }
-    document_ = FPDF_LoadCustomDocument(&file_access_, password);
-    if (!document_) {
+
+    *document = FPDF_LoadCustomDocument(file_access, password);
+    if (!*document)
       return false;
-    }
   }
-
-  SetupFormFillEnvironment();
-
+  *form_handle = SetupFormFillEnvironment(*document);
 #ifdef PDF_ENABLE_XFA
   int docType = DOCTYPE_PDF;
-  if (FPDF_HasXFAField(document_, &docType)) {
+  if (FPDF_HasXFAField(*document, &docType)) {
     if (docType != DOCTYPE_PDF)
-      (void)FPDF_LoadXFA(document_);
+      (void)FPDF_LoadXFA(*document);
   }
 #endif  // PDF_ENABLE_XFA
-
-  (void)FPDF_GetDocPermissions(document_);
+  (void)FPDF_GetDocPermissions(*document);
   return true;
 }
 
-void EmbedderTest::SetupFormFillEnvironment() {
+FPDF_FORMHANDLE EmbedderTest::SetupFormFillEnvironment(FPDF_DOCUMENT doc) {
   IPDF_JSPLATFORM* platform = static_cast<IPDF_JSPLATFORM*>(this);
-  memset(platform, 0, sizeof(IPDF_JSPLATFORM));
+  memset(platform, '\0', sizeof(IPDF_JSPLATFORM));
   platform->version = 2;
   platform->app_alert = AlertTrampoline;
   platform->m_isolate = external_isolate_;
@@ -211,13 +217,15 @@ void EmbedderTest::SetupFormFillEnvironment() {
   formfillinfo->FFI_KillTimer = KillTimerTrampoline;
   formfillinfo->FFI_GetPage = GetPageTrampoline;
   formfillinfo->m_pJsPlatform = platform;
-
-  form_handle_ = FPDFDOC_InitFormFillEnvironment(document_, formfillinfo);
-  FPDF_SetFormFieldHighlightColor(form_handle_, 0, 0xFFE4DD);
-  FPDF_SetFormFieldHighlightAlpha(form_handle_, 100);
+  FPDF_FORMHANDLE form_handle =
+      FPDFDOC_InitFormFillEnvironment(doc, formfillinfo);
+  FPDF_SetFormFieldHighlightColor(form_handle, 0, 0xFFE4DD);
+  FPDF_SetFormFieldHighlightAlpha(form_handle, 100);
+  return form_handle;
 }
 
 void EmbedderTest::DoOpenActions() {
+  ASSERT(form_handle_);
   FORM_DoDocumentJSAction(form_handle_);
   FORM_DoDocumentOpenAction(form_handle_);
 }
@@ -230,22 +238,22 @@ int EmbedderTest::GetFirstPageNum() {
 
 int EmbedderTest::GetPageCount() {
   int page_count = FPDF_GetPageCount(document_);
-  for (int i = 0; i < page_count; ++i) {
+  for (int i = 0; i < page_count; ++i)
     (void)FPDFAvail_IsPageAvail(avail_, i, &hints_);
-  }
   return page_count;
 }
 
 FPDF_PAGE EmbedderTest::LoadPage(int page_number) {
+  ASSERT(form_handle_);
   // First check whether it is loaded already.
   auto it = page_map_.find(page_number);
   if (it != page_map_.end())
     return it->second;
 
   FPDF_PAGE page = FPDF_LoadPage(document_, page_number);
-  if (!page) {
+  if (!page)
     return nullptr;
-  }
+
   FORM_OnAfterLoadPage(page, form_handle_);
   FORM_DoPageAAction(page, form_handle_, FPDFPAGE_AACTION_OPEN);
   // Cache the page.
@@ -255,18 +263,25 @@ FPDF_PAGE EmbedderTest::LoadPage(int page_number) {
 }
 
 FPDF_BITMAP EmbedderTest::RenderPage(FPDF_PAGE page) {
+  return RenderPageWithFlags(page, form_handle_, 0);
+}
+
+FPDF_BITMAP EmbedderTest::RenderPageWithFlags(FPDF_PAGE page,
+                                              FPDF_FORMHANDLE handle,
+                                              int flags) {
   int width = static_cast<int>(FPDF_GetPageWidth(page));
   int height = static_cast<int>(FPDF_GetPageHeight(page));
   int alpha = FPDFPage_HasTransparency(page) ? 1 : 0;
   FPDF_BITMAP bitmap = FPDFBitmap_Create(width, height, alpha);
   FPDF_DWORD fill_color = alpha ? 0x00000000 : 0xFFFFFFFF;
   FPDFBitmap_FillRect(bitmap, 0, 0, width, height, fill_color);
-  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, 0);
-  FPDF_FFLDraw(form_handle_, bitmap, page, 0, 0, width, height, 0, 0);
+  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, flags);
+  FPDF_FFLDraw(handle, bitmap, page, 0, 0, width, height, 0, flags);
   return bitmap;
 }
 
 void EmbedderTest::UnloadPage(FPDF_PAGE page) {
+  ASSERT(form_handle_);
   FORM_DoPageAAction(page, form_handle_, FPDFPAGE_AACTION_CLOSE);
   FORM_OnBeforeClosePage(page, form_handle_);
   FPDF_ClosePage(page);
@@ -277,6 +292,42 @@ void EmbedderTest::UnloadPage(FPDF_PAGE page) {
 
   page_map_.erase(it->second);
   page_reverse_map_.erase(it);
+}
+
+void EmbedderTest::TestSaved(int width,
+                             int height,
+                             const char* md5,
+                             const char* password) {
+  FPDF_FILEACCESS file_access;
+  memset(&file_access, 0, sizeof(file_access));
+  file_access.m_FileLen = m_String.size();
+  file_access.m_GetBlock = GetBlockFromString;
+  file_access.m_Param = &m_String;
+  FX_FILEAVAIL file_avail;
+  FX_DOWNLOADHINTS hints;
+
+  ASSERT_TRUE(OpenDocumentHelper(password, false, &file_avail, &hints,
+                                 &file_access, &m_SavedDocument, &m_SavedAvail,
+                                 &m_SavedForm));
+  EXPECT_EQ(1, FPDF_GetPageCount(m_SavedDocument));
+  m_SavedPage = FPDF_LoadPage(m_SavedDocument, 0);
+  ASSERT_TRUE(m_SavedPage);
+  FPDF_BITMAP new_bitmap =
+      RenderPageWithFlags(m_SavedPage, m_SavedForm, FPDF_ANNOT);
+  CompareBitmap(new_bitmap, width, height, md5);
+  FPDFBitmap_Destroy(new_bitmap);
+}
+
+void EmbedderTest::CloseSaved() {
+  FPDF_ClosePage(m_SavedPage);
+  FPDFDOC_ExitFormFillEnvironment(m_SavedForm);
+  FPDF_CloseDocument(m_SavedDocument);
+  FPDFAvail_Destroy(m_SavedAvail);
+}
+
+void EmbedderTest::TestAndCloseSaved(int width, int height, const char* md5) {
+  TestSaved(width, height, md5);
+  CloseSaved();
 }
 
 FPDF_PAGE EmbedderTest::Delegate::GetPage(FPDF_FORMFILLINFO* info,
@@ -350,6 +401,32 @@ void EmbedderTest::CompareBitmap(FPDF_BITMAP bitmap,
 
   EXPECT_EQ(expected_md5sum,
             HashBitmap(bitmap, expected_width, expected_height));
+}
+
+// static
+int EmbedderTest::WriteBlockCallback(FPDF_FILEWRITE* pFileWrite,
+                                     const void* data,
+                                     unsigned long size) {
+  EmbedderTest* pThis = static_cast<EmbedderTest*>(pFileWrite);
+  pThis->m_String.append(static_cast<const char*>(data), size);
+  return 1;
+}
+
+// static
+int EmbedderTest::GetBlockFromString(void* param,
+                                     unsigned long pos,
+                                     unsigned char* buf,
+                                     unsigned long size) {
+  std::string* new_file = static_cast<std::string*>(param);
+  if (!new_file || pos + size < pos)
+    return 0;
+
+  unsigned long file_size = new_file->size();
+  if (pos + size > file_size)
+    return 0;
+
+  memcpy(buf, new_file->data() + pos, size);
+  return 1;
 }
 
 // Can't use gtest-provided main since we need to stash the path to the

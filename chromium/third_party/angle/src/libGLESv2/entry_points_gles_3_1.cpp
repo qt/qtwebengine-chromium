@@ -48,7 +48,7 @@ void GL_APIENTRY DispatchComputeIndirect(GLintptr indirect)
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -132,7 +132,7 @@ void GL_APIENTRY GetProgramInterfaceiv(GLuint program,
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -154,7 +154,7 @@ GLuint GL_APIENTRY GetProgramResourceIndex(GLuint program,
         }
         return context->getProgramResourceIndex(program, programInterface, name);
     }
-    return 0u;
+    return GL_INVALID_INDEX;
 }
 
 void GL_APIENTRY GetProgramResourceName(GLuint program,
@@ -200,7 +200,7 @@ void GL_APIENTRY GetProgramResourceiv(GLuint program,
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -215,13 +215,14 @@ GLint GL_APIENTRY GetProgramResourceLocation(GLuint program,
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!context->skipValidation())
+        if (!context->skipValidation() &&
+            !ValidateGetProgramResourceLocation(context, program, programInterface, name))
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            return -1;
         }
-        UNIMPLEMENTED();
+        return context->getProgramResourceLocation(program, programInterface, name);
     }
-    return 0;
+    return -1;
 }
 
 void GL_APIENTRY UseProgramStages(GLuint pipeline, GLbitfield stages, GLuint program)
@@ -233,7 +234,7 @@ void GL_APIENTRY UseProgramStages(GLuint pipeline, GLbitfield stages, GLuint pro
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -247,7 +248,7 @@ void GL_APIENTRY ActiveShaderProgram(GLuint pipeline, GLuint program)
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -262,7 +263,7 @@ GLuint GL_APIENTRY CreateShaderProgramv(GLenum type, GLsizei count, const GLchar
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -291,7 +292,7 @@ void GL_APIENTRY DeleteProgramPipelines(GLsizei n, const GLuint *pipelines)
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -305,7 +306,7 @@ void GL_APIENTRY GenProgramPipelines(GLsizei n, GLuint *pipelines)
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -319,7 +320,7 @@ GLboolean GL_APIENTRY IsProgramPipeline(GLuint pipeline)
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -335,7 +336,7 @@ void GL_APIENTRY GetProgramPipelineiv(GLuint pipeline, GLenum pname, GLint *para
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -923,7 +924,7 @@ void GL_APIENTRY ValidateProgramPipeline(GLuint pipeline)
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -943,7 +944,7 @@ void GL_APIENTRY GetProgramPipelineInfoLog(GLuint pipeline,
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -964,11 +965,13 @@ void GL_APIENTRY BindImageTexture(GLuint unit,
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (texture != 0)
+        if (!context->skipValidation() && !ValidateBindImageTexture(context, unit, texture, level,
+                                                                    layered, layer, access, format))
         {
-            // Binding non-zero image textures is not implemented yet.
-            UNIMPLEMENTED();
+            return;
         }
+
+        context->bindImageTexture(unit, texture, level, layered, layer, access, format);
     }
 }
 
@@ -996,7 +999,7 @@ void GL_APIENTRY MemoryBarrier(GLbitfield barriers)
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }
@@ -1010,7 +1013,7 @@ void GL_APIENTRY MemoryBarrierByRegion(GLbitfield barriers)
     {
         if (!context->skipValidation())
         {
-            context->handleError(Error(GL_INVALID_OPERATION, "Entry point not implemented"));
+            context->handleError(InvalidOperation() << "Entry point not implemented");
         }
         UNIMPLEMENTED();
     }

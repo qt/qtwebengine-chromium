@@ -1,3 +1,59 @@
+2017-07-13  Werner Lemberg  <wl@gnu.org>
+
+	[base] Fix memory leak.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/chromium/issues/detail?id=738362
+
+	* src/base/ftglyph.c (FT_Get_Glyph): Do proper deallocation in case
+	of error.
+
+2017-07-12  Werner Lemberg  <wl@gnu.org>
+
+	[base] Integer overflow.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=2573
+
+	* src/base/ftobjs.c (ft_glyphslot_grid_fit_metrics): Use
+	FT_PIX_CEIL_LONG and FT_PIX_ROUND_LONG.
+
+2017-07-12  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttpload.c (tt_face_get_location): Off-by-one typo.
+
+	Also improve tracing message.
+
+	Problem reported as
+
+	  https://bugs.chromium.org/p/chromium/issues/detail?id=738919
+
+2017-07-07  Werner Lemberg  <wl@gnu.org>
+
+	[cff] Integer overflow.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=2517
+
+	* src/cff/cf2blues.c (cf2_blues_capture): Use SUB_INT32.
+
+2017-07-05  Werner Lemberg  <wl@gnu.org>
+
+	* src/sfnt/ttcmap.c (tt_cmap_unicode_class_rec): Fix warning.
+
+2017-07-05  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttgxvar.c (FT_Stream_SeekSet): Fix warning (#51395).
+
+2017-07-04  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Prevent address overflow (#51365).
+
+	* src/truetype/ttgxvar.c (FT_Stream_SeekSet): Add guard.
+
 2017-07-03  Alexei Podtelezhnikov  <apodtele@gmail.com>
 
 	* src/base/ftlcdfil.c (ft_lcd_filter_fir): Improve code.
@@ -128,7 +184,7 @@
 	Reported as
 
 	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=2270
-	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=2278
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=2276
 
 	* src/truetype/ttinterp.c (Ins_MDRP, _iup_worker_interpolate): Use
 	ADD_LONG and SUB_LONG.

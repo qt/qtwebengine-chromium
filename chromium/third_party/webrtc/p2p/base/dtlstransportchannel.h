@@ -15,13 +15,13 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/base/buffer.h"
-#include "webrtc/base/bufferqueue.h"
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/sslstreamadapter.h"
-#include "webrtc/base/stream.h"
 #include "webrtc/p2p/base/dtlstransportinternal.h"
 #include "webrtc/p2p/base/icetransportinternal.h"
+#include "webrtc/rtc_base/buffer.h"
+#include "webrtc/rtc_base/bufferqueue.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/sslstreamadapter.h"
+#include "webrtc/rtc_base/stream.h"
 
 namespace rtc {
 class PacketTransportInternal;
@@ -93,6 +93,10 @@ class DtlsTransport : public DtlsTransportInternal {
   explicit DtlsTransport(IceTransportInternal* ice_transport,
                          const rtc::CryptoOptions& crypto_options);
   ~DtlsTransport() override;
+
+  const rtc::CryptoOptions& crypto_options() const override {
+    return crypto_options_;
+  }
 
   DtlsTransportState dtls_state() const override { return dtls_state_; }
 
@@ -218,6 +222,7 @@ class DtlsTransport : public DtlsTransportInternal {
   rtc::scoped_refptr<rtc::RTCCertificate> local_certificate_;
   rtc::SSLRole ssl_role_;
   rtc::SSLProtocolVersion ssl_max_version_;
+  rtc::CryptoOptions crypto_options_;
   rtc::Buffer remote_fingerprint_value_;
   std::string remote_fingerprint_algorithm_;
 

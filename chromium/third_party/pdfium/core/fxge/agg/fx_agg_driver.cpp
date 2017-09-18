@@ -10,12 +10,12 @@
 #include <utility>
 
 #include "core/fxcodec/fx_codec.h"
+#include "core/fxge/cfx_cliprgn.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/dib/cfx_imagerenderer.h"
 #include "core/fxge/dib/cfx_imagestretcher.h"
-#include "core/fxge/ge/cfx_cliprgn.h"
 #include "third_party/agg23/agg_conv_dash.h"
 #include "third_party/agg23/agg_conv_stroke.h"
 #include "third_party/agg23/agg_curves.h"
@@ -438,7 +438,7 @@ class CFX_Renderer {
   CFX_RetainPtr<CFX_DIBitmap> m_pOriDevice;
   CFX_RetainPtr<CFX_DIBitmap> m_pClipMask;
   CFX_RetainPtr<CFX_DIBitmap> m_pDevice;
-  const CFX_ClipRgn* m_pClipRgn;
+  CFX_UnownedPtr<const CFX_ClipRgn> m_pClipRgn;
 };
 
 void CFX_Renderer::CompositeSpan(uint8_t* dest_scan,
@@ -1349,10 +1349,8 @@ bool CFX_AggDeviceDriver::DrawPath(const CFX_PathData* pPathData,
         pObject2Device->a / matrix1.a, pObject2Device->b / matrix1.a,
         pObject2Device->c / matrix1.d, pObject2Device->d / matrix1.d, 0, 0);
 
-    CFX_Matrix mtRervese;
-    mtRervese.SetReverse(matrix2);
     matrix1 = *pObject2Device;
-    matrix1.Concat(mtRervese);
+    matrix1.Concat(matrix2.GetInverse());
   }
 
   CAgg_PathData path_data;
@@ -1548,9 +1546,9 @@ bool CFX_AggDeviceDriver::StartDIBits(
   if (!m_pBitmap->GetBuffer())
     return true;
 
-  *handle = pdfium::MakeUnique<CFX_ImageRenderer>();
-  (*handle)->Start(m_pBitmap, m_pClipRgn.get(), pSource, bitmap_alpha, argb,
-                   pMatrix, render_flags, m_bRgbByteOrder);
+  *handle = pdfium::MakeUnique<CFX_ImageRenderer>(
+      m_pBitmap, m_pClipRgn.get(), pSource, bitmap_alpha, argb, pMatrix,
+      render_flags, m_bRgbByteOrder);
   return true;
 }
 

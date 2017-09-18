@@ -13,13 +13,12 @@
 #include <utility>
 #include <vector>
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/base/task_queue.h"
-#include "webrtc/base/timeutils.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/platform_thread.h"
+#include "webrtc/rtc_base/task_queue.h"
+#include "webrtc/rtc_base/timeutils.h"
 #include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/frame_generator.h"
 #include "webrtc/video_send_stream.h"
 
@@ -160,6 +159,7 @@ void FrameGeneratorCapturer::InsertFrame() {
   rtc::CritScope cs(&lock_);
   if (sending_) {
     VideoFrame* frame = frame_generator_->NextFrame();
+    frame->set_timestamp_us(clock_->TimeInMicroseconds());
     frame->set_ntp_time_ms(clock_->CurrentNtpInMilliseconds());
     frame->set_rotation(fake_rotation_);
     if (first_frame_capture_time_ == -1) {

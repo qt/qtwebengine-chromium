@@ -28,8 +28,10 @@ CPDF_ProgressiveRenderer::CPDF_ProgressiveRenderer(
       m_pCurrentLayer(nullptr) {}
 
 CPDF_ProgressiveRenderer::~CPDF_ProgressiveRenderer() {
-  if (m_pRenderStatus)
+  if (m_pRenderStatus) {
+    m_pRenderStatus.reset();  // Release first.
     m_pDevice->RestoreState(false);
+  }
 }
 
 void CPDF_ProgressiveRenderer::Start(IFX_Pause* pPause) {
@@ -58,9 +60,7 @@ void CPDF_ProgressiveRenderer::Continue(IFX_Pause* pPause) {
           nullptr);
       m_pDevice->SaveState();
       m_ClipRect = CFX_FloatRect(m_pDevice->GetClipBox());
-      CFX_Matrix device2object;
-      device2object.SetReverse(m_pCurrentLayer->m_Matrix);
-      device2object.TransformRect(m_ClipRect);
+      m_pCurrentLayer->m_Matrix.GetInverse().TransformRect(m_ClipRect);
     }
     CPDF_PageObjectList::iterator iter;
     CPDF_PageObjectList::iterator iterEnd =

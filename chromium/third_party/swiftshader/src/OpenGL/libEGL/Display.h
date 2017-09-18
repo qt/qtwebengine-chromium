@@ -37,7 +37,9 @@ namespace egl
 
 	class [[clang::lto_visibility_public]] Display
 	{
-		virtual void typeinfo();   // Dummy key method (https://gcc.gnu.org/onlinedocs/gcc/Vague-Linkage.html)
+	protected:
+		explicit Display(EGLDisplay eglDisplay, void *nativeDisplay);
+		virtual ~Display() = 0;
 
 	public:
 		static Display *get(EGLDisplay dpy);
@@ -68,18 +70,17 @@ namespace egl
 		EGLint getMinSwapInterval() const;
 		EGLint getMaxSwapInterval() const;
 
+		EGLDisplay getEGLDisplay() const;
 		void *getNativeDisplay() const;
 
 		EGLImageKHR createSharedImage(Image *image);
 		bool destroySharedImage(EGLImageKHR);
-		virtual Image *getSharedImage(EGLImageKHR name);
+		virtual Image *getSharedImage(EGLImageKHR name) = 0;
 
 	private:
-		explicit Display(void *nativeDisplay);
-		~Display();
-
 		sw::Format getDisplayFormat() const;
 
+		const EGLDisplay eglDisplay;
 		void *const nativeDisplay;
 
 		EGLint mMaxSwapInterval;

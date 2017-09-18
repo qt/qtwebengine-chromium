@@ -11,13 +11,15 @@
 #ifndef WEBRTC_MODULES_VIDEO_CODING_GENERIC_DECODER_H_
 #define WEBRTC_MODULES_VIDEO_CODING_GENERIC_DECODER_H_
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/thread_checker.h"
+#include <memory>
+
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/video_coding/encoded_frame.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/timestamp_map.h"
 #include "webrtc/modules/video_coding/timing.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/thread_checker.h"
 
 namespace webrtc {
 
@@ -31,6 +33,7 @@ struct VCMFrameInformation {
   void* userData;
   VideoRotation rotation;
   VideoContentType content_type;
+  EncodedImage::Timing timing;
 };
 
 class VCMDecodedFrameCallback : public DecodedImageCallback {
@@ -68,11 +71,10 @@ class VCMDecodedFrameCallback : public DecodedImageCallback {
   rtc::CriticalSection lock_;
   VCMTimestampMap _timestampMap GUARDED_BY(lock_);
   uint64_t _lastReceivedPictureID;
+  int64_t ntp_offset_;
 };
 
 class VCMGenericDecoder {
-  friend class VCMCodecDataBase;
-
  public:
   explicit VCMGenericDecoder(VideoDecoder* decoder, bool isExternal = false);
   ~VCMGenericDecoder();
@@ -90,26 +92,23 @@ class VCMGenericDecoder {
   int32_t Decode(const VCMEncodedFrame& inputFrame, int64_t nowMs);
 
   /**
-  * Free the decoder memory
-  */
-  int32_t Release();
-
-  /**
   * Set decode callback. Deregistering while decoding is illegal.
   */
   int32_t RegisterDecodeCompleteCallback(VCMDecodedFrameCallback* callback);
 
   bool External() const;
   bool PrefersLateDecoding() const;
+  bool IsSameDecoder(VideoDecoder* decoder) const {
+    return decoder_.get() == decoder;
+  }
 
  private:
   VCMDecodedFrameCallback* _callback;
   VCMFrameInformation _frameInfos[kDecoderFrameMemoryLength];
   uint32_t _nextFrameInfoIdx;
-  VideoDecoder* const _decoder;
+  std::unique_ptr<VideoDecoder> decoder_;
   VideoCodecType _codecType;
-  bool _isExternal;
-  bool _keyFrameDecoded;
+  const bool _isExternal;
   VideoContentType _last_keyframe_content_type;
 };
 

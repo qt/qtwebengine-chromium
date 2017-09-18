@@ -10,8 +10,9 @@
 
 #include "compiler/translator/SimplifyLoopConditions.h"
 
-#include "compiler/translator/IntermNode.h"
 #include "compiler/translator/IntermNodePatternMatcher.h"
+#include "compiler/translator/IntermNode_util.h"
+#include "compiler/translator/IntermTraverse.h"
 
 namespace sh
 {
@@ -19,20 +20,11 @@ namespace sh
 namespace
 {
 
-TIntermConstantUnion *CreateBoolConstantNode(bool value)
-{
-    TConstantUnion *u = new TConstantUnion;
-    u->setBConst(value);
-    TIntermConstantUnion *node =
-        new TIntermConstantUnion(u, TType(EbtBool, EbpUndefined, EvqConst, 1));
-    return node;
-}
-
 class SimplifyLoopConditionsTraverser : public TLValueTrackingTraverser
 {
   public:
     SimplifyLoopConditionsTraverser(unsigned int conditionsToSimplifyMask,
-                                    const TSymbolTable &symbolTable,
+                                    TSymbolTable *symbolTable,
                                     int shaderVersion);
 
     void traverseLoop(TIntermLoop *node) override;
@@ -54,7 +46,7 @@ class SimplifyLoopConditionsTraverser : public TLValueTrackingTraverser
 
 SimplifyLoopConditionsTraverser::SimplifyLoopConditionsTraverser(
     unsigned int conditionsToSimplifyMask,
-    const TSymbolTable &symbolTable,
+    TSymbolTable *symbolTable,
     int shaderVersion)
     : TLValueTrackingTraverser(true, false, false, symbolTable, shaderVersion),
       mFoundLoopToChange(false),
@@ -146,7 +138,7 @@ void SimplifyLoopConditionsTraverser::traverseLoop(TIntermLoop *node)
 
     if (mFoundLoopToChange)
     {
-        nextTemporaryIndex();
+        nextTemporaryId();
 
         // Replace the loop condition with a boolean variable that's updated on each iteration.
         TLoopType loopType = node->getType();
@@ -188,7 +180,7 @@ void SimplifyLoopConditionsTraverser::traverseLoop(TIntermLoop *node)
             //     s0 = expr;
             //   } while (s0);
             TIntermSequence tempInitSeq;
-            tempInitSeq.push_back(createTempInitDeclaration(CreateBoolConstantNode(true)));
+            tempInitSeq.push_back(createTempInitDeclaration(CreateBoolNode(true)));
             insertStatementsInParentBlock(tempInitSeq);
 
             TIntermBlock *newBody = new TIntermBlock();
@@ -237,7 +229,7 @@ void SimplifyLoopConditionsTraverser::traverseLoop(TIntermLoop *node)
             }
             else
             {
-                conditionInitializer = TIntermTyped::CreateBool(true);
+                conditionInitializer = CreateBoolNode(true);
             }
             loopScopeSequence->push_back(createTempInitDeclaration(conditionInitializer));
 
@@ -264,7 +256,7 @@ void SimplifyLoopConditionsTraverser::traverseLoop(TIntermLoop *node)
                 ELoopWhile, nullptr, createTempSymbol(conditionInitializer->getType()), nullptr,
                 whileLoopBody);
             loopScope->getSequence()->push_back(whileLoop);
-            queueReplacement(node, loopScope, OriginalNode::IS_DROPPED);
+            queueReplacement(loopScope, OriginalNode::IS_DROPPED);
 
             // After this the old body node will be traversed and loops inside it may be
             // transformed. This is fine, since the old body node will still be in the AST after the
@@ -284,13 +276,10 @@ void SimplifyLoopConditionsTraverser::traverseLoop(TIntermLoop *node)
 
 void SimplifyLoopConditions(TIntermNode *root,
                             unsigned int conditionsToSimplifyMask,
-                            unsigned int *temporaryIndex,
-                            const TSymbolTable &symbolTable,
+                            TSymbolTable *symbolTable,
                             int shaderVersion)
 {
     SimplifyLoopConditionsTraverser traverser(conditionsToSimplifyMask, symbolTable, shaderVersion);
-    ASSERT(temporaryIndex != nullptr);
-    traverser.useTemporaryIndex(temporaryIndex);
     root->traverse(&traverser);
     traverser.updateTree();
 }

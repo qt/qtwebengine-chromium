@@ -10,9 +10,9 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/pli.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -47,6 +47,10 @@ bool Pli::Parse(const CommonHeader& packet) {
 
   ParseCommonFeedback(packet.payload());
   return true;
+}
+
+size_t Pli::BlockLength() const {
+  return kHeaderLength + kCommonFeedbackLength;
 }
 
 bool Pli::Create(uint8_t* packet,

@@ -21,13 +21,6 @@
 #include "webrtc/api/jsepicecandidate.h"
 #include "webrtc/api/jsepsessiondescription.h"
 #include "webrtc/api/peerconnectioninterface.h"
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/bind.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/helpers.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/stringencode.h"
-#include "webrtc/base/stringutils.h"
 #include "webrtc/call/call.h"
 #include "webrtc/media/base/mediaconstants.h"
 #include "webrtc/media/base/videocapturer.h"
@@ -38,6 +31,13 @@
 #include "webrtc/pc/mediasession.h"
 #include "webrtc/pc/sctputils.h"
 #include "webrtc/pc/webrtcsessiondescriptionfactory.h"
+#include "webrtc/rtc_base/basictypes.h"
+#include "webrtc/rtc_base/bind.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/helpers.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/stringencode.h"
+#include "webrtc/rtc_base/stringutils.h"
 
 #ifdef HAVE_QUIC
 #include "webrtc/p2p/quic/quictransportchannel.h"
@@ -625,12 +625,16 @@ bool WebRtcSession::Initialize(
     webrtc_session_desc_factory_->SetSdesPolicy(cricket::SEC_DISABLED);
   }
 
+  webrtc_session_desc_factory_->set_enable_encrypted_rtp_header_extensions(
+      options.crypto_options.enable_encrypted_rtp_header_extensions);
+
   return true;
 }
 
 void WebRtcSession::Close() {
   SetState(STATE_CLOSED);
   RemoveUnusedChannels(nullptr);
+  call_ = nullptr;
   RTC_DCHECK(!voice_channel_);
   RTC_DCHECK(!video_channel_);
   RTC_DCHECK(!rtp_data_channel_);
@@ -1091,7 +1095,7 @@ bool WebRtcSession::EnableBundle(const cricket::ContentGroup& bundle) {
     bool need_rtcp = (ch->rtcp_dtls_transport() != nullptr);
     cricket::DtlsTransportInternal* rtcp_dtls_transport = nullptr;
     if (need_rtcp) {
-      rtcp_dtls_transport = transport_controller_->CreateDtlsTransport_n(
+      rtcp_dtls_transport = transport_controller_->CreateDtlsTransport(
           transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTCP);
     }
 
@@ -1218,6 +1222,8 @@ cricket::IceConfig WebRtcSession::ParseIceConfig(
   ice_config.presume_writable_when_fully_relayed =
       config.presume_writable_when_fully_relayed;
   ice_config.ice_check_min_interval = config.ice_check_min_interval;
+  ice_config.regather_all_networks_interval_range =
+      config.ice_regather_interval_range;
   return ice_config;
 }
 
@@ -1895,6 +1901,16 @@ bool WebRtcSession::CreateDataChannel(const cricket::ContentInfo* content,
   return true;
 }
 
+Call::Stats WebRtcSession::GetCallStats() {
+  if (!worker_thread()->IsCurrent()) {
+    return worker_thread()->Invoke<Call::Stats>(
+        RTC_FROM_HERE, rtc::Bind(&WebRtcSession::GetCallStats, this));
+  }
+  if (!call_)
+    return Call::Stats();
+  return call_->GetStats();
+}
+
 std::unique_ptr<SessionStats> WebRtcSession::GetStats_n(
     const ChannelNamePairs& channel_name_pairs) {
   RTC_DCHECK(network_thread()->IsCurrent());
@@ -2317,6 +2333,7 @@ void WebRtcSession::ReportNegotiatedCiphers(
 
 void WebRtcSession::OnSentPacket_w(const rtc::SentPacket& sent_packet) {
   RTC_DCHECK(worker_thread()->IsCurrent());
+  RTC_DCHECK(call_);
   call_->OnSentPacket(sent_packet);
 }
 

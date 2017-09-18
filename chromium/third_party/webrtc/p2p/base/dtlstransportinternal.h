@@ -15,11 +15,11 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/base/sslstreamadapter.h"
-#include "webrtc/base/stringencode.h"
 #include "webrtc/p2p/base/icetransportinternal.h"
 #include "webrtc/p2p/base/jseptransport.h"
 #include "webrtc/p2p/base/packettransportinternal.h"
+#include "webrtc/rtc_base/sslstreamadapter.h"
+#include "webrtc/rtc_base/stringencode.h"
 
 namespace cricket {
 
@@ -38,6 +38,8 @@ enum PacketFlags {
 class DtlsTransportInternal : public rtc::PacketTransportInternal {
  public:
   virtual ~DtlsTransportInternal() {}
+
+  virtual const rtc::CryptoOptions& crypto_options() const = 0;
 
   virtual DtlsTransportState dtls_state() const = 0;
 

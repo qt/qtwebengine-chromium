@@ -12,13 +12,14 @@
 
 #include <list>
 
-#include "webrtc/base/logging.h"
-#include "webrtc/base/platform_thread.h"
+#include "webrtc/audio/utility/audio_frame_operations.h"
 #include "webrtc/common_audio/resampler/include/resampler.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/media_file/media_file.h"
 #include "webrtc/modules/media_file/media_file_defines.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/platform_thread.h"
 #include "webrtc/system_wrappers/include/event_wrapper.h"
 #include "webrtc/typedefs.h"
 #include "webrtc/voice_engine/coder.h"
@@ -159,12 +160,10 @@ int32_t FileRecorderImpl::RecordAudioToFile(
     tempAudioFrame.sample_rate_hz_ = incomingAudioFrame.sample_rate_hz_;
     tempAudioFrame.samples_per_channel_ =
         incomingAudioFrame.samples_per_channel_;
-    for (size_t i = 0; i < (incomingAudioFrame.samples_per_channel_); i++) {
-      // Sample value is the average of left and right buffer rounded to
-      // closest integer value. Note samples can be either 1 or 2 byte.
-      tempAudioFrame.data_[i] = ((incomingAudioFrame.data_[2 * i] +
-                                  incomingAudioFrame.data_[(2 * i) + 1] + 1) >>
-                                 1);
+    if (!incomingAudioFrame.muted()) {
+      AudioFrameOperations::StereoToMono(
+          incomingAudioFrame.data(), incomingAudioFrame.samples_per_channel_,
+          tempAudioFrame.mutable_data());
     }
   } else if (incomingAudioFrame.num_channels_ == 1 && _moduleFile->IsStereo()) {
     // Recording stereo but incoming audio is mono.
@@ -172,10 +171,10 @@ int32_t FileRecorderImpl::RecordAudioToFile(
     tempAudioFrame.sample_rate_hz_ = incomingAudioFrame.sample_rate_hz_;
     tempAudioFrame.samples_per_channel_ =
         incomingAudioFrame.samples_per_channel_;
-    for (size_t i = 0; i < (incomingAudioFrame.samples_per_channel_); i++) {
-      // Duplicate sample to both channels
-      tempAudioFrame.data_[2 * i] = incomingAudioFrame.data_[i];
-      tempAudioFrame.data_[2 * i + 1] = incomingAudioFrame.data_[i];
+    if (!incomingAudioFrame.muted()) {
+      AudioFrameOperations::MonoToStereo(
+          incomingAudioFrame.data(), incomingAudioFrame.samples_per_channel_,
+          tempAudioFrame.mutable_data());
     }
   }
 
@@ -204,8 +203,9 @@ int32_t FileRecorderImpl::RecordAudioToFile(
     _audioResampler.ResetIfNeeded(ptrAudioFrame->sample_rate_hz_,
                                   codec_info_.plfreq,
                                   ptrAudioFrame->num_channels_);
+    // TODO(yujo): skip resample if frame is muted.
     _audioResampler.Push(
-        ptrAudioFrame->data_,
+        ptrAudioFrame->data(),
         ptrAudioFrame->samples_per_channel_ * ptrAudioFrame->num_channels_,
         reinterpret_cast<int16_t*>(_audioBuffer), MAX_AUDIO_BUFFER_IN_BYTES,
         outLen);

@@ -13,9 +13,10 @@
 #include <utility>
 
 #include "webrtc/api/call/audio_sink.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/call/rtp_transport_controller_send_interface.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/safe_minmax.h"
 #include "webrtc/voice_engine/channel.h"
 
 namespace webrtc {
@@ -151,6 +152,16 @@ int ChannelProxy::GetSpeechOutputLevel() const {
 int ChannelProxy::GetSpeechOutputLevelFullRange() const {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   return channel()->GetSpeechOutputLevelFullRange();
+}
+
+double ChannelProxy::GetTotalOutputEnergy() const {
+  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+  return channel()->GetTotalOutputEnergy();
+}
+
+double ChannelProxy::GetTotalOutputDuration() const {
+  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+  return channel()->GetTotalOutputDuration();
 }
 
 uint32_t ChannelProxy::GetDelayEstimate() const {
@@ -290,7 +301,7 @@ void ChannelProxy::SetMinimumPlayoutDelay(int delay_ms) {
   RTC_DCHECK(module_process_thread_checker_.CalledOnValidThread());
   // Limit to range accepted by both VoE and ACM, so we're at least getting as
   // close as possible, instead of failing.
-  delay_ms = std::max(0, std::min(delay_ms, 10000));
+  delay_ms = rtc::SafeClamp(delay_ms, 0, 10000);
   int error = channel()->SetMinimumPlayoutDelay(delay_ms);
   if (0 != error) {
     LOG(LS_WARNING) << "Error setting minimum playout delay.";
@@ -308,7 +319,7 @@ bool ChannelProxy::GetRecCodec(CodecInst* codec_inst) const {
 }
 
 void ChannelProxy::OnTwccBasedUplinkPacketLossRate(float packet_loss_rate) {
-  // TODO(elad.alon): This fails in UT; fix and uncomment.
+  // TODO(eladalon): This fails in UT; fix and uncomment.
   // See: https://bugs.chromium.org/p/webrtc/issues/detail?id=7405
   // RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   channel()->OnTwccBasedUplinkPacketLossRate(packet_loss_rate);
@@ -316,7 +327,7 @@ void ChannelProxy::OnTwccBasedUplinkPacketLossRate(float packet_loss_rate) {
 
 void ChannelProxy::OnRecoverableUplinkPacketLossRate(
     float recoverable_packet_loss_rate) {
-  // TODO(elad.alon): This fails in UT; fix and uncomment.
+  // TODO(eladalon): This fails in UT; fix and uncomment.
   // See: https://bugs.chromium.org/p/webrtc/issues/detail?id=7405
   // RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   channel()->OnRecoverableUplinkPacketLossRate(recoverable_packet_loss_rate);

@@ -490,8 +490,8 @@ static void extend_and_predict(const uint8_t *buf_ptr1, int pre_buf_stride,
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
 static void dec_build_inter_predictors(
-    VPxWorker *const worker, MACROBLOCKD *xd, int plane, int bw, int bh, int x,
-    int y, int w, int h, int mi_x, int mi_y, const InterpKernel *kernel,
+    MACROBLOCKD *xd, int plane, int bw, int bh, int x, int y, int w, int h,
+    int mi_x, int mi_y, const InterpKernel *kernel,
     const struct scale_factors *sf, struct buf_2d *pre_buf,
     struct buf_2d *dst_buf, const MV *mv, RefCntBuffer *ref_frame_buf,
     int is_scaled, int ref) {
@@ -593,12 +593,6 @@ static void dec_build_inter_predictors(
       y_pad = 1;
     }
 
-    // Wait until reference block is ready. Pad 7 more pixels as last 7
-    // pixels of each superblock row can be changed by next superblock row.
-    if (worker != NULL)
-      vp9_frameworker_wait(worker, ref_frame_buf, VPXMAX(0, (y1 + 7))
-                                                      << (plane == 0 ? 0 : 1));
-
     // Skip border extension if block is inside the frame.
     if (x0 < 0 || x0 > frame_width - 1 || x1 < 0 || x1 > frame_width - 1 ||
         y0 < 0 || y0 > frame_height - 1 || y1 < 0 || y1 > frame_height - 1) {
@@ -616,14 +610,6 @@ static void dec_build_inter_predictors(
 #endif
                          w, h, ref, xs, ys);
       return;
-    }
-  } else {
-    // Wait until reference block is ready. Pad 7 more pixels as last 7
-    // pixels of each superblock row can be changed by next superblock row.
-    if (worker != NULL) {
-      const int y1 = (y0_16 + (h - 1) * ys) >> SUBPEL_BITS;
-      vp9_frameworker_wait(worker, ref_frame_buf, VPXMAX(0, (y1 + 7))
-                                                      << (plane == 0 ? 0 : 1));
     }
   }
 #if CONFIG_VP9_HIGHBITDEPTH
@@ -653,8 +639,6 @@ static void dec_build_inter_predictors_sb(VP9Decoder *const pbi,
   const int is_compound = has_second_ref(mi);
   int ref;
   int is_scaled;
-  VPxWorker *const fwo =
-      pbi->frame_parallel_decode ? pbi->frame_worker_owner : NULL;
 
   for (ref = 0; ref < 1 + is_compound; ++ref) {
     const MV_REFERENCE_FRAME frame = mi->ref_frame[ref];
@@ -686,10 +670,10 @@ static void dec_build_inter_predictors_sb(VP9Decoder *const pbi,
         for (y = 0; y < num_4x4_h; ++y) {
           for (x = 0; x < num_4x4_w; ++x) {
             const MV mv = average_split_mvs(pd, mi, ref, i++);
-            dec_build_inter_predictors(fwo, xd, plane, n4w_x4, n4h_x4, 4 * x,
-                                       4 * y, 4, 4, mi_x, mi_y, kernel, sf,
-                                       pre_buf, dst_buf, &mv, ref_frame_buf,
-                                       is_scaled, ref);
+            dec_build_inter_predictors(xd, plane, n4w_x4, n4h_x4, 4 * x, 4 * y,
+                                       4, 4, mi_x, mi_y, kernel, sf, pre_buf,
+                                       dst_buf, &mv, ref_frame_buf, is_scaled,
+                                       ref);
           }
         }
       }
@@ -703,7 +687,7 @@ static void dec_build_inter_predictors_sb(VP9Decoder *const pbi,
         const int n4w_x4 = 4 * num_4x4_w;
         const int n4h_x4 = 4 * num_4x4_h;
         struct buf_2d *const pre_buf = &pd->pre[ref];
-        dec_build_inter_predictors(fwo, xd, plane, n4w_x4, n4h_x4, 0, 0, n4w_x4,
+        dec_build_inter_predictors(xd, plane, n4w_x4, n4h_x4, 0, 0, n4w_x4,
                                    n4h_x4, mi_x, mi_y, kernel, sf, pre_buf,
                                    dst_buf, &mv, ref_frame_buf, is_scaled, ref);
       }
@@ -1187,7 +1171,6 @@ static void setup_frame_size(VP9_COMMON *cm, struct vpx_read_bit_buffer *rb) {
   resize_context_buffers(cm, width, height);
   setup_render_size(cm, rb);
 
-  lock_buffer_pool(pool);
   if (vpx_realloc_frame_buffer(
           get_frame_new_buffer(cm), cm->width, cm->height, cm->subsampling_x,
           cm->subsampling_y,
@@ -1197,11 +1180,9 @@ static void setup_frame_size(VP9_COMMON *cm, struct vpx_read_bit_buffer *rb) {
           VP9_DEC_BORDER_IN_PIXELS, cm->byte_alignment,
           &pool->frame_bufs[cm->new_fb_idx].raw_frame_buffer, pool->get_fb_cb,
           pool->cb_priv)) {
-    unlock_buffer_pool(pool);
     vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
                        "Failed to allocate frame buffer");
   }
-  unlock_buffer_pool(pool);
 
   pool->frame_bufs[cm->new_fb_idx].buf.subsampling_x = cm->subsampling_x;
   pool->frame_bufs[cm->new_fb_idx].buf.subsampling_y = cm->subsampling_y;
@@ -1273,7 +1254,6 @@ static void setup_frame_size_with_refs(VP9_COMMON *cm,
   resize_context_buffers(cm, width, height);
   setup_render_size(cm, rb);
 
-  lock_buffer_pool(pool);
   if (vpx_realloc_frame_buffer(
           get_frame_new_buffer(cm), cm->width, cm->height, cm->subsampling_x,
           cm->subsampling_y,
@@ -1283,11 +1263,9 @@ static void setup_frame_size_with_refs(VP9_COMMON *cm,
           VP9_DEC_BORDER_IN_PIXELS, cm->byte_alignment,
           &pool->frame_bufs[cm->new_fb_idx].raw_frame_buffer, pool->get_fb_cb,
           pool->cb_priv)) {
-    unlock_buffer_pool(pool);
     vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
                        "Failed to allocate frame buffer");
   }
-  unlock_buffer_pool(pool);
 
   pool->frame_bufs[cm->new_fb_idx].buf.subsampling_x = cm->subsampling_x;
   pool->frame_bufs[cm->new_fb_idx].buf.subsampling_y = cm->subsampling_y;
@@ -1473,11 +1451,6 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi, const uint8_t *data,
           winterface->execute(&pbi->lf_worker);
         }
       }
-      // After loopfiltering, the last 7 row pixels in each superblock row may
-      // still be changed by the longest loopfilter of the next superblock
-      // row.
-      if (pbi->frame_parallel_decode)
-        vp9_frameworker_broadcast(pbi->cur_buf, mi_row << MI_BLOCK_SIZE_LOG2);
     }
   }
 
@@ -1493,8 +1466,6 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi, const uint8_t *data,
   // Get last tile data.
   tile_data = pbi->tile_worker_data + tile_cols * tile_rows - 1;
 
-  if (pbi->frame_parallel_decode)
-    vp9_frameworker_broadcast(pbi->cur_buf, INT_MAX);
   return vpx_reader_find_end(&tile_data->bit_reader);
 }
 
@@ -1779,24 +1750,17 @@ static size_t read_uncompressed_header(VP9Decoder *pbi,
   if (cm->show_existing_frame) {
     // Show an existing frame directly.
     const int frame_to_show = cm->ref_frame_map[vpx_rb_read_literal(rb, 3)];
-    lock_buffer_pool(pool);
     if (frame_to_show < 0 || frame_bufs[frame_to_show].ref_count < 1) {
-      unlock_buffer_pool(pool);
       vpx_internal_error(&cm->error, VPX_CODEC_UNSUP_BITSTREAM,
                          "Buffer %d does not contain a decoded frame",
                          frame_to_show);
     }
 
     ref_cnt_fb(frame_bufs, &cm->new_fb_idx, frame_to_show);
-    unlock_buffer_pool(pool);
     pbi->refresh_frame_flags = 0;
     cm->lf.filter_level = 0;
     cm->show_frame = 1;
 
-    if (pbi->frame_parallel_decode) {
-      for (i = 0; i < REF_FRAMES; ++i)
-        cm->next_ref_frame_map[i] = cm->ref_frame_map[i];
-    }
     return 0;
   }
 
@@ -1913,7 +1877,6 @@ static size_t read_uncompressed_header(VP9Decoder *pbi,
   cm->frame_context_idx = vpx_rb_read_literal(rb, FRAME_CONTEXTS_LOG2);
 
   // Generate next_ref_frame_map.
-  lock_buffer_pool(pool);
   for (mask = pbi->refresh_frame_flags; mask; mask >>= 1) {
     if (mask & 1) {
       cm->next_ref_frame_map[ref_index] = cm->new_fb_idx;
@@ -1933,7 +1896,6 @@ static size_t read_uncompressed_header(VP9Decoder *pbi,
     if (cm->ref_frame_map[ref_index] >= 0)
       ++frame_bufs[cm->ref_frame_map[ref_index]].ref_count;
   }
-  unlock_buffer_pool(pool);
   pbi->hold_ref_buf = 1;
 
   if (frame_is_intra_only(cm) || cm->error_resilient_mode)
@@ -2088,24 +2050,6 @@ void vp9_decode_frame(VP9Decoder *pbi, const uint8_t *data,
 
   if (cm->lf.filter_level && !cm->skip_loop_filter) {
     vp9_loop_filter_frame_init(cm, cm->lf.filter_level);
-  }
-
-  // If encoded in frame parallel mode, frame context is ready after decoding
-  // the frame header.
-  if (pbi->frame_parallel_decode && cm->frame_parallel_decoding_mode) {
-    VPxWorker *const worker = pbi->frame_worker_owner;
-    FrameWorkerData *const frame_worker_data = worker->data1;
-    if (cm->refresh_frame_context) {
-      context_updated = 1;
-      cm->frame_contexts[cm->frame_context_idx] = *cm->fc;
-    }
-    vp9_frameworker_lock_stats(worker);
-    pbi->cur_buf->row = -1;
-    pbi->cur_buf->col = -1;
-    frame_worker_data->frame_context_ready = 1;
-    // Signal the main thread that context is ready.
-    vp9_frameworker_signal_stats(worker);
-    vp9_frameworker_unlock_stats(worker);
   }
 
   if (pbi->tile_worker_data == NULL ||

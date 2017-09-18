@@ -21,6 +21,7 @@
 namespace gl
 {
 class Buffer;
+class Texture;
 
 enum PrimitiveType
 {
@@ -77,6 +78,9 @@ struct Offset
     Offset(int x_in, int y_in, int z_in) : x(x_in), y(y_in), z(z_in) { }
 };
 
+bool operator==(const Offset &a, const Offset &b);
+bool operator!=(const Offset &a, const Offset &b);
+
 struct Extents
 {
     int width;
@@ -111,9 +115,11 @@ struct Box
     bool operator!=(const Box &other) const;
 };
 
-
-struct RasterizerState
+struct RasterizerState final
 {
+    // This will zero-initialize the struct, including padding.
+    RasterizerState();
+
     bool cullFace;
     GLenum cullMode;
     GLenum frontFace;
@@ -128,8 +134,14 @@ struct RasterizerState
     bool rasterizerDiscard;
 };
 
-struct BlendState
+bool operator==(const RasterizerState &a, const RasterizerState &b);
+bool operator!=(const RasterizerState &a, const RasterizerState &b);
+
+struct BlendState final
 {
+    // This will zero-initialize the struct, including padding.
+    BlendState();
+
     bool blend;
     GLenum sourceBlendRGB;
     GLenum destBlendRGB;
@@ -148,8 +160,14 @@ struct BlendState
     bool dither;
 };
 
-struct DepthStencilState
+bool operator==(const BlendState &a, const BlendState &b);
+bool operator!=(const BlendState &a, const BlendState &b);
+
+struct DepthStencilState final
 {
+    // This will zero-initialize the struct, including padding.
+    DepthStencilState();
+
     bool depthTest;
     GLenum depthFunc;
     bool depthMask;
@@ -169,31 +187,15 @@ struct DepthStencilState
     GLuint stencilBackWritemask;
 };
 
-struct DrawArraysIndirectCommand
-{
-    GLuint count;
-    GLuint instanceCount;
-    GLuint first;
-    GLuint baseInstance;
-};
-static_assert(sizeof(DrawArraysIndirectCommand) == 16,
-              "Unexpected size of DrawArraysIndirectCommand");
-
-struct DrawElementsIndirectCommand
-{
-    GLuint count;
-    GLuint primCount;
-    GLuint firstIndex;
-    GLint baseVertex;
-    GLuint baseInstance;
-};
-static_assert(sizeof(DrawElementsIndirectCommand) == 20,
-              "Unexpected size of DrawElementsIndirectCommand");
+bool operator==(const DepthStencilState &a, const DepthStencilState &b);
+bool operator!=(const DepthStencilState &a, const DepthStencilState &b);
 
 // State from Table 6.10 (state per sampler object)
-struct SamplerState
+struct SamplerState final
 {
+    // This will zero-initialize the struct, including padding.
     SamplerState();
+
     static SamplerState CreateDefaultForTarget(GLenum target);
 
     GLenum minFilter;
@@ -218,7 +220,43 @@ struct SamplerState
 bool operator==(const SamplerState &a, const SamplerState &b);
 bool operator!=(const SamplerState &a, const SamplerState &b);
 
-struct PixelStoreStateBase
+struct DrawArraysIndirectCommand
+{
+    GLuint count;
+    GLuint instanceCount;
+    GLuint first;
+    GLuint baseInstance;
+};
+static_assert(sizeof(DrawArraysIndirectCommand) == 16,
+              "Unexpected size of DrawArraysIndirectCommand");
+
+struct DrawElementsIndirectCommand
+{
+    GLuint count;
+    GLuint primCount;
+    GLuint firstIndex;
+    GLint baseVertex;
+    GLuint baseInstance;
+};
+static_assert(sizeof(DrawElementsIndirectCommand) == 20,
+              "Unexpected size of DrawElementsIndirectCommand");
+
+struct ImageUnit
+{
+    ImageUnit()
+        : texture(), level(0), layered(false), layer(0), access(GL_READ_ONLY), format(GL_R32UI)
+    {
+    }
+
+    BindingPointer<Texture> texture;
+    GLint level;
+    GLboolean layered;
+    GLint layer;
+    GLenum access;
+    GLenum format;
+};
+
+struct PixelStoreStateBase : private angle::NonCopyable
 {
     BindingPointer<Buffer> pixelBuffer;
     GLint alignment   = 4;
@@ -227,6 +265,18 @@ struct PixelStoreStateBase
     GLint skipPixels  = 0;
     GLint imageHeight = 0;
     GLint skipImages  = 0;
+
+  protected:
+    void copyFrom(const Context *context, const PixelStoreStateBase &other)
+    {
+        pixelBuffer.set(context, other.pixelBuffer.get());
+        alignment   = other.alignment;
+        rowLength   = other.rowLength;
+        skipRows    = other.skipRows;
+        skipPixels  = other.skipPixels;
+        imageHeight = other.imageHeight;
+        skipImages  = other.skipImages;
+    }
 };
 
 struct PixelUnpackState : PixelStoreStateBase
@@ -237,6 +287,11 @@ struct PixelUnpackState : PixelStoreStateBase
     {
         alignment = alignmentIn;
         rowLength = rowLengthIn;
+    }
+
+    void copyFrom(const Context *context, const PixelUnpackState &other)
+    {
+        PixelStoreStateBase::copyFrom(context, other);
     }
 };
 
@@ -250,19 +305,23 @@ struct PixelPackState : PixelStoreStateBase
         alignment = alignmentIn;
     }
 
+    void copyFrom(const Context *context, const PixelPackState &other)
+    {
+        PixelStoreStateBase::copyFrom(context, other);
+        reverseRowOrder = other.reverseRowOrder;
+    }
+
     bool reverseRowOrder = false;
 };
 
 // Used in Program and VertexArray.
 using AttributesMask = angle::BitSet<MAX_VERTEX_ATTRIBS>;
 
-// Use in Program
+// Used in Program
 using UniformBlockBindingMask = angle::BitSet<IMPLEMENTATION_MAX_COMBINED_SHADER_UNIFORM_BUFFERS>;
 
-// A map of GL objects indexed by object ID. The specific map implementation may change.
-// Client code should treat it as a std::map.
-template <class ResourceT>
-using ResourceMap = std::unordered_map<GLuint, ResourceT *>;
+// Used in Framebuffer
+using DrawBufferMask = angle::BitSet<IMPLEMENTATION_MAX_DRAW_BUFFERS>;
 
 using ContextID = uintptr_t;
 }
@@ -313,13 +372,6 @@ template <typename DestT, typename SrcT>
 inline DestT *SafeGetImplAs(SrcT *src)
 {
     return src != nullptr ? GetAs<DestT>(src->getImplementation()) : nullptr;
-}
-
-// In some cases we want to retrieve an Impl object, while handling nullptr cases trivially.
-template <typename ObjT>
-auto SafeGetImpl(ObjT *src) -> decltype(src->getImplementation())
-{
-    return src ? src->getImplementation() : nullptr;
 }
 
 }  // namespace rx

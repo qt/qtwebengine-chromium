@@ -14,10 +14,10 @@
 #include <cmath>
 #include <utility>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/trace_event.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
 #include "webrtc/system_wrappers/include/metrics.h"
@@ -77,6 +77,8 @@ ReceiveStatisticsProxy::ReceiveStatisticsProxy(
       total_byte_tracker_(100, 10u),  // bucket_interval_ms, bucket_count
       e2e_delay_max_ms_video_(-1),
       e2e_delay_max_ms_screenshare_(-1),
+      interframe_delay_max_ms_video_(-1),
+      interframe_delay_max_ms_screenshare_(-1),
       freq_offset_counter_(clock, nullptr, kFreqOffsetProcessIntervalMs),
       first_report_block_time_ms_(-1),
       avg_rtt_ms_(0),
@@ -209,6 +211,36 @@ void ReceiveStatisticsProxy::UpdateHistograms() {
     RTC_HISTOGRAM_COUNTS_100000("WebRTC.Video.Screenshare.EndToEndDelayMaxInMs",
                                 e2e_delay_max_ms_screenshare);
   }
+
+  int interframe_delay_ms_screenshare =
+      interframe_delay_counter_screenshare_.Avg(kMinRequiredSamples);
+  if (interframe_delay_ms_screenshare != -1) {
+    RTC_HISTOGRAM_COUNTS_10000("WebRTC.Video.Screenshare.InterframeDelayInMs",
+                               interframe_delay_ms_screenshare);
+  }
+
+  int interframe_delay_ms_video =
+      interframe_delay_counter_video_.Avg(kMinRequiredSamples);
+  if (interframe_delay_ms_video != -1) {
+    RTC_HISTOGRAM_COUNTS_10000("WebRTC.Video.InterframeDelayInMs",
+                               interframe_delay_ms_video);
+  }
+
+  int interframe_delay_max_ms_screenshare =
+      interframe_delay_max_ms_screenshare_;
+  if (interframe_delay_max_ms_screenshare != -1) {
+    RTC_HISTOGRAM_COUNTS_10000(
+        "WebRTC.Video.Screenshare.InterframeDelayMaxInMs",
+        interframe_delay_ms_screenshare);
+  }
+
+  int interframe_delay_max_ms_video = interframe_delay_max_ms_video_;
+  if (interframe_delay_max_ms_video != -1) {
+    RTC_HISTOGRAM_COUNTS_10000(
+        "WebRTC.Video.InterframeDelayMaxInMs",
+        interframe_delay_ms_video);
+  }
+
 
   StreamDataCounters rtp = stats_.rtp_stats;
   StreamDataCounters rtx;
@@ -374,6 +406,17 @@ VideoReceiveStream::Stats ReceiveStatisticsProxy::GetStats() const {
   return stats_;
 }
 
+rtc::Optional<TimingFrameInfo>
+ReceiveStatisticsProxy::GetAndResetTimingFrameInfo() {
+  rtc::CritScope lock(&crit_);
+  rtc::Optional<TimingFrameInfo> info = timing_frame_info_;
+  // Reset reported value to empty, so it will be always
+  // overwritten in |OnTimingFrameInfoUpdated|, thus allowing to store new
+  // value instead of reported one.
+  timing_frame_info_.reset();
+  return info;
+}
+
 void ReceiveStatisticsProxy::OnIncomingPayloadType(int payload_type) {
   rtc::CritScope lock(&crit_);
   stats_.current_payload_type = payload_type;
@@ -430,6 +473,17 @@ void ReceiveStatisticsProxy::OnFrameBufferTimingsUpdated(
   TRACE_EVENT_INSTANT2("webrtc_stats", "WebRTC.Video.RenderDelayInMs",
                        "render_delay_ms", render_delay_ms,
                        "ssrc", stats_.ssrc);
+}
+
+void ReceiveStatisticsProxy::OnTimingFrameInfoUpdated(
+    const TimingFrameInfo& info) {
+  rtc::CritScope lock(&crit_);
+  // Only the frame which was processed the longest since the last
+  // GetStats() call is reported. Therefore, only single 'longest' frame is
+  // stored.
+  if (!timing_frame_info_ || info.IsLongerThan(*timing_frame_info_)) {
+    timing_frame_info_.emplace(info);
+  }
 }
 
 void ReceiveStatisticsProxy::RtcpPacketTypesCounterUpdated(
@@ -516,6 +570,23 @@ void ReceiveStatisticsProxy::OnDecodedFrame(rtc::Optional<uint8_t> qp,
   }
   last_content_type_ = content_type;
   decode_fps_estimator_.Update(1, now);
+  if (last_decoded_frame_time_ms_) {
+    int64_t interframe_delay_ms = now - *last_decoded_frame_time_ms_;
+    RTC_DCHECK_GE(interframe_delay_ms, 0);
+    stats_.interframe_delay_sum_ms += interframe_delay_ms;
+    if (last_content_type_ == VideoContentType::SCREENSHARE) {
+      interframe_delay_counter_screenshare_.Add(interframe_delay_ms);
+      if (interframe_delay_max_ms_screenshare_ < interframe_delay_ms) {
+        interframe_delay_max_ms_screenshare_ = interframe_delay_ms;
+      }
+    } else {
+      interframe_delay_counter_video_.Add(interframe_delay_ms);
+      if (interframe_delay_max_ms_video_ < interframe_delay_ms) {
+        interframe_delay_max_ms_video_ = interframe_delay_ms;
+      }
+    }
+  }
+  last_decoded_frame_time_ms_.emplace(now);
 }
 
 void ReceiveStatisticsProxy::OnRenderedFrame(const VideoFrame& frame) {

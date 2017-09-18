@@ -199,11 +199,6 @@ TString TextureTypeSuffix(const TBasicType type)
     }
 }
 
-TString DecorateUniform(const TName &name, const TType &type)
-{
-    return DecorateIfNeeded(name);
-}
-
 TString DecorateField(const TString &string, const TStructure &structure)
 {
     if (structure.name().compare(0, 3, "gl_") != 0)
@@ -229,16 +224,35 @@ TString Decorate(const TString &string)
     return string;
 }
 
-TString DecorateIfNeeded(const TName &name)
+TString DecorateVariableIfNeeded(const TName &name)
 {
     if (name.isInternal())
     {
+        // The name should not have a prefix reserved for user-defined variables or functions.
+        ASSERT(name.getString().compare(0, 2, "f_") != 0);
+        ASSERT(name.getString().compare(0, 1, "_") != 0);
         return name.getString();
     }
     else
     {
         return Decorate(name.getString());
     }
+}
+
+TString DecorateFunctionIfNeeded(const TName &name)
+{
+    if (name.isInternal())
+    {
+        // The name should not have a prefix reserved for user-defined variables or functions.
+        ASSERT(name.getString().compare(0, 2, "f_") != 0);
+        ASSERT(name.getString().compare(0, 1, "_") != 0);
+        return name.getString();
+    }
+    ASSERT(name.getString().compare(0, 3, "gl_") != 0);
+    // Add an additional f prefix to functions so that they're always disambiguated from variables.
+    // This is necessary in the corner case where a variable declaration hides a function that it
+    // uses in its initializer.
+    return "f_" + name.getString();
 }
 
 TString TypeString(const TType &type)
@@ -329,6 +343,8 @@ TString TypeString(const TType &type)
                 return "samplerCUBE";
             case EbtSamplerExternalOES:
                 return "sampler2D";
+            case EbtAtomicCounter:
+                return "atomic_uint";
             default:
                 break;
         }
@@ -439,12 +455,21 @@ TString DisambiguateFunctionName(const TIntermSequence *parameters)
     for (auto parameter : *parameters)
     {
         const TType &paramType = parameter->getAsTyped()->getType();
-        // Disambiguation is needed for float2x2 and float4 parameters. These are the only parameter
-        // types that HLSL thinks are identical. float2x3 and float3x2 are different types, for
-        // example. Other parameter types are not added to function names to avoid making function
-        // names longer.
+        // Parameter types are only added to function names if they are ambiguous according to the
+        // native HLSL compiler. Other parameter types are not added to function names to avoid
+        // making function names longer.
         if (paramType.getObjectSize() == 4 && paramType.getBasicType() == EbtFloat)
         {
+            // Disambiguation is needed for float2x2 and float4 parameters. These are the only
+            // built-in types that HLSL thinks are identical. float2x3 and float3x2 are different
+            // types, for example.
+            disambiguatingString += "_" + TypeString(paramType);
+        }
+        else if (paramType.getBasicType() == EbtStruct)
+        {
+            // Disambiguation is needed for struct parameters, since HLSL thinks that structs with
+            // the same fields but a different name are identical.
+            ASSERT(paramType.getStruct()->name() != "");
             disambiguatingString += "_" + TypeString(paramType);
         }
     }

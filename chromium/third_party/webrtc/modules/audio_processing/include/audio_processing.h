@@ -19,10 +19,11 @@
 #include <stdio.h>  // FILE
 #include <vector>
 
-#include "webrtc/base/arraysize.h"
-#include "webrtc/base/platform_file.h"
 #include "webrtc/modules/audio_processing/beamformer/array_util.h"
 #include "webrtc/modules/audio_processing/include/config.h"
+#include "webrtc/rtc_base/arraysize.h"
+#include "webrtc/rtc_base/platform_file.h"
+#include "webrtc/rtc_base/refcount.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -233,7 +234,7 @@ struct Intelligibility {
 // // Close the application...
 // delete apm;
 //
-class AudioProcessing {
+class AudioProcessing : public rtc::RefCountInterface {
  public:
   // The struct below constitutes the new parameter scheme for the audio
   // processing. It is being introduced gradually and until it is fully
@@ -300,7 +301,7 @@ class AudioProcessing {
   // Only for testing.
   static AudioProcessing* Create(const webrtc::Config& config,
                                  NonlinearBeamformer* beamformer);
-  virtual ~AudioProcessing() {}
+  ~AudioProcessing() override {}
 
   // Initializes internal states, while retaining all user settings. This
   // should be called before beginning to process a new audio stream. However,
@@ -463,18 +464,12 @@ class AudioProcessing {
   // with a new one. This causes the d-tor of the earlier AecDump to
   // be called. The d-tor call may block until all pending logging
   // tasks are completed.
-  //
-  // TODO(aleloi): make pure virtual when internal projects have
-  // updated. See https://bugs.webrtc.org/7404
-  virtual void AttachAecDump(std::unique_ptr<AecDump> aec_dump);
+  virtual void AttachAecDump(std::unique_ptr<AecDump> aec_dump) = 0;
 
   // If no AecDump is attached, this has no effect. If an AecDump is
   // attached, it's destructor is called. The d-tor may block until
   // all pending logging tasks are completed.
-  //
-  // TODO(aleloi): make pure virtual when internal projects have
-  // updated. See https://bugs.webrtc.org/7404
-  virtual void DetachAecDump();
+  virtual void DetachAecDump() = 0;
 
   // Starts recording debugging information to a file specified by |filename|,
   // a NULL-terminated string. If there is an ongoing recording, the old file

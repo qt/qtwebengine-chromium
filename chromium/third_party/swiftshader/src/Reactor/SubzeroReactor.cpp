@@ -450,7 +450,7 @@ namespace sw
 			buffer.reserve(0x1000);
 		}
 
-		virtual ~ELFMemoryStreamer()
+		~ELFMemoryStreamer() override
 		{
 			#if defined(_WIN32)
 				if(buffer.size() != 0)
@@ -492,20 +492,16 @@ namespace sw
 		{
 			if(!entry)
 			{
-				#if defined(_WIN32)
-					VirtualProtect(&buffer[0], buffer.size(), PAGE_EXECUTE_READWRITE, &oldProtection);
-				#else
-					mprotect(&buffer[0], buffer.size(), PROT_READ | PROT_WRITE | PROT_EXEC);
-				#endif
-
 				position = std::numeric_limits<std::size_t>::max();   // Can't stream more data after this
 
 				size_t codeSize = 0;
 				entry = loadImage(&buffer[0], codeSize);
 
 				#if defined(_WIN32)
+					VirtualProtect(&buffer[0], buffer.size(), PAGE_EXECUTE_READ, &oldProtection);
 					FlushInstructionCache(GetCurrentProcess(), NULL, 0);
 				#else
+					mprotect(&buffer[0], buffer.size(), PROT_READ | PROT_EXEC);
 					__builtin___clear_cache((char*)entry, (char*)entry + codeSize);
 				#endif
 			}
@@ -563,6 +559,8 @@ namespace sw
 
 	Nucleus::~Nucleus()
 	{
+		delete ::routine;
+
 		delete ::allocator;
 		delete ::function;
 		delete ::context;
@@ -589,11 +587,11 @@ namespace sw
 		::function->translate();
 		assert(!::function->hasError());
 
-		auto *globals = ::function->getGlobalInits().release();
+		auto globals = ::function->getGlobalInits();
 
 		if(globals && !globals->empty())
 		{
-			::context->getGlobals()->merge(globals);
+			::context->getGlobals()->merge(globals.get());
 		}
 
 		::context->emitFileHeader();
@@ -608,7 +606,10 @@ namespace sw
 		objectWriter->setUndefinedSyms(::context->getConstantExternSyms());
 		objectWriter->writeNonUserSections();
 
-		return ::routine;
+		Routine *handoffRoutine = ::routine;
+		::routine = nullptr;
+
+		return handoffRoutine;
 	}
 
 	void Nucleus::optimize()
@@ -6324,16 +6325,22 @@ namespace sw
 
 	RValue<Float4> Frac(RValue<Float4> x)
 	{
+		Float4 frc;
+
 		if(CPUID::SSE4_1)
 		{
-			return x - Floor(x);
+			frc = x - Floor(x);
 		}
 		else
 		{
-			Float4 frc = x - Float4(Int4(x));   // Signed fractional part
+			frc = x - Float4(Int4(x));   // Signed fractional part.
 
-			return frc + As<Float4>(As<Int4>(CmpNLE(Float4(0.0f), frc)) & As<Int4>(Float4(1, 1, 1, 1)));
+			frc += As<Float4>(As<Int4>(CmpNLE(Float4(0.0f), frc)) & As<Int4>(Float4(1, 1, 1, 1)));   // Add 1.0 if negative.
 		}
+
+		// x - floor(x) can be 1.0 for very small negative x.
+		// Clamp against the value just below 1.0.
+		return Min(frc, As<Float4>(Int4(0x3F7FFFFF)));
 	}
 
 	RValue<Float4> Floor(RValue<Float4> x)
@@ -6455,12 +6462,10 @@ namespace sw
 		Nucleus::createUnreachable();
 	}
 
-	bool branch(RValue<Bool> cmp, BasicBlock *bodyBB, BasicBlock *endBB)
+	void branch(RValue<Bool> cmp, BasicBlock *bodyBB, BasicBlock *endBB)
 	{
 		Nucleus::createCondBr(cmp.value, bodyBB, endBB);
 		Nucleus::setInsertBlock(bodyBB);
-
-		return true;
 	}
 
 	RValue<Long> Ticks()

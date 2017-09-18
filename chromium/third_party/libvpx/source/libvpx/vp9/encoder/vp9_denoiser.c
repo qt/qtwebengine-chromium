@@ -217,7 +217,7 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
 
   // If the best reference frame uses inter-prediction and there is enough of a
   // difference in sum-squared-error, use it.
-  if (frame != INTRA_FRAME &&
+  if (frame != INTRA_FRAME && frame != ALTREF_FRAME &&
       (frame != GOLDEN_FRAME || num_spatial_layers == 1) &&
       sse_diff > sse_diff_thresh(bs, increase_denoising, motion_magnitude)) {
     mi->ref_frame[0] = ctx->best_reference_frame;
@@ -228,7 +228,7 @@ static VP9_DENOISER_DECISION perform_motion_compensation(
     frame = ctx->best_zeromv_reference_frame;
     ctx->newmv_sse = ctx->zeromv_sse;
     // Bias to last reference.
-    if (num_spatial_layers > 1 ||
+    if (num_spatial_layers > 1 || frame == ALTREF_FRAME ||
         (frame != LAST_FRAME &&
          ((ctx->zeromv_lastref_sse<(5 * ctx->zeromv_sse)>> 2) ||
           denoiser->denoising_level >= kDenHigh))) {
@@ -420,10 +420,23 @@ static void swap_frame_buffer(YV12_BUFFER_CONFIG *const dest,
   src->y_buffer = tmp_buf;
 }
 
+void vp9_denoise_init_svc(VP9_COMP *cpi) {
+  // For fixed pattern SVC, on base temporal layer. Note we only denoise
+  // higher spatial layer for SVC.
+  if (cpi->svc.temporal_layering_mode != VP9E_TEMPORAL_LAYERING_MODE_BYPASS &&
+      cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1 &&
+      cpi->svc.temporal_layer_id == 0) {
+    VP9_DENOISER *denoiser = &cpi->denoiser;
+    copy_frame(&denoiser->running_avg_y[LAST_FRAME],
+               &denoiser->running_avg_y[GOLDEN_FRAME]);
+  }
+}
+
 void vp9_denoiser_update_frame_info(
     VP9_DENOISER *denoiser, YV12_BUFFER_CONFIG src, FRAME_TYPE frame_type,
     int refresh_alt_ref_frame, int refresh_golden_frame, int refresh_last_frame,
-    int resized, int svc_base_is_key) {
+    int resized, int svc_base_is_key, int svc_fixed_pattern,
+    int temporal_layer_id) {
   // Copy source into denoised reference buffers on KEY_FRAME or
   // if the just encoded frame was resized. For SVC, copy source if the base
   // spatial layer was key frame.
@@ -431,39 +444,47 @@ void vp9_denoiser_update_frame_info(
       svc_base_is_key) {
     int i;
     // Start at 1 so as not to overwrite the INTRA_FRAME
-    for (i = 1; i < MAX_REF_FRAMES; ++i)
+    for (i = 1; i < DENOISER_REF_FRAMES; ++i)
       copy_frame(&denoiser->running_avg_y[i], &src);
     denoiser->reset = 0;
     return;
   }
 
   // If more than one refresh occurs, must copy frame buffer.
-  if ((refresh_alt_ref_frame + refresh_golden_frame + refresh_last_frame) > 1) {
-    if (refresh_alt_ref_frame) {
-      copy_frame(&denoiser->running_avg_y[ALTREF_FRAME],
-                 &denoiser->running_avg_y[INTRA_FRAME]);
-    }
+  if (refresh_golden_frame + refresh_last_frame + refresh_alt_ref_frame > 1) {
     if (refresh_golden_frame) {
       copy_frame(&denoiser->running_avg_y[GOLDEN_FRAME],
                  &denoiser->running_avg_y[INTRA_FRAME]);
     }
-    if (refresh_last_frame) {
+    // For fixed pattern SVC: update denoised last_frame if alt_ref is
+    // refreshed, only for non-zero temporal layer.
+    if (refresh_last_frame ||
+        (refresh_alt_ref_frame && svc_fixed_pattern && temporal_layer_id > 0)) {
       copy_frame(&denoiser->running_avg_y[LAST_FRAME],
                  &denoiser->running_avg_y[INTRA_FRAME]);
     }
   } else {
-    if (refresh_alt_ref_frame) {
-      swap_frame_buffer(&denoiser->running_avg_y[ALTREF_FRAME],
-                        &denoiser->running_avg_y[INTRA_FRAME]);
-    }
     if (refresh_golden_frame) {
       swap_frame_buffer(&denoiser->running_avg_y[GOLDEN_FRAME],
                         &denoiser->running_avg_y[INTRA_FRAME]);
     }
-    if (refresh_last_frame) {
+    // For fixed pattern SVC: update denoised last_frame if alt_ref is
+    // refreshed, only for non-zero temporal layer.
+    if (refresh_last_frame ||
+        (refresh_alt_ref_frame && svc_fixed_pattern && temporal_layer_id > 0)) {
       swap_frame_buffer(&denoiser->running_avg_y[LAST_FRAME],
                         &denoiser->running_avg_y[INTRA_FRAME]);
     }
+  }
+  // For fixed pattern SVC we need to keep track of denoised last_frame for base
+  // temporal layer (since alt_ref refresh may update denoised last_frame on
+  // the upper/middle temporal layers).We do this by copying the current
+  // denoised last into the denoised golden_frame, for temporal_layer_id = 0.
+  // For the fixed pattern SVC golden is always spatial reference and is never
+  // used for denoising, so we can use it to keep track of denoised last_frame.
+  if (svc_fixed_pattern && temporal_layer_id == 0) {
+    copy_frame(&denoiser->running_avg_y[GOLDEN_FRAME],
+               &denoiser->running_avg_y[LAST_FRAME]);
   }
 }
 
@@ -501,7 +522,7 @@ int vp9_denoiser_alloc(VP9_DENOISER *denoiser, int width, int height, int ssx,
   const int legacy_byte_alignment = 0;
   assert(denoiser != NULL);
 
-  for (i = 0; i < MAX_REF_FRAMES; ++i) {
+  for (i = 0; i < DENOISER_REF_FRAMES; ++i) {
     fail = vpx_alloc_frame_buffer(&denoiser->running_avg_y[i], width, height,
                                   ssx, ssy,
 #if CONFIG_VP9_HIGHBITDEPTH
@@ -553,7 +574,7 @@ void vp9_denoiser_free(VP9_DENOISER *denoiser) {
     return;
   }
   denoiser->frame_buffer_initialized = 0;
-  for (i = 0; i < MAX_REF_FRAMES; ++i) {
+  for (i = 0; i < DENOISER_REF_FRAMES; ++i) {
     vpx_free_frame_buffer(&denoiser->running_avg_y[i]);
   }
   vpx_free_frame_buffer(&denoiser->mc_running_avg_y);

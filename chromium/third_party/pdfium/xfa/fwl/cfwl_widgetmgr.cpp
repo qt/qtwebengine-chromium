@@ -12,7 +12,7 @@
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fwl/cfwl_form.h"
 #include "xfa/fwl/cfwl_notedriver.h"
-#include "xfa/fxfa/app/xfa_fwladapter.h"
+#include "xfa/fxfa/app/cxfa_fwladapterwidgetmgr.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 
 namespace {
@@ -266,12 +266,7 @@ CFWL_Widget* CFWL_WidgetMgr::GetWidgetAtPoint(CFWL_Widget* parent,
   CFWL_Widget* child = GetLastChildWidget(parent);
   while (child) {
     if ((child->GetStates() & FWL_WGTSTATE_Invisible) == 0) {
-      CFX_Matrix m;
-      m.SetIdentity();
-
-      CFX_Matrix matrixOnParent;
-      m.SetReverse(matrixOnParent);
-      pos = m.Transform(point);
+      pos = parent->GetMatrix().GetInverse().Transform(point);
 
       CFX_RectF bounds = child->GetWidgetRect();
       if (bounds.Contains(pos)) {
@@ -423,7 +418,7 @@ void CFWL_WidgetMgr::OnProcessMessageToForm(CFWL_Message* pMessage) {
 }
 
 void CFWL_WidgetMgr::OnDrawWidget(CFWL_Widget* pWidget,
-                                  CFX_Graphics* pGraphics,
+                                  CXFA_Graphics* pGraphics,
                                   const CFX_Matrix* pMatrix) {
   if (!pWidget || !pGraphics)
     return;
@@ -458,7 +453,7 @@ void CFWL_WidgetMgr::OnDrawWidget(CFWL_Widget* pWidget,
 
 void CFWL_WidgetMgr::DrawChild(CFWL_Widget* parent,
                                const CFX_RectF& rtClip,
-                               CFX_Graphics* pGraphics,
+                               CXFA_Graphics* pGraphics,
                                const CFX_Matrix* pMatrix) {
   if (!parent)
     return;

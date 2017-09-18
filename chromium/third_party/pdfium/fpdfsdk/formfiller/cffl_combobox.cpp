@@ -12,12 +12,12 @@
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
 #include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
 #include "fpdfsdk/fsdk_common.h"
-#include "fpdfsdk/pdfwindow/PWL_ComboBox.h"
+#include "fpdfsdk/pdfwindow/cpwl_combo_box.h"
 #include "third_party/base/ptr_util.h"
 
 CFFL_ComboBox::CFFL_ComboBox(CPDFSDK_FormFillEnvironment* pApp,
-                             CPDFSDK_Annot* pAnnot)
-    : CFFL_FormFiller(pApp, pAnnot) {
+                             CPDFSDK_Widget* pWidget)
+    : CFFL_FormFiller(pApp, pWidget) {
   m_State.nIndex = 0;
   m_State.nStart = 0;
   m_State.nEnd = 0;
@@ -38,15 +38,16 @@ PWL_CREATEPARAM CFFL_ComboBox::GetCreateParam() {
   if (m_pWidget->GetFieldFlags() & FIELDFLAG_EDIT)
     cp.dwFlags |= PCBS_ALLOWCUSTOMTEXT;
 
-  if (!m_pFontMap)
-    m_pFontMap = pdfium::MakeUnique<CBA_FontMap>(m_pWidget, GetSystemHandler());
+  if (!m_pFontMap) {
+    m_pFontMap =
+        pdfium::MakeUnique<CBA_FontMap>(m_pWidget.Get(), GetSystemHandler());
+  }
   cp.pFontMap = m_pFontMap.get();
   cp.pFocusHandler = this;
   return cp;
 }
 
-CPWL_Wnd* CFFL_ComboBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
-                                      CPDFSDK_PageView* pPageView) {
+CPWL_Wnd* CFFL_ComboBox::NewPDFWindow(const PWL_CREATEPARAM& cp) {
   CPWL_ComboBox* pWnd = new CPWL_ComboBox();
   pWnd->AttachFFLData(this);
   pWnd->Create(cp);
@@ -230,19 +231,12 @@ CPWL_Wnd* CFFL_ComboBox::ResetPDFWindow(CPDFSDK_PageView* pPageView,
     SaveState(pPageView);
 
   DestroyPDFWindow(pPageView);
-
-  CPWL_Wnd* pRet = nullptr;
-
-  if (bRestoreValue) {
+  if (bRestoreValue)
     RestoreState(pPageView);
-    pRet = GetPDFWindow(pPageView, false);
-  } else {
-    pRet = GetPDFWindow(pPageView, true);
-  }
 
-  m_pWidget->UpdateField();
-
-  return pRet;
+  CPWL_Wnd::ObservedPtr pRet(GetPDFWindow(pPageView, !bRestoreValue));
+  m_pWidget->UpdateField();  // May invoke JS, invalidating pRet.
+  return pRet.Get();
 }
 
 #ifdef PDF_ENABLE_XFA
@@ -256,13 +250,7 @@ bool CFFL_ComboBox::IsFieldFull(CPDFSDK_PageView* pPageView) {
 }
 #endif  // PDF_ENABLE_XFA
 
-void CFFL_ComboBox::OnSetFocus(CPWL_Wnd* pWnd) {
-  ASSERT(m_pFormFillEnv);
-
-  if (pWnd->GetClassName() != PWL_CLASSNAME_EDIT)
-    return;
-
-  CPWL_Edit* pEdit = (CPWL_Edit*)pWnd;
+void CFFL_ComboBox::OnSetFocus(CPWL_Edit* pEdit) {
   pEdit->SetCharSet(FX_CHARSET_ChineseSimplified);
   pEdit->SetReadyToInput();
 

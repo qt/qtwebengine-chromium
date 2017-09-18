@@ -219,6 +219,16 @@ def BuildFFmpeg(target_os, target_arch, host_os, host_arch, parallel_jobs,
           r'(#define HAVE_POSIX_MEMALIGN [01])',
           (r'#define HAVE_POSIX_MEMALIGN 0 /* \1 -- forced to 0. See https://crbug.com/604451 */'))
 
+
+  # Linux configs is also used on Fuchsia. They are mostly compatible with
+  # Fuchsia except that Fuchsia doesn't support sysctl(). On Linux sysctl()
+  # isn't actually used, so it's safe to set HAVE_SYSCTL to 0.
+  if target_os == 'linux':
+      RewriteFile(
+          os.path.join(config_dir, 'config.h'),
+          r'(#define HAVE_SYSCTL [01])',
+          (r'#define HAVE_SYSCTL 0 /* \1 -- forced to 0 for Fuchsia */'))
+
   # Windows linking resolves external symbols. Since generate_gn.py does not
   # need a functioning set of libraries, ignore unresolved symbols here.
   # This is especially useful here to avoid having to build a local libopus for
@@ -226,7 +236,7 @@ def BuildFFmpeg(target_os, target_arch, host_os, host_arch, parallel_jobs,
   # triggering mis-detection during configure execution.
   if target_os == 'win':
       RewriteFile(
-          os.path.join(config_dir, 'config.mak'),
+          os.path.join(config_dir, 'ffbuild/config.mak'),
           r'(LDFLAGS=.*)',
           (r'\1 -FORCE:UNRESOLVED'))
 
@@ -440,16 +450,17 @@ def main(argv):
               '--extra-cflags=-mfpu=vfpv3-d16',
           ])
       else:
-        configure_flags['Common'].extend([
-            # Location is for CrOS chroot. If you want to use this, enter chroot
-            # and copy ffmpeg to a location that is reachable.
-            '--enable-cross-compile',
-            '--target-os=linux',
-            '--cross-prefix=armv7a-cros-linux-gnueabi-',
-            '--extra-cflags=-mtune=cortex-a8',
-            # NOTE: we don't need softfp for this hardware.
-            '--extra-cflags=-mfloat-abi=hard',
-        ])
+        if host_arch != 'arm':
+          configure_flags['Common'].extend([
+              # Location is for CrOS chroot. If you want to use this, enter chroot
+              # and copy ffmpeg to a location that is reachable.
+              '--enable-cross-compile',
+              '--target-os=linux',
+              '--cross-prefix=armv7a-cros-linux-gnueabi-',
+              '--extra-cflags=-mtune=cortex-a8',
+              # NOTE: we don't need softfp for this hardware.
+              '--extra-cflags=-mfloat-abi=hard',
+          ])
 
         if target_arch == 'arm-neon':
           configure_flags['Common'].extend([
@@ -604,7 +615,6 @@ def main(argv):
       '--enable-decoder=amrnb,amrwb',
       # Wav files for playing phone messages.
       '--enable-decoder=gsm_ms',
-      '--enable-demuxer=gsm',
       '--enable-parser=gsm',
   ])
 

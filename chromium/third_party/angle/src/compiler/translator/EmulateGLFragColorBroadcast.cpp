@@ -13,8 +13,9 @@
 
 #include "compiler/translator/EmulateGLFragColorBroadcast.h"
 
-#include "compiler/translator/FindMain.h"
-#include "compiler/translator/IntermNode.h"
+#include "compiler/translator/IntermNode_util.h"
+#include "compiler/translator/IntermTraverse.h"
+#include "compiler/translator/RunAtTheEndOfShader.h"
 
 namespace sh
 {
@@ -25,10 +26,11 @@ namespace
 class GLFragColorBroadcastTraverser : public TIntermTraverser
 {
   public:
-    GLFragColorBroadcastTraverser(int maxDrawBuffers)
-        : TIntermTraverser(true, false, false),
+    GLFragColorBroadcastTraverser(int maxDrawBuffers, TSymbolTable *symbolTable, int shaderVersion)
+        : TIntermTraverser(true, false, false, symbolTable),
           mGLFragColorUsed(false),
-          mMaxDrawBuffers(maxDrawBuffers)
+          mMaxDrawBuffers(maxDrawBuffers),
+          mShaderVersion(shaderVersion)
     {
     }
 
@@ -45,15 +47,14 @@ class GLFragColorBroadcastTraverser : public TIntermTraverser
   private:
     bool mGLFragColorUsed;
     int mMaxDrawBuffers;
+    const int mShaderVersion;
 };
 
 TIntermBinary *GLFragColorBroadcastTraverser::constructGLFragDataNode(int index) const
 {
-    TType gl_FragDataType = TType(EbtFloat, EbpMedium, EvqFragData, 4);
-    gl_FragDataType.setArraySize(mMaxDrawBuffers);
-
-    TIntermSymbol *symbol   = new TIntermSymbol(0, "gl_FragData", gl_FragDataType);
-    TIntermTyped *indexNode = TIntermTyped::CreateIndexNode(index);
+    TIntermSymbol *symbol =
+        ReferenceBuiltInVariable(TString("gl_FragData"), *mSymbolTable, mShaderVersion);
+    TIntermTyped *indexNode = CreateIndexNode(index);
 
     TIntermBinary *binary = new TIntermBinary(EOpIndexDirect, symbol, indexNode);
     return binary;
@@ -71,7 +72,7 @@ void GLFragColorBroadcastTraverser::visitSymbol(TIntermSymbol *node)
 {
     if (node->getSymbol() == "gl_FragColor")
     {
-        queueReplacement(node, constructGLFragDataNode(0), OriginalNode::IS_DROPPED);
+        queueReplacement(constructGLFragDataNode(0), OriginalNode::IS_DROPPED);
         mGLFragColorUsed = true;
     }
 }
@@ -83,25 +84,29 @@ void GLFragColorBroadcastTraverser::broadcastGLFragColor(TIntermBlock *root)
     {
         return;
     }
-    TIntermSequence *mainSequence = FindMain(root)->getBody()->getSequence();
+
+    TIntermBlock *broadcastBlock = new TIntermBlock();
     // Now insert statements
     //   gl_FragData[1] = gl_FragData[0];
     //   ...
     //   gl_FragData[maxDrawBuffers - 1] = gl_FragData[0];
     for (int colorIndex = 1; colorIndex < mMaxDrawBuffers; ++colorIndex)
     {
-        mainSequence->insert(mainSequence->end(), constructGLFragDataAssignNode(colorIndex));
+        broadcastBlock->appendStatement(constructGLFragDataAssignNode(colorIndex));
     }
+    RunAtTheEndOfShader(root, broadcastBlock, mSymbolTable);
 }
 
 }  // namespace anonymous
 
 void EmulateGLFragColorBroadcast(TIntermBlock *root,
                                  int maxDrawBuffers,
-                                 std::vector<sh::OutputVariable> *outputVariables)
+                                 std::vector<sh::OutputVariable> *outputVariables,
+                                 TSymbolTable *symbolTable,
+                                 int shaderVersion)
 {
     ASSERT(maxDrawBuffers > 1);
-    GLFragColorBroadcastTraverser traverser(maxDrawBuffers);
+    GLFragColorBroadcastTraverser traverser(maxDrawBuffers, symbolTable, shaderVersion);
     root->traverse(&traverser);
     if (traverser.isGLFragColorUsed())
     {

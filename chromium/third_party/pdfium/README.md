@@ -94,7 +94,6 @@ pdf_is_standalone = true  # Set for a non-embedded build.
 is_component_build = false # Disable component build (must be false)
 
 clang_use_chrome_plugins = false  # Currently must be false.
-use_sysroot = false  # Currently must be false on Linux, but entirely omitted on windows.
 ```
 
 Note, you must set `pdf_is_standalone = true` if you want the sample
@@ -133,6 +132,11 @@ differences on the various platforms. These tests are reliable on the bots. If
 you see failures, it can be a good idea to run the tests on the tip-of-tree
 checkout to see if the same failures appear.
 
+## Code Coverage
+
+Code coverage reports for PDFium can be generated in Linux development
+environments. Details can be found [here](/docs/code-coverage.md).
+
 ## Waterfall
 
 The current health of the source tree can be found at
@@ -163,7 +167,7 @@ For contributing code, we will follow
 as much as possible. The main exceptions are:
 
 1. Code has to conform to the existing style and not Chromium/Google style.
-2. PDFium uses a different tool for code reviews, and credentials for 
+2. PDFium uses a different tool for code reviews, and credentials for
 the tool need to be generated before uploading a CL.
 
 

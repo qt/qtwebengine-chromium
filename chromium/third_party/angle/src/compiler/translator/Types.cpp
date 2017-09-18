@@ -105,6 +105,8 @@ const char *getBasicString(TBasicType t)
             return "iimageCube";
         case EbtUImageCube:
             return "uimageCube";
+        case EbtAtomicCounter:
+            return "atomic_uint";
         default:
             UNREACHABLE();
             return "unknown type";
@@ -128,7 +130,7 @@ TType::TType(const TPublicType &p)
     ASSERT(primarySize <= 4);
     ASSERT(secondarySize <= 4);
     if (p.getUserDef())
-        structure = p.getUserDef()->getStruct();
+        structure = p.getUserDef();
 }
 
 bool TStructure::equals(const TStructure &other) const
@@ -502,10 +504,10 @@ int TType::getLocationCount() const
     return count;
 }
 
-TStructure::TStructure(const TString *name, TFieldList *fields)
+TStructure::TStructure(TSymbolTable *symbolTable, const TString *name, TFieldList *fields)
     : TFieldListCollection(name, fields),
       mDeepestNesting(0),
-      mUniqueId(TSymbolTable::nextUniqueId()),
+      mUniqueId(symbolTable->nextUniqueId()),
       mAtGlobalScope(false)
 {
 }

@@ -12,6 +12,7 @@
 #include "public/fpdf_dataavail.h"
 #include "public/fpdf_ext.h"
 #include "public/fpdf_formfill.h"
+#include "public/fpdf_save.h"
 #include "public/fpdfview.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/test_support.h"
@@ -27,7 +28,8 @@ class TestLoader;
 class EmbedderTest : public ::testing::Test,
                      public UNSUPPORT_INFO,
                      public IPDF_JSPLATFORM,
-                     public FPDF_FORMFILLINFO {
+                     public FPDF_FORMFILLINFO,
+                     public FPDF_FILEWRITE {
  public:
   class Delegate {
    public:
@@ -101,12 +103,27 @@ class EmbedderTest : public ::testing::Test,
   // Convert a loaded page into a bitmap.
   virtual FPDF_BITMAP RenderPage(FPDF_PAGE page);
 
+  // Convert a loaded page into a bitmap with page rendering flags specified.
+  // See public/fpdfview.h for a list of page rendering flags.
+  virtual FPDF_BITMAP RenderPageWithFlags(FPDF_PAGE page,
+                                          FPDF_FORMHANDLE handle,
+                                          int flags);
+
   // Relese the resources obtained from LoadPage(). Further use of |page|
   // is prohibited after this call is made.
   virtual void UnloadPage(FPDF_PAGE page);
 
  protected:
-  void SetupFormFillEnvironment();
+  bool OpenDocumentHelper(const char* password,
+                          bool must_linearize,
+                          FX_FILEAVAIL* file_avail,
+                          FX_DOWNLOADHINTS* hints,
+                          FPDF_FILEACCESS* file_access,
+                          FPDF_DOCUMENT* document,
+                          FPDF_AVAIL* avail,
+                          FPDF_FORMHANDLE* form_handle);
+
+  FPDF_FORMHANDLE SetupFormFillEnvironment(FPDF_DOCUMENT doc);
 
   // Return the hash of |bitmap|.
   static std::string HashBitmap(FPDF_BITMAP bitmap,
@@ -118,6 +135,21 @@ class EmbedderTest : public ::testing::Test,
                             int expected_width,
                             int expected_height,
                             const char* expected_md5sum);
+
+  void ClearString() { m_String.clear(); }
+  const std::string& GetString() const { return m_String; }
+
+  static int GetBlockFromString(void* param,
+                                unsigned long pos,
+                                unsigned char* buf,
+                                unsigned long size);
+
+  void TestSaved(int width,
+                 int height,
+                 const char* md5,
+                 const char* password = nullptr);
+  void CloseSaved();
+  void TestAndCloseSaved(int width, int height, const char* md5);
 
   Delegate* delegate_;
   std::unique_ptr<Delegate> default_delegate_;
@@ -136,6 +168,10 @@ class EmbedderTest : public ::testing::Test,
   std::unique_ptr<char, pdfium::FreeDeleter> file_contents_;
   std::map<int, FPDF_PAGE> page_map_;
   std::map<FPDF_PAGE, int> page_reverse_map_;
+  FPDF_DOCUMENT m_SavedDocument;
+  FPDF_PAGE m_SavedPage;
+  FPDF_FORMHANDLE m_SavedForm;
+  FPDF_AVAIL m_SavedAvail;
 
  private:
   static void UnsupportedHandlerTrampoline(UNSUPPORT_INFO*, int type);
@@ -151,6 +187,11 @@ class EmbedderTest : public ::testing::Test,
   static FPDF_PAGE GetPageTrampoline(FPDF_FORMFILLINFO* info,
                                      FPDF_DOCUMENT document,
                                      int page_index);
+  static int WriteBlockCallback(FPDF_FILEWRITE* pFileWrite,
+                                const void* data,
+                                unsigned long size);
+
+  std::string m_String;
 };
 
 #endif  // TESTING_EMBEDDER_TEST_H_

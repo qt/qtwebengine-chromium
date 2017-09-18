@@ -10,9 +10,9 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/dlrr.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -32,6 +32,12 @@ namespace rtcp {
 //  |                 SSRC_2 (SSRC of second receiver)              | sub-
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ block
 //  :                               ...                             :   2
+
+Dlrr::Dlrr() = default;
+
+Dlrr::Dlrr(const Dlrr& other) = default;
+
+Dlrr::~Dlrr() = default;
 
 bool Dlrr::Parse(const uint8_t* buffer, uint16_t block_length_32bits) {
   RTC_DCHECK(buffer[0] == kBlockType);

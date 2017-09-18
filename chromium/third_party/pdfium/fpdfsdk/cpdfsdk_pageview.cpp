@@ -26,7 +26,7 @@
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidgethandler.h"
 #include "xfa/fxfa/cxfa_rendercontext.h"
-#include "xfa/fxgraphics/cfx_graphics.h"
+#include "xfa/fxgraphics/cxfa_graphics.h"
 #endif  // PDF_ENABLE_XFA
 
 CPDFSDK_PageView::CPDFSDK_PageView(CPDFSDK_FormFillEnvironment* pFormFillEnv,
@@ -43,16 +43,12 @@ CPDFSDK_PageView::CPDFSDK_PageView(CPDFSDK_FormFillEnvironment* pFormFillEnv,
       m_bLocked(false),
       m_bBeingDestroyed(false) {
   CPDFSDK_InterForm* pInterForm = pFormFillEnv->GetInterForm();
-  if (pInterForm) {
-    CPDF_InterForm* pPDFInterForm = pInterForm->GetInterForm();
+  CPDF_InterForm* pPDFInterForm = pInterForm->GetInterForm();
 #ifdef PDF_ENABLE_XFA
-    if (page->GetPDFPage())
-      pPDFInterForm->FixPageFields(page->GetPDFPage());
+  if (page->GetPDFPage())
+    pPDFInterForm->FixPageFields(page->GetPDFPage());
 #else   // PDF_ENABLE_XFA
-    pPDFInterForm->FixPageFields(page);
-#endif  // PDF_ENABLE_XFA
-  }
-#ifndef PDF_ENABLE_XFA
+  pPDFInterForm->FixPageFields(page);
   m_page->SetView(this);
 #endif  // PDF_ENABLE_XFA
 }
@@ -99,7 +95,7 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
         static_cast<float>(pClip.left), static_cast<float>(pClip.top),
         static_cast<float>(pClip.Width()), static_cast<float>(pClip.Height()));
 
-    CFX_Graphics gs(pDevice);
+    CXFA_Graphics gs(pDevice);
     gs.SetClipRect(rectClip);
 
     CXFA_FFPageView* xfaView = pPage->GetXFAPageView();
@@ -241,6 +237,16 @@ CPDFSDK_Annot* CPDFSDK_PageView::GetAnnotByXFAWidget(CXFA_FFWidget* hWidget) {
 }
 #endif  // PDF_ENABLE_XFA
 
+CFX_WideString CPDFSDK_PageView::GetSelectedText() {
+  if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
+    CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
+        m_pFormFillEnv->GetAnnotHandlerMgr();
+    return pAnnotHandlerMgr->Annot_GetSelectedText(pAnnot);
+  }
+
+  return CFX_WideString();
+}
+
 bool CPDFSDK_PageView::OnLButtonDown(const CFX_PointF& point, uint32_t nFlag) {
   CPDFSDK_Annot::ObservedPtr pAnnot(GetFXWidgetAtPoint(point));
   if (!pAnnot) {
@@ -348,8 +354,8 @@ bool CPDFSDK_PageView::OnMouseWheel(double deltaX,
 
   CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
       m_pFormFillEnv->GetAnnotHandlerMgr();
-  return pAnnotHandlerMgr->Annot_OnMouseWheel(this, &pAnnot, nFlag, (int)deltaY,
-                                              point);
+  return pAnnotHandlerMgr->Annot_OnMouseWheel(this, &pAnnot, nFlag,
+                                              static_cast<int>(deltaY), point);
 }
 
 bool CPDFSDK_PageView::OnChar(int nChar, uint32_t nFlag) {
@@ -385,16 +391,16 @@ void CPDFSDK_PageView::LoadFXAnnots() {
   CFX_RetainPtr<CPDFXFA_Page> protector(m_page);
   if (m_pFormFillEnv->GetXFAContext()->GetDocType() == XFA_DocType::Dynamic) {
     CXFA_FFPageView* pageView = m_page->GetXFAPageView();
-    std::unique_ptr<IXFA_WidgetIterator> pWidgetHander(
+    std::unique_ptr<IXFA_WidgetIterator> pWidgetHandler(
         pageView->CreateWidgetIterator(
             XFA_TRAVERSEWAY_Form,
             XFA_WidgetStatus_Visible | XFA_WidgetStatus_Viewable));
-    if (!pWidgetHander) {
+    if (!pWidgetHandler) {
       SetLock(false);
       return;
     }
 
-    while (CXFA_FFWidget* pXFAAnnot = pWidgetHander->MoveToNext()) {
+    while (CXFA_FFWidget* pXFAAnnot = pWidgetHandler->MoveToNext()) {
       CPDFSDK_Annot* pAnnot = pAnnotHandlerMgr->NewAnnot(pXFAAnnot, this);
       if (!pAnnot)
         continue;

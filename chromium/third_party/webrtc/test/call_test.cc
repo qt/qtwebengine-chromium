@@ -14,9 +14,9 @@
 
 #include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "webrtc/base/checks.h"
 #include "webrtc/config.h"
 #include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
+#include "webrtc/rtc_base/checks.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/voice_engine/include/voe_base.h"
 
@@ -56,10 +56,13 @@ void CallTest::RunBaseTest(BaseTest* test) {
     CreateFakeAudioDevices(test->CreateCapturer(), test->CreateRenderer());
     test->OnFakeAudioDevicesCreated(fake_send_audio_device_.get(),
                                     fake_recv_audio_device_.get());
+    apm_send_ = AudioProcessing::Create();
+    apm_recv_ = AudioProcessing::Create();
     CreateVoiceEngines();
     AudioState::Config audio_state_config;
     audio_state_config.voice_engine = voe_send_.voice_engine;
     audio_state_config.audio_mixer = AudioMixerImpl::Create();
+    audio_state_config.audio_processing = apm_send_;
     send_config.audio_state = AudioState::Create(audio_state_config);
   }
   CreateSenderCall(send_config);
@@ -69,6 +72,7 @@ void CallTest::RunBaseTest(BaseTest* test) {
       AudioState::Config audio_state_config;
       audio_state_config.voice_engine = voe_recv_.voice_engine;
       audio_state_config.audio_mixer = AudioMixerImpl::Create();
+      audio_state_config.audio_processing = apm_recv_;
       recv_config.audio_state = AudioState::Create(audio_state_config);
     }
     CreateReceiverCall(recv_config);
@@ -378,8 +382,8 @@ void CallTest::DestroyStreams() {
 void CallTest::CreateVoiceEngines() {
   voe_send_.voice_engine = VoiceEngine::Create();
   voe_send_.base = VoEBase::GetInterface(voe_send_.voice_engine);
-  EXPECT_EQ(0, voe_send_.base->Init(fake_send_audio_device_.get(), nullptr,
-                                    decoder_factory_));
+  EXPECT_EQ(0, voe_send_.base->Init(fake_send_audio_device_.get(),
+                                    apm_send_.get(), decoder_factory_));
   VoEBase::ChannelConfig config;
   config.enable_voice_pacing = true;
   voe_send_.channel_id = voe_send_.base->CreateChannel(config);
@@ -387,8 +391,8 @@ void CallTest::CreateVoiceEngines() {
 
   voe_recv_.voice_engine = VoiceEngine::Create();
   voe_recv_.base = VoEBase::GetInterface(voe_recv_.voice_engine);
-  EXPECT_EQ(0, voe_recv_.base->Init(fake_recv_audio_device_.get(), nullptr,
-                                    decoder_factory_));
+  EXPECT_EQ(0, voe_recv_.base->Init(fake_recv_audio_device_.get(),
+                                    apm_recv_.get(), decoder_factory_));
   voe_recv_.channel_id = voe_recv_.base->CreateChannel();
   EXPECT_GE(voe_recv_.channel_id, 0);
 }
@@ -423,6 +427,9 @@ const uint8_t CallTest::kRtxRedPayloadType = 99;
 const uint8_t CallTest::kUlpfecPayloadType = 119;
 const uint8_t CallTest::kFlexfecPayloadType = 120;
 const uint8_t CallTest::kAudioSendPayloadType = 103;
+const uint8_t CallTest::kPayloadTypeH264 = 122;
+const uint8_t CallTest::kPayloadTypeVP8 = 123;
+const uint8_t CallTest::kPayloadTypeVP9 = 124;
 const uint32_t CallTest::kSendRtxSsrcs[kNumSsrcs] = {0xBADCAFD, 0xBADCAFE,
                                                      0xBADCAFF};
 const uint32_t CallTest::kVideoSendSsrcs[kNumSsrcs] = {0xC0FFED, 0xC0FFEE,
@@ -433,6 +440,9 @@ const uint32_t CallTest::kReceiverLocalVideoSsrc = 0x123456;
 const uint32_t CallTest::kReceiverLocalAudioSsrc = 0x1234567;
 const int CallTest::kNackRtpHistoryMs = 1000;
 
+const uint8_t CallTest::kDefaultKeepalivePayloadType =
+    RtpKeepAliveConfig().payload_type;
+
 const std::map<uint8_t, MediaType> CallTest::payload_type_map_ = {
     {CallTest::kVideoSendPayloadType, MediaType::VIDEO},
     {CallTest::kFakeVideoSendPayloadType, MediaType::VIDEO},
@@ -441,7 +451,8 @@ const std::map<uint8_t, MediaType> CallTest::payload_type_map_ = {
     {CallTest::kRtxRedPayloadType, MediaType::VIDEO},
     {CallTest::kUlpfecPayloadType, MediaType::VIDEO},
     {CallTest::kFlexfecPayloadType, MediaType::VIDEO},
-    {CallTest::kAudioSendPayloadType, MediaType::AUDIO}};
+    {CallTest::kAudioSendPayloadType, MediaType::AUDIO},
+    {CallTest::kDefaultKeepalivePayloadType, MediaType::ANY}};
 
 BaseTest::BaseTest() : event_log_(RtcEventLog::CreateNull()) {}
 

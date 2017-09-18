@@ -7,7 +7,7 @@
 #include "core/fpdfapi/cmaps/cmap_int.h"
 
 #include "core/fpdfapi/cpdf_modulemgr.h"
-#include "core/fpdfapi/font/font_int.h"
+#include "core/fpdfapi/font/cpdf_fontglobals.h"
 #include "core/fpdfapi/page/cpdf_pagemodule.h"
 
 extern "C" {
@@ -61,7 +61,7 @@ void FPDFAPI_FindEmbeddedCMap(const CFX_ByteString& bsName,
   CPDF_FontGlobals* pFontGlobals =
       CPDF_ModuleMgr::Get()->GetPageModule()->GetFontGlobals();
   const FXCMAP_CMap* pCMaps =
-      pFontGlobals->m_EmbeddedCharsets[charset].m_pMapList;
+      pFontGlobals->m_EmbeddedCharsets[charset].m_pMapList.Get();
   for (uint32_t i = 0; i < pFontGlobals->m_EmbeddedCharsets[charset].m_Count;
        i++) {
     if (bsName == pCMaps[i].m_Name) {

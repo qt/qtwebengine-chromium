@@ -79,6 +79,36 @@ bool ParseBitfield(const std::string& bitfield,
 
 }  // namespace
 
+// Captured from HJC Game ZD - V gamepad.
+const DeviceAbsoluteAxis kHJCGamepadAbsAxes[] = {
+    {ABS_X, {128, 0, 255, 15, 0}}, {ABS_Y, {128, 0, 255, 15, 0}},
+    {ABS_Z, {128, 0, 255, 15, 0}}, {ABS_RZ, {128, 0, 255, 15, 0}},
+    {ABS_HAT0X, {0, -1, 1, 0, 0}}, {ABS_HAT0Y, {0, 1, 1, 0, 0}}};
+
+const DeviceCapabilities kHJCGamepad = {
+    /* path */
+    "/devices/pci0000:00/0000:00:14.0/usb1/1-2/1-2.2/1-2.2:1.0/"
+    "input/input38/event11",
+    /* name */ "HJC Game ZD - V",
+    /* phys */ "usb-0000:00:14.0-2.2/input0",
+    /* uniq */ "",
+    /* bustype */ "0011",
+    /* vendor */ "11c5",
+    /* product */ "5506",
+    /* version */ "0111",
+    /* prop */ "0",
+    /* ev */ "1b",
+    /* key */ "fff000000000000 0 0 0 0",
+    /* rel */ "0",
+    /* abs */ "30027",
+    /* msc */ "10",
+    /* sw */ "0",
+    /* led */ "0",
+    /* ff */ "0",
+    kHJCGamepadAbsAxes,
+    arraysize(kHJCGamepadAbsAxes),
+};
+
 // Captured from Xbox 360 gamepad.
 const DeviceAbsoluteAxis kXboxGamepadAbsAxes[] = {
     {ABS_X, {0, -32768, 32767, 16, 128}},
@@ -488,6 +518,36 @@ const DeviceCapabilities kWilsonBeachActiveStylus = {
   /* ff */ "0",
   kWilsonBeachActiveStylusAbsAxes,
   arraysize(kWilsonBeachActiveStylusAbsAxes),
+};
+
+// Captured from Eve Chromebook
+const DeviceAbsoluteAxis kEveStylusAbsAxes[] = {
+    {ABS_X, {0, 0, 25920, 0, 0, 100}},     {ABS_Y, {0, 0, 17280, 0, 0, 100}},
+    {ABS_PRESSURE, {0, 0, 2047, 0, 0, 0}}, {ABS_TILT_X, {0, -90, 90, 0, 0, 57}},
+    {ABS_TILT_Y, {0, -90, 90, 0, 0, 57}},  {ABS_MISC, {0, 0, 255, 0, 0, 0}},
+};
+const DeviceCapabilities kEveStylus = {
+    /* path */
+    "/sys/devices/pci0000:00/0000:00:15.0/i2c_designware.0/i2c-6/"
+    "i2c-WCOM50C1:00/0018:2D1F:5134.0001/input/input7/event7",
+    /* name */ "WCOM50C1:00 2D1F:5134 Pen",
+    /* phys */ "",
+    /* uniq */ "",
+    /* bustype */ "0018",
+    /* vendor */ "2d1f",
+    /* product */ "5134",
+    /* version */ "0100",
+    /* prop */ "0",
+    /* ev */ "1b",
+    /* key */ "1c03 1 0 0 0 0",
+    /* rel */ "0",
+    /* abs */ "1000d000003",
+    /* msc */ "11",
+    /* sw */ "0",
+    /* led */ "0",
+    /* ff */ "0",
+    kEveStylusAbsAxes,
+    arraysize(kEveStylusAbsAxes),
 };
 
 ui::InputDeviceType InputDeviceTypeFromBusType(int bustype) {

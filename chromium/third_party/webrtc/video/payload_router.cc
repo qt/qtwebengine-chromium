@@ -10,10 +10,10 @@
 
 #include "webrtc/video/payload_router.h"
 
-#include "webrtc/base/checks.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
+#include "webrtc/rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -130,6 +130,23 @@ EncodedImageCallback::Result PayloadRouter::OnEncodedImage(
     CopyCodecSpecific(codec_specific_info, &rtp_video_header);
   rtp_video_header.rotation = encoded_image.rotation_;
   rtp_video_header.content_type = encoded_image.content_type_;
+  if (encoded_image.timing_.is_timing_frame) {
+    rtp_video_header.video_timing.encode_start_delta_ms =
+        VideoSendTiming::GetDeltaCappedMs(
+            encoded_image.capture_time_ms_,
+            encoded_image.timing_.encode_start_ms);
+    rtp_video_header.video_timing.encode_finish_delta_ms =
+        VideoSendTiming::GetDeltaCappedMs(
+            encoded_image.capture_time_ms_,
+            encoded_image.timing_.encode_finish_ms);
+    rtp_video_header.video_timing.packetization_finish_delta_ms = 0;
+    rtp_video_header.video_timing.pacer_exit_delta_ms = 0;
+    rtp_video_header.video_timing.network_timstamp_delta_ms = 0;
+    rtp_video_header.video_timing.network2_timstamp_delta_ms = 0;
+    rtp_video_header.video_timing.is_timing_frame = true;
+  } else {
+    rtp_video_header.video_timing.is_timing_frame = false;
+  }
   rtp_video_header.playout_delay = encoded_image.playout_delay_;
 
   int stream_index = rtp_video_header.simulcastIdx;
@@ -156,6 +173,10 @@ void PayloadRouter::OnBitrateAllocationUpdated(
       // Simulcast is in use, split the BitrateAllocation into one struct per
       // rtp stream, moving over the temporal layer allocation.
       for (size_t si = 0; si < rtp_modules_.size(); ++si) {
+        // Don't send empty TargetBitrate messages on streams not being relayed.
+        if (bitrate.GetSpatialLayerSum(si) == 0)
+          break;
+
         BitrateAllocation layer_bitrate;
         for (int tl = 0; tl < kMaxTemporalStreams; ++tl)
           layer_bitrate.SetBitrate(0, tl, bitrate.GetBitrate(si, tl));

@@ -16,40 +16,43 @@
 #include "helpers.h"
 #include "util.h"
 
-static struct supported_combination combos[3] = {
-	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_RGB565, DRM_FORMAT_MOD_NONE,
-		BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
-		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-};
+static const uint32_t render_target_formats[] = { DRM_FORMAT_ARGB8888, DRM_FORMAT_RGB565,
+						  DRM_FORMAT_XRGB8888 };
 
 static int vc4_init(struct driver *drv)
 {
-	drv_insert_combinations(drv, combos, ARRAY_SIZE(combos));
-	return drv_add_kms_flags(drv);
+	int ret;
+	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+				   &LINEAR_METADATA, BO_USE_RENDER_MASK);
+	if (ret)
+		return ret;
+
+	return drv_modify_linear_combinations(drv);
 }
 
-static int vc4_bo_create(struct bo *bo, uint32_t width, uint32_t height,
-			 uint32_t format, uint32_t flags)
+static int vc4_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+			 uint32_t flags)
 {
 	int ret;
 	size_t plane;
+	uint32_t stride;
 	struct drm_vc4_create_bo bo_create;
 
-	drv_bo_from_format(bo, width, height, format);
+	/*
+	 * Since the ARM L1 cache line size is 64 bytes, align to that as a
+	 * performance optimization.
+	 */
+	stride = drv_stride_from_format(format, width, 0);
+	stride = ALIGN(stride, 64);
+	drv_bo_from_format(bo, stride, height, format);
 
 	memset(&bo_create, 0, sizeof(bo_create));
 	bo_create.size = bo->total_size;
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_VC4_CREATE_BO, &bo_create);
 	if (ret) {
-		fprintf(stderr, "drv: DRM_IOCTL_VC4_GEM_CREATE failed "
-				"(size=%zu)\n", bo->total_size);
+		fprintf(stderr, "drv: DRM_IOCTL_VC4_GEM_CREATE failed (size=%zu)\n",
+			bo->total_size);
 		return ret;
 	}
 
@@ -67,8 +70,7 @@ static void *vc4_bo_map(struct bo *bo, struct map_info *data, size_t plane)
 	memset(&bo_map, 0, sizeof(bo_map));
 	bo_map.handle = bo->handles[0].u32;
 
-	ret = drmCommandWriteRead(bo->drv->fd, DRM_VC4_MMAP_BO, &bo_map,
-				  sizeof(bo_map));
+	ret = drmCommandWriteRead(bo->drv->fd, DRM_VC4_MMAP_BO, &bo_map, sizeof(bo_map));
 	if (ret) {
 		fprintf(stderr, "drv: DRM_VC4_MMAP_BO failed\n");
 		return MAP_FAILED;
@@ -76,12 +78,11 @@ static void *vc4_bo_map(struct bo *bo, struct map_info *data, size_t plane)
 
 	data->length = bo->total_size;
 
-	return mmap(0, bo->total_size, PROT_READ | PROT_WRITE, MAP_SHARED,
-		    bo->drv->fd, bo_map.offset);
+	return mmap(0, bo->total_size, PROT_READ | PROT_WRITE, MAP_SHARED, bo->drv->fd,
+		    bo_map.offset);
 }
 
-struct backend backend_vc4 =
-{
+struct backend backend_vc4 = {
 	.name = "vc4",
 	.init = vc4_init,
 	.bo_create = vc4_bo_create,

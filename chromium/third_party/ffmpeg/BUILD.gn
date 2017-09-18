@@ -236,12 +236,10 @@ target(link_target_type, "ffmpeg_internal") {
     configs += [ "//build/config/compiler:optimize_max" ]
   }
 
-  if (!is_clang) {
+  if (ffmpeg_use_atomics_fallback) {
     if (is_posix) {
-      # GCC didn't add stdatomic.h until version 4.9.
       include_dirs += [ "compat/atomics/gcc" ]
     } else if (is_win) {
-      # Windows doesn't provide stdatomic.h, so use the compat version.
       include_dirs += [ "compat/atomics/win32" ]
     }
   }
@@ -311,7 +309,7 @@ target(link_target_type, "ffmpeg_internal") {
       "-L",
       rebase_path(target_gen_dir, root_build_dir),
     ]
-    if (!is_android) {
+    if (!is_android && !is_fuchsia) {
       # OS=android requires that both -lz and -lm occur after
       # -lc++_shared on the link command line. Android link rules
       # already include -lm, and we get -lz as a transitive dependency

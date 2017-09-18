@@ -121,10 +121,18 @@ static const struct argument kArguments[] = {
         "verification is required.",
     },
     {
-        "-early-data", kBooleanArgument, "Allow early data",
+        "-early-data", kOptionalArgument, "Allow early data",
+    },
+    {
+        "-tls13-variant", kOptionalArgument,
+        "Enable the specified experimental TLS 1.3 variant",
     },
     {
         "-ed25519", kBooleanArgument, "Advertise Ed25519 support",
+    },
+    {
+        "-http-tunnel", kOptionalArgument,
+        "An HTTP proxy server to tunnel the TCP connection through",
     },
     {
         "", kOptionalArgument, "",
@@ -208,7 +216,12 @@ static bool DoConnection(SSL_CTX *ctx,
                          std::map<std::string, std::string> args_map,
                          bool (*cb)(SSL *ssl, int sock)) {
   int sock = -1;
-  if (!Connect(&sock, args_map["-connect"])) {
+  if (args_map.count("-http-tunnel") != 0) {
+    if (!Connect(&sock, args_map["-http-tunnel"]) ||
+        !DoHTTPTunnel(sock, args_map["-connect"])) {
+      return false;
+    }
+  } else if (!Connect(&sock, args_map["-connect"])) {
     return false;
   }
 
@@ -262,6 +275,20 @@ static bool DoConnection(SSL_CTX *ctx,
     fprintf(stderr, "Error while connecting: %d\n", ssl_err);
     ERR_print_errors_cb(PrintErrorCallback, stderr);
     return false;
+  }
+
+  if (args_map.count("-early-data") != 0 && SSL_in_early_data(ssl.get())) {
+    int ed_size = args_map["-early-data"].size();
+    int ssl_ret = SSL_write(ssl.get(), args_map["-early-data"].data(), ed_size);
+    if (ssl_ret <= 0) {
+      int ssl_err = SSL_get_error(ssl.get(), ssl_ret);
+      fprintf(stderr, "Error while writing: %d\n", ssl_err);
+      ERR_print_errors_cb(PrintErrorCallback, stderr);
+      return false;
+    } else if (ssl_ret != ed_size) {
+      fprintf(stderr, "Short write from SSL_write.\n");
+      return false;
+    }
   }
 
   fprintf(stderr, "Connected.\n");
@@ -434,6 +461,12 @@ bool Client(const std::vector<std::string> &args) {
 
   if (args_map.count("-early-data") != 0) {
     SSL_CTX_set_early_data_enabled(ctx.get(), 1);
+  }
+
+  if (args_map.count("-tls13-variant") != 0) {
+    SSL_CTX_set_tls13_variant(ctx.get(),
+                              static_cast<enum tls13_variant_t>(
+                                  atoi(args_map["-tls13-variant"].c_str())));
   }
 
   if (args_map.count("-ed25519") != 0) {

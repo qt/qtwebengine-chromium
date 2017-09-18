@@ -17,10 +17,6 @@
 #include <vector>
 #include <utility>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/ptr_util.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_video_generic.h"
@@ -28,6 +24,10 @@
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_vp9.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/ptr_util.h"
+#include "webrtc/rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -332,6 +332,10 @@ bool RTPSenderVideo::SendVideo(RtpVideoCodecTypes video_type,
         last_packet->SetExtension<VideoContentTypeExtension>(
             video_header->content_type);
       }
+      if (video_header->video_timing.is_timing_frame) {
+        last_packet->SetExtension<VideoTimingExtension>(
+            video_header->video_timing);
+      }
     }
 
     // FEC settings.
@@ -388,8 +392,19 @@ bool RTPSenderVideo::SendVideo(RtpVideoCodecTypes video_type,
     if (!rtp_sender_->AssignSequenceNumber(packet.get()))
       return false;
 
-    const bool protect_packet =
-        (packetizer->GetProtectionType() == kProtectedPacket);
+    bool protect_packet = (packetizer->GetProtectionType() == kProtectedPacket);
+    // Put packetization finish timestamp into extension.
+    if (packet->HasExtension<VideoTimingExtension>()) {
+      packet->set_packetization_finish_time_ms(clock_->TimeInMilliseconds());
+      // TODO(ilnik): Due to webrtc:7859, packets with timing extensions are not
+      // protected by FEC. It reduces FEC efficiency a bit. When FEC is moved
+      // below the pacer, it can be re-enabled for these packets.
+      // NOTE: Any RTP stream processor in the network, modifying 'network'
+      // timestamps in the timing frames extension have to be an end-point for
+      // FEC, otherwise recovered by FEC packets will be corrupted.
+      protect_packet = false;
+    }
+
     if (flexfec_enabled()) {
       // TODO(brandtr): Remove the FlexFEC code path when FlexfecSender
       // is wired up to PacedSender instead.

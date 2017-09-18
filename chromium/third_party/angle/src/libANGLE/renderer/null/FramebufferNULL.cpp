@@ -24,29 +24,34 @@ FramebufferNULL::~FramebufferNULL()
 {
 }
 
-gl::Error FramebufferNULL::discard(size_t count, const GLenum *attachments)
+gl::Error FramebufferNULL::discard(const gl::Context *context,
+                                   size_t count,
+                                   const GLenum *attachments)
 {
     return gl::NoError();
 }
 
-gl::Error FramebufferNULL::invalidate(size_t count, const GLenum *attachments)
+gl::Error FramebufferNULL::invalidate(const gl::Context *context,
+                                      size_t count,
+                                      const GLenum *attachments)
 {
     return gl::NoError();
 }
 
-gl::Error FramebufferNULL::invalidateSub(size_t count,
+gl::Error FramebufferNULL::invalidateSub(const gl::Context *context,
+                                         size_t count,
                                          const GLenum *attachments,
                                          const gl::Rectangle &area)
 {
     return gl::NoError();
 }
 
-gl::Error FramebufferNULL::clear(ContextImpl *context, GLbitfield mask)
+gl::Error FramebufferNULL::clear(const gl::Context *context, GLbitfield mask)
 {
     return gl::NoError();
 }
 
-gl::Error FramebufferNULL::clearBufferfv(ContextImpl *context,
+gl::Error FramebufferNULL::clearBufferfv(const gl::Context *context,
                                          GLenum buffer,
                                          GLint drawbuffer,
                                          const GLfloat *values)
@@ -54,7 +59,7 @@ gl::Error FramebufferNULL::clearBufferfv(ContextImpl *context,
     return gl::NoError();
 }
 
-gl::Error FramebufferNULL::clearBufferuiv(ContextImpl *context,
+gl::Error FramebufferNULL::clearBufferuiv(const gl::Context *context,
                                           GLenum buffer,
                                           GLint drawbuffer,
                                           const GLuint *values)
@@ -62,7 +67,7 @@ gl::Error FramebufferNULL::clearBufferuiv(ContextImpl *context,
     return gl::NoError();
 }
 
-gl::Error FramebufferNULL::clearBufferiv(ContextImpl *context,
+gl::Error FramebufferNULL::clearBufferiv(const gl::Context *context,
                                          GLenum buffer,
                                          GLint drawbuffer,
                                          const GLint *values)
@@ -70,7 +75,7 @@ gl::Error FramebufferNULL::clearBufferiv(ContextImpl *context,
     return gl::NoError();
 }
 
-gl::Error FramebufferNULL::clearBufferfi(ContextImpl *context,
+gl::Error FramebufferNULL::clearBufferfi(const gl::Context *context,
                                          GLenum buffer,
                                          GLint drawbuffer,
                                          GLfloat depth,
@@ -79,7 +84,7 @@ gl::Error FramebufferNULL::clearBufferfi(ContextImpl *context,
     return gl::NoError();
 }
 
-GLenum FramebufferNULL::getImplementationColorReadFormat() const
+GLenum FramebufferNULL::getImplementationColorReadFormat(const gl::Context *context) const
 {
     const gl::FramebufferAttachment *readAttachment = mState.getReadAttachment();
     if (readAttachment == nullptr)
@@ -92,7 +97,7 @@ GLenum FramebufferNULL::getImplementationColorReadFormat() const
     return format.info->getReadPixelsFormat();
 }
 
-GLenum FramebufferNULL::getImplementationColorReadType() const
+GLenum FramebufferNULL::getImplementationColorReadType(const gl::Context *context) const
 {
     const gl::FramebufferAttachment *readAttachment = mState.getReadAttachment();
     if (readAttachment == nullptr)
@@ -105,7 +110,7 @@ GLenum FramebufferNULL::getImplementationColorReadType() const
     return format.info->getReadPixelsType();
 }
 
-gl::Error FramebufferNULL::readPixels(ContextImpl *context,
+gl::Error FramebufferNULL::readPixels(const gl::Context *context,
                                       const gl::Rectangle &area,
                                       GLenum format,
                                       GLenum type,
@@ -114,7 +119,7 @@ gl::Error FramebufferNULL::readPixels(ContextImpl *context,
     return gl::NoError();
 }
 
-gl::Error FramebufferNULL::blit(ContextImpl *context,
+gl::Error FramebufferNULL::blit(const gl::Context *context,
                                 const gl::Rectangle &sourceArea,
                                 const gl::Rectangle &destArea,
                                 GLbitfield mask,
@@ -128,7 +133,7 @@ bool FramebufferNULL::checkStatus() const
     return true;
 }
 
-void FramebufferNULL::syncState(ContextImpl *contextImpl,
+void FramebufferNULL::syncState(const gl::Context *context,
                                 const gl::Framebuffer::DirtyBits &dirtyBits)
 {
 }

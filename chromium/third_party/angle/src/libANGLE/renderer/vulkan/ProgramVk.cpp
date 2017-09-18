@@ -10,6 +10,7 @@
 #include "libANGLE/renderer/vulkan/ProgramVk.h"
 
 #include "common/debug.h"
+#include "libANGLE/Context.h"
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/GlslangWrapper.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
@@ -25,27 +26,26 @@ ProgramVk::~ProgramVk()
 {
 }
 
-void ProgramVk::destroy(const ContextImpl *contextImpl)
+void ProgramVk::destroy(const gl::Context *contextImpl)
 {
-    VkDevice device = GetAs<ContextVk>(contextImpl)->getDevice();
+    VkDevice device = GetImplAs<ContextVk>(contextImpl)->getDevice();
 
     mLinkedFragmentModule.destroy(device);
     mLinkedVertexModule.destroy(device);
     mPipelineLayout.destroy(device);
 }
 
-LinkResult ProgramVk::load(const ContextImpl *contextImpl,
-                           gl::InfoLog &infoLog,
-                           gl::BinaryInputStream *stream)
+gl::LinkResult ProgramVk::load(const gl::Context *contextImpl,
+                               gl::InfoLog &infoLog,
+                               gl::BinaryInputStream *stream)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
-gl::Error ProgramVk::save(gl::BinaryOutputStream *stream)
+void ProgramVk::save(const gl::Context *context, gl::BinaryOutputStream *stream)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
 }
 
 void ProgramVk::setBinaryRetrievableHint(bool retrievable)
@@ -58,16 +58,18 @@ void ProgramVk::setSeparable(bool separable)
     UNIMPLEMENTED();
 }
 
-LinkResult ProgramVk::link(ContextImpl *contextImpl,
-                           const gl::VaryingPacking &packing,
-                           gl::InfoLog &infoLog)
+gl::LinkResult ProgramVk::link(const gl::Context *glContext,
+                               const gl::VaryingPacking &packing,
+                               gl::InfoLog &infoLog)
 {
-    ContextVk *context             = GetAs<ContextVk>(contextImpl);
+    ContextVk *context             = GetImplAs<ContextVk>(glContext);
     RendererVk *renderer           = context->getRenderer();
     GlslangWrapper *glslangWrapper = renderer->getGlslangWrapper();
 
-    const std::string &vertexSource   = mState.getAttachedVertexShader()->getTranslatedSource();
-    const std::string &fragmentSource = mState.getAttachedFragmentShader()->getTranslatedSource();
+    const std::string &vertexSource =
+        mState.getAttachedVertexShader()->getTranslatedSource(glContext);
+    const std::string &fragmentSource =
+        mState.getAttachedFragmentShader()->getTranslatedSource(glContext);
 
     std::vector<uint32_t> vertexCode;
     std::vector<uint32_t> fragmentCode;

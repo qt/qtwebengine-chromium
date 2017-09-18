@@ -18,11 +18,11 @@
 #include <set>
 #include <vector>
 
-#include "webrtc/base/logging.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_payload_registry.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_receiver_strategy.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -36,8 +36,7 @@ RtpReceiver* RtpReceiver::CreateVideoReceiver(
     RtpData* incoming_payload_callback,
     RtpFeedback* incoming_messages_callback,
     RTPPayloadRegistry* rtp_payload_registry) {
-  if (!incoming_payload_callback)
-    incoming_payload_callback = NullObjectRtpData();
+  RTC_DCHECK(incoming_payload_callback != nullptr);
   if (!incoming_messages_callback)
     incoming_messages_callback = NullObjectRtpFeedback();
   return new RtpReceiverImpl(
@@ -50,8 +49,7 @@ RtpReceiver* RtpReceiver::CreateAudioReceiver(
     RtpData* incoming_payload_callback,
     RtpFeedback* incoming_messages_callback,
     RTPPayloadRegistry* rtp_payload_registry) {
-  if (!incoming_payload_callback)
-    incoming_payload_callback = NullObjectRtpData();
+  RTC_DCHECK(incoming_payload_callback != nullptr);
   if (!incoming_messages_callback)
     incoming_messages_callback = NullObjectRtpFeedback();
   return new RtpReceiverImpl(

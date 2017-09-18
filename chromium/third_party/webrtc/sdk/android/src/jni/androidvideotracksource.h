@@ -11,15 +11,15 @@
 #ifndef WEBRTC_API_ANDROID_JNI_ANDROIDVIDEOTRACKSOURCE_H_
 #define WEBRTC_API_ANDROID_JNI_ANDROIDVIDEOTRACKSOURCE_H_
 
-#include "webrtc/sdk/android/src/jni/native_handle_impl.h"
-#include "webrtc/sdk/android/src/jni/surfacetexturehelper_jni.h"
-#include "webrtc/base/asyncinvoker.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/thread_checker.h"
-#include "webrtc/base/timestampaligner.h"
 #include "webrtc/common_video/include/i420_buffer_pool.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/media/base/adaptedvideotracksource.h"
+#include "webrtc/rtc_base/asyncinvoker.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/thread_checker.h"
+#include "webrtc/rtc_base/timestampaligner.h"
+#include "webrtc/sdk/android/src/jni/native_handle_impl.h"
+#include "webrtc/sdk/android/src/jni/surfacetexturehelper_jni.h"
 
 namespace webrtc {
 
@@ -27,7 +27,7 @@ class AndroidVideoTrackSource : public rtc::AdaptedVideoTrackSource {
  public:
   AndroidVideoTrackSource(rtc::Thread* signaling_thread,
                           JNIEnv* jni,
-                          jobject j_egl_context,
+                          jobject j_surface_texture_helper,
                           bool is_screencast = false);
 
   bool is_screencast() const override { return is_screencast_; }
@@ -50,12 +50,12 @@ class AndroidVideoTrackSource : public rtc::AdaptedVideoTrackSource {
                                  int length,
                                  int width,
                                  int height,
-                                 int rotation,
+                                 VideoRotation rotation,
                                  int64_t timestamp_ns);
 
   void OnTextureFrameCaptured(int width,
                               int height,
-                              int rotation,
+                              VideoRotation rotation,
                               int64_t timestamp_ns,
                               const webrtc_jni::NativeHandleImpl& handle);
 
@@ -73,8 +73,8 @@ class AndroidVideoTrackSource : public rtc::AdaptedVideoTrackSource {
   SourceState state_;
   rtc::VideoBroadcaster broadcaster_;
   rtc::TimestampAligner timestamp_aligner_;
-  webrtc::NV12ToI420Scaler nv12toi420_scaler_;
-  webrtc::I420BufferPool buffer_pool_;
+  NV12ToI420Scaler nv12toi420_scaler_;
+  I420BufferPool buffer_pool_;
   rtc::scoped_refptr<webrtc_jni::SurfaceTextureHelper> surface_texture_helper_;
   const bool is_screencast_;
 };

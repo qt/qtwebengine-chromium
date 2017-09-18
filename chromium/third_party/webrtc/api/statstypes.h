@@ -20,12 +20,12 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/refcount.h"
-#include "webrtc/base/scoped_ref_ptr.h"
-#include "webrtc/base/stringencode.h"
-#include "webrtc/base/thread_checker.h"
+#include "webrtc/rtc_base/basictypes.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/refcount.h"
+#include "webrtc/rtc_base/scoped_ref_ptr.h"
+#include "webrtc/rtc_base/stringencode.h"
+#include "webrtc/rtc_base/thread_checker.h"
 
 namespace webrtc {
 
@@ -107,6 +107,7 @@ class StatsReport {
     kStatsValueNameDataChannelId,
     kStatsValueNameFramesDecoded,
     kStatsValueNameFramesEncoded,
+    kStatsValueNameInterframeDelaySumMs,
     kStatsValueNameMediaType,
     kStatsValueNamePacketsLost,
     kStatsValueNamePacketsReceived,
@@ -117,6 +118,8 @@ class StatsReport {
     kStatsValueNameSelectedCandidatePairId,
     kStatsValueNameSsrc,
     kStatsValueNameState,
+    kStatsValueNameTotalAudioEnergy,
+    kStatsValueNameTotalSamplesDuration,
     kStatsValueNameTransportId,
     kStatsValueNameSentPingRequestsTotal,
     kStatsValueNameSentPingRequestsBeforeFirstResponse,
@@ -210,6 +213,7 @@ class StatsReport {
     kStatsValueNameSrtpCipher,
     kStatsValueNameTargetDelayMs,
     kStatsValueNameTargetEncBitrate,
+    kStatsValueNameTimingFrameInfo,  // Result of |TimingFrameInfo::ToString|
     kStatsValueNameTrackId,
     kStatsValueNameTransmitBitrate,
     kStatsValueNameTransportType,

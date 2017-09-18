@@ -759,9 +759,10 @@ INPUT = "FlatBuffers.md" \
         "Support.md" \
         "Benchmarks.md" \
         "WhitePaper.md" \
+        "FlexBuffers.md" \
         "Internals.md" \
         "Grammar.md" \
-        "CONTRIBUTING.md" \
+        "../../CONTRIBUTING.md" \
         "Tutorial.md" \
         "GoApi.md" \
         "groups" \
