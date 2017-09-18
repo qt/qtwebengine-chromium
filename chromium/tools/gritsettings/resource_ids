@@ -127,6 +127,9 @@
   "chrome/browser/resources/webapks_ui_resources.grd": {
     "includes": [12600],
   },
+  "chrome/browser/resources/qt_webengine_resources.grd": {
+    "includes": [12650],
+  },
   # END chrome/browser section.
 
   # START chrome/ miscellaneous section.
