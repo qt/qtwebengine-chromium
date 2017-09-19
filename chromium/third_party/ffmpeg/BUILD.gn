@@ -152,9 +152,15 @@ config("ffmpegsumo_warnings") {
 
 buildflag_header("ffmpeg_features") {
   header = "ffmpeg_features.h"
-  flags = [
-    "USE_SYSTEM_FFMPEG=false",
-  ]
+  if (use_system_ffmpeg) {
+    flags = [
+      "USE_SYSTEM_FFMPEG=true",
+    ]
+  } else {
+    flags = [
+      "USE_SYSTEM_FFMPEG=false",
+    ]
+  }
 }
 
 if (is_component_ffmpeg) {
@@ -444,10 +450,6 @@ if (use_system_ffmpeg) {
       "opt.h",
     ]
   }
-
-  config("use_system_ffmpeg") {
-    defines = [ "USE_SYSTEM_FFMPEG=1" ]
-  }
 }
 
 if (is_component_ffmpeg) {
@@ -481,7 +483,7 @@ if (is_component_ffmpeg) {
 } else {
   source_set("ffmpeg") {
     if (use_system_ffmpeg) {
-      public_configs = [ ":system_ffmpeg", ":use_system_ffmpeg" ]
+      public_configs = [ ":system_ffmpeg" ]
       deps = [ ":libavcodec_shim", ":libavformat_shim", ":libavutil_shim" ]
     } else {
       public_configs = [ ":ffmpeg_dependent_config" ]
