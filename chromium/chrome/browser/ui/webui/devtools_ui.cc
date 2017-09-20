@@ -327,6 +327,7 @@ void DevToolsDataSource::OnURLFetchComplete(const net::URLFetcher* source) {
 
 // static
 GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
+#ifndef TOOLKIT_QT
   GURL url(frontend_url);
   if (url.scheme() == content::kChromeDevToolsScheme &&
       url.host() == chrome::kChromeUIDevToolsHost)
@@ -338,15 +339,22 @@ GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
               chrome::kChromeUIDevToolsHost,
               chrome::kChromeUIDevToolsRemotePath,
               url.path().substr(1).c_str()));
+#else
+  return GURL();
+#endif
 }
 
 // static
 GURL DevToolsUI::GetRemoteBaseURL() {
+#ifndef TOOLKIT_QT
   return GURL(base::StringPrintf(
       "%s%s/%s/",
       kRemoteFrontendBase,
       kRemoteFrontendPath,
       content::GetWebKitRevision().c_str()));
+#else
+  return GURL();
+#endif
 }
 
 DevToolsUI::DevToolsUI(content::WebUI* web_ui)
