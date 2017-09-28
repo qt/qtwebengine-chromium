@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "content/gpu/in_process_gpu_thread.h"
-
+#include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/gpu/gpu_child_thread.h"
@@ -52,7 +52,12 @@ void InProcessGpuThread::Init() {
   ui::OzonePlatform::InitializeForGPU(params);
 #endif
 
+#if defined(TOOLKIT_QT)
+  content::GpuDataManagerImpl* gpu_data_manager = content::GpuDataManagerImpl::GetInstance();
+  gpu::GPUInfo gpu_info = gpu_data_manager->GetGPUInfo();
+#else
   gpu::GPUInfo gpu_info;
+#endif
   if (!gl::init::InitializeGLOneOff())
     VLOG(1) << "gl::init::InitializeGLOneOff failed";
   else
