@@ -355,7 +355,7 @@ scoped_refptr<SSLPrivateKey> CreateSSLPrivateKeyForSecKey(
   if (!GetClientCertInfo(certificate, &key_type, &max_length))
     return nullptr;
 
-  if (__builtin_available(macOS 10.12, *)) {
+  if (base::mac::IsAtLeastOS10_12()) {
     return make_scoped_refptr(
         new ThreadedSSLPrivateKey(base::MakeUnique<SSLPlatformKeySecKey>(
                                       key_type, max_length, private_key),

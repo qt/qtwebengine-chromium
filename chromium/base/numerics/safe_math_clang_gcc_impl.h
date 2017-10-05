@@ -128,8 +128,16 @@ struct ClampedAddFastOp {
 
 // This is the fastest negation on Intel, and a decent fallback on arm.
 __attribute__((always_inline)) inline int8_t ClampedNegate(uint8_t value) {
+#ifdef __clang__
   uint8_t carry;
   return __builtin_subcb(0, value, 0, &carry) + carry;
+#else
+  int8_t result;
+  if (__builtin_sub_overflow(0, static_cast<int8_t>(value), &result))
+    return GetMaxOrMin<int8_t>(IsValueNegative<int8_t>(value));
+  else
+    return result;
+#endif
 }
 
 __attribute__((always_inline)) inline int8_t ClampedNegate(int8_t value) {
@@ -137,8 +145,16 @@ __attribute__((always_inline)) inline int8_t ClampedNegate(int8_t value) {
 }
 
 __attribute__((always_inline)) inline int16_t ClampedNegate(uint16_t value) {
+#ifdef __clang__
   uint16_t carry;
   return __builtin_subcs(0, value, 0, &carry) + carry;
+#else
+  int16_t result;
+  if (__builtin_sub_overflow(0, static_cast<int16_t>(value), &result))
+    return GetMaxOrMin<int16_t>(IsValueNegative<int16_t>(value));
+  else
+    return result;
+#endif
 }
 
 __attribute__((always_inline)) inline int16_t ClampedNegate(int16_t value) {
@@ -146,8 +162,16 @@ __attribute__((always_inline)) inline int16_t ClampedNegate(int16_t value) {
 }
 
 __attribute__((always_inline)) inline int32_t ClampedNegate(uint32_t value) {
+#ifdef __clang__
   uint32_t carry;
   return __builtin_subc(0, value, 0, &carry) + carry;
+#else
+  int32_t result;
+  if (__builtin_sub_overflow(0, static_cast<int32_t>(value), &result))
+    return GetMaxOrMin<int32_t>(IsValueNegative<int32_t>(value));
+  else
+    return result;
+#endif
 }
 
 __attribute__((always_inline)) inline int32_t ClampedNegate(int32_t value) {
@@ -155,15 +179,23 @@ __attribute__((always_inline)) inline int32_t ClampedNegate(int32_t value) {
 }
 
 // These are the LP64 platforms minus Mac (because Xcode blows up otherwise).
-#if !defined(__APPLE__) && defined(__LP64__) && __LP64__
+#if !defined(__APPLE__) && defined(__LP64__) && __LP64__ && defined(__clang__)
 __attribute__((always_inline)) inline int64_t ClampedNegate(uint64_t value) {
   uint64_t carry;
   return __builtin_subcl(0, value, 0, &carry) + carry;
 }
 #else  // Mac, Windows, and any IL32 platforms.
 __attribute__((always_inline)) inline int64_t ClampedNegate(uint64_t value) {
+#ifdef __clang__
   uint64_t carry;
   return __builtin_subcll(0, value, 0, &carry) + carry;
+#else
+  int64_t result;
+  if (__builtin_sub_overflow(0, static_cast<int64_t>(value), &result))
+    return GetMaxOrMin<int64_t>(IsValueNegative<int64_t>(value));
+  else
+    return result;
+#endif
 }
 #endif
 __attribute__((always_inline)) inline int64_t ClampedNegate(int64_t value) {

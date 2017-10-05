@@ -90,7 +90,7 @@ NetworkServiceImpl::CreateNetworkContextWithBuilder(
       base::MakeUnique<NetworkContext>(std::move(request), std::move(params),
                                        std::move(builder));
   *url_request_context = network_context->url_request_context();
-  return network_context;
+  return std::unique_ptr<mojom::NetworkContext>(network_context.release());
 }
 
 std::unique_ptr<NetworkService> NetworkServiceImpl::CreateForTesting() {
