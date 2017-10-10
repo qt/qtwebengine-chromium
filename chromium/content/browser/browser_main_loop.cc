@@ -450,6 +450,8 @@ class GpuDataManagerVisualProxy : public GpuDataManagerObserver {
 
  private:
   void OnUpdate() {
+    if (!gfx::GetXDisplay())
+      return;
     gpu::GPUInfo gpu_info = gpu_data_manager_->GetGPUInfo();
     gpu::GpuExtraInfo gpu_extra_info = gpu_data_manager_->GetGpuExtraInfo();
     if (!ui::XVisualManager::GetInstance()->OnGPUInfoChanged(
