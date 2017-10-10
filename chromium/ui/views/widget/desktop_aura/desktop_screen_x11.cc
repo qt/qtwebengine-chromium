@@ -42,7 +42,7 @@ namespace {
 // static
 gfx::ICCProfile GetICCProfileForMonitor(int monitor) {
   gfx::ICCProfile icc_profile;
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless) || !gfx::GetXDisplay())
     return icc_profile;
   std::string atom_name;
   if (monitor == 0) {
