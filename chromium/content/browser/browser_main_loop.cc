@@ -500,7 +500,7 @@ class GpuDataManagerVisualProxy : public GpuDataManagerObserver {
   }
 
   void OnGpuInfoUpdate() override {
-    if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless))
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless) || !gfx::GetXDisplay())
       return;
     gpu::GPUInfo gpu_info = gpu_data_manager_->GetGPUInfo();
     if (!ui::XVisualManager::GetInstance()->OnGPUInfoChanged(
@@ -582,7 +582,7 @@ void BrowserMainLoop::EarlyInitialization() {
   SetupSandbox(parsed_command_line_);
 #endif
 
-#if defined(USE_X11)
+#if defined(USE_X11) && !defined(TOOLKIT_QT)
   if (UsingInProcessGpu()) {
     if (!gfx::InitializeThreadedX11()) {
       LOG(ERROR) << "Failed to put Xlib into threaded mode.";
@@ -1655,7 +1655,7 @@ bool BrowserMainLoop::InitializeToolkit() {
 
 #if defined(USE_AURA)
 
-#if defined(USE_X11)
+#if defined(USE_X11) && !defined(TOOLKIT_QT)
   if (!parsed_command_line_.HasSwitch(switches::kHeadless) &&
       !gfx::GetXDisplay()) {
     LOG(ERROR) << "Unable to open X display.";

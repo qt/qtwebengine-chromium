@@ -210,9 +210,9 @@ std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
   basic_info->Append(NewDescriptionValuePair("Window system binding extensions",
                                              gpu_info.gl_ws_extensions));
 #if defined(OS_LINUX) && defined(USE_X11)
-  basic_info->Append(NewDescriptionValuePair("Window manager",
-                                             ui::GuessWindowManagerName()));
-  {
+  if (gfx::GetXDisplay()) {
+    basic_info->Append(NewDescriptionValuePair("Window manager",
+                                               ui::GuessWindowManagerName()));
     std::unique_ptr<base::Environment> env(base::Environment::Create());
     std::string value;
     const char kXDGCurrentDesktop[] = "XDG_CURRENT_DESKTOP";
@@ -249,10 +249,12 @@ std::unique_ptr<base::DictionaryValue> GpuInfoAsDictionaryValue() {
 #endif
 
 #if defined(USE_X11)
-  basic_info->Append(NewDescriptionValuePair(
-      "System visual ID", base::Uint64ToString(gpu_info.system_visual)));
-  basic_info->Append(NewDescriptionValuePair(
-      "RGBA visual ID", base::Uint64ToString(gpu_info.rgba_visual)));
+  if (gfx::GetXDisplay()) {
+    basic_info->Append(NewDescriptionValuePair(
+        "System visual ID", base::Uint64ToString(gpu_info.system_visual)));
+    basic_info->Append(NewDescriptionValuePair(
+        "RGBA visual ID", base::Uint64ToString(gpu_info.rgba_visual)));
+  }
 #endif
 
   info->Set("basic_info", std::move(basic_info));

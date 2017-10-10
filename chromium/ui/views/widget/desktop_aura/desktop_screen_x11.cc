@@ -44,7 +44,7 @@ namespace {
 // static
 gfx::ICCProfile GetICCProfileFromBestMonitor() {
   gfx::ICCProfile icc_profile;
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless) || !gfx::GetXDisplay())
     return icc_profile;
   Atom property = gfx::GetAtom("_ICC_PROFILE");
   if (property != None) {
