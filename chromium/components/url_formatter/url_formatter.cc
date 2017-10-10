@@ -413,6 +413,8 @@ bool IDNSpoofChecker::Check(base::StringPiece16 label, bool is_tld_ascii) {
     //   Letter Co) to be next to Latin.
     // - Disallow Latin 'o' and 'g' next to Armenian.
     // - Disalow mixing of Latin and Canadian Syllabary.
+    // - Disallow U+0307 (dot above) after 'i', 'j', 'l' or dotless i (U+0131).
+    //   Dotless j (U+0237) is not in the allowed set to begin with.
     dangerous_pattern = new icu::RegexMatcher(
         icu::UnicodeString(
             "[^\\p{scx=kana}\\p{scx=hira}\\p{scx=hani}]"
@@ -427,7 +429,9 @@ bool IDNSpoofChecker::Check(base::StringPiece16 label, bool is_tld_ascii) {
             "[a-z][\\u0585\\u0581]+[a-z]|"
             "^[og]+[\\p{scx=armn}]|[\\p{scx=armn}][og]+$|"
             "[\\p{scx=armn}][og]+[\\p{scx=armn}]|"
-            "[\\p{sc=cans}].*[a-z]|[a-z].*[\\p{sc=cans}]",
+            "[\\p{sc=cans}].*[a-z]|[a-z].*[\\p{sc=cans}]|"
+            "[^\\p{scx=hebr}]\\u05b4|"
+            "[ijl\\u0131]\\u0307",
             -1, US_INV),
         0, status);
     tls_index.Set(dangerous_pattern);
