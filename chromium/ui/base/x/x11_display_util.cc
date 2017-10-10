@@ -163,10 +163,12 @@ bool IsRandRAvailable() {
 
 // Get the EDID data from the |output| and stores to |edid|.
 void GetEDIDProperty(XID output, std::vector<uint8_t>* edid) {
-  if (!IsRandRAvailable())
+  Display* display = gfx::GetXDisplay();
+  if (!display)
     return;
 
-  Display* display = gfx::GetXDisplay();
+  if (!IsRandRAvailable())
+    return;
 
   Atom edid_property = gfx::GetAtom(RR_PROPERTY_RANDR_EDID);
 

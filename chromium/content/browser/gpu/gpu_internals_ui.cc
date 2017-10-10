@@ -251,9 +251,9 @@ std::unique_ptr<base::ListValue> BasicGpuInfoAsListValue(
   basic_info->Append(NewDescriptionValuePair("Window system binding extensions",
                                              gpu_info.gl_ws_extensions));
 #if defined(USE_X11)
-  basic_info->Append(
-      NewDescriptionValuePair("Window manager", ui::GuessWindowManagerName()));
-  {
+  if (gfx::GetXDisplay()) {
+    basic_info->Append(
+        NewDescriptionValuePair("Window manager", ui::GuessWindowManagerName()));
     std::unique_ptr<base::Environment> env(base::Environment::Create());
     std::string value;
     const char kXDGCurrentDesktop[] = "XDG_CURRENT_DESKTOP";

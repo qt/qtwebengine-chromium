@@ -275,9 +275,11 @@ int GpuMain(const MainFunctionParams& parameters) {
 
     // We need a UI loop so that we can grab the Expose events. See GLSurfaceGLX
     // and https://crbug.com/326995.
+#if !defined(TOOLKIT_QT)
     ui::SetDefaultX11ErrorHandlers();
     if (!gfx::GetXDisplay())
       return RESULT_CODE_GPU_DEAD_ON_ARRIVAL;
+#endif
     main_thread_task_executor =
         std::make_unique<base::SingleThreadTaskExecutor>(
             base::MessagePumpType::UI);

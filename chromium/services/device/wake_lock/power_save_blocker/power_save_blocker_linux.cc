@@ -143,6 +143,9 @@ bool X11ScreenSaverAvailable() {
   int major;
   int minor;
 
+  if (!display)
+    return false;
+
   if (!XScreenSaverQueryExtension(display, &dummy, &dummy))
     return false;
 

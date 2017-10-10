@@ -453,6 +453,8 @@ class GpuDataManagerVisualProxy : public GpuDataManagerObserver {
 
  private:
   void OnUpdate() {
+    if (!gfx::GetXDisplay())
+      return;
     gpu::GPUInfo gpu_info = gpu_data_manager_->GetGPUInfo();
     gpu::GpuExtraInfo gpu_extra_info = gpu_data_manager_->GetGpuExtraInfo();
     if (!ui::XVisualManager::GetInstance()->OnGPUInfoChanged(
@@ -615,7 +617,7 @@ int BrowserMainLoop::EarlyInitialization() {
   DCHECK(SandboxHostLinux::GetInstance()->IsInitialized());
 #endif
 
-#if defined(USE_X11)
+#if defined(USE_X11) && !defined(TOOLKIT_QT)
   if (UsingInProcessGpu()) {
     if (!gfx::InitializeThreadedX11()) {
       LOG(ERROR) << "Failed to put Xlib into threaded mode.";
@@ -1467,7 +1469,7 @@ bool BrowserMainLoop::InitializeToolkit() {
 
 #if defined(USE_AURA)
 
-#if defined(USE_X11)
+#if defined(USE_X11) && !defined(TOOLKIT_QT)
   if (!parsed_command_line_.HasSwitch(switches::kHeadless) &&
       !gfx::GetXDisplay()) {
     LOG(ERROR) << "Unable to open X display.";
