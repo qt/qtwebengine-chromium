@@ -208,7 +208,7 @@ void X11EventSourceLibevent::OnFileCanWriteWithoutBlocking(int fd) {
   NOTREACHED();
 }
 
-#if defined(USE_X11)
+#if defined(USE_X11) && !defined(TOOLKIT_QT)
 std::unique_ptr<PlatformEventSource> PlatformEventSource::CreateDefault() {
   return base::MakeUnique<X11EventSourceLibevent>(gfx::GetXDisplay());
 }

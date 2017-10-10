@@ -22,7 +22,7 @@ ICCProfile ICCProfile::FromBestMonitor() {
     return GetForcedProfile();
 
   ICCProfile icc_profile;
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless) || !GetXDisplay())
     return icc_profile;
   Atom property = XInternAtom(GetXDisplay(), "_ICC_PROFILE", true);
   if (property != None) {
