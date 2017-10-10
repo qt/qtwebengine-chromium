@@ -156,6 +156,9 @@ bool SupportsEWMH() {
 
 bool GetWindowManagerName(std::string* wm_name) {
   DCHECK(wm_name);
+  if (!gfx::GetXDisplay())
+    return false;
+
   if (!SupportsEWMH())
     return false;
 
