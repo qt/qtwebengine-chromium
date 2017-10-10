@@ -538,8 +538,12 @@ void ImageCapture::SetMediaTrackConstraints(
 
   MediaTrackConstraints resolver_constraints;
   resolver_constraints.setAdvanced(constraints_vector);
-  auto resolver_cb = WTF::Bind(&ImageCapture::ResolveWithMediaTrackConstraints,
-                               WrapPersistent(this), resolver_constraints);
+
+  // An IDLDictionaryBase cannot safely be bound into a callback so the
+  // ScriptValue is created ahead of time. See https://crbug.com/759457.
+  auto resolver_cb = WTF::Bind(
+      &ImageCapture::ResolveWithMediaTrackConstraints, WrapPersistent(this),
+      ScriptValue::From(resolver->GetScriptState(), resolver_constraints));
 
   service_->SetOptions(
       stream_track_->Component()->Source()->Id(), std::move(settings),
@@ -845,7 +849,7 @@ void ImageCapture::ResolveWithPhotoCapabilities(
 }
 
 void ImageCapture::ResolveWithMediaTrackConstraints(
-    MediaTrackConstraints constraints,
+    ScriptValue constraints,
     ScriptPromiseResolver* resolver) {
   DCHECK(resolver);
   resolver->Resolve(constraints);
