@@ -247,9 +247,11 @@ int GpuMain(const MainFunctionParams& parameters) {
 
     // We need a UI loop so that we can grab the Expose events. See GLSurfaceGLX
     // and https://crbug.com/326995.
+#if !defined(TOOLKIT_QT)
     ui::SetDefaultX11ErrorHandlers();
     if (!gfx::GetXDisplay())
       return RESULT_CODE_GPU_DEAD_ON_ARRIVAL;
+#endif
     main_message_loop.reset(new base::MessageLoop(base::MessageLoop::TYPE_UI));
     event_source = ui::PlatformEventSource::CreateDefault();
 #elif defined(USE_OZONE)

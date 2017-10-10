@@ -26,10 +26,12 @@ bool IsRandRAvailable() {
 // Returns true if EDID property is successfully obtained. Otherwise returns
 // false and does not touch |edid|.
 bool GetEDIDProperty(XID output, std::vector<uint8_t>* edid) {
-  if (!IsRandRAvailable())
+  Display* display = gfx::GetXDisplay();
+  if (!display)
     return false;
 
-  Display* display = gfx::GetXDisplay();
+  if (!IsRandRAvailable())
+    return false;
 
   Atom edid_property = gfx::GetAtom(RR_PROPERTY_RANDR_EDID);
 

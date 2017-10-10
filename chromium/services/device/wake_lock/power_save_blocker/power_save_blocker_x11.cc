@@ -436,7 +436,7 @@ bool PowerSaveBlocker::Delegate::DPMSEnabled() {
   XDisplay* display = gfx::GetXDisplay();
   BOOL enabled = false;
   int dummy;
-  if (DPMSQueryExtension(display, &dummy, &dummy) && DPMSCapable(display)) {
+  if (display && DPMSQueryExtension(display, &dummy, &dummy) && DPMSCapable(display)) {
     CARD16 state;
     DPMSInfo(display, &state, &enabled);
   }
@@ -453,6 +453,9 @@ bool PowerSaveBlocker::Delegate::XSSAvailable() {
   int dummy;
   int major;
   int minor;
+
+  if (!display)
+    return false;
 
   if (!XScreenSaverQueryExtension(display, &dummy, &dummy))
     return false;
