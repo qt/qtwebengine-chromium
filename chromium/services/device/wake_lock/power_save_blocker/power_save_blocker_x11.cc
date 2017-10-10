@@ -429,6 +429,9 @@ bool PowerSaveBlocker::Delegate::XSSAvailable() {
   int major;
   int minor;
 
+  if (!display)
+    return false;
+
   if (!XScreenSaverQueryExtension(display, &dummy, &dummy))
     return false;
 
