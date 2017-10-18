@@ -52,7 +52,7 @@ void InProcessGpuThread::Init() {
   ui::OzonePlatform::InitializeForGPU(params);
 #endif
 
-#if defined(TOOLKIT_QT)
+#if defined(TOOLKIT_QT) && defined(OS_LINUX)
   content::GpuDataManagerImpl* gpu_data_manager = content::GpuDataManagerImpl::GetInstance();
   gpu::GPUInfo gpu_info = gpu_data_manager->GetGPUInfo();
 #else
