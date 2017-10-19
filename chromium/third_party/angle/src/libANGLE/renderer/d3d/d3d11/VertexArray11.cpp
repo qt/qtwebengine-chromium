@@ -10,7 +10,9 @@
 #include "libANGLE/renderer/d3d/d3d11/VertexArray11.h"
 
 #include "common/bitset_utils.h"
+#include "libANGLE/Context.h"
 #include "libANGLE/renderer/d3d/d3d11/Buffer11.h"
+#include "libANGLE/renderer/d3d/d3d11/Context11.h"
 
 using namespace angle;
 
@@ -29,34 +31,35 @@ VertexArray11::VertexArray11(const gl::VertexArrayState &data)
     }
 }
 
-VertexArray11::~VertexArray11()
+void VertexArray11::destroy(const gl::Context *context)
 {
     for (auto &buffer : mCurrentBuffers)
     {
         if (buffer.get())
         {
-            buffer.set(nullptr);
+            buffer.set(context, nullptr);
         }
     }
 }
 
-void VertexArray11::syncState(ContextImpl *contextImpl, const gl::VertexArray::DirtyBits &dirtyBits)
+void VertexArray11::syncState(const gl::Context *context,
+                              const gl::VertexArray::DirtyBits &dirtyBits)
 {
     for (auto dirtyBit : dirtyBits)
     {
         if (dirtyBit == gl::VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER)
             continue;
 
-        size_t index = gl::VertexArray::GetAttribIndex(dirtyBit);
+        size_t index = gl::VertexArray::GetVertexIndexFromDirtyBit(dirtyBit);
         // TODO(jiawei.shao@intel.com): Vertex Attrib Bindings
         ASSERT(index == mData.getBindingIndexFromAttribIndex(index));
         mAttribsToUpdate.set(index);
     }
 }
 
-void VertexArray11::flushAttribUpdates(const gl::State &state)
+void VertexArray11::flushAttribUpdates(const gl::Context *context)
 {
-    const gl::Program *program  = state.getProgram();
+    const gl::Program *program  = context->getGLState().getProgram();
     const auto &activeLocations = program->getActiveAttribLocationsMask();
 
     if (mAttribsToUpdate.any())
@@ -67,12 +70,12 @@ void VertexArray11::flushAttribUpdates(const gl::State &state)
         for (auto toUpdateIndex : activeToUpdate)
         {
             mAttribsToUpdate.reset(toUpdateIndex);
-            updateVertexAttribStorage(toUpdateIndex);
+            updateVertexAttribStorage(context, toUpdateIndex);
         }
     }
 }
 
-void VertexArray11::updateVertexAttribStorage(size_t attribIndex)
+void VertexArray11::updateVertexAttribStorage(const gl::Context *context, size_t attribIndex)
 {
     const auto &attrib = mData.getVertexAttribute(attribIndex);
     const auto &binding = mData.getBindingFromAttribIndex(attribIndex);
@@ -104,7 +107,7 @@ void VertexArray11::updateVertexAttribStorage(size_t attribIndex)
     }
 
     gl::Buffer *oldBufferGL = mCurrentBuffers[attribIndex].get();
-    gl::Buffer *newBufferGL = binding.buffer.get();
+    gl::Buffer *newBufferGL = binding.getBuffer().get();
     Buffer11 *oldBuffer11   = oldBufferGL ? GetImplAs<Buffer11>(oldBufferGL) : nullptr;
     Buffer11 *newBuffer11   = newBufferGL ? GetImplAs<Buffer11>(newBufferGL) : nullptr;
 
@@ -129,25 +132,26 @@ void VertexArray11::updateVertexAttribStorage(size_t attribIndex)
             }
         }
         mOnBufferDataDirty[attribIndex].bind(newChannel);
-        mCurrentBuffers[attribIndex] = binding.buffer;
+        mCurrentBuffers[attribIndex].set(context, binding.getBuffer().get());
     }
 }
 
-bool VertexArray11::hasDynamicAttrib(const gl::State &state)
+bool VertexArray11::hasDynamicAttrib(const gl::Context *context)
 {
-    flushAttribUpdates(state);
+    flushAttribUpdates(context);
     return mDynamicAttribsMask.any();
 }
 
-gl::Error VertexArray11::updateDirtyAndDynamicAttribs(VertexDataManager *vertexDataManager,
-                                                      const gl::State &state,
+gl::Error VertexArray11::updateDirtyAndDynamicAttribs(const gl::Context *context,
+                                                      VertexDataManager *vertexDataManager,
                                                       GLint start,
                                                       GLsizei count,
                                                       GLsizei instances)
 {
-    flushAttribUpdates(state);
+    flushAttribUpdates(context);
 
-    const gl::Program *program  = state.getProgram();
+    const auto &glState         = context->getGLState();
+    const gl::Program *program  = glState.getProgram();
     const auto &activeLocations = program->getActiveAttribLocationsMask();
     const auto &attribs         = mData.getVertexAttributes();
     const auto &bindings        = mData.getVertexBindings();
@@ -162,13 +166,13 @@ gl::Error VertexArray11::updateDirtyAndDynamicAttribs(VertexDataManager *vertexD
             mAttribsToTranslate.reset(dirtyAttribIndex);
 
             auto *translatedAttrib = &mTranslatedAttribs[dirtyAttribIndex];
-            const auto &currentValue = state.getVertexAttribCurrentValue(dirtyAttribIndex);
+            const auto &currentValue = glState.getVertexAttribCurrentValue(dirtyAttribIndex);
 
             // Record basic attrib info
             translatedAttrib->attribute = &attribs[dirtyAttribIndex];
             translatedAttrib->binding   = &bindings[translatedAttrib->attribute->bindingIndex];
             translatedAttrib->currentValueType = currentValue.Type;
-            translatedAttrib->divisor          = translatedAttrib->binding->divisor;
+            translatedAttrib->divisor          = translatedAttrib->binding->getDivisor();
 
             switch (mAttributeStorageTypes[dirtyAttribIndex])
             {
@@ -197,13 +201,13 @@ gl::Error VertexArray11::updateDirtyAndDynamicAttribs(VertexDataManager *vertexD
         for (auto dynamicAttribIndex : activeDynamicAttribs)
         {
             auto *dynamicAttrib = &mTranslatedAttribs[dynamicAttribIndex];
-            const auto &currentValue = state.getVertexAttribCurrentValue(dynamicAttribIndex);
+            const auto &currentValue = glState.getVertexAttribCurrentValue(dynamicAttribIndex);
 
             // Record basic attrib info
             dynamicAttrib->attribute        = &attribs[dynamicAttribIndex];
             dynamicAttrib->binding          = &bindings[dynamicAttrib->attribute->bindingIndex];
             dynamicAttrib->currentValueType = currentValue.Type;
-            dynamicAttrib->divisor          = dynamicAttrib->binding->divisor;
+            dynamicAttrib->divisor          = dynamicAttrib->binding->getDivisor();
         }
 
         return vertexDataManager->storeDynamicAttribs(&mTranslatedAttribs, activeDynamicAttribs,

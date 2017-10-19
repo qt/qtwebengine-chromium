@@ -12,15 +12,15 @@
 
 #include <algorithm>
 
-#include "webrtc/base/bind.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/stringencode.h"
-#include "webrtc/base/stringutils.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/media/base/device.h"
 #include "webrtc/media/base/rtpdataengine.h"
 #include "webrtc/pc/srtpfilter.h"
+#include "webrtc/rtc_base/bind.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/stringencode.h"
+#include "webrtc/rtc_base/stringutils.h"
+#include "webrtc/rtc_base/trace_event.h"
 
 namespace cricket {
 
@@ -53,7 +53,6 @@ void ChannelManager::Construct(std::unique_ptr<MediaEngineInterface> me,
   network_thread_ = network_thread;
   capturing_ = false;
   enable_rtx_ = false;
-  crypto_options_ = rtc::CryptoOptions::NoGcm();
 }
 
 ChannelManager::~ChannelManager() {
@@ -89,21 +88,33 @@ bool ChannelManager::SetVideoRtxEnabled(bool enable) {
 
 void ChannelManager::GetSupportedAudioSendCodecs(
     std::vector<AudioCodec>* codecs) const {
+  if (!media_engine_) {
+    return;
+  }
   *codecs = media_engine_->audio_send_codecs();
 }
 
 void ChannelManager::GetSupportedAudioReceiveCodecs(
     std::vector<AudioCodec>* codecs) const {
+  if (!media_engine_) {
+    return;
+  }
   *codecs = media_engine_->audio_recv_codecs();
 }
 
 void ChannelManager::GetSupportedAudioRtpHeaderExtensions(
     RtpHeaderExtensions* ext) const {
+  if (!media_engine_) {
+    return;
+  }
   *ext = media_engine_->GetAudioCapabilities().header_extensions;
 }
 
 void ChannelManager::GetSupportedVideoCodecs(
     std::vector<VideoCodec>* codecs) const {
+  if (!media_engine_) {
+    return;
+  }
   codecs->clear();
 
   std::vector<VideoCodec> video_codecs = media_engine_->video_codecs();
@@ -118,11 +129,17 @@ void ChannelManager::GetSupportedVideoCodecs(
 
 void ChannelManager::GetSupportedVideoRtpHeaderExtensions(
     RtpHeaderExtensions* ext) const {
+  if (!media_engine_) {
+    return;
+  }
   *ext = media_engine_->GetVideoCapabilities().header_extensions;
 }
 
 void ChannelManager::GetSupportedDataCodecs(
     std::vector<DataCodec>* codecs) const {
+  if (!data_media_engine_) {
+    return;
+  }
   *codecs = data_media_engine_->data_codecs();
 }
 
@@ -148,7 +165,10 @@ bool ChannelManager::Init() {
 
 bool ChannelManager::InitMediaEngine_w() {
   RTC_DCHECK(worker_thread_ == rtc::Thread::Current());
-  return media_engine_->Init();
+  if (media_engine_) {
+    return media_engine_->Init();
+  }
+  return true;
 }
 
 void ChannelManager::Terminate() {
@@ -223,6 +243,9 @@ VoiceChannel* ChannelManager::CreateVoiceChannel_w(
   RTC_DCHECK(initialized_);
   RTC_DCHECK(worker_thread_ == rtc::Thread::Current());
   RTC_DCHECK(nullptr != call);
+  if (!media_engine_) {
+    return nullptr;
+  }
 
   VoiceMediaChannel* media_channel = media_engine_->CreateChannel(
       call, media_config, options);

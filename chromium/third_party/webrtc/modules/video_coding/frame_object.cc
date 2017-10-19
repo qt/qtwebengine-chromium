@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/base/checks.h"
-#include "webrtc/common_video/h264/h264_common.h"
 #include "webrtc/modules/video_coding/frame_object.h"
+#include "webrtc/common_video/h264/h264_common.h"
 #include "webrtc/modules/video_coding/packet_buffer.h"
+#include "webrtc/rtc_base/checks.h"
 
 namespace webrtc {
 namespace video_coding {
@@ -111,6 +111,34 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
   rotation_ = last_packet->video_header.rotation;
   _rotation_set = true;
   content_type_ = last_packet->video_header.content_type;
+  if (last_packet->video_header.video_timing.is_timing_frame) {
+    // ntp_time_ms_ may be -1 if not estimated yet. This is not a problem,
+    // as this will be dealt with at the time of reporting.
+    timing_.is_timing_frame = true;
+    timing_.encode_start_ms =
+        ntp_time_ms_ +
+        last_packet->video_header.video_timing.encode_start_delta_ms;
+    timing_.encode_finish_ms =
+        ntp_time_ms_ +
+        last_packet->video_header.video_timing.encode_finish_delta_ms;
+    timing_.packetization_finish_ms =
+        ntp_time_ms_ +
+        last_packet->video_header.video_timing.packetization_finish_delta_ms;
+    timing_.pacer_exit_ms =
+        ntp_time_ms_ +
+        last_packet->video_header.video_timing.pacer_exit_delta_ms;
+    timing_.network_timestamp_ms =
+        ntp_time_ms_ +
+        last_packet->video_header.video_timing.network_timstamp_delta_ms;
+    timing_.network2_timestamp_ms =
+        ntp_time_ms_ +
+        last_packet->video_header.video_timing.network2_timstamp_delta_ms;
+
+    timing_.receive_start_ms = first_packet->receive_time_ms;
+    timing_.receive_finish_ms = last_packet->receive_time_ms;
+  } else {
+    timing_.is_timing_frame = false;
+  }
 }
 
 RtpFrameObject::~RtpFrameObject() {

@@ -13,17 +13,18 @@
 #include <cmath>
 #include <utility>
 
-#include "webrtc/base/ignore_wundef.h"
-#include "webrtc/base/timeutils.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/bitrate_controller.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/channel_controller.h"
+#include "webrtc/modules/audio_coding/audio_network_adaptor/debug_dump_writer.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/dtx_controller.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/fec_controller_plr_based.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/fec_controller_rplr_based.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/frame_length_controller.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/util/threshold_curve.h"
+#include "webrtc/rtc_base/ignore_wundef.h"
+#include "webrtc/rtc_base/timeutils.h"
 
-#ifdef WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP
+#if WEBRTC_ENABLE_PROTOBUF
 RTC_PUSH_IGNORING_WUNDEF()
 #ifdef WEBRTC_ANDROID_PLATFORM_BUILD
 #include "external/webrtc/webrtc/modules/audio_coding/audio_network_adaptor/config.pb.h"
@@ -37,7 +38,7 @@ namespace webrtc {
 
 namespace {
 
-#ifdef WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP
+#if WEBRTC_ENABLE_PROTOBUF
 
 std::unique_ptr<FecControllerPlrBased> CreateFecControllerPlrBased(
     const audio_network_adaptor::config::FecController& config,
@@ -180,7 +181,7 @@ std::unique_ptr<BitrateController> CreateBitrateController(
   return std::unique_ptr<BitrateController>(new BitrateController(
       BitrateController::Config(initial_bitrate_bps, initial_frame_length_ms)));
 }
-#endif  // WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP
+#endif  // WEBRTC_ENABLE_PROTOBUF
 
 }  // namespace
 
@@ -201,12 +202,32 @@ std::unique_ptr<ControllerManager> ControllerManagerImpl::Create(
     int initial_bitrate_bps,
     bool initial_fec_enabled,
     bool initial_dtx_enabled) {
-#ifdef WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP
+  return Create(config_string, num_encoder_channels, encoder_frame_lengths_ms,
+                min_encoder_bitrate_bps, intial_channels_to_encode,
+                initial_frame_length_ms, initial_bitrate_bps,
+                initial_fec_enabled, initial_dtx_enabled, nullptr);
+}
+
+std::unique_ptr<ControllerManager> ControllerManagerImpl::Create(
+    const ProtoString& config_string,
+    size_t num_encoder_channels,
+    rtc::ArrayView<const int> encoder_frame_lengths_ms,
+    int min_encoder_bitrate_bps,
+    size_t intial_channels_to_encode,
+    int initial_frame_length_ms,
+    int initial_bitrate_bps,
+    bool initial_fec_enabled,
+    bool initial_dtx_enabled,
+    DebugDumpWriter* debug_dump_writer) {
+#if WEBRTC_ENABLE_PROTOBUF
   audio_network_adaptor::config::ControllerManager controller_manager_config;
-  controller_manager_config.ParseFromString(config_string);
+  RTC_CHECK(controller_manager_config.ParseFromString(config_string));
+  if (debug_dump_writer)
+    debug_dump_writer->DumpControllerManagerConfig(controller_manager_config,
+                                                   rtc::TimeMillis());
 
   std::vector<std::unique_ptr<Controller>> controllers;
-  std::map<const Controller*, std::pair<int, float>> chracteristic_points;
+  std::map<const Controller*, std::pair<int, float>> scoring_points;
 
   for (int i = 0; i < controller_manager_config.controllers_size(); ++i) {
     auto& controller_config = controller_manager_config.controllers(i);
@@ -243,27 +264,34 @@ std::unique_ptr<ControllerManager> ControllerManagerImpl::Create(
         RTC_NOTREACHED();
     }
     if (controller_config.has_scoring_point()) {
-      auto& characteristic_point = controller_config.scoring_point();
-      RTC_CHECK(characteristic_point.has_uplink_bandwidth_bps());
-      RTC_CHECK(characteristic_point.has_uplink_packet_loss_fraction());
-      chracteristic_points[controller.get()] = std::make_pair<int, float>(
-          characteristic_point.uplink_bandwidth_bps(),
-          characteristic_point.uplink_packet_loss_fraction());
+      auto& scoring_point = controller_config.scoring_point();
+      RTC_CHECK(scoring_point.has_uplink_bandwidth_bps());
+      RTC_CHECK(scoring_point.has_uplink_packet_loss_fraction());
+      scoring_points[controller.get()] = std::make_pair<int, float>(
+          scoring_point.uplink_bandwidth_bps(),
+          scoring_point.uplink_packet_loss_fraction());
     }
     controllers.push_back(std::move(controller));
   }
 
-  RTC_CHECK(controller_manager_config.has_min_reordering_time_ms());
-  RTC_CHECK(controller_manager_config.has_min_reordering_squared_distance());
-  return std::unique_ptr<ControllerManagerImpl>(new ControllerManagerImpl(
-      ControllerManagerImpl::Config(
-          controller_manager_config.min_reordering_time_ms(),
-          controller_manager_config.min_reordering_squared_distance()),
-      std::move(controllers), chracteristic_points));
+  if (scoring_points.size() == 0) {
+    return std::unique_ptr<ControllerManagerImpl>(new ControllerManagerImpl(
+        ControllerManagerImpl::Config(0, 0), std::move(controllers),
+        scoring_points));
+  } else {
+    RTC_CHECK(controller_manager_config.has_min_reordering_time_ms());
+    RTC_CHECK(controller_manager_config.has_min_reordering_squared_distance());
+    return std::unique_ptr<ControllerManagerImpl>(new ControllerManagerImpl(
+        ControllerManagerImpl::Config(
+            controller_manager_config.min_reordering_time_ms(),
+            controller_manager_config.min_reordering_squared_distance()),
+        std::move(controllers), scoring_points));
+  }
+
 #else
   RTC_NOTREACHED();
   return nullptr;
-#endif  // WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP
+#endif  // WEBRTC_ENABLE_PROTOBUF
 }
 
 ControllerManagerImpl::ControllerManagerImpl(const Config& config)
@@ -275,8 +303,7 @@ ControllerManagerImpl::ControllerManagerImpl(const Config& config)
 ControllerManagerImpl::ControllerManagerImpl(
     const Config& config,
     std::vector<std::unique_ptr<Controller>>&& controllers,
-    const std::map<const Controller*, std::pair<int, float>>&
-        chracteristic_points)
+    const std::map<const Controller*, std::pair<int, float>>& scoring_points)
     : config_(config),
       controllers_(std::move(controllers)),
       last_reordering_time_ms_(rtc::Optional<int64_t>()),
@@ -284,7 +311,7 @@ ControllerManagerImpl::ControllerManagerImpl(
   for (auto& controller : controllers_)
     default_sorted_controllers_.push_back(controller.get());
   sorted_controllers_ = default_sorted_controllers_;
-  for (auto& controller_point : chracteristic_points) {
+  for (auto& controller_point : scoring_points) {
     controller_scoring_points_.insert(std::make_pair(
         controller_point.first, ScoringPoint(controller_point.second.first,
                                              controller_point.second.second)));
@@ -295,11 +322,13 @@ ControllerManagerImpl::~ControllerManagerImpl() = default;
 
 std::vector<Controller*> ControllerManagerImpl::GetSortedControllers(
     const Controller::NetworkMetrics& metrics) {
-  int64_t now_ms = rtc::TimeMillis();
+  if (controller_scoring_points_.size() == 0)
+    return default_sorted_controllers_;
 
   if (!metrics.uplink_bandwidth_bps || !metrics.uplink_packet_loss_fraction)
     return sorted_controllers_;
 
+  const int64_t now_ms = rtc::TimeMillis();
   if (last_reordering_time_ms_ &&
       now_ms - *last_reordering_time_ms_ < config_.min_reordering_time_ms)
     return sorted_controllers_;
@@ -313,7 +342,7 @@ std::vector<Controller*> ControllerManagerImpl::GetSortedControllers(
     return sorted_controllers_;
 
   // Sort controllers according to the distances of |scoring_point| to the
-  // characteristic scoring points of controllers.
+  // scoring points of controllers.
   //
   // A controller that does not associate with any scoring point
   // are treated as if

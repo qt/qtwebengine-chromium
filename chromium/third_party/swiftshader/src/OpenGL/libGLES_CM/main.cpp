@@ -18,7 +18,7 @@
 
 #include "libGLES_CM.hpp"
 #include "Framebuffer.h"
-#include "libEGL/EGLSurface.h"
+#include "common/Surface.hpp"
 #include "Common/Thread.hpp"
 #include "Common/SharedLibrary.hpp"
 #include "common/debug.h"
@@ -93,14 +93,14 @@ es1::Context *getContext()
 		return static_cast<es1::Context*>(context);
 	}
 
-	return 0;
+	return nullptr;
 }
 
 Device *getDevice()
 {
 	Context *context = getContext();
 
-	return context ? context->getDevice() : 0;
+	return context ? context->getDevice() : nullptr;
 }
 
 // Records an error code
@@ -332,8 +332,8 @@ void DrawTexfvOES(const GLfloat *coords);
 
 egl::Context *es1CreateContext(egl::Display *display, const egl::Context *shareContext, const egl::Config *config);
 extern "C" __eglMustCastToProperFunctionPointerType es1GetProcAddress(const char *procname);
-egl::Image *createBackBuffer(int width, int height, const egl::Config *config);
-egl::Image *createDepthStencil(unsigned int width, unsigned int height, sw::Format format, int multiSampleDepth, bool discard);
+egl::Image *createBackBuffer(int width, int height, sw::Format format, int multiSampleDepth);
+egl::Image *createDepthStencil(int width, int height, sw::Format format, int multiSampleDepth);
 sw::FrameBuffer *createFrameBuffer(void *nativeDisplay, EGLNativeWindowType window, int width, int height);
 
 extern "C"

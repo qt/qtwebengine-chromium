@@ -16,7 +16,7 @@
 
 #include "main.h"
 #include "Display.h"
-#include "EGLSurface.h"
+#include "Surface.hpp"
 #include "Texture.hpp"
 #include "Context.hpp"
 #include "common/Image.hpp"
@@ -171,15 +171,16 @@ const char *QueryString(EGLDisplay dpy, EGLint name)
 {
 	TRACE("(EGLDisplay dpy = %p, EGLint name = %d)", dpy, name);
 
-	#if defined(__linux__) && !defined(__ANDROID__)
-		if(dpy == EGL_NO_DISPLAY && name == EGL_EXTENSIONS)
-		{
-			return success("EGL_KHR_platform_gbm "
-			               "EGL_KHR_platform_x11 "
-			               "EGL_EXT_client_extensions "
-			               "EGL_EXT_platform_base");
-		}
-	#endif
+	if(dpy == EGL_NO_DISPLAY && name == EGL_EXTENSIONS)
+	{
+		return success(
+#if defined(__linux__) && !defined(__ANDROID__)
+			"EGL_KHR_platform_gbm "
+			"EGL_KHR_platform_x11 "
+#endif
+			"EGL_EXT_client_extensions "
+			"EGL_EXT_platform_base");
+	}
 
 	egl::Display *display = egl::Display::get(dpy);
 
@@ -809,7 +810,6 @@ EGLBoolean MakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLCont
 		UNIMPLEMENTED();   // FIXME
 	}
 
-	egl::setCurrentDisplay(dpy);
 	egl::setCurrentDrawSurface(drawSurface);
 	egl::setCurrentReadSurface(readSurface);
 	egl::setCurrentContext(context);
@@ -855,7 +855,21 @@ EGLDisplay GetCurrentDisplay(void)
 {
 	TRACE("()");
 
-	return success(egl::getCurrentDisplay());
+	egl::Context *context = egl::getCurrentContext();
+
+	if(!context)
+	{
+		return success(EGL_NO_DISPLAY);
+	}
+
+	egl::Display *display = context->getDisplay();
+
+	if(!display)
+	{
+		return error(EGL_BAD_ACCESS, EGL_NO_DISPLAY);
+	}
+
+	return success(display->getEGLDisplay());
 }
 
 EGLBoolean QueryContext(EGLDisplay dpy, EGLContext ctx, EGLint attribute, EGLint *value)

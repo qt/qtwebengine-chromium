@@ -238,8 +238,8 @@ class CXFA_FMCallExpression : public CXFA_FMUnaryExpression {
       bool bIsSomMethod);
   ~CXFA_FMCallExpression() override;
 
-  bool IsBuildInFunc(CFX_WideTextBuf* funcName);
-  uint32_t IsMethodWithObjParam(const CFX_WideStringC& methodName);
+  bool IsBuiltInFunc(CFX_WideTextBuf* funcName);
+  uint32_t IsMethodWithObjParam(const CFX_WideString& methodName);
   bool ToJavaScript(CFX_WideTextBuf& javascript) override;
 
  private:

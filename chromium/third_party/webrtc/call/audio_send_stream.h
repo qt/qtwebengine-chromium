@@ -18,8 +18,8 @@
 #include "webrtc/api/audio_codecs/audio_encoder_factory.h"
 #include "webrtc/api/audio_codecs/audio_format.h"
 #include "webrtc/api/call/transport.h"
-#include "webrtc/base/optional.h"
 #include "webrtc/config.h"
+#include "webrtc/rtc_base/optional.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -47,6 +47,10 @@ class AudioSendStream {
     int32_t jitter_ms = -1;
     int64_t rtt_ms = -1;
     int32_t audio_level = -1;
+    // See description of "totalAudioEnergy" in the WebRTC stats spec:
+    // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalaudioenergy
+    double total_input_energy = 0.0;
+    double total_input_duration = 0.0;
     float aec_quality_min = -1.0f;
     int32_t echo_delay_median_ms = -1;
     int32_t echo_delay_std_ms = -1;

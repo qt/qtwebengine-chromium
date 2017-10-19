@@ -16,30 +16,34 @@
 #define egl_Context_hpp
 
 #include "common/Object.hpp"
+#include "Renderer/Surface.hpp"
 
 #include <EGL/egl.h>
 #include <GLES/gl.h>
 
+namespace gl { class Surface; }
+
 namespace egl
 {
 class Display;
-class Surface;
 class Image;
 
 class [[clang::lto_visibility_public]] Context : public gl::Object
 {
 public:
-	Context(egl::Display *display) : display(display) {}
-
-	virtual void makeCurrent(Surface *surface) = 0;
-	virtual void bindTexImage(Surface *surface) = 0;
+	virtual void makeCurrent(gl::Surface *surface) = 0;
+	virtual void bindTexImage(gl::Surface *surface) = 0;
 	virtual EGLenum validateSharedImage(EGLenum target, GLuint name, GLuint textureLevel) = 0;
 	virtual Image *createSharedImage(EGLenum target, GLuint name, GLuint textureLevel) = 0;
 	virtual EGLint getClientVersion() const = 0;
 	virtual EGLint getConfigID() const = 0;
 	virtual void finish() = 0;
+	virtual void blit(sw::Surface *source, const sw::SliceRect &sRect, sw::Surface *dest, const sw::SliceRect &dRect) = 0;
+
+	Display *getDisplay() const { return display; }
 
 protected:
+	Context(egl::Display *display) : display(display) {}
 	virtual ~Context() {};
 
 	egl::Display *const display;

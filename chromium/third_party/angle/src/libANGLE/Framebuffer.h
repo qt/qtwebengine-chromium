@@ -23,7 +23,6 @@
 
 namespace rx
 {
-class ContextImpl;
 class GLImplFactory;
 class FramebufferImpl;
 class RenderbufferImpl;
@@ -72,6 +71,7 @@ class FramebufferState final : angle::NonCopyable
     const FramebufferAttachment *getDepthStencilAttachment() const;
 
     const std::vector<GLenum> &getDrawBufferStates() const { return mDrawBufferStates; }
+    DrawBufferMask getEnabledDrawBuffers() const { return mEnabledDrawBuffers; }
     GLenum getReadBufferState() const { return mReadBufferState; }
     const std::vector<FramebufferAttachment> &getColorAttachments() const
     {
@@ -89,6 +89,9 @@ class FramebufferState final : angle::NonCopyable
     GLint getDefaultSamples() const { return mDefaultSamples; };
     GLboolean getDefaultFixedSampleLocations() const { return mDefaultFixedSampleLocations; };
 
+    bool hasDepth() const;
+    bool hasStencil() const;
+
   private:
     friend class Framebuffer;
 
@@ -100,7 +103,7 @@ class FramebufferState final : angle::NonCopyable
 
     std::vector<GLenum> mDrawBufferStates;
     GLenum mReadBufferState;
-    angle::BitSet<IMPLEMENTATION_MAX_DRAW_BUFFERS> mEnabledDrawBuffers;
+    DrawBufferMask mEnabledDrawBuffers;
 
     GLint mDefaultWidth;
     GLint mDefaultHeight;
@@ -125,12 +128,12 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     // Constructor to build application-defined framebuffers
     Framebuffer(const Caps &caps, rx::GLImplFactory *factory, GLuint id);
     // Constructor to build default framebuffers for a surface
-    Framebuffer(egl::Surface *surface);
+    Framebuffer(const egl::Display *display, egl::Surface *surface);
     // Constructor to build a fake default framebuffer when surfaceless
     Framebuffer(rx::GLImplFactory *factory);
 
     virtual ~Framebuffer();
-    void destroy(const Context *context);
+    void onDestroy(const Context *context);
     void destroyDefault(const egl::Display *display);
 
     void setLabel(const std::string &label) override;
@@ -145,6 +148,13 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
                        GLenum binding,
                        const ImageIndex &textureIndex,
                        FramebufferAttachmentObject *resource);
+    void setAttachmentMultiviewSideBySide(const Context *context,
+                                          GLenum type,
+                                          GLenum binding,
+                                          const ImageIndex &textureIndex,
+                                          FramebufferAttachmentObject *resource,
+                                          GLsizei numViews,
+                                          const GLint *viewportOffsets);
     void resetAttachment(const Context *context, GLenum binding);
 
     void detachTexture(const Context *context, GLuint texture);
@@ -159,6 +169,7 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     const FramebufferAttachment *getReadColorbuffer() const;
     GLenum getReadColorbufferType() const;
     const FramebufferAttachment *getFirstColorbuffer() const;
+    const FramebufferAttachment *getFirstNonNullAttachment() const;
 
     const FramebufferAttachment *getAttachment(GLenum attachment) const;
 
@@ -167,6 +178,7 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     const std::vector<GLenum> &getDrawBufferStates() const;
     void setDrawBuffers(size_t count, const GLenum *buffers);
     const FramebufferAttachment *getDrawBuffer(size_t drawBuffer) const;
+    GLenum getDrawbufferWriteType(size_t drawBuffer) const;
     bool hasEnabledDrawBuffer() const;
 
     GLenum getReadBufferState() const;
@@ -200,44 +212,50 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     GLenum checkStatus(const ValidationContext *context);
     int getSamples(const ValidationContext *context);
 
+    // For when we don't want to check completeness in getSamples().
+    int getCachedSamples(const Context *context);
+
     // Helper for checkStatus == GL_FRAMEBUFFER_COMPLETE.
     bool complete(const Context *context);
     bool cachedComplete() const;
 
     bool hasValidDepthStencil() const;
 
-    Error discard(size_t count, const GLenum *attachments);
-    Error invalidate(size_t count, const GLenum *attachments);
-    Error invalidateSub(size_t count, const GLenum *attachments, const gl::Rectangle &area);
+    Error discard(const Context *context, size_t count, const GLenum *attachments);
+    Error invalidate(const Context *context, size_t count, const GLenum *attachments);
+    Error invalidateSub(const Context *context,
+                        size_t count,
+                        const GLenum *attachments,
+                        const gl::Rectangle &area);
 
-    Error clear(rx::ContextImpl *context, GLbitfield mask);
-    Error clearBufferfv(rx::ContextImpl *context,
+    Error clear(const gl::Context *context, GLbitfield mask);
+    Error clearBufferfv(const gl::Context *context,
                         GLenum buffer,
                         GLint drawbuffer,
                         const GLfloat *values);
-    Error clearBufferuiv(rx::ContextImpl *context,
+    Error clearBufferuiv(const gl::Context *context,
                          GLenum buffer,
                          GLint drawbuffer,
                          const GLuint *values);
-    Error clearBufferiv(rx::ContextImpl *context,
+    Error clearBufferiv(const gl::Context *context,
                         GLenum buffer,
                         GLint drawbuffer,
                         const GLint *values);
-    Error clearBufferfi(rx::ContextImpl *context,
+    Error clearBufferfi(const gl::Context *context,
                         GLenum buffer,
                         GLint drawbuffer,
                         GLfloat depth,
                         GLint stencil);
 
-    GLenum getImplementationColorReadFormat() const;
-    GLenum getImplementationColorReadType() const;
-    Error readPixels(rx::ContextImpl *context,
+    GLenum getImplementationColorReadFormat(const Context *context) const;
+    GLenum getImplementationColorReadType(const Context *context) const;
+    Error readPixels(const gl::Context *context,
                      const gl::Rectangle &area,
                      GLenum format,
                      GLenum type,
                      void *pixels) const;
 
-    Error blit(rx::ContextImpl *context,
+    Error blit(const gl::Context *context,
                const Rectangle &sourceArea,
                const Rectangle &destArea,
                GLbitfield mask,
@@ -275,24 +293,47 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
 
   private:
     void detachResourceById(const Context *context, GLenum resourceType, GLuint resourceId);
-    void detachMatchingAttachment(FramebufferAttachment *attachment,
+    void detachMatchingAttachment(const Context *context,
+                                  FramebufferAttachment *attachment,
                                   GLenum matchType,
                                   GLuint matchId,
                                   size_t dirtyBit);
     GLenum checkStatusImpl(const Context *context);
-    void commitWebGL1DepthStencilIfConsistent();
-
-    void setAttachmentImpl(GLenum type,
+    void setAttachment(const Context *context,
+                       GLenum type,
+                       GLenum binding,
+                       const ImageIndex &textureIndex,
+                       FramebufferAttachmentObject *resource,
+                       GLsizei numViews,
+                       GLuint baseViewIndex,
+                       GLenum multiviewLayout,
+                       const GLint *viewportOffsets);
+    void commitWebGL1DepthStencilIfConsistent(const Context *context,
+                                              GLsizei numViews,
+                                              GLuint baseViewIndex,
+                                              GLenum multiviewLayout,
+                                              const GLint *viewportOffsets);
+    void setAttachmentImpl(const Context *context,
+                           GLenum type,
                            GLenum binding,
                            const ImageIndex &textureIndex,
-                           FramebufferAttachmentObject *resource);
-    void updateAttachment(FramebufferAttachment *attachment,
+                           FramebufferAttachmentObject *resource,
+                           GLsizei numViews,
+                           GLuint baseViewIndex,
+                           GLenum multiviewLayout,
+                           const GLint *viewportOffsets);
+    void updateAttachment(const Context *context,
+                          FramebufferAttachment *attachment,
                           size_t dirtyBit,
                           OnAttachmentDirtyBinding *onDirtyBinding,
                           GLenum type,
                           GLenum binding,
                           const ImageIndex &textureIndex,
-                          FramebufferAttachmentObject *resource);
+                          FramebufferAttachmentObject *resource,
+                          GLsizei numViews,
+                          GLuint baseViewIndex,
+                          GLenum multiviewLayout,
+                          const GLint *viewportOffsets);
 
     FramebufferState mState;
     rx::FramebufferImpl *mImpl;

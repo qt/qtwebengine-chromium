@@ -13,7 +13,7 @@
 #include <numeric>
 #include <vector>
 
-#include "webrtc/base/checks.h"
+#include "webrtc/rtc_base/checks.h"
 
 namespace webrtc {
 namespace {
@@ -111,7 +111,7 @@ void ResidualEchoEstimator::Estimate(
     const int filter_delay = *aec_state.FilterDelay();
     LinearEstimate(S2_linear, aec_state.Erle(), filter_delay, R2);
     AddEchoReverb(S2_linear, aec_state.SaturatedEcho(), filter_delay,
-                  aec_state.ReverbDecayFactor(), R2);
+                  aec_state.ReverbDecay(), R2);
   } else {
     // Estimate the echo generating signal power.
     std::array<float, kFftLengthBy2Plus1> X2;
@@ -136,13 +136,16 @@ void ResidualEchoEstimator::Estimate(
         X2.begin(), X2.end(), X2_noise_floor_.begin(), X2.begin(),
         [](float a, float b) { return std::max(0.f, a - 10.f * b); });
 
-    NonLinearEstimate(
-        aec_state.HeadsetDetected() ? kHeadsetEchoPathGain : kFixedEchoPathGain,
-        X2, Y2, R2);
+    NonLinearEstimate(aec_state.HeadsetDetected(), X2, Y2, R2);
     AddEchoReverb(*R2, aec_state.SaturatedEcho(),
                   std::min(static_cast<size_t>(kAdaptiveFilterLength),
                            delay.value_or(kAdaptiveFilterLength)),
-                  aec_state.ReverbDecayFactor(), R2);
+                  aec_state.ReverbDecay(), R2);
+  }
+
+  // If the echo is deemed inaudible, set the residual echo to zero.
+  if (aec_state.InaudibleEcho()) {
+    R2->fill(0.f);
   }
 
   // If the echo is saturated, estimate the echo power as the maximum echo power
@@ -179,13 +182,27 @@ void ResidualEchoEstimator::LinearEstimate(
 }
 
 void ResidualEchoEstimator::NonLinearEstimate(
-    float echo_path_gain,
+    bool headset_detected,
     const std::array<float, kFftLengthBy2Plus1>& X2,
     const std::array<float, kFftLengthBy2Plus1>& Y2,
     std::array<float, kFftLengthBy2Plus1>* R2) {
+  // Choose gains.
+  const float echo_path_gain_lf = headset_detected ? kHeadsetEchoPathGain : 100;
+  const float echo_path_gain_mf =
+      headset_detected ? kHeadsetEchoPathGain : 1000;
+  const float echo_path_gain_hf =
+      headset_detected ? kHeadsetEchoPathGain : 5000;
+
   // Compute preliminary residual echo.
-  std::transform(X2.begin(), X2.end(), R2->begin(),
-                 [echo_path_gain](float a) { return a * echo_path_gain; });
+  std::transform(
+      X2.begin(), X2.begin() + 12, R2->begin(),
+      [echo_path_gain_lf](float a) { return a * echo_path_gain_lf; });
+  std::transform(
+      X2.begin() + 12, X2.begin() + 25, R2->begin() + 12,
+      [echo_path_gain_mf](float a) { return a * echo_path_gain_mf; });
+  std::transform(
+      X2.begin() + 25, X2.end(), R2->begin() + 25,
+      [echo_path_gain_hf](float a) { return a * echo_path_gain_hf; });
 
   for (size_t k = 0; k < R2->size(); ++k) {
     // Update hold counter.

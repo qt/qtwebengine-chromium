@@ -119,17 +119,21 @@ class Renderer9 : public RendererD3D
                               DWORD Usage,
                               D3DFORMAT Format,
                               IDirect3DIndexBuffer9 **ppIndexBuffer);
-    gl::Error setSamplerState(gl::SamplerType type,
+    gl::Error setSamplerState(const gl::Context *context,
+                              gl::SamplerType type,
                               int index,
                               gl::Texture *texture,
                               const gl::SamplerState &sampler) override;
-    gl::Error setTexture(gl::SamplerType type, int index, gl::Texture *texture) override;
+    gl::Error setTexture(const gl::Context *context,
+                         gl::SamplerType type,
+                         int index,
+                         gl::Texture *texture) override;
 
     gl::Error setUniformBuffers(const gl::ContextState &data,
                                 const std::vector<GLint> &vertexUniformBuffers,
                                 const std::vector<GLint> &fragmentUniformBuffers) override;
 
-    gl::Error updateState(Context9 *context, GLenum drawMode);
+    gl::Error updateState(const gl::Context *context, GLenum drawMode);
 
     void setScissorRectangle(const gl::Rectangle &scissor, bool enabled);
     void setViewport(const gl::Rectangle &viewport,
@@ -139,8 +143,8 @@ class Renderer9 : public RendererD3D
                      GLenum frontFace,
                      bool ignoreViewport);
 
-    gl::Error applyRenderTarget(GLImplFactory *implFactory, const gl::Framebuffer *frameBuffer);
-    gl::Error applyRenderTarget(GLImplFactory *implFactory,
+    gl::Error applyRenderTarget(const gl::Context *context, const gl::Framebuffer *frameBuffer);
+    gl::Error applyRenderTarget(const gl::Context *context,
                                 const gl::FramebufferAttachment *colorAttachment,
                                 const gl::FramebufferAttachment *depthStencilAttachment);
     gl::Error applyUniforms(const ProgramD3D &programD3D,
@@ -162,7 +166,8 @@ class Renderer9 : public RendererD3D
 
     gl::Error applyTransformFeedbackBuffers(const gl::State &state);
 
-    gl::Error clear(const ClearParameters &clearParams,
+    gl::Error clear(const gl::Context *context,
+                    const ClearParameters &clearParams,
                     const gl::FramebufferAttachment *colorBuffer,
                     const gl::FramebufferAttachment *depthStencilBuffer);
 
@@ -193,33 +198,38 @@ class Renderer9 : public RendererD3D
     DWORD getCapsDeclTypes() const;
 
     // Pixel operations
-    gl::Error copyImage2D(const gl::Framebuffer *framebuffer,
+    gl::Error copyImage2D(const gl::Context *context,
+                          const gl::Framebuffer *framebuffer,
                           const gl::Rectangle &sourceRect,
                           GLenum destFormat,
                           const gl::Offset &destOffset,
                           TextureStorage *storage,
                           GLint level) override;
-    gl::Error copyImageCube(const gl::Framebuffer *framebuffer,
+    gl::Error copyImageCube(const gl::Context *context,
+                            const gl::Framebuffer *framebuffer,
                             const gl::Rectangle &sourceRect,
                             GLenum destFormat,
                             const gl::Offset &destOffset,
                             TextureStorage *storage,
                             GLenum target,
                             GLint level) override;
-    gl::Error copyImage3D(const gl::Framebuffer *framebuffer,
+    gl::Error copyImage3D(const gl::Context *context,
+                          const gl::Framebuffer *framebuffer,
                           const gl::Rectangle &sourceRect,
                           GLenum destFormat,
                           const gl::Offset &destOffset,
                           TextureStorage *storage,
                           GLint level) override;
-    gl::Error copyImage2DArray(const gl::Framebuffer *framebuffer,
+    gl::Error copyImage2DArray(const gl::Context *context,
+                               const gl::Framebuffer *framebuffer,
                                const gl::Rectangle &sourceRect,
                                GLenum destFormat,
                                const gl::Offset &destOffset,
                                TextureStorage *storage,
                                GLint level) override;
 
-    gl::Error copyTexture(const gl::Texture *source,
+    gl::Error copyTexture(const gl::Context *context,
+                          const gl::Texture *source,
                           GLint sourceLevel,
                           const gl::Rectangle &sourceRect,
                           GLenum destFormat,
@@ -230,7 +240,8 @@ class Renderer9 : public RendererD3D
                           bool unpackFlipY,
                           bool unpackPremultiplyAlpha,
                           bool unpackUnmultiplyAlpha) override;
-    gl::Error copyCompressedTexture(const gl::Texture *source,
+    gl::Error copyCompressedTexture(const gl::Context *context,
+                                    const gl::Texture *source,
                                     GLint sourceLevel,
                                     TextureStorage *storage,
                                     GLint destLevel) override;
@@ -244,7 +255,7 @@ class Renderer9 : public RendererD3D
     gl::Error createRenderTargetCopy(RenderTargetD3D *source, RenderTargetD3D **outRT) override;
 
     // Shader operations
-    gl::Error loadExecutable(const void *function,
+    gl::Error loadExecutable(const uint8_t *function,
                              size_t length,
                              ShaderType type,
                              const std::vector<D3DVarying> &streamOutVaryings,
@@ -263,9 +274,18 @@ class Renderer9 : public RendererD3D
 
     // Image operations
     ImageD3D *createImage() override;
-    gl::Error generateMipmap(ImageD3D *dest, ImageD3D *source) override;
-    gl::Error generateMipmapUsingD3D(TextureStorage *storage,
+    gl::Error generateMipmap(const gl::Context *context, ImageD3D *dest, ImageD3D *source) override;
+    gl::Error generateMipmapUsingD3D(const gl::Context *context,
+                                     TextureStorage *storage,
                                      const gl::TextureState &textureState) override;
+    gl::Error copyImage(const gl::Context *context,
+                        ImageD3D *dest,
+                        ImageD3D *source,
+                        const gl::Rectangle &sourceRect,
+                        const gl::Offset &destOffset,
+                        bool unpackFlipY,
+                        bool unpackPremultiplyAlpha,
+                        bool unpackUnmultiplyAlpha) override;
     TextureStorage *createTextureStorage2D(SwapChainD3D *swapChain) override;
     TextureStorage *createTextureStorageEGLImage(EGLImageD3D *eglImage,
                                                  RenderTargetD3D *renderTargetD3D) override;
@@ -296,6 +316,13 @@ class Renderer9 : public RendererD3D
                                                 GLsizei depth,
                                                 int levels) override;
 
+    TextureStorage *createTextureStorage2DMultisample(GLenum internalformat,
+                                                      GLsizei width,
+                                                      GLsizei height,
+                                                      int levels,
+                                                      int samples,
+                                                      GLboolean fixedSampleLocations) override;
+
     // Buffer creation
     VertexBuffer *createVertexBuffer() override;
     IndexBuffer *createIndexBuffer() override;
@@ -307,7 +334,8 @@ class Renderer9 : public RendererD3D
 
     // Buffer-to-texture and Texture-to-buffer copies
     bool supportsFastCopyBufferToTexture(GLenum internalFormat) const override;
-    gl::Error fastCopyBufferToTexture(const gl::PixelUnpackState &unpack,
+    gl::Error fastCopyBufferToTexture(const gl::Context *context,
+                                      const gl::PixelUnpackState &unpack,
                                       unsigned int offset,
                                       RenderTargetD3D *destRenderTarget,
                                       GLenum destinationFormat,
@@ -343,13 +371,13 @@ class Renderer9 : public RendererD3D
 
     StateManager9 *getStateManager() { return &mStateManager; }
 
-    gl::Error genericDrawArrays(Context9 *context,
+    gl::Error genericDrawArrays(const gl::Context *context,
                                 GLenum mode,
                                 GLint first,
                                 GLsizei count,
                                 GLsizei instances);
 
-    gl::Error genericDrawElements(Context9 *context,
+    gl::Error genericDrawElements(const gl::Context *context,
                                   GLenum mode,
                                   GLsizei count,
                                   GLenum type,
@@ -367,8 +395,12 @@ class Renderer9 : public RendererD3D
     gl::Error applyComputeUniforms(const ProgramD3D &programD3D,
                                    const std::vector<D3DUniform *> &uniformArray) override;
 
+    gl::Error clearRenderTarget(RenderTargetD3D *renderTarget,
+                                const gl::ColorF &clearValues) override;
+
   protected:
-    gl::Error clearTextures(gl::SamplerType samplerType,
+    gl::Error clearTextures(const gl::Context *context,
+                            gl::SamplerType samplerType,
                             size_t rangeStart,
                             size_t rangeEnd) override;
 
@@ -386,7 +418,7 @@ class Renderer9 : public RendererD3D
                                const void *indices,
                                GLsizei instances);
 
-    gl::Error applyShaders(const gl::ContextState &data, GLenum drawMode);
+    gl::Error applyShaders(const gl::Context *context, GLenum drawMode);
 
     void generateCaps(gl::Caps *outCaps,
                       gl::TextureCapsMap *outTextureCaps,
@@ -395,7 +427,7 @@ class Renderer9 : public RendererD3D
 
     angle::WorkaroundsD3D generateWorkarounds() const override;
 
-    gl::Error setBlendDepthRasterStates(const gl::ContextState &glData, GLenum drawMode);
+    gl::Error setBlendDepthRasterStates(const gl::Context *context, GLenum drawMode);
 
     void release();
 
@@ -416,7 +448,7 @@ class Renderer9 : public RendererD3D
 
     gl::Error getCountingIB(size_t count, StaticIndexBufferInterface **outIB);
 
-    gl::Error getNullColorbuffer(GLImplFactory *implFactory,
+    gl::Error getNullColorbuffer(const gl::Context *context,
                                  const gl::FramebufferAttachment *depthbuffer,
                                  const gl::FramebufferAttachment **outColorBuffer);
 

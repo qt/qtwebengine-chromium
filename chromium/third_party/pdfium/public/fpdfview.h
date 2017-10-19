@@ -20,8 +20,22 @@
 #define PDF_USE_XFA
 #endif  // PDF_ENABLE_XFA
 
+// PDF object types
+#define FPDF_OBJECT_UNKNOWN 0
+#define FPDF_OBJECT_BOOLEAN 1
+#define FPDF_OBJECT_NUMBER 2
+#define FPDF_OBJECT_STRING 3
+#define FPDF_OBJECT_NAME 4
+#define FPDF_OBJECT_ARRAY 5
+#define FPDF_OBJECT_DICTIONARY 6
+#define FPDF_OBJECT_STREAM 7
+#define FPDF_OBJECT_NULLOBJ 8
+#define FPDF_OBJECT_REFERENCE 9
+
 // PDF types
 typedef void* FPDF_ACTION;
+typedef void* FPDF_ANNOTATION;
+typedef void* FPDF_ATTACHMENT;
 typedef void* FPDF_BITMAP;
 typedef void* FPDF_BOOKMARK;
 typedef void* FPDF_CLIPPATH;
@@ -121,6 +135,12 @@ typedef struct _FS_RECTF_ {
 
 // Const Pointer to FS_RECTF structure.
 typedef const FS_RECTF* FS_LPCRECTF;
+
+// Annotation subtype.
+typedef int FPDF_ANNOTATION_SUBTYPE;
+
+// Dictionary value types.
+typedef int FPDF_OBJECT_TYPE;
 
 #if defined(_WIN32) && defined(FPDFSDK_EXPORTS)
 // On Windows system, functions are exported in a DLL
@@ -242,13 +262,26 @@ DLLEXPORT void STDCALL FPDF_SetPrintTextWithGDI(FPDF_BOOL use_gdi);
 //          Set postscript printing level when printing on Windows.
 //          Experimental API.
 // Parameters:
-//          postscript_level -  0 to disable postscript printing,
-//                              2 to print with postscript level 2,
-//                              3 to print with postscript level 3.
-//                              All other values are invalid.
+//          postscript_level- 0 to disable postscript printing,
+//                            2 to print with postscript level 2,
+//                            3 to print with postscript level 3.
+//                            All other values are invalid.
 // Return value:
-//          True if successful, false if unsucessful (typically invalid input).
+//          True if successful, false if unsuccessful (typically invalid input).
 DLLEXPORT FPDF_BOOL STDCALL FPDF_SetPrintPostscriptLevel(int postscript_level);
+
+// Function: FPDF_SetPrintMode
+//          Set printing mode when printing on Windows.
+//          Experimental API.
+// Parameters:
+//          mode - FPDF_PRINTMODE_EMF to output EMF (default)
+//                 FPDF_PRINTMODE_TEXTONLY to output text only (for charstream
+//                 devices)
+//                 FPDF_PRINTMODE_POSTSCRIPT2 to output level 2 postscript
+//                 FPDF_PRINTMODE_POSTSCRIPT3 to output level 3 postscript
+// Return value:
+//          True if successful, false if unsuccessful (typically invalid input).
+DLLEXPORT FPDF_BOOL STDCALL FPDF_SetPrintMode(int mode);
 #endif  // defined(_WIN32)
 
 // Function: FPDF_LoadDocument

@@ -25,11 +25,11 @@
 #include <vector>
 
 #include "webrtc/api/video/video_frame.h"
-#include "webrtc/base/buffer.h"
 #include "webrtc/call/audio_receive_stream.h"
 #include "webrtc/call/audio_send_stream.h"
 #include "webrtc/call/call.h"
 #include "webrtc/call/flexfec_receive_stream.h"
+#include "webrtc/rtc_base/buffer.h"
 #include "webrtc/video_receive_stream.h"
 #include "webrtc/video_send_stream.h"
 
@@ -205,6 +205,8 @@ class FakeVideoReceiveStream final : public webrtc::VideoReceiveStream {
 
   webrtc::VideoReceiveStream::Stats GetStats() const override;
 
+  rtc::Optional<webrtc::TimingFrameInfo> GetAndResetTimingFrameInfo() override;
+
   webrtc::VideoReceiveStream::Config config_;
   bool receiving_;
   webrtc::VideoReceiveStream::Stats stats_;
@@ -293,6 +295,8 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
 
   void SetBitrateConfig(
       const webrtc::Call::Config::BitrateConfig& bitrate_config) override;
+  void SetBitrateConfigMask(
+      const webrtc::Call::Config::BitrateConfigMask& mask) override;
   void OnNetworkRouteChanged(const std::string& transport_name,
                              const rtc::NetworkRoute& network_route) override {}
   void SignalChannelNetworkState(webrtc::MediaType media,

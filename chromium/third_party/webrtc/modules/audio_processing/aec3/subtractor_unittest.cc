@@ -14,9 +14,9 @@
 #include <numeric>
 #include <string>
 
-#include "webrtc/base/random.h"
 #include "webrtc/modules/audio_processing/aec3/aec_state.h"
 #include "webrtc/modules/audio_processing/test/echo_canceller_test_tools.h"
+#include "webrtc/rtc_base/random.h"
 #include "webrtc/test/gtest.h"
 
 namespace webrtc {
@@ -40,7 +40,7 @@ float RunSubtractorTest(int num_blocks_to_process,
   std::array<float, kFftLengthBy2Plus1> Y2;
   std::array<float, kFftLengthBy2Plus1> E2_main;
   std::array<float, kFftLengthBy2Plus1> E2_shadow;
-  AecState aec_state;
+  AecState aec_state(0.f);
   x_old.fill(0.f);
   Y2.fill(0.f);
   E2_main.fill(0.f);
@@ -68,8 +68,9 @@ float RunSubtractorTest(int num_blocks_to_process,
 
     aec_state.HandleEchoPathChange(EchoPathVariability(false, false));
     aec_state.Update(subtractor.FilterFrequencyResponse(),
+                     subtractor.FilterImpulseResponse(),
                      rtc::Optional<size_t>(delay_samples / kBlockSize),
-                     render_buffer, E2_main, Y2, x[0], false);
+                     render_buffer, E2_main, Y2, x[0], output.s_main, false);
   }
 
   const float output_power = std::inner_product(
@@ -109,7 +110,7 @@ TEST(Subtractor, DISABLED_NullOutput) {
   std::vector<float> y(kBlockSize, 0.f);
 
   EXPECT_DEATH(subtractor.Process(render_buffer, y, render_signal_analyzer,
-                                  AecState(), nullptr),
+                                  AecState(0.f), nullptr),
                "");
 }
 
@@ -124,7 +125,7 @@ TEST(Subtractor, WrongCaptureSize) {
   SubtractorOutput output;
 
   EXPECT_DEATH(subtractor.Process(render_buffer, y, render_signal_analyzer,
-                                  AecState(), &output),
+                                  AecState(0.f), &output),
                "");
 }
 

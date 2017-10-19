@@ -16,19 +16,34 @@ namespace gl
 class VertexArray;
 
 //
-// Implementation of Generic Vertex Attribute Bindings for ES3.1
+// Implementation of Generic Vertex Attribute Bindings for ES3.1. The members are intentionally made
+// private in order to hide implementation details.
 //
-struct VertexBinding final : private angle::NonCopyable
+class VertexBinding final : angle::NonCopyable
 {
+  public:
     VertexBinding();
     explicit VertexBinding(VertexBinding &&binding);
     VertexBinding &operator=(VertexBinding &&binding);
 
-    GLuint stride;
-    GLuint divisor;
-    GLintptr offset;
+    GLuint getStride() const { return mStride; }
+    void setStride(GLuint strideIn) { mStride = strideIn; }
 
-    BindingPointer<Buffer> buffer;
+    GLuint getDivisor() const { return mDivisor; }
+    void setDivisor(GLuint divisorIn) { mDivisor = divisorIn; }
+
+    GLintptr getOffset() const { return mOffset; }
+    void setOffset(GLintptr offsetIn) { mOffset = offsetIn; }
+
+    const BindingPointer<Buffer> &getBuffer() const { return mBuffer; }
+    void setBuffer(const gl::Context *context, Buffer *bufferIn) { mBuffer.set(context, bufferIn); }
+
+  private:
+    GLuint mStride;
+    GLuint mDivisor;
+    GLintptr mOffset;
+
+    BindingPointer<Buffer> mBuffer;
 };
 
 //
@@ -47,7 +62,7 @@ struct VertexAttribute final : private angle::NonCopyable
     bool pureInteger;
 
     const void *pointer;
-    GLintptr relativeOffset;
+    GLuint relativeOffset;
 
     GLuint vertexAttribArrayStride;  // ONLY for queries of VERTEX_ATTRIB_ARRAY_STRIDE
     GLuint bindingIndex;
@@ -64,6 +79,8 @@ GLintptr ComputeVertexAttributeOffset(const VertexAttribute &attrib, const Verte
 size_t ComputeVertexBindingElementCount(const VertexBinding &binding,
                                         size_t drawCount,
                                         size_t instanceCount);
+
+GLenum GetVertexAttributeBaseType(const VertexAttribute &attrib);
 
 struct VertexAttribCurrentValueData
 {

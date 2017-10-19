@@ -2,26 +2,48 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/c++/c++.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/toolchain/toolchain.gni")
 
 # Used by libc++ and libc++abi.
 config("config") {
   defines = [ "LIBCXX_BUILDING_LIBCXXABI" ]
+  if (libcpp_is_static) {
+    # Don't leak any symbols on a static build.
+    defines += [
+      "_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
+      "_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS",
+
+      # This resets the visibility to default only for the various
+      # flavors of operator new and operator delete.  These symbols
+      # are weak and get overriden by Chromium-provided ones, but if
+      # these symbols had hidden visibility, this would make the
+      # Chromium symbols hidden too because elf visibility rules
+      # require that linkers use the least visible form when merging,
+      # and if this is hidden, then when we merge it with tcmalloc's
+      # operator new, hidden visibility would win. However, tcmalloc
+      # needs a visible operator new to also override operator new
+      # references from system libraries.
+      # TODO(lld): Ask lld for a --force-public-visibility flag or
+      # similar to that overrides the default elf merging rules, and
+      # make tcmalloc's gn config pass that to all its dependencies,
+      # then remove this override here.
+      "_LIBCPP_OVERRIDABLE_FUNC_VIS=__attribute__((__visibility__(\"default\")))",
+    ]
+  }
   cflags = [
     "-fPIC",
     "-fstrict-aliasing",
-    "-pthread",
-  ]
-  cflags_cc = [
-    "-nostdinc++",
-    "-isystem" + rebase_path("trunk/include", root_build_dir),
-    "-isystem" + rebase_path("../libc++abi/trunk/include", root_build_dir),
-    "-std=c++11",
   ]
 }
 
-shared_library("libc++") {
+if (libcpp_is_static) {
+  link_target_type = "source_set"
+} else {
+  link_target_type = "shared_library"
+}
+target(link_target_type, "libc++") {
   sources = [
     "trunk/src/algorithm.cpp",
     "trunk/src/any.cpp",
@@ -66,68 +88,7 @@ shared_library("libc++") {
   ]
   defines = [ "_LIBCPP_BUILDING_LIBRARY" ]
 
-  ldflags = [ "-nodefaultlibs" ]
-
-  # Remove "-pthread" from ldflags.
-  # -nodefaultlibs turns -pthread into a no-op, causing an unused argument
-  # warning. Explicitly link with -lpthread instead.
-  configs -= [ "//build/config/compiler:pthread" ]
-
-  libs = [
-    "m",
-  ]
-
-  if (!is_mac) {
-    libs += [
-      "c",
-      "gcc_s",
-      "pthread",
-      "rt",
-    ]
-  }
-
-  # libc++abi is linked statically into libc++.so. This allows us to get both
-  # libc++ and libc++abi by passing '-stdlib=libc++'. If libc++abi was a
-  # separate DSO, we'd have to link against it explicitly.
   deps = [
     "//buildtools/third_party/libc++abi",
   ]
-
-  if (is_mac && using_sanitizer) {
-    # -nodefaultlibs on mac doesn't add any kind of runtime libraries.
-    # These runtimes have to be added manually.
-    lib_dirs = [ "//third_party/llvm-build/Release+Asserts/lib/clang/$clang_version/lib/darwin" ]
-
-    if (is_asan) {
-      libs += [ "clang_rt.asan_osx_dynamic" ]
-    }
-  }
-}
-
-group("libcxx_proxy") {
-  deps = [
-    ":libc++",
-  ]
-  public_configs = [ ":link_helper" ]
-}
-
-# This config is only used by binaries and shared library targets.
-# //build/config/sanitizers:default_sanitizer_flags sets the include paths for
-# everything else.
-config("link_helper") {
-  ldflags = [
-    "-stdlib=libc++",
-  ]
-
-  if (!is_mac) {
-    ldflags += [
-      # Normally the generator takes care of RPATH. Our case is special because
-      # the generator is unaware of the libc++.so dependency. Note that setting
-      # RPATH here is a potential security issue. See the following for another
-      # example of this issue: https://code.google.com/p/gyp/issues/detail?id=315
-      "-Wl,-rpath,\$ORIGIN/",
-    ]
-  }
-
-  lib_dirs = [ root_build_dir ]
 }

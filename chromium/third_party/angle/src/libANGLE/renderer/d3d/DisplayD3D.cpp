@@ -10,16 +10,17 @@
 
 #include <EGL/eglext.h>
 
-#include "libANGLE/Context.h"
 #include "libANGLE/Config.h"
+#include "libANGLE/Context.h"
 #include "libANGLE/Display.h"
 #include "libANGLE/Surface.h"
+#include "libANGLE/Thread.h"
 #include "libANGLE/histogram_macros.h"
+#include "libANGLE/renderer/d3d/DeviceD3D.h"
 #include "libANGLE/renderer/d3d/EGLImageD3D.h"
 #include "libANGLE/renderer/d3d/RendererD3D.h"
 #include "libANGLE/renderer/d3d/SurfaceD3D.h"
 #include "libANGLE/renderer/d3d/SwapChainD3D.h"
-#include "libANGLE/renderer/d3d/DeviceD3D.h"
 
 #if defined (ANGLE_ENABLE_D3D9)
 #   include "libANGLE/renderer/d3d/d3d9/Renderer9.h"
@@ -148,7 +149,7 @@ egl::Error CreateRendererD3D(egl::Display *display, RendererD3D **outRenderer)
         SafeDelete(renderer);
     }
 
-    return egl::Error(EGL_NOT_INITIALIZED, "No available renderers.");
+    return egl::EglNotInitialized() << "No available renderers.";
 }
 
 DisplayD3D::DisplayD3D(const egl::DisplayState &state) : DisplayImpl(state), mRenderer(nullptr)
@@ -215,7 +216,7 @@ StreamProducerImpl *DisplayD3D::createStreamProducerD3DTextureNV12(
 
 egl::Error DisplayD3D::makeCurrent(egl::Surface *drawSurface, egl::Surface *readSurface, gl::Context *context)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 egl::Error DisplayD3D::initialize(egl::Display *display)
@@ -223,7 +224,7 @@ egl::Error DisplayD3D::initialize(egl::Display *display)
     ASSERT(mRenderer == nullptr && display != nullptr);
     mDisplay = display;
     ANGLE_TRY(CreateRendererD3D(display, &mRenderer));
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 void DisplayD3D::terminate()
@@ -243,14 +244,14 @@ bool DisplayD3D::testDeviceLost()
     return mRenderer->testDeviceLost();
 }
 
-egl::Error DisplayD3D::restoreLostDevice()
+egl::Error DisplayD3D::restoreLostDevice(const egl::Display *display)
 {
     // Release surface resources to make the Reset() succeed
     for (auto &surface : mState.surfaceSet)
     {
         if (surface->getBoundTexture())
         {
-            surface->releaseTexImage(EGL_BACK_BUFFER);
+            ANGLE_TRY(surface->releaseTexImage(display->getProxyContext(), EGL_BACK_BUFFER));
         }
         SurfaceD3D *surfaceD3D = GetImplAs<SurfaceD3D>(surface);
         surfaceD3D->releaseSwapChain();
@@ -258,7 +259,7 @@ egl::Error DisplayD3D::restoreLostDevice()
 
     if (!mRenderer->resetDevice())
     {
-        return egl::Error(EGL_BAD_ALLOC);
+        return egl::EglBadAlloc();
     }
 
     // Restore any surfaces that may have been lost
@@ -266,14 +267,10 @@ egl::Error DisplayD3D::restoreLostDevice()
     {
         SurfaceD3D *surfaceD3D = GetImplAs<SurfaceD3D>(surface);
 
-        egl::Error error = surfaceD3D->resetSwapChain();
-        if (error.isError())
-        {
-            return error;
-        }
+        ANGLE_TRY(surfaceD3D->resetSwapChain(display));
     }
 
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 bool DisplayD3D::isValidNativeWindow(EGLNativeWindowType window) const
@@ -325,34 +322,35 @@ void DisplayD3D::generateCaps(egl::Caps *outCaps) const
     outCaps->textureNPOT = mRenderer->getNativeExtensions().textureNPOT;
 }
 
-egl::Error DisplayD3D::waitClient() const
+egl::Error DisplayD3D::waitClient(const gl::Context *context) const
 {
     for (auto &surface : mState.surfaceSet)
     {
         SurfaceD3D *surfaceD3D = GetImplAs<SurfaceD3D>(surface);
-        surfaceD3D->checkForOutOfDateSwapChain();
+        surfaceD3D->checkForOutOfDateSwapChain(context);
     }
 
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
-egl::Error DisplayD3D::waitNative(EGLint engine,
-                                  egl::Surface *drawSurface,
-                                  egl::Surface *readSurface) const
+egl::Error DisplayD3D::waitNative(const gl::Context *context, EGLint engine) const
 {
+    egl::Surface *drawSurface = context->getCurrentDrawSurface();
+    egl::Surface *readSurface = context->getCurrentReadSurface();
+
     if (drawSurface != nullptr)
     {
         SurfaceD3D *drawSurfaceD3D = GetImplAs<SurfaceD3D>(drawSurface);
-        drawSurfaceD3D->checkForOutOfDateSwapChain();
+        drawSurfaceD3D->checkForOutOfDateSwapChain(context);
     }
 
     if (readSurface != nullptr)
     {
         SurfaceD3D *readurfaceD3D = GetImplAs<SurfaceD3D>(readSurface);
-        readurfaceD3D->checkForOutOfDateSwapChain();
+        readurfaceD3D->checkForOutOfDateSwapChain(context);
     }
 
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 gl::Version DisplayD3D::getMaxSupportedESVersion() const

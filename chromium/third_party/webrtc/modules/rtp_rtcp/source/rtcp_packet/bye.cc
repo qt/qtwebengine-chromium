@@ -12,10 +12,10 @@
 
 #include <utility>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -33,6 +33,8 @@ constexpr uint8_t Bye::kPacketType;
 // (opt) |     length    |               reason for leaving            ...
 //       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 Bye::Bye() : sender_ssrc_(0) {}
+
+Bye::~Bye() = default;
 
 bool Bye::Parse(const CommonHeader& packet) {
   RTC_DCHECK_EQ(packet.type(), kPacketType);

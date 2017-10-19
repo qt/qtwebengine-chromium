@@ -35,7 +35,7 @@ class CFX_StringCTemplate {
 
   CFX_StringCTemplate(const CharType* ptr, FX_STRSIZE len)
       : m_Ptr(reinterpret_cast<const UnsignedType*>(ptr)),
-        m_Length(len == -1 ? FXSYS_len(ptr) : len) {}
+        m_Length(len < 0 ? FXSYS_len(ptr) : len) {}
 
   template <typename U = UnsignedType>
   CFX_StringCTemplate(
@@ -112,7 +112,7 @@ class CFX_StringCTemplate {
   }
 
   const UnsignedType* raw_str() const { return m_Ptr.Get(); }
-  const CharType* c_str() const {
+  const CharType* unterminated_c_str() const {
     return reinterpret_cast<const CharType*>(m_Ptr.Get());
   }
 
@@ -165,6 +165,13 @@ class CFX_StringCTemplate {
                            reinterpret_cast<const CharType*>(that.m_Ptr.Get()),
                            std::min(m_Length, that.m_Length));
     return result < 0 || (result == 0 && m_Length < that.m_Length);
+  }
+
+  bool operator>(const CFX_StringCTemplate& that) const {
+    int result = FXSYS_cmp(reinterpret_cast<const CharType*>(m_Ptr.Get()),
+                           reinterpret_cast<const CharType*>(that.m_Ptr.Get()),
+                           std::min(m_Length, that.m_Length));
+    return result > 0 || (result == 0 && m_Length > that.m_Length);
   }
 
  protected:

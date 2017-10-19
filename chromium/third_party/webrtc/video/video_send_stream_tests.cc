@@ -11,14 +11,6 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/base/bind.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/event.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/platform_thread.h"
-#include "webrtc/base/rate_limiter.h"
-#include "webrtc/base/timeutils.h"
 #include "webrtc/call/call.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/common_video/include/video_frame.h"
@@ -28,17 +20,26 @@
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_vp9.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
 #include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
+#include "webrtc/rtc_base/bind.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/event.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/platform_thread.h"
+#include "webrtc/rtc_base/rate_limiter.h"
+#include "webrtc/rtc_base/timeutils.h"
 #include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/call_test.h"
 #include "webrtc/test/configurable_frame_size_encoder.h"
 #include "webrtc/test/fake_texture_frame.h"
+#include "webrtc/test/field_trial.h"
 #include "webrtc/test/frame_generator.h"
+#include "webrtc/test/frame_generator_capturer.h"
 #include "webrtc/test/frame_utils.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/null_transport.h"
 #include "webrtc/test/rtcp_packet_parser.h"
 #include "webrtc/test/testsupport/perf_test.h"
-#include "webrtc/test/field_trial.h"
 
 #include "webrtc/video/send_statistics_proxy.h"
 #include "webrtc/video/transport_adapter.h"
@@ -296,9 +297,9 @@ TEST_F(VideoSendStreamTest, SupportsVideoRotation) {
 }
 
 TEST_F(VideoSendStreamTest, SupportsVideoContentType) {
-  class VideoRotationObserver : public test::SendTest {
+  class VideoContentTypeObserver : public test::SendTest {
    public:
-    VideoRotationObserver() : SendTest(kDefaultTimeoutMs) {
+    VideoContentTypeObserver() : SendTest(kDefaultTimeoutMs) {
       EXPECT_TRUE(parser_->RegisterRtpHeaderExtension(
           kRtpExtensionVideoContentType, test::kVideoContentTypeExtensionId));
     }
@@ -329,6 +330,44 @@ TEST_F(VideoSendStreamTest, SupportsVideoContentType) {
 
     void PerformTest() override {
       EXPECT_TRUE(Wait()) << "Timed out while waiting for single RTP packet.";
+    }
+  } test;
+
+  test::ScopedFieldTrials override_field_trials(
+      "WebRTC-VideoContentTypeExtension/Enabled/");
+  RunBaseTest(&test);
+}
+
+TEST_F(VideoSendStreamTest, SupportsVideoTimingFrames) {
+  class VideoTimingObserver : public test::SendTest {
+   public:
+    VideoTimingObserver() : SendTest(kDefaultTimeoutMs) {
+      EXPECT_TRUE(parser_->RegisterRtpHeaderExtension(
+          kRtpExtensionVideoTiming, test::kVideoTimingExtensionId));
+    }
+
+    Action OnSendRtp(const uint8_t* packet, size_t length) override {
+      RTPHeader header;
+      EXPECT_TRUE(parser_->Parse(packet, length, &header));
+      // Only the last packet of the frame must have extension.
+      if (!header.markerBit)
+        return SEND_PACKET;
+      EXPECT_TRUE(header.extension.has_video_timing);
+      observation_complete_.Set();
+      return SEND_PACKET;
+    }
+
+    void ModifyVideoConfigs(
+        VideoSendStream::Config* send_config,
+        std::vector<VideoReceiveStream::Config>* receive_configs,
+        VideoEncoderConfig* encoder_config) override {
+      send_config->rtp.extensions.clear();
+      send_config->rtp.extensions.push_back(RtpExtension(
+          RtpExtension::kVideoTimingUri, test::kVideoTimingExtensionId));
+    }
+
+    void PerformTest() override {
+      EXPECT_TRUE(Wait()) << "Timed out while waiting for timing frames.";
     }
   } test;
 
@@ -937,10 +976,12 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
 
     void TriggerLossReport(const RTPHeader& header) {
       // Send lossy receive reports to trigger FEC enabling.
-      if (packet_count_++ % 2 != 0) {
-        // Receive statistics reporting having lost 50% of the packets.
+      const int kLossPercent = 5;
+      if (packet_count_++ % (100 / kLossPercent) != 0) {
         FakeReceiveStatistics lossy_receive_stats(
-            kVideoSendSsrcs[0], header.sequenceNumber, packet_count_ / 2, 127);
+            kVideoSendSsrcs[0], header.sequenceNumber,
+            (packet_count_ * (100 - kLossPercent)) / 100,  // Cumulative lost.
+            static_cast<uint8_t>((255 * kLossPercent) / 100));  // Loss percent.
         RTCPSender rtcp_sender(false, Clock::GetRealTimeClock(),
                                &lossy_receive_stats, nullptr, nullptr,
                                transport_adapter_.get());
@@ -993,6 +1034,35 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
       // Make sure there is at least one extension header, to make the RTP
       // header larger than the base length of 12 bytes.
       EXPECT_FALSE(send_config->rtp.extensions.empty());
+
+      // Setup screen content disables frame dropping which makes this easier.
+      class VideoStreamFactory
+          : public VideoEncoderConfig::VideoStreamFactoryInterface {
+       public:
+        explicit VideoStreamFactory(size_t num_temporal_layers)
+            : num_temporal_layers_(num_temporal_layers) {
+          EXPECT_GT(num_temporal_layers, 0u);
+        }
+
+       private:
+        std::vector<VideoStream> CreateEncoderStreams(
+            int width,
+            int height,
+            const VideoEncoderConfig& encoder_config) override {
+          std::vector<VideoStream> streams =
+              test::CreateVideoStreams(width, height, encoder_config);
+          for (VideoStream& stream : streams) {
+            stream.temporal_layer_thresholds_bps.resize(num_temporal_layers_ -
+                                                        1);
+          }
+          return streams;
+        }
+        const size_t num_temporal_layers_;
+      };
+
+      encoder_config->video_stream_factory =
+          new rtc::RefCountedObject<VideoStreamFactory>(2);
+      encoder_config->content_type = VideoEncoderConfig::ContentType::kScreen;
     }
 
     void PerformTest() override {
@@ -1972,17 +2042,14 @@ TEST_F(VideoSendStreamTest, CapturesTextureAndVideoFrames) {
   int width = 168;
   int height = 132;
 
-  test::FakeNativeHandle* handle1 = new test::FakeNativeHandle();
-  test::FakeNativeHandle* handle2 = new test::FakeNativeHandle();
-  test::FakeNativeHandle* handle3 = new test::FakeNativeHandle();
-  input_frames.push_back(test::FakeNativeHandle::CreateFrame(
-      handle1, width, height, 1, 1, kVideoRotation_0));
-  input_frames.push_back(test::FakeNativeHandle::CreateFrame(
-      handle2, width, height, 2, 2, kVideoRotation_0));
+  input_frames.push_back(test::FakeNativeBuffer::CreateFrame(
+      width, height, 1, 1, kVideoRotation_0));
+  input_frames.push_back(test::FakeNativeBuffer::CreateFrame(
+      width, height, 2, 2, kVideoRotation_0));
   input_frames.push_back(CreateVideoFrame(width, height, 3));
   input_frames.push_back(CreateVideoFrame(width, height, 4));
-  input_frames.push_back(test::FakeNativeHandle::CreateFrame(
-      handle3, width, height, 5, 5, kVideoRotation_0));
+  input_frames.push_back(test::FakeNativeBuffer::CreateFrame(
+      width, height, 5, 5, kVideoRotation_0));
 
   video_send_stream_->Start();
   test::FrameForwarder forwarder;
@@ -2018,9 +2085,7 @@ VideoFrame CreateVideoFrame(int width, int height, uint8_t data) {
   const int kSizeY = width * height * 2;
   std::unique_ptr<uint8_t[]> buffer(new uint8_t[kSizeY]);
   memset(buffer.get(), data, kSizeY);
-  VideoFrame frame(
-      I420Buffer::Create(width, height, width, width / 2, width / 2),
-      kVideoRotation_0, data);
+  VideoFrame frame(I420Buffer::Create(width, height), kVideoRotation_0, data);
   frame.set_timestamp(data);
   // Use data as a ms timestamp.
   frame.set_timestamp_us(data * rtc::kNumMicrosecsPerMillisec);
@@ -3338,6 +3403,52 @@ TEST_F(VideoSendStreamTest, RemoveOverheadFromBandwidth) {
     uint32_t max_bitrate_bps_ GUARDED_BY(&crit_);
     bool first_packet_sent_ GUARDED_BY(&crit_);
     rtc::Event bitrate_changed_event_;
+  } test;
+
+  RunBaseTest(&test);
+}
+
+TEST_F(VideoSendStreamTest, SendsKeepAlive) {
+  const int kTimeoutMs = 50;  // Really short timeout for testing.
+
+  class KeepaliveObserver : public test::SendTest {
+   public:
+    KeepaliveObserver() : SendTest(kDefaultTimeoutMs) {}
+
+    Call::Config GetSenderCallConfig() override {
+      Call::Config config = SendTest::GetSenderCallConfig();
+      config.keepalive_config.timeout_interval_ms = kTimeoutMs;
+      config.keepalive_config.payload_type =
+          CallTest::kDefaultKeepalivePayloadType;
+      return config;
+    }
+
+   private:
+    Action OnSendRtp(const uint8_t* packet, size_t length) override {
+      RTPHeader header;
+      EXPECT_TRUE(parser_->Parse(packet, length, &header));
+
+      if (header.payloadType != CallTest::kDefaultKeepalivePayloadType) {
+        // The video stream has started. Stop it now.
+        if (capturer_)
+          capturer_->Stop();
+      } else {
+        observation_complete_.Set();
+      }
+
+      return SEND_PACKET;
+    }
+
+    void PerformTest() override {
+      EXPECT_TRUE(Wait()) << "Timed out while waiting for keep-alive packet.";
+    }
+
+    void OnFrameGeneratorCapturerCreated(
+        test::FrameGeneratorCapturer* frame_generator_capturer) override {
+      capturer_ = frame_generator_capturer;
+    }
+
+    test::FrameGeneratorCapturer* capturer_ = nullptr;
   } test;
 
   RunBaseTest(&test);

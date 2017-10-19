@@ -16,8 +16,8 @@
 #include <memory>
 #include <string>
 
-#include "webrtc/base/thread_checker.h"
 #include "webrtc/modules/utility/include/helpers_android.h"
+#include "webrtc/rtc_base/thread_checker.h"
 
 namespace webrtc {
 
@@ -147,9 +147,10 @@ class JVM {
   // Stores global handles to the Java VM interface.
   // Should be called once on a thread that is attached to the JVM.
   static void Initialize(JavaVM* jvm);
-  // TODO(sakal): Remove once downstream dependencies have been updated.
-  // Deprecated old signature with Android context.
-  static void Initialize(JavaVM* jvm, jobject context) { Initialize(jvm); }
+  // Like the method above but also passes the context to the ContextUtils
+  // class. This method should be used by pure-C++ Android users that can't call
+  // ContextUtils.initialize directly.
+  static void Initialize(JavaVM* jvm, jobject context);
   // Clears handles stored in Initialize(). Must be called on same thread as
   // Initialize().
   static void Uninitialize();

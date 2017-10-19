@@ -14,10 +14,10 @@
 #include <utility>
 
 #include "webrtc/api/call/audio_sink.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/platform_file.h"
-#include "webrtc/base/gunit.h"
 #include "webrtc/media/base/rtputils.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/gunit.h"
+#include "webrtc/rtc_base/platform_file.h"
 
 namespace cricket {
 FakeAudioSendStream::FakeAudioSendStream(
@@ -309,6 +309,11 @@ webrtc::VideoReceiveStream::Stats FakeVideoReceiveStream::GetStats() const {
   return stats_;
 }
 
+rtc::Optional<webrtc::TimingFrameInfo>
+FakeVideoReceiveStream::GetAndResetTimingFrameInfo() {
+  return rtc::Optional<webrtc::TimingFrameInfo>();
+}
+
 void FakeVideoReceiveStream::Start() {
   receiving_ = true;
 }
@@ -586,6 +591,11 @@ webrtc::Call::Stats FakeCall::GetStats() const {
 void FakeCall::SetBitrateConfig(
     const webrtc::Call::Config::BitrateConfig& bitrate_config) {
   config_.bitrate_config = bitrate_config;
+}
+
+void FakeCall::SetBitrateConfigMask(
+    const webrtc::Call::Config::BitrateConfigMask& mask) {
+  // TODO(zstein): not implemented
 }
 
 void FakeCall::SignalChannelNetworkState(webrtc::MediaType media,

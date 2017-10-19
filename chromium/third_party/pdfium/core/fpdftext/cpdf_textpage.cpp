@@ -108,6 +108,12 @@ float MaskPercentFilled(const std::vector<bool>& mask,
 
 }  // namespace
 
+PDFTEXT_Obj::PDFTEXT_Obj() {}
+
+PDFTEXT_Obj::PDFTEXT_Obj(const PDFTEXT_Obj& that) = default;
+
+PDFTEXT_Obj::~PDFTEXT_Obj() {}
+
 FPDF_CHAR_INFO::FPDF_CHAR_INFO()
     : m_Unicode(0),
       m_Charcode(0),
@@ -258,10 +264,7 @@ std::vector<CFX_FloatRect> CPDF_TextPage::GetRectArray(int start,
       CFX_Matrix matrix = info_curchar.m_pTextObj->GetTextMatrix();
       matrix.Concat(info_curchar.m_Matrix);
 
-      CFX_Matrix matrix_reverse;
-      matrix_reverse.SetReverse(matrix);
-
-      CFX_PointF origin = matrix_reverse.Transform(info_curchar.m_Origin);
+      CFX_PointF origin = matrix.GetInverse().Transform(info_curchar.m_Origin);
       rect.left = info_curchar.m_CharBox.left;
       rect.right = info_curchar.m_CharBox.right;
       if (pCurObj->GetFont()->GetTypeDescent()) {
@@ -584,7 +587,7 @@ void CPDF_TextPage::ProcessObject() {
         CFX_Matrix matrix;
         ProcessTextObject(pObj->AsText(), matrix, pObjList, it);
       } else if (pObj->IsForm()) {
-        CFX_Matrix formMatrix(1, 0, 0, 1, 0, 0);
+        CFX_Matrix formMatrix;
         ProcessFormObject(pObj->AsForm(), formMatrix);
       }
     }
@@ -799,7 +802,7 @@ void CPDF_TextPage::ProcessTextObject(
 }
 
 FPDFText_MarkedContent CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
-  CPDF_TextObject* pTextObj = Obj.m_pTextObj;
+  CPDF_TextObject* pTextObj = Obj.m_pTextObj.Get();
   if (!pTextObj->m_ContentMark.HasRef())
     return FPDFText_MarkedContent::Pass;
 
@@ -862,7 +865,7 @@ FPDFText_MarkedContent CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
 }
 
 void CPDF_TextPage::ProcessMarkedContent(PDFTEXT_Obj Obj) {
-  CPDF_TextObject* pTextObj = Obj.m_pTextObj;
+  CPDF_TextObject* pTextObj = Obj.m_pTextObj.Get();
   if (!pTextObj->m_ContentMark.HasRef())
     return;
 
@@ -952,7 +955,7 @@ bool CPDF_TextPage::IsRightToLeft(const CPDF_TextObject* pTextObj,
 }
 
 void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
-  CPDF_TextObject* pTextObj = Obj.m_pTextObj;
+  CPDF_TextObject* pTextObj = Obj.m_pTextObj.Get();
   if (fabs(pTextObj->m_Right - pTextObj->m_Left) < 0.01f)
     return;
   CFX_Matrix formMatrix = Obj.m_formMatrix;
@@ -1300,8 +1303,7 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
   CFX_Matrix prev_matrix = m_pPreTextObj->GetTextMatrix();
   prev_matrix.Concat(m_perMatrix);
 
-  CFX_Matrix prev_reverse;
-  prev_reverse.SetReverse(prev_matrix);
+  CFX_Matrix prev_reverse = prev_matrix.GetInverse();
 
   CFX_PointF pos = prev_reverse.Transform(formMatrix.Transform(pObj->GetPos()));
   if (last_width < this_width)

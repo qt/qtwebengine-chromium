@@ -11,8 +11,8 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_AUDIO_SINK_H_
 #define WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_AUDIO_SINK_H_
 
-#include "webrtc/base/constructormagic.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/rtc_base/constructormagic.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -33,7 +33,7 @@ class AudioSink {
   // otherwise false.
   bool WriteAudioFrame(const AudioFrame& audio_frame) {
     return WriteArray(
-        audio_frame.data_,
+        audio_frame.data(),
         audio_frame.samples_per_channel_ * audio_frame.num_channels_);
   }
 

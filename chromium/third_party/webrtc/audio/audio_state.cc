@@ -10,10 +10,10 @@
 
 #include "webrtc/audio/audio_state.h"
 
-#include "webrtc/base/atomicops.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/audio_device/include/audio_device.h"
+#include "webrtc/rtc_base/atomicops.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 #include "webrtc/voice_engine/include/voe_errors.h"
 
 namespace webrtc {
@@ -23,7 +23,7 @@ AudioState::AudioState(const AudioState::Config& config)
     : config_(config),
       voe_base_(config.voice_engine),
       audio_transport_proxy_(voe_base_->audio_transport(),
-                             voe_base_->audio_processing(),
+                             config_.audio_processing.get(),
                              config_.audio_mixer) {
   process_thread_checker_.DetachFromThread();
   RTC_DCHECK(config_.audio_mixer);

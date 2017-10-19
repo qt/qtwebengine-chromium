@@ -61,6 +61,38 @@ bool IsPageObject(CPDF_Page* pPage) {
   return pObject && !pObject->GetString().Compare("Page");
 }
 
+void CalcBoundingBox(CPDF_PageObject* pPageObj) {
+  switch (pPageObj->GetType()) {
+    case CPDF_PageObject::TEXT: {
+      break;
+    }
+    case CPDF_PageObject::PATH: {
+      CPDF_PathObject* pPathObj = pPageObj->AsPath();
+      pPathObj->CalcBoundingBox();
+      break;
+    }
+    case CPDF_PageObject::IMAGE: {
+      CPDF_ImageObject* pImageObj = pPageObj->AsImage();
+      pImageObj->CalcBoundingBox();
+      break;
+    }
+    case CPDF_PageObject::SHADING: {
+      CPDF_ShadingObject* pShadingObj = pPageObj->AsShading();
+      pShadingObj->CalcBoundingBox();
+      break;
+    }
+    case CPDF_PageObject::FORM: {
+      CPDF_FormObject* pFormObj = pPageObj->AsForm();
+      pFormObj->CalcBoundingBox();
+      break;
+    }
+    default: {
+      NOTREACHED();
+      break;
+    }
+  }
+}
+
 }  // namespace
 
 DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_CreateNewDocument() {
@@ -136,7 +168,7 @@ DLLEXPORT int STDCALL FPDFPage_GetRotation(FPDF_PAGE page) {
 
 DLLEXPORT void STDCALL FPDFPage_InsertObject(FPDF_PAGE page,
                                              FPDF_PAGEOBJECT page_obj) {
-  CPDF_PageObject* pPageObj = static_cast<CPDF_PageObject*>(page_obj);
+  CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(page_obj);
   if (!pPageObj)
     return;
 
@@ -144,37 +176,9 @@ DLLEXPORT void STDCALL FPDFPage_InsertObject(FPDF_PAGE page,
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!IsPageObject(pPage))
     return;
-
+  pPageObj->SetDirty(true);
   pPage->GetPageObjectList()->push_back(std::move(pPageObjHolder));
-  switch (pPageObj->GetType()) {
-    case CPDF_PageObject::TEXT: {
-      break;
-    }
-    case CPDF_PageObject::PATH: {
-      CPDF_PathObject* pPathObj = pPageObj->AsPath();
-      pPathObj->CalcBoundingBox();
-      break;
-    }
-    case CPDF_PageObject::IMAGE: {
-      CPDF_ImageObject* pImageObj = pPageObj->AsImage();
-      pImageObj->CalcBoundingBox();
-      break;
-    }
-    case CPDF_PageObject::SHADING: {
-      CPDF_ShadingObject* pShadingObj = pPageObj->AsShading();
-      pShadingObj->CalcBoundingBox();
-      break;
-    }
-    case CPDF_PageObject::FORM: {
-      CPDF_FormObject* pFormObj = pPageObj->AsForm();
-      pFormObj->CalcBoundingBox();
-      break;
-    }
-    default: {
-      NOTREACHED();
-      break;
-    }
-  }
+  CalcBoundingBox(pPageObj);
 }
 
 DLLEXPORT int STDCALL FPDFPage_CountObject(FPDF_PAGE page) {
@@ -202,7 +206,7 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject) {
   if (!pageObject)
     return false;
 
-  CPDF_PageObject* pPageObj = static_cast<CPDF_PageObject*>(pageObject);
+  CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(pageObject);
   int blend_type = pPageObj->m_GeneralState.GetBlendType();
   if (blend_type != FXDIB_BLEND_NORMAL)
     return true;
@@ -235,7 +239,7 @@ DLLEXPORT int STDCALL FPDFPageObj_GetType(FPDF_PAGEOBJECT pageObject) {
   if (!pageObject)
     return FPDF_PAGEOBJ_UNKNOWN;
 
-  CPDF_PageObject* pPageObj = static_cast<CPDF_PageObject*>(pageObject);
+  CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(pageObject);
   return pPageObj->GetType();
 }
 
@@ -256,12 +260,22 @@ DLLEXPORT void STDCALL FPDFPageObj_Transform(FPDF_PAGEOBJECT page_object,
                                              double d,
                                              double e,
                                              double f) {
-  CPDF_PageObject* pPageObj = static_cast<CPDF_PageObject*>(page_object);
+  CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
   if (!pPageObj)
     return;
 
   CFX_Matrix matrix((float)a, (float)b, (float)c, (float)d, (float)e, (float)f);
   pPageObj->Transform(matrix);
+}
+
+DLLEXPORT void STDCALL FPDFPageObj_SetBlendMode(FPDF_PAGEOBJECT page_object,
+                                                FPDF_BYTESTRING blend_mode) {
+  CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+  if (!pPageObj)
+    return;
+
+  pPageObj->m_GeneralState.SetBlendMode(blend_mode);
+  pPageObj->SetDirty(true);
 }
 
 DLLEXPORT void STDCALL FPDFPage_TransformAnnots(FPDF_PAGE page,
@@ -283,14 +297,17 @@ DLLEXPORT void STDCALL FPDFPage_TransformAnnots(FPDF_PAGE page,
                       (float)f);
     matrix.TransformRect(rect);
 
-    CPDF_Array* pRectArray = pAnnot->GetAnnotDict()->GetArrayFor("Rect");
-    if (!pRectArray)
-      pRectArray = pAnnot->GetAnnotDict()->SetNewFor<CPDF_Array>("Rect");
+    CPDF_Dictionary* pAnnotDict = pAnnot->GetAnnotDict();
+    CPDF_Array* pRectArray = pAnnotDict->GetArrayFor("Rect");
+    if (pRectArray)
+      pRectArray->Clear();
+    else
+      pRectArray = pAnnotDict->SetNewFor<CPDF_Array>("Rect");
 
-    pRectArray->SetNewAt<CPDF_Number>(0, rect.left);
-    pRectArray->SetNewAt<CPDF_Number>(1, rect.bottom);
-    pRectArray->SetNewAt<CPDF_Number>(2, rect.right);
-    pRectArray->SetNewAt<CPDF_Number>(3, rect.top);
+    pRectArray->AddNew<CPDF_Number>(rect.left);
+    pRectArray->AddNew<CPDF_Number>(rect.bottom);
+    pRectArray->AddNew<CPDF_Number>(rect.right);
+    pRectArray->AddNew<CPDF_Number>(rect.top);
 
     // TODO(unknown): Transform AP's rectangle
   }
@@ -303,4 +320,38 @@ DLLEXPORT void STDCALL FPDFPage_SetRotation(FPDF_PAGE page, int rotate) {
 
   rotate %= 4;
   pPage->m_pFormDict->SetNewFor<CPDF_Number>("Rotate", rotate * 90);
+}
+
+FPDF_BOOL FPDFPageObj_SetFillColor(FPDF_PAGEOBJECT page_object,
+                                   unsigned int R,
+                                   unsigned int G,
+                                   unsigned int B,
+                                   unsigned int A) {
+  if (!page_object || R > 255 || G > 255 || B > 255 || A > 255)
+    return false;
+
+  float rgb[3] = {R / 255.f, G / 255.f, B / 255.f};
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
+  pPageObj->m_GeneralState.SetFillAlpha(A / 255.f);
+  pPageObj->m_ColorState.SetFillColor(
+      CPDF_ColorSpace::GetStockCS(PDFCS_DEVICERGB), rgb, 3);
+  pPageObj->SetDirty(true);
+  return true;
+}
+
+DLLEXPORT FPDF_BOOL STDCALL FPDFPageObj_GetBounds(FPDF_PAGEOBJECT pageObject,
+                                                  float* left,
+                                                  float* bottom,
+                                                  float* right,
+                                                  float* top) {
+  if (!pageObject)
+    return false;
+
+  CPDF_PageObject* pPageObj = CPDFPageObjectFromFPDFPageObject(pageObject);
+  CFX_FloatRect bbox = pPageObj->GetRect();
+  *left = bbox.left;
+  *bottom = bbox.bottom;
+  *right = bbox.right;
+  *top = bbox.top;
+  return true;
 }

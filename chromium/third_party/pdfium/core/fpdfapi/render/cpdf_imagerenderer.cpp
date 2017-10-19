@@ -76,7 +76,7 @@ bool CPDF_ImageRenderer::StartRenderDIBSource() {
   CPDF_GeneralState& state = m_pImageObject->m_GeneralState;
   m_BitmapAlpha = FXSYS_round(255 * state.GetFillAlpha());
   m_pDIBSource = m_Loader.m_pBitmap;
-  if (m_pRenderStatus->m_Options.m_ColorMode == RENDER_COLOR_ALPHA &&
+  if (m_pRenderStatus->m_Options.m_ColorMode == CPDF_RenderOptions::kAlpha &&
       !m_Loader.m_pMask) {
     return StartBitmapAlpha();
   }
@@ -103,10 +103,10 @@ bool CPDF_ImageRenderer::StartRenderDIBSource() {
         m_bPatternColor = true;
     }
     m_FillArgb = m_pRenderStatus->GetFillArgb(m_pImageObject.Get());
-  } else if (m_pRenderStatus->m_Options.m_ColorMode == RENDER_COLOR_GRAY) {
+  } else if (m_pRenderStatus->m_Options.m_ColorMode ==
+             CPDF_RenderOptions::kGray) {
     m_pClone = m_pDIBSource->Clone(nullptr);
-    m_pClone->ConvertColorScale(m_pRenderStatus->m_Options.m_BackColor,
-                                m_pRenderStatus->m_Options.m_ForeColor);
+    m_pClone->ConvertColorScale(0xffffff, 0);
     m_pDIBSource = m_pClone;
   }
   m_Flags = 0;
@@ -225,8 +225,8 @@ void CPDF_ImageRenderer::CalculateDrawImage(
     CFX_Matrix* pNewMatrix,
     const FX_RECT& rect) const {
   CPDF_RenderStatus bitmap_render;
-  bitmap_render.Initialize(m_pRenderStatus->m_pContext, pBitmapDevice2, nullptr,
-                           nullptr, nullptr, nullptr, nullptr, 0,
+  bitmap_render.Initialize(m_pRenderStatus->m_pContext.Get(), pBitmapDevice2,
+                           nullptr, nullptr, nullptr, nullptr, nullptr, 0,
                            m_pRenderStatus->m_bDropObjects, nullptr, true);
   CPDF_ImageRenderer image_render;
   if (image_render.Start(&bitmap_render, pDIBSource, 0xffffffff, 255,
@@ -276,7 +276,7 @@ bool CPDF_ImageRenderer::DrawPatternImage(const CFX_Matrix* pObj2Device) {
 
   bitmap_device1.GetBitmap()->Clear(0xffffff);
   CPDF_RenderStatus bitmap_render;
-  bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device1,
+  bitmap_render.Initialize(m_pRenderStatus->m_pContext.Get(), &bitmap_device1,
                            nullptr, nullptr, nullptr, nullptr,
                            &m_pRenderStatus->m_Options, 0,
                            m_pRenderStatus->m_bDropObjects, nullptr, true);
@@ -329,7 +329,7 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
   bitmap_device1.GetBitmap()->Clear(0xffffff);
 #endif
   CPDF_RenderStatus bitmap_render;
-  bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device1,
+  bitmap_render.Initialize(m_pRenderStatus->m_pContext.Get(), &bitmap_device1,
                            nullptr, nullptr, nullptr, nullptr, nullptr, 0,
                            m_pRenderStatus->m_bDropObjects, nullptr, true);
   CPDF_ImageRenderer image_render;
@@ -418,7 +418,6 @@ bool CPDF_ImageRenderer::StartDIBSource() {
     m_Status = 2;
     m_pTransformer = pdfium::MakeUnique<CFX_ImageTransformer>(
         m_pDIBSource, &m_ImageMatrix, m_Flags, &clip_box);
-    m_pTransformer->Start();
     return true;
   }
   if (m_ImageMatrix.a < 0)

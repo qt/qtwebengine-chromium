@@ -51,8 +51,9 @@ gl::Error RenderbufferD3D::setStorageMultisample(size_t samples, GLenum internal
     const gl::TextureCaps &formatCaps = mRenderer->getNativeTextureCaps().get(creationFormat);
     if (samples > formatCaps.getMaxSamples())
     {
-        return gl::Error(GL_OUT_OF_MEMORY, "Renderbuffer format does not support %u samples, %u is the maximum.",
-                         samples, formatCaps.getMaxSamples());
+        return gl::OutOfMemory() << "Renderbuffer format does not support " << samples
+                                 << " samples, " << formatCaps.getMaxSamples()
+                                 << " is the maximum.";
     }
 
     RenderTargetD3D *newRT = nullptr;
@@ -74,11 +75,12 @@ gl::Error RenderbufferD3D::setStorageEGLImageTarget(egl::Image *image)
     return gl::NoError();
 }
 
-gl::Error RenderbufferD3D::getRenderTarget(RenderTargetD3D **outRenderTarget)
+gl::Error RenderbufferD3D::getRenderTarget(const gl::Context *context,
+                                           RenderTargetD3D **outRenderTarget)
 {
     if (mImage)
     {
-        return mImage->getRenderTarget(outRenderTarget);
+        return mImage->getRenderTarget(context, outRenderTarget);
     }
     else
     {
@@ -87,11 +89,12 @@ gl::Error RenderbufferD3D::getRenderTarget(RenderTargetD3D **outRenderTarget)
     }
 }
 
-gl::Error RenderbufferD3D::getAttachmentRenderTarget(GLenum /*binding*/,
+gl::Error RenderbufferD3D::getAttachmentRenderTarget(const gl::Context *context,
+                                                     GLenum /*binding*/,
                                                      const gl::ImageIndex & /*imageIndex*/,
                                                      FramebufferAttachmentRenderTarget **rtOut)
 {
-    return getRenderTarget(reinterpret_cast<RenderTargetD3D **>(rtOut));
+    return getRenderTarget(context, reinterpret_cast<RenderTargetD3D **>(rtOut));
 }
 
-}
+}  // namespace rx

@@ -125,7 +125,6 @@ component("bundled_icui18n") {
     "source/i18n/anytrans.cpp",
     "source/i18n/anytrans.h",
     "source/i18n/astro.cpp",
-    "source/i18n/astro.h",
     "source/i18n/basictz.cpp",
     "source/i18n/bocsu.cpp",
     "source/i18n/bocsu.h",
@@ -458,6 +457,8 @@ component("bundled_icui18n") {
   ]
   # ls source/i18n/unicode/*h | sort | sed 's/^\(.*\)$/    "\1",/'
   public = [
+    # crbug.com/726654: Make astro.h public until the upstream adds an API.
+    "source/i18n/astro.h",
     "source/i18n/unicode/alphaindex.h",
     "source/i18n/unicode/basictz.h",
     "source/i18n/unicode/calendar.h",
@@ -950,10 +951,6 @@ component("bundled_icuuc") {
   deps = [
     ":icudata",
   ]
-
-  if (is_mac && using_sanitizer) {
-    deps += [ "//buildtools/third_party/libc++abi" ]
-  }
 
   configs -= [
     "//build/config/compiler:no_rtti",  # ICU uses RTTI.

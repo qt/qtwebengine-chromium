@@ -11,37 +11,40 @@
 #define MESA_LLVMPIPE_TILE_ORDER 6
 #define MESA_LLVMPIPE_TILE_SIZE (1 << MESA_LLVMPIPE_TILE_ORDER)
 
-static struct supported_combination combos[4] = {
-	{DRM_FORMAT_ABGR8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_RGB565, DRM_FORMAT_MOD_NONE,
-		BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
-		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_XBGR8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_YVU420, DRM_FORMAT_MOD_NONE,
-		BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN |
-		BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-};
+static const uint32_t render_target_formats[] = { DRM_FORMAT_ABGR8888, DRM_FORMAT_ARGB8888,
+						  DRM_FORMAT_RGB565, DRM_FORMAT_XBGR8888,
+						  DRM_FORMAT_XRGB8888 };
+
+static const uint32_t texture_source_formats[] = { DRM_FORMAT_R8, DRM_FORMAT_YVU420,
+						   DRM_FORMAT_YVU420_ANDROID };
 
 static int vgem_init(struct driver *drv)
 {
-	drv_insert_combinations(drv, combos, ARRAY_SIZE(combos));
-	return 0;
+	int ret;
+	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+				   &LINEAR_METADATA, BO_USE_RENDER_MASK);
+	if (ret)
+		return ret;
+
+	ret = drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
+				   &LINEAR_METADATA, BO_USE_TEXTURE_MASK);
+	if (ret)
+		return ret;
+
+	return drv_modify_linear_combinations(drv);
 }
 
-static int vgem_bo_create(struct bo *bo, uint32_t width, uint32_t height,
-			  uint32_t format, uint32_t flags)
+static int vgem_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+			  uint32_t flags)
 {
-	int ret = drv_dumb_bo_create(bo, ALIGN(width, MESA_LLVMPIPE_TILE_SIZE),
-				     ALIGN(height, MESA_LLVMPIPE_TILE_SIZE),
-				     format, flags);
-	bo->width = width;
-	bo->height = height;
+	width = ALIGN(width, MESA_LLVMPIPE_TILE_SIZE);
+	height = ALIGN(height, MESA_LLVMPIPE_TILE_SIZE);
 
-	return ret;
+	/* HAL_PIXEL_FORMAT_YV12 requires that the buffer's height not be aligned. */
+	if (bo->format == DRM_FORMAT_YVU420_ANDROID)
+		height = bo->height;
+
+	return drv_dumb_bo_create(bo, width, height, format, flags);
 }
 
 static uint32_t vgem_resolve_format(uint32_t format)
@@ -57,8 +60,7 @@ static uint32_t vgem_resolve_format(uint32_t format)
 	}
 }
 
-struct backend backend_vgem =
-{
+struct backend backend_vgem = {
 	.name = "vgem",
 	.init = vgem_init,
 	.bo_create = vgem_bo_create,
@@ -67,4 +69,3 @@ struct backend backend_vgem =
 	.bo_map = drv_dumb_bo_map,
 	.resolve_format = vgem_resolve_format,
 };
-

@@ -19,6 +19,7 @@ It assumes you have a Android device plugged in.
 """
 
 import argparse
+import json
 import logging
 import os
 import shutil
@@ -31,6 +32,9 @@ import time
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, os.pardir, os.pardir,
                                         os.pardir))
+BAD_DEVICES_JSON = os.path.join(SRC_DIR,
+                                os.environ.get('CHROMIUM_OUT_DIR', 'out'),
+                                'bad_devices.json')
 
 
 class Error(Exception):
@@ -102,17 +106,26 @@ def main():
   download_tools_script = os.path.join(tools_dir, 'download_tools.py')
   _RunCommand([sys.executable, download_tools_script, toolchain_dir])
 
-  testing_tools_dir = os.path.join(SRC_DIR, 'webrtc', 'tools', 'testing')
+  testing_tools_dir = os.path.join(SRC_DIR, 'webrtc', 'rtc_tools', 'testing')
 
   # Download, extract and build AppRTC.
   setup_apprtc_script = os.path.join(testing_tools_dir, 'setup_apprtc.py')
   _RunCommand([sys.executable, setup_apprtc_script, temp_dir])
 
   # Select an Android device in case multiple are connected
+  try:
+    with open(BAD_DEVICES_JSON) as bad_devices_file:
+      bad_devices = json.load(bad_devices_file)
+  except IOError:
+    if os.environ.get('CHROME_HEADLESS'):
+      logging.warning('Cannot read %r', BAD_DEVICES_JSON)
+    bad_devices = {}
+
   for line in _RunCommandWithOutput([adb_path, 'devices']).splitlines():
     if line.endswith('\tdevice'):
       android_device = line.split('\t')[0]
-      break
+      if android_device not in bad_devices:
+        break
   else:
     raise VideoQualityTestError('Cannot find any connected Android device.')
 
@@ -168,7 +181,7 @@ def main():
     ConvertVideo(reference_video, reference_video_yuv)
 
     # Run compare script.
-    compare_script = os.path.join(SRC_DIR, 'webrtc', 'tools',
+    compare_script = os.path.join(SRC_DIR, 'webrtc', 'rtc_tools',
                                   'compare_videos.py')
     zxing_path = os.path.join(toolchain_dir, 'linux', 'zxing')
 

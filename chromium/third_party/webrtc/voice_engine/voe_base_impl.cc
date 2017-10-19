@@ -11,13 +11,13 @@
 #include "webrtc/voice_engine/voe_base_impl.h"
 
 #include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "webrtc/base/format_macros.h"
-#include "webrtc/base/location.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module.h"
 #include "webrtc/modules/audio_device/audio_device_impl.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
+#include "webrtc/rtc_base/format_macros.h"
+#include "webrtc/rtc_base/location.h"
+#include "webrtc/rtc_base/logging.h"
 #include "webrtc/system_wrappers/include/file_wrapper.h"
 #include "webrtc/voice_engine/channel.h"
 #include "webrtc/voice_engine/include/voe_errors.h"
@@ -225,8 +225,9 @@ int VoEBaseImpl::DeRegisterVoiceEngineObserver() {
 
 int VoEBaseImpl::Init(
     AudioDeviceModule* external_adm,
-    AudioProcessing* audioproc,
+    AudioProcessing* audio_processing,
     const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory) {
+  RTC_DCHECK(audio_processing);
   rtc::CritScope cs(shared_->crit_sec());
   WebRtcSpl_Init();
   if (shared_->statistics().Initialized()) {
@@ -337,33 +338,27 @@ int VoEBaseImpl::Init(
                           "Init() failed to set mono/stereo recording mode");
   }
 
-  if (!audioproc) {
-    audioproc = AudioProcessing::Create();
-    if (!audioproc) {
-      LOG(LS_ERROR) << "Failed to create AudioProcessing.";
-      shared_->SetLastError(VE_NO_MEMORY);
-      return -1;
-    }
-  }
-  shared_->set_audio_processing(audioproc);
+  shared_->set_audio_processing(audio_processing);
 
   // Set the error state for any failures in this block.
   shared_->SetLastError(VE_APM_ERROR);
   // Configure AudioProcessing components.
-  if (audioproc->high_pass_filter()->Enable(true) != 0) {
+  // TODO(peah): Move this initialization to webrtcvoiceengine.cc.
+  if (audio_processing->high_pass_filter()->Enable(true) != 0) {
     LOG_F(LS_ERROR) << "Failed to enable high pass filter.";
     return -1;
   }
-  if (audioproc->echo_cancellation()->enable_drift_compensation(false) != 0) {
+  if (audio_processing->echo_cancellation()->enable_drift_compensation(false) !=
+      0) {
     LOG_F(LS_ERROR) << "Failed to disable drift compensation.";
     return -1;
   }
-  if (audioproc->noise_suppression()->set_level(kDefaultNsMode) != 0) {
+  if (audio_processing->noise_suppression()->set_level(kDefaultNsMode) != 0) {
     LOG_F(LS_ERROR) << "Failed to set noise suppression level: "
         << kDefaultNsMode;
     return -1;
   }
-  GainControl* agc = audioproc->gain_control();
+  GainControl* agc = audio_processing->gain_control();
   if (agc->set_analog_level_limits(kMinVolumeLevel, kMaxVolumeLevel) != 0) {
     LOG_F(LS_ERROR) << "Failed to set analog level limits with minimum: "
         << kMinVolumeLevel << " and maximum: " << kMaxVolumeLevel;
@@ -687,9 +682,7 @@ int32_t VoEBaseImpl::TerminateInternal() {
     shared_->set_audio_device(nullptr);
   }
 
-  if (shared_->audio_processing()) {
-    shared_->set_audio_processing(nullptr);
-  }
+  shared_->set_audio_processing(nullptr);
 
   return shared_->statistics().SetUnInitialized();
 }
@@ -716,7 +709,7 @@ void VoEBaseImpl::GetPlayoutData(int sample_rate, size_t number_of_channels,
   assert(sample_rate == audioFrame_.sample_rate_hz_);
 
   // Deliver audio (PCM) samples to the ADM
-  memcpy(audio_data, audioFrame_.data_,
+  memcpy(audio_data, audioFrame_.data(),
          sizeof(int16_t) * number_of_frames * number_of_channels);
 
   *elapsed_time_ms = audioFrame_.elapsed_time_ms_;

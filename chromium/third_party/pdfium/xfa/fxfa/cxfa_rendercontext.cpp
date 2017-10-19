@@ -8,15 +8,13 @@
 
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
-#include "xfa/fxgraphics/cfx_graphics.h"
+#include "xfa/fxgraphics/cxfa_graphics.h"
 
 CXFA_RenderContext::CXFA_RenderContext(CXFA_FFPageView* pPageView,
                                        const CFX_RectF& clipRect,
                                        const CFX_Matrix& matrix)
     : m_pWidget(nullptr), m_matrix(matrix), m_rtClipRect(clipRect) {
-  CFX_Matrix mtRes;
-  mtRes.SetReverse(matrix);
-  mtRes.TransformRect(m_rtClipRect);
+  matrix.GetInverse().TransformRect(m_rtClipRect);
 
   m_pWidgetIterator = pPageView->CreateWidgetIterator(
       XFA_TRAVERSEWAY_Form,
@@ -26,7 +24,7 @@ CXFA_RenderContext::CXFA_RenderContext(CXFA_FFPageView* pPageView,
 
 CXFA_RenderContext::~CXFA_RenderContext() {}
 
-void CXFA_RenderContext::DoRender(CFX_Graphics* gs) {
+void CXFA_RenderContext::DoRender(CXFA_Graphics* gs) {
   while (m_pWidget) {
     CFX_RectF rtWidgetBox = m_pWidget->GetBBox(XFA_WidgetStatus_Visible);
     rtWidgetBox.width += 1;

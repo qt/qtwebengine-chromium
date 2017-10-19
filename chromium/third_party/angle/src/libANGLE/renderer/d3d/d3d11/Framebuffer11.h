@@ -23,14 +23,20 @@ class Framebuffer11 : public FramebufferD3D, public OnRenderTargetDirtyReceiver
     Framebuffer11(const gl::FramebufferState &data, Renderer11 *renderer);
     virtual ~Framebuffer11();
 
-    gl::Error discard(size_t count, const GLenum *attachments) override;
-    gl::Error invalidate(size_t count, const GLenum *attachments) override;
-    gl::Error invalidateSub(size_t count, const GLenum *attachments, const gl::Rectangle &area) override;
+    gl::Error discard(const gl::Context *context, size_t count, const GLenum *attachments) override;
+    gl::Error invalidate(const gl::Context *context,
+                         size_t count,
+                         const GLenum *attachments) override;
+    gl::Error invalidateSub(const gl::Context *context,
+                            size_t count,
+                            const GLenum *attachments,
+                            const gl::Rectangle &area) override;
 
     // Invalidate the cached swizzles of all bound texture attachments.
-    gl::Error markAttachmentsDirty() const;
+    gl::Error markAttachmentsDirty(const gl::Context *context) const;
 
-    void syncState(ContextImpl *contextImpl, const gl::Framebuffer::DirtyBits &dirtyBits) override;
+    void syncState(const gl::Context *context,
+                   const gl::Framebuffer::DirtyBits &dirtyBits) override;
 
     const RenderTargetArray &getCachedColorRenderTargets() const
     {
@@ -41,24 +47,28 @@ class Framebuffer11 : public FramebufferD3D, public OnRenderTargetDirtyReceiver
         return mCachedDepthStencilRenderTarget;
     }
 
+    RenderTarget11 *getFirstRenderTarget() const;
+
     bool hasAnyInternalDirtyBit() const;
-    void syncInternalState(ContextImpl *contextImpl);
+    void syncInternalState(const gl::Context *context);
 
     void signal(size_t channelID) override;
 
     gl::Error getSamplePosition(size_t index, GLfloat *xy) const override;
 
   private:
-    gl::Error clearImpl(ContextImpl *context, const ClearParameters &clearParams) override;
+    gl::Error clearImpl(const gl::Context *context, const ClearParameters &clearParams) override;
 
-    gl::Error readPixelsImpl(const gl::Rectangle &area,
+    gl::Error readPixelsImpl(const gl::Context *context,
+                             const gl::Rectangle &area,
                              GLenum format,
                              GLenum type,
                              size_t outputPitch,
                              const gl::PixelPackState &pack,
                              uint8_t *pixels) const override;
 
-    gl::Error blitImpl(const gl::Rectangle &sourceArea,
+    gl::Error blitImpl(const gl::Context *context,
+                       const gl::Rectangle &sourceArea,
                        const gl::Rectangle &destArea,
                        const gl::Rectangle *scissor,
                        bool blitRenderTarget,
@@ -67,13 +77,17 @@ class Framebuffer11 : public FramebufferD3D, public OnRenderTargetDirtyReceiver
                        GLenum filter,
                        const gl::Framebuffer *sourceFramebuffer) override;
 
-    gl::Error invalidateBase(size_t count, const GLenum *attachments, bool useEXTBehavior) const;
-    gl::Error invalidateAttachment(const gl::FramebufferAttachment *attachment) const;
+    gl::Error invalidateBase(const gl::Context *context,
+                             size_t count,
+                             const GLenum *attachments,
+                             bool useEXTBehavior) const;
+    gl::Error invalidateAttachment(const gl::Context *context,
+                                   const gl::FramebufferAttachment *attachment) const;
 
     GLenum getRenderTargetImplementationFormat(RenderTargetD3D *renderTarget) const override;
 
-    void updateColorRenderTarget(size_t colorIndex);
-    void updateDepthStencilRenderTarget();
+    void updateColorRenderTarget(const gl::Context *context, size_t colorIndex);
+    void updateDepthStencilRenderTarget(const gl::Context *context);
 
     Renderer11 *const mRenderer;
     RenderTargetArray mCachedColorRenderTargets;

@@ -7,7 +7,6 @@
 #ifndef CORE_FPDFAPI_PAGE_CPDF_PAGE_H_
 #define CORE_FPDFAPI_PAGE_CPDF_PAGE_H_
 
-#include <map>
 #include <memory>
 
 #include "core/fpdfapi/page/cpdf_pageobjectholder.h"
@@ -21,20 +20,6 @@ class CPDF_Object;
 class CPDF_PageRenderCache;
 class CPDF_PageRenderContext;
 
-// These structs are used to keep track of resources that have already been
-// generated in the page.
-struct GraphicsData {
-  float fillAlpha;
-  float strokeAlpha;
-  bool operator<(const GraphicsData& other) const;
-};
-
-struct FontData {
-  CFX_ByteString baseFont;
-  CFX_ByteString type;
-  bool operator<(const FontData& other) const;
-};
-
 class CPDF_Page : public CPDF_PageObjectHolder {
  public:
   class View {};  // Caller implements as desired, empty here due to layering.
@@ -43,6 +28,9 @@ class CPDF_Page : public CPDF_PageObjectHolder {
             CPDF_Dictionary* pPageDict,
             bool bPageCache);
   ~CPDF_Page() override;
+
+  // CPDF_PageObjectHolder
+  bool IsPage() const override;
 
   void ParseContent();
 
@@ -57,7 +45,6 @@ class CPDF_Page : public CPDF_PageObjectHolder {
   CFX_FloatRect GetPageBBox() const { return m_BBox; }
   const CFX_Matrix& GetPageMatrix() const { return m_PageMatrix; }
   int GetPageRotation() const;
-  CPDF_Object* GetPageAttr(const CFX_ByteString& name) const;
   CPDF_PageRenderCache* GetRenderCache() const { return m_pPageRender.get(); }
 
   CPDF_PageRenderContext* GetRenderContext() const {
@@ -68,11 +55,11 @@ class CPDF_Page : public CPDF_PageObjectHolder {
   View* GetView() const { return m_pView; }
   void SetView(View* pView) { m_pView = pView; }
 
-  std::map<GraphicsData, CFX_ByteString> m_GraphicsMap;
-  std::map<FontData, CFX_ByteString> m_FontsMap;
-
- protected:
+ private:
   void StartParse();
+
+  CPDF_Object* GetPageAttr(const CFX_ByteString& name) const;
+  CFX_FloatRect GetBox(const CFX_ByteString& name) const;
 
   float m_PageWidth;
   float m_PageHeight;

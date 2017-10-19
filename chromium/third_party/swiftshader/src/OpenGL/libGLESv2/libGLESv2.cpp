@@ -4247,6 +4247,9 @@ void Hint(GLenum target, GLenum mode)
 	case GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES:
 		if(context) context->setFragmentShaderDerivativeHint(mode);
 		break;
+	case GL_TEXTURE_FILTERING_HINT_CHROMIUM:
+		if(context) context->setTextureFilteringHint(mode);
+		break;
 	default:
 		return error(GL_INVALID_ENUM);
 	}
@@ -5103,7 +5106,7 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 				return error(GL_INVALID_OPERATION);
 			}
 
-			texture->setImage(level, width, height, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
+			texture->setImage(context, level, width, height, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
 		}
 		else
 		{
@@ -5114,7 +5117,7 @@ void TexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
 				return error(GL_INVALID_OPERATION);
 			}
 
-			texture->setImage(target, level, width, height, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
+			texture->setImage(context, target, level, width, height, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
 		}
 	}
 }
@@ -5469,7 +5472,7 @@ void TexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLs
 
 			if(validationError == GL_NONE)
 			{
-				texture->subImage(level, xoffset, yoffset, width, height, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
+				texture->subImage(context, level, xoffset, yoffset, width, height, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
 			}
 			else
 			{
@@ -5484,7 +5487,7 @@ void TexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLs
 
 			if(validationError == GL_NONE)
 			{
-				texture->subImage(target, level, xoffset, yoffset, width, height, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
+				texture->subImage(context, target, level, xoffset, yoffset, width, height, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
 			}
 			else
 			{
@@ -5970,7 +5973,7 @@ void ValidateProgram(GLuint program)
 			}
 		}
 
-		programObject->validate();
+		programObject->validate(context->getDevice());
 	}
 }
 
@@ -6304,7 +6307,7 @@ void TexImage3DOES(GLenum target, GLint level, GLenum internalformat, GLsizei wi
 			return error(GL_INVALID_OPERATION);
 		}
 
-		texture->setImage(level, width, height, depth, GetSizedInternalFormat(internalformat, type), type, context->getUnpackInfo(), context->getPixels(data));
+		texture->setImage(context, level, width, height, depth, GetSizedInternalFormat(internalformat, type), type, context->getUnpackInfo(), context->getPixels(data));
 	}
 }
 
@@ -6349,7 +6352,7 @@ void TexSubImage3DOES(GLenum target, GLint level, GLint xoffset, GLint yoffset, 
 		GLenum validationError = ValidateSubImageParams(false, width, height, depth, xoffset, yoffset, zoffset, target, level, sizedInternalFormat, texture);
 		if(validationError == GL_NONE)
 		{
-			texture->subImage(level, xoffset, yoffset, zoffset, width, height, depth, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
+			texture->subImage(context, level, xoffset, yoffset, zoffset, width, height, depth, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
 		}
 		else
 		{

@@ -64,8 +64,7 @@ static struct backend *drv_get_backend(int fd)
 #ifdef DRV_AMDGPU
 		&backend_amdgpu,
 #endif
-		&backend_cirrus,
-		&backend_evdi,
+		&backend_cirrus,   &backend_evdi,
 #ifdef DRV_EXYNOS
 		&backend_exynos,
 #endif
@@ -90,11 +89,10 @@ static struct backend *drv_get_backend(int fd)
 #ifdef DRV_VC4
 		&backend_vc4,
 #endif
-		&backend_vgem,
-		&backend_virtio_gpu,
+		&backend_vgem,     &backend_virtio_gpu,
 	};
 
-	for(i = 0; i < ARRAY_SIZE(backend_list); i++)
+	for (i = 0; i < ARRAY_SIZE(backend_list); i++)
 		if (!strcmp(drm_version->name, backend_list[i]->name)) {
 			drmFreeVersion(drm_version);
 			return backend_list[i];
@@ -109,7 +107,7 @@ struct driver *drv_create(int fd)
 	struct driver *drv;
 	int ret;
 
-	drv = (struct driver *) calloc(1, sizeof(*drv));
+	drv = (struct driver *)calloc(1, sizeof(*drv));
 
 	if (!drv)
 		return NULL;
@@ -131,12 +129,20 @@ struct driver *drv_create(int fd)
 	if (!drv->map_table)
 		goto free_buffer_table;
 
-	LIST_INITHEAD(&drv->backend->combinations);
+	/* Start with a power of 2 number of allocations. */
+	drv->backend->combos.allocations = 2;
+	drv->backend->combos.size = 0;
+	drv->backend->combos.data =
+	    calloc(drv->backend->combos.allocations, sizeof(struct combination));
+	if (!drv->backend->combos.data)
+		goto free_map_table;
 
 	if (drv->backend->init) {
 		ret = drv->backend->init(drv);
-		if (ret)
+		if (ret) {
+			free(drv->backend->combos.data);
 			goto free_map_table;
+		}
 	}
 
 	return drv;
@@ -162,11 +168,7 @@ void drv_destroy(struct driver *drv)
 	drmHashDestroy(drv->buffer_table);
 	drmHashDestroy(drv->map_table);
 
-	list_for_each_entry_safe(struct combination_list_element, elem,
-				 &drv->backend->combinations, link) {
-		LIST_DEL(&elem->link);
-		free(elem);
-	}
+	free(drv->backend->combos.data);
 
 	pthread_mutex_unlock(&drv->driver_lock);
 	pthread_mutex_destroy(&drv->driver_lock);
@@ -179,36 +181,35 @@ int drv_get_fd(struct driver *drv)
 	return drv->fd;
 }
 
-const char *
-drv_get_name(struct driver *drv)
+const char *drv_get_name(struct driver *drv)
 {
 	return drv->backend->name;
 }
 
-int drv_is_combination_supported(struct driver *drv, uint32_t format,
-			         uint64_t usage, uint64_t modifier)
+struct combination *drv_get_combination(struct driver *drv, uint32_t format, uint64_t usage)
 {
+	struct combination *curr, *best;
 
 	if (format == DRM_FORMAT_NONE || usage == BO_USE_NONE)
 		return 0;
 
-	list_for_each_entry(struct combination_list_element, elem,
-			    &drv->backend->combinations, link) {
-		if (format == elem->combination.format &&
-		    usage == (elem->combination.usage & usage) &&
-		    modifier == elem->combination.modifier)
-			return 1;
+	best = NULL;
+	uint32_t i;
+	for (i = 0; i < drv->backend->combos.size; i++) {
+		curr = &drv->backend->combos.data[i];
+		if ((format == curr->format) && usage == (curr->usage & usage))
+			if (!best || best->metadata.priority < curr->metadata.priority)
+				best = curr;
 	}
 
-	return 0;
+	return best;
 }
 
-struct bo *drv_bo_new(struct driver *drv, uint32_t width, uint32_t height,
-		      uint32_t format)
+struct bo *drv_bo_new(struct driver *drv, uint32_t width, uint32_t height, uint32_t format)
 {
 
 	struct bo *bo;
-	bo = (struct bo *) calloc(1, sizeof(*bo));
+	bo = (struct bo *)calloc(1, sizeof(*bo));
 
 	if (!bo)
 		return NULL;
@@ -227,8 +228,8 @@ struct bo *drv_bo_new(struct driver *drv, uint32_t width, uint32_t height,
 	return bo;
 }
 
-struct bo *drv_bo_create(struct driver *drv, uint32_t width, uint32_t height,
-			 uint32_t format, uint64_t flags)
+struct bo *drv_bo_create(struct driver *drv, uint32_t width, uint32_t height, uint32_t format,
+			 uint64_t flags)
 {
 	int ret;
 	size_t plane;
@@ -256,10 +257,8 @@ struct bo *drv_bo_create(struct driver *drv, uint32_t width, uint32_t height,
 	return bo;
 }
 
-struct bo *drv_bo_create_with_modifiers(struct driver *drv,
-					uint32_t width, uint32_t height,
-					uint32_t format,
-					const uint64_t *modifiers, uint32_t count)
+struct bo *drv_bo_create_with_modifiers(struct driver *drv, uint32_t width, uint32_t height,
+					uint32_t format, const uint64_t *modifiers, uint32_t count)
 {
 	int ret;
 	size_t plane;
@@ -275,8 +274,7 @@ struct bo *drv_bo_create_with_modifiers(struct driver *drv,
 	if (!bo)
 		return NULL;
 
-	ret = drv->backend->bo_create_with_modifiers(bo, width, height,
-						     format, modifiers, count);
+	ret = drv->backend->bo_create_with_modifiers(bo, width, height, format, modifiers, count);
 
 	if (ret) {
 		free(bo);
@@ -292,7 +290,6 @@ struct bo *drv_bo_create_with_modifiers(struct driver *drv,
 
 	return bo;
 }
-
 
 void drv_bo_destroy(struct bo *bo)
 {
@@ -344,8 +341,8 @@ struct bo *drv_bo_import(struct driver *drv, struct drv_import_fd_data *data)
 	return bo;
 }
 
-void *drv_bo_map(struct bo *bo, uint32_t x, uint32_t y, uint32_t width,
-		 uint32_t height, uint32_t flags, void **map_data, size_t plane)
+void *drv_bo_map(struct bo *bo, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+		 uint32_t flags, struct map_info **map_data, size_t plane)
 {
 	void *ptr;
 	uint8_t *addr;
@@ -360,7 +357,7 @@ void *drv_bo_map(struct bo *bo, uint32_t x, uint32_t y, uint32_t width,
 	pthread_mutex_lock(&bo->drv->driver_lock);
 
 	if (!drmHashLookup(bo->drv->map_table, bo->handles[plane].u32, &ptr)) {
-		data = (struct map_info *) ptr;
+		data = (struct map_info *)ptr;
 		data->refcount++;
 		goto success;
 	}
@@ -377,23 +374,21 @@ void *drv_bo_map(struct bo *bo, uint32_t x, uint32_t y, uint32_t width,
 	data->refcount = 1;
 	data->addr = addr;
 	data->handle = bo->handles[plane].u32;
-	drmHashInsert(bo->drv->buffer_table, bo->handles[plane].u32,
-		      (void *) data);
+	drmHashInsert(bo->drv->map_table, bo->handles[plane].u32, (void *)data);
 
 success:
-	*map_data = (void *) data;
+	*map_data = data;
 	offset = drv_bo_get_plane_stride(bo, plane) * y;
 	offset += drv_stride_from_format(bo->format, x, plane);
-	addr = (uint8_t *) data->addr;
+	addr = (uint8_t *)data->addr;
 	addr += drv_bo_get_plane_offset(bo, plane) + offset;
 	pthread_mutex_unlock(&bo->drv->driver_lock);
 
-	return (void *) addr;
+	return (void *)addr;
 }
 
-int drv_bo_unmap(struct bo *bo, void *map_data)
+int drv_bo_unmap(struct bo *bo, struct map_info *data)
 {
-	struct map_info *data = map_data;
 	int ret = 0;
 
 	assert(data);
@@ -450,11 +445,9 @@ int drv_bo_get_plane_fd(struct bo *bo, size_t plane)
 	int ret, fd;
 	assert(plane < bo->num_planes);
 
-	ret = drmPrimeHandleToFD(bo->drv->fd, bo->handles[plane].u32,
-				 DRM_CLOEXEC | DRM_RDWR, &fd);
+	ret = drmPrimeHandleToFD(bo->drv->fd, bo->handles[plane].u32, DRM_CLOEXEC | DRM_RDWR, &fd);
 
 	return (ret) ? ret : fd;
-
 }
 
 uint32_t drv_bo_get_plane_offset(struct bo *bo, size_t plane)
@@ -477,7 +470,7 @@ uint32_t drv_bo_get_plane_stride(struct bo *bo, size_t plane)
 
 uint64_t drv_bo_get_plane_format_modifier(struct bo *bo, size_t plane)
 {
-        assert(plane < bo->num_planes);
+	assert(plane < bo->num_planes);
 	return bo->format_modifiers[plane];
 }
 
@@ -492,31 +485,6 @@ uint32_t drv_resolve_format(struct driver *drv, uint32_t format)
 		return drv->backend->resolve_format(format);
 
 	return format;
-}
-
-/*
- * This function returns the stride for a given format, width and plane.
- */
-int drv_stride_from_format(uint32_t format, uint32_t width, size_t plane)
-{
-	int stride = width * DIV_ROUND_UP(drv_bpp_from_format(format, plane),
-					  8);
-
-	/*
-	 * Only downsample for certain multiplanar formats which have horizontal
-	 * subsampling for chroma planes.  Only formats supported by our drivers
-	 * are listed here -- add more as needed.
-	 */
-	if (plane != 0) {
-		switch (format) {
-		case DRM_FORMAT_NV12:
-		case DRM_FORMAT_YVU420:
-			stride = stride / 2;
-			break;
-		}
-	}
-
-	return stride;
 }
 
 size_t drv_num_planes_from_format(uint32_t format)
@@ -571,8 +539,10 @@ size_t drv_num_planes_from_format(uint32_t format)
 	case DRM_FORMAT_YVYU:
 		return 1;
 	case DRM_FORMAT_NV12:
+	case DRM_FORMAT_NV21:
 		return 2;
 	case DRM_FORMAT_YVU420:
+	case DRM_FORMAT_YVU420_ANDROID:
 		return 3;
 	}
 
@@ -580,8 +550,7 @@ size_t drv_num_planes_from_format(uint32_t format)
 	return 0;
 }
 
-uint32_t drv_size_from_format(uint32_t format, uint32_t stride,
-			      uint32_t height, size_t plane)
+uint32_t drv_size_from_format(uint32_t format, uint32_t stride, uint32_t height, size_t plane)
 {
 	assert(plane < drv_num_planes_from_format(format));
 	uint32_t vertical_subsampling;
@@ -589,6 +558,7 @@ uint32_t drv_size_from_format(uint32_t format, uint32_t stride,
 	switch (format) {
 	case DRM_FORMAT_NV12:
 	case DRM_FORMAT_YVU420:
+	case DRM_FORMAT_YVU420_ANDROID:
 		vertical_subsampling = (plane == 0) ? 1 : 2;
 		break;
 	default:

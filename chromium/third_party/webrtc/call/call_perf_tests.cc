@@ -14,15 +14,15 @@
 #include <string>
 
 #include "webrtc/api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/thread_annotations.h"
 #include "webrtc/call/call.h"
 #include "webrtc/config.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module.h"
 #include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/thread_annotations.h"
 #include "webrtc/system_wrappers/include/metrics_default.h"
 #include "webrtc/test/call_test.h"
 #include "webrtc/test/direct_transport.h"
@@ -145,12 +145,15 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
   const uint32_t kAudioRecvSsrc = 5678;
 
   metrics::Reset();
+  rtc::scoped_refptr<AudioProcessing> audio_processing =
+      AudioProcessing::Create();
   VoiceEngine* voice_engine = VoiceEngine::Create();
   VoEBase* voe_base = VoEBase::GetInterface(voice_engine);
   FakeAudioDevice fake_audio_device(
       FakeAudioDevice::CreatePulsedNoiseCapturer(256, 48000),
       FakeAudioDevice::CreateDiscardRenderer(48000), audio_rtp_speed);
-  EXPECT_EQ(0, voe_base->Init(&fake_audio_device, nullptr, decoder_factory_));
+  EXPECT_EQ(0, voe_base->Init(&fake_audio_device, audio_processing.get(),
+                              decoder_factory_));
   VoEBase::ChannelConfig config;
   config.enable_voice_pacing = true;
   int send_channel_id = voe_base->CreateChannel(config);
@@ -159,7 +162,9 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
   AudioState::Config send_audio_state_config;
   send_audio_state_config.voice_engine = voice_engine;
   send_audio_state_config.audio_mixer = AudioMixerImpl::Create();
+  send_audio_state_config.audio_processing = audio_processing;
   Call::Config sender_config(event_log_.get());
+
   sender_config.audio_state = AudioState::Create(send_audio_state_config);
   Call::Config receiver_config(event_log_.get());
   receiver_config.audio_state = sender_config.audio_state;

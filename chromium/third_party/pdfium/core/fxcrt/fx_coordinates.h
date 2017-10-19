@@ -482,6 +482,7 @@ class CFX_FloatRect {
   FX_RECT GetInnerRect() const;
   FX_RECT GetOuterRect() const;
   FX_RECT GetClosestRect() const;
+  CFX_FloatRect GetCenterSquare() const;
 
   int Substract4(CFX_FloatRect& substract_rect, CFX_FloatRect* pRects);
 
@@ -542,11 +543,34 @@ class CFX_FloatRect {
     Deflate(rt.left, rt.bottom, rt.right, rt.top);
   }
 
+  CFX_FloatRect GetDeflated(float x, float y) const {
+    if (IsEmpty())
+      return CFX_FloatRect();
+
+    CFX_FloatRect that = *this;
+    that.Deflate(x, y);
+    that.Normalize();
+    return that;
+  }
+
   void Translate(float e, float f) {
     left += e;
     right += e;
     top += f;
     bottom += f;
+  }
+
+  void Scale(float fScale) {
+    float fHalfWidth = (right - left) / 2.0f;
+    float fHalfHeight = (top - bottom) / 2.0f;
+
+    float center_x = (left + right) / 2;
+    float center_y = (top + bottom) / 2;
+
+    left = center_x - fHalfWidth * fScale;
+    bottom = center_y - fHalfHeight * fScale;
+    right = center_x + fHalfWidth * fScale;
+    top = center_y + fHalfHeight * fScale;
   }
 
   static CFX_FloatRect GetBBox(const CFX_PointF* pPoints, int nPoints);
@@ -608,7 +632,7 @@ class CFX_Matrix {
     f = 0;
   }
 
-  void SetReverse(const CFX_Matrix& m);
+  CFX_Matrix GetInverse() const;
 
   void Concat(const CFX_Matrix& m, bool bPrepended = false);
   void ConcatInverse(const CFX_Matrix& m, bool bPrepended = false);

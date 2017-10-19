@@ -40,6 +40,8 @@
 namespace egl
 {
 
+class Context;
+
 sw::Format ConvertFormatType(GLenum format, GLenum type);
 sw::Format SelectInternalFormat(GLenum format, GLenum type);
 GLsizei ComputePitch(GLsizei width, GLenum format, GLenum type, GLint alignment);
@@ -48,9 +50,7 @@ size_t ComputePackingOffset(GLenum format, GLenum type, GLsizei width, GLsizei h
 
 class [[clang::lto_visibility_public]] Image : public sw::Surface, public gl::Object
 {
-	virtual void typeinfo();   // Dummy key method (https://gcc.gnu.org/onlinedocs/gcc/Vague-Linkage.html)
-
-public:
+protected:
 	// 2D texture image
 	Image(Texture *parentTexture, GLsizei width, GLsizei height, GLenum format, GLenum type)
 		: sw::Surface(parentTexture->getResource(), width, height, 1, SelectInternalFormat(format, type), true, true),
@@ -92,6 +92,19 @@ public:
 		shared = false;
 		Object::addRef();
 	}
+
+public:
+	// 2D texture image
+	static Image *create(Texture *parentTexture, GLsizei width, GLsizei height, GLenum format, GLenum type);
+
+	// 3D texture image
+	static Image *create(Texture *parentTexture, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type);
+
+	// Native EGL image
+	static Image *create(GLsizei width, GLsizei height, GLenum format, GLenum type, int pitchP);
+
+	// Render target
+	static Image *create(GLsizei width, GLsizei height, sw::Format internalFormat, int multiSampleDepth, bool lockable);
 
 	GLsizei getWidth() const
 	{
@@ -150,6 +163,9 @@ public:
 		unlockExternal();
 	}
 
+	void *lockInternal(int x, int y, int z, sw::Lock lock, sw::Accessor client) override = 0;
+	void unlockInternal() override = 0;
+
 	struct UnpackInfo
 	{
 		UnpackInfo() : alignment(4), rowLength(0), imageHeight(0), skipPixels(0), skipRows(0), skipImages(0) {}
@@ -162,10 +178,10 @@ public:
 		GLint skipImages;
 	};
 
-	void loadImageData(GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const UnpackInfo& unpackInfo, const void *input);
+	void loadImageData(Context *context, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const UnpackInfo& unpackInfo, const void *input);
 	void loadCompressedData(GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLsizei imageSize, const void *pixels);
 
-	void release() override;
+	void release() override = 0;
 	void unbind(const Texture *parent);   // Break parent ownership and release
 	bool isChildOf(const Texture *parent) const;
 
@@ -188,7 +204,7 @@ protected:
 
 	egl::Texture *parentTexture;
 
-	virtual ~Image();
+	~Image() override = 0;
 
 	void loadD24S8ImageData(GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, int inputPitch, int inputHeight, const void *input, void *buffer);
 	void loadD32FS8ImageData(GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, int inputPitch, int inputHeight, const void *input, void *buffer);
@@ -252,14 +268,14 @@ public:
 private:
 	ANativeWindowBuffer *nativeBuffer;
 
-	virtual ~AndroidNativeImage()
+	~AndroidNativeImage() override
 	{
 		sync();   // Wait for any threads that use this image to finish.
 
 		nativeBuffer->common.decRef(&nativeBuffer->common);
 	}
 
-	virtual void *lockInternal(int x, int y, int z, sw::Lock lock, sw::Accessor client)
+	void *lockInternal(int x, int y, int z, sw::Lock lock, sw::Accessor client) override
 	{
 		LOGLOCK("image=%p op=%s.swsurface lock=%d", this, __FUNCTION__, lock);
 
@@ -289,7 +305,7 @@ private:
 		return data;
 	}
 
-	virtual void unlockInternal()
+	void unlockInternal() override
 	{
 		if(nativeBuffer)   // Unlock the buffer from ANativeWindowBuffer
 		{
@@ -301,7 +317,7 @@ private:
 		sw::Surface::unlockInternal();
 	}
 
-	virtual void *lock(unsigned int left, unsigned int top, sw::Lock lock)
+	void *lock(unsigned int left, unsigned int top, sw::Lock lock) override
 	{
 		LOGLOCK("image=%p op=%s lock=%d", this, __FUNCTION__, lock);
 		(void)sw::Surface::lockExternal(left, top, 0, lock, sw::PUBLIC);
@@ -309,7 +325,7 @@ private:
 		return lockNativeBuffer(GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN);
 	}
 
-	virtual void unlock()
+	void unlock() override
 	{
 		LOGLOCK("image=%p op=%s.ani", this, __FUNCTION__);
 		unlockNativeBuffer();
@@ -318,7 +334,7 @@ private:
 		sw::Surface::unlockExternal();
 	}
 
-	void* lockNativeBuffer(int usage)
+	void *lockNativeBuffer(int usage)
 	{
 		void *buffer = nullptr;
 		GrallocModule::getInstance()->lock(nativeBuffer->handle, usage, 0, 0, nativeBuffer->width, nativeBuffer->height, &buffer);
@@ -329,6 +345,11 @@ private:
 	void unlockNativeBuffer()
 	{
 		GrallocModule::getInstance()->unlock(nativeBuffer->handle);
+	}
+
+	void release() override
+	{
+		Image::release();
 	}
 };
 

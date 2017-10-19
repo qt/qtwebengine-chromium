@@ -279,6 +279,7 @@ rtc_static_library("g722") {
     ":legacy_encoded_audio_frame",
     "../..:webrtc_common",
     "../../api/audio_codecs:audio_codecs_api",
+    "../../api/audio_codecs/g722:audio_encoder_g722_config",
     "../../base:rtc_base_approved",
   ]
   public_deps = [
@@ -321,6 +322,7 @@ rtc_static_library("ilbc") {
     ":legacy_encoded_audio_frame",
     "../..:webrtc_common",
     "../../api/audio_codecs:audio_codecs_api",
+    "../../api/audio_codecs/ilbc:audio_encoder_ilbc_config",
     "../../base:rtc_base_approved",
     "../../common_audio",
   ]
@@ -632,6 +634,16 @@ rtc_source_set("isac_fix_common") {
   public_configs = [ ":isac_fix_config" ]
 }
 
+rtc_source_set("isac_fix_c_arm_asm") {
+  sources = []
+  if (current_cpu == "arm" && arm_version >= 7) {
+    sources += [
+      "codecs/isac/fix/source/lattice_armv7.S",
+      "codecs/isac/fix/source/pitch_filter_armv6.S",
+    ]
+  }
+}
+
 rtc_source_set("isac_fix_c") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
   sources = [
@@ -700,14 +712,11 @@ rtc_source_set("isac_fix_c") {
   }
 
   if (current_cpu == "arm" && arm_version >= 7) {
-    sources += [
-      "codecs/isac/fix/source/lattice_armv7.S",
-      "codecs/isac/fix/source/pitch_filter_armv6.S",
-    ]
     sources -= [
       "codecs/isac/fix/source/lattice_c.c",
       "codecs/isac/fix/source/pitch_filter_c.c",
     ]
+    deps += [ ":isac_fix_c_arm_asm" ]
   }
 
   if (current_cpu == "mipsel") {
@@ -827,6 +836,7 @@ rtc_static_library("webrtc_opus") {
     ":audio_network_adaptor",
     "../..:webrtc_common",
     "../../api/audio_codecs:audio_codecs_api",
+    "../../api/audio_codecs/opus:audio_encoder_opus_config",
     "../../base:protobuf_utils",
     "../../base:rtc_base_approved",
     "../../base:rtc_numerics",
@@ -838,11 +848,6 @@ rtc_static_library("webrtc_opus") {
   ]
 
   defines = audio_codec_defines
-  if (rtc_opus_variable_complexity) {
-    defines += [ "WEBRTC_OPUS_VARIABLE_COMPLEXITY=1" ]
-  } else {
-    defines += [ "WEBRTC_OPUS_VARIABLE_COMPLEXITY=0" ]
-  }
 
   if (rtc_build_opus) {
     public_deps += [ rtc_opus_dir ]
@@ -879,6 +884,9 @@ if (rtc_enable_protobuf) {
   proto_library("ana_debug_dump_proto") {
     sources = [
       "audio_network_adaptor/debug_dump.proto",
+    ]
+    deps = [
+      ":ana_config_proto",
     ]
     proto_out_dir = "webrtc/modules/audio_coding/audio_network_adaptor"
   }
@@ -933,7 +941,6 @@ rtc_static_library("audio_network_adaptor") {
       ":ana_config_proto",
       ":ana_debug_dump_proto",
     ]
-    defines = [ "WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP" ]
   }
 
   if (!build_with_chromium && is_clang) {
@@ -1103,6 +1110,120 @@ rtc_source_set("neteq_tools_minimal") {
   ]
 }
 
+rtc_source_set("neteq_test_tools") {
+  testonly = true
+  sources = [
+    "neteq/tools/audio_checksum.h",
+    "neteq/tools/audio_loop.cc",
+    "neteq/tools/audio_loop.h",
+    "neteq/tools/constant_pcm_packet_source.cc",
+    "neteq/tools/constant_pcm_packet_source.h",
+    "neteq/tools/output_audio_file.h",
+    "neteq/tools/output_wav_file.h",
+    "neteq/tools/rtp_file_source.cc",
+    "neteq/tools/rtp_file_source.h",
+    "neteq/tools/rtp_generator.cc",
+    "neteq/tools/rtp_generator.h",
+  ]
+
+  public_configs = [ ":neteq_tools_config" ]
+
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
+
+  deps = [
+    ":pcm16b",
+    "..:module_api",
+    "../..:webrtc_common",
+    "../../base:rtc_base_approved",
+    "../../base:rtc_base_tests_utils",
+    "../../common_audio",
+    "../../test:rtp_test_utils",
+    "../rtp_rtcp",
+  ]
+
+  public_deps = [
+    ":neteq_tools",
+    ":neteq_tools_minimal",
+  ]
+
+  if (rtc_enable_protobuf) {
+    sources += [
+      "neteq/tools/neteq_packet_source_input.cc",
+      "neteq/tools/neteq_packet_source_input.h",
+    ]
+    deps += [ ":rtc_event_log_source" ]
+  }
+}
+
+config("neteq_tools_config") {
+  include_dirs = [ "tools" ]
+}
+
+rtc_source_set("neteq_tools") {
+  sources = [
+    "neteq/tools/fake_decode_from_file.cc",
+    "neteq/tools/fake_decode_from_file.h",
+    "neteq/tools/input_audio_file.cc",
+    "neteq/tools/input_audio_file.h",
+    "neteq/tools/neteq_delay_analyzer.cc",
+    "neteq/tools/neteq_delay_analyzer.h",
+    "neteq/tools/neteq_replacement_input.cc",
+    "neteq/tools/neteq_replacement_input.h",
+    "neteq/tools/resample_input_audio_file.cc",
+    "neteq/tools/resample_input_audio_file.h",
+  ]
+
+  public_configs = [ ":neteq_tools_config" ]
+
+  if (!build_with_chromium && is_clang) {
+    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+  }
+
+  deps = [
+    "../..:webrtc_common",
+    "../../api/audio_codecs:audio_codecs_api",
+    "../../base:rtc_base_approved",
+    "../../common_audio",
+    "../rtp_rtcp",
+  ]
+
+  public_deps = [
+    ":neteq_tools_minimal",
+  ]
+}
+
+if (rtc_enable_protobuf) {
+  rtc_static_library("rtc_event_log_source") {
+    testonly = true
+
+    # TODO(kjellander): Remove (bugs.webrtc.org/6828)
+    # Needs call.h to be moved to webrtc/api first.
+    check_includes = false
+
+    sources = [
+      "neteq/tools/rtc_event_log_source.cc",
+      "neteq/tools/rtc_event_log_source.h",
+    ]
+
+    if (!build_with_chromium && is_clang) {
+      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
+      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
+    }
+
+    deps = [
+      "../../base:rtc_base_approved",
+      "../../logging:rtc_event_log_parser",
+    ]
+    public_deps = [
+      "../../logging:rtc_event_log_proto",
+    ]
+  }
+}
+
 if (rtc_include_tests) {
   group("audio_coding_tests") {
     testonly = true
@@ -1146,7 +1267,7 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc/modules:modules_tests" ]
+      visibility = [ "..:modules_tests" ]
     }
     sources = [
       "test/ACMTest.h",
@@ -1213,7 +1334,7 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc:webrtc_perf_tests" ]
+      visibility = [ "../..:webrtc_perf_tests" ]
     }
     sources = [
       "codecs/opus/opus_complexity_unittest.cc",
@@ -1335,7 +1456,7 @@ if (rtc_include_tests) {
   }  # insert_packet_with_timing
 
   audio_decoder_unittests_resources =
-      [ "//resources/audio_coding/testfile32kHz.pcm" ]
+      [ "../../../resources/audio_coding/testfile32kHz.pcm" ]
 
   if (is_ios) {
     bundle_data("audio_decoder_unittests_bundle_data") {
@@ -1370,6 +1491,7 @@ if (rtc_include_tests) {
       ":neteq",
       ":neteq_tools",
       "../../api/audio_codecs:audio_codecs_api",
+      "../../api/audio_codecs/opus:audio_encoder_opus",
       "../../base:protobuf_utils",
       "../../common_audio",
       "../../test:test_main",
@@ -1393,32 +1515,6 @@ if (rtc_include_tests) {
         "neteq/neteq_unittest.proto",
       ]
       proto_out_dir = "webrtc/modules/audio_coding/neteq"
-    }
-
-    rtc_static_library("rtc_event_log_source") {
-      testonly = true
-
-      # TODO(kjellander): Remove (bugs.webrtc.org/6828)
-      # Needs call.h to be moved to webrtc/api first.
-      check_includes = false
-
-      sources = [
-        "neteq/tools/rtc_event_log_source.cc",
-        "neteq/tools/rtc_event_log_source.h",
-      ]
-
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
-
-      deps = [
-        "../../base:rtc_base_approved",
-        "../../logging:rtc_event_log_parser",
-      ]
-      public_deps = [
-        "../../logging:rtc_event_log_proto",
-      ]
     }
 
     rtc_test("neteq_rtpplay") {
@@ -1540,90 +1636,6 @@ if (rtc_include_tests) {
       "//testing/gtest",
       "//third_party/gflags",
     ]
-  }
-
-  config("neteq_tools_config") {
-    include_dirs = [ "tools" ]
-  }
-
-  rtc_source_set("neteq_tools") {
-    sources = [
-      "neteq/tools/fake_decode_from_file.cc",
-      "neteq/tools/fake_decode_from_file.h",
-      "neteq/tools/input_audio_file.cc",
-      "neteq/tools/input_audio_file.h",
-      "neteq/tools/neteq_replacement_input.cc",
-      "neteq/tools/neteq_replacement_input.h",
-      "neteq/tools/resample_input_audio_file.cc",
-      "neteq/tools/resample_input_audio_file.h",
-    ]
-
-    public_configs = [ ":neteq_tools_config" ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
-    deps = [
-      "../..:webrtc_common",
-      "../../api/audio_codecs:audio_codecs_api",
-      "../../base:rtc_base_approved",
-      "../../common_audio",
-      "../rtp_rtcp",
-    ]
-
-    public_deps = [
-      ":neteq_tools_minimal",
-    ]
-  }
-
-  rtc_source_set("neteq_test_tools") {
-    testonly = true
-    sources = [
-      "neteq/tools/audio_checksum.h",
-      "neteq/tools/audio_loop.cc",
-      "neteq/tools/audio_loop.h",
-      "neteq/tools/constant_pcm_packet_source.cc",
-      "neteq/tools/constant_pcm_packet_source.h",
-      "neteq/tools/output_audio_file.h",
-      "neteq/tools/output_wav_file.h",
-      "neteq/tools/rtp_file_source.cc",
-      "neteq/tools/rtp_file_source.h",
-      "neteq/tools/rtp_generator.cc",
-      "neteq/tools/rtp_generator.h",
-    ]
-
-    public_configs = [ ":neteq_tools_config" ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
-    deps = [
-      ":pcm16b",
-      "..:module_api",
-      "../..:webrtc_common",
-      "../../base:rtc_base_approved",
-      "../../base:rtc_base_tests_utils",
-      "../../common_audio",
-      "../../test:rtp_test_utils",
-      "../rtp_rtcp",
-    ]
-
-    public_deps = [
-      ":neteq_tools",
-      ":neteq_tools_minimal",
-    ]
-
-    if (rtc_enable_protobuf) {
-      sources += [
-        "neteq/tools/neteq_packet_source_input.cc",
-        "neteq/tools/neteq_packet_source_input.h",
-      ]
-      deps += [ ":rtc_event_log_source" ]
-    }
   }
 
   rtc_source_set("neteq_test_tools_deprecated") {
@@ -2052,7 +2064,7 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc/modules:modules_unittests" ]
+      visibility = [ "..:modules_unittests" ]
     }
     sources = [
       "acm2/acm_receiver_unittest.cc",
@@ -2112,6 +2124,7 @@ if (rtc_include_tests) {
       "neteq/mock/mock_external_decoder_pcm16b.h",
       "neteq/mock/mock_packet_buffer.h",
       "neteq/mock/mock_red_payload_splitter.h",
+      "neteq/mock/mock_statistics_calculator.h",
       "neteq/nack_tracker_unittest.cc",
       "neteq/neteq_external_decoder_unittest.cc",
       "neteq/neteq_impl_unittest.cc",
@@ -2176,10 +2189,7 @@ if (rtc_include_tests) {
     defines = audio_coding_defines
 
     if (rtc_enable_protobuf) {
-      defines += [
-        "WEBRTC_AUDIO_NETWORK_ADAPTOR_DEBUG_DUMP",
-        "WEBRTC_NETEQ_UNITTEST_BITEXACT",
-      ]
+      defines += [ "WEBRTC_NETEQ_UNITTEST_BITEXACT" ]
       deps += [
         ":ana_config_proto",
         ":neteq_unittest_proto",

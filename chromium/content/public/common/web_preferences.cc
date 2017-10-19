@@ -173,17 +173,13 @@ WebPreferences::WebPreferences()
       use_solid_color_scrollbars(false),
       navigate_on_drag_drop(true),
       v8_cache_options(V8_CACHE_OPTIONS_DEFAULT),
-      inert_visual_viewport(false),
       record_whole_document(false),
       cookie_enabled(true),
       pepper_accelerated_video_decode_enabled(false),
       animation_policy(IMAGE_ANIMATION_POLICY_ALLOWED),
       user_gesture_required_for_presentation(true),
       text_track_margin_percentage(0.0f),
-      expensive_background_throttling_cpu_budget(-1.0f),
-      expensive_background_throttling_initial_budget(-1.0f),
-      expensive_background_throttling_max_budget(-1.0f),
-      expensive_background_throttling_max_delay(-1.0f),
+      page_popups_suppressed(false),
 #if defined(OS_ANDROID)
       text_autosizing_enabled(true),
       font_scale_factor(1.0f),
@@ -211,6 +207,8 @@ WebPreferences::WebPreferences()
       video_fullscreen_detection_enabled(false),
       embedded_media_experience_enabled(false),
       page_popups_suppressed(false),
+      fullscreen_supported(false),
+      scroll_top_left_interop_enabled(true),
 #else   // defined(OS_ANDROID)
       fullscreen_supported(false),
 #endif  // defined(OS_ANDROID)
@@ -226,7 +224,6 @@ WebPreferences::WebPreferences()
 #endif
       hide_download_ui(false),
       background_video_track_optimization_enabled(false),
-      enable_instant_source_buffer_gc(false),
       presentation_receiver(false),
       media_controls_enabled(true),
       do_not_update_selection_on_mutating_selection_range(false),

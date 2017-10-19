@@ -35,6 +35,7 @@
 #include "libANGLE/renderer/gl/TransformFeedbackGL.h"
 #include "libANGLE/renderer/gl/VertexArrayGL.h"
 #include "libANGLE/renderer/gl/renderergl_utils.h"
+#include "libANGLE/renderer/renderer_utils.h"
 
 namespace
 {
@@ -54,7 +55,6 @@ std::vector<GLuint> GatherPaths(const std::vector<gl::Path *> &paths)
 
 }  // namespace
 
-#ifndef NDEBUG
 static void INTERNAL_GL_APIENTRY LogGLDebugMessage(GLenum source,
                                                    GLenum type,
                                                    GLuint id,
@@ -158,7 +158,6 @@ static void INTERNAL_GL_APIENTRY LogGLDebugMessage(GLenum source,
                << "\tMessage: " << message;
     }
 }
-#endif
 
 namespace rx
 {
@@ -168,21 +167,24 @@ RendererGL::RendererGL(const FunctionsGL *functions, const egl::AttributeMap &at
       mFunctions(functions),
       mStateManager(nullptr),
       mBlitter(nullptr),
-      mHasDebugOutput(false),
+      mUseDebugOutput(false),
       mSkipDrawCalls(false),
-      mCapsInitialized(false)
+      mCapsInitialized(false),
+      mMultiviewImplementationType(MultiviewImplementationTypeGL::UNSPECIFIED)
 {
     ASSERT(mFunctions);
     nativegl_gl::GenerateWorkarounds(mFunctions, &mWorkarounds);
     mStateManager = new StateManagerGL(mFunctions, getNativeCaps());
     mBlitter      = new BlitGL(functions, mWorkarounds, mStateManager);
 
-    mHasDebugOutput = mFunctions->isAtLeastGL(gl::Version(4, 3)) ||
-                      mFunctions->hasGLExtension("GL_KHR_debug") ||
-                      mFunctions->isAtLeastGLES(gl::Version(3, 2)) ||
-                      mFunctions->hasGLESExtension("GL_KHR_debug");
-#ifndef NDEBUG
-    if (mHasDebugOutput)
+    bool hasDebugOutput = mFunctions->isAtLeastGL(gl::Version(4, 3)) ||
+                          mFunctions->hasGLExtension("GL_KHR_debug") ||
+                          mFunctions->isAtLeastGLES(gl::Version(3, 2)) ||
+                          mFunctions->hasGLESExtension("GL_KHR_debug");
+
+    mUseDebugOutput = hasDebugOutput && ShouldUseDebugLayers(attribMap);
+
+    if (mUseDebugOutput)
     {
         mFunctions->enable(GL_DEBUG_OUTPUT);
         mFunctions->enable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
@@ -196,7 +198,6 @@ RendererGL::RendererGL(const FunctionsGL *functions, const egl::AttributeMap &at
                                         0, nullptr, GL_FALSE);
         mFunctions->debugMessageCallback(&LogGLDebugMessage, nullptr);
     }
-#endif
 
     EGLint deviceType =
         static_cast<EGLint>(attribMap.get(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE, EGL_NONE));
@@ -231,31 +232,27 @@ gl::Error RendererGL::flush()
 
 gl::Error RendererGL::finish()
 {
-#ifdef NDEBUG
-    if (mWorkarounds.finishDoesNotCauseQueriesToBeAvailable && mHasDebugOutput)
+    if (mWorkarounds.finishDoesNotCauseQueriesToBeAvailable && mUseDebugOutput)
     {
         mFunctions->enable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
     }
-#endif
 
     mFunctions->finish();
 
-#ifdef NDEBUG
-    if (mWorkarounds.finishDoesNotCauseQueriesToBeAvailable && mHasDebugOutput)
+    if (mWorkarounds.finishDoesNotCauseQueriesToBeAvailable && mUseDebugOutput)
     {
         mFunctions->disable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
     }
-#endif
 
     return gl::NoError();
 }
 
-gl::Error RendererGL::drawArrays(const gl::ContextState &data,
+gl::Error RendererGL::drawArrays(const gl::Context *context,
                                  GLenum mode,
                                  GLint first,
                                  GLsizei count)
 {
-    ANGLE_TRY(mStateManager->setDrawArraysState(data, first, count, 0));
+    ANGLE_TRY(mStateManager->setDrawArraysState(context, first, count, 0));
 
     if (!mSkipDrawCalls)
     {
@@ -265,13 +262,13 @@ gl::Error RendererGL::drawArrays(const gl::ContextState &data,
     return gl::NoError();
 }
 
-gl::Error RendererGL::drawArraysInstanced(const gl::ContextState &data,
+gl::Error RendererGL::drawArraysInstanced(const gl::Context *context,
                                           GLenum mode,
                                           GLint first,
                                           GLsizei count,
                                           GLsizei instanceCount)
 {
-    ANGLE_TRY(mStateManager->setDrawArraysState(data, first, count, instanceCount));
+    ANGLE_TRY(mStateManager->setDrawArraysState(context, first, count, instanceCount));
 
     if (!mSkipDrawCalls)
     {
@@ -281,7 +278,7 @@ gl::Error RendererGL::drawArraysInstanced(const gl::ContextState &data,
     return gl::NoError();
 }
 
-gl::Error RendererGL::drawElements(const gl::ContextState &data,
+gl::Error RendererGL::drawElements(const gl::Context *context,
                                    GLenum mode,
                                    GLsizei count,
                                    GLenum type,
@@ -289,7 +286,7 @@ gl::Error RendererGL::drawElements(const gl::ContextState &data,
                                    const gl::IndexRange &indexRange)
 {
     const void *drawIndexPtr = nullptr;
-    ANGLE_TRY(mStateManager->setDrawElementsState(data, count, type, indices, 0, &drawIndexPtr));
+    ANGLE_TRY(mStateManager->setDrawElementsState(context, count, type, indices, 0, &drawIndexPtr));
 
     if (!mSkipDrawCalls)
     {
@@ -299,7 +296,7 @@ gl::Error RendererGL::drawElements(const gl::ContextState &data,
     return gl::NoError();
 }
 
-gl::Error RendererGL::drawElementsInstanced(const gl::ContextState &data,
+gl::Error RendererGL::drawElementsInstanced(const gl::Context *context,
                                             GLenum mode,
                                             GLsizei count,
                                             GLenum type,
@@ -308,7 +305,7 @@ gl::Error RendererGL::drawElementsInstanced(const gl::ContextState &data,
                                             const gl::IndexRange &indexRange)
 {
     const void *drawIndexPointer = nullptr;
-    ANGLE_TRY(mStateManager->setDrawElementsState(data, count, type, indices, instances,
+    ANGLE_TRY(mStateManager->setDrawElementsState(context, count, type, indices, instances,
                                                   &drawIndexPointer));
 
     if (!mSkipDrawCalls)
@@ -319,7 +316,7 @@ gl::Error RendererGL::drawElementsInstanced(const gl::ContextState &data,
     return gl::NoError();
 }
 
-gl::Error RendererGL::drawRangeElements(const gl::ContextState &data,
+gl::Error RendererGL::drawRangeElements(const gl::Context *context,
                                         GLenum mode,
                                         GLuint start,
                                         GLuint end,
@@ -330,7 +327,7 @@ gl::Error RendererGL::drawRangeElements(const gl::ContextState &data,
 {
     const void *drawIndexPointer = nullptr;
     ANGLE_TRY(
-        mStateManager->setDrawElementsState(data, count, type, indices, 0, &drawIndexPointer));
+        mStateManager->setDrawElementsState(context, count, type, indices, 0, &drawIndexPointer));
 
     if (!mSkipDrawCalls)
     {
@@ -340,11 +337,11 @@ gl::Error RendererGL::drawRangeElements(const gl::ContextState &data,
     return gl::NoError();
 }
 
-gl::Error RendererGL::drawArraysIndirect(const gl::ContextState &data,
+gl::Error RendererGL::drawArraysIndirect(const gl::Context *context,
                                          GLenum mode,
                                          const void *indirect)
 {
-    ANGLE_TRY(mStateManager->setDrawIndirectState(data, GL_NONE));
+    ANGLE_TRY(mStateManager->setDrawIndirectState(context, GL_NONE));
 
     if (!mSkipDrawCalls)
     {
@@ -353,12 +350,12 @@ gl::Error RendererGL::drawArraysIndirect(const gl::ContextState &data,
     return gl::NoError();
 }
 
-gl::Error RendererGL::drawElementsIndirect(const gl::ContextState &data,
+gl::Error RendererGL::drawElementsIndirect(const gl::Context *context,
                                            GLenum mode,
                                            GLenum type,
                                            const void *indirect)
 {
-    ANGLE_TRY(mStateManager->setDrawIndirectState(data, type));
+    ANGLE_TRY(mStateManager->setDrawIndirectState(context, type));
 
     if (!mSkipDrawCalls)
     {
@@ -606,7 +603,7 @@ void RendererGL::generateCaps(gl::Caps *outCaps,
                               gl::Limitations * /* outLimitations */) const
 {
     nativegl_gl::GenerateCaps(mFunctions, mWorkarounds, outCaps, outTextureCaps, outExtensions,
-                              &mMaxSupportedESVersion);
+                              &mMaxSupportedESVersion, &mMultiviewImplementationType);
 }
 
 GLint RendererGL::getGPUDisjoint()
@@ -655,12 +652,24 @@ const gl::Limitations &RendererGL::getNativeLimitations() const
     return mNativeLimitations;
 }
 
-gl::Error RendererGL::dispatchCompute(const gl::ContextState &data,
+MultiviewImplementationTypeGL RendererGL::getMultiviewImplementationType() const
+{
+    ensureCapsInitialized();
+    return mMultiviewImplementationType;
+}
+
+void RendererGL::applyNativeWorkarounds(gl::Workarounds *workarounds) const
+{
+    ensureCapsInitialized();
+    nativegl_gl::ApplyWorkarounds(mFunctions, workarounds);
+}
+
+gl::Error RendererGL::dispatchCompute(const gl::Context *context,
                                       GLuint numGroupsX,
                                       GLuint numGroupsY,
                                       GLuint numGroupsZ)
 {
-    ANGLE_TRY(mStateManager->setDispatchComputeState(data));
+    ANGLE_TRY(mStateManager->setDispatchComputeState(context));
     mFunctions->dispatchCompute(numGroupsX, numGroupsY, numGroupsZ);
     return gl::NoError();
 }

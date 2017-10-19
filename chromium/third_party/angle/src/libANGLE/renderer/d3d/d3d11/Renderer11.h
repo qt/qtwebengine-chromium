@@ -138,23 +138,25 @@ class Renderer11 : public RendererD3D
                                    HANDLE shareHandle,
                                    const egl::AttributeMap &attribs) const override;
 
-    gl::Error setSamplerState(gl::SamplerType type,
+    gl::Error setSamplerState(const gl::Context *context,
+                              gl::SamplerType type,
                               int index,
                               gl::Texture *texture,
                               const gl::SamplerState &sampler) override;
-    gl::Error setTexture(gl::SamplerType type, int index, gl::Texture *texture) override;
+    gl::Error setTexture(const gl::Context *context,
+                         gl::SamplerType type,
+                         int index,
+                         gl::Texture *texture) override;
 
     gl::Error setUniformBuffers(const gl::ContextState &data,
                                 const std::vector<GLint> &vertexUniformBuffers,
                                 const std::vector<GLint> &fragmentUniformBuffers) override;
 
-    gl::Error updateState(ContextImpl *contextImpl, GLenum drawMode);
-
     bool applyPrimitiveType(GLenum mode, GLsizei count, bool usesPointSize);
     gl::Error applyUniforms(const ProgramD3D &programD3D,
                             GLenum drawMode,
                             const std::vector<D3DUniform *> &uniformArray) override;
-    gl::Error applyVertexBuffer(const gl::State &state,
+    gl::Error applyVertexBuffer(const gl::Context *context,
                                 GLenum mode,
                                 GLint first,
                                 GLsizei count,
@@ -189,33 +191,38 @@ class Renderer11 : public RendererD3D
     std::string getShaderModelSuffix() const override;
 
     // Pixel operations
-    gl::Error copyImage2D(const gl::Framebuffer *framebuffer,
+    gl::Error copyImage2D(const gl::Context *context,
+                          const gl::Framebuffer *framebuffer,
                           const gl::Rectangle &sourceRect,
                           GLenum destFormat,
                           const gl::Offset &destOffset,
                           TextureStorage *storage,
                           GLint level) override;
-    gl::Error copyImageCube(const gl::Framebuffer *framebuffer,
+    gl::Error copyImageCube(const gl::Context *context,
+                            const gl::Framebuffer *framebuffer,
                             const gl::Rectangle &sourceRect,
                             GLenum destFormat,
                             const gl::Offset &destOffset,
                             TextureStorage *storage,
                             GLenum target,
                             GLint level) override;
-    gl::Error copyImage3D(const gl::Framebuffer *framebuffer,
+    gl::Error copyImage3D(const gl::Context *context,
+                          const gl::Framebuffer *framebuffer,
                           const gl::Rectangle &sourceRect,
                           GLenum destFormat,
                           const gl::Offset &destOffset,
                           TextureStorage *storage,
                           GLint level) override;
-    gl::Error copyImage2DArray(const gl::Framebuffer *framebuffer,
+    gl::Error copyImage2DArray(const gl::Context *context,
+                               const gl::Framebuffer *framebuffer,
                                const gl::Rectangle &sourceRect,
                                GLenum destFormat,
                                const gl::Offset &destOffset,
                                TextureStorage *storage,
                                GLint level) override;
 
-    gl::Error copyTexture(const gl::Texture *source,
+    gl::Error copyTexture(const gl::Context *context,
+                          const gl::Texture *source,
                           GLint sourceLevel,
                           const gl::Rectangle &sourceRect,
                           GLenum destFormat,
@@ -226,7 +233,8 @@ class Renderer11 : public RendererD3D
                           bool unpackFlipY,
                           bool unpackPremultiplyAlpha,
                           bool unpackUnmultiplyAlpha) override;
-    gl::Error copyCompressedTexture(const gl::Texture *source,
+    gl::Error copyCompressedTexture(const gl::Context *context,
+                                    const gl::Texture *source,
                                     GLint sourceLevel,
                                     TextureStorage *storage,
                                     GLint destLevel) override;
@@ -240,7 +248,7 @@ class Renderer11 : public RendererD3D
     gl::Error createRenderTargetCopy(RenderTargetD3D *source, RenderTargetD3D **outRT) override;
 
     // Shader operations
-    gl::Error loadExecutable(const void *function,
+    gl::Error loadExecutable(const uint8_t *function,
                              size_t length,
                              ShaderType type,
                              const std::vector<D3DVarying> &streamOutVaryings,
@@ -259,9 +267,18 @@ class Renderer11 : public RendererD3D
 
     // Image operations
     ImageD3D *createImage() override;
-    gl::Error generateMipmap(ImageD3D *dest, ImageD3D *source) override;
-    gl::Error generateMipmapUsingD3D(TextureStorage *storage,
+    gl::Error generateMipmap(const gl::Context *context, ImageD3D *dest, ImageD3D *source) override;
+    gl::Error generateMipmapUsingD3D(const gl::Context *context,
+                                     TextureStorage *storage,
                                      const gl::TextureState &textureState) override;
+    gl::Error copyImage(const gl::Context *context,
+                        ImageD3D *dest,
+                        ImageD3D *source,
+                        const gl::Rectangle &sourceRect,
+                        const gl::Offset &destOffset,
+                        bool unpackFlipY,
+                        bool unpackPremultiplyAlpha,
+                        bool unpackUnmultiplyAlpha) override;
     TextureStorage *createTextureStorage2D(SwapChainD3D *swapChain) override;
     TextureStorage *createTextureStorageEGLImage(EGLImageD3D *eglImage,
                                                  RenderTargetD3D *renderTargetD3D) override;
@@ -291,6 +308,12 @@ class Renderer11 : public RendererD3D
                                                 GLsizei height,
                                                 GLsizei depth,
                                                 int levels) override;
+    TextureStorage *createTextureStorage2DMultisample(GLenum internalformat,
+                                                      GLsizei width,
+                                                      GLsizei height,
+                                                      int levels,
+                                                      int samples,
+                                                      GLboolean fixedSampleLocations) override;
 
     VertexBuffer *createVertexBuffer() override;
     IndexBuffer *createIndexBuffer() override;
@@ -307,7 +330,14 @@ class Renderer11 : public RendererD3D
     ID3D11DeviceContext1 *getDeviceContext1IfSupported() { return mDeviceContext1; };
     IDXGIFactory *getDxgiFactory() { return mDxgiFactory; };
 
-    RenderStateCache &getStateCache() { return mStateCache; }
+    gl::Error getBlendState(const d3d11::BlendStateKey &key, ID3D11BlendState **outBlendState);
+    gl::Error getRasterizerState(const gl::RasterizerState &rasterState,
+                                 bool scissorEnabled,
+                                 ID3D11RasterizerState **outRasterizerState);
+    gl::Error getDepthStencilState(const gl::DepthStencilState &dsState,
+                                   ID3D11DepthStencilState **outDSState);
+    gl::Error getSamplerState(const gl::SamplerState &samplerState,
+                              ID3D11SamplerState **outSamplerState);
 
     Blit11 *getBlitter() { return mBlit; }
     Clear11 *getClearer() { return mClear; }
@@ -315,14 +345,15 @@ class Renderer11 : public RendererD3D
 
     // Buffer-to-texture and Texture-to-buffer copies
     bool supportsFastCopyBufferToTexture(GLenum internalFormat) const override;
-    gl::Error fastCopyBufferToTexture(const gl::PixelUnpackState &unpack,
+    gl::Error fastCopyBufferToTexture(const gl::Context *context,
+                                      const gl::PixelUnpackState &unpack,
                                       unsigned int offset,
                                       RenderTargetD3D *destRenderTarget,
                                       GLenum destinationFormat,
                                       GLenum sourcePixelsType,
                                       const gl::Box &destArea) override;
 
-    void markAllStateDirty();
+    void markAllStateDirty(const gl::Context *context);
     gl::Error packPixels(const TextureHelper11 &textureHelper,
                          const PackPixelsParams &params,
                          uint8_t *pixelsOut);
@@ -339,7 +370,8 @@ class Renderer11 : public RendererD3D
                                                            GLsizei count,
                                                            GLsizei instances) const override;
 
-    gl::Error readFromAttachment(const gl::FramebufferAttachment &srcAttachment,
+    gl::Error readFromAttachment(const gl::Context *context,
+                                 const gl::FramebufferAttachment &srcAttachment,
                                  const gl::Rectangle &sourceArea,
                                  GLenum format,
                                  GLenum type,
@@ -347,7 +379,8 @@ class Renderer11 : public RendererD3D
                                  const gl::PixelPackState &pack,
                                  uint8_t *pixels);
 
-    gl::Error blitRenderbufferRect(const gl::Rectangle &readRect,
+    gl::Error blitRenderbufferRect(const gl::Context *context,
+                                   const gl::Rectangle &readRect,
                                    const gl::Rectangle &drawRect,
                                    RenderTargetD3D *readRenderTarget,
                                    RenderTargetD3D *drawRenderTarget,
@@ -370,13 +403,13 @@ class Renderer11 : public RendererD3D
 
     egl::Error getEGLDevice(DeviceImpl **device) override;
 
-    gl::Error genericDrawArrays(Context11 *context,
+    gl::Error genericDrawArrays(const gl::Context *context,
                                 GLenum mode,
                                 GLint first,
                                 GLsizei count,
                                 GLsizei instances);
 
-    gl::Error genericDrawElements(Context11 *context,
+    gl::Error genericDrawElements(const gl::Context *context,
                                   GLenum mode,
                                   GLsizei count,
                                   GLenum type,
@@ -384,7 +417,7 @@ class Renderer11 : public RendererD3D
                                   GLsizei instances,
                                   const gl::IndexRange &indexRange);
 
-    gl::Error genericDrawIndirect(Context11 *context,
+    gl::Error genericDrawIndirect(const gl::Context *context,
                                   GLenum mode,
                                   GLenum type,
                                   const void *indirect);
@@ -396,7 +429,7 @@ class Renderer11 : public RendererD3D
 
     gl::Version getMaxSupportedESVersion() const override;
 
-    gl::Error dispatchCompute(Context11 *context,
+    gl::Error dispatchCompute(const gl::Context *context,
                               GLuint numGroupsX,
                               GLuint numGroupsY,
                               GLuint numGroupsZ);
@@ -404,10 +437,16 @@ class Renderer11 : public RendererD3D
                                    const std::vector<D3DUniform *> &uniformArray) override;
     gl::Error applyComputeShader(const gl::ContextState &data);
 
-    gl::ErrorOrResult<TextureHelper11> createStagingTexture(GLenum textureType,
+    gl::ErrorOrResult<TextureHelper11> createStagingTexture(ResourceType textureType,
                                                             const d3d11::Format &formatSet,
                                                             const gl::Extents &size,
                                                             StagingAccess readAndWriteAccess);
+
+    template <typename DescT, typename ResourceT>
+    gl::Error allocateResource(const DescT &desc, ResourceT *resourceOut)
+    {
+        return mResourceManager11.allocate(this, &desc, nullptr, resourceOut);
+    }
 
     template <typename DescT, typename InitDataT, typename ResourceT>
     gl::Error allocateResource(const DescT &desc, InitDataT *initData, ResourceT *resourceOut)
@@ -421,13 +460,35 @@ class Renderer11 : public RendererD3D
         return mResourceManager11.allocate(this, nullptr, initData, resourceOut);
     }
 
+    template <typename DescT>
+    gl::Error allocateTexture(const DescT &desc,
+                              const d3d11::Format &format,
+                              TextureHelper11 *textureOut)
+    {
+        return allocateTexture(desc, format, nullptr, textureOut);
+    }
+
+    gl::Error allocateTexture(const D3D11_TEXTURE2D_DESC &desc,
+                              const d3d11::Format &format,
+                              const D3D11_SUBRESOURCE_DATA *initData,
+                              TextureHelper11 *textureOut);
+
+    gl::Error allocateTexture(const D3D11_TEXTURE3D_DESC &desc,
+                              const d3d11::Format &format,
+                              const D3D11_SUBRESOURCE_DATA *initData,
+                              TextureHelper11 *textureOut);
+
+    gl::Error clearRenderTarget(RenderTargetD3D *renderTarget,
+                                const gl::ColorF &clearValues) override;
+
   protected:
-    gl::Error clearTextures(gl::SamplerType samplerType,
+    gl::Error clearTextures(const gl::Context *context,
+                            gl::SamplerType samplerType,
                             size_t rangeStart,
                             size_t rangeEnd) override;
 
   private:
-    gl::Error drawArraysImpl(const gl::ContextState &data,
+    gl::Error drawArraysImpl(const gl::Context *context,
                              GLenum mode,
                              GLint startVertex,
                              GLsizei count,
@@ -439,16 +500,14 @@ class Renderer11 : public RendererD3D
                                GLenum type,
                                const void *indices,
                                GLsizei instances);
-    gl::Error drawArraysIndirectImpl(const gl::ContextState &data,
-                                     GLenum mode,
-                                     const void *indirect);
-    gl::Error drawElementsIndirectImpl(const gl::ContextState &data,
+    gl::Error drawArraysIndirectImpl(const gl::Context *context, GLenum mode, const void *indirect);
+    gl::Error drawElementsIndirectImpl(const gl::Context *context,
                                        GLenum mode,
                                        GLenum type,
                                        const void *indirect);
 
     // Support directly using indirect draw buffer.
-    bool supportsFastIndirectDraw(const gl::State &state, GLenum mode, GLenum type);
+    bool supportsFastIndirectDraw(const gl::Context *context, GLenum mode, GLenum type);
 
     void generateCaps(gl::Caps *outCaps,
                       gl::TextureCapsMap *outTextureCaps,
@@ -470,12 +529,13 @@ class Renderer11 : public RendererD3D
                               int baseVertex,
                               int instances);
 
-    gl::Error applyShaders(const gl::ContextState &data, GLenum drawMode);
-    gl::Error generateSwizzle(gl::Texture *texture);
-    gl::Error generateSwizzles(const gl::ContextState &data, gl::SamplerType type);
-    gl::Error generateSwizzles(const gl::ContextState &data);
+    gl::Error applyShaders(const gl::Context *context, GLenum drawMode);
+    gl::Error generateSwizzle(const gl::Context *context, gl::Texture *texture);
+    gl::Error generateSwizzles(const gl::Context *context, gl::SamplerType type);
+    gl::Error generateSwizzles(const gl::Context *context);
 
-    gl::ErrorOrResult<TextureHelper11> resolveMultisampledTexture(RenderTarget11 *renderTarget,
+    gl::ErrorOrResult<TextureHelper11> resolveMultisampledTexture(const gl::Context *context,
+                                                                  RenderTarget11 *renderTarget,
                                                                   bool depth,
                                                                   bool stencil);
 
@@ -517,9 +577,10 @@ class Renderer11 : public RendererD3D
                                       const TShaderConstants &constants,
                                       SamplerMetadataD3D11 *samplerMetadata,
                                       size_t samplerMetadataReferencedBytes,
-                                      ID3D11Buffer *driverConstantBuffer);
+                                      const d3d11::Buffer &driverConstantBuffer);
 
-    gl::Error copyImageInternal(const gl::Framebuffer *framebuffer,
+    gl::Error copyImageInternal(const gl::Context *context,
+                                const gl::Framebuffer *framebuffer,
                                 const gl::Rectangle &sourceRect,
                                 GLenum destFormat,
                                 const gl::Offset &destOffset,
@@ -529,22 +590,23 @@ class Renderer11 : public RendererD3D
         const gl::TextureCaps &colorBufferFormatCaps,
         const gl::TextureCaps &depthStencilBufferFormatCaps) const;
 
-    HMODULE mD3d11Module;
-    HMODULE mDxgiModule;
-    HMODULE mDCompModule;
-    std::vector<D3D_FEATURE_LEVEL> mAvailableFeatureLevels;
-    D3D_DRIVER_TYPE mRequestedDriverType;
-    bool mCreatedWithDeviceEXT;
-    DeviceD3D *mEGLDevice;
-
-    HLSLCompiler mCompiler;
-
     egl::Error initializeD3DDevice();
     void initializeDevice();
     void releaseDeviceResources();
     void release();
 
     d3d11::ANGLED3D11DeviceType getDeviceType() const;
+
+    HMODULE mD3d11Module;
+    HMODULE mDxgiModule;
+    HMODULE mDCompModule;
+    std::vector<D3D_FEATURE_LEVEL> mAvailableFeatureLevels;
+    D3D_DRIVER_TYPE mRequestedDriverType;
+    bool mCreateDebugDevice;
+    bool mCreatedWithDeviceEXT;
+    DeviceD3D *mEGLDevice;
+
+    HLSLCompiler mCompiler;
 
     RenderStateCache mStateCache;
 
@@ -560,9 +622,6 @@ class Renderer11 : public RendererD3D
 
     StateManager11 mStateManager;
 
-    // Currently applied primitive topology
-    D3D11_PRIMITIVE_TOPOLOGY mCurrentPrimitiveTopology;
-
     // Currently applied index buffer
     ID3D11Buffer *mAppliedIB;
     DXGI_FORMAT mAppliedIBFormat;
@@ -572,34 +631,28 @@ class Renderer11 : public RendererD3D
     // Currently applied transform feedback buffers
     uintptr_t mAppliedTFObject;
 
-    // Currently applied shaders
-    uintptr_t mAppliedVertexShader;
-    uintptr_t mAppliedGeometryShader;
-    uintptr_t mAppliedPixelShader;
-    uintptr_t mAppliedComputeShader;
-
     dx_VertexConstants11 mAppliedVertexConstants;
-    ID3D11Buffer *mDriverConstantBufferVS;
+    d3d11::Buffer mDriverConstantBufferVS;
     SamplerMetadataD3D11 mSamplerMetadataVS;
-    ID3D11Buffer *mCurrentVertexConstantBuffer;
+    uintptr_t mCurrentVertexConstantBuffer;
     unsigned int mCurrentConstantBufferVS[gl::IMPLEMENTATION_MAX_VERTEX_SHADER_UNIFORM_BUFFERS];
     GLintptr mCurrentConstantBufferVSOffset[gl::IMPLEMENTATION_MAX_VERTEX_SHADER_UNIFORM_BUFFERS];
     GLsizeiptr mCurrentConstantBufferVSSize[gl::IMPLEMENTATION_MAX_VERTEX_SHADER_UNIFORM_BUFFERS];
 
     dx_PixelConstants11 mAppliedPixelConstants;
-    ID3D11Buffer *mDriverConstantBufferPS;
+    d3d11::Buffer mDriverConstantBufferPS;
     SamplerMetadataD3D11 mSamplerMetadataPS;
-    ID3D11Buffer *mCurrentPixelConstantBuffer;
+    uintptr_t mCurrentPixelConstantBuffer;
     unsigned int mCurrentConstantBufferPS[gl::IMPLEMENTATION_MAX_FRAGMENT_SHADER_UNIFORM_BUFFERS];
     GLintptr mCurrentConstantBufferPSOffset[gl::IMPLEMENTATION_MAX_FRAGMENT_SHADER_UNIFORM_BUFFERS];
     GLsizeiptr mCurrentConstantBufferPSSize[gl::IMPLEMENTATION_MAX_FRAGMENT_SHADER_UNIFORM_BUFFERS];
 
     dx_ComputeConstants11 mAppliedComputeConstants;
-    ID3D11Buffer *mDriverConstantBufferCS;
+    d3d11::Buffer mDriverConstantBufferCS;
     SamplerMetadataD3D11 mSamplerMetadataCS;
-    ID3D11Buffer *mCurrentComputeConstantBuffer;
+    uintptr_t mCurrentComputeConstantBuffer;
 
-    ID3D11Buffer *mCurrentGeometryConstantBuffer;
+    uintptr_t mCurrentGeometryConstantBuffer;
 
     // Vertex, index and input layouts
     VertexDataManager *mVertexDataManager;
@@ -620,7 +673,7 @@ class Renderer11 : public RendererD3D
     Trim11 *mTrim;
 
     // Sync query
-    ID3D11Query *mSyncQuery;
+    d3d11::Query mSyncQuery;
 
     // Created objects state tracking
     std::set<const Buffer11 *> mAliveBuffers;

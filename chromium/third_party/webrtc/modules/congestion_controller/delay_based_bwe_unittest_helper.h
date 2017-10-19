@@ -17,9 +17,10 @@
 #include <utility>
 #include <vector>
 
-#include "webrtc/base/constructormagic.h"
+#include "webrtc/modules/congestion_controller/acknowledged_bitrate_estimator.h"
 #include "webrtc/modules/congestion_controller/delay_based_bwe.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "webrtc/rtc_base/constructormagic.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/test/gtest.h"
 
@@ -164,6 +165,7 @@ class DelayBasedBweTest : public ::testing::Test {
 
   SimulatedClock clock_;  // Time at the receiver.
   test::TestBitrateObserver bitrate_observer_;
+  std::unique_ptr<AcknowledgedBitrateEstimator> acknowledged_bitrate_estimator_;
   std::unique_ptr<DelayBasedBwe> bitrate_estimator_;
   std::unique_ptr<test::StreamGenerator> stream_generator_;
   int64_t arrival_time_offset_ms_;

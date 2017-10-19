@@ -84,7 +84,7 @@ void SpellcheckServiceFactory::RegisterProfilePrefs(
 #endif
   user_prefs->RegisterBooleanPref(
       spellcheck::prefs::kSpellCheckUseSpellingService, false);
-#if defined(OS_IOS) || defined(OS_ANDROID)
+#if defined(OS_ANDROID)
   uint32_t flags = PrefRegistry::NO_REGISTRATION_FLAGS;
 #else
   uint32_t flags = user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;

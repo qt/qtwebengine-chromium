@@ -14,13 +14,13 @@
 #include <list>
 #include <memory>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/numerics/exp_filter.h"
-#include "webrtc/base/optional.h"
-#include "webrtc/base/sequenced_task_checker.h"
-#include "webrtc/base/task_queue.h"
-#include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/video_coding/utility/quality_scaler.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/numerics/exp_filter.h"
+#include "webrtc/rtc_base/optional.h"
+#include "webrtc/rtc_base/sequenced_task_checker.h"
+#include "webrtc/rtc_base/task_queue.h"
+#include "webrtc/rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -68,7 +68,7 @@ class OveruseFrameDetector {
                        AdaptationObserverInterface* overuse_observer,
                        EncodedFrameObserver* encoder_timing_,
                        CpuOveruseMetricsObserver* metrics_observer);
-  ~OveruseFrameDetector();
+  virtual ~OveruseFrameDetector();
 
   // Start to periodically check for overuse.
   void StartCheckForOveruse();
@@ -76,6 +76,13 @@ class OveruseFrameDetector {
   // StopCheckForOveruse must be called before destruction if
   // StartCheckForOveruse has been called.
   void StopCheckForOveruse();
+
+  // Defines the current maximum framerate targeted by the capturer. This is
+  // used to make sure the encode usage percent doesn't drop unduly if the
+  // capturer has quiet periods (for instance caused by screen capturers with
+  // variable capture rate depending on content updates), otherwise we might
+  // experience adaptation toggling.
+  virtual void OnTargetFramerateUpdated(int framerate_fps);
 
   // Called for each captured frame.
   void FrameCaptured(const VideoFrame& frame, int64_t time_when_first_seen_us);
@@ -135,6 +142,7 @@ class OveruseFrameDetector {
 
   // Number of pixels of last captured frame.
   int num_pixels_ GUARDED_BY(task_checker_);
+  int max_framerate_ GUARDED_BY(task_checker_);
   int64_t last_overuse_time_ms_ GUARDED_BY(task_checker_);
   int checks_above_threshold_ GUARDED_BY(task_checker_);
   int num_overuse_detections_ GUARDED_BY(task_checker_);

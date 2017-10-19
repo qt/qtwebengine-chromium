@@ -26,14 +26,6 @@
 #include "webrtc/api/mediastreaminterface.h"
 #include "webrtc/api/peerconnectioninterface.h"
 #include "webrtc/api/test/fakeconstraints.h"
-#include "webrtc/base/asyncinvoker.h"
-#include "webrtc/base/fakenetwork.h"
-#include "webrtc/base/gunit.h"
-#include "webrtc/base/helpers.h"
-#include "webrtc/base/ssladapter.h"
-#include "webrtc/base/sslstreamadapter.h"
-#include "webrtc/base/thread.h"
-#include "webrtc/base/virtualsocketserver.h"
 #include "webrtc/media/engine/fakewebrtcvideoengine.h"
 #include "webrtc/p2p/base/p2pconstants.h"
 #include "webrtc/p2p/base/portinterface.h"
@@ -50,6 +42,14 @@
 #include "webrtc/pc/test/fakertccertificategenerator.h"
 #include "webrtc/pc/test/fakevideotrackrenderer.h"
 #include "webrtc/pc/test/mockpeerconnectionobservers.h"
+#include "webrtc/rtc_base/asyncinvoker.h"
+#include "webrtc/rtc_base/fakenetwork.h"
+#include "webrtc/rtc_base/gunit.h"
+#include "webrtc/rtc_base/helpers.h"
+#include "webrtc/rtc_base/ssladapter.h"
+#include "webrtc/rtc_base/sslstreamadapter.h"
+#include "webrtc/rtc_base/thread.h"
+#include "webrtc/rtc_base/virtualsocketserver.h"
 
 using cricket::ContentInfo;
 using cricket::FakeWebRtcVideoDecoder;
@@ -2480,6 +2480,40 @@ TEST_F(PeerConnectionIntegrationTest, SctpDataChannelToAudioVideoUpgrade) {
       kDefaultExpectedAudioFrameCount, kDefaultExpectedVideoFrameCount,
       kDefaultExpectedAudioFrameCount, kDefaultExpectedVideoFrameCount,
       kMaxWaitForFramesMs);
+}
+
+static void MakeSpecCompliantSctpOffer(cricket::SessionDescription* desc) {
+  const ContentInfo* dc_offer = GetFirstDataContent(desc);
+  ASSERT_NE(nullptr, dc_offer);
+  cricket::DataContentDescription* dcd_offer =
+      static_cast<cricket::DataContentDescription*>(dc_offer->description);
+  dcd_offer->set_use_sctpmap(false);
+  dcd_offer->set_protocol("UDP/DTLS/SCTP");
+}
+
+// Test that the data channel works when a spec-compliant SCTP m= section is
+// offered (using "a=sctp-port" instead of "a=sctpmap", and using
+// "UDP/DTLS/SCTP" as the protocol).
+TEST_F(PeerConnectionIntegrationTest,
+       DataChannelWorksWhenSpecCompliantSctpOfferReceived) {
+  ASSERT_TRUE(CreatePeerConnectionWrappers());
+  ConnectFakeSignaling();
+  caller()->CreateDataChannel();
+  caller()->SetGeneratedSdpMunger(MakeSpecCompliantSctpOffer);
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
+  ASSERT_TRUE_WAIT(callee()->data_channel() != nullptr, kDefaultTimeout);
+  EXPECT_TRUE_WAIT(caller()->data_observer()->IsOpen(), kDefaultTimeout);
+  EXPECT_TRUE_WAIT(callee()->data_observer()->IsOpen(), kDefaultTimeout);
+
+  // Ensure data can be sent in both directions.
+  std::string data = "hello world";
+  caller()->data_channel()->Send(DataBuffer(data));
+  EXPECT_EQ_WAIT(data, callee()->data_observer()->last_message(),
+                 kDefaultTimeout);
+  callee()->data_channel()->Send(DataBuffer(data));
+  EXPECT_EQ_WAIT(data, caller()->data_observer()->last_message(),
+                 kDefaultTimeout);
 }
 
 #endif  // HAVE_SCTP

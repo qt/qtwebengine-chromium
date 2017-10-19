@@ -494,7 +494,6 @@ if (rtc_include_tests) {
         ":audioproc_f",
         ":audioproc_unittest_proto",
         ":unpack_aecdump",
-        "aec_dump:aec_dump_unittests",
         "test/conversational_speech",
         "test/py_quality_assessment",
       ]
@@ -508,7 +507,7 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc/modules:modules_unittests" ]
+      visibility = [ "..:modules_unittests" ]
     }
     sources = [
       "aec/echo_cancellation_unittest.cc",
@@ -559,6 +558,7 @@ if (rtc_include_tests) {
       "../../system_wrappers:system_wrappers",
       "../../test:test_support",
       "../audio_coding:neteq_tools",
+      "aec_dump:mock_aec_dump_unittests",
       "test/conversational_speech:unittest",
       "//testing/gmock",
       "//testing/gtest",
@@ -594,6 +594,9 @@ if (rtc_include_tests) {
         ":audioproc_debug_proto",
         ":audioproc_protobuf_utils",
         ":audioproc_unittest_proto",
+        "../../base:rtc_task_queue",
+        "aec_dump",
+        "aec_dump:aec_dump_unittests",
       ]
       sources += [
         "aec3/adaptive_fir_filter_unittest.cc",
@@ -683,7 +686,7 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc:webrtc_perf_tests" ]
+      visibility = [ "../..:webrtc_perf_tests" ]
     }
     sources = [
       "audio_processing_performance_unittest.cc",
@@ -744,10 +747,13 @@ if (rtc_include_tests) {
         ":audioproc_test_utils",
         "../../base:protobuf_utils",
         "../../base:rtc_base_approved",
+        "../../base:rtc_task_queue",
         "../../common_audio:common_audio",
         "../../system_wrappers",
         "../../system_wrappers:system_wrappers_default",
         "../../test:test_support",
+        "aec_dump",
+        "aec_dump:aec_dump_impl",
         "//testing/gtest",
         "//third_party/gflags:gflags",
       ]

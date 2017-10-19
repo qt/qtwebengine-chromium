@@ -10,9 +10,8 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/target_bitrate.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
+#include "webrtc/rtc_base/checks.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -65,30 +64,7 @@ TargetBitrate::BitrateItem::BitrateItem(uint8_t spatial_layer,
 TargetBitrate::TargetBitrate() {}
 TargetBitrate::~TargetBitrate() {}
 
-void TargetBitrate::Create(uint8_t* buffer) const {
-  buffer[0] = kBlockType;
-  buffer[1] = 0;  // Reserved.
-  const size_t block_length_words = (BlockLength() / 4) - 1;
-  ByteWriter<uint16_t>::WriteBigEndian(&buffer[2], block_length_words);
-
-  size_t index = kTargetBitrateHeaderSizeBytes;
-  for (const BitrateItem& item : bitrates_) {
-    buffer[index] = (item.spatial_layer << 4) | item.temporal_layer;
-    ByteWriter<uint32_t, 3>::WriteBigEndian(&buffer[index + 1],
-                                            item.target_bitrate_kbps);
-    index += kBitrateItemSizeBytes;
-  }
-}
-
-bool TargetBitrate::Parse(const uint8_t* block, uint16_t block_length) {
-  if (block_length < 1) {
-    LOG(LS_WARNING)
-        << "Cannot parse TargetBitrate RTCP packet: Too little payload data ("
-        << kTargetBitrateHeaderSizeBytes << " bytes needed, got "
-        << block_length * 4 << ").";
-    return false;
-  }
-
+void TargetBitrate::Parse(const uint8_t* block, uint16_t block_length) {
   // Validate block header (should already have been parsed and checked).
   RTC_DCHECK_EQ(block[0], kBlockType);
   RTC_DCHECK_EQ(block_length, ByteReader<uint16_t>::ReadBigEndian(&block[2]));
@@ -106,8 +82,6 @@ bool TargetBitrate::Parse(const uint8_t* block, uint16_t block_length) {
     index += kBitrateItemSizeBytes;
     AddTargetBitrate((layers >> 4) & 0x0F, layers & 0x0F, bitrate_kbps);
   }
-
-  return true;
 }
 
 void TargetBitrate::AddTargetBitrate(uint8_t spatial_layer,
@@ -128,6 +102,21 @@ TargetBitrate::GetTargetBitrates() const {
 size_t TargetBitrate::BlockLength() const {
   return kTargetBitrateHeaderSizeBytes +
          bitrates_.size() * kBitrateItemSizeBytes;
+}
+
+void TargetBitrate::Create(uint8_t* buffer) const {
+  buffer[0] = kBlockType;
+  buffer[1] = 0;  // Reserved.
+  const size_t block_length_words = (BlockLength() / 4) - 1;
+  ByteWriter<uint16_t>::WriteBigEndian(&buffer[2], block_length_words);
+
+  size_t index = kTargetBitrateHeaderSizeBytes;
+  for (const BitrateItem& item : bitrates_) {
+    buffer[index] = (item.spatial_layer << 4) | item.temporal_layer;
+    ByteWriter<uint32_t, 3>::WriteBigEndian(&buffer[index + 1],
+                                            item.target_bitrate_kbps);
+    index += kBitrateItemSizeBytes;
+  }
 }
 
 }  // namespace rtcp

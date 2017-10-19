@@ -20,10 +20,6 @@
 #include "libyuv/scale.h"    // NOLINT
 #include "libyuv/convert.h"  // NOLINT
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/random.h"
-#include "webrtc/base/timeutils.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/include/module_common_types.h"
@@ -32,6 +28,10 @@
 #include "webrtc/modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
 #include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/random.h"
+#include "webrtc/rtc_base/timeutils.h"
+#include "webrtc/rtc_base/trace_event.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
 #include "webrtc/system_wrappers/include/metrics.h"
@@ -668,7 +668,8 @@ int VP8EncoderImpl::Encode(const VideoFrame& frame,
   if (encoded_complete_callback_ == NULL)
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
 
-  rtc::scoped_refptr<VideoFrameBuffer> input_image = frame.video_frame_buffer();
+  rtc::scoped_refptr<I420BufferInterface> input_image =
+      frame.video_frame_buffer()->ToI420();
   // Since we are extracting raw pointers from |input_image| to
   // |raw_images_[0]|, the resolution of these frames must match.
   RTC_DCHECK_EQ(input_image->width(), raw_images_[0].d_w);
@@ -877,6 +878,7 @@ int VP8EncoderImpl::GetEncodedPartitions(
     encoded_images_[encoder_idx].content_type_ =
         (codec_.mode == kScreensharing) ? VideoContentType::SCREENSHARE
                                         : VideoContentType::UNSPECIFIED;
+    encoded_images_[encoder_idx].timing_.is_timing_frame = false;
 
     int qp = -1;
     vpx_codec_control(&encoders_[encoder_idx], VP8E_GET_LAST_QUANTIZER_64, &qp);

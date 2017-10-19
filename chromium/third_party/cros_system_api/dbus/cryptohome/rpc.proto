@@ -95,6 +95,12 @@ message MountRequest {
   // If set to true, mounts the existing ecryptfs vault to a temporary location
   // while setting up a new dircrypto directory.
   optional bool to_migrate_from_ecryptfs = 4;
+  // Performs a public mount, which is used for a Kiosk session. Credentials are
+  // not needed in the request; they are synthesized by cryptohomed from id.
+  optional bool public_mount = 5;
+  // If set to true, mounts the vault to a temporary location. The mount is not
+  // exposed to the usual locations (/home/user, /home/root).
+  optional bool hidden_mount = 6;
 }
 
 // A BaseReply type is used for all cryptohomed responses. A shared base class
@@ -334,4 +340,15 @@ message GetAccountDiskUsageReply {
   }
   // The size of cryptohome in bytes.
   optional int64 size = 1;
+}
+
+// Request parameters for MigrateToDircryptoEx.
+// TODO(pmarko): Update comment when MigrateToDircryptoEx gets renamed to
+// MigrateToDircrypto: crbug.com/758837.
+message MigrateToDircryptoRequest {
+  // Next ID to use: 2
+
+  // If true, only a few paths (specified in cryptohomed) that are necessary for
+  // a working profile will be migrated. Most user data will be wiped.
+  optional bool minimal_migration = 1;
 }

@@ -22,15 +22,15 @@
 
 #include "gflags/gflags.h"
 #include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "webrtc/base/ignore_wundef.h"
-#include "webrtc/base/protobuf_utils.h"
-#include "webrtc/base/sha1digest.h"
-#include "webrtc/base/stringencode.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/codecs/pcm16b/pcm16b.h"
 #include "webrtc/modules/audio_coding/neteq/tools/audio_loop.h"
 #include "webrtc/modules/audio_coding/neteq/tools/rtp_file_source.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/rtc_base/ignore_wundef.h"
+#include "webrtc/rtc_base/protobuf_utils.h"
+#include "webrtc/rtc_base/sha1digest.h"
+#include "webrtc/rtc_base/stringencode.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/typedefs.h"
@@ -155,9 +155,7 @@ class ResultSink {
   explicit ResultSink(const std::string& output_file);
   ~ResultSink();
 
-  template<typename T, size_t n> void AddResult(
-      const T (&test_results)[n],
-      size_t length);
+  template<typename T> void AddResult(const T* test_results, size_t length);
 
   void AddResult(const NetEqNetworkStatistics& stats);
   void AddResult(const RtcpStatistics& stats);
@@ -183,12 +181,12 @@ ResultSink::~ResultSink() {
     fclose(output_fp_);
 }
 
-template<typename T, size_t n>
-void ResultSink::AddResult(const T (&test_results)[n], size_t length) {
+template<typename T>
+void ResultSink::AddResult(const T* test_results, size_t length) {
   if (output_fp_) {
-    ASSERT_EQ(length, fwrite(&test_results, sizeof(T), length, output_fp_));
+    ASSERT_EQ(length, fwrite(test_results, sizeof(T), length, output_fp_));
   }
-  digest_->Update(&test_results, sizeof(T) * length);
+  digest_->Update(test_results, sizeof(T) * length);
 }
 
 void ResultSink::AddResult(const NetEqNetworkStatistics& stats_raw) {
@@ -376,7 +374,7 @@ void NetEqDecodingTest::DecodeAndCompare(
     SCOPED_TRACE(ss.str());  // Print out the parameter values on failure.
     ASSERT_NO_FATAL_FAILURE(Process());
     ASSERT_NO_FATAL_FAILURE(output.AddResult(
-        out_frame_.data_, out_frame_.samples_per_channel_));
+        out_frame_.data(), out_frame_.samples_per_channel_));
 
     // Query the network statistics API once per second
     if (sim_clock_ % 1000 == 0) {
@@ -484,10 +482,10 @@ TEST_F(NetEqDecodingTest, MAYBE_TestOpusBitExactness) {
       "6237dd113ad80d7764fe4c90b55b2ec035eae64e");
 
   const std::string network_stats_checksum =
-      PlatformChecksum("0869a450a819b14bf2a91eb6f3629a3421d17606",
-                       "0869a450a819b14bf2a91eb6f3629a3421d17606",
-                       "0869a450a819b14bf2a91eb6f3629a3421d17606",
-                       "0869a450a819b14bf2a91eb6f3629a3421d17606");
+      PlatformChecksum("7a29daca4dfa4fb6eaec06d7e63c1729da7708f6",
+                       "7a29daca4dfa4fb6eaec06d7e63c1729da7708f6",
+                       "7a29daca4dfa4fb6eaec06d7e63c1729da7708f6",
+                       "7a29daca4dfa4fb6eaec06d7e63c1729da7708f6");
 
   const std::string rtcp_stats_checksum = PlatformChecksum(
       "e37c797e3de6a64dda88c9ade7a013d022a2e1e0",
@@ -832,7 +830,6 @@ TEST_F(NetEqDecodingTest, UnknownPayloadType) {
   PopulateRtpInfo(0, 0, &rtp_info);
   rtp_info.payloadType = 1;  // Not registered as a decoder.
   EXPECT_EQ(NetEq::kFail, neteq_->InsertPacket(rtp_info, payload, 0));
-  EXPECT_EQ(NetEq::kUnknownRtpPayloadType, neteq_->LastError());
 }
 
 #if defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX)
@@ -850,47 +847,31 @@ TEST_F(NetEqDecodingTest, MAYBE_DecoderError) {
   EXPECT_EQ(0, neteq_->InsertPacket(rtp_info, payload, 0));
   // Set all of |out_data_| to 1, and verify that it was set to 0 by the call
   // to GetAudio.
+  int16_t* out_frame_data = out_frame_.mutable_data();
   for (size_t i = 0; i < AudioFrame::kMaxDataSizeSamples; ++i) {
-    out_frame_.data_[i] = 1;
+    out_frame_data[i] = 1;
   }
   bool muted;
   EXPECT_EQ(NetEq::kFail, neteq_->GetAudio(&out_frame_, &muted));
   ASSERT_FALSE(muted);
-  // Verify that there is a decoder error to check.
-  EXPECT_EQ(NetEq::kDecoderErrorCode, neteq_->LastError());
 
-  enum NetEqDecoderError {
-    ISAC_LENGTH_MISMATCH = 6730,
-    ISAC_RANGE_ERROR_DECODE_FRAME_LENGTH = 6640
-  };
-#if defined(WEBRTC_CODEC_ISAC)
-  EXPECT_EQ(ISAC_LENGTH_MISMATCH, neteq_->LastDecoderError());
-#elif defined(WEBRTC_CODEC_ISACFX)
-  EXPECT_EQ(ISAC_RANGE_ERROR_DECODE_FRAME_LENGTH, neteq_->LastDecoderError());
-#endif
-  // Verify that the first 160 samples are set to 0, and that the remaining
-  // samples are left unmodified.
+  // Verify that the first 160 samples are set to 0.
   static const int kExpectedOutputLength = 160;  // 10 ms at 16 kHz sample rate.
+  const int16_t* const_out_frame_data = out_frame_.data();
   for (int i = 0; i < kExpectedOutputLength; ++i) {
     std::ostringstream ss;
     ss << "i = " << i;
     SCOPED_TRACE(ss.str());  // Print out the parameter values on failure.
-    EXPECT_EQ(0, out_frame_.data_[i]);
-  }
-  for (size_t i = kExpectedOutputLength; i < AudioFrame::kMaxDataSizeSamples;
-       ++i) {
-    std::ostringstream ss;
-    ss << "i = " << i;
-    SCOPED_TRACE(ss.str());  // Print out the parameter values on failure.
-    EXPECT_EQ(1, out_frame_.data_[i]);
+    EXPECT_EQ(0, const_out_frame_data[i]);
   }
 }
 
 TEST_F(NetEqDecodingTest, GetAudioBeforeInsertPacket) {
   // Set all of |out_data_| to 1, and verify that it was set to 0 by the call
   // to GetAudio.
+  int16_t* out_frame_data = out_frame_.mutable_data();
   for (size_t i = 0; i < AudioFrame::kMaxDataSizeSamples; ++i) {
-    out_frame_.data_[i] = 1;
+    out_frame_data[i] = 1;
   }
   bool muted;
   EXPECT_EQ(0, neteq_->GetAudio(&out_frame_, &muted));
@@ -898,11 +879,12 @@ TEST_F(NetEqDecodingTest, GetAudioBeforeInsertPacket) {
   // Verify that the first block of samples is set to 0.
   static const int kExpectedOutputLength =
       kInitSampleRateHz / 100;  // 10 ms at initial sample rate.
+  const int16_t* const_out_frame_data = out_frame_.data();
   for (int i = 0; i < kExpectedOutputLength; ++i) {
     std::ostringstream ss;
     ss << "i = " << i;
     SCOPED_TRACE(ss.str());  // Print out the parameter values on failure.
-    EXPECT_EQ(0, out_frame_.data_[i]);
+    EXPECT_EQ(0, const_out_frame_data[i]);
   }
   // Verify that the sample rate did not change from the initial configuration.
   EXPECT_EQ(config_.sample_rate_hz, neteq_->last_output_sample_rate_hz());
@@ -989,7 +971,8 @@ class NetEqBgnTest : public NetEqDecodingTest {
     bool plc_to_cng = false;
     for (int n = 0; n < kFadingThreshold + kNumPlcToCngTestFrames; ++n) {
       output.Reset();
-      memset(output.data_, 1, sizeof(output.data_));  // Set to non-zero.
+      // Set to non-zero.
+      memset(output.mutable_data(), 1, AudioFrame::kMaxDataSizeBytes);
       ASSERT_EQ(0, neteq_->GetAudio(&output, &muted));
       ASSERT_FALSE(muted);
       ASSERT_EQ(1u, output.num_channels_);
@@ -997,9 +980,10 @@ class NetEqBgnTest : public NetEqDecodingTest {
       if (output.speech_type_ == AudioFrame::kPLCCNG) {
         plc_to_cng = true;
         double sum_squared = 0;
+        const int16_t* output_data = output.data();
         for (size_t k = 0;
              k < output.num_channels_ * output.samples_per_channel_; ++k)
-          sum_squared += output.data_[k] * output.data_[k];
+          sum_squared += output_data[k] * output_data[k];
         TestCondition(sum_squared, n > kFadingThreshold);
       } else {
         EXPECT_EQ(AudioFrame::kPLC, output.speech_type_);
@@ -1352,18 +1336,21 @@ TEST_F(NetEqDecodingTestWithMutedState, MutedState) {
   EXPECT_FALSE(GetAudioReturnMuted());
   // Pull data until faded out.
   GetAudioUntilMuted();
+  EXPECT_TRUE(out_frame_.muted());
 
   // Verify that output audio is not written during muted mode. Other parameters
   // should be correct, though.
   AudioFrame new_frame;
-  for (auto& d : new_frame.data_) {
-    d = 17;
+  int16_t* frame_data = new_frame.mutable_data();
+  for (size_t i = 0; i < AudioFrame::kMaxDataSizeSamples; i++) {
+    frame_data[i] = 17;
   }
   bool muted;
   EXPECT_EQ(0, neteq_->GetAudio(&new_frame, &muted));
   EXPECT_TRUE(muted);
-  for (auto d : new_frame.data_) {
-    EXPECT_EQ(17, d);
+  EXPECT_TRUE(out_frame_.muted());
+  for (size_t i = 0; i < AudioFrame::kMaxDataSizeSamples; i++) {
+    EXPECT_EQ(17, frame_data[i]);
   }
   EXPECT_EQ(out_frame_.timestamp_ + out_frame_.samples_per_channel_,
             new_frame.timestamp_);
@@ -1377,6 +1364,7 @@ TEST_F(NetEqDecodingTestWithMutedState, MutedState) {
   // packet. Verify that normal operation resumes.
   InsertPacket(kSamples * counter_);
   GetAudioUntilNormal();
+  EXPECT_FALSE(out_frame_.muted());
 
   NetEqNetworkStatistics stats;
   EXPECT_EQ(0, neteq_->NetworkStatistics(&stats));
@@ -1522,8 +1510,8 @@ namespace {
   if (!res)
     return res;
   if (memcmp(
-      a.data_, b.data_,
-      a.samples_per_channel_ * a.num_channels_ * sizeof(a.data_[0])) != 0) {
+      a.data(), b.data(),
+      a.samples_per_channel_ * a.num_channels_ * sizeof(*a.data())) != 0) {
     return ::testing::AssertionFailure() << "data_ diff";
   }
   return ::testing::AssertionSuccess();

@@ -40,7 +40,7 @@ bool ValidFramebufferTarget(GLenum target);
 bool ValidBufferTarget(const ValidationContext *context, GLenum target);
 bool ValidBufferParameter(const ValidationContext *context, GLenum pname, GLsizei *numParams);
 bool ValidMipLevel(const ValidationContext *context, GLenum target, GLint level);
-bool ValidImageSizeParameters(const ValidationContext *context,
+bool ValidImageSizeParameters(ValidationContext *context,
                               GLenum target,
                               GLint level,
                               GLsizei width,
@@ -65,7 +65,7 @@ bool ValidImageDataSize(ValidationContext *context,
                         GLsizei width,
                         GLsizei height,
                         GLsizei depth,
-                        GLenum internalFormat,
+                        GLenum format,
                         GLenum type,
                         const void *pixels,
                         GLsizei imageSize);
@@ -114,7 +114,7 @@ bool ValidateBlitFramebufferParameters(ValidationContext *context,
                                        GLbitfield mask,
                                        GLenum filter);
 
-bool ValidateReadPixelsBase(ValidationContext *context,
+bool ValidateReadPixelsBase(Context *context,
                             GLint x,
                             GLint y,
                             GLsizei width,
@@ -126,7 +126,7 @@ bool ValidateReadPixelsBase(ValidationContext *context,
                             GLsizei *columns,
                             GLsizei *rows,
                             void *pixels);
-bool ValidateReadPixelsRobustANGLE(ValidationContext *context,
+bool ValidateReadPixelsRobustANGLE(Context *context,
                                    GLint x,
                                    GLint y,
                                    GLsizei width,
@@ -147,7 +147,7 @@ bool ValidateReadnPixelsEXT(Context *context,
                             GLenum type,
                             GLsizei bufSize,
                             void *pixels);
-bool ValidateReadnPixelsRobustANGLE(ValidationContext *context,
+bool ValidateReadnPixelsRobustANGLE(Context *context,
                                     GLint x,
                                     GLint y,
                                     GLsizei width,
@@ -342,11 +342,9 @@ bool ValidateInsertEventMarkerEXT(Context *context, GLsizei length, const char *
 bool ValidatePushGroupMarkerEXT(Context *context, GLsizei length, const char *marker);
 
 bool ValidateEGLImageTargetTexture2DOES(Context *context,
-                                        egl::Display *display,
                                         GLenum target,
                                         egl::Image *image);
 bool ValidateEGLImageTargetRenderbufferStorageOES(Context *context,
-                                                  egl::Display *display,
                                                   GLenum target,
                                                   egl::Image *image);
 
@@ -604,8 +602,6 @@ bool ValidateRobustCompressedTexImageBase(ValidationContext *context,
                                           GLsizei imageSize,
                                           GLsizei dataSize);
 
-// Error messages shared here for use in testing.
-extern const char *g_ExceedsMaxElementErrorMessage;
 }  // namespace gl
 
 #endif  // LIBANGLE_VALIDATION_ES_H_

@@ -151,6 +151,7 @@ built_test_programs =				\
 	connection-test				\
 	event-loop-test				\
 	fixed-test				\
+	interface-test				\
 	list-test				\
 	map-test				\
 	os-wrappers-test			\
@@ -158,6 +159,7 @@ built_test_programs =				\
 	socket-test				\
 	queue-test				\
 	signal-test				\
+	newsignal-test				\
 	resources-test				\
 	message-test				\
 	headers-test				\
@@ -168,16 +170,22 @@ if ENABLE_CPP_TEST
 built_test_programs += cpp-compile-test
 endif
 
-TESTS = $(built_test_programs)
+AM_TESTS_ENVIRONMENT =							\
+	export WAYLAND_SCANNER='$(top_builddir)/wayland-scanner'	\
+	TEST_DATA_DIR='$(top_srcdir)/tests/data'			\
+	TEST_OUTPUT_DIR='$(top_builddir)/tests/output'			\
+	SED=$(SED)							\
+	;
 
-check_PROGRAMS =				\
-	$(built_test_programs)			\
-	exec-fd-leak-checker
+TESTS = $(built_test_programs)			\
+	tests/scanner-test.sh
 
 noinst_PROGRAMS =				\
+	$(built_test_programs)			\
+	exec-fd-leak-checker			\
 	fixed-benchmark
 
-check_LTLIBRARIES = libtest-runner.la
+noinst_LTLIBRARIES += libtest-runner.la
 
 libtest_runner_la_SOURCES =			\
 	tests/test-runner.c			\
@@ -205,6 +213,8 @@ event_loop_test_SOURCES = tests/event-loop-test.c
 event_loop_test_LDADD = libtest-runner.la
 fixed_test_SOURCES = tests/fixed-test.c
 fixed_test_LDADD = libtest-runner.la
+interface_test_SOURCES = tests/interface-test.c
+interface_test_LDADD = libtest-runner.la
 list_test_SOURCES = tests/list-test.c
 list_test_LDADD = libtest-runner.la
 map_test_SOURCES = tests/map-test.c
@@ -217,6 +227,9 @@ queue_test_SOURCES = tests/queue-test.c
 queue_test_LDADD = libtest-runner.la
 signal_test_SOURCES = tests/signal-test.c
 signal_test_LDADD = libtest-runner.la
+# wayland-server.c is needed here to access wl_priv_* functions
+newsignal_test_SOURCES = tests/newsignal-test.c src/wayland-server.c
+newsignal_test_LDADD = libtest-runner.la
 resources_test_SOURCES = tests/resources-test.c
 resources_test_LDADD = libtest-runner.la
 message_test_SOURCES = tests/message-test.c
@@ -245,4 +258,23 @@ os_wrappers_test_LDADD = libtest-runner.la
 
 exec_fd_leak_checker_SOURCES = tests/exec-fd-leak-checker.c
 exec_fd_leak_checker_LDADD = libtest-runner.la
+
+EXTRA_DIST += tests/scanner-test.sh			\
+	tests/data/example.xml				\
+	tests/data/example-client.h			\
+	tests/data/example-server.h			\
+	tests/data/example-code.c			\
+	tests/data/small.xml				\
+	tests/data/small-code.c				\
+	tests/data/small-client.h			\
+	tests/data/small-server.h			\
+	tests/data/small-code-core.c			\
+	tests/data/small-client-core.h			\
+	tests/data/small-server-core.h
+
+tests/scanner-test.sh: $(top_builddir)/wayland-scanner
+
+clean-local:
+	-rm -rf tests/output
+
 endif #ENABLE_LIBRARIES

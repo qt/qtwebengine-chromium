@@ -244,8 +244,8 @@ public:
 
 	egl::Context *(*es2CreateContext)(egl::Display *display, const egl::Context *shareContext, int clientVersion, const egl::Config *config);
 	__eglMustCastToProperFunctionPointerType (*es2GetProcAddress)(const char *procname);
-	egl::Image *(*createBackBuffer)(int width, int height, const egl::Config *config);
-	egl::Image *(*createDepthStencil)(unsigned int width, unsigned int height, sw::Format format, int multiSampleDepth, bool discard);
+	egl::Image *(*createBackBuffer)(int width, int height, sw::Format format, int multiSampleDepth);
+	egl::Image *(*createDepthStencil)(int width, int height, sw::Format format, int multiSampleDepth);
 	sw::FrameBuffer *(*createFrameBuffer)(void *nativeDisplay, EGLNativeWindowType window, int width, int height);
 };
 
@@ -298,9 +298,9 @@ private:
 				#endif
 			#elif defined(__APPLE__)
 				#if defined(__LP64__)
-					const char *libGLESv2_lib[] = {"lib64GLES_V2_translator.dylib", "libGLESv2.dylib"};
+					const char *libGLESv2_lib[] = {"lib64GLES_V2_translator.dylib", "libGLESv2.dylib", "libswiftshader_libGLESv2.dylib"};
 				#else
-					const char *libGLESv2_lib[] = {"libGLES_V2_translator.dylib", "libGLESv2.dylib"};
+					const char *libGLESv2_lib[] = {"libGLES_V2_translator.dylib", "libGLESv2.dylib", "libswiftshader_libGLESv2.dylib"};
 				#endif
 			#else
 				#error "libGLESv2::loadExports unimplemented for this platform"

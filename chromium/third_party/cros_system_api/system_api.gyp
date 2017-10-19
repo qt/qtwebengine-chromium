@@ -95,9 +95,6 @@
         'proto_out_dir': 'include/authpolicy/proto_bindings',
       },
       'sources': [
-        # TODO(ljusten): Remove this file as soon as Chrome uses
-        # active_directory_info.proto. crbug.com/712720.
-        '<(proto_in_dir)/active_directory_account_data.proto',
         '<(proto_in_dir)/active_directory_info.proto',
       ],
       'includes': ['../../platform2/common-mk/protoc.gypi'],
@@ -110,9 +107,6 @@
         'system_api-authpolicy-protos-gen',
       ],
       'sources': [
-        # TODO(ljusten): Remove this file as soon as Chrome uses
-        # active_directory_info.proto. crbug.com/712720.
-        '<(SHARED_INTERMEDIATE_DIR)/include/authpolicy/proto_bindings/active_directory_account_data.pb.cc',
         '<(SHARED_INTERMEDIATE_DIR)/include/authpolicy/proto_bindings/active_directory_info.pb.cc',
       ]
     },
@@ -179,6 +173,10 @@
     {
       'target_name': 'system_api-chaps-protos',
       'type': 'static_library',
+      # system_api-chaps-protos' is used by a shared_library
+      # object, so we need to build it with '-fPIC' instead of '-fPIE'.
+      'cflags!': ['-fPIE'],
+      'cflags': ['-fPIC'],
       'standalone_static_library': 1,
       'dependencies': [
         'system_api-chaps-protos-gen',

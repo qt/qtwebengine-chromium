@@ -32,7 +32,6 @@
 #include "fpdfsdk/ipdfsdk_annothandler.h"
 #include "fpdfsdk/javascript/ijs_event_context.h"
 #include "fpdfsdk/javascript/ijs_runtime.h"
-#include "fpdfsdk/pdfwindow/PWL_Utils.h"
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
@@ -346,7 +345,7 @@ bool CPDFSDK_InterForm::OnKeyStrokeCommit(CPDF_FormField* pFormField,
   if (!action.GetDict())
     return true;
 
-  CPDFSDK_ActionHandler* pActionHandler = m_pFormFillEnv->GetActionHander();
+  CPDFSDK_ActionHandler* pActionHandler = m_pFormFillEnv->GetActionHandler();
   PDFSDK_FieldAction fa;
   fa.bModifier = m_pFormFillEnv->IsCTRLKeyDown(0);
   fa.bShift = m_pFormFillEnv->IsSHIFTKeyDown(0);
@@ -366,7 +365,7 @@ bool CPDFSDK_InterForm::OnValidate(CPDF_FormField* pFormField,
   if (!action.GetDict())
     return true;
 
-  CPDFSDK_ActionHandler* pActionHandler = m_pFormFillEnv->GetActionHander();
+  CPDFSDK_ActionHandler* pActionHandler = m_pFormFillEnv->GetActionHandler();
   PDFSDK_FieldAction fa;
   fa.bModifier = m_pFormFillEnv->IsCTRLKeyDown(0);
   fa.bShift = m_pFormFillEnv->IsSHIFTKeyDown(0);

@@ -9,6 +9,10 @@
 
 #include <setjmp.h>
 
+#include <memory>
+#include <vector>
+
+#include "core/fxcodec/codec/ccodec_bmpmodule.h"
 #include "core/fxcrt/fx_basic.h"
 
 #define BMP_WIDTHBYTES(width, bitCount) ((width * bitCount) + 31) / 32 * 4
@@ -42,14 +46,14 @@ typedef struct tagBmpFileHeader {
   uint16_t bfReserved1;
   uint16_t bfReserved2;
   uint32_t bfOffBits;
-} BmpFileHeader, *BmpFileHeaderPtr;
+} BmpFileHeader;
 typedef struct tagBmpCoreHeader {
   uint32_t bcSize;
   uint16_t bcWidth;
   uint16_t bcHeight;
   uint16_t bcPlanes;
   uint16_t bcBitCount;
-} BmpCoreHeader, *BmpCoreHeaderPtr;
+} BmpCoreHeader;
 typedef struct tagBmpInfoHeader {
   uint32_t biSize;
   int32_t biWidth;
@@ -62,96 +66,80 @@ typedef struct tagBmpInfoHeader {
   int32_t biYPelsPerMeter;
   uint32_t biClrUsed;
   uint32_t biClrImportant;
-} BmpInfoHeader, *BmpInfoHeaderPtr;
+} BmpInfoHeader;
 #pragma pack()
 
-typedef struct tag_bmp_decompress_struct bmp_decompress_struct;
-typedef bmp_decompress_struct* bmp_decompress_struct_p;
-typedef bmp_decompress_struct_p* bmp_decompress_struct_pp;
-struct tag_bmp_decompress_struct {
+class BMPDecompressor {
+ public:
+  BMPDecompressor();
+  ~BMPDecompressor();
+
+  void Error(const char* err_msg);
+  int32_t DecodeImage();
+  int32_t ReadHeader();
+  void SetInputBuffer(uint8_t* src_buf, uint32_t src_size);
+  uint32_t GetAvailInput(uint8_t** avail_buf);
+
   jmp_buf jmpbuf;
   char* err_ptr;
-  void (*bmp_error_fn)(bmp_decompress_struct_p gif_ptr, const char* err_msg);
 
   void* context_ptr;
 
-  BmpFileHeaderPtr bmp_header_ptr;
-  BmpInfoHeaderPtr bmp_infoheader_ptr;
-  int32_t width;
-  int32_t height;
+  std::vector<uint8_t> out_row_buffer;
+  std::vector<uint32_t> palette;
+  uint8_t* next_in;
+
+  uint32_t header_offset;
+  uint32_t width;
+  uint32_t height;
   uint32_t compress_flag;
   int32_t components;
-  int32_t src_row_bytes;
-  int32_t out_row_bytes;
-  uint8_t* out_row_buffer;
+  size_t src_row_bytes;
+  size_t out_row_bytes;
   uint16_t bitCounts;
   uint32_t color_used;
   bool imgTB_flag;
   int32_t pal_num;
   int32_t pal_type;
-  uint32_t* pal_ptr;
   uint32_t data_size;
   uint32_t img_data_offset;
   uint32_t img_ifh_size;
-  int32_t row_num;
-  int32_t col_num;
+  size_t row_num;
+  size_t col_num;
   int32_t dpi_x;
   int32_t dpi_y;
   uint32_t mask_red;
   uint32_t mask_green;
   uint32_t mask_blue;
 
-  bool (*bmp_get_data_position_fn)(bmp_decompress_struct_p bmp_ptr,
-                                   uint32_t cur_pos);
-  void (*bmp_get_row_fn)(bmp_decompress_struct_p bmp_ptr,
-                         int32_t row_num,
-                         uint8_t* row_buf);
-  uint8_t* next_in;
   uint32_t avail_in;
   uint32_t skip_size;
   int32_t decode_status;
-};
-void bmp_error(bmp_decompress_struct_p bmp_ptr, const char* err_msg);
-bmp_decompress_struct_p bmp_create_decompress();
-void bmp_destroy_decompress(bmp_decompress_struct_pp bmp_ptr_ptr);
-int32_t bmp_read_header(bmp_decompress_struct_p bmp_ptr);
-int32_t bmp_decode_image(bmp_decompress_struct_p bmp_ptr);
-int32_t bmp_decode_rgb(bmp_decompress_struct_p bmp_ptr);
-int32_t bmp_decode_rle8(bmp_decompress_struct_p bmp_ptr);
-int32_t bmp_decode_rle4(bmp_decompress_struct_p bmp_ptr);
-uint8_t* bmp_read_data(bmp_decompress_struct_p bmp_ptr,
-                       uint8_t** des_buf_pp,
-                       uint32_t data_size);
-void bmp_save_decoding_status(bmp_decompress_struct_p bmp_ptr, int32_t status);
-void bmp_input_buffer(bmp_decompress_struct_p bmp_ptr,
-                      uint8_t* src_buf,
-                      uint32_t src_size);
-uint32_t bmp_get_avail_input(bmp_decompress_struct_p bmp_ptr,
-                             uint8_t** avail_buf_ptr);
-typedef struct tag_bmp_compress_struct bmp_compress_struct;
-typedef bmp_compress_struct* bmp_compress_struct_p;
-typedef bmp_compress_struct_p* bmp_compress_struct_pp;
-struct tag_bmp_compress_struct {
-  BmpFileHeader file_header;
-  BmpInfoHeader info_header;
-  uint8_t* src_buf;
-  uint32_t src_pitch;
-  uint32_t src_row;
-  uint8_t src_bpp;
-  uint32_t src_width;
-  bool src_free;
-  uint32_t* pal_ptr;
-  uint16_t pal_num;
-  uint8_t bit_type;
+
+ private:
+  bool GetDataPosition(uint32_t cur_pos);
+  void ReadScanline(uint32_t row_num, const std::vector<uint8_t>& row_buf);
+  int32_t DecodeRGB();
+  int32_t DecodeRLE8();
+  int32_t DecodeRLE4();
+  uint8_t* ReadData(uint8_t** des_buf, uint32_t data_size);
+  void SaveDecodingStatus(int32_t status);
+  bool ValidateColorIndex(uint8_t val);
+  bool ValidateFlag() const;
+  void SetHeight(int32_t signed_height);
 };
 
-bmp_compress_struct_p bmp_create_compress();
-void bmp_destroy_compress(bmp_compress_struct_p bmp_ptr);
-bool bmp_encode_image(bmp_compress_struct_p bmp_ptr,
-                      uint8_t*& dst_buf,
-                      uint32_t& dst_size);
+class CBmpContext : public CCodec_BmpModule::Context {
+ public:
+  CBmpContext(CCodec_BmpModule* pModule, CCodec_BmpModule::Delegate* pDelegate);
+  ~CBmpContext() override;
+
+  BMPDecompressor m_Bmp;
+  CFX_UnownedPtr<CCodec_BmpModule> const m_pModule;
+  CFX_UnownedPtr<CCodec_BmpModule::Delegate> const m_pDelegate;
+  char m_szLastError[256];
+};
 
 uint16_t GetWord_LSBFirst(uint8_t* p);
-void SetWord_LSBFirst(uint8_t* p, uint16_t v);
 
 #endif  // CORE_FXCODEC_LBMP_FX_BMP_H_

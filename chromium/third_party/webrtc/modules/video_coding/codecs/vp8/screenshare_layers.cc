@@ -13,10 +13,10 @@
 
 #include <algorithm>
 
-#include "webrtc/base/checks.h"
-#include "vpx/vpx_encoder.h"
 #include "vpx/vp8cx.h"
+#include "vpx/vpx_encoder.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
+#include "webrtc/rtc_base/checks.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 
@@ -35,7 +35,7 @@ constexpr int ScreenshareLayers::kMaxNumTemporalLayers;
 
 // Always emit a frame with certain interval, even if bitrate targets have
 // been exceeded. This prevents needless keyframe requests.
-const int ScreenshareLayers::kMaxFrameIntervalMs = 3000;
+const int ScreenshareLayers::kMaxFrameIntervalMs = 2750;
 
 webrtc::TemporalLayers* ScreenshareTemporalLayersFactory::Create(
     int simulcast_id,

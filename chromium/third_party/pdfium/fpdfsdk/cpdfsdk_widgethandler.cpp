@@ -229,7 +229,11 @@ void CPDFSDK_WidgetHandler::OnLoad(CPDFSDK_Annot* pAnnot) {
   int nFieldType = pWidget->GetFieldType();
   if (nFieldType == FIELDTYPE_TEXTFIELD || nFieldType == FIELDTYPE_COMBOBOX) {
     bool bFormatted = false;
+    CPDFSDK_Annot::ObservedPtr pObserved(pWidget);
     CFX_WideString sValue = pWidget->OnFormat(bFormatted);
+    if (!pObserved)
+      return;
+
     if (bFormatted && nFieldType == FIELDTYPE_COMBOBOX)
       pWidget->ResetAppearance(&sValue, false);
   }
@@ -272,8 +276,14 @@ CFX_FloatRect CPDFSDK_WidgetHandler::GetViewBBox(CPDFSDK_PageView* pPageView,
                                                  CPDFSDK_Annot* pAnnot) {
   if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
     return CFX_FloatRect(m_pFormFiller->GetViewBBox(pPageView, pAnnot));
+  return CFX_FloatRect();
+}
 
-  return CFX_FloatRect(0, 0, 0, 0);
+CFX_WideString CPDFSDK_WidgetHandler::GetSelectedText(CPDFSDK_Annot* pAnnot) {
+  if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
+    return m_pFormFiller->GetSelectedText(pAnnot);
+
+  return CFX_WideString();
 }
 
 bool CPDFSDK_WidgetHandler::HitTest(CPDFSDK_PageView* pPageView,

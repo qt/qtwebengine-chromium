@@ -8,9 +8,8 @@
 
 #include <vector>
 
-#include "xfa/fxfa/app/xfa_ffchoicelist.h"
-#include "xfa/fxfa/app/xfa_fffield.h"
-#include "xfa/fxfa/app/xfa_fwladapter.h"
+#include "xfa/fxfa/app/cxfa_fffield.h"
+#include "xfa/fxfa/app/cxfa_fwladapterwidgetmgr.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffdocview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
@@ -156,7 +155,7 @@ bool CXFA_FFWidgetHandler::OnSetCursor(CXFA_FFWidget* hWidget,
 }
 
 void CXFA_FFWidgetHandler::RenderWidget(CXFA_FFWidget* hWidget,
-                                        CFX_Graphics* pGS,
+                                        CXFA_Graphics* pGS,
                                         CFX_Matrix* pMatrix,
                                         bool bHighlight) {
   hWidget->RenderWidget(pGS, pMatrix,

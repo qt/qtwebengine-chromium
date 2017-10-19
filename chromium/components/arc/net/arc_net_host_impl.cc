@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/memory/singleton.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -24,6 +25,7 @@
 #include "chromeos/network/network_util.h"
 #include "chromeos/network/onc/onc_utils.h"
 #include "components/arc/arc_bridge_service.h"
+#include "components/arc/arc_browser_context_keyed_service_factory_base.h"
 #include "components/user_manager/user_manager.h"
 
 namespace {
@@ -288,27 +290,61 @@ void DefaultNetworkFailureCallback(
 }  // namespace
 
 namespace arc {
+namespace {
 
-ArcNetHostImpl::ArcNetHostImpl(ArcBridgeService* bridge_service)
-    : ArcService(bridge_service), binding_(this), weak_factory_(this) {
-  arc_bridge_service()->net()->AddObserver(this);
+// Singleton factory for ArcNetHostImpl.
+class ArcNetHostImplFactory
+    : public internal::ArcBrowserContextKeyedServiceFactoryBase<
+          ArcNetHostImpl,
+          ArcNetHostImplFactory> {
+ public:
+  // Factory name used by ArcBrowserContextKeyedServiceFactoryBase.
+  static constexpr const char* kName = "ArcNetHostImplFactory";
+
+  static ArcNetHostImplFactory* GetInstance() {
+    return base::Singleton<ArcNetHostImplFactory>::get();
+  }
+
+ private:
+  friend base::DefaultSingletonTraits<ArcNetHostImplFactory>;
+  ArcNetHostImplFactory() = default;
+  ~ArcNetHostImplFactory() override = default;
+};
+
+}  // namespace
+
+// static
+ArcNetHostImpl* ArcNetHostImpl::GetForBrowserContext(
+    content::BrowserContext* context) {
+  return ArcNetHostImplFactory::GetForBrowserContext(context);
+}
+
+ArcNetHostImpl::ArcNetHostImpl(content::BrowserContext* context,
+                               ArcBridgeService* bridge_service)
+    : arc_bridge_service_(bridge_service), binding_(this), weak_factory_(this) {
+  arc_bridge_service_->net()->AddObserver(this);
 }
 
 ArcNetHostImpl::~ArcNetHostImpl() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  arc_bridge_service()->net()->RemoveObserver(this);
-  if (observing_network_state_) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (observing_network_state_)
     GetStateHandler()->RemoveObserver(this, FROM_HERE);
-  }
+
+  // TODO(hidehiko): Currently, the lifetime of ArcBridgeService and
+  // BrowserContextKeyedService is not nested.
+  // If ArcServiceManager::Get() returns nullptr, it is already destructed,
+  // so do not touch it.
+  if (ArcServiceManager::Get())
+    arc_bridge_service_->net()->RemoveObserver(this);
 }
 
 void ArcNetHostImpl::OnInstanceReady() {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   mojom::NetHostPtr host;
   binding_.Bind(MakeRequest(&host));
   auto* instance =
-      ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service()->net(), Init);
+      ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service_->net(), Init);
   DCHECK(instance);
   instance->Init(std::move(host));
 
@@ -327,28 +363,9 @@ void ArcNetHostImpl::OnInstanceClosed() {
 }
 
 void ArcNetHostImpl::GetNetworksDeprecated(
-    bool configured_only,
-    bool visible_only,
+    mojom::GetNetworksRequestType type,
     const GetNetworksDeprecatedCallback& callback) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  if (configured_only && visible_only) {
-    VLOG(1) << "Illegal arguments - both configured and visible networks "
-               "requested.";
-    return;
-  }
-
-  mojom::GetNetworksRequestType type =
-      mojom::GetNetworksRequestType::CONFIGURED_ONLY;
-  if (visible_only) {
-    type = mojom::GetNetworksRequestType::VISIBLE_ONLY;
-  }
-
-  GetNetworks(type, callback);
-}
-
-void ArcNetHostImpl::GetNetworks(mojom::GetNetworksRequestType type,
-                                 const GetNetworksCallback& callback) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   mojom::NetworkDataPtr data = mojom::NetworkData::New();
   bool configured_only = true;
@@ -358,7 +375,7 @@ void ArcNetHostImpl::GetNetworks(mojom::GetNetworksRequestType type,
     visible_only = true;
   }
 
-  // Retrieve list of nearby wifi networks
+  // Retrieve list of nearby WiFi networks.
   chromeos::NetworkTypePattern network_pattern =
       chromeos::onc::NetworkTypePatternFromOncType(onc::network_type::kWiFi);
   std::unique_ptr<base::ListValue> network_properties_list =
@@ -421,6 +438,31 @@ void ArcNetHostImpl::GetNetworks(mojom::GetNetworksRequestType type,
   }
   data->networks = std::move(networks);
   callback.Run(std::move(data));
+}
+
+void ArcNetHostImpl::GetNetworks(mojom::GetNetworksRequestType type,
+                                 const GetNetworksCallback& callback) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+
+  // Retrieve list of configured or visible WiFi networks.
+  bool configured_only = type == mojom::GetNetworksRequestType::CONFIGURED_ONLY;
+  chromeos::NetworkTypePattern network_pattern =
+      chromeos::onc::NetworkTypePatternFromOncType(onc::network_type::kWiFi);
+  std::unique_ptr<base::ListValue> network_properties_list =
+      chromeos::network_util::TranslateNetworkListToONC(
+          network_pattern, configured_only, !configured_only /* visible_only */,
+          kGetNetworksListLimit);
+
+  std::vector<mojom::NetworkConfigurationPtr> networks;
+  for (const auto& value : *network_properties_list) {
+    const base::DictionaryValue* network_dict = nullptr;
+    value.GetAsDictionary(&network_dict);
+    DCHECK(network_dict);
+    networks.push_back(TranslateONCConfiguration(network_dict));
+  }
+
+  callback.Run(mojom::GetNetworksResponseType::New(
+      arc::mojom::NetworkResult::SUCCESS, std::move(networks)));
 }
 
 void ArcNetHostImpl::CreateNetworkSuccessCallback(
@@ -565,7 +607,7 @@ void ArcNetHostImpl::GetWifiEnabledState(
 void ArcNetHostImpl::SetWifiEnabledState(
     bool is_enabled,
     const SetWifiEnabledStateCallback& callback) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   chromeos::NetworkStateHandler::TechnologyState state =
       GetStateHandler()->GetTechnologyState(
           chromeos::NetworkTypePattern::WiFi());
@@ -589,7 +631,7 @@ void ArcNetHostImpl::StartScan() {
 
 void ArcNetHostImpl::ScanCompleted(const chromeos::DeviceState* /*unused*/) {
   auto* net_instance =
-      ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service()->net(), ScanCompleted);
+      ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service_->net(), ScanCompleted);
   if (!net_instance)
     return;
 
@@ -617,7 +659,7 @@ void ArcNetHostImpl::GetDefaultNetwork(
 void ArcNetHostImpl::DefaultNetworkSuccessCallback(
     const std::string& service_path,
     const base::DictionaryValue& dictionary) {
-  auto* net_instance = ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service()->net(),
+  auto* net_instance = ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service_->net(),
                                                    DefaultNetworkChanged);
   if (!net_instance)
     return;
@@ -630,8 +672,8 @@ void ArcNetHostImpl::DefaultNetworkChanged(
     const chromeos::NetworkState* network) {
   if (!network) {
     VLOG(1) << "No default network";
-    auto* net_instance = ARC_GET_INSTANCE_FOR_METHOD(
-        arc_bridge_service()->net(), DefaultNetworkChanged);
+    auto* net_instance = ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service_->net(),
+                                                     DefaultNetworkChanged);
     if (net_instance)
       net_instance->DefaultNetworkChanged(nullptr, nullptr);
     return;
@@ -647,7 +689,7 @@ void ArcNetHostImpl::DefaultNetworkChanged(
 }
 
 void ArcNetHostImpl::DeviceListChanged() {
-  auto* net_instance = ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service()->net(),
+  auto* net_instance = ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service_->net(),
                                                    WifiEnabledStateChanged);
   if (!net_instance)
     return;

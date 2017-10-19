@@ -95,11 +95,10 @@ RendererVk::RendererVk()
       mDevice(VK_NULL_HANDLE),
       mHostVisibleMemoryIndex(std::numeric_limits<uint32_t>::max()),
       mGlslangWrapper(nullptr),
-      mCurrentQueueSerial(),
-      mLastCompletedQueueSerial(),
+      mLastCompletedQueueSerial(mQueueSerialFactory.generate()),
+      mCurrentQueueSerial(mQueueSerialFactory.generate()),
       mInFlightCommands()
 {
-    ++mCurrentQueueSerial;
 }
 
 RendererVk::~RendererVk()
@@ -155,17 +154,7 @@ RendererVk::~RendererVk()
 
 vk::Error RendererVk::initialize(const egl::AttributeMap &attribs, const char *wsiName)
 {
-#if !defined(NDEBUG)
-    // Validation layers enabled by default in Debug.
-    mEnableValidationLayers = true;
-#endif
-
-    // If specified in the attributes, override the default.
-    if (attribs.contains(EGL_PLATFORM_ANGLE_ENABLE_VALIDATION_LAYER_ANGLE))
-    {
-        mEnableValidationLayers =
-            (attribs.get(EGL_PLATFORM_ANGLE_ENABLE_VALIDATION_LAYER_ANGLE, EGL_FALSE) == EGL_TRUE);
-    }
+    mEnableValidationLayers = ShouldUseDebugLayers(attribs);
 
     // If we're loading the validation layers, we could be running from any random directory.
     // Change to the executable directory so we can find the layers, then change back to the
@@ -215,7 +204,8 @@ vk::Error RendererVk::initialize(const egl::AttributeMap &attribs, const char *w
         if (!HasStandardValidationLayer(instanceLayerProps))
         {
             // Generate an error if the attribute was requested, warning otherwise.
-            if (attribs.contains(EGL_PLATFORM_ANGLE_ENABLE_VALIDATION_LAYER_ANGLE))
+            if (attribs.get(EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE, EGL_DONT_CARE) ==
+                EGL_TRUE)
             {
                 ERR() << "Vulkan standard validation layers are missing.";
             }
@@ -732,7 +722,8 @@ vk::Error RendererVk::submit(const VkSubmitInfo &submitInfo)
     ASSERT(mInFlightCommands.size() < 1000u);
 
     // Increment the queue serial. If this fails, we should restart ANGLE.
-    ANGLE_VK_CHECK(++mCurrentQueueSerial, VK_ERROR_OUT_OF_HOST_MEMORY);
+    // TODO(jmadill): Overflow check.
+    mCurrentQueueSerial = mQueueSerialFactory.generate();
 
     return vk::NoError();
 }
@@ -757,7 +748,8 @@ vk::Error RendererVk::submitFrame(const VkSubmitInfo &submitInfo)
     ASSERT(mInFlightCommands.size() < 1000u);
 
     // Increment the queue serial. If this fails, we should restart ANGLE.
-    ANGLE_VK_CHECK(++mCurrentQueueSerial, VK_ERROR_OUT_OF_HOST_MEMORY);
+    // TODO(jmadill): Overflow check.
+    mCurrentQueueSerial = mQueueSerialFactory.generate();
 
     ANGLE_TRY(checkInFlightCommands());
 

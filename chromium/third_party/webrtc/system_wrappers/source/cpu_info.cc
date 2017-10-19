@@ -23,7 +23,7 @@
 #include <sys/sysctl.h>
 #endif
 
-#include "webrtc/base/logging.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace internal {
 static int DetectNumberOfCores() {
@@ -32,7 +32,7 @@ static int DetectNumberOfCores() {
 
 #if defined(WEBRTC_WIN)
   SYSTEM_INFO si;
-  GetSystemInfo(&si);
+  GetNativeSystemInfo(&si);
   number_of_cores = static_cast<int>(si.dwNumberOfProcessors);
 #elif defined(WEBRTC_LINUX) || defined(WEBRTC_ANDROID)
   number_of_cores = static_cast<int>(sysconf(_SC_NPROCESSORS_ONLN));

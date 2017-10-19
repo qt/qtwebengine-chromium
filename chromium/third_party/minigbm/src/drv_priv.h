@@ -13,10 +13,8 @@
 #include <sys/types.h>
 
 #include "drv.h"
-#include "list.h"
 
-struct bo
-{
+struct bo {
 	struct driver *drv;
 	uint32_t width;
 	uint32_t height;
@@ -41,43 +39,55 @@ struct driver {
 	pthread_mutex_t driver_lock;
 };
 
-struct map_info {
-	void *addr;
-	size_t length;
-	uint32_t handle;
-	int32_t refcount;
-	void *priv;
-};
-
-struct supported_combination {
+struct kms_item {
 	uint32_t format;
 	uint64_t modifier;
 	uint64_t usage;
 };
 
-struct combination_list_element {
-	struct supported_combination combination;
-	struct list_head link;
+struct format_metadata {
+	uint32_t priority;
+	uint32_t tiling;
+	uint64_t modifier;
 };
 
-struct backend
-{
+struct combination {
+	uint32_t format;
+	struct format_metadata metadata;
+	uint64_t usage;
+};
+
+struct combinations {
+	struct combination *data;
+	uint32_t size;
+	uint32_t allocations;
+};
+
+struct backend {
 	char *name;
 	int (*init)(struct driver *drv);
 	void (*close)(struct driver *drv);
-	int (*bo_create)(struct bo *bo, uint32_t width, uint32_t height,
-			 uint32_t format, uint32_t flags);
-	int (*bo_create_with_modifiers)(struct bo *bo,
-					uint32_t width, uint32_t height,
-					uint32_t format,
-					const uint64_t *modifiers,
-					uint32_t count);
+	int (*bo_create)(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+			 uint32_t flags);
+	int (*bo_create_with_modifiers)(struct bo *bo, uint32_t width, uint32_t height,
+					uint32_t format, const uint64_t *modifiers, uint32_t count);
 	int (*bo_destroy)(struct bo *bo);
 	int (*bo_import)(struct bo *bo, struct drv_import_fd_data *data);
-	void* (*bo_map)(struct bo *bo, struct map_info *data, size_t plane);
+	void *(*bo_map)(struct bo *bo, struct map_info *data, size_t plane);
 	int (*bo_unmap)(struct bo *bo, struct map_info *data);
 	uint32_t (*resolve_format)(uint32_t format);
-	struct list_head combinations;
+	struct combinations combos;
 };
+
+// clang-format off
+#define BO_USE_RENDER_MASK BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | \
+			   BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | \
+			   BO_USE_SW_WRITE_RARELY | BO_USE_TEXTURE
+
+#define BO_USE_TEXTURE_MASK BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN | \
+			    BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY | BO_USE_TEXTURE
+
+#define LINEAR_METADATA (struct format_metadata) { 0, 1, DRM_FORMAT_MOD_NONE }
+// clang-format on
 
 #endif

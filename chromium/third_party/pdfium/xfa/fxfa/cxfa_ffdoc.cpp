@@ -22,7 +22,7 @@
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "third_party/base/ptr_util.h"
 #include "xfa/fwl/cfwl_notedriver.h"
-#include "xfa/fxfa/app/xfa_ffnotify.h"
+#include "xfa/fxfa/app/cxfa_ffnotify.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffdocview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
@@ -365,13 +365,12 @@ CFX_RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(
     return nullptr;
 
   CPDF_NameTree nametree(pXFAImages);
-  CFX_ByteString bsName = PDF_EncodeText(wsName.c_str(), wsName.GetLength());
-  CPDF_Object* pObject = nametree.LookupValue(bsName);
+  CPDF_Object* pObject = nametree.LookupValue(CFX_WideString(wsName));
   if (!pObject) {
     for (size_t i = 0; i < nametree.GetCount(); i++) {
-      CFX_ByteString bsTemp;
-      CPDF_Object* pTempObject = nametree.LookupValueAndName(i, &bsTemp);
-      if (bsTemp == bsName) {
+      CFX_WideString wsTemp;
+      CPDF_Object* pTempObject = nametree.LookupValueAndName(i, &wsTemp);
+      if (wsTemp == wsName) {
         pObject = pTempObject;
         break;
       }

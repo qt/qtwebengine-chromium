@@ -13,7 +13,7 @@
 #include <fstream>
 #include <iostream>
 
-#include "webrtc/base/stringencode.h"
+#include "webrtc/rtc_base/stringencode.h"
 
 namespace webrtc {
 namespace test {
@@ -53,7 +53,7 @@ std::vector<Turn> LoadTiming(const std::string& timing_filepath) {
 void SaveTiming(const std::string& timing_filepath,
                 rtc::ArrayView<const Turn> timing) {
   std::ofstream outfile(timing_filepath);
-  // TODO(alessio): check if file open for writing.
+  RTC_CHECK(outfile.is_open());
   for (const Turn& turn : timing) {
     outfile << turn.speaker_name << " " << turn.audiotrack_file_name
         << " " << turn.offset << std::endl;

@@ -9,7 +9,6 @@
 #include "base/at_exit.h"
 #include "base/base_paths.h"
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/native_library.h"
@@ -92,7 +91,7 @@ bool InitializeStaticOSMesaInternal() {
   return true;
 }
 
-bool InitializeStaticEGLInternal() {
+bool InitializeStaticEGLInternal(GLImplementation implementation) {
   base::FilePath module_path;
   if (!PathService::Get(base::DIR_MODULE, &module_path))
     return false;
@@ -104,14 +103,7 @@ bool InitializeStaticEGLInternal() {
   LoadD3DXLibrary(module_path, kD3DCompiler);
 
   base::FilePath gles_path;
-  const base::CommandLine* command_line =
-      base::CommandLine::ForCurrentProcess();
-  const std::string use_gl =
-      command_line->GetSwitchValueASCII(switches::kUseGL);
-  bool using_swift_shader =
-      (use_gl == kGLImplementationSwiftShaderName) ||
-      (use_gl == kGLImplementationSwiftShaderForWebGLName);
-  if (using_swift_shader) {
+  if (implementation == kGLImplementationSwiftShaderGL) {
 #if BUILDFLAG(ENABLE_SWIFTSHADER)
     gles_path = module_path.Append(L"swiftshader/");
     // Preload library
@@ -291,7 +283,7 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       return InitializeStaticOSMesaInternal();
     case kGLImplementationSwiftShaderGL:
     case kGLImplementationEGLGLES2:
-      return InitializeStaticEGLInternal();
+      return InitializeStaticEGLInternal(implementation);
     case kGLImplementationDesktopGL:
       return InitializeStaticWGLInternal();
     case kGLImplementationMockGL:

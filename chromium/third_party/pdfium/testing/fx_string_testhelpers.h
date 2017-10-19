@@ -7,12 +7,9 @@
 
 #include <ostream>
 
-#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/cfx_datetime.h"
 
-// Output stream operator so GTEST macros work with FX strings.
-std::ostream& operator<<(std::ostream& out, const CFX_ByteStringC& str);
-std::ostream& operator<<(std::ostream& out, const CFX_ByteString& str);
-std::ostream& operator<<(std::ostream& out, const CFX_WideStringC& str);
-std::ostream& operator<<(std::ostream& out, const CFX_WideString& str);
+// Output stream operator so GTEST macros work with CFX_DateTime objects.
+std::ostream& operator<<(std::ostream& os, const CFX_DateTime& dt);
 
 #endif  // TESTING_FX_STRING_TESTHELPERS_H_

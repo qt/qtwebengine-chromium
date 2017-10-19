@@ -14,7 +14,7 @@
 #include "core/fxge/fx_font.h"
 #include "core/fxge/ifx_systemfontinfo.h"
 #include "fpdfsdk/fsdk_define.h"
-#include "fpdfsdk/pdfwindow/PWL_FontMap.h"
+#include "fpdfsdk/pdfwindow/cpwl_font_map.h"
 #include "third_party/base/ptr_util.h"
 
 static_assert(FXFONT_ANSI_CHARSET == FX_CHARSET_ANSI, "Charset must match");
@@ -123,13 +123,12 @@ DLLEXPORT const FPDF_CharsetFontMap* STDCALL FPDF_GetDefaultTTFMap() {
 }
 
 struct FPDF_SYSFONTINFO_DEFAULT : public FPDF_SYSFONTINFO {
-  IFX_SystemFontInfo* m_pFontInfo;
+  CFX_UnownedPtr<IFX_SystemFontInfo> m_pFontInfo;
 };
 
 static void DefaultRelease(struct _FPDF_SYSFONTINFO* pThis) {
   auto* pDefault = static_cast<FPDF_SYSFONTINFO_DEFAULT*>(pThis);
-  // TODO(thestig): Should this be set to nullptr too?
-  delete pDefault->m_pFontInfo;
+  delete pDefault->m_pFontInfo.Release();
 }
 
 static void DefaultEnumFonts(struct _FPDF_SYSFONTINFO* pThis, void* pMapper) {
@@ -213,7 +212,7 @@ DLLEXPORT FPDF_SYSFONTINFO* STDCALL FPDF_GetDefaultSystemFontInfo() {
   return pFontInfoExt;
 }
 
-DLLEXPORT void FPDF_FreeDefaultSystemFontInfo(
-    FPDF_SYSFONTINFO* pDefaultFontInfo) {
+DLLEXPORT void STDCALL
+FPDF_FreeDefaultSystemFontInfo(FPDF_SYSFONTINFO* pDefaultFontInfo) {
   FX_Free(static_cast<FPDF_SYSFONTINFO_DEFAULT*>(pDefaultFontInfo));
 }

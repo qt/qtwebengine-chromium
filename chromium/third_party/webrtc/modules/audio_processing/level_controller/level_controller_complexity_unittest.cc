@@ -11,8 +11,6 @@
 #include <numeric>
 #include <vector>
 
-#include "webrtc/base/array_view.h"
-#include "webrtc/base/random.h"
 #include "webrtc/modules/audio_processing/audio_buffer.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/modules/audio_processing/level_controller/level_controller.h"
@@ -20,6 +18,8 @@
 #include "webrtc/modules/audio_processing/test/bitexactness_tools.h"
 #include "webrtc/modules/audio_processing/test/performance_timer.h"
 #include "webrtc/modules/audio_processing/test/simulator_buffers.h"
+#include "webrtc/rtc_base/array_view.h"
+#include "webrtc/rtc_base/random.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/perf_test.h"
@@ -187,7 +187,8 @@ void RunTogetherWithApm(std::string test_description,
 
 }  // namespace
 
-TEST(LevelControllerPerformanceTest, StandaloneProcessing) {
+// TODO(peah): Reactivate once issue 7712 has been resolved.
+TEST(LevelControllerPerformanceTest, DISABLED_StandaloneProcessing) {
   int sample_rates_to_test[] = {
       AudioProcessing::kSampleRate8kHz, AudioProcessing::kSampleRate16kHz,
       AudioProcessing::kSampleRate32kHz, AudioProcessing::kSampleRate48kHz};
@@ -219,8 +220,9 @@ void TestSomeSampleRatesWithApm(const std::string& test_name,
                      use_mobile_agc, include_default_apm_processing);
 }
 
+// TODO(peah): Reactivate once issue 7712 has been resolved.
 #if !defined(WEBRTC_ANDROID)
-TEST(LevelControllerPerformanceTest, ProcessingViaApm) {
+TEST(LevelControllerPerformanceTest, DISABLED_ProcessingViaApm) {
 #else
 TEST(LevelControllerPerformanceTest, DISABLED_ProcessingViaApm) {
 #endif
@@ -228,8 +230,9 @@ TEST(LevelControllerPerformanceTest, DISABLED_ProcessingViaApm) {
   TestSomeSampleRatesWithApm("SimpleLevelControlViaApm", false, false);
 }
 
+// TODO(peah): Reactivate once issue 7712 has been resolved.
 #if !defined(WEBRTC_ANDROID)
-TEST(LevelControllerPerformanceTest, InteractionWithDefaultApm) {
+TEST(LevelControllerPerformanceTest, DISABLED_InteractionWithDefaultApm) {
 #else
 TEST(LevelControllerPerformanceTest, DISABLED_InteractionWithDefaultApm) {
 #endif

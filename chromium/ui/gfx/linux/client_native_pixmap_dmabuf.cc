@@ -87,7 +87,6 @@ ClientNativePixmapDmaBuf::ClientNativePixmapDmaBuf(
 
     bool fd_valid = fcntl(dmabuf_fd_.get(), F_GETFD) != -1 ||
                     logging::GetLastSystemErrorCode() != EBADF;
-
     std::string mmap_params = base::StringPrintf(
         "(addr=nullptr, length=%zu, prot=(PROT_READ | PROT_WRITE), "
         "flags=MAP_SHARED, fd=%d[valid=%d], offset=0)",

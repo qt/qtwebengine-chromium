@@ -17,17 +17,18 @@
 #include <DXGI1_2.h>
 
 #include <memory>
+#include <string>
 #include <vector>
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/thread_annotations.h"
+#include "webrtc/modules/desktop_capture/desktop_frame_rotation.h"
 #include "webrtc/modules/desktop_capture/desktop_geometry.h"
 #include "webrtc/modules/desktop_capture/desktop_region.h"
-#include "webrtc/modules/desktop_capture/desktop_frame_rotation.h"
 #include "webrtc/modules/desktop_capture/shared_desktop_frame.h"
 #include "webrtc/modules/desktop_capture/win/d3d_device.h"
 #include "webrtc/modules/desktop_capture/win/dxgi_context.h"
 #include "webrtc/modules/desktop_capture/win/dxgi_texture.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -67,6 +68,9 @@ class DxgiOutputDuplicator {
 
   // Returns the desktop rect covered by this DxgiOutputDuplicator.
   DesktopRect desktop_rect() const { return desktop_rect_; }
+
+  // Returns the device name from DXGI_OUTPUT_DESC in utf8 encoding.
+  const std::string& device_name() const { return device_name_; }
 
   void Setup(Context* context);
 
@@ -112,6 +116,7 @@ class DxgiOutputDuplicator {
 
   const D3dDevice device_;
   const Microsoft::WRL::ComPtr<IDXGIOutput1> output_;
+  const std::string device_name_;
   DesktopRect desktop_rect_;
   Microsoft::WRL::ComPtr<IDXGIOutputDuplication> duplication_;
   DXGI_OUTDUPL_DESC desc_;

@@ -14,10 +14,10 @@
 #include <map>
 #include <vector>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/modules/video_coding/video_coding_impl.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 #include "webrtc/video/call_stats.h"
 #include "webrtc/video/payload_router.h"
@@ -118,6 +118,9 @@ void VideoStreamDecoder::OnFrameBufferTimingsUpdated(int decode_ms,
                                                      int jitter_buffer_ms,
                                                      int min_playout_delay_ms,
                                                      int render_delay_ms) {}
+
+void VideoStreamDecoder::OnTimingFrameInfoUpdated(const TimingFrameInfo& info) {
+}
 
 void VideoStreamDecoder::OnCompleteFrame(bool is_keyframe, size_t size_bytes) {}
 

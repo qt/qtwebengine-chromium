@@ -13,11 +13,11 @@
 
 #include <memory>
 
-#include "webrtc/base/criticalsection.h"
 #include "webrtc/common_audio/resampler/include/push_resampler.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_processing/typing_detection.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/rtc_base/criticalsection.h"
 #include "webrtc/voice_engine/audio_level.h"
 #include "webrtc/voice_engine/file_player.h"
 #include "webrtc/voice_engine/file_recorder.h"
@@ -75,6 +75,14 @@ public:
 
     // 'virtual' to allow mocking.
     virtual int16_t AudioLevelFullRange() const;
+
+    // See description of "totalAudioEnergy" in the WebRTC stats spec:
+    // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalaudioenergy
+    // 'virtual' to allow mocking.
+    virtual double GetTotalInputEnergy() const;
+
+    // 'virtual' to allow mocking.
+    virtual double GetTotalInputDuration() const;
 
     bool IsRecordingCall();
 
@@ -189,6 +197,8 @@ private:
     bool _fileRecording = false;
     bool _fileCallRecording = false;
     voe::AudioLevel _audioLevel;
+    double totalInputEnergy_ = 0.0;
+    double totalInputDuration_ = 0.0;
     // protect file instances and their variables in MixedParticipants()
     rtc::CriticalSection _critSect;
     rtc::CriticalSection _callbackCritSect;

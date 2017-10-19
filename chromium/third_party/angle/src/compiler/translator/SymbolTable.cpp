@@ -3,10 +3,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-
-//
-// Symbol table for parsing.  Most functionaliy and main ideas
-// are documented in the header file.
+// Symbol table for parsing. The design principles and most of the functionality are documented in
+// the header file.
 //
 
 #if defined(_MSC_VER)
@@ -31,9 +29,7 @@ static const char kFunctionMangledNameSeparator = '(';
 
 }  // anonymous namespace
 
-int TSymbolTable::uniqueIdCounter = 0;
-
-TSymbolUniqueId::TSymbolUniqueId() : mId(TSymbolTable::nextUniqueId())
+TSymbolUniqueId::TSymbolUniqueId(TSymbolTable *symbolTable) : mId(symbolTable->nextUniqueId())
 {
 }
 
@@ -46,7 +42,8 @@ int TSymbolUniqueId::get() const
     return mId;
 }
 
-TSymbol::TSymbol(const TString *n) : uniqueId(TSymbolTable::nextUniqueId()), name(n)
+TSymbol::TSymbol(TSymbolTable *symbolTable, const TString *n)
+    : uniqueId(symbolTable->nextUniqueId()), name(n)
 {
 }
 
@@ -271,6 +268,74 @@ const TType *VectorType(const TType *type, int size)
     }
 }
 
+TVariable *TSymbolTable::declareVariable(const TString *name, const TType &type)
+{
+    return insertVariable(currentLevel(), name, type);
+}
+
+TVariable *TSymbolTable::declareStructType(TStructure *str)
+{
+    return insertStructType(currentLevel(), str);
+}
+
+TInterfaceBlockName *TSymbolTable::declareInterfaceBlockName(const TString *name)
+{
+    TInterfaceBlockName *blockNameSymbol = new TInterfaceBlockName(this, name);
+    if (insert(currentLevel(), blockNameSymbol))
+    {
+        return blockNameSymbol;
+    }
+    return nullptr;
+}
+
+TVariable *TSymbolTable::insertVariable(ESymbolLevel level, const char *name, const TType &type)
+{
+    return insertVariable(level, NewPoolTString(name), type);
+}
+
+TVariable *TSymbolTable::insertVariable(ESymbolLevel level, const TString *name, const TType &type)
+{
+    TVariable *var = new TVariable(this, name, type);
+    if (insert(level, var))
+    {
+        // Do lazy initialization for struct types, so we allocate to the current scope.
+        if (var->getType().getBasicType() == EbtStruct)
+        {
+            var->getType().realize();
+        }
+        return var;
+    }
+    return nullptr;
+}
+
+TVariable *TSymbolTable::insertVariableExt(ESymbolLevel level,
+                                           const char *ext,
+                                           const char *name,
+                                           const TType &type)
+{
+    TVariable *var = new TVariable(this, NewPoolTString(name), type);
+    if (insert(level, ext, var))
+    {
+        if (var->getType().getBasicType() == EbtStruct)
+        {
+            var->getType().realize();
+        }
+        return var;
+    }
+    return nullptr;
+}
+
+TVariable *TSymbolTable::insertStructType(ESymbolLevel level, TStructure *str)
+{
+    TVariable *var = new TVariable(this, &str->name(), TType(str), true);
+    if (insert(level, var))
+    {
+        var->getType().realize();
+        return var;
+    }
+    return nullptr;
+}
+
 void TSymbolTable::insertBuiltIn(ESymbolLevel level,
                                  TOperator op,
                                  const char *ext,
@@ -401,7 +466,7 @@ void TSymbolTable::insertBuiltIn(ESymbolLevel level,
     }
     else
     {
-        TFunction *function = new TFunction(NewPoolTString(name), rvalue, op, ext);
+        TFunction *function = new TFunction(this, NewPoolTString(name), rvalue, op, ext);
 
         function->addParameter(TConstParameter(ptype1));
 
@@ -466,7 +531,7 @@ void TSymbolTable::insertBuiltInFunctionNoParameters(ESymbolLevel level,
                                                      const char *name)
 {
     insertUnmangledBuiltInName(name, level);
-    insert(level, new TFunction(NewPoolTString(name), rvalue, op));
+    insert(level, new TFunction(this, NewPoolTString(name), rvalue, op));
 }
 
 TPrecision TSymbolTable::getDefaultPrecision(TBasicType type) const

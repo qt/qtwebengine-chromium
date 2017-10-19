@@ -177,6 +177,20 @@ static const CipherTest kCipherTests[] = {
         },
         false,
     },
+    // Standard names may be used instead of OpenSSL names.
+    {
+        "[TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256|"
+        "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256]:"
+        "[TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256]:"
+        "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+        {
+            {TLS1_CK_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, 1},
+            {TLS1_CK_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, 0},
+            {TLS1_CK_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, 0},
+            {TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256, 0},
+        },
+        false,
+    },
     // @STRENGTH performs a stable strength-sort of the selected ciphers and
     // only the selected ciphers.
     {
@@ -197,6 +211,32 @@ static const CipherTest kCipherTests[] = {
             {TLS1_CK_ECDHE_RSA_WITH_AES_128_CBC_SHA, 0},
             {TLS1_CK_RSA_WITH_AES_128_SHA, 0},
             {TLS1_CK_RSA_WITH_AES_256_SHA, 0},
+        },
+        false,
+    },
+    // Additional masks after @STRENGTH get silently discarded.
+    //
+    // TODO(davidben): Make this an error. If not silently discarded, they get
+    // interpreted as + opcodes which are very different.
+    {
+        "ECDHE-RSA-AES128-GCM-SHA256:"
+        "ECDHE-RSA-AES256-GCM-SHA384:"
+        "@STRENGTH+AES256",
+        {
+            {TLS1_CK_ECDHE_RSA_WITH_AES_256_GCM_SHA384, 0},
+            {TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256, 0},
+        },
+        false,
+    },
+    {
+        "ECDHE-RSA-AES128-GCM-SHA256:"
+        "ECDHE-RSA-AES256-GCM-SHA384:"
+        "@STRENGTH+AES256:"
+        "ECDHE-RSA-CHACHA20-POLY1305",
+        {
+            {TLS1_CK_ECDHE_RSA_WITH_AES_256_GCM_SHA384, 0},
+            {TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256, 0},
+            {TLS1_CK_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, 0},
         },
         false,
     },
@@ -715,8 +755,8 @@ static void ExpectDefaultVersion(uint16_t min_version, uint16_t max_version,
                                  const SSL_METHOD *(*method)(void)) {
   bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(method()));
   ASSERT_TRUE(ctx);
-  EXPECT_EQ(min_version, ctx->min_version);
-  EXPECT_EQ(max_version, ctx->max_version);
+  EXPECT_EQ(min_version, ctx->conf_min_version);
+  EXPECT_EQ(max_version, ctx->conf_max_version);
 }
 
 TEST(SSLTest, DefaultVersion) {
@@ -730,43 +770,42 @@ TEST(SSLTest, DefaultVersion) {
   ExpectDefaultVersion(TLS1_2_VERSION, TLS1_2_VERSION, &DTLSv1_2_method);
 }
 
-typedef struct {
-  int id;
-  const char *rfc_name;
-} CIPHER_RFC_NAME_TEST;
+TEST(SSLTest, CipherGetStandardName) {
+  static const struct {
+    int id;
+    const char *standard_name;
+  } kTests[] = {
+      {SSL3_CK_RSA_DES_192_CBC3_SHA, "TLS_RSA_WITH_3DES_EDE_CBC_SHA"},
+      {TLS1_CK_RSA_WITH_AES_128_SHA, "TLS_RSA_WITH_AES_128_CBC_SHA"},
+      {TLS1_CK_ECDHE_RSA_WITH_AES_128_SHA256,
+       "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"},
+      {TLS1_CK_ECDHE_RSA_WITH_AES_256_SHA384,
+       "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"},
+      {TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+       "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"},
+      {TLS1_CK_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+       "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"},
+      {TLS1_CK_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+       "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"},
+      {TLS1_CK_ECDHE_PSK_WITH_AES_128_CBC_SHA,
+       "TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA"},
+      {TLS1_CK_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+       "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"},
+      {TLS1_CK_AES_256_GCM_SHA384, "TLS_AES_256_GCM_SHA384"},
+      {TLS1_CK_AES_128_GCM_SHA256, "TLS_AES_128_GCM_SHA256"},
+      {TLS1_CK_CHACHA20_POLY1305_SHA256, "TLS_CHACHA20_POLY1305_SHA256"},
+  };
 
-static const CIPHER_RFC_NAME_TEST kCipherRFCNameTests[] = {
-    {SSL3_CK_RSA_DES_192_CBC3_SHA, "TLS_RSA_WITH_3DES_EDE_CBC_SHA"},
-    {TLS1_CK_RSA_WITH_AES_128_SHA, "TLS_RSA_WITH_AES_128_CBC_SHA"},
-    {TLS1_CK_ECDHE_RSA_WITH_AES_128_SHA256,
-     "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"},
-    {TLS1_CK_ECDHE_RSA_WITH_AES_256_SHA384,
-     "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"},
-    {TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-     "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"},
-    {TLS1_CK_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-     "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"},
-    {TLS1_CK_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-     "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"},
-    {TLS1_CK_ECDHE_PSK_WITH_AES_128_CBC_SHA,
-     "TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA"},
-    {TLS1_CK_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-     "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"},
-    {TLS1_CK_AES_256_GCM_SHA384, "TLS_AES_256_GCM_SHA384"},
-    {TLS1_CK_AES_128_GCM_SHA256, "TLS_AES_128_GCM_SHA256"},
-    {TLS1_CK_CHACHA20_POLY1305_SHA256, "TLS_CHACHA20_POLY1305_SHA256"},
-};
-
-TEST(SSLTest, CipherGetRFCName) {
-  for (const CIPHER_RFC_NAME_TEST &t : kCipherRFCNameTests) {
-    SCOPED_TRACE(t.rfc_name);
+  for (const auto &t : kTests) {
+    SCOPED_TRACE(t.standard_name);
 
     const SSL_CIPHER *cipher = SSL_get_cipher_by_value(t.id & 0xffff);
     ASSERT_TRUE(cipher);
+    EXPECT_STREQ(t.standard_name, SSL_CIPHER_standard_name(cipher));
+
     bssl::UniquePtr<char> rfc_name(SSL_CIPHER_get_rfc_name(cipher));
     ASSERT_TRUE(rfc_name);
-
-    EXPECT_STREQ(t.rfc_name, rfc_name.get());
+    EXPECT_STREQ(t.standard_name, rfc_name.get());
   }
 }
 
@@ -1254,6 +1293,15 @@ static bssl::UniquePtr<EVP_PKEY> GetChainTestKey() {
       PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr));
 }
 
+static const uint8_t kTestName[] = {
+    0x30, 0x45, 0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
+    0x02, 0x41, 0x55, 0x31, 0x13, 0x30, 0x11, 0x06, 0x03, 0x55, 0x04, 0x08,
+    0x0c, 0x0a, 0x53, 0x6f, 0x6d, 0x65, 0x2d, 0x53, 0x74, 0x61, 0x74, 0x65,
+    0x31, 0x21, 0x30, 0x1f, 0x06, 0x03, 0x55, 0x04, 0x0a, 0x0c, 0x18, 0x49,
+    0x6e, 0x74, 0x65, 0x72, 0x6e, 0x65, 0x74, 0x20, 0x57, 0x69, 0x64, 0x67,
+    0x69, 0x74, 0x73, 0x20, 0x50, 0x74, 0x79, 0x20, 0x4c, 0x74, 0x64,
+};
+
 static bool CompleteHandshakes(SSL *client, SSL *server) {
   // Drive both their handshakes to completion.
   for (;;) {
@@ -1497,6 +1545,7 @@ TEST(SSLTest, SessionDuplication) {
 }
 
 static void ExpectFDs(const SSL *ssl, int rfd, int wfd) {
+  EXPECT_EQ(rfd, SSL_get_fd(ssl));
   EXPECT_EQ(rfd, SSL_get_rfd(ssl));
   EXPECT_EQ(wfd, SSL_get_wfd(ssl));
 
@@ -1945,7 +1994,7 @@ static int SaveLastSession(SSL *ssl, SSL_SESSION *session) {
 }
 
 static bssl::UniquePtr<SSL_SESSION> CreateClientSession(SSL_CTX *client_ctx,
-                                             SSL_CTX *server_ctx) {
+                                                        SSL_CTX *server_ctx) {
   g_last_session = nullptr;
   SSL_CTX_sess_set_new_cb(client_ctx, SaveLastSession);
 
@@ -2543,15 +2592,19 @@ TEST(SSLTest, SetVersion) {
 
   // Zero is the default version.
   EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), 0));
-  EXPECT_EQ(TLS1_2_VERSION, ctx->max_version);
+  EXPECT_EQ(TLS1_2_VERSION, ctx->conf_max_version);
   EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), 0));
-  EXPECT_EQ(TLS1_VERSION, ctx->min_version);
+  EXPECT_EQ(TLS1_VERSION, ctx->conf_min_version);
 
   // SSL 3.0 and TLS 1.3 are available, but not by default.
   EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), SSL3_VERSION));
-  EXPECT_EQ(SSL3_VERSION, ctx->min_version);
+  EXPECT_EQ(SSL3_VERSION, ctx->conf_min_version);
   EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), TLS1_3_VERSION));
-  EXPECT_EQ(TLS1_3_VERSION, ctx->max_version);
+  EXPECT_EQ(TLS1_3_VERSION, ctx->conf_max_version);
+
+  // TLS1_3_DRAFT_VERSION is not an API-level version.
+  EXPECT_FALSE(SSL_CTX_set_max_proto_version(ctx.get(), TLS1_3_DRAFT_VERSION));
+  ERR_clear_error();
 
   ctx.reset(SSL_CTX_new(DTLS_method()));
   ASSERT_TRUE(ctx);
@@ -2571,9 +2624,9 @@ TEST(SSLTest, SetVersion) {
   EXPECT_FALSE(SSL_CTX_set_min_proto_version(ctx.get(), 0x1234));
 
   EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), 0));
-  EXPECT_EQ(TLS1_2_VERSION, ctx->max_version);
+  EXPECT_EQ(TLS1_2_VERSION, ctx->conf_max_version);
   EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), 0));
-  EXPECT_EQ(TLS1_1_VERSION, ctx->min_version);
+  EXPECT_EQ(TLS1_1_VERSION, ctx->conf_min_version);
 }
 
 static const char *GetVersionName(uint16_t version) {
@@ -3032,6 +3085,81 @@ static bool TestSSLWriteRetry(bool is_dtls, const SSL_METHOD *method,
   return true;
 }
 
+static bool TestRecordCallback(bool is_dtls, const SSL_METHOD *method,
+                               uint16_t version) {
+  bssl::UniquePtr<X509> cert = GetChainTestCertificate();
+  bssl::UniquePtr<X509> intermediate = GetChainTestIntermediate();
+  bssl::UniquePtr<EVP_PKEY> key = GetChainTestKey();
+  if (!cert || !intermediate || !key) {
+    return false;
+  }
+
+  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(method));
+  if (!ctx ||
+      !SSL_CTX_use_certificate(ctx.get(), cert.get()) ||
+      !SSL_CTX_use_PrivateKey(ctx.get(), key.get()) ||
+      !SSL_CTX_set_min_proto_version(ctx.get(), version) ||
+      !SSL_CTX_set_max_proto_version(ctx.get(), version)) {
+    return false;
+  }
+
+  bool read_seen = false;
+  bool write_seen = false;
+  auto cb = [&](int is_write, int cb_version, int cb_type, const void *buf,
+                size_t len, SSL *ssl) {
+    if (cb_type != SSL3_RT_HEADER) {
+      return;
+    }
+
+    // The callback does not report a version for records.
+    EXPECT_EQ(0, cb_version);
+
+    if (is_write) {
+      write_seen = true;
+    } else {
+      read_seen = true;
+    }
+
+    // Sanity-check that the record header is plausible.
+    CBS cbs;
+    CBS_init(&cbs, reinterpret_cast<const uint8_t *>(buf), len);
+    uint8_t type;
+    uint16_t record_version, length;
+    ASSERT_TRUE(CBS_get_u8(&cbs, &type));
+    ASSERT_TRUE(CBS_get_u16(&cbs, &record_version));
+    EXPECT_TRUE(record_version == version ||
+                record_version == (is_dtls ? DTLS1_VERSION : TLS1_VERSION))
+        << "Invalid record version: " << record_version;
+    if (is_dtls) {
+      uint16_t epoch;
+      ASSERT_TRUE(CBS_get_u16(&cbs, &epoch));
+      EXPECT_TRUE(epoch == 0 || epoch == 1) << "Invalid epoch: " << epoch;
+      ASSERT_TRUE(CBS_skip(&cbs, 6));
+    }
+    ASSERT_TRUE(CBS_get_u16(&cbs, &length));
+    EXPECT_EQ(0u, CBS_len(&cbs));
+  };
+  using CallbackType = decltype(cb);
+  SSL_CTX_set_msg_callback(
+      ctx.get(), [](int is_write, int cb_version, int cb_type, const void *buf,
+                    size_t len, SSL *ssl, void *arg) {
+        CallbackType *cb_ptr = reinterpret_cast<CallbackType *>(arg);
+        (*cb_ptr)(is_write, cb_version, cb_type, buf, len, ssl);
+      });
+  SSL_CTX_set_msg_callback_arg(ctx.get(), &cb);
+
+  bssl::UniquePtr<SSL> client, server;
+  if (!ConnectClientAndServer(&client, &server, ctx.get(), ctx.get(),
+                              nullptr /* no session */)) {
+    return false;
+  }
+
+  EXPECT_TRUE(read_seen);
+  EXPECT_TRUE(write_seen);
+  return true;
+}
+
+
 static bool ForEachVersion(bool (*test_func)(bool is_dtls,
                                              const SSL_METHOD *method,
                                              uint16_t version)) {
@@ -3157,12 +3285,80 @@ TEST(SSLTest, SetChainAndKey) {
   ASSERT_TRUE(SSL_CTX_set_chain_and_key(server_ctx.get(), &chain[0],
                                         chain.size(), key.get(), nullptr));
 
-  SSL_CTX_i_promise_to_verify_certs_after_the_handshake(client_ctx.get());
+  SSL_CTX_set_custom_verify(
+      client_ctx.get(), SSL_VERIFY_PEER,
+      [](SSL *ssl, uint8_t *out_alert) -> ssl_verify_result_t {
+        return ssl_verify_ok;
+      });
 
   bssl::UniquePtr<SSL> client, server;
   ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
                                      server_ctx.get(),
                                      nullptr /* no session */));
+}
+
+TEST(SSLTest, ClientCABuffers) {
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_with_buffers_method()));
+  ASSERT_TRUE(client_ctx);
+  bssl::UniquePtr<SSL_CTX> server_ctx(SSL_CTX_new(TLS_with_buffers_method()));
+  ASSERT_TRUE(server_ctx);
+
+  bssl::UniquePtr<EVP_PKEY> key = GetChainTestKey();
+  ASSERT_TRUE(key);
+  bssl::UniquePtr<CRYPTO_BUFFER> leaf = GetChainTestCertificateBuffer();
+  ASSERT_TRUE(leaf);
+  bssl::UniquePtr<CRYPTO_BUFFER> intermediate =
+      GetChainTestIntermediateBuffer();
+  ASSERT_TRUE(intermediate);
+  std::vector<CRYPTO_BUFFER *> chain = {
+      leaf.get(),
+      intermediate.get(),
+  };
+  ASSERT_TRUE(SSL_CTX_set_chain_and_key(server_ctx.get(), &chain[0],
+                                        chain.size(), key.get(), nullptr));
+
+  bssl::UniquePtr<CRYPTO_BUFFER> ca_name(
+      CRYPTO_BUFFER_new(kTestName, sizeof(kTestName), nullptr));
+  ASSERT_TRUE(ca_name);
+  bssl::UniquePtr<STACK_OF(CRYPTO_BUFFER)> ca_names(
+      sk_CRYPTO_BUFFER_new_null());
+  ASSERT_TRUE(ca_names);
+  ASSERT_TRUE(sk_CRYPTO_BUFFER_push(ca_names.get(), ca_name.get()));
+  ca_name.release();
+  SSL_CTX_set0_client_CAs(server_ctx.get(), ca_names.release());
+
+  // Configure client and server to accept all certificates.
+  SSL_CTX_set_custom_verify(
+      client_ctx.get(), SSL_VERIFY_PEER,
+      [](SSL *ssl, uint8_t *out_alert) -> ssl_verify_result_t {
+        return ssl_verify_ok;
+      });
+  SSL_CTX_set_custom_verify(
+      server_ctx.get(), SSL_VERIFY_PEER,
+      [](SSL *ssl, uint8_t *out_alert) -> ssl_verify_result_t {
+        return ssl_verify_ok;
+      });
+
+  bool cert_cb_called = false;
+  SSL_CTX_set_cert_cb(
+      client_ctx.get(),
+      [](SSL *ssl, void *arg) -> int {
+        STACK_OF(CRYPTO_BUFFER) *peer_names =
+            SSL_get0_server_requested_CAs(ssl);
+        EXPECT_EQ(1u, sk_CRYPTO_BUFFER_num(peer_names));
+        CRYPTO_BUFFER *peer_name = sk_CRYPTO_BUFFER_value(peer_names, 0);
+        EXPECT_EQ(Bytes(kTestName), Bytes(CRYPTO_BUFFER_data(peer_name),
+                                          CRYPTO_BUFFER_len(peer_name)));
+        *reinterpret_cast<bool *>(arg) = true;
+        return 1;
+      },
+      &cert_cb_called);
+
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get(),
+                                     nullptr /* no session */));
+  EXPECT_TRUE(cert_cb_called);
 }
 
 // Configuring the empty cipher list, though an error, should still modify the
@@ -3454,6 +3650,49 @@ TEST(SSLTest, SSL3Method) {
   EXPECT_EQ(SSL_R_NO_SUPPORTED_VERSIONS_ENABLED, ERR_GET_REASON(err));
 }
 
+TEST(SSLTest, SelectNextProto) {
+  uint8_t *result;
+  uint8_t result_len;
+
+  // If there is an overlap, it should be returned.
+  EXPECT_EQ(OPENSSL_NPN_NEGOTIATED,
+            SSL_select_next_proto(&result, &result_len,
+                                  (const uint8_t *)"\1a\2bb\3ccc", 9,
+                                  (const uint8_t *)"\1x\1y\1a\1z", 8));
+  EXPECT_EQ(Bytes("a"), Bytes(result, result_len));
+
+  EXPECT_EQ(OPENSSL_NPN_NEGOTIATED,
+            SSL_select_next_proto(&result, &result_len,
+                                  (const uint8_t *)"\1a\2bb\3ccc", 9,
+                                  (const uint8_t *)"\1x\1y\2bb\1z", 9));
+  EXPECT_EQ(Bytes("bb"), Bytes(result, result_len));
+
+  EXPECT_EQ(OPENSSL_NPN_NEGOTIATED,
+            SSL_select_next_proto(&result, &result_len,
+                                  (const uint8_t *)"\1a\2bb\3ccc", 9,
+                                  (const uint8_t *)"\1x\1y\3ccc\1z", 10));
+  EXPECT_EQ(Bytes("ccc"), Bytes(result, result_len));
+
+  // Peer preference order takes precedence over local.
+  EXPECT_EQ(OPENSSL_NPN_NEGOTIATED,
+            SSL_select_next_proto(&result, &result_len,
+                                  (const uint8_t *)"\1a\2bb\3ccc", 9,
+                                  (const uint8_t *)"\3ccc\2bb\1a", 9));
+  EXPECT_EQ(Bytes("a"), Bytes(result, result_len));
+
+  // If there is no overlap, return the first local protocol.
+  EXPECT_EQ(OPENSSL_NPN_NO_OVERLAP,
+            SSL_select_next_proto(&result, &result_len,
+                                  (const uint8_t *)"\1a\2bb\3ccc", 9,
+                                  (const uint8_t *)"\1x\2yy\3zzz", 9));
+  EXPECT_EQ(Bytes("x"), Bytes(result, result_len));
+
+  EXPECT_EQ(OPENSSL_NPN_NO_OVERLAP,
+            SSL_select_next_proto(&result, &result_len, nullptr, 0,
+                                  (const uint8_t *)"\1x\2yy\3zzz", 9));
+  EXPECT_EQ(Bytes("x"), Bytes(result, result_len));
+}
+
 // TODO(davidben): Convert this file to GTest properly.
 TEST(SSLTest, AllTests) {
   if (!TestSSL_SESSIONEncoding(kOpenSSLSession) ||
@@ -3482,7 +3721,8 @@ TEST(SSLTest, AllTests) {
       !ForEachVersion(TestALPNCipherAvailable) ||
       !ForEachVersion(TestSSLClearSessionResumption) ||
       !ForEachVersion(TestAutoChain) ||
-      !ForEachVersion(TestSSLWriteRetry)) {
+      !ForEachVersion(TestSSLWriteRetry) ||
+      !ForEachVersion(TestRecordCallback)) {
     ADD_FAILURE() << "Tests failed";
   }
 }

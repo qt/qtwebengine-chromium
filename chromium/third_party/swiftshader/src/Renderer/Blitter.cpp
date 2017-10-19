@@ -20,8 +20,6 @@
 
 namespace sw
 {
-	Blitter blitter;
-
 	Blitter::Blitter()
 	{
 		blitCache = new RoutineCache<BlitState>(1024);
@@ -39,11 +37,12 @@ namespace sw
 			return;
 		}
 
-		sw::Surface color(1, 1, 1, format, pixel, sw::Surface::bytes(format), sw::Surface::bytes(format));
+		sw::Surface *color = sw::Surface::create(1, 1, 1, format, pixel, sw::Surface::bytes(format), sw::Surface::bytes(format));
 		Blitter::Options clearOptions = static_cast<sw::Blitter::Options>((rgbaMask & 0xF) | CLEAR_OPERATION);
 		SliceRect sRect(dRect);
 		sRect.slice = 0;
-		blit(&color, sRect, dest, dRect, clearOptions);
+		blit(color, sRect, dest, dRect, clearOptions);
+		delete color;
 	}
 
 	bool Blitter::fastClear(void* pixel, sw::Format format, Surface *dest, const SliceRect &dRect, unsigned int rgbaMask)

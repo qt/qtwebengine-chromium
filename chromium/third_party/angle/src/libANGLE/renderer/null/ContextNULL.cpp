@@ -92,12 +92,16 @@ gl::Error ContextNULL::finish()
     return gl::NoError();
 }
 
-gl::Error ContextNULL::drawArrays(GLenum mode, GLint first, GLsizei count)
+gl::Error ContextNULL::drawArrays(const gl::Context *context,
+                                  GLenum mode,
+                                  GLint first,
+                                  GLsizei count)
 {
     return gl::NoError();
 }
 
-gl::Error ContextNULL::drawArraysInstanced(GLenum mode,
+gl::Error ContextNULL::drawArraysInstanced(const gl::Context *context,
+                                           GLenum mode,
                                            GLint first,
                                            GLsizei count,
                                            GLsizei instanceCount)
@@ -105,7 +109,8 @@ gl::Error ContextNULL::drawArraysInstanced(GLenum mode,
     return gl::NoError();
 }
 
-gl::Error ContextNULL::drawElements(GLenum mode,
+gl::Error ContextNULL::drawElements(const gl::Context *context,
+                                    GLenum mode,
                                     GLsizei count,
                                     GLenum type,
                                     const void *indices,
@@ -114,7 +119,8 @@ gl::Error ContextNULL::drawElements(GLenum mode,
     return gl::NoError();
 }
 
-gl::Error ContextNULL::drawElementsInstanced(GLenum mode,
+gl::Error ContextNULL::drawElementsInstanced(const gl::Context *context,
+                                             GLenum mode,
                                              GLsizei count,
                                              GLenum type,
                                              const void *indices,
@@ -124,7 +130,8 @@ gl::Error ContextNULL::drawElementsInstanced(GLenum mode,
     return gl::NoError();
 }
 
-gl::Error ContextNULL::drawRangeElements(GLenum mode,
+gl::Error ContextNULL::drawRangeElements(const gl::Context *context,
+                                         GLenum mode,
                                          GLuint start,
                                          GLuint end,
                                          GLsizei count,
@@ -135,12 +142,17 @@ gl::Error ContextNULL::drawRangeElements(GLenum mode,
     return gl::NoError();
 }
 
-gl::Error ContextNULL::drawArraysIndirect(GLenum mode, const void *indirect)
+gl::Error ContextNULL::drawArraysIndirect(const gl::Context *context,
+                                          GLenum mode,
+                                          const void *indirect)
 {
     return gl::NoError();
 }
 
-gl::Error ContextNULL::drawElementsIndirect(GLenum mode, GLenum type, const void *indirect)
+gl::Error ContextNULL::drawElementsIndirect(const gl::Context *context,
+                                            GLenum mode,
+                                            GLenum type,
+                                            const void *indirect)
 {
     return gl::NoError();
 }
@@ -250,7 +262,7 @@ void ContextNULL::popGroupMarker()
 {
 }
 
-void ContextNULL::syncState(const gl::State::DirtyBits &dirtyBits)
+void ContextNULL::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)
 {
 }
 
@@ -264,7 +276,7 @@ GLint64 ContextNULL::getTimestamp()
     return 0;
 }
 
-void ContextNULL::onMakeCurrent(const gl::ContextState &data)
+void ContextNULL::onMakeCurrent(const gl::Context *context)
 {
 }
 
@@ -363,7 +375,10 @@ std::vector<PathImpl *> ContextNULL::createPaths(GLsizei range)
     return result;
 }
 
-gl::Error ContextNULL::dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGroupsZ)
+gl::Error ContextNULL::dispatchCompute(const gl::Context *context,
+                                       GLuint numGroupsX,
+                                       GLuint numGroupsY,
+                                       GLuint numGroupsZ)
 {
     return gl::NoError();
 }

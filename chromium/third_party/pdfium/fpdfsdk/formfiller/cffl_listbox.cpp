@@ -12,25 +12,22 @@
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
 #include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
 #include "fpdfsdk/fsdk_common.h"
-#include "fpdfsdk/pdfwindow/PWL_ListBox.h"
+#include "fpdfsdk/pdfwindow/cpwl_list_box.h"
 #include "third_party/base/ptr_util.h"
 
 #define FFL_DEFAULTLISTBOXFONTSIZE 12.0f
 
 CFFL_ListBox::CFFL_ListBox(CPDFSDK_FormFillEnvironment* pApp,
-                           CPDFSDK_Annot* pWidget)
+                           CPDFSDK_Widget* pWidget)
     : CFFL_FormFiller(pApp, pWidget) {}
 
 CFFL_ListBox::~CFFL_ListBox() {}
 
 PWL_CREATEPARAM CFFL_ListBox::GetCreateParam() {
   PWL_CREATEPARAM cp = CFFL_FormFiller::GetCreateParam();
-
   uint32_t dwFieldFlag = m_pWidget->GetFieldFlags();
-
-  if (dwFieldFlag & FIELDFLAG_MULTISELECT) {
+  if (dwFieldFlag & FIELDFLAG_MULTISELECT)
     cp.dwFlags |= PLBS_MULTIPLESEL;
-  }
 
   cp.dwFlags |= PWS_VSCROLL;
 
@@ -39,15 +36,13 @@ PWL_CREATEPARAM CFFL_ListBox::GetCreateParam() {
 
   if (!m_pFontMap) {
     m_pFontMap = pdfium::MakeUnique<CBA_FontMap>(
-        m_pWidget, m_pFormFillEnv->GetSysHandler());
+        m_pWidget.Get(), m_pFormFillEnv->GetSysHandler());
   }
   cp.pFontMap = m_pFontMap.get();
-
   return cp;
 }
 
-CPWL_Wnd* CFFL_ListBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
-                                     CPDFSDK_PageView* pPageView) {
+CPWL_Wnd* CFFL_ListBox::NewPDFWindow(const PWL_CREATEPARAM& cp) {
   CPWL_ListBox* pWnd = new CPWL_ListBox();
   pWnd->AttachFFLData(this);
   pWnd->Create(cp);
@@ -194,17 +189,10 @@ CPWL_Wnd* CFFL_ListBox::ResetPDFWindow(CPDFSDK_PageView* pPageView,
     SaveState(pPageView);
 
   DestroyPDFWindow(pPageView);
-
-  CPWL_Wnd* pRet = nullptr;
-
-  if (bRestoreValue) {
+  if (bRestoreValue)
     RestoreState(pPageView);
-    pRet = GetPDFWindow(pPageView, false);
-  } else {
-    pRet = GetPDFWindow(pPageView, true);
-  }
 
-  m_pWidget->UpdateField();
-
-  return pRet;
+  CPWL_Wnd::ObservedPtr pRet(GetPDFWindow(pPageView, !bRestoreValue));
+  m_pWidget->UpdateField();  // May invoke JS, invalidating pRet.
+  return pRet.Get();
 }

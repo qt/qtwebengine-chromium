@@ -125,9 +125,14 @@ int main(int argc, char *argv[])
                             {
                                 spec = SH_WEBGL2_SPEC;
                             }
+                            else if (argv[0][4] == 'n')
+                            {
+                                spec = SH_WEBGL_SPEC;
+                            }
                             else
                             {
                                 spec = SH_WEBGL_SPEC;
+                                resources.FragmentPrecisionHigh = 1;
                             }
                             break;
                         default:
@@ -144,24 +149,29 @@ int main(int argc, char *argv[])
                 {
                     switch (argv[0][3])
                     {
-                      case 'e': output = SH_ESSL_OUTPUT; break;
-                      case 'g':
-                          if (!ParseGLSLOutputVersion(&argv[0][sizeof("-b=g") - 1], &output))
-                          {
-                              failCode = EFailUsage;
-                          }
-                          break;
-                      case 'h':
-                        if (argv[0][4] == '1' && argv[0][5] == '1')
-                        {
-                            output = SH_HLSL_4_1_OUTPUT;
-                        }
-                        else
-                        {
-                            output = SH_HLSL_3_0_OUTPUT;
-                        }
-                        break;
-                      default: failCode = EFailUsage;
+                        case 'e':
+                            output = SH_ESSL_OUTPUT;
+                            compileOptions |= SH_INITIALIZE_UNINITIALIZED_LOCALS;
+                            break;
+                        case 'g':
+                            if (!ParseGLSLOutputVersion(&argv[0][sizeof("-b=g") - 1], &output))
+                            {
+                                failCode = EFailUsage;
+                            }
+                            compileOptions |= SH_INITIALIZE_UNINITIALIZED_LOCALS;
+                            break;
+                        case 'h':
+                            if (argv[0][4] == '1' && argv[0][5] == '1')
+                            {
+                                output = SH_HLSL_4_1_OUTPUT;
+                            }
+                            else
+                            {
+                                output = SH_HLSL_3_0_OUTPUT;
+                            }
+                            break;
+                        default:
+                            failCode = EFailUsage;
                     }
                 }
                 else
@@ -207,7 +217,8 @@ int main(int argc, char *argv[])
                       case 'a': resources.ARM_shader_framebuffer_fetch = 1; break;
                       case 'm':
                           resources.OVR_multiview = 1;
-                          compileOptions |= SH_TRANSLATE_VIEWID_OVR_TO_UNIFORM;
+                          compileOptions |= SH_INITIALIZE_BUILTINS_FOR_INSTANCED_MULTIVIEW;
+                          compileOptions |= SH_SELECT_VIEW_IN_NV_GLSL_VERTEX_SHADER;
                           break;
                       case 'y': resources.EXT_YUV_target = 1; break;
                       default: failCode = EFailUsage;
@@ -327,10 +338,11 @@ void usage()
         "       -u       : print active attribs, uniforms, varyings and program outputs\n"
         "       -p       : use precision emulation\n"
         "       -s=e2    : use GLES2 spec (this is by default)\n"
-        "       -s=e3    : use GLES3 spec (in development)\n"
+        "       -s=e3    : use GLES3 spec\n"
         "       -s=e31   : use GLES31 spec (in development)\n"
-        "       -s=w     : use WebGL spec\n"
-        "       -s=w2    : use WebGL 2 spec (in development)\n"
+        "       -s=w     : use WebGL 1.0 spec\n"
+        "       -s=wn    : use WebGL 1.0 spec with no highp support in fragment shaders\n"
+        "       -s=w2    : use WebGL 2.0 spec\n"
         "       -b=e     : output GLSL ES code (this is by default)\n"
         "       -b=g     : output GLSL code (compatibility profile)\n"
         "       -b=g[NUM]: output GLSL code (NUM can be 130, 140, 150, 330, 400, 410, 420, 430, "
@@ -534,8 +546,9 @@ void PrintVariable(const std::string &prefix, size_t index, const sh::ShaderVari
       default: typeName = "UNKNOWN"; break;
     }
 
-    printf("%s %u : name=%s, type=%s, arraySize=%u\n", prefix.c_str(),
-           static_cast<unsigned int>(index), var.name.c_str(), typeName.c_str(), var.arraySize);
+    printf("%s %u : name=%s, mappedName=%s, type=%s, arraySize=%u\n", prefix.c_str(),
+           static_cast<unsigned int>(index), var.name.c_str(), var.mappedName.c_str(),
+           typeName.c_str(), var.arraySize);
     if (var.fields.size())
     {
         std::string structPrefix;

@@ -15,7 +15,9 @@
 #include "webrtc/api/test/mock_audio_mixer.h"
 #include "webrtc/audio/audio_receive_stream.h"
 #include "webrtc/audio/conversion.h"
+#include "webrtc/call/rtp_stream_receiver_controller.h"
 #include "webrtc/logging/rtc_event_log/mock/mock_rtc_event_log.h"
+#include "webrtc/modules/audio_processing/include/mock_audio_processing.h"
 #include "webrtc/modules/bitrate_controller/include/mock/mock_bitrate_controller.h"
 #include "webrtc/modules/pacing/packet_router.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
@@ -55,6 +57,9 @@ const int kTransportSequenceNumberId = 4;
 const int kJitterBufferDelay = -7;
 const int kPlayoutBufferDelay = 302;
 const unsigned int kSpeechOutputLevel = 99;
+const double kTotalOutputEnergy = 0.25;
+const double kTotalOutputDuration = 0.5;
+
 const CallStatistics kCallStats = {
     345,  678,  901, 234, -12, 3456, 7890, 567, 890, 123};
 const CodecInst kCodecInst = {
@@ -73,13 +78,13 @@ struct ConfigHelper {
         RegisterVoiceEngineObserver(_)).WillOnce(Return(0));
     EXPECT_CALL(voice_engine_,
         DeRegisterVoiceEngineObserver()).WillOnce(Return(0));
-    EXPECT_CALL(voice_engine_, audio_processing());
     EXPECT_CALL(voice_engine_, audio_device_module());
     EXPECT_CALL(voice_engine_, audio_transport());
 
     AudioState::Config config;
     config.voice_engine = &voice_engine_;
     config.audio_mixer = audio_mixer_;
+    config.audio_processing = new rtc::RefCountedObject<MockAudioProcessing>();
     audio_state_ = AudioState::Create(config);
 
     EXPECT_CALL(voice_engine_, ChannelProxyFactory(kChannelId))
@@ -137,6 +142,9 @@ struct ConfigHelper {
   rtc::scoped_refptr<MockAudioMixer> audio_mixer() { return audio_mixer_; }
   MockVoiceEngine& voice_engine() { return voice_engine_; }
   MockVoEChannelProxy* channel_proxy() { return channel_proxy_; }
+  RtpStreamReceiverControllerInterface* rtp_stream_receiver_controller() {
+    return &rtp_stream_receiver_controller_;
+  }
 
   void SetupMockForGetStats() {
     using testing::DoAll;
@@ -149,6 +157,10 @@ struct ConfigHelper {
         .WillOnce(Return(kJitterBufferDelay + kPlayoutBufferDelay));
     EXPECT_CALL(*channel_proxy_, GetSpeechOutputLevelFullRange())
         .WillOnce(Return(kSpeechOutputLevel));
+    EXPECT_CALL(*channel_proxy_, GetTotalOutputEnergy())
+        .WillOnce(Return(kTotalOutputEnergy));
+    EXPECT_CALL(*channel_proxy_, GetTotalOutputDuration())
+        .WillOnce(Return(kTotalOutputDuration));
     EXPECT_CALL(*channel_proxy_, GetNetworkStatistics())
         .WillOnce(Return(kNetworkStats));
     EXPECT_CALL(*channel_proxy_, GetDecodingCallStatistics())
@@ -166,6 +178,7 @@ struct ConfigHelper {
   rtc::scoped_refptr<MockAudioMixer> audio_mixer_;
   AudioReceiveStream::Config stream_config_;
   testing::StrictMock<MockVoEChannelProxy>* channel_proxy_ = nullptr;
+  RtpStreamReceiverController rtp_stream_receiver_controller_;
 };
 
 void BuildOneByteExtension(std::vector<uint8_t>::iterator it,
@@ -238,6 +251,7 @@ TEST(AudioReceiveStreamTest, ConfigToString) {
 TEST(AudioReceiveStreamTest, ConstructDestruct) {
   ConfigHelper helper;
   internal::AudioReceiveStream recv_stream(
+      helper.rtp_stream_receiver_controller(),
       helper.packet_router(),
       helper.config(), helper.audio_state(), helper.event_log());
 }
@@ -246,6 +260,7 @@ TEST(AudioReceiveStreamTest, ReceiveRtpPacket) {
   ConfigHelper helper;
   helper.config().rtp.transport_cc = true;
   internal::AudioReceiveStream recv_stream(
+      helper.rtp_stream_receiver_controller(),
       helper.packet_router(),
       helper.config(), helper.audio_state(), helper.event_log());
   const int kTransportSequenceNumberValue = 1234;
@@ -267,6 +282,7 @@ TEST(AudioReceiveStreamTest, ReceiveRtcpPacket) {
   ConfigHelper helper;
   helper.config().rtp.transport_cc = true;
   internal::AudioReceiveStream recv_stream(
+      helper.rtp_stream_receiver_controller(),
       helper.packet_router(),
       helper.config(), helper.audio_state(), helper.event_log());
 
@@ -280,6 +296,7 @@ TEST(AudioReceiveStreamTest, ReceiveRtcpPacket) {
 TEST(AudioReceiveStreamTest, GetStats) {
   ConfigHelper helper;
   internal::AudioReceiveStream recv_stream(
+      helper.rtp_stream_receiver_controller(),
       helper.packet_router(),
       helper.config(), helper.audio_state(), helper.event_log());
   helper.SetupMockForGetStats();
@@ -300,6 +317,8 @@ TEST(AudioReceiveStreamTest, GetStats) {
   EXPECT_EQ(static_cast<uint32_t>(kJitterBufferDelay + kPlayoutBufferDelay),
             stats.delay_estimate_ms);
   EXPECT_EQ(static_cast<int32_t>(kSpeechOutputLevel), stats.audio_level);
+  EXPECT_EQ(kTotalOutputEnergy, stats.total_output_energy);
+  EXPECT_EQ(kTotalOutputDuration, stats.total_output_duration);
   EXPECT_EQ(Q14ToFloat(kNetworkStats.currentExpandRate), stats.expand_rate);
   EXPECT_EQ(Q14ToFloat(kNetworkStats.currentSpeechExpandRate),
             stats.speech_expand_rate);
@@ -325,6 +344,7 @@ TEST(AudioReceiveStreamTest, GetStats) {
 TEST(AudioReceiveStreamTest, SetGain) {
   ConfigHelper helper;
   internal::AudioReceiveStream recv_stream(
+      helper.rtp_stream_receiver_controller(),
       helper.packet_router(),
       helper.config(), helper.audio_state(), helper.event_log());
   EXPECT_CALL(*helper.channel_proxy(),
@@ -335,6 +355,7 @@ TEST(AudioReceiveStreamTest, SetGain) {
 TEST(AudioReceiveStreamTest, StreamShouldNotBeAddedToMixerWhenVoEReturnsError) {
   ConfigHelper helper;
   internal::AudioReceiveStream recv_stream(
+      helper.rtp_stream_receiver_controller(),
       helper.packet_router(),
       helper.config(), helper.audio_state(), helper.event_log());
 
@@ -347,6 +368,7 @@ TEST(AudioReceiveStreamTest, StreamShouldNotBeAddedToMixerWhenVoEReturnsError) {
 TEST(AudioReceiveStreamTest, StreamShouldBeAddedToMixerOnStart) {
   ConfigHelper helper;
   internal::AudioReceiveStream recv_stream(
+      helper.rtp_stream_receiver_controller(),
       helper.packet_router(),
       helper.config(), helper.audio_state(), helper.event_log());
 

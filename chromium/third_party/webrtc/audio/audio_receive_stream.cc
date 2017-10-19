@@ -17,12 +17,13 @@
 #include "webrtc/audio/audio_send_stream.h"
 #include "webrtc/audio/audio_state.h"
 #include "webrtc/audio/conversion.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/timeutils.h"
+#include "webrtc/call/rtp_stream_receiver_controller_interface.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_receiver.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/timeutils.h"
 #include "webrtc/voice_engine/channel_proxy.h"
 #include "webrtc/voice_engine/include/voe_base.h"
 #include "webrtc/voice_engine/voice_engine_impl.h"
@@ -62,12 +63,12 @@ std::string AudioReceiveStream::Config::ToString() const {
 
 namespace internal {
 AudioReceiveStream::AudioReceiveStream(
+    RtpStreamReceiverControllerInterface* receiver_controller,
     PacketRouter* packet_router,
     const webrtc::AudioReceiveStream::Config& config,
     const rtc::scoped_refptr<webrtc::AudioState>& audio_state,
     webrtc::RtcEventLog* event_log)
-    : config_(config),
-      audio_state_(audio_state) {
+    : config_(config), audio_state_(audio_state) {
   LOG(LS_INFO) << "AudioReceiveStream: " << config_.ToString();
   RTC_DCHECK_NE(config_.voe_channel_id, -1);
   RTC_DCHECK(audio_state_.get());
@@ -107,6 +108,11 @@ AudioReceiveStream::AudioReceiveStream(
   }
   // Configure bandwidth estimation.
   channel_proxy_->RegisterReceiverCongestionControlObjects(packet_router);
+
+  // Register with transport.
+  rtp_stream_receiver_ =
+      receiver_controller->CreateReceiver(config_.rtp.remote_ssrc,
+                                          channel_proxy_.get());
 }
 
 AudioReceiveStream::~AudioReceiveStream() {
@@ -181,6 +187,8 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   }
   stats.delay_estimate_ms = channel_proxy_->GetDelayEstimate();
   stats.audio_level = channel_proxy_->GetSpeechOutputLevelFullRange();
+  stats.total_output_energy = channel_proxy_->GetTotalOutputEnergy();
+  stats.total_output_duration = channel_proxy_->GetTotalOutputDuration();
 
   // Get jitter buffer and total delay (alg + jitter + playout) stats.
   auto ns = channel_proxy_->GetNetworkStatistics();

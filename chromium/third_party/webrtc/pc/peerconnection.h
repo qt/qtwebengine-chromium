@@ -61,7 +61,9 @@ class PeerConnection : public PeerConnectionInterface,
                        public rtc::MessageHandler,
                        public sigslot::has_slots<> {
  public:
-  explicit PeerConnection(PeerConnectionFactory* factory);
+  explicit PeerConnection(PeerConnectionFactory* factory,
+                          std::unique_ptr<RtcEventLog> event_log,
+                          std::unique_ptr<Call> call);
 
   bool Initialize(
       const PeerConnectionInterface::RTCConfiguration& configuration,
@@ -143,6 +145,8 @@ class PeerConnection : public PeerConnectionInterface,
       const std::vector<cricket::Candidate>& candidates) override;
 
   void RegisterUMAObserver(UMAObserver* observer) override;
+
+  RTCError SetBitrate(const BitrateParameters& bitrate) override;
 
   bool StartRtcEventLog(rtc::PlatformFile file,
                         int64_t max_size_bytes) override;
@@ -390,8 +394,11 @@ class PeerConnection : public PeerConnectionInterface,
   // This function should only be called from the worker thread.
   void StopRtcEventLog_w();
 
-  // Creates the |*call_| object. Must only be called from the worker thread.
-  void CreateCall_w();
+  // Ensures the configuration doesn't have any parameters with invalid values,
+  // or values that conflict with other parameters.
+  //
+  // Returns RTCError::OK() if there are no issues.
+  RTCError ValidateConfiguration(const RTCConfiguration& config) const;
 
   // Storing the factory as a scoped reference pointer ensures that the memory
   // in the PeerConnectionFactoryImpl remains available as long as the

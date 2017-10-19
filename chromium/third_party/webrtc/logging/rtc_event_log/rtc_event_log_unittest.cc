@@ -14,21 +14,21 @@
 #include <utility>
 #include <vector>
 
-#include "webrtc/base/buffer.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/fakeclock.h"
-#include "webrtc/base/random.h"
 #include "webrtc/call/call.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log_parser.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log_unittest_helper.h"
 #include "webrtc/modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/bwe_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_header_extension.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "webrtc/rtc_base/buffer.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/fakeclock.h"
+#include "webrtc/rtc_base/random.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
@@ -126,7 +126,7 @@ RtpPacketToSend GenerateRtpPacket(const RtpHeaderExtensionMap* extensions,
 
   rtp_packet.SetExtension<TransmissionOffset>(prng->Rand(0x00ffffff));
   rtp_packet.SetExtension<AudioLevel>(prng->Rand<bool>(), prng->Rand(127));
-  rtp_packet.SetExtension<AbsoluteSendTime>(prng->Rand<int32_t>());
+  rtp_packet.SetExtension<AbsoluteSendTime>(prng->Rand(0x00ffffff));
   rtp_packet.SetExtension<VideoOrientation>(prng->Rand(2));
   rtp_packet.SetExtension<TransportSequenceNumber>(prng->Rand<uint16_t>());
 
@@ -306,13 +306,11 @@ void LogSessionAndReadBack(size_t rtp_count,
     for (size_t i = 1; i <= rtp_count; i++) {
       log_dumper->LogRtpHeader(
           (i % 2 == 0) ? kIncomingPacket : kOutgoingPacket,
-          (i % 3 == 0) ? MediaType::AUDIO : MediaType::VIDEO,
           rtp_packets[i - 1].data(), rtp_packets[i - 1].size());
       fake_clock.AdvanceTimeMicros(prng.Rand(1, 1000));
       if (i * rtcp_count >= rtcp_index * rtp_count) {
         log_dumper->LogRtcpPacket(
             (rtcp_index % 2 == 0) ? kIncomingPacket : kOutgoingPacket,
-            rtcp_index % 3 == 0 ? MediaType::AUDIO : MediaType::VIDEO,
             rtcp_packets[rtcp_index - 1].data(),
             rtcp_packets[rtcp_index - 1].size());
         rtcp_index++;
@@ -368,7 +366,6 @@ void LogSessionAndReadBack(size_t rtp_count,
     RtcEventLogTestHelper::VerifyRtpEvent(
         parsed_log, event_index,
         (i % 2 == 0) ? kIncomingPacket : kOutgoingPacket,
-        (i % 3 == 0) ? MediaType::AUDIO : MediaType::VIDEO,
         rtp_packets[i - 1].data(), rtp_packets[i - 1].headers_size(),
         rtp_packets[i - 1].size());
     event_index++;
@@ -376,7 +373,6 @@ void LogSessionAndReadBack(size_t rtp_count,
       RtcEventLogTestHelper::VerifyRtcpEvent(
           parsed_log, event_index,
           rtcp_index % 2 == 0 ? kIncomingPacket : kOutgoingPacket,
-          rtcp_index % 3 == 0 ? MediaType::AUDIO : MediaType::VIDEO,
           rtcp_packets[rtcp_index - 1].data(),
           rtcp_packets[rtcp_index - 1].size());
       event_index++;
@@ -454,15 +450,15 @@ TEST(RtcEventLogTest, LogEventAndReadBack) {
   fake_clock.SetTimeMicros(prng.Rand<uint32_t>());
   std::unique_ptr<RtcEventLog> log_dumper(RtcEventLog::Create());
 
-  log_dumper->LogRtpHeader(kIncomingPacket, MediaType::VIDEO, rtp_packet.data(),
+  log_dumper->LogRtpHeader(kIncomingPacket, rtp_packet.data(),
                            rtp_packet.size());
   fake_clock.AdvanceTimeMicros(prng.Rand(1, 1000));
 
   log_dumper->StartLogging(temp_filename, 10000000);
   fake_clock.AdvanceTimeMicros(prng.Rand(1, 1000));
 
-  log_dumper->LogRtcpPacket(kOutgoingPacket, MediaType::VIDEO,
-                            rtcp_packet.data(), rtcp_packet.size());
+  log_dumper->LogRtcpPacket(kOutgoingPacket, rtcp_packet.data(),
+                            rtcp_packet.size());
   fake_clock.AdvanceTimeMicros(prng.Rand(1, 1000));
 
   log_dumper->StopLogging();
@@ -478,12 +474,11 @@ TEST(RtcEventLogTest, LogEventAndReadBack) {
   RtcEventLogTestHelper::VerifyLogStartEvent(parsed_log, 0);
 
   RtcEventLogTestHelper::VerifyRtpEvent(
-      parsed_log, 1, kIncomingPacket, MediaType::VIDEO, rtp_packet.data(),
+      parsed_log, 1, kIncomingPacket, rtp_packet.data(),
       rtp_packet.headers_size(), rtp_packet.size());
 
-  RtcEventLogTestHelper::VerifyRtcpEvent(parsed_log, 2, kOutgoingPacket,
-                                         MediaType::VIDEO, rtcp_packet.data(),
-                                         rtcp_packet.size());
+  RtcEventLogTestHelper::VerifyRtcpEvent(
+      parsed_log, 2, kOutgoingPacket, rtcp_packet.data(), rtcp_packet.size());
 
   RtcEventLogTestHelper::VerifyLogEndEvent(parsed_log, 3);
 

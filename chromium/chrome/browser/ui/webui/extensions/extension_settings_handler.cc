@@ -16,10 +16,8 @@
 #include "chrome/common/features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/grit/browser_resources.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
-#include "chrome/grit/theme_resources.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
@@ -171,8 +169,6 @@ void ExtensionSettingsHandler::GetLocalizedValues(
                         google_util::AppendGoogleLocaleParam(
                             GURL(chrome::kRemoveNonCWSExtensionURL),
                             g_browser_process->GetApplicationLocale()).spec()));
-  source->AddString("extensionSettingsShowButton",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_SHOW_BUTTON));
   source->AddString("extensionSettingsLoadUnpackedButton",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_LOAD_UNPACKED_BUTTON));
   source->AddString("extensionSettingsPackButton",

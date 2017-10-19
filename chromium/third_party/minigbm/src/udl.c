@@ -8,23 +8,20 @@
 #include "helpers.h"
 #include "util.h"
 
-static struct supported_combination combos[2] = {
-	{DRM_FORMAT_ARGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-	{DRM_FORMAT_XRGB8888, DRM_FORMAT_MOD_NONE,
-		BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN |
-		BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY},
-};
+static const uint32_t render_target_formats[] = { DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888 };
 
 static int udl_init(struct driver *drv)
 {
-	drv_insert_combinations(drv, combos, ARRAY_SIZE(combos));
-	return drv_add_kms_flags(drv);
+	int ret;
+	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
+				   &LINEAR_METADATA, BO_USE_RENDER_MASK);
+	if (ret)
+		return ret;
+
+	return drv_modify_linear_combinations(drv);
 }
 
-struct backend backend_udl =
-{
+struct backend backend_udl = {
 	.name = "udl",
 	.init = udl_init,
 	.bo_create = drv_dumb_bo_create,

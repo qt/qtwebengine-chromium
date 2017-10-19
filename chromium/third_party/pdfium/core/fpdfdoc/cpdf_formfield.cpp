@@ -662,8 +662,7 @@ int CPDF_FormField::InsertOption(CFX_WideString csOptLabel,
   if (bNotify && !NotifyListOrComboBoxBeforeChange(csOptLabel))
     return -1;
 
-  CFX_ByteString csStr =
-      PDF_EncodeText(csOptLabel.c_str(), csOptLabel.GetLength());
+  CFX_ByteString csStr = PDF_EncodeText(csOptLabel);
   CPDF_Array* pOpt = ToArray(FPDF_GetFieldAttr(m_pDict.Get(), "Opt"));
   if (!pOpt)
     pOpt = m_pDict->SetNewFor<CPDF_Array>("Opt");
@@ -899,7 +898,7 @@ bool CPDF_FormField::ClearSelectedOptions(bool bNotify) {
 }
 
 void CPDF_FormField::LoadDA() {
-  CPDF_Dictionary* pFormDict = m_pForm->m_pFormDict;
+  CPDF_Dictionary* pFormDict = m_pForm->m_pFormDict.Get();
   if (!pFormDict)
     return;
 

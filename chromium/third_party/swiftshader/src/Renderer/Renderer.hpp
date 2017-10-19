@@ -321,10 +321,11 @@ namespace sw
 		void *operator new(size_t size);
 		void operator delete(void * mem);
 
+		void draw(DrawType drawType, unsigned int indexOffset, unsigned int count, bool update = true);
+
 		void clear(void* pixel, Format format, Surface *dest, const SliceRect &dRect, unsigned int rgbaMask);
 		void blit(Surface *source, const SliceRect &sRect, Surface *dest, const SliceRect &dRect, bool filter, bool isStencil = false);
 		void blit3D(Surface *source, Surface *dest);
-		void draw(DrawType drawType, unsigned int indexOffset, unsigned int count, bool update = true);
 
 		void setIndexBuffer(Resource *indexBuffer);
 
@@ -344,6 +345,7 @@ namespace sw
 		void setMipmapLOD(SamplerType type, int sampler, float bias);
 		void setBorderColor(SamplerType type, int sampler, const Color<float> &borderColor);
 		void setMaxAnisotropy(SamplerType type, int sampler, float maxAnisotropy);
+		void setHighPrecisionFiltering(SamplerType type, int sampler, bool highPrecisionFiltering);
 		void setSwizzleR(SamplerType type, int sampler, SwizzleType swizzleR);
 		void setSwizzleG(SamplerType type, int sampler, SwizzleType swizzleG);
 		void setSwizzleB(SamplerType type, int sampler, SwizzleType swizzleB);
@@ -431,6 +433,7 @@ namespace sw
 
 		Context *context;
 		Clipper *clipper;
+		Blitter *blitter;
 		Viewport viewport;
 		Rect scissor;
 		int clipFlags;

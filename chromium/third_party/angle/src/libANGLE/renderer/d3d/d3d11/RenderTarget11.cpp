@@ -212,7 +212,7 @@ void RenderTarget11::signalDirty()
 }
 
 TextureRenderTarget11::TextureRenderTarget11(d3d11::RenderTargetView &&rtv,
-                                             ID3D11Resource *resource,
+                                             const TextureHelper11 &resource,
                                              const d3d11::SharedSRV &srv,
                                              const d3d11::SharedSRV &blitSRV,
                                              GLenum internalFormat,
@@ -231,23 +231,18 @@ TextureRenderTarget11::TextureRenderTarget11(d3d11::RenderTargetView &&rtv,
       mTexture(resource),
       mRenderTarget(std::move(rtv)),
       mDepthStencil(),
-      mShaderResource(srv),
-      mBlitShaderResource(blitSRV)
+      mShaderResource(srv.makeCopy()),
+      mBlitShaderResource(blitSRV.makeCopy())
 {
-    if (mTexture)
+    if (mRenderTarget.valid() && mTexture.valid())
     {
-        mTexture->AddRef();
-    }
-
-    if (mRenderTarget.valid() && mTexture)
-    {
-        mSubresourceIndex = GetRTVSubresourceIndex(mTexture, mRenderTarget.get());
+        mSubresourceIndex = GetRTVSubresourceIndex(mTexture.get(), mRenderTarget.get());
     }
     ASSERT(mFormatSet.formatID != angle::Format::ID::NONE || mWidth == 0 || mHeight == 0);
 }
 
 TextureRenderTarget11::TextureRenderTarget11(d3d11::DepthStencilView &&dsv,
-                                             ID3D11Resource *resource,
+                                             const TextureHelper11 &resource,
                                              const d3d11::SharedSRV &srv,
                                              GLenum internalFormat,
                                              const d3d11::Format &formatSet,
@@ -265,27 +260,21 @@ TextureRenderTarget11::TextureRenderTarget11(d3d11::DepthStencilView &&dsv,
       mTexture(resource),
       mRenderTarget(),
       mDepthStencil(std::move(dsv)),
-      mShaderResource(srv),
+      mShaderResource(srv.makeCopy()),
       mBlitShaderResource()
 {
-    if (mTexture)
+    if (mDepthStencil.valid() && mTexture.valid())
     {
-        mTexture->AddRef();
-    }
-
-    if (mDepthStencil.valid() && mTexture)
-    {
-        mSubresourceIndex = GetDSVSubresourceIndex(mTexture, mDepthStencil.get());
+        mSubresourceIndex = GetDSVSubresourceIndex(mTexture.get(), mDepthStencil.get());
     }
     ASSERT(mFormatSet.formatID != angle::Format::ID::NONE || mWidth == 0 || mHeight == 0);
 }
 
 TextureRenderTarget11::~TextureRenderTarget11()
 {
-    SafeRelease(mTexture);
 }
 
-ID3D11Resource *TextureRenderTarget11::getTexture() const
+const TextureHelper11 &TextureRenderTarget11::getTexture() const
 {
     return mTexture;
 }
@@ -379,7 +368,7 @@ GLsizei SurfaceRenderTarget11::getSamples() const
     return mSwapChain->getSamples();
 }
 
-ID3D11Resource *SurfaceRenderTarget11::getTexture() const
+const TextureHelper11 &SurfaceRenderTarget11::getTexture() const
 {
     return (mDepth ? mSwapChain->getDepthStencilTexture() : mSwapChain->getOffscreenTexture());
 }

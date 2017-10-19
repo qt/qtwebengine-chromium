@@ -14,7 +14,7 @@
 
 #include "Image.hpp"
 
-#include "Renderer/Blitter.hpp"
+#include "../libEGL/Context.hpp"
 #include "../libEGL/Texture.hpp"
 #include "../common/debug.h"
 #include "Common/Math.hpp"
@@ -1178,11 +1178,64 @@ namespace egl
 		}
 	}
 
-	void Image::typeinfo() {}
+	class ImageImplementation : public Image
+	{
+	public:
+		ImageImplementation(Texture *parentTexture, GLsizei width, GLsizei height, GLenum format, GLenum type)
+			: Image(parentTexture, width, height, format, type) {}
+		ImageImplementation(Texture *parentTexture, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type)
+			: Image(parentTexture, width, height, depth, format, type) {}
+		ImageImplementation(GLsizei width, GLsizei height, GLenum format, GLenum type, int pitchP)
+			: Image(width, height, format, type, pitchP) {}
+		ImageImplementation(GLsizei width, GLsizei height, sw::Format internalFormat, int multiSampleDepth, bool lockable)
+			: Image(width, height, internalFormat, multiSampleDepth, lockable) {}
+
+		~ImageImplementation() override
+		{
+			sync();   // Wait for any threads that use this image to finish.
+		}
+
+		void *lockInternal(int x, int y, int z, sw::Lock lock, sw::Accessor client) override
+		{
+			return Image::lockInternal(x, y, z, lock, client);
+		}
+
+		void unlockInternal() override
+		{
+			return Image::unlockInternal();
+		}
+
+		void release() override
+		{
+			return Image::release();
+		}
+	};
+
+	Image *Image::create(Texture *parentTexture, GLsizei width, GLsizei height, GLenum format, GLenum type)
+	{
+		return new ImageImplementation(parentTexture, width, height, format, type);
+	}
+
+	Image *Image::create(Texture *parentTexture, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type)
+	{
+		return new ImageImplementation(parentTexture, width, height, depth, format, type);
+	}
+
+	Image *Image::create(GLsizei width, GLsizei height, GLenum format, GLenum type, int pitchP)
+	{
+		return new ImageImplementation(width, height, format, type, pitchP);
+	}
+
+	Image *Image::create(GLsizei width, GLsizei height, sw::Format internalFormat, int multiSampleDepth, bool lockable)
+	{
+		return new ImageImplementation(width, height, internalFormat, multiSampleDepth, lockable);
+	}
 
 	Image::~Image()
 	{
-		sync();   // Wait for any threads that use this image to finish.
+		// sync() must be called in the destructor of the most derived class to ensure their vtable isn't destroyed
+		// before all threads are done using this image. Image itself is abstract so it can't be the most derived.
+		ASSERT(isUnlocked());
 
 		if(parentTexture)
 		{
@@ -1190,6 +1243,16 @@ namespace egl
 		}
 
 		ASSERT(!shared);
+	}
+
+	void *Image::lockInternal(int x, int y, int z, sw::Lock lock, sw::Accessor client)
+	{
+		return Surface::lockInternal(x, y, z, lock, client);
+	}
+
+	void Image::unlockInternal()
+	{
+		Surface::unlockInternal();
 	}
 
 	void Image::release()
@@ -1224,17 +1287,18 @@ namespace egl
 		return parentTexture == parent;
 	}
 
-	void Image::loadImageData(GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const UnpackInfo& unpackInfo, const void *input)
+	void Image::loadImageData(Context *context, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const UnpackInfo& unpackInfo, const void *input)
 	{
-		GLsizei inputWidth = (unpackInfo.rowLength == 0) ? width : unpackInfo.rowLength;
-		GLsizei inputPitch = ComputePitch(inputWidth, format, type, unpackInfo.alignment);
-		GLsizei inputHeight = (unpackInfo.imageHeight == 0) ? height : unpackInfo.imageHeight;
-		input = ((char*)input) + ComputePackingOffset(format, type, inputWidth, inputHeight, unpackInfo.alignment, unpackInfo.skipImages, unpackInfo.skipRows, unpackInfo.skipPixels);
 		sw::Format selectedInternalFormat = SelectInternalFormat(format, type);
 		if(selectedInternalFormat == sw::FORMAT_NULL)
 		{
 			return;
 		}
+
+		GLsizei inputWidth = (unpackInfo.rowLength == 0) ? width : unpackInfo.rowLength;
+		GLsizei inputPitch = ComputePitch(inputWidth, format, type, unpackInfo.alignment);
+		GLsizei inputHeight = (unpackInfo.imageHeight == 0) ? height : unpackInfo.imageHeight;
+		input = ((char*)input) + ComputePackingOffset(format, type, inputWidth, inputHeight, unpackInfo.alignment, unpackInfo.skipImages, unpackInfo.skipRows, unpackInfo.skipPixels);
 
 		if(selectedInternalFormat == internalFormat)
 		{
@@ -1620,10 +1684,11 @@ namespace egl
 		}
 		else
 		{
-			sw::Surface source(width, height, depth, ConvertFormatType(format, type), const_cast<void*>(input), inputPitch, inputPitch * inputHeight);
+			sw::Surface *source = sw::Surface::create(width, height, depth, ConvertFormatType(format, type), const_cast<void*>(input), inputPitch, inputPitch * inputHeight);
 			sw::Rect sourceRect(0, 0, width, height);
 			sw::Rect destRect(xoffset, yoffset, xoffset + width, yoffset + height);
-			sw::blitter.blit(&source, sourceRect, this, destRect, false);
+			context->blit(source, sourceRect, this, destRect);
+			delete source;
 		}
 	}
 

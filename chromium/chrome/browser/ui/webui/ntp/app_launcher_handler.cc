@@ -595,7 +595,7 @@ void AppLauncherHandler::HandleUninstallApp(const base::ListValue* args) {
         base::Bind(&base::DoNothing), nullptr);
     CleanupAfterUninstall();
   } else {
-    GetExtensionUninstallDialog()->ConfirmUninstall(
+    CreateExtensionUninstallDialog()->ConfirmUninstall(
         extension, extensions::UNINSTALL_REASON_USER_INITIATED,
         extensions::UNINSTALL_SOURCE_CHROME_APPS_PAGE);
   }
@@ -630,9 +630,9 @@ void AppLauncherHandler::HandleShowAppInfo(const base::ListValue* args) {
                             AppInfoLaunchSource::FROM_APPS_PAGE,
                             AppInfoLaunchSource::NUM_LAUNCH_SOURCES);
 
-  ShowAppInfoInNativeDialog(
-      web_ui()->GetWebContents(), GetAppInfoNativeDialogSize(),
-      Profile::FromWebUI(web_ui()), extension, base::Closure());
+  ShowAppInfoInNativeDialog(web_ui()->GetWebContents(),
+                            Profile::FromWebUI(web_ui()), extension,
+                            base::Closure());
 }
 
 void AppLauncherHandler::HandleReorderApps(const base::ListValue* args) {
@@ -856,16 +856,13 @@ void AppLauncherHandler::ExtensionEnableFlowAborted(bool user_initiated) {
 }
 
 extensions::ExtensionUninstallDialog*
-AppLauncherHandler::GetExtensionUninstallDialog() {
-  if (!extension_uninstall_dialog_.get()) {
-    Browser* browser = chrome::FindBrowserWithWebContents(
-        web_ui()->GetWebContents());
-    extension_uninstall_dialog_.reset(
-        extensions::ExtensionUninstallDialog::Create(
-            extension_service_->profile(),
-            browser->window()->GetNativeWindow(),
-            this));
-  }
+AppLauncherHandler::CreateExtensionUninstallDialog() {
+  Browser* browser =
+      chrome::FindBrowserWithWebContents(web_ui()->GetWebContents());
+  extension_uninstall_dialog_.reset(
+      extensions::ExtensionUninstallDialog::Create(
+          extension_service_->profile(), browser->window()->GetNativeWindow(),
+          this));
   return extension_uninstall_dialog_.get();
 }
 

@@ -13,7 +13,7 @@
 
 #include <assert.h>
 
-#include "webrtc/base/criticalsection.h"
+#include "webrtc/rtc_base/criticalsection.h"
 #ifdef _WIN32
 #include "webrtc/system_wrappers/include/fix_interlocked_exchange_pointer_win.h"
 #endif
@@ -40,7 +40,7 @@ static T* GetStaticInstance(CountOperation count_operation) {
   static T* volatile instance = NULL;
   CreateOperation state = kInstanceExists;
 #ifndef _WIN32
-  rtc::CriticalSection crit_sect;
+  static rtc::CriticalSection crit_sect;
   rtc::CritScope lock(&crit_sect);
 
   if (count_operation ==

@@ -11,11 +11,12 @@
 #include "webrtc/common_types.h"
 
 #include <string.h>
+#include <algorithm>
 #include <limits>
 #include <type_traits>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/stringutils.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/stringutils.h"
 
 namespace webrtc {
 
@@ -23,9 +24,14 @@ StreamDataCounters::StreamDataCounters() : first_packet_time_ms(-1) {}
 
 constexpr size_t StreamId::kMaxSize;
 
+bool StreamId::IsLegalName(rtc::ArrayView<const char> name) {
+  return (name.size() <= kMaxSize && name.size() > 0 &&
+          std::all_of(name.data(), name.data() + name.size(), isalnum));
+}
+
 void StreamId::Set(const char* data, size_t size) {
   // If |data| contains \0, the stream id size might become less than |size|.
-  RTC_DCHECK_LE(size, kMaxSize);
+  RTC_CHECK_LE(size, kMaxSize);
   memcpy(value_, data, size);
   if (size < kMaxSize)
     value_[size] = 0;
@@ -48,7 +54,8 @@ RTPHeaderExtension::RTPHeaderExtension()
       hasVideoRotation(false),
       videoRotation(kVideoRotation_0),
       hasVideoContentType(false),
-      videoContentType(VideoContentType::UNSPECIFIED) {}
+      videoContentType(VideoContentType::UNSPECIFIED),
+      has_video_timing(false) {}
 
 RTPHeader::RTPHeader()
     : markerBit(false),
@@ -80,6 +87,7 @@ VideoCodec::VideoCodec()
       spatialLayers(),
       mode(kRealtimeVideo),
       expect_encode_from_texture(false),
+      timing_frame_thresholds({0, 0}),
       codec_specific_() {}
 
 VideoCodecVP8* VideoCodec::VP8() {
@@ -199,6 +207,55 @@ uint32_t BitrateAllocation::GetSpatialLayerSum(size_t spatial_index) const {
   for (int i = 0; i < kMaxTemporalStreams; ++i)
     sum += bitrates_[spatial_index][i];
   return sum;
+}
+
+std::string BitrateAllocation::ToString() const {
+  if (sum_ == 0)
+    return "BitrateAllocation [ [] ]";
+
+  // TODO(sprang): Replace this stringstream with something cheaper.
+  std::ostringstream oss;
+  oss << "BitrateAllocation [";
+  uint32_t spatial_cumulator = 0;
+  for (int si = 0; si < kMaxSpatialLayers; ++si) {
+    RTC_DCHECK_LE(spatial_cumulator, sum_);
+    if (spatial_cumulator == sum_)
+      break;
+
+    const uint32_t layer_sum = GetSpatialLayerSum(si);
+    if (layer_sum == sum_) {
+      oss << " [";
+    } else {
+      if (si > 0)
+        oss << ",";
+      oss << std::endl << "  [";
+    }
+    spatial_cumulator += layer_sum;
+
+    uint32_t temporal_cumulator = 0;
+    for (int ti = 0; ti < kMaxTemporalStreams; ++ti) {
+      RTC_DCHECK_LE(temporal_cumulator, layer_sum);
+      if (temporal_cumulator == layer_sum)
+        break;
+
+      if (ti > 0)
+        oss << ", ";
+
+      uint32_t bitrate = bitrates_[si][ti];
+      oss << bitrate;
+      temporal_cumulator += bitrate;
+    }
+    oss << "]";
+  }
+
+  RTC_DCHECK_EQ(spatial_cumulator, sum_);
+  oss << " ]";
+  return oss.str();
+}
+
+std::ostream& BitrateAllocation::operator<<(std::ostream& os) const {
+  os << ToString();
+  return os;
 }
 
 }  // namespace webrtc

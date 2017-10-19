@@ -66,7 +66,7 @@ void vpx_highbd_idct16x16_256_add_sse2(const tran_low_t *input, uint16_t *dest,
     test = _mm_movemask_epi8(temp1);
 
     if (test) {
-      array_transpose_16x16(inptr, inptr + 16);
+      transpose_16bit_16x16(inptr, inptr + 16);
       for (i = 0; i < 16; i++) {
         sign_bits = _mm_cmplt_epi16(inptr[i], zero);
         temp1 = _mm_unpacklo_epi16(inptr[i], sign_bits);
@@ -105,8 +105,8 @@ void vpx_highbd_idct16x16_256_add_sse2(const tran_low_t *input, uint16_t *dest,
         d[1] = _mm_loadu_si128((const __m128i *)(dest + stride * i + 8));
         inptr[i] = _mm_srai_epi16(inptr[i], 6);
         inptr[i + 16] = _mm_srai_epi16(inptr[i + 16], 6);
-        d[0] = clamp_high_sse2(_mm_add_epi16(d[0], inptr[i]), bd);
-        d[1] = clamp_high_sse2(_mm_add_epi16(d[1], inptr[i + 16]), bd);
+        d[0] = add_clamp(d[0], inptr[i], bd);
+        d[1] = add_clamp(d[1], inptr[i + 16], bd);
         // Store
         _mm_storeu_si128((__m128i *)(dest + stride * i), d[0]);
         _mm_storeu_si128((__m128i *)(dest + stride * i + 8), d[1]);
@@ -182,8 +182,8 @@ void vpx_highbd_idct16x16_10_add_sse2(const tran_low_t *input, uint16_t *dest,
 
     if (test) {
       // Use fact only first 4 rows contain non-zero coeffs
-      array_transpose_8x8(inptr, inptr);
-      array_transpose_8x8(inptr + 8, inptr + 16);
+      transpose_16bit_8x8(inptr, inptr);
+      transpose_16bit_8x8(inptr + 8, inptr + 16);
       for (i = 0; i < 4; i++) {
         sign_bits = _mm_cmplt_epi16(inptr[i], zero);
         temp1 = _mm_unpacklo_epi16(inptr[i], sign_bits);
@@ -222,8 +222,8 @@ void vpx_highbd_idct16x16_10_add_sse2(const tran_low_t *input, uint16_t *dest,
         d[1] = _mm_loadu_si128((const __m128i *)(dest + stride * i + 8));
         inptr[i] = _mm_srai_epi16(inptr[i], 6);
         inptr[i + 16] = _mm_srai_epi16(inptr[i + 16], 6);
-        d[0] = clamp_high_sse2(_mm_add_epi16(d[0], inptr[i]), bd);
-        d[1] = clamp_high_sse2(_mm_add_epi16(d[1], inptr[i + 16]), bd);
+        d[0] = add_clamp(d[0], inptr[i], bd);
+        d[1] = add_clamp(d[1], inptr[i + 16], bd);
         // Store
         _mm_storeu_si128((__m128i *)(dest + stride * i), d[0]);
         _mm_storeu_si128((__m128i *)(dest + stride * i + 8), d[1]);
@@ -241,4 +241,9 @@ void vpx_highbd_idct16x16_10_add_sse2(const tran_low_t *input, uint16_t *dest,
       }
     }
   }
+}
+
+void vpx_highbd_idct16x16_1_add_sse2(const tran_low_t *input, uint16_t *dest,
+                                     int stride, int bd) {
+  highbd_idct_1_add_kernel(input, dest, stride, bd, 16);
 }

@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtp_header_extension.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_packet_received.h"
 
@@ -89,6 +89,10 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
       case kRtpExtensionVideoContentType:
         VideoContentType content_type;
         packet.GetExtension<VideoContentTypeExtension>(&content_type);
+        break;
+      case kRtpExtensionVideoTiming:
+        VideoSendTiming timing;
+        packet.GetExtension<VideoTimingExtension>(&timing);
         break;
       case kRtpExtensionRtpStreamId: {
         std::string rsid;

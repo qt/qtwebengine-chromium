@@ -22,6 +22,7 @@
 #include "libANGLE/Error.h"
 #include "libANGLE/HandleAllocator.h"
 #include "libANGLE/RefCountObject.h"
+#include "libANGLE/ResourceMap.h"
 #include "libANGLE/VertexAttribute.h"
 #include "libANGLE/Workarounds.h"
 #include "libANGLE/angletypes.h"
@@ -37,24 +38,26 @@ namespace egl
 class AttributeMap;
 class Surface;
 struct Config;
+class Thread;
 }
 
 namespace gl
 {
+class Buffer;
 class Compiler;
-class Shader;
-class Program;
-class Texture;
-class Framebuffer;
-class Renderbuffer;
 class FenceNV;
 class FenceSync;
+class Framebuffer;
+class MemoryProgramCache;
+class Program;
 class Query;
-class Buffer;
-struct VertexAttribute;
-class VertexArray;
+class Renderbuffer;
 class Sampler;
+class Shader;
+class Texture;
 class TransformFeedback;
+class VertexArray;
+struct VertexAttribute;
 
 class Context final : public ValidationContext
 {
@@ -63,14 +66,16 @@ class Context final : public ValidationContext
             const egl::Config *config,
             const Context *shareContext,
             TextureManager *shareTextures,
+            MemoryProgramCache *memoryProgramCache,
             const egl::AttributeMap &attribs,
-            const egl::DisplayExtensions &displayExtensions);
+            const egl::DisplayExtensions &displayExtensions,
+            bool robustResourceInit);
 
-    void destroy(egl::Display *display);
+    egl::Error onDestroy(const egl::Display *display);
     ~Context() override;
 
-    void makeCurrent(egl::Display *display, egl::Surface *surface);
-    void releaseSurface(egl::Display *display);
+    egl::Error makeCurrent(egl::Display *display, egl::Surface *surface);
+    egl::Error releaseSurface(const egl::Display *display);
 
     // These create  and destroy methods are merely pass-throughs to
     // ResourceManager, which owns these object types
@@ -134,6 +139,13 @@ class Context final : public ValidationContext
                           GLintptr offset,
                           GLsizei stride);
     void bindSampler(GLuint textureUnit, GLuint samplerHandle);
+    void bindImageTexture(GLuint unit,
+                          GLuint texture,
+                          GLint level,
+                          GLboolean layered,
+                          GLint layer,
+                          GLenum access,
+                          GLenum format);
     void bindGenericUniformBuffer(GLuint bufferHandle);
     void bindIndexedUniformBuffer(GLuint bufferHandle,
                                   GLuint index,
@@ -205,6 +217,7 @@ class Context final : public ValidationContext
                                 GLsizei bufSize,
                                 GLsizei *length,
                                 GLchar *name);
+    GLint getProgramResourceLocation(GLuint program, GLenum programInterface, const GLchar *name);
 
     Buffer *getBuffer(GLuint handle) const;
     FenceNV *getFenceNV(GLuint handle);
@@ -425,6 +438,18 @@ class Context final : public ValidationContext
                                  GLuint texture,
                                  GLint level,
                                  GLint layer);
+    void framebufferTextureMultiviewLayeredANGLE(GLenum target,
+                                                 GLenum attachment,
+                                                 GLuint texture,
+                                                 GLint level,
+                                                 GLint baseViewIndex,
+                                                 GLsizei numViews);
+    void framebufferTextureMultiviewSideBySideANGLE(GLenum target,
+                                                    GLenum attachment,
+                                                    GLuint texture,
+                                                    GLint level,
+                                                    GLsizei numViews,
+                                                    const GLint *viewportOffsets);
 
     void drawBuffers(GLsizei n, const GLenum *bufs);
     void readBuffer(GLenum mode);
@@ -747,6 +772,13 @@ class Context final : public ValidationContext
     void uniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
     void validateProgram(GLuint program);
 
+    void getProgramBinary(GLuint program,
+                          GLsizei bufSize,
+                          GLsizei *length,
+                          GLenum *binaryFormat,
+                          void *binary);
+    void programBinary(GLuint program, GLenum binaryFormat, const void *binary, GLsizei length);
+
     void handleError(const Error &error) override;
 
     GLenum getError();
@@ -773,12 +805,31 @@ class Context final : public ValidationContext
     void getFramebufferParameteriv(GLenum target, GLenum pname, GLint *params);
     void setFramebufferParameteri(GLenum target, GLenum pname, GLint param);
 
-    Error getScratchBuffer(size_t requestedSize, angle::MemoryBuffer **scratchBufferOut) const;
+    Error getScratchBuffer(size_t requestedSizeBytes, angle::MemoryBuffer **scratchBufferOut) const;
+    Error getZeroFilledBuffer(size_t requstedSizeBytes, angle::MemoryBuffer **zeroBufferOut) const;
 
     void dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGroupsZ);
 
+    MemoryProgramCache *getMemoryProgramCache() const { return mMemoryProgramCache; }
+
     template <EntryPoint EP, typename... ParamsT>
     void gatherParams(ParamsT &&... params);
+
+    void texStorage2D(GLenum target,
+                      GLsizei levels,
+                      GLenum internalFormat,
+                      GLsizei width,
+                      GLsizei height);
+    void texStorage3D(GLenum target,
+                      GLsizei levels,
+                      GLenum internalFormat,
+                      GLsizei width,
+                      GLsizei height,
+                      GLsizei depth);
+
+    egl::Display *getCurrentDisplay() const { return mCurrentDisplay; }
+    egl::Surface *getCurrentDrawSurface() const { return mCurrentSurface; }
+    egl::Surface *getCurrentReadSurface() const { return mCurrentSurface; }
 
   private:
     void syncRendererState();
@@ -817,8 +868,8 @@ class Context final : public ValidationContext
     Extensions mExtensions;
     Limitations mLimitations;
 
-    // Shader compiler
-    Compiler *mCompiler;
+    // Shader compiler. Lazily initialized hence the mutable value.
+    mutable BindingPointer<Compiler> mCompiler;
 
     State mGLState;
 
@@ -859,8 +910,10 @@ class Context final : public ValidationContext
     GLenum mResetStrategy;
     bool mRobustAccess;
     egl::Surface *mCurrentSurface;
+    egl::Display *mCurrentDisplay;
     Framebuffer *mSurfacelessFramebuffer;
     bool mWebGLContext;
+    MemoryProgramCache *mMemoryProgramCache;
 
     State::DirtyBits mTexImageDirtyBits;
     State::DirtyObjects mTexImageDirtyObjects;
@@ -875,6 +928,7 @@ class Context final : public ValidationContext
 
     // Not really a property of context state. The size and contexts change per-api-call.
     mutable angle::ScratchBuffer mScratchBuffer;
+    mutable angle::ScratchBuffer mZeroFilledBuffer;
 };
 
 template <EntryPoint EP, typename... ArgsT>

@@ -19,12 +19,6 @@
 #include "webrtc/api/mediaconstraintsinterface.h"
 #include "webrtc/api/mediastreamproxy.h"
 #include "webrtc/api/mediastreamtrackproxy.h"
-#include "webrtc/base/bind.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/stringencode.h"
-#include "webrtc/base/stringutils.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/call/call.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/media/sctp/sctptransport.h"
@@ -39,6 +33,12 @@
 #include "webrtc/pc/streamcollection.h"
 #include "webrtc/pc/videocapturertracksource.h"
 #include "webrtc/pc/videotrack.h"
+#include "webrtc/rtc_base/bind.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/stringencode.h"
+#include "webrtc/rtc_base/stringutils.h"
+#include "webrtc/rtc_base/trace_event.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
 
@@ -216,6 +216,13 @@ bool SafeSetError(webrtc::RTCErrorType type, webrtc::RTCError* error) {
   return type == webrtc::RTCErrorType::NONE;
 }
 
+bool SafeSetError(webrtc::RTCError error, webrtc::RTCError* error_out) {
+  if (error_out) {
+    *error_out = std::move(error);
+  }
+  return error.ok();
+}
+
 }  // namespace
 
 namespace webrtc {
@@ -223,11 +230,20 @@ namespace webrtc {
 bool PeerConnectionInterface::RTCConfiguration::operator==(
     const PeerConnectionInterface::RTCConfiguration& o) const {
   // This static_assert prevents us from accidentally breaking operator==.
+  // Note: Order matters! Fields must be ordered the same as RTCConfiguration.
   struct stuff_being_tested_for_equality {
-    IceTransportsType type;
     IceServers servers;
+    IceTransportsType type;
     BundlePolicy bundle_policy;
     RtcpMuxPolicy rtcp_mux_policy;
+    std::vector<rtc::scoped_refptr<rtc::RTCCertificate>> certificates;
+    int ice_candidate_pool_size;
+    bool disable_ipv6;
+    bool disable_ipv6_on_wifi;
+    bool enable_rtp_data_channel;
+    rtc::Optional<int> screencast_min_bitrate;
+    rtc::Optional<bool> combined_audio_video_bwe;
+    rtc::Optional<bool> enable_dtls_srtp;
     TcpCandidatePolicy tcp_candidate_policy;
     CandidateNetworkPolicy candidate_network_policy;
     int audio_jitter_buffer_max_packets;
@@ -235,22 +251,15 @@ bool PeerConnectionInterface::RTCConfiguration::operator==(
     int ice_connection_receiving_timeout;
     int ice_backup_candidate_pair_ping_interval;
     ContinualGatheringPolicy continual_gathering_policy;
-    std::vector<rtc::scoped_refptr<rtc::RTCCertificate>> certificates;
     bool prioritize_most_likely_ice_candidate_pairs;
     struct cricket::MediaConfig media_config;
-    bool disable_ipv6;
-    bool disable_ipv6_on_wifi;
-    bool enable_rtp_data_channel;
     bool enable_quic;
-    rtc::Optional<int> screencast_min_bitrate;
-    rtc::Optional<bool> combined_audio_video_bwe;
-    rtc::Optional<bool> enable_dtls_srtp;
-    int ice_candidate_pool_size;
     bool prune_turn_ports;
     bool presume_writable_when_fully_relayed;
     bool enable_ice_renomination;
     bool redetermine_role_on_ice_restart;
     rtc::Optional<int> ice_check_min_interval;
+    rtc::Optional<rtc::IntervalRange> ice_regather_interval_range;
   };
   static_assert(sizeof(stuff_being_tested_for_equality) == sizeof(*this),
                 "Did you add something to RTCConfiguration and forget to "
@@ -284,7 +293,8 @@ bool PeerConnectionInterface::RTCConfiguration::operator==(
              o.presume_writable_when_fully_relayed &&
          enable_ice_renomination == o.enable_ice_renomination &&
          redetermine_role_on_ice_restart == o.redetermine_role_on_ice_restart &&
-         ice_check_min_interval == o.ice_check_min_interval;
+         ice_check_min_interval == o.ice_check_min_interval &&
+         ice_regather_interval_range == o.ice_regather_interval_range;
 }
 
 bool PeerConnectionInterface::RTCConfiguration::operator!=(
@@ -391,17 +401,20 @@ bool ParseConstraintsForAnswer(const MediaConstraintsInterface* constraints,
   return mandatory_constraints_satisfied == constraints->GetMandatory().size();
 }
 
-PeerConnection::PeerConnection(PeerConnectionFactory* factory)
+PeerConnection::PeerConnection(PeerConnectionFactory* factory,
+                               std::unique_ptr<RtcEventLog> event_log,
+                               std::unique_ptr<Call> call)
     : factory_(factory),
       observer_(NULL),
       uma_observer_(NULL),
-      event_log_(RtcEventLog::Create()),
+      event_log_(std::move(event_log)),
       signaling_state_(kStable),
       ice_connection_state_(kIceConnectionNew),
       ice_gathering_state_(kIceGatheringNew),
       rtcp_cname_(GenerateRtcpCname()),
       local_streams_(StreamCollection::Create()),
-      remote_streams_(StreamCollection::Create()) {}
+      remote_streams_(StreamCollection::Create()),
+      call_(std::move(call)) {}
 
 PeerConnection::~PeerConnection() {
   TRACE_EVENT0("webrtc", "PeerConnection::~PeerConnection");
@@ -438,6 +451,13 @@ bool PeerConnection::Initialize(
     std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
     PeerConnectionObserver* observer) {
   TRACE_EVENT0("webrtc", "PeerConnection::Initialize");
+
+  RTCError config_error = ValidateConfiguration(configuration);
+  if (!config_error.ok()) {
+    LOG(LS_ERROR) << "Invalid configuration: " << config_error.message();
+    return false;
+  }
+
   if (!allocator) {
     LOG(LS_ERROR) << "PeerConnection initialized without a PortAllocator? "
                   << "This shouldn't happen if using PeerConnectionFactory.";
@@ -460,10 +480,6 @@ bool PeerConnection::Initialize(
     return false;
   }
 
-  // Call must be constructed on the worker thread.
-  factory_->worker_thread()->Invoke<void>(
-      RTC_FROM_HERE, rtc::Bind(&PeerConnection::CreateCall_w,
-                               this));
 
   session_.reset(new WebRtcSession(
       call_.get(), factory_->channel_manager(), configuration.media_config,
@@ -513,6 +529,17 @@ bool PeerConnection::Initialize(
 
   configuration_ = configuration;
   return true;
+}
+
+RTCError PeerConnection::ValidateConfiguration(
+    const RTCConfiguration& config) const {
+  if (config.ice_regather_interval_range &&
+      config.continual_gathering_policy == GATHER_ONCE) {
+    return RTCError(RTCErrorType::INVALID_PARAMETER,
+                    "ice_regather_interval_range specified but continual "
+                    "gathering policy is GATHER_ONCE");
+  }
+  return RTCError::OK();
 }
 
 rtc::scoped_refptr<StreamCollectionInterface>
@@ -1159,6 +1186,12 @@ bool PeerConnection::SetConfiguration(const RTCConfiguration& configuration,
     return SafeSetError(RTCErrorType::INVALID_MODIFICATION, error);
   }
 
+  // Validate the modified configuration.
+  RTCError validate_error = ValidateConfiguration(modified_config);
+  if (!validate_error.ok()) {
+    return SafeSetError(std::move(validate_error), error);
+  }
+
   // Note that this isn't possible through chromium, since it's an unsigned
   // short in WebIDL.
   if (configuration.ice_candidate_pool_size < 0 ||
@@ -1240,6 +1273,54 @@ void PeerConnection::RegisterUMAObserver(UMAObserver* observer) {
           kPeerConnectionAddressFamilyCounter_Max);
     }
   }
+}
+
+RTCError PeerConnection::SetBitrate(const BitrateParameters& bitrate) {
+  rtc::Thread* worker_thread = factory_->worker_thread();
+  if (!worker_thread->IsCurrent()) {
+    return worker_thread->Invoke<RTCError>(
+        RTC_FROM_HERE, rtc::Bind(&PeerConnection::SetBitrate, this, bitrate));
+  }
+
+  const bool has_min = static_cast<bool>(bitrate.min_bitrate_bps);
+  const bool has_current = static_cast<bool>(bitrate.current_bitrate_bps);
+  const bool has_max = static_cast<bool>(bitrate.max_bitrate_bps);
+  if (has_min && *bitrate.min_bitrate_bps < 0) {
+    LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER,
+                         "min_bitrate_bps <= 0");
+  }
+  if (has_current) {
+    if (has_min && *bitrate.current_bitrate_bps < *bitrate.min_bitrate_bps) {
+      LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER,
+                           "current_bitrate_bps < min_bitrate_bps");
+    } else if (*bitrate.current_bitrate_bps < 0) {
+      LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER,
+                           "curent_bitrate_bps < 0");
+    }
+  }
+  if (has_max) {
+    if (has_current &&
+        *bitrate.max_bitrate_bps < *bitrate.current_bitrate_bps) {
+      LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER,
+                           "max_bitrate_bps < current_bitrate_bps");
+    } else if (has_min && *bitrate.max_bitrate_bps < *bitrate.min_bitrate_bps) {
+      LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER,
+                           "max_bitrate_bps < min_bitrate_bps");
+    } else if (*bitrate.max_bitrate_bps < 0) {
+      LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER,
+                           "max_bitrate_bps < 0");
+    }
+  }
+
+  Call::Config::BitrateConfigMask mask;
+  mask.min_bitrate_bps = bitrate.min_bitrate_bps;
+  mask.start_bitrate_bps = bitrate.current_bitrate_bps;
+  mask.max_bitrate_bps = bitrate.max_bitrate_bps;
+
+  RTC_DCHECK(call_.get());
+  call_->SetBitrateConfigMask(mask);
+
+  return RTCError::OK();
 }
 
 bool PeerConnection::StartRtcEventLog(rtc::PlatformFile file,
@@ -2325,23 +2406,6 @@ void PeerConnection::StopRtcEventLog_w() {
   if (event_log_) {
     event_log_->StopLogging();
   }
-}
-
-void PeerConnection::CreateCall_w() {
-  RTC_DCHECK(!call_);
-
-  const int kMinBandwidthBps = 30000;
-  const int kStartBandwidthBps = 300000;
-  const int kMaxBandwidthBps = 2000000;
-
-  webrtc::Call::Config call_config(event_log_.get());
-  call_config.audio_state =
-      factory_->channel_manager() ->media_engine()->GetAudioState();
-  call_config.bitrate_config.min_bitrate_bps = kMinBandwidthBps;
-  call_config.bitrate_config.start_bitrate_bps = kStartBandwidthBps;
-  call_config.bitrate_config.max_bitrate_bps = kMaxBandwidthBps;
-
-  call_.reset(webrtc::Call::Create(call_config));
 }
 
 }  // namespace webrtc

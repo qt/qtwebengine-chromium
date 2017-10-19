@@ -65,6 +65,10 @@ bool ValidateGetProgramResourceName(Context *context,
                                     GLsizei bufSize,
                                     GLsizei *length,
                                     GLchar *name);
+bool ValidateGetProgramResourceLocation(Context *context,
+                                        GLuint program,
+                                        GLenum programInterface,
+                                        const GLchar *name);
 
 bool ValidateBindVertexBuffer(ValidationContext *context,
                               GLuint bindingIndex,
@@ -86,6 +90,15 @@ bool ValidateDispatchCompute(Context *context,
                              GLuint numGroupsX,
                              GLuint numGroupsY,
                              GLuint numGroupsZ);
+
+bool ValidateBindImageTexture(Context *context,
+                              GLuint unit,
+                              GLuint texture,
+                              GLint level,
+                              GLboolean layered,
+                              GLint layer,
+                              GLenum access,
+                              GLenum format);
 
 }  // namespace gl
 

@@ -9,7 +9,7 @@
 #include <memory>
 
 #include "fxjs/cfxjse_arguments.h"
-#include "xfa/fxfa/app/xfa_ffnotify.h"
+#include "xfa/fxfa/app/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
@@ -325,7 +325,7 @@ static int32_t XFA_FilterName(const CFX_WideStringC& wsExpression,
   }
   wchar_t* pBuf = wsFilter.GetBuffer(iLength - nStart);
   int32_t nCount = 0;
-  const wchar_t* pSrc = wsExpression.c_str();
+  const wchar_t* pSrc = wsExpression.unterminated_c_str();
   wchar_t wCur;
   while (nStart < iLength) {
     wCur = pSrc[nStart++];

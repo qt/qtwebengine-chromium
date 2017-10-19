@@ -10,9 +10,9 @@
 
 #include "webrtc/media/engine/videoencodersoftwarefallbackwrapper.h"
 
-#include "webrtc/base/logging.h"
 #include "webrtc/media/engine/internalencoderfactory.h"
 #include "webrtc/modules/video_coding/include/video_error_codes.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -122,7 +122,7 @@ int32_t VideoEncoderSoftwareFallbackWrapper::Encode(
   int32_t ret = encoder_->Encode(frame, codec_specific_info, frame_types);
   // If requested, try a software fallback.
   if (ret == WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE && InitFallbackEncoder()) {
-    if (frame.video_frame_buffer()->native_handle() &&
+    if (frame.video_frame_buffer()->type() == VideoFrameBuffer::Type::kNative &&
         !fallback_encoder_->SupportsNativeHandle()) {
       LOG(LS_WARNING) << "Fallback encoder doesn't support native frames, "
                       << "dropping one frame.";

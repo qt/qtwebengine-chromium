@@ -11,7 +11,7 @@
 
 #include "xfa/fwl/cfwl_timer.h"
 #include "xfa/fwl/cfwl_widget.h"
-#include "xfa/fxgraphics/cfx_color.h"
+#include "xfa/fxgraphics/cxfa_color.h"
 
 class CFWL_WidgetProperties;
 class CFWL_Widget;
@@ -27,9 +27,9 @@ class CFWL_Caret : public CFWL_Widget {
 
   // CFWL_Widget
   FWL_Type GetClassID() const override;
-  void DrawWidget(CFX_Graphics* pGraphics, const CFX_Matrix* pMatrix) override;
+  void DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix* pMatrix) override;
   void OnProcessMessage(CFWL_Message* pMessage) override;
-  void OnDrawWidget(CFX_Graphics* pGraphics,
+  void OnDrawWidget(CXFA_Graphics* pGraphics,
                     const CFX_Matrix* pMatrix) override;
   void Update() override;
 
@@ -46,7 +46,7 @@ class CFWL_Caret : public CFWL_Widget {
   };
   friend class CFWL_Caret::Timer;
 
-  void DrawCaretBK(CFX_Graphics* pGraphics,
+  void DrawCaretBK(CXFA_Graphics* pGraphics,
                    IFWL_ThemeProvider* pTheme,
                    const CFX_Matrix* pMatrix);
 

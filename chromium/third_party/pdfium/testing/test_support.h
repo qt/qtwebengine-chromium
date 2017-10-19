@@ -6,18 +6,12 @@
 #define TESTING_TEST_SUPPORT_H_
 
 #include <stdlib.h>
+
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "core/fdrm/crypto/fx_crypt.h"
-#include "public/fpdf_save.h"
 #include "public/fpdfview.h"
-#include "testing/gtest/include/gtest/gtest.h"
-
-#ifdef PDF_ENABLE_V8
-#include "v8/include/v8.h"
-#endif  // PDF_ENABLE_V8
 
 namespace pdfium {
 
@@ -68,9 +62,13 @@ std::unique_ptr<char, pdfium::FreeDeleter> GetFileContents(const char* filename,
 
 std::vector<std::string> StringSplit(const std::string& str, char delimiter);
 
+// Converts a FPDF_WIDESTRING to a std::string.
+// Deals with differences between UTF16LE and UTF8.
+std::string GetPlatformString(FPDF_WIDESTRING wstr);
+
 // Converts a FPDF_WIDESTRING to a std::wstring.
 // Deals with differences between UTF16LE and wchar_t.
-std::wstring GetPlatformWString(const FPDF_WIDESTRING wstr);
+std::wstring GetPlatformWString(FPDF_WIDESTRING wstr);
 
 // Returns a newly allocated FPDF_WIDESTRING.
 // Deals with differences between UTF16LE and wchar_t.
@@ -81,7 +79,13 @@ std::string CryptToBase16(const uint8_t* digest);
 std::string GenerateMD5Base16(const uint8_t* data, uint32_t size);
 
 #ifdef PDF_ENABLE_V8
+namespace v8 {
+class Platform;
+}
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
+namespace v8 {
+class StartupData;
+}
 bool InitializeV8ForPDFium(const std::string& exe_path,
                            const std::string& bin_dir,
                            v8::StartupData* natives_blob,
@@ -104,27 +108,6 @@ class TestLoader {
  private:
   const char* const m_pBuf;
   const size_t m_Len;
-};
-
-class TestSaver : public FPDF_FILEWRITE {
- public:
-  TestSaver();
-
-  void ClearString();
-  const std::string& GetString() const { return m_String; }
-
- protected:
-  static int GetBlockFromString(void* param,
-                                unsigned long pos,
-                                unsigned char* buf,
-                                unsigned long size);
-
- private:
-  static int WriteBlockCallback(FPDF_FILEWRITE* pFileWrite,
-                                const void* data,
-                                unsigned long size);
-
-  std::string m_String;
 };
 
 #endif  // TESTING_TEST_SUPPORT_H_

@@ -15,12 +15,12 @@
 #include <utility>
 #include <vector>
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/optional.h"
 #include "webrtc/modules/include/module.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/optional.h"
 #include "webrtc/test/gmock.h"
 
 namespace webrtc {
@@ -31,9 +31,6 @@ class MockRtpData : public RtpData {
                int32_t(const uint8_t* payload_data,
                        size_t payload_size,
                        const WebRtcRTPHeader* rtp_header));
-
-  MOCK_METHOD2(OnRecoveredPacket,
-               bool(const uint8_t* packet, size_t packet_length));
 };
 
 class MockRtpRtcp : public RtpRtcp {

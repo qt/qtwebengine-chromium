@@ -64,7 +64,8 @@ class Buffer11 : public BufferD3D
                                      UINT *numConstantsOut);
     gl::ErrorOrResult<ID3D11ShaderResourceView *> getSRV(DXGI_FORMAT srvFormat);
     bool isMapped() const { return mMappedStorage != nullptr; }
-    gl::Error packPixels(const gl::FramebufferAttachment &readAttachment,
+    gl::Error packPixels(const gl::Context *context,
+                         const gl::FramebufferAttachment &readAttachment,
                          const PackPixelsParams &params);
     size_t getTotalCPUBufferMemoryBytes() const;
 
@@ -76,28 +77,28 @@ class Buffer11 : public BufferD3D
     void invalidateStaticData() override;
 
     // BufferImpl implementation
-    gl::Error setData(ContextImpl *context,
+    gl::Error setData(const gl::Context *context,
                       GLenum target,
                       const void *data,
                       size_t size,
                       GLenum usage) override;
-    gl::Error setSubData(ContextImpl *context,
+    gl::Error setSubData(const gl::Context *context,
                          GLenum target,
                          const void *data,
                          size_t size,
                          size_t offset) override;
-    gl::Error copySubData(ContextImpl *contextImpl,
+    gl::Error copySubData(const gl::Context *context,
                           BufferImpl *source,
                           GLintptr sourceOffset,
                           GLintptr destOffset,
                           GLsizeiptr size) override;
-    gl::Error map(ContextImpl *contextImpl, GLenum access, void **mapPtr) override;
-    gl::Error mapRange(ContextImpl *contextImpl,
+    gl::Error map(const gl::Context *context, GLenum access, void **mapPtr) override;
+    gl::Error mapRange(const gl::Context *context,
                        size_t offset,
                        size_t length,
                        GLbitfield access,
                        void **mapPtr) override;
-    gl::Error unmap(ContextImpl *contextImpl, GLboolean *result) override;
+    gl::Error unmap(const gl::Context *context, GLboolean *result) override;
     gl::Error markTransformFeedbackUsage() override;
 
     // We use two set of dirty events. Static buffers are marked dirty whenever

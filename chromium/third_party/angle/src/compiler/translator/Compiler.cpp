@@ -13,11 +13,16 @@
 #include "compiler/translator/AddAndTrueToLoopCondition.h"
 #include "compiler/translator/Cache.h"
 #include "compiler/translator/CallDAG.h"
+#include "compiler/translator/ClampPointSize.h"
+#include "compiler/translator/DeclareAndInitBuiltinsForInstancedMultiview.h"
 #include "compiler/translator/DeferGlobalInitializers.h"
 #include "compiler/translator/EmulateGLFragColorBroadcast.h"
 #include "compiler/translator/EmulatePrecision.h"
 #include "compiler/translator/Initialize.h"
 #include "compiler/translator/InitializeVariables.h"
+#include "compiler/translator/IntermNodePatternMatcher.h"
+#include "compiler/translator/IsASTDepthBelowLimit.h"
+#include "compiler/translator/OutputTree.h"
 #include "compiler/translator/ParseContext.h"
 #include "compiler/translator/PruneEmptyDeclarations.h"
 #include "compiler/translator/RegenerateStructNames.h"
@@ -25,6 +30,8 @@
 #include "compiler/translator/RemovePow.h"
 #include "compiler/translator/RewriteDoWhile.h"
 #include "compiler/translator/ScalarizeVecAndMatConstructorArgs.h"
+#include "compiler/translator/SeparateDeclarations.h"
+#include "compiler/translator/SimplifyLoopConditions.h"
 #include "compiler/translator/UnfoldShortCircuitAST.h"
 #include "compiler/translator/UseInterfaceBlockFields.h"
 #include "compiler/translator/ValidateLimitations.h"
@@ -131,6 +138,23 @@ size_t GetGlobalMaxTokenSize(ShShaderSpec spec)
     }
 }
 
+int GetMaxUniformVectorsForShaderType(GLenum shaderType, const ShBuiltInResources &resources)
+{
+    switch (shaderType)
+    {
+        case GL_VERTEX_SHADER:
+            return resources.MaxVertexUniformVectors;
+        case GL_FRAGMENT_SHADER:
+            return resources.MaxFragmentUniformVectors;
+        case GL_COMPUTE_SHADER:
+            // TODO (jiawei.shao@intel.com): check if we need finer-grained component counting
+            return resources.MaxComputeUniformComponents / 4;
+        default:
+            UNIMPLEMENTED();
+            return -1;
+    }
+}
+
 namespace
 {
 
@@ -205,6 +229,7 @@ TShHandleBase::~TShHandleBase()
 
 TCompiler::TCompiler(sh::GLenum type, ShShaderSpec spec, ShShaderOutput output)
     : variablesCollected(false),
+      mGLPositionInitialized(false),
       shaderType(type),
       shaderSpec(spec),
       outputType(output),
@@ -217,8 +242,7 @@ TCompiler::TCompiler(sh::GLenum type, ShShaderSpec spec, ShShaderOutput output)
       builtInFunctionEmulator(),
       mDiagnostics(infoSink.info),
       mSourcePath(nullptr),
-      mComputeShaderLocalSizeDeclared(false),
-      mTemporaryIndex(0)
+      mComputeShaderLocalSizeDeclared(false)
 {
     mComputeShaderLocalSize.fill(1);
 }
@@ -238,9 +262,10 @@ bool TCompiler::shouldRunLoopAndIndexingValidation(ShCompileOptions compileOptio
 
 bool TCompiler::Init(const ShBuiltInResources &resources)
 {
-    shaderVersion     = 100;
-    maxUniformVectors = (shaderType == GL_VERTEX_SHADER) ? resources.MaxVertexUniformVectors
-                                                         : resources.MaxFragmentUniformVectors;
+    shaderVersion = 100;
+
+    maxUniformVectors = GetMaxUniformVectorsForShaderType(shaderType, resources);
+
     maxExpressionComplexity = resources.MaxExpressionComplexity;
     maxCallStackDepth       = resources.MaxCallStackDepth;
     maxFunctionParameters   = resources.MaxFunctionParameters;
@@ -363,11 +388,14 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             PruneEmptyDeclarations(root);
 
         if (success && shaderVersion >= 300 && shaderType == GL_FRAGMENT_SHADER)
-            success = validateOutputs(root);
+        {
+            success = ValidateOutputs(root, getExtensionBehavior(), compileResources.MaxDrawBuffers,
+                                      &mDiagnostics);
+        }
 
         if (success && shouldRunLoopAndIndexingValidation(compileOptions))
             success =
-                ValidateLimitations(root, shaderType, symbolTable, shaderVersion, &mDiagnostics);
+                ValidateLimitations(root, shaderType, &symbolTable, shaderVersion, &mDiagnostics);
 
         bool multiview2 = IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview2");
         if (success && compileResources.OVR_multiview && IsWebGLBasedSpec(shaderSpec) &&
@@ -400,15 +428,16 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && (compileOptions & SH_CLAMP_INDIRECT_ARRAY_BOUNDS))
             arrayBoundsClamper.MarkIndirectArrayBoundsForClamping(root);
 
-        // gl_Position is always written in compatibility output mode
-        if (success && shaderType == GL_VERTEX_SHADER &&
-            ((compileOptions & SH_INIT_GL_POSITION) ||
-             (outputType == SH_GLSL_COMPATIBILITY_OUTPUT)))
-            initializeGLPosition(root);
+        if (success && (compileOptions & SH_INITIALIZE_BUILTINS_FOR_INSTANCED_MULTIVIEW) &&
+            parseContext.isMultiviewExtensionEnabled() && getShaderType() != GL_COMPUTE_SHADER)
+        {
+            DeclareAndInitBuiltinsForInstancedMultiview(root, mNumViews, shaderType, compileOptions,
+                                                        outputType, &symbolTable);
+        }
 
         // This pass might emit short circuits so keep it before the short circuit unfolding
         if (success && (compileOptions & SH_REWRITE_DO_WHILE_LOOPS))
-            RewriteDoWhile(root, getTemporaryIndex());
+            RewriteDoWhile(root, &symbolTable);
 
         if (success && (compileOptions & SH_ADD_AND_TRUE_TO_LOOP_CONDITION))
             sh::AddAndTrueToLoopCondition(root);
@@ -427,14 +456,24 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
 
         if (success && shouldCollectVariables(compileOptions))
         {
-            collectVariables(root);
+            ASSERT(!variablesCollected);
+            CollectVariables(root, &attributes, &outputVariables, &uniforms, &varyings,
+                             &interfaceBlocks, hashFunction, &symbolTable, shaderVersion,
+                             extensionBehavior);
+            variablesCollected = true;
             if (compileOptions & SH_USE_UNUSED_STANDARD_SHARED_BLOCKS)
             {
                 useAllMembersInUnusedStandardAndSharedBlocks(root);
             }
             if (compileOptions & SH_ENFORCE_PACKING_RESTRICTIONS)
             {
-                success = enforcePackingRestrictions();
+                std::vector<sh::ShaderVariable> expandedUniforms;
+                sh::ExpandUniforms(uniforms, &expandedUniforms);
+                VariablePacker packer;
+                // Returns true if, after applying the packing rules in the GLSL ES 1.00.17 spec
+                // Appendix A, section 7, the shader does not use too many uniforms.
+                success =
+                    packer.CheckVariablesWithinPackingLimits(maxUniformVectors, expandedUniforms);
                 if (!success)
                 {
                     mDiagnostics.globalError("too many uniforms");
@@ -446,6 +485,17 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             }
         }
 
+        // gl_Position is always written in compatibility output mode.
+        // It may have been already initialized among other output variables, in that case we don't
+        // need to initialize it twice.
+        if (success && shaderType == GL_VERTEX_SHADER && !mGLPositionInitialized &&
+            ((compileOptions & SH_INIT_GL_POSITION) ||
+             (outputType == SH_GLSL_COMPATIBILITY_OUTPUT)))
+        {
+            initializeGLPosition(root);
+            mGLPositionInitialized = true;
+        }
+
         // Removing invariant declarations must be done after collecting variables.
         // Otherwise, built-in invariant declarations don't apply.
         if (success && RemoveInvariant(shaderType, shaderVersion, outputType, compileOptions))
@@ -454,12 +504,12 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && (compileOptions & SH_SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS))
         {
             ScalarizeVecAndMatConstructorArgs(root, shaderType, fragmentPrecisionHigh,
-                                              &mTemporaryIndex);
+                                              &symbolTable);
         }
 
         if (success && (compileOptions & SH_REGENERATE_STRUCT_NAMES))
         {
-            RegenerateStructNames gen(symbolTable, shaderVersion);
+            RegenerateStructNames gen(&symbolTable, shaderVersion);
             root->traverse(&gen);
         }
 
@@ -467,12 +517,42 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             compileResources.EXT_draw_buffers && compileResources.MaxDrawBuffers > 1 &&
             IsExtensionEnabled(extensionBehavior, "GL_EXT_draw_buffers"))
         {
-            EmulateGLFragColorBroadcast(root, compileResources.MaxDrawBuffers, &outputVariables);
+            EmulateGLFragColorBroadcast(root, compileResources.MaxDrawBuffers, &outputVariables,
+                                        &symbolTable, shaderVersion);
         }
 
         if (success)
         {
-            DeferGlobalInitializers(root);
+            DeferGlobalInitializers(root, needToInitializeGlobalsInAST());
+        }
+
+        if (success && (compileOptions & SH_INITIALIZE_UNINITIALIZED_LOCALS) && getOutputType())
+        {
+            // Initialize uninitialized local variables.
+            // In some cases initializing can generate extra statements in the parent block, such as
+            // when initializing nameless structs or initializing arrays in ESSL 1.00. In that case
+            // we need to first simplify loop conditions and separate declarations. If we don't
+            // follow the Appendix A limitations, loop init statements can declare arrays or
+            // nameless structs and have multiple declarations.
+
+            if (!shouldRunLoopAndIndexingValidation(compileOptions))
+            {
+                SimplifyLoopConditions(root,
+                                       IntermNodePatternMatcher::kMultiDeclaration |
+                                           IntermNodePatternMatcher::kArrayDeclaration |
+                                           IntermNodePatternMatcher::kNamelessStructDeclaration,
+                                       &getSymbolTable(), getShaderVersion());
+            }
+            // We only really need to separate array declarations and nameless struct declarations,
+            // but it's simpler to just use the regular SeparateDeclarations.
+            SeparateDeclarations(root);
+            InitializeUninitializedLocals(root, getShaderVersion());
+        }
+
+        if (success && getShaderType() == GL_VERTEX_SHADER &&
+            (compileOptions & SH_CLAMP_POINT_SIZE))
+        {
+            ClampPointSize(root, compileResources.MaxPointSize, &getSymbolTable());
         }
     }
 
@@ -508,7 +588,7 @@ bool TCompiler::compile(const char *const shaderStrings[],
     if (root)
     {
         if (compileOptions & SH_INTERMEDIATE_TREE)
-            TIntermediate::outputTree(root, infoSink.info);
+            OutputTree(root, infoSink.info);
 
         if (compileOptions & SH_OBJECT_CODE)
             translate(root, compileOptions);
@@ -540,24 +620,18 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
     symbolTable.push();  // ESSL3_BUILTINS
     symbolTable.push();  // ESSL3_1_BUILTINS
 
-    TPublicType integer;
-    integer.initializeBasicType(EbtInt);
-
-    TPublicType floatingPoint;
-    floatingPoint.initializeBasicType(EbtFloat);
-
     switch (shaderType)
     {
         case GL_FRAGMENT_SHADER:
-            symbolTable.setDefaultPrecision(integer, EbpMedium);
+            symbolTable.setDefaultPrecision(EbtInt, EbpMedium);
             break;
         case GL_VERTEX_SHADER:
-            symbolTable.setDefaultPrecision(integer, EbpHigh);
-            symbolTable.setDefaultPrecision(floatingPoint, EbpHigh);
+            symbolTable.setDefaultPrecision(EbtInt, EbpHigh);
+            symbolTable.setDefaultPrecision(EbtFloat, EbpHigh);
             break;
         case GL_COMPUTE_SHADER:
-            symbolTable.setDefaultPrecision(integer, EbpHigh);
-            symbolTable.setDefaultPrecision(floatingPoint, EbpHigh);
+            symbolTable.setDefaultPrecision(EbtInt, EbpHigh);
+            symbolTable.setDefaultPrecision(EbtFloat, EbpHigh);
             break;
         default:
             assert(false && "Language not supported");
@@ -574,6 +648,8 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
     // It isn't specified whether Sampler2DRect has default precision.
     initSamplerDefaultPrecision(EbtSampler2DRect);
 
+    symbolTable.setDefaultPrecision(EbtAtomicCounter, EbpHigh);
+
     InsertBuiltInFunctions(shaderType, shaderSpec, resources, symbolTable);
 
     IdentifyBuiltIns(shaderType, shaderSpec, resources, symbolTable);
@@ -584,9 +660,7 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
 void TCompiler::initSamplerDefaultPrecision(TBasicType samplerType)
 {
     ASSERT(samplerType > EbtGuardSamplerBegin && samplerType < EbtGuardSamplerEnd);
-    TPublicType sampler;
-    sampler.initializeBasicType(samplerType);
-    symbolTable.setDefaultPrecision(sampler, EbpLow);
+    symbolTable.setDefaultPrecision(samplerType, EbpLow);
 }
 
 void TCompiler::setResourceString()
@@ -618,12 +692,14 @@ void TCompiler::setResourceString()
         << ":EXT_shader_framebuffer_fetch:" << compileResources.EXT_shader_framebuffer_fetch
         << ":NV_shader_framebuffer_fetch:" << compileResources.NV_shader_framebuffer_fetch
         << ":ARM_shader_framebuffer_fetch:" << compileResources.ARM_shader_framebuffer_fetch
+        << ":OVR_multiview:" << compileResources.OVR_multiview
         << ":EXT_YUV_target:" << compileResources.EXT_YUV_target
         << ":MaxVertexOutputVectors:" << compileResources.MaxVertexOutputVectors
         << ":MaxFragmentInputVectors:" << compileResources.MaxFragmentInputVectors
         << ":MinProgramTexelOffset:" << compileResources.MinProgramTexelOffset
         << ":MaxProgramTexelOffset:" << compileResources.MaxProgramTexelOffset
         << ":MaxDualSourceDrawBuffers:" << compileResources.MaxDualSourceDrawBuffers
+        << ":MaxViewsOVR:" << compileResources.MaxViewsOVR
         << ":NV_draw_buffers:" << compileResources.NV_draw_buffers
         << ":WEBGL_debug_shader_precision:" << compileResources.WEBGL_debug_shader_precision
         << ":MaxImageUnits:" << compileResources.MaxImageUnits
@@ -666,10 +742,10 @@ void TCompiler::clearResults()
     attributes.clear();
     outputVariables.clear();
     uniforms.clear();
-    expandedUniforms.clear();
     varyings.clear();
     interfaceBlocks.clear();
     variablesCollected = false;
+    mGLPositionInitialized = false;
 
     mNumViews = -1;
 
@@ -678,7 +754,6 @@ void TCompiler::clearResults()
     nameMap.clear();
 
     mSourcePath     = nullptr;
-    mTemporaryIndex = 0;
 }
 
 bool TCompiler::initCallDag(TIntermNode *root)
@@ -844,20 +919,9 @@ bool TCompiler::pruneUnusedFunctions(TIntermBlock *root)
     return true;
 }
 
-bool TCompiler::validateOutputs(TIntermNode *root)
-{
-    ValidateOutputs validateOutputs(getExtensionBehavior(), compileResources.MaxDrawBuffers);
-    root->traverse(&validateOutputs);
-    validateOutputs.validate(&mDiagnostics);
-    return (mDiagnostics.numErrors() == 0);
-}
-
 bool TCompiler::limitExpressionComplexity(TIntermBlock *root)
 {
-    TMaxDepthTraverser traverser(maxExpressionComplexity + 1);
-    root->traverse(&traverser);
-
-    if (traverser.getMaxDepth() > maxExpressionComplexity)
+    if (!IsASTDepthBelowLimit(root, maxExpressionComplexity))
     {
         mDiagnostics.globalError("Expression too complex.");
         return false;
@@ -872,21 +936,6 @@ bool TCompiler::limitExpressionComplexity(TIntermBlock *root)
     return true;
 }
 
-void TCompiler::collectVariables(TIntermNode *root)
-{
-    if (!variablesCollected)
-    {
-        sh::CollectVariables collect(&attributes, &outputVariables, &uniforms, &varyings,
-                                     &interfaceBlocks, hashFunction, symbolTable,
-                                     extensionBehavior);
-        root->traverse(&collect);
-
-        // This is for enforcePackingRestriction().
-        sh::ExpandUniforms(uniforms, &expandedUniforms);
-        variablesCollected = true;
-    }
-}
-
 bool TCompiler::shouldCollectVariables(ShCompileOptions compileOptions)
 {
     return (compileOptions & SH_VARIABLES) != 0;
@@ -897,19 +946,13 @@ bool TCompiler::wereVariablesCollected() const
     return variablesCollected;
 }
 
-bool TCompiler::enforcePackingRestrictions()
-{
-    VariablePacker packer;
-    return packer.CheckVariablesWithinPackingLimits(maxUniformVectors, expandedUniforms);
-}
-
 void TCompiler::initializeGLPosition(TIntermBlock *root)
 {
     InitVariableList list;
     sh::ShaderVariable var(GL_FLOAT_VEC4, 0);
     var.name = "gl_Position";
     list.push_back(var);
-    InitializeVariables(root, list, symbolTable);
+    InitializeVariables(root, list, symbolTable, shaderVersion, extensionBehavior);
 }
 
 void TCompiler::useAllMembersInUnusedStandardAndSharedBlocks(TIntermBlock *root)
@@ -936,6 +979,11 @@ void TCompiler::initializeOutputVariables(TIntermBlock *root)
         for (auto var : varyings)
         {
             list.push_back(var);
+            if (var.name == "gl_Position")
+            {
+                ASSERT(!mGLPositionInitialized);
+                mGLPositionInitialized = true;
+            }
         }
     }
     else
@@ -946,7 +994,7 @@ void TCompiler::initializeOutputVariables(TIntermBlock *root)
             list.push_back(var);
         }
     }
-    InitializeVariables(root, list, symbolTable);
+    InitializeVariables(root, list, symbolTable, shaderVersion, extensionBehavior);
 }
 
 const TExtensionBehavior &TCompiler::getExtensionBehavior() const

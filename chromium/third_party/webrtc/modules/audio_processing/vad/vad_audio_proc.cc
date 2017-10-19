@@ -13,11 +13,11 @@
 #include <math.h>
 #include <stdio.h>
 
-#include "webrtc/base/checks.h"
 #include "webrtc/common_audio/fft4g.h"
-#include "webrtc/modules/audio_processing/vad/vad_audio_proc_internal.h"
 #include "webrtc/modules/audio_processing/vad/pitch_internal.h"
 #include "webrtc/modules/audio_processing/vad/pole_zero_filter.h"
+#include "webrtc/modules/audio_processing/vad/vad_audio_proc_internal.h"
+#include "webrtc/rtc_base/checks.h"
 extern "C" {
 #include "webrtc/modules/audio_coding/codecs/isac/main/source/codec.h"
 #include "webrtc/modules/audio_coding/codecs/isac/main/source/lpc_analysis.h"
@@ -33,9 +33,9 @@ namespace webrtc {
 struct VadAudioProc::PitchAnalysisStruct : public ::PitchAnalysisStruct {};
 struct VadAudioProc::PreFiltBankstr : public ::PreFiltBankstr {};
 
-static const float kFrequencyResolution =
+static constexpr float kFrequencyResolution =
     kSampleRateHz / static_cast<float>(VadAudioProc::kDftSize);
-static const int kSilenceRms = 5;
+static constexpr int kSilenceRms = 5;
 
 // TODO(turajs): Make a Create or Init for VadAudioProc.
 VadAudioProc::VadAudioProc()

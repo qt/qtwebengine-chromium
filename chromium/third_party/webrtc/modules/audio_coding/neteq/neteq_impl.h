@@ -14,10 +14,6 @@
 #include <memory>
 #include <string>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/optional.h"
-#include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/audio_coding/neteq/audio_multi_vector.h"
 #include "webrtc/modules/audio_coding/neteq/defines.h"
 #include "webrtc/modules/audio_coding/neteq/include/neteq.h"
@@ -27,6 +23,10 @@
 #include "webrtc/modules/audio_coding/neteq/statistics_calculator.h"
 #include "webrtc/modules/audio_coding/neteq/tick_timer.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/optional.h"
+#include "webrtc/rtc_base/thread_annotations.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -66,6 +66,26 @@ class NetEqImpl : public webrtc::NetEq {
     kCNG,
     kPLCCNG,
     kVadPassive
+  };
+
+  enum ErrorCodes {
+    kNoError = 0,
+    kOtherError,
+    kUnknownRtpPayloadType,
+    kDecoderNotFound,
+    kInvalidPointer,
+    kAccelerateError,
+    kPreemptiveExpandError,
+    kComfortNoiseErrorCode,
+    kDecoderErrorCode,
+    kOtherDecoderError,
+    kInvalidOperation,
+    kDtmfParsingError,
+    kDtmfInsertError,
+    kSampleUnderrun,
+    kDecodedTooMuch,
+    kRedundancySplitError,
+    kPacketBufferCorruption
   };
 
   struct Dependencies {
@@ -187,15 +207,6 @@ class NetEqImpl : public webrtc::NetEq {
   int SetTargetNumberOfChannels() override;
 
   int SetTargetSampleRate() override;
-
-  // Returns the error code for the last occurred error. If no error has
-  // occurred, 0 is returned.
-  int LastError() const override;
-
-  // Returns the error code last returned by a decoder (audio or comfort noise).
-  // When LastError() returns kDecoderErrorCode or kComfortNoiseErrorCode, check
-  // this method to get the decoder's error code.
-  int LastDecoderError() override;
 
   // Flushes both the packet buffer and the sync buffer.
   void FlushBuffers() override;
@@ -408,8 +419,6 @@ class NetEqImpl : public webrtc::NetEq {
   rtc::Optional<uint8_t> current_cng_rtp_payload_type_ GUARDED_BY(crit_sect_);
   uint32_t ssrc_ GUARDED_BY(crit_sect_);
   bool first_packet_ GUARDED_BY(crit_sect_);
-  int error_code_ GUARDED_BY(crit_sect_);  // Store last error code.
-  int decoder_error_code_ GUARDED_BY(crit_sect_);
   const BackgroundNoiseMode background_noise_mode_ GUARDED_BY(crit_sect_);
   NetEqPlayoutMode playout_mode_ GUARDED_BY(crit_sect_);
   bool enable_fast_accelerate_ GUARDED_BY(crit_sect_);

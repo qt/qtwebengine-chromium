@@ -13,18 +13,19 @@
 #include <algorithm>
 #include <vector>
 
-#include "webrtc/base/base64.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/crc32.h"
-#include "webrtc/base/helpers.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/messagedigest.h"
-#include "webrtc/base/network.h"
-#include "webrtc/base/ptr_util.h"
-#include "webrtc/base/stringencode.h"
-#include "webrtc/base/stringutils.h"
 #include "webrtc/p2p/base/common.h"
 #include "webrtc/p2p/base/portallocator.h"
+#include "webrtc/rtc_base/base64.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/crc32.h"
+#include "webrtc/rtc_base/helpers.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/messagedigest.h"
+#include "webrtc/rtc_base/network.h"
+#include "webrtc/rtc_base/ptr_util.h"
+#include "webrtc/rtc_base/safe_minmax.h"
+#include "webrtc/rtc_base/stringencode.h"
+#include "webrtc/rtc_base/stringutils.h"
 
 namespace {
 
@@ -69,7 +70,7 @@ const int DEFAULT_RTT = 3000;  // 3 seconds
 
 // Computes our estimate of the RTT given the current estimate.
 inline int ConservativeRTTEstimate(int rtt) {
-  return std::max(MINIMUM_RTT, std::min(MAXIMUM_RTT, 2 * rtt));
+  return rtc::SafeClamp(2 * rtt, MINIMUM_RTT, MAXIMUM_RTT);
 }
 
 // Weighting of the old rtt value to new data.
@@ -1250,7 +1251,14 @@ void Connection::UpdateState(int64_t now) {
 void Connection::Ping(int64_t now) {
   last_ping_sent_ = now;
   ConnectionRequest *req = new ConnectionRequest(this);
-  pings_since_last_response_.push_back(SentPing(req->id(), now, nomination_));
+  // If not using renomination, we use "1" to mean "nominated" and "0" to mean
+  // "not nominated". If using renomination, values greater than 1 are used for
+  // re-nominated pairs.
+  int nomination = use_candidate_attr_ ? 1 : 0;
+  if (nomination_ > 0) {
+    nomination = nomination_;
+  }
+  pings_since_last_response_.push_back(SentPing(req->id(), now, nomination));
   packet_loss_estimator_.ExpectResponse(req->id(), now);
   LOG_J(LS_VERBOSE, this) << "Sending STUN ping "
                           << ", id=" << rtc::hex_encode(req->id())

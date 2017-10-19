@@ -15,13 +15,13 @@ rtc_source_set("call_interfaces") {
     "audio_send_stream.h",
     "audio_state.h",
     "call.h",
+    "callfactoryinterface.h",
     "flexfec_receive_stream.h",
-    "rtp_demuxer.h",
-    "rtp_transport_controller_send_interface.h",
     "syncable.cc",
     "syncable.h",
   ]
   deps = [
+    ":rtp_interfaces",
     "..:video_stream_api",
     "..:webrtc_common",
     "../api:audio_mixer_api",
@@ -33,17 +33,62 @@ rtc_source_set("call_interfaces") {
   ]
 }
 
+# TODO(nisse): These RTP targets should be moved elsewhere
+# when interfaces have stabilized.
+rtc_source_set("rtp_interfaces") {
+  sources = [
+    "rtcp_packet_sink_interface.h",
+    "rtp_packet_sink_interface.h",
+    "rtp_stream_receiver_controller_interface.h",
+    "rtp_transport_controller_send_interface.h",
+  ]
+  deps = [
+    "../base:rtc_base_approved",
+  ]
+}
+
+rtc_source_set("rtp_receiver") {
+  sources = [
+    "rsid_resolution_observer.h",
+    "rtcp_demuxer.cc",
+    "rtcp_demuxer.h",
+    "rtp_demuxer.cc",
+    "rtp_demuxer.h",
+    "rtp_rtcp_demuxer_helper.cc",
+    "rtp_rtcp_demuxer_helper.h",
+    "rtp_stream_receiver_controller.cc",
+    "rtp_stream_receiver_controller.h",
+    "rtx_receive_stream.cc",
+    "rtx_receive_stream.h",
+  ]
+  deps = [
+    ":rtp_interfaces",
+    "..:webrtc_common",
+    "../base:rtc_base_approved",
+    "../modules/rtp_rtcp",
+  ]
+}
+
+rtc_source_set("rtp_sender") {
+  sources = [
+    "rtp_transport_controller_send.cc",
+    "rtp_transport_controller_send.h",
+  ]
+  deps = [
+    ":rtp_interfaces",
+    "../base:rtc_base_approved",
+    "../modules/congestion_controller",
+  ]
+}
+
 rtc_static_library("call") {
   sources = [
     "bitrate_allocator.cc",
     "call.cc",
+    "callfactory.cc",
+    "callfactory.h",
     "flexfec_receive_stream_impl.cc",
     "flexfec_receive_stream_impl.h",
-    "rtp_demuxer.cc",
-    "rtp_transport_controller_send.cc",
-    "rtp_transport_controller_send.h",
-    "rtx_receive_stream.cc",
-    "rtx_receive_stream.h",
   ]
 
   if (!build_with_chromium && is_clang) {
@@ -58,6 +103,9 @@ rtc_static_library("call") {
 
   deps = [
     ":call_interfaces",
+    ":rtp_interfaces",
+    ":rtp_receiver",
+    ":rtp_sender",
     "..:webrtc_common",
     "../api:transport_api",
     "../audio",
@@ -82,17 +130,24 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc:video_engine_tests" ]
+      visibility = [ "..:video_engine_tests" ]
     }
     sources = [
       "bitrate_allocator_unittest.cc",
       "bitrate_estimator_tests.cc",
       "call_unittest.cc",
       "flexfec_receive_stream_unittest.cc",
+      "rtcp_demuxer_unittest.cc",
+      "rtp_demuxer_unittest.cc",
+      "rtp_rtcp_demuxer_helper_unittest.cc",
       "rtx_receive_stream_unittest.cc",
     ]
     deps = [
       ":call",
+      ":rtp_interfaces",
+      ":rtp_receiver",
+      ":rtp_sender",
+      "..:webrtc_common",
       "../api:mock_audio_mixer",
       "../base:rtc_base_approved",
       "../logging:rtc_event_log_api",
@@ -125,7 +180,7 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc:webrtc_perf_tests" ]
+      visibility = [ "..:webrtc_perf_tests" ]
     }
     sources = [
       "call_perf_tests.cc",
@@ -145,13 +200,13 @@ if (rtc_include_tests) {
       "../system_wrappers:metrics_default",
       "../test:direct_transport",
       "../test:fake_audio_device",
+      "../test:field_trial",
+      "../test:test_common",
       "../test:test_support",
       "../test:video_test_common",
       "../video",
       "../voice_engine",
       "//testing/gtest",
-      "//webrtc/test:field_trial",
-      "//webrtc/test:test_common",
     ]
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).

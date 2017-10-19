@@ -11,8 +11,8 @@
 
 #include "compiler/translator/SplitSequenceOperator.h"
 
-#include "compiler/translator/IntermNode.h"
 #include "compiler/translator/IntermNodePatternMatcher.h"
+#include "compiler/translator/IntermTraverse.h"
 
 namespace sh
 {
@@ -24,7 +24,7 @@ class SplitSequenceOperatorTraverser : public TLValueTrackingTraverser
 {
   public:
     SplitSequenceOperatorTraverser(unsigned int patternsToSplitMask,
-                                   const TSymbolTable &symbolTable,
+                                   TSymbolTable *symbolTable,
                                    int shaderVersion);
 
     bool visitBinary(Visit visit, TIntermBinary *node) override;
@@ -44,7 +44,7 @@ class SplitSequenceOperatorTraverser : public TLValueTrackingTraverser
 };
 
 SplitSequenceOperatorTraverser::SplitSequenceOperatorTraverser(unsigned int patternsToSplitMask,
-                                                               const TSymbolTable &symbolTable,
+                                                               TSymbolTable *symbolTable,
                                                                int shaderVersion)
     : TLValueTrackingTraverser(true, false, true, symbolTable, shaderVersion),
       mFoundExpressionToSplit(false),
@@ -57,7 +57,7 @@ void SplitSequenceOperatorTraverser::nextIteration()
 {
     mFoundExpressionToSplit = false;
     mInsideSequenceOperator = 0;
-    nextTemporaryIndex();
+    nextTemporaryId();
 }
 
 bool SplitSequenceOperatorTraverser::visitAggregate(Visit visit, TIntermAggregate *node)
@@ -98,7 +98,7 @@ bool SplitSequenceOperatorTraverser::visitBinary(Visit visit, TIntermBinary *nod
                 insertions.push_back(node->getLeft());
                 insertStatementsInParentBlock(insertions);
                 // Replace the comma node with its right side operand.
-                queueReplacement(node, node->getRight(), OriginalNode::IS_DROPPED);
+                queueReplacement(node->getRight(), OriginalNode::IS_DROPPED);
             }
             mInsideSequenceOperator--;
         }
@@ -138,13 +138,10 @@ bool SplitSequenceOperatorTraverser::visitTernary(Visit visit, TIntermTernary *n
 
 void SplitSequenceOperator(TIntermNode *root,
                            int patternsToSplitMask,
-                           unsigned int *temporaryIndex,
-                           const TSymbolTable &symbolTable,
+                           TSymbolTable *symbolTable,
                            int shaderVersion)
 {
     SplitSequenceOperatorTraverser traverser(patternsToSplitMask, symbolTable, shaderVersion);
-    ASSERT(temporaryIndex != nullptr);
-    traverser.useTemporaryIndex(temporaryIndex);
     // Separate one expression at a time, and reset the traverser between iterations.
     do
     {

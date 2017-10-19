@@ -4,6 +4,7 @@
 
 #include "platform/fonts/linux/FontRenderStyle.h"
 
+#include "build/build_config.h"
 #include "platform/LayoutTestSupport.h"
 #include "platform/fonts/FontDescription.h"
 #include "public/platform/Platform.h"
@@ -85,7 +86,7 @@ FontRenderStyle FontRenderStyle::QuerySystem(const CString& family,
                                              float text_size,
                                              SkFontStyle font_style) {
   WebFontRenderStyle style;
-#if OS(ANDROID)
+#if defined(OS_ANDROID)
   style.SetDefaults();
 #else
   // If the the sandbox is disabled, we can query font parameters directly.

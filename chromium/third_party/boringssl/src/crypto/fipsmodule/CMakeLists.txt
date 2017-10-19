@@ -71,7 +71,7 @@ endif()
 
 if (${ARCH} STREQUAL "ppc64le")
   set(
-    AES_ARCH_SOURCES
+    BCM_ASM_SOURCES
 
     aesp8-ppc.${ASM_EXT}
     ghashp8-ppc.${ASM_EXT}
@@ -120,7 +120,7 @@ perlasm(x86_64-mont5.${ASM_EXT} bn/asm/x86_64-mont5.pl)
 perlasm(x86_64-mont.${ASM_EXT} bn/asm/x86_64-mont.pl)
 perlasm(x86-mont.${ASM_EXT} bn/asm/x86-mont.pl)
 
-if(FIPS)
+if(FIPS_DELOCATE)
   add_library(
     bcm_c_generated_asm
 
@@ -131,10 +131,6 @@ if(FIPS)
 
   set_target_properties(bcm_c_generated_asm PROPERTIES COMPILE_OPTIONS "-S")
   set_target_properties(bcm_c_generated_asm PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-  if(FIPS_BREAK_TEST)
-    target_compile_definitions(bcm_c_generated_asm PRIVATE "-DBORINGSSL_FIPS_BREAK_${FIPS_BREAK_TEST}=1")
-  endif()
 
   function(prepend_path values prefix output)
     set(result)
@@ -148,8 +144,8 @@ if(FIPS)
 
   add_custom_command(
     OUTPUT bcm-delocated.S
-    COMMAND ${GO_EXECUTABLE} run util/fipstools/delocate.go util/fipstools/ar.go util/fipstools/const.go -a $<TARGET_FILE:bcm_c_generated_asm> -o ${CMAKE_CURRENT_BINARY_DIR}/bcm-delocated.S ${DELOCATE_ASM_ARGS}
-    DEPENDS bcm_c_generated_asm ${BCM_ASM_SOURCES} ${CMAKE_SOURCE_DIR}/util/fipstools/delocate.go ${CMAKE_SOURCE_DIR}/util/fipstools/ar.go ${CMAKE_SOURCE_DIR}/util/fipstools/const.go
+    COMMAND ${GO_EXECUTABLE} run util/fipstools/delocate.go util/fipstools/delocate.peg.go util/fipstools/ar.go util/fipstools/const.go -a $<TARGET_FILE:bcm_c_generated_asm> -o ${CMAKE_CURRENT_BINARY_DIR}/bcm-delocated.S ${DELOCATE_ASM_ARGS}
+    DEPENDS bcm_c_generated_asm ${BCM_ASM_SOURCES} ${CMAKE_SOURCE_DIR}/util/fipstools/delocate.go ${CMAKE_SOURCE_DIR}/util/fipstools/delocate.peg.go ${CMAKE_SOURCE_DIR}/util/fipstools/ar.go ${CMAKE_SOURCE_DIR}/util/fipstools/const.go
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   )
 
@@ -197,89 +193,3 @@ else()
     ${BCM_ASM_SOURCES}
   )
 endif()
-
-add_executable(
-  bn_test
-
-  bn/bn_test.cc
-
-  $<TARGET_OBJECTS:test_support>
-)
-
-target_link_libraries(bn_test crypto)
-add_dependencies(all_tests bn_test)
-
-add_executable(
-  gcm_test
-
-  modes/gcm_test.cc
-
-  $<TARGET_OBJECTS:test_support>
-)
-
-target_link_libraries(gcm_test crypto)
-add_dependencies(all_tests gcm_test)
-
-add_executable(
-  ctrdrbg_vector_test
-
-  rand/ctrdrbg_vector_test.cc
-
-  $<TARGET_OBJECTS:test_support>
-)
-
-target_link_libraries(ctrdrbg_vector_test crypto)
-add_dependencies(all_tests ctrdrbg_vector_test)
-
-add_executable(
-  example_mul
-
-  ec/example_mul.c
-
-  $<TARGET_OBJECTS:test_support>
-)
-
-target_link_libraries(example_mul crypto)
-
-add_executable(
-  p256-x86_64_test
-
-  ec/p256-x86_64_test.cc
-
-  $<TARGET_OBJECTS:test_support>
-)
-
-target_link_libraries(p256-x86_64_test crypto)
-add_dependencies(all_tests example_mul p256-x86_64_test)
-
-add_executable(
-  ecdsa_test
-
-  ecdsa/ecdsa_test.cc
-
-  $<TARGET_OBJECTS:test_support>
-)
-
-target_link_libraries(ecdsa_test crypto)
-
-add_executable(
-  ecdsa_sign_test
-
-  ecdsa/ecdsa_sign_test.cc
-
-  $<TARGET_OBJECTS:test_support>
-)
-
-target_link_libraries(ecdsa_sign_test crypto)
-
-add_executable(
-  ecdsa_verify_test
-
-  ecdsa/ecdsa_verify_test.cc
-
-  $<TARGET_OBJECTS:test_support>
-)
-
-target_link_libraries(ecdsa_verify_test crypto)
-
-add_dependencies(all_tests ecdsa_test ecdsa_sign_test ecdsa_verify_test)

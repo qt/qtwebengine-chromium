@@ -15,8 +15,6 @@
 #include "webrtc/audio/audio_send_stream.h"
 #include "webrtc/audio/audio_state.h"
 #include "webrtc/audio/conversion.h"
-#include "webrtc/base/ptr_util.h"
-#include "webrtc/base/task_queue.h"
 #include "webrtc/call/fake_rtp_transport_controller_send.h"
 #include "webrtc/call/rtp_transport_controller_send_interface.h"
 #include "webrtc/logging/rtc_event_log/mock/mock_rtc_event_log.h"
@@ -27,6 +25,8 @@
 #include "webrtc/modules/pacing/paced_sender.h"
 #include "webrtc/modules/rtp_rtcp/mocks/mock_rtcp_rtt_stats.h"
 #include "webrtc/modules/rtp_rtcp/mocks/mock_rtp_rtcp.h"
+#include "webrtc/rtc_base/ptr_util.h"
+#include "webrtc/rtc_base/task_queue.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/mock_audio_encoder.h"
 #include "webrtc/test/mock_audio_encoder_factory.h"
@@ -55,6 +55,8 @@ const int kEchoReturnLoss = -65;
 const int kEchoReturnLossEnhancement = 101;
 const float kResidualEchoLikelihood = -1.0f;
 const int32_t kSpeechInputLevel = 96;
+const double kTotalInputEnergy = 0.25;
+const double kTotalInputDuration = 0.5;
 const CallStatistics kCallStats = {
     1345,  1678,  1901, 1234,  112, 13456, 17890, 1567, -1890, -1123};
 const ReportBlock kReportBlock = {456, 780, 123, 567, 890, 132, 143, 13354};
@@ -82,6 +84,8 @@ class MockLimitObserver : public BitrateAllocator::LimitObserver {
 class MockTransmitMixer : public voe::TransmitMixer {
  public:
   MOCK_CONST_METHOD0(AudioLevelFullRange, int16_t());
+  MOCK_CONST_METHOD0(GetTotalInputEnergy, double());
+  MOCK_CONST_METHOD0(GetTotalInputDuration, double());
 };
 
 std::unique_ptr<MockAudioEncoder> SetupAudioEncoderMock(
@@ -128,6 +132,7 @@ rtc::scoped_refptr<MockAudioEncoderFactory> SetupEncoderFactoryMock() {
 struct ConfigHelper {
   ConfigHelper(bool audio_bwe_enabled, bool expect_set_encoder_call)
       : stream_config_(nullptr),
+        audio_processing_(new rtc::RefCountedObject<MockAudioProcessing>()),
         simulated_clock_(123456),
         send_side_cc_(rtc::MakeUnique<SendSideCongestionController>(
             &simulated_clock_,
@@ -144,12 +149,12 @@ struct ConfigHelper {
     EXPECT_CALL(voice_engine_,
         DeRegisterVoiceEngineObserver()).WillOnce(Return(0));
     EXPECT_CALL(voice_engine_, audio_device_module());
-    EXPECT_CALL(voice_engine_, audio_processing());
     EXPECT_CALL(voice_engine_, audio_transport());
 
     AudioState::Config config;
     config.voice_engine = &voice_engine_;
     config.audio_mixer = AudioMixerImpl::Create();
+    config.audio_processing = audio_processing_;
     audio_state_ = AudioState::Create(config);
 
     SetupDefaultChannelProxy(audio_bwe_enabled);
@@ -173,10 +178,7 @@ struct ConfigHelper {
     stream_config_.rtp.extensions.push_back(
         RtpExtension(RtpExtension::kAudioLevelUri, kAudioLevelId));
     if (audio_bwe_enabled) {
-      stream_config_.rtp.extensions.push_back(
-          RtpExtension(RtpExtension::kTransportSequenceNumberUri,
-                       kTransportSequenceNumberId));
-      stream_config_.send_codec_spec->transport_cc_enabled = true;
+      AddBweToConfig(&stream_config_);
     }
     stream_config_.encoder_factory = SetupEncoderFactoryMock();
     stream_config_.min_bitrate_bps = 10000;
@@ -195,6 +197,13 @@ struct ConfigHelper {
   rtc::TaskQueue* worker_queue() { return &worker_queue_; }
   RtcEventLog* event_log() { return &event_log_; }
   MockVoiceEngine* voice_engine() { return &voice_engine_; }
+
+  static void AddBweToConfig(AudioSendStream::Config* config) {
+    config->rtp.extensions.push_back(
+        RtpExtension(RtpExtension::kTransportSequenceNumberUri,
+                     kTransportSequenceNumberId));
+    config->send_codec_spec->transport_cc_enabled = true;
+  }
 
   void SetupDefaultChannelProxy(bool audio_bwe_enabled) {
     using testing::StrEq;
@@ -278,11 +287,13 @@ struct ConfigHelper {
         .WillRepeatedly(Return(report_blocks));
     EXPECT_CALL(voice_engine_, transmit_mixer())
         .WillRepeatedly(Return(&transmit_mixer_));
-    EXPECT_CALL(voice_engine_, audio_processing())
-        .WillRepeatedly(Return(&audio_processing_));
 
     EXPECT_CALL(transmit_mixer_, AudioLevelFullRange())
         .WillRepeatedly(Return(kSpeechInputLevel));
+    EXPECT_CALL(transmit_mixer_, GetTotalInputEnergy())
+        .WillRepeatedly(Return(kTotalInputEnergy));
+    EXPECT_CALL(transmit_mixer_, GetTotalInputDuration())
+        .WillRepeatedly(Return(kTotalInputDuration));
 
     // We have to set the instantaneous value, the average, min and max. We only
     // care about the instantaneous value, so we set all to the same value.
@@ -294,7 +305,7 @@ struct ConfigHelper {
     audio_processing_stats_.delay_median = kEchoDelayMedian;
     audio_processing_stats_.delay_standard_deviation = kEchoDelayStdDev;
 
-    EXPECT_CALL(audio_processing_, GetStatistics())
+    EXPECT_CALL(*audio_processing_, GetStatistics())
         .WillRepeatedly(Return(audio_processing_stats_));
   }
 
@@ -303,7 +314,7 @@ struct ConfigHelper {
   rtc::scoped_refptr<AudioState> audio_state_;
   AudioSendStream::Config stream_config_;
   testing::StrictMock<MockVoEChannelProxy>* channel_proxy_ = nullptr;
-  MockAudioProcessing audio_processing_;
+  rtc::scoped_refptr<MockAudioProcessing> audio_processing_;
   MockTransmitMixer transmit_mixer_;
   AudioProcessing::AudioProcessingStatistics audio_processing_stats_;
   SimulatedClock simulated_clock_;
@@ -417,6 +428,8 @@ TEST(AudioSendStreamTest, GetStats) {
             stats.jitter_ms);
   EXPECT_EQ(kCallStats.rttMs, stats.rtt_ms);
   EXPECT_EQ(static_cast<int32_t>(kSpeechInputLevel), stats.audio_level);
+  EXPECT_EQ(kTotalInputEnergy, stats.total_input_energy);
+  EXPECT_EQ(kTotalInputDuration, stats.total_input_duration);
   EXPECT_EQ(-1, stats.aec_quality_min);
   EXPECT_EQ(kEchoDelayMedian, stats.echo_delay_median_ms);
   EXPECT_EQ(kEchoDelayStdDev, stats.echo_delay_std_ms);
@@ -541,6 +554,29 @@ TEST(AudioSendStreamTest, DontRecreateEncoder) {
       helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
   send_stream.Reconfigure(stream_config);
 }
+
+TEST(AudioSendStreamTest, ReconfigureTransportCcResetsFirst) {
+  ConfigHelper helper(false, true);
+  internal::AudioSendStream send_stream(
+      helper.config(), helper.audio_state(), helper.worker_queue(),
+      helper.transport(), helper.bitrate_allocator(), helper.event_log(),
+      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+  auto new_config = helper.config();
+  ConfigHelper::AddBweToConfig(&new_config);
+  EXPECT_CALL(*helper.channel_proxy(),
+              EnableSendTransportSequenceNumber(kTransportSequenceNumberId))
+      .Times(1);
+  {
+    ::testing::InSequence seq;
+    EXPECT_CALL(*helper.channel_proxy(), ResetSenderCongestionControlObjects())
+        .Times(1);
+    EXPECT_CALL(*helper.channel_proxy(), RegisterSenderCongestionControlObjects(
+        helper.transport(), Ne(nullptr)))
+        .Times(1);
+  }
+  send_stream.Reconfigure(new_config);
+}
+
 
 }  // namespace test
 }  // namespace webrtc

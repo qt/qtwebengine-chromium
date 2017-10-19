@@ -11,8 +11,8 @@
 
 #include <sstream>
 
-#include "webrtc/base/atomicops.h"
 #include "webrtc/modules/audio_processing/logging/apm_data_dumper.h"
+#include "webrtc/rtc_base/atomicops.h"
 
 namespace webrtc {
 
@@ -200,11 +200,14 @@ void EchoCanceller3::RenderWriter::Insert(AudioBuffer* input) {
 
 int EchoCanceller3::instance_count_ = 0;
 
-EchoCanceller3::EchoCanceller3(int sample_rate_hz, bool use_highpass_filter)
+EchoCanceller3::EchoCanceller3(
+    const AudioProcessing::Config::EchoCanceller3& config,
+    int sample_rate_hz,
+    bool use_highpass_filter)
     : EchoCanceller3(sample_rate_hz,
                      use_highpass_filter,
                      std::unique_ptr<BlockProcessor>(
-                         BlockProcessor::Create(sample_rate_hz))) {}
+                         BlockProcessor::Create(config, sample_rate_hz))) {}
 EchoCanceller3::EchoCanceller3(int sample_rate_hz,
                                bool use_highpass_filter,
                                std::unique_ptr<BlockProcessor> block_processor)

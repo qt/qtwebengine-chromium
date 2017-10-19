@@ -92,6 +92,9 @@ rtc_static_library("audio_device") {
   }
   defines = []
   cflags = []
+  if (rtc_audio_device_plays_sinus_tone) {
+    defines += [ "AUDIO_DEVICE_PLAYS_SINUS_TONE" ]
+  }
   if (rtc_include_internal_audio_device) {
     sources += [
       "audio_device_data_observer.cc",
@@ -137,10 +140,10 @@ rtc_static_library("audio_device") {
           "linux/latebindingsymboltable_linux.h",
         ]
         defines += [ "LINUX_ALSA" ]
-        libs = [
-          "dl",
-          "X11",
-        ]
+        libs = [ "dl" ]
+        if (use_x11) {
+          libs += [ "X11" ]
+        }
         if (rtc_include_pulse_audio) {
           sources += [
             "linux/audio_device_pulse_linux.cc",
@@ -176,19 +179,14 @@ rtc_static_library("audio_device") {
         public_deps = [
           "../../base:gtest_prod",
           "../../base:rtc_base",
-          "../../sdk:rtc_sdk_common_objc",
+          "../../sdk:objc_audio",
+          "../../sdk:objc_common",
         ]
         sources += [
           "ios/audio_device_ios.h",
           "ios/audio_device_ios.mm",
           "ios/audio_device_not_implemented_ios.mm",
           "ios/audio_session_observer.h",
-          "ios/objc/RTCAudioSession+Configuration.mm",
-          "ios/objc/RTCAudioSession+Private.h",
-          "ios/objc/RTCAudioSession.h",
-          "ios/objc/RTCAudioSession.mm",
-          "ios/objc/RTCAudioSessionConfiguration.h",
-          "ios/objc/RTCAudioSessionConfiguration.m",
           "ios/objc/RTCAudioSessionDelegateAdapter.h",
           "ios/objc/RTCAudioSessionDelegateAdapter.mm",
           "ios/voice_processing_audio_unit.h",
@@ -254,6 +252,19 @@ config("mock_audio_device_config") {
   }
 }
 
+rtc_source_set("mock_audio_device") {
+  testonly = true
+  sources = [
+    "include/mock_audio_device.h",
+    "include/mock_audio_transport.h",
+  ]
+  deps = [
+    ":audio_device",
+    "../../test:test_support",
+  ]
+  all_dependent_configs = [ ":mock_audio_device_config" ]
+}
+
 if (rtc_include_tests) {
   rtc_source_set("audio_device_unittests") {
     testonly = true
@@ -262,7 +273,7 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc/modules:modules_unittests" ]
+      visibility = [ "..:modules_unittests" ]
     }
     sources = [
       "fine_audio_buffer_unittest.cc",
@@ -293,33 +304,19 @@ if (rtc_include_tests) {
       ]
       deps += [
         "../../../base",
-        "//webrtc/sdk/android:libjingle_peerconnection_java",
+        "../../sdk/android:libjingle_peerconnection_java",
       ]
     }
-    if (is_ios) {
-      sources += [ "ios/objc/RTCAudioSessionTest.mm" ]
-      if (target_cpu != "x64") {
-        sources += [ "ios/audio_device_unittest_ios.mm" ]
-      }
+    if (is_ios && !use_ios_simulator) {
+      # TODO(kthelgason): Reenable these tests on simulator.
+      # See bugs.webrtc.org/7812
+      sources += [ "ios/audio_device_unittest_ios.mm" ]
       deps += [ "//third_party/ocmock" ]
     }
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
-  }
-
-  rtc_source_set("mock_audio_device") {
-    testonly = true
-    sources = [
-      "include/mock_audio_device.h",
-      "include/mock_audio_transport.h",
-    ]
-    deps = [
-      ":audio_device",
-      "../../test:test_support",
-    ]
-    all_dependent_configs = [ ":mock_audio_device_config" ]
   }
 
   if (!is_ios) {
@@ -358,7 +355,7 @@ if (!build_with_chromium && is_android) {
       "android/java/src/org/webrtc/voiceengine/WebRtcAudioUtils.java",
     ]
     deps = [
-      "//webrtc/base:base_java",
+      "../../rtc_base:base_java",
     ]
   }
 }

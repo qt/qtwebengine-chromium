@@ -18,10 +18,10 @@
 
 #include "webrtc/p2p/base/port.h"
 #include "webrtc/p2p/base/portinterface.h"
-#include "webrtc/base/helpers.h"
-#include "webrtc/base/proxyinfo.h"
-#include "webrtc/base/sigslot.h"
-#include "webrtc/base/thread.h"
+#include "webrtc/rtc_base/helpers.h"
+#include "webrtc/rtc_base/proxyinfo.h"
+#include "webrtc/rtc_base/sigslot.h"
+#include "webrtc/rtc_base/thread.h"
 
 namespace webrtc {
 class MetricsObserverInterface;
@@ -77,10 +77,24 @@ enum {
 
   // When specified, do not collect IPv6 ICE candidates on Wi-Fi.
   PORTALLOCATOR_ENABLE_IPV6_ON_WIFI = 0x4000,
+
+  // When this flag is set, ports not bound to any specific network interface
+  // will be used, in addition to normal ports bound to the enumerated
+  // interfaces. Without this flag, these "any address" ports would only be
+  // used when network enumeration fails or is disabled. But under certain
+  // conditions, these ports may succeed where others fail, so they may allow
+  // the application to work in a wider variety of environments, at the expense
+  // of having to allocate additional candidates.
+  PORTALLOCATOR_ENABLE_ANY_ADDRESS_PORTS = 0x8000,
 };
 
 // Defines various reasons that have caused ICE regathering.
-enum class IceRegatheringReason { NETWORK_CHANGE, NETWORK_FAILURE, MAX_VALUE };
+enum class IceRegatheringReason {
+  NETWORK_CHANGE,      // Network interfaces on the device changed
+  NETWORK_FAILURE,     // Regather only on networks that have failed
+  OCCASIONAL_REFRESH,  // Periodic regather on all networks
+  MAX_VALUE
+};
 
 const uint32_t kDefaultPortAllocatorFlags = 0;
 
@@ -129,14 +143,23 @@ typedef std::vector<ProtocolAddress> PortList;
 struct RelayServerConfig {
   RelayServerConfig(RelayType type) : type(type) {}
 
+  RelayServerConfig(const rtc::SocketAddress& address,
+                    const std::string& username,
+                    const std::string& password,
+                    ProtocolType proto)
+      : type(RELAY_TURN), credentials(username, password) {
+    ports.push_back(ProtocolAddress(address, proto));
+  }
+
   RelayServerConfig(const std::string& address,
                     int port,
                     const std::string& username,
                     const std::string& password,
                     ProtocolType proto)
-      : type(RELAY_TURN), credentials(username, password) {
-    ports.push_back(ProtocolAddress(rtc::SocketAddress(address, port), proto));
-  }
+      : RelayServerConfig(rtc::SocketAddress(address, port),
+                          username,
+                          password,
+                          proto) {}
 
   // Legacy constructor where "secure" and PROTO_TCP implies PROTO_TLS.
   RelayServerConfig(const std::string& address,
@@ -220,7 +243,6 @@ class PortAllocatorSession : public sigslot::has_slots<> {
   // implementation should start re-gathering on all networks of that interface.
   virtual void RegatherOnFailedNetworks() {}
   // Re-gathers candidates on all networks.
-  // TODO(honghaiz): Implement this in BasicPortAllocator.
   virtual void RegatherOnAllNetworks() {}
 
   // Another way of getting the information provided by the signals below.

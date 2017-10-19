@@ -10,13 +10,13 @@
 
 #include <memory>
 
-#include "webrtc/base/fakenetwork.h"
-#include "webrtc/base/gunit.h"
-#include "webrtc/base/virtualsocketserver.h"
 #include "webrtc/media/base/fakemediaengine.h"
 #include "webrtc/ortc/ortcfactory.h"
 #include "webrtc/ortc/testrtpparameters.h"
 #include "webrtc/p2p/base/fakepackettransport.h"
+#include "webrtc/rtc_base/fakenetwork.h"
+#include "webrtc/rtc_base/gunit.h"
+#include "webrtc/rtc_base/virtualsocketserver.h"
 
 namespace webrtc {
 
@@ -29,7 +29,7 @@ class OrtcFactoryTest : public testing::Test {
       : thread_(&virtual_socket_server_),
         fake_packet_transport_("fake transport") {
     ortc_factory_ =
-        OrtcFactory::Create(nullptr, nullptr, &fake_network_manager_, nullptr,
+        OrtcFactory::Create(&thread_, nullptr, &fake_network_manager_, nullptr,
                             nullptr,
                             std::unique_ptr<cricket::MediaEngineInterface>(
                                 new cricket::FakeMediaEngine()))

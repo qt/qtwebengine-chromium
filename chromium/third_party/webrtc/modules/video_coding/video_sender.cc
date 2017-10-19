@@ -11,17 +11,17 @@
 
 #include <algorithm>  // std::max
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/include/video_bitrate_allocator.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/encoded_frame.h"
+#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/utility/default_video_bitrate_allocator.h"
 #include "webrtc/modules/video_coding/utility/quality_scaler.h"
 #include "webrtc/modules/video_coding/video_coding_impl.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 #include "webrtc/system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -103,6 +103,11 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
     numLayers = sendCodec->VP8().numberOfTemporalLayers;
   } else if (sendCodec->codecType == kVideoCodecVP9) {
     numLayers = sendCodec->VP9().numberOfTemporalLayers;
+  } else if (sendCodec->codecType == kVideoCodecGeneric &&
+             sendCodec->numberOfSimulcastStreams > 0) {
+    // This is mainly for unit testing, disabling frame dropping.
+    // TODO(sprang): Add a better way to disable frame dropping.
+    numLayers = sendCodec->simulcastStream[0].numberOfTemporalLayers;
   } else {
     numLayers = 1;
   }
@@ -197,13 +202,17 @@ EncoderParameters VideoSender::UpdateEncoderParameters(
     input_frame_rate = current_codec_.maxFramerate;
 
   BitrateAllocation bitrate_allocation;
-  if (bitrate_allocator) {
-    bitrate_allocation = bitrate_allocator->GetAllocation(video_target_rate_bps,
-                                                          input_frame_rate);
-  } else {
-    DefaultVideoBitrateAllocator default_allocator(current_codec_);
-    bitrate_allocation = default_allocator.GetAllocation(video_target_rate_bps,
-                                                         input_frame_rate);
+  // Only call allocators if bitrate > 0 (ie, not suspended), otherwise they
+  // might cap the bitrate to the min bitrate configured.
+  if (target_bitrate_bps > 0) {
+    if (bitrate_allocator) {
+      bitrate_allocation = bitrate_allocator->GetAllocation(
+          video_target_rate_bps, input_frame_rate);
+    } else {
+      DefaultVideoBitrateAllocator default_allocator(current_codec_);
+      bitrate_allocation = default_allocator.GetAllocation(
+          video_target_rate_bps, input_frame_rate);
+    }
   }
   EncoderParameters new_encoder_params = {bitrate_allocation, params.loss_rate,
                                           params.rtt, input_frame_rate};
@@ -221,7 +230,7 @@ void VideoSender::UpdateChannelParemeters(
                                 encoder_params_.target_bitrate.get_sum_bps());
     target_rate = encoder_params_.target_bitrate;
   }
-  if (bitrate_updated_callback)
+  if (bitrate_updated_callback && target_rate.get_sum_bps() > 0)
     bitrate_updated_callback->OnBitrateAllocationUpdated(target_rate);
 }
 
@@ -236,7 +245,7 @@ int32_t VideoSender::SetChannelParameters(
   encoder_params.rtt = rtt;
   encoder_params = UpdateEncoderParameters(encoder_params, bitrate_allocator,
                                            target_bitrate_bps);
-  if (bitrate_updated_callback) {
+  if (bitrate_updated_callback && target_bitrate_bps > 0) {
     bitrate_updated_callback->OnBitrateAllocationUpdated(
         encoder_params.target_bitrate);
   }
@@ -326,12 +335,17 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
     return VCM_PARAMETER_ERROR;
   }
   VideoFrame converted_frame = videoFrame;
-  if (converted_frame.video_frame_buffer()->native_handle() &&
-      !_encoder->SupportsNativeHandle()) {
+  const VideoFrameBuffer::Type buffer_type =
+      converted_frame.video_frame_buffer()->type();
+  const bool is_buffer_type_supported =
+      buffer_type == VideoFrameBuffer::Type::kI420 ||
+      (buffer_type == VideoFrameBuffer::Type::kNative &&
+       _encoder->SupportsNativeHandle());
+  if (!is_buffer_type_supported) {
     // This module only supports software encoding.
     // TODO(pbos): Offload conversion from the encoder thread.
-    rtc::scoped_refptr<VideoFrameBuffer> converted_buffer(
-        converted_frame.video_frame_buffer()->NativeToI420Buffer());
+    rtc::scoped_refptr<I420BufferInterface> converted_buffer(
+        converted_frame.video_frame_buffer()->ToI420());
 
     if (!converted_buffer) {
       LOG(LS_ERROR) << "Frame conversion failed, dropping frame.";

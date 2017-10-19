@@ -121,6 +121,7 @@ struct Uniform : public VariableWithLocation
     }
 
     int binding;
+    int offset;
 
     // Decide whether two uniforms are the same at shader link time,
     // assuming one from vertex shader and the other from fragment shader.
@@ -216,6 +217,7 @@ struct InterfaceBlock
     unsigned int arraySize;
     BlockLayoutType layout;
     bool isRowMajorLayout;
+    int binding;
     bool staticUse;
     std::vector<InterfaceBlockField> fields;
 };

@@ -6,6 +6,7 @@
 
 #include "xfa/fxfa/fm2js/cxfa_fmsimpleexpression.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "core/fxcrt/fx_extension.h"
@@ -13,6 +14,7 @@
 
 namespace {
 
+// Indexed by XFA_FM_SimpleExpressionType
 const wchar_t* const gs_lpStrExpFuncName[] = {
     L"pfm_rt.asgn_val_op", L"pfm_rt.log_or_op",  L"pfm_rt.log_and_op",
     L"pfm_rt.eq_op",       L"pfm_rt.neq_op",     L"pfm_rt.lt_op",
@@ -25,74 +27,55 @@ const wchar_t* const gs_lpStrExpFuncName[] = {
     L"pfm_rt.var_filter",
 };
 
-struct XFA_FMBuildInFunc {
-  uint32_t m_uHash;
-  const wchar_t* m_buildinfunc;
+const wchar_t* const g_BuiltInFuncs[] = {
+    L"Abs",          L"Apr",       L"At",       L"Avg",
+    L"Ceil",         L"Choose",    L"Concat",   L"Count",
+    L"Cterm",        L"Date",      L"Date2Num", L"DateFmt",
+    L"Decode",       L"Encode",    L"Eval",     L"Exists",
+    L"Floor",        L"Format",    L"FV",       L"Get",
+    L"HasValue",     L"If",        L"Ipmt",     L"IsoDate2Num",
+    L"IsoTime2Num",  L"Left",      L"Len",      L"LocalDateFmt",
+    L"LocalTimeFmt", L"Lower",     L"Ltrim",    L"Max",
+    L"Min",          L"Mod",       L"NPV",      L"Num2Date",
+    L"Num2GMTime",   L"Num2Time",  L"Oneof",    L"Parse",
+    L"Pmt",          L"Post",      L"PPmt",     L"Put",
+    L"PV",           L"Rate",      L"Ref",      L"Replace",
+    L"Right",        L"Round",     L"Rtrim",    L"Space",
+    L"Str",          L"Stuff",     L"Substr",   L"Sum",
+    L"Term",         L"Time",      L"Time2Num", L"TimeFmt",
+    L"UnitType",     L"UnitValue", L"Upper",    L"Uuid",
+    L"Within",       L"WordNum",
 };
 
-const XFA_FMBuildInFunc g_BuildInFuncs[] = {
-    {0x0001f1f5, L"At"},           {0x00020b9c, L"FV"},
-    {0x00021aef, L"If"},           {0x00023ee6, L"PV"},
-    {0x04b5c9ee, L"Encode"},       {0x08e96685, L"DateFmt"},
-    {0x09f99db6, L"Abs"},          {0x09f9e583, L"Apr"},
-    {0x09fa043e, L"Avg"},          {0x0a9782a0, L"Get"},
-    {0x0b1b09df, L"Len"},          {0x0b3543a6, L"Max"},
-    {0x0b356ca4, L"Min"},          {0x0b358b60, L"Mod"},
-    {0x0b4fded4, L"NPV"},          {0x0b846bf1, L"Pmt"},
-    {0x0b8494f9, L"Put"},          {0x0bb8df5d, L"Ref"},
-    {0x0bd37a99, L"Str"},          {0x0bd37fb5, L"Sum"},
-    {0x1048469b, L"Cterm"},        {0x11e03660, L"Exists"},
-    {0x126236e6, L"Post"},         {0x127c6661, L"PPmt"},
-    {0x193ade3e, L"Right"},        {0x1ec8ab2c, L"Rate"},
-    {0x20e476dc, L"IsoTime2Num"},  {0x23eb6816, L"TimeFmt"},
-    {0x24fb17b0, L"LocalDateFmt"}, {0x28dee6e9, L"Format"},
-    {0x2d0890b8, L"Term"},         {0x2d71b00f, L"Time"},
-    {0x2f890fb1, L"Num2Time"},     {0x3767511d, L"Ceil"},
-    {0x3ffd1941, L"LocalTimeFmt"}, {0x442f68c8, L"Round"},
-    {0x46fd1128, L"Eval"},         {0x4d629440, L"Date2Num"},
-    {0x4dcf25f8, L"Concat"},       {0x4e00255d, L"UnitValue"},
-    {0x55a5cc29, L"Lower"},        {0x5e43e04c, L"WordNum"},
-    {0x620ce6ba, L"Ipmt"},         {0x6f544d49, L"Count"},
-    {0x7e241013, L"Within"},       {0x9b9a6e2b, L"IsoDate2Num"},
-    {0xb2c941c2, L"UnitType"},     {0xb598a1f7, L"Uuid"},
-    {0xbde9abde, L"Date"},         {0xc0010b80, L"Num2Date"},
-    {0xc1f6144c, L"Upper"},        {0xc44028f7, L"Oneof"},
-    {0xc62c1b2c, L"Space"},        {0xd0ff50f9, L"HasValue"},
-    {0xd1537042, L"Floor"},        {0xd2ac9cf1, L"Time2Num"},
-    {0xd907aee5, L"Num2GMTime"},   {0xdf24f7c4, L"Decode"},
-    {0xe2664803, L"Substr"},       {0xe3e7b528, L"Stuff"},
-    {0xe6792d4e, L"Rtrim"},        {0xe8c23f5b, L"Parse"},
-    {0xea18d121, L"Choose"},       {0xebfef69c, L"Replace"},
-    {0xf5ad782b, L"Left"},         {0xf7bb2248, L"Ltrim"},
-};
+const FX_STRSIZE g_BuiltInFuncsMaxLen = 12;
 
 struct XFA_FMSOMMethod {
-  uint32_t m_uHash;
   const wchar_t* m_wsSomMethodName;
   uint32_t m_dParameters;
 };
+
 const XFA_FMSOMMethod gs_FMSomMethods[] = {
-    {0x00000068, L"h", 0x01},
-    {0x00000077, L"w", 0x01},
-    {0x00000078, L"x", 0x01},
-    {0x00000079, L"y", 0x01},
-    {0x05eb5b0f, L"pageSpan", 0x01},
-    {0x10f1b1bd, L"page", 0x01},
-    {0x3bf1c2a5, L"absPageSpan", 0x01},
-    {0x3c752495, L"verify", 0x0d},
-    {0x44c352ad, L"formNodes", 0x01},
-    {0x5775c2cc, L"absPageInBatch", 0x01},
-    {0x5ee00996, L"setElement", 0x01},
-    {0x7033bfd5, L"insert", 0x03},
-    {0x8c5feb32, L"sheetInBatch", 0x01},
-    {0x8f3a8379, L"sheet", 0x01},
-    {0x92dada4f, L"saveFilteredXML", 0x01},
-    {0x9cab7cae, L"remove", 0x01},
-    {0xa68635f1, L"sign", 0x61},
-    {0xaac241c8, L"isRecordGroup", 0x01},
-    {0xd8ed1467, L"clear", 0x01},
-    {0xda12e518, L"append", 0x01},
-    {0xe74f0653, L"absPage", 0x01},
+    {L"absPage", 0x01},
+    {L"absPageInBatch", 0x01},
+    {L"absPageSpan", 0x01},
+    {L"append", 0x01},
+    {L"clear", 0x01},
+    {L"formNodes", 0x01},
+    {L"h", 0x01},
+    {L"insert", 0x03},
+    {L"isRecordGroup", 0x01},
+    {L"page", 0x01},
+    {L"pageSpan", 0x01},
+    {L"remove", 0x01},
+    {L"saveFilteredXML", 0x01},
+    {L"setElement", 0x01},
+    {L"sheet", 0x01},
+    {L"sheetInBatch", 0x01},
+    {L"sign", 0x61},
+    {L"verify", 0x0d},
+    {L"w", 0x01},
+    {L"x", 0x01},
+    {L"y", 0x01},
 };
 
 }  // namespace
@@ -533,43 +516,38 @@ CXFA_FMCallExpression::CXFA_FMCallExpression(
 
 CXFA_FMCallExpression::~CXFA_FMCallExpression() {}
 
-bool CXFA_FMCallExpression::IsBuildInFunc(CFX_WideTextBuf* funcName) {
-  uint32_t uHash = FX_HashCode_GetW(funcName->AsStringC(), true);
-  const XFA_FMBuildInFunc* pEnd = g_BuildInFuncs + FX_ArraySize(g_BuildInFuncs);
-  const XFA_FMBuildInFunc* pFunc =
-      std::lower_bound(g_BuildInFuncs, pEnd, uHash,
-                       [](const XFA_FMBuildInFunc& func, uint32_t hash) {
-                         return func.m_uHash < hash;
-                       });
-  if (pFunc < pEnd && uHash == pFunc->m_uHash) {
+bool CXFA_FMCallExpression::IsBuiltInFunc(CFX_WideTextBuf* funcName) {
+  if (funcName->GetLength() > g_BuiltInFuncsMaxLen)
+    return false;
+
+  auto cmpFunc = [](const wchar_t* iter, const CFX_WideString& val) -> bool {
+    return val.CompareNoCase(iter) > 0;
+  };
+  CFX_WideString str = funcName->MakeString();
+  const wchar_t* const* pMatchResult = std::lower_bound(
+      std::begin(g_BuiltInFuncs), std::end(g_BuiltInFuncs), str, cmpFunc);
+  if (pMatchResult != std::end(g_BuiltInFuncs) &&
+      !str.CompareNoCase(*pMatchResult)) {
     funcName->Clear();
-    *funcName << pFunc->m_buildinfunc;
+    *funcName << *pMatchResult;
     return true;
   }
   return false;
 }
 
 uint32_t CXFA_FMCallExpression::IsMethodWithObjParam(
-    const CFX_WideStringC& methodName) {
-  uint32_t uHash = FX_HashCode_GetW(methodName, false);
-  XFA_FMSOMMethod somMethodWithObjPara;
-  uint32_t parameters = 0x00;
-  int32_t iStart = 0,
-          iEnd = (sizeof(gs_FMSomMethods) / sizeof(gs_FMSomMethods[0])) - 1;
-  int32_t iMid = (iStart + iEnd) / 2;
-  do {
-    iMid = (iStart + iEnd) / 2;
-    somMethodWithObjPara = gs_FMSomMethods[iMid];
-    if (uHash == somMethodWithObjPara.m_uHash) {
-      parameters = somMethodWithObjPara.m_dParameters;
-      break;
-    } else if (uHash < somMethodWithObjPara.m_uHash) {
-      iEnd = iMid - 1;
-    } else {
-      iStart = iMid + 1;
-    }
-  } while (iStart <= iEnd);
-  return parameters;
+    const CFX_WideString& methodName) {
+  auto cmpFunc = [](const XFA_FMSOMMethod iter, const CFX_WideString& val) {
+    return val.Compare(iter.m_wsSomMethodName) > 0;
+  };
+  const XFA_FMSOMMethod* result =
+      std::lower_bound(std::begin(gs_FMSomMethods), std::end(gs_FMSomMethods),
+                       methodName, cmpFunc);
+  if (result != std::end(gs_FMSomMethods) &&
+      !methodName.Compare(result->m_wsSomMethodName)) {
+    return result->m_dParameters;
+  }
+  return 0;
 }
 
 bool CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
@@ -579,7 +557,7 @@ bool CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   if (m_bIsSomMethod) {
     javascript << funcName;
     javascript << L"(";
-    uint32_t methodPara = IsMethodWithObjParam(funcName.AsStringC());
+    uint32_t methodPara = IsMethodWithObjParam(funcName.MakeString());
     if (methodPara > 0) {
       for (size_t i = 0; i < m_Arguments.size(); ++i) {
         // Currently none of our expressions use objects for a parameter over
@@ -618,7 +596,7 @@ bool CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   } else {
     bool isEvalFunc = false;
     bool isExistsFunc = false;
-    if (IsBuildInFunc(&funcName)) {
+    if (IsBuiltInFunc(&funcName)) {
       if (funcName.AsStringC() == L"Eval") {
         isEvalFunc = true;
         javascript << L"eval.call(this, ";
@@ -633,7 +611,11 @@ bool CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
         javascript << funcName;
       }
     } else {
-      javascript << funcName;
+      // If a function is not a SomMethod or a built-in then the input was
+      // invalid, so failing. The scanner/lexer should catch this, but currently
+      // doesn't. This failure will bubble up to the top-level and cause the
+      // transpile to fail.
+      return false;
     }
     javascript << L"(";
     if (isExistsFunc) {

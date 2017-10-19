@@ -16,17 +16,17 @@
 #include <vector>
 
 #include "webrtc/api/audio_codecs/audio_decoder.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/format_macros.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/safe_conversions.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/acm2/acm_resampler.h"
 #include "webrtc/modules/audio_coding/acm2/call_statistics.h"
-#include "webrtc/modules/audio_coding/neteq/include/neteq.h"
-#include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/modules/audio_coding/acm2/rent_a_codec.h"
+#include "webrtc/modules/audio_coding/neteq/include/neteq.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/format_macros.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/safe_conversions.h"
+#include "webrtc/system_wrappers/include/clock.h"
 
 namespace webrtc {
 
@@ -37,13 +37,11 @@ AcmReceiver::AcmReceiver(const AudioCodingModule::Config& config)
       neteq_(NetEq::Create(config.neteq_config, config.decoder_factory)),
       clock_(config.clock),
       resampled_last_output_frame_(true) {
-  assert(clock_);
+  RTC_DCHECK(clock_);
   memset(last_audio_buffer_.get(), 0, AudioFrame::kMaxDataSizeSamples);
 }
 
-AcmReceiver::~AcmReceiver() {
-  delete neteq_;
-}
+AcmReceiver::~AcmReceiver() = default;
 
 int AcmReceiver::SetMinimumDelay(int delay_ms) {
   if (neteq_->SetMinimumDelay(delay_ms))
@@ -154,10 +152,11 @@ int AcmReceiver::GetAudio(int desired_freq_hz,
   // TODO(henrik.lundin) Glitches in the output may appear if the output rate
   // from NetEq changes. See WebRTC issue 3923.
   if (need_resampling) {
+    // TODO(yujo): handle this more efficiently for muted frames.
     int samples_per_channel_int = resampler_.Resample10Msec(
-        audio_frame->data_, current_sample_rate_hz, desired_freq_hz,
+        audio_frame->data(), current_sample_rate_hz, desired_freq_hz,
         audio_frame->num_channels_, AudioFrame::kMaxDataSizeSamples,
-        audio_frame->data_);
+        audio_frame->mutable_data());
     if (samples_per_channel_int < 0) {
       LOG(LERROR) << "AcmReceiver::GetAudio - Resampling audio_buffer_ failed.";
       return -1;
@@ -175,7 +174,7 @@ int AcmReceiver::GetAudio(int desired_freq_hz,
   }
 
   // Store current audio in |last_audio_buffer_| for next time.
-  memcpy(last_audio_buffer_.get(), audio_frame->data_,
+  memcpy(last_audio_buffer_.get(), audio_frame->data(),
          sizeof(int16_t) * audio_frame->samples_per_channel_ *
              audio_frame->num_channels_);
 
@@ -218,8 +217,7 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
     return 0;
   }
 
-  if (neteq_->RemovePayloadType(payload_type) != NetEq::kOK &&
-      neteq_->LastError() != NetEq::kDecoderNotFound) {
+  if (neteq_->RemovePayloadType(payload_type) != NetEq::kOK) {
     LOG(LERROR) << "Cannot remove payload " << static_cast<int>(payload_type);
     return -1;
   }
@@ -248,8 +246,7 @@ bool AcmReceiver::AddCodec(int rtp_payload_type,
     return true;
   }
 
-  if (neteq_->RemovePayloadType(rtp_payload_type) != NetEq::kOK &&
-      neteq_->LastError() != NetEq::kDecoderNotFound) {
+  if (neteq_->RemovePayloadType(rtp_payload_type) != NetEq::kOK) {
     LOG(LERROR) << "AcmReceiver::AddCodec: Could not remove existing decoder"
                    " for payload type "
                 << rtp_payload_type;
@@ -279,9 +276,9 @@ void AcmReceiver::RemoveAllCodecs() {
 
 int AcmReceiver::RemoveCodec(uint8_t payload_type) {
   rtc::CritScope lock(&crit_sect_);
-  if (neteq_->RemovePayloadType(payload_type) != NetEq::kOK &&
-      neteq_->LastError() != NetEq::kDecoderNotFound) {
-    LOG(LERROR) << "AcmReceiver::RemoveCodec" << static_cast<int>(payload_type);
+  if (neteq_->RemovePayloadType(payload_type) != NetEq::kOK) {
+    LOG(LERROR) << "AcmReceiver::RemoveCodec "
+                << static_cast<int>(payload_type);
     return -1;
   }
   if (last_audio_decoder_ && payload_type == last_audio_decoder_->pltype) {

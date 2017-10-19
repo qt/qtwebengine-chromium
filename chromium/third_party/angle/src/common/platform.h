@@ -27,7 +27,9 @@
       defined(__sun) || \
       defined(__GLIBC__) || \
       defined(__GNU__) || \
-      defined(__QNX__)
+      defined(__QNX__) || \
+      defined(__Fuchsia__) || \
+      defined(__HAIKU__)
 #   define ANGLE_PLATFORM_POSIX 1
 #else
 #   error Unsupported platform.

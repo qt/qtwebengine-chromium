@@ -311,7 +311,7 @@ def CopyDlls(target_dir, configuration, target_cpu):
 
 
 def _CopyDebugger(target_dir, target_cpu):
-  """Copy dbghelp.dll into the requested directory as needed.
+  """Copy dbghelp.dll and dbgcore.dll into the requested directory as needed.
 
   target_cpu is one of 'x86' or 'x64'.
 
@@ -319,19 +319,23 @@ def _CopyDebugger(target_dir, target_cpu):
   from the SDK directory avoids using the system copy of dbghelp.dll which then
   ensures compatibility with recent debug information formats, such as VS
   2017 /debug:fastlink PDBs.
+
+  dbgcore.dll is needed when using some functions from dbghelp.dll (like
+  MinidumpWriteDump).
   """
   win_sdk_dir = SetEnvironmentAndGetSDKDir()
   if not win_sdk_dir:
     return
 
-  debug_file = 'dbghelp.dll'
-  full_path = os.path.join(win_sdk_dir, 'Debuggers', target_cpu, debug_file)
-  if not os.path.exists(full_path):
-    raise Exception('dbghelp.dll not found in "%s"\r\nYou must install the '
-                    '"Debugging Tools for Windows" feature from the Windows '
-                    '10 SDK.' % full_path)
-  target_path = os.path.join(target_dir, debug_file)
-  _CopyRuntimeImpl(target_path, full_path)
+  debug_files = ['dbghelp.dll', 'dbgcore.dll']
+  for debug_file in debug_files:
+    full_path = os.path.join(win_sdk_dir, 'Debuggers', target_cpu, debug_file)
+    if not os.path.exists(full_path):
+      raise Exception('%s not found in "%s"\r\nYou must install the '
+                      '"Debugging Tools for Windows" feature from the Windows '
+                      '10 SDK.' % (debug_file, full_path))
+    target_path = os.path.join(target_dir, debug_file)
+    _CopyRuntimeImpl(target_path, full_path)
 
 
 def _GetDesiredVsToolchainHashes():
@@ -339,11 +343,11 @@ def _GetDesiredVsToolchainHashes():
   to build with."""
   env_version = GetVisualStudioVersion()
   if env_version == '2015':
-    # Update 3 final with patches with 10.0.14393.0 SDK.
-    return ['d3cb0e37bdd120ad0ac4650b674b09e81be45616']
+    # Update 3 final with 10.0.15063.468 SDK and no vctip.exe.
+    return ['f53e4598951162bad6330f7a167486c7ae5db1e5']
   if env_version == '2017':
-    # VS 2017 RTM with 10.0.14393.0 SDK and dbghelp.dll fixes.
-    return ['4e8a360587a3c8ff3fa46aa9271e982bf3e948ec']
+    # VS 2017 Update 3 Preview 4 with 10.0.15063.468 SDK.
+    return ['1f52d730755ac72dddaf121b73c9d6fd5c24ddf8']
   raise Exception('Unsupported VS version %s' % env_version)
 
 

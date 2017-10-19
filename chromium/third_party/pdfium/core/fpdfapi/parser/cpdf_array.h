@@ -41,6 +41,7 @@ class CPDF_Array : public CPDF_Object {
   CPDF_Object* GetObjectAt(size_t index) const;
   CPDF_Object* GetDirectObjectAt(size_t index) const;
   CFX_ByteString GetStringAt(size_t index) const;
+  CFX_WideString GetUnicodeTextAt(size_t index) const;
   int GetIntegerAt(size_t index) const;
   float GetNumberAt(size_t index) const;
   CPDF_Dictionary* GetDictAt(size_t index) const;
@@ -99,7 +100,9 @@ class CPDF_Array : public CPDF_Object {
         index, pdfium::MakeUnique<T>(m_pPool, std::forward<Args>(args)...)));
   }
 
-  void RemoveAt(size_t index, size_t nCount = 1);
+  void RemoveAt(size_t index);
+  void Clear();
+  void Truncate(size_t nNewSize);
   void ConvertToIndirectObjectAt(size_t index, CPDF_IndirectObjectHolder* pDoc);
 
   const_iterator begin() const { return m_Objects.begin(); }

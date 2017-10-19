@@ -9,6 +9,8 @@
 
 #include <memory>
 
+#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxge/cfx_color.h"
 #include "core/fxge/fx_dib.h"
 #include "core/fxge/fx_font.h"
 
@@ -70,6 +72,7 @@ class FXTEXT_CHARPOS {
 
   float m_AdjustMatrix[4];
   CFX_PointF m_Origin;
+  uint32_t m_Unicode;
   uint32_t m_GlyphIndex;
   int32_t m_FontCharWidth;
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
@@ -84,13 +87,11 @@ class CFX_RenderDevice {
  public:
   class StateRestorer {
    public:
-    explicit StateRestorer(CFX_RenderDevice* pDevice) : m_pDevice(pDevice) {
-      m_pDevice->SaveState();
-    }
-    ~StateRestorer() { m_pDevice->RestoreState(false); }
+    explicit StateRestorer(CFX_RenderDevice* pDevice);
+    ~StateRestorer();
 
    private:
-    CFX_RenderDevice* m_pDevice;
+    CFX_UnownedPtr<CFX_RenderDevice> m_pDevice;
   };
 
   CFX_RenderDevice();
@@ -142,18 +143,9 @@ class CFX_RenderDevice {
                          uint32_t stroke_color,
                          int fill_mode,
                          int blend_type);
-  bool SetPixel(int x, int y, uint32_t color);
   bool FillRect(const FX_RECT* pRect, uint32_t color) {
     return FillRectWithBlend(pRect, color, FXDIB_BLEND_NORMAL);
   }
-  bool FillRectWithBlend(const FX_RECT* pRect, uint32_t color, int blend_type);
-  bool DrawCosmeticLine(float x1,
-                        float y1,
-                        float x2,
-                        float y2,
-                        uint32_t color,
-                        int fill_mode,
-                        int blend_type);
 
   CFX_RetainPtr<CFX_DIBitmap> GetBackDrop();
   bool GetDIBits(const CFX_RetainPtr<CFX_DIBitmap>& pBitmap, int left, int top);
@@ -236,6 +228,42 @@ class CFX_RenderDevice {
                     CFX_PathData* pClippingPath,
                     int nFlag);
 
+  void DrawFillRect(CFX_Matrix* pUser2Device,
+                    const CFX_FloatRect& rect,
+                    const CFX_Color& color,
+                    int32_t nTransparency);
+  void DrawFillRect(CFX_Matrix* pUser2Device,
+                    const CFX_FloatRect& rect,
+                    const FX_COLORREF& color);
+  void DrawStrokeRect(CFX_Matrix* pUser2Device,
+                      const CFX_FloatRect& rect,
+                      const FX_COLORREF& color,
+                      float fWidth);
+  void DrawStrokeLine(CFX_Matrix* pUser2Device,
+                      const CFX_PointF& ptMoveTo,
+                      const CFX_PointF& ptLineTo,
+                      const FX_COLORREF& color,
+                      float fWidth);
+  void DrawBorder(CFX_Matrix* pUser2Device,
+                  const CFX_FloatRect& rect,
+                  float fWidth,
+                  const CFX_Color& color,
+                  const CFX_Color& crLeftTop,
+                  const CFX_Color& crRightBottom,
+                  BorderStyle nStyle,
+                  int32_t nTransparency);
+  void DrawFillArea(CFX_Matrix* pUser2Device,
+                    const CFX_PointF* pPts,
+                    int32_t nCount,
+                    const FX_COLORREF& color);
+  void DrawShadow(CFX_Matrix* pUser2Device,
+                  bool bVertical,
+                  bool bHorizontal,
+                  CFX_FloatRect rect,
+                  int32_t nTransparency,
+                  int32_t nStartGray,
+                  int32_t nEndGray);
+
 #ifdef _SKIA_SUPPORT_
   virtual void DebugVerifyBitmapIsPreMultiplied() const;
   virtual bool SetBitsWithMask(const CFX_RetainPtr<CFX_DIBSource>& pBitmap,
@@ -259,6 +287,14 @@ class CFX_RenderDevice {
                           uint32_t stroke_color,
                           int fill_mode,
                           int blend_type);
+  bool DrawCosmeticLine(float x1,
+                        float y1,
+                        float x2,
+                        float y2,
+                        uint32_t color,
+                        int fill_mode,
+                        int blend_type);
+  bool FillRectWithBlend(const FX_RECT* pRect, uint32_t color, int blend_type);
 
   CFX_RetainPtr<CFX_DIBitmap> m_pBitmap;
   int m_Width;

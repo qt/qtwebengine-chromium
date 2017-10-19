@@ -15,10 +15,10 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/base/fileutils.h"
-#include "webrtc/base/thread.h"
 #include "webrtc/media/base/mediaengine.h"
 #include "webrtc/pc/voicechannel.h"
+#include "webrtc/rtc_base/fileutils.h"
+#include "webrtc/rtc_base/thread.h"
 
 namespace cricket {
 
@@ -217,8 +217,6 @@ class ChannelManager {
   RtpDataChannels data_channels_;
 
   bool enable_rtx_;
-  rtc::CryptoOptions crypto_options_;
-
   bool capturing_;
 };
 

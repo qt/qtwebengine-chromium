@@ -6,9 +6,12 @@
 
 #include "core/fpdfdoc/cpdf_filespec.h"
 
+#include <vector>
+
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fxcrt/fx_system.h"
@@ -50,6 +53,12 @@ CFX_WideString ChangeSlashToPDF(const wchar_t* str) {
 
 }  // namespace
 
+CPDF_FileSpec::CPDF_FileSpec(CPDF_Object* pObj) : m_pObj(pObj) {
+  ASSERT(m_pObj);
+}
+
+CPDF_FileSpec::~CPDF_FileSpec() {}
+
 CFX_WideString CPDF_FileSpec::DecodeFileName(const CFX_WideString& filepath) {
   if (filepath.GetLength() <= 1)
     return CFX_WideString();
@@ -80,41 +89,69 @@ CFX_WideString CPDF_FileSpec::DecodeFileName(const CFX_WideString& filepath) {
 #endif
 }
 
-bool CPDF_FileSpec::GetFileName(CFX_WideString* csFileName) const {
+CFX_WideString CPDF_FileSpec::GetFileName() const {
+  CFX_WideString csFileName;
   if (CPDF_Dictionary* pDict = m_pObj->AsDictionary()) {
-    *csFileName = pDict->GetUnicodeTextFor("UF");
-    if (csFileName->IsEmpty()) {
-      *csFileName =
+    csFileName = pDict->GetUnicodeTextFor("UF");
+    if (csFileName.IsEmpty()) {
+      csFileName =
           CFX_WideString::FromLocal(pDict->GetStringFor("F").AsStringC());
     }
     if (pDict->GetStringFor("FS") == "URL")
-      return true;
-    if (csFileName->IsEmpty()) {
-      if (pDict->KeyExist("DOS")) {
-        *csFileName =
-            CFX_WideString::FromLocal(pDict->GetStringFor("DOS").AsStringC());
-      } else if (pDict->KeyExist("Mac")) {
-        *csFileName =
-            CFX_WideString::FromLocal(pDict->GetStringFor("Mac").AsStringC());
-      } else if (pDict->KeyExist("Unix")) {
-        *csFileName =
-            CFX_WideString::FromLocal(pDict->GetStringFor("Unix").AsStringC());
-      } else {
-        return false;
+      return csFileName;
+
+    if (csFileName.IsEmpty()) {
+      constexpr const char* keys[] = {"DOS", "Mac", "Unix"};
+      for (const auto* key : keys) {
+        if (pDict->KeyExist(key)) {
+          csFileName =
+              CFX_WideString::FromLocal(pDict->GetStringFor(key).AsStringC());
+          break;
+        }
       }
     }
   } else if (m_pObj->IsString()) {
-    *csFileName = CFX_WideString::FromLocal(m_pObj->GetString().AsStringC());
-  } else {
-    return false;
+    csFileName = CFX_WideString::FromLocal(m_pObj->GetString().AsStringC());
   }
-  *csFileName = DecodeFileName(*csFileName);
-  return true;
+  return DecodeFileName(csFileName);
 }
 
-CPDF_FileSpec::CPDF_FileSpec(CPDF_Object* pObj) : m_pObj(pObj) {}
+CPDF_Stream* CPDF_FileSpec::GetFileStream() const {
+  CPDF_Dictionary* pDict = m_pObj->AsDictionary();
+  if (!pDict)
+    return nullptr;
 
-CPDF_FileSpec::~CPDF_FileSpec() {}
+  // Get the embedded files dictionary.
+  CPDF_Dictionary* pFiles = pDict->GetDictFor("EF");
+  if (!pFiles)
+    return nullptr;
+
+  // Get the file stream of the highest precedence with its file specification
+  // string available. Follows the same precedence order as GetFileName().
+  constexpr const char* keys[] = {"UF", "F", "DOS", "Mac", "Unix"};
+  size_t end = pDict->GetStringFor("FS") == "URL" ? 2 : FX_ArraySize(keys);
+  for (size_t i = 0; i < end; ++i) {
+    const CFX_ByteString& key = keys[i];
+    if (!pDict->GetUnicodeTextFor(key).IsEmpty()) {
+      CPDF_Stream* pStream = pFiles->GetStreamFor(key);
+      if (pStream)
+        return pStream;
+    }
+  }
+  return nullptr;
+}
+
+CPDF_Dictionary* CPDF_FileSpec::GetParamsDict() const {
+  CPDF_Stream* pStream = GetFileStream();
+  if (!pStream)
+    return nullptr;
+
+  CPDF_Dictionary* pDict = pStream->GetDict();
+  if (!pDict)
+    return nullptr;
+
+  return pDict->GetDictFor("Params");
+}
 
 CFX_WideString CPDF_FileSpec::EncodeFileName(const CFX_WideString& filepath) {
   if (filepath.GetLength() <= 1)
@@ -146,9 +183,6 @@ CFX_WideString CPDF_FileSpec::EncodeFileName(const CFX_WideString& filepath) {
 }
 
 void CPDF_FileSpec::SetFileName(const CFX_WideString& wsFileName) {
-  if (!m_pObj)
-    return;
-
   CFX_WideString wsStr = EncodeFileName(wsFileName);
   if (m_pObj->IsString()) {
     m_pObj->SetString(CFX_ByteString::FromUnicode(wsStr));

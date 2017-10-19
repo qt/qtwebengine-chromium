@@ -11,7 +11,6 @@
 #include <memory>
 
 #include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "webrtc/base/safe_conversions.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/neteq/accelerate.h"
 #include "webrtc/modules/audio_coding/neteq/expand.h"
@@ -29,6 +28,7 @@
 #include "webrtc/modules/audio_coding/neteq/sync_buffer.h"
 #include "webrtc/modules/audio_coding/neteq/timestamp_scaler.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/rtc_base/safe_conversions.h"
 #include "webrtc/test/gmock.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/mock_audio_decoder.h"
@@ -216,7 +216,7 @@ class NetEqImplTest : public ::testing::Test {
         1512, 2378, 2828, 2674, 1877, 568, -986, -2446, -3482, -3864, -3516,
         -2534, -1163 });
     ASSERT_GE(kMaxOutputSize, kOutput.size());
-    EXPECT_TRUE(std::equal(kOutput.begin(), kOutput.end(), output.data_));
+    EXPECT_TRUE(std::equal(kOutput.begin(), kOutput.end(), output.data()));
   }
 
   std::unique_ptr<NetEqImpl> neteq_;
@@ -281,8 +281,9 @@ TEST_F(NetEqImplTest, RemovePayloadType) {
   uint8_t rtp_payload_type = 0;
   EXPECT_CALL(*mock_decoder_database_, Remove(rtp_payload_type))
       .WillOnce(Return(DecoderDatabase::kDecoderNotFound));
-  // Check that kFail is returned when database returns kDecoderNotFound.
-  EXPECT_EQ(NetEq::kFail, neteq_->RemovePayloadType(rtp_payload_type));
+  // Check that kOK is returned when database returns kDecoderNotFound, because
+  // removing a payload type that was never registered is not an error.
+  EXPECT_EQ(NetEq::kOK, neteq_->RemovePayloadType(rtp_payload_type));
 }
 
 TEST_F(NetEqImplTest, RemoveAllPayloadTypes) {
@@ -525,7 +526,7 @@ TEST_F(NetEqImplTest, VerifyTimestampPropagation) {
   // Wrap the expected value in an rtc::Optional to compare them as such.
   EXPECT_EQ(
       rtc::Optional<uint32_t>(rtp_header.timestamp +
-                              output.data_[output.samples_per_channel_ - 1]),
+                              output.data()[output.samples_per_channel_ - 1]),
       neteq_->GetPlayoutTimestamp());
 
   // Check the timestamp for the last value in the sync buffer. This should
@@ -538,7 +539,7 @@ TEST_F(NetEqImplTest, VerifyTimestampPropagation) {
   // Check that the number of samples still to play from the sync buffer add
   // up with what was already played out.
   EXPECT_EQ(
-      kPayloadLengthSamples - output.data_[output.samples_per_channel_ - 1],
+      kPayloadLengthSamples - output.data()[output.samples_per_channel_ - 1],
       sync_buffer->FutureLength());
 }
 
@@ -653,7 +654,6 @@ TEST_F(NetEqImplTest, FirstPacketUnknown) {
   // this packet will be rejected.
   EXPECT_EQ(NetEq::kFail,
             neteq_->InsertPacket(rtp_header, payload, kReceiveTime));
-  EXPECT_EQ(NetEq::kUnknownRtpPayloadType, neteq_->LastError());
 
   // Pull audio once.
   const size_t kMaxOutputSize = static_cast<size_t>(10 * kSampleRateHz / 1000);
@@ -911,10 +911,8 @@ TEST_F(NetEqImplTest, UnsupportedDecoder) {
   AudioFrame output;
   bool muted;
   // First call to GetAudio will try to decode the "faulty" packet.
-  // Expect kFail return value...
+  // Expect kFail return value.
   EXPECT_EQ(NetEq::kFail, neteq_->GetAudio(&output, &muted));
-  // ... and kOtherDecoderError error code.
-  EXPECT_EQ(NetEq::kOtherDecoderError, neteq_->LastError());
   // Output size and number of channels should be correct.
   const size_t kExpectedOutputSize = 10 * (kSampleRateHz / 1000) * kChannels;
   EXPECT_EQ(kExpectedOutputSize, output.samples_per_channel_ * kChannels);
@@ -1123,8 +1121,6 @@ TEST_F(NetEqImplTest, DecodingError) {
 
   // Pull audio again. Decoder fails.
   EXPECT_EQ(NetEq::kFail, neteq_->GetAudio(&output, &muted));
-  EXPECT_EQ(NetEq::kDecoderErrorCode, neteq_->LastError());
-  EXPECT_EQ(kDecoderErrorCode, neteq_->LastDecoderError());
   EXPECT_EQ(kMaxOutputSize, output.samples_per_channel_);
   EXPECT_EQ(1u, output.num_channels_);
   // We are not expecting anything for output.speech_type_, since an error was
@@ -1235,8 +1231,6 @@ TEST_F(NetEqImplTest, DecodingErrorDuringInternalCng) {
 
   // Pull audio again. Decoder fails.
   EXPECT_EQ(NetEq::kFail, neteq_->GetAudio(&output, &muted));
-  EXPECT_EQ(NetEq::kDecoderErrorCode, neteq_->LastError());
-  EXPECT_EQ(kDecoderErrorCode, neteq_->LastDecoderError());
   EXPECT_EQ(kMaxOutputSize, output.samples_per_channel_);
   EXPECT_EQ(1u, output.num_channels_);
   // We are not expecting anything for output.speech_type_, since an error was

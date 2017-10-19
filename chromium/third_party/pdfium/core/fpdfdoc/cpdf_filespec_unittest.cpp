@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
+#include "core/fpdfapi/parser/cpdf_number.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfdoc/cpdf_filespec.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -45,11 +48,11 @@ TEST(cpdf_filespec, EncodeDecodeFileName) {
 #endif
   };
   for (const auto& data : test_data) {
-    CFX_WideString encoded_str = CPDF_FileSpec::EncodeFileName(data.input);
-    EXPECT_TRUE(encoded_str == data.expected);
+    EXPECT_STREQ(data.expected,
+                 CPDF_FileSpec::EncodeFileName(data.input).c_str());
     // DecodeFileName is the reverse procedure of EncodeFileName.
-    CFX_WideString decoded_str = CPDF_FileSpec::DecodeFileName(data.expected);
-    EXPECT_TRUE(decoded_str == data.input);
+    EXPECT_STREQ(data.input,
+                 CPDF_FileSpec::DecodeFileName(data.expected).c_str());
   }
 }
 
@@ -70,9 +73,7 @@ TEST(cpdf_filespec, GetFileName) {
     };
     auto str_obj = pdfium::MakeUnique<CPDF_String>(nullptr, test_data.input);
     CPDF_FileSpec file_spec(str_obj.get());
-    CFX_WideString file_name;
-    EXPECT_TRUE(file_spec.GetFileName(&file_name));
-    EXPECT_TRUE(file_name == test_data.expected);
+    EXPECT_STREQ(test_data.expected, file_spec.GetFileName().c_str());
   }
   {
     // Dictionary object.
@@ -101,25 +102,22 @@ TEST(cpdf_filespec, GetFileName) {
     const char* const keywords[5] = {"Unix", "Mac", "DOS", "F", "UF"};
     auto dict_obj = pdfium::MakeUnique<CPDF_Dictionary>();
     CPDF_FileSpec file_spec(dict_obj.get());
-    CFX_WideString file_name;
+    EXPECT_TRUE(file_spec.GetFileName().IsEmpty());
     for (int i = 0; i < 5; ++i) {
       dict_obj->SetNewFor<CPDF_String>(keywords[i], test_data[i].input);
-      EXPECT_TRUE(file_spec.GetFileName(&file_name));
-      EXPECT_TRUE(file_name == test_data[i].expected);
+      EXPECT_STREQ(test_data[i].expected, file_spec.GetFileName().c_str());
     }
 
     // With all the former fields and 'FS' field suggests 'URL' type.
     dict_obj->SetNewFor<CPDF_String>("FS", "URL", false);
-    EXPECT_TRUE(file_spec.GetFileName(&file_name));
     // Url string is not decoded.
-    EXPECT_TRUE(file_name == test_data[4].input);
+    EXPECT_STREQ(test_data[4].input, file_spec.GetFileName().c_str());
   }
   {
     // Invalid object.
     auto name_obj = pdfium::MakeUnique<CPDF_Name>(nullptr, "test.pdf");
     CPDF_FileSpec file_spec(name_obj.get());
-    CFX_WideString file_name;
-    EXPECT_FALSE(file_spec.GetFileName(&file_name));
+    EXPECT_TRUE(file_spec.GetFileName().IsEmpty());
   }
 }
 
@@ -141,23 +139,112 @@ TEST(cpdf_filespec, SetFileName) {
   CPDF_FileSpec file_spec1(str_obj.get());
   file_spec1.SetFileName(test_data.input);
   // Check internal object value.
-  CFX_ByteString str = CFX_ByteString::FromUnicode(test_data.expected);
-  EXPECT_TRUE(str == str_obj->GetString());
+  EXPECT_STREQ(test_data.expected, str_obj->GetUnicodeText().c_str());
   // Check we can get the file name back.
-  CFX_WideString file_name;
-  EXPECT_TRUE(file_spec1.GetFileName(&file_name));
-  EXPECT_TRUE(file_name == test_data.input);
+  EXPECT_STREQ(test_data.input, file_spec1.GetFileName().c_str());
 
   // Dictionary object.
   auto dict_obj = pdfium::MakeUnique<CPDF_Dictionary>();
   CPDF_FileSpec file_spec2(dict_obj.get());
   file_spec2.SetFileName(test_data.input);
   // Check internal object value.
-  file_name = dict_obj->GetUnicodeTextFor("F");
-  EXPECT_TRUE(file_name == test_data.expected);
-  file_name = dict_obj->GetUnicodeTextFor("UF");
-  EXPECT_TRUE(file_name == test_data.expected);
+  EXPECT_STREQ(test_data.expected, dict_obj->GetUnicodeTextFor("F").c_str());
+  EXPECT_STREQ(test_data.expected, dict_obj->GetUnicodeTextFor("UF").c_str());
   // Check we can get the file name back.
-  EXPECT_TRUE(file_spec2.GetFileName(&file_name));
-  EXPECT_TRUE(file_name == test_data.input);
+  EXPECT_STREQ(test_data.input, file_spec2.GetFileName().c_str());
+}
+
+TEST(cpdf_filespec, GetFileStream) {
+  {
+    // Invalid object.
+    auto name_obj = pdfium::MakeUnique<CPDF_Name>(nullptr, "test.pdf");
+    CPDF_FileSpec file_spec(name_obj.get());
+    EXPECT_FALSE(file_spec.GetFileStream());
+  }
+  {
+    // Dictionary object missing its embedded files dictionary.
+    auto dict_obj = pdfium::MakeUnique<CPDF_Dictionary>();
+    CPDF_FileSpec file_spec(dict_obj.get());
+    EXPECT_FALSE(file_spec.GetFileStream());
+  }
+  {
+    // Dictionary object with an empty embedded files dictionary.
+    auto dict_obj = pdfium::MakeUnique<CPDF_Dictionary>();
+    dict_obj->SetNewFor<CPDF_Dictionary>("EF");
+    CPDF_FileSpec file_spec(dict_obj.get());
+    EXPECT_FALSE(file_spec.GetFileStream());
+  }
+  {
+    // Dictionary object with a non-empty embedded files dictionary.
+    auto dict_obj = pdfium::MakeUnique<CPDF_Dictionary>();
+    dict_obj->SetNewFor<CPDF_Dictionary>("EF");
+    CPDF_FileSpec file_spec(dict_obj.get());
+
+    const char* const keys[5] = {"Unix", "Mac", "DOS", "F", "UF"};
+    const wchar_t file_name[] = L"test.pdf";
+    const char* const stream[5] = {"test1", "test2", "test3", "test4", "test5"};
+    CPDF_Dictionary* file_dict =
+        file_spec.GetObj()->AsDictionary()->GetDictFor("EF");
+
+    // Keys in reverse order of precedence to retrieve the file content stream.
+    for (size_t i = 0; i < FX_ArraySize(keys); ++i) {
+      // Set the file name.
+      dict_obj->SetNewFor<CPDF_String>(keys[i], file_name);
+
+      // Set the file stream.
+      auto pDict = pdfium::MakeUnique<CPDF_Dictionary>();
+      size_t buf_len = strlen(stream[i]) + 1;
+      std::unique_ptr<uint8_t, FxFreeDeleter> buf(FX_Alloc(uint8_t, buf_len));
+      memcpy(buf.get(), stream[i], buf_len);
+      file_dict->SetNewFor<CPDF_Stream>(keys[i], std::move(buf), buf_len,
+                                        std::move(pDict));
+
+      // Check that the file content stream is as expected.
+      EXPECT_STREQ(
+          stream[i],
+          file_spec.GetFileStream()->GetUnicodeText().UTF8Encode().c_str());
+
+      if (i == 2) {
+        dict_obj->SetNewFor<CPDF_String>("FS", "URL", false);
+        EXPECT_FALSE(file_spec.GetFileStream());
+      }
+    }
+  }
+}
+
+TEST(cpdf_filespec, GetParamsDict) {
+  {
+    // Invalid object.
+    auto name_obj = pdfium::MakeUnique<CPDF_Name>(nullptr, "test.pdf");
+    CPDF_FileSpec file_spec(name_obj.get());
+    EXPECT_FALSE(file_spec.GetParamsDict());
+  }
+  {
+    // Dictionary object.
+    auto dict_obj = pdfium::MakeUnique<CPDF_Dictionary>();
+    dict_obj->SetNewFor<CPDF_Dictionary>("EF");
+    dict_obj->SetNewFor<CPDF_String>("UF", L"test.pdf");
+    CPDF_FileSpec file_spec(dict_obj.get());
+    EXPECT_FALSE(file_spec.GetParamsDict());
+
+    // Add a file stream to the embedded files dictionary.
+    CPDF_Dictionary* file_dict =
+        file_spec.GetObj()->AsDictionary()->GetDictFor("EF");
+    auto pDict = pdfium::MakeUnique<CPDF_Dictionary>();
+    std::unique_ptr<uint8_t, FxFreeDeleter> buf(FX_Alloc(uint8_t, 6));
+    memcpy(buf.get(), "hello", 6);
+    file_dict->SetNewFor<CPDF_Stream>("UF", std::move(buf), 6,
+                                      std::move(pDict));
+
+    // Add a params dictionary to the file stream.
+    CPDF_Stream* stream = file_dict->GetStreamFor("UF");
+    CPDF_Dictionary* stream_dict = stream->GetDict();
+    stream_dict->SetNewFor<CPDF_Dictionary>("Params");
+    EXPECT_TRUE(file_spec.GetParamsDict());
+
+    // Add a parameter to the params dictionary.
+    CPDF_Dictionary* params_dict = stream_dict->GetDictFor("Params");
+    params_dict->SetNewFor<CPDF_Number>("Size", 6);
+    EXPECT_EQ(6, file_spec.GetParamsDict()->GetIntegerFor("Size"));
+  }
 }

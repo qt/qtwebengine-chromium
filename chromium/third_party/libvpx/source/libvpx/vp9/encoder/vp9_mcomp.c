@@ -361,7 +361,7 @@ static unsigned int setup_center_error(
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 }
 
-static INLINE int divide_and_round(const int n, const int d) {
+static INLINE int64_t divide_and_round(const int64_t n, const int64_t d) {
   return ((n < 0) ^ (d < 0)) ? ((n - d / 2) / d) : ((n + d / 2) / d);
 }
 
@@ -379,10 +379,13 @@ static INLINE int is_cost_list_wellbehaved(int *cost_list) {
 // y0 = 1/2 (S4 - S2)/(S4 + S2 - 2*S0).
 // The code below is an integerized version of that.
 static void get_cost_surf_min(int *cost_list, int *ir, int *ic, int bits) {
-  *ic = divide_and_round((cost_list[1] - cost_list[3]) * (1 << (bits - 1)),
-                         (cost_list[1] - 2 * cost_list[0] + cost_list[3]));
-  *ir = divide_and_round((cost_list[4] - cost_list[2]) * (1 << (bits - 1)),
-                         (cost_list[4] - 2 * cost_list[0] + cost_list[2]));
+  const int64_t x0 = (int64_t)cost_list[1] - cost_list[3];
+  const int64_t y0 = cost_list[1] - 2 * (int64_t)cost_list[0] + cost_list[3];
+  const int64_t x1 = (int64_t)cost_list[4] - cost_list[2];
+  const int64_t y1 = cost_list[4] - 2 * (int64_t)cost_list[0] + cost_list[2];
+  const int b = 1 << (bits - 1);
+  *ic = (int)divide_and_round(x0 * b, y0);
+  *ir = (int)divide_and_round(x1 * b, y1);
 }
 
 uint32_t vp9_skip_sub_pixel_tree(const MACROBLOCK *x, MV *bestmv,
@@ -441,7 +444,7 @@ uint32_t vp9_find_best_sub_pixel_tree_pruned_evenmore(
       cost_list[2] != INT_MAX && cost_list[3] != INT_MAX &&
       cost_list[4] != INT_MAX && is_cost_list_wellbehaved(cost_list)) {
     int ir, ic;
-    unsigned int minpt;
+    unsigned int minpt = INT_MAX;
     get_cost_surf_min(cost_list, &ir, &ic, 2);
     if (ir != 0 || ic != 0) {
       CHECK_BETTER(minpt, tr + 2 * ir, tc + 2 * ic);
@@ -2037,197 +2040,6 @@ static int full_pixel_exhaustive(VP9_COMP *cpi, MACROBLOCK *x,
     calc_int_cost_list(x, ref_mv, sadpb, fn_ptr, dst_mv, cost_list);
   }
   return bestsme;
-}
-
-int vp9_full_search_sad_c(const MACROBLOCK *x, const MV *ref_mv,
-                          int sad_per_bit, int distance,
-                          const vp9_variance_fn_ptr_t *fn_ptr,
-                          const MV *center_mv, MV *best_mv) {
-  int r, c;
-  const MACROBLOCKD *const xd = &x->e_mbd;
-  const struct buf_2d *const what = &x->plane[0].src;
-  const struct buf_2d *const in_what = &xd->plane[0].pre[0];
-  const int row_min = VPXMAX(ref_mv->row - distance, x->mv_limits.row_min);
-  const int row_max = VPXMIN(ref_mv->row + distance, x->mv_limits.row_max);
-  const int col_min = VPXMAX(ref_mv->col - distance, x->mv_limits.col_min);
-  const int col_max = VPXMIN(ref_mv->col + distance, x->mv_limits.col_max);
-  const MV fcenter_mv = { center_mv->row >> 3, center_mv->col >> 3 };
-  int best_sad =
-      fn_ptr->sdf(what->buf, what->stride, get_buf_from_mv(in_what, ref_mv),
-                  in_what->stride) +
-      mvsad_err_cost(x, ref_mv, &fcenter_mv, sad_per_bit);
-  *best_mv = *ref_mv;
-
-  for (r = row_min; r < row_max; ++r) {
-    for (c = col_min; c < col_max; ++c) {
-      const MV mv = { r, c };
-      const int sad =
-          fn_ptr->sdf(what->buf, what->stride, get_buf_from_mv(in_what, &mv),
-                      in_what->stride) +
-          mvsad_err_cost(x, &mv, &fcenter_mv, sad_per_bit);
-      if (sad < best_sad) {
-        best_sad = sad;
-        *best_mv = mv;
-      }
-    }
-  }
-  return best_sad;
-}
-
-int vp9_full_search_sadx3(const MACROBLOCK *x, const MV *ref_mv,
-                          int sad_per_bit, int distance,
-                          const vp9_variance_fn_ptr_t *fn_ptr,
-                          const MV *center_mv, MV *best_mv) {
-  int r;
-  const MACROBLOCKD *const xd = &x->e_mbd;
-  const struct buf_2d *const what = &x->plane[0].src;
-  const struct buf_2d *const in_what = &xd->plane[0].pre[0];
-  const int row_min = VPXMAX(ref_mv->row - distance, x->mv_limits.row_min);
-  const int row_max = VPXMIN(ref_mv->row + distance, x->mv_limits.row_max);
-  const int col_min = VPXMAX(ref_mv->col - distance, x->mv_limits.col_min);
-  const int col_max = VPXMIN(ref_mv->col + distance, x->mv_limits.col_max);
-  const MV fcenter_mv = { center_mv->row >> 3, center_mv->col >> 3 };
-  unsigned int best_sad =
-      fn_ptr->sdf(what->buf, what->stride, get_buf_from_mv(in_what, ref_mv),
-                  in_what->stride) +
-      mvsad_err_cost(x, ref_mv, &fcenter_mv, sad_per_bit);
-  *best_mv = *ref_mv;
-
-  for (r = row_min; r < row_max; ++r) {
-    int c = col_min;
-    const uint8_t *check_here = &in_what->buf[r * in_what->stride + c];
-
-    if (fn_ptr->sdx3f != NULL) {
-      while ((c + 2) < col_max) {
-        int i;
-        DECLARE_ALIGNED(16, uint32_t, sads[3]);
-
-        fn_ptr->sdx3f(what->buf, what->stride, check_here, in_what->stride,
-                      sads);
-
-        for (i = 0; i < 3; ++i) {
-          unsigned int sad = sads[i];
-          if (sad < best_sad) {
-            const MV mv = { r, c };
-            sad += mvsad_err_cost(x, &mv, &fcenter_mv, sad_per_bit);
-            if (sad < best_sad) {
-              best_sad = sad;
-              *best_mv = mv;
-            }
-          }
-          ++check_here;
-          ++c;
-        }
-      }
-    }
-
-    while (c < col_max) {
-      unsigned int sad =
-          fn_ptr->sdf(what->buf, what->stride, check_here, in_what->stride);
-      if (sad < best_sad) {
-        const MV mv = { r, c };
-        sad += mvsad_err_cost(x, &mv, &fcenter_mv, sad_per_bit);
-        if (sad < best_sad) {
-          best_sad = sad;
-          *best_mv = mv;
-        }
-      }
-      ++check_here;
-      ++c;
-    }
-  }
-
-  return best_sad;
-}
-
-int vp9_full_search_sadx8(const MACROBLOCK *x, const MV *ref_mv,
-                          int sad_per_bit, int distance,
-                          const vp9_variance_fn_ptr_t *fn_ptr,
-                          const MV *center_mv, MV *best_mv) {
-  int r;
-  const MACROBLOCKD *const xd = &x->e_mbd;
-  const struct buf_2d *const what = &x->plane[0].src;
-  const struct buf_2d *const in_what = &xd->plane[0].pre[0];
-  const int row_min = VPXMAX(ref_mv->row - distance, x->mv_limits.row_min);
-  const int row_max = VPXMIN(ref_mv->row + distance, x->mv_limits.row_max);
-  const int col_min = VPXMAX(ref_mv->col - distance, x->mv_limits.col_min);
-  const int col_max = VPXMIN(ref_mv->col + distance, x->mv_limits.col_max);
-  const MV fcenter_mv = { center_mv->row >> 3, center_mv->col >> 3 };
-  unsigned int best_sad =
-      fn_ptr->sdf(what->buf, what->stride, get_buf_from_mv(in_what, ref_mv),
-                  in_what->stride) +
-      mvsad_err_cost(x, ref_mv, &fcenter_mv, sad_per_bit);
-  *best_mv = *ref_mv;
-
-  for (r = row_min; r < row_max; ++r) {
-    int c = col_min;
-    const uint8_t *check_here = &in_what->buf[r * in_what->stride + c];
-
-    if (fn_ptr->sdx8f != NULL) {
-      while ((c + 7) < col_max) {
-        int i;
-        DECLARE_ALIGNED(16, uint32_t, sads[8]);
-
-        fn_ptr->sdx8f(what->buf, what->stride, check_here, in_what->stride,
-                      sads);
-
-        for (i = 0; i < 8; ++i) {
-          unsigned int sad = sads[i];
-          if (sad < best_sad) {
-            const MV mv = { r, c };
-            sad += mvsad_err_cost(x, &mv, &fcenter_mv, sad_per_bit);
-            if (sad < best_sad) {
-              best_sad = sad;
-              *best_mv = mv;
-            }
-          }
-          ++check_here;
-          ++c;
-        }
-      }
-    }
-
-    if (fn_ptr->sdx3f != NULL) {
-      while ((c + 2) < col_max) {
-        int i;
-        DECLARE_ALIGNED(16, uint32_t, sads[3]);
-
-        fn_ptr->sdx3f(what->buf, what->stride, check_here, in_what->stride,
-                      sads);
-
-        for (i = 0; i < 3; ++i) {
-          unsigned int sad = sads[i];
-          if (sad < best_sad) {
-            const MV mv = { r, c };
-            sad += mvsad_err_cost(x, &mv, &fcenter_mv, sad_per_bit);
-            if (sad < best_sad) {
-              best_sad = sad;
-              *best_mv = mv;
-            }
-          }
-          ++check_here;
-          ++c;
-        }
-      }
-    }
-
-    while (c < col_max) {
-      unsigned int sad =
-          fn_ptr->sdf(what->buf, what->stride, check_here, in_what->stride);
-      if (sad < best_sad) {
-        const MV mv = { r, c };
-        sad += mvsad_err_cost(x, &mv, &fcenter_mv, sad_per_bit);
-        if (sad < best_sad) {
-          best_sad = sad;
-          *best_mv = mv;
-        }
-      }
-      ++check_here;
-      ++c;
-    }
-  }
-
-  return best_sad;
 }
 
 int vp9_refining_search_sad(const MACROBLOCK *x, MV *ref_mv, int error_per_bit,

@@ -15,18 +15,18 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/function_view.h"
-#include "webrtc/base/gtest_prod_util.h"
-#include "webrtc/base/ignore_wundef.h"
-#include "webrtc/base/protobuf_utils.h"
-#include "webrtc/base/swap_queue.h"
-#include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/audio_processing/audio_buffer.h"
 #include "webrtc/modules/audio_processing/include/aec_dump.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/modules/audio_processing/render_queue_item_verifier.h"
 #include "webrtc/modules/audio_processing/rms_level.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/function_view.h"
+#include "webrtc/rtc_base/gtest_prod_util.h"
+#include "webrtc/rtc_base/ignore_wundef.h"
+#include "webrtc/rtc_base/protobuf_utils.h"
+#include "webrtc/rtc_base/swap_queue.h"
+#include "webrtc/rtc_base/thread_annotations.h"
 #include "webrtc/system_wrappers/include/file_wrapper.h"
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
@@ -409,7 +409,6 @@ class AudioProcessingImpl : public AudioProcessing {
     // tracked by the capture_audio_.
     StreamConfig capture_processing_format;
     int split_rate;
-    int previous_agc_level;
     bool echo_path_gain_change;
   } capture_ GUARDED_BY(crit_capture_);
 

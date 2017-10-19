@@ -7,7 +7,9 @@
 #ifndef FPDFSDK_FORMFILLER_CFFL_CHECKBOX_H_
 #define FPDFSDK_FORMFILLER_CFFL_CHECKBOX_H_
 
-#include "fpdfsdk/formfiller/cffl_formfiller.h"
+#include "fpdfsdk/formfiller/cffl_button.h"
+
+class CPWL_CheckBox;
 
 class CFFL_CheckBox : public CFFL_Button {
  public:
@@ -15,8 +17,7 @@ class CFFL_CheckBox : public CFFL_Button {
   ~CFFL_CheckBox() override;
 
   // CFFL_Button
-  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
-                         CPDFSDK_PageView* pPageView) override;
+  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp) override;
   bool OnKeyDown(CPDFSDK_Annot* pAnnot,
                  uint32_t nKeyCode,
                  uint32_t nFlags) override;
@@ -27,6 +28,9 @@ class CFFL_CheckBox : public CFFL_Button {
                    const CFX_PointF& point) override;
   bool IsDataChanged(CPDFSDK_PageView* pPageView) override;
   void SaveData(CPDFSDK_PageView* pPageView) override;
+
+ private:
+  CPWL_CheckBox* GetCheckBox(CPDFSDK_PageView* pPageView, bool bNew);
 };
 
 #endif  // FPDFSDK_FORMFILLER_CFFL_CHECKBOX_H_

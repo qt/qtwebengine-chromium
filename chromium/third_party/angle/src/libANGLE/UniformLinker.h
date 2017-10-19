@@ -22,56 +22,78 @@ class UniformLinker
   public:
     UniformLinker(const ProgramState &state);
 
-    bool link(InfoLog &infoLog, const Caps &caps, const Program::Bindings &uniformLocationBindings);
+    bool link(const Context *context,
+              InfoLog &infoLog,
+              const Program::Bindings &uniformLocationBindings);
 
     void getResults(std::vector<LinkedUniform> *uniforms,
                     std::vector<VariableLocation> *uniformLocations);
 
   private:
-    struct VectorAndSamplerCount
+    struct ShaderUniformCount
     {
-        VectorAndSamplerCount() : vectorCount(0), samplerCount(0) {}
-        VectorAndSamplerCount(const VectorAndSamplerCount &other) = default;
-        VectorAndSamplerCount &operator=(const VectorAndSamplerCount &other) = default;
+        ShaderUniformCount() : vectorCount(0), samplerCount(0), imageCount(0), atomicCounterCount(0)
+        {
+        }
+        ShaderUniformCount(const ShaderUniformCount &other) = default;
+        ShaderUniformCount &operator=(const ShaderUniformCount &other) = default;
 
-        VectorAndSamplerCount &operator+=(const VectorAndSamplerCount &other)
+        ShaderUniformCount &operator+=(const ShaderUniformCount &other)
         {
             vectorCount += other.vectorCount;
             samplerCount += other.samplerCount;
+            imageCount += other.imageCount;
+            atomicCounterCount += other.atomicCounterCount;
             return *this;
         }
 
         unsigned int vectorCount;
         unsigned int samplerCount;
+        unsigned int imageCount;
+        unsigned int atomicCounterCount;
     };
 
-    bool validateVertexAndFragmentUniforms(InfoLog &infoLog) const;
+    bool validateVertexAndFragmentUniforms(const Context *context, InfoLog &infoLog) const;
 
     static bool linkValidateUniforms(InfoLog &infoLog,
                                      const std::string &uniformName,
                                      const sh::Uniform &vertexUniform,
                                      const sh::Uniform &fragmentUniform);
 
-    bool flattenUniformsAndCheckCapsForShader(const Shader &shader,
+    bool flattenUniformsAndCheckCapsForShader(const Context *context,
+                                              Shader *shader,
                                               GLuint maxUniformComponents,
                                               GLuint maxTextureImageUnits,
+                                              GLuint maxImageUnits,
+                                              GLuint maxAtomicCounters,
                                               const std::string &componentsErrorMessage,
                                               const std::string &samplerErrorMessage,
+                                              const std::string &imageErrorMessage,
+                                              const std::string &atomicCounterErrorMessage,
                                               std::vector<LinkedUniform> &samplerUniforms,
+                                              std::vector<LinkedUniform> &imageUniforms,
+                                              std::vector<LinkedUniform> &atomicCounterUniforms,
                                               InfoLog &infoLog);
-    bool flattenUniformsAndCheckCaps(const Caps &caps, InfoLog &infoLog);
 
-    VectorAndSamplerCount flattenUniform(const sh::Uniform &uniform,
-                                         std::vector<LinkedUniform> *samplerUniforms);
+    bool flattenUniformsAndCheckCaps(const Context *context, InfoLog &infoLog);
+    bool checkMaxCombinedAtomicCounters(const Caps &caps, InfoLog &infoLog);
+
+    ShaderUniformCount flattenUniform(const sh::Uniform &uniform,
+                                      std::vector<LinkedUniform> *samplerUniforms,
+                                      std::vector<LinkedUniform> *imageUniforms,
+                                      std::vector<LinkedUniform> *atomicCounterUniforms);
 
     // markStaticUse is given as a separate parameter because it is tracked here at struct
     // granularity.
-    VectorAndSamplerCount flattenUniformImpl(const sh::ShaderVariable &uniform,
-                                             const std::string &fullName,
-                                             std::vector<LinkedUniform> *samplerUniforms,
-                                             bool markStaticUse,
-                                             int binding,
-                                             int *location);
+    ShaderUniformCount flattenUniformImpl(const sh::ShaderVariable &uniform,
+                                          const std::string &fullName,
+                                          std::vector<LinkedUniform> *samplerUniforms,
+                                          std::vector<LinkedUniform> *imageUniforms,
+                                          std::vector<LinkedUniform> *atomicCounterUniforms,
+                                          bool markStaticUse,
+                                          int binding,
+                                          int offset,
+                                          int *location);
 
     bool indexUniforms(InfoLog &infoLog, const Program::Bindings &uniformLocationBindings);
     bool gatherUniformLocationsAndCheckConflicts(InfoLog &infoLog,

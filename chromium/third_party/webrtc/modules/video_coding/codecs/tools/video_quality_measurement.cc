@@ -20,13 +20,13 @@
 #endif
 
 #include "gflags/gflags.h"
-#include "webrtc/base/format_macros.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/video_coding/codecs/test/packet_manipulator.h"
 #include "webrtc/modules/video_coding/codecs/test/stats.h"
 #include "webrtc/modules/video_coding/codecs/test/videoprocessor.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
 #include "webrtc/modules/video_coding/include/video_coding.h"
+#include "webrtc/rtc_base/format_macros.h"
 #include "webrtc/test/testsupport/frame_reader.h"
 #include "webrtc/test/testsupport/frame_writer.h"
 #include "webrtc/test/testsupport/metrics/video_metrics.h"
@@ -176,7 +176,7 @@ int HandleCommandLineFlags(webrtc::test::TestConfig* config) {
   if (FLAGS_output_filename.empty()) {
     // Cut out the filename without extension from the given input file
     // (which may include a path)
-    int startIndex = FLAGS_input_filename.find_last_of("/") + 1;
+    size_t startIndex = FLAGS_input_filename.find_last_of("/") + 1;
     if (startIndex == 0) {
       startIndex = 0;
     }

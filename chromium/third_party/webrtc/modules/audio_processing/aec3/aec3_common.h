@@ -33,13 +33,15 @@ constexpr int kMetricsComputationBlocks = 9;
 constexpr int kMetricsCollectionBlocks =
     kMetricsReportingIntervalBlocks - kMetricsComputationBlocks;
 
-constexpr int kAdaptiveFilterLength = 12;
-constexpr int kResidualEchoPowerRenderWindowSize = 30;
-
 constexpr size_t kFftLengthBy2 = 64;
 constexpr size_t kFftLengthBy2Plus1 = kFftLengthBy2 + 1;
 constexpr size_t kFftLengthBy2Minus1 = kFftLengthBy2 - 1;
 constexpr size_t kFftLength = 2 * kFftLengthBy2;
+
+constexpr int kAdaptiveFilterLength = 12;
+constexpr int kResidualEchoPowerRenderWindowSize = 30;
+constexpr int kAdaptiveFilterTimeDomainLength =
+    kAdaptiveFilterLength * kFftLengthBy2;
 
 constexpr size_t kMaxNumBands = 3;
 constexpr size_t kSubFrameLength = 80;
@@ -58,12 +60,11 @@ constexpr size_t kDownsampledRenderBufferSize =
      kMatchedFilterWindowSizeSubBlocks +
      1);
 
-constexpr float kFixedEchoPathGain = 100;
-
 constexpr size_t kRenderDelayBufferSize =
     (3 * kDownsampledRenderBufferSize) / (4 * kSubBlockSize);
 
-constexpr size_t kMaxApiCallsJitterBlocks = 20;
+constexpr size_t kMinEchoPathDelayBlocks = 5;
+constexpr size_t kMaxApiCallsJitterBlocks = 30;
 constexpr size_t kRenderTransferQueueSize = kMaxApiCallsJitterBlocks / 2;
 static_assert(2 * kRenderTransferQueueSize >= kMaxApiCallsJitterBlocks,
               "Requirement to ensure buffer overflow detection");

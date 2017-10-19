@@ -10,9 +10,9 @@
 
 #include "webrtc/call/rampup_tests.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/platform_thread.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/platform_thread.h"
 #include "webrtc/test/encoder_settings.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/perf_test.h"
@@ -54,6 +54,7 @@ RampUpTester::RampUpTester(size_t num_video_streams,
       report_perf_stats_(report_perf_stats),
       sender_call_(nullptr),
       send_stream_(nullptr),
+      send_transport_(nullptr),
       start_bitrate_bps_(start_bitrate_bps),
       min_run_time_ms_(min_run_time_ms),
       expected_bitrate_bps_(0),

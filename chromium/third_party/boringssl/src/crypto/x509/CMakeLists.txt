@@ -39,7 +39,6 @@ add_library(
   x509name.c
   x509rset.c
   x509spki.c
-  x509type.c
   x_algor.c
   x_all.c
   x_attrib.c
@@ -56,14 +55,3 @@ add_library(
   x_x509.c
   x_x509a.c
 )
-
-add_executable(
-  x509_test
-
-  x509_test.cc
-
-  $<TARGET_OBJECTS:test_support>
-)
-
-target_link_libraries(x509_test crypto)
-add_dependencies(all_tests x509_test)

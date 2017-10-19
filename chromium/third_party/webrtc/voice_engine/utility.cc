@@ -11,12 +11,12 @@
 #include "webrtc/voice_engine/utility.h"
 
 #include "webrtc/audio/utility/audio_frame_operations.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/common_audio/resampler/include/push_resampler.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 #include "webrtc/voice_engine/voice_engine_defines.h"
 
 namespace webrtc {
@@ -25,7 +25,7 @@ namespace voe {
 void RemixAndResample(const AudioFrame& src_frame,
                       PushResampler<int16_t>* resampler,
                       AudioFrame* dst_frame) {
-  RemixAndResample(src_frame.data_, src_frame.samples_per_channel_,
+  RemixAndResample(src_frame.data(), src_frame.samples_per_channel_,
                    src_frame.num_channels_, src_frame.sample_rate_hz_,
                    resampler, dst_frame);
   dst_frame->timestamp_ = src_frame.timestamp_;
@@ -41,7 +41,7 @@ void RemixAndResample(const int16_t* src_data,
                       AudioFrame* dst_frame) {
   const int16_t* audio_ptr = src_data;
   size_t audio_ptr_num_channels = num_channels;
-  int16_t downsmixed_audio[AudioFrame::kMaxDataSizeSamples];
+  int16_t downmixed_audio[AudioFrame::kMaxDataSizeSamples];
 
   // Downmix before resampling.
   if (num_channels > dst_frame->num_channels_) {
@@ -52,8 +52,8 @@ void RemixAndResample(const int16_t* src_data,
 
     AudioFrameOperations::DownmixChannels(
         src_data, num_channels, samples_per_channel, dst_frame->num_channels_,
-        downsmixed_audio);
-    audio_ptr = downsmixed_audio;
+        downmixed_audio);
+    audio_ptr = downmixed_audio;
     audio_ptr_num_channels = dst_frame->num_channels_;
   }
 
@@ -64,13 +64,18 @@ void RemixAndResample(const int16_t* src_data,
             << ", audio_ptr_num_channels = " << audio_ptr_num_channels;
   }
 
+  // TODO(yujo): for muted input frames, don't resample. Either 1) allow
+  // resampler to return output length without doing the resample, so we know
+  // how much to zero here; or 2) make resampler accept a hint that the input is
+  // zeroed.
   const size_t src_length = samples_per_channel * audio_ptr_num_channels;
-  int out_length = resampler->Resample(audio_ptr, src_length, dst_frame->data_,
+  int out_length = resampler->Resample(audio_ptr, src_length,
+                                       dst_frame->mutable_data(),
                                        AudioFrame::kMaxDataSizeSamples);
   if (out_length == -1) {
     FATAL() << "Resample failed: audio_ptr = " << audio_ptr
             << ", src_length = " << src_length
-            << ", dst_frame->data_ = " << dst_frame->data_;
+            << ", dst_frame->mutable_data() = " << dst_frame->mutable_data();
   }
   dst_frame->samples_per_channel_ = out_length / audio_ptr_num_channels;
 

@@ -20,13 +20,9 @@
 #include "webrtc/api/proxy.h"
 #include "webrtc/api/rtcerror.h"
 #include "webrtc/api/videosourceproxy.h"
-#include "webrtc/base/asyncpacketsocket.h"
-#include "webrtc/base/bind.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/helpers.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/logging/rtc_event_log/rtc_event_log.h"
 #include "webrtc/media/base/mediaconstants.h"
+#include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/ortc/ortcrtpreceiveradapter.h"
 #include "webrtc/ortc/ortcrtpsenderadapter.h"
 #include "webrtc/ortc/rtpparametersconversion.h"
@@ -39,6 +35,11 @@
 #include "webrtc/pc/localaudiosource.h"
 #include "webrtc/pc/videocapturertracksource.h"
 #include "webrtc/pc/videotrack.h"
+#include "webrtc/rtc_base/asyncpacketsocket.h"
+#include "webrtc/rtc_base/bind.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/helpers.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace {
 
@@ -544,9 +545,9 @@ OrtcFactory::CreateMediaEngine_w() {
   // Note that |adm_| may be null, in which case the platform-specific default
   // AudioDeviceModule will be used.
   return std::unique_ptr<cricket::MediaEngineInterface>(
-      cricket::WebRtcMediaEngineFactory::Create(adm_, audio_encoder_factory_,
-                                                audio_decoder_factory_, nullptr,
-                                                nullptr, nullptr));
+      cricket::WebRtcMediaEngineFactory::Create(
+          adm_, audio_encoder_factory_, audio_decoder_factory_, nullptr,
+          nullptr, nullptr, webrtc::AudioProcessing::Create()));
 }
 
 }  // namespace webrtc

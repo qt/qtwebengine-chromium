@@ -38,6 +38,7 @@ class CPDFSDK_WidgetHandler : public IPDFSDK_AnnotHandler {
   void ReleaseAnnot(CPDFSDK_Annot* pAnnot) override;
   CFX_FloatRect GetViewBBox(CPDFSDK_PageView* pPageView,
                             CPDFSDK_Annot* pAnnot) override;
+  CFX_WideString GetSelectedText(CPDFSDK_Annot* pAnnot) override;
   bool HitTest(CPDFSDK_PageView* pPageView,
                CPDFSDK_Annot* pAnnot,
                const CFX_PointF& point) override;
@@ -100,11 +101,13 @@ class CPDFSDK_WidgetHandler : public IPDFSDK_AnnotHandler {
   void SetFormFiller(CFFL_InteractiveFormFiller* pFiller) {
     m_pFormFiller = pFiller;
   }
-  CFFL_InteractiveFormFiller* GetFormFiller() { return m_pFormFiller; }
+  CFFL_InteractiveFormFiller* GetFormFiller() const {
+    return m_pFormFiller.Get();
+  }
 
  private:
   CFX_UnownedPtr<CPDFSDK_FormFillEnvironment> const m_pFormFillEnv;
-  CFFL_InteractiveFormFiller* m_pFormFiller;
+  CFX_UnownedPtr<CFFL_InteractiveFormFiller> m_pFormFiller;
 };
 
 #endif  // FPDFSDK_CPDFSDK_WIDGETHANDLER_H_

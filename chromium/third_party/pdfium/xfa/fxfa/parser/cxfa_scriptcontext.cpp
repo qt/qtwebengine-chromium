@@ -14,7 +14,7 @@
 #include "fxjs/cfxjse_value.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
-#include "xfa/fxfa/app/xfa_ffnotify.h"
+#include "xfa/fxfa/app/cxfa_ffnotify.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
@@ -115,7 +115,10 @@ const XFA_METHODINFO* GetMethodByName(XFA_Element eElement,
 // static.
 CXFA_Object* CXFA_ScriptContext::ToObject(CFXJSE_Value* pValue,
                                           CFXJSE_Class* pClass) {
-  return static_cast<CXFA_Object*>(pValue->ToHostObject(pClass));
+  CFXJSE_HostObject* pHostObj = pValue->ToHostObject(pClass);
+  if (!pHostObj || pHostObj->type() != CFXJSE_HostObject::kXFA)
+    return nullptr;
+  return static_cast<CXFA_Object*>(pHostObj);
 }
 
 CXFA_ScriptContext::CXFA_ScriptContext(CXFA_Document* pDocument)

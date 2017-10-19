@@ -9,13 +9,17 @@
  */
 
 #include "gflags/gflags.h"
-#include "webrtc/base/logging.h"
+#include "webrtc/rtc_base/logging.h"
 #include "webrtc/system_wrappers/include/metrics_default.h"
 #include "webrtc/test/field_trial.h"
 #include "webrtc/test/gmock.h"
 #include "webrtc/test/gtest.h"
 #include "webrtc/test/testsupport/fileutils.h"
 #include "webrtc/test/testsupport/trace_to_stderr.h"
+
+#if defined(WEBRTC_IOS)
+#include "webrtc/test/ios/test_support.h"
+#endif
 
 DEFINE_bool(logs, false, "print logs to stderr");
 
@@ -45,6 +49,10 @@ int main(int argc, char* argv[]) {
   std::unique_ptr<webrtc::test::TraceToStderr> trace_to_stderr;
   if (FLAGS_logs)
       trace_to_stderr.reset(new webrtc::test::TraceToStderr);
+#if defined(WEBRTC_IOS)
+  rtc::test::InitTestSuite(RUN_ALL_TESTS, argc, argv);
+  rtc::test::RunTestsFromIOSApp();
+#endif
 
   return RUN_ALL_TESTS();
 }

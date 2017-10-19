@@ -21,12 +21,12 @@
 
 #include "webrtc/api/mediastreaminterface.h"
 #include "webrtc/api/rtpreceiverinterface.h"
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/sigslot.h"
 #include "webrtc/media/base/videobroadcaster.h"
 #include "webrtc/pc/channel.h"
 #include "webrtc/pc/remoteaudiosource.h"
 #include "webrtc/pc/videotracksource.h"
+#include "webrtc/rtc_base/basictypes.h"
+#include "webrtc/rtc_base/sigslot.h"
 
 namespace webrtc {
 
@@ -35,7 +35,7 @@ class RtpReceiverInternal : public RtpReceiverInterface {
  public:
   virtual void Stop() = 0;
   // This SSRC is used as an identifier for the receiver between the API layer
-  // and the WebRtcVideoEngine2, WebRtcVoiceEngine layer.
+  // and the WebRtcVideoEngine, WebRtcVoiceEngine layer.
   virtual uint32_t ssrc() const = 0;
 };
 

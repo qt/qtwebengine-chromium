@@ -14,8 +14,8 @@
 #include <deque>
 #include <string>
 
-#include "webrtc/base/constructormagic.h"
 #include "webrtc/modules/audio_coding/neteq/include/neteq.h"
+#include "webrtc/rtc_base/constructormagic.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -64,7 +64,7 @@ class StatisticsCalculator {
   void AddZeros(size_t num_samples);
 
   // Reports that |num_packets| packets were discarded.
-  void PacketsDiscarded(size_t num_packets);
+  virtual void PacketsDiscarded(size_t num_packets);
 
   // Reports that |num_samples| were lost.
   void LostSamples(size_t num_samples);

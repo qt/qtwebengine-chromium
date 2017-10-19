@@ -16,16 +16,16 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/messagequeue.h"
-#include "webrtc/base/optional.h"
-#include "webrtc/base/rtccertificate.h"
-#include "webrtc/base/sigslot.h"
-#include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/p2p/base/candidate.h"
 #include "webrtc/p2p/base/p2pconstants.h"
 #include "webrtc/p2p/base/sessiondescription.h"
 #include "webrtc/p2p/base/transportinfo.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/messagequeue.h"
+#include "webrtc/rtc_base/optional.h"
+#include "webrtc/rtc_base/rtccertificate.h"
+#include "webrtc/rtc_base/sigslot.h"
+#include "webrtc/rtc_base/sslstreamadapter.h"
 
 namespace cricket {
 
@@ -183,6 +183,10 @@ struct IceConfig {
   // Interval to check on all networks and to perform ICE regathering on any
   // active network having no connection on it.
   rtc::Optional<int> regather_on_failed_networks_interval;
+
+  // Interval to perform ICE regathering on all networks
+  // The delay in milliseconds is sampled from the uniform distribution [a, b]
+  rtc::Optional<rtc::IntervalRange> regather_all_networks_interval_range;
 
   // The time period in which we will not switch the selected connection
   // when a new connection becomes receiving but the selected connection is not

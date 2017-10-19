@@ -10,8 +10,8 @@
 
 #include "webrtc/modules/rtp_rtcp/include/flexfec_receiver.h"
 
-#include "webrtc/base/logging.h"
-#include "webrtc/base/scoped_ref_ptr.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/scoped_ref_ptr.h"
 
 namespace webrtc {
 
@@ -34,7 +34,8 @@ FlexfecReceiver::FlexfecReceiver(
     RecoveredPacketReceiver* recovered_packet_receiver)
     : ssrc_(ssrc),
       protected_media_ssrc_(protected_media_ssrc),
-      erasure_code_(ForwardErrorCorrection::CreateFlexfec()),
+      erasure_code_(
+          ForwardErrorCorrection::CreateFlexfec(ssrc, protected_media_ssrc)),
       recovered_packet_receiver_(recovered_packet_receiver),
       clock_(Clock::GetRealTimeClock()),
       last_recovered_packet_ms_(-1) {
@@ -112,7 +113,7 @@ bool FlexfecReceiver::AddReceivedPacket(const RtpPacketReceived& packet) {
 // This implementation only returns _recovered_ media packets through the
 // callback, whereas the implementation in UlpfecReceiver returns _all inserted_
 // media packets through the callback. The latter behaviour makes sense
-// for ULPFEC, since the ULPFEC receiver is owned by the RtpStreamReceiver.
+// for ULPFEC, since the ULPFEC receiver is owned by the RtpVideoStreamReceiver.
 // Here, however, the received media pipeline is more decoupled from the
 // FlexFEC decoder, and we therefore do not interfere with the reception
 // of non-recovered media packets.

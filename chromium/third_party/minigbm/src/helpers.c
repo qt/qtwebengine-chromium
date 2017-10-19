@@ -5,6 +5,7 @@
  */
 
 #include <assert.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,7 +18,22 @@
 #include "helpers.h"
 #include "util.h"
 
-int drv_bpp_from_format(uint32_t format, size_t plane)
+static uint32_t subsample_stride(uint32_t stride, uint32_t format, size_t plane)
+{
+
+	if (plane != 0) {
+		switch (format) {
+		case DRM_FORMAT_YVU420:
+		case DRM_FORMAT_YVU420_ANDROID:
+			stride = DIV_ROUND_UP(stride, 2);
+			break;
+		}
+	}
+
+	return stride;
+}
+
+static uint32_t bpp_from_format(uint32_t format, size_t plane)
 {
 	assert(plane < drv_num_planes_from_format(format));
 
@@ -27,27 +43,12 @@ int drv_bpp_from_format(uint32_t format, size_t plane)
 	case DRM_FORMAT_R8:
 	case DRM_FORMAT_RGB332:
 	case DRM_FORMAT_YVU420:
+	case DRM_FORMAT_YVU420_ANDROID:
 		return 8;
 
-	/*
-	 * NV12 is laid out as follows. Each letter represents a byte.
-	 * Y plane:
-	 * Y0_0, Y0_1, Y0_2, Y0_3, ..., Y0_N
-	 * Y1_0, Y1_1, Y1_2, Y1_3, ..., Y1_N
-	 * ...
-	 * YM_0, YM_1, YM_2, YM_3, ..., YM_N
-	 * CbCr plane:
-	 * Cb01_01, Cr01_01, Cb01_23, Cr01_23, ..., Cb01_(N-1)N, Cr01_(N-1)N
-	 * Cb23_01, Cr23_01, Cb23_23, Cr23_23, ..., Cb23_(N-1)N, Cr23_(N-1)N
-	 * ...
-	 * Cb(M-1)M_01, Cr(M-1)M_01, ..., Cb(M-1)M_(N-1)N, Cr(M-1)M_(N-1)N
-	 *
-	 * Pixel (0, 0) requires Y0_0, Cb01_01 and Cr01_01. Pixel (0, 1) requires
-	 * Y0_1, Cb01_01 and Cr01_01.  So for a single pixel, 2 bytes of luma data
-	 * are required.
-	 */
 	case DRM_FORMAT_NV12:
-		return (plane == 0) ? 8 : 16;
+	case DRM_FORMAT_NV21:
+		return (plane == 0) ? 8 : 4;
 
 	case DRM_FORMAT_ABGR1555:
 	case DRM_FORMAT_ABGR4444:
@@ -103,13 +104,35 @@ int drv_bpp_from_format(uint32_t format, size_t plane)
 	return 0;
 }
 
+uint32_t drv_bo_get_stride_in_pixels(struct bo *bo)
+{
+	uint32_t bytes_per_pixel = DIV_ROUND_UP(bpp_from_format(bo->format, 0), 8);
+	return DIV_ROUND_UP(bo->strides[0], bytes_per_pixel);
+}
+
 /*
- * This function fills in the buffer object given driver aligned dimensions
- * and a format.  This function assumes there is just one kernel buffer per
- * buffer object.
+ * This function returns the stride for a given format, width and plane.
  */
-int drv_bo_from_format(struct bo *bo, uint32_t width, uint32_t height,
-		       uint32_t format)
+uint32_t drv_stride_from_format(uint32_t format, uint32_t width, size_t plane)
+{
+	uint32_t stride = DIV_ROUND_UP(width * bpp_from_format(format, plane), 8);
+
+	/*
+	 * The stride of Android YV12 buffers is required to be aligned to 16 bytes
+	 * (see <system/graphics.h>).
+	 */
+	if (format == DRM_FORMAT_YVU420_ANDROID)
+		stride = (plane == 0) ? ALIGN(stride, 32) : ALIGN(stride, 16);
+
+	return stride;
+}
+
+/*
+ * This function fills in the buffer object given the driver aligned stride of
+ * the first plane, height and a format. This function assumes there is just
+ * one kernel buffer per buffer object.
+ */
+int drv_bo_from_format(struct bo *bo, uint32_t stride, uint32_t aligned_height, uint32_t format)
 {
 
 	size_t p, num_planes;
@@ -118,33 +141,54 @@ int drv_bo_from_format(struct bo *bo, uint32_t width, uint32_t height,
 	num_planes = drv_num_planes_from_format(format);
 	assert(num_planes);
 
+	/*
+	 * HAL_PIXEL_FORMAT_YV12 requires that (see <system/graphics.h>):
+	 *  - the aligned height is same as the buffer's height.
+	 *  - the chroma stride is 16 bytes aligned, i.e., the luma's strides
+	 *    is 32 bytes aligned.
+	 */
+	if (bo->format == DRM_FORMAT_YVU420_ANDROID) {
+		assert(aligned_height == bo->height);
+		assert(stride == ALIGN(stride, 32));
+	}
+
 	for (p = 0; p < num_planes; p++) {
-		bo->strides[p] = drv_stride_from_format(format, width, p);
-		bo->sizes[p] = drv_size_from_format(format, bo->strides[p],
-						    height, p);
+		bo->strides[p] = subsample_stride(stride, format, p);
+		bo->sizes[p] = drv_size_from_format(format, bo->strides[p], aligned_height, p);
 		bo->offsets[p] = offset;
 		offset += bo->sizes[p];
 	}
 
-	bo->total_size = bo->offsets[bo->num_planes - 1] +
-			 bo->sizes[bo->num_planes - 1];
-
+	bo->total_size = offset;
 	return 0;
 }
 
-int drv_dumb_bo_create(struct bo *bo, uint32_t width, uint32_t height,
-		       uint32_t format, uint32_t flags)
+int drv_dumb_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_t format,
+		       uint32_t flags)
 {
-	struct drm_mode_create_dumb create_dumb;
 	int ret;
+	size_t plane;
+	uint32_t aligned_width, aligned_height;
+	struct drm_mode_create_dumb create_dumb;
 
-	/* Only single-plane formats are supported */
-	assert(drv_num_planes_from_format(format) == 1);
+	aligned_width = width;
+	aligned_height = height;
+	if (format == DRM_FORMAT_YVU420_ANDROID) {
+		/*
+		 * Align width to 32 pixels, so chroma strides are 16 bytes as
+		 * Android requires.
+		 */
+		aligned_width = ALIGN(width, 32);
+	}
+
+	if (format == DRM_FORMAT_YVU420_ANDROID || format == DRM_FORMAT_YVU420) {
+		aligned_height = 3 * DIV_ROUND_UP(height, 2);
+	}
 
 	memset(&create_dumb, 0, sizeof(create_dumb));
-	create_dumb.height = height;
-	create_dumb.width = width;
-	create_dumb.bpp = drv_bpp_from_format(format, 0);
+	create_dumb.height = aligned_height;
+	create_dumb.width = aligned_width;
+	create_dumb.bpp = bpp_from_format(format, 0);
 	create_dumb.flags = 0;
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MODE_CREATE_DUMB, &create_dumb);
@@ -153,13 +197,12 @@ int drv_dumb_bo_create(struct bo *bo, uint32_t width, uint32_t height,
 		return ret;
 	}
 
-	bo->width = width;
-	bo->height = height;
-	bo->handles[0].u32 = create_dumb.handle;
-	bo->offsets[0] = 0;
-	bo->total_size = bo->sizes[0] = create_dumb.size;
-	bo->strides[0] = create_dumb.pitch;
+	drv_bo_from_format(bo, create_dumb.pitch, height, format);
 
+	for (plane = 0; plane < bo->num_planes; plane++)
+		bo->handles[plane].u32 = create_dumb.handle;
+
+	bo->total_size = create_dumb.size;
 	return 0;
 }
 
@@ -173,8 +216,8 @@ int drv_dumb_bo_destroy(struct bo *bo)
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_dumb);
 	if (ret) {
-		fprintf(stderr, "drv: DRM_IOCTL_MODE_DESTROY_DUMB failed "
-				"(handle=%x)\n", bo->handles[0].u32);
+		fprintf(stderr, "drv: DRM_IOCTL_MODE_DESTROY_DUMB failed (handle=%x)\n",
+			bo->handles[0].u32);
 		return ret;
 	}
 
@@ -200,9 +243,8 @@ int drv_gem_bo_destroy(struct bo *bo)
 
 		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
 		if (ret) {
-			fprintf(stderr, "drv: DRM_IOCTL_GEM_CLOSE failed "
-					"(handle=%x) error %d\n",
-					bo->handles[plane].u32, ret);
+			fprintf(stderr, "drv: DRM_IOCTL_GEM_CLOSE failed (handle=%x) error %d\n",
+				bo->handles[plane].u32, ret);
 			error = ret;
 		}
 	}
@@ -220,12 +262,11 @@ int drv_prime_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 		memset(&prime_handle, 0, sizeof(prime_handle));
 		prime_handle.fd = data->fds[plane];
 
-		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_PRIME_FD_TO_HANDLE,
-			       &prime_handle);
+		ret = drmIoctl(bo->drv->fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &prime_handle);
 
 		if (ret) {
-			fprintf(stderr, "drv: DRM_IOCTL_PRIME_FD_TO_HANDLE "
-				"failed (fd=%u)\n", prime_handle.fd);
+			fprintf(stderr, "drv: DRM_IOCTL_PRIME_FD_TO_HANDLE failed (fd=%u)\n",
+				prime_handle.fd);
 
 			/*
 			 * Need to call GEM close on planes that were opened,
@@ -269,43 +310,38 @@ void *drv_dumb_bo_map(struct bo *bo, struct map_info *data, size_t plane)
 		if (bo->handles[i].u32 == bo->handles[plane].u32)
 			data->length += bo->sizes[i];
 
-	return mmap(0, data->length, PROT_READ | PROT_WRITE, MAP_SHARED,
-		    bo->drv->fd, map_dumb.offset);
+	return mmap(0, data->length, PROT_READ | PROT_WRITE, MAP_SHARED, bo->drv->fd,
+		    map_dumb.offset);
 }
 
-uintptr_t drv_get_reference_count(struct driver *drv, struct bo *bo,
-				  size_t plane)
+uintptr_t drv_get_reference_count(struct driver *drv, struct bo *bo, size_t plane)
 {
 	void *count;
 	uintptr_t num = 0;
 
 	if (!drmHashLookup(drv->buffer_table, bo->handles[plane].u32, &count))
-		num = (uintptr_t) (count);
+		num = (uintptr_t)(count);
 
 	return num;
 }
 
-void drv_increment_reference_count(struct driver *drv, struct bo *bo,
-				   size_t plane)
+void drv_increment_reference_count(struct driver *drv, struct bo *bo, size_t plane)
 {
 	uintptr_t num = drv_get_reference_count(drv, bo, plane);
 
 	/* If a value isn't in the table, drmHashDelete is a no-op */
 	drmHashDelete(drv->buffer_table, bo->handles[plane].u32);
-	drmHashInsert(drv->buffer_table, bo->handles[plane].u32,
-		      (void *) (num + 1));
+	drmHashInsert(drv->buffer_table, bo->handles[plane].u32, (void *)(num + 1));
 }
 
-void drv_decrement_reference_count(struct driver *drv, struct bo *bo,
-				   size_t plane)
+void drv_decrement_reference_count(struct driver *drv, struct bo *bo, size_t plane)
 {
 	uintptr_t num = drv_get_reference_count(drv, bo, plane);
 
 	drmHashDelete(drv->buffer_table, bo->handles[plane].u32);
 
 	if (num > 0)
-		drmHashInsert(drv->buffer_table, bo->handles[plane].u32,
-			      (void *) (num - 1));
+		drmHashInsert(drv->buffer_table, bo->handles[plane].u32, (void *)(num - 1));
 }
 
 uint32_t drv_log_base2(uint32_t value)
@@ -318,81 +354,74 @@ uint32_t drv_log_base2(uint32_t value)
 	return ret;
 }
 
-/* Inserts a combination into list -- caller should have lock on driver. */
-void drv_insert_supported_combination(struct driver *drv, uint32_t format,
-			              uint64_t usage, uint64_t modifier)
+int drv_add_combination(struct driver *drv, uint32_t format, struct format_metadata *metadata,
+			uint64_t usage)
 {
-	struct combination_list_element *elem;
+	struct combinations *combos = &drv->backend->combos;
+	if (combos->size >= combos->allocations) {
+		struct combination *new_data;
+		combos->allocations *= 2;
+		new_data = realloc(combos->data, combos->allocations * sizeof(*combos->data));
+		if (!new_data)
+			return -ENOMEM;
 
-	elem = calloc(1, sizeof(*elem));
-	elem->combination.format = format;
-	elem->combination.modifier = modifier;
-	elem->combination.usage = usage;
-	LIST_ADD(&elem->link, &drv->backend->combinations);
-}
-
-void drv_insert_combinations(struct driver *drv, struct supported_combination *combos,
-			     uint32_t size)
-{
-	unsigned int i;
-
-	pthread_mutex_lock(&drv->driver_lock);
-
-	for (i = 0; i < size; i++)
-		drv_insert_supported_combination(drv, combos[i].format,
-						 combos[i].usage,
-						 combos[i].modifier);
-
-	pthread_mutex_unlock(&drv->driver_lock);
-}
-
-void drv_modify_supported_combination(struct driver *drv, uint32_t format,
-				      uint64_t usage, uint64_t modifier)
-{
-	/*
-	 * Attempts to add the specified usage to an existing {format, modifier}
-	 * pair. If the pair is not present, a new combination is created.
-	 */
-	int found = 0;
-
-	pthread_mutex_lock(&drv->driver_lock);
-
-	list_for_each_entry(struct combination_list_element,
-			    elem, &drv->backend->combinations, link) {
-		if (elem->combination.format == format &&
-		    elem->combination.modifier == modifier) {
-			elem->combination.usage |= usage;
-			found = 1;
-		}
+		combos->data = new_data;
 	}
 
-
-	if (!found)
-		drv_insert_supported_combination(drv, format, usage, modifier);
-
-	pthread_mutex_unlock(&drv->driver_lock);
+	combos->data[combos->size].format = format;
+	combos->data[combos->size].metadata.priority = metadata->priority;
+	combos->data[combos->size].metadata.tiling = metadata->tiling;
+	combos->data[combos->size].metadata.modifier = metadata->modifier;
+	combos->data[combos->size].usage = usage;
+	combos->size++;
+	return 0;
 }
 
-int drv_add_kms_flags(struct driver *drv)
+int drv_add_combinations(struct driver *drv, const uint32_t *formats, uint32_t num_formats,
+			 struct format_metadata *metadata, uint64_t usage)
 {
 	int ret;
-	uint32_t i, j;
+	uint32_t i;
+	for (i = 0; i < num_formats; i++) {
+		ret = drv_add_combination(drv, formats[i], metadata, usage);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+void drv_modify_combination(struct driver *drv, uint32_t format, struct format_metadata *metadata,
+			    uint64_t usage)
+{
+	uint32_t i;
+	struct combination *combo;
+	/* Attempts to add the specified usage to an existing combination. */
+	for (i = 0; i < drv->backend->combos.size; i++) {
+		combo = &drv->backend->combos.data[i];
+		if (combo->format == format && combo->metadata.tiling == metadata->tiling &&
+		    combo->metadata.modifier == metadata->modifier)
+			combo->usage |= usage;
+	}
+}
+
+struct kms_item *drv_query_kms(struct driver *drv, uint32_t *num_items)
+{
 	uint64_t flag, usage;
+	struct kms_item *items;
+	uint32_t i, j, k, allocations, item_size;
+
 	drmModePlanePtr plane;
 	drmModePropertyPtr prop;
 	drmModePlaneResPtr resources;
 	drmModeObjectPropertiesPtr props;
 
-	/*
-	 * All current drivers can scanout XRGB8888/ARGB8888 as a primary plane.
-	 * Some older kernel versions can only return overlay planes, so add the
-	 * combination here. Note that the kernel disregards the alpha component
-	 * of ARGB unless it's an overlay plane.
-	 */
-	drv_modify_supported_combination(drv, DRM_FORMAT_XRGB8888,
-					 BO_USE_SCANOUT, 0);
-	drv_modify_supported_combination(drv, DRM_FORMAT_ARGB8888,
-					 BO_USE_SCANOUT, 0);
+	/* Start with a power of 2 number of allocations. */
+	allocations = 2;
+	item_size = 0;
+	items = calloc(allocations, sizeof(*items));
+	if (!items)
+		goto out;
 
 	/*
 	 * The ability to return universal planes is only complete on
@@ -406,27 +435,24 @@ int drv_add_kms_flags(struct driver *drv)
 
 	resources = drmModeGetPlaneResources(drv->fd);
 	if (!resources)
-		goto err;
+		goto out;
 
 	for (i = 0; i < resources->count_planes; i++) {
-
 		plane = drmModeGetPlane(drv->fd, resources->planes[i]);
-
 		if (!plane)
-			goto err;
+			goto out;
 
-		props = drmModeObjectGetProperties(drv->fd, plane->plane_id,
-						   DRM_MODE_OBJECT_PLANE);
+		props = drmModeObjectGetProperties(drv->fd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
 		if (!props)
-			goto err;
+			goto out;
 
 		for (j = 0; j < props->count_props; j++) {
-
 			prop = drmModeGetProperty(drv->fd, props->props[j]);
 			if (prop) {
 				if (strcmp(prop->name, "type") == 0) {
 					flag = props->prop_values[j];
 				}
+
 				drmModeFreeProperty(prop);
 			}
 		}
@@ -443,19 +469,82 @@ int drv_add_kms_flags(struct driver *drv)
 			assert(0);
 		}
 
-		for (j = 0; j < plane->count_formats; j++)
-			drv_modify_supported_combination(drv, plane->formats[j],
-							 usage, 0);
+		for (j = 0; j < plane->count_formats; j++) {
+			bool found = false;
+			for (k = 0; k < item_size; k++) {
+				if (items[k].format == plane->formats[j] &&
+				    items[k].modifier == DRM_FORMAT_MOD_NONE) {
+					items[k].usage |= usage;
+					found = true;
+					break;
+				}
+			}
+
+			if (!found && item_size >= allocations) {
+				struct kms_item *new_data = NULL;
+				allocations *= 2;
+				new_data = realloc(items, allocations * sizeof(*items));
+				if (!new_data) {
+					item_size = 0;
+					goto out;
+				}
+
+				items = new_data;
+			}
+
+			if (!found) {
+				items[item_size].format = plane->formats[j];
+				items[item_size].modifier = DRM_FORMAT_MOD_NONE;
+				items[item_size].usage = usage;
+				item_size++;
+			}
+		}
 
 		drmModeFreeObjectProperties(props);
 		drmModeFreePlane(plane);
-
 	}
 
 	drmModeFreePlaneResources(resources);
-	return 0;
+out:
+	if (items && item_size == 0) {
+		free(items);
+		items = NULL;
+	}
 
-err:
-	ret = -1;
-	return ret;
+	*num_items = item_size;
+	return items;
+}
+
+int drv_modify_linear_combinations(struct driver *drv)
+{
+	uint32_t i, j, num_items;
+	struct kms_item *items;
+	struct combination *combo;
+
+	/*
+	 * All current drivers can scanout linear XRGB8888/ARGB8888 as a primary
+	 * plane and as a cursor. Some drivers don't support
+	 * drmModeGetPlaneResources, so add the combination here. Note that the
+	 * kernel disregards the alpha component of ARGB unless it's an overlay
+	 * plane.
+	 */
+	drv_modify_combination(drv, DRM_FORMAT_XRGB8888, &LINEAR_METADATA,
+			       BO_USE_CURSOR | BO_USE_SCANOUT);
+	drv_modify_combination(drv, DRM_FORMAT_ARGB8888, &LINEAR_METADATA,
+			       BO_USE_CURSOR | BO_USE_SCANOUT);
+
+	items = drv_query_kms(drv, &num_items);
+	if (!items || !num_items)
+		return 0;
+
+	for (i = 0; i < num_items; i++) {
+		for (j = 0; j < drv->backend->combos.size; j++) {
+			combo = &drv->backend->combos.data[j];
+			if (items[i].format == combo->format)
+				combo->usage |= BO_USE_SCANOUT;
+		}
+	}
+
+	free(items);
+	return 0;
 }

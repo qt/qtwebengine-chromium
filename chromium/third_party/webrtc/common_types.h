@@ -13,16 +13,16 @@
 
 #include <stddef.h>
 #include <string.h>
-
 #include <ostream>
 #include <string>
 #include <vector>
 
 #include "webrtc/api/video/video_content_type.h"
 #include "webrtc/api/video/video_rotation.h"
-#include "webrtc/base/array_view.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/optional.h"
+#include "webrtc/api/video/video_timing.h"
+#include "webrtc/rtc_base/array_view.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/optional.h"
 #include "webrtc/typedefs.h"
 
 #if defined(_MSC_VER)
@@ -480,7 +480,7 @@ struct VideoCodecVP8 {
 // VP9 specific.
 struct VideoCodecVP9 {
   VideoCodecComplexity complexity;
-  int resilience;
+  bool resilienceOn;
   unsigned char numberOfTemporalLayers;
   bool denoisingOn;
   bool frameDroppingOn;
@@ -588,6 +588,19 @@ class VideoCodec {
   VideoCodecMode mode;
   bool expect_encode_from_texture;
 
+  // Timing frames configuration. There is delay of delay_ms between two
+  // consequent timing frames, excluding outliers. Frame is always made a
+  // timing frame if it's at least outlier_ratio in percent of "ideal" average
+  // frame given bitrate and framerate, i.e. if it's bigger than
+  // |outlier_ratio / 100.0 * bitrate_bps / fps| in bits. This way, timing
+  // frames will not be sent too often usually. Yet large frames will always
+  // have timing information for debug purposes because they are more likely to
+  // cause extra delays.
+  struct TimingFrameTriggerThresholds {
+    int64_t delay_ms;
+    uint16_t outlier_ratio_percent;
+  } timing_frame_thresholds;
+
   bool operator==(const VideoCodec& other) const = delete;
   bool operator!=(const VideoCodec& other) const = delete;
 
@@ -631,6 +644,10 @@ class BitrateAllocation {
   inline bool operator!=(const BitrateAllocation& other) const {
     return !(*this == other);
   }
+
+  // Expensive, please use only in tests.
+  std::string ToString() const;
+  std::ostream& operator<<(std::ostream& os) const;
 
  private:
   uint32_t sum_;
@@ -707,6 +724,8 @@ class StreamId {
   // that can be encoded with one-byte header extensions.
   static constexpr size_t kMaxSize = 16;
 
+  static bool IsLegalName(rtc::ArrayView<const char> name);
+
   StreamId() { value_[0] = 0; }
   explicit StreamId(rtc::ArrayView<const char> value) {
     Set(value.data(), value.size());
@@ -760,6 +779,9 @@ struct RTPHeaderExtension {
   // a corresponding bool flag.
   bool hasVideoContentType;
   VideoContentType videoContentType;
+
+  bool has_video_timing;
+  VideoSendTiming video_timing;
 
   PlayoutDelay playout_delay = {-1, -1};
 
@@ -888,6 +910,17 @@ enum class RtcpMode { kOff, kCompound, kReducedSize };
 enum NetworkState {
   kNetworkUp,
   kNetworkDown,
+};
+
+struct RtpKeepAliveConfig {
+  // If no packet has been sent for |timeout_interval_ms|, send a keep-alive
+  // packet. The keep-alive packet is an empty (no payload) RTP packet with a
+  // payload type of 20 as long as the other end has not negotiated the use of
+  // this value. If this value has already been negotiated, then some other
+  // unused static payload type from table 5 of RFC 3551 shall be used and set
+  // in |payload_type|.
+  int64_t timeout_interval_ms = -1;
+  uint8_t payload_type = 20;
 };
 
 }  // namespace webrtc

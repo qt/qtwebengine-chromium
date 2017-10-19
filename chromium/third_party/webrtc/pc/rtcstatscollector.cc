@@ -17,14 +17,14 @@
 
 #include "webrtc/api/mediastreaminterface.h"
 #include "webrtc/api/peerconnectioninterface.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/timeutils.h"
 #include "webrtc/media/base/mediachannel.h"
 #include "webrtc/p2p/base/candidate.h"
 #include "webrtc/p2p/base/p2pconstants.h"
 #include "webrtc/p2p/base/port.h"
 #include "webrtc/pc/peerconnection.h"
 #include "webrtc/pc/webrtcsession.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/timeutils.h"
 
 namespace webrtc {
 
@@ -374,6 +374,9 @@ ProduceMediaStreamTrackStatsFromVoiceSenderInfo(
     audio_track_stats->audio_level = DoubleAudioLevelFromIntAudioLevel(
         voice_sender_info.audio_level);
   }
+  audio_track_stats->total_audio_energy = voice_sender_info.total_input_energy;
+  audio_track_stats->total_samples_duration =
+      voice_sender_info.total_input_duration;
   if (voice_sender_info.echo_return_loss != -100) {
     audio_track_stats->echo_return_loss = static_cast<double>(
         voice_sender_info.echo_return_loss);
@@ -405,6 +408,10 @@ ProduceMediaStreamTrackStatsFromVoiceReceiverInfo(
     audio_track_stats->audio_level = DoubleAudioLevelFromIntAudioLevel(
         voice_receiver_info.audio_level);
   }
+  audio_track_stats->total_audio_energy =
+      voice_receiver_info.total_output_energy;
+  audio_track_stats->total_samples_duration =
+      voice_receiver_info.total_output_duration;
   return audio_track_stats;
 }
 
@@ -652,9 +659,16 @@ void RTCStatsCollector::GetStatsReport(
     // implemented to invoke on the signaling thread.
     track_to_id_ = PrepareTrackToID_s();
 
-    invoker_.AsyncInvoke<void>(RTC_FROM_HERE, network_thread_,
+    // Prepare |call_stats_| here since GetCallStats() will hop to the worker
+    // thread.
+    // TODO(holmer): To avoid the hop we could move BWE and BWE stats to the
+    // network thread, where it more naturally belongs.
+    call_stats_ = pc_->session()->GetCallStats();
+
+    invoker_.AsyncInvoke<void>(
+        RTC_FROM_HERE, network_thread_,
         rtc::Bind(&RTCStatsCollector::ProducePartialResultsOnNetworkThread,
-            rtc::scoped_refptr<RTCStatsCollector>(this), timestamp_us));
+                  rtc::scoped_refptr<RTCStatsCollector>(this), timestamp_us));
     ProducePartialResultsOnSignalingThread(timestamp_us);
   }
 }
@@ -704,9 +718,9 @@ void RTCStatsCollector::ProducePartialResultsOnNetworkThread(
         timestamp_us, transport_cert_stats, report.get());
     ProduceCodecStats_n(
         timestamp_us, *track_media_info_map_, report.get());
-    ProduceIceCandidateAndPairStats_n(
-        timestamp_us, *session_stats, track_media_info_map_->video_media_info(),
-        report.get());
+    ProduceIceCandidateAndPairStats_n(timestamp_us, *session_stats,
+                                      track_media_info_map_->video_media_info(),
+                                      call_stats_, report.get());
     ProduceRTPStreamStats_n(
         timestamp_us, *session_stats, *track_media_info_map_, report.get());
     ProduceTransportStats_n(
@@ -835,9 +849,11 @@ void RTCStatsCollector::ProduceDataChannelStats_s(
 }
 
 void RTCStatsCollector::ProduceIceCandidateAndPairStats_n(
-      int64_t timestamp_us, const SessionStats& session_stats,
-      const cricket::VideoMediaInfo* video_media_info,
-      RTCStatsReport* report) const {
+    int64_t timestamp_us,
+    const SessionStats& session_stats,
+    const cricket::VideoMediaInfo* video_media_info,
+    const Call::Stats& call_stats,
+    RTCStatsReport* report) const {
   RTC_DCHECK(network_thread_->IsCurrent());
   for (const auto& transport_stats : session_stats.transport_stats) {
     for (const auto& channel_stats : transport_stats.second.channel_stats) {
@@ -879,24 +895,18 @@ void RTCStatsCollector::ProduceIceCandidateAndPairStats_n(
               static_cast<double>(*info.current_round_trip_time_ms) /
               rtc::kNumMillisecsPerSec;
         }
-        if (info.best_connection && video_media_info &&
-            !video_media_info->bw_estimations.empty()) {
+        if (info.best_connection) {
           // The bandwidth estimations we have are for the selected candidate
           // pair ("info.best_connection").
-          RTC_DCHECK_EQ(video_media_info->bw_estimations.size(), 1);
-          RTC_DCHECK_GE(
-              video_media_info->bw_estimations[0].available_send_bandwidth, 0);
-          RTC_DCHECK_GE(
-              video_media_info->bw_estimations[0].available_recv_bandwidth, 0);
-          if (video_media_info->bw_estimations[0].available_send_bandwidth) {
+          RTC_DCHECK_GE(call_stats.send_bandwidth_bps, 0);
+          RTC_DCHECK_GE(call_stats.recv_bandwidth_bps, 0);
+          if (call_stats.send_bandwidth_bps > 0) {
             candidate_pair_stats->available_outgoing_bitrate =
-                static_cast<double>(video_media_info->bw_estimations[0]
-                                        .available_send_bandwidth);
+                static_cast<double>(call_stats.send_bandwidth_bps);
           }
-          if (video_media_info->bw_estimations[0].available_recv_bandwidth) {
+          if (call_stats.recv_bandwidth_bps > 0) {
             candidate_pair_stats->available_incoming_bitrate =
-                static_cast<double>(video_media_info->bw_estimations[0]
-                                        .available_recv_bandwidth);
+                static_cast<double>(call_stats.recv_bandwidth_bps);
           }
         }
         candidate_pair_stats->requests_received =
@@ -1198,22 +1208,15 @@ std::map<MediaStreamTrackInterface*, std::string>
 RTCStatsCollector::PrepareTrackToID_s() const {
   RTC_DCHECK(signaling_thread_->IsCurrent());
   std::map<MediaStreamTrackInterface*, std::string> track_to_id;
-  StreamCollectionInterface* local_and_remote_streams[] =
-      { pc_->local_streams().get(), pc_->remote_streams().get() };
-  for (auto& streams : local_and_remote_streams) {
-    if (streams) {
-      for (size_t i = 0; i < streams->count(); ++i) {
-        MediaStreamInterface* stream = streams->at(i);
-        for (const rtc::scoped_refptr<AudioTrackInterface>& audio_track :
-             stream->GetAudioTracks()) {
-          track_to_id[audio_track.get()] = audio_track->id();
-        }
-        for (const rtc::scoped_refptr<VideoTrackInterface>& video_track :
-             stream->GetVideoTracks()) {
-          track_to_id[video_track.get()] = video_track->id();
-        }
-      }
-    }
+  for (auto sender : pc_->GetSenders()) {
+    auto track = sender->track();
+    if (track)
+      track_to_id[track.get()] = track->id();
+  }
+  for (auto receiver : pc_->GetReceivers()) {
+    auto track = receiver->track();
+    if (track)
+      track_to_id[track.get()] = track->id();
   }
   return track_to_id;
 }

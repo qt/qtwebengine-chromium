@@ -10,6 +10,10 @@ import("../../webrtc.gni")
 
 rtc_static_library("congestion_controller") {
   sources = [
+    "acknowledged_bitrate_estimator.cc",
+    "acknowledged_bitrate_estimator.h",
+    "bitrate_estimator.cc",
+    "bitrate_estimator.h",
     "congestion_controller.cc",
     "delay_based_bwe.cc",
     "delay_based_bwe.h",
@@ -68,9 +72,10 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc/modules:modules_unittests" ]
+      visibility = [ "..:modules_unittests" ]
     }
     sources = [
+      "acknowledged_bitrate_estimator_unittest.cc",
       "congestion_controller_unittest.cc",
       "congestion_controller_unittests_helper.cc",
       "congestion_controller_unittests_helper.h",
@@ -86,7 +91,9 @@ if (rtc_include_tests) {
     deps = [
       ":congestion_controller",
       ":mock_congestion_controller",
+      "../../base:rtc_base",
       "../../base:rtc_base_approved",
+      "../../base:rtc_base_tests_utils",
       "../../system_wrappers:system_wrappers",
       "../../test:field_trial",
       "../../test:test_support",

@@ -4,6 +4,7 @@
 #
 
 import("//build/config/features.gni")
+import("//extensions/features/features.gni")
 import("//testing/test.gni")
 
 static_library("router") {
@@ -64,13 +65,18 @@ static_library("router") {
     "route_message_observer.h",
   ]
 
-  if (!is_android) {
+  if (enable_extensions) {
     deps += [
       "discovery",
       "//extensions/browser",
       "//mojo/public/cpp/bindings",
     ]
     sources += [
+      "event_page_request_manager.cc",
+      "event_page_request_manager.h",
+      "event_page_request_manager_factory.cc",
+      "event_page_request_manager_factory.h",
+
       # TODO(crbug.com/646627): Move media_router_ui_service* to
       # chrome/browser/ui/.
       "media_router_ui_service.cc",
@@ -90,7 +96,6 @@ static_library("router") {
 static_library("test_support") {
   testonly = true
   deps = [
-    ":router",
     "//chrome/test:test_support",
     "//testing/gmock",
   ]
@@ -99,6 +104,9 @@ static_library("test_support") {
       "//chrome/test:test_support",
     ]
   }
+  public_deps = [
+    ":router",
+  ]
   sources = [
     "mock_media_router.cc",
     "mock_media_router.h",
@@ -107,10 +115,13 @@ static_library("test_support") {
     "test_helper.cc",
     "test_helper.h",
   ]
-  if (!is_android) {
+
+  if (enable_extensions) {
     deps += [
+      "discovery",
       "//chrome/common/media_router/mojo:media_router",
       "//chrome/common/media_router/mojo:media_router_test_interfaces",
+      "//extensions/browser",
       "//extensions/common",
     ]
     sources += [

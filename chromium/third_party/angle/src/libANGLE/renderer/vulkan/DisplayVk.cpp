@@ -44,7 +44,7 @@ egl::Error DisplayVk::makeCurrent(egl::Surface * /*drawSurface*/,
                                   egl::Surface * /*readSurface*/,
                                   gl::Context * /*context*/)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 egl::ConfigSet DisplayVk::generateConfigs()
@@ -98,10 +98,10 @@ bool DisplayVk::testDeviceLost()
     return false;
 }
 
-egl::Error DisplayVk::restoreLostDevice()
+egl::Error DisplayVk::restoreLostDevice(const egl::Display *display)
 {
     UNIMPLEMENTED();
-    return egl::Error(EGL_BAD_ACCESS);
+    return egl::EglBadAccess();
 }
 
 std::string DisplayVk::getVendorString() const
@@ -117,21 +117,19 @@ std::string DisplayVk::getVendorString() const
 
 egl::Error DisplayVk::getDevice(DeviceImpl **device)
 {
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
-egl::Error DisplayVk::waitClient() const
+egl::Error DisplayVk::waitClient(const gl::Context *context) const
 {
     UNIMPLEMENTED();
-    return egl::Error(EGL_BAD_ACCESS);
+    return egl::EglBadAccess();
 }
 
-egl::Error DisplayVk::waitNative(EGLint engine,
-                                 egl::Surface *drawSurface,
-                                 egl::Surface *readSurface) const
+egl::Error DisplayVk::waitNative(const gl::Context *context, EGLint engine) const
 {
     UNIMPLEMENTED();
-    return egl::Error(EGL_BAD_ACCESS);
+    return egl::EglBadAccess();
 }
 
 SurfaceImpl *DisplayVk::createWindowSurface(const egl::SurfaceState &state,

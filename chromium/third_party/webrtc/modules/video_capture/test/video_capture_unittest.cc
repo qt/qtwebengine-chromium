@@ -16,13 +16,13 @@
 
 #include "webrtc/api/video/i420_buffer.h"
 #include "webrtc/api/video/video_frame.h"
-#include "webrtc/base/criticalsection.h"
-#include "webrtc/base/scoped_ref_ptr.h"
-#include "webrtc/base/timeutils.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/utility/include/process_thread.h"
 #include "webrtc/modules/video_capture/video_capture.h"
 #include "webrtc/modules/video_capture/video_capture_factory.h"
+#include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/scoped_ref_ptr.h"
+#include "webrtc/rtc_base/timeutils.h"
 #include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/frame_utils.h"
 #include "webrtc/test/gtest.h"
@@ -362,15 +362,14 @@ class VideoCaptureExternalTest : public testing::Test {
     capability.maxFPS = kTestFramerate;
     capture_callback_.SetExpectedCapability(capability);
 
-    rtc::scoped_refptr<webrtc::I420Buffer> buffer = webrtc::I420Buffer::Create(
-        kTestWidth, kTestHeight,
-        kTestWidth, ((kTestWidth + 1) / 2), (kTestWidth + 1) / 2);
+    rtc::scoped_refptr<webrtc::I420Buffer> buffer =
+        webrtc::I420Buffer::Create(kTestWidth, kTestHeight);
 
-    memset(buffer->MutableDataY(), 127, kTestWidth * kTestHeight);
+    memset(buffer->MutableDataY(), 127, buffer->height() * buffer->StrideY());
     memset(buffer->MutableDataU(), 127,
-           ((kTestWidth + 1) / 2) * ((kTestHeight + 1) / 2));
+           buffer->ChromaHeight() * buffer->StrideU());
     memset(buffer->MutableDataV(), 127,
-           ((kTestWidth + 1) / 2) * ((kTestHeight + 1) / 2));
+           buffer->ChromaHeight() * buffer->StrideV());
     test_frame_.reset(
         new webrtc::VideoFrame(buffer, 0, 0, webrtc::kVideoRotation_0));
 

@@ -17,17 +17,17 @@
 #include "webrtc/audio/audio_state.h"
 #include "webrtc/audio/conversion.h"
 #include "webrtc/audio/scoped_voe_interface.h"
-#include "webrtc/base/checks.h"
-#include "webrtc/base/event.h"
-#include "webrtc/base/function_view.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/task_queue.h"
-#include "webrtc/base/timeutils.h"
 #include "webrtc/call/rtp_transport_controller_send_interface.h"
 #include "webrtc/modules/audio_coding/codecs/cng/audio_encoder_cng.h"
 #include "webrtc/modules/bitrate_controller/include/bitrate_controller.h"
 #include "webrtc/modules/congestion_controller/include/send_side_congestion_controller.h"
 #include "webrtc/modules/pacing/paced_sender.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/event.h"
+#include "webrtc/rtc_base/function_view.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/task_queue.h"
+#include "webrtc/rtc_base/timeutils.h"
 #include "webrtc/voice_engine/channel_proxy.h"
 #include "webrtc/voice_engine/include/voe_base.h"
 #include "webrtc/voice_engine/transmit_mixer.h"
@@ -36,7 +36,7 @@
 namespace webrtc {
 
 namespace internal {
-// TODO(elad.alon): Subsequent CL will make these values experiment-dependent.
+// TODO(eladalon): Subsequent CL will make these values experiment-dependent.
 constexpr size_t kPacketLossTrackerMaxWindowSizeMs = 15000;
 constexpr size_t kPacketLossRateMinNumAckedPackets = 50;
 constexpr size_t kRecoverablePacketLossRateMinNumAckedPairs = 40;
@@ -171,7 +171,7 @@ void AudioSendStream::ConfigureStream(
   // Transport sequence number
   if (first_time ||
       new_ids.transport_sequence_number != old_ids.transport_sequence_number) {
-    if (old_ids.transport_sequence_number) {
+    if (!first_time) {
       channel_proxy->ResetSenderCongestionControlObjects();
       stream->bandwidth_observer_.reset();
     }
@@ -279,8 +279,12 @@ webrtc::AudioSendStream::Stats AudioSendStream::GetStats() const {
   stats.audio_level = base->transmit_mixer()->AudioLevelFullRange();
   RTC_DCHECK_LE(0, stats.audio_level);
 
-  RTC_DCHECK(base->audio_processing());
-  auto audio_processing_stats = base->audio_processing()->GetStatistics();
+  stats.total_input_energy = base->transmit_mixer()->GetTotalInputEnergy();
+  stats.total_input_duration = base->transmit_mixer()->GetTotalInputDuration();
+
+  RTC_DCHECK(audio_state_->audio_processing());
+  auto audio_processing_stats =
+      audio_state_->audio_processing()->GetStatistics();
   stats.echo_delay_median_ms = audio_processing_stats.delay_median;
   stats.echo_delay_std_ms = audio_processing_stats.delay_standard_deviation;
   stats.echo_return_loss = audio_processing_stats.echo_return_loss.instant();
@@ -340,7 +344,7 @@ void AudioSendStream::OnPacketAdded(uint32_t ssrc, uint16_t seq_num) {
   // Only packets that belong to this stream are of interest.
   if (ssrc == config_.rtp.ssrc) {
     rtc::CritScope lock(&packet_loss_tracker_cs_);
-    // TODO(elad.alon): This function call could potentially reset the window,
+    // TODO(eladalon): This function call could potentially reset the window,
     // setting both PLR and RPLR to unknown. Consider (during upcoming
     // refactoring) passing an indication of such an event.
     packet_loss_tracker_.OnPacketAdded(seq_num, rtc::TimeMillis());
@@ -349,7 +353,7 @@ void AudioSendStream::OnPacketAdded(uint32_t ssrc, uint16_t seq_num) {
 
 void AudioSendStream::OnPacketFeedbackVector(
     const std::vector<PacketFeedback>& packet_feedback_vector) {
-  // TODO(elad.alon): This fails in UT; fix and uncomment.
+  // TODO(eladalon): This fails in UT; fix and uncomment.
   // See: https://bugs.chromium.org/p/webrtc/issues/detail?id=7405
   // RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   rtc::Optional<float> plr;
@@ -360,7 +364,7 @@ void AudioSendStream::OnPacketFeedbackVector(
     plr = packet_loss_tracker_.GetPacketLossRate();
     rplr = packet_loss_tracker_.GetRecoverablePacketLossRate();
   }
-  // TODO(elad.alon): If R/PLR go back to unknown, no indication is given that
+  // TODO(eladalon): If R/PLR go back to unknown, no indication is given that
   // the previously sent value is no longer relevant. This will be taken care
   // of with some refactoring which is now being done.
   if (plr) {

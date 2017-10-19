@@ -97,6 +97,28 @@ TEST_F(ReceiveStatisticsProxyTest, OnDecodedFrameIncreasesQpSum) {
             statistics_proxy_->GetStats().qp_sum);
 }
 
+TEST_F(ReceiveStatisticsProxyTest,
+       OnDecodedFrameIncreasesInterframeDelayMsSum) {
+  const uint64_t kInterframeDelayMs1 = 100;
+  const uint64_t kInterframeDelayMs2 = 200;
+  EXPECT_EQ(0u, statistics_proxy_->GetStats().interframe_delay_sum_ms);
+  statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>(3u),
+                                    VideoContentType::UNSPECIFIED);
+  EXPECT_EQ(0u, statistics_proxy_->GetStats().interframe_delay_sum_ms);
+
+  fake_clock_.AdvanceTimeMilliseconds(kInterframeDelayMs1);
+  statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>(127u),
+                                    VideoContentType::UNSPECIFIED);
+  EXPECT_EQ(kInterframeDelayMs1,
+            statistics_proxy_->GetStats().interframe_delay_sum_ms);
+
+  fake_clock_.AdvanceTimeMilliseconds(kInterframeDelayMs2);
+  statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>(127u),
+                                    VideoContentType::UNSPECIFIED);
+  EXPECT_EQ(kInterframeDelayMs1 + kInterframeDelayMs2,
+            statistics_proxy_->GetStats().interframe_delay_sum_ms);
+}
+
 TEST_F(ReceiveStatisticsProxyTest, OnDecodedFrameWithoutQpQpSumWontExist) {
   EXPECT_EQ(rtc::Optional<uint64_t>(), statistics_proxy_->GetStats().qp_sum);
   statistics_proxy_->OnDecodedFrame(rtc::Optional<uint8_t>(),
@@ -245,6 +267,48 @@ TEST_F(ReceiveStatisticsProxyTest, GetStatsReportsNoCNameForUnknownSsrc) {
   const char* kName = "cName";
   statistics_proxy_->CNameChanged(kName, kRemoteSsrc + 1);
   EXPECT_STREQ("", statistics_proxy_->GetStats().c_name.c_str());
+}
+
+TEST_F(ReceiveStatisticsProxyTest,
+       GetTimingFrameInfoReportsLongestTimingFrame) {
+  const int64_t kShortEndToEndDelay = 10;
+  const int64_t kMedEndToEndDelay = 20;
+  const int64_t kLongEndToEndDelay = 100;
+  const uint32_t kExpectedRtpTimestamp = 2;
+  TimingFrameInfo info;
+  rtc::Optional<TimingFrameInfo> result;
+  info.rtp_timestamp = kExpectedRtpTimestamp - 1;
+  info.capture_time_ms = 0;
+  info.decode_finish_ms = kShortEndToEndDelay;
+  statistics_proxy_->OnTimingFrameInfoUpdated(info);
+  info.rtp_timestamp =
+      kExpectedRtpTimestamp;  // this frame should be reported in the end.
+  info.capture_time_ms = 0;
+  info.decode_finish_ms = kLongEndToEndDelay;
+  statistics_proxy_->OnTimingFrameInfoUpdated(info);
+  info.rtp_timestamp = kExpectedRtpTimestamp + 1;
+  info.capture_time_ms = 0;
+  info.decode_finish_ms = kMedEndToEndDelay;
+  statistics_proxy_->OnTimingFrameInfoUpdated(info);
+  result = statistics_proxy_->GetAndResetTimingFrameInfo();
+  EXPECT_TRUE(result);
+  EXPECT_EQ(kExpectedRtpTimestamp, result->rtp_timestamp);
+}
+
+TEST_F(ReceiveStatisticsProxyTest, GetTimingFrameInfoTimingFramesReportedOnce) {
+  const int64_t kShortEndToEndDelay = 10;
+  const uint32_t kExpectedRtpTimestamp = 2;
+  TimingFrameInfo info;
+  rtc::Optional<TimingFrameInfo> result;
+  info.rtp_timestamp = kExpectedRtpTimestamp;
+  info.capture_time_ms = 0;
+  info.decode_finish_ms = kShortEndToEndDelay;
+  statistics_proxy_->OnTimingFrameInfoUpdated(info);
+  result = statistics_proxy_->GetAndResetTimingFrameInfo();
+  EXPECT_TRUE(result);
+  EXPECT_EQ(kExpectedRtpTimestamp, result->rtp_timestamp);
+  result = statistics_proxy_->GetAndResetTimingFrameInfo();
+  EXPECT_FALSE(result);
 }
 
 TEST_F(ReceiveStatisticsProxyTest, LifetimeHistogramIsUpdated) {

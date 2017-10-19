@@ -16,6 +16,7 @@
 #define BF_ALIGN_RIGHT 2
 
 class CBA_FontMap;
+class CPWL_Edit;
 
 struct FFL_TextFieldState {
   FFL_TextFieldState() : nStart(0), nEnd(0) {}
@@ -27,13 +28,12 @@ struct FFL_TextFieldState {
 
 class CFFL_TextField : public CFFL_FormFiller, public IPWL_FocusHandler {
  public:
-  CFFL_TextField(CPDFSDK_FormFillEnvironment* pApp, CPDFSDK_Annot* pAnnot);
+  CFFL_TextField(CPDFSDK_FormFillEnvironment* pApp, CPDFSDK_Widget* pWidget);
   ~CFFL_TextField() override;
 
   // CFFL_FormFiller:
   PWL_CREATEPARAM GetCreateParam() override;
-  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
-                         CPDFSDK_PageView* pPageView) override;
+  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp) override;
   bool OnChar(CPDFSDK_Annot* pAnnot, uint32_t nChar, uint32_t nFlags) override;
   bool IsDataChanged(CPDFSDK_PageView* pPageView) override;
   void SaveData(CPDFSDK_PageView* pPageView) override;
@@ -52,7 +52,7 @@ class CFFL_TextField : public CFFL_FormFiller, public IPWL_FocusHandler {
                            bool bRestoreValue) override;
 
   // IPWL_FocusHandler:
-  void OnSetFocus(CPWL_Wnd* pWnd) override;
+  void OnSetFocus(CPWL_Edit* pEdit) override;
 
 #ifdef PDF_ENABLE_XFA
   // CFFL_FormFiller:
@@ -60,6 +60,8 @@ class CFFL_TextField : public CFFL_FormFiller, public IPWL_FocusHandler {
 #endif  // PDF_ENABLE_XFA
 
  private:
+  CPWL_Edit* GetEdit(CPDFSDK_PageView* pPageView, bool bNew);
+
   std::unique_ptr<CBA_FontMap> m_pFontMap;
   FFL_TextFieldState m_State;
 };

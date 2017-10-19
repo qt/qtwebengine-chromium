@@ -19,16 +19,6 @@
 #include <vector>
 
 #include "webrtc/api/call/audio_sink.h"
-#include "webrtc/base/arraysize.h"
-#include "webrtc/base/base64.h"
-#include "webrtc/base/byteorder.h"
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/helpers.h"
-#include "webrtc/base/logging.h"
-#include "webrtc/base/race_checker.h"
-#include "webrtc/base/stringencode.h"
-#include "webrtc/base/stringutils.h"
-#include "webrtc/base/trace_event.h"
 #include "webrtc/media/base/audiosource.h"
 #include "webrtc/media/base/mediaconstants.h"
 #include "webrtc/media/base/streamparams.h"
@@ -40,6 +30,16 @@
 #include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
 #include "webrtc/modules/audio_processing/aec_dump/aec_dump_factory.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
+#include "webrtc/rtc_base/arraysize.h"
+#include "webrtc/rtc_base/base64.h"
+#include "webrtc/rtc_base/byteorder.h"
+#include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/helpers.h"
+#include "webrtc/rtc_base/logging.h"
+#include "webrtc/rtc_base/race_checker.h"
+#include "webrtc/rtc_base/stringencode.h"
+#include "webrtc/rtc_base/stringutils.h"
+#include "webrtc/rtc_base/trace_event.h"
 #include "webrtc/system_wrappers/include/field_trial.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 #include "webrtc/system_wrappers/include/trace.h"
@@ -48,7 +48,7 @@
 namespace cricket {
 namespace {
 
-constexpr size_t kMaxUnsignaledRecvStreams = 1;
+constexpr size_t kMaxUnsignaledRecvStreams = 4;
 
 const int kDefaultTraceFilter = webrtc::kTraceNone | webrtc::kTraceTerseInfo |
                                 webrtc::kTraceWarning | webrtc::kTraceError |
@@ -163,7 +163,8 @@ rtc::Optional<std::string> GetAudioNetworkAdaptorConfig(
 
 webrtc::AudioState::Config MakeAudioStateConfig(
     VoEWrapper* voe_wrapper,
-    rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer) {
+    rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer,
+    rtc::scoped_refptr<webrtc::AudioProcessing> audio_processing) {
   webrtc::AudioState::Config config;
   config.voice_engine = voe_wrapper->engine();
   if (audio_mixer) {
@@ -171,6 +172,7 @@ webrtc::AudioState::Config MakeAudioStateConfig(
   } else {
     config.audio_mixer = webrtc::AudioMixerImpl::Create();
   }
+  config.audio_processing = audio_processing;
   return config;
 }
 
@@ -181,9 +183,10 @@ rtc::Optional<int> ComputeSendBitrate(int max_send_bitrate_bps,
                                       const webrtc::AudioCodecSpec& spec) {
   // If application-configured bitrate is set, take minimum of that and SDP
   // bitrate.
-  const int bps = rtp_max_bitrate_bps
-                      ? MinPositive(max_send_bitrate_bps, *rtp_max_bitrate_bps)
-                      : max_send_bitrate_bps;
+  const int bps =
+      rtp_max_bitrate_bps
+          ? webrtc::MinPositive(max_send_bitrate_bps, *rtp_max_bitrate_bps)
+          : max_send_bitrate_bps;
   if (bps <= 0) {
     return rtc::Optional<int>(spec.info.default_bitrate_bps);
   }
@@ -213,33 +216,61 @@ WebRtcVoiceEngine::WebRtcVoiceEngine(
     webrtc::AudioDeviceModule* adm,
     const rtc::scoped_refptr<webrtc::AudioEncoderFactory>& encoder_factory,
     const rtc::scoped_refptr<webrtc::AudioDecoderFactory>& decoder_factory,
-    rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer)
+    rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer,
+    rtc::scoped_refptr<webrtc::AudioProcessing> audio_processing)
     : WebRtcVoiceEngine(adm,
                         encoder_factory,
                         decoder_factory,
                         audio_mixer,
-                        new VoEWrapper()) {
-  audio_state_ =
-      webrtc::AudioState::Create(MakeAudioStateConfig(voe(), audio_mixer));
-}
+                        audio_processing,
+                        nullptr) {}
 
 WebRtcVoiceEngine::WebRtcVoiceEngine(
     webrtc::AudioDeviceModule* adm,
     const rtc::scoped_refptr<webrtc::AudioEncoderFactory>& encoder_factory,
     const rtc::scoped_refptr<webrtc::AudioDecoderFactory>& decoder_factory,
     rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer,
+    rtc::scoped_refptr<webrtc::AudioProcessing> audio_processing,
     VoEWrapper* voe_wrapper)
-    : low_priority_worker_queue_("rtc-low-prio", rtc::TaskQueue::Priority::LOW),
-      adm_(adm),
+    : adm_(adm),
       encoder_factory_(encoder_factory),
       decoder_factory_(decoder_factory),
+      audio_mixer_(audio_mixer),
+      apm_(audio_processing),
       voe_wrapper_(voe_wrapper) {
-  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  LOG(LS_INFO) << "WebRtcVoiceEngine::WebRtcVoiceEngine";
-  RTC_DCHECK(voe_wrapper);
-  RTC_DCHECK(decoder_factory);
-
+  // This may be called from any thread, so detach thread checkers.
+  worker_thread_checker_.DetachFromThread();
   signal_thread_checker_.DetachFromThread();
+  LOG(LS_INFO) << "WebRtcVoiceEngine::WebRtcVoiceEngine";
+  RTC_DCHECK(decoder_factory);
+  RTC_DCHECK(encoder_factory);
+  RTC_DCHECK(audio_processing);
+  // The rest of our initialization will happen in Init.
+}
+
+WebRtcVoiceEngine::~WebRtcVoiceEngine() {
+  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+  LOG(LS_INFO) << "WebRtcVoiceEngine::~WebRtcVoiceEngine";
+  if (initialized_) {
+    StopAecDump();
+    voe_wrapper_->base()->Terminate();
+    webrtc::Trace::SetTraceCallback(nullptr);
+  }
+}
+
+void WebRtcVoiceEngine::Init() {
+  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+  LOG(LS_INFO) << "WebRtcVoiceEngine::Init";
+
+  // TaskQueue expects to be created/destroyed on the same thread.
+  low_priority_worker_queue_.reset(
+      new rtc::TaskQueue("rtc-low-prio", rtc::TaskQueue::Priority::LOW));
+
+  // VoEWrapper needs to be created on the worker thread. It's expected to be
+  // null here unless it's being injected for testing.
+  if (!voe_wrapper_) {
+    voe_wrapper_.reset(new VoEWrapper());
+  }
 
   // Load our audio codec lists.
   LOG(LS_INFO) << "Supported send codecs in order of preference:";
@@ -260,8 +291,8 @@ WebRtcVoiceEngine::WebRtcVoiceEngine(
   webrtc::Trace::SetTraceCallback(this);
   webrtc::Trace::set_level_filter(kElevatedTraceFilter);
   LOG(LS_INFO) << webrtc::VoiceEngine::GetVersionString();
-  RTC_CHECK_EQ(0, voe_wrapper_->base()->Init(adm_.get(), nullptr,
-                                             decoder_factory_));
+  RTC_CHECK_EQ(0,
+               voe_wrapper_->base()->Init(adm_.get(), apm(), decoder_factory_));
   webrtc::Trace::set_level_filter(kDefaultTraceFilter);
 
   // No ADM supplied? Get the default one from VoE.
@@ -270,15 +301,12 @@ WebRtcVoiceEngine::WebRtcVoiceEngine(
   }
   RTC_DCHECK(adm_);
 
-  apm_ = voe_wrapper_->base()->audio_processing();
-  RTC_DCHECK(apm_);
-
   transmit_mixer_ = voe_wrapper_->base()->transmit_mixer();
   RTC_DCHECK(transmit_mixer_);
 
   // Save the default AGC configuration settings. This must happen before
   // calling ApplyOptions or the default will be overwritten.
-  default_agc_config_ = webrtc::apm_helpers::GetAgcConfig(apm_);
+  default_agc_config_ = webrtc::apm_helpers::GetAgcConfig(apm());
 
   // Set default engine options.
   {
@@ -309,14 +337,14 @@ WebRtcVoiceEngine::WebRtcVoiceEngine(
   apm()->Initialize();
   webrtc::adm_helpers::SetPlayoutDevice(adm_);
 #endif  // !WEBRTC_IOS
-}
 
-WebRtcVoiceEngine::~WebRtcVoiceEngine() {
-  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  LOG(LS_INFO) << "WebRtcVoiceEngine::~WebRtcVoiceEngine";
-  StopAecDump();
-  voe_wrapper_->base()->Terminate();
-  webrtc::Trace::SetTraceCallback(nullptr);
+  // May be null for VoE injected for testing.
+  if (voe()->engine()) {
+    audio_state_ = webrtc::AudioState::Create(
+        MakeAudioStateConfig(voe(), audio_mixer_, apm_));
+  }
+
+  initialized_ = true;
 }
 
 rtc::scoped_refptr<webrtc::AudioState>
@@ -483,7 +511,7 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
                    << default_agc_config_.targetLeveldBOv << "dB to -"
                    << config.targetLeveldBOv << "dB";
     }
-    webrtc::apm_helpers::SetAgcConfig(apm_, config);
+    webrtc::apm_helpers::SetAgcConfig(apm(), config);
   }
 
   if (options.intelligibility_enhancer) {
@@ -689,8 +717,8 @@ void WebRtcVoiceEngine::UnregisterChannel(WebRtcVoiceMediaChannel* channel) {
 bool WebRtcVoiceEngine::StartAecDump(rtc::PlatformFile file,
                                      int64_t max_size_bytes) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  auto aec_dump = webrtc::AecDumpFactory::Create(file, max_size_bytes,
-                                                 &low_priority_worker_queue_);
+  auto aec_dump = webrtc::AecDumpFactory::Create(
+      file, max_size_bytes, low_priority_worker_queue_.get());
   if (!aec_dump) {
     return false;
   }
@@ -701,8 +729,8 @@ bool WebRtcVoiceEngine::StartAecDump(rtc::PlatformFile file,
 void WebRtcVoiceEngine::StartAecDump(const std::string& filename) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
 
-  auto aec_dump =
-      webrtc::AecDumpFactory::Create(filename, -1, &low_priority_worker_queue_);
+  auto aec_dump = webrtc::AecDumpFactory::Create(
+      filename, -1, low_priority_worker_queue_.get());
   if (aec_dump) {
     apm()->AttachAecDump(std::move(aec_dump));
   }
@@ -726,8 +754,7 @@ webrtc::AudioDeviceModule* WebRtcVoiceEngine::adm() {
 
 webrtc::AudioProcessing* WebRtcVoiceEngine::apm() {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  RTC_DCHECK(apm_);
-  return apm_;
+  return apm_.get();
 }
 
 webrtc::voe::TransmitMixer* WebRtcVoiceEngine::transmit_mixer() {
@@ -2221,6 +2248,8 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     sinfo.jitter_ms = stats.jitter_ms;
     sinfo.rtt_ms = stats.rtt_ms;
     sinfo.audio_level = stats.audio_level;
+    sinfo.total_input_energy = stats.total_input_energy;
+    sinfo.total_input_duration = stats.total_input_duration;
     sinfo.aec_quality_min = stats.aec_quality_min;
     sinfo.echo_delay_median_ms = stats.echo_delay_median_ms;
     sinfo.echo_delay_std_ms = stats.echo_delay_std_ms;
@@ -2251,6 +2280,8 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     rinfo.jitter_buffer_preferred_ms = stats.jitter_buffer_preferred_ms;
     rinfo.delay_estimate_ms = stats.delay_estimate_ms;
     rinfo.audio_level = stats.audio_level;
+    rinfo.total_output_energy = stats.total_output_energy;
+    rinfo.total_output_duration = stats.total_output_duration;
     rinfo.expand_rate = stats.expand_rate;
     rinfo.speech_expand_rate = stats.speech_expand_rate;
     rinfo.secondary_decoded_rate = stats.secondary_decoded_rate;

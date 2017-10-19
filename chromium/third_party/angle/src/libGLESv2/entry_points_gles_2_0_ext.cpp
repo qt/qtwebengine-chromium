@@ -249,7 +249,7 @@ void GL_APIENTRY DeleteFencesNV(GLsizei n, const GLuint *fences)
     {
         if (n < 0)
         {
-            context->handleError(Error(GL_INVALID_VALUE));
+            context->handleError(InvalidValue());
             return;
         }
 
@@ -318,13 +318,13 @@ void GL_APIENTRY FinishFenceNV(GLuint fence)
 
         if (fenceObject == nullptr)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(InvalidOperation());
             return;
         }
 
         if (fenceObject->isSet() != GL_TRUE)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(InvalidOperation());
             return;
         }
 
@@ -341,7 +341,7 @@ void GL_APIENTRY GenFencesNV(GLsizei n, GLuint *fences)
     {
         if (n < 0)
         {
-            context->handleError(Error(GL_INVALID_VALUE));
+            context->handleError(InvalidValue());
             return;
         }
 
@@ -364,13 +364,13 @@ void GL_APIENTRY GetFenceivNV(GLuint fence, GLenum pname, GLint *params)
 
         if (fenceObject == nullptr)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(InvalidOperation());
             return;
         }
 
         if (fenceObject->isSet() != GL_TRUE)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(InvalidOperation());
             return;
         }
 
@@ -404,7 +404,7 @@ void GL_APIENTRY GetFenceivNV(GLuint fence, GLenum pname, GLint *params)
 
             default:
             {
-                context->handleError(Error(GL_INVALID_ENUM));
+                context->handleError(InvalidEnum());
                 return;
             }
         }
@@ -440,7 +440,7 @@ void GL_APIENTRY GetTranslatedShaderSourceANGLE(GLuint shader,
     {
         if (bufsize < 0)
         {
-            context->handleError(Error(GL_INVALID_VALUE));
+            context->handleError(InvalidValue());
             return;
         }
 
@@ -448,11 +448,11 @@ void GL_APIENTRY GetTranslatedShaderSourceANGLE(GLuint shader,
 
         if (!shaderObject)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(InvalidOperation());
             return;
         }
 
-        shaderObject->getTranslatedSourceWithDebugInfo(bufsize, length, source);
+        shaderObject->getTranslatedSourceWithDebugInfo(context, bufsize, length, source);
     }
 }
 
@@ -583,7 +583,7 @@ void GL_APIENTRY SetFenceNV(GLuint fence, GLenum condition)
     {
         if (condition != GL_ALL_COMPLETED_NV)
         {
-            context->handleError(Error(GL_INVALID_ENUM));
+            context->handleError(InvalidEnum());
             return;
         }
 
@@ -591,7 +591,7 @@ void GL_APIENTRY SetFenceNV(GLuint fence, GLenum condition)
 
         if (fenceObject == nullptr)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(InvalidOperation());
             return;
         }
 
@@ -615,13 +615,13 @@ GLboolean GL_APIENTRY TestFenceNV(GLuint fence)
 
         if (fenceObject == nullptr)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(InvalidOperation());
             return GL_TRUE;
         }
 
         if (fenceObject->isSet() != GL_TRUE)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(InvalidOperation());
             return GL_TRUE;
         }
 
@@ -652,7 +652,7 @@ TexStorage2DEXT(GLenum target, GLsizei levels, GLenum internalformat, GLsizei wi
     {
         if (!context->getExtensions().textureStorage)
         {
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(InvalidOperation());
             return;
         }
 
@@ -670,14 +670,7 @@ TexStorage2DEXT(GLenum target, GLsizei levels, GLenum internalformat, GLsizei wi
             return;
         }
 
-        Extents size(width, height, 1);
-        Texture *texture = context->getTargetTexture(target);
-        Error error      = texture->setStorage(context, target, levels, internalformat, size);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->texStorage2D(target, levels, internalformat, width, height);
     }
 }
 
@@ -690,7 +683,7 @@ void GL_APIENTRY VertexAttribDivisorANGLE(GLuint index, GLuint divisor)
     {
         if (index >= MAX_VERTEX_ATTRIBS)
         {
-            context->handleError(Error(GL_INVALID_VALUE));
+            context->handleError(InvalidValue());
             return;
         }
 
@@ -703,7 +696,7 @@ void GL_APIENTRY VertexAttribDivisorANGLE(GLuint index, GLuint divisor)
                     "attribute with index zero. "
                     "Please reorder the attributes in your vertex shader so that attribute zero "
                     "can have a zero divisor.";
-                context->handleError(Error(GL_INVALID_OPERATION, errorMessage));
+                context->handleError(InvalidOperation() << errorMessage);
 
                 // We also output an error message to the debugger window if tracing is active, so
                 // that developers can see the error message.
@@ -803,20 +796,13 @@ void GL_APIENTRY GetProgramBinaryOES(GLuint program,
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidateGetProgramBinaryOES(context, program, bufSize, length, binaryFormat, binary))
+        if (!context->skipValidation() &&
+            !ValidateGetProgramBinaryOES(context, program, bufSize, length, binaryFormat, binary))
         {
             return;
         }
 
-        Program *programObject = context->getProgram(program);
-        ASSERT(programObject != nullptr);
-
-        Error error = programObject->saveBinary(context, binaryFormat, binary, bufSize, length);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->getProgramBinary(program, bufSize, length, binaryFormat, binary);
     }
 }
 
@@ -831,20 +817,13 @@ void GL_APIENTRY ProgramBinaryOES(GLuint program,
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidateProgramBinaryOES(context, program, binaryFormat, binary, length))
+        if (!context->skipValidation() &&
+            !ValidateProgramBinaryOES(context, program, binaryFormat, binary, length))
         {
             return;
         }
 
-        Program *programObject = context->getProgram(program);
-        ASSERT(programObject != nullptr);
-
-        Error error = programObject->loadBinary(context, binaryFormat, binary, length);
-        if (error.isError())
-        {
-            context->handleError(error);
-            return;
-        }
+        context->programBinary(program, binaryFormat, binary, length);
     }
 }
 
@@ -973,7 +952,7 @@ void GL_APIENTRY InsertEventMarkerEXT(GLsizei length, const char *marker)
         {
             // The debug marker calls should not set error state
             // However, it seems reasonable to set an error state if the extension is not enabled
-            context->handleError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+            context->handleError(InvalidOperation() << "Extension not enabled");
             return;
         }
 
@@ -998,7 +977,7 @@ void GL_APIENTRY PushGroupMarkerEXT(GLsizei length, const char *marker)
         {
             // The debug marker calls should not set error state
             // However, it seems reasonable to set an error state if the extension is not enabled
-            context->handleError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+            context->handleError(InvalidOperation() << "Extension not enabled");
             return;
         }
 
@@ -1032,7 +1011,7 @@ void GL_APIENTRY PopGroupMarkerEXT()
         {
             // The debug marker calls should not set error state
             // However, it seems reasonable to set an error state if the extension is not enabled
-            context->handleError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
+            context->handleError(InvalidOperation() << "Extension not enabled");
             return;
         }
 
@@ -1044,19 +1023,17 @@ ANGLE_EXPORT void GL_APIENTRY EGLImageTargetTexture2DOES(GLenum target, GLeglIma
 {
     EVENT("(GLenum target = 0x%X, GLeglImageOES image = 0x%0.8p)", target, image);
 
-    egl::Thread *thread = egl::GetCurrentThread();
-    Context *context    = thread->getValidContext();
+    Context *context = GetValidGlobalContext();
     if (context)
     {
-        egl::Display *display   = thread->getDisplay();
         egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
-        if (!ValidateEGLImageTargetTexture2DOES(context, display, target, imageObject))
+        if (!ValidateEGLImageTargetTexture2DOES(context, target, imageObject))
         {
             return;
         }
 
         Texture *texture = context->getTargetTexture(target);
-        Error error      = texture->setEGLImageTarget(target, imageObject);
+        Error error      = texture->setEGLImageTarget(context, target, imageObject);
         if (error.isError())
         {
             context->handleError(error);
@@ -1070,19 +1047,17 @@ ANGLE_EXPORT void GL_APIENTRY EGLImageTargetRenderbufferStorageOES(GLenum target
 {
     EVENT("(GLenum target = 0x%X, GLeglImageOES image = 0x%0.8p)", target, image);
 
-    egl::Thread *thread = egl::GetCurrentThread();
-    Context *context    = thread->getValidContext();
+    Context *context = GetValidGlobalContext();
     if (context)
     {
-        egl::Display *display   = thread->getDisplay();
         egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
-        if (!ValidateEGLImageTargetRenderbufferStorageOES(context, display, target, imageObject))
+        if (!ValidateEGLImageTargetRenderbufferStorageOES(context, target, imageObject))
         {
             return;
         }
 
         Renderbuffer *renderbuffer = context->getGLState().getCurrentRenderbuffer();
-        Error error                = renderbuffer->setStorageEGLImageTarget(imageObject);
+        Error error                = renderbuffer->setStorageEGLImageTarget(context, imageObject);
         if (error.isError())
         {
             context->handleError(error);
@@ -2180,7 +2155,7 @@ ANGLE_EXPORT void GL_APIENTRY GetProgramivRobustANGLE(GLuint program,
         }
 
         Program *programObject = context->getProgram(program);
-        QueryProgramiv(programObject, pname, params);
+        QueryProgramiv(context, programObject, pname, params);
         SetRobustLengthParam(length, numParams);
     }
 }
@@ -2230,7 +2205,7 @@ GetShaderivRobustANGLE(GLuint shader, GLenum pname, GLsizei bufSize, GLsizei *le
         }
 
         Shader *shaderObject = context->getShader(shader);
-        QueryShaderiv(shaderObject, pname, params);
+        QueryShaderiv(context, shaderObject, pname, params);
         SetRobustLengthParam(length, numParams);
     }
 }
@@ -2513,7 +2488,7 @@ ANGLE_EXPORT void GL_APIENTRY TexParameterfvRobustANGLE(GLenum target,
         }
 
         Texture *texture = context->getTargetTexture(target);
-        SetTexParameterfv(texture, pname, params);
+        SetTexParameterfv(context, texture, pname, params);
     }
 }
 
@@ -2536,7 +2511,7 @@ ANGLE_EXPORT void GL_APIENTRY TexParameterivRobustANGLE(GLenum target,
         }
 
         Texture *texture = context->getTargetTexture(target);
-        SetTexParameteriv(texture, pname, params);
+        SetTexParameteriv(context, texture, pname, params);
     }
 }
 
@@ -3536,6 +3511,56 @@ ANGLE_EXPORT void GL_APIENTRY GetQueryObjectui64vRobustANGLE(GLuint id,
 
         context->getQueryObjectui64v(id, pname, params);
         SetRobustLengthParam(length, numParams);
+    }
+}
+
+GL_APICALL void GL_APIENTRY FramebufferTextureMultiviewLayeredANGLE(GLenum target,
+                                                                    GLenum attachment,
+                                                                    GLuint texture,
+                                                                    GLint level,
+                                                                    GLint baseViewIndex,
+                                                                    GLsizei numViews)
+{
+    EVENT(
+        "(GLenum target = 0x%X, GLenum attachment = 0x%X, GLuint texture = %u, GLint level = %d, "
+        "GLint baseViewIndex = %d, GLsizei numViews = %d)",
+        target, attachment, texture, level, baseViewIndex, numViews);
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() &&
+            !ValidateFramebufferTextureMultiviewLayeredANGLE(context, target, attachment, texture,
+                                                             level, baseViewIndex, numViews))
+        {
+            return;
+        }
+        context->framebufferTextureMultiviewLayeredANGLE(target, attachment, texture, level,
+                                                         baseViewIndex, numViews);
+    }
+}
+
+GL_APICALL void GL_APIENTRY FramebufferTextureMultiviewSideBySideANGLE(GLenum target,
+                                                                       GLenum attachment,
+                                                                       GLuint texture,
+                                                                       GLint level,
+                                                                       GLsizei numViews,
+                                                                       const GLint *viewportOffsets)
+{
+    EVENT(
+        "(GLenum target = 0x%X, GLenum attachment = 0x%X, GLuint texture = %u, GLint level = %d, "
+        "GLsizei numViews = %d, GLsizei* viewportOffsets = 0x%0.8p)",
+        target, attachment, texture, level, numViews, viewportOffsets);
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() &&
+            !ValidateFramebufferTextureMultiviewSideBySideANGLE(
+                context, target, attachment, texture, level, numViews, viewportOffsets))
+        {
+            return;
+        }
+        context->framebufferTextureMultiviewSideBySideANGLE(target, attachment, texture, level,
+                                                            numViews, viewportOffsets);
     }
 }
 

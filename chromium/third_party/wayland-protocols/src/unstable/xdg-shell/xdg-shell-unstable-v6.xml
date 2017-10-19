@@ -118,7 +118,9 @@
       child surface relative to a parent surface. Rules can be defined to ensure
       the child surface remains within the visible area's borders, and to
       specify how the child surface changes its position, such as sliding along
-      an axis, or flipping around a rectangle.
+      an axis, or flipping around a rectangle. These positioner-created rules are
+      constrained by the requirement that a child surface must intersect with or
+      be at least partially adjacent to its parent surface.
 
       See the various requests for details about possible rules.
 
@@ -247,7 +249,6 @@
 	The adjustments can be combined, according to a defined precedence: 1)
 	Flip, 2) Slide, 3) Resize.
       </description>
-
       <entry name="none" value="0">
 	<description summary="don't move the child surface when constrained">
 	  Don't alter the surface position even if it is constrained on some
@@ -567,7 +568,7 @@
 	service name.
 
 	The compositor shell will try to group application surfaces together
-	by their app ID.  As a best practice, it is suggested to select app
+	by their app ID. As a best practice, it is suggested to select app
 	ID's that match the basename of the application's .desktop file.
 	For example, "org.freedesktop.FooViewer" where the .desktop file is
 	"org.freedesktop.FooViewer.desktop".
@@ -595,7 +596,6 @@
 	This request must be used in response to some sort of user action
 	like a button press, key press, or touch down event.
       </description>
-
       <arg name="seat" type="object" interface="wl_seat" summary="the wl_seat of the user event"/>
       <arg name="serial" type="uint" summary="the serial of the user event"/>
       <arg name="x" type="int" summary="the x position to pop up the window menu at"/>
@@ -884,7 +884,7 @@
 
 	If the width or height arguments are zero, it means the client
 	should decide its own window dimension. This may happen when the
-	compositor need to configure the state of the surface but doesn't
+	compositor needs to configure the state of the surface but doesn't
 	have any information about any previous or expected dimension.
 
 	The states listed in the event specify how the width/height
@@ -894,7 +894,6 @@
 	Clients must send an ack_configure in response to this event. See
 	xdg_surface.configure and xdg_surface.ack_configure for details.
       </description>
-
       <arg name="width" type="int"/>
       <arg name="height" type="int"/>
       <arg name="states" type="array"/>
@@ -905,11 +904,11 @@
 	The close event is sent by the compositor when the user
 	wants the surface to be closed. This should be equivalent to
 	the user clicking the close button in client-side decorations,
-	if your application has any...
+	if your application has any.
 
-	This is only a request that the user intends to close your
+	This is only a request that the user intends to close the
 	window. The client may choose to ignore this request, or show
-	a dialog to ask the user to save their data...
+	a dialog to ask the user to save their data, etc.
       </description>
     </event>
   </interface>
@@ -944,7 +943,8 @@
       The x and y arguments passed when creating the popup object specify
       where the top left of the popup should be placed, relative to the
       local surface coordinates of the parent surface. See
-      xdg_surface.get_popup.
+      xdg_surface.get_popup. An xdg_popup must intersect with or be at least
+      partially adjacent to its parent surface.
 
       The client must call wl_surface.commit on the corresponding wl_surface
       for the xdg_popup state to take effect.
@@ -1009,7 +1009,6 @@
 	"owner-events" grab in X11 parlance), while the top most grabbing popup
 	will always have keyboard focus.
       </description>
-
       <arg name="seat" type="object" interface="wl_seat"
 	   summary="the wl_seat of the user event"/>
       <arg name="serial" type="uint" summary="the serial of the user event"/>

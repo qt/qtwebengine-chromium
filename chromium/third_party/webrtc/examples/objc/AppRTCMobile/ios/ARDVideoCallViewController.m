@@ -10,7 +10,7 @@
 
 #import "ARDVideoCallViewController.h"
 
-#import "webrtc/modules/audio_device/ios/objc/RTCAudioSession.h"
+#import "WebRTC/RTCAudioSession.h"
 
 #import "ARDAppClient.h"
 #import "ARDCaptureController.h"
@@ -22,7 +22,8 @@
 #import "WebRTC/RTCMediaConstraints.h"
 
 @interface ARDVideoCallViewController () <ARDAppClientDelegate,
-    ARDVideoCallViewDelegate>
+                                          ARDVideoCallViewDelegate,
+                                          RTCAudioSessionDelegate>
 @property(nonatomic, strong) RTCVideoTrack *remoteVideoTrack;
 @property(nonatomic, readonly) ARDVideoCallView *videoCallView;
 @end
@@ -40,21 +41,13 @@
 
 - (instancetype)initForRoom:(NSString *)room
                  isLoopback:(BOOL)isLoopback
-                isAudioOnly:(BOOL)isAudioOnly
-          shouldMakeAecDump:(BOOL)shouldMakeAecDump
-      shouldUseLevelControl:(BOOL)shouldUseLevelControl
                    delegate:(id<ARDVideoCallViewControllerDelegate>)delegate {
   if (self = [super init]) {
     ARDSettingsModel *settingsModel = [[ARDSettingsModel alloc] init];
     _delegate = delegate;
 
     _client = [[ARDAppClient alloc] initWithDelegate:self];
-    [_client connectToRoomWithId:room
-                        settings:settingsModel
-                      isLoopback:isLoopback
-                     isAudioOnly:isAudioOnly
-               shouldMakeAecDump:shouldMakeAecDump
-           shouldUseLevelControl:shouldUseLevelControl];
+    [_client connectToRoomWithId:room settings:settingsModel isLoopback:isLoopback];
   }
   return self;
 }
@@ -65,6 +58,9 @@
   _videoCallView.statusLabel.text =
       [self statusTextForState:RTCIceConnectionStateNew];
   self.view = _videoCallView;
+
+  RTCAudioSession *session = [RTCAudioSession sharedInstance];
+  [session addDelegate:self];
 }
 
 #pragma mark - ARDAppClientDelegate
@@ -164,6 +160,13 @@
 - (void)videoCallViewDidEnableStats:(ARDVideoCallView *)view {
   _client.shouldGetStats = YES;
   _videoCallView.statsView.hidden = NO;
+}
+
+#pragma mark - RTCAudioSessionDelegate
+
+- (void)audioSession:(RTCAudioSession *)audioSession
+    didDetectPlayoutGlitch:(int64_t)totalNumberOfGlitches {
+  RTCLog(@"Audio session detected glitch, total: %lld", totalNumberOfGlitches);
 }
 
 #pragma mark - Private

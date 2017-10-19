@@ -472,8 +472,8 @@ void SpellcheckCustomDictionary::FixInvalidFile(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&SavePassedWordsToDictionaryFileReliably,
-                 custom_dictionary_path_, base::Passed(&load_file_result)));
+      base::BindOnce(&SavePassedWordsToDictionaryFileReliably,
+                     custom_dictionary_path_, base::Passed(&load_file_result)));
 }
 
 void SpellcheckCustomDictionary::Save(
@@ -482,8 +482,9 @@ void SpellcheckCustomDictionary::Save(
   fix_invalid_file_.Cancel();
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&SpellcheckCustomDictionary::UpdateDictionaryFile,
-                 base::Passed(&dictionary_change), custom_dictionary_path_));
+      base::BindOnce(&SpellcheckCustomDictionary::UpdateDictionaryFile,
+                     base::Passed(&dictionary_change),
+                     custom_dictionary_path_));
 }
 
 #ifndef TOOLKIT_QT

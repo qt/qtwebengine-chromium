@@ -15,7 +15,7 @@
 namespace rx
 {
 
-class GlslangWrapper : public RefCountObjectNoID
+class GlslangWrapper : public gl::RefCountObjectNoID
 {
   public:
     // Increases the reference count.
@@ -23,10 +23,10 @@ class GlslangWrapper : public RefCountObjectNoID
     static GlslangWrapper *GetReference();
     static void ReleaseReference();
 
-    LinkResult linkProgram(const std::string &vertexSource,
-                           const std::string &fragmentSource,
-                           std::vector<uint32_t> *vertexCodeOut,
-                           std::vector<uint32_t> *fragmentCodeOut);
+    gl::LinkResult linkProgram(const std::string &vertexSource,
+                               const std::string &fragmentSource,
+                               std::vector<uint32_t> *vertexCodeOut,
+                               std::vector<uint32_t> *fragmentCodeOut);
 
   private:
     GlslangWrapper();

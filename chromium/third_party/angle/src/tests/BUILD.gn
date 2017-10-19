@@ -189,6 +189,7 @@ if (is_win || is_linux) {
       "//testing/gmock",
       "//testing/gtest",
       "//third_party/angle:angle_util_static",
+      "//third_party/angle:libANGLE",
       "//third_party/angle:libEGL_static",
       "//third_party/angle:libGLESv2_static",
     ]
@@ -361,6 +362,7 @@ if (build_angle_deqp_tests) {
     shared_library(shared_library_name) {
       deps = [
         ":angle_deqp_libtester",
+        "//build/config:exe_and_shlib_deps",
         "//third_party/angle:angle_util",
       ]
 

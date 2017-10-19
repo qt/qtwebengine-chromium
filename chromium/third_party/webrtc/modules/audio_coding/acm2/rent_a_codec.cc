@@ -13,9 +13,9 @@
 #include <memory>
 #include <utility>
 
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/audio_coding/codecs/cng/audio_encoder_cng.h"
 #include "webrtc/modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
+#include "webrtc/rtc_base/logging.h"
 #ifdef WEBRTC_CODEC_G722
 #include "webrtc/modules/audio_coding/codecs/g722/audio_encoder_g722.h"
 #endif
@@ -173,11 +173,11 @@ std::unique_ptr<AudioEncoder> CreateEncoder(
     return std::unique_ptr<AudioEncoder>(new AudioEncoderPcm16B(speech_inst));
 #ifdef WEBRTC_CODEC_ILBC
   if (STR_CASE_CMP(speech_inst.plname, "ilbc") == 0)
-    return std::unique_ptr<AudioEncoder>(new AudioEncoderIlbc(speech_inst));
+    return std::unique_ptr<AudioEncoder>(new AudioEncoderIlbcImpl(speech_inst));
 #endif
 #ifdef WEBRTC_CODEC_G722
   if (STR_CASE_CMP(speech_inst.plname, "g722") == 0)
-    return std::unique_ptr<AudioEncoder>(new AudioEncoderG722(speech_inst));
+    return std::unique_ptr<AudioEncoder>(new AudioEncoderG722Impl(speech_inst));
 #endif
   LOG_F(LS_ERROR) << "Could not create encoder of type " << speech_inst.plname;
   return std::unique_ptr<AudioEncoder>();

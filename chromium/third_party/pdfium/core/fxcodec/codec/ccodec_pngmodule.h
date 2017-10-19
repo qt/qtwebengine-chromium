@@ -7,15 +7,19 @@
 #ifndef CORE_FXCODEC_CODEC_CCODEC_PNGMODULE_H_
 #define CORE_FXCODEC_CODEC_CCODEC_PNGMODULE_H_
 
+#include <memory>
+
 #include "core/fxcrt/fx_system.h"
 
 class CFX_DIBAttribute;
-struct FXPNG_Context;
-
-#define PNG_ERROR_SIZE 256
 
 class CCodec_PngModule {
  public:
+  class Context {
+   public:
+    virtual ~Context() {}
+  };
+
   class Delegate {
    public:
     virtual bool PngReadHeader(int width,
@@ -28,22 +32,11 @@ class CCodec_PngModule {
     virtual void PngFillScanlineBufCompleted(int pass, int line) = 0;
   };
 
-  CCodec_PngModule();
-  ~CCodec_PngModule();
-
-  FXPNG_Context* Start();
-  void Finish(FXPNG_Context* pContext);
-  bool Input(FXPNG_Context* pContext,
+  std::unique_ptr<Context> Start(Delegate* pDelegate);
+  bool Input(Context* pContext,
              const uint8_t* src_buf,
              uint32_t src_size,
              CFX_DIBAttribute* pAttribute);
-
-  Delegate* GetDelegate() const { return m_pDelegate; }
-  void SetDelegate(Delegate* delegate) { m_pDelegate = delegate; }
-
- protected:
-  Delegate* m_pDelegate;
-  char m_szLastError[PNG_ERROR_SIZE];
 };
 
 #endif  // CORE_FXCODEC_CODEC_CCODEC_PNGMODULE_H_

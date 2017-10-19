@@ -60,8 +60,11 @@
 
 #define FT_Stream_FTell( stream )                         \
           (FT_ULong)( (stream)->cursor - (stream)->base )
-#define FT_Stream_SeekSet( stream, off )                  \
-          ( (stream)->cursor = (stream)->base + (off) )
+#define FT_Stream_SeekSet( stream, off )                               \
+          (stream)->cursor =                                           \
+            ( (off) < (FT_ULong)( (stream)->limit - (stream)->base ) ) \
+                        ? (stream)->base + (off)                       \
+                        : (stream)->limit
 
 
   /*************************************************************************/

@@ -25,7 +25,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 174
+#define ANGLE_SH_VERSION 178
 
 enum ShShaderSpec
 {
@@ -218,6 +218,32 @@ const ShCompileOptions SH_EMULATE_ATAN2_FLOAT_FUNCTION = UINT64_C(1) << 30;
 // "uniform highp uint webgl_angle_ViewID_OVR".
 const ShCompileOptions SH_TRANSLATE_VIEWID_OVR_TO_UNIFORM = UINT64_C(1) << 31;
 
+// Set to initialize uninitialized local variables. Should only be used with GLSL output. In HLSL
+// output variables are initialized regardless of if this flag is set.
+const ShCompileOptions SH_INITIALIZE_UNINITIALIZED_LOCALS = UINT64_C(1) << 32;
+
+// The flag modifies the shader in the following way:
+// Every occurrence of gl_InstanceID is replaced by the global temporary variable InstanceID.
+// Every occurrence of gl_ViewID_OVR is replaced by the varying variable ViewID_OVR.
+// At the beginning of the body of main() in a vertex shader the following initializers are added:
+// ViewID_OVR = uint(gl_InstanceID) % num_views;
+// InstanceID = gl_InstanceID / num_views;
+// ViewID_OVR is added as a varying variable to both the vertex and fragment shaders.
+const ShCompileOptions SH_INITIALIZE_BUILTINS_FOR_INSTANCED_MULTIVIEW = UINT64_C(1) << 33;
+
+// With the flag enabled the GLSL/ESSL vertex shader is modified to include code for viewport
+// selection in the following way:
+// - Code to enable the extension NV_viewport_array2 is included.
+// - Code to select the viewport index is included at the beginning of main after ViewID_OVR's
+// initialization: gl_ViewportIndex = int(ViewID_OVR)
+// Note: The SH_INITIALIZE_BUILTINS_FOR_INSTANCED_MULTIVIEW flag also has to be enabled to have the
+// temporary variable ViewID_OVR declared and initialized.
+const ShCompileOptions SH_SELECT_VIEW_IN_NV_GLSL_VERTEX_SHADER = UINT64_C(1) << 34;
+
+// If the flag is enabled, gl_PointSize is clamped to the maximum point size specified in
+// ShBuiltInResources in vertex shaders.
+const ShCompileOptions SH_CLAMP_POINT_SIZE = UINT64_C(1) << 35;
+
 // Defines alternate strategies for implementing array index clamping.
 enum ShArrayIndexClampingStrategy
 {
@@ -376,6 +402,15 @@ struct ShBuiltInResources
 
     // maximum number of buffer object storage in machine units
     int MaxAtomicCounterBufferSize;
+
+    // maximum number of uniform block bindings
+    int MaxUniformBufferBindings;
+
+    // maximum number of shader storage buffer bindings
+    int MaxShaderStorageBufferBindings;
+
+    // maximum point size (higher limit from ALIASED_POINT_SIZE_RANGE)
+    float MaxPointSize;
 };
 
 //

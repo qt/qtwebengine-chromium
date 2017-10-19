@@ -63,10 +63,12 @@ static NSUInteger const kBottomViewHeight = 200;
 
 
 - (void)displayLogMessage:(NSString *)message {
-  _logView.string =
-      [NSString stringWithFormat:@"%@%@\n", _logView.string, message];
-  NSRange range = NSMakeRange(_logView.string.length, 0);
-  [_logView scrollRangeToVisible:range];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    _logView.string =
+        [NSString stringWithFormat:@"%@%@\n", _logView.string, message];
+    NSRange range = NSMakeRange(_logView.string.length, 0);
+    [_logView scrollRangeToVisible:range];
+  });
 }
 
 #pragma mark - Private
@@ -221,10 +223,12 @@ static NSUInteger const kBottomViewHeight = 200;
 // If not we're providing sensible default.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpartial-availability"
-  if ([RTCMTLNSVideoView class]) {
+  if ([RTCMTLNSVideoView class] && [RTCMTLNSVideoView isMetalAvailable]) {
     _remoteVideoView = [[RTCMTLNSVideoView alloc] initWithFrame:NSZeroRect];
     _localVideoView = [[RTCMTLNSVideoView alloc] initWithFrame:NSZeroRect];
-  } else {
+  }
+#pragma clang diagnostic pop
+  if (_remoteVideoView == nil) {
     NSOpenGLPixelFormatAttribute attributes[] = {
       NSOpenGLPFADoubleBuffer,
       NSOpenGLPFADepthSize, 24,
@@ -245,7 +249,6 @@ static NSUInteger const kBottomViewHeight = 200;
     local.delegate = self;
     _localVideoView = local;
   }
-#pragma clang diagnostic pop
 
   [_remoteVideoView setTranslatesAutoresizingMaskIntoConstraints:NO];
   [self addSubview:_remoteVideoView];
@@ -399,10 +402,7 @@ static NSUInteger const kBottomViewHeight = 200;
   ARDAppClient* client = [[ARDAppClient alloc] initWithDelegate:self];
   [client connectToRoomWithId:roomId
                      settings:[[ARDSettingsModel alloc] init]  // Use default settings.
-                   isLoopback:isLoopback
-                  isAudioOnly:NO
-            shouldMakeAecDump:NO
-        shouldUseLevelControl:NO];
+                   isLoopback:isLoopback];
   _client = client;
 }
 
@@ -413,9 +413,11 @@ static NSUInteger const kBottomViewHeight = 200;
 }
 
 - (void)showAlertWithMessage:(NSString*)message {
-  NSAlert* alert = [[NSAlert alloc] init];
-  [alert setMessageText:message];
-  [alert runModal];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSAlert* alert = [[NSAlert alloc] init];
+    [alert setMessageText:message];
+    [alert runModal];
+  });
 }
 
 - (void)resetUI {

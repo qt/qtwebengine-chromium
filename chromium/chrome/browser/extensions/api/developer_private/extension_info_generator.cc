@@ -21,7 +21,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/path_util.h"
 #include "chrome/browser/extensions/scripting_permissions_modifier.h"
 #include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -37,6 +36,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/image_loader.h"
+#include "extensions/browser/path_util.h"
 #include "extensions/browser/warning_service.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/feature_switch.h"
@@ -311,12 +311,6 @@ void ExtensionInfoGenerator::CreateExtensionInfoHelper(
   std::unique_ptr<developer::ExtensionInfo> info(
       new developer::ExtensionInfo());
 
-  // Don't consider the button hidden with the redesign, because "hidden"
-  // buttons are now just hidden in the wrench menu.
-  info->action_button_hidden =
-      !extension_action_api_->GetBrowserActionVisibility(extension.id()) &&
-      !FeatureSwitch::extension_action_redesign()->IsEnabled();
-
   // Blacklist text.
   int blacklist_text = -1;
   switch (extension_prefs_->GetExtensionBlacklistState(extension.id())) {
@@ -403,7 +397,10 @@ void ExtensionInfoGenerator::CreateExtensionInfoHelper(
       error_console_->IsReportingEnabledForExtension(extension.id());
 
   // File access.
-  info->file_access.is_enabled = extension.wants_file_access();
+  ManagementPolicy* management_policy = extension_system_->management_policy();
+  info->file_access.is_enabled =
+      extension.wants_file_access() &&
+      management_policy->UserMayModifySettings(&extension, nullptr);
   info->file_access.is_active =
       util::AllowFileAccess(extension.id(), browser_context_);
 
@@ -487,7 +484,6 @@ void ExtensionInfoGenerator::CreateExtensionInfoHelper(
     }
   }
 
-  ManagementPolicy* management_policy = extension_system_->management_policy();
   info->must_remain_installed =
       management_policy->MustRemainInstalled(&extension, nullptr);
 

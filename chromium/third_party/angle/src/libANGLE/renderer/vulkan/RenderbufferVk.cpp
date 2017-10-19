@@ -25,7 +25,7 @@ RenderbufferVk::~RenderbufferVk()
 gl::Error RenderbufferVk::setStorage(GLenum internalformat, size_t width, size_t height)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
 gl::Error RenderbufferVk::setStorageMultisample(size_t samples,
@@ -34,21 +34,22 @@ gl::Error RenderbufferVk::setStorageMultisample(size_t samples,
                                                 size_t height)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
 gl::Error RenderbufferVk::setStorageEGLImageTarget(egl::Image *image)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
-gl::Error RenderbufferVk::getAttachmentRenderTarget(GLenum binding,
+gl::Error RenderbufferVk::getAttachmentRenderTarget(const gl::Context *context,
+                                                    GLenum binding,
                                                     const gl::ImageIndex &imageIndex,
                                                     FramebufferAttachmentRenderTarget **rtOut)
 {
     UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    return gl::InternalError();
 }
 
 }  // namespace rx

@@ -9,8 +9,9 @@
 
 #include <set>
 
-#include "compiler/translator/IntermNode.h"
-#include "compiler/translator/ParseContext.h"
+#include "compiler/translator/HashNames.h"
+#include "compiler/translator/InfoSink.h"
+#include "compiler/translator/IntermTraverse.h"
 
 namespace sh
 {
@@ -22,7 +23,7 @@ class TOutputGLSLBase : public TIntermTraverser
                     ShArrayIndexClampingStrategy clampingStrategy,
                     ShHashFunction64 hashFunction,
                     NameMap &nameMap,
-                    TSymbolTable &symbolTable,
+                    TSymbolTable *symbolTable,
                     sh::GLenum shaderType,
                     int shaderVersion,
                     ShShaderOutput output,
@@ -98,8 +99,6 @@ class TOutputGLSLBase : public TIntermTraverser
     ShHashFunction64 mHashFunction;
 
     NameMap &mNameMap;
-
-    TSymbolTable &mSymbolTable;
 
     sh::GLenum mShaderType;
 

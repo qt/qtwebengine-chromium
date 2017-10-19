@@ -98,6 +98,7 @@ const char kCryptohomeTpmAttestationSetKeyPayload[] =
     "TpmAttestationSetKeyPayload";
 const char kCryptohomeTpmAttestationDeleteKeys[] =
     "TpmAttestationDeleteKeys";
+const char kCryptohomeTpmGetVersion[] = "TpmGetVersion";
 const char kCryptohomeGetKeyDataEx[] = "GetKeyDataEx";
 const char kCryptohomeCheckKeyEx[] = "CheckKeyEx";
 const char kCryptohomeMountEx[] = "MountEx";
@@ -123,6 +124,7 @@ const char kCryptohomeSetFirmwareManagementParameters[] =
 const char kCryptohomeRemoveFirmwareManagementParameters[] =
     "RemoveFirmwareManagementParameters";
 const char kCryptohomeMigrateToDircrypto[] = "MigrateToDircrypto";
+const char kCryptohomeMigrateToDircryptoEx[] = "MigrateToDircryptoEx";
 const char kCryptohomeNeedsDircryptoMigration[] = "NeedsDircryptoMigration";
 
 // Signals

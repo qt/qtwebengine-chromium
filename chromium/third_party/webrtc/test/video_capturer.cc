@@ -10,8 +10,8 @@
 
 #include "webrtc/test/video_capturer.h"
 
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/constructormagic.h"
+#include "webrtc/rtc_base/basictypes.h"
+#include "webrtc/rtc_base/constructormagic.h"
 
 namespace webrtc {
 namespace test {
@@ -37,7 +37,7 @@ rtc::Optional<VideoFrame> VideoCapturer::AdaptFrame(const VideoFrame& frame) {
     // return scaled version.
     rtc::scoped_refptr<I420Buffer> scaled_buffer =
         I420Buffer::Create(out_width, out_height);
-    scaled_buffer->ScaleFrom(*frame.video_frame_buffer().get());
+    scaled_buffer->ScaleFrom(*frame.video_frame_buffer()->ToI420());
     out_frame.emplace(
         VideoFrame(scaled_buffer, kVideoRotation_0, frame.timestamp_us()));
   } else {

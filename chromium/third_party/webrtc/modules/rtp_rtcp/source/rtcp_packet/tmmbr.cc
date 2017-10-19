@@ -10,10 +10,10 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/tmmbr.h"
 
-#include "webrtc/base/checks.h"
-#include "webrtc/base/logging.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/logging.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -43,6 +43,11 @@ constexpr uint8_t Tmmbr::kFeedbackMessageType;
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //  | MxTBR Exp |  MxTBR Mantissa                 |Measured Overhead|
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Tmmbr::Tmmbr() = default;
+
+Tmmbr::~Tmmbr() = default;
+
 bool Tmmbr::Parse(const CommonHeader& packet) {
   RTC_DCHECK_EQ(packet.type(), kPacketType);
   RTC_DCHECK_EQ(packet.fmt(), kFeedbackMessageType);
@@ -73,6 +78,11 @@ bool Tmmbr::Parse(const CommonHeader& packet) {
 
 void Tmmbr::AddTmmbr(const TmmbItem& item) {
   items_.push_back(item);
+}
+
+size_t Tmmbr::BlockLength() const {
+  return kHeaderLength + kCommonFeedbackLength +
+         TmmbItem::kLength * items_.size();
 }
 
 bool Tmmbr::Create(uint8_t* packet,

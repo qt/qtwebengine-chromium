@@ -114,17 +114,25 @@ struct WorkaroundsGL
     // Tracking bug: http://crbug.com/672380
     bool emulateAtan2Float = false;
 
-    // Some drivers seem to forget about UBO bindings when loading program binaries. Work around
-    // this by re-applying the bindings after the program binary is loaded.
+    // Some drivers seem to forget about UBO bindings when using program binaries. Work around
+    // this by re-applying the bindings after the program binary is loaded or saved.
     // This only seems to affect AMD OpenGL drivers, and some Android devices.
     // http://anglebug.com/1637
-    bool reapplyUBOBindingsAfterLoadingBinaryProgram = false;
+    bool reapplyUBOBindingsAfterUsingBinaryProgram = false;
 
     // Some OpenGL drivers return 0 when we query MAX_VERTEX_ATTRIB_STRIDE in an OpenGL 4.4 or
     // higher context.
     // This only seems to affect AMD OpenGL drivers.
     // Tracking bug: http://anglebug.com/1936
     bool emulateMaxVertexAttribStride = false;
+
+    // Initializing uninitialized locals caused odd behavior on Mac in a few WebGL 2 tests.
+    // Tracking bug: http://anglebug/2041
+    bool dontInitializeUninitializedLocals = false;
+
+    // On some NVIDIA drivers the point size range reported from the API is inconsistent with the
+    // actual behavior. Clamp the point size to the value from the API to fix this.
+    bool clampPointSize = false;
 };
 }  // namespace rx
 

@@ -71,6 +71,15 @@ TextureCaps GenerateMinimumTextureCaps(GLenum sizedInternalFormat,
     caps.filterable = internalFormatInfo.filterSupport(clientVersion, extensions);
 
     caps.sampleCounts.insert(0);
+    if (internalFormatInfo.isRequiredRenderbufferFormat(clientVersion))
+    {
+        if ((clientVersion.major >= 3 && clientVersion.minor >= 1) ||
+            (clientVersion.major >= 3 && internalFormatInfo.componentType != GL_UNSIGNED_INT &&
+             internalFormatInfo.componentType != GL_INT))
+        {
+            caps.sampleCounts.insert(4);
+        }
+    }
 
     return caps;
 }
@@ -179,6 +188,8 @@ Extensions::Extensions()
       ARMshaderFramebufferFetch(false),
       NVshaderFramebufferFetch(false),
       fragDepth(false),
+      multiview(false),
+      maxViews(1u),
       textureUsage(false),
       translatedShaderSource(false),
       fboRenderMipmap(false),
@@ -217,7 +228,8 @@ Extensions::Extensions()
       pathRendering(false),
       surfacelessContext(false),
       clientArrays(false),
-      robustResourceInitialization(false)
+      robustResourceInitialization(false),
+      programCacheControl(false)
 {
 }
 
@@ -649,6 +661,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_ARM_shader_framebuffer_fetch"] = esOnlyExtension(&Extensions::ARMshaderFramebufferFetch);
         map["GL_EXT_shader_framebuffer_fetch"] = esOnlyExtension(&Extensions::shaderFramebufferFetch);
         map["GL_EXT_frag_depth"] = enableableExtension(&Extensions::fragDepth);
+        map["GL_ANGLE_multiview"] = enableableExtension(&Extensions::multiview);
         map["GL_ANGLE_texture_usage"] = esOnlyExtension(&Extensions::textureUsage);
         map["GL_ANGLE_translated_shader_source"] = esOnlyExtension(&Extensions::translatedShaderSource);
         map["GL_OES_fbo_render_mipmap"] = esOnlyExtension(&Extensions::fboRenderMipmap);
@@ -685,6 +698,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_surfaceless_context"] = esOnlyExtension(&Extensions::surfacelessContext);
         map["GL_ANGLE_client_arrays"] = esOnlyExtension(&Extensions::clientArrays);
         map["GL_ANGLE_robust_resource_initialization"] = esOnlyExtension(&Extensions::robustResourceInitialization);
+        map["GL_ANGLE_program_cache_control"] = esOnlyExtension(&Extensions::programCacheControl);
         // clang-format on
 
         return map;
@@ -1076,7 +1090,7 @@ DisplayExtensions::DisplayExtensions()
       surfacelessContext(false),
       displayTextureShareGroup(false),
       createContextClientArrays(false),
-      createContextRobustResourceInitialization(false)
+      programCacheControl(false)
 {
 }
 
@@ -1119,7 +1133,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_KHR_surfaceless_context",                         surfacelessContext,                 &extensionStrings);
     InsertExtensionString("EGL_ANGLE_display_texture_share_group",               displayTextureShareGroup,           &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_client_arrays",              createContextClientArrays,          &extensionStrings);
-    InsertExtensionString("EGL_ANGLE_create_context_robust_resource_initialization", createContextRobustResourceInitialization, &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_program_cache_control",                     programCacheControl,                &extensionStrings);
     // TODO(jmadill): Enable this when complete.
     //InsertExtensionString("KHR_create_context_no_error",                       createContextNoError,               &extensionStrings);
     // clang-format on
@@ -1154,7 +1168,8 @@ ClientExtensions::ClientExtensions()
       deviceCreationD3D11(false),
       x11Visual(false),
       experimentalPresentPath(false),
-      clientGetAllProcAddresses(false)
+      clientGetAllProcAddresses(false),
+      displayRobustResourceInitialization(false)
 {
 }
 
@@ -1177,9 +1192,10 @@ std::vector<std::string> ClientExtensions::getStrings() const
     InsertExtensionString("EGL_ANGLE_x11_visual",                  x11Visual,                 &extensionStrings);
     InsertExtensionString("EGL_ANGLE_experimental_present_path",   experimentalPresentPath,   &extensionStrings);
     InsertExtensionString("EGL_KHR_client_get_all_proc_addresses", clientGetAllProcAddresses, &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_display_robust_resource_initialization", displayRobustResourceInitialization, &extensionStrings);
     // clang-format on
 
     return extensionStrings;
 }
 
-}
+}  // namespace egl

@@ -6,6 +6,7 @@
 
 #include "core/fpdfapi/font/cpdf_font.h"
 
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -15,7 +16,6 @@
 #include "core/fpdfapi/font/cpdf_truetypefont.h"
 #include "core/fpdfapi/font/cpdf_type1font.h"
 #include "core/fpdfapi/font/cpdf_type3font.h"
-#include "core/fpdfapi/font/font_int.h"
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/page/cpdf_pagemodule.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
@@ -158,6 +158,10 @@ uint32_t CPDF_Font::CharCodeFromUnicode(wchar_t unicode) const {
     LoadUnicodeMap();
 
   return m_pToUnicodeMap ? m_pToUnicodeMap->ReverseLookup(unicode) : 0;
+}
+
+bool CPDF_Font::HasFontWidths() const {
+  return true;
 }
 
 void CPDF_Font::LoadFontDescriptor(CPDF_Dictionary* pFontDesc) {
@@ -476,4 +480,31 @@ CFX_Font* CPDF_Font::GetFontFallback(int position) {
   if (position < 0 || static_cast<size_t>(position) >= m_FontFallbacks.size())
     return nullptr;
   return m_FontFallbacks[position].get();
+}
+
+// static
+int CPDF_Font::TT2PDF(int m, FXFT_Face face) {
+  int upm = FXFT_Get_Face_UnitsPerEM(face);
+  if (upm == 0)
+    return m;
+
+  return static_cast<int>(
+      pdfium::clamp((m * 1000.0 + upm / 2) / upm,
+                    static_cast<double>(std::numeric_limits<int>::min()),
+                    static_cast<double>(std::numeric_limits<int>::max())));
+}
+
+// static
+bool CPDF_Font::FT_UseTTCharmap(FXFT_Face face,
+                                int platform_id,
+                                int encoding_id) {
+  auto** pCharMap = FXFT_Get_Face_Charmaps(face);
+  for (int i = 0; i < FXFT_Get_Face_CharmapCount(face); i++) {
+    if (FXFT_Get_Charmap_PlatformID(pCharMap[i]) == platform_id &&
+        FXFT_Get_Charmap_EncodingID(pCharMap[i]) == encoding_id) {
+      FXFT_Set_Charmap(face, pCharMap[i]);
+      return true;
+    }
+  }
+  return false;
 }
