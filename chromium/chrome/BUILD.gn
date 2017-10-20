@@ -852,7 +852,7 @@ if (is_win) {
       "//third_party/crashpad/crashpad/handler:crashpad_handler",
     ]
 
-    if (using_sanitizer) {
+    if (using_sanitizer && !use_qt) {
       # crashpad_handler requires the ASan runtime at its @executable_path.
       sources += [ "$root_out_dir/libclang_rt.asan_osx_dynamic.dylib" ]
       public_deps += [ "//build/config/sanitizers:copy_asan_runtime" ]
