@@ -102,7 +102,7 @@ int CompareLexicalNumberStrings(
 bool StringMismatch(const std::string& input, const std::string& pattern) {
   if (input.empty() || pattern.empty())
     return false;
-  return !RE2::FullMatch(input, pattern);
+  return !RE2::FullMatch(input, pattern.data());
 }
 
 const char kMultiGpuStyleStringAMDSwitchable[] = "amd_switchable";
@@ -1291,7 +1291,7 @@ bool GpuControlList::GpuControlListEntry::Contains(
     bool found_match = false;
     for (size_t ii = 0; ii < machine_model_name_list_.size(); ++ii) {
       if (RE2::FullMatch(gpu_info.machine_model_name,
-                         machine_model_name_list_[ii])) {
+                         machine_model_name_list_[ii].data())) {
         found_match = true;
         break;
       }
