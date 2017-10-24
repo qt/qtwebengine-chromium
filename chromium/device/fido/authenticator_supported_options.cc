@@ -57,19 +57,19 @@ AuthenticatorSupportedOptions::SetIsPlatformDevice(bool is_platform_device) {
 
 cbor::Value ConvertToCBOR(const AuthenticatorSupportedOptions& options) {
   cbor::Value::MapValue option_map;
-  option_map.emplace(kResidentKeyMapKey, options.supports_resident_key());
-  option_map.emplace(kUserPresenceMapKey, options.user_presence_required());
-  option_map.emplace(kPlatformDeviceMapKey, options.is_platform_device());
+  option_map.emplace(cbor::Value(kResidentKeyMapKey), cbor::Value(options.supports_resident_key()));
+  option_map.emplace(cbor::Value(kUserPresenceMapKey), cbor::Value(options.user_presence_required()));
+  option_map.emplace(cbor::Value(kPlatformDeviceMapKey), cbor::Value(options.is_platform_device()));
 
   using UvAvailability =
       AuthenticatorSupportedOptions::UserVerificationAvailability;
 
   switch (options.user_verification_availability()) {
     case UvAvailability::kSupportedAndConfigured:
-      option_map.emplace(kUserVerificationMapKey, true);
+      option_map.emplace(cbor::CBORValue(kUserVerificationMapKey), cbor::CBORValue(true));
       break;
     case UvAvailability::kSupportedButNotConfigured:
-      option_map.emplace(kUserVerificationMapKey, false);
+      option_map.emplace(cbor::CBORValue(kUserVerificationMapKey), cbor::CBORValue(false));
       break;
     case UvAvailability::kNotSupported:
       break;
@@ -80,10 +80,10 @@ cbor::Value ConvertToCBOR(const AuthenticatorSupportedOptions& options) {
 
   switch (options.client_pin_availability()) {
     case ClientPinAvailability::kSupportedAndPinSet:
-      option_map.emplace(kClientPinMapKey, true);
+      option_map.emplace(cbor::CBORValue(kClientPinMapKey), cbor::CBORValue(true));
       break;
     case ClientPinAvailability::kSupportedButPinNotSet:
-      option_map.emplace(kClientPinMapKey, false);
+      option_map.emplace(cbor::CBORValue(kClientPinMapKey), cbor::CBORValue(false));
       break;
     case ClientPinAvailability::kNotSupported:
       break;

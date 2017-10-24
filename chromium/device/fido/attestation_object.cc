@@ -78,9 +78,12 @@ std::vector<uint8_t> AttestationObject::SerializeToCBOREncodedBytes() const {
 std::vector<uint8_t> SerializeToCtapStyleCborEncodedBytes(
     const AttestationObject& object) {
   cbor::Value::MapValue map;
-  map.emplace(1, object.attestation_statement().format_name());
-  map.emplace(2, object.authenticator_data().SerializeToByteArray());
-  map.emplace(3, object.attestation_statement().GetAsCBORMap());
+  map[cbor::Value(1)] =
+      cbor::Value(object.attestation_statement().format_name());
+  map[cbor::Value(2)] =
+      cbor::Value(object.authenticator_data().SerializeToByteArray());
+  map[cbor::Value(3)] =
+      cbor::Value(object.attestation_statement().GetAsCBORMap());
   auto encoded_bytes = cbor::Writer::Write(cbor::Value(std::move(map)));
   DCHECK(encoded_bytes);
   return std::move(*encoded_bytes);

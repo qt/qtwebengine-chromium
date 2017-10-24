@@ -289,7 +289,7 @@ void CommandLine::SetProgram(const FilePath& program) {
 
 bool CommandLine::HasSwitch(const base::StringPiece& switch_string) const {
   DCHECK_EQ(ToLowerASCII(switch_string), switch_string);
-  return ContainsKey(switches_, switch_string);
+  return ContainsKey(switches_, switch_string.as_string());
 }
 
 bool CommandLine::HasSwitch(const char switch_constant[]) const {
@@ -318,7 +318,7 @@ FilePath CommandLine::GetSwitchValuePath(
 CommandLine::StringType CommandLine::GetSwitchValueNative(
     const base::StringPiece& switch_string) const {
   DCHECK_EQ(ToLowerASCII(switch_string), switch_string);
-  auto result = switches_.find(switch_string);
+  auto result = switches_.find(switch_string.as_string());
   return result == switches_.end() ? StringType() : result->second;
 }
 
