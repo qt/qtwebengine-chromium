@@ -84,13 +84,13 @@ DefaultLevelDBFactory::OpenLevelDBState(
       LOG(ERROR) << "Failed to open in-memory LevelDB database: "
                  << status.ToString();
       // Must match the other returns in this function for RVO.
-      return {nullptr, status, false};
+      return std::make_tuple(nullptr, status, false);
     }
 
-    return {LevelDBState::CreateForInMemoryDB(
-                std::move(in_memory_env), ldb_comparator, idb_comparator,
-                std::move(db), "in-memory-database"),
-            status, false};
+    return std::make_tuple(LevelDBState::CreateForInMemoryDB(
+                               std::move(in_memory_env), ldb_comparator, idb_comparator,
+                               std::move(db), "in-memory-database"),
+                           status, false);
   }
 
   leveldb_env::Options options =
@@ -117,16 +117,16 @@ DefaultLevelDBFactory::OpenLevelDBState(
     LOG(ERROR) << "Failed to open LevelDB database from "
                << file_name.AsUTF8Unsafe() << "," << status.ToString();
     // Must match the other returns in this function for RVO.
-    return {nullptr, status, is_disk_full};
+    return std::make_tuple(nullptr, status, is_disk_full);
   }
 
   UMA_HISTOGRAM_MEDIUM_TIMES("WebCore.IndexedDB.LevelDB.OpenTime",
                              base::TimeTicks::Now() - begin_time);
 
   // Must match the other returns in this function for RVO.
-  return {LevelDBState::CreateForDiskDB(ldb_comparator, idb_comparator,
-                                        std::move(db), std::move(file_name)),
-          status, false};
+  return std::make_tuple(LevelDBState::CreateForDiskDB(ldb_comparator, idb_comparator,
+                                                       std::move(db), std::move(file_name)),
+                         status, false);
 }
 
 leveldb::Status DefaultLevelDBFactory::DestroyLevelDB(

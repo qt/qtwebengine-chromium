@@ -150,7 +150,7 @@ DeleteAndRecreateDatabase(
     ReportOpenStatus(
         indexed_db::INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_DESTROY_FAILED,
         origin);
-    return {nullptr, status, false};
+    return std::make_tuple(nullptr, status, false);
   }
 
   LOG(ERROR) << "IndexedDB backing store cleanup succeeded, reopening";
@@ -164,7 +164,7 @@ DeleteAndRecreateDatabase(
     ReportOpenStatus(
         indexed_db::INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_FAILED,
         origin);
-    return {nullptr, status, is_disk_full};
+    return std::make_tuple(nullptr, status, is_disk_full);
   }
   std::unique_ptr<LevelDBDatabase> database = std::make_unique<LevelDBDatabase>(
       std::move(state), std::move(task_runner),
@@ -172,7 +172,7 @@ DeleteAndRecreateDatabase(
   ReportOpenStatus(
       indexed_db::INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_SUCCESS, origin);
 
-  return {std::move(database), status, is_disk_full};
+  return std::make_tuple(std::move(database), status, is_disk_full);
 }
 
 }  // namespace
@@ -682,7 +682,7 @@ CreateDatabaseDirectories(const base::FilePath& path_base,
                << "\"";
     ReportOpenStatus(indexed_db::INDEXED_DB_BACKING_STORE_OPEN_FAILED_DIRECTORY,
                      origin);
-    return {base::FilePath(), base::FilePath(), status};
+    return std::make_tuple(base::FilePath(), base::FilePath(), status);
   }
 
   base::FilePath leveldb_path = path_base.Append(GetLevelDBFileName(origin));
@@ -691,9 +691,9 @@ CreateDatabaseDirectories(const base::FilePath& path_base,
     ReportOpenStatus(indexed_db::INDEXED_DB_BACKING_STORE_OPEN_ORIGIN_TOO_LONG,
                      origin);
     status = Status::IOError("File path too long");
-    return {base::FilePath(), base::FilePath(), status};
+    return std::make_tuple(base::FilePath(), base::FilePath(), status);
   }
-  return {leveldb_path, blob_path, status};
+  return std::make_tuple(leveldb_path, blob_path, status);
 }
 
 std::tuple<std::unique_ptr<LevelDBDatabase>,
@@ -725,7 +725,7 @@ OpenAndVerifyLevelDBDatabase(
   if (status.IsIOError()) {
     ReportOpenStatus(indexed_db::INDEXED_DB_BACKING_STORE_OPEN_NO_RECOVERY,
                      origin);
-    return {std::move(database), status, IndexedDBDataLossInfo(), is_disk_full};
+    return std::make_tuple(std::move(database), status, IndexedDBDataLossInfo(), is_disk_full);
   }
 
   IndexedDBDataLossInfo data_loss_info;
@@ -742,7 +742,7 @@ OpenAndVerifyLevelDBDatabase(
       ReportOpenStatus(indexed_db::INDEXED_DB_BACKING_STORE_OPEN_SUCCESS,
                        origin);
     }
-    return {std::move(database), status, data_loss_info, is_disk_full};
+    return std::make_tuple(std::move(database), status, data_loss_info, is_disk_full);
   }
   // The leveldb database is successfully opened.
   DCHECK(status.ok());
@@ -794,7 +794,7 @@ OpenAndVerifyLevelDBDatabase(
 
   if (status.ok())
     ReportOpenStatus(indexed_db::INDEXED_DB_BACKING_STORE_OPEN_SUCCESS, origin);
-  return {std::move(database), status, data_loss_info, is_disk_full};
+  return std::make_tuple(std::move(database), status, data_loss_info, is_disk_full);
 }
 
 }  // namespace indexed_db

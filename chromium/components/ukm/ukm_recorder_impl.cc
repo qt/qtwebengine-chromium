@@ -302,7 +302,7 @@ void UkmRecorderImpl::StoreRecordingsInReport(Report* report) {
 
   std::vector<std::unique_ptr<UkmSource>> unsent_sources;
   int unmatched_sources = 0;
-  std::unordered_map<ukm::SourceIdType, int> serialized_source_type_counts;
+  std::map<ukm::SourceIdType, int> serialized_source_type_counts;
   for (auto& kv : recordings_.sources) {
     // If the source id is not whitelisted, don't send it unless it has
     // associated entries and the URL matches a URL of a whitelisted source.

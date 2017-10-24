@@ -100,7 +100,7 @@ int CompareLexicalNumberStrings(
 bool StringMismatch(const std::string& input, const std::string& pattern) {
   if (input.empty() || pattern.empty())
     return false;
-  return !RE2::FullMatch(input, pattern);
+  return !RE2::FullMatch(input, re2::StringPiece(pattern));
 }
 
 bool StringMismatch(const std::string& input, const char* pattern) {

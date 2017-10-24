@@ -602,8 +602,8 @@ IndexedDBFactoryImpl::OpenBackingStore(const Origin& origin,
       backing_store->pre_close_task_queue()->StopForNewConnection();
       backing_store->SetPreCloseTaskList(nullptr);
     }
-    return {std::move(backing_store), leveldb::Status::OK(),
-            IndexedDBDataLossInfo(), false};
+    return std::make_tuple(std::move(backing_store), leveldb::Status::OK(),
+                           IndexedDBDataLossInfo(), false);
   }
 
   base::FilePath blob_path;
@@ -614,7 +614,7 @@ IndexedDBFactoryImpl::OpenBackingStore(const Origin& origin,
     std::tie(database_path, blob_path, s) =
         indexed_db::CreateDatabaseDirectories(data_directory, origin);
     if (!s.ok())
-      return {std::move(backing_store), s, IndexedDBDataLossInfo(), false};
+      return std::make_tuple(std::move(backing_store), s, IndexedDBDataLossInfo(), false);
   }
   std::unique_ptr<LevelDBDatabase> database;
   IndexedDBDataLossInfo data_loss_info;
@@ -624,7 +624,7 @@ IndexedDBFactoryImpl::OpenBackingStore(const Origin& origin,
                                                database_path, leveldb_factory_,
                                                context_->TaskRunner());
   if (!s.ok())
-    return {std::move(backing_store), s, data_loss_info, disk_full};
+    return std::make_tuple(std::move(backing_store), s, data_loss_info, disk_full);
 
   IndexedDBBackingStore::Mode backing_store_mode =
       data_directory.empty() ? IndexedDBBackingStore::Mode::kInMemory
@@ -639,7 +639,7 @@ IndexedDBFactoryImpl::OpenBackingStore(const Origin& origin,
       first_open_since_startup);
   if (!s.ok()) {
     backing_store.reset();
-    return {std::move(backing_store), s, data_loss_info, disk_full};
+    return std::make_tuple(std::move(backing_store), s, data_loss_info, disk_full);
   }
   // If an in-memory database, bind lifetime to this factory instance.
   if (database_path.empty())
@@ -650,7 +650,7 @@ IndexedDBFactoryImpl::OpenBackingStore(const Origin& origin,
   // type.
   DCHECK_EQ(!in_memory_backing_stores_.empty(), database_path.empty());
   DCHECK(backing_store);
-  return {std::move(backing_store), s, data_loss_info, disk_full};
+  return std::make_tuple(std::move(backing_store), s, data_loss_info, disk_full);
 }
 
 scoped_refptr<IndexedDBBackingStore> IndexedDBFactoryImpl::CreateBackingStore(
