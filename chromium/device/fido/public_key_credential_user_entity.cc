@@ -64,13 +64,13 @@ PublicKeyCredentialUserEntity::~PublicKeyCredentialUserEntity() = default;
 
 cbor::CBORValue PublicKeyCredentialUserEntity::ConvertToCBOR() const {
   cbor::CBORValue::MapValue user_map;
-  user_map.emplace(kEntityIdMapKey, user_id_);
+  user_map.emplace(cbor::CBORValue(kEntityIdMapKey), cbor::CBORValue(user_id_));
   if (user_name_)
-    user_map.emplace(kEntityNameMapKey, *user_name_);
+    user_map.emplace(cbor::CBORValue(kEntityNameMapKey), cbor::CBORValue(*user_name_));
   if (user_icon_url_)
-    user_map.emplace(kIconUrlMapKey, user_icon_url_->spec());
+    user_map.emplace(cbor::CBORValue(kIconUrlMapKey), cbor::CBORValue(user_icon_url_->spec()));
   if (user_display_name_) {
-    user_map.emplace(kDisplayNameMapKey, *user_display_name_);
+    user_map.emplace(cbor::CBORValue(kDisplayNameMapKey), cbor::CBORValue(*user_display_name_));
   }
   return cbor::CBORValue(std::move(user_map));
 }

@@ -367,7 +367,9 @@ void SharedWorkerServiceImpl::ConnectToWorker(
 
 void SharedWorkerServiceImpl::DestroyHost(SharedWorkerHost* host) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  worker_hosts_.erase(worker_hosts_.find(host));
+  std::unique_ptr<SharedWorkerHost> hostKey(host);
+  worker_hosts_.erase(hostKey);
+  hostKey.release();
 
   // Run the termination callback if no more workers.
   if (worker_hosts_.empty() && terminate_all_workers_callback_)

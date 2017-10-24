@@ -420,7 +420,7 @@ class CacheStorageCache::BlobDataHandle
                  disk_cache::ScopedEntryPtr entry)
       : cache_handle_(std::move(cache_handle)), entry_(std::move(entry)) {}
 
-  bool IsValid() override { return bool{entry_}; }
+  bool IsValid() override { return entry_.get(); }
 
   void Invalidate() {
     cache_handle_ = base::nullopt;

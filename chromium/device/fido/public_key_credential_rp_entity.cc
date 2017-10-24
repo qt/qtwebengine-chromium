@@ -78,12 +78,12 @@ PublicKeyCredentialRpEntity& PublicKeyCredentialRpEntity::SetRpIconUrl(
 
 cbor::CBORValue PublicKeyCredentialRpEntity::ConvertToCBOR() const {
   cbor::CBORValue::MapValue rp_map;
-  rp_map.emplace(kEntityIdMapKey, rp_id_);
+  rp_map.emplace(cbor::CBORValue(kEntityIdMapKey), cbor::CBORValue(rp_id_));
   if (rp_name_)
-    rp_map.emplace(kEntityNameMapKey, *rp_name_);
+    rp_map.emplace(cbor::CBORValue(kEntityNameMapKey), cbor::CBORValue(*rp_name_));
 
   if (rp_icon_url_)
-    rp_map.emplace(kIconUrlMapKey, rp_icon_url_->spec());
+    rp_map.emplace(cbor::CBORValue(kIconUrlMapKey), cbor::CBORValue(rp_icon_url_->spec()));
 
   return cbor::CBORValue(std::move(rp_map));
 }

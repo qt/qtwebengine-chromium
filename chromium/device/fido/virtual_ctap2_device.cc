@@ -113,13 +113,13 @@ std::vector<uint8_t> ConstructMakeCredentialResponse(
     base::span<const uint8_t> signature,
     AuthenticatorData authenticator_data) {
   cbor::CBORValue::MapValue attestation_map;
-  attestation_map.emplace("alg", -7);
-  attestation_map.emplace("sig", fido_parsing_utils::Materialize(signature));
+  attestation_map.emplace(cbor::CBORValue("alg"), cbor::CBORValue(-7));
+  attestation_map.emplace(cbor::CBORValue("sig"), cbor::CBORValue(fido_parsing_utils::Materialize(signature)));
 
   if (attestation_certificate) {
     cbor::CBORValue::ArrayValue certificate_chain;
     certificate_chain.emplace_back(std::move(*attestation_certificate));
-    attestation_map.emplace("x5c", std::move(certificate_chain));
+    attestation_map.emplace(cbor::CBORValue("x5c"), cbor::CBORValue(std::move(certificate_chain)));
   }
 
   AuthenticatorMakeCredentialResponse make_credential_response(

@@ -1168,8 +1168,8 @@ constexpr const ImmutableString imulExtended_3C3C3C3C("imulExtended(3C3C3C3C");
 constexpr const ImmutableString intBitsToFloat("intBitsToFloat");
 constexpr const ImmutableString inverse("inverse");
 constexpr const ImmutableString inversesqrt("inversesqrt");
-constexpr const ImmutableString isinf("isinf");
-constexpr const ImmutableString isnan("isnan");
+constexpr const ImmutableString isinf_("isinf");
+constexpr const ImmutableString isnan_("isnan");
 constexpr const ImmutableString ldexp("ldexp");
 constexpr const ImmutableString length("length");
 constexpr const ImmutableString lessThan("lessThan");
@@ -4739,7 +4739,7 @@ constexpr const TFunction kFunction_modf_3B3B(
     false);
 constexpr const TFunction kFunction_isnan_0B(
     BuiltInId::isnan_Float1,
-    BuiltInName::isnan,
+    BuiltInName::isnan_,
     TExtension::UNDEFINED,
     BuiltInParameters::p0B0C,
     1,
@@ -4748,7 +4748,7 @@ constexpr const TFunction kFunction_isnan_0B(
     true);
 constexpr const TFunction kFunction_isnan_1B(
     BuiltInId::isnan_Float2,
-    BuiltInName::isnan,
+    BuiltInName::isnan_,
     TExtension::UNDEFINED,
     BuiltInParameters::p1B1B0B,
     1,
@@ -4757,7 +4757,7 @@ constexpr const TFunction kFunction_isnan_1B(
     true);
 constexpr const TFunction kFunction_isnan_2B(
     BuiltInId::isnan_Float3,
-    BuiltInName::isnan,
+    BuiltInName::isnan_,
     TExtension::UNDEFINED,
     BuiltInParameters::p2B_o_2C,
     1,
@@ -4766,7 +4766,7 @@ constexpr const TFunction kFunction_isnan_2B(
     true);
 constexpr const TFunction kFunction_isnan_3B(
     BuiltInId::isnan_Float4,
-    BuiltInName::isnan,
+    BuiltInName::isnan_,
     TExtension::UNDEFINED,
     BuiltInParameters::p3B0B0B,
     1,
@@ -4775,7 +4775,7 @@ constexpr const TFunction kFunction_isnan_3B(
     true);
 constexpr const TFunction kFunction_isinf_0B(
     BuiltInId::isinf_Float1,
-    BuiltInName::isinf,
+    BuiltInName::isinf_,
     TExtension::UNDEFINED,
     BuiltInParameters::p0B0C,
     1,
@@ -4784,7 +4784,7 @@ constexpr const TFunction kFunction_isinf_0B(
     true);
 constexpr const TFunction kFunction_isinf_1B(
     BuiltInId::isinf_Float2,
-    BuiltInName::isinf,
+    BuiltInName::isinf_,
     TExtension::UNDEFINED,
     BuiltInParameters::p1B1B0B,
     1,
@@ -4793,7 +4793,7 @@ constexpr const TFunction kFunction_isinf_1B(
     true);
 constexpr const TFunction kFunction_isinf_2B(
     BuiltInId::isinf_Float3,
-    BuiltInName::isinf,
+    BuiltInName::isinf_,
     TExtension::UNDEFINED,
     BuiltInParameters::p2B_o_2C,
     1,
@@ -4802,7 +4802,7 @@ constexpr const TFunction kFunction_isinf_2B(
     true);
 constexpr const TFunction kFunction_isinf_3B(
     BuiltInId::isinf_Float4,
-    BuiltInName::isinf,
+    BuiltInName::isinf_,
     TExtension::UNDEFINED,
     BuiltInParameters::p3B0B0B,
     1,
@@ -13488,7 +13488,7 @@ const TSymbol *TSymbolTable::findBuiltIn(const ImmutableString &name, int shader
             }
             case 0x0a406460u:
             {
-                if (name.beginsWith(BuiltInName::isnan))
+                if (name.beginsWith(BuiltInName::isnan_))
                 {
                     ASSERT(name.length() == 8);
                     return &BuiltInFunction::kFunction_isnan_2B;
@@ -13542,7 +13542,7 @@ const TSymbol *TSymbolTable::findBuiltIn(const ImmutableString &name, int shader
             }
             case 0x0a4262ceu:
             {
-                if (name.beginsWith(BuiltInName::isinf))
+                if (name.beginsWith(BuiltInName::isinf_))
                 {
                     ASSERT(name.length() == 8);
                     return &BuiltInFunction::kFunction_isinf_2B;
@@ -13569,7 +13569,7 @@ const TSymbol *TSymbolTable::findBuiltIn(const ImmutableString &name, int shader
             }
             case 0x0a43b397u:
             {
-                if (name.beginsWith(BuiltInName::isinf))
+                if (name.beginsWith(BuiltInName::isinf_))
                 {
                     ASSERT(name.length() == 8);
                     return &BuiltInFunction::kFunction_isinf_3B;
@@ -13596,7 +13596,7 @@ const TSymbol *TSymbolTable::findBuiltIn(const ImmutableString &name, int shader
             }
             case 0x0a443a26u:
             {
-                if (name.beginsWith(BuiltInName::isinf))
+                if (name.beginsWith(BuiltInName::isinf_))
                 {
                     ASSERT(name.length() == 8);
                     return &BuiltInFunction::kFunction_isinf_0B;
@@ -13614,7 +13614,7 @@ const TSymbol *TSymbolTable::findBuiltIn(const ImmutableString &name, int shader
             }
             case 0x0a452617u:
             {
-                if (name.beginsWith(BuiltInName::isinf))
+                if (name.beginsWith(BuiltInName::isinf_))
                 {
                     ASSERT(name.length() == 8);
                     return &BuiltInFunction::kFunction_isinf_1B;
@@ -13623,7 +13623,7 @@ const TSymbol *TSymbolTable::findBuiltIn(const ImmutableString &name, int shader
             }
             case 0x0a4561b0u:
             {
-                if (name.beginsWith(BuiltInName::isnan))
+                if (name.beginsWith(BuiltInName::isnan_))
                 {
                     ASSERT(name.length() == 8);
                     return &BuiltInFunction::kFunction_isnan_3B;
@@ -13677,7 +13677,7 @@ const TSymbol *TSymbolTable::findBuiltIn(const ImmutableString &name, int shader
             }
             case 0x0a46ab3bu:
             {
-                if (name.beginsWith(BuiltInName::isnan))
+                if (name.beginsWith(BuiltInName::isnan_))
                 {
                     ASSERT(name.length() == 8);
                     return &BuiltInFunction::kFunction_isnan_0B;
@@ -13722,7 +13722,7 @@ const TSymbol *TSymbolTable::findBuiltIn(const ImmutableString &name, int shader
             }
             case 0x0a47fa7au:
             {
-                if (name.beginsWith(BuiltInName::isnan))
+                if (name.beginsWith(BuiltInName::isnan_))
                 {
                     ASSERT(name.length() == 8);
                     return &BuiltInFunction::kFunction_isnan_1B;
@@ -19670,7 +19670,7 @@ const UnmangledBuiltIn *TSymbolTable::getUnmangledBuiltInForShaderVersion(
             }
             case 0x7e2924b8u:
             {
-                if (name == BuiltInName::isinf)
+                if (name == BuiltInName::isinf_)
                 {
                     return &UnmangledBuiltIns::UNDEFINED;
                 }
@@ -19702,7 +19702,7 @@ const UnmangledBuiltIn *TSymbolTable::getUnmangledBuiltInForShaderVersion(
             }
             case 0x7e2d8df4u:
             {
-                if (name == BuiltInName::isnan)
+                if (name == BuiltInName::isnan_)
                 {
                     return &UnmangledBuiltIns::UNDEFINED;
                 }
