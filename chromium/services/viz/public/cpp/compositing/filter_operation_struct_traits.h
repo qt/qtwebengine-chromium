@@ -138,7 +138,7 @@ struct StructTraits<viz::mojom::FilterOperationDataView, cc::FilterOperation> {
   static base::span<const float> matrix(const cc::FilterOperation& operation) {
     if (operation.type() != cc::FilterOperation::COLOR_MATRIX)
       return base::span<const float>();
-    return operation.matrix();
+    return base::span<const float>(operation.matrix());
   }
 
   static base::span<const gfx::Rect> shape(
