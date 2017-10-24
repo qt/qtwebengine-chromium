@@ -22,7 +22,7 @@ namespace device {
 
 namespace {
 
-constexpr const char* ToString(BluetoothDevice::ConnectErrorCode error_code) {
+const char* ToString(BluetoothDevice::ConnectErrorCode error_code) {
   switch (error_code) {
     case BluetoothDevice::ERROR_AUTH_CANCELED:
       return "ERROR_AUTH_CANCELED";
@@ -46,7 +46,7 @@ constexpr const char* ToString(BluetoothDevice::ConnectErrorCode error_code) {
   }
 }
 
-constexpr const char* ToString(BluetoothGattService::GattErrorCode error_code) {
+const char* ToString(BluetoothGattService::GattErrorCode error_code) {
   switch (error_code) {
     case BluetoothGattService::GATT_ERROR_UNKNOWN:
       return "GATT_ERROR_UNKNOWN";

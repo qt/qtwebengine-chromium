@@ -63,13 +63,13 @@ class WTF_EXPORT ArrayBufferContents {
           allocation_length_(length),
           data_(data),
           data_length_(length),
-          kind_(AllocationKind::kNormal),
+          kind_(ArrayBufferContents::AllocationKind::kNormal),
           deleter_(deleter) {}
     DataHandle(void* allocation_base,
                size_t allocation_length,
                void* data,
                size_t data_length,
-               AllocationKind kind,
+               ArrayBufferContents::AllocationKind kind,
                DataDeleter deleter)
         : allocation_base_(allocation_base),
           allocation_length_(allocation_length),
@@ -94,11 +94,11 @@ class WTF_EXPORT ArrayBufferContents {
              reinterpret_cast<uintptr_t>(allocation_base_) +
                  allocation_length_);
       switch (kind_) {
-        case AllocationKind::kNormal:
+        case ArrayBufferContents::AllocationKind::kNormal:
           DCHECK(deleter_);
           deleter_(data_);
           return;
-        case AllocationKind::kReservation:
+        case ArrayBufferContents::AllocationKind::kReservation:
           base::FreePages(allocation_base_, allocation_length_);
           return;
       }
