@@ -114,7 +114,7 @@ FidoDevice* FidoDiscovery::GetDevice(base::StringPiece device_id) {
 }
 
 const FidoDevice* FidoDiscovery::GetDevice(base::StringPiece device_id) const {
-  auto found = devices_.find(device_id);
+  auto found = devices_.find(device_id.as_string());
   return found != devices_.end() ? found->second.get() : nullptr;
 }
 
@@ -127,7 +127,7 @@ bool FidoDiscovery::AddDevice(std::unique_ptr<FidoDevice> device) {
 }
 
 bool FidoDiscovery::RemoveDevice(base::StringPiece device_id) {
-  auto found = devices_.find(device_id);
+  auto found = devices_.find(device_id.as_string());
   if (found == devices_.end())
     return false;
 
