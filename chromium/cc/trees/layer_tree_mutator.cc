@@ -59,7 +59,7 @@ bool MutatorInputState::IsEmpty() const {
 AnimationWorkletInput& MutatorInputState::EnsureWorkletEntry(int id) {
   auto it = inputs_.find(id);
   if (it == inputs_.end())
-    it = inputs_.emplace_hint(it, id, new AnimationWorkletInput);
+    it = inputs_.emplace_hint(it, id, std::unique_ptr<AnimationWorkletInput>(new AnimationWorkletInput));
 
   return *it->second;
 }

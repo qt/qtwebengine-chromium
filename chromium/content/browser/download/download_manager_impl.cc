@@ -1353,7 +1353,7 @@ void DownloadManagerImpl::BeginResourceDownloadOnChecksComplete(
     }
   }
 
-  DCHECK_EQ(params->url().SchemeIsBlob(), bool{blob_url_loader_factory});
+  DCHECK_EQ(params->url().SchemeIsBlob(), bool(blob_url_loader_factory));
   scoped_refptr<download::DownloadURLLoaderFactoryGetter>
       url_loader_factory_getter;
   if (blob_url_loader_factory) {

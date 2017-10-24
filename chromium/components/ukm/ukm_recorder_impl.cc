@@ -292,7 +292,7 @@ void UkmRecorderImpl::StoreRecordingsInReport(Report* report) {
 
   // Number of sources discarded due to not matching a navigation URL.
   int num_sources_unmatched = 0;
-  std::unordered_map<ukm::SourceIdType, int> serialized_source_type_counts;
+  std::map<ukm::SourceIdType, int> serialized_source_type_counts;
 
   for (const auto& kv : recordings_.sources) {
     // Sources of non-navigation types will not be kept after current report.

@@ -622,9 +622,9 @@ IndexedDBFactoryImpl::GetOrOpenOriginFactory(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto it = factories_per_origin_.find(origin);
   if (it != factories_per_origin_.end()) {
-    return {it->second->CreateHandle(), leveldb::Status::OK(),
-            IndexedDBDatabaseError(), IndexedDBDataLossInfo(),
-            /*was_cold_open=*/false};
+    return std::make_tuple(it->second->CreateHandle(), leveldb::Status::OK(),
+                           IndexedDBDatabaseError(), IndexedDBDataLossInfo(),
+                           /*was_cold_open=*/false);
   }
 
   bool is_incognito_and_in_memory = data_directory.empty();
@@ -636,8 +636,8 @@ IndexedDBFactoryImpl::GetOrOpenOriginFactory(
     std::tie(database_path, blob_path, s) =
         CreateDatabaseDirectories(data_directory, origin);
     if (!s.ok())
-      return {IndexedDBOriginStateHandle(), s, CreateDefaultError(),
-              IndexedDBDataLossInfo(), /*was_cold_open=*/true};
+      return std::make_tuple(IndexedDBOriginStateHandle(), s, CreateDefaultError(),
+                             IndexedDBDataLossInfo(), /*was_cold_open=*/true);
   }
   IndexedDBDataLossInfo data_loss_info;
   std::unique_ptr<IndexedDBBackingStore> backing_store;
