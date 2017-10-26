@@ -6,7 +6,9 @@
 
 #include "base/stl_util.h"
 #include "components/nacl/common/buildflags.h"
+#if !defined(TOOLKIT_QT)
 #include "components/safe_browsing/web_ui/constants.h"
+#endif
 #include "extensions/buildflags/buildflags.h"
 
 namespace chrome {
@@ -355,7 +357,9 @@ const char* const kChromeHostURLs[] = {
     kChromeUISignInInternalsHost,
     kChromeUISiteEngagementHost,
     kChromeUINTPTilesInternalsHost,
+#if !defined(TOOLKIT_QT)
     safe_browsing::kChromeUISafeBrowsingHost,
+#endif
     kChromeUISuggestionsHost,
     kChromeUISupervisedUserInternalsHost,
     kChromeUISyncInternalsHost,
