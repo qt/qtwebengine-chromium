@@ -9,7 +9,9 @@
 #include "base/macros.h"
 #include "build/build_config.h"
 #include "chrome/common/features.h"
+#if !defined(TOOLKIT_QT)
 #include "components/safe_browsing/web_ui/constants.h"
+#endif
 #include "content/public/common/url_constants.h"
 #include "extensions/features/features.h"
 #include "media/media_features.h"
@@ -684,7 +686,9 @@ const char* const kChromeHostURLs[] = {
     kChromeUISignInInternalsHost,
     kChromeUISiteEngagementHost,
     kChromeUINTPTilesInternalsHost,
+# !defined(TOOLKIT_QT)
     safe_browsing::kChromeUISafeBrowsingHost,
+#endif
     kChromeUISuggestionsHost,
     kChromeUISupervisedUserInternalsHost,
     kChromeUISyncInternalsHost,
