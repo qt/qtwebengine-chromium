@@ -8,7 +8,9 @@
 #include "base/strings/string_piece.h"
 #include "build/chromeos_buildflags.h"
 #include "components/nacl/common/buildflags.h"
+#if !defined(TOOLKIT_QT)
 #include "components/safe_browsing/core/common/web_ui_constants.h"
+#endif
 #include "extensions/buildflags/buildflags.h"
 #include "third_party/blink/public/common/chrome_debug_urls.h"
 
@@ -597,7 +599,9 @@ const char* const kChromeHostURLs[] = {
     kChromeUISignInInternalsHost,
     kChromeUISiteEngagementHost,
     kChromeUINTPTilesInternalsHost,
+#if !defined(TOOLKIT_QT)
     safe_browsing::kChromeUISafeBrowsingHost,
+#endif
     kChromeUISyncInternalsHost,
 #if !defined(OS_ANDROID)
     kChromeUITermsHost,
