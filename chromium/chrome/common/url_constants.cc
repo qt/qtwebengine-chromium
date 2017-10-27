@@ -686,7 +686,7 @@ const char* const kChromeHostURLs[] = {
     kChromeUISignInInternalsHost,
     kChromeUISiteEngagementHost,
     kChromeUINTPTilesInternalsHost,
-# !defined(TOOLKIT_QT)
+#if !defined(TOOLKIT_QT)
     safe_browsing::kChromeUISafeBrowsingHost,
 #endif
     kChromeUISuggestionsHost,
