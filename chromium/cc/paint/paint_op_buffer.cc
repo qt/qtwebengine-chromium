@@ -207,7 +207,7 @@ TYPES(M);
 #undef TYPES
 
 SkRect PaintOp::kUnsetRect = {SK_ScalarInfinity, 0, 0, 0};
-const size_t PaintOp::kMaxSkip;
+constexpr size_t PaintOp::kMaxSkip;
 
 std::string PaintOpTypeToString(PaintOpType type) {
   switch (type) {
