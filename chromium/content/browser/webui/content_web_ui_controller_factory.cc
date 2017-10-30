@@ -38,7 +38,9 @@ WebUI::TypeID ContentWebUIControllerFactory::GetWebUIType(
       url.host_piece() == kChromeUIIndexedDBInternalsHost ||
       url.host_piece() == kChromeUIMediaInternalsHost ||
       url.host_piece() == kChromeUIServiceWorkerInternalsHost ||
+#if !defined(TOOLKIT_QT)
       url.host_piece() == kChromeUIAccessibilityHost ||
+#endif
       url.host_piece() == kChromeUIAppCacheInternalsHost ||
       url.host_piece() == kChromeUINetworkErrorsListingHost) {
     return const_cast<ContentWebUIControllerFactory*>(this);
