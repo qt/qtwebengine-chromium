@@ -452,9 +452,19 @@ void CPWL_Edit::OnSetFocus() {
 }
 
 void CPWL_Edit::OnKillFocus() {
+  ObservedPtr observed_ptr = ObservedPtr(this);
   ShowVScrollBar(false);
+  if (!observed_ptr)
+    return;
+
   m_pEdit->SelectNone();
+  if (!observed_ptr)
+    return;
+
   SetCaret(false, CFX_FloatPoint(), CFX_FloatPoint());
+  if (!observed_ptr)
+    return;
+
   SetCharSet(FXFONT_ANSI_CHARSET);
   m_bFocus = false;
 }

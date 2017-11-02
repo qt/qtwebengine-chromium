@@ -99,7 +99,7 @@ void CPWL_TimerHandler::EndTimer() {
 
 void CPWL_TimerHandler::TimerProc() {}
 
-class CPWL_MsgControl {
+class CPWL_MsgControl : public CFX_Observable<CPWL_MsgControl> {
   friend class CPWL_Wnd;
 
  public:
@@ -168,9 +168,12 @@ class CPWL_MsgControl {
   }
 
   void KillFocus() {
+    ObservedPtr observed_ptr = ObservedPtr(this);
     if (m_aKeyboardPath.GetSize() > 0)
       if (CPWL_Wnd* pWnd = m_aKeyboardPath.GetAt(0))
         pWnd->OnKillFocus();
+    if (!observed_ptr)
+      return;
 
     m_pMainKeyboardWnd = nullptr;
     m_aKeyboardPath.RemoveAll();

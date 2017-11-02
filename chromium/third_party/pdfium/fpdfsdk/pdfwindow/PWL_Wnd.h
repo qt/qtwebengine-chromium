@@ -244,7 +244,7 @@ class CPWL_TimerHandler {
   std::unique_ptr<CPWL_Timer> m_pTimer;
 };
 
-class CPWL_Wnd : public CPWL_TimerHandler {
+class CPWL_Wnd : public CPWL_TimerHandler, public CFX_Observable<CPWL_Wnd> {
   friend class CPWL_MsgControl;
 
  public:
