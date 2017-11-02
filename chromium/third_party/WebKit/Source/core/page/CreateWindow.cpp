@@ -31,6 +31,7 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/FrameLoadRequest.h"
@@ -193,6 +194,23 @@ DOMWindow* createWindow(const String& urlString,
         "Unable to open a window with invalid URL '" +
         completedURL.getString() + "'.\n");
     return nullptr;
+  }
+
+  if (protocolIsJavaScript(completedURL.getString()) &&
+      openerFrame.document()->contentSecurityPolicy() &&
+      !ContentSecurityPolicy::shouldBypassMainWorld(
+          openerFrame.document())) {
+    const int kJavascriptSchemeLength = sizeof("javascript:") - 1;
+    String script_source = decodeURLEscapeSequences(completedURL.getString())
+                               .substring(kJavascriptSchemeLength);
+
+    if (!openerFrame.document()
+             ->contentSecurityPolicy()
+             ->allowJavaScriptURLs(nullptr,
+                                   openerFrame.document()->url(),
+                                   OrdinalNumber())) {
+      return nullptr;
+    }
   }
 
   FrameLoadRequest frameRequest(callingWindow.document(), completedURL,
