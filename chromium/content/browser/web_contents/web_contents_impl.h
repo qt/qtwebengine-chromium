@@ -841,6 +841,8 @@ class CONTENT_EXPORT WebContentsImpl
                            JavaScriptDialogsInMainAndSubframes);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            DialogsFromJavaScriptEndFullscreen);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
+                           PopupsFromJavaScriptEndFullscreen);
 
   // So |find_request_manager_| can be accessed for testing.
   friend class FindRequestManagerTest;

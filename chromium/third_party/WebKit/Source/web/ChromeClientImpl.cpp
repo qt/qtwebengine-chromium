@@ -372,8 +372,6 @@ Page* ChromeClientImpl::createWindow(LocalFrame* frame,
 
   WebNavigationPolicy policy =
       effectiveNavigationPolicy(navigationPolicy, features);
-  DCHECK(frame->document());
-  Fullscreen::fullyExitFullscreen(*frame->document());
 
   WebViewImpl* newView = toWebViewImpl(m_webView->client()->createView(
       WebLocalFrameImpl::fromFrame(frame),
