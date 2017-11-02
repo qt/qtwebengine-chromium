@@ -591,6 +591,10 @@ bool SkBlurMask::BoxBlur(SkMask* dst, const SkMask& src,
 #else
     SkMaskBlurFilter blurFilter{sigma, sigma};
     border = blurFilter.blur(src, dst);
+    // If src.fImage is null, then this call is only to calculate the border.
+    if (src.fImage != nullptr && dst->fImage == nullptr) {
+        return false;
+    }
 #endif  // SK_SUPPORT_LEGACY_MASK_BLUR
 
     if (src.fImage != nullptr) {
