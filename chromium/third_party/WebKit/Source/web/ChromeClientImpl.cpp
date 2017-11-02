@@ -265,8 +265,6 @@ Page* ChromeClientImpl::CreateWindow(LocalFrame* frame,
 
   if (!frame->GetPage() || frame->GetPage()->Suspended())
     return nullptr;
-  DCHECK(frame->GetDocument());
-  Fullscreen::FullyExitFullscreen(*frame->GetDocument());
 
   const AtomicString& frame_name =
       !EqualIgnoringASCIICase(r.FrameName(), "_blank") ? r.FrameName()
