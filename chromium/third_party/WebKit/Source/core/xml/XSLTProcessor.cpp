@@ -91,6 +91,7 @@ Document* XSLTProcessor::createDocumentFromSource(const String& sourceString,
       DocumentXSLT::from(*result).setTransformSourceDocument(oldDocument);
       result->updateSecurityOrigin(oldDocument->getSecurityOrigin());
       result->setCookieURL(oldDocument->cookieURL());
+      result->enforceSandboxFlags(oldDocument->getSandboxFlags());
 
       ContentSecurityPolicy* csp = ContentSecurityPolicy::create();
       csp->copyStateFrom(oldDocument->contentSecurityPolicy());
