@@ -881,18 +881,21 @@ void CFFL_InteractiveFormFiller::OnBeforeKeyStroke(
     bool& bRC,
     bool& bExit,
     uint32_t nFlag) {
-  CFFL_PrivateData* pData = (CFFL_PrivateData*)pPrivateData;
-  ASSERT(pData->pWidget);
+  // Copy the private data since the window owning it may not survive.
+  CFFL_PrivateData privateData =
+      *reinterpret_cast<CFFL_PrivateData*>(pPrivateData);
+  ASSERT(privateData.pWidget);
 
-  CFFL_FormFiller* pFormFiller = GetFormFiller(pData->pWidget, false);
+  CFFL_FormFiller* pFormFiller = GetFormFiller(privateData.pWidget, false);
 
 #ifdef PDF_ENABLE_XFA
-  if (pFormFiller->IsFieldFull(pData->pPageView)) {
+  if (pFormFiller->IsFieldFull(privateData.pPageView)) {
     bool bFullExit = false;
     bool bFullReset = false;
-    OnFull(pData->pWidget, pData->pPageView, bFullReset, bFullExit, nFlag);
+    CPDFSDK_Annot::ObservedPtr pObserved(privateData.pWidget);
+    OnFull(&pObserved, privateData.pPageView, bFullReset, bFullExit, nFlag);
 
-    if (bFullReset || bFullExit) {
+    if (bFullReset || bFullExit || !pObserved) {
       bExit = true;
       return;
     }
@@ -900,13 +903,13 @@ void CFFL_InteractiveFormFiller::OnBeforeKeyStroke(
 #endif  // PDF_ENABLE_XFA
 
   if (!m_bNotifying) {
-    if (pData->pWidget->GetAAction(CPDF_AAction::KeyStroke).GetDict()) {
+    if (privateData.pWidget->GetAAction(CPDF_AAction::KeyStroke).GetDict()) {
       m_bNotifying = true;
-      int nAge = pData->pWidget->GetAppearanceAge();
-      int nValueAge = pData->pWidget->GetValueAge();
 
+      int nAge = privateData.pWidget->GetAppearanceAge();
+      int nValueAge = privateData.pWidget->GetValueAge();
       CPDFSDK_FormFillEnvironment* pFormFillEnv =
-          pData->pPageView->GetFormFillEnv();
+          privateData.pPageView->GetFormFillEnv();
 
       PDFSDK_FieldAction fa;
       fa.bModifier = m_pFormFillEnv->IsCTRLKeyDown(nFlag);
@@ -918,41 +921,46 @@ void CFFL_InteractiveFormFiller::OnBeforeKeyStroke(
       fa.bRC = true;
       fa.nSelStart = nSelStart;
       fa.nSelEnd = nSelEnd;
+      pFormFiller->GetActionData(privateData.pPageView, CPDF_AAction::KeyStroke, fa);
+      pFormFiller->SaveState(privateData.pPageView);
 
-      pFormFiller->GetActionData(pData->pPageView, CPDF_AAction::KeyStroke, fa);
-      pFormFiller->SaveState(pData->pPageView);
+      CPDFSDK_Annot::ObservedPtr pObserved(privateData.pWidget);
+      bool action_status = privateData.pWidget->OnAAction(
+        CPDF_AAction::KeyStroke, fa, privateData.pPageView);
 
-      CPDFSDK_Annot::ObservedPtr pObserved(pData->pWidget);
-      if (pData->pWidget->OnAAction(CPDF_AAction::KeyStroke, fa,
-                                    pData->pPageView)) {
-        if (!pObserved || !IsValidAnnot(pData->pPageView, pData->pWidget)) {
+      if (action_status) {
+        if (!pObserved || !IsValidAnnot(privateData.pPageView, privateData.pWidget)) {
           bExit = true;
           m_bNotifying = false;
           return;
         }
 
-        if (nAge != pData->pWidget->GetAppearanceAge()) {
+        if (nAge != privateData.pWidget->GetAppearanceAge()) {
           CPWL_Wnd* pWnd = pFormFiller->ResetPDFWindow(
-              pData->pPageView, nValueAge == pData->pWidget->GetValueAge());
-          pData = (CFFL_PrivateData*)pWnd->GetAttachedData();
+              privateData.pPageView, nValueAge == privateData.pWidget->GetValueAge());
+          if (!pWnd) {
+              bExit = true;
+              bRC = true;
+              m_bNotifying = false;
+              return;
+          }
+          privateData = *reinterpret_cast<CFFL_PrivateData*>(pWnd->GetAttachedData());
           bExit = true;
         }
-
         if (fa.bRC) {
-          pFormFiller->SetActionData(pData->pPageView, CPDF_AAction::KeyStroke,
-                                     fa);
+          pFormFiller->SetActionData(privateData.pPageView, CPDF_AAction::KeyStroke,
+                               fa);
           bRC = false;
         } else {
-          pFormFiller->RestoreState(pData->pPageView);
+          pFormFiller->RestoreState(privateData.pPageView);
           bRC = false;
         }
-
-        if (pFormFillEnv->GetFocusAnnot() != pData->pWidget) {
-          pFormFiller->CommitData(pData->pPageView, nFlag);
-          bExit = true;
+        if (pFormFillEnv->GetFocusAnnot() != privateData.pWidget) {
+          pFormFiller->CommitData(privateData.pPageView, nFlag);
+          bExit = true;    
         }
       } else {
-        if (!IsValidAnnot(pData->pPageView, pData->pWidget)) {
+        if (!IsValidAnnot(privateData.pPageView, privateData.pWidget)) {
           bExit = true;
           m_bNotifying = false;
           return;
