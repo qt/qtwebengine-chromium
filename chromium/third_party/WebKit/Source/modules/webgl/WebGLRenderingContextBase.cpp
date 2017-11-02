@@ -4630,8 +4630,11 @@ void WebGLRenderingContextBase::texImageHelperDOMArrayBufferView(
     if (sourceType == Tex2D) {
       if (!WebGLImageConversion::extractTextureData(
               width, height, format, type, m_unpackAlignment, m_unpackFlipY,
-              m_unpackPremultiplyAlpha, data, tempData))
+              m_unpackPremultiplyAlpha, data, tempData)) {
+        synthesizeGLError(GL_INVALID_OPERATION, funcName,
+                          "Invalid format/type combination.");
         return;
+      }
       data = tempData.data();
     }
     changeUnpackAlignment = true;
