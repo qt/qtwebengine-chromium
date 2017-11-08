@@ -28,15 +28,9 @@ constexpr char kAppLockScreenSupportKey[] = "lockScreenSupport";
 
 }  // namespace
 
-StylusHandler::StylusHandler() {
-  NoteTakingHelper::Get()->AddObserver(this);
-  ui::InputDeviceManager::GetInstance()->AddObserver(this);
-}
+StylusHandler::StylusHandler() : note_observer_(this), input_observer_(this) {}
 
-StylusHandler::~StylusHandler() {
-  ui::InputDeviceManager::GetInstance()->RemoveObserver(this);
-  NoteTakingHelper::Get()->RemoveObserver(this);
-}
+StylusHandler::~StylusHandler() = default;
 
 void StylusHandler::RegisterMessages() {
   DCHECK(web_ui());
@@ -58,6 +52,16 @@ void StylusHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "showPlayStoreApps",
       base::Bind(&StylusHandler::ShowPlayStoreApps, base::Unretained(this)));
+}
+
+void StylusHandler::OnJavascriptAllowed() {
+  note_observer_.Add(NoteTakingHelper::Get());
+  input_observer_.Add(ui::InputDeviceManager::GetInstance());
+}
+
+void StylusHandler::OnJavascriptDisallowed() {
+  note_observer_.RemoveAll();
+  input_observer_.RemoveAll();
 }
 
 void StylusHandler::OnAvailableNoteTakingAppsUpdated() {
@@ -99,12 +103,12 @@ void StylusHandler::UpdateNoteTakingApps() {
     }
   }
 
-  AllowJavascript();
   FireWebUIListener("onNoteTakingAppsUpdated", apps_list,
                     base::Value(waiting_for_android));
 }
 
 void StylusHandler::RequestApps(const base::ListValue* unused_args) {
+  AllowJavascript();
   UpdateNoteTakingApps();
 }
 
@@ -133,13 +137,13 @@ void StylusHandler::SetPreferredNoteTakingAppEnabledOnLockScreen(
 }
 
 void StylusHandler::HandleInitialize(const base::ListValue* args) {
+  AllowJavascript();
   if (ui::InputDeviceManager::GetInstance()->AreDeviceListsComplete())
     SendHasStylus();
 }
 
 void StylusHandler::SendHasStylus() {
   DCHECK(ui::InputDeviceManager::GetInstance()->AreDeviceListsComplete());
-  AllowJavascript();
   FireWebUIListener("has-stylus-changed",
                     base::Value(ash::palette_utils::HasStylusInput()));
 }
