@@ -5962,7 +5962,7 @@ All users must sign out to continue.
     Google Play Store (beta)
   </message>
   <message name="IDS_ARC_PLAYSTORE_ICON_TITLE_BETA" desc="The Play Store icon title with the beta label in the launcher.">
-    Play Store (beta)
+    Play Store
   </message>
   <message name="IDS_OPTIONS_ARC_ENABLE" desc="Label for the checkbox that enables Google Play Store apps.">
     Enable Google Play Store on your Chromebook.
@@ -6118,7 +6118,7 @@ All users must sign out to continue.
     Free up disk space to launch Android apps.
   </message>
   <message name="IDS_ARC_MANAGED_PROVISION_NOTIFICATION_TITLE" desc="Title of the notification shown to user during ARC provision when the ARC opt-in flow happens silently due to enterprise policies">
-    Google Play Store (beta)
+    Google Play Store
   </message>
   <message name="IDS_ARC_MANAGED_PROVISION_NOTIFICATION_MESSAGE" desc="Notification shown to user during ARC provision when the ARC opt-in flow happens silently due to enterprise policies.">
     Installing the Google Play Store on your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. This could take a few minutes.
