@@ -105,9 +105,13 @@ QualifiedName::QualifiedNameImpl::~QualifiedNameImpl() {
 }
 
 String QualifiedName::ToString() const {
-  String local = LocalName();
+  const String& local = LocalName().GetString();
   if (HasPrefix())
     return Prefix().GetString() + ":" + local;
+#if !defined(NDEBUG)
+  if (!local.IsSafeToSendToAnotherThread())
+      return local.IsolatedCopy();
+#endif
   return local;
 }
 
