@@ -60,7 +60,7 @@ void CPDFSDK_XFAWidgetHandler::OnDraw(CPDFSDK_PageView* pPageView,
   if (pPageView->GetFormFillEnv()->GetFocusAnnot() != pAnnot)
     bIsHighlight = true;
 
-  GetXFAWidgetHandler(pAnnot)->RenderWidget(pAnnot->GetXFAWidget(), &gs, &mt,
+  GetXFAWidgetHandler(pAnnot)->RenderWidget(pAnnot->GetXFAWidget(), &gs, mt,
                                             bIsHighlight);
 
   // to do highlight and shadow
@@ -97,10 +97,17 @@ CFX_FloatRect CPDFSDK_XFAWidgetHandler::GetViewBBox(CPDFSDK_PageView* pPageView,
   return rcWidget;
 }
 
+// TODO(bug 840): Implement so selected text can be obtained from XFA
+// fields.
 CFX_WideString CPDFSDK_XFAWidgetHandler::GetSelectedText(
     CPDFSDK_Annot* pAnnot) {
   return CFX_WideString();
 }
+
+// TODO(bug 840): Implement so text can be inserted into and deleted from XFA
+// fields.
+void CPDFSDK_XFAWidgetHandler::ReplaceSelection(CPDFSDK_Annot* pAnnot,
+                                                const CFX_WideString& text) {}
 
 bool CPDFSDK_XFAWidgetHandler::HitTest(CPDFSDK_PageView* pPageView,
                                        CPDFSDK_Annot* pAnnot,

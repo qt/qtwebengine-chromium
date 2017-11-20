@@ -125,7 +125,7 @@ class TParseContext : angle::NonCopyable
     // Returns a sanitized array size to use (the size is at least 1).
     unsigned int checkIsValidArraySize(const TSourceLoc &line, TIntermTyped *expr);
     bool checkIsValidQualifierForArray(const TSourceLoc &line, const TPublicType &elementQualifier);
-    bool checkIsValidTypeForArray(const TSourceLoc &line, const TPublicType &elementType);
+    bool checkArrayElementIsNotArray(const TSourceLoc &line, const TPublicType &elementType);
     bool checkIsNonVoid(const TSourceLoc &line, const TString &identifier, const TBasicType &type);
     bool checkIsScalarBool(const TSourceLoc &line, const TIntermTyped *type);
     void checkIsScalarBool(const TSourceLoc &line, const TPublicType &pType);
@@ -340,6 +340,14 @@ class TParseContext : angle::NonCopyable
                        const TSourceLoc &intValueLine,
                        const std::string &intValueString,
                        int *numViews);
+    void parseInvocations(int intValue,
+                          const TSourceLoc &intValueLine,
+                          const std::string &intValueString,
+                          int *numInvocations);
+    void parseMaxVertices(int intValue,
+                          const TSourceLoc &intValueLine,
+                          const std::string &intValueString,
+                          int *numMaxVertices);
     TLayoutQualifier parseLayoutQualifier(const TString &qualifierType,
                                           const TSourceLoc &qualifierTypeLine);
     TLayoutQualifier parseLayoutQualifier(const TString &qualifierType,
@@ -407,6 +415,20 @@ class TParseContext : angle::NonCopyable
                                       TIntermTyped *falseExpression,
                                       const TSourceLoc &line);
 
+    int getGeometryShaderMaxVertices() const { return mGeometryShaderMaxVertices; }
+    int getGeometryShaderInvocations() const
+    {
+        return (mGeometryShaderInvocations > 0) ? mGeometryShaderInvocations : 1;
+    }
+    TLayoutPrimitiveType getGeometryShaderInputPrimitiveType() const
+    {
+        return mGeometryShaderInputPrimitiveType;
+    }
+    TLayoutPrimitiveType getGeometryShaderOutputPrimitiveType() const
+    {
+        return mGeometryShaderOutputPrimitiveType;
+    }
+
     // TODO(jmadill): make this private
     TSymbolTable &symbolTable;   // symbol table that goes with the language currently being parsed
 
@@ -462,8 +484,12 @@ class TParseContext : angle::NonCopyable
     void checkBindingIsValid(const TSourceLoc &identifierLocation, const TType &type);
     void checkBindingIsNotSpecified(const TSourceLoc &location, int binding);
     void checkOffsetIsNotSpecified(const TSourceLoc &location, int offset);
-    void checkImageBindingIsValid(const TSourceLoc &location, int binding, int arraySize);
-    void checkSamplerBindingIsValid(const TSourceLoc &location, int binding, int arraySize);
+    void checkImageBindingIsValid(const TSourceLoc &location,
+                                  int binding,
+                                  int arrayTotalElementCount);
+    void checkSamplerBindingIsValid(const TSourceLoc &location,
+                                    int binding,
+                                    int arrayTotalElementCount);
     void checkBlockBindingIsValid(const TSourceLoc &location,
                                   const TQualifier &qualifier,
                                   int binding,
@@ -475,6 +501,10 @@ class TParseContext : angle::NonCopyable
                                      const TLayoutQualifier &layoutQualifier);
 
     void checkYuvIsNotSpecified(const TSourceLoc &location, bool yuv);
+
+    bool checkUnsizedArrayConstructorArgumentDimensionality(TIntermSequence *arguments,
+                                                            TType type,
+                                                            const TSourceLoc &line);
 
     TIntermTyped *addBinaryMathInternal(TOperator op,
                                         TIntermTyped *left,
@@ -509,6 +539,11 @@ class TParseContext : angle::NonCopyable
 
     void setAtomicCounterBindingDefaultOffset(const TPublicType &declaration,
                                               const TSourceLoc &location);
+
+    bool checkPrimitiveTypeMatchesTypeQualifier(const TTypeQualifier &typeQualifier);
+    bool parseGeometryShaderInputLayoutQualifier(const TTypeQualifier &typeQualifier);
+    bool parseGeometryShaderOutputLayoutQualifier(const TTypeQualifier &typeQualifier);
+    void setGeometryShaderInputArraySizes();
 
     // Set to true when the last/current declarator list was started with an empty declaration. The
     // non-empty declaration error check will need to be performed if the empty declaration is
@@ -566,6 +601,16 @@ class TParseContext : angle::NonCopyable
 
     // Track the state of each atomic counter binding.
     std::map<int, AtomicCounterBindingState> mAtomicCounterBindingStates;
+
+    // Track the geometry shader global parameters declared in layout.
+    TLayoutPrimitiveType mGeometryShaderInputPrimitiveType;
+    TLayoutPrimitiveType mGeometryShaderOutputPrimitiveType;
+    int mGeometryShaderInvocations;
+    int mGeometryShaderMaxVertices;
+    int mMaxGeometryShaderInvocations;
+    int mMaxGeometryShaderMaxVertices;
+    int mGeometryShaderInputArraySize;  // Track if all input array sizes are same and matches the
+                                        // latter input primitive declaration.
 };
 
 int PaParseStrings(size_t count,

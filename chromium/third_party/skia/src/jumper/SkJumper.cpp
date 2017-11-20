@@ -18,19 +18,11 @@
     #define __has_feature(x) 0
 #endif
 
-// Stages expect these constants to be set to these values.
-// It's fine to rearrange and add new ones if you update SkJumper_constants.
-using K = const SkJumper_constants;
-static K kConstants = {
-    {0,1,2,3,4,5,6,7},
-    {0,1,2,3,4,5,6,7},
-};
-
 #define M(st) +1
 static const int kNumStages = SK_RASTER_PIPELINE_STAGES(M);
 #undef M
 
-#ifndef SK_DISABLE_SSSE3_RUNTIME_CHECK_FOR_LOWP_STAGES
+#ifndef SK_JUMPER_DISABLE_8BIT
     #if 0 && !__has_feature(memory_sanitizer) && (defined(__x86_64__) || defined(_M_X64))
         #include <atomic>
 
@@ -58,10 +50,9 @@ static const int kNumStages = SK_RASTER_PIPELINE_STAGES(M);
 #endif
 
 // We can't express the real types of most stage functions portably, so we use a stand-in.
-// We'll only ever call start_pipeline() or start_pipeline_2d(), which then chain into the rest.
-using StageFn           = void(void);
-using StartPipelineFn   = void(size_t,size_t,size_t,        void**,K*);
-using StartPipeline2dFn = void(size_t,size_t,size_t,size_t, void**,K*);
+// We'll only ever call start_pipeline(), which then chains into the rest.
+using StageFn         = void(void);
+using StartPipelineFn = void(size_t,size_t,size_t,size_t, void**);
 
 // Some platforms expect C "name" maps to asm "_name", others to "name".
 #if defined(__APPLE__)
@@ -70,7 +61,7 @@ using StartPipeline2dFn = void(size_t,size_t,size_t,size_t, void**,K*);
     #define ASM(name, suffix) _sk_##name##_##suffix
 #endif
 
-// Some stages have low-precision (~15 bit) versions from SkJumper_stages_lowp.cpp.
+// Some stages have 8-bit versions from SkJumper_stages_8bit.cpp.
 #define LOWP_STAGES(M)   \
     M(black_color) M(white_color) M(uniform_color) \
     M(set_rgb)           \
@@ -99,24 +90,22 @@ using StartPipeline2dFn = void(size_t,size_t,size_t,size_t, void**,K*);
     M(modulate)          \
     M(multiply)          \
     M(screen)            \
-    M(xor_)
+    M(xor_)              \
+    M(plus_)             \
+    M(darken)            \
+    M(lighten)           \
+    M(difference)        \
+    M(exclusion)         \
+    M(hardlight)         \
+    M(overlay)
 
 extern "C" {
 
 #if __has_feature(memory_sanitizer)
-    // We'll just run portable code.
-
-#elif defined(__aarch64__)
-    StartPipelineFn   ASM(start_pipeline   ,aarch64);
-    StartPipeline2dFn ASM(start_pipeline_2d,aarch64);
-    StageFn ASM(just_return,aarch64);
-    #define M(st) StageFn ASM(st,aarch64);
-        SK_RASTER_PIPELINE_STAGES(M)
-    #undef M
+    // We'll just run baseline code.
 
 #elif defined(__arm__)
-    StartPipelineFn   ASM(start_pipeline   ,vfp4);
-    StartPipeline2dFn ASM(start_pipeline_2d,vfp4);
+    StartPipelineFn ASM(start_pipeline,vfp4);
     StageFn ASM(just_return,vfp4);
     #define M(st) StageFn ASM(st,vfp4);
         SK_RASTER_PIPELINE_STAGES(M)
@@ -127,22 +116,17 @@ extern "C" {
                     ASM(start_pipeline,avx       ),
                     ASM(start_pipeline,sse41     ),
                     ASM(start_pipeline,sse2      ),
-                    ASM(start_pipeline,hsw_lowp  ),
-                    ASM(start_pipeline,ssse3_lowp);
-
-    StartPipeline2dFn ASM(start_pipeline_2d,hsw       ),
-                      ASM(start_pipeline_2d,avx       ),
-                      ASM(start_pipeline_2d,sse41     ),
-                      ASM(start_pipeline_2d,sse2      ),
-                      ASM(start_pipeline_2d,hsw_lowp  ),
-                      ASM(start_pipeline_2d,ssse3_lowp);
+                    ASM(start_pipeline,hsw_8bit  ),
+                    ASM(start_pipeline,sse41_8bit),
+                    ASM(start_pipeline,sse2_8bit );
 
     StageFn ASM(just_return,hsw),
             ASM(just_return,avx),
             ASM(just_return,sse41),
             ASM(just_return,sse2),
-            ASM(just_return,hsw_lowp  ),
-            ASM(just_return,ssse3_lowp);
+            ASM(just_return,hsw_8bit  ),
+            ASM(just_return,sse41_8bit),
+            ASM(just_return,sse2_8bit );
 
     #define M(st) StageFn ASM(st,hsw);
         SK_RASTER_PIPELINE_STAGES(M)
@@ -157,46 +141,89 @@ extern "C" {
         SK_RASTER_PIPELINE_STAGES(M)
     #undef M
 
-    #define M(st) StageFn ASM(st,hsw_lowp);
+    #define M(st) StageFn ASM(st,hsw_8bit);
         LOWP_STAGES(M)
     #undef M
-    #define M(st) StageFn ASM(st,ssse3_lowp);
+    #define M(st) StageFn ASM(st,sse41_8bit);
+        LOWP_STAGES(M)
+    #undef M
+    #define M(st) StageFn ASM(st,sse2_8bit);
         LOWP_STAGES(M)
     #undef M
 
-#elif (defined(__i386__) || defined(_M_IX86)) && \
-        !(defined(_MSC_VER) && defined(SK_SUPPORT_LEGACY_WIN32_JUMPER))
-    StartPipelineFn   ASM(start_pipeline   ,sse2);
-    StartPipeline2dFn ASM(start_pipeline_2d,sse2);
-    StageFn ASM(just_return,sse2);
+#elif defined(__i386__) || defined(_M_IX86)
+    StartPipelineFn ASM(start_pipeline,sse2),
+                    ASM(start_pipeline,sse2_8bit);
+    StageFn ASM(just_return,sse2),
+            ASM(just_return,sse2_8bit);
     #define M(st) StageFn ASM(st,sse2);
+        SK_RASTER_PIPELINE_STAGES(M)
+    #undef M
+    #define M(st) StageFn ASM(st,sse2_8bit);
         SK_RASTER_PIPELINE_STAGES(M)
     #undef M
 
 #endif
 
-    // Portable, single-pixel stages.
-    StartPipelineFn   sk_start_pipeline;
-    StartPipeline2dFn sk_start_pipeline_2d;
+    // Baseline code compiled as a normal part of Skia.
+    StartPipelineFn sk_start_pipeline;
     StageFn sk_just_return;
     #define M(st) StageFn sk_##st;
         SK_RASTER_PIPELINE_STAGES(M)
     #undef M
+
+#if defined(JUMPER_HAS_NEON_8BIT)
+    // We also compile 8-bit stages on ARMv8 as a normal part of Skia when compiled with Clang.
+    StartPipelineFn sk_start_pipeline_8bit;
+    StageFn sk_just_return_8bit;
+    #define M(st) StageFn sk_##st##_8bit;
+        SK_RASTER_PIPELINE_STAGES(M)
+    #undef M
+#endif
+
 }
 
 #if !__has_feature(memory_sanitizer) && (defined(__x86_64__) || defined(_M_X64))
     template <SkRasterPipeline::StockStage st>
-    static constexpr StageFn* hsw_lowp() { return nullptr; }
+    static constexpr StageFn* hsw_8bit() { return nullptr; }
 
     template <SkRasterPipeline::StockStage st>
-    static constexpr StageFn* ssse3_lowp() { return nullptr; }
+    static constexpr StageFn* sse41_8bit() { return nullptr; }
+
+    template <SkRasterPipeline::StockStage st>
+    static constexpr StageFn* sse2_8bit() { return nullptr; }
 
     #define M(st) \
-        template <> constexpr StageFn* hsw_lowp<SkRasterPipeline::st>() {   \
-            return ASM(st,hsw_lowp);                                        \
+        template <> constexpr StageFn* hsw_8bit<SkRasterPipeline::st>() {   \
+            return ASM(st,hsw_8bit);                                        \
         }                                                                   \
-        template <> constexpr StageFn* ssse3_lowp<SkRasterPipeline::st>() { \
-            return ASM(st,ssse3_lowp);                                      \
+        template <> constexpr StageFn* sse41_8bit<SkRasterPipeline::st>() { \
+            return ASM(st,sse41_8bit);                                      \
+        }                                                                   \
+        template <> constexpr StageFn* sse2_8bit<SkRasterPipeline::st>() {  \
+            return ASM(st,sse2_8bit);                                       \
+        }
+        LOWP_STAGES(M)
+    #undef M
+#elif !defined(SK_JUMPER_LEGACY_X86_8BIT) && \
+    (defined(__i386__) || defined(_M_IX86))
+    template <SkRasterPipeline::StockStage st>
+    static constexpr StageFn* sse2_8bit() { return nullptr; }
+
+    #define M(st) \
+        template <> constexpr StageFn* sse2_8bit<SkRasterPipeline::st>() {  \
+            return ASM(st,sse2_8bit);                                       \
+        }
+        LOWP_STAGES(M)
+    #undef M
+
+#elif defined(JUMPER_HAS_NEON_8BIT)
+    template <SkRasterPipeline::StockStage st>
+    static constexpr StageFn* neon_8bit() { return nullptr; }
+
+    #define M(st)                                                            \
+        template <> constexpr StageFn* neon_8bit<SkRasterPipeline::st>() {   \
+            return sk_##st##_8bit;                                           \
         }
         LOWP_STAGES(M)
     #undef M
@@ -204,37 +231,25 @@ extern "C" {
 
 // Engines comprise everything we need to run SkRasterPipelines.
 struct SkJumper_Engine {
-    StageFn*           stages[kNumStages];
-    StartPipelineFn*   start_pipeline;
-    StartPipeline2dFn* start_pipeline_2d;
-    StageFn*           just_return;
+    StageFn*         stages[kNumStages];
+    StartPipelineFn* start_pipeline;
+    StageFn*         just_return;
 };
 
-// We'll default to this portable engine, but try to choose a better one at runtime.
-static const SkJumper_Engine kPortable = {
+// We'll default to this baseline engine, but try to choose a better one at runtime.
+static const SkJumper_Engine kBaseline = {
 #define M(stage) sk_##stage,
     { SK_RASTER_PIPELINE_STAGES(M) },
 #undef M
     sk_start_pipeline,
-    sk_start_pipeline_2d,
     sk_just_return,
 };
-static SkJumper_Engine gEngine = kPortable;
+static SkJumper_Engine gEngine = kBaseline;
 static SkOnce gChooseEngineOnce;
 
 static SkJumper_Engine choose_engine() {
 #if __has_feature(memory_sanitizer)
-    // We'll just run portable code.
-
-#elif defined(__aarch64__)
-    return {
-    #define M(stage) ASM(stage, aarch64),
-        { SK_RASTER_PIPELINE_STAGES(M) },
-        M(start_pipeline)
-        M(start_pipeline_2d)
-        M(just_return)
-    #undef M
-    };
+    // We'll just run baseline code.
 
 #elif defined(__arm__)
     if (1 && SkCpu::Supports(SkCpu::NEON|SkCpu::NEON_FMA|SkCpu::VFP_FP16)) {
@@ -242,7 +257,6 @@ static SkJumper_Engine choose_engine() {
         #define M(stage) ASM(stage, vfp4),
             { SK_RASTER_PIPELINE_STAGES(M) },
             M(start_pipeline)
-            M(start_pipeline_2d)
             M(just_return)
         #undef M
         };
@@ -254,7 +268,6 @@ static SkJumper_Engine choose_engine() {
         #define M(stage) ASM(stage, hsw),
             { SK_RASTER_PIPELINE_STAGES(M) },
             M(start_pipeline)
-            M(start_pipeline_2d)
             M(just_return)
         #undef M
         };
@@ -264,7 +277,6 @@ static SkJumper_Engine choose_engine() {
         #define M(stage) ASM(stage, avx),
             { SK_RASTER_PIPELINE_STAGES(M) },
             M(start_pipeline)
-            M(start_pipeline_2d)
             M(just_return)
         #undef M
         };
@@ -274,7 +286,6 @@ static SkJumper_Engine choose_engine() {
         #define M(stage) ASM(stage, sse41),
             { SK_RASTER_PIPELINE_STAGES(M) },
             M(start_pipeline)
-            M(start_pipeline_2d)
             M(just_return)
         #undef M
         };
@@ -284,35 +295,31 @@ static SkJumper_Engine choose_engine() {
         #define M(stage) ASM(stage, sse2),
             { SK_RASTER_PIPELINE_STAGES(M) },
             M(start_pipeline)
-            M(start_pipeline_2d)
             M(just_return)
         #undef M
         };
     }
 
-#elif (defined(__i386__) || defined(_M_IX86)) && \
-        !(defined(_MSC_VER) && defined(SK_SUPPORT_LEGACY_WIN32_JUMPER))
+#elif defined(__i386__) || defined(_M_IX86)
     if (1 && SkCpu::Supports(SkCpu::SSE2)) {
         return {
         #define M(stage) ASM(stage, sse2),
             { SK_RASTER_PIPELINE_STAGES(M) },
             M(start_pipeline)
-            M(start_pipeline_2d)
             M(just_return)
         #undef M
         };
     }
 
 #endif
-    return kPortable;
+    return kBaseline;
 }
 
-#ifndef SK_DISABLE_SSSE3_RUNTIME_CHECK_FOR_LOWP_STAGES
+#ifndef SK_JUMPER_DISABLE_8BIT
     static const SkJumper_Engine kNone = {
     #define M(stage) nullptr,
         { SK_RASTER_PIPELINE_STAGES(M) },
     #undef M
-        nullptr,
         nullptr,
         nullptr,
     };
@@ -323,39 +330,67 @@ static SkJumper_Engine choose_engine() {
     #if !__has_feature(memory_sanitizer) && (defined(__x86_64__) || defined(_M_X64))
         if (1 && SkCpu::Supports(SkCpu::HSW)) {
             return {
-            #define M(st) hsw_lowp<SkRasterPipeline::st>(),
+            #define M(st) hsw_8bit<SkRasterPipeline::st>(),
                 { SK_RASTER_PIPELINE_STAGES(M) },
-                ASM(start_pipeline   ,hsw_lowp),
-                ASM(start_pipeline_2d,hsw_lowp),
-                ASM(just_return      ,hsw_lowp)
+                ASM(start_pipeline,hsw_8bit),
+                ASM(just_return   ,hsw_8bit)
             #undef M
             };
         }
-        if (1 && SkCpu::Supports(SkCpu::SSSE3)) {
+        if (1 && SkCpu::Supports(SkCpu::SSE41)) {
             return {
-            #define M(st) ssse3_lowp<SkRasterPipeline::st>(),
+            #define M(st) sse41_8bit<SkRasterPipeline::st>(),
                 { SK_RASTER_PIPELINE_STAGES(M) },
-                ASM(start_pipeline   ,ssse3_lowp),
-                ASM(start_pipeline_2d,ssse3_lowp),
-                ASM(just_return      ,ssse3_lowp)
+                ASM(start_pipeline,sse41_8bit),
+                ASM(just_return   ,sse41_8bit)
             #undef M
             };
         }
+        if (1 && SkCpu::Supports(SkCpu::SSE2)) {
+            return {
+            #define M(st) sse2_8bit<SkRasterPipeline::st>(),
+                { SK_RASTER_PIPELINE_STAGES(M) },
+                ASM(start_pipeline,sse2_8bit),
+                ASM(just_return   ,sse2_8bit)
+            #undef M
+            };
+        }
+    #elif !defined(SK_JUMPER_LEGACY_X86_8BIT) && \
+        (defined(__i386__) || defined(_M_IX86))
+        if (1 && SkCpu::Supports(SkCpu::SSE2)) {
+            return {
+            #define M(st) sse2_8bit<SkRasterPipeline::st>(),
+                { SK_RASTER_PIPELINE_STAGES(M) },
+                ASM(start_pipeline,sse2_8bit),
+                ASM(just_return   ,sse2_8bit)
+            #undef M
+            };
+        }
+
+    #elif defined(JUMPER_HAS_NEON_8BIT)
+        return {
+        #define M(st) neon_8bit<SkRasterPipeline::st>(),
+            { SK_RASTER_PIPELINE_STAGES(M) },
+            sk_start_pipeline_8bit,
+            sk_just_return_8bit,
+        #undef M
+        };
     #endif
         return kNone;
     }
 #endif
 
 const SkJumper_Engine& SkRasterPipeline::build_pipeline(void** ip) const {
-#ifndef SK_DISABLE_SSSE3_RUNTIME_CHECK_FOR_LOWP_STAGES
+#ifndef SK_JUMPER_DISABLE_8BIT
     gChooseLowpOnce([]{ gLowp = choose_lowp(); });
 
     // First try to build a lowp pipeline.  If that fails, fall back to normal float gEngine.
     void** reset_point = ip;
     *--ip = (void*)gLowp.just_return;
     for (const StageList* st = fStages; st; st = st->prev) {
-        if (st->stage == SkRasterPipeline::clamp_0) {
-            continue;  // No-op in lowp.
+        if (st->stage == SkRasterPipeline::clamp_0 ||
+            st->stage == SkRasterPipeline::clamp_1) {
+            continue;  // No-ops in lowp.
         }
         if (StageFn* fn = gLowp.stages[st->stage]) {
             if (st->ctx) {
@@ -387,7 +422,7 @@ const SkJumper_Engine& SkRasterPipeline::build_pipeline(void** ip) const {
     return gEngine;
 }
 
-void SkRasterPipeline::run(size_t x, size_t y, size_t n) const {
+void SkRasterPipeline::run(size_t x, size_t y, size_t w, size_t h) const {
     if (this->empty()) {
         return;
     }
@@ -396,31 +431,19 @@ void SkRasterPipeline::run(size_t x, size_t y, size_t n) const {
     SkAutoSTMalloc<64, void*> program(fSlotsNeeded);
 
     const SkJumper_Engine& engine = this->build_pipeline(program.get() + fSlotsNeeded);
-    engine.start_pipeline(x,y,x+n, program.get(), &kConstants);
+    engine.start_pipeline(x,y,x+w,y+h, program.get());
 }
 
-std::function<void(size_t, size_t, size_t)> SkRasterPipeline::compile() const {
+std::function<void(size_t, size_t, size_t, size_t)> SkRasterPipeline::compile() const {
     if (this->empty()) {
-        return [](size_t, size_t, size_t) {};
+        return [](size_t, size_t, size_t, size_t) {};
     }
 
     void** program = fAlloc->makeArray<void*>(fSlotsNeeded);
     const SkJumper_Engine& engine = this->build_pipeline(program + fSlotsNeeded);
 
     auto start_pipeline = engine.start_pipeline;
-    return [=](size_t x, size_t y, size_t n) {
-        start_pipeline(x,y,x+n, program, &kConstants);
+    return [=](size_t x, size_t y, size_t w, size_t h) {
+        start_pipeline(x,y,x+w,y+h, program);
     };
-}
-
-void SkRasterPipeline::run_2d(size_t x, size_t y, size_t w, size_t h) const {
-    if (this->empty()) {
-        return;
-    }
-
-    // Like in run(), it's best to not use fAlloc here... we can't bound how often we'll be called.
-    SkAutoSTMalloc<64, void*> program(fSlotsNeeded);
-
-    const SkJumper_Engine& engine = this->build_pipeline(program.get() + fSlotsNeeded);
-    engine.start_pipeline_2d(x,y,x+w,y+h, program.get(), &kConstants);
 }

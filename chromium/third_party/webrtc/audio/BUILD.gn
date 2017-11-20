@@ -24,6 +24,8 @@ rtc_static_library("audio") {
     "audio_transport_proxy.h",
     "conversion.h",
     "scoped_voe_interface.h",
+    "time_interval.cc",
+    "time_interval.h",
   ]
 
   if (!build_with_chromium && is_clang) {
@@ -37,8 +39,6 @@ rtc_static_library("audio") {
     "../api:call_api",
     "../api/audio_codecs:audio_codecs_api",
     "../api/audio_codecs:builtin_audio_encoder_factory",
-    "../base:rtc_base_approved",
-    "../base:rtc_task_queue",
     "../call:call_interfaces",
     "../call:rtp_interfaces",
     "../common_audio",
@@ -50,6 +50,8 @@ rtc_static_library("audio") {
     "../modules/pacing:pacing",
     "../modules/remote_bitrate_estimator:remote_bitrate_estimator",
     "../modules/rtp_rtcp:rtp_rtcp",
+    "../rtc_base:rtc_base_approved",
+    "../rtc_base:rtc_task_queue",
     "../system_wrappers",
     "../voice_engine",
   ]
@@ -73,18 +75,19 @@ if (rtc_include_tests) {
       "audio_receive_stream_unittest.cc",
       "audio_send_stream_unittest.cc",
       "audio_state_unittest.cc",
+      "time_interval_unittest.cc",
     ]
     deps = [
       ":audio",
       "../api:mock_audio_mixer",
-      "../base:rtc_base_approved",
-      "../base:rtc_task_queue",
       "../call:rtp_receiver",
       "../modules/audio_device:mock_audio_device",
       "../modules/audio_mixer:audio_mixer_impl",
       "../modules/congestion_controller:congestion_controller",
       "../modules/congestion_controller:mock_congestion_controller",
       "../modules/pacing:pacing",
+      "../rtc_base:rtc_base_approved",
+      "../rtc_base:rtc_task_queue",
       "../test:test_common",
       "../test:test_support",
       "utility:utility_tests",
@@ -109,13 +112,13 @@ if (rtc_include_tests) {
 
       deps = [
         "../common_audio",
+        "../rtc_base:rtc_base_approved",
         "../system_wrappers",
         "../test:fake_audio_device",
         "../test:test_common",
         "../test:test_main",
         "//testing/gmock",
         "//testing/gtest",
-        "//third_party/gflags",
       ]
       if (is_android) {
         deps += [ "//testing/android/native_test:native_test_native_code" ]
@@ -141,23 +144,23 @@ if (rtc_include_tests) {
     # gets additional generated targets which would require many lines here to
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
-      visibility = [ "//webrtc:webrtc_perf_tests" ]
+      visibility = [ "..:webrtc_perf_tests" ]
     }
     sources = [
       "test/audio_bwe_integration_test.cc",
       "test/audio_bwe_integration_test.h",
     ]
     deps = [
-      "../base:rtc_base_approved",
       "../common_audio",
+      "../rtc_base:rtc_base_approved",
       "../system_wrappers",
       "../test:fake_audio_device",
       "../test:field_trial",
+      "../test:single_threaded_task_queue",
       "../test:test_common",
       "../test:test_main",
       "//testing/gmock",
       "//testing/gtest",
-      "//third_party/gflags",
     ]
 
     data = [

@@ -2,7 +2,7 @@
 layout(key) in int rangeType;
 
 @make {
-    static sk_sp<GrFragmentProcessor> Make(GrPixelConfig dstConfig) {
+    static std::unique_ptr<GrFragmentProcessor> Make(GrPixelConfig dstConfig) {
         int rangeType;
         switch (dstConfig) {
             case kGray_8_GrPixelConfig:
@@ -27,7 +27,7 @@ layout(key) in int rangeType;
             case kAlpha_8_GrPixelConfig:
                 return nullptr;
         }
-        return sk_sp<GrFragmentProcessor>(new GrDitherEffect(rangeType));
+        return std::unique_ptr<GrFragmentProcessor>(new GrDitherEffect(rangeType));
     }
 }
 
@@ -43,32 +43,30 @@ void main() {
             break;
         default:
             // Experimentally this looks better than the expected value of 1/15.
-            range = 0.125 / 15.0;
+            range = 1.0 / 15.0;
             break;
     }
     @if (sk_Caps.integerSupport) {
         // This ordered-dither code is lifted from the cpu backend.
-        int x = int(sk_FragCoord.x);
-        int y = int(sk_FragCoord.y);
+        uint x = uint(sk_FragCoord.x);
+        uint y = uint(sk_FragCoord.y);
         uint m = (y & 1) << 5 | (x & 1) << 4 |
                  (y & 2) << 2 | (x & 2) << 1 |
                  (y & 4) >> 1 | (x & 4) >> 2;
         value = float(m) * 1.0 / 64.0 - 63.0 / 128.0;
     } else {
-        // Generate a random number based on the fragment position. For this
-        // random number generator, we use the "GLSL rand" function
-        // that seems to be floating around on the internet. It works under
-        // the assumption that sin(<big number>) oscillates with high frequency
-        // and sampling it will generate "randomness". Since we're using this
-        // for rendering and not cryptography it should be OK.
-        value = fract(sin(dot(sk_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - .5;
+        // Simulate the integer effect used above using step/mod. For speed, simulates a 4x4
+        // dither pattern rather than an 8x8 one.
+        float4 modValues = mod(sk_FragCoord.xyxy, float4(2.0, 2.0, 4.0, 4.0));
+        float4 stepValues = step(modValues, float4(1.0, 1.0, 2.0, 2.0));
+        value = dot(stepValues, float4(8.0 / 16.0, 4.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0)) - 15.0 / 32.0;
     }
     // For each color channel, add the random offset to the channel value and then clamp
     // between 0 and alpha to keep the color premultiplied.
-    sk_OutColor = vec4(clamp(sk_InColor.rgb + value * range, 0, sk_InColor.a), sk_InColor.a);
+    sk_OutColor = float4(clamp(sk_InColor.rgb + value * range, 0, sk_InColor.a), sk_InColor.a);
 }
 
 @test(testData) {
     float range = testData->fRandom->nextRangeF(0.001f, 0.05f);
-    return sk_sp<GrFragmentProcessor>(new GrDitherEffect(range));
+    return std::unique_ptr<GrFragmentProcessor>(new GrDitherEffect(range));
 }

@@ -85,21 +85,21 @@ enum XFA_FM_TOKEN {
 
 struct XFA_FMKeyword {
   XFA_FM_TOKEN m_type;
-  uint32_t m_uHash;
+  uint32_t m_hash;
   const wchar_t* m_keyword;
 };
-
-const wchar_t* XFA_FM_KeywordToString(XFA_FM_TOKEN op);
 
 class CXFA_FMToken {
  public:
   CXFA_FMToken();
-  explicit CXFA_FMToken(uint32_t uLineNum);
+  explicit CXFA_FMToken(uint32_t line_num);
   ~CXFA_FMToken();
 
-  CFX_WideStringC m_wstring;
+  CFX_WideString ToDebugString() const;
+
+  CFX_WideStringC m_string;
   XFA_FM_TOKEN m_type;
-  uint32_t m_uLinenum;
+  uint32_t m_line_num;
 };
 
 class CXFA_FMLexer {
@@ -107,30 +107,28 @@ class CXFA_FMLexer {
   explicit CXFA_FMLexer(const CFX_WideStringC& wsFormcalc);
   ~CXFA_FMLexer();
 
-  CXFA_FMToken* NextToken();
-  bool HasError() const { return m_LexerError; }
+  std::unique_ptr<CXFA_FMToken> NextToken();
 
-  void SetCurrentLine(uint32_t line) { m_uCurrentLine = line; }
-  void SetToken(std::unique_ptr<CXFA_FMToken> pToken) {
-    m_pToken = std::move(pToken);
-  }
-
-  const wchar_t* GetPos() { return m_ptr; }
-  void SetPos(const wchar_t* pPos) { m_ptr = pPos; }
+  void SetCurrentLine(uint32_t line) { m_current_line = line; }
+  const wchar_t* GetPos() { return m_cursor; }
+  void SetPos(const wchar_t* pos) { m_cursor = pos; }
 
  private:
-  const wchar_t* Number(CXFA_FMToken* t, const wchar_t* p);
-  const wchar_t* String(CXFA_FMToken* t, const wchar_t* p);
-  const wchar_t* Identifiers(CXFA_FMToken* t, const wchar_t* p);
-  const wchar_t* Comment(const wchar_t* p);
-  XFA_FM_TOKEN IsKeyword(const CFX_WideStringC& p);
-  std::unique_ptr<CXFA_FMToken> Scan();
+  void AdvanceForNumber();
+  void AdvanceForString();
+  void AdvanceForIdentifier();
+  void AdvanceForComment();
 
-  const wchar_t* m_ptr;
+  void RaiseError() {
+    m_token.reset();
+    m_lexer_error = true;
+  }
+
+  const wchar_t* m_cursor;
   const wchar_t* const m_end;
-  uint32_t m_uCurrentLine;
-  std::unique_ptr<CXFA_FMToken> m_pToken;
-  bool m_LexerError;
+  uint32_t m_current_line;
+  std::unique_ptr<CXFA_FMToken> m_token;
+  bool m_lexer_error;
 };
 
 #endif  // XFA_FXFA_FM2JS_CXFA_FMLEXER_H_

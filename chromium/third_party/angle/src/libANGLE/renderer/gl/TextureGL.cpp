@@ -41,7 +41,8 @@ size_t GetLevelInfoIndex(GLenum target, size_t level)
 
 bool UseTexImage2D(GLenum textureType)
 {
-    return textureType == GL_TEXTURE_2D || textureType == GL_TEXTURE_CUBE_MAP;
+    return textureType == GL_TEXTURE_2D || textureType == GL_TEXTURE_CUBE_MAP ||
+           textureType == GL_TEXTURE_RECTANGLE_ANGLE;
 }
 
 bool UseTexImage3D(GLenum textureType)
@@ -87,7 +88,8 @@ LevelInfoGL GetLevelInfo(GLenum originalInternalFormat, GLenum destinationIntern
 {
     GLenum originalFormat    = gl::GetUnsizedFormat(originalInternalFormat);
     GLenum destinationFormat = gl::GetUnsizedFormat(destinationInternalFormat);
-    return LevelInfoGL(originalFormat, GetDepthStencilWorkaround(originalFormat),
+    return LevelInfoGL(originalFormat, destinationInternalFormat,
+                       GetDepthStencilWorkaround(originalFormat),
                        GetLUMAWorkaroundInfo(originalFormat, destinationFormat));
 }
 
@@ -112,14 +114,16 @@ LUMAWorkaroundGL::LUMAWorkaroundGL(bool enabled_, GLenum workaroundFormat_)
 {
 }
 
-LevelInfoGL::LevelInfoGL() : LevelInfoGL(GL_NONE, false, LUMAWorkaroundGL())
+LevelInfoGL::LevelInfoGL() : LevelInfoGL(GL_NONE, GL_NONE, false, LUMAWorkaroundGL())
 {
 }
 
 LevelInfoGL::LevelInfoGL(GLenum sourceFormat_,
+                         GLenum nativeInternalFormat_,
                          bool depthStencilWorkaround_,
                          const LUMAWorkaroundGL &lumaWorkaround_)
     : sourceFormat(sourceFormat_),
+      nativeInternalFormat(nativeInternalFormat_),
       depthStencilWorkaround(depthStencilWorkaround_),
       lumaWorkaround(lumaWorkaround_)
 {
@@ -714,8 +718,8 @@ gl::Error TextureGL::copyTexture(const gl::Context *context,
                               gl::GetUnsizedFormat(internalFormat), type);
 
     return copySubTextureHelper(context, target, level, gl::Offset(0, 0, 0), sourceLevel,
-                                sourceArea, internalFormat, unpackFlipY, unpackPremultiplyAlpha,
-                                unpackUnmultiplyAlpha, source);
+                                sourceArea, gl::GetUnsizedFormat(internalFormat), type, unpackFlipY,
+                                unpackPremultiplyAlpha, unpackUnmultiplyAlpha, source);
 }
 
 gl::Error TextureGL::copySubTexture(const gl::Context *context,
@@ -729,10 +733,10 @@ gl::Error TextureGL::copySubTexture(const gl::Context *context,
                                     bool unpackUnmultiplyAlpha,
                                     const gl::Texture *source)
 {
-    GLenum destFormat = mState.getImageDesc(target, level).format.info->format;
+    const gl::InternalFormat &destFormatInfo = *mState.getImageDesc(target, level).format.info;
     return copySubTextureHelper(context, target, level, destOffset, sourceLevel, sourceArea,
-                                destFormat, unpackFlipY, unpackPremultiplyAlpha,
-                                unpackUnmultiplyAlpha, source);
+                                destFormatInfo.format, destFormatInfo.type, unpackFlipY,
+                                unpackPremultiplyAlpha, unpackUnmultiplyAlpha, source);
 }
 
 gl::Error TextureGL::copySubTextureHelper(const gl::Context *context,
@@ -742,6 +746,7 @@ gl::Error TextureGL::copySubTextureHelper(const gl::Context *context,
                                           size_t sourceLevel,
                                           const gl::Rectangle &sourceArea,
                                           GLenum destFormat,
+                                          GLenum destType,
                                           bool unpackFlipY,
                                           bool unpackPremultiplyAlpha,
                                           bool unpackUnmultiplyAlpha,
@@ -761,19 +766,36 @@ gl::Error TextureGL::copySubTextureHelper(const gl::Context *context,
         (sourceFormat == destFormat && sourceFormat != GL_BGRA_EXT) ||
         (sourceFormat == GL_RGBA && destFormat == GL_RGB);
 
+    GLenum sourceComponentType = sourceImageDesc.format.info->componentType;
+    const auto &destInternalFormatInfo = gl::GetInternalFormatInfo(destFormat, destType);
+    GLenum destComponentType           = destInternalFormatInfo.componentType;
+    bool destSRGB                      = destInternalFormatInfo.colorEncoding == GL_SRGB;
     if (source->getTarget() == GL_TEXTURE_2D && !unpackFlipY &&
         unpackPremultiplyAlpha == unpackUnmultiplyAlpha && !needsLumaWorkaround &&
-        sourceFormatContainSupersetOfDestFormat)
+        sourceFormatContainSupersetOfDestFormat && sourceComponentType == destComponentType &&
+        !destSRGB)
     {
         return mBlitter->copyTexSubImage(sourceGL, sourceLevel, this, target, level, sourceArea,
                                          destOffset);
     }
 
-    // We can't use copyTexSubImage, do a manual copy
-    return mBlitter->copySubTexture(context, sourceGL, sourceLevel, this, target, level,
-                                    sourceImageDesc.size, sourceArea, destOffset,
-                                    needsLumaWorkaround, sourceLevelInfo.sourceFormat, unpackFlipY,
-                                    unpackPremultiplyAlpha, unpackUnmultiplyAlpha);
+    // Check if the destination is renderable and copy on the GPU
+    const LevelInfoGL &destLevelInfo = getLevelInfo(target, level);
+    if (!destSRGB &&
+        nativegl::SupportsNativeRendering(mFunctions, target, destLevelInfo.nativeInternalFormat))
+    {
+        return mBlitter->copySubTexture(context, sourceGL, sourceLevel, sourceComponentType, this,
+                                        target, level, destComponentType, sourceImageDesc.size,
+                                        sourceArea, destOffset, needsLumaWorkaround,
+                                        sourceLevelInfo.sourceFormat, unpackFlipY,
+                                        unpackPremultiplyAlpha, unpackUnmultiplyAlpha);
+    }
+
+    // Fall back to CPU-readback
+    return mBlitter->copySubTextureCPUReadback(context, sourceGL, sourceLevel, sourceComponentType,
+                                               this, target, level, destFormat, destType,
+                                               sourceArea, destOffset, unpackFlipY,
+                                               unpackPremultiplyAlpha, unpackUnmultiplyAlpha);
 }
 
 gl::Error TextureGL::setStorage(const gl::Context *context,
@@ -811,7 +833,7 @@ gl::Error TextureGL::setStorage(const gl::Context *context,
                                       std::max(size.height >> level, 1),
                                       1);
 
-                if (getTarget() == GL_TEXTURE_2D)
+                if (getTarget() == GL_TEXTURE_2D || getTarget() == GL_TEXTURE_RECTANGLE_ANGLE)
                 {
                     if (internalFormatInfo.compressed)
                     {
@@ -989,7 +1011,7 @@ gl::Error TextureGL::generateMipmap(const gl::Context *context)
 
 gl::Error TextureGL::bindTexImage(const gl::Context *context, egl::Surface *surface)
 {
-    ASSERT(getTarget() == GL_TEXTURE_2D);
+    ASSERT(getTarget() == GL_TEXTURE_2D || getTarget() == GL_TEXTURE_RECTANGLE_ANGLE);
 
     // Make sure this texture is bound
     mStateManager->bindTexture(getTarget(), mTextureID);
@@ -1001,7 +1023,7 @@ gl::Error TextureGL::bindTexImage(const gl::Context *context, egl::Surface *surf
 gl::Error TextureGL::releaseTexImage(const gl::Context *context)
 {
     // Not all Surface implementations reset the size of mip 0 when releasing, do it manually
-    ASSERT(getTarget() == GL_TEXTURE_2D);
+    ASSERT(getTarget() == GL_TEXTURE_2D || getTarget() == GL_TEXTURE_RECTANGLE_ANGLE);
 
     mStateManager->bindTexture(getTarget(), mTextureID);
     if (UseTexImage2D(getTarget()))

@@ -1205,9 +1205,9 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
   // Tests that when the transport channel signals a candidate pair change
   // event, the media channel will receive a call on the network route change.
   void TestNetworkRouteChanges() {
-    constexpr uint16_t kLocalNetId = 1;
-    constexpr uint16_t kRemoteNetId = 2;
-    constexpr int kLastPacketId = 100;
+    static constexpr uint16_t kLocalNetId = 1;
+    static constexpr uint16_t kRemoteNetId = 2;
+    static constexpr int kLastPacketId = 100;
 
     CreateChannels(0, 0);
 
@@ -1227,9 +1227,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     EXPECT_FALSE(media_channel1->last_network_route().connected);
     media_channel1->set_num_network_route_changes(0);
 
-    network_thread_->Invoke<void>(RTC_FROM_HERE, [this, media_channel1,
-                                                  kLocalNetId, kRemoteNetId,
-                                                  kLastPacketId] {
+    network_thread_->Invoke<void>(RTC_FROM_HERE, [this] {
       // The transport channel becomes connected.
       rtc::SocketAddress local_address("192.168.1.1", 1000 /* port number */);
       rtc::SocketAddress remote_address("192.168.1.2", 2000 /* port number */);

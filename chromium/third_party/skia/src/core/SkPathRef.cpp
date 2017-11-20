@@ -6,6 +6,7 @@
  */
 
 #include "SkBuffer.h"
+#include "SkNx.h"
 #include "SkOnce.h"
 #include "SkPath.h"
 #include "SkPathRef.h"
@@ -32,8 +33,9 @@ SkPathRef::Editor::Editor(sk_sp<SkPathRef>* pathRef,
 //////////////////////////////////////////////////////////////////////////////
 
 SkPathRef::~SkPathRef() {
+    // Deliberately don't validate() this path ref, otherwise there's no way
+    // to read one that's not valid and then free its memory without asserting.
     this->callGenIDChangeListeners();
-    SkDEBUGCODE(this->validate();)
     sk_free(fPoints);
 
     SkDEBUGCODE(fPoints = nullptr;)
@@ -243,29 +245,42 @@ SkPathRef* SkPathRef::CreateFromBuffer(SkRBuffer* buffer) {
     unsigned rrectOrOvalStartIdx = (packed >> kRRectOrOvalStartIdx_SerializationShift) & 0x7;
 
     int32_t verbCount, pointCount, conicCount;
-    ptrdiff_t maxPtrDiff = std::numeric_limits<ptrdiff_t>::max();
     if (!buffer->readU32(&(ref->fGenerationID)) ||
-        !buffer->readS32(&verbCount) ||
-        verbCount < 0 ||
-        static_cast<uint32_t>(verbCount) > maxPtrDiff/sizeof(uint8_t) ||
-        !buffer->readS32(&pointCount) ||
-        pointCount < 0 ||
-        static_cast<uint32_t>(pointCount) > maxPtrDiff/sizeof(SkPoint) ||
-        sizeof(uint8_t) * verbCount + sizeof(SkPoint) * pointCount >
-            static_cast<size_t>(maxPtrDiff) ||
-        !buffer->readS32(&conicCount) ||
-        conicCount < 0) {
+        !buffer->readS32(&verbCount)            || (verbCount  < 0) ||
+        !buffer->readS32(&pointCount)           || (pointCount < 0) ||
+        !buffer->readS32(&conicCount)           || (conicCount < 0))
+    {
         return nullptr;
     }
 
+    uint64_t pointSize64 = sk_64_mul(pointCount, sizeof(SkPoint));
+    uint64_t conicSize64 = sk_64_mul(conicCount, sizeof(SkScalar));
+    if (!SkTFitsIn<size_t>(pointSize64) || !SkTFitsIn<size_t>(conicSize64)) {
+        return nullptr;
+    }
+
+    size_t verbSize = verbCount * sizeof(uint8_t);
+    size_t pointSize = SkToSizeT(pointSize64);
+    size_t conicSize = SkToSizeT(conicSize64);
+
+    {
+        uint64_t requiredBufferSize = sizeof(SkRect);
+        requiredBufferSize += verbSize;
+        requiredBufferSize += pointSize;
+        requiredBufferSize += conicSize;
+        if (buffer->available() < requiredBufferSize) {
+            return nullptr;
+        }
+    }
+
     ref->resetToSize(verbCount, pointCount, conicCount);
-    SkASSERT(verbCount == ref->countVerbs());
+    SkASSERT(verbCount  == ref->countVerbs());
     SkASSERT(pointCount == ref->countPoints());
     SkASSERT(conicCount == ref->fConicWeights.count());
 
-    if (!buffer->read(ref->verbsMemWritable(), verbCount * sizeof(uint8_t)) ||
-        !buffer->read(ref->fPoints, pointCount * sizeof(SkPoint)) ||
-        !buffer->read(ref->fConicWeights.begin(), conicCount * sizeof(SkScalar)) ||
+    if (!buffer->read(ref->verbsMemWritable(), verbSize) ||
+        !buffer->read(ref->fPoints, pointSize) ||
+        !buffer->read(ref->fConicWeights.begin(), conicSize) ||
         !buffer->read(&ref->fBounds, sizeof(SkRect))) {
         return nullptr;
     }
@@ -283,7 +298,7 @@ SkPathRef* SkPathRef::CreateFromBuffer(SkRBuffer* buffer) {
             return nullptr;
         }
     }
-    
+
     ref->fBoundsIsDirty = false;
 
     // resetToSize clears fSegmentMask and fIsOval
@@ -676,6 +691,11 @@ void SkPathRef::Iter::setPathRef(const SkPathRef& path) {
     if (fConicWeights) {
       fConicWeights -= 1;  // begin one behind
     }
+
+    // Don't allow iteration through non-finite points.
+    if (!path.isFinite()) {
+        fVerbStop = fVerbs;
+    }
 }
 
 uint8_t SkPathRef::Iter::next(SkPoint pts[4]) {
@@ -729,28 +749,47 @@ uint8_t SkPathRef::Iter::peek() const {
     return next <= fVerbStop ? (uint8_t) SkPath::kDone_Verb : *next;
 }
 
-#ifdef SK_DEBUG
 
-#include "SkNx.h"
-
-void SkPathRef::validate() const {
-    SkASSERT(static_cast<ptrdiff_t>(fFreeSpace) >= 0);
-    SkASSERT(reinterpret_cast<intptr_t>(fVerbs) - reinterpret_cast<intptr_t>(fPoints) >= 0);
-    SkASSERT((nullptr == fPoints) == (nullptr == fVerbs));
-    SkASSERT(!(nullptr == fPoints && 0 != fFreeSpace));
-    SkASSERT(!(nullptr == fPoints && 0 != fFreeSpace));
-    SkASSERT(!(nullptr == fPoints && fPointCnt));
-    SkASSERT(!(nullptr == fVerbs && fVerbCnt));
-    SkASSERT(this->currSize() ==
-                fFreeSpace + sizeof(SkPoint) * fPointCnt + sizeof(uint8_t) * fVerbCnt);
+bool SkPathRef::isValid() const {
+    if (static_cast<ptrdiff_t>(fFreeSpace) < 0) {
+        return false;
+    }
+    if (reinterpret_cast<intptr_t>(fVerbs) - reinterpret_cast<intptr_t>(fPoints) < 0) {
+        return false;
+    }
+    if ((nullptr == fPoints) != (nullptr == fVerbs)) {
+        return false;
+    }
+    if (nullptr == fPoints && 0 != fFreeSpace) {
+        return false;
+    }
+    if (nullptr == fPoints && 0 != fFreeSpace) {
+        return false;
+    }
+    if (nullptr == fPoints && fPointCnt) {
+        return false;
+    }
+    if (nullptr == fVerbs && fVerbCnt) {
+        return false;
+    }
+    if (this->currSize() !=
+                fFreeSpace + sizeof(SkPoint) * fPointCnt + sizeof(uint8_t) * fVerbCnt) {
+        return false;
+    }
 
     if (fIsOval || fIsRRect) {
-        // Currently we don't allow both of these to be set, even though ovals are round rects.
-        SkASSERT(fIsOval != fIsRRect);
+        // Currently we don't allow both of these to be set, even though ovals are ro
+        if (fIsOval == fIsRRect) {
+            return false;
+        }
         if (fIsOval) {
-            SkASSERT(fRRectOrOvalStartIdx < 4);
+            if (fRRectOrOvalStartIdx >= 4) {
+                return false;
+            }
         } else {
-            SkASSERT(fRRectOrOvalStartIdx < 8);
+            if (fRRectOrOvalStartIdx >= 8) {
+                return false;
+            }
         }
     }
 
@@ -774,13 +813,15 @@ void SkPathRef::validate() const {
             }
 #endif
 
-            SkASSERT(!fPoints[i].isFinite() ||
-                    (!(point < leftTop).anyTrue() && !(point > rightBot).anyTrue()));
+            if (fPoints[i].isFinite() && (point < leftTop).anyTrue() && !(point > rightBot).anyTrue())
+                return false;
             if (!fPoints[i].isFinite()) {
                 isFinite = false;
             }
         }
-        SkASSERT(SkToBool(fIsFinite) == isFinite);
+        if (SkToBool(fIsFinite) != isFinite) {
+            return false;
+        }
     }
 
 #ifdef SK_DEBUG_PATH
@@ -811,7 +852,9 @@ void SkPathRef::validate() const {
                 break;
         }
     }
-    SkASSERT(mask == fSegmentMask);
+    if (mask != fSegmentMask) {
+        return false;
+    }
 #endif // SK_DEBUG_PATH
+    return true;
 }
-#endif

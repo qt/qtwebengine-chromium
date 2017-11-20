@@ -35,6 +35,12 @@ public:
                                                              : GrFSAAType::kUnifiedMSAA;
     }
 
+    /*
+     * When instantiated does this proxy require a stencil buffer?
+     */
+    void setNeedsStencil() { fNeedsStencil = true; }
+    bool needsStencil() const { return fNeedsStencil; }
+
     /**
      * Returns the number of samples/pixel in the stencil buffer (Zero if non-MSAA).
      */
@@ -66,7 +72,7 @@ protected:
                         SkBackingFit, SkBudgeted, uint32_t flags);
 
     // Wrapped version
-    GrRenderTargetProxy(sk_sp<GrSurface>);
+    GrRenderTargetProxy(sk_sp<GrSurface>, GrSurfaceOrigin);
 
     sk_sp<GrSurface> createSurface(GrResourceProvider*) const override;
 
@@ -74,6 +80,8 @@ private:
     size_t onUninstantiatedGpuMemorySize() const override;
 
     int                 fSampleCnt;
+    bool                fNeedsStencil;
+
     // For wrapped render targets the actual GrRenderTarget is stored in the GrIORefProxy class.
     // For deferred proxies that pointer is filled in when we need to instantiate the
     // deferred resource.

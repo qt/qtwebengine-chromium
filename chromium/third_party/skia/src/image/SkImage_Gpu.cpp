@@ -203,9 +203,19 @@ bool SkImage_Gpu::onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, size
         flags = GrContextPriv::kUnpremul_PixelOpsFlag;
     }
 
+    // This hack allows us to call makeNonTextureImage on images with arbitrary color spaces.
+    // Otherwise, we'll be unable to create a render target context.
+    // TODO: This shouldn't be necessary - we need more robust support for images (and surfaces)
+    // with arbitrary color spaces. Unfortunately, this is one spot where we go from image to
+    // surface (rather than the opposite), and our lenient image rules break our (currently) more
+    // strict surface rules.
+    sk_sp<SkColorSpace> surfaceColorSpace = fColorSpace;
+    if (!flags && SkColorSpace::Equals(fColorSpace.get(), dstInfo.colorSpace())) {
+        surfaceColorSpace = nullptr;
+    }
+
     sk_sp<GrSurfaceContext> sContext = fContext->contextPriv().makeWrappedSurfaceContext(
-                                                                                    fProxy,
-                                                                                    fColorSpace);
+            fProxy, surfaceColorSpace);
     if (!sContext) {
         return false;
     }
@@ -230,10 +240,10 @@ bool SkImage_Gpu::onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, size
 
 sk_sp<SkImage> SkImage_Gpu::onMakeSubset(const SkIRect& subset) const {
     GrSurfaceDesc desc;
-    desc.fConfig = fProxy->config();
+    desc.fOrigin = fProxy->origin();
     desc.fWidth = subset.width();
     desc.fHeight = subset.height();
-    desc.fOrigin = fProxy->origin();
+    desc.fConfig = fProxy->config();
 
     sk_sp<GrSurfaceContext> sContext(fContext->contextPriv().makeDeferredSurfaceContext(
                                                                         desc,
@@ -266,9 +276,7 @@ static sk_sp<SkImage> new_wrapped_texture_common(GrContext* ctx,
         return nullptr;
     }
 
-    sk_sp<GrTexture> tex = ctx->resourceProvider()->wrapBackendTexture(backendTex,
-                                                                       origin,
-                                                                       ownership);
+    sk_sp<GrTexture> tex = ctx->resourceProvider()->wrapBackendTexture(backendTex, ownership);
     if (!tex) {
         return nullptr;
     }
@@ -277,7 +285,7 @@ static sk_sp<SkImage> new_wrapped_texture_common(GrContext* ctx,
     }
 
     const SkBudgeted budgeted = SkBudgeted::kNo;
-    sk_sp<GrTextureProxy> proxy(GrSurfaceProxy::MakeWrapped(std::move(tex)));
+    sk_sp<GrTextureProxy> proxy(GrSurfaceProxy::MakeWrapped(std::move(tex), origin));
     return sk_make_sp<SkImage_Gpu>(ctx, kNeedNewImageUniqueID,
                                    at, std::move(proxy), std::move(colorSpace), budgeted);
 }
@@ -491,8 +499,8 @@ sk_sp<SkImage> SkImage::MakeCrossContextFromEncoded(GrContext* context, sk_sp<Sk
 
     sk_sp<GrSemaphore> sema = context->getGpu()->prepareTextureForCrossContextUsage(texture.get());
 
-    auto gen = GrBackendTextureImageGenerator::Make(std::move(texture), std::move(sema),
-                                                    codecImage->alphaType(),
+    auto gen = GrBackendTextureImageGenerator::Make(std::move(texture), proxy->origin(),
+                                                    std::move(sema), codecImage->alphaType(),
                                                     std::move(texColorSpace));
     return SkImage::MakeFromGenerator(std::move(gen));
 }

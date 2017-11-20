@@ -10,7 +10,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "content/renderer/media/gpu/rtc_video_encoder.h"
-#include "media/renderers/mock_gpu_video_accelerator_factories.h"
+#include "media/video/mock_gpu_video_accelerator_factories.h"
 #include "media/video/mock_video_encode_accelerator.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/libyuv/include/libyuv/planar_functions.h"
@@ -106,14 +106,26 @@ class RTCVideoEncoderTest
   void RunUntilIdle() {
     DVLOG(3) << __func__;
     encoder_thread_.task_runner()->PostTask(
-        FROM_HERE, base::Bind(&base::WaitableEvent::Signal,
-                              base::Unretained(&idle_waiter_)));
+        FROM_HERE, base::BindOnce(&base::WaitableEvent::Signal,
+                                  base::Unretained(&idle_waiter_)));
     idle_waiter_.Wait();
   }
 
   void CreateEncoder(webrtc::VideoCodecType codec_type) {
     DVLOG(3) << __func__;
-    rtc_encoder_ = base::MakeUnique<RTCVideoEncoder>(codec_type,
+    media::VideoCodecProfile media_profile;
+    switch (codec_type) {
+      case webrtc::kVideoCodecVP8:
+        media_profile = media::VP8PROFILE_ANY;
+        break;
+      case webrtc::kVideoCodecH264:
+        media_profile = media::H264PROFILE_BASELINE;
+        break;
+      default:
+        ADD_FAILURE() << "Unexpected codec type: " << codec_type;
+        media_profile = media::VIDEO_CODEC_PROFILE_UNKNOWN;
+    }
+    rtc_encoder_ = base::MakeUnique<RTCVideoEncoder>(media_profile,
                                                      mock_gpu_factories_.get());
   }
 

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_extension.h"
 #include "third_party/base/logging.h"
 
@@ -132,7 +133,7 @@ bool CXFA_FMStringExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
     return true;
   }
   javascript.AppendChar(L'\"');
-  for (int32_t i = 1; i < tempStr.GetLength() - 1; i++) {
+  for (FX_STRSIZE i = 1; i < tempStr.GetLength() - 1; i++) {
     wchar_t oneChar = tempStr[i];
     switch (oneChar) {
       case L'\"':
@@ -180,7 +181,8 @@ bool CXFA_FMIdentifierExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   } else if (tempStr == L"$template") {
     tempStr = L"xfa.template";
   } else if (tempStr[0] == L'!') {
-    tempStr = EXCLAMATION_IN_IDENTIFIER + tempStr.Mid(1);
+    tempStr =
+        EXCLAMATION_IN_IDENTIFIER + tempStr.Right(tempStr.GetLength() - 1);
   }
   javascript << tempStr;
   return true;

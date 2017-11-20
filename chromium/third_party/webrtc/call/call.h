@@ -21,12 +21,12 @@
 #include "webrtc/call/audio_state.h"
 #include "webrtc/call/flexfec_receive_stream.h"
 #include "webrtc/call/rtp_transport_controller_send_interface.h"
+#include "webrtc/call/video_receive_stream.h"
+#include "webrtc/call/video_send_stream.h"
 #include "webrtc/common_types.h"
 #include "webrtc/rtc_base/networkroute.h"
 #include "webrtc/rtc_base/platform_file.h"
 #include "webrtc/rtc_base/socket.h"
-#include "webrtc/video_receive_stream.h"
-#include "webrtc/video_send_stream.h"
 
 namespace webrtc {
 
@@ -112,12 +112,6 @@ class Call {
     // RtcEventLog to use for this call. Required.
     // Use webrtc::RtcEventLog::CreateNull() for a null implementation.
     RtcEventLog* event_log = nullptr;
-
-    // Enables periodic sending if empty keep-alive messages that helps prevent
-    // network time-out events. The packets adhere to RFC6263 section 4.6, and
-    // by default use payload type 20, as described in 3GPP TS 24.229,
-    // Appendix K.5.2.1.
-    RtpKeepAliveConfig keepalive_config;
   };
 
   struct Stats {

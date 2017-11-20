@@ -72,7 +72,7 @@ namespace sw
 
 		texture.baseLevel = 0;
 		texture.maxLevel = 1000;
-		texture.maxLod = MIPMAP_LEVELS - 2;	// Trilinear accesses lod+1
+		texture.maxLod = MAX_TEXTURE_LOD;
 		texture.minLod = 0;
 	}
 
@@ -207,8 +207,15 @@ namespace sw
 				mipmap.onePitchP[2] = 1;
 				mipmap.onePitchP[3] = pitchP;
 
+				mipmap.pitchP[0] = pitchP;
+				mipmap.pitchP[1] = pitchP;
+				mipmap.pitchP[2] = pitchP;
+				mipmap.pitchP[3] = pitchP;
+
 				mipmap.sliceP[0] = sliceP;
 				mipmap.sliceP[1] = sliceP;
+				mipmap.sliceP[2] = sliceP;
+				mipmap.sliceP[3] = sliceP;
 
 				if(internalTextureFormat == FORMAT_YV12_BT601 ||
 				   internalTextureFormat == FORMAT_YV12_BT709 ||
@@ -337,12 +344,12 @@ namespace sw
 
 	void Sampler::setMinLod(float minLod)
 	{
-		texture.minLod = clamp(minLod, 0.0f, (float)(MIPMAP_LEVELS - 2));
+		texture.minLod = clamp(minLod, 0.0f, (float)(MAX_TEXTURE_LOD));
 	}
 
 	void Sampler::setMaxLod(float maxLod)
 	{
-		texture.maxLod = clamp(maxLod, 0.0f, (float)(MIPMAP_LEVELS - 2));
+		texture.maxLod = clamp(maxLod, 0.0f, (float)(MAX_TEXTURE_LOD));
 	}
 
 	void Sampler::setFilterQuality(FilterType maximumFilterQuality)

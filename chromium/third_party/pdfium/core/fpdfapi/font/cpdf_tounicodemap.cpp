@@ -77,15 +77,14 @@ static CFX_WideString StringDataAdd(CFX_WideString str) {
   for (int i = len - 1; i >= 0; --i) {
     wchar_t ch = str[i] + value;
     if (ch < str[i]) {
-      ret.Insert(0, 0);
+      ret.InsertAtFront(0);
     } else {
-      ret.Insert(0, ch);
+      ret.InsertAtFront(ch);
       value = 0;
     }
   }
-  if (value) {
-    ret.Insert(0, value);
-  }
+  if (value)
+    ret.InsertAtFront(value);
   return ret;
 }
 
@@ -148,7 +147,7 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
           continue;
         }
         if (len == 1) {
-          m_Map[srccode] = destcode.GetAt(0);
+          m_Map[srccode] = destcode[0];
         } else {
           m_Map[srccode] = GetUnicode();
           m_MultiCharBuf.AppendChar(destcode.GetLength());
@@ -179,7 +178,7 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
               continue;
             }
             if (len == 1) {
-              m_Map[code] = destcode.GetAt(0);
+              m_Map[code] = destcode[0];
             } else {
               m_Map[code] = GetUnicode();
               m_MultiCharBuf.AppendChar(destcode.GetLength());

@@ -14,7 +14,6 @@
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_interform.h"
 #include "core/fpdfdoc/cpdf_metadata.h"
-#include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/xml/cxml_content.h"
 #include "core/fxcrt/xml/cxml_element.h"
@@ -37,7 +36,7 @@ bool FPDF_UnSupportError(int nError) {
   return true;
 }
 
-DLLEXPORT FPDF_BOOL STDCALL
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FSDK_SetUnSpObjProcessHandler(UNSUPPORT_INFO* unsp_info) {
   if (!unsp_info || unsp_info->version != 1)
     return false;
@@ -126,7 +125,7 @@ void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
     return;
 
   // Portfolios and Packages
-  CPDF_Dictionary* pRootDict = pDoc->GetRoot();
+  const CPDF_Dictionary* pRootDict = pDoc->GetRoot();
   if (pRootDict) {
     CFX_ByteString cbString;
     if (pRootDict->KeyExist("Collection")) {
@@ -169,12 +168,12 @@ void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
 #endif  // PDF_ENABLE_XFA
 }
 
-DLLEXPORT int STDCALL FPDFDoc_GetPageMode(FPDF_DOCUMENT document) {
+FPDF_EXPORT int FPDF_CALLCONV FPDFDoc_GetPageMode(FPDF_DOCUMENT document) {
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
   if (!pDoc)
     return PAGEMODE_UNKNOWN;
 
-  CPDF_Dictionary* pRoot = pDoc->GetRoot();
+  const CPDF_Dictionary* pRoot = pDoc->GetRoot();
   if (!pRoot)
     return PAGEMODE_UNKNOWN;
 

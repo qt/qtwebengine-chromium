@@ -22,6 +22,7 @@ namespace gl
 struct Caps;
 class ContextState;
 class State;
+class FramebufferState;
 }
 
 namespace rx
@@ -30,12 +31,15 @@ namespace rx
 class FramebufferGL;
 class FunctionsGL;
 class TransformFeedbackGL;
+class VertexArrayGL;
 class QueryGL;
 
 class StateManagerGL final : angle::NonCopyable
 {
   public:
-    StateManagerGL(const FunctionsGL *functions, const gl::Caps &rendererCaps);
+    StateManagerGL(const FunctionsGL *functions,
+                   const gl::Caps &rendererCaps,
+                   const gl::Extensions &extensions);
 
     void deleteProgram(GLuint program);
     void deleteVertexArray(GLuint vao);
@@ -74,9 +78,15 @@ class StateManagerGL final : angle::NonCopyable
 
     void setScissorTestEnabled(bool enabled);
     void setScissor(const gl::Rectangle &scissor);
+    void setScissorIndexed(GLuint index, const gl::Rectangle &scissor);
+    void setScissorArrayv(GLuint first, const std::vector<gl::Rectangle> &viewports);
 
     void setViewport(const gl::Rectangle &viewport);
+    void setViewportArrayv(GLuint first, const std::vector<gl::Rectangle> &viewports);
     void setDepthRange(float near, float far);
+
+    void setViewportOffsets(const std::vector<gl::Offset> &kviewportOffsets);
+    void setSideBySide(bool isSideBySide);
 
     void setBlendEnabled(bool enabled);
     void setBlendColor(const gl::ColorF &blendColor);
@@ -171,6 +181,10 @@ class StateManagerGL final : angle::NonCopyable
 
     void syncState(const gl::Context *context, const gl::State::DirtyBits &glDirtyBits);
 
+    void updateMultiviewBaseViewLayerIndexUniform(
+        const gl::Program *program,
+        const gl::FramebufferState &drawFramebufferState) const;
+
   private:
     // Set state that's common among draw commands and compute invocations.
     void setGenericShaderState(const gl::Context *context);
@@ -179,6 +193,19 @@ class StateManagerGL final : angle::NonCopyable
     gl::Error setGenericDrawState(const gl::Context *context);
 
     void setTextureCubemapSeamlessEnabled(bool enabled);
+
+    void applyViewportOffsetsAndSetScissors(const gl::Rectangle &scissor,
+                                            const gl::Framebuffer &drawFramebuffer);
+    void applyViewportOffsetsAndSetViewports(const gl::Rectangle &viewport,
+                                             const gl::Framebuffer &drawFramebuffer);
+    void propagateNumViewsToVAO(const gl::Program *program, VertexArrayGL *vao);
+
+    enum MultiviewDirtyBitType
+    {
+        MULTIVIEW_DIRTY_BIT_SIDE_BY_SIDE_LAYOUT,
+        MULTIVIEW_DIRTY_BIT_VIEWPORT_OFFSETS,
+        MULTIVIEW_DIRTY_BIT_MAX
+    };
 
     const FunctionsGL *mFunctions;
 
@@ -244,9 +271,9 @@ class StateManagerGL final : angle::NonCopyable
     GLuint mRenderbuffer;
 
     bool mScissorTestEnabled;
-    gl::Rectangle mScissor;
-
-    gl::Rectangle mViewport;
+    std::vector<gl::Rectangle> mScissors;
+    std::vector<gl::Rectangle> mViewports;
+    std::vector<gl::Offset> mViewportOffsets;
     float mNear;
     float mFar;
 
@@ -316,7 +343,13 @@ class StateManagerGL final : angle::NonCopyable
     GLint mPathStencilRef;
     GLuint mPathStencilMask;
 
+    bool mIsSideBySideDrawFramebuffer;
+    const bool mIsMultiviewEnabled;
+
     gl::State::DirtyBits mLocalDirtyBits;
+
+    // ANGLE_multiview dirty bits.
+    angle::BitSet<MULTIVIEW_DIRTY_BIT_MAX> mMultiviewDirtyBits;
 };
 }
 

@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "core/fxcrt/cfx_memorystream.h"
-#include "core/fxcrt/fx_basic.h"
+#include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/xml/cfx_xmldoc.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
@@ -58,7 +58,7 @@ CFX_WideString ExportEncodeContent(const CFX_WideStringC& str) {
   CFX_WideTextBuf textBuf;
   int32_t iLen = str.GetLength();
   for (int32_t i = 0; i < iLen; i++) {
-    wchar_t ch = str.GetAt(i);
+    wchar_t ch = str[i];
     if (!IsXMLValidChar(ch))
       continue;
 
@@ -73,13 +73,13 @@ CFX_WideString ExportEncodeContent(const CFX_WideStringC& str) {
     } else if (ch == '\"') {
       textBuf << L"&quot;";
     } else if (ch == ' ') {
-      if (i && str.GetAt(i - 1) != ' ') {
+      if (i && str[i - 1] != ' ') {
         textBuf.AppendChar(' ');
       } else {
         textBuf << L"&#x20;";
       }
     } else {
-      textBuf.AppendChar(str.GetAt(i));
+      textBuf.AppendChar(str[i]);
     }
   }
   return textBuf.MakeString();
@@ -225,15 +225,15 @@ void RegenerateFormFile_Changed(CXFA_Node* pNode,
           break;
 
         std::vector<CFX_WideString> wsSelTextArray;
-        int32_t iStart = 0;
-        int32_t iEnd = wsRawValue.Find(L'\n', iStart);
-        iEnd = (iEnd == -1) ? wsRawValue.GetLength() : iEnd;
-        while (iEnd >= iStart) {
-          wsSelTextArray.push_back(wsRawValue.Mid(iStart, iEnd - iStart));
-          iStart = iEnd + 1;
+        FX_STRSIZE iStart = 0;
+        auto iEnd = wsRawValue.Find(L'\n', iStart);
+        iEnd = !iEnd.has_value() ? wsRawValue.GetLength() : iEnd;
+        while (iEnd.has_value() && iEnd >= iStart) {
+          wsSelTextArray.push_back(
+              wsRawValue.Mid(iStart, iEnd.value() - iStart));
+          iStart = iEnd.value() + 1;
           if (iStart >= wsRawValue.GetLength())
             break;
-
           iEnd = wsRawValue.Find(L'\n', iStart);
         }
         CXFA_Node* pParentNode = pNode->GetNodeItem(XFA_NODEITEM_Parent);

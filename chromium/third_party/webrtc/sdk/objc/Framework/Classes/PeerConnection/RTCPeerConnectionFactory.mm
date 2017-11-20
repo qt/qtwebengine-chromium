@@ -8,9 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#import "RTCPeerConnectionFactory+Native.h"
 #import "RTCPeerConnectionFactory+Private.h"
 
 #import "NSString+StdString.h"
+#import "RTCAVFoundationVideoSource+Private.h"
 #import "RTCAudioSource+Private.h"
 #import "RTCAudioTrack+Private.h"
 #import "RTCMediaConstraints+Private.h"
@@ -18,11 +20,19 @@
 #import "RTCPeerConnection+Private.h"
 #import "RTCVideoSource+Private.h"
 #import "RTCVideoTrack+Private.h"
-#import "RTCAVFoundationVideoSource+Private.h"
 #import "WebRTC/RTCLogging.h"
+#import "WebRTC/RTCVideoCodecFactory.h"
+#ifndef HAVE_NO_MEDIA
+#include "VideoToolbox/objc_video_decoder_factory.h"
+#include "VideoToolbox/objc_video_encoder_factory.h"
+#import "WebRTC/RTCVideoCodecH264.h"
+// The no-media version PeerConnectionFactory doesn't depend on these files, but the gn check tool
+// is not smart enough to take the #ifdef into account.
+#include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"  // nogncheck
+#include "webrtc/api/audio_codecs/builtin_audio_encoder_factory.h"  // nogncheck
+#endif
 
 #include "Video/objcvideotracksource.h"
-#include "VideoToolbox/videocodecfactory.h"
 #include "webrtc/api/videosourceproxy.h"
 // Adding the nogncheck to disable the including header check.
 // The no-media version PeerConnectionFactory doesn't depend on media related
@@ -41,7 +51,49 @@
 @synthesize nativeFactory = _nativeFactory;
 
 - (instancetype)init {
-  if ((self = [super init])) {
+#ifdef HAVE_NO_MEDIA
+  return [self initWithNativeAudioEncoderFactory:nil
+                       nativeAudioDecoderFactory:nil
+                       nativeVideoEncoderFactory:nil
+                       nativeVideoDecoderFactory:nil];
+#else
+  return [self initWithNativeAudioEncoderFactory:webrtc::CreateBuiltinAudioEncoderFactory()
+                       nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
+                       nativeVideoEncoderFactory:new webrtc::ObjCVideoEncoderFactory(
+                                                     [[RTCVideoEncoderFactoryH264 alloc] init])
+                       nativeVideoDecoderFactory:new webrtc::ObjCVideoDecoderFactory(
+                                                     [[RTCVideoDecoderFactoryH264 alloc] init])];
+#endif
+}
+
+- (instancetype)initWithEncoderFactory:(nullable id<RTCVideoEncoderFactory>)encoderFactory
+                        decoderFactory:(nullable id<RTCVideoDecoderFactory>)decoderFactory {
+#ifdef HAVE_NO_MEDIA
+  return [self initWithNativeAudioEncoderFactory:nil
+                       nativeAudioDecoderFactory:nil
+                       nativeVideoEncoderFactory:nil
+                       nativeVideoDecoderFactory:nil];
+#else
+  cricket::WebRtcVideoEncoderFactory *native_encoder_factory =
+      encoderFactory ? new webrtc::ObjCVideoEncoderFactory(encoderFactory) : nullptr;
+  cricket::WebRtcVideoDecoderFactory *native_decoder_factory =
+      decoderFactory ? new webrtc::ObjCVideoDecoderFactory(decoderFactory) : nullptr;
+  return [self initWithNativeAudioEncoderFactory:webrtc::CreateBuiltinAudioEncoderFactory()
+                       nativeAudioDecoderFactory:webrtc::CreateBuiltinAudioDecoderFactory()
+                       nativeVideoEncoderFactory:native_encoder_factory
+                       nativeVideoDecoderFactory:native_decoder_factory];
+#endif
+}
+
+- (instancetype)initWithNativeAudioEncoderFactory:
+                    (rtc::scoped_refptr<webrtc::AudioEncoderFactory>)audioEncoderFactory
+                        nativeAudioDecoderFactory:
+                            (rtc::scoped_refptr<webrtc::AudioDecoderFactory>)audioDecoderFactory
+                        nativeVideoEncoderFactory:
+                            (nullable cricket::WebRtcVideoEncoderFactory *)videoEncoderFactory
+                        nativeVideoDecoderFactory:
+                            (nullable cricket::WebRtcVideoDecoderFactory *)videoDecoderFactory {
+  if (self = [super init]) {
     _networkThread = rtc::Thread::CreateWithSocketServer();
     BOOL result = _networkThread->Start();
     NSAssert(result, @"Failed to start network thread.");
@@ -68,14 +120,16 @@
         std::unique_ptr<webrtc::CallFactoryInterface>(),
         std::unique_ptr<webrtc::RtcEventLogFactoryInterface>());
 #else
-    const auto encoder_factory = new webrtc::VideoToolboxVideoEncoderFactory();
-    const auto decoder_factory = new webrtc::VideoToolboxVideoDecoderFactory();
-
     // Ownership of encoder/decoder factories is passed on to the
     // peerconnectionfactory, that handles deleting them.
-    _nativeFactory = webrtc::CreatePeerConnectionFactory(
-        _networkThread.get(), _workerThread.get(), _signalingThread.get(),
-        nullptr, encoder_factory, decoder_factory);
+    _nativeFactory = webrtc::CreatePeerConnectionFactory(_networkThread.get(),
+                                                         _workerThread.get(),
+                                                         _signalingThread.get(),
+                                                         nullptr,  // audio device module
+                                                         audioEncoderFactory,
+                                                         audioDecoderFactory,
+                                                         videoEncoderFactory,
+                                                         videoDecoderFactory);
 #endif
     NSAssert(_nativeFactory, @"Failed to initialize PeerConnectionFactory!");
   }

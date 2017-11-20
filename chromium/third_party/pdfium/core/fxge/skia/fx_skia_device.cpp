@@ -16,6 +16,7 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fxcodec/fx_codec.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_graphstatedata.h"
@@ -1948,10 +1949,8 @@ bool CFX_SkiaDeviceDriver::DrawPath(
   return true;
 }
 
-bool CFX_SkiaDeviceDriver::DrawCosmeticLine(float x1,
-                                            float y1,
-                                            float x2,
-                                            float y2,
+bool CFX_SkiaDeviceDriver::DrawCosmeticLine(const CFX_PointF& ptMoveTo,
+                                            const CFX_PointF& ptLineTo,
                                             uint32_t color,
                                             int blend_type) {
   return false;
@@ -2393,7 +2392,7 @@ bool CFX_SkiaDeviceDriver::StartDIBits(
 }
 
 bool CFX_SkiaDeviceDriver::ContinueDIBits(CFX_ImageRenderer* handle,
-                                          IFX_Pause* pPause) {
+                                          IFX_PauseIndicator* pPause) {
 #ifdef _SKIA_SUPPORT_
   m_pCache->FlushForDraw();
   return false;
@@ -2595,7 +2594,7 @@ bool CFX_DefaultRenderDevice::Create(
 }
 
 CFX_DefaultRenderDevice::~CFX_DefaultRenderDevice() {
-  Flush();
+  Flush(true);
 }
 
 #ifdef _SKIA_SUPPORT_

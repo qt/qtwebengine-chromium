@@ -58,16 +58,17 @@ class SendSideCongestionController : public CallStatsObserver,
    protected:
     virtual ~Observer() {}
   };
+  // TODO(holmer): Delete after fixing upstream projects.
+  RTC_DEPRECATED SendSideCongestionController(const Clock* clock,
+                                              Observer* observer,
+                                              RtcEventLog* event_log,
+                                              PacketRouter* packet_router);
   // TODO(nisse): Consider deleting the |observer| argument to constructors
   // once CongestionController is deleted.
   SendSideCongestionController(const Clock* clock,
                                Observer* observer,
                                RtcEventLog* event_log,
-                               PacketRouter* packet_router);
-  SendSideCongestionController(const Clock* clock,
-                               Observer* observer,
-                               RtcEventLog* event_log,
-                               std::unique_ptr<PacedSender> pacer);
+                               PacedSender* pacer);
   ~SendSideCongestionController() override;
 
   void RegisterPacketFeedbackObserver(PacketFeedbackObserver* observer);
@@ -91,25 +92,11 @@ class SendSideCongestionController : public CallStatsObserver,
   virtual BitrateController* GetBitrateController() const;
   virtual int64_t GetPacerQueuingDelayMs() const;
   virtual int64_t GetFirstPacketTimeMs() const;
-  // TODO(nisse): Delete this accessor function. The pacer should be
-  // internal to the congestion controller.
-  virtual PacedSender* pacer();
+
   virtual TransportFeedbackObserver* GetTransportFeedbackObserver();
 
   RateLimiter* GetRetransmissionRateLimiter();
   void EnablePeriodicAlrProbing(bool enable);
-
-  // SetAllocatedSendBitrateLimits sets bitrates limits imposed by send codec
-  // settings.
-  // |min_send_bitrate_bps| is the total minimum send bitrate required by all
-  // sending streams.  This is the minimum bitrate the PacedSender will use.
-  // Note that SendSideCongestionController::OnNetworkChanged can still be
-  // called with a lower bitrate estimate. |max_padding_bitrate_bps| is the max
-  // bitrate the send streams request for padding. This can be higher than the
-  // current network estimate and tells the PacedSender how much it should max
-  // pad unless there is real packets to send.
-  void SetAllocatedSendBitrateLimits(int min_send_bitrate_bps,
-                                     int max_padding_bitrate_bps);
 
   virtual void OnSentPacket(const rtc::SentPacket& sent_packet);
 
@@ -136,11 +123,13 @@ class SendSideCongestionController : public CallStatsObserver,
   bool HasNetworkParametersToReportChanged(uint32_t bitrate_bps,
                                            uint8_t fraction_loss,
                                            int64_t rtt);
+  void LimitOutstandingBytes(size_t num_outstanding_bytes);
   const Clock* const clock_;
   rtc::CriticalSection observer_lock_;
   Observer* observer_ GUARDED_BY(observer_lock_);
   RtcEventLog* const event_log_;
-  const std::unique_ptr<PacedSender> pacer_;
+  std::unique_ptr<PacedSender> owned_pacer_;
+  PacedSender* pacer_;
   const std::unique_ptr<BitrateController> bitrate_controller_;
   std::unique_ptr<AcknowledgedBitrateEstimator> acknowledged_bitrate_estimator_;
   const std::unique_ptr<ProbeController> probe_controller_;
@@ -151,9 +140,16 @@ class SendSideCongestionController : public CallStatsObserver,
   uint8_t last_reported_fraction_loss_ GUARDED_BY(network_state_lock_);
   int64_t last_reported_rtt_ GUARDED_BY(network_state_lock_);
   NetworkState network_state_ GUARDED_BY(network_state_lock_);
+  bool pause_pacer_ GUARDED_BY(network_state_lock_);
+  // Duplicate the pacer paused state to avoid grabbing a lock when
+  // pausing the pacer. This can be removed when we move this class
+  // over to the task queue.
+  bool pacer_paused_;
   rtc::CriticalSection bwe_lock_;
   int min_bitrate_bps_ GUARDED_BY(bwe_lock_);
   std::unique_ptr<DelayBasedBwe> delay_based_bwe_ GUARDED_BY(bwe_lock_);
+  bool in_cwnd_experiment_;
+  int64_t accepted_queue_ms_;
   bool was_in_alr_;
 
   rtc::RaceChecker worker_race_;

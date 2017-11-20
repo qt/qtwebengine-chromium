@@ -15,15 +15,16 @@
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 #include "GrColorSpaceXform.h"
-#include "effects/GrProxyMove.h"
 class GrEllipseEffect : public GrFragmentProcessor {
 public:
     int edgeType() const { return fEdgeType; }
     SkPoint center() const { return fCenter; }
     SkPoint radii() const { return fRadii; }
-    static sk_sp<GrFragmentProcessor> Make(int edgeType, SkPoint center, SkPoint radii) {
-        return sk_sp<GrFragmentProcessor>(new GrEllipseEffect(edgeType, center, radii));
+    static std::unique_ptr<GrFragmentProcessor> Make(int edgeType, SkPoint center, SkPoint radii) {
+        return std::unique_ptr<GrFragmentProcessor>(new GrEllipseEffect(edgeType, center, radii));
     }
+    GrEllipseEffect(const GrEllipseEffect& src);
+    std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "EllipseEffect"; }
 
 private:

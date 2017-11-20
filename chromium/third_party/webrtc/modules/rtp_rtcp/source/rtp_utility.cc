@@ -22,11 +22,6 @@ RtpFeedback* NullObjectRtpFeedback() {
   return &null_rtp_feedback;
 }
 
-ReceiveStatistics* NullObjectReceiveStatistics() {
-  static NullReceiveStatistics null_receive_statistics;
-  return &null_receive_statistics;
-}
-
 namespace RtpUtility {
 
 enum {
@@ -457,8 +452,7 @@ void RtpHeaderParser::ParseOneByteExtensionHeader(
           //   |  ID   | len=0 | Content type  |
           //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-          if (ptr[0] <
-              static_cast<uint8_t>(VideoContentType::TOTAL_CONTENT_TYPES)) {
+          if (videocontenttypehelpers::IsValidContentType(ptr[0])) {
             header->extension.hasVideoContentType = true;
             header->extension.videoContentType =
                 static_cast<VideoContentType>(ptr[0]);
@@ -482,6 +476,10 @@ void RtpHeaderParser::ParseOneByteExtensionHeader(
         case kRtpExtensionRepairedRtpStreamId: {
           header->extension.repaired_stream_id.Set(
               rtc::MakeArrayView(ptr, len + 1));
+          break;
+        }
+        case kRtpExtensionMid: {
+          header->extension.mid.Set(rtc::MakeArrayView(ptr, len + 1));
           break;
         }
         case kRtpExtensionNone:

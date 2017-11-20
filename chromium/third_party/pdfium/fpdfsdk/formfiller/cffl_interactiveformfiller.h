@@ -14,7 +14,7 @@
 #include "core/fxcrt/cfx_unowned_ptr.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
 #include "fpdfsdk/fsdk_define.h"
-#include "fpdfsdk/pdfwindow/cpwl_edit.h"
+#include "fpdfsdk/pwl/cpwl_edit.h"
 
 class CFFL_FormFiller;
 class CPDFSDK_FormFillEnvironment;
@@ -84,6 +84,7 @@ class CFFL_InteractiveFormFiller : public IPWL_Filler_Notify {
   void RemoveFormFiller(CPDFSDK_Annot* pAnnot);
 
   CFX_WideString GetSelectedText(CPDFSDK_Annot* pAnnot);
+  void ReplaceSelection(CPDFSDK_Annot* pAnnot, const CFX_WideString& text);
 
   static bool IsVisible(CPDFSDK_Widget* pWidget);
   static bool IsReadOnly(CPDFSDK_Widget* pWidget);

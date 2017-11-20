@@ -8,6 +8,7 @@
 #include "GrVkBuffer.h"
 #include "GrVkGpu.h"
 #include "GrVkMemory.h"
+#include "GrVkTransferBuffer.h"
 #include "GrVkUtil.h"
 
 #define VK_CALL(GPU, X) GR_VK_CALL(GPU->vkInterface(), X)
@@ -87,7 +88,7 @@ void GrVkBuffer::addMemoryBarrier(const GrVkGpu* gpu,
                                   bool byRegion) const {
     VkBufferMemoryBarrier bufferMemoryBarrier = {
         VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER, // sType
-        NULL,                                    // pNext
+        nullptr,                                 // pNext
         srcAccessMask,                           // srcAccessMask
         dstAccesMask,                            // dstAccessMask
         VK_QUEUE_FAMILY_IGNORED,                 // srcQueueFamilyIndex
@@ -192,7 +193,22 @@ void GrVkBuffer::internalUnmap(GrVkGpu* gpu, size_t size) {
         VK_CALL(gpu, UnmapMemory(gpu->device(), this->alloc().fMemory));
         fMapPtr = nullptr;
     } else {
-        gpu->updateBuffer(this, fMapPtr, this->offset(), size);
+        if (size <= 65536) {
+            gpu->updateBuffer(this, fMapPtr, this->offset(), size);
+        } else {
+            GrVkTransferBuffer* transferBuffer =
+                    GrVkTransferBuffer::Create(gpu, size, GrVkBuffer::kCopyRead_Type);
+            if(!transferBuffer) {
+                return;
+            }
+
+            char* buffer = (char*) transferBuffer->map();
+            memcpy (buffer, fMapPtr, size);
+            transferBuffer->unmap();
+
+            gpu->copyBuffer(transferBuffer, this, 0, this->offset(), size);
+            transferBuffer->unref();
+        }
         this->addMemoryBarrier(gpu,
                                VK_ACCESS_TRANSFER_WRITE_BIT,
                                buffer_type_to_access_flags(fDesc.fType),

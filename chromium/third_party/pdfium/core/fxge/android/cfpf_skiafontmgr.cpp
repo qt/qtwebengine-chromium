@@ -194,13 +194,13 @@ bool FPF_SkiaIsCJK(uint8_t uCharset) {
 bool FPF_SkiaMaybeSymbol(const CFX_ByteStringC& bsFacename) {
   CFX_ByteString bsName(bsFacename);
   bsName.MakeLower();
-  return bsName.Find("symbol") > -1;
+  return bsName.Contains("symbol");
 }
 
 bool FPF_SkiaMaybeArabic(const CFX_ByteStringC& bsFacename) {
   CFX_ByteString bsName(bsFacename);
   bsName.MakeLower();
-  return bsName.Find("arabic") > -1;
+  return bsName.Contains("arabic");
 }
 
 const uint32_t g_FPFSkiaFontCharsets[] = {

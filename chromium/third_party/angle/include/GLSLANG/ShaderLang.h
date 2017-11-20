@@ -25,7 +25,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 178
+#define ANGLE_SH_VERSION 180
 
 enum ShShaderSpec
 {
@@ -234,8 +234,9 @@ const ShCompileOptions SH_INITIALIZE_BUILTINS_FOR_INSTANCED_MULTIVIEW = UINT64_C
 // With the flag enabled the GLSL/ESSL vertex shader is modified to include code for viewport
 // selection in the following way:
 // - Code to enable the extension NV_viewport_array2 is included.
-// - Code to select the viewport index is included at the beginning of main after ViewID_OVR's
-// initialization: gl_ViewportIndex = int(ViewID_OVR)
+// - Code to select the viewport index or layer is inserted at the beginning of main after
+// ViewID_OVR's initialization.
+// - A declaration of the uniform multiviewBaseViewLayerIndex.
 // Note: The SH_INITIALIZE_BUILTINS_FOR_INSTANCED_MULTIVIEW flag also has to be enabled to have the
 // temporary variable ViewID_OVR declared and initialized.
 const ShCompileOptions SH_SELECT_VIEW_IN_NV_GLSL_VERTEX_SHADER = UINT64_C(1) << 34;
@@ -291,6 +292,7 @@ struct ShBuiltInResources
     int ARM_shader_framebuffer_fetch;
     int OVR_multiview;
     int EXT_YUV_target;
+    int OES_geometry_shader;
 
     // Set to 1 to enable replacing GL_EXT_draw_buffers #extension directives
     // with GL_NV_draw_buffers in ESSL output. This flag can be used to emulate
@@ -411,6 +413,20 @@ struct ShBuiltInResources
 
     // maximum point size (higher limit from ALIASED_POINT_SIZE_RANGE)
     float MaxPointSize;
+
+    // OES_geometry_shader constants
+    int MaxGeometryUniformComponents;
+    int MaxGeometryUniformBlocks;
+    int MaxGeometryInputComponents;
+    int MaxGeometryOutputComponents;
+    int MaxGeometryOutputVertices;
+    int MaxGeometryTotalOutputComponents;
+    int MaxGeometryTextureImageUnits;
+    int MaxGeometryAtomicCounterBuffers;
+    int MaxGeometryAtomicCounters;
+    int MaxGeometryShaderStorageBlocks;
+    int MaxGeometryShaderInvocations;
+    int MaxGeometryImageUniforms;
 };
 
 //
@@ -529,10 +545,16 @@ const std::map<std::string, std::string> *GetNameHashingMap(const ShHandle handl
 // handle: Specifies the compiler
 const std::vector<sh::Uniform> *GetUniforms(const ShHandle handle);
 const std::vector<sh::Varying> *GetVaryings(const ShHandle handle);
+const std::vector<sh::Varying> *GetInputVaryings(const ShHandle handle);
+const std::vector<sh::Varying> *GetOutputVaryings(const ShHandle handle);
 const std::vector<sh::Attribute> *GetAttributes(const ShHandle handle);
 const std::vector<sh::OutputVariable> *GetOutputVariables(const ShHandle handle);
 const std::vector<sh::InterfaceBlock> *GetInterfaceBlocks(const ShHandle handle);
+const std::vector<sh::InterfaceBlock> *GetUniformBlocks(const ShHandle handle);
+const std::vector<sh::InterfaceBlock> *GetShaderStorageBlocks(const ShHandle handle);
 sh::WorkGroupSize GetComputeShaderLocalGroupSize(const ShHandle handle);
+// Returns the number of views specified through the num_views layout qualifier. If num_views is
+// not set, the function returns -1.
 int GetVertexShaderNumViews(const ShHandle handle);
 
 // Returns true if the passed in variables pack in maxVectors followingthe packing rules from the
@@ -545,18 +567,18 @@ int GetVertexShaderNumViews(const ShHandle handle);
 bool CheckVariablesWithinPackingLimits(int maxVectors,
                                        const std::vector<sh::ShaderVariable> &variables);
 
-// Gives the compiler-assigned register for an interface block.
+// Gives the compiler-assigned register for a uniform block.
 // The method writes the value to the output variable "indexOut".
-// Returns true if it found a valid interface block, false otherwise.
+// Returns true if it found a valid uniform block, false otherwise.
 // Parameters:
 // handle: Specifies the compiler
-// interfaceBlockName: Specifies the interface block
+// uniformBlockName: Specifies the uniform block
 // indexOut: output variable that stores the assigned register
-bool GetInterfaceBlockRegister(const ShHandle handle,
-                               const std::string &interfaceBlockName,
-                               unsigned int *indexOut);
+bool GetUniformBlockRegister(const ShHandle handle,
+                             const std::string &uniformBlockName,
+                             unsigned int *indexOut);
 
-// Gives a map from uniform names to compiler-assigned registers in the default interface block.
+// Gives a map from uniform names to compiler-assigned registers in the default uniform block.
 // Note that the map contains also registers of samplers that have been extracted from structs.
 const std::map<std::string, unsigned int> *GetUniformRegisterMap(const ShHandle handle);
 

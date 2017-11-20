@@ -21,7 +21,7 @@
 #include "GrResourceProvider.h"
 #include "GrStencilAttachment.h"
 #include "GrTracing.h"
-#include "SkDrawShadowRec.h"
+#include "SkDrawShadowInfo.h"
 #include "SkLatticeIter.h"
 #include "SkMatrixPriv.h"
 #include "SkShadowUtils.h"
@@ -30,7 +30,7 @@
 #include "instanced/InstancedRendering.h"
 #include "ops/GrClearOp.h"
 #include "ops/GrClearStencilClipOp.h"
-#include "ops/GrDiscardOp.h"
+#include "ops/GrDebugMarkerOp.h"
 #include "ops/GrDrawAtlasOp.h"
 #include "ops/GrDrawOp.h"
 #include "ops/GrDrawVerticesOp.h"
@@ -42,6 +42,7 @@
 #include "ops/GrSemaphoreOp.h"
 #include "ops/GrShadowRRectOp.h"
 #include "ops/GrStencilPathOp.h"
+#include "ops/GrTextureOp.h"
 #include "text/GrAtlasTextContext.h"
 #include "text/GrStencilAndCoverTextContext.h"
 
@@ -77,7 +78,7 @@ GrAAType GrChooseAAType(GrAA aa, GrFSAAType fsaaType, GrAllowMixedSamples allowM
             return GrAllowMixedSamples::kYes == allowMixedSamples ? GrAAType::kMixedSamples
                                                                   : GrAAType::kCoverage;
     }
-    SkFAIL("Unexpected fsaa type");
+    SK_ABORT("Unexpected fsaa type");
     return GrAAType::kNone;
 }
 
@@ -215,19 +216,11 @@ void GrRenderTargetContext::discard() {
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
-            GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "discard", fContext);
+    GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "discard", fContext);
 
     AutoCheckFlush acf(this->drawingManager());
 
-    // Currently this just inserts a discard op. However, once in MDB this can remove all the
-    // previously recorded ops and change the load op to discard.
-    if (this->caps()->discardRenderTargetSupport()) {
-        std::unique_ptr<GrOp> op(GrDiscardOp::Make(fRenderTargetProxy.get()));
-        if (!op) {
-            return;
-        }
-        this->getRTOpList()->addOp(std::move(op), *this->caps());
-    }
+    this->getRTOpList()->discard();
 }
 
 void GrRenderTargetContext::clear(const SkIRect* rect,
@@ -647,22 +640,12 @@ void GrRenderTargetContextPriv::stencilPath(const GrClip& clip,
     // attempt this in a situation that would require coverage AA.
     SkASSERT(!appliedClip.clipCoverageFragmentProcessor());
 
-    GrRenderTarget* rt = fRenderTargetContext->accessRenderTarget();
-    if (!rt) {
-        return;
-    }
-    GrStencilAttachment* stencilAttachment =
-            fRenderTargetContext->fContext->resourceProvider()->attachStencilAttachment(rt);
-    if (!stencilAttachment) {
-        SkDebugf("ERROR creating stencil attachment. Draw skipped.\n");
-        return;
-    }
+    fRenderTargetContext->setNeedsStencil();
 
     std::unique_ptr<GrOp> op = GrStencilPathOp::Make(viewMatrix,
                                                      useHWAA,
                                                      path->getFillType(),
                                                      appliedClip.hasStencilClip(),
-                                                     stencilAttachment->bits(),
                                                      appliedClip.scissorState(),
                                                      path);
     if (!op) {
@@ -776,6 +759,41 @@ void GrRenderTargetContext::fillRectToRect(const GrClip& clip,
     path.setIsVolatile(true);
     path.addRect(localRect);
     this->internalDrawPath(clip, std::move(paint), aa, viewAndUnLocalMatrix, path, GrStyle());
+}
+
+static bool must_filter(const SkRect& src, const SkRect& dst, const SkMatrix& ctm) {
+    // We don't currently look for 90 degree rotations, mirroring, or downscales that sample at
+    // texel centers.
+    if (!ctm.isTranslate()) {
+        return true;
+    }
+    if (src.width() != dst.width() || src.height() != dst.height()) {
+        return true;
+    }
+    // Check that the device space rectangle's fractional offset is the same as the src rectangle,
+    // and that therefore integers in the src image fall on integers in device space.
+    SkScalar x = ctm.getTranslateX(), y = ctm.getTranslateY();
+    x += dst.fLeft; y += dst.fTop;
+    x -= src.fLeft; y -= src.fTop;
+    return !SkScalarIsInt(x) || !SkScalarIsInt(y);
+}
+
+void GrRenderTargetContext::drawTextureAffine(const GrClip& clip, sk_sp<GrTextureProxy> proxy,
+                                              GrSamplerParams::FilterMode filter, GrColor color,
+                                              const SkRect& srcRect, const SkRect& dstRect,
+                                              const SkMatrix& viewMatrix,
+                                              sk_sp<GrColorSpaceXform> colorSpaceXform) {
+    ASSERT_SINGLE_OWNER
+    RETURN_IF_ABANDONED
+    SkDEBUGCODE(this->validate();)
+    GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "drawTextureAffine", fContext);
+    SkASSERT(!viewMatrix.hasPerspective());
+    if (filter != GrSamplerParams::kNone_FilterMode && !must_filter(srcRect, dstRect, viewMatrix)) {
+        filter = GrSamplerParams::kNone_FilterMode;
+    }
+    bool allowSRGB = SkToBool(this->getColorSpace());
+    this->addDrawOp(clip, GrTextureOp::Make(std::move(proxy), filter, color, srcRect, dstRect,
+                                            viewMatrix, std::move(colorSpaceXform), allowSRGB));
 }
 
 void GrRenderTargetContext::fillRectWithLocalMatrix(const GrClip& clip,
@@ -1012,12 +1030,9 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
     bool tonalColor = SkToBool(rec.fFlags & SkShadowFlags::kTonalColor_ShadowFlag);
 
     if (rec.fAmbientAlpha > 0) {
-        static constexpr float kHeightFactor = 1.0f / 128.0f;
-        static constexpr float kGeomFactor = 64.0f;
-
-        SkScalar devSpaceInsetWidth = occluderHeight * kHeightFactor * kGeomFactor;
-        const float umbraAlpha = (1.0f + SkTMax(occluderHeight * kHeightFactor, 0.0f));
-        const SkScalar devSpaceAmbientBlur = devSpaceInsetWidth * umbraAlpha;
+        SkScalar devSpaceInsetWidth = SkDrawShadowMetrics::AmbientBlurRadius(occluderHeight);
+        const SkScalar umbraRecipAlpha = SkDrawShadowMetrics::AmbientRecipAlpha(occluderHeight);
+        const SkScalar devSpaceAmbientBlur = devSpaceInsetWidth * umbraRecipAlpha;
 
         // Outset the shadow rrect to the border of the penumbra
         SkScalar ambientPathOutset = devSpaceInsetWidth * devToSrcScale;
@@ -1044,8 +1059,8 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
             devSpaceInsetWidth = ambientRRect.width();
         }
         // the fraction of the blur we want to apply is devSpaceInsetWidth/devSpaceAmbientBlur,
-        // which is just 1/umbraAlpha.
-        SkScalar blurClamp = SkScalarInvert(umbraAlpha);
+        // which is just 1/umbraRecipAlpha.
+        SkScalar blurClamp = SkScalarInvert(umbraRecipAlpha);
 
         std::unique_ptr<GrDrawOp> op = GrShadowRRectOp::Make(ambientColor, viewMatrix,
                                                              ambientRRect,
@@ -1057,15 +1072,15 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
     }
 
     if (rec.fSpotAlpha > 0) {
-        float zRatio = SkTPin(occluderHeight / (devLightPos.fZ - occluderHeight), 0.0f, 0.95f);
-
-        SkScalar devSpaceSpotBlur = 2.0f * rec.fLightRadius * zRatio;
-        // handle scale of radius and pad due to CTM
+        SkScalar devSpaceSpotBlur;
+        SkScalar spotScale;
+        SkVector spotOffset;
+        SkDrawShadowMetrics::GetSpotParams(occluderHeight, devLightPos.fX, devLightPos.fY,
+                                           devLightPos.fZ, rec.fLightRadius,
+                                           &devSpaceSpotBlur, &spotScale, &spotOffset);
+        // handle scale of radius due to CTM
         const SkScalar srcSpaceSpotBlur = devSpaceSpotBlur * devToSrcScale;
 
-        // Compute the scale and translation for the spot shadow.
-        const SkScalar spotScale = devLightPos.fZ / (devLightPos.fZ - occluderHeight);
-        SkPoint spotOffset = SkPoint::Make(zRatio*(-devLightPos.fX), zRatio*(-devLightPos.fY));
         // Adjust translate for the effect of the scale.
         spotOffset.fX += spotScale*viewMatrix[SkMatrix::kMTransX];
         spotOffset.fY += spotScale*viewMatrix[SkMatrix::kMTransY];
@@ -1087,7 +1102,7 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
         SkScalar spotRadius = spotShadowRRect.getSimpleRadii().fX;
 
         // Compute the insetWidth
-        SkScalar blurOutset = 0.5f*srcSpaceSpotBlur;
+        SkScalar blurOutset = srcSpaceSpotBlur;
         SkScalar insetWidth = blurOutset;
         if (transparent) {
             // If transparent, just do a fill
@@ -1159,7 +1174,7 @@ bool GrRenderTargetContext::drawFastShadow(const GrClip& clip,
 
         std::unique_ptr<GrDrawOp> op = GrShadowRRectOp::Make(spotColor, viewMatrix,
                                                              spotShadowRRect,
-                                                             devSpaceSpotBlur,
+                                                             2.0f * devSpaceSpotBlur,
                                                              insetWidth);
         SkASSERT(op);
         this->addDrawOp(clip, std::move(op));
@@ -1217,12 +1232,12 @@ bool GrRenderTargetContext::drawFilledDRRect(const GrClip& clip,
     }
 
     // TODO these need to be a geometry processors
-    sk_sp<GrFragmentProcessor> innerEffect(GrRRectEffect::Make(innerEdgeType, *inner));
+    std::unique_ptr<GrFragmentProcessor> innerEffect(GrRRectEffect::Make(innerEdgeType, *inner));
     if (!innerEffect) {
         return false;
     }
 
-    sk_sp<GrFragmentProcessor> outerEffect(GrRRectEffect::Make(outerEdgeType, *outer));
+    std::unique_ptr<GrFragmentProcessor> outerEffect(GrRRectEffect::Make(outerEdgeType, *outer));
     if (!outerEffect) {
         return false;
     }
@@ -1271,16 +1286,13 @@ void GrRenderTargetContext::drawDRRect(const GrClip& clip,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static inline bool is_int(float x) {
-    return x == (float) sk_float_round2int(x);
-}
-
 void GrRenderTargetContext::drawRegion(const GrClip& clip,
                                        GrPaint&& paint,
                                        GrAA aa,
                                        const SkMatrix& viewMatrix,
                                        const SkRegion& region,
-                                       const GrStyle& style) {
+                                       const GrStyle& style,
+                                       const GrUserStencilSettings* ss) {
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
@@ -1290,8 +1302,8 @@ void GrRenderTargetContext::drawRegion(const GrClip& clip,
         // GrRegionOp performs no antialiasing but is much faster, so here we check the matrix
         // to see whether aa is really required.
         if (!SkToBool(viewMatrix.getType() & ~(SkMatrix::kTranslate_Mask)) &&
-            is_int(viewMatrix.getTranslateX()) &&
-            is_int(viewMatrix.getTranslateY())) {
+            SkScalarIsInt(viewMatrix.getTranslateX()) &&
+            SkScalarIsInt(viewMatrix.getTranslateY())) {
             aa = GrAA::kNo;
         }
     }
@@ -1303,7 +1315,8 @@ void GrRenderTargetContext::drawRegion(const GrClip& clip,
     }
 
     GrAAType aaType = this->chooseAAType(GrAA::kNo, GrAllowMixedSamples::kNo);
-    std::unique_ptr<GrDrawOp> op = GrRegionOp::Make(std::move(paint), viewMatrix, region, aaType);
+    std::unique_ptr<GrDrawOp> op = GrRegionOp::Make(std::move(paint), viewMatrix, region, aaType,
+                                                    ss);
     this->addDrawOp(clip, std::move(op));
 }
 
@@ -1412,35 +1425,16 @@ void GrRenderTargetContext::drawImageLattice(const GrClip& clip,
     this->addDrawOp(clip, std::move(op));
 }
 
-bool GrRenderTargetContext::prepareForExternalIO(int numSemaphores,
-                                                 GrBackendSemaphore* backendSemaphores) {
+GrSemaphoresSubmitted GrRenderTargetContext::prepareForExternalIO(
+        int numSemaphores, GrBackendSemaphore backendSemaphores[]) {
     ASSERT_SINGLE_OWNER
-    RETURN_FALSE_IF_ABANDONED
+    if (this->drawingManager()->wasAbandoned()) { return GrSemaphoresSubmitted::kNo; }
     SkDEBUGCODE(this->validate();)
     GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "prepareForExternalIO", fContext);
 
-    if (numSemaphores && !this->caps()->fenceSyncSupport()) {
-        this->drawingManager()->prepareSurfaceForExternalIO(fRenderTargetProxy.get());
-        return false;
-    }
-
-    SkTArray<sk_sp<GrSemaphore>> semaphores(numSemaphores);
-    for (int i = 0; i < numSemaphores; ++i) {
-        semaphores.push_back(fContext->resourceProvider()->makeSemaphore(false));
-        // Create signal semaphore ops and force the final one to call flush.
-        bool forceFlush = (i == (numSemaphores - 1));
-        std::unique_ptr<GrOp> signalOp(GrSemaphoreOp::MakeSignal(semaphores.back(),
-                                                                 fRenderTargetProxy.get(),
-                                                                 forceFlush));
-        this->getRTOpList()->addOp(std::move(signalOp), *this->caps());
-    }
-
-    this->drawingManager()->prepareSurfaceForExternalIO(fRenderTargetProxy.get());
-
-    for (int i = 0; i < numSemaphores; ++i) {
-        semaphores[i]->setBackendSemaphore(&backendSemaphores[i]);
-    }
-    return true;
+    return this->drawingManager()->prepareSurfaceForExternalIO(fRenderTargetProxy.get(),
+                                                               numSemaphores,
+                                                               backendSemaphores);
 }
 
 bool GrRenderTargetContext::waitOnSemaphores(int numSemaphores,
@@ -1465,6 +1459,12 @@ bool GrRenderTargetContext::waitOnSemaphores(int numSemaphores,
     }
     return true;
 }
+
+void GrRenderTargetContext::insertEventMarker(const SkString& str) {
+    std::unique_ptr<GrOp> op(GrDebugMarkerOp::Make(fRenderTargetProxy.get(), str));
+    this->getRTOpList()->addOp(std::move(op), *this->caps());
+}
+
 
 // Can 'path' be drawn as a pair of filled nested rectangles?
 static bool fills_as_nested_rects(const SkMatrix& viewMatrix, const SkPath& path, SkRect rects[2]) {
@@ -1774,16 +1774,9 @@ uint32_t GrRenderTargetContext::addDrawOp(const GrClip& clip, std::unique_ptr<Gr
 
     if (fixedFunctionFlags & GrDrawOp::FixedFunctionFlags::kUsesStencil ||
         appliedClip.hasStencilClip()) {
-        // This forces instantiation of the render target.
-        GrRenderTarget* rt = this->accessRenderTarget();
-        if (!rt) {
-            return SK_InvalidUniqueID;
-        }
+        this->getOpList()->setStencilLoadOp(GrLoadOp::kClear);
 
-        if (!fContext->resourceProvider()->attachStencilAttachment(rt)) {
-            SkDebugf("ERROR creating stencil attachment. Draw skipped.\n");
-            return SK_InvalidUniqueID;
-        }
+        this->setNeedsStencil();
     }
 
     GrXferProcessor::DstProxy dstProxy;
@@ -1799,8 +1792,8 @@ uint32_t GrRenderTargetContext::addDrawOp(const GrClip& clip, std::unique_ptr<Gr
 }
 
 bool GrRenderTargetContext::setupDstProxy(GrRenderTargetProxy* rtProxy, const GrClip& clip,
-                                            const SkRect& opBounds,
-                                            GrXferProcessor::DstProxy* dstProxy) {
+                                          const SkRect& opBounds,
+                                          GrXferProcessor::DstProxy* dstProxy) {
     if (this->caps()->textureBarrierSupport()) {
         if (GrTextureProxy* texProxy = rtProxy->asTextureProxy()) {
             // The render target is a texture, so we can read from it directly in the shader. The XP
@@ -1832,8 +1825,8 @@ bool GrRenderTargetContext::setupDstProxy(GrRenderTargetProxy* rtProxy, const Gr
     bool rectsMustMatch = false;
     bool disallowSubrect = false;
     if (!this->caps()->initDescForDstCopy(rtProxy, &desc, &rectsMustMatch, &disallowSubrect)) {
-        desc.fOrigin = kBottomLeft_GrSurfaceOrigin;
         desc.fFlags = kRenderTarget_GrSurfaceFlag;
+        desc.fOrigin = kBottomLeft_GrSurfaceOrigin;
         desc.fConfig = rtProxy->config();
     }
 

@@ -114,7 +114,8 @@ CPDF_Type3Char* CPDF_Type3Font::LoadChar(uint32_t charcode) {
   // can change as a result. Thus after it returns, check the cache again for
   // a cache hit.
   m_CharLoadingDepth++;
-  pNewChar->m_pForm->ParseContent(nullptr, nullptr, pNewChar.get());
+  pNewChar->m_pForm->ParseContentWithParams(nullptr, nullptr, pNewChar.get(),
+                                            0);
   m_CharLoadingDepth--;
   it = m_CacheMap.find(charcode);
   if (it != m_CacheMap.end())
@@ -130,7 +131,7 @@ CPDF_Type3Char* CPDF_Type3Font::LoadChar(uint32_t charcode) {
   if (rcBBox.right <= rcBBox.left || rcBBox.bottom >= rcBBox.top)
     char_rect = pNewChar->m_pForm->CalcBoundingBox();
 
-  m_FontMatrix.TransformRect(char_rect);
+  char_rect = m_FontMatrix.TransformRect(char_rect);
   rcBBox.left = FXSYS_round(char_rect.left * 1000);
   rcBBox.right = FXSYS_round(char_rect.right * 1000);
   rcBBox.top = FXSYS_round(char_rect.top * 1000);

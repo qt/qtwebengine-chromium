@@ -652,10 +652,13 @@ struct VoiceReceiverInfo : public MediaReceiverInfo {
         delay_estimate_ms(0),
         audio_level(0),
         total_output_energy(0.0),
+        total_samples_received(0),
         total_output_duration(0.0),
+        concealed_samples(0),
         expand_rate(0),
         speech_expand_rate(0),
         secondary_decoded_rate(0),
+        secondary_discarded_rate(0),
         accelerate_rate(0),
         preemptive_expand_rate(0),
         decoding_calls_to_silence_generator(0),
@@ -676,13 +679,27 @@ struct VoiceReceiverInfo : public MediaReceiverInfo {
   // See description of "totalAudioEnergy" in the WebRTC stats spec:
   // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalaudioenergy
   double total_output_energy;
+  // See description of "totalSamplesReceived" in the WebRTC stats spec:
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalsamplesreceived
+  uint64_t total_samples_received;
+  // See description of "totalSamplesDuration" in the WebRTC stats spec:
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalsamplesduration
   double total_output_duration;
+  // See description of "concealedSamples" in the WebRTC stats spec:
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-concealedsamples
+  uint64_t concealed_samples;
   // fraction of synthesized audio inserted through expansion.
   float expand_rate;
   // fraction of synthesized speech inserted through expansion.
   float speech_expand_rate;
   // fraction of data out of secondary decoding, including FEC and RED.
   float secondary_decoded_rate;
+  // Fraction of secondary data, including FEC and RED, that is discarded.
+  // Discarding of secondary data can be caused by the reception of the primary
+  // data, obsoleting the secondary data. It can also be caused by early
+  // or late arrival of secondary data. This metric is the percentage of
+  // discarded secondary data since last query of receiver info.
+  float secondary_discarded_rate;
   // Fraction of data removed through time compression.
   float accelerate_rate;
   // Fraction of data inserted through time stretching.
@@ -753,7 +770,8 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
         frames_received(0),
         frames_decoded(0),
         frames_rendered(0),
-        interframe_delay_sum_ms(0),
+        interframe_delay_max_ms(-1),
+        content_type(webrtc::VideoContentType::UNSPECIFIED),
         decode_ms(0),
         max_decode_ms(0),
         jitter_buffer_ms(0),
@@ -783,7 +801,9 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
   uint32_t frames_decoded;
   uint32_t frames_rendered;
   rtc::Optional<uint64_t> qp_sum;
-  uint64_t interframe_delay_sum_ms;
+  int64_t interframe_delay_max_ms;
+
+  webrtc::VideoContentType content_type;
 
   // All stats below are gathered per-VideoReceiver, but some will be correlated
   // across MediaStreamTracks.  NOTE(hta): when sinking stats into per-SSRC

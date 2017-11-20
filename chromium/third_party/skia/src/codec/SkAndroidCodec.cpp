@@ -8,6 +8,7 @@
 #include "SkAndroidCodec.h"
 #include "SkCodec.h"
 #include "SkCodecPriv.h"
+#include "SkMakeUnique.h"
 #include "SkRawAdapterCodec.h"
 #include "SkSampledCodec.h"
 #include "SkWebpAdapterCodec.h"
@@ -65,8 +66,14 @@ SkAndroidCodec::SkAndroidCodec(SkCodec* codec)
     , fCodec(codec)
 {}
 
-SkAndroidCodec* SkAndroidCodec::NewFromStream(SkStream* stream, SkPngChunkReader* chunkReader) {
-    std::unique_ptr<SkCodec> codec(SkCodec::NewFromStream(stream, nullptr, chunkReader));
+SkAndroidCodec::~SkAndroidCodec() {}
+
+const SkEncodedInfo& SkAndroidCodec::getEncodedInfo() const {
+    return fCodec->getEncodedInfo();
+}
+
+std::unique_ptr<SkAndroidCodec> SkAndroidCodec::MakeFromStream(std::unique_ptr<SkStream> stream, SkPngChunkReader* chunkReader) {
+    auto codec = SkCodec::MakeFromStream(std::move(stream), nullptr, chunkReader);
     if (nullptr == codec) {
         return nullptr;
     }
@@ -82,26 +89,30 @@ SkAndroidCodec* SkAndroidCodec::NewFromStream(SkStream* stream, SkPngChunkReader
         case SkEncodedImageFormat::kGIF:
         case SkEncodedImageFormat::kBMP:
         case SkEncodedImageFormat::kWBMP:
-            return new SkSampledCodec(codec.release());
+#ifdef SK_HAS_HEIF_LIBRARY
+        case SkEncodedImageFormat::kHEIF:
+#endif
+            return skstd::make_unique<SkSampledCodec>(codec.release());
 #ifdef SK_HAS_WEBP_LIBRARY
         case SkEncodedImageFormat::kWEBP:
-            return new SkWebpAdapterCodec((SkWebpCodec*) codec.release());
+            return skstd::make_unique<SkWebpAdapterCodec>((SkWebpCodec*) codec.release());
 #endif
 #ifdef SK_CODEC_DECODES_RAW
         case SkEncodedImageFormat::kDNG:
-            return new SkRawAdapterCodec((SkRawCodec*)codec.release());
+            return skstd::make_unique<SkRawAdapterCodec>((SkRawCodec*)codec.release());
 #endif
         default:
             return nullptr;
     }
 }
 
-SkAndroidCodec* SkAndroidCodec::NewFromData(sk_sp<SkData> data, SkPngChunkReader* chunkReader) {
+std::unique_ptr<SkAndroidCodec> SkAndroidCodec::MakeFromData(sk_sp<SkData> data,
+                                                             SkPngChunkReader* chunkReader) {
     if (!data) {
         return nullptr;
     }
 
-    return NewFromStream(new SkMemoryStream(data), chunkReader);
+    return MakeFromStream(SkMemoryStream::Make(std::move(data)), chunkReader);
 }
 
 SkColorType SkAndroidCodec::computeOutputColorType(SkColorType requestedColorType) {

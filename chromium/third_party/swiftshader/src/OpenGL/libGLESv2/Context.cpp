@@ -2178,15 +2178,18 @@ template<typename T> bool Context::getIntegerv(GLenum pname, T *params) const
 			*params = MAX_FRAGMENT_UNIFORM_COMPONENTS;
 			return true;
 		case GL_MAX_PROGRAM_TEXEL_OFFSET:
-			UNIMPLEMENTED();
+			// Note: SwiftShader has no actual texel offset limit, so this limit can be modified if required.
+			// In any case, any behavior outside the specified range is valid since the spec mentions:
+			// (see OpenGL ES 3.0.5, 3.8.10.1 Scale Factor and Level of Detail, p.153)			// "If any of the offset values are outside the range of the  implementation-defined values
+			//  MIN_PROGRAM_TEXEL_OFFSET and MAX_PROGRAM_TEXEL_OFFSET, results of the texture lookup are
+			//  undefined."
 			*params = MAX_PROGRAM_TEXEL_OFFSET;
 			return true;
 		case GL_MAX_SERVER_WAIT_TIMEOUT:
 			*params = 0;
 			return true;
 		case GL_MAX_TEXTURE_LOD_BIAS:
-			UNIMPLEMENTED();
-			*params = 2;
+			*params = MAX_TEXTURE_LOD_BIAS;
 			return true;
 		case GL_MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS:
 			*params = sw::MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS;
@@ -2216,7 +2219,11 @@ template<typename T> bool Context::getIntegerv(GLenum pname, T *params) const
 			*params = MAX_VERTEX_UNIFORM_COMPONENTS;
 			return true;
 		case GL_MIN_PROGRAM_TEXEL_OFFSET:
-			UNIMPLEMENTED();
+			// Note: SwiftShader has no actual texel offset limit, so this limit can be modified if required.
+			// In any case, any behavior outside the specified range is valid since the spec mentions:
+			// (see OpenGL ES 3.0.5, 3.8.10.1 Scale Factor and Level of Detail, p.153)			// "If any of the offset values are outside the range of the  implementation-defined values
+			//  MIN_PROGRAM_TEXEL_OFFSET and MAX_PROGRAM_TEXEL_OFFSET, results of the texture lookup are
+			//  undefined."
 			*params = MIN_PROGRAM_TEXEL_OFFSET;
 			return true;
 		case GL_MINOR_VERSION:
@@ -3329,7 +3336,7 @@ void Context::clearColorBuffer(GLint drawbuffer, void *value, sw::Format format)
 
 		if(colorbuffer)
 		{
-			sw::SliceRect clearRect = colorbuffer->getRect();
+			sw::Rect clearRect = colorbuffer->getRect();
 
 			if(mState.scissorTestEnabled)
 			{
@@ -3368,7 +3375,7 @@ void Context::clearDepthBuffer(const GLfloat value)
 		if(depthbuffer)
 		{
 			float depth = clamp01(value);
-			sw::SliceRect clearRect = depthbuffer->getRect();
+			sw::Rect clearRect = depthbuffer->getRect();
 
 			if(mState.scissorTestEnabled)
 			{
@@ -3392,7 +3399,7 @@ void Context::clearStencilBuffer(const GLint value)
 		if(stencilbuffer)
 		{
 			unsigned char stencil = value < 0 ? 0 : static_cast<unsigned char>(value & 0x000000FF);
-			sw::SliceRect clearRect = stencilbuffer->getRect();
+			sw::Rect clearRect = stencilbuffer->getRect();
 
 			if(mState.scissorTestEnabled)
 			{
@@ -4314,6 +4321,7 @@ const GLubyte *Context::getExtensions(GLuint index, GLuint *numExt) const
 		"GL_OES_texture_half_float_linear",
 		"GL_OES_texture_npot",
 		"GL_OES_texture_3D",
+		"GL_OES_vertex_half_float",
 		"GL_EXT_blend_minmax",
 		"GL_EXT_color_buffer_half_float",
 		"GL_EXT_draw_buffers",
@@ -4370,6 +4378,14 @@ const GLubyte *Context::getExtensions(GLuint index, GLuint *numExt) const
 			{
 				extensionsCat += std::string(extension) + " ";
 			}
+
+			if(clientVersion >= 3)
+			{
+				for(const char *extension : es3extensions)
+				{
+					extensionsCat += std::string(extension) + " ";
+				}
+			}
 		}
 
 		return (const GLubyte*)extensionsCat.c_str();
@@ -4392,7 +4408,7 @@ const GLubyte *Context::getExtensions(GLuint index, GLuint *numExt) const
 
 }
 
-egl::Context *es2CreateContext(egl::Display *display, const egl::Context *shareContext, int clientVersion, const egl::Config *config)
+NO_SANITIZE_FUNCTION egl::Context *es2CreateContext(egl::Display *display, const egl::Context *shareContext, int clientVersion, const egl::Config *config)
 {
 	ASSERT(!shareContext || shareContext->getClientVersion() == clientVersion);   // Should be checked by eglCreateContext
 	return new es2::Context(display, static_cast<const es2::Context*>(shareContext), clientVersion, config);

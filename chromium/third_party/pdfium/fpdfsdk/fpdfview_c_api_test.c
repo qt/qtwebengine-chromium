@@ -40,6 +40,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFPage_CreateAnnot);
     CHK(FPDFPage_GetAnnotCount);
     CHK(FPDFPage_GetAnnot);
+    CHK(FPDFPage_GetAnnotIndex);
     CHK(FPDFPage_CloseAnnot);
     CHK(FPDFPage_RemoveAnnot);
     CHK(FPDFAnnot_GetSubtype);
@@ -59,6 +60,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFAnnot_HasKey);
     CHK(FPDFAnnot_SetStringValue);
     CHK(FPDFAnnot_GetStringValue);
+    CHK(FPDFAnnot_GetLinkedAnnot);
     CHK(FPDFAnnot_GetFlags);
     CHK(FPDFAnnot_SetFlags);
     CHK(FPDFAnnot_GetFormFieldFlags);
@@ -66,11 +68,14 @@ int CheckPDFiumCApi() {
 
     // fpdf_attachment.h
     CHK(FPDFDoc_GetAttachmentCount);
+    CHK(FPDFDoc_AddAttachment);
     CHK(FPDFDoc_GetAttachment);
     CHK(FPDFAttachment_GetName);
     CHK(FPDFAttachment_HasKey);
     CHK(FPDFAttachment_GetValueType);
+    CHK(FPDFAttachment_SetStringValue);
     CHK(FPDFAttachment_GetStringValue);
+    CHK(FPDFAttachment_SetFile);
     CHK(FPDFAttachment_GetFile);
 
     // fpdf_dataavail.h
@@ -118,6 +123,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFPage_GetObject);
     CHK(FPDFPage_HasTransparency);
     CHK(FPDFPage_GenerateContent);
+    CHK(FPDFPageObj_Destroy);
     CHK(FPDFPageObj_HasTransparency);
     CHK(FPDFPageObj_GetBounds);
     CHK(FPDFPageObj_GetType);
@@ -129,6 +135,12 @@ int CheckPDFiumCApi() {
     CHK(FPDFImageObj_LoadJpegFileInline);
     CHK(FPDFImageObj_SetMatrix);
     CHK(FPDFImageObj_SetBitmap);
+    CHK(FPDFImageObj_GetBitmap);
+    CHK(FPDFImageObj_GetImageDataDecoded);
+    CHK(FPDFImageObj_GetImageDataRaw);
+    CHK(FPDFImageObj_GetImageFilterCount);
+    CHK(FPDFImageObj_GetImageFilter);
+    CHK(FPDFImageObj_GetImageMetadata);
     CHK(FPDFPageObj_CreateNewPath);
     CHK(FPDFPageObj_CreateNewRect);
     CHK(FPDFPath_SetStrokeColor);
@@ -169,6 +181,7 @@ int CheckPDFiumCApi() {
     CHK(FORM_DoDocumentAAction);
     CHK(FORM_DoPageAAction);
     CHK(FORM_OnMouseMove);
+    CHK(FORM_OnFocus);
     CHK(FORM_OnLButtonDown);
     CHK(FORM_OnLButtonUp);
 #ifdef PDF_ENABLE_XFA
@@ -179,6 +192,7 @@ int CheckPDFiumCApi() {
     CHK(FORM_OnKeyUp);
     CHK(FORM_OnChar);
     CHK(FORM_GetSelectedText);
+    CHK(FORM_ReplaceSelection);
     CHK(FORM_ForceToKillFocus);
     CHK(FPDFPage_HasFormFieldAtPoint);
     CHK(FPDFPage_FormFieldZOrderAtPoint);
@@ -244,6 +258,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFText_GetUnicode);
     CHK(FPDFText_GetFontSize);
     CHK(FPDFText_GetCharBox);
+    CHK(FPDFText_GetCharOrigin);
     CHK(FPDFText_GetCharIndexAtPos);
     CHK(FPDFText_GetText);
     CHK(FPDFText_CountRects);
@@ -298,6 +313,7 @@ int CheckPDFiumCApi() {
     CHK(FPDF_PageToDevice);
     CHK(FPDFBitmap_Create);
     CHK(FPDFBitmap_CreateEx);
+    CHK(FPDFBitmap_GetFormat);
     CHK(FPDFBitmap_FillRect);
     CHK(FPDFBitmap_GetBuffer);
     CHK(FPDFBitmap_GetWidth);

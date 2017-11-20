@@ -13,6 +13,7 @@
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fpdfapi/render/cpdf_renderstatus.h"
+#include "core/fxcrt/ifx_pauseindicator.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "third_party/base/ptr_util.h"
 
@@ -34,7 +35,7 @@ CPDF_ProgressiveRenderer::~CPDF_ProgressiveRenderer() {
   }
 }
 
-void CPDF_ProgressiveRenderer::Start(IFX_Pause* pPause) {
+void CPDF_ProgressiveRenderer::Start(IFX_PauseIndicator* pPause) {
   if (!m_pContext || !m_pDevice || m_Status != Ready) {
     m_Status = Failed;
     return;
@@ -43,7 +44,7 @@ void CPDF_ProgressiveRenderer::Start(IFX_Pause* pPause) {
   Continue(pPause);
 }
 
-void CPDF_ProgressiveRenderer::Continue(IFX_Pause* pPause) {
+void CPDF_ProgressiveRenderer::Continue(IFX_PauseIndicator* pPause) {
   while (m_Status == ToBeContinued) {
     if (!m_pCurrentLayer) {
       if (m_LayerIndex >= m_pContext->CountLayers()) {
@@ -59,8 +60,8 @@ void CPDF_ProgressiveRenderer::Continue(IFX_Pause* pPause) {
           m_pOptions, m_pCurrentLayer->m_pObjectHolder->m_Transparency, false,
           nullptr);
       m_pDevice->SaveState();
-      m_ClipRect = CFX_FloatRect(m_pDevice->GetClipBox());
-      m_pCurrentLayer->m_Matrix.GetInverse().TransformRect(m_ClipRect);
+      m_ClipRect = m_pCurrentLayer->m_Matrix.GetInverse().TransformRect(
+          CFX_FloatRect(m_pDevice->GetClipBox()));
     }
     CPDF_PageObjectList::iterator iter;
     CPDF_PageObjectList::iterator iterEnd =
@@ -72,12 +73,23 @@ void CPDF_ProgressiveRenderer::Continue(IFX_Pause* pPause) {
       iter = m_pCurrentLayer->m_pObjectHolder->GetPageObjectList()->begin();
     }
     int nObjsToGo = kStepLimit;
+    bool is_mask = false;
     while (iter != iterEnd) {
       CPDF_PageObject* pCurObj = iter->get();
       if (pCurObj && pCurObj->m_Left <= m_ClipRect.right &&
           pCurObj->m_Right >= m_ClipRect.left &&
           pCurObj->m_Bottom <= m_ClipRect.top &&
           pCurObj->m_Top >= m_ClipRect.bottom) {
+        if (m_pOptions->m_Flags & RENDER_BREAKFORMASKS && pCurObj->IsImage() &&
+            pCurObj->AsImage()->GetImage()->IsMask()) {
+          if (m_pDevice->GetDeviceCaps(FXDC_DEVICE_CLASS) == FXDC_PRINTER) {
+            m_LastObjectRendered = iter;
+            m_pRenderStatus->ProcessClipPath(pCurObj->m_ClipPath,
+                                             &m_pCurrentLayer->m_Matrix);
+            return;
+          }
+          is_mask = true;
+        }
         if (m_pRenderStatus->ContinueSingleObject(
                 pCurObj, &m_pCurrentLayer->m_Matrix, pPause)) {
           return;
@@ -98,20 +110,20 @@ void CPDF_ProgressiveRenderer::Continue(IFX_Pause* pPause) {
           return;
         nObjsToGo = kStepLimit;
       }
-      if (pCurObj->IsImage() && pCurObj->AsImage()->GetImage()->IsMask() &&
-          (m_pOptions->m_Flags & RENDER_BREAKFORMASKS)) {
-        return;
-      }
       ++iter;
+      if (is_mask && iter != iterEnd)
+        return;
     }
     if (m_pCurrentLayer->m_pObjectHolder->IsParsed()) {
       m_pRenderStatus.reset();
       m_pDevice->RestoreState(false);
       m_pCurrentLayer = nullptr;
       m_LayerIndex++;
-      if (pPause && pPause->NeedToPauseNow()) {
+      if (is_mask || (pPause && pPause->NeedToPauseNow())) {
         return;
       }
+    } else if (is_mask) {
+      return;
     } else {
       m_pCurrentLayer->m_pObjectHolder->ContinueParse(pPause);
       if (!m_pCurrentLayer->m_pObjectHolder->IsParsed())

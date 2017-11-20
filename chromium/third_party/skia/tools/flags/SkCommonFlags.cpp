@@ -6,6 +6,8 @@
  */
 
 #include "SkCommonFlags.h"
+#include "SkExecutor.h"
+#include "SkOnce.h"
 #include "SkOSFile.h"
 #include "SkOSPath.h"
 
@@ -54,6 +56,9 @@ DEFINE_string(svgs, "", "Directory to read SVGs from, or a single SVG file.");
 DEFINE_int32_2(threads, j, -1, "Run threadsafe tests on a threadpool with this many extra threads, "
                                "defaulting to one extra thread per core.");
 
+DEFINE_int32(gpuThreads, 0, "Create this many extra threads to assist with GPU work, "
+                            "including software path rendering.");
+
 DEFINE_bool2(verbose, v, false, "enable verbose output from the test driver.");
 
 DEFINE_bool2(veryVerbose, V, false, "tell individual tests to be verbose.");
@@ -72,7 +77,15 @@ DEFINE_bool(forceAnalyticAA, false, "Force analytic anti-aliasing even if the pa
                                     "whether it's concave or convex, we consider a path complicated"
                                     "if its number of points is comparable to its resolution.");
 
-DEFINE_bool(trace, false, "Show trace events using SkDebugf.");
+#if defined(SK_SUPPORT_LEGACY_DELTA_AA) || (defined(_MSC_VER) && !defined(__clang__))
+constexpr bool kDefaultDeltaAA = false;
+#else
+constexpr bool kDefaultDeltaAA = true;
+#endif
+DEFINE_bool(deltaAA, kDefaultDeltaAA,
+            "If true, use delta anti-aliasing in suitable cases (it overrides forceAnalyticAA.");
+
+DEFINE_bool(forceDeltaAA, false, "Force delta anti-aliasing for all paths.");
 
 bool CollectImages(SkCommandLineFlags::StringArray images, SkTArray<SkString>* output) {
     SkASSERT(output);
@@ -114,4 +127,10 @@ bool CollectImages(SkCommandLineFlags::StringArray images, SkTArray<SkString>* o
         }
     }
     return true;
+}
+
+SkExecutor* GpuExecutorForTools() {
+    static std::unique_ptr<SkExecutor> gGpuExecutor = (0 != FLAGS_gpuThreads)
+        ? SkExecutor::MakeThreadPool(FLAGS_gpuThreads) : nullptr;
+    return gGpuExecutor.get();
 }

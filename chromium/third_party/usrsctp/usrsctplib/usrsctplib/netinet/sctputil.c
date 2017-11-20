@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctputil.c 310590 2016-12-26 11:06:41Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctputil.c 321204 2017-07-19 14:28:58Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -57,6 +57,9 @@ __FBSDID("$FreeBSD: head/sys/netinet/sctputil.c 310590 2016-12-26 11:06:41Z tuex
 #include <netinet/sctp_constants.h>
 #endif
 #if defined(__FreeBSD__)
+#if defined(INET6) || defined(INET)
+#include <netinet/tcp_var.h>
+#endif
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
 #include <sys/proc.h>
@@ -2710,7 +2713,7 @@ sctp_m_getptr(struct mbuf *m, int off, int len, uint8_t * in_ptr)
 		/* else, it spans more than one mbuf, so save a temp copy... */
 		while ((m != NULL) && (len > 0)) {
 			count = min(SCTP_BUF_LEN(m) - off, len);
-			bcopy(mtod(m, caddr_t) + off, ptr, count);
+			memcpy(ptr, mtod(m, caddr_t) + off, count);
 			len -= count;
 			ptr += count;
 			off = 0;
@@ -2871,9 +2874,9 @@ sctp_notify_assoc_change(uint16_t state, struct sctp_tcb *stcb,
 		                                 m_notify);
 		if (control != NULL) {
 			control->length = SCTP_BUF_LEN(m_notify);
+			control->spec_flags = M_NOTIFICATION;
 			/* not that we need this */
 			control->tail_mbuf = m_notify;
-			control->spec_flags = M_NOTIFICATION;
 			sctp_add_to_readq(stcb->sctp_ep, stcb,
 			                  control,
 			                  &stcb->sctp_socket->so_rcv, 1, SCTP_READ_LOCK_NOT_HELD,
@@ -2909,6 +2912,7 @@ set_error:
 				stcb->sctp_socket->so_error = ECONNABORTED;
 			}
 		}
+		SOCK_UNLOCK(stcb->sctp_socket);
 	}
 	/* Wake ANY sleepers */
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
@@ -2928,11 +2932,7 @@ set_error:
 	if (((stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_TCPTYPE) ||
 	     (stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_IN_TCPPOOL)) &&
 	    ((state == SCTP_COMM_LOST) || (state == SCTP_CANT_STR_ASSOC))) {
-#if defined(__APPLE__)
 		socantrcvmore(stcb->sctp_socket);
-#else
-		socantrcvmore_locked(stcb->sctp_socket);
-#endif
 	}
 	sorwakeup(stcb->sctp_socket);
 	sowwakeup(stcb->sctp_socket);
@@ -3173,7 +3173,10 @@ sctp_notify_send_failed(struct sctp_tcb *stcb, uint8_t sent, uint32_t error,
 		sctp_m_freem(m_notify);
 		return;
 	}
+	control->length = SCTP_BUF_LEN(m_notify);
 	control->spec_flags = M_NOTIFICATION;
+	/* not that we need this */
+	control->tail_mbuf = m_notify;
 	sctp_add_to_readq(stcb->sctp_ep, stcb,
 	                  control,
 	                  &stcb->sctp_socket->so_rcv, 1,
@@ -3273,7 +3276,10 @@ sctp_notify_send_failed2(struct sctp_tcb *stcb, uint32_t error,
 		sctp_m_freem(m_notify);
 		return;
 	}
+	control->length = SCTP_BUF_LEN(m_notify);
 	control->spec_flags = M_NOTIFICATION;
+	/* not that we need this */
+	control->tail_mbuf = m_notify;
 	sctp_add_to_readq(stcb->sctp_ep, stcb,
 	    control,
 	    &stcb->sctp_socket->so_rcv, 1, SCTP_READ_LOCK_NOT_HELD, so_locked);
@@ -3376,12 +3382,10 @@ sctp_notify_partial_delivery_indication(struct sctp_tcb *stcb, uint32_t error,
 		sctp_m_freem(m_notify);
 		return;
 	}
-	control->spec_flags = M_NOTIFICATION;
 	control->length = SCTP_BUF_LEN(m_notify);
+	control->spec_flags = M_NOTIFICATION;
 	/* not that we need this */
 	control->tail_mbuf = m_notify;
-	control->held_length = 0;
-	control->length = 0;
 	sb = &stcb->sctp_socket->so_rcv;
 	if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_SB_LOGGING_ENABLE) {
 		sctp_sblog(sb, control->do_not_ref_stcb?NULL:stcb, SCTP_LOG_SBALLOC, SCTP_BUF_LEN(m_notify));
@@ -3390,7 +3394,6 @@ sctp_notify_partial_delivery_indication(struct sctp_tcb *stcb, uint32_t error,
 	if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_SB_LOGGING_ENABLE) {
 		sctp_sblog(sb, control->do_not_ref_stcb?NULL:stcb, SCTP_LOG_SBRESULT, 0);
 	}
-	atomic_add_int(&control->length, SCTP_BUF_LEN(m_notify));
 	control->end_added = 1;
 	if (stcb->asoc.control_pdapi)
 		TAILQ_INSERT_AFTER(&stcb->sctp_ep->read_queue, stcb->asoc.control_pdapi,  control, next);
@@ -3486,8 +3489,8 @@ sctp_notify_shutdown_event(struct sctp_tcb *stcb)
 		sctp_m_freem(m_notify);
 		return;
 	}
-	control->spec_flags = M_NOTIFICATION;
 	control->length = SCTP_BUF_LEN(m_notify);
+	control->spec_flags = M_NOTIFICATION;
 	/* not that we need this */
 	control->tail_mbuf = m_notify;
 	sctp_add_to_readq(stcb->sctp_ep, stcb,
@@ -3594,8 +3597,8 @@ sctp_notify_stream_reset_add(struct sctp_tcb *stcb, uint16_t numberin, uint16_t 
 		sctp_m_freem(m_notify);
 		return;
 	}
-	control->spec_flags = M_NOTIFICATION;
 	control->length = SCTP_BUF_LEN(m_notify);
+	control->spec_flags = M_NOTIFICATION;
 	/* not that we need this */
 	control->tail_mbuf = m_notify;
 	sctp_add_to_readq(stcb->sctp_ep, stcb,
@@ -3644,8 +3647,8 @@ sctp_notify_stream_reset_tsn(struct sctp_tcb *stcb, uint32_t sending_tsn, uint32
 		sctp_m_freem(m_notify);
 		return;
 	}
-	control->spec_flags = M_NOTIFICATION;
 	control->length = SCTP_BUF_LEN(m_notify);
+	control->spec_flags = M_NOTIFICATION;
 	/* not that we need this */
 	control->tail_mbuf = m_notify;
 	sctp_add_to_readq(stcb->sctp_ep, stcb,
@@ -3710,8 +3713,8 @@ sctp_notify_stream_reset(struct sctp_tcb *stcb,
 		sctp_m_freem(m_notify);
 		return;
 	}
-	control->spec_flags = M_NOTIFICATION;
 	control->length = SCTP_BUF_LEN(m_notify);
+	control->spec_flags = M_NOTIFICATION;
 	/* not that we need this */
 	control->tail_mbuf = m_notify;
 	sctp_add_to_readq(stcb->sctp_ep, stcb,
@@ -3766,9 +3769,9 @@ sctp_notify_remote_error(struct sctp_tcb *stcb, uint16_t error, struct sctp_erro
 	                                 m_notify);
 	if (control != NULL) {
 		control->length = SCTP_BUF_LEN(m_notify);
+		control->spec_flags = M_NOTIFICATION;
 		/* not that we need this */
 		control->tail_mbuf = m_notify;
-		control->spec_flags = M_NOTIFICATION;
 		sctp_add_to_readq(stcb->sctp_ep, stcb,
 		                  control,
 		                  &stcb->sctp_socket->so_rcv, 1,
@@ -6759,7 +6762,7 @@ sctp_dynamic_set_primary(struct sockaddr *sa, uint32_t vrf_id)
 	}
 	/* Now incr the count and int wi structure */
 	SCTP_INCR_LADDR_COUNT();
-	bzero(wi, sizeof(*wi));
+	memset(wi, 0, sizeof(*wi));
 	(void)SCTP_GETTIME_TIMEVAL(&wi->start_time);
 	wi->ifa = ifa;
 	wi->action = SCTP_SET_PRIM_ADDR;
@@ -7871,7 +7874,7 @@ sctp_recv_icmp_tunneled_packet(int cmd, struct sockaddr *sa, void *vip, void *ct
 		}
 		sctp_notify(inp, stcb, net, type, code,
 		            ntohs(inner_ip->ip_len),
-		            ntohs(icmp->icmp_nextmtu));
+		            (uint32_t)ntohs(icmp->icmp_nextmtu));
 	} else {
 #if defined(__FreeBSD__) && __FreeBSD_version < 500000
 		/*
@@ -8036,7 +8039,7 @@ sctp_recv_icmp6_tunneled_packet(int cmd, struct sockaddr *sa, void *d, void *ctx
 			code = ICMP6_PARAMPROB_NEXTHEADER;
 		}
 		sctp6_notify(inp, stcb, net, type, code,
-			     (uint16_t)ntohl(ip6cp->ip6c_icmp6->icmp6_mtu));
+			     ntohl(ip6cp->ip6c_icmp6->icmp6_mtu));
 	} else {
 #if defined(__FreeBSD__) && __FreeBSD_version < 500000
 		if (PRC_IS_REDIRECT(cmd) && (inp != NULL)) {
@@ -8170,5 +8173,91 @@ sctp_over_udp_start(void)
 #else
 	return (ENOTSUP);
 #endif
+}
+#endif
+
+/*
+ * sctp_min_mtu ()returns the minimum of all non-zero arguments.
+ * If all arguments are zero, zero is returned.
+ */
+uint32_t
+sctp_min_mtu(uint32_t mtu1, uint32_t mtu2, uint32_t mtu3)
+{
+	if (mtu1 > 0) {
+		if (mtu2 > 0) {
+			if (mtu3 > 0) {
+				return (min(mtu1, min(mtu2, mtu3)));
+			} else {
+				return (min(mtu1, mtu2));
+			}
+		} else {
+			if (mtu3 > 0) {
+				return (min(mtu1, mtu3));
+			} else {
+				return (mtu1);
+			}
+		}
+	} else {
+		if (mtu2 > 0) {
+			if (mtu3 > 0) {
+				return (min(mtu2, mtu3));
+			} else {
+				return (mtu2);
+			}
+		} else {
+			return (mtu3);
+		}
+	}
+}
+
+#if defined(__FreeBSD__)
+void
+sctp_hc_set_mtu(union sctp_sockstore *addr, uint16_t fibnum, uint32_t mtu)
+{
+	struct in_conninfo inc;
+
+	memset(&inc, 0, sizeof(struct in_conninfo));
+	inc.inc_fibnum = fibnum;
+	switch (addr->sa.sa_family) {
+#ifdef INET
+	case AF_INET:
+		inc.inc_faddr = addr->sin.sin_addr;
+		break;
+#endif
+#ifdef INET6
+	case AF_INET6:
+		inc.inc_flags |= INC_ISIPV6;
+		inc.inc6_faddr = addr->sin6.sin6_addr;
+		break;
+#endif
+	default:
+		return;
+	}
+	tcp_hc_updatemtu(&inc, (u_long)mtu);
+}
+
+uint32_t
+sctp_hc_get_mtu(union sctp_sockstore *addr, uint16_t fibnum)
+{
+	struct in_conninfo inc;
+
+	memset(&inc, 0, sizeof(struct in_conninfo));
+	inc.inc_fibnum = fibnum;
+	switch (addr->sa.sa_family) {
+#ifdef INET
+	case AF_INET:
+		inc.inc_faddr = addr->sin.sin_addr;
+		break;
+#endif
+#ifdef INET6
+	case AF_INET6:
+		inc.inc_flags |= INC_ISIPV6;
+		inc.inc6_faddr = addr->sin6.sin6_addr;
+		break;
+#endif
+	default:
+		return (0);
+	}
+	return ((uint32_t)tcp_hc_getmtu(&inc));
 }
 #endif

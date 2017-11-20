@@ -30,16 +30,10 @@ class EncodedImage {
   // number of additional bytes (due to over-reading byte readers).
   static size_t GetBufferPaddingBytes(VideoCodecType codec_type);
 
-  EncodedImage() : EncodedImage(nullptr, 0, 0) {}
+  EncodedImage();
+  EncodedImage(uint8_t* buffer, size_t length, size_t size);
 
-  EncodedImage(uint8_t* buffer, size_t length, size_t size)
-      : _buffer(buffer), _length(length), _size(size) {}
-
-  void SetEncodeTime(int64_t encode_start_ms, int64_t encode_finish_ms) const {
-    timing_.is_timing_frame = true;
-    timing_.encode_start_ms = encode_start_ms;
-    timing_.encode_finish_ms = encode_finish_ms;
-  }
+  void SetEncodeTime(int64_t encode_start_ms, int64_t encode_finish_ms) const;
 
   // TODO(kthelgason): get rid of this struct as it only has a single member
   // remaining.
@@ -60,7 +54,7 @@ class EncodedImage {
   size_t _length;
   size_t _size;
   VideoRotation rotation_ = kVideoRotation_0;
-  VideoContentType content_type_ = VideoContentType::UNSPECIFIED;
+  mutable VideoContentType content_type_ = VideoContentType::UNSPECIFIED;
   bool _completeFrame = false;
   AdaptReason adapt_reason_;
   int qp_ = -1;  // Quantizer value.
@@ -72,7 +66,7 @@ class EncodedImage {
 
   // Timing information should be updatable on const instances.
   mutable struct Timing {
-    bool is_timing_frame = false;
+    uint8_t flags = TimingFrameFlags::kInvalid;
     int64_t encode_start_ms = 0;
     int64_t encode_finish_ms = 0;
     int64_t packetization_finish_ms = 0;

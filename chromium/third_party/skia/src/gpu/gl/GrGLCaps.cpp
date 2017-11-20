@@ -12,6 +12,7 @@
 #include "GrGLTexture.h"
 #include "GrShaderCaps.h"
 #include "GrSurfaceProxyPriv.h"
+#include "SkJSONWriter.h"
 #include "SkTSearch.h"
 #include "SkTSort.h"
 #include "instanced/GLInstancedRendering.h"
@@ -51,7 +52,6 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fMipMapLevelAndLodControlSupport = false;
     fRGBAToBGRAReadbackConversionsAreSlow = false;
     fDoManualMipmapping = false;
-    fSRGBDecodeDisableSupport = false;
     fSRGBDecodeDisableAffectsMipmaps = false;
     fClearToBoundaryValuesIsBroken = false;
     fClearTextureSupport = false;
@@ -291,9 +291,12 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     this->initGLSL(ctxInfo);
     GrShaderCaps* shaderCaps = fShaderCaps.get();
 
-    if (!contextOptions.fSuppressPathRendering) {
-        shaderCaps->fPathRenderingSupport = this->hasPathRenderingSupport(ctxInfo, gli);
+    shaderCaps->fPathRenderingSupport = this->hasPathRenderingSupport(ctxInfo, gli);
+#if GR_TEST_UTILS
+    if (contextOptions.fSuppressPathRendering) {
+        shaderCaps->fPathRenderingSupport = false;
     }
+#endif
 
     // For now these two are equivalent but we could have dst read in shader via some other method.
     // Before setting this, initGLSL() must have been called.
@@ -528,6 +531,22 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         fUseDrawInsteadOfClear = true;
     }
 
+#ifdef SK_BUILD_FOR_MAC
+    // crbug.com/768134 - On MacBook Pros, the Intel Iris Pro doesn't always perform
+    // full screen clears
+    if (kIntelIrisPro_GrGLRenderer == ctxInfo.renderer()) {
+        fUseDrawInsteadOfClear = true;
+    }
+#endif
+
+    // See crbug.com/755871. This could probably be narrowed to just partial clears as the driver
+    // bugs seems to involve clearing too much and not skipping the clear.
+    // See crbug.com/768134. This is also needed for full clears and was seen on an nVidia K620 
+    // but only for D3D11 ANGLE.
+    if (GrGLANGLEBackend::kD3D11 == ctxInfo.angleBackend()) {
+        fUseDrawInsteadOfClear = true;
+    }
+
     if (kAdreno4xx_GrGLRenderer == ctxInfo.renderer()) {
         // This is known to be fixed sometime between driver 145.0 and 219.0
         if (ctxInfo.driver() == kQualcomm_GrGLDriver &&
@@ -597,10 +616,6 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     }
 
     this->initShaderPrecisionTable(ctxInfo, gli, shaderCaps);
-
-    if (contextOptions.fUseShaderSwizzling) {
-        fTextureSwizzleSupport = false;
-    }
 
     if (kGL_GrGLStandard == standard) {
         if ((version >= GR_GL_VER(4, 0) || ctxInfo.hasExtension("GL_ARB_sample_shading")) &&
@@ -893,10 +908,14 @@ void GrGLCaps::initGLSL(const GrGLContextInfo& ctxInfo) {
         shaderCaps->fVertexIDSupport = ctxInfo.glslGeneration() >= k330_GrGLSLGeneration;
     }
 
-    // The Tegra3 compiler will sometimes never return if we have min(abs(x), 1.0), so we must do
-    // the abs first in a separate expression.
     if (kTegra3_GrGLRenderer == ctxInfo.renderer()) {
+        // The Tegra3 compiler will sometimes never return if we have min(abs(x), 1.0),
+        // so we must do the abs first in a separate expression.
         shaderCaps->fCanUseMinAndAbsTogether = false;
+
+        // Tegra3 fract() seems to trigger undefined behavior for negative values, so we
+        // must avoid this condition.
+        shaderCaps->fCanUseFractForNegativeValues = false;
     }
 
     // On Intel GPU there is an issue where it reads the second argument to atan "- %s.x" as an int
@@ -928,6 +947,24 @@ void GrGLCaps::initGLSL(const GrGLContextInfo& ctxInfo) {
     if (kMaliT_GrGLRenderer == ctxInfo.renderer()) {
         shaderCaps->fMustObfuscateUniformColor = true;
     }
+
+#ifdef SK_BUILD_FOR_WIN
+    // Check for ANGLE on Windows, so we can workaround a bug in D3D itself (anglebug.com/2098).
+    //
+    // Basically, if a shader has a construct like:
+    //
+    // float x = someCondition ? someValue : 0;
+    // float2 result = (0 == x) ? float2(x, x)
+    //                          : float2(2 * x / x, 0);
+    //
+    // ... the compiler will produce an error 'NaN and infinity literals not allowed', even though
+    // we've explicitly guarded the division with a check against zero. This manifests in much
+    // more complex ways in some of our shaders, so we use this caps bit to add an epsilon value
+    // to the denominator of divisions, even when we've added checks that the denominator isn't 0.
+    if (kANGLE_GrGLDriver == ctxInfo.driver() || kChromium_GrGLDriver == ctxInfo.driver()) {
+        shaderCaps->fMustGuardDivisionEvenAfterExplicitZeroCheck = true;
+    }
+#endif
 }
 
 bool GrGLCaps::hasPathRenderingSupport(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
@@ -1052,8 +1089,11 @@ void GrGLCaps::initFSAASupport(const GrContextOptions& contextOptions, const GrG
     // renderer is available and enabled; no other path renderers support this feature.
     if (fMultisampleDisableSupport &&
         this->shaderCaps()->dualSourceBlendingSupport() &&
-        this->shaderCaps()->pathRenderingSupport() &&
-        (contextOptions.fGpuPathRenderers & GrContextOptions::GpuPathRenderers::kStencilAndCover)) {
+        this->shaderCaps()->pathRenderingSupport()
+#if GR_TEST_UTILS
+        && (contextOptions.fGpuPathRenderers & GpuPathRenderers::kStencilAndCover)
+#endif
+        ) {
         fUsesMixedSamples = ctxInfo.hasExtension("GL_NV_framebuffer_mixed_samples") ||
                             ctxInfo.hasExtension("GL_CHROMIUM_framebuffer_mixed_samples");
         // Workaround NVIDIA bug related to glInvalidateFramebuffer and mixed samples.
@@ -1227,17 +1267,22 @@ void GrGLCaps::initStencilSupport(const GrGLContextInfo& ctxInfo) {
     }
 }
 
-SkString GrGLCaps::dump() const {
+void GrGLCaps::onDumpJSON(SkJSONWriter* writer) const {
 
-    SkString r = INHERITED::dump();
+    // We are called by the base class, which has already called beginObject(). We choose to nest
+    // all of our caps information in a named sub-object.
+    writer->beginObject("GL caps");
 
-    r.appendf("--- GL-Specific ---\n");
+    writer->beginArray("Stencil Formats");
+
     for (int i = 0; i < fStencilFormats.count(); ++i) {
-        r.appendf("Stencil Format %d, stencil bits: %02d, total bits: %02d\n",
-                 i,
-                 fStencilFormats[i].fStencilBits,
-                 fStencilFormats[i].fTotalBits);
+        writer->beginObject(nullptr, false);
+        writer->appendS32("stencil bits", fStencilFormats[i].fStencilBits);
+        writer->appendS32("total bits", fStencilFormats[i].fTotalBits);
+        writer->endObject();
     }
+
+    writer->endArray();
 
     static const char* kMSFBOExtStr[] = {
         "None",
@@ -1277,55 +1322,59 @@ SkString GrGLCaps::dump() const {
     GR_STATIC_ASSERT(3 == kChromium_MapBufferType);
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kMapBufferTypeStr) == kLast_MapBufferType + 1);
 
-    r.appendf("Core Profile: %s\n", (fIsCoreProfile ? "YES" : "NO"));
-    r.appendf("MSAA Type: %s\n", kMSFBOExtStr[fMSFBOType]);
-    r.appendf("Invalidate FB Type: %s\n", kInvalidateFBTypeStr[fInvalidateFBType]);
-    r.appendf("Map Buffer Type: %s\n", kMapBufferTypeStr[fMapBufferType]);
-    r.appendf("Max FS Uniform Vectors: %d\n", fMaxFragmentUniformVectors);
-    r.appendf("Unpack Row length support: %s\n", (fUnpackRowLengthSupport ? "YES": "NO"));
-    r.appendf("Unpack Flip Y support: %s\n", (fUnpackFlipYSupport ? "YES": "NO"));
-    r.appendf("Pack Row length support: %s\n", (fPackRowLengthSupport ? "YES": "NO"));
-    r.appendf("Pack Flip Y support: %s\n", (fPackFlipYSupport ? "YES": "NO"));
+    writer->appendBool("Core Profile", fIsCoreProfile);
+    writer->appendString("MSAA Type", kMSFBOExtStr[fMSFBOType]);
+    writer->appendString("Invalidate FB Type", kInvalidateFBTypeStr[fInvalidateFBType]);
+    writer->appendString("Map Buffer Type", kMapBufferTypeStr[fMapBufferType]);
+    writer->appendS32("Max FS Uniform Vectors", fMaxFragmentUniformVectors);
+    writer->appendBool("Unpack Row length support", fUnpackRowLengthSupport);
+    writer->appendBool("Unpack Flip Y support", fUnpackFlipYSupport);
+    writer->appendBool("Pack Row length support", fPackRowLengthSupport);
+    writer->appendBool("Pack Flip Y support", fPackFlipYSupport);
 
-    r.appendf("Texture Usage support: %s\n", (fTextureUsageSupport ? "YES": "NO"));
-    r.appendf("GL_R support: %s\n", (fTextureRedSupport ? "YES": "NO"));
-    r.appendf("Alpha8 is renderable: %s\n", (fAlpha8IsRenderable ? "YES" : "NO"));
-    r.appendf("GL_ARB_imaging support: %s\n", (fImagingSupport ? "YES": "NO"));
-    r.appendf("Vertex array object support: %s\n", (fVertexArrayObjectSupport ? "YES": "NO"));
-    r.appendf("Direct state access support: %s\n", (fDirectStateAccessSupport ? "YES": "NO"));
-    r.appendf("Debug support: %s\n", (fDebugSupport ? "YES": "NO"));
-    r.appendf("Draw indirect support: %s\n", (fDrawIndirectSupport ? "YES" : "NO"));
-    r.appendf("Multi draw indirect support: %s\n", (fMultiDrawIndirectSupport ? "YES" : "NO"));
-    r.appendf("Base instance support: %s\n", (fBaseInstanceSupport ? "YES" : "NO"));
-    r.appendf("RGBA 8888 pixel ops are slow: %s\n", (fRGBA8888PixelsOpsAreSlow ? "YES" : "NO"));
-    r.appendf("Partial FBO read is slow: %s\n", (fPartialFBOReadIsSlow ? "YES" : "NO"));
-    r.appendf("Bind uniform location support: %s\n", (fBindUniformLocationSupport ? "YES" : "NO"));
-    r.appendf("Rectangle texture support: %s\n", (fRectangleTextureSupport? "YES" : "NO"));
-    r.appendf("Texture swizzle support: %s\n", (fTextureSwizzleSupport ? "YES" : "NO"));
-    r.appendf("BGRA to RGBA readback conversions are slow: %s\n",
-              (fRGBAToBGRAReadbackConversionsAreSlow ? "YES" : "NO"));
-    r.appendf("Intermediate texture for partial updates of unorm textures ever bound to FBOs: %s\n",
-              fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO ? "YES" : "NO");
-    r.appendf("Intermediate texture for all updates of textures bound to FBOs: %s\n",
-              fUseDrawInsteadOfAllRenderTargetWrites ? "YES" : "NO");
+    writer->appendBool("Texture Usage support", fTextureUsageSupport);
+    writer->appendBool("GL_R support", fTextureRedSupport);
+    writer->appendBool("Alpha8 is renderable", fAlpha8IsRenderable);
+    writer->appendBool("GL_ARB_imaging support", fImagingSupport);
+    writer->appendBool("Vertex array object support", fVertexArrayObjectSupport);
+    writer->appendBool("Direct state access support", fDirectStateAccessSupport);
+    writer->appendBool("Debug support", fDebugSupport);
+    writer->appendBool("Draw indirect support", fDrawIndirectSupport);
+    writer->appendBool("Multi draw indirect support", fMultiDrawIndirectSupport);
+    writer->appendBool("Base instance support", fBaseInstanceSupport);
+    writer->appendBool("RGBA 8888 pixel ops are slow", fRGBA8888PixelsOpsAreSlow);
+    writer->appendBool("Partial FBO read is slow", fPartialFBOReadIsSlow);
+    writer->appendBool("Bind uniform location support", fBindUniformLocationSupport);
+    writer->appendBool("Rectangle texture support", fRectangleTextureSupport);
+    writer->appendBool("Texture swizzle support", fTextureSwizzleSupport);
+    writer->appendBool("BGRA to RGBA readback conversions are slow",
+                       fRGBAToBGRAReadbackConversionsAreSlow);
+    writer->appendBool("Intermediate texture for partial updates of unorm textures ever bound to FBOs",
+                       fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO);
+    writer->appendBool("Intermediate texture for all updates of textures bound to FBOs",
+                       fUseDrawInsteadOfAllRenderTargetWrites);
 
-    r.append("Configs\n-------\n");
+    writer->beginArray("configs");
+
     for (int i = 0; i < kGrPixelConfigCnt; ++i) {
-        r.appendf("  cfg: %d flags: 0x%04x, b_internal: 0x%08x s_internal: 0x%08x, e_format: "
-                  "0x%08x, e_format_teximage: 0x%08x, e_type: 0x%08x, i_for_teximage: 0x%08x, "
-                  "i_for_renderbuffer: 0x%08x\n",
-                  i,
-                  fConfigTable[i].fFlags,
-                  fConfigTable[i].fFormats.fBaseInternalFormat,
-                  fConfigTable[i].fFormats.fSizedInternalFormat,
-                  fConfigTable[i].fFormats.fExternalFormat[kOther_ExternalFormatUsage],
-                  fConfigTable[i].fFormats.fExternalFormat[kTexImage_ExternalFormatUsage],
-                  fConfigTable[i].fFormats.fExternalType,
-                  fConfigTable[i].fFormats.fInternalFormatTexImage,
-                  fConfigTable[i].fFormats.fInternalFormatRenderbuffer);
+        writer->beginObject(nullptr, false);
+        writer->appendHexU32("flags", fConfigTable[i].fFlags);
+        writer->appendHexU32("b_internal", fConfigTable[i].fFormats.fBaseInternalFormat);
+        writer->appendHexU32("s_internal", fConfigTable[i].fFormats.fSizedInternalFormat);
+        writer->appendHexU32("e_format",
+                             fConfigTable[i].fFormats.fExternalFormat[kOther_ExternalFormatUsage]);
+        writer->appendHexU32(
+                "e_format_teximage",
+                fConfigTable[i].fFormats.fExternalFormat[kTexImage_ExternalFormatUsage]);
+        writer->appendHexU32("e_type", fConfigTable[i].fFormats.fExternalType);
+        writer->appendHexU32("i_for_teximage", fConfigTable[i].fFormats.fInternalFormatTexImage);
+        writer->appendHexU32("i_for_renderbuffer",
+                             fConfigTable[i].fFormats.fInternalFormatRenderbuffer);
+        writer->endObject();
     }
 
-    return r;
+    writer->endArray();
+    writer->endObject();
 }
 
 static GrGLenum precision_to_gl_float_type(GrSLPrecision p) {
@@ -1337,7 +1386,7 @@ static GrGLenum precision_to_gl_float_type(GrSLPrecision p) {
     case kHigh_GrSLPrecision:
         return GR_GL_HIGH_FLOAT;
     default:
-        SkFAIL("Unexpected precision type.");
+        SK_ABORT("Unexpected precision type.");
         return -1;
     }
 }
@@ -1351,7 +1400,7 @@ static GrGLenum shader_type_to_gl_shader(GrShaderType type) {
     case kFragment_GrShaderType:
         return GR_GL_FRAGMENT_SHADER;
     }
-    SkFAIL("Unknown shader type.");
+    SK_ABORT("Unknown shader type.");
     return -1;
 }
 
@@ -2109,14 +2158,12 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
         }
     }
 
-    bool hasInternalformatFunction = gli->fFunctions.fGetInternalformativ != nullptr;
     for (int i = 0; i < kGrPixelConfigCnt; ++i) {
         if (ConfigInfo::kRenderableWithMSAA_Flag & fConfigTable[i].fFlags) {
-            if (hasInternalformatFunction && // This check is temporary until chrome is updated
-                ((kGL_GrGLStandard == ctxInfo.standard() &&
+            if ((kGL_GrGLStandard == ctxInfo.standard() &&
                  (ctxInfo.version() >= GR_GL_VER(4,2) ||
                   ctxInfo.hasExtension("GL_ARB_internalformat_query"))) ||
-                (kGLES_GrGLStandard == ctxInfo.standard() && ctxInfo.version() >= GR_GL_VER(3,0)))) {
+                (kGLES_GrGLStandard == ctxInfo.standard() && ctxInfo.version() >= GR_GL_VER(3,0))) {
                 int count;
                 GrGLenum format = fConfigTable[i].fFormats.fInternalFormatRenderbuffer;
                 GR_GL_GetInternalformativ(gli, GR_GL_RENDERBUFFER, format, GR_GL_NUM_SAMPLE_COUNTS,

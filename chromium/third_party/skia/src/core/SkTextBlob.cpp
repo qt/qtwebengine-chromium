@@ -423,7 +423,7 @@ SkRect SkTextBlobBuilder::TightRunBounds(const SkTextBlob::RunRecord& run) {
     SkAutoSTArray<16, SkRect> glyphBounds(run.glyphCount());
     paint.getTextWidths(run.glyphBuffer(),
                         run.glyphCount() * sizeof(uint16_t),
-                        NULL,
+                        nullptr,
                         glyphBounds.get());
 
     SkASSERT(SkTextBlob::kFull_Positioning == run.positioning() ||
@@ -489,7 +489,7 @@ SkRect SkTextBlobBuilder::ConservativeRunBounds(const SkTextBlob::RunRecord& run
         bounds.setBounds(glyphPosPts, run.glyphCount());
     } break;
     default:
-        SkFAIL("unsupported positioning mode");
+        SK_ABORT("unsupported positioning mode");
     }
 
     // Expand by typeface glyph bounds.
@@ -658,7 +658,7 @@ const SkTextBlobBuilder::RunBuffer& SkTextBlobBuilder::allocRunTextPos(const SkP
                                                                        int textByteCount,
                                                                        SkString lang,
                                                                        const SkRect *bounds) {
-   this->allocInternal(font, SkTextBlob::kFull_Positioning, count, textByteCount, SkPoint::Make(0, 0), bounds);
+    this->allocInternal(font, SkTextBlob::kFull_Positioning, count, textByteCount, SkPoint::Make(0, 0), bounds);
 
     return fCurrentRunBuffer;
 }
@@ -815,21 +815,23 @@ sk_sp<SkTextBlob> SkTextBlob::MakeFromBuffer(SkReadBuffer& reader) {
 
 class SkTypefaceCatalogerWriteBuffer : public SkBinaryWriteBuffer {
 public:
-    SkTypefaceCatalogerWriteBuffer(const SkTypefaceCataloger& cataloger)
+    SkTypefaceCatalogerWriteBuffer(SkTypefaceCatalogerProc proc, void* ctx)
         : SkBinaryWriteBuffer(SkBinaryWriteBuffer::kCrossProcess_Flag)
-        , fCataloger(cataloger)
+        , fCatalogerProc(proc)
+        , fCatalogerCtx(ctx)
     {}
 
     void writeTypeface(SkTypeface* typeface) override {
-        fCataloger(typeface);
+        fCatalogerProc(typeface, fCatalogerCtx);
         this->write32(typeface ? typeface->uniqueID() : 0);
     }
 
-    const SkTypefaceCataloger& fCataloger;
+    SkTypefaceCatalogerProc fCatalogerProc;
+    void*                   fCatalogerCtx;
 };
 
-sk_sp<SkData> SkTextBlob::serialize(const SkTypefaceCataloger& cataloger) const {
-    SkTypefaceCatalogerWriteBuffer buffer(cataloger);
+sk_sp<SkData> SkTextBlob::serialize(SkTypefaceCatalogerProc proc, void* ctx) const {
+    SkTypefaceCatalogerWriteBuffer buffer(proc, ctx);
     this->flatten(buffer);
 
     size_t total = buffer.bytesWritten();
@@ -840,20 +842,23 @@ sk_sp<SkData> SkTextBlob::serialize(const SkTypefaceCataloger& cataloger) const 
 
 class SkTypefaceResolverReadBuffer : public SkReadBuffer {
 public:
-    SkTypefaceResolverReadBuffer(const void* data, size_t size, const SkTypefaceResolver& resolver)
+    SkTypefaceResolverReadBuffer(const void* data, size_t size, SkTypefaceResolverProc proc,
+                                 void* ctx)
         : SkReadBuffer(data, size)
-        , fResolver(resolver)
+        , fResolverProc(proc)
+        , fResolverCtx(ctx)
     {}
 
     sk_sp<SkTypeface> readTypeface() override {
-        return fResolver(this->read32());
+        return fResolverProc(this->read32(), fResolverCtx);
     }
 
-    const SkTypefaceResolver& fResolver;
+    SkTypefaceResolverProc  fResolverProc;
+    void*                   fResolverCtx;
 };
 
 sk_sp<SkTextBlob> SkTextBlob::Deserialize(const void* data, size_t length,
-                                      const SkTypefaceResolver& resolver) {
-    SkTypefaceResolverReadBuffer buffer(data, length, resolver);
+                                          SkTypefaceResolverProc proc, void* ctx) {
+    SkTypefaceResolverReadBuffer buffer(data, length, proc, ctx);
     return SkTextBlob::MakeFromBuffer(buffer);
 }

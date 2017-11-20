@@ -9,13 +9,14 @@
 
 #include <memory>
 
+#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/cfx_unowned_ptr.h"
-#include "core/fxcrt/fx_basic.h"
 #include "core/fxge/fx_dib.h"
 
 class CPDF_ImageObject;
 class CPDF_PageRenderCache;
 class CPDF_RenderStatus;
+class IFX_PauseIndicator;
 
 class CPDF_ImageLoader {
  public:
@@ -28,7 +29,7 @@ class CPDF_ImageLoader {
              uint32_t GroupFamily,
              bool bLoadMask,
              CPDF_RenderStatus* pRenderStatus);
-  bool Continue(IFX_Pause* pPause, CPDF_RenderStatus* pRenderStatus);
+  bool Continue(IFX_PauseIndicator* pPause, CPDF_RenderStatus* pRenderStatus);
 
   CFX_RetainPtr<CFX_DIBSource> m_pBitmap;
   CFX_RetainPtr<CFX_DIBSource> m_pMask;

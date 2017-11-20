@@ -25,7 +25,7 @@ public:
      * Creates an Ico decoder
      * Reads enough of the stream to determine the image format
      */
-    static SkCodec* NewFromStream(SkStream*, Result*);
+    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*);
 
 protected:
 
@@ -48,6 +48,14 @@ protected:
 
     SkScanlineOrder onGetScanlineOrder() const override;
 
+    bool conversionSupported(const SkImageInfo&, SkEncodedInfo::Color, bool,
+                             const SkColorSpace*) const override {
+        // This will be checked by the embedded codec.
+        return true;
+    }
+
+    // Handled by the embedded codec.
+    bool usesColorXform() const override { return false; }
 private:
 
     Result onStartScanlineDecode(const SkImageInfo& dstInfo,

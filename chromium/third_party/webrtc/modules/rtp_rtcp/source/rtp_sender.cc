@@ -288,9 +288,8 @@ void RTPSender::SetSendPayloadType(int8_t payload_type) {
 }
 
 void RTPSender::SetMaxRtpPacketSize(size_t max_packet_size) {
-  // Sanity check.
-  RTC_DCHECK(max_packet_size >= 100 && max_packet_size <= IP_PACKET_SIZE)
-      << "Invalid max payload length: " << max_packet_size;
+  RTC_DCHECK_GE(max_packet_size, 100);
+  RTC_DCHECK_LE(max_packet_size, IP_PACKET_SIZE);
   rtc::CritScope lock(&send_critsect_);
   max_packet_size_ = max_packet_size;
 }
@@ -1130,13 +1129,6 @@ int32_t RTPSender::SendTelephoneEvent(uint8_t key,
     return -1;
   }
   return audio_->SendTelephoneEvent(key, time_ms, level);
-}
-
-int32_t RTPSender::SetAudioPacketSize(uint16_t packet_size_samples) {
-  if (!audio_configured_) {
-    return -1;
-  }
-  return 0;
 }
 
 int32_t RTPSender::SetAudioLevel(uint8_t level_d_bov) {

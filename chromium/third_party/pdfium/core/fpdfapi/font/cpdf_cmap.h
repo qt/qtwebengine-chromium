@@ -11,7 +11,6 @@
 
 #include "core/fpdfapi/font/cpdf_cidfont.h"
 #include "core/fxcrt/cfx_retain_ptr.h"
-#include "core/fxcrt/fx_basic.h"
 
 class CPDF_CMapManager;
 struct FXCMAP_CMap;
@@ -37,7 +36,7 @@ class CPDF_CMap : public CFX_Retainable {
   };
 
   struct CodeRange {
-    int m_CharSize;
+    FX_STRSIZE m_CharSize;
     uint8_t m_Lower[4];
     uint8_t m_Upper[4];
   };

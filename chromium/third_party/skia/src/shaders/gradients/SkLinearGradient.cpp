@@ -66,9 +66,13 @@ void SkLinearGradient::flatten(SkWriteBuffer& buffer) const {
 SkShaderBase::Context* SkLinearGradient::onMakeContext(
     const ContextRec& rec, SkArenaAlloc* alloc) const
 {
+#ifndef SK_SUPPORT_LEGACY_LINEAR_GRADIENT
+    return CheckedMakeContext<LinearGradient4fContext>(alloc, *this, rec);
+#else
     return rec.fPreferredDstType == ContextRec::kPM4f_DstType
            ? CheckedMakeContext<LinearGradient4fContext>(alloc, *this, rec)
            : CheckedMakeContext<  LinearGradientContext>(alloc, *this, rec);
+#endif
 }
 
 SkShaderBase::Context* SkLinearGradient::onMakeBurstPipelineContext(
@@ -79,12 +83,9 @@ SkShaderBase::Context* SkLinearGradient::onMakeBurstPipelineContext(
                            : nullptr;
 }
 
-bool SkLinearGradient::adjustMatrixAndAppendStages(SkArenaAlloc*,
-                                                   SkMatrix* matrix,
-                                                   SkRasterPipeline*,
-                                                   SkRasterPipeline*) const {
-    *matrix = SkMatrix::Concat(fPtsToUnit, *matrix);
-    return true;
+void SkLinearGradient::appendGradientStages(SkArenaAlloc*, SkRasterPipeline*,
+                                            SkRasterPipeline*) const {
+    // No extra stage needed for linear gradients.
 }
 
 sk_sp<SkShader> SkLinearGradient::onMakeColorSpace(SkColorSpaceXformer* xformer) const {
@@ -336,17 +337,24 @@ class GrLinearGradient : public GrGradientEffect {
 public:
     class GLSLLinearProcessor;
 
-    static sk_sp<GrFragmentProcessor> Make(const CreateArgs& args) {
-        auto processor = sk_sp<GrLinearGradient>(new GrLinearGradient(args));
+    static std::unique_ptr<GrFragmentProcessor> Make(const CreateArgs& args) {
+        auto processor = std::unique_ptr<GrLinearGradient>(new GrLinearGradient(args));
         return processor->isValid() ? std::move(processor) : nullptr;
     }
 
-    ~GrLinearGradient() override {}
-
     const char* name() const override { return "Linear Gradient"; }
 
+    std::unique_ptr<GrFragmentProcessor> clone() const override {
+        return std::unique_ptr<GrFragmentProcessor>(new GrLinearGradient(*this));
+    }
+
 private:
-    GrLinearGradient(const CreateArgs& args) : INHERITED(args, args.fShader->colorsAreOpaque()) {
+    explicit GrLinearGradient(const CreateArgs& args)
+            : INHERITED(args, args.fShader->colorsAreOpaque()) {
+        this->initClassID<GrLinearGradient>();
+    }
+
+    explicit GrLinearGradient(const GrLinearGradient& that) : INHERITED(that) {
         this->initClassID<GrLinearGradient>();
     }
 
@@ -365,8 +373,6 @@ private:
 class GrLinearGradient::GLSLLinearProcessor : public GrGradientEffect::GLSLProcessor {
 public:
     GLSLLinearProcessor(const GrProcessor&) {}
-
-    ~GLSLLinearProcessor() override {}
 
     virtual void emitCode(EmitArgs&) override;
 
@@ -394,7 +400,7 @@ void GrLinearGradient::onGetGLSLProcessorKey(const GrShaderCaps& caps,
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrLinearGradient);
 
 #if GR_TEST_UTILS
-sk_sp<GrFragmentProcessor> GrLinearGradient::TestCreate(GrProcessorTestData* d) {
+std::unique_ptr<GrFragmentProcessor> GrLinearGradient::TestCreate(GrProcessorTestData* d) {
     SkPoint points[] = {{d->fRandom->nextUScalar1(), d->fRandom->nextUScalar1()},
                         {d->fRandom->nextUScalar1(), d->fRandom->nextUScalar1()}};
 
@@ -405,7 +411,7 @@ sk_sp<GrFragmentProcessor> GrLinearGradient::TestCreate(GrProcessorTestData* d) 
         SkGradientShader::MakeLinear(points, params.fColors, params.fStops,
                                      params.fColorCount, params.fTileMode);
     GrTest::TestAsFPArgs asFPArgs(d);
-    sk_sp<GrFragmentProcessor> fp = as_SB(shader)->asFragmentProcessor(asFPArgs.args());
+    std::unique_ptr<GrFragmentProcessor> fp = as_SB(shader)->asFragmentProcessor(asFPArgs.args());
     GrAlwaysAssert(fp);
     return fp;
 }
@@ -430,7 +436,8 @@ void GrLinearGradient::GLSLLinearProcessor::emitCode(EmitArgs& args) {
 
 /////////////////////////////////////////////////////////////////////
 
-sk_sp<GrFragmentProcessor> SkLinearGradient::asFragmentProcessor(const AsFPArgs& args) const {
+std::unique_ptr<GrFragmentProcessor> SkLinearGradient::asFragmentProcessor(
+        const AsFPArgs& args) const {
     SkASSERT(args.fContext);
 
     SkMatrix matrix;
@@ -448,9 +455,9 @@ sk_sp<GrFragmentProcessor> SkLinearGradient::asFragmentProcessor(const AsFPArgs&
 
     sk_sp<GrColorSpaceXform> colorSpaceXform = GrColorSpaceXform::Make(fColorSpace.get(),
                                                                        args.fDstColorSpace);
-    sk_sp<GrFragmentProcessor> inner(GrLinearGradient::Make(
-        GrGradientEffect::CreateArgs(args.fContext, this, &matrix, fTileMode,
-                                     std::move(colorSpaceXform), SkToBool(args.fDstColorSpace))));
+    auto inner = GrLinearGradient::Make(GrGradientEffect::CreateArgs(
+            args.fContext, this, &matrix, fTileMode, std::move(colorSpaceXform),
+            SkToBool(args.fDstColorSpace)));
     if (!inner) {
         return nullptr;
     }
@@ -619,6 +626,11 @@ template <bool apply_alpha> void ramp(SkPMColor dstC[], int n, const Sk4f& c, co
     }
 }
 
+static inline uint32_t clamped_advance(float advance) {
+    SkASSERT(advance >= 0);
+    return sk_float_floor2int(SkTMin<float>(advance, std::numeric_limits<int>::max() - 1)) + 1;
+}
+
 template <bool apply_alpha, bool dx_is_pos>
 void SkLinearGradient::LinearGradientContext::shade4_dx_clamp(SkPMColor dstC[], int count,
                                                               float fx, float dx, float invDx,
@@ -634,8 +646,7 @@ void SkLinearGradient::LinearGradientContext::shade4_dx_clamp(SkPMColor dstC[], 
         if (fx < 0) {
             // count is guaranteed to be positive, but the first arg may overflow int32 after
             // increment => casting to uint32 ensures correct clamping.
-            int n = SkTMin<uint32_t>(static_cast<uint32_t>(SkFloatToIntFloor(-fx * invDx)) + 1,
-                                     count);
+            int n = SkTMin<uint32_t>(clamped_advance(-fx * invDx), count);
             SkASSERT(n > 0);
             fill<apply_alpha>(dstC, n, rec[0].fColor);
             count -= n;
@@ -650,8 +661,7 @@ void SkLinearGradient::LinearGradientContext::shade4_dx_clamp(SkPMColor dstC[], 
         if (fx > 1) {
             // count is guaranteed to be positive, but the first arg may overflow int32 after
             // increment => casting to uint32 ensures correct clamping.
-            int n = SkTMin<uint32_t>(static_cast<uint32_t>(SkFloatToIntFloor((1 - fx) * invDx)) + 1,
-                                     count);
+            int n = SkTMin<uint32_t>(clamped_advance((1 - fx) * invDx), count);
             SkASSERT(n > 0);
             fill<apply_alpha>(dstC, n, rec[fRecs.count() - 1].fColor);
             count -= n;

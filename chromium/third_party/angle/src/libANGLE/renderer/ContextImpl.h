@@ -18,6 +18,7 @@
 
 namespace gl
 {
+class MemoryProgramCache;
 class Path;
 struct Workarounds;
 }
@@ -51,23 +52,20 @@ class ContextImpl : public GLImplFactory
                                    GLenum mode,
                                    GLsizei count,
                                    GLenum type,
-                                   const void *indices,
-                                   const gl::IndexRange &indexRange) = 0;
+                                   const void *indices) = 0;
     virtual gl::Error drawElementsInstanced(const gl::Context *context,
                                             GLenum mode,
                                             GLsizei count,
                                             GLenum type,
                                             const void *indices,
-                                            GLsizei instances,
-                                            const gl::IndexRange &indexRange) = 0;
+                                            GLsizei instances) = 0;
     virtual gl::Error drawRangeElements(const gl::Context *context,
                                         GLenum mode,
                                         GLuint start,
                                         GLuint end,
                                         GLsizei count,
                                         GLenum type,
-                                        const void *indices,
-                                        const gl::IndexRange &indexRange) = 0;
+                                        const void *indices) = 0;
 
     virtual gl::Error drawArraysIndirect(const gl::Context *context,
                                          GLenum mode,
@@ -157,6 +155,18 @@ class ContextImpl : public GLImplFactory
                                       GLuint numGroupsX,
                                       GLuint numGroupsY,
                                       GLuint numGroupsZ) = 0;
+
+    // This does not correspond to a GL API, but matches a common GL driver behaviour where
+    // draw call states can trigger dynamic shader recompilation. We pass the Program cache
+    // handle as a mutable pointer to this Impl method to both trigger dynamic recompilations
+    // and to allow the back-end to store the refreshed shaders in the cache.
+    virtual gl::Error triggerDrawCallProgramRecompilation(const gl::Context *context,
+                                                          gl::InfoLog *infoLog,
+                                                          gl::MemoryProgramCache *memoryCache,
+                                                          GLenum drawMode)
+    {
+        return gl::NoError();
+    }
 
     const gl::ContextState &getContextState() { return mState; }
     int getClientMajorVersion() const { return mState.getClientMajorVersion(); }

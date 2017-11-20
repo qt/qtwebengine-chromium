@@ -11,8 +11,10 @@
 #include "webrtc/modules/desktop_capture/shared_desktop_frame.h"
 
 #include <memory>
+#include <utility>
 
 #include "webrtc/rtc_base/constructormagic.h"
+#include "webrtc/rtc_base/ptr_util.h"
 
 namespace webrtc {
 
@@ -33,12 +35,13 @@ DesktopFrame* SharedDesktopFrame::GetUnderlyingFrame() {
   return core_->get();
 }
 
+bool SharedDesktopFrame::ShareFrameWith(const SharedDesktopFrame& other) const {
+  return core_->get() == other.core_->get();
+}
+
 std::unique_ptr<SharedDesktopFrame> SharedDesktopFrame::Share() {
   std::unique_ptr<SharedDesktopFrame> result(new SharedDesktopFrame(core_));
-  result->set_dpi(dpi());
-  result->set_capture_time_ms(capture_time_ms());
-  result->set_capturer_id(capturer_id());
-  *result->mutable_updated_region() = updated_region();
+  result->CopyFrameInfoFrom(*this);
   return result;
 }
 
@@ -51,6 +54,8 @@ SharedDesktopFrame::SharedDesktopFrame(rtc::scoped_refptr<Core> core)
                    (*core)->stride(),
                    (*core)->data(),
                    (*core)->shared_memory()),
-      core_(core) {}
+      core_(core) {
+  CopyFrameInfoFrom(*(core_->get()));
+}
 
 }  // namespace webrtc

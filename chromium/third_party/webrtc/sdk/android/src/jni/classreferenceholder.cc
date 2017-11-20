@@ -11,7 +11,8 @@
 
 #include "webrtc/sdk/android/src/jni/jni_helpers.h"
 
-namespace webrtc_jni {
+namespace webrtc {
+namespace jni {
 
 // ClassReferenceHolder holds global reference to Java classes in app/webrtc.
 class ClassReferenceHolder {
@@ -111,7 +112,9 @@ ClassReferenceHolder::ClassReferenceHolder(JNIEnv* jni) {
   LoadClass(jni, "org/webrtc/VideoFrame");
   LoadClass(jni, "org/webrtc/VideoFrame$Buffer");
   LoadClass(jni, "org/webrtc/VideoFrame$I420Buffer");
+  LoadClass(jni, "org/webrtc/VideoFrame$TextureBuffer");
   LoadClass(jni, "org/webrtc/VideoRenderer$I420Frame");
+  LoadClass(jni, "org/webrtc/VideoSink");
   LoadClass(jni, "org/webrtc/VideoTrack");
   LoadClass(jni, "org/webrtc/WrappedNativeI420Buffer");
 }
@@ -151,4 +154,5 @@ jclass FindClass(JNIEnv* jni, const char* name) {
   return g_class_reference_holder->GetClass(name);
 }
 
-}  // namespace webrtc_jni
+}  // namespace jni
+}  // namespace webrtc

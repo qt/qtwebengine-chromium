@@ -14,7 +14,9 @@ Also install Python, Subversion, and Git and make sure they're in your path.
 PDFium uses a similar Windows toolchain as Chromium:
 
 #### Open source contributors
-Visual Studio 2015 Update 2 or later is highly recommended.
+Visual Studio 2015 Update 2 or later is highly recommended. Visual Studio 2015
+is current default version, run `set GYP_MSVS_VERSION=2017` when you use Visual
+Studio 2017.
 
 Run `set DEPOT_TOOLS_WIN_TOOLCHAIN=0`, or set that variable in your global
 environment.
@@ -28,6 +30,9 @@ The default architecture for Windows, Linux, and Mac is "`x64`". On Windows,
 override the default value. If you specify Android build, the default CPU
 architecture will be "`arm`".
 
+It is expected that there are still some places lurking in the code which will
+not function properly on big-endian architectures. Bugs and/or patches are
+welcome, however providing this support is **not** a priority at this time.
 
 #### Google employees
 
@@ -169,5 +174,5 @@ as much as possible. The main exceptions are:
 1. Code has to conform to the existing style and not Chromium/Google style.
 2. PDFium uses a different tool for code reviews, and credentials for
 the tool need to be generated before uploading a CL.
-
-
+3. PDFium is currently holding at C++11 compatibility, rejecting features that
+are only present in C++14 (onto which Chromium is now slowly moving).

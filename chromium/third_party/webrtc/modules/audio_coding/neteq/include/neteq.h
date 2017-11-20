@@ -35,7 +35,6 @@ struct NetEqNetworkStatistics {
   uint16_t jitter_peaks_found;  // 1 if adding extra delay due to peaky
                                 // jitter; 0 otherwise.
   uint16_t packet_loss_rate;  // Loss rate (network + late) in Q14.
-  uint16_t packet_discard_rate;  // Late loss rate in Q14.
   uint16_t expand_rate;  // Fraction (of original stream) of synthesized
                          // audio inserted through expansion (in Q14).
   uint16_t speech_expand_rate;  // Fraction (of original stream) of synthesized
@@ -44,8 +43,10 @@ struct NetEqNetworkStatistics {
                              // expansion (in Q14).
   uint16_t accelerate_rate;  // Fraction of data removed through acceleration
                              // (in Q14).
-  uint16_t secondary_decoded_rate;  // Fraction of data coming from secondary
+  uint16_t secondary_decoded_rate;  // Fraction of data coming from FEC/RED
                                     // decoding (in Q14).
+  uint16_t secondary_discarded_rate;  // Fraction of discarded FEC/RED data (in
+                                      // Q14).
   int32_t clockdrift_ppm;  // Average clock-drift in parts-per-million
                            // (positive or negative).
   size_t added_zero_samples;  // Number of zero samples added in "off" mode.
@@ -55,6 +56,18 @@ struct NetEqNetworkStatistics {
   int median_waiting_time_ms;
   int min_waiting_time_ms;
   int max_waiting_time_ms;
+};
+
+// NetEq statistics that persist over the lifetime of the class.
+// These metrics are never reset.
+struct NetEqLifetimeStatistics {
+  // Total number of audio samples received, including synthesized samples.
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalsamplesreceived
+  uint64_t total_samples_received = 0;
+  // Total number of inbound audio samples that are based on synthesized data to
+  // conceal packet loss.
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-concealedsamples
+  uint64_t concealed_samples = 0;
 };
 
 enum NetEqPlayoutMode {
@@ -218,6 +231,10 @@ class NetEq {
   // Writes the current network statistics to |stats|. The statistics are reset
   // after the call.
   virtual int NetworkStatistics(NetEqNetworkStatistics* stats) = 0;
+
+  // Returns a copy of this class's lifetime statistics. These statistics are
+  // never reset.
+  virtual NetEqLifetimeStatistics GetLifetimeStatistics() const = 0;
 
   // Writes the current RTCP statistics to |stats|. The statistics are reset
   // and a new report period is started with the call.

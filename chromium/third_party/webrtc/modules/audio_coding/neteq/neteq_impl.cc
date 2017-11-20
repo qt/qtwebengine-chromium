@@ -380,6 +380,11 @@ int NetEqImpl::NetworkStatistics(NetEqNetworkStatistics* stats) {
   return 0;
 }
 
+NetEqLifetimeStatistics NetEqImpl::GetLifetimeStatistics() const {
+  rtc::CritScope lock(&crit_sect_);
+  return stats_.GetLifetimeStatistics();
+}
+
 void NetEqImpl::GetRtcpStatistics(RtcpStatistics* stats) {
   rtc::CritScope lock(&crit_sect_);
   if (stats) {
@@ -728,7 +733,7 @@ int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
       packet_buffer_->NumPacketsInBuffer();
   const int ret = packet_buffer_->InsertPacketList(
       &parsed_packet_list, *decoder_database_, &current_rtp_payload_type_,
-      &current_cng_rtp_payload_type_);
+      &current_cng_rtp_payload_type_, &stats_);
   if (ret == PacketBuffer::kFlushed) {
     // Reset DSP timestamp etc. if packet buffer flushed.
     new_codec_ = true;

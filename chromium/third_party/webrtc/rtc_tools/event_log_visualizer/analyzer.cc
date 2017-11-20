@@ -20,6 +20,8 @@
 #include "webrtc/call/audio_receive_stream.h"
 #include "webrtc/call/audio_send_stream.h"
 #include "webrtc/call/call.h"
+#include "webrtc/call/video_receive_stream.h"
+#include "webrtc/call/video_send_stream.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_coding/neteq/tools/audio_sink.h"
 #include "webrtc/modules/audio_coding/neteq/tools/fake_decode_from_file.h"
@@ -27,7 +29,7 @@
 #include "webrtc/modules/audio_coding/neteq/tools/neteq_replacement_input.h"
 #include "webrtc/modules/audio_coding/neteq/tools/neteq_test.h"
 #include "webrtc/modules/audio_coding/neteq/tools/resample_input_audio_file.h"
-#include "webrtc/modules/congestion_controller/include/congestion_controller.h"
+#include "webrtc/modules/congestion_controller/include/send_side_congestion_controller.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
@@ -43,8 +45,6 @@
 #include "webrtc/rtc_base/logging.h"
 #include "webrtc/rtc_base/ptr_util.h"
 #include "webrtc/rtc_base/rate_statistics.h"
-#include "webrtc/video_receive_stream.h"
-#include "webrtc/video_send_stream.h"
 
 namespace webrtc {
 namespace plotting {
@@ -119,8 +119,20 @@ int64_t WrappingDifference(uint32_t later, uint32_t earlier, int64_t modulus) {
 webrtc::RtpHeaderExtensionMap GetDefaultHeaderExtensionMap() {
   webrtc::RtpHeaderExtensionMap default_map;
   default_map.Register<AudioLevel>(webrtc::RtpExtension::kAudioLevelDefaultId);
+  default_map.Register<TransmissionOffset>(
+      webrtc::RtpExtension::kTimestampOffsetDefaultId);
   default_map.Register<AbsoluteSendTime>(
       webrtc::RtpExtension::kAbsSendTimeDefaultId);
+  default_map.Register<VideoOrientation>(
+      webrtc::RtpExtension::kVideoRotationDefaultId);
+  default_map.Register<VideoContentTypeExtension>(
+      webrtc::RtpExtension::kVideoContentTypeDefaultId);
+  default_map.Register<VideoTimingExtension>(
+      webrtc::RtpExtension::kVideoTimingDefaultId);
+  default_map.Register<TransportSequenceNumber>(
+      webrtc::RtpExtension::kTransportSequenceNumberDefaultId);
+  default_map.Register<PlayoutDelayLimits>(
+      webrtc::RtpExtension::kPlayoutDelayDefaultId);
   return default_map;
 }
 
@@ -516,14 +528,10 @@ EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log)
   }
 }
 
-class BitrateObserver : public CongestionController::Observer,
+class BitrateObserver : public SendSideCongestionController::Observer,
                         public RemoteBitrateObserver {
  public:
   BitrateObserver() : last_bitrate_bps_(0), bitrate_updated_(false) {}
-
-  // TODO(minyue): remove this when old OnNetworkChanged is deprecated. See
-  // https://bugs.chromium.org/p/webrtc/issues/detail?id=6796
-  using CongestionController::Observer::OnNetworkChanged;
 
   void OnNetworkChanged(uint32_t bitrate_bps,
                         uint8_t fraction_loss,
@@ -813,7 +821,7 @@ void EventLogAnalyzer::CreateIncomingPacketLossGraph(Plot* plot) {
   plot->SetTitle("Estimated incoming loss rate");
 }
 
-void EventLogAnalyzer::CreateDelayChangeGraph(Plot* plot) {
+void EventLogAnalyzer::CreateIncomingDelayDeltaGraph(Plot* plot) {
   for (auto& kv : rtp_packets_) {
     StreamId stream_id = kv.first;
     const std::vector<LoggedRtpPacket>& packet_stream = kv.second;
@@ -843,10 +851,10 @@ void EventLogAnalyzer::CreateDelayChangeGraph(Plot* plot) {
   plot->SetXAxis(0, call_duration_s_, "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 1, "Latency change (ms)", kBottomMargin,
                           kTopMargin);
-  plot->SetTitle("Network latency change between consecutive packets");
+  plot->SetTitle("Network latency difference between consecutive packets");
 }
 
-void EventLogAnalyzer::CreateAccumulatedDelayChangeGraph(Plot* plot) {
+void EventLogAnalyzer::CreateIncomingDelayGraph(Plot* plot) {
   for (auto& kv : rtp_packets_) {
     StreamId stream_id = kv.first;
     const std::vector<LoggedRtpPacket>& packet_stream = kv.second;
@@ -876,7 +884,7 @@ void EventLogAnalyzer::CreateAccumulatedDelayChangeGraph(Plot* plot) {
   plot->SetXAxis(0, call_duration_s_, "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 1, "Latency change (ms)", kBottomMargin,
                           kTopMargin);
-  plot->SetTitle("Accumulated network latency change");
+  plot->SetTitle("Network latency (relative to first packet)");
 }
 
 // Plot the fraction of packets lost (as perceived by the loss-based BWE).
@@ -1118,8 +1126,8 @@ void EventLogAnalyzer::CreateBweSimulationGraph(Plot* plot) {
   BitrateObserver observer;
   RtcEventLogNullImpl null_event_log;
   PacketRouter packet_router;
-  CongestionController cc(&clock, &observer, &observer, &null_event_log,
-                          &packet_router);
+  PacedSender pacer(&clock, &packet_router, &null_event_log);
+  SendSideCongestionController cc(&clock, &observer, &null_event_log, &pacer);
   // TODO(holmer): Log the call config and use that here instead.
   static const uint32_t kDefaultStartBitrateBps = 300000;
   cc.SetBweBitrates(0, kDefaultStartBitrateBps, -1);
@@ -1408,8 +1416,7 @@ void EventLogAnalyzer::CreateAudioEncoderFrameLengthGraph(Plot* plot) {
   plot->SetTitle("Reported audio encoder frame length");
 }
 
-void EventLogAnalyzer::CreateAudioEncoderUplinkPacketLossFractionGraph(
-    Plot* plot) {
+void EventLogAnalyzer::CreateAudioEncoderPacketLossGraph(Plot* plot) {
   TimeSeries time_series("Audio encoder uplink packet loss fraction",
                          LINE_DOT_GRAPH);
   ProcessPoints<AudioNetworkAdaptationEvent>(

@@ -19,6 +19,10 @@ class InterfaceProvider;
 
 namespace media {
 
+namespace mojom {
+class InterfaceFactory;
+}
+
 class GpuVideoAcceleratorFactories;
 
 // The default factory class for creating MojoRenderer.
@@ -26,9 +30,12 @@ class MojoRendererFactory : public RendererFactory {
  public:
   using GetGpuFactoriesCB = base::Callback<GpuVideoAcceleratorFactories*()>;
 
+  MojoRendererFactory(const GetGpuFactoriesCB& get_gpu_factories_cb,
+                      media::mojom::InterfaceFactory* interface_factory);
   MojoRendererFactory(
       const GetGpuFactoriesCB& get_gpu_factories_cb,
       service_manager::mojom::InterfaceProvider* interface_provider);
+
   ~MojoRendererFactory() final;
 
   std::unique_ptr<Renderer> CreateRenderer(
@@ -36,11 +43,18 @@ class MojoRendererFactory : public RendererFactory {
       const scoped_refptr<base::TaskRunner>& worker_task_runner,
       AudioRendererSink* audio_renderer_sink,
       VideoRendererSink* video_renderer_sink,
-      const RequestOverlayInfoCB& request_overlay_info_cb) final;
+      const RequestOverlayInfoCB& request_overlay_info_cb,
+      const gfx::ColorSpace& target_color_space) final;
 
  private:
+  mojom::RendererPtr GetRendererPtr();
+
   GetGpuFactoriesCB get_gpu_factories_cb_;
-  service_manager::mojom::InterfaceProvider* interface_provider_;
+
+  // InterfaceFactory or InterfaceProvider used to create or connect to remote
+  // renderer.
+  media::mojom::InterfaceFactory* interface_factory_ = nullptr;
+  service_manager::mojom::InterfaceProvider* interface_provider_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(MojoRendererFactory);
 };

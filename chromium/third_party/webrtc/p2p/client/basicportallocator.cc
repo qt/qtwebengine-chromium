@@ -588,13 +588,14 @@ std::vector<rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
       network_manager->GetAnyAddressNetworks(&networks);
     }
   }
+  // Do some more filtering, depending on the network ignore mask and "disable
+  // costly networks" flag.
   networks.erase(std::remove_if(networks.begin(), networks.end(),
                                 [this](rtc::Network* network) {
                                   return allocator_->network_ignore_mask() &
                                          network->type();
                                 }),
                  networks.end());
-
   if (flags() & PORTALLOCATOR_DISABLE_COSTLY_NETWORKS) {
     uint16_t lowest_cost = rtc::kNetworkCostMax;
     for (rtc::Network* network : networks) {
@@ -606,6 +607,26 @@ std::vector<rtc::Network*> BasicPortAllocatorSession::GetNetworks() {
                                            lowest_cost + rtc::kNetworkCostLow;
                                   }),
                    networks.end());
+  }
+  // Lastly, if we have a limit for the number of IPv6 network interfaces (by
+  // default, it's 5), remove networks to ensure that limit is satisfied.
+  //
+  // TODO(deadbeef): Instead of just taking the first N arbitrary IPv6
+  // networks, we could try to choose a set that's "most likely to work". It's
+  // hard to define what that means though; it's not just "lowest cost".
+  // Alternatively, we could just focus on making our ICE pinging logic smarter
+  // such that this filtering isn't necessary in the first place.
+  int ipv6_networks = 0;
+  for (auto it = networks.begin(); it != networks.end();) {
+    if ((*it)->prefix().family() == AF_INET6) {
+      if (ipv6_networks >= allocator_->max_ipv6_networks()) {
+        it = networks.erase(it);
+        continue;
+      } else {
+        ++ipv6_networks;
+      }
+    }
+    ++it;
   }
   return networks;
 }
@@ -1075,7 +1096,6 @@ AllocationSequence::AllocationSequence(BasicPortAllocatorSession* session,
                                        uint32_t flags)
     : session_(session),
       network_(network),
-      ip_(network->GetBestIP()),
       config_(config),
       state_(kInit),
       flags_(flags),
@@ -1087,8 +1107,8 @@ AllocationSequence::AllocationSequence(BasicPortAllocatorSession* session,
 void AllocationSequence::Init() {
   if (IsFlagSet(PORTALLOCATOR_ENABLE_SHARED_SOCKET)) {
     udp_socket_.reset(session_->socket_factory()->CreateUdpSocket(
-        rtc::SocketAddress(ip_, 0), session_->allocator()->min_port(),
-        session_->allocator()->max_port()));
+        rtc::SocketAddress(network_->GetBestIP(), 0),
+        session_->allocator()->min_port(), session_->allocator()->max_port()));
     if (udp_socket_) {
       udp_socket_->SignalReadPacket.connect(
           this, &AllocationSequence::OnReadPacket);
@@ -1122,7 +1142,7 @@ void AllocationSequence::DisableEquivalentPhases(rtc::Network* network,
     return;
   }
 
-  if (!((network == network_) && (ip_ == network->GetBestIP()))) {
+  if (!((network == network_) && (previous_best_ip_ == network->GetBestIP()))) {
     // Different network setup; nothing is equivalent.
     return;
   }
@@ -1152,6 +1172,9 @@ void AllocationSequence::DisableEquivalentPhases(rtc::Network* network,
 void AllocationSequence::Start() {
   state_ = kRunning;
   session_->network_thread()->Post(RTC_FROM_HERE, this, MSG_ALLOCATION_PHASE);
+  // Take a snapshot of the best IP, so that when DisableEquivalentPhases is
+  // called next time, we enable all phases if the best IP has since changed.
+  previous_best_ip_ = network_->GetBestIP();
 }
 
 void AllocationSequence::Stop() {
@@ -1246,7 +1269,7 @@ void AllocationSequence::CreateUDPPorts() {
         session_->allocator()->origin(), emit_local_candidate_for_anyaddress);
   } else {
     port = UDPPort::Create(
-        session_->network_thread(), session_->socket_factory(), network_, ip_,
+        session_->network_thread(), session_->socket_factory(), network_,
         session_->allocator()->min_port(), session_->allocator()->max_port(),
         session_->username(), session_->password(),
         session_->allocator()->origin(), emit_local_candidate_for_anyaddress);
@@ -1279,13 +1302,11 @@ void AllocationSequence::CreateTCPPorts() {
     return;
   }
 
-  Port* port = TCPPort::Create(session_->network_thread(),
-                               session_->socket_factory(),
-                               network_, ip_,
-                               session_->allocator()->min_port(),
-                               session_->allocator()->max_port(),
-                               session_->username(), session_->password(),
-                               session_->allocator()->allow_tcp_listen());
+  Port* port = TCPPort::Create(
+      session_->network_thread(), session_->socket_factory(), network_,
+      session_->allocator()->min_port(), session_->allocator()->max_port(),
+      session_->username(), session_->password(),
+      session_->allocator()->allow_tcp_listen());
   if (port) {
     session_->AddAllocatedPort(port, this, true);
     // Since TCPPort is not created using shared socket, |port| will not be
@@ -1309,14 +1330,11 @@ void AllocationSequence::CreateStunPorts() {
     return;
   }
 
-  StunPort* port = StunPort::Create(session_->network_thread(),
-                                session_->socket_factory(),
-                                network_, ip_,
-                                session_->allocator()->min_port(),
-                                session_->allocator()->max_port(),
-                                session_->username(), session_->password(),
-                                config_->StunServers(),
-                                session_->allocator()->origin());
+  StunPort* port = StunPort::Create(
+      session_->network_thread(), session_->socket_factory(), network_,
+      session_->allocator()->min_port(), session_->allocator()->max_port(),
+      session_->username(), session_->password(), config_->StunServers(),
+      session_->allocator()->origin());
   if (port) {
     session_->AddAllocatedPort(port, this, true);
     // Since StunPort is not created using shared socket, |port| will not be
@@ -1332,7 +1350,8 @@ void AllocationSequence::CreateRelayPorts() {
 
   // If BasicPortAllocatorSession::OnAllocate left relay ports enabled then we
   // ought to have a relay list for them here.
-  RTC_DCHECK(config_ && !config_->relays.empty());
+  RTC_DCHECK(config_);
+  RTC_DCHECK(!config_->relays.empty());
   if (!(config_ && !config_->relays.empty())) {
     LOG(LS_WARNING)
         << "AllocationSequence: No relay server configured, skipping.";
@@ -1352,12 +1371,10 @@ void AllocationSequence::CreateRelayPorts() {
 
 void AllocationSequence::CreateGturnPort(const RelayServerConfig& config) {
   // TODO(mallinath) - Rename RelayPort to GTurnPort.
-  RelayPort* port = RelayPort::Create(session_->network_thread(),
-                                      session_->socket_factory(),
-                                      network_, ip_,
-                                      session_->allocator()->min_port(),
-                                      session_->allocator()->max_port(),
-                                      config_->username, config_->password);
+  RelayPort* port = RelayPort::Create(
+      session_->network_thread(), session_->socket_factory(), network_,
+      session_->allocator()->min_port(), session_->allocator()->max_port(),
+      config_->username, config_->password);
   if (port) {
     // Since RelayPort is not created using shared socket, |port| will not be
     // added to the dequeue.
@@ -1396,12 +1413,12 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
     // Do not create a port if the server address family is known and does
     // not match the local IP address family.
     int server_ip_family = relay_port->address.ipaddr().family();
-    int local_ip_family = ip_.family();
+    int local_ip_family = network_->GetBestIP().family();
     if (server_ip_family != AF_UNSPEC && server_ip_family != local_ip_family) {
       LOG(LS_INFO) << "Server and local address families are not compatible. "
                    << "Server address: "
                    << relay_port->address.ipaddr().ToString()
-                   << " Local address: " << ip_.ToString();
+                   << " Local address: " << network_->GetBestIP().ToString();
       continue;
     }
 
@@ -1423,15 +1440,12 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
       // remove entrt from it's map.
       port->SignalDestroyed.connect(this, &AllocationSequence::OnPortDestroyed);
     } else {
-      port = TurnPort::Create(session_->network_thread(),
-                              session_->socket_factory(),
-                              network_, ip_,
-                              session_->allocator()->min_port(),
-                              session_->allocator()->max_port(),
-                              session_->username(),
-                              session_->password(),
-                              *relay_port, config.credentials, config.priority,
-                              session_->allocator()->origin());
+      port = TurnPort::Create(
+          session_->network_thread(), session_->socket_factory(), network_,
+          session_->allocator()->min_port(), session_->allocator()->max_port(),
+          session_->username(), session_->password(), *relay_port,
+          config.credentials, config.priority, session_->allocator()->origin(),
+          config.tls_alpn_protocols);
     }
     RTC_DCHECK(port != NULL);
     port->SetTlsCertPolicy(config.tls_cert_policy);

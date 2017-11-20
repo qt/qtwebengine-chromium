@@ -17,7 +17,6 @@
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/DeviceVk.h"
 #include "libANGLE/renderer/vulkan/FenceNVVk.h"
-#include "libANGLE/renderer/vulkan/FenceSyncVk.h"
 #include "libANGLE/renderer/vulkan/FramebufferVk.h"
 #include "libANGLE/renderer/vulkan/ImageVk.h"
 #include "libANGLE/renderer/vulkan/ProgramVk.h"
@@ -26,6 +25,7 @@
 #include "libANGLE/renderer/vulkan/RendererVk.h"
 #include "libANGLE/renderer/vulkan/SamplerVk.h"
 #include "libANGLE/renderer/vulkan/ShaderVk.h"
+#include "libANGLE/renderer/vulkan/SyncVk.h"
 #include "libANGLE/renderer/vulkan/TextureVk.h"
 #include "libANGLE/renderer/vulkan/TransformFeedbackVk.h"
 #include "libANGLE/renderer/vulkan/VertexArrayVk.h"
@@ -340,8 +340,7 @@ gl::Error ContextVk::drawElements(const gl::Context *context,
                                   GLenum mode,
                                   GLsizei count,
                                   GLenum type,
-                                  const void *indices,
-                                  const gl::IndexRange &indexRange)
+                                  const void *indices)
 {
     UNIMPLEMENTED();
     return gl::InternalError();
@@ -352,8 +351,7 @@ gl::Error ContextVk::drawElementsInstanced(const gl::Context *context,
                                            GLsizei count,
                                            GLenum type,
                                            const void *indices,
-                                           GLsizei instances,
-                                           const gl::IndexRange &indexRange)
+                                           GLsizei instances)
 {
     UNIMPLEMENTED();
     return gl::InternalError();
@@ -365,8 +363,7 @@ gl::Error ContextVk::drawRangeElements(const gl::Context *context,
                                        GLuint end,
                                        GLsizei count,
                                        GLenum type,
-                                       const void *indices,
-                                       const gl::IndexRange &indexRange)
+                                       const void *indices)
 {
     return gl::NoError();
 }
@@ -533,9 +530,9 @@ FenceNVImpl *ContextVk::createFenceNV()
     return new FenceNVVk();
 }
 
-FenceSyncImpl *ContextVk::createFenceSync()
+SyncImpl *ContextVk::createSync()
 {
-    return new FenceSyncVk();
+    return new SyncVk();
 }
 
 TransformFeedbackImpl *ContextVk::createTransformFeedback(const gl::TransformFeedbackState &state)

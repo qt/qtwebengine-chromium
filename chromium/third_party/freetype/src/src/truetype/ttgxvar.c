@@ -2139,7 +2139,15 @@
         goto Exit;
 
       if ( fvar_head.instanceCount && !face->blend->avar_loaded )
+      {
+        FT_ULong  offset = FT_STREAM_POS();
+
+
         ft_var_load_avar( face );
+
+        if ( FT_STREAM_SEEK( offset ) )
+          goto Exit;
+      }
 
       ns  = mmvar->namedstyle;
       nsc = face->blend->normalized_stylecoords;
@@ -2157,8 +2165,11 @@
         for ( j = 0; j < fvar_head.axisCount; j++, c++ )
           *c = FT_GET_LONG();
 
+        /* valid psid values are 6, [256;32767], and 0xFFFF */
         if ( usePsName )
           ns->psid = FT_GET_USHORT();
+        else
+          ns->psid = 0xFFFF;
 
         ft_var_to_normalized( face,
                               fvar_head.axisCount,
@@ -2174,7 +2185,7 @@
         SFNT_Service  sfnt = (SFNT_Service)face->sfnt;
 
         FT_Int   found, dummy1, dummy2;
-        FT_UInt  strid = 0xFFFFFFFFUL;
+        FT_UInt  strid = ~0U;
 
 
         /* the default instance is missing in array the   */

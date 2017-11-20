@@ -24,7 +24,8 @@ sk_sp<GrTextureProxy> GrTextureProducer::CopyOnGpu(GrContext* context,
     const SkRect dstRect = SkRect::MakeIWH(copyParams.fWidth, copyParams.fHeight);
 
     sk_sp<GrRenderTargetContext> copyRTC = context->makeDeferredRenderTargetContextWithFallback(
-        SkBackingFit::kExact, dstRect.width(), dstRect.height(), inputProxy->config(), nullptr);
+        SkBackingFit::kExact, dstRect.width(), dstRect.height(), inputProxy->config(), nullptr,
+        0, inputProxy->origin());
     if (!copyRTC) {
         return nullptr;
     }
@@ -217,13 +218,13 @@ GrTextureProducer::DomainMode GrTextureProducer::DetermineDomainMode(
     return kDomain_DomainMode;
 }
 
-sk_sp<GrFragmentProcessor> GrTextureProducer::CreateFragmentProcessorForDomainAndFilter(
-                                        sk_sp<GrTextureProxy> proxy,
-                                        sk_sp<GrColorSpaceXform> colorSpaceXform,
-                                        const SkMatrix& textureMatrix,
-                                        DomainMode domainMode,
-                                        const SkRect& domain,
-                                        const GrSamplerParams::FilterMode* filterOrNullForBicubic) {
+std::unique_ptr<GrFragmentProcessor> GrTextureProducer::CreateFragmentProcessorForDomainAndFilter(
+        sk_sp<GrTextureProxy> proxy,
+        sk_sp<GrColorSpaceXform> colorSpaceXform,
+        const SkMatrix& textureMatrix,
+        DomainMode domainMode,
+        const SkRect& domain,
+        const GrSamplerParams::FilterMode* filterOrNullForBicubic) {
     SkASSERT(kTightCopy_DomainMode != domainMode);
     if (filterOrNullForBicubic) {
         if (kDomain_DomainMode == domainMode) {

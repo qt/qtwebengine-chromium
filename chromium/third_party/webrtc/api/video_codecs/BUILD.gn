@@ -15,13 +15,14 @@ if (is_android) {
 rtc_source_set("video_codecs_api") {
   sources = [
     "video_decoder.h",
+    "video_encoder.cc",
     "video_encoder.h",
   ]
 
   deps = [
     "..:video_frame_api",
     "../..:webrtc_common",
-    "../../base:rtc_base_approved",
     "../../common_video",
+    "../../rtc_base:rtc_base_approved",
   ]
 }

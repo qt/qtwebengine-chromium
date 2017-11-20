@@ -129,7 +129,6 @@ FlexfecReceiveStreamImpl::FlexfecReceiveStreamImpl(
     RtcpRttStats* rtt_stats,
     ProcessThread* process_thread)
     : config_(config),
-      started_(false),
       receiver_(MaybeCreateFlexfecReceiver(config_, recovered_packet_receiver)),
       rtp_receive_statistics_(
           ReceiveStatistics::Create(Clock::GetRealTimeClock())),
@@ -157,23 +156,14 @@ FlexfecReceiveStreamImpl::FlexfecReceiveStreamImpl(
   // problem too.
   rtp_stream_receiver_ =
       receiver_controller->CreateReceiver(config_.remote_ssrc, this);
-  for (uint32_t ssrc : config.protected_media_ssrcs)
-    receiver_controller->AddSink(ssrc, this);
 }
 
 FlexfecReceiveStreamImpl::~FlexfecReceiveStreamImpl() {
   LOG(LS_INFO) << "~FlexfecReceiveStreamImpl: " << config_.ToString();
-  Stop();
   process_thread_->DeRegisterModule(rtp_rtcp_.get());
 }
 
 void FlexfecReceiveStreamImpl::OnRtpPacket(const RtpPacketReceived& packet) {
-  {
-    rtc::CritScope cs(&crit_);
-    if (!started_)
-      return;
-  }
-
   if (!receiver_)
     return;
 
@@ -190,20 +180,15 @@ void FlexfecReceiveStreamImpl::OnRtpPacket(const RtpPacketReceived& packet) {
   }
 }
 
-void FlexfecReceiveStreamImpl::Start() {
-  rtc::CritScope cs(&crit_);
-  started_ = true;
-}
-
-void FlexfecReceiveStreamImpl::Stop() {
-  rtc::CritScope cs(&crit_);
-  started_ = false;
-}
-
 // TODO(brandtr): Implement this member function when we have designed the
 // stats for FlexFEC.
 FlexfecReceiveStreamImpl::Stats FlexfecReceiveStreamImpl::GetStats() const {
   return FlexfecReceiveStream::Stats();
+}
+
+const FlexfecReceiveStream::Config& FlexfecReceiveStreamImpl::GetConfig()
+    const {
+  return config_;
 }
 
 }  // namespace webrtc

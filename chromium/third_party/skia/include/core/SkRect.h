@@ -10,6 +10,7 @@
 
 #include "SkPoint.h"
 #include "SkSize.h"
+#include "../private/SkTFitsIn.h"
 
 struct SkRect;
 
@@ -116,8 +117,8 @@ struct SK_API SkIRect {
     }
 
     bool is16Bit() const {
-        return  SkIsS16(fLeft) && SkIsS16(fTop) &&
-                SkIsS16(fRight) && SkIsS16(fBottom);
+        return  SkTFitsIn<int16_t>(fLeft) && SkTFitsIn<int16_t>(fTop) &&
+                SkTFitsIn<int16_t>(fRight) && SkTFitsIn<int16_t>(fBottom);
     }
 
     /** Set the rectangle to (0,0,0,0)
@@ -456,7 +457,7 @@ struct SK_API SkRect {
     static SkRect Make(const SkISize& size) {
         return MakeIWH(size.width(), size.height());
     }
-    
+
     static SkRect SK_WARN_UNUSED_RESULT Make(const SkIRect& irect) {
         SkRect r;
         r.set(SkIntToScalar(irect.fLeft),
@@ -512,11 +513,11 @@ struct SK_API SkRect {
     SkScalar    centerY() const { return SkScalarHalf(fTop + fBottom); }
 
     friend bool operator==(const SkRect& a, const SkRect& b) {
-        return SkScalarsEqual((SkScalar*)&a, (SkScalar*)&b, 4);
+        return SkScalarsEqual((const SkScalar*)&a, (const SkScalar*)&b, 4);
     }
 
     friend bool operator!=(const SkRect& a, const SkRect& b) {
-        return !SkScalarsEqual((SkScalar*)&a, (SkScalar*)&b, 4);
+        return !SkScalarsEqual((const SkScalar*)&a, (const SkScalar*)&b, 4);
     }
 
     /** return the 4 points that enclose the rectangle (top-left, top-right, bottom-right,
@@ -633,7 +634,7 @@ struct SK_API SkRect {
     SkRect makeOffset(SkScalar dx, SkScalar dy) const {
         return MakeLTRB(fLeft + dx, fTop + dy, fRight + dx, fBottom + dy);
     }
-    
+
     /**
      *  Return a new Rect, built as an inset of this rect.
      */
@@ -789,11 +790,11 @@ public:
      *  contains(x,y) -> fLeft <= x < fRight && fTop <= y < fBottom. Also note
      *  that contains(x,y) always returns false if the rect is empty.
      */
-    void growToInclude(SkScalar x, SkScalar y) {
-        fLeft  = SkMinScalar(x, fLeft);
-        fRight = SkMaxScalar(x, fRight);
-        fTop    = SkMinScalar(y, fTop);
-        fBottom = SkMaxScalar(y, fBottom);
+    void growToInclude(SkPoint pt) {
+        fLeft  =  SkMinScalar(pt.fX, fLeft);
+        fRight =  SkMaxScalar(pt.fX, fRight);
+        fTop    = SkMinScalar(pt.fY, fTop);
+        fBottom = SkMaxScalar(pt.fY, fBottom);
     }
 
     /** Bulk version of growToInclude */
@@ -807,7 +808,7 @@ public:
         SkASSERT(stride >= sizeof(SkPoint));
         const SkPoint* end = (const SkPoint*)((intptr_t)pts + count * stride);
         for (; pts < end; pts = (const SkPoint*)((intptr_t)pts + stride)) {
-            this->growToInclude(pts->fX, pts->fY);
+            this->growToInclude(*pts);
         }
     }
 
@@ -883,14 +884,14 @@ public:
         this->round(&ir);
         return ir;
     }
-    
+
     //! Returns the result of calling roundOut(&dst)
     SkIRect roundOut() const {
         SkIRect ir;
         this->roundOut(&ir);
         return ir;
     }
-    
+
     /**
      *  Swap top/bottom or left/right if there are flipped (i.e. if width()
      *  or height() would have returned a negative value.) This should be called

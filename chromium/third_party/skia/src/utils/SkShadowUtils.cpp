@@ -10,7 +10,7 @@
 #include "SkColorFilter.h"
 #include "SkColorPriv.h"
 #include "SkDevice.h"
-#include "SkDrawShadowRec.h"
+#include "SkDrawShadowInfo.h"
 #include "SkPath.h"
 #include "SkPM4f.h"
 #include "SkRandom.h"
@@ -38,7 +38,8 @@ public:
     }
 
 #if SK_SUPPORT_GPU
-    sk_sp<GrFragmentProcessor> asFragmentProcessor(GrContext*, SkColorSpace*) const override;
+    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(GrContext*,
+                                                             SkColorSpace*) const override;
 #endif
 
     SK_TO_STRING_OVERRIDE()
@@ -68,8 +69,8 @@ void SkGaussianColorFilter::toString(SkString* str) const {
 
 #if SK_SUPPORT_GPU
 
-sk_sp<GrFragmentProcessor> SkGaussianColorFilter::asFragmentProcessor(GrContext*,
-                                                                      SkColorSpace*) const {
+std::unique_ptr<GrFragmentProcessor> SkGaussianColorFilter::asFragmentProcessor(
+        GrContext*, SkColorSpace*) const {
     return GrBlurredEdgeFragmentProcessor::Make(GrBlurredEdgeFragmentProcessor::kGaussian_Mode);
 }
 #endif
@@ -150,7 +151,7 @@ struct SpotVerticesFactory {
                 }
                 return false;
         }
-        SkFAIL("Uninitialized occluder type?");
+        SK_ABORT("Uninitialized occluder type?");
         return false;
     }
 
@@ -368,7 +369,7 @@ public:
     bool isRRect(SkRRect* rrect) { return fShapeForKey.asRRect(rrect, nullptr, nullptr, nullptr); }
 #else
     int keyBytes() const { return -1; }
-    void writeKey(void* key) const { SkFAIL("Should never be called"); }
+    void writeKey(void* key) const { SK_ABORT("Should never be called"); }
     bool isRRect(SkRRect* rrect) { return false; }
 #endif
 

@@ -652,21 +652,12 @@ void Texture2D::setImage(egl::Context *context, GLint level, GLsizei width, GLsi
 
 void Texture2D::bindTexImage(gl::Surface *surface)
 {
-	GLenum format;
-
 	switch(surface->getInternalFormat())
 	{
 	case sw::FORMAT_A8R8G8B8:
-	case sw::FORMAT_SRGB8_A8:
-		format = GL_BGRA_EXT;
-		break;
 	case sw::FORMAT_A8B8G8R8:
-		format = GL_RGBA;
-		break;
 	case sw::FORMAT_X8B8G8R8:
 	case sw::FORMAT_X8R8G8B8:
-	case sw::FORMAT_SRGB8_X8:
-		format = GL_RGB;
 		break;
 	default:
 		UNIMPLEMENTED();
@@ -1975,7 +1966,7 @@ GLenum TextureExternal::getTarget() const
 
 }
 
-egl::Image *createBackBuffer(int width, int height, sw::Format format, int multiSampleDepth)
+NO_SANITIZE_FUNCTION egl::Image *createBackBuffer(int width, int height, sw::Format format, int multiSampleDepth)
 {
 	if(width > es2::IMPLEMENTATION_MAX_RENDERBUFFER_SIZE || height > es2::IMPLEMENTATION_MAX_RENDERBUFFER_SIZE)
 	{
@@ -1986,7 +1977,7 @@ egl::Image *createBackBuffer(int width, int height, sw::Format format, int multi
 	return egl::Image::create(width, height, format, multiSampleDepth, false);
 }
 
-egl::Image *createDepthStencil(int width, int height, sw::Format format, int multiSampleDepth)
+NO_SANITIZE_FUNCTION egl::Image *createDepthStencil(int width, int height, sw::Format format, int multiSampleDepth)
 {
 	if(width > es2::IMPLEMENTATION_MAX_RENDERBUFFER_SIZE || height > es2::IMPLEMENTATION_MAX_RENDERBUFFER_SIZE)
 	{

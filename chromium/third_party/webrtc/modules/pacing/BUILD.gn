@@ -18,6 +18,7 @@ rtc_static_library("pacing") {
     "interval_budget.h",
     "paced_sender.cc",
     "paced_sender.h",
+    "pacer.h",
     "packet_router.cc",
     "packet_router.h",
   ]
@@ -30,8 +31,8 @@ rtc_static_library("pacing") {
   deps = [
     "..:module_api",
     "../../:webrtc_common",
-    "../../base:rtc_base_approved",
     "../../logging:rtc_event_log_api",
+    "../../rtc_base:rtc_base_approved",
     "../../system_wrappers",
     "../remote_bitrate_estimator",
     "../rtp_rtcp",
@@ -58,8 +59,8 @@ if (rtc_include_tests) {
     ]
     deps = [
       ":pacing",
-      "../../base:rtc_base_approved",
-      "../../base:rtc_base_tests_utils",
+      "../../rtc_base:rtc_base_approved",
+      "../../rtc_base:rtc_base_tests_utils",
       "../../system_wrappers:system_wrappers",
       "../../test:test_support",
       "../rtp_rtcp",

@@ -39,10 +39,8 @@ bool IFX_RenderDeviceDriver::FillRectWithBlend(const FX_RECT* pRect,
   return false;
 }
 
-bool IFX_RenderDeviceDriver::DrawCosmeticLine(float x1,
-                                              float y1,
-                                              float x2,
-                                              float y2,
+bool IFX_RenderDeviceDriver::DrawCosmeticLine(const CFX_PointF& ptMoveTo,
+                                              const CFX_PointF& ptLineTo,
                                               uint32_t color,
                                               int blend_type) {
   return false;
@@ -60,7 +58,7 @@ CFX_RetainPtr<CFX_DIBitmap> IFX_RenderDeviceDriver::GetBackDrop() {
 }
 
 bool IFX_RenderDeviceDriver::ContinueDIBits(CFX_ImageRenderer* handle,
-                                            IFX_Pause* pPause) {
+                                            IFX_PauseIndicator* pPause) {
   return false;
 }
 

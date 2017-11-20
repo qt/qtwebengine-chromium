@@ -18,7 +18,6 @@ skia_effects_sources = [
   "$_src/effects/Sk1DPathEffect.cpp",
   "$_src/effects/Sk2DPathEffect.cpp",
   "$_src/effects/SkAlphaThresholdFilter.cpp",
-  "$_src/effects/SkArcToPathEffect.cpp",
   "$_src/effects/SkArithmeticImageFilter.cpp",
   "$_src/effects/SkBlurMask.cpp",
   "$_src/effects/SkBlurMask.h",
@@ -47,7 +46,6 @@ skia_effects_sources = [
   "$_src/effects/SkMorphologyImageFilter.cpp",
   "$_src/effects/SkOffsetImageFilter.cpp",
   "$_src/effects/SkOverdrawColorFilter.cpp",
-  "$_src/effects/SkOverdrawColorFilter.h",
   "$_src/effects/SkPackBits.cpp",
   "$_src/effects/SkPackBits.h",
   "$_src/effects/SkPaintFlagsDrawFilter.cpp",
@@ -57,6 +55,7 @@ skia_effects_sources = [
   "$_src/effects/SkTableColorFilter.cpp",
   "$_src/effects/SkTableMaskFilter.cpp",
   "$_src/effects/SkTileImageFilter.cpp",
+  "$_src/effects/SkToSRGBColorFilter.cpp",
   "$_src/effects/SkXfermodeImageFilter.cpp",
 
   "$_src/shaders/SkPerlinNoiseShader.cpp",
@@ -106,6 +105,7 @@ skia_effects_sources = [
   "$_include/effects/SkMagnifierImageFilter.h",
   "$_include/effects/SkMorphologyImageFilter.h",
   "$_include/effects/SkOffsetImageFilter.h",
+  "$_include/effects/SkOverdrawColorFilter.h",
   "$_include/effects/SkPaintFlagsDrawFilter.h",
   "$_include/effects/SkPaintImageFilter.h",
   "$_include/effects/SkPerlinNoiseShader.h",
@@ -113,5 +113,6 @@ skia_effects_sources = [
   "$_include/effects/SkTableColorFilter.h",
   "$_include/effects/SkTableMaskFilter.h",
   "$_include/effects/SkTileImageFilter.h",
+  "$_include/effects/SkToSRGBColorFilter.h",
   "$_include/effects/SkXfermodeImageFilter.h",
 ]

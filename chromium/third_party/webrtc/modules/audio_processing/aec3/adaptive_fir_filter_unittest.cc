@@ -305,7 +305,7 @@ TEST(AdaptiveFirFilter, FilterAndAdapt) {
   std::vector<std::vector<float>> x(3, std::vector<float>(kBlockSize, 0.f));
   std::vector<float> n(kBlockSize, 0.f);
   std::vector<float> y(kBlockSize, 0.f);
-  AecState aec_state(0.f);
+  AecState aec_state(AudioProcessing::Config::EchoCanceller3{});
   RenderSignalAnalyzer render_signal_analyzer;
   std::vector<float> e(kBlockSize, 0.f);
   std::array<float, kFftLength> s_scratch;
@@ -337,10 +337,10 @@ TEST(AdaptiveFirFilter, FilterAndAdapt) {
       delay_buffer.Delay(x[0], y);
 
       RandomizeSampleVector(&random_generator, n);
-      constexpr float kNoiseScaling = 1.f / 100.f;
+      static constexpr float kNoiseScaling = 1.f / 100.f;
       std::transform(
           y.begin(), y.end(), n.begin(), y.begin(),
-          [kNoiseScaling](float a, float b) { return a + b * kNoiseScaling; });
+          [](float a, float b) { return a + b * kNoiseScaling; });
 
       x_hp_filter.Process(x[0]);
       y_hp_filter.Process(y);

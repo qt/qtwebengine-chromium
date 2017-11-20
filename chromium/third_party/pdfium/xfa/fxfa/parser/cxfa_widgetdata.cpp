@@ -10,7 +10,7 @@
 #include "core/fxcrt/fx_extension.h"
 #include "fxbarcode/BC_Library.h"
 #include "third_party/base/stl_util.h"
-#include "xfa/fxfa/app/cxfa_ffnotify.h"
+#include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_event.h"
 #include "xfa/fxfa/parser/cxfa_localevalue.h"
@@ -42,19 +42,18 @@ bool SplitDateTime(const CFX_WideString& wsDateTime,
   if (wsDateTime.IsEmpty())
     return false;
 
-  int nSplitIndex = -1;
-  nSplitIndex = wsDateTime.Find('T');
-  if (nSplitIndex < 0)
+  auto nSplitIndex = wsDateTime.Find('T');
+  if (!nSplitIndex.has_value())
     nSplitIndex = wsDateTime.Find(' ');
-  if (nSplitIndex < 0)
+  if (!nSplitIndex.has_value())
     return false;
 
-  wsDate = wsDateTime.Left(nSplitIndex);
+  wsDate = wsDateTime.Left(nSplitIndex.value());
   if (!wsDate.IsEmpty()) {
     if (!std::any_of(wsDate.begin(), wsDate.end(), std::iswdigit))
       return false;
   }
-  wsTime = wsDateTime.Right(wsDateTime.GetLength() - nSplitIndex - 1);
+  wsTime = wsDateTime.Right(wsDateTime.GetLength() - nSplitIndex.value() - 1);
   if (!wsTime.IsEmpty()) {
     if (!std::any_of(wsTime.begin(), wsTime.end(), std::iswdigit))
       return false;
@@ -848,17 +847,17 @@ std::vector<CFX_WideString> CXFA_WidgetData::GetSelectedItemsValue() {
   CFX_WideString wsValue = GetRawValue();
   if (GetChoiceListOpen() == XFA_ATTRIBUTEENUM_MultiSelect) {
     if (!wsValue.IsEmpty()) {
-      int32_t iStart = 0;
-      int32_t iLength = wsValue.GetLength();
-      int32_t iEnd = wsValue.Find(L'\n', iStart);
-      iEnd = (iEnd == -1) ? iLength : iEnd;
+      FX_STRSIZE iStart = 0;
+      FX_STRSIZE iLength = wsValue.GetLength();
+      auto iEnd = wsValue.Find(L'\n', iStart);
+      iEnd = (!iEnd.has_value()) ? iLength : iEnd;
       while (iEnd >= iStart) {
-        wsSelTextArray.push_back(wsValue.Mid(iStart, iEnd - iStart));
-        iStart = iEnd + 1;
+        wsSelTextArray.push_back(wsValue.Mid(iStart, iEnd.value() - iStart));
+        iStart = iEnd.value() + 1;
         if (iStart >= iLength)
           break;
         iEnd = wsValue.Find(L'\n', iStart);
-        if (iEnd < 0)
+        if (!iEnd.has_value())
           wsSelTextArray.push_back(wsValue.Mid(iStart, iLength - iStart));
       }
     }
@@ -1216,7 +1215,7 @@ bool CXFA_WidgetData::GetBarcodeAttribute_StartChar(char* val) {
   CFX_WideStringC wsStartEndChar;
   if (pUIChild->TryCData(XFA_ATTRIBUTE_StartChar, wsStartEndChar)) {
     if (wsStartEndChar.GetLength()) {
-      *val = static_cast<char>(wsStartEndChar.GetAt(0));
+      *val = static_cast<char>(wsStartEndChar[0]);
       return true;
     }
   }
@@ -1228,7 +1227,7 @@ bool CXFA_WidgetData::GetBarcodeAttribute_EndChar(char* val) {
   CFX_WideStringC wsStartEndChar;
   if (pUIChild->TryCData(XFA_ATTRIBUTE_EndChar, wsStartEndChar)) {
     if (wsStartEndChar.GetLength()) {
-      *val = static_cast<char>(wsStartEndChar.GetAt(0));
+      *val = static_cast<char>(wsStartEndChar[0]);
       return true;
     }
   }
@@ -1316,14 +1315,17 @@ bool CXFA_WidgetData::GetBarcodeAttribute_WideNarrowRatio(float* val) {
   CXFA_Node* pUIChild = GetUIChild();
   CFX_WideString wsWideNarrowRatio;
   if (pUIChild->TryCData(XFA_ATTRIBUTE_WideNarrowRatio, wsWideNarrowRatio)) {
-    FX_STRSIZE ptPos = wsWideNarrowRatio.Find(':');
+    auto ptPos = wsWideNarrowRatio.Find(':');
     float fRatio = 0;
-    if (ptPos >= 0) {
+    if (!ptPos.has_value()) {
       fRatio = (float)FXSYS_wtoi(wsWideNarrowRatio.c_str());
     } else {
       int32_t fA, fB;
-      fA = FXSYS_wtoi(wsWideNarrowRatio.Left(ptPos).c_str());
-      fB = FXSYS_wtoi(wsWideNarrowRatio.Mid(ptPos + 1).c_str());
+      fA = FXSYS_wtoi(wsWideNarrowRatio.Left(ptPos.value()).c_str());
+      fB = FXSYS_wtoi(
+          wsWideNarrowRatio
+              .Right(wsWideNarrowRatio.GetLength() - (ptPos.value() + 1))
+              .c_str());
       if (fB)
         fRatio = (float)fA / fB;
     }
@@ -1741,15 +1743,14 @@ void CXFA_WidgetData::NormalizeNumStr(const CFX_WideString& wsValue,
 
   wsOutput = wsValue;
   wsOutput.TrimLeft('0');
-  int32_t dot_index = wsOutput.Find('.');
   int32_t iFracDigits = 0;
-  if (!wsOutput.IsEmpty() && dot_index >= 0 &&
+  if (!wsOutput.IsEmpty() && wsOutput.Contains('.') &&
       (!GetFracDigits(iFracDigits) || iFracDigits != -1)) {
     wsOutput.TrimRight(L"0");
     wsOutput.TrimRight(L".");
   }
   if (wsOutput.IsEmpty() || wsOutput[0] == '.')
-    wsOutput.Insert(0, '0');
+    wsOutput.InsertAtFront('0');
 }
 
 void CXFA_WidgetData::FormatNumStr(const CFX_WideString& wsValue,
@@ -1766,24 +1767,22 @@ void CXFA_WidgetData::FormatNumStr(const CFX_WideString& wsValue,
     bNeg = true;
     wsSrcNum.Delete(0, 1);
   }
-  int32_t len = wsSrcNum.GetLength();
-  int32_t dot_index = wsSrcNum.Find('.');
-  if (dot_index == -1)
-    dot_index = len;
+  FX_STRSIZE len = wsSrcNum.GetLength();
+  auto dot_index = wsSrcNum.Find('.');
+  dot_index = !dot_index.has_value() ? len : dot_index;
 
-  int32_t cc = dot_index - 1;
-  if (cc >= 0) {
-    int nPos = dot_index % 3;
+  if (dot_index.value() >= 1) {
+    int nPos = dot_index.value() % 3;
     wsOutput.clear();
-    for (int32_t i = 0; i < dot_index; i++) {
+    for (FX_STRSIZE i = 0; i < dot_index.value(); i++) {
       if (i % 3 == nPos && i != 0)
         wsOutput += wsGroupSymbol;
 
       wsOutput += wsSrcNum[i];
     }
-    if (dot_index < len) {
+    if (dot_index.value() < len) {
       wsOutput += pLocale->GetNumbericSymbol(FX_LOCALENUMSYMBOL_Decimal);
-      wsOutput += wsSrcNum.Right(len - dot_index - 1);
+      wsOutput += wsSrcNum.Right(len - dot_index.value() - 1);
     }
     if (bNeg) {
       wsOutput =

@@ -18,7 +18,7 @@ rtc_static_library("audio_encoder_opus_config") {
     "audio_encoder_opus_config.h",
   ]
   deps = [
-    "../../../base:rtc_base_approved",
+    "../../../rtc_base:rtc_base_approved",
   ]
   defines = []
   if (rtc_opus_variable_complexity) {
@@ -35,9 +35,12 @@ rtc_source_set("audio_encoder_opus") {
   deps = [
     ":audio_encoder_opus_config",
     "..:audio_codecs_api",
-    "../../../base:protobuf_utils",  # TODO(kwiberg): Why is this needed?
-    "../../../base:rtc_base_approved",
     "../../../modules/audio_coding:webrtc_opus",
+    "../../../rtc_base:rtc_base_approved",
+  ]
+  public_deps = [
+    # TODO(kwiberg): Remove this public_dep when bug 7847 has been fixed.
+    "../../../rtc_base:protobuf_utils",
   ]
 }
 
@@ -49,7 +52,7 @@ rtc_static_library("audio_decoder_opus") {
   deps = [
     "..:audio_codecs_api",
     "../../..:webrtc_common",
-    "../../../base:rtc_base_approved",
     "../../../modules/audio_coding:webrtc_opus",
+    "../../../rtc_base:rtc_base_approved",
   ]
 }

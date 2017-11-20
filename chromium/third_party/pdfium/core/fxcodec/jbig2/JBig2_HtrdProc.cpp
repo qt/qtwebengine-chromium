@@ -12,13 +12,12 @@
 #include "core/fxcodec/jbig2/JBig2_BitStream.h"
 #include "core/fxcodec/jbig2/JBig2_GrdProc.h"
 #include "core/fxcodec/jbig2/JBig2_Image.h"
-#include "core/fxcrt/fx_basic.h"
 #include "third_party/base/ptr_util.h"
 
 std::unique_ptr<CJBig2_Image> CJBig2_HTRDProc::decode_Arith(
     CJBig2_ArithDecoder* pArithDecoder,
     JBig2ArithCtx* gbContext,
-    IFX_Pause* pPause) {
+    IFX_PauseIndicator* pPause) {
   std::unique_ptr<CJBig2_Image> HSKIP;
   if (HENABLESKIP == 1) {
     HSKIP = pdfium::MakeUnique<CJBig2_Image>(HGW, HGH);

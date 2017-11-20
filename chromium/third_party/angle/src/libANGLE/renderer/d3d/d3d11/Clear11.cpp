@@ -21,11 +21,35 @@
 
 // Precompiled shaders
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11_fl9vs.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11multiviewgs.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11multiviewvs.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clear11vs.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/cleardepth11ps.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11_fl9ps.h"
-#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps.h"
-#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps.h"
-#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps1.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps2.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps3.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps4.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps5.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps6.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps7.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearfloat11ps8.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps1.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps2.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps3.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps4.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps5.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps6.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps7.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearsint11ps8.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps1.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps2.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps3.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps4.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps5.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps6.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps7.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/clearuint11ps8.h"
 
 namespace rx
 {
@@ -79,18 +103,43 @@ bool UpdateDataCache(RtvDsvClearInfo<T> *dataCache,
 
     return cacheDirty;
 }
+
+bool AllOffsetsAreNonNegative(const std::vector<gl::Offset> &viewportOffsets)
+{
+    for (size_t i = 0u; i < viewportOffsets.size(); ++i)
+    {
+        const auto &offset = viewportOffsets[i];
+        if (offset.x < 0 || offset.y < 0)
+        {
+            return false;
+        }
+    }
+    return true;
+}
 }  // anonymous namespace
+
+#define CLEARPS(Index)                                                                    \
+    d3d11::LazyShader<ID3D11PixelShader>(g_PS_Clear##Index, ArraySize(g_PS_Clear##Index), \
+                                         "Clear11 PS " ANGLE_STRINGIFY(Index))
 
 Clear11::ShaderManager::ShaderManager()
     : mIl9(),
       mVs9(g_VS_Clear_FL9, ArraySize(g_VS_Clear_FL9), "Clear11 VS FL9"),
       mPsFloat9(g_PS_ClearFloat_FL9, ArraySize(g_PS_ClearFloat_FL9), "Clear11 PS FloatFL9"),
       mVs(g_VS_Clear, ArraySize(g_VS_Clear), "Clear11 VS"),
-      mPsFloat(g_PS_ClearFloat, ArraySize(g_PS_ClearFloat), "Clear11 PS Float"),
-      mPsUInt(g_PS_ClearUint, ArraySize(g_PS_ClearUint), "Clear11 PS UINT"),
-      mPsSInt(g_PS_ClearSint, ArraySize(g_PS_ClearSint), "Clear11 PS SINT")
+      mVsMultiview(g_VS_Multiview_Clear, ArraySize(g_VS_Multiview_Clear), "Clear11 VS Multiview"),
+      mGsMultiview(g_GS_Multiview_Clear, ArraySize(g_GS_Multiview_Clear), "Clear11 GS Multiview"),
+      mPsDepth(g_PS_ClearDepth, ArraySize(g_PS_ClearDepth), "Clear11 PS Depth"),
+      mPsFloat{{CLEARPS(Float1), CLEARPS(Float2), CLEARPS(Float3), CLEARPS(Float4), CLEARPS(Float5),
+                CLEARPS(Float6), CLEARPS(Float7), CLEARPS(Float8)}},
+      mPsUInt{{CLEARPS(Uint1), CLEARPS(Uint2), CLEARPS(Uint3), CLEARPS(Uint4), CLEARPS(Uint5),
+               CLEARPS(Uint6), CLEARPS(Uint7), CLEARPS(Uint8)}},
+      mPsSInt{{CLEARPS(Sint1), CLEARPS(Sint2), CLEARPS(Sint3), CLEARPS(Sint4), CLEARPS(Sint5),
+               CLEARPS(Sint6), CLEARPS(Sint7), CLEARPS(Sint8)}}
 {
 }
+
+#undef CLEARPS
 
 Clear11::ShaderManager::~ShaderManager()
 {
@@ -98,8 +147,11 @@ Clear11::ShaderManager::~ShaderManager()
 
 gl::Error Clear11::ShaderManager::getShadersAndLayout(Renderer11 *renderer,
                                                       const INT clearType,
+                                                      const uint32_t numRTs,
+                                                      const bool hasLayeredLayout,
                                                       const d3d11::InputLayout **il,
                                                       const d3d11::VertexShader **vs,
+                                                      const d3d11::GeometryShader **gs,
                                                       const d3d11::PixelShader **ps)
 {
     if (renderer->getRenderer11DeviceCaps().featureLevel <= D3D_FEATURE_LEVEL_9_3)
@@ -121,28 +173,48 @@ gl::Error Clear11::ShaderManager::getShadersAndLayout(Renderer11 *renderer,
         }
 
         *vs = &mVs9.getObj();
+        *gs = nullptr;
         *il = &mIl9;
         *ps = &mPsFloat9.getObj();
         return gl::NoError();
     }
+    if (!hasLayeredLayout)
+    {
+        ANGLE_TRY(mVs.resolve(renderer));
+        *vs = &mVs.getObj();
+        *gs = nullptr;
+    }
+    else
+    {
+        // For layered framebuffers we have to use the multi-view versions of the VS and GS.
+        ANGLE_TRY(mVsMultiview.resolve(renderer));
+        ANGLE_TRY(mGsMultiview.resolve(renderer));
+        *vs = &mVsMultiview.getObj();
+        *gs = &mGsMultiview.getObj();
+    }
 
-    ANGLE_TRY(mVs.resolve(renderer));
-    *vs = &mVs.getObj();
     *il = nullptr;
+
+    if (numRTs == 0)
+    {
+        ANGLE_TRY(mPsDepth.resolve(renderer));
+        *ps = &mPsDepth.getObj();
+        return gl::NoError();
+    }
 
     switch (clearType)
     {
         case GL_FLOAT:
-            ANGLE_TRY(mPsFloat.resolve(renderer));
-            *ps = &mPsFloat.getObj();
+            ANGLE_TRY(mPsFloat[numRTs - 1].resolve(renderer));
+            *ps = &mPsFloat[numRTs - 1].getObj();
             break;
         case GL_UNSIGNED_INT:
-            ANGLE_TRY(mPsUInt.resolve(renderer));
-            *ps = &mPsUInt.getObj();
+            ANGLE_TRY(mPsUInt[numRTs - 1].resolve(renderer));
+            *ps = &mPsUInt[numRTs - 1].getObj();
             break;
         case GL_INT:
-            ANGLE_TRY(mPsSInt.resolve(renderer));
-            *ps = &mPsSInt.getObj();
+            ANGLE_TRY(mPsSInt[numRTs - 1].resolve(renderer));
+            *ps = &mPsSInt[numRTs - 1].getObj();
             break;
         default:
             UNREACHABLE();
@@ -364,24 +436,66 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
         framebufferSize = colorAttachment->getSize();
     }
 
+    const bool isSideBySideFBO =
+        (fboData.getMultiviewLayout() == GL_FRAMEBUFFER_MULTIVIEW_SIDE_BY_SIDE_ANGLE);
     bool needScissoredClear = false;
-
+    std::vector<D3D11_RECT> scissorRects;
     if (clearParams.scissorEnabled)
     {
+        const std::vector<gl::Offset> *viewportOffsets = fboData.getViewportOffsets();
+        ASSERT(viewportOffsets != nullptr);
+        ASSERT(AllOffsetsAreNonNegative(*fboData.getViewportOffsets()));
+
         if (clearParams.scissor.x >= framebufferSize.width ||
-            clearParams.scissor.y >= framebufferSize.height ||
-            clearParams.scissor.x + clearParams.scissor.width <= 0 ||
-            clearParams.scissor.y + clearParams.scissor.height <= 0 ||
-            clearParams.scissor.width == 0 || clearParams.scissor.height == 0)
+            clearParams.scissor.y >= framebufferSize.height || clearParams.scissor.width == 0 ||
+            clearParams.scissor.height == 0)
         {
-            // Scissor rect is outside the renderbuffer or is an empty rect
+            // The check assumes that the viewport offsets are not negative as according to the
+            // ANGLE_multiview spec.
+            // Scissor rect is outside the renderbuffer or is an empty rect.
             return gl::NoError();
         }
 
-        needScissoredClear =
-            clearParams.scissor.x > 0 || clearParams.scissor.y > 0 ||
-            clearParams.scissor.x + clearParams.scissor.width < framebufferSize.width ||
-            clearParams.scissor.y + clearParams.scissor.height < framebufferSize.height;
+        if (isSideBySideFBO)
+        {
+            // We always have to do a scissor clear for side-by-side framebuffers.
+            needScissoredClear = true;
+        }
+        else
+        {
+            // Because the viewport offsets can generate scissor rectangles within the framebuffer's
+            // bounds, we can do this check only for non-side-by-side framebuffers.
+            if (clearParams.scissor.x + clearParams.scissor.width <= 0 ||
+                clearParams.scissor.y + clearParams.scissor.height <= 0)
+            {
+                // Scissor rect is outside the renderbuffer.
+                return gl::NoError();
+            }
+            needScissoredClear =
+                clearParams.scissor.x > 0 || clearParams.scissor.y > 0 ||
+                clearParams.scissor.x + clearParams.scissor.width < framebufferSize.width ||
+                clearParams.scissor.y + clearParams.scissor.height < framebufferSize.height;
+        }
+
+        if (needScissoredClear)
+        {
+            // Apply viewport offsets to compute the final scissor rectangles. This is valid also
+            // for non-side-by-side framebuffers, because the default viewport offset is {0,0}.
+            const size_t numViews = viewportOffsets->size();
+            scissorRects.reserve(numViews);
+            for (size_t i = 0u; i < numViews; ++i)
+            {
+                const gl::Offset &offset = (*viewportOffsets)[i];
+                D3D11_RECT rect;
+                int x       = clearParams.scissor.x + offset.x;
+                int y       = clearParams.scissor.y + offset.y;
+                rect.left   = x;
+                rect.right  = x + clearParams.scissor.width;
+                rect.top    = y;
+                rect.bottom = y + clearParams.scissor.height;
+                scissorRects.emplace_back(rect);
+            }
+        }
     }
 
     ID3D11DeviceContext *deviceContext   = mRenderer->getDeviceContext();
@@ -479,19 +593,17 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
             {
                 // We shouldn't reach here if deviceContext1 is unavailable.
                 ASSERT(deviceContext1);
-
-                D3D11_RECT rect;
-                rect.left   = clearParams.scissor.x;
-                rect.right  = clearParams.scissor.x + clearParams.scissor.width;
-                rect.top    = clearParams.scissor.y;
-                rect.bottom = clearParams.scissor.y + clearParams.scissor.height;
-
-                deviceContext1->ClearView(framebufferRTV.get(), clearValues, &rect, 1);
+                // There must be at least one scissor rectangle.
+                ASSERT(!scissorRects.empty());
+                deviceContext1->ClearView(framebufferRTV.get(), clearValues, scissorRects.data(),
+                                          static_cast<UINT>(scissorRects.size()));
                 if (mRenderer->getWorkarounds().callClearTwiceOnSmallTarget)
                 {
                     if (clearParams.scissor.width <= 16 || clearParams.scissor.height <= 16)
                     {
-                        deviceContext1->ClearView(framebufferRTV.get(), clearValues, &rect, 1);
+                        deviceContext1->ClearView(framebufferRTV.get(), clearValues,
+                                                  scissorRects.data(),
+                                                  static_cast<UINT>(scissorRects.size()));
                     }
                 }
             }
@@ -649,7 +761,7 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
         deviceContext->Unmap(mConstantBuffer.get(), 0);
     }
 
-    // Set the viewport to be the same size as the framebuffer
+    // Set the viewport to be the same size as the framebuffer.
     D3D11_VIEWPORT viewport;
     viewport.TopLeftX = 0;
     viewport.TopLeftY = 0;
@@ -667,9 +779,6 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
 
     if (needScissoredClear)
     {
-        const D3D11_RECT scissorRect = {clearParams.scissor.x, clearParams.scissor.y,
-                                        clearParams.scissor.x1(), clearParams.scissor.y1()};
-        deviceContext->RSSetScissorRects(1, &scissorRect);
         deviceContext->RSSetState(mScissorEnabledRasterizerState.get());
     }
     else
@@ -681,13 +790,16 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
 
     // Get Shaders
     const d3d11::VertexShader *vs = nullptr;
+    const d3d11::GeometryShader *gs = nullptr;
     const d3d11::InputLayout *il  = nullptr;
     const d3d11::PixelShader *ps  = nullptr;
-
-    ANGLE_TRY(mShaderManager.getShadersAndLayout(mRenderer, clearParams.colorType, &il, &vs, &ps));
+    const bool hasLayeredLayout =
+        (fboData.getMultiviewLayout() == GL_FRAMEBUFFER_MULTIVIEW_LAYERED_ANGLE);
+    ANGLE_TRY(mShaderManager.getShadersAndLayout(mRenderer, clearParams.colorType, numRtvs,
+                                                 hasLayeredLayout, &il, &vs, &gs, &ps));
 
     // Apply Shaders
-    stateManager->setDrawShaders(vs, nullptr, ps);
+    stateManager->setDrawShaders(vs, gs, ps);
     ID3D11Buffer *constantBuffer = mConstantBuffer.get();
     deviceContext->PSSetConstantBuffers(0, 1, &constantBuffer);
 
@@ -710,8 +822,27 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
     // Apply render targets
     stateManager->setOneTimeRenderTargets(context, &rtvs[0], numRtvs, dsv);
 
-    // Draw the fullscreen quad
-    deviceContext->Draw(6, 0);
+    // If scissors are necessary to be applied, then the number of clears is the number of scissor
+    // rects. If no scissors are necessary, then a single full-size clear is enough.
+    size_t necessaryNumClears = needScissoredClear ? scissorRects.size() : 1u;
+    for (size_t i = 0u; i < necessaryNumClears; ++i)
+    {
+        if (needScissoredClear)
+        {
+            ASSERT(i < scissorRects.size());
+            deviceContext->RSSetScissorRects(1, &scissorRects[i]);
+        }
+        // Draw the fullscreen quad.
+        if (!hasLayeredLayout || isSideBySideFBO)
+        {
+            deviceContext->Draw(6, 0);
+        }
+        else
+        {
+            ASSERT(hasLayeredLayout);
+            deviceContext->DrawInstanced(6, static_cast<UINT>(fboData.getNumViews()), 0, 0);
+        }
+    }
 
     // Clean up
     mRenderer->markAllStateDirty(context);

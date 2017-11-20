@@ -188,15 +188,16 @@ const char *SSL_state_string_long(const SSL *ssl) {
     case SSL3_ST_SR_KEY_EXCH_A:
       return "SSLv3 read client key exchange A";
 
-    case SSL3_ST_SR_KEY_EXCH_B:
-      return "SSLv3 read client key exchange B";
-
     case SSL3_ST_SR_CERT_VRFY_A:
       return "SSLv3 read certificate verify A";
 
     /* DTLS */
     case DTLS1_ST_CR_HELLO_VERIFY_REQUEST_A:
       return "DTLS1 read hello verify request A";
+
+    case SSL_ST_TLS13:
+      return ssl->server ? tls13_server_handshake_state(ssl->s3->hs)
+                         : tls13_client_handshake_state(ssl->s3->hs);
 
     default:
       return "unknown state";

@@ -37,6 +37,9 @@ extern struct backend backend_marvell;
 extern struct backend backend_mediatek;
 #endif
 extern struct backend backend_nouveau;
+#ifdef DRV_RADEON
+extern struct backend backend_radeon;
+#endif
 #ifdef DRV_ROCKCHIP
 extern struct backend backend_rockchip;
 #endif
@@ -79,6 +82,9 @@ static struct backend *drv_get_backend(int fd)
 		&backend_mediatek,
 #endif
 		&backend_nouveau,
+#ifdef DRV_RADEON
+		&backend_radeon,
+#endif
 #ifdef DRV_ROCKCHIP
 		&backend_rockchip,
 #endif
@@ -205,7 +211,8 @@ struct combination *drv_get_combination(struct driver *drv, uint32_t format, uin
 	return best;
 }
 
-struct bo *drv_bo_new(struct driver *drv, uint32_t width, uint32_t height, uint32_t format)
+struct bo *drv_bo_new(struct driver *drv, uint32_t width, uint32_t height, uint32_t format,
+		      uint64_t flags)
 {
 
 	struct bo *bo;
@@ -218,6 +225,7 @@ struct bo *drv_bo_new(struct driver *drv, uint32_t width, uint32_t height, uint3
 	bo->width = width;
 	bo->height = height;
 	bo->format = format;
+	bo->flags = flags;
 	bo->num_planes = drv_num_planes_from_format(format);
 
 	if (!bo->num_planes) {
@@ -235,7 +243,7 @@ struct bo *drv_bo_create(struct driver *drv, uint32_t width, uint32_t height, ui
 	size_t plane;
 	struct bo *bo;
 
-	bo = drv_bo_new(drv, width, height, format);
+	bo = drv_bo_new(drv, width, height, format, flags);
 
 	if (!bo)
 		return NULL;
@@ -269,7 +277,7 @@ struct bo *drv_bo_create_with_modifiers(struct driver *drv, uint32_t width, uint
 		return NULL;
 	}
 
-	bo = drv_bo_new(drv, width, height, format);
+	bo = drv_bo_new(drv, width, height, format, BO_USE_NONE);
 
 	if (!bo)
 		return NULL;
@@ -295,6 +303,7 @@ void drv_bo_destroy(struct bo *bo)
 {
 	size_t plane;
 	uintptr_t total = 0;
+	size_t map_count = 0;
 	struct driver *drv = bo->drv;
 
 	pthread_mutex_lock(&drv->driver_lock);
@@ -302,13 +311,24 @@ void drv_bo_destroy(struct bo *bo)
 	for (plane = 0; plane < bo->num_planes; plane++)
 		drv_decrement_reference_count(drv, bo, plane);
 
-	for (plane = 0; plane < bo->num_planes; plane++)
+	for (plane = 0; plane < bo->num_planes; plane++) {
+		void *ptr;
+
 		total += drv_get_reference_count(drv, bo, plane);
+		map_count += !drmHashLookup(bo->drv->map_table, bo->handles[plane].u32, &ptr);
+	}
 
 	pthread_mutex_unlock(&drv->driver_lock);
 
-	if (total == 0)
+	if (total == 0) {
+		/*
+		 * If we leak a reference to the GEM handle being freed here in the mapping table,
+		 * we risk using the mapping table entry later for a completely different BO that
+		 * gets the same handle. (See b/38250067.)
+		 */
+		assert(!map_count);
 		bo->drv->backend->bo_destroy(bo);
+	}
 
 	free(bo);
 }
@@ -319,7 +339,7 @@ struct bo *drv_bo_import(struct driver *drv, struct drv_import_fd_data *data)
 	size_t plane;
 	struct bo *bo;
 
-	bo = drv_bo_new(drv, data->width, data->height, data->format);
+	bo = drv_bo_new(drv, data->width, data->height, data->format, data->flags);
 
 	if (!bo)
 		return NULL;
@@ -348,11 +368,13 @@ void *drv_bo_map(struct bo *bo, uint32_t x, uint32_t y, uint32_t width, uint32_t
 	uint8_t *addr;
 	size_t offset;
 	struct map_info *data;
+	int prot;
 
 	assert(width > 0);
 	assert(height > 0);
 	assert(x + width <= drv_bo_get_width(bo));
 	assert(y + height <= drv_bo_get_height(bo));
+	assert(BO_TRANSFER_READ_WRITE & flags);
 
 	pthread_mutex_lock(&bo->drv->driver_lock);
 
@@ -363,7 +385,8 @@ void *drv_bo_map(struct bo *bo, uint32_t x, uint32_t y, uint32_t width, uint32_t
 	}
 
 	data = calloc(1, sizeof(*data));
-	addr = bo->drv->backend->bo_map(bo, data, plane);
+	prot = BO_TRANSFER_WRITE & flags ? PROT_WRITE | PROT_READ : PROT_READ;
+	addr = bo->drv->backend->bo_map(bo, data, plane, prot);
 	if (addr == MAP_FAILED) {
 		*map_data = NULL;
 		free(data);
@@ -479,10 +502,10 @@ uint32_t drv_bo_get_format(struct bo *bo)
 	return bo->format;
 }
 
-uint32_t drv_resolve_format(struct driver *drv, uint32_t format)
+uint32_t drv_resolve_format(struct driver *drv, uint32_t format, uint64_t usage)
 {
 	if (drv->backend->resolve_format)
-		return drv->backend->resolve_format(format);
+		return drv->backend->resolve_format(format, usage);
 
 	return format;
 }

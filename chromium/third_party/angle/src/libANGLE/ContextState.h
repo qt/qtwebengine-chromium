@@ -19,12 +19,12 @@ namespace gl
 {
 class BufferManager;
 class ContextState;
-class FenceSyncManager;
 class FramebufferManager;
 class PathManager;
 class RenderbufferManager;
 class SamplerManager;
 class ShaderProgramManager;
+class SyncManager;
 class TextureManager;
 class ValidationContext;
 
@@ -62,6 +62,7 @@ class ContextState final : angle::NonCopyable
 
     bool usingDisplayTextureShareGroup() const;
 
+    bool isWebGL() const;
     bool isWebGL1() const;
 
   private:
@@ -81,7 +82,7 @@ class ContextState final : angle::NonCopyable
     TextureManager *mTextures;
     RenderbufferManager *mRenderbuffers;
     SamplerManager *mSamplers;
-    FenceSyncManager *mFenceSyncs;
+    SyncManager *mSyncs;
     PathManager *mPaths;
     FramebufferManager *mFramebuffers;
 };
@@ -100,7 +101,7 @@ class ValidationContext : angle::NonCopyable
                       bool skipValidation);
     virtual ~ValidationContext() {}
 
-    virtual void handleError(const Error &error) = 0;
+    virtual Error handleError(const Error &error) = 0;
 
     const ContextState &getContextState() const { return mState; }
     GLint getClientMajorVersion() const { return mState.getClientMajorVersion(); }
@@ -130,6 +131,7 @@ class ValidationContext : angle::NonCopyable
     // Hack for the special WebGL 1 "DEPTH_STENCIL" internal format.
     GLenum getConvertedRenderbufferFormat(GLenum internalformat) const;
 
+    bool isWebGL() const { return mState.isWebGL(); }
     bool isWebGL1() const { return mState.isWebGL1(); }
 
     template <typename T>

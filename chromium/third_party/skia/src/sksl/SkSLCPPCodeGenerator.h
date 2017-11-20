@@ -27,15 +27,19 @@ private:
 
     void writef(const char* s, ...) SKSL_PRINTF_LIKE(2, 3);
 
-    void writeSection(const char* name, const char* prefix = "");
+    bool writeSection(const char* name, const char* prefix = "");
 
     void writeHeader() override;
 
     void writePrecisionModifier() override;
 
+    void writeType(const Type& type) override;
+
     void writeBinaryExpression(const BinaryExpression& b, Precedence parentPrecedence) override;
 
     void writeIndexExpression(const IndexExpression& i) override;
+
+    void writeIntLiteral(const IntLiteral& i) override;
 
     void writeVariableReference(const VariableReference& ref) override;
 
@@ -69,6 +73,8 @@ private:
     void writeSetData(std::vector<const Variable*>& uniforms);
 
     void writeGetKey();
+
+    void writeClone();
 
     void writeTest();
 

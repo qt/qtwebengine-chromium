@@ -12,8 +12,12 @@
 #include "SkImage.h"
 #include "SkSurfaceProps.h"
 
+#include "GrTypes.h"
+
 class SkCanvas;
+class SkDeferredDisplayList;
 class SkPaint;
+class SkSurfaceCharacterization;
 class GrBackendRenderTarget;
 class GrBackendSemaphore;
 class GrContext;
@@ -90,16 +94,6 @@ public:
                                                    GrSurfaceOrigin origin, int sampleCnt,
                                                    sk_sp<SkColorSpace>, const SkSurfaceProps*);
 
-    /**
-     *  Used to wrap a pre-existing 3D API rendering target as a SkSurface. Skia will not assume
-     *  ownership of the render target and the client must ensure the render target is valid for the
-     *  lifetime of the SkSurface.
-     */
-    static sk_sp<SkSurface> MakeFromBackendRenderTarget(GrContext*,
-                                                        const GrBackendRenderTargetDesc&,
-                                                        sk_sp<SkColorSpace>,
-                                                        const SkSurfaceProps*);
-
     static sk_sp<SkSurface> MakeFromBackendRenderTarget(GrContext*,
                                                         const GrBackendRenderTarget&,
                                                         GrSurfaceOrigin origin,
@@ -109,10 +103,9 @@ public:
     /**
      *  Used to wrap a pre-existing 3D API texture as a SkSurface. Skia will treat the texture as
      *  a rendering target only, but unlike NewFromBackendRenderTarget, Skia will manage and own
-     *  the associated render target objects (but not the provided texture). The kRenderTarget flag
-     *  must be set on GrBackendTextureDesc for this to succeed. Skia will not assume ownership
-     *  of the texture and the client must ensure the texture is valid for the lifetime of the
-     *  SkSurface.
+     *  the associated render target objects (but not the provided texture). Skia will not assume
+     *  ownership of the texture and the client must ensure the texture is valid for the lifetime
+     *  of the SkSurface.
      */
     static sk_sp<SkSurface> MakeFromBackendTextureAsRenderTarget(GrContext*,
                                                                  const GrBackendTexture&,
@@ -120,17 +113,6 @@ public:
                                                                  int sampleCnt,
                                                                  sk_sp<SkColorSpace>,
                                                                  const SkSurfaceProps*);
-
-    /**
-     * Legacy version of the above factory, without color space support. This creates a "legacy"
-     * surface that operate without gamma correction or color management.
-     */
-    static sk_sp<SkSurface> MakeFromBackendRenderTarget(GrContext* ctx,
-                                                        const GrBackendRenderTargetDesc& desc,
-                                                        const SkSurfaceProps* props) {
-        return MakeFromBackendRenderTarget(ctx, desc, nullptr, props);
-    }
-
 
     /**
      *  Return a new surface whose contents will be drawn to an offscreen
@@ -284,13 +266,13 @@ public:
     bool peekPixels(SkPixmap*);
 
     /**
-     *  Copy the pixels from the surface into the specified buffer (pixels + rowBytes),
-     *  converting them into the requested format (dstInfo). The surface pixels are read
+     *  Copy the pixels from the surface into the specified pixmap,
+     *  converting them into the pixmap's format. The surface pixels are read
      *  starting at the specified (srcX,srcY) location.
      *
-     *  The specified ImageInfo and (srcX,srcY) offset specifies a source rectangle
+     *  The pixmap and (srcX,srcY) offset specifies a source rectangle
      *
-     *      srcR.setXYWH(srcX, srcY, dstInfo.width(), dstInfo.height());
+     *      srcR.setXYWH(srcX, srcY, pixmap.width(), pixmap.height());
      *
      *  srcR is intersected with the bounds of the base-layer. If this intersection is not empty,
      *  then we have two sets of pixels (of equal size). Replace the dst pixels with the
@@ -301,8 +283,10 @@ public:
      *  - If srcR does not intersect the surface bounds.
      *  - If the requested colortype/alphatype cannot be converted from the surface's types.
      */
+    bool readPixels(const SkPixmap& dst, int srcX, int srcY);
     bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
                     int srcX, int srcY);
+    bool readPixels(const SkBitmap& dst, int srcX, int srcY);
 
     const SkSurfaceProps& props() const { return fProps; }
 
@@ -320,17 +304,28 @@ public:
     void flush();
 
     /**
-     * Issue any pending surface IO to the current backend 3D API. After issuing all commands, we
-     * will issue numSemaphore semaphores for the gpu to signal. We will then fill in the array
-     * signalSemaphores with the info on the semaphores we submitted. The client is reposonsible for
-     * allocating enough space in signalSemaphores to handle numSemaphores of GrBackendSemaphores.
-     * The client will also take ownership of the returned underlying backend semaphores.
+     * Issue any pending surface IO to the current backend 3D API. After issuing all commands,
+     * numSemaphore semaphores will be signaled by the gpu. The client passes in an array of
+     * numSemaphores GrBackendSemaphores. In general these GrBackendSemaphore's can be either
+     * initialized or not. If they are initialized, the backend uses the passed in semaphore.
+     * If it is not initialized, a new semaphore is created and the GrBackendSemaphore object
+     * is initialized with that semaphore.
      *
-     * If this call returns false, the GPU backend will not have created or added any semaphores to
-     * signal. Thus the array of semaphores will remain uninitialized. However, we will still flush
-     * any pending surface IO.
+     * The client will own and be responsible for deleting the underlying semaphores that are stored
+     * and returned in initialized GrBackendSemaphore objects. The GrBackendSemaphore objects
+     * themselves can be deleted as soon as this function returns.
+     *
+     * If the backend API is OpenGL only uninitialized GrBackendSemaphores are supported.
+     * If the backend API is Vulkan either initialized or unitialized semaphores are supported.
+     * If unitialized, the semaphores which are created will be valid for use only with the VkDevice
+     * with which they were created.
+     *
+     * If this call returns GrSemaphoresSubmited::kNo, the GPU backend will not have created or
+     * added any semaphores to signal on the GPU. Thus the client should not have the GPU wait on
+     * any of the semaphores. However, any pending surface IO will still be flushed.
      */
-    bool flushAndSignalSemaphores(int numSemaphores, GrBackendSemaphore* signalSemaphores);
+    GrSemaphoresSubmitted flushAndSignalSemaphores(int numSemaphores,
+                                                   GrBackendSemaphore signalSemaphores[]);
 
     /**
      * Inserts a list of GPU semaphores that the current backend 3D API must wait on before
@@ -341,6 +336,21 @@ public:
      * and the client will still own the semaphores.
      */
     bool wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores);
+
+    /**
+     * This creates a characterization of this SkSurface's properties that can
+     * be used to perform gpu-backend preprocessing in a separate thread (via
+     * the SkDeferredDisplayListRecorder).
+     * It will return false on failure (e.g., if the SkSurface is cpu-backed).
+     */
+    bool characterize(SkSurfaceCharacterization* characterization) const;
+
+    /**
+     * Draw a deferred display list (created via SkDeferredDisplayListRecorder).
+     * The draw will be skipped if the characterization stored in the display list
+     * isn't compatible with this surface.
+     */
+    void draw(SkDeferredDisplayList* deferredDisplayList);
 
 protected:
     SkSurface(int width, int height, const SkSurfaceProps*);

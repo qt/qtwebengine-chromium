@@ -1,3 +1,37 @@
+2017-08-01  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttgxvar.c (TT_Get_MM_Var): Fix thinko.
+
+2017-08-01  Behdad Esfahbod  <behdad@behdad.org>
+
+	[truetype] Fix loading of named instances.
+
+	* src/truetype/ttgxvar.c (TT_Get_MM_Var): Preserve file position
+	while loading the `avar' table.
+
+2017-08-01  Werner Lemberg  <wl@gnu.org>
+
+	[sfnt, truetype] Minor adjustments for OpenType 1.8.2.
+
+	* src/sfnt/sfobjs.c (sfnt_load_face): The units per EM value has now
+	(tighter) limits.
+
+	* src/truetype/ttgload.c (load_truetype_glyph): The new OpenType
+	version explicitly allows all negative values for the number of
+	contours if we have a composite glyph (this is for better backwards
+	compatibility I guess), but it still recommends value -1.
+
+2017-07-26  Werner Lemberg  <wl@gnu.org>
+
+	[cff] Integer overflow.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=2738
+
+	* src/cff/cf2hints.c (cf2_glyphpath_computeOffset,
+	cf2_glyphpath_curveTo): Use ADD_INT32.
+
 2017-07-13  Werner Lemberg  <wl@gnu.org>
 
 	[base] Fix memory leak.

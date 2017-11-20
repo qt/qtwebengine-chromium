@@ -40,8 +40,9 @@ protected:
     GrColor color() const { return fInputColor; }
     GrPathRendering::FillType fillType() const { return fFillType; }
     const GrProcessorSet& processors() const { return fProcessorSet; }
+    GrProcessorSet detachProcessors() { return std::move(fProcessorSet); }
     uint32_t pipelineSRGBFlags() const { return fPipelineSRGBFlags; }
-    void initPipeline(const GrOpFlushState&, GrPipeline*);
+    inline GrPipeline::InitArgs pipelineInitArgs(const GrOpFlushState&);
     const GrProcessorSet::Analysis& doProcessorAnalysis(const GrCaps& caps,
                                                         const GrAppliedClip* clip) {
         bool isMixedSamples = GrAAType::kMixedSamples == fAAType;

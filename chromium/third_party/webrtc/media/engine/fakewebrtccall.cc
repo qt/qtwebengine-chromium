@@ -309,11 +309,6 @@ webrtc::VideoReceiveStream::Stats FakeVideoReceiveStream::GetStats() const {
   return stats_;
 }
 
-rtc::Optional<webrtc::TimingFrameInfo>
-FakeVideoReceiveStream::GetAndResetTimingFrameInfo() {
-  return rtc::Optional<webrtc::TimingFrameInfo>();
-}
-
 void FakeVideoReceiveStream::Start() {
   receiving_ = true;
 }
@@ -332,26 +327,28 @@ void FakeVideoReceiveStream::EnableEncodedFrameRecording(rtc::PlatformFile file,
   rtc::ClosePlatformFile(file);
 }
 
+void FakeVideoReceiveStream::AddSecondarySink(
+    webrtc::RtpPacketSinkInterface* sink) {}
+
+void FakeVideoReceiveStream::RemoveSecondarySink(
+    const webrtc::RtpPacketSinkInterface* sink) {}
+
 FakeFlexfecReceiveStream::FakeFlexfecReceiveStream(
     const webrtc::FlexfecReceiveStream::Config& config)
-    : config_(config), receiving_(false) {}
+    : config_(config) {}
 
 const webrtc::FlexfecReceiveStream::Config&
 FakeFlexfecReceiveStream::GetConfig() const {
   return config_;
 }
 
-void FakeFlexfecReceiveStream::Start() {
-  receiving_ = true;
-}
-
-void FakeFlexfecReceiveStream::Stop() {
-  receiving_ = false;
-}
-
 // TODO(brandtr): Implement when the stats have been designed.
 webrtc::FlexfecReceiveStream::Stats FakeFlexfecReceiveStream::GetStats() const {
   return webrtc::FlexfecReceiveStream::Stats();
+}
+
+void FakeFlexfecReceiveStream::OnRtpPacket(const webrtc::RtpPacketReceived&) {
+  RTC_NOTREACHED() << "Not implemented.";
 }
 
 FakeCall::FakeCall(const webrtc::Call::Config& config)

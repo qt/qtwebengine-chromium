@@ -19,6 +19,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
+#include "webrtc/modules/desktop_capture/desktop_capture_types.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/mac/desktop_configuration.h"
 #include "webrtc/modules/desktop_capture/mac/desktop_configuration_monitor.h"
@@ -240,22 +241,24 @@ void MouseCursorMonitorMac::Capture() {
         state = OUTSIDE;
         position.set(-1, -1);
       }
-    } else {
-      position.subtract(configuration.bounds.top_left());
     }
   }
-  if (state == INSIDE) {
-    // Convert Density Independent Pixel to physical pixel.
-    position = DesktopVector(round(position.x() * scale),
-                             round(position.y() * scale));
-  }
+  // Convert Density Independent Pixel to physical pixel.
+  position = DesktopVector(round(position.x() * scale),
+                           round(position.y() * scale));
+  // TODO(zijiehe): Remove this overload.
   callback_->OnMouseCursorPosition(state, position);
+  callback_->OnMouseCursorPosition(
+      position.subtract(configuration.bounds.top_left()));
 }
 
 void MouseCursorMonitorMac::CaptureImage(float scale) {
   NSCursor* nscursor = [NSCursor currentSystemCursor];
 
   NSImage* nsimage = [nscursor image];
+  if (nsimage == nil || !nsimage.isValid) {
+    return;
+  }
   NSSize nssize = [nsimage size];  // DIP size
 
   // No need to caputre cursor image if it's unchanged since last capture.
@@ -328,6 +331,12 @@ MouseCursorMonitor* MouseCursorMonitor::CreateForScreen(
     const DesktopCaptureOptions& options,
     ScreenId screen) {
   return new MouseCursorMonitorMac(options, kCGNullWindowID, screen);
+}
+
+std::unique_ptr<MouseCursorMonitor> MouseCursorMonitor::Create(
+    const DesktopCaptureOptions& options) {
+  return std::unique_ptr<MouseCursorMonitor>(
+      CreateForScreen(options, kFullDesktopScreenId));
 }
 
 }  // namespace webrtc

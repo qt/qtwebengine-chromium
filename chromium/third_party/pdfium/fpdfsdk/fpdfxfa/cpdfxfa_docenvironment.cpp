@@ -66,8 +66,7 @@ void CPDFXFA_DocEnvironment::InvalidateRect(CXFA_FFPageView* pPageView,
   if (!pFormFillEnv)
     return;
 
-  pFormFillEnv->Invalidate(pPage.Get(),
-                           CFX_FloatRect::FromCFXRectF(rt).ToFxRect());
+  pFormFillEnv->Invalidate(pPage.Get(), rt.ToFloatRect().ToFxRect());
 }
 
 void CPDFXFA_DocEnvironment::DisplayCaret(CXFA_FFWidget* hWidget,
@@ -97,7 +96,7 @@ void CPDFXFA_DocEnvironment::DisplayCaret(CXFA_FFWidget* hWidget,
   if (!pFormFillEnv)
     return;
 
-  CFX_FloatRect rcCaret = CFX_FloatRect::FromCFXRectF(*pRtAnchor);
+  CFX_FloatRect rcCaret = pRtAnchor->ToFloatRect();
   pFormFillEnv->DisplayCaret(pPage.Get(), bVisible, rcCaret.left, rcCaret.top,
                              rcCaret.right, rcCaret.bottom);
 }
@@ -127,7 +126,7 @@ bool CPDFXFA_DocEnvironment::GetPopupPos(CXFA_FFWidget* hWidget,
 
   int t1;
   int t2;
-  CFX_FloatRect rcAnchor = CFX_FloatRect::FromCFXRectF(rtAnchor);
+  CFX_FloatRect rcAnchor = rtAnchor.ToFloatRect();
   int nRotate = hWidget->GetDataAcc()->GetRotate();
   switch (nRotate) {
     case 90: {
@@ -385,7 +384,7 @@ void CPDFXFA_DocEnvironment::GetTitle(CXFA_FFDoc* hDoc,
   if (hDoc != m_pContext->GetXFADoc() || !m_pContext->GetPDFDoc())
     return;
 
-  CPDF_Dictionary* pInfoDict = m_pContext->GetPDFDoc()->GetInfo();
+  const CPDF_Dictionary* pInfoDict = m_pContext->GetPDFDoc()->GetInfo();
   if (!pInfoDict)
     return;
 
@@ -399,7 +398,8 @@ void CPDFXFA_DocEnvironment::SetTitle(CXFA_FFDoc* hDoc,
   if (hDoc != m_pContext->GetXFADoc() || !m_pContext->GetPDFDoc())
     return;
 
-  if (CPDF_Dictionary* pInfoDict = m_pContext->GetPDFDoc()->GetInfo())
+  CPDF_Dictionary* pInfoDict = m_pContext->GetPDFDoc()->GetInfo();
+  if (pInfoDict)
     pInfoDict->SetNewFor<CPDF_String>("Title", wsTitle);
 }
 
@@ -450,7 +450,7 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
     if (!m_pContext->GetPDFDoc())
       return;
 
-    CPDF_Dictionary* pRoot = m_pContext->GetPDFDoc()->GetRoot();
+    const CPDF_Dictionary* pRoot = m_pContext->GetPDFDoc()->GetRoot();
     if (!pRoot)
       return;
 
@@ -751,7 +751,7 @@ bool CPDFXFA_DocEnvironment::ExportSubmitFile(FPDF_FILEHANDLER* pFileHandler,
     return false;
   }
 
-  CPDF_Dictionary* pRoot = m_pContext->GetPDFDoc()->GetRoot();
+  const CPDF_Dictionary* pRoot = m_pContext->GetPDFDoc()->GetRoot();
   if (!pRoot) {
     fileStream->Flush();
     return false;
@@ -810,19 +810,19 @@ bool CPDFXFA_DocEnvironment::ExportSubmitFile(FPDF_FILEHANDLER* pFileHandler,
 
 void CPDFXFA_DocEnvironment::ToXFAContentFlags(CFX_WideString csSrcContent,
                                                FPDF_DWORD& flag) {
-  if (csSrcContent.Find(L" config ", 0) != -1)
+  if (csSrcContent.Contains(L" config "))
     flag |= FXFA_CONFIG;
-  if (csSrcContent.Find(L" template ", 0) != -1)
+  if (csSrcContent.Contains(L" template "))
     flag |= FXFA_TEMPLATE;
-  if (csSrcContent.Find(L" localeSet ", 0) != -1)
+  if (csSrcContent.Contains(L" localeSet "))
     flag |= FXFA_LOCALESET;
-  if (csSrcContent.Find(L" datasets ", 0) != -1)
+  if (csSrcContent.Contains(L" datasets "))
     flag |= FXFA_DATASETS;
-  if (csSrcContent.Find(L" xmpmeta ", 0) != -1)
+  if (csSrcContent.Contains(L" xmpmeta "))
     flag |= FXFA_XMPMETA;
-  if (csSrcContent.Find(L" xfdf ", 0) != -1)
+  if (csSrcContent.Contains(L" xfdf "))
     flag |= FXFA_XFDF;
-  if (csSrcContent.Find(L" form ", 0) != -1)
+  if (csSrcContent.Contains(L" form "))
     flag |= FXFA_FORM;
   if (flag == 0) {
     flag = FXFA_CONFIG | FXFA_TEMPLATE | FXFA_LOCALESET | FXFA_DATASETS |
@@ -841,16 +841,16 @@ bool CPDFXFA_DocEnvironment::MailToInfo(CFX_WideString& csURL,
   if (srcURL.Left(7).CompareNoCase(L"mailto:") != 0)
     return false;
 
-  int pos = srcURL.Find(L'?', 0);
+  auto pos = srcURL.Find(L'?');
   CFX_WideString tmp;
-  if (pos == -1) {
-    pos = srcURL.Find(L'@', 0);
-    if (pos == -1)
+  if (!pos.has_value()) {
+    pos = srcURL.Find(L'@');
+    if (!pos.has_value())
       return false;
 
     tmp = srcURL.Right(csURL.GetLength() - 7);
   } else {
-    tmp = srcURL.Left(pos);
+    tmp = srcURL.Left(pos.value());
     tmp = tmp.Right(tmp.GetLength() - 7);
   }
   tmp.TrimLeft();
@@ -858,13 +858,13 @@ bool CPDFXFA_DocEnvironment::MailToInfo(CFX_WideString& csURL,
 
   csToAddress = tmp;
 
-  srcURL = srcURL.Right(srcURL.GetLength() - (pos + 1));
+  srcURL = srcURL.Right(srcURL.GetLength() - (pos.value() + 1));
   while (!srcURL.IsEmpty()) {
     srcURL.TrimLeft();
     srcURL.TrimRight();
-    pos = srcURL.Find(L'&', 0);
+    pos = srcURL.Find(L'&');
 
-    tmp = (pos == -1) ? srcURL : srcURL.Left(pos);
+    tmp = (!pos.has_value()) ? srcURL : srcURL.Left(pos.value());
     tmp.TrimLeft();
     tmp.TrimRight();
     if (tmp.GetLength() >= 3 && tmp.Left(3).CompareNoCase(L"cc=") == 0) {
@@ -887,7 +887,9 @@ bool CPDFXFA_DocEnvironment::MailToInfo(CFX_WideString& csURL,
       tmp = tmp.Right(tmp.GetLength() - 5);
       csMsg += tmp;
     }
-    srcURL = (pos == -1) ? L"" : srcURL.Right(csURL.GetLength() - (pos + 1));
+    srcURL = !pos.has_value()
+                 ? L""
+                 : srcURL.Right(csURL.GetLength() - (pos.value() + 1));
   }
   csToAddress.Replace(L",", L";");
   csCCAddress.Replace(L",", L";");
@@ -977,11 +979,11 @@ bool CPDFXFA_DocEnvironment::SubmitDataInternal(CXFA_FFDoc* hDoc,
         (FPDF_WIDESTRING)bsSubject.GetBuffer(bsSubject.GetLength());
     FPDF_WIDESTRING pMsg = (FPDF_WIDESTRING)bsMsg.GetBuffer(bsMsg.GetLength());
     pFormFillEnv->EmailTo(pFileHandler, pTo, pSubject, pCC, pBcc, pMsg);
-    bsTo.ReleaseBuffer();
-    bsCC.ReleaseBuffer();
-    bsBcc.ReleaseBuffer();
-    bsSubject.ReleaseBuffer();
-    bsMsg.ReleaseBuffer();
+    bsTo.ReleaseBuffer(bsTo.GetStringLength());
+    bsCC.ReleaseBuffer(bsCC.GetStringLength());
+    bsBcc.ReleaseBuffer(bsBcc.GetStringLength());
+    bsSubject.ReleaseBuffer(bsSubject.GetStringLength());
+    bsMsg.ReleaseBuffer(bsMsg.GetStringLength());
   } else {
     // HTTP or FTP
     CFX_WideString ws;

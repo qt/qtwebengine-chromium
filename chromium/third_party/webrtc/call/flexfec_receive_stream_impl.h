@@ -15,7 +15,6 @@
 
 #include "webrtc/call/flexfec_receive_stream.h"
 #include "webrtc/call/rtp_packet_sink_interface.h"
-#include "webrtc/rtc_base/criticalsection.h"
 
 namespace webrtc {
 
@@ -29,8 +28,7 @@ class RtpRtcp;
 class RtpStreamReceiverControllerInterface;
 class RtpStreamReceiverInterface;
 
-class FlexfecReceiveStreamImpl : public FlexfecReceiveStream,
-                                 public RtpPacketSinkInterface {
+class FlexfecReceiveStreamImpl : public FlexfecReceiveStream {
  public:
   FlexfecReceiveStreamImpl(
       RtpStreamReceiverControllerInterface* receiver_controller,
@@ -40,21 +38,15 @@ class FlexfecReceiveStreamImpl : public FlexfecReceiveStream,
       ProcessThread* process_thread);
   ~FlexfecReceiveStreamImpl() override;
 
-  const Config& GetConfig() const { return config_; }
-
   // RtpPacketSinkInterface.
   void OnRtpPacket(const RtpPacketReceived& packet) override;
 
-  // Implements FlexfecReceiveStream.
-  void Start() override;
-  void Stop() override;
   Stats GetStats() const override;
+  const Config& GetConfig() const override;
 
  private:
   // Config.
   const Config config_;
-  bool started_ GUARDED_BY(crit_);
-  rtc::CriticalSection crit_;
 
   // Erasure code interfacing.
   const std::unique_ptr<FlexfecReceiver> receiver_;

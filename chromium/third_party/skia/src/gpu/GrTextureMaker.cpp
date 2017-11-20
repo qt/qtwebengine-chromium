@@ -41,10 +41,17 @@ sk_sp<GrTextureProxy> GrTextureMaker::refTextureProxyForParams(const GrSamplerPa
         }
     }
 
+    GrSurfaceOrigin origOrigin;
     GrUniqueKey copyKey;
     this->makeCopyKey(copyParams, &copyKey, dstColorSpace);
     if (copyKey.isValid()) {
-        sk_sp<GrTextureProxy> result(fContext->resourceProvider()->findProxyByUniqueKey(copyKey));
+        if (original) {
+            origOrigin = original->origin();
+        } else {
+            origOrigin = kTopLeft_GrSurfaceOrigin;
+        }
+        sk_sp<GrTextureProxy> result(fContext->resourceProvider()->findProxyByUniqueKey(
+                                                                            copyKey, origOrigin));
         if (result) {
             return result;
         }
@@ -62,20 +69,20 @@ sk_sp<GrTextureProxy> GrTextureMaker::refTextureProxyForParams(const GrSamplerPa
     }
 
     if (copyKey.isValid()) {
+        SkASSERT(result->origin() == origOrigin);
         fContext->resourceProvider()->assignUniqueKeyToProxy(copyKey, result.get());
         this->didCacheCopy(copyKey);
     }
     return result;
 }
 
-sk_sp<GrFragmentProcessor> GrTextureMaker::createFragmentProcessor(
-                                        const SkMatrix& textureMatrix,
-                                        const SkRect& constraintRect,
-                                        FilterConstraint filterConstraint,
-                                        bool coordsLimitedToConstraintRect,
-                                        const GrSamplerParams::FilterMode* filterOrNullForBicubic,
-                                        SkColorSpace* dstColorSpace) {
-
+std::unique_ptr<GrFragmentProcessor> GrTextureMaker::createFragmentProcessor(
+        const SkMatrix& textureMatrix,
+        const SkRect& constraintRect,
+        FilterConstraint filterConstraint,
+        bool coordsLimitedToConstraintRect,
+        const GrSamplerParams::FilterMode* filterOrNullForBicubic,
+        SkColorSpace* dstColorSpace) {
     const GrSamplerParams::FilterMode* fmForDetermineDomain = filterOrNullForBicubic;
     if (filterOrNullForBicubic && GrSamplerParams::kMipMap_FilterMode == *filterOrNullForBicubic &&
         kYes_FilterConstraint == filterConstraint) {

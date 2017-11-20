@@ -29,9 +29,8 @@
 #include "fpdfsdk/formfiller/cba_fontmap.h"
 #include "fpdfsdk/fsdk_actionhandler.h"
 #include "fpdfsdk/fsdk_define.h"
-#include "fpdfsdk/fxedit/fxet_edit.h"
-#include "fpdfsdk/pdfwindow/cpwl_appstream.h"
-#include "fpdfsdk/pdfwindow/cpwl_edit.h"
+#include "fpdfsdk/pwl/cpwl_appstream.h"
+#include "fpdfsdk/pwl/cpwl_edit.h"
 
 #ifdef PDF_ENABLE_XFA
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
@@ -802,7 +801,7 @@ void CPDFSDK_Widget::ResetFieldAppearance(bool bValueChanged) {
 }
 
 void CPDFSDK_Widget::DrawAppearance(CFX_RenderDevice* pDevice,
-                                    const CFX_Matrix* pUser2Device,
+                                    const CFX_Matrix& mtUser2Device,
                                     CPDF_Annot::AppearanceMode mode,
                                     const CPDF_RenderOptions* pOptions) {
   int nFieldType = GetFieldType();
@@ -821,10 +820,10 @@ void CPDFSDK_Widget::DrawAppearance(CFX_RenderDevice* pDevice,
     CFX_GraphStateData gsd;
     gsd.m_LineWidth = 0.0f;
 
-    pDevice->DrawPath(&pathData, pUser2Device, &gsd, 0, 0xFFAAAAAA,
+    pDevice->DrawPath(&pathData, &mtUser2Device, &gsd, 0, 0xFFAAAAAA,
                       FXFILL_ALTERNATE);
   } else {
-    CPDFSDK_BAAnnot::DrawAppearance(pDevice, pUser2Device, mode, pOptions);
+    CPDFSDK_BAAnnot::DrawAppearance(pDevice, mtUser2Device, mode, pOptions);
   }
 }
 

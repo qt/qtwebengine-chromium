@@ -90,7 +90,7 @@ source_set("compile_assert_c") {
 rtc_static_library("rtc_base_approved") {
   # TODO(kjellander): Remove (bugs.webrtc.org/7480)
   # Enabling GN check triggers a cyclic dependency caused by rate_limiter.cc:
-  #   :rtc_base_approved -> //webrtc/system_wrappers -> :rtc_base_approved
+  #   :rtc_base_approved -> ../system_wrappers -> :rtc_base_approved
   check_includes = false
   defines = []
   libs = []
@@ -135,6 +135,7 @@ rtc_static_library("rtc_base_approved") {
     "location.cc",
     "location.h",
     "mod_ops.h",
+    "moving_max_counter.h",
     "onetimeevent.h",
     "optional.cc",
     "optional.h",
@@ -203,8 +204,8 @@ rtc_static_library("rtc_base_approved") {
     # Dependency on chromium's logging (in //base).
     deps += [ "//base:base" ]
     sources += [
-      "../../webrtc_overrides/webrtc/base/logging.cc",
-      "../../webrtc_overrides/webrtc/base/logging.h",
+      "../../webrtc_overrides/webrtc/rtc_base/logging.cc",
+      "../../webrtc_overrides/webrtc/rtc_base/logging.h",
     ]
   } else {
     sources += [
@@ -294,42 +295,71 @@ config("enable_libevent_config") {
   defines = [ "WEBRTC_BUILD_LIBEVENT" ]
 }
 
-rtc_static_library("rtc_task_queue") {
-  public_deps = [
+rtc_source_set("rtc_task_queue") {
+  deps = [
     ":rtc_base_approved",
   ]
+  public_deps = [
+    ":rtc_task_queue_api",
+  ]
 
+  if (rtc_link_task_queue_impl) {
+    deps += [ ":rtc_task_queue_impl" ]
+  }
+}
+
+# WebRTC targets must not directly depend on rtc_task_queue_api or
+# rtc_task_queue_impl. Instead, depend on rtc_task_queue.
+# The build flag |rtc_link_task_queue_impl| decides if WebRTC targets will link
+# to the default implemenation in rtc_task_queue_impl or if an externally
+# provided implementation should be used. An external implementation should
+# depend on rtc_task_queue_api.
+rtc_source_set("rtc_task_queue_api") {
   if (build_with_chromium) {
     sources = [
-      "../../webrtc_overrides/webrtc/base/task_queue.cc",
-      "../../webrtc_overrides/webrtc/base/task_queue.h",
+      "../../webrtc_overrides/webrtc/rtc_base/task_queue.h",
     ]
   } else {
     sources = [
       "task_queue.h",
-      "task_queue_posix.h",
     ]
-    if (rtc_build_libevent) {
-      deps = [
-        "//base/third_party/libevent",
-      ]
-    }
+  }
+  deps = [
+    ":rtc_base_approved",
+  ]
+}
 
+rtc_source_set("rtc_task_queue_impl") {
+  deps = [
+    ":rtc_base_approved",
+    ":rtc_task_queue_api",
+  ]
+  if (build_with_chromium) {
+    sources = [
+      "../../webrtc_overrides/webrtc/rtc_base/task_queue.cc",
+    ]
+  } else {
+    if (rtc_build_libevent) {
+      deps += [ "//base/third_party/libevent" ]
+    }
     if (rtc_enable_libevent) {
-      sources += [
+      sources = [
         "task_queue_libevent.cc",
         "task_queue_posix.cc",
+        "task_queue_posix.h",
       ]
       all_dependent_configs = [ ":enable_libevent_config" ]
     } else {
       if (is_mac || is_ios) {
-        sources += [
+        sources = [
           "task_queue_gcd.cc",
           "task_queue_posix.cc",
         ]
       }
       if (is_win) {
-        sources += [ "task_queue_win.cc" ]
+        sources = [
+          "task_queue_win.cc",
+        ]
       }
     }
   }
@@ -342,6 +372,7 @@ rtc_static_library("sequenced_task_checker") {
     "sequenced_task_checker_impl.h",
   ]
   deps = [
+    ":rtc_base_approved",
     ":rtc_task_queue",
   ]
 }
@@ -414,7 +445,6 @@ rtc_static_library("rtc_base") {
   all_dependent_configs = [ ":rtc_base_all_dependent_config" ]
 
   sources = [
-    "applefilesystem.mm",
     "asyncinvoker-inl.h",
     "asyncinvoker.cc",
     "asyncinvoker.h",
@@ -518,7 +548,7 @@ rtc_static_library("rtc_base") {
 
   if (build_with_chromium) {
     if (is_win) {
-      sources += [ "../../webrtc_overrides/webrtc/base/win32socketinit.cc" ]
+      sources += [ "../../webrtc_overrides/webrtc/rtc_base/win32socketinit.cc" ]
     }
     include_dirs = [ "../../boringssl/src/include" ]
     public_configs += [ ":rtc_base_chromium_config" ]
@@ -765,7 +795,7 @@ if (rtc_include_tests) {
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
       # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "//webrtc:webrtc_nonparallel_tests" ]
+      #visibility = [ "..:webrtc_nonparallel_tests" ]
     }
     sources = [
       "cpu_time_unittest.cc",
@@ -802,7 +832,7 @@ if (rtc_include_tests) {
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
       # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "//webrtc:rtc_unittests" ]
+      #visibility = [ "..:rtc_unittests" ]
     }
     sources = [
       "array_view_unittest.cc",
@@ -824,6 +854,7 @@ if (rtc_include_tests) {
       "logging_unittest.cc",
       "md5digest_unittest.cc",
       "mod_ops_unittest.cc",
+      "moving_max_counter_unittest.cc",
       "onetimeevent_unittest.cc",
       "optional_unittest.cc",
       "pathutils_unittest.cc",
@@ -869,12 +900,13 @@ if (rtc_include_tests) {
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
       # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "//webrtc:rtc_unittests" ]
+      #visibility = [ "..:rtc_unittests" ]
     }
     sources = [
       "task_queue_unittest.cc",
     ]
     deps = [
+      ":rtc_base_approved",
       ":rtc_base_tests_main",
       ":rtc_base_tests_utils",
       ":rtc_task_queue",
@@ -894,7 +926,7 @@ if (rtc_include_tests) {
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
       # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "//webrtc:rtc_unittests" ]
+      #visibility = [ "..:rtc_unittests" ]
     }
     sources = [
       "sequenced_task_checker_unittest.cc",
@@ -916,7 +948,7 @@ if (rtc_include_tests) {
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
       # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "//webrtc:rtc_unittests" ]
+      #visibility = [ "..:rtc_unittests" ]
     }
     sources = [
       "weak_ptr_unittest.cc",
@@ -938,7 +970,7 @@ if (rtc_include_tests) {
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
       # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "//webrtc:rtc_unittests" ]
+      #visibility = [ "..:rtc_unittests" ]
     }
     sources = [
       "numerics/exp_filter_unittest.cc",
@@ -965,12 +997,11 @@ if (rtc_include_tests) {
     # cover (which would be confusing to read and hard to maintain).
     if (!is_android && !is_ios) {
       # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "//webrtc:rtc_unittests" ]
+      #visibility = [ "..:rtc_unittests" ]
     }
     sources = [
       "callback_unittest.cc",
       "crc32_unittest.cc",
-      "fileutils_unittest.cc",
       "helpers_unittest.cc",
       "httpbase_unittest.cc",
       "httpcommon_unittest.cc",
@@ -1007,6 +1038,7 @@ if (rtc_include_tests) {
     }
     if (is_posix) {
       sources += [
+        "openssladapter_unittest.cc",
         "ssladapter_unittest.cc",
         "sslidentity_unittest.cc",
         "sslstreamadapter_unittest.cc",
@@ -1025,6 +1057,14 @@ if (rtc_include_tests) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
+    if (build_with_chromium) {
+      include_dirs = [ "../../boringssl/src/include" ]
+    }
+    if (rtc_build_ssl) {
+      deps += [ "//third_party/boringssl" ]
+    } else {
+      configs += [ ":external_ssl_library" ]
+    }
   }
 }
 
@@ -1036,5 +1076,8 @@ if (is_android) {
       "java/src/org/webrtc/Size.java",
       "java/src/org/webrtc/ThreadUtils.java",
     ]
+
+    # TODO(sakal): Fix build hooks crbug.com/webrtc/8148
+    no_build_hooks = true
   }
 }

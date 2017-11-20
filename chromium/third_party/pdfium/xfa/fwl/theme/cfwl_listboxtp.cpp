@@ -41,7 +41,7 @@ void CFWL_ListBoxTP::DrawBackground(CFWL_ThemeBackground* pParams) {
     }
     case CFWL_Part::Icon: {
       pParams->m_pGraphics->StretchImage(pParams->m_pImage, pParams->m_rtPart,
-                                         &pParams->m_matrix);
+                                         pParams->m_matrix);
       break;
     }
     case CFWL_Part::Check: {
@@ -66,8 +66,7 @@ void CFWL_ListBoxTP::DrawListBoxItem(CXFA_Graphics* pGraphics,
                                      CFX_Matrix* pMatrix) {
   if (dwStates & CFWL_PartState_Selected) {
     pGraphics->SaveGraphState();
-    CXFA_Color crFill(FWLTHEME_COLOR_BKSelected);
-    pGraphics->SetFillColor(&crFill);
+    pGraphics->SetFillColor(CXFA_Color(FWLTHEME_COLOR_BKSelected));
     CFX_RectF rt(*prtItem);
     CXFA_Path path;
 #if (_FX_OS_ == _FX_MACOSX_)

@@ -6,9 +6,11 @@
 
 #include "compiler/translator/OutputGLSLBase.h"
 
+#include "angle_gl.h"
 #include "common/debug.h"
 #include "common/mathutil.h"
 #include "compiler/translator/Compiler.h"
+#include "compiler/translator/util.h"
 
 #include <cfloat>
 
@@ -17,13 +19,6 @@ namespace sh
 
 namespace
 {
-TString arrayBrackets(const TType &type)
-{
-    ASSERT(type.isArray());
-    TInfoSinkBase out;
-    out << "[" << type.getArraySize() << "]";
-    return TString(out.c_str());
-}
 
 bool isSingleStatement(TIntermNode *node)
 {
@@ -245,6 +240,11 @@ void TOutputGLSLBase::writeLayoutQualifier(const TType &type)
         }
     }
 
+    if (IsAtomicCounter(type.getBasicType()))
+    {
+        out << listItemPrefix << "offset = " << layoutQualifier.offset;
+    }
+
     out << ") ";
 }
 
@@ -376,7 +376,7 @@ void TOutputGLSLBase::writeFunctionParameters(const TIntermSequence &args)
         if (!arg->getName().getString().empty())
             out << " " << hashName(arg->getName());
         if (type.isArray())
-            out << arrayBrackets(type);
+            out << ArrayString(type);
 
         // Put a comma if this is not the last argument.
         if (iter != args.end() - 1)
@@ -450,7 +450,7 @@ void TOutputGLSLBase::writeConstructorTriplet(Visit visit, const TType &type)
         if (type.isArray())
         {
             out << getTypeName(type);
-            out << arrayBrackets(type);
+            out << ArrayString(type);
             out << "(";
         }
         else
@@ -470,7 +470,7 @@ void TOutputGLSLBase::visitSymbol(TIntermSymbol *node)
     out << hashVariableName(node->getName());
 
     if (mDeclaringVariables && node->getType().isArray())
-        out << arrayBrackets(node->getType());
+        out << ArrayString(node->getType());
 }
 
 void TOutputGLSLBase::visitConstantUnion(TIntermConstantUnion *node)
@@ -567,7 +567,7 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
                     if (left->isArray())
                     {
                         // The shader will fail validation if the array length is not > 0.
-                        maxSize = static_cast<int>(leftType.getArraySize()) - 1;
+                        maxSize = static_cast<int>(leftType.getOutermostArraySize()) - 1;
                     }
                     else
                     {
@@ -616,7 +616,8 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
                 const TField *field               = interfaceBlock->fields()[index->getIConst(0)];
 
                 TString fieldName = field->name();
-                ASSERT(!mSymbolTable->findBuiltIn(interfaceBlock->name(), mShaderVersion));
+                ASSERT(!mSymbolTable->findBuiltIn(interfaceBlock->name(), mShaderVersion) ||
+                       interfaceBlock->name() == "gl_PerVertex");
                 fieldName = hashName(TName(fieldName));
 
                 out << fieldName;
@@ -924,7 +925,7 @@ bool TOutputGLSLBase::visitFunctionPrototype(Visit visit, TIntermFunctionPrototy
     const TType &type = node->getType();
     writeVariableType(type);
     if (type.isArray())
-        out << arrayBrackets(type);
+        out << ArrayString(type);
 
     out << " " << hashFunctionNameIfNeeded(*node->getFunctionSymbolInfo());
 
@@ -1005,6 +1006,8 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpMemoryBarrierImage:
         case EOpMemoryBarrierShared:
         case EOpGroupMemoryBarrier:
+        case EOpEmitVertex:
+        case EOpEndPrimitive:
             writeBuiltInFunctionTriplet(visit, node->getOp(), node->getUseEmulatedFunction());
             break;
         default:
@@ -1219,7 +1222,7 @@ void TOutputGLSLBase::declareStruct(const TStructure *structure)
             out << " ";
         out << getTypeName(*field->type()) << " " << hashName(TName(field->name()));
         if (field->type()->isArray())
-            out << arrayBrackets(*field->type());
+            out << ArrayString(*field->type());
         out << ";\n";
     }
     out << "}";
@@ -1287,10 +1290,58 @@ void TOutputGLSLBase::declareInterfaceBlock(const TInterfaceBlock *interfaceBloc
             out << " ";
         out << getTypeName(*field->type()) << " " << hashName(TName(field->name()));
         if (field->type()->isArray())
-            out << arrayBrackets(*field->type());
+            out << ArrayString(*field->type());
         out << ";\n";
     }
     out << "}";
+}
+
+void WriteGeometryShaderLayoutQualifiers(TInfoSinkBase &out,
+                                         sh::TLayoutPrimitiveType inputPrimitive,
+                                         int invocations,
+                                         sh::TLayoutPrimitiveType outputPrimitive,
+                                         int maxVertices)
+{
+    // Omit 'invocations = 1'
+    if (inputPrimitive != EptUndefined || invocations > 1)
+    {
+        out << "layout (";
+
+        if (inputPrimitive != EptUndefined)
+        {
+            out << getGeometryShaderPrimitiveTypeString(inputPrimitive);
+        }
+
+        if (invocations > 1)
+        {
+            if (inputPrimitive != EptUndefined)
+            {
+                out << ", ";
+            }
+            out << "invocations = " << invocations;
+        }
+        out << ") in;\n";
+    }
+
+    if (outputPrimitive != EptUndefined || maxVertices != -1)
+    {
+        out << "layout (";
+
+        if (outputPrimitive != EptUndefined)
+        {
+            out << getGeometryShaderPrimitiveTypeString(outputPrimitive);
+        }
+
+        if (maxVertices != -1)
+        {
+            if (outputPrimitive != EptUndefined)
+            {
+                out << ", ";
+            }
+            out << "max_vertices = " << maxVertices;
+        }
+        out << ") out;\n";
+    }
 }
 
 }  // namespace sh

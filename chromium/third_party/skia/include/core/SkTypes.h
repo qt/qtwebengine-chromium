@@ -95,8 +95,6 @@ inline void operator delete(void* p) {
     #define SkDEBUGFAIL(message)        SK_ABORT(message)
     #define SkDEBUGFAILF(fmt, ...)      SkASSERTF(false, fmt, ##__VA_ARGS__)
     #define SkDEBUGCODE(...)            __VA_ARGS__
-    #define SkDECLAREPARAM(type, var)   , type var
-    #define SkPARAM(var)                , var
     #define SkDEBUGF(args       )       SkDebugf args
     #define SkAssertResult(cond)        SkASSERT(cond)
 #else
@@ -106,17 +104,11 @@ inline void operator delete(void* p) {
     #define SkDEBUGFAILF(fmt, ...)
     #define SkDEBUGCODE(...)
     #define SkDEBUGF(args)
-    #define SkDECLAREPARAM(type, var)
-    #define SkPARAM(var)
 
     // unlike SkASSERT, this guy executes its condition in the non-debug build.
     // The if is present so that this can be used with functions marked SK_WARN_UNUSED_RESULT.
     #define SkAssertResult(cond)         if (cond) {} do {} while(false)
 #endif
-
-// Legacy macro names for SK_ABORT
-#define SkFAIL(message)                 SK_ABORT(message)
-#define sk_throw()                      SK_ABORT("sk_throw")
 
 #ifdef SK_IGNORE_TO_STRING
     #define SK_TO_STRING_NONVIRT()
@@ -235,18 +227,6 @@ template <typename D, typename S> D SkTo(S s) {
 #define SK_MaxU32   0xFFFFFFFF
 #define SK_MinU32   0
 #define SK_NaN32    ((int) (1U << 31))
-
-/** Returns true if the value can be represented with signed 16bits
- */
-static inline bool SkIsS16(long x) {
-    return (int16_t)x == x;
-}
-
-/** Returns true if the value can be represented with unsigned 16bits
- */
-static inline bool SkIsU16(long x) {
-    return (uint16_t)x == x;
-}
 
 static inline int32_t SkLeftShift(int32_t value, int32_t shift) {
     return (int32_t) ((uint32_t) value << shift);

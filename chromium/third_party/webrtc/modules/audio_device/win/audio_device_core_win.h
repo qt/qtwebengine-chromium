@@ -82,7 +82,7 @@ class ScopedCOMInitializer {
 class AudioDeviceWindowsCore : public AudioDeviceGeneric
 {
 public:
-    AudioDeviceWindowsCore(const int32_t id);
+    AudioDeviceWindowsCore();
     ~AudioDeviceWindowsCore();
 
     static bool CoreAudioIsSupported();
@@ -132,10 +132,6 @@ public:
     // Microphone Automatic Gain Control (AGC)
     virtual int32_t SetAGC(bool enable);
     virtual bool AGC() const;
-
-    // Volume control based on the Windows Wave API (Windows only)
-    virtual int32_t SetWaveOutVolume(uint16_t volumeLeft, uint16_t volumeRight);
-    virtual int32_t WaveOutVolume(uint16_t& volumeLeft, uint16_t& volumeRight) const;
 
     // Audio mixer initialization
     virtual int32_t InitSpeaker();
@@ -237,8 +233,6 @@ private:    // thread functions
     void _Lock() { _critSect.Enter(); };
     void _UnLock() { _critSect.Leave(); };
 
-    int32_t Id() {return _id;}
-
     int SetDMOProperties();
 
     int SetBoolProperty(IPropertyStore* ptrPS,
@@ -274,7 +268,6 @@ private:    // thread functions
     AudioDeviceBuffer*                      _ptrAudioBuffer;
     rtc::CriticalSection                    _critSect;
     rtc::CriticalSection                    _volumeMutex;
-    int32_t                                 _id;
 
     IMMDeviceEnumerator*                    _ptrEnumerator;
     IMMDeviceCollection*                    _ptrRenderCollection;

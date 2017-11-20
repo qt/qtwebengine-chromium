@@ -589,14 +589,12 @@ if (vpx_config("CONFIG_EMULATE_HARDWARE") ne "yes") {
   specialize qw/vpx_idct8x8_64_add neon sse2 vsx/;
   specialize qw/vpx_idct8x8_12_add neon sse2 ssse3/;
   specialize qw/vpx_idct8x8_1_add neon sse2/;
-  specialize qw/vpx_idct16x16_256_add neon sse2/;
+  specialize qw/vpx_idct16x16_256_add neon sse2 vsx/;
   specialize qw/vpx_idct16x16_38_add neon sse2/;
-  $vpx_idct16x16_38_add_sse2=vpx_idct16x16_256_add_sse2;
   specialize qw/vpx_idct16x16_10_add neon sse2/;
   specialize qw/vpx_idct16x16_1_add neon sse2/;
   specialize qw/vpx_idct32x32_1024_add neon sse2/;
   specialize qw/vpx_idct32x32_135_add neon sse2 ssse3/;
-  $vpx_idct32x32_135_add_sse2=vpx_idct32x32_1024_add_sse2;
   specialize qw/vpx_idct32x32_34_add neon sse2 ssse3/;
   specialize qw/vpx_idct32x32_1_add neon sse2/;
 
@@ -657,13 +655,12 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
     specialize qw/vpx_highbd_idct4x4_16_add neon sse2 sse4_1/;
     specialize qw/vpx_highbd_idct8x8_64_add neon sse2 sse4_1/;
     specialize qw/vpx_highbd_idct8x8_12_add neon sse2 sse4_1/;
-    specialize qw/vpx_highbd_idct16x16_256_add neon sse2/;
-    specialize qw/vpx_highbd_idct16x16_38_add neon sse2/;
-    $vpx_highbd_idct16x16_38_add_sse2=vpx_highbd_idct16x16_256_add_sse2;
-    specialize qw/vpx_highbd_idct16x16_10_add neon sse2/;
-    specialize qw/vpx_highbd_idct32x32_1024_add neon/;
-    specialize qw/vpx_highbd_idct32x32_135_add neon/;
-    specialize qw/vpx_highbd_idct32x32_34_add neon/;
+    specialize qw/vpx_highbd_idct16x16_256_add neon sse2 sse4_1/;
+    specialize qw/vpx_highbd_idct16x16_38_add neon sse2 sse4_1/;
+    specialize qw/vpx_highbd_idct16x16_10_add neon sse2 sse4_1/;
+    specialize qw/vpx_highbd_idct32x32_1024_add neon sse2 sse4_1/;
+    specialize qw/vpx_highbd_idct32x32_135_add neon sse2 sse4_1/;
+    specialize qw/vpx_highbd_idct32x32_34_add neon sse2 sse4_1/;
   }  # !CONFIG_EMULATE_HARDWARE
 }  # CONFIG_VP9_HIGHBITDEPTH
 }  # CONFIG_VP9
@@ -673,10 +670,10 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
 #
 if (vpx_config("CONFIG_VP9_ENCODER") eq "yes") {
   add_proto qw/void vpx_quantize_b/, "const tran_low_t *coeff_ptr, intptr_t n_coeffs, int skip_block, const int16_t *zbin_ptr, const int16_t *round_ptr, const int16_t *quant_ptr, const int16_t *quant_shift_ptr, tran_low_t *qcoeff_ptr, tran_low_t *dqcoeff_ptr, const int16_t *dequant_ptr, uint16_t *eob_ptr, const int16_t *scan, const int16_t *iscan";
-  specialize qw/vpx_quantize_b sse2/, "$ssse3_x86_64", "$avx_x86_64";
+  specialize qw/vpx_quantize_b neon sse2 ssse3 avx/;
 
   add_proto qw/void vpx_quantize_b_32x32/, "const tran_low_t *coeff_ptr, intptr_t n_coeffs, int skip_block, const int16_t *zbin_ptr, const int16_t *round_ptr, const int16_t *quant_ptr, const int16_t *quant_shift_ptr, tran_low_t *qcoeff_ptr, tran_low_t *dqcoeff_ptr, const int16_t *dequant_ptr, uint16_t *eob_ptr, const int16_t *scan, const int16_t *iscan";
-  specialize qw/vpx_quantize_b_32x32/, "$ssse3_x86_64", "$avx_x86_64";
+  specialize qw/vpx_quantize_b_32x32 neon/, "$ssse3_x86_64", "$avx_x86_64";
 
   if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
     add_proto qw/void vpx_highbd_quantize_b/, "const tran_low_t *coeff_ptr, intptr_t n_coeffs, int skip_block, const int16_t *zbin_ptr, const int16_t *round_ptr, const int16_t *quant_ptr, const int16_t *quant_shift_ptr, tran_low_t *qcoeff_ptr, tran_low_t *dqcoeff_ptr, const int16_t *dequant_ptr, uint16_t *eob_ptr, const int16_t *scan, const int16_t *iscan";
@@ -692,7 +689,7 @@ if (vpx_config("CONFIG_ENCODERS") eq "yes") {
 # Block subtraction
 #
 add_proto qw/void vpx_subtract_block/, "int rows, int cols, int16_t *diff_ptr, ptrdiff_t diff_stride, const uint8_t *src_ptr, ptrdiff_t src_stride, const uint8_t *pred_ptr, ptrdiff_t pred_stride";
-specialize qw/vpx_subtract_block neon msa sse2/;
+specialize qw/vpx_subtract_block neon msa mmi sse2/;
 
 #
 # Single block SAD

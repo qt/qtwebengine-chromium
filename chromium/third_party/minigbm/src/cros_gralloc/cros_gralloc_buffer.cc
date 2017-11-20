@@ -46,44 +46,45 @@ int32_t cros_gralloc_buffer::decrease_refcount()
 
 int32_t cros_gralloc_buffer::lock(uint64_t flags, uint8_t *addr[DRV_MAX_PLANES])
 {
+	void *vaddr = nullptr;
+
+	memset(addr, 0, DRV_MAX_PLANES * sizeof(*addr));
+
 	/*
 	 * Gralloc consumers don't support more than one kernel buffer per buffer object yet, so
 	 * just use the first kernel buffer.
 	 */
 	if (drv_num_buffers_per_bo(bo_) != 1) {
 		cros_gralloc_error("Can only support one buffer per bo.");
-		return CROS_GRALLOC_ERROR_NO_RESOURCES;
+		return -EINVAL;
 	}
 
 	if (flags) {
-		void *vaddr;
 		if (lock_data_[0]) {
 			vaddr = lock_data_[0]->addr;
 		} else {
 			vaddr = drv_bo_map(bo_, 0, 0, drv_bo_get_width(bo_), drv_bo_get_height(bo_),
-					   0, &lock_data_[0], 0);
+					   BO_TRANSFER_READ_WRITE, &lock_data_[0], 0);
 		}
 
 		if (vaddr == MAP_FAILED) {
 			cros_gralloc_error("Mapping failed.");
-			return CROS_GRALLOC_ERROR_UNSUPPORTED;
+			return -EFAULT;
 		}
-
-		addr[0] = static_cast<uint8_t *>(vaddr);
 	}
 
 	for (uint32_t plane = 0; plane < num_planes_; plane++)
-		addr[plane] = addr[0] + drv_bo_get_plane_offset(bo_, plane);
+		addr[plane] = static_cast<uint8_t *>(vaddr) + drv_bo_get_plane_offset(bo_, plane);
 
 	lockcount_++;
-	return CROS_GRALLOC_ERROR_NONE;
+	return 0;
 }
 
 int32_t cros_gralloc_buffer::unlock()
 {
 	if (lockcount_ <= 0) {
 		cros_gralloc_error("Buffer was not locked.");
-		return CROS_GRALLOC_ERROR_UNSUPPORTED;
+		return -EINVAL;
 	}
 
 	if (!--lockcount_) {
@@ -93,5 +94,5 @@ int32_t cros_gralloc_buffer::unlock()
 		}
 	}
 
-	return CROS_GRALLOC_ERROR_NONE;
+	return 0;
 }

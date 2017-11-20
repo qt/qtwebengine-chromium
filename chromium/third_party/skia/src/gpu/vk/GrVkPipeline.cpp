@@ -34,14 +34,16 @@ static inline VkFormat attrib_type_to_vkformat(GrVertexAttribType type) {
             return VK_FORMAT_R8_UNORM;
         case kVec4ub_GrVertexAttribType:
             return VK_FORMAT_R8G8B8A8_UNORM;
-        case kVec2us_GrVertexAttribType:
+        case kVec2us_norm_GrVertexAttribType:
             return VK_FORMAT_R16G16_UNORM;
+        case kVec2us_uint_GrVertexAttribType:
+            return VK_FORMAT_R16G16_UINT;
         case kInt_GrVertexAttribType:
             return VK_FORMAT_R32_SINT;
         case kUint_GrVertexAttribType:
             return VK_FORMAT_R32_UINT;
     }
-    SkFAIL("Unknown vertex attrib type");
+    SK_ABORT("Unknown vertex attrib type");
     return VK_FORMAT_UNDEFINED;
 }
 
@@ -111,7 +113,7 @@ static VkPrimitiveTopology gr_primitive_type_to_vk_topology(GrPrimitiveType prim
         case GrPrimitiveType::kLinesAdjacency:
             return VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY;
     }
-    SkFAIL("invalid GrPrimitiveType");
+    SK_ABORT("invalid GrPrimitiveType");
     return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 }
 
@@ -239,7 +241,7 @@ static void setup_multisample_state(const GrPipeline& pipeline,
     multisampleInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampleInfo->pNext = nullptr;
     multisampleInfo->flags = 0;
-    int numSamples = pipeline.getRenderTarget()->numColorSamples();
+    int numSamples = pipeline.proxy()->numColorSamples();
     SkAssertResult(GrSampleCountToVkSampleCount(numSamples,
                    &multisampleInfo->rasterizationSamples));
     float sampleShading = primProc.getSampleShading();
@@ -495,6 +497,7 @@ void GrVkPipeline::freeGPUData(const GrVkGpu* gpu) const {
 void GrVkPipeline::SetDynamicScissorRectState(GrVkGpu* gpu,
                                               GrVkCommandBuffer* cmdBuffer,
                                               const GrRenderTarget* renderTarget,
+                                              GrSurfaceOrigin rtOrigin,
                                               SkIRect scissorRect) {
     if (!scissorRect.intersect(SkIRect::MakeWH(renderTarget->width(), renderTarget->height()))) {
         scissorRect.setEmpty();
@@ -503,10 +506,10 @@ void GrVkPipeline::SetDynamicScissorRectState(GrVkGpu* gpu,
     VkRect2D scissor;
     scissor.offset.x = scissorRect.fLeft;
     scissor.extent.width = scissorRect.width();
-    if (kTopLeft_GrSurfaceOrigin == renderTarget->origin()) {
+    if (kTopLeft_GrSurfaceOrigin == rtOrigin) {
         scissor.offset.y = scissorRect.fTop;
     } else {
-        SkASSERT(kBottomLeft_GrSurfaceOrigin == renderTarget->origin());
+        SkASSERT(kBottomLeft_GrSurfaceOrigin == rtOrigin);
         scissor.offset.y = renderTarget->height() - scissorRect.fBottom;
     }
     scissor.extent.height = scissorRect.height();

@@ -64,19 +64,19 @@ void GrMeshDrawOp::onExecute(GrOpFlushState* state) {
     int currMeshIdx = 0;
 
     SkASSERT(fQueuedDraws.empty() || fBaseDrawToken == state->nextTokenToFlush());
+    SkASSERT(state->rtCommandBuffer());
 
     for (int currDrawIdx = 0; currDrawIdx < fQueuedDraws.count(); ++currDrawIdx) {
         GrDrawOpUploadToken drawToken = state->nextTokenToFlush();
         while (currUploadIdx < fInlineUploads.count() &&
                fInlineUploads[currUploadIdx].fUploadBeforeToken == drawToken) {
-            state->commandBuffer()->inlineUpload(state, fInlineUploads[currUploadIdx++].fUpload,
-                                                 state->drawOpArgs().fRenderTarget);
+            state->rtCommandBuffer()->inlineUpload(state, fInlineUploads[currUploadIdx++].fUpload);
         }
         const QueuedDraw& draw = fQueuedDraws[currDrawIdx];
-        SkASSERT(draw.fPipeline->getRenderTarget() == state->drawOpArgs().fRenderTarget);
-        state->commandBuffer()->draw(*draw.fPipeline, *draw.fGeometryProcessor.get(),
-                                     fMeshes.begin() + currMeshIdx, nullptr, draw.fMeshCnt,
-                                     this->bounds());
+        SkASSERT(draw.fPipeline->proxy() == state->drawOpArgs().fProxy);
+        state->rtCommandBuffer()->draw(*draw.fPipeline, *draw.fGeometryProcessor.get(),
+                                       fMeshes.begin() + currMeshIdx, nullptr, draw.fMeshCnt,
+                                       this->bounds());
         currMeshIdx += draw.fMeshCnt;
         state->flushToken();
     }

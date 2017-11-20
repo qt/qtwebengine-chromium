@@ -10,8 +10,8 @@
 #include <memory>
 
 #include "core/fxcrt/cfx_retain_ptr.h"
-#include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_memory.h"
 #include "core/fxge/fx_dib.h"
 
 enum FXDIB_Channel {
@@ -27,6 +27,7 @@ enum FXDIB_Channel {
 
 class CFX_ClipRgn;
 class CFX_DIBitmap;
+class IFX_PauseIndicator;
 
 class CFX_DIBSource : public CFX_Retainable {
  public:
@@ -34,7 +35,7 @@ class CFX_DIBSource : public CFX_Retainable {
 
   virtual uint8_t* GetBuffer() const;
   virtual const uint8_t* GetScanline(int line) const = 0;
-  virtual bool SkipToScanline(int line, IFX_Pause* pPause) const;
+  virtual bool SkipToScanline(int line, IFX_PauseIndicator* pPause) const;
   virtual void DownSampleScanline(int line,
                                   uint8_t* dest_scan,
                                   int dest_bpp,

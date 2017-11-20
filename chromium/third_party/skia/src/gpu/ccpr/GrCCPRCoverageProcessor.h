@@ -75,7 +75,7 @@ public:
 
         // Quadratics.
         kQuadraticHulls,
-        kQuadraticFlatEdges,
+        kQuadraticCorners,
 
         // Cubics.
         kSerpentineInsets,
@@ -104,7 +104,7 @@ public:
     void enableDebugVisualizations() { fDebugVisualizations = true; }
     bool debugVisualizations() const { return fDebugVisualizations; }
 
-    static void Validate(GrRenderTarget* atlasTexture);
+    static void Validate(GrRenderTargetProxy* atlasProxy);
 #endif
 
     class PrimitiveProcessor;
@@ -182,7 +182,7 @@ protected:
     // TODO: subclasses might have good spots to stuff the winding information without burning a
     // whole new varying slot. Consider requiring them to generate the correct coverage sign.
     virtual void emitShaderCoverage(GrGLSLFragmentBuilder*, const char* outputCoverage) const {
-        SkFAIL("Shader coverage not implemented when using CoverageType::kShader.");
+        SK_ABORT("Shader coverage not implemented when using CoverageType::kShader.");
     }
 
     // Emits one wedge of the conservative raster hull of a convex polygon. The complete hull has
@@ -215,13 +215,21 @@ protected:
     int emitEdgeGeometry(GrGLSLGeometryBuilder*, const char* emitVertexFn, const char* leftPt,
                          const char* rightPt, const char* distanceEquation = nullptr) const;
 
-    // Defines an equation ("dot(vec3(pt, 1), distance_equation)") that is -1 on the outside border
-    // of a conservative raster edge and 0 on the inside (see emitEdgeGeometry).
+    // Defines an equation ("dot(float3(pt, 1), distance_equation)") that is -1 on the outside
+    // border of a conservative raster edge and 0 on the inside (see emitEdgeGeometry).
     void emitEdgeDistanceEquation(GrGLSLGeometryBuilder*, const char* leftPt, const char* rightPt,
                                   const char* outputDistanceEquation) const;
 
-    // Defines a global vec2 array that contains MSAA sample locations as offsets from pixel center.
-    // Subclasses can use this for software multisampling.
+    // Emits the conservative raster of a single point (i.e. pixel-size box centered on the point).
+    // Coverage is +1 all around.
+    //
+    // Geometry shader must be configured to output triangle strips.
+    //
+    // Returns the number of vertices that were emitted.
+    int emitCornerGeometry(GrGLSLGeometryBuilder*, const char* emitVertexFn, const char* pt) const;
+
+    // Defines a global float2 array that contains MSAA sample locations as offsets from pixel
+    // center. Subclasses can use this for software multisampling.
     //
     // Returns the number of samples.
     int defineSoftSampleLocations(GrGLSLFragmentBuilder*, const char* samplesName) const;

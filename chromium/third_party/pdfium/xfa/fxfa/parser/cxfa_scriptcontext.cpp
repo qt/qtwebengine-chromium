@@ -8,14 +8,16 @@
 
 #include <utility>
 
+#include "core/fxcrt/cfx_autorestorer.h"
+#include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_extension.h"
 #include "fxjs/cfxjse_arguments.h"
 #include "fxjs/cfxjse_class.h"
 #include "fxjs/cfxjse_value.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
-#include "xfa/fxfa/app/cxfa_ffnotify.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
+#include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
@@ -340,7 +342,7 @@ void CXFA_ScriptContext::NormalPropertySetter(CFXJSE_Value* pOriginalValue,
         pReturnValue, true, (XFA_ATTRIBUTE)lpAttributeInfo->eAttribute);
   } else {
     if (pObject->IsNode()) {
-      if (wsPropName.GetAt(0) == '#') {
+      if (wsPropName[0] == '#') {
         wsPropName = wsPropName.Right(wsPropName.GetLength() - 1);
       }
       CXFA_Node* pNode = ToNode(pObject);

@@ -95,7 +95,7 @@ void GrGLSLProgramBuilder::emitAndInstallPrimProc(const GrPrimitiveProcessor& pr
     fVS.codeAppendf("// Primitive Processor %s\n", proc.name());
 
     SkASSERT(!fGeometryProcessor);
-    fGeometryProcessor = proc.createGLSLInstance(*this->shaderCaps());
+    fGeometryProcessor.reset(proc.createGLSLInstance(*this->shaderCaps()));
 
     SkSTArray<4, SamplerHandle>      texSamplers(proc.numTextureSamplers());
     SkSTArray<2, TexelBufferHandle>  texelBuffers(proc.numBuffers());
@@ -207,7 +207,7 @@ void GrGLSLProgramBuilder::emitAndInstallXferProc(const SkString& colorIn,
 
     SkASSERT(!fXferProcessor);
     const GrXferProcessor& xp = fPipeline.getXferProcessor();
-    fXferProcessor = xp.createGLSLInstance();
+    fXferProcessor.reset(xp.createGLSLInstance());
 
     // Enable dual source secondary output if we have one
     if (xp.hasSecondaryOutput()) {
@@ -231,7 +231,7 @@ void GrGLSLProgramBuilder::emitAndInstallXferProc(const SkString& colorIn,
         dstTextureSamplerHandle =
                 this->emitSampler(dstTexture->texturePriv().samplerType(), dstTexture->config(),
                                   "DstTextureSampler", kFragment_GrShaderFlag);
-        dstTextureOrigin = dstTexture->origin();
+        dstTextureOrigin = fPipeline.dstTextureProxy()->origin();
         SkASSERT(kTextureExternalSampler_GrSLType != dstTexture->texturePriv().samplerType());
     }
 
@@ -239,8 +239,8 @@ void GrGLSLProgramBuilder::emitAndInstallXferProc(const SkString& colorIn,
                                        this->uniformHandler(),
                                        this->shaderCaps(),
                                        xp,
-                                       colorIn.size() ? colorIn.c_str() : "vec4(1)",
-                                       coverageIn.size() ? coverageIn.c_str() : "vec4(1)",
+                                       colorIn.size() ? colorIn.c_str() : "float4(1)",
+                                       coverageIn.size() ? coverageIn.c_str() : "float4(1)",
                                        fFS.getPrimaryColorOutputName(),
                                        fFS.getSecondaryColorOutputName(),
                                        dstTextureSamplerHandle,
@@ -455,7 +455,7 @@ void GrGLSLProgramBuilder::nameExpression(SkString* output, const char* baseName
     } else {
         this->nameVariable(&outName, '\0', baseName);
     }
-    fFS.codeAppendf("vec4 %s;", outName.c_str());
+    fFS.codeAppendf("float4 %s;", outName.c_str());
     *output = outName;
 }
 

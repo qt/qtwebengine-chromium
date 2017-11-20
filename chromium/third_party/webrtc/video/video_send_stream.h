@@ -16,6 +16,8 @@
 #include <vector>
 
 #include "webrtc/call/bitrate_allocator.h"
+#include "webrtc/call/video_receive_stream.h"
+#include "webrtc/call/video_send_stream.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_coding/protection_bitrate_calculator.h"
 #include "webrtc/rtc_base/criticalsection.h"
@@ -24,9 +26,7 @@
 #include "webrtc/video/encoder_rtcp_feedback.h"
 #include "webrtc/video/send_delay_stats.h"
 #include "webrtc/video/send_statistics_proxy.h"
-#include "webrtc/video/vie_encoder.h"
-#include "webrtc/video_receive_stream.h"
-#include "webrtc/video_send_stream.h"
+#include "webrtc/video/video_stream_encoder.h"
 
 namespace webrtc {
 
@@ -44,7 +44,8 @@ class VideoSendStreamImpl;
 
 // VideoSendStream implements webrtc::VideoSendStream.
 // Internally, it delegates all public methods to VideoSendStreamImpl and / or
-// VieEncoder. VideoSendStreamInternal is created and deleted on |worker_queue|.
+// VideoStreamEncoder. VideoSendStreamInternal is created and deleted on
+// |worker_queue|.
 class VideoSendStream : public webrtc::VideoSendStream {
  public:
   VideoSendStream(int num_cpu_cores,
@@ -57,8 +58,7 @@ class VideoSendStream : public webrtc::VideoSendStream {
                   RtcEventLog* event_log,
                   VideoSendStream::Config config,
                   VideoEncoderConfig encoder_config,
-                  const std::map<uint32_t, RtpState>& suspended_ssrcs,
-                  const RtpKeepAliveConfig& keepalive_config);
+                  const std::map<uint32_t, RtpState>& suspended_ssrcs);
 
   ~VideoSendStream() override;
 
@@ -102,7 +102,7 @@ class VideoSendStream : public webrtc::VideoSendStream {
   const VideoSendStream::Config config_;
   const VideoEncoderConfig::ContentType content_type_;
   std::unique_ptr<VideoSendStreamImpl> send_stream_;
-  std::unique_ptr<ViEEncoder> vie_encoder_;
+  std::unique_ptr<VideoStreamEncoder> video_stream_encoder_;
 };
 
 }  // namespace internal

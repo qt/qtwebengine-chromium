@@ -103,7 +103,7 @@
 #include "media/base/media_switches.h"
 #include "media/media_features.h"
 #include "media/renderers/audio_renderer_impl.h"
-#include "media/renderers/gpu_video_accelerator_factories.h"
+#include "media/video/gpu_video_accelerator_factories.h"
 #include "net/base/data_url.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
@@ -136,7 +136,6 @@
 #include "third_party/WebKit/public/web/WebColorSuggestion.h"
 #include "third_party/WebKit/public/web/WebDOMEvent.h"
 #include "third_party/WebKit/public/web/WebDOMMessageEvent.h"
-#include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDateTimeChooserCompletion.h"
 #include "third_party/WebKit/public/web/WebDateTimeChooserParams.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -207,7 +206,6 @@ using blink::WebApplicationCacheHostClient;
 using blink::WebColor;
 using blink::WebConsoleMessage;
 using blink::WebData;
-using blink::WebDataSource;
 using blink::WebDocument;
 using blink::WebDragOperation;
 using blink::WebElement;
@@ -245,6 +243,7 @@ using blink::WebStorageQuotaCallbacks;
 using blink::WebStorageQuotaError;
 using blink::WebStorageQuotaType;
 using blink::WebString;
+using blink::WebTappedInfo;
 using blink::WebTextDirection;
 using blink::WebTouchEvent;
 using blink::WebURL;
@@ -336,10 +335,6 @@ static bool DeviceScaleEnsuresTextQuality(float device_scale_factor) {
 
 static bool PreferCompositingToLCDText(CompositorDependencies* compositor_deps,
                                        float device_scale_factor) {
-  if (base::FeatureList::IsEnabled(
-          features::kDisablePreferCompositingToLCDTextOnLowEndAndroid) &&
-      base::SysInfo::AmountOfPhysicalMemoryMB() <= 512)
-    return false;
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kDisablePreferCompositingToLCDText))
@@ -548,6 +543,7 @@ RenderViewImpl::RenderViewImpl(CompositorDependencies* compositor_deps,
 #endif
       browser_controls_shrink_blink_size_(false),
       top_controls_height_(0.f),
+      bottom_controls_height_(0.f),
       webview_(nullptr),
       has_scrolled_focused_editable_node_into_rect_(false),
       page_zoom_level_(params.page_zoom_level),
@@ -830,8 +826,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   // Disable antialiasing for 2d canvas if requested on the command line.
   settings->SetAntialiased2dCanvasEnabled(
       !prefs.antialiased_2d_canvas_disabled);
-  WebRuntimeFeatures::ForceDisable2dCanvasCopyOnWrite(
-      prefs.disable_2d_canvas_copy_on_write);
 
   // Disable antialiasing of clips for 2d canvas if requested on the command
   // line.
@@ -878,6 +872,7 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->SetPrimaryHoverType(
       static_cast<blink::HoverType>(prefs.primary_hover_type));
   settings->SetEnableTouchAdjustment(prefs.touch_adjustment_enabled);
+  settings->SetBarrelButtonForDragEnabled(prefs.barrel_button_for_drag_enabled);
 
   WebRuntimeFeatures::EnableColorCorrectRendering(
       prefs.color_correct_rendering_enabled);
@@ -975,8 +970,11 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->SetEmbeddedMediaExperienceEnabled(
       prefs.embedded_media_experience_enabled);
   settings->SetPagePopupsSuppressed(prefs.page_popups_suppressed);
+  settings->SetMediaDownloadInProductHelpEnabled(
+      prefs.enable_media_download_in_product_help);
   settings->SetDoNotUpdateSelectionOnMutatingSelectionRange(
       prefs.do_not_update_selection_on_mutating_selection_range);
+  WebRuntimeFeatures::EnableCSSHexAlphaColor(prefs.css_hex_alpha_color_enabled);
   WebRuntimeFeatures::EnableScrollTopLeftInterop(
       prefs.scroll_top_left_interop_enabled);
 #endif  // defined(OS_ANDROID)
@@ -1022,6 +1020,9 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       prefs.background_video_track_optimization_enabled);
   WebRuntimeFeatures::EnableNewRemotePlaybackPipeline(
       base::FeatureList::IsEnabled(media::kNewRemotePlaybackPipeline));
+
+  WebRuntimeFeatures::EnablePreloadDefaultIsMetadata(
+      base::FeatureList::IsEnabled(media::kPreloadDefaultIsMetadata));
 
   settings->SetPresentationReceiver(prefs.presentation_receiver);
 
@@ -1103,12 +1104,6 @@ void RenderViewImpl::OnGetRenderedText() {
 
 #endif  // ENABLE_PLUGINS
 
-void RenderViewImpl::TransferActiveWheelFlingAnimation(
-    const blink::WebActiveWheelFlingParameters& params) {
-  if (webview())
-    webview()->TransferActiveWheelFlingAnimation(params);
-}
-
 // RenderWidgetInputHandlerDelegate -----------------------------------------
 
 bool RenderViewImpl::DoesRenderWidgetHaveTouchEventHandlersAt(
@@ -1137,9 +1132,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
   // swapped out state.
   if (is_swapped_out_ &&
       IPC_MESSAGE_ID_CLASS(message.type()) == InputMsgStart) {
-    // TODO(dtapuska): Remove this histogram once we have seen that it actually
-    // produces results true. See crbug.com/615090
-    UMA_HISTOGRAM_BOOLEAN("Event.RenderView.DiscardInput", true);
     IPC_BEGIN_MESSAGE_MAP(RenderViewImpl, message)
       IPC_MESSAGE_HANDLER(InputMsg_HandleInputEvent, OnDiscardInputEvent)
     IPC_END_MESSAGE_MAP()
@@ -1774,9 +1766,10 @@ void RenderViewImpl::DidOverscroll(
     const blink::WebFloatSize& overscrollDelta,
     const blink::WebFloatSize& accumulatedOverscroll,
     const blink::WebFloatPoint& positionInViewport,
-    const blink::WebFloatSize& velocityInViewport) {
+    const blink::WebFloatSize& velocityInViewport,
+    const blink::WebScrollBoundaryBehavior& behavior) {
   RenderWidget::DidOverscroll(overscrollDelta, accumulatedOverscroll,
-                              positionInViewport, velocityInViewport);
+                              positionInViewport, velocityInViewport, behavior);
 }
 
 void RenderViewImpl::HasTouchEventHandlers(bool has_handlers) {
@@ -1801,11 +1794,8 @@ void RenderViewImpl::SetTouchAction(blink::WebTouchAction touchAction) {
 }
 
 void RenderViewImpl::ShowUnhandledTapUIIfNeeded(
-    const blink::WebPoint& tappedPosition,
-    const blink::WebNode& tappedNode,
-    bool pageChanged) {
-  RenderWidget::ShowUnhandledTapUIIfNeeded(tappedPosition, tappedNode,
-                                           pageChanged);
+    const blink::WebTappedInfo& tappedInfo) {
+  RenderWidget::ShowUnhandledTapUIIfNeeded(tappedInfo);
 }
 
 blink::WebWidgetClient* RenderViewImpl::WidgetClient() {
@@ -2091,9 +2081,9 @@ void RenderViewImpl::OnMoveOrResizeStarted() {
 }
 
 void RenderViewImpl::ResizeWebWidget() {
-  webview()->ResizeWithBrowserControls(GetSizeForWebWidget(),
-                                       top_controls_height_,
-                                       browser_controls_shrink_blink_size_);
+  webview()->ResizeWithBrowserControls(
+      GetSizeForWebWidget(), top_controls_height_, bottom_controls_height_,
+      browser_controls_shrink_blink_size_);
 }
 
 void RenderViewImpl::OnResize(const ResizeParams& params) {
@@ -2117,6 +2107,7 @@ void RenderViewImpl::OnResize(const ResizeParams& params) {
   browser_controls_shrink_blink_size_ =
       params.browser_controls_shrink_blink_size;
   top_controls_height_ = params.top_controls_height;
+  bottom_controls_height_ = params.bottom_controls_height;
 
   RenderWidget::OnResize(params);
 
@@ -2326,9 +2317,8 @@ bool RenderViewImpl::DidTapMultipleTargets(
     const WebVector<WebRect>& target_rects) {
   // Never show a disambiguation popup when accessibility is enabled,
   // as this interferes with "touch exploration".
-  AccessibilityMode accessibility_mode =
-      GetMainRenderFrame()->accessibility_mode();
-  if (accessibility_mode == kAccessibilityModeComplete)
+  ui::AXMode accessibility_mode = GetMainRenderFrame()->accessibility_mode();
+  if (accessibility_mode == ui::kAXModeComplete)
     return false;
 
   // The touch_rect, target_rects and zoom_rect are in the outer viewport
@@ -2535,7 +2525,7 @@ void RenderViewImpl::HandleInputEvent(
     HandledEventCallback callback) {
   if (is_swapped_out_) {
     std::move(callback).Run(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, latency_info,
-                            nullptr);
+                            nullptr, base::nullopt);
     return;
   }
   idle_user_detector_->ActivityDetected();

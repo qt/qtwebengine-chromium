@@ -28,6 +28,7 @@ class VertexArray11 : public VertexArrayImpl, public OnBufferDataDirtyReceiver
                    const gl::VertexArray::DirtyBits &dirtyBits) override;
     // This will flush any pending attrib updates and then check the dynamic attribs mask.
     bool hasDynamicAttrib(const gl::Context *context);
+    bool hasDirtyOrDynamicAttrib(const gl::Context *context);
     gl::Error updateDirtyAndDynamicAttribs(const gl::Context *context,
                                            VertexDataManager *vertexDataManager,
                                            GLint start,
@@ -39,6 +40,8 @@ class VertexArray11 : public VertexArrayImpl, public OnBufferDataDirtyReceiver
 
     // SignalReceiver implementation
     void signal(size_t channelID) override;
+
+    Serial getCurrentStateSerial() const { return mCurrentStateSerial; }
 
   private:
     void updateVertexAttribStorage(const gl::Context *context, size_t attribIndex);
@@ -60,6 +63,8 @@ class VertexArray11 : public VertexArrayImpl, public OnBufferDataDirtyReceiver
     std::vector<gl::BindingPointer<gl::Buffer>> mCurrentBuffers;
 
     std::vector<OnBufferDataDirtyBinding> mOnBufferDataDirty;
+
+    Serial mCurrentStateSerial;
 };
 
 }  // namespace rx

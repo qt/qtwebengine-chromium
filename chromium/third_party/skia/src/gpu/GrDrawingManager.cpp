@@ -7,6 +7,7 @@
 
 #include "GrDrawingManager.h"
 
+#include "GrBackendSemaphore.h"
 #include "GrContext.h"
 #include "GrGpu.h"
 #include "GrOnFlushResourceProvider.h"
@@ -83,11 +84,14 @@ gr_instanced::OpAllocator* GrDrawingManager::instancingAllocator() {
 }
 
 // MDB TODO: make use of the 'proxy' parameter.
-void GrDrawingManager::internalFlush(GrSurfaceProxy*, GrResourceCache::FlushType type) {
+GrSemaphoresSubmitted GrDrawingManager::internalFlush(GrSurfaceProxy*,
+                                                      GrResourceCache::FlushType type,
+                                                      int numSemaphores,
+                                                      GrBackendSemaphore backendSemaphores[]) {
     GR_CREATE_TRACE_MARKER_CONTEXT("GrDrawingManager", "internalFlush", fContext);
 
     if (fFlushing || this->wasAbandoned()) {
-        return;
+        return GrSemaphoresSubmitted::kNo;
     }
     fFlushing = true;
     bool flushed = false;
@@ -148,8 +152,8 @@ void GrDrawingManager::internalFlush(GrSurfaceProxy*, GrResourceCache::FlushType
                     continue;   // Odd - but not a big deal
                 }
                 opList->makeClosed(*fContext->caps());
-                opList->prepareOps(&fFlushState);
-                if (!opList->executeOps(&fFlushState)) {
+                opList->prepare(&fFlushState);
+                if (!opList->execute(&fFlushState)) {
                     continue;         // This is bad
                 }
             }
@@ -166,11 +170,12 @@ void GrDrawingManager::internalFlush(GrSurfaceProxy*, GrResourceCache::FlushType
 
     for (int i = 0; i < fOpLists.count(); ++i) {
         if (!fOpLists[i]->instantiate(fContext->resourceProvider())) {
+            SkDebugf("OpList failed to instantiate.\n");
             fOpLists[i] = nullptr;
             continue;
         }
 
-        fOpLists[i]->prepareOps(&fFlushState);
+        fOpLists[i]->prepare(&fFlushState);
     }
 
     // Upload all data to the GPU
@@ -181,7 +186,7 @@ void GrDrawingManager::internalFlush(GrSurfaceProxy*, GrResourceCache::FlushType
             continue;
         }
 
-        if (fOpLists[i]->executeOps(&fFlushState)) {
+        if (fOpLists[i]->execute(&fFlushState)) {
             flushed = true;
         }
         fOpLists[i]->reset();
@@ -190,7 +195,8 @@ void GrDrawingManager::internalFlush(GrSurfaceProxy*, GrResourceCache::FlushType
 
     SkASSERT(fFlushState.nextDrawToken() == fFlushState.nextTokenToFlush());
 
-    fContext->getGpu()->finishFlush();
+    GrSemaphoresSubmitted result = fContext->getGpu()->finishFlush(numSemaphores,
+                                                                   backendSemaphores);
 
     fFlushState.reset();
     // We always have to notify the cache when it requested a flush so it can reset its state.
@@ -201,27 +207,32 @@ void GrDrawingManager::internalFlush(GrSurfaceProxy*, GrResourceCache::FlushType
         onFlushCBObject->postFlush();
     }
     fFlushing = false;
+
+    return result;
 }
 
-void GrDrawingManager::prepareSurfaceForExternalIO(GrSurfaceProxy* proxy) {
+GrSemaphoresSubmitted GrDrawingManager::prepareSurfaceForExternalIO(
+        GrSurfaceProxy* proxy, int numSemaphores, GrBackendSemaphore backendSemaphores[]) {
     if (this->wasAbandoned()) {
-        return;
+        return GrSemaphoresSubmitted::kNo;
     }
     SkASSERT(proxy);
 
-    if (proxy->priv().hasPendingIO()) {
-        this->flush(proxy);
+    GrSemaphoresSubmitted result;
+    if (proxy->priv().hasPendingIO() || numSemaphores) {
+        result = this->flush(proxy, numSemaphores, backendSemaphores);
     }
 
     if (!proxy->instantiate(fContext->resourceProvider())) {
-        return;
+        return result;
     }
 
     GrSurface* surface = proxy->priv().peekSurface();
 
     if (fContext->getGpu() && surface->asRenderTarget()) {
-        fContext->getGpu()->resolveRenderTarget(surface->asRenderTarget());
+        fContext->getGpu()->resolveRenderTarget(surface->asRenderTarget(), proxy->origin());
     }
+    return result;
 }
 
 void GrDrawingManager::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlushCBObject) {

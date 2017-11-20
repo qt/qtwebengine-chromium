@@ -14,7 +14,6 @@
 #include "core/fpdfdoc/cpdf_action.h"
 #include "core/fpdfdoc/ipdf_formnotify.h"
 #include "core/fxcrt/cfx_unowned_ptr.h"
-#include "core/fxcrt/fx_basic.h"
 #include "core/fxge/fx_dib.h"
 #include "fpdfsdk/cpdfsdk_widget.h"
 
@@ -90,10 +89,10 @@ class CPDFSDK_InterForm : public IPDF_FormNotify {
                     bool bIncludeOrExclude,
                     bool bUrlEncoded);
   bool SubmitForm(const CFX_WideString& sDestination, bool bUrlEncoded);
-  bool ExportFormToFDFTextBuf(CFX_ByteTextBuf& textBuf);
-  bool ExportFieldsToFDFTextBuf(const std::vector<CPDF_FormField*>& fields,
-                                bool bIncludeOrExclude,
-                                CFX_ByteTextBuf& textBuf);
+  CFX_ByteString ExportFormToFDFTextBuf();
+  CFX_ByteString ExportFieldsToFDFTextBuf(
+      const std::vector<CPDF_FormField*>& fields,
+      bool bIncludeOrExclude);
   CFX_WideString GetTemporaryFileName(const CFX_WideString& sFileExt);
 
   bool IsNeedHighLight(int nFieldType);
@@ -117,7 +116,6 @@ class CPDFSDK_InterForm : public IPDF_FormNotify {
   int BeforeFormImportData(CPDF_InterForm* pForm) override;
   void AfterFormImportData(CPDF_InterForm* pForm) override;
 
-  bool FDFToURLEncodedData(CFX_WideString csFDFFile, CFX_WideString csTxtFile);
   bool FDFToURLEncodedData(uint8_t*& pBuf, FX_STRSIZE& nBufSize);
   int GetPageIndexByAnnotDict(CPDF_Document* pDocument,
                               CPDF_Dictionary* pAnnotDict) const;

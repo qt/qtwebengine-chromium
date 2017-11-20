@@ -16,6 +16,7 @@ namespace SkSL {
     class ShaderCapsFactory;
 }
 struct GrContextOptions;
+class SkJSONWriter;
 
 class GrShaderCaps : public SkRefCnt {
 public:
@@ -68,7 +69,7 @@ public:
 
     GrShaderCaps(const GrContextOptions&);
 
-    SkString dump() const;
+    void dumpJSON(SkJSONWriter*) const;
 
     bool shaderDerivativeSupport() const { return fShaderDerivativeSupport; }
     bool geometryShaderSupport() const { return fGeometryShaderSupport; }
@@ -153,6 +154,8 @@ public:
 
     bool canUseMinAndAbsTogether() const { return fCanUseMinAndAbsTogether; }
 
+    bool canUseFractForNegativeValues() const { return fCanUseFractForNegativeValues; }
+
     bool mustForceNegatedAtanParamToFloat() const { return fMustForceNegatedAtanParamToFloat; }
 
     // Returns whether a device incorrectly implements atan(y,x) as atan(y/x)
@@ -164,6 +167,12 @@ public:
     bool mustImplementGSInvocationsWithLoop() const { return fMustImplementGSInvocationsWithLoop; }
 
     bool mustObfuscateUniformColor() const { return fMustObfuscateUniformColor; }
+
+    // The D3D shader compiler, when targeting PS 3.0 (ie within ANGLE) fails to compile certain
+    // constructs. See detailed comments in GrGLCaps.cpp.
+    bool mustGuardDivisionEvenAfterExplicitZeroCheck() const {
+        return fMustGuardDivisionEvenAfterExplicitZeroCheck;
+    }
 
     // Returns the string of an extension that must be enabled in the shader to support
     // derivatives. If nullptr is returned then no extension needs to be enabled. Before calling
@@ -290,11 +299,13 @@ private:
 
     // Used for specific driver bug work arounds
     bool fCanUseMinAndAbsTogether : 1;
+    bool fCanUseFractForNegativeValues : 1;
     bool fMustForceNegatedAtanParamToFloat : 1;
     bool fAtan2ImplementedAsAtanYOverX : 1;
     bool fRequiresLocalOutputColorForFBFetch : 1;
     bool fMustImplementGSInvocationsWithLoop : 1;
     bool fMustObfuscateUniformColor : 1;
+    bool fMustGuardDivisionEvenAfterExplicitZeroCheck : 1;
 
     PrecisionInfo fFloatPrecisions[kGrShaderTypeCount][kGrSLPrecisionCount];
 
@@ -331,6 +342,7 @@ private:
     uint8_t fSamplerPrecisions[(1 << kGrShaderTypeCount)][kGrPixelConfigCnt];
 
     friend class GrGLCaps;  // For initialization.
+    friend class GrMtlCaps;
     friend class GrVkCaps;
     friend class SkSL::ShaderCapsFactory;
 };

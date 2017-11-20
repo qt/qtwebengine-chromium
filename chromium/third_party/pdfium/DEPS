@@ -5,28 +5,26 @@ vars = {
   'pdfium_git': 'https://pdfium.googlesource.com',
 
   'android_ndk_revision': '26d93ec07f3ce2ec2cdfeae1b21ee6f12ff868d8',
-  'build_revision': 'f671d3baeb64d9dba628ad582e867cf1aebc0207',
-  'buildtools_revision': 'e6b510a9daf822bbe9f922c200c58150803d2fd8',
+  'build_revision': 'bee933aa41e29016998f5fbdd05cc2ce457e28c5',
+  'buildtools_revision': 'f90f6a5af3e8cf843395bfe6243cf606f71b5344',
   'catapult_revision': '86352b966b0245d6883e5f7df27687856978b6d7',
-  'clang_revision': 'ae881aab392c247eca831e079d1d45e1c200cce7',
+  'clang_revision': 'a1420b85586c1fa3eaf68808bbb095334d2d271d',
   'cygwin_revision': 'c89e446b273697fadf3a10ff1007a97c0b7de6df',
-  'freetype_revision': '38bdf22bfe68432aebdd33c198a0bd11b4ebb96f',
-  'gen_library_loader_revision': '916d4acd8b2cde67a390737dfba90b3c37de23a1',
+  'freetype_revision': '7e50824288fac5a36c2938fdb3e1c949ea53f982',
   'gmock_revision': '29763965ab52f24565299976b936d1265cb6a271',
   'gtest_revision': '8245545b6dc9c4703e6496d1efd19e975ad2b038',
-  'icu_revision': '73e24736676b4b438270fda44e5b2c83b49fdd80',
-  'instrumented_lib_revision': '45f5814b1543e41ea0be54c771e3840ea52cca4a',
+  'icu_revision': '08cb956852a5ccdba7f9c941728bb833529ba3c6',
+  'instrumented_lib_revision': '644afd349826cb68204226a16c38bde13abe9c3c',
   'jinja2_revision': 'd34383206fa42d52faa10bb9931d6d538f3a57e0',
   'jpeg_turbo_revision': '7260e4d8b8e1e40b17f03fafdf1cd83296900f76',
   'markupsafe_revision': '8f45f5cfa0009d2a70589bcda0349b8cb2b72783',
-  'pdfium_tests_revision': 'ab561f0075518d699636b884b0db46293cd76261',
-  'skia_revision': 'bb581ce30f55360fd3a12e7f5aa1fe324b16d085',
+  'pdfium_tests_revision': '14606ac642de57bea9aae0d07aa76f5e0ac50dba',
+  'skia_revision': 'e0e20755f6c09b71038ced2bf4a00b4c4593f504',
   'tools_memory_revision': '427f10475e1a8d72424c29d00bf689122b738e5d',
   'trace_event_revision': '06294c8a4a6f744ef284cd63cfe54dbf61eea290',
-  'v8_revision': '539f7ab310f8865090c494b0251c45e7c52ae5f5',
-  'yasm_binary_revision': '52f9b3f4b0aa06da24ef8b123058bb61ee468881',
-  'yasm_source_revision': '7da28c6c7c6a1387217352ce02b31754deb54d2a',
-  'zlib_revision': 'eed2732a73838fd581cb25819ab1c4f478d6b38f',
+  'v8_revision': '4931eb42e8a934941dc60d8f7dc510c08d7bc2c6',
+  'yasm_source_revision': 'b98114e18d8b9b84586b10d24353ab8616d4c5fc',
+  'zlib_revision': '718f686437b89038ac83525f4f1b1888aadd9bfc',
 }
 
 deps = {
@@ -88,10 +86,6 @@ deps = {
   "tools/clang":
     Var('chromium_git') + "/chromium/src/tools/clang@" +  Var('clang_revision'),
 
-  "tools/generate_library_loader":
-    Var('chromium_git') + "/chromium/src/tools/generate_library_loader@" +
-        Var('gen_library_loader_revision'),
-
   # TODO(GYP): Remove this when no tools rely on GYP anymore.
   "tools/gyp":
     Var('chromium_git') + '/external/gyp.git@' +
@@ -115,10 +109,6 @@ deps_os = {
           Var('catapult_revision'),
   },
   "win": {
-    'third_party/yasm/binaries':
-      Var('chromium_git') + '/chromium/deps/yasm/binaries.git' + '@' +
-          Var('yasm_binary_revision'),
-
     "v8/third_party/cygwin":
       Var('chromium_git') + "/chromium/deps/cygwin@" + Var('cygwin_revision'),
   },

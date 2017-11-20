@@ -61,7 +61,8 @@ void CompareRow(const uint8_t* old_buffer,
   const int height = bottom - top;
   const int block_count = (width - 1) / kBlockSize;
   const int last_block_width = width - block_count * kBlockSize;
-  RTC_DCHECK(last_block_width <= kBlockSize && last_block_width > 0);
+  RTC_DCHECK_GT(last_block_width, 0);
+  RTC_DCHECK_LE(last_block_width, kBlockSize);
 
   // The first block-column in a continuous dirty area in current block-row.
   int first_dirty_x_block = -1;
@@ -200,7 +201,7 @@ void DesktopCapturerDifferWrapper::OnCaptureResult(
 
   if (last_frame_) {
     DesktopRegion hints;
-    hints.Swap(frame->GetUnderlyingFrame()->mutable_updated_region());
+    hints.Swap(frame->mutable_updated_region());
     for (DesktopRegion::Iterator it(hints); !it.IsAtEnd(); it.Advance()) {
       CompareFrames(*last_frame_, *frame, it.rect(),
                     frame->mutable_updated_region());
@@ -211,10 +212,9 @@ void DesktopCapturerDifferWrapper::OnCaptureResult(
   }
   last_frame_ = frame->Share();
 
-  frame->set_capture_time_ms(frame->GetUnderlyingFrame()->capture_time_ms() +
+  frame->set_capture_time_ms(frame->capture_time_ms() +
                              (rtc::TimeNanos() - start_time_nanos) /
                                  rtc::kNumNanosecsPerMillisec);
-  frame->set_capturer_id(frame->GetUnderlyingFrame()->capturer_id());
   callback_->OnCaptureResult(result, std::move(frame));
 }
 

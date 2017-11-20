@@ -31,10 +31,6 @@ TEST_F(CPDFParserEmbeddertest, Bug_544880) {
   (void)GetPageCount();
 }
 
-TEST_F(CPDFParserEmbeddertest, Feature_Linearized_Loading) {
-  EXPECT_TRUE(OpenDocument("feature_linearized_loading.pdf", nullptr, true));
-}
-
 TEST_F(CPDFParserEmbeddertest, Bug_325a) {
   EXPECT_FALSE(OpenDocument("bug_325_a.pdf"));
 }
@@ -56,4 +52,8 @@ TEST_F(CPDFParserEmbeddertest, Bug_602650) {
 
   FPDFText_ClosePage(text_page);
   UnloadPage(page);
+}
+
+TEST_F(CPDFParserEmbeddertest, Bug_757705) {
+  EXPECT_TRUE(OpenDocument("bug_757705.pdf"));
 }

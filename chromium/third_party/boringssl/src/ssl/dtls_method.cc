@@ -66,20 +66,27 @@
 #include "internal.h"
 
 
+using namespace bssl;
+
 static int dtls1_supports_cipher(const SSL_CIPHER *cipher) {
   return cipher->algorithm_enc != SSL_eNULL;
 }
 
-static void dtls1_expect_flight(SSL *ssl) { dtls1_start_timer(ssl); }
+static void dtls1_on_handshake_complete(SSL *ssl) {
+  /* Stop the reply timer left by the last flight we sent. */
+  dtls1_stop_timer(ssl);
+  /* If the final flight had a reply, we know the peer has received it. If not,
+   * we must leave the flight around for post-handshake retransmission. */
+  if (ssl->d1->flight_has_reply) {
+    dtls_clear_outgoing_messages(ssl);
+  }
+}
 
-static void dtls1_received_flight(SSL *ssl) { dtls1_stop_timer(ssl); }
-
-static int dtls1_set_read_state(SSL *ssl, SSL_AEAD_CTX *aead_ctx) {
+static int dtls1_set_read_state(SSL *ssl, UniquePtr<SSLAEADContext> aead_ctx) {
   /* Cipher changes are illegal when there are buffered incoming messages. */
-  if (dtls_has_incoming_messages(ssl)) {
+  if (dtls_has_incoming_messages(ssl) || ssl->d1->has_change_cipher_spec) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_BUFFERED_MESSAGES_ON_CIPHER_CHANGE);
     ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
-    SSL_AEAD_CTX_free(aead_ctx);
     return 0;
   }
 
@@ -87,19 +94,20 @@ static int dtls1_set_read_state(SSL *ssl, SSL_AEAD_CTX *aead_ctx) {
   OPENSSL_memset(&ssl->d1->bitmap, 0, sizeof(ssl->d1->bitmap));
   OPENSSL_memset(ssl->s3->read_sequence, 0, sizeof(ssl->s3->read_sequence));
 
-  SSL_AEAD_CTX_free(ssl->s3->aead_read_ctx);
-  ssl->s3->aead_read_ctx = aead_ctx;
+  Delete(ssl->s3->aead_read_ctx);
+  ssl->s3->aead_read_ctx = aead_ctx.release();
   return 1;
 }
 
-static int dtls1_set_write_state(SSL *ssl, SSL_AEAD_CTX *aead_ctx) {
+static int dtls1_set_write_state(SSL *ssl, UniquePtr<SSLAEADContext> aead_ctx) {
   ssl->d1->w_epoch++;
   OPENSSL_memcpy(ssl->d1->last_write_sequence, ssl->s3->write_sequence,
                  sizeof(ssl->s3->write_sequence));
   OPENSSL_memset(ssl->s3->write_sequence, 0, sizeof(ssl->s3->write_sequence));
 
-  SSL_AEAD_CTX_free(ssl->s3->aead_write_ctx);
-  ssl->s3->aead_write_ctx = aead_ctx;
+  Delete(ssl->d1->last_aead_write_ctx);
+  ssl->d1->last_aead_write_ctx = ssl->s3->aead_write_ctx;
+  ssl->s3->aead_write_ctx = aead_ctx.release();
   return 1;
 }
 
@@ -108,8 +116,8 @@ static const SSL_PROTOCOL_METHOD kDTLSProtocolMethod = {
     dtls1_new,
     dtls1_free,
     dtls1_get_message,
-    dtls1_get_current_message,
-    dtls1_release_current_message,
+    dtls1_read_message,
+    dtls1_next_message,
     dtls1_read_app_data,
     dtls1_read_change_cipher_spec,
     dtls1_read_close_notify,
@@ -122,8 +130,7 @@ static const SSL_PROTOCOL_METHOD kDTLSProtocolMethod = {
     dtls1_add_change_cipher_spec,
     dtls1_add_alert,
     dtls1_flush_flight,
-    dtls1_expect_flight,
-    dtls1_received_flight,
+    dtls1_on_handshake_complete,
     dtls1_set_read_state,
     dtls1_set_write_state,
 };
@@ -133,6 +140,15 @@ const SSL_METHOD *DTLS_method(void) {
       0,
       &kDTLSProtocolMethod,
       &ssl_crypto_x509_method,
+  };
+  return &kMethod;
+}
+
+const SSL_METHOD *DTLS_with_buffers_method(void) {
+  static const SSL_METHOD kMethod = {
+      0,
+      &kDTLSProtocolMethod,
+      &ssl_noop_x509_method,
   };
   return &kMethod;
 }

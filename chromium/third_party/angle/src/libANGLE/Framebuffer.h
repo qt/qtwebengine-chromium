@@ -92,6 +92,11 @@ class FramebufferState final : angle::NonCopyable
     bool hasDepth() const;
     bool hasStencil() const;
 
+    GLenum getMultiviewLayout() const;
+    GLsizei getNumViews() const;
+    const std::vector<Offset> *getViewportOffsets() const;
+    GLint getBaseViewIndex() const;
+
   private:
     friend class Framebuffer;
 
@@ -148,6 +153,13 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
                        GLenum binding,
                        const ImageIndex &textureIndex,
                        FramebufferAttachmentObject *resource);
+    void setAttachmentMultiviewLayered(const Context *context,
+                                       GLenum type,
+                                       GLenum binding,
+                                       const ImageIndex &textureIndex,
+                                       FramebufferAttachmentObject *resource,
+                                       GLsizei numViews,
+                                       GLint baseViewIndex);
     void setAttachmentMultiviewSideBySide(const Context *context,
                                           GLenum type,
                                           GLenum binding,
@@ -172,6 +184,10 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     const FramebufferAttachment *getFirstNonNullAttachment() const;
 
     const FramebufferAttachment *getAttachment(GLenum attachment) const;
+    GLenum getMultiviewLayout() const;
+    GLsizei getNumViews() const;
+    GLint getBaseViewIndex() const;
+    const std::vector<Offset> *getViewportOffsets() const;
 
     size_t getDrawbufferStateCount() const;
     GLenum getDrawBufferState(size_t drawBuffer) const;

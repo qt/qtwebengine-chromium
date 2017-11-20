@@ -21,6 +21,8 @@
 #include "webrtc/api/video/video_frame.h"
 #include "webrtc/call/call.h"
 #include "webrtc/call/flexfec_receive_stream.h"
+#include "webrtc/call/video_receive_stream.h"
+#include "webrtc/call/video_send_stream.h"
 #include "webrtc/media/base/mediaengine.h"
 #include "webrtc/media/base/videosinkinterface.h"
 #include "webrtc/media/base/videosourceinterface.h"
@@ -32,8 +34,6 @@
 #include "webrtc/rtc_base/optional.h"
 #include "webrtc/rtc_base/thread_annotations.h"
 #include "webrtc/rtc_base/thread_checker.h"
-#include "webrtc/video_receive_stream.h"
-#include "webrtc/video_send_stream.h"
 
 namespace webrtc {
 class VideoDecoder;
@@ -122,7 +122,6 @@ class WebRtcVideoEngine {
 
   WebRtcVideoDecoderFactory* external_decoder_factory_;
   WebRtcVideoEncoderFactory* external_encoder_factory_;
-  std::unique_ptr<WebRtcVideoEncoderFactory> simulcast_encoder_factory_;
 };
 
 class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
@@ -311,24 +310,42 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
       webrtc::VideoEncoderConfig encoder_config;
     };
 
-    struct AllocatedEncoder {
-      AllocatedEncoder(webrtc::VideoEncoder* encoder,
+    class AllocatedEncoder {
+     public:
+      AllocatedEncoder() = default;
+      AllocatedEncoder(AllocatedEncoder&&) = default;
+      AllocatedEncoder& operator=(AllocatedEncoder&&) = default;
+
+      AllocatedEncoder(std::unique_ptr<webrtc::VideoEncoder> encoder,
+                       bool is_external,
                        const cricket::VideoCodec& codec,
-                       bool external);
-      webrtc::VideoEncoder* encoder;
-      webrtc::VideoEncoder* external_encoder;
-      cricket::VideoCodec codec;
-      bool external;
+                       bool has_internal_source);
+
+      // Returns a raw pointer to the allocated encoder. This object still has
+      // ownership of the encoder and is responsible for deleting it.
+      webrtc::VideoEncoder* encoder() { return encoder_.get(); }
+
+      // Returns true if the encoder is external.
+      bool IsExternal() { return is_external_; }
+
+      cricket::VideoCodec codec() { return codec_; }
+
+      bool HasInternalSource() { return has_internal_source_; }
+
+      // Release the encoders this object manages.
+      void Reset();
+
+     private:
+      std::unique_ptr<webrtc::VideoEncoder> encoder_;
+      bool is_external_;
+      cricket::VideoCodec codec_;
+      bool has_internal_source_;
     };
 
     rtc::scoped_refptr<webrtc::VideoEncoderConfig::EncoderSpecificSettings>
     ConfigureVideoEncoderSettings(const VideoCodec& codec);
-    // If force_encoder_allocation is true, a new AllocatedEncoder is always
-    // created. If false, the allocated encoder may be reused, if the type
-    // matches.
-    AllocatedEncoder CreateVideoEncoder(const VideoCodec& codec,
-                                        bool force_encoder_allocation);
-    void DestroyVideoEncoder(AllocatedEncoder* encoder);
+    // Creates and returns a new AllocatedEncoder of the specified codec type.
+    AllocatedEncoder CreateVideoEncoder(const VideoCodec& codec);
     void SetCodec(const VideoCodecSettings& codec,
                   bool force_encoder_allocation);
     void RecreateWebRtcStream();
@@ -423,6 +440,9 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
 
     void RecreateWebRtcVideoStream();
     void MaybeRecreateWebRtcFlexfecStream();
+
+    void MaybeAssociateFlexfecWithVideo();
+    void MaybeDissociateFlexfecFromVideo();
 
     void ConfigureCodecs(const std::vector<VideoCodecSettings>& recv_codecs,
                          std::vector<AllocatedDecoder>* old_codecs);

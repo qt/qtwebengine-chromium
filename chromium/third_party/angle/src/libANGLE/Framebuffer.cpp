@@ -39,6 +39,32 @@ void BindResourceChannel(OnAttachmentDirtyBinding *binding, FramebufferAttachmen
     binding->bind(resource ? resource->getDirtyChannel() : nullptr);
 }
 
+bool CheckMultiviewStateMatchesForCompleteness(const FramebufferAttachment *firstAttachment,
+                                               const FramebufferAttachment *secondAttachment)
+{
+    ASSERT(firstAttachment && secondAttachment);
+    ASSERT(firstAttachment->isAttached() && secondAttachment->isAttached());
+
+    if (firstAttachment->getNumViews() != secondAttachment->getNumViews())
+    {
+        return false;
+    }
+    if (firstAttachment->getBaseViewIndex() != secondAttachment->getBaseViewIndex())
+    {
+        return false;
+    }
+    if (firstAttachment->getMultiviewLayout() != secondAttachment->getMultiviewLayout())
+    {
+        return false;
+    }
+    if (firstAttachment->getMultiviewViewportOffsets() !=
+        secondAttachment->getMultiviewViewportOffsets())
+    {
+        return false;
+    }
+    return true;
+}
+
 bool CheckAttachmentCompleteness(const Context *context, const FramebufferAttachment &attachment)
 {
     ASSERT(attachment.isAttached());
@@ -201,7 +227,6 @@ FramebufferState::FramebufferState(const Caps &caps)
 {
     ASSERT(mDrawBufferStates.size() > 0);
     mDrawBufferStates[0] = GL_COLOR_ATTACHMENT0_EXT;
-    mEnabledDrawBuffers.set(0);
 }
 
 FramebufferState::~FramebufferState()
@@ -426,6 +451,46 @@ bool FramebufferState::hasDepth() const
 bool FramebufferState::hasStencil() const
 {
     return (mStencilAttachment.isAttached() && mStencilAttachment.getStencilSize() > 0);
+}
+
+GLsizei FramebufferState::getNumViews() const
+{
+    const FramebufferAttachment *attachment = getFirstNonNullAttachment();
+    if (attachment == nullptr)
+    {
+        return FramebufferAttachment::kDefaultNumViews;
+    }
+    return attachment->getNumViews();
+}
+
+const std::vector<Offset> *FramebufferState::getViewportOffsets() const
+{
+    const FramebufferAttachment *attachment = getFirstNonNullAttachment();
+    if (attachment == nullptr)
+    {
+        return nullptr;
+    }
+    return &attachment->getMultiviewViewportOffsets();
+}
+
+GLenum FramebufferState::getMultiviewLayout() const
+{
+    const FramebufferAttachment *attachment = getFirstNonNullAttachment();
+    if (attachment == nullptr)
+    {
+        return GL_NONE;
+    }
+    return attachment->getMultiviewLayout();
+}
+
+int FramebufferState::getBaseViewIndex() const
+{
+    const FramebufferAttachment *attachment = getFirstNonNullAttachment();
+    if (attachment == nullptr)
+    {
+        return GL_NONE;
+    }
+    return attachment->getBaseViewIndex();
 }
 
 Framebuffer::Framebuffer(const Caps &caps, rx::GLImplFactory *factory, GLuint id)
@@ -798,6 +863,8 @@ GLenum Framebuffer::checkStatusImpl(const Context *context)
     Optional<GLboolean> fixedSampleLocations;
     bool hasRenderbuffer = false;
 
+    const FramebufferAttachment *firstAttachment = getFirstNonNullAttachment();
+
     for (const FramebufferAttachment &colorAttachment : mState.mColorAttachments)
     {
         if (colorAttachment.isAttached())
@@ -836,6 +903,11 @@ GLenum Framebuffer::checkStatusImpl(const Context *context)
                 }
             }
 
+            if (!CheckMultiviewStateMatchesForCompleteness(firstAttachment, &colorAttachment))
+            {
+                return GL_FRAMEBUFFER_INCOMPLETE_VIEW_TARGETS_ANGLE;
+            }
+
             hasRenderbuffer = hasRenderbuffer || (colorAttachment.type() == GL_RENDERBUFFER);
             hasAttachments  = true;
         }
@@ -861,6 +933,11 @@ GLenum Framebuffer::checkStatusImpl(const Context *context)
             return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE;
         }
 
+        if (!CheckMultiviewStateMatchesForCompleteness(firstAttachment, &depthAttachment))
+        {
+            return GL_FRAMEBUFFER_INCOMPLETE_VIEW_TARGETS_ANGLE;
+        }
+
         hasRenderbuffer = hasRenderbuffer || (depthAttachment.type() == GL_RENDERBUFFER);
         hasAttachments  = true;
     }
@@ -883,6 +960,11 @@ GLenum Framebuffer::checkStatusImpl(const Context *context)
                                                &fixedSampleLocations))
         {
             return GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE;
+        }
+
+        if (!CheckMultiviewStateMatchesForCompleteness(firstAttachment, &stencilAttachment))
+        {
+            return GL_FRAMEBUFFER_INCOMPLETE_VIEW_TARGETS_ANGLE;
         }
 
         hasRenderbuffer = hasRenderbuffer || (stencilAttachment.type() == GL_RENDERBUFFER);
@@ -910,6 +992,12 @@ GLenum Framebuffer::checkStatusImpl(const Context *context)
                 mState.mWebGLDepthStencilAttachment.getStencilSize() == 0)
             {
                 return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+            }
+
+            if (!CheckMultiviewStateMatchesForCompleteness(firstAttachment,
+                                                           &mState.mWebGLDepthStencilAttachment))
+            {
+                return GL_FRAMEBUFFER_INCOMPLETE_VIEW_TARGETS_ANGLE;
             }
         }
         else if (mState.mStencilAttachment.isAttached() &&
@@ -1196,6 +1284,19 @@ void Framebuffer::setAttachment(const Context *context,
                                          viewportOffsets);
 }
 
+void Framebuffer::setAttachmentMultiviewLayered(const Context *context,
+                                                GLenum type,
+                                                GLenum binding,
+                                                const ImageIndex &textureIndex,
+                                                FramebufferAttachmentObject *resource,
+                                                GLsizei numViews,
+                                                GLint baseViewIndex)
+{
+    setAttachment(context, type, binding, textureIndex, resource, numViews, baseViewIndex,
+                  GL_FRAMEBUFFER_MULTIVIEW_LAYERED_ANGLE,
+                  FramebufferAttachment::kDefaultViewportOffsets);
+}
+
 void Framebuffer::setAttachmentMultiviewSideBySide(const Context *context,
                                                    GLenum type,
                                                    GLenum binding,
@@ -1430,11 +1531,12 @@ bool Framebuffer::formsRenderingFeedbackLoopWith(const State &state) const
     // The bitset will skip inactive draw buffers.
     for (size_t drawIndex : mState.mEnabledDrawBuffers)
     {
-        const FramebufferAttachment *attachment = getDrawBuffer(drawIndex);
-        if (attachment && attachment->type() == GL_TEXTURE)
+        const FramebufferAttachment &attachment = mState.mColorAttachments[drawIndex];
+        ASSERT(attachment.isAttached());
+        if (attachment.type() == GL_TEXTURE)
         {
             // Validate the feedback loop.
-            if (program->samplesFromTexture(state, attachment->id()))
+            if (program->samplesFromTexture(state, attachment.id()))
             {
                 return true;
             }
@@ -1553,6 +1655,26 @@ GLenum Framebuffer::checkStatus(const ValidationContext *context)
 int Framebuffer::getSamples(const ValidationContext *context)
 {
     return getSamples(static_cast<const Context *>(context));
+}
+
+GLsizei Framebuffer::getNumViews() const
+{
+    return mState.getNumViews();
+}
+
+GLint Framebuffer::getBaseViewIndex() const
+{
+    return mState.getBaseViewIndex();
+}
+
+const std::vector<Offset> *Framebuffer::getViewportOffsets() const
+{
+    return mState.getViewportOffsets();
+}
+
+GLenum Framebuffer::getMultiviewLayout() const
+{
+    return mState.getMultiviewLayout();
 }
 
 }  // namespace gl

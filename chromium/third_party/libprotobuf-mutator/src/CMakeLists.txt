@@ -18,7 +18,9 @@ project(LibProtobufMutator CXX)
 enable_language(C)
 enable_language(CXX)
 
-option(LIB_PROTO_MUTATOR_WITH_ASAN "Enable address sanitizer" ON)
+option(LIB_PROTO_MUTATOR_DOWNLOAD_PROTOBUF
+       "Automatically download working protobuf" OFF)
+option(LIB_PROTO_MUTATOR_WITH_ASAN "Enable address sanitizer" OFF)
 set(LIB_PROTO_MUTATOR_FUZZER_LIBRARIES "" CACHE STRING "Fuzzing engine libs")
 
 # External dependencies
@@ -29,6 +31,7 @@ include(ProcessorCount)
 include(CheckCCompilerFlag)
 include(CheckCXXCompilerFlag)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads)
 
 find_package(LibLZMA)
@@ -47,8 +50,8 @@ check_cxx_compiler_flag("-fsanitize=address -fsanitize-address-use-after-scope"
                         LIB_PROTO_MUTATOR_HAS_SANITIZE_SCOPE)
 unset(CMAKE_REQUIRED_FLAGS)
 
-set(CMAKE_REQUIRED_FLAGS "-fsanitize-coverage=")
-check_cxx_compiler_flag(-fsanitize-coverage= LIB_PROTO_MUTATOR_HAS_COVERAGE)
+set(CMAKE_REQUIRED_FLAGS "-fsanitize-coverage=0")
+check_cxx_compiler_flag(-fsanitize-coverage= LIB_PROTO_MUTATOR_HAS_NO_COVERAGE)
 unset(CMAKE_REQUIRED_FLAGS)
 
 set(CMAKE_REQUIRED_FLAGS "-fsanitize-coverage=trace-pc-guard")
@@ -60,6 +63,7 @@ check_cxx_compiler_flag(-fsanitize-coverage=trace-cmp LIB_PROTO_MUTATOR_HAS_TRAC
 unset(CMAKE_REQUIRED_FLAGS)
 
 set(EXTRA_FLAGS "-fno-exceptions -Werror -Wall")
+
 if (LIB_PROTO_MUTATOR_WITH_ASAN)
   if (LIB_PROTO_MUTATOR_HAS_SANITIZE_ADDRESS)
     set(EXTRA_FLAGS "${EXTRA_FLAGS} -fsanitize=address")
@@ -81,8 +85,12 @@ if (SANITIZE_COVERAGE_OPTIONS)
     set(FUZZING_FLAGS "${FUZZING_FLAGS},${OPT}")
   endforeach()
   string(SUBSTRING ${FUZZING_FLAGS} 1 -1 FUZZING_FLAGS)
-  set(NO_FUZZING_FLAGS "-fno-sanitize-coverage=${FUZZING_FLAGS}")
   set(FUZZING_FLAGS "-fsanitize-coverage=${FUZZING_FLAGS}")
+  set(NO_FUZZING_FLAGS "-fsanitize-coverage=0")
+endif()
+
+if (LIB_PROTO_MUTATOR_HAS_NO_COVERAGE)
+  set(NO_FUZZING_FLAGS "-fsanitize-coverage=0")
 endif()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_FLAGS}")
@@ -90,15 +98,28 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXTRA_FLAGS}")
 
 set(PROTOBUF_CFLAGS "${CMAKE_C_FLAGS} ${NO_FUZZING_FLAGS} -w")
 set(PROTOBUF_CXXFLAGS "${CMAKE_CXX_FLAGS} ${NO_FUZZING_FLAGS} -w")
-include(protobuf)
+if(CMAKE_USE_PTHREADS_INIT)
+  set(PROTOBUF_CFLAGS "${PROTOBUF_CFLAGS} -pthread")
+  set(PROTOBUF_CXXFLAGS "${PROTOBUF_CXXFLAGS} -pthread")
+endif()
+
+if (LIB_PROTO_MUTATOR_DOWNLOAD_PROTOBUF)
+  include(protobuf)
+else()
+  find_package(Protobuf REQUIRED)
+  include_directories(${PROTOBUF_INCLUDE_DIRS})
+  include_directories(${CMAKE_CURRENT_BINARY_DIR})
+endif()
 
 enable_testing()
 
 include(googletest)
 
-ProcessorCount(CPU_COUNT)
+if (NOT LIB_PROTO_MUTATOR_CTEST_JOBS)
+  ProcessorCount(LIB_PROTO_MUTATOR_CTEST_JOBS)
+endif()
 add_custom_target(check
-                  COMMAND ${CMAKE_CTEST_COMMAND} -j${CPU_COUNT} --output-on-failure)
+                  COMMAND ${CMAKE_CTEST_COMMAND} -j${LIB_PROTO_MUTATOR_CTEST_JOBS} --output-on-failure)
 
 add_subdirectory(src)
 
@@ -108,6 +129,6 @@ if ("${LIB_PROTO_MUTATOR_FUZZER_LIBRARIES}" STREQUAL "" AND
 endif()
 
 if (NOT "${LIB_PROTO_MUTATOR_FUZZER_LIBRARIES}" STREQUAL "")
-  add_subdirectory(examples)
+  add_subdirectory(examples EXCLUDE_FROM_ALL)
 endif()
 

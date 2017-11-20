@@ -79,7 +79,7 @@ void SetConstraintProperty(const std::string& name,
   if (value != SizeConstraints::kUnboundedSize)
     bounds_properties->SetInteger(name, value);
   else
-    bounds_properties->Set(name, base::MakeUnique<base::Value>());
+    bounds_properties->Set(name, std::make_unique<base::Value>());
 }
 
 void SetBoundsProperties(const gfx::Rect& bounds,
@@ -578,8 +578,8 @@ void AppWindow::SetAppIconUrl(const GURL& url) {
                  image_loader_ptr_factory_.GetWeakPtr()));
 }
 
-void AppWindow::UpdateShape(std::unique_ptr<SkRegion> region) {
-  native_app_window_->UpdateShape(std::move(region));
+void AppWindow::UpdateShape(std::unique_ptr<ShapeRects> rects) {
+  native_app_window_->UpdateShape(std::move(rects));
 }
 
 void AppWindow::UpdateDraggableRegions(

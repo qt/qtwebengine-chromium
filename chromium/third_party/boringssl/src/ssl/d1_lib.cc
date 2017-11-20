@@ -68,6 +68,7 @@
 #include "internal.h"
 
 
+namespace bssl {
 
 /* DTLS1_MTU_TIMEOUTS is the maximum number of timeouts to expire
  * before starting to decrease the MTU. */
@@ -108,13 +109,10 @@ void dtls1_free(SSL *ssl) {
 
   dtls_clear_incoming_messages(ssl);
   dtls_clear_outgoing_messages(ssl);
+  Delete(ssl->d1->last_aead_write_ctx);
 
   OPENSSL_free(ssl->d1);
   ssl->d1 = NULL;
-}
-
-void DTLSv1_set_initial_timeout_duration(SSL *ssl, unsigned int duration_ms) {
-  ssl->initial_timeout_duration_ms = duration_ms;
 }
 
 void dtls1_start_timer(SSL *ssl) {
@@ -135,12 +133,71 @@ void dtls1_start_timer(SSL *ssl) {
   }
 }
 
+int dtls1_is_timer_expired(SSL *ssl) {
+  struct timeval timeleft;
+
+  /* Get time left until timeout, return false if no timer running */
+  if (!DTLSv1_get_timeout(ssl, &timeleft)) {
+    return 0;
+  }
+
+  /* Return false if timer is not expired yet */
+  if (timeleft.tv_sec > 0 || timeleft.tv_usec > 0) {
+    return 0;
+  }
+
+  /* Timer expired, so return true */
+  return 1;
+}
+
+static void dtls1_double_timeout(SSL *ssl) {
+  ssl->d1->timeout_duration_ms *= 2;
+  if (ssl->d1->timeout_duration_ms > 60000) {
+    ssl->d1->timeout_duration_ms = 60000;
+  }
+}
+
+void dtls1_stop_timer(SSL *ssl) {
+  ssl->d1->num_timeouts = 0;
+  OPENSSL_memset(&ssl->d1->next_timeout, 0, sizeof(ssl->d1->next_timeout));
+  ssl->d1->timeout_duration_ms = ssl->initial_timeout_duration_ms;
+}
+
+int dtls1_check_timeout_num(SSL *ssl) {
+  ssl->d1->num_timeouts++;
+
+  /* Reduce MTU after 2 unsuccessful retransmissions */
+  if (ssl->d1->num_timeouts > DTLS1_MTU_TIMEOUTS &&
+      !(SSL_get_options(ssl) & SSL_OP_NO_QUERY_MTU)) {
+    long mtu = BIO_ctrl(ssl->wbio, BIO_CTRL_DGRAM_GET_FALLBACK_MTU, 0, NULL);
+    if (mtu >= 0 && mtu <= (1 << 30) && (unsigned)mtu >= dtls1_min_mtu()) {
+      ssl->d1->mtu = (unsigned)mtu;
+    }
+  }
+
+  if (ssl->d1->num_timeouts > DTLS1_MAX_TIMEOUTS) {
+    /* fail the connection, enough alerts have been sent */
+    OPENSSL_PUT_ERROR(SSL, SSL_R_READ_TIMEOUT_EXPIRED);
+    return 0;
+  }
+
+  return 1;
+}
+
+}  // namespace bssl
+
+using namespace bssl;
+
+void DTLSv1_set_initial_timeout_duration(SSL *ssl, unsigned int duration_ms) {
+  ssl->initial_timeout_duration_ms = duration_ms;
+}
+
 int DTLSv1_get_timeout(const SSL *ssl, struct timeval *out) {
   if (!SSL_is_dtls(ssl)) {
     return 0;
   }
 
-  /* If no timeout is set, just return NULL */
+  /* If no timeout is set, just return 0. */
   if (ssl->d1->next_timeout.tv_sec == 0 && ssl->d1->next_timeout.tv_usec == 0) {
     return 0;
   }
@@ -148,7 +205,7 @@ int DTLSv1_get_timeout(const SSL *ssl, struct timeval *out) {
   struct OPENSSL_timeval timenow;
   ssl_get_current_time(ssl, &timenow);
 
-  /* If timer already expired, set remaining time to 0 */
+  /* If timer already expired, set remaining time to 0. */
   if (ssl->d1->next_timeout.tv_sec < timenow.tv_sec ||
       (ssl->d1->next_timeout.tv_sec == timenow.tv_sec &&
        ssl->d1->next_timeout.tv_usec <= timenow.tv_usec)) {
@@ -156,7 +213,7 @@ int DTLSv1_get_timeout(const SSL *ssl, struct timeval *out) {
     return 1;
   }
 
-  /* Calculate time left until timer expires */
+  /* Calculate time left until timer expires. */
   struct OPENSSL_timeval ret;
   OPENSSL_memcpy(&ret, &ssl->d1->next_timeout, sizeof(ret));
   ret.tv_sec -= timenow.tv_sec;
@@ -185,80 +242,24 @@ int DTLSv1_get_timeout(const SSL *ssl, struct timeval *out) {
   return 1;
 }
 
-int dtls1_is_timer_expired(SSL *ssl) {
-  struct timeval timeleft;
-
-  /* Get time left until timeout, return false if no timer running */
-  if (!DTLSv1_get_timeout(ssl, &timeleft)) {
-    return 0;
-  }
-
-  /* Return false if timer is not expired yet */
-  if (timeleft.tv_sec > 0 || timeleft.tv_usec > 0) {
-    return 0;
-  }
-
-  /* Timer expired, so return true */
-  return 1;
-}
-
-void dtls1_double_timeout(SSL *ssl) {
-  ssl->d1->timeout_duration_ms *= 2;
-  if (ssl->d1->timeout_duration_ms > 60000) {
-    ssl->d1->timeout_duration_ms = 60000;
-  }
-  dtls1_start_timer(ssl);
-}
-
-void dtls1_stop_timer(SSL *ssl) {
-  /* Reset everything */
-  ssl->d1->num_timeouts = 0;
-  OPENSSL_memset(&ssl->d1->next_timeout, 0, sizeof(ssl->d1->next_timeout));
-  ssl->d1->timeout_duration_ms = ssl->initial_timeout_duration_ms;
-
-  /* Clear retransmission buffer */
-  dtls_clear_outgoing_messages(ssl);
-}
-
-int dtls1_check_timeout_num(SSL *ssl) {
-  ssl->d1->num_timeouts++;
-
-  /* Reduce MTU after 2 unsuccessful retransmissions */
-  if (ssl->d1->num_timeouts > DTLS1_MTU_TIMEOUTS &&
-      !(SSL_get_options(ssl) & SSL_OP_NO_QUERY_MTU)) {
-    long mtu = BIO_ctrl(ssl->wbio, BIO_CTRL_DGRAM_GET_FALLBACK_MTU, 0, NULL);
-    if (mtu >= 0 && mtu <= (1 << 30) && (unsigned)mtu >= dtls1_min_mtu()) {
-      ssl->d1->mtu = (unsigned)mtu;
-    }
-  }
-
-  if (ssl->d1->num_timeouts > DTLS1_MAX_TIMEOUTS) {
-    /* fail the connection, enough alerts have been sent */
-    OPENSSL_PUT_ERROR(SSL, SSL_R_READ_TIMEOUT_EXPIRED);
-    return -1;
-  }
-
-  return 0;
-}
-
 int DTLSv1_handle_timeout(SSL *ssl) {
   ssl_reset_error_state(ssl);
 
   if (!SSL_is_dtls(ssl)) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return -1;
   }
 
-  /* if no timer is expired, don't do anything */
+  /* If no timer is expired, don't do anything. */
   if (!dtls1_is_timer_expired(ssl)) {
     return 0;
   }
 
-  dtls1_double_timeout(ssl);
-
-  if (dtls1_check_timeout_num(ssl) < 0) {
+  if (!dtls1_check_timeout_num(ssl)) {
     return -1;
   }
 
+  dtls1_double_timeout(ssl);
   dtls1_start_timer(ssl);
   return dtls1_retransmit_outgoing_messages(ssl);
 }

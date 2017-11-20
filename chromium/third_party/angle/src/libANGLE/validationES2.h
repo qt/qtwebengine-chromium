@@ -32,9 +32,9 @@ bool ValidateDiscardFramebufferEXT(Context *context,
 bool ValidateDrawBuffersEXT(ValidationContext *context, GLsizei n, const GLenum *bufs);
 
 bool ValidateBindVertexArrayOES(Context *context, GLuint array);
-bool ValidateDeleteVertexArraysOES(Context *context, GLsizei n);
-bool ValidateGenVertexArraysOES(Context *context, GLsizei n);
-bool ValidateIsVertexArrayOES(Context *context);
+bool ValidateDeleteVertexArraysOES(Context *context, GLsizei n, const GLuint *arrays);
+bool ValidateGenVertexArraysOES(Context *context, GLsizei n, GLuint *arrays);
+bool ValidateIsVertexArrayOES(Context *context, GLuint array);
 
 bool ValidateProgramBinaryOES(Context *context,
                               GLuint program,
@@ -208,6 +208,7 @@ bool ValidateMapBufferRangeEXT(Context *context,
                                GLintptr offset,
                                GLsizeiptr length,
                                GLbitfield access);
+bool ValidateMapBufferBase(Context *context, GLenum target);
 bool ValidateFlushMappedBufferRangeEXT(Context *context,
                                        GLenum target,
                                        GLintptr offset,

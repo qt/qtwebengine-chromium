@@ -135,6 +135,14 @@ static const struct argument kArguments[] = {
         "An HTTP proxy server to tunnel the TCP connection through",
     },
     {
+        "-renegotiate-freely", kBooleanArgument,
+        "Allow renegotiations from the peer.",
+    },
+    {
+        "-debug", kBooleanArgument,
+        "Print debug information about the handshake",
+    },
+    {
         "", kOptionalArgument, "",
     },
 };
@@ -262,6 +270,10 @@ static bool DoConnection(SSL_CTX *ctx,
     SSL_set_session(ssl.get(), session.get());
   }
 
+  if (args_map.count("-renegotiate-freely") != 0) {
+    SSL_set_renegotiate_mode(ssl.get(), ssl_renegotiate_freely);
+  }
+
   if (resume_session) {
     SSL_set_session(ssl.get(), resume_session.get());
   }
@@ -297,6 +309,40 @@ static bool DoConnection(SSL_CTX *ctx,
   return cb(ssl.get(), sock);
 }
 
+static bool GetTLS13Variant(tls13_variant_t *out, const std::string &in) {
+  if (in == "draft") {
+    *out = tls13_default;
+    return true;
+  }
+  if (in == "experiment") {
+    *out = tls13_experiment;
+    return true;
+  }
+  if (in == "record-type") {
+    *out = tls13_record_type_experiment;
+    return true;
+  }
+  if (in == "no-session-id") {
+    *out = tls13_no_session_id_experiment;
+    return true;
+  }
+  return false;
+}
+
+static void InfoCallback(const SSL *ssl, int type, int value) {
+  switch (type) {
+    case SSL_CB_HANDSHAKE_START:
+      fprintf(stderr, "Handshake started.\n");
+      break;
+    case SSL_CB_HANDSHAKE_DONE:
+      fprintf(stderr, "Handshake done.\n");
+      break;
+    case SSL_CB_CONNECT_LOOP:
+      fprintf(stderr, "Handshake progress: %s\n", SSL_state_string_long(ssl));
+      break;
+  }
+}
+
 bool Client(const std::vector<std::string> &args) {
   if (!InitSocketLibrary()) {
     return false;
@@ -309,7 +355,7 @@ bool Client(const std::vector<std::string> &args) {
     return false;
   }
 
-  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(SSLv23_client_method()));
+  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
 
   const char *keylog_file = getenv("SSLKEYLOGFILE");
   if (keylog_file) {
@@ -464,13 +510,21 @@ bool Client(const std::vector<std::string> &args) {
   }
 
   if (args_map.count("-tls13-variant") != 0) {
-    SSL_CTX_set_tls13_variant(ctx.get(),
-                              static_cast<enum tls13_variant_t>(
-                                  atoi(args_map["-tls13-variant"].c_str())));
+    tls13_variant_t variant;
+    if (!GetTLS13Variant(&variant, args_map["-tls13-variant"])) {
+      fprintf(stderr, "Unknown TLS 1.3 variant: %s\n",
+              args_map["-tls13-variant"].c_str());
+      return false;
+    }
+    SSL_CTX_set_tls13_variant(ctx.get(), variant);
   }
 
   if (args_map.count("-ed25519") != 0) {
     SSL_CTX_set_ed25519_enabled(ctx.get(), 1);
+  }
+
+  if (args_map.count("-debug") != 0) {
+    SSL_CTX_set_info_callback(ctx.get(), InfoCallback);
   }
 
   if (args_map.count("-test-resumption") != 0) {

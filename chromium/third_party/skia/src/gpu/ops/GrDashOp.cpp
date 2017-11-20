@@ -356,7 +356,7 @@ private:
         bool fHasEndRect;
     };
 
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         int instanceCount = fLines.count();
         SkPaint::Cap cap = this->cap();
         bool isRoundCap = SkPaint::kRound_Cap == cap;
@@ -662,7 +662,8 @@ private:
         if (fAllowsSRGBInputs) {
             pipelineFlags |= GrPipeline::kAllowSRGBInputs_Flag;
         }
-        const GrPipeline* pipeline = target->makePipeline(pipelineFlags, &fProcessorSet);
+        const GrPipeline* pipeline = target->makePipeline(pipelineFlags, std::move(fProcessorSet),
+                                                          target->detachAppliedClip());
         helper.recordDraw(target, gp.get(), pipeline);
     }
 
@@ -789,7 +790,7 @@ class GLDashingCircleEffect;
  * This effect will draw a dotted line (defined as a dashed lined with round caps and no on
  * interval). The radius of the dots is given by the strokeWidth and the spacing by the DashInfo.
  * Both of the previous two parameters are in device space. This effect also requires the setting of
- * a vec2 vertex attribute for the the four corners of the bounding rect. This attribute is the
+ * a float2 vertex attribute for the the four corners of the bounding rect. This attribute is the
  * "dash position" of each vertex. In other words it is the vertex coords (in device space) if we
  * transform the line to be horizontal, with the start of line at the origin then shifted to the
  * right by half the off interval. The line then goes in the positive x direction.
@@ -895,7 +896,7 @@ void GLDashingCircleEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     this->setupUniformColor(fragBuilder, uniformHandler, args.fOutputColor, &fColorUniform);
 
     // Setup position
-    this->setupPosition(vertBuilder, gpArgs, dce.inPosition()->fName);
+    this->writeOutputPosition(vertBuilder, gpArgs, dce.inPosition()->fName);
 
     // emit transforms
     this->emitTransforms(vertBuilder,
@@ -910,8 +911,8 @@ void GLDashingCircleEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     fragBuilder->codeAppendf("float xShifted = %s.x - floor(%s.x / %s.z) * %s.z;",
                              dashParams.fsIn(), dashParams.fsIn(), dashParams.fsIn(),
                              dashParams.fsIn());
-    fragBuilder->codeAppendf("vec2 fragPosShifted = vec2(xShifted, %s.y);", dashParams.fsIn());
-    fragBuilder->codeAppendf("vec2 center = vec2(%s.y, 0.0);", circleParams.fsIn());
+    fragBuilder->codeAppendf("float2 fragPosShifted = float2(xShifted, %s.y);", dashParams.fsIn());
+    fragBuilder->codeAppendf("float2 center = float2(%s.y, 0.0);", circleParams.fsIn());
     fragBuilder->codeAppend("float dist = length(center - fragPosShifted);");
     if (dce.aaMode() != AAMode::kNone) {
         fragBuilder->codeAppendf("float diff = dist - %s.x;", circleParams.fsIn());
@@ -921,7 +922,7 @@ void GLDashingCircleEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
         fragBuilder->codeAppendf("float alpha = 1.0;");
         fragBuilder->codeAppendf("alpha *=  dist < %s.x + 0.5 ? 1.0 : 0.0;", circleParams.fsIn());
     }
-    fragBuilder->codeAppendf("%s = vec4(alpha);", args.fOutputCoverage);
+    fragBuilder->codeAppendf("%s = float4(alpha);", args.fOutputCoverage);
 }
 
 void GLDashingCircleEffect::setData(const GrGLSLProgramDataManager& pdman,
@@ -998,7 +999,7 @@ class GLDashingLineEffect;
 /*
  * This effect will draw a dashed line. The width of the dash is given by the strokeWidth and the
  * length and spacing by the DashInfo. Both of the previous two parameters are in device space.
- * This effect also requires the setting of a vec2 vertex attribute for the the four corners of the
+ * This effect also requires the setting of a float2 vertex attribute for the the four corners of the
  * bounding rect. This attribute is the "dash position" of each vertex. In other words it is the
  * vertex coords (in device space) if we transform the line to be horizontal, with the start of
  * line at the origin then shifted to the right by half the off interval. The line then goes in the
@@ -1099,7 +1100,7 @@ void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     this->setupUniformColor(fragBuilder, uniformHandler, args.fOutputColor, &fColorUniform);
 
     // Setup position
-    this->setupPosition(vertBuilder, gpArgs, de.inPosition()->fName);
+    this->writeOutputPosition(vertBuilder, gpArgs, de.inPosition()->fName);
 
     // emit transforms
     this->emitTransforms(vertBuilder,
@@ -1114,7 +1115,7 @@ void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     fragBuilder->codeAppendf("float xShifted = %s.x - floor(%s.x / %s.z) * %s.z;",
                              inDashParams.fsIn(), inDashParams.fsIn(), inDashParams.fsIn(),
                              inDashParams.fsIn());
-    fragBuilder->codeAppendf("vec2 fragPosShifted = vec2(xShifted, %s.y);", inDashParams.fsIn());
+    fragBuilder->codeAppendf("float2 fragPosShifted = float2(xShifted, %s.y);", inDashParams.fsIn());
     if (de.aaMode() == AAMode::kCoverage) {
         // The amount of coverage removed in x and y by the edges is computed as a pair of negative
         // numbers, xSub and ySub.
@@ -1143,7 +1144,7 @@ void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
         fragBuilder->codeAppendf("alpha *= (%s.z - fragPosShifted.x) >= -0.5 ? 1.0 : 0.0;",
                                  inRectParams.fsIn());
     }
-    fragBuilder->codeAppendf("%s = vec4(alpha);", args.fOutputCoverage);
+    fragBuilder->codeAppendf("%s = float4(alpha);", args.fOutputCoverage);
 }
 
 void GLDashingLineEffect::setData(const GrGLSLProgramDataManager& pdman,

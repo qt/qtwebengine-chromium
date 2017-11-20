@@ -22,9 +22,9 @@
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "third_party/base/ptr_util.h"
 #include "xfa/fwl/cfwl_notedriver.h"
-#include "xfa/fxfa/app/cxfa_ffnotify.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffdocview.h"
+#include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_fileread.h"
 #include "xfa/fxfa/cxfa_fontmgr.h"
@@ -282,16 +282,11 @@ CXFA_FFDocView* CXFA_FFDoc::GetDocView() {
   return m_DocView.get();
 }
 
-bool CXFA_FFDoc::OpenDoc(const CFX_RetainPtr<IFX_SeekableStream>& pStream) {
-  m_pStream = pStream;
-  return true;
-}
-
 bool CXFA_FFDoc::OpenDoc(CPDF_Document* pPDFDoc) {
   if (!pPDFDoc)
     return false;
 
-  CPDF_Dictionary* pRoot = pPDFDoc->GetRoot();
+  const CPDF_Dictionary* pRoot = pPDFDoc->GetRoot();
   if (!pRoot)
     return false;
 
@@ -352,7 +347,7 @@ CFX_RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(
     return it->second.pDibSource.As<CFX_DIBitmap>();
   }
 
-  CPDF_Dictionary* pRoot = m_pPDFDoc->GetRoot();
+  const CPDF_Dictionary* pRoot = m_pPDFDoc->GetRoot();
   if (!pRoot)
     return nullptr;
 

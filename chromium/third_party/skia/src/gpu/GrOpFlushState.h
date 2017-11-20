@@ -8,12 +8,14 @@
 #ifndef GrOpFlushState_DEFINED
 #define GrOpFlushState_DEFINED
 
+#include "GrAppliedClip.h"
 #include "GrBufferAllocPool.h"
 #include "SkArenaAlloc.h"
 #include "ops/GrMeshDrawOp.h"
 
 class GrGpu;
 class GrGpuCommandBuffer;
+class GrGpuRTCommandBuffer;
 class GrResourceProvider;
 
 /** Tracks the state across all the GrOps (really just the GrDrawOps) in a GrOpList flush. */
@@ -85,6 +87,8 @@ public:
     void putBackVertexSpace(size_t sizeInBytes) { fVertexPool.putBack(sizeInBytes); }
 
     GrGpuCommandBuffer* commandBuffer() { return fCommandBuffer; }
+    // Helper function used by Ops that are only called via RenderTargetOpLists
+    GrGpuRTCommandBuffer* rtCommandBuffer();
     void setCommandBuffer(GrGpuCommandBuffer* buffer) { fCommandBuffer = buffer; }
 
     GrGpu* gpu() { return fGpu; }
@@ -97,8 +101,11 @@ public:
 
     /** Additional data required on a per-op basis when executing GrDrawOps. */
     struct DrawOpArgs {
-        GrRenderTarget*           fRenderTarget;
-        const GrAppliedClip*      fAppliedClip;
+        GrRenderTarget* renderTarget() const { return fProxy->priv().peekRenderTarget(); }
+
+        // TODO: do we still need the dst proxy here?
+        GrRenderTargetProxy* fProxy;
+        GrAppliedClip* fAppliedClip;
         GrXferProcessor::DstProxy fDstProxy;
     };
 
@@ -109,8 +116,13 @@ public:
         return *fOpArgs;
     }
 
+    GrAppliedClip detachAppliedClip() {
+        SkASSERT(fOpArgs);
+        return fOpArgs->fAppliedClip ? std::move(*fOpArgs->fAppliedClip) : GrAppliedClip();
+    }
+
     template <typename... Args>
-    GrPipeline* allocPipeline(Args... args) {
+    GrPipeline* allocPipeline(Args&&... args) {
         return fPipelines.make<GrPipeline>(std::forward<Args>(args)...);
     }
 
@@ -232,16 +244,18 @@ public:
         this->state()->putBackVertexSpace(vertices * vertexStride);
     }
 
-    GrRenderTarget* renderTarget() const { return this->state()->drawOpArgs().fRenderTarget; }
+    GrRenderTargetProxy* proxy() const { return this->state()->drawOpArgs().fProxy; }
 
     const GrAppliedClip* clip() const { return this->state()->drawOpArgs().fAppliedClip; }
+
+    GrAppliedClip detachAppliedClip() { return this->state()->detachAppliedClip(); }
 
     const GrXferProcessor::DstProxy& dstProxy() const {
         return this->state()->drawOpArgs().fDstProxy;
     }
 
     template <typename... Args>
-    GrPipeline* allocPipeline(Args... args) {
+    GrPipeline* allocPipeline(Args&&... args) {
         return this->state()->allocPipeline(std::forward<Args>(args)...);
     }
 
@@ -249,16 +263,15 @@ public:
      * Helper that makes a pipeline targeting the op's render target that incorporates the op's
      * GrAppliedClip.
      * */
-    GrPipeline* makePipeline(uint32_t pipelineFlags, const GrProcessorSet* processorSet) {
+    GrPipeline* makePipeline(uint32_t pipelineFlags, GrProcessorSet&& processorSet,
+                             GrAppliedClip&& clip) {
         GrPipeline::InitArgs pipelineArgs;
         pipelineArgs.fFlags = pipelineFlags;
-        pipelineArgs.fProcessors = processorSet;
-        pipelineArgs.fRenderTarget = this->renderTarget();
-        pipelineArgs.fAppliedClip = this->clip();
+        pipelineArgs.fProxy = this->proxy();
         pipelineArgs.fDstProxy = this->dstProxy();
         pipelineArgs.fCaps = &this->caps();
         pipelineArgs.fResourceProvider = this->resourceProvider();
-        return this->allocPipeline(pipelineArgs);
+        return this->allocPipeline(pipelineArgs, std::move(processorSet), std::move(clip));
     }
 
 private:

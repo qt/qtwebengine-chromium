@@ -140,7 +140,7 @@ sk_sp<GrTextureProxy> GrResourceProvider::createTextureProxy(const GrSurfaceDesc
 
     if (make_info(desc.fWidth, desc.fHeight, desc.fConfig, &srcInfo)) {
         sk_sp<GrTexture> tex = this->getExactScratch(desc, budgeted, 0);
-        sk_sp<GrTextureProxy> proxy = GrSurfaceProxy::MakeWrapped(std::move(tex));
+        sk_sp<GrTextureProxy> proxy = GrSurfaceProxy::MakeWrapped(std::move(tex), desc.fOrigin);
         if (proxy) {
             sk_sp<GrSurfaceContext> sContext =
                        context->contextPriv().makeWrappedSurfaceContext(std::move(proxy), nullptr);
@@ -153,7 +153,7 @@ sk_sp<GrTextureProxy> GrResourceProvider::createTextureProxy(const GrSurfaceDesc
     }
 
     sk_sp<GrTexture> tex(fGpu->createTexture(desc, budgeted, &mipLevel, 1));
-    return GrSurfaceProxy::MakeWrapped(std::move(tex));
+    return GrSurfaceProxy::MakeWrapped(std::move(tex), desc.fOrigin);
 }
 
 sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
@@ -238,31 +238,29 @@ sk_sp<GrTexture> GrResourceProvider::refScratchTexture(const GrSurfaceDesc& inDe
 }
 
 sk_sp<GrTexture> GrResourceProvider::wrapBackendTexture(const GrBackendTexture& tex,
-                                                        GrSurfaceOrigin origin,
                                                         GrWrapOwnership ownership) {
     ASSERT_SINGLE_OWNER
     if (this->isAbandoned()) {
         return nullptr;
     }
-    return fGpu->wrapBackendTexture(tex, origin, ownership);
+    return fGpu->wrapBackendTexture(tex, ownership);
 }
 
 sk_sp<GrTexture> GrResourceProvider::wrapRenderableBackendTexture(const GrBackendTexture& tex,
-                                                                  GrSurfaceOrigin origin,
                                                                   int sampleCnt,
                                                                   GrWrapOwnership ownership) {
     ASSERT_SINGLE_OWNER
     if (this->isAbandoned()) {
         return nullptr;
     }
-    return fGpu->wrapRenderableBackendTexture(tex, origin, sampleCnt, ownership);
+    return fGpu->wrapRenderableBackendTexture(tex, sampleCnt, ownership);
 }
 
 sk_sp<GrRenderTarget> GrResourceProvider::wrapBackendRenderTarget(
-        const GrBackendRenderTarget& backendRT, GrSurfaceOrigin origin)
+        const GrBackendRenderTarget& backendRT)
 {
     ASSERT_SINGLE_OWNER
-    return this->isAbandoned() ? nullptr : fGpu->wrapBackendRenderTarget(backendRT, origin);
+    return this->isAbandoned() ? nullptr : fGpu->wrapBackendRenderTarget(backendRT);
 }
 
 void GrResourceProvider::assignUniqueKeyToResource(const GrUniqueKey& key,
@@ -287,7 +285,7 @@ GrTexture* GrResourceProvider::findAndRefTextureByUniqueKey(const GrUniqueKey& k
         SkASSERT(texture);
         return texture;
     }
-    return NULL;
+    return nullptr;
 }
 
 void GrResourceProvider::assignUniqueKeyToTexture(const GrUniqueKey& key, GrTexture* texture) {
@@ -312,7 +310,8 @@ void GrResourceProvider::assignUniqueKeyToProxy(const GrUniqueKey& key, GrTextur
 }
 
 // MDB TODO (caching): this side-steps the issue of texture proxies with unique IDs
-sk_sp<GrTextureProxy> GrResourceProvider::findProxyByUniqueKey(const GrUniqueKey& key) {
+sk_sp<GrTextureProxy> GrResourceProvider::findProxyByUniqueKey(const GrUniqueKey& key,
+                                                               GrSurfaceOrigin origin) {
     ASSERT_SINGLE_OWNER
 
     sk_sp<GrTexture> texture(this->findAndRefTextureByUniqueKey(key));
@@ -320,7 +319,7 @@ sk_sp<GrTextureProxy> GrResourceProvider::findProxyByUniqueKey(const GrUniqueKey
         return nullptr;
     }
 
-    return GrSurfaceProxy::MakeWrapped(std::move(texture));
+    return GrSurfaceProxy::MakeWrapped(std::move(texture), origin);
 }
 
 const GrBuffer* GrResourceProvider::createPatternedIndexBuffer(const uint16_t* pattern,
@@ -361,13 +360,16 @@ const GrBuffer* GrResourceProvider::createPatternedIndexBuffer(const uint16_t* p
     return buffer;
 }
 
+static constexpr int kMaxQuads = 1 << 12;  // max possible: (1 << 14) - 1;
+
 const GrBuffer* GrResourceProvider::createQuadIndexBuffer() {
-    static const int kMaxQuads = 1 << 12; // max possible: (1 << 14) - 1;
     GR_STATIC_ASSERT(4 * kMaxQuads <= 65535);
     static const uint16_t kPattern[] = { 0, 1, 2, 0, 2, 3 };
 
     return this->createPatternedIndexBuffer(kPattern, 6, kMaxQuads, 4, fQuadIndexBufferKey);
 }
+
+int GrResourceProvider::QuadCountOfQuadBuffer() { return kMaxQuads; }
 
 sk_sp<GrPath> GrResourceProvider::createPath(const SkPath& path, const GrStyle& style) {
     SkASSERT(this->gpu()->pathRendering());
@@ -449,7 +451,7 @@ GrStencilAttachment* GrResourceProvider::attachStencilAttachment(GrRenderTarget*
             height = SkNextPow2(height);
         }
 #endif
-        bool newStencil = false;
+        SkDEBUGCODE(bool newStencil = false;)
         GrStencilAttachment::ComputeSharedStencilAttachmentKey(width, height,
                                                                rt->numStencilSamples(), &sbKey);
         GrStencilAttachment* stencil = static_cast<GrStencilAttachment*>(
@@ -459,33 +461,31 @@ GrStencilAttachment* GrResourceProvider::attachStencilAttachment(GrRenderTarget*
             stencil = this->gpu()->createStencilAttachmentForRenderTarget(rt, width, height);
             if (stencil) {
                 this->assignUniqueKeyToResource(sbKey, stencil);
-                newStencil = true;
+                SkDEBUGCODE(newStencil = true;)
             }
         }
         if (rt->renderTargetPriv().attachStencilAttachment(stencil)) {
+#ifdef SK_DEBUG
+            // Fill the SB with an inappropriate value. opLists that use the
+            // SB should clear it properly.
             if (newStencil) {
-                // Right now we're clearing the stencil attachment here after it is
-                // attached to a RT for the first time. When we start matching
-                // stencil buffers with smaller color targets this will no longer
-                // be correct because it won't be guaranteed to clear the entire
-                // sb.
-                // We used to clear down in the GL subclass using a special purpose
-                // FBO. But iOS doesn't allow a stencil-only FBO. It reports unsupported
-                // FBO status.
-                this->gpu()->clearStencil(rt);
+                SkASSERT(stencil->isDirty());
+                this->gpu()->clearStencil(rt, 0xFFFF);
+                SkASSERT(stencil->isDirty());
             }
+#endif
         }
     }
     return rt->renderTargetPriv().getStencilAttachment();
 }
 
 sk_sp<GrRenderTarget> GrResourceProvider::wrapBackendTextureAsRenderTarget(
-        const GrBackendTexture& tex, GrSurfaceOrigin origin, int sampleCnt)
+        const GrBackendTexture& tex, int sampleCnt)
 {
     if (this->isAbandoned()) {
         return nullptr;
     }
-    return this->gpu()->wrapBackendTextureAsRenderTarget(tex, origin, sampleCnt);
+    return this->gpu()->wrapBackendTextureAsRenderTarget(tex, sampleCnt);
 }
 
 sk_sp<GrSemaphore> SK_WARN_UNUSED_RESULT GrResourceProvider::makeSemaphore(bool isOwned) {

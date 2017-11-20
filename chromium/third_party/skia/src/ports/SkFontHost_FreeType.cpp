@@ -418,9 +418,7 @@ class AutoFTAccess {
 public:
     AutoFTAccess(const SkTypeface* tf) : fFaceRec(nullptr) {
         gFTMutex.acquire();
-        if (!ref_ft_library()) {
-            sk_throw();
-        }
+        SkASSERT_RELEASE(ref_ft_library());
         fFaceRec = ref_ft_face(tf);
     }
 
@@ -764,10 +762,7 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(sk_sp<SkTypeface> typeface,
     , fStrikeIndex(-1)
 {
     SkAutoMutexAcquire  ac(gFTMutex);
-
-    if (!ref_ft_library()) {
-        sk_throw();
-    }
+    SkASSERT_RELEASE(ref_ft_library());
 
     fFaceRec.reset(ref_ft_face(this->getTypeface()));
 
@@ -1289,6 +1284,7 @@ void SkScalerContext_FreeType::generateFontMetrics(SkPaint::FontMetrics* metrics
     }
 
     FT_Face face = fFace;
+    metrics->fFlags = 0;
 
     // fetch units/EM from "head" table if needed (ie for bitmap fonts)
     SkScalar upem = SkIntToScalar(face->units_per_EM);
@@ -1303,10 +1299,15 @@ void SkScalerContext_FreeType::generateFontMetrics(SkPaint::FontMetrics* metrics
     SkScalar x_height = 0.0f;
     SkScalar avgCharWidth = 0.0f;
     SkScalar cap_height = 0.0f;
+    SkScalar strikeoutThickness, strikeoutPosition;
     TT_OS2* os2 = (TT_OS2*) FT_Get_Sfnt_Table(face, ft_sfnt_os2);
     if (os2) {
         x_height = SkIntToScalar(os2->sxHeight) / upem * fScale.y();
         avgCharWidth = SkIntToScalar(os2->xAvgCharWidth) / upem;
+        strikeoutThickness = SkIntToScalar(os2->yStrikeoutSize) / upem;
+        strikeoutPosition = -SkIntToScalar(os2->yStrikeoutPosition) / upem;
+        metrics->fFlags |= SkPaint::FontMetrics::kStrikeoutThicknessIsValid_Flag;
+        metrics->fFlags |= SkPaint::FontMetrics::kStrikeoutPositionIsValid_Flag;
         if (os2->version != 0xFFFF && os2->version >= 2) {
             cap_height = SkIntToScalar(os2->sCapHeight) / upem * fScale.y();
         }
@@ -1398,10 +1399,13 @@ void SkScalerContext_FreeType::generateFontMetrics(SkPaint::FontMetrics* metrics
     metrics->fAvgCharWidth = avgCharWidth * fScale.y();
     metrics->fXMin = xmin * fScale.y();
     metrics->fXMax = xmax * fScale.y();
+    metrics->fMaxCharWidth = metrics->fXMax - metrics->fXMin;
     metrics->fXHeight = x_height;
     metrics->fCapHeight = cap_height;
     metrics->fUnderlineThickness = underlineThickness * fScale.y();
     metrics->fUnderlinePosition = underlinePosition * fScale.y();
+    metrics->fStrikeoutThickness = strikeoutThickness * fScale.y();
+    metrics->fStrikeoutPosition = strikeoutPosition * fScale.y();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

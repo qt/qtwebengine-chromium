@@ -32,9 +32,9 @@
 namespace {
 
 CFX_WideString EncodeToCodewords(const CFX_WideString& sb, int32_t startPos) {
-  wchar_t c1 = sb.GetAt(startPos);
-  wchar_t c2 = sb.GetAt(startPos + 1);
-  wchar_t c3 = sb.GetAt(startPos + 2);
+  wchar_t c1 = sb[startPos];
+  wchar_t c2 = sb[startPos + 1];
+  wchar_t c3 = sb[startPos + 2];
   int32_t v = (1600 * c1) + (40 * c2) + c3 + 1;
   wchar_t cw[2];
   cw[0] = static_cast<wchar_t>(v / 256);
@@ -189,8 +189,14 @@ int32_t CBC_C40Encoder::encodeChar(wchar_t c, CFX_WideString& sb, int32_t& e) {
 int32_t CBC_C40Encoder::BacktrackOneCharacter(CBC_EncoderContext* context,
                                               CFX_WideString* buffer,
                                               int32_t lastCharSize) {
+  if (context->m_pos < 1)
+    return -1;
+
   int32_t count = buffer->GetLength();
-  buffer->Delete(count - lastCharSize, count);
+  if (count < lastCharSize)
+    return -1;
+
+  buffer->Delete(count - lastCharSize, lastCharSize);
   context->m_pos--;
   wchar_t c = context->getCurrentChar();
   int32_t e = BCExceptionNO;
@@ -199,7 +205,7 @@ int32_t CBC_C40Encoder::BacktrackOneCharacter(CBC_EncoderContext* context,
   if (e != BCExceptionNO)
     return -1;
 
-  assert(len > 0);
+  ASSERT(len > 0);
   context->resetSymbolInfo();
   return len;
 }

@@ -35,6 +35,7 @@ ProgramGL::ProgramGL(const gl::ProgramState &data,
       mWorkarounds(workarounds),
       mStateManager(stateManager),
       mEnablePathRendering(enablePathRendering),
+      mMultiviewBaseViewLayerIndexUniformLocation(-1),
       mProgramID(0)
 {
     ASSERT(mFunctions);
@@ -590,6 +591,8 @@ void ProgramGL::preLink()
     mUniformRealLocationMap.clear();
     mUniformBlockRealLocationMap.clear();
     mPathRenderingFragmentInputs.clear();
+
+    mMultiviewBaseViewLayerIndexUniformLocation = -1;
 }
 
 bool ProgramGL::checkLinkStatus(gl::InfoLog &infoLog)
@@ -658,6 +661,13 @@ void ProgramGL::postLink()
         mUniformRealLocationMap[uniformLocation] = realLocation;
     }
 
+    if (mState.usesMultiview())
+    {
+        mMultiviewBaseViewLayerIndexUniformLocation =
+            mFunctions->getUniformLocation(mProgramID, "webgl_angle_multiviewBaseViewLayerIndex");
+        ASSERT(mMultiviewBaseViewLayerIndexUniformLocation != -1);
+    }
+
     // Discover CHROMIUM_path_rendering fragment inputs if enabled.
     if (!mEnablePathRendering)
         return;
@@ -720,6 +730,52 @@ void ProgramGL::postLink()
                 arrayElementInput.location = baseLocation + arrayIndex;
                 mPathRenderingFragmentInputs.push_back(std::move(arrayElementInput));
             }
+        }
+    }
+}
+
+void ProgramGL::enableSideBySideRenderingPath() const
+{
+    ASSERT(mState.usesMultiview());
+    ASSERT(mMultiviewBaseViewLayerIndexUniformLocation != -1);
+
+    ASSERT(mFunctions->programUniform1i != nullptr);
+    mFunctions->programUniform1i(mProgramID, mMultiviewBaseViewLayerIndexUniformLocation, -1);
+}
+
+void ProgramGL::enableLayeredRenderingPath(int baseViewIndex) const
+{
+    ASSERT(mState.usesMultiview());
+    ASSERT(mMultiviewBaseViewLayerIndexUniformLocation != -1);
+
+    ASSERT(mFunctions->programUniform1i != nullptr);
+    mFunctions->programUniform1i(mProgramID, mMultiviewBaseViewLayerIndexUniformLocation,
+                                 baseViewIndex);
+}
+
+void ProgramGL::getUniformfv(const gl::Context *context, GLint location, GLfloat *params) const
+{
+    mFunctions->getUniformfv(mProgramID, uniLoc(location), params);
+}
+
+void ProgramGL::getUniformiv(const gl::Context *context, GLint location, GLint *params) const
+{
+    mFunctions->getUniformiv(mProgramID, uniLoc(location), params);
+}
+
+void ProgramGL::getUniformuiv(const gl::Context *context, GLint location, GLuint *params) const
+{
+    mFunctions->getUniformuiv(mProgramID, uniLoc(location), params);
+}
+
+void ProgramGL::markUnusedUniformLocations(std::vector<gl::VariableLocation> *uniformLocations)
+{
+    GLint maxLocation = static_cast<GLint>(uniformLocations->size());
+    for (GLint location = 0; location < maxLocation; ++location)
+    {
+        if (uniLoc(location) == -1)
+        {
+            (*uniformLocations)[location].used = false;
         }
     }
 }

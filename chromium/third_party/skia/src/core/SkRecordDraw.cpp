@@ -73,6 +73,7 @@ namespace SkRecords {
 template <> void Draw::draw(const NoOp&) {}
 
 #define DRAW(T, call) template <> void Draw::draw(const T& r) { fCanvas->call; }
+DRAW(Flush, flush());
 DRAW(Restore, restore());
 DRAW(Save, save());
 DRAW(SaveLayer, saveLayer(SkCanvas::SaveLayerRec(r.bounds,
@@ -388,6 +389,8 @@ private:
         }
     }
 
+    Bounds bounds(const Flush&) const { return fCurrentClipBounds; }
+
     // FIXME: this method could use better bounds
     Bounds bounds(const DrawText&) const { return fCurrentClipBounds; }
 
@@ -457,7 +460,9 @@ private:
     }
 
     Bounds bounds(const DrawShadowRec& op) const {
-        return this->adjustAndMap(op.path.getBounds(), nullptr);
+        SkRect bounds;
+        SkDrawShadowMetrics::GetLocalBounds(op.path, op.rec, fCTM, &bounds);
+        return this->adjustAndMap(bounds, nullptr);
     }
 
     Bounds bounds(const DrawPicture& op) const {

@@ -12,6 +12,7 @@
 #include "core/fpdfapi/parser/cpdf_data_avail.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fxcrt/cfx_retain_ptr.h"
+#include "core/fxcrt/fx_stream.h"
 #include "fpdfsdk/fsdk_define.h"
 #include "public/fpdf_formfill.h"
 #include "third_party/base/ptr_util.h"
@@ -105,9 +106,9 @@ class CFPDF_DataAvail {
         m_FileRead(pdfium::MakeRetain<CFPDF_FileAccessWrap>()) {}
   ~CFPDF_DataAvail() {}
 
-  std::unique_ptr<CPDF_DataAvail> m_pDataAvail;
   std::unique_ptr<CFPDF_FileAvailWrap> m_FileAvail;
   CFX_RetainPtr<CFPDF_FileAccessWrap> m_FileRead;
+  std::unique_ptr<CPDF_DataAvail> m_pDataAvail;
 };
 
 CFPDF_DataAvail* CFPDFDataAvailFromFPDFAvail(FPDF_AVAIL avail) {
@@ -116,8 +117,8 @@ CFPDF_DataAvail* CFPDFDataAvailFromFPDFAvail(FPDF_AVAIL avail) {
 
 }  // namespace
 
-DLLEXPORT FPDF_AVAIL STDCALL FPDFAvail_Create(FX_FILEAVAIL* file_avail,
-                                              FPDF_FILEACCESS* file) {
+FPDF_EXPORT FPDF_AVAIL FPDF_CALLCONV FPDFAvail_Create(FX_FILEAVAIL* file_avail,
+                                                      FPDF_FILEACCESS* file) {
   auto pAvail = pdfium::MakeUnique<CFPDF_DataAvail>();
   pAvail->m_FileAvail->Set(file_avail);
   pAvail->m_FileRead->Set(file);
@@ -126,13 +127,13 @@ DLLEXPORT FPDF_AVAIL STDCALL FPDFAvail_Create(FX_FILEAVAIL* file_avail,
   return pAvail.release();  // Caller takes ownership.
 }
 
-DLLEXPORT void STDCALL FPDFAvail_Destroy(FPDF_AVAIL avail) {
+FPDF_EXPORT void FPDF_CALLCONV FPDFAvail_Destroy(FPDF_AVAIL avail) {
   // Take ownership back from caller and destroy.
   std::unique_ptr<CFPDF_DataAvail>(static_cast<CFPDF_DataAvail*>(avail));
 }
 
-DLLEXPORT int STDCALL FPDFAvail_IsDocAvail(FPDF_AVAIL avail,
-                                           FX_DOWNLOADHINTS* hints) {
+FPDF_EXPORT int FPDF_CALLCONV FPDFAvail_IsDocAvail(FPDF_AVAIL avail,
+                                                   FX_DOWNLOADHINTS* hints) {
   if (!avail || !hints)
     return PDF_DATA_ERROR;
   CFPDF_DownloadHintsWrap hints_wrap(hints);
@@ -140,7 +141,7 @@ DLLEXPORT int STDCALL FPDFAvail_IsDocAvail(FPDF_AVAIL avail,
       &hints_wrap);
 }
 
-DLLEXPORT FPDF_DOCUMENT STDCALL
+FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
 FPDFAvail_GetDocument(FPDF_AVAIL avail, FPDF_BYTESTRING password) {
   CFPDF_DataAvail* pDataAvail = static_cast<CFPDF_DataAvail*>(avail);
   if (!pDataAvail)
@@ -161,14 +162,14 @@ FPDFAvail_GetDocument(FPDF_AVAIL avail, FPDF_BYTESTRING password) {
   return FPDFDocumentFromCPDFDocument(pDocument.release());
 }
 
-DLLEXPORT int STDCALL FPDFAvail_GetFirstPageNum(FPDF_DOCUMENT doc) {
+FPDF_EXPORT int FPDF_CALLCONV FPDFAvail_GetFirstPageNum(FPDF_DOCUMENT doc) {
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(doc);
   return pDoc ? pDoc->GetParser()->GetFirstPageNo() : 0;
 }
 
-DLLEXPORT int STDCALL FPDFAvail_IsPageAvail(FPDF_AVAIL avail,
-                                            int page_index,
-                                            FX_DOWNLOADHINTS* hints) {
+FPDF_EXPORT int FPDF_CALLCONV FPDFAvail_IsPageAvail(FPDF_AVAIL avail,
+                                                    int page_index,
+                                                    FX_DOWNLOADHINTS* hints) {
   if (!avail || !hints)
     return PDF_DATA_ERROR;
   if (page_index < 0)
@@ -178,8 +179,8 @@ DLLEXPORT int STDCALL FPDFAvail_IsPageAvail(FPDF_AVAIL avail,
       page_index, &hints_wrap);
 }
 
-DLLEXPORT int STDCALL FPDFAvail_IsFormAvail(FPDF_AVAIL avail,
-                                            FX_DOWNLOADHINTS* hints) {
+FPDF_EXPORT int FPDF_CALLCONV FPDFAvail_IsFormAvail(FPDF_AVAIL avail,
+                                                    FX_DOWNLOADHINTS* hints) {
   if (!avail || !hints)
     return PDF_FORM_ERROR;
   CFPDF_DownloadHintsWrap hints_wrap(hints);
@@ -187,7 +188,7 @@ DLLEXPORT int STDCALL FPDFAvail_IsFormAvail(FPDF_AVAIL avail,
       &hints_wrap);
 }
 
-DLLEXPORT int STDCALL FPDFAvail_IsLinearized(FPDF_AVAIL avail) {
+FPDF_EXPORT int FPDF_CALLCONV FPDFAvail_IsLinearized(FPDF_AVAIL avail) {
   if (!avail)
     return PDF_LINEARIZATION_UNKNOWN;
   return CFPDFDataAvailFromFPDFAvail(avail)->m_pDataAvail->IsLinearizedPDF();

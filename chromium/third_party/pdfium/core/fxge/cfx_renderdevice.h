@@ -123,6 +123,7 @@ class CFX_RenderDevice {
   bool SetClip_PathFill(const CFX_PathData* pPathData,
                         const CFX_Matrix* pObject2Device,
                         int fill_mode);
+  bool SetClip_Rect(const CFX_RectF& pRect);
   bool SetClip_Rect(const FX_RECT& pRect);
   bool SetClip_PathStroke(const CFX_PathData* pPathData,
                           const CFX_Matrix* pObject2Device,
@@ -207,7 +208,7 @@ class CFX_RenderDevice {
                             uint32_t flags,
                             std::unique_ptr<CFX_ImageRenderer>* handle,
                             int blend_type);
-  bool ContinueDIBits(CFX_ImageRenderer* handle, IFX_Pause* pPause);
+  bool ContinueDIBits(CFX_ImageRenderer* handle, IFX_PauseIndicator* pPause);
 
   bool DrawNormalText(int nChars,
                       const FXTEXT_CHARPOS* pCharPos,
@@ -228,23 +229,23 @@ class CFX_RenderDevice {
                     CFX_PathData* pClippingPath,
                     int nFlag);
 
-  void DrawFillRect(CFX_Matrix* pUser2Device,
+  void DrawFillRect(const CFX_Matrix* pUser2Device,
                     const CFX_FloatRect& rect,
                     const CFX_Color& color,
                     int32_t nTransparency);
-  void DrawFillRect(CFX_Matrix* pUser2Device,
+  void DrawFillRect(const CFX_Matrix* pUser2Device,
                     const CFX_FloatRect& rect,
                     const FX_COLORREF& color);
-  void DrawStrokeRect(CFX_Matrix* pUser2Device,
+  void DrawStrokeRect(const CFX_Matrix* pUser2Device,
                       const CFX_FloatRect& rect,
                       const FX_COLORREF& color,
                       float fWidth);
-  void DrawStrokeLine(CFX_Matrix* pUser2Device,
+  void DrawStrokeLine(const CFX_Matrix* pUser2Device,
                       const CFX_PointF& ptMoveTo,
                       const CFX_PointF& ptLineTo,
                       const FX_COLORREF& color,
                       float fWidth);
-  void DrawBorder(CFX_Matrix* pUser2Device,
+  void DrawBorder(const CFX_Matrix* pUser2Device,
                   const CFX_FloatRect& rect,
                   float fWidth,
                   const CFX_Color& color,
@@ -252,11 +253,11 @@ class CFX_RenderDevice {
                   const CFX_Color& crRightBottom,
                   BorderStyle nStyle,
                   int32_t nTransparency);
-  void DrawFillArea(CFX_Matrix* pUser2Device,
+  void DrawFillArea(const CFX_Matrix* pUser2Device,
                     const CFX_PointF* pPts,
                     int32_t nCount,
                     const FX_COLORREF& color);
-  void DrawShadow(CFX_Matrix* pUser2Device,
+  void DrawShadow(const CFX_Matrix* pUser2Device,
                   bool bVertical,
                   bool bHorizontal,
                   CFX_FloatRect rect,
@@ -274,7 +275,7 @@ class CFX_RenderDevice {
                                int blend_type);
 #endif
 #if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
-  void Flush();
+  void Flush(bool release);
 #endif
 
  private:
@@ -287,10 +288,8 @@ class CFX_RenderDevice {
                           uint32_t stroke_color,
                           int fill_mode,
                           int blend_type);
-  bool DrawCosmeticLine(float x1,
-                        float y1,
-                        float x2,
-                        float y2,
+  bool DrawCosmeticLine(const CFX_PointF& ptMoveTo,
+                        const CFX_PointF& ptLineTo,
                         uint32_t color,
                         int fill_mode,
                         int blend_type);

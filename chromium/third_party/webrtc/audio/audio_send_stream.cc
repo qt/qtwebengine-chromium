@@ -51,6 +51,30 @@ void CallEncoder(const std::unique_ptr<voe::ChannelProxy>& channel_proxy,
 }
 }  // namespace
 
+// TODO(saza): Move this declaration further down when we can use
+// std::make_unique.
+class AudioSendStream::TimedTransport : public Transport {
+ public:
+  TimedTransport(Transport* transport, TimeInterval* time_interval)
+      : transport_(transport), lifetime_(time_interval) {}
+  bool SendRtp(const uint8_t* packet,
+               size_t length,
+               const PacketOptions& options) {
+    if (lifetime_) {
+      lifetime_->Extend();
+    }
+    return transport_->SendRtp(packet, length, options);
+  }
+  bool SendRtcp(const uint8_t* packet, size_t length) {
+    return transport_->SendRtcp(packet, length);
+  }
+  ~TimedTransport() {}
+
+ private:
+  Transport* transport_;
+  TimeInterval* lifetime_;
+};
+
 AudioSendStream::AudioSendStream(
     const webrtc::AudioSendStream::Config& config,
     const rtc::scoped_refptr<webrtc::AudioState>& audio_state,
@@ -102,6 +126,11 @@ AudioSendStream::~AudioSendStream() {
   channel_proxy_->SetRtcpRttStats(nullptr);
 }
 
+const webrtc::AudioSendStream::Config& AudioSendStream::GetConfig() const {
+  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+  return config_;
+}
+
 void AudioSendStream::Reconfigure(
     const webrtc::AudioSendStream::Config& new_config) {
   ConfigureStream(this, new_config, false);
@@ -137,8 +166,14 @@ void AudioSendStream::ConfigureStream(
     if (old_config.send_transport) {
       channel_proxy->DeRegisterExternalTransport();
     }
-
-    channel_proxy->RegisterExternalTransport(new_config.send_transport);
+    if (new_config.send_transport) {
+      stream->timed_send_transport_adapter_.reset(new TimedTransport(
+          new_config.send_transport, &stream->active_lifetime_));
+    } else {
+      stream->timed_send_transport_adapter_.reset(nullptr);
+    }
+    channel_proxy->RegisterExternalTransport(
+        stream->timed_send_transport_adapter_.get());
   }
 
   // RFC 5285: Each distinct extension MUST have a unique ID. The value 0 is
@@ -353,9 +388,7 @@ void AudioSendStream::OnPacketAdded(uint32_t ssrc, uint16_t seq_num) {
 
 void AudioSendStream::OnPacketFeedbackVector(
     const std::vector<PacketFeedback>& packet_feedback_vector) {
-  // TODO(eladalon): This fails in UT; fix and uncomment.
-  // See: https://bugs.chromium.org/p/webrtc/issues/detail?id=7405
-  // RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   rtc::Optional<float> plr;
   rtc::Optional<float> rplr;
   {
@@ -375,11 +408,6 @@ void AudioSendStream::OnPacketFeedbackVector(
   }
 }
 
-const webrtc::AudioSendStream::Config& AudioSendStream::config() const {
-  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  return config_;
-}
-
 void AudioSendStream::SetTransportOverhead(int transport_overhead_per_packet) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   transport_->send_side_cc()->SetTransportOverhead(
@@ -389,6 +417,10 @@ void AudioSendStream::SetTransportOverhead(int transport_overhead_per_packet) {
 
 RtpState AudioSendStream::GetRtpState() const {
   return rtp_rtcp_module_->GetRtpState();
+}
+
+const TimeInterval& AudioSendStream::GetActiveLifetime() const {
+  return active_lifetime_;
 }
 
 VoiceEngine* AudioSendStream::voice_engine() const {
@@ -453,7 +485,17 @@ bool AudioSendStream::SetupSendCodec(AudioSendStream* stream,
 bool AudioSendStream::ReconfigureSendCodec(AudioSendStream* stream,
                                            const Config& new_config) {
   const auto& old_config = stream->config_;
-  if (new_config.send_codec_spec == old_config.send_codec_spec) {
+
+  if (!new_config.send_codec_spec) {
+    // We cannot de-configure a send codec. So we will do nothing.
+    // By design, the send codec should have not been configured.
+    RTC_DCHECK(!old_config.send_codec_spec);
+    return true;
+  }
+
+  if (new_config.send_codec_spec == old_config.send_codec_spec &&
+      new_config.audio_network_adaptor_config ==
+          old_config.audio_network_adaptor_config) {
     return true;
   }
 
@@ -466,9 +508,6 @@ bool AudioSendStream::ReconfigureSendCodec(AudioSendStream* stream,
           old_config.send_codec_spec->payload_type) {
     return SetupSendCodec(stream, new_config);
   }
-
-  // Should never move a stream from fully configured to unconfigured.
-  RTC_CHECK(new_config.send_codec_spec);
 
   const rtc::Optional<int>& new_target_bitrate_bps =
       new_config.send_codec_spec->target_bitrate_bps;

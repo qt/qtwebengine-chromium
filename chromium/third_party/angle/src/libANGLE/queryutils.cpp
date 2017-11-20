@@ -19,6 +19,7 @@
 #include "libANGLE/Renderbuffer.h"
 #include "libANGLE/Sampler.h"
 #include "libANGLE/Shader.h"
+#include "libANGLE/Surface.h"
 #include "libANGLE/Texture.h"
 #include "libANGLE/Uniform.h"
 #include "libANGLE/VertexAttribute.h"
@@ -436,6 +437,93 @@ void QueryBufferParameterBase(const Buffer *buffer, GLenum pname, ParamType *par
         default:
             UNREACHABLE();
             break;
+    }
+}
+
+GLint GetLocationVariableProperty(const sh::VariableWithLocation &var, GLenum prop)
+{
+    switch (prop)
+    {
+        case GL_TYPE:
+            return var.type;
+
+        case GL_ARRAY_SIZE:
+            // TODO(jie.a.chen@intel.com): check array of array.
+            if (var.isArray() && !var.isStruct())
+            {
+                return static_cast<GLint>(var.elementCount());
+            }
+            return 1;
+
+        case GL_NAME_LENGTH:
+        {
+            GLint length = static_cast<GLint>(var.name.size());
+            if (var.isArray())
+            {
+                // Counts "[0]".
+                length += 3;
+            }
+            // ES31 spec p84: This counts the terminating null char.
+            ++length;
+            return length;
+        }
+
+        case GL_LOCATION:
+            return var.location;
+
+        default:
+            UNREACHABLE();
+            return GL_INVALID_VALUE;
+    }
+}
+
+GLint GetInputResourceProperty(const Program *program, GLuint index, GLenum prop)
+{
+    const auto &attribute = program->getInputResource(index);
+    switch (prop)
+    {
+        case GL_TYPE:
+        case GL_ARRAY_SIZE:
+        case GL_LOCATION:
+        case GL_NAME_LENGTH:
+            return GetLocationVariableProperty(attribute, prop);
+
+        case GL_REFERENCED_BY_VERTEX_SHADER:
+            return 1;
+
+        case GL_REFERENCED_BY_FRAGMENT_SHADER:
+        case GL_REFERENCED_BY_COMPUTE_SHADER:
+            return 0;
+
+        default:
+            UNREACHABLE();
+            return GL_INVALID_VALUE;
+    }
+}
+
+GLint GetOutputResourceProperty(const Program *program, GLuint index, const GLenum prop)
+{
+    const auto &outputVariable = program->getOutputResource(index);
+    switch (prop)
+    {
+        case GL_TYPE:
+        case GL_ARRAY_SIZE:
+        case GL_LOCATION:
+        case GL_NAME_LENGTH:
+            return GetLocationVariableProperty(outputVariable, prop);
+
+        case GL_REFERENCED_BY_VERTEX_SHADER:
+            return 0;
+
+        case GL_REFERENCED_BY_FRAGMENT_SHADER:
+            return 1;
+
+        case GL_REFERENCED_BY_COMPUTE_SHADER:
+            return 0;
+
+        default:
+            UNREACHABLE();
+            return GL_INVALID_VALUE;
     }
 }
 
@@ -910,11 +998,7 @@ void QueryFramebufferParameteriv(const Framebuffer *framebuffer, GLenum pname, G
     }
 }
 
-Error QuerySynciv(const FenceSync *sync,
-                  GLenum pname,
-                  GLsizei bufSize,
-                  GLsizei *length,
-                  GLint *values)
+Error QuerySynciv(const Sync *sync, GLenum pname, GLsizei bufSize, GLsizei *length, GLint *values)
 {
     ASSERT(sync);
 
@@ -1123,6 +1207,60 @@ GLint QueryProgramResourceLocation(const Program *program,
     }
 }
 
+void QueryProgramResourceiv(const Program *program,
+                            GLenum programInterface,
+                            GLuint index,
+                            GLsizei propCount,
+                            const GLenum *props,
+                            GLsizei bufSize,
+                            GLsizei *length,
+                            GLint *params)
+{
+    if (!program->isLinked())
+    {
+        if (length != nullptr)
+        {
+            *length = 0;
+        }
+        return;
+    }
+
+    GLsizei count = std::min(propCount, bufSize);
+    if (length != nullptr)
+    {
+        *length = count;
+    }
+
+    for (GLsizei i = 0; i < count; i++)
+    {
+        switch (programInterface)
+        {
+            case GL_PROGRAM_INPUT:
+                params[i] = GetInputResourceProperty(program, index, props[i]);
+                break;
+
+            case GL_PROGRAM_OUTPUT:
+                params[i] = GetOutputResourceProperty(program, index, props[i]);
+                break;
+
+            // TODO(jie.a.chen@intel.com): more interfaces.
+            case GL_UNIFORM:
+            case GL_UNIFORM_BLOCK:
+            case GL_TRANSFORM_FEEDBACK_VARYING:
+            case GL_BUFFER_VARIABLE:
+            case GL_SHADER_STORAGE_BLOCK:
+            case GL_ATOMIC_COUNTER_BUFFER:
+                UNIMPLEMENTED();
+                params[i] = GL_INVALID_VALUE;
+                break;
+
+            default:
+                UNREACHABLE();
+                params[i] = GL_INVALID_VALUE;
+        }
+    }
+}
+
 }  // namespace gl
 
 namespace egl
@@ -1238,6 +1376,121 @@ void QueryConfigAttrib(const Config *config, EGLint attribute, EGLint *value)
             break;
         case EGL_COLOR_COMPONENT_TYPE_EXT:
             *value = config->colorComponentType;
+            break;
+        default:
+            UNREACHABLE();
+            break;
+    }
+}
+
+void QuerySurfaceAttrib(const Surface *surface, EGLint attribute, EGLint *value)
+{
+    switch (attribute)
+    {
+        case EGL_GL_COLORSPACE:
+            *value = surface->getGLColorspace();
+            break;
+        case EGL_VG_ALPHA_FORMAT:
+            *value = surface->getVGAlphaFormat();
+            break;
+        case EGL_VG_COLORSPACE:
+            *value = surface->getVGColorspace();
+            break;
+        case EGL_CONFIG_ID:
+            *value = surface->getConfig()->configID;
+            break;
+        case EGL_HEIGHT:
+            *value = surface->getHeight();
+            break;
+        case EGL_HORIZONTAL_RESOLUTION:
+            *value = surface->getHorizontalResolution();
+            break;
+        case EGL_LARGEST_PBUFFER:
+            // The EGL spec states that value is not written if the surface is not a pbuffer
+            if (surface->getType() == EGL_PBUFFER_BIT)
+            {
+                *value = surface->getLargestPbuffer();
+            }
+            break;
+        case EGL_MIPMAP_TEXTURE:
+            // The EGL spec states that value is not written if the surface is not a pbuffer
+            if (surface->getType() == EGL_PBUFFER_BIT)
+            {
+                *value = surface->getMipmapTexture();
+            }
+            break;
+        case EGL_MIPMAP_LEVEL:
+            // The EGL spec states that value is not written if the surface is not a pbuffer
+            if (surface->getType() == EGL_PBUFFER_BIT)
+            {
+                *value = surface->getMipmapLevel();
+            }
+            break;
+        case EGL_MULTISAMPLE_RESOLVE:
+            *value = surface->getMultisampleResolve();
+            break;
+        case EGL_PIXEL_ASPECT_RATIO:
+            *value = surface->getPixelAspectRatio();
+            break;
+        case EGL_RENDER_BUFFER:
+            *value = surface->getRenderBuffer();
+            break;
+        case EGL_SWAP_BEHAVIOR:
+            *value = surface->getSwapBehavior();
+            break;
+        case EGL_TEXTURE_FORMAT:
+            // The EGL spec states that value is not written if the surface is not a pbuffer
+            if (surface->getType() == EGL_PBUFFER_BIT)
+            {
+                *value = surface->getTextureFormat();
+            }
+            break;
+        case EGL_TEXTURE_TARGET:
+            // The EGL spec states that value is not written if the surface is not a pbuffer
+            if (surface->getType() == EGL_PBUFFER_BIT)
+            {
+                *value = surface->getTextureTarget();
+            }
+            break;
+        case EGL_VERTICAL_RESOLUTION:
+            *value = surface->getVerticalResolution();
+            break;
+        case EGL_WIDTH:
+            *value = surface->getWidth();
+            break;
+        case EGL_POST_SUB_BUFFER_SUPPORTED_NV:
+            *value = surface->isPostSubBufferSupported();
+            break;
+        case EGL_FIXED_SIZE_ANGLE:
+            *value = surface->isFixedSize();
+            break;
+        case EGL_FLEXIBLE_SURFACE_COMPATIBILITY_SUPPORTED_ANGLE:
+            *value = surface->flexibleSurfaceCompatibilityRequested();
+            break;
+        case EGL_SURFACE_ORIENTATION_ANGLE:
+            *value = surface->getOrientation();
+            break;
+        case EGL_DIRECT_COMPOSITION_ANGLE:
+            *value = surface->directComposition();
+            break;
+        default:
+            UNREACHABLE();
+            break;
+    }
+}
+
+void SetSurfaceAttrib(Surface *surface, EGLint attribute, EGLint value)
+{
+    switch (attribute)
+    {
+        case EGL_MIPMAP_LEVEL:
+            surface->setMipmapLevel(value);
+            break;
+        case EGL_MULTISAMPLE_RESOLVE:
+            surface->setMultisampleResolve(value);
+            break;
+        case EGL_SWAP_BEHAVIOR:
+            surface->setSwapBehavior(value);
             break;
         default:
             UNREACHABLE();

@@ -22,6 +22,8 @@
 #include <GL/gl.h>
 #elif defined(SK_BUILD_FOR_MAC)
 #include <OpenGL/gl.h>
+#elif defined(SK_BUILD_FOR_IOS)
+#include <OpenGLES/ES2/gl.h>
 #endif
 
 /*
@@ -187,8 +189,7 @@ int main(int argc, char** argv) {
     sk_sp<const GrGLInterface> interface(GrGLCreateNativeInterface());
 
     // setup contexts
-    sk_sp<GrContext> grContext(GrContext::Create(kOpenGL_GrBackend,
-                                                 (GrBackendContext)interface.get()));
+    sk_sp<GrContext> grContext(GrContext::MakeGL(interface.get()));
     SkASSERT(grContext);
 
     // Wrap the frame buffer object attached to the screen in a Skia render target so Skia can

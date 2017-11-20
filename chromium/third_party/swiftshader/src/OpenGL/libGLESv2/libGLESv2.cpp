@@ -6146,6 +6146,7 @@ void VertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normal
 	case GL_UNSIGNED_SHORT:
 	case GL_FIXED:
 	case GL_FLOAT:
+	case GL_HALF_FLOAT_OES:   // GL_OES_vertex_half_float
 		break;
 	case GL_INT_2_10_10_10_REV:
 	case GL_UNSIGNED_INT_2_10_10_10_REV:
@@ -6855,7 +6856,7 @@ void DrawBuffersEXT(GLsizei n, const GLenum *bufs)
 
 }
 
-extern "C" __eglMustCastToProperFunctionPointerType es2GetProcAddress(const char *procname)
+extern "C" NO_SANITIZE_FUNCTION __eglMustCastToProperFunctionPointerType es2GetProcAddress(const char *procname)
 {
 	struct Extension
 	{

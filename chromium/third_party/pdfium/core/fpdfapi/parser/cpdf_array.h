@@ -15,7 +15,6 @@
 
 #include "core/fpdfapi/parser/cpdf_indirect_object_holder.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
-#include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "third_party/base/ptr_util.h"
 
@@ -100,9 +99,8 @@ class CPDF_Array : public CPDF_Object {
         index, pdfium::MakeUnique<T>(m_pPool, std::forward<Args>(args)...)));
   }
 
-  void RemoveAt(size_t index);
   void Clear();
-  void Truncate(size_t nNewSize);
+  void RemoveAt(size_t index);
   void ConvertToIndirectObjectAt(size_t index, CPDF_IndirectObjectHolder* pDoc);
 
   const_iterator begin() const { return m_Objects.begin(); }

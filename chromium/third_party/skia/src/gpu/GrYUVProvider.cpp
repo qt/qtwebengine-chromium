@@ -124,20 +124,21 @@ sk_sp<GrTextureProxy> GrYUVProvider::refAsTextureProxy(GrContext* ctx, const GrS
 
     // We never want to perform color-space conversion during the decode
     sk_sp<GrRenderTargetContext> renderTargetContext(ctx->makeDeferredRenderTargetContext(
-                                                                          SkBackingFit::kExact,
-                                                                          desc.fWidth, desc.fHeight,
-                                                                          desc.fConfig, nullptr,
-                                                                          desc.fSampleCnt));
+                                                                    SkBackingFit::kExact,
+                                                                    desc.fWidth, desc.fHeight,
+                                                                    desc.fConfig, nullptr,
+                                                                    desc.fSampleCnt,
+                                                                    kTopLeft_GrSurfaceOrigin));
     if (!renderTargetContext) {
         return nullptr;
     }
 
     GrPaint paint;
-    sk_sp<GrFragmentProcessor> yuvToRgbProcessor(
-        GrYUVEffect::MakeYUVToRGB(yuvTextureContexts[0]->asTextureProxyRef(),
-                                  yuvTextureContexts[1]->asTextureProxyRef(),
-                                  yuvTextureContexts[2]->asTextureProxyRef(),
-                                  yuvInfo.fSizeInfo.fSizes, yuvInfo.fColorSpace, false));
+    auto yuvToRgbProcessor =
+            GrYUVEffect::MakeYUVToRGB(yuvTextureContexts[0]->asTextureProxyRef(),
+                                      yuvTextureContexts[1]->asTextureProxyRef(),
+                                      yuvTextureContexts[2]->asTextureProxyRef(),
+                                      yuvInfo.fSizeInfo.fSizes, yuvInfo.fColorSpace, false);
     paint.addColorFragmentProcessor(std::move(yuvToRgbProcessor));
 
     // If we're decoding an sRGB image, the result of our linear math on the YUV planes is already
@@ -157,10 +158,10 @@ sk_sp<GrTextureProxy> GrYUVProvider::refAsTextureProxy(GrContext* ctx, const GrS
 
     // If the caller expects the pixels in a different color space than the one from the image,
     // apply a color conversion to do this.
-    sk_sp<GrFragmentProcessor> colorConversionProcessor =
+    std::unique_ptr<GrFragmentProcessor> colorConversionProcessor =
             GrNonlinearColorSpaceXformEffect::Make(srcColorSpace, dstColorSpace);
     if (colorConversionProcessor) {
-        paint.addColorFragmentProcessor(colorConversionProcessor);
+        paint.addColorFragmentProcessor(std::move(colorConversionProcessor));
     }
 
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);

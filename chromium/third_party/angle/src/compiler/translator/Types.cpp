@@ -122,13 +122,15 @@ TType::TType(const TPublicType &p)
       layoutQualifier(p.layoutQualifier),
       primarySize(p.getPrimarySize()),
       secondarySize(p.getSecondarySize()),
-      array(p.array),
-      arraySize(p.arraySize),
       interfaceBlock(0),
       structure(0)
 {
     ASSERT(primarySize <= 4);
     ASSERT(secondarySize <= 4);
+    if (p.array)
+    {
+        makeArray(p.arraySize);
+    }
     if (p.getUserDef())
         structure = p.getUserDef();
 }
@@ -279,8 +281,11 @@ TString TType::getCompleteString() const
         stream << getQualifierString() << " ";
     if (precision != EbpUndefined)
         stream << getPrecisionString() << " ";
-    if (array)
-        stream << "array[" << getArraySize() << "] of ";
+    for (auto arraySizeIter = mArraySizes.rbegin(); arraySizeIter != mArraySizes.rend();
+         ++arraySizeIter)
+    {
+        stream << "array[" << (*arraySizeIter) << "] of ";
+    }
     if (isMatrix())
         stream << getCols() << "X" << getRows() << " matrix of ";
     else if (isVector())
@@ -417,6 +422,9 @@ TString TType::buildMangledName() const
         case EbtUImageCube:
             mangledName += "uimc";
             break;
+        case EbtAtomicCounter:
+            mangledName += "ac";
+            break;
         case EbtStruct:
             mangledName += structure->mangledName();
             break;
@@ -439,7 +447,7 @@ TString TType::buildMangledName() const
         mangledName += static_cast<char>('0' + getNominalSize());
     }
 
-    if (isArray())
+    for (unsigned int arraySize : mArraySizes)
     {
         char buf[20];
         snprintf(buf, sizeof(buf), "%d", arraySize);
@@ -459,16 +467,15 @@ size_t TType::getObjectSize() const
     else
         totalSize = primarySize * secondarySize;
 
-    if (isArray())
-    {
-        if (totalSize == 0)
-            return 0;
+    if (totalSize == 0)
+        return 0;
 
-        size_t currentArraySize = getArraySize();
-        if (currentArraySize > INT_MAX / totalSize)
+    for (size_t arraySize : mArraySizes)
+    {
+        if (arraySize > INT_MAX / totalSize)
             totalSize = INT_MAX;
         else
-            totalSize *= currentArraySize;
+            totalSize *= arraySize;
     }
 
     return totalSize;
@@ -483,25 +490,91 @@ int TType::getLocationCount() const
         count = structure->getLocationCount();
     }
 
-    if (isArray())
+    if (count == 0)
     {
-        if (count == 0)
-        {
-            return 0;
-        }
+        return 0;
+    }
 
-        unsigned int currentArraySize = getArraySize();
-        if (currentArraySize > static_cast<unsigned int>(std::numeric_limits<int>::max() / count))
+    for (unsigned int arraySize : mArraySizes)
+    {
+        if (arraySize > static_cast<unsigned int>(std::numeric_limits<int>::max() / count))
         {
             count = std::numeric_limits<int>::max();
         }
         else
         {
-            count *= static_cast<int>(currentArraySize);
+            count *= static_cast<int>(arraySize);
         }
     }
 
     return count;
+}
+
+unsigned int TType::getArraySizeProduct() const
+{
+    unsigned int product = 1u;
+    for (unsigned int arraySize : mArraySizes)
+    {
+        product *= arraySize;
+    }
+    return product;
+}
+
+bool TType::isUnsizedArray() const
+{
+    for (unsigned int arraySize : mArraySizes)
+    {
+        if (arraySize == 0u)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TType::sameNonArrayType(const TType &right) const
+{
+    return (type == right.type && primarySize == right.primarySize &&
+            secondarySize == right.secondarySize && structure == right.structure);
+}
+
+bool TType::isElementTypeOf(const TType &arrayType) const
+{
+    if (!sameNonArrayType(arrayType))
+    {
+        return false;
+    }
+    if (arrayType.mArraySizes.size() != mArraySizes.size() + 1u)
+    {
+        return false;
+    }
+    for (size_t i = 0; i < mArraySizes.size(); ++i)
+    {
+        if (mArraySizes[i] != arrayType.mArraySizes[i])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void TType::sizeUnsizedArrays(const TVector<unsigned int> &arraySizes)
+{
+    for (size_t i = 0u; i < mArraySizes.size(); ++i)
+    {
+        if (mArraySizes[i] == 0)
+        {
+            if (i < arraySizes.size())
+            {
+                mArraySizes[i] = arraySizes[i];
+            }
+            else
+            {
+                mArraySizes[i] = 1u;
+            }
+        }
+    }
+    invalidateMangledName();
 }
 
 TStructure::TStructure(TSymbolTable *symbolTable, const TString *name, TFieldList *fields)
@@ -545,73 +618,58 @@ bool TStructure::containsSamplers() const
     return false;
 }
 
-void TStructure::createSamplerSymbols(const TString &structName,
-                                      const TString &structAPIName,
-                                      const unsigned int arrayOfStructsSize,
+void TType::createSamplerSymbols(const TString &namePrefix,
+                                 const TString &apiNamePrefix,
+                                 TVector<TIntermSymbol *> *outputSymbols,
+                                 TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames) const
+{
+    if (isStructureContainingSamplers())
+    {
+        if (isArray())
+        {
+            TType elementType(*this);
+            elementType.toArrayElementType();
+            for (unsigned int arrayIndex = 0u; arrayIndex < getOutermostArraySize(); ++arrayIndex)
+            {
+                TStringStream elementName;
+                elementName << namePrefix << "_" << arrayIndex;
+                TStringStream elementApiName;
+                elementApiName << apiNamePrefix << "[" << arrayIndex << "]";
+                elementType.createSamplerSymbols(elementName.str(), elementApiName.str(),
+                                                 outputSymbols, outputSymbolsToAPINames);
+            }
+        }
+        else
+        {
+            structure->createSamplerSymbols(namePrefix, apiNamePrefix, outputSymbols,
+                                            outputSymbolsToAPINames);
+        }
+        return;
+    }
+    ASSERT(IsSampler(type));
+    TIntermSymbol *symbol = new TIntermSymbol(0, namePrefix, *this);
+    outputSymbols->push_back(symbol);
+    if (outputSymbolsToAPINames)
+    {
+        (*outputSymbolsToAPINames)[symbol] = apiNamePrefix;
+    }
+}
+
+void TStructure::createSamplerSymbols(const TString &namePrefix,
+                                      const TString &apiNamePrefix,
                                       TVector<TIntermSymbol *> *outputSymbols,
                                       TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames) const
 {
+    ASSERT(containsSamplers());
     for (auto &field : *mFields)
     {
         const TType *fieldType = field->type();
-        if (IsSampler(fieldType->getBasicType()))
+        if (IsSampler(fieldType->getBasicType()) || fieldType->isStructureContainingSamplers())
         {
-            if (arrayOfStructsSize > 0u)
-            {
-                for (unsigned int arrayIndex = 0u; arrayIndex < arrayOfStructsSize; ++arrayIndex)
-                {
-                    TStringStream name;
-                    name << structName << "_" << arrayIndex << "_" << field->name();
-                    TIntermSymbol *symbol = new TIntermSymbol(0, name.str(), *fieldType);
-                    outputSymbols->push_back(symbol);
-
-                    if (outputSymbolsToAPINames)
-                    {
-                        TStringStream apiName;
-                        apiName << structAPIName << "[" << arrayIndex << "]." << field->name();
-                        (*outputSymbolsToAPINames)[symbol] = apiName.str();
-                    }
-                }
-            }
-            else
-            {
-                TString symbolName    = structName + "_" + field->name();
-                TIntermSymbol *symbol = new TIntermSymbol(0, symbolName, *fieldType);
-                outputSymbols->push_back(symbol);
-
-                if (outputSymbolsToAPINames)
-                {
-                    TString apiName                    = structAPIName + "." + field->name();
-                    (*outputSymbolsToAPINames)[symbol] = apiName;
-                }
-            }
-        }
-        else if (fieldType->isStructureContainingSamplers())
-        {
-            unsigned int nestedArrayOfStructsSize =
-                fieldType->isArray() ? fieldType->getArraySize() : 0u;
-            if (arrayOfStructsSize > 0)
-            {
-                for (unsigned int arrayIndex = 0u; arrayIndex < arrayOfStructsSize; ++arrayIndex)
-                {
-                    TStringStream fieldName;
-                    fieldName << structName << "_" << arrayIndex << "_" << field->name();
-                    TStringStream fieldAPIName;
-                    if (outputSymbolsToAPINames)
-                    {
-                        fieldAPIName << structAPIName << "[" << arrayIndex << "]." << field->name();
-                    }
-                    fieldType->createSamplerSymbols(fieldName.str(), fieldAPIName.str(),
-                                                    nestedArrayOfStructsSize, outputSymbols,
-                                                    outputSymbolsToAPINames);
-                }
-            }
-            else
-            {
-                fieldType->createSamplerSymbols(
-                    structName + "_" + field->name(), structAPIName + "." + field->name(),
-                    nestedArrayOfStructsSize, outputSymbols, outputSymbolsToAPINames);
-            }
+            TString fieldName    = namePrefix + "_" + field->name();
+            TString fieldApiName = apiNamePrefix + "." + field->name();
+            fieldType->createSamplerSymbols(fieldName, fieldApiName, outputSymbols,
+                                            outputSymbolsToAPINames);
         }
     }
 }

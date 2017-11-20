@@ -15,6 +15,7 @@
 #include "SkFontMgr.h"
 #include "SkFontStyle.h"
 #include "SkPixelRef.h"
+#include "SkPM4f.h"
 #include "SkPoint3.h"
 #include "SkShader.h"
 #include "SkTestScalerContext.h"
@@ -246,12 +247,11 @@ SkBitmap create_string_bitmap(int w, int h, SkColor c, int x, int y,
     return result;
 }
 
-void add_to_text_blob(SkTextBlobBuilder* builder, const char* text, const SkPaint& origPaint,
-                      SkScalar x, SkScalar y) {
+void add_to_text_blob_w_len(SkTextBlobBuilder* builder, const char* text, size_t len,
+                            const SkPaint& origPaint, SkScalar x, SkScalar y) {
     SkPaint paint(origPaint);
     SkTDArray<uint16_t> glyphs;
 
-    size_t len = strlen(text);
     glyphs.append(paint.textToGlyphs(text, len, nullptr));
     paint.textToGlyphs(text, len, glyphs.begin());
 
@@ -261,115 +261,12 @@ void add_to_text_blob(SkTextBlobBuilder* builder, const char* text, const SkPain
     memcpy(run.glyphs, glyphs.begin(), glyphs.count() * sizeof(uint16_t));
 }
 
-static inline void norm_to_rgb(SkBitmap* bm, int x, int y, const SkVector3& norm) {
-    SkASSERT(SkScalarNearlyEqual(norm.length(), 1.0f));
-    unsigned char r = static_cast<unsigned char>((0.5f * norm.fX + 0.5f) * 255);
-    unsigned char g = static_cast<unsigned char>((-0.5f * norm.fY + 0.5f) * 255);
-    unsigned char b = static_cast<unsigned char>((0.5f * norm.fZ + 0.5f) * 255);
-    *bm->getAddr32(x, y) = SkPackARGB32(0xFF, r, g, b);
+void add_to_text_blob(SkTextBlobBuilder* builder, const char* text,
+                      const SkPaint& origPaint, SkScalar x, SkScalar y) {
+    add_to_text_blob_w_len(builder, text, strlen(text), origPaint, x, y);
 }
 
-void create_hemi_normal_map(SkBitmap* bm, const SkIRect& dst) {
-    const SkPoint center = SkPoint::Make(dst.fLeft + (dst.width() / 2.0f),
-                                         dst.fTop + (dst.height() / 2.0f));
-    const SkPoint halfSize = SkPoint::Make(dst.width() / 2.0f, dst.height() / 2.0f);
-
-    SkVector3 norm;
-
-    for (int y = dst.fTop; y < dst.fBottom; ++y) {
-        for (int x = dst.fLeft; x < dst.fRight; ++x) {
-            norm.fX = (x + 0.5f - center.fX) / halfSize.fX;
-            norm.fY = (y + 0.5f - center.fY) / halfSize.fY;
-
-            SkScalar tmp = norm.fX * norm.fX + norm.fY * norm.fY;
-            if (tmp >= 1.0f) {
-                norm.set(0.0f, 0.0f, 1.0f);
-            } else {
-                norm.fZ = sqrtf(1.0f - tmp);
-            }
-
-            norm_to_rgb(bm, x, y, norm);
-        }
-    }
-}
-
-void create_frustum_normal_map(SkBitmap* bm, const SkIRect& dst) {
-    const SkPoint center = SkPoint::Make(dst.fLeft + (dst.width() / 2.0f),
-                                         dst.fTop + (dst.height() / 2.0f));
-
-    SkIRect inner = dst;
-    inner.inset(dst.width()/4, dst.height()/4);
-
-    SkPoint3 norm;
-    const SkPoint3 left =  SkPoint3::Make(-SK_ScalarRoot2Over2, 0.0f, SK_ScalarRoot2Over2);
-    const SkPoint3 up =    SkPoint3::Make(0.0f, -SK_ScalarRoot2Over2, SK_ScalarRoot2Over2);
-    const SkPoint3 right = SkPoint3::Make(SK_ScalarRoot2Over2,  0.0f, SK_ScalarRoot2Over2);
-    const SkPoint3 down =  SkPoint3::Make(0.0f,  SK_ScalarRoot2Over2, SK_ScalarRoot2Over2);
-
-    for (int y = dst.fTop; y < dst.fBottom; ++y) {
-        for (int x = dst.fLeft; x < dst.fRight; ++x) {
-            if (inner.contains(x, y)) {
-                norm.set(0.0f, 0.0f, 1.0f);
-            } else {
-                SkScalar locX = x + 0.5f - center.fX;
-                SkScalar locY = y + 0.5f - center.fY;
-
-                if (locX >= 0.0f) {
-                    if (locY > 0.0f) {
-                        norm = locX >= locY ? right : down;   // LR corner
-                    } else {
-                        norm = locX > -locY ? right : up;     // UR corner
-                    }
-                } else {
-                    if (locY > 0.0f) {
-                        norm = -locX > locY ? left : down;    // LL corner
-                    } else {
-                        norm = locX > locY ? up : left;       // UL corner
-                    }
-                }
-            }
-
-            norm_to_rgb(bm, x, y, norm);
-        }
-    }
-}
-
-void create_tetra_normal_map(SkBitmap* bm, const SkIRect& dst) {
-    const SkPoint center = SkPoint::Make(dst.fLeft + (dst.width() / 2.0f),
-                                         dst.fTop + (dst.height() / 2.0f));
-
-    static const SkScalar k1OverRoot3 = 0.5773502692f;
-
-    SkPoint3 norm;
-    const SkPoint3 leftUp =  SkPoint3::Make(-k1OverRoot3, -k1OverRoot3, k1OverRoot3);
-    const SkPoint3 rightUp = SkPoint3::Make(k1OverRoot3,  -k1OverRoot3, k1OverRoot3);
-    const SkPoint3 down =  SkPoint3::Make(0.0f,  SK_ScalarRoot2Over2, SK_ScalarRoot2Over2);
-
-    for (int y = dst.fTop; y < dst.fBottom; ++y) {
-        for (int x = dst.fLeft; x < dst.fRight; ++x) {
-            SkScalar locX = x + 0.5f - center.fX;
-            SkScalar locY = y + 0.5f - center.fY;
-
-            if (locX >= 0.0f) {
-                if (locY > 0.0f) {
-                    norm = locX >= locY ? rightUp : down;   // LR corner
-                } else {
-                    norm = rightUp;
-                }
-            } else {
-                if (locY > 0.0f) {
-                    norm = -locX > locY ? leftUp : down;    // LL corner
-                } else {
-                    norm = leftUp;
-                }
-            }
-
-            norm_to_rgb(bm, x, y, norm);
-        }
-    }
-}
-
-#if defined(_MSC_VER)
+#if !defined(__clang__) && defined(_MSC_VER)
     // MSVC takes ~2 minutes to compile this function with optimization.
     // We don't really care to wait that long for this function.
     #pragma optimize("", off)
@@ -613,4 +510,91 @@ void copy_to_g8(SkBitmap* dst, const SkBitmap& src) {
     }
 }
 
+    //////////////////////////////////////////////////////////////////////////////////////////////
+
+    static int scale255(float x) {
+        return sk_float_round2int(x * 255);
+    }
+
+    static unsigned diff(const SkColorType ct, const void* a, const void* b) {
+        int dr = 0,
+            dg = 0,
+            db = 0,
+            da = 0;
+        switch (ct) {
+            case kRGBA_8888_SkColorType:
+            case kBGRA_8888_SkColorType: {
+                SkPMColor c0 = *(const SkPMColor*)a;
+                SkPMColor c1 = *(const SkPMColor*)b;
+                dr = SkGetPackedR32(c0) - SkGetPackedR32(c1);
+                dg = SkGetPackedG32(c0) - SkGetPackedG32(c1);
+                db = SkGetPackedB32(c0) - SkGetPackedB32(c1);
+                da = SkGetPackedA32(c0) - SkGetPackedA32(c1);
+            } break;
+            case kRGB_565_SkColorType: {
+                uint16_t c0 = *(const uint16_t*)a;
+                uint16_t c1 = *(const uint16_t*)b;
+                dr = SkGetPackedR16(c0) - SkGetPackedR16(c1);
+                dg = SkGetPackedG16(c0) - SkGetPackedG16(c1);
+                db = SkGetPackedB16(c0) - SkGetPackedB16(c1);
+            } break;
+            case kARGB_4444_SkColorType: {
+                uint16_t c0 = *(const uint16_t*)a;
+                uint16_t c1 = *(const uint16_t*)b;
+                dr = SkGetPackedR4444(c0) - SkGetPackedR4444(c1);
+                dg = SkGetPackedG4444(c0) - SkGetPackedG4444(c1);
+                db = SkGetPackedB4444(c0) - SkGetPackedB4444(c1);
+                da = SkGetPackedA4444(c0) - SkGetPackedA4444(c1);
+            } break;
+            case kAlpha_8_SkColorType:
+            case kGray_8_SkColorType:
+                da = (const uint8_t*)a - (const uint8_t*)b;
+                break;
+            case kRGBA_F16_SkColorType: {
+                const SkPM4f* c0 = (const SkPM4f*)a;
+                const SkPM4f* c1 = (const SkPM4f*)b;
+                dr = scale255(c0->r() - c1->r());
+                dg = scale255(c0->g() - c1->g());
+                db = scale255(c0->b() - c1->b());
+                da = scale255(c0->a() - c1->a());
+            } break;
+            default:
+                return 0;
+        }
+        dr = SkAbs32(dr);
+        dg = SkAbs32(dg);
+        db = SkAbs32(db);
+        da = SkAbs32(da);
+        return SkMax32(dr, SkMax32(dg, SkMax32(db, da)));
+    }
+
+    bool equal_pixels(const SkPixmap& a, const SkPixmap& b, unsigned maxDiff) {
+        if (a.width() != b.width() ||
+            a.height() != b.height() ||
+            a.colorType() != b.colorType() ||
+            a.colorSpace() != b.colorSpace())
+        {
+            return false;
+        }
+
+        for (int y = 0; y < a.height(); ++y) {
+            const char* aptr = (const char*)a.addr(0, y);
+            const char* bptr = (const char*)b.addr(0, y);
+            if (memcmp(aptr, bptr, a.width() * a.info().bytesPerPixel())) {
+                for (int x = 0; x < a.width(); ++x) {
+                    if (diff(a.colorType(), a.addr(x, y), b.addr(x, y)) > maxDiff) {
+                        return false;
+                    }
+                }
+            }
+            aptr += a.rowBytes();
+            bptr += b.rowBytes();
+        }
+        return true;
+    }
+
+    bool equal_pixels(const SkBitmap& bm0, const SkBitmap& bm1, unsigned maxDiff) {
+        SkPixmap pm0, pm1;
+        return bm0.peekPixels(&pm0) && bm1.peekPixels(&pm1) && equal_pixels(pm0, pm1, maxDiff);
+    }
 }  // namespace sk_tool_utils

@@ -291,17 +291,16 @@ sk_sp<SkShader> SkPictureShader::refBitmapShader(const SkMatrix& viewMatrix, con
     return tileShader;
 }
 
-bool SkPictureShader::onIsRasterPipelineOnly() const {
-    return SkImageShader::IsRasterPipelineOnly(kN32_SkColorType, fTmx, fTmy);
+bool SkPictureShader::onIsRasterPipelineOnly(const SkMatrix& ctm) const {
+    return SkImageShader::IsRasterPipelineOnly(ctm, kN32_SkColorType, kPremul_SkAlphaType,
+                                               fTmx, fTmy, this->getLocalMatrix());
 }
 
-bool SkPictureShader::onAppendStages(SkRasterPipeline* p, SkColorSpace* cs, SkArenaAlloc* alloc,
-                                     const SkMatrix& ctm, const SkPaint& paint,
-                                     const SkMatrix* localMatrix) const {
+bool SkPictureShader::onAppendStages(const StageRec& rec) const {
     // Keep bitmapShader alive by using alloc instead of stack memory
-    auto& bitmapShader = *alloc->make<sk_sp<SkShader>>();
-    bitmapShader = this->refBitmapShader(ctm, localMatrix, cs);
-    return bitmapShader && as_SB(bitmapShader)->appendStages(p, cs, alloc, ctm, paint);
+    auto& bitmapShader = *rec.fAlloc->make<sk_sp<SkShader>>();
+    bitmapShader = this->refBitmapShader(rec.fCTM, rec.fLocalM, rec.fDstCS);
+    return bitmapShader && as_SB(bitmapShader)->appendStages(rec);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -348,11 +347,6 @@ uint32_t SkPictureShader::PictureShaderContext::getFlags() const {
     return fBitmapShaderContext->getFlags();
 }
 
-SkShaderBase::Context::ShadeProc SkPictureShader::PictureShaderContext::asAShadeProc(void** ctx) {
-    SkASSERT(fBitmapShaderContext);
-    return fBitmapShaderContext->asAShadeProc(ctx);
-}
-
 void SkPictureShader::PictureShaderContext::shadeSpan(int x, int y, SkPMColor dstC[], int count) {
     SkASSERT(fBitmapShaderContext);
     fBitmapShaderContext->shadeSpan(x, y, dstC, count);
@@ -377,7 +371,8 @@ void SkPictureShader::toString(SkString* str) const {
 #endif
 
 #if SK_SUPPORT_GPU
-sk_sp<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(const AsFPArgs& args) const {
+std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
+        const AsFPArgs& args) const {
     int maxTextureSize = 0;
     if (args.fContext) {
         maxTextureSize = args.fContext->caps()->maxTextureSize();

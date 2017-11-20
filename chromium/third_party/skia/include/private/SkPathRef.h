@@ -83,7 +83,7 @@ public:
          */
         SkPoint* growForRepeatedVerb(int /*SkPath::Verb*/ verb,
                                      int numVbs,
-                                     SkScalar** weights = NULL) {
+                                     SkScalar** weights = nullptr) {
             return fPathRef->growForRepeatedVerb(verb, numVbs, weights);
         }
 
@@ -123,6 +123,8 @@ public:
 
         /** Return the next verb in this iteration of the path. When all
             segments have been visited, return kDone_Verb.
+
+            If any point in the path is non-finite, return kDone_Verb immediately.
 
             @param  pts The points representing the current verb and/or segment
                         This must not be NULL.
@@ -244,14 +246,14 @@ public:
     static void Rewind(sk_sp<SkPathRef>* pathRef);
 
     ~SkPathRef();
-    int countPoints() const { SkDEBUGCODE(this->validate();) return fPointCnt; }
-    int countVerbs() const { SkDEBUGCODE(this->validate();) return fVerbCnt; }
-    int countWeights() const { SkDEBUGCODE(this->validate();) return fConicWeights.count(); }
+    int countPoints() const { return fPointCnt; }
+    int countVerbs() const { return fVerbCnt; }
+    int countWeights() const { return fConicWeights.count(); }
 
     /**
      * Returns a pointer one beyond the first logical verb (last verb in memory order).
      */
-    const uint8_t* verbs() const { SkDEBUGCODE(this->validate();) return fVerbs; }
+    const uint8_t* verbs() const { return fVerbs; }
 
     /**
      * Returns a const pointer to the first verb in memory (which is the last logical verb).
@@ -261,15 +263,15 @@ public:
     /**
      * Returns a const pointer to the first point.
      */
-    const SkPoint* points() const { SkDEBUGCODE(this->validate();) return fPoints; }
+    const SkPoint* points() const { return fPoints; }
 
     /**
      * Shortcut for this->points() + this->countPoints()
      */
     const SkPoint* pointsEnd() const { return this->points() + this->countPoints(); }
 
-    const SkScalar* conicWeights() const { SkDEBUGCODE(this->validate();) return fConicWeights.begin(); }
-    const SkScalar* conicWeightsEnd() const { SkDEBUGCODE(this->validate();) return fConicWeights.end(); }
+    const SkScalar* conicWeights() const { return fConicWeights.begin(); }
+    const SkScalar* conicWeightsEnd() const { return fConicWeights.end(); }
 
     /**
      * Convenience methods for getting to a verb or point by index.
@@ -311,7 +313,8 @@ public:
 
     void addGenIDChangeListener(GenIDChangeListener* listener);
 
-    SkDEBUGCODE(void validate() const;)
+    bool isValid() const;
+    SkDEBUGCODE(void validate() const { SkASSERT(this->isValid()); } )
 
 private:
     enum SerializationOffsets {
@@ -327,8 +330,8 @@ private:
         fBoundsIsDirty = true;    // this also invalidates fIsFinite
         fPointCnt = 0;
         fVerbCnt = 0;
-        fVerbs = NULL;
-        fPoints = NULL;
+        fVerbs = nullptr;
+        fPoints = nullptr;
         fFreeSpace = 0;
         fGenerationID = kEmptyGenID;
         fSegmentMask = 0;
@@ -394,8 +397,8 @@ private:
 
         if (sizeDelta < 0 || static_cast<size_t>(sizeDelta) >= 3 * minSize) {
             sk_free(fPoints);
-            fPoints = NULL;
-            fVerbs = NULL;
+            fPoints = nullptr;
+            fVerbs = nullptr;
             fFreeSpace = 0;
             fVerbCnt = 0;
             fPointCnt = 0;

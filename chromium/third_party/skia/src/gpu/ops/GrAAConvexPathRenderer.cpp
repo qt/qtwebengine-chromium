@@ -207,7 +207,7 @@ static void update_degenerate_test(DegenerateTestData* data, const SkPoint& pt) 
         case DegenerateTestData::kNonDegenerate:
             break;
         default:
-            SkFAIL("Unexpected degenerate test stage.");
+            SK_ABORT("Unexpected degenerate test stage.");
     }
 }
 
@@ -574,7 +574,7 @@ public:
             GrGLSLPPFragmentBuilder* fragBuilder = args.fFragBuilder;
 
             // Setup position
-            this->setupPosition(vertBuilder, gpArgs, qe.fInPosition->fName);
+            this->writeOutputPosition(vertBuilder, gpArgs, qe.fInPosition->fName);
 
             // emit transforms
             this->emitTransforms(vertBuilder,
@@ -588,14 +588,14 @@ public:
             fragBuilder->codeAppendf("float edgeAlpha;");
 
             // keep the derivative instructions outside the conditional
-            fragBuilder->codeAppendf("vec2 duvdx = dFdx(%s.xy);", v.fsIn());
-            fragBuilder->codeAppendf("vec2 duvdy = dFdy(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("float2 duvdx = dFdx(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("float2 duvdy = dFdy(%s.xy);", v.fsIn());
             fragBuilder->codeAppendf("if (%s.z > 0.0 && %s.w > 0.0) {", v.fsIn(), v.fsIn());
             // today we know z and w are in device space. We could use derivatives
             fragBuilder->codeAppendf("edgeAlpha = min(min(%s.z, %s.w) + 0.5, 1.0);", v.fsIn(),
                                      v.fsIn());
             fragBuilder->codeAppendf ("} else {");
-            fragBuilder->codeAppendf("vec2 gF = vec2(2.0*%s.x*duvdx.x - duvdx.y,"
+            fragBuilder->codeAppendf("float2 gF = float2(2.0*%s.x*duvdx.x - duvdx.y,"
                                      "               2.0*%s.x*duvdy.x - duvdy.y);",
                                      v.fsIn(), v.fsIn());
             fragBuilder->codeAppendf("edgeAlpha = (%s.x*%s.x - %s.y);", v.fsIn(), v.fsIn(),
@@ -603,7 +603,7 @@ public:
             fragBuilder->codeAppendf("edgeAlpha = "
                                      "clamp(0.5 - edgeAlpha / length(gF), 0.0, 1.0);}");
 
-            fragBuilder->codeAppendf("%s = vec4(edgeAlpha);", args.fOutputCoverage);
+            fragBuilder->codeAppendf("%s = float4(edgeAlpha);", args.fOutputCoverage);
         }
 
         static inline void GenKey(const GrGeometryProcessor& gp,
@@ -762,7 +762,7 @@ public:
     }
 
 private:
-    void prepareLinesOnlyDraws(Target* target) const {
+    void prepareLinesOnlyDraws(Target* target) {
         // Setup GrGeometryProcessor
         sk_sp<GrGeometryProcessor> gp(make_lines_only_gp(fHelper.compatibleWithAlphaAsCoverage(),
                                                          fPaths.back().fViewMatrix,
@@ -821,7 +821,7 @@ private:
         }
     }
 
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
 #ifndef SK_IGNORE_LINEONLY_AA_CONVEX_PATH_OPTS
         if (fLinesOnly) {
             this->prepareLinesOnlyDraws(target);

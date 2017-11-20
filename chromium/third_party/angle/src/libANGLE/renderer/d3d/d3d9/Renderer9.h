@@ -123,11 +123,11 @@ class Renderer9 : public RendererD3D
                               gl::SamplerType type,
                               int index,
                               gl::Texture *texture,
-                              const gl::SamplerState &sampler) override;
+                              const gl::SamplerState &sampler);
     gl::Error setTexture(const gl::Context *context,
                          gl::SamplerType type,
                          int index,
-                         gl::Texture *texture) override;
+                         gl::Texture *texture);
 
     gl::Error setUniformBuffers(const gl::ContextState &data,
                                 const std::vector<GLint> &vertexUniformBuffers,
@@ -382,8 +382,7 @@ class Renderer9 : public RendererD3D
                                   GLsizei count,
                                   GLenum type,
                                   const void *indices,
-                                  GLsizei instances,
-                                  const gl::IndexRange &indexRange);
+                                  GLsizei instances);
 
     // Necessary hack for default framebuffers in D3D.
     FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
@@ -396,13 +395,9 @@ class Renderer9 : public RendererD3D
                                    const std::vector<D3DUniform *> &uniformArray) override;
 
     gl::Error clearRenderTarget(RenderTargetD3D *renderTarget,
-                                const gl::ColorF &clearValues) override;
-
-  protected:
-    gl::Error clearTextures(const gl::Context *context,
-                            gl::SamplerType samplerType,
-                            size_t rangeStart,
-                            size_t rangeEnd) override;
+                                const gl::ColorF &clearColorValue,
+                                const float clearDepthValue,
+                                const unsigned int clearStencilValue) override;
 
   private:
     gl::Error drawArraysImpl(const gl::ContextState &data,
@@ -410,8 +405,7 @@ class Renderer9 : public RendererD3D
                              GLint startVertex,
                              GLsizei count,
                              GLsizei instances);
-    gl::Error drawElementsImpl(const gl::ContextState &data,
-                               const TranslatedIndexData &indexInfo,
+    gl::Error drawElementsImpl(const gl::Context *context,
                                GLenum mode,
                                GLsizei count,
                                GLenum type,
@@ -419,6 +413,12 @@ class Renderer9 : public RendererD3D
                                GLsizei instances);
 
     gl::Error applyShaders(const gl::Context *context, GLenum drawMode);
+
+    gl::Error applyTextures(const gl::Context *context);
+    gl::Error applyTextures(const gl::Context *context,
+                            gl::SamplerType shaderType,
+                            const FramebufferTextureArray &framebufferTextures,
+                            size_t framebufferTextureCount);
 
     void generateCaps(gl::Caps *outCaps,
                       gl::TextureCapsMap *outTextureCaps,
@@ -456,7 +456,7 @@ class Renderer9 : public RendererD3D
 
     HMODULE mD3d9Module;
 
-    void initializeDevice();
+    egl::Error initializeDevice();
     D3DPRESENT_PARAMETERS getDefaultPresentParameters();
     void releaseDeviceResources();
 

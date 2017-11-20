@@ -18,6 +18,7 @@
 #include "SkNullCanvas.h"
 #include "SkPathEffect.h"
 #include "SkPictureRecorder.h"
+#include "SkPoint3.h"
 #include "SkRSXform.h"
 #include "SkRegion.h"
 #include "SkSurface.h"
@@ -27,7 +28,6 @@
 #include "Sk1DPathEffect.h"
 #include "Sk2DPathEffect.h"
 #include "SkAlphaThresholdFilter.h"
-#include "SkArcToPathEffect.h"
 #include "SkArithmeticImageFilter.h"
 #include "SkBlurImageFilter.h"
 #include "SkBlurMaskFilter.h"
@@ -495,7 +495,7 @@ static sk_sp<SkPathEffect> make_fuzz_patheffect(Fuzz* fuzz, int depth) {
         return nullptr;
     }
     uint8_t pathEffectType;
-    fuzz->nextRange(&pathEffectType, 0, 9);
+    fuzz->nextRange(&pathEffectType, 0, 8);
     switch (pathEffectType) {
         case 0: {
             return nullptr;
@@ -535,14 +535,9 @@ static sk_sp<SkPathEffect> make_fuzz_patheffect(Fuzz* fuzz, int depth) {
         case 6: {
             SkScalar radius;
             fuzz->next(&radius);
-            return SkArcToPathEffect::Make(radius);
-        }
-        case 7: {
-            SkScalar radius;
-            fuzz->next(&radius);
             return SkCornerPathEffect::Make(radius);
         }
-        case 8: {
+        case 7: {
             SkScalar phase;
             fuzz->next(&phase);
             SkScalar intervals[20];
@@ -551,7 +546,7 @@ static sk_sp<SkPathEffect> make_fuzz_patheffect(Fuzz* fuzz, int depth) {
             fuzz->nextN(intervals, count);
             return SkDashPathEffect::Make(intervals, count, phase);
         }
-        case 9: {
+        case 8: {
             SkScalar segLength, dev;
             uint32_t seed;
             fuzz->next(&segLength, &dev, &seed);
@@ -1808,11 +1803,7 @@ DEF_FUZZ(DebugGLCanvas, fuzz) {
 #endif
 
 DEF_FUZZ(PDFCanvas, fuzz) {
-    struct final : public SkWStream {
-        bool write(const void*, size_t n) override { fN += n; return true; }
-        size_t bytesWritten() const override { return fN; }
-        size_t fN = 0;
-    } stream;
+    SkNullWStream stream;
     auto doc = SkDocument::MakePDF(&stream);
     fuzz_canvas(fuzz, doc->beginPage(SkIntToScalar(kCanvasSize.width()),
                                      SkIntToScalar(kCanvasSize.height())));

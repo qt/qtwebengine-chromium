@@ -7,6 +7,7 @@
 #include "fpdfsdk/javascript/Document.h"
 
 #include <algorithm>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -382,16 +383,21 @@ bool Document::mailForm(CJS_Runtime* pRuntime,
       iLength > 4 ? params[4].ToCFXWideString(pRuntime) : L"";
   CFX_WideString cMsg = iLength > 5 ? params[5].ToCFXWideString(pRuntime) : L"";
   CPDFSDK_InterForm* pInterForm = m_pFormFillEnv->GetInterForm();
-  CFX_ByteTextBuf textBuf;
-  if (!pInterForm->ExportFormToFDFTextBuf(textBuf))
+  CFX_ByteString sTextBuf = pInterForm->ExportFormToFDFTextBuf();
+  if (sTextBuf.GetLength() == 0)
     return false;
+
+  FX_STRSIZE nBufSize = sTextBuf.GetLength();
+  char* pMutableBuf = FX_Alloc(char, nBufSize);
+  memcpy(pMutableBuf, sTextBuf.c_str(), nBufSize);
 
   pRuntime->BeginBlock();
   CPDFSDK_FormFillEnvironment* pFormFillEnv = pRuntime->GetFormFillEnv();
-  pFormFillEnv->JS_docmailForm(textBuf.GetBuffer(), textBuf.GetLength(), bUI,
-                               cTo.c_str(), cSubject.c_str(), cCc.c_str(),
-                               cBcc.c_str(), cMsg.c_str());
+  pFormFillEnv->JS_docmailForm(pMutableBuf, nBufSize, bUI, cTo.c_str(),
+                               cSubject.c_str(), cCc.c_str(), cBcc.c_str(),
+                               cMsg.c_str());
   pRuntime->EndBlock();
+  FX_Free(pMutableBuf);
   return true;
 }
 
@@ -748,7 +754,7 @@ bool Document::info(CJS_Runtime* pRuntime,
     sError = JSGetStringFromID(IDS_STRING_JSBADOBJECT);
     return false;
   }
-  CPDF_Dictionary* pDictionary = m_pFormFillEnv->GetPDFDocument()->GetInfo();
+  const auto* pDictionary = m_pFormFillEnv->GetPDFDocument()->GetInfo();
   if (!pDictionary)
     return false;
 
@@ -1010,9 +1016,9 @@ bool Document::documentFileName(CJS_Runtime* pRuntime,
     return false;
   }
   CFX_WideString wsFilePath = m_pFormFillEnv->JS_docGetFilePath();
-  int32_t i = wsFilePath.GetLength() - 1;
+  FX_STRSIZE i = wsFilePath.GetLength() - 1;
   for (; i >= 0; i--) {
-    if (wsFilePath.GetAt(i) == L'\\' || wsFilePath.GetAt(i) == L'/')
+    if (wsFilePath[i] == L'\\' || wsFilePath[i] == L'/')
       break;
   }
   if (i >= 0 && i < wsFilePath.GetLength() - 1) {

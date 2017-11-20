@@ -332,7 +332,7 @@ GLenum GLVariableType(const TType &type)
         case EbtSamplerExternal2DY2YEXT:
             return GL_SAMPLER_EXTERNAL_2D_Y2Y_EXT;
         case EbtSampler2DRect:
-            return GL_SAMPLER_2D_RECT_ARB;
+            return GL_SAMPLER_2D_RECT_ANGLE;
         case EbtSampler2DArray:
             return GL_SAMPLER_2D_ARRAY;
         case EbtSampler2DMS:
@@ -437,12 +437,14 @@ GLenum GLVariablePrecision(const TType &type)
 
 TString ArrayString(const TType &type)
 {
-    if (!type.isArray())
+    TStringStream arrayString;
+    const TVector<unsigned int> &arraySizes = type.getArraySizes();
+    for (auto arraySizeIter = arraySizes.rbegin(); arraySizeIter != arraySizes.rend();
+         ++arraySizeIter)
     {
-        return "";
+        arrayString << "[" << (*arraySizeIter) << "]";
     }
-
-    return "[" + str(type.getArraySize()) + "]";
+    return arrayString.str();
 }
 
 bool IsVaryingOut(TQualifier qualifier)

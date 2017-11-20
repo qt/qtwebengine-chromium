@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfapi/page/cpdf_page.h"
@@ -924,4 +925,209 @@ TEST_F(FPDFEditEmbeddertest, SaveAndRender) {
     UnloadPage(page);
   }
   TestAndCloseSaved(612, 792, md5);
+}
+
+TEST_F(FPDFEditEmbeddertest, ExtractImageBitmap) {
+  ASSERT_TRUE(OpenDocument("embedded_images.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+  ASSERT_EQ(39, FPDFPage_CountObject(page));
+
+  FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page, 32);
+  EXPECT_NE(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  EXPECT_FALSE(FPDFImageObj_GetBitmap(obj));
+
+  obj = FPDFPage_GetObject(page, 33);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  FPDF_BITMAP bitmap = FPDFImageObj_GetBitmap(obj);
+  EXPECT_EQ(FPDFBitmap_BGR, FPDFBitmap_GetFormat(bitmap));
+  CompareBitmap(bitmap, 109, 88, "d65e98d968d196abf13f78aec655ffae");
+  FPDFBitmap_Destroy(bitmap);
+
+  obj = FPDFPage_GetObject(page, 34);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  bitmap = FPDFImageObj_GetBitmap(obj);
+  EXPECT_EQ(FPDFBitmap_BGR, FPDFBitmap_GetFormat(bitmap));
+  CompareBitmap(bitmap, 103, 75, "1287711c84dbef767c435d11697661d6");
+  FPDFBitmap_Destroy(bitmap);
+
+  obj = FPDFPage_GetObject(page, 35);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  bitmap = FPDFImageObj_GetBitmap(obj);
+  EXPECT_EQ(FPDFBitmap_Gray, FPDFBitmap_GetFormat(bitmap));
+  CompareBitmap(bitmap, 92, 68, "9c6d76cb1e37ef8514f9455d759391f3");
+  FPDFBitmap_Destroy(bitmap);
+
+  obj = FPDFPage_GetObject(page, 36);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  bitmap = FPDFImageObj_GetBitmap(obj);
+  EXPECT_EQ(FPDFBitmap_BGR, FPDFBitmap_GetFormat(bitmap));
+  CompareBitmap(bitmap, 79, 60, "15cb6a49a2e354ed0e9f45dd34e3da1a");
+  FPDFBitmap_Destroy(bitmap);
+
+  obj = FPDFPage_GetObject(page, 37);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  bitmap = FPDFImageObj_GetBitmap(obj);
+  EXPECT_EQ(FPDFBitmap_BGR, FPDFBitmap_GetFormat(bitmap));
+  CompareBitmap(bitmap, 126, 106, "be5a64ba7890d2657522af6524118534");
+  FPDFBitmap_Destroy(bitmap);
+
+  obj = FPDFPage_GetObject(page, 38);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  bitmap = FPDFImageObj_GetBitmap(obj);
+  EXPECT_EQ(FPDFBitmap_BGR, FPDFBitmap_GetFormat(bitmap));
+  CompareBitmap(bitmap, 194, 119, "f9e24207ee1bc0db6c543d33a5f12ec5");
+  FPDFBitmap_Destroy(bitmap);
+  UnloadPage(page);
+}
+
+TEST_F(FPDFEditEmbeddertest, GetImageData) {
+  EXPECT_TRUE(OpenDocument("embedded_images.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+  ASSERT_EQ(39, FPDFPage_CountObject(page));
+
+  // Retrieve an image object with flate-encoded data stream.
+  FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page, 33);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+
+  // Check that the raw image data has the correct length and hash value.
+  unsigned long len = FPDFImageObj_GetImageDataRaw(obj, nullptr, 0);
+  std::vector<char> buf(len);
+  EXPECT_EQ(4091u, FPDFImageObj_GetImageDataRaw(obj, buf.data(), len));
+  EXPECT_EQ("f73802327d2e88e890f653961bcda81a",
+            GenerateMD5Base16(reinterpret_cast<uint8_t*>(buf.data()), len));
+
+  // Check that the decoded image data has the correct length and hash value.
+  len = FPDFImageObj_GetImageDataDecoded(obj, nullptr, 0);
+  buf.clear();
+  buf.resize(len);
+  EXPECT_EQ(28776u, FPDFImageObj_GetImageDataDecoded(obj, buf.data(), len));
+  EXPECT_EQ("cb3637934bb3b95a6e4ae1ea9eb9e56e",
+            GenerateMD5Base16(reinterpret_cast<uint8_t*>(buf.data()), len));
+
+  // Retrieve an image obejct with DCTDecode-encoded data stream.
+  obj = FPDFPage_GetObject(page, 37);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+
+  // Check that the raw image data has the correct length and hash value.
+  len = FPDFImageObj_GetImageDataRaw(obj, nullptr, 0);
+  buf.clear();
+  buf.resize(len);
+  EXPECT_EQ(4370u, FPDFImageObj_GetImageDataRaw(obj, buf.data(), len));
+  EXPECT_EQ("6aae1f3710335023a9e12191be66b64b",
+            GenerateMD5Base16(reinterpret_cast<uint8_t*>(buf.data()), len));
+
+  // Check that the decoded image data has the correct length and hash value,
+  // which should be the same as those of the raw data, since this image is
+  // encoded by a single DCTDecode filter and decoding is a noop.
+  len = FPDFImageObj_GetImageDataDecoded(obj, nullptr, 0);
+  buf.clear();
+  buf.resize(len);
+  EXPECT_EQ(4370u, FPDFImageObj_GetImageDataDecoded(obj, buf.data(), len));
+  EXPECT_EQ("6aae1f3710335023a9e12191be66b64b",
+            GenerateMD5Base16(reinterpret_cast<uint8_t*>(buf.data()), len));
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFEditEmbeddertest, DestroyPageObject) {
+  FPDF_PAGEOBJECT rect = FPDFPageObj_CreateNewRect(10, 10, 20, 20);
+  ASSERT_TRUE(rect);
+
+  // There should be no memory leaks with a call to FPDFPageObj_Destroy().
+  FPDFPageObj_Destroy(rect);
+}
+
+TEST_F(FPDFEditEmbeddertest, GetImageFilters) {
+  EXPECT_TRUE(OpenDocument("embedded_images.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  // Verify that retrieving the filter of a non-image object would fail.
+  FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page, 32);
+  ASSERT_NE(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  ASSERT_EQ(0, FPDFImageObj_GetImageFilterCount(obj));
+  EXPECT_EQ(0u, FPDFImageObj_GetImageFilter(obj, 0, nullptr, 0));
+
+  // Verify the returned filter string for an image object with a single filter.
+  obj = FPDFPage_GetObject(page, 33);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  ASSERT_EQ(1, FPDFImageObj_GetImageFilterCount(obj));
+  unsigned long len = FPDFImageObj_GetImageFilter(obj, 0, nullptr, 0);
+  std::vector<char> buf(len);
+  EXPECT_EQ(24u, FPDFImageObj_GetImageFilter(obj, 0, buf.data(), len));
+  EXPECT_STREQ(L"FlateDecode",
+               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
+                   .c_str());
+  EXPECT_EQ(0u, FPDFImageObj_GetImageFilter(obj, 1, nullptr, 0));
+
+  // Verify all the filters for an image object with a list of filters.
+  obj = FPDFPage_GetObject(page, 38);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  ASSERT_EQ(2, FPDFImageObj_GetImageFilterCount(obj));
+  len = FPDFImageObj_GetImageFilter(obj, 0, nullptr, 0);
+  buf.clear();
+  buf.resize(len);
+  EXPECT_EQ(30u, FPDFImageObj_GetImageFilter(obj, 0, buf.data(), len));
+  EXPECT_STREQ(L"ASCIIHexDecode",
+               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
+                   .c_str());
+
+  len = FPDFImageObj_GetImageFilter(obj, 1, nullptr, 0);
+  buf.clear();
+  buf.resize(len);
+  EXPECT_EQ(20u, FPDFImageObj_GetImageFilter(obj, 1, buf.data(), len));
+  EXPECT_STREQ(L"DCTDecode",
+               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
+                   .c_str());
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFEditEmbeddertest, GetImageMetadata) {
+  ASSERT_TRUE(OpenDocument("embedded_images.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  // Check that getting the metadata of a null object would fail.
+  FPDF_IMAGEOBJ_METADATA metadata;
+  EXPECT_FALSE(FPDFImageObj_GetImageMetadata(nullptr, page, &metadata));
+
+  // Check that receiving the metadata with a null metadata object would fail.
+  FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page, 35);
+  EXPECT_FALSE(FPDFImageObj_GetImageMetadata(obj, page, nullptr));
+
+  // Check that when retrieving an image object's metadata without passing in
+  // |page|, all values are correct, with the last two being default values.
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  ASSERT_TRUE(FPDFImageObj_GetImageMetadata(obj, nullptr, &metadata));
+  EXPECT_EQ(92u, metadata.width);
+  EXPECT_EQ(68u, metadata.height);
+  EXPECT_NEAR(96.000000, metadata.horizontal_dpi, 0.001);
+  EXPECT_NEAR(96.000000, metadata.vertical_dpi, 0.001);
+  EXPECT_EQ(0u, metadata.bits_per_pixel);
+  EXPECT_EQ(FPDF_COLORSPACE_UNKNOWN, metadata.colorspace);
+
+  // Verify the metadata of a bitmap image with indexed colorspace.
+  ASSERT_TRUE(FPDFImageObj_GetImageMetadata(obj, page, &metadata));
+  EXPECT_EQ(92u, metadata.width);
+  EXPECT_EQ(68u, metadata.height);
+  EXPECT_NEAR(96.000000, metadata.horizontal_dpi, 0.001);
+  EXPECT_NEAR(96.000000, metadata.vertical_dpi, 0.001);
+  EXPECT_EQ(1u, metadata.bits_per_pixel);
+  EXPECT_EQ(FPDF_COLORSPACE_INDEXED, metadata.colorspace);
+
+  // Verify the metadata of an image with RGB colorspace.
+  obj = FPDFPage_GetObject(page, 37);
+  ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
+  ASSERT_TRUE(FPDFImageObj_GetImageMetadata(obj, page, &metadata));
+  EXPECT_EQ(126u, metadata.width);
+  EXPECT_EQ(106u, metadata.height);
+  EXPECT_NEAR(162.173752, metadata.horizontal_dpi, 0.001);
+  EXPECT_NEAR(162.555878, metadata.vertical_dpi, 0.001);
+  EXPECT_EQ(24u, metadata.bits_per_pixel);
+  EXPECT_EQ(FPDF_COLORSPACE_DEVICERGB, metadata.colorspace);
+
+  UnloadPage(page);
 }

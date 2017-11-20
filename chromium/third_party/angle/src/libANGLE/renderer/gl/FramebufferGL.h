@@ -15,6 +15,7 @@ namespace rx
 {
 
 class BlitGL;
+class ClearMultiviewGL;
 class FunctionsGL;
 class StateManagerGL;
 struct WorkaroundsGL;
@@ -27,6 +28,7 @@ class FramebufferGL : public FramebufferImpl
                   StateManagerGL *stateManager,
                   const WorkaroundsGL &workarounds,
                   BlitGL *blitter,
+                  ClearMultiviewGL *multiviewClearer,
                   bool isDefault);
     // Constructor called when we need to create a FramebufferGL from an
     // existing framebuffer name, for example for the default framebuffer
@@ -36,6 +38,7 @@ class FramebufferGL : public FramebufferImpl
                   const FunctionsGL *functions,
                   const WorkaroundsGL &workarounds,
                   BlitGL *blitter,
+                  ClearMultiviewGL *multiviewClearer,
                   StateManagerGL *stateManager);
     ~FramebufferGL() override;
 
@@ -122,6 +125,7 @@ class FramebufferGL : public FramebufferImpl
     StateManagerGL *mStateManager;
     const WorkaroundsGL &mWorkarounds;
     BlitGL *mBlitter;
+    ClearMultiviewGL *mMultiviewClearer;
 
     GLuint mFramebufferID;
     bool mIsDefault;

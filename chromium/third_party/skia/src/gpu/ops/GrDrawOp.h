@@ -47,7 +47,7 @@ private:
 class GrDrawOp : public GrOp {
 public:
     /** Method that performs an upload on behalf of a DeferredUploadFn. */
-    using WritePixelsFn = std::function<bool(GrSurface* texture,
+    using WritePixelsFn = std::function<bool(GrTextureProxy*,
                                              int left, int top, int width, int height,
                                              GrPixelConfig config, const void* buffer,
                                              size_t rowBytes)>;
@@ -83,8 +83,6 @@ public:
     virtual RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*) = 0;
 
 protected:
-    static SkString DumpPipelineInfo(const GrPipeline& pipeline);
-
     struct QueuedUpload {
         QueuedUpload(DeferredUploadFn&& upload, GrDrawOpUploadToken token)
             : fUpload(std::move(upload))

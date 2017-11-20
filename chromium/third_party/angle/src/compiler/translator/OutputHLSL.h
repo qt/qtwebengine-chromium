@@ -43,7 +43,7 @@ class OutputHLSL : public TIntermTraverser
 
     void output(TIntermNode *treeRoot, TInfoSinkBase &objSink);
 
-    const std::map<std::string, unsigned int> &getInterfaceBlockRegisterMap() const;
+    const std::map<std::string, unsigned int> &getUniformBlockRegisterMap() const;
     const std::map<std::string, unsigned int> &getUniformRegisterMap() const;
 
     static TString initializer(const TType &type);
@@ -96,7 +96,6 @@ class OutputHLSL : public TIntermTraverser
                        const char *postString);
     void outputLineDirective(TInfoSinkBase &out, int line);
     TString argumentString(const TIntermSymbol *symbol);
-    int vectorSize(const TType &type) const;
 
     // Emit constructor. Called with literal names so using const char* instead of TString.
     void outputConstructor(TInfoSinkBase &out,
@@ -109,6 +108,7 @@ class OutputHLSL : public TIntermTraverser
                                              const TConstantUnion *constUnion);
 
     void outputEqual(Visit visit, const TType &type, TOperator op, TInfoSinkBase &out);
+    void outputAssign(Visit visit, const TType &type, TInfoSinkBase &out);
 
     void writeEmulatedFunctionTriplet(TInfoSinkBase &out, Visit visit, TOperator op);
     void makeFlaggedStructMaps(const std::vector<TIntermTyped *> &flaggedStructs);
@@ -154,7 +154,7 @@ class OutputHLSL : public TIntermTraverser
     std::stack<TInfoSinkBase *> mInfoSinkStack;
 
     ReferencedSymbols mReferencedUniforms;
-    ReferencedSymbols mReferencedInterfaceBlocks;
+    ReferencedSymbols mReferencedUniformBlocks;
     ReferencedSymbols mReferencedAttributes;
     ReferencedSymbols mReferencedVaryings;
     ReferencedSymbols mReferencedOutputVariables;
@@ -172,6 +172,8 @@ class OutputHLSL : public TIntermTraverser
     bool mUsesFrontFacing;
     bool mUsesPointSize;
     bool mUsesInstanceID;
+    bool mHasMultiviewExtensionEnabled;
+    bool mUsesViewID;
     bool mUsesVertexID;
     bool mUsesFragDepth;
     bool mUsesNumWorkGroups;
@@ -197,9 +199,7 @@ class OutputHLSL : public TIntermTraverser
 
     TIntermSymbol *mExcessiveLoopIndex;
 
-    TString structInitializerString(int indent,
-                                    const TStructure &structure,
-                                    const TString &rhsStructName);
+    TString structInitializerString(int indent, const TType &type, const TString &name);
 
     std::map<TIntermTyped *, TString> mFlaggedStructMappedNames;
     std::map<TIntermTyped *, TString> mFlaggedStructOriginalNames;

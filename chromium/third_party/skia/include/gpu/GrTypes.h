@@ -365,7 +365,7 @@ static inline bool GrPixelConfigIs8888Unorm(GrPixelConfig config) {
         case kRGBA_half_GrPixelConfig:
             return false;
     }
-    SkFAIL("Invalid pixel config");
+    SK_ABORT("Invalid pixel config");
     return false;
 }
 
@@ -390,7 +390,7 @@ static inline bool GrPixelConfigIsSRGB(GrPixelConfig config) {
         case kRGBA_half_GrPixelConfig:
             return false;
     }
-    SkFAIL("Invalid pixel config");
+    SK_ABORT("Invalid pixel config");
     return false;
 }
 
@@ -418,7 +418,7 @@ static inline GrPixelConfig GrPixelConfigSwapRAndB(GrPixelConfig config) {
         case kRGBA_half_GrPixelConfig:
             return kUnknown_GrPixelConfig;
     }
-    SkFAIL("Invalid pixel config");
+    SK_ABORT("Invalid pixel config");
     return kUnknown_GrPixelConfig;
 }
 
@@ -446,7 +446,7 @@ static inline size_t GrBytesPerPixel(GrPixelConfig config) {
         case kUnknown_GrPixelConfig:
             return 0;
     }
-    SkFAIL("Invalid pixel config");
+    SK_ABORT("Invalid pixel config");
     return 0;
 }
 
@@ -469,7 +469,7 @@ static inline bool GrPixelConfigIsOpaque(GrPixelConfig config) {
         case kUnknown_GrPixelConfig:
             return false;
     }
-    SkFAIL("Invalid pixel config");
+    SK_ABORT("Invalid pixel config");
     return false;
 }
 
@@ -492,7 +492,7 @@ static inline bool GrPixelConfigIsAlphaOnly(GrPixelConfig config) {
         case kRGBA_half_GrPixelConfig:
             return false;
     }
-    SkFAIL("Invalid pixel config.");
+    SK_ABORT("Invalid pixel config.");
     return false;
 }
 
@@ -515,7 +515,7 @@ static inline bool GrPixelConfigIsFloatingPoint(GrPixelConfig config) {
         case kRGBA_8888_sint_GrPixelConfig:
             return false;
     }
-    SkFAIL("Invalid pixel config");
+    SK_ABORT("Invalid pixel config");
     return false;
 }
 
@@ -542,7 +542,7 @@ static inline bool GrPixelConfigIsUnorm(GrPixelConfig config) {
         case kRGBA_half_GrPixelConfig:
             return false;
     }
-    SkFAIL("Invalid pixel config.");
+    SK_ABORT("Invalid pixel config.");
     return false;
 }
 
@@ -571,12 +571,10 @@ typedef intptr_t GrBackendObject;
 /**
  * Some textures will be stored such that the upper and left edges of the content meet at the
  * the origin (in texture coord space) and for other textures the lower and left edges meet at
- * the origin. kDefault_GrSurfaceOrigin sets textures to TopLeft, and render targets
- * to BottomLeft.
+ * the origin.
  */
 
 enum GrSurfaceOrigin {
-    kDefault_GrSurfaceOrigin,         // DEPRECATED; to be removed
     kTopLeft_GrSurfaceOrigin,
     kBottomLeft_GrSurfaceOrigin,
 };
@@ -591,13 +589,13 @@ struct GrMipLevel {
  */
 struct GrSurfaceDesc {
     GrSurfaceDesc()
-    : fFlags(kNone_GrSurfaceFlags)
-    , fOrigin(kDefault_GrSurfaceOrigin)
-    , fWidth(0)
-    , fHeight(0)
-    , fConfig(kUnknown_GrPixelConfig)
-    , fSampleCnt(0)
-    , fIsMipMapped(false) {
+        : fFlags(kNone_GrSurfaceFlags)
+        , fOrigin(kTopLeft_GrSurfaceOrigin)
+        , fWidth(0)
+        , fHeight(0)
+        , fConfig(kUnknown_GrPixelConfig)
+        , fSampleCnt(0)
+        , fIsMipMapped(false) {
     }
 
     GrSurfaceFlags         fFlags;  //!< bitfield of TextureFlags
@@ -622,9 +620,6 @@ struct GrSurfaceDesc {
     bool                   fIsMipMapped; //!< Indicates if the texture has mipmaps
 };
 
-// Legacy alias
-typedef GrSurfaceDesc GrTextureDesc;
-
 /**
  * Clips are composed from these objects.
  */
@@ -645,39 +640,6 @@ enum GrWrapOwnership {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-
-/**
- * Gr can wrap an existing render target created by the client in the 3D API
- * with a GrRenderTarget object. The client is responsible for ensuring that the
- * underlying 3D API object lives at least as long as the GrRenderTarget object
- * wrapping it. We require the client to explicitly provide information about
- * the target, such as width, height, and pixel config rather than querying the
- * 3D API for these values. We expect these properties to be immutable even if
- * the 3D API doesn't require this (OpenGL).
- */
-
-struct GrBackendRenderTargetDesc {
-    GrBackendRenderTargetDesc() { memset(this, 0, sizeof(*this)); }
-    int                             fWidth;         //<! width in pixels
-    int                             fHeight;        //<! height in pixels
-    GrPixelConfig                   fConfig;        //<! color format
-    GrSurfaceOrigin                 fOrigin;        //<! pixel origin
-    /**
-     * The number of samples per pixel. Gr uses this to influence decisions
-     * about applying other forms of anti-aliasing.
-     */
-    int                             fSampleCnt;
-    /**
-     * Number of bits of stencil per-pixel.
-     */
-    int                             fStencilBits;
-    /**
-     * Handle to the 3D API object.
-     * OpenGL: FBO ID
-     * Vulkan: GrVkImageInfo*
-     */
-    GrBackendObject                 fRenderTargetHandle;
-};
 
 /**
  * The GrContext's cache of backend context state can be partially invalidated.
@@ -704,5 +666,12 @@ enum GrGLBackendState {
  * This value translates to reseting all the context state for any backend.
  */
 static const uint32_t kAll_GrBackendState = 0xffffffff;
+
+// Enum used as return value when flush with semaphores so the client knows whether the
+// semaphores were submitted to GPU or not.
+enum class GrSemaphoresSubmitted : int {
+    kNo,
+    kYes,
+};
 
 #endif

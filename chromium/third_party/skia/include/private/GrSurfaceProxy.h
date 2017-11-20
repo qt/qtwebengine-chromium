@@ -72,6 +72,46 @@ public:
     int32_t getPendingReadCnt_TestOnly() const;
     int32_t getPendingWriteCnt_TestOnly() const;
 
+    void addPendingRead() const {
+        this->validate();
+
+        ++fPendingReads;
+        if (fTarget) {
+            fTarget->addPendingRead();
+        }
+    }
+
+    void completedRead() const {
+        this->validate();
+
+        if (fTarget) {
+            fTarget->completedRead();
+        }
+
+        --fPendingReads;
+        this->didRemoveRefOrPendingIO();
+    }
+
+    void addPendingWrite() const {
+        this->validate();
+
+        ++fPendingWrites;
+        if (fTarget) {
+            fTarget->addPendingWrite();
+        }
+    }
+
+    void completedWrite() const {
+        this->validate();
+
+        if (fTarget) {
+            fTarget->completedWrite();
+        }
+
+        --fPendingWrites;
+        this->didRemoveRefOrPendingIO();
+    }
+
 protected:
     GrIORefProxy() : fTarget(nullptr), fRefCnt(1), fPendingReads(0), fPendingWrites(0) {}
     GrIORefProxy(sk_sp<GrSurface> surface) : fRefCnt(1), fPendingReads(0), fPendingWrites(0) {
@@ -120,46 +160,6 @@ private:
     friend class GrSurfaceProxyRef;
     template <typename, GrIOType> friend class GrPendingIOResource;
 
-    void addPendingRead() const {
-        this->validate();
-
-        ++fPendingReads;
-        if (fTarget) {
-            fTarget->addPendingRead();
-        }
-    }
-
-    void completedRead() const {
-        this->validate();
-
-        if (fTarget) {
-            fTarget->completedRead();
-        }
-
-        --fPendingReads;
-        this->didRemoveRefOrPendingIO();
-    }
-
-    void addPendingWrite() const {
-        this->validate();
-
-        ++fPendingWrites;
-        if (fTarget) {
-            fTarget->addPendingWrite();
-        }
-    }
-
-    void completedWrite() const {
-        this->validate();
-
-        if (fTarget) {
-            fTarget->completedWrite();
-        }
-
-        --fPendingWrites;
-        this->didRemoveRefOrPendingIO();
-    }
-
     void didRemoveRefOrPendingIO() const {
         if (0 == fPendingReads && 0 == fPendingWrites && 0 == fRefCnt) {
             delete this;
@@ -173,8 +173,8 @@ private:
 
 class GrSurfaceProxy : public GrIORefProxy {
 public:
-    static sk_sp<GrSurfaceProxy> MakeWrapped(sk_sp<GrSurface>);
-    static sk_sp<GrTextureProxy> MakeWrapped(sk_sp<GrTexture>);
+    static sk_sp<GrSurfaceProxy> MakeWrapped(sk_sp<GrSurface>, GrSurfaceOrigin);
+    static sk_sp<GrTextureProxy> MakeWrapped(sk_sp<GrTexture>, GrSurfaceOrigin);
 
     static sk_sp<GrTextureProxy> MakeDeferred(GrResourceProvider*,
                                               const GrSurfaceDesc&, SkBackingFit,
@@ -329,7 +329,6 @@ public:
 
     bool isWrapped_ForTesting() const;
 
-    SkDEBUGCODE(bool isInstantiated() const { return SkToBool(fTarget); })
     SkDEBUGCODE(void validate(GrContext*) const;)
 
     // Provides access to functions that aren't part of the public API.
@@ -353,7 +352,7 @@ protected:
     }
 
     // Wrapped version
-    GrSurfaceProxy(sk_sp<GrSurface> surface, SkBackingFit fit);
+    GrSurfaceProxy(sk_sp<GrSurface> surface, GrSurfaceOrigin origin, SkBackingFit fit);
 
     virtual ~GrSurfaceProxy();
 
@@ -368,14 +367,16 @@ protected:
         return this->internalHasPendingWrite();
     }
 
+    void computeScratchKey(GrScratchKey*) const;
+
     virtual sk_sp<GrSurface> createSurface(GrResourceProvider*) const = 0;
     void assign(sk_sp<GrSurface> surface);
 
-    sk_sp<GrSurface> createSurfaceImpl(GrResourceProvider*, int sampleCnt,
+    sk_sp<GrSurface> createSurfaceImpl(GrResourceProvider*, int sampleCnt, bool needsStencil,
                                        GrSurfaceFlags flags, bool isMipMapped,
                                        SkDestinationSurfaceColorMode mipColorMode) const;
 
-    bool instantiateImpl(GrResourceProvider* resourceProvider, int sampleCnt,
+    bool instantiateImpl(GrResourceProvider* resourceProvider, int sampleCnt, bool needsStencil,
                          GrSurfaceFlags flags, bool isMipMapped,
                          SkDestinationSurfaceColorMode mipColorMode);
 

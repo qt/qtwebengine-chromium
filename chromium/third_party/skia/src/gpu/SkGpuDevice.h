@@ -21,6 +21,7 @@
 #include "GrTypes.h"
 
 class GrAccelData;
+class GrTextureMaker;
 class GrTextureProducer;
 struct GrCachedLayer;
 
@@ -118,14 +119,15 @@ public:
     sk_sp<SkSpecialImage> snapSpecial() override;
 
     void flush() override;
-    bool flushAndSignalSemaphores(int numSemaphores, GrBackendSemaphore* signalSemaphores);
+    GrSemaphoresSubmitted flushAndSignalSemaphores(int numSemaphores,
+                                                   GrBackendSemaphore signalSemaphores[]);
     bool wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores);
 
     bool onAccessPixels(SkPixmap*) override;
 
 protected:
-    bool onReadPixels(const SkImageInfo&, void*, size_t, int, int) override;
-    bool onWritePixels(const SkImageInfo&, const void*, size_t, int, int) override;
+    bool onReadPixels(const SkPixmap&, int, int) override;
+    bool onWritePixels(const SkPixmap&, int, int) override;
     bool onShouldDisableLCD(const SkPaint&) const final;
 
 private:
@@ -204,12 +206,30 @@ private:
                         bool bicubic,
                         bool needsTextureDomain);
 
+    void drawPinnedTextureProxy(sk_sp<GrTextureProxy>,
+                                uint32_t pinnedUniqueID,
+                                SkColorSpace*,
+                                SkAlphaType alphaType,
+                                const SkRect* srcRect,
+                                const SkRect* dstRect,
+                                SkCanvas::SrcRectConstraint,
+                                const SkMatrix& viewMatrix,
+                                const SkPaint&);
+
+    void drawTextureMaker(GrTextureMaker* maker,
+                          int imageW,
+                          int imageH,
+                          const SkRect* srcRect,
+                          const SkRect* dstRect,
+                          SkCanvas::SrcRectConstraint,
+                          const SkMatrix& viewMatrix,
+                          const SkPaint&);
+
     void drawTextureProducer(GrTextureProducer*,
                              const SkRect* srcRect,
                              const SkRect* dstRect,
                              SkCanvas::SrcRectConstraint,
                              const SkMatrix& viewMatrix,
-                             const GrClip&,
                              const SkPaint&);
 
     void drawTextureProducerImpl(GrTextureProducer*,
@@ -218,7 +238,6 @@ private:
                                  SkCanvas::SrcRectConstraint,
                                  const SkMatrix& viewMatrix,
                                  const SkMatrix& srcToDstMatrix,
-                                 const GrClip&,
                                  const SkPaint&);
 
     bool drawFilledDRRect(const SkMatrix& viewMatrix, const SkRRect& outer,

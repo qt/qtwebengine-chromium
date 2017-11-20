@@ -95,6 +95,27 @@ bool CanSetDefaultPrecisionOnType(const TPublicType &type)
     return true;
 }
 
+// Map input primitive types to input array sizes in a geometry shader.
+GLuint GetGeometryShaderInputArraySize(TLayoutPrimitiveType primitiveType)
+{
+    switch (primitiveType)
+    {
+        case EptPoints:
+            return 1u;
+        case EptLines:
+            return 2u;
+        case EptTriangles:
+            return 3u;
+        case EptLinesAdjacency:
+            return 4u;
+        case EptTrianglesAdjacency:
+            return 6u;
+        default:
+            UNREACHABLE();
+            return 0u;
+    }
+}
+
 }  // namespace
 
 // This tracks each binding point's current default offset for inheritance of subsequent
@@ -178,7 +199,14 @@ TParseContext::TParseContext(TSymbolTable &symt,
       mMaxUniformBufferBindings(resources.MaxUniformBufferBindings),
       mMaxAtomicCounterBindings(resources.MaxAtomicCounterBindings),
       mMaxShaderStorageBufferBindings(resources.MaxShaderStorageBufferBindings),
-      mDeclaringFunction(false)
+      mDeclaringFunction(false),
+      mGeometryShaderInputPrimitiveType(EptUndefined),
+      mGeometryShaderOutputPrimitiveType(EptUndefined),
+      mGeometryShaderInvocations(0),
+      mGeometryShaderMaxVertices(-1),
+      mMaxGeometryShaderInvocations(resources.MaxGeometryShaderInvocations),
+      mMaxGeometryShaderMaxVertices(resources.MaxGeometryOutputVertices),
+      mGeometryShaderInputArraySize(0)
 {
     mComputeShaderLocalSize.fill(-1);
 }
@@ -446,9 +474,10 @@ bool TParseContext::checkCanBeLValue(const TSourceLoc &line, const char *op, TIn
             message = "can't modify an attribute";
             break;
         case EvqFragmentIn:
-            message = "can't modify an input";
-            break;
         case EvqVertexIn:
+        case EvqFlatIn:
+        case EvqSmoothIn:
+        case EvqCentroidIn:
             message = "can't modify an input";
             break;
         case EvqUniform:
@@ -489,6 +518,27 @@ bool TParseContext::checkCanBeLValue(const TSourceLoc &line, const char *op, TIn
             break;
         case EvqComputeIn:
             message = "can't modify work group size variable";
+            break;
+        case EvqPerVertexIn:
+            message = "can't modify any member in gl_in";
+            break;
+        case EvqPrimitiveIDIn:
+            message = "can't modify gl_PrimitiveIDIn";
+            break;
+        case EvqInvocationID:
+            message = "can't modify gl_InvocationID";
+            break;
+        case EvqPrimitiveID:
+            if (mShaderType == GL_FRAGMENT_SHADER)
+            {
+                message = "can't modify gl_PrimitiveID in a fragment shader";
+            }
+            break;
+        case EvqLayer:
+            if (mShaderType == GL_FRAGMENT_SHADER)
+            {
+                message = "can't modify gl_Layer in a fragment shader";
+            }
             break;
         default:
             //
@@ -649,7 +699,7 @@ bool TParseContext::checkConstructorArguments(const TSourceLoc &line,
     {
         // The size of an unsized constructor should already have been determined.
         ASSERT(!type.isUnsizedArray());
-        if (static_cast<size_t>(type.getArraySize()) != arguments->size())
+        if (static_cast<size_t>(type.getOutermostArraySize()) != arguments->size())
         {
             error(line, "array constructor needs one argument per array element", "constructor");
             return false;
@@ -664,7 +714,7 @@ bool TParseContext::checkConstructorArguments(const TSourceLoc &line,
                 error(line, "constructing from a non-dereferenced array", "constructor");
                 return false;
             }
-            if (!argType.sameElementType(type))
+            if (!argType.isElementTypeOf(type))
             {
                 error(line, "Array constructor argument has an incorrect type", "constructor");
                 return false;
@@ -937,15 +987,29 @@ bool TParseContext::checkIsValidQualifierForArray(const TSourceLoc &line,
 }
 
 // See if this element type can be formed into an array.
-bool TParseContext::checkIsValidTypeForArray(const TSourceLoc &line, const TPublicType &elementType)
+bool TParseContext::checkArrayElementIsNotArray(const TSourceLoc &line,
+                                                const TPublicType &elementType)
 {
-    //
-    // Can the type be an array?
-    //
     if (elementType.array)
     {
         error(line, "cannot declare arrays of arrays",
               TType(elementType).getCompleteString().c_str());
+        return false;
+    }
+    return true;
+}
+
+// Check if this qualified element type can be formed into an array. This is only called when array
+// brackets are associated with an identifier in a declaration, like this:
+//   float a[2];
+// Similar checks are done in addFullySpecifiedType for array declarations where the array brackets
+// are associated with the type, like this:
+//   float[2] a;
+bool TParseContext::checkIsValidTypeAndQualifierForArray(const TSourceLoc &indexLocation,
+                                                         const TPublicType &elementType)
+{
+    if (!checkArrayElementIsNotArray(indexLocation, elementType))
+    {
         return false;
     }
     // In ESSL1.00 shaders, structs cannot be varying (section 4.3.5). This is checked elsewhere.
@@ -954,23 +1018,11 @@ bool TParseContext::checkIsValidTypeForArray(const TSourceLoc &line, const TPubl
     if (mShaderVersion >= 300 && elementType.getBasicType() == EbtStruct &&
         sh::IsVarying(elementType.qualifier))
     {
-        error(line, "cannot declare arrays of structs of this qualifier",
+        error(indexLocation, "cannot declare arrays of structs of this qualifier",
               TType(elementType).getCompleteString().c_str());
         return false;
     }
-
-    return true;
-}
-
-// Check if this qualified element type can be formed into an array.
-bool TParseContext::checkIsValidTypeAndQualifierForArray(const TSourceLoc &indexLocation,
-                                                         const TPublicType &elementType)
-{
-    if (checkIsValidTypeForArray(indexLocation, elementType))
-    {
-        return checkIsValidQualifierForArray(indexLocation, elementType);
-    }
-    return false;
+    return checkIsValidQualifierForArray(indexLocation, elementType);
 }
 
 // Enforce non-initializer type/qualifier rules.
@@ -1026,7 +1078,14 @@ bool TParseContext::declareVariable(const TSourceLoc &line,
     {
         const TVariable *maxDrawBuffers = static_cast<const TVariable *>(
             symbolTable.findBuiltIn("gl_MaxDrawBuffers", mShaderVersion));
-        if (static_cast<int>(type.getArraySize()) == maxDrawBuffers->getConstPointer()->getIConst())
+        if (type.isArrayOfArrays())
+        {
+            error(line, "redeclaration of gl_LastFragData as an array of arrays",
+                  identifier.c_str());
+            return false;
+        }
+        else if (static_cast<int>(type.getOutermostArraySize()) ==
+                 maxDrawBuffers->getConstPointer()->getIConst())
         {
             if (TSymbol *builtInSymbol = symbolTable.findBuiltIn(identifier, mShaderVersion))
             {
@@ -1358,14 +1417,21 @@ void TParseContext::nonEmptyDeclarationErrorCheck(const TPublicType &publicType,
 void TParseContext::checkBindingIsValid(const TSourceLoc &identifierLocation, const TType &type)
 {
     TLayoutQualifier layoutQualifier = type.getLayoutQualifier();
-    int arraySize                    = type.isArray() ? type.getArraySize() : 1;
+    // Note that the ESSL 3.10 section 4.4.5 is not particularly clear on how the binding qualifier
+    // on arrays of arrays should be handled. We interpret the spec so that the binding value is
+    // incremented for each element of the innermost nested arrays. This is in line with how arrays
+    // of arrays of blocks are specified to behave in GLSL 4.50 and a conservative interpretation
+    // when it comes to which shaders are accepted by the compiler.
+    int arrayTotalElementCount = type.getArraySizeProduct();
     if (IsImage(type.getBasicType()))
     {
-        checkImageBindingIsValid(identifierLocation, layoutQualifier.binding, arraySize);
+        checkImageBindingIsValid(identifierLocation, layoutQualifier.binding,
+                                 arrayTotalElementCount);
     }
     else if (IsSampler(type.getBasicType()))
     {
-        checkSamplerBindingIsValid(identifierLocation, layoutQualifier.binding, arraySize);
+        checkSamplerBindingIsValid(identifierLocation, layoutQualifier.binding,
+                                   arrayTotalElementCount);
     }
     else if (IsAtomicCounter(type.getBasicType()))
     {
@@ -1437,10 +1503,12 @@ void TParseContext::checkOffsetIsNotSpecified(const TSourceLoc &location, int of
     }
 }
 
-void TParseContext::checkImageBindingIsValid(const TSourceLoc &location, int binding, int arraySize)
+void TParseContext::checkImageBindingIsValid(const TSourceLoc &location,
+                                             int binding,
+                                             int arrayTotalElementCount)
 {
     // Expects arraySize to be 1 when setting binding for only a single variable.
-    if (binding >= 0 && binding + arraySize > mMaxImageUnits)
+    if (binding >= 0 && binding + arrayTotalElementCount > mMaxImageUnits)
     {
         error(location, "image binding greater than gl_MaxImageUnits", "binding");
     }
@@ -1448,10 +1516,10 @@ void TParseContext::checkImageBindingIsValid(const TSourceLoc &location, int bin
 
 void TParseContext::checkSamplerBindingIsValid(const TSourceLoc &location,
                                                int binding,
-                                               int arraySize)
+                                               int arrayTotalElementCount)
 {
     // Expects arraySize to be 1 when setting binding for only a single variable.
-    if (binding >= 0 && binding + arraySize > mMaxCombinedTextureImageUnits)
+    if (binding >= 0 && binding + arrayTotalElementCount > mMaxCombinedTextureImageUnits)
     {
         error(location, "sampler binding greater than maximum texture units", "binding");
     }
@@ -1742,6 +1810,13 @@ TIntermTyped *TParseContext::parseVariableIdentifier(const TSourceLoc &location,
         type.setQualifier(EvqConst);
         node = new TIntermConstantUnion(constArray, type);
     }
+    // TODO(jiawei.shao@intel.com): set array sizes for user-defined geometry shader inputs.
+    else if (variable->getType().getQualifier() == EvqPerVertexIn)
+    {
+        TType type(variable->getType());
+        type.setArraySize(0, mGeometryShaderInputArraySize);
+        node = new TIntermSymbol(variable->getUniqueId(), variable->getName(), type);
+    }
     else
     {
         node = new TIntermSymbol(variable->getUniqueId(), variable->getName(), variable->getType());
@@ -1768,17 +1843,11 @@ bool TParseContext::executeInitializer(const TSourceLoc &line,
     TVariable *variable = nullptr;
     if (type.isUnsizedArray())
     {
-        // We have not checked yet whether the initializer actually is an array or not.
-        if (initializer->isArray())
-        {
-            type.setArraySize(initializer->getArraySize());
-        }
-        else
-        {
-            // Having a non-array initializer for an unsized array will result in an error later,
-            // so we don't generate an error message here.
-            type.setArraySize(1u);
-        }
+        // In case initializer is not an array or type has more dimensions than initializer, this
+        // will default to setting array sizes to 1. We have not checked yet whether the initializer
+        // actually is an array or not. Having a non-array initializer for an unsized array will
+        // result in an error later, so we don't generate an error message here.
+        type.sizeUnsizedArrays(initializer->getType().getArraySizes());
     }
     if (!declareVariable(line, identifier, type, &variable))
     {
@@ -2315,7 +2384,7 @@ TIntermDeclaration *TParseContext::parseSingleArrayDeclaration(TPublicType &publ
     unsigned int size = checkIsValidArraySize(identifierLocation, indexExpression);
     // Make the type an array even if size check failed.
     // This ensures useless error messages regarding the variable's non-arrayness won't follow.
-    arrayType.setArraySize(size);
+    arrayType.makeArray(size);
 
     if (IsAtomicCounter(publicType.getBasicType()))
     {
@@ -2526,7 +2595,7 @@ void TParseContext::parseArrayDeclarator(TPublicType &publicType,
     {
         TType arrayType   = TType(publicType);
         unsigned int size = checkIsValidArraySize(arrayLocation, indexExpression);
-        arrayType.setArraySize(size);
+        arrayType.makeArray(size);
 
         if (IsAtomicCounter(publicType.getBasicType()))
         {
@@ -2654,6 +2723,143 @@ void TParseContext::parseDefaultPrecisionQualifier(const TPrecision precision,
     symbolTable.setDefaultPrecision(type.getBasicType(), precision);
 }
 
+bool TParseContext::checkPrimitiveTypeMatchesTypeQualifier(const TTypeQualifier &typeQualifier)
+{
+    switch (typeQualifier.layoutQualifier.primitiveType)
+    {
+        case EptLines:
+        case EptLinesAdjacency:
+        case EptTriangles:
+        case EptTrianglesAdjacency:
+            return typeQualifier.qualifier == EvqGeometryIn;
+
+        case EptLineStrip:
+        case EptTriangleStrip:
+            return typeQualifier.qualifier == EvqGeometryOut;
+
+        case EptPoints:
+            return true;
+
+        default:
+            UNREACHABLE();
+            return false;
+    }
+}
+
+void TParseContext::setGeometryShaderInputArraySizes()
+{
+    // TODO(jiawei.shao@intel.com): check former input array sizes match the input primitive
+    // declaration.
+    ASSERT(mGeometryShaderInputArraySize == 0);
+    mGeometryShaderInputArraySize =
+        GetGeometryShaderInputArraySize(mGeometryShaderInputPrimitiveType);
+}
+
+bool TParseContext::parseGeometryShaderInputLayoutQualifier(const TTypeQualifier &typeQualifier)
+{
+    ASSERT(typeQualifier.qualifier == EvqGeometryIn);
+
+    const TLayoutQualifier &layoutQualifier = typeQualifier.layoutQualifier;
+
+    if (layoutQualifier.maxVertices != -1)
+    {
+        error(typeQualifier.line,
+              "max_vertices can only be declared in 'out' layout in a geometry shader", "layout");
+        return false;
+    }
+
+    // Set mGeometryInputPrimitiveType if exists
+    if (layoutQualifier.primitiveType != EptUndefined)
+    {
+        if (!checkPrimitiveTypeMatchesTypeQualifier(typeQualifier))
+        {
+            error(typeQualifier.line, "invalid primitive type for 'in' layout", "layout");
+            return false;
+        }
+
+        if (mGeometryShaderInputPrimitiveType == EptUndefined)
+        {
+            mGeometryShaderInputPrimitiveType = layoutQualifier.primitiveType;
+            setGeometryShaderInputArraySizes();
+        }
+        else if (mGeometryShaderInputPrimitiveType != layoutQualifier.primitiveType)
+        {
+            error(typeQualifier.line, "primitive doesn't match earlier input primitive declaration",
+                  "layout");
+            return false;
+        }
+    }
+
+    // Set mGeometryInvocations if exists
+    if (layoutQualifier.invocations > 0)
+    {
+        if (mGeometryShaderInvocations == 0)
+        {
+            mGeometryShaderInvocations = layoutQualifier.invocations;
+        }
+        else if (mGeometryShaderInvocations != layoutQualifier.invocations)
+        {
+            error(typeQualifier.line, "invocations contradicts to the earlier declaration",
+                  "layout");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool TParseContext::parseGeometryShaderOutputLayoutQualifier(const TTypeQualifier &typeQualifier)
+{
+    ASSERT(typeQualifier.qualifier == EvqGeometryOut);
+
+    const TLayoutQualifier &layoutQualifier = typeQualifier.layoutQualifier;
+
+    if (layoutQualifier.invocations > 0)
+    {
+        error(typeQualifier.line,
+              "invocations can only be declared in 'in' layout in a geometry shader", "layout");
+        return false;
+    }
+
+    // Set mGeometryOutputPrimitiveType if exists
+    if (layoutQualifier.primitiveType != EptUndefined)
+    {
+        if (!checkPrimitiveTypeMatchesTypeQualifier(typeQualifier))
+        {
+            error(typeQualifier.line, "invalid primitive type for 'out' layout", "layout");
+            return false;
+        }
+
+        if (mGeometryShaderOutputPrimitiveType == EptUndefined)
+        {
+            mGeometryShaderOutputPrimitiveType = layoutQualifier.primitiveType;
+        }
+        else if (mGeometryShaderOutputPrimitiveType != layoutQualifier.primitiveType)
+        {
+            error(typeQualifier.line,
+                  "primitive doesn't match earlier output primitive declaration", "layout");
+            return false;
+        }
+    }
+
+    // Set mGeometryMaxVertices if exists
+    if (layoutQualifier.maxVertices > -1)
+    {
+        if (mGeometryShaderMaxVertices == -1)
+        {
+            mGeometryShaderMaxVertices = layoutQualifier.maxVertices;
+        }
+        else if (mGeometryShaderMaxVertices != layoutQualifier.maxVertices)
+        {
+            error(typeQualifier.line, "max_vertices contradicts to the earlier declaration",
+                  "layout");
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void TParseContext::parseGlobalLayoutQualifier(const TTypeQualifierBuilder &typeQualifierBuilder)
 {
     TTypeQualifier typeQualifier = typeQualifierBuilder.getVariableTypeQualifier(mDiagnostics);
@@ -2734,6 +2940,33 @@ void TParseContext::parseGlobalLayoutQualifier(const TTypeQualifierBuilder &type
         }
 
         mComputeShaderLocalSizeDeclared = true;
+    }
+    else if (typeQualifier.qualifier == EvqGeometryIn)
+    {
+        if (mShaderVersion < 310)
+        {
+            error(typeQualifier.line, "in type qualifier supported in GLSL ES 3.10 only", "layout");
+            return;
+        }
+
+        if (!parseGeometryShaderInputLayoutQualifier(typeQualifier))
+        {
+            return;
+        }
+    }
+    else if (typeQualifier.qualifier == EvqGeometryOut)
+    {
+        if (mShaderVersion < 310)
+        {
+            error(typeQualifier.line, "out type qualifier supported in GLSL ES 3.10 only",
+                  "layout");
+            return;
+        }
+
+        if (!parseGeometryShaderOutputLayoutQualifier(typeQualifier))
+        {
+            return;
+        }
     }
     else if (isMultiviewExtensionEnabled() && typeQualifier.qualifier == EvqVertexIn)
     {
@@ -2845,7 +3078,7 @@ TIntermFunctionPrototype *TParseContext::createPrototypeNodeFromFunction(
                 }
                 else
                 {
-                    error(location, "redefinition", variable->getName().c_str());
+                    error(location, "redefinition", param.name->c_str());
                 }
             }
         }
@@ -3133,10 +3366,49 @@ TParameter TParseContext::parseParameterArrayDeclarator(const TString *identifie
                                                         const TSourceLoc &arrayLoc,
                                                         TPublicType *type)
 {
-    checkIsValidTypeForArray(arrayLoc, *type);
+    checkArrayElementIsNotArray(arrayLoc, *type);
     unsigned int size = checkIsValidArraySize(arrayLoc, arraySize);
     type->setArraySize(size);
     return parseParameterDeclarator(*type, identifier, identifierLoc);
+}
+
+bool TParseContext::checkUnsizedArrayConstructorArgumentDimensionality(TIntermSequence *arguments,
+                                                                       TType type,
+                                                                       const TSourceLoc &line)
+{
+    if (arguments->empty())
+    {
+        error(line, "implicitly sized array constructor must have at least one argument", "[]");
+        return false;
+    }
+    for (TIntermNode *arg : *arguments)
+    {
+        TIntermTyped *element = arg->getAsTyped();
+        ASSERT(element);
+        size_t dimensionalityFromElement = element->getType().getArraySizes().size() + 1u;
+        if (dimensionalityFromElement > type.getArraySizes().size())
+        {
+            error(line, "constructing from a non-dereferenced array", "constructor");
+            return false;
+        }
+        else if (dimensionalityFromElement < type.getArraySizes().size())
+        {
+            if (dimensionalityFromElement == 1u)
+            {
+                error(line, "implicitly sized array of arrays constructor argument is not an array",
+                      "constructor");
+            }
+            else
+            {
+                error(line,
+                      "implicitly sized array of arrays constructor argument dimensionality is too "
+                      "low",
+                      "constructor");
+            }
+            return false;
+        }
+    }
+    return true;
 }
 
 // This function is used to test for the correctness of the parameters passed to various constructor
@@ -3150,13 +3422,23 @@ TIntermTyped *TParseContext::addConstructor(TIntermSequence *arguments,
 {
     if (type.isUnsizedArray())
     {
-        if (arguments->empty())
+        if (!checkUnsizedArrayConstructorArgumentDimensionality(arguments, type, line))
         {
-            error(line, "implicitly sized array constructor must have at least one argument", "[]");
-            type.setArraySize(1u);
+            type.sizeUnsizedArrays(TVector<unsigned int>());
             return CreateZeroNode(type);
         }
-        type.setArraySize(static_cast<unsigned int>(arguments->size()));
+        TIntermTyped *firstElement = arguments->at(0)->getAsTyped();
+        ASSERT(firstElement);
+        type.setArraySize(type.getArraySizes().size() - 1u,
+                          static_cast<unsigned int>(arguments->size()));
+        for (size_t i = 0; i < firstElement->getType().getArraySizes().size(); ++i)
+        {
+            if (type.getArraySizes()[i] == 0u)
+            {
+                type.setArraySize(i, firstElement->getType().getArraySizes().at(i));
+            }
+        }
+        ASSERT(!type.isUnsizedArray());
     }
 
     if (!checkConstructorArguments(line, arguments, type))
@@ -3177,6 +3459,7 @@ TIntermTyped *TParseContext::addConstructor(TIntermSequence *arguments,
 
 //
 // Interface/uniform blocks
+// TODO(jiawei.shao@intel.com): implement GL_OES_shader_io_blocks.
 //
 TIntermDeclaration *TParseContext::addInterfaceBlock(
     const TTypeQualifierBuilder &typeQualifierBuilder,
@@ -3357,9 +3640,12 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
     }
 
     TInterfaceBlock *interfaceBlock =
-        new TInterfaceBlock(&blockName, fieldList, instanceName, arraySize, blockLayoutQualifier);
-    TType interfaceBlockType(interfaceBlock, typeQualifier.qualifier, blockLayoutQualifier,
-                             arraySize);
+        new TInterfaceBlock(&blockName, fieldList, instanceName, blockLayoutQualifier);
+    TType interfaceBlockType(interfaceBlock, typeQualifier.qualifier, blockLayoutQualifier);
+    if (arrayIndex != nullptr)
+    {
+        interfaceBlockType.makeArray(arraySize);
+    }
 
     TString symbolName = "";
     int symbolId       = 0;
@@ -3481,6 +3767,16 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
         return CreateZeroNode(TType(EbtFloat, EbpHigh, EvqConst));
     }
 
+    if (baseExpression->getQualifier() == EvqPerVertexIn)
+    {
+        ASSERT(mShaderType == GL_GEOMETRY_SHADER_OES);
+        if (mGeometryShaderInputPrimitiveType == EptUndefined)
+        {
+            error(location, "missing input primitive declaration before indexing gl_in.", "[");
+            return CreateZeroNode(TType(EbtFloat, EbpHigh, EvqConst));
+        }
+    }
+
     TIntermConstantUnion *indexConstantUnion = indexExpression->getAsConstantUnion();
 
     // TODO(oetuaho@nvidia.com): Get rid of indexConstantUnion == nullptr below once ANGLE is able
@@ -3491,9 +3787,23 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
     {
         if (baseExpression->isInterfaceBlock())
         {
-            error(location,
-                  "array indexes for interface blocks arrays must be constant integral expressions",
-                  "[");
+            // TODO(jiawei.shao@intel.com): implement GL_OES_shader_io_blocks.
+            switch (baseExpression->getQualifier())
+            {
+                case EvqPerVertexIn:
+                    break;
+                case EvqUniform:
+                case EvqBuffer:
+                    error(location,
+                          "array indexes for uniform block arrays and shader storage block arrays "
+                          "must be constant integral expressions",
+                          "[");
+                    break;
+                default:
+                    // We can reach here only in error cases.
+                    ASSERT(mDiagnostics->numErrors() > 0);
+                    break;
+            }
         }
         else if (baseExpression->getQualifier() == EvqFragmentOut)
         {
@@ -3543,7 +3853,7 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
             if (safeIndex < 0)
             {
                 safeIndex = checkIndexOutOfRange(outOfRangeIndexIsError, location, index,
-                                                 baseExpression->getArraySize(),
+                                                 baseExpression->getOutermostArraySize(),
                                                  "array index out of range");
             }
         }
@@ -3833,6 +4143,48 @@ TLayoutQualifier TParseContext::parseLayoutQualifier(const TString &qualifierTyp
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.imageInternalFormat = EiifR32UI;
     }
+    else if (qualifierType == "points" && isExtensionEnabled("GL_OES_geometry_shader") &&
+             mShaderType == GL_GEOMETRY_SHADER_OES)
+    {
+        checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
+        qualifier.primitiveType = EptPoints;
+    }
+    else if (qualifierType == "lines" && isExtensionEnabled("GL_OES_geometry_shader") &&
+             mShaderType == GL_GEOMETRY_SHADER_OES)
+    {
+        checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
+        qualifier.primitiveType = EptLines;
+    }
+    else if (qualifierType == "lines_adjacency" && isExtensionEnabled("GL_OES_geometry_shader") &&
+             mShaderType == GL_GEOMETRY_SHADER_OES)
+    {
+        checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
+        qualifier.primitiveType = EptLinesAdjacency;
+    }
+    else if (qualifierType == "triangles" && isExtensionEnabled("GL_OES_geometry_shader") &&
+             mShaderType == GL_GEOMETRY_SHADER_OES)
+    {
+        checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
+        qualifier.primitiveType = EptTriangles;
+    }
+    else if (qualifierType == "triangles_adjacency" &&
+             isExtensionEnabled("GL_OES_geometry_shader") && mShaderType == GL_GEOMETRY_SHADER_OES)
+    {
+        checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
+        qualifier.primitiveType = EptTrianglesAdjacency;
+    }
+    else if (qualifierType == "line_strip" && isExtensionEnabled("GL_OES_geometry_shader") &&
+             mShaderType == GL_GEOMETRY_SHADER_OES)
+    {
+        checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
+        qualifier.primitiveType = EptLineStrip;
+    }
+    else if (qualifierType == "triangle_strip" && isExtensionEnabled("GL_OES_geometry_shader") &&
+             mShaderType == GL_GEOMETRY_SHADER_OES)
+    {
+        checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
+        qualifier.primitiveType = EptTriangleStrip;
+    }
 
     else
     {
@@ -3873,6 +4225,46 @@ void TParseContext::parseNumViews(int intValue,
         error(intValueLine, "out of range: num_views must be positive", intValueString.c_str());
     }
     *numViews = intValue;
+}
+
+void TParseContext::parseInvocations(int intValue,
+                                     const TSourceLoc &intValueLine,
+                                     const std::string &intValueString,
+                                     int *numInvocations)
+{
+    // Although SPEC isn't clear whether invocations can be less than 1, we add this limit because
+    // it doesn't make sense to accept invocations <= 0.
+    if (intValue < 1 || intValue > mMaxGeometryShaderInvocations)
+    {
+        error(intValueLine,
+              "out of range: invocations must be in the range of [1, "
+              "MAX_GEOMETRY_SHADER_INVOCATIONS_OES]",
+              intValueString.c_str());
+    }
+    else
+    {
+        *numInvocations = intValue;
+    }
+}
+
+void TParseContext::parseMaxVertices(int intValue,
+                                     const TSourceLoc &intValueLine,
+                                     const std::string &intValueString,
+                                     int *maxVertices)
+{
+    // Although SPEC isn't clear whether max_vertices can be less than 0, we add this limit because
+    // it doesn't make sense to accept max_vertices < 0.
+    if (intValue < 0 || intValue > mMaxGeometryShaderMaxVertices)
+    {
+        error(
+            intValueLine,
+            "out of range: max_vertices must be in the range of [0, gl_MaxGeometryOutputVertices]",
+            intValueString.c_str());
+    }
+    else
+    {
+        *maxVertices = intValue;
+    }
 }
 
 TLayoutQualifier TParseContext::parseLayoutQualifier(const TString &qualifierType,
@@ -3944,6 +4336,17 @@ TLayoutQualifier TParseContext::parseLayoutQualifier(const TString &qualifierTyp
     {
         parseNumViews(intValue, intValueLine, intValueString, &qualifier.numViews);
     }
+    else if (qualifierType == "invocations" && isExtensionEnabled("GL_OES_geometry_shader") &&
+             mShaderType == GL_GEOMETRY_SHADER_OES)
+    {
+        parseInvocations(intValue, intValueLine, intValueString, &qualifier.invocations);
+    }
+    else if (qualifierType == "max_vertices" && isExtensionEnabled("GL_OES_geometry_shader") &&
+             mShaderType == GL_GEOMETRY_SHADER_OES)
+    {
+        parseMaxVertices(intValue, intValueLine, intValueString, &qualifier.maxVertices);
+    }
+
     else
     {
         error(qualifierTypeLine, "invalid layout qualifier", qualifierType.c_str());
@@ -3981,23 +4384,39 @@ TStorageQualifierWrapper *TParseContext::parseInQualifier(const TSourceLoc &loc)
     {
         return new TStorageQualifierWrapper(EvqIn, loc);
     }
-    if (getShaderType() == GL_FRAGMENT_SHADER)
+
+    switch (getShaderType())
     {
-        if (mShaderVersion < 300)
+        case GL_VERTEX_SHADER:
         {
-            error(loc, "storage qualifier supported in GLSL ES 3.00 and above only", "in");
+            if (mShaderVersion < 300 && !isMultiviewExtensionEnabled())
+            {
+                error(loc, "storage qualifier supported in GLSL ES 3.00 and above only", "in");
+            }
+            return new TStorageQualifierWrapper(EvqVertexIn, loc);
         }
-        return new TStorageQualifierWrapper(EvqFragmentIn, loc);
-    }
-    if (getShaderType() == GL_VERTEX_SHADER)
-    {
-        if (mShaderVersion < 300 && !isMultiviewExtensionEnabled())
+        case GL_FRAGMENT_SHADER:
         {
-            error(loc, "storage qualifier supported in GLSL ES 3.00 and above only", "in");
+            if (mShaderVersion < 300)
+            {
+                error(loc, "storage qualifier supported in GLSL ES 3.00 and above only", "in");
+            }
+            return new TStorageQualifierWrapper(EvqFragmentIn, loc);
         }
-        return new TStorageQualifierWrapper(EvqVertexIn, loc);
+        case GL_COMPUTE_SHADER:
+        {
+            return new TStorageQualifierWrapper(EvqComputeIn, loc);
+        }
+        case GL_GEOMETRY_SHADER_OES:
+        {
+            return new TStorageQualifierWrapper(EvqGeometryIn, loc);
+        }
+        default:
+        {
+            UNREACHABLE();
+            return new TStorageQualifierWrapper(EvqLast, loc);
+        }
     }
-    return new TStorageQualifierWrapper(EvqComputeIn, loc);
 }
 
 TStorageQualifierWrapper *TParseContext::parseOutQualifier(const TSourceLoc &loc)
@@ -4006,19 +4425,39 @@ TStorageQualifierWrapper *TParseContext::parseOutQualifier(const TSourceLoc &loc
     {
         return new TStorageQualifierWrapper(EvqOut, loc);
     }
-    if (mShaderVersion < 300)
+    switch (getShaderType())
     {
-        error(loc, "storage qualifier supported in GLSL ES 3.00 and above only", "out");
+        case GL_VERTEX_SHADER:
+        {
+            if (mShaderVersion < 300)
+            {
+                error(loc, "storage qualifier supported in GLSL ES 3.00 and above only", "out");
+            }
+            return new TStorageQualifierWrapper(EvqVertexOut, loc);
+        }
+        case GL_FRAGMENT_SHADER:
+        {
+            if (mShaderVersion < 300)
+            {
+                error(loc, "storage qualifier supported in GLSL ES 3.00 and above only", "out");
+            }
+            return new TStorageQualifierWrapper(EvqFragmentOut, loc);
+        }
+        case GL_COMPUTE_SHADER:
+        {
+            error(loc, "storage qualifier isn't supported in compute shaders", "out");
+            return new TStorageQualifierWrapper(EvqLast, loc);
+        }
+        case GL_GEOMETRY_SHADER_OES:
+        {
+            return new TStorageQualifierWrapper(EvqGeometryOut, loc);
+        }
+        default:
+        {
+            UNREACHABLE();
+            return new TStorageQualifierWrapper(EvqLast, loc);
+        }
     }
-    if (getShaderType() != GL_VERTEX_SHADER && getShaderType() != GL_FRAGMENT_SHADER)
-    {
-        error(loc, "storage qualifier supported in vertex and fragment shaders only", "out");
-    }
-    if (getShaderType() == GL_VERTEX_SHADER)
-    {
-        return new TStorageQualifierWrapper(EvqVertexOut, loc);
-    }
-    return new TStorageQualifierWrapper(EvqFragmentOut, loc);
 }
 
 TStorageQualifierWrapper *TParseContext::parseInOutQualifier(const TSourceLoc &loc)
@@ -4054,7 +4493,7 @@ TField *TParseContext::parseStructArrayDeclarator(TString *identifier,
 
     TType *type       = new TType(EbtVoid, EbpUndefined);
     unsigned int size = checkIsValidArraySize(arraySizeLoc, arraySize);
-    type->setArraySize(size);
+    type->makeArray(size);
 
     return new TField(type, identifier, loc);
 }
@@ -4096,46 +4535,36 @@ TFieldList *TParseContext::addStructDeclaratorListWithQualifiers(
 }
 
 TFieldList *TParseContext::addStructDeclaratorList(const TPublicType &typeSpecifier,
-                                                   TFieldList *fieldList)
+                                                   TFieldList *declaratorList)
 {
     checkPrecisionSpecified(typeSpecifier.getLine(), typeSpecifier.precision,
                             typeSpecifier.getBasicType());
 
-    checkIsNonVoid(typeSpecifier.getLine(), (*fieldList)[0]->name(), typeSpecifier.getBasicType());
+    checkIsNonVoid(typeSpecifier.getLine(), (*declaratorList)[0]->name(),
+                   typeSpecifier.getBasicType());
 
     checkWorkGroupSizeIsNotSpecified(typeSpecifier.getLine(), typeSpecifier.layoutQualifier);
 
-    for (unsigned int i = 0; i < fieldList->size(); ++i)
+    for (unsigned int i = 0; i < declaratorList->size(); ++i)
     {
-        //
-        // Careful not to replace already known aspects of type, like array-ness
-        //
-        TType *type = (*fieldList)[i]->type();
-        type->setBasicType(typeSpecifier.getBasicType());
-        type->setPrimarySize(typeSpecifier.getPrimarySize());
-        type->setSecondarySize(typeSpecifier.getSecondarySize());
-        type->setPrecision(typeSpecifier.precision);
-        type->setQualifier(typeSpecifier.qualifier);
-        type->setLayoutQualifier(typeSpecifier.layoutQualifier);
-        type->setMemoryQualifier(typeSpecifier.memoryQualifier);
-        type->setInvariant(typeSpecifier.invariant);
-
+        auto declaratorArraySizes = (*declaratorList)[i]->type()->getArraySizes();
         // don't allow arrays of arrays
-        if (type->isArray())
+        if (!declaratorArraySizes.empty())
         {
-            checkIsValidTypeForArray(typeSpecifier.getLine(), typeSpecifier);
-        }
-        if (typeSpecifier.array)
-            type->setArraySize(static_cast<unsigned int>(typeSpecifier.arraySize));
-        if (typeSpecifier.getUserDef())
-        {
-            type->setStruct(typeSpecifier.getUserDef());
+            checkArrayElementIsNotArray(typeSpecifier.getLine(), typeSpecifier);
         }
 
-        checkIsBelowStructNestingLimit(typeSpecifier.getLine(), *(*fieldList)[i]);
+        TType *type = (*declaratorList)[i]->type();
+        *type       = TType(typeSpecifier);
+        for (unsigned int arraySize : declaratorArraySizes)
+        {
+            type->makeArray(arraySize);
+        }
+
+        checkIsBelowStructNestingLimit(typeSpecifier.getLine(), *(*declaratorList)[i]);
     }
 
-    return fieldList;
+    return declaratorList;
 }
 
 TTypeSpecifierNonArray TParseContext::addStructure(const TSourceLoc &structLine,
@@ -4446,7 +4875,7 @@ bool TParseContext::binaryOpCommonCheck(TOperator op,
                 return false;
         }
         // At this point, size of implicitly sized arrays should be resolved.
-        if (left->getArraySize() != right->getArraySize())
+        if (left->getType().getArraySizes() != right->getType().getArraySizes())
         {
             error(loc, "array size mismatch", GetOperatorString(op));
             return false;
@@ -5037,9 +5466,14 @@ TIntermTyped *TParseContext::addMethod(TFunction *fnCall,
     {
         error(loc, "length can only be called on arrays", "length");
     }
+    else if (typedThis->getQualifier() == EvqPerVertexIn &&
+             mGeometryShaderInputPrimitiveType == EptUndefined)
+    {
+        error(loc, "missing input primitive declaration before calling length on gl_in", "length");
+    }
     else
     {
-        arraySize = typedThis->getArraySize();
+        arraySize = typedThis->getOutermostArraySize();
         if (typedThis->getAsSymbolNode() == nullptr)
         {
             // This code path can be hit with expressions like these:

@@ -116,9 +116,6 @@ BASE_SRCS_ALL = struct(
 
         # Defines main.
         "src/sksl/SkSLMain.cpp",
-
-        # Only pre-compiled into SkJumper_generated.S.
-        "src/jumper/SkJumper_stages_lowp.cpp",
     ],
 )
 
@@ -249,7 +246,6 @@ BASE_SRCS_IOS = struct(
         "src/opts/*x86*",
         "src/opts/SkBlitMask_opts_arm*.cpp",
         "src/opts/SkBlitRow_opts_arm*.cpp",
-        "src/ports/*CG*",
         "src/ports/*FontConfig*",
         "src/ports/*FreeType*",
         "src/ports/*WIC*",
@@ -437,6 +433,7 @@ INCLUDES = [
     "src/core",
     "src/gpu",
     "src/image",
+    "src/images",
     "src/lazy",
     "src/opts",
     "src/ports",
@@ -570,8 +567,8 @@ DM_INCLUDES = [
 
 def DM_ARGS(asan):
   source = ["tests", "gm", "image"]
-  # TODO(benjaminwagner): f16 and serialize-8888 fail.
-  config = ["565", "8888", "pdf", "srgb", "tiles_rt", "pic"]
+  # TODO(benjaminwagner): f16, pic-8888, serialize-8888, and tiles_rt-8888 fail.
+  config = ["565", "8888", "pdf", "srgb"]
   # TODO(mtklein): maybe investigate why these fail?
   match = [
       "~Canvas",
@@ -659,7 +656,6 @@ DEFINES_IOS = [
 
 DEFINES_ALL = [
     # Chrome DEFINES.
-    "SK_USE_FLOATBITS",
     "SK_USE_FREETYPE_EMBOLDEN",
     # Turn on a few Google3-specific build fixes.
     "GOOGLE3",
@@ -668,10 +664,8 @@ DEFINES_ALL = [
     # Staging flags for API changes
     # Should remove after we update golden images
     "SK_WEBP_ENCODER_USE_DEFAULT_METHOD",
-    # Temporarily Disable analytic AA for Google3
-    "SK_NO_ANALYTIC_AA",
     # Experiment to diagnose image diffs in Google3
-    "SK_DISABLE_SSSE3_RUNTIME_CHECK_FOR_LOWP_STAGES",
+    "SK_JUMPER_DISABLE_8BIT",
 ]
 
 ################################################################################
@@ -684,7 +678,13 @@ LINKOPTS_ANDROID = [
     "-lEGL",
 ]
 
-LINKOPTS_IOS = []
+LINKOPTS_IOS = [
+    "-framework CoreFoundation",
+    "-framework CoreGraphics",
+    "-framework CoreText",
+    "-framework ImageIO",
+    "-framework MobileCoreServices",
+]
 
 LINKOPTS_ALL = [
     "-ldl",

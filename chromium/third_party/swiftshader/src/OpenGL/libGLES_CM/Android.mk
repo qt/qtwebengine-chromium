@@ -14,6 +14,9 @@ COMMON_CFLAGS := \
 	-Wno-unused-parameter \
 	-Wno-implicit-exception-spec-mismatch \
 	-Wno-overloaded-virtual \
+	-Wno-attributes \
+	-Wno-unknown-attributes \
+	-Wno-unknown-warning-option \
 	-DANDROID_PLATFORM_SDK_VERSION=$(PLATFORM_SDK_VERSION)
 
 ifneq (16,${PLATFORM_SDK_VERSION})
@@ -57,6 +60,11 @@ COMMON_SHARED_LIBRARIES := \
 	liblog \
 	libcutils \
 	libhardware
+
+# libnativewindow is introduced from O
+ifeq ($(shell test $(PLATFORM_SDK_VERSION) -ge 26 && echo O),O)
+COMMON_SHARED_LIBRARIES += libnativewindow
+endif
 
 # gralloc1 is introduced from N MR1
 ifeq ($(shell test $(PLATFORM_SDK_VERSION) -ge 25 && echo NMR1),NMR1)

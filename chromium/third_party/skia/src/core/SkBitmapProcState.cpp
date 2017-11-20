@@ -65,15 +65,11 @@ static bool just_trans_general(const SkMatrix& matrix) {
  *  for the purpose of filtering.
  */
 static bool just_trans_integral(const SkMatrix& m) {
-#ifdef SK_SUPPORT_LEGACY_BILERP
-    return false;
-#else
     static constexpr SkScalar tol = SK_Scalar1 / 256;
 
     return m.getType() <= SkMatrix::kTranslate_Mask
         && SkScalarNearlyEqual(m.getTranslateX(), SkScalarRoundToScalar(m.getTranslateX()), tol)
         && SkScalarNearlyEqual(m.getTranslateY(), SkScalarRoundToScalar(m.getTranslateY()), tol);
-#endif
 }
 
 static bool valid_for_filtering(unsigned dimension) {
@@ -83,7 +79,7 @@ static bool valid_for_filtering(unsigned dimension) {
 }
 
 bool SkBitmapProcInfo::init(const SkMatrix& inv, const SkPaint& paint) {
-    SkASSERT(!inv.hasPerspective());
+    SkASSERT(inv.isScaleTranslate());
 
     fPixmap.reset();
     fInvMatrix = inv;
@@ -104,11 +100,7 @@ bool SkBitmapProcInfo::init(const SkMatrix& inv, const SkPaint& paint) {
     SkASSERT(fFilterQuality <= kLow_SkFilterQuality);
     SkASSERT(fPixmap.addr());
 
-#ifdef SK_SUPPORT_LEGACY_BILERP2
-    bool integral_translate_only = false;
-#else
     bool integral_translate_only = just_trans_integral(fInvMatrix);
-#endif
     if (!integral_translate_only) {
         // Most of the scanline procs deal with "unit" texture coordinates, as this
         // makes it easy to perform tiling modes (repeat = (x & 0xFFFF)). To generate
@@ -551,34 +543,6 @@ static void check_scale_filter(uint32_t bitmapXY[], int count,
     }
 }
 
-static void check_affine_nofilter(uint32_t bitmapXY[], int count,
-                                 unsigned mx, unsigned my) {
-    for (int i = 0; i < count; ++i) {
-        uint32_t XY = bitmapXY[i];
-        unsigned x = XY & 0xFFFF;
-        unsigned y = XY >> 16;
-        SkASSERT(x < mx);
-        SkASSERT(y < my);
-    }
-}
-
-static void check_affine_filter(uint32_t bitmapXY[], int count,
-                                 unsigned mx, unsigned my) {
-    for (int i = 0; i < count; ++i) {
-        uint32_t YY = *bitmapXY++;
-        unsigned y0 = YY >> 18;
-        unsigned y1 = YY & 0x3FFF;
-        SkASSERT(y0 < my);
-        SkASSERT(y1 < my);
-
-        uint32_t XX = *bitmapXY++;
-        unsigned x0 = XX >> 18;
-        unsigned x1 = XX & 0x3FFF;
-        SkASSERT(x0 < mx);
-        SkASSERT(x1 < mx);
-    }
-}
-
 void SkBitmapProcState::DebugMatrixProc(const SkBitmapProcState& state,
                                         uint32_t bitmapXY[], int count,
                                         int x, int y) {
@@ -589,16 +553,11 @@ void SkBitmapProcState::DebugMatrixProc(const SkBitmapProcState& state,
 
     void (*proc)(uint32_t bitmapXY[], int count, unsigned mx, unsigned my);
 
-    // There are four formats possible:
-    //  scale -vs- affine
+    // There are two formats possible:
     //  filter -vs- nofilter
-    if (state.fInvType <= (SkMatrix::kTranslate_Mask | SkMatrix::kScale_Mask)) {
-        proc = state.fFilterQuality != kNone_SkFilterQuality ?
-                    check_scale_filter : check_scale_nofilter;
-    } else {
-        proc = state.fFilterQuality != kNone_SkFilterQuality ?
-                    check_affine_filter : check_affine_nofilter;
-    }
+    SkASSERT(state.fInvType <= (SkMatrix::kTranslate_Mask | SkMatrix::kScale_Mask));
+    proc = state.fFilterQuality != kNone_SkFilterQuality ?
+                check_scale_filter : check_scale_nofilter;
     proc(bitmapXY, count, state.fPixmap.width(), state.fPixmap.height());
 }
 

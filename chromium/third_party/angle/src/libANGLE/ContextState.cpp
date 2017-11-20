@@ -86,8 +86,7 @@ ContextState::ContextState(ContextID contextIn,
       mRenderbuffers(
           AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mRenderbuffers)),
       mSamplers(AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mSamplers)),
-      mFenceSyncs(
-          AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mFenceSyncs)),
+      mSyncs(AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mSyncs)),
       mPaths(AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mPaths)),
       mFramebuffers(new FramebufferManager())
 {
@@ -98,9 +97,14 @@ ContextState::~ContextState()
     // Handles are released by the Context.
 }
 
+bool ContextState::isWebGL() const
+{
+    return mExtensions.webglCompatibility;
+}
+
 bool ContextState::isWebGL1() const
 {
-    return (mExtensions.webglCompatibility && mClientVersion.major == 2);
+    return (isWebGL() && mClientVersion.major == 2);
 }
 
 const TextureCaps &ContextState::getTextureCap(GLenum internalFormat) const
@@ -225,6 +229,17 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
         case GL_RESET_NOTIFICATION_STRATEGY_EXT:
         case GL_NUM_PROGRAM_BINARY_FORMATS_OES:
         {
+            *type      = GL_INT;
+            *numParams = 1;
+            return true;
+        }
+        case GL_MAX_RECTANGLE_TEXTURE_SIZE_ANGLE:
+        case GL_TEXTURE_BINDING_RECTANGLE_ANGLE:
+        {
+            if (!getExtensions().textureRectangle)
+            {
+                return false;
+            }
             *type      = GL_INT;
             *numParams = 1;
             return true;

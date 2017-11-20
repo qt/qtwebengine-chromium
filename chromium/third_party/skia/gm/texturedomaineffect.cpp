@@ -86,6 +86,7 @@ protected:
         }
 
         GrSurfaceDesc desc;
+        desc.fOrigin = kTopLeft_GrSurfaceOrigin;
         desc.fWidth = fBmp.width();
         desc.fHeight = fBmp.height();
         desc.fConfig = SkImageInfo2GrPixelConfig(fBmp.info(), *context->caps());
@@ -121,12 +122,10 @@ protected:
                     GrTextureDomain::Mode mode = (GrTextureDomain::Mode) m;
                     GrPaint grPaint;
                     grPaint.setXPFactory(GrPorterDuffXPFactory::Get(SkBlendMode::kSrc));
-                    sk_sp<GrFragmentProcessor> fp(
-                        GrTextureDomainEffect::Make(
-                                   proxy,
-                                   nullptr, textureMatrices[tm],
-                                   GrTextureDomain::MakeTexelDomainForMode(texelDomains[d], mode),
-                                   mode, GrSamplerParams::kNone_FilterMode));
+                    auto fp = GrTextureDomainEffect::Make(
+                            proxy, nullptr, textureMatrices[tm],
+                            GrTextureDomain::MakeTexelDomainForMode(texelDomains[d], mode), mode,
+                            GrSamplerParams::kNone_FilterMode);
 
                     if (!fp) {
                         continue;

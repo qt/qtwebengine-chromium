@@ -42,7 +42,8 @@ DxgiTexture::~DxgiTexture() = default;
 
 bool DxgiTexture::CopyFrom(const DXGI_OUTDUPL_FRAME_INFO& frame_info,
                            IDXGIResource* resource) {
-  RTC_DCHECK(resource && frame_info.AccumulatedFrames > 0);
+  RTC_DCHECK_GT(frame_info.AccumulatedFrames, 0);
+  RTC_DCHECK(resource);
   ComPtr<ID3D11Texture2D> texture;
   _com_error error = resource->QueryInterface(
       __uuidof(ID3D11Texture2D),
@@ -57,10 +58,6 @@ bool DxgiTexture::CopyFrom(const DXGI_OUTDUPL_FRAME_INFO& frame_info,
   D3D11_TEXTURE2D_DESC desc = {0};
   texture->GetDesc(&desc);
   desktop_size_.set(desc.Width, desc.Height);
-  if (resolution_change_detector_.IsChanged(desktop_size_)) {
-    LOG(LS_ERROR) << "Texture size is not consistent with current DxgiTexture.";
-    return false;
-  }
 
   return CopyFromTexture(frame_info, texture.Get());
 }

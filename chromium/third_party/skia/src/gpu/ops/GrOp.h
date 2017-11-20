@@ -152,8 +152,6 @@ public:
         return string;
     }
 
-    virtual bool needsCommandBufferIsolation() const { return false; }
-
 protected:
     /**
      * Indicates that the op will produce geometry that extends beyond its bounds for the
@@ -172,6 +170,7 @@ protected:
         kYes,
         kNo
     };
+
     void setBounds(const SkRect& newBounds, HasAABloat aabloat, IsZeroArea zeroArea) {
         fBounds = newBounds;
         this->setBoundsFlags(aabloat, zeroArea);
@@ -180,6 +179,10 @@ protected:
                               HasAABloat aabloat, IsZeroArea zeroArea) {
         m.mapRect(&fBounds, srcBounds);
         this->setBoundsFlags(aabloat, zeroArea);
+    }
+    void makeFullScreen(GrSurfaceProxy* proxy) {
+        this->setBounds(SkRect::MakeIWH(proxy->width(), proxy->height()),
+                        HasAABloat::kNo, IsZeroArea::kNo);
     }
 
     void joinBounds(const GrOp& that) {
@@ -210,7 +213,7 @@ private:
         // 1 to the returned value.
         uint32_t id = static_cast<uint32_t>(sk_atomic_inc(idCounter)) + 1;
         if (!id) {
-            SkFAIL("This should never wrap as it should only be called once for each GrOp "
+            SK_ABORT("This should never wrap as it should only be called once for each GrOp "
                    "subclass.");
         }
         return id;

@@ -31,6 +31,23 @@
 namespace sh
 {
 
+namespace
+{
+
+TString ArrayHelperFunctionName(const char *prefix, const TType &type)
+{
+    TStringStream fnName;
+    fnName << prefix << "_";
+    for (unsigned int arraySize : type.getArraySizes())
+    {
+        fnName << arraySize << "_";
+    }
+    fnName << TypeString(type);
+    return fnName.str();
+}
+
+}  // anonymous namespace
+
 void OutputHLSL::writeFloat(TInfoSinkBase &out, float f)
 {
     // This is known not to work for NaN on all drivers but make the best effort to output NaNs
@@ -113,6 +130,9 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
     mUsesFrontFacing             = false;
     mUsesPointSize               = false;
     mUsesInstanceID              = false;
+    mHasMultiviewExtensionEnabled = IsExtensionEnabled(mExtensionBehavior, "GL_OVR_multiview") ||
+                                    IsExtensionEnabled(mExtensionBehavior, "GL_OVR_multiview2");
+    mUsesViewID                  = false;
     mUsesVertexID                = false;
     mUsesFragDepth               = false;
     mUsesNumWorkGroups           = false;
@@ -147,7 +167,7 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
     }
 
     // Reserve registers for the default uniform block and driver constants
-    mUniformHLSL->reserveInterfaceBlockRegisters(2);
+    mUniformHLSL->reserveUniformBlockRegisters(2);
 }
 
 OutputHLSL::~OutputHLSL()
@@ -231,9 +251,9 @@ void OutputHLSL::makeFlaggedStructMaps(const std::vector<TIntermTyped *> &flagge
     }
 }
 
-const std::map<std::string, unsigned int> &OutputHLSL::getInterfaceBlockRegisterMap() const
+const std::map<std::string, unsigned int> &OutputHLSL::getUniformBlockRegisterMap() const
 {
-    return mUniformHLSL->getInterfaceBlockRegisterMap();
+    return mUniformHLSL->getUniformBlockRegisterMap();
 }
 
 const std::map<std::string, unsigned int> &OutputHLSL::getUniformRegisterMap() const
@@ -241,53 +261,58 @@ const std::map<std::string, unsigned int> &OutputHLSL::getUniformRegisterMap() c
     return mUniformHLSL->getUniformRegisterMap();
 }
 
-int OutputHLSL::vectorSize(const TType &type) const
-{
-    int elementSize        = type.isMatrix() ? type.getCols() : 1;
-    unsigned int arraySize = type.isArray() ? type.getArraySize() : 1u;
-
-    return elementSize * arraySize;
-}
-
-TString OutputHLSL::structInitializerString(int indent,
-                                            const TStructure &structure,
-                                            const TString &rhsStructName)
+TString OutputHLSL::structInitializerString(int indent, const TType &type, const TString &name)
 {
     TString init;
 
-    TString preIndentString;
-    TString fullIndentString;
-
-    for (int spaces = 0; spaces < (indent * 4); spaces++)
+    TString indentString;
+    for (int spaces = 0; spaces < indent; spaces++)
     {
-        preIndentString += ' ';
+        indentString += "    ";
     }
 
-    for (int spaces = 0; spaces < ((indent + 1) * 4); spaces++)
+    if (type.isArray())
     {
-        fullIndentString += ' ';
-    }
-
-    init += preIndentString + "{\n";
-
-    const TFieldList &fields = structure.fields();
-    for (unsigned int fieldIndex = 0; fieldIndex < fields.size(); fieldIndex++)
-    {
-        const TField &field      = *fields[fieldIndex];
-        const TString &fieldName = rhsStructName + "." + Decorate(field.name());
-        const TType &fieldType   = *field.type();
-
-        if (fieldType.getStruct())
+        init += indentString + "{\n";
+        for (unsigned int arrayIndex = 0u; arrayIndex < type.getOutermostArraySize(); ++arrayIndex)
         {
-            init += structInitializerString(indent + 1, *fieldType.getStruct(), fieldName);
+            TStringStream indexedString;
+            indexedString << name << "[" << arrayIndex << "]";
+            TType elementType = type;
+            elementType.toArrayElementType();
+            init += structInitializerString(indent + 1, elementType, indexedString.str());
+            if (arrayIndex < type.getOutermostArraySize() - 1)
+            {
+                init += ",";
+            }
+            init += "\n";
         }
-        else
-        {
-            init += fullIndentString + fieldName + ",\n";
-        }
+        init += indentString + "}";
     }
+    else if (type.getBasicType() == EbtStruct)
+    {
+        init += indentString + "{\n";
+        const TStructure &structure = *type.getStruct();
+        const TFieldList &fields    = structure.fields();
+        for (unsigned int fieldIndex = 0; fieldIndex < fields.size(); fieldIndex++)
+        {
+            const TField &field      = *fields[fieldIndex];
+            const TString &fieldName = name + "." + Decorate(field.name());
+            const TType &fieldType   = *field.type();
 
-    init += preIndentString + "}" + (indent == 0 ? ";" : ",") + "\n";
+            init += structInitializerString(indent + 1, fieldType, fieldName);
+            if (fieldIndex < fields.size() - 1)
+            {
+                init += ",";
+            }
+            init += "\n";
+        }
+        init += indentString + "}";
+    }
+    else
+    {
+        init += indentString + name;
+    }
 
     return init;
 }
@@ -307,9 +332,14 @@ void OutputHLSL::header(TInfoSinkBase &out, const BuiltInFunctionEmulator *built
         const TStructure &structure = *structNode->getType().getStruct();
         const TString &originalName = mFlaggedStructOriginalNames[structNode];
 
-        flaggedStructs += "static " + Decorate(structure.name()) + " " + mappedName + " =\n";
-        flaggedStructs += structInitializerString(0, structure, originalName);
-        flaggedStructs += "\n";
+        flaggedStructs += "static " + Decorate(structure.name()) + " " + mappedName;
+        if (structNode->isArray())
+        {
+            flaggedStructs += ArrayString(structNode->getType());
+        }
+        flaggedStructs += " =\n";
+        flaggedStructs += structInitializerString(0, structNode->getType(), originalName);
+        flaggedStructs += ";\n";
     }
 
     for (ReferencedSymbols::const_iterator varying = mReferencedVaryings.begin();
@@ -336,7 +366,7 @@ void OutputHLSL::header(TInfoSinkBase &out, const BuiltInFunctionEmulator *built
     out << mStructureHLSL->structsHeader();
 
     mUniformHLSL->uniformsHeader(out, mOutputType, mReferencedUniforms);
-    out << mUniformHLSL->interfaceBlocksHeader(mReferencedInterfaceBlocks);
+    out << mUniformHLSL->uniformBlocksHeader(mReferencedUniformBlocks);
 
     if (!mEqualityFunctions.empty())
     {
@@ -698,6 +728,16 @@ void OutputHLSL::header(TInfoSinkBase &out, const BuiltInFunctionEmulator *built
         out << "#define GL_USES_POINT_SIZE\n";
     }
 
+    if (mHasMultiviewExtensionEnabled)
+    {
+        out << "#define GL_ANGLE_MULTIVIEW_ENABLED\n";
+    }
+
+    if (mUsesViewID)
+    {
+        out << "#define GL_USES_VIEW_ID\n";
+    }
+
     if (mUsesFragDepth)
     {
         out << "#define GL_USES_FRAG_DEPTH\n";
@@ -774,7 +814,7 @@ void OutputHLSL::visitSymbol(TIntermSymbol *node)
 
             if (interfaceBlock)
             {
-                mReferencedInterfaceBlocks[interfaceBlock->name()] = node;
+                mReferencedUniformBlocks[interfaceBlock->name()] = node;
             }
             else
             {
@@ -794,6 +834,10 @@ void OutputHLSL::visitSymbol(TIntermSymbol *node)
         {
             mReferencedVaryings[name] = node;
             out << Decorate(name);
+            if (name == "ViewID_OVR")
+            {
+                mUsesViewID = true;
+            }
         }
         else if (qualifier == EvqFragmentOut)
         {
@@ -921,6 +965,19 @@ void OutputHLSL::outputEqual(Visit visit, const TType &type, TOperator op, TInfo
     }
 }
 
+void OutputHLSL::outputAssign(Visit visit, const TType &type, TInfoSinkBase &out)
+{
+    if (type.isArray())
+    {
+        const TString &functionName = addArrayAssignmentFunction(type);
+        outputTriplet(out, visit, (functionName + "(").c_str(), ", ", ")");
+    }
+    else
+    {
+        outputTriplet(out, visit, "(", " = ", ")");
+    }
+}
+
 bool OutputHLSL::ancestorEvaluatesToSamplerInStruct()
 {
     for (unsigned int n = 0u; getAncestorNode(n) != nullptr; ++n)
@@ -983,7 +1040,7 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
             outputTriplet(out, visit, "(", ", ", ")");
             break;
         case EOpAssign:
-            if (node->getLeft()->isArray())
+            if (node->isArray())
             {
                 TIntermAggregate *rightAgg = node->getRight()->getAsAggregate();
                 if (rightAgg != nullptr && rightAgg->isConstructor())
@@ -1003,14 +1060,8 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
                 // ArrayReturnValueToOutParameter should have eliminated expressions where a
                 // function call is assigned.
                 ASSERT(rightAgg == nullptr);
-
-                const TString &functionName = addArrayAssignmentFunction(node->getType());
-                outputTriplet(out, visit, (functionName + "(").c_str(), ", ", ")");
             }
-            else
-            {
-                outputTriplet(out, visit, "(", " = ", ")");
-            }
+            outputAssign(visit, node->getType(), out);
             break;
         case EOpInitialize:
             if (visit == PreVisit)
@@ -1120,9 +1171,9 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
                 {
                     TInterfaceBlock *interfaceBlock = leftType.getInterfaceBlock();
                     const int arrayIndex = node->getRight()->getAsConstantUnion()->getIConst(0);
-                    mReferencedInterfaceBlocks[interfaceBlock->instanceName()] =
+                    mReferencedUniformBlocks[interfaceBlock->instanceName()] =
                         node->getLeft()->getAsSymbolNode();
-                    out << mUniformHLSL->interfaceBlockInstanceString(*interfaceBlock, arrayIndex);
+                    out << mUniformHLSL->uniformBlockInstanceString(*interfaceBlock, arrayIndex);
                     return false;
                 }
             }
@@ -1811,7 +1862,6 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
                     TVector<TIntermSymbol *> samplerSymbols;
                     TString structName = samplerNamePrefixFromStruct(typedArg);
                     argType.createSamplerSymbols("angle_" + structName, "",
-                                                 argType.isArray() ? argType.getArraySize() : 0u,
                                                  &samplerSymbols, nullptr);
                     for (const TIntermSymbol *sampler : samplerSymbols)
                     {
@@ -2557,33 +2607,29 @@ TString OutputHLSL::argumentString(const TIntermSymbol *symbol)
     {
         ASSERT(qualifier != EvqOut && qualifier != EvqInOut);
         TVector<TIntermSymbol *> samplerSymbols;
-        type.createSamplerSymbols("angle" + nameStr, "", type.isArray() ? type.getArraySize() : 0u,
-                                  &samplerSymbols, nullptr);
+        type.createSamplerSymbols("angle" + nameStr, "", &samplerSymbols, nullptr);
         for (const TIntermSymbol *sampler : samplerSymbols)
         {
+            const TType &samplerType = sampler->getType();
             if (mOutputType == SH_HLSL_4_1_OUTPUT)
             {
-                ASSERT(!sampler->getType().isArray());
-                argString << ", const uint " << sampler->getSymbol();
+                argString << ", const uint " << sampler->getSymbol() << ArrayString(samplerType);
             }
             else if (mOutputType == SH_HLSL_4_0_FL9_3_OUTPUT)
             {
-                const TType &samplerType = sampler->getType();
-                ASSERT(!samplerType.isArray());
                 ASSERT(IsSampler(samplerType.getBasicType()));
                 argString << ", " << QualifierString(qualifier) << " "
                           << TextureString(samplerType.getBasicType()) << " texture_"
-                          << sampler->getSymbol() << ", " << QualifierString(qualifier) << " "
+                          << sampler->getSymbol() << ArrayString(samplerType) << ", "
+                          << QualifierString(qualifier) << " "
                           << SamplerString(samplerType.getBasicType()) << " sampler_"
-                          << sampler->getSymbol();
+                          << sampler->getSymbol() << ArrayString(samplerType);
             }
             else
             {
-                const TType &samplerType = sampler->getType();
-                ASSERT(!samplerType.isArray());
                 ASSERT(IsSampler(samplerType.getBasicType()));
                 argString << ", " << QualifierString(qualifier) << " " << TypeString(samplerType)
-                          << " " << sampler->getSymbol();
+                          << " " << sampler->getSymbol() << ArrayString(samplerType);
             }
         }
     }
@@ -2722,31 +2768,33 @@ bool OutputHLSL::canWriteAsHLSLLiteral(TIntermTyped *expression)
 {
     // We support writing constant unions and constructors that only take constant unions as
     // parameters as HLSL literals.
-    return expression->getAsConstantUnion() ||
-           expression->isConstructorWithOnlyConstantUnionParameters();
+    return !expression->getType().isArrayOfArrays() &&
+           (expression->getAsConstantUnion() ||
+            expression->isConstructorWithOnlyConstantUnionParameters());
 }
 
 bool OutputHLSL::writeConstantInitialization(TInfoSinkBase &out,
                                              TIntermSymbol *symbolNode,
-                                             TIntermTyped *expression)
+                                             TIntermTyped *initializer)
 {
-    if (canWriteAsHLSLLiteral(expression))
+    if (canWriteAsHLSLLiteral(initializer))
     {
         symbolNode->traverse(this);
-        if (expression->getType().isArray())
+        ASSERT(!symbolNode->getType().isArrayOfArrays());
+        if (symbolNode->getType().isArray())
         {
-            out << "[" << expression->getType().getArraySize() << "]";
+            out << "[" << symbolNode->getType().getOutermostArraySize() << "]";
         }
         out << " = {";
-        if (expression->getAsConstantUnion())
+        if (initializer->getAsConstantUnion())
         {
-            TIntermConstantUnion *nodeConst  = expression->getAsConstantUnion();
+            TIntermConstantUnion *nodeConst  = initializer->getAsConstantUnion();
             const TConstantUnion *constUnion = nodeConst->getUnionArrayPointer();
             writeConstantUnionArray(out, constUnion, nodeConst->getType().getObjectSize());
         }
         else
         {
-            TIntermAggregate *constructor = expression->getAsAggregate();
+            TIntermAggregate *constructor = initializer->getAsAggregate();
             ASSERT(constructor != nullptr);
             for (TIntermNode *&node : *constructor->getSequence())
             {
@@ -2834,33 +2882,31 @@ TString OutputHLSL::addArrayEqualityFunction(const TType &type)
         }
     }
 
-    const TString &typeName = TypeString(type);
+    TType elementType(type);
+    elementType.toArrayElementType();
 
     ArrayHelperFunction *function = new ArrayHelperFunction();
     function->type                = type;
 
-    TInfoSinkBase fnNameOut;
-    fnNameOut << "angle_eq_" << type.getArraySize() << "_" << typeName;
-    function->functionName = fnNameOut.c_str();
-
-    TType nonArrayType = type;
-    nonArrayType.clearArrayness();
+    function->functionName = ArrayHelperFunctionName("angle_eq", type);
 
     TInfoSinkBase fnOut;
 
-    fnOut << "bool " << function->functionName << "(" << typeName << " a[" << type.getArraySize()
-          << "], " << typeName << " b[" << type.getArraySize() << "])\n"
+    const TString &typeName = TypeString(type);
+    fnOut << "bool " << function->functionName << "(" << typeName << " a" << ArrayString(type)
+          << ", " << typeName << " b" << ArrayString(type) << ")\n"
           << "{\n"
              "    for (int i = 0; i < "
-          << type.getArraySize() << "; ++i)\n"
-                                    "    {\n"
-                                    "        if (";
+          << type.getOutermostArraySize()
+          << "; ++i)\n"
+             "    {\n"
+             "        if (";
 
-    outputEqual(PreVisit, nonArrayType, EOpNotEqual, fnOut);
+    outputEqual(PreVisit, elementType, EOpNotEqual, fnOut);
     fnOut << "a[i]";
-    outputEqual(InVisit, nonArrayType, EOpNotEqual, fnOut);
+    outputEqual(InVisit, elementType, EOpNotEqual, fnOut);
     fnOut << "b[i]";
-    outputEqual(PostVisit, nonArrayType, EOpNotEqual, fnOut);
+    outputEqual(PostVisit, elementType, EOpNotEqual, fnOut);
 
     fnOut << ") { return false; }\n"
              "    }\n"
@@ -2885,26 +2931,35 @@ TString OutputHLSL::addArrayAssignmentFunction(const TType &type)
         }
     }
 
-    const TString &typeName = TypeString(type);
+    TType elementType(type);
+    elementType.toArrayElementType();
 
     ArrayHelperFunction function;
     function.type = type;
 
-    TInfoSinkBase fnNameOut;
-    fnNameOut << "angle_assign_" << type.getArraySize() << "_" << typeName;
-    function.functionName = fnNameOut.c_str();
+    function.functionName = ArrayHelperFunctionName("angle_assign", type);
 
     TInfoSinkBase fnOut;
 
-    fnOut << "void " << function.functionName << "(out " << typeName << " a[" << type.getArraySize()
-          << "], " << typeName << " b[" << type.getArraySize() << "])\n"
+    const TString &typeName = TypeString(type);
+    fnOut << "void " << function.functionName << "(out " << typeName << " a" << ArrayString(type)
+          << ", " << typeName << " b" << ArrayString(type) << ")\n"
           << "{\n"
              "    for (int i = 0; i < "
-          << type.getArraySize() << "; ++i)\n"
-                                    "    {\n"
-                                    "        a[i] = b[i];\n"
-                                    "    }\n"
-                                    "}\n";
+          << type.getOutermostArraySize()
+          << "; ++i)\n"
+             "    {\n"
+             "        ";
+
+    outputAssign(PreVisit, elementType, fnOut);
+    fnOut << "a[i]";
+    outputAssign(InVisit, elementType, fnOut);
+    fnOut << "b[i]";
+    outputAssign(PostVisit, elementType, fnOut);
+
+    fnOut << ";\n"
+             "    }\n"
+             "}\n";
 
     function.functionDefinition = fnOut.c_str();
 
@@ -2923,29 +2978,34 @@ TString OutputHLSL::addArrayConstructIntoFunction(const TType &type)
         }
     }
 
-    const TString &typeName = TypeString(type);
+    TType elementType(type);
+    elementType.toArrayElementType();
 
     ArrayHelperFunction function;
     function.type = type;
 
-    TInfoSinkBase fnNameOut;
-    fnNameOut << "angle_construct_into_" << type.getArraySize() << "_" << typeName;
-    function.functionName = fnNameOut.c_str();
+    function.functionName = ArrayHelperFunctionName("angle_construct_into", type);
 
     TInfoSinkBase fnOut;
 
-    fnOut << "void " << function.functionName << "(out " << typeName << " a[" << type.getArraySize()
-          << "]";
-    for (unsigned int i = 0u; i < type.getArraySize(); ++i)
+    const TString &typeName = TypeString(type);
+    fnOut << "void " << function.functionName << "(out " << typeName << " a" << ArrayString(type);
+    for (unsigned int i = 0u; i < type.getOutermostArraySize(); ++i)
     {
-        fnOut << ", " << typeName << " b" << i;
+        fnOut << ", " << typeName << " b" << i << ArrayString(elementType);
     }
     fnOut << ")\n"
              "{\n";
 
-    for (unsigned int i = 0u; i < type.getArraySize(); ++i)
+    for (unsigned int i = 0u; i < type.getOutermostArraySize(); ++i)
     {
-        fnOut << "    a[" << i << "] = b" << i << ";\n";
+        fnOut << "    ";
+        outputAssign(PreVisit, elementType, fnOut);
+        fnOut << "a[" << i << "]";
+        outputAssign(InVisit, elementType, fnOut);
+        fnOut << "b" << i;
+        outputAssign(PostVisit, elementType, fnOut);
+        fnOut << ";\n";
     }
     fnOut << "}\n";
 

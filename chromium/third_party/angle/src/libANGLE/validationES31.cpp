@@ -9,6 +9,7 @@
 #include "libANGLE/validationES31.h"
 
 #include "libANGLE/Context.h"
+#include "libANGLE/ErrorStrings.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/validationES.h"
@@ -54,6 +55,195 @@ bool ValidateLocationProgramInterface(GLenum programInterface)
     }
 }
 
+bool ValidateProgramInterface(GLenum programInterface)
+{
+    return (programInterface == GL_ATOMIC_COUNTER_BUFFER ||
+            ValidateNamedProgramInterface(programInterface));
+}
+
+bool ValidateProgramResourceProperty(GLenum prop)
+{
+    switch (prop)
+    {
+        case GL_ACTIVE_VARIABLES:
+        case GL_BUFFER_BINDING:
+        case GL_NUM_ACTIVE_VARIABLES:
+
+        case GL_ARRAY_SIZE:
+
+        case GL_ARRAY_STRIDE:
+        case GL_BLOCK_INDEX:
+        case GL_IS_ROW_MAJOR:
+        case GL_MATRIX_STRIDE:
+
+        case GL_ATOMIC_COUNTER_BUFFER_INDEX:
+
+        case GL_BUFFER_DATA_SIZE:
+
+        case GL_LOCATION:
+
+        case GL_NAME_LENGTH:
+
+        case GL_OFFSET:
+
+        case GL_REFERENCED_BY_VERTEX_SHADER:
+        case GL_REFERENCED_BY_FRAGMENT_SHADER:
+        case GL_REFERENCED_BY_COMPUTE_SHADER:
+
+        case GL_TOP_LEVEL_ARRAY_SIZE:
+        case GL_TOP_LEVEL_ARRAY_STRIDE:
+
+        case GL_TYPE:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+// GLES 3.10 spec: Page 82 -- Table 7.2
+bool ValidateProgramResourcePropertyByInterface(GLenum prop, GLenum programInterface)
+{
+    switch (prop)
+    {
+        case GL_ACTIVE_VARIABLES:
+        case GL_BUFFER_BINDING:
+        case GL_NUM_ACTIVE_VARIABLES:
+        {
+            switch (programInterface)
+            {
+                case GL_ATOMIC_COUNTER_BUFFER:
+                case GL_SHADER_STORAGE_BLOCK:
+                case GL_UNIFORM_BLOCK:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        case GL_ARRAY_SIZE:
+        {
+            switch (programInterface)
+            {
+                case GL_BUFFER_VARIABLE:
+                case GL_PROGRAM_INPUT:
+                case GL_PROGRAM_OUTPUT:
+                case GL_TRANSFORM_FEEDBACK_VARYING:
+                case GL_UNIFORM:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        case GL_ARRAY_STRIDE:
+        case GL_BLOCK_INDEX:
+        case GL_IS_ROW_MAJOR:
+        case GL_MATRIX_STRIDE:
+        {
+            switch (programInterface)
+            {
+                case GL_BUFFER_VARIABLE:
+                case GL_UNIFORM:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        case GL_ATOMIC_COUNTER_BUFFER_INDEX:
+        {
+            if (programInterface == GL_UNIFORM)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        case GL_BUFFER_DATA_SIZE:
+        {
+            switch (programInterface)
+            {
+                case GL_ATOMIC_COUNTER_BUFFER:
+                case GL_SHADER_STORAGE_BLOCK:
+                case GL_UNIFORM_BLOCK:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        case GL_LOCATION:
+        {
+            return ValidateLocationProgramInterface(programInterface);
+        }
+
+        case GL_NAME_LENGTH:
+        {
+            return ValidateNamedProgramInterface(programInterface);
+        }
+
+        case GL_OFFSET:
+        {
+            switch (programInterface)
+            {
+                case GL_BUFFER_VARIABLE:
+                case GL_UNIFORM:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        case GL_REFERENCED_BY_VERTEX_SHADER:
+        case GL_REFERENCED_BY_FRAGMENT_SHADER:
+        case GL_REFERENCED_BY_COMPUTE_SHADER:
+        {
+            switch (programInterface)
+            {
+                case GL_ATOMIC_COUNTER_BUFFER:
+                case GL_BUFFER_VARIABLE:
+                case GL_PROGRAM_INPUT:
+                case GL_PROGRAM_OUTPUT:
+                case GL_SHADER_STORAGE_BLOCK:
+                case GL_UNIFORM:
+                case GL_UNIFORM_BLOCK:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        case GL_TOP_LEVEL_ARRAY_SIZE:
+        case GL_TOP_LEVEL_ARRAY_STRIDE:
+        {
+            if (programInterface == GL_BUFFER_VARIABLE)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        case GL_TYPE:
+        {
+            switch (programInterface)
+            {
+                case GL_BUFFER_VARIABLE:
+                case GL_PROGRAM_INPUT:
+                case GL_PROGRAM_OUTPUT:
+                case GL_TRANSFORM_FEEDBACK_VARYING:
+                case GL_UNIFORM:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        default:
+            return false;
+    }
+}
+
 bool ValidateProgramResourceIndex(const Program *programObject,
                                   GLenum programInterface,
                                   GLuint index)
@@ -66,12 +256,13 @@ bool ValidateProgramResourceIndex(const Program *programObject,
         case GL_PROGRAM_OUTPUT:
             return (index < static_cast<GLuint>(programObject->getOutputResourceCount()));
 
-        // TODO(Jie): more interfaces.
+        // TODO(jie.a.chen@intel.com): more interfaces.
         case GL_UNIFORM:
         case GL_UNIFORM_BLOCK:
         case GL_TRANSFORM_FEEDBACK_VARYING:
         case GL_BUFFER_VARIABLE:
         case GL_SHADER_STORAGE_BLOCK:
+        case GL_ATOMIC_COUNTER_BUFFER:
             UNIMPLEMENTED();
             return false;
 
@@ -87,7 +278,7 @@ bool ValidateGetBooleani_v(Context *context, GLenum target, GLuint index, GLbool
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -108,7 +299,7 @@ bool ValidateGetBooleani_vRobustANGLE(Context *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -134,7 +325,7 @@ bool ValidateDrawIndirectBase(Context *context, GLenum mode, const void *indirec
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -169,6 +360,19 @@ bool ValidateDrawIndirectBase(Context *context, GLenum mode, const void *indirec
         context->handleError(
             InvalidValue()
             << "indirect is not a multiple of the size, in basic machine units, of uint");
+        return false;
+    }
+
+    // ANGLE_multiview spec, revision 1:
+    // An INVALID_OPERATION is generated by DrawArraysIndirect and DrawElementsIndirect if the
+    // number of views in the draw framebuffer is greater than 1.
+    const Framebuffer *drawFramebuffer = context->getGLState().getDrawFramebuffer();
+    ASSERT(drawFramebuffer != nullptr);
+    if (drawFramebuffer->getNumViews() > 1)
+    {
+        context->handleError(
+            InvalidOperation()
+            << "The number of views in the active draw framebuffer is greater than 1.");
         return false;
     }
 
@@ -249,7 +453,7 @@ bool ValidateGetTexLevelParameterBase(Context *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -260,7 +464,7 @@ bool ValidateGetTexLevelParameterBase(Context *context,
 
     if (!ValidTexLevelDestinationTarget(context, target))
     {
-        context->handleError(InvalidEnum() << "Invalid texture target");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidTextureTarget);
         return false;
     }
 
@@ -304,7 +508,7 @@ bool ValidateGetTexLevelParameterBase(Context *context,
         case GL_TEXTURE_COMPRESSED:
             break;
         default:
-            context->handleError(InvalidEnum() << "Unknown pname.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidPname);
             return false;
     }
 
@@ -343,7 +547,7 @@ bool ValidateTexStorage2DMultiSample(Context *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -355,7 +559,7 @@ bool ValidateTexStorage2DMultiSample(Context *context,
 
     if (width < 1 || height < 1)
     {
-        context->handleError(InvalidValue() << "Width and height must be positive.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), NegativeSize);
         return false;
     }
 
@@ -424,7 +628,7 @@ bool ValidateGetMultisamplefv(Context *context, GLenum pname, GLuint index, GLfl
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -448,7 +652,7 @@ bool ValidationFramebufferParameteri(Context *context, GLenum target, GLenum pna
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -502,8 +706,7 @@ bool ValidationFramebufferParameteri(Context *context, GLenum target, GLenum pna
         }
         default:
         {
-            context->handleError(InvalidEnum()
-                                 << "Invalid pname: 0x" << std::hex << std::uppercase << pname);
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidPname);
             return false;
         }
     }
@@ -525,13 +728,13 @@ bool ValidationGetFramebufferParameteri(Context *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
     if (!ValidFramebufferTarget(target))
     {
-        context->handleError(InvalidEnum() << "Invalid framebuffer target.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidFramebufferTarget);
         return false;
     }
 
@@ -543,8 +746,7 @@ bool ValidationGetFramebufferParameteri(Context *context,
         case GL_FRAMEBUFFER_DEFAULT_FIXED_SAMPLE_LOCATIONS:
             break;
         default:
-            context->handleError(InvalidEnum()
-                                 << "Invalid pname: 0x" << std::hex << std::uppercase << pname);
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidPname);
             return false;
     }
 
@@ -566,7 +768,7 @@ bool ValidateGetProgramResourceIndex(Context *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES 3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -594,7 +796,7 @@ bool ValidateBindVertexBuffer(ValidationContext *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -614,7 +816,7 @@ bool ValidateBindVertexBuffer(ValidationContext *context,
 
     if (offset < 0)
     {
-        context->handleError(InvalidValue() << "offset cannot be negative.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), NegativeOffset);
         return false;
     }
 
@@ -640,7 +842,7 @@ bool ValidateVertexBindingDivisor(ValidationContext *context, GLuint bindingInde
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -672,7 +874,7 @@ bool ValidateVertexAttribFormat(ValidationContext *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -702,7 +904,7 @@ bool ValidateVertexAttribBinding(ValidationContext *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -717,8 +919,7 @@ bool ValidateVertexAttribBinding(ValidationContext *context,
     const Caps &caps = context->getCaps();
     if (attribIndex >= caps.maxVertexAttributes)
     {
-        context->handleError(InvalidValue()
-                             << "attribindex must be smaller than MAX_VERTEX_ATTRIBS.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMaxVertexAttribute);
         return false;
     }
 
@@ -742,7 +943,7 @@ bool ValidateGetProgramResourceName(Context *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -767,7 +968,7 @@ bool ValidateGetProgramResourceName(Context *context,
 
     if (bufSize < 0)
     {
-        context->handleError(InvalidValue() << "Invalid bufSize: " << bufSize);
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), NegativeBufferSize);
         return false;
     }
 
@@ -781,7 +982,7 @@ bool ValidateDispatchCompute(Context *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -916,7 +1117,7 @@ bool ValidateGetProgramResourceLocation(Context *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -936,6 +1137,63 @@ bool ValidateGetProgramResourceLocation(Context *context,
     {
         context->handleError(InvalidEnum() << "Invalid program interface.");
         return false;
+    }
+    return true;
+}
+
+bool ValidateGetProgramResourceiv(Context *context,
+                                  GLuint program,
+                                  GLenum programInterface,
+                                  GLuint index,
+                                  GLsizei propCount,
+                                  const GLenum *props,
+                                  GLsizei bufSize,
+                                  GLsizei *length,
+                                  GLint *params)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        return false;
+    }
+
+    Program *programObject = GetValidProgram(context, program);
+    if (programObject == nullptr)
+    {
+        return false;
+    }
+    if (!ValidateProgramInterface(programInterface))
+    {
+        context->handleError(InvalidEnum() << "Invalid program interface.");
+        return false;
+    }
+    if (propCount <= 0)
+    {
+        context->handleError(InvalidValue() << "Invalid propCount.");
+        return false;
+    }
+    if (bufSize < 0)
+    {
+        context->handleError(InvalidValue() << "Invalid bufSize.");
+        return false;
+    }
+    if (!ValidateProgramResourceIndex(programObject, programInterface, index))
+    {
+        context->handleError(InvalidValue() << "Invalid index: " << index);
+        return false;
+    }
+    for (GLsizei i = 0; i < propCount; i++)
+    {
+        if (!ValidateProgramResourceProperty(props[i]))
+        {
+            context->handleError(InvalidEnum() << "Invalid prop.");
+            return false;
+        }
+        if (!ValidateProgramResourcePropertyByInterface(props[i], programInterface))
+        {
+            context->handleError(InvalidOperation() << "Not an allowed prop for interface");
+            return false;
+        }
     }
     return true;
 }

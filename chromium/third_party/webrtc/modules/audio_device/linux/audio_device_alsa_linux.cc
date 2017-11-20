@@ -58,9 +58,8 @@ static const unsigned int ALSA_CAPTURE_WAIT_TIMEOUT = 5; // in ms
 #define FUNC_GET_DEVICE_NAME 1
 #define FUNC_GET_DEVICE_NAME_FOR_AN_ENUM 2
 
-AudioDeviceLinuxALSA::AudioDeviceLinuxALSA(const int32_t id) :
+AudioDeviceLinuxALSA::AudioDeviceLinuxALSA() :
     _ptrAudioBuffer(NULL),
-    _mixerManager(id),
     _inputDeviceIndex(0),
     _outputDeviceIndex(0),
     _inputDeviceIsSpecified(false),
@@ -320,24 +319,6 @@ int32_t AudioDeviceLinuxALSA::SpeakerVolume(uint32_t& volume) const
     volume = level;
 
     return 0;
-}
-
-
-int32_t AudioDeviceLinuxALSA::SetWaveOutVolume(uint16_t volumeLeft,
-                                               uint16_t volumeRight)
-{
-
-    LOG(LS_WARNING) << "API call not supported on this platform";
-    return -1;
-}
-
-int32_t AudioDeviceLinuxALSA::WaveOutVolume(
-    uint16_t& /*volumeLeft*/,
-    uint16_t& /*volumeRight*/) const
-{
-
-    LOG(LS_WARNING) << "API call not supported on this platform";
-    return -1;
 }
 
 int32_t AudioDeviceLinuxALSA::MaxSpeakerVolume(

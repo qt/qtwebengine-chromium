@@ -112,15 +112,24 @@ class InfoLog : angle::NonCopyable
     template <typename T>
     StreamHelper operator<<(const T &value)
     {
-        StreamHelper helper(&mStream);
+        ensureInitialized();
+        StreamHelper helper(mLazyStream.get());
         helper << value;
         return helper;
     }
 
-    std::string str() const { return mStream.str(); }
+    std::string str() const { return mLazyStream ? mLazyStream->str() : ""; }
 
   private:
-    std::stringstream mStream;
+    void ensureInitialized()
+    {
+        if (!mLazyStream)
+        {
+            mLazyStream.reset(new std::stringstream());
+        }
+    }
+
+    std::unique_ptr<std::stringstream> mLazyStream;
 };
 
 // Struct used for correlating uniforms/elements of uniform arrays to handles
@@ -162,8 +171,8 @@ struct BindingInfo
 // This small structure encapsulates binding sampler uniforms to active GL textures.
 struct SamplerBinding
 {
-    SamplerBinding(GLenum textureTypeIn, size_t elementCount)
-        : textureType(textureTypeIn), boundTextureUnits(elementCount, 0)
+    SamplerBinding(GLenum textureTypeIn, size_t elementCount, bool unreferenced)
+        : textureType(textureTypeIn), boundTextureUnits(elementCount, 0), unreferenced(unreferenced)
     {
     }
 
@@ -172,6 +181,9 @@ struct SamplerBinding
 
     // List of all textures bound to this sampler, of type textureType.
     std::vector<GLuint> boundTextureUnits;
+
+    // A note if this sampler is an unreferenced uniform.
+    bool unreferenced;
 };
 
 // A varying with tranform feedback enabled. If it's an array, either the whole array or one of its
@@ -199,10 +211,16 @@ struct TransformFeedbackVarying : public sh::Varying
 
 struct ImageBinding
 {
-    ImageBinding(GLuint imageUnit, size_t count) : boundImageUnit(imageUnit), elementCount(count) {}
+    ImageBinding(size_t count) : boundImageUnits(count, 0) {}
+    ImageBinding(GLuint imageUnit, size_t count)
+    {
+        for (size_t index = 0; index < count; ++index)
+        {
+            boundImageUnits.push_back(imageUnit + static_cast<GLuint>(index));
+        }
+    }
 
-    GLuint boundImageUnit;
-    size_t elementCount;
+    std::vector<GLuint> boundImageUnits;
 };
 
 class ProgramState final : angle::NonCopyable
@@ -265,6 +283,9 @@ class ProgramState final : angle::NonCopyable
     GLuint getSamplerIndexFromUniformIndex(GLuint uniformIndex) const;
     GLuint getAttributeLocation(const std::string &name) const;
 
+    int getNumViews() const { return mNumViews; }
+    bool usesMultiview() const { return mNumViews != -1; }
+
   private:
     friend class MemoryProgramCache;
     friend class Program;
@@ -318,6 +339,9 @@ class ProgramState final : angle::NonCopyable
 
     bool mBinaryRetrieveableHint;
     bool mSeparable;
+
+    // ANGLE_multiview.
+    int mNumViews;
 };
 
 class Program final : angle::NonCopyable, public LabeledObject
@@ -436,9 +460,9 @@ class Program final : angle::NonCopyable, public LabeledObject
     void setUniformMatrix3x4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
     void setUniformMatrix4x3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
 
-    void getUniformfv(GLint location, GLfloat *params) const;
-    void getUniformiv(GLint location, GLint *params) const;
-    void getUniformuiv(GLint location, GLuint *params) const;
+    void getUniformfv(const Context *context, GLint location, GLfloat *params) const;
+    void getUniformiv(const Context *context, GLint location, GLint *params) const;
+    void getUniformuiv(const Context *context, GLint location, GLuint *params) const;
 
     void getActiveUniformBlockName(GLuint uniformBlockIndex, GLsizei bufSize, GLsizei *length, GLchar *uniformBlockName) const;
     GLuint getActiveUniformBlockCount() const;
@@ -498,6 +522,8 @@ class Program final : angle::NonCopyable, public LabeledObject
     GLuint getOutputResourceIndex(const GLchar *name) const;
     void getInputResourceName(GLuint index, GLsizei bufSize, GLsizei *length, GLchar *name) const;
     void getOutputResourceName(GLuint index, GLsizei bufSize, GLsizei *length, GLchar *name) const;
+    const sh::Attribute &getInputResource(GLuint index) const;
+    const sh::OutputVariable &getOutputResource(GLuint index) const;
 
     class Bindings final : angle::NonCopyable
     {
@@ -516,6 +542,9 @@ class Program final : angle::NonCopyable, public LabeledObject
     const Bindings &getAttributeBindings() const { return mAttributeBindings; }
     const Bindings &getUniformLocationBindings() const { return mUniformLocationBindings; }
     const Bindings &getFragmentInputBindings() const { return mFragmentInputBindings; }
+
+    int getNumViews() const { return mState.getNumViews(); }
+    bool usesMultiview() const { return mState.usesMultiview(); }
 
   private:
     ~Program();
@@ -601,7 +630,11 @@ class Program final : angle::NonCopyable, public LabeledObject
                               const T *v);
 
     template <typename DestT>
-    void getUniformInternal(GLint location, DestT *dataOut) const;
+    void getUniformInternal(const Context *context,
+                            DestT *dataOut,
+                            GLint location,
+                            GLenum nativeType,
+                            int components) const;
 
     ProgramState mState;
     rx::ProgramImpl *mProgram;

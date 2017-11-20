@@ -33,6 +33,7 @@
 #include "SkResourceCache.h"
 #include "SkShaderBase.h"
 #include "SkTemplates.h"
+#include "SkTraceEvent.h"
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrConstColorProcessor.h"
 #include "effects/GrDitherEffect.h"
@@ -42,6 +43,7 @@
 GrSurfaceDesc GrImageInfoToSurfaceDesc(const SkImageInfo& info, const GrCaps& caps) {
     GrSurfaceDesc desc;
     desc.fFlags = kNone_GrSurfaceFlags;
+    desc.fOrigin = kTopLeft_GrSurfaceOrigin;
     desc.fWidth = info.width();
     desc.fHeight = info.height();
     desc.fConfig = SkImageInfo2GrPixelConfig(info, caps);
@@ -134,6 +136,7 @@ sk_sp<GrTextureProxy> GrUploadPixmapToTextureProxy(GrResourceProvider* resourceP
     SkPixmap tmpPixmap;
     GrSurfaceDesc desc;
 
+    ATRACE_ANDROID_FRAMEWORK("Upload Texture [%ux%u]", pixmap.width(), pixmap.height());
     if (const SkPixmap* pmap = compute_desc(*resourceProvider->caps(), pixmap, &desc,
                                             &tmpBitmap, &tmpPixmap)) {
         return GrSurfaceProxy::MakeDeferred(resourceProvider, desc,
@@ -176,6 +179,7 @@ sk_sp<GrTextureProxy> GrGenerateMipMapsAndUploadToTextureProxy(GrContext* ctx,
         return nullptr;
     }
 
+    ATRACE_ANDROID_FRAMEWORK("Upload MipMap Texture [%ux%u]", pixmap.width(), pixmap.height());
     std::unique_ptr<SkMipMap> mipmaps(SkMipMap::Build(pixmap, colorMode, nullptr));
     if (!mipmaps) {
         return nullptr;
@@ -245,7 +249,7 @@ sk_sp<GrTextureProxy> GrMakeCachedBitmapProxy(GrResourceProvider* resourceProvid
     sk_sp<GrTextureProxy> proxy;
 
     if (originalKey.isValid()) {
-        proxy = resourceProvider->findProxyByUniqueKey(originalKey);
+        proxy = resourceProvider->findProxyByUniqueKey(originalKey, kTopLeft_GrSurfaceOrigin);
     }
     if (!proxy) {
         // Pass nullptr for |dstColorSpace|.  This is lenient - we allow a wider range of
@@ -253,6 +257,7 @@ sk_sp<GrTextureProxy> GrMakeCachedBitmapProxy(GrResourceProvider* resourceProvid
         // we can't necessarily know the |dstColorSpace| at this time.
         proxy = GrUploadBitmapToTextureProxy(resourceProvider, bitmap, nullptr);
         if (proxy && originalKey.isValid()) {
+            SkASSERT(proxy->origin() == kTopLeft_GrSurfaceOrigin);
             resourceProvider->assignUniqueKeyToProxy(originalKey, proxy.get());
             // MDB TODO (caching): this has to play nice with the GrSurfaceProxy's caching
             GrInstallBitmapUniqueKeyInvalidator(originalKey, bitmap.pixelRef());
@@ -402,7 +407,7 @@ static inline bool skpaint_to_grpaint_impl(GrContext* context,
                                            GrRenderTargetContext* rtc,
                                            const SkPaint& skPaint,
                                            const SkMatrix& viewM,
-                                           sk_sp<GrFragmentProcessor>* shaderProcessor,
+                                           std::unique_ptr<GrFragmentProcessor>* shaderProcessor,
                                            SkBlendMode* primColorMode,
                                            GrPaint* grPaint) {
     grPaint->setAllowSRGBInputs(rtc->isGammaCorrect());
@@ -413,10 +418,10 @@ static inline bool skpaint_to_grpaint_impl(GrContext* context,
 
     // Setup the initial color considering the shader, the SkPaint color, and the presence or not
     // of per-vertex colors.
-    sk_sp<GrFragmentProcessor> shaderFP;
+    std::unique_ptr<GrFragmentProcessor> shaderFP;
     if (!primColorMode || blend_requires_shader(*primColorMode)) {
         if (shaderProcessor) {
-            shaderFP = *shaderProcessor;
+            shaderFP = std::move(*shaderProcessor);
         } else if (const auto* shader = as_SB(skPaint.getShader())) {
             shaderFP = shader->asFragmentProcessor(
                 SkShaderBase::AsFPArgs(context, &viewM, nullptr, skPaint.getFilterQuality(),
@@ -441,7 +446,7 @@ static inline bool skpaint_to_grpaint_impl(GrContext* context,
             // the GrPaint color will be ignored.
 
             GrColor4f shaderInput = origColor.opaque();
-            shaderFP = GrFragmentProcessor::OverrideInput(shaderFP, shaderInput);
+            shaderFP = GrFragmentProcessor::OverrideInput(std::move(shaderFP), shaderInput);
             shaderFP = GrXfermodeFragmentProcessor::MakeFromSrcProcessor(std::move(shaderFP),
                                                                          *primColorMode);
 
@@ -468,9 +473,8 @@ static inline bool skpaint_to_grpaint_impl(GrContext* context,
         if (primColorMode) {
             // There is a blend between the primitive color and the paint color. The blend considers
             // the opaque paint color. The paint's alpha is applied to the post-blended color.
-            sk_sp<GrFragmentProcessor> processor(
-                GrConstColorProcessor::Make(origColor.opaque(),
-                                            GrConstColorProcessor::kIgnore_InputMode));
+            auto processor = GrConstColorProcessor::Make(origColor.opaque(),
+                                                         GrConstColorProcessor::kIgnore_InputMode);
             processor = GrXfermodeFragmentProcessor::MakeFromSrcProcessor(std::move(processor),
                                                                           *primColorMode);
             if (processor) {
@@ -508,8 +512,7 @@ static inline bool skpaint_to_grpaint_impl(GrContext* context,
                     colorFilter->filterColor(skPaint.getColor()), nullptr, nullptr));
             }
         } else {
-            sk_sp<GrFragmentProcessor> cfFP(colorFilter->asFragmentProcessor(context,
-                                                                             rtc->getColorSpace()));
+            auto cfFP = colorFilter->asFragmentProcessor(context, rtc->getColorSpace());
             if (cfFP) {
                 grPaint->addColorFragmentProcessor(std::move(cfFP));
             } else {
@@ -522,7 +525,7 @@ static inline bool skpaint_to_grpaint_impl(GrContext* context,
     if (maskFilter) {
         GrFragmentProcessor* mfFP;
         if (maskFilter->asFragmentProcessor(&mfFP)) {
-            grPaint->addCoverageFragmentProcessor(sk_sp<GrFragmentProcessor>(mfFP));
+            grPaint->addCoverageFragmentProcessor(std::unique_ptr<GrFragmentProcessor>(mfFP));
         }
     }
 
@@ -557,7 +560,7 @@ bool SkPaintToGrPaint(GrContext* context, GrRenderTargetContext* rtc, const SkPa
 bool SkPaintToGrPaintReplaceShader(GrContext* context,
                                    GrRenderTargetContext* rtc,
                                    const SkPaint& skPaint,
-                                   sk_sp<GrFragmentProcessor> shaderFP,
+                                   std::unique_ptr<GrFragmentProcessor> shaderFP,
                                    GrPaint* grPaint) {
     if (!shaderFP) {
         return false;
@@ -572,8 +575,8 @@ bool SkPaintToGrPaintNoShader(GrContext* context,
                               const SkPaint& skPaint,
                               GrPaint* grPaint) {
     // Use a ptr to a nullptr to to indicate that the SkShader is ignored and not replaced.
-    static sk_sp<GrFragmentProcessor> kNullShaderFP(nullptr);
-    static sk_sp<GrFragmentProcessor>* kIgnoreShader = &kNullShaderFP;
+    static std::unique_ptr<GrFragmentProcessor> kNullShaderFP(nullptr);
+    static std::unique_ptr<GrFragmentProcessor>* kIgnoreShader = &kNullShaderFP;
     return skpaint_to_grpaint_impl(context, rtc, skPaint, SkMatrix::I(), kIgnoreShader, nullptr,
                                    grPaint);
 }
@@ -594,10 +597,10 @@ bool SkPaintToGrPaintWithTexture(GrContext* context,
                                  GrRenderTargetContext* rtc,
                                  const SkPaint& paint,
                                  const SkMatrix& viewM,
-                                 sk_sp<GrFragmentProcessor> fp,
+                                 std::unique_ptr<GrFragmentProcessor> fp,
                                  bool textureIsAlphaOnly,
                                  GrPaint* grPaint) {
-    sk_sp<GrFragmentProcessor> shaderFP;
+    std::unique_ptr<GrFragmentProcessor> shaderFP;
     if (textureIsAlphaOnly) {
         if (const auto* shader = as_SB(paint.getShader())) {
             shaderFP = shader->asFragmentProcessor(
@@ -606,13 +609,13 @@ bool SkPaintToGrPaintWithTexture(GrContext* context,
             if (!shaderFP) {
                 return false;
             }
-            sk_sp<GrFragmentProcessor> fpSeries[] = { std::move(shaderFP), std::move(fp) };
+            std::unique_ptr<GrFragmentProcessor> fpSeries[] = { std::move(shaderFP), std::move(fp) };
             shaderFP = GrFragmentProcessor::RunInSeries(fpSeries, 2);
         } else {
-            shaderFP = GrFragmentProcessor::MakeInputPremulAndMulByOutput(fp);
+            shaderFP = GrFragmentProcessor::MakeInputPremulAndMulByOutput(std::move(fp));
         }
     } else {
-        shaderFP = GrFragmentProcessor::MulOutputByInputAlpha(fp);
+        shaderFP = GrFragmentProcessor::MulOutputByInputAlpha(std::move(fp));
     }
 
     return SkPaintToGrPaintReplaceShader(context, rtc, paint, std::move(shaderFP), grPaint);

@@ -8,7 +8,6 @@
 #define FPDFSDK_CPDFSDK_XFAWIDGETHANDLER_H_
 
 #include "core/fxcrt/cfx_unowned_ptr.h"
-#include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "fpdfsdk/ipdfsdk_annothandler.h"
 
@@ -34,6 +33,8 @@ class CPDFSDK_XFAWidgetHandler : public IPDFSDK_AnnotHandler {
   CFX_FloatRect GetViewBBox(CPDFSDK_PageView* pPageView,
                             CPDFSDK_Annot* pAnnot) override;
   CFX_WideString GetSelectedText(CPDFSDK_Annot* pAnnot) override;
+  void ReplaceSelection(CPDFSDK_Annot* pAnnot,
+                        const CFX_WideString& text) override;
   bool HitTest(CPDFSDK_PageView* pPageView,
                CPDFSDK_Annot* pAnnot,
                const CFX_PointF& point) override;

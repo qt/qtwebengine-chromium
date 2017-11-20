@@ -54,20 +54,20 @@
 #define OPENSSL_HEADER_BASE_H
 
 
-/* This file should be the first included by all BoringSSL headers. */
+// This file should be the first included by all BoringSSL headers.
 
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
 
 #if defined(__MINGW32__)
-/* stdio.h is needed on MinGW for __MINGW_PRINTF_FORMAT. */
+// stdio.h is needed on MinGW for __MINGW_PRINTF_FORMAT.
 #include <stdio.h>
 #endif
 
-/* Include a BoringSSL-only header so consumers including this header without
- * setting up include paths do not accidentally pick up the system
- * opensslconf.h. */
+// Include a BoringSSL-only header so consumers including this header without
+// setting up include paths do not accidentally pick up the system
+// opensslconf.h.
 #include <openssl/is_boringssl.h>
 #include <openssl/opensslconf.h>
 
@@ -107,6 +107,10 @@ extern "C" {
 #elif defined(__myriad2__)
 #define OPENSSL_32_BIT
 #else
+// Note BoringSSL only supports standard 32-bit and 64-bit two's-complement,
+// little-endian architectures. Functions will not produce the correct answer
+// on other systems. Run the crypto_test binary, notably
+// crypto/compiler_test.cc, before adding a new architecture.
 #error "Unknown target CPU"
 #endif
 
@@ -132,19 +136,17 @@ extern "C" {
 #endif
 
 #define OPENSSL_IS_BORINGSSL
-#define BORINGSSL_201512
-#define BORINGSSL_201603
 #define OPENSSL_VERSION_NUMBER 0x100020af
 #define SSLEAY_VERSION_NUMBER OPENSSL_VERSION_NUMBER
 
-/* BORINGSSL_API_VERSION is a positive integer that increments as BoringSSL
- * changes over time. The value itself is not meaningful. It will be incremented
- * whenever is convenient to coordinate an API change with consumers. This will
- * not denote any special point in development.
- *
- * A consumer may use this symbol in the preprocessor to temporarily build
- * against multiple revisions of BoringSSL at the same time. It is not
- * recommended to do so for longer than is necessary. */
+// BORINGSSL_API_VERSION is a positive integer that increments as BoringSSL
+// changes over time. The value itself is not meaningful. It will be incremented
+// whenever is convenient to coordinate an API change with consumers. This will
+// not denote any special point in development.
+//
+// A consumer may use this symbol in the preprocessor to temporarily build
+// against multiple revisions of BoringSSL at the same time. It is not
+// recommended to do so for longer than is necessary.
 #define BORINGSSL_API_VERSION 4
 
 #if defined(BORINGSSL_SHARED_LIBRARY)
@@ -157,7 +159,7 @@ extern "C" {
 #define OPENSSL_EXPORT __declspec(dllimport)
 #endif
 
-#else  /* defined(OPENSSL_WINDOWS) */
+#else  // defined(OPENSSL_WINDOWS)
 
 #if defined(BORINGSSL_IMPLEMENTATION)
 #define OPENSSL_EXPORT __attribute__((visibility("default")))
@@ -165,19 +167,19 @@ extern "C" {
 #define OPENSSL_EXPORT
 #endif
 
-#endif  /* defined(OPENSSL_WINDOWS) */
+#endif  // defined(OPENSSL_WINDOWS)
 
-#else  /* defined(BORINGSSL_SHARED_LIBRARY) */
+#else  // defined(BORINGSSL_SHARED_LIBRARY)
 
 #define OPENSSL_EXPORT
 
-#endif  /* defined(BORINGSSL_SHARED_LIBRARY) */
+#endif  // defined(BORINGSSL_SHARED_LIBRARY)
 
 
 #if defined(__GNUC__)
-/* MinGW has two different printf implementations. Ensure the format macro
- * matches the selected implementation. See
- * https://sourceforge.net/p/mingw-w64/wiki2/gnu%20printf/. */
+// MinGW has two different printf implementations. Ensure the format macro
+// matches the selected implementation. See
+// https://sourceforge.net/p/mingw-w64/wiki2/gnu%20printf/.
 #if defined(__MINGW_PRINTF_FORMAT)
 #define OPENSSL_PRINTF_FORMAT_FUNC(string_index, first_to_check) \
   __attribute__(                                                 \
@@ -190,7 +192,7 @@ extern "C" {
 #define OPENSSL_PRINTF_FORMAT_FUNC(string_index, first_to_check)
 #endif
 
-/* OPENSSL_MSVC_PRAGMA emits a pragma on MSVC and nothing on other compilers. */
+// OPENSSL_MSVC_PRAGMA emits a pragma on MSVC and nothing on other compilers.
 #if defined(_MSC_VER)
 #define OPENSSL_MSVC_PRAGMA(arg) __pragma(arg)
 #else
@@ -217,7 +219,7 @@ extern "C" {
 #endif
 #endif
 
-/* CRYPTO_THREADID is a dummy value. */
+// CRYPTO_THREADID is a dummy value.
 typedef int CRYPTO_THREADID;
 
 typedef int ASN1_BOOLEAN;
@@ -317,7 +319,6 @@ typedef struct spake2_ctx_st SPAKE2_CTX;
 typedef struct srtp_protection_profile_st SRTP_PROTECTION_PROFILE;
 typedef struct ssl_cipher_st SSL_CIPHER;
 typedef struct ssl_ctx_st SSL_CTX;
-typedef struct ssl_custom_extension SSL_CUSTOM_EXTENSION;
 typedef struct ssl_method_st SSL_METHOD;
 typedef struct ssl_private_key_method_st SSL_PRIVATE_KEY_METHOD;
 typedef struct ssl_session_st SSL_SESSION;
@@ -340,7 +341,10 @@ typedef void *OPENSSL_BLOCK;
 
 
 #if defined(__cplusplus)
-}  /* extern C */
+}  // extern C
+#elif !defined(BORINGSSL_NO_CXX)
+#define BORINGSSL_NO_CXX
+#endif
 
 // MSVC doesn't set __cplusplus to 201103 to indicate C++11 support (see
 // https://connect.microsoft.com/VisualStudio/feedback/details/763051/a-value-of-predefined-macro-cplusplus-is-still-199711l)
@@ -365,19 +369,18 @@ extern "C++" {
 #if defined(BORINGSSL_NO_CXX)
 
 #define BORINGSSL_MAKE_DELETER(type, deleter)
-#define BORINGSSL_MAKE_STACK_DELETER(type, deleter)
 
 #else
 
 extern "C++" {
 
-#include <memory>
-
 namespace bssl {
 
 namespace internal {
 
-template <typename T>
+// The Enable parameter is ignored and only exists so specializations can use
+// SFINAE.
+template <typename T, typename Enable = void>
 struct DeleterImpl {};
 
 template <typename T>
@@ -408,6 +411,9 @@ class StackAllocated {
   T *get() { return &ctx_; }
   const T *get() const { return &ctx_; }
 
+  T *operator->() { return &ctx_; }
+  const T *operator->() const { return &ctx_; }
+
   void Reset() {
     cleanup(&ctx_);
     init(&ctx_);
@@ -427,18 +433,6 @@ class StackAllocated {
   };                                              \
   }
 
-// This makes a unique_ptr to STACK_OF(type) that owns all elements on the
-// stack, i.e. it uses sk_pop_free() to clean up.
-#define BORINGSSL_MAKE_STACK_DELETER(type, deleter) \
-  namespace internal {                              \
-  template <>                                       \
-  struct DeleterImpl<STACK_OF(type)> {              \
-    static void Free(STACK_OF(type) *ptr) {         \
-      sk_##type##_pop_free(ptr, deleter);           \
-    }                                               \
-  };                                                \
-  }
-
 // Holds ownership of heap-allocated BoringSSL structures. Sample usage:
 //   bssl::UniquePtr<RSA> rsa(RSA_new());
 //   bssl::UniquePtr<BIO> bio(BIO_new(BIO_s_mem()));
@@ -447,10 +441,8 @@ using UniquePtr = std::unique_ptr<T, internal::Deleter<T>>;
 
 }  // namespace bssl
 
-}  /* extern C++ */
+}  // extern C++
 
 #endif  // !BORINGSSL_NO_CXX
 
-#endif
-
-#endif  /* OPENSSL_HEADER_BASE_H */
+#endif  // OPENSSL_HEADER_BASE_H

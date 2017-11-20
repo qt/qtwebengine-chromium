@@ -195,7 +195,7 @@ static void fuzz_img(sk_sp<SkData> bytes, uint8_t scale, uint8_t mode) {
 
     // This is mostly copied from DMSrcSink's CodecSrc::draw method.
     SkDebugf("Decoding\n");
-    std::unique_ptr<SkCodec> codec(SkCodec::NewFromData(bytes));
+    std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(bytes));
     if (nullptr == codec.get()) {
         SkDebugf("[terminated] Couldn't create codec.\n");
         return;
@@ -513,7 +513,7 @@ static void fuzz_filter_fuzz(sk_sp<SkData> bytes) {
         bytes->data(), bytes->size());
 
     // Adding some info, but the test passed if we got here without any trouble
-    if (flattenable != NULL) {
+    if (flattenable != nullptr) {
         SkDebugf("Valid stream detected.\n");
         // Let's see if using the filters can cause any trouble...
         SkPaint paint;
@@ -543,8 +543,8 @@ static void fuzz_sksl2glsl(sk_sp<SkData> bytes) {
     sk_sp<GrShaderCaps> caps = SkSL::ShaderCapsFactory::Default();
     settings.fCaps = caps.get();
     std::unique_ptr<SkSL::Program> program = compiler.convertProgram(SkSL::Program::kFragment_Kind,
-                                                              SkString((const char*) bytes->data()),
-                                                              settings);
+                                                          SkSL::String((const char*) bytes->data()),
+                                                          settings);
     if (!program || !compiler.toGLSL(*program, &output)) {
         SkDebugf("[terminated] Couldn't compile input.\n");
         return;

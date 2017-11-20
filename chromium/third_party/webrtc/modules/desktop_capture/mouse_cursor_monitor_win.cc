@@ -15,10 +15,12 @@
 
 #include <memory>
 
+#include "webrtc/modules/desktop_capture/desktop_capture_types.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/desktop_geometry.h"
 #include "webrtc/modules/desktop_capture/mouse_cursor.h"
 #include "webrtc/modules/desktop_capture/win/cursor.h"
+#include "webrtc/modules/desktop_capture/win/screen_capture_utils.h"
 #include "webrtc/modules/desktop_capture/win/window_capture_utils.h"
 #include "webrtc/rtc_base/logging.h"
 
@@ -161,7 +163,10 @@ void MouseCursorMonitorWin::Capture() {
     position = position.subtract(rect.top_left());
   }
 
+  // TODO(zijiehe): Remove this overload.
   callback_->OnMouseCursorPosition(inside ? INSIDE : OUTSIDE, position);
+  callback_->OnMouseCursorPosition(
+      position.subtract(GetFullscreenRect().top_left()));
 }
 
 DesktopRect MouseCursorMonitorWin::GetScreenRect() {
@@ -202,6 +207,12 @@ MouseCursorMonitor* MouseCursorMonitor::CreateForScreen(
     const DesktopCaptureOptions& options,
     ScreenId screen) {
   return new MouseCursorMonitorWin(screen);
+}
+
+std::unique_ptr<MouseCursorMonitor> MouseCursorMonitor::Create(
+    const DesktopCaptureOptions& options) {
+  return std::unique_ptr<MouseCursorMonitor>(
+      CreateForScreen(options, kFullDesktopScreenId));
 }
 
 }  // namespace webrtc

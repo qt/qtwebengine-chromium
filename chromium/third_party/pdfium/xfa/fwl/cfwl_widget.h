@@ -12,6 +12,7 @@
 #include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
+#include "xfa/fde/cfde_textout.h"
 #include "xfa/fwl/cfwl_event.h"
 #include "xfa/fwl/cfwl_themepart.h"
 #include "xfa/fwl/cfwl_widgetmgr.h"
@@ -64,14 +65,14 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
   virtual void Update() = 0;
   virtual FWL_WidgetHit HitTest(const CFX_PointF& point);
   virtual void DrawWidget(CXFA_Graphics* pGraphics,
-                          const CFX_Matrix* pMatrix) = 0;
+                          const CFX_Matrix& matrix) = 0;
   virtual void SetThemeProvider(IFWL_ThemeProvider* pThemeProvider);
 
   // IFWL_WidgetDelegate.
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnProcessEvent(CFWL_Event* pEvent) override;
   void OnDrawWidget(CXFA_Graphics* pGraphics,
-                    const CFX_Matrix* pMatrix) override;
+                    const CFX_Matrix& matrix) override;
 
   void InflateWidgetRect(CFX_RectF& rect);
   void SetWidgetRect(const CFX_RectF& rect);
@@ -132,8 +133,8 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
                          bool bMultiLine);
   void CalcTextRect(const CFX_WideString& wsText,
                     IFWL_ThemeProvider* pTheme,
-                    uint32_t dwTTOStyles,
-                    int32_t iTTOAlign,
+                    const FDE_TextStyle& dwTTOStyles,
+                    FDE_TextAlignment iTTOAlign,
                     CFX_RectF& rect);
   void SetGrab(bool bSet);
   void GetPopupPos(float fMinHeight,
@@ -146,7 +147,7 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
   void DrawBorder(CXFA_Graphics* pGraphics,
                   CFWL_Part iPartBorder,
                   IFWL_ThemeProvider* pTheme,
-                  const CFX_Matrix* pMatrix);
+                  const CFX_Matrix& pMatrix);
 
   CFX_UnownedPtr<const CFWL_App> const m_pOwnerApp;
   CFX_UnownedPtr<CFWL_WidgetMgr> const m_pWidgetMgr;

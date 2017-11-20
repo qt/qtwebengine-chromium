@@ -134,7 +134,7 @@ void Append8BitBytes(const CFX_ByteString& content,
                      CBC_QRCoderBitVector* bits,
                      CFX_ByteString encoding,
                      int32_t& e) {
-  for (int32_t i = 0; i < content.GetLength(); i++)
+  for (FX_STRSIZE i = 0; i < content.GetLength(); i++)
     bits->AppendBits(content[i], 8);
 }
 
@@ -425,22 +425,24 @@ void MergeString(std::vector<ModeStringPair>* result,
 
 void SplitString(const CFX_ByteString& content,
                  std::vector<ModeStringPair>* result) {
-  int32_t index = 0;
-  while (index < content.GetLength() &&
-         ((content[index] >= 0xA1 && content[index] <= 0xAA) ||
-          (content[index] >= 0xB0 && content[index] <= 0xFA))) {
+  FX_STRSIZE index = 0;
+  while (index < content.GetLength()) {
+    uint8_t c = static_cast<uint8_t>(content[index]);
+    if (!((c >= 0xA1 && c <= 0xAA) || (c >= 0xB0 && c <= 0xFA)))
+      break;
     index += 2;
   }
   if (index)
-    result->push_back({CBC_QRCoderMode::sGBK, content.Mid(0, index)});
+    result->push_back({CBC_QRCoderMode::sGBK, content.Left(index)});
   if (index >= content.GetLength())
     return;
 
-  int32_t flag = index;
+  FX_STRSIZE flag = index;
   while (GetAlphaNumericCode(content[index]) == -1 &&
-         index < content.GetLength() &&
-         !((content[index] >= 0xA1 && content[index] <= 0xAA) ||
-           (content[index] >= 0xB0 && content[index] <= 0xFA))) {
+         index < content.GetLength()) {
+    uint8_t c = static_cast<uint8_t>(content[index]);
+    if (((c >= 0xA1 && c <= 0xAA) || (c >= 0xB0 && c <= 0xFA)))
+      break;
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
     bool high = !!IsDBCSLeadByte(content[index]);
 #else
@@ -479,7 +481,7 @@ void SplitString(const CFX_ByteString& content,
   }
   flag = index;
   if (index < content.GetLength())
-    SplitString(content.Mid(index, content.GetLength() - index), result);
+    SplitString(content.Right(content.GetLength() - index), result);
 }
 
 CBC_QRCoderMode* ChooseMode(const CFX_ByteString& content,
@@ -489,7 +491,7 @@ CBC_QRCoderMode* ChooseMode(const CFX_ByteString& content,
 
   bool hasNumeric = false;
   bool hasAlphaNumeric = false;
-  for (int32_t i = 0; i < content.GetLength(); i++) {
+  for (FX_STRSIZE i = 0; i < content.GetLength(); i++) {
     if (isdigit(content[i])) {
       hasNumeric = true;
     } else if (GetAlphaNumericCode(content[i]) != -1) {

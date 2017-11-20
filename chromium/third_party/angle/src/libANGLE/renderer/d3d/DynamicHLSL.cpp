@@ -294,8 +294,13 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(
     declarationStream << "struct PS_OUTPUT\n"
                          "{\n";
 
+    size_t numOutputs = outputLayout.size();
+
     // Workaround for HLSL 3.x: We can't do a depth/stencil only render, the runtime will complain.
-    size_t numOutputs = outputLayout.empty() ? 1u : outputLayout.size();
+    if (numOutputs == 0 && (shaderModel == 3 || !mRenderer->getShaderModelSuffix().empty()))
+    {
+        numOutputs = 1u;
+    }
     const PixelShaderOutputVariable defaultOutput(GL_FLOAT_VEC4, "dummy", "float4(0, 0, 0, 1)", 0);
 
     for (size_t layoutIndex = 0; layoutIndex < numOutputs; ++layoutIndex)
@@ -377,6 +382,18 @@ void DynamicHLSL::generateVaryingLinkHLSL(const VaryingPacking &varyingPacking,
     if (builtins.glPointSize.enabled)
     {
         hlslStream << "    float gl_PointSize : " << builtins.glPointSize.str() << ";\n";
+    }
+
+    if (builtins.glViewIDOVR.enabled)
+    {
+        hlslStream << "    nointerpolation uint gl_ViewID_OVR : " << builtins.glViewIDOVR.str()
+                   << ";\n";
+    }
+
+    if (builtins.glViewportIndex.enabled)
+    {
+        hlslStream << "    nointerpolation uint gl_ViewportIndex : "
+                   << builtins.glViewportIndex.str() << ";\n";
     }
 
     std::string varyingSemantic =
@@ -481,6 +498,11 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Context *context,
     if (vertexBuiltins.glPosition.enabled)
     {
         vertexStream << "    output.gl_Position = gl_Position;\n";
+    }
+
+    if (vertexBuiltins.glViewIDOVR.enabled)
+    {
+        vertexStream << "   output.gl_ViewID_OVR = _ViewID_OVR;\n";
     }
 
     // On D3D9 or D3D11 Feature Level 9, we need to emulate large viewports using dx_ViewAdjust.
@@ -640,6 +662,12 @@ void DynamicHLSL::generateShaderLinkHLSL(const gl::Context *context,
     {
         pixelStream << "PS_OUTPUT main(PS_INPUT input)\n"
                     << "{\n";
+    }
+
+    if (fragmentShader->usesViewID())
+    {
+        ASSERT(pixelBuiltins.glViewIDOVR.enabled);
+        pixelStream << "    _ViewID_OVR = input.gl_ViewID_OVR;\n";
     }
 
     if (pixelBuiltins.glFragCoord.enabled)
@@ -872,7 +900,8 @@ std::string DynamicHLSL::generateComputeShaderLinkHLSL(const gl::Context *contex
 }
 
 std::string DynamicHLSL::generateGeometryShaderPreamble(const VaryingPacking &varyingPacking,
-                                                        const BuiltinVaryingsD3D &builtinsD3D) const
+                                                        const BuiltinVaryingsD3D &builtinsD3D,
+                                                        const bool hasANGLEMultiviewEnabled) const
 {
     ASSERT(mRenderer->getMajorShaderModel() >= 4);
 
@@ -919,6 +948,15 @@ std::string DynamicHLSL::generateGeometryShaderPreamble(const VaryingPacking &va
                    << "#endif  // ANGLE_POINT_SPRITE_SHADER\n"
                    << "}\n";
 
+    if (builtinsD3D[SHADER_GEOMETRY].glViewportIndex.enabled && hasANGLEMultiviewEnabled)
+    {
+        preambleStream << "\n"
+                       << "void selectView(inout GS_OUTPUT output, GS_INPUT input)\n"
+                       << "{\n"
+                       << "    output.gl_ViewportIndex = input.gl_ViewID_OVR;\n"
+                       << "}\n";
+    }
+
     return preambleStream.str();
 }
 
@@ -926,13 +964,15 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(gl::PrimitiveType primitiveT
                                                     const gl::ContextState &data,
                                                     const gl::ProgramState &programData,
                                                     const bool useViewScale,
+                                                    const bool hasANGLEMultiviewEnabled,
+                                                    const bool pointSpriteEmulation,
                                                     const std::string &preambleString) const
 {
     ASSERT(mRenderer->getMajorShaderModel() >= 4);
 
     std::stringstream shaderStream;
 
-    const bool pointSprites   = (primitiveType == PRIMITIVE_POINTS);
+    const bool pointSprites   = (primitiveType == PRIMITIVE_POINTS) && pointSpriteEmulation;
     const bool usesPointCoord = preambleString.find("gl_PointCoord") != std::string::npos;
 
     const char *inputPT  = nullptr;
@@ -944,9 +984,19 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(gl::PrimitiveType primitiveT
     {
         case PRIMITIVE_POINTS:
             inputPT         = "point";
-            outputPT        = "Triangle";
             inputSize       = 1;
-            maxVertexOutput = 4;
+
+            if (pointSprites)
+            {
+                outputPT        = "Triangle";
+                maxVertexOutput = 4;
+            }
+            else
+            {
+                outputPT        = "Point";
+                maxVertexOutput = 1;
+            }
+
             break;
 
         case PRIMITIVE_LINES:
@@ -1034,7 +1084,10 @@ std::string DynamicHLSL::generateGeometryShaderHLSL(gl::PrimitiveType primitiveT
     {
         shaderStream << "    copyVertex(output, input[" << vertexIndex
                      << "], input[lastVertexIndex]);\n";
-
+        if (hasANGLEMultiviewEnabled)
+        {
+            shaderStream << "   selectView(output, input[" << vertexIndex << "]);\n";
+        }
         if (!pointSprites)
         {
             ASSERT(inputSize == maxVertexOutput);
@@ -1251,6 +1304,21 @@ void BuiltinVaryingsD3D::updateBuiltins(ShaderType shaderType,
         {
             builtins->glPointCoord.enable("TEXCOORD", 0);
         }
+    }
+
+    if (shaderType == SHADER_VERTEX && metadata.hasANGLEMultiviewEnabled())
+    {
+        builtins->glViewIDOVR.enable(userSemantic, reservedSemanticIndex++);
+    }
+
+    if (shaderType == SHADER_PIXEL && metadata.hasANGLEMultiviewEnabled())
+    {
+        builtins->glViewIDOVR.enableSystem("SV_ViewportArrayIndex");
+    }
+
+    if (shaderType == SHADER_GEOMETRY && metadata.hasANGLEMultiviewEnabled())
+    {
+        builtins->glViewportIndex.enableSystem("SV_ViewportArrayIndex");
     }
 
     // Special case: do not include PSIZE semantic in HLSL 3 pixel shaders

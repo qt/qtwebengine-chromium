@@ -60,17 +60,14 @@ uint32_t DecodeAllScanlines(std::unique_ptr<CCodec_ScanlineDecoder> pDecoder,
   return pDecoder->GetSrcOffset();
 }
 
-}  // namespace
-
-// Static
-uint32_t CPDF_StreamParser::DecodeInlineStream(const uint8_t* src_buf,
-                                               uint32_t limit,
-                                               int width,
-                                               int height,
-                                               const CFX_ByteString& decoder,
-                                               CPDF_Dictionary* pParam,
-                                               uint8_t** dest_buf,
-                                               uint32_t* dest_size) {
+uint32_t DecodeInlineStream(const uint8_t* src_buf,
+                            uint32_t limit,
+                            int width,
+                            int height,
+                            const CFX_ByteString& decoder,
+                            CPDF_Dictionary* pParam,
+                            uint8_t** dest_buf,
+                            uint32_t* dest_size) {
   if (decoder == "CCITTFaxDecode" || decoder == "CCF") {
     std::unique_ptr<CCodec_ScanlineDecoder> pDecoder =
         FPDFAPI_CreateFaxDecoder(src_buf, limit, width, height, pParam);
@@ -101,6 +98,8 @@ uint32_t CPDF_StreamParser::DecodeInlineStream(const uint8_t* src_buf,
   *dest_buf = 0;
   return 0xFFFFFFFF;
 }
+
+}  // namespace
 
 CPDF_StreamParser::CPDF_StreamParser(const uint8_t* pData, uint32_t dwSize)
     : m_pBuf(pData), m_Size(dwSize), m_Pos(0), m_pPool(nullptr) {}
@@ -479,9 +478,9 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
       case 0:
         if (ch == ')') {
           if (parlevel == 0) {
-            return CFX_ByteString(
-                buf.str().c_str(),
-                std::min(static_cast<int>(buf.tellp()), kMaxStringLength));
+            return CFX_ByteString(buf.str().c_str(),
+                                  std::min(static_cast<FX_STRSIZE>(buf.tellp()),
+                                           kMaxStringLength));
           }
           parlevel--;
           buf << ')';
@@ -558,7 +557,7 @@ CFX_ByteString CPDF_StreamParser::ReadString() {
 
   return CFX_ByteString(
       buf.str().c_str(),
-      std::min(static_cast<int>(buf.tellp()), kMaxStringLength));
+      std::min(static_cast<FX_STRSIZE>(buf.tellp()), kMaxStringLength));
 }
 
 CFX_ByteString CPDF_StreamParser::ReadHexString() {
@@ -591,7 +590,7 @@ CFX_ByteString CPDF_StreamParser::ReadHexString() {
 
   return CFX_ByteString(
       buf.str().c_str(),
-      std::min(static_cast<int>(buf.tellp()), kMaxStringLength));
+      std::min(static_cast<FX_STRSIZE>(buf.tellp()), kMaxStringLength));
 }
 
 bool CPDF_StreamParser::PositionIsInBounds() const {

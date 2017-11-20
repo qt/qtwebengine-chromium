@@ -15,15 +15,16 @@
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 #include "GrColorSpaceXform.h"
-#include "effects/GrProxyMove.h"
 class GrCircleBlurFragmentProcessor : public GrFragmentProcessor {
 public:
     SkRect circleRect() const { return fCircleRect; }
     float textureRadius() const { return fTextureRadius; }
     float solidRadius() const { return fSolidRadius; }
 
-    static sk_sp<GrFragmentProcessor> Make(GrResourceProvider* resourceProvider,
-                                           const SkRect& circle, float sigma);
+    static std::unique_ptr<GrFragmentProcessor> Make(GrResourceProvider* resourceProvider,
+                                                     const SkRect& circle, float sigma);
+    GrCircleBlurFragmentProcessor(const GrCircleBlurFragmentProcessor& src);
+    std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "CircleBlurFragmentProcessor"; }
 
 private:

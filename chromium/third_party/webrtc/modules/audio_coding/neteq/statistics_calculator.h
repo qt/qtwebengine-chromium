@@ -66,6 +66,9 @@ class StatisticsCalculator {
   // Reports that |num_packets| packets were discarded.
   virtual void PacketsDiscarded(size_t num_packets);
 
+  // Reports that |num_packets| packets samples were discarded.
+  virtual void SecondaryPacketsDiscarded(size_t num_samples);
+
   // Reports that |num_samples| were lost.
   void LostSamples(size_t num_samples);
 
@@ -95,6 +98,10 @@ class StatisticsCalculator {
                             const DelayManager& delay_manager,
                             const DecisionLogic& decision_logic,
                             NetEqNetworkStatistics *stats);
+
+  // Returns a copy of this class's lifetime statistics. These statistics are
+  // never reset.
+  NetEqLifetimeStatistics GetLifetimeStatistics() const;
 
  private:
   static const int kMaxReportPeriod = 60;  // Seconds before auto-reset.
@@ -155,6 +162,8 @@ class StatisticsCalculator {
   // Calculates numerator / denominator, and returns the value in Q14.
   static uint16_t CalculateQ14Ratio(size_t numerator, uint32_t denominator);
 
+  // TODO(steveanton): Add unit tests for the lifetime stats.
+  NetEqLifetimeStatistics lifetime_stats_;
   size_t preemptive_samples_;
   size_t accelerate_samples_;
   size_t added_zero_samples_;
@@ -165,6 +174,7 @@ class StatisticsCalculator {
   uint32_t timestamps_since_last_report_;
   std::deque<int> waiting_times_;
   uint32_t secondary_decoded_samples_;
+  size_t discarded_secondary_packets_;
   PeriodicUmaCount delayed_packet_outage_counter_;
   PeriodicUmaAverage excess_buffer_delay_;
 

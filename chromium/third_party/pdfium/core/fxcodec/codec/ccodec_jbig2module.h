@@ -10,12 +10,12 @@
 #include <memory>
 
 #include "core/fxcodec/fx_codec_def.h"
-#include "core/fxcrt/fx_basic.h"
+#include "core/fxcrt/cfx_retain_ptr.h"
 
 class CJBig2_Context;
 class CJBig2_Image;
 class CPDF_StreamAcc;
-class IFX_Pause;
+class IFX_PauseIndicator;
 class JBig2_DocumentContext;
 
 class CCodec_Jbig2Context {
@@ -46,9 +46,9 @@ class CCodec_Jbig2Module {
       const CFX_RetainPtr<CPDF_StreamAcc>& global_stream,
       uint8_t* dest_buf,
       uint32_t dest_pitch,
-      IFX_Pause* pPause);
+      IFX_PauseIndicator* pPause);
   FXCODEC_STATUS ContinueDecode(CCodec_Jbig2Context* pJbig2Context,
-                                IFX_Pause* pPause);
+                                IFX_PauseIndicator* pPause);
 
  private:
   FXCODEC_STATUS Decode(CCodec_Jbig2Context* pJbig2Context, int result);

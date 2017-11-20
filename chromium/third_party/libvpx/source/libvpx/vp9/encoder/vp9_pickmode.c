@@ -193,9 +193,14 @@ static int combined_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
   else
     center_mv = tmp_mv->as_mv;
 
-  vp9_full_pixel_search(
-      cpi, x, bsize, &mvp_full, step_param, cpi->sf.mv.search_method, sadpb,
-      cond_cost_list(cpi, cost_list), &center_mv, &tmp_mv->as_mv, INT_MAX, 0);
+  if (x->sb_use_mv_part) {
+    tmp_mv->as_mv.row = x->sb_mvrow_part >> 3;
+    tmp_mv->as_mv.col = x->sb_mvcol_part >> 3;
+  } else {
+    vp9_full_pixel_search(
+        cpi, x, bsize, &mvp_full, step_param, cpi->sf.mv.search_method, sadpb,
+        cond_cost_list(cpi, cost_list), &center_mv, &tmp_mv->as_mv, INT_MAX, 0);
+  }
 
   x->mv_limits = tmp_mv_limits;
 
@@ -1628,6 +1633,9 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
     }
   }
 
+  if (cpi->use_svc || cpi->oxcf.speed <= 7 || bsize < BLOCK_32X32)
+    x->sb_use_mv_part = 0;
+
   for (idx = 0; idx < RT_INTER_MODES; ++idx) {
     int rate_mv = 0;
     int mode_rd_thresh;
@@ -1797,6 +1805,14 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
               (frame_mv[NEWMV][ref_frame].as_mv.col >> 3);
           cpi->fn_ptr[bsize].vf(x->plane[0].src.buf, x->plane[0].src.stride,
                                 pre_buf, pre_stride, &base_mv_sse);
+
+          // Exit NEWMV search if base_mv is (0,0) && bsize < BLOCK_16x16,
+          // for SVC encoding.
+          if (cpi->use_svc && cpi->svc.use_base_mv && bsize < BLOCK_16X16 &&
+              frame_mv[NEWMV][ref_frame].as_mv.row == 0 &&
+              frame_mv[NEWMV][ref_frame].as_mv.col == 0)
+            continue;
+
           // Exit NEWMV search if base_mv_sse is large.
           if (sf->base_mv_aggressive && base_mv_sse > (best_sse_sofar << scale))
             continue;
@@ -2242,6 +2258,11 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
       denoise_svc_pickmode && cpi->denoiser.denoising_level > kDenLowLow &&
       cpi->denoiser.reset == 0) {
     VP9_DENOISER_DECISION decision = COPY_BLOCK;
+    ctx->sb_skip_denoising = 0;
+    // TODO(marpan): There is an issue with denoising when the
+    // superblock partitioning scheme is based on the pickmode.
+    // Remove this condition when the issue is resolved.
+    if (x->sb_pickmode_part) ctx->sb_skip_denoising = 1;
     vp9_pickmode_ctx_den_update(&ctx_den, zero_last_cost_orig, ref_frame_cost,
                                 frame_mv, reuse_inter_pred, best_tx_size,
                                 best_mode, best_ref_frame, best_pred_filter,

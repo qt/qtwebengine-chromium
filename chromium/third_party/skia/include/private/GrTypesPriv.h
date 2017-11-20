@@ -23,6 +23,23 @@ using GrStdSteadyClock = std::chrono::monotonic_clock;
 using GrStdSteadyClock = std::chrono::steady_clock;
 #endif
 
+/** This enum is used to specify the load operation to be used when an
+ *  opList/GrGpuCommandBuffer begins execution.
+ */
+enum class GrLoadOp {
+    kLoad,
+    kClear,
+    kDiscard,
+};
+
+/** This enum is used to specify the store operation to be used when an
+ *  opList/GrGpuCommandBuffer ends execution.
+ */
+enum class GrStoreOp {
+    kStore,
+    kDiscard,
+};
+
 /** This enum indicates the type of antialiasing to be performed. */
 enum class GrAAType : unsigned {
     /** No antialiasing */
@@ -49,7 +66,7 @@ static inline bool GrAATypeIsHW(GrAAType type) {
         case GrAAType::kMixedSamples:
             return true;
     }
-    SkFAIL("Unknown AA Type");
+    SK_ABORT("Unknown AA Type");
     return false;
 }
 
@@ -84,6 +101,7 @@ enum GrSLType {
     kVec2f_GrSLType,
     kVec3f_GrSLType,
     kVec4f_GrSLType,
+    kVec2us_GrSLType,
     kVec2i_GrSLType,
     kVec3i_GrSLType,
     kVec4i_GrSLType,
@@ -161,6 +179,7 @@ static inline bool GrSLTypeIsFloatType(GrSLType type) {
         case kBool_GrSLType:
         case kInt_GrSLType:
         case kUint_GrSLType:
+        case kVec2us_GrSLType:
         case kVec2i_GrSLType:
         case kVec3i_GrSLType:
         case kVec4i_GrSLType:
@@ -170,7 +189,7 @@ static inline bool GrSLTypeIsFloatType(GrSLType type) {
         case kIImageStorage2D_GrSLType:
             return false;
     }
-    SkFAIL("Unexpected type");
+    SK_ABORT("Unexpected type");
     return false;
 }
 
@@ -187,6 +206,7 @@ static inline bool GrSLTypeIs2DCombinedSamplerType(GrSLType type) {
         case kVec2f_GrSLType:
         case kVec3f_GrSLType:
         case kVec4f_GrSLType:
+        case kVec2us_GrSLType:
         case kVec2i_GrSLType:
         case kVec3i_GrSLType:
         case kVec4i_GrSLType:
@@ -203,7 +223,7 @@ static inline bool GrSLTypeIs2DCombinedSamplerType(GrSLType type) {
         case kIImageStorage2D_GrSLType:
             return false;
     }
-    SkFAIL("Unexpected type");
+    SK_ABORT("Unexpected type");
     return false;
 }
 
@@ -221,6 +241,7 @@ static inline bool GrSLTypeIsCombinedSamplerType(GrSLType type) {
         case kVec2f_GrSLType:
         case kVec3f_GrSLType:
         case kVec4f_GrSLType:
+        case kVec2us_GrSLType:
         case kVec2i_GrSLType:
         case kVec3i_GrSLType:
         case kVec4i_GrSLType:
@@ -236,7 +257,7 @@ static inline bool GrSLTypeIsCombinedSamplerType(GrSLType type) {
         case kIImageStorage2D_GrSLType:
             return false;
     }
-    SkFAIL("Unexpected type");
+    SK_ABORT("Unexpected type");
     return false;
 }
 
@@ -251,6 +272,7 @@ static inline bool GrSLTypeIsImageStorage(GrSLType type) {
         case kVec2f_GrSLType:
         case kVec3f_GrSLType:
         case kVec4f_GrSLType:
+        case kVec2us_GrSLType:
         case kVec2i_GrSLType:
         case kVec3i_GrSLType:
         case kVec4i_GrSLType:
@@ -269,7 +291,7 @@ static inline bool GrSLTypeIsImageStorage(GrSLType type) {
         case kBufferSampler_GrSLType:
             return false;
     }
-    SkFAIL("Unexpected type");
+    SK_ABORT("Unexpected type");
     return false;
 }
 
@@ -281,6 +303,7 @@ static inline bool GrSLTypeAcceptsPrecision(GrSLType type) {
         case kVec2f_GrSLType:
         case kVec3f_GrSLType:
         case kVec4f_GrSLType:
+        case kVec2us_GrSLType:
         case kVec2i_GrSLType:
         case kVec3i_GrSLType:
         case kVec4i_GrSLType:
@@ -302,7 +325,7 @@ static inline bool GrSLTypeAcceptsPrecision(GrSLType type) {
         case kBool_GrSLType:
             return false;
     }
-    SkFAIL("Unexpected type");
+    SK_ABORT("Unexpected type");
     return false;
 }
 
@@ -324,7 +347,8 @@ enum GrVertexAttribType {
     kUByte_GrVertexAttribType,   // unsigned byte, e.g. coverage
     kVec4ub_GrVertexAttribType,  // vector of 4 unsigned bytes, e.g. colors
 
-    kVec2us_GrVertexAttribType,  // vector of 2 shorts, e.g. texture coordinates
+    kVec2us_norm_GrVertexAttribType, // vector of 2 shorts. 0 -> 0.0f, 65535 -> 1.0f.
+    kVec2us_uint_GrVertexAttribType, // vector of 2 shorts. 0 -> 0, 65535 -> 65535.
 
     kInt_GrVertexAttribType,
     kUint_GrVertexAttribType,
@@ -356,49 +380,16 @@ static inline size_t GrVertexAttribTypeSize(GrVertexAttribType type) {
             return 1 * sizeof(char);
         case kVec4ub_GrVertexAttribType:
             return 4 * sizeof(char);
-        case kVec2us_GrVertexAttribType:
+        case kVec2us_norm_GrVertexAttribType: // fall through
+        case kVec2us_uint_GrVertexAttribType:
             return 2 * sizeof(int16_t);
         case kInt_GrVertexAttribType:
             return sizeof(int32_t);
         case kUint_GrVertexAttribType:
             return sizeof(uint32_t);
     }
-    SkFAIL("Unexpected attribute type");
+    SK_ABORT("Unexpected attribute type");
     return 0;
-}
-
-/**
- * Is the attrib type integral?
- */
-static inline bool GrVertexAttribTypeIsIntType(GrVertexAttribType type) {
-    switch (type) {
-        case kFloat_GrVertexAttribType:
-            return false;
-        case kVec2f_GrVertexAttribType:
-            return false;
-        case kVec3f_GrVertexAttribType:
-            return false;
-        case kVec4f_GrVertexAttribType:
-            return false;
-        case kVec2i_GrVertexAttribType:
-            return true;
-        case kVec3i_GrVertexAttribType:
-            return true;
-        case kVec4i_GrVertexAttribType:
-            return true;
-        case kUByte_GrVertexAttribType:
-            return false;
-        case kVec4ub_GrVertexAttribType:
-            return false;
-        case kVec2us_GrVertexAttribType:
-            return false;
-        case kInt_GrVertexAttribType:
-            return true;
-        case kUint_GrVertexAttribType:
-            return true;
-    }
-    SkFAIL("Unexpected attribute type");
-    return false;
 }
 
 /**
@@ -406,10 +397,13 @@ static inline bool GrVertexAttribTypeIsIntType(GrVertexAttribType type) {
  */
 static inline GrSLType GrVertexAttribTypeToSLType(GrVertexAttribType type) {
     switch (type) {
-        case kUByte_GrVertexAttribType:
+        case kVec2us_norm_GrVertexAttribType: // fall through
+            return kVec2f_GrSLType;
+        case kVec2us_uint_GrVertexAttribType:
+            return kVec2us_GrSLType;
+        case kUByte_GrVertexAttribType:       // fall through
         case kFloat_GrVertexAttribType:
             return kFloat_GrSLType;
-        case kVec2us_GrVertexAttribType:
         case kVec2f_GrVertexAttribType:
             return kVec2f_GrSLType;
         case kVec3f_GrVertexAttribType:
@@ -428,7 +422,7 @@ static inline GrSLType GrVertexAttribTypeToSLType(GrVertexAttribType type) {
         case kUint_GrVertexAttribType:
             return kUint_GrSLType;
     }
-    SkFAIL("Unsupported type conversion");
+    SK_ABORT("Unsupported type conversion");
     return kVoid_GrSLType;
 }
 
@@ -511,7 +505,7 @@ static inline GrPrimitiveEdgeType GrInvertProcessorEdgeType(const GrPrimitiveEdg
         case kInverseFillAA_GrProcessorEdgeType:
             return kFillAA_GrProcessorEdgeType;
         case kHairlineAA_GrProcessorEdgeType:
-            SkFAIL("Hairline fill isn't invertible.");
+            SK_ABORT("Hairline fill isn't invertible.");
     }
     return kFillAA_GrProcessorEdgeType;  // suppress warning.
 }
@@ -603,14 +597,37 @@ enum class GrBackendObjectOwnership : bool {
     kOwned = true
 };
 
-template <typename T> T * const * sk_sp_address_as_pointer_address(sk_sp<T> const * sp) {
-    static_assert(sizeof(T*) == sizeof(sk_sp<T>), "sk_sp not expected size.");
-    return reinterpret_cast<T * const *>(sp);
+template <typename T>
+T* const* unique_ptr_address_as_pointer_address(std::unique_ptr<T> const* up) {
+    static_assert(sizeof(T*) == sizeof(std::unique_ptr<T>), "unique_ptr not expected size.");
+    return reinterpret_cast<T* const*>(up);
 }
 
 /*
  * Object for CPU-GPU synchronization
  */
 typedef uint64_t GrFence;
+
+/**
+ * Used to include or exclude specific GPU path renderers for testing purposes.
+ */
+enum class GpuPathRenderers {
+    kNone              = 0, // Always use sofware masks and/or GrDefaultPathRenderer.
+    kDashLine          = 1 << 0,
+    kStencilAndCover   = 1 << 1,
+    kMSAA              = 1 << 2,
+    kAAConvex          = 1 << 3,
+    kAALinearizing     = 1 << 4,
+    kSmall             = 1 << 5,
+    kCoverageCounting  = 1 << 6,
+    kTessellating      = 1 << 7,
+
+    kAll               = (kTessellating | (kTessellating - 1)),
+
+    // Temporarily disabling CCPR by default until it has had a time to soak.
+    kDefault           = kAll & ~kCoverageCounting,
+};
+
+GR_MAKE_BITFIELD_CLASS_OPS(GpuPathRenderers)
 
 #endif

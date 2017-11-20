@@ -122,6 +122,8 @@ class ProgramD3DMetadata final : angle::NonCopyable
     bool usesPointSize() const;
     bool usesInsertedPointCoordValue() const;
     bool usesViewScale() const;
+    bool hasANGLEMultiviewEnabled() const;
+    bool usesViewID() const;
     bool addsPointCoordToVertexShader() const;
     bool usesTransformFeedbackGLPosition() const;
     bool usesSystemValuePointSize() const;
@@ -134,6 +136,8 @@ class ProgramD3DMetadata final : angle::NonCopyable
     const std::string mShaderModelSuffix;
     const bool mUsesInstancedPointSpriteEmulation;
     const bool mUsesViewScale;
+    const bool mHasANGLEMultiviewEnabled;
+    const bool mUsesViewID;
     const ShaderD3D *mVertexShader;
     const ShaderD3D *mFragmentShader;
 };
@@ -156,6 +160,7 @@ class ProgramD3D : public ProgramImpl
     bool usesPointSize() const { return mUsesPointSize; }
     bool usesPointSpriteEmulation() const;
     bool usesGeometryShader(GLenum drawMode) const;
+    bool usesGeometryShaderForPointSpriteEmulation() const;
     bool usesInstancedPointSpriteEmulation() const;
 
     gl::LinkResult load(const gl::Context *context,
@@ -165,19 +170,14 @@ class ProgramD3D : public ProgramImpl
     void setBinaryRetrievableHint(bool retrievable) override;
     void setSeparable(bool separable) override;
 
-    gl::Error getPixelExecutableForFramebuffer(const gl::Context *context,
-                                               const gl::Framebuffer *fbo,
-                                               ShaderExecutableD3D **outExectuable);
-    gl::Error getPixelExecutableForOutputLayout(const std::vector<GLenum> &outputLayout,
-                                                ShaderExecutableD3D **outExectuable,
-                                                gl::InfoLog *infoLog);
-    gl::Error getVertexExecutableForInputLayout(const gl::InputLayout &inputLayout,
-                                                ShaderExecutableD3D **outExectuable,
-                                                gl::InfoLog *infoLog);
+    gl::Error getVertexExecutableForCachedInputLayout(ShaderExecutableD3D **outExectuable,
+                                                      gl::InfoLog *infoLog);
     gl::Error getGeometryExecutableForPrimitiveType(const gl::ContextState &data,
                                                     GLenum drawMode,
                                                     ShaderExecutableD3D **outExecutable,
                                                     gl::InfoLog *infoLog);
+    gl::Error getPixelExecutableForCachedOutputLayout(ShaderExecutableD3D **outExectuable,
+                                                      gl::InfoLog *infoLog);
     gl::Error getComputeExecutable(ShaderExecutableD3D **outExecutable);
     gl::LinkResult link(const gl::Context *context,
                         const gl::VaryingPacking &packing,
@@ -247,6 +247,10 @@ class ProgramD3D : public ProgramImpl
                                GLboolean transpose,
                                const GLfloat *value);
 
+    void getUniformfv(const gl::Context *context, GLint location, GLfloat *params) const override;
+    void getUniformiv(const gl::Context *context, GLint location, GLint *params) const override;
+    void getUniformuiv(const gl::Context *context, GLint location, GLuint *params) const override;
+
     void setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding) override;
 
     UniformStorageD3D &getVertexUniformStorage() const { return *mVertexUniformStorage.get(); }
@@ -260,10 +264,15 @@ class ProgramD3D : public ProgramImpl
         return mAttribLocationToD3DSemantic;
     }
 
-    void updateCachedInputLayout(const gl::State &state);
-    const gl::InputLayout &getCachedInputLayout() const { return mCachedInputLayout; }
+    void updateCachedInputLayout(Serial associatedSerial, const gl::State &state);
+    void updateCachedOutputLayout(const gl::Context *context, const gl::Framebuffer *framebuffer);
 
     bool isSamplerMappingDirty() { return mDirtySamplerMapping; }
+
+    // Checks if we need to recompile certain shaders.
+    bool hasVertexExecutableForCachedInputLayout();
+    bool hasGeometryExecutableForPrimitiveType(GLenum drawMode);
+    bool hasPixelExecutableForCachedOutputLayout();
 
   private:
     // These forward-declared tasks are used for multi-thread shader compiles.
@@ -355,6 +364,9 @@ class ProgramD3D : public ProgramImpl
                                std::vector<Sampler> &outSamplers,
                                GLuint *outUsedRange);
 
+    template <typename DestT>
+    void getUniformInternal(GLint location, DestT *dataOut) const;
+
     template <typename T>
     void setUniform(GLint location, GLsizei count, const T *v, GLenum targetUniformType);
 
@@ -381,6 +393,9 @@ class ProgramD3D : public ProgramImpl
     void initUniformBlockInfo(const gl::Context *context, gl::Shader *shader);
     size_t getUniformBlockInfo(const sh::InterfaceBlock &interfaceBlock);
 
+    void updateCachedInputLayoutFromShader(const gl::Context *context);
+    void updateCachedOutputLayoutFromShader();
+
     RendererD3D *mRenderer;
     DynamicHLSL *mDynamicHLSL;
 
@@ -395,6 +410,8 @@ class ProgramD3D : public ProgramImpl
     std::string mPixelHLSL;
     angle::CompilerWorkaroundsD3D mPixelWorkarounds;
     bool mUsesFragDepth;
+    bool mHasANGLEMultiviewEnabled;
+    bool mUsesViewID;
     std::vector<PixelShaderOutputVariable> mPixelShaderKey;
 
     // Common code for all dynamic geometry shaders. Consists mainly of the GS input and output
@@ -417,8 +434,8 @@ class ProgramD3D : public ProgramImpl
     GLuint mUsedComputeSamplerRange;
     bool mDirtySamplerMapping;
 
-    // Cache for getPixelExecutableForFramebuffer
-    std::vector<GLenum> mPixelShaderOutputFormatCache;
+    // Cache for pixel shader output layout to save reallocations.
+    std::vector<GLenum> mPixelShaderOutputLayoutCache;
 
     AttribIndexArray mAttribLocationToD3DSemantic;
 
@@ -438,7 +455,9 @@ class ProgramD3D : public ProgramImpl
 
     static unsigned int issueSerial();
     static unsigned int mCurrentSerial;
+
+    Serial mCurrentVertexArrayStateSerial;
 };
-}
+}  // namespace rx
 
 #endif  // LIBANGLE_RENDERER_D3D_PROGRAMD3D_H_

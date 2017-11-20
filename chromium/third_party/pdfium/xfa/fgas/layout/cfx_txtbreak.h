@@ -14,9 +14,9 @@
 #include "core/fxcrt/cfx_char.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "third_party/base/stl_util.h"
-#include "xfa/fde/cfde_txtedtpage.h"
 #include "xfa/fgas/layout/cfx_break.h"
 
+class CFDE_TextEditEngine;
 class CFGAS_GEFont;
 struct FDE_TEXTEDITPIECE;
 
@@ -39,7 +39,7 @@ struct FX_TXTRUN {
   FX_TXTRUN(const FX_TXTRUN& other);
   ~FX_TXTRUN();
 
-  CFDE_TxtEdtPage* pAccess;
+  CFDE_TextEditEngine* pEdtEngine;
   const FDE_TEXTEDITPIECE* pIdentity;
   CFX_WideString wsStr;
   int32_t* pWidths;
@@ -51,7 +51,6 @@ struct FX_TXTRUN {
   int32_t iVerticalScale;
   uint32_t dwCharStyles;
   const CFX_RectF* pRect;
-  wchar_t wLineBreakChar;
   bool bSkipSpace;
 };
 
@@ -66,9 +65,7 @@ class CFX_TxtBreak : public CFX_Break {
   CFX_BreakType EndBreak(CFX_BreakType dwStatus);
 
   int32_t GetDisplayPos(const FX_TXTRUN* pTxtRun,
-                        FXTEXT_CHARPOS* pCharPos,
-                        bool bCharCode = false,
-                        CFX_WideString* pWSForms = nullptr) const;
+                        FXTEXT_CHARPOS* pCharPos) const;
   std::vector<CFX_RectF> GetCharRects(const FX_TXTRUN* pTxtRun,
                                       bool bCharBBox = false) const;
   CFX_BreakType AppendChar(wchar_t wch);
@@ -76,7 +73,6 @@ class CFX_TxtBreak : public CFX_Break {
  private:
   void AppendChar_Combination(CFX_Char* pCurChar);
   void AppendChar_Tab(CFX_Char* pCurChar);
-  void AppendChar_PageLoad(CFX_Char* pCurChar, uint32_t dwProps);
   CFX_BreakType AppendChar_Control(CFX_Char* pCurChar);
   CFX_BreakType AppendChar_Arabic(CFX_Char* pCurChar);
   CFX_BreakType AppendChar_Others(CFX_Char* pCurChar);

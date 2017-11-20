@@ -5,14 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include <functional>
 #include "GrGLTestInterface.h"
 
 namespace {
-template<typename R, typename... A>
-std::function<R(A...)> bind_to_member(GrGLTestInterface* interface, R (GrGLTestInterface::*member)(A...)) {
-    return [interface, member] (A... a) -> R { return (interface->*member)(a...); };
-}
+    template<typename R, typename... A>
+    GrGLFunction<R(*)(A...)> bind_to_member(GrGLTestInterface* interface,
+                                            R (GrGLTestInterface::*member)(A...)) {
+        return [interface, member] (A... a) -> R { return (interface->*member)(a...); };
+    }
 }  // anonymous namespace
 
 GrGLTestInterface::GrGLTestInterface() {
@@ -314,6 +314,7 @@ GrGLTestInterface::GrGLTestInterface() {
     fFunctions.fFlushMappedNamedBufferRange = bind_to_member(this, &GrGLTestInterface::flushMappedNamedBufferRange);
     fFunctions.fTextureBuffer = bind_to_member(this, &GrGLTestInterface::textureBuffer);
     fFunctions.fFenceSync = bind_to_member(this, &GrGLTestInterface::fenceSync);
+    fFunctions.fIsSync = bind_to_member(this, &GrGLTestInterface::isSync);
     fFunctions.fClientWaitSync = bind_to_member(this, &GrGLTestInterface::clientWaitSync);
     fFunctions.fWaitSync = bind_to_member(this, &GrGLTestInterface::waitSync);
     fFunctions.fDeleteSync = bind_to_member(this, &GrGLTestInterface::deleteSync);

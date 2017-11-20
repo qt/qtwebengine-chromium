@@ -30,6 +30,12 @@ TEST_F(FPDFViewEmbeddertest, Document) {
   EXPECT_EQ(-1, FPDF_GetSecurityHandlerRevision(document()));
 }
 
+TEST_F(FPDFViewEmbeddertest, LoadNonexistentDocument) {
+  FPDF_DOCUMENT doc = FPDF_LoadDocument("nonexistent_document.pdf", "");
+  ASSERT_FALSE(doc);
+  EXPECT_EQ(static_cast<int>(FPDF_GetLastError()), FPDF_ERR_FILE);
+}
+
 // See bug 465.
 TEST_F(FPDFViewEmbeddertest, EmptyDocument) {
   EXPECT_TRUE(CreateEmptyDocument());
@@ -62,6 +68,13 @@ TEST_F(FPDFViewEmbeddertest, EmptyDocument) {
   EXPECT_EQ(0U, FPDF_VIEWERREF_GetName(document(), "foo", buf, sizeof(buf)));
 
   EXPECT_EQ(0u, FPDF_CountNamedDests(document()));
+}
+
+TEST_F(FPDFViewEmbeddertest, LinearizedDocument) {
+  EXPECT_TRUE(OpenDocument("feature_linearized_loading.pdf", nullptr, true));
+  int version;
+  EXPECT_TRUE(FPDF_GetFileVersion(document(), &version));
+  EXPECT_EQ(16, version);
 }
 
 TEST_F(FPDFViewEmbeddertest, Page) {
@@ -305,6 +318,13 @@ TEST_F(FPDFViewEmbeddertest, Hang_298) {
 // reference loop. Cross references will be rebuilt successfully.
 TEST_F(FPDFViewEmbeddertest, CrossRefV4Loop) {
   EXPECT_TRUE(OpenDocument("bug_xrefv4_loop.pdf"));
+
+  // Make sure calling FPDFAvail_IsDocAvail() on this file does not infinite
+  // loop either. See bug 875.
+  int ret = PDF_DATA_NOTAVAIL;
+  while (ret == PDF_DATA_NOTAVAIL)
+    ret = FPDFAvail_IsDocAvail(avail_, &hints_);
+  EXPECT_EQ(PDF_DATA_AVAIL, ret);
 }
 
 // The test should pass when circular references to ParseIndirectObject will not
@@ -330,19 +350,21 @@ TEST_F(FPDFViewEmbeddertest, Hang_360) {
 }
 
 TEST_F(FPDFViewEmbeddertest, FPDF_RenderPageBitmapWithMatrix) {
-  const char kAllBlackMd5sum[] = "5708fc5c4a8bd0abde99c8e8f0390615";
-  const char kTopLeftQuarterBlackMd5sum[] = "24e4d1ec06fa0258af758cfc8b2ad50a";
+  const char kOriginalMD5[] = "210157942bcce97b057a1107a1fd62f8";
+  const char kTopLeftQuarterMD5[] = "c54d58dda13e3cd04eb63e1d0db0feda";
+  const char kTrimmedMD5[] = "88225d7951a21d0eef191cfed06c36ce";
+  const char kRotatedMD5[] = "7d38bc58aa50ad271bc432e77256d3de";
 
-  EXPECT_TRUE(OpenDocument("black.pdf"));
+  EXPECT_TRUE(OpenDocument("rectangles.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_NE(nullptr, page);
   const int width = static_cast<int>(FPDF_GetPageWidth(page));
   const int height = static_cast<int>(FPDF_GetPageHeight(page));
-  EXPECT_EQ(612, width);
-  EXPECT_EQ(792, height);
+  EXPECT_EQ(200, width);
+  EXPECT_EQ(200, height);
 
   FPDF_BITMAP bitmap = RenderPage(page);
-  CompareBitmap(bitmap, width, height, kAllBlackMd5sum);
+  CompareBitmap(bitmap, width, height, kOriginalMD5);
   FPDFBitmap_Destroy(bitmap);
 
   // Try rendering with an identity matrix. The output should be the same as
@@ -364,17 +386,39 @@ TEST_F(FPDFViewEmbeddertest, FPDF_RenderPageBitmapWithMatrix) {
   bitmap = FPDFBitmap_Create(width, height, 0);
   FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xFFFFFFFF);
   FPDF_RenderPageBitmapWithMatrix(bitmap, page, &matrix, &rect, 0);
-  CompareBitmap(bitmap, width, height, kAllBlackMd5sum);
+  CompareBitmap(bitmap, width, height, kOriginalMD5);
   FPDFBitmap_Destroy(bitmap);
 
-  // Now render again with the image scaled.
+  // Now render again with the image scaled smaller.
   matrix.a = 0.5;
   matrix.d = 0.5;
 
   bitmap = FPDFBitmap_Create(width, height, 0);
   FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xFFFFFFFF);
   FPDF_RenderPageBitmapWithMatrix(bitmap, page, &matrix, &rect, 0);
-  CompareBitmap(bitmap, width, height, kTopLeftQuarterBlackMd5sum);
+  CompareBitmap(bitmap, width, height, kTopLeftQuarterMD5);
+  FPDFBitmap_Destroy(bitmap);
+
+  // Now render again with the image scaled larger horizontally (will be
+  // trimmed).
+  matrix.a = 2;
+  matrix.d = 1;
+  bitmap = FPDFBitmap_Create(width, height, 0);
+  FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xFFFFFFFF);
+  FPDF_RenderPageBitmapWithMatrix(bitmap, page, &matrix, &rect, 0);
+  CompareBitmap(bitmap, width, height, kTrimmedMD5);
+  FPDFBitmap_Destroy(bitmap);
+
+  // Now try a 90 degree rotation
+  matrix.a = 0;
+  matrix.b = 1;
+  matrix.c = -1;
+  matrix.d = 0;
+  matrix.e = width;
+  bitmap = FPDFBitmap_Create(width, height, 0);
+  FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xFFFFFFFF);
+  FPDF_RenderPageBitmapWithMatrix(bitmap, page, &matrix, &rect, 0);
+  CompareBitmap(bitmap, width, height, kRotatedMD5);
   FPDFBitmap_Destroy(bitmap);
 
   UnloadPage(page);

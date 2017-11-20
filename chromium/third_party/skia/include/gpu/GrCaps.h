@@ -16,6 +16,7 @@
 
 struct GrContextOptions;
 class GrRenderTargetProxy;
+class SkJSONWriter;
 
 /**
  * Represents the capabilities of a GrContext.
@@ -24,7 +25,8 @@ class GrCaps : public SkRefCnt {
 public:
     GrCaps(const GrContextOptions&);
 
-    virtual SkString dump() const;
+    void dumpJSON(SkJSONWriter*) const;
+
     const GrShaderCaps* shaderCaps() const { return fShaderCaps.get(); }
 
     bool npotTextureTileSupport() const { return fNPOTTextureTileSupport; }
@@ -42,6 +44,7 @@ public:
      * Is there support for enabling/disabling sRGB writes for sRGB-capable color buffers?
      */
     bool srgbWriteControl() const { return fSRGBWriteControl; }
+    bool srgbDecodeDisableSupport() const { return fSRGBDecodeDisableSupport; }
     bool discardRenderTargetSupport() const { return fDiscardRenderTargetSupport; }
     bool gpuTracingSupport() const { return fGpuTracingSupport; }
     bool oversizedStencilSupport() const { return fOversizedStencilSupport; }
@@ -187,6 +190,7 @@ protected:
     bool fMipMapSupport                              : 1;
     bool fSRGBSupport                                : 1;
     bool fSRGBWriteControl                           : 1;
+    bool fSRGBDecodeDisableSupport                   : 1;
     bool fDiscardRenderTargetSupport                 : 1;
     bool fReuseScratchTextures                       : 1;
     bool fReuseScratchBuffers                        : 1;
@@ -236,6 +240,7 @@ protected:
 
 private:
     virtual void onApplyOptionsOverrides(const GrContextOptions&) {}
+    virtual void onDumpJSON(SkJSONWriter*) const {}
 
     bool fSuppressPrints : 1;
     bool fWireframeMode  : 1;

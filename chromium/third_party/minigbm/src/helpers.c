@@ -147,7 +147,7 @@ int drv_bo_from_format(struct bo *bo, uint32_t stride, uint32_t aligned_height, 
 	 *  - the chroma stride is 16 bytes aligned, i.e., the luma's strides
 	 *    is 32 bytes aligned.
 	 */
-	if (bo->format == DRM_FORMAT_YVU420_ANDROID) {
+	if (format == DRM_FORMAT_YVU420_ANDROID) {
 		assert(aligned_height == bo->height);
 		assert(stride == ALIGN(stride, 32));
 	}
@@ -291,7 +291,7 @@ int drv_prime_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 	return 0;
 }
 
-void *drv_dumb_bo_map(struct bo *bo, struct map_info *data, size_t plane)
+void *drv_dumb_bo_map(struct bo *bo, struct map_info *data, size_t plane, int prot)
 {
 	int ret;
 	size_t i;
@@ -310,8 +310,7 @@ void *drv_dumb_bo_map(struct bo *bo, struct map_info *data, size_t plane)
 		if (bo->handles[i].u32 == bo->handles[plane].u32)
 			data->length += bo->sizes[i];
 
-	return mmap(0, data->length, PROT_READ | PROT_WRITE, MAP_SHARED, bo->drv->fd,
-		    map_dumb.offset);
+	return mmap(0, data->length, prot, MAP_SHARED, bo->drv->fd, map_dumb.offset);
 }
 
 uintptr_t drv_get_reference_count(struct driver *drv, struct bo *bo, size_t plane)

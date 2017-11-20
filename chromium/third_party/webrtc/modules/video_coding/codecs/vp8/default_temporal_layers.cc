@@ -19,6 +19,7 @@
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8_common_types.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/rtc_base/checks.h"
+#include "webrtc/system_wrappers/include/field_trial.h"
 
 #include "vpx/vpx_encoder.h"
 #include "vpx/vp8cx.h"
@@ -49,9 +50,10 @@ TemporalLayers::FrameConfig::FrameConfig(TemporalLayers::BufferFlags last,
       last_buffer_flags(last),
       golden_buffer_flags(golden),
       arf_buffer_flags(arf),
+      encoder_layer_id(0),
+      packetizer_temporal_idx(kNoTemporalIdx),
       layer_sync(false),
-      freeze_entropy(freeze_entropy),
-      pattern_idx(0) {}
+      freeze_entropy(freeze_entropy) {}
 
 namespace {
 
@@ -247,6 +249,16 @@ std::vector<TemporalLayers::FrameConfig> GetTemporalPattern(size_t num_layers) {
       TemporalLayers::kNone, TemporalLayers::kNone, TemporalLayers::kNone)};
 }
 
+// Temporary fix for forced SW fallback.
+// For VP8 SW codec, |TemporalLayers| is created and reported to
+// SimulcastRateAllocator::OnTemporalLayersCreated but not for VP8 HW.
+// Causes an issue when going from forced SW -> HW as |TemporalLayers| is not
+// deregistred when deleted by SW codec (tl factory might not exist, owned by
+// SimulcastRateAllocator).
+bool ExcludeOnTemporalLayersCreated(int num_temporal_layers) {
+  return webrtc::field_trial::IsEnabled("WebRTC-VP8-Forced-Fallback-Encoder") &&
+         num_temporal_layers == 1;
+}
 }  // namespace
 
 DefaultTemporalLayers::DefaultTemporalLayers(int number_of_temporal_layers,
@@ -257,7 +269,6 @@ DefaultTemporalLayers::DefaultTemporalLayers(int number_of_temporal_layers,
       temporal_pattern_(GetTemporalPattern(num_layers_)),
       tl0_pic_idx_(initial_tl0_pic_idx),
       pattern_idx_(255),
-      timestamp_(0),
       last_base_layer_sync_(false) {
   RTC_DCHECK_EQ(temporal_pattern_.size(), temporal_layer_sync_.size());
   RTC_CHECK_GE(kMaxTemporalStreams, number_of_temporal_layers);
@@ -267,12 +278,6 @@ DefaultTemporalLayers::DefaultTemporalLayers(int number_of_temporal_layers,
   // temporal_ids_ are ever longer. If this is no longer correct it needs to
   // wrap at max(temporal_ids_.size(), temporal_pattern_.size()).
   RTC_DCHECK_LE(temporal_ids_.size(), temporal_pattern_.size());
-}
-
-int DefaultTemporalLayers::GetTemporalLayerId(
-    const TemporalLayers::FrameConfig& tl_config) const {
-  RTC_DCHECK(!tl_config.drop_frame);
-  return temporal_ids_[tl_config.pattern_idx % temporal_ids_.size()];
 }
 
 uint8_t DefaultTemporalLayers::Tl0PicIdx() const {
@@ -335,7 +340,10 @@ TemporalLayers::FrameConfig DefaultTemporalLayers::UpdateLayerConfig(
   RTC_DCHECK_LT(0, temporal_pattern_.size());
   pattern_idx_ = (pattern_idx_ + 1) % temporal_pattern_.size();
   TemporalLayers::FrameConfig tl_config = temporal_pattern_[pattern_idx_];
-  tl_config.pattern_idx = pattern_idx_;
+  tl_config.layer_sync =
+      temporal_layer_sync_[pattern_idx_ % temporal_layer_sync_.size()];
+  tl_config.encoder_layer_id = tl_config.packetizer_temporal_idx =
+      temporal_ids_[pattern_idx_ % temporal_ids_.size()];
   return tl_config;
 }
 
@@ -351,24 +359,19 @@ void DefaultTemporalLayers::PopulateCodecSpecific(
     vp8_info->layerSync = false;
     vp8_info->tl0PicIdx = kNoTl0PicIdx;
   } else {
+    vp8_info->temporalIdx = tl_config.packetizer_temporal_idx;
+    vp8_info->layerSync = tl_config.layer_sync;
     if (frame_is_keyframe) {
       vp8_info->temporalIdx = 0;
       vp8_info->layerSync = true;
-    } else {
-      vp8_info->temporalIdx = GetTemporalLayerId(tl_config);
-
-      vp8_info->layerSync = temporal_layer_sync_[tl_config.pattern_idx %
-                                                 temporal_layer_sync_.size()];
     }
     if (last_base_layer_sync_ && vp8_info->temporalIdx != 0) {
       // Regardless of pattern the frame after a base layer sync will always
       // be a layer sync.
       vp8_info->layerSync = true;
     }
-    if (vp8_info->temporalIdx == 0 && timestamp != timestamp_) {
-      timestamp_ = timestamp;
+    if (vp8_info->temporalIdx == 0)
       tl0_pic_idx_++;
-    }
     last_base_layer_sync_ = frame_is_keyframe;
     vp8_info->tl0PicIdx = tl0_pic_idx_;
   }
@@ -380,7 +383,7 @@ TemporalLayers* TemporalLayersFactory::Create(
     uint8_t initial_tl0_pic_idx) const {
   TemporalLayers* tl =
       new DefaultTemporalLayers(temporal_layers, initial_tl0_pic_idx);
-  if (listener_)
+  if (listener_ && !ExcludeOnTemporalLayersCreated(temporal_layers))
     listener_->OnTemporalLayersCreated(simulcast_id, tl);
   return tl;
 }

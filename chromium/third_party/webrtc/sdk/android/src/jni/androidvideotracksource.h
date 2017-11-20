@@ -11,6 +11,8 @@
 #ifndef WEBRTC_API_ANDROID_JNI_ANDROIDVIDEOTRACKSOURCE_H_
 #define WEBRTC_API_ANDROID_JNI_ANDROIDVIDEOTRACKSOURCE_H_
 
+#include <jni.h>
+
 #include "webrtc/common_video/include/i420_buffer_pool.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/media/base/adaptedvideotracksource.h"
@@ -22,6 +24,7 @@
 #include "webrtc/sdk/android/src/jni/surfacetexturehelper_jni.h"
 
 namespace webrtc {
+namespace jni {
 
 class AndroidVideoTrackSource : public rtc::AdaptedVideoTrackSource {
  public:
@@ -57,12 +60,18 @@ class AndroidVideoTrackSource : public rtc::AdaptedVideoTrackSource {
                               int height,
                               VideoRotation rotation,
                               int64_t timestamp_ns,
-                              const webrtc_jni::NativeHandleImpl& handle);
+                              const NativeHandleImpl& handle);
+
+  void OnFrameCaptured(JNIEnv* jni,
+                       int width,
+                       int height,
+                       int64_t timestamp_ns,
+                       VideoRotation rotation,
+                       jobject j_video_frame_buffer);
 
   void OnOutputFormatRequest(int width, int height, int fps);
 
-  rtc::scoped_refptr<webrtc_jni::SurfaceTextureHelper>
-  surface_texture_helper() {
+  rtc::scoped_refptr<SurfaceTextureHelper> surface_texture_helper() {
     return surface_texture_helper_;
   }
 
@@ -71,14 +80,17 @@ class AndroidVideoTrackSource : public rtc::AdaptedVideoTrackSource {
   rtc::AsyncInvoker invoker_;
   rtc::ThreadChecker camera_thread_checker_;
   SourceState state_;
-  rtc::VideoBroadcaster broadcaster_;
   rtc::TimestampAligner timestamp_aligner_;
   NV12ToI420Scaler nv12toi420_scaler_;
   I420BufferPool buffer_pool_;
-  rtc::scoped_refptr<webrtc_jni::SurfaceTextureHelper> surface_texture_helper_;
+  rtc::scoped_refptr<SurfaceTextureHelper> surface_texture_helper_;
+  AndroidVideoBufferFactory video_buffer_factory_;
   const bool is_screencast_;
+
+  jmethodID j_crop_and_scale_id_;
 };
 
+}  // namespace jni
 }  // namespace webrtc
 
 #endif  // WEBRTC_API_ANDROID_JNI_ANDROIDVIDEOTRACKSOURCE_H_

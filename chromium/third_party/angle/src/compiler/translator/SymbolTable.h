@@ -292,8 +292,11 @@ const int COMMON_BUILTINS    = 0;
 const int ESSL1_BUILTINS     = 1;
 const int ESSL3_BUILTINS     = 2;
 const int ESSL3_1_BUILTINS   = 3;
-const int LAST_BUILTIN_LEVEL = ESSL3_1_BUILTINS;
-const int GLOBAL_LEVEL       = 4;
+// GLSL_BUILTINS are desktop GLSL builtins that don't exist in ESSL but are used to implement
+// features in ANGLE's GLSL backend. They're not visible to the parser.
+const int GLSL_BUILTINS      = 4;
+const int LAST_BUILTIN_LEVEL = GLSL_BUILTINS;
+const int GLOBAL_LEVEL       = 5;
 
 class TSymbolTable : angle::NonCopyable
 {
@@ -344,6 +347,9 @@ class TSymbolTable : angle::NonCopyable
                                  const char *name,
                                  const TType &type);
     TVariable *insertStructType(ESymbolLevel level, TStructure *str);
+    TInterfaceBlockName *insertInterfaceBlockNameExt(ESymbolLevel level,
+                                                     const char *ext,
+                                                     const TString *name);
 
     bool insertConstInt(ESymbolLevel level, const char *name, int value, TPrecision precision)
     {
@@ -355,10 +361,14 @@ class TSymbolTable : angle::NonCopyable
         return insert(level, constant);
     }
 
-    bool insertConstIntExt(ESymbolLevel level, const char *ext, const char *name, int value)
+    bool insertConstIntExt(ESymbolLevel level,
+                           const char *ext,
+                           const char *name,
+                           int value,
+                           TPrecision precision)
     {
         TVariable *constant =
-            new TVariable(this, NewPoolTString(name), TType(EbtInt, EbpUndefined, EvqConst, 1));
+            new TVariable(this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 1));
         TConstantUnion *unionArray = new TConstantUnion[1];
         unionArray[0].setIConst(value);
         constant->shareConstPointer(unionArray);
@@ -445,6 +455,12 @@ class TSymbolTable : angle::NonCopyable
                                            const TType *rvalue,
                                            const char *name);
 
+    void insertBuiltInFunctionNoParametersExt(ESymbolLevel level,
+                                              const char *ext,
+                                              TOperator op,
+                                              const TType *rvalue,
+                                              const char *name);
+
     TSymbol *find(const TString &name,
                   int shaderVersion,
                   bool *builtIn   = nullptr,
@@ -453,6 +469,8 @@ class TSymbolTable : angle::NonCopyable
     TSymbol *findGlobal(const TString &name) const;
 
     TSymbol *findBuiltIn(const TString &name, int shaderVersion) const;
+
+    TSymbol *findBuiltIn(const TString &name, int shaderVersion, bool includeGLSLBuiltins) const;
 
     TSymbolTableLevel *getOuterLevel()
     {

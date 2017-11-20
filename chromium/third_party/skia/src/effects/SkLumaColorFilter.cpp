@@ -45,28 +45,31 @@ void SkLumaColorFilter::toString(SkString* str) const {
 #if SK_SUPPORT_GPU
 class LumaColorFilterEffect : public GrFragmentProcessor {
 public:
-    static sk_sp<GrFragmentProcessor> Make() {
-        return sk_sp<GrFragmentProcessor>(new LumaColorFilterEffect);
+    static std::unique_ptr<GrFragmentProcessor> Make() {
+        return std::unique_ptr<GrFragmentProcessor>(new LumaColorFilterEffect);
     }
 
     const char* name() const override { return "Luminance-to-Alpha"; }
 
+    std::unique_ptr<GrFragmentProcessor> clone() const override { return Make(); }
+
+private:
     class GLSLProcessor : public GrGLSLFragmentProcessor {
     public:
         static void GenKey(const GrProcessor&, const GrShaderCaps&, GrProcessorKeyBuilder*) {}
 
         void emitCode(EmitArgs& args) override {
             if (nullptr == args.fInputColor) {
-                args.fInputColor = "vec4(1)";
+                args.fInputColor = "float4(1)";
             }
 
             GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
-            fragBuilder->codeAppendf("\tfloat luma = dot(vec3(%f, %f, %f), %s.rgb);\n",
+            fragBuilder->codeAppendf("\tfloat luma = dot(float3(%f, %f, %f), %s.rgb);\n",
                                      SK_ITU_BT709_LUM_COEFF_R,
                                      SK_ITU_BT709_LUM_COEFF_G,
                                      SK_ITU_BT709_LUM_COEFF_B,
                                      args.fInputColor);
-            fragBuilder->codeAppendf("\t%s = vec4(0, 0, 0, luma);\n",
+            fragBuilder->codeAppendf("\t%s = float4(0, 0, 0, luma);\n",
                                      args.fOutputColor);
 
         }
@@ -75,7 +78,6 @@ public:
         typedef GrGLSLFragmentProcessor INHERITED;
     };
 
-private:
     LumaColorFilterEffect() : INHERITED(kConstantOutputForConstantInput_OptimizationFlag) {
         this->initClassID<LumaColorFilterEffect>();
     }
@@ -101,7 +103,8 @@ private:
     typedef GrFragmentProcessor INHERITED;
 };
 
-sk_sp<GrFragmentProcessor> SkLumaColorFilter::asFragmentProcessor(GrContext*, SkColorSpace*) const {
+std::unique_ptr<GrFragmentProcessor> SkLumaColorFilter::asFragmentProcessor(GrContext*,
+                                                                            SkColorSpace*) const {
     return LumaColorFilterEffect::Make();
 }
 #endif

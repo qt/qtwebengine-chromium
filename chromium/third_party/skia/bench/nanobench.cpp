@@ -30,9 +30,11 @@
 #include "SkCodec.h"
 #include "SkCommonFlags.h"
 #include "SkCommonFlagsConfig.h"
+#include "SkCommonFlagsGpuThreads.h"
 #include "SkCommonFlagsPathRenderer.h"
 #include "SkData.h"
 #include "SkDebugfTracer.h"
+#include "SkEventTracingPriv.h"
 #include "SkGraphics.h"
 #include "SkLeanWindows.h"
 #include "SkOSFile.h"
@@ -95,6 +97,8 @@ static SkString to_string(int n) {
     str.appendS32(n);
     return str;
 }
+
+DECLARE_bool(undefok);
 
 DEFINE_int32(loops, kDefaultLoops, loops_help_txt().c_str());
 
@@ -411,8 +415,10 @@ static void create_config(const SkCommandLineConfig* config, SkTArray<Config>* c
 
 #if SK_SUPPORT_GPU
     if (const auto* gpuConfig = config->asConfigGpu()) {
-        if (!FLAGS_gpu)
+        if (!FLAGS_gpu) {
+            SkDebugf("Skipping config '%s' as requested.\n", config->getTag().c_str());
             return;
+        }
 
         const auto ctxType = gpuConfig->getContextType();
         const auto ctxOverrides = gpuConfig->getContextOverrides();
@@ -425,12 +431,13 @@ static void create_config(const SkCommandLineConfig* config, SkTArray<Config>* c
                                                                   *ctx->caps());
             int supportedSampleCount = ctx->caps()->getSampleCount(sampleCount, grPixConfig);
             if (sampleCount != supportedSampleCount) {
-                SkDebugf("Configuration sample count %d is not a supported sample count.\n",
-                    sampleCount);
+                SkDebugf("Configuration '%s' sample count %d is not a supported sample count.\n",
+                         config->getTag().c_str(), sampleCount);
                 return;
             }
         } else {
-            SkDebugf("No context was available matching config type and options.\n");
+            SkDebugf("No context was available matching config '%s'.\n",
+                     config->getTag().c_str());
             return;
         }
 
@@ -453,6 +460,11 @@ static void create_config(const SkCommandLineConfig* config, SkTArray<Config>* c
 
     #define CPU_CONFIG(name, backend, color, alpha, colorSpace)                \
         if (config->getTag().equals(#name)) {                                  \
+            if (!FLAGS_cpu) {                                                  \
+                SkDebugf("Skipping config '%s' as requested.\n",               \
+                         config->getTag().c_str());                            \
+                return;                                                        \
+            }                                                                  \
             Config config = {                                                  \
                 SkString(#name), Benchmark::backend, color, alpha, colorSpace, \
                 0, kBogusContextType, kBogusContextOverrides, false            \
@@ -461,23 +473,25 @@ static void create_config(const SkCommandLineConfig* config, SkTArray<Config>* c
             return;                                                            \
         }
 
-    if (FLAGS_cpu) {
-        CPU_CONFIG(nonrendering, kNonRendering_Backend,
-                   kUnknown_SkColorType, kUnpremul_SkAlphaType, nullptr)
+    CPU_CONFIG(nonrendering, kNonRendering_Backend,
+               kUnknown_SkColorType, kUnpremul_SkAlphaType, nullptr)
 
-        CPU_CONFIG(8888, kRaster_Backend,
-                   kN32_SkColorType, kPremul_SkAlphaType, nullptr)
-        CPU_CONFIG(565,  kRaster_Backend,
-                   kRGB_565_SkColorType, kOpaque_SkAlphaType, nullptr)
-        auto srgbColorSpace = SkColorSpace::MakeSRGB();
-        CPU_CONFIG(srgb, kRaster_Backend,
-                   kN32_SkColorType,  kPremul_SkAlphaType, srgbColorSpace)
-        auto srgbLinearColorSpace = SkColorSpace::MakeSRGBLinear();
-        CPU_CONFIG(f16,  kRaster_Backend,
-                   kRGBA_F16_SkColorType, kPremul_SkAlphaType, srgbLinearColorSpace)
-    }
+    CPU_CONFIG(a8, kRaster_Backend,
+               kAlpha_8_SkColorType, kPremul_SkAlphaType, nullptr)
+    CPU_CONFIG(8888, kRaster_Backend,
+               kN32_SkColorType, kPremul_SkAlphaType, nullptr)
+    CPU_CONFIG(565,  kRaster_Backend,
+               kRGB_565_SkColorType, kOpaque_SkAlphaType, nullptr)
+    auto srgbColorSpace = SkColorSpace::MakeSRGB();
+    CPU_CONFIG(srgb, kRaster_Backend,
+               kN32_SkColorType,  kPremul_SkAlphaType, srgbColorSpace)
+    auto srgbLinearColorSpace = SkColorSpace::MakeSRGBLinear();
+    CPU_CONFIG(f16,  kRaster_Backend,
+               kRGBA_F16_SkColorType, kPremul_SkAlphaType, srgbLinearColorSpace)
 
     #undef CPU_CONFIG
+
+    SkDebugf("Unknown config '%s'.\n", config->getTag().c_str());
 }
 
 // Append all configs that are enabled and supported.
@@ -487,6 +501,17 @@ void create_configs(SkTArray<Config>* configs) {
     for (int i = 0; i < array.count(); ++i) {
         create_config(array[i].get(), configs);
     }
+
+    // If no just default configs were requested, then we're okay.
+    if (array.count() == 0 || FLAGS_config.count() == 0 ||
+        // If we've been told to ignore undefined flags, we're okay.
+        FLAGS_undefok ||
+        // Otherwise, make sure that all specified configs have been created.
+        array.count() == configs->count()) {
+        return;
+    }
+    SkDebugf("Invalid --config. Use --undefok to bypass this warning.\n");
+    exit(1);
 }
 
 // disable warning : switch statement contains default but no 'case' labels
@@ -814,7 +839,7 @@ public:
                 continue;
             }
             sk_sp<SkData> encoded(SkData::MakeFromFileName(path.c_str()));
-            std::unique_ptr<SkCodec> codec(SkCodec::NewFromData(encoded));
+            std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(encoded));
             if (!codec) {
                 // Nothing to time.
                 SkDebugf("Cannot find codec for %s\n", path.c_str());
@@ -893,7 +918,7 @@ public:
                 continue;
             }
             sk_sp<SkData> encoded(SkData::MakeFromFileName(path.c_str()));
-            std::unique_ptr<SkAndroidCodec> codec(SkAndroidCodec::NewFromData(encoded));
+            std::unique_ptr<SkAndroidCodec> codec(SkAndroidCodec::MakeFromData(encoded));
             if (!codec) {
                 // Nothing to time.
                 SkDebugf("Cannot find codec for %s\n", path.c_str());
@@ -1104,9 +1129,9 @@ static void start_keepalive() {
 
 int main(int argc, char** argv) {
     SkCommandLineFlags::Parse(argc, argv);
-    if (FLAGS_trace) {
-        SkEventTracer::SetInstance(new SkDebugfTracer);
-    }
+
+    initializeEventTracingForTools();
+
 #if defined(SK_BUILD_FOR_IOS)
     cd_Documents();
 #endif
@@ -1117,6 +1142,7 @@ int main(int argc, char** argv) {
 #if SK_SUPPORT_GPU
     GrContextOptions grContextOpts;
     grContextOpts.fGpuPathRenderers = CollectGpuPathRenderersFromFlags();
+    grContextOpts.fExecutor = GpuExecutorForTools();
     gGrFactory.reset(new GrContextFactory(grContextOpts));
 #endif
 
@@ -1198,7 +1224,11 @@ int main(int argc, char** argv) {
     }
 
     gSkUseAnalyticAA = FLAGS_analyticAA;
+    gSkUseDeltaAA = FLAGS_deltaAA;
 
+    if (FLAGS_forceDeltaAA) {
+        gSkForceDeltaAA = true;
+    }
     if (FLAGS_forceAnalyticAA) {
         gSkForceAnalyticAA = true;
     }

@@ -21,6 +21,7 @@ std::unique_ptr<GrDrawOpAtlas> GrDrawOpAtlas::Make(GrContext* ctx, GrPixelConfig
                                                    void* data) {
     GrSurfaceDesc desc;
     desc.fFlags = kNone_GrSurfaceFlags;
+    desc.fOrigin = kTopLeft_GrSurfaceOrigin;
     desc.fWidth = width;
     desc.fHeight = height;
     desc.fConfig = config;
@@ -39,7 +40,8 @@ std::unique_ptr<GrDrawOpAtlas> GrDrawOpAtlas::Make(GrContext* ctx, GrPixelConfig
     // should receive special attention.
     // Note: When switching over to the deferred proxy, use the kExact flag to create
     // the atlas and assert that the width & height are powers of 2.
-    sk_sp<GrTextureProxy> proxy = GrSurfaceProxy::MakeWrapped(std::move(texture));
+    sk_sp<GrTextureProxy> proxy = GrSurfaceProxy::MakeWrapped(std::move(texture),
+                                                              kTopLeft_GrSurfaceOrigin);
     if (!proxy) {
         return nullptr;
     }
@@ -127,15 +129,15 @@ bool GrDrawOpAtlas::Plot::addSubImage(int width, int height, const void* image, 
 }
 
 void GrDrawOpAtlas::Plot::uploadToTexture(GrDrawOp::WritePixelsFn& writePixels,
-                                          GrTexture* texture) {
+                                          GrTextureProxy* proxy) {
     // We should only be issuing uploads if we are in fact dirty
-    SkASSERT(fDirty && fData && texture);
-    TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("skia.gpu"), "GrDrawOpAtlas::Plot::uploadToTexture");
+    SkASSERT(fDirty && fData && proxy && proxy->priv().peekTexture());
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
     size_t rowBytes = fBytesPerPixel * fWidth;
     const unsigned char* dataPtr = fData;
     dataPtr += rowBytes * fDirtyRect.fTop;
     dataPtr += fBytesPerPixel * fDirtyRect.fLeft;
-    writePixels(texture, fOffset.fX + fDirtyRect.fLeft, fOffset.fY + fDirtyRect.fTop,
+    writePixels(proxy, fOffset.fX + fDirtyRect.fLeft, fOffset.fY + fDirtyRect.fTop,
                 fDirtyRect.width(), fDirtyRect.height(), fConfig, dataPtr, rowBytes);
     fDirtyRect.setEmpty();
     SkDEBUGCODE(fDirty = false;)
@@ -211,11 +213,12 @@ inline bool GrDrawOpAtlas::updatePlot(GrDrawOp::Target* target, AtlasID* id, Plo
         if (!fProxy->instantiate(fContext->resourceProvider())) {
             return false;
         }
-        GrTexture* texture = fProxy->priv().peekTexture();
+
+        GrTextureProxy* proxy = fProxy.get();
 
         GrDrawOpUploadToken lastUploadToken = target->addAsapUpload(
-            [plotsp, texture] (GrDrawOp::WritePixelsFn& writePixels) {
-                plotsp->uploadToTexture(writePixels, texture);
+            [plotsp, proxy] (GrDrawOp::WritePixelsFn& writePixels) {
+                plotsp->uploadToTexture(writePixels, proxy);
             }
         );
         plot->setLastUploadToken(lastUploadToken);
@@ -290,11 +293,11 @@ bool GrDrawOpAtlas::addToAtlas(AtlasID* id, GrDrawOp::Target* target, int width,
     if (!fProxy->instantiate(fContext->resourceProvider())) {
         return false;
     }
-    GrTexture* texture = fProxy->priv().peekTexture();
+    GrTextureProxy* proxy = fProxy.get();
 
     GrDrawOpUploadToken lastUploadToken = target->addInlineUpload(
-        [plotsp, texture] (GrDrawOp::WritePixelsFn& writePixels) {
-            plotsp->uploadToTexture(writePixels, texture);
+        [plotsp, proxy] (GrDrawOp::WritePixelsFn& writePixels) {
+            plotsp->uploadToTexture(writePixels, proxy);
         }
     );
     newPlot->setLastUploadToken(lastUploadToken);

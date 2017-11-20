@@ -37,10 +37,10 @@ static void print_shaders_line_by_line(const char** skslStrings, int* lengths,
                                      std::function<void(const char*)> println = [](const char* ln) {
                                          SkDebugf("%s\n", ln);
                                      }) {
-    SkString sksl = GrSKSLPrettyPrint::PrettyPrint(skslStrings, lengths, count, false);
+    SkSL::String sksl = GrSKSLPrettyPrint::PrettyPrint(skslStrings, lengths, count, false);
     println("SKSL:");
     print_source_lines_with_numbers(sksl.c_str(), println);
-    if (!glsl.isEmpty()) {
+    if (0 != glsl.size()) {
         println("GLSL:");
         print_source_lines_with_numbers(glsl.c_str(), println);
     }
@@ -50,7 +50,7 @@ std::unique_ptr<SkSL::Program> translate_to_glsl(const GrGLContext& context, GrG
                                                  const char** skslStrings, int* lengths, int count,
                                                  const SkSL::Program::Settings& settings,
                                                  SkSL::String* glsl) {
-    SkString sksl;
+    SkSL::String sksl;
 #ifdef SK_DEBUG
     sksl = GrSKSLPrettyPrint::PrettyPrint(skslStrings, lengths, count, false);
 #else
@@ -106,14 +106,14 @@ GrGLuint GrGLCompileAndAttachShader(const GrGLContext& glCtx,
 
     // Trace event for shader preceding driver compilation
     bool traceShader;
-    TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("skia.gpu"), &traceShader);
+    TRACE_EVENT_CATEGORY_GROUP_ENABLED("skia.gpu", &traceShader);
     if (traceShader) {
         SkString shaderDebugString;
         print_shaders_line_by_line(skslStrings, lengths, count, glsl, [&](const char* ln) {
             shaderDebugString.append(ln);
             shaderDebugString.append("\n");
         });
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("skia.gpu"), "skia_gpu::GLShader",
+        TRACE_EVENT_INSTANT1("skia.gpu", "skia_gpu::GLShader",
                              TRACE_EVENT_SCOPE_THREAD, "shader",
                              TRACE_STR_COPY(shaderDebugString.c_str()));
     }

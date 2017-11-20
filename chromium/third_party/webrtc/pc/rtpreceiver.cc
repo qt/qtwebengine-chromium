@@ -53,7 +53,8 @@ void AudioRtpReceiver::OnChanged() {
 }
 
 void AudioRtpReceiver::OnSetVolume(double volume) {
-  RTC_DCHECK(volume >= 0 && volume <= 10);
+  RTC_DCHECK_GE(volume, 0);
+  RTC_DCHECK_LE(volume, 10);
   cached_volume_ = volume;
   if (!channel_) {
     LOG(LS_ERROR) << "AudioRtpReceiver::OnSetVolume: No audio channel exists.";
@@ -155,7 +156,8 @@ VideoRtpReceiver::VideoRtpReceiver(const std::string& track_id,
               track_id,
               VideoTrackSourceProxy::Create(rtc::Thread::Current(),
                                             worker_thread,
-                                            source_)))) {
+                                            source_),
+              worker_thread))) {
   source_->SetState(MediaSourceInterface::kLive);
   if (!channel_) {
     LOG(LS_ERROR)

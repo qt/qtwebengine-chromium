@@ -14,6 +14,7 @@
 #include "compiler/translator/Cache.h"
 #include "compiler/translator/CallDAG.h"
 #include "compiler/translator/ClampPointSize.h"
+#include "compiler/translator/CollectVariables.h"
 #include "compiler/translator/DeclareAndInitBuiltinsForInstancedMultiview.h"
 #include "compiler/translator/DeferGlobalInitializers.h"
 #include "compiler/translator/EmulateGLFragColorBroadcast.h"
@@ -146,11 +147,14 @@ int GetMaxUniformVectorsForShaderType(GLenum shaderType, const ShBuiltInResource
             return resources.MaxVertexUniformVectors;
         case GL_FRAGMENT_SHADER:
             return resources.MaxFragmentUniformVectors;
+
+        // TODO (jiawei.shao@intel.com): check if we need finer-grained component counting
         case GL_COMPUTE_SHADER:
-            // TODO (jiawei.shao@intel.com): check if we need finer-grained component counting
             return resources.MaxComputeUniformComponents / 4;
+        case GL_GEOMETRY_SHADER_OES:
+            return resources.MaxGeometryUniformComponents / 4;
         default:
-            UNIMPLEMENTED();
+            UNREACHABLE();
             return -1;
     }
 }
@@ -242,7 +246,11 @@ TCompiler::TCompiler(sh::GLenum type, ShShaderSpec spec, ShShaderOutput output)
       builtInFunctionEmulator(),
       mDiagnostics(infoSink.info),
       mSourcePath(nullptr),
-      mComputeShaderLocalSizeDeclared(false)
+      mComputeShaderLocalSizeDeclared(false),
+      mGeometryShaderMaxVertices(-1),
+      mGeometryShaderInvocations(0),
+      mGeometryShaderInputPrimitiveType(EptUndefined),
+      mGeometryShaderOutputPrimitiveType(EptUndefined)
 {
     mComputeShaderLocalSize.fill(1);
 }
@@ -360,6 +368,15 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             success = false;
         }
 
+        if (success && shaderType == GL_GEOMETRY_SHADER_OES)
+        {
+            mGeometryShaderInputPrimitiveType = parseContext.getGeometryShaderInputPrimitiveType();
+            mGeometryShaderOutputPrimitiveType =
+                parseContext.getGeometryShaderOutputPrimitiveType();
+            mGeometryShaderMaxVertices = parseContext.getGeometryShaderMaxVertices();
+            mGeometryShaderInvocations = parseContext.getGeometryShaderInvocations();
+        }
+
         // Disallow expressions deemed too complex.
         if (success && (compileOptions & SH_LIMIT_EXPRESSION_COMPLEXITY))
             success = limitExpressionComplexity(root);
@@ -457,9 +474,11 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && shouldCollectVariables(compileOptions))
         {
             ASSERT(!variablesCollected);
-            CollectVariables(root, &attributes, &outputVariables, &uniforms, &varyings,
-                             &interfaceBlocks, hashFunction, &symbolTable, shaderVersion,
+            CollectVariables(root, &attributes, &outputVariables, &uniforms, &inputVaryings,
+                             &outputVaryings, &uniformBlocks, &shaderStorageBlocks, &inBlocks,
+                             hashFunction, &symbolTable, shaderVersion, shaderType,
                              extensionBehavior);
+            collectInterfaceBlocks();
             variablesCollected = true;
             if (compileOptions & SH_USE_UNUSED_STANDARD_SHARED_BLOCKS)
             {
@@ -467,13 +486,9 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             }
             if (compileOptions & SH_ENFORCE_PACKING_RESTRICTIONS)
             {
-                std::vector<sh::ShaderVariable> expandedUniforms;
-                sh::ExpandUniforms(uniforms, &expandedUniforms);
-                VariablePacker packer;
                 // Returns true if, after applying the packing rules in the GLSL ES 1.00.17 spec
                 // Appendix A, section 7, the shader does not use too many uniforms.
-                success =
-                    packer.CheckVariablesWithinPackingLimits(maxUniformVectors, expandedUniforms);
+                success = CheckVariablesInPackingLimits(maxUniformVectors, uniforms);
                 if (!success)
                 {
                     mDiagnostics.globalError("too many uniforms");
@@ -614,11 +629,12 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
     compileResources = resources;
     setResourceString();
 
-    assert(symbolTable.isEmpty());
+    ASSERT(symbolTable.isEmpty());
     symbolTable.push();  // COMMON_BUILTINS
     symbolTable.push();  // ESSL1_BUILTINS
     symbolTable.push();  // ESSL3_BUILTINS
     symbolTable.push();  // ESSL3_1_BUILTINS
+    symbolTable.push();  // GLSL_BUILTINS
 
     switch (shaderType)
     {
@@ -626,15 +642,13 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
             symbolTable.setDefaultPrecision(EbtInt, EbpMedium);
             break;
         case GL_VERTEX_SHADER:
-            symbolTable.setDefaultPrecision(EbtInt, EbpHigh);
-            symbolTable.setDefaultPrecision(EbtFloat, EbpHigh);
-            break;
         case GL_COMPUTE_SHADER:
+        case GL_GEOMETRY_SHADER_OES:
             symbolTable.setDefaultPrecision(EbtInt, EbpHigh);
             symbolTable.setDefaultPrecision(EbtFloat, EbpHigh);
             break;
         default:
-            assert(false && "Language not supported");
+            UNREACHABLE();
     }
     // Set defaults for sampler types that have default precision, even those that are
     // only available if an extension exists.
@@ -694,6 +708,7 @@ void TCompiler::setResourceString()
         << ":ARM_shader_framebuffer_fetch:" << compileResources.ARM_shader_framebuffer_fetch
         << ":OVR_multiview:" << compileResources.OVR_multiview
         << ":EXT_YUV_target:" << compileResources.EXT_YUV_target
+        << ":OES_geometry_shader:" << compileResources.OES_geometry_shader
         << ":MaxVertexOutputVectors:" << compileResources.MaxVertexOutputVectors
         << ":MaxFragmentInputVectors:" << compileResources.MaxFragmentInputVectors
         << ":MinProgramTexelOffset:" << compileResources.MinProgramTexelOffset
@@ -725,10 +740,32 @@ void TCompiler::setResourceString()
         << ":MaxVertexAtomicCounterBuffers:" << compileResources.MaxVertexAtomicCounterBuffers
         << ":MaxFragmentAtomicCounterBuffers:" << compileResources.MaxFragmentAtomicCounterBuffers
         << ":MaxCombinedAtomicCounterBuffers:" << compileResources.MaxCombinedAtomicCounterBuffers
-        << ":MaxAtomicCounterBufferSize:" << compileResources.MaxAtomicCounterBufferSize;
+        << ":MaxAtomicCounterBufferSize:" << compileResources.MaxAtomicCounterBufferSize
+        << ":MaxGeometryUniformComponents:" << compileResources.MaxGeometryUniformComponents
+        << ":MaxGeometryUniformBlocks:" << compileResources.MaxGeometryUniformBlocks
+        << ":MaxGeometryInputComponents:" << compileResources.MaxGeometryInputComponents
+        << ":MaxGeometryOutputComponents:" << compileResources.MaxGeometryOutputComponents
+        << ":MaxGeometryOutputVertices:" << compileResources.MaxGeometryOutputVertices
+        << ":MaxGeometryTotalOutputComponents:" << compileResources.MaxGeometryTotalOutputComponents
+        << ":MaxGeometryTextureImageUnits:" << compileResources.MaxGeometryTextureImageUnits
+        << ":MaxGeometryAtomicCounterBuffers:" << compileResources.MaxGeometryAtomicCounterBuffers
+        << ":MaxGeometryAtomicCounters:" << compileResources.MaxGeometryAtomicCounters
+        << ":MaxGeometryShaderStorageBlocks:" << compileResources.MaxGeometryShaderStorageBlocks
+        << ":MaxGeometryShaderInvocations:" << compileResources.MaxGeometryShaderInvocations
+        << ":MaxGeometryImageUniforms:" << compileResources.MaxGeometryImageUniforms;
     // clang-format on
 
     builtInResourcesString = strstream.str();
+}
+
+void TCompiler::collectInterfaceBlocks()
+{
+    ASSERT(interfaceBlocks.empty());
+    interfaceBlocks.reserve(uniformBlocks.size() + shaderStorageBlocks.size() + inBlocks.size());
+    interfaceBlocks.insert(interfaceBlocks.end(), uniformBlocks.begin(), uniformBlocks.end());
+    interfaceBlocks.insert(interfaceBlocks.end(), shaderStorageBlocks.begin(),
+                           shaderStorageBlocks.end());
+    interfaceBlocks.insert(interfaceBlocks.end(), inBlocks.begin(), inBlocks.end());
 }
 
 void TCompiler::clearResults()
@@ -742,12 +779,21 @@ void TCompiler::clearResults()
     attributes.clear();
     outputVariables.clear();
     uniforms.clear();
-    varyings.clear();
+    inputVaryings.clear();
+    outputVaryings.clear();
     interfaceBlocks.clear();
+    uniformBlocks.clear();
+    shaderStorageBlocks.clear();
+    inBlocks.clear();
     variablesCollected = false;
     mGLPositionInitialized = false;
 
     mNumViews = -1;
+
+    mGeometryShaderInputPrimitiveType  = EptUndefined;
+    mGeometryShaderOutputPrimitiveType = EptUndefined;
+    mGeometryShaderInvocations         = 0;
+    mGeometryShaderMaxVertices         = -1;
 
     builtInFunctionEmulator.cleanup();
 
@@ -959,7 +1005,7 @@ void TCompiler::useAllMembersInUnusedStandardAndSharedBlocks(TIntermBlock *root)
 {
     sh::InterfaceBlockList list;
 
-    for (auto block : interfaceBlocks)
+    for (auto block : uniformBlocks)
     {
         if (!block.staticUse &&
             (block.layout == sh::BLOCKLAYOUT_STANDARD || block.layout == sh::BLOCKLAYOUT_SHARED))
@@ -974,9 +1020,9 @@ void TCompiler::useAllMembersInUnusedStandardAndSharedBlocks(TIntermBlock *root)
 void TCompiler::initializeOutputVariables(TIntermBlock *root)
 {
     InitVariableList list;
-    if (shaderType == GL_VERTEX_SHADER)
+    if (shaderType == GL_VERTEX_SHADER || shaderType == GL_GEOMETRY_SHADER_OES)
     {
-        for (auto var : varyings)
+        for (auto var : outputVaryings)
         {
             list.push_back(var);
             if (var.name == "gl_Position")
@@ -1040,9 +1086,16 @@ void TCompiler::writePragma(ShCompileOptions compileOptions)
 bool TCompiler::isVaryingDefined(const char *varyingName)
 {
     ASSERT(variablesCollected);
-    for (size_t ii = 0; ii < varyings.size(); ++ii)
+    for (size_t ii = 0; ii < inputVaryings.size(); ++ii)
     {
-        if (varyings[ii].name == varyingName)
+        if (inputVaryings[ii].name == varyingName)
+        {
+            return true;
+        }
+    }
+    for (size_t ii = 0; ii < outputVaryings.size(); ++ii)
+    {
+        if (outputVaryings[ii].name == varyingName)
         {
             return true;
         }

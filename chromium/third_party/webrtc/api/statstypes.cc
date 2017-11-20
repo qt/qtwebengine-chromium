@@ -371,6 +371,8 @@ const char* StatsReport::Value::display_name() const {
       return "audioInputLevel";
     case kStatsValueNameBytesSent:
       return "bytesSent";
+    case kStatsValueNameConcealedSamples:
+      return "concealedSamples";
     case kStatsValueNamePacketsSent:
       return "packetsSent";
     case kStatsValueNameBytesReceived:
@@ -383,6 +385,8 @@ const char* StatsReport::Value::display_name() const {
       return "packetsLost";
     case kStatsValueNameProtocol:
       return "protocol";
+    case kStatsValueNameTotalSamplesReceived:
+      return "totalSamplesReceived";
     case kStatsValueNameTransportId:
       return "transportId";
     case kStatsValueNameSelectedCandidatePairId:
@@ -456,6 +460,8 @@ const char* StatsReport::Value::display_name() const {
       return "googComponent";
     case kStatsValueNameContentName:
       return "googContentName";
+    case kStatsValueNameContentType:
+      return "googContentType";
     case kStatsValueNameCpuLimitedResolution:
       return "googCpuLimitedResolution";
     case kStatsValueNameDecodingCTSG:
@@ -538,8 +544,8 @@ const char* StatsReport::Value::display_name() const {
       return "googFrameWidthSent";
     case kStatsValueNameInitiator:
       return "googInitiator";
-    case kStatsValueNameInterframeDelaySumMs:
-      return "googInterframeDelaySum";
+    case kStatsValueNameInterframeDelayMaxMs:
+      return "googInterframeDelayMax";
     case kStatsValueNameIssuerId:
       return "googIssuerId";
     case kStatsValueNameJitterReceived:
@@ -586,6 +592,8 @@ const char* StatsReport::Value::display_name() const {
       return "googRtt";
     case kStatsValueNameSecondaryDecodedRate:
       return "googSecondaryDecodedRate";
+    case kStatsValueNameSecondaryDiscardedRate:
+      return "googSecondaryDiscardedRate";
     case kStatsValueNameSendPacketsDiscarded:
       return "packetsDiscardedOnSend";
     case kStatsValueNameSpeechExpandRate:

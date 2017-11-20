@@ -1058,6 +1058,31 @@ size_t GetMaximumStreamOutputSeparateComponents(D3D_FEATURE_LEVEL featureLevel)
     }
 }
 
+size_t GetMaximumRenderToBufferWindowSize(D3D_FEATURE_LEVEL featureLevel)
+{
+    switch (featureLevel)
+    {
+        case D3D_FEATURE_LEVEL_11_1:
+        case D3D_FEATURE_LEVEL_11_0:
+            return D3D11_REQ_RENDER_TO_BUFFER_WINDOW_WIDTH;
+        case D3D_FEATURE_LEVEL_10_1:
+        case D3D_FEATURE_LEVEL_10_0:
+            return D3D10_REQ_RENDER_TO_BUFFER_WINDOW_WIDTH;
+
+        // REQ_RENDER_TO_BUFFER_WINDOW_WIDTH not supported on D3D11 Feature Level 9,
+        // use the maximum texture sizes
+        case D3D_FEATURE_LEVEL_9_3:
+            return D3D_FL9_3_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+        case D3D_FEATURE_LEVEL_9_2:
+        case D3D_FEATURE_LEVEL_9_1:
+            return D3D_FL9_1_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+
+        default:
+            UNREACHABLE();
+            return 0;
+    }
+}
+
 IntelDriverVersion GetIntelDriverVersion(const Optional<LARGE_INTEGER> driverVersion)
 {
     if (!driverVersion.valid())
@@ -1136,10 +1161,41 @@ gl::Version GetMaximumClientVersion(D3D_FEATURE_LEVEL featureLevel)
     }
 }
 
+unsigned int GetMaxViewportAndScissorRectanglesPerPipeline(D3D_FEATURE_LEVEL featureLevel)
+{
+    switch (featureLevel)
+    {
+        case D3D_FEATURE_LEVEL_11_1:
+        case D3D_FEATURE_LEVEL_11_0:
+            return D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+        case D3D_FEATURE_LEVEL_10_1:
+        case D3D_FEATURE_LEVEL_10_0:
+        case D3D_FEATURE_LEVEL_9_3:
+        case D3D_FEATURE_LEVEL_9_2:
+        case D3D_FEATURE_LEVEL_9_1:
+            return 1;
+        default:
+            UNREACHABLE();
+            return 0;
+    }
+}
+
+bool IsMultiviewSupported(D3D_FEATURE_LEVEL featureLevel)
+{
+    // The ANGLE_multiview extension can always be supported in D3D11 through geometry shaders.
+    switch (featureLevel)
+    {
+        case D3D_FEATURE_LEVEL_11_1:
+        case D3D_FEATURE_LEVEL_11_0:
+            return true;
+        default:
+            return false;
+    }
+}
+
 void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, const Renderer11DeviceCaps &renderer11DeviceCaps, gl::Caps *caps,
                   gl::TextureCapsMap *textureCapsMap, gl::Extensions *extensions, gl::Limitations *limitations)
 {
-    GLuint maxSamples = 0;
     D3D_FEATURE_LEVEL featureLevel = renderer11DeviceCaps.featureLevel;
     const gl::FormatSet &allFormats = gl::GetAllSizedInternalFormats();
     for (GLenum internalFormat : allFormats)
@@ -1147,8 +1203,6 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
         gl::TextureCaps textureCaps = GenerateTextureFormatCaps(
             GetMaximumClientVersion(featureLevel), internalFormat, device, renderer11DeviceCaps);
         textureCapsMap->insert(internalFormat, textureCaps);
-
-        maxSamples = std::max(maxSamples, textureCaps.getMaxSamples());
 
         if (gl::GetSizedInternalFormatInfo(internalFormat).compressed)
         {
@@ -1292,9 +1346,18 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
     caps->maxTransformFeedbackSeparateComponents =
         static_cast<GLuint>(GetMaximumStreamOutputSeparateComponents(featureLevel));
 
-    // Multisample limits
-    caps->maxSamples = maxSamples;
-    caps->maxColorTextureSamples = maxSamples;
+    // Defer the computation of multisample limits to Context::updateCaps() where max*Samples values
+    // are determined according to available sample counts for each individual format.
+    caps->maxSamples             = std::numeric_limits<GLint>::max();
+    caps->maxColorTextureSamples = std::numeric_limits<GLint>::max();
+    caps->maxDepthTextureSamples = std::numeric_limits<GLint>::max();
+    caps->maxIntegerSamples      = std::numeric_limits<GLint>::max();
+
+    // Framebuffer limits
+    caps->maxFramebufferSamples = std::numeric_limits<GLint>::max();
+    caps->maxFramebufferWidth =
+        static_cast<GLuint>(GetMaximumRenderToBufferWindowSize(featureLevel));
+    caps->maxFramebufferHeight = caps->maxFramebufferWidth;
 
     // GL extension support
     extensions->setTextureExtensionSupport(*textureCapsMap);
@@ -1326,6 +1389,13 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
     extensions->standardDerivatives = GetDerivativeInstructionSupport(featureLevel);
     extensions->shaderTextureLOD = GetShaderTextureLODSupport(featureLevel);
     extensions->fragDepth = true;
+    extensions->multiview              = IsMultiviewSupported(featureLevel);
+    if (extensions->multiview)
+    {
+        extensions->maxViews =
+            std::min(static_cast<GLuint>(GetMaximum2DTextureArraySize(featureLevel)),
+                     GetMaxViewportAndScissorRectanglesPerPipeline(featureLevel));
+    }
     extensions->textureUsage = true; // This could be false since it has no effect in D3D11
     extensions->discardFramebuffer = true;
     extensions->translatedShaderSource = true;

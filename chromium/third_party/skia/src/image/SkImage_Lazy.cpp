@@ -697,17 +697,22 @@ public:
 static void set_key_on_proxy(GrResourceProvider* resourceProvider,
                              GrTextureProxy* proxy, const GrUniqueKey& key) {
     if (key.isValid()) {
+        SkASSERT(proxy->origin() == kTopLeft_GrSurfaceOrigin);
         resourceProvider->assignUniqueKeyToProxy(key, proxy);
     }
 }
 
 sk_sp<SkColorSpace> SkImage_Lazy::getColorSpace(GrContext* ctx, SkColorSpace* dstColorSpace) {
-    // TODO: This isn't always correct. Picture generator currently produces textures in N32,
-    // and will (soon) emit them in an arbitrary (destination) space. We will need to stash that
-    // information in/on the key so we can return the correct space in case #1 of lockTexture.
-    CachedFormat format = this->chooseCacheFormat(dstColorSpace, ctx->caps());
-    SkImageInfo cacheInfo = this->buildCacheInfo(format);
-    return sk_ref_sp(cacheInfo.colorSpace());
+    if (!dstColorSpace) {
+        // In legacy mode, we do no modification to the image's color space or encoding.
+        // Subsequent legacy drawing is likely to ignore the color space, but some clients
+        // may want to know what space the image data is in, so return it.
+        return fInfo.refColorSpace();
+    } else {
+        CachedFormat format = this->chooseCacheFormat(dstColorSpace, ctx->caps());
+        SkImageInfo cacheInfo = this->buildCacheInfo(format);
+        return cacheInfo.refColorSpace();
+    }
 }
 
 /*
@@ -747,7 +752,8 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(GrContext* ctx,
 
     // 1. Check the cache for a pre-existing one
     if (key.isValid()) {
-        if (sk_sp<GrTextureProxy> proxy = ctx->resourceProvider()->findProxyByUniqueKey(key)) {
+        if (sk_sp<GrTextureProxy> proxy = ctx->resourceProvider()->findProxyByUniqueKey(
+                                                                key, kTopLeft_GrSurfaceOrigin)) {
             SK_HISTOGRAM_ENUMERATION("LockTexturePath", kPreExisting_LockTexturePath,
                                      kLockTexturePathCount);
             return proxy;

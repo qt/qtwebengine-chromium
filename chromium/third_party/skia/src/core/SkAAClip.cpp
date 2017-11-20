@@ -1382,8 +1382,7 @@ private:
     }
 
     void unexpected() {
-        SkDebugf("---- did not expect to get called here");
-        sk_throw();
+        SK_ABORT("---- did not expect to get called here");
     }
 };
 
@@ -1421,11 +1420,15 @@ bool SkAAClip::setPath(const SkPath& path, const SkRegion* clip, bool doAA) {
     BuilderBlitter blitter(&builder);
 
     if (doAA) {
+#ifdef SK_SUPPORT_LEGACY_DELTA_AA
         if (gSkUseAnalyticAA.load()) {
             SkScan::AAAFillPath(path, snugClip, &blitter, true);
         } else {
             SkScan::AntiFillPath(path, snugClip, &blitter, true);
         }
+#else
+        SkScan::AntiFillPath(path, snugClip, &blitter, true);
+#endif
     } else {
         SkScan::FillPath(path, snugClip, &blitter);
     }

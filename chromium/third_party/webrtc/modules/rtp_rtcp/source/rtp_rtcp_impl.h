@@ -187,9 +187,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
       uint32_t ssrc,
       struct RtpPacketLossStats* loss_stats) const override;
 
-  // Get received RTCP report, sender info.
-  int32_t RemoteRTCPStat(RTCPSenderInfo* sender_info) override;
-
   // Get received RTCP report, report block.
   int32_t RemoteRTCPStat(
       std::vector<RTCPReportBlock>* receive_blocks) const override;
@@ -252,10 +249,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
   bool RtcpXrRrtrStatus() const override;
 
   // Audio part.
-
-  // This function is deprecated. It was previously used to determine when it
-  // was time to send a DTMF packet in silence (CNG).
-  int32_t SetAudioPacketSize(uint16_t packet_size_samples) override;
 
   // Send a TelephoneEvent tone using RFC 2833 (4733).
   int32_t SendTelephoneEventOutband(uint8_t key,

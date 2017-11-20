@@ -33,7 +33,7 @@ class EventWrapper;
 class AudioDeviceLinuxALSA : public AudioDeviceGeneric
 {
 public:
-    AudioDeviceLinuxALSA(const int32_t id);
+    AudioDeviceLinuxALSA();
     virtual ~AudioDeviceLinuxALSA();
 
     // Retrieve the currently utilized audio layer
@@ -82,12 +82,6 @@ public:
     // Microphone Automatic Gain Control (AGC)
     int32_t SetAGC(bool enable) override;
     bool AGC() const override;
-
-    // Volume control based on the Windows Wave API (Windows only)
-    int32_t SetWaveOutVolume(uint16_t volumeLeft,
-                             uint16_t volumeRight) override;
-    int32_t WaveOutVolume(uint16_t& volumeLeft,
-                          uint16_t& volumeRight) const override;
 
     // Audio mixer initialization
     int32_t InitSpeaker() override;

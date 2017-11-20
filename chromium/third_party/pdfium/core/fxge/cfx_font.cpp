@@ -14,6 +14,7 @@
 
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fxcrt/fx_codepage.h"
+#include "core/fxcrt/fx_stream.h"
 #include "core/fxge/cfx_facecache.h"
 #include "core/fxge/cfx_fontcache.h"
 #include "core/fxge/cfx_fontmgr.h"
@@ -447,7 +448,7 @@ bool CFX_Font::IsItalic() const {
 
   CFX_ByteString str(FXFT_Get_Face_Style_Name(m_Face));
   str.MakeLower();
-  return str.Find("italic") != -1;
+  return str.Contains("italic");
 }
 
 bool CFX_Font::IsBold() const {

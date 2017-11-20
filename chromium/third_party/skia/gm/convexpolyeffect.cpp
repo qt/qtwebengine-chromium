@@ -65,7 +65,7 @@ private:
         this->setBounds(sorted_rect(fRect), HasAABloat::kNo, IsZeroArea::kNo);
     }
 
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         using namespace GrDefaultGeoProcFactory;
 
         Color color(fColor);
@@ -82,7 +82,9 @@ private:
 
         fRect.toQuad(verts);
 
-        helper.recordDraw(target, gp.get(), target->makePipeline(0, &fProcessors));
+        helper.recordDraw(
+                target, gp.get(),
+                target->makePipeline(0, std::move(fProcessors), target->detachAppliedClip()));
     }
 
     bool onCombineIfPossible(GrOp* op, const GrCaps& caps) override { return false; }
@@ -189,7 +191,7 @@ protected:
                 path->transform(m, &p);
 
                 GrPrimitiveEdgeType edgeType = (GrPrimitiveEdgeType) et;
-                sk_sp<GrFragmentProcessor> fp(GrConvexPolyEffect::Make(edgeType, p));
+                std::unique_ptr<GrFragmentProcessor> fp(GrConvexPolyEffect::Make(edgeType, p));
                 if (!fp) {
                     continue;
                 }
@@ -229,7 +231,7 @@ protected:
                 SkRect rect = *iter.get();
                 rect.offset(x, y);
                 GrPrimitiveEdgeType edgeType = (GrPrimitiveEdgeType) et;
-                sk_sp<GrFragmentProcessor> fp(GrConvexPolyEffect::Make(edgeType, rect));
+                std::unique_ptr<GrFragmentProcessor> fp(GrConvexPolyEffect::Make(edgeType, rect));
                 if (!fp) {
                     continue;
                 }

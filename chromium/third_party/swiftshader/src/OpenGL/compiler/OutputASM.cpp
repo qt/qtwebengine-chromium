@@ -950,6 +950,7 @@ namespace glsl
 			break;
 		case EOpVectorLogicalNot: if(visit == PostVisit) emit(sw::Shader::OPCODE_NOT, result, arg); break;
 		case EOpLogicalNot:       if(visit == PostVisit) emit(sw::Shader::OPCODE_NOT, result, arg); break;
+		case EOpBitwiseNot:       if(visit == PostVisit) emit(sw::Shader::OPCODE_NOT, result, arg); break;
 		case EOpPostIncrement:
 			if(visit == PostVisit)
 			{
@@ -2554,6 +2555,7 @@ namespace glsl
 		case EvqPosition:            return sw::Shader::PARAMETER_OUTPUT;
 		case EvqPointSize:           return sw::Shader::PARAMETER_OUTPUT;
 		case EvqInstanceID:          return sw::Shader::PARAMETER_MISCTYPE;
+		case EvqVertexID:            return sw::Shader::PARAMETER_MISCTYPE;
 		case EvqFragCoord:           return sw::Shader::PARAMETER_MISCTYPE;
 		case EvqFrontFacing:         return sw::Shader::PARAMETER_MISCTYPE;
 		case EvqPointCoord:          return sw::Shader::PARAMETER_INPUT;
@@ -2606,9 +2608,10 @@ namespace glsl
 		case EvqConstReadOnly:       return temporaryRegister(operand);
 		case EvqPosition:            return varyingRegister(operand);
 		case EvqPointSize:           return varyingRegister(operand);
-		case EvqInstanceID:          vertexShader->declareInstanceId(); return 0;
-		case EvqFragCoord:           pixelShader->declareVPos();  return 0;
-		case EvqFrontFacing:         pixelShader->declareVFace(); return 1;
+		case EvqInstanceID:          vertexShader->declareInstanceId(); return sw::Shader::InstanceIDIndex;
+		case EvqVertexID:            vertexShader->declareVertexId(); return sw::Shader::VertexIDIndex;
+		case EvqFragCoord:           pixelShader->declareVPos();  return sw::Shader::VPosIndex;
+		case EvqFrontFacing:         pixelShader->declareVFace(); return sw::Shader::VFaceIndex;
 		case EvqPointCoord:          return varyingRegister(operand);
 		case EvqFragColor:           return 0;
 		case EvqFragData:            return fragmentOutputRegister(operand);

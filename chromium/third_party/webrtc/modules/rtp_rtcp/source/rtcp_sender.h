@@ -77,7 +77,7 @@ class RTCPSender {
 
   RTCPSender(bool audio,
              Clock* clock,
-             ReceiveStatistics* receive_statistics,
+             ReceiveStatisticsProvider* receive_statistics,
              RtcpPacketTypeCounterObserver* packet_type_counter_observer,
              RtcEventLog* event_log,
              Transport* outgoing_transport);
@@ -157,9 +157,8 @@ class RTCPSender {
   void PrepareReport(const FeedbackState& feedback_state)
       EXCLUSIVE_LOCKS_REQUIRED(critical_section_rtcp_sender_);
 
-  bool AddReportBlock(const FeedbackState& feedback_state,
-                      uint32_t ssrc,
-                      StreamStatistician* statistician)
+  std::vector<rtcp::ReportBlock> CreateReportBlocks(
+      const FeedbackState& feedback_state)
       EXCLUSIVE_LOCKS_REQUIRED(critical_section_rtcp_sender_);
 
   std::unique_ptr<rtcp::RtcpPacket> BuildSR(const RtcpContext& context)
@@ -212,9 +211,7 @@ class RTCPSender {
   uint32_t remote_ssrc_ GUARDED_BY(critical_section_rtcp_sender_);
   std::string cname_ GUARDED_BY(critical_section_rtcp_sender_);
 
-  ReceiveStatistics* receive_statistics_
-      GUARDED_BY(critical_section_rtcp_sender_);
-  std::map<uint32_t, rtcp::ReportBlock> report_blocks_
+  ReceiveStatisticsProvider* receive_statistics_
       GUARDED_BY(critical_section_rtcp_sender_);
   std::map<uint32_t, std::string> csrc_cnames_
       GUARDED_BY(critical_section_rtcp_sender_);

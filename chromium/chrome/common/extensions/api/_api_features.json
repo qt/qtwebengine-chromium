@@ -92,7 +92,6 @@
     "channel": "stable",
     "contexts": ["webui"],
     "matches": [
-      "chrome://md-settings/*",
       "chrome://settings/*"
     ]
   }],
@@ -447,14 +446,6 @@
     "channel": "stable",
     "contexts": ["blessed_extension"]
   },
-  "feedbackPrivate": {
-    "dependencies": ["permission:feedbackPrivate"],
-    "contexts": ["blessed_extension"]
-  },
-  "feedbackPrivate.readLogSource": {
-    "platforms": ["chromeos"],
-    "session_types": ["kiosk"]
-  },
   "fileBrowserHandler": {
     "dependencies": ["permission:fileBrowserHandler"],
     "contexts": ["blessed_extension"]
@@ -545,7 +536,6 @@
     "channel": "stable",
     "contexts": ["webui"],
     "matches": [
-      "chrome://md-settings/*",
       "chrome://settings/*"
     ]
   }],
@@ -560,7 +550,6 @@
     "channel": "stable",
     "contexts": ["webui"],
     "matches": [
-      "chrome://md-settings/*",
       "chrome://settings/*"
     ]
   }],
@@ -633,7 +622,6 @@
     "channel": "stable",
     "contexts": ["webui"],
     "matches": [
-      "chrome://md-settings/*",
       "chrome://settings/*"
     ]
   }],
@@ -679,7 +667,6 @@
     "channel": "stable",
     "contexts": ["webui"],
     "matches": [
-      "chrome://md-settings/*",
       "chrome://settings/*"
     ],
     "platforms": ["chromeos"]
@@ -709,7 +696,6 @@
     "channel": "stable",
     "contexts": ["webui"],
     "matches": [
-      "chrome://md-settings/*",
       "chrome://settings/*"
     ]
   }],
@@ -771,7 +757,6 @@
     "channel": "stable",
     "contexts": ["webui"],
     "matches": [
-      "chrome://md-settings/*",
       "chrome://settings/*"
     ]
   }],

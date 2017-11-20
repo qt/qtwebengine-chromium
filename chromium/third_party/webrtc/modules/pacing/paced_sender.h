@@ -15,8 +15,7 @@
 #include <memory>
 #include <set>
 
-#include "webrtc/modules/include/module.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "webrtc/modules/pacing/pacer.h"
 #include "webrtc/rtc_base/criticalsection.h"
 #include "webrtc/rtc_base/optional.h"
 #include "webrtc/rtc_base/thread_annotations.h"
@@ -31,11 +30,12 @@ class RtcEventLog;
 class IntervalBudget;
 
 namespace paced_sender {
+class IntervalBudget;
 struct Packet;
 class PacketQueue;
 }  // namespace paced_sender
 
-class PacedSender : public Module, public RtpPacketSender {
+class PacedSender : public Pacer {
  public:
   class PacketSender {
    public:
@@ -93,7 +93,7 @@ class PacedSender : public Module, public RtpPacketSender {
   // |bitrate_bps| is our estimate of what we are allowed to send on average.
   // We will pace out bursts of packets at a bitrate of
   // |bitrate_bps| * kDefaultPaceMultiplier.
-  virtual void SetEstimatedBitrate(uint32_t bitrate_bps);
+  void SetEstimatedBitrate(uint32_t bitrate_bps) override;
 
   // Sets the minimum send bitrate and maximum padding bitrate requested by send
   // streams.
@@ -136,7 +136,8 @@ class PacedSender : public Module, public RtpPacketSender {
   virtual rtc::Optional<int64_t> GetApplicationLimitedRegionStartTime() const;
 
   // Returns the average time since being enqueued, in milliseconds, for all
-  // packets currently in the pacer queue, or 0 if queue is empty.
+  // packets currently in the pacer queue, excluding any time the pacer has been
+  // paused. Returns 0 if queue is empty.
   virtual int64_t AverageQueueTimeMs();
 
   // Returns the number of milliseconds until the module want a worker thread
@@ -148,7 +149,6 @@ class PacedSender : public Module, public RtpPacketSender {
 
   // Called when the prober is associated with a process thread.
   void ProcessThreadAttached(ProcessThread* process_thread) override;
-
   void SetPacingFactor(float pacing_factor);
   void SetQueueTimeLimit(int limit_ms);
 

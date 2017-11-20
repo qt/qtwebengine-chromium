@@ -150,7 +150,7 @@ static int rrect_type_to_vert_count(RRectType type) {
         case kOverstroke_RRectType:
             return kVertsPerOverstrokeRRect;
     }
-    SkFAIL("Invalid type");
+    SK_ABORT("Invalid type");
     return 0;
 }
 
@@ -163,7 +163,7 @@ static int rrect_type_to_index_count(RRectType type) {
         case kOverstroke_RRectType:
             return kIndicesPerOverstrokeRRect;
     }
-    SkFAIL("Invalid type");
+    SK_ABORT("Invalid type");
     return 0;
 }
 
@@ -175,7 +175,7 @@ static const uint16_t* rrect_type_to_indices(RRectType type) {
         case kOverstroke_RRectType:
             return gRRectIndices;
     }
-    SkFAIL("Invalid type");
+    SK_ABORT("Invalid type");
     return nullptr;
 }
 
@@ -558,7 +558,7 @@ private:
 
     }
 
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         // Setup geometry processor
         sk_sp<GrGeometryProcessor> gp = GrRRectShadowGeoProc::Make();
 
@@ -613,8 +613,8 @@ private:
         }
 
         static const uint32_t kPipelineFlags = 0;
-        const GrPipeline* pipeline =
-                target->makePipeline(kPipelineFlags, &GrProcessorSet::EmptySet());
+        const GrPipeline* pipeline = target->makePipeline(
+                kPipelineFlags, GrProcessorSet::MakeEmptySet(), target->detachAppliedClip());
 
         GrMesh mesh(GrPrimitiveType::kTriangles);
         mesh.setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1);

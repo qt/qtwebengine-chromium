@@ -24,8 +24,8 @@ matrix:
 
 addons:
   apt:
-    # List of whitelisted in travis packages for ubuntu-precise can be found here:
-    #   https://github.com/travis-ci/apt-package-whitelist/blob/master/ubuntu-precise
+    # List of whitelisted in travis packages for ubuntu-trusty can be found here:
+    #   https://github.com/travis-ci/apt-package-whitelist/blob/master/ubuntu-trusty
     # List of whitelisted in travis apt-sources:
     #   https://github.com/travis-ci/apt-source-whitelist/blob/master/ubuntu.json
     sources:
@@ -47,7 +47,13 @@ install:
 - echo ${CC}
 - echo ${CXX}
 - ${CXX} --version
+- cmake --version
+
+before_script:
+- mkdir -p build && cd build
+- cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+- cmake --build .
+- cd ..
 
 script:
-- mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE &&
-      CTEST_OUTPUT_ON_FAILURE=1 make all test
+- build/snappy_unittest

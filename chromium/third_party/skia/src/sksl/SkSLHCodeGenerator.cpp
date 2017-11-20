@@ -23,13 +23,13 @@ HCodeGenerator::HCodeGenerator(const Program* program, ErrorReporter* errors, St
 , fSectionAndParameterHelper(*program, *errors) {}
 
 String HCodeGenerator::ParameterType(const Type& type) {
-    if (type.fName == "vec2") {
+    if (type.fName == "float2") {
         return "SkPoint";
-    } else if (type.fName == "ivec4") {
+    } else if (type.fName == "int4") {
         return "SkIRect";
-    } else if (type.fName == "vec4") {
+    } else if (type.fName == "float4") {
         return "SkRect";
-    } else if (type.fName == "mat4") {
+    } else if (type.fName == "float4x4") {
         return "SkMatrix44";
     } else if (type.kind() == Type::kSampler_Kind) {
         return "sk_sp<GrTextureProxy>";
@@ -123,7 +123,7 @@ void HCodeGenerator::writeExtraConstructorParams(const char* separator) {
 void HCodeGenerator::writeMake() {
     const char* separator;
     if (!this->writeSection(MAKE_SECTION)) {
-        this->writef("    static sk_sp<GrFragmentProcessor> Make(");
+        this->writef("    static std::unique_ptr<GrFragmentProcessor> Make(");
         separator = "";
         for (const auto& param : fSectionAndParameterHelper.getParameters()) {
             this->writef("%s%s %s", separator, ParameterType(param->fType).c_str(),
@@ -132,7 +132,7 @@ void HCodeGenerator::writeMake() {
         }
         this->writeSection(CONSTRUCTOR_PARAMS_SECTION, separator);
         this->writef(") {\n"
-                     "        return sk_sp<GrFragmentProcessor>(new %s(",
+                     "        return std::unique_ptr<GrFragmentProcessor>(new %s(",
                      fFullName.c_str());
         separator = "";
         for (const auto& param : fSectionAndParameterHelper.getParameters()) {
@@ -236,8 +236,7 @@ bool HCodeGenerator::generateCode() {
     this->writeSection(HEADER_SECTION);
     this->writef("#include \"GrFragmentProcessor.h\"\n"
                  "#include \"GrCoordTransform.h\"\n"
-                 "#include \"GrColorSpaceXform.h\"\n"
-                 "#include \"effects/GrProxyMove.h\"\n");
+                 "#include \"GrColorSpaceXform.h\"\n");
     this->writef("class %s : public GrFragmentProcessor {\n"
                  "public:\n",
                  fFullName.c_str());
@@ -251,9 +250,11 @@ bool HCodeGenerator::generateCode() {
                      FieldType(param->fType).c_str(), name, FieldName(name).c_str());
     }
     this->writeMake();
-    this->writef("    const char* name() const override { return \"%s\"; }\n"
+    this->writef("    %s(const %s& src);\n"
+                 "    std::unique_ptr<GrFragmentProcessor> clone() const override;\n"
+                 "    const char* name() const override { return \"%s\"; }\n"
                  "private:\n",
-                 fName.c_str());
+                 fFullName.c_str(), fFullName.c_str(), fName.c_str());
     this->writeConstructor();
     this->writef("    GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;\n"
                  "    void onGetGLSLProcessorKey(const GrShaderCaps&,"

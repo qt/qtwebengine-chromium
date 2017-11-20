@@ -173,16 +173,16 @@ void CPDF_FormControl::DrawControl(CFX_RenderDevice* pDevice,
   if (!pStream)
     return;
 
-  CFX_FloatRect form_bbox = pStream->GetDict()->GetRectFor("BBox");
   CFX_Matrix form_matrix = pStream->GetDict()->GetMatrixFor("Matrix");
-  form_matrix.TransformRect(form_bbox);
+  CFX_FloatRect form_bbox =
+      form_matrix.TransformRect(pStream->GetDict()->GetRectFor("BBox"));
   CFX_FloatRect arect = m_pWidgetDict->GetRectFor("Rect");
   CFX_Matrix matrix;
   matrix.MatchRect(arect, form_bbox);
   matrix.Concat(*pMatrix);
   CPDF_Form form(m_pField->GetForm()->m_pDocument.Get(),
                  m_pField->GetForm()->m_pFormDict->GetDictFor("DR"), pStream);
-  form.ParseContent(nullptr, nullptr, nullptr);
+  form.ParseContent();
   CPDF_RenderContext context(pPage);
   context.AppendLayer(&form, &matrix);
   context.Render(pDevice, pOptions, nullptr);

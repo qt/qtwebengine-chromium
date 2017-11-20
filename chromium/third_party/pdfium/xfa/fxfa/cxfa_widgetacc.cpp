@@ -13,13 +13,13 @@
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
-#include "xfa/fxfa/app/cxfa_textlayout.h"
-#include "xfa/fxfa/app/cxfa_textprovider.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffdocview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_fontmgr.h"
+#include "xfa/fxfa/cxfa_textlayout.h"
+#include "xfa/fxfa/cxfa_textprovider.h"
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_localevalue.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
@@ -828,7 +828,7 @@ void CXFA_WidgetAcc::CalculateTextContentSize(CFX_SizeF& size) {
   }
 
   wchar_t wcEnter = '\n';
-  wchar_t wsLast = wsText.GetAt(wsText.GetLength() - 1);
+  wchar_t wsLast = wsText[wsText.GetLength() - 1];
   if (wsLast == wcEnter)
     wsText = wsText + wcEnter;
 
@@ -841,14 +841,15 @@ void CXFA_WidgetAcc::CalculateTextContentSize(CFX_SizeF& size) {
     pTextOut->SetFontSize(fFontSize);
     pTextOut->SetLineBreakTolerance(fFontSize * 0.2f);
     pTextOut->SetLineSpace(GetLineHeight());
-    uint32_t dwStyles = FDE_TTOSTYLE_LastLineHeight;
+
+    FDE_TextStyle dwStyles;
+    dwStyles.last_line_height_ = true;
     if (GetUIType() == XFA_Element::TextEdit && IsMultiLine())
-      dwStyles |= FDE_TTOSTYLE_LineWrap;
+      dwStyles.line_wrap_ = true;
 
     pTextOut->SetStyles(dwStyles);
   }
-  layoutData->m_pTextOut->CalcLogicSize(wsText.c_str(), wsText.GetLength(),
-                                        size);
+  layoutData->m_pTextOut->CalcLogicSize(wsText, size);
 }
 
 bool CXFA_WidgetAcc::CalculateTextEditAutoSize(CFX_SizeF& size) {

@@ -13,8 +13,12 @@
 #include "effects/GrPorterDuffXferProcessor.h"
 
 const GrProcessorSet& GrProcessorSet::EmptySet() {
-    static const GrProcessorSet gEmpty(GrProcessorSet::Empty::kEmpty);
+    static GrProcessorSet gEmpty(GrProcessorSet::Empty::kEmpty);
     return gEmpty;
+}
+
+GrProcessorSet GrProcessorSet::MakeEmptySet() {
+    return GrProcessorSet(GrProcessorSet::Empty::kEmpty);
 }
 
 GrProcessorSet::GrProcessorSet(GrPaint&& paint) : fXP(paint.getXPFactory()) {
@@ -25,11 +29,11 @@ GrProcessorSet::GrProcessorSet(GrPaint&& paint) : fXP(paint.getXPFactory()) {
         int i = 0;
         for (auto& fp : paint.fColorFragmentProcessors) {
             SkASSERT(fp.get());
-            fFragmentProcessors[i++] = fp.release();
+            fFragmentProcessors[i++] = std::move(fp);
         }
         for (auto& fp : paint.fCoverageFragmentProcessors) {
             SkASSERT(fp.get());
-            fFragmentProcessors[i++] = fp.release();
+            fFragmentProcessors[i++] = std::move(fp);
         }
     } else {
         SkDebugf("Insane number of color fragment processors in paint. Dropping all processors.");
@@ -43,24 +47,31 @@ GrProcessorSet::GrProcessorSet(SkBlendMode mode)
         , fFragmentProcessorOffset(0)
         , fFlags(0) {}
 
-GrProcessorSet::GrProcessorSet(sk_sp<GrFragmentProcessor> colorFP)
+GrProcessorSet::GrProcessorSet(std::unique_ptr<GrFragmentProcessor> colorFP)
         : fFragmentProcessors(1)
         , fXP((const GrXPFactory*)nullptr)
         , fColorFragmentProcessorCnt(1)
         , fFragmentProcessorOffset(0)
         , fFlags(0) {
     SkASSERT(colorFP);
-    fFragmentProcessors[0] = colorFP.release();
+    fFragmentProcessors[0] = std::move(colorFP);
+}
+
+GrProcessorSet::GrProcessorSet(GrProcessorSet&& that)
+        : fXP(std::move(that.fXP))
+        , fColorFragmentProcessorCnt(that.fColorFragmentProcessorCnt)
+        , fFragmentProcessorOffset(0)
+        , fFlags(that.fFlags) {
+    fFragmentProcessors.reset(that.fFragmentProcessors.count() - that.fFragmentProcessorOffset);
+    for (int i = 0; i < fFragmentProcessors.count(); ++i) {
+        fFragmentProcessors[i] =
+                std::move(that.fFragmentProcessors[i + that.fFragmentProcessorOffset]);
+    }
+    that.fColorFragmentProcessorCnt = 0;
+    that.fFragmentProcessors.reset(0);
 }
 
 GrProcessorSet::~GrProcessorSet() {
-    for (int i = fFragmentProcessorOffset; i < fFragmentProcessors.count(); ++i) {
-        if (this->isFinalized()) {
-            fFragmentProcessors[i]->completedExecution();
-        } else {
-            fFragmentProcessors[i]->unref();
-        }
-    }
     if (this->isFinalized() && this->xferProcessor()) {
         this->xferProcessor()->unref();
     }
@@ -153,13 +164,13 @@ GrProcessorSet::Analysis GrProcessorSet::finalize(const GrProcessorAnalysisColor
     SkASSERT(!fFragmentProcessorOffset);
 
     GrProcessorSet::Analysis analysis;
-
-    const GrFragmentProcessor* clipFP = clip ? clip->clipCoverageFragmentProcessor() : nullptr;
-    GrColorFragmentProcessorAnalysis colorAnalysis(colorInput);
     analysis.fCompatibleWithCoverageAsAlpha = GrProcessorAnalysisCoverage::kLCD != coverageInput;
 
-    const GrFragmentProcessor* const* fps = fFragmentProcessors.get() + fFragmentProcessorOffset;
-    colorAnalysis.analyzeProcessors(fps, fColorFragmentProcessorCnt);
+    const GrFragmentProcessor* clipFP = clip ? clip->clipCoverageFragmentProcessor() : nullptr;
+    const std::unique_ptr<const GrFragmentProcessor>* fps =
+            fFragmentProcessors.get() + fFragmentProcessorOffset;
+    GrColorFragmentProcessorAnalysis colorAnalysis(
+            colorInput, unique_ptr_address_as_pointer_address(fps), fColorFragmentProcessorCnt);
     analysis.fCompatibleWithCoverageAsAlpha &=
             colorAnalysis.allProcessorsCompatibleWithCoverageAsAlpha();
     fps += fColorFragmentProcessorCnt;
@@ -221,12 +232,10 @@ GrProcessorSet::Analysis GrProcessorSet::finalize(const GrProcessorAnalysisColor
         analysis.fUsesLocalCoords = coverageUsesLocalCoords | colorAnalysis.usesLocalCoords();
     }
     for (int i = 0; i < colorFPsToEliminate; ++i) {
-        fFragmentProcessors[i]->unref();
-        fFragmentProcessors[i] = nullptr;
+        fFragmentProcessors[i].reset(nullptr);
     }
     for (int i = colorFPsToEliminate; i < fFragmentProcessors.count(); ++i) {
-        fFragmentProcessors[i]->addPendingExecution();
-        fFragmentProcessors[i]->unref();
+        fFragmentProcessors[i]->markPendingExecution();
     }
     fFragmentProcessorOffset = colorFPsToEliminate;
     fColorFragmentProcessorCnt -= colorFPsToEliminate;

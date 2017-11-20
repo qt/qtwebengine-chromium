@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "core/fxcrt/cfx_retain_ptr.h"
+#include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
 
 class CFX_DIBitmap;
@@ -21,7 +22,7 @@ class CFX_Matrix;
 class CFX_PathData;
 class CPDF_ShadingPattern;
 class FXTEXT_CHARPOS;
-class IFX_Pause;
+class IFX_PauseIndicator;
 struct FX_RECT;
 
 class IFX_RenderDeviceDriver {
@@ -53,10 +54,8 @@ class IFX_RenderDeviceDriver {
   virtual bool FillRectWithBlend(const FX_RECT* pRect,
                                  uint32_t fill_color,
                                  int blend_type);
-  virtual bool DrawCosmeticLine(float x1,
-                                float y1,
-                                float x2,
-                                float y2,
+  virtual bool DrawCosmeticLine(const CFX_PointF& ptMoveTo,
+                                const CFX_PointF& ptLineTo,
                                 uint32_t color,
                                 int blend_type);
 
@@ -87,7 +86,8 @@ class IFX_RenderDeviceDriver {
                            uint32_t flags,
                            std::unique_ptr<CFX_ImageRenderer>* handle,
                            int blend_type) = 0;
-  virtual bool ContinueDIBits(CFX_ImageRenderer* handle, IFX_Pause* pPause);
+  virtual bool ContinueDIBits(CFX_ImageRenderer* handle,
+                              IFX_PauseIndicator* pPause);
   virtual bool DrawDeviceText(int nChars,
                               const FXTEXT_CHARPOS* pCharPos,
                               CFX_Font* pFont,

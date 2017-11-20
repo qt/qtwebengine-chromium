@@ -14,6 +14,8 @@
 // This should not be included by driver code.
 //
 
+#include <GLSLANG/ShaderVars.h>
+
 #include "compiler/translator/BuiltInFunctionEmulator.h"
 #include "compiler/translator/CallDAG.h"
 #include "compiler/translator/Diagnostics.h"
@@ -22,7 +24,6 @@
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/Pragma.h"
 #include "compiler/translator/SymbolTable.h"
-#include "compiler/translator/VariableInfo.h"
 #include "third_party/compiler/ArrayBoundsClamper.h"
 
 namespace sh
@@ -110,8 +111,15 @@ class TCompiler : public TShHandleBase
     const std::vector<sh::Attribute> &getAttributes() const { return attributes; }
     const std::vector<sh::OutputVariable> &getOutputVariables() const { return outputVariables; }
     const std::vector<sh::Uniform> &getUniforms() const { return uniforms; }
-    const std::vector<sh::Varying> &getVaryings() const { return varyings; }
+    const std::vector<sh::Varying> &getInputVaryings() const { return inputVaryings; }
+    const std::vector<sh::Varying> &getOutputVaryings() const { return outputVaryings; }
     const std::vector<sh::InterfaceBlock> &getInterfaceBlocks() const { return interfaceBlocks; }
+    const std::vector<sh::InterfaceBlock> &getUniformBlocks() const { return uniformBlocks; }
+    const std::vector<sh::InterfaceBlock> &getShaderStorageBlocks() const
+    {
+        return shaderStorageBlocks;
+    }
+    const std::vector<sh::InterfaceBlock> &getInBlocks() const { return inBlocks; }
 
     ShHashFunction64 getHashFunction() const { return hashFunction; }
     NameMap &getNameMap() { return nameMap; }
@@ -125,8 +133,20 @@ class TCompiler : public TShHandleBase
     // Get the resources set by InitBuiltInSymbolTable
     const ShBuiltInResources &getResources() const;
 
-  protected:
+    int getGeometryShaderMaxVertices() const { return mGeometryShaderMaxVertices; }
+    int getGeometryShaderInvocations() const { return mGeometryShaderInvocations; }
+    TLayoutPrimitiveType getGeometryShaderInputPrimitiveType() const
+    {
+        return mGeometryShaderInputPrimitiveType;
+    }
+    TLayoutPrimitiveType getGeometryShaderOutputPrimitiveType() const
+    {
+        return mGeometryShaderOutputPrimitiveType;
+    }
+
     sh::GLenum getShaderType() const { return shaderType; }
+
+  protected:
     // Initialize symbol-table with built-in symbols.
     bool InitBuiltInSymbolTable(const ShBuiltInResources &resources);
     // Compute the string representation of the built-in resources
@@ -172,8 +192,12 @@ class TCompiler : public TShHandleBase
     std::vector<sh::Attribute> attributes;
     std::vector<sh::OutputVariable> outputVariables;
     std::vector<sh::Uniform> uniforms;
-    std::vector<sh::Varying> varyings;
+    std::vector<sh::Varying> inputVaryings;
+    std::vector<sh::Varying> outputVaryings;
     std::vector<sh::InterfaceBlock> interfaceBlocks;
+    std::vector<sh::InterfaceBlock> uniformBlocks;
+    std::vector<sh::InterfaceBlock> shaderStorageBlocks;
+    std::vector<sh::InterfaceBlock> inBlocks;
 
   private:
     // Creates the function call DAG for further analysis, returning false if there is a recursion
@@ -183,6 +207,8 @@ class TCompiler : public TShHandleBase
     void internalTagUsedFunction(size_t index);
 
     void initSamplerDefaultPrecision(TBasicType samplerType);
+
+    void collectInterfaceBlocks();
 
     bool variablesCollected;
 
@@ -240,6 +266,12 @@ class TCompiler : public TShHandleBase
 
     // GL_OVR_multiview num_views.
     int mNumViews;
+
+    // geometry shader parameters.
+    int mGeometryShaderMaxVertices;
+    int mGeometryShaderInvocations;
+    TLayoutPrimitiveType mGeometryShaderInputPrimitiveType;
+    TLayoutPrimitiveType mGeometryShaderOutputPrimitiveType;
 
     // name hashing.
     ShHashFunction64 hashFunction;

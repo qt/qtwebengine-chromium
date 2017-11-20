@@ -7,7 +7,6 @@
 #ifndef FPDFSDK_IPDFSDK_ANNOTHANDLER_H_
 #define FPDFSDK_IPDFSDK_ANNOTHANDLER_H_
 
-#include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
 
@@ -37,6 +36,8 @@ class IPDFSDK_AnnotHandler {
   virtual CFX_FloatRect GetViewBBox(CPDFSDK_PageView* pPageView,
                                     CPDFSDK_Annot* pAnnot) = 0;
   virtual CFX_WideString GetSelectedText(CPDFSDK_Annot* pAnnot) = 0;
+  virtual void ReplaceSelection(CPDFSDK_Annot* pAnnot,
+                                const CFX_WideString& text) = 0;
   virtual bool HitTest(CPDFSDK_PageView* pPageView,
                        CPDFSDK_Annot* pAnnot,
                        const CFX_PointF& point) = 0;

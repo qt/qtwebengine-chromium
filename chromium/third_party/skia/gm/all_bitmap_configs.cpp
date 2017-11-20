@@ -81,7 +81,7 @@ static void color_wheel_native(SkCanvas* canvas) {
     const SkScalar D = 0.3f * SkIntToScalar(SCALE);
     const SkScalar X = SkDoubleToScalar(D * sqrt_3_over_2);
     const SkScalar Y = D * SK_ScalarHalf;
-    sk_tool_utils::set_portable_typeface(&p, nullptr, SkFontStyle::FromOldStyle(SkTypeface::kBold));
+    sk_tool_utils::set_portable_typeface(&p, nullptr, SkFontStyle::Bold());
     p.setTextSize(0.28125f * SCALE);
     draw_center_letter('K', &p, SK_ColorBLACK, Z, Z, canvas);
     draw_center_letter('R', &p, SK_ColorRED, Z, D, canvas);
@@ -195,7 +195,7 @@ static uint32_t make_pixel(int x, int y, SkAlphaType alphaType) {
             component = 0xFF;
             break;
         default:
-            SkFAIL("Should not get here - invalid alpha type");
+            SK_ABORT("Should not get here - invalid alpha type");
             return 0xFF000000;
     }
     return alpha << 24 | component;

@@ -320,18 +320,22 @@ void AcmReceiver::GetNetworkStatistics(NetworkStatistics* acm_stat) {
   acm_stat->preferredBufferSize = neteq_stat.preferred_buffer_size_ms;
   acm_stat->jitterPeaksFound = neteq_stat.jitter_peaks_found ? true : false;
   acm_stat->currentPacketLossRate = neteq_stat.packet_loss_rate;
-  acm_stat->currentDiscardRate = neteq_stat.packet_discard_rate;
   acm_stat->currentExpandRate = neteq_stat.expand_rate;
   acm_stat->currentSpeechExpandRate = neteq_stat.speech_expand_rate;
   acm_stat->currentPreemptiveRate = neteq_stat.preemptive_rate;
   acm_stat->currentAccelerateRate = neteq_stat.accelerate_rate;
   acm_stat->currentSecondaryDecodedRate = neteq_stat.secondary_decoded_rate;
+  acm_stat->currentSecondaryDiscardedRate = neteq_stat.secondary_discarded_rate;
   acm_stat->clockDriftPPM = neteq_stat.clockdrift_ppm;
   acm_stat->addedSamples = neteq_stat.added_zero_samples;
   acm_stat->meanWaitingTimeMs = neteq_stat.mean_waiting_time_ms;
   acm_stat->medianWaitingTimeMs = neteq_stat.median_waiting_time_ms;
   acm_stat->minWaitingTimeMs = neteq_stat.min_waiting_time_ms;
   acm_stat->maxWaitingTimeMs = neteq_stat.max_waiting_time_ms;
+
+  NetEqLifetimeStatistics neteq_lifetime_stat = neteq_->GetLifetimeStatistics();
+  acm_stat->totalSamplesReceived = neteq_lifetime_stat.total_samples_received;
+  acm_stat->concealedSamples = neteq_lifetime_stat.concealed_samples;
 }
 
 int AcmReceiver::DecoderByPayloadType(uint8_t payload_type,

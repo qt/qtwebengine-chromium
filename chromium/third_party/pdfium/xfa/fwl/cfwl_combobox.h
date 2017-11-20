@@ -52,12 +52,12 @@ class CFWL_ComboBox : public CFWL_Widget {
   void RemoveStates(uint32_t dwStates) override;
   void Update() override;
   FWL_WidgetHit HitTest(const CFX_PointF& point) override;
-  void DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix* pMatrix) override;
+  void DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix& matrix) override;
   void SetThemeProvider(IFWL_ThemeProvider* pThemeProvider) override;
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnProcessEvent(CFWL_Event* pEvent) override;
   void OnDrawWidget(CXFA_Graphics* pGraphics,
-                    const CFX_Matrix* pMatrix) override;
+                    const CFX_Matrix& matrix) override;
 
   CFX_WideString GetTextByIndex(int32_t iIndex) const;
   int32_t GetCurSel() const { return m_iCurSel; }
@@ -76,7 +76,7 @@ class CFWL_ComboBox : public CFWL_Widget {
   bool EditCanRedo() const { return m_pEdit->CanRedo(); }
   bool EditUndo() { return m_pEdit->Undo(); }
   bool EditRedo() { return m_pEdit->Redo(); }
-  bool EditCanCopy() const { return m_pEdit->CountSelRanges() > 0; }
+  bool EditCanCopy() const { return m_pEdit->HasSelection(); }
   bool EditCanCut() const {
     if (m_pEdit->GetStylesEx() & FWL_STYLEEXT_EDT_ReadOnly)
       return false;
@@ -88,9 +88,9 @@ class CFWL_ComboBox : public CFWL_Widget {
   bool EditPaste(const CFX_WideString& wsPaste) {
     return m_pEdit->Paste(wsPaste);
   }
-  void EditSelectAll() { m_pEdit->AddSelRange(0); }
+  void EditSelectAll() { m_pEdit->SelectAll(); }
   void EditDelete() { m_pEdit->ClearText(); }
-  void EditDeSelect() { m_pEdit->ClearSelections(); }
+  void EditDeSelect() { m_pEdit->ClearSelection(); }
 
   CFX_RectF GetBBox() const;
   void EditModifyStylesEx(uint32_t dwStylesExAdded, uint32_t dwStylesExRemoved);

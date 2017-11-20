@@ -27,14 +27,12 @@ webrtc::adm_linux_pulse::PulseAudioSymbolTable PaSymbolTable;
 
 namespace webrtc {
 
-AudioDeviceLinuxPulse::AudioDeviceLinuxPulse(const int32_t id)
+AudioDeviceLinuxPulse::AudioDeviceLinuxPulse()
     : _ptrAudioBuffer(NULL),
       _timeEventRec(*EventWrapper::Create()),
       _timeEventPlay(*EventWrapper::Create()),
       _recStartEvent(*EventWrapper::Create()),
       _playStartEvent(*EventWrapper::Create()),
-      _id(id),
-      _mixerManager(id),
       _inputDeviceIndex(0),
       _outputDeviceIndex(0),
       _inputDeviceIsSpecified(false),
@@ -372,18 +370,6 @@ int32_t AudioDeviceLinuxPulse::SpeakerVolume(uint32_t& volume) const {
   volume = level;
 
   return 0;
-}
-
-int32_t AudioDeviceLinuxPulse::SetWaveOutVolume(uint16_t volumeLeft,
-                                                uint16_t volumeRight) {
-  LOG(LS_WARNING) << "API call not supported on this platform";
-  return -1;
-}
-
-int32_t AudioDeviceLinuxPulse::WaveOutVolume(uint16_t& /*volumeLeft*/,
-                                             uint16_t& /*volumeRight*/) const {
-  LOG(LS_WARNING) << "API call not supported on this platform";
-  return -1;
 }
 
 int32_t AudioDeviceLinuxPulse::MaxSpeakerVolume(uint32_t& maxVolume) const {

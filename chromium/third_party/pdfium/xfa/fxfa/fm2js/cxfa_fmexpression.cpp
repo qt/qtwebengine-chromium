@@ -8,7 +8,7 @@
 
 #include <utility>
 
-#include "core/fxcrt/fx_basic.h"
+#include "core/fxcrt/cfx_widetextbuf.h"
 
 namespace {
 
@@ -60,8 +60,9 @@ bool CXFA_FMFunctionDefinition::ToJavaScript(CFX_WideTextBuf& javascript) {
     javascript << L"(\n";
   }
   javascript << L"function ";
-  if (m_wsName.GetAt(0) == L'!') {
-    CFX_WideString tempName = EXCLAMATION_IN_IDENTIFIER + m_wsName.Mid(1);
+  if (!m_wsName.IsEmpty() && m_wsName[0] == L'!') {
+    CFX_WideString tempName =
+        EXCLAMATION_IN_IDENTIFIER + m_wsName.Right(m_wsName.GetLength() - 1);
     javascript << tempName;
   } else {
     javascript << m_wsName;
@@ -71,9 +72,10 @@ bool CXFA_FMFunctionDefinition::ToJavaScript(CFX_WideTextBuf& javascript) {
   for (const auto& identifier : m_pArguments) {
     if (bNeedComma)
       javascript << L", ";
-    if (identifier.GetAt(0) == L'!') {
+    if (identifier[0] == L'!') {
       CFX_WideString tempIdentifier =
-          EXCLAMATION_IN_IDENTIFIER + identifier.Mid(1);
+          EXCLAMATION_IN_IDENTIFIER +
+          identifier.Right(identifier.GetLength() - 1);
       javascript << tempIdentifier;
     } else {
       javascript << identifier;
@@ -126,8 +128,9 @@ CXFA_FMVarExpression::~CXFA_FMVarExpression() {}
 bool CXFA_FMVarExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   javascript << L"var ";
   CFX_WideString tempName(m_wsName);
-  if (m_wsName.GetAt(0) == L'!') {
-    tempName = EXCLAMATION_IN_IDENTIFIER + m_wsName.Mid(1);
+  if (m_wsName[0] == L'!') {
+    tempName =
+        EXCLAMATION_IN_IDENTIFIER + m_wsName.Right(m_wsName.GetLength() - 1);
   }
   javascript << tempName;
   javascript << L" = ";
@@ -149,8 +152,9 @@ bool CXFA_FMVarExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
 bool CXFA_FMVarExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << L"var ";
   CFX_WideString tempName(m_wsName);
-  if (m_wsName.GetAt(0) == L'!') {
-    tempName = EXCLAMATION_IN_IDENTIFIER + m_wsName.Mid(1);
+  if (m_wsName[0] == L'!') {
+    tempName =
+        EXCLAMATION_IN_IDENTIFIER + m_wsName.Right(m_wsName.GetLength() - 1);
   }
   javascript << tempName;
   javascript << L" = ";
@@ -455,8 +459,9 @@ CXFA_FMForExpression::~CXFA_FMForExpression() {}
 bool CXFA_FMForExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   javascript << L"{\nvar ";
   CFX_WideString tempVariant;
-  if (m_wsVariant.GetAt(0) == L'!') {
-    tempVariant = EXCLAMATION_IN_IDENTIFIER + m_wsVariant.Mid(1);
+  if (m_wsVariant[0] == L'!') {
+    tempVariant = EXCLAMATION_IN_IDENTIFIER +
+                  m_wsVariant.Right(m_wsVariant.GetLength() - 1);
     javascript << tempVariant;
   } else {
     tempVariant = m_wsVariant;
@@ -509,8 +514,9 @@ bool CXFA_FMForExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << L" = 0;\n";
   javascript << L"{\nvar ";
   CFX_WideString tempVariant;
-  if (m_wsVariant.GetAt(0) == L'!') {
-    tempVariant = EXCLAMATION_IN_IDENTIFIER + m_wsVariant.Mid(1);
+  if (m_wsVariant[0] == L'!') {
+    tempVariant = EXCLAMATION_IN_IDENTIFIER +
+                  m_wsVariant.Right(m_wsVariant.GetLength() - 1);
     javascript << tempVariant;
   } else {
     tempVariant = m_wsVariant;
@@ -574,9 +580,10 @@ CXFA_FMForeachExpression::~CXFA_FMForeachExpression() {}
 bool CXFA_FMForeachExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   javascript << L"{\n";
   javascript << L"var ";
-  if (m_wsIdentifier.GetAt(0) == L'!') {
+  if (m_wsIdentifier[0] == L'!') {
     CFX_WideString tempIdentifier =
-        EXCLAMATION_IN_IDENTIFIER + m_wsIdentifier.Mid(1);
+        EXCLAMATION_IN_IDENTIFIER +
+        m_wsIdentifier.Right(m_wsIdentifier.GetLength() - 1);
     javascript << tempIdentifier;
   } else {
     javascript << m_wsIdentifier;
@@ -605,9 +612,10 @@ bool CXFA_FMForeachExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   javascript << L" < ";
   javascript << RUNTIMEBLOCKTEMPARRAY;
   javascript << L".length)\n{\n";
-  if (m_wsIdentifier.GetAt(0) == L'!') {
+  if (m_wsIdentifier[0] == L'!') {
     CFX_WideString tempIdentifier =
-        EXCLAMATION_IN_IDENTIFIER + m_wsIdentifier.Mid(1);
+        EXCLAMATION_IN_IDENTIFIER +
+        m_wsIdentifier.Right(m_wsIdentifier.GetLength() - 1);
     javascript << tempIdentifier;
   } else {
     javascript << m_wsIdentifier;
@@ -629,9 +637,10 @@ bool CXFA_FMForeachExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << L" = 0;\n";
   javascript << L"{\n";
   javascript << L"var ";
-  if (m_wsIdentifier.GetAt(0) == L'!') {
+  if (m_wsIdentifier[0] == L'!') {
     CFX_WideString tempIdentifier =
-        EXCLAMATION_IN_IDENTIFIER + m_wsIdentifier.Mid(1);
+        EXCLAMATION_IN_IDENTIFIER +
+        m_wsIdentifier.Right(m_wsIdentifier.GetLength() - 1);
     javascript << tempIdentifier;
   } else {
     javascript << m_wsIdentifier;
@@ -659,9 +668,10 @@ bool CXFA_FMForeachExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << L" < ";
   javascript << RUNTIMEBLOCKTEMPARRAY;
   javascript << L".length)\n{\n";
-  if (m_wsIdentifier.GetAt(0) == L'!') {
+  if (m_wsIdentifier[0] == L'!') {
     CFX_WideString tempIdentifier =
-        EXCLAMATION_IN_IDENTIFIER + m_wsIdentifier.Mid(1);
+        EXCLAMATION_IN_IDENTIFIER +
+        m_wsIdentifier.Right(m_wsIdentifier.GetLength() - 1);
     javascript << tempIdentifier;
   } else {
     javascript << m_wsIdentifier;

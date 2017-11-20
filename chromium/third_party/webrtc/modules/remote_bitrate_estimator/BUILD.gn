@@ -51,8 +51,8 @@ rtc_static_library("remote_bitrate_estimator") {
 
   deps = [
     "../..:webrtc_common",
-    "../../base:rtc_base",
-    "../../base:rtc_base_approved",
+    "../../rtc_base:rtc_base",
+    "../../rtc_base:rtc_base_approved",
     "../../system_wrappers",
   ]
 }
@@ -61,6 +61,8 @@ if (rtc_include_tests) {
   rtc_static_library("bwe_simulator_lib") {
     testonly = true
     sources = [
+      "test/bbr_paced_sender.cc",
+      "test/bbr_paced_sender.h",
       "test/bwe.cc",
       "test/bwe.h",
       "test/bwe_test.cc",
@@ -74,6 +76,7 @@ if (rtc_include_tests) {
       "test/bwe_test_logging.h",
       "test/estimators/bbr.cc",
       "test/estimators/bbr.h",
+      "test/estimators/congestion_window.cc",
       "test/estimators/congestion_window.h",
       "test/estimators/max_bandwidth_filter.cc",
       "test/estimators/max_bandwidth_filter.h",
@@ -117,9 +120,9 @@ if (rtc_include_tests) {
       ":remote_bitrate_estimator",
       "..:module_api",
       "../..:webrtc_common",
-      "../../base:gtest_prod",
-      "../../base:rtc_base",
-      "../../base:rtc_base_approved",
+      "../../rtc_base:gtest_prod",
+      "../../rtc_base:rtc_base",
+      "../../rtc_base:rtc_base_approved",
       "../../system_wrappers",
       "../../test:test_support",
       "../../voice_engine",
@@ -147,7 +150,7 @@ if (rtc_include_tests) {
     deps = [
       ":bwe_simulator_lib",
       ":remote_bitrate_estimator",
-      "../../base:rtc_base_approved",
+      "../../rtc_base:rtc_base_approved",
       "../../test:test_support",
     ]
     if (!build_with_chromium && is_clang) {
@@ -177,16 +180,18 @@ if (rtc_include_tests) {
       "send_time_history_unittest.cc",
       "test/bwe_test_framework_unittest.cc",
       "test/bwe_unittest.cc",
+      "test/estimators/congestion_window_unittest.cc",
+      "test/estimators/max_bandwidth_filter_unittest.cc",
+      "test/estimators/min_rtt_filter_unittest.cc",
       "test/estimators/nada_unittest.cc",
       "test/metric_recorder_unittest.cc",
     ]
     deps = [
       ":bwe_simulator_lib",
-      ":mock_remote_bitrate_observer",
       ":remote_bitrate_estimator",
       "../..:webrtc_common",
-      "../../base:rtc_base",
-      "../../base:rtc_base_approved",
+      "../../rtc_base:rtc_base",
+      "../../rtc_base:rtc_base_approved",
       "../../system_wrappers:system_wrappers",
       "../../test:field_trial",
       "../../test:test_support",
@@ -206,17 +211,6 @@ if (rtc_include_tests) {
     }
   }
 
-  rtc_source_set("mock_remote_bitrate_observer") {
-    testonly = true
-    sources = [
-      "include/mock/mock_remote_bitrate_observer.h",
-    ]
-    deps = [
-      ":remote_bitrate_estimator",
-      "../../test:test_support",
-    ]
-  }
-
   rtc_test("bwe_simulations_tests") {
     testonly = true
 
@@ -227,7 +221,7 @@ if (rtc_include_tests) {
       ":bwe_simulator_lib",
       ":remote_bitrate_estimator",
       "../..:webrtc_common",
-      "../../base:rtc_base_approved",
+      "../../rtc_base:rtc_base_approved",
       "../../test:test_main",
       "//testing/gmock",
       "//testing/gtest",

@@ -63,8 +63,8 @@ CFX_WideString CBC_OnedEAN13Writer::FilterContents(
     const CFX_WideStringC& contents) {
   CFX_WideString filtercontents;
   wchar_t ch;
-  for (int32_t i = 0; i < contents.GetLength(); i++) {
-    ch = contents.GetAt(i);
+  for (FX_STRSIZE i = 0; i < contents.GetLength(); i++) {
+    ch = contents[i];
     if (ch > 175) {
       i++;
       continue;
@@ -78,8 +78,8 @@ CFX_WideString CBC_OnedEAN13Writer::FilterContents(
 int32_t CBC_OnedEAN13Writer::CalcChecksum(const CFX_ByteString& contents) {
   int32_t odd = 0;
   int32_t even = 0;
-  int32_t j = 1;
-  for (int32_t i = contents.GetLength() - 1; i >= 0; i--) {
+  FX_STRSIZE j = 1;
+  for (FX_STRSIZE i = 0; i < contents.GetLength(); i++) {
     if (j % 2) {
       odd += FXSYS_atoi(contents.Mid(i, 1).c_str());
     } else {
@@ -109,7 +109,7 @@ uint8_t* CBC_OnedEAN13Writer::EncodeImpl(const CFX_ByteString& contents,
     return nullptr;
 
   m_iDataLenth = 13;
-  int32_t firstDigit = FXSYS_atoi(contents.Mid(0, 1).c_str());
+  int32_t firstDigit = FXSYS_atoi(contents.Left(1).c_str());
   int32_t parities = FIRST_DIGIT_ENCODINGS[firstDigit];
   outLength = m_codeWidth;
   std::unique_ptr<uint8_t, FxFreeDeleter> result(
@@ -168,24 +168,21 @@ bool CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
   CFX_FloatRect rect((float)leftPosition, (float)(m_Height - iTextHeight),
                      (float)(leftPosition + strWidth - 0.5), (float)m_Height);
   matr.Concat(*matrix);
-  matr.TransformRect(rect);
-  FX_RECT re = rect.GetOuterRect();
+  FX_RECT re = matr.TransformRect(rect).GetOuterRect();
   device->FillRect(&re, m_backgroundColor);
   CFX_FloatRect rect1(
       (float)(leftPosition + 47 * multiple), (float)(m_Height - iTextHeight),
       (float)(leftPosition + 47 * multiple + strWidth - 0.5), (float)m_Height);
   CFX_Matrix matr1(m_outputHScale, 0.0, 0.0, 1.0, 0.0, 0.0);
   matr1.Concat(*matrix);
-  matr1.TransformRect(rect1);
-  re = rect1.GetOuterRect();
+  re = matr1.TransformRect(rect1).GetOuterRect();
   device->FillRect(&re, m_backgroundColor);
   int32_t strWidth1 = multiple * 7;
   CFX_Matrix matr2(m_outputHScale, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
   CFX_FloatRect rect2(0.0f, (float)(m_Height - iTextHeight),
                       (float)strWidth1 - 0.5f, (float)m_Height);
   matr2.Concat(*matrix);
-  matr2.TransformRect(rect2);
-  re = rect2.GetOuterRect();
+  re = matr2.TransformRect(rect2).GetOuterRect();
   device->FillRect(&re, m_backgroundColor);
 
   float blank = 0.0;
@@ -219,7 +216,7 @@ bool CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
                            static_cast<float>(iFontSize), &affine_matrix1,
                            m_fontColor, FXTEXT_CLEARTYPE);
   }
-  tempStr = str.Mid(0, 1);
+  tempStr = str.Left(1);
   iLen = tempStr.GetLength();
   strWidth = multiple * 7;
   strWidth = (int32_t)(strWidth * m_outputHScale);

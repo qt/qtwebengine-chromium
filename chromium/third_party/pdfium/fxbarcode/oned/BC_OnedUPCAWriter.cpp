@@ -43,7 +43,7 @@ CBC_OnedUPCAWriter::~CBC_OnedUPCAWriter() {}
 
 bool CBC_OnedUPCAWriter::CheckContentValidity(const CFX_WideStringC& contents) {
   for (FX_STRSIZE i = 0; i < contents.GetLength(); ++i) {
-    if (contents.GetAt(i) < '0' || contents.GetAt(i) > '9')
+    if (contents[i] < '0' || contents[i] > '9')
       return false;
   }
   return true;
@@ -53,8 +53,8 @@ CFX_WideString CBC_OnedUPCAWriter::FilterContents(
     const CFX_WideStringC& contents) {
   CFX_WideString filtercontents;
   wchar_t ch;
-  for (int32_t i = 0; i < contents.GetLength(); i++) {
-    ch = contents.GetAt(i);
+  for (FX_STRSIZE i = 0; i < contents.GetLength(); i++) {
+    ch = contents[i];
     if (ch > 175) {
       i++;
       continue;
@@ -69,8 +69,8 @@ CFX_WideString CBC_OnedUPCAWriter::FilterContents(
 int32_t CBC_OnedUPCAWriter::CalcChecksum(const CFX_ByteString& contents) {
   int32_t odd = 0;
   int32_t even = 0;
-  int32_t j = 1;
-  for (int32_t i = contents.GetLength() - 1; i >= 0; i--) {
+  FX_STRSIZE j = 1;
+  for (FX_STRSIZE i = contents.GetLength() - 1; i >= 0; i--) {
     if (j % 2) {
       odd += FXSYS_atoi(contents.Mid(i, 1).c_str());
     } else {
@@ -127,8 +127,7 @@ bool CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
   CFX_FloatRect rect((float)leftPosition, (float)(m_Height - iTextHeight),
                      (float)(leftPosition + strWidth - 0.5), (float)m_Height);
   matr.Concat(*matrix);
-  matr.TransformRect(rect);
-  FX_RECT re = rect.GetOuterRect();
+  FX_RECT re = matr.TransformRect(rect).GetOuterRect();
   device->FillRect(&re, m_backgroundColor);
   CFX_Matrix matr1(m_outputHScale, 0.0, 0.0, 1.0, 0.0, 0.0);
   CFX_FloatRect rect1((float)(leftPosition + 40 * multiple),
@@ -136,16 +135,14 @@ bool CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
                       (float)((leftPosition + 40 * multiple) + strWidth - 0.5),
                       (float)m_Height);
   matr1.Concat(*matrix);
-  matr1.TransformRect(rect1);
-  re = rect1.GetOuterRect();
+  re = matr1.TransformRect(rect1).GetOuterRect();
   device->FillRect(&re, m_backgroundColor);
   float strWidth1 = (float)multiple * 7;
   CFX_Matrix matr2(m_outputHScale, 0.0, 0.0, 1.0, 0.0, 0.0);
   CFX_FloatRect rect2(0.0, (float)(m_Height - iTextHeight),
                       (float)strWidth1 - 1, (float)m_Height);
   matr2.Concat(*matrix);
-  matr2.TransformRect(rect2);
-  re = rect2.GetOuterRect();
+  re = matr2.TransformRect(rect2).GetOuterRect();
   device->FillRect(&re, m_backgroundColor);
   CFX_Matrix matr3(m_outputHScale, 0.0, 0.0, 1.0, 0.0, 0.0);
   CFX_FloatRect rect3((float)(leftPosition + 85 * multiple),
@@ -153,8 +150,7 @@ bool CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
                       (float)((leftPosition + 85 * multiple) + strWidth1 - 0.5),
                       (float)m_Height);
   matr3.Concat(*matrix);
-  matr3.TransformRect(rect3);
-  re = rect3.GetOuterRect();
+  re = matr3.TransformRect(rect3).GetOuterRect();
   device->FillRect(&re, m_backgroundColor);
   strWidth = strWidth * m_outputHScale;
 
@@ -183,7 +179,7 @@ bool CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
                            static_cast<float>(iFontSize), &affine_matrix1,
                            m_fontColor, FXTEXT_CLEARTYPE);
   }
-  tempStr = str.Mid(0, 1);
+  tempStr = str.Left(1);
   iLen = tempStr.GetLength();
   strWidth = (float)multiple * 7;
   strWidth = strWidth * m_outputHScale;

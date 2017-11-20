@@ -73,7 +73,7 @@ void CPDFSDK_BAAnnotHandler::OnDraw(CPDFSDK_PageView* pPageView,
 #endif  // PDF_ENABLE_XFA
   if (bDrawAnnots && pAnnot->GetAnnotSubtype() == CPDF_Annot::Subtype::POPUP) {
     static_cast<CPDFSDK_BAAnnot*>(pAnnot)->DrawAppearance(
-        pDevice, pUser2Device, CPDF_Annot::Normal, nullptr);
+        pDevice, *pUser2Device, CPDF_Annot::Normal, nullptr);
   }
 }
 
@@ -196,6 +196,9 @@ CFX_FloatRect CPDFSDK_BAAnnotHandler::GetViewBBox(CPDFSDK_PageView* pPageView,
 CFX_WideString CPDFSDK_BAAnnotHandler::GetSelectedText(CPDFSDK_Annot* pAnnot) {
   return CFX_WideString();
 }
+
+void CPDFSDK_BAAnnotHandler::ReplaceSelection(CPDFSDK_Annot* pAnnot,
+                                              const CFX_WideString& text) {}
 
 bool CPDFSDK_BAAnnotHandler::HitTest(CPDFSDK_PageView* pPageView,
                                      CPDFSDK_Annot* pAnnot,

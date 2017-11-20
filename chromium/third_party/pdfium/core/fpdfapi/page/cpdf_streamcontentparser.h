@@ -9,6 +9,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_contentmark.h"
@@ -37,9 +38,9 @@ class CPDF_StreamContentParser {
                            const CFX_Matrix* pmtContentToUser,
                            CPDF_PageObjectHolder* pObjectHolder,
                            CPDF_Dictionary* pResources,
-                           CFX_FloatRect* pBBox,
+                           const CFX_FloatRect& rcBBox,
                            CPDF_AllStates* pAllStates,
-                           int level);
+                           std::set<const uint8_t*>* parsedSet);
   ~CPDF_StreamContentParser();
 
   uint32_t Parse(const uint8_t* pData, uint32_t dwSize, uint32_t max_cost);
@@ -51,8 +52,10 @@ class CPDF_StreamContentParser {
   const float* GetType3Data() const { return m_Type3Data; }
   CPDF_Font* FindFont(const CFX_ByteString& name);
 
-  CFX_ByteStringC FindKeyAbbreviationForTesting(const CFX_ByteStringC& abbr);
-  CFX_ByteStringC FindValueAbbreviationForTesting(const CFX_ByteStringC& abbr);
+  static CFX_ByteStringC FindKeyAbbreviationForTesting(
+      const CFX_ByteStringC& abbr);
+  static CFX_ByteStringC FindValueAbbreviationForTesting(
+      const CFX_ByteStringC& abbr);
 
  private:
   struct ContentParam {
@@ -196,9 +199,9 @@ class CPDF_StreamContentParser {
   CFX_UnownedPtr<CPDF_Dictionary> m_pParentResources;
   CFX_UnownedPtr<CPDF_Dictionary> m_pResources;
   CFX_UnownedPtr<CPDF_PageObjectHolder> m_pObjectHolder;
-  int m_Level;
+  CFX_UnownedPtr<std::set<const uint8_t*>> m_ParsedSet;
   CFX_Matrix m_mtContentToUser;
-  CFX_FloatRect m_BBox;
+  const CFX_FloatRect m_BBox;
   ContentParam m_ParamBuf[kParamBufSize];
   uint32_t m_ParamStartPos;
   uint32_t m_ParamCount;

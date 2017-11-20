@@ -24,12 +24,14 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkImageShader)
 
 #if SK_SUPPORT_GPU
-    sk_sp<GrFragmentProcessor> asFragmentProcessor(const AsFPArgs&) const override;
+    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const AsFPArgs&) const override;
 #endif
 
     SkImageShader(sk_sp<SkImage>, TileMode tx, TileMode ty, const SkMatrix* localMatrix);
 
-    static bool IsRasterPipelineOnly(SkColorType, SkShader::TileMode tx, SkShader::TileMode ty);
+    static bool IsRasterPipelineOnly(const SkMatrix& ctm, SkColorType, SkAlphaType,
+                                     SkShader::TileMode tx, SkShader::TileMode ty,
+                                     const SkMatrix& localM);
 
 protected:
     void flatten(SkWriteBuffer&) const override;
@@ -39,10 +41,9 @@ protected:
 #endif
     SkImage* onIsAImage(SkMatrix*, TileMode*) const override;
 
-    bool onIsRasterPipelineOnly() const override;
+    bool onIsRasterPipelineOnly(const SkMatrix& ctm) const override;
 
-    bool onAppendStages(SkRasterPipeline*, SkColorSpace*, SkArenaAlloc*,
-                        const SkMatrix& ctm, const SkPaint&, const SkMatrix*) const override;
+    bool onAppendStages(const StageRec&) const override;
 
     sk_sp<SkShader> onMakeColorSpace(SkColorSpaceXformer* xformer) const override {
         return xformer->apply(fImage.get())->makeShader(fTileModeX, fTileModeY,

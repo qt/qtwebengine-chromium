@@ -284,10 +284,6 @@ class UIThreadExtensionFunction::RenderFrameHostTracker
         function_->OnMessageReceived(message);
   }
 
-  bool OnMessageReceived(const IPC::Message& message) override {
-    return function_->OnMessageReceived(message);
-  }
-
   UIThreadExtensionFunction* function_;  // Owns us.
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameHostTracker);
@@ -353,7 +349,7 @@ bool ExtensionFunction::user_gesture() const {
 
 ExtensionFunction::ResponseValue ExtensionFunction::NoArguments() {
   return ResponseValue(
-      new ArgumentListResponseValue(this, base::MakeUnique<base::ListValue>()));
+      new ArgumentListResponseValue(this, std::make_unique<base::ListValue>()));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::OneArgument(
@@ -476,7 +472,7 @@ void ExtensionFunction::SendResponseImpl(bool success) {
     response = BAD_MESSAGE;
     LOG(ERROR) << "Bad extension message " << name_;
   }
-  response_type_ = base::MakeUnique<ResponseType>(response);
+  response_type_ = std::make_unique<ResponseType>(response);
 
   // If results were never set, we send an empty argument list.
   if (!results_)

@@ -25,6 +25,8 @@ class GrStencilAttachment;
  */
 class GrRenderTarget : virtual public GrSurface {
 public:
+    virtual bool alwaysClearStencil() const { return false; }
+
     // GrSurface overrides
     GrRenderTarget* asRenderTarget() override { return this; }
     const GrRenderTarget* asRenderTarget() const  override { return this; }
@@ -63,7 +65,7 @@ public:
      * @param rect  a rect bounding the area needing resolve. NULL indicates
      *              the whole RT needs resolving.
      */
-    void flagAsNeedingResolve(const SkIRect* rect = NULL);
+    void flagAsNeedingResolve(const SkIRect* rect = nullptr);
 
     /**
      * Call to override the region that needs to be resolved.

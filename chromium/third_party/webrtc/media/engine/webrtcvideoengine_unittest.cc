@@ -111,6 +111,16 @@ cricket::MediaConfig GetMediaConfig() {
   media_config.video.enable_cpu_overuse_detection = false;
   return media_config;
 }
+
+// TODO(nisse): Duplicated in call.cc.
+const int* FindKeyByValue(const std::map<int, int>& m, int v) {
+  for (const auto& kv : m) {
+    if (kv.second == v)
+      return &kv.first;
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 namespace cricket {
@@ -271,29 +281,6 @@ TEST_F(WebRtcVideoEngineTest, CVOSetHeaderExtensionBeforeCapturer) {
   parameters.extensions.clear();
   EXPECT_TRUE(channel->SetSendParameters(parameters));
   EXPECT_TRUE(capturer.apply_rotation());
-}
-
-
-// TODO(ilnik): Remove this test once field trial is gone.
-TEST_F(WebRtcVideoEngineTest, SupportsVideoContentTypeHeaderExtension) {
-  // Extension shound not be reported outside of the field trial.
-  RtpCapabilities capabilities = engine_.GetCapabilities();
-  EXPECT_FALSE(capabilities.header_extensions.empty());
-  for (const RtpExtension& extension : capabilities.header_extensions) {
-    EXPECT_NE(extension.uri, RtpExtension::kVideoContentTypeUri);
-  }
-  webrtc::test::ScopedFieldTrials override_field_trials_(
-        "WebRTC-VideoContentTypeExtension/Enabled/");
-  // Should be reported within field trial.
-  capabilities = engine_.GetCapabilities();
-  EXPECT_FALSE(capabilities.header_extensions.empty());
-  for (const RtpExtension& extension : capabilities.header_extensions) {
-    if (extension.uri == RtpExtension::kVideoContentTypeUri) {
-      EXPECT_EQ(RtpExtension::kVideoContentTypeDefaultId, extension.id);
-      return;
-    }
-  }
-  FAIL() << "Video Content Type extension not in header-extension list.";
 }
 
 TEST_F(WebRtcVideoEngineTest, CVOSetHeaderExtensionBeforeAddSendStream) {
@@ -1327,9 +1314,10 @@ TEST_F(WebRtcVideoChannelTest, RecvStreamWithSimAndRtx) {
   // Receiver side.
   FakeVideoReceiveStream* recv_stream = AddRecvStream(
       cricket::CreateSimWithRtxStreamParams("cname", ssrcs, rtx_ssrcs));
-  EXPECT_FALSE(recv_stream->GetConfig().rtp.rtx_payload_types.empty());
+  EXPECT_FALSE(
+      recv_stream->GetConfig().rtp.rtx_associated_payload_types.empty());
   EXPECT_EQ(recv_stream->GetConfig().decoders.size(),
-            recv_stream->GetConfig().rtp.rtx_payload_types.size())
+            recv_stream->GetConfig().rtp.rtx_associated_payload_types.size())
       << "RTX should be mapped for all decoders/payload types.";
   EXPECT_EQ(rtx_ssrcs[0], recv_stream->GetConfig().rtp.rtx_ssrc);
 }
@@ -2272,7 +2260,7 @@ TEST_F(WebRtcVideoChannelTest, PreviousAdaptationDoesNotApplyToScreenshare) {
   send_stream = fake_call_->GetVideoSendStreams().front();
   // We have a new fake send stream, so it doesn't remember the old sink wants.
   // In practice, it will be populated from
-  // ViEEncoder::VideoSourceProxy::SetSource(), so simulate that here.
+  // VideoStreamEncoder::VideoSourceProxy::SetSource(), so simulate that here.
   send_stream->InjectVideoSinkWants(wants);
   EXPECT_TRUE(capturer.CaptureCustomFrame(1280, 720, cricket::FOURCC_I420));
   ASSERT_EQ(3, fake_call_->GetNumCreatedSendStreams());
@@ -3165,11 +3153,11 @@ TEST_F(WebRtcVideoChannelTest, SetRecvCodecsWithChangedRtxPayloadType) {
   ASSERT_EQ(1U, fake_call_->GetVideoReceiveStreams().size());
   const webrtc::VideoReceiveStream::Config& config_before =
       fake_call_->GetVideoReceiveStreams()[0]->GetConfig();
-  EXPECT_EQ(1U, config_before.rtp.rtx_payload_types.size());
-  auto it_before =
-      config_before.rtp.rtx_payload_types.find(GetEngineCodec("VP8").id);
-  ASSERT_NE(it_before, config_before.rtp.rtx_payload_types.end());
-  EXPECT_EQ(kUnusedPayloadType1, it_before->second);
+  EXPECT_EQ(1U, config_before.rtp.rtx_associated_payload_types.size());
+  const int* payload_type_before = FindKeyByValue(
+      config_before.rtp.rtx_associated_payload_types, GetEngineCodec("VP8").id);
+  ASSERT_NE(payload_type_before, nullptr);
+  EXPECT_EQ(kUnusedPayloadType1, *payload_type_before);
   EXPECT_EQ(kRtxSsrcs1[0], config_before.rtp.rtx_ssrc);
 
   // Change payload type for RTX.
@@ -3178,11 +3166,11 @@ TEST_F(WebRtcVideoChannelTest, SetRecvCodecsWithChangedRtxPayloadType) {
   ASSERT_EQ(1U, fake_call_->GetVideoReceiveStreams().size());
   const webrtc::VideoReceiveStream::Config& config_after =
       fake_call_->GetVideoReceiveStreams()[0]->GetConfig();
-  EXPECT_EQ(1U, config_after.rtp.rtx_payload_types.size());
-  auto it_after =
-      config_after.rtp.rtx_payload_types.find(GetEngineCodec("VP8").id);
-  ASSERT_NE(it_after, config_after.rtp.rtx_payload_types.end());
-  EXPECT_EQ(kUnusedPayloadType2, it_after->second);
+  EXPECT_EQ(1U, config_after.rtp.rtx_associated_payload_types.size());
+  const int* payload_type_after = FindKeyByValue(
+      config_after.rtp.rtx_associated_payload_types, GetEngineCodec("VP8").id);
+  ASSERT_NE(payload_type_after, nullptr);
+  EXPECT_EQ(kUnusedPayloadType2, *payload_type_after);
   EXPECT_EQ(kRtxSsrcs1[0], config_after.rtp.rtx_ssrc);
 }
 
@@ -3709,7 +3697,7 @@ TEST_F(WebRtcVideoChannelTest, GetStatsTranslatesReceivePacketStatsCorrectly) {
   stats.rtp_stats.transmitted.header_bytes = 3;
   stats.rtp_stats.transmitted.padding_bytes = 4;
   stats.rtp_stats.transmitted.packets = 5;
-  stats.rtcp_stats.cumulative_lost = 6;
+  stats.rtcp_stats.packets_lost = 6;
   stats.rtcp_stats.fraction_lost = 7;
   stream->SetStats(stats);
 
@@ -3721,7 +3709,7 @@ TEST_F(WebRtcVideoChannelTest, GetStatsTranslatesReceivePacketStatsCorrectly) {
             info.receivers[0].bytes_rcvd);
   EXPECT_EQ(stats.rtp_stats.transmitted.packets,
             info.receivers[0].packets_rcvd);
-  EXPECT_EQ(stats.rtcp_stats.cumulative_lost, info.receivers[0].packets_lost);
+  EXPECT_EQ(stats.rtcp_stats.packets_lost, info.receivers[0].packets_lost);
   EXPECT_EQ(static_cast<float>(stats.rtcp_stats.fraction_lost) / (1 << 8),
             info.receivers[0].fraction_lost);
 }
@@ -3806,9 +3794,10 @@ TEST_F(WebRtcVideoChannelTest, DefaultReceiveStreamReconfiguresToUseRtx) {
   ASSERT_EQ(1u, fake_call_->GetVideoReceiveStreams().size())
       << "AddRecvStream should have reconfigured, not added a new receiver.";
   recv_stream = fake_call_->GetVideoReceiveStreams()[0];
-  EXPECT_FALSE(recv_stream->GetConfig().rtp.rtx_payload_types.empty());
+  EXPECT_FALSE(
+      recv_stream->GetConfig().rtp.rtx_associated_payload_types.empty());
   EXPECT_EQ(recv_stream->GetConfig().decoders.size(),
-            recv_stream->GetConfig().rtp.rtx_payload_types.size())
+            recv_stream->GetConfig().rtp.rtx_associated_payload_types.size())
       << "RTX should be mapped for all decoders/payload types.";
   EXPECT_EQ(rtx_ssrcs[0], recv_stream->GetConfig().rtp.rtx_ssrc);
 }

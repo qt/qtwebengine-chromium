@@ -8,6 +8,7 @@
 #define GrMockTexture_DEFINED
 
 #include "GrMockGpu.h"
+#include "GrRenderTarget.h"
 #include "GrTexture.h"
 #include "GrTexturePriv.h"
 #include "mock/GrMockTypes.h"
@@ -89,7 +90,7 @@ private:
 
     void computeScratchKey(GrScratchKey* key) const override {
         GrTexturePriv::ComputeScratchKey(this->config(), this->width(), this->height(),
-                                         this->origin(), true, this->numStencilSamples(),
+                                         true, this->numStencilSamples(),
                                          this->texturePriv().hasMipMaps(), key);
     }
 };

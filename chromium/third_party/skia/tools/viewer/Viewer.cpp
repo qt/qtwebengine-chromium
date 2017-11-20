@@ -19,8 +19,10 @@
 #include "SkColorSpace_Base.h"
 #include "SkColorSpaceXformCanvas.h"
 #include "SkCommandLineFlags.h"
+#include "SkCommonFlagsGpuThreads.h"
 #include "SkCommonFlagsPathRenderer.h"
 #include "SkDashPathEffect.h"
+#include "SkEventTracingPriv.h"
 #include "SkGraphics.h"
 #include "SkImagePriv.h"
 #include "SkMetaData.h"
@@ -28,6 +30,7 @@
 #include "SkOSFile.h"
 #include "SkOSPath.h"
 #include "SkRandom.h"
+#include "SkScan.h"
 #include "SkStream.h"
 #include "SkSurface.h"
 #include "SkSwizzle.h"
@@ -44,7 +47,6 @@
 
 using namespace sk_app;
 
-using GpuPathRenderers = GrContextOptions::GpuPathRenderers;
 static std::map<GpuPathRenderers, std::string> gPathRendererNames;
 
 Application* Application::Create(int argc, char** argv, void* platformData) {
@@ -157,15 +159,17 @@ static DEFINE_string(jpgs, "jpgs", "Directory to read jpgs from.");
 
 static DEFINE_string2(backend, b, "sw", "Backend to use. Allowed values are " BACKENDS_STR ".");
 
-static DEFINE_bool(atrace, false, "Enable support for using ATrace. ATrace is only supported on Android.");
-
 DEFINE_int32(msaa, 0, "Number of subpixel samples. 0 for no HW antialiasing.");
 DEFINE_pathrenderer_flag;
 
 DEFINE_bool(instancedRendering, false, "Enable instanced rendering on GPU backends.");
+DECLARE_int32(threads)
 
-const char *kBackendTypeStrings[sk_app::Window::kBackendTypeCount] = {
+const char* kBackendTypeStrings[sk_app::Window::kBackendTypeCount] = {
     "OpenGL",
+#if SK_ANGLE && defined(SK_BUILD_FOR_WIN)
+    "ANGLE",
+#endif
 #ifdef SK_VULKAN
     "Vulkan",
 #endif
@@ -176,6 +180,11 @@ static sk_app::Window::BackendType get_backend_type(const char* str) {
 #ifdef SK_VULKAN
     if (0 == strcmp(str, "vk")) {
         return sk_app::Window::kVulkan_BackendType;
+    } else
+#endif
+#if SK_ANGLE && defined(SK_BUILD_FOR_WIN)
+    if (0 == strcmp(str, "angle")) {
+        return sk_app::Window::kANGLE_BackendType;
     } else
 #endif
     if (0 == strcmp(str, "gl")) {
@@ -255,18 +264,18 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     , fZoomLevel(0.0f)
     , fGestureDevice(GestureDevice::kNone)
 {
-    static SkTaskGroup::Enabler kTaskGroupEnabler;
     SkGraphics::Init();
 
     static SkOnce initPathRendererNames;
     initPathRendererNames([]() {
-        gPathRendererNames[GpuPathRenderers::kAll] = "Default Ganesh Behavior (best path renderer)";
+        gPathRendererNames[GpuPathRenderers::kAll] = "All Path Renderers";
+        gPathRendererNames[GpuPathRenderers::kDefault] =
+                "Default Ganesh Behavior (best path renderer, not including CCPR)";
         gPathRendererNames[GpuPathRenderers::kStencilAndCover] = "NV_path_rendering";
         gPathRendererNames[GpuPathRenderers::kMSAA] = "Sample shading";
         gPathRendererNames[GpuPathRenderers::kSmall] = "Small paths (cached sdf or alpha masks)";
         gPathRendererNames[GpuPathRenderers::kCoverageCounting] = "Coverage counting";
         gPathRendererNames[GpuPathRenderers::kTessellating] = "Tessellating";
-        gPathRendererNames[GpuPathRenderers::kDefault] = "Original Ganesh path renderer";
         gPathRendererNames[GpuPathRenderers::kNone] = "Software masks";
     });
 
@@ -285,9 +294,8 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     SetResourcePath("/data/local/tmp/resources");
 #endif
 
-    if (FLAGS_atrace) {
-        SkAssertResult(SkEventTracer::SetInstance(new SkATrace()));
-    }
+    initializeEventTracingForTools();
+    static SkTaskGroup::Enabler kTaskGroupEnabler(FLAGS_threads);
 
     fBackendType = get_backend_type(FLAGS_backend[0]);
     fWindow = Window::CreateNativeWindow(platformData);
@@ -296,6 +304,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     displayParams.fMSAASampleCount = FLAGS_msaa;
     displayParams.fGrContextOptions.fEnableInstancedRendering = FLAGS_instancedRendering;
     displayParams.fGrContextOptions.fGpuPathRenderers = CollectGpuPathRenderersFromFlags();
+    displayParams.fGrContextOptions.fExecutor = GpuExecutorForTools();
     fWindow->setRequestedDisplayParams(displayParams);
 
     // register callbacks
@@ -367,27 +376,41 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
         fWindow->inval();
     });
     fCommands.addCommand('d', "Modes", "Change rendering backend", [this]() {
-        sk_app::Window::BackendType newBackend = fBackendType;
-#if defined(SK_BUILD_FOR_WIN) || defined(SK_BUILD_FOR_MAC)
-        if (sk_app::Window::kRaster_BackendType == fBackendType) {
-            newBackend = sk_app::Window::kNativeGL_BackendType;
-#ifdef SK_VULKAN
-        } else if (sk_app::Window::kNativeGL_BackendType == fBackendType) {
-            newBackend = sk_app::Window::kVulkan_BackendType;
-#endif
-        } else {
-            newBackend = sk_app::Window::kRaster_BackendType;
-        }
-#elif defined(SK_BUILD_FOR_UNIX)
+        sk_app::Window::BackendType newBackend = (sk_app::Window::BackendType)(
+                (fBackendType + 1) % sk_app::Window::kBackendTypeCount);
         // Switching to and from Vulkan is problematic on Linux so disabled for now
-        if (sk_app::Window::kRaster_BackendType == fBackendType) {
-            newBackend = sk_app::Window::kNativeGL_BackendType;
-        } else if (sk_app::Window::kNativeGL_BackendType == fBackendType) {
-            newBackend = sk_app::Window::kRaster_BackendType;
+#if defined(SK_BUILD_FOR_UNIX) && defined(SK_VULKAN)
+        if (newBackend == sk_app::Window::kVulkan_BackendType) {
+            newBackend = (sk_app::Window::BackendType)((newBackend + 1) %
+                                                       sk_app::Window::kBackendTypeCount);
+        } else if (fBackendType == sk_app::Window::kVulkan_BackendType) {
+            newBackend = sk_app::Window::kVulkan_BackendType;
         }
 #endif
-
         this->setBackend(newBackend);
+    });
+
+    fCommands.addCommand('A', "AAA", "Toggle analytic AA", [this]() {
+        if (!gSkUseAnalyticAA) {
+            gSkUseAnalyticAA = true;
+        } else if (!gSkForceAnalyticAA) {
+            gSkForceAnalyticAA = true;
+        } else {
+            gSkUseAnalyticAA = gSkForceAnalyticAA = false;
+        }
+        this->updateTitle();
+        fWindow->inval();
+    });
+    fCommands.addCommand('D', "DAA", "Toggle delta AA", [this]() {
+        if (!gSkUseDeltaAA) {
+            gSkUseDeltaAA = true;
+        } else if (!gSkForceDeltaAA) {
+            gSkForceDeltaAA = true;
+        } else {
+            gSkUseDeltaAA = gSkForceDeltaAA = false;
+        }
+        this->updateTitle();
+        fWindow->inval();
     });
 
     // set up slides
@@ -544,6 +567,20 @@ void Viewer::updateTitle() {
     SkString title("Viewer: ");
     title.append(fSlides[fCurrentSlide]->getName());
 
+    if (gSkUseDeltaAA) {
+        if (gSkForceDeltaAA) {
+            title.append(" <FDAA>");
+        } else {
+            title.append(" <DAA>");
+        }
+    } else if (gSkUseAnalyticAA) {
+        if (gSkForceAnalyticAA) {
+            title.append(" <FAAA>");
+        } else {
+            title.append(" <AAA>");
+        }
+    }
+
     switch (fColorMode) {
         case ColorMode::kLegacy:
             title.append(" Legacy 8888");
@@ -578,7 +615,7 @@ void Viewer::updateTitle() {
     title.append("]");
 
     GpuPathRenderers pr = fWindow->getRequestedDisplayParams().fGrContextOptions.fGpuPathRenderers;
-    if (GpuPathRenderers::kAll != pr) {
+    if (GpuPathRenderers::kDefault != pr) {
         title.appendf(" [Path renderer: %s]", gPathRendererNames[pr].c_str());
     }
 
@@ -670,10 +707,14 @@ void Viewer::setBackend(sk_app::Window::BackendType backendType) {
     fWindow->detach();
 
 #if defined(SK_BUILD_FOR_WIN) && defined(SK_VULKAN)
-    // Switching from OpenGL to Vulkan (or vice-versa on some systems) in the same window is
-    // problematic at this point on Windows, so we just delete the window and recreate it.
+    // Switching between OpenGL, Vulkan, and ANGLE in the same window is problematic at this point
+    // on Windows, so we just delete the window and recreate it.
     if (sk_app::Window::kVulkan_BackendType == fBackendType ||
-            sk_app::Window::kNativeGL_BackendType == fBackendType) {
+        sk_app::Window::kNativeGL_BackendType == fBackendType
+#if SK_ANGLE
+        || sk_app::Window::kANGLE_BackendType == fBackendType
+#endif
+        ) {
         DisplayParams params = fWindow->getRequestedDisplayParams();
         delete fWindow;
         fWindow = Window::CreateNativeWindow(nullptr);
@@ -731,7 +772,7 @@ void Viewer::drawSlide(SkCanvas* canvas) {
     if (ColorMode::kLegacy != fColorMode) {
         auto transferFn = (ColorMode::kColorManagedLinearF16 == fColorMode)
             ? SkColorSpace::kLinear_RenderTargetGamma : SkColorSpace::kSRGB_RenderTargetGamma;
-        SkMatrix44 toXYZ;
+        SkMatrix44 toXYZ(SkMatrix44::kIdentity_Constructor);
         SkAssertResult(fColorSpacePrimaries.toXYZD50(&toXYZ));
         cs = SkColorSpace::MakeRGB(transferFn, toXYZ);
     }
@@ -1012,6 +1053,10 @@ void Viewer::drawImGui(SkCanvas* canvas) {
                 ImGui::RadioButton("Raster", &newBackend, sk_app::Window::kRaster_BackendType);
                 ImGui::SameLine();
                 ImGui::RadioButton("OpenGL", &newBackend, sk_app::Window::kNativeGL_BackendType);
+#if SK_ANGLE && defined(SK_BUILD_FOR_WIN)
+                ImGui::SameLine();
+                ImGui::RadioButton("ANGLE", &newBackend, sk_app::Window::kANGLE_BackendType);
+#endif
 #if defined(SK_VULKAN)
                 ImGui::SameLine();
                 ImGui::RadioButton("Vulkan", &newBackend, sk_app::Window::kVulkan_BackendType);
@@ -1060,6 +1105,7 @@ void Viewer::drawImGui(SkCanvas* canvas) {
                     if (!ctx) {
                         ImGui::RadioButton("Software", true);
                     } else if (fWindow->sampleCount()) {
+                        prButton(GpuPathRenderers::kDefault);
                         prButton(GpuPathRenderers::kAll);
                         if (ctx->caps()->shaderCaps()->pathRenderingSupport()) {
                             prButton(GpuPathRenderers::kStencilAndCover);
@@ -1068,9 +1114,9 @@ void Viewer::drawImGui(SkCanvas* canvas) {
                             prButton(GpuPathRenderers::kMSAA);
                         }
                         prButton(GpuPathRenderers::kTessellating);
-                        prButton(GpuPathRenderers::kDefault);
                         prButton(GpuPathRenderers::kNone);
                     } else {
+                        prButton(GpuPathRenderers::kDefault);
                         prButton(GpuPathRenderers::kAll);
                         if (GrCoverageCountingPathRenderer::IsSupported(*ctx->caps())) {
                             prButton(GpuPathRenderers::kCoverageCounting);
@@ -1299,6 +1345,7 @@ void Viewer::updateUIState() {
     if (!ctx) {
         prState[kOptions].append("Software");
     } else if (fWindow->sampleCount()) {
+        prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kDefault]);
         prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kAll]);
         if (ctx->caps()->shaderCaps()->pathRenderingSupport()) {
             prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kStencilAndCover]);
@@ -1307,9 +1354,9 @@ void Viewer::updateUIState() {
             prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kMSAA]);
         }
         prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kTessellating]);
-        prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kDefault]);
         prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kNone]);
     } else {
+        prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kDefault]);
         prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kAll]);
         if (GrCoverageCountingPathRenderer::IsSupported(*ctx->caps())) {
             prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kCoverageCounting]);
@@ -1322,13 +1369,12 @@ void Viewer::updateUIState() {
     // Instanced rendering state
     Json::Value instState(Json::objectValue);
     instState[kName] = kInstancedRenderingStateName;
+    instState[kValue] = kOFF;
+    instState[kOptions] = Json::Value(Json::arrayValue);
     if (ctx) {
         if (fWindow->getRequestedDisplayParams().fGrContextOptions.fEnableInstancedRendering) {
             instState[kValue] = kON;
-        } else {
-            instState[kValue] = kOFF;
         }
-        instState[kOptions] = Json::Value(Json::arrayValue);
         instState[kOptions].append(kOFF);
         instState[kOptions].append(kON);
     }

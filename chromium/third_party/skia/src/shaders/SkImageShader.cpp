@@ -61,9 +61,13 @@ bool SkImageShader::isOpaque() const {
     return fImage->isOpaque();
 }
 
-bool SkImageShader::IsRasterPipelineOnly(SkColorType ct, SkShader::TileMode tx,
-                                         SkShader::TileMode ty) {
+bool SkImageShader::IsRasterPipelineOnly(const SkMatrix& ctm, SkColorType ct, SkAlphaType at,
+                                         SkShader::TileMode tx, SkShader::TileMode ty,
+                                         const SkMatrix& localM) {
     if (ct != kN32_SkColorType) {
+        return true;
+    }
+    if (at == kUnpremul_SkAlphaType) {
         return true;
     }
 #ifndef SK_SUPPORT_LEGACY_TILED_BITMAPS
@@ -71,12 +75,19 @@ bool SkImageShader::IsRasterPipelineOnly(SkColorType ct, SkShader::TileMode tx,
         return true;
     }
 #endif
+    if (!ctm.isScaleTranslate()) {
+        return true;
+    }
+    if (!localM.isScaleTranslate()) {
+        return true;
+    }
     return false;
 }
 
-bool SkImageShader::onIsRasterPipelineOnly() const {
+bool SkImageShader::onIsRasterPipelineOnly(const SkMatrix& ctm) const {
     SkBitmapProvider provider(fImage.get(), nullptr);
-    return IsRasterPipelineOnly(provider.info().colorType(), fTileModeX, fTileModeY);
+    return IsRasterPipelineOnly(ctm, provider.info().colorType(), provider.info().alphaType(),
+                                fTileModeX, fTileModeY, this->getLocalMatrix());
 }
 
 SkShaderBase::Context* SkImageShader::onMakeContext(const ContextRec& rec,
@@ -160,8 +171,8 @@ void SkImageShader::toString(SkString* str) const {
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrSimpleTextureEffect.h"
 
-sk_sp<GrFragmentProcessor> SkImageShader::asFragmentProcessor(const AsFPArgs& args) const {
-
+std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
+        const AsFPArgs& args) const {
     SkMatrix lmInverse;
     if (!this->getLocalMatrix().invert(&lmInverse)) {
         return nullptr;
@@ -200,7 +211,7 @@ sk_sp<GrFragmentProcessor> SkImageShader::asFragmentProcessor(const AsFPArgs& ar
 
     sk_sp<GrColorSpaceXform> colorSpaceXform = GrColorSpaceXform::Make(texColorSpace.get(),
                                                                        args.fDstColorSpace);
-    sk_sp<GrFragmentProcessor> inner;
+    std::unique_ptr<GrFragmentProcessor> inner;
     if (doBicubic) {
         inner = GrBicubicEffect::Make(std::move(proxy),
                                       std::move(colorSpaceXform), lmInverse, tm);
@@ -212,7 +223,7 @@ sk_sp<GrFragmentProcessor> SkImageShader::asFragmentProcessor(const AsFPArgs& ar
     if (isAlphaOnly) {
         return inner;
     }
-    return sk_sp<GrFragmentProcessor>(GrFragmentProcessor::MulOutputByInputAlpha(std::move(inner)));
+    return GrFragmentProcessor::MulOutputByInputAlpha(std::move(inner));
 }
 
 #endif
@@ -242,20 +253,21 @@ SkFlattenable::Register("SkBitmapProcShader", SkBitmapProcShader_CreateProc, kSk
 SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END
 
 
-bool SkImageShader::onAppendStages(SkRasterPipeline* p, SkColorSpace* dstCS, SkArenaAlloc* alloc,
-                                   const SkMatrix& ctm, const SkPaint& paint,
-                                   const SkMatrix* localM) const {
-    auto matrix = SkMatrix::Concat(ctm, this->getLocalMatrix());
-    if (localM) {
-        matrix.preConcat(*localM);
+bool SkImageShader::onAppendStages(const StageRec& rec) const {
+    SkRasterPipeline* p = rec.fPipeline;
+    SkArenaAlloc* alloc = rec.fAlloc;
+
+    auto matrix = SkMatrix::Concat(rec.fCTM, this->getLocalMatrix());
+    if (rec.fLocalM) {
+        matrix.preConcat(*rec.fLocalM);
     }
 
     if (!matrix.invert(&matrix)) {
         return false;
     }
-    auto quality = paint.getFilterQuality();
+    auto quality = rec.fPaint.getFilterQuality();
 
-    SkBitmapProvider provider(fImage.get(), dstCS);
+    SkBitmapProvider provider(fImage.get(), rec.fDstCS);
     SkDefaultBitmapController controller;
     std::unique_ptr<SkBitmapController::State> state {
         controller.requestBitmap(provider, matrix, quality)
@@ -297,7 +309,7 @@ bool SkImageShader::onAppendStages(SkRasterPipeline* p, SkColorSpace* dstCS, SkA
     };
     auto misc = alloc->make<MiscCtx>();
     misc->state       = std::move(state);  // Extend lifetime to match the pipeline's.
-    misc->paint_color = SkColor4f_from_SkColor(paint.getColor(), dstCS);
+    misc->paint_color = SkColor4f_from_SkColor(rec.fPaint.getColor(), rec.fDstCS);
     p->append_matrix(alloc, matrix);
 
     auto gather = alloc->make<SkJumper_MemoryCtx>();
@@ -332,7 +344,7 @@ bool SkImageShader::onAppendStages(SkRasterPipeline* p, SkColorSpace* dstCS, SkA
             case kRGBA_F16_SkColorType:  p->append(SkRasterPipeline::gather_f16,  gather); break;
             default: SkASSERT(false);
         }
-        if (dstCS && (!info.colorSpace() || info.gammaCloseToSRGB())) {
+        if (rec.fDstCS && (!info.colorSpace() || info.gammaCloseToSRGB())) {
             p->append_from_srgb(info.alphaType());
         }
     };
@@ -398,6 +410,6 @@ bool SkImageShader::onAppendStages(SkRasterPipeline* p, SkColorSpace* dstCS, SkA
         p->append(SkRasterPipeline::clamp_0);
         p->append(SkRasterPipeline::clamp_a);
     }
-    append_gamut_transform(p, alloc, info.colorSpace(), dstCS, kPremul_SkAlphaType);
+    append_gamut_transform(p, alloc, info.colorSpace(), rec.fDstCS, kPremul_SkAlphaType);
     return true;
 }

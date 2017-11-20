@@ -135,6 +135,17 @@ public:
                                  const SkMatrix& localMatrix);
 
     /**
+     * Creates an op that draws a subrectangle of a texture. The passed color is modulated by the
+     * texture's color. 'srcRect' specifies the rectangle of the texture to draw. 'dstRect'
+     * specifies the rectangle to draw in local coords which will be transformed by 'viewMatrix' to
+     * device space. The edges of the rendered rectangle are not antialiased. This asserts that the
+     * view matrix does not have perspective.
+     */
+    void drawTextureAffine(const GrClip& clip, sk_sp<GrTextureProxy>, GrSamplerParams::FilterMode,
+                           GrColor, const SkRect& srcRect, const SkRect& dstRect,
+                           const SkMatrix& viewMatrix, sk_sp<GrColorSpaceXform>);
+
+    /**
      * Draw a roundrect using a paint.
      *
      * @param paint       describes how to color pixels.
@@ -246,7 +257,8 @@ public:
                     GrAA aa,
                     const SkMatrix& viewMatrix,
                     const SkRegion& region,
-                    const GrStyle& style);
+                    const GrStyle& style,
+                    const GrUserStencilSettings* ss = nullptr);
 
     /**
      * Draws an oval.
@@ -303,13 +315,16 @@ public:
      * After this returns any pending surface IO will be issued to the backend 3D API and
      * if the surface has MSAA it will be resolved.
      */
-    bool prepareForExternalIO(int numSemaphores, GrBackendSemaphore* backendSemaphores);
+    GrSemaphoresSubmitted prepareForExternalIO(int numSemaphores,
+                                               GrBackendSemaphore backendSemaphores[]);
 
     /**
      *  The next time this GrRenderTargetContext is flushed, the gpu will wait on the passed in
      *  semaphores before executing any commands.
      */
     bool waitOnSemaphores(int numSemaphores, const GrBackendSemaphore* waitSemaphores);
+
+    void insertEventMarker(const SkString&);
 
     GrFSAAType fsaaType() const { return fRenderTargetProxy->fsaaType(); }
     const GrCaps* caps() const { return fContext->caps(); }
@@ -323,6 +338,8 @@ public:
     GrSurfaceOrigin origin() const { return fRenderTargetProxy->origin(); }
 
     bool wasAbandoned() const;
+
+    void setNeedsStencil() { fRenderTargetProxy->setNeedsStencil(); }
 
     GrRenderTarget* accessRenderTarget() {
         // TODO: usage of this entry point needs to be reduced and potentially eliminated
@@ -368,7 +385,6 @@ private:
 
     friend class GrDrawingManager; // for ctor
     friend class GrRenderTargetContextPriv;
-    friend class GrSWMaskHelper;  // for access to add[Mesh]DrawOp
 
     // All the path renderers currently make their own ops
     friend class GrSoftwarePathRenderer;             // for access to add[Mesh]DrawOp
@@ -384,8 +400,8 @@ private:
     friend class GrCCPRAtlas;                        // for access to addDrawOp
     friend class GrCoverageCountingPathRenderer;     // for access to addDrawOp
     // for a unit test
-    friend void test_draw_op(GrRenderTargetContext*,
-                             sk_sp<GrFragmentProcessor>, sk_sp<GrTextureProxy>);
+    friend void test_draw_op(GrRenderTargetContext*, std::unique_ptr<GrFragmentProcessor>,
+                             sk_sp<GrTextureProxy>);
 
     void internalClear(const GrFixedClip&, const GrColor, bool canIgnoreClip);
 

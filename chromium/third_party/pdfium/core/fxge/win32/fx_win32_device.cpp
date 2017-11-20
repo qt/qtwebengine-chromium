@@ -430,7 +430,7 @@ bool CFX_Win32FontInfo::IsSupportFontFormDiv(const LOGFONTA* plf) {
 void CFX_Win32FontInfo::AddInstalledFont(const LOGFONTA* plf,
                                          uint32_t FontType) {
   CFX_ByteString name(plf->lfFaceName);
-  if (name[0] == '@')
+  if (name.GetLength() > 0 && name[0] == '@')
     return;
 
   if (name == m_LastFamily) {
@@ -503,7 +503,7 @@ void* CFX_Win32FallbackFontInfo::MapFont(int weight,
 void CFX_Win32FontInfo::GetGBPreference(CFX_ByteString& face,
                                         int weight,
                                         int picth_family) {
-  if (face.Find("KaiTi") >= 0 || face.Find("\xbf\xac") >= 0) {
+  if (face.Contains("KaiTi") || face.Contains("\xbf\xac")) {
     if (m_KaiTi.IsEmpty()) {
       m_KaiTi = FindFont("KaiTi");
       if (m_KaiTi.IsEmpty()) {
@@ -511,7 +511,7 @@ void CFX_Win32FontInfo::GetGBPreference(CFX_ByteString& face,
       }
     }
     face = m_KaiTi;
-  } else if (face.Find("FangSong") >= 0 || face.Find("\xb7\xc2\xcb\xce") >= 0) {
+  } else if (face.Contains("FangSong") || face.Contains("\xb7\xc2\xcb\xce")) {
     if (m_FangSong.IsEmpty()) {
       m_FangSong = FindFont("FangSong");
       if (m_FangSong.IsEmpty()) {
@@ -519,9 +519,9 @@ void CFX_Win32FontInfo::GetGBPreference(CFX_ByteString& face,
       }
     }
     face = m_FangSong;
-  } else if (face.Find("SimSun") >= 0 || face.Find("\xcb\xce") >= 0) {
+  } else if (face.Contains("SimSun") || face.Contains("\xcb\xce")) {
     face = "SimSun";
-  } else if (face.Find("SimHei") >= 0 || face.Find("\xba\xda") >= 0) {
+  } else if (face.Contains("SimHei") || face.Contains("\xba\xda")) {
     face = "SimHei";
   } else if (!(picth_family & FF_ROMAN) && weight > 550) {
     face = "SimHei";
@@ -533,15 +533,15 @@ void CFX_Win32FontInfo::GetGBPreference(CFX_ByteString& face,
 void CFX_Win32FontInfo::GetJapanesePreference(CFX_ByteString& face,
                                               int weight,
                                               int picth_family) {
-  if (face.Find("Gothic") >= 0 ||
-      face.Find("\x83\x53\x83\x56\x83\x62\x83\x4e") >= 0) {
-    if (face.Find("PGothic") >= 0 ||
-        face.Find("\x82\x6f\x83\x53\x83\x56\x83\x62\x83\x4e") >= 0) {
+  if (face.Contains("Gothic") ||
+      face.Contains("\x83\x53\x83\x56\x83\x62\x83\x4e")) {
+    if (face.Contains("PGothic") ||
+        face.Contains("\x82\x6f\x83\x53\x83\x56\x83\x62\x83\x4e")) {
       face = "MS PGothic";
-    } else if (face.Find("UI Gothic") >= 0) {
+    } else if (face.Contains("UI Gothic")) {
       face = "MS UI Gothic";
     } else {
-      if (face.Find("HGSGothicM") >= 0 || face.Find("HGMaruGothicMPRO") >= 0) {
+      if (face.Contains("HGSGothicM") || face.Contains("HGMaruGothicMPRO")) {
         face = "MS PGothic";
       } else {
         face = "MS Gothic";
@@ -549,9 +549,8 @@ void CFX_Win32FontInfo::GetJapanesePreference(CFX_ByteString& face,
     }
     return;
   }
-  if (face.Find("Mincho") >= 0 || face.Find("\x96\xbe\x92\xa9") >= 0) {
-    if (face.Find("PMincho") >= 0 ||
-        face.Find("\x82\x6f\x96\xbe\x92\xa9") >= 0) {
+  if (face.Contains("Mincho") || face.Contains("\x96\xbe\x92\xa9")) {
+    if (face.Contains("PMincho") || face.Contains("\x82\x6f\x96\xbe\x92\xa9")) {
       face = "MS PMincho";
     } else {
       face = "MS Mincho";
@@ -635,7 +634,7 @@ void* CFX_Win32FontInfo::MapFont(int weight,
       face = "Gulim";
       break;
     case FX_CHARSET_ChineseTraditional:
-      if (face.Find("MSung") >= 0) {
+      if (face.Contains("MSung")) {
         face = "MingLiU";
       } else {
         face = "PMingLiU";
@@ -989,18 +988,18 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
       !pPlatform->m_GdiplusExt.IsAvailable()) {
     CFX_FloatRect bbox_f = pPathData->GetBoundingBox();
     if (pMatrix)
-      pMatrix->TransformRect(bbox_f);
+      bbox_f = pMatrix->TransformRect(bbox_f);
 
     FX_RECT bbox = bbox_f.GetInnerRect();
     if (bbox.Width() <= 0) {
-      return DrawCosmeticLine((float)(bbox.left), (float)(bbox.top),
-                              (float)(bbox.left), (float)(bbox.bottom + 1),
+      return DrawCosmeticLine(CFX_PointF(bbox.left, bbox.top),
+                              CFX_PointF(bbox.left, bbox.bottom + 1),
                               fill_color, FXDIB_BLEND_NORMAL);
     }
     if (bbox.Height() <= 0) {
-      return DrawCosmeticLine((float)(bbox.left), (float)(bbox.top),
-                              (float)(bbox.right + 1), (float)(bbox.top),
-                              fill_color, FXDIB_BLEND_NORMAL);
+      return DrawCosmeticLine(CFX_PointF(bbox.left, bbox.top),
+                              CFX_PointF(bbox.right + 1, bbox.top), fill_color,
+                              FXDIB_BLEND_NORMAL);
     }
   }
   int fill_alpha = FXARGB_A(fill_color);
@@ -1132,10 +1131,8 @@ bool CGdiDeviceDriver::SetClip_PathStroke(
   return ret;
 }
 
-bool CGdiDeviceDriver::DrawCosmeticLine(float x1,
-                                        float y1,
-                                        float x2,
-                                        float y2,
+bool CGdiDeviceDriver::DrawCosmeticLine(const CFX_PointF& ptMoveTo,
+                                        const CFX_PointF& ptLineTo,
                                         uint32_t color,
                                         int blend_type) {
   if (blend_type != FXDIB_BLEND_NORMAL)
@@ -1149,8 +1146,8 @@ bool CGdiDeviceDriver::DrawCosmeticLine(float x1,
 
   HPEN hPen = CreatePen(PS_SOLID, 1, rgb);
   hPen = (HPEN)SelectObject(m_hDC, hPen);
-  MoveToEx(m_hDC, FXSYS_round(x1), FXSYS_round(y1), nullptr);
-  LineTo(m_hDC, FXSYS_round(x2), FXSYS_round(y2));
+  MoveToEx(m_hDC, FXSYS_round(ptMoveTo.x), FXSYS_round(ptMoveTo.y), nullptr);
+  LineTo(m_hDC, FXSYS_round(ptLineTo.x), FXSYS_round(ptLineTo.y));
   hPen = (HPEN)SelectObject(m_hDC, hPen);
   DeleteObject(hPen);
   return true;

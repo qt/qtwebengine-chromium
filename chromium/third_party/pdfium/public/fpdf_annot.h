@@ -8,7 +8,9 @@
 // NOLINTNEXTLINE(build/include)
 #include "fpdfview.h"
 
+// NOLINTNEXTLINE(build/include)
 #include "fpdf_doc.h"
+// NOLINTNEXTLINE(build/include)
 #include "fpdf_formfill.h"
 
 #ifdef __cplusplus
@@ -96,7 +98,7 @@ typedef enum FPDFANNOT_COLORTYPE {
 //   subtype   - the subtype to be checked.
 //
 // Returns true if this subtype supported.
-DLLEXPORT FPDF_BOOL STDCALL
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAnnot_IsSupportedSubtype(FPDF_ANNOTATION_SUBTYPE subtype);
 
 // Experimental API.
@@ -109,7 +111,7 @@ FPDFAnnot_IsSupportedSubtype(FPDF_ANNOTATION_SUBTYPE subtype);
 //   subtype   - the subtype of the new annotation.
 //
 // Returns a handle to the new annotation object, or NULL on failure.
-DLLEXPORT FPDF_ANNOTATION STDCALL
+FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV
 FPDFPage_CreateAnnot(FPDF_PAGE page, FPDF_ANNOTATION_SUBTYPE subtype);
 
 // Experimental API.
@@ -118,7 +120,7 @@ FPDFPage_CreateAnnot(FPDF_PAGE page, FPDF_ANNOTATION_SUBTYPE subtype);
 //   page   - handle to a page.
 //
 // Returns the number of annotations in |page|.
-DLLEXPORT int STDCALL FPDFPage_GetAnnotCount(FPDF_PAGE page);
+FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetAnnotCount(FPDF_PAGE page);
 
 // Experimental API.
 // Get annotation in |page| at |index|. Must call FPDFPage_CloseAnnot() when the
@@ -128,7 +130,19 @@ DLLEXPORT int STDCALL FPDFPage_GetAnnotCount(FPDF_PAGE page);
 //   index - the index of the annotation.
 //
 // Returns a handle to the annotation object, or NULL on failure.
-DLLEXPORT FPDF_ANNOTATION STDCALL FPDFPage_GetAnnot(FPDF_PAGE page, int index);
+FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV FPDFPage_GetAnnot(FPDF_PAGE page,
+                                                            int index);
+
+// Experimental API.
+// Get the index of |annot| in |page|. This is the opposite of
+// FPDFPage_GetAnnot().
+//
+//   page  - handle to the page that the annotation is on.
+//   annot - handle to an annotation.
+//
+// Returns the index of |annot|, or -1 on failure.
+FPDF_EXPORT int FPDF_CALLCONV FPDFPage_GetAnnotIndex(FPDF_PAGE page,
+                                                     FPDF_ANNOTATION annot);
 
 // Experimental API.
 // Close an annotation. Must be called when the annotation returned by
@@ -136,7 +150,7 @@ DLLEXPORT FPDF_ANNOTATION STDCALL FPDFPage_GetAnnot(FPDF_PAGE page, int index);
 // function does not remove the annotation from the document.
 //
 //   annot  - handle to an annotation.
-DLLEXPORT void STDCALL FPDFPage_CloseAnnot(FPDF_ANNOTATION annot);
+FPDF_EXPORT void FPDF_CALLCONV FPDFPage_CloseAnnot(FPDF_ANNOTATION annot);
 
 // Experimental API.
 // Remove the annotation in |page| at |index|.
@@ -145,7 +159,8 @@ DLLEXPORT void STDCALL FPDFPage_CloseAnnot(FPDF_ANNOTATION annot);
 //   index - the index of the annotation.
 //
 // Returns true if successful.
-DLLEXPORT FPDF_BOOL STDCALL FPDFPage_RemoveAnnot(FPDF_PAGE page, int index);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPage_RemoveAnnot(FPDF_PAGE page,
+                                                         int index);
 
 // Experimental API.
 // Get the subtype of an annotation.
@@ -153,7 +168,7 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFPage_RemoveAnnot(FPDF_PAGE page, int index);
 //   annot  - handle to an annotation.
 //
 // Returns the annotation subtype.
-DLLEXPORT FPDF_ANNOTATION_SUBTYPE STDCALL
+FPDF_EXPORT FPDF_ANNOTATION_SUBTYPE FPDF_CALLCONV
 FPDFAnnot_GetSubtype(FPDF_ANNOTATION annot);
 
 // Experimental API.
@@ -164,7 +179,7 @@ FPDFAnnot_GetSubtype(FPDF_ANNOTATION annot);
 //   subtype   - the subtype to be checked.
 //
 // Returns true if this subtype supported.
-DLLEXPORT FPDF_BOOL STDCALL
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAnnot_IsObjectSupportedSubtype(FPDF_ANNOTATION_SUBTYPE subtype);
 
 // Experimental API.
@@ -178,8 +193,8 @@ FPDFAnnot_IsObjectSupportedSubtype(FPDF_ANNOTATION_SUBTYPE subtype);
 //   obj    - handle to the object that |annot| needs to update.
 //
 // Return true if successful.
-DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_UpdateObject(FPDF_ANNOTATION annot,
-                                                   FPDF_PAGEOBJECT obj);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_UpdateObject(FPDF_ANNOTATION annot, FPDF_PAGEOBJECT obj);
 
 // Experimental API.
 // Add |obj| to |annot|. |obj| must have been created by
@@ -192,8 +207,8 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_UpdateObject(FPDF_ANNOTATION annot,
 //   obj    - handle to the object that is to be added to |annot|.
 //
 // Return true if successful.
-DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_AppendObject(FPDF_ANNOTATION annot,
-                                                   FPDF_PAGEOBJECT obj);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_AppendObject(FPDF_ANNOTATION annot, FPDF_PAGEOBJECT obj);
 
 // Experimental API.
 // Get the total number of objects in |annot|, including path objects, text
@@ -202,7 +217,7 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_AppendObject(FPDF_ANNOTATION annot,
 //   annot  - handle to an annotation.
 //
 // Returns the number of objects in |annot|.
-DLLEXPORT int STDCALL FPDFAnnot_GetObjectCount(FPDF_ANNOTATION annot);
+FPDF_EXPORT int FPDF_CALLCONV FPDFAnnot_GetObjectCount(FPDF_ANNOTATION annot);
 
 // Experimental API.
 // Get the object in |annot| at |index|.
@@ -211,8 +226,8 @@ DLLEXPORT int STDCALL FPDFAnnot_GetObjectCount(FPDF_ANNOTATION annot);
 //   index  - the index of the object.
 //
 // Return a handle to the object, or NULL on failure.
-DLLEXPORT FPDF_PAGEOBJECT STDCALL FPDFAnnot_GetObject(FPDF_ANNOTATION annot,
-                                                      int index);
+FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV
+FPDFAnnot_GetObject(FPDF_ANNOTATION annot, int index);
 
 // Experimental API.
 // Remove the object in |annot| at |index|.
@@ -221,8 +236,8 @@ DLLEXPORT FPDF_PAGEOBJECT STDCALL FPDFAnnot_GetObject(FPDF_ANNOTATION annot,
 //   index  - the index of the object to be removed.
 //
 // Return true if successful.
-DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_RemoveObject(FPDF_ANNOTATION annot,
-                                                   int index);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_RemoveObject(FPDF_ANNOTATION annot, int index);
 
 // Experimental API.
 // Set the color of an annotation. Fails when called on annotations with
@@ -235,12 +250,12 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_RemoveObject(FPDF_ANNOTATION annot,
 //   A        - buffer to hold the opacity. Ranges from 0 to 255.
 //
 // Returns true if successful.
-DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_SetColor(FPDF_ANNOTATION annot,
-                                               FPDFANNOT_COLORTYPE type,
-                                               unsigned int R,
-                                               unsigned int G,
-                                               unsigned int B,
-                                               unsigned int A);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetColor(FPDF_ANNOTATION annot,
+                                                       FPDFANNOT_COLORTYPE type,
+                                                       unsigned int R,
+                                                       unsigned int G,
+                                                       unsigned int B,
+                                                       unsigned int A);
 
 // Experimental API.
 // Get the color of an annotation. If no color is specified, default to yellow
@@ -254,12 +269,12 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_SetColor(FPDF_ANNOTATION annot,
 //   A        - buffer to hold the opacity. Ranges from 0 to 255.
 //
 // Returns true if successful.
-DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_GetColor(FPDF_ANNOTATION annot,
-                                               FPDFANNOT_COLORTYPE type,
-                                               unsigned int* R,
-                                               unsigned int* G,
-                                               unsigned int* B,
-                                               unsigned int* A);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_GetColor(FPDF_ANNOTATION annot,
+                                                       FPDFANNOT_COLORTYPE type,
+                                                       unsigned int* R,
+                                                       unsigned int* G,
+                                                       unsigned int* B,
+                                                       unsigned int* A);
 
 // Experimental API.
 // Check if the annotation is of a type that has attachment points
@@ -273,54 +288,56 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_GetColor(FPDF_ANNOTATION annot,
 //
 // Returns true if the annotation is of a type that has quadpoints, false
 // otherwise.
-DLLEXPORT FPDF_BOOL STDCALL
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAnnot_HasAttachmentPoints(FPDF_ANNOTATION annot);
 
 // Experimental API.
 // Set the attachment points (i.e. quadpoints) of an annotation. If the
 // annotation's appearance stream is defined and this annotation is of a type
-// with quadpoints, then update the bounding box too.
+// with quadpoints, then update the bounding box too if the new quadpoints
+// define a bigger one.
 //
 //   annot      - handle to an annotation.
 //   quadPoints - the quadpoints to be set.
 //
 // Returns true if successful.
-DLLEXPORT FPDF_BOOL STDCALL
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAnnot_SetAttachmentPoints(FPDF_ANNOTATION annot,
                               const FS_QUADPOINTSF* quadPoints);
 
 // Experimental API.
-// Get the attachment points (i.e. quadpoints) of an annotation. If the
-// annotation's appearance stream is defined and this annotation is of a type
-// with quadpoints, then return the bounding box it specifies instead.
+// Get the attachment points (i.e. quadpoints) of an annotation.
 //
 //   annot      - handle to an annotation.
+//   quadPoints - receives the quadpoints; must not be NULL.
 //
-// Returns a quadpoints object, or an empty set of quadpoints on failure.
-DLLEXPORT FS_QUADPOINTSF STDCALL
-FPDFAnnot_GetAttachmentPoints(FPDF_ANNOTATION annot);
+// Returns true if successful.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_GetAttachmentPoints(FPDF_ANNOTATION annot,
+                              FS_QUADPOINTSF* quadPoints);
 
 // Experimental API.
 // Set the annotation rectangle defining the location of the annotation. If the
 // annotation's appearance stream is defined and this annotation is of a type
-// without quadpoints, then update the bounding box too.
+// without quadpoints, then update the bounding box too if the new rectangle
+// defines a bigger one.
 //
 //   annot  - handle to an annotation.
 //   rect   - the annotation rectangle to be set.
 //
 // Returns true if successful.
-DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_SetRect(FPDF_ANNOTATION annot,
-                                              const FS_RECTF* rect);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetRect(FPDF_ANNOTATION annot,
+                                                      const FS_RECTF* rect);
 
 // Experimental API.
-// Get the annotation rectangle defining the location of the annotation. If the
-// annotation's appearance stream is defined and this annotation is of a type
-// without quadpoints, then return the bounding box it specifies instead.
+// Get the annotation rectangle defining the location of the annotation.
 //
 //   annot  - handle to an annotation.
+//   rect   - receives the rectangle; must not be NULL.
 //
-// Returns a rectangle object, or an empty rectangle on failure.
-DLLEXPORT FS_RECTF STDCALL FPDFAnnot_GetRect(FPDF_ANNOTATION annot);
+// Returns true if successful.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_GetRect(FPDF_ANNOTATION annot,
+                                                      FS_RECTF* rect);
 
 // Experimental API.
 // Check if |annot|'s dictionary has |key| as a key.
@@ -329,8 +346,8 @@ DLLEXPORT FS_RECTF STDCALL FPDFAnnot_GetRect(FPDF_ANNOTATION annot);
 //   key    - the key to look for.
 //
 // Returns true if |key| exists.
-DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_HasKey(FPDF_ANNOTATION annot,
-                                             FPDF_WIDESTRING key);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_HasKey(FPDF_ANNOTATION annot,
+                                                     FPDF_BYTESTRING key);
 
 // Experimental API.
 // Get the type of the value corresponding to |key| in |annot|'s dictionary.
@@ -339,8 +356,8 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_HasKey(FPDF_ANNOTATION annot,
 //   key    - the key to look for.
 //
 // Returns the type of the dictionary value.
-DLLEXPORT FPDF_OBJECT_TYPE STDCALL FPDFAnnot_GetValueType(FPDF_ANNOTATION annot,
-                                                          FPDF_WIDESTRING key);
+FPDF_EXPORT FPDF_OBJECT_TYPE FPDF_CALLCONV
+FPDFAnnot_GetValueType(FPDF_ANNOTATION annot, FPDF_BYTESTRING key);
 
 // Experimental API.
 // Set the string value corresponding to |key| in |annot|'s dictionary,
@@ -352,9 +369,10 @@ DLLEXPORT FPDF_OBJECT_TYPE STDCALL FPDFAnnot_GetValueType(FPDF_ANNOTATION annot,
 //   value  - the string value to be set, encoded in UTF16-LE.
 //
 // Returns true if successful.
-DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_SetStringValue(FPDF_ANNOTATION annot,
-                                                     FPDF_WIDESTRING key,
-                                                     FPDF_WIDESTRING value);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetStringValue(FPDF_ANNOTATION annot,
+                         FPDF_BYTESTRING key,
+                         FPDF_WIDESTRING value);
 
 // Experimental API.
 // Get the string value corresponding to |key| in |annot|'s dictionary. |buffer|
@@ -371,10 +389,24 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_SetStringValue(FPDF_ANNOTATION annot,
 //   buflen - length of the buffer.
 //
 // Returns the length of the string value.
-DLLEXPORT unsigned long STDCALL FPDFAnnot_GetStringValue(FPDF_ANNOTATION annot,
-                                                         FPDF_WIDESTRING key,
-                                                         void* buffer,
-                                                         unsigned long buflen);
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetStringValue(FPDF_ANNOTATION annot,
+                         FPDF_BYTESTRING key,
+                         void* buffer,
+                         unsigned long buflen);
+
+// Experimental API.
+// Get the annotation corresponding to |key| in |annot|'s dictionary. Common
+// keys for linking annotations include "IRT" and "Popup". Must call
+// FPDFPage_CloseAnnot() when the annotation returned by this function is no
+// longer needed.
+//
+//   annot  - handle to an annotation.
+//   key    - the key to the requested dictionary entry.
+//
+// Returns a handle to the linked annotation object, or NULL on failure.
+FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV
+FPDFAnnot_GetLinkedAnnot(FPDF_ANNOTATION annot, FPDF_BYTESTRING key);
 
 // Experimental API.
 // Get the annotation flags of |annot|.
@@ -382,7 +414,7 @@ DLLEXPORT unsigned long STDCALL FPDFAnnot_GetStringValue(FPDF_ANNOTATION annot,
 //   annot    - handle to an annotation.
 //
 // Returns the annotation flags.
-DLLEXPORT int STDCALL FPDFAnnot_GetFlags(FPDF_ANNOTATION annot);
+FPDF_EXPORT int FPDF_CALLCONV FPDFAnnot_GetFlags(FPDF_ANNOTATION annot);
 
 // Experimental API.
 // Set the |annot|'s flags to be of the value |flags|.
@@ -391,8 +423,8 @@ DLLEXPORT int STDCALL FPDFAnnot_GetFlags(FPDF_ANNOTATION annot);
 //   flags      - the flag values to be set.
 //
 // Returns true if successful.
-DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_SetFlags(FPDF_ANNOTATION annot,
-                                               int flags);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetFlags(FPDF_ANNOTATION annot,
+                                                       int flags);
 
 // Experimental API.
 // Get the annotation flags of |annot|, which is an interactive form
@@ -402,8 +434,8 @@ DLLEXPORT FPDF_BOOL STDCALL FPDFAnnot_SetFlags(FPDF_ANNOTATION annot,
 //   annot    - handle to an interactive form annotation.
 //
 // Returns the annotation flags specific to interactive forms.
-DLLEXPORT int STDCALL FPDFAnnot_GetFormFieldFlags(FPDF_PAGE page,
-                                                  FPDF_ANNOTATION annot);
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFAnnot_GetFormFieldFlags(FPDF_PAGE page, FPDF_ANNOTATION annot);
 
 // Experimental API.
 // Retrieves an interactive form annotation whose rectangle contains a given
@@ -419,7 +451,7 @@ DLLEXPORT int STDCALL FPDFAnnot_GetFormFieldFlags(FPDF_PAGE page,
 //
 // Returns the interactive form annotation whose rectangle contains the given
 // coordinates on the page. If there is no such annotation, return NULL.
-DLLEXPORT FPDF_ANNOTATION STDCALL
+FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV
 FPDFAnnot_GetFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
                               FPDF_PAGE page,
                               double page_x,

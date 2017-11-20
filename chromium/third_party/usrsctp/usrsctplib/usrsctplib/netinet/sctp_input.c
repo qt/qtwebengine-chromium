@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_input.c 313330 2017-02-06 08:49:57Z ae $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_input.c 320653 2017-07-04 18:24:50Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -184,12 +184,11 @@ sctp_handle_init(struct mbuf *m, int iphlen, int offset,
 			*abort_no_unlock = 1;
 		goto outnow;
 	}
-	/* We are only accepting if we have a socket with positive so_qlimit.*/
+	/* We are only accepting if we have a listening socket.*/
 	if ((stcb == NULL) &&
 	    ((inp->sctp_flags & SCTP_PCB_FLAGS_SOCKET_GONE) ||
 	     (inp->sctp_flags & SCTP_PCB_FLAGS_SOCKET_ALLGONE) ||
-	     (inp->sctp_socket == NULL) ||
-	     (inp->sctp_socket->so_qlimit == 0))) {
+	     (!SCTP_IS_LISTENING(inp)))) {
 		/*
 		 * FIX ME ?? What about TCP model and we have a
 		 * match/restart case? Actually no fix is needed.
@@ -1693,8 +1692,7 @@ sctp_process_cookie_existing(struct mbuf *m, int iphlen, int offset,
 				sctp_stop_all_cookie_timers(stcb);
 				if (((stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_TCPTYPE) ||
 				     (stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_IN_TCPPOOL)) &&
-				    (inp->sctp_socket->so_qlimit == 0)
-					) {
+				    (!SCTP_IS_LISTENING(inp))) {
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
 					struct socket *so;
 #endif
@@ -1892,7 +1890,7 @@ sctp_process_cookie_existing(struct mbuf *m, int iphlen, int offset,
 
 			if (((stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_TCPTYPE) ||
 			     (stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_IN_TCPPOOL)) &&
-			    (inp->sctp_socket->so_qlimit == 0)) {
+			    (!SCTP_IS_LISTENING(inp))) {
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
 				struct socket *so;
 #endif
@@ -2255,7 +2253,6 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 		 * cookie was in flight. Only recourse is to abort the
 		 * association.
 		 */
-		atomic_add_int(&stcb->asoc.refcnt, 1);
 		op_err = sctp_generate_cause(SCTP_CAUSE_OUT_OF_RESC, "");
 		sctp_abort_association(inp, (struct sctp_tcb *)NULL, m, iphlen,
 				       src, dst, sh, op_err,
@@ -2264,16 +2261,17 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 #endif
 		                       vrf_id, port);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
+		atomic_add_int(&stcb->asoc.refcnt, 1);
 		SCTP_TCB_UNLOCK(stcb);
 		SCTP_SOCKET_LOCK(so, 1);
 		SCTP_TCB_LOCK(stcb);
+		atomic_subtract_int(&stcb->asoc.refcnt, 1);
 #endif
 		(void)sctp_free_assoc(inp, stcb, SCTP_NORMAL_PROC,
 				      SCTP_FROM_SCTP_INPUT + SCTP_LOC_18);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
 		SCTP_SOCKET_UNLOCK(so, 1);
 #endif
-		atomic_subtract_int(&stcb->asoc.refcnt, 1);
 		return (NULL);
 	}
 	/* process the INIT-ACK info (my info) */
@@ -2294,36 +2292,36 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 	else
 		retval = 0;
 	if (retval < 0) {
-		atomic_add_int(&stcb->asoc.refcnt, 1);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
+		atomic_add_int(&stcb->asoc.refcnt, 1);
 		SCTP_TCB_UNLOCK(stcb);
 		SCTP_SOCKET_LOCK(so, 1);
 		SCTP_TCB_LOCK(stcb);
+		atomic_subtract_int(&stcb->asoc.refcnt, 1);
 #endif
 		(void)sctp_free_assoc(inp, stcb, SCTP_NORMAL_PROC,
 		                      SCTP_FROM_SCTP_INPUT + SCTP_LOC_19);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
 		SCTP_SOCKET_UNLOCK(so, 1);
 #endif
-		atomic_subtract_int(&stcb->asoc.refcnt, 1);
 		return (NULL);
 	}
 	/* load all addresses */
 	if (sctp_load_addresses_from_init(stcb, m,
 	    init_offset + sizeof(struct sctp_init_chunk), initack_offset,
 	    src, dst, init_src, port)) {
-		atomic_add_int(&stcb->asoc.refcnt, 1);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
+		atomic_add_int(&stcb->asoc.refcnt, 1);
 		SCTP_TCB_UNLOCK(stcb);
 		SCTP_SOCKET_LOCK(so, 1);
 		SCTP_TCB_LOCK(stcb);
+		atomic_subtract_int(&stcb->asoc.refcnt, 1);
 #endif
 		(void)sctp_free_assoc(inp, stcb, SCTP_NORMAL_PROC,
 		                      SCTP_FROM_SCTP_INPUT + SCTP_LOC_20);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
 		SCTP_SOCKET_UNLOCK(so, 1);
 #endif
-		atomic_subtract_int(&stcb->asoc.refcnt, 1);
 		return (NULL);
 	}
 	/*
@@ -2342,34 +2340,24 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 			/* auth HMAC failed, dump the assoc and packet */
 			SCTPDBG(SCTP_DEBUG_AUTH1,
 				"COOKIE-ECHO: AUTH failed\n");
-			atomic_add_int(&stcb->asoc.refcnt, 1);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
+			atomic_add_int(&stcb->asoc.refcnt, 1);
 			SCTP_TCB_UNLOCK(stcb);
 			SCTP_SOCKET_LOCK(so, 1);
 			SCTP_TCB_LOCK(stcb);
+			atomic_subtract_int(&stcb->asoc.refcnt, 1);
 #endif
 			(void)sctp_free_assoc(inp, stcb, SCTP_NORMAL_PROC,
 			                      SCTP_FROM_SCTP_INPUT + SCTP_LOC_21);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
 			SCTP_SOCKET_UNLOCK(so, 1);
 #endif
-			atomic_subtract_int(&stcb->asoc.refcnt, 1);
 			return (NULL);
 		} else {
 			/* remaining chunks checked... good to go */
 			stcb->asoc.authenticated = 1;
 		}
 	}
-	/* update current state */
-	SCTPDBG(SCTP_DEBUG_INPUT2, "moving to OPEN state\n");
-	SCTP_SET_STATE(asoc, SCTP_STATE_OPEN);
-	if (asoc->state & SCTP_STATE_SHUTDOWN_PENDING) {
-		sctp_timer_start(SCTP_TIMER_TYPE_SHUTDOWNGUARD,
-				 stcb->sctp_ep, stcb, asoc->primary_destination);
-	}
-	sctp_stop_all_cookie_timers(stcb);
-	SCTP_STAT_INCR_COUNTER32(sctps_passiveestab);
-	SCTP_STAT_INCR_GAUGE32(sctps_currestab);
 
 	/*
 	 * if we're doing ASCONFs, check to see if we have any new local
@@ -2418,26 +2406,37 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 		break;
 #endif
 	default:
-		atomic_add_int(&stcb->asoc.refcnt, 1);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
+		atomic_add_int(&stcb->asoc.refcnt, 1);
 		SCTP_TCB_UNLOCK(stcb);
 		SCTP_SOCKET_LOCK(so, 1);
 		SCTP_TCB_LOCK(stcb);
+		atomic_subtract_int(&stcb->asoc.refcnt, 1);
 #endif
 		(void)sctp_free_assoc(inp, stcb, SCTP_NORMAL_PROC,
 		                      SCTP_FROM_SCTP_INPUT + SCTP_LOC_22);
 #if defined(__APPLE__) || defined(SCTP_SO_LOCK_TESTING)
 		SCTP_SOCKET_UNLOCK(so, 1);
 #endif
-		atomic_subtract_int(&stcb->asoc.refcnt, 1);
 		return (NULL);
 	}
+
+	/* update current state */
+	SCTPDBG(SCTP_DEBUG_INPUT2, "moving to OPEN state\n");
+	SCTP_SET_STATE(asoc, SCTP_STATE_OPEN);
+	if (asoc->state & SCTP_STATE_SHUTDOWN_PENDING) {
+		sctp_timer_start(SCTP_TIMER_TYPE_SHUTDOWNGUARD,
+				 stcb->sctp_ep, stcb, asoc->primary_destination);
+	}
+	sctp_stop_all_cookie_timers(stcb);
+	SCTP_STAT_INCR_COUNTER32(sctps_passiveestab);
+	SCTP_STAT_INCR_GAUGE32(sctps_currestab);
 
 	/* set up to notify upper layer */
 	*notification = SCTP_NOTIFY_ASSOC_UP;
 	if (((stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_TCPTYPE) ||
 	    (stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_IN_TCPPOOL)) &&
-	    (inp->sctp_socket->so_qlimit == 0)) {
+	    (!SCTP_IS_LISTENING(inp))) {
 		/*
 		 * This is an endpoint that called connect() how it got a
 		 * cookie that is NEW is a bit of a mystery. It must be that
@@ -2463,7 +2462,7 @@ sctp_process_cookie_new(struct mbuf *m, int iphlen, int offset,
 		SCTP_SOCKET_UNLOCK(so, 1);
 #endif
 	} else if ((stcb->sctp_ep->sctp_flags & SCTP_PCB_FLAGS_TCPTYPE) &&
-	    (inp->sctp_socket->so_qlimit)) {
+	           (SCTP_IS_LISTENING(inp))) {
 		/*
 		 * We don't want to do anything with this one. Since it is
 		 * the listening guy. The timer will get started for
@@ -2569,6 +2568,12 @@ sctp_handle_cookie_echo(struct mbuf *m, int iphlen, int offset,
 	cookie_offset = offset + sizeof(struct sctp_chunkhdr);
 	cookie_len = ntohs(cp->ch.chunk_length);
 
+	if (cookie_len < sizeof(struct sctp_cookie_echo_chunk) +
+	    sizeof(struct sctp_init_chunk) +
+	    sizeof(struct sctp_init_ack_chunk) + SCTP_SIGNATURE_SIZE) {
+		/* cookie too small */
+		return (NULL);
+	}
 	if ((cookie->peerport != sh->src_port) ||
 	    (cookie->myport != sh->dest_port) ||
 	    (cookie->my_vtag != sh->v_tag)) {
@@ -2579,12 +2584,6 @@ sctp_handle_cookie_echo(struct mbuf *m, int iphlen, int offset,
 		 * This maintains the match even though it may be in the
 		 * opposite byte order of the machine :->
 		 */
-		return (NULL);
-	}
-	if (cookie_len < sizeof(struct sctp_cookie_echo_chunk) +
-	    sizeof(struct sctp_init_chunk) +
-	    sizeof(struct sctp_init_ack_chunk) + SCTP_SIGNATURE_SIZE) {
-		/* cookie too small */
 		return (NULL);
 	}
 	/*
@@ -3798,7 +3797,7 @@ sctp_handle_stream_reset_response(struct sctp_tcb *stcb,
 				  struct sctp_stream_reset_response *respin)
 {
 	uint16_t type;
-	int lparm_len;
+	int lparam_len;
 	struct sctp_association *asoc = &stcb->asoc;
 	struct sctp_tmit_chunk *chk;
 	struct sctp_stream_reset_request *req_param;
@@ -3815,12 +3814,12 @@ sctp_handle_stream_reset_response(struct sctp_tcb *stcb,
 		if (req_param != NULL) {
 			stcb->asoc.str_reset_seq_out++;
 			type = ntohs(req_param->ph.param_type);
-			lparm_len = ntohs(req_param->ph.param_length);
+			lparam_len = ntohs(req_param->ph.param_length);
 			if (type == SCTP_STR_RESET_OUT_REQUEST) {
 				int no_clear = 0;
 
 				req_out_param = (struct sctp_stream_reset_out_request *)req_param;
-				number_entries = (lparm_len - sizeof(struct sctp_stream_reset_out_request)) / sizeof(uint16_t);
+				number_entries = (lparam_len - sizeof(struct sctp_stream_reset_out_request)) / sizeof(uint16_t);
 				asoc->stream_reset_out_is_outstanding = 0;
 				if (asoc->stream_reset_outstanding)
 					asoc->stream_reset_outstanding--;
@@ -3843,7 +3842,7 @@ sctp_handle_stream_reset_response(struct sctp_tcb *stcb,
 				}
 			} else if (type == SCTP_STR_RESET_IN_REQUEST) {
 				req_in_param = (struct sctp_stream_reset_in_request *)req_param;
-				number_entries = (lparm_len - sizeof(struct sctp_stream_reset_in_request)) / sizeof(uint16_t);
+				number_entries = (lparam_len - sizeof(struct sctp_stream_reset_in_request)) / sizeof(uint16_t);
 				if (asoc->stream_reset_outstanding)
 					asoc->stream_reset_outstanding--;
 				if (action == SCTP_STREAM_RESET_RESULT_DENIED) {
@@ -5382,15 +5381,31 @@ sctp_process_control(struct mbuf *m, int iphlen, int *offset, int length,
 					return (NULL);
 				}
 			}
-			/*
+			/*-
 			 * First are we accepting? We do this again here
 			 * since it is possible that a previous endpoint WAS
 			 * listening responded to a INIT-ACK and then
 			 * closed. We opened and bound.. and are now no
 			 * longer listening.
+			 *
+			 * XXXGL: notes on checking listen queue length.
+			 * 1) SCTP_IS_LISTENING() doesn't necessarily mean
+			 *    SOLISTENING(), because a listening "UDP type"
+			 *    socket isn't listening in terms of the socket
+			 *    layer.  It is a normal data flow socket, that
+			 *    can fork off new connections.  Thus, we should
+			 *    look into sol_qlen only in case we are !UDP.
+			 * 2) Checking sol_qlen in general requires locking
+			 *    the socket, and this code lacks that.
 			 */
-
-			if ((stcb == NULL) && (inp->sctp_socket->so_qlen >= inp->sctp_socket->so_qlimit)) {
+			if ((stcb == NULL) &&
+			    (!SCTP_IS_LISTENING(inp) ||
+			     (!(inp->sctp_flags & SCTP_PCB_FLAGS_UDPTYPE) &&
+#if defined(__FreeBSD__) && __FreeBSD_version >= 1200034
+			      inp->sctp_socket->sol_qlen >= inp->sctp_socket->sol_qlimit))) {
+#else
+			      inp->sctp_socket->so_qlen >= inp->sctp_socket->so_qlimit))) {
+#endif
 				if ((inp->sctp_flags & SCTP_PCB_FLAGS_TCPTYPE) &&
 				    (SCTP_BASE_SYSCTL(sctp_abort_if_one_2_one_hits_limit))) {
 					op_err = sctp_generate_cause(SCTP_CAUSE_OUT_OF_RESC, "");

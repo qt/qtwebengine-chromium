@@ -94,6 +94,7 @@ class VP8EncoderImpl : public VP8Encoder {
   uint32_t MaxIntraTarget(uint32_t optimal_buffer_size);
 
   const bool use_gf_boost_;
+  const rtc::Optional<int> min_pixels_per_frame_;
 
   EncodedImageCallback* encoded_complete_callback_;
   VideoCodec codec_;
@@ -135,7 +136,14 @@ class VP8DecoderImpl : public VP8Decoder {
 
   const char* ImplementationName() const override;
 
+  struct DeblockParams {
+    int max_level = 6;   // Deblocking strength: [0, 16].
+    int degrade_qp = 1;  // If QP value is below, start lowering |max_level|.
+    int min_qp = 0;      // If QP value is below, turn off deblocking.
+  };
+
  private:
+  class QpSmoother;
   int ReturnFrame(const vpx_image_t* img,
                   uint32_t timeStamp,
                   int64_t ntp_time_ms,
@@ -151,6 +159,8 @@ class VP8DecoderImpl : public VP8Decoder {
   int last_frame_width_;
   int last_frame_height_;
   bool key_frame_required_;
+  DeblockParams deblock_;
+  const std::unique_ptr<QpSmoother> qp_smoother_;
 };
 }  // namespace webrtc
 

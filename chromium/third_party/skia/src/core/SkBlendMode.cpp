@@ -7,6 +7,7 @@
 
 #include "SkBlendModePriv.h"
 #include "SkRasterPipeline.h"
+#include "../jumper/SkJumper.h"
 
 bool SkBlendMode_SupportsCoverageAsAlpha(SkBlendMode mode) {
     switch (mode) {
@@ -61,7 +62,15 @@ bool SkBlendMode_AsCoeff(SkBlendMode mode, SkBlendModeCoeff* src, SkBlendModeCoe
     return true;
 }
 
-void SkBlendMode_AppendStagesNoClamp(SkBlendMode mode, SkRasterPipeline* p) {
+bool SkBlendMode_ShouldPreScaleCoverage(SkBlendMode mode, bool rgb_coverage) {
+    // The most important things we do here are:
+    //   - always use pre-scaling for plus mode;
+    //   - never use pre-scaling for srcover with 565 coverage.
+    return mode == SkBlendMode::kPlus ||
+          (mode == SkBlendMode::kSrcOver && !rgb_coverage);
+}
+
+void SkBlendMode_AppendStages(SkBlendMode mode, SkRasterPipeline* p) {
     auto stage = SkRasterPipeline::srcover;
     switch (mode) {
         case SkBlendMode::kClear:    stage = SkRasterPipeline::clear; break;
@@ -99,14 +108,6 @@ void SkBlendMode_AppendStagesNoClamp(SkBlendMode mode, SkRasterPipeline* p) {
     p->append(stage);
 }
 
-void SkBlendMode_AppendClampIfNeeded(SkBlendMode mode, SkRasterPipeline* p) {
-    if (mode == SkBlendMode::kPlus) {
-        // Both clamp_a and clamp_1 would preserve premultiplication invariants here,
-        // so we pick clamp_1 for being a smidge faster.
-        p->append(SkRasterPipeline::clamp_1);
-    }
-}
-
 SkPM4f SkBlendMode_Apply(SkBlendMode mode, const SkPM4f& src, const SkPM4f& dst) {
     // special-case simple/common modes...
     switch (mode) {
@@ -122,16 +123,16 @@ SkPM4f SkBlendMode_Apply(SkBlendMode mode, const SkPM4f& src, const SkPM4f& dst)
     SkRasterPipeline_<256> p;
     SkPM4f                 src_storage = src,
                            dst_storage = dst,
-                           result_storage,
-                           *src_ctx = &src_storage,
-                           *dst_ctx = &dst_storage,
-                           *res_ctx = &result_storage;
+                           res_storage;
+    SkJumper_MemoryCtx src_ctx = { &src_storage, 0 },
+                       dst_ctx = { &dst_storage, 0 },
+                       res_ctx = { &res_storage, 0 };
 
     p.append(SkRasterPipeline::load_f32, &dst_ctx);
     p.append(SkRasterPipeline::move_src_dst);
     p.append(SkRasterPipeline::load_f32, &src_ctx);
     SkBlendMode_AppendStages(mode, &p);
     p.append(SkRasterPipeline::store_f32, &res_ctx);
-    p.run(0, 0, 1);
-    return result_storage;
+    p.run(0,0, 1,1);
+    return res_storage;
 }

@@ -47,7 +47,7 @@ group("libyuv") {
   if (is_win && target_cpu == "x64") {
     # Compile with clang in order to get inline assembly
     public_deps = [
-      ":libyuv_internal(//build/toolchain/win:clang_x64)",
+      ":libyuv_internal(//build/toolchain/win:win_clang_x64)",
     ]
   } else {
     public_deps = [
@@ -308,6 +308,7 @@ if (libyuv_include_tests) {
     ]
     deps = [
       ":libyuv",
+      "//build/config:exe_and_shlib_deps",  # for asan on llvm libc++
     ]
     if (is_linux) {
       cflags = [ "-fexceptions" ]
@@ -321,6 +322,7 @@ if (libyuv_include_tests) {
     ]
     deps = [
       ":libyuv",
+      "//build/config:exe_and_shlib_deps",  # for new[] on llvm libc++
     ]
     if (is_linux) {
       cflags = [ "-fexceptions" ]
@@ -336,6 +338,7 @@ if (libyuv_include_tests) {
     ]
     deps = [
       ":libyuv",
+      "//build/config:exe_and_shlib_deps",  # for new[] on llvm libc++
     ]
 
     if (!is_ios && !libyuv_disable_jpeg) {
@@ -350,6 +353,7 @@ if (libyuv_include_tests) {
     ]
     deps = [
       ":libyuv",
+      "//build/config:exe_and_shlib_deps",  # for asan on llvm libc++
     ]
   }
 }

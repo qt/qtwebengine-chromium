@@ -9,6 +9,7 @@
 
 #include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 
 using TimerCallback = void (*)(int32_t idEvent);
@@ -53,7 +54,7 @@ class CFX_SystemHandler {
   explicit CFX_SystemHandler(CPDFSDK_FormFillEnvironment* pFormFillEnv);
   ~CFX_SystemHandler();
 
-  void InvalidateRect(CPDFSDK_Widget* widget, FX_RECT rect);
+  void InvalidateRect(CPDFSDK_Widget* widget, const CFX_FloatRect& rect);
   void OutputSelectedRect(CFFL_FormFiller* pFormFiller, CFX_FloatRect& rect);
   bool IsSelectionImplemented() const;
   void SetCursor(int32_t nCursorType);
@@ -64,9 +65,6 @@ class CFX_SystemHandler {
 
   int32_t SetTimer(int32_t uElapse, TimerCallback lpTimerFunc);
   void KillTimer(int32_t nID);
-  bool IsSHIFTKeyDown(uint32_t nFlag) const;
-  bool IsCTRLKeyDown(uint32_t nFlag) const;
-  bool IsALTKeyDown(uint32_t nFlag) const;
 
  private:
   CFX_UnownedPtr<CPDFSDK_FormFillEnvironment> const m_pFormFillEnv;

@@ -52,7 +52,7 @@ public:
 
     GradientType asAGradient(GradientInfo* info) const override;
 #if SK_SUPPORT_GPU
-    sk_sp<GrFragmentProcessor> asFragmentProcessor(const AsFPArgs&) const override;
+    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const AsFPArgs&) const override;
 #endif
 
     SK_TO_STRING_OVERRIDE()
@@ -64,10 +64,8 @@ protected:
     Context* onMakeContext(const ContextRec&, SkArenaAlloc*) const override;
     Context* onMakeBurstPipelineContext(const ContextRec&, SkArenaAlloc*) const override;
 
-    bool adjustMatrixAndAppendStages(SkArenaAlloc* alloc,
-                                     SkMatrix* matrix,
-                                     SkRasterPipeline* tPipeline,
-                                     SkRasterPipeline* postPipeline) const final;
+    void appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* tPipeline,
+                              SkRasterPipeline* postPipeline) const final;
 
 
     sk_sp<SkShader> onMakeColorSpace(SkColorSpaceXformer* xformer) const override;

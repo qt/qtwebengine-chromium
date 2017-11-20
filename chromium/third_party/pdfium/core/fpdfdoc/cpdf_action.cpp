@@ -85,7 +85,7 @@ CFX_WideString CPDF_Action::GetFilePath() const {
   return CFX_WideString();
 }
 
-CFX_ByteString CPDF_Action::GetURI(CPDF_Document* pDoc) const {
+CFX_ByteString CPDF_Action::GetURI(const CPDF_Document* pDoc) const {
   CFX_ByteString csURI;
   if (!m_pDict)
     return csURI;
@@ -93,10 +93,11 @@ CFX_ByteString CPDF_Action::GetURI(CPDF_Document* pDoc) const {
     return csURI;
 
   csURI = m_pDict->GetStringFor("URI");
-  CPDF_Dictionary* pRoot = pDoc->GetRoot();
+  const CPDF_Dictionary* pRoot = pDoc->GetRoot();
   CPDF_Dictionary* pURI = pRoot->GetDictFor("URI");
   if (pURI) {
-    if (csURI.Find(":", 0) < 1)
+    auto result = csURI.Find(":");
+    if (!result.has_value() || result.value() == 0)
       csURI = pURI->GetStringFor("Base") + csURI;
   }
   return csURI;

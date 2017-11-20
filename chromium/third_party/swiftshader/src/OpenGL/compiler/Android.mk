@@ -20,6 +20,9 @@ COMMON_CFLAGS := \
 	-Wno-unused-parameter \
 	-Wno-implicit-exception-spec-mismatch \
 	-Wno-overloaded-virtual \
+	-Wno-attributes \
+	-Wno-unknown-attributes \
+	-Wno-unknown-warning-option \
 	-fno-operator-names \
 	-msse2 \
 	-D__STDC_CONSTANT_MACROS \
@@ -66,7 +69,6 @@ COMMON_SRC_FILES := \
 	SymbolTable.cpp \
 	TranslatorASM.cpp \
 	util.cpp \
-	ValidateGlobalInitializer.cpp \
 	ValidateLimitations.cpp \
 	ValidateSwitch.cpp \
 

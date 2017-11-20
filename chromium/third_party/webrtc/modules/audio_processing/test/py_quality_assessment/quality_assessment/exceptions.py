@@ -20,3 +20,15 @@ class SignalProcessingException(Exception):
   """Signal processing exeception.
   """
   pass
+
+
+class InputMixerException(Exception):
+  """Input mixer exeception.
+  """
+  pass
+
+
+class InputSignalCreatorException(Exception):
+  """Input signal creator exeception.
+  """
+  pass

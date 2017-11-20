@@ -15,14 +15,15 @@
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 #include "GrColorSpaceXform.h"
-#include "effects/GrProxyMove.h"
 class GrBlurredEdgeFragmentProcessor : public GrFragmentProcessor {
 public:
     enum Mode { kGaussian_Mode = 0, kSmoothStep_Mode = 1 };
     int mode() const { return fMode; }
-    static sk_sp<GrFragmentProcessor> Make(int mode) {
-        return sk_sp<GrFragmentProcessor>(new GrBlurredEdgeFragmentProcessor(mode));
+    static std::unique_ptr<GrFragmentProcessor> Make(int mode) {
+        return std::unique_ptr<GrFragmentProcessor>(new GrBlurredEdgeFragmentProcessor(mode));
     }
+    GrBlurredEdgeFragmentProcessor(const GrBlurredEdgeFragmentProcessor& src);
+    std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "BlurredEdgeFragmentProcessor"; }
 
 private:

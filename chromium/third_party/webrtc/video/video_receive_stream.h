@@ -16,19 +16,19 @@
 
 #include "webrtc/call/rtp_packet_sink_interface.h"
 #include "webrtc/call/syncable.h"
+#include "webrtc/call/video_receive_stream.h"
 #include "webrtc/common_video/include/incoming_video_stream.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/rtp_rtcp/include/flexfec_receiver.h"
 #include "webrtc/modules/video_coding/frame_buffer2.h"
 #include "webrtc/modules/video_coding/video_coding_impl.h"
-#include "webrtc/rtc_base/thread_checker.h"
+#include "webrtc/rtc_base/sequenced_task_checker.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/video/receive_statistics_proxy.h"
 #include "webrtc/video/rtp_streams_synchronizer.h"
 #include "webrtc/video/rtp_video_stream_receiver.h"
 #include "webrtc/video/transport_adapter.h"
 #include "webrtc/video/video_stream_decoder.h"
-#include "webrtc/video_receive_stream.h"
 
 namespace webrtc {
 
@@ -72,8 +72,6 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
 
   webrtc::VideoReceiveStream::Stats GetStats() const override;
 
-  rtc::Optional<TimingFrameInfo> GetAndResetTimingFrameInfo() override;
-
   // Takes ownership of the file, is responsible for closing it later.
   // Calling this method will close and finalize any current log.
   // Giving rtc::kInvalidPlatformFileValue disables logging.
@@ -81,6 +79,9 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   // the log is closed and finalized. A |byte_limit| of 0 means no limit.
   void EnableEncodedFrameRecording(rtc::PlatformFile file,
                                    size_t byte_limit) override;
+
+  void AddSecondarySink(RtpPacketSinkInterface* sink) override;
+  void RemoveSecondarySink(const RtpPacketSinkInterface* sink) override;
 
   // Implements rtc::VideoSinkInterface<VideoFrame>.
   void OnFrame(const VideoFrame& video_frame) override;
@@ -111,8 +112,8 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   static void DecodeThreadFunction(void* ptr);
   bool Decode();
 
-  rtc::ThreadChecker worker_thread_checker_;
-  rtc::ThreadChecker module_process_thread_checker_;
+  rtc::SequencedTaskChecker worker_sequence_checker_;
+  rtc::SequencedTaskChecker module_process_sequence_checker_;
 
   TransportAdapter transport_adapter_;
   const VideoReceiveStream::Config config_;
@@ -141,6 +142,13 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
 
   std::unique_ptr<RtpStreamReceiverInterface> media_receiver_;
   std::unique_ptr<RtpStreamReceiverInterface> rtx_receiver_;
+
+  // Whenever we are in an undecodable state (stream has just started or due to
+  // a decoding error) we require a keyframe to restart the stream.
+  bool keyframe_required_ = true;
+
+  // If we have successfully decoded any frame.
+  bool frame_decoded_ = false;
 };
 }  // namespace internal
 }  // namespace webrtc

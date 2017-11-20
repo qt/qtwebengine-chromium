@@ -68,6 +68,7 @@ void GLSLCodeGenerator::writeType(const Type& type) {
         fIndentation++;
         for (const auto& f : type.fields()) {
             this->writeModifiers(f.fModifiers, false);
+            this->writeTypePrecision(*f.fType);
             // sizes (which must be static in structs) are part of the type name here
             this->writeType(*f.fType);
             this->writeLine(" " + f.fName + ";");
@@ -75,7 +76,75 @@ void GLSLCodeGenerator::writeType(const Type& type) {
         fIndentation--;
         this->write("}");
     } else {
-        this->write(type.name());
+        switch (type.kind()) {
+            case Type::kVector_Kind: {
+                Type component = type.componentType();
+                if (component == *fContext.fFloat_Type || component == *fContext.fHalf_Type) {
+                    this->write("vec");
+                }
+                else if (component == *fContext.fDouble_Type) {
+                    this->write("dvec");
+                }
+                else if (component == *fContext.fInt_Type || component == *fContext.fShort_Type) {
+                    this->write("ivec");
+                }
+                else if (component == *fContext.fUInt_Type || component == *fContext.fUShort_Type) {
+                    this->write("uvec");
+                }
+                else if (component == *fContext.fBool_Type) {
+                    this->write("bvec");
+                }
+                else {
+                    ABORT("unsupported vector type");
+                }
+                this->write(to_string(type.columns()));
+                break;
+            }
+            case Type::kMatrix_Kind: {
+                Type component = type.componentType();
+                if (component == *fContext.fFloat_Type || component == *fContext.fHalf_Type) {
+                    this->write("mat");
+                }
+                else if (component == *fContext.fDouble_Type) {
+                    this->write("dmat");
+                }
+                else {
+                    ABORT("unsupported matrix type");
+                }
+                this->write(to_string(type.columns()));
+                if (type.columns() != type.rows()) {
+                    this->write("x");
+                    this->write(to_string(type.rows()));
+                }
+                break;
+            }
+            case Type::kArray_Kind: {
+                this->writeType(type.componentType());
+                this->write("[");
+                if (type.columns() != -1) {
+                    this->write(to_string(type.columns()));
+                }
+                this->write("]");
+                break;
+            }
+            case Type::kScalar_Kind: {
+                if (type == *fContext.fHalf_Type) {
+                    this->write("float");
+                }
+                else if (type == *fContext.fShort_Type) {
+                    this->write("int");
+                }
+                else if (type == *fContext.fUShort_Type) {
+                    this->write("uint");
+                }
+                else {
+                    this->write(type.name());
+                }
+                break;
+            }
+            default:
+                this->write(type.name());
+        }
     }
 }
 
@@ -165,6 +234,18 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
             return;
         }
     }
+    if (!fProgram.fSettings.fCaps->canUseFractForNegativeValues() && c.fFunction.fName == "fract" &&
+        c.fFunction.fBuiltin) {
+        ASSERT(c.fArguments.size() == 1);
+
+        this->write("(0.5 - sign(");
+        this->writeExpression(*c.fArguments[0], kSequence_Precedence);
+        this->write(") * (0.5 - fract(abs(");
+        this->writeExpression(*c.fArguments[0], kSequence_Precedence);
+        this->write("))))");
+
+        return;
+    }
     if (fProgram.fSettings.fCaps->mustForceNegatedAtanParamToFloat() &&
         c.fFunction.fName == "atan" &&
         c.fFunction.fBuiltin && c.fArguments.size() == 2 &&
@@ -196,25 +277,25 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
                 if (c.fArguments[1]->fType == *fContext.fFloat_Type) {
                     proj = false;
                 } else {
-                    ASSERT(c.fArguments[1]->fType == *fContext.fVec2_Type);
+                    ASSERT(c.fArguments[1]->fType == *fContext.fFloat2_Type);
                     proj = true;
                 }
                 break;
             case SpvDim2D:
                 dim = "2D";
-                if (c.fArguments[1]->fType == *fContext.fVec2_Type) {
+                if (c.fArguments[1]->fType == *fContext.fFloat2_Type) {
                     proj = false;
                 } else {
-                    ASSERT(c.fArguments[1]->fType == *fContext.fVec3_Type);
+                    ASSERT(c.fArguments[1]->fType == *fContext.fFloat3_Type);
                     proj = true;
                 }
                 break;
             case SpvDim3D:
                 dim = "3D";
-                if (c.fArguments[1]->fType == *fContext.fVec3_Type) {
+                if (c.fArguments[1]->fType == *fContext.fFloat3_Type) {
                     proj = false;
                 } else {
-                    ASSERT(c.fArguments[1]->fType == *fContext.fVec4_Type);
+                    ASSERT(c.fArguments[1]->fType == *fContext.fFloat4_Type);
                     proj = true;
                 }
                 break;
@@ -259,7 +340,8 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
 }
 
 void GLSLCodeGenerator::writeConstructor(const Constructor& c) {
-    this->write(c.fType.name() + "(");
+    this->writeType(c.fType);
+    this->write("(");
     const char* separator = "";
     for (const auto& arg : c.fArguments) {
         this->write(separator);
@@ -292,7 +374,7 @@ void GLSLCodeGenerator::writeFragCoord() {
             // The Adreno compiler seems to be very touchy about access to "gl_FragCoord".
             // Accessing glFragCoord.zw can cause a program to fail to link. Additionally,
             // depending on the surrounding code, accessing .xy with a uniform involved can
-            // do the same thing. Copying gl_FragCoord.xy into a temp vec2 beforehand
+            // do the same thing. Copying gl_FragCoord.xy into a temp float2beforehand
             // (and only accessing .xy) seems to "fix" things.
             const char* precision = fProgram.fSettings.fCaps->usesPrecisionModifiers() ? "highp "
                                                                                        : "";
@@ -605,6 +687,7 @@ void GLSLCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
     }
     for (const auto& f : structType->fields()) {
         this->writeModifiers(f.fModifiers, false);
+        this->writeTypePrecision(*f.fType);
         this->writeType(*f.fType);
         this->writeLine(" " + f.fName + ";");
     }
@@ -628,6 +711,25 @@ void GLSLCodeGenerator::writeVarInitializer(const Variable& var, const Expressio
     this->writeExpression(value, kTopLevel_Precedence);
 }
 
+void GLSLCodeGenerator::writeTypePrecision(const Type& type) {
+    if (fProgram.fSettings.fCaps->usesPrecisionModifiers()) {
+        switch (type.kind()) {
+            case Type::kScalar_Kind:
+                if (type == *fContext.fHalf_Type || type == *fContext.fShort_Type ||
+                        type == *fContext.fUShort_Type) {
+                    this->write("mediump ");
+                }
+                break;
+            case Type::kVector_Kind: // fall through
+            case Type::kMatrix_Kind:
+                this->writeTypePrecision(type.componentType());
+                break;
+            default:
+                break;
+        }
+    }
+}
+
 void GLSLCodeGenerator::writeVarDeclarations(const VarDeclarations& decl, bool global) {
     ASSERT(decl.fVars.size() > 0);
     bool wroteType = false;
@@ -637,6 +739,7 @@ void GLSLCodeGenerator::writeVarDeclarations(const VarDeclarations& decl, bool g
             this->write(", ");
         } else {
             this->writeModifiers(var.fVar->fModifiers, global);
+            this->writeTypePrecision(decl.fBaseType);
             this->writeType(decl.fBaseType);
             this->write(" ");
             wroteType = true;

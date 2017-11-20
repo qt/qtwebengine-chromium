@@ -73,8 +73,8 @@ void GrClipStackClip::getConservativeBounds(int width, int height, SkIRect* devR
 
 ////////////////////////////////////////////////////////////////////////////////
 // set up the draw state to enable the aa clipping mask.
-static sk_sp<GrFragmentProcessor> create_fp_for_mask(sk_sp<GrTextureProxy> mask,
-                                                     const SkIRect &devBound) {
+static std::unique_ptr<GrFragmentProcessor> create_fp_for_mask(sk_sp<GrTextureProxy> mask,
+                                                               const SkIRect& devBound) {
     SkIRect domainTexels = SkIRect::MakeWH(devBound.width(), devBound.height());
     return GrDeviceSpaceTextureDecalFragmentProcessor::Make(std::move(mask), domainTexels,
                                                             {devBound.fLeft, devBound.fTop});
@@ -90,7 +90,7 @@ bool GrClipStackClip::PathNeedsSWRenderer(GrContext* context,
                                           const Element* element,
                                           GrPathRenderer** prOut,
                                           bool needsStencil) {
-    if (Element::kRect_Type == element->getType()) {
+    if (Element::DeviceSpaceType::kRect == element->getDeviceSpaceType()) {
         // rects can always be drawn directly w/o using the software path
         // TODO: skip rrects once we're drawing them directly.
         if (prOut) {
@@ -99,11 +99,11 @@ bool GrClipStackClip::PathNeedsSWRenderer(GrContext* context,
         return false;
     } else {
         // We shouldn't get here with an empty clip element.
-        SkASSERT(Element::kEmpty_Type != element->getType());
+        SkASSERT(Element::DeviceSpaceType::kEmpty != element->getDeviceSpaceType());
 
         // the gpu alpha mask will draw the inverse paths as non-inverse to a temp buffer
         SkPath path;
-        element->asPath(&path);
+        element->asDeviceSpacePath(&path);
         if (path.isInverseFillType()) {
             path.toggleInverseFillType();
         }
@@ -174,9 +174,9 @@ bool GrClipStackClip::UseSWOnlyPath(GrContext* context,
 static bool get_analytic_clip_processor(const ElementList& elements,
                                         bool abortIfAA,
                                         const SkRect& drawDevBounds,
-                                        sk_sp<GrFragmentProcessor>* resultFP) {
+                                        std::unique_ptr<GrFragmentProcessor>* resultFP) {
     SkASSERT(elements.count() <= kMaxAnalyticElements);
-    SkSTArray<kMaxAnalyticElements, sk_sp<GrFragmentProcessor>> fps;
+    SkSTArray<kMaxAnalyticElements, std::unique_ptr<GrFragmentProcessor>> fps;
     ElementList::Iter iter(elements);
     while (iter.get()) {
         SkClipOp op = iter.get()->getOp();
@@ -213,16 +213,19 @@ static bool get_analytic_clip_processor(const ElementList& elements,
                     invert ? kInverseFillBW_GrProcessorEdgeType : kFillBW_GrProcessorEdgeType;
             }
 
-            switch (iter.get()->getType()) {
-                case SkClipStack::Element::kPath_Type:
-                    fps.emplace_back(GrConvexPolyEffect::Make(edgeType, iter.get()->getPath()));
+            switch (iter.get()->getDeviceSpaceType()) {
+                case SkClipStack::Element::DeviceSpaceType::kPath:
+                    fps.emplace_back(
+                            GrConvexPolyEffect::Make(edgeType, iter.get()->getDeviceSpacePath()));
                     break;
-                case SkClipStack::Element::kRRect_Type: {
-                    fps.emplace_back(GrRRectEffect::Make(edgeType, iter.get()->getRRect()));
+                case SkClipStack::Element::DeviceSpaceType::kRRect: {
+                    fps.emplace_back(
+                            GrRRectEffect::Make(edgeType, iter.get()->getDeviceSpaceRRect()));
                     break;
                 }
-                case SkClipStack::Element::kRect_Type: {
-                    fps.emplace_back(GrConvexPolyEffect::Make(edgeType, iter.get()->getRect()));
+                case SkClipStack::Element::DeviceSpaceType::kRect: {
+                    fps.emplace_back(
+                            GrConvexPolyEffect::Make(edgeType, iter.get()->getDeviceSpaceRect()));
                     break;
                 }
                 default:
@@ -302,7 +305,7 @@ bool GrClipStackClip::apply(GrContext* context, GrRenderTargetContext* renderTar
             // is multisampled.
             disallowAnalyticAA = useHWAA || hasUserStencilSettings;
         }
-        sk_sp<GrFragmentProcessor> clipFP;
+        std::unique_ptr<GrFragmentProcessor> clipFP;
         if ((reducedClip.requiresAA() || avoidStencilBuffers) &&
             get_analytic_clip_processor(reducedClip.elements(), disallowAnalyticAA, devBounds,
                                         &clipFP)) {
@@ -338,16 +341,7 @@ bool GrClipStackClip::apply(GrContext* context, GrRenderTargetContext* renderTar
         }
     }
 
-    GrRenderTarget* rt = renderTargetContext->accessRenderTarget();
-    if (!rt) {
-        return true;
-    }
-
-    // use the stencil clip if we can't represent the clip as a rectangle.
-    if (!context->resourceProvider()->attachStencilAttachment(rt)) {
-        SkDebugf("WARNING: failed to attach stencil buffer for clip mask. Clip will be ignored.\n");
-        return true;
-    }
+    renderTargetContext->setNeedsStencil();
 
     // This relies on the property that a reduced sub-rect of the last clip will contain all the
     // relevant window rectangles that were in the last clip. This subtle requirement will go away
@@ -394,7 +388,8 @@ sk_sp<GrTextureProxy> GrClipStackClip::createAlphaClipMask(GrContext* context,
     GrUniqueKey key;
     create_clip_mask_key(reducedClip.elementsGenID(), reducedClip.ibounds(), &key);
 
-    sk_sp<GrTextureProxy> proxy(resourceProvider->findProxyByUniqueKey(key));
+    sk_sp<GrTextureProxy> proxy(resourceProvider->findProxyByUniqueKey(
+                                                                key, kBottomLeft_GrSurfaceOrigin));
     if (proxy) {
         return proxy;
     }
@@ -418,6 +413,7 @@ sk_sp<GrTextureProxy> GrClipStackClip::createAlphaClipMask(GrContext* context,
         return nullptr;
     }
 
+    SkASSERT(result->origin() == kBottomLeft_GrSurfaceOrigin);
     resourceProvider->assignUniqueKeyToProxy(key, result.get());
     // MDB TODO (caching): this has to play nice with the GrSurfaceProxy's caching
     add_invalidate_on_pop_message(*fStack, reducedClip.elementsGenID(), key);
@@ -431,7 +427,8 @@ sk_sp<GrTextureProxy> GrClipStackClip::createSoftwareClipMask(
     GrUniqueKey key;
     create_clip_mask_key(reducedClip.elementsGenID(), reducedClip.ibounds(), &key);
 
-    sk_sp<GrTextureProxy> proxy(context->resourceProvider()->findProxyByUniqueKey(key));
+    sk_sp<GrTextureProxy> proxy(context->resourceProvider()->findProxyByUniqueKey(
+                                                                  key, kTopLeft_GrSurfaceOrigin));
     if (proxy) {
         return proxy;
     }
@@ -447,7 +444,7 @@ sk_sp<GrTextureProxy> GrClipStackClip::createSoftwareClipMask(
     SkMatrix translate;
     translate.setTranslate(SkIntToScalar(-reducedClip.left()), SkIntToScalar(-reducedClip.top()));
 
-    if (!helper.init(maskSpaceIBounds, &translate)) {
+    if (!helper.init(maskSpaceIBounds)) {
         return nullptr;
     }
     helper.clear(InitialState::kAllIn == reducedClip.initialState() ? 0xFF : 0x00);
@@ -465,30 +462,31 @@ sk_sp<GrTextureProxy> GrClipStackClip::createSoftwareClipMask(
             if (kReverseDifference_SkClipOp == op) {
                 SkRect temp = SkRect::Make(reducedClip.ibounds());
                 // invert the entire scene
-                helper.drawRect(temp, SkRegion::kXOR_Op, GrAA::kNo, 0xFF);
+                helper.drawRect(temp, translate, SkRegion::kXOR_Op, GrAA::kNo, 0xFF);
             }
             SkPath clipPath;
-            element->asPath(&clipPath);
+            element->asDeviceSpacePath(&clipPath);
             clipPath.toggleInverseFillType();
             GrShape shape(clipPath, GrStyle::SimpleFill());
-            helper.drawShape(shape, SkRegion::kReplace_Op, aa, 0x00);
+            helper.drawShape(shape, translate, SkRegion::kReplace_Op, aa, 0x00);
             continue;
         }
 
         // The other ops (union, xor, diff) only affect pixels inside
         // the geometry so they can just be drawn normally
-        if (Element::kRect_Type == element->getType()) {
-            helper.drawRect(element->getRect(), (SkRegion::Op)op, aa, 0xFF);
+        if (Element::DeviceSpaceType::kRect == element->getDeviceSpaceType()) {
+            helper.drawRect(element->getDeviceSpaceRect(), translate, (SkRegion::Op)op, aa, 0xFF);
         } else {
             SkPath path;
-            element->asPath(&path);
+            element->asDeviceSpacePath(&path);
             GrShape shape(path, GrStyle::SimpleFill());
-            helper.drawShape(shape, (SkRegion::Op)op, aa, 0xFF);
+            helper.drawShape(shape, translate, (SkRegion::Op)op, aa, 0xFF);
         }
     }
 
     sk_sp<GrTextureProxy> result(helper.toTextureProxy(context, SkBackingFit::kApprox));
 
+    SkASSERT(result->origin() == kTopLeft_GrSurfaceOrigin);
     context->resourceProvider()->assignUniqueKeyToProxy(key, result.get());
     // MDB TODO (caching): this has to play nice with the GrSurfaceProxy's caching
     add_invalidate_on_pop_message(*fStack, reducedClip.elementsGenID(), key);

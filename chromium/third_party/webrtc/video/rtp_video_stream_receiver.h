@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "webrtc/call/rtp_packet_sink_interface.h"
+#include "webrtc/call/video_receive_stream.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
 #include "webrtc/modules/rtp_rtcp/include/remote_ntp_time_estimator.h"
@@ -31,8 +32,8 @@
 #include "webrtc/modules/video_coding/sequence_number_util.h"
 #include "webrtc/rtc_base/constructormagic.h"
 #include "webrtc/rtc_base/criticalsection.h"
+#include "webrtc/rtc_base/sequenced_task_checker.h"
 #include "webrtc/typedefs.h"
-#include "webrtc/video_receive_stream.h"
 
 namespace webrtc {
 
@@ -142,6 +143,13 @@ class RtpVideoStreamReceiver : public RtpData,
   rtc::Optional<int64_t> LastReceivedPacketMs() const;
   rtc::Optional<int64_t> LastReceivedKeyframePacketMs() const;
 
+  // RtpDemuxer only forwards a given RTP packet to one sink. However, some
+  // sinks, such as FlexFEC, might wish to be informed of all of the packets
+  // a given sink receives (or any set of sinks). They may do so by registering
+  // themselves as secondary sinks.
+  void AddSecondarySink(RtpPacketSinkInterface* sink);
+  void RemoveSecondarySink(const RtpPacketSinkInterface* sink);
+
  private:
   bool AddReceiveCodec(const VideoCodec& video_codec);
   void ReceivePacket(const uint8_t* packet,
@@ -175,11 +183,11 @@ class RtpVideoStreamReceiver : public RtpData,
   const std::unique_ptr<ReceiveStatistics> rtp_receive_statistics_;
   std::unique_ptr<UlpfecReceiver> ulpfec_receiver_;
 
-  rtc::CriticalSection receive_cs_;
-  bool receiving_ GUARDED_BY(receive_cs_);
-  uint8_t restored_packet_[IP_PACKET_SIZE] GUARDED_BY(receive_cs_);
-  bool restored_packet_in_use_ GUARDED_BY(receive_cs_);
-  int64_t last_packet_log_ms_ GUARDED_BY(receive_cs_);
+  rtc::SequencedTaskChecker worker_task_checker_;
+  bool receiving_ GUARDED_BY(worker_task_checker_);
+  uint8_t restored_packet_[IP_PACKET_SIZE] GUARDED_BY(worker_task_checker_);
+  bool restored_packet_in_use_ GUARDED_BY(worker_task_checker_);
+  int64_t last_packet_log_ms_ GUARDED_BY(worker_task_checker_);
 
   const std::unique_ptr<RtpRtcp> rtp_rtcp_;
 
@@ -201,6 +209,9 @@ class RtpVideoStreamReceiver : public RtpData,
   int16_t last_payload_type_ = -1;
 
   bool has_received_frame_;
+
+  std::vector<RtpPacketSinkInterface*> secondary_sinks_
+      GUARDED_BY(worker_task_checker_);
 };
 
 }  // namespace webrtc

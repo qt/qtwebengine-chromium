@@ -32,8 +32,7 @@ CFWL_ListBox::CFWL_ListBox(const CFWL_App* app,
                            std::unique_ptr<CFWL_WidgetProperties> properties,
                            CFWL_Widget* pOuter)
     : CFWL_Widget(app, std::move(properties), pOuter),
-      m_dwTTOStyles(0),
-      m_iTTOAligns(0),
+      m_iTTOAligns(FDE_TextAlignment::kTopLeft),
       m_hAnchor(nullptr),
       m_fScorllBarWidth(0),
       m_bLButtonDown(false),
@@ -57,20 +56,20 @@ void CFWL_ListBox::Update() {
 
   switch (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_LTB_AlignMask) {
     case FWL_STYLEEXT_LTB_LeftAlign: {
-      m_iTTOAligns = FDE_TTOALIGNMENT_CenterLeft;
+      m_iTTOAligns = FDE_TextAlignment::kCenterLeft;
       break;
     }
     case FWL_STYLEEXT_LTB_RightAlign: {
-      m_iTTOAligns = FDE_TTOALIGNMENT_CenterRight;
+      m_iTTOAligns = FDE_TextAlignment::kCenterRight;
       break;
     }
     case FWL_STYLEEXT_LTB_CenterAlign:
     default: {
-      m_iTTOAligns = FDE_TTOALIGNMENT_Center;
+      m_iTTOAligns = FDE_TextAlignment::kCenter;
       break;
     }
   }
-  m_dwTTOStyles |= FDE_TTOSTYLE_SingleLine;
+  m_dwTTOStyles.single_line_ = true;
   m_fScorllBarWidth = GetScrollWidth();
   CalcSize(false);
 }
@@ -92,7 +91,7 @@ FWL_WidgetHit CFWL_ListBox::HitTest(const CFX_PointF& point) {
 }
 
 void CFWL_ListBox::DrawWidget(CXFA_Graphics* pGraphics,
-                              const CFX_Matrix* pMatrix) {
+                              const CFX_Matrix& matrix) {
   if (!pGraphics)
     return;
   if (!m_pProperties->m_pThemeProvider)
@@ -101,21 +100,19 @@ void CFWL_ListBox::DrawWidget(CXFA_Graphics* pGraphics,
   IFWL_ThemeProvider* pTheme = m_pProperties->m_pThemeProvider;
   pGraphics->SaveGraphState();
   if (HasBorder())
-    DrawBorder(pGraphics, CFWL_Part::Border, pTheme, pMatrix);
+    DrawBorder(pGraphics, CFWL_Part::Border, pTheme, matrix);
 
   CFX_RectF rtClip(m_rtConent);
   if (IsShowScrollBar(false))
     rtClip.height -= m_fScorllBarWidth;
   if (IsShowScrollBar(true))
     rtClip.width -= m_fScorllBarWidth;
-  if (pMatrix)
-    pMatrix->TransformRect(rtClip);
 
-  pGraphics->SetClipRect(rtClip);
+  pGraphics->SetClipRect(matrix.TransformRect(rtClip));
   if ((m_pProperties->m_dwStyles & FWL_WGTSTYLE_NoBackground) == 0)
-    DrawBkground(pGraphics, pTheme, pMatrix);
+    DrawBkground(pGraphics, pTheme, &matrix);
 
-  DrawItems(pGraphics, pTheme, pMatrix);
+  DrawItems(pGraphics, pTheme, &matrix);
   pGraphics->RestoreGraphState();
 }
 
@@ -715,8 +712,8 @@ void CFWL_ListBox::OnProcessEvent(CFWL_Event* pEvent) {
 }
 
 void CFWL_ListBox::OnDrawWidget(CXFA_Graphics* pGraphics,
-                                const CFX_Matrix* pMatrix) {
-  DrawWidget(pGraphics, pMatrix);
+                                const CFX_Matrix& matrix) {
+  DrawWidget(pGraphics, matrix);
 }
 
 void CFWL_ListBox::OnFocusChanged(CFWL_Message* pMsg, bool bSet) {

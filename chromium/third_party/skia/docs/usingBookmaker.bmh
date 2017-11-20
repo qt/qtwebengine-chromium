@@ -1,0 +1,118 @@
+#External
+SkXXX
+bmh_SkXXX
+CL
+Go
+Visual_Studio
+##
+
+#Topic Bookmaker
+
+How to use the Bookmaker utility.
+
+Install #A Go # https://golang.org/doc/install ## if needed.  
+Get the fiddle command line interface tool.
+By default this will appear in your home directory.
+
+#Code
+$ go get go.skia.org/infra/fiddle/go/fiddlecli
+##
+
+Build Bookmaker.
+
+#Code
+$ ninja -C out/dir bookmaker
+##
+
+Generate an starter Bookmaker file from an existing include.
+This writes SkXXX.bmh in the current directory, which is
+out/dir/obj/ from an IDE.
+
+#Code
+$ ./out/dir/bookmaker -t -i include/core/SkXXX.h
+##
+
+Copy SkXXX.bmh to docs.
+Use your favorite editor to fill out docs/SkXXX.bmh.
+
+#Subtopic Style
+
+Documentation consists of cross references, descriptions, and examples.
+All structs, classes, enums, their members and methods, functions, and so on,
+require descriptions. Most also require examples.
+
+All methods and functions should include examples if practical.
+
+Descriptions start with an active verb. Descriptions are complete, punctuated
+sentences unless they describe parameters or return values. Parameters and
+returned values are described by phrases that start lower case and do not
+include trailing punctuation.
+
+Descriptions are not self-referential; they do not include the thing they
+describe. Descriptions may contain upper case references to definitions
+but otherwise should be free of jargon.
+
+Descriptions may contain code and formulas, each bracketed by markup.
+
+Similar items may be grouped into topics. Topics may include subtopics.
+
+Each document begins with one or more indices that include the contents of
+that file. A class reference includes an index listing contained topics, 
+a separate listing for constructors, one for methods, and so on.
+
+Class methods contain a description, any parameters, any return value,
+an example, and any cross references.
+
+Each method must contain either one or more examples or markup indicating
+that there is no example.
+
+##
+
+Generate fiddle.json from all examples, including the ones you just wrote.
+Error checking is syntatic: starting keywords are closed, keywords have the
+correct parents.
+If you run Bookmaker inside Visual_Studio, you can click on errors and it
+will take you to the source line in question.
+
+#Code
+$ ./out/dir/bookmaker -e fiddle.json -b docs
+##
+
+Once complete, run fiddlecli to generate the example hashes.
+Errors are contained by the output but aren't reported yet.
+
+#Code
+$ $GOPATH/bin/fiddlecli --input fiddle.json --output fiddleout.json
+##
+
+Generate bmh_SkXXX.md from SkXXX.bmh and fiddleout.json.
+Error checking includes: undefined references, fiddle compiler errors,
+missing or mismatched printf output.
+Again, you can click on any errors inside Visual_Studio.
+
+#Code
+$ ./out/dir/bookmaker -r site/user/api -b docs -f fiddleout.json
+##
+
+The original include may have changed since you started creating the markdown.
+Check to see if it is up to date.
+This reports if a method no longer exists or its parameters have changed.
+
+#Code
+$ ./out/dir/bookmaker -x -b docs/SkXXX.bmh -i include/core/SkXXX.h
+##
+
+Generate an updated include header.
+This writes the updated SkXXX.h to the current directory.
+
+#Code
+$ ./out/dir/bookmaker -p -b docs -i include/core/SkXXX.h
+##
+
+#Subtopic Bugs
+
+Bookmaker bugs are tracked #A here # bug.skia.org/6898 ##.
+
+##
+
+#Topic Bookmaker ##

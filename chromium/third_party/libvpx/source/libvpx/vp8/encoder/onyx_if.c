@@ -37,6 +37,7 @@
 #include "vp8/common/threading.h"
 #include "vpx_ports/system_state.h"
 #include "vpx_ports/vpx_timer.h"
+#include "vpx_util/vpx_write_yuv_frame.h"
 #if ARCH_ARM
 #include "vpx_ports/arm.h"
 #endif
@@ -220,7 +221,8 @@ static void save_layer_context(VP8_COMP *cpi) {
   lc->inter_frame_target = cpi->inter_frame_target;
   lc->total_byte_count = cpi->total_byte_count;
   lc->filter_level = cpi->common.filter_level;
-
+  lc->frames_since_last_drop_overshoot = cpi->frames_since_last_drop_overshoot;
+  lc->force_maxqp = cpi->force_maxqp;
   lc->last_frame_percent_intra = cpi->last_frame_percent_intra;
 
   memcpy(lc->count_mb_ref_frame_usage, cpi->mb.count_mb_ref_frame_usage,
@@ -256,7 +258,8 @@ static void restore_layer_context(VP8_COMP *cpi, const int layer) {
   cpi->inter_frame_target = lc->inter_frame_target;
   cpi->total_byte_count = lc->total_byte_count;
   cpi->common.filter_level = lc->filter_level;
-
+  cpi->frames_since_last_drop_overshoot = lc->frames_since_last_drop_overshoot;
+  cpi->force_maxqp = lc->force_maxqp;
   cpi->last_frame_percent_intra = lc->last_frame_percent_intra;
 
   memcpy(cpi->mb.count_mb_ref_frame_usage, lc->count_mb_ref_frame_usage,
@@ -628,16 +631,15 @@ static void compute_skin_map(VP8_COMP *cpi) {
 
   const SKIN_DETECTION_BLOCK_SIZE bsize =
       (cm->Width * cm->Height <= 352 * 288) ? SKIN_8X8 : SKIN_16X16;
-  int offset = 0;
+
   for (mb_row = 0; mb_row < cm->mb_rows; mb_row++) {
     num_bl = 0;
     for (mb_col = 0; mb_col < cm->mb_cols; mb_col++) {
       const int bl_index = mb_row * cm->mb_cols + mb_col;
-      cpi->skin_map[offset] =
+      cpi->skin_map[bl_index] =
           vp8_compute_skin_block(src_y, src_u, src_v, src_ystride, src_uvstride,
                                  bsize, cpi->consec_zero_last[bl_index], 0);
       num_bl++;
-      offset++;
       src_y += 16;
       src_u += 8;
       src_v += 8;
@@ -645,6 +647,29 @@ static void compute_skin_map(VP8_COMP *cpi) {
     src_y += (src_ystride << 4) - (num_bl << 4);
     src_u += (src_uvstride << 3) - (num_bl << 3);
     src_v += (src_uvstride << 3) - (num_bl << 3);
+  }
+
+  // Remove isolated skin blocks (none of its neighbors are skin) and isolated
+  // non-skin blocks (all of its neighbors are skin). Skip the boundary.
+  for (mb_row = 1; mb_row < cm->mb_rows - 1; mb_row++) {
+    for (mb_col = 1; mb_col < cm->mb_cols - 1; mb_col++) {
+      const int bl_index = mb_row * cm->mb_cols + mb_col;
+      int num_neighbor = 0;
+      int mi, mj;
+      int non_skin_threshold = 8;
+
+      for (mi = -1; mi <= 1; mi += 1) {
+        for (mj = -1; mj <= 1; mj += 1) {
+          int bl_neighbor_index = (mb_row + mi) * cm->mb_cols + mb_col + mj;
+          if (cpi->skin_map[bl_neighbor_index]) num_neighbor++;
+        }
+      }
+
+      if (cpi->skin_map[bl_index] && num_neighbor < 2)
+        cpi->skin_map[bl_index] = 0;
+      if (!cpi->skin_map[bl_index] && num_neighbor == non_skin_threshold)
+        cpi->skin_map[bl_index] = 1;
+    }
   }
 }
 
@@ -1915,6 +1940,7 @@ struct VP8_COMP *vp8_create_compressor(VP8_CONFIG *oxcf) {
   cpi->common.refresh_alt_ref_frame = 0;
 
   cpi->force_maxqp = 0;
+  cpi->frames_since_last_drop_overshoot = 0;
 
   cpi->b_calculate_psnr = CONFIG_INTERNAL_STATS;
 #if CONFIG_INTERNAL_STATS
@@ -3877,7 +3903,7 @@ static void encode_frame_to_data_rate(VP8_COMP *cpi, size_t *size,
 #endif
 
 #ifdef OUTPUT_YUV_SRC
-  vp8_write_yuv_frame(yuv_file, cpi->Source);
+  vpx_write_yuv_frame(yuv_file, cpi->Source);
 #endif
 
   do {
@@ -4005,7 +4031,8 @@ static void encode_frame_to_data_rate(VP8_COMP *cpi, size_t *size,
 #else
     /* transform / motion compensation build reconstruction frame */
     vp8_encode_frame(cpi);
-    if (cpi->oxcf.screen_content_mode == 2) {
+
+    if (cpi->pass == 0 && cpi->oxcf.end_usage == USAGE_STREAM_FROM_SERVER) {
       if (vp8_drop_encodedframe_overshoot(cpi, Q)) return;
     }
 
@@ -4457,7 +4484,7 @@ static void encode_frame_to_data_rate(VP8_COMP *cpi, size_t *size,
   update_reference_frames(cpi);
 
 #ifdef OUTPUT_YUV_DENOISED
-  vp8_write_yuv_frame(yuv_denoised_file,
+  vpx_write_yuv_frame(yuv_denoised_file,
                       &cpi->denoiser.yv12_running_avg[INTRA_FRAME]);
 #endif
 
@@ -4806,7 +4833,7 @@ static void encode_frame_to_data_rate(VP8_COMP *cpi, size_t *size,
 #endif
 
   /* DEBUG */
-  /* vp8_write_yuv_frame("encoder_recon.yuv", cm->frame_to_show); */
+  /* vpx_write_yuv_frame("encoder_recon.yuv", cm->frame_to_show); */
 }
 #if !CONFIG_REALTIME_ONLY
 static void Pass2Encode(VP8_COMP *cpi, size_t *size, unsigned char *dest,

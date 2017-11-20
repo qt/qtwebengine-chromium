@@ -332,6 +332,11 @@ void VerifyVoiceReceiverInfoReport(
   EXPECT_TRUE(GetValue(report, StatsReport::kStatsValueNameSecondaryDecodedRate,
                        &value_in_report));
   EXPECT_EQ(rtc::ToString<float>(info.secondary_decoded_rate), value_in_report);
+  EXPECT_TRUE(GetValue(report,
+                       StatsReport::kStatsValueNameSecondaryDiscardedRate,
+                       &value_in_report));
+  EXPECT_EQ(rtc::ToString<float>(info.secondary_discarded_rate),
+            value_in_report);
   EXPECT_TRUE(GetValue(
       report, StatsReport::kStatsValueNamePacketsReceived, &value_in_report));
   EXPECT_EQ(rtc::ToString<int>(info.packets_rcvd), value_in_report);
@@ -483,6 +488,7 @@ void InitVoiceReceiverInfo(cricket::VoiceReceiverInfo* voice_receiver_info) {
   voice_receiver_info->secondary_decoded_rate = 123;
   voice_receiver_info->accelerate_rate = 124;
   voice_receiver_info->preemptive_expand_rate = 125;
+  voice_receiver_info->secondary_discarded_rate = 126;
 }
 
 class StatsCollectorForTest : public webrtc::StatsCollector {
@@ -545,7 +551,8 @@ class StatsCollectorTest : public testing::Test {
   void AddOutgoingVideoTrackStats() {
     stream_ = webrtc::MediaStream::Create("streamlabel");
     track_ = webrtc::VideoTrack::Create(kLocalTrackId,
-                                        webrtc::FakeVideoTrackSource::Create());
+                                        webrtc::FakeVideoTrackSource::Create(),
+                                        rtc::Thread::Current());
     stream_->AddTrack(track_);
     EXPECT_CALL(session_, GetLocalTrackIdBySsrc(kSsrcOfTrack, _))
         .WillRepeatedly(DoAll(SetArgPointee<1>(kLocalTrackId), Return(true)));
@@ -555,7 +562,8 @@ class StatsCollectorTest : public testing::Test {
   void AddIncomingVideoTrackStats() {
     stream_ = webrtc::MediaStream::Create("streamlabel");
     track_ = webrtc::VideoTrack::Create(kRemoteTrackId,
-                                        webrtc::FakeVideoTrackSource::Create());
+                                        webrtc::FakeVideoTrackSource::Create(),
+                                        rtc::Thread::Current());
     stream_->AddTrack(track_);
     EXPECT_CALL(session_, GetRemoteTrackIdBySsrc(kSsrcOfTrack, _))
         .WillRepeatedly(DoAll(SetArgPointee<1>(kRemoteTrackId), Return(true)));

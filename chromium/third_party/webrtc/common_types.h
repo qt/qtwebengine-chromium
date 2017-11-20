@@ -22,6 +22,7 @@
 #include "webrtc/api/video/video_timing.h"
 #include "webrtc/rtc_base/array_view.h"
 #include "webrtc/rtc_base/checks.h"
+#include "webrtc/rtc_base/deprecation.h"
 #include "webrtc/rtc_base/optional.h"
 #include "webrtc/typedefs.h"
 
@@ -156,13 +157,19 @@ enum FrameType {
 struct RtcpStatistics {
   RtcpStatistics()
       : fraction_lost(0),
-        cumulative_lost(0),
-        extended_max_sequence_number(0),
+        packets_lost(0),
+        extended_highest_sequence_number(0),
         jitter(0) {}
 
   uint8_t fraction_lost;
-  uint32_t cumulative_lost;
-  uint32_t extended_max_sequence_number;
+  union {
+    uint32_t packets_lost;
+    RTC_DEPRECATED uint32_t cumulative_lost;
+  };
+  union {
+    uint32_t extended_highest_sequence_number;
+    RTC_DEPRECATED uint32_t extended_max_sequence_number;
+  };
   uint32_t jitter;
 };
 
@@ -360,10 +367,19 @@ struct NetworkStatistics {
   uint16_t preferredBufferSize;
   // adding extra delay due to "peaky jitter"
   bool jitterPeaksFound;
+  // Total number of audio samples received, including synthesized samples.
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalsamplesreceived
+  uint64_t totalSamplesReceived;
+  // Total number of inbound audio samples that are based on synthesized data to
+  // conceal packet loss.
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-concealedsamples
+  uint64_t concealedSamples;
   // Loss rate (network + late); fraction between 0 and 1, scaled to Q14.
   uint16_t currentPacketLossRate;
   // Late loss rate; fraction between 0 and 1, scaled to Q14.
-  uint16_t currentDiscardRate;
+  union {
+    RTC_DEPRECATED uint16_t currentDiscardRate;
+  };
   // fraction (of original stream) of synthesized audio inserted through
   // expansion (in Q14)
   uint16_t currentExpandRate;
@@ -377,6 +393,11 @@ struct NetworkStatistics {
   uint16_t currentAccelerateRate;
   // fraction of data coming from secondary decoding (in Q14)
   uint16_t currentSecondaryDecodedRate;
+  // Fraction of secondary data, including FEC and RED, that is discarded (in
+  // Q14). Discarding of secondary data can be caused by the reception of the
+  // primary data, obsoleting the secondary data. It can also be caused by early
+  // or late arrival of secondary data.
+  uint16_t currentSecondaryDiscardedRate;
   // clock-drift in parts-per-million (negative or positive)
   int32_t clockDriftPPM;
   // average packet waiting time in the jitter buffer (ms)
@@ -530,6 +551,10 @@ enum VideoCodecType {
 };
 
 // Translates from name of codec to codec type and vice versa.
+const char* CodecTypeToPayloadString(VideoCodecType type);
+VideoCodecType PayloadStringToCodecType(const std::string& name);
+// TODO(kthelgason): Remove these methods once upstream projects
+// have been updated.
 rtc::Optional<const char*> CodecTypeToPayloadName(VideoCodecType type);
 rtc::Optional<VideoCodecType> PayloadNameToCodecType(const std::string& name);
 
@@ -715,23 +740,26 @@ struct PlayoutDelay {
   int max_ms;
 };
 
-// Class to represent RtpStreamId which is a string.
+// Class to represent the value of RTP header extensions that are
+// variable-length strings (e.g., RtpStreamId and RtpMid).
 // Unlike std::string, it can be copied with memcpy and cleared with memset.
-// Empty value represent unset RtpStreamId.
-class StreamId {
+//
+// Empty value represents unset header extension (use empty() to query).
+class StringRtpHeaderExtension {
  public:
-  // Stream id is limited to 16 bytes because it is the maximum length
-  // that can be encoded with one-byte header extensions.
+  // String RTP header extensions are limited to 16 bytes because it is the
+  // maximum length that can be encoded with one-byte header extensions.
   static constexpr size_t kMaxSize = 16;
 
   static bool IsLegalName(rtc::ArrayView<const char> name);
 
-  StreamId() { value_[0] = 0; }
-  explicit StreamId(rtc::ArrayView<const char> value) {
+  StringRtpHeaderExtension() { value_[0] = 0; }
+  explicit StringRtpHeaderExtension(rtc::ArrayView<const char> value) {
     Set(value.data(), value.size());
   }
-  StreamId(const StreamId&) = default;
-  StreamId& operator=(const StreamId&) = default;
+  StringRtpHeaderExtension(const StringRtpHeaderExtension&) = default;
+  StringRtpHeaderExtension& operator=(const StringRtpHeaderExtension&) =
+      default;
 
   bool empty() const { return value_[0] == 0; }
   const char* data() const { return value_; }
@@ -742,16 +770,24 @@ class StreamId {
   }
   void Set(const char* data, size_t size);
 
-  friend bool operator==(const StreamId& lhs, const StreamId& rhs) {
+  friend bool operator==(const StringRtpHeaderExtension& lhs,
+                         const StringRtpHeaderExtension& rhs) {
     return strncmp(lhs.value_, rhs.value_, kMaxSize) == 0;
   }
-  friend bool operator!=(const StreamId& lhs, const StreamId& rhs) {
+  friend bool operator!=(const StringRtpHeaderExtension& lhs,
+                         const StringRtpHeaderExtension& rhs) {
     return !(lhs == rhs);
   }
 
  private:
   char value_[kMaxSize];
 };
+
+// StreamId represents RtpStreamId which is a string.
+typedef StringRtpHeaderExtension StreamId;
+
+// Mid represents RtpMid which is a string.
+typedef StringRtpHeaderExtension Mid;
 
 struct RTPHeaderExtension {
   RTPHeaderExtension();
@@ -790,6 +826,10 @@ struct RTPHeaderExtension {
   // TODO(danilchap): Update url from draft to release version.
   StreamId stream_id;
   StreamId repaired_stream_id;
+
+  // For identifying the media section used to interpret this RTP packet. See
+  // https://tools.ietf.org/html/draft-ietf-mmusic-sdp-bundle-negotiation-38
+  Mid mid;
 };
 
 struct RTPHeader {
@@ -912,7 +952,7 @@ enum NetworkState {
   kNetworkDown,
 };
 
-struct RtpKeepAliveConfig {
+struct RtpKeepAliveConfig final {
   // If no packet has been sent for |timeout_interval_ms|, send a keep-alive
   // packet. The keep-alive packet is an empty (no payload) RTP packet with a
   // payload type of 20 as long as the other end has not negotiated the use of
@@ -921,6 +961,12 @@ struct RtpKeepAliveConfig {
   // in |payload_type|.
   int64_t timeout_interval_ms = -1;
   uint8_t payload_type = 20;
+
+  bool operator==(const RtpKeepAliveConfig& o) const {
+    return timeout_interval_ms == o.timeout_interval_ms &&
+           payload_type == o.payload_type;
+  }
+  bool operator!=(const RtpKeepAliveConfig& o) const { return !(*this == o); }
 };
 
 }  // namespace webrtc

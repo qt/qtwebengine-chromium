@@ -41,6 +41,17 @@ enum BlockLayoutType
     BLOCKLAYOUT_SHARED
 };
 
+// Interface Blocks, see section 4.3.9 of the ESSL 3.10 spec
+enum class BlockType
+{
+    BLOCK_UNIFORM,
+    BLOCK_BUFFER,
+
+    // Required in OpenGL ES 3.1 extension GL_OES_shader_io_blocks.
+    // TODO(jiawei.shao@intel.com): add BLOCK_OUT.
+    BLOCK_IN
+};
+
 // Base class for all variables defined in shaders, including Varyings, Uniforms, etc
 // Note: we must override the copy constructor and assignment operator so we can
 // work around excessive GCC binary bloating:
@@ -211,6 +222,8 @@ struct InterfaceBlock
     // Decide whether two interface blocks are the same at shader link time.
     bool isSameInterfaceBlockAtLinkTime(const InterfaceBlock &other) const;
 
+    bool isBuiltIn() const { return name.compare(0, 3, "gl_") == 0; }
+
     std::string name;
     std::string mappedName;
     std::string instanceName;
@@ -219,6 +232,7 @@ struct InterfaceBlock
     bool isRowMajorLayout;
     int binding;
     bool staticUse;
+    BlockType blockType;
     std::vector<InterfaceBlockField> fields;
 };
 

@@ -17,6 +17,7 @@
 
 #include "webrtc/rtc_base/checks.h"
 #include "webrtc/rtc_base/logging.h"
+#include "webrtc/system_wrappers/include/metrics.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -44,7 +45,11 @@ bool DxgiTextureStaging::InitializeStage(ID3D11Texture2D* texture) {
     AssertStageAndSurfaceAreSameObject();
     D3D11_TEXTURE2D_DESC current_desc;
     stage_->GetDesc(&current_desc);
-    if (memcmp(&desc, &current_desc, sizeof(D3D11_TEXTURE2D_DESC)) == 0) {
+    const bool recreate_needed = (
+        memcmp(&desc, &current_desc, sizeof(D3D11_TEXTURE2D_DESC)) != 0);
+    RTC_HISTOGRAM_BOOLEAN("WebRTC.DesktopCapture.StagingTextureRecreate",
+                          recreate_needed);
+    if (!recreate_needed) {
       return true;
     }
 
@@ -87,7 +92,8 @@ void DxgiTextureStaging::AssertStageAndSurfaceAreSameObject() {
 bool DxgiTextureStaging::CopyFromTexture(
     const DXGI_OUTDUPL_FRAME_INFO& frame_info,
     ID3D11Texture2D* texture) {
-  RTC_DCHECK(texture && frame_info.AccumulatedFrames > 0);
+  RTC_DCHECK_GT(frame_info.AccumulatedFrames, 0);
+  RTC_DCHECK(texture);
 
   // AcquireNextFrame returns a CPU inaccessible IDXGIResource, so we need to
   // copy it to a CPU accessible staging ID3D11Texture2D.

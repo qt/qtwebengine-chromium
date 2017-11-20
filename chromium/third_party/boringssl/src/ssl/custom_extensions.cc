@@ -25,6 +25,8 @@
 #include "internal.h"
 
 
+namespace bssl {
+
 void SSL_CUSTOM_EXTENSION_free(SSL_CUSTOM_EXTENSION *custom_extension) {
   OPENSSL_free(custom_extension);
 }
@@ -67,14 +69,6 @@ static int custom_ext_add_hello(SSL_HANDSHAKE *hs, CBB *extensions) {
 
   if (stack == NULL) {
     return 1;
-  }
-
-  if (ssl->cert->enable_early_data) {
-    /* TODO(svaldez): Support Custom Extensions with 0-RTT. For now the caller
-     * is expected not to configure both together.
-     * https://crbug.com/boringssl/173. */
-    OPENSSL_PUT_ERROR(SSL, SSL_R_CUSTOM_EXTENSION_ERROR);
-    return 0;
   }
 
   for (size_t i = 0; i < sk_SSL_CUSTOM_EXTENSION_num(stack); i++) {
@@ -245,6 +239,10 @@ static int custom_ext_append(STACK_OF(SSL_CUSTOM_EXTENSION) **stack,
 
   return 1;
 }
+
+}  // namespace bssl
+
+using namespace bssl;
 
 int SSL_CTX_add_client_custom_ext(SSL_CTX *ctx, unsigned extension_value,
                                   SSL_custom_ext_add_cb add_cb,

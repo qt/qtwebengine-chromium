@@ -82,8 +82,9 @@ public:
 
     bool compatibleWithAlphaAsCoverage() const { return fCompatibleWithAlphaAsCoveage; }
 
-    GrPipeline* makePipeline(GrMeshDrawOp::Target* target) const {
-        return target->allocPipeline(this->pipelineInitArgs(target));
+    /** Makes a pipeline that consumes the processor set and the op's applied clip. */
+    GrPipeline* makePipeline(GrMeshDrawOp::Target* target) {
+        return this->internalMakePipeline(target, this->pipelineInitArgs(target));
     }
 
     struct MakeArgs {
@@ -101,11 +102,10 @@ public:
 protected:
     GrAAType aaType() const { return static_cast<GrAAType>(fAAType); }
     uint32_t pipelineFlags() const { return fPipelineFlags; }
-    const GrProcessorSet& processors() const {
-        return fProcessors ? *fProcessors : GrProcessorSet::EmptySet();
-    }
 
     GrPipeline::InitArgs pipelineInitArgs(GrMeshDrawOp::Target* target) const;
+
+    GrPipeline* internalMakePipeline(GrMeshDrawOp::Target*, const GrPipeline::InitArgs&);
 
 private:
     GrProcessorSet* fProcessors;
@@ -114,6 +114,7 @@ private:
     unsigned fRequiresDstTexture : 1;
     unsigned fUsesLocalCoords : 1;
     unsigned fCompatibleWithAlphaAsCoveage : 1;
+    SkDEBUGCODE(unsigned fMadePipeline : 1;)
     SkDEBUGCODE(unsigned fDidAnalysis : 1;)
 };
 
@@ -146,7 +147,7 @@ public:
     bool isCompatible(const GrSimpleMeshDrawOpHelperWithStencil& that, const GrCaps&,
                       const SkRect& thisBounds, const SkRect& thatBounds) const;
 
-    const GrPipeline* makePipeline(GrMeshDrawOp::Target*) const;
+    const GrPipeline* makePipeline(GrMeshDrawOp::Target*);
 
     SkString dumpInfo() const;
 

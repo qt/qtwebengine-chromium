@@ -16,6 +16,7 @@
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/fx_stream.h"
 #include "third_party/base/logging.h"
 
 // Indexed by 8-bit character code, contains either:
@@ -75,12 +76,12 @@ int32_t GetHeaderOffset(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile) {
   uint8_t buf[kBufSize];
   for (int32_t offset = 0; offset <= 1024; ++offset) {
     if (!pFile->ReadBlock(buf, offset, kBufSize))
-      return -1;
+      return kInvalidHeaderOffset;
 
     if (memcmp(buf, "%PDF", 4) == 0)
       return offset;
   }
-  return -1;
+  return kInvalidHeaderOffset;
 }
 
 int32_t GetDirectInteger(CPDF_Dictionary* pDict, const CFX_ByteString& key) {
@@ -89,7 +90,7 @@ int32_t GetDirectInteger(CPDF_Dictionary* pDict, const CFX_ByteString& key) {
 }
 
 CFX_ByteString PDF_NameDecode(const CFX_ByteStringC& bstr) {
-  if (bstr.Find('#') == -1)
+  if (!bstr.Contains('#'))
     return CFX_ByteString(bstr);
 
   int size = bstr.GetLength();
@@ -110,9 +111,7 @@ CFX_ByteString PDF_NameDecode(const CFX_ByteStringC& bstr) {
 }
 
 CFX_ByteString PDF_NameDecode(const CFX_ByteString& orig) {
-  if (orig.Find('#') == -1)
-    return orig;
-  return PDF_NameDecode(orig.AsStringC());
+  return orig.Contains("#") ? PDF_NameDecode(orig.AsStringC()) : orig;
 }
 
 CFX_ByteString PDF_NameEncode(const CFX_ByteString& orig) {
@@ -147,11 +146,11 @@ CFX_ByteString PDF_NameEncode(const CFX_ByteString& orig) {
     }
   }
   dest_buf[dest_len] = 0;
-  res.ReleaseBuffer();
+  res.ReleaseBuffer(res.GetStringLength());
   return res;
 }
 
-CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& buf, const CPDF_Object* pObj) {
+std::ostream& operator<<(std::ostream& buf, const CPDF_Object* pObj) {
   if (!pObj) {
     buf << " null";
     return buf;
@@ -211,7 +210,8 @@ CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& buf, const CPDF_Object* pObj) {
       buf << p->GetDict() << "stream\r\n";
       auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(p);
       pAcc->LoadAllData(true);
-      buf.AppendBlock(pAcc->GetData(), pAcc->GetSize());
+      buf.write(reinterpret_cast<const char*>(pAcc->GetData()),
+                pAcc->GetSize());
       buf << "\r\nendstream";
       break;
     }

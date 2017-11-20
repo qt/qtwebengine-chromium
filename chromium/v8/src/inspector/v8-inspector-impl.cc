@@ -66,13 +66,12 @@ V8InspectorImpl::~V8InspectorImpl() {
   v8::debug::SetConsoleDelegate(m_isolate, nullptr);
 }
 
-int V8InspectorImpl::contextGroupId(v8::Local<v8::Context> context) {
+int V8InspectorImpl::contextGroupId(v8::Local<v8::Context> context) const {
   return contextGroupId(InspectedContext::contextId(context));
 }
 
-int V8InspectorImpl::contextGroupId(int contextId) {
-  protocol::HashMap<int, int>::iterator it =
-      m_contextIdToGroupIdMap.find(contextId);
+int V8InspectorImpl::contextGroupId(int contextId) const {
+  auto it = m_contextIdToGroupIdMap.find(contextId);
   return it != m_contextIdToGroupIdMap.end() ? it->second : 0;
 }
 
@@ -178,6 +177,10 @@ InspectedContext* V8InspectorImpl::getContext(int groupId,
   return contextIt->second.get();
 }
 
+InspectedContext* V8InspectorImpl::getContext(int contextId) const {
+  return getContext(contextGroupId(contextId), contextId);
+}
+
 void V8InspectorImpl::contextCreated(const V8ContextInfo& info) {
   int contextId = ++m_lastContextId;
   InspectedContext* context = new InspectedContext(this, info, contextId);
@@ -203,6 +206,10 @@ void V8InspectorImpl::contextCreated(const V8ContextInfo& info) {
 void V8InspectorImpl::contextDestroyed(v8::Local<v8::Context> context) {
   int contextId = InspectedContext::contextId(context);
   int groupId = contextGroupId(context);
+  contextCollected(groupId, contextId);
+}
+
+void V8InspectorImpl::contextCollected(int groupId, int contextId) {
   m_contextIdToGroupIdMap.erase(contextId);
 
   ConsoleStorageMap::iterator storageIt = m_consoleStorageMap.find(groupId);

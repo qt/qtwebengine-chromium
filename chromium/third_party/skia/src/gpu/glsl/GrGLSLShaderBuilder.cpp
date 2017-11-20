@@ -46,7 +46,7 @@ void GrGLSLShaderBuilder::emitFunction(GrSLType returnType,
                                        const GrShaderVar* args,
                                        const char* body,
                                        SkString* outName) {
-    this->functions().append(GrGLSLTypeString(returnType));
+    this->functions().append(GrGLSLTypeString(fProgramBuilder->shaderCaps(), returnType));
     fProgramBuilder->nameVariable(outName, '\0', name);
     this->functions().appendf(" %s", outName->c_str());
     this->functions().append("(");
@@ -128,7 +128,7 @@ void GrGLSLShaderBuilder::appendColorGamutXform(SkString* out,
     SkString functionBody;
     // Gamut xform, clamp to destination gamut. We only support/have premultiplied textures, so we
     // always just clamp to alpha.
-    functionBody.append("\tcolor.rgb = clamp((xform * vec4(color.rgb, 1.0)).rgb, 0.0, color.a);\n");
+    functionBody.append("\tcolor.rgb = clamp((xform * float4(color.rgb, 1.0)).rgb, 0.0, color.a);\n");
     functionBody.append("\treturn color;");
     SkString colorGamutXformFuncName;
     this->emitFunction(kVec4f_GrSLType,

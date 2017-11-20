@@ -145,8 +145,8 @@ public:
             vsBuilder->codeAppendf("%s = %s;", uv.vsOut(), qp.inUV()->fName);
 
             // Setup position
-            this->setupPosition(vsBuilder, uniformHandler, gpArgs, qp.inPosition()->fName,
-                                qp.viewMatrix(), &fViewMatrixUniform);
+            this->writeOutputPosition(vsBuilder, uniformHandler, gpArgs, qp.inPosition()->fName,
+                                      qp.viewMatrix(), &fViewMatrixUniform);
 
             // emit transforms
             this->emitTransforms(vsBuilder, varyingHandler, uniformHandler, gpArgs->fPositionVar,
@@ -156,7 +156,7 @@ public:
             GrGLSLPPFragmentBuilder* fsBuilder = args.fFragBuilder;
             fsBuilder->codeAppendf("if (%s.x * %s.x >= %s.y) discard;", uv.fsIn(), uv.fsIn(),
                                                                         uv.fsIn());
-            fsBuilder->codeAppendf("%s = vec4(1.0);", args.fOutputCoverage);
+            fsBuilder->codeAppendf("%s = float4(1.0);", args.fOutputCoverage);
         }
 
         static inline void GenKey(const GrGeometryProcessor& gp,
@@ -329,7 +329,7 @@ private:
         *outQuadPointCount = quadPointCount;
     }
 
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         if (fMaxLineVertices == 0) {
             SkASSERT(fMaxQuadVertices == 0);
             return;
@@ -639,12 +639,15 @@ bool GrMSAAPathRenderer::internalDrawPath(GrRenderTargetContext* renderTargetCon
         bool firstPassIsStencil = stencilOnly || passes[1];
         // If we have a cover pass then we ignore the paint in the first pass and apply it in the
         // second.
-        GrPaint::MoveOrNew firstPassPaint(paint, firstPassIsStencil);
+        std::unique_ptr<GrDrawOp> op;
         if (firstPassIsStencil) {
-            firstPassPaint.paint().setXPFactory(GrDisableColorXPFactory::Get());
+            GrPaint stencilPaint;
+            stencilPaint.setXPFactory(GrDisableColorXPFactory::Get());
+            op = MSAAPathOp::Make(std::move(stencilPaint), path, aaType, viewMatrix, devBounds,
+                                  passes[0]);
+        } else {
+            op = MSAAPathOp::Make(std::move(paint), path, aaType, viewMatrix, devBounds, passes[0]);
         }
-        std::unique_ptr<GrDrawOp> op = MSAAPathOp::Make(std::move(firstPassPaint), path, aaType,
-                                                        viewMatrix, devBounds, passes[0]);
         if (!op) {
             return false;
         }

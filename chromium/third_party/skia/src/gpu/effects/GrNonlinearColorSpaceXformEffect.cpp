@@ -63,19 +63,21 @@ public:
             transferFnBody.appendf("float E = %s[4];", coeffsName);
             transferFnBody.appendf("float F = %s[5];", coeffsName);
             transferFnBody.appendf("float G = %s[6];", coeffsName);
-            transferFnBody.appendf("return (x < D) ? (C * x) + F : pow(A * x + B, G) + E;");
+            transferFnBody.append("float s = sign(x);");
+            transferFnBody.append("x = abs(x);");
+            transferFnBody.appendf("return s * ((x < D) ? (C * x) + F : pow(A * x + B, G) + E);");
             fragBuilder->emitFunction(kFloat_GrSLType, fnName, SK_ARRAY_COUNT(gTransferFnFuncArgs),
                                       gTransferFnFuncArgs, transferFnBody.c_str(), &tfFuncNames[i]);
         }
 
         if (nullptr == args.fInputColor) {
-            args.fInputColor = "vec4(1)";
+            args.fInputColor = "float4(1)";
         }
-        fragBuilder->codeAppendf("vec4 color = %s;", args.fInputColor);
+        fragBuilder->codeAppendf("float4 color = %s;", args.fInputColor);
 
         // 1: Un-premultiply the input color (if necessary)
         fragBuilder->codeAppendf("float nonZeroAlpha = max(color.a, 0.00001);");
-        fragBuilder->codeAppendf("color = vec4(color.rgb / nonZeroAlpha, nonZeroAlpha);");
+        fragBuilder->codeAppendf("color = float4(color.rgb / nonZeroAlpha, nonZeroAlpha);");
 
         // 2: Apply src transfer function (to get to linear RGB)
         if (srcCoeffsName) {
@@ -86,9 +88,8 @@ public:
 
         // 3: Apply gamut matrix
         if (gamutXformName) {
-            // Color is unpremultiplied at this point, so clamp to [0, 1]
             fragBuilder->codeAppendf(
-                "color.rgb = clamp((%s * vec4(color.rgb, 1.0)).rgb, 0.0, 1.0);", gamutXformName);
+                "color.rgb = (%s * float4(color.rgb, 1.0)).rgb;", gamutXformName);
         }
 
         // 4: Apply dst transfer fn
@@ -99,7 +100,7 @@ public:
         }
 
         // 5: Premultiply again
-        fragBuilder->codeAppendf("%s = vec4(color.rgb * color.a, color.a);", args.fOutputColor);
+        fragBuilder->codeAppendf("%s = float4(color.rgb * color.a, color.a);", args.fOutputColor);
     }
 
     static inline void GenKey(const GrProcessor& processor, const GrShaderCaps&,
@@ -162,6 +163,20 @@ GrNonlinearColorSpaceXformEffect::GrNonlinearColorSpaceXformEffect(
     fDstTransferFnCoeffs[6] = dstTransferFn.fG;
 }
 
+GrNonlinearColorSpaceXformEffect::GrNonlinearColorSpaceXformEffect(
+        const GrNonlinearColorSpaceXformEffect& that)
+        : INHERITED(kPreservesOpaqueInput_OptimizationFlag)
+        , fGamutXform(that.fGamutXform)
+        , fOps(that.fOps) {
+    this->initClassID<GrNonlinearColorSpaceXformEffect>();
+    memcpy(fSrcTransferFnCoeffs, that.fSrcTransferFnCoeffs, sizeof(fSrcTransferFnCoeffs));
+    memcpy(fDstTransferFnCoeffs, that.fDstTransferFnCoeffs, sizeof(fDstTransferFnCoeffs));
+}
+
+std::unique_ptr<GrFragmentProcessor> GrNonlinearColorSpaceXformEffect::clone() const {
+    return std::unique_ptr<GrFragmentProcessor>(new GrNonlinearColorSpaceXformEffect(*this));
+}
+
 bool GrNonlinearColorSpaceXformEffect::onIsEqual(const GrFragmentProcessor& s) const {
     const GrNonlinearColorSpaceXformEffect& other = s.cast<GrNonlinearColorSpaceXformEffect>();
     if (other.fOps != fOps) {
@@ -186,7 +201,8 @@ bool GrNonlinearColorSpaceXformEffect::onIsEqual(const GrFragmentProcessor& s) c
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrNonlinearColorSpaceXformEffect);
 
 #if GR_TEST_UTILS
-sk_sp<GrFragmentProcessor> GrNonlinearColorSpaceXformEffect::TestCreate(GrProcessorTestData* d) {
+std::unique_ptr<GrFragmentProcessor> GrNonlinearColorSpaceXformEffect::TestCreate(
+        GrProcessorTestData* d) {
     // TODO: Generate a random variety of color spaces for this effect (it can handle wacky
     // transfer functions, etc...)
     sk_sp<SkColorSpace> srcSpace = SkColorSpace::MakeSRGBLinear();
@@ -206,8 +222,8 @@ GrGLSLFragmentProcessor* GrNonlinearColorSpaceXformEffect::onCreateGLSLInstance(
     return new GrGLNonlinearColorSpaceXformEffect();
 }
 
-sk_sp<GrFragmentProcessor> GrNonlinearColorSpaceXformEffect::Make(const SkColorSpace* src,
-                                                                  const SkColorSpace* dst) {
+std::unique_ptr<GrFragmentProcessor> GrNonlinearColorSpaceXformEffect::Make(
+        const SkColorSpace* src, const SkColorSpace* dst) {
     if (!src || !dst || SkColorSpace::Equals(src, dst)) {
         // No conversion possible (or necessary)
         return nullptr;
@@ -242,6 +258,6 @@ sk_sp<GrFragmentProcessor> GrNonlinearColorSpaceXformEffect::Make(const SkColorS
         }
     }
 
-    return sk_sp<GrFragmentProcessor>(new GrNonlinearColorSpaceXformEffect(
-            ops, srcTransferFn, dstTransferFn, srcToDstMtx));
+    return std::unique_ptr<GrFragmentProcessor>(
+            new GrNonlinearColorSpaceXformEffect(ops, srcTransferFn, dstTransferFn, srcToDstMtx));
 }

@@ -358,11 +358,11 @@ CPVT_WordPlace CPDF_VariableText::InsertText(const CPVT_WordPlace& place,
   CPVT_WordPlace wp = place;
   for (int32_t i = 0, sz = swText.GetLength(); i < sz; i++) {
     CPVT_WordPlace oldwp = wp;
-    uint16_t word = swText.GetAt(i);
+    uint16_t word = swText[i];
     switch (word) {
       case 0x0D:
         if (m_bMultiLine) {
-          if (swText.GetAt(i + 1) == 0x0A)
+          if (swText[i + 1] == 0x0A)
             i += 1;
 
           wp = InsertSection(wp, nullptr, nullptr);
@@ -370,7 +370,7 @@ CPVT_WordPlace CPDF_VariableText::InsertText(const CPVT_WordPlace& place,
         break;
       case 0x0A:
         if (m_bMultiLine) {
-          if (swText.GetAt(i + 1) == 0x0D)
+          if (swText[i + 1] == 0x0D)
             i += 1;
 
           wp = InsertSection(wp, nullptr, nullptr);
@@ -426,22 +426,20 @@ void CPDF_VariableText::SetText(const CFX_WideString& swText) {
     if (m_nCharArray > 0 && nCharCount >= m_nCharArray)
       break;
 
-    uint16_t word = swText.GetAt(i);
+    uint16_t word = swText[i];
     switch (word) {
       case 0x0D:
         if (m_bMultiLine) {
-          if (swText.GetAt(i + 1) == 0x0A)
-            i += 1;
-
+          if (i + 1 < sz && swText[i + 1] == 0x0A)
+            i++;
           wp.AdvanceSection();
           AddSection(wp, secinfo);
         }
         break;
       case 0x0A:
         if (m_bMultiLine) {
-          if (swText.GetAt(i + 1) == 0x0D)
-            i += 1;
-
+          if (i + 1 < sz && swText[i + 1] == 0x0D)
+            i++;
           wp.AdvanceSection();
           AddSection(wp, secinfo);
         }

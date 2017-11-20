@@ -76,7 +76,7 @@ bool ValidatePathInstances(gl::Context *context,
         const GLuint pathName = array[i] + pathBase;
         if (context->hasPath(pathName) && !context->hasPathData(pathName))
         {
-            context->handleError(InvalidOperation() << "No such path object.");
+            ANGLE_VALIDATION_ERR(context, InvalidOperation(), NoSuchPath);
             return false;
         }
     }
@@ -290,6 +290,13 @@ bool IsValidCopyTextureDestinationFormatType(Context *context, GLint internalFor
         return false;
     }
 
+    if (!ValidES3FormatCombination(GetUnsizedFormat(internalFormat), type, internalFormat))
+    {
+        context->handleError(InvalidOperation()
+                             << "Invalid combination of type and internalFormat.");
+        return false;
+    }
+
     const InternalFormat &internalFormatInfo = GetInternalFormatInfo(internalFormat, type);
     if (!internalFormatInfo.textureSupport(context->getClientVersion(), context->getExtensions()))
     {
@@ -314,8 +321,9 @@ bool IsValidCopyTextureDestinationTarget(Context *context, GLenum textureType, G
         case GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:
             return textureType == GL_TEXTURE_CUBE_MAP;
 
-        // TODO(geofflang): accept GL_TEXTURE_RECTANGLE_ARB if the texture_rectangle extension is
-        // supported
+        case GL_TEXTURE_RECTANGLE_ANGLE:
+            return textureType == GL_TEXTURE_RECTANGLE_ANGLE &&
+                   context->getExtensions().textureRectangle;
 
         default:
             return false;
@@ -328,9 +336,8 @@ bool IsValidCopyTextureSourceTarget(Context *context, GLenum target)
     {
         case GL_TEXTURE_2D:
             return true;
-
-        // TODO(geofflang): accept GL_TEXTURE_RECTANGLE_ARB if the texture_rectangle extension is
-        // supported
+        case GL_TEXTURE_RECTANGLE_ANGLE:
+            return context->getExtensions().textureRectangle;
 
         // TODO(geofflang): accept GL_TEXTURE_EXTERNAL_OES if the texture_external extension is
         // supported
@@ -371,6 +378,15 @@ bool IsValidCopyTextureDestinationLevel(Context *context,
     {
         if (static_cast<GLuint>(width) > (caps.max2DTextureSize >> level) ||
             static_cast<GLuint>(height) > (caps.max2DTextureSize >> level))
+        {
+            return false;
+        }
+    }
+    else if (target == GL_TEXTURE_RECTANGLE_ANGLE)
+    {
+        ASSERT(level == 0);
+        if (static_cast<GLuint>(width) > caps.maxRectangleTextureSize ||
+            static_cast<GLuint>(height) > caps.maxRectangleTextureSize)
         {
             return false;
         }
@@ -782,11 +798,11 @@ bool ValidCap(const Context *context, GLenum cap, bool queryOnly)
 
 // Return true if a character belongs to the ASCII subset as defined in GLSL ES 1.0 spec section
 // 3.1.
-bool IsValidESSLCharacter(unsigned char c, bool allowBackslash)
+bool IsValidESSLCharacter(unsigned char c)
 {
     // Printing characters are valid except " $ ` @ \ ' DEL.
-    if (c >= 32 && c <= 126 && c != '"' && c != '$' && c != '`' && c != '@' &&
-        (allowBackslash || c != '\\') && c != '\'')
+    if (c >= 32 && c <= 126 && c != '"' && c != '$' && c != '`' && c != '@' && c != '\\' &&
+        c != '\'')
     {
         return true;
     }
@@ -800,14 +816,173 @@ bool IsValidESSLCharacter(unsigned char c, bool allowBackslash)
     return false;
 }
 
-bool IsValidESSLString(const char *str, size_t len, bool allowBackslash)
+bool IsValidESSLString(const char *str, size_t len)
 {
     for (size_t i = 0; i < len; i++)
     {
-        if (!IsValidESSLCharacter(str[i], allowBackslash))
+        if (!IsValidESSLCharacter(str[i]))
         {
             return false;
         }
+    }
+
+    return true;
+}
+
+bool IsValidESSLShaderSourceString(const char *str, size_t len, bool lineContinuationAllowed)
+{
+    enum class ParseState
+    {
+        // Have not seen an ASCII non-whitespace character yet on
+        // this line. Possible that we might see a preprocessor
+        // directive.
+        BEGINING_OF_LINE,
+
+        // Have seen at least one ASCII non-whitespace character
+        // on this line.
+        MIDDLE_OF_LINE,
+
+        // Handling a preprocessor directive. Passes through all
+        // characters up to the end of the line. Disables comment
+        // processing.
+        IN_PREPROCESSOR_DIRECTIVE,
+
+        // Handling a single-line comment. The comment text is
+        // replaced with a single space.
+        IN_SINGLE_LINE_COMMENT,
+
+        // Handling a multi-line comment. Newlines are passed
+        // through to preserve line numbers.
+        IN_MULTI_LINE_COMMENT
+    };
+
+    ParseState state = ParseState::BEGINING_OF_LINE;
+    size_t pos       = 0;
+
+    while (pos < len)
+    {
+        char c    = str[pos];
+        char next = pos + 1 < len ? str[pos + 1] : 0;
+
+        // Check for newlines
+        if (c == '\n' || c == '\r')
+        {
+            if (state != ParseState::IN_MULTI_LINE_COMMENT)
+            {
+                state = ParseState::BEGINING_OF_LINE;
+            }
+
+            pos++;
+            continue;
+        }
+
+        switch (state)
+        {
+            case ParseState::BEGINING_OF_LINE:
+                if (c == ' ')
+                {
+                    // Maintain the BEGINING_OF_LINE state until a non-space is seen
+                    pos++;
+                }
+                else if (c == '#')
+                {
+                    state = ParseState::IN_PREPROCESSOR_DIRECTIVE;
+                    pos++;
+                }
+                else
+                {
+                    // Don't advance, re-process this character with the MIDDLE_OF_LINE state
+                    state = ParseState::MIDDLE_OF_LINE;
+                }
+                break;
+
+            case ParseState::MIDDLE_OF_LINE:
+                if (c == '/' && next == '/')
+                {
+                    state = ParseState::IN_SINGLE_LINE_COMMENT;
+                    pos++;
+                }
+                else if (c == '/' && next == '*')
+                {
+                    state = ParseState::IN_MULTI_LINE_COMMENT;
+                    pos++;
+                }
+                else if (lineContinuationAllowed && c == '\\' && (next == '\n' || next == '\r'))
+                {
+                    // Skip line continuation characters
+                }
+                else if (!IsValidESSLCharacter(c))
+                {
+                    return false;
+                }
+                pos++;
+                break;
+
+            case ParseState::IN_PREPROCESSOR_DIRECTIVE:
+                // No matter what the character is, just pass it
+                // through. Do not parse comments in this state.
+                pos++;
+                break;
+
+            case ParseState::IN_SINGLE_LINE_COMMENT:
+                // Line-continuation characters are processed before comment processing.
+                // Advance string if a new line character is immediately behind
+                // line-continuation character.
+                if (c == '\\' && (next == '\n' || next == '\r'))
+                {
+                    pos++;
+                }
+                pos++;
+                break;
+
+            case ParseState::IN_MULTI_LINE_COMMENT:
+                if (c == '*' && next == '/')
+                {
+                    state = ParseState::MIDDLE_OF_LINE;
+                    pos++;
+                }
+                pos++;
+                break;
+        }
+    }
+
+    return true;
+}
+
+bool ValidateWebGLNamePrefix(ValidationContext *context, const GLchar *name)
+{
+    ASSERT(context->isWebGL());
+
+    // WebGL 1.0 [Section 6.16] GLSL Constructs
+    // Identifiers starting with "webgl_" and "_webgl_" are reserved for use by WebGL.
+    if (strncmp(name, "webgl_", 6) == 0 || strncmp(name, "_webgl_", 7) == 0)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), WebglBindAttribLocationReservedPrefix);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateWebGLNameLength(ValidationContext *context, size_t length)
+{
+    ASSERT(context->isWebGL());
+
+    if (context->isWebGL1() && length > 256)
+    {
+        // WebGL 1.0 [Section 6.21] Maxmimum Uniform and Attribute Location Lengths
+        // WebGL imposes a limit of 256 characters on the lengths of uniform and attribute
+        // locations.
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), WebglNameLengthLimitExceeded);
+
+        return false;
+    }
+    else if (length > 1024)
+    {
+        // WebGL 2.0 [Section 4.3.2] WebGL 2.0 imposes a limit of 1024 characters on the lengths of
+        // uniform and attribute locations.
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), Webgl2NameLengthLimitExceeded);
+        return false;
     }
 
     return true;
@@ -882,6 +1057,22 @@ bool ValidateES2TexImageParameters(Context *context,
             return false;
         }
     }
+    else if (target == GL_TEXTURE_RECTANGLE_ANGLE)
+    {
+        ASSERT(level == 0);
+        if (static_cast<GLuint>(width) > caps.maxRectangleTextureSize ||
+            static_cast<GLuint>(height) > caps.maxRectangleTextureSize)
+        {
+            context->handleError(InvalidValue());
+            return false;
+        }
+        if (isCompressed)
+        {
+            context->handleError(InvalidEnum()
+                                 << "Rectangle texture cannot have a compressed format.");
+            return false;
+        }
+    }
     else if (IsCubeMapTextureTarget(target))
     {
         if (!isSubImage && width != height)
@@ -925,7 +1116,7 @@ bool ValidateES2TexImageParameters(Context *context,
             if (GetInternalFormatInfo(format, type).sizedInternalFormat !=
                 textureInternalFormat.sizedInternalFormat)
             {
-                ANGLE_VALIDATION_ERR(context, InvalidOperation(), TypeMustMatchOriginalType);
+                ANGLE_VALIDATION_ERR(context, InvalidOperation(), TypeMismatch);
                 return false;
             }
         }
@@ -1261,14 +1452,19 @@ bool ValidateES2TexImageParameters(Context *context,
                 }
                 if (target != GL_TEXTURE_2D)
                 {
-                    context->handleError(InvalidOperation());
+                    ANGLE_VALIDATION_ERR(context, InvalidOperation(), MismatchedTargetAndFormat);
                     return false;
                 }
                 // OES_depth_texture supports loading depth data and multiple levels,
                 // but ANGLE_depth_texture does not
-                if (pixels != nullptr || level != 0)
+                if (pixels != nullptr)
                 {
-                    context->handleError(InvalidOperation());
+                    ANGLE_VALIDATION_ERR(context, InvalidOperation(), PixelDataNotNull);
+                    return false;
+                }
+                if (level != 0)
+                {
+                    ANGLE_VALIDATION_ERR(context, InvalidOperation(), LevelNotZero);
                     return false;
                 }
                 break;
@@ -1360,7 +1556,8 @@ bool ValidateES2TexStorageParameters(Context *context,
                                      GLsizei width,
                                      GLsizei height)
 {
-    if (target != GL_TEXTURE_2D && target != GL_TEXTURE_CUBE_MAP)
+    if (target != GL_TEXTURE_2D && target != GL_TEXTURE_CUBE_MAP &&
+        target != GL_TEXTURE_RECTANGLE_ANGLE)
     {
         context->handleError(InvalidEnum());
         return false;
@@ -1400,6 +1597,20 @@ bool ValidateES2TexStorageParameters(Context *context,
                 static_cast<GLuint>(height) > caps.max2DTextureSize)
             {
                 context->handleError(InvalidValue());
+                return false;
+            }
+            break;
+        case GL_TEXTURE_RECTANGLE_ANGLE:
+            if (static_cast<GLuint>(width) > caps.maxRectangleTextureSize ||
+                static_cast<GLuint>(height) > caps.maxRectangleTextureSize || levels != 1)
+            {
+                context->handleError(InvalidValue());
+                return false;
+            }
+            if (formatInfo.compressed)
+            {
+                context->handleError(InvalidEnum()
+                                     << "Rectangle texture cannot have a compressed format.");
                 return false;
             }
             break;
@@ -1593,7 +1804,7 @@ bool ValidateBindVertexArrayOES(Context *context, GLuint array)
     return ValidateBindVertexArrayBase(context, array);
 }
 
-bool ValidateDeleteVertexArraysOES(Context *context, GLsizei n)
+bool ValidateDeleteVertexArraysOES(Context *context, GLsizei n, const GLuint *arrays)
 {
     if (!context->getExtensions().vertexArrayObject)
     {
@@ -1604,7 +1815,7 @@ bool ValidateDeleteVertexArraysOES(Context *context, GLsizei n)
     return ValidateGenOrDelete(context, n);
 }
 
-bool ValidateGenVertexArraysOES(Context *context, GLsizei n)
+bool ValidateGenVertexArraysOES(Context *context, GLsizei n, GLuint *arrays)
 {
     if (!context->getExtensions().vertexArrayObject)
     {
@@ -1615,7 +1826,7 @@ bool ValidateGenVertexArraysOES(Context *context, GLsizei n)
     return ValidateGenOrDelete(context, n);
 }
 
-bool ValidateIsVertexArrayOES(Context *context)
+bool ValidateIsVertexArrayOES(Context *context, GLuint array)
 {
     if (!context->getExtensions().vertexArrayObject)
     {
@@ -1728,19 +1939,19 @@ bool ValidateDebugMessageControlKHR(Context *context,
 
     if (!ValidDebugSource(source, false) && source != GL_DONT_CARE)
     {
-        context->handleError(InvalidEnum() << "Invalid debug source.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidDebugSource);
         return false;
     }
 
     if (!ValidDebugType(type) && type != GL_DONT_CARE)
     {
-        context->handleError(InvalidEnum() << "Invalid debug type.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidDebugType);
         return false;
     }
 
     if (!ValidDebugSeverity(severity) && severity != GL_DONT_CARE)
     {
-        context->handleError(InvalidEnum() << "Invalid debug severity.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidDebugSeverity);
         return false;
     }
 
@@ -1789,19 +2000,19 @@ bool ValidateDebugMessageInsertKHR(Context *context,
 
     if (!ValidDebugSeverity(severity))
     {
-        context->handleError(InvalidEnum() << "Invalid debug severity.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidDebugSource);
         return false;
     }
 
     if (!ValidDebugType(type))
     {
-        context->handleError(InvalidEnum() << "Invalid debug type.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidDebugType);
         return false;
     }
 
     if (!ValidDebugSource(source, true))
     {
-        context->handleError(InvalidEnum() << "Invalid debug source.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidDebugSource);
         return false;
     }
 
@@ -1868,7 +2079,7 @@ bool ValidatePushDebugGroupKHR(Context *context,
 
     if (!ValidDebugSource(source, true))
     {
-        context->handleError(InvalidEnum() << "Invalid debug source.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidDebugSource);
         return false;
     }
 
@@ -2079,7 +2290,7 @@ bool ValidateGetObjectLabelKHR(Context *context,
 
 static bool ValidateObjectPtrName(Context *context, const void *ptr)
 {
-    if (context->getFenceSync(reinterpret_cast<GLsync>(const_cast<void *>(ptr))) == nullptr)
+    if (context->getSync(reinterpret_cast<GLsync>(const_cast<void *>(ptr))) == nullptr)
     {
         context->handleError(InvalidValue() << "name is not a valid sync.");
         return false;
@@ -2230,8 +2441,8 @@ bool ValidateBlitFramebufferANGLE(Context *context,
                     }
 
                     // Return an error if the destination formats do not match
-                    if (!Format::SameSized(attachment->getFormat(),
-                                           readColorAttachment->getFormat()))
+                    if (!Format::EquivalentForBlit(attachment->getFormat(),
+                                                   readColorAttachment->getFormat()))
                     {
                         context->handleError(InvalidOperation());
                         return false;
@@ -2477,7 +2688,13 @@ bool ValidateCompressedTexImage2D(Context *context,
 
     if (imageSize < 0 || static_cast<GLuint>(imageSize) != blockSizeOrErr.getResult())
     {
-        context->handleError(InvalidValue());
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), CompressedTextureDimensionsMustMatchData);
+        return false;
+    }
+
+    if (target == GL_TEXTURE_RECTANGLE_ANGLE)
+    {
+        context->handleError(InvalidEnum() << "Rectangle texture cannot have a compressed format.");
         return false;
     }
 
@@ -2611,7 +2828,7 @@ bool ValidateMapBufferOES(Context *context, GLenum target, GLenum access)
         return false;
     }
 
-    return true;
+    return ValidateMapBufferBase(context, target);
 }
 
 bool ValidateUnmapBufferOES(Context *context, GLenum target)
@@ -2640,6 +2857,30 @@ bool ValidateMapBufferRangeEXT(Context *context,
     return ValidateMapBufferRangeBase(context, target, offset, length, access);
 }
 
+bool ValidateMapBufferBase(Context *context, GLenum target)
+{
+    Buffer *buffer = context->getGLState().getTargetBuffer(target);
+    ASSERT(buffer != nullptr);
+
+    // Check if this buffer is currently being used as a transform feedback output buffer
+    TransformFeedback *transformFeedback = context->getGLState().getCurrentTransformFeedback();
+    if (transformFeedback != nullptr && transformFeedback->isActive())
+    {
+        for (size_t i = 0; i < transformFeedback->getIndexedBufferCount(); i++)
+        {
+            const auto &transformFeedbackBuffer = transformFeedback->getIndexedBuffer(i);
+            if (transformFeedbackBuffer.get() == buffer)
+            {
+                context->handleError(InvalidOperation()
+                                     << "Buffer is currently bound for transform feedback.");
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 bool ValidateFlushMappedBufferRangeEXT(Context *context,
                                        GLenum target,
                                        GLintptr offset,
@@ -2659,7 +2900,7 @@ bool ValidateBindTexture(Context *context, GLenum target, GLuint texture)
     Texture *textureObject = context->getTexture(texture);
     if (textureObject && textureObject->getTarget() != target && texture != 0)
     {
-        ANGLE_VALIDATION_ERR(context, InvalidOperation(), TypeMustMatchOriginalType);
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), TypeMismatch);
         return false;
     }
 
@@ -2676,11 +2917,20 @@ bool ValidateBindTexture(Context *context, GLenum target, GLuint texture)
         case GL_TEXTURE_CUBE_MAP:
             break;
 
+        case GL_TEXTURE_RECTANGLE_ANGLE:
+            if (!context->getExtensions().textureRectangle)
+            {
+                context->handleError(InvalidEnum()
+                                     << "Context does not support GL_ANGLE_texture_rectangle");
+                return false;
+            }
+            break;
+
         case GL_TEXTURE_3D:
         case GL_TEXTURE_2D_ARRAY:
             if (context->getClientMajorVersion() < 3)
             {
-                context->handleError(InvalidEnum() << "GLES 3.0 disabled");
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), ES3Required);
                 return false;
             }
             break;
@@ -2688,7 +2938,7 @@ bool ValidateBindTexture(Context *context, GLenum target, GLuint texture)
         case GL_TEXTURE_2D_MULTISAMPLE:
             if (context->getClientVersion() < Version(3, 1))
             {
-                context->handleError(InvalidEnum() << "Context does not support GLES3.1");
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), ES31Required);
                 return false;
             }
             break;
@@ -2745,8 +2995,7 @@ bool ValidateBindUniformLocationCHROMIUM(Context *context,
 
     // The WebGL spec (section 6.20) disallows strings containing invalid ESSL characters for
     // shader-related entry points
-    if (context->getExtensions().webglCompatibility &&
-        !IsValidESSLString(name, strlen(name), false))
+    if (context->getExtensions().webglCompatibility && !IsValidESSLString(name, strlen(name)))
     {
         ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidNameCharacters);
         return false;
@@ -2797,7 +3046,7 @@ bool ValidateMatrix(Context *context, GLenum matrixMode, const GLfloat *matrix)
     }
     if (matrixMode != GL_PATH_MODELVIEW_CHROMIUM && matrixMode != GL_PATH_PROJECTION_CHROMIUM)
     {
-        context->handleError(InvalidEnum() << "Invalid matrix mode.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidMatrixMode);
         return false;
     }
     if (matrix == nullptr)
@@ -2817,7 +3066,7 @@ bool ValidateMatrixMode(Context *context, GLenum matrixMode)
     }
     if (matrixMode != GL_PATH_MODELVIEW_CHROMIUM && matrixMode != GL_PATH_PROJECTION_CHROMIUM)
     {
-        context->handleError(InvalidEnum() << "Invalid matrix mode.");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidMatrixMode);
         return false;
     }
     return true;
@@ -2835,7 +3084,7 @@ bool ValidateGenPaths(Context *context, GLsizei range)
     // we add stricter semantic check here and require a non zero positive range.
     if (range <= 0)
     {
-        context->handleError(InvalidValue() << "Invalid range.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidRange);
         return false;
     }
 
@@ -2860,7 +3109,7 @@ bool ValidateDeletePaths(Context *context, GLuint path, GLsizei range)
     // we add stricter semantic check here and require a non zero positive range.
     if (range <= 0)
     {
-        context->handleError(InvalidValue() << "Invalid range.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidRange);
         return false;
     }
 
@@ -2890,7 +3139,7 @@ bool ValidatePathCommands(Context *context,
     }
     if (!context->hasPath(path))
     {
-        context->handleError(InvalidOperation() << "No such path object.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), NoSuchPath);
         return false;
     }
 
@@ -3005,7 +3254,7 @@ bool ValidateSetPathParameter(Context *context, GLuint path, GLenum pname, GLflo
     }
     if (!context->hasPath(path))
     {
-        context->handleError(InvalidOperation() << "No such path object.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), NoSuchPath);
         return false;
     }
 
@@ -3070,7 +3319,7 @@ bool ValidateGetPathParameter(Context *context, GLuint path, GLenum pname, GLflo
 
     if (!context->hasPath(path))
     {
-        context->handleError(InvalidOperation() << "No such path object.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), NoSuchPath);
         return false;
     }
     if (!value)
@@ -3138,7 +3387,7 @@ bool ValidateStencilFillPath(Context *context, GLuint path, GLenum fillMode, GLu
     }
     if (context->hasPath(path) && !context->hasPathData(path))
     {
-        context->handleError(InvalidOperation() << "No such path object.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), NoSuchPath);
         return false;
     }
 
@@ -3148,13 +3397,13 @@ bool ValidateStencilFillPath(Context *context, GLuint path, GLenum fillMode, GLu
         case GL_COUNT_DOWN_CHROMIUM:
             break;
         default:
-            context->handleError(InvalidEnum() << "Invalid fill mode.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidFillMode);
             return false;
     }
 
     if (!isPow2(mask + 1))
     {
-        context->handleError(InvalidValue() << "Invalid stencil bit mask.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidStencilBitMask);
         return false;
     }
 
@@ -3186,7 +3435,7 @@ bool ValidateCoverPath(Context *context, GLuint path, GLenum coverMode)
     }
     if (context->hasPath(path) && !context->hasPathData(path))
     {
-        context->handleError(InvalidOperation() << "No such path object.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), NoSuchPath);
         return false;
     }
 
@@ -3196,7 +3445,7 @@ bool ValidateCoverPath(Context *context, GLuint path, GLenum coverMode)
         case GL_BOUNDING_BOX_CHROMIUM:
             break;
         default:
-            context->handleError(InvalidEnum() << "Invalid cover mode.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidCoverMode);
             return false;
     }
     return true;
@@ -3252,7 +3501,7 @@ bool ValidateCoverFillPathInstanced(Context *context,
         case GL_BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM:
             break;
         default:
-            context->handleError(InvalidEnum() << "Invalid cover mode.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidCoverMode);
             return false;
     }
 
@@ -3279,7 +3528,7 @@ bool ValidateCoverStrokePathInstanced(Context *context,
         case GL_BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM:
             break;
         default:
-            context->handleError(InvalidEnum() << "Invalid cover mode.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidCoverMode);
             return false;
     }
 
@@ -3307,12 +3556,12 @@ bool ValidateStencilFillPathInstanced(Context *context,
         case GL_COUNT_DOWN_CHROMIUM:
             break;
         default:
-            context->handleError(InvalidEnum() << "Invalid fill mode.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidFillMode);
             return false;
     }
     if (!isPow2(mask + 1))
     {
-        context->handleError(InvalidValue() << "Invalid stencil bit mask.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidStencilBitMask);
         return false;
     }
     return true;
@@ -3359,7 +3608,7 @@ bool ValidateStencilThenCoverFillPathInstanced(Context *context,
         case GL_BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM:
             break;
         default:
-            context->handleError(InvalidEnum() << "Invalid cover mode.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidCoverMode);
             return false;
     }
 
@@ -3369,12 +3618,12 @@ bool ValidateStencilThenCoverFillPathInstanced(Context *context,
         case GL_COUNT_DOWN_CHROMIUM:
             break;
         default:
-            context->handleError(InvalidEnum() << "Invalid fill mode.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidFillMode);
             return false;
     }
     if (!isPow2(mask + 1))
     {
-        context->handleError(InvalidValue() << "Invalid stencil bit mask.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidStencilBitMask);
         return false;
     }
 
@@ -3403,7 +3652,7 @@ bool ValidateStencilThenCoverStrokePathInstanced(Context *context,
         case GL_BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM:
             break;
         default:
-            context->handleError(InvalidEnum() << "Invalid cover mode.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidCoverMode);
             return false;
     }
 
@@ -3443,7 +3692,7 @@ bool ValidateBindFragmentInputLocation(Context *context,
 
     if (angle::BeginsWith(name, "gl_"))
     {
-        context->handleError(InvalidOperation() << "Cannot bind a built-in variable.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), NameBeginsWithGL);
         return false;
     }
 
@@ -4064,7 +4313,7 @@ bool ValidateBindAttribLocation(ValidationContext *context,
 {
     if (index >= MAX_VERTEX_ATTRIBS)
     {
-        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMax);
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMaxVertexAttribute);
         return false;
     }
 
@@ -4074,13 +4323,22 @@ bool ValidateBindAttribLocation(ValidationContext *context,
         return false;
     }
 
-    // The WebGL spec (section 6.20) disallows strings containing invalid ESSL characters for
-    // shader-related entry points
-    if (context->getExtensions().webglCompatibility &&
-        !IsValidESSLString(name, strlen(name), false))
+    if (context->isWebGL())
     {
-        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidNameCharacters);
-        return false;
+        const size_t length = strlen(name);
+
+        if (!IsValidESSLString(name, length))
+        {
+            // The WebGL spec (section 6.20) disallows strings containing invalid ESSL characters
+            // for shader-related entry points
+            ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidNameCharacters);
+            return false;
+        }
+
+        if (!ValidateWebGLNameLength(context, length) || !ValidateWebGLNamePrefix(context, name))
+        {
+            return false;
+        }
     }
 
     return GetValidProgram(context, program) != nullptr;
@@ -4330,13 +4588,13 @@ bool ValidateGetString(Context *context, GLenum name)
         case GL_REQUESTABLE_EXTENSIONS_ANGLE:
             if (!context->getExtensions().requestExtension)
             {
-                context->handleError(InvalidEnum() << "Invalid name.");
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidName);
                 return false;
             }
             break;
 
         default:
-            context->handleError(InvalidEnum() << "Invalid name.");
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidName);
             return false;
     }
 
@@ -4347,7 +4605,7 @@ bool ValidateLineWidth(ValidationContext *context, GLfloat width)
 {
     if (width <= 0.0f || isNaN(width))
     {
-        context->handleError(InvalidValue() << "Invalid width value.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidWidth);
         return false;
     }
 
@@ -4678,7 +4936,7 @@ bool ValidateDisableVertexAttribArray(ValidationContext *context, GLuint index)
 {
     if (index >= MAX_VERTEX_ATTRIBS)
     {
-        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMax);
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMaxVertexAttribute);
         return false;
     }
 
@@ -4689,7 +4947,7 @@ bool ValidateEnableVertexAttribArray(ValidationContext *context, GLuint index)
 {
     if (index >= MAX_VERTEX_ATTRIBS)
     {
-        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMax);
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMaxVertexAttribute);
         return false;
     }
 
@@ -4745,7 +5003,7 @@ bool ValidateGetActiveAttrib(ValidationContext *context,
 
     if (index >= static_cast<GLuint>(programObject->getActiveAttributeCount()))
     {
-        context->handleError(InvalidValue() << "index exeeds program active attribute count.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMaxActiveUniform);
         return false;
     }
 
@@ -4776,7 +5034,7 @@ bool ValidateGetActiveUniform(ValidationContext *context,
 
     if (index >= static_cast<GLuint>(programObject->getActiveUniformCount()))
     {
-        context->handleError(InvalidValue() << "index exceeds program active uniform count.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMaxActiveUniform);
         return false;
     }
 
@@ -4791,7 +5049,7 @@ bool ValidateGetAttachedShaders(ValidationContext *context,
 {
     if (maxcount < 0)
     {
-        context->handleError(InvalidValue() << "max count must be non-negative.");
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), NegativeMaxCount);
         return false;
     }
 
@@ -4809,8 +5067,7 @@ bool ValidateGetAttribLocation(ValidationContext *context, GLuint program, const
 {
     // The WebGL spec (section 6.20) disallows strings containing invalid ESSL characters for
     // shader-related entry points
-    if (context->getExtensions().webglCompatibility &&
-        !IsValidESSLString(name, strlen(name), false))
+    if (context->getExtensions().webglCompatibility && !IsValidESSLString(name, strlen(name)))
     {
         ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidNameCharacters);
         return false;
@@ -4969,8 +5226,7 @@ bool ValidateGetUniformLocation(ValidationContext *context, GLuint program, cons
 
     // The WebGL spec (section 6.20) disallows strings containing invalid ESSL characters for
     // shader-related entry points
-    if (context->getExtensions().webglCompatibility &&
-        !IsValidESSLString(name, strlen(name), false))
+    if (context->getExtensions().webglCompatibility && !IsValidESSLString(name, strlen(name)))
     {
         ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidNameCharacters);
         return false;
@@ -5197,10 +5453,12 @@ bool ValidateShaderSource(ValidationContext *context,
     {
         for (GLsizei i = 0; i < count; i++)
         {
-            size_t len = length ? static_cast<size_t>(length[i]) : strlen(string[i]);
+            size_t len =
+                (length && length[i] >= 0) ? static_cast<size_t>(length[i]) : strlen(string[i]);
 
             // Backslash as line-continuation is allowed in WebGL 2.0.
-            if (!IsValidESSLString(string[i], len, context->getClientVersion() >= ES_3_0))
+            if (!IsValidESSLShaderSourceString(string[i], len,
+                                               context->getClientVersion() >= ES_3_0))
             {
                 ANGLE_VALIDATION_ERR(context, InvalidValue(), ShaderSourceInvalidCharacters);
                 return false;
@@ -5421,17 +5679,6 @@ bool ValidateValidateProgram(ValidationContext *context, GLuint program)
 
     if (!programObject)
     {
-        return false;
-    }
-
-    return true;
-}
-
-bool ValidateVertexAttribIndex(ValidationContext *context, GLuint index)
-{
-    if (index >= MAX_VERTEX_ATTRIBS)
-    {
-        ANGLE_VALIDATION_ERR(context, InvalidValue(), IndexExceedsMax);
         return false;
     }
 
@@ -5689,6 +5936,22 @@ bool ValidateFramebufferTexture2D(Context *context,
             }
             break;
 
+            case GL_TEXTURE_RECTANGLE_ANGLE:
+            {
+                if (level != 0)
+                {
+                    context->handleError(InvalidValue());
+                    return false;
+                }
+                if (tex->getTarget() != GL_TEXTURE_RECTANGLE_ANGLE)
+                {
+                    context->handleError(InvalidOperation()
+                                         << "Textarget must match the texture target type.");
+                    return false;
+                }
+            }
+            break;
+
             case GL_TEXTURE_CUBE_MAP_POSITIVE_X:
             case GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
             case GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
@@ -5714,15 +5977,13 @@ bool ValidateFramebufferTexture2D(Context *context,
             {
                 if (context->getClientVersion() < ES_3_1)
                 {
-                    context->handleError(InvalidOperation()
-                                         << "Texture target requires at least OpenGL ES 3.1.");
+                    ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
                     return false;
                 }
 
                 if (level != 0)
                 {
-                    context->handleError(InvalidValue()
-                                         << "Level must be 0 for TEXTURE_2D_MULTISAMPLE.");
+                    ANGLE_VALIDATION_ERR(context, InvalidValue(), LevelNotZero);
                     return false;
                 }
                 if (tex->getTarget() != GL_TEXTURE_2D_MULTISAMPLE)
@@ -5836,7 +6097,8 @@ bool ValidateGenerateMipmap(Context *context, GLenum target)
         (!isPow2(static_cast<int>(texture->getWidth(baseTarget, 0))) ||
          !isPow2(static_cast<int>(texture->getHeight(baseTarget, 0)))))
     {
-        ASSERT(target == GL_TEXTURE_2D || target == GL_TEXTURE_CUBE_MAP);
+        ASSERT(target == GL_TEXTURE_2D || target == GL_TEXTURE_RECTANGLE_ANGLE ||
+               target == GL_TEXTURE_CUBE_MAP);
         ANGLE_VALIDATION_ERR(context, InvalidOperation(), TextureNotPow2);
         return false;
     }

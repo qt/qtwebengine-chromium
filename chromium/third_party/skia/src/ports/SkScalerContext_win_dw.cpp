@@ -612,9 +612,13 @@ void SkScalerContext_DW::generateFontMetrics(SkPaint::FontMetrics* metrics) {
     metrics->fCapHeight = fTextSizeRender * SkIntToScalar(dwfm.capHeight) / upem;
     metrics->fUnderlineThickness = fTextSizeRender * SkIntToScalar(dwfm.underlineThickness) / upem;
     metrics->fUnderlinePosition = -(fTextSizeRender * SkIntToScalar(dwfm.underlinePosition) / upem);
+    metrics->fStrikeoutThickness = fTextSizeRender * SkIntToScalar(dwfm.strikethroughThickness) / upem;
+    metrics->fStrikeoutPosition = -(fTextSizeRender * SkIntToScalar(dwfm.strikethroughPosition) / upem);
 
     metrics->fFlags |= SkPaint::FontMetrics::kUnderlineThicknessIsValid_Flag;
     metrics->fFlags |= SkPaint::FontMetrics::kUnderlinePositionIsValid_Flag;
+    metrics->fFlags |= SkPaint::FontMetrics::kStrikeoutThicknessIsValid_Flag;
+    metrics->fFlags |= SkPaint::FontMetrics::kStrikeoutPositionIsValid_Flag;
 
     if (this->getDWriteTypeface()->fDWriteFontFace1.get()) {
         DWRITE_FONT_METRICS1 dwfm1;
@@ -863,10 +867,10 @@ void SkScalerContext_DW::generateColorGlyphImage(const SkGlyph& glyph) {
 
         SkColor color;
         if (colorGlyph->paletteIndex != 0xffff) {
-            color = SkColorSetARGB(SkFloatToIntRound(colorGlyph->runColor.a * 255),
-                                   SkFloatToIntRound(colorGlyph->runColor.r * 255),
-                                   SkFloatToIntRound(colorGlyph->runColor.g * 255),
-                                   SkFloatToIntRound(colorGlyph->runColor.b * 255));
+            color = SkColorSetARGB(sk_float_round2int(colorGlyph->runColor.a * 255),
+                                   sk_float_round2int(colorGlyph->runColor.r * 255),
+                                   sk_float_round2int(colorGlyph->runColor.g * 255),
+                                   sk_float_round2int(colorGlyph->runColor.b * 255));
         } else {
             // If all components of runColor are 0 or (equivalently) paletteIndex is 0xFFFF then
             // the 'current brush' is used. fRec.getLuminanceColor() is kinda sorta what is wanted

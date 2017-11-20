@@ -21,6 +21,7 @@
 #include "SkPath.h"
 #include "SkView.h"
 #include "ccpr/GrCCPRCoverageProcessor.h"
+#include "ccpr/GrCCPRGeometry.h"
 #include "gl/GrGLGpu.cpp"
 #include "ops/GrDrawOp.h"
 
@@ -155,7 +156,6 @@ void CCPRGeometryView::onDrawContent(SkCanvas* canvas) {
 
 void CCPRGeometryView::updateGpuData() {
     int vertexCount = num_points(fMode);
-    int instanceCount = 1;
 
     fGpuPoints.reset();
     fGpuInstances.reset();
@@ -171,7 +171,7 @@ void CCPRGeometryView::updateGpuData() {
             }
         }
 
-        instanceCount = chops.count() + 1;
+        int instanceCount = chops.count() + 1;
         SkPoint chopped[10];
         SkChopCubicAt(fPoints, chopped, chops.begin(), chops.count());
 
@@ -196,22 +196,32 @@ void CCPRGeometryView::updateGpuData() {
         if (fMode >= Mode::kLoopInsets && SkCubicType::kLoop != type) {
             fMode = (Mode) ((int) fMode - 2);
         }
-    } else {
-        // Endpoints.
-        fGpuPoints.push_back(fPoints[0]);
-        fGpuPoints.push_back(fPoints[3]);
-        // Control points.
-        fGpuPoints.push_back(fPoints[1]);
-    }
 
-    if (4 == vertexCount) {
         int controlPointsIdx = instanceCount + 1;
         for (int i = 0; i < instanceCount; ++i) {
             fGpuInstances.push_back().fCubicData = {controlPointsIdx + i * 4, i};
         }
     } else if (is_curve(fMode)) {
-        fGpuInstances.push_back().fQuadraticData = {2, 0};
+        SkPoint chopped[5];
+        fGpuPoints.push_back(fPoints[0]);
+        if (GrCCPRChopMonotonicQuadratics(fPoints[0], fPoints[1], fPoints[3], chopped)) {
+            // Endpoints.
+            fGpuPoints.push_back(chopped[2]);
+            fGpuPoints.push_back(chopped[4]);
+            // Control points.
+            fGpuPoints.push_back(chopped[1]);
+            fGpuPoints.push_back(chopped[3]);
+            fGpuInstances.push_back().fQuadraticData = {3, 0};
+            fGpuInstances.push_back().fQuadraticData = {4, 1};
+        } else {
+            fGpuPoints.push_back(fPoints[3]);
+            fGpuPoints.push_back(fPoints[1]);
+            fGpuInstances.push_back().fQuadraticData = {2, 0};
+        }
     } else {
+        fGpuPoints.push_back(fPoints[0]);
+        fGpuPoints.push_back(fPoints[3]);
+        fGpuPoints.push_back(fPoints[1]);
         fGpuInstances.push_back().fTriangleData = {0, 2, 1}; // Texel buffer has endpoints first.
     }
 
@@ -245,7 +255,7 @@ void CCPRGeometryView::Op::onExecute(GrOpFlushState* state) {
         return;
     }
 
-    GrPipeline pipeline(state->drawOpArgs().fRenderTarget, GrPipeline::ScissorState::kDisabled,
+    GrPipeline pipeline(state->drawOpArgs().fProxy, GrPipeline::ScissorState::kDisabled,
                         SkBlendMode::kSrcOver);
 
     GrCCPRCoverageProcessor ccprProc(fView->fMode, pointsBuffer.get());
@@ -260,7 +270,7 @@ void CCPRGeometryView::Op::onExecute(GrOpFlushState* state) {
         GR_GL_CALL(glGpu->glInterface(), Enable(GR_GL_LINE_SMOOTH));
     }
 
-    state->commandBuffer()->draw(pipeline, ccprProc, &mesh, nullptr, 1, this->bounds());
+    state->rtCommandBuffer()->draw(pipeline, ccprProc, &mesh, nullptr, 1, this->bounds());
 
     if (glGpu) {
         context->resetContext(kMisc_GrGLBackendState);

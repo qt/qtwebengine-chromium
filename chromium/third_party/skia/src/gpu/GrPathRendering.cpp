@@ -16,7 +16,7 @@
 const GrUserStencilSettings& GrPathRendering::GetStencilPassSettings(FillType fill) {
     switch (fill) {
         default:
-            SkFAIL("Unexpected path fill.");
+            SK_ABORT("Unexpected path fill.");
         case GrPathRendering::kWinding_FillType: {
             constexpr static GrUserStencilSettings kWindingStencilPass(
                 GrUserStencilSettings::StaticInit<
@@ -118,7 +118,7 @@ void GrPathRendering::drawPath(const GrPipeline& pipeline,
                                const GrPath* path) {
     fGpu->handleDirtyContext();
     if (GrXferBarrierType barrierType = pipeline.xferBarrierType(*fGpu->caps())) {
-        fGpu->xferBarrier(pipeline.getRenderTarget(), barrierType);
+        fGpu->xferBarrier(pipeline.renderTarget(), barrierType);
     }
     this->onDrawPath(pipeline, primProc, stencilPassSettings, path);
 }
@@ -135,7 +135,7 @@ void GrPathRendering::drawPaths(const GrPipeline& pipeline,
                                 int count) {
     fGpu->handleDirtyContext();
     if (GrXferBarrierType barrierType = pipeline.xferBarrierType(*fGpu->caps())) {
-        fGpu->xferBarrier(pipeline.getRenderTarget(), barrierType);
+        fGpu->xferBarrier(pipeline.renderTarget(), barrierType);
     }
 #ifdef SK_DEBUG
     pathRange->assertPathsLoaded(indices, indexType, count);

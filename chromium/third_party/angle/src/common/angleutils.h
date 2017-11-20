@@ -99,6 +99,13 @@ class WrappedArray final : angle::NonCopyable
 
     constexpr WrappedArray() : mArray(nullptr), mSize(0) {}
     constexpr WrappedArray(const T *data, size_t size) : mArray(data), mSize(size) {}
+
+    WrappedArray(WrappedArray &&other) : WrappedArray()
+    {
+        std::swap(mArray, other.mArray);
+        std::swap(mSize, other.mSize);
+    }
+
     ~WrappedArray() {}
 
     constexpr const T *get() const { return mArray; }
@@ -236,6 +243,7 @@ std::string ToString(const T &value)
 #define snprintf _snprintf
 #endif
 
+#define GL_BGRX8_ANGLEX 0x6ABA
 #define GL_BGR565_ANGLEX 0x6ABB
 #define GL_BGRA4_ANGLEX 0x6ABC
 #define GL_BGR5_A1_ANGLEX 0x6ABD
@@ -253,5 +261,33 @@ std::string ToString(const T &value)
     {                                                      \
         return gl::InternalError() << "Integer overflow."; \
     }
+
+// The below inlining code lifted from V8.
+#if defined(__clang__) || (defined(__GNUC__) && defined(__has_attribute))
+#define ANGLE_HAS_ATTRIBUTE_ALWAYS_INLINE (__has_attribute(always_inline))
+#define ANGLE_HAS___FORCEINLINE 0
+#elif defined(_MSC_VER)
+#define ANGLE_HAS_ATTRIBUTE_ALWAYS_INLINE 0
+#define ANGLE_HAS___FORCEINLINE 1
+#else
+#define ANGLE_HAS_ATTRIBUTE_ALWAYS_INLINE 0
+#define ANGLE_HAS___FORCEINLINE 0
+#endif
+
+#if defined(NDEBUG) && ANGLE_HAS_ATTRIBUTE_ALWAYS_INLINE
+#define ANGLE_INLINE inline __attribute__((always_inline))
+#elif defined(NDEBUG) && ANGLE_HAS___FORCEINLINE
+#define ANGLE_INLINE __forceinline
+#else
+#define ANGLE_INLINE inline
+#endif
+
+#ifndef ANGLE_STRINGIFY
+#define ANGLE_STRINGIFY(x) #x
+#endif
+
+#ifndef ANGLE_MACRO_STRINGIFY
+#define ANGLE_MACRO_STRINGIFY(x) ANGLE_STRINGIFY(x)
+#endif
 
 #endif // COMMON_ANGLEUTILS_H_

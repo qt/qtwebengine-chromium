@@ -14,9 +14,10 @@
 #include "core/fpdfapi/page/cpdf_pageobjectlist.h"
 #include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 
-class IFX_Pause;
+class IFX_PauseIndicator;
 class CPDF_Dictionary;
 class CPDF_Stream;
 class CPDF_Document;
@@ -48,7 +49,7 @@ class CPDF_PageObjectHolder {
 
   virtual bool IsPage() const;
 
-  void ContinueParse(IFX_Pause* pPause);
+  void ContinueParse(IFX_PauseIndicator* pPause);
   bool IsParsed() const { return m_ParseState == CONTENT_PARSED; }
 
   CPDF_PageObjectList* GetPageObjectList() { return &m_PageObjectList; }

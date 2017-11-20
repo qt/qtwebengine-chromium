@@ -142,6 +142,8 @@ void ExtractStats(const cricket::VoiceReceiverInfo& info, StatsReport* report) {
     { StatsReport::kStatsValueNameExpandRate, info.expand_rate },
     { StatsReport::kStatsValueNameSecondaryDecodedRate,
       info.secondary_decoded_rate },
+    { StatsReport::kStatsValueNameSecondaryDiscardedRate,
+      info.secondary_discarded_rate },
     { StatsReport::kStatsValueNameSpeechExpandRate, info.speech_expand_rate },
     { StatsReport::kStatsValueNameAccelerateRate, info.accelerate_rate },
     { StatsReport::kStatsValueNamePreemptiveExpandRate,
@@ -268,8 +270,12 @@ void ExtractStats(const cricket::VideoReceiverInfo& info, StatsReport* report) {
                       info.timing_frame_info->ToString());
   }
 
-  report->AddInt64(StatsReport::kStatsValueNameInterframeDelaySumMs,
-                   info.interframe_delay_sum_ms);
+  report->AddInt64(StatsReport::kStatsValueNameInterframeDelayMaxMs,
+                   info.interframe_delay_max_ms);
+
+  report->AddString(
+      StatsReport::kStatsValueNameContentType,
+      webrtc::videocontenttypehelpers::ToString(info.content_type));
 }
 
 void ExtractStats(const cricket::VideoSenderInfo& info, StatsReport* report) {

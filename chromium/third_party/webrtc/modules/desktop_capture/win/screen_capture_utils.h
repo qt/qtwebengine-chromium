@@ -21,7 +21,7 @@ namespace webrtc {
 // Output the list of active screens into |screens|. Returns true if succeeded,
 // or false if it fails to enumerate the display devices. If the |device_names|
 // is provided, it will be filled with the DISPLAY_DEVICE.DeviceName in UTF-8
-// encoding. Once this function returns true, consumers can always assume that
+// encoding. If this function returns true, consumers can always assume that
 // |screens|[i] and |device_names|[i] indicate the same monitor on the system.
 bool GetScreenList(DesktopCapturer::SourceList* screens,
                    std::vector<std::string>* device_names = nullptr);
@@ -31,6 +31,10 @@ bool GetScreenList(DesktopCapturer::SourceList* screens,
 // used in GetScreenRect to verify the screen matches the previously obtained
 // id.
 bool IsScreenValid(DesktopCapturer::SourceId screen, std::wstring* device_key);
+
+// Get the rect of the entire system in system coordinate system. I.e. the
+// primary monitor always starts from (0, 0).
+DesktopRect GetFullscreenRect();
 
 // Get the rect of the screen identified by |screen|, relative to the primary
 // display's top-left. If the screen device key does not match |device_key|, or

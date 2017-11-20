@@ -287,20 +287,18 @@ void GrCoverageCountingPathRenderer::preFlush(GrOnFlushResourceProvider* onFlush
 
 void DrawPathsOp::onExecute(GrOpFlushState* flushState) {
     SkASSERT(fCCPR->fFlushing);
+    SkASSERT(flushState->rtCommandBuffer());
 
     if (!fCCPR->fPerFlushInstanceBuffer) {
         return; // Setup failed.
     }
 
-    GrPipeline pipeline;
     GrPipeline::InitArgs args;
-    args.fAppliedClip = flushState->drawOpArgs().fAppliedClip;
     args.fCaps = &flushState->caps();
-    args.fProcessors = &fProcessors;
     args.fFlags = fSRGBFlags;
-    args.fRenderTarget = flushState->drawOpArgs().fRenderTarget;
+    args.fProxy = flushState->drawOpArgs().fProxy;
     args.fDstProxy = flushState->drawOpArgs().fDstProxy;
-    pipeline.init(args);
+    GrPipeline pipeline(args, std::move(fProcessors), flushState->detachAppliedClip());
 
     int baseInstance = fBaseInstance;
 
@@ -322,7 +320,7 @@ void DrawPathsOp::onExecute(GrOpFlushState* flushState) {
                                  batch.fEndInstanceIdx - baseInstance, baseInstance);
         mesh.setVertexData(fCCPR->fPerFlushVertexBuffer.get());
 
-        flushState->commandBuffer()->draw(pipeline, coverProc, &mesh, nullptr, 1, this->bounds());
+        flushState->rtCommandBuffer()->draw(pipeline, coverProc, &mesh, nullptr, 1, this->bounds());
     }
 
     SkASSERT(baseInstance == fBaseInstance + fDebugInstanceCount);

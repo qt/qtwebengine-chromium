@@ -150,6 +150,10 @@ void State::initialize(const Context *context,
         mShaderStorageBuffers.resize(caps.maxShaderStorageBufferBindings);
         mImageUnits.resize(caps.maxImageUnits);
     }
+    if (extensions.textureRectangle)
+    {
+        mSamplerTextures[GL_TEXTURE_RECTANGLE_ANGLE].resize(caps.maxCombinedTextureImageUnits);
+    }
     if (extensions.eglImageExternal || extensions.eglStreamConsumerExternal)
     {
         mSamplerTextures[GL_TEXTURE_EXTERNAL_OES].resize(caps.maxCombinedTextureImageUnits);
@@ -256,8 +260,6 @@ void State::reset(const Context *context)
     {
         buf.set(context, nullptr);
     }
-
-    mProgram = nullptr;
 
     angle::Matrix<GLfloat>::setToIdentity(mPathMatrixProj);
     angle::Matrix<GLfloat>::setToIdentity(mPathMatrixMV);
@@ -1102,6 +1104,8 @@ void State::setProgram(const Context *context, Program *newProgram)
         {
             newProgram->addRef();
         }
+        mDirtyBits.set(DIRTY_BIT_PROGRAM_EXECUTABLE);
+        mDirtyBits.set(DIRTY_BIT_PROGRAM_BINDING);
     }
 }
 
@@ -1915,6 +1919,11 @@ void State::getIntegerv(const Context *context, GLenum pname, GLint *params)
         ASSERT(mActiveSampler < mMaxCombinedTextureImageUnits);
         *params = getSamplerTextureId(static_cast<unsigned int>(mActiveSampler), GL_TEXTURE_2D);
         break;
+      case GL_TEXTURE_BINDING_RECTANGLE_ANGLE:
+          ASSERT(mActiveSampler < mMaxCombinedTextureImageUnits);
+          *params = getSamplerTextureId(static_cast<unsigned int>(mActiveSampler),
+                                        GL_TEXTURE_RECTANGLE_ANGLE);
+          break;
       case GL_TEXTURE_BINDING_CUBE_MAP:
         ASSERT(mActiveSampler < mMaxCombinedTextureImageUnits);
         *params =
@@ -2154,9 +2163,6 @@ void State::syncDirtyObjects(const Context *context, const DirtyObjects &bitset)
                 ASSERT(mVertexArray);
                 mVertexArray->syncImplState(context);
                 break;
-            case DIRTY_OBJECT_PROGRAM:
-                // TODO(jmadill): implement this
-                break;
             default:
                 UNREACHABLE();
                 break;
@@ -2185,9 +2191,6 @@ void State::syncDirtyObject(const Context *context, GLenum target)
         case GL_VERTEX_ARRAY:
             localSet.set(DIRTY_OBJECT_VERTEX_ARRAY);
             break;
-        case GL_PROGRAM:
-            localSet.set(DIRTY_OBJECT_PROGRAM);
-            break;
     }
 
     syncDirtyObjects(context, localSet);
@@ -2210,9 +2213,18 @@ void State::setObjectDirty(GLenum target)
         case GL_VERTEX_ARRAY:
             mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
             break;
-        case GL_PROGRAM:
-            mDirtyObjects.set(DIRTY_OBJECT_PROGRAM);
-            break;
+    }
+}
+
+void State::onProgramExecutableChange(Program *program)
+{
+    // OpenGL Spec:
+    // "If LinkProgram or ProgramBinary successfully re-links a program object
+    //  that was already in use as a result of a previous call to UseProgram, then the
+    //  generated executable code will be installed as part of the current rendering state."
+    if (program->isLinked() && mProgram == program)
+    {
+        mDirtyBits.set(DIRTY_BIT_PROGRAM_EXECUTABLE);
     }
 }
 

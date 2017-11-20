@@ -30,11 +30,11 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   virtual void OnDraw(CPDFSDK_PageView* pPageView,
                       CPDFSDK_Annot* pAnnot,
                       CFX_RenderDevice* pDevice,
-                      CFX_Matrix* pUser2Device);
+                      const CFX_Matrix& mtUser2Device);
   virtual void OnDrawDeactive(CPDFSDK_PageView* pPageView,
                               CPDFSDK_Annot* pAnnot,
                               CFX_RenderDevice* pDevice,
-                              CFX_Matrix* pUser2Device);
+                              const CFX_Matrix& mtUser2Device);
 
   virtual void OnMouseEnter(CPDFSDK_PageView* pPageView, CPDFSDK_Annot* pAnnot);
   virtual void OnMouseExit(CPDFSDK_PageView* pPageView, CPDFSDK_Annot* pAnnot);
@@ -75,6 +75,7 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   virtual bool OnChar(CPDFSDK_Annot* pAnnot, uint32_t nChar, uint32_t nFlags);
 
   CFX_WideString GetSelectedText(CPDFSDK_Annot* pAnnot);
+  void ReplaceSelection(CPDFSDK_Annot* pAnnot, const CFX_WideString& text);
 
   void SetFocusForAnnot(CPDFSDK_Annot* pAnnot, uint32_t nFlag);
   void KillFocusForAnnot(CPDFSDK_Annot* pAnnot, uint32_t nFlag);
@@ -139,7 +140,6 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   CPDFSDK_PageView* GetCurPageView(bool renew);
   void SetChangeMark();
 
-  virtual void InvalidateRect(const FX_RECT& rect);
   CPDFSDK_Annot* GetSDKAnnot() { return m_pWidget.Get(); }
 
  protected:
@@ -152,6 +152,8 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   // The font map should be stored somewhere more appropriate so it will live
   // until the PWL_Edit is done with it. pdfium:566
   void DestroyWindows();
+
+  void InvalidateRect(const FX_RECT& rect);
 
   CFX_UnownedPtr<CPDFSDK_FormFillEnvironment> const m_pFormFillEnv;
   CFX_UnownedPtr<CPDFSDK_Widget> m_pWidget;

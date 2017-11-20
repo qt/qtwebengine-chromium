@@ -25,7 +25,7 @@ struct SkTestFontData {
     const SkFixed* fWidths;
     const SkPaint::FontMetrics& fMetrics;
     const char* fName;
-    SkTypeface::Style fStyle;
+    SkFontStyle fStyle;
     sk_sp<SkTestFont> fCachedFont;
 };
 
@@ -105,7 +105,5 @@ private:
     sk_sp<SkTestFont> fTestFont;
     friend class SkTestScalerContext;
 };
-
-SkTypeface* CreateTestTypeface(const char* name, SkTypeface::Style style);
 
 #endif

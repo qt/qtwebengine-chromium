@@ -14,8 +14,8 @@
 #include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/cfx_string_c_template.h"
 #include "core/fxcrt/cfx_string_data_template.h"
-#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_system.h"
+#include "third_party/base/optional.h"
 
 class CFX_WideString;
 
@@ -46,13 +46,12 @@ class CFX_ByteString {
   explicit CFX_ByteString(const CFX_ByteStringC& bstrc);
   CFX_ByteString(const CFX_ByteStringC& bstrc1, const CFX_ByteStringC& bstrc2);
   CFX_ByteString(const std::initializer_list<CFX_ByteStringC>& list);
-  explicit CFX_ByteString(std::ostringstream& outStream);
+  explicit CFX_ByteString(const std::ostringstream& outStream);
 
   ~CFX_ByteString();
 
   void clear() { m_pData.Reset(); }
 
-  static CFX_ByteString FromUnicode(const wchar_t* ptr, FX_STRSIZE len = -1);
   static CFX_ByteString FromUnicode(const CFX_WideString& str);
 
   // Explicit conversion to C-style string.
@@ -79,7 +78,18 @@ class CFX_ByteString {
   }
 
   FX_STRSIZE GetLength() const { return m_pData ? m_pData->m_nDataLength : 0; }
+  FX_STRSIZE GetStringLength() const {
+    return m_pData ? FXSYS_strlen(m_pData->m_String) : 0;
+  }
   bool IsEmpty() const { return !GetLength(); }
+
+  bool IsValidIndex(FX_STRSIZE index) const {
+    return 0 <= index && index < GetLength();
+  }
+
+  bool IsValidLength(FX_STRSIZE length) const {
+    return 0 <= length && length <= GetLength();
+  }
 
   int Compare(const CFX_ByteStringC& str) const;
   bool EqualNoCase(const CFX_ByteStringC& str) const;
@@ -105,16 +115,16 @@ class CFX_ByteString {
   const CFX_ByteString& operator+=(const CFX_ByteString& str);
   const CFX_ByteString& operator+=(const CFX_ByteStringC& bstrc);
 
-  uint8_t GetAt(FX_STRSIZE nIndex) const {
-    return m_pData ? m_pData->m_String[nIndex] : 0;
+  CharType operator[](const FX_STRSIZE index) const {
+    ASSERT(IsValidIndex(index));
+    return m_pData ? m_pData->m_String[index] : 0;
   }
 
-  uint8_t operator[](FX_STRSIZE nIndex) const {
-    return m_pData ? m_pData->m_String[nIndex] : 0;
-  }
+  void SetAt(FX_STRSIZE index, char c);
 
-  void SetAt(FX_STRSIZE nIndex, char ch);
   FX_STRSIZE Insert(FX_STRSIZE index, char ch);
+  FX_STRSIZE InsertAtFront(char ch) { return Insert(0, ch); }
+  FX_STRSIZE InsertAtBack(char ch) { return Insert(GetLength(), ch); }
   FX_STRSIZE Delete(FX_STRSIZE index, FX_STRSIZE count = 1);
 
   void Format(const char* lpszFormat, ...);
@@ -122,16 +132,24 @@ class CFX_ByteString {
 
   void Reserve(FX_STRSIZE len);
   char* GetBuffer(FX_STRSIZE len);
-  void ReleaseBuffer(FX_STRSIZE len = -1);
+  void ReleaseBuffer(FX_STRSIZE len);
 
-  CFX_ByteString Mid(FX_STRSIZE first) const;
   CFX_ByteString Mid(FX_STRSIZE first, FX_STRSIZE count) const;
   CFX_ByteString Left(FX_STRSIZE count) const;
   CFX_ByteString Right(FX_STRSIZE count) const;
 
-  FX_STRSIZE Find(const CFX_ByteStringC& lpszSub, FX_STRSIZE start = 0) const;
-  FX_STRSIZE Find(char ch, FX_STRSIZE start = 0) const;
-  FX_STRSIZE ReverseFind(char ch) const;
+  pdfium::Optional<FX_STRSIZE> Find(const CFX_ByteStringC& lpszSub,
+                                    FX_STRSIZE start = 0) const;
+  pdfium::Optional<FX_STRSIZE> Find(char ch, FX_STRSIZE start = 0) const;
+  pdfium::Optional<FX_STRSIZE> ReverseFind(char ch) const;
+
+  bool Contains(const CFX_ByteStringC& lpszSub, FX_STRSIZE start = 0) const {
+    return Find(lpszSub, start).has_value();
+  }
+
+  bool Contains(char ch, FX_STRSIZE start = 0) const {
+    return Find(ch, start).has_value();
+  }
 
   void MakeLower();
   void MakeUpper();
@@ -151,7 +169,7 @@ class CFX_ByteString {
 
   CFX_WideString UTF8Decode() const;
 
-  uint32_t GetID(FX_STRSIZE start_pos = 0) const;
+  uint32_t GetID() const { return AsStringC().GetID(); }
 
 #define FXFORMAT_SIGNED 1
 #define FXFORMAT_HEX 2

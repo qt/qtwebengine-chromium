@@ -57,7 +57,8 @@ class FrameBuffer {
   //    kTimeout.
   //  - If the FrameBuffer is stopped then it will return kStopped.
   ReturnReason NextFrame(int64_t max_wait_time_ms,
-                         std::unique_ptr<FrameObject>* frame_out);
+                         std::unique_ptr<FrameObject>* frame_out,
+                         bool keyframe_required = false);
 
   // Tells the FrameBuffer which protection mode that is in use. Affects
   // the frame timing.
@@ -177,6 +178,7 @@ class FrameBuffer {
   bool stopped_ GUARDED_BY(crit_);
   VCMVideoProtection protection_mode_ GUARDED_BY(crit_);
   VCMReceiveStatisticsCallback* const stats_callback_;
+  int64_t last_log_non_decoded_ms_ GUARDED_BY(crit_);
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(FrameBuffer);
 };

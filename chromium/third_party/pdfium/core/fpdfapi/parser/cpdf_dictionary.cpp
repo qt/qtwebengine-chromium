@@ -17,6 +17,7 @@
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fxcrt/fx_stream.h"
 #include "third_party/base/logging.h"
 #include "third_party/base/stl_util.h"
 
@@ -197,8 +198,15 @@ void CPDF_Dictionary::ConvertToIndirectObjectFor(
   it->second = pdfium::MakeUnique<CPDF_Reference>(pHolder, pObj->GetObjNum());
 }
 
-void CPDF_Dictionary::RemoveFor(const CFX_ByteString& key) {
-  m_Map.erase(key);
+std::unique_ptr<CPDF_Object> CPDF_Dictionary::RemoveFor(
+    const CFX_ByteString& key) {
+  std::unique_ptr<CPDF_Object> result;
+  auto it = m_Map.find(key);
+  if (it != m_Map.end()) {
+    result = std::move(it->second);
+    m_Map.erase(it);
+  }
+  return result;
 }
 
 void CPDF_Dictionary::ReplaceKey(const CFX_ByteString& oldkey,

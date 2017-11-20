@@ -59,17 +59,22 @@ static int i915_add_kms_item(struct driver *drv, const struct kms_item *item)
 	 */
 	for (i = 0; i < drv->backend->combos.size; i++) {
 		combo = &drv->backend->combos.data[i];
-		if (combo->format == item->format) {
-			if ((combo->metadata.tiling == I915_TILING_Y &&
-			     item->modifier == I915_FORMAT_MOD_Y_TILED) ||
-			    (combo->metadata.tiling == I915_TILING_X &&
-			     item->modifier == I915_FORMAT_MOD_X_TILED)) {
-				combo->metadata.modifier = item->modifier;
-				combo->usage |= item->usage;
-			} else if (combo->metadata.tiling != I915_TILING_Y) {
-				combo->usage |= item->usage;
-			}
+		if (combo->format != item->format)
+			continue;
+
+		if (item->modifier == DRM_FORMAT_MOD_NONE &&
+		    combo->metadata.tiling == I915_TILING_X) {
+			/*
+			 * FIXME: drv_query_kms() does not report the available modifiers
+			 * yet, but we know that all hardware can scanout from X-tiled
+			 * buffers, so let's add this to our combinations, except for
+			 * cursor, which must not be tiled.
+			 */
+			combo->usage |= item->usage & ~BO_USE_CURSOR;
 		}
+
+		if (combo->metadata.modifier == item->modifier)
+			combo->usage |= item->usage;
 	}
 
 	return 0;
@@ -109,16 +114,29 @@ static int i915_add_combinations(struct driver *drv)
 	drv_modify_combination(drv, DRM_FORMAT_XRGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_ARGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
 
+	/* IPU3 camera ISP supports only NV12 output. */
+	drv_modify_combination(drv, DRM_FORMAT_NV12, &metadata,
+			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE);
+	/*
+	 * R8 format is used for Android's HAL_PIXEL_FORMAT_BLOB and is used for JPEG snapshots
+	 * from camera.
+	 */
+	drv_modify_combination(drv, DRM_FORMAT_R8, &metadata,
+			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE);
+
+	render_flags &= ~BO_USE_RENDERSCRIPT;
 	render_flags &= ~BO_USE_SW_WRITE_OFTEN;
 	render_flags &= ~BO_USE_SW_READ_OFTEN;
 	render_flags &= ~BO_USE_LINEAR;
 
+	texture_flags &= ~BO_USE_RENDERSCRIPT;
 	texture_flags &= ~BO_USE_SW_WRITE_OFTEN;
 	texture_flags &= ~BO_USE_SW_READ_OFTEN;
 	texture_flags &= ~BO_USE_LINEAR;
 
 	metadata.tiling = I915_TILING_X;
 	metadata.priority = 2;
+	metadata.modifier = I915_FORMAT_MOD_X_TILED;
 
 	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
 				   &metadata, render_flags);
@@ -133,6 +151,7 @@ static int i915_add_combinations(struct driver *drv)
 
 	metadata.tiling = I915_TILING_Y;
 	metadata.priority = 3;
+	metadata.modifier = I915_FORMAT_MOD_Y_TILED;
 
 	ret = drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
 				   &metadata, render_flags);
@@ -187,6 +206,21 @@ static int i915_align_dimensions(struct bo *bo, uint32_t tiling, uint32_t *strid
 			horizontal_alignment = 128;
 			vertical_alignment = 32;
 		}
+		break;
+	}
+
+	/*
+	 * The alignment calculated above is based on the full size luma plane and to have chroma
+	 * planes properly aligned with subsampled formats, we need to multiply luma alignment by
+	 * subsampling factor.
+	 */
+	switch (bo->format) {
+	case DRM_FORMAT_YVU420_ANDROID:
+	case DRM_FORMAT_YVU420:
+		horizontal_alignment *= 2;
+		/* Fall through */
+	case DRM_FORMAT_NV12:
+		vertical_alignment *= 2;
 		break;
 	}
 
@@ -264,16 +298,13 @@ static int i915_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32
 	uint32_t stride;
 	struct drm_i915_gem_create gem_create;
 	struct drm_i915_gem_set_tiling gem_set_tiling;
+	struct combination *combo;
 
-	if (flags & (BO_USE_CURSOR | BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN))
-		bo->tiling = I915_TILING_NONE;
-	else if (flags & BO_USE_SCANOUT)
-		bo->tiling = I915_TILING_X;
-	else
-		bo->tiling = I915_TILING_Y;
+	combo = drv_get_combination(bo->drv, format, flags);
+	if (!combo)
+		return -EINVAL;
 
-	if (format == DRM_FORMAT_YVU420 || format == DRM_FORMAT_YVU420_ANDROID)
-		bo->tiling = I915_TILING_NONE;
+	bo->tiling = combo->metadata.tiling;
 
 	stride = drv_stride_from_format(format, width, 0);
 
@@ -282,19 +313,42 @@ static int i915_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32
 		return ret;
 
 	/*
-	 * Align the Y plane to 128 bytes so the chroma planes would be aligned
-	 * to 64 byte boundaries. This is an Intel HW requirement.
+	 * HAL_PIXEL_FORMAT_YV12 requires the buffer height not be aligned, but we need to keep
+	 * total size as with aligned height to ensure enough padding space after each plane to
+	 * satisfy GPU alignment requirements.
+	 *
+	 * We do it by first calling drv_bo_from_format() with aligned height and
+	 * DRM_FORMAT_YVU420, which allows height alignment, saving the total size it calculates
+	 * and then calling it again with requested parameters.
+	 *
+	 * This relies on the fact that i965 driver uses separate surfaces for each plane and
+	 * contents of padding bytes is not affected, as it is only used to satisfy GPU cache
+	 * requests.
+	 *
+	 * This is enforced by Mesa in src/intel/isl/isl_gen8.c, inside
+	 * isl_gen8_choose_image_alignment_el(), which is used for GEN9 and GEN8.
 	 */
-	if (format == DRM_FORMAT_YVU420)
-		stride = ALIGN(stride, 128);
+	if (format == DRM_FORMAT_YVU420_ANDROID) {
+		uint32_t unaligned_height = bo->height;
+		size_t total_size;
+
+		drv_bo_from_format(bo, stride, height, DRM_FORMAT_YVU420);
+		total_size = bo->total_size;
+		drv_bo_from_format(bo, stride, unaligned_height, format);
+		bo->total_size = total_size;
+	} else {
+		drv_bo_from_format(bo, stride, height, format);
+	}
 
 	/*
-	 * HAL_PIXEL_FORMAT_YV12 requires that the buffer's height not be aligned.
+	 * Quoting Mesa ISL library:
+	 *
+	 *    - For linear surfaces, additional padding of 64 bytes is required at
+	 *      the bottom of the surface. This is in addition to the padding
+	 *      required above.
 	 */
-	if (format == DRM_FORMAT_YVU420_ANDROID)
-		height = bo->height;
-
-	drv_bo_from_format(bo, stride, height, format);
+	if (bo->tiling == I915_TILING_NONE)
+		bo->total_size += 64;
 
 	memset(&gem_create, 0, sizeof(gem_create));
 	gem_create.size = bo->total_size;
@@ -349,6 +403,7 @@ static int i915_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_I915_GEM_GET_TILING, &gem_get_tiling);
 	if (ret) {
+		drv_gem_bo_destroy(bo);
 		fprintf(stderr, "drv: DRM_IOCTL_I915_GEM_GET_TILING failed.");
 		return ret;
 	}
@@ -357,7 +412,7 @@ static int i915_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 	return 0;
 }
 
-static void *i915_bo_map(struct bo *bo, struct map_info *data, size_t plane)
+static void *i915_bo_map(struct bo *bo, struct map_info *data, size_t plane, int prot)
 {
 	int ret;
 	void *addr;
@@ -395,9 +450,7 @@ static void *i915_bo_map(struct bo *bo, struct map_info *data, size_t plane)
 			return MAP_FAILED;
 		}
 
-		addr = mmap(0, bo->total_size, PROT_READ | PROT_WRITE, MAP_SHARED, bo->drv->fd,
-			    gem_map.offset);
-
+		addr = mmap(0, bo->total_size, prot, MAP_SHARED, bo->drv->fd, gem_map.offset);
 		set_domain.read_domains = I915_GEM_DOMAIN_GTT;
 		set_domain.write_domain = I915_GEM_DOMAIN_GTT;
 	}
@@ -426,13 +479,19 @@ static int i915_bo_unmap(struct bo *bo, struct map_info *data)
 	return munmap(data->addr, data->length);
 }
 
-static uint32_t i915_resolve_format(uint32_t format)
+static uint32_t i915_resolve_format(uint32_t format, uint64_t usage)
 {
 	switch (format) {
 	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
+		/* KBL camera subsystem requires NV12. */
+		if (usage & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
+			return DRM_FORMAT_NV12;
 		/*HACK: See b/28671744 */
 		return DRM_FORMAT_XBGR8888;
 	case DRM_FORMAT_FLEX_YCbCr_420_888:
+		/* KBL camera subsystem requires NV12. */
+		if (usage & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
+			return DRM_FORMAT_NV12;
 		return DRM_FORMAT_YVU420;
 	default:
 		return format;

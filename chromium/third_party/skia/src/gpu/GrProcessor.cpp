@@ -33,17 +33,15 @@ class GrGeometryProcessor;
  * Originally these were both in the processor unit test header, but then it seemed to cause linker
  * problems on android.
  */
-template<>
-SkTArray<GrProcessorTestFactory<GrFragmentProcessor>*, true>*
-GrProcessorTestFactory<GrFragmentProcessor>::GetFactories() {
-    static SkTArray<GrProcessorTestFactory<GrFragmentProcessor>*, true> gFactories;
+template <>
+SkTArray<GrFragmentProcessorTestFactory*, true>* GrFragmentProcessorTestFactory::GetFactories() {
+    static SkTArray<GrFragmentProcessorTestFactory*, true> gFactories;
     return &gFactories;
 }
 
-template<>
-SkTArray<GrProcessorTestFactory<GrGeometryProcessor>*, true>*
-GrProcessorTestFactory<GrGeometryProcessor>::GetFactories() {
-    static SkTArray<GrProcessorTestFactory<GrGeometryProcessor>*, true> gFactories;
+template <>
+SkTArray<GrGeometryProcessorTestFactory*, true>* GrGeometryProcessorTestFactory::GetFactories() {
+    static SkTArray<GrGeometryProcessorTestFactory*, true> gFactories;
     return &gFactories;
 }
 
@@ -61,21 +59,21 @@ static const int kFPFactoryCount = 42;
 static const int kGPFactoryCount = 14;
 static const int kXPFactoryCount = 4;
 
-template<>
-void GrProcessorTestFactory<GrFragmentProcessor>::VerifyFactoryCount() {
+template <>
+void GrFragmentProcessorTestFactory::VerifyFactoryCount() {
     if (kFPFactoryCount != GetFactories()->count()) {
         SkDebugf("\nExpected %d fragment processor factories, found %d.\n",
                  kFPFactoryCount, GetFactories()->count());
-        SkFAIL("Wrong number of fragment processor factories!");
+        SK_ABORT("Wrong number of fragment processor factories!");
     }
 }
 
-template<>
-void GrProcessorTestFactory<GrGeometryProcessor>::VerifyFactoryCount() {
+template <>
+void GrGeometryProcessorTestFactory::VerifyFactoryCount() {
     if (kGPFactoryCount != GetFactories()->count()) {
         SkDebugf("\nExpected %d geometry processor factories, found %d.\n",
                  kGPFactoryCount, GetFactories()->count());
-        SkFAIL("Wrong number of geometry processor factories!");
+        SK_ABORT("Wrong number of geometry processor factories!");
     }
 }
 
@@ -83,7 +81,7 @@ void GrXPFactoryTestFactory::VerifyFactoryCount() {
     if (kXPFactoryCount != GetFactories()->count()) {
         SkDebugf("\nExpected %d xp factory factories, found %d.\n",
                  kXPFactoryCount, GetFactories()->count());
-        SkFAIL("Wrong number of xp factory factories!");
+        SK_ABORT("Wrong number of xp factory factories!");
     }
 }
 
@@ -282,7 +280,7 @@ GrResourceIOProcessor::ImageStorageAccess::ImageStorageAccess(sk_sp<GrTexturePro
             fFormat = GrImageStorageFormat::kRGBA32f;
             break;
         default:
-            SkFAIL("Config is not (yet) supported as image storage.");
+            SK_ABORT("Config is not (yet) supported as image storage.");
             break;
     }
 }

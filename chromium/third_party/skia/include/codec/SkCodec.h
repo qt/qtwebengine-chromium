@@ -50,7 +50,7 @@ public:
      *  this many bytes, or by implementing rewind() to be able to rewind()
      *  after reading this many bytes.
      */
-    static size_t MinBufferedBytesNeeded();
+    static constexpr size_t MinBufferedBytesNeeded() { return 32; }
 
     /**
      *  Error codes for various SkCodec methods.
@@ -139,8 +139,8 @@ public:
      *  If NULL is returned, the stream is deleted immediately. Otherwise, the
      *  SkCodec takes ownership of it, and will delete it when done with it.
      */
-    static SkCodec* NewFromStream(SkStream*, Result* = nullptr,
-                                  SkPngChunkReader* = nullptr);
+    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result* = nullptr,
+                                                   SkPngChunkReader* = nullptr);
 
     /**
      *  If this data represents an encoded image that we know how to decode,
@@ -158,10 +158,7 @@ public:
      *      If the PNG does not contain unknown chunks, the SkPngChunkReader
      *      will not be used or modified.
      */
-    static SkCodec* NewFromData(sk_sp<SkData>, SkPngChunkReader* = NULL);
-    static SkCodec* NewFromData(SkData* data, SkPngChunkReader* reader) {
-        return NewFromData(sk_ref_sp(data), reader);
-    }
+    static std::unique_ptr<SkCodec> MakeFromData(sk_sp<SkData>, SkPngChunkReader* = nullptr);
 
     virtual ~SkCodec();
 
@@ -622,7 +619,10 @@ public:
          *  This is conservative; it will still return non-opaque if e.g. a
          *  color index-based frame has a color with alpha but does not use it.
          */
+#ifdef SK_LEGACY_FRAME_INFO_ALPHA_TYPE
         SkAlphaType fAlphaType;
+#endif
+        SkEncodedInfo::Alpha fAlpha;
 
         /**
          *  How this frame should be modified before decoding the next one.
@@ -674,25 +674,21 @@ public:
 protected:
     using XformFormat = SkColorSpaceXform::ColorFormat;
 
-    /**
-     *  Takes ownership of SkStream*
-     */
     SkCodec(int width,
             int height,
             const SkEncodedInfo&,
             XformFormat srcFormat,
-            SkStream*,
+            std::unique_ptr<SkStream>,
             sk_sp<SkColorSpace>,
             Origin = kTopLeft_Origin);
 
     /**
-     *  Takes ownership of SkStream*
      *  Allows the subclass to set the recommended SkImageInfo
      */
     SkCodec(const SkEncodedInfo&,
             const SkImageInfo&,
             XformFormat srcFormat,
-            SkStream*,
+            std::unique_ptr<SkStream>,
             Origin = kTopLeft_Origin);
 
     virtual SkISize onGetScaledDimensions(float /*desiredScale*/) const {
@@ -813,8 +809,12 @@ protected:
 
     virtual int onOutputScanline(int inputScanline) const;
 
-    bool initializeColorXform(const SkImageInfo& dstInfo,
+    bool initializeColorXform(const SkImageInfo& dstInfo, SkEncodedInfo::Alpha,
                               SkTransferFunctionBehavior premulBehavior);
+    // Some classes never need a colorXform e.g.
+    // - ICO uses its embedded codec's colorXform
+    // - WBMP is just Black/White
+    virtual bool usesColorXform() const { return true; }
     void applyColorXform(void* dst, const void* src, int count, SkAlphaType) const;
     void applyColorXform(void* dst, const void* src, int count) const;
 
@@ -852,6 +852,13 @@ private:
 
     bool                               fStartedIncrementalDecode;
 
+    /**
+     *  Return whether {srcColor, srcIsOpaque, srcCS} can convert to dst.
+     *
+     *  Will be called for the appropriate frame, prior to initializing the colorXform.
+     */
+    virtual bool conversionSupported(const SkImageInfo& dst, SkEncodedInfo::Color srcColor,
+                                     bool srcIsOpaque, const SkColorSpace* srcCS) const;
     /**
      *  Return whether these dimensions are supported as a scale.
      *

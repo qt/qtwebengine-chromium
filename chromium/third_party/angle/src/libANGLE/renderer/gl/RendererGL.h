@@ -36,6 +36,7 @@ struct BlockMemberInfo;
 namespace rx
 {
 class BlitGL;
+class ClearMultiviewGL;
 class ContextImpl;
 class FunctionsGL;
 class StateManagerGL;
@@ -62,23 +63,20 @@ class RendererGL : angle::NonCopyable
                            GLenum mode,
                            GLsizei count,
                            GLenum type,
-                           const void *indices,
-                           const gl::IndexRange &indexRange);
+                           const void *indices);
     gl::Error drawElementsInstanced(const gl::Context *context,
                                     GLenum mode,
                                     GLsizei count,
                                     GLenum type,
                                     const void *indices,
-                                    GLsizei instances,
-                                    const gl::IndexRange &indexRange);
+                                    GLsizei instances);
     gl::Error drawRangeElements(const gl::Context *context,
                                 GLenum mode,
                                 GLuint start,
                                 GLuint end,
                                 GLsizei count,
                                 GLenum type,
-                                const void *indices,
-                                const gl::IndexRange &indexRange);
+                                const void *indices);
     gl::Error drawArraysIndirect(const gl::Context *context, GLenum mode, const void *indirect);
     gl::Error drawElementsIndirect(const gl::Context *context,
                                    GLenum mode,
@@ -162,6 +160,7 @@ class RendererGL : angle::NonCopyable
     StateManagerGL *getStateManager() const { return mStateManager; }
     const WorkaroundsGL &getWorkarounds() const { return mWorkarounds; }
     BlitGL *getBlitter() const { return mBlitter; }
+    ClearMultiviewGL *getMultiviewClearer() const { return mMultiviewClearer; }
 
     MultiviewImplementationTypeGL getMultiviewImplementationType() const;
     const gl::Caps &getNativeCaps() const;
@@ -188,6 +187,7 @@ class RendererGL : angle::NonCopyable
     StateManagerGL *mStateManager;
 
     BlitGL *mBlitter;
+    ClearMultiviewGL *mMultiviewClearer;
 
     WorkaroundsGL mWorkarounds;
 

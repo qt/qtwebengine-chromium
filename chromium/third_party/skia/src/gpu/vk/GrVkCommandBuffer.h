@@ -185,7 +185,7 @@ public:
     // in the render pass.
     void beginRenderPass(const GrVkGpu* gpu,
                          const GrVkRenderPass* renderPass,
-                         const VkClearValue* clearValues,
+                         const VkClearValue clearValues[],
                          const GrVkRenderTarget& target,
                          const SkIRect& bounds,
                          bool forSecondaryCB);
@@ -249,6 +249,12 @@ public:
                            VkImageLayout dstLayout,
                            uint32_t copyRegionCount,
                            const VkBufferImageCopy* copyRegions);
+
+    void copyBuffer(GrVkGpu* gpu,
+                    GrVkBuffer* srcBuffer,
+                    GrVkBuffer* dstBuffer,
+                    uint32_t regionCount,
+                    const VkBufferCopy* regions);
 
     void updateBuffer(GrVkGpu* gpu,
                       GrVkBuffer* dstBuffer,

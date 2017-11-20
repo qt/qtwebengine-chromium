@@ -86,6 +86,13 @@ GrTextureStripAtlas::GrTextureStripAtlas(GrTextureStripAtlas::Desc desc)
 
 GrTextureStripAtlas::~GrTextureStripAtlas() { delete[] fRows; }
 
+void GrTextureStripAtlas::lockRow(int row) {
+    // This should only be called on a row that is already locked.
+    SkASSERT(fRows[row].fLocks);
+    fRows[row].fLocks++;
+    ++fLockedRows;
+}
+
 int GrTextureStripAtlas::lockRow(const SkBitmap& bitmap) {
     VALIDATE;
     if (0 == fLockedRows) {
@@ -193,11 +200,6 @@ GrTextureStripAtlas::AtlasRow* GrTextureStripAtlas::getLRU() {
 }
 
 void GrTextureStripAtlas::lockTexture() {
-    GrSurfaceDesc texDesc;
-    texDesc.fOrigin = kTopLeft_GrSurfaceOrigin;
-    texDesc.fWidth = fDesc.fWidth;
-    texDesc.fHeight = fDesc.fHeight;
-    texDesc.fConfig = fDesc.fConfig;
 
     static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
     GrUniqueKey key;
@@ -205,8 +207,15 @@ void GrTextureStripAtlas::lockTexture() {
     builder[0] = static_cast<uint32_t>(fCacheKey);
     builder.finish();
 
-    sk_sp<GrTextureProxy> proxy = fDesc.fContext->resourceProvider()->findProxyByUniqueKey(key);
+    sk_sp<GrTextureProxy> proxy = fDesc.fContext->resourceProvider()->findProxyByUniqueKey(
+                                                                key, kTopLeft_GrSurfaceOrigin);
     if (!proxy) {
+        GrSurfaceDesc texDesc;
+        texDesc.fOrigin = kTopLeft_GrSurfaceOrigin;
+        texDesc.fWidth  = fDesc.fWidth;
+        texDesc.fHeight = fDesc.fHeight;
+        texDesc.fConfig = fDesc.fConfig;
+
         proxy = GrSurfaceProxy::MakeDeferred(fDesc.fContext->resourceProvider(),
                                              texDesc, SkBackingFit::kExact,
                                              SkBudgeted::kYes,
@@ -215,6 +224,7 @@ void GrTextureStripAtlas::lockTexture() {
             return;
         }
 
+        SkASSERT(proxy->origin() == kTopLeft_GrSurfaceOrigin);
         fDesc.fContext->resourceProvider()->assignUniqueKeyToProxy(key, proxy.get());
         // This is a new texture, so all of our cache info is now invalid
         this->initLRU();

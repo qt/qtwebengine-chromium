@@ -20,7 +20,7 @@
 #include "webrtc/rtc_base/timeutils.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/test/frame_generator.h"
-#include "webrtc/video_send_stream.h"
+#include "webrtc/call/video_send_stream.h"
 
 namespace webrtc {
 namespace test {
@@ -107,6 +107,22 @@ FrameGeneratorCapturer* FrameGeneratorCapturer::CreateFromYuvFile(
       clock,
       FrameGenerator::CreateFromYuvFile(std::vector<std::string>(1, file_name),
                                         width, height, 1),
+      target_fps));
+  if (!capturer->Init())
+    return nullptr;
+
+  return capturer.release();
+}
+
+FrameGeneratorCapturer* FrameGeneratorCapturer::CreateSlideGenerator(
+    int width,
+    int height,
+    int frame_repeat_count,
+    int target_fps,
+    Clock* clock) {
+  std::unique_ptr<FrameGeneratorCapturer> capturer(new FrameGeneratorCapturer(
+      clock, FrameGenerator::CreateSlideGenerator(width, height,
+                                                  frame_repeat_count),
       target_fps));
   if (!capturer->Init())
     return nullptr;

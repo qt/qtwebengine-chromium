@@ -34,9 +34,11 @@ namespace {
 bool GenerateWidgetAP(CPDF_Document* pDoc,
                       CPDF_Dictionary* pAnnotDict,
                       const int32_t& nWidgetType) {
-  CPDF_Dictionary* pFormDict = nullptr;
-  if (CPDF_Dictionary* pRootDict = pDoc->GetRoot())
-    pFormDict = pRootDict->GetDictFor("AcroForm");
+  const CPDF_Dictionary* pRootDict = pDoc->GetRoot();
+  if (!pRootDict)
+    return false;
+
+  const CPDF_Dictionary* pFormDict = pRootDict->GetDictFor("AcroForm");
   if (!pFormDict)
     return false;
 
@@ -65,15 +67,17 @@ bool GenerateWidgetAP(CPDF_Document* pDoc,
   if (!pDRFontDict)
     return false;
 
-  CPDF_Dictionary* pFontDict = pDRFontDict->GetDictFor(sFontName.Mid(1));
+  CPDF_Dictionary* pFontDict =
+      pDRFontDict->GetDictFor(sFontName.Right(sFontName.GetLength() - 1));
   if (!pFontDict) {
     pFontDict = pDoc->NewIndirect<CPDF_Dictionary>();
     pFontDict->SetNewFor<CPDF_Name>("Type", "Font");
     pFontDict->SetNewFor<CPDF_Name>("Subtype", "Type1");
     pFontDict->SetNewFor<CPDF_Name>("BaseFont", "Helvetica");
     pFontDict->SetNewFor<CPDF_Name>("Encoding", "WinAnsiEncoding");
-    pDRFontDict->SetNewFor<CPDF_Reference>(sFontName.Mid(1), pDoc,
-                                           pFontDict->GetObjNum());
+    pDRFontDict->SetNewFor<CPDF_Reference>(
+        sFontName.Right(sFontName.GetLength() - 1), pDoc,
+        pFontDict->GetObjNum());
   }
   CPDF_Font* pDefFont = pDoc->LoadFont(pFontDict);
   if (!pDefFont)
@@ -112,7 +116,8 @@ bool GenerateWidgetAP(CPDF_Document* pDoc,
   BorderStyle nBorderStyle = BorderStyle::SOLID;
   float fBorderWidth = 1;
   CPVT_Dash dsBorder(3, 0, 0);
-  CPVT_Color crLeftTop, crRightBottom;
+  CPVT_Color crLeftTop;
+  CPVT_Color crRightBottom;
   if (CPDF_Dictionary* pBSDict = pAnnotDict->GetDictFor("BS")) {
     if (pBSDict->KeyExist("W"))
       fBorderWidth = pBSDict->GetNumberFor("W");
@@ -121,31 +126,34 @@ bool GenerateWidgetAP(CPDF_Document* pDoc,
       dsBorder = CPVT_Dash(pArray->GetIntegerAt(0), pArray->GetIntegerAt(1),
                            pArray->GetIntegerAt(2));
     }
-    switch (pBSDict->GetStringFor("S").GetAt(0)) {
-      case 'S':
-        nBorderStyle = BorderStyle::SOLID;
-        break;
-      case 'D':
-        nBorderStyle = BorderStyle::DASH;
-        break;
-      case 'B':
-        nBorderStyle = BorderStyle::BEVELED;
-        fBorderWidth *= 2;
-        crLeftTop = CPVT_Color(CPVT_Color::kGray, 1);
-        crRightBottom = CPVT_Color(CPVT_Color::kGray, 0.5);
-        break;
-      case 'I':
-        nBorderStyle = BorderStyle::INSET;
-        fBorderWidth *= 2;
-        crLeftTop = CPVT_Color(CPVT_Color::kGray, 0.5);
-        crRightBottom = CPVT_Color(CPVT_Color::kGray, 0.75);
-        break;
-      case 'U':
-        nBorderStyle = BorderStyle::UNDERLINE;
-        break;
+    if (pBSDict->GetStringFor("S").GetLength()) {
+      switch (pBSDict->GetStringFor("S")[0]) {
+        case 'S':
+          nBorderStyle = BorderStyle::SOLID;
+          break;
+        case 'D':
+          nBorderStyle = BorderStyle::DASH;
+          break;
+        case 'B':
+          nBorderStyle = BorderStyle::BEVELED;
+          fBorderWidth *= 2;
+          crLeftTop = CPVT_Color(CPVT_Color::kGray, 1);
+          crRightBottom = CPVT_Color(CPVT_Color::kGray, 0.5);
+          break;
+        case 'I':
+          nBorderStyle = BorderStyle::INSET;
+          fBorderWidth *= 2;
+          crLeftTop = CPVT_Color(CPVT_Color::kGray, 0.5);
+          crRightBottom = CPVT_Color(CPVT_Color::kGray, 0.75);
+          break;
+        case 'U':
+          nBorderStyle = BorderStyle::UNDERLINE;
+          break;
+      }
     }
   }
-  CPVT_Color crBorder, crBG;
+  CPVT_Color crBorder;
+  CPVT_Color crBG;
   if (CPDF_Dictionary* pMKDict = pAnnotDict->GetDictFor("MK")) {
     if (CPDF_Array* pArray = pMKDict->GetArrayFor("BC"))
       crBorder = CPVT_Color::ParseColor(*pArray);
@@ -427,7 +435,7 @@ bool GenerateWidgetAP(CPDF_Document* pDoc,
     } break;
   }
   if (pNormalStream) {
-    pNormalStream->SetData(&sAppStream);
+    pNormalStream->SetDataAndRemoveFilter(&sAppStream);
     pStreamDict = pNormalStream->GetDict();
     if (pStreamDict) {
       pStreamDict->SetMatrixFor("Matrix", matrix);

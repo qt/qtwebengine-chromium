@@ -194,9 +194,12 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   auto ns = channel_proxy_->GetNetworkStatistics();
   stats.jitter_buffer_ms = ns.currentBufferSize;
   stats.jitter_buffer_preferred_ms = ns.preferredBufferSize;
+  stats.total_samples_received = ns.totalSamplesReceived;
+  stats.concealed_samples = ns.concealedSamples;
   stats.expand_rate = Q14ToFloat(ns.currentExpandRate);
   stats.speech_expand_rate = Q14ToFloat(ns.currentSpeechExpandRate);
   stats.secondary_decoded_rate = Q14ToFloat(ns.currentSecondaryDecodedRate);
+  stats.secondary_discarded_rate = Q14ToFloat(ns.currentSecondaryDiscardedRate);
   stats.accelerate_rate = Q14ToFloat(ns.currentAccelerateRate);
   stats.preemptive_expand_rate = Q14ToFloat(ns.currentPreemptiveRate);
 
@@ -294,7 +297,7 @@ void AudioReceiveStream::AssociateSendStream(AudioSendStream* send_stream) {
   if (send_stream) {
     VoiceEngineImpl* voe_impl = static_cast<VoiceEngineImpl*>(voice_engine());
     std::unique_ptr<voe::ChannelProxy> send_channel_proxy =
-        voe_impl->GetChannelProxy(send_stream->config().voe_channel_id);
+        voe_impl->GetChannelProxy(send_stream->GetConfig().voe_channel_id);
     channel_proxy_->AssociateSendChannel(*send_channel_proxy.get());
   } else {
     channel_proxy_->DisassociateSendChannel();

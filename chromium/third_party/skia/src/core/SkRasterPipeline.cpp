@@ -7,6 +7,8 @@
 
 #include "SkRasterPipeline.h"
 #include "SkPM4f.h"
+#include "SkPM4fPriv.h"
+#include "../jumper/SkJumper.h"
 
 SkRasterPipeline::SkRasterPipeline(SkArenaAlloc* alloc) : fAlloc(alloc) {
     this->reset();
@@ -15,10 +17,12 @@ void SkRasterPipeline::reset() {
     fStages      = nullptr;
     fNumStages   = 0;
     fSlotsNeeded = 1;  // We always need one extra slot for just_return().
+    fClamped     = true;
 }
 
 void SkRasterPipeline::append(StockStage stage, void* ctx) {
-    SkASSERT(stage != from_srgb);
+    SkASSERT(stage != from_srgb);      // Please use append_from_srgb().
+    SkASSERT(stage != uniform_color);  // Please use append_constant_color().
     this->unchecked_append(stage, ctx);
 }
 void SkRasterPipeline::unchecked_append(StockStage stage, void* ctx) {
@@ -46,6 +50,7 @@ void SkRasterPipeline::extend(const SkRasterPipeline& src) {
     fStages = &stages[src.fNumStages - 1];
     fNumStages   += src.fNumStages;
     fSlotsNeeded += src.fSlotsNeeded - 1;  // Don't double count just_returns().
+    fClamped = fClamped && src.fClamped;
 }
 
 void SkRasterPipeline::dump() const {
@@ -76,17 +81,20 @@ void SkRasterPipeline::dump() const {
     #define INC_COLOR
 #endif
 
-void SkRasterPipeline::append_uniform_color(SkArenaAlloc* alloc, const SkPM4f& c) {
-    if (c.r() == 0 && c.g() == 0 && c.b() == 0 && c.a() == 1) {
+void SkRasterPipeline::append_constant_color(SkArenaAlloc* alloc, const float rgba[4]) {
+    if (rgba[0] == 0 && rgba[1] == 0 && rgba[2] == 0 && rgba[3] == 1) {
         this->append(black_color);
         INC_BLACK;
-    } else if (c.r() == 1 && c.g() == 1 && c.b() == 1 && c.a() == 1) {
+    } else if (rgba[0] == 1 && rgba[1] == 1 && rgba[2] == 1 && rgba[3] == 1) {
         this->append(white_color);
         INC_WHITE;
     } else {
-        float* storage = alloc->makeArray<float>(4);
-        memcpy(storage, c.fVec, 4 * sizeof(float));
-        this->append(uniform_color, storage);
+        auto ctx = alloc->make<SkJumper_UniformColorCtx>();
+        Sk4f color = Sk4f::Load(rgba);
+        color.store(&ctx->r);
+        ctx->rgba = Sk4f_toL32(color);
+
+        this->unchecked_append(uniform_color, ctx);
         INC_COLOR;
     }
 
@@ -160,5 +168,14 @@ void SkRasterPipeline::append_matrix(SkArenaAlloc* alloc, const SkMatrix& matrix
             matrix.get9(storage);
             this->append(SkRasterPipeline::matrix_perspective, storage);
         }
+    }
+}
+
+void SkRasterPipeline::clamp_if_unclamped(SkAlphaType alphaType) {
+    if (!fClamped) {
+        this->append(SkRasterPipeline::clamp_0);
+        this->append(alphaType == kPremul_SkAlphaType ? SkRasterPipeline::clamp_a
+                                                      : SkRasterPipeline::clamp_1);
+        fClamped = true;
     }
 }

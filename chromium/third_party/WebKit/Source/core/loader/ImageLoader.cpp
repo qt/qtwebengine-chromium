@@ -28,7 +28,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/IncrementLoadEventDelayCount.h"
-#include "core/events/Event.h"
+#include "core/dom/events/Event.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
@@ -231,7 +231,8 @@ static void ConfigureRequest(
         element.GetDocument().GetSecurityOrigin(), cross_origin);
   }
 
-  if (client_hints_preferences.ShouldSend(kWebClientHintsTypeResourceWidth) &&
+  if (client_hints_preferences.ShouldSend(
+          mojom::WebClientHintsType::kResourceWidth) &&
       isHTMLImageElement(element))
     params.SetResourceWidth(toHTMLImageElement(element).GetResourceWidth());
 }

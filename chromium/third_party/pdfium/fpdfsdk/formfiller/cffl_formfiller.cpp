@@ -82,13 +82,13 @@ FX_RECT CFFL_FormFiller::GetViewBBox(CPDFSDK_PageView* pPageView,
 void CFFL_FormFiller::OnDraw(CPDFSDK_PageView* pPageView,
                              CPDFSDK_Annot* pAnnot,
                              CFX_RenderDevice* pDevice,
-                             CFX_Matrix* pUser2Device) {
+                             const CFX_Matrix& mtUser2Device) {
   ASSERT(pAnnot->GetPDFAnnot()->GetSubtype() == CPDF_Annot::Subtype::WIDGET);
 
   if (CPWL_Wnd* pWnd = GetPDFWindow(pPageView, false)) {
     CFX_Matrix mt = GetCurMatrix();
-    mt.Concat(*pUser2Device);
-    pWnd->DrawAppearance(pDevice, &mt);
+    mt.Concat(mtUser2Device);
+    pWnd->DrawAppearance(pDevice, mt);
     return;
   }
 
@@ -96,14 +96,14 @@ void CFFL_FormFiller::OnDraw(CPDFSDK_PageView* pPageView,
   if (!CFFL_InteractiveFormFiller::IsVisible(pWidget))
     return;
 
-  pWidget->DrawAppearance(pDevice, pUser2Device, CPDF_Annot::Normal, nullptr);
+  pWidget->DrawAppearance(pDevice, mtUser2Device, CPDF_Annot::Normal, nullptr);
 }
 
 void CFFL_FormFiller::OnDrawDeactive(CPDFSDK_PageView* pPageView,
                                      CPDFSDK_Annot* pAnnot,
                                      CFX_RenderDevice* pDevice,
-                                     CFX_Matrix* pUser2Device) {
-  CPDFSDKAnnotToWidget(pAnnot)->DrawAppearance(pDevice, pUser2Device,
+                                     const CFX_Matrix& mtUser2Device) {
+  CPDFSDKAnnotToWidget(pAnnot)->DrawAppearance(pDevice, mtUser2Device,
                                                CPDF_Annot::Normal, nullptr);
 }
 
@@ -243,6 +243,21 @@ CFX_WideString CFFL_FormFiller::GetSelectedText(CPDFSDK_Annot* pAnnot) {
 
   CPWL_Wnd* pWnd = GetPDFWindow(pPageView, false);
   return pWnd ? pWnd->GetSelectedText() : CFX_WideString();
+}
+
+void CFFL_FormFiller::ReplaceSelection(CPDFSDK_Annot* pAnnot,
+                                       const CFX_WideString& text) {
+  if (!IsValid())
+    return;
+
+  CPDFSDK_PageView* pPageView = GetCurPageView(true);
+  ASSERT(pPageView);
+
+  CPWL_Wnd* pWnd = GetPDFWindow(pPageView, false);
+  if (!pWnd)
+    return;
+
+  pWnd->ReplaceSelection(text);
 }
 
 void CFFL_FormFiller::SetFocusForAnnot(CPDFSDK_Annot* pAnnot, uint32_t nFlag) {
@@ -441,15 +456,11 @@ CFX_FloatRect CFFL_FormFiller::GetFocusBox(CPDFSDK_PageView* pPageView) {
 }
 
 CFX_FloatRect CFFL_FormFiller::FFLtoPWL(const CFX_FloatRect& rect) {
-  CFX_FloatRect temp = rect;
-  GetCurMatrix().GetInverse().TransformRect(temp);
-  return temp;
+  return GetCurMatrix().GetInverse().TransformRect(rect);
 }
 
 CFX_FloatRect CFFL_FormFiller::PWLtoFFL(const CFX_FloatRect& rect) {
-  CFX_FloatRect temp = rect;
-  GetCurMatrix().TransformRect(temp);
-  return temp;
+  return GetCurMatrix().TransformRect(rect);
 }
 
 CFX_PointF CFFL_FormFiller::FFLtoPWL(const CFX_PointF& point) {

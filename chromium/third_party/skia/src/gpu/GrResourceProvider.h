@@ -53,7 +53,9 @@ public:
     void assignUniqueKeyToProxy(const GrUniqueKey& key, GrTextureProxy*);
 
     /** Finds a texture by unique key. If the texture is found it is ref'ed and returned. */
-    sk_sp<GrTextureProxy> findProxyByUniqueKey(const GrUniqueKey& key);
+    // MDB TODO (caching): If this were actually caching proxies (rather than shallowly 
+    // wrapping GrSurface caching) we would not need the origin parameter.
+    sk_sp<GrTextureProxy> findProxyByUniqueKey(const GrUniqueKey& key, GrSurfaceOrigin);
 
     /**
      * Finds a texture that approximately matches the descriptor. Will be at least as large in width
@@ -85,7 +87,6 @@ public:
      * @return GrTexture object or NULL on failure.
      */
     sk_sp<GrTexture> wrapBackendTexture(const GrBackendTexture& tex,
-                                        GrSurfaceOrigin origin,
                                         GrWrapOwnership = kBorrow_GrWrapOwnership);
 
     /**
@@ -94,7 +95,6 @@ public:
      * to the texture.
      */
     sk_sp<GrTexture> wrapRenderableBackendTexture(const GrBackendTexture& tex,
-                                                  GrSurfaceOrigin origin,
                                                   int sampleCnt,
                                                   GrWrapOwnership = kBorrow_GrWrapOwnership);
 
@@ -107,7 +107,7 @@ public:
      *
      * @return GrRenderTarget object or NULL on failure.
      */
-    sk_sp<GrRenderTarget> wrapBackendRenderTarget(const GrBackendRenderTarget&, GrSurfaceOrigin);
+    sk_sp<GrRenderTarget> wrapBackendRenderTarget(const GrBackendRenderTarget&);
 
     static const uint32_t kMinScratchTextureSize;
 
@@ -149,6 +149,8 @@ public:
         }
         return this->createQuadIndexBuffer();
     }
+
+    static int QuadCountOfQuadBuffer();
 
     /**
      * Factories for GrPath and GrPathRange objects. It's an error to call these if path rendering
@@ -210,7 +212,6 @@ public:
       * @return GrRenderTarget object or NULL on failure.
       */
      sk_sp<GrRenderTarget> wrapBackendTextureAsRenderTarget(const GrBackendTexture&,
-                                                            GrSurfaceOrigin origin,
                                                             int sampleCnt);
 
     /**

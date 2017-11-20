@@ -38,13 +38,10 @@ declare_args() {
 
   # Enable this if the Opus version upon which WebRTC is built supports direct
   # encoding of 120 ms packets.
-  rtc_opus_support_120ms_ptime = false
+  rtc_opus_support_120ms_ptime = true
 
   # Enable this to let the Opus audio codec change complexity on the fly.
   rtc_opus_variable_complexity = false
-
-  # Disable to use absolute header paths for some libraries.
-  rtc_relative_path = true
 
   # Used to specify an external Jsoncpp include path when not compiling the
   # library that comes with WebRTC (i.e. rtc_build_json == 0).
@@ -79,7 +76,6 @@ declare_args() {
 
   # Disable these to not build components which can be externally provided.
   rtc_build_json = true
-  rtc_build_libjpeg = true
   rtc_build_libsrtp = true
   rtc_build_libvpx = true
   rtc_libvpx_build_vp9 = true
@@ -106,7 +102,14 @@ declare_args() {
   # See http://clang.llvm.org/docs/SanitizerCoverage.html .
   rtc_sanitize_coverage = ""
 
+  # Links a default implementation of task queues to targets
+  # that depend on the target rtc_task_queue. Set to false to
+  # use an external implementation.
+  rtc_link_task_queue_impl = true
+
   # Enable libevent task queues on platforms that support it.
+  # rtc_link_task_queue_impl must be set to true for this to
+  # have an effect.
   if (is_win || is_mac || is_ios || is_nacl) {
     rtc_enable_libevent = false
     rtc_build_libevent = false
@@ -273,8 +276,8 @@ template("rtc_test") {
       public_configs += invoker.public_configs
     }
     if (!build_with_chromium && is_android) {
-      android_manifest = "//webrtc/test/android/AndroidManifest.xml"
-      deps += [ "//webrtc/test:native_test_java" ]
+      android_manifest = webrtc_root + "test/android/AndroidManifest.xml"
+      deps += [ webrtc_root + "test:native_test_java" ]
     }
   }
 }
@@ -315,6 +318,7 @@ template("rtc_executable") {
       "//build/config:exe_and_shlib_deps",
     ]
     deps += invoker.deps
+
     public_configs = [ rtc_common_inherited_config ]
     if (defined(invoker.public_configs)) {
       public_configs += invoker.public_configs

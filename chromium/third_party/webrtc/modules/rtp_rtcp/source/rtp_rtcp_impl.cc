@@ -54,8 +54,7 @@ RTPExtensionType StringToRtpExtensionType(const std::string& extension) {
   return kRtpExtensionNone;
 }
 
-RtpRtcp::Configuration::Configuration()
-    : receive_statistics(NullObjectReceiveStatistics()) {}
+RtpRtcp::Configuration::Configuration() = default;
 
 RtpRtcp* RtpRtcp::CreateRtpRtcp(const RtpRtcp::Configuration& configuration) {
   if (configuration.clock) {
@@ -188,7 +187,7 @@ void ModuleRtpRtcpImpl::Process() {
       for (std::vector<RTCPReportBlock>::iterator it = receive_blocks.begin();
            it != receive_blocks.end(); ++it) {
         int64_t rtt = 0;
-        rtcp_receiver_.RTT(it->remoteSSRC, &rtt, NULL, NULL, NULL);
+        rtcp_receiver_.RTT(it->sender_ssrc, &rtt, NULL, NULL, NULL);
         max_rtt = (rtt > max_rtt) ? rtt : max_rtt;
       }
       // Report the rtt.
@@ -612,10 +611,6 @@ void ModuleRtpRtcpImpl::GetRtpPacketLossStats(
   }
 }
 
-int32_t ModuleRtpRtcpImpl::RemoteRTCPStat(RTCPSenderInfo* sender_info) {
-  return rtcp_receiver_.SenderInfoReceived(sender_info);
-}
-
 // Received RTCP report.
 int32_t ModuleRtpRtcpImpl::RemoteRTCPStat(
     std::vector<RTCPReportBlock>* receive_blocks) const {
@@ -775,11 +770,6 @@ int32_t ModuleRtpRtcpImpl::SendTelephoneEventOutband(
     const uint16_t time_ms,
     const uint8_t level) {
   return rtp_sender_->SendTelephoneEvent(key, time_ms, level);
-}
-
-int32_t ModuleRtpRtcpImpl::SetAudioPacketSize(
-    const uint16_t packet_size_samples) {
-  return audio_ ? 0 : -1;
 }
 
 int32_t ModuleRtpRtcpImpl::SetAudioLevel(

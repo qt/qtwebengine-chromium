@@ -6,6 +6,7 @@
 
 #include "core/fpdfdoc/cpdf_annotlist.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -26,7 +27,8 @@
 namespace {
 
 std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Annot* pAnnot,
-                                             CPDF_Document* pDocument) {
+                                             CPDF_Document* pDocument,
+                                             CPDF_Page* pPage) {
   CPDF_Dictionary* pParentDict = pAnnot->GetAnnotDict();
   if (!pParentDict)
     return nullptr;
@@ -48,7 +50,20 @@ std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Annot* pAnnot,
   CFX_FloatRect rect = pParentDict->GetRectFor("Rect");
   rect.Normalize();
   CFX_FloatRect popupRect(0, 0, 200, 200);
-  popupRect.Translate(rect.left, rect.bottom - popupRect.Height());
+  // Note that if the popup can set its own dimensions, then we will need to
+  // make sure that it isn't larger than the page size.
+  if (rect.left + popupRect.Width() > pPage->GetPageWidth() &&
+      rect.bottom - popupRect.Height() < 0) {
+    // If the annotation is on the bottom-right corner of the page, then place
+    // the popup above and to the left of the annotation.
+    popupRect.Translate(rect.right - popupRect.Width(), rect.top);
+  } else {
+    // Place the popup below and to the right of the annotation without getting
+    // clipped by page edges.
+    popupRect.Translate(
+        std::min(rect.left, pPage->GetPageWidth() - popupRect.Width()),
+        std::max(rect.bottom - popupRect.Height(), 0.f));
+  }
 
   pAnnotDict->SetRectFor("Rect", popupRect);
   pAnnotDict->SetNewFor<CPDF_Number>("F", 0);
@@ -70,7 +85,7 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
   if (!pAnnots)
     return;
 
-  CPDF_Dictionary* pRoot = m_pDocument->GetRoot();
+  const CPDF_Dictionary* pRoot = m_pDocument->GetRoot();
   CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
   bool bRegenerateAP = pAcroForm && pAcroForm->GetBooleanFor("NeedAppearances");
   for (size_t i = 0; i < pAnnots->GetCount(); ++i) {
@@ -94,7 +109,7 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
   size_t nAnnotListSize = m_AnnotList.size();
   for (size_t i = 0; i < nAnnotListSize; ++i) {
     std::unique_ptr<CPDF_Annot> pPopupAnnot(
-        CreatePopupAnnot(m_AnnotList[i].get(), m_pDocument));
+        CreatePopupAnnot(m_AnnotList[i].get(), m_pDocument, pPage));
     if (pPopupAnnot)
       m_AnnotList.push_back(std::move(pPopupAnnot));
   }
@@ -133,19 +148,18 @@ void CPDF_AnnotList::DisplayPass(CPDF_Page* pPage,
         continue;
       }
     }
-    CFX_FloatRect annot_rect_f = pAnnot->GetRect();
+
     CFX_Matrix matrix = *pMatrix;
     if (clip_rect) {
-      matrix.TransformRect(annot_rect_f);
-
-      FX_RECT annot_rect = annot_rect_f.GetOuterRect();
+      FX_RECT annot_rect =
+          matrix.TransformRect(pAnnot->GetRect()).GetOuterRect();
       annot_rect.Intersect(*clip_rect);
       if (annot_rect.IsEmpty())
         continue;
     }
     if (pContext) {
       pAnnot->DrawInContext(pPage, pContext, &matrix, CPDF_Annot::Normal);
-    } else if (!pAnnot->DrawAppearance(pPage, pDevice, &matrix,
+    } else if (!pAnnot->DrawAppearance(pPage, pDevice, matrix,
                                        CPDF_Annot::Normal, pOptions)) {
       pAnnot->DrawBorder(pDevice, &matrix, pOptions);
     }

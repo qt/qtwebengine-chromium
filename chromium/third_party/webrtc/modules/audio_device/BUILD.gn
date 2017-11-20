@@ -51,9 +51,9 @@ rtc_static_library("audio_device") {
   deps = [
     "..:module_api",
     "../..:webrtc_common",
-    "../../base:rtc_base_approved",
-    "../../base:rtc_task_queue",
     "../../common_audio",
+    "../../rtc_base:rtc_base_approved",
+    "../../rtc_base:rtc_task_queue",
     "../../system_wrappers",
     "../utility",
   ]
@@ -177,10 +177,10 @@ rtc_static_library("audio_device") {
       }
       if (is_ios) {
         public_deps = [
-          "../../base:gtest_prod",
-          "../../base:rtc_base",
-          "../../sdk:objc_audio",
-          "../../sdk:objc_common",
+          "../../rtc_base:gtest_prod",
+          "../../rtc_base:rtc_base",
+          "../../sdk:audio_objc",
+          "../../sdk:common_objc",
         ]
         sources += [
           "ios/audio_device_ios.h",
@@ -281,7 +281,7 @@ if (rtc_include_tests) {
     deps = [
       ":audio_device",
       ":mock_audio_device",
-      "../../base:rtc_base_approved",
+      "../../rtc_base:rtc_base_approved",
       "../../system_wrappers:system_wrappers",
       "../../test:test_support",
       "../utility:utility",
@@ -318,30 +318,6 @@ if (rtc_include_tests) {
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
-
-  if (!is_ios) {
-    # These tests do not work on ios, see
-    # https://bugs.chromium.org/p/webrtc/issues/detail?id=4755
-    rtc_executable("audio_device_tests") {
-      testonly = true
-      sources = [
-        "test/audio_device_test_api.cc",
-        "test/audio_device_test_defines.h",
-      ]
-      deps = [
-        ":audio_device",
-        "../..:webrtc_common",
-        "../../base:rtc_base_approved",
-        "../../system_wrappers",
-        "../../test:test_main",
-        "../../test:test_support",
-        "../rtp_rtcp",
-        "../utility",
-        "//testing/gtest",
-      ]
-      public_configs = [ ":audio_device_config" ]
-    }
-  }
 }
 
 if (!build_with_chromium && is_android) {
@@ -357,5 +333,8 @@ if (!build_with_chromium && is_android) {
     deps = [
       "../../rtc_base:base_java",
     ]
+
+    # TODO(sakal): Fix build hooks crbug.com/webrtc/8148
+    no_build_hooks = true
   }
 }

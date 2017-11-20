@@ -12,8 +12,8 @@
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fwl/cfwl_form.h"
 #include "xfa/fwl/cfwl_notedriver.h"
-#include "xfa/fxfa/app/cxfa_fwladapterwidgetmgr.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_fwladapterwidgetmgr.h"
 
 namespace {
 
@@ -419,7 +419,7 @@ void CFWL_WidgetMgr::OnProcessMessageToForm(CFWL_Message* pMessage) {
 
 void CFWL_WidgetMgr::OnDrawWidget(CFWL_Widget* pWidget,
                                   CXFA_Graphics* pGraphics,
-                                  const CFX_Matrix* pMatrix) {
+                                  const CFX_Matrix& matrix) {
   if (!pWidget || !pGraphics)
     return;
 
@@ -430,22 +430,24 @@ void CFWL_WidgetMgr::OnDrawWidget(CFWL_Widget* pWidget,
   if (IsFormDisabled()) {
 #endif  // _FX_OS_ == _FX_MACOSX_
 
-    pWidget->GetDelegate()->OnDrawWidget(pGraphics, pMatrix);
+    pWidget->GetDelegate()->OnDrawWidget(pGraphics, matrix);
     clipBounds = pGraphics->GetClipRect();
     clipCopy = clipBounds;
 
 #if _FX_OS_ == _FX_MACOSX_
   } else {
-    clipBounds = CFX_RectF(pMatrix->a, pMatrix->b, pMatrix->c, pMatrix->d);
-    const_cast<CFX_Matrix*>(pMatrix)->SetIdentity();  // FIXME: const cast.
-    pWidget->GetDelegate()->OnDrawWidget(pGraphics, pMatrix);
+    clipBounds = CFX_RectF(matrix.a, matrix.b, matrix.c, matrix.d);
+    // FIXME: const cast
+    CFX_Matrix* pMatrixHack = const_cast<CFX_Matrix*>(&matrix);
+    pMatrixHack->SetIdentity();
+    pWidget->GetDelegate()->OnDrawWidget(pGraphics, *pMatrixHack);
   }
 #endif  // _FX_OS_ == _FX_MACOSX_
 
   if (!IsFormDisabled())
     clipBounds.Intersect(pWidget->GetClientRect());
   if (!clipBounds.IsEmpty())
-    DrawChild(pWidget, clipBounds, pGraphics, pMatrix);
+    DrawChild(pWidget, clipBounds, pGraphics, &matrix);
 
   GetWidgetMgrItem(pWidget)->iRedrawCounter = 0;
   ResetRedrawCounts(pWidget);
@@ -492,7 +494,7 @@ void CFWL_WidgetMgr::DrawChild(CFWL_Widget* parent,
 
     if (IFWL_WidgetDelegate* pDelegate = child->GetDelegate()) {
       if (IsFormDisabled() || IsNeedRepaint(child, &widgetMatrix, rtClip))
-        pDelegate->OnDrawWidget(pGraphics, &widgetMatrix);
+        pDelegate->OnDrawWidget(pGraphics, widgetMatrix);
     }
     if (!bFormDisable)
       pGraphics->RestoreGraphState();
@@ -512,8 +514,8 @@ bool CFWL_WidgetMgr::IsNeedRepaint(CFWL_Widget* pWidget,
     return true;
   }
 
-  CFX_RectF rtWidget(0, 0, pWidget->GetWidgetRect().Size());
-  pMatrix->TransformRect(rtWidget);
+  CFX_RectF rtWidget =
+      pMatrix->TransformRect(CFX_RectF(0, 0, pWidget->GetWidgetRect().Size()));
   if (!rtWidget.IntersectWith(rtDirty))
     return false;
 
@@ -591,7 +593,7 @@ bool CFWL_WidgetMgr::IsNeedRepaint(CFWL_Widget* pWidget,
   if (repaintPoint > 0)
     return true;
 
-  pMatrix->TransformRect(rtChilds);
+  rtChilds = pMatrix->TransformRect(rtChilds);
   if (rtChilds.Contains(rtDirty) || rtChilds.Contains(rtWidget))
     return false;
   return true;

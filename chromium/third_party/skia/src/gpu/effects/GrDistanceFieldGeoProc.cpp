@@ -23,11 +23,12 @@
 class GrGLDistanceFieldA8TextGeoProc : public GrGLSLGeometryProcessor {
 public:
     GrGLDistanceFieldA8TextGeoProc()
-        : fViewMatrix(SkMatrix::InvalidMatrix())
-#ifdef SK_GAMMA_APPLY_TO_A8
-        , fDistanceAdjust(-1.0f)
-#endif
-        {}
+            : fViewMatrix(SkMatrix::InvalidMatrix())
+    #ifdef SK_GAMMA_APPLY_TO_A8
+            , fDistanceAdjust(-1.0f)
+    #endif
+            , fAtlasSize({0,0}) {
+    }
 
     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override{
         const GrDistanceFieldA8TextGeoProc& dfTexEffect =
@@ -41,6 +42,12 @@ public:
         // emit attributes
         varyingHandler->emitAttributes(dfTexEffect);
 
+        const char* atlasSizeInvName;
+        fAtlasSizeInvUniform = uniformHandler->addUniform(kVertex_GrShaderFlag,
+                                                          kVec2f_GrSLType,
+                                                          kHigh_GrSLPrecision,
+                                                          "AtlasSizeInv",
+                                                          &atlasSizeInvName);
 #ifdef SK_GAMMA_APPLY_TO_A8
         // adjust based on gamma
         const char* distanceAdjustUniName = nullptr;
@@ -54,12 +61,12 @@ public:
         varyingHandler->addPassThroughAttribute(dfTexEffect.inColor(), args.fOutputColor);
 
         // Setup position
-        this->setupPosition(vertBuilder,
-                            uniformHandler,
-                            gpArgs,
-                            dfTexEffect.inPosition()->fName,
-                            dfTexEffect.viewMatrix(),
-                            &fViewMatrixUniform);
+        this->writeOutputPosition(vertBuilder,
+                                  uniformHandler,
+                                  gpArgs,
+                                  dfTexEffect.inPosition()->fName,
+                                  dfTexEffect.viewMatrix(),
+                                  &fViewMatrixUniform);
 
         // emit transforms
         this->emitTransforms(vertBuilder,
@@ -70,8 +77,19 @@ public:
                              args.fFPCoordTransformHandler);
 
         // add varyings
-        GrGLSLVertToFrag recipScale(kFloat_GrSLType);
         GrGLSLVertToFrag uv(kVec2f_GrSLType);
+        varyingHandler->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
+        vertBuilder->codeAppendf("%s = float2(%s.x, %s.y) * %s;", uv.vsOut(),
+                                 dfTexEffect.inTextureCoords()->fName,
+                                 dfTexEffect.inTextureCoords()->fName,
+                                 atlasSizeInvName);
+
+        GrGLSLVertToFrag st(kVec2f_GrSLType);
+        varyingHandler->addVarying("IntTextureCoords", &st, kHigh_GrSLPrecision);
+        vertBuilder->codeAppendf("%s = float2(%s.x, %s.y);", st.vsOut(),
+                                 dfTexEffect.inTextureCoords()->fName,
+                                 dfTexEffect.inTextureCoords()->fName);
+
         bool isUniformScale = (dfTexEffect.getFlags() & kUniformScale_DistanceFieldEffectMask) ==
                               kUniformScale_DistanceFieldEffectMask;
         bool isSimilarity = SkToBool(dfTexEffect.getFlags() & kSimilarity_DistanceFieldEffectFlag);
@@ -79,29 +97,14 @@ public:
             SkToBool(dfTexEffect.getFlags() & kGammaCorrect_DistanceFieldEffectFlag);
         bool isAliased =
             SkToBool(dfTexEffect.getFlags() & kAliased_DistanceFieldEffectFlag);
-        varyingHandler->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
-        vertBuilder->codeAppendf("%s = %s;", uv.vsOut(), dfTexEffect.inTextureCoords()->fName);
-
-        // compute numbers to be hardcoded to convert texture coordinates from float to int
-        SkASSERT(dfTexEffect.numTextureSamplers() == 1);
-        GrTexture* atlas = dfTexEffect.textureSampler(0).peekTexture();
-        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
-
-        GrGLSLVertToFrag st(kVec2f_GrSLType);
-        varyingHandler->addVarying("IntTextureCoords", &st, kHigh_GrSLPrecision);
-        vertBuilder->codeAppendf("%s = vec2(%d, %d) * %s;", st.vsOut(),
-                                 atlas->width(), atlas->height(),
-                                 dfTexEffect.inTextureCoords()->fName);
 
         // Use highp to work around aliasing issues
-        fragBuilder->codeAppendf("highp vec2 uv = %s;\n", uv.fsIn());
+        fragBuilder->codeAppendf("highp float2 uv = %s;\n", uv.fsIn());
 
-        fragBuilder->codeAppend("\tfloat texColor = ");
-        fragBuilder->appendTextureLookup(args.fTexSamplers[0],
-                                         "uv",
-                                         kVec2f_GrSLType);
-        fragBuilder->codeAppend(".r;\n");
-        fragBuilder->codeAppend("\tfloat distance = "
+        fragBuilder->codeAppend("float texColor = ");
+        fragBuilder->appendTextureLookup(args.fTexSamplers[0], "uv", kVec2f_GrSLType);
+        fragBuilder->codeAppend(".r;");
+        fragBuilder->codeAppend("float distance = "
                        SK_DistanceFieldMultiplier "*(texColor - " SK_DistanceFieldThreshold ");");
 #ifdef SK_GAMMA_APPLY_TO_A8
         // adjust width based on gamma
@@ -141,19 +144,19 @@ public:
             // For general transforms, to determine the amount of correction we multiply a unit
             // vector pointing along the SDF gradient direction by the Jacobian of the st coords
             // (which is the inverse transform for this fragment) and take the length of the result.
-            fragBuilder->codeAppend("vec2 dist_grad = vec2(dFdx(distance), dFdy(distance));");
+            fragBuilder->codeAppend("float2 dist_grad = float2(dFdx(distance), dFdy(distance));");
             // the length of the gradient may be 0, so we need to check for this
             // this also compensates for the Adreno, which likes to drop tiles on division by 0
             fragBuilder->codeAppend("float dg_len2 = dot(dist_grad, dist_grad);");
             fragBuilder->codeAppend("if (dg_len2 < 0.0001) {");
-            fragBuilder->codeAppend("dist_grad = vec2(0.7071, 0.7071);");
+            fragBuilder->codeAppend("dist_grad = float2(0.7071, 0.7071);");
             fragBuilder->codeAppend("} else {");
             fragBuilder->codeAppend("dist_grad = dist_grad*inversesqrt(dg_len2);");
             fragBuilder->codeAppend("}");
 
-            fragBuilder->codeAppendf("vec2 Jdx = dFdx(%s);", st.fsIn());
-            fragBuilder->codeAppendf("vec2 Jdy = dFdy(%s);", st.fsIn());
-            fragBuilder->codeAppend("vec2 grad = vec2(dist_grad.x*Jdx.x + dist_grad.y*Jdy.x,");
+            fragBuilder->codeAppendf("float2 Jdx = dFdx(%s);", st.fsIn());
+            fragBuilder->codeAppendf("float2 Jdy = dFdy(%s);", st.fsIn());
+            fragBuilder->codeAppend("float2 grad = float2(dist_grad.x*Jdx.x + dist_grad.y*Jdy.x,");
             fragBuilder->codeAppend("                 dist_grad.x*Jdx.y + dist_grad.y*Jdy.y);");
 
             // this gives us a smooth step across approximately one fragment
@@ -172,20 +175,20 @@ public:
             fragBuilder->codeAppend("float val = smoothstep(-afwidth, afwidth, distance);");
         }
 
-        fragBuilder->codeAppendf("%s = vec4(val);", args.fOutputCoverage);
+        fragBuilder->codeAppendf("%s = float4(val);", args.fOutputCoverage);
     }
 
     void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& proc,
                  FPCoordTransformIter&& transformIter) override {
+        const GrDistanceFieldA8TextGeoProc& dfa8gp = proc.cast<GrDistanceFieldA8TextGeoProc>();
+
 #ifdef SK_GAMMA_APPLY_TO_A8
-        const GrDistanceFieldA8TextGeoProc& dfTexEffect = proc.cast<GrDistanceFieldA8TextGeoProc>();
-        float distanceAdjust = dfTexEffect.getDistanceAdjust();
+        float distanceAdjust = dfa8gp.getDistanceAdjust();
         if (distanceAdjust != fDistanceAdjust) {
-            pdman.set1f(fDistanceAdjustUni, distanceAdjust);
             fDistanceAdjust = distanceAdjust;
+            pdman.set1f(fDistanceAdjustUni, distanceAdjust);
         }
 #endif
-        const GrDistanceFieldA8TextGeoProc& dfa8gp = proc.cast<GrDistanceFieldA8TextGeoProc>();
 
         if (!dfa8gp.viewMatrix().isIdentity() && !fViewMatrix.cheapEqualTo(dfa8gp.viewMatrix())) {
             fViewMatrix = dfa8gp.viewMatrix();
@@ -193,6 +196,16 @@ public:
             GrGLSLGetMatrix<3>(viewMatrix, fViewMatrix);
             pdman.setMatrix3f(fViewMatrixUniform, viewMatrix);
         }
+
+        SkASSERT(dfa8gp.numTextureSamplers() == 1);
+        GrTexture* atlas = dfa8gp.textureSampler(0).peekTexture();
+        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
+
+        if (fAtlasSize.fWidth != atlas->width() || fAtlasSize.fHeight != atlas->height()) {
+            fAtlasSize.set(atlas->width(), atlas->height());
+            pdman.set2f(fAtlasSizeInvUniform, 1.0f / atlas->width(), 1.0f / atlas->height());
+        }
+
         this->setTransformDataHelper(SkMatrix::I(), pdman, &transformIter);
     }
 
@@ -203,14 +216,6 @@ public:
         uint32_t key = dfTexEffect.getFlags();
         key |= ComputePosKey(dfTexEffect.viewMatrix()) << 16;
         b->add32(key);
-
-        // Currently we hardcode numbers to convert atlas coordinates to normalized floating point
-        SkASSERT(gp.numTextureSamplers() == 1);
-        GrTextureProxy* atlas = gp.textureSampler(0).proxy();
-        if (atlas) {
-            b->add32(atlas->width());
-            b->add32(atlas->height());
-        }
     }
 
 private:
@@ -220,6 +225,8 @@ private:
     float         fDistanceAdjust;
     UniformHandle fDistanceAdjustUni;
 #endif
+    SkISize       fAtlasSize;
+    UniformHandle fAtlasSizeInvUniform;
 
     typedef GrGLSLGeometryProcessor INHERITED;
 };
@@ -249,7 +256,7 @@ GrDistanceFieldA8TextGeoProc::GrDistanceFieldA8TextGeoProc(GrColor color,
     fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType,
                                          kHigh_GrSLPrecision);
     fInColor = &this->addVertexAttrib("inColor", kVec4ub_GrVertexAttribType);
-    fInTextureCoords = &this->addVertexAttrib("inTextureCoords", kVec2us_GrVertexAttribType,
+    fInTextureCoords = &this->addVertexAttrib("inTextureCoords", kVec2us_uint_GrVertexAttribType,
                                               kHigh_GrSLPrecision);
     this->addTextureSampler(&fTextureSampler);
 }
@@ -308,8 +315,9 @@ sk_sp<GrGeometryProcessor> GrDistanceFieldA8TextGeoProc::TestCreate(GrProcessorT
 class GrGLDistanceFieldPathGeoProc : public GrGLSLGeometryProcessor {
 public:
     GrGLDistanceFieldPathGeoProc()
-        : fViewMatrix(SkMatrix::InvalidMatrix())
-        , fTextureSize(SkISize::Make(-1, -1)) {}
+            : fViewMatrix(SkMatrix::InvalidMatrix())
+            , fAtlasSize({0,0}) {
+    }
 
     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override{
         const GrDistanceFieldPathGeoProc& dfTexEffect = args.fGP.cast<GrDistanceFieldPathGeoProc>();
@@ -323,20 +331,36 @@ public:
         // emit attributes
         varyingHandler->emitAttributes(dfTexEffect);
 
-        GrGLSLVertToFrag v(kVec2f_GrSLType);
-        varyingHandler->addVarying("TextureCoords", &v, kHigh_GrSLPrecision);
+        const char* atlasSizeInvName;
+        fAtlasSizeInvUniform = uniformHandler->addUniform(kVertex_GrShaderFlag,
+                                                          kVec2f_GrSLType,
+                                                          kHigh_GrSLPrecision,
+                                                          "AtlasSizeInv",
+                                                          &atlasSizeInvName);
+
+        GrGLSLVertToFrag uv(kVec2f_GrSLType);
+        varyingHandler->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
+        vertBuilder->codeAppendf("%s = float2(%s.x, %s.y) * %s;", uv.vsOut(),
+                                 dfTexEffect.inTextureCoords()->fName,
+                                 dfTexEffect.inTextureCoords()->fName,
+                                 atlasSizeInvName);
+
+        GrGLSLVertToFrag st(kVec2f_GrSLType);
+        varyingHandler->addVarying("IntTextureCoords", &st, kHigh_GrSLPrecision);
+        vertBuilder->codeAppendf("%s = float2(%s.x, %s.y);", st.vsOut(),
+                                 dfTexEffect.inTextureCoords()->fName,
+                                 dfTexEffect.inTextureCoords()->fName);
 
         // setup pass through color
         varyingHandler->addPassThroughAttribute(dfTexEffect.inColor(), args.fOutputColor);
-        vertBuilder->codeAppendf("%s = %s;", v.vsOut(), dfTexEffect.inTextureCoords()->fName);
 
         // Setup position
-        this->setupPosition(vertBuilder,
-                            uniformHandler,
-                            gpArgs,
-                            dfTexEffect.inPosition()->fName,
-                            dfTexEffect.viewMatrix(),
-                            &fViewMatrixUniform);
+        this->writeOutputPosition(vertBuilder,
+                                  uniformHandler,
+                                  gpArgs,
+                                  dfTexEffect.inPosition()->fName,
+                                  dfTexEffect.viewMatrix(),
+                                  &fViewMatrixUniform);
 
         // emit transforms
         this->emitTransforms(vertBuilder,
@@ -346,23 +370,15 @@ public:
                              dfTexEffect.inPosition()->fName,
                              args.fFPCoordTransformHandler);
 
-        const char* textureSizeUniName = nullptr;
-        fTextureSizeUni = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                                     kVec2f_GrSLType, kDefault_GrSLPrecision,
-                                                     "TextureSize", &textureSizeUniName);
-
         // Use highp to work around aliasing issues
-        fragBuilder->codeAppendf("highp vec2 uv = %s;", v.fsIn());
+        fragBuilder->codeAppendf("highp float2 uv = %s;", uv.fsIn());
 
         fragBuilder->codeAppend("float texColor = ");
-        fragBuilder->appendTextureLookup(args.fTexSamplers[0],
-                                         "uv",
-                                         kVec2f_GrSLType);
+        fragBuilder->appendTextureLookup(args.fTexSamplers[0], "uv", kVec2f_GrSLType);
         fragBuilder->codeAppend(".r;");
         fragBuilder->codeAppend("float distance = "
             SK_DistanceFieldMultiplier "*(texColor - " SK_DistanceFieldThreshold ");");
 
-        fragBuilder->codeAppendf("highp vec2 st = uv*%s;", textureSizeUniName);
         fragBuilder->codeAppend("float afwidth;");
         bool isUniformScale = (dfTexEffect.getFlags() & kUniformScale_DistanceFieldEffectMask) ==
                                kUniformScale_DistanceFieldEffectMask;
@@ -376,10 +392,12 @@ public:
 
             // this gives us a smooth step across approximately one fragment
 #ifdef SK_VULKAN
-            fragBuilder->codeAppend("afwidth = abs(" SK_DistanceFieldAAFactor "*dFdx(st.x));");
+            fragBuilder->codeAppendf("afwidth = abs(" SK_DistanceFieldAAFactor "*dFdx(%s.x));",
+                                     st.fsIn());
 #else
             // We use the y gradient because there is a bug in the Mali 400 in the x direction.
-            fragBuilder->codeAppend("afwidth = abs(" SK_DistanceFieldAAFactor "*dFdy(st.y));");
+            fragBuilder->codeAppendf("afwidth = abs(" SK_DistanceFieldAAFactor "*dFdy(%s.y));",
+                                     st.fsIn());
 #endif
         } else if (isSimilarity) {
             // For similarity transform, we adjust the effect of the transformation on the distance
@@ -388,29 +406,29 @@ public:
 
             // this gives us a smooth step across approximately one fragment
 #ifdef SK_VULKAN
-            fragBuilder->codeAppend("float st_grad_len = length(dFdx(st));");
+            fragBuilder->codeAppendf("float st_grad_len = length(dFdx(%s));", st.fsIn());
 #else
             // We use the y gradient because there is a bug in the Mali 400 in the x direction.
-            fragBuilder->codeAppend("float st_grad_len = length(dFdy(st));");
+            fragBuilder->codeAppendf("float st_grad_len = length(dFdy(%s));", st.fsIn());
 #endif
             fragBuilder->codeAppend("afwidth = abs(" SK_DistanceFieldAAFactor "*st_grad_len);");
         } else {
             // For general transforms, to determine the amount of correction we multiply a unit
             // vector pointing along the SDF gradient direction by the Jacobian of the st coords
             // (which is the inverse transform for this fragment) and take the length of the result.
-            fragBuilder->codeAppend("vec2 dist_grad = vec2(dFdx(distance), dFdy(distance));");
+            fragBuilder->codeAppend("float2 dist_grad = float2(dFdx(distance), dFdy(distance));");
             // the length of the gradient may be 0, so we need to check for this
             // this also compensates for the Adreno, which likes to drop tiles on division by 0
             fragBuilder->codeAppend("float dg_len2 = dot(dist_grad, dist_grad);");
             fragBuilder->codeAppend("if (dg_len2 < 0.0001) {");
-            fragBuilder->codeAppend("dist_grad = vec2(0.7071, 0.7071);");
+            fragBuilder->codeAppend("dist_grad = float2(0.7071, 0.7071);");
             fragBuilder->codeAppend("} else {");
             fragBuilder->codeAppend("dist_grad = dist_grad*inversesqrt(dg_len2);");
             fragBuilder->codeAppend("}");
 
-            fragBuilder->codeAppend("vec2 Jdx = dFdx(st);");
-            fragBuilder->codeAppend("vec2 Jdy = dFdy(st);");
-            fragBuilder->codeAppend("vec2 grad = vec2(dist_grad.x*Jdx.x + dist_grad.y*Jdy.x,");
+            fragBuilder->codeAppendf("float2 Jdx = dFdx(%s);", st.fsIn());
+            fragBuilder->codeAppendf("float2 Jdy = dFdy(%s);", st.fsIn());
+            fragBuilder->codeAppend("float2 grad = float2(dist_grad.x*Jdx.x + dist_grad.y*Jdy.x,");
             fragBuilder->codeAppend("                 dist_grad.x*Jdx.y + dist_grad.y*Jdy.y);");
 
             // this gives us a smooth step across approximately one fragment
@@ -426,22 +444,11 @@ public:
             fragBuilder->codeAppend("float val = smoothstep(-afwidth, afwidth, distance);");
         }
 
-        fragBuilder->codeAppendf("%s = vec4(val);", args.fOutputCoverage);
+        fragBuilder->codeAppendf("%s = float4(val);", args.fOutputCoverage);
     }
 
     void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& proc,
                  FPCoordTransformIter&& transformIter) override {
-        SkASSERT(fTextureSizeUni.isValid());
-
-        GrTexture* texture = proc.textureSampler(0).peekTexture();
-
-        if (texture->width() != fTextureSize.width() ||
-            texture->height() != fTextureSize.height()) {
-            fTextureSize = SkISize::Make(texture->width(), texture->height());
-            pdman.set2f(fTextureSizeUni,
-                        SkIntToScalar(fTextureSize.width()),
-                        SkIntToScalar(fTextureSize.height()));
-        }
 
         const GrDistanceFieldPathGeoProc& dfpgp = proc.cast<GrDistanceFieldPathGeoProc>();
 
@@ -451,6 +458,16 @@ public:
             GrGLSLGetMatrix<3>(viewMatrix, fViewMatrix);
             pdman.setMatrix3f(fViewMatrixUniform, viewMatrix);
         }
+
+        SkASSERT(dfpgp.numTextureSamplers() == 1);
+        GrTexture* atlas = dfpgp.textureSampler(0).peekTexture();
+        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
+
+        if (fAtlasSize.fWidth != atlas->width() || fAtlasSize.fHeight != atlas->height()) {
+            fAtlasSize.set(atlas->width(), atlas->height());
+            pdman.set2f(fAtlasSizeInvUniform, 1.0f / atlas->width(), 1.0f / atlas->height());
+        }
+
         this->setTransformDataHelper(SkMatrix::I(), pdman, &transformIter);
     }
 
@@ -465,10 +482,11 @@ public:
     }
 
 private:
-    UniformHandle fTextureSizeUni;
-    UniformHandle fViewMatrixUniform;
     SkMatrix      fViewMatrix;
-    SkISize       fTextureSize;
+    UniformHandle fViewMatrixUniform;
+
+    SkISize       fAtlasSize;
+    UniformHandle fAtlasSizeInvUniform;
 
     typedef GrGLSLGeometryProcessor INHERITED;
 };
@@ -491,7 +509,8 @@ GrDistanceFieldPathGeoProc::GrDistanceFieldPathGeoProc(GrColor color,
     fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType,
                                          kHigh_GrSLPrecision);
     fInColor = &this->addVertexAttrib("inColor", kVec4ub_GrVertexAttribType);
-    fInTextureCoords = &this->addVertexAttrib("inTextureCoords", kVec2us_GrVertexAttribType);
+    fInTextureCoords = &this->addVertexAttrib("inTextureCoords", kVec2us_uint_GrVertexAttribType,
+                                              kHigh_GrSLPrecision);
     this->addTextureSampler(&fTextureSampler);
 }
 
@@ -547,7 +566,8 @@ sk_sp<GrGeometryProcessor> GrDistanceFieldPathGeoProc::TestCreate(GrProcessorTes
 class GrGLDistanceFieldLCDTextGeoProc : public GrGLSLGeometryProcessor {
 public:
     GrGLDistanceFieldLCDTextGeoProc()
-        : fViewMatrix(SkMatrix::InvalidMatrix()) {
+            : fViewMatrix(SkMatrix::InvalidMatrix())
+            , fAtlasSize({0,0}) {
         fDistanceAdjust = GrDistanceFieldLCDTextGeoProc::DistanceAdjust::Make(1.0f, 1.0f, 1.0f);
     }
 
@@ -562,18 +582,25 @@ public:
         // emit attributes
         varyingHandler->emitAttributes(dfTexEffect);
 
+        const char* atlasSizeInvName;
+        fAtlasSizeInvUniform = uniformHandler->addUniform(kVertex_GrShaderFlag,
+                                                          kVec2f_GrSLType,
+                                                          kHigh_GrSLPrecision,
+                                                          "AtlasSizeInv",
+                                                          &atlasSizeInvName);
+
         GrGLSLPPFragmentBuilder* fragBuilder = args.fFragBuilder;
 
         // setup pass through color
         varyingHandler->addPassThroughAttribute(dfTexEffect.inColor(), args.fOutputColor);
 
         // Setup position
-        this->setupPosition(vertBuilder,
-                            uniformHandler,
-                            gpArgs,
-                            dfTexEffect.inPosition()->fName,
-                            dfTexEffect.viewMatrix(),
-                            &fViewMatrixUniform);
+        this->writeOutputPosition(vertBuilder,
+                                  uniformHandler,
+                                  gpArgs,
+                                  dfTexEffect.inPosition()->fName,
+                                  dfTexEffect.viewMatrix(),
+                                  &fViewMatrixUniform);
 
         // emit transforms
         this->emitTransforms(vertBuilder,
@@ -584,39 +611,38 @@ public:
                              args.fFPCoordTransformHandler);
 
         // set up varyings
+        GrGLSLVertToFrag uv(kVec2f_GrSLType);
+        varyingHandler->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
+        vertBuilder->codeAppendf("%s = float2(%s.x, %s.y) * %s;", uv.vsOut(),
+                                 dfTexEffect.inTextureCoords()->fName,
+                                 dfTexEffect.inTextureCoords()->fName,
+                                 atlasSizeInvName);
+
+        GrGLSLVertToFrag st(kVec2f_GrSLType);
+        varyingHandler->addVarying("IntTextureCoords", &st, kHigh_GrSLPrecision);
+        vertBuilder->codeAppendf("%s = float2(%s.x, %s.y);", st.vsOut(),
+                                 dfTexEffect.inTextureCoords()->fName,
+                                 dfTexEffect.inTextureCoords()->fName);
+
+        GrGLSLVertToFrag delta(kFloat_GrSLType);
+        varyingHandler->addVarying("Delta", &delta, kHigh_GrSLPrecision);
+        if (dfTexEffect.getFlags() & kBGR_DistanceFieldEffectFlag) {
+            vertBuilder->codeAppendf("%s = -%s.x/3.0;", delta.vsOut(), atlasSizeInvName);
+        } else {
+            vertBuilder->codeAppendf("%s = %s.x/3.0;", delta.vsOut(), atlasSizeInvName);
+        }
+
+        // add frag shader code
         bool isUniformScale = (dfTexEffect.getFlags() & kUniformScale_DistanceFieldEffectMask) ==
                               kUniformScale_DistanceFieldEffectMask;
         bool isSimilarity = SkToBool(dfTexEffect.getFlags() & kSimilarity_DistanceFieldEffectFlag);
         bool isGammaCorrect =
             SkToBool(dfTexEffect.getFlags() & kGammaCorrect_DistanceFieldEffectFlag);
-        GrGLSLVertToFrag recipScale(kFloat_GrSLType);
-        GrGLSLVertToFrag uv(kVec2f_GrSLType);
-        varyingHandler->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
-        vertBuilder->codeAppendf("%s = %s;", uv.vsOut(), dfTexEffect.inTextureCoords()->fName);
-
-        // compute numbers to be hardcoded to convert texture coordinates from float to int
-        SkASSERT(dfTexEffect.numTextureSamplers() == 1);
-        GrTexture* atlas = dfTexEffect.textureSampler(0).peekTexture();
-        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
-
-        GrGLSLVertToFrag st(kVec2f_GrSLType);
-        varyingHandler->addVarying("IntTextureCoords", &st, kHigh_GrSLPrecision);
-        vertBuilder->codeAppendf("%s = vec2(%d, %d) * %s;", st.vsOut(),
-                                 atlas->width(), atlas->height(),
-                                 dfTexEffect.inTextureCoords()->fName);
-
-        // add frag shader code
 
         // create LCD offset adjusted by inverse of transform
         // Use highp to work around aliasing issues
-        fragBuilder->codeAppendf("highp vec2 uv = %s;\n", uv.fsIn());
+        fragBuilder->codeAppendf("highp float2 uv = %s;\n", uv.fsIn());
 
-        SkScalar lcdDelta = 1.0f / (3.0f * atlas->width());
-        if (dfTexEffect.getFlags() & kBGR_DistanceFieldEffectFlag) {
-            fragBuilder->codeAppendf("highp float delta = -%.*f;\n", SK_FLT_DECIMAL_DIG, lcdDelta);
-        } else {
-            fragBuilder->codeAppendf("highp float delta = %.*f;\n", SK_FLT_DECIMAL_DIG, lcdDelta);
-        }
         if (isUniformScale) {
 #ifdef SK_VULKAN
             fragBuilder->codeAppendf("float st_grad_len = abs(dFdx(%s.x));", st.fsIn());
@@ -624,36 +650,37 @@ public:
             // We use the y gradient because there is a bug in the Mali 400 in the x direction.
             fragBuilder->codeAppendf("float st_grad_len = abs(dFdy(%s.y));", st.fsIn());
 #endif
-            fragBuilder->codeAppend("vec2 offset = vec2(st_grad_len*delta, 0.0);");
+            fragBuilder->codeAppendf("float2 offset = float2(st_grad_len*%s, 0.0);", delta.fsIn());
         } else if (isSimilarity) {
             // For a similarity matrix with rotation, the gradient will not be aligned
             // with the texel coordinate axes, so we need to calculate it.
 #ifdef SK_VULKAN
-            fragBuilder->codeAppendf("vec2 st_grad = dFdx(%s);", st.fsIn());
-            fragBuilder->codeAppend("vec2 offset = delta*st_grad;");
+            fragBuilder->codeAppendf("float2 st_grad = dFdx(%s);", st.fsIn());
+            fragBuilder->codeAppendf("float2 offset = %s*st_grad;", delta.fsIn());
 #else
             // We use dFdy because of a Mali 400 bug, and rotate -90 degrees to
             // get the gradient in the x direction.
-            fragBuilder->codeAppendf("vec2 st_grad = dFdy(%s);", st.fsIn());
-            fragBuilder->codeAppend("vec2 offset = delta*vec2(st_grad.y, -st_grad.x);");
+            fragBuilder->codeAppendf("float2 st_grad = dFdy(%s);", st.fsIn());
+            fragBuilder->codeAppendf("float2 offset = %s*float2(st_grad.y, -st_grad.x);",
+                                     delta.fsIn());
 #endif
             fragBuilder->codeAppend("float st_grad_len = length(st_grad);");
         } else {
-            fragBuilder->codeAppendf("vec2 st = %s;\n", st.fsIn());
+            fragBuilder->codeAppendf("float2 st = %s;\n", st.fsIn());
 
-            fragBuilder->codeAppend("vec2 Jdx = dFdx(st);");
-            fragBuilder->codeAppend("vec2 Jdy = dFdy(st);");
-            fragBuilder->codeAppend("vec2 offset = delta*Jdx;");
+            fragBuilder->codeAppend("float2 Jdx = dFdx(st);");
+            fragBuilder->codeAppend("float2 Jdy = dFdy(st);");
+            fragBuilder->codeAppendf("float2 offset = %s*Jdx;", delta.fsIn());
         }
 
         // green is distance to uv center
-        fragBuilder->codeAppend("\tvec4 texColor = ");
+        fragBuilder->codeAppend("\tfloat4 texColor = ");
         fragBuilder->appendTextureLookup(args.fTexSamplers[0], "uv", kVec2f_GrSLType);
         fragBuilder->codeAppend(";\n");
-        fragBuilder->codeAppend("\tvec3 distance;\n");
+        fragBuilder->codeAppend("\tfloat3 distance;\n");
         fragBuilder->codeAppend("\tdistance.y = texColor.r;\n");
         // red is distance to left offset
-        fragBuilder->codeAppend("\tvec2 uv_adjusted = uv - offset;\n");
+        fragBuilder->codeAppend("\tfloat2 uv_adjusted = uv - offset;\n");
         fragBuilder->codeAppend("\ttexColor = ");
         fragBuilder->appendTextureLookup(args.fTexSamplers[0], "uv_adjusted", kVec2f_GrSLType);
         fragBuilder->codeAppend(";\n");
@@ -666,7 +693,7 @@ public:
         fragBuilder->codeAppend("\tdistance.z = texColor.r;\n");
 
         fragBuilder->codeAppend("\tdistance = "
-           "vec3(" SK_DistanceFieldMultiplier ")*(distance - vec3(" SK_DistanceFieldThreshold"));");
+           "float3(" SK_DistanceFieldMultiplier ")*(distance - float3(" SK_DistanceFieldThreshold"));");
 
         // adjust width based on gamma
         const char* distanceAdjustUniName = nullptr;
@@ -692,16 +719,16 @@ public:
             // For general transforms, to determine the amount of correction we multiply a unit
             // vector pointing along the SDF gradient direction by the Jacobian of the st coords
             // (which is the inverse transform for this fragment) and take the length of the result.
-            fragBuilder->codeAppend("vec2 dist_grad = vec2(dFdx(distance.r), dFdy(distance.r));");
+            fragBuilder->codeAppend("float2 dist_grad = float2(dFdx(distance.r), dFdy(distance.r));");
             // the length of the gradient may be 0, so we need to check for this
             // this also compensates for the Adreno, which likes to drop tiles on division by 0
             fragBuilder->codeAppend("float dg_len2 = dot(dist_grad, dist_grad);");
             fragBuilder->codeAppend("if (dg_len2 < 0.0001) {");
-            fragBuilder->codeAppend("dist_grad = vec2(0.7071, 0.7071);");
+            fragBuilder->codeAppend("dist_grad = float2(0.7071, 0.7071);");
             fragBuilder->codeAppend("} else {");
             fragBuilder->codeAppend("dist_grad = dist_grad*inversesqrt(dg_len2);");
             fragBuilder->codeAppend("}");
-            fragBuilder->codeAppend("vec2 grad = vec2(dist_grad.x*Jdx.x + dist_grad.y*Jdy.x,");
+            fragBuilder->codeAppend("float2 grad = float2(dist_grad.x*Jdx.x + dist_grad.y*Jdy.x,");
             fragBuilder->codeAppend("                 dist_grad.x*Jdx.y + dist_grad.y*Jdy.y);");
 
             // this gives us a smooth step across approximately one fragment
@@ -713,11 +740,11 @@ public:
         // mapped linearly to coverage, so use a linear step:
         if (isGammaCorrect) {
             fragBuilder->codeAppendf("%s = "
-                "vec4(clamp((distance + vec3(afwidth)) / vec3(2.0 * afwidth), 0.0, 1.0), 1.0);",
+                "float4(clamp((distance + float3(afwidth)) / float3(2.0 * afwidth), 0.0, 1.0), 1.0);",
                 args.fOutputCoverage);
         } else {
             fragBuilder->codeAppendf(
-                "%s = vec4(smoothstep(vec3(-afwidth), vec3(afwidth), distance), 1.0);",
+                "%s = float4(smoothstep(float3(-afwidth), float3(afwidth), distance), 1.0);",
                 args.fOutputCoverage);
         }
     }
@@ -742,6 +769,16 @@ public:
             GrGLSLGetMatrix<3>(viewMatrix, fViewMatrix);
             pdman.setMatrix3f(fViewMatrixUniform, viewMatrix);
         }
+
+        SkASSERT(dflcd.numTextureSamplers() == 1);
+        GrTexture* atlas = dflcd.textureSampler(0).peekTexture();
+        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
+
+        if (fAtlasSize.fWidth != atlas->width() || fAtlasSize.fHeight != atlas->height()) {
+            fAtlasSize.set(atlas->width(), atlas->height());
+            pdman.set2f(fAtlasSizeInvUniform, 1.0f / atlas->width(), 1.0f / atlas->height());
+        }
+
         this->setTransformDataHelper(SkMatrix::I(), pdman, &transformIter);
     }
 
@@ -753,22 +790,17 @@ public:
         uint32_t key = dfTexEffect.getFlags();
         key |= ComputePosKey(dfTexEffect.viewMatrix()) << 16;
         b->add32(key);
-
-        // Currently we hardcode numbers to convert atlas coordinates to normalized floating point
-        SkASSERT(gp.numTextureSamplers() == 1);
-        GrTextureProxy* atlas = gp.textureSampler(0).proxy();
-        if (atlas) {
-            b->add32(atlas->width());
-            b->add32(atlas->height());
-        }
     }
 
 private:
-    SkMatrix                                     fViewMatrix;
-    UniformHandle                                fViewMatrixUniform;
-    UniformHandle                                fColorUniform;
+    SkMatrix                                      fViewMatrix;
+    UniformHandle                                 fViewMatrixUniform;
+
     GrDistanceFieldLCDTextGeoProc::DistanceAdjust fDistanceAdjust;
-    UniformHandle                                fDistanceAdjustUni;
+    UniformHandle                                 fDistanceAdjustUni;
+
+    SkISize                                       fAtlasSize;
+    UniformHandle                                 fAtlasSizeInvUniform;
 
     typedef GrGLSLGeometryProcessor INHERITED;
 };
@@ -791,7 +823,7 @@ GrDistanceFieldLCDTextGeoProc::GrDistanceFieldLCDTextGeoProc(
     fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType,
                                          kHigh_GrSLPrecision);
     fInColor = &this->addVertexAttrib("inColor", kVec4ub_GrVertexAttribType);
-    fInTextureCoords = &this->addVertexAttrib("inTextureCoords", kVec2us_GrVertexAttribType,
+    fInTextureCoords = &this->addVertexAttrib("inTextureCoords", kVec2us_uint_GrVertexAttribType,
                                               kHigh_GrSLPrecision);
     this->addTextureSampler(&fTextureSampler);
 }

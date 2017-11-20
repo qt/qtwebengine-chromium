@@ -7,6 +7,7 @@
 
 #include "GrCCPRCoverageProcessor.h"
 
+#include "GrRenderTargetProxy.h"
 #include "ccpr/GrCCPRTriangleProcessor.h"
 #include "ccpr/GrCCPRQuadraticProcessor.h"
 #include "ccpr/GrCCPRCubicProcessor.h"
@@ -27,8 +28,8 @@ const char* GrCCPRCoverageProcessor::GetProcessorName(Mode mode) {
             return "GrCCPRTriangleCornerProcessor";
         case Mode::kQuadraticHulls:
             return "GrCCPRQuadraticHullProcessor";
-        case Mode::kQuadraticFlatEdges:
-            return "GrCCPRQuadraticSharedEdgeProcessor";
+        case Mode::kQuadraticCorners:
+            return "GrCCPRQuadraticCornerProcessor";
         case Mode::kSerpentineInsets:
             return "GrCCPRCubicInsetProcessor (serpentine)";
         case Mode::kSerpentineBorders:
@@ -38,7 +39,7 @@ const char* GrCCPRCoverageProcessor::GetProcessorName(Mode mode) {
         case Mode::kLoopBorders:
             return "GrCCPRCubicBorderProcessor (loop)";
     }
-    SkFAIL("Unexpected ccpr coverage processor mode.");
+    SK_ABORT("Unexpected ccpr coverage processor mode.");
     return nullptr;
 }
 
@@ -73,8 +74,8 @@ GrGLSLPrimitiveProcessor* GrCCPRCoverageProcessor::createGLSLInstance(const GrSh
             return new GrCCPRTriangleCornerProcessor();
         case Mode::kQuadraticHulls:
             return new GrCCPRQuadraticHullProcessor();
-        case Mode::kQuadraticFlatEdges:
-            return new GrCCPRQuadraticSharedEdgeProcessor();
+        case Mode::kQuadraticCorners:
+            return new GrCCPRQuadraticCornerProcessor();
         case Mode::kSerpentineInsets:
             return new GrCCPRCubicInsetProcessor(GrCCPRCubicProcessor::Type::kSerpentine);
         case Mode::kSerpentineBorders:
@@ -84,7 +85,7 @@ GrGLSLPrimitiveProcessor* GrCCPRCoverageProcessor::createGLSLInstance(const GrSh
         case Mode::kLoopBorders:
             return new GrCCPRCubicBorderProcessor(GrCCPRCubicProcessor::Type::kLoop);
     }
-    SkFAIL("Unexpected ccpr coverage processor mode.");
+    SK_ABORT("Unexpected ccpr coverage processor mode.");
     return nullptr;
 }
 
@@ -121,7 +122,8 @@ void PrimitiveProcessor::emitVertexShader(const GrCCPRCoverageProcessor& proc,
                                           const TexelBufferHandle& pointsBuffer,
                                           const char* rtAdjust, GrGPArgs* gpArgs) const {
     v->codeAppendf("int packedoffset = %s.w;", proc.instanceAttrib());
-    v->codeAppend ("highp vec2 atlasoffset = vec2((packedoffset<<16) >> 16, packedoffset >> 16);");
+    v->codeAppend ("highp float2 atlasoffset = float2((packedoffset<<16) >> 16, "
+                                                     "packedoffset >> 16);");
 
     this->onEmitVertexShader(proc, v, pointsBuffer, "atlasoffset", rtAdjust, gpArgs);
 }
@@ -149,12 +151,12 @@ void PrimitiveProcessor::emitGeometryShader(const GrCCPRCoverageProcessor& proc,
             fnBody.appendf("%s = %s * %s;",
                            fFragCoverageTimesWind.gsOut(), coverage, fGeomWind.c_str());
         }
-        fnBody.append ("gl_Position = vec4(position, 0, 1);");
+        fnBody.append ("gl_Position = float4(position, 0, 1);");
         fnBody.append ("EmitVertex();");
         return fnBody;
     }().c_str(), &emitVertexFn);
 
-    g->codeAppendf("highp vec2 bloat = %f * abs(%s.xz);", kAABloatRadius, rtAdjust);
+    g->codeAppendf("highp float2 bloat = %f * abs(%s.xz);", kAABloatRadius, rtAdjust);
 
 #ifdef SK_DEBUG
     if (proc.debugVisualizations()) {
@@ -171,7 +173,7 @@ int PrimitiveProcessor::emitHullGeometry(GrGLSLGeometryBuilder* g, const char* e
     SkASSERT(numSides >= 3);
 
     if (!insetPts) {
-        g->codeAppendf("highp vec2 centroidpt = %s * vec%i(%f);",
+        g->codeAppendf("highp float2 centroidpt = %s * float%i(%f);",
                        polygonPts, numSides, 1.0 / numSides);
     }
 
@@ -179,44 +181,44 @@ int PrimitiveProcessor::emitHullGeometry(GrGLSLGeometryBuilder* g, const char* e
                        "nextidx = (%s + 1) %% %i;",
                    wedgeIdx, numSides - 1, numSides, wedgeIdx, numSides);
 
-    g->codeAppendf("highp vec2 self = %s[%s];"
+    g->codeAppendf("highp float2 self = %s[%s];"
                    "highp int leftidx = %s > 0 ? previdx : nextidx;"
                    "highp int rightidx = %s > 0 ? nextidx : previdx;",
                    polygonPts, wedgeIdx, fGeomWind.c_str(), fGeomWind.c_str());
 
     // Which quadrant does the vector from self -> right fall into?
-    g->codeAppendf("highp vec2 right = %s[rightidx];", polygonPts);
+    g->codeAppendf("highp float2 right = %s[rightidx];", polygonPts);
     if (3 == numSides) {
         // TODO: evaluate perf gains.
-        g->codeAppend ("highp vec2 qsr = sign(right - self);");
+        g->codeAppend ("highp float2 qsr = sign(right - self);");
     } else {
         SkASSERT(4 == numSides);
-        g->codeAppendf("highp vec2 diag = %s[(%s + 2) %% 4];", polygonPts, wedgeIdx);
-        g->codeAppend ("highp vec2 qsr = sign((right != self ? right : diag) - self);");
+        g->codeAppendf("highp float2 diag = %s[(%s + 2) %% 4];", polygonPts, wedgeIdx);
+        g->codeAppend ("highp float2 qsr = sign((right != self ? right : diag) - self);");
     }
 
     // Which quadrant does the vector from left -> self fall into?
-    g->codeAppendf("highp vec2 qls = sign(self - %s[leftidx]);", polygonPts);
+    g->codeAppendf("highp float2 qls = sign(self - %s[leftidx]);", polygonPts);
 
     // d2 just helps us reduce triangle counts with orthogonal, axis-aligned lines.
     // TODO: evaluate perf gains.
     const char* dr2 = "dr";
     if (3 == numSides) {
         // TODO: evaluate perf gains.
-        g->codeAppend ("highp vec2 dr = vec2(qsr.y != 0 ? +qsr.y : +qsr.x, "
+        g->codeAppend ("highp float2 dr = float2(qsr.y != 0 ? +qsr.y : +qsr.x, "
                                             "qsr.x != 0 ? -qsr.x : +qsr.y);");
-        g->codeAppend ("highp vec2 dr2 = vec2(qsr.y != 0 ? +qsr.y : -qsr.x, "
+        g->codeAppend ("highp float2 dr2 = float2(qsr.y != 0 ? +qsr.y : -qsr.x, "
                                              "qsr.x != 0 ? -qsr.x : -qsr.y);");
-        g->codeAppend ("highp vec2 dl = vec2(qls.y != 0 ? +qls.y : +qls.x, "
+        g->codeAppend ("highp float2 dl = float2(qls.y != 0 ? +qls.y : +qls.x, "
                                             "qls.x != 0 ? -qls.x : +qls.y);");
         dr2 = "dr2";
     } else {
-        g->codeAppend ("highp vec2 dr = vec2(qsr.y != 0 ? +qsr.y : 1, "
+        g->codeAppend ("highp float2 dr = float2(qsr.y != 0 ? +qsr.y : 1, "
                                             "qsr.x != 0 ? -qsr.x : 1);");
-        g->codeAppend ("highp vec2 dl = (qls == vec2(0)) ? dr : vec2(qls.y != 0 ? +qls.y : 1, "
-                                                                    "qls.x != 0 ? -qls.x : 1);");
+        g->codeAppend ("highp float2 dl = (qls == float2(0)) ? dr : "
+                                       "float2(qls.y != 0 ? +qls.y : 1, qls.x != 0 ? -qls.x : 1);");
     }
-    g->codeAppendf("bvec2 dnotequal = notEqual(%s, dl);", dr2);
+    g->codeAppendf("bool2 dnotequal = notEqual(%s, dl);", dr2);
 
     // Emit one third of what is the convex hull of pixel-size boxes centered on the vertices.
     // Each invocation emits a different third.
@@ -234,7 +236,7 @@ int PrimitiveProcessor::emitHullGeometry(GrGLSLGeometryBuilder* g, const char* e
     g->codeAppendf(    "%s(self + bloat * dl, 1);", emitVertexFn);
     g->codeAppend ("}");
     g->codeAppend ("if (all(dnotequal)) {");
-    g->codeAppendf(    "%s(self + bloat * vec2(-dl.y, dl.x), 1);", emitVertexFn);
+    g->codeAppendf(    "%s(self + bloat * float2(-dl.y, dl.x), 1);", emitVertexFn);
     g->codeAppend ("}");
     g->codeAppend ("EndPrimitive();");
 
@@ -245,18 +247,18 @@ int PrimitiveProcessor::emitEdgeGeometry(GrGLSLGeometryBuilder* g, const char* e
                                          const char* leftPt, const char* rightPt,
                                          const char* distanceEquation) const {
     if (!distanceEquation) {
-        this->emitEdgeDistanceEquation(g, leftPt, rightPt, "highp vec3 edge_distance_equation");
+        this->emitEdgeDistanceEquation(g, leftPt, rightPt, "highp float3 edge_distance_equation");
         distanceEquation = "edge_distance_equation";
     }
 
     // qlr is defined in emitEdgeDistanceEquation.
-    g->codeAppendf("highp mat2 endpts = mat2(%s - bloat * qlr, %s + bloat * qlr);",
+    g->codeAppendf("highp float2x2 endpts = float2x2(%s - bloat * qlr, %s + bloat * qlr);",
                    leftPt, rightPt);
-    g->codeAppendf("mediump vec2 endpts_coverage = %s.xy * endpts + %s.z;",
+    g->codeAppendf("mediump float2 endpts_coverage = %s.xy * endpts + %s.z;",
                    distanceEquation, distanceEquation);
 
     // d1 is defined in emitEdgeDistanceEquation.
-    g->codeAppend ("highp vec2 d2 = d1;");
+    g->codeAppend ("highp float2 d2 = d1;");
     g->codeAppend ("bool aligned = qlr.x == 0 || qlr.y == 0;");
     g->codeAppend ("if (aligned) {");
     g->codeAppend (    "d1 -= qlr;");
@@ -285,16 +287,28 @@ void PrimitiveProcessor::emitEdgeDistanceEquation(GrGLSLGeometryBuilder* g,
                                                   const char* leftPt, const char* rightPt,
                                                   const char* outputDistanceEquation) const {
     // Which quadrant does the vector from left -> right fall into?
-    g->codeAppendf("highp vec2 qlr = sign(%s - %s);", rightPt, leftPt);
-    g->codeAppend ("highp vec2 d1 = vec2(qlr.y, -qlr.x);");
+    g->codeAppendf("highp float2 qlr = sign(%s - %s);", rightPt, leftPt);
+    g->codeAppend ("highp float2 d1 = float2(qlr.y, -qlr.x);");
 
-    g->codeAppendf("highp vec2 n = vec2(%s.y - %s.y, %s.x - %s.x);",
+    g->codeAppendf("highp float2 n = float2(%s.y - %s.y, %s.x - %s.x);",
                    rightPt, leftPt, leftPt, rightPt);
-    g->codeAppendf("highp vec2 kk = n * mat2(%s + bloat * d1, %s - bloat * d1);", leftPt, leftPt);
+    g->codeAppendf("highp float2 kk = n * float2x2(%s + bloat * d1, %s - bloat * d1);",
+                   leftPt, leftPt);
     // Clamp for when n=0. wind=0 when n=0 so as long as we don't get Inf or NaN we are fine.
     g->codeAppendf("highp float scale = 1 / max(kk[0] - kk[1], 1e-30);");
 
-    g->codeAppendf("%s = vec3(-n, kk[1]) * scale;", outputDistanceEquation);
+    g->codeAppendf("%s = float3(-n, kk[1]) * scale;", outputDistanceEquation);
+}
+
+int PrimitiveProcessor::emitCornerGeometry(GrGLSLGeometryBuilder* g, const char* emitVertexFn,
+                                           const char* pt) const {
+    g->codeAppendf("%s(%s + float2(-bloat.x, -bloat.y), 1);", emitVertexFn, pt);
+    g->codeAppendf("%s(%s + float2(-bloat.x, +bloat.y), 1);", emitVertexFn, pt);
+    g->codeAppendf("%s(%s + float2(+bloat.x, -bloat.y), 1);", emitVertexFn, pt);
+    g->codeAppendf("%s(%s + float2(+bloat.x, +bloat.y), 1);", emitVertexFn, pt);
+    g->codeAppend ("EndPrimitive();");
+
+    return 4;
 }
 
 void PrimitiveProcessor::emitCoverage(const GrCCPRCoverageProcessor& proc, GrGLSLFragmentBuilder* f,
@@ -313,11 +327,11 @@ void PrimitiveProcessor::emitCoverage(const GrCCPRCoverageProcessor& proc, GrGLS
             break;
     }
 
-    f->codeAppendf("%s = vec4(1);", outputCoverage);
+    f->codeAppendf("%s = float4(1);", outputCoverage);
 
 #ifdef SK_DEBUG
     if (proc.debugVisualizations()) {
-        f->codeAppendf("%s = vec4(-%s.a, %s.a, 0, 1);", outputColor, outputColor, outputColor);
+        f->codeAppendf("%s = float4(-%s.a, %s.a, 0, 1);", outputColor, outputColor, outputColor);
     }
 #endif
 }
@@ -326,17 +340,17 @@ int PrimitiveProcessor::defineSoftSampleLocations(GrGLSLFragmentBuilder* f,
                                                   const char* samplesName) const {
     // Standard DX11 sample locations.
 #if defined(SK_BUILD_FOR_ANDROID) || defined(SK_BUILD_FOR_IOS)
-    f->defineConstant("highp vec2[8]", samplesName, "vec2[8]("
-        "vec2(+1, -3)/16, vec2(-1, +3)/16, vec2(+5, +1)/16, vec2(-3, -5)/16, "
-        "vec2(-5, +5)/16, vec2(-7, -1)/16, vec2(+3, +7)/16, vec2(+7, -7)/16."
+    f->defineConstant("highp float2[8]", samplesName, "float2[8]("
+        "float2(+1, -3)/16, float2(-1, +3)/16, float2(+5, +1)/16, float2(-3, -5)/16, "
+        "float2(-5, +5)/16, float2(-7, -1)/16, float2(+3, +7)/16, float2(+7, -7)/16."
     ")");
     return 8;
 #else
-    f->defineConstant("highp vec2[16]", samplesName, "vec2[16]("
-        "vec2(+1, +1)/16, vec2(-1, -3)/16, vec2(-3, +2)/16, vec2(+4, -1)/16, "
-        "vec2(-5, -2)/16, vec2(+2, +5)/16, vec2(+5, +3)/16, vec2(+3, -5)/16, "
-        "vec2(-2, +6)/16, vec2( 0, -7)/16, vec2(-4, -6)/16, vec2(-6, +4)/16, "
-        "vec2(-8,  0)/16, vec2(+7, -4)/16, vec2(+6, +7)/16, vec2(-7, -8)/16."
+    f->defineConstant("highp float2[16]", samplesName, "float2[16]("
+        "float2(+1, +1)/16, float2(-1, -3)/16, float2(-3, +2)/16, float2(+4, -1)/16, "
+        "float2(-5, -2)/16, float2(+2, +5)/16, float2(+5, +3)/16, float2(+3, -5)/16, "
+        "float2(-2, +6)/16, float2( 0, -7)/16, float2(-4, -6)/16, float2(-6, +4)/16, "
+        "float2(-8,  0)/16, float2(+7, -4)/16, float2(+6, +7)/16, float2(-7, -8)/16."
     ")");
     return 16;
 #endif
@@ -346,10 +360,10 @@ int PrimitiveProcessor::defineSoftSampleLocations(GrGLSLFragmentBuilder* f,
 
 #include "GrRenderTarget.h"
 
-void GrCCPRCoverageProcessor::Validate(GrRenderTarget* atlasTexture) {
-    SkASSERT(kAtlasOrigin == atlasTexture->origin());
-    SkASSERT(GrPixelConfigIsAlphaOnly(atlasTexture->config()));
-    SkASSERT(GrPixelConfigIsFloatingPoint(atlasTexture->config()));
+void GrCCPRCoverageProcessor::Validate(GrRenderTargetProxy* atlasProxy) {
+    SkASSERT(kAtlasOrigin == atlasProxy->origin());
+    SkASSERT(GrPixelConfigIsAlphaOnly(atlasProxy->config()));
+    SkASSERT(GrPixelConfigIsFloatingPoint(atlasProxy->config()));
 }
 
 #endif

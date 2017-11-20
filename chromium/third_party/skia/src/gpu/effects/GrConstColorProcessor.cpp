@@ -62,6 +62,10 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
+std::unique_ptr<GrFragmentProcessor> GrConstColorProcessor::clone() const {
+    return Make(fColor, fMode);
+}
+
 GrColor4f GrConstColorProcessor::constantOutputForConstantInput(GrColor4f input) const {
     switch (fMode) {
         case kIgnore_InputMode:
@@ -71,7 +75,7 @@ GrColor4f GrConstColorProcessor::constantOutputForConstantInput(GrColor4f input)
         case kModulateRGBA_InputMode:
             return fColor.modulate(input);
     }
-    SkFAIL("Unexpected mode");
+    SK_ABORT("Unexpected mode");
     return GrColor4f::TransparentBlack();
 }
 
@@ -94,7 +98,7 @@ bool GrConstColorProcessor::onIsEqual(const GrFragmentProcessor& other) const {
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrConstColorProcessor);
 
 #if GR_TEST_UTILS
-sk_sp<GrFragmentProcessor> GrConstColorProcessor::TestCreate(GrProcessorTestData* d) {
+std::unique_ptr<GrFragmentProcessor> GrConstColorProcessor::TestCreate(GrProcessorTestData* d) {
     GrColor4f color;
     int colorPicker = d->fRandom->nextULessThan(3);
     switch (colorPicker) {

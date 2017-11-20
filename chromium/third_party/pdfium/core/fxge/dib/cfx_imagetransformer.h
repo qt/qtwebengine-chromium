@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "core/fxcrt/cfx_retain_ptr.h"
+#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxge/dib/cfx_bitmapstorer.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
@@ -25,7 +26,7 @@ class CFX_ImageTransformer {
                        const FX_RECT* pClip);
   ~CFX_ImageTransformer();
 
-  bool Continue(IFX_Pause* pPause);
+  bool Continue(IFX_PauseIndicator* pPause);
 
   const FX_RECT& result() const { return m_result; }
   CFX_RetainPtr<CFX_DIBitmap> DetachBitmap();

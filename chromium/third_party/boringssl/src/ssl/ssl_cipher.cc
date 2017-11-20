@@ -154,6 +154,8 @@
 #include "../crypto/internal.h"
 
 
+namespace bssl {
+
 /* kCiphers is an array of all supported ciphers, sorted by id. */
 static const SSL_CIPHER kCiphers[] = {
     /* The RSA ciphers */
@@ -643,14 +645,6 @@ static int ssl_cipher_id_cmp(const void *in_a, const void *in_b) {
   }
 }
 
-const SSL_CIPHER *SSL_get_cipher_by_value(uint16_t value) {
-  SSL_CIPHER c;
-
-  c.id = 0x03000000L | value;
-  return reinterpret_cast<const SSL_CIPHER *>(bsearch(
-      &c, kCiphers, kCiphersLen, sizeof(SSL_CIPHER), ssl_cipher_id_cmp));
-}
-
 int ssl_cipher_get_evp_aead(const EVP_AEAD **out_aead,
                             size_t *out_mac_secret_len,
                             size_t *out_fixed_iv_len,
@@ -748,9 +742,9 @@ int ssl_cipher_get_evp_aead(const EVP_AEAD **out_aead,
   return 1;
 }
 
-const EVP_MD *ssl_get_handshake_digest(uint32_t algorithm_prf,
-                                       uint16_t version) {
-  switch (algorithm_prf) {
+const EVP_MD *ssl_get_handshake_digest(uint16_t version,
+                                       const SSL_CIPHER *cipher) {
+  switch (cipher->algorithm_prf) {
     case SSL_HANDSHAKE_MAC_DEFAULT:
       return version >= TLS1_2_VERSION ? EVP_sha256() : EVP_md5_sha1();
     case SSL_HANDSHAKE_MAC_SHA256:
@@ -758,12 +752,17 @@ const EVP_MD *ssl_get_handshake_digest(uint32_t algorithm_prf,
     case SSL_HANDSHAKE_MAC_SHA384:
       return EVP_sha384();
     default:
+      assert(0);
       return NULL;
   }
 }
 
-#define ITEM_SEP(a) \
-  (((a) == ':') || ((a) == ' ') || ((a) == ';') || ((a) == ','))
+static bool is_cipher_list_separator(char c, int is_strict) {
+  if (c == ':') {
+    return true;
+  }
+  return !is_strict && (c == ' ' || c == ';' || c == ',');
+}
 
 /* rule_equals returns one iff the NUL-terminated string |rule| is equal to the
  * |buf_len| bytes at |buf|. */
@@ -1098,7 +1097,7 @@ static int ssl_cipher_process_rulestr(const SSL_PROTOCOL_METHOD *ssl_method,
       return 0;
     }
 
-    if (ITEM_SEP(ch)) {
+    if (is_cipher_list_separator(ch, strict)) {
       l++;
       continue;
     }
@@ -1192,7 +1191,7 @@ static int ssl_cipher_process_rulestr(const SSL_PROTOCOL_METHOD *ssl_method,
 
       /* We do not support any "multi" options together with "@", so throw away
        * the rest of the command, if any left, until end or ':' is found. */
-      while (*l != '\0' && !ITEM_SEP(*l)) {
+      while (*l != '\0' && !is_cipher_list_separator(*l, strict)) {
         l++;
       }
     } else if (!skip_rule) {
@@ -1371,8 +1370,6 @@ err:
   return 0;
 }
 
-uint32_t SSL_CIPHER_get_id(const SSL_CIPHER *cipher) { return cipher->id; }
-
 uint16_t ssl_cipher_get_value(const SSL_CIPHER *cipher) {
   uint32_t id = cipher->id;
   /* All ciphers are SSLv3. */
@@ -1380,65 +1377,141 @@ uint16_t ssl_cipher_get_value(const SSL_CIPHER *cipher) {
   return id & 0xffff;
 }
 
-int SSL_CIPHER_is_AES(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_enc & SSL_AES) != 0;
+uint32_t ssl_cipher_auth_mask_for_key(const EVP_PKEY *key) {
+  switch (EVP_PKEY_id(key)) {
+    case EVP_PKEY_RSA:
+      return SSL_aRSA;
+    case EVP_PKEY_EC:
+    case EVP_PKEY_ED25519:
+      /* Ed25519 keys in TLS 1.2 repurpose the ECDSA ciphers. */
+      return SSL_aECDSA;
+    default:
+      return 0;
+  }
 }
 
-int SSL_CIPHER_has_SHA1_HMAC(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_mac & SSL_SHA1) != 0;
+int ssl_cipher_uses_certificate_auth(const SSL_CIPHER *cipher) {
+  return (cipher->algorithm_auth & SSL_aCERT) != 0;
 }
 
-int SSL_CIPHER_has_SHA256_HMAC(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_mac & SSL_SHA256) != 0;
+int ssl_cipher_requires_server_key_exchange(const SSL_CIPHER *cipher) {
+  /* Ephemeral Diffie-Hellman key exchanges require a ServerKeyExchange. */
+  if (cipher->algorithm_mkey & SSL_kECDHE) {
+    return 1;
+  }
+
+  /* It is optional in all others. */
+  return 0;
 }
 
-int SSL_CIPHER_has_SHA384_HMAC(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_mac & SSL_SHA384) != 0;
+size_t ssl_cipher_get_record_split_len(const SSL_CIPHER *cipher) {
+  size_t block_size;
+  switch (cipher->algorithm_enc) {
+    case SSL_3DES:
+      block_size = 8;
+      break;
+    case SSL_AES128:
+    case SSL_AES256:
+      block_size = 16;
+      break;
+    default:
+      return 0;
+  }
+
+  /* All supported TLS 1.0 ciphers use SHA-1. */
+  assert(cipher->algorithm_mac == SSL_SHA1);
+  size_t ret = 1 + SHA_DIGEST_LENGTH;
+  ret += block_size - (ret % block_size);
+  return ret;
 }
 
-int SSL_CIPHER_is_AEAD(const SSL_CIPHER *cipher) {
+}  // namespace bssl
+
+using namespace bssl;
+
+const SSL_CIPHER *SSL_get_cipher_by_value(uint16_t value) {
+  SSL_CIPHER c;
+
+  c.id = 0x03000000L | value;
+  return reinterpret_cast<const SSL_CIPHER *>(bsearch(
+      &c, kCiphers, kCiphersLen, sizeof(SSL_CIPHER), ssl_cipher_id_cmp));
+}
+
+uint32_t SSL_CIPHER_get_id(const SSL_CIPHER *cipher) { return cipher->id; }
+
+int SSL_CIPHER_is_aead(const SSL_CIPHER *cipher) {
   return (cipher->algorithm_mac & SSL_AEAD) != 0;
 }
 
-int SSL_CIPHER_is_AESGCM(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_enc & (SSL_AES128GCM | SSL_AES256GCM)) != 0;
+int SSL_CIPHER_get_cipher_nid(const SSL_CIPHER *cipher) {
+  switch (cipher->algorithm_enc) {
+    case SSL_eNULL:
+      return NID_undef;
+    case SSL_3DES:
+      return NID_des_ede3_cbc;
+    case SSL_AES128:
+      return NID_aes_128_cbc;
+    case SSL_AES256:
+      return NID_aes_256_cbc;
+    case SSL_AES128GCM:
+      return NID_aes_128_gcm;
+    case SSL_AES256GCM:
+      return NID_aes_256_gcm;
+    case SSL_CHACHA20POLY1305:
+      return NID_chacha20_poly1305;
+  }
+  assert(0);
+  return NID_undef;
 }
 
-int SSL_CIPHER_is_AES128GCM(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_enc & SSL_AES128GCM) != 0;
+int SSL_CIPHER_get_digest_nid(const SSL_CIPHER *cipher) {
+  switch (cipher->algorithm_mac) {
+    case SSL_AEAD:
+      return NID_undef;
+    case SSL_SHA1:
+      return NID_sha1;
+    case SSL_SHA256:
+      return NID_sha256;
+    case SSL_SHA384:
+      return NID_sha384;
+  }
+  assert(0);
+  return NID_undef;
 }
 
-int SSL_CIPHER_is_AES128CBC(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_enc & SSL_AES128) != 0;
+int SSL_CIPHER_get_kx_nid(const SSL_CIPHER *cipher) {
+  switch (cipher->algorithm_mkey) {
+    case SSL_kRSA:
+      return NID_kx_rsa;
+    case SSL_kECDHE:
+      return NID_kx_ecdhe;
+    case SSL_kPSK:
+      return NID_kx_psk;
+    case SSL_kGENERIC:
+      return NID_kx_any;
+  }
+  assert(0);
+  return NID_undef;
 }
 
-int SSL_CIPHER_is_AES256CBC(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_enc & SSL_AES256) != 0;
-}
-
-int SSL_CIPHER_is_CHACHA20POLY1305(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_enc & SSL_CHACHA20POLY1305) != 0;
-}
-
-int SSL_CIPHER_is_NULL(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_enc & SSL_eNULL) != 0;
+int SSL_CIPHER_get_auth_nid(const SSL_CIPHER *cipher) {
+  switch (cipher->algorithm_auth) {
+    case SSL_aRSA:
+      return NID_auth_rsa;
+    case SSL_aECDSA:
+      return NID_auth_ecdsa;
+    case SSL_aPSK:
+      return NID_auth_psk;
+    case SSL_aGENERIC:
+      return NID_auth_any;
+  }
+  assert(0);
+  return NID_undef;
 }
 
 int SSL_CIPHER_is_block_cipher(const SSL_CIPHER *cipher) {
   return (cipher->algorithm_enc & SSL_eNULL) == 0 &&
       cipher->algorithm_mac != SSL_AEAD;
-}
-
-int SSL_CIPHER_is_ECDSA(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_auth & SSL_aECDSA) != 0;
-}
-
-int SSL_CIPHER_is_ECDHE(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_mkey & SSL_kECDHE) != 0;
-}
-
-int SSL_CIPHER_is_static_RSA(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_mkey & SSL_kRSA) != 0;
 }
 
 uint16_t SSL_CIPHER_get_min_version(const SSL_CIPHER *cipher) {
@@ -1697,51 +1770,3 @@ int SSL_COMP_add_compression_method(int id, COMP_METHOD *cm) { return 1; }
 const char *SSL_COMP_get_name(const COMP_METHOD *comp) { return NULL; }
 
 void SSL_COMP_free_compression_methods(void) {}
-
-uint32_t ssl_cipher_auth_mask_for_key(const EVP_PKEY *key) {
-  switch (EVP_PKEY_id(key)) {
-    case EVP_PKEY_RSA:
-      return SSL_aRSA;
-    case EVP_PKEY_EC:
-    case EVP_PKEY_ED25519:
-      /* Ed25519 keys in TLS 1.2 repurpose the ECDSA ciphers. */
-      return SSL_aECDSA;
-    default:
-      return 0;
-  }
-}
-
-int ssl_cipher_uses_certificate_auth(const SSL_CIPHER *cipher) {
-  return (cipher->algorithm_auth & SSL_aCERT) != 0;
-}
-
-int ssl_cipher_requires_server_key_exchange(const SSL_CIPHER *cipher) {
-  /* Ephemeral Diffie-Hellman key exchanges require a ServerKeyExchange. */
-  if (cipher->algorithm_mkey & SSL_kECDHE) {
-    return 1;
-  }
-
-  /* It is optional in all others. */
-  return 0;
-}
-
-size_t ssl_cipher_get_record_split_len(const SSL_CIPHER *cipher) {
-  size_t block_size;
-  switch (cipher->algorithm_enc) {
-    case SSL_3DES:
-      block_size = 8;
-      break;
-    case SSL_AES128:
-    case SSL_AES256:
-      block_size = 16;
-      break;
-    default:
-      return 0;
-  }
-
-  /* All supported TLS 1.0 ciphers use SHA-1. */
-  assert(cipher->algorithm_mac == SSL_SHA1);
-  size_t ret = 1 + SHA_DIGEST_LENGTH;
-  ret += block_size - (ret % block_size);
-  return ret;
-}

@@ -981,8 +981,8 @@ static void chroma_check(VP9_COMP *cpi, MACROBLOCK *x, int bsize,
   }
 }
 
-static void avg_source_sad(VP9_COMP *cpi, MACROBLOCK *x, int shift,
-                           int sb_offset) {
+static uint64_t avg_source_sad(VP9_COMP *cpi, MACROBLOCK *x, int shift,
+                               int sb_offset) {
   unsigned int tmp_sse;
   uint64_t tmp_sad;
   unsigned int tmp_variance;
@@ -994,7 +994,7 @@ static void avg_source_sad(VP9_COMP *cpi, MACROBLOCK *x, int shift,
   uint64_t avg_source_sad_threshold = 10000;
   uint64_t avg_source_sad_threshold2 = 12000;
 #if CONFIG_VP9_HIGHBITDEPTH
-  if (cpi->common.use_highbitdepth) return;
+  if (cpi->common.use_highbitdepth) return 0;
 #endif
   src_y += shift;
   last_src_y += shift;
@@ -1011,10 +1011,11 @@ static void avg_source_sad(VP9_COMP *cpi, MACROBLOCK *x, int shift,
                                                           : kHighSadHighSumdiff;
 
   // Detect large lighting change.
-  if (tmp_variance < (tmp_sse >> 3) && (tmp_sse - tmp_variance) > 10000)
+  if (cpi->oxcf.content != VP9E_CONTENT_SCREEN &&
+      cpi->oxcf.rc_mode == VPX_CBR && tmp_variance < (tmp_sse >> 3) &&
+      (tmp_sse - tmp_variance) > 10000)
     x->content_state_sb = kLowVarHighSumdiff;
-
-  if (tmp_sad > (avg_source_sad_threshold << 1))
+  else if (tmp_sad > (avg_source_sad_threshold << 1))
     x->content_state_sb = kVeryHighSad;
 
   if (cpi->content_state_sb_fd != NULL) {
@@ -1026,7 +1027,7 @@ static void avg_source_sad(VP9_COMP *cpi, MACROBLOCK *x, int shift,
       cpi->content_state_sb_fd[sb_offset] = 0;
     }
   }
-  return;
+  return tmp_sad;
 }
 
 // This function chooses partitioning based on the variance between source and
@@ -1090,6 +1091,7 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
     // If source_sad is low copy the partition without computing the y_sad.
     if (x->skip_low_source_sad && cpi->sf.copy_partition_flag &&
         copy_partitioning(cpi, x, xd, mi_row, mi_col, segment_id, sb_offset)) {
+      x->sb_use_mv_part = 1;
       return 0;
     }
   }
@@ -1166,12 +1168,17 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
     mi->mv[0].as_int = 0;
     mi->interp_filter = BILINEAR;
 
-    if (cpi->oxcf.speed >= 8 && !low_res && x->content_state_sb != kVeryHighSad)
+    if (cpi->oxcf.speed >= 8 && !low_res &&
+        x->content_state_sb != kVeryHighSad) {
       y_sad = cpi->fn_ptr[bsize].sdf(
           x->plane[0].src.buf, x->plane[0].src.stride, xd->plane[0].pre[0].buf,
           xd->plane[0].pre[0].stride);
-    else
+    } else {
       y_sad = vp9_int_pro_motion_estimation(cpi, x, bsize, mi_row, mi_col);
+      x->sb_use_mv_part = 1;
+      x->sb_mvcol_part = mi->mv[0].as_mv.col;
+      x->sb_mvrow_part = mi->mv[0].as_mv.row;
+    }
 
     y_sad_last = y_sad;
     // Pick ref frame for partitioning, bias last frame when y_sad_g and y_sad
@@ -1285,7 +1292,10 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
                                           xd->cur_buf->flags,
 #endif
                                           pixels_wide, pixels_high);
-          if (minmax > cpi->vbp_threshold_minmax) {
+          int thresh_minmax = (int)cpi->vbp_threshold_minmax;
+          if (x->content_state_sb == kVeryHighSad)
+            thresh_minmax = thresh_minmax << 1;
+          if (minmax > thresh_minmax) {
             force_split[split_index] = 1;
             force_split[i + 1] = 1;
             force_split[0] = 1;
@@ -3641,6 +3651,9 @@ static void nonrd_pick_partition(VP9_COMP *cpi, ThreadData *td,
       !force_horz_split && xss <= yss && bsize >= BLOCK_8X8;
   (void)*tp_orig;
 
+  // Avoid checking for rectangular partitions for speed >= 6.
+  if (cpi->oxcf.speed >= 6) do_rect = 0;
+
   assert(num_8x8_blocks_wide_lookup[bsize] ==
          num_8x8_blocks_high_lookup[bsize]);
 
@@ -3868,6 +3881,8 @@ static void nonrd_select_partition(VP9_COMP *cpi, ThreadData *td,
   PARTITION_TYPE partition;
   BLOCK_SIZE subsize;
   RD_COST this_rdc;
+  BLOCK_SIZE subsize_ref =
+      (cpi->sf.adapt_partition_source_sad) ? BLOCK_8X8 : BLOCK_16X16;
 
   vp9_rd_cost_reset(&this_rdc);
   if (mi_row >= cm->mi_rows || mi_col >= cm->mi_cols) return;
@@ -3881,7 +3896,7 @@ static void nonrd_select_partition(VP9_COMP *cpi, ThreadData *td,
     nonrd_pick_partition(cpi, td, tile_data, tp, mi_row, mi_col, bsize, rd_cost,
                          0, INT64_MAX, pc_tree);
   } else if (bsize == BLOCK_32X32 && partition != PARTITION_NONE &&
-             subsize >= BLOCK_16X16) {
+             subsize >= subsize_ref) {
     x->max_partition_size = BLOCK_32X32;
     x->min_partition_size = BLOCK_8X8;
     nonrd_pick_partition(cpi, td, tile_data, tp, mi_row, mi_col, bsize, rd_cost,
@@ -4142,6 +4157,10 @@ static void encode_nonrd_sb_row(VP9_COMP *cpi, ThreadData *td,
     x->skip_low_source_sad = 0;
     x->lowvar_highsumdiff = 0;
     x->content_state_sb = 0;
+    x->sb_use_mv_part = 0;
+    x->sb_mvcol_part = 0;
+    x->sb_mvrow_part = 0;
+    x->sb_pickmode_part = 0;
 
     if (seg->enabled) {
       const uint8_t *const map =
@@ -4156,7 +4175,9 @@ static void encode_nonrd_sb_row(VP9_COMP *cpi, ThreadData *td,
     if (cpi->compute_source_sad_onepass && cpi->sf.use_source_sad) {
       int shift = cpi->Source->y_stride * (mi_row << 3) + (mi_col << 3);
       int sb_offset2 = ((cm->mi_cols + 7) >> 3) * (mi_row >> 3) + (mi_col >> 3);
-      avg_source_sad(cpi, x, shift, sb_offset2);
+      int64_t source_sad = avg_source_sad(cpi, x, shift, sb_offset2);
+      if (sf->adapt_partition_source_sad && source_sad > 40000)
+        partition_search_type = REFERENCE_PARTITION;
     }
 
     // Set the partition type of the 64X64 block
@@ -4182,6 +4203,7 @@ static void encode_nonrd_sb_row(VP9_COMP *cpi, ThreadData *td,
                             BLOCK_64X64, 1, &dummy_rdc, td->pc_root);
         break;
       case REFERENCE_PARTITION:
+        x->sb_pickmode_part = 1;
         set_offsets(cpi, tile_info, x, mi_row, mi_col, BLOCK_64X64);
         // Use nonrd_pick_partition on scene-cut for VBR mode.
         // nonrd_pick_partition does not support 4x4 partition, so avoid it
@@ -4220,6 +4242,17 @@ static void encode_nonrd_sb_row(VP9_COMP *cpi, ThreadData *td,
 }
 // end RTC play code
 
+static INLINE uint32_t variance(const diff *const d) {
+  return d->sse - (uint32_t)(((int64_t)d->sum * d->sum) >> 8);
+}
+
+#if CONFIG_VP9_HIGHBITDEPTH
+static INLINE uint32_t variance_highbd(diff *const d) {
+  const int64_t var = (int64_t)d->sse - (((int64_t)d->sum * d->sum) >> 8);
+  return (var >= 0) ? (uint32_t)var : 0;
+}
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+
 static int set_var_thresh_from_histogram(VP9_COMP *cpi) {
   const SPEED_FEATURES *const sf = &cpi->sf;
   const VP9_COMMON *const cm = &cpi->common;
@@ -4249,14 +4282,17 @@ static int set_var_thresh_from_histogram(VP9_COMP *cpi) {
           case VPX_BITS_8:
             vpx_highbd_8_get16x16var(src, src_stride, last_src, last_stride,
                                      &var16->sse, &var16->sum);
+            var16->var = variance(var16);
             break;
           case VPX_BITS_10:
             vpx_highbd_10_get16x16var(src, src_stride, last_src, last_stride,
                                       &var16->sse, &var16->sum);
+            var16->var = variance_highbd(var16);
             break;
           case VPX_BITS_12:
             vpx_highbd_12_get16x16var(src, src_stride, last_src, last_stride,
                                       &var16->sse, &var16->sum);
+            var16->var = variance_highbd(var16);
             break;
           default:
             assert(0 &&
@@ -4267,12 +4303,13 @@ static int set_var_thresh_from_histogram(VP9_COMP *cpi) {
       } else {
         vpx_get16x16var(src, src_stride, last_src, last_stride, &var16->sse,
                         &var16->sum);
+        var16->var = variance(var16);
       }
 #else
       vpx_get16x16var(src, src_stride, last_src, last_stride, &var16->sse,
                       &var16->sum);
+      var16->var = variance(var16);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
-      var16->var = var16->sse - (((uint32_t)var16->sum * var16->sum) >> 8);
 
       if (var16->var >= VAR_HIST_MAX_BG_VAR)
         hist[VAR_HIST_BINS - 1]++;

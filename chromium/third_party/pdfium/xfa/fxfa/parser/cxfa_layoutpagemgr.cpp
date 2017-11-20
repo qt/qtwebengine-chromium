@@ -7,7 +7,7 @@
 #include "xfa/fxfa/parser/cxfa_layoutpagemgr.h"
 
 #include "third_party/base/stl_util.h"
-#include "xfa/fxfa/app/cxfa_ffnotify.h"
+#include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_containerlayoutitem.h"
 #include "xfa/fxfa/parser/cxfa_contentlayoutitem.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
@@ -148,10 +148,13 @@ CXFA_Node* ResolveBreakTarget(CXFA_Node* pPageSetRoot,
   bool bTargetAllFind = true;
   while (iSplitIndex != -1) {
     CFX_WideString wsExpr;
-    int32_t iSplitNextIndex = 0;
+    pdfium::Optional<FX_STRSIZE> iSplitNextIndex = 0;
     if (!bTargetAllFind) {
       iSplitNextIndex = wsTargetAll.Find(' ', iSplitIndex);
-      wsExpr = wsTargetAll.Mid(iSplitIndex, iSplitNextIndex - iSplitIndex);
+      if (!iSplitNextIndex.has_value())
+        return nullptr;
+      wsExpr =
+          wsTargetAll.Mid(iSplitIndex, iSplitNextIndex.value() - iSplitIndex);
     } else {
       wsExpr = wsTargetAll;
     }
@@ -159,10 +162,10 @@ CXFA_Node* ResolveBreakTarget(CXFA_Node* pPageSetRoot,
       return nullptr;
 
     bTargetAllFind = false;
-    if (wsExpr.GetAt(0) == '#') {
+    if (wsExpr[0] == '#') {
       CXFA_Node* pNode = pDocument->GetNodeByID(
           ToNode(pDocument->GetXFAObject(XFA_HASHCODE_Template)),
-          wsExpr.Mid(1).AsStringC());
+          wsExpr.Right(wsExpr.GetLength() - 1).AsStringC());
       if (pNode)
         return pNode;
     } else if (bNewExprStyle) {
@@ -179,7 +182,7 @@ CXFA_Node* ResolveBreakTarget(CXFA_Node* pPageSetRoot,
       if (iCount > 0 && rs.objects.front()->IsNode())
         return rs.objects.front()->AsNode();
     }
-    iSplitIndex = iSplitNextIndex;
+    iSplitIndex = iSplitNextIndex.value();
   }
   return nullptr;
 }

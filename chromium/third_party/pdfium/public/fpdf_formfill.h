@@ -1081,7 +1081,7 @@ typedef struct _FPDF_FORMFILLINFO {
  * Return Value:
  *          Return handler to the form fill module. NULL means fails.
  **/
-DLLEXPORT FPDF_FORMHANDLE STDCALL
+FPDF_EXPORT FPDF_FORMHANDLE FPDF_CALLCONV
 FPDFDOC_InitFormFillEnvironment(FPDF_DOCUMENT document,
                                 FPDF_FORMFILLINFO* formInfo);
 
@@ -1094,7 +1094,8 @@ FPDFDOC_InitFormFillEnvironment(FPDF_DOCUMENT document,
  * Return Value:
  *          NULL.
  **/
-DLLEXPORT void STDCALL FPDFDOC_ExitFormFillEnvironment(FPDF_FORMHANDLE hHandle);
+FPDF_EXPORT void FPDF_CALLCONV
+FPDFDOC_ExitFormFillEnvironment(FPDF_FORMHANDLE hHandle);
 
 /**
  * Function: FORM_OnAfterLoadPage
@@ -1108,8 +1109,8 @@ DLLEXPORT void STDCALL FPDFDOC_ExitFormFillEnvironment(FPDF_FORMHANDLE hHandle);
  * Return Value:
  *          NONE.
  **/
-DLLEXPORT void STDCALL FORM_OnAfterLoadPage(FPDF_PAGE page,
-                                            FPDF_FORMHANDLE hHandle);
+FPDF_EXPORT void FPDF_CALLCONV FORM_OnAfterLoadPage(FPDF_PAGE page,
+                                                    FPDF_FORMHANDLE hHandle);
 
 /**
  * Function: FORM_OnBeforeClosePage
@@ -1124,8 +1125,8 @@ DLLEXPORT void STDCALL FORM_OnAfterLoadPage(FPDF_PAGE page,
  * Return Value:
  *          NONE.
  **/
-DLLEXPORT void STDCALL FORM_OnBeforeClosePage(FPDF_PAGE page,
-                                              FPDF_FORMHANDLE hHandle);
+FPDF_EXPORT void FPDF_CALLCONV FORM_OnBeforeClosePage(FPDF_PAGE page,
+                                                      FPDF_FORMHANDLE hHandle);
 
 /**
 * Function: FORM_DoDocumentJSAction
@@ -1142,7 +1143,7 @@ DLLEXPORT void STDCALL FORM_OnBeforeClosePage(FPDF_PAGE page,
 *document, this method will execute the javascript action;
 *           otherwise, the method will do nothing.
 **/
-DLLEXPORT void STDCALL FORM_DoDocumentJSAction(FPDF_FORMHANDLE hHandle);
+FPDF_EXPORT void FPDF_CALLCONV FORM_DoDocumentJSAction(FPDF_FORMHANDLE hHandle);
 
 /**
 * Function: FORM_DoDocumentOpenAction
@@ -1157,7 +1158,8 @@ DLLEXPORT void STDCALL FORM_DoDocumentJSAction(FPDF_FORMHANDLE hHandle);
 *           This method will do nothing if there is no open-actions embedded in
 *the document.
 **/
-DLLEXPORT void STDCALL FORM_DoDocumentOpenAction(FPDF_FORMHANDLE hHandle);
+FPDF_EXPORT void FPDF_CALLCONV
+FORM_DoDocumentOpenAction(FPDF_FORMHANDLE hHandle);
 
 // additional actions type of document.
 #define FPDFDOC_AACTION_WC \
@@ -1187,8 +1189,8 @@ DLLEXPORT void STDCALL FORM_DoDocumentOpenAction(FPDF_FORMHANDLE hHandle);
 *additional-action corresponding to the specified aaType.
 **/
 
-DLLEXPORT void STDCALL FORM_DoDocumentAAction(FPDF_FORMHANDLE hHandle,
-                                              int aaType);
+FPDF_EXPORT void FPDF_CALLCONV FORM_DoDocumentAAction(FPDF_FORMHANDLE hHandle,
+                                                      int aaType);
 
 // Additional-action types of page object
 #define FPDFPAGE_AACTION_OPEN \
@@ -1213,9 +1215,9 @@ DLLEXPORT void STDCALL FORM_DoDocumentAAction(FPDF_FORMHANDLE hHandle,
 *           This method will do nothing if no additional-action corresponding to
 *the specified aaType exists.
 **/
-DLLEXPORT void STDCALL FORM_DoPageAAction(FPDF_PAGE page,
-                                          FPDF_FORMHANDLE hHandle,
-                                          int aaType);
+FPDF_EXPORT void FPDF_CALLCONV FORM_DoPageAAction(FPDF_PAGE page,
+                                                  FPDF_FORMHANDLE hHandle,
+                                                  int aaType);
 
 /**
  * Function: FORM_OnMouseMove
@@ -1233,11 +1235,34 @@ DLLEXPORT void STDCALL FORM_DoPageAAction(FPDF_PAGE page,
  * Return Value:
  *          TRUE indicates success; otherwise false.
  **/
-DLLEXPORT FPDF_BOOL STDCALL FORM_OnMouseMove(FPDF_FORMHANDLE hHandle,
-                                             FPDF_PAGE page,
-                                             int modifier,
-                                             double page_x,
-                                             double page_y);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnMouseMove(FPDF_FORMHANDLE hHandle,
+                                                     FPDF_PAGE page,
+                                                     int modifier,
+                                                     double page_x,
+                                                     double page_y);
+
+/**
+ * Function: FORM_OnFocus
+ *          This function focuses the form annotation at a given point. If the
+ *          annotation at the point already has focus, nothing happens. If there
+ *          is no annotation at the point, remove form focus.
+ * Parameters:
+ *          hHandle     -   Handle to the form fill module. Returned by
+ *                          FPDFDOC_InitFormFillEnvironment.
+ *          page        -   Handle to the page. Returned by FPDF_LoadPage.
+ *          modifier    -   Indicates whether various virtual keys are down.
+ *          page_x      -   Specifies the x-coordinate of the cursor in PDF user
+ *                          space.
+ *          page_y      -   Specifies the y-coordinate of the cursor in PDF user
+ *                          space.
+ * Return Value:
+ *          TRUE if there is an annotation at the given point and it has focus.
+ **/
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnFocus(FPDF_FORMHANDLE hHandle,
+                                                 FPDF_PAGE page,
+                                                 int modifier,
+                                                 double page_x,
+                                                 double page_y);
 
 /**
  * Function: FORM_OnLButtonDown
@@ -1256,11 +1281,11 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnMouseMove(FPDF_FORMHANDLE hHandle,
  * Return Value:
  *          TRUE indicates success; otherwise false.
  **/
-DLLEXPORT FPDF_BOOL STDCALL FORM_OnLButtonDown(FPDF_FORMHANDLE hHandle,
-                                               FPDF_PAGE page,
-                                               int modifier,
-                                               double page_x,
-                                               double page_y);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnLButtonDown(FPDF_FORMHANDLE hHandle,
+                                                       FPDF_PAGE page,
+                                                       int modifier,
+                                                       double page_x,
+                                                       double page_y);
 
 /**
  * Function: FORM_OnLButtonUp
@@ -1277,23 +1302,23 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnLButtonDown(FPDF_FORMHANDLE hHandle,
  * Return Value:
  *          TRUE indicates success; otherwise false.
  **/
-DLLEXPORT FPDF_BOOL STDCALL FORM_OnLButtonUp(FPDF_FORMHANDLE hHandle,
-                                             FPDF_PAGE page,
-                                             int modifier,
-                                             double page_x,
-                                             double page_y);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnLButtonUp(FPDF_FORMHANDLE hHandle,
+                                                     FPDF_PAGE page,
+                                                     int modifier,
+                                                     double page_x,
+                                                     double page_y);
 
 #ifdef PDF_ENABLE_XFA
-DLLEXPORT FPDF_BOOL STDCALL FORM_OnRButtonDown(FPDF_FORMHANDLE hHandle,
-                                               FPDF_PAGE page,
-                                               int modifier,
-                                               double page_x,
-                                               double page_y);
-DLLEXPORT FPDF_BOOL STDCALL FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
-                                             FPDF_PAGE page,
-                                             int modifier,
-                                             double page_x,
-                                             double page_y);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnRButtonDown(FPDF_FORMHANDLE hHandle,
+                                                       FPDF_PAGE page,
+                                                       int modifier,
+                                                       double page_x,
+                                                       double page_y);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
+                                                     FPDF_PAGE page,
+                                                     int modifier,
+                                                     double page_x,
+                                                     double page_y);
 #endif  // PDF_ENABLE_XFA
 
 /**
@@ -1310,10 +1335,10 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
  * Return Value:
  *          TRUE indicates success; otherwise false.
  **/
-DLLEXPORT FPDF_BOOL STDCALL FORM_OnKeyDown(FPDF_FORMHANDLE hHandle,
-                                           FPDF_PAGE page,
-                                           int nKeyCode,
-                                           int modifier);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnKeyDown(FPDF_FORMHANDLE hHandle,
+                                                   FPDF_PAGE page,
+                                                   int nKeyCode,
+                                                   int modifier);
 
 /**
  * Function: FORM_OnKeyUp
@@ -1329,10 +1354,10 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnKeyDown(FPDF_FORMHANDLE hHandle,
  * Return Value:
  *          TRUE indicates success; otherwise false.
  **/
-DLLEXPORT FPDF_BOOL STDCALL FORM_OnKeyUp(FPDF_FORMHANDLE hHandle,
-                                         FPDF_PAGE page,
-                                         int nKeyCode,
-                                         int modifier);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnKeyUp(FPDF_FORMHANDLE hHandle,
+                                                 FPDF_PAGE page,
+                                                 int nKeyCode,
+                                                 int modifier);
 
 /**
  * Function: FORM_OnChar
@@ -1349,10 +1374,10 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnKeyUp(FPDF_FORMHANDLE hHandle,
  * Return Value:
  *          TRUE indicates success; otherwise false.
  **/
-DLLEXPORT FPDF_BOOL STDCALL FORM_OnChar(FPDF_FORMHANDLE hHandle,
-                                        FPDF_PAGE page,
-                                        int nChar,
-                                        int modifier);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnChar(FPDF_FORMHANDLE hHandle,
+                                                FPDF_PAGE page,
+                                                int nChar,
+                                                int modifier);
 
 /**
  * Function: FORM_GetSelectedText
@@ -1372,10 +1397,31 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_OnChar(FPDF_FORMHANDLE hHandle,
  *          Length in bytes of selected text in form text field or form combobox
  *          text field.
  **/
-DLLEXPORT unsigned long STDCALL FORM_GetSelectedText(FPDF_FORMHANDLE hHandle,
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FORM_GetSelectedText(FPDF_FORMHANDLE hHandle,
+                     FPDF_PAGE page,
+                     void* buffer,
+                     unsigned long buflen);
+
+/**
+ * Function: FORM_ReplaceSelection
+ *          You can call this function to replace the selected text in a form
+ *          text field or user-editable form combobox text field with another
+ *          text string (which can be empty or non-empty). If there is no
+ *          selected text, this function will append the replacement text after
+ *          the current caret position.
+ * Parameters:
+ *          hHandle     -   Handle to the form fill module. Returned by
+ *                          FPDFDOC_InitFormFillEnvironment.
+ *          page        -   Handle to the page. Returned by FPDF_LoadPage
+ *                          function.
+ *          wsText      -   The text to be inserted, in UTF-16LE format.
+ * Return Value:
+ *          None.
+ **/
+FPDF_EXPORT void FPDF_CALLCONV FORM_ReplaceSelection(FPDF_FORMHANDLE hHandle,
                                                      FPDF_PAGE page,
-                                                     void* buffer,
-                                                     unsigned long buflen);
+                                                     FPDF_WIDESTRING wsText);
 
 /**
  * Function: FORM_ForceToKillFocus.
@@ -1389,7 +1435,8 @@ DLLEXPORT unsigned long STDCALL FORM_GetSelectedText(FPDF_FORMHANDLE hHandle,
  * Return Value:
  *          TRUE indicates success; otherwise false.
  **/
-DLLEXPORT FPDF_BOOL STDCALL FORM_ForceToKillFocus(FPDF_FORMHANDLE hHandle);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FORM_ForceToKillFocus(FPDF_FORMHANDLE hHandle);
 
 // Field Types
 #define FPDF_FORMFIELD_UNKNOWN 0      // Unknown.
@@ -1416,10 +1463,11 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_ForceToKillFocus(FPDF_FORMHANDLE hHandle);
  *     Return the type of the form field; -1 indicates no field.
  *     See field types above.
  **/
-DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
-                                                   FPDF_PAGE page,
-                                                   double page_x,
-                                                   double page_y);
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
+                             FPDF_PAGE page,
+                             double page_x,
+                             double page_y);
 
 /**
  * Function: FPDFPage_FormFieldZOrderAtPoint
@@ -1434,10 +1482,11 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
  *     Return the z-order of the form field; -1 indicates no field.
  *     Higher numbers are closer to the front.
  **/
-DLLEXPORT int STDCALL FPDFPage_FormFieldZOrderAtPoint(FPDF_FORMHANDLE hHandle,
-                                                      FPDF_PAGE page,
-                                                      double page_x,
-                                                      double page_y);
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFPage_FormFieldZOrderAtPoint(FPDF_FORMHANDLE hHandle,
+                                FPDF_PAGE page,
+                                double page_x,
+                                double page_y);
 
 /**
  * Function: FPDF_SetFormFieldHighlightColor
@@ -1461,9 +1510,10 @@ DLLEXPORT int STDCALL FPDFPage_FormFieldZOrderAtPoint(FPDF_FORMHANDLE hHandle,
  *          Please refresh the client window to show the highlight immediately
  *if necessary.
  **/
-DLLEXPORT void STDCALL FPDF_SetFormFieldHighlightColor(FPDF_FORMHANDLE hHandle,
-                                                       int fieldType,
-                                                       unsigned long color);
+FPDF_EXPORT void FPDF_CALLCONV
+FPDF_SetFormFieldHighlightColor(FPDF_FORMHANDLE hHandle,
+                                int fieldType,
+                                unsigned long color);
 
 /**
  * Function: FPDF_SetFormFieldHighlightAlpha
@@ -1479,8 +1529,8 @@ DLLEXPORT void STDCALL FPDF_SetFormFieldHighlightColor(FPDF_FORMHANDLE hHandle,
  * Return Value:
  *          NONE.
  **/
-DLLEXPORT void STDCALL FPDF_SetFormFieldHighlightAlpha(FPDF_FORMHANDLE hHandle,
-                                                       unsigned char alpha);
+FPDF_EXPORT void FPDF_CALLCONV
+FPDF_SetFormFieldHighlightAlpha(FPDF_FORMHANDLE hHandle, unsigned char alpha);
 
 /**
  * Function: FPDF_RemoveFormFieldHighlight
@@ -1494,7 +1544,8 @@ DLLEXPORT void STDCALL FPDF_SetFormFieldHighlightAlpha(FPDF_FORMHANDLE hHandle,
  *          Please refresh the client window to remove the highlight immediately
  *if necessary.
  **/
-DLLEXPORT void STDCALL FPDF_RemoveFormFieldHighlight(FPDF_FORMHANDLE hHandle);
+FPDF_EXPORT void FPDF_CALLCONV
+FPDF_RemoveFormFieldHighlight(FPDF_FORMHANDLE hHandle);
 
 /**
 * Function: FPDF_FFLDraw
@@ -1534,26 +1585,26 @@ DLLEXPORT void STDCALL FPDF_RemoveFormFieldHighlight(FPDF_FORMHANDLE hHandle);
 *call this function after rendering functions, such as FPDF_RenderPageBitmap or
 *FPDF_RenderPageBitmap_Start, finish rendering the page contents.
 **/
-DLLEXPORT void STDCALL FPDF_FFLDraw(FPDF_FORMHANDLE hHandle,
-                                    FPDF_BITMAP bitmap,
-                                    FPDF_PAGE page,
-                                    int start_x,
-                                    int start_y,
-                                    int size_x,
-                                    int size_y,
-                                    int rotate,
-                                    int flags);
+FPDF_EXPORT void FPDF_CALLCONV FPDF_FFLDraw(FPDF_FORMHANDLE hHandle,
+                                            FPDF_BITMAP bitmap,
+                                            FPDF_PAGE page,
+                                            int start_x,
+                                            int start_y,
+                                            int size_x,
+                                            int size_y,
+                                            int rotate,
+                                            int flags);
 
 #ifdef _SKIA_SUPPORT_
-DLLEXPORT void STDCALL FPDF_FFLRecord(FPDF_FORMHANDLE hHandle,
-                                      FPDF_RECORDER recorder,
-                                      FPDF_PAGE page,
-                                      int start_x,
-                                      int start_y,
-                                      int size_x,
-                                      int size_y,
-                                      int rotate,
-                                      int flags);
+FPDF_EXPORT void FPDF_CALLCONV FPDF_FFLRecord(FPDF_FORMHANDLE hHandle,
+                                              FPDF_RECORDER recorder,
+                                              FPDF_PAGE page,
+                                              int start_x,
+                                              int start_y,
+                                              int size_x,
+                                              int size_y,
+                                              int rotate,
+                                              int flags);
 #endif
 
 #ifdef PDF_ENABLE_XFA
@@ -1570,8 +1621,8 @@ DLLEXPORT void STDCALL FPDF_FFLRecord(FPDF_FORMHANDLE hHandle,
  *                      TRUE indicates that the input document has XFA fields,
  *otherwise FALSE.
  **/
-DLLEXPORT FPDF_BOOL STDCALL FPDF_HasXFAField(FPDF_DOCUMENT document,
-                                             int* docType);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_HasXFAField(FPDF_DOCUMENT document,
+                                                     int* docType);
 
 /**
  * Function: FPDF_LoadXFA
@@ -1583,7 +1634,7 @@ DLLEXPORT FPDF_BOOL STDCALL FPDF_HasXFAField(FPDF_DOCUMENT document,
  * Return Value:
  *          TRUE indicates success,otherwise FALSE.
  **/
-DLLEXPORT FPDF_BOOL STDCALL FPDF_LoadXFA(FPDF_DOCUMENT document);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_LoadXFA(FPDF_DOCUMENT document);
 
 /**
  * Function: FPDF_Widget_Undo
@@ -1596,8 +1647,8 @@ DLLEXPORT FPDF_BOOL STDCALL FPDF_LoadXFA(FPDF_DOCUMENT document);
  * Return Value:
  *          None.
  **/
-DLLEXPORT void STDCALL FPDF_Widget_Undo(FPDF_DOCUMENT document,
-                                        FPDF_WIDGET hWidget);
+FPDF_EXPORT void FPDF_CALLCONV FPDF_Widget_Undo(FPDF_DOCUMENT document,
+                                                FPDF_WIDGET hWidget);
 /**
  * Function: FPDF_Widget_Redo
  *          This method will implement the redo feature for the specified xfa
@@ -1609,8 +1660,8 @@ DLLEXPORT void STDCALL FPDF_Widget_Undo(FPDF_DOCUMENT document,
  * Return Value:
  *          None.
  **/
-DLLEXPORT void STDCALL FPDF_Widget_Redo(FPDF_DOCUMENT document,
-                                        FPDF_WIDGET hWidget);
+FPDF_EXPORT void FPDF_CALLCONV FPDF_Widget_Redo(FPDF_DOCUMENT document,
+                                                FPDF_WIDGET hWidget);
 /**
  * Function: FPDF_Widget_SelectAll
  *          This method will implement the select all feature for the specified
@@ -1622,8 +1673,8 @@ DLLEXPORT void STDCALL FPDF_Widget_Redo(FPDF_DOCUMENT document,
  * Return Value:
  *          None.
  **/
-DLLEXPORT void STDCALL FPDF_Widget_SelectAll(FPDF_DOCUMENT document,
-                                             FPDF_WIDGET hWidget);
+FPDF_EXPORT void FPDF_CALLCONV FPDF_Widget_SelectAll(FPDF_DOCUMENT document,
+                                                     FPDF_WIDGET hWidget);
 /**
  * Function: FPDF_Widget_Copy
  *          This method will implement the copy feature for the specified xfa
@@ -1638,10 +1689,10 @@ DLLEXPORT void STDCALL FPDF_Widget_SelectAll(FPDF_DOCUMENT document,
  * Return Value:
  *          None.
  **/
-DLLEXPORT void STDCALL FPDF_Widget_Copy(FPDF_DOCUMENT document,
-                                        FPDF_WIDGET hWidget,
-                                        FPDF_WIDESTRING wsText,
-                                        FPDF_DWORD* size);
+FPDF_EXPORT void FPDF_CALLCONV FPDF_Widget_Copy(FPDF_DOCUMENT document,
+                                                FPDF_WIDGET hWidget,
+                                                FPDF_WIDESTRING wsText,
+                                                FPDF_DWORD* size);
 /**
  * Function: FPDF_Widget_Cut
  *          This method will implement the cut feature for the specified xfa
@@ -1656,10 +1707,10 @@ DLLEXPORT void STDCALL FPDF_Widget_Copy(FPDF_DOCUMENT document,
  * Return Value:
  *          None.
  **/
-DLLEXPORT void STDCALL FPDF_Widget_Cut(FPDF_DOCUMENT document,
-                                       FPDF_WIDGET hWidget,
-                                       FPDF_WIDESTRING wsText,
-                                       FPDF_DWORD* size);
+FPDF_EXPORT void FPDF_CALLCONV FPDF_Widget_Cut(FPDF_DOCUMENT document,
+                                               FPDF_WIDGET hWidget,
+                                               FPDF_WIDESTRING wsText,
+                                               FPDF_DWORD* size);
 /**
  * Function: FPDF_Widget_Paste
  *          This method will implement the paste feature for the specified xfa
@@ -1673,10 +1724,10 @@ DLLEXPORT void STDCALL FPDF_Widget_Cut(FPDF_DOCUMENT document,
  * Return Value:
  *          None.
  **/
-DLLEXPORT void STDCALL FPDF_Widget_Paste(FPDF_DOCUMENT document,
-                                         FPDF_WIDGET hWidget,
-                                         FPDF_WIDESTRING wsText,
-                                         FPDF_DWORD size);
+FPDF_EXPORT void FPDF_CALLCONV FPDF_Widget_Paste(FPDF_DOCUMENT document,
+                                                 FPDF_WIDGET hWidget,
+                                                 FPDF_WIDESTRING wsText,
+                                                 FPDF_DWORD size);
 /**
  * Function: FPDF_Widget_ReplaceSpellCheckWord
  *          This method will implement the spell check feature for the specified
@@ -1692,7 +1743,7 @@ DLLEXPORT void STDCALL FPDF_Widget_Paste(FPDF_DOCUMENT document,
  * Return Value:
  *          None.
  **/
-DLLEXPORT void STDCALL
+FPDF_EXPORT void FPDF_CALLCONV
 FPDF_Widget_ReplaceSpellCheckWord(FPDF_DOCUMENT document,
                                   FPDF_WIDGET hWidget,
                                   float x,
@@ -1714,7 +1765,7 @@ FPDF_Widget_ReplaceSpellCheckWord(FPDF_DOCUMENT document,
  * Return Value:
  *          None.
  **/
-DLLEXPORT void STDCALL
+FPDF_EXPORT void FPDF_CALLCONV
 FPDF_Widget_GetSpellCheckWords(FPDF_DOCUMENT document,
                                FPDF_WIDGET hWidget,
                                float x,
@@ -1728,7 +1779,8 @@ FPDF_Widget_GetSpellCheckWords(FPDF_DOCUMENT document,
  * Return Value:
  *          None.
  **/
-DLLEXPORT int STDCALL FPDF_StringHandleCounts(FPDF_STRINGHANDLE stringHandle);
+FPDF_EXPORT int FPDF_CALLCONV
+FPDF_StringHandleCounts(FPDF_STRINGHANDLE stringHandle);
 /**
  * Function: FPDF_StringHandleGetStringByIndex
  *          This method will get the specified index of the text buffer.
@@ -1741,7 +1793,7 @@ DLLEXPORT int STDCALL FPDF_StringHandleCounts(FPDF_STRINGHANDLE stringHandle);
  * Return Value:
  *          TRUE indicates success, otherwise FALSE.
  **/
-DLLEXPORT FPDF_BOOL STDCALL
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDF_StringHandleGetStringByIndex(FPDF_STRINGHANDLE stringHandle,
                                   int index,
                                   FPDF_BYTESTRING bsText,
@@ -1754,7 +1806,8 @@ FPDF_StringHandleGetStringByIndex(FPDF_STRINGHANDLE stringHandle,
  * Return Value:
  *          None.
  **/
-DLLEXPORT void STDCALL FPDF_StringHandleRelease(FPDF_STRINGHANDLE stringHandle);
+FPDF_EXPORT void FPDF_CALLCONV
+FPDF_StringHandleRelease(FPDF_STRINGHANDLE stringHandle);
 /**
  * Function: FPDF_StringHandleAddString
  *          This method will add the specified text buffer.
@@ -1766,7 +1819,7 @@ DLLEXPORT void STDCALL FPDF_StringHandleRelease(FPDF_STRINGHANDLE stringHandle);
  * Return Value:
  *          TRUE indicates success, otherwise FALSE.
  **/
-DLLEXPORT FPDF_BOOL STDCALL
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDF_StringHandleAddString(FPDF_STRINGHANDLE stringHandle,
                            FPDF_BYTESTRING bsText,
                            FPDF_DWORD size);

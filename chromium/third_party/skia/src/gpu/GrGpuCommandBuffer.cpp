@@ -16,32 +16,27 @@
 #include "GrRenderTarget.h"
 #include "SkRect.h"
 
-void GrGpuCommandBuffer::submit() {
-    this->gpu()->handleDirtyContext();
-    this->onSubmit();
-}
-
-void GrGpuCommandBuffer::clear(GrRenderTarget* rt, const GrFixedClip& clip, GrColor color) {
+void GrGpuRTCommandBuffer::clear(const GrFixedClip& clip, GrColor color) {
 #ifdef SK_DEBUG
+    GrRenderTarget* rt = fRenderTarget;
     SkASSERT(rt);
     SkASSERT(!clip.scissorEnabled() ||
              (SkIRect::MakeWH(rt->width(), rt->height()).contains(clip.scissorRect()) &&
               SkIRect::MakeWH(rt->width(), rt->height()) != clip.scissorRect()));
 #endif
-    this->onClear(rt, clip, color);
+    this->onClear(clip, color);
 }
 
-void GrGpuCommandBuffer::clearStencilClip(GrRenderTarget* rt, const GrFixedClip& clip,
-                                          bool insideStencilMask) {
-    this->onClearStencilClip(rt, clip, insideStencilMask);
+void GrGpuRTCommandBuffer::clearStencilClip(const GrFixedClip& clip, bool insideStencilMask) {
+    this->onClearStencilClip(clip, insideStencilMask);
 }
 
-bool GrGpuCommandBuffer::draw(const GrPipeline& pipeline,
-                              const GrPrimitiveProcessor& primProc,
-                              const GrMesh meshes[],
-                              const GrPipeline::DynamicState dynamicStates[],
-                              int meshCount,
-                              const SkRect& bounds) {
+bool GrGpuRTCommandBuffer::draw(const GrPipeline& pipeline,
+                                const GrPrimitiveProcessor& primProc,
+                                const GrMesh meshes[],
+                                const GrPipeline::DynamicState dynamicStates[],
+                                int meshCount,
+                                const SkRect& bounds) {
 #ifdef SK_DEBUG
     SkASSERT(!primProc.hasInstanceAttribs() || this->gpu()->caps()->instanceAttribSupport());
     for (int i = 0; i < meshCount; ++i) {
@@ -56,7 +51,6 @@ bool GrGpuCommandBuffer::draw(const GrPipeline& pipeline,
         return false;
     }
 
-    SkASSERT(pipeline.isInitialized());
     if (primProc.numAttribs() > this->gpu()->caps()->maxVertexAttributes()) {
         this->gpu()->stats()->incNumFailedDraws();
         return false;

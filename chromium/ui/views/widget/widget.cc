@@ -567,7 +567,7 @@ void Widget::StackAtTop() {
   native_widget_->StackAtTop();
 }
 
-void Widget::SetShape(std::unique_ptr<SkRegion> shape) {
+void Widget::SetShape(std::unique_ptr<ShapeRects> shape) {
   native_widget_->SetShape(std::move(shape));
 }
 
@@ -855,10 +855,6 @@ FocusTraversable* Widget::GetFocusTraversable() {
 
 void Widget::ThemeChanged() {
   root_view_->ThemeChanged();
-}
-
-void Widget::LocaleChanged() {
-  root_view_->LocaleChanged();
 }
 
 void Widget::DeviceScaleFactorChanged(float device_scale_factor) {

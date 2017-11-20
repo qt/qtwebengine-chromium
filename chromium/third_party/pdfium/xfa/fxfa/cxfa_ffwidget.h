@@ -41,7 +41,7 @@ int32_t XFA_StrokeTypeSetLineDash(CXFA_Graphics* pGraphics,
 CFX_GraphStateData::LineCap XFA_LineCapToFXGE(int32_t iLineCap);
 void XFA_DrawImage(CXFA_Graphics* pGS,
                    const CFX_RectF& rtImage,
-                   CFX_Matrix* pMatrix,
+                   const CFX_Matrix& matrix,
                    const CFX_RetainPtr<CFX_DIBitmap>& pDIBitmap,
                    int32_t iAspect,
                    int32_t iImageXDpi,
@@ -68,13 +68,9 @@ void XFA_RectWidthoutMargin(CFX_RectF& rt,
                             bool bUI = false);
 CXFA_FFWidget* XFA_GetWidgetFromLayoutItem(CXFA_LayoutItem* pLayoutItem);
 bool XFA_IsCreateWidget(XFA_Element iType);
+
 #define XFA_DRAWBOX_ForceRound 1
 #define XFA_DRAWBOX_Lowered3D 2
-void XFA_DrawBox(CXFA_Box box,
-                 CXFA_Graphics* pGS,
-                 const CFX_RectF& rtWidget,
-                 CFX_Matrix* pMatrix,
-                 uint32_t dwFlags = 0);
 
 class CXFA_CalcData {
  public:
@@ -92,7 +88,7 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
 
   virtual CFX_RectF GetBBox(uint32_t dwStatus, bool bDrawFocus = false);
   virtual void RenderWidget(CXFA_Graphics* pGS,
-                            CFX_Matrix* pMatrix,
+                            const CFX_Matrix& matrix,
                             uint32_t dwStatus);
   virtual bool IsLoaded();
   virtual bool LoadWidget();
@@ -157,8 +153,7 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   CXFA_FFDoc* GetDoc();
   CXFA_FFApp* GetApp();
   IXFA_AppProvider* GetAppProvider();
-  void InvalidateWidget(const CFX_RectF* pRect = nullptr);
-  void AddInvalidateRect(const CFX_RectF* pRect = nullptr);
+  void AddInvalidateRect();
   bool GetCaptionText(CFX_WideString& wsCap);
   bool IsFocused() const { return !!(m_dwStatus & XFA_WidgetStatus_Focused); }
   CFX_PointF Rotate2Normal(const CFX_PointF& point);
@@ -174,8 +169,12 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   void DrawBorder(CXFA_Graphics* pGS,
                   CXFA_Box box,
                   const CFX_RectF& rtBorder,
-                  CFX_Matrix* pMatrix,
-                  uint32_t dwFlags = 0);
+                  const CFX_Matrix& matrix);
+  void DrawBorderWithFlags(CXFA_Graphics* pGS,
+                           CXFA_Box box,
+                           const CFX_RectF& rtBorder,
+                           const CFX_Matrix& matrix,
+                           uint32_t dwFlags);
 
   CFX_RectF GetRectWithoutRotate();
   bool IsMatchVisibleStatus(uint32_t dwStatus);

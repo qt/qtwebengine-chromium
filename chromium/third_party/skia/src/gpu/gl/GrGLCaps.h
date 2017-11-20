@@ -346,13 +346,9 @@ public:
 
     bool doManualMipmapping() const { return fDoManualMipmapping; }
 
-    bool srgbDecodeDisableSupport() const { return fSRGBDecodeDisableSupport; }
     bool srgbDecodeDisableAffectsMipmaps() const { return fSRGBDecodeDisableAffectsMipmaps; }
 
-    /**
-     * Returns a string containing the caps info.
-     */
-    SkString dump() const override;
+    void onDumpJSON(SkJSONWriter*) const override;
 
     bool rgba8888PixelsOpsAreSlow() const { return fRGBA8888PixelsOpsAreSlow; }
     bool partialFBOReadIsSlow() const { return fPartialFBOReadIsSlow; }
@@ -464,7 +460,6 @@ private:
     bool fMipMapLevelAndLodControlSupport : 1;
     bool fRGBAToBGRAReadbackConversionsAreSlow : 1;
     bool fDoManualMipmapping : 1;
-    bool fSRGBDecodeDisableSupport : 1;
     bool fSRGBDecodeDisableAffectsMipmaps : 1;
     bool fClearToBoundaryValuesIsBroken : 1;
     bool fClearTextureSupport : 1;

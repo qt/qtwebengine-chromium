@@ -206,7 +206,6 @@ RenderWidgetHostView* GetRenderWidgetHostViewToUse(
                               styleMask:windowStyle
                                 backing:bufferingType
                                   defer:deferCreation]) {
-    [self setOpaque:NO];
     [self setBackgroundColor:[NSColor clearColor]];
     [self startObservingClicks];
   }
@@ -281,7 +280,7 @@ blink::WebColor WebColorFromNSColor(NSColor *color) {
 // Extract underline information from an attributed string. Mostly copied from
 // third_party/WebKit/Source/WebKit/mac/WebView/WebHTMLView.mm
 void ExtractUnderlines(NSAttributedString* string,
-                       std::vector<ui::CompositionUnderline>* underlines) {
+                       std::vector<ui::ImeTextSpan>* ime_text_spans) {
   int length = [[string string] length];
   int i = 0;
   while (i < length) {
@@ -296,9 +295,9 @@ void ExtractUnderlines(NSAttributedString* string,
         color = WebColorFromNSColor(
             [colorAttr colorUsingColorSpaceName:NSDeviceRGBColorSpace]);
       }
-      underlines->push_back(
-          ui::CompositionUnderline(range.location, NSMaxRange(range), color,
-                                   [style intValue] > 1, SK_ColorTRANSPARENT));
+      ime_text_spans->push_back(ui::ImeTextSpan(
+          ui::ImeTextSpan::Type::kComposition, range.location,
+          NSMaxRange(range), color, [style intValue] > 1, SK_ColorTRANSPARENT));
     }
     i = range.location + range.length;
   }
@@ -422,7 +421,7 @@ void RenderWidgetHostViewMac::AcceleratedWidgetSwapCompleted() {
   // swapped. See RenderWidgetHostViewAura for more details. Note that this is
   // done only after the swap has completed, so that the background is not set
   // before the frame is up.
-  UpdateBackgroundColorFromRenderer(last_frame_root_background_color_);
+  SetBackgroundLayerColor(last_frame_root_background_color_);
 
   if (display_link_)
     display_link_->NotifyCurrentTime(base::TimeTicks::Now());
@@ -1422,7 +1421,7 @@ void RenderWidgetHostViewMac::FocusedNodeChanged(
 }
 
 void RenderWidgetHostViewMac::DidCreateNewRendererCompositorFrameSink(
-    cc::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink) {
+    viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink) {
   browser_compositor_->DidCreateNewRendererCompositorFrameSink(
       renderer_compositor_frame_sink);
 }
@@ -1443,12 +1442,12 @@ void RenderWidgetHostViewMac::SubmitCompositorFrame(
 }
 
 void RenderWidgetHostViewMac::OnDidNotProduceFrame(
-    const cc::BeginFrameAck& ack) {
+    const viz::BeginFrameAck& ack) {
   browser_compositor_->OnDidNotProduceFrame(ack);
 }
 
 void RenderWidgetHostViewMac::ClearCompositorFrame() {
-  browser_compositor_->GetDelegatedFrameHost()->ClearDelegatedFrame();
+  browser_compositor_->ClearCompositorFrame();
 }
 
 gfx::Rect RenderWidgetHostViewMac::GetBoundsInRootWindow() {
@@ -1520,7 +1519,7 @@ viz::FrameSinkId RenderWidgetHostViewMac::GetFrameSinkId() {
 }
 
 viz::FrameSinkId RenderWidgetHostViewMac::FrameSinkIdAtPoint(
-    cc::SurfaceHittestDelegate* delegate,
+    viz::SurfaceHittestDelegate* delegate,
     const gfx::Point& point,
     gfx::Point* transformed_point) {
   // The surface hittest happens in device pixels, so we need to convert the
@@ -1547,8 +1546,7 @@ bool RenderWidgetHostViewMac::ShouldRouteEvent(
   DCHECK(WebInputEvent::IsMouseEventType(event.GetType()) ||
          event.GetType() == WebInputEvent::kMouseWheel);
   return render_widget_host_->delegate() &&
-         render_widget_host_->delegate()->GetInputEventRouter() &&
-         SiteIsolationPolicy::AreCrossProcessFramesPossible();
+         render_widget_host_->delegate()->GetInputEventRouter();
 }
 
 void RenderWidgetHostViewMac::ProcessMouseEvent(
@@ -1639,34 +1637,37 @@ void RenderWidgetHostViewMac::ShowDefinitionForSelection() {
 }
 
 void RenderWidgetHostViewMac::SetBackgroundColor(SkColor color) {
-  if (color == background_color_)
-    return;
-
-  // The renderer will feed its color back to us with the first CompositorFrame.
-  // We short-cut here to show a sensible color before that happens.
-  UpdateBackgroundColorFromRenderer(color);
+  // This is called by the embedding code prior to the first frame appearing,
+  // to set a reasonable color to show before the web content generates its
+  // first frame. This will be overridden by the web contents.
+  SetBackgroundLayerColor(color);
 
   DCHECK(SkColorGetA(color) == SK_AlphaOPAQUE ||
          SkColorGetA(color) == SK_AlphaTRANSPARENT);
   bool opaque = SkColorGetA(color) == SK_AlphaOPAQUE;
-  if (render_widget_host_)
-    render_widget_host_->SetBackgroundOpaque(opaque);
+  if (background_is_opaque_ != opaque) {
+    background_is_opaque_ = opaque;
+    browser_compositor_->SetHasTransparentBackground(!opaque);
+    if (render_widget_host_)
+      render_widget_host_->SetBackgroundOpaque(opaque);
+  }
 }
 
 SkColor RenderWidgetHostViewMac::background_color() const {
-  return background_color_;
+  // This is used to specify a color to temporarily show while waiting for web
+  // content. This should never return transparent, since that will cause bugs
+  // where views are initialized as having a transparent background
+  // inappropriately.
+  // https://crbug.com/735407
+  if (background_layer_color_ == SK_ColorTRANSPARENT)
+    return SK_ColorWHITE;
+  return background_layer_color_;
 }
 
-void RenderWidgetHostViewMac::UpdateBackgroundColorFromRenderer(SkColor color) {
-  if (color == background_color_)
+void RenderWidgetHostViewMac::SetBackgroundLayerColor(SkColor color) {
+  if (color == background_layer_color_)
     return;
-  background_color_ = color;
-
-  bool opaque = SkColorGetA(color) == SK_AlphaOPAQUE;
-
-  [cocoa_view_ setOpaque:opaque];
-
-  browser_compositor_->SetHasTransparentBackground(!opaque);
+  background_layer_color_ = color;
 
   ScopedCAActionDisabler disabler;
   base::ScopedCFTypeRef<CGColorRef> cg_color(
@@ -1770,7 +1771,6 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
 
     renderWidgetHostView_.reset(r);
     canBeKeyView_ = YES;
-    opaque_ = NO;
     pinchHasReachedZoomThreshold_ = false;
     isStylusEnteringProximity_ = false;
 
@@ -1795,6 +1795,13 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
   responderDelegate_.reset();
 
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+
+  // Update and cache the new input context. Otherwise,
+  // [NSTextInputContext currentInputContext] might still hold on to this
+  // view's NSTextInputContext even after it's deallocated.
+  // See http://crbug.com/684388.
+  [[self window] makeFirstResponder:nil];
+  [NSApp updateWindows];
 
   [super dealloc];
 }
@@ -1864,10 +1871,6 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
 
 - (void)setCloseOnDeactivate:(BOOL)b {
   closeOnDeactivate_ = b;
-}
-
-- (void)setOpaque:(BOOL)opaque {
-  opaque_ = opaque;
 }
 
 - (BOOL)shouldIgnoreMouseEvent:(NSEvent*)theEvent {
@@ -1994,6 +1997,9 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
       type == NSOtherMouseDown) {
     [self finishComposingText];
   }
+
+  if (type == NSMouseMoved)
+    cursorHidden_ = NO;
 
   WebMouseEvent event =
       WebMouseEventBuilder::Build(theEvent, self, pointerType_);
@@ -2162,8 +2168,10 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
     widgetHost->ForwardKeyboardEventWithLatencyInfo(event, latency_info);
 
     // Possibly autohide the cursor.
-    if ([self shouldAutohideCursorForEvent:theEvent])
+    if ([self shouldAutohideCursorForEvent:theEvent]) {
       [NSCursor setHiddenUntilMouseMoves:YES];
+      cursorHidden_ = YES;
+    }
 
     return;
   }
@@ -2188,7 +2196,7 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
   textToBeInserted_.clear();
   markedText_.clear();
   markedTextSelectedRange_ = NSMakeRange(NSNotFound, 0);
-  underlines_.clear();
+  ime_text_spans_.clear();
   setMarkedTextReplacementRange_ = gfx::Range::InvalidRange();
   unmarkTextCalled_ = NO;
   hasEditCommands_ = NO;
@@ -2250,8 +2258,7 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
   BOOL textInserted = NO;
   if (textToBeInserted_.length() >
       ((hasMarkedText_ || oldHasMarkedText) ? 0u : 1u)) {
-    widgetHost->ImeCommitText(textToBeInserted_,
-                              std::vector<ui::CompositionUnderline>(),
+    widgetHost->ImeCommitText(textToBeInserted_, std::vector<ui::ImeTextSpan>(),
                               gfx::Range::InvalidRange(), 0);
     textInserted = YES;
   }
@@ -2263,7 +2270,7 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
     // composition node in WebKit.
     // When marked text is available, |markedTextSelectedRange_| will be the
     // range being selected inside the marked text.
-    widgetHost->ImeSetComposition(markedText_, underlines_,
+    widgetHost->ImeSetComposition(markedText_, ime_text_spans_,
                                   setMarkedTextReplacementRange_,
                                   markedTextSelectedRange_.location,
                                   NSMaxRange(markedTextSelectedRange_));
@@ -2332,8 +2339,10 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
   }
 
   // Possibly autohide the cursor.
-  if ([self shouldAutohideCursorForEvent:theEvent])
+  if ([self shouldAutohideCursorForEvent:theEvent]) {
     [NSCursor setHiddenUntilMouseMoves:YES];
+    cursorHidden_ = YES;
+  }
 }
 
 - (void)forceTouchEvent:(NSEvent*)theEvent {
@@ -2587,6 +2596,23 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
 //     cancels the gesture, all remaining touches are forwarded to the content
 //     scroll logic. The user cannot trigger the navigation logic again.
 - (void)scrollWheel:(NSEvent*)event {
+#if defined(MAC_OS_X_VERSION_10_11) && \
+    MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_11
+  // When linking against the 10.11 (or later) SDK and running on 10.11 or
+  // later, check the phase of the event and specially handle the "begin" and
+  // "end" phases.
+  if (base::mac::IsAtLeastOS10_11()) {
+    if (event.phase == NSEventPhaseBegan) {
+      [self handleBeginGestureWithEvent:event];
+    }
+
+    if (event.phase == NSEventPhaseEnded ||
+        event.phase == NSEventPhaseCancelled) {
+      [self handleEndGestureWithEvent:event];
+    }
+  }
+#endif
+
   if (responderDelegate_ &&
       [responderDelegate_ respondsToSelector:@selector(handleEvent:)]) {
     BOOL handled = [responderDelegate_ handleEvent:event];
@@ -3295,7 +3321,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   hasMarkedText_ = NO;
   markedText_.clear();
   markedTextSelectedRange_ = NSMakeRange(NSNotFound, 0);
-  underlines_.clear();
+  ime_text_spans_.clear();
 
   // If we are handling a key down event, then FinishComposingText() will be
   // called in keyEvent: method.
@@ -3324,13 +3350,14 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   markedText_ = base::SysNSStringToUTF16(im_text);
   hasMarkedText_ = (length > 0);
 
-  underlines_.clear();
+  ime_text_spans_.clear();
   if (isAttributedString) {
-    ExtractUnderlines(string, &underlines_);
+    ExtractUnderlines(string, &ime_text_spans_);
   } else {
     // Use a thin black underline by default.
-    underlines_.push_back(ui::CompositionUnderline(0, length, SK_ColorBLACK,
-                                                   false, SK_ColorTRANSPARENT));
+    ime_text_spans_.push_back(
+        ui::ImeTextSpan(ui::ImeTextSpan::Type::kComposition, 0, length,
+                        SK_ColorBLACK, false, SK_ColorTRANSPARENT));
   }
 
   // If we are handling a key down event, then SetComposition() will be
@@ -3345,7 +3372,7 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   } else {
     if (renderWidgetHostView_->GetActiveWidget()) {
       renderWidgetHostView_->GetActiveWidget()->ImeSetComposition(
-          markedText_, underlines_, gfx::Range(replacementRange),
+          markedText_, ime_text_spans_, gfx::Range(replacementRange),
           newSelRange.location, NSMaxRange(newSelRange));
     }
   }
@@ -3404,8 +3431,8 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
     gfx::Range replacement_range(replacementRange);
     if (renderWidgetHostView_->GetActiveWidget()) {
       renderWidgetHostView_->GetActiveWidget()->ImeCommitText(
-          base::SysNSStringToUTF16(im_text),
-          std::vector<ui::CompositionUnderline>(), replacement_range, 0);
+          base::SysNSStringToUTF16(im_text), std::vector<ui::ImeTextSpan>(),
+          replacement_range, 0);
     }
   }
 
@@ -3557,6 +3584,12 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 
   currentCursor_.reset([cursor retain]);
   [[self window] invalidateCursorRectsForView:self];
+
+  // NSWindow's invalidateCursorRectsForView: resets cursor rects but does not
+  // update the cursor instantly. The cursor is updated when the mouse moves.
+  // Update the cursor by setting the current cursor if not hidden.
+  if (!cursorHidden_)
+    [currentCursor_ set];
 }
 
 - (void)popupWindowWillClose:(NSNotification *)notification {
@@ -3596,10 +3629,6 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
   [self finishComposingText];
   [self insertText:string];
   return YES;
-}
-
-- (BOOL)isOpaque {
-  return opaque_;
 }
 
 // "-webkit-app-region: drag | no-drag" is implemented on Mac by excluding

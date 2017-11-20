@@ -41,8 +41,6 @@ std::string DescribePC(const char *SymbolizedFMT, uintptr_t PC);
 
 unsigned NumberOfCpuCores();
 
-bool ExecuteCommandAndReadOutput(const std::string &Command, std::string *Out);
-
 // Platform specific functions.
 void SetSignalHandler(const FuzzingOptions& Options);
 
@@ -59,17 +57,27 @@ FILE *OpenProcessPipe(const char *Command, const char *Mode);
 const void *SearchMemory(const void *haystack, size_t haystacklen,
                          const void *needle, size_t needlelen);
 
-std::string CloneArgsWithoutX(const std::vector<std::string> &Args,
+std::string CloneArgsWithoutX(const Vector<std::string> &Args,
                               const char *X1, const char *X2);
 
-inline std::string CloneArgsWithoutX(const std::vector<std::string> &Args,
+inline std::string CloneArgsWithoutX(const Vector<std::string> &Args,
                                      const char *X) {
   return CloneArgsWithoutX(Args, X, X);
+}
+
+inline std::pair<std::string, std::string> SplitBefore(std::string X,
+                                                       std::string S) {
+  auto Pos = S.find(X);
+  if (Pos == std::string::npos)
+    return std::make_pair(S, "");
+  return std::make_pair(S.substr(0, Pos), S.substr(Pos));
 }
 
 std::string DisassembleCmd(const std::string &FileName);
 
 std::string SearchRegexCmd(const std::string &Regex);
+
+size_t SimpleFastHash(const uint8_t *Data, size_t Size);
 
 }  // namespace fuzzer
 

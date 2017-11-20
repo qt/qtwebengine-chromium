@@ -28,7 +28,7 @@ rtc_static_library("primitives") {
 
   deps = [
     "../..:webrtc_common",
-    "../../base:rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
+    "../../rtc_base:rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
   ]
 }
 
@@ -49,8 +49,8 @@ if (rtc_include_tests) {
         ":desktop_capture_mock",
         ":primitives",
         ":screen_drawer",
-        "../../base:rtc_base",
-        "../../base:rtc_base_approved",
+        "../../rtc_base:rtc_base",
+        "../../rtc_base:rtc_base_approved",
         "../../system_wrappers",
         "../../test:test_support",
         "../../test:video_test_support",
@@ -89,13 +89,14 @@ if (rtc_include_tests) {
       "win/cursor_unittest_resources.h",
       "win/cursor_unittest_resources.rc",
       "win/screen_capture_utils_unittest.cc",
+      "win/screen_capturer_win_directx_unittest.cc",
     ]
     deps = [
       ":desktop_capture",
       ":desktop_capture_mock",
       ":primitives",
       "../..:webrtc_common",
-      "../../base:rtc_base_approved",
+      "../../rtc_base:rtc_base_approved",
       "../../system_wrappers",
       "../../test:test_support",
       "//testing/gmock",
@@ -126,13 +127,15 @@ if (rtc_include_tests) {
       "screen_drawer.cc",
       "screen_drawer.h",
       "screen_drawer_linux.cc",
+      "screen_drawer_lock_posix.cc",
+      "screen_drawer_lock_posix.h",
       "screen_drawer_mac.cc",
       "screen_drawer_win.cc",
     ]
 
     deps = [
       ":primitives",
-      "../../base:rtc_base_approved",
+      "../../rtc_base:rtc_base_approved",
       "../../system_wrappers",
     ]
   }
@@ -156,7 +159,7 @@ if (rtc_include_tests) {
 
     deps = [
       ":primitives",
-      "../../base:rtc_base_approved",
+      "../../rtc_base:rtc_base_approved",
       "../../test:test_support",
     ]
   }
@@ -202,8 +205,8 @@ rtc_static_library("desktop_capture") {
     "mouse_cursor_monitor.h",
     "mouse_cursor_monitor_mac.mm",
     "mouse_cursor_monitor_win.cc",
-    "resolution_change_detector.cc",
-    "resolution_change_detector.h",
+    "resolution_tracker.cc",
+    "resolution_tracker.h",
     "rgba_color.cc",
     "rgba_color.h",
     "screen_capture_frame_queue.h",
@@ -217,6 +220,8 @@ rtc_static_library("desktop_capture") {
     "win/d3d_device.h",
     "win/desktop.cc",
     "win/desktop.h",
+    "win/display_configuration_monitor.cc",
+    "win/display_configuration_monitor.h",
     "win/dxgi_adapter_duplicator.cc",
     "win/dxgi_adapter_duplicator.h",
     "win/dxgi_context.cc",
@@ -248,6 +253,11 @@ rtc_static_library("desktop_capture") {
     "win/window_capture_utils.h",
     "window_capturer_mac.mm",
     "window_capturer_win.cc",
+    "window_finder.h",
+    "window_finder_mac.h",
+    "window_finder_mac.mm",
+    "window_finder_win.cc",
+    "window_finder_win.h",
   ]
 
   if (use_x11) {
@@ -255,8 +265,14 @@ rtc_static_library("desktop_capture") {
       "mouse_cursor_monitor_x11.cc",
       "screen_capturer_x11.cc",
       "window_capturer_x11.cc",
+      "window_finder_x11.cc",
+      "window_finder_x11.h",
       "x11/shared_x_display.cc",
       "x11/shared_x_display.h",
+      "x11/window_list_utils.cc",
+      "x11/window_list_utils.h",
+      "x11/x_atom_cache.cc",
+      "x11/x_atom_cache.h",
       "x11/x_error_trap.cc",
       "x11/x_error_trap.h",
       "x11/x_server_pixel_buffer.cc",
@@ -291,7 +307,7 @@ rtc_static_library("desktop_capture") {
   deps = [
     ":primitives",
     "../..:webrtc_common",
-    "../../base:rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
+    "../../rtc_base:rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
     "../../system_wrappers",
     "//third_party/libyuv",
   ]

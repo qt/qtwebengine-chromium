@@ -337,7 +337,7 @@ bool ShouldDrawDeviceText(const CFX_Font* pFont, uint32_t text_flags) {
     return false;
 
   const CFX_ByteString bsPsName = pFont->GetPsName();
-  if (bsPsName.Find("+ZJHL") != -1)
+  if (bsPsName.Contains("+ZJHL"))
     return false;
 
   if (bsPsName == "CNAAJI+cmex10")
@@ -375,13 +375,16 @@ CFX_RenderDevice::CFX_RenderDevice()
 CFX_RenderDevice::~CFX_RenderDevice() {
   RestoreState(false);
 #if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
-  Flush();
+  Flush(true);
 #endif
 }
 
 #if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
-void CFX_RenderDevice::Flush() {
-  m_pDeviceDriver.reset();
+void CFX_RenderDevice::Flush(bool release) {
+  if (release)
+    m_pDeviceDriver.reset();
+  else
+    m_pDeviceDriver->Flush();
 }
 #endif
 
@@ -468,6 +471,13 @@ bool CFX_RenderDevice::SetClip_PathStroke(
   return true;
 }
 
+bool CFX_RenderDevice::SetClip_Rect(const CFX_RectF& rtClip) {
+  return SetClip_Rect(FX_RECT(static_cast<int32_t>(floor(rtClip.left)),
+                              static_cast<int32_t>(floor(rtClip.top)),
+                              static_cast<int32_t>(ceil(rtClip.right())),
+                              static_cast<int32_t>(ceil(rtClip.bottom()))));
+}
+
 bool CFX_RenderDevice::SetClip_Rect(const FX_RECT& rect) {
   CFX_PathData path;
   path.AppendRect(rect.left, rect.bottom, rect.right, rect.top);
@@ -504,8 +514,7 @@ bool CFX_RenderDevice::DrawPathWithBlend(const CFX_PathData* pPathData,
       pos1 = pObject2Device->Transform(pos1);
       pos2 = pObject2Device->Transform(pos2);
     }
-    DrawCosmeticLine(pos1.x, pos1.y, pos2.x, pos2.y, fill_color, fill_mode,
-                     blend_type);
+    DrawCosmeticLine(pos1, pos2, fill_color, fill_mode, blend_type);
     return true;
   }
 
@@ -613,7 +622,7 @@ bool CFX_RenderDevice::DrawFillStrokePath(const CFX_PathData* pPathData,
     bbox = pPathData->GetBoundingBox();
   }
   if (pObject2Device)
-    pObject2Device->TransformRect(bbox);
+    bbox = pObject2Device->TransformRect(bbox);
 
   CFX_Matrix ctm = GetCTM();
   float fScaleX = fabs(ctm.a);
@@ -681,21 +690,19 @@ bool CFX_RenderDevice::FillRectWithBlend(const FX_RECT* pRect,
   return true;
 }
 
-bool CFX_RenderDevice::DrawCosmeticLine(float x1,
-                                        float y1,
-                                        float x2,
-                                        float y2,
+bool CFX_RenderDevice::DrawCosmeticLine(const CFX_PointF& ptMoveTo,
+                                        const CFX_PointF& ptLineTo,
                                         uint32_t color,
                                         int fill_mode,
                                         int blend_type) {
-  if ((color >= 0xff000000) &&
-      m_pDeviceDriver->DrawCosmeticLine(x1, y1, x2, y2, color, blend_type)) {
+  if ((color >= 0xff000000) && m_pDeviceDriver->DrawCosmeticLine(
+                                   ptMoveTo, ptLineTo, color, blend_type)) {
     return true;
   }
   CFX_GraphStateData graph_state;
   CFX_PathData path;
-  path.AppendPoint(CFX_PointF(x1, y1), FXPT_TYPE::MoveTo, false);
-  path.AppendPoint(CFX_PointF(x2, y2), FXPT_TYPE::LineTo, false);
+  path.AppendPoint(ptMoveTo, FXPT_TYPE::MoveTo, false);
+  path.AppendPoint(ptLineTo, FXPT_TYPE::LineTo, false);
   return m_pDeviceDriver->DrawPath(&path, nullptr, &graph_state, 0, color,
                                    fill_mode, blend_type);
 }
@@ -828,7 +835,7 @@ bool CFX_RenderDevice::StartDIBitsWithBlend(
 }
 
 bool CFX_RenderDevice::ContinueDIBits(CFX_ImageRenderer* handle,
-                                      IFX_Pause* pPause) {
+                                      IFX_PauseIndicator* pPause) {
   return m_pDeviceDriver->ContinueDIBits(handle, pPause);
 }
 
@@ -1115,7 +1122,7 @@ bool CFX_RenderDevice::DrawTextPath(int nChars,
   return true;
 }
 
-void CFX_RenderDevice::DrawFillRect(CFX_Matrix* pUser2Device,
+void CFX_RenderDevice::DrawFillRect(const CFX_Matrix* pUser2Device,
                                     const CFX_FloatRect& rect,
                                     const FX_COLORREF& color) {
   CFX_PathData path;
@@ -1124,7 +1131,7 @@ void CFX_RenderDevice::DrawFillRect(CFX_Matrix* pUser2Device,
   DrawPath(&path, pUser2Device, nullptr, color, 0, FXFILL_WINDING);
 }
 
-void CFX_RenderDevice::DrawFillArea(CFX_Matrix* pUser2Device,
+void CFX_RenderDevice::DrawFillArea(const CFX_Matrix* pUser2Device,
                                     const CFX_PointF* pPts,
                                     int32_t nCount,
                                     const FX_COLORREF& color) {
@@ -1136,7 +1143,7 @@ void CFX_RenderDevice::DrawFillArea(CFX_Matrix* pUser2Device,
   DrawPath(&path, pUser2Device, nullptr, color, 0, FXFILL_ALTERNATE);
 }
 
-void CFX_RenderDevice::DrawStrokeRect(CFX_Matrix* pUser2Device,
+void CFX_RenderDevice::DrawStrokeRect(const CFX_Matrix* pUser2Device,
                                       const CFX_FloatRect& rect,
                                       const FX_COLORREF& color,
                                       float fWidth) {
@@ -1150,7 +1157,7 @@ void CFX_RenderDevice::DrawStrokeRect(CFX_Matrix* pUser2Device,
   DrawPath(&path, pUser2Device, &gsd, 0, color, FXFILL_ALTERNATE);
 }
 
-void CFX_RenderDevice::DrawStrokeLine(CFX_Matrix* pUser2Device,
+void CFX_RenderDevice::DrawStrokeLine(const CFX_Matrix* pUser2Device,
                                       const CFX_PointF& ptMoveTo,
                                       const CFX_PointF& ptLineTo,
                                       const FX_COLORREF& color,
@@ -1165,14 +1172,14 @@ void CFX_RenderDevice::DrawStrokeLine(CFX_Matrix* pUser2Device,
   DrawPath(&path, pUser2Device, &gsd, 0, color, FXFILL_ALTERNATE);
 }
 
-void CFX_RenderDevice::DrawFillRect(CFX_Matrix* pUser2Device,
+void CFX_RenderDevice::DrawFillRect(const CFX_Matrix* pUser2Device,
                                     const CFX_FloatRect& rect,
                                     const CFX_Color& color,
                                     int32_t nTransparency) {
   DrawFillRect(pUser2Device, rect, color.ToFXColor(nTransparency));
 }
 
-void CFX_RenderDevice::DrawShadow(CFX_Matrix* pUser2Device,
+void CFX_RenderDevice::DrawShadow(const CFX_Matrix* pUser2Device,
                                   bool bVertical,
                                   bool bHorizontal,
                                   CFX_FloatRect rect,
@@ -1204,7 +1211,7 @@ void CFX_RenderDevice::DrawShadow(CFX_Matrix* pUser2Device,
   }
 }
 
-void CFX_RenderDevice::DrawBorder(CFX_Matrix* pUser2Device,
+void CFX_RenderDevice::DrawBorder(const CFX_Matrix* pUser2Device,
                                   const CFX_FloatRect& rect,
                                   float fWidth,
                                   const CFX_Color& color,

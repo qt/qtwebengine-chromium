@@ -48,7 +48,7 @@ CompilerImpl *Context9::createCompiler()
 
 ShaderImpl *Context9::createShader(const gl::ShaderState &data)
 {
-    return new ShaderD3D(data, mRenderer->getWorkarounds());
+    return new ShaderD3D(data, mRenderer->getWorkarounds(), mRenderer->getNativeExtensions());
 }
 
 ProgramImpl *Context9::createProgram(const gl::ProgramState &data)
@@ -102,7 +102,7 @@ FenceNVImpl *Context9::createFenceNV()
     return new FenceNV9(mRenderer);
 }
 
-FenceSyncImpl *Context9::createFenceSync()
+SyncImpl *Context9::createSync()
 {
     // D3D9 doesn't support ES 3.0 and its sync objects.
     UNREACHABLE();
@@ -153,10 +153,9 @@ gl::Error Context9::drawElements(const gl::Context *context,
                                  GLenum mode,
                                  GLsizei count,
                                  GLenum type,
-                                 const void *indices,
-                                 const gl::IndexRange &indexRange)
+                                 const void *indices)
 {
-    return mRenderer->genericDrawElements(context, mode, count, type, indices, 0, indexRange);
+    return mRenderer->genericDrawElements(context, mode, count, type, indices, 0);
 }
 
 gl::Error Context9::drawElementsInstanced(const gl::Context *context,
@@ -164,11 +163,9 @@ gl::Error Context9::drawElementsInstanced(const gl::Context *context,
                                           GLsizei count,
                                           GLenum type,
                                           const void *indices,
-                                          GLsizei instances,
-                                          const gl::IndexRange &indexRange)
+                                          GLsizei instances)
 {
-    return mRenderer->genericDrawElements(context, mode, count, type, indices, instances,
-                                          indexRange);
+    return mRenderer->genericDrawElements(context, mode, count, type, indices, instances);
 }
 
 gl::Error Context9::drawRangeElements(const gl::Context *context,
@@ -177,10 +174,9 @@ gl::Error Context9::drawRangeElements(const gl::Context *context,
                                       GLuint end,
                                       GLsizei count,
                                       GLenum type,
-                                      const void *indices,
-                                      const gl::IndexRange &indexRange)
+                                      const void *indices)
 {
-    return mRenderer->genericDrawElements(context, mode, count, type, indices, 0, indexRange);
+    return mRenderer->genericDrawElements(context, mode, count, type, indices, 0);
 }
 
 gl::Error Context9::drawArraysIndirect(const gl::Context *context,

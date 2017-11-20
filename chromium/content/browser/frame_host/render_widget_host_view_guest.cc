@@ -12,9 +12,9 @@
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "build/build_config.h"
-#include "cc/surfaces/surface.h"
-#include "cc/surfaces/surface_manager.h"
 #include "components/viz/common/surfaces/surface_sequence.h"
+#include "components/viz/service/surfaces/surface.h"
+#include "components/viz/service/surfaces/surface_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/renderer_host/input/input_router.h"
@@ -85,6 +85,11 @@ RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
       guest_(guest ? guest->AsWeakPtr() : base::WeakPtr<BrowserPluginGuest>()),
       platform_view_(platform_view),
       should_forward_text_selection_(false) {
+  // In tests |guest_| and therefore |owner| can be null.
+  auto* owner = GetOwnerRenderWidgetHostView();
+  if (owner)
+    SetParentFrameSinkId(owner->GetFrameSinkId());
+
   gfx::NativeView view = GetNativeView();
   if (view)
     UpdateScreenInfo(view);
@@ -124,7 +129,7 @@ void RenderWidgetHostViewGuest::Show() {
     // Since we were last shown, our renderer may have had a different surface
     // set (e.g. showing an interstitial), so we resend our current surface to
     // the renderer.
-    if (local_surface_id_.is_valid())
+    if (last_received_local_surface_id_.is_valid())
       SendSurfaceInfoToEmbedder();
   }
   host_->WasShown(ui::LatencyInfo());
@@ -259,10 +264,9 @@ base::string16 RenderWidgetHostViewGuest::GetSelectedText() {
   return platform_view_->GetSelectedText();
 }
 
-void RenderWidgetHostViewGuest::SetNeedsBeginFrames(
-    bool needs_begin_frames) {
- if (platform_view_)
-   platform_view_->SetNeedsBeginFrames(needs_begin_frames);
+void RenderWidgetHostViewGuest::SetNeedsBeginFrames(bool needs_begin_frames) {
+  if (platform_view_)
+    platform_view_->SetNeedsBeginFrames(needs_begin_frames);
 }
 
 TouchSelectionControllerClientManager*
@@ -357,14 +361,9 @@ void RenderWidgetHostViewGuest::UpdateCursor(const WebCursor& cursor) {
   // and so we will always hit this code path.
   if (!guest_)
     return;
-  if (SiteIsolationPolicy::AreCrossProcessFramesPossible()) {
-    RenderWidgetHostViewBase* rwhvb = GetOwnerRenderWidgetHostView();
-    if (rwhvb)
-      rwhvb->UpdateCursor(cursor);
-  } else {
-    guest_->SendMessageToEmbedder(base::MakeUnique<BrowserPluginMsg_SetCursor>(
-        guest_->browser_plugin_instance_id(), cursor));
-  }
+  RenderWidgetHostViewBase* rwhvb = GetOwnerRenderWidgetHostView();
+  if (rwhvb)
+    rwhvb->UpdateCursor(cursor);
 }
 
 void RenderWidgetHostViewGuest::SetIsLoading(bool is_loading) {
@@ -453,7 +452,7 @@ void RenderWidgetHostViewGuest::UnlockMouse() {
 }
 
 void RenderWidgetHostViewGuest::DidCreateNewRendererCompositorFrameSink(
-    cc::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink) {
+    viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink) {
   RenderWidgetHostViewChildFrame::DidCreateNewRendererCompositorFrameSink(
       renderer_compositor_frame_sink);
   platform_view_->DidCreateNewRendererCompositorFrameSink(
@@ -653,9 +652,8 @@ void RenderWidgetHostViewGuest::OnHandleInputEvent(
   }
 
   if (blink::WebInputEvent::IsKeyboardEventType(event->GetType())) {
-    if (!embedder->GetLastKeyboardEvent())
-      return;
-    NativeWebKeyboardEvent keyboard_event(*embedder->GetLastKeyboardEvent());
+    NativeWebKeyboardEvent keyboard_event(
+        *static_cast<const blink::WebKeyboardEvent*>(event));
     host_->ForwardKeyboardEvent(keyboard_event);
     return;
   }

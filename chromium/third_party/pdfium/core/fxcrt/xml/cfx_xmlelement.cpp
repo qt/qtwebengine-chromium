@@ -6,6 +6,7 @@
 
 #include "core/fxcrt/xml/cfx_xmlelement.h"
 
+#include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/xml/cfx_xmlchardata.h"
 #include "core/fxcrt/xml/cfx_xmltext.h"
@@ -42,17 +43,15 @@ std::unique_ptr<CFX_XMLNode> CFX_XMLElement::Clone() {
 }
 
 CFX_WideString CFX_XMLElement::GetLocalTagName() const {
-  FX_STRSIZE iFind = GetName().Find(L':', 0);
-  if (iFind < 0)
-    return GetName();
-  return GetName().Right(GetName().GetLength() - iFind - 1);
+  auto pos = GetName().Find(L':');
+  return pos.has_value()
+             ? GetName().Right(GetName().GetLength() - pos.value() - 1)
+             : GetName();
 }
 
 CFX_WideString CFX_XMLElement::GetNamespacePrefix() const {
-  FX_STRSIZE iFind = GetName().Find(L':', 0);
-  if (iFind < 0)
-    return CFX_WideString();
-  return GetName().Left(iFind);
+  auto pos = GetName().Find(L':');
+  return pos.has_value() ? GetName().Left(pos.value()) : CFX_WideString();
 }
 
 CFX_WideString CFX_XMLElement::GetNamespaceURI() const {

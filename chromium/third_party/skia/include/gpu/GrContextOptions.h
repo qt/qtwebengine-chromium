@@ -10,6 +10,9 @@
 
 #include "SkTypes.h"
 #include "GrTypes.h"
+#include "../private/GrTypesPriv.h"
+
+class SkExecutor;
 
 struct GrContextOptions {
     GrContextOptions() {}
@@ -23,22 +26,21 @@ struct GrContextOptions {
 
     int  fMaxTextureSizeOverride = SK_MaxS32;
 
-    /** If non-zero, overrides the maximum size of a tile for sw-backed images and bitmaps rendered
-        by SkGpuDevice. */
-    int  fMaxTileSizeOverride = 0;
-    bool fSuppressDualSourceBlending = false;
-
     /** the threshold in bytes above which we will use a buffer mapping API to map vertex and index
         buffers to CPU memory in order to update them.  A value of -1 means the GrContext should
         deduce the optimal value for this platform. */
     int  fBufferMapThreshold = -1;
 
+    /**
+     * Executor to handle threaded work within Ganesh. If this is nullptr, then all work will be
+     * done serially on the main thread. To have worker threads assist with various tasks, set this
+     * to a valid SkExecutor instance. Currently, used for software path rendering, but may be used
+     * for other tasks.
+     */
+    SkExecutor* fExecutor = nullptr;
+
     /** some gpus have problems with partial writes of the rendertarget */
     bool fUseDrawInsteadOfPartialRenderTargetWrite = false;
-
-    /** Force us to do all swizzling manually in the shader and don't rely on extensions to do
-        swizzling. */
-    bool fUseShaderSwizzling = false;
 
     /** Construct mipmaps manually, via repeated downsampling draw-calls. This is used when
         the driver's implementation (glGenerateMipmap) contains bugs. This requires mipmap
@@ -48,6 +50,12 @@ struct GrContextOptions {
     /** Enable instanced rendering as long as all required functionality is supported by the HW.
         Instanced rendering is still experimental at this point and disabled by default. */
     bool fEnableInstancedRendering = false;
+
+    /**
+     * Disables distance field rendering for paths. Distance field computation can be expensive,
+     * and yields no benefit if a path is not rendered multiple times with different transforms.
+     */
+    bool fDisableDistanceFieldPaths = false;
 
     /**
      * If true this allows path mask textures to be cached. This is only really useful if paths
@@ -70,6 +78,33 @@ struct GrContextOptions {
     bool fDisableGpuYUVConversion = false;
 
     /**
+     * The maximum size of cache textures used for Skia's Glyph cache.
+     */
+    float fGlyphCacheTextureMaximumBytes = 2048 * 1024 * 4;
+
+    /**
+     * Bugs on certain drivers cause stencil buffers to leak. This flag causes Skia to avoid
+     * allocating stencil buffers and use alternate rasterization paths, avoiding the leak.
+     */
+    bool fAvoidStencilBuffers = false;
+
+#if GR_TEST_UTILS
+    /**
+     * Private options that are only meant for testing within Skia's tools.
+     */
+
+    /**
+     * If non-zero, overrides the maximum size of a tile for sw-backed images and bitmaps rendered
+     * by SkGpuDevice.
+     */
+    int  fMaxTileSizeOverride = 0;
+
+    /**
+     * Prevents use of dual source blending, to test that all xfer modes work correctly without it.
+     */
+    bool fSuppressDualSourceBlending = false;
+
+    /**
      * If true, the caps will never report driver support for path rendering.
      */
     bool fSuppressPathRendering = false;
@@ -80,42 +115,10 @@ struct GrContextOptions {
     bool fWireframeMode = false;
 
     /**
-     * Allows the client to include or exclude specific GPU path renderers.
+     * Include or exclude specific GPU path renderers.
      */
-    enum class GpuPathRenderers {
-        kNone              = 0, // Always use sofware masks.
-        kDashLine          = 1 << 0,
-        kStencilAndCover   = 1 << 1,
-        kMSAA              = 1 << 2,
-        kAAHairline        = 1 << 3,
-        kAAConvex          = 1 << 4,
-        kAALinearizing     = 1 << 5,
-        kSmall             = 1 << 6,
-        kCoverageCounting  = 1 << 7,
-        kTessellating      = 1 << 8,
-        kDefault           = 1 << 9,
-
-        // Temporarily disabling CCPR by default until it has had a time to soak.
-        kAll               = (kDefault | (kDefault - 1)) & ~kCoverageCounting,
-
-        // For legacy. To be removed when updated in Android.
-        kDistanceField     = kSmall
-    };
-
-    GpuPathRenderers fGpuPathRenderers = GpuPathRenderers::kAll;
-
-    /**
-     * The maximum size of cache textures used for Skia's Glyph cache.
-     */
-    float fGlyphCacheTextureMaximumBytes = 2048 * 1024 * 4;
-
-    /**
-     * Bugs on certain drivers cause stencil buffers to leak. This flag causes Skia to avoid
-     * allocating stencil buffers and use alternate rasterization paths, avoiding the leak.
-     */
-    bool fAvoidStencilBuffers = false;
+    GpuPathRenderers fGpuPathRenderers = GpuPathRenderers::kDefault;
+#endif
 };
-
-GR_MAKE_BITFIELD_CLASS_OPS(GrContextOptions::GpuPathRenderers)
 
 #endif

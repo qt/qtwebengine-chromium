@@ -19,7 +19,6 @@
 
 #include "glslang.h"
 #include "preprocessor/SourceLocation.h"
-#include "ValidateGlobalInitializer.h"
 #include "ValidateSwitch.h"
 
 ///////////////////////////////////////////////////////////////////////
@@ -406,6 +405,7 @@ bool TParseContext::lValueErrorCheck(const TSourceLoc &line, const char* op, TIn
 	case EvqFrontFacing:    message = "can't modify gl_FrontFacing"; break;
 	case EvqPointCoord:     message = "can't modify gl_PointCoord";  break;
 	case EvqInstanceID:     message = "can't modify gl_InstanceID";  break;
+	case EvqVertexID:       message = "can't modify gl_VertexID";    break;
 	default:
 
 		//
@@ -1299,18 +1299,10 @@ bool TParseContext::executeInitializer(const TSourceLoc& line, const TString& id
 		return true;
 	}
 
-	bool globalInitWarning = false;
-	if(symbolTable.atGlobalLevel() && !ValidateGlobalInitializer(initializer, this, &globalInitWarning))
+	if(symbolTable.atGlobalLevel() && initializer->getQualifier() != EvqConstExpr)
 	{
-		// Error message does not completely match behavior with ESSL 1.00, but
-		// we want to steer developers towards only using constant expressions.
 		error(line, "global variable initializers must be constant expressions", "=");
 		return true;
-	}
-	if(globalInitWarning)
-	{
-		warning(line, "global variable initializers should be constant expressions "
-			"(uniforms and globals are allowed in global initializers for legacy compatibility)", "=");
 	}
 
 	//

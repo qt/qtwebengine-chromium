@@ -9,16 +9,19 @@
 
 #include "GrBackendSurface.h"
 #include "GrContextPriv.h"
+#include "GrRenderTarget.h"
 #include "GrRenderTargetContextPriv.h"
 #include "GrTexture.h"
 
 #include "SkCanvas.h"
 #include "SkColorSpace_Base.h"
+#include "SkDeferredDisplayList.h"
 #include "SkGpuDevice.h"
 #include "SkImage_Base.h"
 #include "SkImage_Gpu.h"
 #include "SkImagePriv.h"
 #include "SkSurface_Base.h"
+#include "SkSurfaceCharacterization.h"
 
 #if SK_SUPPORT_GPU
 
@@ -148,7 +151,8 @@ void SkSurface_Gpu::onDiscard() {
     fDevice->accessRenderTargetContext()->discard();
 }
 
-bool SkSurface_Gpu::onFlush(int numSemaphores, GrBackendSemaphore* signalSemaphores) {
+GrSemaphoresSubmitted SkSurface_Gpu::onFlush(int numSemaphores,
+                                             GrBackendSemaphore signalSemaphores[]) {
     return fDevice->flushAndSignalSemaphores(numSemaphores, signalSemaphores);
 }
 
@@ -156,12 +160,41 @@ bool SkSurface_Gpu::onWait(int numSemaphores, const GrBackendSemaphore* waitSema
     return fDevice->wait(numSemaphores, waitSemaphores);
 }
 
+bool SkSurface_Gpu::onCharacterize(SkSurfaceCharacterization* data) const {
+    GrRenderTargetContext* rtc = fDevice->accessRenderTargetContext();
+
+    data->set(rtc->origin(), rtc->width(), rtc->height(),
+              rtc->config(), rtc->numColorSamples());
+    return true;
+}
+
+bool SkSurface_Gpu::isCompatible(const SkSurfaceCharacterization& data) const {
+    GrRenderTargetContext* rtc = fDevice->accessRenderTargetContext();
+
+    return data.origin() == rtc->origin() &&
+           data.width() == rtc->width() &&
+           data.height() == rtc->height() &&
+           data.config() == rtc->config() &&
+           data.sampleCount() == rtc->numColorSamples();
+}
+
+void SkSurface_Gpu::onDraw(SkDeferredDisplayList* dl) {
+    if (!this->isCompatible(dl->characterization())) {
+        return;
+    }
+
+    // Ultimately need to pass opLists from the DeferredDisplayList on to the
+    // SkGpuDevice's renderTargetContext.
+    dl->draw(this);
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////
 
 bool SkSurface_Gpu::Valid(const SkImageInfo& info) {
     switch (info.colorType()) {
         case kRGBA_F16_SkColorType:
-            return info.colorSpace() && info.colorSpace()->gammaIsLinear();
+            return (!info.colorSpace()) || info.colorSpace()->gammaIsLinear();
         case kRGBA_8888_SkColorType:
         case kBGRA_8888_SkColorType:
             return !info.colorSpace() || info.colorSpace()->gammaCloseToSRGB();
@@ -173,7 +206,7 @@ bool SkSurface_Gpu::Valid(const SkImageInfo& info) {
 bool SkSurface_Gpu::Valid(GrContext* context, GrPixelConfig config, SkColorSpace* colorSpace) {
     switch (config) {
         case kRGBA_half_GrPixelConfig:
-            return colorSpace && colorSpace->gammaIsLinear();
+            return (!colorSpace) || colorSpace->gammaIsLinear();
         case kSRGBA_8888_GrPixelConfig:
         case kSBGRA_8888_GrPixelConfig:
             return context->caps()->srgbSupport() && colorSpace && colorSpace->gammaCloseToSRGB();
@@ -230,20 +263,6 @@ sk_sp<SkSurface> SkSurface::MakeFromBackendTexture(GrContext* context, const GrB
         return nullptr;
     }
     return sk_make_sp<SkSurface_Gpu>(std::move(device));
-}
-
-sk_sp<SkSurface> SkSurface::MakeFromBackendRenderTarget(GrContext* context,
-                                                        const GrBackendRenderTargetDesc& desc,
-                                                        sk_sp<SkColorSpace> colorSpace,
-                                                        const SkSurfaceProps* props) {
-    if (!context) {
-        return nullptr;
-    }
-
-    GrBackendRenderTarget backendRT(desc, context->contextPriv().getBackend());
-    return MakeFromBackendRenderTarget(context, backendRT, desc.fOrigin,
-                                       std::move(colorSpace), props);
-
 }
 
 sk_sp<SkSurface> SkSurface::MakeFromBackendRenderTarget(GrContext* context,

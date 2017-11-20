@@ -31,6 +31,7 @@ declare_args() {
   skia_use_piex = !is_win
   skia_use_zlib = true
   skia_use_metal = false
+  skia_use_libheif = false
 
   skia_android_serial = ""
   skia_enable_discrete_gpu = true
@@ -250,7 +251,7 @@ opts("crc32") {
 opts("sse2") {
   enabled = is_x86
   sources = skia_opts.sse2_sources
-  if (is_win) {
+  if (!is_clang && is_win) {
     defines = [ "SK_CPU_SSE_LEVEL=SK_CPU_SSE_LEVEL_SSE2" ]
   } else {
     cflags = [ "-msse2" ]
@@ -260,7 +261,7 @@ opts("sse2") {
 opts("ssse3") {
   enabled = is_x86
   sources = skia_opts.ssse3_sources
-  if (is_win) {
+  if (!is_clang && is_win) {
     defines = [ "SK_CPU_SSE_LEVEL=SK_CPU_SSE_LEVEL_SSSE3" ]
   } else {
     cflags = [ "-mssse3" ]
@@ -270,7 +271,7 @@ opts("ssse3") {
 opts("sse41") {
   enabled = is_x86
   sources = skia_opts.sse41_sources
-  if (is_win) {
+  if (!is_clang && is_win) {
     defines = [ "SK_CPU_SSE_LEVEL=SK_CPU_SSE_LEVEL_SSE41" ]
   } else {
     cflags = [ "-msse4.1" ]
@@ -280,7 +281,7 @@ opts("sse41") {
 opts("sse42") {
   enabled = is_x86
   sources = skia_opts.sse42_sources
-  if (is_win) {
+  if (!is_clang && is_win) {
     defines = [ "SK_CPU_SSE_LEVEL=SK_CPU_SSE_LEVEL_SSE42" ]
   } else {
     cflags = [ "-msse4.2" ]
@@ -290,7 +291,7 @@ opts("sse42") {
 opts("avx") {
   enabled = is_x86
   sources = skia_opts.avx_sources
-  if (is_win) {
+  if (!is_clang && is_win) {
     cflags = [ "/arch:AVX" ]
   } else {
     cflags = [ "-mavx" ]
@@ -454,7 +455,10 @@ if (skia_compile_processors) {
     if (host_os == "win") {
       skslc_path += ".exe"
     }
-    args = [ rebase_path(skslc_path) ]
+    args = [
+      rebase_path(skslc_path),
+      rebase_path("bin/clang-format"),
+    ]
     args += rebase_path(skia_gpu_processor_sources)
   }
 } else {
@@ -527,6 +531,17 @@ optional("gpu") {
     libs += [ "Metal.framework" ]
     cflags_objcc += [ "-fobjc-arc" ]
   }
+}
+
+optional("heif") {
+  enabled = skia_use_libheif
+  public_defines = [ "SK_HAS_HEIF_LIBRARY" ]
+
+  deps = []
+
+  sources = [
+    "src/codec/SkHeifCodec.cpp",
+  ]
 }
 
 optional("jpeg") {
@@ -652,6 +667,7 @@ component("skia") {
     ":fontmgr_fontconfig",
     ":fontmgr_fuchsia",
     ":gpu",
+    ":heif",
     ":jpeg",
     ":none",
     ":pdf",
@@ -675,6 +691,7 @@ component("skia") {
   sources += skia_utils_sources
   sources += skia_xps_sources
   sources += [
+    "src/android/SkAndroidFrameworkUtils.cpp",
     "src/android/SkBitmapRegionCodec.cpp",
     "src/android/SkBitmapRegionDecoder.cpp",
     "src/codec/SkAndroidCodec.cpp",
@@ -891,12 +908,14 @@ if (skia_enable_tools) {
     if (defined(invoker.is_shared_library) && invoker.is_shared_library) {
       shared_library("lib" + target_name) {
         forward_variables_from(invoker, "*", [ "is_shared_library" ])
+        configs += [ ":skia_private" ]
         testonly = true
       }
     } else {
       _executable = target_name
       executable(_executable) {
         forward_variables_from(invoker, "*", [ "is_shared_library" ])
+        configs += [ ":skia_private" ]
         testonly = true
       }
     }
@@ -1030,8 +1049,12 @@ if (skia_enable_tools) {
       "tools/sk_tool_utils.cpp",
       "tools/sk_tool_utils_font.cpp",
       "tools/timer/Timer.cpp",
+      "tools/trace/SkChromeTracingTracer.cpp",
+      "tools/trace/SkChromeTracingTracer.h",
       "tools/trace/SkDebugfTracer.cpp",
       "tools/trace/SkDebugfTracer.h",
+      "tools/trace/SkEventTracingPriv.cpp",
+      "tools/trace/SkEventTracingPriv.h",
     ]
     libs = []
     if (is_ios) {
@@ -1204,6 +1227,23 @@ if (skia_enable_tools) {
     }
   }
 
+  test_app("bookmaker") {
+    sources = [
+      "tools/bookmaker/bookmaker.cpp",
+      "tools/bookmaker/fiddleParser.cpp",
+      "tools/bookmaker/includeParser.cpp",
+      "tools/bookmaker/includeWriter.cpp",
+      "tools/bookmaker/mdOut.cpp",
+      "tools/bookmaker/parserCommon.cpp",
+      "tools/bookmaker/spellCheck.cpp",
+    ]
+    deps = [
+      ":flags",
+      ":skia",
+      ":tool_utils",
+    ]
+  }
+
   import("gn/samples.gni")
   test_lib("samples") {
     public_include_dirs = [ "samplecode" ]
@@ -1262,28 +1302,18 @@ if (skia_enable_tools) {
     sources = [
       "tools/ok.cpp",
       "tools/ok_dsts.cpp",
+      "tools/ok_engines.cpp",
       "tools/ok_srcs.cpp",
       "tools/ok_test.cpp",
       "tools/ok_vias.cpp",
     ]
     deps = [
+      ":bench",
       ":gm",
       ":skia",
       ":tests",
       ":tool_utils",
     ]
-  }
-
-  if (!is_debug) {  # I've benchmarked debug code once too many times...
-    test_app("monobench") {
-      sources = [
-        "tools/monobench.cpp",
-      ]
-      deps = [
-        ":bench",
-        ":skia",
-      ]
-    }
   }
 
   test_app("nanobench") {
@@ -1384,6 +1414,19 @@ if (skia_enable_tools) {
     ]
     deps = [
       ":skia",
+      ":tool_utils",
+    ]
+  }
+
+  test_app("create_test_font") {
+    sources = [
+      "tools/create_test_font.cpp",
+    ]
+    deps = [
+      ":skia",
+    ]
+    assert_no_deps = [
+      # tool_utils requires the output of this app.
       ":tool_utils",
     ]
   }
@@ -1549,6 +1592,9 @@ if (skia_enable_tools) {
           "tools/viewer/sk_app/win/Window_win.cpp",
           "tools/viewer/sk_app/win/main_win.cpp",
         ]
+        if (skia_use_angle) {
+          sources += [ "tools/viewer/sk_app/win/ANGLEWindowContext_win.cpp" ]
+        }
       } else if (is_mac) {
         sources += [
           "tools/viewer/sk_app/mac/GLWindowContext_mac.cpp",
@@ -1588,10 +1634,13 @@ if (skia_enable_tools) {
       } else if (is_mac) {
         deps += [ "//third_party/libsdl" ]
       }
+      if (skia_use_angle) {
+        deps += [ "//third_party/angle2" ]
+      }
     }
   }
 
-  if (skia_enable_gpu && (is_linux || is_mac)) {
+  if (skia_enable_gpu && (is_linux || is_mac || is_ios)) {
     test_app("SkiaSDLExample") {
       sources = [
         "example/SkiaSDLExample.cpp",
@@ -1624,7 +1673,7 @@ if (skia_jumper_clang != "") {
 
     inputs = [
       "src/jumper/SkJumper_stages.cpp",
-      "src/jumper/SkJumper_stages_lowp.cpp",
+      "src/jumper/SkJumper_stages_8bit.cpp",
     ]
 
     # GN insists its outputs should go somewhere underneath target_out_dir, so we trick it.

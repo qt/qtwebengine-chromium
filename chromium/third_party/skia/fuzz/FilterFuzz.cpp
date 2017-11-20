@@ -8,7 +8,6 @@
 #include "Sk1DPathEffect.h"
 #include "Sk2DPathEffect.h"
 #include "SkAlphaThresholdFilter.h"
-#include "SkArcToPathEffect.h"
 #include "SkBlurImageFilter.h"
 #include "SkBlurMaskFilter.h"
 #include "SkCanvas.h"
@@ -24,6 +23,7 @@
 #include "SkDropShadowImageFilter.h"
 #include "SkEmbossMaskFilter.h"
 #include "SkFlattenableSerialization.h"
+#include "SkFontStyle.h"
 #include "SkImageSource.h"
 #include "SkLayerRasterizer.h"
 #include "SkLightingImageFilter.h"
@@ -183,9 +183,13 @@ static SkFilterQuality make_filter_quality() {
 }
 
 static SkFontStyle make_typeface_style() {
-    uint8_t i;
-    fuzz->nextRange(&i, 0, (uint8_t)SkTypeface::kBoldItalic);
-    return SkFontStyle::FromOldStyle(i);
+    uint16_t weight;
+    fuzz->nextRange(&weight, SkFontStyle::kInvisible_Weight, SkFontStyle::kExtraBlack_Weight);
+    uint8_t width;
+    fuzz->nextRange(&width, SkFontStyle::kUltraCondensed_Width, SkFontStyle::kUltraExpanded_Width);
+    uint8_t slant;
+    fuzz->nextRange(&slant, SkFontStyle::kUpright_Slant, SkFontStyle::kOblique_Slant);
+    return SkFontStyle(weight, width, static_cast<SkFontStyle::Slant>(slant));
 }
 
 static SkPath1DPathEffect::Style make_path_1d_path_effect_style() {
@@ -414,12 +418,14 @@ static sk_sp<SkPathEffect> make_path_effect(bool canBeNull = true) {
     fuzz->nextRange(&s, 0, 2);
     if (canBeNull && s == 0) { return pathEffect; }
 
-    fuzz->nextRange(&s, 0, 8);
+    fuzz->nextRange(&s, 0, 7);
 
     switch (s) {
         case 0: {
-            SkScalar a = make_number(true);
-            pathEffect = SkArcToPathEffect::Make(a);
+            SkPath path = make_path();
+            SkMatrix m;
+            init_matrix(&m);
+            pathEffect = SkPath2DPathEffect::Make(m, path);
             break;
         }
         case 1: {
@@ -463,14 +469,7 @@ static sk_sp<SkPathEffect> make_path_effect(bool canBeNull = true) {
             pathEffect = SkLine2DPathEffect::Make(a, m);
             break;
         }
-        case 7: {
-            SkPath path = make_path();
-            SkMatrix m;
-            init_matrix(&m);
-            pathEffect = SkPath2DPathEffect::Make(m, path);
-            break;
-        }
-        case 8:
+        case 7:
         default: {
             sk_sp<SkPathEffect> a = make_path_effect(false);
             sk_sp<SkPathEffect> b = make_path_effect(false);

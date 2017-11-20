@@ -26,20 +26,33 @@ int GrMockGpu::NextExternalTextureID() {
 
 GrGpu* GrMockGpu::Create(GrBackendContext backendContext, const GrContextOptions& contextOptions,
                          GrContext* context) {
+    return Create(reinterpret_cast<const GrMockOptions*>(backendContext), contextOptions, context);
+}
+
+GrGpu* GrMockGpu::Create(const GrMockOptions* mockOptions, const GrContextOptions& contextOptions,
+                         GrContext* context) {
     static const GrMockOptions kDefaultOptions = GrMockOptions();
-    const GrMockOptions* options = reinterpret_cast<const GrMockOptions*>(backendContext);
-    if (!options) {
-        options = &kDefaultOptions;
+    if (!mockOptions) {
+        mockOptions = &kDefaultOptions;
     }
-    return new GrMockGpu(context, *options, contextOptions);
+    return new GrMockGpu(context, *mockOptions, contextOptions);
 }
 
-GrGpuCommandBuffer* GrMockGpu::createCommandBuffer(const GrGpuCommandBuffer::LoadAndStoreInfo&,
-                                                   const GrGpuCommandBuffer::LoadAndStoreInfo&) {
-    return new GrMockGpuCommandBuffer(this);
+
+GrGpuRTCommandBuffer* GrMockGpu::createCommandBuffer(
+                                            GrRenderTarget* rt, GrSurfaceOrigin origin,
+                                            const GrGpuRTCommandBuffer::LoadAndStoreInfo&,
+                                            const GrGpuRTCommandBuffer::StencilLoadAndStoreInfo&) {
+    return new GrMockGpuRTCommandBuffer(this, rt, origin);
 }
 
-void GrMockGpu::submitCommandBuffer(const GrMockGpuCommandBuffer* cmdBuffer) {
+GrGpuTextureCommandBuffer* GrMockGpu::createCommandBuffer(GrTexture* texture,
+                                                          GrSurfaceOrigin origin) {
+    return new GrMockGpuTextureCommandBuffer(texture, origin);
+}
+
+
+void GrMockGpu::submitCommandBuffer(const GrMockGpuRTCommandBuffer* cmdBuffer) {
     for (int i = 0; i < cmdBuffer->numDraws(); ++i) {
         fStats.incNumDraws();
     }

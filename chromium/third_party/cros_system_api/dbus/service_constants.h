@@ -98,6 +98,7 @@ const char kCheckLiveness[] = "CheckLiveness";
 const char kGetKioskAppRequiredPlatforVersion[] =
     "GetKioskAppRequiredPlatformVersion";
 const char kLockScreen[] = "LockScreen";
+// TODO(lannm): Remove Display methods once removed from LibCrosService.
 const char kSetDisplayPower[] = "SetDisplayPower";
 const char kSetDisplaySoftwareDimming[] = "SetDisplaySoftwareDimming";
 const char kTakeDisplayOwnership[] = "TakeDisplayOwnership";
@@ -129,6 +130,15 @@ const char kKioskAppServiceInterface[] =
 // Methods
 const char kKioskAppServiceGetRequiredPlatformVersionMethod[] =
     "GetRequiredPlatformVersion";
+
+const char kDisplayServiceName[] = "org.chromium.DisplayService";
+const char kDisplayServicePath[] = "/org/chromium/DisplayService";
+const char kDisplayServiceInterface[] = "org.chromium.DisplayServiceInterface";
+// Methods
+const char kDisplayServiceSetPowerMethod[] = "SetPower";
+const char kDisplayServiceSetSoftwareDimmingMethod[] = "SetSoftwareDimming";
+const char kDisplayServiceTakeOwnershipMethod[] = "TakeOwnership";
+const char kDisplayServiceReleaseOwnershipMethod[] = "ReleaseOwnership";
 
 }  // namespace chromeos
 
@@ -929,6 +939,7 @@ const char kSetInputGain[] = "SetInputGain";
 const char kSetInputNodeGain[] = "SetInputNodeGain";
 const char kSetInputMute[] = "SetInputMute";
 const char kGetVolumeState[] = "GetVolumeState";
+const char kGetDefaultOutputBufferSize[] = "GetDefaultOutputBufferSize";
 const char kGetNodes[] = "GetNodes";
 const char kSetActiveOutputNode[] = "SetActiveOutputNode";
 const char kSetActiveInputNode[] = "SetActiveInputNode";
@@ -964,6 +975,7 @@ const char kNodesChanged[] = "NodesChanged";
 const char kActiveOutputNodeChanged[] = "ActiveOutputNodeChanged";
 const char kActiveInputNodeChanged[] = "ActiveInputNodeChanged";
 const char kNumberOfActiveStreamsChanged[] = "NumberOfActiveStreamsChanged";
+const char kHotwordTriggered[] = "HotwordTriggered";
 }  // namespace cras
 
 namespace feedback {
@@ -1000,5 +1012,21 @@ const char kGenerateEcP256KeyPairMethod[] = "GenerateEcP256KeyPair";
 const char kCreateSecureMessageMethod[] = "CreateSecureMessage";
 const char kUnwrapSecureMessageMethod[] = "UnwrapSecureMessage";
 }  // namespace easy_unlock
+
+namespace arc_oemcrypto {
+const char kArcOemCryptoServiceInterface[] = "org.chromium.ArcOemCrypto";
+const char kArcOemCryptoServiceName[] = "org.chromium.ArcOemCrypto";
+const char kArcOemCryptoServicePath[] = "/org/chromium/ArcOemCrypto";
+// Methods
+const char kBootstrapMojoConnection[] = "BootstrapMojoConnection";
+}  // namespace arc_oemcrypto
+
+namespace midis {
+constexpr char kMidisServiceName[] = "org.chromium.Midis";
+constexpr char kMidisServicePath[] = "/org/chromium/Midis";
+constexpr char kMidisInterfaceName[] = "org.chromium.Midis";
+// Methods
+constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
+}  // namespace midis
 
 #endif  // SYSTEM_API_DBUS_SERVICE_CONSTANTS_H_

@@ -8,6 +8,7 @@
 
 #include "core/fxcodec/jbig2/JBig2_Image.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/ptr_util.h"
 
@@ -74,7 +75,7 @@ CJBig2_Image::~CJBig2_Image() {
   }
 }
 
-int CJBig2_Image::getPixel(int32_t x, int32_t y) {
+int CJBig2_Image::getPixel(int32_t x, int32_t y) const {
   if (!m_pData)
     return 0;
 

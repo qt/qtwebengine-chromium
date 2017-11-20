@@ -99,8 +99,7 @@ copy("deb_packaging_files") {
     "debian/changelog.template",
     "debian/control.template",
     "debian/debian.menu",
-    "debian/expected_deps_ia32_jessie",
-    "debian/expected_deps_x64_jessie",
+    "debian/expected_deps_x64",
     "debian/postinst",
     "debian/postrm",
     "debian/prerm",
@@ -135,7 +134,6 @@ if (!is_chromeos) {
     sources = [
       "rpm/build.sh",
       "rpm/chrome.spec.template",
-      "rpm/expected_deps_i386",
       "rpm/expected_deps_x86_64",
     ]
     outputs = [
@@ -303,7 +301,7 @@ template("linux_package") {
 
       inputs = packaging_files_binaries
       outputs = [
-        "$root_out_dir/google-chrome-${channel}_${chrome_version_full}-1.${rpm_arch}.rpm",
+        "$root_out_dir/google-chrome-${channel}-${chrome_version_full}-1.${rpm_arch}.rpm",
       ]
 
       args = [

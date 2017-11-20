@@ -16,6 +16,7 @@ import("//chrome/chrome_paks.gni")
 import("//chrome/common/features.gni")
 import("//chrome/process_version_rc_template.gni")
 import("//extensions/features/features.gni")
+import("//media/media_options.gni")
 import("//ppapi/features/features.gni")
 import("//third_party/WebKit/public/public_features.gni")
 import("//third_party/widevine/cdm/widevine.gni")
@@ -116,6 +117,7 @@ if (!is_android && !is_mac) {
   group("chrome") {
     public_deps = [
       ":chrome_initial",
+      "//tools/v8_context_snapshot:v8_context_snapshot",
     ]
     data_deps = [
       ":chrome_initial",
@@ -479,7 +481,6 @@ if (is_win) {
       sources = [
         as_invoker_manifest,
       ]
-      type = "dll"
     }
 
     shared_library("chrome_child") {
@@ -547,7 +548,7 @@ if (is_win) {
   }
   copy("copy_first_run") {
     sources = [
-      "app/firstRun",
+      "app/FirstRun",
     ]
     outputs = [
       "$root_out_dir/First Run",
@@ -585,7 +586,7 @@ if (is_win) {
     ]
 
     outputs = [
-      "{{bundle_root_dir}}/XPCServices/{{source_file_part}}",
+      "{{bundle_contents_dir}}/XPCServices/{{source_file_part}}",
     ]
 
     public_deps = [
@@ -736,7 +737,7 @@ if (is_win) {
       ]
 
       outputs = [
-        "{{bundle_root_dir}}/Helpers/{{source_file_part}}",
+        "{{bundle_contents_dir}}/Helpers/{{source_file_part}}",
       ]
     }
   }
@@ -747,7 +748,7 @@ if (is_win) {
       "$root_out_dir/$chrome_helper_name.app",
     ]
     outputs = [
-      "{{bundle_root_dir}}/Versions/$chrome_version_full/{{source_file_part}}",
+      "{{bundle_contents_dir}}/Versions/$chrome_version_full/{{source_file_part}}",
     ]
     public_deps = [
       ":chrome_helper_app",
@@ -768,7 +769,7 @@ if (is_win) {
 
     # Only official builds that include Widevine need the widevine
     # signature file.
-    if (is_chrome_branded && enable_pepper_cdms) {
+    if (is_chrome_branded && enable_library_cdms) {
       sources += [ "$root_out_dir/Widevine Resources.bundle" ]
       public_deps += [ ":widevine_resources_bundle" ]
     }
@@ -845,7 +846,7 @@ if (is_win) {
     ]
 
     outputs = [
-      "{{bundle_root_dir}}/Helpers/{{source_file_part}}",
+      "{{bundle_contents_dir}}/Helpers/{{source_file_part}}",
     ]
 
     public_deps = [
@@ -862,6 +863,7 @@ if (is_win) {
   bundle_data("chrome_framework_resources") {
     sources = [
       "$root_out_dir/app_mode_loader.app",
+      "$root_out_dir/v8_context_snapshot.bin",
 
       # This image is used to badge the lock icon in the
       # authentication dialogs, such as those used for installation
@@ -881,6 +883,7 @@ if (is_win) {
     public_deps = [
       ":packed_resources",
       "//chrome/app_shim:app_mode_loader",
+      "//tools/v8_context_snapshot:v8_context_snapshot",
     ]
 
     if (is_chrome_branded) {
@@ -946,7 +949,7 @@ if (is_win) {
     bundle_data("chrome_framework_plugins") {
       sources = []
       outputs = [
-        "{{bundle_root_dir}}/Internet Plug-Ins/{{source_file_part}}",
+        "{{bundle_contents_dir}}/Internet Plug-Ins/{{source_file_part}}",
       ]
       public_deps = []
 
@@ -965,7 +968,7 @@ if (is_win) {
   }
 
   _should_bundle_widevine =
-      (is_chrome_branded || enable_widevine) && enable_pepper_cdms
+      (is_chrome_branded || enable_widevine) && enable_library_cdms
   if (_should_bundle_widevine) {
     # The Widevine CDM and manifest are either the actual Widevine CDM and
     # manifest or stubs used for testing only. The choice is made within the
@@ -976,7 +979,7 @@ if (is_win) {
         "$root_out_dir/libwidevinecdm.dylib",
       ]
       outputs = [
-        "{{bundle_root_dir}}/Libraries/$widevine_cdm_path/{{source_file_part}}",
+        "{{bundle_contents_dir}}/Libraries/$widevine_cdm_path/{{source_file_part}}",
       ]
       public_deps = [
         # Need this intermediate dependency because "widevinecdm" is a
@@ -1018,7 +1021,7 @@ if (is_win) {
         "$root_out_dir/WidevineCdm/manifest.json",
       ]
       outputs = [
-        "{{bundle_root_dir}}/Libraries/WidevineCdm/{{source_file_part}}",
+        "{{bundle_contents_dir}}/Libraries/WidevineCdm/{{source_file_part}}",
       ]
       public_deps = [
         "//third_party/widevine/cdm:widevine_cdm_manifest",
@@ -1058,7 +1061,7 @@ if (is_win) {
     bundle_data("widevine_resources_plist_bundle_data") {
       sources = get_target_outputs(":widevine_resources_plist")
       outputs = [
-        "{{bundle_root_dir}}/Info.plist",
+        "{{bundle_contents_dir}}/Info.plist",
       ]
       public_deps = [
         ":widevine_resources_plist",
@@ -1081,8 +1084,9 @@ if (is_win) {
 
     create_bundle("widevine_resources_bundle") {
       output_name = "Widevine Resources.bundle"
-      bundle_root_dir = "$root_build_dir/$output_name/Contents"
-      bundle_resources_dir = bundle_root_dir + "/Resources"
+      bundle_root_dir = "$root_build_dir/$output_name"
+      bundle_contents_dir = "$bundle_root_dir/Contents"
+      bundle_resources_dir = "$bundle_contents_dir/Resources"
 
       deps = [
         ":framework_widevine_signature",
@@ -1487,7 +1491,6 @@ if (is_win) {
       as_invoker_manifest,
       common_controls_manifest,
     ]
-    type = "dll"
   }
 
   process_version_rc_template("nacl64_exe_version") {
@@ -1552,7 +1555,6 @@ group("extra_resources") {
     "//chrome/browser/resources:invalidations_resources",
     "//chrome/browser/resources:net_internals_resources",
     "//chrome/browser/resources:password_manager_internals_resources",
-    "//chrome/browser/resources:policy_resources",
     "//chrome/browser/resources:quota_internals_resources",
     "//chrome/browser/resources:task_scheduler_internals_resources",
     "//chrome/browser/resources:translate_internals_resources",
@@ -1568,7 +1570,6 @@ group("extra_resources") {
 
   if (is_chromeos) {
     public_deps += [
-      "//chrome/browser/resources:options_resources",
       "//chrome/browser/resources/chromeos/chromevox",
       "//chrome/browser/resources/chromeos/select_to_speak",
       "//chrome/browser/resources/chromeos/switch_access",
@@ -1611,7 +1612,7 @@ if (is_chrome_branded && !is_android) {
       ]
     } else {
       outputs = [
-        "{{bundle_root_dir}}/Default Apps/{{source_file_part}}",
+        "{{bundle_contents_dir}}/Default Apps/{{source_file_part}}",
       ]
     }
 
@@ -1753,9 +1754,10 @@ if (is_android) {
       "//chrome/child",
       "//chrome/common",
       "//chrome/gpu",
+      "//chrome/profiling",
       "//chrome/renderer",
       "//chrome/utility",
-      "//components/safe_browsing_db:safe_browsing_db_mobile",
+      "//components/safe_browsing/db:safe_browsing_mobile",
       "//content/public/app:both",
       "//content/public/common:service_names",
       "//services/service_manager/embedder",

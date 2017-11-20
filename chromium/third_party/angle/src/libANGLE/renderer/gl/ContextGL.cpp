@@ -12,7 +12,6 @@
 #include "libANGLE/renderer/gl/BufferGL.h"
 #include "libANGLE/renderer/gl/CompilerGL.h"
 #include "libANGLE/renderer/gl/FenceNVGL.h"
-#include "libANGLE/renderer/gl/FenceSyncGL.h"
 #include "libANGLE/renderer/gl/FramebufferGL.h"
 #include "libANGLE/renderer/gl/FunctionsGL.h"
 #include "libANGLE/renderer/gl/PathGL.h"
@@ -23,6 +22,7 @@
 #include "libANGLE/renderer/gl/SamplerGL.h"
 #include "libANGLE/renderer/gl/ShaderGL.h"
 #include "libANGLE/renderer/gl/StateManagerGL.h"
+#include "libANGLE/renderer/gl/SyncGL.h"
 #include "libANGLE/renderer/gl/TextureGL.h"
 #include "libANGLE/renderer/gl/TransformFeedbackGL.h"
 #include "libANGLE/renderer/gl/VertexArrayGL.h"
@@ -65,7 +65,7 @@ ProgramImpl *ContextGL::createProgram(const gl::ProgramState &data)
 FramebufferImpl *ContextGL::createFramebuffer(const gl::FramebufferState &data)
 {
     return new FramebufferGL(data, getFunctions(), getStateManager(), getWorkaroundsGL(),
-                             mRenderer->getBlitter(), false);
+                             mRenderer->getBlitter(), mRenderer->getMultiviewClearer(), false);
 }
 
 TextureImpl *ContextGL::createTexture(const gl::TextureState &state)
@@ -107,9 +107,9 @@ FenceNVImpl *ContextGL::createFenceNV()
     return new FenceNVGL(getFunctions());
 }
 
-FenceSyncImpl *ContextGL::createFenceSync()
+SyncImpl *ContextGL::createSync()
 {
-    return new FenceSyncGL(getFunctions());
+    return new SyncGL(getFunctions());
 }
 
 TransformFeedbackImpl *ContextGL::createTransformFeedback(const gl::TransformFeedbackState &state)
@@ -170,10 +170,9 @@ gl::Error ContextGL::drawElements(const gl::Context *context,
                                   GLenum mode,
                                   GLsizei count,
                                   GLenum type,
-                                  const void *indices,
-                                  const gl::IndexRange &indexRange)
+                                  const void *indices)
 {
-    return mRenderer->drawElements(context, mode, count, type, indices, indexRange);
+    return mRenderer->drawElements(context, mode, count, type, indices);
 }
 
 gl::Error ContextGL::drawElementsInstanced(const gl::Context *context,
@@ -181,11 +180,9 @@ gl::Error ContextGL::drawElementsInstanced(const gl::Context *context,
                                            GLsizei count,
                                            GLenum type,
                                            const void *indices,
-                                           GLsizei instances,
-                                           const gl::IndexRange &indexRange)
+                                           GLsizei instances)
 {
-    return mRenderer->drawElementsInstanced(context, mode, count, type, indices, instances,
-                                            indexRange);
+    return mRenderer->drawElementsInstanced(context, mode, count, type, indices, instances);
 }
 
 gl::Error ContextGL::drawRangeElements(const gl::Context *context,
@@ -194,11 +191,9 @@ gl::Error ContextGL::drawRangeElements(const gl::Context *context,
                                        GLuint end,
                                        GLsizei count,
                                        GLenum type,
-                                       const void *indices,
-                                       const gl::IndexRange &indexRange)
+                                       const void *indices)
 {
-    return mRenderer->drawRangeElements(context, mode, start, end, count, type, indices,
-                                        indexRange);
+    return mRenderer->drawRangeElements(context, mode, start, end, count, type, indices);
 }
 
 gl::Error ContextGL::drawArraysIndirect(const gl::Context *context,

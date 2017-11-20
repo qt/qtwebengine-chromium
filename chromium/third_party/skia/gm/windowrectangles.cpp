@@ -79,17 +79,17 @@ void WindowRectanglesGM::onCoverClipStack(const SkClipStack& stack, SkCanvas* ca
     for (const SkClipStack::Element* element = iter.next(); element; element = iter.next()) {
         SkClipOp op = element->getOp();
         bool isAA = element->isAA();
-        switch (element->getType()) {
-            case SkClipStack::Element::kPath_Type:
-                canvas->clipPath(element->getPath(), op, isAA);
+        switch (element->getDeviceSpaceType()) {
+            case SkClipStack::Element::DeviceSpaceType::kPath:
+                canvas->clipPath(element->getDeviceSpacePath(), op, isAA);
                 break;
-            case SkClipStack::Element::kRRect_Type:
-                canvas->clipRRect(element->getRRect(), op, isAA);
+            case SkClipStack::Element::DeviceSpaceType::kRRect:
+                canvas->clipRRect(element->getDeviceSpaceRRect(), op, isAA);
                 break;
-            case SkClipStack::Element::kRect_Type:
-                canvas->clipRect(element->getRect(), op, isAA);
+            case SkClipStack::Element::DeviceSpaceType::kRect:
+                canvas->clipRect(element->getDeviceSpaceRect(), op, isAA);
                 break;
-            case SkClipStack::Element::kEmpty_Type:
+            case SkClipStack::Element::DeviceSpaceType::kEmpty:
                 canvas->clipRect({ 0, 0, 0, 0 }, kIntersect_SkClipOp, false);
                 break;
         }
@@ -149,18 +149,20 @@ private:
  */
 class AlphaOnlyClip final : public MaskOnlyClipBase {
 public:
-    AlphaOnlyClip(sk_sp<GrTextureProxy> mask, int x, int y) {
-        int w = mask->width(), h = mask->height();
-        fFP = GrDeviceSpaceTextureDecalFragmentProcessor::Make(std::move(mask),
-                                                               SkIRect::MakeWH(w, h), {x, y});
-    }
+    AlphaOnlyClip(sk_sp<GrTextureProxy> mask, int x, int y) : fMask(mask), fX(x), fY(y) {}
+
 private:
     bool apply(GrContext*, GrRenderTargetContext*, bool, bool, GrAppliedClip* out,
                SkRect* bounds) const override {
-        out->addCoverageFP(fFP);
+        int w = fMask->width();
+        int h = fMask->height();
+        out->addCoverageFP(GrDeviceSpaceTextureDecalFragmentProcessor::Make(
+                fMask, SkIRect::MakeWH(w, h), {fX, fY}));
         return true;
     }
-    sk_sp<GrFragmentProcessor> fFP;
+    sk_sp<GrTextureProxy> fMask;
+    int fX;
+    int fY;
 };
 
 /**

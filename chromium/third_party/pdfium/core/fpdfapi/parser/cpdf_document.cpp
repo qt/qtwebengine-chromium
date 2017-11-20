@@ -342,7 +342,6 @@ CPDF_Document::CPDF_Document(std::unique_ptr<CPDF_Parser> pParser)
     : CPDF_IndirectObjectHolder(),
       m_pParser(std::move(pParser)),
       m_pRootDict(nullptr),
-      m_pInfoDict(nullptr),
       m_iNextPageToTraverse(0),
       m_bReachedMaxPageLevel(false),
       m_bLinearized(false),
@@ -426,6 +425,7 @@ CPDF_Dictionary* CPDF_Document::TraversePDFPages(int iPage,
        i++) {
     if (*nPagesToGo == 0)
       break;
+    pKidList->ConvertToIndirectObjectAt(i, this);
     CPDF_Dictionary* pKid = pKidList->GetDictAt(i);
     if (!pKid) {
       (*nPagesToGo)--;
@@ -473,7 +473,7 @@ void CPDF_Document::ResetTraversal() {
 }
 
 CPDF_Dictionary* CPDF_Document::GetPagesDict() const {
-  CPDF_Dictionary* pRoot = GetRoot();
+  const CPDF_Dictionary* pRoot = GetRoot();
   return pRoot ? pRoot->GetDictFor("Pages") : nullptr;
 }
 
@@ -499,15 +499,6 @@ CPDF_Dictionary* CPDF_Document::GetPage(int iPage) {
   if (!pPages)
     return nullptr;
 
-  if (iPage - m_iNextPageToTraverse + 1 <= 0) {
-    // This can happen when the page does not have an object number. On repeated
-    // calls to this function for the same page index, this condition causes
-    // TraversePDFPages() to incorrectly return nullptr.
-    // Example "testing/corpus/fx/other/jetman_std.pdf"
-    // We should restart traversing in this case.
-    // TODO(art-snake): optimize this.
-    ResetTraversal();
-  }
   if (m_pTreeTraversal.empty()) {
     ResetTraversal();
     m_pTreeTraversal.push_back(std::make_pair(pPages, 0));
@@ -526,7 +517,7 @@ int CPDF_Document::FindPageIndex(CPDF_Dictionary* pNode,
                                  uint32_t* skip_count,
                                  uint32_t objnum,
                                  int* index,
-                                 int level) {
+                                 int level) const {
   if (!pNode->KeyExist("Kids")) {
     if (objnum == pNode->GetObjNum())
       return *index;
@@ -662,7 +653,8 @@ CFX_RetainPtr<CPDF_Image> CPDF_Document::LoadImageFromPageData(
 }
 
 void CPDF_Document::CreateNewDoc() {
-  ASSERT(!m_pRootDict && !m_pInfoDict);
+  ASSERT(!m_pRootDict);
+  ASSERT(!m_pInfoDict);
   m_pRootDict = NewIndirect<CPDF_Dictionary>();
   m_pRootDict->SetNewFor<CPDF_Name>("Type", "Catalog");
 
@@ -733,7 +725,7 @@ bool CPDF_Document::InsertDeletePDFPage(CPDF_Dictionary* pPages,
 }
 
 bool CPDF_Document::InsertNewPage(int iPage, CPDF_Dictionary* pPageDict) {
-  CPDF_Dictionary* pRoot = GetRoot();
+  const CPDF_Dictionary* pRoot = GetRoot();
   CPDF_Dictionary* pPages = pRoot ? pRoot->GetDictFor("Pages") : nullptr;
   if (!pPages)
     return false;

@@ -11,13 +11,15 @@
 
 #include <array>
 
-#include "libANGLE/angletypes.h"
 #include "libANGLE/ContextState.h"
 #include "libANGLE/State.h"
+#include "libANGLE/angletypes.h"
+#include "libANGLE/renderer/d3d/IndexDataManager.h"
+#include "libANGLE/renderer/d3d/RendererD3D.h"
+#include "libANGLE/renderer/d3d/d3d11/InputLayoutCache.h"
+#include "libANGLE/renderer/d3d/d3d11/Query11.h"
 #include "libANGLE/renderer/d3d/d3d11/RenderStateCache.h"
 #include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
-#include "libANGLE/renderer/d3d/d3d11/Query11.h"
-#include "libANGLE/renderer/d3d/RendererD3D.h"
 
 namespace rx
 {
@@ -47,29 +49,65 @@ struct dx_ComputeConstants11
     unsigned int padding;  // This just pads the struct to 16 bytes
 };
 
+class SamplerMetadata11 final : angle::NonCopyable
+{
+  public:
+    SamplerMetadata11();
+    ~SamplerMetadata11();
+
+    struct dx_SamplerMetadata
+    {
+        int baseLevel;
+        int internalFormatBits;
+        int wrapModes;
+        int padding;  // This just pads the struct to 16 bytes
+    };
+    static_assert(sizeof(dx_SamplerMetadata) == 16u,
+                  "Sampler metadata struct must be one 4-vec / 16 bytes.");
+
+    void initData(unsigned int samplerCount);
+    void update(unsigned int samplerIndex, const gl::Texture &texture);
+
+    const dx_SamplerMetadata *getData() const;
+    size_t sizeBytes() const;
+    bool isDirty() const { return mDirty; }
+    void markClean() { mDirty = false; }
+
+  private:
+    std::vector<dx_SamplerMetadata> mSamplerMetadata;
+    bool mDirty;
+};
+
 class StateManager11 final : angle::NonCopyable
 {
   public:
     StateManager11(Renderer11 *renderer);
     ~StateManager11();
 
-    void initialize(const gl::Caps &caps);
+    gl::Error initialize(const gl::Caps &caps);
     void deinitialize();
 
     void syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits);
 
+    // TODO(jmadill): Don't expose these.
     const dx_VertexConstants11 &getVertexConstants() const { return mVertexConstants; }
     const dx_PixelConstants11 &getPixelConstants() const { return mPixelConstants; }
     const dx_ComputeConstants11 &getComputeConstants() const { return mComputeConstants; }
 
-    void setComputeConstants(GLuint numGroupsX, GLuint numGroupsY, GLuint numGroupsZ);
+    SamplerMetadata11 *getVertexSamplerMetadata() { return &mSamplerMetadataVS; }
+    SamplerMetadata11 *getPixelSamplerMetadata() { return &mSamplerMetadataPS; }
+    SamplerMetadata11 *getComputeSamplerMetadata() { return &mSamplerMetadataCS; }
+
+    gl::Error updateStateForCompute(const gl::Context *context,
+                                    GLuint numGroupsX,
+                                    GLuint numGroupsY,
+                                    GLuint numGroupsZ);
 
     void updateStencilSizeIfChanged(bool depthStencilInitialized, unsigned int stencilSize);
 
     void setShaderResource(gl::SamplerType shaderType,
                            UINT resourceSlot,
                            ID3D11ShaderResourceView *srv);
-    gl::Error clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd);
 
     // Checks are done on a framebuffer state change to trigger other state changes.
     // The Context is allowed to be nullptr for these methods, when called in EGL init code.
@@ -77,6 +115,10 @@ class StateManager11 final : angle::NonCopyable
     void invalidateBoundViews(const gl::Context *context);
     void invalidateVertexBuffer();
     void invalidateEverything(const gl::Context *context);
+    void invalidateViewport(const gl::Context *context);
+
+    // Called from VertexArray11::updateVertexAttribStorage.
+    void invalidateCurrentValueAttrib(size_t attribIndex);
 
     void setOneTimeRenderTarget(const gl::Context *context,
                                 ID3D11RenderTargetView *rtv,
@@ -89,11 +131,6 @@ class StateManager11 final : angle::NonCopyable
     void onBeginQuery(Query11 *query);
     void onDeleteQueryObject(Query11 *query);
     gl::Error onMakeCurrent(const gl::Context *context);
-
-    gl::Error updateCurrentValueAttribs(const gl::State &state,
-                                        VertexDataManager *vertexDataManager);
-
-    const std::vector<TranslatedAttribute> &getCurrentValueAttribs() const;
 
     void setInputLayout(const d3d11::InputLayout *inputLayout);
 
@@ -119,6 +156,31 @@ class StateManager11 final : angle::NonCopyable
     void setPixelShader(const d3d11::PixelShader *shader);
     void setComputeShader(const d3d11::ComputeShader *shader);
 
+    // Not handled by an internal dirty bit because of the extra draw parameters.
+    gl::Error applyVertexBuffer(const gl::Context *context,
+                                GLenum mode,
+                                GLint first,
+                                GLsizei count,
+                                GLsizei instances,
+                                TranslatedIndexData *indexInfo);
+
+    gl::Error applyIndexBuffer(const gl::ContextState &data,
+                               const void *indices,
+                               GLsizei count,
+                               GLenum type,
+                               TranslatedIndexData *indexInfo);
+
+    void setIndexBuffer(ID3D11Buffer *buffer,
+                        DXGI_FORMAT indexFormat,
+                        unsigned int offset,
+                        bool indicesChanged);
+
+    gl::Error updateVertexOffsetsForPointSpritesEmulation(GLint startVertex,
+                                                          GLsizei emulatedInstanceId);
+
+    // Only used in testing.
+    InputLayoutCache *getInputLayoutCache() { return &mInputLayoutCache; }
+
   private:
     void unsetConflictingSRVs(gl::SamplerType shaderType,
                               uintptr_t resource,
@@ -138,11 +200,33 @@ class StateManager11 final : angle::NonCopyable
 
     void syncScissorRectangle(const gl::Rectangle &scissor, bool enabled);
 
-    void syncViewport(const gl::Caps *caps, const gl::Rectangle &viewport, float zNear, float zFar);
+    void syncViewport(const gl::Context *context);
 
     void checkPresentPath(const gl::Context *context);
 
     gl::Error syncFramebuffer(const gl::Context *context, gl::Framebuffer *framebuffer);
+    gl::Error syncProgram(const gl::Context *context, GLenum drawMode);
+
+    gl::Error syncTextures(const gl::Context *context);
+    gl::Error applyTextures(const gl::Context *context,
+                            gl::SamplerType shaderType,
+                            const FramebufferTextureArray &framebufferTextures,
+                            size_t framebufferTextureCount);
+
+    gl::Error setSamplerState(const gl::Context *context,
+                              gl::SamplerType type,
+                              int index,
+                              gl::Texture *texture,
+                              const gl::SamplerState &sampler);
+    gl::Error setTexture(const gl::Context *context,
+                         gl::SamplerType type,
+                         int index,
+                         gl::Texture *texture);
+
+    // Faster than calling setTexture a jillion times
+    gl::Error clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd);
+
+    gl::Error syncCurrentValueAttribs(const gl::State &state);
 
     enum DirtyBitType
     {
@@ -247,6 +331,7 @@ class StateManager11 final : angle::NonCopyable
 
     // Current applied input layout.
     ResourceSerial mCurrentInputLayout;
+    bool mInputLayoutIsDirty;
 
     // Current applied vertex states.
     // TODO(jmadill): Figure out how to use ResourceSerial here.
@@ -263,6 +348,33 @@ class StateManager11 final : angle::NonCopyable
     ResourceSerial mAppliedGeometryShader;
     ResourceSerial mAppliedPixelShader;
     ResourceSerial mAppliedComputeShader;
+
+    // Currently applied sampler states
+    std::vector<bool> mForceSetVertexSamplerStates;
+    std::vector<gl::SamplerState> mCurVertexSamplerStates;
+
+    std::vector<bool> mForceSetPixelSamplerStates;
+    std::vector<gl::SamplerState> mCurPixelSamplerStates;
+
+    std::vector<bool> mForceSetComputeSamplerStates;
+    std::vector<gl::SamplerState> mCurComputeSamplerStates;
+
+    SamplerMetadata11 mSamplerMetadataVS;
+    SamplerMetadata11 mSamplerMetadataPS;
+    SamplerMetadata11 mSamplerMetadataCS;
+
+    // Currently applied index buffer
+    ID3D11Buffer *mAppliedIB;
+    DXGI_FORMAT mAppliedIBFormat;
+    unsigned int mAppliedIBOffset;
+    bool mAppliedIBChanged;
+
+    // Vertex, index and input layouts
+    VertexDataManager mVertexDataManager;
+    IndexDataManager mIndexDataManager;
+    InputLayoutCache mInputLayoutCache;
+    std::vector<const TranslatedAttribute *> mCurrentAttributes;
+    Optional<GLint> mLastFirstVertex;
 };
 
 }  // namespace rx

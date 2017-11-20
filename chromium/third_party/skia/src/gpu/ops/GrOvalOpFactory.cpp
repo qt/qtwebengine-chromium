@@ -119,21 +119,21 @@ private:
 
             // emit attributes
             varyingHandler->emitAttributes(cgp);
-            fragBuilder->codeAppend("highp vec4 circleEdge;");
+            fragBuilder->codeAppend("highp float4 circleEdge;");
             varyingHandler->addPassThroughAttribute(cgp.fInCircleEdge, "circleEdge",
                                                     kHigh_GrSLPrecision);
             if (cgp.fInClipPlane) {
-                fragBuilder->codeAppend("vec3 clipPlane;");
+                fragBuilder->codeAppend("float3 clipPlane;");
                 varyingHandler->addPassThroughAttribute(cgp.fInClipPlane, "clipPlane");
             }
             if (cgp.fInIsectPlane) {
                 SkASSERT(cgp.fInClipPlane);
-                fragBuilder->codeAppend("vec3 isectPlane;");
+                fragBuilder->codeAppend("float3 isectPlane;");
                 varyingHandler->addPassThroughAttribute(cgp.fInIsectPlane, "isectPlane");
             }
             if (cgp.fInUnionPlane) {
                 SkASSERT(cgp.fInClipPlane);
-                fragBuilder->codeAppend("vec3 unionPlane;");
+                fragBuilder->codeAppend("float3 unionPlane;");
                 varyingHandler->addPassThroughAttribute(cgp.fInUnionPlane, "unionPlane");
             }
 
@@ -141,7 +141,7 @@ private:
             varyingHandler->addPassThroughAttribute(cgp.fInColor, args.fOutputColor);
 
             // Setup position
-            this->setupPosition(vertBuilder, gpArgs, cgp.fInPosition->fName);
+            this->writeOutputPosition(vertBuilder, gpArgs, cgp.fInPosition->fName);
 
             // emit transforms
             this->emitTransforms(vertBuilder,
@@ -178,7 +178,7 @@ private:
                 }
                 fragBuilder->codeAppend("edgeAlpha *= clip;");
             }
-            fragBuilder->codeAppendf("%s = vec4(edgeAlpha);", args.fOutputCoverage);
+            fragBuilder->codeAppendf("%s = float4(edgeAlpha);", args.fOutputCoverage);
         }
 
         static void GenKey(const GrGeometryProcessor& gp,
@@ -289,7 +289,7 @@ private:
             varyingHandler->addPassThroughAttribute(egp.fInColor, args.fOutputColor);
 
             // Setup position
-            this->setupPosition(vertBuilder, gpArgs, egp.fInPosition->fName);
+            this->writeOutputPosition(vertBuilder, gpArgs, egp.fInPosition->fName);
 
             // emit transforms
             this->emitTransforms(vertBuilder,
@@ -301,10 +301,10 @@ private:
                                  args.fFPCoordTransformHandler);
 
             // for outer curve
-            fragBuilder->codeAppendf("vec2 scaledOffset = %s*%s.xy;", ellipseOffsets.fsIn(),
+            fragBuilder->codeAppendf("float2 scaledOffset = %s*%s.xy;", ellipseOffsets.fsIn(),
                                      ellipseRadii.fsIn());
             fragBuilder->codeAppend("float test = dot(scaledOffset, scaledOffset) - 1.0;");
-            fragBuilder->codeAppendf("vec2 grad = 2.0*scaledOffset*%s.xy;", ellipseRadii.fsIn());
+            fragBuilder->codeAppendf("float2 grad = 2.0*scaledOffset*%s.xy;", ellipseRadii.fsIn());
             fragBuilder->codeAppend("float grad_dot = dot(grad, grad);");
 
             // avoid calling inversesqrt on zero.
@@ -322,7 +322,7 @@ private:
                 fragBuilder->codeAppend("edgeAlpha *= clamp(0.5+test*invlen, 0.0, 1.0);");
             }
 
-            fragBuilder->codeAppendf("%s = vec4(edgeAlpha);", args.fOutputCoverage);
+            fragBuilder->codeAppendf("%s = float4(edgeAlpha);", args.fOutputCoverage);
         }
 
         static void GenKey(const GrGeometryProcessor& gp,
@@ -429,12 +429,12 @@ private:
             varyingHandler->addPassThroughAttribute(diegp.fInColor, args.fOutputColor);
 
             // Setup position
-            this->setupPosition(vertBuilder,
-                                uniformHandler,
-                                gpArgs,
-                                diegp.fInPosition->fName,
-                                diegp.fViewMatrix,
-                                &fViewMatrixUniform);
+            this->writeOutputPosition(vertBuilder,
+                                      uniformHandler,
+                                      gpArgs,
+                                      diegp.fInPosition->fName,
+                                      diegp.fViewMatrix,
+                                      &fViewMatrixUniform);
 
             // emit transforms
             this->emitTransforms(vertBuilder,
@@ -445,12 +445,12 @@ private:
                                  args.fFPCoordTransformHandler);
 
             // for outer curve
-            fragBuilder->codeAppendf("vec2 scaledOffset = %s.xy;", offsets0.fsIn());
+            fragBuilder->codeAppendf("float2 scaledOffset = %s.xy;", offsets0.fsIn());
             fragBuilder->codeAppend("float test = dot(scaledOffset, scaledOffset) - 1.0;");
-            fragBuilder->codeAppendf("vec2 duvdx = dFdx(%s);", offsets0.fsIn());
-            fragBuilder->codeAppendf("vec2 duvdy = dFdy(%s);", offsets0.fsIn());
+            fragBuilder->codeAppendf("float2 duvdx = dFdx(%s);", offsets0.fsIn());
+            fragBuilder->codeAppendf("float2 duvdy = dFdy(%s);", offsets0.fsIn());
             fragBuilder->codeAppendf(
-                    "vec2 grad = vec2(2.0*%s.x*duvdx.x + 2.0*%s.y*duvdx.y,"
+                    "float2 grad = float2(2.0*%s.x*duvdx.x + 2.0*%s.y*duvdx.y,"
                     "                 2.0*%s.x*duvdy.x + 2.0*%s.y*duvdy.y);",
                     offsets0.fsIn(), offsets0.fsIn(), offsets0.fsIn(), offsets0.fsIn());
 
@@ -473,14 +473,14 @@ private:
                 fragBuilder->codeAppendf("duvdx = dFdx(%s);", offsets1.fsIn());
                 fragBuilder->codeAppendf("duvdy = dFdy(%s);", offsets1.fsIn());
                 fragBuilder->codeAppendf(
-                        "grad = vec2(2.0*%s.x*duvdx.x + 2.0*%s.y*duvdx.y,"
+                        "grad = float2(2.0*%s.x*duvdx.x + 2.0*%s.y*duvdx.y,"
                         "            2.0*%s.x*duvdy.x + 2.0*%s.y*duvdy.y);",
                         offsets1.fsIn(), offsets1.fsIn(), offsets1.fsIn(), offsets1.fsIn());
                 fragBuilder->codeAppend("invlen = inversesqrt(dot(grad, grad));");
                 fragBuilder->codeAppend("edgeAlpha *= clamp(0.5+test*invlen, 0.0, 1.0);");
             }
 
-            fragBuilder->codeAppendf("%s = vec4(edgeAlpha);", args.fOutputCoverage);
+            fragBuilder->codeAppendf("%s = float4(edgeAlpha);", args.fOutputCoverage);
         }
 
         static void GenKey(const GrGeometryProcessor& gp,
@@ -809,7 +809,7 @@ public:
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
 private:
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         SkMatrix localMatrix;
         if (!fViewMatrixIfUsingLocalCoords.invert(&localMatrix)) {
             return;
@@ -1272,7 +1272,7 @@ public:
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
 private:
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         SkMatrix localMatrix;
         if (!fViewMatrixIfUsingLocalCoords.invert(&localMatrix)) {
             return;
@@ -1498,7 +1498,7 @@ public:
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
 private:
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         // Setup geometry processor
         sk_sp<GrGeometryProcessor> gp(
                 new DIEllipseGeometryProcessor(this->viewMatrix(), this->style()));
@@ -1679,7 +1679,7 @@ static int rrect_type_to_vert_count(RRectType type) {
         case kOverstroke_RRectType:
             return kVertsPerOverstrokeRRect;
     }
-    SkFAIL("Invalid type");
+    SK_ABORT("Invalid type");
     return 0;
 }
 
@@ -1692,7 +1692,7 @@ static int rrect_type_to_index_count(RRectType type) {
         case kOverstroke_RRectType:
             return kIndicesPerOverstrokeRRect;
     }
-    SkFAIL("Invalid type");
+    SK_ABORT("Invalid type");
     return 0;
 }
 
@@ -1704,7 +1704,7 @@ static const uint16_t* rrect_type_to_indices(RRectType type) {
         case kOverstroke_RRectType:
             return gOverstrokeRRectIndices;
     }
-    SkFAIL("Invalid type");
+    SK_ABORT("Invalid type");
     return 0;
 }
 
@@ -1886,7 +1886,7 @@ private:
         (*verts)++;
     }
 
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         // Invert the view matrix as a local matrix (if any other processors require coords).
         SkMatrix localMatrix;
         if (!fViewMatrixIfUsingLocalCoords.invert(&localMatrix)) {
@@ -2165,7 +2165,7 @@ public:
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
 private:
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         SkMatrix localMatrix;
         if (!fViewMatrixIfUsingLocalCoords.invert(&localMatrix)) {
             return;

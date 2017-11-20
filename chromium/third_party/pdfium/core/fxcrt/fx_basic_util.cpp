@@ -9,12 +9,12 @@
 #include <limits>
 #include <memory>
 
-#include "core/fxcrt/fx_basic.h"
 #include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/fx_stream.h"
 #include "third_party/base/ptr_util.h"
 
 bool FX_atonum(const CFX_ByteStringC& strc, void* pData) {
-  if (strc.Find('.') != -1) {
+  if (strc.Contains('.')) {
     float* pFloat = static_cast<float*>(pData);
     *pFloat = FX_atof(strc);
     return false;
@@ -28,7 +28,7 @@ bool FX_atonum(const CFX_ByteStringC& strc, void* pData) {
   pdfium::base::CheckedNumeric<uint32_t> integer = 0;
   bool bNegative = false;
   bool bSigned = false;
-  int cc = 0;
+  FX_STRSIZE cc = 0;
   if (strc[0] == '+') {
     cc++;
     bSigned = true;
@@ -127,24 +127,6 @@ float FX_atof(const CFX_WideStringC& wsStr) {
   return FX_atof(FX_UTF8Encode(wsStr).c_str());
 }
 
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_ && _MSC_VER < 1900
-void FXSYS_snprintf(char* str,
-                    size_t size,
-                    _Printf_format_string_ const char* fmt,
-                    ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  FXSYS_vsnprintf(str, size, fmt, ap);
-  va_end(ap);
-}
-
-void FXSYS_vsnprintf(char* str, size_t size, const char* fmt, va_list ap) {
-  (void)_vsnprintf(str, size, fmt, ap);
-  if (size)
-    str[size - 1] = 0;
-}
-#endif  // _FXM_PLATFORM_WINDOWS_ && _MSC_VER < 1900
-
 FX_FileHandle* FX_OpenFolder(const char* path) {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
   auto pData = pdfium::MakeUnique<CFindFileDataA>();
@@ -177,9 +159,6 @@ bool FX_GetNextFile(FX_FileHandle* handle,
   if (!FindNextFileA(handle->m_Handle, &handle->m_FindData))
     handle->m_bEnd = true;
   return true;
-#elif defined(__native_client__)
-  abort();
-  return false;
 #else
   struct dirent* de = readdir(handle);
   if (!de)

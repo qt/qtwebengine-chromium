@@ -25,6 +25,7 @@ DECLARE_bool(preAbandonGpuContext);
 DECLARE_bool(abandonGpuContext);
 DECLARE_bool(releaseAndAbandonGpuContext);
 DECLARE_string(skps);
+DECLARE_bool(ddl);
 DECLARE_string(svgs);
 DECLARE_int32(threads);
 DECLARE_string(resourcePath);
@@ -34,7 +35,8 @@ DECLARE_string(writePath);
 DECLARE_bool(pre_log);
 DECLARE_bool(analyticAA);
 DECLARE_bool(forceAnalyticAA);
-DECLARE_bool(trace)
+DECLARE_bool(deltaAA);
+DECLARE_bool(forceDeltaAA);
 
 DECLARE_string(key);
 DECLARE_string(properties);

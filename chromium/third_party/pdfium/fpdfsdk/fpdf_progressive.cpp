@@ -20,7 +20,7 @@
 #include "third_party/base/ptr_util.h"
 
 // These checks are here because core/ and public/ cannot depend on each other.
-static_assert(CPDF_ProgressiveRenderer::Ready == FPDF_RENDER_READER,
+static_assert(CPDF_ProgressiveRenderer::Ready == FPDF_RENDER_READY,
               "CPDF_ProgressiveRenderer::Ready value mismatch");
 static_assert(CPDF_ProgressiveRenderer::ToBeContinued ==
                   FPDF_RENDER_TOBECONTINUED,
@@ -30,15 +30,15 @@ static_assert(CPDF_ProgressiveRenderer::Done == FPDF_RENDER_DONE,
 static_assert(CPDF_ProgressiveRenderer::Failed == FPDF_RENDER_FAILED,
               "CPDF_ProgressiveRenderer::Failed value mismatch");
 
-DLLEXPORT int STDCALL FPDF_RenderPageBitmap_Start(FPDF_BITMAP bitmap,
-                                                  FPDF_PAGE page,
-                                                  int start_x,
-                                                  int start_y,
-                                                  int size_x,
-                                                  int size_y,
-                                                  int rotate,
-                                                  int flags,
-                                                  IFSDK_PAUSE* pause) {
+FPDF_EXPORT int FPDF_CALLCONV FPDF_RenderPageBitmap_Start(FPDF_BITMAP bitmap,
+                                                          FPDF_PAGE page,
+                                                          int start_x,
+                                                          int start_y,
+                                                          int size_x,
+                                                          int size_y,
+                                                          int rotate,
+                                                          int flags,
+                                                          IFSDK_PAUSE* pause) {
   if (!bitmap || !pause || pause->version != 1)
     return FPDF_RENDER_FAILED;
 
@@ -61,7 +61,7 @@ DLLEXPORT int STDCALL FPDF_RenderPageBitmap_Start(FPDF_BITMAP bitmap,
                          rotate, flags, false, &IPauseAdapter);
 
 #ifdef _SKIA_SUPPORT_PATHS_
-  pDevice->Flush();
+  pDevice->Flush(false);
   pBitmap->UnPreMultiply();
 #endif
   if (pContext->m_pRenderer) {
@@ -71,8 +71,8 @@ DLLEXPORT int STDCALL FPDF_RenderPageBitmap_Start(FPDF_BITMAP bitmap,
   return FPDF_RENDER_FAILED;
 }
 
-DLLEXPORT int STDCALL FPDF_RenderPage_Continue(FPDF_PAGE page,
-                                               IFSDK_PAUSE* pause) {
+FPDF_EXPORT int FPDF_CALLCONV FPDF_RenderPage_Continue(FPDF_PAGE page,
+                                                       IFSDK_PAUSE* pause) {
   if (!pause || pause->version != 1)
     return FPDF_RENDER_FAILED;
 
@@ -86,7 +86,7 @@ DLLEXPORT int STDCALL FPDF_RenderPage_Continue(FPDF_PAGE page,
     pContext->m_pRenderer->Continue(&IPauseAdapter);
 #ifdef _SKIA_SUPPORT_PATHS_
     CFX_RenderDevice* pDevice = pContext->m_pDevice.get();
-    pDevice->Flush();
+    pDevice->Flush(false);
     pDevice->GetBitmap()->UnPreMultiply();
 #endif
     return CPDF_ProgressiveRenderer::ToFPDFStatus(
@@ -95,8 +95,17 @@ DLLEXPORT int STDCALL FPDF_RenderPage_Continue(FPDF_PAGE page,
   return FPDF_RENDER_FAILED;
 }
 
-DLLEXPORT void STDCALL FPDF_RenderPage_Close(FPDF_PAGE page) {
+FPDF_EXPORT void FPDF_CALLCONV FPDF_RenderPage_Close(FPDF_PAGE page) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
-  if (pPage)
+  if (pPage) {
+#ifdef _SKIA_SUPPORT_PATHS_
+    CPDF_PageRenderContext* pContext = pPage->GetRenderContext();
+    if (pContext && pContext->m_pRenderer) {
+      CFX_RenderDevice* pDevice = pContext->m_pDevice.get();
+      pDevice->Flush(true);
+      pDevice->GetBitmap()->UnPreMultiply();
+    }
+#endif
     pPage->SetRenderContext(nullptr);
+  }
 }

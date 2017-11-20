@@ -15,14 +15,10 @@ pw_1: times 8 dw 1
 
 SECTION .text
 
-; TODO(yunqingwang)fix quantize_b code for skip=1 case.
 %macro QUANTIZE_FN 2
 cglobal quantize_%1, 0, %2, 15, coeff, ncoeff, skip, zbin, round, quant, \
                                 shift, qcoeff, dqcoeff, dequant, \
                                 eob, scan, iscan
-  cmp                    dword skipm, 0
-  jne .blank
-
   ; actual quantize loop - setup pointers, rounders, etc.
   movifnidn                   coeffq, coeffmp
   movifnidn                  ncoeffq, ncoeffmp
@@ -301,45 +297,7 @@ cglobal quantize_%1, 0, %2, 15, coeff, ncoeff, skip, zbin, round, quant, \
   pextrw                          r6, m8, 0
   mov                             [r2], r6
   RET
-
-  ; skip-block, i.e. just write all zeroes
-.blank:
-  mov                             r0, dqcoeffmp
-  movifnidn                  ncoeffq, ncoeffmp
-  mov                             r2, qcoeffmp
-  mov                             r3, eobmp
-  DEFINE_ARGS dqcoeff, ncoeff, qcoeff, eob
-%if CONFIG_VP9_HIGHBITDEPTH
-  lea                       dqcoeffq, [dqcoeffq+ncoeffq*4]
-  lea                        qcoeffq, [ qcoeffq+ncoeffq*4]
-%else
-  lea                       dqcoeffq, [dqcoeffq+ncoeffq*2]
-  lea                        qcoeffq, [ qcoeffq+ncoeffq*2]
-%endif
-  neg                        ncoeffq
-  pxor                            m7, m7
-.blank_loop:
-%if CONFIG_VP9_HIGHBITDEPTH
-  mova       [dqcoeffq+ncoeffq*4+ 0], m7
-  mova       [dqcoeffq+ncoeffq*4+16], m7
-  mova       [dqcoeffq+ncoeffq*4+32], m7
-  mova       [dqcoeffq+ncoeffq*4+48], m7
-  mova        [qcoeffq+ncoeffq*4+ 0], m7
-  mova        [qcoeffq+ncoeffq*4+16], m7
-  mova        [qcoeffq+ncoeffq*4+32], m7
-  mova        [qcoeffq+ncoeffq*4+48], m7
-%else
-  mova       [dqcoeffq+ncoeffq*2+ 0], m7
-  mova       [dqcoeffq+ncoeffq*2+16], m7
-  mova        [qcoeffq+ncoeffq*2+ 0], m7
-  mova        [qcoeffq+ncoeffq*2+16], m7
-%endif
-  add                        ncoeffq, mmsize
-  jl .blank_loop
-  mov                    word [eobq], 0
-  RET
 %endmacro
 
 INIT_XMM ssse3
-QUANTIZE_FN b, 7
 QUANTIZE_FN b_32x32, 7

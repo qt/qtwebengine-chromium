@@ -676,6 +676,15 @@ void InsertBuiltInFunctions(sh::GLenum type,
                                                       voidType, "groupMemoryBarrier");
     }
 
+    if (type == GL_GEOMETRY_SHADER_OES)
+    {
+        const char *extension = "GL_OES_geometry_shader";
+        symbolTable.insertBuiltInFunctionNoParametersExt(ESSL3_1_BUILTINS, extension, EOpEmitVertex,
+                                                         voidType, "EmitVertex");
+        symbolTable.insertBuiltInFunctionNoParametersExt(ESSL3_1_BUILTINS, extension,
+                                                         EOpEndPrimitive, voidType, "EndPrimitive");
+    }
+
     //
     // Depth range in window coordinates
     //
@@ -720,7 +729,7 @@ void InsertBuiltInFunctions(sh::GLenum type,
     {
         symbolTable.insertConstIntExt(COMMON_BUILTINS, "GL_EXT_blend_func_extended",
                                       "gl_MaxDualSourceDrawBuffersEXT",
-                                      resources.MaxDualSourceDrawBuffers);
+                                      resources.MaxDualSourceDrawBuffers, EbpMedium);
     }
 
     symbolTable.insertConstInt(ESSL3_BUILTINS, "gl_MaxVertexOutputVectors",
@@ -777,6 +786,29 @@ void InsertBuiltInFunctions(sh::GLenum type,
                                resources.MaxCombinedAtomicCounterBuffers, EbpMedium);
     symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxAtomicCounterBufferSize",
                                resources.MaxAtomicCounterBufferSize, EbpMedium);
+
+    if (resources.OES_geometry_shader)
+    {
+        const char *ext = "GL_OES_geometry_shader";
+        symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryInputComponents",
+                                      resources.MaxGeometryInputComponents, EbpMedium);
+        symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryOutputComponents",
+                                      resources.MaxGeometryOutputComponents, EbpMedium);
+        symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryImageUniforms",
+                                      resources.MaxGeometryImageUniforms, EbpMedium);
+        symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryTextureImageUnits",
+                                      resources.MaxGeometryTextureImageUnits, EbpMedium);
+        symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryOutputVertices",
+                                      resources.MaxGeometryOutputVertices, EbpMedium);
+        symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryTotalOutputComponents",
+                                      resources.MaxGeometryTotalOutputComponents, EbpMedium);
+        symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryUniformComponents",
+                                      resources.MaxGeometryUniformComponents, EbpMedium);
+        symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryAtomicCounters",
+                                      resources.MaxGeometryAtomicCounters, EbpMedium);
+        symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryAtomicCounterBuffers",
+                                      resources.MaxGeometryAtomicCounterBuffers, EbpMedium);
+    }
 }
 
 void IdentifyBuiltIns(sh::GLenum type,
@@ -816,11 +848,11 @@ void IdentifyBuiltIns(sh::GLenum type,
             TType fragData(EbtFloat, EbpMedium, EvqFragData, 4);
             if (spec != SH_WEBGL2_SPEC && spec != SH_WEBGL3_SPEC)
             {
-                fragData.setArraySize(resources.MaxDrawBuffers);
+                fragData.makeArray(resources.MaxDrawBuffers);
             }
             else
             {
-                fragData.setArraySize(1u);
+                fragData.makeArray(1u);
             }
             symbolTable.insertVariable(ESSL1_BUILTINS, "gl_FragData", fragData);
 
@@ -829,8 +861,8 @@ void IdentifyBuiltIns(sh::GLenum type,
                 symbolTable.insertVariableExt(
                     ESSL1_BUILTINS, "GL_EXT_blend_func_extended", "gl_SecondaryFragColorEXT",
                     TType(EbtFloat, EbpMedium, EvqSecondaryFragColorEXT, 4));
-                TType secondaryFragData(EbtFloat, EbpMedium, EvqSecondaryFragDataEXT, 4, 1, true);
-                secondaryFragData.setArraySize(resources.MaxDualSourceDrawBuffers);
+                TType secondaryFragData(EbtFloat, EbpMedium, EvqSecondaryFragDataEXT, 4, 1);
+                secondaryFragData.makeArray(resources.MaxDualSourceDrawBuffers);
                 symbolTable.insertVariableExt(ESSL1_BUILTINS, "GL_EXT_blend_func_extended",
                                               "gl_SecondaryFragDataEXT", secondaryFragData);
             }
@@ -848,8 +880,8 @@ void IdentifyBuiltIns(sh::GLenum type,
 
             if (resources.EXT_shader_framebuffer_fetch || resources.NV_shader_framebuffer_fetch)
             {
-                TType lastFragData(EbtFloat, EbpMedium, EvqLastFragData, 4, 1, true);
-                lastFragData.setArraySize(resources.MaxDrawBuffers);
+                TType lastFragData(EbtFloat, EbpMedium, EvqLastFragData, 4, 1);
+                lastFragData.makeArray(resources.MaxDrawBuffers);
 
                 if (resources.EXT_shader_framebuffer_fetch)
                 {
@@ -871,11 +903,20 @@ void IdentifyBuiltIns(sh::GLenum type,
                                               "gl_LastFragColorARM",
                                               TType(EbtFloat, EbpMedium, EvqLastFragColor, 4));
             }
+
+            if (resources.OES_geometry_shader)
+            {
+                const char *extension = "GL_OES_geometry_shader";
+                symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_PrimitiveID",
+                                              TType(EbtInt, EbpHigh, EvqPrimitiveID, 1));
+                symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_Layer",
+                                              TType(EbtInt, EbpHigh, EvqLayer, 1));
+            }
+
+            break;
         }
-
-        break;
-
         case GL_VERTEX_SHADER:
+        {
             symbolTable.insertVariable(COMMON_BUILTINS, "gl_Position",
                                        TType(EbtFloat, EbpHigh, EvqPosition, 4));
             symbolTable.insertVariable(COMMON_BUILTINS, "gl_PointSize",
@@ -884,7 +925,12 @@ void IdentifyBuiltIns(sh::GLenum type,
                                        TType(EbtInt, EbpHigh, EvqInstanceID, 1));
             symbolTable.insertVariable(ESSL3_BUILTINS, "gl_VertexID",
                                        TType(EbtInt, EbpHigh, EvqVertexID, 1));
+
+            // For internal use by ANGLE - not exposed to the parser.
+            symbolTable.insertVariable(GLSL_BUILTINS, "gl_ViewportIndex",
+                                       TType(EbtInt, EbpHigh, EvqViewportIndex));
             break;
+        }
         case GL_COMPUTE_SHADER:
         {
             symbolTable.insertVariable(ESSL3_1_BUILTINS, "gl_NumWorkGroups",
@@ -899,11 +945,51 @@ void IdentifyBuiltIns(sh::GLenum type,
                                        TType(EbtUInt, EbpUndefined, EvqGlobalInvocationID, 3));
             symbolTable.insertVariable(ESSL3_1_BUILTINS, "gl_LocalInvocationIndex",
                                        TType(EbtUInt, EbpUndefined, EvqLocalInvocationIndex, 1));
+            break;
         }
-        break;
 
+        case GL_GEOMETRY_SHADER_OES:
+        {
+            const char *extension = "GL_OES_geometry_shader";
+
+            // Add built-in interface block gl_PerVertex and the built-in array gl_in.
+            // TODO(jiawei.shao@intel.com): implement GL_OES_geometry_point_size.
+            const TString *glPerVertexString = NewPoolTString("gl_PerVertex");
+            symbolTable.insertInterfaceBlockNameExt(ESSL3_1_BUILTINS, extension, glPerVertexString);
+
+            TFieldList *fieldList    = NewPoolTFieldList();
+            TSourceLoc zeroSourceLoc = {0, 0, 0, 0};
+            TField *glPositionField  = new TField(new TType(EbtFloat, EbpHigh, EvqPosition, 4),
+                                                 NewPoolTString("gl_Position"), zeroSourceLoc);
+            fieldList->push_back(glPositionField);
+
+            TInterfaceBlock *glInBlock = new TInterfaceBlock(
+                glPerVertexString, fieldList, NewPoolTString("gl_in"), TLayoutQualifier::create());
+
+            // The array size of gl_in is undefined until we get a valid input primitive
+            // declaration.
+            TType glInType(glInBlock, EvqPerVertexIn, TLayoutQualifier::create());
+            glInType.makeArray(0u);
+            symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_in", glInType);
+
+            TType glPositionType(EbtFloat, EbpHigh, EvqPosition, 4);
+            glPositionType.setInterfaceBlock(new TInterfaceBlock(
+                glPerVertexString, fieldList, nullptr, TLayoutQualifier::create()));
+            symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_Position",
+                                          glPositionType);
+            symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_PrimitiveIDIn",
+                                          TType(EbtInt, EbpHigh, EvqPrimitiveIDIn, 1));
+            symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_InvocationID",
+                                          TType(EbtInt, EbpHigh, EvqInvocationID, 1));
+            symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_PrimitiveID",
+                                          TType(EbtInt, EbpHigh, EvqPrimitiveID, 1));
+            symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_Layer",
+                                          TType(EbtInt, EbpHigh, EvqLayer, 1));
+
+            break;
+        }
         default:
-            assert(false && "Language not supported");
+            UNREACHABLE();
     }
 }
 
@@ -941,6 +1027,10 @@ void InitExtensionBehavior(const ShBuiltInResources &resources, TExtensionBehavi
     if (resources.EXT_YUV_target)
     {
         extBehavior["GL_EXT_YUV_target"] = EBhUndefined;
+    }
+    if (resources.OES_geometry_shader)
+    {
+        extBehavior["GL_OES_geometry_shader"] = EBhUndefined;
     }
 }
 

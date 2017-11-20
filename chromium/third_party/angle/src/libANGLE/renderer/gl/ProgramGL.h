@@ -65,6 +65,10 @@ class ProgramGL : public ProgramImpl
     void setUniformMatrix3x4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value) override;
     void setUniformMatrix4x3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value) override;
 
+    void getUniformfv(const gl::Context *context, GLint location, GLfloat *params) const override;
+    void getUniformiv(const gl::Context *context, GLint location, GLint *params) const override;
+    void getUniformuiv(const gl::Context *context, GLint location, GLuint *params) const override;
+
     void setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding) override;
 
     bool getUniformBlockSize(const std::string &blockName, size_t *sizeOut) const override;
@@ -76,7 +80,12 @@ class ProgramGL : public ProgramImpl
                                  GLint components,
                                  const GLfloat *coeffs) override;
 
+    void markUnusedUniformLocations(std::vector<gl::VariableLocation> *uniformLocations) override;
+
     GLuint getProgramID() const;
+
+    void enableSideBySideRenderingPath() const;
+    void enableLayeredRenderingPath(int baseViewIndex) const;
 
   private:
     void preLink();
@@ -102,6 +111,7 @@ class ProgramGL : public ProgramImpl
     std::vector<PathRenderingFragmentInput> mPathRenderingFragmentInputs;
 
     bool mEnablePathRendering;
+    GLint mMultiviewBaseViewLayerIndexUniformLocation;
 
     GLuint mProgramID;
 };

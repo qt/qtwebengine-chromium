@@ -344,7 +344,7 @@ GrVkPrimaryCommandBuffer* GrVkPrimaryCommandBuffer::Create(const GrVkGpu* gpu,
                                                            VkCommandPool cmdPool) {
     const VkCommandBufferAllocateInfo cmdInfo = {
         VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,   // sType
-        NULL,                                             // pNext
+        nullptr,                                          // pNext
         cmdPool,                                          // commandPool
         VK_COMMAND_BUFFER_LEVEL_PRIMARY,                  // level
         1                                                 // bufferCount
@@ -384,7 +384,7 @@ void GrVkPrimaryCommandBuffer::end(const GrVkGpu* gpu) {
 
 void GrVkPrimaryCommandBuffer::beginRenderPass(const GrVkGpu* gpu,
                                                const GrVkRenderPass* renderPass,
-                                               const VkClearValue* clearValues,
+                                               const VkClearValue clearValues[],
                                                const GrVkRenderTarget& target,
                                                const SkIRect& bounds,
                                                bool forSecondaryCB) {
@@ -403,7 +403,15 @@ void GrVkPrimaryCommandBuffer::beginRenderPass(const GrVkGpu* gpu,
     beginInfo.renderPass = renderPass->vkRenderPass();
     beginInfo.framebuffer = target.framebuffer()->framebuffer();
     beginInfo.renderArea = renderArea;
-    beginInfo.clearValueCount = renderPass->clearValueCount();
+
+    // TODO: have clearValueCount return the index of the last attachment that
+    // requires a clear instead of the number of total clears.
+    uint32_t stencilIndex;
+    if (renderPass->stencilAttachmentIndex(&stencilIndex)) {
+        beginInfo.clearValueCount = renderPass->clearValueCount() ? 2 : 0;
+    } else {
+        beginInfo.clearValueCount = renderPass->clearValueCount();
+    }
     beginInfo.pClearValues = clearValues;
 
     VkSubpassContents contents = forSecondaryCB ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS
@@ -491,7 +499,7 @@ void GrVkPrimaryCommandBuffer::submitToQueue(
                          WaitForFences(gpu->device(), 1, &fSubmitFence, true, UINT64_MAX));
         if (VK_TIMEOUT == err) {
             SkDebugf("Fence failed to signal: %d\n", err);
-            SkFAIL("failing");
+            SK_ABORT("failing");
         }
         SkASSERT(!err);
 
@@ -516,7 +524,7 @@ bool GrVkPrimaryCommandBuffer::finished(const GrVkGpu* gpu) const {
 
         default:
             SkDebugf("Error getting fence status: %d\n", err);
-            SkFAIL("failing");
+            SK_ABORT("failing");
             break;
     }
 
@@ -629,6 +637,33 @@ void GrVkPrimaryCommandBuffer::copyBufferToImage(const GrVkGpu* gpu,
                                                         copyRegions));
 }
 
+
+void GrVkPrimaryCommandBuffer::copyBuffer(GrVkGpu* gpu,
+                                          GrVkBuffer* srcBuffer,
+                                          GrVkBuffer* dstBuffer,
+                                          uint32_t regionCount,
+                                          const VkBufferCopy* regions) {
+    SkASSERT(fIsActive);
+    SkASSERT(!fActiveRenderPass);
+#ifdef SK_DEBUG
+    for (uint32_t i = 0; i < regionCount; ++i) {
+        const VkBufferCopy& region = regions[i];
+        SkASSERT(region.size > 0);
+        SkASSERT(region.srcOffset < srcBuffer->size());
+        SkASSERT(region.dstOffset < dstBuffer->size());
+        SkASSERT(region.srcOffset + region.size <= srcBuffer->size());
+        SkASSERT(region.dstOffset + region.size <= dstBuffer->size());
+    }
+#endif
+    this->addResource(srcBuffer->resource());
+    this->addResource(dstBuffer->resource());
+    GR_VK_CALL(gpu->vkInterface(), CmdCopyBuffer(fCmdBuffer,
+                                                 srcBuffer->buffer(),
+                                                 dstBuffer->buffer(),
+                                                 regionCount,
+                                                 regions));
+}
+
 void GrVkPrimaryCommandBuffer::updateBuffer(GrVkGpu* gpu,
                                             GrVkBuffer* dstBuffer,
                                             VkDeviceSize dstOffset,
@@ -716,7 +751,7 @@ GrVkSecondaryCommandBuffer* GrVkSecondaryCommandBuffer::Create(const GrVkGpu* gp
                                                                VkCommandPool cmdPool) {
     const VkCommandBufferAllocateInfo cmdInfo = {
         VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,   // sType
-        NULL,                                             // pNext
+        nullptr,                                          // pNext
         cmdPool,                                          // commandPool
         VK_COMMAND_BUFFER_LEVEL_SECONDARY,                // level
         1                                                 // bufferCount

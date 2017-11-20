@@ -22,7 +22,7 @@
 #include "webrtc/modules/audio_processing/include/mock_audio_processing.h"
 #include "webrtc/modules/congestion_controller/include/mock/mock_congestion_observer.h"
 #include "webrtc/modules/congestion_controller/include/send_side_congestion_controller.h"
-#include "webrtc/modules/pacing/paced_sender.h"
+#include "webrtc/modules/pacing/mock/mock_paced_sender.h"
 #include "webrtc/modules/rtp_rtcp/mocks/mock_rtcp_rtt_stats.h"
 #include "webrtc/modules/rtp_rtcp/mocks/mock_rtp_rtcp.h"
 #include "webrtc/rtc_base/ptr_util.h"
@@ -43,6 +43,7 @@ using testing::Eq;
 using testing::Ne;
 using testing::Invoke;
 using testing::Return;
+using testing::StrEq;
 
 const int kChannelId = 1;
 const uint32_t kSsrc = 1234;
@@ -138,10 +139,11 @@ struct ConfigHelper {
             &simulated_clock_,
             nullptr /* observer */,
             &event_log_,
-            &packet_router_)),
-        fake_transport_(&packet_router_, send_side_cc_.get()),
+            &pacer_)),
+        fake_transport_(&packet_router_, &pacer_, send_side_cc_.get()),
         bitrate_allocator_(&limit_observer_),
-        worker_queue_("ConfigHelper_worker_queue") {
+        worker_queue_("ConfigHelper_worker_queue"),
+        audio_encoder_(nullptr) {
     using testing::Invoke;
 
     EXPECT_CALL(voice_engine_,
@@ -206,7 +208,6 @@ struct ConfigHelper {
   }
 
   void SetupDefaultChannelProxy(bool audio_bwe_enabled) {
-    using testing::StrEq;
     channel_proxy_ = new testing::StrictMock<MockVoEChannelProxy>();
     EXPECT_CALL(*channel_proxy_, GetRtpRtcp(_, _))
         .WillRepeatedly(Invoke(
@@ -250,8 +251,23 @@ struct ConfigHelper {
   void SetupMockForSetupSendCodec(bool expect_set_encoder_call) {
     if (expect_set_encoder_call) {
       EXPECT_CALL(*channel_proxy_, SetEncoderForMock(_, _))
-          .WillOnce(Return(true));
+          .WillOnce(Invoke(
+              [this](int payload_type, std::unique_ptr<AudioEncoder>* encoder) {
+                this->audio_encoder_ = std::move(*encoder);
+                return true;
+              }));
     }
+  }
+
+  void SetupMockForModifyEncoder() {
+    // Let ModifyEncoder to invoke mock audio encoder.
+    EXPECT_CALL(*channel_proxy_, ModifyEncoder(_))
+        .WillRepeatedly(Invoke(
+            [this](rtc::FunctionView<void(std::unique_ptr<AudioEncoder>*)>
+                       modifier) {
+              if (this->audio_encoder_)
+                modifier(&this->audio_encoder_);
+            }));
   }
 
   RtcpRttStats* rtcp_rtt_stats() { return &rtcp_rtt_stats_; }
@@ -319,6 +335,7 @@ struct ConfigHelper {
   AudioProcessing::AudioProcessingStatistics audio_processing_stats_;
   SimulatedClock simulated_clock_;
   PacketRouter packet_router_;
+  testing::NiceMock<MockPacedSender> pacer_;
   std::unique_ptr<SendSideCongestionController> send_side_cc_;
   FakeRtpTransportControllerSend fake_transport_;
   MockRtcEventLog event_log_;
@@ -329,6 +346,7 @@ struct ConfigHelper {
   // |worker_queue| is defined last to ensure all pending tasks are cancelled
   // and deleted before any other members.
   rtc::TaskQueue worker_queue_;
+  std::unique_ptr<AudioEncoder> audio_encoder_;
 };
 }  // namespace
 
@@ -458,19 +476,27 @@ TEST(AudioSendStreamTest, GetStatsTypingNoiseDetected) {
   EXPECT_FALSE(send_stream.GetStats().typing_noise_detected);
 }
 
-TEST(AudioSendStreamTest, SendCodecAppliesNetworkAdaptor) {
+TEST(AudioSendStreamTest, SendCodecAppliesAudioNetworkAdaptor) {
   ConfigHelper helper(false, true);
   auto stream_config = helper.config();
   stream_config.send_codec_spec =
       rtc::Optional<AudioSendStream::Config::SendCodecSpec>({0, kOpusFormat});
+  const std::string kAnaConfigString = "abcde";
+  const std::string kAnaReconfigString = "12345";
+
   stream_config.audio_network_adaptor_config =
-      rtc::Optional<std::string>("abced");
+      rtc::Optional<std::string>(kAnaConfigString);
 
   EXPECT_CALL(helper.mock_encoder_factory(), MakeAudioEncoderMock(_, _, _))
-      .WillOnce(Invoke([](int payload_type, const SdpAudioFormat& format,
-                          std::unique_ptr<AudioEncoder>* return_value) {
+      .WillOnce(Invoke([&kAnaConfigString, &kAnaReconfigString](
+                           int payload_type, const SdpAudioFormat& format,
+                           std::unique_ptr<AudioEncoder>* return_value) {
         auto mock_encoder = SetupAudioEncoderMock(payload_type, format);
-        EXPECT_CALL(*mock_encoder.get(), EnableAudioNetworkAdaptor(_, _))
+        EXPECT_CALL(*mock_encoder,
+                    EnableAudioNetworkAdaptor(StrEq(kAnaConfigString), _))
+            .WillOnce(Return(true));
+        EXPECT_CALL(*mock_encoder,
+                    EnableAudioNetworkAdaptor(StrEq(kAnaReconfigString), _))
             .WillOnce(Return(true));
         *return_value = std::move(mock_encoder);
       }));
@@ -479,6 +505,12 @@ TEST(AudioSendStreamTest, SendCodecAppliesNetworkAdaptor) {
       stream_config, helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
       helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+
+  stream_config.audio_network_adaptor_config =
+      rtc::Optional<std::string>(kAnaReconfigString);
+
+  helper.SetupMockForModifyEncoder();
+  send_stream.Reconfigure(stream_config);
 }
 
 // VAD is applied when codec is mono and the CNG frequency matches the codec

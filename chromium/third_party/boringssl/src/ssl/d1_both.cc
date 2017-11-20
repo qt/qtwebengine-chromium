@@ -127,6 +127,8 @@
 #include "internal.h"
 
 
+namespace bssl {
+
 /* TODO(davidben): 28 comes from the size of IP + UDP header. Is this reasonable
  * for these values? Notably, why is kMinMTU a function of the transport
  * protocol's overhead rather than, say, what's needed to hold a minimally-sized
@@ -152,6 +154,7 @@ static void dtls1_hm_fragment_free(hm_fragment *frag) {
 }
 
 static hm_fragment *dtls1_hm_fragment_new(const struct hm_header_st *msg_hdr) {
+  ScopedCBB cbb;
   hm_fragment *frag = (hm_fragment *)OPENSSL_malloc(sizeof(hm_fragment));
   if (frag == NULL) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
@@ -170,15 +173,13 @@ static hm_fragment *dtls1_hm_fragment_new(const struct hm_header_st *msg_hdr) {
     goto err;
   }
 
-  CBB cbb;
-  if (!CBB_init_fixed(&cbb, frag->data, DTLS1_HM_HEADER_LENGTH) ||
-      !CBB_add_u8(&cbb, msg_hdr->type) ||
-      !CBB_add_u24(&cbb, msg_hdr->msg_len) ||
-      !CBB_add_u16(&cbb, msg_hdr->seq) ||
-      !CBB_add_u24(&cbb, 0 /* frag_off */) ||
-      !CBB_add_u24(&cbb, msg_hdr->msg_len) ||
-      !CBB_finish(&cbb, NULL, NULL)) {
-    CBB_cleanup(&cbb);
+  if (!CBB_init_fixed(cbb.get(), frag->data, DTLS1_HM_HEADER_LENGTH) ||
+      !CBB_add_u8(cbb.get(), msg_hdr->type) ||
+      !CBB_add_u24(cbb.get(), msg_hdr->msg_len) ||
+      !CBB_add_u16(cbb.get(), msg_hdr->seq) ||
+      !CBB_add_u24(cbb.get(), 0 /* frag_off */) ||
+      !CBB_add_u24(cbb.get(), msg_hdr->msg_len) ||
+      !CBB_finish(cbb.get(), NULL, NULL)) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
     goto err;
   }
@@ -297,12 +298,8 @@ static hm_fragment *dtls1_get_incoming_message(
   return frag;
 }
 
-/* dtls1_process_handshake_record reads a handshake record and processes it. It
- * returns one if the record was successfully processed and 0 or -1 on error. */
-static int dtls1_process_handshake_record(SSL *ssl) {
+int dtls1_read_message(SSL *ssl) {
   SSL3_RECORD *rr = &ssl->s3->rrec;
-
-start:
   if (rr->length == 0) {
     int ret = dtls1_get_record(ssl);
     if (ret <= 0) {
@@ -310,27 +307,53 @@ start:
     }
   }
 
-  /* Cross-epoch records are discarded, but we may receive out-of-order
-   * application data between ChangeCipherSpec and Finished or a
-   * ChangeCipherSpec before the appropriate point in the handshake. Those must
-   * be silently discarded.
-   *
-   * However, only allow the out-of-order records in the correct epoch.
-   * Application data must come in the encrypted epoch, and ChangeCipherSpec in
-   * the unencrypted epoch (we never renegotiate). Other cases fall through and
-   * fail with a fatal error. */
-  if ((rr->type == SSL3_RT_APPLICATION_DATA &&
-       ssl->s3->aead_read_ctx != NULL) ||
-      (rr->type == SSL3_RT_CHANGE_CIPHER_SPEC &&
-       ssl->s3->aead_read_ctx == NULL)) {
-    rr->length = 0;
-    goto start;
-  }
+  switch (rr->type) {
+    case SSL3_RT_APPLICATION_DATA:
+      /* Unencrypted application data records are always illegal. */
+      if (ssl->s3->aead_read_ctx->is_null_cipher()) {
+        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
+        OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_RECORD);
+        return -1;
+      }
 
-  if (rr->type != SSL3_RT_HANDSHAKE) {
-    ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
-    OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_RECORD);
-    return -1;
+      /* Out-of-order application data may be received between ChangeCipherSpec
+       * and finished. Discard it. */
+      rr->length = 0;
+      ssl_read_buffer_discard(ssl);
+      return 1;
+
+    case SSL3_RT_CHANGE_CIPHER_SPEC:
+      /* We do not support renegotiation, so encrypted ChangeCipherSpec records
+       * are illegal. */
+      if (!ssl->s3->aead_read_ctx->is_null_cipher()) {
+        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
+        OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_RECORD);
+        return -1;
+      }
+
+      if (rr->length != 1 || rr->data[0] != SSL3_MT_CCS) {
+        OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_CHANGE_CIPHER_SPEC);
+        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
+        return -1;
+      }
+
+      /* Flag the ChangeCipherSpec for later. */
+      ssl->d1->has_change_cipher_spec = true;
+      ssl_do_msg_callback(ssl, 0 /* read */, SSL3_RT_CHANGE_CIPHER_SPEC,
+                          rr->data, rr->length);
+
+      rr->length = 0;
+      ssl_read_buffer_discard(ssl);
+      return 1;
+
+    case SSL3_RT_HANDSHAKE:
+      /* Break out to main processing. */
+      break;
+
+    default:
+      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
+      OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_RECORD);
+      return -1;
   }
 
   CBS cbs;
@@ -394,61 +417,38 @@ start:
   return 1;
 }
 
-int dtls1_get_message(SSL *ssl) {
-  if (ssl->s3->tmp.reuse_message) {
-    /* There must be a current message. */
-    assert(ssl->init_msg != NULL);
-    ssl->s3->tmp.reuse_message = 0;
-  } else {
-    dtls1_release_current_message(ssl, 0 /* don't free buffer */);
-  }
-
-  /* Process handshake records until the current message is ready. */
-  while (!dtls1_is_current_message_complete(ssl)) {
-    int ret = dtls1_process_handshake_record(ssl);
-    if (ret <= 0) {
-      return ret;
-    }
+bool dtls1_get_message(SSL *ssl, SSLMessage *out) {
+  if (!dtls1_is_current_message_complete(ssl)) {
+    return false;
   }
 
   hm_fragment *frag = ssl->d1->incoming_messages[ssl->d1->handshake_read_seq %
                                                  SSL_MAX_HANDSHAKE_FLIGHT];
-  assert(frag != NULL);
-  assert(frag->reassembly == NULL);
-  assert(ssl->d1->handshake_read_seq == frag->seq);
-
-  /* TODO(davidben): This function has a lot of implicit outputs. Simplify the
-   * |ssl_get_message| API. */
-  ssl->s3->tmp.message_type = frag->type;
-  ssl->init_msg = frag->data + DTLS1_HM_HEADER_LENGTH;
-  ssl->init_num = frag->msg_len;
-
-  ssl_do_msg_callback(ssl, 0 /* read */, SSL3_RT_HANDSHAKE, frag->data,
-                      ssl->init_num + DTLS1_HM_HEADER_LENGTH);
-  return 1;
-}
-
-void dtls1_get_current_message(const SSL *ssl, CBS *out) {
-  assert(dtls1_is_current_message_complete(ssl));
-
-  hm_fragment *frag = ssl->d1->incoming_messages[ssl->d1->handshake_read_seq %
-                                                 SSL_MAX_HANDSHAKE_FLIGHT];
-  CBS_init(out, frag->data, DTLS1_HM_HEADER_LENGTH + frag->msg_len);
-}
-
-void dtls1_release_current_message(SSL *ssl, int free_buffer) {
-  if (ssl->init_msg == NULL) {
-    return;
+  out->type = frag->type;
+  CBS_init(&out->body, frag->data + DTLS1_HM_HEADER_LENGTH, frag->msg_len);
+  CBS_init(&out->raw, frag->data, DTLS1_HM_HEADER_LENGTH + frag->msg_len);
+  out->is_v2_hello = false;
+  if (!ssl->s3->has_message) {
+    ssl_do_msg_callback(ssl, 0 /* read */, SSL3_RT_HANDSHAKE, frag->data,
+                        frag->msg_len + DTLS1_HM_HEADER_LENGTH);
+    ssl->s3->has_message = 1;
   }
+  return true;
+}
 
+void dtls1_next_message(SSL *ssl) {
+  assert(ssl->s3->has_message);
   assert(dtls1_is_current_message_complete(ssl));
   size_t index = ssl->d1->handshake_read_seq % SSL_MAX_HANDSHAKE_FLIGHT;
   dtls1_hm_fragment_free(ssl->d1->incoming_messages[index]);
   ssl->d1->incoming_messages[index] = NULL;
   ssl->d1->handshake_read_seq++;
-
-  ssl->init_msg = NULL;
-  ssl->init_num = 0;
+  ssl->s3->has_message = 0;
+  /* If we previously sent a flight, mark it as having a reply, so
+   * |on_handshake_complete| can manage post-handshake retransmission. */
+  if (ssl->d1->outgoing_messages_complete) {
+    ssl->d1->flight_has_reply = true;
+  }
 }
 
 void dtls_clear_incoming_messages(SSL *ssl) {
@@ -462,7 +462,7 @@ int dtls_has_incoming_messages(const SSL *ssl) {
   size_t current = ssl->d1->handshake_read_seq % SSL_MAX_HANDSHAKE_FLIGHT;
   for (size_t i = 0; i < SSL_MAX_HANDSHAKE_FLIGHT; i++) {
     /* Skip the current message. */
-    if (ssl->init_msg != NULL && i == current) {
+    if (ssl->s3->has_message && i == current) {
       assert(dtls1_is_current_message_complete(ssl));
       continue;
     }
@@ -489,6 +489,19 @@ int dtls1_parse_fragment(CBS *cbs, struct hm_header_st *out_hdr,
   return 1;
 }
 
+int dtls1_read_change_cipher_spec(SSL *ssl) {
+  /* Process handshake records until there is a ChangeCipherSpec. */
+  while (!ssl->d1->has_change_cipher_spec) {
+    int ret = dtls1_read_message(ssl);
+    if (ret <= 0) {
+      return ret;
+    }
+  }
+
+  ssl->d1->has_change_cipher_spec = false;
+  return 1;
+}
+
 
 /* Sending handshake messages. */
 
@@ -500,6 +513,8 @@ void dtls_clear_outgoing_messages(SSL *ssl) {
   ssl->d1->outgoing_messages_len = 0;
   ssl->d1->outgoing_written = 0;
   ssl->d1->outgoing_offset = 0;
+  ssl->d1->outgoing_messages_complete = false;
+  ssl->d1->flight_has_reply = false;
 }
 
 int dtls1_init_message(SSL *ssl, CBB *cbb, CBB *body, uint8_t type) {
@@ -537,6 +552,13 @@ int dtls1_finish_message(SSL *ssl, CBB *cbb, uint8_t **out_msg,
  * it takes ownership of |data| and releases it with |OPENSSL_free| when
  * done. */
 static int add_outgoing(SSL *ssl, int is_ccs, uint8_t *data, size_t len) {
+  if (ssl->d1->outgoing_messages_complete) {
+    /* If we've begun writing a new flight, we received the peer flight. Discard
+     * the timer and the our flight. */
+    dtls1_stop_timer(ssl);
+    dtls_clear_outgoing_messages(ssl);
+  }
+
   static_assert(SSL_MAX_HANDSHAKE_FLIGHT <
                     (1 << 8 * sizeof(ssl->d1->outgoing_messages_len)),
                 "outgoing_messages_len is too small");
@@ -548,10 +570,10 @@ static int add_outgoing(SSL *ssl, int is_ccs, uint8_t *data, size_t len) {
   }
 
   if (!is_ccs) {
-    /* TODO(svaldez): Move this up a layer to fix abstraction for SSL_TRANSCRIPT
+    /* TODO(svaldez): Move this up a layer to fix abstraction for SSLTranscript
      * on hs. */
     if (ssl->s3->hs != NULL &&
-        !SSL_TRANSCRIPT_update(&ssl->s3->hs->transcript, data, len)) {
+        !ssl->s3->hs->transcript.Update(data, len)) {
       OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
       OPENSSL_free(data);
       return 0;
@@ -624,14 +646,14 @@ static enum seal_result_t seal_next_message(SSL *ssl, uint8_t *out,
   assert(ssl->d1->outgoing_written < ssl->d1->outgoing_messages_len);
   assert(msg == &ssl->d1->outgoing_messages[ssl->d1->outgoing_written]);
 
-  /* DTLS renegotiation is unsupported, so only epochs 0 (NULL cipher) and 1
-   * (negotiated cipher) exist. */
-  assert(ssl->d1->w_epoch == 0 || ssl->d1->w_epoch == 1);
-  assert(msg->epoch <= ssl->d1->w_epoch);
   enum dtls1_use_epoch_t use_epoch = dtls1_use_current_epoch;
-  if (ssl->d1->w_epoch == 1 && msg->epoch == 0) {
+  if (ssl->d1->w_epoch >= 1 && msg->epoch == ssl->d1->w_epoch - 1) {
     use_epoch = dtls1_use_previous_epoch;
+  } else if (msg->epoch != ssl->d1->w_epoch) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+    return seal_error;
   }
+
   size_t overhead = dtls_max_seal_overhead(ssl, use_epoch);
   size_t prefix = dtls_seal_prefix_len(ssl, use_epoch);
 
@@ -677,18 +699,17 @@ static enum seal_result_t seal_next_message(SSL *ssl, uint8_t *out,
   }
 
   /* Assemble a fragment, to be sealed in-place. */
-  CBB cbb;
+  ScopedCBB cbb;
   uint8_t *frag = out + prefix;
   size_t max_frag = max_out - prefix, frag_len;
-  if (!CBB_init_fixed(&cbb, frag, max_frag) ||
-      !CBB_add_u8(&cbb, hdr.type) ||
-      !CBB_add_u24(&cbb, hdr.msg_len) ||
-      !CBB_add_u16(&cbb, hdr.seq) ||
-      !CBB_add_u24(&cbb, ssl->d1->outgoing_offset) ||
-      !CBB_add_u24(&cbb, todo) ||
-      !CBB_add_bytes(&cbb, CBS_data(&body), todo) ||
-      !CBB_finish(&cbb, NULL, &frag_len)) {
-    CBB_cleanup(&cbb);
+  if (!CBB_init_fixed(cbb.get(), frag, max_frag) ||
+      !CBB_add_u8(cbb.get(), hdr.type) ||
+      !CBB_add_u24(cbb.get(), hdr.msg_len) ||
+      !CBB_add_u16(cbb.get(), hdr.seq) ||
+      !CBB_add_u24(cbb.get(), ssl->d1->outgoing_offset) ||
+      !CBB_add_u24(cbb.get(), todo) ||
+      !CBB_add_bytes(cbb.get(), CBS_data(&body), todo) ||
+      !CBB_finish(cbb.get(), NULL, &frag_len)) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
     return seal_error;
   }
@@ -756,7 +777,7 @@ packet_full:
   return 1;
 }
 
-int dtls1_flush_flight(SSL *ssl) {
+static int send_flight(SSL *ssl) {
   dtls1_update_mtu(ssl);
 
   int ret = -1;
@@ -798,6 +819,13 @@ err:
   return ret;
 }
 
+int dtls1_flush_flight(SSL *ssl) {
+  ssl->d1->outgoing_messages_complete = true;
+  /* Start the retransmission timer for the next flight (if any). */
+  dtls1_start_timer(ssl);
+  return send_flight(ssl);
+}
+
 int dtls1_retransmit_outgoing_messages(SSL *ssl) {
   /* Rewind to the start of the flight and write it again.
    *
@@ -806,9 +834,11 @@ int dtls1_retransmit_outgoing_messages(SSL *ssl) {
   ssl->d1->outgoing_written = 0;
   ssl->d1->outgoing_offset = 0;
 
-  return dtls1_flush_flight(ssl);
+  return send_flight(ssl);
 }
 
 unsigned int dtls1_min_mtu(void) {
   return kMinMTU;
 }
+
+}  // namespace bssl

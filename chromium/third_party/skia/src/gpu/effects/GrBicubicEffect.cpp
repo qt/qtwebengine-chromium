@@ -7,9 +7,7 @@
 
 #include "GrBicubicEffect.h"
 
-#include "GrProxyMove.h"
 #include "GrTexture.h"
-#include "GrTextureProxy.h"
 #include "glsl/GrGLSLColorSpaceXformHelper.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLProgramDataManager.h"
@@ -73,26 +71,26 @@ void GrGLBicubicEffect::emitCode(EmitArgs& args) {
      *
      * This is GLSL, so the matrix is column-major (transposed from standard matrix notation).
      */
-    fragBuilder->codeAppend("mat4 kMitchellCoefficients = mat4("
+    fragBuilder->codeAppend("float4x4 kMitchellCoefficients = float4x4("
                             " 1.0 / 18.0,  16.0 / 18.0,   1.0 / 18.0,  0.0 / 18.0,"
                             "-9.0 / 18.0,   0.0 / 18.0,   9.0 / 18.0,  0.0 / 18.0,"
                             "15.0 / 18.0, -36.0 / 18.0,  27.0 / 18.0, -6.0 / 18.0,"
                             "-7.0 / 18.0,  21.0 / 18.0, -21.0 / 18.0,  7.0 / 18.0);");
-    fragBuilder->codeAppendf("vec2 coord = %s - %s * vec2(0.5);", coords2D.c_str(), imgInc);
+    fragBuilder->codeAppendf("float2 coord = %s - %s * float2(0.5);", coords2D.c_str(), imgInc);
     // We unnormalize the coord in order to determine our fractional offset (f) within the texel
     // We then snap coord to a texel center and renormalize. The snap prevents cases where the
     // starting coords are near a texel boundary and accumulations of imgInc would cause us to skip/
     // double hit a texel.
     fragBuilder->codeAppendf("coord /= %s;", imgInc);
-    fragBuilder->codeAppend("vec2 f = fract(coord);");
-    fragBuilder->codeAppendf("coord = (coord - f + vec2(0.5)) * %s;", imgInc);
-    fragBuilder->codeAppend("vec4 wx = kMitchellCoefficients * vec4(1.0, f.x, f.x * f.x, f.x * f.x * f.x);");
-    fragBuilder->codeAppend("vec4 wy = kMitchellCoefficients * vec4(1.0, f.y, f.y * f.y, f.y * f.y * f.y);");
-    fragBuilder->codeAppend("vec4 rowColors[4];");
+    fragBuilder->codeAppend("float2 f = fract(coord);");
+    fragBuilder->codeAppendf("coord = (coord - f + float2(0.5)) * %s;", imgInc);
+    fragBuilder->codeAppend("float4 wx = kMitchellCoefficients * float4(1.0, f.x, f.x * f.x, f.x * f.x * f.x);");
+    fragBuilder->codeAppend("float4 wy = kMitchellCoefficients * float4(1.0, f.y, f.y * f.y, f.y * f.y * f.y);");
+    fragBuilder->codeAppend("float4 rowColors[4];");
     for (int y = 0; y < 4; ++y) {
         for (int x = 0; x < 4; ++x) {
             SkString coord;
-            coord.printf("coord + %s * vec2(%d, %d)", imgInc, x - 1, y - 1);
+            coord.printf("coord + %s * float2(%d, %d)", imgInc, x - 1, y - 1);
             SkString sampleVar;
             sampleVar.printf("rowColors[%d]", x);
             fDomain.sampleTexture(fragBuilder,
@@ -104,7 +102,7 @@ void GrGLBicubicEffect::emitCode(EmitArgs& args) {
                                   args.fTexSamplers[0]);
         }
         fragBuilder->codeAppendf(
-            "vec4 s%d = wx.x * rowColors[0] + wx.y * rowColors[1] + wx.z * rowColors[2] + wx.w * rowColors[3];",
+            "float4 s%d = wx.x * rowColors[0] + wx.y * rowColors[1] + wx.z * rowColors[2] + wx.w * rowColors[3];",
             y);
     }
     SkString bicubicColor("(wy.x * s0 + wy.y * s1 + wy.z * s2 + wy.w * s3)");
@@ -120,13 +118,14 @@ void GrGLBicubicEffect::emitCode(EmitArgs& args) {
 void GrGLBicubicEffect::onSetData(const GrGLSLProgramDataManager& pdman,
                                   const GrFragmentProcessor& processor) {
     const GrBicubicEffect& bicubicEffect = processor.cast<GrBicubicEffect>();
-    GrTexture* texture = processor.textureSampler(0).peekTexture();
+    GrSurfaceProxy* proxy = processor.textureSampler(0).proxy();
+    GrTexture* texture = proxy->priv().peekTexture();
 
     float imageIncrement[2];
     imageIncrement[0] = 1.0f / texture->width();
     imageIncrement[1] = 1.0f / texture->height();
     pdman.set2fv(fImageIncrementUni, 1, imageIncrement);
-    fDomain.setData(pdman, bicubicEffect.domain(), texture);
+    fDomain.setData(pdman, bicubicEffect.domain(), proxy);
     if (SkToBool(bicubicEffect.colorSpaceXform())) {
         fColorSpaceHelper.setData(pdman, bicubicEffect.colorSpaceXform());
     }
@@ -134,29 +133,42 @@ void GrGLBicubicEffect::onSetData(const GrGLSLProgramDataManager& pdman,
 
 GrBicubicEffect::GrBicubicEffect(sk_sp<GrTextureProxy> proxy,
                                  sk_sp<GrColorSpaceXform> colorSpaceXform,
-                                 const SkMatrix &matrix,
+                                 const SkMatrix& matrix,
                                  const SkShader::TileMode tileModes[2])
-        : INHERITED{ModulationFlags(proxy->config()),
-                    GR_PROXY_MOVE(proxy),
-                    std::move(colorSpaceXform),
-                    matrix,
-                    GrSamplerParams(tileModes, GrSamplerParams::kNone_FilterMode)}
-        , fDomain(GrTextureDomain::IgnoredDomain()) {
+        : INHERITED{ModulateByConfigOptimizationFlags(proxy->config())}
+        , fCoordTransform(matrix, proxy.get())
+        , fDomain(GrTextureDomain::IgnoredDomain())
+        , fTextureSampler(std::move(proxy),
+                          GrSamplerParams(tileModes, GrSamplerParams::kNone_FilterMode))
+        , fColorSpaceXform(std::move(colorSpaceXform)) {
     this->initClassID<GrBicubicEffect>();
+    this->addCoordTransform(&fCoordTransform);
+    this->addTextureSampler(&fTextureSampler);
 }
 
 GrBicubicEffect::GrBicubicEffect(sk_sp<GrTextureProxy> proxy,
                                  sk_sp<GrColorSpaceXform> colorSpaceXform,
-                                 const SkMatrix &matrix,
+                                 const SkMatrix& matrix,
                                  const SkRect& domain)
-        : INHERITED(ModulationFlags(proxy->config()), proxy,
-                    std::move(colorSpaceXform), matrix,
-                    GrSamplerParams(SkShader::kClamp_TileMode, GrSamplerParams::kNone_FilterMode))
-        , fDomain(proxy.get(), domain, GrTextureDomain::kClamp_Mode) {
+        : INHERITED(ModulateByConfigOptimizationFlags(proxy->config()))
+        , fCoordTransform(matrix, proxy.get())
+        , fDomain(proxy.get(), domain, GrTextureDomain::kClamp_Mode)
+        , fTextureSampler(std::move(proxy))
+        , fColorSpaceXform(std::move(colorSpaceXform)) {
     this->initClassID<GrBicubicEffect>();
+    this->addCoordTransform(&fCoordTransform);
+    this->addTextureSampler(&fTextureSampler);
 }
 
-GrBicubicEffect::~GrBicubicEffect() {
+GrBicubicEffect::GrBicubicEffect(const GrBicubicEffect& that)
+        : INHERITED(that.optimizationFlags())
+        , fCoordTransform(that.fCoordTransform)
+        , fDomain(that.fDomain)
+        , fTextureSampler(that.fTextureSampler)
+        , fColorSpaceXform(that.fColorSpaceXform) {
+    this->initClassID<GrBicubicEffect>();
+    this->addCoordTransform(&fCoordTransform);
+    this->addTextureSampler(&fTextureSampler);
 }
 
 void GrBicubicEffect::onGetGLSLProcessorKey(const GrShaderCaps& caps,
@@ -176,7 +188,7 @@ bool GrBicubicEffect::onIsEqual(const GrFragmentProcessor& sBase) const {
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrBicubicEffect);
 
 #if GR_TEST_UTILS
-sk_sp<GrFragmentProcessor> GrBicubicEffect::TestCreate(GrProcessorTestData* d) {
+std::unique_ptr<GrFragmentProcessor> GrBicubicEffect::TestCreate(GrProcessorTestData* d) {
     int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx
                                         : GrProcessorUnitTest::kAlphaTextureIdx;
     sk_sp<GrColorSpaceXform> colorSpaceXform = GrTest::TestColorXform(d->fRandom);

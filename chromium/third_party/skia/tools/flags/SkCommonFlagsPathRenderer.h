@@ -10,30 +10,29 @@
 
 #if SK_SUPPORT_GPU
 
-#include "GrContextOptions.h"
+#include "GrTypesPriv.h"
 #include "SkCommandLineFlags.h"
 #include "SkTypes.h"
 
 DECLARE_string(pr);
 
 #define DEFINE_pathrenderer_flag                                                   \
-    DEFINE_string(pr, "all",                                                       \
+    DEFINE_string(pr, "default",                                                   \
                   "Set of enabled gpu path renderers. Defined as a list of: "      \
-                  "[[~]all [~]dashline [~]nvpr [~]msaa [~]aahairline [~]aaconvex " \
-                  "[~]aalinearizing [~]small [~]tess [~]grdefault]")
+                  "[[~]all [~]default [~]dashline [~]nvpr [~]msaa [~]aaconvex "    \
+                  "[~]aalinearizing [~]small [~]tess]")
 
-inline GrContextOptions::GpuPathRenderers get_named_pathrenderers_flags(const char* name) {
-    using GpuPathRenderers = GrContextOptions::GpuPathRenderers;
+inline GpuPathRenderers get_named_pathrenderers_flags(const char* name) {
     if (!strcmp(name, "all")) {
         return GpuPathRenderers::kAll;
+    } else if (!strcmp(name, "default")) {
+        return GpuPathRenderers::kDefault;
     } else if (!strcmp(name, "dashline")) {
         return GpuPathRenderers::kDashLine;
     } else if (!strcmp(name, "nvpr")) {
         return GpuPathRenderers::kStencilAndCover;
     } else if (!strcmp(name, "msaa")) {
         return GpuPathRenderers::kMSAA;
-    } else if (!strcmp(name, "aahairline")) {
-        return GpuPathRenderers::kAAHairline;
     } else if (!strcmp(name, "aaconvex")) {
         return GpuPathRenderers::kAAConvex;
     } else if (!strcmp(name, "aalinearizing")) {
@@ -44,20 +43,19 @@ inline GrContextOptions::GpuPathRenderers get_named_pathrenderers_flags(const ch
         return GpuPathRenderers::kCoverageCounting;
     } else if (!strcmp(name, "tess")) {
         return GpuPathRenderers::kTessellating;
-    } else if (!strcmp(name, "grdefault")) {
-        return GpuPathRenderers::kDefault;
+    } else if (!strcmp(name, "none")) {
+        return GpuPathRenderers::kNone;
     }
     SK_ABORT(SkStringPrintf("error: unknown named path renderer \"%s\"\n", name).c_str());
     return GpuPathRenderers::kNone;
 }
 
-inline GrContextOptions::GpuPathRenderers CollectGpuPathRenderersFromFlags() {
-    using GpuPathRenderers = GrContextOptions::GpuPathRenderers;
+inline GpuPathRenderers CollectGpuPathRenderersFromFlags() {
     if (FLAGS_pr.isEmpty()) {
-        return GpuPathRenderers::kAll;
+        return GpuPathRenderers::kDefault;
     }
     GpuPathRenderers gpuPathRenderers = '~' == FLAGS_pr[0][0] ?
-                                        GpuPathRenderers::kAll : GpuPathRenderers::kNone;
+                                        GpuPathRenderers::kDefault : GpuPathRenderers::kNone;
     for (int i = 0; i < FLAGS_pr.count(); ++i) {
         const char* name = FLAGS_pr[i];
         if (name[0] == '~') {

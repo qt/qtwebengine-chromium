@@ -246,6 +246,8 @@ DSP_SRCS-$(HAVE_SSE2)  += x86/highbd_idct32x32_add_sse2.c
 DSP_SRCS-$(HAVE_SSE4_1) += x86/highbd_inv_txfm_sse4.h
 DSP_SRCS-$(HAVE_SSE4_1) += x86/highbd_idct4x4_add_sse4.c
 DSP_SRCS-$(HAVE_SSE4_1) += x86/highbd_idct8x8_add_sse4.c
+DSP_SRCS-$(HAVE_SSE4_1) += x86/highbd_idct16x16_add_sse4.c
+DSP_SRCS-$(HAVE_SSE4_1) += x86/highbd_idct32x32_add_sse4.c
 endif  # !CONFIG_VP9_HIGHBITDEPTH
 
 ifeq ($(HAVE_NEON_ASM),yes)
@@ -274,6 +276,9 @@ DSP_SRCS-yes            += quantize.c
 DSP_SRCS-yes            += quantize.h
 
 DSP_SRCS-$(HAVE_SSE2)   += x86/quantize_sse2.c
+DSP_SRCS-$(HAVE_SSSE3)  += x86/quantize_ssse3.c
+DSP_SRCS-$(HAVE_AVX)    += x86/quantize_avx.c
+DSP_SRCS-$(HAVE_NEON)   += arm/quantize_neon.c
 ifeq ($(CONFIG_VP9_HIGHBITDEPTH),yes)
 DSP_SRCS-$(HAVE_SSE2)   += x86/highbd_quantize_intrin_sse2.c
 endif
@@ -313,6 +318,8 @@ DSP_SRCS-$(HAVE_NEON)   += arm/subtract_neon.c
 DSP_SRCS-$(HAVE_MSA)    += mips/sad_msa.c
 DSP_SRCS-$(HAVE_MSA)    += mips/subtract_msa.c
 
+DSP_SRCS-$(HAVE_MMI)    += mips/subtract_mmi.c
+
 DSP_SRCS-$(HAVE_SSE3)   += x86/sad_sse3.asm
 DSP_SRCS-$(HAVE_SSSE3)  += x86/sad_ssse3.asm
 DSP_SRCS-$(HAVE_SSE4_1) += x86/sad_sse4.asm
@@ -349,7 +356,6 @@ DSP_SRCS-$(HAVE_SSE)    += x86/variance_sse2.c
 DSP_SRCS-$(HAVE_SSE2)   += x86/avg_pred_sse2.c
 DSP_SRCS-$(HAVE_SSE2)   += x86/variance_sse2.c  # Contains SSE2 and SSSE3
 DSP_SRCS-$(HAVE_AVX2)   += x86/variance_avx2.c
-DSP_SRCS-$(HAVE_AVX2)   += x86/variance_impl_avx2.c
 DSP_SRCS-$(HAVE_VSX)    += ppc/variance_vsx.c
 
 ifeq ($(ARCH_X86_64),yes)

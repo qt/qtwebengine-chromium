@@ -98,20 +98,6 @@ public:
 
         virtual void shadeSpan4f(int x, int y, SkPM4f[], int count);
 
-        /**
-         * The const void* ctx is only const because all the implementations are const.
-         * This can be changed to non-const if a new shade proc needs to change the ctx.
-         */
-        typedef void (*ShadeProc)(const void* ctx, int x, int y, SkPMColor[], int count);
-        virtual ShadeProc asAShadeProc(void** ctx);
-
-        /**
-         *  Similar to shadeSpan, but only returns the alpha-channel for a span.
-         *  The default implementation calls shadeSpan() and then extracts the alpha
-         *  values from the returned colors.
-         */
-        virtual void shadeSpanAlpha(int x, int y, uint8_t alpha[], int count);
-
         // Notification from blitter::blitMask in case we need to see the non-alpha channels
         virtual void set3DMask(const SkMask*) {}
 
@@ -181,7 +167,7 @@ public:
      *  The returned GrFragmentProcessor should expect an unpremultiplied input color and
      *  produce a premultiplied output.
      */
-    virtual sk_sp<GrFragmentProcessor> asFragmentProcessor(const AsFPArgs&) const;
+    virtual std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const AsFPArgs&) const;
 #endif
 
     /**
@@ -201,14 +187,23 @@ public:
         return this->onMakeColorSpace(xformer);
     }
 
-    bool isRasterPipelineOnly() const {
+    bool isRasterPipelineOnly(const SkMatrix& ctm) const {
         // We always use RP when perspective is present.
-        return fLocalMatrix.hasPerspective() || this->onIsRasterPipelineOnly();
+        return ctm.hasPerspective() || fLocalMatrix.hasPerspective()
+                                    || this->onIsRasterPipelineOnly(ctm);
     }
 
+    struct StageRec {
+        SkRasterPipeline*   fPipeline;
+        SkArenaAlloc*       fAlloc;
+        SkColorSpace*       fDstCS;         // may be nullptr
+        const SkPaint&      fPaint;
+        const SkMatrix*     fLocalM;        // may be nullptr
+        SkMatrix            fCTM;
+    };
+
     // If this returns false, then we draw nothing (do not fall back to shader context)
-    bool appendStages(SkRasterPipeline*, SkColorSpace* dstCS, SkArenaAlloc*,
-                      const SkMatrix& ctm, const SkPaint&, const SkMatrix* localM=nullptr) const;
+    bool appendStages(const StageRec&) const;
 
     bool computeTotalInverse(const SkMatrix& ctm,
                              const SkMatrix* outerLocalMatrix,
@@ -258,10 +253,9 @@ protected:
     }
 
     // Default impl creates shadercontext and calls that (not very efficient)
-    virtual bool onAppendStages(SkRasterPipeline*, SkColorSpace* dstCS, SkArenaAlloc*,
-                                const SkMatrix&, const SkPaint&, const SkMatrix* localM) const;
+    virtual bool onAppendStages(const StageRec&) const;
 
-    virtual bool onIsRasterPipelineOnly() const { return false; }
+    virtual bool onIsRasterPipelineOnly(const SkMatrix& ctm) const { return false; }
 
 private:
     // This is essentially const, but not officially so it can be modified in constructors.

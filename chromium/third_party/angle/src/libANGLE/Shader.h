@@ -64,7 +64,11 @@ class ShaderState final : angle::NonCopyable
 
     const std::vector<sh::Varying> &getVaryings() const { return mVaryings; }
     const std::vector<sh::Uniform> &getUniforms() const { return mUniforms; }
-    const std::vector<sh::InterfaceBlock> &getInterfaceBlocks() const { return mInterfaceBlocks; }
+    const std::vector<sh::InterfaceBlock> &getUniformBlocks() const { return mUniformBlocks; }
+    const std::vector<sh::InterfaceBlock> &getShaderStorageBlocks() const
+    {
+        return mShaderStorageBlocks;
+    }
     const std::vector<sh::Attribute> &getActiveAttributes() const { return mActiveAttributes; }
     const std::vector<sh::OutputVariable> &getActiveOutputVariables() const
     {
@@ -87,9 +91,13 @@ class ShaderState final : angle::NonCopyable
 
     std::vector<sh::Varying> mVaryings;
     std::vector<sh::Uniform> mUniforms;
-    std::vector<sh::InterfaceBlock> mInterfaceBlocks;
+    std::vector<sh::InterfaceBlock> mUniformBlocks;
+    std::vector<sh::InterfaceBlock> mShaderStorageBlocks;
     std::vector<sh::Attribute> mActiveAttributes;
     std::vector<sh::OutputVariable> mActiveOutputVariables;
+
+    // ANGLE_multiview.
+    int mNumViews;
 
     // Indicates if this shader has been successfully compiled
     CompileStatus mCompileStatus;
@@ -145,11 +153,14 @@ class Shader final : angle::NonCopyable, public LabeledObject
 
     const std::vector<sh::Varying> &getVaryings(const Context *context);
     const std::vector<sh::Uniform> &getUniforms(const Context *context);
-    const std::vector<sh::InterfaceBlock> &getInterfaceBlocks(const Context *context);
+    const std::vector<sh::InterfaceBlock> &getUniformBlocks(const Context *context);
+    const std::vector<sh::InterfaceBlock> &getShaderStorageBlocks(const Context *context);
     const std::vector<sh::Attribute> &getActiveAttributes(const Context *context);
     const std::vector<sh::OutputVariable> &getActiveOutputVariables(const Context *context);
 
     const sh::WorkGroupSize &getWorkGroupSize(const Context *context);
+
+    int getNumViews(const Context *context);
 
     const std::string &getCompilerResourcesString() const;
 

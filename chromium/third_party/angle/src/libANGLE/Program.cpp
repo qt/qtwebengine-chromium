@@ -23,9 +23,11 @@
 #include "libANGLE/UniformLinker.h"
 #include "libANGLE/VaryingPacking.h"
 #include "libANGLE/features.h"
+#include "libANGLE/histogram_macros.h"
 #include "libANGLE/queryconversions.h"
 #include "libANGLE/renderer/GLImplFactory.h"
 #include "libANGLE/renderer/ProgramImpl.h"
+#include "platform/Platform.h"
 
 namespace gl
 {
@@ -205,7 +207,12 @@ InfoLog::~InfoLog()
 
 size_t InfoLog::getLength() const
 {
-    const std::string &logString = mStream.str();
+    if (!mLazyStream)
+    {
+        return 0;
+    }
+
+    const std::string &logString = mLazyStream->str();
     return logString.empty() ? 0 : logString.length() + 1;
 }
 
@@ -215,12 +222,12 @@ void InfoLog::getLog(GLsizei bufSize, GLsizei *length, char *infoLog) const
 
     if (bufSize > 0)
     {
-        const std::string str(mStream.str());
+        const std::string logString(str());
 
-        if (!str.empty())
+        if (!logString.empty())
         {
-            index = std::min(static_cast<size_t>(bufSize) - 1, str.length());
-            memcpy(infoLog, str.c_str(), index);
+            index = std::min(static_cast<size_t>(bufSize) - 1, logString.length());
+            memcpy(infoLog, logString.c_str(), index);
         }
 
         infoLog[index] = '\0';
@@ -237,6 +244,8 @@ void InfoLog::getLog(GLsizei bufSize, GLsizei *length, char *infoLog) const
 // messages, so lets remove all occurrences of this fake file path from the log.
 void InfoLog::appendSanitized(const char *message)
 {
+    ensureInitialized();
+
     std::string msg(message);
 
     size_t found;
@@ -250,7 +259,7 @@ void InfoLog::appendSanitized(const char *message)
     }
     while (found != std::string::npos);
 
-    mStream << message << std::endl;
+    *mLazyStream << message << std::endl;
 }
 
 void InfoLog::reset()
@@ -298,7 +307,8 @@ ProgramState::ProgramState()
       mSamplerUniformRange(0, 0),
       mImageUniformRange(0, 0),
       mAtomicCounterUniformRange(0, 0),
-      mBinaryRetrieveableHint(false)
+      mBinaryRetrieveableHint(false),
+      mNumViews(-1)
 {
     mComputeShaderLocalSize.fill(1);
 }
@@ -616,6 +626,9 @@ Error Program::link(const gl::Context *context)
 {
     const auto &data = context->getContextState();
 
+    auto *platform   = ANGLEPlatformCurrent();
+    double startTime = platform->currentTime(platform);
+
     unlink();
 
     ProgramHash programHash;
@@ -623,10 +636,14 @@ Error Program::link(const gl::Context *context)
     if (cache)
     {
         ANGLE_TRY_RESULT(cache->getProgram(context, this, &mState, &programHash), mLinked);
+        ANGLE_HISTOGRAM_BOOLEAN("GPU.ANGLE.ProgramCache.LoadBinarySuccess", mLinked);
     }
 
     if (mLinked)
     {
+        double delta = platform->currentTime(platform) - startTime;
+        int us       = static_cast<int>(delta * 1000000.0);
+        ANGLE_HISTOGRAM_COUNTS("GPU.ANGLE.ProgramCache.ProgramCacheHitTimeUS", us);
         return NoError();
     }
 
@@ -734,10 +751,7 @@ Error Program::link(const gl::Context *context)
 
         const auto &mergedVaryings = getMergedVaryings(context);
 
-        if (!linkValidateTransformFeedback(context, mInfoLog, mergedVaryings, caps))
-        {
-            return NoError();
-        }
+        mState.mNumViews = vertexShader->getNumViews(context);
 
         linkOutputVariables(context);
 
@@ -751,6 +765,11 @@ Error Program::link(const gl::Context *context)
         VaryingPacking varyingPacking(data.getCaps().maxVaryingVectors, packMode);
         if (!varyingPacking.packUserVaryings(mInfoLog, packedVaryings,
                                              mState.getTransformFeedbackVaryingNames()))
+        {
+            return NoError();
+        }
+
+        if (!linkValidateTransformFeedback(context, mInfoLog, mergedVaryings, caps))
         {
             return NoError();
         }
@@ -769,12 +788,29 @@ Error Program::link(const gl::Context *context)
 
     setUniformValuesFromBindingQualifiers();
 
+    // Mark implementation-specific unreferenced uniforms as ignored.
+    mProgram->markUnusedUniformLocations(&mState.mUniformLocations);
+
+    // Update sampler bindings with unreferenced uniforms.
+    for (const auto &location : mState.mUniformLocations)
+    {
+        if (!location.used && mState.isSamplerUniformIndex(location.index))
+        {
+            GLuint samplerIndex = mState.getSamplerIndexFromUniformIndex(location.index);
+            mState.mSamplerBindings[samplerIndex].unreferenced = true;
+        }
+    }
+
     // Save to the program cache.
     if (cache && (mState.mLinkedTransformFeedbackVaryings.empty() ||
                   !context->getWorkarounds().disableProgramCachingForTransformFeedback))
     {
         cache->putProgram(programHash, context, this);
     }
+
+    double delta = platform->currentTime(platform) - startTime;
+    int us       = static_cast<int>(delta * 1000000.0);
+    ANGLE_HISTOGRAM_COUNTS("GPU.ANGLE.ProgramCache.ProgramCacheMissTimeUS", us);
 
     return NoError();
 }
@@ -797,6 +833,7 @@ void Program::unlink()
     mState.mComputeShaderLocalSize.fill(1);
     mState.mSamplerBindings.clear();
     mState.mImageBindings.clear();
+    mState.mNumViews = -1;
 
     mValidated = false;
 
@@ -1127,6 +1164,18 @@ void Program::getOutputResourceName(GLuint index,
     }
 }
 
+const sh::Attribute &Program::getInputResource(GLuint index) const
+{
+    ASSERT(index < mState.mAttributes.size());
+    return mState.mAttributes[index];
+}
+
+const sh::OutputVariable &Program::getOutputResource(GLuint index) const
+{
+    ASSERT(index < mState.mOutputVariables.size());
+    return mState.mOutputVariables[index];
+}
+
 GLint Program::getFragDataLocation(const std::string &name) const
 {
     std::string baseName(name);
@@ -1408,19 +1457,55 @@ void Program::setUniformMatrix4x3fv(GLint location, GLsizei count, GLboolean tra
     mProgram->setUniformMatrix4x3fv(location, clampedCount, transpose, v);
 }
 
-void Program::getUniformfv(GLint location, GLfloat *v) const
+void Program::getUniformfv(const Context *context, GLint location, GLfloat *v) const
 {
-    getUniformInternal(location, v);
+    const auto &uniformLocation = mState.getUniformLocations()[location];
+    const auto &uniform         = mState.getUniforms()[uniformLocation.index];
+
+    GLenum nativeType = gl::VariableComponentType(uniform.type);
+    if (nativeType == GL_FLOAT)
+    {
+        mProgram->getUniformfv(context, location, v);
+    }
+    else
+    {
+        getUniformInternal(context, v, location, nativeType,
+                           gl::VariableComponentCount(uniform.type));
+    }
 }
 
-void Program::getUniformiv(GLint location, GLint *v) const
+void Program::getUniformiv(const Context *context, GLint location, GLint *v) const
 {
-    getUniformInternal(location, v);
+    const auto &uniformLocation = mState.getUniformLocations()[location];
+    const auto &uniform         = mState.getUniforms()[uniformLocation.index];
+
+    GLenum nativeType = gl::VariableComponentType(uniform.type);
+    if (nativeType == GL_INT || nativeType == GL_BOOL)
+    {
+        mProgram->getUniformiv(context, location, v);
+    }
+    else
+    {
+        getUniformInternal(context, v, location, nativeType,
+                           gl::VariableComponentCount(uniform.type));
+    }
 }
 
-void Program::getUniformuiv(GLint location, GLuint *v) const
+void Program::getUniformuiv(const Context *context, GLint location, GLuint *v) const
 {
-    getUniformInternal(location, v);
+    const auto &uniformLocation = mState.getUniformLocations()[location];
+    const auto &uniform         = mState.getUniforms()[uniformLocation.index];
+
+    GLenum nativeType = gl::VariableComponentType(uniform.type);
+    if (nativeType == GL_UNSIGNED_INT)
+    {
+        mProgram->getUniformuiv(context, location, v);
+    }
+    else
+    {
+        getUniformInternal(context, v, location, nativeType,
+                           gl::VariableComponentCount(uniform.type));
+    }
 }
 
 void Program::flagForDeletion()
@@ -1470,6 +1555,9 @@ bool Program::validateSamplers(InfoLog *infoLog, const Caps &caps)
     // DrawArrays and DrawElements will issue the INVALID_OPERATION error.
     for (const auto &samplerBinding : mState.mSamplerBindings)
     {
+        if (samplerBinding.unreferenced)
+            continue;
+
         GLenum textureType = samplerBinding.textureType;
 
         for (GLuint textureUnit : samplerBinding.boundTextureUnits)
@@ -1808,17 +1896,20 @@ void Program::linkSamplerAndImageBindings()
     // If uniform is a image type, insert it into the mImageBindings array.
     for (unsigned int imageIndex : mState.mImageUniformRange)
     {
-        // ES3.1 (section 7.6.1) and GLSL ES3.1 (section 4.4.5), Uniform*i{v}
-        // commands cannot load values into a uniform defined as an image,
-        // if declare without a binding qualifier, the image variable is
-        // initially bound to unit zero.
+        // ES3.1 (section 7.6.1) and GLSL ES3.1 (section 4.4.5), Uniform*i{v} commands
+        // cannot load values into a uniform defined as an image. if declare without a
+        // binding qualifier, any uniform image variable (include all elements of
+        // unbound image array) shoud be bound to unit zero.
         auto &imageUniform = mState.mUniforms[imageIndex];
         if (imageUniform.binding == -1)
         {
-            imageUniform.binding = 0;
+            mState.mImageBindings.emplace_back(ImageBinding(imageUniform.elementCount()));
         }
-        mState.mImageBindings.emplace_back(
-            ImageBinding(imageUniform.binding, imageUniform.elementCount()));
+        else
+        {
+            mState.mImageBindings.emplace_back(
+                ImageBinding(imageUniform.binding, imageUniform.elementCount()));
+        }
     }
 
     high = low;
@@ -1837,7 +1928,7 @@ void Program::linkSamplerAndImageBindings()
         const auto &samplerUniform = mState.mUniforms[samplerIndex];
         GLenum textureType         = SamplerTypeToTextureType(samplerUniform.type);
         mState.mSamplerBindings.emplace_back(
-            SamplerBinding(textureType, samplerUniform.elementCount()));
+            SamplerBinding(textureType, samplerUniform.elementCount(), false));
     }
 }
 
@@ -2055,7 +2146,7 @@ bool Program::linkUniformBlocks(const Context *context, InfoLog &infoLog)
     if (mState.mAttachedComputeShader)
     {
         Shader &computeShader              = *mState.mAttachedComputeShader;
-        const auto &computeInterfaceBlocks = computeShader.getInterfaceBlocks(context);
+        const auto &computeInterfaceBlocks = computeShader.getUniformBlocks(context);
 
         if (!validateUniformBlocksCount(
                 caps.maxComputeUniformBlocks, computeInterfaceBlocks,
@@ -2070,8 +2161,8 @@ bool Program::linkUniformBlocks(const Context *context, InfoLog &infoLog)
     Shader &vertexShader   = *mState.mAttachedVertexShader;
     Shader &fragmentShader = *mState.mAttachedFragmentShader;
 
-    const auto &vertexInterfaceBlocks   = vertexShader.getInterfaceBlocks(context);
-    const auto &fragmentInterfaceBlocks = fragmentShader.getInterfaceBlocks(context);
+    const auto &vertexInterfaceBlocks   = vertexShader.getUniformBlocks(context);
+    const auto &fragmentInterfaceBlocks = fragmentShader.getUniformBlocks(context);
 
     if (!validateUniformBlocksCount(
             caps.maxVertexUniformBlocks, vertexInterfaceBlocks,
@@ -2375,7 +2466,8 @@ bool Program::linkValidateTransformFeedback(const gl::Context *context,
             infoLog << "Capture of array elements is undefined and not supported.";
             return false;
         }
-        // All transform feedback varyings are expected to exist since packVaryings checks for them.
+        // All transform feedback varyings are expected to exist since packUserVaryings checks for
+        // them.
         ASSERT(found);
     }
 
@@ -2635,7 +2727,7 @@ void Program::gatherInterfaceBlockInfo(const Context *context)
     {
         Shader *computeShader = mState.getAttachedComputeShader();
 
-        for (const sh::InterfaceBlock &computeBlock : computeShader->getInterfaceBlocks(context))
+        for (const sh::InterfaceBlock &computeBlock : computeShader->getUniformBlocks(context))
         {
 
             // Only 'packed' blocks are allowed to be considered inactive.
@@ -2659,7 +2751,7 @@ void Program::gatherInterfaceBlockInfo(const Context *context)
 
     Shader *vertexShader = mState.getAttachedVertexShader();
 
-    for (const sh::InterfaceBlock &vertexBlock : vertexShader->getInterfaceBlocks(context))
+    for (const sh::InterfaceBlock &vertexBlock : vertexShader->getUniformBlocks(context))
     {
         // Only 'packed' blocks are allowed to be considered inactive.
         if (!vertexBlock.staticUse && vertexBlock.layout == sh::BLOCKLAYOUT_PACKED)
@@ -2674,7 +2766,7 @@ void Program::gatherInterfaceBlockInfo(const Context *context)
 
     Shader *fragmentShader = mState.getAttachedFragmentShader();
 
-    for (const sh::InterfaceBlock &fragmentBlock : fragmentShader->getInterfaceBlocks(context))
+    for (const sh::InterfaceBlock &fragmentBlock : fragmentShader->getUniformBlocks(context))
     {
         // Only 'packed' blocks are allowed to be considered inactive.
         if (!fragmentBlock.staticUse && fragmentBlock.layout == sh::BLOCKLAYOUT_PACKED)
@@ -2887,7 +2979,9 @@ GLsizei Program::setUniformInternal(GLint location, GLsizei countIn, int vectorS
         count        = maxElementCount / vectorSize;
     }
 
-    if (VariableComponentType(linkedUniform->type) == GL_BOOL)
+    // VariableComponentType(linkedUniform->type) has a dozens of compares and thus is evil for
+    // inlining with regards to code size. This version is one subtract and one compare only.
+    if (IsVariableComponentTypeBool(linkedUniform->type))
     {
         // Do a cast conversion for boolean types. From the spec:
         // "The uniform is set to FALSE if the input value is 0 or 0.0f, and set to TRUE otherwise."
@@ -2943,39 +3037,52 @@ GLsizei Program::setMatrixUniformInternal(GLint location,
     return clampedCount;
 }
 
+// Driver differences mean that doing the uniform value cast ourselves gives consistent results.
+// EG: on NVIDIA drivers, it was observed that getUniformi for MAX_INT+1 returned MIN_INT.
 template <typename DestT>
-void Program::getUniformInternal(GLint location, DestT *dataOut) const
+void Program::getUniformInternal(const Context *context,
+                                 DestT *dataOut,
+                                 GLint location,
+                                 GLenum nativeType,
+                                 int components) const
 {
-    const VariableLocation &locationInfo = mState.mUniformLocations[location];
-    const LinkedUniform &uniform         = mState.mUniforms[locationInfo.index];
-
-    const uint8_t *srcPointer = uniform.getDataPtrToElement(locationInfo.element);
-
-    GLenum componentType = VariableComponentType(uniform.type);
-    if (componentType == GLTypeToGLenum<DestT>::value)
+    switch (nativeType)
     {
-        memcpy(dataOut, srcPointer, uniform.getElementSize());
-        return;
-    }
-
-    int components = VariableComponentCount(uniform.type);
-
-    switch (componentType)
-    {
-        case GL_INT:
-            UniformStateQueryCastLoop<GLint>(dataOut, srcPointer, components);
-            break;
-        case GL_UNSIGNED_INT:
-            UniformStateQueryCastLoop<GLuint>(dataOut, srcPointer, components);
-            break;
         case GL_BOOL:
-            UniformStateQueryCastLoop<GLboolean>(dataOut, srcPointer, components);
+        {
+            GLint tempValue[16] = {0};
+            mProgram->getUniformiv(context, location, tempValue);
+            UniformStateQueryCastLoop<GLboolean>(
+                dataOut, reinterpret_cast<const uint8_t *>(tempValue), components);
             break;
+        }
+        case GL_INT:
+        {
+            GLint tempValue[16] = {0};
+            mProgram->getUniformiv(context, location, tempValue);
+            UniformStateQueryCastLoop<GLint>(dataOut, reinterpret_cast<const uint8_t *>(tempValue),
+                                             components);
+            break;
+        }
+        case GL_UNSIGNED_INT:
+        {
+            GLuint tempValue[16] = {0};
+            mProgram->getUniformuiv(context, location, tempValue);
+            UniformStateQueryCastLoop<GLuint>(dataOut, reinterpret_cast<const uint8_t *>(tempValue),
+                                              components);
+            break;
+        }
         case GL_FLOAT:
-            UniformStateQueryCastLoop<GLfloat>(dataOut, srcPointer, components);
+        {
+            GLfloat tempValue[16] = {0};
+            mProgram->getUniformfv(context, location, tempValue);
+            UniformStateQueryCastLoop<GLfloat>(
+                dataOut, reinterpret_cast<const uint8_t *>(tempValue), components);
             break;
+        }
         default:
             UNREACHABLE();
+            break;
     }
 }
 

@@ -34,7 +34,7 @@ GrVkCopyManager::GrVkCopyManager()
 GrVkCopyManager::~GrVkCopyManager() {}
 
 bool GrVkCopyManager::createCopyProgram(GrVkGpu* gpu) {
-    TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("skia"), "GrVkCopyManager::createCopyProgram()");
+    TRACE_EVENT0("skia", TRACE_FUNC);
 
     const GrShaderCaps* shaderCaps = gpu->caps()->shaderCaps();
     const char* version = shaderCaps->versionDeclString();
@@ -44,17 +44,17 @@ bool GrVkCopyManager::createCopyProgram(GrVkGpu* gpu) {
         "#extension GL_ARB_shading_language_420pack : enable\n"
 
         "layout(set = 0, binding = 0) uniform vertexUniformBuffer {"
-            "mediump vec4 uPosXform;"
-            "mediump vec4 uTexCoordXform;"
+            "mediump float4 uPosXform;"
+            "mediump float4 uTexCoordXform;"
         "};"
-        "layout(location = 0) in highp vec2 inPosition;"
-        "layout(location = 1) out mediump vec2 vTexCoord;"
+        "layout(location = 0) in highp float2 inPosition;"
+        "layout(location = 1) out mediump float2 vTexCoord;"
 
         "// Copy Program VS\n"
         "void main() {"
             "vTexCoord = inPosition * uTexCoordXform.xy + uTexCoordXform.zw;"
             "gl_Position.xy = inPosition * uPosXform.xy + uPosXform.zw;"
-            "gl_Position.zw = vec2(0, 1);"
+            "gl_Position.zw = float2(0, 1);"
         "}"
     );
 
@@ -66,8 +66,8 @@ bool GrVkCopyManager::createCopyProgram(GrVkGpu* gpu) {
         "precision mediump float;"
 
         "layout(set = 1, binding = 0) uniform mediump sampler2D uTextureSampler;"
-        "layout(location = 1) in mediump vec2 vTexCoord;"
-        "layout(location = 0, index = 0) out mediump vec4 fsColorOut;"
+        "layout(location = 1) in mediump float2 vTexCoord;"
+        "layout(location = 0, index = 0) out mediump float4 fsColorOut;"
 
         "// Copy Program FS\n"
         "void main() {"
@@ -135,7 +135,7 @@ bool GrVkCopyManager::createCopyProgram(GrVkGpu* gpu) {
     SkASSERT(fVertexBuffer.get());
     fVertexBuffer->updateData(vdata, sizeof(vdata));
 
-    // We use 2 vec4's for uniforms
+    // We use 2 float4's for uniforms
     fUniformBuffer.reset(GrVkUniformBuffer::Create(gpu, 8 * sizeof(float)));
     SkASSERT(fUniformBuffer.get());
 
@@ -143,10 +143,9 @@ bool GrVkCopyManager::createCopyProgram(GrVkGpu* gpu) {
 }
 
 bool GrVkCopyManager::copySurfaceAsDraw(GrVkGpu* gpu,
-                                        GrSurface* dst,
-                                        GrSurface* src,
-                                        const SkIRect& srcRect,
-                                        const SkIPoint& dstPoint) {
+                                        GrSurface* dst, GrSurfaceOrigin dstOrigin,
+                                        GrSurface* src, GrSurfaceOrigin srcOrigin,
+                                        const SkIRect& srcRect, const SkIPoint& dstPoint) {
     // None of our copy methods can handle a swizzle. TODO: Make copySurfaceAsDraw handle the
     // swizzle.
     if (gpu->caps()->shaderCaps()->configOutputSwizzle(src->config()) !=
@@ -160,7 +159,7 @@ bool GrVkCopyManager::copySurfaceAsDraw(GrVkGpu* gpu,
 
     if (gpu->vkCaps().newCBOnPipelineChange()) {
         // We bind a new pipeline here for the copy so we must start a new command buffer.
-        gpu->finishFlush();
+        gpu->finishFlush(0, nullptr);
     }
 
     GrVkRenderTarget* rt = static_cast<GrVkRenderTarget*>(dst->asRenderTarget());
@@ -204,7 +203,7 @@ bool GrVkCopyManager::copySurfaceAsDraw(GrVkGpu* gpu,
     float dx1 = 2.f * (dstPoint.fX + w) / dw - 1.f;
     float dy0 = 2.f * dstPoint.fY / dh - 1.f;
     float dy1 = 2.f * (dstPoint.fY + h) / dh - 1.f;
-    if (kBottomLeft_GrSurfaceOrigin == dst->origin()) {
+    if (kBottomLeft_GrSurfaceOrigin == dstOrigin) {
         dy0 = -dy0;
         dy1 = -dy1;
     }
@@ -215,7 +214,7 @@ bool GrVkCopyManager::copySurfaceAsDraw(GrVkGpu* gpu,
     float sy0 = (float)srcRect.fTop;
     float sy1 = (float)(srcRect.fTop + h);
     int sh = src->height();
-    if (kBottomLeft_GrSurfaceOrigin == src->origin()) {
+    if (kBottomLeft_GrSurfaceOrigin == srcOrigin) {
         sy0 = sh - sy0;
         sy1 = sh - sy1;
     }
@@ -293,7 +292,7 @@ bool GrVkCopyManager::copySurfaceAsDraw(GrVkGpu* gpu,
 
     GrVkRenderTarget* texRT = static_cast<GrVkRenderTarget*>(srcTex->asRenderTarget());
     if (texRT) {
-        gpu->onResolveRenderTarget(texRT);
+        gpu->onResolveRenderTarget(texRT, srcOrigin);
     }
 
     GrVkPrimaryCommandBuffer* cmdBuffer = gpu->currentCommandBuffer();

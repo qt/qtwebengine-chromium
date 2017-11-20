@@ -15,6 +15,7 @@
 #include "core/fxcrt/cfx_string_data_template.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_system.h"
+#include "third_party/base/optional.h"
 
 class CFX_ByteString;
 
@@ -75,7 +76,18 @@ class CFX_WideString {
   void clear() { m_pData.Reset(); }
 
   FX_STRSIZE GetLength() const { return m_pData ? m_pData->m_nDataLength : 0; }
+  FX_STRSIZE GetStringLength() const {
+    return m_pData ? FXSYS_wcslen(m_pData->m_String) : 0;
+  }
   bool IsEmpty() const { return !GetLength(); }
+
+  bool IsValidIndex(FX_STRSIZE index) const {
+    return 0 <= index && index < GetLength();
+  }
+
+  bool IsValidLength(FX_STRSIZE length) const {
+    return 0 <= length && length <= GetLength();
+  }
 
   const CFX_WideString& operator=(const wchar_t* str);
   const CFX_WideString& operator=(const CFX_WideString& stringSrc);
@@ -98,26 +110,24 @@ class CFX_WideString {
 
   bool operator<(const CFX_WideString& str) const;
 
-  wchar_t GetAt(FX_STRSIZE nIndex) const {
-    return m_pData ? m_pData->m_String[nIndex] : 0;
+  CharType operator[](const FX_STRSIZE index) const {
+    ASSERT(IsValidIndex(index));
+    return m_pData ? m_pData->m_String[index] : 0;
   }
 
-  wchar_t operator[](FX_STRSIZE nIndex) const {
-    return m_pData ? m_pData->m_String[nIndex] : 0;
-  }
-
-  void SetAt(FX_STRSIZE nIndex, wchar_t ch);
+  void SetAt(FX_STRSIZE index, wchar_t c);
 
   int Compare(const wchar_t* str) const;
   int Compare(const CFX_WideString& str) const;
   int CompareNoCase(const wchar_t* str) const;
 
-  CFX_WideString Mid(FX_STRSIZE first) const;
   CFX_WideString Mid(FX_STRSIZE first, FX_STRSIZE count) const;
   CFX_WideString Left(FX_STRSIZE count) const;
   CFX_WideString Right(FX_STRSIZE count) const;
 
   FX_STRSIZE Insert(FX_STRSIZE index, wchar_t ch);
+  FX_STRSIZE InsertAtFront(wchar_t ch) { return Insert(0, ch); }
+  FX_STRSIZE InsertAtBack(wchar_t ch) { return Insert(GetLength(), ch); }
   FX_STRSIZE Delete(FX_STRSIZE index, FX_STRSIZE count = 1);
 
   void Format(const wchar_t* lpszFormat, ...);
@@ -136,13 +146,23 @@ class CFX_WideString {
 
   void Reserve(FX_STRSIZE len);
   wchar_t* GetBuffer(FX_STRSIZE len);
-  void ReleaseBuffer(FX_STRSIZE len = -1);
+  void ReleaseBuffer(FX_STRSIZE len);
 
   int GetInteger() const;
   float GetFloat() const;
 
-  FX_STRSIZE Find(const CFX_WideStringC& pSub, FX_STRSIZE start = 0) const;
-  FX_STRSIZE Find(wchar_t ch, FX_STRSIZE start = 0) const;
+  pdfium::Optional<FX_STRSIZE> Find(const CFX_WideStringC& pSub,
+                                    FX_STRSIZE start = 0) const;
+  pdfium::Optional<FX_STRSIZE> Find(wchar_t ch, FX_STRSIZE start = 0) const;
+
+  bool Contains(const CFX_WideStringC& lpszSub, FX_STRSIZE start = 0) const {
+    return Find(lpszSub, start).has_value();
+  }
+
+  bool Contains(char ch, FX_STRSIZE start = 0) const {
+    return Find(ch, start).has_value();
+  }
+
   FX_STRSIZE Replace(const CFX_WideStringC& pOld, const CFX_WideStringC& pNew);
   FX_STRSIZE Remove(wchar_t ch);
 

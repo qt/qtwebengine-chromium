@@ -32,8 +32,8 @@ void EchoGeneratingPower(const RenderBuffer& render_buffer,
   }
 
   // Apply soft noise gate of -78 dBFS.
-  constexpr float kNoiseGatePower = 27509.42f;
-  std::for_each(X2->begin(), X2->end(), [kNoiseGatePower](float& a) {
+  static constexpr float kNoiseGatePower = 27509.42f;
+  std::for_each(X2->begin(), X2->end(), [](float& a) {
     if (kNoiseGatePower > a) {
       a = std::max(0.f, a - 0.3f * (kNoiseGatePower - a));
     }
@@ -79,7 +79,9 @@ constexpr float kHeadsetEchoPathGain = 0.0005f;
 
 }  // namespace
 
-ResidualEchoEstimator::ResidualEchoEstimator() {
+ResidualEchoEstimator::ResidualEchoEstimator(
+    const AudioProcessing::Config::EchoCanceller3& config)
+    : config_(config) {
   Reset();
 }
 
@@ -95,10 +97,10 @@ void ResidualEchoEstimator::Estimate(
   RTC_DCHECK(R2);
 
   const rtc::Optional<size_t> delay =
-      aec_state.FilterDelay()
-          ? aec_state.FilterDelay()
-          : (aec_state.ExternalDelay() ? aec_state.ExternalDelay()
-                                       : rtc::Optional<size_t>());
+      aec_state.ExternalDelay()
+          ? (aec_state.FilterDelay() ? aec_state.FilterDelay()
+                                     : aec_state.ExternalDelay())
+          : rtc::Optional<size_t>();
 
   // Estimate the power of the stationary noise in the render signal.
   RenderNoisePower(render_buffer, &X2_noise_floor_, &X2_noise_floor_counter_);
@@ -115,7 +117,7 @@ void ResidualEchoEstimator::Estimate(
   } else {
     // Estimate the echo generating signal power.
     std::array<float, kFftLengthBy2Plus1> X2;
-    if (aec_state.ExternalDelay() || aec_state.FilterDelay()) {
+    if (aec_state.ExternalDelay() && aec_state.FilterDelay()) {
       RTC_DCHECK(delay);
       const int delay_use = static_cast<int>(*delay);
 
@@ -144,7 +146,8 @@ void ResidualEchoEstimator::Estimate(
   }
 
   // If the echo is deemed inaudible, set the residual echo to zero.
-  if (aec_state.InaudibleEcho()) {
+  if (aec_state.InaudibleEcho() &&
+      (aec_state.ExternalDelay() || aec_state.HeadsetDetected())) {
     R2->fill(0.f);
   }
 
@@ -187,11 +190,12 @@ void ResidualEchoEstimator::NonLinearEstimate(
     const std::array<float, kFftLengthBy2Plus1>& Y2,
     std::array<float, kFftLengthBy2Plus1>* R2) {
   // Choose gains.
-  const float echo_path_gain_lf = headset_detected ? kHeadsetEchoPathGain : 100;
+  const float echo_path_gain_lf =
+      headset_detected ? kHeadsetEchoPathGain : config_.param.ep_strength.lf;
   const float echo_path_gain_mf =
-      headset_detected ? kHeadsetEchoPathGain : 1000;
+      headset_detected ? kHeadsetEchoPathGain : config_.param.ep_strength.mf;
   const float echo_path_gain_hf =
-      headset_detected ? kHeadsetEchoPathGain : 5000;
+      headset_detected ? kHeadsetEchoPathGain : config_.param.ep_strength.hf;
 
   // Compute preliminary residual echo.
   std::transform(

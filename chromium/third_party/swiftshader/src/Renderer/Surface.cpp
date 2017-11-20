@@ -2984,14 +2984,14 @@ namespace sw
 		case FORMAT_X8B8G8R8I:
 		case FORMAT_G8R8I:
 		case FORMAT_R8I:
-		case FORMAT_A8B8G8R8UI:
-		case FORMAT_X8B8G8R8UI:
-		case FORMAT_G8R8UI:
-		case FORMAT_R8UI:
 		case FORMAT_A16B16G16R16I:
 		case FORMAT_X16B16G16R16I:
 		case FORMAT_G16R16I:
 		case FORMAT_R16I:
+		case FORMAT_A32B32G32R32I:
+		case FORMAT_X32B32G32R32I:
+		case FORMAT_G32R32I:
+		case FORMAT_R32I:
 			return true;
 		default:
 			return false;
@@ -3002,14 +3002,14 @@ namespace sw
 	{
 		switch(format)
 		{
+		case FORMAT_A8B8G8R8UI:
+		case FORMAT_X8B8G8R8UI:
+		case FORMAT_G8R8UI:
+		case FORMAT_R8UI:
 		case FORMAT_A16B16G16R16UI:
 		case FORMAT_X16B16G16R16UI:
 		case FORMAT_G16R16UI:
 		case FORMAT_R16UI:
-		case FORMAT_A32B32G32R32I:
-		case FORMAT_X32B32G32R32I:
-		case FORMAT_G32R32I:
-		case FORMAT_R32I:
 		case FORMAT_A32B32G32R32UI:
 		case FORMAT_X32B32G32R32UI:
 		case FORMAT_G32R32UI:
@@ -3193,14 +3193,14 @@ namespace sw
 		resource->unlock();
 	}
 
-	bool Surface::isEntire(const SliceRect& rect) const
+	bool Surface::isEntire(const Rect& rect) const
 	{
 		return (rect.x0 == 0 && rect.y0 == 0 && rect.x1 == internal.width && rect.y1 == internal.height && internal.depth == 1);
 	}
 
-	SliceRect Surface::getRect() const
+	Rect Surface::getRect() const
 	{
-		return SliceRect(0, 0, internal.width, internal.height, 0);
+		return Rect(0, 0, internal.width, internal.height);
 	}
 
 	void Surface::clearDepth(float depth, int x0, int y0, int width, int height)

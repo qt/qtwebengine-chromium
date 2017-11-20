@@ -46,6 +46,8 @@
 #include "core/fpdfapi/render/cpdf_type3cache.h"
 #include "core/fpdfdoc/cpdf_occontext.h"
 #include "core/fxcodec/fx_codec.h"
+#include "core/fxcrt/cfx_autorestorer.h"
+#include "core/fxcrt/cfx_fixedbufgrow.h"
 #include "core/fxcrt/cfx_maybe_owned.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
@@ -925,9 +927,9 @@ CFX_RetainPtr<CFX_DIBitmap> DrawPatternBitmap(CPDF_Document* pDoc,
   CFX_DefaultRenderDevice bitmap_device;
   bitmap_device.Attach(pBitmap, false, nullptr, false);
   pBitmap->Clear(0);
-  CFX_FloatRect cell_bbox = pPattern->bbox();
-  pPattern->pattern_to_form()->TransformRect(cell_bbox);
-  pObject2Device->TransformRect(cell_bbox);
+  CFX_FloatRect cell_bbox =
+      pPattern->pattern_to_form()->TransformRect(pPattern->bbox());
+  cell_bbox = pObject2Device->TransformRect(cell_bbox);
   CFX_FloatRect bitmap_rect(0.0f, 0.0f, (float)width, (float)height);
   CFX_Matrix mtAdjust;
   mtAdjust.MatchRect(bitmap_rect, cell_bbox);
@@ -944,7 +946,7 @@ CFX_RetainPtr<CFX_DIBitmap> DrawPatternBitmap(CPDF_Document* pDoc,
   context.AppendLayer(pPattern->form(), &mtPattern2Bitmap);
   context.Render(&bitmap_device, &options, nullptr);
 #if defined _SKIA_SUPPORT_PATHS_
-  bitmap_device.Flush();
+  bitmap_device.Flush(true);
   pBitmap->UnPreMultiply();
 #endif
   return pBitmap;
@@ -1048,9 +1050,8 @@ void CPDF_RenderStatus::RenderObjectList(
 #if defined _SKIA_SUPPORT_
   DebugVerifyDeviceIsPreMultiplied();
 #endif
-  CFX_FloatRect clip_rect(m_pDevice->GetClipBox());
-  pObj2Device->GetInverse().TransformRect(clip_rect);
-
+  CFX_FloatRect clip_rect = pObj2Device->GetInverse().TransformRect(
+      CFX_FloatRect(m_pDevice->GetClipBox()));
   for (const auto& pCurObj : *pObjectHolder->GetPageObjectList()) {
     if (pCurObj.get() == m_pStopObj) {
       m_bStopped = true;
@@ -1101,7 +1102,7 @@ void CPDF_RenderStatus::RenderSingleObject(CPDF_PageObject* pObj,
 
 bool CPDF_RenderStatus::ContinueSingleObject(CPDF_PageObject* pObj,
                                              const CFX_Matrix* pObj2Device,
-                                             IFX_Pause* pPause) {
+                                             IFX_PauseIndicator* pPause) {
   if (m_pImageRenderer) {
     if (m_pImageRenderer->Continue(pPause))
       return true;
@@ -1122,20 +1123,20 @@ bool CPDF_RenderStatus::ContinueSingleObject(CPDF_PageObject* pObj,
   if (ProcessTransparency(pObj, pObj2Device))
     return false;
 
-  if (pObj->IsImage()) {
-    m_pImageRenderer = pdfium::MakeUnique<CPDF_ImageRenderer>();
-    if (!m_pImageRenderer->Start(this, pObj, pObj2Device, false,
-                                 FXDIB_BLEND_NORMAL)) {
-      if (!m_pImageRenderer->GetResult())
-        DrawObjWithBackground(pObj, pObj2Device);
-      m_pImageRenderer.reset();
-      return false;
-    }
-    return ContinueSingleObject(pObj, pObj2Device, pPause);
+  if (!pObj->IsImage()) {
+    ProcessObjectNoClip(pObj, pObj2Device);
+    return false;
   }
 
-  ProcessObjectNoClip(pObj, pObj2Device);
-  return false;
+  m_pImageRenderer = pdfium::MakeUnique<CPDF_ImageRenderer>();
+  if (!m_pImageRenderer->Start(this, pObj->AsImage(), pObj2Device, false,
+                               FXDIB_BLEND_NORMAL)) {
+    if (!m_pImageRenderer->GetResult())
+      DrawObjWithBackground(pObj, pObj2Device);
+    m_pImageRenderer.reset();
+    return false;
+  }
+  return ContinueSingleObject(pObj, pObj2Device, pPause);
 }
 
 bool CPDF_RenderStatus::GetObjectClippedRect(const CPDF_PageObject* pObj,
@@ -1383,7 +1384,7 @@ FX_ARGB CPDF_RenderStatus::GetStrokeArgb(CPDF_PageObject* pObj) const {
   return m_Options.TranslateColor(ArgbEncode(alpha, rgb));
 }
 
-void CPDF_RenderStatus::ProcessClipPath(CPDF_ClipPath ClipPath,
+void CPDF_RenderStatus::ProcessClipPath(const CPDF_ClipPath& ClipPath,
                                         const CFX_Matrix* pObj2Device) {
   if (!ClipPath.HasRef()) {
     if (m_LastClipPath.HasRef()) {
@@ -1602,7 +1603,7 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
                            m_bDropObjects, pFormResource, true);
   bitmap_render.ProcessObjectNoClip(pPageObj, &new_matrix);
 #if defined _SKIA_SUPPORT_PATHS_
-  bitmap_device.Flush();
+  bitmap_device.Flush(true);
   bitmap->UnPreMultiply();
 #endif
   m_bStopped = bitmap_render.m_bStopped;
@@ -1899,10 +1900,9 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
         CFX_RenderDevice::StateRestorer restorer(m_pDevice);
         status.RenderObjectList(pType3Char->m_pForm.get(), &matrix);
       } else {
-        CFX_FloatRect rect_f = pType3Char->m_pForm->CalcBoundingBox();
-        matrix.TransformRect(rect_f);
-
-        FX_RECT rect = rect_f.GetOuterRect();
+        FX_RECT rect =
+            matrix.TransformRect(pType3Char->m_pForm->CalcBoundingBox())
+                .GetOuterRect();
         CFX_DefaultRenderDevice bitmap_device;
         if (!bitmap_device.Create((int)(rect.Width() * sa),
                                   (int)(rect.Height() * sd), FXDIB_Argb,
@@ -2075,9 +2075,8 @@ void CPDF_RenderStatus::DrawShading(CPDF_ShadingPattern* pPattern,
     }
   }
   if (pDict->KeyExist("BBox")) {
-    CFX_FloatRect rect = pDict->GetRectFor("BBox");
-    pMatrix->TransformRect(rect);
-    clip_rect.Intersect(rect.GetOuterRect());
+    clip_rect.Intersect(
+        pMatrix->TransformRect(pDict->GetRectFor("BBox")).GetOuterRect());
   }
   if (m_pDevice->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_SHADING &&
       m_pDevice->GetDeviceDriver()->DrawShading(pPattern, pMatrix, clip_rect,
@@ -2224,9 +2223,7 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
       pPattern->bbox().top == pPattern->y_step() &&
       (mtPattern2Device.IsScaled() || mtPattern2Device.Is90Rotated());
 
-  CFX_FloatRect cell_bbox = pPattern->bbox();
-  mtPattern2Device.TransformRect(cell_bbox);
-
+  CFX_FloatRect cell_bbox = mtPattern2Device.TransformRect(pPattern->bbox());
   int width = static_cast<int>(ceil(cell_bbox.Width()));
   int height = static_cast<int>(ceil(cell_bbox.Height()));
   if (width == 0)
@@ -2234,9 +2231,8 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
   if (height == 0)
     height = 1;
 
-  CFX_FloatRect clip_box_p(clip_box);
-  mtPattern2Device.GetInverse().TransformRect(clip_box_p);
-
+  CFX_FloatRect clip_box_p =
+      mtPattern2Device.GetInverse().TransformRect(CFX_FloatRect(clip_box));
   int min_col = (int)ceil((clip_box_p.left - pPattern->bbox().right) /
                           pPattern->x_step());
   int max_col = (int)floor((clip_box_p.right - pPattern->bbox().left) /
@@ -2549,7 +2545,7 @@ CFX_RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
 
   CPDF_Form form(m_pContext->GetDocument(), m_pContext->GetPageResources(),
                  pGroup);
-  form.ParseContent(nullptr, nullptr, nullptr);
+  form.ParseContent();
 
   CFX_DefaultRenderDevice bitmap_device;
   bool bLuminosity = pSMaskDict->GetStringFor("S") != "Alpha";

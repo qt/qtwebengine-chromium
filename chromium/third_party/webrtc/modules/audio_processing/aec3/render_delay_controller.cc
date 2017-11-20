@@ -17,6 +17,7 @@
 #include "webrtc/modules/audio_processing/aec3/aec3_common.h"
 #include "webrtc/modules/audio_processing/aec3/echo_path_delay_estimator.h"
 #include "webrtc/modules/audio_processing/aec3/render_delay_controller_metrics.h"
+#include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/rtc_base/atomicops.h"
 #include "webrtc/rtc_base/constructormagic.h"
 
@@ -26,7 +27,9 @@ namespace {
 
 class RenderDelayControllerImpl final : public RenderDelayController {
  public:
-  RenderDelayControllerImpl(int sample_rate_hz);
+  RenderDelayControllerImpl(
+      const AudioProcessing::Config::EchoCanceller3& config,
+      int sample_rate_hz);
   ~RenderDelayControllerImpl() override;
   void Reset() override;
   void SetDelay(size_t render_delay) override;
@@ -39,12 +42,14 @@ class RenderDelayControllerImpl final : public RenderDelayController {
  private:
   static int instance_count_;
   std::unique_ptr<ApmDataDumper> data_dumper_;
-  size_t delay_ = 0;
+  size_t delay_ = kMinEchoPathDelayBlocks;
   EchoPathDelayEstimator delay_estimator_;
   size_t blocks_since_last_delay_estimate_ = 300000;
-  int echo_path_delay_samples_ = 0;
+  int echo_path_delay_samples_ = kMinEchoPathDelayBlocks * kBlockSize;
   size_t align_call_counter_ = 0;
   rtc::Optional<size_t> headroom_samples_;
+  std::vector<float> capture_delay_buffer_;
+  int capture_delay_buffer_index_ = 0;
   RenderDelayControllerMetrics metrics_;
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(RenderDelayControllerImpl);
 };
@@ -68,10 +73,13 @@ size_t ComputeNewBufferDelay(size_t current_delay,
 
 int RenderDelayControllerImpl::instance_count_ = 0;
 
-RenderDelayControllerImpl::RenderDelayControllerImpl(int sample_rate_hz)
+RenderDelayControllerImpl::RenderDelayControllerImpl(
+    const AudioProcessing::Config::EchoCanceller3& config,
+    int sample_rate_hz)
     : data_dumper_(
           new ApmDataDumper(rtc::AtomicOps::Increment(&instance_count_))),
-      delay_estimator_(data_dumper_.get()) {
+      delay_estimator_(data_dumper_.get(), config),
+      capture_delay_buffer_(kBlockSize * (kMaxApiCallsJitterBlocks + 2), 0.f) {
   RTC_DCHECK(ValidFullBandRate(sample_rate_hz));
 }
 
@@ -80,10 +88,10 @@ RenderDelayControllerImpl::~RenderDelayControllerImpl() = default;
 void RenderDelayControllerImpl::Reset() {
   delay_ = kMinEchoPathDelayBlocks;
   blocks_since_last_delay_estimate_ = 300000;
-  echo_path_delay_samples_ = 0;
+  echo_path_delay_samples_ = delay_ * kBlockSize;
   align_call_counter_ = 0;
   headroom_samples_ = rtc::Optional<size_t>();
-
+  std::fill(capture_delay_buffer_.begin(), capture_delay_buffer_.end(), 0.f);
   delay_estimator_.Reset();
 }
 
@@ -102,11 +110,29 @@ size_t RenderDelayControllerImpl::GetDelay(
   RTC_DCHECK_EQ(kBlockSize, capture.size());
 
   ++align_call_counter_;
-  rtc::Optional<size_t> echo_path_delay_samples =
-      delay_estimator_.EstimateDelay(render_buffer, capture);
-  if (echo_path_delay_samples) {
+
+  // Estimate the delay with a delayed capture signal in order to catch
+  // noncausal delays.
+  RTC_DCHECK_LT(capture_delay_buffer_index_ + kBlockSize - 1,
+                capture_delay_buffer_.size());
+  const rtc::Optional<size_t> echo_path_delay_samples_shifted =
+      delay_estimator_.EstimateDelay(
+          render_buffer,
+          rtc::ArrayView<const float>(
+              &capture_delay_buffer_[capture_delay_buffer_index_], kBlockSize));
+  std::copy(capture.begin(), capture.end(),
+            capture_delay_buffer_.begin() + capture_delay_buffer_index_);
+  capture_delay_buffer_index_ =
+      (capture_delay_buffer_index_ + kBlockSize) % capture_delay_buffer_.size();
+
+  if (echo_path_delay_samples_shifted) {
     blocks_since_last_delay_estimate_ = 0;
-    echo_path_delay_samples_ = *echo_path_delay_samples;
+
+    // Correct for the capture signal delay.
+    const int echo_path_delay_samples_corrected =
+        static_cast<int>(*echo_path_delay_samples_shifted) -
+        static_cast<int>(capture_delay_buffer_.size());
+    echo_path_delay_samples_ = std::max(0, echo_path_delay_samples_corrected);
 
     // Compute and set new render delay buffer delay.
     const size_t new_delay =
@@ -115,15 +141,19 @@ size_t RenderDelayControllerImpl::GetDelay(
       delay_ = new_delay;
 
       // Update render delay buffer headroom.
-      const int headroom = echo_path_delay_samples_ - delay_ * kBlockSize;
-      RTC_DCHECK_LE(0, headroom);
-      headroom_samples_ = rtc::Optional<size_t>(headroom);
+      if (echo_path_delay_samples_corrected >= 0) {
+        const int headroom = echo_path_delay_samples_ - delay_ * kBlockSize;
+        RTC_DCHECK_LE(0, headroom);
+        headroom_samples_ = rtc::Optional<size_t>(headroom);
+      } else {
+        headroom_samples_ = rtc::Optional<size_t>();
+      }
     }
-  } else if (++blocks_since_last_delay_estimate_ > 20 * kNumBlocksPerSecond) {
-    headroom_samples_ = rtc::Optional<size_t>();
-  }
 
-  metrics_.Update(echo_path_delay_samples, delay_);
+    metrics_.Update(rtc::Optional<size_t>(echo_path_delay_samples_), delay_);
+  } else {
+    metrics_.Update(rtc::Optional<size_t>(), delay_);
+  }
 
   data_dumper_->DumpRaw("aec3_render_delay_controller_delay", 1,
                         &echo_path_delay_samples_);
@@ -134,8 +164,10 @@ size_t RenderDelayControllerImpl::GetDelay(
 
 }  // namespace
 
-RenderDelayController* RenderDelayController::Create(int sample_rate_hz) {
-  return new RenderDelayControllerImpl(sample_rate_hz);
+RenderDelayController* RenderDelayController::Create(
+    const AudioProcessing::Config::EchoCanceller3& config,
+    int sample_rate_hz) {
+  return new RenderDelayControllerImpl(config, sample_rate_hz);
 }
 
 }  // namespace webrtc

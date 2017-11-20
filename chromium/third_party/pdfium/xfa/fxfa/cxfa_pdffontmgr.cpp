@@ -120,31 +120,30 @@ bool CXFA_PDFFontMgr::PsNameMatchDRFontName(const CFX_ByteStringC& bsPsName,
                                             bool bStrictMatch) {
   CFX_ByteString bsDRName = bsDRFontName;
   bsDRName.Remove('-');
-  int32_t iPsLen = bsPsName.GetLength();
-  int32_t nIndex = bsDRName.Find(bsPsName);
-  if (nIndex != -1 && !bStrictMatch)
+  FX_STRSIZE iPsLen = bsPsName.GetLength();
+  auto nIndex = bsDRName.Find(bsPsName);
+  if (nIndex.has_value() && !bStrictMatch)
     return true;
 
-  if (nIndex != 0)
+  if (!nIndex.has_value() || nIndex.value() != 0)
     return false;
 
-  int32_t iDifferLength = bsDRName.GetLength() - iPsLen;
+  FX_STRSIZE iDifferLength = bsDRName.GetLength() - iPsLen;
   if (iDifferLength > 1 || (bBold || bItalic)) {
-    int32_t iBoldIndex = bsDRName.Find("Bold");
-    bool bBoldFont = iBoldIndex > 0;
-    if (bBold != bBoldFont)
+    auto iBoldIndex = bsDRName.Find("Bold");
+    if (bBold != iBoldIndex.has_value())
       return false;
 
-    if (bBoldFont) {
-      iDifferLength =
-          std::min(iDifferLength - 4, bsDRName.GetLength() - iBoldIndex - 4);
+    if (iBoldIndex.has_value()) {
+      iDifferLength = std::min(iDifferLength - 4,
+                               bsDRName.GetLength() - iBoldIndex.value() - 4);
     }
     bool bItalicFont = true;
-    if (bsDRName.Find("Italic") > 0) {
+    if (bsDRName.Contains("Italic")) {
       iDifferLength -= 6;
-    } else if (bsDRName.Find("It") > 0) {
+    } else if (bsDRName.Contains("It")) {
       iDifferLength -= 2;
-    } else if (bsDRName.Find("Oblique") > 0) {
+    } else if (bsDRName.Contains("Oblique")) {
       iDifferLength -= 7;
     } else {
       bItalicFont = false;
@@ -158,11 +157,11 @@ bool CXFA_PDFFontMgr::PsNameMatchDRFontName(const CFX_ByteStringC& bsPsName,
           bsDRTailer == "Regular" || bsDRTailer == "Reg") {
         return true;
       }
-      if (bBoldFont || bItalicFont)
+      if (iBoldIndex.has_value() || bItalicFont)
         return false;
 
       bool bMatch = false;
-      switch (bsPsName.GetAt(iPsLen - 1)) {
+      switch (bsPsName[iPsLen - 1]) {
         case 'L': {
           if (bsDRName.Right(5) == "Light") {
             bMatch = true;

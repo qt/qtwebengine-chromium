@@ -52,9 +52,9 @@ CPDF_Form* AnnotGetMatrix(const CPDF_Page* pPage,
   if (!pForm)
     return nullptr;
 
-  CFX_FloatRect form_bbox = pForm->m_pFormDict->GetRectFor("BBox");
   CFX_Matrix form_matrix = pForm->m_pFormDict->GetMatrixFor("Matrix");
-  form_matrix.TransformRect(form_bbox);
+  CFX_FloatRect form_bbox =
+      form_matrix.TransformRect(pForm->m_pFormDict->GetRectFor("BBox"));
   matrix->MatchRect(pAnnot->GetRect(), form_bbox);
   matrix->Concat(*pUser2Device);
   return pForm;
@@ -207,7 +207,7 @@ CPDF_Form* CPDF_Annot::GetAPForm(const CPDF_Page* pPage, AppearanceMode mode) {
 
   auto pNewForm = pdfium::MakeUnique<CPDF_Form>(
       m_pDocument.Get(), pPage->m_pResources.Get(), pStream);
-  pNewForm->ParseContent(nullptr, nullptr, nullptr);
+  pNewForm->ParseContent();
 
   CPDF_Form* pResult = pNewForm.get();
   m_APMap[pStream] = std::move(pNewForm);
@@ -360,7 +360,7 @@ CFX_ByteString CPDF_Annot::AnnotSubtypeToString(CPDF_Annot::Subtype nSubtype) {
 
 bool CPDF_Annot::DrawAppearance(CPDF_Page* pPage,
                                 CFX_RenderDevice* pDevice,
-                                const CFX_Matrix* pUser2Device,
+                                const CFX_Matrix& mtUser2Device,
                                 AppearanceMode mode,
                                 const CPDF_RenderOptions* pOptions) {
   if (!ShouldDrawAnnotation())
@@ -374,7 +374,7 @@ bool CPDF_Annot::DrawAppearance(CPDF_Page* pPage,
   GenerateAPIfNeeded();
 
   CFX_Matrix matrix;
-  CPDF_Form* pForm = AnnotGetMatrix(pPage, this, mode, pUser2Device, &matrix);
+  CPDF_Form* pForm = AnnotGetMatrix(pPage, this, mode, &mtUser2Device, &matrix);
   if (!pForm)
     return false;
 

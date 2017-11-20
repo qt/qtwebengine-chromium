@@ -96,7 +96,7 @@ protected:
 
     virtual void writePrecisionModifier();
 
-    void writeType(const Type& type);
+    virtual void writeType(const Type& type);
 
     void writeExtension(const Extension& ext);
 
@@ -115,6 +115,8 @@ protected:
     void writeGlobalVars(const VarDeclaration& vs);
 
     virtual void writeVarInitializer(const Variable& var, const Expression& value);
+
+    void writeTypePrecision(const Type& type);
 
     void writeVarDeclarations(const VarDeclarations& decl, bool global);
 
@@ -150,7 +152,7 @@ protected:
 
     void writeBoolLiteral(const BoolLiteral& b);
 
-    void writeIntLiteral(const IntLiteral& i);
+    virtual void writeIntLiteral(const IntLiteral& i);
 
     void writeFloatLiteral(const FloatLiteral& f);
 

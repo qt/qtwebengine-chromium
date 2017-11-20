@@ -69,10 +69,8 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
                          int blend_type) override;
 
   /** Draw a single pixel (device dependant) line */
-  bool DrawCosmeticLine(float x1,
-                        float y1,
-                        float x2,
-                        float y2,
+  bool DrawCosmeticLine(const CFX_PointF& ptMoveTo,
+                        const CFX_PointF& ptLineTo,
                         uint32_t color,
                         int blend_type) override;
 
@@ -122,7 +120,8 @@ class CFX_SkiaDeviceDriver : public IFX_RenderDeviceDriver {
                    std::unique_ptr<CFX_ImageRenderer>* handle,
                    int blend_type) override;
 
-  bool ContinueDIBits(CFX_ImageRenderer* handle, IFX_Pause* pPause) override;
+  bool ContinueDIBits(CFX_ImageRenderer* handle,
+                      IFX_PauseIndicator* pPause) override;
 
   bool DrawBitsWithMask(const CFX_RetainPtr<CFX_DIBSource>& pBitmap,
                         const CFX_RetainPtr<CFX_DIBSource>& pMask,

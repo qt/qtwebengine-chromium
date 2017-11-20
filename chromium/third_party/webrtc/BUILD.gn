@@ -26,14 +26,24 @@ config("common_inherited_config") {
   if (build_with_mozilla) {
     defines += [ "WEBRTC_MOZILLA_BUILD" ]
   }
+
+  # Some tests need to declare their own trace event handlers. If this define is
+  # not set, the first time TRACE_EVENT_* is called it will store the return
+  # value for the current handler in an static variable, so that subsequent
+  # changes to the handler for that TRACE_EVENT_* will be ignored.
+  # So when tests are included, we set this define, making it possible to use
+  # different event handlers in different tests.
+  if (rtc_include_tests) {
+    defines += [ "WEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS=1" ]
+  } else {
+    defines += [ "WEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS=0" ]
+  }
   if (build_with_chromium) {
-    defines = [
+    defines += [
       # TODO(kjellander): Cleanup unused ones and move defines closer to
       # the source when webrtc:4256 is completed.
       "FEATURE_ENABLE_VOICEMAIL",
-      "EXPAT_RELATIVE_PATH",
       "GTEST_RELATIVE_PATH",
-      "NO_SOUND_SYSTEM",
       "WEBRTC_CHROMIUM_BUILD",
     ]
     include_dirs = [
@@ -114,10 +124,6 @@ config("common_config") {
     defines += [ "WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE" ]
   }
 
-  if (rtc_relative_path) {
-    defines += [ "EXPAT_RELATIVE_PATH" ]
-  }
-
   if (!rtc_libvpx_build_vp9) {
     defines += [ "RTC_DISABLE_VP9" ]
   }
@@ -162,11 +168,21 @@ config("common_config") {
 
     if (is_clang) {
       cflags += [
+        "-Wc++11-narrowing",
         "-Wimplicit-fallthrough",
         "-Wthread-safety",
         "-Winconsistent-missing-override",
         "-Wundef",
       ]
+
+      # use_xcode_clang only refers to the iOS toolchain, host binaries use
+      # chromium's clang always.
+      if (!is_nacl &&
+          (!use_xcode_clang || current_toolchain == host_toolchain)) {
+        # Flags NaCl (Clang 3.7) and Xcode 7.3 (Clang clang-703.0.31) do not
+        # recognize.
+        cflags += [ "-Wunused-lambda-capture" ]
+      }
     }
   }
 
@@ -224,19 +240,6 @@ config("common_objc") {
   libs = [ "Foundation.framework" ]
 }
 
-rtc_source_set("video_stream_api") {
-  sources = [
-    "video_receive_stream.h",
-    "video_send_stream.h",
-  ]
-  deps = [
-    ":webrtc_common",
-    "api:transport_api",
-    "base:rtc_base_approved",
-    "common_video:common_video",
-  ]
-}
-
 if (!build_with_chromium) {
   # Target to build all the WebRTC production code.
   rtc_static_library("webrtc") {
@@ -252,7 +255,6 @@ if (!build_with_chromium) {
       "api",
       "api:transport_api",
       "audio",
-      "base",
       "call",
       "common_audio",
       "common_video",
@@ -291,7 +293,6 @@ if (!build_with_chromium) {
         ":video_engine_tests",
         ":webrtc_nonparallel_tests",
         ":webrtc_perf_tests",
-        "base:rtc_base_tests_utils",
         "common_audio:common_audio_unittests",
         "common_video:common_video_unittests",
         "media:rtc_media_unittests",
@@ -306,6 +307,7 @@ if (!build_with_chromium) {
         "ortc:ortc_unittests",
         "pc:peerconnection_unittests",
         "pc:rtc_pc_unittests",
+        "rtc_base:rtc_base_tests_utils",
         "stats:rtc_stats_unittests",
         "system_wrappers:system_wrappers_unittests",
         "test",
@@ -322,10 +324,7 @@ if (!build_with_chromium) {
         deps += [ "modules/video_capture:video_capture_tests" ]
       }
       if (!is_ios) {
-        deps += [
-          "modules/audio_device:audio_device_tests",
-          "voice_engine:voe_auto_test",
-        ]
+        deps += [ "voice_engine:voe_auto_test" ]
       }
       if (rtc_enable_protobuf) {
         deps += [
@@ -340,10 +339,10 @@ if (!build_with_chromium) {
 rtc_static_library("webrtc_common") {
   # TODO(mbonadei): Remove (bugs.webrtc.org/7745)
   # Enabling GN check triggers cyclic dependency error:
-  # //webrtc:webrtc_common ->
-  # //webrtc/api:video_frame_api ->
-  # //webrtc/system_wrappers:system_wrappers ->
-  # //webrtc:webrtc_common
+  # :webrtc_common ->
+  # api:video_frame_api ->
+  # system_wrappers:system_wrappers ->
+  # webrtc_common
   check_includes = false
   sources = [
     "common_types.cc",
@@ -393,16 +392,16 @@ if (rtc_include_tests) {
       ":webrtc_common",
       "api:rtc_api_unittests",
       "api/audio_codecs/test:audio_codecs_api_unittests",
-      "base:rtc_base_approved_unittests",
-      "base:rtc_base_tests_main",
-      "base:rtc_base_tests_utils",
-      "base:rtc_base_unittests",
-      "base:rtc_numerics_unittests",
-      "base:rtc_task_queue_unittests",
-      "base:sequenced_task_checker_unittests",
-      "base:weak_ptr_unittests",
       "p2p:libstunprober_unittests",
       "p2p:rtc_p2p_unittests",
+      "rtc_base:rtc_base_approved_unittests",
+      "rtc_base:rtc_base_tests_main",
+      "rtc_base:rtc_base_tests_utils",
+      "rtc_base:rtc_base_unittests",
+      "rtc_base:rtc_numerics_unittests",
+      "rtc_base:rtc_task_queue_unittests",
+      "rtc_base:sequenced_task_checker_unittests",
+      "rtc_base:weak_ptr_unittests",
       "system_wrappers:metrics_default",
     ]
 
@@ -416,7 +415,7 @@ if (rtc_include_tests) {
     }
 
     if (is_ios || is_mac) {
-      deps += [ "sdk:objc_sdk_unittests" ]
+      deps += [ "sdk:sdk_unittests_objc" ]
     }
   }
 
@@ -440,12 +439,12 @@ if (rtc_include_tests) {
     testonly = true
     deps = [
       "audio:audio_tests",
-      "base:rtc_base_tests_utils",
 
       # TODO(eladalon): call_tests aren't actually video-specific, so we
       # should move them to a more appropriate test suite.
       "call:call_tests",
       "modules/video_capture",
+      "rtc_base:rtc_base_tests_utils",
       "test:test_common",
       "test:test_main",
       "test:video_test_common",
@@ -518,7 +517,7 @@ if (rtc_include_tests) {
   rtc_test("webrtc_nonparallel_tests") {
     testonly = true
     deps = [
-      "base:rtc_base_nonparallel_tests",
+      "rtc_base:rtc_base_nonparallel_tests",
     ]
     if (is_android) {
       deps += [ "//testing/android/native_test:native_test_support" ]

@@ -45,8 +45,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
-#include <Mswsock.h>
-#include <Windows.h>
+#include <mswsock.h>
+#include <windows.h>
 #include "user_environment.h"
 typedef CRITICAL_SECTION userland_mutex_t;
 #if WINVER < 0x0600
@@ -216,8 +216,6 @@ typedef HANDLE userland_thread_t;
 
 typedef char* caddr_t;
 
-#define bzero(buf, len) memset(buf, 0, len)
-#define bcopy(srcKey, dstKey, len) memcpy(dstKey, srcKey, len)
 #if _MSC_VER < 1900
 #define snprintf(data, size, format, ...) _snprintf_s(data, size, _TRUNCATE, format, __VA_ARGS__)
 #endif
@@ -413,8 +411,6 @@ struct ifreq {
 #endif
 
 #if defined(__Userspace_os_Windows)
-int Win_getifaddrs(struct ifaddrs**);
-#define getifaddrs(interfaces)  (int)Win_getifaddrs(interfaces)
 int win_if_nametoindex(const char *);
 #define if_nametoindex(x) win_if_nametoindex(x)
 #endif
@@ -1159,5 +1155,7 @@ sctp_get_mbuf_for_msg(unsigned int space_needed, int want_header, int how, int a
 	    ((tvp)->tv_usec cmp (uvp)->tv_usec) :			\
 	    ((tvp)->tv_sec cmp (uvp)->tv_sec))
 #endif
+
+#define SCTP_IS_LISTENING(inp) ((inp->sctp_flags & SCTP_PCB_FLAGS_ACCEPTING) != 0)
 
 #endif

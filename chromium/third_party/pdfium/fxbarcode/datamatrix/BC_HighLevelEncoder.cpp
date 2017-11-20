@@ -76,13 +76,12 @@ CFX_WideString CBC_HighLevelEncoder::encodeHighLevel(CFX_WideString msg,
     return CFX_WideString();
 
   context.setAllowRectangular(allowRectangular);
-  if ((msg.Mid(0, 6) == MACRO_05_HEADER) &&
-      (msg.Mid(msg.GetLength() - 1, 1) == MACRO_TRAILER)) {
+  if ((msg.Left(6) == MACRO_05_HEADER) && (msg.Right(1) == MACRO_TRAILER)) {
     context.writeCodeword(MACRO_05);
     context.setSkipAtEnd(2);
     context.m_pos += 6;
-  } else if ((msg.Mid(0, 6) == MACRO_06_HEADER) &&
-             (msg.Mid(msg.GetLength() - 1, 1) == MACRO_TRAILER)) {
+  } else if ((msg.Left(6) == MACRO_06_HEADER) &&
+             (msg.Right(1) == MACRO_TRAILER)) {
     context.writeCodeword(MACRO_06);
     context.setSkipAtEnd(2);
     context.m_pos += 6;
@@ -175,7 +174,7 @@ int32_t CBC_HighLevelEncoder::lookAheadTest(CFX_WideString msg,
       }
       return C40_ENCODATION;
     }
-    wchar_t c = msg.GetAt(startpos + charsProcessed);
+    wchar_t c = msg[startpos + charsProcessed];
     charsProcessed++;
     if (isDigit(c)) {
       charCounts[ASCII_ENCODATION] += 0.5;
@@ -254,7 +253,7 @@ int32_t CBC_HighLevelEncoder::lookAheadTest(CFX_WideString msg,
         if (intCharCounts[C40_ENCODATION] == intCharCounts[X12_ENCODATION]) {
           int32_t p = startpos + charsProcessed + 1;
           while (p < msg.GetLength()) {
-            wchar_t tc = msg.GetAt(p);
+            wchar_t tc = msg[p];
             if (isX12TermSep(tc)) {
               return X12_ENCODATION;
             }
@@ -281,12 +280,12 @@ int32_t CBC_HighLevelEncoder::determineConsecutiveDigitCount(CFX_WideString msg,
   int32_t len = msg.GetLength();
   int32_t idx = startpos;
   if (idx < len) {
-    wchar_t ch = msg.GetAt(idx);
+    wchar_t ch = msg[idx];
     while (isDigit(ch) && idx < len) {
       count++;
       idx++;
       if (idx < len) {
-        ch = msg.GetAt(idx);
+        ch = msg[idx];
       }
     }
   }

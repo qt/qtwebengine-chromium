@@ -33,11 +33,16 @@ extern "C" {
 #define BO_USE_EXTERNAL_DISP		(1ull << 10)
 #define BO_USE_PROTECTED		(1ull << 11)
 #define BO_USE_HW_VIDEO_ENCODER		(1ull << 12)
-#define BO_USE_HW_CAMERA_WRITE		(1ull << 13)
-#define BO_USE_HW_CAMERA_READ		(1ull << 14)
-#define BO_USE_HW_CAMERA_ZSL		(1ull << 15)
+#define BO_USE_CAMERA_WRITE		(1ull << 13)
+#define BO_USE_CAMERA_READ		(1ull << 14)
 #define BO_USE_RENDERSCRIPT		(1ull << 16)
 #define BO_USE_TEXTURE			(1ull << 17)
+
+/* Read-Write permissions for drv_bo_map() flags */
+#define BO_TRANSFER_NONE 0
+#define BO_TRANSFER_READ (1 << 0)
+#define BO_TRANSFER_WRITE (1 << 1)
+#define BO_TRANSFER_READ_WRITE (BO_TRANSFER_READ | BO_TRANSFER_WRITE)
 
 /* This is our extension to <drm_fourcc.h>.  We need to make sure we don't step
  * on the namespace of already defined formats, which can be done by using invalid
@@ -71,6 +76,7 @@ struct drv_import_fd_data {
 	uint32_t width;
 	uint32_t height;
 	uint32_t format;
+	uint64_t flags;
 };
 
 struct map_info {
@@ -91,7 +97,8 @@ const char *drv_get_name(struct driver *drv);
 
 struct combination *drv_get_combination(struct driver *drv, uint32_t format, uint64_t usage);
 
-struct bo *drv_bo_new(struct driver *drv, uint32_t width, uint32_t height, uint32_t format);
+struct bo *drv_bo_new(struct driver *drv, uint32_t width, uint32_t height, uint32_t format,
+		      uint64_t flags);
 
 struct bo *drv_bo_create(struct driver *drv, uint32_t width, uint32_t height, uint32_t format,
 			 uint64_t flags);
@@ -132,7 +139,7 @@ uint32_t drv_bo_get_format(struct bo *bo);
 
 uint32_t drv_bo_get_stride_in_pixels(struct bo *bo);
 
-uint32_t drv_resolve_format(struct driver *drv, uint32_t format);
+uint32_t drv_resolve_format(struct driver *drv, uint32_t format, uint64_t usage);
 
 size_t drv_num_planes_from_format(uint32_t format);
 

@@ -25,7 +25,8 @@
 
 CPDFSDK_WidgetHandler::CPDFSDK_WidgetHandler(
     CPDFSDK_FormFillEnvironment* pFormFillEnv)
-    : m_pFormFillEnv(pFormFillEnv), m_pFormFiller(nullptr) {}
+    : m_pFormFillEnv(pFormFillEnv),
+      m_pFormFiller(pFormFillEnv->GetInteractiveFormFiller()) {}
 
 CPDFSDK_WidgetHandler::~CPDFSDK_WidgetHandler() {}
 
@@ -94,7 +95,7 @@ void CPDFSDK_WidgetHandler::OnDraw(CPDFSDK_PageView* pPageView,
                                    bool bDrawAnnots) {
   if (pAnnot->IsSignatureWidget()) {
     static_cast<CPDFSDK_BAAnnot*>(pAnnot)->DrawAppearance(
-        pDevice, pUser2Device, CPDF_Annot::Normal, nullptr);
+        pDevice, *pUser2Device, CPDF_Annot::Normal, nullptr);
   } else {
     if (m_pFormFiller)
       m_pFormFiller->OnDraw(pPageView, pAnnot, pDevice, pUser2Device);
@@ -284,6 +285,12 @@ CFX_WideString CPDFSDK_WidgetHandler::GetSelectedText(CPDFSDK_Annot* pAnnot) {
     return m_pFormFiller->GetSelectedText(pAnnot);
 
   return CFX_WideString();
+}
+
+void CPDFSDK_WidgetHandler::ReplaceSelection(CPDFSDK_Annot* pAnnot,
+                                             const CFX_WideString& text) {
+  if (!pAnnot->IsSignatureWidget() && m_pFormFiller)
+    m_pFormFiller->ReplaceSelection(pAnnot, text);
 }
 
 bool CPDFSDK_WidgetHandler::HitTest(CPDFSDK_PageView* pPageView,

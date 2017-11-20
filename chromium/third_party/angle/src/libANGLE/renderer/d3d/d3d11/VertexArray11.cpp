@@ -45,6 +45,16 @@ void VertexArray11::destroy(const gl::Context *context)
 void VertexArray11::syncState(const gl::Context *context,
                               const gl::VertexArray::DirtyBits &dirtyBits)
 {
+    ASSERT(dirtyBits.any());
+
+    // Generate a state serial. This serial is used in the program class to validate the cached
+    // input layout, and skip recomputation in the fast path.
+    auto renderer       = GetImplAs<Context11>(context)->getRenderer();
+    mCurrentStateSerial = renderer->generateSerial();
+
+    // TODO(jmadill): Individual attribute invalidation.
+    renderer->getStateManager()->invalidateVertexBuffer();
+
     for (auto dirtyBit : dirtyBits)
     {
         if (dirtyBit == gl::VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER)
@@ -111,13 +121,20 @@ void VertexArray11::updateVertexAttribStorage(const gl::Context *context, size_t
     Buffer11 *oldBuffer11   = oldBufferGL ? GetImplAs<Buffer11>(oldBufferGL) : nullptr;
     Buffer11 *newBuffer11   = newBufferGL ? GetImplAs<Buffer11>(newBufferGL) : nullptr;
 
+    StateManager11 *stateManager = GetImplAs<Context11>(context)->getRenderer()->getStateManager();
+
     if (oldBuffer11 != newBuffer11 || oldStorageType != newStorageType)
     {
-        // Note that for static callbacks, promotion to a static buffer from a dynamic buffer means
-        // we need to tag dynamic buffers with static callbacks.
         OnBufferDataDirtyChannel *newChannel = nullptr;
-        if (newBuffer11 != nullptr)
+
+        if (newStorageType == VertexStorageType::CURRENT_VALUE)
         {
+            stateManager->invalidateCurrentValueAttrib(attribIndex);
+        }
+        else if (newBuffer11 != nullptr)
+        {
+            // Note that for static callbacks, promotion to a static buffer from a dynamic buffer
+            // means we need to tag dynamic buffers with static callbacks.
             switch (newStorageType)
             {
                 case VertexStorageType::DIRECT:
@@ -128,9 +145,11 @@ void VertexArray11::updateVertexAttribStorage(const gl::Context *context, size_t
                     newChannel = newBuffer11->getStaticBroadcastChannel();
                     break;
                 default:
+                    UNREACHABLE();
                     break;
             }
         }
+
         mOnBufferDataDirty[attribIndex].bind(newChannel);
         mCurrentBuffers[attribIndex].set(context, binding.getBuffer().get());
     }
@@ -140,6 +159,12 @@ bool VertexArray11::hasDynamicAttrib(const gl::Context *context)
 {
     flushAttribUpdates(context);
     return mDynamicAttribsMask.any();
+}
+
+bool VertexArray11::hasDirtyOrDynamicAttrib(const gl::Context *context)
+{
+    flushAttribUpdates(context);
+    return mAttribsToTranslate.any() || mDynamicAttribsMask.any();
 }
 
 gl::Error VertexArray11::updateDirtyAndDynamicAttribs(const gl::Context *context,
@@ -210,8 +235,8 @@ gl::Error VertexArray11::updateDirtyAndDynamicAttribs(const gl::Context *context
             dynamicAttrib->divisor          = dynamicAttrib->binding->getDivisor();
         }
 
-        return vertexDataManager->storeDynamicAttribs(&mTranslatedAttribs, activeDynamicAttribs,
-                                                      start, count, instances);
+        ANGLE_TRY(vertexDataManager->storeDynamicAttribs(&mTranslatedAttribs, activeDynamicAttribs,
+                                                         start, count, instances));
     }
 
     return gl::NoError();

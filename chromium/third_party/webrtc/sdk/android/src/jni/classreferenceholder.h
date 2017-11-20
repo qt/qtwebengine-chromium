@@ -20,7 +20,8 @@
 #include <map>
 #include <string>
 
-namespace webrtc_jni {
+namespace webrtc {
+namespace jni {
 
 // LoadGlobalClassReferenceHolder must be called in JNI_OnLoad.
 void LoadGlobalClassReferenceHolder();
@@ -31,10 +32,14 @@ void FreeGlobalClassReferenceHolder();
 // process.
 jclass FindClass(JNIEnv* jni, const char* name);
 
-// Convenience macro defining JNI-accessible methods in the org.webrtc package.
-// Eliminates unnecessary boilerplate and line-wraps, reducing visual clutter.
-#define JOW(rettype, name) \
-  extern "C" JNIEXPORT rettype JNICALL Java_org_webrtc_##name
+}  // namespace jni
+}  // namespace webrtc
+
+// TODO(magjed): Remove once external clients are updated.
+namespace webrtc_jni {
+
+using webrtc::jni::LoadGlobalClassReferenceHolder;
+using webrtc::jni::FreeGlobalClassReferenceHolder;
 
 }  // namespace webrtc_jni
 

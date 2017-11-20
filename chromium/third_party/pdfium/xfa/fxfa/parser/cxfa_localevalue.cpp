@@ -49,14 +49,14 @@ bool ValueSplitDateTime(const CFX_WideString& wsDateTime,
   if (wsDateTime.IsEmpty())
     return false;
 
-  int nSplitIndex = wsDateTime.Find('T');
-  if (nSplitIndex < 0)
+  auto nSplitIndex = wsDateTime.Find('T');
+  if (!nSplitIndex.has_value())
     nSplitIndex = wsDateTime.Find(' ');
-  if (nSplitIndex < 0)
+  if (!nSplitIndex.has_value())
     return false;
 
-  wsDate = wsDateTime.Left(nSplitIndex);
-  wsTime = wsDateTime.Right(wsDateTime.GetLength() - nSplitIndex - 1);
+  wsDate = wsDateTime.Left(nSplitIndex.value());
+  wsTime = wsDateTime.Right(wsDateTime.GetLength() - nSplitIndex.value() - 1);
   return true;
 }
 
@@ -444,7 +444,7 @@ bool CXFA_LocaleValue::ValidateCanonicalDate(const CFX_WideString& wsDate,
   if (nLen < wCountY || nLen > wCountY + wCountM + wCountD + 2)
     return false;
 
-  const bool bSymbol = wsDate.Find(0x2D) != -1;
+  const bool bSymbol = wsDate.Contains(0x2D);
   uint16_t wYear = 0;
   uint16_t wMonth = 0;
   uint16_t wDay = 0;
@@ -519,7 +519,7 @@ bool CXFA_LocaleValue::ValidateCanonicalTime(const CFX_WideString& wsTime) {
   const uint16_t wCountM = 2;
   const uint16_t wCountS = 2;
   const uint16_t wCountF = 3;
-  const bool bSymbol = wsTime.Find(':') != -1;
+  const bool bSymbol = wsTime.Contains(':');
   uint16_t wHour = 0;
   uint16_t wMinute = 0;
   uint16_t wSecond = 0;
@@ -558,7 +558,8 @@ bool CXFA_LocaleValue::ValidateCanonicalTime(const CFX_WideString& wsTime) {
     wSecond = pTime[nIndex] - '0' + wSecond * 10;
     nIndex++;
   }
-  if (wsTime.Find('.') > 0) {
+  auto pos = wsTime.Find('.');
+  if (pos.has_value() && pos.value() != 0) {
     if (pTime[nIndex] != '.')
       return false;
     nIndex++;

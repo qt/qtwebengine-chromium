@@ -91,6 +91,17 @@ namespace sk_tool_utils {
      */
     void write_pixels(SkCanvas*, const SkBitmap&, int x, int y, SkColorType, SkAlphaType);
 
+    /**
+     *  Returns true iff all of the pixels between the two images differ by <= the maxDiff value
+     *  per component.
+     *
+     *  If the configs differ, return false.
+     *
+     *  If the colorType is half-float, then maxDiff is interpreted as 0..255 --> 0..1
+     */
+    bool equal_pixels(const SkPixmap&, const SkPixmap&, unsigned maxDiff = 0);
+    bool equal_pixels(const SkBitmap&, const SkBitmap&, unsigned maxDiff = 0);
+
     // private to sk_tool_utils
     sk_sp<SkTypeface> create_font(const char* name, SkFontStyle);
 
@@ -118,14 +129,11 @@ namespace sk_tool_utils {
                                   int textSize, const char* str);
 
     // A helper for inserting a drawtext call into a SkTextBlobBuilder
-    void add_to_text_blob(SkTextBlobBuilder* builder, const char* text, const SkPaint& origPaint,
-                          SkScalar x, SkScalar y);
+    void add_to_text_blob_w_len(SkTextBlobBuilder* builder, const char* text, size_t len,
+                                const SkPaint& origPaint, SkScalar x, SkScalar y);
 
-    void create_hemi_normal_map(SkBitmap* bm, const SkIRect& dst);
-
-    void create_frustum_normal_map(SkBitmap* bm, const SkIRect& dst);
-
-    void create_tetra_normal_map(SkBitmap* bm, const SkIRect& dst);
+    void add_to_text_blob(SkTextBlobBuilder* builder, const char* text,
+                          const SkPaint& origPaint, SkScalar x, SkScalar y);
 
     void make_big_path(SkPath& path);
 

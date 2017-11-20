@@ -35,9 +35,11 @@
 #include "SkColorPriv.h"
 #include "SkColorTable.h"
 #include "SkGifCodec.h"
+#include "SkMakeUnique.h"
 #include "SkRasterPipeline.h"
 #include "SkStream.h"
 #include "SkSwizzler.h"
+#include "../jumper/SkJumper.h"
 
 #include <algorithm>
 
@@ -67,8 +69,9 @@ static SkCodec::Result gif_error(const char* msg, SkCodec::Result result = SkCod
     return result;
 }
 
-SkCodec* SkGifCodec::NewFromStream(SkStream* stream, Result* result) {
-    std::unique_ptr<SkGifImageReader> reader(new SkGifImageReader(stream));
+std::unique_ptr<SkCodec> SkGifCodec::MakeFromStream(std::unique_ptr<SkStream> stream,
+                                                    Result* result) {
+    std::unique_ptr<SkGifImageReader> reader(new SkGifImageReader(std::move(stream)));
     *result = reader->parse(SkGifImageReader::SkGIFSizeQuery);
     if (*result != kSuccess) {
         return nullptr;
@@ -101,7 +104,7 @@ SkCodec* SkGifCodec::NewFromStream(SkStream* stream, Result* result) {
     const auto imageInfo = SkImageInfo::Make(reader->screenWidth(), reader->screenHeight(),
                                              kN32_SkColorType, alphaType,
                                              SkColorSpace::MakeSRGB());
-    return new SkGifCodec(encodedInfo, imageInfo, reader.release());
+    return std::unique_ptr<SkCodec>(new SkGifCodec(encodedInfo, imageInfo, reader.release()));
 }
 
 bool SkGifCodec::onRewind() {
@@ -143,8 +146,12 @@ bool SkGifCodec::onGetFrameInfo(int i, SkCodec::FrameInfo* frameInfo) const {
         frameInfo->fDuration = frameContext->getDuration();
         frameInfo->fRequiredFrame = frameContext->getRequiredFrame();
         frameInfo->fFullyReceived = frameContext->isComplete();
+#ifdef SK_LEGACY_FRAME_INFO_ALPHA_TYPE
         frameInfo->fAlphaType = frameContext->hasAlpha() ? kUnpremul_SkAlphaType
                                                          : kOpaque_SkAlphaType;
+#endif
+        frameInfo->fAlpha = frameContext->hasAlpha() ? SkEncodedInfo::kBinary_Alpha
+                                                     : SkEncodedInfo::kOpaque_Alpha;
         frameInfo->fDisposalMethod = frameContext->getDisposalMethod();
     }
     return true;
@@ -165,7 +172,7 @@ void SkGifCodec::initializeColorTable(const SkImageInfo& dstInfo, int frameIndex
     }
 
     sk_sp<SkColorTable> currColorTable = fReader->getColorTable(colorTableColorType, frameIndex);
-    fCurrColorTableIsReal = currColorTable;
+    fCurrColorTableIsReal = static_cast<bool>(currColorTable);
     if (!fCurrColorTableIsReal) {
         // This is possible for an empty frame. Create a dummy with one value (transparent).
         SkPMColor color = SK_ColorTRANSPARENT;
@@ -221,14 +228,6 @@ SkCodec::Result SkGifCodec::prepareToDecode(const SkImageInfo& dstInfo, const Op
         // Parsing happened in SkCodec::getPixels.
         SkASSERT(frameIndex < fReader->imagesCount());
         SkASSERT(frame->reachedStartOfData());
-    }
-
-    const auto at = frame->hasAlpha() ? kUnpremul_SkAlphaType : kOpaque_SkAlphaType;
-    const auto srcInfo = this->getInfo().makeAlphaType(at);
-    if (!conversion_possible(dstInfo, srcInfo) ||
-        !this->initializeColorXform(dstInfo, opts.fPremulBehavior))
-    {
-        return gif_error("Cannot convert input type to output type.\n", kInvalidConversion);
     }
 
     if (this->xformOnDecode()) {
@@ -422,7 +421,7 @@ void SkGifCodec::applyXformRow(const SkImageInfo& dstInfo, void* dst, const uint
     }
 }
 
-bool SkGifCodec::haveDecodedRow(int frameIndex, const unsigned char* rowBegin,
+void SkGifCodec::haveDecodedRow(int frameIndex, const unsigned char* rowBegin,
                                 int rowNumber, int repeatCount, bool writeTransparentPixels)
 {
     const SkGIFFrameContext* frameContext = fReader->frameContext(frameIndex);
@@ -440,7 +439,7 @@ bool SkGifCodec::haveDecodedRow(int frameIndex, const unsigned char* rowBegin,
     // FIXME: No need to make the checks on width/xBegin/xEnd for every row. We could instead do
     // this once in prepareToDecode.
     if (!width || (xBegin < 0) || (yBegin < 0) || (xEnd <= xBegin) || (yEnd <= yBegin))
-        return true;
+        return;
 
     // yBegin is the first row in the non-sampled image. dstRow will be the row in the output,
     // after potentially scaling it.
@@ -457,7 +456,7 @@ bool SkGifCodec::haveDecodedRow(int frameIndex, const unsigned char* rowBegin,
                 dstRow = potentialRow / sampleY;
                 const int scaledHeight = get_scaled_dimension(this->dstInfo().height(), sampleY);
                 if (dstRow >= scaledHeight) {
-                    return true;
+                    return;
                 }
 
                 foundNecessaryRow = true;
@@ -475,7 +474,7 @@ bool SkGifCodec::haveDecodedRow(int frameIndex, const unsigned char* rowBegin,
         }
 
         if (!foundNecessaryRow) {
-            return true;
+            return;
         }
     } else {
         // Make sure the repeatCount does not take us beyond the end of the dst
@@ -520,26 +519,28 @@ bool SkGifCodec::haveDecodedRow(int frameIndex, const unsigned char* rowBegin,
         SkRasterPipeline::StockStage storeDst;
         void* src = SkTAddOffset<void>(fTmpBuffer.get(), offsetBytes);
         void* dst = SkTAddOffset<void>(dstLine, offsetBytes);
+
+        SkJumper_MemoryCtx src_ctx = { src, 0 },
+                           dst_ctx = { dst, 0 };
         switch (dstInfo.colorType()) {
             case kBGRA_8888_SkColorType:
             case kRGBA_8888_SkColorType:
-                p.append(SkRasterPipeline::load_8888_dst, &dst);
-                p.append(SkRasterPipeline::load_8888, &src);
+                p.append(SkRasterPipeline::load_8888_dst, &dst_ctx);
+                p.append(SkRasterPipeline::load_8888, &src_ctx);
                 storeDst = SkRasterPipeline::store_8888;
                 break;
             case kRGBA_F16_SkColorType:
-                p.append(SkRasterPipeline::load_f16_dst, &dst);
-                p.append(SkRasterPipeline::load_f16, &src);
+                p.append(SkRasterPipeline::load_f16_dst, &dst_ctx);
+                p.append(SkRasterPipeline::load_f16, &src_ctx);
                 storeDst = SkRasterPipeline::store_f16;
                 break;
             default:
                 SkASSERT(false);
-                return false;
-                break;
+                return;
         }
         p.append(SkRasterPipeline::srcover);
         p.append(storeDst, &dst);
-        p.run(0, 0, fSwizzler->swizzleWidth());
+        p.run(0,0, fSwizzler->swizzleWidth(),1);
     }
 
     // Tell the frame to copy the row data if need be.
@@ -553,6 +554,4 @@ bool SkGifCodec::haveDecodedRow(int frameIndex, const unsigned char* rowBegin,
             memcpy(dst, copiedLine, bytesToCopy);
         }
     }
-
-    return true;
 }

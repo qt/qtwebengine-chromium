@@ -15,7 +15,7 @@
 import("//build/config/compiler/compiler.gni")
 
 config("swiftshader_config") {
-  defines = [ "STRICT_CONFORMANCE" ]  # Disables OpenGL ES 3.0
+  defines = []
 
   if (is_win) {
     cflags = [
@@ -30,17 +30,15 @@ config("swiftshader_config") {
       "_CRT_SECURE_NO_DEPRECATE",
       "NOMINMAX",
       "_WINDLL",
+      "NO_SANITIZE_FUNCTION=",
     ]
 
-    if (is_debug) {
-      cflags += [ "/RTC1" ]  # Run-Time Error Checks
-    } else {
+    if (!is_debug) {
       defines += [ "ANGLE_DISABLE_TRACE" ]
     }
   } else {
     cflags = [
       "-std=c++11",
-      "-Wall",
       "-fno-exceptions",
       "-fno-operator-names",
     ]
@@ -48,6 +46,7 @@ config("swiftshader_config") {
     defines += [
       "__STDC_CONSTANT_MACROS",
       "__STDC_LIMIT_MACROS",
+      "NO_SANITIZE_FUNCTION=__attribute__((no_sanitize(\"function\")))",
     ]
 
     if (is_debug) {
@@ -89,11 +88,10 @@ config("swiftshader_config") {
         "-Wl,--hash-style=both",
         "-Wl,--gc-sections",
       ]
+
       # A bug in the gold linker prevents using ICF on 32-bit (crbug.com/729532)
       if (use_gold && target_cpu == "x86") {
-        ldflags += [
-          "-Wl,--icf=none",
-        ]
+        ldflags += [ "-Wl,--icf=none" ]
       }
     }
   }

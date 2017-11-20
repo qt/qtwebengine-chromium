@@ -147,7 +147,6 @@ class MockRtpRtcp : public RtpRtcp {
                      void(StreamDataCounters*, StreamDataCounters*));
   MOCK_CONST_METHOD3(GetRtpPacketLossStats,
                      void(bool, uint32_t, struct RtpPacketLossStats*));
-  MOCK_METHOD1(RemoteRTCPStat, int32_t(RTCPSenderInfo* sender_info));
   MOCK_CONST_METHOD1(RemoteRTCPStat,
                      int32_t(std::vector<RTCPReportBlock>* receive_blocks));
   MOCK_METHOD4(SetRTCPApplicationSpecificData,
@@ -175,7 +174,6 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_METHOD1(RegisterRtcpStatisticsCallback, void(RtcpStatisticsCallback*));
   MOCK_METHOD0(GetRtcpStatisticsCallback, RtcpStatisticsCallback*());
   MOCK_METHOD1(SendFeedbackPacket, bool(const rtcp::TransportFeedback& packet));
-  MOCK_METHOD1(SetAudioPacketSize, int32_t(uint16_t packet_size_samples));
   MOCK_METHOD3(SendTelephoneEventOutband,
                int32_t(uint8_t key, uint16_t time_ms, uint8_t level));
   MOCK_METHOD1(SetSendREDPayloadType, int32_t(int8_t payload_type));

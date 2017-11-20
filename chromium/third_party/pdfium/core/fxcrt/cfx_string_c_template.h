@@ -9,10 +9,12 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_system.h"
+#include "third_party/base/optional.h"
 #include "third_party/base/stl_util.h"
 
 // An immutable string with caller-provided storage which must outlive the
@@ -99,14 +101,14 @@ class CFX_StringCTemplate {
     return !(*this == other);
   }
 
-  uint32_t GetID(FX_STRSIZE start_pos = 0) const {
-    if (m_Length == 0 || start_pos < 0 || start_pos >= m_Length)
+  uint32_t GetID() const {
+    if (m_Length == 0)
       return 0;
 
     uint32_t strid = 0;
-    FX_STRSIZE size = std::min(4, m_Length - start_pos);
+    FX_STRSIZE size = std::min(4, m_Length);
     for (FX_STRSIZE i = 0; i < size; i++)
-      strid = strid * 256 + m_Ptr.Get()[start_pos + i];
+      strid = strid * 256 + m_Ptr.Get()[i];
 
     return strid << ((4 - size) * 8);
   }
@@ -117,47 +119,63 @@ class CFX_StringCTemplate {
   }
 
   FX_STRSIZE GetLength() const { return m_Length; }
+
   bool IsEmpty() const { return m_Length == 0; }
 
-  UnsignedType GetAt(FX_STRSIZE index) const { return m_Ptr.Get()[index]; }
-  CharType CharAt(FX_STRSIZE index) const {
+  bool IsValidIndex(FX_STRSIZE index) const {
+    return 0 <= index && index < GetLength();
+  }
+
+  bool IsValidLength(FX_STRSIZE length) const {
+    return 0 <= length && length <= GetLength();
+  }
+
+  const UnsignedType& operator[](const FX_STRSIZE index) const {
+    ASSERT(IsValidIndex(index));
+    return m_Ptr.Get()[index];
+  }
+
+  const CharType CharAt(const FX_STRSIZE index) const {
+    ASSERT(IsValidIndex(index));
     return static_cast<CharType>(m_Ptr.Get()[index]);
   }
 
-  FX_STRSIZE Find(CharType ch) const {
+  pdfium::Optional<FX_STRSIZE> Find(CharType ch) const {
     const UnsignedType* found = reinterpret_cast<const UnsignedType*>(FXSYS_chr(
         reinterpret_cast<const CharType*>(m_Ptr.Get()), ch, m_Length));
-    return found ? found - m_Ptr.Get() : -1;
+
+    return found ? pdfium::Optional<FX_STRSIZE>(found - m_Ptr.Get())
+                 : pdfium::Optional<FX_STRSIZE>();
   }
 
-  CFX_StringCTemplate Mid(FX_STRSIZE index, FX_STRSIZE count = -1) const {
-    index = std::max(0, index);
-    if (index > m_Length)
+  bool Contains(CharType ch) const { return Find(ch).has_value(); }
+
+  CFX_StringCTemplate Mid(FX_STRSIZE first, FX_STRSIZE count) const {
+    if (!m_Ptr.Get())
       return CFX_StringCTemplate();
 
-    if (count < 0 || count > m_Length - index)
-      count = m_Length - index;
+    if (!IsValidIndex(first))
+      return CFX_StringCTemplate();
 
-    return CFX_StringCTemplate(m_Ptr.Get() + index, count);
+    if (count == 0 || !IsValidLength(count))
+      return CFX_StringCTemplate();
+
+    if (!IsValidIndex(first + count - 1))
+      return CFX_StringCTemplate();
+
+    return CFX_StringCTemplate(m_Ptr.Get() + first, count);
   }
 
   CFX_StringCTemplate Left(FX_STRSIZE count) const {
-    if (count <= 0)
+    if (count == 0 || !IsValidLength(count))
       return CFX_StringCTemplate();
-
-    return CFX_StringCTemplate(m_Ptr.Get(), std::min(count, m_Length));
+    return Mid(0, count);
   }
 
   CFX_StringCTemplate Right(FX_STRSIZE count) const {
-    if (count <= 0)
+    if (count == 0 || !IsValidLength(count))
       return CFX_StringCTemplate();
-
-    count = std::min(count, m_Length);
-    return CFX_StringCTemplate(m_Ptr.Get() + m_Length - count, count);
-  }
-
-  const UnsignedType& operator[](size_t index) const {
-    return m_Ptr.Get()[index];
+    return Mid(GetLength() - count, count);
   }
 
   bool operator<(const CFX_StringCTemplate& that) const {

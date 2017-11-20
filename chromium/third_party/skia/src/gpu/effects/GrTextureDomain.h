@@ -8,7 +8,9 @@
 #ifndef GrTextureDomainEffect_DEFINED
 #define GrTextureDomainEffect_DEFINED
 
-#include "GrSingleTextureEffect.h"
+#include "GrCoordTransform.h"
+#include "GrFragmentProcessor.h"
+#include "GrColorSpaceXform.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLProgramDataManager.h"
 
@@ -21,7 +23,7 @@ struct SkRect;
 
 /**
  * Limits a texture's lookup coordinates to a domain. Samples outside the domain are either clamped
- * the edge of the domain or result in a vec4 of zeros (decal mode). The domain is clipped to
+ * the edge of the domain or result in a float4 of zeros (decal mode). The domain is clipped to
  * normalized texture coords ([0,1]x[0,1] square). Bilinear filtering can cause texels outside the
  * domain to affect the read value unless the caller considers this when calculating the domain.
  */
@@ -54,6 +56,8 @@ public:
      *                  It is used to keep inserted variables from causing name collisions.
      */
     GrTextureDomain(GrTextureProxy*, const SkRect& domain, Mode, int index = -1);
+
+    GrTextureDomain(const GrTextureDomain&) = default;
 
     const SkRect& domain() const { return fDomain; }
     Mode mode() const { return fMode; }
@@ -94,8 +98,8 @@ public:
          * Call this from GrGLSLFragmentProcessor::emitCode() to sample the texture W.R.T. the
          * domain and mode.
          *
-         * @param outcolor  name of vec4 variable to hold the sampled color.
-         * @param inCoords  name of vec2 variable containing the coords to be used with the domain.
+         * @param outcolor  name of float4 variable to hold the sampled color.
+         * @param inCoords  name of float2 variable containing the coords to be used with the domain.
          *                  It is assumed that this is a variable and not an expression.
          * @param inModulateColor   if non-nullptr the sampled color will be modulated with this
          *                          expression before being written to outColor.
@@ -115,8 +119,7 @@ public:
          * texture domain. The rectangle is automatically adjusted to account for the texture's
          * origin.
          */
-        void setData(const GrGLSLProgramDataManager& pdman, const GrTextureDomain& textureDomain,
-                     GrTexture* texure);
+        void setData(const GrGLSLProgramDataManager&, const GrTextureDomain&, GrSurfaceProxy*);
 
         enum {
             kDomainKeyBits = 2, // See DomainKey().
@@ -148,17 +151,20 @@ protected:
 /**
  * A basic texture effect that uses GrTextureDomain.
  */
-class GrTextureDomainEffect : public GrSingleTextureEffect {
-
+class GrTextureDomainEffect : public GrFragmentProcessor {
 public:
-    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrTextureProxy>,
-                                           sk_sp<GrColorSpaceXform>,
-                                           const SkMatrix&,
-                                           const SkRect& domain,
-                                           GrTextureDomain::Mode,
-                                           GrSamplerParams::FilterMode filterMode);
+    static std::unique_ptr<GrFragmentProcessor> Make(sk_sp<GrTextureProxy>,
+                                                     sk_sp<GrColorSpaceXform>,
+                                                     const SkMatrix&,
+                                                     const SkRect& domain,
+                                                     GrTextureDomain::Mode,
+                                                     GrSamplerParams::FilterMode filterMode);
 
     const char* name() const override { return "TextureDomain"; }
+
+    std::unique_ptr<GrFragmentProcessor> clone() const override {
+        return std::unique_ptr<GrFragmentProcessor>(new GrTextureDomainEffect(*this));
+    }
 
     SkString dumpInfo() const override {
         SkString str;
@@ -170,7 +176,10 @@ public:
     }
 
 private:
+    GrCoordTransform fCoordTransform;
     GrTextureDomain fTextureDomain;
+    TextureSampler fTextureSampler;
+    sk_sp<GrColorSpaceXform> fColorSpaceXform;
 
     GrTextureDomainEffect(sk_sp<GrTextureProxy>,
                           sk_sp<GrColorSpaceXform>,
@@ -178,6 +187,8 @@ private:
                           const SkRect& domain,
                           GrTextureDomain::Mode,
                           GrSamplerParams::FilterMode);
+
+    explicit GrTextureDomainEffect(const GrTextureDomainEffect&);
 
     static OptimizationFlags OptFlags(GrPixelConfig config, GrTextureDomain::Mode mode);
 
@@ -187,16 +198,18 @@ private:
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
+    const GrColorSpaceXform* colorSpaceXform() const { return fColorSpaceXform.get(); }
+
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
-    typedef GrSingleTextureEffect INHERITED;
+    typedef GrFragmentProcessor INHERITED;
 };
 
 class GrDeviceSpaceTextureDecalFragmentProcessor : public GrFragmentProcessor {
 public:
-    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrTextureProxy>,
-                                           const SkIRect& subset,
-                                           const SkIPoint& deviceSpaceOffset);
+    static std::unique_ptr<GrFragmentProcessor> Make(sk_sp<GrTextureProxy>,
+                                                     const SkIRect& subset,
+                                                     const SkIPoint& deviceSpaceOffset);
 
     const char* name() const override { return "GrDeviceSpaceTextureDecalFragmentProcessor"; }
 
@@ -210,6 +223,8 @@ public:
         return str;
     }
 
+    std::unique_ptr<GrFragmentProcessor> clone() const override;
+
 private:
     TextureSampler fTextureSampler;
     GrTextureDomain fTextureDomain;
@@ -217,6 +232,7 @@ private:
 
     GrDeviceSpaceTextureDecalFragmentProcessor(sk_sp<GrTextureProxy>,
                                                const SkIRect&, const SkIPoint&);
+    GrDeviceSpaceTextureDecalFragmentProcessor(const GrDeviceSpaceTextureDecalFragmentProcessor&);
 
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
 

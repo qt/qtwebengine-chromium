@@ -12,6 +12,7 @@
 #include "../private/SkPathRef.h"
 
 class SkAutoPathBoundsUpdate;
+class SkData;
 class SkRRect;
 class SkWStream;
 
@@ -82,7 +83,7 @@ public:
         kInverseWinding_FillType,
         /** Same as EvenOdd, but draws outside of the path, rather than inside
          */
-        kInverseEvenOdd_FillType
+        kInverseEvenOdd_FillType,
     };
 
     /** Return the path's fill type. This is used to define how "inside" is
@@ -115,7 +116,7 @@ public:
     enum Convexity {
         kUnknown_Convexity,
         kConvex_Convexity,
-        kConcave_Convexity
+        kConcave_Convexity,
     };
 
     /**
@@ -662,7 +663,7 @@ public:
      *  @param direction If not null, set to the rectangle's direction
      *  @return true if the path specifies a rectangle
      */
-    bool isRect(SkRect* rect, bool* isClosed = NULL, Direction* direction = NULL) const;
+    bool isRect(SkRect* rect, bool* isClosed = nullptr, Direction* direction = nullptr) const;
 
     /** Returns true if the path specifies a pair of nested rectangles, or would draw a
         pair of nested rectangles when filled. If so, and if
@@ -676,7 +677,7 @@ public:
         @param dirs If not null, returns the direction of the rects
         @return true if the path describes a pair of nested rectangles
     */
-    bool isNestedFillRects(SkRect rect[2], Direction dirs[2] = NULL) const;
+    bool isNestedFillRects(SkRect rect[2], Direction dirs[2] = nullptr) const;
 
     /**
      *  Add a closed rectangle contour to the path
@@ -847,7 +848,7 @@ public:
             Instead, the start of source path will be extended by a straight
             line to the end point of the destination path.
         */
-        kExtend_AddPathMode
+        kExtend_AddPathMode,
     };
 
     /** Add a copy of src to the path, offset by (dx,dy)
@@ -972,9 +973,9 @@ public:
     class SK_API Iter {
     public:
         Iter();
-        Iter(const SkPath&, bool forceClose);
+        Iter(const SkPath& path, bool forceClose);
 
-        void setPath(const SkPath&, bool forceClose);
+        void setPath(const SkPath& path, bool forceClose);
 
         /** Return the next verb in this iteration of the path. When all
             segments have been visited, return kDone_Verb.
@@ -988,8 +989,8 @@ public:
                    doConsumeDegenerates is false, exact has no effect.
             @return The verb for the current segment
         */
-        Verb next(SkPoint pts[4], bool doConsumeDegerates = true, bool exact = false) {
-            if (doConsumeDegerates) {
+        Verb next(SkPoint pts[4], bool doConsumeDegenerates = true, bool exact = false) {
+            if (doConsumeDegenerates) {
                 this->consumeDegenerateSegments(exact);
             }
             return this->doNext(pts);
@@ -1090,6 +1091,12 @@ public:
      *  If buffer is NULL, it still returns the number of bytes.
      */
     size_t writeToMemory(void* buffer) const;
+
+    /**
+     *  Write the path to a buffer. Can recreate the path by calling readFromMemory().
+     */
+    sk_sp<SkData> serialize() const;
+
     /**
      * Initializes the path from the buffer
      *
@@ -1112,8 +1119,18 @@ public:
     static const int kPathRefGenIDBitCnt = 32;
 #endif
 
-    SkDEBUGCODE(void validate() const;)
-    SkDEBUGCODE(void experimentalValidateRef() const { fPathRef->validate(); } )
+    /** Returns if SkPath data is consistent. Corrupt SkPath data is detected if
+        internal values are out of range or internal storage does not match
+        array dimensions.
+
+        @return  true if SkPath data is consistent
+     */
+#ifdef SK_SUPPORT_DIRECT_PATHREF_VALIDATION
+    bool isValid() const { return this->isValidImpl() && fPathRef->isValid(); }
+#else
+    bool isValid() const { return this->isValidImpl(); }
+    bool pathRefIsValid() const { return fPathRef->isValid(); }
+#endif
 
 private:
     enum SerializationOffsets {
@@ -1174,6 +1191,13 @@ private:
 
     Convexity internalGetConvexity() const;
 
+    /** Asserts if SkPath data is inconsistent.
+        Debugging check intended for internal use only.
+     */
+    SkDEBUGCODE(void validate() const { SkASSERT(this->isValidImpl()); } )
+    bool isValidImpl() const;
+    SkDEBUGCODE(void validateRef() const { fPathRef->validate(); } )
+
     bool isRectContour(bool allowPartial, int* currVerb, const SkPoint** pts,
                        bool* isClosed, Direction* direction) const;
 
@@ -1206,6 +1230,7 @@ private:
     friend class SkBench_AddPathTest; // perf test reversePathTo
     friend class PathTest_Private; // unit test reversePathTo
     friend class ForceIsRRect_Private; // unit test isRRect
+    friend class FuzzPath; // for legacy access to validateRef
 };
 
 #endif

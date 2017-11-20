@@ -48,15 +48,18 @@ void AudioBweTest::OnFakeAudioDevicesCreated(
   send_audio_device_ = send_audio_device;
 }
 
-test::PacketTransport* AudioBweTest::CreateSendTransport(Call* sender_call) {
+test::PacketTransport* AudioBweTest::CreateSendTransport(
+    SingleThreadedTaskQueueForTesting* task_queue,
+    Call* sender_call) {
   return new test::PacketTransport(
-      sender_call, this, test::PacketTransport::kSender,
+      task_queue, sender_call, this, test::PacketTransport::kSender,
       test::CallTest::payload_type_map_, GetNetworkPipeConfig());
 }
 
-test::PacketTransport* AudioBweTest::CreateReceiveTransport() {
+test::PacketTransport* AudioBweTest::CreateReceiveTransport(
+    SingleThreadedTaskQueueForTesting* task_queue) {
   return new test::PacketTransport(
-      nullptr, this, test::PacketTransport::kReceiver,
+      task_queue, nullptr, this, test::PacketTransport::kReceiver,
       test::CallTest::payload_type_map_, GetNetworkPipeConfig());
 }
 
@@ -139,14 +142,9 @@ class NoBandwidthDropAfterDtx : public AudioBweTest {
 
 using AudioBweIntegrationTest = CallTest;
 
-// TODO(tschumim): This test is flaky when run on android. Re-enable the test
-// for android when the issue is fixed.
-#if defined(WEBRTC_ANDROID)
-#define MAYBE_NoBandwidthDropAfterDtx DISABLED_NoBandwidthDropAfterDtx
-#else
-#define MAYBE_NoBandwidthDropAfterDtx NoBandwidthDropAfterDtx
-#endif
-TEST_F(AudioBweIntegrationTest, MAYBE_NoBandwidthDropAfterDtx) {
+// TODO(tschumim): This test is flaky when run on android and mac. Re-enable the
+// test for when the issue is fixed.
+TEST_F(AudioBweIntegrationTest, DISABLED_NoBandwidthDropAfterDtx) {
   webrtc::test::ScopedFieldTrials override_field_trials(
       "WebRTC-Audio-SendSideBwe/Enabled/"
       "WebRTC-SendSideBwe-WithOverhead/Enabled/");

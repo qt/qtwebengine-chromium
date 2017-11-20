@@ -17,17 +17,20 @@
 #include "../private/GrSingleOwner.h"
 
 class GrAtlasGlyphCache;
+class GrBackendSemaphore;
 struct GrContextOptions;
 class GrContextPriv;
 class GrContextThreadSafeProxy;
 class GrDrawingManager;
 struct GrDrawOpAtlasConfig;
-class GrRenderTargetContext;
 class GrFragmentProcessor;
+struct GrGLInterface;
 class GrGpu;
 class GrIndexBuffer;
+struct GrMockOptions;
 class GrOvalRenderer;
 class GrPath;
+class GrRenderTargetContext;
 class GrResourceEntry;
 class GrResourceCache;
 class GrResourceProvider;
@@ -37,11 +40,13 @@ class GrTextBlobCache;
 class GrTextContext;
 class GrTextureProxy;
 class GrVertexBuffer;
+struct GrVkBackendContext;
 class GrSwizzle;
 class SkTraceMemoryDump;
 
 class SkImage;
 class SkSurfaceProps;
+class SkTaskGroup;
 
 class SK_API GrContext : public SkRefCnt {
 public:
@@ -51,6 +56,14 @@ public:
     static GrContext* Create(GrBackend, GrBackendContext, const GrContextOptions& options);
     static GrContext* Create(GrBackend, GrBackendContext);
 
+    static sk_sp<GrContext> MakeGL(const GrGLInterface*, const GrContextOptions&);
+    static sk_sp<GrContext> MakeGL(const GrGLInterface*);
+
+#ifdef SK_VULKAN
+    static sk_sp<GrContext> MakeVulkan(const GrVkBackendContext*, const GrContextOptions&);
+    static sk_sp<GrContext> MakeVulkan(const GrVkBackendContext*);
+#endif
+
 #ifdef SK_METAL
     /**
      * Makes a GrContext which uses Metal as the backend. The device parameter is an MTLDevice
@@ -59,7 +72,11 @@ public:
      * GrContext is destroyed.
      */
     static sk_sp<GrContext> MakeMetal(void* device, void* queue, const GrContextOptions& options);
+    static sk_sp<GrContext> MakeMetal(void* device, void* queue);
 #endif
+
+    static sk_sp<GrContext> MakeMock(const GrMockOptions*, const GrContextOptions&);
+    static sk_sp<GrContext> MakeMock(const GrMockOptions*);
 
     virtual ~GrContext();
 
@@ -237,10 +254,33 @@ public:
     // Misc.
 
     /**
-     * Call to ensure all drawing to the context has been issued to the
-     * underlying 3D API.
+     * Call to ensure all drawing to the context has been issued to the underlying 3D API.
      */
     void flush();
+
+    /**
+     * Call to ensure all drawing to the context has been issued to the underlying 3D API. After
+     * issuing all commands, numSemaphore semaphores will be signaled by the gpu. The client passes
+     * in an array of numSemaphores GrBackendSemaphores. In general these GrBackendSemaphore's can
+     * be either initialized or not. If they are initialized, the backend uses the passed in
+     * semaphore. If it is not initialized, a new semaphore is created and the GrBackendSemaphore
+     * object is initialized with that semaphore.
+     *
+     * The client will own and be responsible for deleting the underlying semaphores that are stored
+     * and returned in initialized GrBackendSemaphore objects. The GrBackendSemaphore objects
+     * themselves can be deleted as soon as this function returns.
+     *
+     * If the backend API is OpenGL only uninitialized GrBackendSemaphores are supported.
+     * If the backend API is Vulkan either initialized or unitialized semaphores are supported.
+     * If unitialized, the semaphores which are created will be valid for use only with the VkDevice
+     * with which they were created.
+     *
+     * If this call returns GrSemaphoresSubmited::kNo, the GPU backend will not have created or
+     * added any semaphores to signal on the GPU. Thus the client should not have the GPU wait on
+     * any of the semaphores. However, any pending commands to the context will still be flushed.
+     */
+    GrSemaphoresSubmitted flushAndSignalSemaphores(int numSemaphores,
+                                                   GrBackendSemaphore signalSemaphores[]);
 
     /**
      * An ID associated with this context, guaranteed to be unique.
@@ -270,6 +310,9 @@ public:
     void dumpGpuStats(SkString*) const;
     void dumpGpuStatsKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* values) const;
     void printGpuStats() const;
+
+    /** Returns a string with detailed information about the context & GPU, in JSON format. */
+    SkString dump() const;
 
     /** Specify the TextBlob cache limit. If the current cache exceeds this limit it will purge.
         this is for testing only */
@@ -317,6 +360,8 @@ private:
     // GrRenderTargetContexts.  It is also passed to the GrResourceProvider and SkGpuDevice.
     mutable GrSingleOwner                   fSingleOwner;
 
+    std::unique_ptr<SkTaskGroup>            fTaskGroup;
+
     struct CleanUpData {
         PFCleanUpFunc fFunc;
         void*         fInfo;
@@ -344,10 +389,10 @@ private:
      * use the specialized round-trip effects from GrConfigConversionEffect, otherwise they
      * create effects that do naive multiply or divide.
      */
-    sk_sp<GrFragmentProcessor> createPMToUPMEffect(sk_sp<GrFragmentProcessor>,
-                                                   bool useConfigConversionEffect);
-    sk_sp<GrFragmentProcessor> createUPMToPMEffect(sk_sp<GrFragmentProcessor>,
-                                                   bool useConfigConversionEffect);
+    std::unique_ptr<GrFragmentProcessor> createPMToUPMEffect(std::unique_ptr<GrFragmentProcessor>,
+                                                             bool useConfigConversionEffect);
+    std::unique_ptr<GrFragmentProcessor> createUPMToPMEffect(std::unique_ptr<GrFragmentProcessor>,
+                                                             bool useConfigConversionEffect);
 
     /**
      * Returns true if createPMtoUPMEffect and createUPMToPMEffect will succeed for non-sRGB 8888

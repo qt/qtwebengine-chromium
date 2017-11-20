@@ -8,7 +8,6 @@
 #include "Sk1DPathEffect.h"
 #include "Sk2DPathEffect.h"
 #include "SkAlphaThresholdFilter.h"
-#include "SkArcToPathEffect.h"
 #include "SkBitmapSourceDeserializer.h"
 #include "SkBlurImageFilter.h"
 #include "SkBlurMaskFilter.h"
@@ -27,22 +26,21 @@
 #include "SkLayerDrawLooper.h"
 #include "SkLayerRasterizer.h"
 #include "SkLightingImageFilter.h"
-#include "SkLightingShader.h"
 #include "SkLocalMatrixImageFilter.h"
 #include "SkLumaColorFilter.h"
 #include "SkMagnifierImageFilter.h"
 #include "SkMatrixConvolutionImageFilter.h"
 #include "SkMergeImageFilter.h"
 #include "SkMorphologyImageFilter.h"
-#include "SkNormalSource.h"
 #include "SkOffsetImageFilter.h"
-#include "../../src/effects/SkOverdrawColorFilter.h"
+#include "SkOverdrawColorFilter.h"
 #include "SkPaintImageFilter.h"
 #include "SkPerlinNoiseShader.h"
 #include "SkPictureImageFilter.h"
 #include "SkRRectsGaussianEdgeMaskFilter.h"
 #include "SkTableColorFilter.h"
 #include "SkTileImageFilter.h"
+#include "SkToSRGBColorFilter.h"
 #include "SkXfermodeImageFilter.h"
 
 // Security note:
@@ -79,6 +77,7 @@ void SkFlattenable::PrivateInitializer::InitEffects() {
     // ColorFilter
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkColorMatrixFilterRowMajor255)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLumaColorFilter)
+    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkToSRGBColorFilter)
     SkAlphaThresholdFilter::InitializeFlattenables();
     SkTableColorFilter::InitializeFlattenables();
     SkOverdrawColorFilter::InitializeFlattenables();
@@ -87,11 +86,8 @@ void SkFlattenable::PrivateInitializer::InitEffects() {
     // Shader
     SkPerlinNoiseShader::InitializeFlattenables();
     SkGradientShader::InitializeFlattenables();
-    SkLightingShader::InitializeFlattenables();
-    SkNormalSource::InitializeFlattenables();
 
     // PathEffect
-    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkArcToPathEffect)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkCornerPathEffect)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkDashImpl)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkDiscretePathEffect)

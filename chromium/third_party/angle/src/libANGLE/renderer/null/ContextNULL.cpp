@@ -15,7 +15,6 @@
 #include "libANGLE/renderer/null/CompilerNULL.h"
 #include "libANGLE/renderer/null/DisplayNULL.h"
 #include "libANGLE/renderer/null/FenceNVNULL.h"
-#include "libANGLE/renderer/null/FenceSyncNULL.h"
 #include "libANGLE/renderer/null/FramebufferNULL.h"
 #include "libANGLE/renderer/null/ImageNULL.h"
 #include "libANGLE/renderer/null/PathNULL.h"
@@ -24,6 +23,7 @@
 #include "libANGLE/renderer/null/RenderbufferNULL.h"
 #include "libANGLE/renderer/null/SamplerNULL.h"
 #include "libANGLE/renderer/null/ShaderNULL.h"
+#include "libANGLE/renderer/null/SyncNULL.h"
 #include "libANGLE/renderer/null/TextureNULL.h"
 #include "libANGLE/renderer/null/TransformFeedbackNULL.h"
 #include "libANGLE/renderer/null/VertexArrayNULL.h"
@@ -113,8 +113,7 @@ gl::Error ContextNULL::drawElements(const gl::Context *context,
                                     GLenum mode,
                                     GLsizei count,
                                     GLenum type,
-                                    const void *indices,
-                                    const gl::IndexRange &indexRange)
+                                    const void *indices)
 {
     return gl::NoError();
 }
@@ -124,8 +123,7 @@ gl::Error ContextNULL::drawElementsInstanced(const gl::Context *context,
                                              GLsizei count,
                                              GLenum type,
                                              const void *indices,
-                                             GLsizei instances,
-                                             const gl::IndexRange &indexRange)
+                                             GLsizei instances)
 {
     return gl::NoError();
 }
@@ -136,8 +134,7 @@ gl::Error ContextNULL::drawRangeElements(const gl::Context *context,
                                          GLuint end,
                                          GLsizei count,
                                          GLenum type,
-                                         const void *indices,
-                                         const gl::IndexRange &indexRange)
+                                         const void *indices)
 {
     return gl::NoError();
 }
@@ -350,9 +347,9 @@ FenceNVImpl *ContextNULL::createFenceNV()
     return new FenceNVNULL();
 }
 
-FenceSyncImpl *ContextNULL::createFenceSync()
+SyncImpl *ContextNULL::createSync()
 {
-    return new FenceSyncNULL();
+    return new SyncNULL();
 }
 
 TransformFeedbackImpl *ContextNULL::createTransformFeedback(const gl::TransformFeedbackState &state)

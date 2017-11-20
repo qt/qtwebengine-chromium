@@ -193,11 +193,14 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // extension). If |urls| itself contains the hostname, this isn't
     // necessary.
     std::string hostname;
+    // List of protocols to be used in the TLS ALPN extension.
+    std::vector<std::string> tls_alpn_protocols;
 
     bool operator==(const IceServer& o) const {
       return uri == o.uri && urls == o.urls && username == o.username &&
              password == o.password && tls_cert_policy == o.tls_cert_policy &&
-             hostname == o.hostname;
+             hostname == o.hostname &&
+             tls_alpn_protocols == o.tls_alpn_protocols;
     }
     bool operator!=(const IceServer& o) const { return !(*this == o); }
   };
@@ -351,6 +354,13 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // when the screen is turned off and it would be better to just disable the
     // IPv6 ICE candidates on Wi-Fi in those cases.
     bool disable_ipv6_on_wifi = false;
+
+    // By default, the PeerConnection will use a limited number of IPv6 network
+    // interfaces, in order to avoid too many ICE candidate pairs being created
+    // and delaying ICE completion.
+    //
+    // Can be set to INT_MAX to effectively disable the limit.
+    int max_ipv6_networks = cricket::kDefaultMaxIPv6Networks;
 
     // If set to true, use RTP data channels instead of SCTP.
     // TODO(deadbeef): Remove this. We no longer commit to supporting RTP data

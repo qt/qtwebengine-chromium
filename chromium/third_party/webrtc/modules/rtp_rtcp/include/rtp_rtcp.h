@@ -29,7 +29,7 @@ namespace webrtc {
 // Forward declarations.
 class OverheadObserver;
 class RateLimiter;
-class ReceiveStatistics;
+class ReceiveStatisticsProvider;
 class RemoteBitrateEstimator;
 class RtcEventLog;
 class RtpReceiver;
@@ -55,7 +55,7 @@ class RtpRtcp : public Module {
     // The clock to use to read time. If nullptr then system clock will be used.
     Clock* clock = nullptr;
 
-    ReceiveStatistics* receive_statistics;
+    ReceiveStatisticsProvider* receive_statistics = nullptr;
 
     // Transport object that will be called when packets are ready to be sent
     // out on the network.
@@ -326,10 +326,6 @@ class RtpRtcp : public Module {
       uint32_t ssrc,
       struct RtpPacketLossStats* loss_stats) const = 0;
 
-  // Returns received RTCP sender info.
-  // Returns -1 on failure else 0.
-  virtual int32_t RemoteRTCPStat(RTCPSenderInfo* sender_info) = 0;
-
   // Returns received RTCP report block.
   // Returns -1 on failure else 0.
   virtual int32_t RemoteRTCPStat(
@@ -412,12 +408,6 @@ class RtpRtcp : public Module {
   // **************************************************************************
   // Audio
   // **************************************************************************
-
-  // This function is deprecated. It was previously used to determine when it
-  // was time to send a DTMF packet in silence (CNG).
-  // Returns -1 on failure else 0.
-  RTC_DEPRECATED virtual int32_t SetAudioPacketSize(
-      uint16_t packet_size_samples) = 0;
 
   // Sends a TelephoneEvent tone using RFC 2833 (4733).
   // Returns -1 on failure else 0.

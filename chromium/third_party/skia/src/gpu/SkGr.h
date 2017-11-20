@@ -115,7 +115,7 @@ bool SkPaintToGrPaintNoShader(GrContext* context,
 bool SkPaintToGrPaintReplaceShader(GrContext*,
                                    GrRenderTargetContext*,
                                    const SkPaint& skPaint,
-                                   sk_sp<GrFragmentProcessor> shaderFP,
+                                   std::unique_ptr<GrFragmentProcessor> shaderFP,
                                    GrPaint* grPaint);
 
 /** Blends the SkPaint's shader (or color if no shader) with the color which specified via a
@@ -143,7 +143,7 @@ bool SkPaintToGrPaintWithTexture(GrContext* context,
                                  GrRenderTargetContext* rtc,
                                  const SkPaint& paint,
                                  const SkMatrix& viewM,
-                                 sk_sp<GrFragmentProcessor> fp,
+                                 std::unique_ptr<GrFragmentProcessor> fp,
                                  bool textureIsAlphaOnly,
                                  GrPaint* grPaint);
 
@@ -172,7 +172,7 @@ static inline GrPrimitiveType SkVertexModeToGrPrimitiveType(SkVertices::VertexMo
         case SkVertices::kTriangleFan_VertexMode:
             return GrPrimitiveType::kTriangleFan;
     }
-    SkFAIL("Invalid mode");
+    SK_ABORT("Invalid mode");
     return GrPrimitiveType::kPoints;
 }
 

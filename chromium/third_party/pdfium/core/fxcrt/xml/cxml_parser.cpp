@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "core/fxcrt/cfx_utf8decoder.h"
+#include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/xml/cxml_content.h"
 #include "core/fxcrt/xml/cxml_element.h"
@@ -82,12 +84,12 @@ void FX_XML_SplitQualifiedName(const CFX_ByteStringC& bsFullName,
   if (bsFullName.IsEmpty())
     return;
 
-  FX_STRSIZE iStart = bsFullName.Find(':');
-  if (iStart == -1) {
+  auto iStart = bsFullName.Find(':');
+  if (!iStart.has_value()) {
     bsName = bsFullName;
   } else {
-    bsSpace = bsFullName.Mid(0, iStart);
-    bsName = bsFullName.Mid(iStart + 1);
+    bsSpace = bsFullName.Left(iStart.value());
+    bsName = bsFullName.Right(bsFullName.GetLength() - (iStart.value() + 1));
   }
 }
 
@@ -171,7 +173,7 @@ void CXML_Parser::SkipLiterals(const CFX_ByteStringC& str) {
   int32_t i = 0, iLen = str.GetLength();
   do {
     while (m_dwIndex < m_dwBufferSize) {
-      if (str.GetAt(i) != m_pBuffer[m_dwIndex++]) {
+      if (str[i] != m_pBuffer[m_dwIndex++]) {
         i = 0;
         continue;
       }
@@ -303,7 +305,7 @@ void CXML_Parser::GetAttrValue(CFX_WideString& value) {
         break;
 
       if (ch == '&') {
-        decoder.AppendChar(GetCharRef());
+        decoder.AppendCodePoint(GetCharRef());
         if (IsEOF()) {
           value = decoder.GetResult();
           return;
@@ -459,7 +461,7 @@ std::unique_ptr<CXML_Element> CXML_Parser::ParseElementInternal(
             iState = 1;
           } else if (ch == '&') {
             decoder.ClearStatus();
-            decoder.AppendChar(GetCharRef());
+            decoder.AppendCodePoint(GetCharRef());
           } else {
             decoder.Input(ch);
           }

@@ -78,6 +78,7 @@ ShaderState::ShaderState(GLenum shaderType)
     : mLabel(),
       mShaderType(shaderType),
       mShaderVersion(100),
+      mNumViews(-1),
       mCompileStatus(CompileStatus::NOT_COMPILED)
 {
     mLocalSize.fill(-1);
@@ -269,9 +270,11 @@ void Shader::compile(const Context *context)
     mState.mShaderVersion = 100;
     mState.mVaryings.clear();
     mState.mUniforms.clear();
-    mState.mInterfaceBlocks.clear();
+    mState.mUniformBlocks.clear();
+    mState.mShaderStorageBlocks.clear();
     mState.mActiveAttributes.clear();
     mState.mActiveOutputVariables.clear();
+    mState.mNumViews = -1;
 
     mState.mCompileStatus = CompileStatus::COMPILE_REQUESTED;
     mBoundCompiler.set(context, context->getCompiler());
@@ -359,7 +362,8 @@ void Shader::resolveCompile(const Context *context)
 
     mState.mVaryings        = GetShaderVariables(sh::GetVaryings(compilerHandle));
     mState.mUniforms        = GetShaderVariables(sh::GetUniforms(compilerHandle));
-    mState.mInterfaceBlocks = GetShaderVariables(sh::GetInterfaceBlocks(compilerHandle));
+    mState.mUniformBlocks       = GetShaderVariables(sh::GetUniformBlocks(compilerHandle));
+    mState.mShaderStorageBlocks = GetShaderVariables(sh::GetShaderStorageBlocks(compilerHandle));
 
     switch (mState.mShaderType)
     {
@@ -370,7 +374,11 @@ void Shader::resolveCompile(const Context *context)
         }
         case GL_VERTEX_SHADER:
         {
-            mState.mActiveAttributes = GetActiveShaderVariables(sh::GetAttributes(compilerHandle));
+            {
+                mState.mActiveAttributes =
+                    GetActiveShaderVariables(sh::GetAttributes(compilerHandle));
+                mState.mNumViews = sh::GetVertexShaderNumViews(compilerHandle);
+            }
             break;
         }
         case GL_FRAGMENT_SHADER:
@@ -445,10 +453,16 @@ const std::vector<sh::Uniform> &Shader::getUniforms(const Context *context)
     return mState.getUniforms();
 }
 
-const std::vector<sh::InterfaceBlock> &Shader::getInterfaceBlocks(const Context *context)
+const std::vector<sh::InterfaceBlock> &Shader::getUniformBlocks(const Context *context)
 {
     resolveCompile(context);
-    return mState.getInterfaceBlocks();
+    return mState.getUniformBlocks();
+}
+
+const std::vector<sh::InterfaceBlock> &Shader::getShaderStorageBlocks(const Context *context)
+{
+    resolveCompile(context);
+    return mState.getShaderStorageBlocks();
 }
 
 const std::vector<sh::Attribute> &Shader::getActiveAttributes(const Context *context)
@@ -467,6 +481,12 @@ const sh::WorkGroupSize &Shader::getWorkGroupSize(const Context *context)
 {
     resolveCompile(context);
     return mState.mLocalSize;
+}
+
+int Shader::getNumViews(const Context *context)
+{
+    resolveCompile(context);
+    return mState.mNumViews;
 }
 
 const std::string &Shader::getCompilerResourcesString() const

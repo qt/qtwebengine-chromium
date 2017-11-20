@@ -25,6 +25,7 @@
 #include "core/fpdfapi/render/cpdf_dibsource.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fxcodec/fx_codec.h"
+#include "core/fxcrt/fx_stream.h"
 #include "core/fxge/fx_dib.h"
 #include "third_party/base/numerics/safe_conversions.h"
 #include "third_party/base/ptr_util.h"
@@ -257,7 +258,7 @@ void CPDF_Image::SetImage(const CFX_RetainPtr<CFX_DIBitmap>& pBitmap) {
     int32_t maskWidth = pMaskBitmap->GetWidth();
     int32_t maskHeight = pMaskBitmap->GetHeight();
     std::unique_ptr<uint8_t, FxFreeDeleter> mask_buf;
-    FX_STRSIZE mask_size = 0;
+    int32_t mask_size = 0;
     auto pMaskDict =
         pdfium::MakeUnique<CPDF_Dictionary>(m_pDocument->GetByteStringPool());
     pMaskDict->SetNewFor<CPDF_Name>("Type", "XObject");
@@ -365,7 +366,7 @@ bool CPDF_Image::StartLoadDIBSource(CPDF_Dictionary* pFormResource,
   return false;
 }
 
-bool CPDF_Image::Continue(IFX_Pause* pPause) {
+bool CPDF_Image::Continue(IFX_PauseIndicator* pPause) {
   CFX_RetainPtr<CPDF_DIBSource> pSource = m_pDIBSource.As<CPDF_DIBSource>();
   int ret = pSource->ContinueLoadDIBSource(pPause);
   if (!ret) {

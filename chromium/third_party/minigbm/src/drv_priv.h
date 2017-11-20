@@ -26,6 +26,7 @@ struct bo {
 	uint32_t sizes[DRV_MAX_PLANES];
 	uint32_t strides[DRV_MAX_PLANES];
 	uint64_t format_modifiers[DRV_MAX_PLANES];
+	uint64_t flags;
 	size_t total_size;
 	void *priv;
 };
@@ -73,19 +74,20 @@ struct backend {
 					uint32_t format, const uint64_t *modifiers, uint32_t count);
 	int (*bo_destroy)(struct bo *bo);
 	int (*bo_import)(struct bo *bo, struct drv_import_fd_data *data);
-	void *(*bo_map)(struct bo *bo, struct map_info *data, size_t plane);
+	void *(*bo_map)(struct bo *bo, struct map_info *data, size_t plane, int prot);
 	int (*bo_unmap)(struct bo *bo, struct map_info *data);
-	uint32_t (*resolve_format)(uint32_t format);
+	uint32_t (*resolve_format)(uint32_t format, uint64_t usage);
 	struct combinations combos;
 };
 
 // clang-format off
-#define BO_USE_RENDER_MASK BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_SW_READ_OFTEN | \
-			   BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | \
+#define BO_USE_RENDER_MASK BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_RENDERSCRIPT | \
+			   BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | \
 			   BO_USE_SW_WRITE_RARELY | BO_USE_TEXTURE
 
-#define BO_USE_TEXTURE_MASK BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN | \
-			    BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY | BO_USE_TEXTURE
+#define BO_USE_TEXTURE_MASK BO_USE_LINEAR | BO_USE_RENDERSCRIPT | BO_USE_SW_READ_OFTEN | \
+			    BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | \
+			    BO_USE_SW_WRITE_RARELY | BO_USE_TEXTURE
 
 #define LINEAR_METADATA (struct format_metadata) { 0, 1, DRM_FORMAT_MOD_NONE }
 // clang-format on

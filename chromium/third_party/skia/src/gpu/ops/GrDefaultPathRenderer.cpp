@@ -148,7 +148,7 @@ public:
 
         bool done = false;
         while (!done) {
-            SkPath::Verb verb = iter.next(pts);
+            SkPath::Verb verb = iter.next(pts, false);
             switch (verb) {
                 case SkPath::kMove_Verb:
                     this->moveTo(pts[0]);
@@ -380,7 +380,7 @@ public:
     }
 
 private:
-    void onPrepareDraws(Target* target) const override {
+    void onPrepareDraws(Target* target) override {
         sk_sp<GrGeometryProcessor> gp;
         {
             using namespace GrDefaultGeoProcFactory;
@@ -593,13 +593,16 @@ bool GrDefaultPathRenderer::internalDrawPath(GrRenderTargetContext* renderTarget
                             std::move(paint), viewM, localMatrix, bounds, aaType, passes[p]));
         } else {
             bool stencilPass = stencilOnly || passCount > 1;
-            GrPaint::MoveOrNew passPaint(paint, stencilPass);
+            std::unique_ptr<GrDrawOp> op;
             if (stencilPass) {
-                passPaint.paint().setXPFactory(GrDisableColorXPFactory::Get());
+                GrPaint stencilPaint;
+                stencilPaint.setXPFactory(GrDisableColorXPFactory::Get());
+                op = DefaultPathOp::Make(std::move(stencilPaint), path, srcSpaceTol, newCoverage,
+                                         viewMatrix, isHairline, aaType, devBounds, passes[p]);
+            } else {
+                op = DefaultPathOp::Make(std::move(paint), path, srcSpaceTol, newCoverage,
+                                         viewMatrix, isHairline, aaType, devBounds, passes[p]);
             }
-            std::unique_ptr<GrDrawOp> op =
-                    DefaultPathOp::Make(std::move(passPaint), path, srcSpaceTol, newCoverage,
-                                        viewMatrix, isHairline, aaType, devBounds, passes[p]);
             renderTargetContext->addDrawOp(clip, std::move(op));
         }
     }
