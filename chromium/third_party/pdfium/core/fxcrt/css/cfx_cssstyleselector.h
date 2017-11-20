@@ -32,31 +32,30 @@ class CFX_CSSStyleSelector {
   void SetUAStyleSheet(std::unique_ptr<CFX_CSSStyleSheet> pSheet);
   void UpdateStyleIndex();
 
-  CFX_RetainPtr<CFX_CSSComputedStyle> CreateComputedStyle(
+  RetainPtr<CFX_CSSComputedStyle> CreateComputedStyle(
       CFX_CSSComputedStyle* pParentStyle);
 
   // Note, the dest style has to be an out param because the CXFA_TextParser
   // adds non-inherited data from the parent style. Attempting to copy
   // internally will fail as you'll lose the non-inherited data.
   void ComputeStyle(const std::vector<const CFX_CSSDeclaration*>& declArray,
-                    const CFX_WideString& styleString,
-                    const CFX_WideString& alignString,
+                    const WideString& styleString,
+                    const WideString& alignString,
                     CFX_CSSComputedStyle* pDestStyle);
 
   std::vector<const CFX_CSSDeclaration*> MatchDeclarations(
-      const CFX_WideString& tagname);
+      const WideString& tagname);
 
  private:
-  bool MatchSelector(const CFX_WideString& tagname, CFX_CSSSelector* pSel);
+  bool MatchSelector(const WideString& tagname, CFX_CSSSelector* pSel);
 
-  void AppendInlineStyle(CFX_CSSDeclaration* pDecl,
-                         const CFX_WideString& style);
+  void AppendInlineStyle(CFX_CSSDeclaration* pDecl, const WideString& style);
   void ApplyDeclarations(
       const std::vector<const CFX_CSSDeclaration*>& declArray,
       const CFX_CSSDeclaration* extraDecl,
       CFX_CSSComputedStyle* pDestStyle);
   void ApplyProperty(CFX_CSSProperty eProperty,
-                     const CFX_RetainPtr<CFX_CSSValue>& pValue,
+                     const RetainPtr<CFX_CSSValue>& pValue,
                      CFX_CSSComputedStyle* pComputedStyle);
   void ExtractValues(const CFX_CSSDeclaration* decl,
                      std::vector<const CFX_CSSPropertyHolder*>* importants,
@@ -65,7 +64,7 @@ class CFX_CSSStyleSelector {
 
   bool SetLengthWithPercent(CFX_CSSLength& width,
                             CFX_CSSPrimitiveType eType,
-                            const CFX_RetainPtr<CFX_CSSValue>& pValue,
+                            const RetainPtr<CFX_CSSValue>& pValue,
                             float fFontSize);
   float ToFontSize(CFX_CSSPropertyValue eValue, float fCurFontSize);
   CFX_CSSDisplay ToDisplay(CFX_CSSPropertyValue eValue);
@@ -73,7 +72,7 @@ class CFX_CSSStyleSelector {
   uint16_t ToFontWeight(CFX_CSSPropertyValue eValue);
   CFX_CSSFontStyle ToFontStyle(CFX_CSSPropertyValue eValue);
   CFX_CSSVerticalAlign ToVerticalAlign(CFX_CSSPropertyValue eValue);
-  uint32_t ToTextDecoration(const CFX_RetainPtr<CFX_CSSValueList>& pList);
+  uint32_t ToTextDecoration(const RetainPtr<CFX_CSSValueList>& pList);
   CFX_CSSFontVariant ToFontVariant(CFX_CSSPropertyValue eValue);
 
   float m_fDefFontSize;

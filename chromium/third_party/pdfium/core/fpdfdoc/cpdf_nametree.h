@@ -9,8 +9,8 @@
 
 #include <memory>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 class CPDF_Array;
 class CPDF_Dictionary;
@@ -20,23 +20,23 @@ class CPDF_Object;
 class CPDF_NameTree {
  public:
   explicit CPDF_NameTree(CPDF_Dictionary* pRoot);
-  CPDF_NameTree(const CPDF_Document* pDoc, const CFX_ByteString& category);
+  CPDF_NameTree(const CPDF_Document* pDoc, const ByteString& category);
   ~CPDF_NameTree();
 
   bool AddValueAndName(std::unique_ptr<CPDF_Object> pObj,
-                       const CFX_WideString& name);
+                       const WideString& name);
   bool DeleteValueAndName(int nIndex);
 
-  CPDF_Object* LookupValueAndName(int nIndex, CFX_WideString* csName) const;
-  CPDF_Object* LookupValue(const CFX_WideString& csName) const;
-  CPDF_Array* LookupNamedDest(CPDF_Document* pDoc, const CFX_WideString& sName);
+  CPDF_Object* LookupValueAndName(int nIndex, WideString* csName) const;
+  CPDF_Object* LookupValue(const WideString& csName) const;
+  CPDF_Array* LookupNamedDest(CPDF_Document* pDoc, const WideString& sName);
 
-  int GetIndex(const CFX_WideString& csName) const;
+  int GetIndex(const WideString& csName) const;
   size_t GetCount() const;
   CPDF_Dictionary* GetRoot() const { return m_pRoot.Get(); }
 
  private:
-  CFX_UnownedPtr<CPDF_Dictionary> m_pRoot;
+  UnownedPtr<CPDF_Dictionary> m_pRoot;
 };
 
 #endif  // CORE_FPDFDOC_CPDF_NAMETREE_H_

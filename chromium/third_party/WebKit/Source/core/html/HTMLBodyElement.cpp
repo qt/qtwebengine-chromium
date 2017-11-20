@@ -26,17 +26,17 @@
 
 #include "bindings/core/v8/ScriptEventListener.h"
 #include "core/CSSValueKeywords.h"
-#include "core/HTMLNames.h"
 #include "core/css/CSSImageValue.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/dom/Attribute.h"
-#include "core/dom/StyleChangeReason.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html_names.h"
 
 namespace blink {
 
@@ -115,6 +115,16 @@ void HTMLBodyElement::ParseAttribute(
     SetNeedsStyleRecalc(kSubtreeStyleChange,
                         StyleChangeReasonForTracing::Create(
                             StyleChangeReason::kLinkColorChange));
+  } else if (name == onafterprintAttr) {
+    GetDocument().SetWindowAttributeEventListener(
+        EventTypeNames::afterprint,
+        CreateAttributeEventListener(GetDocument().GetFrame(), name, value,
+                                     EventParameterName()));
+  } else if (name == onbeforeprintAttr) {
+    GetDocument().SetWindowAttributeEventListener(
+        EventTypeNames::beforeprint,
+        CreateAttributeEventListener(GetDocument().GetFrame(), name, value,
+                                     EventParameterName()));
   } else if (name == onloadAttr) {
     GetDocument().SetWindowAttributeEventListener(
         EventTypeNames::load,

@@ -19,7 +19,6 @@
 #include "media/cdm/cdm_manager.h"
 #include "media/mojo/common/media_type_converters.h"
 #include "media/mojo/services/mojo_cdm_service_context.h"
-#include "url/gurl.h"
 #include "url/origin.h"
 
 namespace media {
@@ -60,16 +59,15 @@ void MojoCdmService::SetClient(mojom::ContentDecryptionModuleClientPtr client) {
 }
 
 void MojoCdmService::Initialize(const std::string& key_system,
-                                const std::string& security_origin,
-                                mojom::CdmConfigPtr cdm_config,
+                                const url::Origin& security_origin,
+                                const CdmConfig& cdm_config,
                                 InitializeCallback callback) {
   DVLOG(1) << __func__ << ": " << key_system;
   DCHECK(!cdm_);
 
   auto weak_this = weak_factory_.GetWeakPtr();
   cdm_factory_->Create(
-      key_system, url::Origin(GURL(security_origin)),
-      cdm_config.To<CdmConfig>(),
+      key_system, security_origin, cdm_config,
       base::Bind(&MojoCdmService::OnSessionMessage, weak_this),
       base::Bind(&MojoCdmService::OnSessionClosed, weak_this),
       base::Bind(&MojoCdmService::OnSessionKeysChange, weak_this),

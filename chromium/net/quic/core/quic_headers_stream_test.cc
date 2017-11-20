@@ -31,14 +31,13 @@
 #include "net/test/gtest_util.h"
 
 using std::string;
-using testing::_;
 using testing::AtLeast;
-using testing::HasSubstr;
 using testing::InSequence;
 using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
 using testing::WithArgs;
+using testing::_;
 
 namespace net {
 namespace test {
@@ -134,7 +133,7 @@ class ForceHolAckListener : public QuicAckListenerInterface {
   DISALLOW_COPY_AND_ASSIGN(ForceHolAckListener);
 };
 
-typedef testing::tuple<QuicVersion, Perspective> TestParamsTuple;
+typedef testing::tuple<QuicTransportVersion, Perspective> TestParamsTuple;
 
 struct TestParams {
   explicit TestParams(TestParamsTuple params)
@@ -143,7 +142,7 @@ struct TestParams {
                    << ", perspective: " << perspective;
   }
 
-  QuicVersion version;
+  QuicTransportVersion version;
   Perspective perspective;
 };
 
@@ -171,7 +170,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParamsTuple> {
         new SpdyFramer(SpdyFramer::ENABLE_COMPRESSION));
     deframer_ = std::unique_ptr<Http2DecoderAdapter>(new Http2DecoderAdapter());
     deframer_->set_visitor(&visitor_);
-    EXPECT_EQ(version(), session_.connection()->version());
+    EXPECT_EQ(transport_version(), session_.connection()->transport_version());
     EXPECT_TRUE(headers_stream_ != nullptr);
     connection_->AdvanceTime(QuicTime::Delta::FromMilliseconds(1));
     client_id_1_ =
@@ -199,8 +198,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParamsTuple> {
     } else {
       consumed = data.total_length;
       char* buf = new char[consumed];
-      QuicDataWriter writer(consumed, buf, Perspective::IS_CLIENT,
-                            NETWORK_BYTE_ORDER);
+      QuicDataWriter writer(consumed, buf, NETWORK_BYTE_ORDER);
       headers_stream_->WriteStreamData(headers_stream_->stream_bytes_written(),
                                        consumed, &writer);
       saved_data_.append(buf, consumed);
@@ -216,8 +214,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParamsTuple> {
       saved_data_.append(static_cast<char*>(iov[0].iov_base), consumed);
     } else {
       char* buf = new char[consumed];
-      QuicDataWriter writer(consumed, buf, Perspective::IS_CLIENT,
-                            NETWORK_BYTE_ORDER);
+      QuicDataWriter writer(consumed, buf, NETWORK_BYTE_ORDER);
       headers_stream_->WriteStreamData(headers_stream_->stream_bytes_written(),
                                        consumed, &writer);
       saved_data_.append(buf, consumed);
@@ -332,11 +329,13 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParamsTuple> {
 
   Perspective perspective() const { return test_params_.perspective; }
 
-  QuicVersion version() const { return test_params_.version; }
+  QuicTransportVersion transport_version() const {
+    return test_params_.version;
+  }
 
-  QuicVersionVector GetVersion() {
-    QuicVersionVector versions;
-    versions.push_back(version());
+  QuicTransportVersionVector GetVersion() {
+    QuicTransportVersionVector versions;
+    versions.push_back(transport_version());
     return versions;
   }
 
@@ -378,7 +377,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParamsTuple> {
 INSTANTIATE_TEST_CASE_P(
     Tests,
     QuicHeadersStreamTest,
-    ::testing::Combine(::testing::ValuesIn(AllSupportedVersions()),
+    ::testing::Combine(::testing::ValuesIn(AllSupportedTransportVersions()),
                        ::testing::Values(Perspective::IS_CLIENT,
                                          Perspective::IS_SERVER)));
 
@@ -654,33 +653,6 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyDataFrame) {
   headers_stream_->OnStreamFrame(stream_frame_);
 }
 
-TEST_P(QuicHeadersStreamTest, ProcessSpdyDataFrameForceHolBlocking) {
-  if (version() <= QUIC_VERSION_35) {
-    return;
-  }
-  QuicSpdySessionPeer::SetForceHolBlocking(&session_, true);
-  SpdyDataIR data(2, "ping");
-  SpdySerializedFrame frame(framer_->SerializeFrame(data));
-  EXPECT_CALL(session_, OnStreamFrameData(2, _, 4, false));
-  stream_frame_.data_buffer = frame.data();
-  stream_frame_.data_length = frame.size();
-  headers_stream_->OnStreamFrame(stream_frame_);
-}
-
-TEST_P(QuicHeadersStreamTest, ProcessSpdyDataFrameEmptyWithFin) {
-  if (version() <= QUIC_VERSION_35) {
-    return;
-  }
-  QuicSpdySessionPeer::SetForceHolBlocking(&session_, true);
-  SpdyDataIR data(2, "");
-  data.set_fin(true);
-  SpdySerializedFrame frame(framer_->SerializeFrame(data));
-  EXPECT_CALL(session_, OnStreamFrameData(2, _, 0, true));
-  stream_frame_.data_buffer = frame.data();
-  stream_frame_.data_length = frame.size();
-  headers_stream_->OnStreamFrame(stream_frame_);
-}
-
 TEST_P(QuicHeadersStreamTest, ProcessSpdyRstStreamFrame) {
   SpdyRstStreamIR data(2, ERROR_CODE_PROTOCOL_ERROR);
   SpdySerializedFrame frame(framer_->SerializeFrame(data));
@@ -898,124 +870,11 @@ TEST_P(QuicHeadersStreamTest, HpackEncoderDebugVisitor) {
   }
 }
 
-TEST_P(QuicHeadersStreamTest, WritevStreamData) {
-  QuicStreamId id = client_id_1_;
-  QuicStreamOffset offset = 0;
-  struct iovec iov;
-
-  // This test will issue a write that will require fragmenting into
-  // multiple HTTP/2 DATA frames.
-  const int kMinDataFrames = 4;
-  const size_t data_len = kSpdyInitialFrameSizeLimit * kMinDataFrames + 1024;
-  // Set headers stream send window large enough for data written below.
-  headers_stream_->flow_controller()->UpdateSendWindowOffset(data_len * 2 * 4);
-  string data(data_len, 'a');
-
-  for (bool fin : {true, false}) {
-    for (bool use_ack_listener : {true, false}) {
-      QuicReferenceCountedPointer<ForceHolAckListener> ack_listener;
-      if (use_ack_listener) {
-        ack_listener = new ForceHolAckListener();
-      }
-      EXPECT_CALL(session_, WritevData(headers_stream_, kHeadersStreamId, _, _,
-                                       NO_FIN, _))
-          .WillRepeatedly(WithArgs<2, 5>(Invoke(
-              this, &QuicHeadersStreamTest::SaveIovAndNotifyAckListener)));
-
-      QuicConsumedData consumed_data = session_.WritevStreamData(
-          id, MakeIOVector(data, &iov), offset, fin, ack_listener);
-
-      EXPECT_EQ(consumed_data.bytes_consumed, data_len);
-      EXPECT_EQ(consumed_data.fin_consumed, fin);
-      // Now process the written data with the SPDY framer, and verify
-      // that the original data is unchanged.
-      EXPECT_CALL(visitor_, OnDataFrameHeader(id, _, _))
-          .Times(AtLeast(kMinDataFrames));
-      EXPECT_CALL(visitor_, OnStreamFrameData(id, _, _))
-          .WillRepeatedly(WithArgs<1, 2>(
-              Invoke(this, &QuicHeadersStreamTest::SavePayload)));
-      if (fin) {
-        EXPECT_CALL(visitor_, OnStreamEnd(id));
-      }
-      deframer_->ProcessInput(saved_data_.data(), saved_data_.length());
-      EXPECT_EQ(saved_payloads_, data);
-
-      if (use_ack_listener && !session_.use_stream_notifier()) {
-        // Notice, acked bytes doesn't include extra bytes used by
-        // HTTP/2 DATA frame headers.
-        EXPECT_EQ(ack_listener->total_acked_bytes(), data_len);
-      }
-      saved_data_.clear();
-      saved_payloads_.clear();
-    }
-  }
-}
-
-TEST_P(QuicHeadersStreamTest, WritevStreamDataFinOnly) {
-  struct iovec iov;
-  string data;
-
-  EXPECT_CALL(session_,
-              WritevData(headers_stream_, kHeadersStreamId, _, _, NO_FIN, _))
-      .WillOnce(WithArgs<2, 5>(
-          Invoke(this, &QuicHeadersStreamTest::SaveIovAndNotifyAckListener)));
-
-  QuicConsumedData consumed_data = session_.WritevStreamData(
-      client_id_1_, MakeIOVector(data, &iov), 0, true, nullptr);
-
-  EXPECT_EQ(consumed_data.bytes_consumed, 0u);
-  EXPECT_EQ(consumed_data.fin_consumed, true);
-}
-
-TEST_P(QuicHeadersStreamTest, WritevStreamDataSendBlocked) {
-  QuicStreamId id = client_id_1_;
-  QuicStreamOffset offset = 0;
-  struct iovec iov;
-
-  // This test will issue a write that will require fragmenting into
-  // multiple HTTP/2 DATA frames.  It will ensure that only 1 frame
-  // will go out in the case that the underlying session becomes write
-  // blocked.  Buffering is required to preserve framing, but the
-  // amount of buffering is limited to one HTTP/2 data frame.
-  const int kMinDataFrames = 4;
-  const size_t data_len = kSpdyInitialFrameSizeLimit * kMinDataFrames + 1024;
-  // Set headers stream send window large enough for data written below.
-  headers_stream_->flow_controller()->UpdateSendWindowOffset(data_len * 2 * 4);
-  string data(data_len, 'a');
-
-  bool fin = true;
-  // So force the underlying |WritevData| to consume only 1 byte.
-  // In that case, |WritevStreamData| should consume just one
-  // HTTP/2 data frame's worth of data.
-  EXPECT_CALL(session_,
-              WritevData(headers_stream_, kHeadersStreamId, _, _, NO_FIN, _))
-      .WillOnce(
-          WithArgs<2>(Invoke(this, &QuicHeadersStreamTest::SaveIovShort)));
-
-  QuicConsumedData consumed_data = session_.WritevStreamData(
-      id, MakeIOVector(data, &iov), offset, fin, nullptr);
-
-  // bytes_consumed is max HTTP/2 data frame size minus the HTTP/2
-  // data header size.
-  EXPECT_EQ(consumed_data.bytes_consumed,
-            kSpdyInitialFrameSizeLimit - kDataFrameMinimumSize);
-  EXPECT_EQ(consumed_data.fin_consumed, false);
-
-  // If session already blocked, then bytes_consumed should be zero.
-  consumed_data = session_.WritevStreamData(id, MakeIOVector(data, &iov),
-                                            offset, fin, nullptr);
-
-  EXPECT_EQ(consumed_data.bytes_consumed, 0u);
-  EXPECT_EQ(consumed_data.fin_consumed, false);
-}
-
 TEST_P(QuicHeadersStreamTest, AckSentData) {
-  if (!session_.use_stream_notifier()) {
-    return;
-  }
   EXPECT_CALL(session_,
               WritevData(headers_stream_, kHeadersStreamId, _, _, NO_FIN, _))
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeAllData));
+  EXPECT_CALL(*connection_, CloseConnection(QUIC_INTERNAL_ERROR, _, _));
   InSequence s;
   QuicReferenceCountedPointer<MockAckListener> ack_listener1(
       new MockAckListener());
@@ -1063,19 +922,14 @@ TEST_P(QuicHeadersStreamTest, AckSentData) {
   headers_stream_->OnStreamFrameAcked(frame1, QuicTime::Delta::Zero());
   headers_stream_->OnStreamFrameAcked(frame2, QuicTime::Delta::Zero());
   // Unsent data is acked.
-  if (!session_.save_data_before_consumption()) {
-    EXPECT_CALL(*connection_, CloseConnection(QUIC_INTERNAL_ERROR, _, _));
-    EXPECT_QUIC_BUG(
-        headers_stream_->OnStreamFrameAcked(frame3, QuicTime::Delta::Zero()),
-        "Unsent stream data is acked.");
-  }
+  EXPECT_CALL(*ack_listener2, OnPacketAcked(7, _));
+  EXPECT_QUIC_BUG(
+      headers_stream_->OnStreamFrameAcked(frame3, QuicTime::Delta::Zero()),
+      "Unsent stream data is acked.");
 }
 
 TEST_P(QuicHeadersStreamTest, FrameContainsMultipleHeaders) {
   // In this test, a stream frame can contain multiple headers.
-  if (!session_.save_data_before_consumption()) {
-    return;
-  }
   EXPECT_CALL(session_,
               WritevData(headers_stream_, kHeadersStreamId, _, _, NO_FIN, _))
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeAllData));

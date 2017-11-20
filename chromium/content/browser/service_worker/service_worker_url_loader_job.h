@@ -11,6 +11,7 @@
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_response_type.h"
 #include "content/browser/service_worker/service_worker_url_job_wrapper.h"
+#include "content/browser/url_loader_factory_getter.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/url_loader.mojom.h"
@@ -19,7 +20,6 @@
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_stream_handle.mojom.h"
 
 namespace net {
-class IOBuffer;
 struct RedirectInfo;
 }
 
@@ -73,6 +73,7 @@ class CONTENT_EXPORT ServiceWorkerURLLoaderJob : public mojom::URLLoader,
       LoaderCallback loader_callback,
       Delegate* delegate,
       const ResourceRequest& resource_request,
+      scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter,
       base::WeakPtr<storage::BlobStorageContext> blob_storage_context);
 
   ~ServiceWorkerURLLoaderJob() override;
@@ -89,8 +90,11 @@ class CONTENT_EXPORT ServiceWorkerURLLoaderJob : public mojom::URLLoader,
   bool WasCanceled() const;
 
  private:
+  class StreamWaiter;
+
   // For FORWARD_TO_SERVICE_WORKER case.
   void StartRequest();
+  scoped_refptr<storage::BlobHandle> CreateRequestBodyBlob();
   void DidPrepareFetchEvent(scoped_refptr<ServiceWorkerVersion> version);
   void DidDispatchFetchEvent(
       ServiceWorkerStatusCode status,
@@ -100,38 +104,38 @@ class CONTENT_EXPORT ServiceWorkerURLLoaderJob : public mojom::URLLoader,
       storage::mojom::BlobPtr body_as_blob,
       const scoped_refptr<ServiceWorkerVersion>& version);
 
+  // Used as the StartLoaderCallback passed to |loader_callback_| when the
+  // service worker provided a response. Returns the response to |client|.
   // |body_as_blob| is kept around until BlobDataHandle is created from
   // blob_uuid just to make sure the blob is kept alive.
   void StartResponse(const ServiceWorkerResponse& response,
+                     scoped_refptr<ServiceWorkerVersion> version,
                      blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
                      storage::mojom::BlobPtr body_as_blob,
                      mojom::URLLoaderRequest request,
                      mojom::URLLoaderClientPtr client);
-  void AfterRead(scoped_refptr<net::IOBuffer> buffer, int bytes);
 
-  std::unique_ptr<ServiceWorkerFetchRequest> CreateFetchRequest(
-      const ResourceRequest& request);
+  // Used as the StartLoaderCallback passed to |loader_callback_| on error.
+  // Returns a network error to |client|.
+  void StartErrorResponse(mojom::URLLoaderRequest request,
+                          mojom::URLLoaderClientPtr client);
 
-  // Populates |response_info_| (except for headers) with given |response|.
-  void SaveResponseInfo(const ServiceWorkerResponse& response);
-  // Generates and populates |response.headers|.
-  void SaveResponseHeaders(int status_code,
-                           const std::string& status_text,
-                           const ServiceWorkerHeaderMap& headers);
   // Calls url_loader_client_->OnReceiveResopnse() with |response_head_|.
-  // Expected to be called afer saving response info/headers.
   void CommitResponseHeaders();
   // Calls url_loader_client_->OnComplete(). Expected to be called after
   // CommitResponseHeaders (i.e. status_ == kSentHeader).
   void CommitCompleted(int error_code);
-  // Calls CommitResponseHeaders() if we haven't sent headers yet,
-  // and CommitCompleted() with error code.
-  void DeliverErrorResponse();
+
+  // Calls |loader_callback_| with StartErrorResponse callback. Must not be
+  // called once either StartResponse or StartErrorResponse is called.
+  void ReturnNetworkError();
 
   // mojom::URLLoader:
   void FollowRedirect() override;
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override;
+  void PauseReadingBodyFromNet() override;
+  void ResumeReadingBodyFromNet() override;
 
   // mojom::URLLoaderClient for Blob response reading (used only when
   // the SW response had valid blob UUID):
@@ -155,8 +159,10 @@ class CONTENT_EXPORT ServiceWorkerURLLoaderJob : public mojom::URLLoader,
 
   Delegate* delegate_;
   ResourceRequest resource_request_;
+  scoped_refptr<URLLoaderFactoryGetter> url_loader_factory_getter_;
   base::WeakPtr<storage::BlobStorageContext> blob_storage_context_;
   std::unique_ptr<ServiceWorkerFetchDispatcher> fetch_dispatcher_;
+  std::unique_ptr<StreamWaiter> stream_waiter_;
 
   bool did_navigation_preload_ = false;
   ResourceResponseHead response_head_;

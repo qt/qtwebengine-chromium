@@ -23,9 +23,9 @@
 #include "base/trace_event/trace_event_argument.h"
 #include "components/exo/layer_tree_frame_sink_holder.h"
 #include "components/viz/common/gpu/context_provider.h"
-#include "components/viz/common/quads/single_release_callback.h"
 #include "components/viz/common/quads/texture_mailbox.h"
 #include "components/viz/common/resources/resource_format.h"
+#include "components/viz/common/resources/single_release_callback.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "ui/aura/env.h"
@@ -446,7 +446,7 @@ bool Buffer::ProduceTransferableResource(
   // if one doesn't already exist. The contents of this buffer are copied to
   // |texture| using a call to CopyTexImage.
   if (!contents_texture_) {
-    contents_texture_ = base::MakeUnique<Texture>(
+    contents_texture_ = std::make_unique<Texture>(
         context_factory, context_provider.get(), gpu_memory_buffer_.get(),
         texture_target_, query_type_);
   }
@@ -483,7 +483,7 @@ bool Buffer::ProduceTransferableResource(
   // Create a mailbox texture that we copy the buffer contents to.
   if (!texture_) {
     texture_ =
-        base::MakeUnique<Texture>(context_factory, context_provider.get());
+        std::make_unique<Texture>(context_factory, context_provider.get());
   }
   Texture* texture = texture_.get();
 

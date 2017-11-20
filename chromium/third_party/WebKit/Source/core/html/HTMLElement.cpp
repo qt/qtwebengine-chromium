@@ -29,11 +29,9 @@
 #include "bindings/core/v8/ScriptEventListener.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
-#include "core/HTMLNames.h"
-#include "core/MathMLNames.h"
-#include "core/XMLNames.h"
 #include "core/css/CSSColorValue.h"
 #include "core/css/CSSMarkup.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/ElementShadow.h"
@@ -43,7 +41,6 @@
 #include "core/dom/NodeComputedStyle.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/ShadowRoot.h"
-#include "core/dom/StyleChangeReason.h"
 #include "core/dom/Text.h"
 #include "core/dom/events/EventListener.h"
 #include "core/editing/EditingUtilities.h"
@@ -55,15 +52,18 @@
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLDimension.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTemplateElement.h"
+#include "core/html/forms/HTMLFormElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html_names.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
+#include "core/mathml_names.h"
 #include "core/page/SpatialNavigation.h"
 #include "core/svg/SVGSVGElement.h"
+#include "core/xml_names.h"
 #include "platform/Language.h"
 #include "platform/text/BidiResolver.h"
 #include "platform/text/BidiTextRun.h"
@@ -114,7 +114,7 @@ bool IsEditable(const Node& node) {
     return false;
   if (node.IsHTMLElement())
     return true;
-  if (isSVGSVGElement(node))
+  if (IsSVGSVGElement(node))
     return true;
   if (node.IsElementNode() && ToElement(node).HasTagName(MathMLNames::mathTag))
     return true;
@@ -202,9 +202,9 @@ void HTMLElement::MapLanguageAttributeToLocale(const AtomicString& value,
     // FIXME: Remove the following UseCounter code when we collect enough
     // data.
     UseCounter::Count(GetDocument(), WebFeature::kLangAttribute);
-    if (isHTMLHtmlElement(*this))
+    if (IsHTMLHtmlElement(*this))
       UseCounter::Count(GetDocument(), WebFeature::kLangAttributeOnHTML);
-    else if (isHTMLBodyElement(*this))
+    else if (IsHTMLBodyElement(*this))
       UseCounter::Count(GetDocument(), WebFeature::kLangAttributeOnBody);
     String html_language = value.GetString();
     size_t first_separator = html_language.find('-');
@@ -301,7 +301,7 @@ void HTMLElement::CollectStyleForPresentationAttribute(
       if (IsValidDirAttribute(value))
         AddPropertyToPresentationAttributeStyle(style, CSSPropertyDirection,
                                                 value);
-      else if (isHTMLBodyElement(*this))
+      else if (IsHTMLBodyElement(*this))
         AddPropertyToPresentationAttributeStyle(style, CSSPropertyDirection,
                                                 "ltr");
       if (!HasTagName(bdiTag) && !HasTagName(bdoTag) && !HasTagName(outputTag))
@@ -896,7 +896,7 @@ HTMLFormElement* HTMLElement::FindFormAncestor() const {
 }
 
 static inline bool ElementAffectsDirectionality(const Node* node) {
-  return node->IsHTMLElement() && (isHTMLBDIElement(ToHTMLElement(*node)) ||
+  return node->IsHTMLElement() && (IsHTMLBDIElement(ToHTMLElement(*node)) ||
                                    ToHTMLElement(*node).hasAttribute(dirAttr));
 }
 
@@ -909,7 +909,7 @@ bool HTMLElement::HasDirectionAuto() const {
   // <bdi> defaults to dir="auto"
   // https://html.spec.whatwg.org/multipage/semantics.html#the-bdi-element
   const AtomicString& direction = FastGetAttribute(dirAttr);
-  return (isHTMLBDIElement(*this) && direction == g_null_atom) ||
+  return (IsHTMLBDIElement(*this) && direction == g_null_atom) ||
          DeprecatedEqualIgnoringCase(direction, "auto");
 }
 
@@ -923,15 +923,16 @@ TextDirection HTMLElement::DirectionalityIfhasDirAutoAttribute(
 
 TextDirection HTMLElement::Directionality(
     Node** strong_directionality_text_node) const {
-  if (isHTMLInputElement(*this)) {
-    HTMLInputElement* input_element =
-        toHTMLInputElement(const_cast<HTMLElement*>(this));
+  if (auto* input_element = ToHTMLInputElementOrNull(*this)) {
     bool has_strong_directionality;
     TextDirection text_direction = DetermineDirectionality(
         input_element->value(), &has_strong_directionality);
-    if (strong_directionality_text_node)
+    if (strong_directionality_text_node) {
       *strong_directionality_text_node =
-          has_strong_directionality ? input_element : 0;
+          has_strong_directionality
+              ? const_cast<HTMLInputElement*>(input_element)
+              : 0;
+    }
     return text_direction;
   }
 
@@ -939,7 +940,7 @@ TextDirection HTMLElement::Directionality(
   while (node) {
     // Skip bdi, script, style and text form controls.
     if (DeprecatedEqualIgnoringCase(node->nodeName(), "bdi") ||
-        isHTMLScriptElement(*node) || isHTMLStyleElement(*node) ||
+        IsHTMLScriptElement(*node) || IsHTMLStyleElement(*node) ||
         (node->IsElementNode() && ToElement(node)->IsTextControl()) ||
         (node->IsElementNode() &&
          ToElement(node)->ShadowPseudoId() == "-webkit-input-placeholder")) {
@@ -1033,10 +1034,8 @@ Node::InsertionNotificationRequest HTMLElement::InsertedInto(
   // updated.
   Element::InsertedInto(insertion_point);
 
-  if (RuntimeEnabledFeatures::HideNonceContentAttributeEnabled() &&
-      FastHasAttribute(nonceAttr) &&
-      GetDocument().GetContentSecurityPolicy()->HasHeaderDeliveredPolicy() &&
-      InActiveDocument()) {
+  if (GetDocument().GetContentSecurityPolicy()->HasHeaderDeliveredPolicy() &&
+      InActiveDocument() && FastHasAttribute(nonceAttr)) {
     setAttribute(nonceAttr, g_empty_atom);
   }
 
@@ -1341,6 +1340,6 @@ void HTMLElement::OnXMLLangAttrChanged(
 void dumpInnerHTML(blink::HTMLElement*);
 
 void dumpInnerHTML(blink::HTMLElement* element) {
-  printf("%s\n", element->innerHTML().Ascii().data());
+  printf("%s\n", element->InnerHTMLAsString().Ascii().data());
 }
 #endif

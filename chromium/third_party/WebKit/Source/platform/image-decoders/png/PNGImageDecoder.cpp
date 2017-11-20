@@ -38,6 +38,8 @@
 
 #include "platform/image-decoders/png/PNGImageDecoder.h"
 
+#include <memory>
+
 namespace blink {
 
 PNGImageDecoder::PNGImageDecoder(AlphaOption alpha_option,
@@ -99,7 +101,7 @@ void PNGImageDecoder::Parse(ParseQuery query) {
     return;
 
   if (!reader_)
-    reader_ = WTF::MakeUnique<PNGImageReader>(this, offset_);
+    reader_ = std::make_unique<PNGImageReader>(this, offset_);
 
   if (!reader_->Parse(*data_, query))
     SetFailed();
@@ -132,7 +134,7 @@ void PNGImageDecoder::InitializeNewFrame(size_t index) {
   DCHECK(IntRect(IntPoint(), Size()).Contains(frame_info.frame_rect));
   buffer.SetOriginalFrameRect(frame_info.frame_rect);
 
-  buffer.SetDuration(frame_info.duration);
+  buffer.SetDuration(TimeDelta::FromMilliseconds(frame_info.duration));
   buffer.SetDisposalMethod(frame_info.disposal_method);
   buffer.SetAlphaBlendSource(frame_info.alpha_blend);
 
@@ -482,10 +484,10 @@ bool PNGImageDecoder::FrameIsReceivedAtIndex(size_t index) const {
   return reader_->FrameIsReceivedAtIndex(index);
 }
 
-float PNGImageDecoder::FrameDurationAtIndex(size_t index) const {
+TimeDelta PNGImageDecoder::FrameDurationAtIndex(size_t index) const {
   if (index < frame_buffer_cache_.size())
     return frame_buffer_cache_[index].Duration();
-  return 0;
+  return TimeDelta();
 }
 
 }  // namespace blink

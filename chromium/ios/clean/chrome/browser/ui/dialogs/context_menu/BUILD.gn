@@ -24,6 +24,7 @@ source_set("context_menu") {
     "//ios/clean/chrome/browser/ui/commands",
     "//ios/clean/chrome/browser/ui/dialogs:dialog_coordinator_support",
     "//ios/clean/chrome/browser/ui/dialogs:dialogs_ui",
+    "//ios/clean/chrome/browser/ui/dialogs/unavailable_feature_dialogs",
     "//ios/clean/chrome/browser/ui/overlays",
     "//ios/web",
     "//ui/base",

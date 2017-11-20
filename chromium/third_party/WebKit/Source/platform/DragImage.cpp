@@ -27,7 +27,6 @@
 
 #include <algorithm>
 #include <memory>
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
@@ -41,6 +40,7 @@
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/StaticBitmapImage.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/text/BidiTextRun.h"
 #include "platform/text/StringTruncator.h"
 #include "platform/text/TextRun.h"
@@ -115,15 +115,13 @@ PaintImage DragImage::ResizeAndOrientImage(
 
   SkCanvas* canvas = surface->getCanvas();
   std::unique_ptr<SkCanvas> color_transform_canvas;
-  if (RuntimeEnabledFeatures::ColorCorrectRenderingEnabled()) {
-    color_transform_canvas =
-        SkCreateColorSpaceXformCanvas(canvas, SkColorSpace::MakeSRGB());
-    canvas = color_transform_canvas.get();
-  }
+  color_transform_canvas =
+      SkCreateColorSpaceXformCanvas(canvas, SkColorSpace::MakeSRGB());
+  canvas = color_transform_canvas.get();
   canvas->concat(AffineTransformToSkMatrix(transform));
   canvas->drawImage(image.GetSkImage(), 0, 0, &paint);
 
-  return PaintImageBuilder(std::move(image))
+  return PaintImageBuilder::WithProperties(std::move(image))
       .set_image(surface->makeImageSnapshot())
       .TakePaintImage();
 }
@@ -312,7 +310,7 @@ std::unique_ptr<DragImage> DragImage::Create(const KURL& url,
                           device_scale_factor, text_paint);
 
   RefPtr<StaticBitmapImage> image = buffer->NewImageSnapshot();
-  return DragImage::Create(image.Get(), kDoNotRespectImageOrientation,
+  return DragImage::Create(image.get(), kDoNotRespectImageOrientation,
                            device_scale_factor);
 }
 

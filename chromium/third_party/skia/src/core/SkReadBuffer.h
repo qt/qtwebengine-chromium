@@ -165,11 +165,11 @@ public:
 
     sk_sp<SkData> readByteArrayAsData() {
         size_t len = this->getArrayCount();
-        if (!this->validateAvailable(len)) {
+        void* buffer = sk_malloc_throw(len);
+        if (!this->readByteArray(buffer, len)) {
+            sk_free(buffer);
             return SkData::MakeEmpty();
         }
-        void* buffer = sk_malloc_throw(len);
-        this->readByteArray(buffer, len);
         return SkData::MakeFromMalloc(buffer, len);
     }
 
@@ -215,7 +215,6 @@ public:
     // Default impelementations don't check anything.
     virtual bool validate(bool isValid) { return isValid; }
     virtual bool isValid() const { return true; }
-    virtual bool validateAvailable(size_t size) { return true; }
     bool validateIndex(int index, int count) {
         return this->validate(index >= 0 && index < count);
     }
@@ -224,7 +223,7 @@ public:
     void setInflator(SkInflator* inf) { fInflator = inf; }
 
 //    sk_sp<SkImage> inflateImage();
-    
+
 protected:
     /**
      *  Allows subclass to check if we are using factories for expansion

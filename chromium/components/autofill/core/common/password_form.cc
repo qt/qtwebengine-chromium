@@ -44,6 +44,8 @@ void PasswordFormToJSON(const PasswordForm& form,
   target->SetString(
       "other_possible_usernames",
       OtherPossibleUsernamesToString(form.other_possible_usernames));
+  target->SetString("all_possible_passwords",
+                    AllPossiblePasswordsToString(form.all_possible_passwords));
   target->SetBoolean("blacklisted", form.blacklisted_by_user);
   target->SetBoolean("preferred", form.preferred);
   target->SetDouble("date_created", form.date_created.ToDoubleT());
@@ -78,6 +80,7 @@ void PasswordFormToJSON(const PasswordForm& form,
 PasswordForm::PasswordForm()
     : scheme(SCHEME_HTML),
       username_marked_by_site(false),
+      form_has_autofilled_value(false),
       password_value_is_default(false),
       new_password_value_is_default(false),
       new_password_marked_by_site(false),
@@ -96,7 +99,13 @@ PasswordForm::PasswordForm()
 
 PasswordForm::PasswordForm(const PasswordForm& other) = default;
 
+PasswordForm::PasswordForm(PasswordForm&& other) = default;
+
 PasswordForm::~PasswordForm() = default;
+
+PasswordForm& PasswordForm::operator=(const PasswordForm& form) = default;
+
+PasswordForm& PasswordForm::operator=(PasswordForm&& form) = default;
 
 bool PasswordForm::IsPossibleChangePasswordForm() const {
   return !new_password_element.empty() &&
@@ -115,6 +124,8 @@ bool PasswordForm::operator==(const PasswordForm& form) const {
          username_marked_by_site == form.username_marked_by_site &&
          username_value == form.username_value &&
          other_possible_usernames == form.other_possible_usernames &&
+         all_possible_passwords == form.all_possible_passwords &&
+         form_has_autofilled_value == form.form_has_autofilled_value &&
          password_element == form.password_element &&
          password_value == form.password_value &&
          new_password_element == form.new_password_element &&
@@ -185,6 +196,11 @@ base::string16 OtherPossibleUsernamesToString(
                    return p.first + base::ASCIIToUTF16("+") + p.second;
                  });
   return base::JoinString(pairs, base::ASCIIToUTF16(", "));
+}
+
+base::string16 AllPossiblePasswordsToString(
+    const std::vector<base::string16>& possible_passwords) {
+  return base::JoinString(possible_passwords, base::ASCIIToUTF16(", "));
 }
 
 std::ostream& operator<<(std::ostream& os, PasswordForm::Layout layout) {

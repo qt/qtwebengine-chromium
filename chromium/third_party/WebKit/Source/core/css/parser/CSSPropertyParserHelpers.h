@@ -6,12 +6,13 @@
 #define CSSPropertyParserHelpers_h
 
 #include "core/css/CSSCustomIdentValue.h"
+#include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/parser/CSSParserMode.h"
 #include "core/css/parser/CSSParserTokenRange.h"
-#include "core/frame/UseCounter.h"
+#include "core/frame/WebFeatureForward.h"
 #include "platform/Length.h"  // For ValueRange
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Optional.h"
@@ -192,6 +193,8 @@ CSSValueList* ConsumeCommaSeparatedList(Func callback,
 }
 
 CSSValue* ConsumeTransformList(CSSParserTokenRange&, const CSSParserContext&);
+CSSValue* ConsumeFilterFunctionList(CSSParserTokenRange&,
+                                    const CSSParserContext&);
 
 }  // namespace CSSPropertyParserHelpers
 

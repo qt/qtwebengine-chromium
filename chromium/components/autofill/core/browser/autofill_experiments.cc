@@ -11,7 +11,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/suggestion.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
@@ -25,16 +24,26 @@
 
 namespace autofill {
 
+const base::Feature kAutofillAlwaysFillAddresses{
+    "AlwaysFillAddresses", base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kAutofillCreateDataForTest{
+    "AutofillCreateDataForTest", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreditCardAssist{
     "AutofillCreditCardAssist", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillScanCardholderName{
     "AutofillScanCardholderName", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreditCardBankNameDisplay{
     "AutofillCreditCardBankNameDisplay", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAutofillCreditCardAblationExperiment{
+    "AutofillCreditCardAblationExperiment", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreditCardPopupLayout{
     "AutofillCreditCardPopupLayout", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillCreditCardLastUsedDateDisplay{
     "AutofillCreditCardLastUsedDateDisplay", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAutofillDeleteDisusedAddresses{
+    "AutofillDeleteDisusedAddresses", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAutofillDeleteDisusedCreditCards{
+    "AutofillDeleteDisusedCreditCards", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillOfferLocalSaveIfServerCardManuallyEntered{
     "AutofillOfferLocalSaveIfServerCardManuallyEntered",
     base::FEATURE_DISABLED_BY_DEFAULT};
@@ -43,6 +52,10 @@ const base::Feature kAutofillRationalizeFieldTypePredictions{
     base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kAutofillSuppressDisusedAddresses{
     "AutofillSuppressDisusedAddresses", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAutofillSuppressDisusedCreditCards{
+    "AutofillSuppressDisusedCreditCards", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAutofillUpstreamAllowAllEmailDomains{
+    "AutofillUpstreamAllowAllEmailDomains", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillUpstreamRequestCvcIfMissing{
     "AutofillUpstreamRequestCvcIfMissing", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillUpstreamShowGoogleLogo{
@@ -51,9 +64,6 @@ const base::Feature kAutofillUpstreamShowNewUi{
     "AutofillUpstreamShowNewUi", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kAutofillUpstreamUseAutofillProfileComparator{
     "AutofillUpstreamUseAutofillProfileComparator",
-    base::FEATURE_ENABLED_BY_DEFAULT};
-const base::Feature kAutofillUpstreamUseNotRecentlyUsedAutofillProfile{
-    "AutofillUpstreamUseNotRecentlyUsedAutofillProfile",
     base::FEATURE_DISABLED_BY_DEFAULT};
 const char kCreditCardSigninPromoImpressionLimitParamKey[] = "impression_limit";
 const char kAutofillCreditCardPopupBackgroundColorKey[] = "background_color";
@@ -67,8 +77,6 @@ const char kAutofillCreditCardPopupIsIconAtStartKey[] =
 const char kAutofillPopupMarginKey[] = "margin";
 const char kAutofillCreditCardLastUsedDateShowExpirationDateKey[] =
     "show_expiration_date";
-const char kAutofillUpstreamMaxMinutesSinceAutofillProfileUseKey[] =
-    "max_minutes_since_autofill_profile_use";
 
 #if defined(OS_MACOSX)
 const base::Feature kCreditCardAutofillTouchBar{
@@ -238,8 +246,12 @@ bool IsCreditCardUploadEnabled(const PrefService* pref_service,
   if (user_email.empty())
     return false;
   std::string domain = gaia::ExtractDomainName(user_email);
-  if (!(domain == "googlemail.com" || domain == "gmail.com" ||
-        domain == "google.com")) {
+  // If the "allow all email domains" flag is off, restrict credit card upload
+  // only to Google Accounts with @googlemail, @gmail, @google, or @chromium
+  // domains.
+  if (!base::FeatureList::IsEnabled(kAutofillUpstreamAllowAllEmailDomains) &&
+      !(domain == "googlemail.com" || domain == "gmail.com" ||
+        domain == "google.com" || domain == "chromium.org")) {
     return false;
   }
 
@@ -284,16 +296,6 @@ bool IsAutofillUpstreamShowNewUiExperimentEnabled() {
 #else
   return base::FeatureList::IsEnabled(kAutofillUpstreamShowNewUi);
 #endif
-}
-
-base::TimeDelta GetMaxTimeSinceAutofillProfileUseForCardUpload() {
-  int value;
-  const std::string param_value = variations::GetVariationParamValueByFeature(
-      kAutofillUpstreamUseNotRecentlyUsedAutofillProfile,
-      kAutofillUpstreamMaxMinutesSinceAutofillProfileUseKey);
-  if (!param_value.empty() && base::StringToInt(param_value, &value))
-    return base::TimeDelta::FromMinutes(value);
-  return base::TimeDelta();
 }
 
 #if defined(OS_MACOSX)

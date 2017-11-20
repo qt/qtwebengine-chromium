@@ -21,6 +21,7 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "cc/blink/web_layer_impl.h"
+#include "cc/test/test_context_provider.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/test_helpers.h"
@@ -240,6 +241,7 @@ class WebMediaPlayerImplTest : public testing::Test {
                                                   &web_frame_client_,
                                                   nullptr,
                                                   nullptr)),
+        context_provider_(cc::TestContextProvider::Create()),
         audio_parameters_(TestAudioParameters::Normal()) {
     media_thread_.StartAndWaitForTesting();
   }
@@ -266,15 +268,16 @@ class WebMediaPlayerImplTest : public testing::Test {
             std::move(media_log), WebMediaPlayerParams::DeferLoadCB(),
             scoped_refptr<SwitchableAudioRendererSink>(),
             media_thread_.task_runner(), message_loop_.task_runner(),
-            message_loop_.task_runner(), WebMediaPlayerParams::Context3DCB(),
-            base::Bind(&OnAdjustAllocatedMemory), nullptr, nullptr,
-            RequestRoutingTokenCallback(), nullptr,
+            message_loop_.task_runner(), base::Bind(&OnAdjustAllocatedMemory),
+            nullptr, nullptr, RequestRoutingTokenCallback(), nullptr,
             kMaxKeyframeDistanceToDisableBackgroundVideo,
             kMaxKeyframeDistanceToDisableBackgroundVideoMSE, false, false,
-            provider_.get(),
-            base::Bind(&CreateCapabilitiesRecorder),
+            provider_.get(), base::Bind(&CreateCapabilitiesRecorder),
             base::Bind(&WebMediaPlayerImplTest::CreateMockSurfaceLayerBridge,
-                       base::Unretained(this))));
+                       base::Unretained(this)),
+            base::BindRepeating(&WebMediaPlayerImplTest::ProvideContext,
+                                base::Unretained(this)),
+            cc::TestContextProvider::Create()));
 }
 
   ~WebMediaPlayerImplTest() override {
@@ -288,6 +291,13 @@ class WebMediaPlayerImplTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
 
     web_view_->Close();
+  }
+
+  void ProvideContext(
+      base::OnceCallback<void(viz::ContextProvider*)> callback) {
+    media_thread_.task_runner()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(callback),
+                                  base::Unretained(context_provider_.get())));
   }
 
  protected:
@@ -444,6 +454,8 @@ class WebMediaPlayerImplTest : public testing::Test {
   blink::WebFrameClient web_frame_client_;
   blink::WebView* web_view_;
   blink::WebLocalFrame* web_local_frame_;
+
+  scoped_refptr<cc::TestContextProvider> context_provider_;
 
   std::unique_ptr<media::UrlIndex> url_index_;
 
@@ -849,9 +861,9 @@ TEST_F(WebMediaPlayerImplTest, NaturalSizeChange_Rotated) {
   InitializeWebMediaPlayerImpl();
   PipelineMetadata metadata;
   metadata.has_video = true;
-  metadata.video_decoder_config = TestVideoConfig::Normal();
+  metadata.video_decoder_config =
+      TestVideoConfig::NormalRotated(VIDEO_ROTATION_90);
   metadata.natural_size = gfx::Size(320, 240);
-  metadata.video_rotation = VIDEO_ROTATION_90;
 
   OnMetadata(metadata);
   ASSERT_EQ(blink::WebSize(320, 240), wmpi_->NaturalSize());
@@ -1101,17 +1113,12 @@ TEST_P(WebMediaPlayerImplBackgroundBehaviorTest, VideoOnly) {
   // Never disable video track for a video only stream.
   EXPECT_FALSE(ShouldDisableVideoWhenHidden());
 
-  // There's no optimization criteria for video only on Android.
-  bool matches_requirements =
-      IsAndroid() ||
-      ((GetDurationSec() < GetMaxKeyframeDistanceSec()) ||
-       (GetAverageKeyframeDistanceSec() < GetMaxKeyframeDistanceSec()));
-  EXPECT_EQ(matches_requirements, IsBackgroundOptimizationCandidate());
+  // Video only is always optimized.
+  EXPECT_TRUE(IsBackgroundOptimizationCandidate());
 
   // Video is always paused when suspension is on and only if matches the
   // optimization criteria if the optimization is on.
-  bool should_pause =
-      IsMediaSuspendOn() || (IsBackgroundPauseOn() && matches_requirements);
+  bool should_pause = IsMediaSuspendOn() || IsBackgroundPauseOn();
   EXPECT_EQ(should_pause, ShouldPauseVideoWhenHidden());
 }
 

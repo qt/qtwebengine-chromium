@@ -10,33 +10,33 @@
 
 #include <memory>
 
-#include "webrtc/common_types.h"
-#include "webrtc/common_video/include/video_bitrate_allocator.h"
-#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/app.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/bye.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/compound_packet.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/extended_jitter_report.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/fir.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/nack.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/pli.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/rapid_resync_request.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/remb.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sdes.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/tmmbr.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_receiver.h"
-#include "webrtc/modules/rtp_rtcp/source/time_util.h"
-#include "webrtc/rtc_base/array_view.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/random.h"
-#include "webrtc/system_wrappers/include/ntp_time.h"
-#include "webrtc/test/gmock.h"
-#include "webrtc/test/gtest.h"
+#include "api/array_view.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "common_video/include/video_bitrate_allocator.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/rtcp_packet.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/app.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/compound_packet.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/extended_jitter_report.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/fir.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/nack.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/pli.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/rapid_resync_request.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/remb.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/sdes.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/tmmbr.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
+#include "modules/rtp_rtcp/source/rtcp_receiver.h"
+#include "modules/rtp_rtcp/source/time_util.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/random.h"
+#include "system_wrappers/include/ntp_time.h"
+#include "test/gmock.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 namespace {
@@ -274,7 +274,6 @@ TEST_F(RtcpReceiverTest, InjectRrPacket) {
               OnReceivedRtcpReceiverReport(IsEmpty(), _, now));
   InjectRtcpPacket(rr);
 
-  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReceiverReport());
   std::vector<RTCPReportBlock> report_blocks;
   rtcp_receiver_.StatisticsReceived(&report_blocks);
   EXPECT_TRUE(report_blocks.empty());
@@ -293,7 +292,7 @@ TEST_F(RtcpReceiverTest, InjectRrPacketWithReportBlockNotToUsIgnored) {
               OnReceivedRtcpReceiverReport(IsEmpty(), _, now));
   InjectRtcpPacket(rr);
 
-  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReceiverReport());
+  EXPECT_EQ(0, rtcp_receiver_.LastReceivedReportBlockMs());
   std::vector<RTCPReportBlock> received_blocks;
   rtcp_receiver_.StatisticsReceived(&received_blocks);
   EXPECT_TRUE(received_blocks.empty());
@@ -313,7 +312,27 @@ TEST_F(RtcpReceiverTest, InjectRrPacketWithOneReportBlock) {
               OnReceivedRtcpReceiverReport(SizeIs(1), _, now));
   InjectRtcpPacket(rr);
 
-  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReceiverReport());
+  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReportBlockMs());
+  std::vector<RTCPReportBlock> received_blocks;
+  rtcp_receiver_.StatisticsReceived(&received_blocks);
+  EXPECT_EQ(1u, received_blocks.size());
+}
+
+TEST_F(RtcpReceiverTest, InjectSrPacketWithOneReportBlock) {
+  int64_t now = system_clock_.TimeInMilliseconds();
+
+  rtcp::ReportBlock rb;
+  rb.SetMediaSsrc(kReceiverMainSsrc);
+  rtcp::SenderReport sr;
+  sr.SetSenderSsrc(kSenderSsrc);
+  sr.AddReportBlock(rb);
+
+  EXPECT_CALL(rtp_rtcp_impl_, OnReceivedRtcpReportBlocks(SizeIs(1)));
+  EXPECT_CALL(bandwidth_observer_,
+              OnReceivedRtcpReceiverReport(SizeIs(1), _, now));
+  InjectRtcpPacket(sr);
+
+  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReportBlockMs());
   std::vector<RTCPReportBlock> received_blocks;
   rtcp_receiver_.StatisticsReceived(&received_blocks);
   EXPECT_EQ(1u, received_blocks.size());
@@ -345,7 +364,7 @@ TEST_F(RtcpReceiverTest, InjectRrPacketWithTwoReportBlocks) {
               OnReceivedRtcpReceiverReport(SizeIs(2), _, now));
   InjectRtcpPacket(rr1);
 
-  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReceiverReport());
+  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReportBlockMs());
   std::vector<RTCPReportBlock> received_blocks;
   rtcp_receiver_.StatisticsReceived(&received_blocks);
   EXPECT_THAT(received_blocks,
@@ -419,7 +438,7 @@ TEST_F(RtcpReceiverTest, InjectRrPacketsFromTwoRemoteSsrcs) {
               OnReceivedRtcpReceiverReport(SizeIs(1), _, now));
   InjectRtcpPacket(rr1);
 
-  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReceiverReport());
+  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReportBlockMs());
 
   std::vector<RTCPReportBlock> received_blocks;
   rtcp_receiver_.StatisticsReceived(&received_blocks);
@@ -486,7 +505,7 @@ TEST_F(RtcpReceiverTest, GetRtt) {
   EXPECT_CALL(bandwidth_observer_, OnReceivedRtcpReceiverReport(_, _, _));
   InjectRtcpPacket(rr);
 
-  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReceiverReport());
+  EXPECT_EQ(now, rtcp_receiver_.LastReceivedReportBlockMs());
   EXPECT_EQ(
       0, rtcp_receiver_.RTT(kSenderSsrc, nullptr, nullptr, nullptr, nullptr));
 }

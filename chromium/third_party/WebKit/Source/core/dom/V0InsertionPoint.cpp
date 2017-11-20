@@ -30,14 +30,14 @@
 
 #include "core/dom/V0InsertionPoint.h"
 
-#include "core/HTMLNames.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/dom/ElementShadow.h"
 #include "core/dom/ElementShadowV0.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/QualifiedName.h"
 #include "core/dom/StaticNodeList.h"
-#include "core/dom/StyleChangeReason.h"
 #include "core/dom/WhitespaceAttacher.h"
+#include "core/html_names.h"
 
 namespace blink {
 
@@ -171,25 +171,25 @@ bool V0InsertionPoint::IsActive() const {
     return false;
   ShadowRoot* shadow_root = ContainingShadowRoot();
   DCHECK(shadow_root);
-  if (!isHTMLShadowElement(*this) ||
+  if (!IsHTMLShadowElement(*this) ||
       shadow_root->DescendantShadowElementCount() <= 1)
     return true;
 
   // Slow path only when there are more than one shadow elements in a shadow
   // tree. That should be a rare case.
   for (const auto& point : shadow_root->DescendantInsertionPoints()) {
-    if (isHTMLShadowElement(*point))
+    if (IsHTMLShadowElement(*point))
       return point == this;
   }
   return true;
 }
 
 bool V0InsertionPoint::IsShadowInsertionPoint() const {
-  return isHTMLShadowElement(*this) && IsActive();
+  return IsHTMLShadowElement(*this) && IsActive();
 }
 
 bool V0InsertionPoint::IsContentInsertionPoint() const {
-  return isHTMLContentElement(*this) && IsActive();
+  return IsHTMLContentElement(*this) && IsActive();
 }
 
 StaticNodeList* V0InsertionPoint::getDistributedNodes() {

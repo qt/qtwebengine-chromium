@@ -2,12 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define _USE_MATH_DEFINES // For VC++ to get M_PI. This has to be first.
-
 #include "ui/views/view.h"
 
 #include <algorithm>
-#include <cmath>
 #include <memory>
 #include <utility>
 
@@ -40,6 +37,7 @@
 #include "ui/events/base_event_utils.h"
 #include "ui/events/event_target_iterator.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/angle_conversions.h"
 #include "ui/gfx/geometry/point3_f.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/interpolated_transform.h"
@@ -1710,9 +1708,10 @@ void View::OnDelegatedFrameDamage(
     const gfx::Rect& damage_rect_in_dip) {
 }
 
-void View::OnDeviceScaleFactorChanged(float device_scale_factor) {
+void View::OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                      float new_device_scale_factor) {
   snap_layer_to_pixel_boundary_ =
-      (device_scale_factor - std::floor(device_scale_factor)) != 0.0f;
+      (new_device_scale_factor - std::floor(new_device_scale_factor)) != 0.0f;
 
   if (!layer())
     return;
@@ -1910,7 +1909,7 @@ std::string View::DoPrintViewGraph(bool first, View* view_with_children) {
 
     base::snprintf(bounds_buffer, arraysize(bounds_buffer),
                    "\\n rotation: %3.2f",
-                   std::acos(decomp.quaternion.w()) * 360.0 / M_PI);
+                   gfx::RadToDeg(std::acos(decomp.quaternion.w()) * 2));
     result.append(bounds_buffer);
 
     base::snprintf(bounds_buffer,
@@ -2690,17 +2689,21 @@ void View::PropagateThemeChanged() {
   OnThemeChanged();
 }
 
-void View::PropagateDeviceScaleFactorChanged(float device_scale_factor) {
+void View::PropagateDeviceScaleFactorChanged(float old_device_scale_factor,
+                                             float new_device_scale_factor) {
   {
     internal::ScopedChildrenLock lock(this);
-    for (auto* child : base::Reversed(children_))
-      child->PropagateDeviceScaleFactorChanged(device_scale_factor);
+    for (auto* child : base::Reversed(children_)) {
+      child->PropagateDeviceScaleFactorChanged(old_device_scale_factor,
+                                               new_device_scale_factor);
+    }
   }
 
   // If the view is drawing to the layer, OnDeviceScaleFactorChanged() is called
   // through LayerDelegate callback.
   if (!layer())
-    OnDeviceScaleFactorChanged(device_scale_factor);
+    OnDeviceScaleFactorChanged(old_device_scale_factor,
+                               new_device_scale_factor);
 }
 
 // Tooltips --------------------------------------------------------------------

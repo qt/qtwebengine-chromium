@@ -33,8 +33,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/ScriptSourceCode.h"
-#include "core/HTMLNames.h"
-#include "core/XMLNSNames.h"
+#include "core/css/StyleEngine.h"
 #include "core/dom/CDATASection.h"
 #include "core/dom/ClassicPendingScript.h"
 #include "core/dom/Comment.h"
@@ -44,7 +43,6 @@
 #include "core/dom/DocumentType.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/ScriptLoader.h"
-#include "core/dom/StyleEngine.h"
 #include "core/dom/TransformSource.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
@@ -52,6 +50,7 @@
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/HTMLEntityParser.h"
 #include "core/html/parser/TextResourceDecoder.h"
+#include "core/html_names.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ImageLoader.h"
@@ -61,15 +60,16 @@
 #include "core/xml/parser/SharedBufferReader.h"
 #include "core/xml/parser/XMLDocumentParserScope.h"
 #include "core/xml/parser/XMLParserInput.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "core/xmlns_names.h"
 #include "platform/SharedBuffer.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/RawResource.h"
 #include "platform/loader/fetch/ResourceError.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/loader/fetch/ResourceResponse.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/AutoReset.h"
 #include "platform/wtf/PtrUtil.h"
@@ -692,7 +692,7 @@ RefPtr<XMLParserContext> XMLParserContext::CreateStringParser(
   xmlCtxtUseOptions(parser, XML_PARSE_HUGE);
   parser->_private = user_data;
   parser->replaceEntities = true;
-  return AdoptRef(new XMLParserContext(parser));
+  return WTF::AdoptRef(new XMLParserContext(parser));
 }
 
 // Chunk should be encoded in UTF-8
@@ -728,7 +728,7 @@ RefPtr<XMLParserContext> XMLParserContext::CreateMemoryParser(
   parser->str_xml_ns = xmlDictLookup(parser->dict, XML_XML_NAMESPACE, 36);
   parser->_private = user_data;
 
-  return AdoptRef(new XMLParserContext(parser));
+  return WTF::AdoptRef(new XMLParserContext(parser));
 }
 
 // --------------------------------
@@ -1022,15 +1022,15 @@ void XMLDocumentParser::StartElementNs(const AtomicString& local_name,
     return;
   }
 
-  if (isHTMLTemplateElement(*new_element))
-    PushCurrentNode(toHTMLTemplateElement(*new_element).content());
+  if (auto* template_element = ToHTMLTemplateElementOrNull(*new_element))
+    PushCurrentNode(template_element->content());
   else
     PushCurrentNode(new_element);
 
   // Note: |insertedByParser| will perform dispatching if this is an
   // HTMLHtmlElement.
-  if (isHTMLHtmlElement(*new_element) && is_first_element) {
-    toHTMLHtmlElement(*new_element).InsertedByParser();
+  if (IsHTMLHtmlElement(*new_element) && is_first_element) {
+    ToHTMLHtmlElement(*new_element).InsertedByParser();
   } else if (!parsing_fragment_ && is_first_element &&
              GetDocument()->GetFrame()) {
     GetDocument()->GetFrame()->Loader().DispatchDocumentElementAvailable();

@@ -26,8 +26,6 @@
 #include "core/dom/DOMImplementation.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/HTMLNames.h"
-#include "core/SVGNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleSheetContents.h"
@@ -49,8 +47,10 @@
 #include "core/html/TextDocument.h"
 #include "core/html/custom/V0CustomElementRegistrationContext.h"
 #include "core/html/media/MediaDocument.h"
+#include "core/html_names.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/Page.h"
+#include "core/svg_names.h"
 #include "platform/graphics/Image.h"
 #include "platform/network/mime/ContentType.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
@@ -201,7 +201,7 @@ bool DOMImplementation::IsTextMIMEType(const String& mime_type) {
          IsJSONMIMEType(mime_type) || IsTextPlainType(mime_type);
 }
 
-HTMLDocument* DOMImplementation::createHTMLDocument(const String& title) {
+Document* DOMImplementation::createHTMLDocument(const String& title) {
   DocumentInit init =
       DocumentInit::Create()
           .WithContextDocument(document_->ContextDocument())
@@ -242,7 +242,7 @@ Document* DOMImplementation::createDocument(const String& type,
     // For that reason, the origin must be retrieved directly from init.url().
     if (init.GetFrame()->IsMainFrame()) {
       RefPtr<SecurityOrigin> origin = SecurityOrigin::Create(init.Url());
-      plugin_data = init.GetFrame()->GetPage()->GetPluginData(origin.Get());
+      plugin_data = init.GetFrame()->GetPage()->GetPluginData(origin.get());
     } else {
       plugin_data =
           init.GetFrame()->GetPage()->GetPluginData(init.GetFrame()

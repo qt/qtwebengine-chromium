@@ -8,29 +8,31 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtp_sender.h"
+#include "modules/rtp_rtcp/source/rtp_sender.h"
 
 #include <algorithm>
 #include <utility>
 
-#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_logging.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_cvo.h"
-#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/rtp_rtcp/source/playout_delay_oracle.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_packet_to_send.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_sender_audio.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_sender_video.h"
-#include "webrtc/modules/rtp_rtcp/source/time_util.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/rate_limiter.h"
-#include "webrtc/rtc_base/safe_minmax.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/rtc_base/trace_event.h"
-#include "webrtc/system_wrappers/include/field_trial.h"
+#include "logging/rtc_event_log/events/rtc_event_rtp_packet_outgoing.h"
+#include "logging/rtc_event_log/rtc_event_log.h"
+#include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
+#include "modules/rtp_rtcp/include/rtp_cvo.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/playout_delay_oracle.h"
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "modules/rtp_rtcp/source/rtp_sender_audio.h"
+#include "modules/rtp_rtcp/source/rtp_sender_video.h"
+#include "modules/rtp_rtcp/source/time_util.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/rate_limiter.h"
+#include "rtc_base/safe_minmax.h"
+#include "rtc_base/timeutils.h"
+#include "rtc_base/trace_event.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 
@@ -232,20 +234,21 @@ int32_t RTPSender::RegisterPayload(
   if (payload_type_map_.end() != it) {
     // We already use this payload type.
     RtpUtility::Payload* payload = it->second;
-    assert(payload);
+    RTC_DCHECK(payload);
 
     // Check if it's the same as we already have.
     if (RtpUtility::StringCompare(
             payload->name, payload_name, RTP_PAYLOAD_NAME_SIZE - 1)) {
-      if (audio_configured_ && payload->audio &&
-          payload->typeSpecific.Audio.frequency == frequency &&
-          (payload->typeSpecific.Audio.rate == rate ||
-           payload->typeSpecific.Audio.rate == 0 || rate == 0)) {
-        payload->typeSpecific.Audio.rate = rate;
-        // Ensure that we update the rate if new or old is zero.
-        return 0;
+      if (audio_configured_ && payload->typeSpecific.is_audio()) {
+        auto& p = payload->typeSpecific.audio_payload();
+        if (rtc::SafeEq(p.format.clockrate_hz, frequency) &&
+            (p.rate == rate || p.rate == 0 || rate == 0)) {
+          p.rate = rate;
+          // Ensure that we update the rate if new or old is zero.
+          return 0;
+        }
       }
-      if (!audio_configured_ && !payload->audio) {
+      if (!audio_configured_ && !payload->typeSpecific.is_audio()) {
         return 0;
       }
     }
@@ -355,10 +358,11 @@ int32_t RTPSender::CheckPayloadType(int8_t payload_type,
   }
   SetSendPayloadType(payload_type);
   RtpUtility::Payload* payload = it->second;
-  assert(payload);
-  if (!payload->audio && !audio_configured_) {
-    video_->SetVideoCodecType(payload->typeSpecific.Video.videoCodecType);
-    *video_type = payload->typeSpecific.Video.videoCodecType;
+  RTC_DCHECK(payload);
+  if (payload->typeSpecific.is_video() && !audio_configured_) {
+    video_->SetVideoCodecType(
+        payload->typeSpecific.video_payload().videoCodecType);
+    *video_type = payload->typeSpecific.video_payload().videoCodecType;
   }
   return 0;
 }
@@ -371,7 +375,8 @@ bool RTPSender::SendOutgoingData(FrameType frame_type,
                                  size_t payload_size,
                                  const RTPFragmentationHeader* fragmentation,
                                  const RTPVideoHeader* rtp_header,
-                                 uint32_t* transport_frame_id_out) {
+                                 uint32_t* transport_frame_id_out,
+                                 int64_t expected_retransmission_time_ms) {
   uint32_t ssrc;
   uint16_t sequence_number;
   uint32_t rtp_timestamp;
@@ -395,20 +400,29 @@ bool RTPSender::SendOutgoingData(FrameType frame_type,
     return false;
   }
 
+  switch (frame_type) {
+    case kAudioFrameSpeech:
+    case kAudioFrameCN:
+      RTC_CHECK(audio_configured_);
+      break;
+    case kVideoFrameKey:
+    case kVideoFrameDelta:
+      RTC_CHECK(!audio_configured_);
+      break;
+    case kEmptyFrame:
+      break;
+  }
+
   bool result;
   if (audio_configured_) {
     TRACE_EVENT_ASYNC_STEP1("webrtc", "Audio", rtp_timestamp, "Send", "type",
                             FrameTypeToString(frame_type));
-    assert(frame_type == kAudioFrameSpeech || frame_type == kAudioFrameCN ||
-           frame_type == kEmptyFrame);
 
     result = audio_->SendAudio(frame_type, payload_type, rtp_timestamp,
                                payload_data, payload_size, fragmentation);
   } else {
     TRACE_EVENT_ASYNC_STEP1("webrtc", "Video", capture_time_ms,
                             "Send", "type", FrameTypeToString(frame_type));
-    assert(frame_type != kAudioFrameSpeech && frame_type != kAudioFrameCN);
-
     if (frame_type == kEmptyFrame)
       return true;
 
@@ -419,7 +433,8 @@ bool RTPSender::SendOutgoingData(FrameType frame_type,
 
     result = video_->SendVideo(video_type, frame_type, payload_type,
                                rtp_timestamp, capture_time_ms, payload_data,
-                               payload_size, fragmentation, rtp_header);
+                               payload_size, fragmentation, rtp_header,
+                               expected_retransmission_time_ms);
   }
 
   rtc::CritScope cs(&statistics_crit_);
@@ -631,8 +646,8 @@ bool RTPSender::SendPacketToNetwork(const RtpPacketToSend& packet,
                      ? static_cast<int>(packet.size())
                      : -1;
     if (event_log_ && bytes_sent > 0) {
-      event_log_->LogRtpHeader(kOutgoingPacket, packet.data(), packet.size(),
-                               pacing_info.probe_cluster_id);
+      event_log_->Log(rtc::MakeUnique<RtcEventRtpPacketOutgoing>(
+          packet, pacing_info.probe_cluster_id));
     }
   }
   TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
@@ -925,7 +940,7 @@ void RTPSender::UpdateDelayStatistics(int64_t capture_time_ms, int64_t now_ms) {
     return;
 
   uint32_t ssrc;
-  int avg_delay_ms = 0;
+  int64_t avg_delay_ms = 0;
   int max_delay_ms = 0;
   {
     rtc::CritScope lock(&send_critsect_);
@@ -951,8 +966,8 @@ void RTPSender::UpdateDelayStatistics(int64_t capture_time_ms, int64_t now_ms) {
       return;
     avg_delay_ms = (avg_delay_ms + num_delays / 2) / num_delays;
   }
-  send_side_delay_observer_->SendSideDelayUpdated(avg_delay_ms, max_delay_ms,
-                                                  ssrc);
+  send_side_delay_observer_->SendSideDelayUpdated(
+      rtc::dchecked_cast<int>(avg_delay_ms), max_delay_ms, ssrc);
 }
 
 void RTPSender::UpdateOnSendPacket(int packet_id,
@@ -1105,7 +1120,7 @@ rtc::Optional<uint32_t> RTPSender::FlexfecSsrc() const {
 }
 
 void RTPSender::SetCsrcs(const std::vector<uint32_t>& csrcs) {
-  assert(csrcs.size() <= kRtpCsrcSize);
+  RTC_DCHECK_LE(csrcs.size(), kRtpCsrcSize);
   rtc::CritScope lock(&send_critsect_);
   csrcs_ = csrcs;
 }
@@ -1136,7 +1151,7 @@ int32_t RTPSender::SetAudioLevel(uint8_t level_d_bov) {
 }
 
 RtpVideoCodecTypes RTPSender::VideoCodecType() const {
-  assert(!audio_configured_ && "Sender is an audio stream!");
+  RTC_DCHECK(!audio_configured_) << "Sender is an audio stream!";
   return video_->VideoCodecType();
 }
 

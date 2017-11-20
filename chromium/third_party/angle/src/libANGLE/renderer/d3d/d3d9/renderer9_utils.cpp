@@ -576,9 +576,12 @@ void GenerateCaps(IDirect3D9 *d3d9,
     extensions->fence = SUCCEEDED(device->CreateQuery(D3DQUERYTYPE_EVENT, &eventQuery)) && eventQuery;
     SafeRelease(eventQuery);
 
-    extensions->timerQuery = false; // Unimplemented
     extensions->disjointTimerQuery     = false;
     extensions->robustness = true;
+    // It seems that only DirectX 10 and higher enforce the well-defined behavior of always
+    // returning zero values when out-of-bounds reads. See
+    // https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_robustness.txt
+    extensions->robustBufferAccessBehavior = false;
     extensions->blendMinMax = true;
     extensions->framebufferBlit = true;
     extensions->framebufferMultisample = true;

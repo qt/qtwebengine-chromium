@@ -7,9 +7,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <queue>
-
 #include "base/bind.h"
+#include "base/containers/queue.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
@@ -20,6 +19,7 @@
 #include "content/renderer/accessibility/blink_ax_enum_conversion.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_impl.h"
+#include "third_party/WebKit/public/platform/TaskType.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -292,14 +292,23 @@ void RenderAccessibilityImpl::HandleAXEvent(
   }
   pending_events_.push_back(acc_event);
 
+  // Don't send accessibility events for frames that are not in the frame tree
+  // yet (i.e., provisional frames used for remote-to-local navigations, which
+  // haven't committed yet).  Doing so might trigger layout, which may not work
+  // correctly for those frames.  The events should be sent once such a frame
+  // commits.
+  if (!render_frame_->in_frame_tree())
+    return;
+
   if (!ack_pending_ && !weak_factory_.HasWeakPtrs()) {
     // When no accessibility events are in-flight post a task to send
     // the events to the browser. We use PostTask so that we can queue
     // up additional events.
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
-        base::Bind(&RenderAccessibilityImpl::SendPendingAccessibilityEvents,
-                   weak_factory_.GetWeakPtr()));
+    render_frame_->GetTaskRunner(blink::TaskType::kUnspecedTimer)
+        ->PostTask(FROM_HERE,
+                   base::BindOnce(
+                       &RenderAccessibilityImpl::SendPendingAccessibilityEvents,
+                       weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -326,7 +335,7 @@ void RenderAccessibilityImpl::OnPluginRootNodeUpdated() {
   if (!root.UpdateLayoutAndCheckValidity())
     return;
 
-  std::queue<WebAXObject> objs_to_explore;
+  base::queue<WebAXObject> objs_to_explore;
   objs_to_explore.push(root);
   while (objs_to_explore.size()) {
     WebAXObject obj = objs_to_explore.front();
@@ -456,7 +465,7 @@ void RenderAccessibilityImpl::SendLocationChanges() {
 
   // Do a breadth-first explore of the whole blink AX tree.
   base::hash_map<int, ui::AXRelativeBounds> new_locations;
-  std::queue<WebAXObject> objs_to_explore;
+  base::queue<WebAXObject> objs_to_explore;
   objs_to_explore.push(root);
   while (objs_to_explore.size()) {
     WebAXObject obj = objs_to_explore.front();

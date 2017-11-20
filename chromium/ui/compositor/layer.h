@@ -411,6 +411,7 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
       cc::Layer* layer) override;
   void didUpdateMainThreadScrollingReasons() override;
   void didChangeScrollbarsHidden(bool) override;
+  void DidChangeLayerOpacity(float old_opacity, float new_opacity) override;
 
   // Triggers a call to SwitchToLayer.
   void SwitchCCLayerForTest();
@@ -429,6 +430,16 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   // surface even if layer is invisible is not a problem.
   void AddCacheRenderSurfaceRequest();
   void RemoveCacheRenderSurfaceRequest();
+
+  // Request deferring painting for layer.
+  void AddDeferredPaintRequest();
+  void RemoveDeferredPaintRequest();
+
+  bool IsPaintDeferredForTesting() const { return deferred_paint_requests_; }
+
+  // Request trilinear filtering for layer.
+  void AddTrilinearFilteringRequest();
+  void RemoveTrilinearFilteringRequest();
 
   // The back link from the mask layer to it's associated masked layer.
   // We keep this reference for the case that if the mask layer gets deleted
@@ -605,6 +616,17 @@ class COMPOSITOR_EXPORT Layer : public LayerAnimationDelegate,
   // the value > 0, means we need to cache the render surface. If the value
   // == 0, means we should not cache the render surface.
   unsigned cache_render_surface_requests_;
+
+  // The counter to maintain how many deferred paint requests we have. If the
+  // value > 0, means we need to defer painting the layer. If the value == 0,
+  // means we should paint the layer.
+  unsigned deferred_paint_requests_;
+
+  // The counter to maintain how many trilinear filtering requests we have. If
+  // the value > 0, means we need to perform trilinear filtering on the layer.
+  // If the value == 0, means we should not perform trilinear filtering on the
+  // layer.
+  unsigned trilinear_filtering_request_;
 
   DISALLOW_COPY_AND_ASSIGN(Layer);
 };

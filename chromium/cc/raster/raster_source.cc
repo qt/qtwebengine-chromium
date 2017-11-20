@@ -11,6 +11,7 @@
 #include "cc/base/region.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/paint/display_item_list.h"
+#include "cc/paint/image_provider.h"
 #include "cc/paint/skia_paint_canvas.h"
 #include "components/viz/common/traced_value.h"
 #include "skia/ext/analysis_canvas.h"
@@ -74,9 +75,7 @@ void RasterSource::PlaybackToCanvas(SkCanvas* input_canvas,
     raster_canvas = color_transform_canvas.get();
   }
 
-  if (!settings.playback_to_shared_canvas)
-    ClearCanvasForPlayback(raster_canvas);
-
+  ClearCanvasForPlayback(raster_canvas);
   RasterCommon(raster_canvas, settings.image_provider);
 }
 
@@ -151,10 +150,16 @@ void RasterSource::ClearCanvasForPlayback(SkCanvas* canvas) const {
 void RasterSource::RasterCommon(SkCanvas* raster_canvas,
                                 ImageProvider* image_provider,
                                 SkPicture::AbortCallback* callback) const {
+  if (image_provider)
+    image_provider->BeginRaster();
+
   DCHECK(display_list_.get());
   int repeat_count = std::max(1, slow_down_raster_scale_factor_for_debug_);
   for (int i = 0; i < repeat_count; ++i)
     display_list_->Raster(raster_canvas, image_provider, callback);
+
+  if (image_provider)
+    image_provider->EndRaster();
 }
 
 sk_sp<SkPicture> RasterSource::GetFlattenedPicture() {
@@ -238,9 +243,7 @@ void RasterSource::DidBeginTracing() {
     display_list_->EmitTraceSnapshot();
 }
 
-RasterSource::PlaybackSettings::PlaybackSettings()
-    : playback_to_shared_canvas(false),
-      use_lcd_text(true) {}
+RasterSource::PlaybackSettings::PlaybackSettings() = default;
 
 RasterSource::PlaybackSettings::PlaybackSettings(const PlaybackSettings&) =
     default;

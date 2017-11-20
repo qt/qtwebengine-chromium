@@ -4,7 +4,6 @@
 #ifndef COMPONENTS_SIGNIN_CORE_BROWSER_ACCOUNT_RECONCILOR_H_
 #define COMPONENTS_SIGNIN_CORE_BROWSER_ACCOUNT_RECONCILOR_H_
 
-#include <deque>
 #include <functional>
 #include <memory>
 #include <set>
@@ -16,6 +15,8 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
+#include "base/observer_list.h"
+#include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "components/content_settings/core/browser/content_settings_observer.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
@@ -37,6 +38,42 @@ class AccountReconcilor : public KeyedService,
                           public OAuth2TokenService::Observer,
                           public SigninManagerBase::Observer {
  public:
+  // When an instance of this class exists, the account reconcilor is suspended.
+  // It will automatically restart when all instances of Lock have been
+  // destroyed.
+  class Lock final {
+   public:
+    explicit Lock(AccountReconcilor* reconcilor);
+    ~Lock();
+
+   private:
+    AccountReconcilor* reconcilor_;
+    THREAD_CHECKER(thread_checker_);
+    DISALLOW_COPY_AND_ASSIGN(Lock);
+  };
+
+  class Observer {
+   public:
+    virtual ~Observer() {}
+
+    // The typical order of events is:
+    // - OnStartReconcile() called at the beginning of StartReconcile().
+    // - When reconcile is blocked:
+    //   1. current reconcile is aborted with AbortReconcile(),
+    //   2. OnBlockReconcile() is called.
+    // - When reconcile is unblocked:
+    //   1. OnUnblockReconcile() is called,
+    //   2. reconcile is restarted if needed with StartReconcile(), which
+    //     triggers a call to OnStartReconcile().
+
+    // Called whe reconcile starts.
+    virtual void OnStartReconcile() {}
+    // Called when the AccountReconcilor is blocked.
+    virtual void OnBlockReconcile() {}
+    // Called when the AccountReconcilor is unblocked.
+    virtual void OnUnblockReconcile() {}
+  };
+
   AccountReconcilor(ProfileOAuth2TokenService* token_service,
                     SigninManagerBase* signin_manager,
                     SigninClient* client,
@@ -62,15 +99,25 @@ class AccountReconcilor : public KeyedService,
   // Determine what the reconcilor is currently doing.
   signin_metrics::AccountReconcilorState GetState();
 
- private:
-  bool IsRegisteredWithTokenService() const {
-    return registered_with_token_service_;
-  }
+  // Adds ands removes observers.
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
 
+ private:
+  friend class Lock;
   friend class AccountReconcilorTest;
+  friend class DiceBrowserTestBase;
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, SigninManagerRegistration);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, Reauth);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, ProfileAlreadyConnected);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTestDice, TableRowTest);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, EnabledWithDice);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, DiceReconcileWhithoutSignin);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, DiceReconcileNoop);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, DiceLastKnownFirstAccount);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
+                           DiceReconcileReuseGaiaFirstAccount);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, TokensNotLoaded);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
                            StartReconcileCookiesDisabled);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
@@ -95,12 +142,17 @@ class AccountReconcilor : public KeyedService,
                            StartReconcileAddToCookieTwice);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, StartReconcileBadPrimary);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, StartReconcileOnlyOnce);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, Lock);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
                            StartReconcileWithSessionInfoExpiredDefault);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
                            AddAccountToCookieCompletedWithBogusAccount);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, NoLoopWithBadPrimary);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, WontMergeAccountsWithError);
+
+  bool IsRegisteredWithTokenService() const {
+    return registered_with_token_service_;
+  }
 
   // Register and unregister with dependent services.
   void RegisterWithSigninManager();
@@ -112,10 +164,13 @@ class AccountReconcilor : public KeyedService,
   void RegisterWithContentSettings();
   void UnregisterWithContentSettings();
 
-  bool IsProfileConnected();
+  // The reconcilor is enabled if Sync or Dice is enabled.
+  bool IsEnabled();
+  // Returns true if account consistency is enabled (Mirror or Dice).
+  bool IsAccountConsistencyEnabled();
 
-  // All actions with side effects.  Virtual so that they can be overridden
-  // in tests.
+  // All actions with side effects, only doing meaningful work if account
+  // consistency is enabled. Virtual so that they can be overridden in tests.
   virtual void PerformMergeAction(const std::string& account_id);
   virtual void PerformLogoutAllAccountsAction();
 
@@ -125,10 +180,20 @@ class AccountReconcilor : public KeyedService,
   void AbortReconcile();
   void CalculateIfReconcileIsDone();
   void ScheduleStartReconcileIfChromeAccountsChanged();
+  // Revokes tokens for all accounts in chrome_accounts_ but primary_account_.
+  void RevokeAllSecondaryTokens();
 
   void ValidateAccountsFromTokenService();
   // Note internally that this |account_id| is added to the cookie jar.
   bool MarkAccountAsAddedToCookie(const std::string& account_id);
+
+  // The reconcilor only starts when the token service is ready.
+  bool IsTokenServiceReady();
+
+  // Returns the first account to add in the Gaia cookie.
+  // If this returns an empty string, the user must be logged out of all
+  // accounts.
+  std::string GetFirstGaiaAccountForReconcile() const;
 
   // Overriden from content_settings::Observer.
   void OnContentSettingChanged(
@@ -148,12 +213,20 @@ class AccountReconcilor : public KeyedService,
 
   // Overriden from OAuth2TokenService::Observer.
   void OnEndBatchChanges() override;
+  void OnRefreshTokensLoaded() override;
 
   // Overriden from SigninManagerBase::Observer.
   void GoogleSigninSucceeded(const std::string& account_id,
                              const std::string& username) override;
   void GoogleSignedOut(const std::string& account_id,
                        const std::string& username) override;
+
+  // Lock related methods.
+  void IncrementLockCount();
+  void DecrementLockCount();
+  void BlockReconcile();
+  void UnblockReconcile();
+  bool IsReconcileBlocked() const;
 
   // The ProfileOAuth2TokenService associated with this reconcilor.
   ProfileOAuth2TokenService* token_service_;
@@ -195,6 +268,16 @@ class AccountReconcilor : public KeyedService,
   std::vector<std::string> chrome_accounts_;
   std::vector<std::string> add_to_cookie_;
   bool chrome_accounts_changed_;
+  // Last known "first account". Used when cookies are lost as a best guess.
+  std::string last_known_first_account_;
+
+  // Used for the Lock.
+  // StartReconcile() is blocked while this is > 0.
+  int account_reconcilor_lock_count_;
+  // StartReconcile() should be started when the reconcilor is unblocked.
+  bool reconcile_on_unblock_;
+
+  base::ObserverList<Observer, true> observer_list_;
 
   DISALLOW_COPY_AND_ASSIGN(AccountReconcilor);
 };

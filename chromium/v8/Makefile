@@ -338,32 +338,32 @@ $(ANDROID_BUILDS): $(GYPFILES) $(ENVFILE) Makefile.android
 
 # Test targets.
 check: all
-	@gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --arch=$(shell echo $(DEFAULT_ARCHES) | sed -e 's/ /,/g') \
 	    $(TESTFLAGS)
 
 $(addsuffix .check,$(MODES)): $$(basename $$@)
-	@gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --mode=$(basename $@) $(TESTFLAGS)
 
 $(addsuffix .check,$(ARCHES)): $$(basename $$@)
-	@gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --arch=$(basename $@) $(TESTFLAGS)
 
 $(CHECKS): $$(basename $$@)
-	@gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --arch-and-mode=$(basename $@) $(TESTFLAGS)
 
 $(addsuffix .quickcheck,$(MODES)): $$(basename $$@)
-	@gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --mode=$(basename $@) $(TESTFLAGS) --quickcheck
 
 $(addsuffix .quickcheck,$(ARCHES)): $$(basename $$@)
-	@gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --arch=$(basename $@) $(TESTFLAGS) --quickcheck
 
 $(QUICKCHECKS): $$(basename $$@)
-	@gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --arch-and-mode=$(basename $@) $(TESTFLAGS) --quickcheck
 
 $(addsuffix .sync, $(ANDROID_BUILDS)): $$(basename $$@)
@@ -371,7 +371,7 @@ $(addsuffix .sync, $(ANDROID_BUILDS)): $$(basename $$@)
 	                       $(shell pwd) $(ANDROID_V8)
 
 $(addsuffix .check, $(ANDROID_BUILDS)): $$(basename $$@).sync
-	@gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	     --arch-and-mode=$(basename $@) \
 	     --timeout=600 \
 	     --command-prefix="tools/android-run.py" $(TESTFLAGS)
@@ -380,7 +380,7 @@ $(addsuffix .check, $(ANDROID_ARCHES)): \
                 $(addprefix $$(basename $$@).,$(MODES)).check
 
 native.check: native
-	@gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR)/native \
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR)/native \
 	    --arch-and-mode=. $(TESTFLAGS)
 
 SUPERFASTTESTMODES = ia32.release
@@ -391,18 +391,18 @@ COMMA = ,
 EMPTY =
 SPACE = $(EMPTY) $(EMPTY)
 quickcheck: $(subst $(COMMA),$(SPACE),$(FASTCOMPILEMODES))
-	gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --arch-and-mode=$(SUPERFASTTESTMODES) $(TESTFLAGS) --quickcheck \
 	    --download-data mozilla webkit
-	gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --arch-and-mode=$(FASTTESTMODES) $(TESTFLAGS) --quickcheck
 qc: quickcheck
 
 turbocheck: $(subst $(COMMA),$(SPACE),$(FASTCOMPILEMODES))
-	gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --arch-and-mode=$(SUPERFASTTESTMODES) $(TESTFLAGS) \
 	    --quickcheck --variants=turbofan --download-data mozilla webkit
-	gypfiles/run-tests-legacy.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
 	    --arch-and-mode=$(FASTTESTMODES) $(TESTFLAGS) \
 	    --quickcheck --variants=turbofan
 tc: turbocheck

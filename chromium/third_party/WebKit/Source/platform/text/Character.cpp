@@ -45,9 +45,6 @@
 #include <utrie2.h>
 #endif
 
-using namespace WTF;
-using namespace Unicode;
-
 namespace blink {
 
 #if defined(USING_SYSTEM_ICU)
@@ -215,9 +212,11 @@ unsigned Character::ExpansionOpportunityCount(const UChar* characters,
 }
 
 bool Character::CanReceiveTextEmphasis(UChar32 c) {
-  CharCategory category = Unicode::Category(c);
-  if (category & (kSeparator_Space | kSeparator_Line | kSeparator_Paragraph |
-                  kOther_NotAssigned | kOther_Control | kOther_Format))
+  WTF::Unicode::CharCategory category = WTF::Unicode::Category(c);
+  if (category &
+      (WTF::Unicode::kSeparator_Space | WTF::Unicode::kSeparator_Line |
+       WTF::Unicode::kSeparator_Paragraph | WTF::Unicode::kOther_NotAssigned |
+       WTF::Unicode::kOther_Control | WTF::Unicode::kOther_Format))
     return false;
 
   // Additional word-separator characters listed in CSS Text Level 3 Editor's

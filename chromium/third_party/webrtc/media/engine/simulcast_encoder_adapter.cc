@@ -8,19 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/media/engine/simulcast_encoder_adapter.h"
+#include "media/engine/simulcast_encoder_adapter.h"
 
 #include <algorithm>
 
 // NOTE(ajm): Path provided by gyp.
 #include "libyuv/scale.h"  // NOLINT
 
-#include "webrtc/api/video/i420_buffer.h"
-#include "webrtc/media/engine/scopedvideoencoder.h"
-#include "webrtc/modules/video_coding/codecs/vp8/screenshare_layers.h"
-#include "webrtc/modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/system_wrappers/include/clock.h"
+#include "api/video/i420_buffer.h"
+#include "media/engine/scopedvideoencoder.h"
+#include "modules/video_coding/codecs/vp8/screenshare_layers.h"
+#include "modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
+#include "rtc_base/checks.h"
+#include "system_wrappers/include/clock.h"
 
 namespace {
 
@@ -118,6 +118,13 @@ class TemporalLayersFactoryAdapter : public webrtc::TemporalLayersFactory {
     return tl_factory_.Create(adapted_simulcast_id_, temporal_layers,
                               initial_tl0_pic_idx);
   }
+  std::unique_ptr<webrtc::TemporalLayersChecker> CreateChecker(
+      int simulcast_id,
+      int temporal_layers,
+      uint8_t initial_tl0_pic_idx) const override {
+    return tl_factory_.CreateChecker(adapted_simulcast_id_, temporal_layers,
+                                     initial_tl0_pic_idx);
+  }
 
   const int adapted_simulcast_id_;
   const TemporalLayersFactory& tl_factory_;
@@ -151,11 +158,11 @@ int SimulcastEncoderAdapter::Release() {
   while (!streaminfos_.empty()) {
     std::unique_ptr<VideoEncoder> encoder =
         std::move(streaminfos_.back().encoder);
-    encoder->Release();
     // Even though it seems very unlikely, there are no guarantees that the
-    // encoder will not call back after being Release()'d. Therefore, we disable
-    // the callbacks here.
+    // encoder will not call back after being Release()'d. Therefore, we first
+    // disable the callbacks here.
     encoder->RegisterEncodeCompleteCallback(nullptr);
+    encoder->Release();
     streaminfos_.pop_back();  // Deletes callback adapter.
     stored_encoders_.push(std::move(encoder));
   }

@@ -27,16 +27,18 @@
 #include "core/dom/ShadowRoot.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/string_or_trusted_html.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/StyleSheetList.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ElementShadow.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ShadowRootRareDataV0.h"
 #include "core/dom/SlotAssignment.h"
-#include "core/dom/StyleEngine.h"
 #include "core/dom/Text.h"
 #include "core/dom/V0InsertionPoint.h"
 #include "core/dom/WhitespaceAttacher.h"
+#include "core/dom/trustedtypes/TrustedHTML.h"
 #include "core/editing/serializers/Serialization.h"
 #include "core/html/HTMLShadowElement.h"
 #include "core/html/HTMLSlotElement.h"
@@ -126,16 +128,38 @@ Node* ShadowRoot::cloneNode(bool, ExceptionState& exception_state) {
   return nullptr;
 }
 
-String ShadowRoot::innerHTML() const {
+String ShadowRoot::InnerHTMLAsString() const {
   return CreateMarkup(this, kChildrenOnly);
 }
 
-void ShadowRoot::setInnerHTML(const String& markup,
-                              ExceptionState& exception_state) {
+void ShadowRoot::innerHTML(StringOrTrustedHTML& result) const {
+  result.SetString(InnerHTMLAsString());
+}
+
+void ShadowRoot::SetInnerHTMLFromString(const String& markup,
+                                        ExceptionState& exception_state) {
   if (DocumentFragment* fragment = CreateFragmentForInnerOuterHTML(
           markup, &host(), kAllowScriptingContent, "innerHTML",
           exception_state))
     ReplaceChildrenWithFragment(this, fragment, exception_state);
+}
+
+void ShadowRoot::setInnerHTML(const StringOrTrustedHTML& stringOrHtml,
+                              ExceptionState& exception_state) {
+  DCHECK(stringOrHtml.IsString() ||
+         RuntimeEnabledFeatures::TrustedDOMTypesEnabled());
+
+  if (stringOrHtml.IsString() && GetDocument().RequireTrustedTypes()) {
+    exception_state.ThrowTypeError(
+        "This document requires `TrustedHTML` assignment.");
+    return;
+  }
+
+  String html = stringOrHtml.IsString()
+                    ? stringOrHtml.GetAsString()
+                    : stringOrHtml.GetAsTrustedHTML()->toString();
+
+  SetInnerHTMLFromString(html, exception_state);
 }
 
 void ShadowRoot::RecalcStyle(StyleRecalcChange change) {
@@ -156,43 +180,9 @@ void ShadowRoot::RecalcStyle(StyleRecalcChange change) {
 }
 
 void ShadowRoot::RebuildLayoutTree(WhitespaceAttacher& whitespace_attacher) {
-  if (!NeedsReattachLayoutTree() && !ChildNeedsReattachLayoutTree()) {
-    SkipRebuildLayoutTree(whitespace_attacher);
-    return;
-  }
-
   ClearNeedsReattachLayoutTree();
   RebuildChildrenLayoutTrees(whitespace_attacher);
   ClearChildNeedsReattachLayoutTree();
-}
-
-void ShadowRoot::SkipRebuildLayoutTree(
-    WhitespaceAttacher& whitespace_attacher) const {
-  // We call this method when neither this, nor our child nodes are marked
-  // for re-attachment, but the host has been marked with
-  // childNeedsReattachLayoutTree. That happens when ::before or ::after needs
-  // re-attachment. In that case, we update nextTextSibling with the first text
-  // node sibling not preceeded by any in-flow children to allow for correct
-  // whitespace re-attachment if the ::before element display changes.
-  DCHECK(GetDocument().InStyleRecalc());
-  DCHECK(!GetDocument().ChildNeedsDistributionRecalc());
-  DCHECK(!NeedsStyleRecalc());
-  DCHECK(!ChildNeedsStyleRecalc());
-  DCHECK(!NeedsReattachLayoutTree());
-  DCHECK(!ChildNeedsReattachLayoutTree());
-
-  for (Node* sibling = firstChild(); sibling;
-       sibling = sibling->nextSibling()) {
-    if (sibling->IsTextNode()) {
-      whitespace_attacher.DidVisitText(ToText(sibling));
-      return;
-    }
-    LayoutObject* layout_object = sibling->GetLayoutObject();
-    if (layout_object && !layout_object->IsFloatingOrOutOfFlowPositioned()) {
-      whitespace_attacher.DidVisitElement(ToElement(sibling));
-      return;
-    }
-  }
 }
 
 void ShadowRoot::AttachLayoutTree(AttachContext& context) {

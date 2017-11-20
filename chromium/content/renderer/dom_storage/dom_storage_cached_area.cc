@@ -8,6 +8,7 @@
 
 #include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "content/common/dom_storage/dom_storage_map.h"
 #include "content/renderer/dom_storage/dom_storage_proxy.h"
 
@@ -54,8 +55,17 @@ bool DOMStorageCachedArea::SetItem(int connection_id,
 
   PrimeIfNeeded(connection_id);
   base::NullableString16 old_value;
+#if !defined(OS_ANDROID)
+  if (!map_->SetItem(key, value, nullptr))
+    return false;
+#else
+  // The old value is only used on Android when the cache stores only the keys.
+  // Do not send old value on other platforms.
+  // TODO(ssid): Clear this value when values are stored in the browser cache on
+  // Android, crbug.com/743187.
   if (!map_->SetItem(key, value, &old_value))
     return false;
+#endif  // !defined(OS_ANDROID)
 
   // Ignore mutations to 'key' until OnSetItemComplete.
   ignore_key_mutations_[key]++;
@@ -70,8 +80,15 @@ void DOMStorageCachedArea::RemoveItem(int connection_id,
                                       const GURL& page_url) {
   PrimeIfNeeded(connection_id);
   base::string16 old_value;
+#if !defined(OS_ANDROID)
+  if (!map_->RemoveItem(key, nullptr))
+    return;
+#else
+  // The old value is only used on Android when the cache stores only the keys.
+  // Do not send old value on other platforms.
   if (!map_->RemoveItem(key, &old_value))
     return;
+#endif
 
   // Ignore mutations to 'key' until OnRemoveItemComplete.
   ignore_key_mutations_[key]++;
@@ -112,8 +129,7 @@ void DOMStorageCachedArea::ApplyMutation(
     while (iter != ignore_key_mutations_.end()) {
       base::NullableString16 value = old->GetItem(iter->first);
       if (!value.is_null()) {
-        base::NullableString16 unused;
-        map_->SetItem(iter->first, value.string(), &unused);
+        map_->SetItem(iter->first, value.string(), nullptr);
       }
       ++iter;
     }
@@ -126,17 +142,15 @@ void DOMStorageCachedArea::ApplyMutation(
 
   if (new_value.is_null()) {
     // It's a remove item event.
-    base::string16 unused;
-    map_->RemoveItem(key.string(), &unused);
+    map_->RemoveItem(key.string(), nullptr);
     return;
   }
 
   // It's a set item event.
   // We turn off quota checking here to accomodate the over budget
   // allowance that's provided in the browser process.
-  base::NullableString16 unused;
   map_->set_quota(std::numeric_limits<int32_t>::max());
-  map_->SetItem(key.string(), new_value.string(), &unused);
+  map_->SetItem(key.string(), new_value.string(), nullptr);
   map_->set_quota(kPerStorageAreaQuota);
 }
 
@@ -165,7 +179,7 @@ void DOMStorageCachedArea::Prime(int connection_id) {
   map_ = new DOMStorageMap(kPerStorageAreaQuota);
   map_->SwapValues(&values);
 
-  size_t local_storage_size_kb = map_->bytes_used() / 1024;
+  size_t local_storage_size_kb = map_->storage_used() / 1024;
   // Track localStorage size, from 0-6MB. Note that the maximum size should be
   // 5MB, but we add some slop since we want to make sure the max size is always
   // above what we see in practice, since histograms can't change.

@@ -105,10 +105,6 @@ class PartitionAllocTest : public testing::Test {
   ~PartitionAllocTest() override {}
 
   void SetUp() override {
-    // TODO(crbug.com/722911): These calls to |memset| should perhaps not be
-    // necessary.
-    memset(&allocator, 0, sizeof(allocator));
-    memset(&generic_allocator, 0, sizeof(generic_allocator));
     allocator.init();
     generic_allocator.init();
   }
@@ -139,7 +135,7 @@ class PartitionAllocTest : public testing::Test {
                              bucket->active_pages_head->num_allocated_slots));
     EXPECT_EQ(0, bucket->active_pages_head->freelist_head);
     EXPECT_TRUE(bucket->active_pages_head);
-    EXPECT_TRUE(bucket->active_pages_head != &PartitionRootGeneric::gSeedPage);
+    EXPECT_TRUE(bucket->active_pages_head != GetSentinelPageForTesting());
     return bucket->active_pages_head;
   }
 
@@ -355,8 +351,9 @@ TEST(PageAllocatorTest, AllocFailure) {
   EXPECT_FALSE(base::ReserveAddressSpace(kEasyAllocSize));
 }
 
+// TODO(crbug.com/765801): Test failed on chromium.win/Win10 Tests x64.
 // Test that reserving address space can fail.
-TEST(PageAllocatorTest, ReserveAddressSpace) {
+TEST(PageAllocatorTest, DISABLED_ReserveAddressSpace) {
   size_t size = GetHugeMemoryAmount();
   // Skip the test for sanitizers and platforms with ASLR turned off.
   if (size == 0)
@@ -374,7 +371,7 @@ TEST(PageAllocatorTest, ReserveAddressSpace) {
 // Check that the most basic of allocate / free pairs work.
 TEST_F(PartitionAllocTest, Basic) {
   PartitionBucket* bucket = &allocator.root()->buckets()[kTestBucketIndex];
-  PartitionPage* seedPage = &PartitionRootGeneric::gSeedPage;
+  PartitionPage* seedPage = GetSentinelPageForTesting();
 
   EXPECT_FALSE(bucket->empty_pages_head);
   EXPECT_FALSE(bucket->decommitted_pages_head);
@@ -439,7 +436,7 @@ TEST_F(PartitionAllocTest, MultiPages) {
   PartitionPage* page = GetFullPage(kTestAllocSize);
   FreeFullPage(page);
   EXPECT_TRUE(bucket->empty_pages_head);
-  EXPECT_EQ(&PartitionRootGeneric::gSeedPage, bucket->active_pages_head);
+  EXPECT_EQ(GetSentinelPageForTesting(), bucket->active_pages_head);
   EXPECT_EQ(0, page->next_page);
   EXPECT_EQ(0, page->num_allocated_slots);
 
@@ -458,7 +455,7 @@ TEST_F(PartitionAllocTest, MultiPages) {
   FreeFullPage(page);
   EXPECT_EQ(0, page->num_allocated_slots);
   EXPECT_TRUE(bucket->empty_pages_head);
-  EXPECT_EQ(&PartitionRootGeneric::gSeedPage, bucket->active_pages_head);
+  EXPECT_EQ(GetSentinelPageForTesting(), bucket->active_pages_head);
 
   // Allocate a new page, it should pull from the freelist.
   page = GetFullPage(kTestAllocSize);
@@ -552,7 +549,7 @@ TEST_F(PartitionAllocTest, FreePageListPageTransitions) {
   EXPECT_EQ(pages[numToFillFreeListPage - 1], bucket->active_pages_head);
   for (i = 0; i < numToFillFreeListPage; ++i)
     FreeFullPage(pages[i]);
-  EXPECT_EQ(&PartitionRootGeneric::gSeedPage, bucket->active_pages_head);
+  EXPECT_EQ(GetSentinelPageForTesting(), bucket->active_pages_head);
   EXPECT_TRUE(bucket->empty_pages_head);
 
   // Allocate / free in a different bucket size so we get control of a
@@ -570,7 +567,7 @@ TEST_F(PartitionAllocTest, FreePageListPageTransitions) {
 
   for (i = 0; i < numToFillFreeListPage; ++i)
     FreeFullPage(pages[i]);
-  EXPECT_EQ(&PartitionRootGeneric::gSeedPage, bucket->active_pages_head);
+  EXPECT_EQ(GetSentinelPageForTesting(), bucket->active_pages_head);
   EXPECT_TRUE(bucket->empty_pages_head);
 }
 
@@ -1187,13 +1184,15 @@ TEST_F(PartitionAllocTest, MappingCollision) {
   // with the goal of tripping up alignment of the next mapping.
   map1 = AllocPages(pageBase - kPageAllocationGranularity,
                     kPageAllocationGranularity, kPageAllocationGranularity,
-                    PageAccessible);
+                    PageReadWrite);
   EXPECT_TRUE(map1);
   map2 = AllocPages(pageBase + kSuperPageSize, kPageAllocationGranularity,
-                    kPageAllocationGranularity, PageAccessible);
+                    kPageAllocationGranularity, PageReadWrite);
   EXPECT_TRUE(map2);
-  SetSystemPagesInaccessible(map1, kPageAllocationGranularity);
-  SetSystemPagesInaccessible(map2, kPageAllocationGranularity);
+  EXPECT_TRUE(
+      SetSystemPagesAccess(map1, kPageAllocationGranularity, PageInaccessible));
+  EXPECT_TRUE(
+      SetSystemPagesAccess(map2, kPageAllocationGranularity, PageInaccessible));
 
   PartitionPage* pageInThirdSuperPage = GetFullPage(kTestAllocSize);
   FreePages(map1, kPageAllocationGranularity);
@@ -1311,14 +1310,14 @@ TEST_F(PartitionAllocTest, LostFreePagesBug) {
 
   EXPECT_TRUE(bucket->empty_pages_head);
   EXPECT_TRUE(bucket->empty_pages_head->next_page);
-  EXPECT_EQ(&PartitionRootGeneric::gSeedPage, bucket->active_pages_head);
+  EXPECT_EQ(GetSentinelPageForTesting(), bucket->active_pages_head);
 
   // At this moment, we have two decommitted pages, on the empty list.
   ptr = PartitionAllocGeneric(generic_allocator.root(), size, type_name);
   EXPECT_TRUE(ptr);
   PartitionFreeGeneric(generic_allocator.root(), ptr);
 
-  EXPECT_EQ(&PartitionRootGeneric::gSeedPage, bucket->active_pages_head);
+  EXPECT_EQ(GetSentinelPageForTesting(), bucket->active_pages_head);
   EXPECT_TRUE(bucket->empty_pages_head);
   EXPECT_TRUE(bucket->decommitted_pages_head);
 

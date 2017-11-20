@@ -471,9 +471,8 @@ int AnalyzeDictionary(Fuzzer *F, const Vector<Unit>& Dict,
     // Get coverage for the testcase without modifications.
     F->ExecuteCallback(C.data(), C.size());
     InitialFeatures.clear();
-    TPC.CollectFeatures([&](size_t Feature) -> bool {
+    TPC.CollectFeatures([&](size_t Feature) {
       InitialFeatures.push_back(Feature);
-      return true;
     });
 
     for (size_t i = 0; i < Dict.size(); ++i) {
@@ -498,9 +497,8 @@ int AnalyzeDictionary(Fuzzer *F, const Vector<Unit>& Dict,
       // Get coverage for testcase with masked occurrences of dictionary unit.
       F->ExecuteCallback(Data.data(), Data.size());
       ModifiedFeatures.clear();
-      TPC.CollectFeatures([&](size_t Feature) -> bool {
+      TPC.CollectFeatures([&](size_t Feature) {
         ModifiedFeatures.push_back(Feature);
-        return true;
       });
 
       if (InitialFeatures == ModifiedFeatures)
@@ -606,6 +604,7 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   Options.PrintCorpusStats = Flags.print_corpus_stats;
   Options.PrintCoverage = Flags.print_coverage;
   Options.DumpCoverage = Flags.dump_coverage;
+  Options.UseClangCoverage = Flags.use_clang_coverage;
   if (Flags.exit_on_src_pos)
     Options.ExitOnSrcPos = Flags.exit_on_src_pos;
   if (Flags.exit_on_item)

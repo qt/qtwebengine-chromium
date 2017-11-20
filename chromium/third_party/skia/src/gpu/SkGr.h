@@ -10,17 +10,17 @@
 
 #include "GrBlend.h"
 #include "GrColor.h"
-#include "GrSamplerParams.h"
+#include "GrSamplerState.h"
 #include "GrTypes.h"
+#include "SkBlendModePriv.h"
 #include "SkCanvas.h"
 #include "SkColor.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkFilterQuality.h"
 #include "SkImageInfo.h"
 #include "SkMatrix.h"
 #include "SkPM4f.h"
 #include "SkVertices.h"
-#include "SkBlendModePriv.h"
 
 class GrCaps;
 class GrColorSpaceXform;
@@ -156,10 +156,10 @@ GrPixelConfig SkImageInfo2GrPixelConfig(const SkImageInfo& info, const GrCaps& c
 
 bool GrPixelConfigToColorType(GrPixelConfig, SkColorType*);
 
-GrSamplerParams::FilterMode GrSkFilterQualityToGrFilterMode(SkFilterQuality paintFilterQuality,
-                                                            const SkMatrix& viewM,
-                                                            const SkMatrix& localM,
-                                                            bool* doBicubic);
+GrSamplerState::Filter GrSkFilterQualityToGrFilterMode(SkFilterQuality paintFilterQuality,
+                                                       const SkMatrix& viewM,
+                                                       const SkMatrix& localM,
+                                                       bool* doBicubic);
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -195,7 +195,7 @@ GR_STATIC_ASSERT((int)kIDA_GrBlendCoeff == (int)SkBlendModeCoeff::kIDA);
 ////////////////////////////////////////////////////////////////////////////////
 // Texture management
 
-/** Returns a texture representing the bitmap that is compatible with the GrSamplerParams. The
+/** Returns a texture representing the bitmap that is compatible with the GrSamplerState. The
  *  texture is inserted into the cache (unless the bitmap is marked volatile) and can be
  *  retrieved again via this function.
  *  The 'scaleAdjust' in/out parameter will be updated to hold any rescaling that needs to be
@@ -204,7 +204,7 @@ GR_STATIC_ASSERT((int)kIDA_GrBlendCoeff == (int)SkBlendModeCoeff::kIDA);
  */
 sk_sp<GrTextureProxy> GrRefCachedBitmapTextureProxy(GrContext*,
                                                     const SkBitmap&,
-                                                    const GrSamplerParams&,
+                                                    const GrSamplerState&,
                                                     SkScalar scaleAdjust[2]);
 
 /**
@@ -225,6 +225,12 @@ sk_sp<GrTextureProxy> GrUploadPixmapToTextureProxy(GrResourceProvider*,
                                                    const SkPixmap&, SkBudgeted, SkColorSpace*);
 
 /**
+ * Creates a new texture with mipmap levels and copies the baseProxy into the base layer.
+ */
+sk_sp<GrTextureProxy> GrCopyBaseMipMapToTextureProxy(GrContext*,
+                                                     GrTextureProxy* baseProxy);
+
+/**
  * Creates a new texture populated with the mipmap levels.
  */
 sk_sp<GrTextureProxy> GrUploadMipMapToTextureProxy(GrContext*, const SkImageInfo&,
@@ -238,7 +244,7 @@ sk_sp<GrTextureProxy> GrUploadMipMapToTextureProxy(GrContext*, const SkImageInfo
 //        return nullptr;
 //    }
 //    sk_sp<GrTexture> texture = GrMakeCachedBitmapTexture(fContext.get(), bitmap,
-//                                                         GrSamplerParams::ClampNoFilter(),
+//                                                         GrSamplerState::ClampNearest(),
 //                                                         nullptr);
 //    if (!texture) {
 //        return nullptr;

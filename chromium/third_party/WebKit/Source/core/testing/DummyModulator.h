@@ -38,11 +38,6 @@ class DummyModulator : public Modulator {
   ScriptState* GetScriptState() override;
 
   void FetchTree(const ModuleScriptFetchRequest&, ModuleTreeClient*) override;
-  void FetchTreeInternal(const ModuleScriptFetchRequest&,
-                         const AncestorList&,
-                         ModuleGraphLevel,
-                         ModuleTreeReachedUrlSet*,
-                         ModuleTreeClient*) override;
   void FetchSingle(const ModuleScriptFetchRequest&,
                    ModuleGraphLevel,
                    SingleModuleClient*) override;
@@ -53,16 +48,24 @@ class DummyModulator : public Modulator {
                             ModuleGraphLevel,
                             ModuleScriptLoaderClient*) override;
   bool HasValidContext() override;
+  void ResolveDynamically(const String& specifier,
+                          const KURL&,
+                          const ReferrerScriptInfo&,
+                          ScriptPromiseResolver*) override;
   ScriptModule CompileModule(const String& script,
                              const String& url_str,
                              AccessControlStatus,
+                             WebURLRequest::FetchCredentialsMode,
+                             const String& nonce,
+                             ParserDisposition,
                              const TextPosition&,
                              ExceptionState&) override;
   ScriptValue InstantiateModule(ScriptModule) override;
   ScriptModuleState GetRecordStatus(ScriptModule) override;
   ScriptValue GetError(const ModuleScript*) override;
   Vector<ModuleRequest> ModuleRequestsFromScriptModule(ScriptModule) override;
-  void ExecuteModule(const ModuleScript*) override;
+  ScriptValue ExecuteModule(const ModuleScript*, CaptureEvalErrorFlag) override;
+  ModuleScriptFetcher* CreateModuleScriptFetcher() override;
 
   Member<ScriptModuleResolver> resolver_;
 };

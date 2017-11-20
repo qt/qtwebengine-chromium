@@ -12,6 +12,8 @@
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/StringHash.h"
 #include "platform/wtf/text/WTFString.h"
+#include "public/platform/WebTrialTokenValidator.h"
+#include "third_party/WebKit/common/origin_trials/trial_token_validator.h"
 
 namespace blink {
 
@@ -25,7 +27,7 @@ class WebTrialTokenValidator;
 // context.  This class is not for direct use by feature implementers.
 // Instead, the OriginTrials generated namespace provides a method for each
 // trial to check if it is enabled. Experimental features must be defined in
-// RuntimeEnabledFeatures.json5, which is used to generate OriginTrials.h/cpp.
+// runtime_enabled_features.json5, which is used to generate origin_trials.h/cc.
 //
 // Origin trials are defined by string names, provided by the implementers. The
 // framework does not maintain an enum or constant list for trial names.
@@ -40,7 +42,8 @@ class CORE_EXPORT OriginTrialContext final
  public:
   enum CreateMode { kCreateIfNotExists, kDontCreateIfNotExists };
 
-  OriginTrialContext(ExecutionContext&, WebTrialTokenValidator*);
+  OriginTrialContext(ExecutionContext&,
+                     std::unique_ptr<WebTrialTokenValidator>);
 
   static const char* SupplementName();
 
@@ -98,7 +101,7 @@ class CORE_EXPORT OriginTrialContext final
   Vector<String> tokens_;
   HashSet<String> enabled_trials_;
   HashSet<String> installed_trials_;
-  WebTrialTokenValidator* trial_token_validator_;
+  std::unique_ptr<WebTrialTokenValidator> trial_token_validator_;
 };
 
 }  // namespace blink

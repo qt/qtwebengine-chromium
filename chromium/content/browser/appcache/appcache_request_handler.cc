@@ -175,8 +175,16 @@ AppCacheJob* AppCacheRequestHandler::MaybeLoadFallbackForResponse(
 
   // We don't fallback for responses that we delivered.
   if (job_.get()) {
-    DCHECK(!job_->IsDeliveringNetworkResponse());
-    return NULL;
+    // In the network service world the existing job initiates a fallback
+    // response request with the exception being a job which already
+    // delivered an AppCached or error response.
+    if (!base::FeatureList::IsEnabled(features::kNetworkService)) {
+      DCHECK(!job_->IsDeliveringNetworkResponse());
+      return NULL;
+    } else if (job_->IsDeliveringAppCacheResponse() ||
+               job_->IsDeliveringErrorResponse()) {
+      return NULL;
+    }
   }
 
   if (request_->IsSuccess()) {
@@ -248,12 +256,15 @@ void AppCacheRequestHandler::MaybeCompleteCrossSiteTransferInOldProcess(
 
 AppCacheJob* AppCacheRequestHandler::MaybeCreateSubresourceLoader(
     std::unique_ptr<SubresourceLoadInfo> subresource_load_info,
-    URLLoaderFactoryGetter* loader_factory_getter) {
+    URLLoaderFactoryGetter* loader_factory_getter,
+    AppCacheSubresourceURLFactory* subresource_factory) {
   DCHECK(!is_main_resource());
   DCHECK(base::FeatureList::IsEnabled(features::kNetworkService));
+  job_ = nullptr;
 
   subresource_load_info_ = std::move(subresource_load_info);
   network_url_loader_factory_getter_ = loader_factory_getter;
+  request_->AsURLLoaderRequest()->set_request(subresource_load_info_->request);
 
   AppCacheJob* job = MaybeLoadResource(nullptr);
   if (!job)
@@ -261,8 +272,8 @@ AppCacheJob* AppCacheRequestHandler::MaybeCreateSubresourceLoader(
 
   AppCacheURLLoaderJob* loader_job = job->AsURLLoaderJob();
   // The job takes ownership of the handler.
-  loader_job->set_request_handler(
-      std::unique_ptr<AppCacheRequestHandler>(this));
+  loader_job->SetRequestHandlerAndFactory(
+      std::unique_ptr<AppCacheRequestHandler>(this), subresource_factory);
   return job;
 }
 
@@ -532,7 +543,7 @@ void AppCacheRequestHandler::ContinueMaybeLoadSubResource() {
   DCHECK(job_.get());
   DCHECK(host_->associated_cache() && host_->associated_cache()->is_complete());
 
-  const GURL& url = job_->GetURL();
+  const GURL& url = request_->GetURL();
   AppCache* cache = host_->associated_cache();
   storage()->FindResponseForSubRequest(
       host_->associated_cache(), url,
@@ -603,7 +614,8 @@ void AppCacheRequestHandler::MaybeCreateLoader(
     LoaderCallback callback) {
   // MaybeLoadMainResource will invoke navigation_request_job's methods
   // asynchronously via AppCacheStorage::Delegate.
-  navigation_request_job_ = MaybeLoadMainResource(nullptr);
+  request_->AsURLLoaderRequest()->set_request(resource_request);
+  navigation_request_job_.reset(MaybeLoadResource(nullptr));
   if (!navigation_request_job_.get()) {
     std::move(callback).Run(StartLoaderCallback());
     return;

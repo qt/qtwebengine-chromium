@@ -8,20 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_INCLUDE_NETEQ_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_INCLUDE_NETEQ_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_INCLUDE_NETEQ_H_
+#define MODULES_AUDIO_CODING_NETEQ_INCLUDE_NETEQ_H_
 
 #include <string.h>  // Provide access to size_t.
 
 #include <string>
 #include <vector>
 
-#include "webrtc/common_types.h"
-#include "webrtc/modules/audio_coding/neteq/audio_decoder_impl.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/optional.h"
-#include "webrtc/rtc_base/scoped_ref_ptr.h"
-#include "webrtc/typedefs.h"
+#include "api/optional.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/audio_coding/neteq/audio_decoder_impl.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/scoped_ref_ptr.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -61,13 +61,12 @@ struct NetEqNetworkStatistics {
 // NetEq statistics that persist over the lifetime of the class.
 // These metrics are never reset.
 struct NetEqLifetimeStatistics {
-  // Total number of audio samples received, including synthesized samples.
-  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalsamplesreceived
+  // Stats below correspond to similarly-named fields in the WebRTC stats spec.
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats
   uint64_t total_samples_received = 0;
-  // Total number of inbound audio samples that are based on synthesized data to
-  // conceal packet loss.
-  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-concealedsamples
   uint64_t concealed_samples = 0;
+  uint64_t concealment_events = 0;
+  uint64_t jitter_buffer_delay_ms = 0;
 };
 
 enum NetEqPlayoutMode {
@@ -311,4 +310,4 @@ class NetEq {
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_INCLUDE_NETEQ_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_INCLUDE_NETEQ_H_

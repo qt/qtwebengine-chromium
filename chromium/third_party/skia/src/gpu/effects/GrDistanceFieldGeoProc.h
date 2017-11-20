@@ -45,27 +45,29 @@ enum GrDistanceFieldEffectFlags {
 /**
  * The output color of this effect is a modulation of the input color and a sample from a
  * distance field texture (using a smoothed step function near 0.5).
- * It allows explicit specification of the filtering and wrap modes (GrSamplerParams). The input
+ * It allows explicit specification of the filtering and wrap modes (GrSamplerState). The input
  * coords are a custom attribute. Gamma correction is handled via a texture LUT.
  */
 class GrDistanceFieldA8TextGeoProc : public GrGeometryProcessor {
 public:
+    static constexpr int kMaxTextures = 4;
+
 #ifdef SK_GAMMA_APPLY_TO_A8
     static sk_sp<GrGeometryProcessor> Make(GrColor color, const SkMatrix& viewMatrix,
-                                           sk_sp<GrTextureProxy> proxy,
-                                           const GrSamplerParams& params,
-                                           float lum, uint32_t flags, bool usesLocalCoords) {
+                                           const sk_sp<GrTextureProxy> proxies[kMaxTextures],
+                                           const GrSamplerState& params, float lum, uint32_t flags,
+                                           bool usesLocalCoords) {
         return sk_sp<GrGeometryProcessor>(
-            new GrDistanceFieldA8TextGeoProc(color, viewMatrix, std::move(proxy),
+            new GrDistanceFieldA8TextGeoProc(color, viewMatrix, proxies,
                                              params, lum, flags, usesLocalCoords));
     }
 #else
     static sk_sp<GrGeometryProcessor> Make(GrColor color, const SkMatrix& viewMatrix,
-                                           sk_sp<GrTextureProxy> proxy,
-                                           const GrSamplerParams& params,
-                                           uint32_t flags, bool usesLocalCoords) {
+                                           const sk_sp<GrTextureProxy> proxies[kMaxTextures],
+                                           const GrSamplerState& params, uint32_t flags,
+                                           bool usesLocalCoords) {
         return sk_sp<GrGeometryProcessor>(
-            new GrDistanceFieldA8TextGeoProc(color, viewMatrix, std::move(proxy),
+            new GrDistanceFieldA8TextGeoProc(color, viewMatrix, proxies,
                                              params, flags, usesLocalCoords));
     }
 #endif
@@ -85,13 +87,16 @@ public:
 #endif
     uint32_t getFlags() const { return fFlags; }
 
+    void addNewProxies(const sk_sp<GrTextureProxy> proxies[kMaxTextures], const GrSamplerState& p);
+
     void getGLSLProcessorKey(const GrShaderCaps& caps, GrProcessorKeyBuilder* b) const override;
 
     GrGLSLPrimitiveProcessor* createGLSLInstance(const GrShaderCaps&) const override;
 
 private:
     GrDistanceFieldA8TextGeoProc(GrColor, const SkMatrix& viewMatrix,
-                                 sk_sp<GrTextureProxy> proxy, const GrSamplerParams& params,
+                                 const sk_sp<GrTextureProxy> proxies[kMaxTextures],
+                                 const GrSamplerState& params,
 #ifdef SK_GAMMA_APPLY_TO_A8
                                  float distanceAdjust,
 #endif
@@ -99,7 +104,7 @@ private:
 
     GrColor          fColor;
     SkMatrix         fViewMatrix;
-    TextureSampler   fTextureSampler;
+    TextureSampler   fTextureSamplers[kMaxTextures];
 #ifdef SK_GAMMA_APPLY_TO_A8
     float            fDistanceAdjust;
 #endif
@@ -114,21 +119,22 @@ private:
     typedef GrGeometryProcessor INHERITED;
 };
 
-
 /**
-* The output color of this effect is a modulation of the input color and a sample from a
-* distance field texture (using a smoothed step function near 0.5).
-* It allows explicit specification of the filtering and wrap modes (GrSamplerParams). The input
-* coords are a custom attribute. No gamma correct blending is applied. Used for paths only.
-*/
+ * The output color of this effect is a modulation of the input color and a sample from a
+ * distance field texture (using a smoothed step function near 0.5).
+ * It allows explicit specification of the filtering and wrap modes (GrSamplerState). The input
+ * coords are a custom attribute. No gamma correct blending is applied. Used for paths only.
+ */
 class GrDistanceFieldPathGeoProc : public GrGeometryProcessor {
 public:
-    static sk_sp<GrGeometryProcessor> Make(GrColor color,
-                                           const SkMatrix& viewMatrix, sk_sp<GrTextureProxy> proxy,
-                                           const GrSamplerParams& params,
-                                           uint32_t flags, bool usesLocalCoords) {
+    static constexpr int kMaxTextures = 4;
+
+    static sk_sp<GrGeometryProcessor> Make(GrColor color, const SkMatrix& viewMatrix,
+                                           const sk_sp<GrTextureProxy> proxies[kMaxTextures],
+                                           const GrSamplerState& params, uint32_t flags,
+                                           bool usesLocalCoords) {
         return sk_sp<GrGeometryProcessor>(
-            new GrDistanceFieldPathGeoProc(color, viewMatrix, std::move(proxy),
+            new GrDistanceFieldPathGeoProc(color, viewMatrix, proxies,
                                            params, flags, usesLocalCoords));
     }
 
@@ -144,18 +150,20 @@ public:
     uint32_t getFlags() const { return fFlags; }
     bool usesLocalCoords() const { return fUsesLocalCoords; }
 
+    void addNewProxies(const sk_sp<GrTextureProxy> proxies[kMaxTextures], const GrSamplerState& p);
+
     void getGLSLProcessorKey(const GrShaderCaps& caps, GrProcessorKeyBuilder* b) const override;
 
     GrGLSLPrimitiveProcessor* createGLSLInstance(const GrShaderCaps&) const override;
 
 private:
     GrDistanceFieldPathGeoProc(GrColor, const SkMatrix& viewMatrix,
-                               sk_sp<GrTextureProxy>, const GrSamplerParams&, uint32_t flags,
-                               bool usesLocalCoords);
+                               const sk_sp<GrTextureProxy> proxies[kMaxTextures],
+                               const GrSamplerState&, uint32_t flags, bool usesLocalCoords);
 
     GrColor          fColor;
     SkMatrix         fViewMatrix;
-    TextureSampler   fTextureSampler;
+    TextureSampler   fTextureSamplers[kMaxTextures];
     uint32_t         fFlags;
     const Attribute* fInPosition;
     const Attribute* fInColor;
@@ -170,7 +178,7 @@ private:
 /**
  * The output color of this effect is a modulation of the input color and samples from a
  * distance field texture (using a smoothed step function near 0.5), adjusted for LCD displays.
- * It allows explicit specification of the filtering and wrap modes (GrSamplerParams). The input
+ * It allows explicit specification of the filtering and wrap modes (GrSamplerState). The input
  * coords are a custom attribute. Gamma correction is handled via a texture LUT.
  */
 class GrDistanceFieldLCDTextGeoProc : public GrGeometryProcessor {
@@ -190,15 +198,17 @@ public:
         }
     };
 
+    static constexpr int kMaxTextures = 4;
+
     static sk_sp<GrGeometryProcessor> Make(GrColor color,
                                            const SkMatrix& viewMatrix,
-                                           sk_sp<GrTextureProxy> proxy,
-                                           const GrSamplerParams& params,
+                                           const sk_sp<GrTextureProxy> proxies[kMaxTextures],
+                                           const GrSamplerState& params,
                                            DistanceAdjust distanceAdjust,
                                            uint32_t flags,
                                            bool usesLocalCoords) {
         return sk_sp<GrGeometryProcessor>(
-            new GrDistanceFieldLCDTextGeoProc(color, viewMatrix, std::move(proxy),
+            new GrDistanceFieldLCDTextGeoProc(color, viewMatrix, proxies,
                                               params, distanceAdjust,
                                               flags, usesLocalCoords));
     }
@@ -216,19 +226,21 @@ public:
     uint32_t getFlags() const { return fFlags; }
     bool usesLocalCoords() const { return fUsesLocalCoords; }
 
+    void addNewProxies(const sk_sp<GrTextureProxy> proxies[kMaxTextures], const GrSamplerState& p);
+
     void getGLSLProcessorKey(const GrShaderCaps& caps, GrProcessorKeyBuilder* b) const override;
 
     GrGLSLPrimitiveProcessor* createGLSLInstance(const GrShaderCaps&) const override;
 
 private:
     GrDistanceFieldLCDTextGeoProc(GrColor, const SkMatrix& viewMatrix,
-                                  sk_sp<GrTextureProxy> proxy, const GrSamplerParams& params,
-                                  DistanceAdjust wa, uint32_t flags,
+                                  const sk_sp<GrTextureProxy> proxies[kMaxTextures],
+                                  const GrSamplerState& params, DistanceAdjust wa, uint32_t flags,
                                   bool usesLocalCoords);
 
     GrColor          fColor;
     SkMatrix         fViewMatrix;
-    TextureSampler   fTextureSampler;
+    TextureSampler   fTextureSamplers[kMaxTextures];
     DistanceAdjust   fDistanceAdjust;
     uint32_t         fFlags;
     const Attribute* fInPosition;

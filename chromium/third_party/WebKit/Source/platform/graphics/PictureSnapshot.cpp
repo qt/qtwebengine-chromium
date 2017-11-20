@@ -43,7 +43,6 @@
 #include "platform/image-encoders/ImageEncoder.h"
 #include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/HexNumber.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/text/Base64.h"
 #include "platform/wtf/text/TextEncoding.h"
 #include "third_party/skia/include/core/SkData.h"
@@ -81,7 +80,7 @@ class SkiaImageDecoder final : public SkImageDeserializer {
   }
 };
 
-PassRefPtr<PictureSnapshot> PictureSnapshot::Load(
+RefPtr<PictureSnapshot> PictureSnapshot::Load(
     const Vector<RefPtr<TilePictureStream>>& tiles) {
   DCHECK(!tiles.IsEmpty());
   Vector<sk_sp<SkPicture>> pictures;
@@ -99,7 +98,7 @@ PassRefPtr<PictureSnapshot> PictureSnapshot::Load(
     pictures.push_back(std::move(picture));
   }
   if (tiles.size() == 1)
-    return AdoptRef(new PictureSnapshot(std::move(pictures[0])));
+    return WTF::AdoptRef(new PictureSnapshot(std::move(pictures[0])));
   SkPictureRecorder recorder;
   SkCanvas* canvas =
       recorder.beginRecording(union_rect.Width(), union_rect.Height(), 0, 0);
@@ -110,7 +109,8 @@ PassRefPtr<PictureSnapshot> PictureSnapshot::Load(
     pictures[i]->playback(canvas, 0);
     canvas->restore();
   }
-  return AdoptRef(new PictureSnapshot(recorder.finishRecordingAsPicture()));
+  return WTF::AdoptRef(
+      new PictureSnapshot(recorder.finishRecordingAsPicture()));
 }
 
 bool PictureSnapshot::IsEmpty() const {
@@ -142,7 +142,7 @@ std::unique_ptr<Vector<char>> PictureSnapshot::Replay(unsigned from_step,
     canvas.ResetStepCount();
     picture_->playback(&canvas, &canvas);
   }
-  std::unique_ptr<Vector<char>> base64_data = WTF::MakeUnique<Vector<char>>();
+  std::unique_ptr<Vector<char>> base64_data = std::make_unique<Vector<char>>();
   Vector<char> encoded_image;
 
   SkPixmap src;
@@ -168,7 +168,7 @@ std::unique_ptr<PictureSnapshot::Timings> PictureSnapshot::Profile(
     double min_duration,
     const FloatRect* clip_rect) const {
   std::unique_ptr<PictureSnapshot::Timings> timings =
-      WTF::MakeUnique<PictureSnapshot::Timings>();
+      std::make_unique<PictureSnapshot::Timings>();
   timings->ReserveCapacity(min_repeat_count);
   const SkIRect bounds = picture_->cullRect().roundOut();
   SkBitmap bitmap;
@@ -198,8 +198,7 @@ std::unique_ptr<PictureSnapshot::Timings> PictureSnapshot::Profile(
 }
 
 std::unique_ptr<JSONArray> PictureSnapshot::SnapshotCommandLog() const {
-  const SkIRect bounds = picture_->cullRect().roundOut();
-  LoggingCanvas canvas(bounds.width(), bounds.height());
+  LoggingCanvas canvas;
   picture_->playback(&canvas);
   return canvas.Log();
 }

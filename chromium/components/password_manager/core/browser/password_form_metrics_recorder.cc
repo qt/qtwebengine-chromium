@@ -342,6 +342,7 @@ void PasswordFormMetricsRecorder::RecordPasswordBubbleShown(
     // Other reasons to show a bubble:
     case metrics_util::MANUAL_MANAGE_PASSWORDS:
     case metrics_util::AUTOMATIC_GENERATED_PASSWORD_CONFIRMATION:
+    case metrics_util::MANUAL_GENERATED_PASSWORD_CONFIRMATION:
     case metrics_util::AUTOMATIC_SIGNIN_TOAST:
       // Do nothing.
       return;
@@ -421,6 +422,8 @@ bool PasswordFormMetricsRecorder::IsRepeatedUserAction(
     case DetailedUserAction::kUnknown:
       return true;
     case DetailedUserAction::kEditedUsernameInBubble:
+    case DetailedUserAction::kSelectedDifferentPasswordInBubble:
+    case DetailedUserAction::kCorrectedUsernameInForm:
       return false;
   }
   NOTREACHED();

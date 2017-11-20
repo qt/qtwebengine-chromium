@@ -382,6 +382,14 @@ void MojoAsyncResourceHandler::SetPriority(net::RequestPriority priority,
       request(), priority, intra_priority_value);
 }
 
+void MojoAsyncResourceHandler::PauseReadingBodyFromNet() {
+  NOTREACHED();
+}
+
+void MojoAsyncResourceHandler::ResumeReadingBodyFromNet() {
+  NOTREACHED();
+}
+
 void MojoAsyncResourceHandler::OnWritableForTesting() {
   OnWritable(MOJO_RESULT_OK);
 }
@@ -569,7 +577,7 @@ void MojoAsyncResourceHandler::ReportBadMessage(const std::string& error) {
 
 std::unique_ptr<UploadProgressTracker>
 MojoAsyncResourceHandler::CreateUploadProgressTracker(
-    const tracked_objects::Location& from_here,
+    const base::Location& from_here,
     UploadProgressTracker::UploadProgressReportCallback callback) {
   return base::MakeUnique<UploadProgressTracker>(from_here, std::move(callback),
                                                  request());

@@ -39,8 +39,8 @@ protected:
     GrMockTexture(GrMockGpu* gpu, const GrSurfaceDesc& desc, bool hasMipLevels,
                   const GrMockTextureInfo& info)
             : GrSurface(gpu, desc)
-            , INHERITED(gpu, desc, kITexture2DSampler_GrSLType, GrSamplerParams::kMipMap_FilterMode,
-                        hasMipLevels)
+            , INHERITED(gpu, desc, kITexture2DSampler_GrSLType, GrSamplerState::Filter::kMipMap,
+                        hasMipLevels, hasMipLevels)
             , fInfo(info)
             , fReleaseProc(nullptr)
             , fReleaseCtx(nullptr) {}

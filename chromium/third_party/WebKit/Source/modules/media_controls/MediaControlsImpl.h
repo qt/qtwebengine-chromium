@@ -31,6 +31,7 @@
 #include "core/html/HTMLDivElement.h"
 #include "core/html/media/MediaControls.h"
 #include "modules/ModulesExport.h"
+#include "platform/Timer.h"
 
 namespace blink {
 
@@ -122,6 +123,8 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void DidDismissDownloadInProductHelp();
   MediaDownloadInProductHelpManager* DownloadInProductHelp();
 
+  void MaybeRecordOverflowTimeToAction();
+
   DECLARE_VIRTUAL_TRACE();
 
  private:
@@ -152,6 +155,33 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // Notify us that our controls enclosure has changed size.
   void NotifyElementSizeChanged(DOMRectReadOnly* new_size);
 
+  // Update the CSS class when we think the state has updated.
+  void UpdateCSSClassFromState();
+
+  // Track the state of the controls.
+  enum ControlsState {
+    // There is no video source.
+    kNoSource,
+
+    // Metadata has not been loaded.
+    kNotLoaded,
+
+    // Metadata is being loaded.
+    kLoadingMetadata,
+
+    // Metadata is loaded and the media is ready to play. This can be when the
+    // media is paused, when it has ended or before the media has started
+    // playing.
+    kStopped,
+
+    // The media is playing.
+    kPlaying,
+
+    // Playback has stopped to buffer.
+    kBuffering,
+  };
+  ControlsState State() const;
+
   explicit MediaControlsImpl(HTMLMediaElement&);
 
   void InitializeControls();
@@ -176,6 +206,8 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void StartHideMediaControlsTimer();
   void StopHideMediaControlsTimer();
   void ResetHideMediaControlsTimer();
+  void HideCursor();
+  void ShowCursor();
 
   void ElementSizeChangedTimerFired(TimerBase*);
 
@@ -185,6 +217,11 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // do fit.  This requires that m_effectiveWidth and m_effectiveHeight are
   // current.
   void ComputeWhichControlsFit();
+
+  // Takes a popup menu (caption, overflow) and position on the screen. This is
+  // used because these menus use a fixed position in order to appear over all
+  // content.
+  void PositionPopupMenu(Element*);
 
   // Node
   bool IsMediaControls() const override { return true; }
@@ -213,6 +250,8 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void OnExitedFullscreen();
   void OnPanelKeypress();
   void OnMediaKeyboardEvent(Event* event) { DefaultEventHandler(event); }
+  void OnWaiting();
+  void OnLoadingProgress();
 
   // Media control elements.
   Member<MediaControlOverlayEnclosureElement> overlay_enclosure_;
@@ -231,6 +270,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   Member<MediaControlTextTrackListElement> text_track_list_;
   Member<MediaControlOverflowMenuButtonElement> overflow_menu_;
   Member<MediaControlOverflowMenuListElement> overflow_list_;
+  Member<HTMLDivElement> media_button_panel_;
 
   Member<MediaControlCastButtonElement> cast_button_;
   Member<MediaControlFullscreenButtonElement> fullscreen_button_;

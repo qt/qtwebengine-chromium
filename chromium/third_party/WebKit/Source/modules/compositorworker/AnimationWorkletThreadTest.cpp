@@ -12,7 +12,6 @@
 #include "core/dom/AnimationWorkletProxyClient.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/workers/GlobalScopeCreationParams.h"
-#include "core/workers/InProcessWorkerObjectProxy.h"
 #include "core/workers/ParentFrameTaskRunners.h"
 #include "core/workers/WorkerBackingThread.h"
 #include "core/workers/WorkerOrWorkletGlobalScope.h"
@@ -85,7 +84,7 @@ class AnimationWorkletThreadTest : public ::testing::Test {
         WTF::MakeUnique<GlobalScopeCreationParams>(
             KURL(kParsedURLString, "http://fake.url/"), "fake user agent", "",
             nullptr, kDontPauseWorkerGlobalScopeOnStart, nullptr, "",
-            security_origin_.Get(), clients, kWebAddressSpaceLocal, nullptr,
+            security_origin_.get(), clients, kWebAddressSpaceLocal, nullptr,
             nullptr, kV8CacheOptionsDefault),
         WTF::nullopt, ParentFrameTaskRunners::Create());
     return thread;

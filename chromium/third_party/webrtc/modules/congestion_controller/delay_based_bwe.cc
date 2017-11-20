@@ -8,23 +8,25 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/congestion_controller/delay_based_bwe.h"
+#include "modules/congestion_controller/delay_based_bwe.h"
 
 #include <algorithm>
 #include <cmath>
 #include <string>
 
-#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
-#include "webrtc/modules/pacing/paced_sender.h"
-#include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_logging.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/thread_annotations.h"
-#include "webrtc/system_wrappers/include/field_trial.h"
-#include "webrtc/system_wrappers/include/metrics.h"
-#include "webrtc/typedefs.h"
+#include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
+#include "logging/rtc_event_log/rtc_event_log.h"
+#include "modules/pacing/paced_sender.h"
+#include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/thread_annotations.h"
+#include "system_wrappers/include/field_trial.h"
+#include "system_wrappers/include/metrics.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace {
 constexpr int kTimestampGroupLengthMs = 5;
@@ -46,11 +48,23 @@ constexpr double kDefaultTrendlineThresholdGain = 4.0;
 constexpr int kMaxConsecutiveFailedLookups = 5;
 
 const char kBweSparseUpdateExperiment[] = "WebRTC-BweSparseUpdateExperiment";
+const char kBweWindowSizeInPacketsExperiment[] =
+    "WebRTC-BweWindowSizeInPackets";
 
-bool BweSparseUpdateExperimentIsEnabled() {
+size_t ReadTrendlineFilterWindowSize() {
   std::string experiment_string =
-      webrtc::field_trial::FindFullName(kBweSparseUpdateExperiment);
-  return experiment_string == "Enabled";
+      webrtc::field_trial::FindFullName(kBweWindowSizeInPacketsExperiment);
+  size_t window_size;
+  int parsed_values =
+      sscanf(experiment_string.c_str(), "Enabled-%zu", &window_size);
+  if (parsed_values == 1) {
+    if (window_size > 1)
+      return window_size;
+    LOG(WARNING) << "Window size must be greater than 1.";
+  }
+  LOG(LS_WARNING) << "Failed to parse parameters for BweTrendlineFilter "
+                     "experiment from field trial string. Using default.";
+  return kDefaultTrendlineWindowSize;
 }
 }  // namespace
 
@@ -79,14 +93,20 @@ DelayBasedBwe::DelayBasedBwe(RtcEventLog* event_log, const Clock* clock)
       last_seen_packet_ms_(-1),
       uma_recorded_(false),
       probe_bitrate_estimator_(event_log),
-      trendline_window_size_(kDefaultTrendlineWindowSize),
+      trendline_window_size_(
+          webrtc::field_trial::IsEnabled(kBweWindowSizeInPacketsExperiment)
+              ? ReadTrendlineFilterWindowSize()
+              : kDefaultTrendlineWindowSize),
       trendline_smoothing_coeff_(kDefaultTrendlineSmoothingCoeff),
       trendline_threshold_gain_(kDefaultTrendlineThresholdGain),
       consecutive_delayed_feedbacks_(0),
-      last_logged_bitrate_(0),
-      last_logged_state_(BandwidthUsage::kBwNormal),
-      in_sparse_update_experiment_(BweSparseUpdateExperimentIsEnabled()) {
-  LOG(LS_INFO) << "Using Trendline filter for delay change estimation.";
+      prev_bitrate_(0),
+      prev_state_(BandwidthUsage::kBwNormal),
+      in_sparse_update_experiment_(
+          webrtc::field_trial::IsEnabled(kBweSparseUpdateExperiment)) {
+  LOG(LS_INFO)
+      << "Using Trendline filter for delay change estimation with window size "
+      << trendline_window_size_;
 }
 
 DelayBasedBwe::~DelayBasedBwe() {}
@@ -249,16 +269,20 @@ DelayBasedBwe::Result DelayBasedBwe::MaybeUpdateEstimate(
       result.recovered_from_overuse = recovered_from_overuse;
     }
   }
-  if (result.updated) {
-    BWE_TEST_LOGGING_PLOT(1, "target_bitrate_bps", now_ms,
-                          result.target_bitrate_bps);
-    if (event_log_ && (result.target_bitrate_bps != last_logged_bitrate_ ||
-                       detector_.State() != last_logged_state_)) {
-      event_log_->LogDelayBasedBweUpdate(result.target_bitrate_bps,
-                                         detector_.State());
-      last_logged_bitrate_ = result.target_bitrate_bps;
-      last_logged_state_ = detector_.State();
+  if ((result.updated && prev_bitrate_ != result.target_bitrate_bps) ||
+      detector_.State() != prev_state_) {
+    uint32_t bitrate_bps =
+        result.updated ? result.target_bitrate_bps : prev_bitrate_;
+
+    BWE_TEST_LOGGING_PLOT(1, "target_bitrate_bps", now_ms, bitrate_bps);
+
+    if (event_log_) {
+      event_log_->Log(rtc::MakeUnique<RtcEventBweUpdateDelayBased>(
+          bitrate_bps, detector_.State()));
     }
+
+    prev_bitrate_ = bitrate_bps;
+    prev_state_ = detector_.State();
   }
   return result;
 }

@@ -448,6 +448,14 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
         frame_view->RemoveViewportConstrainedObject(*this);
     }
   }
+
+  if (old_style && RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
+      old_style->BackfaceVisibility() != StyleRef().BackfaceVisibility() &&
+      HasLayer()) {
+    // We need to repaint the layer to update the backface visibility value of
+    // the paint chunk.
+    Layer()->SetNeedsRepaint();
+  }
 }
 
 void LayoutBoxModelObject::InvalidateStickyConstraints() {
@@ -500,23 +508,27 @@ void LayoutBoxModelObject::AddLayerHitTestRects(
     LayerHitTestRects& rects,
     const PaintLayer* current_layer,
     const LayoutPoint& layer_offset,
-    const LayoutRect& container_rect) const {
+    TouchAction supported_fast_actions,
+    const LayoutRect& container_rect,
+    TouchAction container_whitelisted_touch_action) const {
   if (HasLayer()) {
     if (IsLayoutView()) {
       // LayoutView is handled with a special fast-path, but it needs to know
       // the current layer.
       LayoutObject::AddLayerHitTestRects(rects, Layer(), LayoutPoint(),
-                                         LayoutRect());
+                                         supported_fast_actions, LayoutRect(),
+                                         TouchAction::kTouchActionAuto);
     } else {
       // Since a LayoutObject never lives outside it's container Layer, we can
       // switch to marking entire layers instead. This may sometimes mark more
       // than necessary (when a layer is made of disjoint objects) but in
       // practice is a significant performance savings.
-      Layer()->AddLayerHitTestRects(rects);
+      Layer()->AddLayerHitTestRects(rects, supported_fast_actions);
     }
   } else {
     LayoutObject::AddLayerHitTestRects(rects, current_layer, layer_offset,
-                                       container_rect);
+                                       supported_fast_actions, container_rect,
+                                       container_whitelisted_touch_action);
   }
 }
 
@@ -589,7 +601,7 @@ bool LayoutBoxModelObject::HasNonEmptyLayoutSize() const {
   for (const LayoutBoxModelObject* root = this; root;
        root = root->Continuation()) {
     for (const LayoutObject* object = root; object;
-         object = object->NextInPreOrder(object)) {
+         object = object->NextInPreOrder(root)) {
       if (object->IsBox()) {
         const LayoutBox& box = ToLayoutBox(*object);
         if (box.LogicalHeight() && box.LogicalWidth())
@@ -599,7 +611,7 @@ bool LayoutBoxModelObject::HasNonEmptyLayoutSize() const {
         if (!layout_inline.LinesBoundingBox().IsEmpty())
           return true;
       } else {
-        DCHECK(object->IsText());
+        DCHECK(object->IsText() || object->IsSVG());
       }
     }
   }
@@ -1167,20 +1179,21 @@ void LayoutBoxModelObject::SetContinuation(LayoutBoxModelObject* continuation) {
 }
 
 void LayoutBoxModelObject::ComputeLayerHitTestRects(
-    LayerHitTestRects& rects) const {
-  LayoutObject::ComputeLayerHitTestRects(rects);
+    LayerHitTestRects& rects,
+    TouchAction supported_fast_actions) const {
+  LayoutObject::ComputeLayerHitTestRects(rects, supported_fast_actions);
 
   // If there is a continuation then we need to consult it here, since this is
   // the root of the tree walk and it wouldn't otherwise get picked up.
   // Continuations should always be siblings in the tree, so any others should
   // get picked up already by the tree walk.
   if (Continuation())
-    Continuation()->ComputeLayerHitTestRects(rects);
+    Continuation()->ComputeLayerHitTestRects(rects, supported_fast_actions);
 }
 
 LayoutRect LayoutBoxModelObject::LocalCaretRectForEmptyElement(
     LayoutUnit width,
-    LayoutUnit text_indent_offset) {
+    LayoutUnit text_indent_offset) const {
   DCHECK(!SlowFirstChild() || SlowFirstChild()->IsPseudoElement());
 
   // FIXME: This does not take into account either :first-line or :first-letter
@@ -1273,14 +1286,31 @@ const LayoutObject* LayoutBoxModelObject::PushMappingToContainer(
   bool is_fixed_pos = !is_inline && Style()->GetPosition() == EPosition::kFixed;
   bool contains_fixed_position = CanContainFixedPositionObjects();
 
-  LayoutSize adjustment_for_skipped_ancestor;
+  TransformationMatrix adjustment_for_skipped_ancestor;
+  bool adjustment_for_skipped_ancestor_is_translate2D = true;
   if (skip_info.AncestorSkipped()) {
-    // There can't be a transform between paintInvalidationContainer and
-    // ancestorToStopAt, because transforms create containers, so it should be
-    // safe to just subtract the delta between the ancestor and
-    // ancestorToStopAt.
-    adjustment_for_skipped_ancestor =
-        -ancestor_to_stop_at->OffsetFromAncestorContainer(container);
+    // There can't be a transform between container and ancestor_to_stop_at,
+    // because transforms create containers, so it should be safe to just
+    // subtract the delta between the container and ancestor_to_stop_at.
+    // But if ancestor_to_stop_at is a table section with a transform, we
+    // must apply the transform to the offset because the table section is
+    // not the container (it is not a LayoutBlock).
+    LayoutSize ancestor_offset =
+        ancestor_to_stop_at->OffsetFromAncestorContainer(container);
+    if (ancestor_to_stop_at->IsTableSection() &&
+        ancestor_to_stop_at->StyleRef().HasTransform() &&
+        ancestor_to_stop_at->ShouldUseTransformFromContainer(container)) {
+      TransformationMatrix t;
+      ancestor_to_stop_at->GetTransformFromContainer(container, ancestor_offset,
+                                                     t);
+      adjustment_for_skipped_ancestor = t.Inverse();
+      adjustment_for_skipped_ancestor_is_translate2D =
+          adjustment_for_skipped_ancestor.IsIdentityOr2DTranslation();
+    } else {
+      adjustment_for_skipped_ancestor.Translate(
+          -ancestor_offset.Width().ToFloat(),
+          -ancestor_offset.Height().ToFloat());
+    }
   }
 
   LayoutSize container_offset = OffsetFromContainer(container);
@@ -1306,12 +1336,22 @@ const LayoutObject* LayoutBoxModelObject::PushMappingToContainer(
   if (ShouldUseTransformFromContainer(container)) {
     TransformationMatrix t;
     GetTransformFromContainer(container, container_offset, t);
-    t.PostTranslate(adjustment_for_skipped_ancestor.Width().ToFloat(),
-                    adjustment_for_skipped_ancestor.Height().ToFloat());
-    geometry_map.Push(this, t, flags, LayoutSize());
-  } else {
-    container_offset += adjustment_for_skipped_ancestor;
+    adjustment_for_skipped_ancestor.Multiply(t);
+    geometry_map.Push(this, adjustment_for_skipped_ancestor, flags,
+                      LayoutSize());
+  } else if (adjustment_for_skipped_ancestor_is_translate2D) {
+    container_offset.SetWidth(
+        container_offset.Width() +
+        LayoutUnit(adjustment_for_skipped_ancestor.M41()));
+    container_offset.SetHeight(
+        container_offset.Height() +
+        LayoutUnit(adjustment_for_skipped_ancestor.M42()));
     geometry_map.Push(this, container_offset, flags, LayoutSize());
+  } else {
+    adjustment_for_skipped_ancestor.Translate(container_offset.Width(),
+                                              container_offset.Height());
+    geometry_map.Push(this, adjustment_for_skipped_ancestor, flags,
+                      LayoutSize());
   }
 
   return skip_info.AncestorSkipped() ? ancestor_to_stop_at : container;
@@ -1396,7 +1436,7 @@ bool LayoutBoxModelObject::BackgroundStolenForBeingBody(
     return false;
 
   Element* root_element = GetDocument().documentElement();
-  if (!isHTMLHtmlElement(root_element))
+  if (!IsHTMLHtmlElement(root_element))
     return false;
 
   if (!root_element_style)

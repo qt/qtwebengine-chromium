@@ -209,8 +209,15 @@ class CONTENT_EXPORT DownloadUrlParameters {
     do_not_prompt_for_login_ = do_not_prompt;
   }
 
+  // Sets whether to download the response body even if the server returns
+  // non-successful HTTP response code, like "HTTP NOT FOUND".
+  void set_fetch_error_body(bool fetch_error_body) {
+    fetch_error_body_ = fetch_error_body;
+  }
+
   // Sets whether the download is to be treated as transient. A transient
-  // download is short-lived and is not shown in the UI.
+  // download is short-lived and is not shown in the UI, and will not prompt
+  // to user for target file path determination.
   void set_transient(bool transient) { transient_ = transient; }
 
   // Sets the optional guid for the download, the guid serves as the unique
@@ -270,6 +277,7 @@ class CONTENT_EXPORT DownloadUrlParameters {
   bool prompt() const { return save_info_.prompt_for_save_location; }
   const GURL& url() const { return url_; }
   bool do_not_prompt_for_login() const { return do_not_prompt_for_login_; }
+  bool fetch_error_body() const { return fetch_error_body_; }
   bool is_transient() const { return transient_; }
   std::string guid() const { return guid_; }
 
@@ -307,6 +315,7 @@ class CONTENT_EXPORT DownloadUrlParameters {
   DownloadSaveInfo save_info_;
   GURL url_;
   bool do_not_prompt_for_login_;
+  bool fetch_error_body_;
   bool transient_;
   std::string guid_;
   std::unique_ptr<storage::BlobDataHandle> blob_data_handle_;

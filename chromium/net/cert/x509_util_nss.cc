@@ -11,6 +11,7 @@
 #include <pk11pub.h>
 #include <prerror.h>
 #include <secder.h>
+#include <sechash.h>
 #include <secmod.h>
 #include <secport.h>
 #include <string.h>
@@ -184,6 +185,13 @@ ScopedCERTCertificate CreateCERTCertificateFromX509Certificate(
 
 ScopedCERTCertificateList CreateCERTCertificateListFromX509Certificate(
     const X509Certificate* cert) {
+  return x509_util::CreateCERTCertificateListFromX509Certificate(
+      cert, InvalidIntermediateBehavior::kFail);
+}
+
+ScopedCERTCertificateList CreateCERTCertificateListFromX509Certificate(
+    const X509Certificate* cert,
+    InvalidIntermediateBehavior invalid_intermediate_behavior) {
   ScopedCERTCertificateList nss_chain;
   nss_chain.reserve(1 + cert->GetIntermediateCertificates().size());
 #if BUILDFLAG(USE_BYTE_CERTS)
@@ -196,8 +204,12 @@ ScopedCERTCertificateList CreateCERTCertificateListFromX509Certificate(
        cert->GetIntermediateCertificates()) {
     ScopedCERTCertificate nss_intermediate = CreateCERTCertificateFromBytes(
         CRYPTO_BUFFER_data(intermediate), CRYPTO_BUFFER_len(intermediate));
-    if (!nss_intermediate)
-      return {};
+    if (!nss_intermediate) {
+      if (invalid_intermediate_behavior == InvalidIntermediateBehavior::kFail)
+        return {};
+      LOG(WARNING) << "error parsing intermediate";
+      continue;
+    }
     nss_chain.push_back(std::move(nss_intermediate));
   }
 #else
@@ -229,6 +241,15 @@ ScopedCERTCertificateList CreateCERTCertificateListFromBytes(const char* data,
 
 ScopedCERTCertificate DupCERTCertificate(CERTCertificate* cert) {
   return ScopedCERTCertificate(CERT_DupCertificate(cert));
+}
+
+ScopedCERTCertificateList DupCERTCertificateList(
+    const ScopedCERTCertificateList& certs) {
+  ScopedCERTCertificateList result;
+  result.reserve(certs.size());
+  for (const ScopedCERTCertificate& cert : certs)
+    result.push_back(DupCERTCertificate(cert.get()));
+  return result;
 }
 
 scoped_refptr<X509Certificate> CreateX509CertificateFromCERTCertificate(
@@ -283,12 +304,34 @@ scoped_refptr<X509Certificate> CreateX509CertificateFromCERTCertificate(
       cert, std::vector<CERTCertificate*>());
 }
 
+CertificateList CreateX509CertificateListFromCERTCertificates(
+    const ScopedCERTCertificateList& certs) {
+  CertificateList result;
+  result.reserve(certs.size());
+  for (const ScopedCERTCertificate& cert : certs) {
+    scoped_refptr<X509Certificate> x509_cert(
+        CreateX509CertificateFromCERTCertificate(cert.get()));
+    if (!x509_cert)
+      return {};
+    result.push_back(std::move(x509_cert));
+  }
+  return result;
+}
+
 bool GetDEREncoded(CERTCertificate* cert, std::string* der_encoded) {
   if (!cert || !cert->derCert.len)
     return false;
   der_encoded->assign(reinterpret_cast<char*>(cert->derCert.data),
                       cert->derCert.len);
   return true;
+}
+
+bool GetPEMEncoded(CERTCertificate* cert, std::string* pem_encoded) {
+  if (!cert || !cert->derCert.len)
+    return false;
+  std::string der(reinterpret_cast<char*>(cert->derCert.data),
+                  cert->derCert.len);
+  return X509Certificate::GetPEMEncodedFromDER(der, pem_encoded);
 }
 
 void GetRFC822SubjectAltNames(CERTCertificate* cert_handle,
@@ -392,6 +435,34 @@ std::string GetCERTNameDisplayName(CERTName* name) {
   if (ou_ava)
     return DecodeAVAValue(ou_ava);
   return std::string();
+}
+
+bool GetValidityTimes(CERTCertificate* cert,
+                      base::Time* not_before,
+                      base::Time* not_after) {
+  PRTime pr_not_before, pr_not_after;
+  if (CERT_GetCertTimes(cert, &pr_not_before, &pr_not_after) == SECSuccess) {
+    if (not_before)
+      *not_before = crypto::PRTimeToBaseTime(pr_not_before);
+    if (not_after)
+      *not_after = crypto::PRTimeToBaseTime(pr_not_after);
+    return true;
+  }
+  return false;
+}
+
+SHA256HashValue CalculateFingerprint256(CERTCertificate* cert) {
+  SHA256HashValue sha256;
+  memset(sha256.data, 0, sizeof(sha256.data));
+
+  DCHECK(cert->derCert.data);
+  DCHECK_NE(0U, cert->derCert.len);
+
+  SECStatus rv = HASH_HashBuf(HASH_AlgSHA256, sha256.data, cert->derCert.data,
+                              cert->derCert.len);
+  DCHECK_EQ(SECSuccess, rv);
+
+  return sha256;
 }
 
 }  // namespace x509_util

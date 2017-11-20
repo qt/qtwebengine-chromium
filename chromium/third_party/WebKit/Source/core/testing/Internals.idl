@@ -146,8 +146,9 @@ enum EffectiveConnectionType {
 
     [RaisesException] long lastSpellCheckRequestSequence(Document document);
     [RaisesException] long lastSpellCheckProcessedSequence(Document document);
-    [RuntimeEnabled=IdleTimeSpellChecking, RaisesException] DOMString idleTimeSpellCheckerState(Document document);
-    [RuntimeEnabled=IdleTimeSpellChecking, RaisesException] void runIdleTimeSpellChecker(Document document);
+    [RaisesException] void cancelCurrentSpellCheckRequest(Document document);
+    [RaisesException] DOMString idleTimeSpellCheckerState(Document document);
+    [RaisesException] void runIdleTimeSpellChecker(Document document);
 
     sequence<DOMString> userPreferredLanguages();
     void setUserPreferredLanguages(sequence<DOMString> languages);
@@ -395,4 +396,14 @@ enum EffectiveConnectionType {
     boolean isLowEndDevice();
 
     sequence<DOMString> supportedTextEncodingLabels();
+
+    // When RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled() and
+    // simulateRasterUnderInvalidation(true) is called, all changed pixels will
+    // be reported as raster under-invalidations.
+    void simulateRasterUnderInvalidations(boolean enable);
+
+    // Bypass the threshold of 'script-compile' of long-task attribution in
+    // PerformanceMonitor for testing. "PerformanceObserver should be observing
+    // 'longtask' while calling BypassLongCompileThresholdOnce.
+    [RaisesException] void BypassLongCompileThresholdOnce();
 };

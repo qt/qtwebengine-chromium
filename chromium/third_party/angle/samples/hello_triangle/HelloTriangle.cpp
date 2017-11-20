@@ -19,30 +19,26 @@
 class HelloTriangleSample : public SampleApplication
 {
   public:
-    HelloTriangleSample()
-        : SampleApplication("HelloTriangle", 1280, 720)
+    HelloTriangleSample(EGLint displayType)
+        : SampleApplication("HelloTriangle", 1280, 720, 2, 0, displayType)
     {
     }
 
     virtual bool initialize()
     {
-        const std::string vs = SHADER_SOURCE
-        (
-            attribute vec4 vPosition;
+        const std::string vs =
+            R"(attribute vec4 vPosition;
             void main()
             {
                 gl_Position = vPosition;
-            }
-        );
+            })";
 
-        const std::string fs = SHADER_SOURCE
-        (
-            precision mediump float;
+        const std::string fs =
+            R"(precision mediump float;
             void main()
             {
                 gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-            }
-        );
+            })";
 
         mProgram = CompileProgram(vs, fs);
         if (!mProgram)
@@ -91,6 +87,13 @@ class HelloTriangleSample : public SampleApplication
 
 int main(int argc, char **argv)
 {
-    HelloTriangleSample app;
+    EGLint displayType = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
+
+    if (argc > 1)
+    {
+        displayType = GetDisplayTypeFromArg(argv[1]);
+    }
+
+    HelloTriangleSample app(displayType);
     return app.run();
 }

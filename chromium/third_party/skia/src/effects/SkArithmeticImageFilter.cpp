@@ -20,6 +20,7 @@
 #include "GrRenderTargetContext.h"
 #include "GrTextureProxy.h"
 #include "SkGr.h"
+#include "effects/GrArithmeticFP.h"
 #include "effects/GrConstColorProcessor.h"
 #include "effects/GrTextureDomain.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
@@ -40,6 +41,8 @@ public:
 protected:
     sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
                                         SkIPoint* offset) const override;
+
+    SkIRect onFilterBounds(const SkIRect&, const SkMatrix&, MapDirection) const override;
 
 #if SK_SUPPORT_GPU
     sk_sp<SkSpecialImage> filterImageGPU(SkSpecialImage* source,
@@ -64,6 +67,8 @@ protected:
     sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
 
 private:
+    bool affectsTransparentBlack() const override { return !SkScalarNearlyZero(fK[3]); }
+
     const float fK[4];
     const bool fEnforcePMColor;
 
@@ -202,119 +207,63 @@ sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::onFilterImage(SkSpecialImage* s
     return surf->makeImageSnapshot();
 }
 
-#if SK_SUPPORT_GPU
-
-namespace {
-class ArithmeticFP : public GrFragmentProcessor {
-public:
-    static std::unique_ptr<GrFragmentProcessor> Make(float k1, float k2, float k3, float k4,
-                                                     bool enforcePMColor,
-                                                     std::unique_ptr<GrFragmentProcessor> dst) {
-        return std::unique_ptr<GrFragmentProcessor>(
-                new ArithmeticFP(k1, k2, k3, k4, enforcePMColor, std::move(dst)));
+SkIRect ArithmeticImageFilterImpl::onFilterBounds(const SkIRect& src,
+                                                  const SkMatrix& ctm,
+                                                  MapDirection direction) const {
+    if (kReverse_MapDirection == direction) {
+        return SkImageFilter::onFilterBounds(src, ctm, direction);
     }
 
-    ~ArithmeticFP() override {}
+    SkASSERT(2 == this->countInputs());
 
-    const char* name() const override { return "Arithmetic"; }
+    // result(i1,i2) = k1*i1*i2 + k2*i1 + k3*i2 + k4
+    // Note that background (getInput(0)) is i2, and foreground (getInput(1)) is i1.
+    auto i2 = this->getInput(0) ? this->getInput(0)->filterBounds(src, ctm, direction) : src;
+    auto i1 = this->getInput(1) ? this->getInput(1)->filterBounds(src, ctm, direction) : src;
 
-    SkString dumpInfo() const override {
-        SkString str;
-        str.appendf("K1: %.2f K2: %.2f K3: %.2f K4: %.2f", fK1, fK2, fK3, fK4);
-        return str;
+    // Arithmetic with non-zero k4 may influence the complete filter primitive
+    // region. [k4 > 0 => result(0,0) = k4 => result(i1,i2) >= k4]
+    if (!SkScalarNearlyZero(fK[3])) {
+        i1.join(i2);
+        return i1;
     }
 
-    std::unique_ptr<GrFragmentProcessor> clone() const override {
-        return Make(fK1, fK2, fK3, fK4, fEnforcePMColor, this->childProcessor(0).clone());
+    // If both K2 or K3 are non-zero, both i1 and i2 appear.
+    if (!SkScalarNearlyZero(fK[1]) && !SkScalarNearlyZero(fK[2])) {
+        i1.join(i2);
+        return i1;
     }
 
-    float k1() const { return fK1; }
-    float k2() const { return fK2; }
-    float k3() const { return fK3; }
-    float k4() const { return fK4; }
-    bool enforcePMColor() const { return fEnforcePMColor; }
-
-private:
-    GrGLSLFragmentProcessor* onCreateGLSLInstance() const override {
-        class GLSLFP : public GrGLSLFragmentProcessor {
-        public:
-            void emitCode(EmitArgs& args) override {
-                const ArithmeticFP& arith = args.fFp.cast<ArithmeticFP>();
-
-                GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
-                SkString dstColor("dstColor");
-                this->emitChild(0, &dstColor, args);
-
-                fKUni = args.fUniformHandler->addUniform(kFragment_GrShaderFlag, kVec4f_GrSLType,
-                                                         kDefault_GrSLPrecision, "k");
-                const char* kUni = args.fUniformHandler->getUniformCStr(fKUni);
-
-                // We don't try to optimize for this case at all
-                if (!args.fInputColor) {
-                    fragBuilder->codeAppend("const float4 src = float4(1);");
-                } else {
-                    fragBuilder->codeAppendf("float4 src = %s;", args.fInputColor);
-                }
-
-                fragBuilder->codeAppendf("float4 dst = %s;", dstColor.c_str());
-                fragBuilder->codeAppendf("%s = %s.x * src * dst + %s.y * src + %s.z * dst + %s.w;",
-                                         args.fOutputColor, kUni, kUni, kUni, kUni);
-                fragBuilder->codeAppendf("%s = clamp(%s, 0.0, 1.0);\n", args.fOutputColor,
-                                         args.fOutputColor);
-                if (arith.fEnforcePMColor) {
-                    fragBuilder->codeAppendf("%s.rgb = min(%s.rgb, %s.a);", args.fOutputColor,
-                                             args.fOutputColor, args.fOutputColor);
-                }
-            }
-
-        protected:
-            void onSetData(const GrGLSLProgramDataManager& pdman,
-                           const GrFragmentProcessor& proc) override {
-                const ArithmeticFP& arith = proc.cast<ArithmeticFP>();
-                pdman.set4f(fKUni, arith.k1(), arith.k2(), arith.k3(), arith.k4());
-            }
-
-        private:
-            GrGLSLProgramDataManager::UniformHandle fKUni;
-        };
-        return new GLSLFP;
+    // If k2 is non-zero, output can be produced whenever i1 is non-transparent.
+    // [k3 = k4 = 0 => result(i1,i2) = k1*i1*i2 + k2*i1 = (k1*i2 + k2)*i1]
+    if (!SkScalarNearlyZero(fK[1])) {
+        return i1;
     }
 
-    void onGetGLSLProcessorKey(const GrShaderCaps& caps, GrProcessorKeyBuilder* b) const override {
-        b->add32(fEnforcePMColor ? 1 : 0);
+    // If k3 is non-zero, output can be produced whenever i2 is non-transparent.
+    // [k2 = k4 = 0 => result(i1,i2) = k1*i1*i2 + k3*i2 = (k1*i1 + k3)*i2]
+    if (!SkScalarNearlyZero(fK[2])) {
+        return i2;
     }
 
-    bool onIsEqual(const GrFragmentProcessor& fpBase) const override {
-        const ArithmeticFP& fp = fpBase.cast<ArithmeticFP>();
-        return fK1 == fp.fK1 && fK2 == fp.fK2 && fK3 == fp.fK3 && fK4 == fp.fK4 &&
-               fEnforcePMColor == fp.fEnforcePMColor;
+    // If just k1 is non-zero, output will only be produce where both inputs
+    // are non-transparent. Use intersection.
+    // [k1 > 0 and k2 = k3 = k4 = 0 => result(i1,i2) = k1*i1*i2]
+    if (!SkScalarNearlyZero(fK[0])) {
+        if (!i1.intersect(i2)) {
+            return SkIRect::MakeEmpty();
+        }
+        return i1;
     }
 
-    // This could implement the const input -> const output optimization but it's unlikely to help.
-    ArithmeticFP(float k1, float k2, float k3, float k4, bool enforcePMColor,
-                 std::unique_ptr<GrFragmentProcessor> dst)
-            : INHERITED(kNone_OptimizationFlags)
-            , fK1(k1)
-            , fK2(k2)
-            , fK3(k3)
-            , fK4(k4)
-            , fEnforcePMColor(enforcePMColor) {
-        this->initClassID<ArithmeticFP>();
-        SkASSERT(dst);
-        SkDEBUGCODE(int dstIndex =) this->registerChildProcessor(std::move(dst));
-        SkASSERT(0 == dstIndex);
-    }
-
-    float fK1, fK2, fK3, fK4;
-    bool fEnforcePMColor;
-
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST
-    typedef GrFragmentProcessor INHERITED;
-};
+    // [k1 = k2 = k3 = k4 = 0 => result(i1,i2) = 0]
+    return SkIRect::MakeEmpty();
 }
 
+#if SK_SUPPORT_GPU
+
 #if GR_TEST_UTILS
-std::unique_ptr<GrFragmentProcessor> ArithmeticFP::TestCreate(GrProcessorTestData* d) {
+std::unique_ptr<GrFragmentProcessor> GrArithmeticFP::TestCreate(GrProcessorTestData* d) {
     float k1 = d->fRandom->nextF();
     float k2 = d->fRandom->nextF();
     float k3 = d->fRandom->nextF();
@@ -322,11 +271,11 @@ std::unique_ptr<GrFragmentProcessor> ArithmeticFP::TestCreate(GrProcessorTestDat
     bool enforcePMColor = d->fRandom->nextBool();
 
     std::unique_ptr<GrFragmentProcessor> dst(GrProcessorUnitTest::MakeChildFP(d));
-    return ArithmeticFP::Make(k1, k2, k3, k4, enforcePMColor, std::move(dst));
+    return GrArithmeticFP::Make(k1, k2, k3, k4, enforcePMColor, std::move(dst));
 }
 #endif
 
-GR_DEFINE_FRAGMENT_PROCESSOR_TEST(ArithmeticFP);
+GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrArithmeticFP);
 
 sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
         SkSpecialImage* source,
@@ -359,9 +308,9 @@ sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
         sk_sp<GrColorSpaceXform> bgXform =
                 GrColorSpaceXform::Make(background->getColorSpace(), outputProperties.colorSpace());
         bgFP = GrTextureDomainEffect::Make(
-                std::move(backgroundProxy), std::move(bgXform),
-                backgroundMatrix, GrTextureDomain::MakeTexelDomain(background->subset()),
-                GrTextureDomain::kDecal_Mode, GrSamplerParams::kNone_FilterMode);
+                std::move(backgroundProxy), std::move(bgXform), backgroundMatrix,
+                GrTextureDomain::MakeTexelDomain(background->subset()),
+                GrTextureDomain::kDecal_Mode, GrSamplerState::Filter::kNearest);
     } else {
         bgFP = GrConstColorProcessor::Make(GrColor4f::TransparentBlack(),
                                            GrConstColorProcessor::kIgnore_InputMode);
@@ -375,11 +324,11 @@ sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
         auto foregroundFP = GrTextureDomainEffect::Make(
                 std::move(foregroundProxy), std::move(fgXform), foregroundMatrix,
                 GrTextureDomain::MakeTexelDomain(foreground->subset()),
-                GrTextureDomain::kDecal_Mode, GrSamplerParams::kNone_FilterMode);
+                GrTextureDomain::kDecal_Mode, GrSamplerState::Filter::kNearest);
         paint.addColorFragmentProcessor(std::move(foregroundFP));
 
         std::unique_ptr<GrFragmentProcessor> xferFP =
-                ArithmeticFP::Make(fK[0], fK[1], fK[2], fK[3], fEnforcePMColor, std::move(bgFP));
+                GrArithmeticFP::Make(fK[0], fK[1], fK[2], fK[3], fEnforcePMColor, std::move(bgFP));
 
         // A null 'xferFP' here means kSrc_Mode was used in which case we can just proceed
         if (xferFP) {

@@ -10,14 +10,29 @@
 
 namespace blink {
 
+namespace {
+
+bool ShouldComputeBaseline(const LayoutBox& box) {
+  if (box.IsLayoutBlock() &&
+      ToLayoutBlock(box).UseLogicalBottomMarginEdgeForInlineBlockBaseline())
+    return false;
+  if (box.IsWritingModeRoot())
+    return false;
+  return true;
+}
+
+}  // namespace
+
 NGConstraintSpace::NGConstraintSpace(
     NGWritingMode writing_mode,
+    bool is_orthogonal_writing_mode_root,
     TextDirection direction,
     NGLogicalSize available_size,
     NGLogicalSize percentage_resolution_size,
     Optional<LayoutUnit> parent_percentage_resolution_inline_size,
     NGPhysicalSize initial_containing_block_size,
-    LayoutUnit fragmentainer_space_available,
+    LayoutUnit fragmentainer_block_size,
+    LayoutUnit fragmentainer_space_at_bfc_start,
     bool is_fixed_size_inline,
     bool is_fixed_size_block,
     bool is_shrink_to_fit,
@@ -26,6 +41,7 @@ NGConstraintSpace::NGConstraintSpace(
     NGFragmentationType block_direction_fragmentation_type,
     bool is_new_fc,
     bool is_anonymous,
+    bool use_first_line_style,
     const NGMarginStrut& margin_strut,
     const NGBfcOffset& bfc_offset,
     const WTF::Optional<NGBfcOffset>& floats_bfc_offset,
@@ -38,7 +54,8 @@ NGConstraintSpace::NGConstraintSpace(
       parent_percentage_resolution_inline_size_(
           parent_percentage_resolution_inline_size),
       initial_containing_block_size_(initial_containing_block_size),
-      fragmentainer_space_available_(fragmentainer_space_available),
+      fragmentainer_block_size_(fragmentainer_block_size),
+      fragmentainer_space_at_bfc_start_(fragmentainer_space_at_bfc_start),
       is_fixed_size_inline_(is_fixed_size_inline),
       is_fixed_size_block_(is_fixed_size_block),
       is_shrink_to_fit_(is_shrink_to_fit),
@@ -49,7 +66,9 @@ NGConstraintSpace::NGConstraintSpace(
       block_direction_fragmentation_type_(block_direction_fragmentation_type),
       is_new_fc_(is_new_fc),
       is_anonymous_(is_anonymous),
+      use_first_line_style_(use_first_line_style),
       writing_mode_(writing_mode),
+      is_orthogonal_writing_mode_root_(is_orthogonal_writing_mode_root),
       direction_(static_cast<unsigned>(direction)),
       margin_strut_(margin_strut),
       bfc_offset_(bfc_offset),
@@ -61,9 +80,7 @@ NGConstraintSpace::NGConstraintSpace(
 }
 
 RefPtr<NGConstraintSpace> NGConstraintSpace::CreateFromLayoutObject(
-    const LayoutBox& box,
-    Optional<LayoutUnit> override_logical_width,
-    Optional<LayoutUnit> override_logical_height) {
+    const LayoutBox& box) {
   auto writing_mode = FromPlatformWritingMode(box.StyleRef().GetWritingMode());
   bool parallel_containing_block = IsParallelWritingMode(
       FromPlatformWritingMode(
@@ -100,18 +117,10 @@ RefPtr<NGConstraintSpace> NGConstraintSpace::CreateFromLayoutObject(
     available_size.inline_size =
         box.BorderAndPaddingLogicalWidth() + box.OverrideLogicalContentWidth();
     fixed_inline = true;
-  } else if (override_logical_width.has_value()) {
-    available_size.inline_size =
-        box.BorderAndPaddingLogicalWidth() + override_logical_width.value();
-    fixed_inline = true;
   }
   if (box.HasOverrideLogicalContentHeight()) {
     available_size.block_size = box.BorderAndPaddingLogicalHeight() +
                                 box.OverrideLogicalContentHeight();
-    fixed_block = true;
-  } else if (override_logical_height.has_value()) {
-    available_size.block_size =
-        box.BorderAndPaddingLogicalHeight() + override_logical_height.value();
     fixed_block = true;
   }
 
@@ -133,8 +142,21 @@ RefPtr<NGConstraintSpace> NGConstraintSpace::CreateFromLayoutObject(
   DCHECK_GE(initial_containing_block_size.width, LayoutUnit());
   DCHECK_GE(initial_containing_block_size.height, LayoutUnit());
 
-  return NGConstraintSpaceBuilder(writing_mode, initial_containing_block_size)
-      .SetAvailableSize(available_size)
+  NGConstraintSpaceBuilder builder(writing_mode, initial_containing_block_size);
+
+  if (ShouldComputeBaseline(box)) {
+    FontBaseline baseline_type = IsHorizontalWritingMode(writing_mode)
+                                     ? kAlphabeticBaseline
+                                     : kIdeographicBaseline;
+    // Add all types because we don't know which baselines will be requested.
+    builder
+        .AddBaselineRequest(
+            {NGBaselineAlgorithmType::kAtomicInline, baseline_type})
+        .AddBaselineRequest(
+            {NGBaselineAlgorithmType::kFirstLine, baseline_type});
+  }
+
+  return builder.SetAvailableSize(available_size)
       .SetPercentageResolutionSize(percentage_size)
       .SetIsInlineDirectionTriggersScrollbar(
           box.StyleRef().OverflowInlineDirection() == EOverflow::kAuto)
@@ -147,6 +169,17 @@ RefPtr<NGConstraintSpace> NGConstraintSpace::CreateFromLayoutObject(
       .SetIsNewFormattingContext(is_new_fc)
       .SetTextDirection(box.StyleRef().Direction())
       .ToConstraintSpace(writing_mode);
+}
+
+LayoutUnit
+NGConstraintSpace::PercentageResolutionInlineSizeForParentWritingMode() const {
+  if (!IsOrthogonalWritingModeRoot())
+    return PercentageResolutionSize().inline_size;
+  if (PercentageResolutionSize().block_size != NGSizeIndefinite)
+    return PercentageResolutionSize().block_size;
+  if (IsHorizontalWritingMode(WritingMode()))
+    return InitialContainingBlockSize().height;
+  return InitialContainingBlockSize().width;
 }
 
 Optional<LayoutUnit> NGConstraintSpace::ParentPercentageResolutionInlineSize()
@@ -180,8 +213,9 @@ bool NGConstraintSpace::operator==(const NGConstraintSpace& other) const {
              other.parent_percentage_resolution_inline_size_ &&
          initial_containing_block_size_ ==
              other.initial_containing_block_size_ &&
-         fragmentainer_space_available_ ==
-             other.fragmentainer_space_available_ &&
+         fragmentainer_block_size_ == other.fragmentainer_block_size_ &&
+         fragmentainer_space_at_bfc_start_ ==
+             other.fragmentainer_space_at_bfc_start_ &&
          is_fixed_size_inline_ == other.is_fixed_size_inline_ &&
          is_fixed_size_block_ == other.is_fixed_size_block_ &&
          is_shrink_to_fit_ == other.is_shrink_to_fit_ &&

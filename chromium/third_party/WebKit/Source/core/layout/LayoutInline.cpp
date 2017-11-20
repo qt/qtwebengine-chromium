@@ -23,7 +23,8 @@
 
 #include "core/layout/LayoutInline.h"
 
-#include "core/dom/StyleEngine.h"
+#include "core/css/StyleEngine.h"
+#include "core/editing/PositionWithAffinity.h"
 #include "core/fullscreen/Fullscreen.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutBlock.h"
@@ -54,6 +55,12 @@ static_assert(sizeof(LayoutInline) == sizeof(SameSizeAsLayoutInline),
 
 LayoutInline::LayoutInline(Element* element) : LayoutBoxModelObject(element) {
   SetChildrenInline(true);
+}
+
+LayoutInline* LayoutInline::CreateAnonymous(Document* document) {
+  LayoutInline* layout_inline = new LayoutInline(nullptr);
+  layout_inline->SetDocumentForAnonymous(document);
+  return layout_inline;
 }
 
 void LayoutInline::WillBeDestroyed() {
@@ -262,9 +269,9 @@ void LayoutInline::UpdateAlwaysCreateLineBoxes(bool full_layout) {
 }
 
 LayoutRect LayoutInline::LocalCaretRect(
-    InlineBox* inline_box,
+    const InlineBox* inline_box,
     int,
-    LayoutUnit* extra_width_to_end_of_line) {
+    LayoutUnit* extra_width_to_end_of_line) const {
   if (FirstChild()) {
     // This condition is possible if the LayoutInline is at an editing boundary,
     // i.e. the VisiblePosition is:

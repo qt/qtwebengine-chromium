@@ -55,11 +55,16 @@ rtc_static_library("video") {
 
   deps = [
     "..:webrtc_common",
+    "../api:optional",
     "../api:transport_api",
     "../api/video_codecs:video_codecs_api",
+    "../call:bitrate_allocator",
     "../call:call_interfaces",
     "../call:rtp_interfaces",
     "../call:video_stream_api",
+
+    # For RtxReceiveStream.
+    "../call:rtp_receiver",
     "../common_video",
     "../logging:rtc_event_log_api",
     "../media:rtc_media_base",
@@ -93,6 +98,7 @@ if (rtc_include_tests) {
       "video_quality_test.h",
     ]
     deps = [
+      "../api:optional",
       "../call:call_interfaces",
       "../common_video",
       "../logging:rtc_event_log_api",
@@ -112,7 +118,7 @@ if (rtc_include_tests) {
       "../test:test_renderer",
       "../test:test_renderer",
       "../test:test_support",
-      "../test:test_support_test_output",
+      "../test:test_support_test_artifacts",
       "../test:video_test_common",
       "../test:video_test_common",
       "../test:video_test_support",
@@ -165,6 +171,7 @@ if (rtc_include_tests) {
       "../system_wrappers:metrics_default",
       "../test:field_trial",
       "../test:run_test",
+      "../test:run_test_interface",
       "../test:test_common",
       "../test:test_renderer",
       "../test:test_support",
@@ -189,6 +196,7 @@ if (rtc_include_tests) {
       "../system_wrappers:metrics_default",
       "../test:field_trial",
       "../test:run_test",
+      "../test:run_test_interface",
       "../test:test_common",
       "../test:test_renderer",
       "../test:test_support",
@@ -218,12 +226,12 @@ if (rtc_include_tests) {
       "../test:field_trial",
       "../test:rtp_test_utils",
       "../test:run_test",
+      "../test:run_test_interface",
       "../test:test_common",
       "../test:test_renderer",
       "../test:test_support",
       "../test:video_test_common",
       "../test:video_test_support",
-      "//third_party/gflags",
     ]
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
@@ -263,6 +271,7 @@ if (rtc_include_tests) {
     ]
     deps = [
       ":video",
+      "../api:optional",
       "../api:video_frame_api",
       "../api/video_codecs:video_codecs_api",
       "../call:call_interfaces",
@@ -280,7 +289,6 @@ if (rtc_include_tests) {
       "../modules/rtp_rtcp",
       "../modules/rtp_rtcp:mock_rtp_rtcp",
       "../modules/utility",
-      "../modules/utility:mock_process_thread",
       "../modules/video_coding",
       "../modules/video_coding:video_coding_utility",
       "../modules/video_coding:webrtc_h264",

@@ -8,22 +8,26 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_P2P_BASE_TURNPORT_H_
-#define WEBRTC_P2P_BASE_TURNPORT_H_
+#ifndef P2P_BASE_TURNPORT_H_
+#define P2P_BASE_TURNPORT_H_
 
 #include <stdio.h>
 #include <list>
 #include <set>
 #include <string>
 
-#include "webrtc/p2p/base/port.h"
-#include "webrtc/p2p/client/basicportallocator.h"
-#include "webrtc/rtc_base/asyncinvoker.h"
-#include "webrtc/rtc_base/asyncpacketsocket.h"
+#include "p2p/base/port.h"
+#include "p2p/client/basicportallocator.h"
+#include "rtc_base/asyncinvoker.h"
+#include "rtc_base/asyncpacketsocket.h"
 
 namespace rtc {
 class AsyncResolver;
 class SignalThread;
+}
+
+namespace webrtc {
+class TurnCustomizer;
 }
 
 namespace cricket {
@@ -52,9 +56,11 @@ class TurnPort : public Port {
                           const ProtocolAddress& server_address,
                           const RelayCredentials& credentials,
                           int server_priority,
-                          const std::string& origin) {
+                          const std::string& origin,
+                          webrtc::TurnCustomizer* customizer) {
     return new TurnPort(thread, factory, network, socket, username, password,
-                        server_address, credentials, server_priority, origin);
+                        server_address, credentials, server_priority, origin,
+                        customizer);
   }
 
   // Create a TURN port that will use a new socket, bound to |network| and
@@ -70,10 +76,13 @@ class TurnPort : public Port {
                           const RelayCredentials& credentials,
                           int server_priority,
                           const std::string& origin,
-                          const std::vector<std::string>& tls_alpn_protocols) {
+                          const std::vector<std::string>& tls_alpn_protocols,
+                          const std::vector<std::string>& tls_elliptic_curves,
+                          webrtc::TurnCustomizer* customizer) {
     return new TurnPort(thread, factory, network, min_port, max_port, username,
                         password, server_address, credentials, server_priority,
-                        origin, tls_alpn_protocols);
+                        origin, tls_alpn_protocols, tls_elliptic_curves,
+                        customizer);
   }
 
   virtual ~TurnPort();
@@ -98,6 +107,10 @@ class TurnPort : public Port {
 
   virtual std::vector<std::string> GetTlsAlpnProtocols() const {
     return tls_alpn_protocols_;
+  }
+
+  virtual std::vector<std::string> GetTlsEllipticCurves() const {
+    return tls_elliptic_curves_;
   }
 
   virtual void PrepareAddress();
@@ -179,7 +192,8 @@ class TurnPort : public Port {
            const ProtocolAddress& server_address,
            const RelayCredentials& credentials,
            int server_priority,
-           const std::string& origin);
+           const std::string& origin,
+           webrtc::TurnCustomizer* customizer);
 
   TurnPort(rtc::Thread* thread,
            rtc::PacketSocketFactory* factory,
@@ -192,7 +206,9 @@ class TurnPort : public Port {
            const RelayCredentials& credentials,
            int server_priority,
            const std::string& origin,
-           const std::vector<std::string>& alpn_protocols);
+           const std::vector<std::string>& tls_alpn_protocols,
+           const std::vector<std::string>& tls_elliptic_curves,
+           webrtc::TurnCustomizer* customizer);
 
  private:
   enum {
@@ -261,7 +277,6 @@ class TurnPort : public Port {
   // in |entry|.
   void DestroyEntryIfNotCancelled(TurnEntry* entry, int64_t timestamp);
   void ScheduleEntryDestruction(TurnEntry* entry);
-  void CancelEntryDestruction(TurnEntry* entry);
 
   // Marks the connection with remote address |address| failed and
   // pruned (a.k.a. write-timed-out). Returns true if a connection is found.
@@ -270,9 +285,14 @@ class TurnPort : public Port {
   // Reconstruct the URL of the server which the candidate is gathered from.
   std::string ReconstructedServerUrl();
 
+  void TurnCustomizerMaybeModifyOutgoingStunMessage(StunMessage* message);
+  bool TurnCustomizerAllowChannelData(const void* data,
+                                      size_t size, bool payload);
+
   ProtocolAddress server_address_;
   TlsCertPolicy tls_cert_policy_ = TlsCertPolicy::TLS_CERT_POLICY_SECURE;
   std::vector<std::string> tls_alpn_protocols_;
+  std::vector<std::string> tls_elliptic_curves_;
   RelayCredentials credentials_;
   AttemptedServerSet attempted_server_addresses_;
 
@@ -299,6 +319,9 @@ class TurnPort : public Port {
 
   rtc::AsyncInvoker invoker_;
 
+  // Optional TurnCustomizer that can modify outgoing messages.
+  webrtc::TurnCustomizer *turn_customizer_ = nullptr;
+
   friend class TurnEntry;
   friend class TurnAllocateRequest;
   friend class TurnRefreshRequest;
@@ -308,4 +331,4 @@ class TurnPort : public Port {
 
 }  // namespace cricket
 
-#endif  // WEBRTC_P2P_BASE_TURNPORT_H_
+#endif  // P2P_BASE_TURNPORT_H_

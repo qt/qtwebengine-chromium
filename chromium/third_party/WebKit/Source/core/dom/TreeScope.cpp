@@ -26,7 +26,7 @@
 
 #include "core/dom/TreeScope.h"
 
-#include "core/HTMLNames.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/css/resolver/ScopedStyleResolver.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
@@ -36,7 +36,6 @@
 #include "core/dom/IdTargetObserverRegistry.h"
 #include "core/dom/NodeComputedStyle.h"
 #include "core/dom/ShadowRoot.h"
-#include "core/dom/StyleChangeReason.h"
 #include "core/dom/TreeScopeAdopter.h"
 #include "core/dom/events/EventPath.h"
 #include "core/editing/DOMSelection.h"
@@ -45,6 +44,7 @@
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLMapElement.h"
+#include "core/html_names.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/api/LayoutViewItem.h"
 #include "core/page/FocusController.h"
@@ -191,7 +191,7 @@ HTMLMapElement* TreeScope::GetImageMap(const String& url) const {
     return nullptr;
   size_t hash_pos = url.find('#');
   String name = hash_pos == kNotFound ? url : url.Substring(hash_pos + 1);
-  return toHTMLMapElement(
+  return ToHTMLMapElement(
       image_maps_by_name_->GetElementByMapName(AtomicString(name), *this));
 }
 

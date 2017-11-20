@@ -13,19 +13,20 @@
 #include "base/memory/ptr_util.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
-#include "cc/output/layer_tree_frame_sink.h"
-#include "cc/quads/render_pass.h"
-#include "cc/quads/solid_color_draw_quad.h"
-#include "cc/quads/texture_draw_quad.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "components/exo/buffer.h"
 #include "components/exo/pointer.h"
 #include "components/exo/surface_delegate.h"
 #include "components/exo/surface_observer.h"
+#include "components/viz/common/quads/render_pass.h"
 #include "components/viz/common/quads/shared_quad_state.h"
-#include "components/viz/common/quads/single_release_callback.h"
+#include "components/viz/common/quads/solid_color_draw_quad.h"
+#include "components/viz/common/quads/texture_draw_quad.h"
+#include "components/viz/common/resources/single_release_callback.h"
 #include "components/viz/common/surfaces/sequence_surface_reference_factory.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_manager.h"
+#include "services/ui/public/interfaces/window_tree_constants.mojom.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/drag_drop_delegate.h"
@@ -129,7 +130,8 @@ class CustomWindowDelegate : public aura::WindowDelegate {
   bool CanFocus() override { return true; }
   void OnCaptureLost() override {}
   void OnPaint(const ui::PaintContext& context) override {}
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override {}
   void OnWindowDestroying(aura::Window* window) override {}
   void OnWindowDestroyed(aura::Window* window) override { delete this; }
   void OnWindowTargetVisibilityChanged(bool visible) override {}
@@ -159,24 +161,6 @@ class CustomWindowTargeter : public aura::WindowTargeter {
   ~CustomWindowTargeter() override {}
 
   // Overridden from aura::WindowTargeter:
-  bool SubtreeCanAcceptEvent(aura::Window* window,
-                             const ui::LocatedEvent& event) const override {
-    Surface* surface = Surface::AsSurface(window);
-    if (!surface)
-      return false;
-
-    if (surface->IsStylusOnly()) {
-      ui::EventPointerType type = ui::EventPointerType::POINTER_TYPE_UNKNOWN;
-      if (event.IsTouchEvent()) {
-        auto* touch_event = static_cast<const ui::TouchEvent*>(&event);
-        type = touch_event->pointer_details().pointer_type;
-      }
-      if (type != ui::EventPointerType::POINTER_TYPE_PEN)
-        return false;
-    }
-    return aura::WindowTargeter::SubtreeCanAcceptEvent(window, event);
-  }
-
   bool EventLocationInsideBounds(aura::Window* window,
                                  const ui::LocatedEvent& event) const override {
     Surface* surface = Surface::AsSurface(window);
@@ -188,6 +172,16 @@ class CustomWindowTargeter : public aura::WindowTargeter {
       aura::Window::ConvertPointToTarget(window->parent(), window,
                                          &local_point);
     return surface->HitTestRect(gfx::Rect(local_point, gfx::Size(1, 1)));
+  }
+
+  std::unique_ptr<HitTestRects> GetExtraHitTestShapeRects(
+      aura::Window* window) const override {
+    Surface* surface = Surface::AsSurface(window);
+    if (!surface)
+      return nullptr;
+    if (!surface->HasHitTestMask())
+      return nullptr;
+    return surface->GetHitTestShapeRects();
   }
 
  private:
@@ -424,6 +418,13 @@ void Surface::SetAlpha(float alpha) {
   pending_state_.alpha = alpha;
 }
 
+void Surface::SetFrame(SurfaceFrameType type) {
+  TRACE_EVENT1("exo", "Surface::SetFrame", "type", static_cast<uint32_t>(type));
+
+  if (delegate_)
+    delegate_->OnSetFrame(type);
+}
+
 void Surface::Commit() {
   TRACE_EVENT0("exo", "Surface::Commit");
 
@@ -453,14 +454,26 @@ gfx::Rect Surface::CommitSurfaceHierarchy(
         pending_state_.buffer_scale != state_.buffer_scale ||
         pending_state_.buffer_transform != state_.buffer_transform;
 
+    // If the current state is fully transparent, the last submitted frame will
+    // not include the TextureDrawQuad for the resource, so the resource might
+    // have been released and needs to be updated again.
+    if (!state_.alpha && pending_state_.alpha)
+      needs_update_resource_ = true;
+
     state_ = pending_state_;
     pending_state_.only_visible_on_secure_output = false;
+
+    window_->SetEventTargetingPolicy(
+        state_.input_region.isEmpty()
+            ? ui::mojom::EventTargetingPolicy::DESCENDANTS_ONLY
+            : ui::mojom::EventTargetingPolicy::TARGET_AND_DESCENDANTS);
 
     // We update contents if Attach() has been called since last commit.
     if (has_pending_contents_) {
       has_pending_contents_ = false;
       current_buffer_ = std::move(pending_buffer_);
-      needs_update_resource_ = true;
+      if (state_.alpha)
+        needs_update_resource_ = true;
     }
 
     if (needs_update_buffer_transform)
@@ -531,7 +544,7 @@ void Surface::AppendSurfaceHierarchyContentsToFrame(
     const gfx::Point& origin,
     float device_scale_factor,
     LayerTreeFrameSinkHolder* frame_sink_holder,
-    cc::CompositorFrame* frame) {
+    viz::CompositorFrame* frame) {
   // The top most sub-surface is at the front of the RenderPass's quad_list,
   // so we need composite sub-surface in reversed order.
   for (const auto& sub_surface_entry : base::Reversed(sub_surfaces_)) {
@@ -578,6 +591,15 @@ bool Surface::HasHitTestMask() const {
 
 void Surface::GetHitTestMask(gfx::Path* mask) const {
   state_.input_region.getBoundaryPath(mask);
+}
+
+std::unique_ptr<aura::WindowTargeter::HitTestRects>
+Surface::GetHitTestShapeRects() const {
+  auto rects = std::make_unique<aura::WindowTargeter::HitTestRects>();
+  SkRegion::Iterator it(state_.input_region);
+  for (const SkIRect& rect = it.rect(); !it.done(); it.next())
+    rects->push_back(gfx::SkIRectToRect(rect));
+  return rects;
 }
 
 void Surface::RegisterCursorProvider(Pointer* provider) {
@@ -745,8 +767,8 @@ void Surface::UpdateBufferTransform() {
 
 void Surface::AppendContentsToFrame(const gfx::Point& origin,
                                     float device_scale_factor,
-                                    cc::CompositorFrame* frame) {
-  const std::unique_ptr<cc::RenderPass>& render_pass =
+                                    viz::CompositorFrame* frame) {
+  const std::unique_ptr<viz::RenderPass>& render_pass =
       frame->render_pass_list.back();
   gfx::Rect output_rect(origin, content_size_);
   gfx::Rect quad_rect(0, 0, 1, 1);
@@ -754,7 +776,7 @@ void Surface::AppendContentsToFrame(const gfx::Point& origin,
   // Surface bounds are in DIPs, but |damage_rect| and |output_rect| are in
   // pixels, so we need to scale by the |device_scale_factor|.
   gfx::Rect damage_rect = gfx::SkIRectToRect(damage_.getBounds());
-  damage_rect.set_origin(origin);
+  damage_rect.Offset(origin.x(), origin.y());
   render_pass->damage_rect.Union(
       gfx::ConvertRectToPixel(device_scale_factor, damage_rect));
   render_pass->output_rect.Union(
@@ -775,12 +797,16 @@ void Surface::AppendContentsToFrame(const gfx::Point& origin,
   quad_to_target_transform.ConcatTransform(
       gfx::Transform(viewport_to_target_matrix));
 
+  bool are_contents_opaque =
+      !current_resource_has_alpha_ || state_.blend_mode == SkBlendMode::kSrc ||
+      state_.opaque_region.contains(gfx::RectToSkIRect(output_rect));
+
   viz::SharedQuadState* quad_state =
       render_pass->CreateAndAppendSharedQuadState();
   quad_state->SetAll(
       quad_to_target_transform, quad_rect /* quad_layer_rect */,
       quad_rect /* visible_quad_layer_rect */, gfx::Rect() /* clip_rect */,
-      false /* is_clipped */, state_.alpha /* opacity */,
+      false /* is_clipped */, are_contents_opaque, state_.alpha /* opacity */,
       SkBlendMode::kSrcOver /* blend_mode */, 0 /* sorting_context_id */);
 
   if (current_resource_.id) {
@@ -801,16 +827,12 @@ void Surface::AppendContentsToFrame(const gfx::Point& origin,
 
     // Texture quad is only needed if buffer is not fully transparent.
     if (state_.alpha) {
-      cc::TextureDrawQuad* texture_quad =
-          render_pass->CreateAndAppendDrawQuad<cc::TextureDrawQuad>();
+      viz::TextureDrawQuad* texture_quad =
+          render_pass->CreateAndAppendDrawQuad<viz::TextureDrawQuad>();
       float vertex_opacity[4] = {1.0, 1.0, 1.0, 1.0};
-      bool needs_blending =
-          current_resource_has_alpha_ &&
-          state_.blend_mode != SkBlendMode::kSrc &&
-          !state_.opaque_region.contains(gfx::RectToSkIRect(output_rect));
 
       texture_quad->SetNew(
-          quad_state, quad_rect, quad_rect, needs_blending,
+          quad_state, quad_rect, quad_rect, !are_contents_opaque,
           current_resource_.id, true /* premultiplied_alpha */,
           uv_crop.origin(), uv_crop.bottom_right(),
           SK_ColorTRANSPARENT /* background_color */, vertex_opacity,
@@ -821,8 +843,8 @@ void Surface::AppendContentsToFrame(const gfx::Point& origin,
       frame->resource_list.push_back(current_resource_);
     }
   } else {
-    cc::SolidColorDrawQuad* solid_quad =
-        render_pass->CreateAndAppendDrawQuad<cc::SolidColorDrawQuad>();
+    viz::SolidColorDrawQuad* solid_quad =
+        render_pass->CreateAndAppendDrawQuad<viz::SolidColorDrawQuad>();
     solid_quad->SetNew(quad_state, quad_rect, quad_rect, SK_ColorBLACK,
                        false /* force_anti_aliasing_off */);
   }

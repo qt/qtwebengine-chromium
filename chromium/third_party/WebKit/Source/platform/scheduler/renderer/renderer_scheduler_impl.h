@@ -13,6 +13,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/trace_event/trace_log.h"
+#include "build/build_config.h"
 #include "device/base/synchronization/shared_memory_seqlock_buffer.h"
 #include "platform/PlatformExport.h"
 #include "platform/scheduler/base/pollable_thread_safe_flag.h"
@@ -29,7 +30,7 @@
 #include "platform/scheduler/renderer/task_cost_estimator.h"
 #include "platform/scheduler/renderer/user_model.h"
 #include "platform/scheduler/renderer/web_view_scheduler_impl.h"
-#include "platform/scheduler/util/state_tracer.h"
+#include "platform/scheduler/util/tracing_helper.h"
 #include "public/platform/scheduler/renderer/renderer_scheduler.h"
 
 namespace base {
@@ -40,6 +41,11 @@ class ConvertableToTraceFormat;
 
 namespace blink {
 namespace scheduler {
+namespace renderer_scheduler_impl_unittest {
+class RendererSchedulerImplForTest;
+class RendererSchedulerImplTest;
+FORWARD_DECLARE_TEST(RendererSchedulerImplTest, Tracing);
+}  // namespace renderer_scheduler_impl_unittest
 class AutoAdvancingVirtualTimeDomain;
 class RenderWidgetSchedulingState;
 class WebViewSchedulerImpl;
@@ -106,8 +112,12 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void DidAnimateForInputOnCompositorThread() override;
   void SetRendererHidden(bool hidden) override;
   void SetRendererBackgrounded(bool backgrounded) override;
-  void PauseRenderer() override;
-  void ResumeRenderer() override;
+#if defined(OS_ANDROID)
+  void PauseTimersForAndroidWebView();
+  void ResumeTimersForAndroidWebView();
+#endif
+  std::unique_ptr<RendererPauseHandle> PauseRenderer() override
+      WARN_UNUSED_RESULT;
   void AddPendingNavigation(NavigatingFrameType type) override;
   void RemovePendingNavigation(NavigatingFrameType type) override;
   bool IsHighPriorityWorkAnticipated() override;
@@ -117,11 +127,9 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void RemoveTaskObserver(
       base::MessageLoop::TaskObserver* task_observer) override;
   void Shutdown() override;
-  void PauseTimerQueue() override;
-  void ResumeTimerQueue() override;
   void VirtualTimePaused() override;
   void VirtualTimeResumed() override;
-  void SetTimerQueueStoppingWhenBackgroundedEnabled(bool enabled) override;
+  void SetStoppingWhenBackgroundedEnabled(bool enabled) override;
   void SetTopLevelBlameContext(
       base::trace_event::BlameContext* blame_context) override;
   void SetRAILModeObserver(RAILModeObserver* observer) override;
@@ -137,6 +145,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   // SchedulerHelper::Observer implementation:
   void OnTriedToExecuteBlockedTask() override;
   void OnBeginNestedRunLoop() override;
+  void OnExitNestedRunLoop() override;
 
   // QueueingTimeEstimator::Client implementation:
   void OnQueueingTimeForWindowEstimated(base::TimeDelta queueing_time,
@@ -163,9 +172,6 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
   // Returns a task queue where tasks run at the highest possible priority.
   scoped_refptr<MainThreadTaskQueue> ControlTaskQueue();
-
-  // Returns a task queue where tasks run at the lowest priority.
-  scoped_refptr<MainThreadTaskQueue> BestEffortTaskQueue();
 
   // A control task queue which also respects virtual time. Only available if
   // virtual time has been enabled.
@@ -253,16 +259,17 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> LoadingTaskRunner() override;
-  scoped_refptr<base::SingleThreadTaskRunner> TimerTaskRunner() override;
 
  private:
   friend class RenderWidgetSchedulingState;
   friend class RendererMetricsHelper;
 
   friend class RendererMetricsHelperTest;
-  friend class RendererSchedulerImplForTest;
-  friend class RendererSchedulerImplTest;
-  FRIEND_TEST_ALL_PREFIXES(RendererSchedulerImplTest, Tracing);
+  friend class renderer_scheduler_impl_unittest::RendererSchedulerImplForTest;
+  friend class renderer_scheduler_impl_unittest::RendererSchedulerImplTest;
+  FRIEND_TEST_ALL_PREFIXES(
+      renderer_scheduler_impl_unittest::RendererSchedulerImplTest,
+      Tracing);
 
   enum class ExpensiveTaskPolicy { RUN, BLOCK, THROTTLE };
 
@@ -273,6 +280,8 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   };
 
   static const char* TimeDomainTypeToString(TimeDomainType domain_type);
+
+  void SetStoppedInBackground(bool) const;
 
   struct TaskQueuePolicy {
     // Default constructor of TaskQueuePolicy should match behaviour of a
@@ -403,6 +412,15 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
   class TaskDurationMetricTracker;
 
+  class RendererPauseHandleImpl : public RendererPauseHandle {
+   public:
+    explicit RendererPauseHandleImpl(RendererSchedulerImpl* scheduler);
+    ~RendererPauseHandleImpl() override;
+
+   private:
+    RendererSchedulerImpl* scheduler_;  // NOT OWNED
+  };
+
   // IdleHelper::Delegate implementation:
   bool CanEnterLongIdlePeriod(
       base::TimeTicks now,
@@ -432,10 +450,10 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   // defined by RAILS.
   static const int kRailsResponseTimeMillis = 50;
 
-  // The amount of time to wait before suspending shared timers after the
-  // renderer has been backgrounded. This is used only if background suspension
-  // of shared timers is enabled.
-  static const int kStopTimersWhenBackgroundedDelayMillis = 5 * 60 * 1000;
+  // The amount of time to wait before suspending shared timers, and loading
+  // etc. after the renderer has been backgrounded. This is used only if
+  // background suspension is enabled.
+  static const int kStopWhenBackgroundedDelayMillis = 5 * 60 * 1000;
 
   // The time we should stay in a priority-escalated mode after a call to
   // DidAnimateForInputOnCompositorThread().
@@ -445,7 +463,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   // sets |policy_may_need_update_|. Note |any_thread_lock_| must be
   // locked.
   void EnsureUrgentPolicyUpdatePostedOnMainThread(
-      const tracked_objects::Location& from_here);
+      const base::Location& from_here);
 
   // Update the policy if a new signal has arrived. Must be called from the main
   // thread.
@@ -482,11 +500,6 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void UpdateForInputEventOnCompositorThread(WebInputEvent::Type type,
                                              InputEventState input_event_state);
 
-  // Helpers for safely stopping/resuming the timer queue after a
-  // background/foreground signal.
-  void PauseTimerQueueWhenBackgrounded();
-  void ResumeTimerQueueWhenForegroundedOrResumed();
-
   // The task cost estimators and the UserModel need to be reset upon page
   // nagigation. This function does that. Must be called from the main thread.
   void ResetForNavigationLocked();
@@ -510,6 +523,9 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   bool ShouldDisableThrottlingBecauseOfAudio(base::TimeTicks now);
 
   void AddQueueToWakeUpBudgetPool(MainThreadTaskQueue* queue);
+
+  void PauseRendererImpl();
+  void ResumeRendererImpl();
 
   MainThreadSchedulerHelper helper_;
   IdleHelper idle_helper_;
@@ -558,7 +574,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     TaskCostEstimator loading_task_cost_estimator;
     TaskCostEstimator timer_task_cost_estimator;
     IdleTimeEstimator idle_time_estimator;
-    UseCase current_use_case;
+    TraceableState<UseCase, kTracingCategoryNameDefault> current_use_case;
     Policy current_policy;
     base::TimeTicks current_policy_expiration_time;
     base::TimeTicks estimated_next_frame_begin;
@@ -567,18 +583,17 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     base::TimeDelta compositor_frame_interval;
     base::TimeDelta longest_jank_free_task_duration;
     base::Optional<base::TimeTicks> last_audio_state_change;
-    int timer_queue_pause_count;  // TIMER_TASK_QUEUE stopped if non-zero.
+    int renderer_pause_count;  // Renderer is paused if non-zero.
     int navigation_task_expected_count;
     ExpensiveTaskPolicy expensive_task_policy;
     bool renderer_hidden;
-    bool renderer_backgrounded;
-    bool renderer_paused;
-    bool timer_queue_stopping_when_backgrounded_enabled;
-    bool timer_queue_stopped_when_backgrounded;
+    TraceableState<bool, kTracingCategoryNameDefault> renderer_backgrounded;
+    bool stopping_when_backgrounded_enabled;
+    bool stopped_when_backgrounded;
     bool was_shutdown;
-    bool loading_tasks_seem_expensive;
-    bool timer_tasks_seem_expensive;
-    bool touchstart_expected_soon;
+    TraceableState<bool, kTracingCategoryNameInfo> loading_tasks_seem_expensive;
+    TraceableState<bool, kTracingCategoryNameInfo> timer_tasks_seem_expensive;
+    TraceableState<bool, kTracingCategoryNameDefault> touchstart_expected_soon;
     bool have_seen_a_begin_main_frame;
     bool have_reported_blocking_intervention_in_current_policy;
     bool have_reported_blocking_intervention_since_navigation;
@@ -586,10 +601,11 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     bool begin_frame_not_expected_soon;
     bool in_idle_period_for_testing;
     bool use_virtual_time;
-    bool is_audio_playing;
+    TraceableState<bool, kTracingCategoryNameDefault> is_audio_playing;
     bool compositor_will_send_main_frame_not_expected;
     bool virtual_time_stopped;
     bool has_navigated;
+    bool pause_timers_for_webview;
     std::unique_ptr<base::SingleSampleMetric> max_queueing_time_metric;
     base::TimeDelta max_queueing_time;
     base::TimeTicks background_status_changed_at;
@@ -598,8 +614,6 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     WakeUpBudgetPool* wake_up_budget_pool;                // Not owned.
     RendererMetricsHelper metrics_helper;
     RendererProcessType process_type;
-    StateTracer use_case_tracer;
-    StateTracer backgrounding_tracer;
   };
 
   struct AnyThread {

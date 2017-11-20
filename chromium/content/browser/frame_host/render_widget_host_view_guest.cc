@@ -294,7 +294,7 @@ void RenderWidgetHostViewGuest::SendSurfaceInfoToEmbedderImpl(
 
 void RenderWidgetHostViewGuest::SubmitCompositorFrame(
     const viz::LocalSurfaceId& local_surface_id,
-    cc::CompositorFrame frame) {
+    viz::CompositorFrame frame) {
   TRACE_EVENT0("content", "RenderWidgetHostViewGuest::OnSwapCompositorFrame");
 
   last_scroll_offset_ = frame.metadata.root_scroll_offset;
@@ -443,12 +443,32 @@ void RenderWidgetHostViewGuest::SelectionBoundsChanged(
   rwhv->SelectionBoundsChanged(guest_params);
 }
 
+void RenderWidgetHostViewGuest::DidStopFlinging() {
+  RenderWidgetHostViewBase* rwhv = this;
+  // If we're a pdf in a WebView, we could have nested guest views here.
+  while (rwhv && rwhv->IsRenderWidgetHostViewGuest()) {
+    rwhv = static_cast<RenderWidgetHostViewGuest*>(rwhv)
+               ->GetOwnerRenderWidgetHostView();
+  }
+  // DidStopFlinging() is used by TouchSelection to correctly detect the end of
+  // scroll events, so we forward this to the top-level RenderWidgetHostViewBase
+  // so it can be passed along to its TouchSelectionController.
+  if (rwhv)
+    rwhv->DidStopFlinging();
+}
+
 bool RenderWidgetHostViewGuest::LockMouse() {
   return platform_view_->LockMouse();
 }
 
 void RenderWidgetHostViewGuest::UnlockMouse() {
   return platform_view_->UnlockMouse();
+}
+
+viz::LocalSurfaceId RenderWidgetHostViewGuest::GetLocalSurfaceId() const {
+  if (guest_)
+    return guest_->local_surface_id();
+  return viz::LocalSurfaceId();
 }
 
 void RenderWidgetHostViewGuest::DidCreateNewRendererCompositorFrameSink(
@@ -653,7 +673,7 @@ void RenderWidgetHostViewGuest::OnHandleInputEvent(
 
   if (blink::WebInputEvent::IsKeyboardEventType(event->GetType())) {
     NativeWebKeyboardEvent keyboard_event(
-        *static_cast<const blink::WebKeyboardEvent*>(event));
+        *static_cast<const blink::WebKeyboardEvent*>(event), GetNativeView());
     host_->ForwardKeyboardEvent(keyboard_event);
     return;
   }

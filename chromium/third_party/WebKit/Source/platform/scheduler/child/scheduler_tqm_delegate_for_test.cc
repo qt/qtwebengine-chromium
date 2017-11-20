@@ -17,7 +17,7 @@ namespace scheduler {
 scoped_refptr<SchedulerTqmDelegateForTest> SchedulerTqmDelegateForTest::Create(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     std::unique_ptr<base::TickClock> time_source) {
-  return make_scoped_refptr(
+  return base::WrapRefCounted(
       new SchedulerTqmDelegateForTest(task_runner, std::move(time_source)));
 }
 
@@ -40,14 +40,14 @@ void SchedulerTqmDelegateForTest::RestoreDefaultTaskRunner() {
 }
 
 bool SchedulerTqmDelegateForTest::PostDelayedTask(
-    const tracked_objects::Location& from_here,
+    const base::Location& from_here,
     base::OnceClosure task,
     base::TimeDelta delay) {
   return task_runner_->PostDelayedTask(from_here, std::move(task), delay);
 }
 
 bool SchedulerTqmDelegateForTest::PostNonNestableDelayedTask(
-    const tracked_objects::Location& from_here,
+    const base::Location& from_here,
     base::OnceClosure task,
     base::TimeDelta delay) {
   return task_runner_->PostNonNestableDelayedTask(from_here, std::move(task),

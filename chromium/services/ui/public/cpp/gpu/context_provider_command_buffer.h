@@ -27,6 +27,7 @@
 namespace gpu {
 class CommandBufferProxyImpl;
 class GpuChannelHost;
+struct GpuFeatureInfo;
 class TransferBuffer;
 namespace gles2 {
 class GLES2CmdHelper;
@@ -74,7 +75,8 @@ class ContextProviderCommandBuffer
   viz::ContextCacheController* CacheController() override;
   void InvalidateGrContext(uint32_t state) override;
   base::Lock* GetLock() override;
-  gpu::Capabilities ContextCapabilities() override;
+  const gpu::Capabilities& ContextCapabilities() const override;
+  const gpu::GpuFeatureInfo& GetGpuFeatureInfo() const override;
   void SetLostContextCallback(
       const LostContextCallback& lost_context_callback) override;
 

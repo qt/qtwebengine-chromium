@@ -29,8 +29,6 @@
 
 namespace headless {
 
-uint64_t GenericURLRequestJob::next_request_id_ = 0;
-
 GenericURLRequestJob::GenericURLRequestJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
@@ -47,7 +45,6 @@ GenericURLRequestJob::GenericURLRequestJob(
       headless_browser_context_(headless_browser_context),
       request_resource_info_(
           content::ResourceRequestInfo::ForRequest(request_)),
-      request_id_(next_request_id_++),
       weak_factory_(this) {}
 
 GenericURLRequestJob::~GenericURLRequestJob() {
@@ -192,7 +189,8 @@ void GenericURLRequestJob::GetLoadTimingInfo(
 }
 
 uint64_t GenericURLRequestJob::GenericURLRequestJob::GetRequestId() const {
-  return request_id_;
+  return request_->identifier() +
+         (static_cast<uint64_t>(request_->url_chain().size()) << 32);
 }
 
 const net::URLRequest* GenericURLRequestJob::GetURLRequest() const {
@@ -204,7 +202,10 @@ const net::HttpRequestHeaders& GenericURLRequestJob::GetHttpRequestHeaders()
   return extra_request_headers_;
 }
 
-int GenericURLRequestJob::GetFrameTreeNodeId() const {
+std::string GenericURLRequestJob::GetDevToolsFrameId() const {
+  // TODO(alexclarke): When available get the new DevTools token directly from
+  // |request_resource_info_| and remove the machinery filling these maps.
+
   // URLRequestUserData will be set for all renderer initiated resource
   // requests, but not for browser side navigations.
   int render_process_id;
@@ -213,16 +214,28 @@ int GenericURLRequestJob::GetFrameTreeNodeId() const {
           request_, &render_process_id, &render_frame_routing_id) &&
       render_process_id != -1) {
     DCHECK(headless_browser_context_);
-    return static_cast<HeadlessBrowserContextImpl*>(headless_browser_context_)
-        ->GetFrameTreeNodeId(render_process_id, render_frame_routing_id);
+    const base::UnguessableToken* devtools_frame_token =
+        static_cast<HeadlessBrowserContextImpl*>(headless_browser_context_)
+            ->GetDevToolsFrameToken(render_process_id, render_frame_routing_id);
+    if (!devtools_frame_token)
+      return "";
+    return devtools_frame_token->ToString();
   }
+
   // ResourceRequestInfo::GetFrameTreeNodeId is only set for browser side
   // navigations.
-  if (request_resource_info_)
-    return request_resource_info_->GetFrameTreeNodeId();
+  if (request_resource_info_) {
+    const base::UnguessableToken* devtools_frame_token =
+        static_cast<HeadlessBrowserContextImpl*>(headless_browser_context_)
+            ->GetDevToolsFrameTokenForFrameTreeNodeId(
+                request_resource_info_->GetFrameTreeNodeId());
+    if (!devtools_frame_token)
+      return "";
+    return devtools_frame_token->ToString();
+  }
 
   // This should only happen in tests.
-  return -1;
+  return "";
 }
 
 std::string GenericURLRequestJob::GetDevToolsAgentHostId() const {

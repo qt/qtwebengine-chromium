@@ -34,10 +34,9 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/trace_event/memory_dump_manager.h"
-#include "base/tracked_objects.h"
 #include "build/build_config.h"
 #include "components/tracing/child/child_trace_message_filter.h"
-#include "content/child/child_histogram_message_filter.h"
+#include "content/child/child_histogram_fetcher_impl.h"
 #include "content/child/child_process.h"
 #include "content/child/child_resource_message_filter.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
@@ -57,6 +56,7 @@
 #include "content/public/common/mojo_channel_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
+#include "content/public/common/simple_connection_filter.h"
 #include "ipc/ipc_channel_mojo.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_platform_file.h"
@@ -72,6 +72,7 @@
 #include "services/device/public/cpp/power_monitor/power_monitor_broadcast_source.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/client_process_impl.h"
 #include "services/resource_coordinator/public/interfaces/memory_instrumentation/memory_instrumentation.mojom.h"
+#include "services/resource_coordinator/public/interfaces/service_constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/runner/common/client_util.h"
@@ -83,15 +84,11 @@
 
 #if defined(OS_MACOSX)
 #include "base/allocator/allocator_interception_mac.h"
-#include "base/process/process.h"
-#include "content/common/mac/app_nap_activity.h"
 #endif
 
 #if defined(OS_WIN)
-#include "content/child/dwrite_font_proxy/dwrite_font_proxy_init_win.h"
+#include "content/child/dwrite_font_proxy/dwrite_font_proxy_init_impl_win.h"
 #endif
-
-using tracked_objects::ThreadData;
 
 namespace content {
 namespace {
@@ -484,9 +481,14 @@ void ChildThreadImpl::Init(const Options& options) {
       this, message_loop()->task_runner()));
   file_system_dispatcher_.reset(new FileSystemDispatcher());
 
-  histogram_message_filter_ = new ChildHistogramMessageFilter();
   resource_message_filter_ =
       new ChildResourceMessageFilter(resource_dispatcher());
+
+  auto registry = base::MakeUnique<service_manager::BinderRegistry>();
+  registry->AddInterface(base::Bind(&ChildHistogramFetcherFactoryImpl::Create),
+                         GetIOTaskRunner());
+  GetServiceManagerConnection()->AddConnectionFilter(
+      base::MakeUnique<SimpleConnectionFilter>(std::move(registry)));
 
   service_worker_message_filter_ =
       new ServiceWorkerMessageFilter(thread_safe_sender_.get());
@@ -498,7 +500,6 @@ void ChildThreadImpl::Init(const Options& options) {
   notification_dispatcher_ =
       new NotificationDispatcher(thread_safe_sender_.get());
 
-  channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(resource_message_filter_.get());
   channel_->AddFilter(quota_message_filter_->GetFilter());
   channel_->AddFilter(notification_dispatcher_->GetFilter());
@@ -509,6 +510,9 @@ void ChildThreadImpl::Init(const Options& options) {
     // whole process including renderers.
     channel_->AddFilter(new tracing::ChildTraceMessageFilter(
         ChildProcess::current()->io_task_runner()));
+
+    chrome_trace_event_agent_ =
+        base::MakeUnique<tracing::ChromeTraceEventAgent>(GetConnector());
 
     if (service_manager_connection_) {
       std::string process_type_str =
@@ -525,7 +529,8 @@ void ChildThreadImpl::Init(const Options& options) {
         process_type = memory_instrumentation::mojom::ProcessType::PLUGIN;
 
       memory_instrumentation::ClientProcessImpl::Config config(
-          GetConnector(), mojom::kBrowserServiceName, process_type);
+          GetConnector(), resource_coordinator::mojom::kServiceName,
+          process_type);
       memory_instrumentation::ClientProcessImpl::CreateInstance(config);
     }
   }
@@ -535,7 +540,8 @@ void ChildThreadImpl::Init(const Options& options) {
   // not create the power monitor.
   if (!base::PowerMonitor::Get() && service_manager_connection_) {
     auto power_monitor_source =
-        base::MakeUnique<device::PowerMonitorBroadcastSource>(GetConnector());
+        base::MakeUnique<device::PowerMonitorBroadcastSource>(
+            GetConnector(), GetIOTaskRunner());
     power_monitor_.reset(
         new base::PowerMonitor(std::move(power_monitor_source)));
   }
@@ -577,10 +583,6 @@ void ChildThreadImpl::Init(const Options& options) {
           switches::kEnableHeapProfiling)) {
     base::allocator::PeriodicallyShimNewMallocZones();
   }
-  if (base::Process::IsAppNapEnabled()) {
-    app_nap_activity_.reset(new AppNapActivity());
-    app_nap_activity_->Begin();
-  };
 #endif
 
   message_loop_->task_runner()->PostDelayedTask(
@@ -612,7 +614,6 @@ ChildThreadImpl::~ChildThreadImpl() {
   IPC::Logging::GetInstance()->SetIPCSender(NULL);
 #endif
 
-  channel_->RemoveFilter(histogram_message_filter_.get());
   channel_->RemoveFilter(sync_message_filter_.get());
 
   // The ChannelProxy object caches a pointer to the IPC thread, so need to
@@ -741,12 +742,6 @@ bool ChildThreadImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ChildProcessMsg_SetIPCLoggingEnabled,
                         OnSetIPCLoggingEnabled)
 #endif
-    IPC_MESSAGE_HANDLER(ChildProcessMsg_SetProfilerStatus,
-                        OnSetProfilerStatus)
-    IPC_MESSAGE_HANDLER(ChildProcessMsg_GetChildProfilerData,
-                        OnGetChildProfilerData)
-    IPC_MESSAGE_HANDLER(ChildProcessMsg_ProfilingPhaseCompleted,
-                        OnProfilingPhaseCompleted)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_SetProcessBackgrounded,
                         OnProcessBackgrounded)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_PurgeAndSuspend,
@@ -794,15 +789,6 @@ void ChildThreadImpl::OnProcessBackgrounded(bool backgrounded) {
   if (backgrounded)
     timer_slack = base::TIMER_SLACK_MAXIMUM;
   base::MessageLoop::current()->SetTimerSlack(timer_slack);
-#if defined(OS_MACOSX)
-  if (base::Process::IsAppNapEnabled()) {
-    if (backgrounded) {
-      app_nap_activity_->End();
-    } else {
-      app_nap_activity_->Begin();
-    }
-  }
-#endif  // defined(OS_MACOSX)
 }
 
 void ChildThreadImpl::OnProcessPurgeAndSuspend() {
@@ -822,23 +808,6 @@ void ChildThreadImpl::OnSetIPCLoggingEnabled(bool enable) {
     IPC::Logging::GetInstance()->Disable();
 }
 #endif  //  IPC_MESSAGE_LOG_ENABLED
-
-void ChildThreadImpl::OnSetProfilerStatus(ThreadData::Status status) {
-  ThreadData::InitializeAndSetTrackingStatus(status);
-}
-
-void ChildThreadImpl::OnGetChildProfilerData(int sequence_number,
-                                             int current_profiling_phase) {
-  tracked_objects::ProcessDataSnapshot process_data;
-  ThreadData::Snapshot(current_profiling_phase, &process_data);
-
-  Send(
-      new ChildProcessHostMsg_ChildProfilerData(sequence_number, process_data));
-}
-
-void ChildThreadImpl::OnProfilingPhaseCompleted(int profiling_phase) {
-  ThreadData::OnProfilingPhaseCompleted(profiling_phase);
-}
 
 ChildThreadImpl* ChildThreadImpl::current() {
   return g_lazy_tls.Pointer()->Get();

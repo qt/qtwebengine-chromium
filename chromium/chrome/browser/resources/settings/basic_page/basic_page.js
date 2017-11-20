@@ -39,10 +39,7 @@ Polymer({
 
     showChangePassword: {
       type: Boolean,
-      value: function() {
-        return loadTimeData.valueExists('changePasswordEnabled') &&
-            loadTimeData.getBoolean('changePasswordEnabled');
-      },
+      value: false,
     },
 
     /**
@@ -99,6 +96,10 @@ Polymer({
     currentRoute_: Object,
   },
 
+  hostAttributes: {
+    role: 'main',
+  },
+
   listeners: {
     'subpage-expand': 'onSubpageExpanded_',
   },
@@ -107,16 +108,24 @@ Polymer({
   attached: function() {
     this.currentRoute_ = settings.getCurrentRoute();
 
-    this.addEventListener('chrome-cleanup-dismissed', e => {
+    // <if expr="is_win">
+    this.addEventListener('chrome-cleanup-dismissed', () => {
       this.showChromeCleanup = false;
     });
+    // </if>
 
-    this.addEventListener('change-password-clicked', e => {
+    this.addEventListener('change-password-dismissed', () => {
       this.showChangePassword = false;
     });
 
+    this.addWebUIListener('change-password-visibility', visibility => {
+      this.showChangePassword = visibility;
+    });
+    settings.ChangePasswordBrowserProxyImpl.getInstance()
+        .initializeChangePasswordHandler();
+
     if (settings.AndroidAppsBrowserProxyImpl) {
-      cr.addWebUIListener(
+      this.addWebUIListener(
           'android-apps-info-update', this.androidAppsInfoUpdate_.bind(this));
       settings.AndroidAppsBrowserProxyImpl.getInstance()
           .requestAndroidAppsInfo();

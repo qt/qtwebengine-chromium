@@ -33,10 +33,10 @@ class PasswordManager {
 
   /**
    * Should remove the saved password and notify that the list has changed.
-   * @param {!PasswordManager.LoginPair} loginPair The saved password that
-   *     should be removed from the list. No-op if |loginPair| is not found.
+   * @param {number} index The index for the password entry being removed.
+   *     No-op if |index| is not in the list.
    */
-  removeSavedPassword(loginPair) {}
+  removeSavedPassword(index) {}
 
   /**
    * Add an observer to the list of password exceptions.
@@ -58,18 +58,34 @@ class PasswordManager {
 
   /**
    * Should remove the password exception and notify that the list has changed.
-   * @param {string} exception The exception that should be removed from the
-   *     list. No-op if |exception| is not in the list.
+   * @param {number} index The index for the exception url entry being removed.
+   *     No-op if |index| is not in the list.
    */
-  removeException(exception) {}
+  removeException(index) {}
+
+  /**
+   * Should undo the last saved password or exception removal and notify that
+   * the list has changed.
+   */
+  undoRemoveSavedPasswordOrException() {}
 
   /**
    * Gets the saved password for a given login pair.
-   * @param {!PasswordManager.LoginPair} loginPair The saved password that
-   *     should be retrieved.
+   * @param {number} index The index for password entry that should be
+   *     retrieved. No-op if |index| is not in the list.
    * @param {function(!PasswordManager.PlaintextPasswordEvent):void} callback
    */
-  getPlaintextPassword(loginPair, callback) {}
+  getPlaintextPassword(index, callback) {}
+
+  /**
+   * Triggers the dialogue for importing passwords.
+   */
+  importPasswords() {}
+
+  /**
+   * Triggers the dialogue for exporting passwords.
+   */
+  exportPasswords() {}
 }
 
 /** @typedef {chrome.passwordsPrivate.PasswordUiEntry} */
@@ -106,8 +122,8 @@ class PasswordManagerImpl {
   }
 
   /** @override */
-  removeSavedPassword(loginPair) {
-    chrome.passwordsPrivate.removeSavedPassword(loginPair);
+  removeSavedPassword(index) {
+    chrome.passwordsPrivate.removeSavedPassword(index);
   }
 
   /** @override */
@@ -128,23 +144,37 @@ class PasswordManagerImpl {
   }
 
   /** @override */
-  removeException(exception) {
-    chrome.passwordsPrivate.removePasswordException(exception);
+  removeException(index) {
+    chrome.passwordsPrivate.removePasswordException(index);
   }
 
   /** @override */
-  getPlaintextPassword(loginPair, callback) {
+  undoRemoveSavedPasswordOrException() {
+    chrome.passwordsPrivate.undoRemoveSavedPasswordOrException();
+  }
+
+  /** @override */
+  getPlaintextPassword(index, callback) {
     var listener = function(reply) {
       // Only handle the reply for our loginPair request.
-      if (reply.loginPair.urls.origin == loginPair.urls.origin &&
-          reply.loginPair.username == loginPair.username) {
+      if (reply.index == index) {
         chrome.passwordsPrivate.onPlaintextPasswordRetrieved.removeListener(
             listener);
         callback(reply);
       }
     };
     chrome.passwordsPrivate.onPlaintextPasswordRetrieved.addListener(listener);
-    chrome.passwordsPrivate.requestPlaintextPassword(loginPair);
+    chrome.passwordsPrivate.requestPlaintextPassword(index);
+  }
+
+  /** @override */
+  importPasswords() {
+    chrome.passwordsPrivate.importPasswords();
+  }
+
+  /** @override */
+  exportPasswords() {
+    chrome.passwordsPrivate.exportPasswords();
   }
 }
 
@@ -162,7 +192,11 @@ var ExceptionEntryEntryEvent;
 Polymer({
   is: 'passwords-section',
 
-  behaviors: [settings.GlobalScrollTargetBehavior, I18nBehavior],
+  behaviors: [
+    I18nBehavior,
+    Polymer.IronA11yKeysBehavior,
+    settings.GlobalScrollTargetBehavior,
+  ],
 
   properties: {
     /** Preferences state. */
@@ -183,6 +217,15 @@ Polymer({
      */
     passwordExceptions: Array,
 
+    /**
+     * Duration of the undo toast in ms
+     * @private
+     */
+    toastDuration_: {
+      type: Number,
+      value: 5000,
+    },
+
     /** @override */
     subpageRoute: {
       type: Object,
@@ -194,6 +237,22 @@ Polymer({
      * @private {?chrome.passwordsPrivate.PasswordUiEntry}
      */
     activePassword: Object,
+
+
+    /** The target of the key bindings defined below. */
+    keyEventTarget: {
+      type: Object,
+      value: () => document,
+    },
+
+    /** @private */
+    showImportExportPasswords_: {
+      type: Boolean,
+      value: function() {
+        return loadTimeData.valueExists('showImportExportPasswords') &&
+            loadTimeData.getBoolean('showImportExportPasswords');
+      }
+    },
 
     /** @private */
     showPasswordEditDialog_: Boolean,
@@ -211,6 +270,15 @@ Polymer({
   listeners: {
     'show-password': 'showPassword_',
     'password-menu-tap': 'onPasswordMenuTap_',
+  },
+
+  keyBindings: {
+    // <if expr="is_macosx">
+    'meta+z': 'onUndoKeyBinding_',
+    // </if>
+    // <if expr="not is_macosx">
+    'ctrl+z': 'onUndoKeyBinding_',
+    // </if>
   },
 
   /**
@@ -264,6 +332,10 @@ Polymer({
         setSavedPasswordsListener);
     this.passwordManager_.addExceptionListChangedListener(
         setPasswordExceptionsListener);
+
+    Polymer.RenderStatus.afterNextRender(this, function() {
+      Polymer.IronA11yAnnouncer.requestAvailability();
+    });
   },
 
   /** @override */
@@ -326,17 +398,31 @@ Polymer({
    * @private
    */
   onMenuRemovePasswordTap_: function() {
-    this.passwordManager_.removeSavedPassword(this.activePassword.loginPair);
+    this.passwordManager_.removeSavedPassword(this.activePassword.index);
+    this.fire('iron-announce', {text: this.$.undoLabel.textContent});
+    this.$.undoToast.show();
     /** @type {CrActionMenuElement} */ (this.$.menu).close();
   },
 
+  onUndoKeyBinding_: function(event) {
+    this.passwordManager_.undoRemoveSavedPasswordOrException();
+    this.$.undoToast.hide();
+    // Preventing the default is necessary to not conflict with a possible
+    // search action.
+    event.preventDefault();
+  },
+
+  onUndoButtonTap_: function() {
+    this.passwordManager_.undoRemoveSavedPasswordOrException();
+    this.$.undoToast.hide();
+  },
   /**
    * Fires an event that should delete the password exception.
    * @param {!ExceptionEntryEntryEvent} e The polymer event.
    * @private
    */
   onRemoveExceptionButtonTap_: function(e) {
-    this.passwordManager_.removeException(e.model.item.urls.origin);
+    this.passwordManager_.removeException(e.model.item.index);
   },
 
   /**
@@ -353,6 +439,26 @@ Polymer({
             event.detail.item);
     menu.showAt(target);
     this.activeDialogAnchor_ = target;
+  },
+
+  undoRemoveSavedPasswordOrException_: function(event) {
+    this.passwordManager_.undoRemoveSavedPasswordOrException();
+  },
+
+  /**
+   * Fires an event that should trigger the password import process.
+   * @private
+   */
+  onImportTap_: function() {
+    this.passwordManager_.importPasswords();
+  },
+
+  /**
+   * Fires an event that should trigger the password export process.
+   * @private
+   */
+  onExportTap_: function() {
+    this.passwordManager_.exportPasswords();
   },
 
   /**
@@ -372,8 +478,7 @@ Polymer({
    */
   showPassword_: function(event) {
     this.passwordManager_.getPlaintextPassword(
-        /** @type {!PasswordManager.LoginPair} */ (event.detail.item.loginPair),
-        item => {
+        /** @type {!number} */ (event.detail.item.index), item => {
           event.detail.password = item.plaintextPassword;
         });
   },

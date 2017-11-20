@@ -6,7 +6,6 @@
 #include <stdint.h>
 
 #include <algorithm>
-#include <deque>
 #include <string>
 
 #include "base/bind.h"
@@ -227,12 +226,11 @@ class FFmpegDemuxerTest : public testing::Test {
   // Verifies that |buffer| has a specific |size| and |timestamp|.
   // |location| simply indicates where the call to this function was made.
   // This makes it easier to track down where test failures occur.
-  void OnReadDone(const tracked_objects::Location& location,
+  void OnReadDone(const base::Location& location,
                   const ReadExpectation& read_expectation,
                   DemuxerStream::Status status,
                   const scoped_refptr<DecoderBuffer>& buffer) {
-    std::string location_str;
-    location.Write(true, false, &location_str);
+    std::string location_str = location.ToString();
     location_str += "\n";
     SCOPED_TRACE(location_str);
     EXPECT_EQ(read_expectation.status, status);
@@ -251,7 +249,7 @@ class FFmpegDemuxerTest : public testing::Test {
   }
 
   DemuxerStream::ReadCB NewReadCB(
-      const tracked_objects::Location& location,
+      const base::Location& location,
       int size,
       int64_t timestamp_us,
       bool is_key_frame,
@@ -261,7 +259,7 @@ class FFmpegDemuxerTest : public testing::Test {
   }
 
   DemuxerStream::ReadCB NewReadCBWithCheckedDiscard(
-      const tracked_objects::Location& location,
+      const base::Location& location,
       int size,
       int64_t timestamp_us,
       base::TimeDelta discard_front_padding,
@@ -1370,7 +1368,9 @@ TEST_F(FFmpegDemuxerTest, Rotate_Metadata_0) {
 
   DemuxerStream* stream = GetStream(DemuxerStream::VIDEO);
   ASSERT_TRUE(stream);
-  ASSERT_EQ(VIDEO_ROTATION_0, stream->video_rotation());
+
+  const VideoDecoderConfig& video_config = stream->video_decoder_config();
+  ASSERT_EQ(VIDEO_ROTATION_0, video_config.video_rotation());
 }
 
 TEST_F(FFmpegDemuxerTest, Rotate_Metadata_90) {
@@ -1379,7 +1379,9 @@ TEST_F(FFmpegDemuxerTest, Rotate_Metadata_90) {
 
   DemuxerStream* stream = GetStream(DemuxerStream::VIDEO);
   ASSERT_TRUE(stream);
-  ASSERT_EQ(VIDEO_ROTATION_90, stream->video_rotation());
+
+  const VideoDecoderConfig& video_config = stream->video_decoder_config();
+  ASSERT_EQ(VIDEO_ROTATION_90, video_config.video_rotation());
 }
 
 TEST_F(FFmpegDemuxerTest, Rotate_Metadata_180) {
@@ -1388,7 +1390,9 @@ TEST_F(FFmpegDemuxerTest, Rotate_Metadata_180) {
 
   DemuxerStream* stream = GetStream(DemuxerStream::VIDEO);
   ASSERT_TRUE(stream);
-  ASSERT_EQ(VIDEO_ROTATION_180, stream->video_rotation());
+
+  const VideoDecoderConfig& video_config = stream->video_decoder_config();
+  ASSERT_EQ(VIDEO_ROTATION_180, video_config.video_rotation());
 }
 
 TEST_F(FFmpegDemuxerTest, Rotate_Metadata_270) {
@@ -1397,7 +1401,9 @@ TEST_F(FFmpegDemuxerTest, Rotate_Metadata_270) {
 
   DemuxerStream* stream = GetStream(DemuxerStream::VIDEO);
   ASSERT_TRUE(stream);
-  ASSERT_EQ(VIDEO_ROTATION_270, stream->video_rotation());
+
+  const VideoDecoderConfig& video_config = stream->video_decoder_config();
+  ASSERT_EQ(VIDEO_ROTATION_270, video_config.video_rotation());
 }
 
 TEST_F(FFmpegDemuxerTest, NaturalSizeWithoutPASP) {

@@ -8,6 +8,7 @@
 #include <stddef.h>
 
 #include <memory>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -16,6 +17,7 @@
 #include "components/ukm/ukm_recorder_impl.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/metrics/public/interfaces/ukm_interface.mojom.h"
+#include "url/gurl.h"
 
 namespace ukm {
 
@@ -26,11 +28,19 @@ class TestUkmRecorder : public UkmRecorderImpl {
   ~TestUkmRecorder() override;
 
   size_t sources_count() const { return sources().size(); }
+
+  // Get all SourceIds with any data associated with them.
+  std::set<ukm::SourceId> GetSourceIds() const;
+
   const std::map<ukm::SourceId, std::unique_ptr<UkmSource>>& GetSources()
       const {
     return sources();
   }
+
   const UkmSource* GetSourceForUrl(const char* url) const;
+  const UkmSource* GetSourceForUrl(const GURL& url) const {
+    return GetSourceForUrl(url.spec().c_str());
+  }
   std::vector<const ukm::UkmSource*> GetSourcesForUrl(const char* url) const;
   const UkmSource* GetSourceForSourceId(ukm::SourceId source_id) const;
 
@@ -74,6 +84,13 @@ class TestUkmRecorder : public UkmRecorderImpl {
                      const char* metric_name,
                      const std::vector<int64_t>& expected_values) const;
 
+  // Returns all recorded values of a metric for the given |source|,
+  // |event_name| and |metric_name|. The order of values is not specified.
+  std::vector<int64_t> GetMetricValues(ukm::SourceId source_id,
+                                       const char* event_name,
+                                       const char* metric_name) const;
+
+  // Deprecated.
   // Returns all collected metrics for the given |source|, |event_name| and
   // |metric_name|. The order of values is not specified.
   std::vector<int64_t> GetMetrics(const UkmSource& source,

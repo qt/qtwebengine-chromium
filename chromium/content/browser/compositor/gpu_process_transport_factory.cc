@@ -12,7 +12,6 @@
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/simple_thread.h"
 #include "base/threading/thread.h"
@@ -20,7 +19,6 @@
 #include "build/build_config.h"
 #include "cc/base/histograms.h"
 #include "cc/base/switches.h"
-#include "cc/output/texture_mailbox_deleter.h"
 #include "cc/raster/single_thread_task_graph_runner.h"
 #include "cc/raster/task_graph_runner.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
@@ -32,6 +30,7 @@
 #include "components/viz/host/renderer_settings_creation.h"
 #include "components/viz/service/display/display.h"
 #include "components/viz/service/display/display_scheduler.h"
+#include "components/viz/service/display/texture_mailbox_deleter.h"
 #include "components/viz/service/display_embedder/compositor_overlay_candidate_validator.h"
 #include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
 #include "components/viz/service/frame_sinks/direct_layer_tree_frame_sink.h"
@@ -52,6 +51,8 @@
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/shared_memory_limits.h"
 #include "gpu/command_buffer/common/mailbox.h"
+#include "gpu/config/gpu_driver_bug_workaround_type.h"
+#include "gpu/config/gpu_feature_info.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "gpu/ipc/host/gpu_memory_buffer_support.h"
 #include "gpu/vulkan/features.h"
@@ -91,7 +92,6 @@
 #include "components/viz/service/display_embedder/compositor_overlay_candidate_validator_mac.h"
 #include "content/browser/compositor/gpu_output_surface_mac.h"
 #include "content/browser/compositor/software_output_device_mac.h"
-#include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "ui/base/cocoa/remote_layer_api.h"
 #include "ui/base/ui_base_switches.h"
 #elif defined(OS_ANDROID)
@@ -170,10 +170,10 @@ scoped_refptr<ui::ContextProviderCommandBuffer> CreateContextCommon(
   constexpr bool automatic_flushes = false;
 
   GURL url("chrome://gpu/GpuProcessTransportFactory::CreateContextCommon");
-  return make_scoped_refptr(new ui::ContextProviderCommandBuffer(
+  return base::MakeRefCounted<ui::ContextProviderCommandBuffer>(
       std::move(gpu_channel_host), stream_id, stream_priority, surface_handle,
       url, automatic_flushes, support_locking, gpu::SharedMemoryLimits(),
-      attributes, shared_context_provider, type));
+      attributes, shared_context_provider, type);
 }
 
 #if defined(OS_MACOSX)
@@ -271,12 +271,12 @@ GpuProcessTransportFactory::~GpuProcessTransportFactory() {
   task_graph_runner_->Shutdown();
 }
 
-std::unique_ptr<cc::SoftwareOutputDevice>
+std::unique_ptr<viz::SoftwareOutputDevice>
 GpuProcessTransportFactory::CreateSoftwareOutputDevice(
     ui::Compositor* compositor) {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kHeadless))
-    return base::WrapUnique(new cc::SoftwareOutputDevice);
+    return base::WrapUnique(new viz::SoftwareOutputDevice);
 
 #if defined(USE_AURA)
   if (aura::Env::GetInstance()->mode() == aura::Env::Mode::MUS) {
@@ -286,24 +286,30 @@ GpuProcessTransportFactory::CreateSoftwareOutputDevice(
 #endif
 
 #if defined(OS_WIN)
-  return std::unique_ptr<cc::SoftwareOutputDevice>(
+  return std::unique_ptr<viz::SoftwareOutputDevice>(
       new SoftwareOutputDeviceWin(software_backing_.get(), compositor));
 #elif defined(USE_OZONE)
   return SoftwareOutputDeviceOzone::Create(compositor);
 #elif defined(USE_X11)
-  return std::unique_ptr<cc::SoftwareOutputDevice>(
+  return std::unique_ptr<viz::SoftwareOutputDevice>(
       new SoftwareOutputDeviceX11(compositor));
 #elif defined(OS_MACOSX)
-  return std::unique_ptr<cc::SoftwareOutputDevice>(
+  return std::unique_ptr<viz::SoftwareOutputDevice>(
       new SoftwareOutputDeviceMac(compositor));
 #else
   NOTREACHED();
-  return std::unique_ptr<cc::SoftwareOutputDevice>();
+  return std::unique_ptr<viz::SoftwareOutputDevice>();
 #endif
 }
 
 std::unique_ptr<viz::CompositorOverlayCandidateValidator>
-CreateOverlayCandidateValidator(gfx::AcceleratedWidget widget) {
+CreateOverlayCandidateValidator(
+#if defined(OS_MACOSX)
+    gfx::AcceleratedWidget widget,
+    bool disable_overlay_ca_layers) {
+#else
+    gfx::AcceleratedWidget widget) {
+#endif
   std::unique_ptr<viz::CompositorOverlayCandidateValidator> validator;
 #if defined(USE_OZONE)
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
@@ -323,9 +329,7 @@ CreateOverlayCandidateValidator(gfx::AcceleratedWidget widget) {
     static bool overlays_disabled_at_command_line =
         IsCALayersDisabledFromCommandLine();
     const bool ca_layers_disabled =
-        overlays_disabled_at_command_line ||
-        GpuDataManagerImpl::GetInstance()->IsDriverBugWorkaroundActive(
-            gpu::DISABLE_OVERLAY_CA_LAYERS);
+        overlays_disabled_at_command_line || disable_overlay_ca_layers;
     validator.reset(
         new viz::CompositorOverlayCandidateValidatorMac(ca_layers_disabled));
   }
@@ -457,13 +461,6 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
             gpu_channel_host, gpu::kNullSurfaceHandle, need_alpha_channel,
             false /* support_stencil */, support_locking, nullptr,
             ui::command_buffer_metrics::BROWSER_WORKER_CONTEXT);
-        // TODO(vadimt): Remove ScopedTracker below once crbug.com/125248 is
-        // fixed. Tracking time in BindToCurrentThread.
-        tracked_objects::ScopedTracker tracking_profile(
-            FROM_HERE_WITH_EXPLICIT_FUNCTION(
-                "125248"
-                " GpuProcessTransportFactory::EstablishedGpuChannel"
-                "::Worker"));
         if (!shared_worker_context_provider_->BindToCurrentThread())
           shared_worker_context_provider_ = nullptr;
       }
@@ -484,13 +481,6 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
             support_stencil, support_locking,
             shared_worker_context_provider_.get(),
             ui::command_buffer_metrics::DISPLAY_COMPOSITOR_ONSCREEN_CONTEXT);
-        // TODO(vadimt): Remove ScopedTracker below once crbug.com/125248 is
-        // fixed. Tracking time in BindToCurrentThread.
-        tracked_objects::ScopedTracker tracking_profile(
-            FROM_HERE_WITH_EXPLICIT_FUNCTION(
-                "125248"
-                " GpuProcessTransportFactory::EstablishedGpuChannel"
-                "::Compositor"));
         // On Mac, GpuCommandBufferMsg_SwapBuffersCompleted must be handled in
         // a nested run loop during resize.
         context_provider->SetDefaultTaskRunner(resize_task_runner_);
@@ -552,10 +542,14 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
                 std::unique_ptr<viz::CompositorOverlayCandidateValidator>());
       } else if (capabilities.surfaceless) {
 #if defined(OS_MACOSX)
+        const auto& gpu_feature_info = context_provider->GetGpuFeatureInfo();
+        bool disable_overlay_ca_layers = gpu_feature_info.IsWorkaroundEnabled(
+            gpu::DISABLE_OVERLAY_CA_LAYERS);
         display_output_surface = base::MakeUnique<GpuOutputSurfaceMac>(
             compositor->widget(), context_provider, data->surface_handle,
             vsync_callback,
-            CreateOverlayCandidateValidator(compositor->widget()),
+            CreateOverlayCandidateValidator(compositor->widget(),
+                                            disable_overlay_ca_layers),
             GetGpuMemoryBufferManager());
 #else
         auto gpu_output_surface =
@@ -645,7 +639,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       viz::ServerSharedBitmapManager::current(), GetGpuMemoryBufferManager(),
       renderer_settings_, compositor->frame_sink_id(),
       std::move(display_output_surface), std::move(scheduler),
-      base::MakeUnique<cc::TextureMailboxDeleter>(
+      base::MakeUnique<viz::TextureMailboxDeleter>(
           compositor->task_runner().get()));
   GetFrameSinkManager()->RegisterBeginFrameSource(begin_frame_source,
                                                   compositor->frame_sink_id());
@@ -855,8 +849,19 @@ void GpuProcessTransportFactory::IssueExternalBeginFrame(
     return;
   PerCompositorData* data = it->second.get();
   DCHECK(data);
-  if (data->external_begin_frame_controller)
+  if (data->external_begin_frame_controller) {
     data->external_begin_frame_controller->IssueExternalBeginFrame(args);
+    // Ensure that Display will receive the BeginFrame (as a missed one), even
+    // if it doesn't currently need it. This way, we ensure that
+    // OnDisplayDidFinishFrame will be called for this BeginFrame.
+    data->display->SetNeedsOneBeginFrame();
+  } else {
+    DLOG(WARNING) << "IssueExternalBeginFrame called for compositor without "
+                     "ExternalBeginFrameController";
+    // Still send an ack back to unblock the client.
+    compositor->OnDisplayDidFinishFrame(
+        viz::BeginFrameAck(args.source_id, args.sequence_number, false));
+  }
 }
 
 void GpuProcessTransportFactory::SetOutputIsSecure(ui::Compositor* compositor,
@@ -945,12 +950,6 @@ GpuProcessTransportFactory::SharedMainThreadContextProvider() {
   shared_main_thread_contexts_->SetLostContextCallback(base::Bind(
       &GpuProcessTransportFactory::OnLostMainThreadSharedContextInsideCallback,
       callback_factory_.GetWeakPtr()));
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/125248 is
-  // fixed. Tracking time in BindToCurrentThread.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "125248"
-          " GpuProcessTransportFactory::SharedMainThreadContextProvider"));
   if (!shared_main_thread_contexts_->BindToCurrentThread())
     shared_main_thread_contexts_ = nullptr;
   return shared_main_thread_contexts_;

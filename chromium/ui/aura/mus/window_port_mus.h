@@ -89,6 +89,12 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
              uint32_t flags,
              const ui::mojom::WindowTree::EmbedCallback& callback);
 
+  // Schedules an embed of a client. See
+  // mojom::WindowTreeClient::ScheduleEmbed() for details.
+  void ScheduleEmbed(
+      ui::mojom::WindowTreeClientPtr client,
+      base::OnceCallback<void(const base::UnguessableToken&)> callback);
+
   std::unique_ptr<viz::ClientLayerTreeFrameSink> RequestLayerTreeFrameSink(
       scoped_refptr<viz::ContextProvider> context_provider,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager);
@@ -145,18 +151,12 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
     REMOVE_TRANSIENT,
     REORDER,
     TRANSFORM,
-    // This is used when a REORDER *may* occur as the result of a transient
-    // child being added or removed. As there is no guarantee the move will
-    // actually happen (the window may be in place already) this change is not
-    // automatically removed. Instead the change is explicitly removed.
-    TRANSIENT_REORDER,
     VISIBLE,
   };
 
   // Contains data needed to identify a change from the server.
   struct ServerChangeData {
-    // Applies to ADD, ADD_TRANSIENT, REMOVE, REMOVE_TRANSIENT, REORDER and
-    // TRANSIENT_REORDER.
+    // Applies to ADD, ADD_TRANSIENT, REMOVE, REMOVE_TRANSIENT, and REORDER.
     Id child_id;
     // Applies to BOUNDS. This should be in dip.
     gfx::Rect bounds_in_dip;
@@ -253,14 +253,14 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
   std::unique_ptr<WindowMusChangeData> PrepareForServerVisibilityChange(
       bool value) override;
   void PrepareForDestroy() override;
-  void PrepareForTransientRestack(WindowMus* window) override;
-  void OnTransientRestackDone(WindowMus* window) override;
   void NotifyEmbeddedAppDisconnected() override;
   bool HasLocalLayerTreeFrameSink() override;
+  float GetDeviceScaleFactor() override;
 
   // WindowPort:
   void OnPreInit(Window* window) override;
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override;
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override;
   void OnWillAddChild(Window* child) override;
   void OnWillRemoveChild(Window* child) override;
   void OnWillMoveChild(size_t current_index, size_t dest_index) override;
@@ -281,6 +281,7 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
   void OnWindowAddedToRootWindow() override;
   void OnWillRemoveWindowFromRootWindow() override;
   void OnEventTargetingPolicyChanged() override;
+  bool ShouldRestackTransientChildren() override;
 
   void UpdatePrimarySurfaceInfo();
   void UpdateClientSurfaceEmbedder();
@@ -303,10 +304,12 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
 
   viz::LocalSurfaceId local_surface_id_;
   viz::LocalSurfaceIdAllocator local_surface_id_allocator_;
-  float last_device_scale_factor_ = 1.0f;
   gfx::Size last_surface_size_in_pixels_;
 
   ui::CursorData cursor_;
+
+  // See description in single place that changes the value for details.
+  bool should_restack_transient_children_ = true;
 
   // When a frame sink is created
   // for a local aura::Window, we need keep a weak ptr of it, so we can update

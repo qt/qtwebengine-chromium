@@ -35,10 +35,12 @@ Options::Options(int argc, const char** argv)
       instance(0),
       sandbox_info(nullptr),
 #endif
+      devtools_endpoint(),
       devtools_socket_fd(0),
       message_pump(nullptr),
       single_process_mode(false),
       disable_sandbox(false),
+      enable_resource_scheduler(true),
 #if defined(USE_OZONE)
       // TODO(skyostil): Implement SwiftShader backend for headless ozone.
       gl_implementation("osmesa"),
@@ -64,7 +66,7 @@ Options::~Options() {}
 Options& Options::operator=(Options&& options) = default;
 
 bool Options::DevtoolsServerEnabled() {
-  return (devtools_endpoint.address().IsValid() || devtools_socket_fd != 0);
+  return (!devtools_endpoint.IsEmpty() || devtools_socket_fd != 0);
 }
 
 Builder::Builder(int argc, const char** argv) : options_(argc, argv) {}
@@ -89,7 +91,7 @@ Builder& Builder::SetAcceptLanguage(const std::string& accept_language) {
   return *this;
 }
 
-Builder& Builder::EnableDevToolsServer(const net::IPEndPoint& endpoint) {
+Builder& Builder::EnableDevToolsServer(const net::HostPortPair& endpoint) {
   options_.devtools_endpoint = endpoint;
   return *this;
 }
@@ -122,6 +124,11 @@ Builder& Builder::SetSingleProcessMode(bool single_process_mode) {
 
 Builder& Builder::SetDisableSandbox(bool disable_sandbox) {
   options_.disable_sandbox = disable_sandbox;
+  return *this;
+}
+
+Builder& Builder::SetEnableResourceScheduler(bool enable_resource_scheduler) {
+  options_.enable_resource_scheduler = enable_resource_scheduler;
   return *this;
 }
 

@@ -305,9 +305,6 @@ bool SkWebpCodec::onGetFrameInfo(int i, FrameInfo* frameInfo) const {
         // libwebp only reports fully received frames for an
         // animated image.
         frameInfo->fFullyReceived = true;
-#ifdef SK_LEGACY_FRAME_INFO_ALPHA_TYPE
-        frameInfo->fAlphaType = alpha_type(frame->hasAlpha());
-#endif
         frameInfo->fAlpha = frame->hasAlpha() ? SkEncodedInfo::kUnpremul_Alpha
                                               : SkEncodedInfo::kOpaque_Alpha;
         frameInfo->fDisposalMethod = frame->getDisposalMethod();
@@ -545,14 +542,14 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
 
     config.output.u.RGBA.rgba = reinterpret_cast<uint8_t*>(webpDst.getAddr(dstX, dstY));
     config.output.u.RGBA.stride = static_cast<int>(webpDst.rowBytes());
-    config.output.u.RGBA.size = webpDst.getSafeSize();
+    config.output.u.RGBA.size = webpDst.computeByteSize();
 
     SkAutoTCallVProc<WebPIDecoder, WebPIDelete> idec(WebPIDecode(nullptr, 0, &config));
     if (!idec) {
         return kInvalidInput;
     }
 
-    int rowsDecoded;
+    int rowsDecoded = 0;
     SkCodec::Result result;
     switch (WebPIUpdate(idec, frame.fragment.bytes, frame.fragment.size)) {
         case VP8_STATUS_OK:
@@ -560,7 +557,10 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
             result = kSuccess;
             break;
         case VP8_STATUS_SUSPENDED:
-            WebPIDecGetRGB(idec, &rowsDecoded, nullptr, nullptr, nullptr);
+            if (!WebPIDecGetRGB(idec, &rowsDecoded, nullptr, nullptr, nullptr)
+                    || rowsDecoded <= 0) {
+                return kInvalidInput;
+            }
             *rowsDecodedPtr = rowsDecoded + dstY;
             result = kIncompleteInput;
             break;

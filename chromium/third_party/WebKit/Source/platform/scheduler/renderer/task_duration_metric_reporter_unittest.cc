@@ -41,7 +41,7 @@ class FakeHistogram : public base::HistogramBase {
   MOCK_METHOD1(AddSamplesFromPickle, bool(base::PickleIterator*));
   MOCK_CONST_METHOD1(WriteHTMLGraph, void(std::string*));
   MOCK_CONST_METHOD1(WriteAscii, void(std::string*));
-  MOCK_CONST_METHOD1(SerializeInfoImpl, bool(base::Pickle*));
+  MOCK_CONST_METHOD1(SerializeInfoImpl, void(base::Pickle*));
   MOCK_CONST_METHOD1(GetParameters, void(base::DictionaryValue*));
   MOCK_CONST_METHOD3(GetCountAndBucketData,
                      void(base::HistogramBase::Count*,
@@ -54,7 +54,8 @@ class FakeHistogram : public base::HistogramBase {
 TEST(TaskDurationMetricReporterTest, Test) {
   FakeHistogram histogram;
 
-  TaskDurationMetricReporter metric_reporter(&histogram);
+  TaskDurationMetricReporter<MainThreadTaskQueue::QueueType> metric_reporter(
+      &histogram);
 
   EXPECT_CALL(histogram, AddCount(2, 3));
   metric_reporter.RecordTask(static_cast<MainThreadTaskQueue::QueueType>(2),

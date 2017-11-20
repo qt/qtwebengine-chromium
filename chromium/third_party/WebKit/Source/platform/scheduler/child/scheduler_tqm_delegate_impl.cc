@@ -15,7 +15,7 @@ namespace scheduler {
 scoped_refptr<SchedulerTqmDelegateImpl> SchedulerTqmDelegateImpl::Create(
     base::MessageLoop* message_loop,
     std::unique_ptr<base::TickClock> time_source) {
-  return make_scoped_refptr(
+  return base::WrapRefCounted(
       new SchedulerTqmDelegateImpl(message_loop, std::move(time_source)));
 }
 
@@ -40,16 +40,15 @@ void SchedulerTqmDelegateImpl::RestoreDefaultTaskRunner() {
     message_loop_->SetTaskRunner(message_loop_task_runner_);
 }
 
-bool SchedulerTqmDelegateImpl::PostDelayedTask(
-    const tracked_objects::Location& from_here,
-    base::OnceClosure task,
-    base::TimeDelta delay) {
+bool SchedulerTqmDelegateImpl::PostDelayedTask(const base::Location& from_here,
+                                               base::OnceClosure task,
+                                               base::TimeDelta delay) {
   return message_loop_task_runner_->PostDelayedTask(from_here, std::move(task),
                                                     delay);
 }
 
 bool SchedulerTqmDelegateImpl::PostNonNestableDelayedTask(
-    const tracked_objects::Location& from_here,
+    const base::Location& from_here,
     base::OnceClosure task,
     base::TimeDelta delay) {
   return message_loop_task_runner_->PostNonNestableDelayedTask(

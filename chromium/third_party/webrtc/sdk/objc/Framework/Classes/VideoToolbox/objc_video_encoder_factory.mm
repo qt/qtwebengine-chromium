@@ -8,47 +8,34 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/sdk/objc/Framework/Classes/VideoToolbox/objc_video_encoder_factory.h"
+#include "sdk/objc/Framework/Classes/VideoToolbox/objc_video_encoder_factory.h"
 
 #include <string>
 
 #import "NSString+StdString.h"
 #import "RTCI420Buffer+Private.h"
 #import "RTCVideoCodec+Private.h"
+#import "RTCVideoFrame+Private.h"
+#import "RTCWrappedNativeVideoEncoder.h"
 #import "WebRTC/RTCVideoCodec.h"
 #import "WebRTC/RTCVideoCodecFactory.h"
 #import "WebRTC/RTCVideoCodecH264.h"
 #import "WebRTC/RTCVideoFrame.h"
 #import "WebRTC/RTCVideoFrameBuffer.h"
 
-#include "webrtc/api/video/video_frame.h"
-#include "webrtc/api/video_codecs/video_encoder.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
-#include "webrtc/modules/video_coding/include/video_error_codes.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/sdk/objc/Framework/Classes/Common/helpers.h"
-#include "webrtc/sdk/objc/Framework/Classes/Video/objc_frame_buffer.h"
+#include "api/video/video_frame.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/video_encoder.h"
+#include "modules/include/module_common_types.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "modules/video_coding/include/video_error_codes.h"
+#include "rtc_base/logging.h"
+#include "sdk/objc/Framework/Classes/Common/helpers.h"
+#include "sdk/objc/Framework/Classes/Video/objc_frame_buffer.h"
 
 namespace webrtc {
 
 namespace {
-
-id<RTCVideoFrameBuffer> nativeToRtcFrameBuffer(const rtc::scoped_refptr<VideoFrameBuffer> &buffer) {
-  return buffer->type() == VideoFrameBuffer::Type::kNative ?
-      static_cast<ObjCFrameBuffer *>(buffer.get())->wrapped_frame_buffer() :
-      [[RTCI420Buffer alloc] initWithFrameBuffer:buffer->ToI420()];
-}
-
-RTCVideoFrame *nativeToRtcFrame(const VideoFrame &frame) {
-  RTCVideoFrame *rtcFrame =
-      [[RTCVideoFrame alloc] initWithBuffer:nativeToRtcFrameBuffer(frame.video_frame_buffer())
-                                   rotation:RTCVideoRotation(frame.rotation())
-                                timeStampNs:frame.timestamp_us() * rtc::kNumNanosecsPerMicrosec];
-  rtcFrame.timeStamp = frame.timestamp();
-  return rtcFrame;
-}
 
 class ObjCVideoEncoder : public VideoEncoder {
  public:
@@ -69,7 +56,7 @@ class ObjCVideoEncoder : public VideoEncoder {
                                 RTCRtpFragmentationHeader *_Nonnull header) {
       EncodedImage encodedImage = [frame nativeEncodedImage];
 
-      // Handle types than can be converted into one of CodecSpecificInfo's hard coded cases.
+      // Handle types that can be converted into one of CodecSpecificInfo's hard coded cases.
       CodecSpecificInfo codecSpecificInfo;
       if ([info isKindOfClass:[RTCCodecSpecificInfoH264 class]]) {
         codecSpecificInfo = [(RTCCodecSpecificInfoH264 *)info nativeCodecSpecificInfo];
@@ -78,7 +65,7 @@ class ObjCVideoEncoder : public VideoEncoder {
       std::unique_ptr<RTPFragmentationHeader> fragmentationHeader =
           [header createNativeFragmentationHeader];
       EncodedImageCallback::Result res =
-          callback->OnEncodedImage(encodedImage, &codecSpecificInfo, fragmentationHeader.release());
+          callback->OnEncodedImage(encodedImage, &codecSpecificInfo, fragmentationHeader.get());
       return res.error == EncodedImageCallback::Result::OK;
     }];
 
@@ -106,7 +93,7 @@ class ObjCVideoEncoder : public VideoEncoder {
       [rtcFrameTypes addObject:@(RTCFrameType(frame_types->at(i)))];
     }
 
-    return [encoder_ encode:nativeToRtcFrame(frame)
+    return [encoder_ encode:[[RTCVideoFrame alloc] initWithNativeVideoFrame:frame]
           codecSpecificInfo:rtcCodecSpecificInfo
                  frameTypes:rtcFrameTypes];
   }
@@ -143,8 +130,44 @@ id<RTCVideoEncoderFactory> ObjCVideoEncoderFactory::wrapped_encoder_factory() co
   return encoder_factory_;
 }
 
+std::vector<SdpVideoFormat> ObjCVideoEncoderFactory::GetSupportedFormats() const {
+  std::vector<SdpVideoFormat> supported_formats;
+  for (RTCVideoCodecInfo *supportedCodec in encoder_factory_.supportedCodecs) {
+    SdpVideoFormat format = [supportedCodec nativeSdpVideoFormat];
+    supported_formats.push_back(format);
+  }
+
+  return supported_formats;
+}
+
+VideoEncoderFactory::CodecInfo ObjCVideoEncoderFactory::QueryVideoEncoder(
+    const SdpVideoFormat &format) const {
+  // TODO(andersc): This is a hack until we figure out how this should be done properly.
+  NSString *formatName = [NSString stringForStdString:format.name];
+  NSSet *wrappedSoftwareFormats = [NSSet setWithObjects:@"VP8", @"VP9", nil];
+
+  CodecInfo codec_info;
+  codec_info.is_hardware_accelerated = ![wrappedSoftwareFormats containsObject:formatName];
+  codec_info.has_internal_source = false;
+  return codec_info;
+}
+
+std::unique_ptr<VideoEncoder> ObjCVideoEncoderFactory::CreateVideoEncoder(
+    const SdpVideoFormat &format) {
+  RTCVideoCodecInfo *info = [[RTCVideoCodecInfo alloc] initWithNativeSdpVideoFormat:format];
+  id<RTCVideoEncoder> encoder = [encoder_factory_ createEncoder:info];
+  if ([encoder isKindOfClass:[RTCWrappedNativeVideoEncoder class]]) {
+    return [(RTCWrappedNativeVideoEncoder *)encoder releaseWrappedEncoder];
+  } else {
+    return std::unique_ptr<ObjCVideoEncoder>(new ObjCVideoEncoder(encoder));
+  }
+}
+
+// WebRtcVideoEncoderFactory
+
 VideoEncoder *ObjCVideoEncoderFactory::CreateVideoEncoder(const cricket::VideoCodec &codec) {
-  RTCVideoCodecInfo *info = [[RTCVideoCodecInfo alloc] initWithNativeVideoCodec:codec];
+  RTCVideoCodecInfo *info = [[RTCVideoCodecInfo alloc]
+      initWithNativeSdpVideoFormat:SdpVideoFormat(codec.name, codec.params)];
   id<RTCVideoEncoder> encoder = [encoder_factory_ createEncoder:info];
   return new ObjCVideoEncoder(encoder);
 }
@@ -152,8 +175,8 @@ VideoEncoder *ObjCVideoEncoderFactory::CreateVideoEncoder(const cricket::VideoCo
 const std::vector<cricket::VideoCodec> &ObjCVideoEncoderFactory::supported_codecs() const {
   supported_codecs_.clear();
   for (RTCVideoCodecInfo *supportedCodec in encoder_factory_.supportedCodecs) {
-    cricket::VideoCodec codec = [supportedCodec nativeVideoCodec];
-    supported_codecs_.push_back(codec);
+    SdpVideoFormat format = [supportedCodec nativeSdpVideoFormat];
+    supported_codecs_.push_back(cricket::VideoCodec(format));
   }
 
   return supported_codecs_;

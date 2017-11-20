@@ -28,6 +28,7 @@
 #include "xfa/fwl/cfwl_themepart.h"
 #include "xfa/fwl/cfwl_widgetmgr.h"
 #include "xfa/fwl/ifwl_themeprovider.h"
+#include "xfa/fwl/theme/cfwl_utils.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxgraphics/cxfa_path.h"
@@ -36,7 +37,7 @@ namespace {
 
 const int kEditMargin = 3;
 
-#if (_FX_OS_ == _FX_MACOSX_)
+#if (_FX_OS_ == _FX_OS_MACOSX_)
 constexpr int kEditingModifier = FWL_KEYFLAG_Command;
 #else
 constexpr int kEditingModifier = FWL_KEYFLAG_Ctrl;
@@ -188,12 +189,12 @@ void CFWL_Edit::DrawSpellCheck(CXFA_Graphics* pGraphics,
     pGraphics->ConcatMatrix(pMatrix);
 
   CFWL_EventCheckWord checkWordEvent(this);
-  CFX_ByteString sLatinWord;
+  ByteString sLatinWord;
   CXFA_Path pathSpell;
   int32_t nStart = 0;
   float fOffSetX = m_rtEngine.left - m_fScrollOffsetX;
   float fOffSetY = m_rtEngine.top - m_fScrollOffsetY + m_fVAlignOffset;
-  CFX_WideString wsSpell = GetText();
+  WideString wsSpell = GetText();
   int32_t nContentLen = wsSpell.GetLength();
   for (int i = 0; i < nContentLen; i++) {
     if (FxEditIsLatinWord(wsSpell[i])) {
@@ -269,7 +270,7 @@ void CFWL_Edit::SetThemeProvider(IFWL_ThemeProvider* pThemeProvider) {
   m_pProperties->m_pThemeProvider = pThemeProvider;
 }
 
-void CFWL_Edit::SetText(const CFX_WideString& wsText) {
+void CFWL_Edit::SetText(const WideString& wsText) {
   m_EdtEngine.Clear();
   m_EdtEngine.Insert(0, wsText);
 }
@@ -278,7 +279,7 @@ int32_t CFWL_Edit::GetTextLength() const {
   return m_EdtEngine.GetLength();
 }
 
-CFX_WideString CFWL_Edit::GetText() const {
+WideString CFWL_Edit::GetText() const {
   return m_EdtEngine.GetText();
 }
 
@@ -321,7 +322,7 @@ void CFWL_Edit::SetAliasChar(wchar_t wAlias) {
   m_EdtEngine.SetAliasChar(wAlias);
 }
 
-bool CFWL_Edit::Copy(CFX_WideString& wsCopy) {
+bool CFWL_Edit::Copy(WideString& wsCopy) {
   if (!m_EdtEngine.HasSelection())
     return false;
 
@@ -329,7 +330,7 @@ bool CFWL_Edit::Copy(CFX_WideString& wsCopy) {
   return true;
 }
 
-bool CFWL_Edit::Cut(CFX_WideString& wsCut) {
+bool CFWL_Edit::Cut(WideString& wsCut) {
   if (!m_EdtEngine.HasSelection())
     return false;
 
@@ -337,7 +338,7 @@ bool CFWL_Edit::Cut(CFX_WideString& wsCut) {
   return true;
 }
 
-bool CFWL_Edit::Paste(const CFX_WideString& wsPaste) {
+bool CFWL_Edit::Paste(const WideString& wsPaste) {
   if (m_EdtEngine.HasSelection())
     m_EdtEngine.ReplaceSelectedText(wsPaste);
   else
@@ -395,7 +396,7 @@ void CFWL_Edit::OnCaretChanged() {
   }
 }
 
-void CFWL_Edit::OnTextChanged(const CFX_WideString& prevText) {
+void CFWL_Edit::OnTextChanged(const WideString& prevText) {
   if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_EDT_VAlignMask)
     UpdateVAlignment();
 
@@ -411,7 +412,7 @@ void CFWL_Edit::OnSelChanged() {
   RepaintRect(GetClientRect());
 }
 
-bool CFWL_Edit::OnValidate(const CFX_WideString& wsText) {
+bool CFWL_Edit::OnValidate(const WideString& wsText) {
   CFWL_Widget* pDst = GetOuter();
   if (!pDst)
     pDst = this;
@@ -480,10 +481,10 @@ void CFWL_Edit::DrawContent(CXFA_Graphics* pGraphics,
   bool bShowSel = !!(m_pProperties->m_dwStates & FWL_WGTSTATE_Focused);
   if (bShowSel && m_EdtEngine.HasSelection()) {
     size_t sel_start;
-    size_t sel_end;
-    std::tie(sel_start, sel_end) = m_EdtEngine.GetSelection();
-    std::vector<CFX_RectF> rects = m_EdtEngine.GetCharacterRectsInRange(
-        sel_start, sel_end - sel_start + 1);
+    size_t count;
+    std::tie(sel_start, count) = m_EdtEngine.GetSelection();
+    std::vector<CFX_RectF> rects =
+        m_EdtEngine.GetCharacterRectsInRange(sel_start, count);
 
     CXFA_Path path;
     for (auto& rect : rects) {
@@ -537,7 +538,7 @@ void CFWL_Edit::RenderText(CFX_RenderDevice* pRenderDev,
                            const CFX_Matrix& mt) {
   ASSERT(pRenderDev);
 
-  CFX_RetainPtr<CFGAS_GEFont> font = m_EdtEngine.GetFont();
+  RetainPtr<CFGAS_GEFont> font = m_EdtEngine.GetFont();
   if (!font)
     return;
 
@@ -634,7 +635,7 @@ void CFWL_Edit::UpdateEditParams() {
   }
   m_fFontSize = theme->GetFontSize(&part);
 
-  CFX_RetainPtr<CFGAS_GEFont> pFont = theme->GetFont(&part);
+  RetainPtr<CFGAS_GEFont> pFont = theme->GetFont(&part);
   if (!pFont)
     return;
 
@@ -1049,7 +1050,7 @@ bool CFWL_Edit::ValidateNumberChar(wchar_t cNum) {
   if (!m_bSetRange)
     return true;
 
-  CFX_WideString wsText = m_EdtEngine.GetText();
+  WideString wsText = m_EdtEngine.GetText();
   if (wsText.IsEmpty())
     return cNum != L'0';
 
@@ -1059,9 +1060,9 @@ bool CFWL_Edit::ValidateNumberChar(wchar_t cNum) {
     return false;
 
   int32_t nLen = wsText.GetLength();
-  CFX_WideString l = wsText.Left(m_CursorPosition);
-  CFX_WideString r = wsText.Right(nLen - m_CursorPosition);
-  CFX_WideString wsNew = l + cNum + r;
+  WideString l = wsText.Left(m_CursorPosition);
+  WideString r = wsText.Right(nLen - m_CursorPosition);
+  WideString wsNew = l + cNum + r;
   return wsNew.GetInteger() <= m_iMax;
 }
 
@@ -1119,7 +1120,7 @@ void CFWL_Edit::OnProcessMessage(CFWL_Message* pMessage) {
           OnMouseMove(pMsg);
           break;
         case FWL_MouseCommand::RightButtonDown:
-          DoButtonDown(pMsg);
+          DoRButtonDown(pMsg);
           break;
         default:
           break;
@@ -1158,17 +1159,11 @@ void CFWL_Edit::OnDrawWidget(CXFA_Graphics* pGraphics,
   DrawWidget(pGraphics, matrix);
 }
 
-void CFWL_Edit::DoButtonDown(CFWL_MessageMouse* pMsg) {
+void CFWL_Edit::DoRButtonDown(CFWL_MessageMouse* pMsg) {
   if ((m_pProperties->m_dwStates & FWL_WGTSTATE_Focused) == 0)
     SetFocus(true);
 
-  // TODO(dsinclair): Handle DoButtonDown
-  //  bool bBefore = true;
-  //  int32_t nIndex =
-  //      std::max(0, pPage->GetCharIndex(DeviceToEngine(pMsg->m_pos),
-  //      bBefore));
-
-  // SetCursorPosition(nIndex);
+  m_CursorPosition = m_EdtEngine.GetIndexForPoint(DeviceToEngine(pMsg->m_pos));
 }
 
 void CFWL_Edit::OnFocusChanged(CFWL_Message* pMsg, bool bSet) {
@@ -1205,7 +1200,9 @@ void CFWL_Edit::OnLButtonDown(CFWL_MessageMouse* pMsg) {
 
   m_bLButtonDown = true;
   SetGrab(true);
-  DoButtonDown(pMsg);
+
+  if ((m_pProperties->m_dwStates & FWL_WGTSTATE_Focused) == 0)
+    SetFocus(true);
 
   bool bRepaint = false;
   if (m_EdtEngine.HasSelection()) {
@@ -1215,13 +1212,16 @@ void CFWL_Edit::OnLButtonDown(CFWL_MessageMouse* pMsg) {
 
   size_t index_at_click =
       m_EdtEngine.GetIndexForPoint(DeviceToEngine(pMsg->m_pos));
+
   if (index_at_click != m_CursorPosition &&
       !!(pMsg->m_dwFlags & FWL_KEYFLAG_Shift)) {
     size_t start = std::min(m_CursorPosition, index_at_click);
     size_t end = std::max(m_CursorPosition, index_at_click);
 
-    m_EdtEngine.SetSelection(start, end);
+    m_EdtEngine.SetSelection(start, end - start);
     bRepaint = true;
+  } else {
+    m_CursorPosition = index_at_click;
   }
 
   if (bRepaint)
@@ -1234,14 +1234,13 @@ void CFWL_Edit::OnLButtonUp(CFWL_MessageMouse* pMsg) {
 }
 
 void CFWL_Edit::OnButtonDoubleClick(CFWL_MessageMouse* pMsg) {
-  // TODO(dsinclair): Handle OnButtonDoubleClick
-  //  int32_t nCount = 0;
-  //  int32_t nIndex = pPage->SelectWord(DeviceToEngine(pMsg->m_pos), nCount);
-  //  if (nIndex < 0)
-  //    return;
-  //
-  //  m_EdtEngine.AddSelRange(nIndex, nCount);
-  // SetCursorPosition(nIndex + nCount - 1);
+  size_t click_idx = m_EdtEngine.GetIndexForPoint(DeviceToEngine(pMsg->m_pos));
+  size_t start_idx;
+  size_t count;
+  std::tie(start_idx, count) = m_EdtEngine.BoundsForWordAt(click_idx);
+
+  m_EdtEngine.SetSelection(start_idx, count);
+  m_CursorPosition = start_idx + count;
   RepaintRect(m_rtEngine);
 }
 
@@ -1259,11 +1258,16 @@ void CFWL_Edit::OnMouseMove(CFWL_MessageMouse* pMsg) {
   if (m_CursorPosition > length)
     SetCursorPosition(length);
 
-  size_t sel_start;
-  size_t sel_end;
-  std::tie(sel_start, sel_end) = m_EdtEngine.GetSelection();
-  m_EdtEngine.SetSelection(std::min(sel_start, m_CursorPosition),
-                           std::max(sel_end, m_CursorPosition));
+  size_t sel_start = 0;
+  size_t count = 0;
+  if (m_EdtEngine.HasSelection())
+    std::tie(sel_start, count) = m_EdtEngine.GetSelection();
+  else
+    sel_start = old_cursor_pos;
+
+  size_t start_pos = std::min(sel_start, m_CursorPosition);
+  size_t end_pos = std::max(sel_start, m_CursorPosition);
+  m_EdtEngine.SetSelection(start_pos, end_pos - start_pos);
 }
 
 void CFWL_Edit::OnKeyDown(CFWL_MessageKey* pMsg) {
@@ -1273,8 +1277,8 @@ void CFWL_Edit::OnKeyDown(CFWL_MessageKey* pMsg) {
   size_t sel_start = m_CursorPosition;
   if (m_EdtEngine.HasSelection()) {
     size_t start_idx;
-    size_t end_idx;
-    std::tie(start_idx, end_idx) = m_EdtEngine.GetSelection();
+    size_t count;
+    std::tie(start_idx, count) = m_EdtEngine.GetSelection();
     sel_start = start_idx;
   }
 
@@ -1369,7 +1373,7 @@ void CFWL_Edit::OnChar(CFWL_MessageKey* pMsg) {
       if (pMsg->m_dwFlags & kEditingModifier)
         break;
 
-      m_EdtEngine.Insert(m_CursorPosition, CFX_WideString(c));
+      m_EdtEngine.Insert(m_CursorPosition, WideString(c));
       SetCursorPosition(m_CursorPosition + 1);
       break;
     }

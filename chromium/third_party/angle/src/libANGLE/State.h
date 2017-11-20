@@ -17,6 +17,7 @@
 #include "common/bitset_utils.h"
 #include "libANGLE/Debug.h"
 #include "libANGLE/Program.h"
+#include "libANGLE/ProgramPipeline.h"
 #include "libANGLE/RefCountObject.h"
 #include "libANGLE/Renderbuffer.h"
 #include "libANGLE/Sampler.h"
@@ -35,7 +36,7 @@ struct Caps;
 
 typedef std::map<GLenum, BindingPointer<Texture>> TextureMap;
 
-class State : angle::NonCopyable
+class State : public OnAttachmentDirtyReceiver, angle::NonCopyable
 {
   public:
     State();
@@ -123,9 +124,16 @@ class State : angle::NonCopyable
     void setSampleAlphaToCoverage(bool enabled);
     bool isSampleCoverageEnabled() const;
     void setSampleCoverage(bool enabled);
-    void setSampleCoverageParams(GLfloat value, bool invert);
+    void setSampleCoverageParams(GLclampf value, bool invert);
     GLfloat getSampleCoverageValue() const;
     bool getSampleCoverageInvert() const;
+
+    // Multisample mask state manipulation.
+    bool isSampleMaskEnabled() const;
+    void setSampleMaskEnabled(bool enabled);
+    void setSampleMaskParams(GLuint maskNumber, GLbitfield mask);
+    GLbitfield getSampleMaskWord(GLuint maskNumber) const;
+    GLuint getMaxSampleMaskWords() const;
 
     // Multisampling/alpha to one manipulation.
     void setSampleAlphaToOne(bool enabled);
@@ -218,6 +226,10 @@ class State : angle::NonCopyable
     void setActiveQuery(const Context *context, GLenum target, Query *query);
     GLuint getActiveQueryId(GLenum target) const;
     Query *getActiveQuery(GLenum target) const;
+
+    // Program Pipeline binding manipulation
+    void setProgramPipelineBinding(const Context *context, ProgramPipeline *pipeline);
+    void detachProgramPipeline(const Context *context, GLuint pipeline);
 
     //// Typed buffer binding point manipulation ////
     // GL_ARRAY_BUFFER
@@ -379,7 +391,10 @@ class State : angle::NonCopyable
         DIRTY_BIT_SAMPLE_ALPHA_TO_COVERAGE_ENABLED,
         DIRTY_BIT_SAMPLE_COVERAGE_ENABLED,
         DIRTY_BIT_SAMPLE_COVERAGE,
-        DIRTY_BIT_DEPTH_TEST_ENABLED,
+        DIRTY_BIT_SAMPLE_MASK_ENABLED,
+        DIRTY_BIT_SAMPLE_MASK_WORD_0,
+        DIRTY_BIT_SAMPLE_MASK_WORD_MAX = DIRTY_BIT_SAMPLE_MASK_WORD_0 + MAX_SAMPLE_MASK_WORDS,
+        DIRTY_BIT_DEPTH_TEST_ENABLED   = DIRTY_BIT_SAMPLE_MASK_WORD_MAX,
         DIRTY_BIT_DEPTH_FUNC,
         DIRTY_BIT_DEPTH_MASK,
         DIRTY_BIT_STENCIL_TEST_ENABLED,
@@ -423,6 +438,9 @@ class State : angle::NonCopyable
         DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING,
         DIRTY_BIT_PROGRAM_BINDING,
         DIRTY_BIT_PROGRAM_EXECUTABLE,
+        // TODO(jmadill): Fine-grained dirty bits for each texture/sampler.
+        DIRTY_BIT_TEXTURE_BINDINGS,
+        DIRTY_BIT_SAMPLER_BINDINGS,
         DIRTY_BIT_MULTISAMPLING,
         DIRTY_BIT_SAMPLE_ALPHA_TO_ONE,
         DIRTY_BIT_COVERAGE_MODULATION,         // CHROMIUM_framebuffer_mixed_samples
@@ -442,6 +460,9 @@ class State : angle::NonCopyable
         DIRTY_OBJECT_READ_FRAMEBUFFER,
         DIRTY_OBJECT_DRAW_FRAMEBUFFER,
         DIRTY_OBJECT_VERTEX_ARRAY,
+        // Use a very coarse bit for any program or texture change.
+        // TODO(jmadill): Fine-grained dirty bits for each texture/sampler.
+        DIRTY_OBJECT_PROGRAM_TEXTURES,
         DIRTY_OBJECT_UNKNOWN,
         DIRTY_OBJECT_MAX = DIRTY_OBJECT_UNKNOWN,
     };
@@ -470,8 +491,16 @@ class State : angle::NonCopyable
                       GLenum format);
 
     const ImageUnit &getImageUnit(GLuint unit) const;
+    const std::vector<Texture *> &getCompleteTextureCache() const { return mCompleteTextureCache; }
+
+    // Handle a dirty texture event.
+    void signal(size_t textureIndex, InitState initState) override;
+
+    Error clearUnclearedActiveTextures(const Context *context);
 
   private:
+    void syncProgramTextures(const Context *context);
+
     // Cached values from Context's caps
     GLuint mMaxDrawBuffers;
     GLuint mMaxCombinedTextureImageUnits;
@@ -489,6 +518,9 @@ class State : angle::NonCopyable
     bool mSampleCoverage;
     GLfloat mSampleCoverageValue;
     bool mSampleCoverageInvert;
+    bool mSampleMask;
+    GLuint mMaxSampleMaskWords;
+    std::array<GLbitfield, MAX_SAMPLE_MASK_WORDS> mSampleMaskValues;
 
     DepthStencilState mDepthStencil;
     GLint mStencilRef;
@@ -512,6 +544,7 @@ class State : angle::NonCopyable
     Framebuffer *mDrawFramebuffer;
     BindingPointer<Renderbuffer> mRenderbuffer;
     Program *mProgram;
+    BindingPointer<ProgramPipeline> mProgramPipeline;
 
     typedef std::vector<VertexAttribCurrentValueData> VertexAttribVector;
     VertexAttribVector mVertexAttribCurrentValues;  // From glVertexAttrib
@@ -523,6 +556,26 @@ class State : angle::NonCopyable
     typedef std::vector<BindingPointer<Texture>> TextureBindingVector;
     typedef std::map<GLenum, TextureBindingVector> TextureBindingMap;
     TextureBindingMap mSamplerTextures;
+
+    // Texture Completeness Caching
+    // ----------------------------
+    // The texture completeness cache uses dirty bits to avoid having to scan the list
+    // of textures each draw call. This gl::State class implements OnAttachmentDirtyReceiver,
+    // and keeps an array of bindings to the Texture class. When the Textures are marked dirty,
+    // they send messages to the State class (and any Framebuffers they're attached to) via the
+    // State::signal method (see above). Internally this then invalidates the completeness cache.
+    //
+    // Note this requires that we also invalidate the completeness cache manually on events like
+    // re-binding textures/samplers or a change in the program. For more information see the
+    // signal_utils.h header and the design doc linked there.
+
+    // A cache of complete textures. nullptr indicates unbound or incomplete.
+    // Don't use BindingPointer because this cache is only valid within a draw call.
+    // Also stores a notification channel to the texture itself to handle texture change events.
+    std::vector<Texture *> mCompleteTextureCache;
+    std::vector<OnAttachmentDirtyBinding> mCompleteTextureBindings;
+    using ActiveTextureMask = angle::BitSet<IMPLEMENTATION_MAX_ACTIVE_TEXTURES>;
+    ActiveTextureMask mCompleteTexturesMask;
 
     typedef std::vector<BindingPointer<Sampler>> SamplerBindingVector;
     SamplerBindingVector mSamplers;

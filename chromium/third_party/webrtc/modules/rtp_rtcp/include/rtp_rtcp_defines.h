@@ -8,18 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_INCLUDE_RTP_RTCP_DEFINES_H_
-#define WEBRTC_MODULES_RTP_RTCP_INCLUDE_RTP_RTCP_DEFINES_H_
+#ifndef MODULES_RTP_RTCP_INCLUDE_RTP_RTCP_DEFINES_H_
+#define MODULES_RTP_RTCP_INCLUDE_RTP_RTCP_DEFINES_H_
 
 #include <stddef.h>
 #include <list>
 #include <vector>
 
-#include "webrtc/common_types.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/rtc_base/deprecation.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/typedefs.h"
+#include "api/audio_codecs/audio_format.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/include/module_common_types.h"
+#include "rtc_base/deprecation.h"
+#include "system_wrappers/include/clock.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 #define RTCP_CNAME_SIZE 256    // RFC 3550 page 44, including null termination
 #define IP_PACKET_SIZE 1500    // we assume ethernet
@@ -40,9 +41,8 @@ const int kBogusRtpRateForAudioRtcp = 8000;
 const uint8_t kRtpHeaderSize = 12;
 
 struct AudioPayload {
-    uint32_t    frequency;
-    size_t      channels;
-    uint32_t    rate;
+  SdpAudioFormat format;
+  uint32_t rate;
 };
 
 struct VideoPayload {
@@ -51,9 +51,39 @@ struct VideoPayload {
   H264::Profile h264_profile;
 };
 
-union PayloadUnion {
-    AudioPayload Audio;
-    VideoPayload Video;
+class PayloadUnion {
+ public:
+  explicit PayloadUnion(const AudioPayload& payload);
+  explicit PayloadUnion(const VideoPayload& payload);
+  PayloadUnion(const PayloadUnion&);
+  PayloadUnion(PayloadUnion&&);
+  ~PayloadUnion();
+
+  PayloadUnion& operator=(const PayloadUnion&);
+  PayloadUnion& operator=(PayloadUnion&&);
+
+  bool is_audio() const { return audio_payload_.has_value(); }
+  bool is_video() const { return video_payload_.has_value(); }
+  const AudioPayload& audio_payload() const {
+    RTC_DCHECK(audio_payload_);
+    return *audio_payload_;
+  }
+  const VideoPayload& video_payload() const {
+    RTC_DCHECK(video_payload_);
+    return *video_payload_;
+  }
+  AudioPayload& audio_payload() {
+    RTC_DCHECK(audio_payload_);
+    return *audio_payload_;
+  }
+  VideoPayload& video_payload() {
+    RTC_DCHECK(video_payload_);
+    return *video_payload_;
+  }
+
+ private:
+  rtc::Optional<AudioPayload> audio_payload_;
+  rtc::Optional<VideoPayload> video_payload_;
 };
 
 enum RTPAliveType { kRtpDead = 0, kRtpNoRtp = 1, kRtpAlive = 2 };
@@ -113,11 +143,16 @@ enum KeyFrameRequestMethod { kKeyFrameReqPliRtcp, kKeyFrameReqFirRtcp };
 
 enum RtpRtcpPacketType { kPacketRtp = 0, kPacketKeepAlive = 1 };
 
+// kConditionallyRetransmitHigherLayers allows retransmission of video frames
+// in higher layers if either the last frame in that layer was too far back in
+// time, or if we estimate that a new frame will be available in a lower layer
+// in a shorter time than it would take to request and receive a retransmission.
 enum RetransmissionMode : uint8_t {
   kRetransmitOff = 0x0,
   kRetransmitFECPackets = 0x1,
   kRetransmitBaseLayer = 0x2,
   kRetransmitHigherLayers = 0x4,
+  kConditionallyRetransmitHigherLayers = 0x8,
   kRetransmitAllPackets = 0xFF
 };
 
@@ -236,12 +271,9 @@ class RtpFeedback {
   /*
   *   channels    - number of channels in codec (1 = mono, 2 = stereo)
   */
-  virtual int32_t OnInitializeDecoder(
-      int8_t payload_type,
-      const char payload_name[RTP_PAYLOAD_NAME_SIZE],
-      int frequency,
-      size_t channels,
-      uint32_t rate) = 0;
+  virtual int32_t OnInitializeDecoder(int payload_type,
+                                      const SdpAudioFormat& audio_format,
+                                      uint32_t rate) = 0;
 
   virtual void OnIncomingSSRCChanged(uint32_t ssrc) = 0;
 
@@ -417,10 +449,8 @@ class NullRtpFeedback : public RtpFeedback {
  public:
   ~NullRtpFeedback() override {}
 
-  int32_t OnInitializeDecoder(int8_t payload_type,
-                              const char payloadName[RTP_PAYLOAD_NAME_SIZE],
-                              int frequency,
-                              size_t channels,
+  int32_t OnInitializeDecoder(int payload_type,
+                              const SdpAudioFormat& audio_format,
                               uint32_t rate) override;
 
   void OnIncomingSSRCChanged(uint32_t ssrc) override {}
@@ -428,10 +458,8 @@ class NullRtpFeedback : public RtpFeedback {
 };
 
 inline int32_t NullRtpFeedback::OnInitializeDecoder(
-    int8_t payload_type,
-    const char payloadName[RTP_PAYLOAD_NAME_SIZE],
-    int frequency,
-    size_t channels,
+    int payload_type,
+    const SdpAudioFormat& audio_format,
     uint32_t rate) {
   return 0;
 }
@@ -481,4 +509,4 @@ class TransportSequenceNumberAllocator {
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_RTP_RTCP_INCLUDE_RTP_RTCP_DEFINES_H_
+#endif  // MODULES_RTP_RTCP_INCLUDE_RTP_RTCP_DEFINES_H_

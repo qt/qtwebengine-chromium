@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-#include "cc/output/compositor_frame.h"
+#include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "content/browser/renderer_host/frame_connector_delegate.h"
 #include "content/common/content_export.h"
@@ -99,6 +99,10 @@ class CONTENT_EXPORT CrossProcessFrameConnector
   void UnlockMouse() override;
   bool IsInert() const override;
   bool IsHidden() const override;
+#if defined(USE_AURA)
+  void EmbedRendererWindowTreeClientInParent(
+      ui::mojom::WindowTreeClientPtr window_tree_client) override;
+#endif
 
   // Set the visibility of immediate child views, i.e. views whose parent view
   // is |view_|.

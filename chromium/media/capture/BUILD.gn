@@ -107,10 +107,10 @@ component("capture_lib") {
     "video/mac/video_capture_device_factory_mac.mm",
     "video/mac/video_capture_device_mac.h",
     "video/mac/video_capture_device_mac.mm",
-    "video/shared_memory_buffer_handle.cc",
-    "video/shared_memory_buffer_handle.h",
     "video/shared_memory_buffer_tracker.cc",
     "video/shared_memory_buffer_tracker.h",
+    "video/shared_memory_handle_provider.cc",
+    "video/shared_memory_handle_provider.h",
     "video/video_capture_buffer_pool.h",
     "video/video_capture_buffer_pool_impl.cc",
     "video/video_capture_buffer_pool_impl.h",
@@ -248,6 +248,7 @@ test("capture_unittests") {
     "video/mac/video_capture_device_factory_mac_unittest.mm",
     "video/video_capture_device_client_unittest.cc",
     "video/video_capture_device_unittest.cc",
+    "video_capture_types_unittest.cc",
   ]
 
   deps = [

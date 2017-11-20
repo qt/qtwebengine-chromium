@@ -7,6 +7,7 @@
 #include <memory>
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/resolver/StyleResolverState.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/wtf/PtrUtil.h"
 
 namespace blink {
@@ -17,7 +18,7 @@ class CSSVisibilityNonInterpolableValue : public NonInterpolableValue {
 
   static RefPtr<CSSVisibilityNonInterpolableValue> Create(EVisibility start,
                                                           EVisibility end) {
-    return AdoptRef(new CSSVisibilityNonInterpolableValue(start, end));
+    return WTF::AdoptRef(new CSSVisibilityNonInterpolableValue(start, end));
   }
 
   EVisibility Visibility() const {

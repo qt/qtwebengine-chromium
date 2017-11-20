@@ -93,12 +93,18 @@ void ExplainCertificateSecurity(
     const security_state::SecurityInfo& security_info,
     content::SecurityStyleExplanations* security_style_explanations) {
   if (security_info.sha1_in_chain) {
-    security_style_explanations->neutral_explanations.push_back(
-        content::SecurityStyleExplanation(
-            l10n_util::GetStringUTF8(IDS_SHA1),
-            l10n_util::GetStringUTF8(IDS_SHA1_DESCRIPTION),
-            security_info.certificate,
-            blink::WebMixedContentContextType::kNotMixedContent));
+    content::SecurityStyleExplanation explanation(
+        l10n_util::GetStringUTF8(IDS_SHA1),
+        l10n_util::GetStringUTF8(IDS_SHA1_DESCRIPTION),
+        security_info.certificate,
+        blink::WebMixedContentContextType::kNotMixedContent);
+    // The impact of SHA1 on the certificate status depends on
+    // the EnableSHA1ForLocalAnchors policy.
+    if (security_info.cert_status & net::CERT_STATUS_WEAK_SIGNATURE_ALGORITHM) {
+      security_style_explanations->insecure_explanations.push_back(explanation);
+    } else {
+      security_style_explanations->neutral_explanations.push_back(explanation);
+    }
   }
 
   if (security_info.cert_missing_subject_alt_name) {
@@ -356,6 +362,8 @@ std::unique_ptr<security_state::VisibleSecurityState> GetVisibleSecurityState(
 
   content::NavigationEntry* entry =
       web_contents->GetController().GetVisibleEntry();
+  state->is_error_page =
+      entry && (entry->GetPageType() == content::PAGE_TYPE_ERROR);
   if (!entry || !entry->GetSSL().initialized)
     return state;
 

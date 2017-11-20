@@ -8,22 +8,31 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/video/send_statistics_proxy.h"
+#include "video/send_statistics_proxy.h"
 
 #include <algorithm>
 #include <cmath>
 #include <map>
 #include <vector>
 
-#include "webrtc/common_types.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/system_wrappers/include/metrics.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "system_wrappers/include/field_trial.h"
+#include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
 namespace {
 const float kEncodeTimeWeigthFactor = 0.5f;
+const size_t kMaxEncodedFrameMapSize = 150;
+const int64_t kMaxEncodedFrameWindowMs = 800;
+const int64_t kBucketSizeMs = 100;
+const size_t kBucketCount = 10;
+
+const char kVp8ForcedFallbackEncoderFieldTrial[] =
+    "WebRTC-VP8-Forced-Fallback-Encoder";
+const char kVp8SwCodecName[] = "libvpx";
 
 // Used by histograms. Values of entries should not be changed.
 enum HistogramCodecType {
@@ -68,6 +77,38 @@ void UpdateCodecTypeHistogram(const std::string& payload_name) {
                             PayloadNameToHistogramCodecType(payload_name),
                             kVideoMax);
 }
+
+bool IsForcedFallbackPossible(const CodecSpecificInfo* codec_info) {
+  return codec_info->codecType == kVideoCodecVP8 &&
+         codec_info->codecSpecific.VP8.simulcastIdx == 0 &&
+         (codec_info->codecSpecific.VP8.temporalIdx == 0 ||
+          codec_info->codecSpecific.VP8.temporalIdx == kNoTemporalIdx);
+}
+
+rtc::Optional<int> GetFallbackIntervalFromFieldTrial() {
+  if (!webrtc::field_trial::IsEnabled(kVp8ForcedFallbackEncoderFieldTrial))
+    return rtc::Optional<int>();
+
+  std::string group =
+      webrtc::field_trial::FindFullName(kVp8ForcedFallbackEncoderFieldTrial);
+  if (group.empty())
+    return rtc::Optional<int>();
+
+  int low_kbps;
+  int high_kbps;
+  int min_low_ms;
+  int min_pixels;
+  if (sscanf(group.c_str(), "Enabled-%d,%d,%d,%d", &low_kbps, &high_kbps,
+             &min_low_ms, &min_pixels) != 4) {
+    return rtc::Optional<int>();
+  }
+
+  if (min_low_ms <= 0 || min_pixels <= 0 || low_kbps <= 0 ||
+      high_kbps <= low_kbps) {
+    return rtc::Optional<int>();
+  }
+  return rtc::Optional<int>(min_low_ms);
+}
 }  // namespace
 
 
@@ -80,12 +121,14 @@ SendStatisticsProxy::SendStatisticsProxy(
     : clock_(clock),
       payload_name_(config.encoder_settings.payload_name),
       rtp_config_(config.rtp),
+      min_first_fallback_interval_ms_(GetFallbackIntervalFromFieldTrial()),
       content_type_(content_type),
       start_ms_(clock->TimeInMilliseconds()),
-      last_sent_frame_timestamp_(0),
       encode_time_(kEncodeTimeWeigthFactor),
       quality_downscales_(-1),
       cpu_downscales_(-1),
+      media_byte_rate_tracker_(kBucketSizeMs, kBucketCount),
+      encoded_frame_rate_tracker_(kBucketSizeMs, kBucketCount),
       uma_container_(
           new UmaSamplesContainer(GetUmaPrefix(content_type_), stats_, clock)) {
 }
@@ -108,8 +151,6 @@ SendStatisticsProxy::UmaSamplesContainer::UmaSamplesContainer(
     Clock* const clock)
     : uma_prefix_(prefix),
       clock_(clock),
-      max_sent_width_per_timestamp_(0),
-      max_sent_height_per_timestamp_(0),
       input_frame_rate_tracker_(100, 10u),
       input_fps_counter_(clock, nullptr, true),
       sent_fps_counter_(clock, nullptr, true),
@@ -146,6 +187,44 @@ void SendStatisticsProxy::UmaSamplesContainer::InitializeBitrateCounters(
                                   ssrc);
     }
   }
+}
+
+void SendStatisticsProxy::UmaSamplesContainer::RemoveOld(int64_t now_ms) {
+  while (!encoded_frames_.empty()) {
+    auto it = encoded_frames_.begin();
+    if (now_ms - it->second.send_ms < kMaxEncodedFrameWindowMs)
+      break;
+
+    // Use max per timestamp.
+    sent_width_counter_.Add(it->second.max_width);
+    sent_height_counter_.Add(it->second.max_height);
+    encoded_frames_.erase(it);
+  }
+}
+
+bool SendStatisticsProxy::UmaSamplesContainer::InsertEncodedFrame(
+    const EncodedImage& encoded_frame) {
+  int64_t now_ms = clock_->TimeInMilliseconds();
+  RemoveOld(now_ms);
+  if (encoded_frames_.size() > kMaxEncodedFrameMapSize) {
+    encoded_frames_.clear();
+  }
+
+  auto it = encoded_frames_.find(encoded_frame._timeStamp);
+  if (it == encoded_frames_.end()) {
+    // First frame with this timestamp.
+    encoded_frames_.insert(std::make_pair(
+        encoded_frame._timeStamp, Frame(now_ms, encoded_frame._encodedWidth,
+                                        encoded_frame._encodedHeight)));
+    sent_fps_counter_.Add(1);
+    return true;
+  }
+
+  it->second.max_width =
+      std::max(it->second.max_width, encoded_frame._encodedWidth);
+  it->second.max_height =
+      std::max(it->second.max_height, encoded_frame._encodedHeight);
+  return false;
 }
 
 void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
@@ -410,6 +489,21 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
     }
   }
 
+  if (fallback_info_.is_possible) {
+    // Double interval since there is some time before fallback may occur.
+    const int kMinRunTimeMs = 2 * metrics::kMinRunTimeInSeconds * 1000;
+    int64_t elapsed_ms = fallback_info_.elapsed_ms;
+    int fallback_time_percent = fallback_active_counter_.Percent(kMinRunTimeMs);
+    if (fallback_time_percent != -1 && elapsed_ms >= kMinRunTimeMs) {
+      RTC_HISTOGRAMS_PERCENTAGE(
+          kIndex, uma_prefix_ + "Encoder.ForcedSwFallbackTimeInPercent.Vp8",
+          fallback_time_percent);
+      RTC_HISTOGRAMS_COUNTS_100(
+          kIndex, uma_prefix_ + "Encoder.ForcedSwFallbackChangesPerMinute.Vp8",
+          fallback_info_.on_off_events * 60 / (elapsed_ms / 1000));
+    }
+  }
+
   AggregatedStats total_bytes_per_sec = total_byte_counter_.GetStats();
   if (total_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAMS_COUNTS_10000(kIndex, uma_prefix_ + "BitrateSentInKbps",
@@ -482,13 +576,6 @@ void SendStatisticsProxy::OnEncoderReconfigured(
   }
 }
 
-void SendStatisticsProxy::OnEncoderStatsUpdate(uint32_t framerate,
-                                               uint32_t bitrate) {
-  rtc::CritScope lock(&crit_);
-  stats_.encode_frame_rate = framerate;
-  stats_.media_bitrate_bps = bitrate;
-}
-
 void SendStatisticsProxy::OnEncodedFrameTimeMeasured(
     int encode_time_ms,
     const CpuOveruseMetrics& metrics) {
@@ -539,6 +626,12 @@ VideoSendStream::Stats SendStatisticsProxy::GetStats() {
   PurgeOldStats();
   stats_.input_frame_rate =
       round(uma_container_->input_frame_rate_tracker_.ComputeRate());
+  stats_.content_type =
+      content_type_ == VideoEncoderConfig::ContentType::kRealtimeVideo
+          ? VideoContentType::UNSPECIFIED
+          : VideoContentType::SCREENSHARE;
+  stats_.encode_frame_rate = round(encoded_frame_rate_tracker_.ComputeRate());
+  stats_.media_bitrate_bps = media_byte_rate_tracker_.ComputeRate() * 8;
   return stats_;
 }
 
@@ -616,6 +709,57 @@ void SendStatisticsProxy::OnSetEncoderTargetRate(uint32_t bitrate_bps) {
   stats_.target_media_bitrate_bps = bitrate_bps;
 }
 
+void SendStatisticsProxy::UpdateEncoderFallbackStats(
+    const CodecSpecificInfo* codec_info) {
+  if (!min_first_fallback_interval_ms_ ||
+      !uma_container_->fallback_info_.is_possible) {
+    return;
+  }
+
+  if (!IsForcedFallbackPossible(codec_info)) {
+    uma_container_->fallback_info_.is_possible = false;
+    return;
+  }
+
+  FallbackEncoderInfo* fallback_info = &uma_container_->fallback_info_;
+
+  const int64_t now_ms = clock_->TimeInMilliseconds();
+  bool is_active = fallback_info->is_active;
+  if (codec_info->codec_name != stats_.encoder_implementation_name) {
+    // Implementation changed.
+    is_active = strcmp(codec_info->codec_name, kVp8SwCodecName) == 0;
+    if (!is_active && stats_.encoder_implementation_name != kVp8SwCodecName) {
+      // First or not a VP8 SW change, update stats on next call.
+      return;
+    }
+    if (is_active && fallback_info->on_off_events == 0) {
+      // The minimum set time should have passed for the first fallback (else
+      // skip to avoid fallback due to failure).
+      int64_t elapsed_ms = fallback_info->elapsed_ms;
+      if (fallback_info->last_update_ms)
+        elapsed_ms += now_ms - *(fallback_info->last_update_ms);
+      if (elapsed_ms < *min_first_fallback_interval_ms_) {
+        fallback_info->is_possible = false;
+        return;
+      }
+    }
+    ++fallback_info->on_off_events;
+  }
+
+  if (fallback_info->last_update_ms) {
+    int64_t diff_ms = now_ms - *(fallback_info->last_update_ms);
+    // If the time diff since last update is greater than |max_frame_diff_ms|,
+    // video is considered paused/muted and the change is not included.
+    if (diff_ms < fallback_info->max_frame_diff_ms) {
+      uma_container_->fallback_active_counter_.Add(fallback_info->is_active,
+                                                   diff_ms);
+      fallback_info->elapsed_ms += diff_ms;
+    }
+  }
+  fallback_info->is_active = is_active;
+  fallback_info->last_update_ms.emplace(now_ms);
+}
+
 void SendStatisticsProxy::OnSendEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_info) {
@@ -630,6 +774,7 @@ void SendStatisticsProxy::OnSendEncodedImage(
       simulcast_idx = codec_info->codecSpecific.generic.simulcast_idx;
     }
     if (codec_info->codec_name) {
+      UpdateEncoderFallbackStats(codec_info);
       stats_.encoder_implementation_name = codec_info->codec_name;
     }
   }
@@ -693,31 +838,14 @@ void SendStatisticsProxy::OnSendEncodedImage(
     }
   }
 
-  // TODO(asapersson): This is incorrect if simulcast layers are encoded on
-  // different threads and there is no guarantee that one frame of all layers
-  // are encoded before the next start.
-  if (last_sent_frame_timestamp_ > 0 &&
-      encoded_image._timeStamp != last_sent_frame_timestamp_) {
-    uma_container_->sent_fps_counter_.Add(1);
-    uma_container_->sent_width_counter_.Add(
-        uma_container_->max_sent_width_per_timestamp_);
-    uma_container_->sent_height_counter_.Add(
-        uma_container_->max_sent_height_per_timestamp_);
-    uma_container_->max_sent_width_per_timestamp_ = 0;
-    uma_container_->max_sent_height_per_timestamp_ = 0;
-  }
-  last_sent_frame_timestamp_ = encoded_image._timeStamp;
-  uma_container_->max_sent_width_per_timestamp_ =
-      std::max(uma_container_->max_sent_width_per_timestamp_,
-               static_cast<int>(encoded_image._encodedWidth));
-  uma_container_->max_sent_height_per_timestamp_ =
-      std::max(uma_container_->max_sent_height_per_timestamp_,
-               static_cast<int>(encoded_image._encodedHeight));
+  media_byte_rate_tracker_.AddSamples(encoded_image._length);
+  if (uma_container_->InsertEncodedFrame(encoded_image))
+    encoded_frame_rate_tracker_.AddSamples(1);
 }
 
 int SendStatisticsProxy::GetSendFrameRate() const {
   rtc::CritScope lock(&crit_);
-  return stats_.encode_frame_rate;
+  return round(encoded_frame_rate_tracker_.ComputeRate());
 }
 
 void SendStatisticsProxy::OnIncomingFrame(int width, int height) {

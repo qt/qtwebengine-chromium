@@ -94,7 +94,7 @@ namespace sw
 					x -= *Pointer<Float4>(constants + OFFSET(Constants,X) + q * sizeof(float4));
 				}
 
-				z[q] = interpolate(x, Dz[q], z[q], primitive + OFFSET(Primitive,z), false, false);
+				z[q] = interpolate(x, Dz[q], z[q], primitive + OFFSET(Primitive,z), false, false, state.depthClamp);
 			}
 		}
 
@@ -141,7 +141,7 @@ namespace sw
 
 			if(interpolateW())
 			{
-				w = interpolate(xxxx, Dw, rhw, primitive + OFFSET(Primitive,w), false, false);
+				w = interpolate(xxxx, Dw, rhw, primitive + OFFSET(Primitive,w), false, false, false);
 				rhw = reciprocal(w, false, false, true);
 
 				if(state.centroid)
@@ -158,7 +158,7 @@ namespace sw
 					{
 						if(!state.interpolant[interpolant].centroid)
 						{
-							v[interpolant][component] = interpolate(xxxx, Dv[interpolant][component], rhw, primitive + OFFSET(Primitive, V[interpolant][component]), (state.interpolant[interpolant].flat & (1 << component)) != 0, state.perspective);
+							v[interpolant][component] = interpolate(xxxx, Dv[interpolant][component], rhw, primitive + OFFSET(Primitive, V[interpolant][component]), (state.interpolant[interpolant].flat & (1 << component)) != 0, state.perspective, false);
 						}
 						else
 						{
@@ -193,7 +193,7 @@ namespace sw
 
 			if(state.fog.component)
 			{
-				f = interpolate(xxxx, Df, rhw, primitive + OFFSET(Primitive,f), state.fog.flat & 0x01, state.perspective);
+				f = interpolate(xxxx, Df, rhw, primitive + OFFSET(Primitive,f), state.fog.flat & 0x01, state.perspective, false);
 			}
 
 			setBuiltins(x, y, z, w);
@@ -544,29 +544,29 @@ namespace sw
 			break;
 		case ALPHA_EQUAL:
 			cmp = CmpEQ(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)));
-			aMask = SignMask(Pack(cmp, Short4(0x0000)));
+			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
 			break;
 		case ALPHA_NOTEQUAL:       // a != b ~ !(a == b)
 			cmp = CmpEQ(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4))) ^ Short4(0xFFFFu);   // FIXME
-			aMask = SignMask(Pack(cmp, Short4(0x0000)));
+			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
 			break;
 		case ALPHA_LESS:           // a < b ~ b > a
 			cmp = CmpGT(*Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)), alpha);
-			aMask = SignMask(Pack(cmp, Short4(0x0000)));
+			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
 			break;
 		case ALPHA_GREATEREQUAL:   // a >= b ~ (a > b) || (a == b) ~ !(b > a)   // TODO: Approximate
 			equal = CmpEQ(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)));
 			cmp = CmpGT(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)));
 			cmp |= equal;
-			aMask = SignMask(Pack(cmp, Short4(0x0000)));
+			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
 			break;
 		case ALPHA_LESSEQUAL:      // a <= b ~ !(a > b)
 			cmp = CmpGT(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4))) ^ Short4(0xFFFFu);   // FIXME
-			aMask = SignMask(Pack(cmp, Short4(0x0000)));
+			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
 			break;
 		case ALPHA_GREATER:        // a > b
 			cmp = CmpGT(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)));
-			aMask = SignMask(Pack(cmp, Short4(0x0000)));
+			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
 			break;
 		default:
 			ASSERT(false);
@@ -1447,8 +1447,8 @@ namespace sw
 				current.y = As<Short4>(As<UShort4>(current.y) >> 8);
 				current.z = As<Short4>(As<UShort4>(current.z) >> 8);
 
-				current.z = As<Short4>(Pack(As<UShort4>(current.z), As<UShort4>(current.x)));
-				current.y = As<Short4>(Pack(As<UShort4>(current.y), As<UShort4>(current.y)));
+				current.z = As<Short4>(PackUnsigned(current.z, current.x));
+				current.y = As<Short4>(PackUnsigned(current.y, current.y));
 
 				current.x = current.z;
 				current.z = UnpackLow(As<Byte8>(current.z), As<Byte8>(current.y));
@@ -1464,8 +1464,8 @@ namespace sw
 				current.z = As<Short4>(As<UShort4>(current.z) >> 8);
 				current.w = As<Short4>(As<UShort4>(current.w) >> 8);
 
-				current.z = As<Short4>(Pack(As<UShort4>(current.z), As<UShort4>(current.x)));
-				current.y = As<Short4>(Pack(As<UShort4>(current.y), As<UShort4>(current.w)));
+				current.z = As<Short4>(PackUnsigned(current.z, current.x));
+				current.y = As<Short4>(PackUnsigned(current.y, current.w));
 
 				current.x = current.z;
 				current.z = UnpackLow(As<Byte8>(current.z), As<Byte8>(current.y));
@@ -1485,8 +1485,8 @@ namespace sw
 				current.y = As<Short4>(As<UShort4>(current.y) >> 8);
 				current.z = As<Short4>(As<UShort4>(current.z) >> 8);
 
-				current.z = As<Short4>(Pack(As<UShort4>(current.x), As<UShort4>(current.z)));
-				current.y = As<Short4>(Pack(As<UShort4>(current.y), As<UShort4>(current.y)));
+				current.z = As<Short4>(PackUnsigned(current.x, current.z));
+				current.y = As<Short4>(PackUnsigned(current.y, current.y));
 
 				current.x = current.z;
 				current.z = UnpackLow(As<Byte8>(current.z), As<Byte8>(current.y));
@@ -1502,8 +1502,8 @@ namespace sw
 				current.z = As<Short4>(As<UShort4>(current.z) >> 8);
 				current.w = As<Short4>(As<UShort4>(current.w) >> 8);
 
-				current.z = As<Short4>(Pack(As<UShort4>(current.x), As<UShort4>(current.z)));
-				current.y = As<Short4>(Pack(As<UShort4>(current.y), As<UShort4>(current.w)));
+				current.z = As<Short4>(PackUnsigned(current.x, current.z));
+				current.y = As<Short4>(PackUnsigned(current.y, current.w));
 
 				current.x = current.z;
 				current.z = UnpackLow(As<Byte8>(current.z), As<Byte8>(current.y));
@@ -1516,17 +1516,17 @@ namespace sw
 		case FORMAT_G8R8:
 			current.x = As<Short4>(As<UShort4>(current.x) >> 8);
 			current.y = As<Short4>(As<UShort4>(current.y) >> 8);
-			current.x = As<Short4>(Pack(As<UShort4>(current.x), As<UShort4>(current.x)));
-			current.y = As<Short4>(Pack(As<UShort4>(current.y), As<UShort4>(current.y)));
+			current.x = As<Short4>(PackUnsigned(current.x, current.x));
+			current.y = As<Short4>(PackUnsigned(current.y, current.y));
 			current.x = UnpackLow(As<Byte8>(current.x), As<Byte8>(current.y));
 			break;
 		case FORMAT_R8:
 			current.x = As<Short4>(As<UShort4>(current.x) >> 8);
-			current.x = As<Short4>(Pack(As<UShort4>(current.x), As<UShort4>(current.x)));
+			current.x = As<Short4>(PackUnsigned(current.x, current.x));
 			break;
 		case FORMAT_A8:
 			current.w = As<Short4>(As<UShort4>(current.w) >> 8);
-			current.w = As<Short4>(Pack(As<UShort4>(current.w), As<UShort4>(current.w)));
+			current.w = As<Short4>(PackUnsigned(current.w, current.w));
 			break;
 		case FORMAT_G16R16:
 			current.z = current.x;
@@ -2362,11 +2362,11 @@ namespace sw
 				Short4 tmpCol = Short4(As<Int4>(oC.x));
 				if(state.targetFormat[index] == FORMAT_R8I)
 				{
-					tmpCol = As<Short4>(Pack(tmpCol, tmpCol));
+					tmpCol = As<Short4>(PackSigned(tmpCol, tmpCol));
 				}
 				else
 				{
-					tmpCol = As<Short4>(Pack(As<UShort4>(tmpCol), As<UShort4>(tmpCol)));
+					tmpCol = As<Short4>(PackUnsigned(tmpCol, tmpCol));
 				}
 				packedCol = Extract(As<Int2>(tmpCol), 0);
 
@@ -2461,11 +2461,11 @@ namespace sw
 
 				if(state.targetFormat[index] == FORMAT_G8R8I)
 				{
-					packedCol = As<Int2>(Pack(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
+					packedCol = As<Int2>(PackSigned(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
 				}
 				else
 				{
-					packedCol = As<Int2>(Pack(UShort4(As<Int4>(oC.x)), UShort4(As<Int4>(oC.y))));
+					packedCol = As<Int2>(PackUnsigned(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
 				}
 
 				UInt2 mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskW4Q) + xMask * 8);
@@ -2599,11 +2599,11 @@ namespace sw
 
 				if(state.targetFormat[index] == FORMAT_A8B8G8R8I)
 				{
-					packedCol = As<UInt2>(Pack(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
+					packedCol = As<UInt2>(PackSigned(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
 				}
 				else
 				{
-					packedCol = As<UInt2>(Pack(UShort4(As<Int4>(oC.x)), UShort4(As<Int4>(oC.y))));
+					packedCol = As<UInt2>(PackUnsigned(Short4(As<Int4>(oC.x)), Short4(As<Int4>(oC.y))));
 				}
 				value = *Pointer<UInt2>(buffer, 16);
 				mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskD01Q) + xMask * 8);
@@ -2617,11 +2617,11 @@ namespace sw
 
 				if(state.targetFormat[index] == FORMAT_A8B8G8R8I)
 				{
-					packedCol = As<UInt2>(Pack(Short4(As<Int4>(oC.z)), Short4(As<Int4>(oC.w))));
+					packedCol = As<UInt2>(PackSigned(Short4(As<Int4>(oC.z)), Short4(As<Int4>(oC.w))));
 				}
 				else
 				{
-					packedCol = As<UInt2>(Pack(UShort4(As<Int4>(oC.z)), UShort4(As<Int4>(oC.w))));
+					packedCol = As<UInt2>(PackUnsigned(Short4(As<Int4>(oC.z)), Short4(As<Int4>(oC.w))));
 				}
 				value = *Pointer<UInt2>(buffer, 16);
 				mergedMask = *Pointer<UInt2>(constants + OFFSET(Constants, maskD23Q) + xMask * 8);

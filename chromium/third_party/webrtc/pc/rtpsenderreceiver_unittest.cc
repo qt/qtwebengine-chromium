@@ -12,26 +12,23 @@
 #include <string>
 #include <utility>
 
-#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
-#include "webrtc/media/base/fakemediaengine.h"
-#include "webrtc/media/base/mediachannel.h"
-#include "webrtc/media/engine/fakewebrtccall.h"
-#include "webrtc/p2p/base/faketransportcontroller.h"
-#include "webrtc/pc/audiotrack.h"
-#include "webrtc/pc/channelmanager.h"
-#include "webrtc/pc/localaudiosource.h"
-#include "webrtc/pc/mediastream.h"
-#include "webrtc/pc/remoteaudiosource.h"
-#include "webrtc/pc/rtpreceiver.h"
-#include "webrtc/pc/rtpsender.h"
-#include "webrtc/pc/streamcollection.h"
-#include "webrtc/pc/test/fakevideotracksource.h"
-#include "webrtc/pc/videotrack.h"
-#include "webrtc/pc/videotracksource.h"
-#include "webrtc/rtc_base/gunit.h"
-#include "webrtc/rtc_base/sigslot.h"
-#include "webrtc/test/gmock.h"
-#include "webrtc/test/gtest.h"
+#include "media/base/fakemediaengine.h"
+#include "media/engine/fakewebrtccall.h"
+#include "pc/audiotrack.h"
+#include "pc/channelmanager.h"
+#include "pc/localaudiosource.h"
+#include "pc/mediastream.h"
+#include "pc/remoteaudiosource.h"
+#include "pc/rtpreceiver.h"
+#include "pc/rtpsender.h"
+#include "pc/streamcollection.h"
+#include "pc/test/faketransportcontroller.h"
+#include "pc/test/fakevideotracksource.h"
+#include "pc/videotrack.h"
+#include "pc/videotracksource.h"
+#include "rtc_base/gunit.h"
+#include "test/gmock.h"
+#include "test/gtest.h"
 
 using ::testing::_;
 using ::testing::Exactly;
@@ -136,7 +133,7 @@ class RtpSenderReceiverTest : public testing::Test,
     EXPECT_TRUE(local_stream_->AddTrack(audio_track_));
     audio_rtp_sender_ =
         new AudioRtpSender(local_stream_->GetAudioTracks()[0],
-                           local_stream_->label(), voice_channel_, nullptr);
+                           {local_stream_->label()}, voice_channel_, nullptr);
     audio_rtp_sender_->SetSsrc(kAudioSsrc);
     audio_rtp_sender_->GetOnDestroyedSignal()->connect(
         this, &RtpSenderReceiverTest::OnAudioSenderDestroyed);
@@ -151,7 +148,7 @@ class RtpSenderReceiverTest : public testing::Test,
     AddVideoTrack(is_screencast);
     video_rtp_sender_ =
         new VideoRtpSender(local_stream_->GetVideoTracks()[0],
-                           local_stream_->label(), video_channel_);
+                           {local_stream_->label()}, video_channel_);
     video_rtp_sender_->SetSsrc(kVideoSsrc);
     VerifyVideoChannelInput();
   }
@@ -715,7 +712,7 @@ TEST_F(RtpSenderReceiverTest,
   video_track_->set_content_hint(VideoTrackInterface::ContentHint::kDetailed);
   video_rtp_sender_ =
       new VideoRtpSender(local_stream_->GetVideoTracks()[0],
-                         local_stream_->label(), video_channel_);
+                         {local_stream_->label()}, video_channel_);
   video_track_->set_enabled(true);
 
   // Sender is not ready to send (no SSRC) so no option should have been set.

@@ -53,7 +53,7 @@ public:
         kTranslate_Mask     = 0x01,  //!< set if the matrix has translation
         kScale_Mask         = 0x02,  //!< set if the matrix has X or Y scale
         kAffine_Mask        = 0x04,  //!< set if the matrix skews or rotates
-        kPerspective_Mask   = 0x08   //!< set if the matrix is in perspective
+        kPerspective_Mask   = 0x08,  //!< set if the matrix is in perspective
     };
 
     /** Returns a bitfield describing the transformations the matrix may
@@ -123,7 +123,7 @@ public:
         kMTransY,
         kMPersp0,
         kMPersp1,
-        kMPersp2
+        kMPersp2,
     };
 
     /** Affine arrays are in column major order
@@ -135,7 +135,7 @@ public:
         kASkewX,
         kAScaleY,
         kATransX,
-        kATransY
+        kATransY,
     };
 
     SkScalar operator[](int index) const {
@@ -251,7 +251,7 @@ public:
     */
     void setSinCos(SkScalar sinValue, SkScalar cosValue);
 
-    SkMatrix& setRSXform(const SkRSXform&);
+    SkMatrix& setRSXform(const SkRSXform& rsxForm);
 
     /** Set the matrix to skew by sx and sy, with a pivot point at (px, py).
         The pivot point is the coordinate that should remain unchanged by the
@@ -362,7 +362,7 @@ public:
          * axis (X or Y) will fit exactly. kEnd aligns the result to the
          * right and bottom edges of dst.
          */
-        kEnd_ScaleToFit
+        kEnd_ScaleToFit,
     };
 
     /** Set the matrix to the scale and translate values that map the source
@@ -569,7 +569,7 @@ public:
      *  scale and translate elements. If it contains other elements, the results are undefined.
      */
     void mapRectScaleTranslate(SkRect* dst, const SkRect& src) const;
-    
+
     /** Return the mean radius of a circle after it has been mapped by
         this matrix. NOTE: in perspective this value assumes the circle
         has its center at the origin.
@@ -631,7 +631,7 @@ public:
 
     enum {
         // writeTo/readFromMemory will never return a value larger than this
-        kMaxFlattenSize = 9 * sizeof(SkScalar) + sizeof(uint32_t)
+        kMaxFlattenSize = 9 * sizeof(SkScalar) + sizeof(uint32_t),
     };
     // return the number of bytes written, whether or not buffer is null
     size_t writeToMemory(void* buffer) const;
@@ -646,7 +646,7 @@ public:
     size_t readFromMemory(const void* buffer, size_t length);
 
     void dump() const;
-    void toString(SkString*) const;
+    void toString(SkString* str) const;
 
     /**
      * Calculates the minimum scaling factor of the matrix as computed from the SVD of the upper
@@ -721,15 +721,15 @@ public:
         fMat[kMScaleX] = sx;
         fMat[kMSkewX]  = 0;
         fMat[kMTransX] = tx;
-        
+
         fMat[kMSkewY]  = 0;
         fMat[kMScaleY] = sy;
         fMat[kMTransY] = ty;
-        
+
         fMat[kMPersp0] = 0;
         fMat[kMPersp1] = 0;
         fMat[kMPersp2] = 1;
-        
+
         unsigned mask = 0;
         if (sx != 1 || sy != 1) {
             mask |= kScale_Mask;
@@ -739,7 +739,7 @@ public:
         }
         this->setTypeMask(mask | kRectStaysRect_Mask);
     }
-    
+
     /**
      *  Are all elements of the matrix finite?
      */
@@ -771,7 +771,7 @@ private:
                     kScale_Mask |
                     kAffine_Mask |
                     kPerspective_Mask |
-                    kRectStaysRect_Mask
+                    kRectStaysRect_Mask,
     };
 
     SkScalar         fMat[9];

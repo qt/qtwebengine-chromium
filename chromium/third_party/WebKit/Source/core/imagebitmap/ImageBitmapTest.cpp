@@ -47,6 +47,7 @@
 #include "platform/image-decoders/ImageDecoder.h"
 #include "platform/loader/fetch/MemoryCache.h"
 #include "platform/loader/fetch/ResourceRequest.h"
+#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColorSpaceXform.h"
@@ -71,15 +72,6 @@ class ImageBitmapTest : public ::testing::Test {
 
     // Save the global memory cache to restore it upon teardown.
     global_memory_cache_ = ReplaceMemoryCacheForTesting(MemoryCache::Create());
-
-    // Save the state of experimental canvas features and color correct
-    // rendering flags to restore them on teardown.
-    experimental_canvas_features =
-        RuntimeEnabledFeatures::ExperimentalCanvasFeaturesEnabled();
-    color_correct_rendering =
-        RuntimeEnabledFeatures::ColorCorrectRenderingEnabled();
-    color_canvas_extensions =
-        RuntimeEnabledFeatures::ColorCanvasExtensionsEnabled();
   }
   virtual void TearDown() {
     // Garbage collection is required prior to switching out the
@@ -90,29 +82,26 @@ class ImageBitmapTest : public ::testing::Test {
                                            BlinkGC::kForcedGC);
 
     ReplaceMemoryCacheForTesting(global_memory_cache_.Release());
-    RuntimeEnabledFeatures::SetExperimentalCanvasFeaturesEnabled(
-        experimental_canvas_features);
-    RuntimeEnabledFeatures::SetColorCorrectRenderingEnabled(
-        color_correct_rendering);
-    RuntimeEnabledFeatures::SetColorCanvasExtensionsEnabled(
-        color_canvas_extensions);
   }
 
   sk_sp<SkImage> image_, image2_;
   Persistent<MemoryCache> global_memory_cache_;
-  bool experimental_canvas_features;
-  bool color_correct_rendering;
-  bool color_canvas_extensions;
 };
 
 TEST_F(ImageBitmapTest, ImageResourceConsistency) {
-  RuntimeEnabledFeatures::SetColorCanvasExtensionsEnabled(true);
+  ScopedColorCanvasExtensionsForTest color_canvas_extensions(true);
   const ImageBitmapOptions default_options;
   HTMLImageElement* image_element =
       HTMLImageElement::Create(*Document::CreateForTest());
-  ImageResourceContent* image = ImageResourceContent::CreateLoaded(
-      StaticBitmapImage::Create(image_).Get());
-  image_element->SetImageForTest(image);
+  sk_sp<SkColorSpace> src_rgb_color_space = SkColorSpace::MakeSRGB();
+  SkImageInfo raster_image_info =
+      SkImageInfo::MakeN32Premul(5, 5, src_rgb_color_space);
+  sk_sp<SkSurface> surface(SkSurface::MakeRaster(raster_image_info));
+  sk_sp<SkImage> image = surface->makeImageSnapshot();
+  ImageResourceContent* original_image_resource =
+      ImageResourceContent::CreateLoaded(
+          StaticBitmapImage::Create(image).get());
+  image_element->SetImageForTest(original_image_resource);
 
   Optional<IntRect> crop_rect =
       IntRect(0, 0, image_->width(), image_->height());
@@ -149,7 +138,7 @@ TEST_F(ImageBitmapTest, ImageResourceConsistency) {
                 ->GetImage()
                 ->PaintImageForCurrentFrame()
                 .GetSkImage());
-  ASSERT_NE(image_bitmap_exterior_crop->BitmapImage()
+  ASSERT_EQ(image_bitmap_exterior_crop->BitmapImage()
                 ->PaintImageForCurrentFrame()
                 .GetSkImage(),
             image_element->CachedImage()
@@ -169,12 +158,17 @@ TEST_F(ImageBitmapTest, ImageResourceConsistency) {
 // Verifies that ImageBitmaps constructed from HTMLImageElements hold a
 // reference to the original Image if the HTMLImageElement src is changed.
 TEST_F(ImageBitmapTest, ImageBitmapSourceChanged) {
-  RuntimeEnabledFeatures::SetColorCanvasExtensionsEnabled(true);
+  ScopedColorCanvasExtensionsForTest color_canvas_extensions(true);
   HTMLImageElement* image =
       HTMLImageElement::Create(*Document::CreateForTest());
+  sk_sp<SkColorSpace> src_rgb_color_space = SkColorSpace::MakeSRGB();
+  SkImageInfo raster_image_info =
+      SkImageInfo::MakeN32Premul(5, 5, src_rgb_color_space);
+  sk_sp<SkSurface> raster_surface(SkSurface::MakeRaster(raster_image_info));
+  sk_sp<SkImage> raster_image = raster_surface->makeImageSnapshot();
   ImageResourceContent* original_image_resource =
       ImageResourceContent::CreateLoaded(
-          StaticBitmapImage::Create(image_).Get());
+          StaticBitmapImage::Create(raster_image).get());
   image->SetImageForTest(original_image_resource);
 
   const ImageBitmapOptions default_options;
@@ -189,7 +183,7 @@ TEST_F(ImageBitmapTest, ImageBitmapSourceChanged) {
           .GetSkImage());
 
   ImageResourceContent* new_image_resource = ImageResourceContent::CreateLoaded(
-      StaticBitmapImage::Create(image2_).Get());
+      StaticBitmapImage::Create(image2_).get());
   image->SetImageForTest(new_image_resource);
 
   {
@@ -235,12 +229,11 @@ constexpr float kWideGamutColorCorrectionTolerance = 0.01;
 
 enum class ColorSpaceConversion : uint8_t {
   NONE = 0,
-  DEFAULT_NOT_COLOR_CORRECTED = 1,
-  DEFAULT_COLOR_CORRECTED = 2,
-  SRGB = 3,
-  LINEAR_RGB = 4,
-  P3 = 5,
-  REC2020 = 6,
+  DEFAULT_COLOR_CORRECTED = 1,
+  SRGB = 2,
+  LINEAR_RGB = 3,
+  P3 = 4,
+  REC2020 = 5,
 
   LAST = REC2020
 };
@@ -255,10 +248,7 @@ static ImageBitmapOptions PrepareBitmapOptionsAndSetRuntimeFlags(
       kConversions[static_cast<uint8_t>(color_space_conversion)]);
 
   // Set the runtime flags
-  bool flag = (color_space_conversion !=
-               ColorSpaceConversion::DEFAULT_NOT_COLOR_CORRECTED);
   RuntimeEnabledFeatures::SetExperimentalCanvasFeaturesEnabled(true);
-  RuntimeEnabledFeatures::SetColorCorrectRenderingEnabled(flag);
   RuntimeEnabledFeatures::SetColorCanvasExtensionsEnabled(true);
 
   return options;
@@ -295,7 +285,7 @@ TEST_F(ImageBitmapTest, MAYBE_ImageBitmapColorSpaceConversionHTMLImageElement) {
 
   ImageResourceContent* original_image_resource =
       ImageResourceContent::CreateLoaded(
-          StaticBitmapImage::Create(image).Get());
+          StaticBitmapImage::Create(image).get());
   image_element->SetImageForTest(original_image_resource);
 
   Optional<IntRect> crop_rect = IntRect(0, 0, image->width(), image->height());
@@ -313,8 +303,8 @@ TEST_F(ImageBitmapTest, MAYBE_ImageBitmapColorSpaceConversionHTMLImageElement) {
           : SkColorSpaceXform::ColorFormat::kRGBA_8888_ColorFormat;
   SkColorSpaceXform::ColorFormat color_format = color_format32;
 
-  for (uint8_t i = static_cast<uint8_t>(
-           ColorSpaceConversion::DEFAULT_NOT_COLOR_CORRECTED);
+  for (uint8_t i =
+           static_cast<uint8_t>(ColorSpaceConversion::DEFAULT_COLOR_CORRECTED);
        i <= static_cast<uint8_t>(ColorSpaceConversion::LAST); i++) {
     ColorSpaceConversion color_space_conversion =
         static_cast<ColorSpaceConversion>(i);
@@ -331,15 +321,6 @@ TEST_F(ImageBitmapTest, MAYBE_ImageBitmapColorSpaceConversionHTMLImageElement) {
     switch (color_space_conversion) {
       case ColorSpaceConversion::NONE:
         NOTREACHED();
-        break;
-      case ColorSpaceConversion::DEFAULT_NOT_COLOR_CORRECTED:
-        color_space = ColorBehavior::GlobalTargetColorSpace().ToSkColorSpace();
-        if (color_space->gammaIsLinear()) {
-          color_type = SkColorType::kRGBA_F16_SkColorType;
-          color_format = SkColorSpaceXform::ColorFormat::kRGBA_F16_ColorFormat;
-        } else {
-          color_format = color_format32;
-        }
         break;
       case ColorSpaceConversion::DEFAULT_COLOR_CORRECTED:
       case ColorSpaceConversion::SRGB:
@@ -424,7 +405,7 @@ TEST_F(ImageBitmapTest, MAYBE_ImageBitmapColorSpaceConversionImageBitmap) {
 
   ImageResourceContent* source_image_resource =
       ImageResourceContent::CreateLoaded(
-          StaticBitmapImage::Create(image).Get());
+          StaticBitmapImage::Create(image).get());
   image_element->SetImageForTest(source_image_resource);
 
   Optional<IntRect> crop_rect = IntRect(0, 0, image->width(), image->height());
@@ -441,8 +422,8 @@ TEST_F(ImageBitmapTest, MAYBE_ImageBitmapColorSpaceConversionImageBitmap) {
           : SkColorSpaceXform::ColorFormat::kRGBA_8888_ColorFormat;
   SkColorSpaceXform::ColorFormat color_format = color_format32;
 
-  for (uint8_t i = static_cast<uint8_t>(
-           ColorSpaceConversion::DEFAULT_NOT_COLOR_CORRECTED);
+  for (uint8_t i =
+           static_cast<uint8_t>(ColorSpaceConversion::DEFAULT_COLOR_CORRECTED);
        i <= static_cast<uint8_t>(ColorSpaceConversion::LAST); i++) {
     ColorSpaceConversion color_space_conversion =
         static_cast<ColorSpaceConversion>(i);
@@ -457,15 +438,6 @@ TEST_F(ImageBitmapTest, MAYBE_ImageBitmapColorSpaceConversionImageBitmap) {
     switch (color_space_conversion) {
       case ColorSpaceConversion::NONE:
         NOTREACHED();
-        break;
-      case ColorSpaceConversion::DEFAULT_NOT_COLOR_CORRECTED:
-        color_space = ColorBehavior::GlobalTargetColorSpace().ToSkColorSpace();
-        if (color_space->gammaIsLinear()) {
-          color_type = SkColorType::kRGBA_F16_SkColorType;
-          color_format = SkColorSpaceXform::ColorFormat::kRGBA_F16_ColorFormat;
-        } else {
-          color_format = color_format32;
-        }
         break;
       case ColorSpaceConversion::DEFAULT_COLOR_CORRECTED:
       case ColorSpaceConversion::SRGB:
@@ -556,8 +528,8 @@ TEST_F(ImageBitmapTest,
           : SkColorSpaceXform::ColorFormat::kRGBA_8888_ColorFormat;
   SkColorSpaceXform::ColorFormat color_format = color_format32;
 
-  for (uint8_t i = static_cast<uint8_t>(
-           ColorSpaceConversion::DEFAULT_NOT_COLOR_CORRECTED);
+  for (uint8_t i =
+           static_cast<uint8_t>(ColorSpaceConversion::DEFAULT_COLOR_CORRECTED);
        i <= static_cast<uint8_t>(ColorSpaceConversion::LAST); i++) {
     ColorSpaceConversion color_space_conversion =
         static_cast<ColorSpaceConversion>(i);
@@ -574,15 +546,6 @@ TEST_F(ImageBitmapTest,
     switch (color_space_conversion) {
       case ColorSpaceConversion::NONE:
         NOTREACHED();
-        break;
-      case ColorSpaceConversion::DEFAULT_NOT_COLOR_CORRECTED:
-        color_space = ColorBehavior::GlobalTargetColorSpace().ToSkColorSpace();
-        if (color_space->gammaIsLinear()) {
-          color_type = SkColorType::kRGBA_F16_SkColorType;
-          color_format = SkColorSpaceXform::ColorFormat::kRGBA_F16_ColorFormat;
-        } else {
-          color_format = color_format32;
-        }
         break;
       case ColorSpaceConversion::DEFAULT_COLOR_CORRECTED:
       case ColorSpaceConversion::SRGB:
@@ -725,4 +688,5 @@ TEST_F(ImageBitmapTest, ImageBitmapColorSpaceConversionImageData) {
   }
 }
 
+#undef MAYBE_ImageBitmapColorSpaceConversionHTMLImageElement
 }  // namespace blink

@@ -13,29 +13,27 @@
 #include <algorithm>
 #include <memory>
 
-#include "webrtc/pc/statscollector.h"
+#include "pc/statscollector.h"
 
-#include "webrtc/api/mediastreaminterface.h"
-#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
-#include "webrtc/media/base/fakemediaengine.h"
-#include "webrtc/media/base/test/mock_mediachannel.h"
-#include "webrtc/pc/channelmanager.h"
-#include "webrtc/pc/mediastream.h"
-#include "webrtc/pc/mediastreamtrack.h"
-#include "webrtc/pc/peerconnection.h"
-#include "webrtc/pc/peerconnectionfactory.h"
-#include "webrtc/pc/test/fakedatachannelprovider.h"
-#include "webrtc/pc/test/fakevideotracksource.h"
-#include "webrtc/pc/test/mock_peerconnection.h"
-#include "webrtc/pc/test/mock_webrtcsession.h"
-#include "webrtc/pc/videotrack.h"
-#include "webrtc/rtc_base/base64.h"
-#include "webrtc/rtc_base/fakesslidentity.h"
-#include "webrtc/rtc_base/gunit.h"
-#include "webrtc/rtc_base/network.h"
-#include "webrtc/rtc_base/stringencode.h"
-#include "webrtc/test/gmock.h"
-#include "webrtc/test/gtest.h"
+#include "api/mediastreaminterface.h"
+#include "media/base/fakemediaengine.h"
+#include "media/base/test/mock_mediachannel.h"
+#include "pc/channelmanager.h"
+#include "pc/mediastream.h"
+#include "pc/mediastreamtrack.h"
+#include "pc/peerconnection.h"
+#include "pc/peerconnectionfactory.h"
+#include "pc/test/fakedatachannelprovider.h"
+#include "pc/test/fakevideotracksource.h"
+#include "pc/test/mock_peerconnection.h"
+#include "pc/test/mock_webrtcsession.h"
+#include "pc/videotrack.h"
+#include "rtc_base/base64.h"
+#include "rtc_base/fakesslidentity.h"
+#include "rtc_base/gunit.h"
+#include "rtc_base/stringencode.h"
+#include "test/gmock.h"
+#include "test/gtest.h"
 
 using testing::_;
 using testing::DoAll;
@@ -430,6 +428,51 @@ void VerifyVoiceSenderInfoReport(const StatsReport* report,
       report, StatsReport::kStatsValueNameTypingNoiseState, &value_in_report));
   std::string typing_detected = sinfo.typing_noise_detected ? "true" : "false";
   EXPECT_EQ(typing_detected, value_in_report);
+  EXPECT_TRUE(GetValue(report,
+                       StatsReport::kStatsValueNameAnaBitrateActionCounter,
+                       &value_in_report));
+  ASSERT_TRUE(sinfo.ana_statistics.bitrate_action_counter);
+  EXPECT_EQ(
+      rtc::ToString<uint32_t>(*sinfo.ana_statistics.bitrate_action_counter),
+      value_in_report);
+  EXPECT_TRUE(GetValue(report,
+                       StatsReport::kStatsValueNameAnaChannelActionCounter,
+                       &value_in_report));
+  ASSERT_TRUE(sinfo.ana_statistics.channel_action_counter);
+  EXPECT_EQ(
+      rtc::ToString<uint32_t>(*sinfo.ana_statistics.channel_action_counter),
+      value_in_report);
+  EXPECT_TRUE(GetValue(report, StatsReport::kStatsValueNameAnaDtxActionCounter,
+                       &value_in_report));
+  ASSERT_TRUE(sinfo.ana_statistics.dtx_action_counter);
+  EXPECT_EQ(rtc::ToString<uint32_t>(*sinfo.ana_statistics.dtx_action_counter),
+            value_in_report);
+  EXPECT_TRUE(GetValue(report, StatsReport::kStatsValueNameAnaFecActionCounter,
+                       &value_in_report));
+  ASSERT_TRUE(sinfo.ana_statistics.fec_action_counter);
+  EXPECT_EQ(rtc::ToString<uint32_t>(*sinfo.ana_statistics.fec_action_counter),
+            value_in_report);
+  EXPECT_TRUE(GetValue(
+      report, StatsReport::kStatsValueNameAnaFrameLengthIncreaseCounter,
+      &value_in_report));
+  ASSERT_TRUE(sinfo.ana_statistics.frame_length_increase_counter);
+  EXPECT_EQ(rtc::ToString<uint32_t>(
+                *sinfo.ana_statistics.frame_length_increase_counter),
+            value_in_report);
+  EXPECT_TRUE(GetValue(
+      report, StatsReport::kStatsValueNameAnaFrameLengthDecreaseCounter,
+      &value_in_report));
+  ASSERT_TRUE(sinfo.ana_statistics.frame_length_decrease_counter);
+  EXPECT_EQ(rtc::ToString<uint32_t>(
+                *sinfo.ana_statistics.frame_length_decrease_counter),
+            value_in_report);
+  EXPECT_TRUE(GetValue(report,
+                       StatsReport::kStatsValueNameAnaUplinkPacketLossFraction,
+                       &value_in_report));
+  ASSERT_TRUE(sinfo.ana_statistics.uplink_packet_loss_fraction);
+  EXPECT_EQ(
+      rtc::ToString<float>(*sinfo.ana_statistics.uplink_packet_loss_fraction),
+      value_in_report);
 }
 
 // Helper methods to avoid duplication of code.
@@ -450,6 +493,20 @@ void InitVoiceSenderInfo(cricket::VoiceSenderInfo* voice_sender_info) {
   voice_sender_info->echo_delay_std_ms = 111;
   voice_sender_info->aec_quality_min = 112.0f;
   voice_sender_info->typing_noise_detected = false;
+  voice_sender_info->ana_statistics.bitrate_action_counter =
+      rtc::Optional<uint32_t>(113);
+  voice_sender_info->ana_statistics.channel_action_counter =
+      rtc::Optional<uint32_t>(114);
+  voice_sender_info->ana_statistics.dtx_action_counter =
+      rtc::Optional<uint32_t>(115);
+  voice_sender_info->ana_statistics.fec_action_counter =
+      rtc::Optional<uint32_t>(116);
+  voice_sender_info->ana_statistics.frame_length_increase_counter =
+      rtc::Optional<uint32_t>(117);
+  voice_sender_info->ana_statistics.frame_length_decrease_counter =
+      rtc::Optional<uint32_t>(118);
+  voice_sender_info->ana_statistics.uplink_packet_loss_fraction =
+      rtc::Optional<float>(119.0);
 }
 
 void UpdateVoiceSenderInfoFromAudioTrack(
@@ -516,12 +573,12 @@ class StatsCollectorTest : public testing::Test {
             network_thread_)),
 
         session_(channel_manager_.get(), cricket::MediaConfig()) {
+    pc_.set_session_for_testing(&session_);
     // By default, we ignore session GetStats calls.
     EXPECT_CALL(session_, GetStats(_)).WillRepeatedly(ReturnNull());
     // Add default returns for mock classes.
     EXPECT_CALL(session_, video_channel()).WillRepeatedly(ReturnNull());
     EXPECT_CALL(session_, voice_channel()).WillRepeatedly(ReturnNull());
-    EXPECT_CALL(pc_, session()).WillRepeatedly(Return(&session_));
     EXPECT_CALL(pc_, sctp_data_channels())
         .WillRepeatedly(ReturnRef(data_channels_));
     EXPECT_CALL(pc_, GetSenders()).WillRepeatedly(Return(
@@ -1988,6 +2045,7 @@ TEST_F(StatsCollectorTest, TwoLocalTracksWithSameSsrc) {
   stats.AddLocalAudioTrack(audio_track_, kSsrcOfTrack);
 
   cricket::VoiceSenderInfo voice_sender_info;
+  InitVoiceSenderInfo(&voice_sender_info);
   voice_sender_info.add_ssrc(kSsrcOfTrack);
 
   cricket::VoiceMediaInfo stats_read;

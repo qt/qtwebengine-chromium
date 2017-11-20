@@ -7,9 +7,9 @@
 #include <string>
 
 #include "base/strings/stringprintf.h"
-#include "components/safe_browsing_db/metadata.pb.h"
-#include "components/safe_browsing_db/util.h"
-#include "components/safe_browsing_db/v4_test_util.h"
+#include "components/safe_browsing/db/metadata.pb.h"
+#include "components/safe_browsing/db/util.h"
+#include "components/safe_browsing/db/v4_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace safe_browsing {
@@ -170,30 +170,57 @@ TEST_F(SafeBrowsingApiHandlerUtilTest, NoSubresourceFilterSubTypes) {
 }
 
 TEST_F(SafeBrowsingApiHandlerUtilTest, SubresourceFilterSubTypes) {
+  typedef SubresourceFilterLevel Level;
+  typedef SubresourceFilterType Type;
   const struct {
-    const char* pattern_type;
-    const char* experimental;
-    ThreatPatternType expected_pattern_type;
-    bool expected_experimental;
+    const char* abusive_type;
+    const char* bas_type;
+    SubresourceFilterMatch expected_match;
   } test_cases[] = {
-      {"BETTER_ADS", "true", ThreatPatternType::SUBRESOURCE_FILTER_BETTER_ADS,
-       true},
-      {"ALL_ADS", "asdf", ThreatPatternType::SUBRESOURCE_FILTER_ALL_ADS, false},
-      {"ABUSIVE_ADS", "false",
-       ThreatPatternType::SUBRESOURCE_FILTER_ABUSIVE_ADS, false},
-      {"", "false", ThreatPatternType::NONE, false},
+      {"warn",
+       "enforce",
+       {{{Type::ABUSIVE, Level::WARN}, {Type::BETTER_ADS, Level::ENFORCE}},
+        base::KEEP_FIRST_OF_DUPES}},
+      {nullptr,
+       "warn",
+       {{{Type::BETTER_ADS, Level::WARN}}, base::KEEP_FIRST_OF_DUPES}},
+      {"asdf",
+       "",
+       {{{Type::ABUSIVE, Level::ENFORCE}, {Type::BETTER_ADS, Level::ENFORCE}},
+        base::KEEP_FIRST_OF_DUPES}},
+      {"warn",
+       nullptr,
+       {{{Type::ABUSIVE, Level::WARN}}, base::KEEP_FIRST_OF_DUPES}},
+      {nullptr, nullptr, {}},
+      {"",
+       "",
+       {{{Type::ABUSIVE, Level::ENFORCE}, {Type::BETTER_ADS, Level::ENFORCE}},
+        base::KEEP_FIRST_OF_DUPES}},
   };
+
   for (const auto& test_case : test_cases) {
-    std::string json = base::StringPrintf(
-        "{\"matches\":[{\"threat_type\":\"13\", "
-        "\"sf_pattern_type\":\"%s\", \"experimental\":\"%s\"}]}",
-        test_case.pattern_type, test_case.experimental);
+    std::string json = R"({
+        "matches" : [{
+          "threat_type":"13"
+          %s
+          %s
+        }]
+      })";
+    auto put_kv = [](const char* k, const char* v) {
+      if (!v)
+        return std::string();
+      return base::StringPrintf(",\"%s\":\"%s\"", k, v);
+    };
+    json = base::StringPrintf(json.c_str(),
+                              put_kv("sf_absv", test_case.abusive_type).c_str(),
+                              put_kv("sf_bas", test_case.bas_type).c_str());
+    SCOPED_TRACE(testing::Message() << json);
+
     ASSERT_EQ(UMA_STATUS_MATCH, ResetAndParseJson(json));
     EXPECT_EQ(SB_THREAT_TYPE_SUBRESOURCE_FILTER, threat_);
 
     ThreatMetadata expected;
-    expected.threat_pattern_type = test_case.expected_pattern_type;
-    expected.experimental = test_case.expected_experimental;
+    expected.subresource_filter_match = test_case.expected_match;
     EXPECT_EQ(expected, meta_);
   }
 }

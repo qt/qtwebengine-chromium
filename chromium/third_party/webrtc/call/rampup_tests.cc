@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/call/rampup_tests.h"
+#include "call/rampup_tests.h"
 
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/platform_thread.h"
-#include "webrtc/test/encoder_settings.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/testsupport/perf_test.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/platform_thread.h"
+#include "test/encoder_settings.h"
+#include "test/gtest.h"
+#include "test/testsupport/perf_test.h"
 
 namespace webrtc {
 namespace {
@@ -202,13 +202,14 @@ void RampUpTester::ModifyVideoConfigs(
     recv_config.rtp.nack.rtp_history_ms = send_config->rtp.nack.rtp_history_ms;
 
     if (red_) {
-      recv_config.rtp.ulpfec.red_payload_type =
+      recv_config.rtp.red_payload_type =
           send_config->rtp.ulpfec.red_payload_type;
-      recv_config.rtp.ulpfec.ulpfec_payload_type =
+      recv_config.rtp.ulpfec_payload_type =
           send_config->rtp.ulpfec.ulpfec_payload_type;
       if (rtx_) {
-        recv_config.rtp.ulpfec.red_rtx_payload_type =
-            send_config->rtp.ulpfec.red_rtx_payload_type;
+        recv_config.rtp.rtx_associated_payload_types
+            [send_config->rtp.ulpfec.red_rtx_payload_type] =
+            send_config->rtp.ulpfec.red_payload_type;
       }
     }
 
@@ -583,7 +584,9 @@ TEST_F(RampUpTest, UpDownUpTransportSequenceNumberRtx) {
 
 // TODO(holmer): Tests which don't report perf stats should be moved to a
 // different executable since they per definition are not perf tests.
-TEST_F(RampUpTest, UpDownUpTransportSequenceNumberPacketLoss) {
+// This test is disabled because it crashes on Linux, and is flaky on other
+// platforms. See: crbug.com/webrtc/7919
+TEST_F(RampUpTest, DISABLED_UpDownUpTransportSequenceNumberPacketLoss) {
   std::vector<int> loss_rates = {20, 0, 0, 0};
   RampUpDownUpTester test(1, 0, 1, kStartBitrateBps,
                           RtpExtension::kTransportSequenceNumberUri, true,

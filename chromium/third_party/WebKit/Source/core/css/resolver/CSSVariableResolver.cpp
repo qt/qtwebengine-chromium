@@ -14,6 +14,7 @@
 #include "core/css/CSSVariableData.h"
 #include "core/css/CSSVariableReferenceValue.h"
 #include "core/css/PropertyRegistry.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/parser/CSSParserToken.h"
 #include "core/css/parser/CSSParserTokenRange.h"
 #include "core/css/parser/CSSPropertyParser.h"
@@ -21,7 +22,7 @@
 #include "core/css/resolver/StyleBuilderConverter.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/StyleResolverStats.h"
-#include "core/dom/StyleEngine.h"
+#include "core/style/ComputedStyle.h"
 #include "core/style/StyleInheritedVariables.h"
 #include "core/style/StyleNonInheritedVariables.h"
 #include "platform/wtf/Vector.h"
@@ -71,7 +72,7 @@ CSSVariableData* CSSVariableResolver::ValueForCustomProperty(
       ResolveCustomProperty(name, *variable_data, unused_cycle_detected);
   if (!registration) {
     inherited_variables_->SetVariable(name, new_variable_data);
-    return new_variable_data.Get();
+    return new_variable_data.get();
   }
 
   const CSSValue* parsed_value = nullptr;
@@ -89,7 +90,7 @@ CSSVariableData* CSSVariableResolver::ValueForCustomProperty(
   }
   if (!new_variable_data)
     return registration->InitialVariableData();
-  return new_variable_data.Get();
+  return new_variable_data.get();
 }
 
 RefPtr<CSSVariableData> CSSVariableResolver::ResolveCustomProperty(

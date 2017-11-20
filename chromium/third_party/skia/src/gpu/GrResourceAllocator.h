@@ -52,6 +52,7 @@ public:
     }
 
     void assign();
+    SkDEBUGCODE(void dump();)
 
 private:
     class Interval;
@@ -61,7 +62,7 @@ private:
 
     // These two methods wrap the interactions with the free pool
     void freeUpSurface(GrSurface* surface);
-    sk_sp<GrSurface> findSurfaceFor(GrSurfaceProxy* proxy);
+    sk_sp<GrSurface> findSurfaceFor(const GrSurfaceProxy* proxy);
 
     struct FreePoolTraits {
         static const GrScratchKey& GetKey(const GrSurface& s) {
@@ -92,7 +93,7 @@ private:
         static uint32_t Hash(const uint32_t& key) { return key; }
 
         GrSurfaceProxy* fProxy;
-        uint32_t        fProxyID; // This is here b.c. DynamicHash requires a ref to the key 
+        uint32_t        fProxyID; // This is here b.c. DynamicHash requires a ref to the key
         unsigned int    fStart;
         unsigned int    fEnd;
         Interval*       fNext;

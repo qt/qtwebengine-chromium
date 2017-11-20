@@ -14,7 +14,7 @@
 namespace sh
 {
 
-class TOutputVulkanGLSL : public TOutputGLSLBase
+class TOutputVulkanGLSL : public TOutputGLSL
 {
   public:
     TOutputVulkanGLSL(TInfoSinkBase &objSink,
@@ -28,9 +28,7 @@ class TOutputVulkanGLSL : public TOutputGLSLBase
                       ShCompileOptions compileOptions);
 
   protected:
-    void writeLayoutQualifier(const TType &type) override;
-    bool writeVariablePrecision(TPrecision precision) override;
-    void visitSymbol(TIntermSymbol *node) override;
+    void writeLayoutQualifier(TIntermTyped *variable) override;
 };
 
 }  // namespace sh

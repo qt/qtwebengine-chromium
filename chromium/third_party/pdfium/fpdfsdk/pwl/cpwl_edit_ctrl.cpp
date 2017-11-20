@@ -6,7 +6,6 @@
 
 #include "fpdfsdk/pwl/cpwl_edit_ctrl.h"
 
-#include "core/fpdfdoc/cpvt_section.h"
 #include "core/fpdfdoc/cpvt_word.h"
 #include "core/fxge/fx_font.h"
 #include "fpdfsdk/pwl/cpwl_caret.h"
@@ -24,12 +23,12 @@ CPWL_EditCtrl::CPWL_EditCtrl()
 
 CPWL_EditCtrl::~CPWL_EditCtrl() {}
 
-void CPWL_EditCtrl::OnCreate(PWL_CREATEPARAM& cp) {
-  cp.eCursorType = FXCT_VBEAM;
+void CPWL_EditCtrl::OnCreate(CreateParams* pParamsToAdjust) {
+  pParamsToAdjust->eCursorType = FXCT_VBEAM;
 }
 
 void CPWL_EditCtrl::OnCreated() {
-  SetFontSize(GetCreationParam().fFontSize);
+  SetFontSize(GetCreationParams().fFontSize);
 
   m_pEdit->SetFontMap(GetFontMap());
   m_pEdit->SetNotify(this);
@@ -52,14 +51,14 @@ void CPWL_EditCtrl::SetCursor() {
   }
 }
 
-CFX_WideString CPWL_EditCtrl::GetSelectedText() {
+WideString CPWL_EditCtrl::GetSelectedText() {
   if (m_pEdit)
     return m_pEdit->GetSelectedText();
 
-  return CFX_WideString();
+  return WideString();
 }
 
-void CPWL_EditCtrl::ReplaceSelection(const CFX_WideString& text) {
+void CPWL_EditCtrl::ReplaceSelection(const WideString& text) {
   if (!m_pEdit)
     return;
 
@@ -67,8 +66,9 @@ void CPWL_EditCtrl::ReplaceSelection(const CFX_WideString& text) {
   m_pEdit->InsertText(text, FX_CHARSET_Default);
 }
 
-void CPWL_EditCtrl::RePosChildWnd() {
+bool CPWL_EditCtrl::RePosChildWnd() {
   m_pEdit->SetPlateRect(GetClientRect());
+  return true;
 }
 
 void CPWL_EditCtrl::SetScrollInfo(const PWL_SCROLL_INFO& info) {
@@ -85,19 +85,19 @@ void CPWL_EditCtrl::ScrollWindowVertically(float pos) {
   m_pEdit->SetScrollPos(CFX_PointF(m_pEdit->GetScrollPos().x, pos));
 }
 
-void CPWL_EditCtrl::CreateChildWnd(const PWL_CREATEPARAM& cp) {
+void CPWL_EditCtrl::CreateChildWnd(const CreateParams& cp) {
   if (!IsReadOnly())
     CreateEditCaret(cp);
 }
 
-void CPWL_EditCtrl::CreateEditCaret(const PWL_CREATEPARAM& cp) {
+void CPWL_EditCtrl::CreateEditCaret(const CreateParams& cp) {
   if (m_pEditCaret)
     return;
 
   m_pEditCaret = new CPWL_Caret;
   m_pEditCaret->SetInvalidRect(GetClientRect());
 
-  PWL_CREATEPARAM ecp = cp;
+  CreateParams ecp = cp;
   ecp.pParentWnd = this;
   ecp.dwFlags = PWS_CHILD | PWS_NOREFRESHCLIP;
   ecp.dwBorderWidth = 0;
@@ -264,8 +264,8 @@ bool CPWL_EditCtrl::OnLButtonDown(const CFX_PointF& point, uint32_t nFlag) {
   CPWL_Wnd::OnLButtonDown(point, nFlag);
 
   if (ClientHitTest(point)) {
-    if (m_bMouseDown)
-      InvalidateRect(nullptr);
+    if (m_bMouseDown && !InvalidateRect(nullptr))
+      return true;
 
     m_bMouseDown = true;
     SetCapture();
@@ -307,6 +307,8 @@ void CPWL_EditCtrl::SetEditCaret(bool bVisible) {
     GetCaretInfo(&ptHead, &ptFoot);
 
   SetCaret(bVisible, ptHead, ptFoot);
+  // Note, |this| may no longer be viable at this point. If more work needs to
+  // be done, check the return value of SetCaret().
 }
 
 void CPWL_EditCtrl::GetCaretInfo(CFX_PointF* ptHead, CFX_PointF* ptFoot) const {
@@ -327,18 +329,24 @@ void CPWL_EditCtrl::GetCaretInfo(CFX_PointF* ptHead, CFX_PointF* ptFoot) const {
   }
 }
 
-void CPWL_EditCtrl::SetCaret(bool bVisible,
+bool CPWL_EditCtrl::SetCaret(bool bVisible,
                              const CFX_PointF& ptHead,
                              const CFX_PointF& ptFoot) {
-  if (m_pEditCaret) {
-    if (!IsFocused() || m_pEdit->IsSelected())
-      bVisible = false;
+  if (!m_pEditCaret)
+    return true;
 
-    m_pEditCaret->SetCaret(bVisible, ptHead, ptFoot);
-  }
+  if (!IsFocused() || m_pEdit->IsSelected())
+    bVisible = false;
+
+  ObservedPtr thisObserved(this);
+  m_pEditCaret->SetCaret(bVisible, ptHead, ptFoot);
+  if (!thisObserved)
+    return false;
+
+  return true;
 }
 
-CFX_WideString CPWL_EditCtrl::GetText() const {
+WideString CPWL_EditCtrl::GetText() const {
   return m_pEdit->GetText();
 }
 

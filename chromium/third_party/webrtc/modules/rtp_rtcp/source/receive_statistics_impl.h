@@ -8,18 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_RECEIVE_STATISTICS_IMPL_H_
-#define WEBRTC_MODULES_RTP_RTCP_SOURCE_RECEIVE_STATISTICS_IMPL_H_
+#ifndef MODULES_RTP_RTCP_SOURCE_RECEIVE_STATISTICS_IMPL_H_
+#define MODULES_RTP_RTCP_SOURCE_RECEIVE_STATISTICS_IMPL_H_
 
-#include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
+#include "modules/rtp_rtcp/include/receive_statistics.h"
 
 #include <algorithm>
 #include <map>
 #include <vector>
 
-#include "webrtc/rtc_base/criticalsection.h"
-#include "webrtc/rtc_base/rate_statistics.h"
-#include "webrtc/system_wrappers/include/ntp_time.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/rate_statistics.h"
+#include "system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
 
@@ -31,7 +31,9 @@ class StreamStatisticianImpl : public StreamStatistician {
                          StreamDataCountersCallback* rtp_callback);
   virtual ~StreamStatisticianImpl() {}
 
+  // |reset| here and in next method restarts calculation of fraction_lost stat.
   bool GetStatistics(RtcpStatistics* statistics, bool reset) override;
+  bool GetActiveStatisticsAndReset(RtcpStatistics* statistics);
   void GetDataCounters(size_t* bytes_received,
                        uint32_t* packets_received) const override;
   void GetReceiveStreamDataCounters(
@@ -46,12 +48,11 @@ class StreamStatisticianImpl : public StreamStatistician {
                       bool retransmitted);
   void FecPacketReceived(const RTPHeader& header, size_t packet_length);
   void SetMaxReorderingThreshold(int max_reordering_threshold);
-  virtual void LastReceiveTimeNtp(uint32_t* secs, uint32_t* frac) const;
 
  private:
   bool InOrderPacketInternal(uint16_t sequence_number) const;
   RtcpStatistics CalculateRtcpStatistics()
-      EXCLUSIVE_LOCKS_REQUIRED(stream_lock_);
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(stream_lock_);
   void UpdateJitter(const RTPHeader& header, NtpTime receive_time);
   StreamDataCounters UpdateCounters(const RTPHeader& rtp_header,
                                     size_t packet_length,
@@ -108,7 +109,6 @@ class ReceiveStatisticsImpl : public ReceiveStatistics,
                       bool retransmitted) override;
   void FecPacketReceived(const RTPHeader& header,
                          size_t packet_length) override;
-  StatisticianMap GetActiveStatisticians() const override;
   StreamStatistician* GetStatistician(uint32_t ssrc) const override;
   void SetMaxReorderingThreshold(int max_reordering_threshold) override;
 
@@ -125,14 +125,12 @@ class ReceiveStatisticsImpl : public ReceiveStatistics,
   void DataCountersUpdated(const StreamDataCounters& counters,
                            uint32_t ssrc) override;
 
-  typedef std::map<uint32_t, StreamStatisticianImpl*> StatisticianImplMap;
-
   Clock* const clock_;
   rtc::CriticalSection receive_statistics_lock_;
-  StatisticianImplMap statisticians_;
+  std::map<uint32_t, StreamStatisticianImpl*> statisticians_;
 
   RtcpStatisticsCallback* rtcp_stats_callback_;
   StreamDataCountersCallback* rtp_stats_callback_;
 };
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_RECEIVE_STATISTICS_IMPL_H_
+#endif  // MODULES_RTP_RTCP_SOURCE_RECEIVE_STATISTICS_IMPL_H_

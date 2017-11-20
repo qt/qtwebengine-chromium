@@ -20,6 +20,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "cc/base/unique_notifier.h"
+#include "cc/paint/draw_image.h"
 #include "cc/raster/bitmap_raster_buffer_provider.h"
 #include "cc/raster/gpu_raster_buffer_provider.h"
 #include "cc/raster/one_copy_raster_buffer_provider.h"
@@ -238,7 +239,7 @@ class RasterBufferProviderTest
 
   void AppendTask(unsigned id, const gfx::Size& size) {
     auto resource = std::make_unique<ScopedResource>(resource_provider_.get());
-    resource->Allocate(size, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
+    resource->Allocate(size, ResourceProvider::TEXTURE_HINT_DEFAULT,
                        viz::RGBA_8888, gfx::ColorSpace());
 
     // The raster buffer has no tile ids associated with it for partial update,
@@ -257,7 +258,7 @@ class RasterBufferProviderTest
     const gfx::Size size(1, 1);
 
     auto resource = std::make_unique<ScopedResource>(resource_provider_.get());
-    resource->Allocate(size, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
+    resource->Allocate(size, ResourceProvider::TEXTURE_HINT_DEFAULT,
                        viz::RGBA_8888, gfx::ColorSpace());
 
     std::unique_ptr<RasterBuffer> raster_buffer =
@@ -297,16 +298,14 @@ class RasterBufferProviderTest
     worker_context_provider_ = TestContextProvider::CreateWorker();
     TestWebGraphicsContext3D* context3d = context_provider_->TestContext3d();
     context3d->set_support_sync_query(true);
-    resource_provider_ =
-        FakeResourceProvider::Create<LayerTreeResourceProvider>(
-            context_provider_.get(), &shared_bitmap_manager_,
-            &gpu_memory_buffer_manager_);
+    resource_provider_ = FakeResourceProvider::CreateLayerTreeResourceProvider(
+        context_provider_.get(), &shared_bitmap_manager_,
+        &gpu_memory_buffer_manager_);
   }
 
   void CreateSoftwareResourceProvider() {
-    resource_provider_ =
-        FakeResourceProvider::Create<LayerTreeResourceProvider>(
-            nullptr, &shared_bitmap_manager_, &gpu_memory_buffer_manager_);
+    resource_provider_ = FakeResourceProvider::CreateLayerTreeResourceProvider(
+        nullptr, &shared_bitmap_manager_, &gpu_memory_buffer_manager_);
   }
 
   void OnTimeout() {

@@ -9,7 +9,7 @@
 
 #include <memory>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/pwl/cpwl_edit.h"
 #include "fpdfsdk/pwl/cpwl_list_box.h"
 #include "fpdfsdk/pwl/cpwl_wnd.h"
@@ -27,8 +27,6 @@ class CPWL_CBListBox : public CPWL_ListBox {
   bool IsChar(uint16_t nChar, uint32_t nFlag) const;
   bool OnCharNotify(uint16_t nChar, uint32_t nFlag);
 };
-
-#define PWL_COMBOBOX_BUTTON_WIDTH 13
 
 class CPWL_CBButton : public CPWL_Wnd {
  public:
@@ -50,26 +48,26 @@ class CPWL_ComboBox : public CPWL_Wnd {
   CPWL_Edit* GetEdit() const { return m_pEdit.Get(); }
 
   // CPWL_Wnd:
-  CFX_ByteString GetClassName() const override;
-  void OnCreate(PWL_CREATEPARAM& cp) override;
+  ByteString GetClassName() const override;
+  void OnCreate(CreateParams* pParamsToAdjust) override;
   void OnDestroy() override;
   bool OnKeyDown(uint16_t nChar, uint32_t nFlag) override;
   bool OnChar(uint16_t nChar, uint32_t nFlag) override;
   void NotifyLButtonDown(CPWL_Wnd* child, const CFX_PointF& pos) override;
   void NotifyLButtonUp(CPWL_Wnd* child, const CFX_PointF& pos) override;
-  void CreateChildWnd(const PWL_CREATEPARAM& cp) override;
-  void RePosChildWnd() override;
+  void CreateChildWnd(const CreateParams& cp) override;
+  bool RePosChildWnd() override;
   CFX_FloatRect GetFocusRect() const override;
   void SetFocus() override;
   void KillFocus() override;
-  CFX_WideString GetSelectedText() override;
-  void ReplaceSelection(const CFX_WideString& text) override;
+  WideString GetSelectedText() override;
+  void ReplaceSelection(const WideString& text) override;
 
   void SetFillerNotify(IPWL_Filler_Notify* pNotify);
 
-  CFX_WideString GetText() const;
-  void SetText(const CFX_WideString& text);
-  void AddString(const CFX_WideString& str);
+  WideString GetText() const;
+  void SetText(const WideString& text);
+  void AddString(const WideString& str);
   int32_t GetSelect() const;
   void SetSelect(int32_t nItemIndex);
 
@@ -84,20 +82,22 @@ class CPWL_ComboBox : public CPWL_Wnd {
   void AttachFFLData(CFFL_FormFiller* pData) { m_pFormFiller = pData; }
 
  private:
-  void CreateEdit(const PWL_CREATEPARAM& cp);
-  void CreateButton(const PWL_CREATEPARAM& cp);
-  void CreateListBox(const PWL_CREATEPARAM& cp);
-  void SetPopup(bool bPopup);
+  void CreateEdit(const CreateParams& cp);
+  void CreateButton(const CreateParams& cp);
+  void CreateListBox(const CreateParams& cp);
 
-  CFX_UnownedPtr<CPWL_Edit> m_pEdit;
-  CFX_UnownedPtr<CPWL_CBButton> m_pButton;
-  CFX_UnownedPtr<CPWL_CBListBox> m_pList;
+  // Returns |true| iff this instance is still allocated.
+  bool SetPopup(bool bPopup);
+
+  UnownedPtr<CPWL_Edit> m_pEdit;
+  UnownedPtr<CPWL_CBButton> m_pButton;
+  UnownedPtr<CPWL_CBListBox> m_pList;
   CFX_FloatRect m_rcOldWindow;
   bool m_bPopup = false;
   bool m_bBottom = true;
   int32_t m_nSelectItem = -1;
-  CFX_UnownedPtr<IPWL_Filler_Notify> m_pFillerNotify;
-  CFX_UnownedPtr<CFFL_FormFiller> m_pFormFiller;
+  UnownedPtr<IPWL_Filler_Notify> m_pFillerNotify;
+  UnownedPtr<CFFL_FormFiller> m_pFormFiller;
 };
 
 #endif  // FPDFSDK_PWL_CPWL_COMBO_BOX_H_

@@ -101,8 +101,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
       QuicIOVector iov,
       QuicStreamOffset offset,
       StreamSendingState state,
-      QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener,
-      bool flag_run_fast_path);
+      QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener);
 
   // Sends as many data only packets as allowed by the send algorithm and the
   // available iov.
@@ -148,7 +147,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
 
   // Creates a version negotiation packet which supports |supported_versions|.
   std::unique_ptr<QuicEncryptedPacket> SerializeVersionNegotiationPacket(
-      const QuicVersionVector& supported_versions);
+      const QuicTransportVersionVector& supported_versions);
 
   // Re-serializes frames with the original packet's packet number length.
   // Used for retransmitting packets to ensure they aren't too long.
@@ -187,10 +186,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
 
   void set_debug_delegate(QuicPacketCreator::DebugDelegate* debug_delegate) {
     packet_creator_.set_debug_delegate(debug_delegate);
-  }
-
-  bool latched_flag_no_stop_waiting_frames() const {
-    return packet_creator_.latched_flag_no_stop_waiting_frames();
   }
 
  private:

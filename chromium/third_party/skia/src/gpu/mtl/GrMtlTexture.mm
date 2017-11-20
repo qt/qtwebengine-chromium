@@ -12,7 +12,8 @@
 #include "GrTexturePriv.h"
 
 sk_sp<GrMtlTexture> GrMtlTexture::CreateNewTexture(GrMtlGpu* gpu, SkBudgeted budgeted,
-                                                   const GrSurfaceDesc& desc, int mipLevels) {
+                                                   const GrSurfaceDesc& desc, int mipLevels,
+                                                   bool wasFullMipMapDataProvided) {
     MTLPixelFormat format;
     if (!GrPixelConfigToMTLFormat(desc.fConfig, &format)) {
         return nullptr;
@@ -40,26 +41,28 @@ sk_sp<GrMtlTexture> GrMtlTexture::CreateNewTexture(GrMtlGpu* gpu, SkBudgeted bud
 
     id<MTLTexture> texture = [gpu->device() newTextureWithDescriptor:descriptor];
 
-    return sk_sp<GrMtlTexture>(new GrMtlTexture(gpu, budgeted, desc, texture, mipLevels > 1));
+    return sk_sp<GrMtlTexture>(new GrMtlTexture(gpu, budgeted, desc, texture, mipLevels > 1,
+                                                wasFullMipMapDataProvided));
 }
 
 // This method parallels GrTextureProxy::highestFilterMode
-static inline GrSamplerParams::FilterMode highest_filter_mode(GrPixelConfig config) {
+static inline GrSamplerState::Filter highest_filter_mode(GrPixelConfig config) {
     if (GrPixelConfigIsSint(config)) {
         // We only ever want to nearest-neighbor sample signed int textures.
-        return GrSamplerParams::kNone_FilterMode;
+        return GrSamplerState::Filter::kNearest;
     }
-    return GrSamplerParams::kMipMap_FilterMode;
+    return GrSamplerState::Filter::kMipMap;
 }
 
 GrMtlTexture::GrMtlTexture(GrMtlGpu* gpu,
                            SkBudgeted budgeted,
                            const GrSurfaceDesc& desc,
                            id<MTLTexture> texture,
-                           bool isMipMapped)
+                           bool isMipMapped,
+                           bool wasFullMipMapDataProvided)
         : GrSurface(gpu, desc)
         , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                    isMipMapped)
+                    isMipMapped, wasFullMipMapDataProvided)
         , fTexture(texture) {
 }
 

@@ -146,7 +146,7 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, void *scanner, cons
 }
 
 #define ES3_OR_NEWER_OR_MULTIVIEW(TOKEN, LINE, REASON) {  \
-    if (context->getShaderVersion() < 300 && !context->isMultiviewExtensionEnabled()) {  \
+    if (context->getShaderVersion() < 300 && !context->isExtensionEnabled(TExtension::OVR_multiview)) {  \
         context->error(LINE, REASON " supported in GLSL ES 3.00 and above only", TOKEN);  \
     }  \
 }
@@ -205,7 +205,7 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, void *scanner, cons
 %type <interm.intermNode> condition conditionopt
 %type <interm.intermBlock> translation_unit
 %type <interm.intermNode> function_definition statement simple_statement
-%type <interm.intermBlock> statement_list compound_statement compound_statement_no_new_scope
+%type <interm.intermBlock> statement_list compound_statement_with_scope compound_statement_no_new_scope
 %type <interm.intermNode> declaration_statement selection_statement expression_statement
 %type <interm.intermNode> declaration external_declaration
 %type <interm.intermNode> for_init_statement
@@ -279,7 +279,7 @@ primary_expression
         $$ = context->addScalarLiteral(unionArray, @1);
     }
     | YUVCSCSTANDARDEXTCONSTANT {
-        if (!context->isExtensionEnabled("GL_EXT_YUV_target")) {
+        if (!context->isExtensionEnabled(TExtension::EXT_YUV_target)) {
            context->error(@1, "unsupported value", $1.string->c_str());
         }
         TConstantUnion *unionArray = new TConstantUnion[1];
@@ -1049,7 +1049,7 @@ type_specifier_nonarray
         $$.setMatrix(4, 3);
     }
     | YUVCSCSTANDARDEXT {
-        if (!context->isExtensionEnabled("GL_EXT_YUV_target")) {
+        if (!context->isExtensionEnabled(TExtension::EXT_YUV_target)) {
             context->error(@1, "unsupported type", "yuvCscStandardEXT");
         }
         $$.initialize(EbtYuvCscStandardEXT, @1);
@@ -1109,20 +1109,20 @@ type_specifier_nonarray
         $$.initialize(EbtSampler2DArrayShadow, @1);
     }
     | SAMPLER_EXTERNAL_OES {
-        if (!context->supportsExtension("GL_OES_EGL_image_external") &&
-            !context->supportsExtension("GL_NV_EGL_stream_consumer_external")) {
+        if (!context->supportsExtension(TExtension::OES_EGL_image_external) &&
+            !context->supportsExtension(TExtension::NV_EGL_stream_consumer_external)) {
             context->error(@1, "unsupported type", "samplerExternalOES");
         }
         $$.initialize(EbtSamplerExternalOES, @1);
     }
     | SAMPLEREXTERNAL2DY2YEXT {
-        if (!context->isExtensionEnabled("GL_EXT_YUV_target")) {
+        if (!context->isExtensionEnabled(TExtension::EXT_YUV_target)) {
             context->error(@1, "unsupported type", "__samplerExternal2DY2YEXT");
         }
         $$.initialize(EbtSamplerExternal2DY2YEXT, @1);
     }
     | SAMPLER2DRECT {
-        if (!context->supportsExtension("GL_ARB_texture_rectangle")) {
+        if (!context->supportsExtension(TExtension::ARB_texture_rectangle)) {
             context->error(@1, "unsupported type", "sampler2DRect");
         }
         $$.initialize(EbtSampler2DRect, @1);
@@ -1232,8 +1232,8 @@ declaration_statement
     ;
 
 statement
-    : compound_statement  { $$ = $1; }
-    | simple_statement    { $$ = $1; }
+    : compound_statement_with_scope { $$ = $1; }
+    | simple_statement              { $$ = $1; }
     ;
 
 // Grammar Note:  Labeled statements for SWITCH only; 'goto' is not supported.
@@ -1248,8 +1248,11 @@ simple_statement
     | jump_statement        { $$ = $1; }
     ;
 
-compound_statement
-    : LEFT_BRACE RIGHT_BRACE { $$ = 0; }
+compound_statement_with_scope
+    : LEFT_BRACE RIGHT_BRACE {
+        $$ = new TIntermBlock();
+        $$->setLine(@$);
+    }
     | LEFT_BRACE { context->symbolTable.push(); } statement_list { context->symbolTable.pop(); } RIGHT_BRACE {
         $3->setLine(@$);
         $$ = $3;
@@ -1267,9 +1270,10 @@ statement_with_scope
     ;
 
 compound_statement_no_new_scope
-    // Statement that doesn't create a new scope, for selection_statement, iteration_statement
+    // Statement that doesn't create a new scope for iteration_statement, function definition (scope is created for parameters)
     : LEFT_BRACE RIGHT_BRACE {
-        $$ = nullptr;
+        $$ = new TIntermBlock();
+        $$->setLine(@$);
     }
     | LEFT_BRACE statement_list RIGHT_BRACE {
         $2->setLine(@$);
@@ -1310,8 +1314,10 @@ selection_rest_statement
     }
     ;
 
+// Note that we've diverged from the spec grammar here a bit for the sake of simplicity.
+// We're reusing compound_statement_with_scope instead of having separate rules for switch.
 switch_statement
-    : SWITCH LEFT_PAREN expression RIGHT_PAREN { context->incrSwitchNestingLevel(); } compound_statement {
+    : SWITCH LEFT_PAREN expression RIGHT_PAREN { context->incrSwitchNestingLevel(); } compound_statement_with_scope {
         $$ = context->addSwitch($3, $6, @1);
         context->decrSwitchNestingLevel();
     }

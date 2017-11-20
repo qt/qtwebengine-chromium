@@ -25,12 +25,9 @@
 #include "public/platform/WebAudioBus.h"
 
 #include "platform/audio/AudioBus.h"
-#include "platform/wtf/PassRefPtr.h"
 #include "platform/wtf/RefPtr.h"
 
 namespace blink {
-
-class WebAudioBusPrivate : public AudioBus {};
 
 void WebAudioBus::Initialize(unsigned number_of_channels,
                              size_t length,
@@ -39,10 +36,10 @@ void WebAudioBus::Initialize(unsigned number_of_channels,
   audio_bus->SetSampleRate(sample_rate);
 
   if (private_)
-    (static_cast<AudioBus*>(private_))->Deref();
+    private_->Release();
 
-  audio_bus->Ref();
-  private_ = static_cast<WebAudioBusPrivate*>(audio_bus.Get());
+  audio_bus->AddRef();
+  private_ = audio_bus.get();
 }
 
 void WebAudioBus::ResizeSmaller(size_t new_length) {
@@ -55,8 +52,8 @@ void WebAudioBus::ResizeSmaller(size_t new_length) {
 
 void WebAudioBus::Reset() {
   if (private_) {
-    (static_cast<AudioBus*>(private_))->Deref();
-    private_ = 0;
+    private_->Release();
+    private_ = nullptr;
   }
 }
 
@@ -80,14 +77,15 @@ double WebAudioBus::SampleRate() const {
 
 float* WebAudioBus::ChannelData(unsigned channel_index) {
   if (!private_)
-    return 0;
+    return nullptr;
   DCHECK_LT(channel_index, NumberOfChannels());
   return private_->Channel(channel_index)->MutableData();
 }
 
-PassRefPtr<AudioBus> WebAudioBus::Release() {
-  RefPtr<AudioBus> audio_bus(AdoptRef(static_cast<AudioBus*>(private_)));
-  private_ = 0;
+RefPtr<AudioBus> WebAudioBus::Release() {
+  RefPtr<AudioBus> audio_bus(private_);
+  private_->Release();
+  private_ = nullptr;
   return audio_bus;
 }
 

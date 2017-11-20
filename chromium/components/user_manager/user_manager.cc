@@ -23,6 +23,10 @@ void UserManager::Observer::OnUserProfileImageUpdated(
     const User& user,
     const gfx::ImageSkia& profile_image) {}
 
+void UserManager::Observer::OnChildStatusChanged(const User& user) {}
+
+void UserManager::Observer::OnUsersSignInConstraintsChanged() {}
+
 void UserManager::UserSessionStateObserver::ActiveUserChanged(
     const User* active_user) {
 }
@@ -33,9 +37,6 @@ void UserManager::UserSessionStateObserver::UserAddedToSession(
 
 void UserManager::UserSessionStateObserver::ActiveUserHashChanged(
     const std::string& hash) {
-}
-
-void UserManager::UserSessionStateObserver::UserChangedChildStatus(User* user) {
 }
 
 UserManager::UserSessionStateObserver::~UserSessionStateObserver() {

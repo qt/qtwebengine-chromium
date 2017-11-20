@@ -13,7 +13,7 @@ namespace blink {
 ScrollHitTestDisplayItem::ScrollHitTestDisplayItem(
     const DisplayItemClient& client,
     Type type,
-    PassRefPtr<const TransformPaintPropertyNode> scroll_offset_node)
+    RefPtr<const TransformPaintPropertyNode> scroll_offset_node)
     : DisplayItem(client, type, sizeof(*this)),
       scroll_offset_node_(std::move(scroll_offset_node)) {
   DCHECK(RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
@@ -41,9 +41,10 @@ bool ScrollHitTestDisplayItem::Equals(const DisplayItem& other) const {
 }
 
 #ifndef NDEBUG
-void ScrollHitTestDisplayItem::DumpPropertiesAsDebugString(
-    StringBuilder& string_builder) const {
-  DisplayItem::DumpPropertiesAsDebugString(string_builder);
+void ScrollHitTestDisplayItem::PropertiesAsJSON(JSONObject& json) const {
+  DisplayItem::PropertiesAsJSON(json);
+  json.SetString("scrollOffsetNode",
+                 String::Format("%p", scroll_offset_node_.get()));
 }
 #endif  // NDEBUG
 
@@ -51,7 +52,7 @@ void ScrollHitTestDisplayItem::Record(
     GraphicsContext& context,
     const DisplayItemClient& client,
     DisplayItem::Type type,
-    PassRefPtr<const TransformPaintPropertyNode> scroll_offset_node) {
+    RefPtr<const TransformPaintPropertyNode> scroll_offset_node) {
   PaintController& paint_controller = context.GetPaintController();
 
   // The scroll hit test should be in the non-scrolled transform space and

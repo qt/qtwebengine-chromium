@@ -108,6 +108,29 @@ OPENSSL_EXPORT void RSA_get0_crt_params(const RSA *rsa, const BIGNUM **out_dmp1,
                                         const BIGNUM **out_dmq1,
                                         const BIGNUM **out_iqmp);
 
+// RSA_set0_key sets |rsa|'s modulus, public exponent, and private exponent to
+// |n|, |e|, and |d| respectively, if non-NULL. On success, it takes ownership
+// of each argument and returns one. Otherwise, it returns zero.
+//
+// |d| may be NULL, but |n| and |e| must either be non-NULL or already
+// configured on |rsa|.
+OPENSSL_EXPORT int RSA_set0_key(RSA *rsa, BIGNUM *n, BIGNUM *e, BIGNUM *d);
+
+// RSA_set0_factors sets |rsa|'s prime factors to |p| and |q|, if non-NULL, and
+// takes ownership of them. On success, it takes ownership of each argument and
+// returns one. Otherwise, it returns zero.
+//
+// Each argument must either be non-NULL or already configured on |rsa|.
+OPENSSL_EXPORT int RSA_set0_factors(RSA *rsa, BIGNUM *p, BIGNUM *q);
+
+// RSA_set0_crt_params sets |rsa|'s CRT parameters to |dmp1|, |dmq1|, and
+// |iqmp|, if non-NULL, and takes ownership of them. On success, it takes
+// ownership of its parameters and returns one. Otherwise, it returns zero.
+//
+// Each argument must either be non-NULL or already configured on |rsa|.
+OPENSSL_EXPORT int RSA_set0_crt_params(RSA *rsa, BIGNUM *dmp1, BIGNUM *dmq1,
+                                       BIGNUM *iqmp);
+
 
 // Key generation.
 
@@ -391,8 +414,8 @@ OPENSSL_EXPORT int RSA_padding_add_PKCS1_OAEP_mgf1(
 
 // RSA_add_pkcs1_prefix builds a version of |msg| prefixed with the DigestInfo
 // header for the given hash function and sets |out_msg| to point to it. On
-// successful return, |*out_msg| may be allocated memory and, if so,
-// |*is_alloced| will be 1.
+// successful return, if |*is_alloced| is one, the caller must release
+// |*out_msg| with |OPENSSL_free|.
 OPENSSL_EXPORT int RSA_add_pkcs1_prefix(uint8_t **out_msg, size_t *out_msg_len,
                                         int *is_alloced, int hash_nid,
                                         const uint8_t *msg, size_t msg_len);
@@ -576,13 +599,6 @@ struct rsa_meth_st {
 
   int (*sign)(int type, const uint8_t *m, unsigned int m_length,
               uint8_t *sigret, unsigned int *siglen, const RSA *rsa);
-
-  // Ignored. Set this to NULL.
-  // TODO(davidben): Remove this when
-  // https://github.com/google/conscrypt/commit/bb0571e358e95e1c70ac7a6984fc4d7236cac72f
-  // is in all BoringSSL consumers.
-  int (*encrypt)(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
-                 const uint8_t *in, size_t in_len, int padding);
 
   // These functions mirror the |RSA_*| functions of the same name.
   int (*sign_raw)(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,

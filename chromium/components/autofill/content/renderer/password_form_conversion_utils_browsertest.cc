@@ -10,11 +10,14 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "components/autofill/content/renderer/form_autofill_util.h"
 #include "components/autofill/content/renderer/password_form_conversion_utils.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/common/password_manager_features.h"
 #include "content/public/test/render_view_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -63,14 +66,29 @@ class PasswordFormBuilder {
         name_and_id, name_and_id, value, autocomplete_attribute.c_str());
   }
 
+  // Add a text field with name, id, value, label and placeholder,
+  // without autocomplete.
+  void AddTextFieldWithoutAutocomplete(const char* name,
+                                       const char* id,
+                                       const char* value,
+                                       const char* label,
+                                       const char* placeholder) {
+    base::StringAppendF(&html_,
+                        "<LABEL for=\"%s\">%s</LABEL>"
+                        "<INPUT type=\"text\" name=\"%s\" id=\"%s\" "
+                        "value=\"%s\" placeholder=\"%s\"/>",
+                        id, label, name, id, value, placeholder);
+  }
+
   // Appends a new password-type field at the end of the form, having the
   // specified |name_and_id|, |value|, and |autocomplete| attributes. Special
   // values for |autocomplete| are the same as in AddTextField.
   void AddPasswordField(const char* name_and_id,
                         const char* value,
                         const char* autocomplete) {
-    std::string autocomplete_attribute(autocomplete ?
-        base::StringPrintf("autocomplete=\"%s\"", autocomplete): "");
+    std::string autocomplete_attribute(
+        autocomplete ? base::StringPrintf("autocomplete=\"%s\"", autocomplete)
+                     : "");
     base::StringAppendF(
         &html_,
         "<INPUT type=\"password\" name=\"%s\" id=\"%s\" value=\"%s\" %s/>",
@@ -92,32 +110,29 @@ class PasswordFormBuilder {
 
   // Appends a new hidden-type field at the end of the form, having the
   // specified |name_and_id| and |value| attributes.
-  void AddHiddenField(const char* name_and_id,
-                      const char* value) {
+  void AddHiddenField(const char* name_and_id, const char* value) {
     base::StringAppendF(
-        &html_,
-        "<INPUT type=\"hidden\" name=\"%s\" id=\"%s\" value=\"%s\" />",
+        &html_, "<INPUT type=\"hidden\" name=\"%s\" id=\"%s\" value=\"%s\" />",
         name_and_id, name_and_id, value);
   }
 
   // Append a text field with "display: none".
-  void AddNonDisplayedTextField(const char* name_and_id,
-                                const char* value) {
+  void AddNonDisplayedTextField(const char* name_and_id, const char* value) {
     base::StringAppendF(
-            &html_,
-            "<INPUT type=\"text\" name=\"%s\" id=\"%s\" value=\"%s\""
-             "style=\"display: none;\"/>",
-            name_and_id, name_and_id, value);
+        &html_,
+        "<INPUT type=\"text\" name=\"%s\" id=\"%s\" value=\"%s\""
+        "style=\"display: none;\"/>",
+        name_and_id, name_and_id, value);
   }
 
   // Append a password field with "display: none".
   void AddNonDisplayedPasswordField(const char* name_and_id,
                                     const char* value) {
     base::StringAppendF(
-            &html_,
-            "<INPUT type=\"password\" name=\"%s\" id=\"%s\" value=\"%s\""
-            "style=\"display: none;\"/>",
-            name_and_id, name_and_id, value);
+        &html_,
+        "<INPUT type=\"password\" name=\"%s\" id=\"%s\" value=\"%s\""
+        "style=\"display: none;\"/>",
+        name_and_id, name_and_id, value);
   }
 
   // Append a text field with "visibility: hidden".
@@ -142,16 +157,12 @@ class PasswordFormBuilder {
   // |name|.
   void AddSubmitButton(const char* name) {
     base::StringAppendF(
-        &html_,
-        "<INPUT type=\"submit\" name=\"%s\" value=\"Submit\"/>",
-        name);
+        &html_, "<INPUT type=\"submit\" name=\"%s\" value=\"Submit\"/>", name);
   }
 
   // Returns the HTML code for the form containing the fields that have been
   // added so far.
-  std::string ProduceHTML() const {
-    return html_ + "</FORM>";
-  }
+  std::string ProduceHTML() const { return html_ + "</FORM>"; }
 
   // Appends a field of |type| without name or id attribute at the end of the
   // form.
@@ -203,7 +214,8 @@ class MAYBE_PasswordFormConversionUtilsTest : public content::RenderViewTest {
       if (with_user_input) {
         const base::string16 element_value = input_element->Value().Utf16();
         user_input[control_elements[i]] =
-            std::make_pair(base::MakeUnique<base::string16>(element_value), 0U);
+            std::make_pair(base::MakeUnique<base::string16>(element_value),
+                           FieldPropertiesFlags::USER_TYPED);
       }
     }
 
@@ -306,9 +318,262 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest, DisabledFieldsAreIgnored) {
   EXPECT_EQ(base::UTF8ToUTF16("secret"), password_form->password_value);
 }
 
-TEST_F(MAYBE_PasswordFormConversionUtilsTest, IdentifyingUsernameFields) {
+TEST_F(MAYBE_PasswordFormConversionUtilsTest,
+       IdentifyingUsernameFieldsFromDeveloperGroupWithHTMLDetector) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      password_manager::features::kEnableHtmlBasedUsernameDetector);
+
   // Each test case consists of a set of parameters to be plugged into the
   // PasswordFormBuilder below, plus the corresponding expectations.
+  // The test data contains cases that are identified by HTML detector, and not
+  // by base heuristic. Thus, username field does not necessarely have to be
+  // right before password field.
+  // These tests basically check searching in developer group (i.e. name and id
+  // attribute, concatenated, with "$" guard in between).
+  struct TestCase {
+    // Field parameters represent, in order of appearance, field name, field id
+    // and field value.
+    const char* first_text_field_parameters[3];
+    const char* second_text_field_parameters[3];
+    const char* expected_username_element;
+    const char* expected_username_value;
+  } cases[] = {
+      // There are both field name and id.
+      {{"username", "id", "johnsmith"},
+       {"email", "id", "js@google.com"},
+       "username",
+       "johnsmith"},
+      // there is no field id.
+      {{"username", "", "johnsmith"},
+       {"email", "", "js@google.com"},
+       "username",
+       "johnsmith"},
+      // Upper or mixed case shouldn't matter.
+      {{"uSeRnAmE", "id", "johnsmith"},
+       {"email", "id", "js@google.com"},
+       "uSeRnAmE",
+       "johnsmith"},
+      // Check removal of special characters.
+      {{"u1_s2-e3~r4/n5(a)6m#e", "", "johnsmith"},
+       {"email", "", "js@google.com"},
+       "u1_s2-e3~r4/n5(a)6m#e",
+       "johnsmith"},
+      // Check guard between field name and field id.
+      {{"us", "ername", "johnsmith"},
+       {"email", "", "js@google.com"},
+       "email",
+       "js@google.com"},
+      // Check removal of fields with latin negative words in developer group.
+      {{"email", "", "js@google.com"},
+       {"fake_username", "", "johnsmith"},
+       "email",
+       "js@google.com"},
+      {{"email", "mail", "js@google.com"},
+       {"user_name", "fullname", "johnsmith"},
+       "email",
+       "js@google.com"},
+      // Identify latin translations of "username".
+      {{"benutzername", "", "johnsmith"},
+       {"email", "", "js@google.com"},
+       "benutzername",
+       "johnsmith"},
+      // Identify latin translations of "user".
+      {{"utilizator", "", "johnsmith"},
+       {"email", "", "js@google.com"},
+       "utilizator",
+       "johnsmith"},
+      // Identify technical words.
+      {{"loginid", "", "johnsmith"},
+       {"email", "", "js@google.com"},
+       "loginid",
+       "johnsmith"},
+      // Identify weak words.
+      {{"usrname", "", "johnsmith"},
+       {"email", "", "js@google.com"},
+       "email",
+       "js@google.com"},
+      // If word matches in maximum 2 fields, it is accepted.
+      // First encounter is selected as username.
+      {{"loginusername", "", "johnsmith"},
+       {"loginemail", "", "js@google.com"},
+       "loginusername",
+       "johnsmith"},
+      // Check treatment for short dictionary words.
+      {{"identity_name", "", "johnsmith"},
+       {"email", "", "js@google.com"},
+       "email",
+       "js@google.com"}};
+
+  for (size_t i = 0; i < arraysize(cases); ++i) {
+    SCOPED_TRACE(testing::Message() << "Iteration " << i);
+
+    PasswordFormBuilder builder(kTestFormActionURL);
+    builder.AddTextFieldWithoutAutocomplete(
+        cases[i].first_text_field_parameters[0],
+        cases[i].first_text_field_parameters[1],
+        cases[i].first_text_field_parameters[2], "", "");
+    builder.AddTextFieldWithoutAutocomplete(
+        cases[i].second_text_field_parameters[0],
+        cases[i].second_text_field_parameters[1],
+        cases[i].second_text_field_parameters[2], "", "");
+    builder.AddPasswordField("password", "secret", nullptr);
+    builder.AddSubmitButton("submit");
+    std::string html = builder.ProduceHTML();
+
+    std::unique_ptr<PasswordForm> password_form =
+        LoadHTMLAndConvertForm(html, nullptr, false);
+
+    ASSERT_TRUE(password_form);
+
+    EXPECT_EQ(base::UTF8ToUTF16(cases[i].expected_username_element),
+              password_form->username_element);
+    EXPECT_EQ(base::UTF8ToUTF16(cases[i].expected_username_value),
+              password_form->username_value);
+  }
+
+  // If word matches in more than 2 fields, we don't match on it.
+  // We search for match with another word.
+  PasswordFormBuilder builder(kTestFormActionURL);
+  builder.AddTextFieldWithoutAutocomplete("address", "user", "someaddress", "",
+                                          "");
+  builder.AddTextFieldWithoutAutocomplete("loginid", "user", "johnsmith", "",
+                                          "");
+  builder.AddTextFieldWithoutAutocomplete("tel", "user", "sometel", "", "");
+  builder.AddPasswordField("password", "secret", nullptr);
+  builder.AddSubmitButton("submit");
+  std::string html = builder.ProduceHTML();
+
+  std::unique_ptr<PasswordForm> password_form =
+      LoadHTMLAndConvertForm(html, nullptr, false);
+
+  ASSERT_TRUE(password_form);
+
+  EXPECT_EQ(base::UTF8ToUTF16("loginid"), password_form->username_element);
+  EXPECT_EQ(base::UTF8ToUTF16("johnsmith"), password_form->username_value);
+}
+
+TEST_F(MAYBE_PasswordFormConversionUtilsTest,
+       IdentifyingUsernameFieldsFromUserGroupWithHTMLDetector) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      password_manager::features::kEnableHtmlBasedUsernameDetector);
+
+  // Each test case consists of a set of parameters to be plugged into the
+  // PasswordFormBuilder below, plus the corresponding expectations.
+  // The test data contains cases that are identified by HTML detector, and not
+  // by base heuristic. Thus, username field does not necessarely have to be
+  // right before password field.
+  // These tests basically check searching in user group.
+  struct TestCase {
+    // Field parameters represent, in order of appearance, field name, field
+    // id, field value and field label or placeholder.
+    const char* first_text_field_parameters[4];
+    const char* second_text_field_parameters[4];
+    const char* expected_username_element;
+    const char* expected_username_value;
+  } cases[] = {
+      // Developer group does not contain any significant information.
+      // Label information will decide username.
+      {{"name1", "id1", "johnsmith", "Username:"},
+       {"name2", "id2", "js@google.com", "Email:"},
+       "name1",
+       "johnsmith"},
+      // Placeholder information will decide username.
+      {{"name1", "id1", "js@google.com", "Email:"},
+       {"name2", "id2", "johnsmith", "Username:"},
+       "name2",
+       "johnsmith"},
+      // Check removal of special characters.
+      {{"name1", "id1", "johnsmith", "U s er n a m e:"},
+       {"name2", "id2", "js@google.com", "Email:"},
+       "name1",
+       "johnsmith"},
+      // Check removal of fields with latin negative words in user group.
+      {{"name1", "id1", "johnsmith", "Username password:"},
+       {"name2", "id2", "js@google.com", "Email:"},
+       "name2",
+       "js@google.com"},
+      // Check removal of fields with non-latin negative words in user group.
+      {{"name1", "id1", "js@google.com", "Email:"},
+       {"name2", "id2", "johnsmith", "የይለፍቃልየይለፍቃል:"},
+       "name1",
+       "js@google.com"},
+      // Identify latin translations of "username".
+      {{"name1", "id1", "johnsmith", "Username:"},
+       {"name2", "id2", "js@google.com", "Email:"},
+       "name1",
+       "johnsmith"},
+      // Identify non-latin translations of "username".
+      {{"name1", "id1", "johnsmith", "用户名:"},
+       {"name2", "id2", "js@google.com", "Email:"},
+       "name1",
+       "johnsmith"},
+      // Identify latin translations of "user".
+      {{"name1", "id1", "johnsmith", "Wosuta:"},
+       {"name2", "id2", "js@google.com", "Email:"},
+       "name1",
+       "johnsmith"},
+      // Identify non-latin translations of "user".
+      {{"name1", "id1", "johnsmith", "истифода:"},
+       {"name2", "id2", "js@google.com", "Email:"},
+       "name1",
+       "johnsmith"},
+      // Identify weak words.
+      {{"name1", "id1", "johnsmith", "Insert your login details:"},
+       {"name2", "id2", "js@google.com", "Insert your email:"},
+       "name1",
+       "johnsmith"},
+      // Check user group priority, compared to developer group.
+      // User group should have higher priority than developer group.
+      {{"email", "", "js@google.com", "Username:"},
+       {"username", "", "johnsmith", "Email:"},
+       "email",
+       "js@google.com"},
+      // Check treatment for short dictionary words.
+      {{"name1", "", "johnsmith", "Insert your id:"},
+       {"name2", "", "js@google.com", "Insert something:"},
+       "name1",
+       "johnsmith"}};
+
+  for (size_t i = 0; i < arraysize(cases); ++i) {
+    SCOPED_TRACE(testing::Message() << "Iteration " << i);
+
+    PasswordFormBuilder builder(kTestFormActionURL);
+    builder.AddTextFieldWithoutAutocomplete(
+        cases[i].first_text_field_parameters[0],
+        cases[i].first_text_field_parameters[1],
+        cases[i].first_text_field_parameters[2],
+        cases[i].first_text_field_parameters[3], "");
+    builder.AddTextFieldWithoutAutocomplete(
+        cases[i].second_text_field_parameters[0],
+        cases[i].second_text_field_parameters[1],
+        cases[i].second_text_field_parameters[2], "",
+        cases[i].second_text_field_parameters[3]);
+    builder.AddPasswordField("password", "secret", nullptr);
+    builder.AddSubmitButton("submit");
+    std::string html = builder.ProduceHTML();
+
+    std::unique_ptr<PasswordForm> password_form =
+        LoadHTMLAndConvertForm(html, nullptr, false);
+
+    ASSERT_TRUE(password_form);
+
+    EXPECT_EQ(base::UTF8ToUTF16(cases[i].expected_username_element),
+              password_form->username_element);
+    EXPECT_EQ(base::UTF8ToUTF16(cases[i].expected_username_value),
+              password_form->username_value);
+  }
+}
+
+TEST_F(MAYBE_PasswordFormConversionUtilsTest,
+       IdentifyingUsernameFieldsWithBaseHeuristic) {
+  // Each test case consists of a set of parameters to be plugged into the
+  // PasswordFormBuilder below, plus the corresponding expectations.
+  // The test data should not contain field names that are identified by the
+  // HTML based username detector, because with these tests only the base
+  // heuristic (i.e. select as username the field before the password field)
+  // is tested.
   struct TestCase {
     const char* autocomplete[3];
     const char* expected_username_element;
@@ -319,46 +584,62 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest, IdentifyingUsernameFields) {
       // input field before the first password element should get selected as
       // the username, and the rest should be marked as alternatives.
       {{nullptr, nullptr, nullptr},
-       "username2",
+       "usrname2",
        "William",
-       "John+username1, Smith+username3"},
+       "John+usrname1, Smith+usrname3"},
       // When a sole element is marked with autocomplete='username', it should
-      // be treated as the username for sure, with no other_possible_usernames.
-      {{"username", nullptr, nullptr}, "username1", "John", ""},
-      {{nullptr, "username", nullptr}, "username2", "William", ""},
-      {{nullptr, nullptr, "username"}, "username3", "Smith", ""},
-      // When >=2 elements have the attribute, the first should be selected as
-      // the username, and the rest should go to other_possible_usernames.
-      {{"username", "username", nullptr},
-       "username1",
+      // be treated as the username, but other text fields should be added to
+      // |other_possible_usernames|.
+      {{"username", nullptr, nullptr},
+       "usrname1",
        "John",
-       "William+username2"},
-      {{nullptr, "username", "username"},
-       "username2",
+       "William+usrname2, Smith+usrname3"},
+      {{nullptr, "username", nullptr},
+       "usrname2",
        "William",
-       "Smith+username3"},
+       "John+usrname1, Smith+usrname3"},
+      {{nullptr, nullptr, "username"},
+       "usrname3",
+       "Smith",
+       "John+usrname1, William+usrname2"},
+      // When >=2 elements have the attribute, the first should be selected as
+      // the username, and the rest should go to |other_possible_usernames|.
+      {{"username", "username", nullptr},
+       "usrname1",
+       "John",
+       "William+usrname2, Smith+usrname3"},
+      {{nullptr, "username", "username"},
+       "usrname2",
+       "William",
+       "John+usrname1, Smith+usrname3"},
       {{"username", nullptr, "username"},
-       "username1",
+       "usrname1",
        "John",
-       "Smith+username3"},
+       "William+usrname2, Smith+usrname3"},
       {{"username", "username", "username"},
-       "username1",
+       "usrname1",
        "John",
-       "William+username2, Smith+username3"},
+       "William+usrname2, Smith+usrname3"},
       // When there is an empty autocomplete attribute (i.e. autocomplete=""),
       // it should have the same effect as having no attribute whatsoever.
-      {{"", "", ""}, "username2", "William", "John+username1, Smith+username3"},
-      {{"", "", "username"}, "username3", "Smith", ""},
-      {{"username", "", "username"}, "username1", "John", "Smith+username3"},
+      {{"", "", ""}, "usrname2", "William", "John+usrname1, Smith+usrname3"},
+      {{"", "", "username"},
+       "usrname3",
+       "Smith",
+       "John+usrname1, William+usrname2"},
+      {{"username", "", "username"},
+       "usrname1",
+       "John",
+       "William+usrname2, Smith+usrname3"},
       // It should not matter if attribute values are upper or mixed case.
       {{"USERNAME", nullptr, "uSeRNaMe"},
-       "username1",
+       "usrname1",
        "John",
-       "Smith+username3"},
+       "William+usrname2, Smith+usrname3"},
       {{"uSeRNaMe", nullptr, "USERNAME"},
-       "username1",
+       "usrname1",
        "John",
-       "Smith+username3"}};
+       "William+usrname2, Smith+usrname3"}};
 
   for (size_t i = 0; i < arraysize(cases); ++i) {
     for (size_t nonempty_username_fields = 0; nonempty_username_fields < 2;
@@ -379,10 +660,10 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest, IdentifyingUsernameFields) {
       }
 
       PasswordFormBuilder builder(kTestFormActionURL);
-      builder.AddTextField("username1", names[0], cases[i].autocomplete[0]);
-      builder.AddTextField("username2", names[1], cases[i].autocomplete[1]);
+      builder.AddTextField("usrname1", names[0], cases[i].autocomplete[0]);
+      builder.AddTextField("usrname2", names[1], cases[i].autocomplete[1]);
       builder.AddPasswordField("password", "secret", nullptr);
-      builder.AddTextField("username3", names[2], cases[i].autocomplete[2]);
+      builder.AddTextField("usrname3", names[2], cases[i].autocomplete[2]);
       builder.AddPasswordField("password2", "othersecret", nullptr);
       builder.AddSubmitButton("submit");
       std::string html = builder.ProduceHTML();
@@ -440,9 +721,9 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest, IdentifyingTwoPasswordFields) {
     SCOPED_TRACE(testing::Message() << "Iteration " << i);
 
     PasswordFormBuilder builder(kTestFormActionURL);
-    builder.AddTextField("username1", "William", nullptr);
+    builder.AddTextField("usrname1", "William", nullptr);
     builder.AddPasswordField("password1", cases[i].password_values[0], nullptr);
-    builder.AddTextField("username2", "Smith", nullptr);
+    builder.AddTextField("usrname2", "Smith", nullptr);
     builder.AddPasswordField("password2", cases[i].password_values[1], nullptr);
     builder.AddSubmitButton("submit");
     std::string html = builder.ProduceHTML();
@@ -463,12 +744,12 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest, IdentifyingTwoPasswordFields) {
               password_form->confirmation_password_element);
 
     // Do a basic sanity check that we are still selecting the right username.
-    EXPECT_EQ(base::UTF8ToUTF16("username1"), password_form->username_element);
+    EXPECT_EQ(base::UTF8ToUTF16("usrname1"), password_form->username_element);
     EXPECT_EQ(base::UTF8ToUTF16("William"), password_form->username_value);
     EXPECT_THAT(
         password_form->other_possible_usernames,
         testing::ElementsAre(PossibleUsernamePair(
-            base::UTF8ToUTF16("Smith"), base::UTF8ToUTF16("username2"))));
+            base::UTF8ToUTF16("Smith"), base::UTF8ToUTF16("usrname2"))));
   }
 }
 
@@ -510,10 +791,10 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest, IdentifyingThreePasswordFields) {
     SCOPED_TRACE(testing::Message() << "Iteration " << i);
 
     PasswordFormBuilder builder(kTestFormActionURL);
-    builder.AddTextField("username1", "William", nullptr);
+    builder.AddTextField("usrname1", "William", nullptr);
     builder.AddPasswordField("password1", cases[i].password_values[0], nullptr);
     builder.AddPasswordField("password2", cases[i].password_values[1], nullptr);
-    builder.AddTextField("username2", "Smith", nullptr);
+    builder.AddTextField("usrname2", "Smith", nullptr);
     builder.AddPasswordField("password3", cases[i].password_values[2], nullptr);
     builder.AddSubmitButton("submit");
     std::string html = builder.ProduceHTML();
@@ -534,12 +815,12 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest, IdentifyingThreePasswordFields) {
               password_form->confirmation_password_element);
 
     // Do a basic sanity check that we are still selecting the right username.
-    EXPECT_EQ(base::UTF8ToUTF16("username1"), password_form->username_element);
+    EXPECT_EQ(base::UTF8ToUTF16("usrname1"), password_form->username_element);
     EXPECT_EQ(base::UTF8ToUTF16("William"), password_form->username_value);
     EXPECT_THAT(
         password_form->other_possible_usernames,
         testing::ElementsAre(PossibleUsernamePair(
-            base::UTF8ToUTF16("Smith"), base::UTF8ToUTF16("username2"))));
+            base::UTF8ToUTF16("Smith"), base::UTF8ToUTF16("usrname2"))));
   }
 }
 
@@ -547,6 +828,10 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        IdentifyingPasswordFieldsWithAutocompleteAttributes) {
   // Each test case consists of a set of parameters to be plugged into the
   // PasswordFormBuilder below, plus the corresponding expectations.
+  // The test data should not contain field names that are identified by the
+  // HTML based username detector, because with these tests only the base
+  // heuristic (i.e. select as username the field before the password field)
+  // is tested.
   struct TestCase {
     const char* autocomplete[3];
     const char* expected_password_element;
@@ -572,7 +857,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username1",
+       "usrname1",
        "William"},
       {{nullptr, "current-password", nullptr},
        "password2",
@@ -580,7 +865,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username2",
+       "usrname2",
        "Smith"},
       {{nullptr, nullptr, "current-password"},
        "password3",
@@ -588,7 +873,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username2",
+       "usrname2",
        "Smith"},
       {{nullptr, "current-password", "current-password"},
        "password2",
@@ -596,7 +881,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username2",
+       "usrname2",
        "Smith"},
       {{"current-password", nullptr, "current-password"},
        "password1",
@@ -604,7 +889,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username1",
+       "usrname1",
        "William"},
       {{"current-password", "current-password", nullptr},
        "password1",
@@ -612,7 +897,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username1",
+       "usrname1",
        "William"},
       {{"current-password", "current-password", "current-password"},
        "password1",
@@ -620,7 +905,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username1",
+       "usrname1",
        "William"},
       // The same goes vice versa for autocomplete='new-password'.
       {{"new-password", nullptr, nullptr},
@@ -629,7 +914,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username1",
+       "usrname1",
        "William"},
       {{nullptr, "new-password", nullptr},
        "",
@@ -637,7 +922,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password2",
        "beta",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{nullptr, nullptr, "new-password"},
        "",
@@ -645,7 +930,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password3",
        "gamma",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{nullptr, "new-password", "new-password"},
        "",
@@ -653,7 +938,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password2",
        "beta",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{"new-password", nullptr, "new-password"},
        "",
@@ -661,7 +946,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username1",
+       "usrname1",
        "William"},
       {{"new-password", "new-password", nullptr},
        "",
@@ -669,7 +954,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username1",
+       "usrname1",
        "William"},
       {{"new-password", "new-password", "new-password"},
        "",
@@ -677,7 +962,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username1",
+       "usrname1",
        "William"},
       // When there is one element marked with autocomplete='current-password',
       // and one with 'new-password', just comply. Ignore the unmarked password
@@ -688,7 +973,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password2",
        "beta",
        true,
-       "username1",
+       "usrname1",
        "William"},
       {{"current-password", nullptr, "new-password"},
        "password1",
@@ -696,7 +981,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password3",
        "gamma",
        true,
-       "username1",
+       "usrname1",
        "William"},
       {{nullptr, "current-password", "new-password"},
        "password2",
@@ -704,7 +989,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password3",
        "gamma",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{"new-password", "current-password", nullptr},
        "password2",
@@ -712,7 +997,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{"new-password", nullptr, "current-password"},
        "password3",
@@ -720,7 +1005,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{nullptr, "new-password", "current-password"},
        "password3",
@@ -728,7 +1013,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password2",
        "beta",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       // In case of duplicated elements of either kind, go with the first one of
       // its kind.
@@ -738,7 +1023,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password3",
        "gamma",
        true,
-       "username1",
+       "usrname1",
        "William"},
       {{"current-password", "new-password", "current-password"},
        "password1",
@@ -746,7 +1031,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password2",
        "beta",
        true,
-       "username1",
+       "usrname1",
        "William"},
       {{"new-password", "current-password", "current-password"},
        "password2",
@@ -754,7 +1039,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{"current-password", "new-password", "new-password"},
        "password1",
@@ -762,7 +1047,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password2",
        "beta",
        true,
-       "username1",
+       "usrname1",
        "William"},
       {{"new-password", "current-password", "new-password"},
        "password2",
@@ -770,7 +1055,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{"new-password", "new-password", "current-password"},
        "password3",
@@ -778,7 +1063,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       // When there is an empty autocomplete attribute (i.e. autocomplete=""),
       // it should have the same effect as having no attribute whatsoever.
@@ -788,7 +1073,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username1",
+       "usrname1",
        "William"},
       {{"", "", "new-password"},
        "",
@@ -796,7 +1081,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password3",
        "gamma",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{"", "new-password", ""},
        "",
@@ -804,7 +1089,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password2",
        "beta",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{"", "current-password", "current-password"},
        "password2",
@@ -812,7 +1097,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username2",
+       "usrname2",
        "Smith"},
       {{"new-password", "", "new-password"},
        "",
@@ -820,7 +1105,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username1",
+       "usrname1",
        "William"},
       {{"new-password", "", "current-password"},
        "password3",
@@ -828,7 +1113,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password1",
        "alpha",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       // It should not matter if attribute values are upper or mixed case.
       {{nullptr, "current-password", nullptr},
@@ -837,7 +1122,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username2",
+       "usrname2",
        "Smith"},
       {{nullptr, "CURRENT-PASSWORD", nullptr},
        "password2",
@@ -845,7 +1130,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "",
        "",
        false,
-       "username2",
+       "usrname2",
        "Smith"},
       {{nullptr, "new-password", nullptr},
        "",
@@ -853,7 +1138,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password2",
        "beta",
        true,
-       "username2",
+       "usrname2",
        "Smith"},
       {{nullptr, "nEw-PaSsWoRd", nullptr},
        "",
@@ -861,7 +1146,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
        "password2",
        "beta",
        true,
-       "username2",
+       "usrname2",
        "Smith"}};
 
   for (size_t i = 0; i < arraysize(cases); ++i) {
@@ -870,9 +1155,9 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
     PasswordFormBuilder builder(kTestFormActionURL);
     builder.AddPasswordField("pin1", "123456", nullptr);
     builder.AddPasswordField("pin2", "789101", nullptr);
-    builder.AddTextField("username1", "William", nullptr);
+    builder.AddTextField("usrname1", "William", nullptr);
     builder.AddPasswordField("password1", "alpha", cases[i].autocomplete[0]);
-    builder.AddTextField("username2", "Smith", nullptr);
+    builder.AddTextField("usrname2", "Smith", nullptr);
     builder.AddPasswordField("password2", "beta", cases[i].autocomplete[1]);
     builder.AddPasswordField("password3", "gamma", cases[i].autocomplete[2]);
     builder.AddSubmitButton("submit");
@@ -893,12 +1178,12 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
       EXPECT_THAT(
           password_form->other_possible_usernames,
           testing::ElementsAre(PossibleUsernamePair(
-              base::UTF8ToUTF16("Smith"), base::UTF8ToUTF16("username2"))));
+              base::UTF8ToUTF16("Smith"), base::UTF8ToUTF16("usrname2"))));
     } else {
       EXPECT_THAT(
           password_form->other_possible_usernames,
           testing::ElementsAre(PossibleUsernamePair(
-              base::UTF8ToUTF16("William"), base::UTF8ToUTF16("username1"))));
+              base::UTF8ToUTF16("William"), base::UTF8ToUTF16("usrname1"))));
     }
     EXPECT_EQ(base::UTF8ToUTF16(cases[i].expected_password_element),
               password_form->password_element);
@@ -1082,8 +1367,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
   EXPECT_FALSE(password_form);
 }
 
-TEST_F(MAYBE_PasswordFormConversionUtilsTest,
-       InvalidFormsDueToConfusingPasswordFields) {
+TEST_F(MAYBE_PasswordFormConversionUtilsTest, ConfusingPasswordFields) {
   // Each test case consists of a set of parameters to be plugged into the
   // PasswordFormBuilder below.
   const char* cases[][3] = {
@@ -1109,12 +1393,16 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
 
     std::unique_ptr<PasswordForm> password_form =
         LoadHTMLAndConvertForm(html, nullptr, false);
-    EXPECT_FALSE(password_form);
+    ASSERT_TRUE(password_form);
+    EXPECT_EQ(base::UTF8ToUTF16("username1"), password_form->username_element);
+    EXPECT_EQ(base::UTF8ToUTF16("John"), password_form->username_value);
+    EXPECT_EQ(base::UTF8ToUTF16("password1"), password_form->password_element);
+    EXPECT_EQ(base::UTF8ToUTF16(cases[i][0]), password_form->password_value);
   }
 }
 
 TEST_F(MAYBE_PasswordFormConversionUtilsTest,
-       InvalidFormDueToTooManyPasswordFieldsWithoutAutocompleteAttributes) {
+       ManyPasswordFieldsWithoutAutocompleteAttributes) {
   PasswordFormBuilder builder(kTestFormActionURL);
   builder.AddTextField("username1", "John", nullptr);
   builder.AddPasswordField("password1", "alpha", nullptr);
@@ -1126,7 +1414,82 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
 
   std::unique_ptr<PasswordForm> password_form =
       LoadHTMLAndConvertForm(html, nullptr, false);
-  EXPECT_FALSE(password_form);
+  ASSERT_TRUE(password_form);
+  EXPECT_EQ(base::UTF8ToUTF16("username1"), password_form->username_element);
+  EXPECT_EQ(base::UTF8ToUTF16("John"), password_form->username_value);
+  EXPECT_EQ(base::UTF8ToUTF16("password1"), password_form->password_element);
+  EXPECT_EQ(base::UTF8ToUTF16("alpha"), password_form->password_value);
+}
+
+TEST_F(MAYBE_PasswordFormConversionUtilsTest,
+       AcceptMultiplePasswordFieldsIfPasswordSelectionIsEnabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      password_manager::features::kEnablePasswordSelection);
+
+  PasswordFormBuilder builder(kTestFormActionURL);
+  builder.AddTextField("username1", "John", nullptr);
+  builder.AddPasswordField("password1", "alpha1", nullptr);
+  builder.AddPasswordField("password2", "alpha2", nullptr);
+  builder.AddPasswordField("password3", "alpha3", nullptr);
+  builder.AddPasswordField("password4", "alpha4", nullptr);
+  builder.AddSubmitButton("submit");
+  std::string html = builder.ProduceHTML();
+
+  std::unique_ptr<PasswordForm> password_form =
+      LoadHTMLAndConvertForm(html, nullptr, false);
+  ASSERT_TRUE(password_form);
+  EXPECT_FALSE(password_form->form_has_autofilled_value);
+
+  // Make sure we have all possible passwords along with the username info.
+  EXPECT_EQ(base::ASCIIToUTF16("username1"), password_form->username_element);
+  EXPECT_EQ(base::ASCIIToUTF16("John"), password_form->username_value);
+  EXPECT_EQ(base::ASCIIToUTF16("alpha1"), password_form->password_value);
+  EXPECT_THAT(password_form->all_possible_passwords,
+              testing::ElementsAre(
+                  base::ASCIIToUTF16("alpha1"), base::ASCIIToUTF16("alpha2"),
+                  base::ASCIIToUTF16("alpha3"), base::ASCIIToUTF16("alpha4")));
+  EXPECT_EQ(
+      base::ASCIIToUTF16("alpha1, alpha2, alpha3, alpha4"),
+      AllPossiblePasswordsToString(password_form->all_possible_passwords));
+}
+
+TEST_F(MAYBE_PasswordFormConversionUtilsTest,
+       AllPossiblePasswordsIncludeAutofilledValue) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      password_manager::features::kEnablePasswordSelection);
+
+  for (bool autofilled_value_was_modified_by_user : {false, true}) {
+    PasswordFormBuilder builder(kTestFormActionURL);
+    builder.AddTextField("username1", "John", nullptr);
+    builder.AddPasswordField("old-password", "autofilled_value", nullptr);
+    builder.AddPasswordField("new-password", "user_value", nullptr);
+    builder.AddSubmitButton("submit");
+    std::string html = builder.ProduceHTML();
+
+    WebFormElement form;
+    LoadWebFormFromHTML(html, &form, nullptr);
+    WebVector<WebFormControlElement> control_elements;
+    form.GetFormControlElements(control_elements);
+    FieldValueAndPropertiesMaskMap user_input;
+
+    FieldPropertiesMask mask = FieldPropertiesFlags::AUTOFILLED;
+    if (autofilled_value_was_modified_by_user)
+      mask |= FieldPropertiesFlags::USER_TYPED;
+    user_input[control_elements[1]] =
+        std::make_pair(base::MakeUnique<base::string16>(
+                           base::ASCIIToUTF16("autofilled_value")),
+                       mask);
+    user_input[control_elements[2]] = std::make_pair(
+        base::MakeUnique<base::string16>(base::ASCIIToUTF16("user_value")),
+        FieldPropertiesFlags::USER_TYPED);
+
+    std::unique_ptr<PasswordForm> password_form(
+        CreatePasswordFormFromWebForm(form, &user_input, nullptr));
+    ASSERT_TRUE(password_form);
+    EXPECT_TRUE(password_form->form_has_autofilled_value);
+  }
 }
 
 TEST_F(MAYBE_PasswordFormConversionUtilsTest, LayoutClassificationLogin) {
@@ -1202,7 +1565,7 @@ TEST_F(MAYBE_PasswordFormConversionUtilsTest,
   builder.AddTextField("username", "", nullptr);
   builder.AddHiddenField();
   builder.AddPasswordField("password", "", nullptr);
-  builder.AddTextField("username2", "", nullptr);
+  builder.AddTextField("usrname2", "", nullptr);
   builder.AddTextField("someotherfield", "", nullptr);
   builder.AddPasswordField("new_password", "", nullptr);
   builder.AddTextField("someotherfield2", "", nullptr);

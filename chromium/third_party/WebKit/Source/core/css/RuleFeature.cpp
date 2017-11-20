@@ -30,16 +30,15 @@
 
 #include "core/css/RuleFeature.h"
 
-#include "core/HTMLNames.h"
 #include "core/css/CSSCustomIdentValue.h"
 #include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/RuleSet.h"
-#include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/invalidation/InvalidationSet.h"
+#include "core/css/parser/CSSLazyParsingState.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/inspector/InspectorTraceEvents.h"
@@ -141,6 +140,7 @@ bool SupportsInvalidation(CSSSelector::PseudoType type) {
     case CSSSelector::kPseudoNoButton:
     case CSSSelector::kPseudoFullScreen:
     case CSSSelector::kPseudoFullScreenAncestor:
+    case CSSSelector::kPseudoFullscreen:
     case CSSSelector::kPseudoInRange:
     case CSSSelector::kPseudoOutOfRange:
     case CSSSelector::kPseudoWebKitCustomElement:
@@ -225,7 +225,7 @@ InvalidationSet& StoredInvalidationSet(
 
   RefPtr<InvalidationSet> descendants = invalidation_set;
   invalidation_set = SiblingInvalidationSet::Create(
-      ToDescendantInvalidationSet(descendants.Get()));
+      ToDescendantInvalidationSet(descendants.get()));
   return *invalidation_set;
 }
 
@@ -276,8 +276,8 @@ RuleFeatureSet::~RuleFeatureSet() {
   attribute_invalidation_sets_.clear();
   id_invalidation_sets_.clear();
   pseudo_invalidation_sets_.clear();
-  universal_sibling_invalidation_set_.Clear();
-  nth_invalidation_set_.Clear();
+  universal_sibling_invalidation_set_ = nullptr;
+  nth_invalidation_set_ = nullptr;
 
   is_alive_ = false;
 }
@@ -430,6 +430,7 @@ InvalidationSet* RuleFeatureSet::InvalidationSetForSimpleSelector(
       case CSSSelector::kPseudoLang:
       case CSSSelector::kPseudoFullScreen:
       case CSSSelector::kPseudoFullScreenAncestor:
+      case CSSSelector::kPseudoFullscreen:
       case CSSSelector::kPseudoInRange:
       case CSSSelector::kPseudoOutOfRange:
       case CSSSelector::kPseudoUnresolved:
@@ -452,7 +453,7 @@ InvalidationSet* RuleFeatureSet::InvalidationSetForSimpleSelector(
   return nullptr;
 }
 
-void RuleFeatureSet::UpdateInvalidationSets(const RuleData& rule_data) {
+void RuleFeatureSet::UpdateInvalidationSets(RuleData& rule_data) {
   // Given a rule, update the descendant invalidation sets for the features
   // found in its selector. The first step is to extract the features from the
   // rightmost compound selector (extractInvalidationSetFeaturesFromCompound).
@@ -475,8 +476,12 @@ void RuleFeatureSet::UpdateInvalidationSets(const RuleData& rule_data) {
     features.force_subtree = true;
   if (features.has_nth_pseudo)
     AddFeaturesToInvalidationSet(EnsureNthInvalidationSet(), features);
-  if (features.has_before_or_after)
-    UpdateInvalidationSetsForContentAttribute(rule_data);
+  if (features.has_before_or_after) {
+    if (rule_data.Rule()->LazyParser())
+      rule_data.Rule()->LazyParser()->SetHasBeforeOrAfter();
+    UpdateInvalidationSetsForContentAttribute(
+        rule_data.Rule()->ParsedProperties());
+  }
 
   const CSSSelector* next_compound =
       last_in_compound ? last_in_compound->TagHistory() : &rule_data.Selector();
@@ -514,20 +519,20 @@ void RuleFeatureSet::UpdateRuleSetInvalidation(
 }
 
 void RuleFeatureSet::UpdateInvalidationSetsForContentAttribute(
-    const RuleData& rule_data) {
+    const StylePropertySet* property_set) {
   // If any ::before and ::after rules specify 'content: attr(...)', we
   // need to create invalidation sets for those attributes to have content
   // changes applied through style recalc.
+  if (!property_set)
+    return;
 
-  const StylePropertySet& property_set = rule_data.Rule()->Properties();
-
-  int property_index = property_set.FindPropertyIndex(CSSPropertyContent);
+  int property_index = property_set->FindPropertyIndex(CSSPropertyContent);
 
   if (property_index == -1)
     return;
 
   StylePropertySet::PropertyReference content_property =
-      property_set.PropertyAt(property_index);
+      property_set->PropertyAt(property_index);
   const CSSValue& content_value = content_property.Value();
 
   if (!content_value.IsValueList())
@@ -800,7 +805,7 @@ void RuleFeatureSet::AddFeaturesToInvalidationSets(
 }
 
 RuleFeatureSet::SelectorPreMatch RuleFeatureSet::CollectFeaturesFromRuleData(
-    const RuleData& rule_data) {
+    RuleData& rule_data) {
   CHECK(is_alive_);
   FeatureMetadata metadata;
   if (CollectFeaturesFromSelector(rule_data.Selector(), metadata) ==
@@ -932,8 +937,8 @@ void RuleFeatureSet::Clear() {
   attribute_invalidation_sets_.clear();
   id_invalidation_sets_.clear();
   pseudo_invalidation_sets_.clear();
-  universal_sibling_invalidation_set_.Clear();
-  nth_invalidation_set_.Clear();
+  universal_sibling_invalidation_set_ = nullptr;
+  nth_invalidation_set_ = nullptr;
   viewport_dependent_media_query_results_.clear();
   device_dependent_media_query_results_.clear();
 }
@@ -949,7 +954,7 @@ void RuleFeatureSet::CollectInvalidationSetsForClass(
 
   DescendantInvalidationSet* descendants;
   SiblingInvalidationSet* siblings;
-  ExtractInvalidationSets(it->value.Get(), descendants, siblings);
+  ExtractInvalidationSets(it->value.get(), descendants, siblings);
 
   if (descendants) {
     TRACE_SCHEDULE_STYLE_INVALIDATION(element, *descendants, ClassChange,
@@ -974,7 +979,7 @@ void RuleFeatureSet::CollectSiblingInvalidationSetForClass(
   if (it == class_invalidation_sets_.end())
     return;
 
-  InvalidationSet* invalidation_set = it->value.Get();
+  InvalidationSet* invalidation_set = it->value.get();
   if (invalidation_set->GetType() == kInvalidateDescendants)
     return;
 
@@ -998,7 +1003,7 @@ void RuleFeatureSet::CollectInvalidationSetsForId(
 
   DescendantInvalidationSet* descendants;
   SiblingInvalidationSet* siblings;
-  ExtractInvalidationSets(it->value.Get(), descendants, siblings);
+  ExtractInvalidationSets(it->value.get(), descendants, siblings);
 
   if (descendants) {
     TRACE_SCHEDULE_STYLE_INVALIDATION(element, *descendants, IdChange, id);
@@ -1020,7 +1025,7 @@ void RuleFeatureSet::CollectSiblingInvalidationSetForId(
   if (it == id_invalidation_sets_.end())
     return;
 
-  InvalidationSet* invalidation_set = it->value.Get();
+  InvalidationSet* invalidation_set = it->value.get();
   if (invalidation_set->GetType() == kInvalidateDescendants)
     return;
 
@@ -1044,7 +1049,7 @@ void RuleFeatureSet::CollectInvalidationSetsForAttribute(
 
   DescendantInvalidationSet* descendants;
   SiblingInvalidationSet* siblings;
-  ExtractInvalidationSets(it->value.Get(), descendants, siblings);
+  ExtractInvalidationSets(it->value.get(), descendants, siblings);
 
   if (descendants) {
     TRACE_SCHEDULE_STYLE_INVALIDATION(element, *descendants, AttributeChange,
@@ -1069,7 +1074,7 @@ void RuleFeatureSet::CollectSiblingInvalidationSetForAttribute(
   if (it == attribute_invalidation_sets_.end())
     return;
 
-  InvalidationSet* invalidation_set = it->value.Get();
+  InvalidationSet* invalidation_set = it->value.get();
   if (invalidation_set->GetType() == kInvalidateDescendants)
     return;
 
@@ -1094,7 +1099,7 @@ void RuleFeatureSet::CollectInvalidationSetsForPseudoClass(
 
   DescendantInvalidationSet* descendants;
   SiblingInvalidationSet* siblings;
-  ExtractInvalidationSets(it->value.Get(), descendants, siblings);
+  ExtractInvalidationSets(it->value.get(), descendants, siblings);
 
   if (descendants) {
     TRACE_SCHEDULE_STYLE_INVALIDATION(element, *descendants, PseudoChange,

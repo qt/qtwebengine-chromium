@@ -34,7 +34,6 @@
 #include <memory>
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8BindingForCore.h"
-#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/dom/Document.h"
 #include "core/frame/ContentSettingsClient.h"
 #include "core/frame/Deprecation.h"
@@ -52,9 +51,9 @@
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
+#include "core/loader/IdlenessDetector.h"
 #include "core/loader/MixedContentChecker.h"
 #include "core/loader/NetworkHintsInterface.h"
-#include "core/loader/NetworkQuietDetector.h"
 #include "core/loader/PingLoader.h"
 #include "core/loader/ProgressTracker.h"
 #include "core/loader/SubresourceFilter.h"
@@ -68,15 +67,16 @@
 #include "core/timing/Performance.h"
 #include "core/timing/PerformanceBase.h"
 #include "platform/WebFrameScheduler.h"
+#include "platform/bindings/V8DOMActivityLogger.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
 #include "platform/loader/fetch/ClientHintsPreferences.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/Resource.h"
 #include "platform/loader/fetch/ResourceLoadPriority.h"
 #include "platform/loader/fetch/ResourceLoadingLog.h"
 #include "platform/loader/fetch/ResourceTimingInfo.h"
 #include "platform/loader/fetch/UniqueIdentifier.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/mhtml/MHTMLArchive.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/scheduler/renderer/web_view_scheduler.h"
@@ -87,6 +87,7 @@
 #include "public/platform/WebCachePolicy.h"
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerNetworkProvider.h"
+#include "third_party/WebKit/common/device_memory/approximated_device_memory.h"
 
 namespace blink {
 
@@ -223,6 +224,24 @@ struct FrameFetchContext::FrozenState final
   DEFINE_INLINE_TRACE() { visitor->Trace(content_security_policy); }
 };
 
+ResourceFetcher* FrameFetchContext::CreateFetcher(DocumentLoader* loader,
+                                                  Document* document) {
+  FrameFetchContext* context = new FrameFetchContext(loader, document);
+  ResourceFetcher* fetcher = ResourceFetcher::Create(context);
+
+  if (loader && context->GetSettings()->GetSavePreviousDocumentResources() !=
+                    SavePreviousDocumentResources::kNever) {
+    if (Document* previous_document = context->GetFrame()->GetDocument()) {
+      if (previous_document->IsSecureTransitionTo(loader->Url())) {
+        fetcher->HoldResourcesFromPreviousFetcher(
+            previous_document->Loader()->Fetcher());
+      }
+    }
+  }
+
+  return fetcher;
+}
+
 FrameFetchContext::FrameFetchContext(DocumentLoader* loader, Document* document)
     : document_loader_(loader), document_(document) {
   DCHECK(GetFrame());
@@ -266,8 +285,10 @@ LocalFrame* FrameFetchContext::FrameOfImportsController() const {
   return frame;
 }
 
-RefPtr<WebTaskRunner> FrameFetchContext::GetTaskRunner() const {
-  return GetFrame()->FrameScheduler()->LoadingTaskRunner();
+RefPtr<WebTaskRunner> FrameFetchContext::GetLoadingTaskRunner() {
+  if (IsDetached())
+    return FetchContext::GetLoadingTaskRunner();
+  return TaskRunnerHelper::Get(TaskType::kNetworking, GetFrame());
 }
 
 WebFrameScheduler* FrameFetchContext::GetFrameScheduler() {
@@ -314,10 +335,10 @@ void FrameFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
 
   // Reload should reflect the current data saver setting.
   if (IsReloadLoadType(MasterDocumentLoader()->LoadType()))
-    request.ClearHTTPHeaderField("Save-Data");
+    request.ClearHTTPHeaderField(HTTPNames::Save_Data);
 
   if (GetSettings() && GetSettings()->GetDataSaverEnabled())
-    request.SetHTTPHeaderField("Save-Data", "on");
+    request.SetHTTPHeaderField(HTTPNames::Save_Data, "on");
 
   if (GetLocalFrameClient()->IsClientLoFiActiveForFrame()) {
     request.AddHTTPHeaderField(
@@ -427,6 +448,7 @@ void FrameFetchContext::DispatchWillSendRequest(
     unsigned long identifier,
     ResourceRequest& request,
     const ResourceResponse& redirect_response,
+    Resource::Type resource_type,
     const FetchInitiatorInfo& initiator_info) {
   if (IsDetached())
     return;
@@ -439,7 +461,9 @@ void FrameFetchContext::DispatchWillSendRequest(
   }
   probe::willSendRequest(GetFrame()->GetDocument(), identifier,
                          MasterDocumentLoader(), request, redirect_response,
-                         initiator_info);
+                         initiator_info, resource_type);
+  if (IdlenessDetector* idleness_detector = GetFrame()->GetIdlenessDetector())
+    idleness_detector->OnWillSendRequest();
   if (GetFrame()->FrameScheduler())
     GetFrame()->FrameScheduler()->DidStartLoading(identifier);
 }
@@ -489,6 +513,11 @@ void FrameFetchContext::DispatchDidReceiveResponse(
   if (response.HasMajorCertificateErrors()) {
     MixedContentChecker::HandleCertificateError(GetFrame(), response,
                                                 frame_type, request_context);
+  }
+
+  if (response.IsLegacySymantecCert()) {
+    GetLocalFrameClient()->ReportLegacySymantecCert(
+        response.Url(), response.CertValidityStart());
   }
 
   GetFrame()->Loader().Progress().IncrementProgress(identifier, response);
@@ -632,7 +661,12 @@ void FrameFetchContext::DidLoadResource(Resource* resource) {
   if (!document_)
     return;
   FirstMeaningfulPaintDetector::From(*document_).CheckNetworkStable();
-  NetworkQuietDetector::From(*document_).CheckNetworkStable();
+  if (LocalFrame* local_frame = document_->GetFrame()) {
+    if (IdlenessDetector* idleness_detector =
+            local_frame->GetIdlenessDetector()) {
+      idleness_detector->OnDidLoadResource();
+    }
+  }
 
   if (resource->IsLoadEventBlockingResourceType())
     document_->CheckCompleted();
@@ -747,7 +781,7 @@ void FrameFetchContext::SendImagePing(const KURL& url) {
 
 SecurityOrigin* FrameFetchContext::GetSecurityOrigin() const {
   if (IsDetached())
-    return frozen_state_->security_origin.Get();
+    return frozen_state_->security_origin.get();
   return document_ ? document_->GetSecurityOrigin() : nullptr;
 }
 
@@ -768,20 +802,33 @@ void FrameFetchContext::AddClientHintsIfNecessary(
   if (!RuntimeEnabledFeatures::ClientHintsEnabled())
     return;
 
+  WebEnabledClientHints enabled_hints;
+  if (blink::RuntimeEnabledFeatures::ClientHintsPersistentEnabled() &&
+      GetContentSettingsClient()) {
+    // TODO(tbansal): crbug.com/735518 This code path is not executed for main
+    // frame navigations when browser side navigation is enabled. For main frame
+    // requests with browser side navigation enabled, the client hints should be
+    // attached by the browser process.
+    GetContentSettingsClient()->GetAllowedClientHintsFromSource(request.Url(),
+                                                                &enabled_hints);
+  }
+
   if (ShouldSendClientHint(mojom::WebClientHintsType::kDeviceMemory,
-                           hints_preferences)) {
+                           hints_preferences, enabled_hints)) {
     request.AddHTTPHeaderField(
         "Device-Memory",
-        AtomicString(
-            String::Number(MemoryCoordinator::GetApproximatedDeviceMemory())));
+        AtomicString(String::Number(
+            ApproximatedDeviceMemory::GetApproximatedDeviceMemory())));
   }
 
   float dpr = GetDevicePixelRatio();
-  if (ShouldSendClientHint(mojom::WebClientHintsType::kDpr, hints_preferences))
+  if (ShouldSendClientHint(mojom::WebClientHintsType::kDpr, hints_preferences,
+                           enabled_hints)) {
     request.AddHTTPHeaderField("DPR", AtomicString(String::Number(dpr)));
+  }
 
   if (ShouldSendClientHint(mojom::WebClientHintsType::kResourceWidth,
-                           hints_preferences)) {
+                           hints_preferences, enabled_hints)) {
     if (resource_width.is_set) {
       float physical_width = resource_width.width * dpr;
       request.AddHTTPHeaderField(
@@ -790,7 +837,7 @@ void FrameFetchContext::AddClientHintsIfNecessary(
   }
 
   if (ShouldSendClientHint(mojom::WebClientHintsType::kViewportWidth,
-                           hints_preferences) &&
+                           hints_preferences, enabled_hints) &&
       !IsDetached() && GetFrame()->View()) {
     request.AddHTTPHeaderField(
         "Viewport-Width",
@@ -881,12 +928,13 @@ bool FrameFetchContext::ShouldBlockRequestByInspector(const KURL& url) const {
 void FrameFetchContext::DispatchDidBlockRequest(
     const ResourceRequest& resource_request,
     const FetchInitiatorInfo& fetch_initiator_info,
-    ResourceRequestBlockedReason blocked_reason) const {
+    ResourceRequestBlockedReason blocked_reason,
+    Resource::Type resource_type) const {
   if (IsDetached())
     return;
   probe::didBlockRequest(GetFrame()->GetDocument(), resource_request,
                          MasterDocumentLoader(), fetch_initiator_info,
-                         blocked_reason);
+                         blocked_reason, resource_type);
 }
 
 bool FrameFetchContext::ShouldBypassMainWorldCSP() const {
@@ -986,7 +1034,7 @@ const KURL& FrameFetchContext::Url() const {
 
 const SecurityOrigin* FrameFetchContext::GetParentSecurityOrigin() const {
   if (IsDetached())
-    return frozen_state_->parent_security_origin.Get();
+    return frozen_state_->parent_security_origin.get();
   Frame* parent = GetFrame()->Tree().Parent();
   if (!parent)
     return nullptr;
@@ -1083,9 +1131,10 @@ float FrameFetchContext::GetDevicePixelRatio() const {
 
 bool FrameFetchContext::ShouldSendClientHint(
     mojom::WebClientHintsType type,
-    const ClientHintsPreferences& hints_preferences) const {
+    const ClientHintsPreferences& hints_preferences,
+    const WebEnabledClientHints& enabled_hints) const {
   return GetClientHintsPreferences().ShouldSend(type) ||
-         hints_preferences.ShouldSend(type);
+         hints_preferences.ShouldSend(type) || enabled_hints.IsEnabled(type);
 }
 
 void FrameFetchContext::ParseAndPersistClientHints(
@@ -1105,19 +1154,9 @@ void FrameFetchContext::ParseAndPersistClientHints(
 }
 
 std::unique_ptr<WebURLLoader> FrameFetchContext::CreateURLLoader(
-    const ResourceRequest& request) {
+    const ResourceRequest& request,
+    WebTaskRunner* task_runner) {
   DCHECK(!IsDetached());
-
-  RefPtr<WebTaskRunner> task_runner;
-  if (request.GetKeepalive()) {
-    // The loader should be able to work after the frame destruction, so we
-    // cannot use the task runner associated with the frame.
-    task_runner =
-        Platform::Current()->CurrentThread()->Scheduler()->LoadingTaskRunner();
-  } else {
-    task_runner = GetTaskRunner();
-  }
-
   if (MasterDocumentLoader()->GetServiceWorkerNetworkProvider()) {
     WrappedResourceRequest webreq(request);
     auto loader =
@@ -1128,7 +1167,7 @@ std::unique_ptr<WebURLLoader> FrameFetchContext::CreateURLLoader(
       return loader;
   }
 
-  return GetFrame()->CreateURLLoader(request, task_runner.Get());
+  return GetFrame()->CreateURLLoader(request, task_runner);
 }
 
 FetchContext* FrameFetchContext::Detach() {

@@ -25,6 +25,7 @@
 #include "components/previews/core/previews_black_list.h"
 #include "components/previews/core/previews_black_list_item.h"
 #include "components/previews/core/previews_experiments.h"
+#include "components/previews/core/previews_logger.h"
 #include "components/previews/core/previews_opt_out_store.h"
 #include "components/previews/core/previews_ui_service.h"
 #include "components/variations/variations_associated_data.h"
@@ -49,6 +50,7 @@ bool IsPreviewFieldTrialEnabled(PreviewsType type) {
   switch (type) {
     case PreviewsType::OFFLINE:
     case PreviewsType::LITE_PAGE:
+    case PreviewsType::AMP_REDIRECTION:
       return params::IsOfflinePreviewsEnabled();
     case PreviewsType::LOFI:
       return params::IsClientLoFiEnabled();
@@ -59,6 +61,53 @@ bool IsPreviewFieldTrialEnabled(PreviewsType type) {
   NOTREACHED();
   return false;
 }
+
+// Stub class of PreviewsUIService to test logging functionalities in
+// PreviewsIOData.
+class TestPreviewsUIService : public PreviewsUIService {
+ public:
+  TestPreviewsUIService(
+      PreviewsIOData* previews_io_data,
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner,
+      std::unique_ptr<PreviewsOptOutStore> previews_opt_out_store,
+      const PreviewsIsEnabledCallback& is_enabled_callback,
+      std::unique_ptr<PreviewsLogger> logger)
+      : PreviewsUIService(previews_io_data,
+                          io_task_runner,
+                          std::move(previews_opt_out_store),
+                          is_enabled_callback,
+                          std::move(logger)),
+        type_(PreviewsType::NONE) {}
+
+  // Return the passed in url.
+  GURL url() const { return url_; }
+
+  // Return the passed in opt_out.
+  bool opt_out() const { return opt_out_; }
+
+  // Return the passed in type.
+  PreviewsType type() const { return type_; }
+
+  // Return the passed in time.
+  base::Time time() const { return time_; }
+
+ private:
+  // PreviewsUIService:
+  void LogPreviewNavigation(const GURL& url,
+                            PreviewsType type,
+                            bool opt_out,
+                            base::Time time) override {
+    url_ = url;
+    opt_out_ = opt_out;
+    type_ = type;
+    time_ = base::Time(time);
+  }
+
+  GURL url_;
+  bool opt_out_;
+  PreviewsType type_;
+  base::Time time_;
+};
 
 class TestPreviewsIOData : public PreviewsIOData {
  public:
@@ -135,10 +184,11 @@ class PreviewsIODataTest : public testing::Test {
   }
 
   void InitializeUIServiceWithoutWaitingForBlackList() {
-    ui_service_.reset(new PreviewsUIService(
-        &io_data_, loop_.task_runner(),
-        std::unique_ptr<TestPreviewsOptOutStore>(new TestPreviewsOptOutStore()),
-        base::Bind(&IsPreviewFieldTrialEnabled)));
+    ui_service_.reset(
+        new TestPreviewsUIService(&io_data_, loop_.task_runner(),
+                                  base::MakeUnique<TestPreviewsOptOutStore>(),
+                                  base::Bind(&IsPreviewFieldTrialEnabled),
+                                  base::MakeUnique<PreviewsLogger>()));
   }
 
   void InitializeUIService() {
@@ -147,13 +197,16 @@ class PreviewsIODataTest : public testing::Test {
   }
 
   std::unique_ptr<net::URLRequest> CreateRequest() const {
-    return context_.CreateRequest(GURL("http://example.com"),
-                                  net::DEFAULT_PRIORITY, nullptr,
+    return CreateRequestWithURL(GURL("http://example.com"));
+  }
+
+  std::unique_ptr<net::URLRequest> CreateRequestWithURL(const GURL& url) const {
+    return context_.CreateRequest(url, net::DEFAULT_PRIORITY, nullptr,
                                   TRAFFIC_ANNOTATION_FOR_TESTS);
   }
 
   TestPreviewsIOData* io_data() { return &io_data_; }
-  PreviewsUIService* ui_service() { return ui_service_.get(); }
+  TestPreviewsUIService* ui_service() { return ui_service_.get(); }
   net::TestURLRequestContext* context() { return &context_; }
   net::TestNetworkQualityEstimator* network_quality_estimator() {
     return &network_quality_estimator_;
@@ -165,7 +218,7 @@ class PreviewsIODataTest : public testing::Test {
  private:
   base::FieldTrialList field_trial_list_;
   TestPreviewsIOData io_data_;
-  std::unique_ptr<PreviewsUIService> ui_service_;
+  std::unique_ptr<TestPreviewsUIService> ui_service_;
   net::TestNetworkQualityEstimator network_quality_estimator_;
   net::TestURLRequestContext context_;
 };
@@ -380,6 +433,21 @@ TEST_F(PreviewsIODataTest, ClientLoFiAllowed) {
   variations::testing::ClearAllVariationParams();
 }
 
+TEST_F(PreviewsIODataTest, MissingHostDisallowed) {
+  InitializeUIService();
+  CreateFieldTrialWithParams("PreviewsClientLoFi", "Enabled",
+                             {{"max_allowed_effective_connection_type", "2G"}});
+
+  network_quality_estimator()->set_effective_connection_type(
+      net::EFFECTIVE_CONNECTION_TYPE_2G);
+
+  EXPECT_FALSE(io_data()->ShouldAllowPreviewAtECT(
+      *CreateRequestWithURL(GURL("file:///sdcard")), PreviewsType::LOFI,
+      params::EffectiveConnectionTypeThresholdForClientLoFi(),
+      params::GetBlackListedHostsForClientLoFiFieldTrial()));
+  variations::testing::ClearAllVariationParams();
+}
+
 TEST_F(PreviewsIODataTest, ClientLoFiAllowedOnReload) {
   InitializeUIService();
   CreateFieldTrialWithParams("PreviewsClientLoFi", "Enabled",
@@ -444,6 +512,22 @@ TEST_F(PreviewsIODataTest, ClientLoFiObeysHostBlackListFromServer) {
         1);
   }
   variations::testing::ClearAllVariationParams();
+}
+
+TEST_F(PreviewsIODataTest, LogPreviewNavigationPassInCorrectParams) {
+  InitializeUIService();
+  GURL url("http://www.url_a.com/url_a");
+  bool opt_out = true;
+  PreviewsType type = PreviewsType::OFFLINE;
+  base::Time time = base::Time::Now();
+
+  io_data()->LogPreviewNavigation(url, opt_out, type, time);
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(url, ui_service()->url());
+  EXPECT_EQ(opt_out, ui_service()->opt_out());
+  EXPECT_EQ(type, ui_service()->type());
+  EXPECT_EQ(time, ui_service()->time());
 }
 
 }  // namespace

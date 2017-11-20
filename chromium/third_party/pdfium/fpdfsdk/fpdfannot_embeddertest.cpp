@@ -306,11 +306,11 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndSaveUnderlineAnnotation) {
 }
 
 TEST_F(FPDFAnnotEmbeddertest, ModifyRectQuadpointsWithAP) {
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_original[] = "63af8432fab95a67cdebb7cd0e514941";
   const char md5_modified_highlight[] = "aec26075011349dec9bace891856b5f2";
   const char md5_modified_square[] = "057f57a32be95975775e5ec513fdcb56";
-#elif _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   const char md5_original[] = "ade6762a70e85605546ce067e7d2148f";
   const char md5_modified_highlight[] = "fb8440ed1a070b53ed5598ce7451cfad";
   const char md5_modified_square[] = "7925f6726b343393f258e8b4e93dd65d";
@@ -481,21 +481,21 @@ TEST_F(FPDFAnnotEmbeddertest, RemoveAnnotation) {
 }
 
 TEST_F(FPDFAnnotEmbeddertest, AddAndModifyPath) {
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_original[] = "c35408717759562d1f8bf33d317483d2";
   const char md5_modified_path[] = "cf3cea74bd46497520ff6c4d1ea228c8";
   const char md5_two_paths[] = "e8994452fc4385337bae5522354e10ff";
   const char md5_new_annot[] = "ee5372b31fede117fc83b9384598aa25";
-#elif _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
   const char md5_modified_path[] = "681f0d0738dded0722e146f6c219bfac";
   const char md5_two_paths[] = "67c7e90fc3b64e20f6b69a1744f7f4f0";
   const char md5_new_annot[] = "262187984451bae2fe826067d68623ff";
 #else
-  const char md5_original[] = "02e1c6adff8fee4aeabd91c2c2e4be43";
-  const char md5_modified_path[] = "87a78cbacd8509b961a67be56b5665a2";
-  const char md5_two_paths[] = "76e985c18b73ceacf409f77f978176d4";
-  const char md5_new_annot[] = "c95de7a9a1f61faca03d953961a319b9";
+  const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
+  const char md5_modified_path[] = "681f0d0738dded0722e146f6c219bfac";
+  const char md5_two_paths[] = "67c7e90fc3b64e20f6b69a1744f7f4f0";
+  const char md5_new_annot[] = "262187984451bae2fe826067d68623ff";
 #endif
 
   // Open a file with two annotations and load its first page.
@@ -660,18 +660,18 @@ TEST_F(FPDFAnnotEmbeddertest, ModifyAnnotationFlags) {
 }
 
 TEST_F(FPDFAnnotEmbeddertest, AddAndModifyImage) {
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_original[] = "c35408717759562d1f8bf33d317483d2";
   const char md5_new_image[] = "ff012f5697436dfcaec25b32d1333596";
   const char md5_modified_image[] = "86cf8cb2755a7a2046a543e66d9c1e61";
-#elif _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
   const char md5_new_image[] = "6fb176c20996cc554d0210d8c8b6138f";
   const char md5_modified_image[] = "546959714dfb0dcd7e7b00259e8d178c";
 #else
-  const char md5_original[] = "02e1c6adff8fee4aeabd91c2c2e4be43";
-  const char md5_new_image[] = "e7658232abd8977cdc3367dd02aee04a";
-  const char md5_modified_image[] = "f393432b9a9b452ea69022f46c8b3f75";
+  const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
+  const char md5_new_image[] = "6fb176c20996cc554d0210d8c8b6138f";
+  const char md5_modified_image[] = "546959714dfb0dcd7e7b00259e8d178c";
 #endif
 
   // Open a file with two annotations and load its first page.
@@ -739,18 +739,18 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndModifyImage) {
 }
 
 TEST_F(FPDFAnnotEmbeddertest, AddAndModifyText) {
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_original[] = "c35408717759562d1f8bf33d317483d2";
   const char md5_new_text[] = "e5680ed048c2cfd9a1d27212cdf41286";
   const char md5_modified_text[] = "79f5cfb0b07caaf936f65f6a7a57ce77";
-#elif _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
   const char md5_new_text[] = "998abae4962f8f41e094e7612d8339fc";
   const char md5_modified_text[] = "e89b82ca4589b8f0b45fff42ca3a96a4";
 #else
-  const char md5_original[] = "02e1c6adff8fee4aeabd91c2c2e4be43";
-  const char md5_new_text[] = "3fbbaec4d846ccf2be89e09daae0273d";
-  const char md5_modified_text[] = "2ad0acaf2d8990bcdf48e1d12e6c44ad";
+  const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
+  const char md5_new_text[] = "998abae4962f8f41e094e7612d8339fc";
+  const char md5_modified_text[] = "e89b82ca4589b8f0b45fff42ca3a96a4";
 #endif
 
   // Open a file with two annotations and load its first page.
@@ -871,12 +871,12 @@ TEST_F(FPDFAnnotEmbeddertest, GetSetStringValue) {
   FPDF_ClosePage(page);
 
   // Open the saved annotation.
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "4d64e61c9c0f8c60ab3cc3234bb73b1c";
-#elif _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   const char md5[] = "0e3710ea6476f5bcba2cd39eb42d54e2";
 #else
-  const char md5[] = "831a3c465a56d2e0c89aef7bdf15306a";
+  const char md5[] = "0e3710ea6476f5bcba2cd39eb42d54e2";
 #endif
   TestSaved(595, 842, md5);
   FPDF_ANNOTATION new_annot = FPDFPage_GetAnnot(m_SavedPage, 0);

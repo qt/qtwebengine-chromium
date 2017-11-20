@@ -30,9 +30,9 @@
 #ifndef DOMSelection_h
 #define DOMSelection_h
 
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ContextLifecycleObserver.h"
-#include "core/editing/Position.h"
-#include "core/editing/VisibleSelection.h"
+#include "core/editing/Forward.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Forward.h"
@@ -111,7 +111,7 @@ class CORE_EXPORT DOMSelection final : public GarbageCollected<DOMSelection>,
 
   void UpdateFrameSelection(const SelectionInDOMTree&, Range*) const;
   // Convenience methods for accessors, does not check m_frame present.
-  const VisibleSelection& GetVisibleSelection() const;
+  VisibleSelection GetVisibleSelection() const;
   bool IsBaseFirstInSelection() const;
   const Position& AnchorPosition() const;
 

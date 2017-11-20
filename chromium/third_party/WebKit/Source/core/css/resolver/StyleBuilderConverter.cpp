@@ -30,7 +30,6 @@
 
 #include "build/build_config.h"
 #include "core/css/BasicShapeFunctions.h"
-#include "core/css/CSSBasicShapeValues.h"
 #include "core/css/CSSColorValue.h"
 #include "core/css/CSSContentDistributionValue.h"
 #include "core/css/CSSCustomIdentValue.h"
@@ -38,29 +37,20 @@
 #include "core/css/CSSFontFeatureValue.h"
 #include "core/css/CSSFontStyleRangeValue.h"
 #include "core/css/CSSFontVariationValue.h"
-#include "core/css/CSSFunctionValue.h"
 #include "core/css/CSSGridAutoRepeatValue.h"
-#include "core/css/CSSGridLineNamesValue.h"
-#include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSPathValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSQuadValue.h"
 #include "core/css/CSSReflectValue.h"
 #include "core/css/CSSShadowValue.h"
-#include "core/css/CSSStringValue.h"
 #include "core/css/CSSURIValue.h"
-#include "core/css/CSSValuePair.h"
 #include "core/css/resolver/FilterOperationResolver.h"
+#include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/TransformBuilder.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
-#include "core/style/ClipPathOperation.h"
-#include "core/style/TextSizeAdjust.h"
+#include "core/style/ComputedStyle.h"
 #include "core/svg/SVGURIReference.h"
-#include "platform/fonts/FontCache.h"
-#include "platform/transforms/RotateTransformOperation.h"
-#include "platform/transforms/ScaleTransformOperation.h"
-#include "platform/transforms/TranslateTransformOperation.h"
 
 namespace blink {
 
@@ -235,7 +225,7 @@ FontDescription::FamilyDescription StyleBuilderConverterBase::ConvertFontFamily(
     } else {
       RefPtr<SharedFontFamily> new_family = SharedFontFamily::Create();
       curr_family->AppendFamily(new_family);
-      curr_family = new_family.Get();
+      curr_family = new_family.get();
     }
 
     curr_family->SetFamily(family_name);
@@ -638,6 +628,52 @@ FontVariantNumeric StyleBuilderConverter::ConvertFontVariantNumeric(
   return variant_numeric;
 }
 
+FontVariantEastAsian StyleBuilderConverter::ConvertFontVariantEastAsian(
+    StyleResolverState&,
+    const CSSValue& value) {
+  if (value.IsIdentifierValue()) {
+    DCHECK_EQ(ToCSSIdentifierValue(value).GetValueID(), CSSValueNormal);
+    return FontVariantEastAsian();
+  }
+
+  FontVariantEastAsian variant_east_asian;
+  for (const CSSValue* feature : ToCSSValueList(value)) {
+    switch (ToCSSIdentifierValue(feature)->GetValueID()) {
+      case CSSValueJis78:
+        variant_east_asian.SetForm(FontVariantEastAsian::kJis78);
+        break;
+      case CSSValueJis83:
+        variant_east_asian.SetForm(FontVariantEastAsian::kJis83);
+        break;
+      case CSSValueJis90:
+        variant_east_asian.SetForm(FontVariantEastAsian::kJis90);
+        break;
+      case CSSValueJis04:
+        variant_east_asian.SetForm(FontVariantEastAsian::kJis04);
+        break;
+      case CSSValueSimplified:
+        variant_east_asian.SetForm(FontVariantEastAsian::kSimplified);
+        break;
+      case CSSValueTraditional:
+        variant_east_asian.SetForm(FontVariantEastAsian::kTraditional);
+        break;
+      case CSSValueFullWidth:
+        variant_east_asian.SetWidth(FontVariantEastAsian::kFullWidth);
+        break;
+      case CSSValueProportionalWidth:
+        variant_east_asian.SetWidth(FontVariantEastAsian::kProportionalWidth);
+        break;
+      case CSSValueRuby:
+        variant_east_asian.SetRuby(true);
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
+  }
+  return variant_east_asian;
+}
+
 StyleSelfAlignmentData StyleBuilderConverter::ConvertSelfOrDefaultAlignmentData(
     StyleResolverState&,
     const CSSValue& value) {
@@ -672,26 +708,6 @@ StyleContentAlignmentData StyleBuilderConverter::ConvertContentAlignmentData(
     const CSSValue& value) {
   StyleContentAlignmentData alignment_data =
       ComputedStyle::InitialContentAlignment();
-  if (!RuntimeEnabledFeatures::CSSGridLayoutEnabled()) {
-    const CSSIdentifierValue& identifier_value = ToCSSIdentifierValue(value);
-    switch (identifier_value.GetValueID()) {
-      case CSSValueStretch:
-      case CSSValueSpaceBetween:
-      case CSSValueSpaceAround:
-        alignment_data.SetDistribution(
-            identifier_value.ConvertTo<ContentDistributionType>());
-        break;
-      case CSSValueFlexStart:
-      case CSSValueFlexEnd:
-      case CSSValueCenter:
-        alignment_data.SetPosition(
-            identifier_value.ConvertTo<ContentPosition>());
-        break;
-      default:
-        NOTREACHED();
-    }
-    return alignment_data;
-  }
   const CSSContentDistributionValue& content_value =
       ToCSSContentDistributionValue(value);
   if (content_value.Distribution()->GetValueID() != CSSValueInvalid)
@@ -1613,6 +1629,11 @@ const CSSValue& StyleBuilderConverter::ConvertRegisteredPropertyValue(
     const CSSValue& value) {
   return ComputeRegisteredPropertyValue(state.CssToLengthConversionData(),
                                         value);
+}
+
+const CSSToLengthConversionData&
+StyleBuilderConverter::CssToLengthConversionData(StyleResolverState& state) {
+  return state.CssToLengthConversionData();
 }
 
 }  // namespace blink

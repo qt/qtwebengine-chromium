@@ -27,14 +27,15 @@
 #include "core/editing/commands/RemoveFormatCommand.h"
 
 #include "core/CSSValueKeywords.h"
-#include "core/HTMLNames.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/editing/EditingStyle.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/VisibleSelection.h"
 #include "core/editing/commands/ApplyStyleCommand.h"
 #include "core/frame/LocalFrame.h"
+#include "core/html_names.h"
 
 namespace blink {
 
@@ -57,10 +58,9 @@ static bool IsElementForRemoveFormatCommand(const Element* element) {
 
 void RemoveFormatCommand::DoApply(EditingState* editing_state) {
   LocalFrame* frame = GetDocument().GetFrame();
-
-  if (!frame->Selection()
-           .ComputeVisibleSelectionInDOMTreeDeprecated()
-           .IsNonOrphanedCaretOrRange())
+  const VisibleSelection selection =
+      frame->Selection().ComputeVisibleSelectionInDOMTreeDeprecated();
+  if (selection.IsNone() || !selection.IsValidFor(GetDocument()))
     return;
 
   // Get the default style for this editable root, it's the style that we'll

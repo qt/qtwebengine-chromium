@@ -27,7 +27,7 @@
 
 #include "SkMatrix44.h"
 #include "core/dom/AccessibleNode.h"
-#include "core/html/HTMLSelectElement.h"
+#include "core/html/forms/HTMLSelectElement.h"
 #include "modules/accessibility/AXMenuList.h"
 #include "modules/accessibility/AXMenuListPopup.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
@@ -75,7 +75,7 @@ AXObject* AXMenuListOption::ComputeParent() const {
   Node* node = GetNode();
   if (!node)
     return nullptr;
-  HTMLSelectElement* select = toHTMLOptionElement(node)->OwnerSelectElement();
+  HTMLSelectElement* select = ToHTMLOptionElement(node)->OwnerSelectElement();
   if (!select)
     return nullptr;
   AXObject* select_ax_object = AxObjectCache().GetOrCreate(select);
@@ -190,8 +190,8 @@ HTMLSelectElement* AXMenuListOption::ParentSelectNode() const {
   if (!GetNode())
     return 0;
 
-  if (isHTMLOptionElement(GetNode()))
-    return toHTMLOptionElement(GetNode())->OwnerSelectElement();
+  if (auto* option = ToHTMLOptionElementOrNull(GetNode()))
+    return option->OwnerSelectElement();
 
   return 0;
 }

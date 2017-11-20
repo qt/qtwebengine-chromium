@@ -12,6 +12,7 @@
 #include "libANGLE/Buffer.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Error.h"
+#include "libANGLE/ErrorStrings.h"
 #include "libANGLE/Fence.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/Query.h"
@@ -312,7 +313,7 @@ void GL_APIENTRY FinishFenceNV(GLuint fence)
             return;
         }
 
-        fenceObject->finish();
+        context->handleError(fenceObject->finish());
     }
 }
 
@@ -665,6 +666,12 @@ void GL_APIENTRY VertexAttribDivisorANGLE(GLuint index, GLuint divisor)
     Context *context = GetValidGlobalContext();
     if (context)
     {
+        if (!context->getExtensions().instancedArrays)
+        {
+            ANGLE_VALIDATION_ERR(context, InvalidOperation(), ExtensionNotEnabled);
+            return;
+        }
+
         if (index >= MAX_VERTEX_ATTRIBS)
         {
             context->handleError(InvalidValue());

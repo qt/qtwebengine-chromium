@@ -27,12 +27,12 @@
 #include "public/platform/WebCORSPreflightResultCache.h"
 
 #include <memory>
-#include "base/lazy_instance.h"
-#include "platform/HTTPNames.h"
+#include "platform/http_names.h"
 #include "platform/loader/fetch/FetchUtils.h"
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/StdLibExtras.h"
+#include "platform/wtf/ThreadSpecific.h"
 #include "public/platform/WebCORS.h"
 
 namespace blink {
@@ -91,9 +91,6 @@ bool ParseAccessControlAllowList(const std::string& string, SetType& set) {
 
   return true;
 }
-
-static base::LazyInstance<WebCORSPreflightResultCache>::Leaky lazy_cache_ptr_ =
-    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -167,7 +164,11 @@ bool WebCORSPreflightResultCacheItem::AllowsCrossOriginMethod(
     const WebString& method,
     WebString& error_description) const {
   if (methods_.find(method.Ascii().data()) != methods_.end() ||
-      FetchUtils::IsCORSSafelistedMethod(method))
+      FetchUtils::IsCORSSafelistedMethod(method)) {
+    return true;
+  }
+
+  if (!credentials_ && methods_.find("*") != methods_.end())
     return true;
 
   error_description.Assign(WebString::FromASCII("Method " + method.Ascii() +
@@ -181,6 +182,9 @@ bool WebCORSPreflightResultCacheItem::AllowsCrossOriginMethod(
 bool WebCORSPreflightResultCacheItem::AllowsCrossOriginHeaders(
     const WebHTTPHeaderMap& request_headers,
     WebString& error_description) const {
+  if (!credentials_ && headers_.find("*") != headers_.end())
+    return true;
+
   for (const auto& header : request_headers.GetHTTPHeaderMap()) {
     if (headers_.find(header.key.Ascii().data()) == headers_.end() &&
         !FetchUtils::IsCORSSafelistedHeader(header.key, header.value) &&
@@ -214,10 +218,13 @@ bool WebCORSPreflightResultCacheItem::AllowsRequest(
 }
 
 WebCORSPreflightResultCache& WebCORSPreflightResultCache::Shared() {
-  return lazy_cache_ptr_.Get();
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<WebCORSPreflightResultCache>,
+                                  cache, ());
+  return *cache;
 }
 
-WebCORSPreflightResultCache::~WebCORSPreflightResultCache() {}
+WebCORSPreflightResultCache::WebCORSPreflightResultCache() = default;
+WebCORSPreflightResultCache::~WebCORSPreflightResultCache() = default;
 
 void WebCORSPreflightResultCache::AppendEntry(
     const WebString& web_origin,

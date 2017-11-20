@@ -5,7 +5,7 @@
 #ifndef CSSUnparsedValue_h
 #define CSSUnparsedValue_h
 
-#include "bindings/core/v8/StringOrCSSVariableReferenceValue.h"
+#include "bindings/core/v8/string_or_css_variable_reference_value.h"
 #include "core/css/CSSVariableReferenceValue.h"
 #include "core/css/cssom/CSSStyleValue.h"
 #include "platform/wtf/Vector.h"
@@ -47,7 +47,7 @@ class CORE_EXPORT CSSUnparsedValue final : public CSSStyleValue {
  private:
   static CSSUnparsedValue* FromString(String string) {
     HeapVector<StringOrCSSVariableReferenceValue> fragments;
-    fragments.push_back(StringOrCSSVariableReferenceValue::fromString(string));
+    fragments.push_back(StringOrCSSVariableReferenceValue::FromString(string));
     return Create(fragments);
   }
 

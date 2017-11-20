@@ -34,7 +34,7 @@
 #include "core/animation/CompositorAnimations.h"
 #include "core/animation/InvalidatableInterpolation.h"
 #include "core/animation/css/CSSAnimations.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/NonCopyingSort.h"
 
 namespace blink {
@@ -58,9 +58,9 @@ void CopyToActiveInterpolationsMap(
         interpolation->IsInvalidatableInterpolation() &&
         ToInvalidatableInterpolation(*interpolation)
             .DependsOnUnderlyingValue()) {
-      active_interpolations.push_back(interpolation.Get());
+      active_interpolations.push_back(interpolation.get());
     } else {
-      active_interpolations.at(0) = interpolation.Get();
+      active_interpolations.at(0) = interpolation.get();
     }
   }
 }

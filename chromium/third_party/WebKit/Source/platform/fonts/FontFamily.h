@@ -48,8 +48,12 @@ class PLATFORM_EXPORT FontFamily {
 
   const FontFamily* Next() const;
 
-  void AppendFamily(PassRefPtr<SharedFontFamily>);
-  PassRefPtr<SharedFontFamily> ReleaseNext();
+  void AppendFamily(RefPtr<SharedFontFamily>);
+  RefPtr<SharedFontFamily> ReleaseNext();
+
+  // Returns this font family's name followed by all subsequent linked
+  // families delimited by commas.
+  String ToString() const;
 
  private:
   AtomicString family_;
@@ -62,8 +66,8 @@ class PLATFORM_EXPORT SharedFontFamily : public FontFamily,
   WTF_MAKE_NONCOPYABLE(SharedFontFamily);
 
  public:
-  static PassRefPtr<SharedFontFamily> Create() {
-    return AdoptRef(new SharedFontFamily);
+  static RefPtr<SharedFontFamily> Create() {
+    return WTF::AdoptRef(new SharedFontFamily);
   }
 
  private:
@@ -84,14 +88,14 @@ inline FontFamily::~FontFamily() {
 }
 
 inline const FontFamily* FontFamily::Next() const {
-  return next_.Get();
+  return next_.get();
 }
 
-inline void FontFamily::AppendFamily(PassRefPtr<SharedFontFamily> family) {
+inline void FontFamily::AppendFamily(RefPtr<SharedFontFamily> family) {
   next_ = std::move(family);
 }
 
-inline PassRefPtr<SharedFontFamily> FontFamily::ReleaseNext() {
+inline RefPtr<SharedFontFamily> FontFamily::ReleaseNext() {
   return std::move(next_);
 }
 

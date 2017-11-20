@@ -97,7 +97,8 @@ gl::Error BufferNULL::unmap(const gl::Context *context, GLboolean *result)
     return gl::NoError();
 }
 
-gl::Error BufferNULL::getIndexRange(GLenum type,
+gl::Error BufferNULL::getIndexRange(const gl::Context *context,
+                                    GLenum type,
                                     size_t offset,
                                     size_t count,
                                     bool primitiveRestartEnabled,
@@ -105,6 +106,16 @@ gl::Error BufferNULL::getIndexRange(GLenum type,
 {
     *outRange = gl::ComputeIndexRange(type, mData.data() + offset, count, primitiveRestartEnabled);
     return gl::NoError();
+}
+
+uint8_t *BufferNULL::getDataPtr()
+{
+    return mData.data();
+}
+
+const uint8_t *BufferNULL::getDataPtr() const
+{
+    return mData.data();
 }
 
 }  // namespace rx

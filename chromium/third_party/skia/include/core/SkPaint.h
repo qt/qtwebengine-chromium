@@ -57,7 +57,8 @@ class SkTypeface;
     The objects contained by SkPaint are opaque, and cannot be edited outside of the SkPaint
     to affect it. The implementation is free to defer computations associated with the
     SkPaint, or ignore them altogether. For instance, some GPU implementations draw all
-    SkPath geometries with anti-aliasing, regardless of SkPaint::kAntiAlias_Flag setting.
+    SkPath geometries with anti-aliasing, regardless of how SkPaint::kAntiAlias_Flag
+    is set in SkPaint.
 
     SkPaint describes a single color, a single font, a single image quality, and so on.
     Multiple colors are drawn either by using multiple paints or with objects like
@@ -74,7 +75,8 @@ public:
 
     /** Makes a shallow copy of SkPaint. SkTypeface, SkPathEffect, SkShader,
         SkMaskFilter, SkColorFilter, SkRasterizer, SkDrawLooper, and SkImageFilter are shared
-        between the original paint and the copy. These objects' SkRefCnt are increased.
+        between the original paint and the copy. Objects containing SkRefCnt increment
+        their references by one.
 
         The referenced objects SkPathEffect, SkShader, SkMaskFilter, SkColorFilter, SkRasterizer,
         SkDrawLooper, and SkImageFilter cannot be modified after they are created.
@@ -85,7 +87,7 @@ public:
     */
     SkPaint(const SkPaint& paint);
 
-    /** Implements a move constructor to avoid incrementing the reference counts
+    /** Implements a move constructor to avoid increasing the reference counts
         of objects referenced by the paint.
 
         After the call, paint is undefined, and can be safely destructed.
@@ -97,26 +99,26 @@ public:
 
     /** Decreases SkPaint SkRefCnt of owned objects: SkTypeface, SkPathEffect, SkShader,
         SkMaskFilter, SkColorFilter, SkRasterizer, SkDrawLooper, and SkImageFilter. If the
-        objects' reference count goes to zero, they are deleted.
+        objects containing SkRefCnt go to zero, they are deleted.
     */
     ~SkPaint();
 
     /** Makes a shallow copy of SkPaint. SkTypeface, SkPathEffect, SkShader,
         SkMaskFilter, SkColorFilter, SkRasterizer, SkDrawLooper, and SkImageFilter are shared
-        between the original paint and the copy. The objects' SkRefCnt are in the
+        between the original paint and the copy. Objects containing SkRefCnt in the
         prior destination are decreased by one, and the referenced objects are deleted if the
-        resulting count is zero. The objects' SkRefCnt in the parameter paint are increased
-        by one. paint is unmodified.
+        resulting count is zero. Objects containing SkRefCnt in the parameter paint
+        are increased by one. paint is unmodified.
 
         @param paint  original to copy
         @return       content of paint
     */
     SkPaint& operator=(const SkPaint& paint);
 
-    /** Moves the paint to avoid incrementing the reference counts
-        of objects referenced by the paint parameter. The objects' SkRefCnt are in the
-        prior destination are decreased by one, and the referenced objects are deleted if the
-        resulting count is zero.
+    /** Moves the paint to avoid increasing the reference counts
+        of objects referenced by the paint parameter. Objects containing SkRefCnt in the
+        prior destination are decreased by one; those objects are deleted if the resulting count
+        is zero.
 
         After the call, paint is undefined, and can be safely destructed.
 
@@ -174,7 +176,7 @@ public:
         SkReadBuffer class is not public, so unflatten() cannot be meaningfully called
         by the client.
 
-        @param buffer  serialized data to unflatten
+        @param buffer  serialized data describing SkPaint content
     */
     void unflatten(SkReadBuffer& buffer);
 
@@ -459,7 +461,7 @@ public:
         return SkToBool(this->getFlags() & kFakeBoldText_Flag);
     }
 
-    /** Use increased stroke width when creating glyph bitmaps to approximate bolding.
+    /** Use increased stroke width when creating glyph bitmaps to approximate a bold typeface.
 
         Sets kFakeBoldText_Flag if fakeBoldText is true.
         Clears kFakeBoldText_Flag if fakeBoldText is false.
@@ -526,9 +528,8 @@ public:
         kFill_Style,
 
         /** Set to stroke geometry.
-            Applies to SkRect, SkRegion, SkRRect, arcs, circles, ovals,
-            SkPath, and text.
-            Arcs, lines, SkPoint, and SkPoint arrays are always drawn as if kStroke_Style is set,
+            Applies to SkRect, SkRegion, SkRRect, arcs, circles, ovals, SkPath, and text.
+            Arcs, lines, and SkPoint, are always drawn as if kStroke_Style is set,
             and ignore the set Style.
             The stroke construction is unaffected by the FillType.
         */
@@ -566,14 +567,14 @@ public:
         Use helpers SkColorGetA(), SkColorGetR(), SkColorGetG(), and SkColorGetB() to extract
         a color component.
 
-        @return  Unpremultiplied ARGB
+        @return  unpremultiplied ARGB
     */
     SkColor getColor() const { return fColor; }
 
     /** Sets alpha and RGB used when stroking and filling. The color is a 32-bit value,
-        unpremutiplied, packing 8-bit components for alpha, red, blue, and green.
+        unpremultiplied, packing 8-bit components for alpha, red, blue, and green.
 
-        @param color  Unpremultiplied ARGB
+        @param color  unpremultiplied ARGB
     */
     void setColor(SkColor color);
 
@@ -594,13 +595,12 @@ public:
     void setAlpha(U8CPU a);
 
     /** Sets color used when drawing solid fills. The color components range from 0 to 255.
-        The color is unpremultiplied;
-        alpha sets the transparency independent of RGB.
+        The color is unpremultiplied; alpha sets the transparency independent of RGB.
 
-        @param a  amount of alpha, from fully transparent (0) to fully opaque (255)
-        @param r  amount of red, from no red (0) to full red (255)
-        @param g  amount of green, from no green (0) to full green (255)
-        @param b  amount of blue, from no blue (0) to full blue (255)
+        @param a  amount of color alpha, from fully transparent (0) to fully opaque (255)
+        @param r  amount of color rgb red, from no red (0) to full red (255)
+        @param g  amount of color rgb green, from no green (0) to full green (255)
+        @param b  amount of color rgb blue, from no blue (0) to full blue (255)
     */
     void setARGB(U8CPU a, U8CPU r, U8CPU g, U8CPU b);
 
@@ -760,8 +760,8 @@ public:
 
     /** Optional colors used when filling a path, such as a gradient.
 
-        Sets SkShader to shader, decrementing SkRefCnt of the previous SkShader.
-        Does not alter shader SkRefCnt.
+        Sets SkShader to shader, decreasing SkRefCnt of the previous SkShader.
+        Increments shader SkRefCnt by one.
 
         @param shader  how geometry is filled with color; if nullptr, color is used instead
     */
@@ -781,9 +781,10 @@ public:
     */
     sk_sp<SkColorFilter> refColorFilter() const;
 
-    /** Sets SkColorFilter to filter, decrementing SkRefCnt of the previous SkColorFilter.
-        Pass nullptr to clear SkColorFilter.
-        Does not alter filter SkRefCnt.
+    /** Sets SkColorFilter to filter, decreasing SkRefCnt of the previous
+        SkColorFilter. Pass nullptr to clear SkColorFilter.
+
+        Increments filter SkRefCnt by one.
 
         @param colorFilter  SkColorFilter to apply to subsequent draw
     */
@@ -823,10 +824,10 @@ public:
     */
     sk_sp<SkPathEffect> refPathEffect() const;
 
-    /** Sets SkPathEffect to pathEffect,
-        decrementing SkRefCnt of the previous SkPathEffect.
-        Pass nullptr to leave the path geometry unaltered.
-        Does not alter pathEffect SkRefCnt.
+    /** Sets SkPathEffect to pathEffect, decreasing SkRefCnt of the previous
+        SkPathEffect. Pass nullptr to leave the path geometry unaltered.
+
+        Increments pathEffect SkRefCnt by one.
 
         @param pathEffect  replace SkPath with a modification when drawn
     */
@@ -840,24 +841,26 @@ public:
     SkMaskFilter* getMaskFilter() const { return fMaskFilter.get(); }
 
     /** Returns SkMaskFilter if set, or nullptr.
+
         Increases SkMaskFilter SkRefCnt by one.
 
         @return  SkMaskFilter if previously set, nullptr otherwise
     */
     sk_sp<SkMaskFilter> refMaskFilter() const;
 
-    /** Sets SkMaskFilter to maskFilter,
-        decrementing SkRefCnt of the previous SkMaskFilter.
-        Pass nullptr to clear SkMaskFilter and leave SkMaskFilter effect on mask alpha unaltered.
+    /** Sets SkMaskFilter to maskFilter, decreasing SkRefCnt of the previous
+        SkMaskFilter. Pass nullptr to clear SkMaskFilter and leave SkMaskFilter effect on
+        mask alpha unaltered.
+
         Does not affect SkRasterizer.
-        Does not alter maskFilter SkRefCnt.
+        Increments maskFilter SkRefCnt by one.
 
         @param maskFilter  modifies clipping mask generated from drawn geometry
     */
     void setMaskFilter(sk_sp<SkMaskFilter> maskFilter);
 
     /** Returns SkTypeface if set, or nullptr.
-        Does not alter SkTypeface SkRefCnt.
+        Increments SkTypeface SkRefCnt by one.
 
         @return  SkTypeface if previously set, nullptr otherwise
     */
@@ -869,10 +872,9 @@ public:
     */
     sk_sp<SkTypeface> refTypeface() const;
 
-    /** Sets SkTypeface to typeface,
-        decrementing SkRefCnt of the previous SkTypeface.
-        Pass nullptr to clear SkTypeface and use the default typeface.
-        Does not alter typeface SkRefCnt.
+    /** Sets SkTypeface to typeface, decreasing SkRefCnt of the previous SkTypeface.
+        Pass nullptr to clear SkTypeface and use the default typeface. Increments
+        typeface SkRefCnt by one.
 
         @param typeface  font and style used to draw text
     */
@@ -892,11 +894,12 @@ public:
     */
     sk_sp<SkRasterizer> refRasterizer() const;
 
-    /** Sets SkRasterizer to rasterizer,
-        decrementing SkRefCnt of the previous SkRasterizer.
-        Pass nullptr to clear SkRasterizer and leave SkRasterizer effect on mask alpha unaltered.
+    /** Sets SkRasterizer to rasterizer, decreasing SkRefCnt of the previous
+        SkRasterizer. Pass nullptr to clear SkRasterizer and leave SkRasterizer effect on
+        mask alpha unaltered.
+
         Does not affect SkMaskFilter.
-        Does not alter rasterizer SkRefCnt.
+        Increments rasterizer SkRefCnt by one.
 
         @param rasterizer  how geometry is converted to mask alpha
     */
@@ -916,12 +919,12 @@ public:
     */
     sk_sp<SkImageFilter> refImageFilter() const;
 
-    /** Sets SkImageFilter to imageFilter,
-        decrementing SkRefCnt of the previous SkImageFilter.
-        Pass nullptr to clear SkImageFilter, and remove SkImageFilter effect
+    /** Sets SkImageFilter to imageFilter, decreasing SkRefCnt of the previous
+        SkImageFilter. Pass nullptr to clear SkImageFilter, and remove SkImageFilter effect
         on drawing.
+
         Does not affect SkRasterizer or SkMaskFilter.
-        Does not alter imageFilter SkRefCnt.
+        Increments imageFilter SkRefCnt by one.
 
         @param imageFilter  how SkImage is sampled when transformed
     */
@@ -948,12 +951,13 @@ public:
     */
     SkDrawLooper* getLooper() const { return fDrawLooper.get(); }
 
-    /** Sets SkDrawLooper to drawLooper,
-        decrementing SkRefCnt of the previous drawLooper.
-        Pass nullptr to clear SkDrawLooper and leave SkDrawLooper effect on drawing unaltered.
-        Does not alter drawLooper SkRefCnt.
+    /** Sets SkDrawLooper to drawLooper, decreasing SkRefCnt of the previous
+        drawLooper.  Pass nullptr to clear SkDrawLooper and leave SkDrawLooper effect on
+        drawing unaltered.
 
-        @param drawLooper  Iterates through drawing one or more time, altering SkPaint
+        Increments drawLooper SkRefCnt by one.
+
+        @param drawLooper  iterates through drawing one or more time, altering SkPaint
     */
     void setDrawLooper(sk_sp<SkDrawLooper> drawLooper);
 
@@ -1057,14 +1061,12 @@ public:
     void setTextSkewX(SkScalar skewX);
 
     /** \enum SkPaint::TextEncoding
-        TextEncoding determines whether text specifies character codes and their encoded size,
-        or glyph indices. Character codes use the encoding specified by the Unicode standard .
+        TextEncoding determines whether text specifies character codes and their encoded
+        size, or glyph indices. Character codes use the encoding specified by the Unicode standard.
+
         Character codes encoded size are specified by UTF-8, UTF-16, or UTF-32.
-        All character encoding are able to represent all of Unicode, differing only
-        in the total storage required. UTF-8 (RFC 3629) is made up of 8-bit bytes,
-        and is a superset of ASCII. UTF-16 (RFC 2781) is made up of 16-bit words,
-        and is a superset of Unicode ranges 0x0000 to 0xD7FF and 0xE000 to 0xFFFF. UTF-32 is
-        made up of 32-bit words, and is a superset of Unicode.
+        All character encodings are able to represent all of Unicode, differing only
+        in the total storage required. UTF-8 (RFC 3629) encodes each character as one or more 8-bit bytes. UTF-16 (RFC 2781) encodes each character as one or two 16-bit words. UTF-32 encodes each character as one 32-bit word.
 
         font manager uses font data to convert character code points into glyph indices.
         A glyph index is a 16-bit word.
@@ -1100,7 +1102,7 @@ public:
     /** \struct SkPaint::FontMetrics
         FontMetrics is filled out by getFontMetrics(). FontMetrics contents reflect the values
         computed by font manager using SkTypeface. Values are set to zero if they are
-        not availble.
+        not available.
 
         fUnderlineThickness and fUnderlinePosition have a bit set in fFlags if their values
         are valid, since their value may be zero.
@@ -1110,11 +1112,6 @@ public:
     */
     struct FontMetrics {
 
-        /** \enum SkPaint::FontMetrics::FontMetricsFlags
-            FontMetricsFlags are set in fFlags when underline and strikeout metrics are valid;
-            the underline or strikeout metric may be valid and zero.
-            Fonts with embedded bitmaps may not have valid underline or strikeout metrics.
-        */
         enum FontMetricsFlags {
             kUnderlineThicknessIsValid_Flag = 1 << 0, //!< Set if fUnderlineThickness is valid.
             kUnderlinePositionIsValid_Flag  = 1 << 1, //!< Set if fUnderlinePosition is valid.
@@ -1208,8 +1205,8 @@ public:
         SkScalar fStrikeoutPosition;
 
         /** If SkPaint::FontMetrics has a valid underline thickness, return true, and set
-            thickness to that value. If it doesn't, return false, and ignore
-            thickness.
+            thickness to that value. If the underline thickness is not valid,
+            return false, and ignore thickness.
 
             @param thickness  storage for underline width
             @return           true if font specifies underline width
@@ -1223,8 +1220,8 @@ public:
         }
 
         /** If SkPaint::FontMetrics has a valid underline position, return true, and set
-            position to that value. If it doesn't, return false, and ignore
-            position.
+            position to that value. If the underline position is not valid,
+            return false, and ignore position.
 
             @param position  storage for underline position
             @return          true if font specifies underline position
@@ -1238,8 +1235,8 @@ public:
         }
 
         /** If SkPaint::FontMetrics has a valid strikeout thickness, return true, and set
-            thickness to that value. If it doesn't, return false, and ignore
-            thickness.
+            thickness to that value. If the underline thickness is not valid,
+            return false, and ignore thickness.
 
             @param thickness  storage for strikeout width
             @return           true if font specifies strikeout width
@@ -1253,8 +1250,8 @@ public:
         }
 
         /** If SkPaint::FontMetrics has a valid strikeout position, return true, and set
-            position to that value. If it doesn't, return false, and ignore
-            position.
+            position to that value. If the underline position is not valid,
+            return false, and ignore position.
 
             @param position  storage for strikeout position
             @return          true if font specifies strikeout position
@@ -1309,7 +1306,7 @@ public:
         If SkPaint::TextEncoding is kUTF8_TextEncoding and
         text contains an invalid UTF-8 sequence, zero is returned.
 
-        @param text        character stroage encoded with SkPaint::TextEncoding
+        @param text        character storage encoded with SkPaint::TextEncoding
         @param byteLength  length of character storage in bytes
         @param glyphs      storage for glyph indices; may be nullptr
         @return            number of glyphs represented by text of length byteLength
@@ -1325,7 +1322,7 @@ public:
         returns true if all glyph indices in text are non-zero;
         does not check to see if text contains valid glyph indices for SkTypeface.
 
-        Returns true if bytelength is zero.
+        Returns true if byteLength is zero.
 
         @param text        array of characters or glyphs
         @param byteLength  number of bytes in text array
@@ -1350,7 +1347,7 @@ public:
         Uses SkPaint::TextEncoding to count the glyphs.
         Returns the same result as textToGlyphs().
 
-        @param text        character stroage encoded with SkPaint::TextEncoding
+        @param text        character storage encoded with SkPaint::TextEncoding
         @param byteLength  length of character storage in bytes
         @return            number of glyphs represented by text of length byteLength
     */
@@ -1500,7 +1497,7 @@ public:
         @param pos        positions of each glyph
         @param bounds     lower and upper line parallel to the advance
         @param intervals  returned intersections; may be nullptr
-        @return           The number of intersections; may be zero
+        @return           number of intersections; may be zero
     */
     int getPosTextIntercepts(const void* text, size_t length, const SkPoint pos[],
                              const SkScalar bounds[2], SkScalar* intervals) const;
@@ -1534,7 +1531,7 @@ public:
         the string.
         Uses SkPaint::TextEncoding to decode text, SkTypeface to get the glyph paths,
         and text size, fake bold, and SkPathEffect to scale and modify the glyph paths.
-        Uses pos array and SkPaint::Align to position intervals.
+        Uses run array and SkPaint::Align to position intervals.
 
         Pass nullptr for intervals to determine the size of the interval array.
 
@@ -1564,8 +1561,8 @@ public:
     /** Returns true if SkPaint prevents all drawing;
         otherwise, the SkPaint may or may not allow drawing.
 
-        Returns true if SkBlendMode and alpha are enabled,
-        and computed alpha is zero.
+        Returns true if, for example, SkBlendMode combined with color alpha computes a
+        new alpha of zero.
 
         @return  true if SkPaint prevents all drawing
     */
@@ -1584,13 +1581,13 @@ public:
         Only call this if canComputeFastBounds() returned true. This takes a
         raw rectangle (the raw bounds of a shape), and adjusts it for stylistic
         effects in the paint (e.g. stroking). If needed, it uses the storage
-        rect parameter. It returns the adjusted bounds that can then be used
+        parameter. It returns the adjusted bounds that can then be used
         for SkCanvas::quickReject tests.
 
-        The returned rect will either be orig or storage, thus the caller
+        The returned SkRect will either be orig or storage, thus the caller
         should not rely on storage being set to the result, but should always
-        use the retured value. It is legal for orig and storage to be the same
-        rect.
+        use the returned value. It is legal for orig and storage to be the same
+        SkRect.
         e.g.
         if (paint.canComputeFastBounds()) {
         SkRect r, storage;
@@ -1635,8 +1632,9 @@ public:
     }
 
     /** (to be made private)
-        Take the style explicitly, so the caller can force us to be stroked
-        without having to make a copy of the paint just to change that field.
+        Computes the bounds, overriding the SkPaint SkPaint::Style. This can be used to
+        account for additional width required by stroking orig, without
+        altering SkPaint::Style set to fill.
 
         @param orig     geometry modified by SkPaint when drawn
         @param storage  computed bounds of geometry
@@ -1647,9 +1645,11 @@ public:
                                       Style style) const;
 
     /** macro expands to: void toString(SkString* str) const;
-        Converts SkPaint to machine parsable form in developer mode.
+        Creates string representation of SkPaint. The representation is read by
+        internal debugging tools. The interface and implementation may be
+        suppressed by defining SK_IGNORE_TO_STRING.
 
-        @param str  storage for string containing parsable SkPaint
+        @param str  storage for string representation of SkPaint
     */
     SK_TO_STRING_NONVIRT()
 

@@ -80,23 +80,28 @@ void TaskSchedulerImpl::Start(const TaskScheduler::InitParams& init_params) {
 #endif  // defined(OS_POSIX) && !defined(OS_NACL_SFI)
 
   // Needs to happen after starting the service thread to get its task_runner().
-  delayed_task_manager_.Start(service_thread_.task_runner());
+  scoped_refptr<TaskRunner> service_thread_task_runner =
+      service_thread_.task_runner();
+  delayed_task_manager_.Start(service_thread_task_runner);
 
   single_thread_task_runner_manager_.Start();
 
-  worker_pools_[BACKGROUND]->Start(init_params.background_worker_pool_params);
+  worker_pools_[BACKGROUND]->Start(init_params.background_worker_pool_params,
+                                   service_thread_task_runner);
   worker_pools_[BACKGROUND_BLOCKING]->Start(
-      init_params.background_blocking_worker_pool_params);
-  worker_pools_[FOREGROUND]->Start(init_params.foreground_worker_pool_params);
+      init_params.background_blocking_worker_pool_params,
+      service_thread_task_runner);
+  worker_pools_[FOREGROUND]->Start(init_params.foreground_worker_pool_params,
+                                   service_thread_task_runner);
   worker_pools_[FOREGROUND_BLOCKING]->Start(
-      init_params.foreground_blocking_worker_pool_params);
+      init_params.foreground_blocking_worker_pool_params,
+      service_thread_task_runner);
 }
 
-void TaskSchedulerImpl::PostDelayedTaskWithTraits(
-    const tracked_objects::Location& from_here,
-    const TaskTraits& traits,
-    OnceClosure task,
-    TimeDelta delay) {
+void TaskSchedulerImpl::PostDelayedTaskWithTraits(const Location& from_here,
+                                                  const TaskTraits& traits,
+                                                  OnceClosure task,
+                                                  TimeDelta delay) {
   // Post |task| as part of a one-off single-task Sequence.
   const TaskTraits new_traits = SetUserBlockingPriorityIfNeeded(traits);
   GetWorkerPoolForTraits(new_traits)

@@ -62,7 +62,7 @@ class CXFA_FFNotify {
   CXFA_FFWidgetHandler* GetWidgetHandler();
   CXFA_FFWidget* GetHWidget(CXFA_LayoutItem* pLayoutItem);
   void OpenDropDownList(CXFA_FFWidget* hWidget);
-  CFX_WideString GetCurrentDateTime();
+  WideString GetCurrentDateTime();
   void ResetData(CXFA_WidgetData* pWidgetData = nullptr);
   int32_t GetLayoutStatus();
   void RunNodeInitialize(CXFA_Node* pNode);
@@ -71,7 +71,7 @@ class CXFA_FFNotify {
   void SetFocusWidgetNode(CXFA_Node* pNode);
 
  private:
-  CFX_UnownedPtr<CXFA_FFDoc> const m_pDoc;
+  UnownedPtr<CXFA_FFDoc> const m_pDoc;
 };
 
 #endif  // XFA_FXFA_CXFA_FFNOTIFY_H_

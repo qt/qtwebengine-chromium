@@ -709,6 +709,7 @@ jboolean WebContentsAccessibilityAndroid::PopulateAccessibilityNodeInfo(
 
   Java_WebContentsAccessibility_setAccessibilityNodeInfoKitKatAttributes(
       env, obj, info, is_root, node->IsEditableText(),
+      base::android::ConvertUTF8ToJavaString(env, node->GetRoleString()),
       base::android::ConvertUTF16ToJavaString(env, node->GetRoleDescription()),
       base::android::ConvertUTF16ToJavaString(env, node->GetHint()),
       node->GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START),
@@ -897,9 +898,11 @@ jboolean WebContentsAccessibilityAndroid::AdjustSlider(
     return false;
 
   // To behave similarly to an Android SeekBar, move by an increment of
-  // approximately 20%.
+  // approximately 5%.
   float original_value = value;
-  float delta = (max - min) / 5.0f;
+  float delta = (max - min) / 20.0f;
+  // Slider does not move if the delta value is less than 1.
+  delta = ((delta < 1) ? 1 : delta);
   value += (increment ? delta : -delta);
   value = std::max(std::min(value, max), min);
   if (value != original_value) {

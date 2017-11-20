@@ -8,7 +8,7 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/CompositorFilterOperations.h"
 #include "platform/graphics/paint/DisplayItem.h"
-#include "platform/wtf/PassRefPtr.h"
+#include "platform/wtf/RefPtr.h"
 #ifndef NDEBUG
 #include "platform/wtf/text/WTFString.h"
 #endif
@@ -37,7 +37,7 @@ class PLATFORM_EXPORT BeginFilterDisplayItem final
 
  private:
 #ifndef NDEBUG
-  void DumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
+  void PropertiesAsJSON(JSONObject&) const override;
 #endif
   bool Equals(const DisplayItem& other) const final {
     if (!DisplayItem::Equals(other))

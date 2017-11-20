@@ -8,21 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/api/audio_codecs/L16/audio_encoder_L16.h"
+#include "api/audio_codecs/L16/audio_encoder_L16.h"
 
-#include "webrtc/common_types.h"
-#include "webrtc/modules/audio_coding/codecs/pcm16b/audio_encoder_pcm16b.h"
-#include "webrtc/modules/audio_coding/codecs/pcm16b/pcm16b_common.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/rtc_base/safe_conversions.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/audio_coding/codecs/pcm16b/audio_encoder_pcm16b.h"
+#include "modules/audio_coding/codecs/pcm16b/pcm16b_common.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/safe_conversions.h"
 
 namespace webrtc {
 
 rtc::Optional<AudioEncoderL16::Config> AudioEncoderL16::SdpToConfig(
     const SdpAudioFormat& format) {
+  if (!rtc::IsValueInRangeForNumericType<int>(format.num_channels)) {
+    return rtc::Optional<Config>();
+  }
   Config config;
   config.sample_rate_hz = format.clockrate_hz;
-  config.num_channels = rtc::checked_cast<int>(format.num_channels);
+  config.num_channels = rtc::dchecked_cast<int>(format.num_channels);
   return STR_CASE_CMP(format.name.c_str(), "L16") == 0 && config.IsOk()
              ? rtc::Optional<Config>(config)
              : rtc::Optional<Config>();

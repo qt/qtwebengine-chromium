@@ -6,7 +6,7 @@
 
 #include <memory>
 #include "core/dom/Document.h"
-#include "core/editing/EditingTestBase.h"
+#include "core/editing/testing/EditingTestBase.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/geometry/DOMRect.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -21,7 +21,7 @@ class ElementTest : public EditingTestBase {};
 
 TEST_F(ElementTest, SupportsFocus) {
   Document& document = GetDocument();
-  DCHECK(isHTMLHtmlElement(document.documentElement()));
+  DCHECK(IsHTMLHtmlElement(document.documentElement()));
   document.setDesignMode("on");
   document.View()->UpdateAllLifecyclePhases();
   EXPECT_TRUE(document.documentElement()->SupportsFocus())
@@ -57,7 +57,8 @@ TEST_F(ElementTest,
 
   // Insert a new <div> above the sticky. This will dirty layout and invalidate
   // the sticky constraints.
-  writer->setInnerHTML("<div style='height: 100px; width: 700px;'></div>");
+  writer->SetInnerHTMLFromString(
+      "<div style='height: 100px; width: 700px;'></div>");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             document.Lifecycle().GetState());
 
@@ -100,7 +101,8 @@ TEST_F(ElementTest, OffsetTopAndLeftCorrectForStickyElementsAfterInsertion) {
 
   // Insert a new <div> above the sticky. This will dirty layout and invalidate
   // the sticky constraints.
-  writer->setInnerHTML("<div style='height: 100px; width: 700px;'></div>");
+  writer->SetInnerHTMLFromString(
+      "<div style='height: 100px; width: 700px;'></div>");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             document.Lifecycle().GetState());
 
@@ -114,7 +116,8 @@ TEST_F(ElementTest, OffsetTopAndLeftCorrectForStickyElementsAfterInsertion) {
                    ->NeedsCompositingInputsUpdate());
 
   // Dirty layout again, since |OffsetTop| will have cleaned it.
-  writer->setInnerHTML("<div style='height: 100px; width: 700px;'></div>");
+  writer->SetInnerHTMLFromString(
+      "<div style='height: 100px; width: 700px;'></div>");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             document.Lifecycle().GetState());
 
@@ -155,7 +158,8 @@ TEST_F(ElementTest, BoundsInViewportCorrectForStickyElementsAfterInsertion) {
 
   // Insert a new <div> above the sticky. This will dirty layout and invalidate
   // the sticky constraints.
-  writer->setInnerHTML("<div style='height: 100px; width: 700px;'></div>");
+  writer->SetInnerHTMLFromString(
+      "<div style='height: 100px; width: 700px;'></div>");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             document.Lifecycle().GetState());
 

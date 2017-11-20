@@ -12,6 +12,7 @@
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverState.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/LengthFunctions.h"
 #include "platform/wtf/PtrUtil.h"
 
@@ -138,7 +139,7 @@ void CSSLengthInterpolationType::Composite(
   LengthInterpolationFunctions::Composite(
       underlying.interpolable_value, underlying.non_interpolable_value,
       underlying_fraction, *value.interpolable_value,
-      value.non_interpolable_value.Get());
+      value.non_interpolable_value.get());
 }
 
 void CSSLengthInterpolationType::ApplyStandardPropertyValue(

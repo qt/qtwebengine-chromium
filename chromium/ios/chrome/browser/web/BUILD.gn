@@ -15,6 +15,8 @@ source_set("web") {
     "mailto_handler.mm",
     "mailto_handler_gmail.h",
     "mailto_handler_gmail.mm",
+    "mailto_handler_inbox.h",
+    "mailto_handler_inbox.mm",
     "mailto_handler_system_mail.h",
     "mailto_handler_system_mail.mm",
     "mailto_url_rewriter.h",
@@ -42,7 +44,6 @@ source_set("web") {
     "//ios/chrome/app/strings:ios_strings_grit",
     "//ios/chrome/browser",
     "//ios/chrome/browser/ui",
-    "//ios/chrome/browser/ui/alert_coordinator:alert_coordinator",
     "//ios/chrome/browser/ui/commands:commands",
     "//ios/chrome/browser/ui/util:util",
     "//ios/web",
@@ -65,6 +66,7 @@ source_set("tab_helper_delegates") {
   configs += [ "//build/config/compiler:enable_arc" ]
   sources = [
     "page_placeholder_tab_helper_delegate.h",
+    "repost_form_tab_helper_delegate.h",
     "sad_tab_tab_helper_delegate.h",
   ]
 }
@@ -75,6 +77,7 @@ source_set("unit_tests") {
   sources = [
     "legacy_mailto_url_rewriter_unittest.mm",
     "mailto_handler_gmail_unittest.mm",
+    "mailto_handler_inbox_unittest.mm",
     "mailto_handler_system_mail_unittest.mm",
     "mailto_handler_unittest.mm",
     "navigation_manager_util_unittest.mm",
@@ -91,8 +94,7 @@ source_set("unit_tests") {
     ":web",
     "//base:base",
     "//base/test:test_support",
-    "//components/strings:components_strings_grit",
-    "//ios/chrome/browser/ui:ui",
+    "//ios/chrome/browser/browser_state:test_support",
     "//ios/chrome/test:test_support",
     "//ios/web:web",
     "//ios/web/public/test",
@@ -132,10 +134,6 @@ js_compile_checked("credential_manager") {
 source_set("web_internal") {
   configs += [ "//build/config/compiler:enable_arc" ]
   sources = [
-    "auto_reload_bridge.h",
-    "auto_reload_bridge.mm",
-    "auto_reload_controller.h",
-    "auto_reload_controller.mm",
     "blocked_popup_tab_helper.h",
     "blocked_popup_tab_helper.mm",
     "chrome_web_client.h",
@@ -147,8 +145,9 @@ source_set("web_internal") {
     "external_app_launcher.h",
     "external_app_launcher.mm",
     "passkit_dialog_provider.h",
-    "print_observer.h",
-    "print_observer.mm",
+    "print_tab_helper.h",
+    "print_tab_helper.mm",
+    "web_state_printer.h",
   ]
   deps = [
     ":chrome_bundle",
@@ -188,7 +187,10 @@ source_set("web_internal") {
     "//ui/gfx",
     "//url",
   ]
-  libs = [ "UIKit.framework" ]
+  libs = [
+    "UIKit.framework",
+    "Foundation.framework",
+  ]
 }
 
 source_set("test_support") {
@@ -215,7 +217,6 @@ source_set("unit_tests_internal") {
   configs += [ "//build/config/compiler:enable_arc" ]
   testonly = true
   sources = [
-    "auto_reload_controller_unittest.mm",
     "blocked_popup_tab_helper_unittest.mm",
     "chrome_web_client_unittest.mm",
     "error_page_generator_unittest.mm",
@@ -305,10 +306,11 @@ source_set("perf_tests") {
   ]
   deps = [
     "//base",
+    "//base/test:test_support",
+    "//ios/chrome/browser/browser_state:test_support",
     "//ios/chrome/test/base:perf_test_support",
     "//ios/web",
     "//ios/web/public/test",
-    "//ios/web/public/test/fakes",
   ]
   libs = [ "WebKit.framework" ]
 }

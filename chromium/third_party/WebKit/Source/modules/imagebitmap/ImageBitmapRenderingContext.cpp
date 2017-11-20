@@ -4,7 +4,7 @@
 
 #include "modules/imagebitmap/ImageBitmapRenderingContext.h"
 
-#include "bindings/modules/v8/RenderingContext.h"
+#include "bindings/modules/v8/rendering_context.h"
 #include "core/imagebitmap/ImageBitmap.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/StaticBitmapImage.h"
@@ -25,7 +25,7 @@ ImageBitmapRenderingContext::~ImageBitmapRenderingContext() {}
 
 void ImageBitmapRenderingContext::SetCanvasGetContextResult(
     RenderingContext& result) {
-  result.setImageBitmapRenderingContext(this);
+  result.SetImageBitmapRenderingContext(this);
 }
 
 void ImageBitmapRenderingContext::transferFromImageBitmap(

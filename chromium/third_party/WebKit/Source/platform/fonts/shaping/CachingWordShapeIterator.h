@@ -71,18 +71,18 @@ class PLATFORM_EXPORT CachingWordShapeIterator final {
         return false;
       *word_result = ShapeWord(text_run_, font_);
       start_index_ = 1;
-      return word_result->Get();
+      return word_result->get();
     }
 
     return NextWord(word_result);
   }
 
  private:
-  PassRefPtr<const ShapeResult> ShapeWordWithoutSpacing(const TextRun&,
-                                                        const Font*);
+  RefPtr<const ShapeResult> ShapeWordWithoutSpacing(const TextRun&,
+                                                    const Font*);
 
-  PassRefPtr<const ShapeResult> ShapeWord(const TextRun& word_run,
-                                          const Font* font) {
+  RefPtr<const ShapeResult> ShapeWord(const TextRun& word_run,
+                                      const Font* font) {
     if (LIKELY(!spacing_.HasSpacing()))
       return ShapeWordWithoutSpacing(word_run, font);
 
@@ -165,7 +165,7 @@ class PLATFORM_EXPORT CachingWordShapeIterator final {
       *result = ShapeWord(sub_run, font_);
     }
     start_index_ = end_index;
-    return result->Get();
+    return result->get();
   }
 
   unsigned EndIndexUntil(UChar ch) const {

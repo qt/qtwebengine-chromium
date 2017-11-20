@@ -8,14 +8,15 @@
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "gpu/config/gpu_feature_info.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "mojo/public/cpp/bindings/strong_binding_set.h"
 #include "services/ui/gpu/gpu_main.h"
-#include "services/ui/gpu/interfaces/gpu_host.mojom.h"
 #include "services/ui/public/interfaces/gpu.mojom.h"
+#include "services/viz/privileged/interfaces/gl/gpu_host.mojom.h"
 #include "services/viz/privileged/interfaces/gl/gpu_service.mojom.h"
 
 namespace viz {
@@ -51,7 +52,7 @@ class GpuHost {
       viz::mojom::FrameSinkManagerClientPtr client) = 0;
 };
 
-class DefaultGpuHost : public GpuHost, public mojom::GpuHost {
+class DefaultGpuHost : public GpuHost, public viz::mojom::GpuHost {
  public:
   explicit DefaultGpuHost(GpuHostDelegate* delegate);
   ~DefaultGpuHost() override;
@@ -62,6 +63,9 @@ class DefaultGpuHost : public GpuHost, public mojom::GpuHost {
   GpuClient* AddInternal(mojom::GpuRequest request);
   void OnBadMessageFromGpu();
 
+  // TODO(crbug.com/611505): this goes away after the gpu proces split in mus.
+  void InitializeGpuMain(mojom::GpuMainRequest request);
+
   // GpuHost:
   void Add(mojom::GpuRequest request) override;
   void OnAcceleratedWidgetAvailable(gfx::AcceleratedWidget widget) override;
@@ -70,7 +74,7 @@ class DefaultGpuHost : public GpuHost, public mojom::GpuHost {
       viz::mojom::FrameSinkManagerRequest request,
       viz::mojom::FrameSinkManagerClientPtr client) override;
 
-  // mojom::GpuHost:
+  // viz::mojom::GpuHost:
   void DidInitialize(const gpu::GPUInfo& gpu_info,
                      const gpu::GpuFeatureInfo& gpu_feature_info) override;
   void DidFailInitialize() override;
@@ -93,15 +97,20 @@ class DefaultGpuHost : public GpuHost, public mojom::GpuHost {
   int32_t next_client_id_;
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
   viz::mojom::GpuServicePtr gpu_service_;
-  mojo::Binding<mojom::GpuHost> gpu_host_binding_;
+  mojo::Binding<viz::mojom::GpuHost> gpu_host_binding_;
   gpu::GPUInfo gpu_info_;
+  gpu::GpuFeatureInfo gpu_feature_info_;
   std::unique_ptr<viz::ServerGpuMemoryBufferManager> gpu_memory_buffer_manager_;
 
   mojom::GpuMainPtr gpu_main_;
 
   // TODO(fsamuel): GpuHost should not be holding onto |gpu_main_impl|
   // because that will live in another process soon.
+  base::Thread gpu_thread_;
   std::unique_ptr<GpuMain> gpu_main_impl_;
+  // This is used to make sure that the |gpu_main_impl_| has been set up
+  // correctly, before we start tearing it down.
+  base::WaitableEvent gpu_main_wait_;
 
   mojo::StrongBindingSet<mojom::Gpu> gpu_bindings_;
 

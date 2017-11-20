@@ -791,6 +791,8 @@ void DisplayGLX::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->displayTextureShareGroup = true;
 
     outExtensions->surfacelessContext = true;
+
+    DisplayGL::generateExtensions(outExtensions);
 }
 
 void DisplayGLX::generateCaps(egl::Caps *outCaps) const
@@ -821,6 +823,8 @@ egl::Error DisplayGLX::createContextAttribs(glx::FBConfig,
 
     if (mHasARBCreateContextRobustness)
     {
+        attribs.push_back(GLX_CONTEXT_FLAGS_ARB);
+        attribs.push_back(GLX_CONTEXT_ROBUST_ACCESS_BIT_ARB);
         attribs.push_back(GLX_CONTEXT_RESET_NOTIFICATION_STRATEGY_ARB);
         attribs.push_back(GLX_LOSE_CONTEXT_ON_RESET_ARB);
     }

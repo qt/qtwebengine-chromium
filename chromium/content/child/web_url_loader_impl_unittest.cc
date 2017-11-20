@@ -30,6 +30,7 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/redirect_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -71,6 +72,7 @@ class TestResourceDispatcher : public ResourceDispatcher {
       std::unique_ptr<ResourceRequest> request,
       int routing_id,
       const url::Origin& frame_origin,
+      const net::NetworkTrafficAnnotationTag& traffic_annotation,
       SyncLoadResponse* response,
       blink::WebURLRequest::LoadingIPCType ipc_type,
       mojom::URLLoaderFactory* url_loader_factory,
@@ -83,6 +85,7 @@ class TestResourceDispatcher : public ResourceDispatcher {
       int routing_id,
       scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner,
       const url::Origin& frame_origin,
+      const net::NetworkTrafficAnnotationTag& traffic_annotation,
       bool is_sync,
       std::unique_ptr<RequestPeer> peer,
       blink::WebURLRequest::LoadingIPCType ipc_type,
@@ -130,12 +133,33 @@ class TestResourceDispatcher : public ResourceDispatcher {
   DISALLOW_COPY_AND_ASSIGN(TestResourceDispatcher);
 };
 
+class FakeURLLoaderFactory final : public mojom::URLLoaderFactory {
+ public:
+  FakeURLLoaderFactory() = default;
+  ~FakeURLLoaderFactory() override = default;
+  void CreateLoaderAndStart(mojom::URLLoaderRequest request,
+                            int32_t routing_id,
+                            int32_t request_id,
+                            uint32_t options,
+                            const ResourceRequest& url_request,
+                            mojom::URLLoaderClientPtr client,
+                            const net::MutableNetworkTrafficAnnotationTag&
+                                traffic_annotation) override {
+    NOTREACHED();
+  }
+
+  void Clone(mojom::URLLoaderFactoryRequest request) override { NOTREACHED(); }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FakeURLLoaderFactory);
+};
+
 class TestWebURLLoaderClient : public blink::WebURLLoaderClient {
  public:
   TestWebURLLoaderClient(ResourceDispatcher* dispatcher)
       : loader_(new WebURLLoaderImpl(dispatcher,
                                      base::ThreadTaskRunnerHandle::Get(),
-                                     nullptr)),
+                                     &fake_url_loader_factory_)),
         delete_on_receive_redirect_(false),
         delete_on_receive_response_(false),
         delete_on_receive_data_(false),
@@ -244,6 +268,7 @@ class TestWebURLLoaderClient : public blink::WebURLLoaderClient {
   const blink::WebURLResponse& response() const { return response_; }
 
  private:
+  FakeURLLoaderFactory fake_url_loader_factory_;
   std::unique_ptr<WebURLLoaderImpl> loader_;
 
   bool delete_on_receive_redirect_;

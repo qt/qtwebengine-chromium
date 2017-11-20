@@ -4,8 +4,9 @@
 
 #include "platform/graphics/OffscreenCanvasFrameDispatcherImpl.h"
 
-#include "cc/output/compositor_frame.h"
-#include "cc/quads/texture_draw_quad.h"
+#include <memory>
+#include "components/viz/common/quads/compositor_frame.h"
+#include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/resources/resource_format.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/Histogram.h"
@@ -21,6 +22,7 @@ namespace blink {
 
 enum {
   kMaxPendingCompositorFrames = 2,
+  kMaxUnreclaimedPlaceholderFrames = 3,
 };
 
 OffscreenCanvasFrameDispatcherImpl::OffscreenCanvasFrameDispatcherImpl(
@@ -37,7 +39,8 @@ OffscreenCanvasFrameDispatcherImpl::OffscreenCanvasFrameDispatcherImpl(
       change_size_for_next_commit_(false),
       needs_begin_frame_(false),
       binding_(this),
-      placeholder_canvas_id_(canvas_id) {
+      placeholder_canvas_id_(canvas_id),
+      num_unreclaimed_frames_posted_(0) {
   if (frame_sink_id_.is_valid()) {
     // Only frameless canvas pass an invalid frame sink id; we don't create
     // mojo channel for this special case.
@@ -61,7 +64,7 @@ OffscreenCanvasFrameDispatcherImpl::OffscreenCanvasFrameDispatcherImpl(
                                         mojo::MakeRequest(&sink_));
   }
   offscreen_canvas_resource_provider_ =
-      base::MakeUnique<OffscreenCanvasResourceProvider>(width, height);
+      std::make_unique<OffscreenCanvasResourceProvider>(width, height);
 }
 
 OffscreenCanvasFrameDispatcherImpl::~OffscreenCanvasFrameDispatcherImpl() {
@@ -86,11 +89,33 @@ void UpdatePlaceholderImage(WeakPtr<OffscreenCanvasFrameDispatcher> dispatcher,
 
 }  // namespace
 
+void OffscreenCanvasFrameDispatcherImpl::PostImageToPlaceholderIfNotBlocked(
+    RefPtr<StaticBitmapImage> image,
+    unsigned resource_id) {
+  // Determines whether the main thread may be blocked. If unblocked, post the
+  // image. Otherwise, save the image and do not post it.
+  if (num_unreclaimed_frames_posted_ < kMaxUnreclaimedPlaceholderFrames) {
+    // After this point, |image| can only be used on the main thread, until it
+    // is returned.
+    image->Transfer();
+    this->PostImageToPlaceholder(std::move(image), resource_id);
+    num_unreclaimed_frames_posted_++;
+  } else {
+    DCHECK(num_unreclaimed_frames_posted_ == kMaxUnreclaimedPlaceholderFrames);
+    if (latest_unposted_image_) {
+      // The previous unposted image becomes obsolete now.
+      offscreen_canvas_resource_provider_->ReclaimResource(
+          latest_unposted_resource_id_);
+    }
+
+    latest_unposted_image_ = std::move(image);
+    latest_unposted_resource_id_ = resource_id;
+  }
+}
+
 void OffscreenCanvasFrameDispatcherImpl::PostImageToPlaceholder(
-    RefPtr<StaticBitmapImage> image) {
-  // After this point, |image| can only be used on the main thread, until
-  // it is returned.
-  image->Transfer();
+    RefPtr<StaticBitmapImage> image,
+    unsigned resource_id) {
   RefPtr<WebTaskRunner> dispatcher_task_runner =
       Platform::Current()->CurrentThread()->GetWebTaskRunner();
 
@@ -99,11 +124,10 @@ void OffscreenCanvasFrameDispatcherImpl::PostImageToPlaceholder(
       ->Scheduler()
       ->CompositorTaskRunner()
       ->PostTask(BLINK_FROM_HERE,
-                 CrossThreadBind(
-                     UpdatePlaceholderImage, this->CreateWeakPtr(),
-                     WTF::Passed(std::move(dispatcher_task_runner)),
-                     placeholder_canvas_id_, std::move(image),
-                     offscreen_canvas_resource_provider_->GetNextResourceId()));
+                 CrossThreadBind(UpdatePlaceholderImage, this->CreateWeakPtr(),
+                                 WTF::Passed(std::move(dispatcher_task_runner)),
+                                 placeholder_canvas_id_, std::move(image),
+                                 resource_id));
 }
 
 void OffscreenCanvasFrameDispatcherImpl::DispatchFrame(
@@ -115,11 +139,16 @@ void OffscreenCanvasFrameDispatcherImpl::DispatchFrame(
     ) {
   if (!image || !VerifyImageSize(image->Size()))
     return;
+
+  offscreen_canvas_resource_provider_->IncNextResourceId();
+
   if (!frame_sink_id_.is_valid()) {
-    PostImageToPlaceholder(std::move(image));
+    PostImageToPlaceholderIfNotBlocked(
+        std::move(image),
+        offscreen_canvas_resource_provider_->GetNextResourceId());
     return;
   }
-  cc::CompositorFrame frame;
+  viz::CompositorFrame frame;
   // TODO(crbug.com/652931): update the device_scale_factor
   frame.metadata.device_scale_factor = 1.0f;
   if (current_begin_frame_ack_.sequence_number ==
@@ -134,15 +163,18 @@ void OffscreenCanvasFrameDispatcherImpl::DispatchFrame(
 
   const gfx::Rect bounds(width_, height_);
   const int kRenderPassId = 1;
-  std::unique_ptr<cc::RenderPass> pass = cc::RenderPass::Create();
+  bool is_clipped = false;
+  // TODO(crbug.com/705019): optimize for contexts that have {alpha: false}
+  bool are_contents_opaque = false;
+  std::unique_ptr<viz::RenderPass> pass = viz::RenderPass::Create();
   pass->SetNew(kRenderPassId, bounds,
                gfx::Rect(damage_rect.x(), damage_rect.y(), damage_rect.width(),
                          damage_rect.height()),
                gfx::Transform());
 
   viz::SharedQuadState* sqs = pass->CreateAndAppendSharedQuadState();
-  sqs->SetAll(gfx::Transform(), bounds, bounds, bounds, false, 1.f,
-              SkBlendMode::kSrcOver, 0);
+  sqs->SetAll(gfx::Transform(), bounds, bounds, bounds, is_clipped,
+              are_contents_opaque, 1.f, SkBlendMode::kSrcOver, 0);
 
   viz::TransferableResource resource;
   offscreen_canvas_resource_provider_->TransferResource(&resource);
@@ -184,14 +216,16 @@ void OffscreenCanvasFrameDispatcherImpl::DispatchFrame(
     }
   }
 
-  PostImageToPlaceholder(std::move(image));
   commit_type_histogram.Count(commit_type);
 
-  offscreen_canvas_resource_provider_->IncNextResourceId();
+  PostImageToPlaceholderIfNotBlocked(
+      std::move(image),
+      offscreen_canvas_resource_provider_->GetNextResourceId());
+
   frame.resource_list.push_back(std::move(resource));
 
-  cc::TextureDrawQuad* quad =
-      pass->CreateAndAppendDrawQuad<cc::TextureDrawQuad>();
+  viz::TextureDrawQuad* quad =
+      pass->CreateAndAppendDrawQuad<viz::TextureDrawQuad>();
   gfx::Size rect_size(width_, height_);
 
   // TODO(crbug.com/705019): optimize for contexts that have {alpha: false}
@@ -368,6 +402,17 @@ void OffscreenCanvasFrameDispatcherImpl::ReclaimResources(
 
 void OffscreenCanvasFrameDispatcherImpl::ReclaimResource(unsigned resource_id) {
   offscreen_canvas_resource_provider_->ReclaimResource(resource_id);
+  num_unreclaimed_frames_posted_--;
+
+  // The main thread has become unblocked recently and we have an image that
+  // have not been posted yet.
+  if (latest_unposted_image_) {
+    DCHECK(num_unreclaimed_frames_posted_ ==
+           kMaxUnreclaimedPlaceholderFrames - 1);
+    PostImageToPlaceholderIfNotBlocked(std::move(latest_unposted_image_),
+                                       latest_unposted_resource_id_);
+    latest_unposted_resource_id_ = 0;
+  }
 }
 
 bool OffscreenCanvasFrameDispatcherImpl::VerifyImageSize(

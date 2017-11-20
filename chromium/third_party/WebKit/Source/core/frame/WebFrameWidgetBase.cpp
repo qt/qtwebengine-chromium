@@ -4,6 +4,7 @@
 
 #include "core/frame/WebFrameWidgetBase.h"
 
+#include "core/dom/Element.h"
 #include "core/dom/UserGestureIndicator.h"
 #include "core/events/WebInputEventConversion.h"
 #include "core/events/WheelEvent.h"
@@ -258,7 +259,7 @@ void WebFrameWidgetBase::DidNotAcquirePointerLock() {
 }
 
 void WebFrameWidgetBase::DidLosePointerLock() {
-  pointer_lock_gesture_token_.Clear();
+  pointer_lock_gesture_token_ = nullptr;
   GetPage()->GetPointerLockController().DidLosePointerLock();
 }
 
@@ -420,7 +421,6 @@ bool WebFrameWidgetBase::ScrollBy(const WebFloatSize& delta,
 
   WebGestureEvent synthetic_gesture_event = CreateGestureScrollEventFromFling(
       WebInputEvent::kGestureScrollUpdate, fling_source_device_);
-  synthetic_gesture_event.data.scroll_update.prevent_propagation = true;
   synthetic_gesture_event.data.scroll_update.delta_x = delta.width;
   synthetic_gesture_event.data.scroll_update.delta_y = delta.height;
   synthetic_gesture_event.data.scroll_update.velocity_x = velocity.width;

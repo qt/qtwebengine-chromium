@@ -55,7 +55,7 @@ public:
     /**
      * Empties the draw buffer of any queued up draws.
      */
-    void reset() override;
+    void endFlush() override;
 
     void abandonGpuResources() override;
     void freeGpuResources() override;
@@ -68,12 +68,28 @@ public:
     bool onExecute(GrOpFlushState* flushState) override;
 
     uint32_t addOp(std::unique_ptr<GrOp> op, const GrCaps& caps) {
-        this->recordOp(std::move(op), caps, nullptr, nullptr);
+        auto addDependency = [ &caps, this ] (GrSurfaceProxy* p) {
+            this->addDependency(p, caps);
+        };
+
+        op->visitProxies(addDependency);
+
+        this->recordOp(std::move(op), caps);
+
         return this->uniqueID();
     }
+
     uint32_t addOp(std::unique_ptr<GrOp> op, const GrCaps& caps,
                    GrAppliedClip&& clip, const DstProxy& dstProxy) {
+        auto addDependency = [ &caps, this ] (GrSurfaceProxy* p) {
+            this->addDependency(p, caps);
+        };
+
+        op->visitProxies(addDependency);
+        clip.visitProxies(addDependency);
+
         this->recordOp(std::move(op), caps, clip.doesClip() ? &clip : nullptr, &dstProxy);
+
         return this->uniqueID();
     }
 
@@ -124,6 +140,8 @@ private:
         DstProxy fDstProxy;
         GrAppliedClip* fAppliedClip;
     };
+
+    void gatherProxyIntervals(GrResourceAllocator*) const override;
 
     void recordOp(std::unique_ptr<GrOp>, const GrCaps& caps,
                   GrAppliedClip* = nullptr, const DstProxy* = nullptr);

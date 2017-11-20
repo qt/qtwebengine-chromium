@@ -15,8 +15,7 @@ const int kWidevineCdmVersionNumComponents = 4;
 // "alpha" is a temporary name until a convention is defined.
 const char kWidevineKeySystem[] = "com.widevine.alpha";
 
-// This type is used to register the Widevine CDM.
-const char kWidevineCdmType[] = "Widevine";
+const char kWidevineCdmGuid[] = "AD87877A-0213-49A8-8849-9E93B075E477";
 
 // Widevine CDM files are in a directory with this name.
 const char kWidevineCdmBaseDirectory[] = "WidevineCdm";
@@ -34,6 +33,13 @@ const char kWidevineCdmDescription[] =
 const char kWidevineCdmPluginMimeType[] = "application/x-ppapi-widevine-cdm";
 const char kWidevineCdmPluginMimeTypeDescription[] =
     "Widevine Content Decryption Module";
+
+// Identifier used by the PluginPrivateFileSystem to identify the files stored
+// for the Widevine CDM. This is used to store persistent files. As the files
+// were initially used by the CDM running as a pepper plugin, this ID is based
+// on the pepper plugin MIME type. Changing this will result in any existing
+// saved files becoming inaccesssible.
+const char kWidevineCdmFileSystemId[] = "application_x-ppapi-widevine-cdm";
 
 // Name of the CDM library.
 const char kWidevineCdmLibraryName[] = "widevinecdm";

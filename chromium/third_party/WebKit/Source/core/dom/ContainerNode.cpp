@@ -24,6 +24,9 @@
 #include "core/dom/ContainerNode.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "core/css/SelectorQuery.h"
+#include "core/css/StyleChangeReason.h"
+#include "core/css/StyleEngine.h"
 #include "core/dom/ChildFrameDisconnector.h"
 #include "core/dom/ChildListMutationScope.h"
 #include "core/dom/ClassCollection.h"
@@ -35,27 +38,25 @@
 #include "core/dom/NodeComputedStyle.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/SelectorQuery.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/dom/StaticNodeList.h"
-#include "core/dom/StyleChangeReason.h"
-#include "core/dom/StyleEngine.h"
 #include "core/dom/WhitespaceAttacher.h"
 #include "core/events/MutationEvent.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLTagCollection.h"
-#include "core/html/RadioNodeList.h"
+#include "core/html/forms/RadioNodeList.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutText.h"
-#include "core/layout/LayoutTheme.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/layout/line/RootInlineBox.h"
 #include "core/probe/CoreProbes.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/ScriptForbiddenScope.h"
+#include "platform/bindings/RuntimeCallStats.h"
+#include "platform/bindings/V8PerIsolateData.h"
 
 namespace blink {
 
@@ -182,10 +183,17 @@ bool ContainerNode::IsHostIncludingInclusiveAncestorOfThis(
     return false;
 
   bool child_contains_parent = false;
-  if (IsInShadowTree() || GetDocument().IsTemplateDocument())
+  if (IsInShadowTree() || GetDocument().IsTemplateDocument()) {
     child_contains_parent = new_child.ContainsIncludingHostElements(*this);
-  else
-    child_contains_parent = new_child.contains(this);
+  } else {
+    const Node& root = TreeRoot();
+    if (root.IsDocumentFragment() &&
+        ToDocumentFragment(root).IsTemplateContent()) {
+      child_contains_parent = new_child.ContainsIncludingHostElements(*this);
+    } else {
+      child_contains_parent = new_child.contains(this);
+    }
+  }
   if (child_contains_parent) {
     exception_state.ThrowDOMException(
         kHierarchyRequestError, "The new child element contains the parent.");
@@ -402,6 +410,10 @@ Node* ContainerNode::InsertBefore(Node* new_child,
   return new_child;
 }
 
+Node* ContainerNode::InsertBefore(Node* new_child, Node* ref_child) {
+  return InsertBefore(new_child, ref_child, ASSERT_NO_EXCEPTION);
+}
+
 void ContainerNode::InsertBeforeCommon(Node& next_child, Node& new_child) {
 #if DCHECK_IS_ON()
   DCHECK(EventDispatchForbiddenScope::IsEventDispatchForbidden());
@@ -459,7 +471,7 @@ void ContainerNode::ParserInsertBefore(Node* new_child, Node& next_child) {
   DCHECK(new_child);
   DCHECK_EQ(next_child.parentNode(), this);
   DCHECK(!new_child->IsDocumentFragment());
-  DCHECK(!isHTMLTemplateElement(this));
+  DCHECK(!IsHTMLTemplateElement(this));
 
   if (next_child.previousSibling() == new_child ||
       &next_child == new_child)  // nothing to do
@@ -582,6 +594,10 @@ Node* ContainerNode::ReplaceChild(Node* new_child,
   return old_child;
 }
 
+Node* ContainerNode::ReplaceChild(Node* new_child, Node* old_child) {
+  return ReplaceChild(new_child, old_child, ASSERT_NO_EXCEPTION);
+}
+
 void ContainerNode::WillRemoveChild(Node& child) {
   DCHECK_EQ(child.parentNode(), this);
   ChildListMutationScope(*this).WillRemoveChild(child);
@@ -684,6 +700,10 @@ Node* ContainerNode::RemoveChild(Node* old_child,
   }
   DispatchSubtreeModifiedEvent();
   return child;
+}
+
+Node* ContainerNode::RemoveChild(Node* old_child) {
+  return RemoveChild(old_child, ASSERT_NO_EXCEPTION);
 }
 
 void ContainerNode::RemoveBetween(Node* previous_child,
@@ -816,10 +836,17 @@ Node* ContainerNode::AppendChild(Node* new_child,
   return new_child;
 }
 
+Node* ContainerNode::AppendChild(Node* new_child) {
+  return AppendChild(new_child, ASSERT_NO_EXCEPTION);
+}
+
 void ContainerNode::ParserAppendChild(Node* new_child) {
   DCHECK(new_child);
   DCHECK(!new_child->IsDocumentFragment());
-  DCHECK(!isHTMLTemplateElement(this));
+  DCHECK(!IsHTMLTemplateElement(this));
+
+  RUNTIME_CALL_TIMER_SCOPE(V8PerIsolateData::MainThreadIsolate(),
+                           RuntimeCallStats::CounterId::kParserAppendChild);
 
   if (!CheckParserAcceptChild(*new_child))
     return;
@@ -940,7 +967,7 @@ void ContainerNode::DetachLayoutTree(const AttachContext& context) {
 void ContainerNode::ChildrenChanged(const ChildrenChange& change) {
   GetDocument().IncDOMTreeVersion();
   GetDocument().NotifyChangeChildren(*this);
-  InvalidateNodeListCachesInAncestors();
+  InvalidateNodeListCachesInAncestors(nullptr, nullptr, &change);
   if (change.IsChildInsertion()) {
     if (!ChildNeedsStyleRecalc()) {
       SetChildNeedsStyleRecalc();
@@ -1156,8 +1183,7 @@ void ContainerNode::FocusStateChanged() {
   if (IsElementNode() && ToElement(this)->ChildrenOrSiblingsAffectedByFocus())
     ToElement(this)->PseudoStateChanged(CSSSelector::kPseudoFocus);
 
-  LayoutTheme::GetTheme().ControlStateChanged(*GetLayoutObject(),
-                                              kFocusControlState);
+  GetLayoutObject()->InvalidateIfControlStateChanged(kFocusControlState);
   FocusWithinStateChanged();
 }
 
@@ -1265,8 +1291,7 @@ void ContainerNode::SetActive(bool down) {
   if (IsElementNode() && ToElement(this)->ChildrenOrSiblingsAffectedByActive())
     ToElement(this)->PseudoStateChanged(CSSSelector::kPseudoActive);
 
-  LayoutTheme::GetTheme().ControlStateChanged(*GetLayoutObject(),
-                                              kPressedControlState);
+  GetLayoutObject()->InvalidateIfControlStateChanged(kPressedControlState);
 }
 
 void ContainerNode::SetDragged(bool new_value) {
@@ -1323,10 +1348,8 @@ void ContainerNode::SetHovered(bool over) {
   if (IsElementNode() && ToElement(this)->ChildrenOrSiblingsAffectedByHover())
     ToElement(this)->PseudoStateChanged(CSSSelector::kPseudoHover);
 
-  if (GetLayoutObject()) {
-    LayoutTheme::GetTheme().ControlStateChanged(*GetLayoutObject(),
-                                                kHoverControlState);
-  }
+  if (LayoutObject* o = GetLayoutObject())
+    o->InvalidateIfControlStateChanged(kHoverControlState);
 }
 
 HTMLCollection* ContainerNode::Children() {
@@ -1349,6 +1372,10 @@ Element* ContainerNode::QuerySelector(const AtomicString& selectors,
   return selector_query->QueryFirst(*this);
 }
 
+Element* ContainerNode::QuerySelector(const AtomicString& selectors) {
+  return QuerySelector(selectors, ASSERT_NO_EXCEPTION);
+}
+
 StaticElementList* ContainerNode::QuerySelectorAll(
     const AtomicString& selectors,
     ExceptionState& exception_state) {
@@ -1357,6 +1384,11 @@ StaticElementList* ContainerNode::QuerySelectorAll(
   if (!selector_query)
     return nullptr;
   return selector_query->QueryAll(*this);
+}
+
+StaticElementList* ContainerNode::QuerySelectorAll(
+    const AtomicString& selectors) {
+  return QuerySelectorAll(selectors, ASSERT_NO_EXCEPTION);
 }
 
 static void DispatchChildInsertionEvents(Node& child) {
@@ -1468,18 +1500,38 @@ void ContainerNode::RebuildLayoutTreeForChild(
     whitespace_attacher.DidVisitElement(element);
 }
 
+void ContainerNode::RebuildNonDistributedChildren() {
+  // Non-distributed children are:
+  // 1. Children of shadow hosts which are not slotted (v1) or distributed to an
+  //    insertion point (v0).
+  // 2. Children of <slot> (v1) and <content> (v0) elements which are not used
+  //    as fallback content when no nodes are slotted/distributed.
+  //
+  // These children will not take part in the flat tree, but we need to walk
+  // them in order to clear dirtiness flags during layout tree rebuild. We
+  // need to use a separate WhitespaceAttacher so that DidVisitText does not
+  // mess up the WhitespaceAttacher for the layout tree rebuild of the nodes
+  // which take part in the flat tree.
+  WhitespaceAttacher whitespace_attacher;
+  for (Node* child = lastChild(); child; child = child->previousSibling())
+    RebuildLayoutTreeForChild(child, whitespace_attacher);
+  ClearChildNeedsStyleRecalc();
+  ClearChildNeedsReattachLayoutTree();
+}
+
 void ContainerNode::RebuildChildrenLayoutTrees(
     WhitespaceAttacher& whitespace_attacher) {
   DCHECK(!NeedsReattachLayoutTree());
 
   if (IsActiveSlotOrActiveV0InsertionPoint()) {
-    if (isHTMLSlotElement(this)) {
-      toHTMLSlotElement(this)->RebuildDistributedChildrenLayoutTrees(
-          whitespace_attacher);
+    if (auto* slot = ToHTMLSlotElementOrNull(this)) {
+      slot->RebuildDistributedChildrenLayoutTrees(whitespace_attacher);
     } else {
       ToV0InsertionPoint(this)->RebuildDistributedChildrenLayoutTrees(
           whitespace_attacher);
     }
+    RebuildNonDistributedChildren();
+    return;
   }
 
   // This loop is deliberately backwards because we use insertBefore in the
@@ -1566,11 +1618,17 @@ void ContainerNode::CheckForSiblingStyleChanges(SiblingCheckType change_type,
 
 void ContainerNode::InvalidateNodeListCachesInAncestors(
     const QualifiedName* attr_name,
-    Element* attribute_owner_element) {
+    Element* attribute_owner_element,
+    const ChildrenChange* change) {
   if (HasRareData() && (!attr_name || IsAttributeNode())) {
     if (NodeListsNodeData* lists = RareData()->NodeLists()) {
-      if (ChildNodeList* child_node_list = lists->GetChildNodeList(*this))
-        child_node_list->InvalidateCache();
+      if (ChildNodeList* child_node_list = lists->GetChildNodeList(*this)) {
+        if (change) {
+          child_node_list->ChildrenChanged(*change);
+        } else {
+          child_node_list->InvalidateCache();
+        }
+      }
     }
   }
 
@@ -1629,7 +1687,7 @@ ClassCollection* ContainerNode::getElementsByClassName(
 
 RadioNodeList* ContainerNode::GetRadioNodeList(const AtomicString& name,
                                                bool only_match_img_elements) {
-  DCHECK(isHTMLFormElement(this) || isHTMLFieldSetElement(this));
+  DCHECK(IsHTMLFormElement(this) || IsHTMLFieldSetElement(this));
   CollectionType type =
       only_match_img_elements ? kRadioImgNodeListType : kRadioNodeListType;
   return EnsureCachedCollection<RadioNodeList>(type, name);
@@ -1667,7 +1725,7 @@ bool ChildAttachedAllowedWhenAttachingChildren(ContainerNode* node) {
   if (node->IsV0InsertionPoint())
     return true;
 
-  if (isHTMLSlotElement(node))
+  if (IsHTMLSlotElement(node))
     return true;
 
   if (node->IsElementNode() && ToElement(node)->Shadow())

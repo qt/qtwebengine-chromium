@@ -19,7 +19,7 @@ class StyleSheetContents;
 class CORE_EXPORT StringKeyframe : public Keyframe {
  public:
   static RefPtr<StringKeyframe> Create() {
-    return AdoptRef(new StringKeyframe);
+    return WTF::AdoptRef(new StringKeyframe);
   }
 
   MutableStylePropertySet::SetResult SetCSSPropertyValue(
@@ -68,8 +68,8 @@ class CORE_EXPORT StringKeyframe : public Keyframe {
         RefPtr<TimingFunction> easing,
         const CSSValue* value,
         EffectModel::CompositeOperation composite) {
-      return AdoptRef(new CSSPropertySpecificKeyframe(offset, std::move(easing),
-                                                      value, composite));
+      return WTF::AdoptRef(new CSSPropertySpecificKeyframe(
+          offset, std::move(easing), value, composite));
     }
 
     const CSSValue* Value() const { return value_.Get(); }
@@ -79,7 +79,7 @@ class CORE_EXPORT StringKeyframe : public Keyframe {
                                  const ComputedStyle& base_style,
                                  const ComputedStyle* parent_style) const final;
     const AnimatableValue* GetAnimatableValue() const final {
-      return animatable_value_cache_.Get();
+      return animatable_value_cache_.get();
     }
 
     bool IsNeutral() const final { return !value_; }
@@ -114,8 +114,8 @@ class CORE_EXPORT StringKeyframe : public Keyframe {
         RefPtr<TimingFunction> easing,
         const String& value,
         EffectModel::CompositeOperation composite) {
-      return AdoptRef(new SVGPropertySpecificKeyframe(offset, std::move(easing),
-                                                      value, composite));
+      return WTF::AdoptRef(new SVGPropertySpecificKeyframe(
+          offset, std::move(easing), value, composite));
     }
 
     const String& Value() const { return value_; }

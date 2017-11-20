@@ -6,6 +6,7 @@
 
 #include <memory>
 #include "platform/image-decoders/ImageDecoderTestHelpers.h"
+#include "platform/wtf/Time.h"
 #include "png.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -33,9 +34,9 @@ namespace {
 
 std::unique_ptr<ImageDecoder> CreatePNGDecoder(
     ImageDecoder::AlphaOption alpha_option) {
-  return WTF::WrapUnique(new PNGImageDecoder(
-      alpha_option, ColorBehavior::TransformToTargetForTesting(),
-      ImageDecoder::kNoDecodedImageByteLimit));
+  return WTF::WrapUnique(
+      new PNGImageDecoder(alpha_option, ColorBehavior::TransformToSRGB(),
+                          ImageDecoder::kNoDecodedImageByteLimit));
 }
 
 std::unique_ptr<ImageDecoder> CreatePNGDecoder() {
@@ -47,7 +48,7 @@ std::unique_ptr<ImageDecoder> CreatePNGDecoderWithPngData(
   auto decoder = CreatePNGDecoder();
   auto data = ReadFile(png_file);
   EXPECT_FALSE(data->IsEmpty());
-  decoder->SetData(data.Get(), true);
+  decoder->SetData(data.get(), true);
   return decoder;
 }
 
@@ -71,7 +72,7 @@ void TestSizeByteByByte(const char* png_file,
   RefPtr<SharedBuffer> partial_data = SharedBuffer::Create();
   for (size_t length = 1; length <= bytes_needed_to_decode_size; length++) {
     partial_data->Append(source++, 1u);
-    decoder->SetData(partial_data.Get(), false);
+    decoder->SetData(partial_data.get(), false);
 
     if (length < bytes_needed_to_decode_size) {
       EXPECT_FALSE(decoder->IsSizeAvailable());
@@ -101,7 +102,7 @@ void TestRepetitionCount(const char* png_file, int expected_repetition_count) {
 }
 
 struct PublicFrameInfo {
-  size_t duration;
+  TimeDelta duration;
   IntRect frame_rect;
   ImageFrame::AlphaBlendSource alpha_blend;
   ImageFrame::DisposalMethod disposal_method;
@@ -110,19 +111,19 @@ struct PublicFrameInfo {
 // This is the frame data for the following PNG image:
 // /LayoutTests/images/resources/png-animated-idat-part-of-animation.png
 static PublicFrameInfo g_png_animated_frame_info[] = {
-    {500,
+    {TimeDelta::FromMilliseconds(500),
      {IntPoint(0, 0), IntSize(5, 5)},
      ImageFrame::kBlendAtopBgcolor,
      ImageFrame::kDisposeKeep},
-    {900,
+    {TimeDelta::FromMilliseconds(900),
      {IntPoint(1, 1), IntSize(3, 1)},
      ImageFrame::kBlendAtopBgcolor,
      ImageFrame::kDisposeOverwriteBgcolor},
-    {2000,
+    {TimeDelta::FromMilliseconds(2000),
      {IntPoint(1, 2), IntSize(3, 2)},
      ImageFrame::kBlendAtopPreviousFrame,
      ImageFrame::kDisposeKeep},
-    {1500,
+    {TimeDelta::FromMilliseconds(1500),
      {IntPoint(1, 2), IntSize(3, 1)},
      ImageFrame::kBlendAtopBgcolor,
      ImageFrame::kDisposeKeep},
@@ -230,7 +231,7 @@ void TestProgressiveDecodingContinuesAfterFullData(
   ASSERT_FALSE(full_data->IsEmpty());
 
   auto decoder_upfront = CreatePNGDecoder();
-  decoder_upfront->SetData(full_data.Get(), true);
+  decoder_upfront->SetData(full_data.get(), true);
   EXPECT_GE(decoder_upfront->FrameCount(), 1u);
   const ImageFrame* const frame_upfront =
       decoder_upfront->DecodeFrameBufferAtIndex(0);
@@ -247,7 +248,7 @@ void TestProgressiveDecodingContinuesAfterFullData(
   EXPECT_EQ(frame->GetStatus(), ImageFrame::kFramePartial);
   const unsigned hash_partial = HashBitmap(frame->Bitmap());
 
-  decoder->SetData(full_data.Get(), true);
+  decoder->SetData(full_data.get(), true);
   frame = decoder->DecodeFrameBufferAtIndex(0);
   EXPECT_EQ(frame->GetStatus(), ImageFrame::kFrameComplete);
   const unsigned hash_full = HashBitmap(frame->Bitmap());
@@ -277,7 +278,7 @@ void TestFailureDuringDecode(const char* file,
                full_data->size() - idat_offset - 16u);
 
   auto decoder = CreatePNGDecoder();
-  decoder->SetData(data.Get(), true);
+  decoder->SetData(data.get(), true);
 
   EXPECT_EQ(expected_frame_count, decoder->FrameCount());
 
@@ -377,7 +378,7 @@ TEST(AnimatedPNGTests, ByteByByteMetaData) {
   for (size_t length = 1; length <= frame_offsets[kExpectedFrameCount - 1];
        length++) {
     partial_data->Append(source++, 1u);
-    decoder->SetData(partial_data.Get(), false);
+    decoder->SetData(partial_data.get(), false);
     EXPECT_FALSE(decoder->Failed());
     if (length < frame_offsets[frames_parsed]) {
       EXPECT_EQ(frames_parsed, decoder->FrameCount());
@@ -538,7 +539,7 @@ TEST(AnimatedPNGTests, fdatBeforeIdat) {
   {
     // This broken APNG will be treated as a static png.
     auto decoder = CreatePNGDecoder();
-    decoder->SetData(modified_data.Get(), true);
+    decoder->SetData(modified_data.get(), true);
     ExpectStatic(decoder.get());
   }
 
@@ -552,7 +553,7 @@ TEST(AnimatedPNGTests, fdatBeforeIdat) {
     modified_data2->Append(modified_data->Data() + kOffsetActl + kAcTLSize,
                            modified_data->size() - kOffsetActl - kAcTLSize);
     auto decoder = CreatePNGDecoder();
-    decoder->SetData(modified_data2.Get(), true);
+    decoder->SetData(modified_data2.get(), true);
     ExpectStatic(decoder.get());
 
     // Likewise, if an acTL follows the fdAT, it is ignored.
@@ -563,7 +564,7 @@ TEST(AnimatedPNGTests, fdatBeforeIdat) {
     modified_data3->Append(modified_data2->Data() + kInsertionOffset,
                            modified_data2->size() - kInsertionOffset);
     decoder = CreatePNGDecoder();
-    decoder->SetData(modified_data3.Get(), true);
+    decoder->SetData(modified_data3.get(), true);
     ExpectStatic(decoder.get());
   }
 }
@@ -591,7 +592,7 @@ TEST(AnimatedPNGTests, IdatSizeMismatch) {
   modified_data->Append(data->Data() + kAfterFctl, data->size() - kAfterFctl);
 
   auto decoder = CreatePNGDecoder();
-  decoder->SetData(modified_data.Get(), true);
+  decoder->SetData(modified_data.get(), true);
   ExpectStatic(decoder.get());
 }
 
@@ -680,14 +681,14 @@ TEST(AnimatedPNGTests, FailureMissingIendChunk) {
   const size_t kExpectedFramesAfter249Bytes = 2;
   RefPtr<SharedBuffer> temp_data =
       SharedBuffer::Create(full_data->Data(), kOffsetTwoFrames);
-  decoder->SetData(temp_data.Get(), false);
+  decoder->SetData(temp_data.get(), false);
   EXPECT_EQ(kExpectedFramesAfter249Bytes, decoder->FrameCount());
   EXPECT_FALSE(decoder->Failed());
 
   // Provide the rest of the data except for the last IEND chunk.
   const size_t kExpectedFramesAfterAllExcept12Bytes = 3;
   temp_data = SharedBuffer::Create(full_data->Data(), full_data->size() - 12);
-  decoder->SetData(temp_data.Get(), true);
+  decoder->SetData(temp_data.get(), true);
   ASSERT_EQ(kExpectedFramesAfterAllExcept12Bytes, decoder->FrameCount());
 
   for (size_t i = 0; i < kExpectedFramesAfterAllExcept12Bytes; i++) {
@@ -730,7 +731,7 @@ TEST(AnimatedPNGTests, VerifyIENDBeforeIDATInvalidatesDecoder) {
   data->Append(full_data->Data() + full_data->size() - 12u, 12u);
   data->Append(full_data->Data() + kOffsetIDAT,
                full_data->size() - kOffsetIDAT);
-  decoder->SetData(data.Get(), true);
+  decoder->SetData(data.get(), true);
 
   const size_t kExpectedFrameCount = 0u;
   EXPECT_EQ(kExpectedFrameCount, decoder->FrameCount());
@@ -760,7 +761,7 @@ TEST(AnimatedPNGTests, MixedDataChunks) {
   data->Append(full_data->Data() + kIENDOffset,
                full_data->size() - kIENDOffset);
   auto decoder = CreatePNGDecoder();
-  decoder->SetData(data.Get(), true);
+  decoder->SetData(data.get(), true);
   decoder->FrameCount();
   EXPECT_TRUE(decoder->Failed());
 
@@ -772,7 +773,7 @@ TEST(AnimatedPNGTests, MixedDataChunks) {
   // Append the rest.
   data->Append(full_data->Data() + kPostIDAT, full_data->size() - kPostIDAT);
   decoder = CreatePNGDecoder();
-  decoder->SetData(data.Get(), true);
+  decoder->SetData(data.get(), true);
   decoder->FrameCount();
   EXPECT_TRUE(decoder->Failed());
 }
@@ -805,7 +806,7 @@ TEST(AnimatedPNGTests, VerifyInvalidDisposalAndBlending) {
   data->Append(full_data->Data() + kOffsetDisposalOp + 6u,
                full_data->size() - kOffsetDisposalOp - 6u);
 
-  decoder->SetData(data.Get(), true);
+  decoder->SetData(data.get(), true);
   decoder->FrameCount();
   ASSERT_TRUE(decoder->Failed());
 }
@@ -832,13 +833,13 @@ TEST(AnimatedPNGTests, VerifySuccessfulFirstFrameDecodeAfterLaterFrame) {
   const size_t kMiddleFirstFrame = 160u;
   RefPtr<SharedBuffer> data =
       SharedBuffer::Create(full_data->Data(), kMiddleFirstFrame);
-  decoder->SetData(data.Get(), false);
+  decoder->SetData(data.get(), false);
 
   ASSERT_EQ(1u, decoder->FrameCount());
   ASSERT_EQ(ImageFrame::kFramePartial,
             decoder->DecodeFrameBufferAtIndex(0)->GetStatus());
 
-  decoder->SetData(full_data.Get(), true);
+  decoder->SetData(full_data.get(), true);
   ASSERT_EQ(3u, decoder->FrameCount());
   ASSERT_EQ(ImageFrame::kFrameComplete,
             decoder->DecodeFrameBufferAtIndex(1)->GetStatus());
@@ -881,7 +882,7 @@ TEST(AnimatedPNGTests, DecodeFromIndependentFrame) {
   ASSERT_EQ(original_data->size(), data->size());
 
   auto decoder = CreatePNGDecoder();
-  decoder->SetData(data.Get(), true);
+  decoder->SetData(data.get(), true);
 
   ASSERT_EQ(4u, decoder->FrameCount());
   ASSERT_FALSE(decoder->Failed());
@@ -900,7 +901,7 @@ TEST(AnimatedPNGTests, DecodeFromIndependentFrame) {
 
   // Now decode starting from frame 1.
   decoder = CreatePNGDecoder();
-  decoder->SetData(data.Get(), true);
+  decoder->SetData(data.get(), true);
 
   frame = decoder->DecodeFrameBufferAtIndex(1);
   ASSERT_TRUE(frame);
@@ -937,7 +938,7 @@ TEST(AnimatedPNGTests, SubsetFromIHDR) {
   ASSERT_EQ(original_data->size(), data->size());
 
   // This will test both byte by byte and using the full data, and compare.
-  TestByteByByteDecode(CreatePNGDecoder, data.Get(), 1, kAnimationNone);
+  TestByteByByteDecode(CreatePNGDecoder, data.get(), 1, kAnimationNone);
 }
 
 // Static PNG tests
@@ -953,7 +954,7 @@ TEST(StaticPNGTests, sizeTest) {
 
 TEST(StaticPNGTests, MetaDataTest) {
   const size_t kExpectedFrameCount = 1;
-  const size_t kExpectedDuration = 0;
+  const TimeDelta kExpectedDuration;
   auto decoder = CreatePNGDecoderWithPngData(
       "/LayoutTests/images/resources/png-simple.png");
   EXPECT_EQ(kExpectedFrameCount, decoder->FrameCount());
@@ -1000,13 +1001,13 @@ TEST(PNGTests, VerifyFrameCompleteBehavior) {
   };
   for (const auto& rec : g_recs) {
     auto full_data = ReadFile(rec.name);
-    ASSERT_TRUE(full_data.Get());
+    ASSERT_TRUE(full_data.get());
 
     // Create with enough data for part of the first frame.
     auto decoder = CreatePNGDecoder();
     auto data =
         SharedBuffer::Create(full_data->Data(), rec.offset_in_first_frame);
-    decoder->SetData(data.Get(), false);
+    decoder->SetData(data.get(), false);
 
     EXPECT_FALSE(decoder->FrameIsReceivedAtIndex(0));
 
@@ -1024,7 +1025,7 @@ TEST(PNGTests, VerifyFrameCompleteBehavior) {
     EXPECT_NE(ImageFrame::kFrameComplete, frame->GetStatus());
     EXPECT_FALSE(decoder->FrameIsReceivedAtIndex(0));
 
-    decoder->SetData(full_data.Get(), true);
+    decoder->SetData(full_data.get(), true);
 
     // With full data, parsing the size still does not mark a frame as
     // complete for animated images.

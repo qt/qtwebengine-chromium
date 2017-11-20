@@ -12,6 +12,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
@@ -28,6 +29,7 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/common/content_features.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/test/dummy_render_widget_host_delegate.h"
@@ -64,7 +66,13 @@ class MockFrameConnectorDelegate : public FrameConnectorDelegate {
     return nullptr;
   }
 
+  void BubbleScrollEvent(const blink::WebGestureEvent& event) override {
+    if (event.GetType() == blink::WebInputEvent::kGestureScrollUpdate)
+      seen_bubbled_gsu_ = true;
+  }
+
   viz::SurfaceInfo last_surface_info_;
+  bool seen_bubbled_gsu_ = false;
 };
 
 class RenderWidgetHostViewChildFrameTest : public testing::Test {
@@ -78,8 +86,8 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
 
 // ImageTransportFactory doesn't exist on Android.
 #if !defined(OS_ANDROID)
-    ImageTransportFactory::InitializeForUnitTests(
-        base::WrapUnique(new NoTransportImageTransportFactory));
+    ImageTransportFactory::SetFactory(
+        std::make_unique<NoTransportImageTransportFactory>());
 #endif
 
     MockRenderProcessHost* process_host =
@@ -156,14 +164,14 @@ class RenderWidgetHostViewChildFrameTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewChildFrameTest);
 };
 
-cc::CompositorFrame CreateDelegatedFrame(float scale_factor,
-                                         gfx::Size size,
-                                         const gfx::Rect& damage) {
-  cc::CompositorFrame frame;
+viz::CompositorFrame CreateDelegatedFrame(float scale_factor,
+                                          gfx::Size size,
+                                          const gfx::Rect& damage) {
+  viz::CompositorFrame frame;
   frame.metadata.device_scale_factor = scale_factor;
   frame.metadata.begin_frame_ack = viz::BeginFrameAck(0, 1, true);
 
-  std::unique_ptr<cc::RenderPass> pass = cc::RenderPass::Create();
+  std::unique_ptr<viz::RenderPass> pass = viz::RenderPass::Create();
   pass->SetNew(1, gfx::Rect(size), damage, gfx::Transform());
   frame.render_pass_list.push_back(std::move(pass));
   return frame;
@@ -266,6 +274,49 @@ TEST_F(RenderWidgetHostViewChildFrameTest, ViewportIntersectionUpdated) {
   std::tuple<gfx::Rect> sent_rect;
   ViewMsg_SetViewportIntersection::Read(intersection_update, &sent_rect);
   EXPECT_EQ(intersection_rect, std::get<0>(sent_rect));
+}
+
+// Tests specific to non-scroll-latching behaviour.
+// TODO(mcnee): Remove once scroll-latching lands. crbug.com/526463
+class RenderWidgetHostViewChildFrameScrollLatchingDisabledTest
+    : public RenderWidgetHostViewChildFrameTest {
+ public:
+  RenderWidgetHostViewChildFrameScrollLatchingDisabledTest() {}
+
+  void SetUp() override {
+    feature_list_.InitWithFeatures({},
+                                   {features::kTouchpadAndWheelScrollLatching,
+                                    features::kAsyncWheelEvents});
+
+    RenderWidgetHostViewChildFrameTest::SetUp();
+    DCHECK(!view_->wheel_scroll_latching_enabled());
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+
+  DISALLOW_COPY_AND_ASSIGN(
+      RenderWidgetHostViewChildFrameScrollLatchingDisabledTest);
+};
+
+// Test that when a child scrolls and then stops consuming once it hits the
+// extent, we don't bubble the subsequent unconsumed GestureScrollUpdates
+// in the same gesture.
+TEST_F(RenderWidgetHostViewChildFrameScrollLatchingDisabledTest,
+       DoNotBubbleIfChildHasAlreadyScrolled) {
+  blink::WebGestureEvent gesture_scroll(
+      blink::WebGestureEvent::kGestureScrollBegin,
+      blink::WebInputEvent::kNoModifiers,
+      blink::WebInputEvent::kTimeStampForTesting);
+  view_->GestureEventAck(gesture_scroll, INPUT_EVENT_ACK_STATE_IGNORED);
+
+  gesture_scroll.SetType(blink::WebGestureEvent::kGestureScrollUpdate);
+  view_->GestureEventAck(gesture_scroll, INPUT_EVENT_ACK_STATE_CONSUMED);
+  ASSERT_FALSE(test_frame_connector_->seen_bubbled_gsu_);
+
+  view_->GestureEventAck(gesture_scroll,
+                         INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
+  EXPECT_FALSE(test_frame_connector_->seen_bubbled_gsu_);
 }
 
 }  // namespace content

@@ -12,6 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/unguessable_token.h"
 #include "media/base/decode_status.h"
+#include "media/base/overlay_info.h"
 #include "media/base/video_decoder.h"
 #include "media/mojo/interfaces/video_decoder.mojom.h"
 #include "media/mojo/services/mojo_media_client.h"
@@ -47,6 +48,7 @@ class MojoVideoDecoderService : public mojom::VideoDecoder {
   void Reset(ResetCallback callback) final;
   void OnReleaseMailbox(const base::UnguessableToken& release_token,
                         const gpu::SyncToken& release_sync_token) final;
+  void OnOverlayInfoChanged(const OverlayInfo& overlay_info) final;
 
  private:
   // Helper methods so that we can bind them with a weak pointer to avoid
@@ -58,9 +60,15 @@ class MojoVideoDecoderService : public mojom::VideoDecoder {
                      scoped_refptr<DecoderBuffer> buffer);
   void OnDecoderDecoded(DecodeCallback callback, DecodeStatus status);
   void OnDecoderReset(ResetCallback callback);
-
-  void OnDecoderOutput(MojoMediaClient::ReleaseMailboxCB,
+  void OnDecoderOutputWithReleaseCB(
+      MojoMediaClient::ReleaseMailboxCB release_cb,
+      const scoped_refptr<VideoFrame>& frame);
+  void OnDecoderOutput(base::Optional<base::UnguessableToken> release_token,
                        const scoped_refptr<VideoFrame>& frame);
+
+  void OnDecoderRequestedOverlayInfo(
+      bool restart_for_transitions,
+      const ProvideOverlayInfoCB& provide_overlay_info_cb);
 
   mojom::VideoDecoderClientAssociatedPtr client_;
   std::unique_ptr<MojoMediaLog> media_log_;
@@ -70,6 +78,7 @@ class MojoVideoDecoderService : public mojom::VideoDecoder {
   std::unique_ptr<media::VideoDecoder> decoder_;
   std::map<base::UnguessableToken, MojoMediaClient::ReleaseMailboxCB>
       release_mailbox_cbs_;
+  ProvideOverlayInfoCB provide_overlay_info_cb_;
 
   base::WeakPtr<MojoVideoDecoderService> weak_this_;
   base::WeakPtrFactory<MojoVideoDecoderService> weak_factory_;

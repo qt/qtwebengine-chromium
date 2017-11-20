@@ -96,8 +96,8 @@ $genBType isinf($genType x);
 $genBType isinf($genDType x);
 $genIType floatBitsToInt($genType value);
 //$genUType floatBitsToUint($genType value);
-$genType intBitsToFloat($genIType value);
-$genType uintBitsToFloat($genUType value);
+$genType intBitsTofloat($genIType value);
+$genType uintBitsTofloat($genUType value);
 $genType fma($genType a, $genType b, $genType c);
 $genHType fma($genHType a, $genHType b, $genHType c);
 $genDType fma($genDType a, $genDType b, $genDType c);
@@ -282,14 +282,14 @@ int textureQueryLevels(sampler2DArrayShadow sampler);
 int textureQueryLevels(samplerCubeArrayShadow sampler);
 */
 
-$gfloat4 texture($gsampler1D sampler, float P);
-$gfloat4 texture($gsampler1D sampler, float P, float bias);
-$gfloat4 texture($gsampler2D sampler, float2 P);
+half4 texture($gsampler1D sampler, float P);
+half4 texture($gsampler1D sampler, float P, float bias);
+half4 texture($gsampler2D sampler, float2 P);
 // The above currently only expand to handle the float/fixed case. So we also declare this integer
 // version of texture().
 int4 texture(isampler2D sampler, float2 P);
-float4 texture(samplerExternalOES sampler, float2 P, float bias);
-float4 texture(samplerExternalOES sampler, float2 P);
+half4 texture(samplerExternalOES sampler, float2 P, float bias);
+half4 texture(samplerExternalOES sampler, float2 P);
 
 /*
 $gfloat4 texture($gsampler2D sampler, float2 P, float bias);
@@ -314,8 +314,8 @@ float texture(sampler1DArrayShadow sampler, float3 P, float bias);
 float texture(sampler2DArrayShadow sampler, float4 P);
 */
 
-$gfloat4 texture($gsampler2DRect sampler, float2 P);
-$gfloat4 texture($gsampler2DRect sampler, float3 P);
+half4 texture($gsampler2DRect sampler, float2 P);
+half4 texture($gsampler2DRect sampler, float3 P);
 
 /*
 float texture(sampler2DRectShadow sampler, float3 P);
@@ -336,10 +336,10 @@ $gfloat4subpassLoad(gsubpassInputMS subpass, int sample);
 
 STRINGIFY(
 
-$gfloat4 texture($gsampler1D sampler, float2 P);
-$gfloat4 texture($gsampler1D sampler, float2 P, float bias);
-$gfloat4 texture($gsampler2D sampler, float3 P);
-$gfloat4 texture($gsampler2D sampler, float3 P, float bias);
+half4 texture($gsampler1D sampler, float2 P);
+half4 texture($gsampler1D sampler, float2 P, float bias);
+half4 texture($gsampler2D sampler, float3 P);
+half4 texture($gsampler2D sampler, float3 P, float bias);
 /*
 $gfloat4 textureProj($gsampler3D sampler, float4 P);
 $gfloat4 textureProj($gsampler3D sampler, float4 P, float bias);

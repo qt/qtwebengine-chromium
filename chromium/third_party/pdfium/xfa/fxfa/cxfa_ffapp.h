@@ -12,14 +12,14 @@
 
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
-#include "core/fxcrt/cfx_retain_ptr.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "xfa/fgas/font/cfgas_fontmgr.h"
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fxfa/fxfa.h"
 
 class CFWL_WidgetMgr;
-class CXFA_DefFontMgr;
+class CFGAS_DefaultFontManager;
 class CXFA_FWLAdapterWidgetMgr;
 class CXFA_FWLTheme;
 class CXFA_FFDocHandler;
@@ -33,10 +33,13 @@ class CXFA_FFApp {
 
   std::unique_ptr<CXFA_FFDoc> CreateDoc(IXFA_DocEnvironment* pDocEnvironment,
                                         CPDF_Document* pPDFDoc);
-  void SetDefaultFontMgr(std::unique_ptr<CXFA_DefFontMgr> pFontMgr);
+  void SetDefaultFontMgr(std::unique_ptr<CFGAS_DefaultFontManager> pFontMgr);
 
   CXFA_FFDocHandler* GetDocHandler();
-  CXFA_FWLAdapterWidgetMgr* GetWidgetMgr(CFWL_WidgetMgr* pDelegate);
+
+  CXFA_FWLAdapterWidgetMgr* GetFWLAdapterWidgetMgr();
+  CFWL_WidgetMgr* GetFWLWidgetMgr() const { return m_pFWLApp->GetWidgetMgr(); }
+
   CFGAS_FontMgr* GetFDEFontMgr();
   CXFA_FWLTheme* GetFWLTheme();
 
@@ -44,13 +47,12 @@ class CXFA_FFApp {
   const CFWL_App* GetFWLApp() const { return m_pFWLApp.get(); }
   IFWL_AdapterTimerMgr* GetTimerMgr() const;
   CXFA_FontMgr* GetXFAFontMgr() const;
-  CFWL_WidgetMgr* GetWidgetMgr() const { return m_pWidgetMgr.Get(); }
 
   void ClearEventTargets();
 
  private:
   std::unique_ptr<CXFA_FFDocHandler> m_pDocHandler;
-  CFX_UnownedPtr<IXFA_AppProvider> const m_pProvider;
+  UnownedPtr<IXFA_AppProvider> const m_pProvider;
 
   // The fonts stored in the font manager may have been created by the default
   // font manager. The GEFont::LoadFont call takes the manager as a param and
@@ -65,19 +67,12 @@ class CXFA_FFApp {
   std::unique_ptr<CFGAS_FontMgr> m_pFDEFontMgr;
   std::unique_ptr<CXFA_FontMgr> m_pFontMgr;
 
-#if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
-  std::unique_ptr<CFX_FontSourceEnum_File> m_pFontSource;
-#endif
   std::unique_ptr<CXFA_FWLAdapterWidgetMgr> m_pAdapterWidgetMgr;
 
   // |m_pFWLApp| has to be released first, then |m_pFWLTheme| since the former
   // may refers to theme manager and the latter refers to font manager.
   std::unique_ptr<CXFA_FWLTheme> m_pFWLTheme;
   std::unique_ptr<CFWL_App> m_pFWLApp;
-
-  // |m_pWidgetMgr| has to be released before |m_pFWLApp|, since
-  // |m_pFWLApp| is its owner.
-  CFX_UnownedPtr<CFWL_WidgetMgr> m_pWidgetMgr;
 };
 
 #endif  // XFA_FXFA_CXFA_FFAPP_H_

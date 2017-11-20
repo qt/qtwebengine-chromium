@@ -42,6 +42,7 @@
 #include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameTestHelpers.h"
 #include "core/frame/WebLocalFrameImpl.h"
+#include "core/html/HTMLElement.h"
 #include "core/layout/LayoutObject.h"
 #include "core/page/Page.h"
 #include "platform/KeyboardCodes.h"
@@ -1190,9 +1191,9 @@ TEST_F(WebPluginContainerTest, ClippedRectsForIframedElement) {
   IntRect window_rect, clip_rect, unobscured_rect;
   CalculateGeometry(plugin_container_impl, window_rect, clip_rect,
                     unobscured_rect);
-  EXPECT_RECT_EQ(IntRect(20, 220, 40, 40), window_rect);
-  EXPECT_RECT_EQ(IntRect(0, 0, 40, 40), clip_rect);
-  EXPECT_RECT_EQ(IntRect(0, 0, 40, 40), unobscured_rect);
+  EXPECT_EQ(IntRect(20, 220, 40, 40), window_rect);
+  EXPECT_EQ(IntRect(0, 0, 40, 40), clip_rect);
+  EXPECT_EQ(IntRect(0, 0, 40, 40), unobscured_rect);
 
   // Cause the plugin's frame to be detached.
   web_view_helper.Reset();
@@ -1219,9 +1220,9 @@ TEST_F(WebPluginContainerTest, ClippedRectsForSubpixelPositionedPlugin) {
   IntRect window_rect, clip_rect, unobscured_rect;
   CalculateGeometry(plugin_container_impl, window_rect, clip_rect,
                     unobscured_rect);
-  EXPECT_RECT_EQ(IntRect(0, 0, 40, 40), window_rect);
-  EXPECT_RECT_EQ(IntRect(0, 0, 40, 40), clip_rect);
-  EXPECT_RECT_EQ(IntRect(0, 0, 40, 40), unobscured_rect);
+  EXPECT_EQ(IntRect(0, 0, 40, 40), window_rect);
+  EXPECT_EQ(IntRect(0, 0, 40, 40), clip_rect);
+  EXPECT_EQ(IntRect(0, 0, 40, 40), unobscured_rect);
 
   // Cause the plugin's frame to be detached.
   web_view_helper.Reset();
@@ -1330,7 +1331,8 @@ TEST_F(WebPluginContainerTest, CompositedPluginSPv2) {
 
   paint_controller->UpdateCurrentPaintChunkProperties(nullptr, properties);
   GraphicsContext graphics_context(*paint_controller);
-  container->Paint(graphics_context, CullRect(IntRect(10, 10, 400, 300)));
+  container->Paint(graphics_context, kGlobalPaintNormalPhase,
+                   CullRect(IntRect(10, 10, 400, 300)));
   paint_controller->CommitNewDisplayItems();
 
   const auto& display_items =

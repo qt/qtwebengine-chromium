@@ -29,6 +29,7 @@
 #include "platform/instrumentation/tracing/web_process_memory_dump.h"
 #include "platform/wtf/text/UTF8.h"
 #include "platform/wtf/text/Unicode.h"
+#include "third_party/skia/include/core/SkData.h"
 
 namespace blink {
 
@@ -65,7 +66,7 @@ SharedBuffer::~SharedBuffer() {
   Clear();
 }
 
-PassRefPtr<SharedBuffer> SharedBuffer::AdoptVector(Vector<char>& vector) {
+RefPtr<SharedBuffer> SharedBuffer::AdoptVector(Vector<char>& vector) {
   RefPtr<SharedBuffer> buffer = Create();
   buffer->buffer_.swap(vector);
   buffer->size_ = buffer->buffer_.size();
@@ -263,7 +264,7 @@ void SharedBuffer::OnMemoryDump(const String& dump_prefix,
 }
 
 SharedBuffer::DeprecatedFlatData::DeprecatedFlatData(
-    PassRefPtr<const SharedBuffer> buffer)
+    RefPtr<const SharedBuffer> buffer)
     : buffer_(std::move(buffer)) {
   DCHECK(buffer_);
 

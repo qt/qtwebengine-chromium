@@ -10,6 +10,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/scoped_feature_list.h"
+#include "components/autofill/core/browser/autofill_experiments.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/country_names.h"
@@ -118,7 +120,7 @@ class AutofillFieldTest : public testing::Test {
 
 TEST_F(AutofillFieldTest, Type) {
   AutofillField field;
-  ASSERT_EQ(NO_SERVER_DATA, field.server_type());
+  ASSERT_EQ(NO_SERVER_DATA, field.overall_server_type());
   ASSERT_EQ(UNKNOWN_TYPE, field.heuristic_type());
 
   // |server_type_| is NO_SERVER_DATA, so |heuristic_type_| is returned.
@@ -130,12 +132,12 @@ TEST_F(AutofillFieldTest, Type) {
   EXPECT_EQ(NAME, field.Type().group());
 
   // Set the server type and check it.
-  field.set_server_type(ADDRESS_BILLING_LINE1);
+  field.set_overall_server_type(ADDRESS_BILLING_LINE1);
   EXPECT_EQ(ADDRESS_HOME_LINE1, field.Type().GetStorableType());
   EXPECT_EQ(ADDRESS_BILLING, field.Type().group());
 
   // Remove the server type to make sure the heuristic type is preserved.
-  field.set_server_type(NO_SERVER_DATA);
+  field.set_overall_server_type(NO_SERVER_DATA);
   EXPECT_EQ(NAME_FIRST, field.Type().GetStorableType());
   EXPECT_EQ(NAME, field.Type().group());
 }
@@ -171,18 +173,18 @@ TEST_F(AutofillFieldTest, Type_CreditCardOverrideHtml_ServerPredicitons) {
   field.SetHtmlType(HTML_TYPE_UNRECOGNIZED, HTML_MODE_NONE);
 
   // A credit card server prediction overrides the unrecognized type.
-  field.set_server_type(CREDIT_CARD_NUMBER);
+  field.set_overall_server_type(CREDIT_CARD_NUMBER);
   EXPECT_EQ(CREDIT_CARD_NUMBER, field.Type().GetStorableType());
 
   // A non credit card server prediction doesn't override the unrecognized
   // type.
-  field.set_server_type(NAME_FIRST);
+  field.set_overall_server_type(NAME_FIRST);
   EXPECT_EQ(UNKNOWN_TYPE, field.Type().GetStorableType());
 
   // A credit card server prediction doesn't override a known specified html
   // type.
   field.SetHtmlType(HTML_TYPE_NAME, HTML_MODE_NONE);
-  field.set_server_type(CREDIT_CARD_NUMBER);
+  field.set_overall_server_type(CREDIT_CARD_NUMBER);
   EXPECT_EQ(NAME_FULL, field.Type().GetStorableType());
 }
 
@@ -219,7 +221,7 @@ TEST_F(AutofillFieldTest, FieldSignatureAsStr) {
   EXPECT_EQ("502192749", field.FieldSignatureAsStr());
 
   // Server type does not affect FieldSignature.
-  field.set_server_type(NAME_LAST);
+  field.set_overall_server_type(NAME_LAST);
   EXPECT_EQ("502192749", field.FieldSignatureAsStr());
 }
 
@@ -236,12 +238,12 @@ TEST_F(AutofillFieldTest, IsFieldFillable) {
 
   // Only server type is set.
   field.set_heuristic_type(UNKNOWN_TYPE);
-  field.set_server_type(NAME_LAST);
+  field.set_overall_server_type(NAME_LAST);
   EXPECT_TRUE(field.IsFieldFillable());
 
   // Both types set.
   field.set_heuristic_type(NAME_FIRST);
-  field.set_server_type(NAME_LAST);
+  field.set_overall_server_type(NAME_LAST);
   EXPECT_TRUE(field.IsFieldFillable());
 
   // Field has autocomplete="off" set. Since autofill was able to make a
@@ -251,8 +253,12 @@ TEST_F(AutofillFieldTest, IsFieldFillable) {
 }
 
 // Verify that non credit card related fields with the autocomplete attribute
-// set to off don't get filled on desktop.
-TEST_F(AutofillFieldTest, FillFormField_AutocompleteOff_AddressField) {
+// set to off don't get filled on desktop when the feature to Autofill all
+// addresses is disabled.
+TEST_F(AutofillFieldTest, FillFormField_AutocompleteOffRespected_AddressField) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(kAutofillAlwaysFillAddresses);
+
   AutofillField field;
   field.should_autocomplete = false;
 
@@ -260,12 +266,28 @@ TEST_F(AutofillFieldTest, FillFormField_AutocompleteOff_AddressField) {
   AutofillField::FillFormField(field, ASCIIToUTF16("Test"), "en-US", "en-US",
                                &field);
 
-  // Verifiy that the field is filled on mobile but not on desktop.
+  // Verify that the field is filled on mobile but not on desktop.
   if (IsDesktopPlatform()) {
     EXPECT_EQ(base::string16(), field.value);
   } else {
     EXPECT_EQ(ASCIIToUTF16("Test"), field.value);
   }
+}
+
+// Verify that non credit card related fields with the autocomplete attribute
+// set to off are filled on desktop when the feature to Autofill all
+// addresses is enabled (default).
+TEST_F(AutofillFieldTest,
+       FillFormField_AutocompleteOffNotRespected_AddressField) {
+  AutofillField field;
+  field.should_autocomplete = false;
+
+  // Non credit card related field.
+  AutofillField::FillFormField(field, ASCIIToUTF16("Test"), "en-US", "en-US",
+                               &field);
+
+  // Verify that the field is filled in all circumstances.
+  EXPECT_EQ(ASCIIToUTF16("Test"), field.value);
 }
 
 // Verify that credit card related fields with the autocomplete attribute
@@ -683,12 +705,17 @@ INSTANTIATE_TEST_CASE_P(
             {"00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
              "11"},
             NotNumericMonthsContentsNoPlaceholder()},
-        // The AngularJS framework adds a prefix to number types. Test that it
-        // is removed.
+        // The AngularJS framework can add a "number:" prefix to select values.
         FillWithExpirationMonthTestCase{
             {"number:1", "number:2", "number:3", "number:4", "number:5",
              "number:6", "number:7", "number:8", "number:9", "number:10",
              "number:11", "number:12"},
+            NotNumericMonthsContentsNoPlaceholder()},
+        // The AngularJS framework can add a "string:" prefix to select values.
+        FillWithExpirationMonthTestCase{
+            {"string:1", "string:2", "string:3", "string:4", "string:5",
+             "string:6", "string:7", "string:8", "string:9", "string:10",
+             "string:11", "string:12"},
             NotNumericMonthsContentsNoPlaceholder()},
         // Values start at 0 and the first content is a placeholder.
         FillWithExpirationMonthTestCase{
@@ -739,7 +766,7 @@ TEST_F(AutofillFieldTest, FillSelectControlWithAbbreviatedMonthName) {
   EXPECT_EQ(ASCIIToUTF16("Apr"), field.value);
 }
 
-TEST_F(AutofillFieldTest, FillSelectControlWithFullMonthName) {
+TEST_F(AutofillFieldTest, FillSelectControlWithMonthName) {
   std::vector<const char*> kMonthsFull = {
       "January", "February", "March",     "April",   "May",      "June",
       "July",    "August",   "September", "October", "November", "December",
@@ -753,7 +780,49 @@ TEST_F(AutofillFieldTest, FillSelectControlWithFullMonthName) {
   EXPECT_EQ(ASCIIToUTF16("April"), field.value);
 }
 
-TEST_F(AutofillFieldTest, FillSelectControlWithFrenchMonthName) {
+TEST_F(AutofillFieldTest, FillSelectControlWithMonthNameAndDigits) {
+  std::vector<const char*> kMonthsFullWithDigits = {
+      "January (01)",   "February (02)", "March (03)",    "April (04)",
+      "May (05)",       "June (06)",     "July (07)",     "August (08)",
+      "September (09)", "October (10)",  "November (11)", "December (12)",
+  };
+  AutofillField field;
+  test::CreateTestSelectField(kMonthsFullWithDigits, &field);
+  field.set_heuristic_type(CREDIT_CARD_EXP_MONTH);
+
+  AutofillField::FillFormField(field, ASCIIToUTF16("04"), "en-US", "en-US",
+                               &field);
+  EXPECT_EQ(ASCIIToUTF16("April (04)"), field.value);
+}
+
+TEST_F(AutofillFieldTest, FillSelectControlWithMonthNameAndDigits_French) {
+  std::vector<const char*> kMonthsFullWithDigits = {
+      "01 - JANVIER",
+      "02 - FÉVRIER",
+      "03 - MARS",
+      "04 - AVRIL",
+      "05 - MAI",
+      "06 - JUIN",
+      "07 - JUILLET",
+      "08 - AOÛT",
+      "09 - SEPTEMBRE",
+      "10 - OCTOBRE",
+      "11 - NOVEMBRE",
+      "12 - DECEMBRE" /* Intentionally not including accent in DÉCEMBRE */,
+  };
+  AutofillField field;
+  test::CreateTestSelectField(kMonthsFullWithDigits, &field);
+  field.set_heuristic_type(CREDIT_CARD_EXP_MONTH);
+
+  AutofillField::FillFormField(field, ASCIIToUTF16("08"), "fr-FR", "fr-FR",
+                               &field);
+  EXPECT_EQ(UTF8ToUTF16("08 - AOÛT"), field.value);
+  AutofillField::FillFormField(field, ASCIIToUTF16("12"), "fr-FR", "fr-FR",
+                               &field);
+  EXPECT_EQ(UTF8ToUTF16("12 - DECEMBRE"), field.value);
+}
+
+TEST_F(AutofillFieldTest, FillSelectControlWithMonthName_French) {
   std::vector<const char*> kMonthsFrench = {"JANV", "FÉVR.", "MARS",
                                             "décembre"};
   AutofillField field;
@@ -873,7 +942,7 @@ TEST_F(AutofillFieldTest, FillStreetAddressTextArea) {
 TEST_F(AutofillFieldTest, FillStreetAddressTextField) {
   AutofillField field;
   field.form_control_type = "text";
-  field.set_server_type(ADDRESS_HOME_STREET_ADDRESS);
+  field.set_overall_server_type(ADDRESS_HOME_STREET_ADDRESS);
 
   base::string16 value = ASCIIToUTF16("123 Fake St.\n"
                                       "Apt. 42");

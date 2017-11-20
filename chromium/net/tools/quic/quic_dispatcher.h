@@ -38,7 +38,6 @@ class QuicCryptoServerConfig;
 
 class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
                        public ProcessPacketInterface,
-                       public QuicBlockedWriterInterface,
                        public QuicFramerVisitorInterface,
                        public QuicBufferedPacketStore::VisitorInterface {
  public:
@@ -64,7 +63,7 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
                      const QuicReceivedPacket& packet) override;
 
   // Called when the socket becomes writable to allow queued writes to happen.
-  void OnCanWrite() override;
+  virtual void OnCanWrite();
 
   // Returns true if there's anything in the blocked writer list.
   virtual bool HasPendingWrites() const;
@@ -123,7 +122,8 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
   // destined for the time wait manager.
   bool OnUnauthenticatedHeader(const QuicPacketHeader& header) override;
   void OnError(QuicFramer* framer) override;
-  bool OnProtocolVersionMismatch(QuicVersion received_version) override;
+  bool OnProtocolVersionMismatch(
+      QuicTransportVersion received_version) override;
 
   // The following methods should never get called because
   // OnUnauthenticatedPublicHeader() or OnUnauthenticatedHeader() (whichever
@@ -214,7 +214,7 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
     return time_wait_list_manager_.get();
   }
 
-  const QuicVersionVector& GetSupportedVersions();
+  const QuicTransportVersionVector& GetSupportedTransportVersions();
 
   QuicConnectionId current_connection_id() { return current_connection_id_; }
   const QuicSocketAddress& current_server_address() {
@@ -253,8 +253,9 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
   virtual QuicPacketWriter* CreatePerConnectionWriter();
 
   // Returns true if a session should be created for a connection with an
-  // unknown version identified by |version_tag|.
-  virtual bool ShouldCreateSessionForUnknownVersion(QuicTag version_tag);
+  // unknown version identified by |version_label|.
+  virtual bool ShouldCreateSessionForUnknownVersion(
+      QuicVersionLabel version_label);
 
   void SetLastError(QuicErrorCode error);
 
@@ -287,6 +288,9 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
 
   void StopAcceptingNewConnections();
 
+  // Return true if the blocked writer should be added to blocked list.
+  virtual bool ShouldAddToBlockedList();
+
  private:
   friend class test::QuicDispatcherPeer;
   friend class StatelessRejectorProcessDoneCallback;
@@ -300,7 +304,7 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
   // fate which describes what subsequent processing should be performed on the
   // packets, like ValidityChecks, and invokes ProcessUnauthenticatedHeaderFate.
   void MaybeRejectStatelessly(QuicConnectionId connection_id,
-                              QuicVersion version);
+                              QuicTransportVersion version);
 
   // Deliver |packets| to |session| for further processing.
   void DeliverPacketsToSession(
@@ -319,13 +323,13 @@ class QuicDispatcher : public QuicTimeWaitListManager::Visitor,
       const QuicSocketAddress& current_client_address,
       const QuicSocketAddress& current_server_address,
       std::unique_ptr<QuicReceivedPacket> current_packet,
-      QuicVersion first_version);
+      QuicTransportVersion first_version);
 
   // Examine the state of the rejector and decide what to do with the current
   // packet.
   void ProcessStatelessRejectorState(
       std::unique_ptr<StatelessRejector> rejector,
-      QuicVersion first_version);
+      QuicTransportVersion first_version);
 
   void set_new_sessions_allowed_per_event_loop(
       int16_t new_sessions_allowed_per_event_loop) {

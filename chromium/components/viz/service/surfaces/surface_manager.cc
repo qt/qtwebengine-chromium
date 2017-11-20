@@ -8,9 +8,9 @@
 #include <stdint.h>
 
 #include <algorithm>
-#include <queue>
 #include <utility>
 
+#include "base/containers/queue.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "components/viz/common/surfaces/local_surface_id_allocator.h"
@@ -119,8 +119,10 @@ Surface* SurfaceManager::CreateSurface(
   // SurfaceId. Remove the surface out of the garbage collector's queue and
   // reuse it.
   Surface* surface = it->second.get();
+
   DCHECK(IsMarkedForDestruction(surface_info.id()));
   surfaces_to_destroy_.erase(surface_info.id());
+  surface->ResetSeenFirstFrameActivation();
   return surface;
 }
 
@@ -158,12 +160,12 @@ void SurfaceManager::SatisfySequence(const SurfaceSequence& sequence) {
 }
 
 void SurfaceManager::RegisterFrameSinkId(const FrameSinkId& frame_sink_id) {
-  bool inserted = valid_frame_sink_ids_.insert(frame_sink_id).second;
+  bool inserted = valid_frame_sink_labels_.emplace(frame_sink_id, "").second;
   DCHECK(inserted);
 }
 
 void SurfaceManager::InvalidateFrameSinkId(const FrameSinkId& frame_sink_id) {
-  valid_frame_sink_ids_.erase(frame_sink_id);
+  valid_frame_sink_labels_.erase(frame_sink_id);
 
   // Remove any temporary references owned by |frame_sink_id|.
   std::vector<SurfaceId> temp_refs_to_clear;
@@ -177,6 +179,25 @@ void SurfaceManager::InvalidateFrameSinkId(const FrameSinkId& frame_sink_id) {
     RemoveTemporaryReference(surface_id, false);
 
   GarbageCollectSurfaces();
+}
+
+void SurfaceManager::SetFrameSinkDebugLabel(const FrameSinkId& frame_sink_id,
+                                            const std::string& debug_label) {
+#if DCHECK_IS_ON()
+  auto it = valid_frame_sink_labels_.find(frame_sink_id);
+  DCHECK(it != valid_frame_sink_labels_.end());
+  it->second = debug_label;
+#else
+  NOTREACHED();
+#endif
+}
+
+std::string SurfaceManager::GetFrameSinkDebugLabel(
+    const FrameSinkId& frame_sink_id) const {
+  auto it = valid_frame_sink_labels_.find(frame_sink_id);
+  if (it != valid_frame_sink_labels_.end())
+    return it->second;
+  return std::string();
 }
 
 const SurfaceId& SurfaceManager::GetRootSurfaceId() const {
@@ -272,7 +293,7 @@ SurfaceManager::SurfaceIdSet SurfaceManager::GetLiveSurfacesForReferences() {
 
   // Walk down from the root and mark each SurfaceId we encounter as
   // reachable.
-  std::queue<SurfaceId> surface_queue;
+  base::queue<SurfaceId> surface_queue;
   surface_queue.push(root_surface_id_);
 
   // All surfaces not marked for destruction are reachable.
@@ -319,7 +340,7 @@ SurfaceManager::SurfaceIdSet SurfaceManager::GetLiveSurfacesForSequences() {
     const SurfaceId& surface_id = map_entry.first;
     Surface* surface = map_entry.second.get();
     surface->SatisfyDestructionDependencies(&satisfied_sequences_,
-                                            &valid_frame_sink_ids_);
+                                            &valid_frame_sink_labels_);
 
     if (!IsMarkedForDestruction(surface_id) ||
         surface->GetDestructionDependencyCount() > 0) {
@@ -452,14 +473,16 @@ void SurfaceManager::MarkOldTemporaryReference() {
 
   std::vector<SurfaceId> temporary_references_to_delete;
   for (auto& map_entry : temporary_references_) {
+    const SurfaceId& surface_id = map_entry.first;
     TemporaryReferenceData& data = map_entry.second;
     if (data.marked_as_old) {
       // The temporary reference has existed for more than 10 seconds, a surface
       // reference should have replaced it by now. To avoid permanently leaking
       // memory delete the temporary reference.
-      DLOG(ERROR) << "Old/orphaned temporary reference to " << map_entry.first;
-      temporary_references_to_delete.push_back(map_entry.first);
-    } else {
+      DLOG(ERROR) << "Old/orphaned temporary reference to " << surface_id;
+      temporary_references_to_delete.push_back(surface_id);
+    } else if (IsMarkedForDestruction(surface_id)) {
+      // Never mark live surfaces as old, they can't be garbage collected.
       data.marked_as_old = true;
     }
   }
@@ -500,7 +523,7 @@ void SurfaceManager::FirstSurfaceActivation(const SurfaceInfo& surface_info) {
 
 void SurfaceManager::SurfaceActivated(Surface* surface) {
   // Trigger a display frame if necessary.
-  const cc::CompositorFrame& frame = surface->GetActiveFrame();
+  const CompositorFrame& frame = surface->GetActiveFrame();
   if (!SurfaceModified(surface->surface_id(), frame.metadata.begin_frame_ack)) {
     TRACE_EVENT_INSTANT0("cc", "Damage not visible.", TRACE_EVENT_SCOPE_THREAD);
     surface->RunDrawCallback();
@@ -551,22 +574,26 @@ void SurfaceManager::SurfaceReferencesToStringImpl(const SurfaceId& surface_id,
                                                    std::string indent,
                                                    std::stringstream* str) {
   *str << indent;
-
   // Print the current line for |surface_id|.
   Surface* surface = GetSurfaceForId(surface_id);
   if (surface) {
     *str << surface->surface_id().ToString();
+
+    std::string frame_sink_label =
+        GetFrameSinkDebugLabel(surface_id.frame_sink_id());
+    if (!frame_sink_label.empty())
+      *str << " " << frame_sink_label;
     *str << (IsMarkedForDestruction(surface_id) ? " destroyed" : " live");
 
     if (surface->HasPendingFrame()) {
       // This provides the surface size from the root render pass.
-      const cc::CompositorFrame& frame = surface->GetPendingFrame();
+      const CompositorFrame& frame = surface->GetPendingFrame();
       *str << " pending " << frame.size_in_pixels().ToString();
     }
 
     if (surface->HasActiveFrame()) {
       // This provides the surface size from the root render pass.
-      const cc::CompositorFrame& frame = surface->GetActiveFrame();
+      const CompositorFrame& frame = surface->GetActiveFrame();
       *str << " active " << frame.size_in_pixels().ToString();
     }
   } else {

@@ -190,14 +190,18 @@ SelectionState InlineTextBox::GetSelectionState() const {
             : 0;
     const FrameSelection& selection =
         GetLineLayoutItem().GetDocument().GetFrame()->Selection();
+    // TODO(yoichio): |value_or()| is used to prevent use uininitialized
+    // value on release build. It should be value() because calling
+    // LayoutSelectionStart() if SelectionState is neigher kStart nor
+    // kStartAndEnd is invalid operation.
     bool start =
         (state != SelectionState::kEnd &&
-         selection.LayoutSelectionStart().value() >= start_ &&
-         selection.LayoutSelectionStart().value() <=
+         selection.LayoutSelectionStart().value_or(0) >= start_ &&
+         selection.LayoutSelectionStart().value_or(0) <=
              start_ + len_ + end_of_line_adjustment_for_css_line_break);
     bool end = (state != SelectionState::kStart &&
-                selection.LayoutSelectionEnd().value() > start_ &&
-                selection.LayoutSelectionEnd().value() <= last_selectable);
+                selection.LayoutSelectionEnd().value_or(0) > start_ &&
+                selection.LayoutSelectionEnd().value_or(0) <= last_selectable);
     if (start && end)
       state = SelectionState::kStartAndEnd;
     else if (start)
@@ -205,9 +209,9 @@ SelectionState InlineTextBox::GetSelectionState() const {
     else if (end)
       state = SelectionState::kEnd;
     else if ((state == SelectionState::kEnd ||
-              selection.LayoutSelectionStart().value() < start_) &&
+              selection.LayoutSelectionStart().value_or(0) < start_) &&
              (state == SelectionState::kStart ||
-              selection.LayoutSelectionEnd().value() > last_selectable))
+              selection.LayoutSelectionEnd().value_or(0) > last_selectable))
       state = SelectionState::kInside;
     else if (state == SelectionState::kStartAndEnd)
       state = SelectionState::kNone;
@@ -547,18 +551,22 @@ void InlineTextBox::SelectionStartEnd(int& s_pos, int& e_pos) const {
   } else {
     const FrameSelection& selection =
         GetLineLayoutItem().GetDocument().GetFrame()->Selection();
+    // TODO(yoichio): |value_or()| is used to prevent use uininitialized
+    // value on release build. It should be |value()| because calling
+    // LayoutSelectionStart() if SelectionState is neigher kStart nor
+    // kStartAndEnd is invalid operation.
     if (GetLineLayoutItem().GetSelectionState() == SelectionState::kStart) {
-      start_pos = selection.LayoutSelectionStart().value();
+      start_pos = selection.LayoutSelectionStart().value_or(0);
       end_pos = GetLineLayoutItem().TextLength();
     } else if (GetLineLayoutItem().GetSelectionState() ==
                SelectionState::kEnd) {
       start_pos = 0;
-      end_pos = selection.LayoutSelectionEnd().value();
+      end_pos = selection.LayoutSelectionEnd().value_or(0);
     } else {
       DCHECK(GetLineLayoutItem().GetSelectionState() ==
              SelectionState::kStartAndEnd);
-      start_pos = selection.LayoutSelectionStart().value();
-      end_pos = selection.LayoutSelectionEnd().value();
+      start_pos = selection.LayoutSelectionStart().value_or(0);
+      end_pos = selection.LayoutSelectionEnd().value_or(0);
     }
   }
 

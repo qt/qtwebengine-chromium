@@ -81,9 +81,9 @@ bool GpuDataManagerImpl::IsWebGLEnabled() const {
   return private_->IsWebGLEnabled();
 }
 
-bool GpuDataManagerImpl::IsDriverBugWorkaroundActive(int feature) const {
+bool GpuDataManagerImpl::IsWebGL2Enabled() const {
   base::AutoLock auto_lock(lock_);
-  return private_->IsDriverBugWorkaroundActive(feature);
+  return private_->IsWebGL2Enabled();
 }
 
 gpu::GPUInfo GpuDataManagerImpl::GetGPUInfo() const {
@@ -195,6 +195,11 @@ void GpuDataManagerImpl::UpdateGpuFeatureInfo(
     const gpu::GpuFeatureInfo& gpu_feature_info) {
   base::AutoLock auto_lock(lock_);
   private_->UpdateGpuFeatureInfo(gpu_feature_info);
+}
+
+gpu::GpuFeatureInfo GpuDataManagerImpl::GetGpuFeatureInfo() const {
+  base::AutoLock auto_lock(lock_);
+  return private_->GetGpuFeatureInfo();
 }
 
 void GpuDataManagerImpl::AppendRendererCommandLine(

@@ -12,6 +12,7 @@
 #include <unordered_map>
 
 #include "base/atomic_sequence_num.h"
+#include "base/bits.h"
 #include "base/macros.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_math.h"
@@ -106,6 +107,7 @@ GLenum TextureToStorageFormat(viz::ResourceFormat format) {
     case viz::ETC1:
     case viz::RED_8:
     case viz::LUMINANCE_F16:
+    case viz::R16_EXT:
       NOTREACHED();
       break;
   }
@@ -127,6 +129,7 @@ bool IsFormatSupportedForStorage(viz::ResourceFormat format, bool use_bgra) {
     case viz::ETC1:
     case viz::RED_8:
     case viz::LUMINANCE_F16:
+    case viz::R16_EXT:
       return false;
   }
   return false;
@@ -189,6 +192,7 @@ ResourceProvider::Resource::Resource(GLuint texture_id,
       target(target),
       original_filter(filter),
       filter(filter),
+      min_filter(filter),
       image_id(0),
       hint(hint),
       type(type),
@@ -225,8 +229,9 @@ ResourceProvider::Resource::Resource(uint8_t* pixels,
       target(0),
       original_filter(filter),
       filter(filter),
+      min_filter(filter),
       image_id(0),
-      hint(TEXTURE_HINT_IMMUTABLE),
+      hint(TEXTURE_HINT_DEFAULT),
       type(RESOURCE_TYPE_BITMAP),
       buffer_format(gfx::BufferFormat::RGBA_8888),
       format(viz::RGBA_8888),
@@ -262,8 +267,9 @@ ResourceProvider::Resource::Resource(const viz::SharedBitmapId& bitmap_id,
       target(0),
       original_filter(filter),
       filter(filter),
+      min_filter(filter),
       image_id(0),
-      hint(TEXTURE_HINT_IMMUTABLE),
+      hint(TEXTURE_HINT_DEFAULT),
       type(RESOURCE_TYPE_BITMAP),
       buffer_format(gfx::BufferFormat::RGBA_8888),
       format(viz::RGBA_8888),
@@ -317,22 +323,24 @@ void ResourceProvider::Resource::WaitSyncToken(gpu::gles2::GLES2Interface* gl) {
   SetSynchronized();
 }
 
-ResourceProvider::Child::Child()
-    : marked_for_deletion(false), needs_sync_tokens(true) {}
-
-ResourceProvider::Child::Child(const Child& other) = default;
-
-ResourceProvider::Child::~Child() {}
+void ResourceProvider::Resource::SetGenerateMipmap() {
+  DCHECK(IsGpuResourceType(type));
+  DCHECK_EQ(target, static_cast<GLenum>(GL_TEXTURE_2D));
+  DCHECK(hint & TEXTURE_HINT_MIPMAP);
+  DCHECK(!gpu_memory_buffer);
+  mipmap_state = GENERATE;
+}
 
 ResourceProvider::Settings::Settings(
     viz::ContextProvider* compositor_context_provider,
     bool delegated_sync_points_required,
-    bool enable_color_correct_rasterization,
     const viz::ResourceSettings& resource_settings)
     : default_resource_type(resource_settings.use_gpu_memory_buffer_resources
                                 ? RESOURCE_TYPE_GPU_MEMORY_BUFFER
                                 : RESOURCE_TYPE_GL_TEXTURE),
-      enable_color_correct_rasterization(enable_color_correct_rasterization),
+      yuv_highbit_resource_format(resource_settings.high_bit_for_testing
+                                      ? viz::R16_EXT
+                                      : viz::LUMINANCE_8),
       delegated_sync_points_required(delegated_sync_points_required) {
   if (!compositor_context_provider) {
     default_resource_type = RESOURCE_TYPE_BITMAP;
@@ -348,15 +356,17 @@ ResourceProvider::Settings::Settings(
   use_texture_storage_ext = caps.texture_storage;
   use_texture_format_bgra = caps.texture_format_bgra8888;
   use_texture_usage_hint = caps.texture_usage;
+  use_texture_npot = caps.texture_npot;
   use_sync_query = caps.sync_query;
 
   if (caps.disable_one_component_textures) {
     yuv_resource_format = yuv_highbit_resource_format = viz::RGBA_8888;
   } else {
     yuv_resource_format = caps.texture_rg ? viz::RED_8 : viz::LUMINANCE_8;
-    yuv_highbit_resource_format = caps.texture_half_float_linear
-                                      ? viz::LUMINANCE_F16
-                                      : yuv_resource_format;
+    if (resource_settings.use_r16_texture && caps.texture_norm16)
+      yuv_highbit_resource_format = viz::R16_EXT;
+    else if (caps.texture_half_float_linear)
+      yuv_highbit_resource_format = viz::LUMINANCE_F16;
   }
 
   GLES2Interface* gl = compositor_context_provider->ContextGL();
@@ -372,18 +382,14 @@ ResourceProvider::ResourceProvider(
     viz::ContextProvider* compositor_context_provider,
     viz::SharedBitmapManager* shared_bitmap_manager,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-    BlockingTaskRunner* blocking_main_thread_task_runner,
     bool delegated_sync_points_required,
-    bool enable_color_correct_rasterization,
     const viz::ResourceSettings& resource_settings)
     : settings_(compositor_context_provider,
                 delegated_sync_points_required,
-                enable_color_correct_rasterization,
                 resource_settings),
       compositor_context_provider_(compositor_context_provider),
       shared_bitmap_manager_(shared_bitmap_manager),
       gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
-      blocking_main_thread_task_runner_(blocking_main_thread_task_runner),
       next_id_(1),
       next_child_(1),
       lost_context_provider_(false),
@@ -414,8 +420,6 @@ ResourceProvider::~ResourceProvider() {
   base::trace_event::MemoryDumpManager::GetInstance()->UnregisterDumpProvider(
       this);
 
-  while (!children_.empty())
-    DestroyChildInternal(children_.begin(), FOR_SHUTDOWN);
   while (!resources_.empty())
     DeleteResourceInternal(resources_.begin(), FOR_SHUTDOWN);
 
@@ -458,6 +462,8 @@ bool ResourceProvider::IsTextureFormatSupported(
       return caps.texture_format_etc1;
     case viz::RED_8:
       return caps.texture_rg;
+    case viz::R16_EXT:
+      return caps.texture_norm16;
     case viz::LUMINANCE_F16:
     case viz::RGBA_F16:
       return caps.texture_half_float_linear;
@@ -491,6 +497,7 @@ bool ResourceProvider::IsRenderBufferFormatSupported(
     case viz::RED_8:
     case viz::ETC1:
     case viz::LUMINANCE_F16:
+    case viz::R16_EXT:
       // We don't currently render into these formats. If we need to render into
       // these eventually, we should expand this logic.
       return false;
@@ -623,69 +630,6 @@ viz::ResourceId ResourceProvider::CreateBitmapResource(
   return id;
 }
 
-viz::ResourceId ResourceProvider::CreateResourceFromTextureMailbox(
-    const viz::TextureMailbox& mailbox,
-    std::unique_ptr<SingleReleaseCallbackImpl> release_callback_impl,
-    bool read_lock_fences_enabled,
-    gfx::BufferFormat buffer_format) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  // Just store the information. Mailbox will be consumed in LockForRead().
-  viz::ResourceId id = next_id_++;
-  DCHECK(mailbox.IsValid());
-  Resource* resource = nullptr;
-  if (mailbox.IsTexture()) {
-    resource = InsertResource(
-        id, Resource(0, mailbox.size_in_pixels(), Resource::EXTERNAL,
-                     mailbox.target(),
-                     mailbox.nearest_neighbor() ? GL_NEAREST : GL_LINEAR,
-                     TEXTURE_HINT_IMMUTABLE, RESOURCE_TYPE_GL_TEXTURE,
-                     viz::RGBA_8888));
-  } else {
-    DCHECK(mailbox.IsSharedMemory());
-    viz::SharedBitmap* shared_bitmap = mailbox.shared_bitmap();
-    uint8_t* pixels = shared_bitmap->pixels();
-    DCHECK(pixels);
-    resource = InsertResource(
-        id, Resource(pixels, shared_bitmap, mailbox.size_in_pixels(),
-                     Resource::EXTERNAL, GL_LINEAR));
-  }
-  resource->allocated = true;
-  resource->SetMailbox(mailbox);
-  resource->color_space = mailbox.color_space();
-  resource->release_callback_impl =
-      base::Bind(&SingleReleaseCallbackImpl::Run,
-                 base::Owned(release_callback_impl.release()));
-  resource->read_lock_fences_enabled = read_lock_fences_enabled;
-  resource->buffer_format = buffer_format;
-  resource->is_overlay_candidate = mailbox.is_overlay_candidate();
-#if defined(OS_ANDROID)
-  resource->is_backed_by_surface_texture =
-      mailbox.is_backed_by_surface_texture();
-  resource->wants_promotion_hint = mailbox.wants_promotion_hint();
-  if (resource->wants_promotion_hint)
-    wants_promotion_hints_set_.insert(id);
-#endif
-  resource->color_space = mailbox.color_space();
-
-  return id;
-}
-
-viz::ResourceId ResourceProvider::CreateResourceFromTextureMailbox(
-    const viz::TextureMailbox& mailbox,
-    std::unique_ptr<SingleReleaseCallbackImpl> release_callback_impl,
-    bool read_lock_fences_enabled) {
-  return CreateResourceFromTextureMailbox(
-      mailbox, std::move(release_callback_impl), read_lock_fences_enabled,
-      gfx::BufferFormat::RGBA_8888);
-}
-
-viz::ResourceId ResourceProvider::CreateResourceFromTextureMailbox(
-    const viz::TextureMailbox& mailbox,
-    std::unique_ptr<SingleReleaseCallbackImpl> release_callback_impl) {
-  return CreateResourceFromTextureMailbox(
-      mailbox, std::move(release_callback_impl), false);
-}
-
 void ResourceProvider::DeleteResource(viz::ResourceId id) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   ResourceMap::iterator it = resources_.find(id);
@@ -759,8 +703,7 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
       resource->shared_bitmap = nullptr;
       resource->pixels = nullptr;
     }
-    resource->release_callback_impl.Run(sync_token, lost_resource,
-                                        blocking_main_thread_task_runner_);
+    resource->release_callback.Run(sync_token, lost_resource);
   }
 
   if (resource->gl_id) {
@@ -802,16 +745,6 @@ GLenum ResourceProvider::GetResourceTextureTarget(viz::ResourceId id) {
   return GetResource(id)->target;
 }
 
-bool ResourceProvider::IsImmutable(viz::ResourceId id) {
-  if (IsGpuResourceType(settings_.default_resource_type)) {
-    return GetTextureHint(id) == TEXTURE_HINT_IMMUTABLE;
-  } else {
-    // Software resources are immutable; they cannot change format or be
-    // resized.
-    return true;
-  }
-}
-
 ResourceProvider::TextureHint ResourceProvider::GetTextureHint(
     viz::ResourceId id) {
   return GetResource(id)->hint;
@@ -819,8 +752,6 @@ ResourceProvider::TextureHint ResourceProvider::GetTextureHint(
 
 gfx::ColorSpace ResourceProvider::GetResourceColorSpaceForRaster(
     const Resource* resource) const {
-  if (!settings_.enable_color_correct_rasterization)
-    return gfx::ColorSpace();
   return resource->color_space;
 }
 
@@ -890,83 +821,13 @@ ResourceProvider::Resource* ResourceProvider::GetResource(viz::ResourceId id) {
   return &it->second;
 }
 
-const ResourceProvider::Resource* ResourceProvider::LockForRead(
-    viz::ResourceId id) {
-  Resource* resource = GetResource(id);
-  DCHECK(!resource->locked_for_write)
-      << "locked for write: " << resource->locked_for_write;
-  DCHECK_EQ(resource->exported_count, 0);
-  // Uninitialized! Call SetPixels or LockForWrite first.
-  DCHECK(resource->allocated);
-
-  // Mailbox sync_tokens must be processed by a call to WaitSyncToken() prior to
-  // calling LockForRead().
-  DCHECK_NE(Resource::NEEDS_WAIT, resource->synchronization_state());
-
-  if (IsGpuResourceType(resource->type) && !resource->gl_id) {
-    DCHECK(resource->origin != Resource::INTERNAL);
-    DCHECK(resource->mailbox().IsTexture());
-
-    GLES2Interface* gl = ContextGL();
-    DCHECK(gl);
-    resource->gl_id = gl->CreateAndConsumeTextureCHROMIUM(
-        resource->mailbox().target(), resource->mailbox().name());
-    resource->SetLocallyUsed();
-  }
-
-  if (!resource->pixels && resource->has_shared_bitmap_id &&
-      shared_bitmap_manager_) {
-    std::unique_ptr<viz::SharedBitmap> bitmap =
-        shared_bitmap_manager_->GetSharedBitmapFromId(
-            resource->size, resource->shared_bitmap_id);
-    if (bitmap) {
-      resource->shared_bitmap = bitmap.release();
-      resource->pixels = resource->shared_bitmap->pixels();
-    }
-  }
-
-  resource->lock_for_read_count++;
-  if (resource->read_lock_fences_enabled) {
-    if (current_read_lock_fence_.get())
-      current_read_lock_fence_->Set();
-    resource->read_lock_fence = current_read_lock_fence_;
-  }
-
-  return resource;
-}
-
-void ResourceProvider::UnlockForRead(viz::ResourceId id) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  ResourceMap::iterator it = resources_.find(id);
-  CHECK(it != resources_.end());
-
-  Resource* resource = &it->second;
-  DCHECK_GT(resource->lock_for_read_count, 0);
-  DCHECK_EQ(resource->exported_count, 0);
-  resource->lock_for_read_count--;
-  if (resource->marked_for_deletion && !resource->lock_for_read_count) {
-    if (!resource->child_id) {
-      // The resource belongs to this ResourceProvider, so it can be destroyed.
-      DeleteResourceInternal(it, NORMAL);
-    } else {
-      if (batch_return_resources_) {
-        batched_returning_resources_[resource->child_id].push_back(id);
-      } else {
-        ChildMap::iterator child_it = children_.find(resource->child_id);
-        ResourceIdArray unused;
-        unused.push_back(id);
-        DeleteAndReturnUnusedResourcesToChild(child_it, NORMAL, unused);
-      }
-    }
-  }
-}
-
 ResourceProvider::Resource* ResourceProvider::LockForWrite(viz::ResourceId id) {
   DCHECK(CanLockForWrite(id));
   Resource* resource = GetResource(id);
   resource->WaitSyncToken(ContextGL());
   resource->SetLocallyUsed();
   resource->locked_for_write = true;
+  resource->mipmap_state = Resource::INVALID;
   return resource;
 }
 
@@ -1060,6 +921,8 @@ ResourceProvider::ScopedWriteLockGL::~ScopedWriteLockGL() {
     resource->UpdateSyncToken(sync_token_);
   if (synchronized_)
     resource->SetSynchronized();
+  if (generate_mipmap_)
+    resource->SetGenerateMipmap();
   resource_provider_->UnlockForWrite(resource);
 }
 
@@ -1144,10 +1007,14 @@ void ResourceProvider::ScopedWriteLockGL::AllocateTexture(
   gl->BindTexture(target_, texture_id);
   const ResourceProvider::Settings& settings = resource_provider_->settings_;
   if (settings.use_texture_storage_ext &&
-      IsFormatSupportedForStorage(format_, settings.use_texture_format_bgra) &&
-      (hint_ & ResourceProvider::TEXTURE_HINT_IMMUTABLE)) {
+      IsFormatSupportedForStorage(format_, settings.use_texture_format_bgra)) {
     GLenum storage_format = TextureToStorageFormat(format_);
-    gl->TexStorage2DEXT(target_, 1, storage_format, size_.width(),
+    GLint levels = 1;
+    if (settings.use_texture_npot &&
+        (hint_ & ResourceProvider::TEXTURE_HINT_MIPMAP)) {
+      levels += base::bits::Log2Floor(std::max(size_.width(), size_.height()));
+    }
+    gl->TexStorage2DEXT(target_, levels, storage_format, size_.width(),
                         size_.height());
   } else {
     gl->TexImage2D(target_, 0, GLInternalFormat(format_), size_.width(),
@@ -1211,6 +1078,7 @@ ResourceProvider::ScopedWriteLockSoftware::~ScopedWriteLockSoftware() {
   resource->SetSynchronized();
   resource_provider_->UnlockForWrite(resource);
 }
+
 ResourceProvider::SynchronousFence::SynchronousFence(
     gpu::gles2::GLES2Interface* gl)
     : gl_(gl), has_synchronized_(true) {}
@@ -1238,142 +1106,6 @@ void ResourceProvider::SynchronousFence::Synchronize() {
   gl_->Finish();
 }
 
-void ResourceProvider::DestroyChildInternal(ChildMap::iterator it,
-                                            DeleteStyle style) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-
-  Child& child = it->second;
-  DCHECK(style == FOR_SHUTDOWN || !child.marked_for_deletion);
-
-  ResourceIdArray resources_for_child;
-
-  for (ResourceIdMap::iterator child_it = child.child_to_parent_map.begin();
-       child_it != child.child_to_parent_map.end(); ++child_it) {
-    viz::ResourceId id = child_it->second;
-    resources_for_child.push_back(id);
-  }
-
-  child.marked_for_deletion = true;
-
-  DeleteAndReturnUnusedResourcesToChild(it, style, resources_for_child);
-}
-
-void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
-    ChildMap::iterator child_it,
-    DeleteStyle style,
-    const ResourceIdArray& unused) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  DCHECK(child_it != children_.end());
-  Child* child_info = &child_it->second;
-
-  if (unused.empty() && !child_info->marked_for_deletion)
-    return;
-
-  std::vector<viz::ReturnedResource> to_return;
-  to_return.reserve(unused.size());
-  std::vector<viz::ReturnedResource*> need_synchronization_resources;
-  std::vector<GLbyte*> unverified_sync_tokens;
-
-  GLES2Interface* gl = ContextGL();
-
-  for (viz::ResourceId local_id : unused) {
-    ResourceMap::iterator it = resources_.find(local_id);
-    CHECK(it != resources_.end());
-    Resource& resource = it->second;
-
-    DCHECK(!resource.locked_for_write);
-
-    viz::ResourceId child_id = resource.id_in_child;
-    DCHECK(child_info->child_to_parent_map.count(child_id));
-
-    bool is_lost = resource.lost ||
-                   (IsGpuResourceType(resource.type) && lost_context_provider_);
-    if (resource.exported_count > 0 || resource.lock_for_read_count > 0) {
-      if (style != FOR_SHUTDOWN) {
-        // Defer this resource deletion.
-        resource.marked_for_deletion = true;
-        continue;
-      }
-      // We can't postpone the deletion, so we'll have to lose it.
-      is_lost = true;
-    } else if (!ReadLockFenceHasPassed(&resource)) {
-      // TODO(dcastagna): see if it's possible to use this logic for
-      // the branch above too, where the resource is locked or still exported.
-      if (style != FOR_SHUTDOWN && !child_info->marked_for_deletion) {
-        // Defer this resource deletion.
-        resource.marked_for_deletion = true;
-        continue;
-      }
-      // We can't postpone the deletion, so we'll have to lose it.
-      is_lost = true;
-    }
-
-    if (IsGpuResourceType(resource.type) &&
-        resource.filter != resource.original_filter) {
-      DCHECK(resource.target);
-      DCHECK(resource.gl_id);
-      DCHECK(gl);
-      gl->BindTexture(resource.target, resource.gl_id);
-      gl->TexParameteri(resource.target, GL_TEXTURE_MIN_FILTER,
-                        resource.original_filter);
-      gl->TexParameteri(resource.target, GL_TEXTURE_MAG_FILTER,
-                        resource.original_filter);
-      resource.SetLocallyUsed();
-    }
-
-    viz::ReturnedResource returned;
-    returned.id = child_id;
-    returned.sync_token = resource.mailbox().sync_token();
-    returned.count = resource.imported_count;
-    returned.lost = is_lost;
-    to_return.push_back(returned);
-
-    if (IsGpuResourceType(resource.type) && child_info->needs_sync_tokens) {
-      if (resource.needs_sync_token()) {
-        need_synchronization_resources.push_back(&to_return.back());
-      } else if (returned.sync_token.HasData() &&
-                 !returned.sync_token.verified_flush()) {
-        // Before returning any sync tokens, they must be verified.
-        unverified_sync_tokens.push_back(returned.sync_token.GetData());
-      }
-    }
-
-    child_info->child_to_parent_map.erase(child_id);
-    resource.imported_count = 0;
-    DeleteResourceInternal(it, style);
-  }
-
-  gpu::SyncToken new_sync_token;
-  if (!need_synchronization_resources.empty()) {
-    DCHECK(child_info->needs_sync_tokens);
-    DCHECK(gl);
-    const uint64_t fence_sync = gl->InsertFenceSyncCHROMIUM();
-    gl->OrderingBarrierCHROMIUM();
-    gl->GenUnverifiedSyncTokenCHROMIUM(fence_sync, new_sync_token.GetData());
-    unverified_sync_tokens.push_back(new_sync_token.GetData());
-  }
-
-  if (!unverified_sync_tokens.empty()) {
-    DCHECK(child_info->needs_sync_tokens);
-    DCHECK(gl);
-    gl->VerifySyncTokensCHROMIUM(unverified_sync_tokens.data(),
-                                 unverified_sync_tokens.size());
-  }
-
-  // Set sync token after verification.
-  for (viz::ReturnedResource* returned : need_synchronization_resources)
-    returned->sync_token = new_sync_token;
-
-  if (!to_return.empty())
-    child_info->return_callback.Run(to_return,
-                                    blocking_main_thread_task_runner_);
-
-  if (child_info->marked_for_deletion &&
-      child_info->child_to_parent_map.empty()) {
-    children_.erase(child_it);
-  }
-}
-
 GLenum ResourceProvider::BindForSampling(viz::ResourceId resource_id,
                                          GLenum unit,
                                          GLenum filter) {
@@ -1388,8 +1120,26 @@ GLenum ResourceProvider::BindForSampling(viz::ResourceId resource_id,
   ScopedSetActiveTexture scoped_active_tex(gl, unit);
   GLenum target = resource->target;
   gl->BindTexture(target, resource->gl_id);
+  GLenum min_filter = filter;
+  if (filter == GL_LINEAR) {
+    switch (resource->mipmap_state) {
+      case Resource::INVALID:
+        break;
+      case Resource::GENERATE:
+        DCHECK(settings_.use_texture_npot);
+        gl->GenerateMipmap(target);
+        resource->mipmap_state = Resource::VALID;
+      // fall-through
+      case Resource::VALID:
+        min_filter = GL_LINEAR_MIPMAP_LINEAR;
+        break;
+    }
+  }
+  if (min_filter != resource->min_filter) {
+    gl->TexParameteri(target, GL_TEXTURE_MIN_FILTER, min_filter);
+    resource->min_filter = min_filter;
+  }
   if (filter != resource->filter) {
-    gl->TexParameteri(target, GL_TEXTURE_MIN_FILTER, filter);
     gl->TexParameteri(target, GL_TEXTURE_MAG_FILTER, filter);
     resource->filter = filter;
   }

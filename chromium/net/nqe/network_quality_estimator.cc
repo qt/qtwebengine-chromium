@@ -12,7 +12,6 @@
 #include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_base.h"
 #include "base/metrics/histogram_macros.h"
@@ -268,10 +267,10 @@ NetworkQualityEstimator::NetworkQualityEstimator(
   current_network_id_ = GetCurrentNetworkID();
 
   throughput_analyzer_.reset(new nqe::internal::ThroughputAnalyzer(
-      params_.get(), base::ThreadTaskRunnerHandle::Get(),
+      this, params_.get(), base::ThreadTaskRunnerHandle::Get(),
       base::Bind(&NetworkQualityEstimator::OnNewThroughputObservationAvailable,
                  base::Unretained(this)),
-      net_log_));
+      tick_clock_.get(), net_log_));
 
   watcher_factory_.reset(new nqe::internal::SocketWatcherFactory(
       base::ThreadTaskRunnerHandle::Get(),
@@ -413,6 +412,12 @@ void NetworkQualityEstimator::NotifyHeadersReceived(const URLRequest& request) {
                                    tick_clock_->NowTicks(), signal_strength_,
                                    NETWORK_QUALITY_OBSERVATION_SOURCE_HTTP);
   AddAndNotifyObserversOfRTT(http_rtt_observation);
+  throughput_analyzer_->NotifyBytesRead(request);
+}
+
+void NetworkQualityEstimator::NotifyBytesRead(const URLRequest& request) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  throughput_analyzer_->NotifyBytesRead(request);
 }
 
 void NetworkQualityEstimator::RecordAccuracyAfterMainFrame(
@@ -758,6 +763,9 @@ void NetworkQualityEstimator::OnConnectionTypeChanged(
   last_connection_change_ = tick_clock_->NowTicks();
   downstream_throughput_kbps_observations_.Clear();
   rtt_ms_observations_.Clear();
+
+  if (external_estimate_provider_)
+    external_estimate_provider_->ClearCachedEstimate();
 
 #if defined(OS_ANDROID)
   if (params_->weight_multiplier_per_signal_strength_level() < 1.0 &&
@@ -1603,6 +1611,7 @@ void NetworkQualityEstimator::SetTickClockForTesting(
     std::unique_ptr<base::TickClock> tick_clock) {
   DCHECK(thread_checker_.CalledOnValidThread());
   tick_clock_ = std::move(tick_clock);
+  throughput_analyzer_->SetTickClockForTesting(tick_clock_.get());
 }
 
 double NetworkQualityEstimator::RandDouble() const {
@@ -1684,7 +1693,7 @@ void NetworkQualityEstimator::OnNewThroughputObservationAvailable(
     int32_t downstream_kbps) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  if (downstream_kbps == 0)
+  if (downstream_kbps <= 0)
     return;
 
   DCHECK_NE(nqe::internal::kInvalidThroughput, downstream_kbps);

@@ -4,14 +4,16 @@
 
 #include "platform/scheduler/renderer/renderer_metrics_helper.h"
 
+#include <memory>
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "components/viz/test/ordered_simple_task_runner.h"
+#include "platform/WebFrameScheduler.h"
 #include "platform/scheduler/base/test_time_source.h"
 #include "platform/scheduler/child/scheduler_tqm_delegate_for_test.h"
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
+#include "platform/scheduler/test/fake_web_frame_scheduler.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -23,6 +25,49 @@ using testing::ElementsAre;
 using testing::UnorderedElementsAre;
 using base::Bucket;
 
+namespace {
+
+class MainThreadTaskQueueForTest : public MainThreadTaskQueue {
+ public:
+  MainThreadTaskQueueForTest(QueueType queue_type)
+      : MainThreadTaskQueue(nullptr, QueueCreationParams(queue_type), nullptr) {
+  }
+  ~MainThreadTaskQueueForTest() {}
+};
+
+class MockWebFrameScheduler : public FakeWebFrameScheduler {
+ public:
+  MockWebFrameScheduler(bool is_page_visible,
+                        bool is_frame_visible,
+                        WebFrameScheduler::FrameType frame_type,
+                        bool is_cross_origin,
+                        bool is_exempt_from_throttling)
+      : is_page_visible_(is_page_visible),
+        is_frame_visible_(is_frame_visible),
+        frame_type_(frame_type),
+        is_cross_origin_(is_cross_origin),
+        is_exempt_from_throttling_(is_exempt_from_throttling) {
+    DCHECK(frame_type_ != FrameType::kMainFrame || !is_cross_origin);
+  }
+
+  bool IsCrossOrigin() const override { return is_cross_origin_; }
+  bool IsExemptFromThrottling() const override {
+    return is_exempt_from_throttling_;
+  }
+  bool IsFrameVisible() const override { return is_frame_visible_; }
+  bool IsPageVisible() const override { return is_page_visible_; }
+  FrameType GetFrameType() const override { return frame_type_; }
+
+ private:
+  bool is_page_visible_;
+  bool is_frame_visible_;
+  WebFrameScheduler::FrameType frame_type_;
+  bool is_cross_origin_;
+  bool is_exempt_from_throttling_;
+};
+
+}  // namespace
+
 class RendererMetricsHelperTest : public ::testing::Test {
  public:
   RendererMetricsHelperTest() {}
@@ -30,12 +75,12 @@ class RendererMetricsHelperTest : public ::testing::Test {
 
   void SetUp() {
     histogram_tester_.reset(new base::HistogramTester());
-    clock_ = base::MakeUnique<base::SimpleTestTickClock>();
+    clock_ = std::make_unique<base::SimpleTestTickClock>();
     mock_task_runner_ =
-        make_scoped_refptr(new cc::OrderedSimpleTaskRunner(clock_.get(), true));
+        base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(clock_.get(), true);
     delegate_ = SchedulerTqmDelegateForTest::Create(
-        mock_task_runner_, base::MakeUnique<TestTimeSource>(clock_.get()));
-    scheduler_ = base::MakeUnique<RendererSchedulerImpl>(delegate_);
+        mock_task_runner_, std::make_unique<TestTimeSource>(clock_.get()));
+    scheduler_ = std::make_unique<RendererSchedulerImpl>(delegate_);
     metrics_helper_ = &scheduler_->main_thread_only().metrics_helper;
   }
 
@@ -49,7 +94,9 @@ class RendererMetricsHelperTest : public ::testing::Test {
                base::TimeDelta duration) {
     DCHECK_LE(clock_->NowTicks(), start);
     clock_->SetNowTicks(start + duration);
-    metrics_helper_->RecordTaskMetrics(queue_type, start, start + duration);
+    scoped_refptr<MainThreadTaskQueueForTest> queue(
+        new MainThreadTaskQueueForTest(queue_type));
+    metrics_helper_->RecordTaskMetrics(queue.get(), start, start + duration);
   }
 
   base::TimeTicks Microseconds(int microseconds) {
@@ -164,6 +211,28 @@ TEST_F(RendererMetricsHelperTest, Metrics) {
           Bucket(static_cast<int>(QueueType::COMPOSITOR), 20),
           Bucket(static_cast<int>(QueueType::IDLE), 1650),
           Bucket(static_cast<int>(QueueType::FRAME_LOADING_CONTROL), 5)));
+}
+
+TEST_F(RendererMetricsHelperTest, GetFrameTypeTest) {
+  MockWebFrameScheduler frame1(
+      true, true, WebFrameScheduler::FrameType::kMainFrame, false, false);
+  EXPECT_EQ(GetFrameType(frame1), FrameType::MAIN_FRAME_VISIBLE);
+
+  MockWebFrameScheduler frame2(
+      true, false, WebFrameScheduler::FrameType::kSubframe, false, false);
+  EXPECT_EQ(GetFrameType(frame2), FrameType::SAME_ORIGIN_HIDDEN);
+
+  MockWebFrameScheduler frame3(
+      true, false, WebFrameScheduler::FrameType::kSubframe, true, false);
+  EXPECT_EQ(GetFrameType(frame3), FrameType::CROSS_ORIGIN_HIDDEN);
+
+  MockWebFrameScheduler frame4(
+      false, false, WebFrameScheduler::FrameType::kSubframe, false, false);
+  EXPECT_EQ(GetFrameType(frame4), FrameType::SAME_ORIGIN_BACKGROUND);
+
+  MockWebFrameScheduler frame5(
+      false, false, WebFrameScheduler::FrameType::kMainFrame, false, true);
+  DCHECK_EQ(GetFrameType(frame5), FrameType::MAIN_FRAME_BACKGROUND_EXEMPT);
 }
 
 // TODO(crbug.com/754656): Add tests for NthMinute and AfterNthMinute

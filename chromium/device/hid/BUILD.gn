@@ -6,11 +6,17 @@ import("//build/config/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
 source_set("hid") {
+  # HID is not implemented on Android and we want to be particularly careful
+  # about not bloating binary size by accidentially including it.
+  assert(!is_android)
+
   sources = [
     "hid_collection_info.cc",
     "hid_collection_info.h",
     "hid_connection.cc",
     "hid_connection.h",
+    "hid_connection_impl.cc",
+    "hid_connection_impl.h",
     "hid_connection_linux.cc",
     "hid_connection_linux.h",
     "hid_connection_mac.cc",
@@ -21,6 +27,8 @@ source_set("hid") {
     "hid_device_filter.h",
     "hid_device_info.cc",
     "hid_device_info.h",
+    "hid_manager_impl.cc",
+    "hid_manager_impl.h",
     "hid_report_descriptor.cc",
     "hid_report_descriptor.h",
     "hid_report_descriptor_item.cc",
@@ -74,13 +82,14 @@ source_set("mocks") {
   testonly = true
 
   sources = [
+    "mock_hid_connection.cc",
+    "mock_hid_connection.h",
     "mock_hid_service.cc",
     "mock_hid_service.h",
   ]
 
   public_deps = [
     ":hid",
-    "//testing/gmock",
   ]
 }
 

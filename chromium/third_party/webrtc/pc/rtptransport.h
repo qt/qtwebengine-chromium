@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_PC_RTPTRANSPORT_H_
-#define WEBRTC_PC_RTPTRANSPORT_H_
+#ifndef PC_RTPTRANSPORT_H_
+#define PC_RTPTRANSPORT_H_
 
-#include "webrtc/pc/bundlefilter.h"
-#include "webrtc/pc/rtptransportinternal.h"
-#include "webrtc/rtc_base/sigslot.h"
+#include "pc/bundlefilter.h"
+#include "pc/rtptransportinternal.h"
+#include "rtc_base/sigslot.h"
 
 namespace rtc {
 
@@ -56,10 +56,13 @@ class RtpTransport : public RtpTransportInternal {
 
   bool IsWritable(bool rtcp) const override;
 
-  bool SendPacket(bool rtcp,
-                  rtc::CopyOnWriteBuffer* packet,
-                  const rtc::PacketOptions& options,
-                  int flags) override;
+  bool SendRtpPacket(rtc::CopyOnWriteBuffer* packet,
+                     const rtc::PacketOptions& options,
+                     int flags) override;
+
+  bool SendRtcpPacket(rtc::CopyOnWriteBuffer* packet,
+                      const rtc::PacketOptions& options,
+                      int flags) override;
 
   bool HandlesPayloadType(int payload_type) const override;
 
@@ -79,6 +82,11 @@ class RtpTransport : public RtpTransportInternal {
   void SetReadyToSend(bool rtcp, bool ready);
 
   void MaybeSignalReadyToSend();
+
+  bool SendPacket(bool rtcp,
+                  rtc::CopyOnWriteBuffer* packet,
+                  const rtc::PacketOptions& options,
+                  int flags);
 
   void OnReadPacket(rtc::PacketTransportInternal* transport,
                     const char* data,
@@ -104,4 +112,4 @@ class RtpTransport : public RtpTransportInternal {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_PC_RTPTRANSPORT_H_
+#endif  // PC_RTPTRANSPORT_H_

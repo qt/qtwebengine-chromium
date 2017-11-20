@@ -11,8 +11,10 @@
 #include <set>
 #include <vector>
 
+#include "base/atomicops.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
+#include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "services/service_manager/public/cpp/bind_source_info.h"
 #include "services/ui/display/screen_manager.h"
@@ -41,7 +43,14 @@
 
 namespace ui {
 namespace ws {
+
+class CursorLocationManager;
+
 namespace test {
+
+const ClientSpecificId kWindowManagerClientId = kWindowServerClientId + 1;
+const std::string kWindowManagerClientIdString =
+    std::to_string(kWindowManagerClientId);
 
 // Collection of utilities useful in creating mus tests.
 
@@ -63,7 +72,9 @@ class TestScreenManager : public display::ScreenManager {
   int64_t AddDisplay(const display::Display& display);
 
   // Calls OnDisplayModified() on delegate.
-  void ModifyDisplay(const display::Display& display);
+  void ModifyDisplay(const display::Display& display,
+                     const base::Optional<display::ViewportMetrics>& metrics =
+                         base::Optional<display::ViewportMetrics>());
 
   // Calls OnDisplayRemoved() on delegate.
   void RemoveDisplay(int64_t id);
@@ -235,10 +246,10 @@ class WindowManagerStateTestApi {
 
   void DispatchInputEventToWindow(ServerWindow* target,
                                   ClientSpecificId client_id,
-                                  int64_t display_id,
+                                  const EventLocation& event_location,
                                   const ui::Event& event,
                                   Accelerator* accelerator) {
-    wms_->DispatchInputEventToWindow(target, client_id, display_id, event,
+    wms_->DispatchInputEventToWindow(target, client_id, event_location, event,
                                      accelerator);
   }
 
@@ -247,7 +258,7 @@ class WindowManagerStateTestApi {
     return wms_->GetEventTargetClientId(window, in_nonclient_area);
   }
 
-  void ProcessEvent(const ui::Event& event, int64_t display_id = 0) {
+  void ProcessEvent(ui::Event* event, int64_t display_id = 0) {
     wms_->ProcessEvent(event, display_id);
   }
 
@@ -514,11 +525,13 @@ class TestWindowTreeClient : public ui::mojom::WindowTreeClient {
       uint32_t window,
       const std::string& name,
       const base::Optional<std::vector<uint8_t>>& new_data) override;
-  void OnWindowInputEvent(uint32_t event_id,
-                          uint32_t window,
-                          int64_t display_id,
-                          std::unique_ptr<ui::Event> event,
-                          bool matches_pointer_watcher) override;
+  void OnWindowInputEvent(
+      uint32_t event_id,
+      uint32_t window,
+      int64_t display_id,
+      const gfx::PointF& event_location_in_screen_pixel_layout,
+      std::unique_ptr<ui::Event> event,
+      bool matches_pointer_watcher) override;
   void OnPointerEventObserved(std::unique_ptr<ui::Event> event,
                               uint32_t window_id,
                               int64_t display_id) override;
@@ -805,6 +818,21 @@ class TestPlatformDisplay : public PlatformDisplay {
 
 // -----------------------------------------------------------------------------
 
+class CursorLocationManagerTestApi {
+ public:
+  CursorLocationManagerTestApi(CursorLocationManager* cursor_location_manager);
+  ~CursorLocationManagerTestApi();
+
+  base::subtle::Atomic32 current_cursor_location();
+
+ private:
+  CursorLocationManager* cursor_location_manager_;
+
+  DISALLOW_COPY_AND_ASSIGN(CursorLocationManagerTestApi);
+};
+
+// -----------------------------------------------------------------------------
+
 // Adds a new WM to |window_server| for |user_id|. Creates
 // WindowManagerWindowTreeFactory and associated WindowTree for the WM.
 void AddWindowManager(WindowServer* window_server,
@@ -839,6 +867,10 @@ ServerWindow* NewWindowInTree(WindowTree* tree,
 ServerWindow* NewWindowInTreeWithParent(WindowTree* tree,
                                         ServerWindow* parent,
                                         ClientWindowId* client_id = nullptr);
+
+// Converts an atomic 32 to a point. The cursor location is represented as an
+// atomic 32.
+gfx::Point Atomic32ToPoint(base::subtle::Atomic32 atomic);
 
 }  // namespace test
 }  // namespace ws

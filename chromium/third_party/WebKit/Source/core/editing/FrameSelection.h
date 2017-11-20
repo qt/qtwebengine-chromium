@@ -30,10 +30,8 @@
 #include <memory>
 #include "core/CoreExport.h"
 #include "core/dom/SynchronousMutationObserver.h"
-#include "core/editing/EphemeralRange.h"
+#include "core/editing/Forward.h"
 #include "core/editing/SetSelectionOptions.h"
-#include "core/editing/VisiblePosition.h"
-#include "core/editing/VisibleSelection.h"
 #include "core/layout/ScrollAlignment.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
@@ -43,6 +41,7 @@
 namespace blink {
 
 class DisplayItemClient;
+class Element;
 class LayoutBlock;
 class LocalFrame;
 class FrameCaret;
@@ -83,14 +82,14 @@ class CORE_EXPORT FrameSelection final
   // An implementation of |WebFrame::moveCaretSelection()|
   void MoveCaretSelection(const IntPoint&);
 
-  const VisibleSelection& ComputeVisibleSelectionInDOMTree() const;
-  const VisibleSelectionInFlatTree& ComputeVisibleSelectionInFlatTree() const;
+  VisibleSelection ComputeVisibleSelectionInDOMTree() const;
+  VisibleSelectionInFlatTree ComputeVisibleSelectionInFlatTree() const;
 
   // TODO(editing-dev): We should replace
   // |computeVisibleSelectionInDOMTreeDeprecated()| with update layout and
   // |computeVisibleSelectionInDOMTree()| to increase places hoisting update
   // layout.
-  const VisibleSelection& ComputeVisibleSelectionInDOMTreeDeprecated() const;
+  VisibleSelection ComputeVisibleSelectionInDOMTreeDeprecated() const;
 
   void SetSelection(const SelectionInDOMTree&, const SetSelectionOptions&);
 
@@ -144,8 +143,8 @@ class CORE_EXPORT FrameSelection final
 
   void DidChangeFocus();
 
-  const SelectionInDOMTree& GetSelectionInDOMTree() const;
-  bool IsDirectional() const { return GetSelectionInDOMTree().IsDirectional(); }
+  SelectionInDOMTree GetSelectionInDOMTree() const;
+  bool IsDirectional() const;
 
   void DocumentAttached(Document*);
 
@@ -178,11 +177,12 @@ class CORE_EXPORT FrameSelection final
   void SetUseSecureKeyboardEntryWhenActive(bool);
 
   bool IsHandleVisible() const { return is_handle_visible_; }
+  bool ShouldShrinkNextTap() const { return should_shrink_next_tap_; }
 
   void UpdateSecureKeyboardEntryIfActive();
 
   // Returns true if a word is selected.
-  bool SelectWordAroundPosition(const VisiblePosition&);
+  bool SelectWordAroundCaret();
 
 #ifndef NDEBUG
   void ShowTreeForThis() const;
@@ -196,10 +196,8 @@ class CORE_EXPORT FrameSelection final
   String SelectedText() const;
   String SelectedTextForClipboard() const;
 
-  // The bounds are clipped to the viewport as this is what callers expect.
   // This returns last layouted selection bounds of LayoutSelection rather than
   // SelectionEditor keeps.
-  LayoutRect Bounds() const;
   LayoutRect UnclippedBounds() const;
 
   // TODO(tkent): This function has a bug that scrolling doesn't work well in
@@ -228,10 +226,8 @@ class CORE_EXPORT FrameSelection final
  private:
   friend class CaretDisplayItemClientTest;
   friend class FrameSelectionTest;
-  friend class PaintControllerPaintTestForSlimmingPaintV1AndV2;
+  friend class PaintControllerPaintTestBase;
   friend class SelectionControllerTest;
-  FRIEND_TEST_ALL_PREFIXES(PaintControllerPaintTestForSlimmingPaintV1AndV2,
-                           FullDocumentPaintingWithCaret);
 
   explicit FrameSelection(LocalFrame&);
 
@@ -239,7 +235,7 @@ class CORE_EXPORT FrameSelection final
 
   // Note: We have |selectionInFlatTree()| for unit tests, we should
   // use |visibleSelection<EditingInFlatTreeStrategy>()|.
-  const VisibleSelectionInFlatTree& GetSelectionInFlatTree() const;
+  VisibleSelectionInFlatTree GetSelectionInFlatTree() const;
 
   void NotifyAccessibilityForSelectionChange();
   void NotifyCompositorForSelectionChange();
@@ -272,6 +268,7 @@ class CORE_EXPORT FrameSelection final
 
   bool focused_ : 1;
   bool is_handle_visible_ = false;
+  bool should_shrink_next_tap_ = false;
 
   // Controls text granularity used to adjust the selection's extent in
   // moveRangeSelectionExtent.

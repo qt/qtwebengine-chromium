@@ -4,6 +4,7 @@
 
 import("//build/config/ui.gni")
 import("//chrome/common/features.gni")
+import("//components/nacl/features.gni")
 import("//ppapi/features/features.gni")
 import("//printing/features/features.gni")
 import("//services/catalog/public/tools/catalog.gni")
@@ -17,8 +18,7 @@ source_set("command_ids") {
   ]
 }
 
-# Shared by //chrome/browser and //chrome/app/mash. Not in //chrome/common
-# because it isn't shared with processes like renderer, utility, etc.
+# TODO: put back in chrome/browser if necessary. http://crbug.com/771801.
 source_set("shutdown_signal_handlers") {
   sources = [
     "shutdown_signal_handlers_posix.cc",
@@ -324,9 +324,7 @@ static_library("test_support") {
     "//chrome/gpu",
     "//chrome/renderer",
     "//chrome/utility",
-    "//components/crash/content/app",
-    "//components/crash/content/app:lib",
-    "//components/crash/content/app:test_support",
+    "//components/nacl/common:features",
     "//components/startup_metric_utils/browser:lib",
     "//content/public/app:both",
     "//content/public/common",
@@ -338,6 +336,15 @@ static_library("test_support") {
     "//ui/base",
     "//v8:v8_headers",
   ]
+
+  if (!is_fuchsia) {
+    # TODO(crbug.com/753619): Enable crash reporting on Fuchsia.
+    deps += [
+      "//components/crash/content/app",
+      "//components/crash/content/app:lib",
+      "//components/crash/content/app:test_support",
+    ]
+  }
 
   if (is_mac) {
     sources += [ "chrome_main_mac.mm" ]
@@ -370,25 +377,24 @@ static_library("test_support") {
 
   if (enable_package_mash_services) {
     deps += [
-      "//chrome/app/mash:chrome_mash_catalog",
-      "//chrome/app/mash:chrome_test_catalog",
-      "//chrome/app/mash:embedded_services",
       "//mash/common",
       "//mash/quick_launch/public/interfaces:constants",
       "//services/ui/public/interfaces:constants",
     ]
-
-    if (is_chromeos) {
-      deps += [ "//chrome/app/mash:chrome_mus_catalog" ]
-    }
   }
 }
 
 chrome_packaged_services = [
   ":chrome_manifest",
   "//chrome/profiling:manifest",
+  "//services/proxy_resolver:proxy_resolver_manifest",
   "//services/preferences:local_state_manifest",
 ]
+
+if (enable_print_preview) {
+  chrome_packaged_services +=
+      [ "//chrome/utility:pdf_to_pwg_raster_converter_manifest" ]
+}
 
 if (enable_basic_printing || enable_print_preview) {
   chrome_packaged_services +=
@@ -418,9 +424,15 @@ service_manifest("chrome_content_packaged_services_manifest_overlay") {
   source =
       "//chrome/browser/chrome_content_packaged_services_manifest_overlay.json"
   packaged_services = chrome_packaged_services
+  if (enable_package_mash_services) {
+    packaged_services += [ "//mash/quick_launch:manifest" ]
+  }
   if (is_chromeos) {
     packaged_services += [
+      "//ash/autoclick/mus:manifest",
       "//ash/mus:manifest",
+      "//ash/touch_hud/mus:manifest",
+      "//components/font_service:manifest",
       "//services/ui:manifest",
     ]
   }

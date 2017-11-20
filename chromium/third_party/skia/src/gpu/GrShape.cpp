@@ -9,9 +9,12 @@
 
 GrShape& GrShape::operator=(const GrShape& that) {
     fStyle = that.fStyle;
+    fOriginalPath = that.fOriginalPath;
     this->changeType(that.fType, Type::kPath == that.fType ? &that.path() : nullptr);
     switch (fType) {
         case Type::kEmpty:
+            break;
+        case Type::kInvertedEmpty:
             break;
         case Type::kRRect:
             fRRectData = that.fRRectData;
@@ -29,12 +32,91 @@ GrShape& GrShape::operator=(const GrShape& that) {
     return *this;
 }
 
+static bool flip_inversion(bool originalIsInverted, GrShape::FillInversion inversion) {
+    switch (inversion) {
+        case GrShape::FillInversion::kPreserve:
+            return false;
+        case GrShape::FillInversion::kFlip:
+            return true;
+        case GrShape::FillInversion::kForceInverted:
+            return !originalIsInverted;
+        case GrShape::FillInversion::kForceNoninverted:
+            return originalIsInverted;
+    }
+    return false;
+}
+
+static bool is_inverted(bool originalIsInverted, GrShape::FillInversion inversion) {
+    switch (inversion) {
+        case GrShape::FillInversion::kPreserve:
+            return originalIsInverted;
+        case GrShape::FillInversion::kFlip:
+            return !originalIsInverted;
+        case GrShape::FillInversion::kForceInverted:
+            return true;
+        case GrShape::FillInversion::kForceNoninverted:
+            return false;
+    }
+    return false;
+}
+
+GrShape GrShape::MakeFilled(const GrShape& original, FillInversion inversion) {
+    if (original.style().isSimpleFill() && !flip_inversion(original.inverseFilled(), inversion)) {
+        // By returning the original rather than falling through we can preserve any inherited style
+        // key. Otherwise, we wipe it out below since the style change invalidates it.
+        return original;
+    }
+    GrShape result;
+    result.fOriginalPath = original.fOriginalPath;
+    switch (original.fType) {
+        case Type::kRRect:
+            result.fType = original.fType;
+            result.fRRectData.fRRect = original.fRRectData.fRRect;
+            result.fRRectData.fDir = kDefaultRRectDir;
+            result.fRRectData.fStart = kDefaultRRectStart;
+            result.fRRectData.fInverted = is_inverted(original.fRRectData.fInverted, inversion);
+            break;
+        case Type::kLine:
+            // Lines don't fill.
+            if (is_inverted(original.fLineData.fInverted, inversion)) {
+                result.fType = Type::kInvertedEmpty;
+            } else {
+                result.fType = Type::kEmpty;
+            }
+            break;
+        case Type::kEmpty:
+            result.fType = is_inverted(false, inversion) ? Type::kInvertedEmpty :  Type::kEmpty;
+            break;
+        case Type::kInvertedEmpty:
+            result.fType = is_inverted(true, inversion) ? Type::kInvertedEmpty :  Type::kEmpty;
+            break;
+        case Type::kPath:
+            result.initType(Type::kPath, &original.fPathData.fPath);
+            result.fPathData.fGenID = original.fPathData.fGenID;
+            if (flip_inversion(original.fPathData.fPath.isInverseFillType(), inversion)) {
+                result.fPathData.fPath.toggleInverseFillType();
+            }
+            if (!original.style().isSimpleFill()) {
+                // Going from a non-filled style to fill may allow additional simplifications (e.g.
+                // closing an open rect that wasn't closed in the original shape because it had
+                // stroke style).
+                result.attemptToSimplifyPath();
+            }
+            break;
+    }
+    // We don't copy the inherited key since it can contain path effect information that we just
+    // stripped.
+    return result;
+}
+
 SkRect GrShape::bounds() const {
     // Bounds where left == bottom or top == right can indicate a line or point shape. We return
     // inverted bounds for a truly empty shape.
     static constexpr SkRect kInverted = SkRect::MakeLTRB(1, 1, -1, -1);
     switch (fType) {
         case Type::kEmpty:
+            return kInverted;
+        case Type::kInvertedEmpty:
             return kInverted;
         case Type::kLine: {
             SkRect bounds;
@@ -64,9 +146,10 @@ SkRect GrShape::bounds() const {
 }
 
 SkRect GrShape::styledBounds() const {
-    if (Type::kEmpty == fType && !fStyle.hasNonDashPathEffect()) {
+    if (this->isEmpty() && !fStyle.hasNonDashPathEffect()) {
         return SkRect::MakeEmpty();
     }
+
     SkRect bounds;
     fStyle.adjustBounds(&bounds, this->bounds());
     return bounds;
@@ -122,6 +205,8 @@ int GrShape::unstyledKeySize() const {
     switch (fType) {
         case Type::kEmpty:
             return 1;
+        case Type::kInvertedEmpty:
+            return 1;
         case Type::kRRect:
             SkASSERT(!fInheritedKey.count());
             SkASSERT(0 == SkRRect::kSizeInMemory % sizeof(uint32_t));
@@ -157,6 +242,9 @@ void GrShape::writeUnstyledKey(uint32_t* key) const {
         switch (fType) {
             case Type::kEmpty:
                 *key++ = 1;
+                break;
+            case Type::kInvertedEmpty:
+                *key++ = 2;
                 break;
             case Type::kRRect:
                 fRRectData.fRRect.writeToMemory(key);
@@ -196,7 +284,7 @@ void GrShape::setInheritedKey(const GrShape &parent, GrStyle::Apply apply, SkSca
         // We want ApplyFullStyle(ApplyPathEffect(shape)) to have the same key as
         // ApplyFullStyle(shape).
         // The full key is structured as (geo,path_effect,stroke).
-        // If we do ApplyPathEffect we get get,path_effect as the inherited key. If we then
+        // If we do ApplyPathEffect we get geo,path_effect as the inherited key. If we then
         // do ApplyFullStyle we'll memcpy geo,path_effect into the new inherited key
         // and then append the style key (which should now be stroke only) at the end.
         int parentCnt = parent.fInheritedKey.count();
@@ -238,11 +326,17 @@ void GrShape::setInheritedKey(const GrShape &parent, GrStyle::Apply apply, SkSca
     }
 }
 
-GrShape::GrShape(const GrShape& that) : fStyle(that.fStyle) {
+void GrShape::addGenIDChangeListener(SkPathRef::GenIDChangeListener* listener) const {
+    SkPathPriv::AddGenIDChangeListener(fOriginalPath, listener);
+}
+
+GrShape::GrShape(const GrShape& that) : fStyle(that.fStyle), fOriginalPath(that.fOriginalPath) {
     const SkPath* thatPath = Type::kPath == that.fType ? &that.fPathData.fPath : nullptr;
     this->initType(that.fType, thatPath);
     switch (fType) {
         case Type::kEmpty:
+            break;
+        case Type::kInvertedEmpty:
             break;
         case Type::kRRect:
             fRRectData = that.fRRectData;
@@ -342,6 +436,7 @@ GrShape::GrShape(const GrShape& parent, GrStyle::Apply apply, SkScalar scale) {
                                                  scale));
         fStyle.resetToInitStyle(fillOrHairline);
     }
+    fOriginalPath = parent.fOriginalPath;
     this->attemptToSimplifyPath();
     this->setInheritedKey(*parentForKey, apply, scale);
 }
@@ -354,7 +449,9 @@ void GrShape::attemptToSimplifyPath() {
     bool inverted = this->path().isInverseFillType();
     SkPoint pts[2];
     if (this->path().isEmpty()) {
-        this->changeType(Type::kEmpty);
+        // Dashing ignores inverseness skbug.com/5421.
+        this->changeType(inverted && !this->style().isDashed() ? Type::kInvertedEmpty
+                                                               : Type::kEmpty);
     } else if (this->path().isLine(pts)) {
         this->changeType(Type::kLine);
         fLineData.fPts[0] = pts[0];
@@ -366,10 +463,7 @@ void GrShape::attemptToSimplifyPath() {
         fRRectData.fDir = rrectDir;
         fRRectData.fStart = rrectStart;
         fRRectData.fInverted = inverted;
-        // Currently SkPath does not acknowledge that empty, rect, or oval subtypes as rrects.
         SkASSERT(!fRRectData.fRRect.isEmpty());
-        SkASSERT(fRRectData.fRRect.getType() != SkRRect::kRect_Type);
-        SkASSERT(fRRectData.fRRect.getType() != SkRRect::kOval_Type);
     } else if (this->path().isOval(&rect, &rrectDir, &rrectStart)) {
         this->changeType(Type::kRRect);
         fRRectData.fRRect.setOval(rect);
@@ -403,6 +497,10 @@ void GrShape::attemptToSimplifyPath() {
     }
     if (Type::kPath != fType) {
         fInheritedKey.reset(0);
+        // Whenever we simplify to a non-path, break the chain so we no longer refer to the
+        // original path. This prevents attaching genID listeners to temporary paths created when
+        // drawing simple shapes.
+        fOriginalPath.reset();
         if (Type::kRRect == fType) {
             this->attemptToSimplifyRRect();
         } else if (Type::kLine == fType) {
@@ -442,7 +540,8 @@ void GrShape::attemptToSimplifyRRect() {
     SkASSERT(Type::kRRect == fType);
     SkASSERT(!fInheritedKey.count());
     if (fRRectData.fRRect.isEmpty()) {
-        fType = Type::kEmpty;
+        // Dashing ignores the inverseness currently. skbug.com/5421
+        fType = fRRectData.fInverted && !fStyle.isDashed() ? Type::kInvertedEmpty : Type::kEmpty;
         return;
     }
     if (!this->style().hasPathEffect()) {
@@ -480,8 +579,8 @@ void GrShape::attemptToSimplifyLine() {
         rec.setStrokeStyle(fStyle.strokeRec().getWidth(), false);
         fStyle = GrStyle(rec, nullptr);
     }
-    if (fStyle.isSimpleFill() && !fLineData.fInverted) {
-        this->changeType(Type::kEmpty);
+    if (fStyle.isSimpleFill()) {
+        this->changeType(fLineData.fInverted ? Type::kInvertedEmpty : Type::kEmpty);
         return;
     }
     SkPoint* pts = fLineData.fPts;
@@ -525,7 +624,7 @@ void GrShape::attemptToSimplifyLine() {
             fRRectData.fStart = kDefaultRRectStart;
             if (fRRectData.fRRect.isEmpty()) {
                 // This can happen when r is very small relative to the rect edges.
-                this->changeType(Type::kEmpty);
+                this->changeType(inverted ? Type::kInvertedEmpty : Type::kEmpty);
                 return;
             }
             fStyle = GrStyle::SimpleFill();

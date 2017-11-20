@@ -6,7 +6,6 @@
 
 #include <stdint.h>
 
-#include <stack>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,6 +13,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/containers/stack.h"
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
@@ -89,6 +89,10 @@ class AppCacheRequestHandlerTest
                       const std::string& message) override {}
 
     void OnContentBlocked(int host_id, const GURL& manifest_url) override {}
+
+    void OnSetSubresourceFactory(
+        int host_id,
+        mojo::MessagePipeHandle loader_factory_pipe_handle) override {}
   };
 
   // Helper callback to run a test on our io_thread. The io_thread is spun up
@@ -302,8 +306,8 @@ class AppCacheRequestHandlerTest
 
   void MainResource_Miss() {
     PushNextTask(
-        base::Bind(&AppCacheRequestHandlerTest::Verify_MainResource_Miss,
-                   base::Unretained(this)));
+        base::BindOnce(&AppCacheRequestHandlerTest::Verify_MainResource_Miss,
+                       base::Unretained(this)));
 
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah"), host_,
                                         RESOURCE_TYPE_MAIN_FRAME));
@@ -344,8 +348,8 @@ class AppCacheRequestHandlerTest
 
   void MainResource_Hit() {
     PushNextTask(
-        base::Bind(&AppCacheRequestHandlerTest::Verify_MainResource_Hit,
-                   base::Unretained(this)));
+        base::BindOnce(&AppCacheRequestHandlerTest::Verify_MainResource_Hit,
+                       base::Unretained(this)));
 
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah"), host_,
                                         RESOURCE_TYPE_MAIN_FRAME));
@@ -388,9 +392,9 @@ class AppCacheRequestHandlerTest
   // MainResource_Fallback --------------------------------------------------
 
   void MainResource_Fallback() {
-    PushNextTask(
-        base::Bind(&AppCacheRequestHandlerTest::Verify_MainResource_Fallback,
-                   base::Unretained(this)));
+    PushNextTask(base::BindOnce(
+        &AppCacheRequestHandlerTest::Verify_MainResource_Fallback,
+        base::Unretained(this)));
 
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah"), host_,
                                         RESOURCE_TYPE_MAIN_FRAME));
@@ -482,7 +486,7 @@ class AppCacheRequestHandlerTest
   // MainResource_FallbackOverride --------------------------------------------
 
   void MainResource_FallbackOverride() {
-    PushNextTask(base::Bind(
+    PushNextTask(base::BindOnce(
         &AppCacheRequestHandlerTest::Verify_MainResource_FallbackOverride,
         base::Unretained(this)));
 
@@ -954,8 +958,8 @@ class AppCacheRequestHandlerTest
 
   void MainResource_Blocked() {
     PushNextTask(
-        base::Bind(&AppCacheRequestHandlerTest::Verify_MainResource_Blocked,
-                   base::Unretained(this)));
+        base::BindOnce(&AppCacheRequestHandlerTest::Verify_MainResource_Blocked,
+                       base::Unretained(this)));
 
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah/"), host_,
                                         RESOURCE_TYPE_MAIN_FRAME));
@@ -1036,7 +1040,7 @@ class AppCacheRequestHandlerTest
   // Data members --------------------------------------------------
 
   std::unique_ptr<base::WaitableEvent> test_finished_event_;
-  std::stack<base::OnceClosure> task_stack_;
+  base::stack<base::OnceClosure> task_stack_;
   std::unique_ptr<MockAppCacheService> mock_service_;
   std::unique_ptr<AppCacheBackendImpl> backend_impl_;
   std::unique_ptr<MockFrontend> mock_frontend_;

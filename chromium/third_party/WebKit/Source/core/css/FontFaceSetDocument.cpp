@@ -31,11 +31,11 @@
 #include "core/css/CSSSegmentedFontFace.h"
 #include "core/css/FontFaceCache.h"
 #include "core/css/FontFaceSetLoadEvent.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
-#include "core/dom/StyleEngine.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/style/ComputedStyle.h"
@@ -479,7 +479,7 @@ bool FontFaceSetDocument::ResolveFontStyle(const String& font_string,
   style->GetFont().Update(style->GetFont().GetFontSelector());
 
   GetDocument()->UpdateActiveStyle();
-  GetDocument()->EnsureStyleResolver().ComputeFont(style.Get(), *parsed_style);
+  GetDocument()->EnsureStyleResolver().ComputeFont(style.get(), *parsed_style);
 
   font = style->GetFont();
   font.Update(GetDocument()->GetStyleEngine().GetFontSelector());
@@ -571,11 +571,15 @@ DEFINE_TRACE(FontFaceSetDocument) {
   visitor->Trace(failed_fonts_);
   visitor->Trace(non_css_connected_faces_);
   visitor->Trace(async_runner_);
-  EventTargetWithInlineData::Trace(visitor);
   Supplement<Document>::Trace(visitor);
   SuspendableObject::Trace(visitor);
   FontFace::LoadFontCallback::Trace(visitor);
   FontFaceSet::Trace(visitor);
+}
+
+DEFINE_TRACE_WRAPPERS(FontFaceSetDocument) {
+  FontFaceSet::TraceWrappers(visitor);
+  Supplement<Document>::TraceWrappers(visitor);
 }
 
 }  // namespace blink

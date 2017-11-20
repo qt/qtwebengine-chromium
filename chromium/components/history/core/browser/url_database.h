@@ -7,6 +7,9 @@
 
 #include <stddef.h>
 
+#include <string>
+#include <vector>
+
 #include "base/macros.h"
 #include "components/history/core/browser/keyword_id.h"
 #include "components/history/core/browser/url_row.h"
@@ -58,10 +61,6 @@ class URLDatabase {
   // Looks up a url given an id. Fills info with the data. Returns true on
   // success and false otherwise.
   bool GetURLRow(URLID url_id, URLRow* info);
-
-  // Looks up all urls that were typed in manually. Fills info with the data.
-  // Returns true on success and false otherwise.
-  bool GetAllTypedUrls(URLRows* urls);
 
   // Looks up the given URL and if it exists, fills the given pointers with the
   // associated info and returns the ID of that URL. If the info pointer is
@@ -286,9 +285,13 @@ class URLDatabase {
   // be used in between CreateTemporaryURLTable() and CommitTemporaryURLTable().
   URLID AddURLInternal(const URLRow& info, bool is_temporary);
 
+  // Return ture if the urls table's schema contains "AUTOINCREMENT".
+  // false if table do not contain AUTOINCREMENT, or the table is not created.
+  bool URLTableContainsAutoincrement();
+
   // Convenience to fill a URLRow. Must be in sync with the fields in
   // kHistoryURLRowFields.
-  static void FillURLRow(sql::Statement& s, URLRow* i);
+  static void FillURLRow(const sql::Statement& s, URLRow* i);
 
   // Returns the database for the functions in this interface. The decendent of
   // this class implements these functions to return its objects.

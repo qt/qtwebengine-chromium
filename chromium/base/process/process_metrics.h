@@ -203,22 +203,40 @@ class BASE_EXPORT ProcessMetrics {
                       size_t* locked_bytes) const;
 #endif
 
-  // Returns the CPU usage in percent since the last time this method or
-  // GetPlatformIndependentCPUUsage() was called. The first time this method
-  // is called it returns 0 and will return the actual CPU info on subsequent
-  // calls. On Windows, the CPU usage value is for all CPUs. So if you have
-  // 2 CPUs and your process is using all the cycles of 1 CPU and not the other
-  // CPU, this method returns 50.
-  double GetCPUUsage();
+  // Returns the percentage of time spent executing, across all threads of the
+  // process, in the interval since the last time the method was called. Since
+  // this considers the total execution time across all threads in a process,
+  // the result can easily exceed 100% in multi-thread processes running on
+  // multi-core systems. In general the result is therefore a value in the
+  // range 0% to SysInfo::NumberOfProcessors() * 100%.
+  //
+  // To obtain the percentage of total available CPU resources consumed by this
+  // process over the interval, the caller must divide by NumberOfProcessors().
+  //
+  // Since this API measures usage over an interval, it will return zero on the
+  // first call, and an actual value only on the second and subsequent calls.
+  double GetPlatformIndependentCPUUsage();
 
   // Returns the number of average idle cpu wakeups per second since the last
   // call.
   int GetIdleWakeupsPerSecond();
 
-  // Same as GetCPUUsage(), but will return consistent values on all platforms
-  // (cancelling the Windows exception mentioned above) by returning a value in
-  // the range of 0 to (100 * numCPUCores) everywhere.
-  double GetPlatformIndependentCPUUsage();
+#if defined(OS_MACOSX)
+  // Returns the number of average "package idle exits" per second, which have
+  // a higher energy impact than a regular wakeup, since the last call.
+  //
+  // From the powermetrics man page:
+  // "With the exception of some Mac Pro systems, Mac and
+  // iOS systems are typically single package systems, wherein all CPUs are
+  // part of a single processor complex (typically a single IC die) with shared
+  // logic that can include (depending on system specifics) shared last level
+  // caches, an integrated memory controller etc. When all CPUs in the package
+  // are idle, the hardware can power-gate significant portions of the shared
+  // logic in addition to each individual processor's logic, as well as take
+  // measures such as placing DRAM in to self-refresh (also referred to as
+  // auto-refresh), place interconnects into lower-power states etc"
+  int GetPackageIdleWakeupsPerSecond();
+#endif
 
   // Retrieves accounting information for all I/O operations performed by the
   // process.
@@ -267,14 +285,18 @@ class BASE_EXPORT ProcessMetrics {
 #if defined(OS_MACOSX) || defined(OS_LINUX) || defined(OS_AIX)
   int CalculateIdleWakeupsPerSecond(uint64_t absolute_idle_wakeups);
 #endif
+#if defined(OS_MACOSX)
+  // The subset of wakeups that cause a "package exit" can be tracked on macOS.
+  // See |GetPackageIdleWakeupsForSecond| comment for more info.
+  int CalculatePackageIdleWakeupsPerSecond(
+      uint64_t absolute_package_idle_wakeups);
+#endif
 
 #if defined(OS_WIN)
   win::ScopedHandle process_;
 #else
   ProcessHandle process_;
 #endif
-
-  int processor_count_;
 
   // Used to store the previous times and CPU usage counts so we can
   // compute the CPU usage between calls.
@@ -285,6 +307,12 @@ class BASE_EXPORT ProcessMetrics {
   // Same thing for idle wakeups.
   TimeTicks last_idle_wakeups_time_;
   uint64_t last_absolute_idle_wakeups_;
+#endif
+
+#if defined(OS_MACOSX)
+  // And same thing for package idle exit wakeups.
+  TimeTicks last_package_idle_wakeups_time_;
+  uint64_t last_absolute_package_idle_wakeups_;
 #endif
 
 #if !defined(OS_IOS)
@@ -312,11 +340,11 @@ BASE_EXPORT size_t GetSystemCommitCharge();
 // returned by GetPageSize().
 BASE_EXPORT size_t GetPageSize();
 
-#if defined(OS_POSIX)
 // Returns the maximum number of file descriptors that can be open by a process
 // at once. If the number is unavailable, a conservative best guess is returned.
 BASE_EXPORT size_t GetMaxFds();
 
+#if defined(OS_POSIX)
 // Sets the file descriptor soft limit to |max_descriptors| or the OS hard
 // limit, whichever is lower.
 BASE_EXPORT void SetFdLimit(unsigned int max_descriptors);

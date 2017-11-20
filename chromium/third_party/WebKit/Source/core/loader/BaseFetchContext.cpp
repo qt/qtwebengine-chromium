@@ -7,14 +7,15 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/ContentSettingsClient.h"
 #include "core/frame/Settings.h"
+#include "core/frame/WebFeature.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/loader/SubresourceFilter.h"
 #include "core/loader/private/FrameClientHintsPreferencesContext.h"
 #include "platform/exported/WrappedResourceRequest.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/Resource.h"
 #include "platform/loader/fetch/ResourceLoadPriority.h"
 #include "platform/loader/fetch/ResourceLoadingLog.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
@@ -57,7 +58,7 @@ ResourceRequestBlockedReason BaseFetchContext::CanRequest(
   if (blocked_reason != ResourceRequestBlockedReason::kNone &&
       reporting_policy == SecurityViolationReportingPolicy::kReport) {
     DispatchDidBlockRequest(resource_request, options.initiator_info,
-                            blocked_reason);
+                            blocked_reason, type);
   }
   return blocked_reason;
 }
@@ -161,7 +162,7 @@ ResourceRequestBlockedReason BaseFetchContext::CanRequestInternal(
   if (ShouldBlockRequestByInspector(resource_request.Url()))
     return ResourceRequestBlockedReason::kInspector;
 
-  SecurityOrigin* security_origin = options.security_origin.Get();
+  SecurityOrigin* security_origin = options.security_origin.get();
   if (!security_origin)
     security_origin = GetSecurityOrigin();
 

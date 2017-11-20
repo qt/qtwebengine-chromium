@@ -37,7 +37,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/sandbox_linux.h"
-#include "content/public/common/sandbox_type.h"
+#include "gpu/config/gpu_info.h"
 #include "sandbox/linux/services/credentials.h"
 #include "sandbox/linux/services/namespace_sandbox.h"
 #include "sandbox/linux/services/proc_util.h"
@@ -45,6 +45,8 @@
 #include "sandbox/linux/services/thread_helpers.h"
 #include "sandbox/linux/services/yama.h"
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
+#include "services/service_manager/sandbox/sandbox_type.h"
+#include "third_party/angle/src/gpu_info_util/SystemInfo.h"
 
 #if defined(ANY_OF_AMTLU_SANITIZER)
 #include <sanitizer/common_interface_defs.h>
@@ -200,9 +202,9 @@ std::vector<int> LinuxSandbox::GetFileDescriptorsToClose() {
   return fds;
 }
 
-bool LinuxSandbox::InitializeSandbox() {
+bool LinuxSandbox::InitializeSandbox(const gpu::GPUInfo* gpu_info) {
   LinuxSandbox* linux_sandbox = LinuxSandbox::GetInstance();
-  return linux_sandbox->InitializeSandboxImpl();
+  return linux_sandbox->InitializeSandboxImpl(gpu_info);
 }
 
 void LinuxSandbox::StopThread(base::Thread* thread) {
@@ -233,13 +235,11 @@ int LinuxSandbox::GetStatus() {
 
     // We report whether the sandbox will be activated when renderers, workers
     // and PPAPI plugins go through sandbox initialization.
-    if (seccomp_bpf_supported() &&
-        SandboxSeccompBPF::ShouldEnableSeccompBPF(switches::kRendererProcess)) {
+    if (seccomp_bpf_supported()) {
       sandbox_status_flags_ |= kSandboxLinuxSeccompBPF;
     }
 
-    if (seccomp_bpf_with_tsync_supported() &&
-        SandboxSeccompBPF::ShouldEnableSeccompBPF(switches::kRendererProcess)) {
+    if (seccomp_bpf_with_tsync_supported()) {
       sandbox_status_flags_ |= kSandboxLinuxSeccompTSYNC;
     }
 
@@ -276,28 +276,33 @@ sandbox::SetuidSandboxClient*
 }
 
 // For seccomp-bpf, we use the SandboxSeccompBPF class.
-bool LinuxSandbox::StartSeccompBPF(const std::string& process_type) {
+bool LinuxSandbox::StartSeccompBPF(service_manager::SandboxType sandbox_type,
+                                   const gpu::GPUInfo* gpu_info) {
   CHECK(!seccomp_bpf_started_);
   CHECK(pre_initialized_);
-  if (seccomp_bpf_supported()) {
-    seccomp_bpf_started_ =
-        SandboxSeccompBPF::StartSandbox(process_type, OpenProc(proc_fd_));
-  }
+  if (!seccomp_bpf_supported())
+    return false;
 
-  if (seccomp_bpf_started_) {
-    LogSandboxStarted("seccomp-bpf");
-  }
+  SandboxSeccompBPF::Options opts;
+  opts.use_amd_specific_policies =
+      gpu_info && angle::IsAMD(gpu_info->active_gpu().vendor_id);
+  if (!SandboxSeccompBPF::StartSandbox(sandbox_type, OpenProc(proc_fd_), opts))
+    return false;
 
-  return seccomp_bpf_started_;
+  seccomp_bpf_started_ = true;
+  LogSandboxStarted("seccomp-bpf");
+  return true;
 }
 
-bool LinuxSandbox::InitializeSandboxImpl() {
+bool LinuxSandbox::InitializeSandboxImpl(const gpu::GPUInfo* gpu_info) {
   DCHECK(!initialize_sandbox_ran_);
   initialize_sandbox_ran_ = true;
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   const std::string process_type =
       command_line->GetSwitchValueASCII(switches::kProcessType);
+  service_manager::SandboxType sandbox_type =
+      service_manager::SandboxTypeFromCommandLine(*command_line);
 
   // We need to make absolutely sure that our sandbox is "sealed" before
   // returning.
@@ -308,7 +313,7 @@ bool LinuxSandbox::InitializeSandboxImpl() {
   // Unretained() since the current object is a Singleton.
   base::ScopedClosureRunner sandbox_promise_keeper(
       base::BindOnce(&LinuxSandbox::CheckForBrokenPromises,
-                     base::Unretained(this), process_type));
+                     base::Unretained(this), sandbox_type));
 
   // No matter what, it's always an error to call InitializeSandbox() after
   // threads have been created.
@@ -359,7 +364,7 @@ bool LinuxSandbox::InitializeSandboxImpl() {
   LimitAddressSpace(process_type);
 
   // Try to enable seccomp-bpf.
-  bool seccomp_bpf_started = StartSeccompBPF(process_type);
+  bool seccomp_bpf_started = StartSeccompBPF(sandbox_type, gpu_info);
 
   return seccomp_bpf_started;
 }
@@ -383,9 +388,10 @@ bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
   (void) process_type;
 #if !defined(ANY_OF_AMTLU_SANITIZER)
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (SandboxTypeFromCommandLine(*command_line) == SANDBOX_TYPE_NO_SANDBOX)
+  if (service_manager::SandboxTypeFromCommandLine(*command_line) ==
+      service_manager::SANDBOX_TYPE_NO_SANDBOX) {
     return false;
-
+  }
   // Limit the address space to 4GB.
   // This is in the hope of making some kernel exploits more complex and less
   // reliable. It also limits sprays a little on 64 bits.
@@ -460,18 +466,17 @@ void LinuxSandbox::SealSandbox() {
   }
 }
 
-void LinuxSandbox::CheckForBrokenPromises(const std::string& process_type) {
+void LinuxSandbox::CheckForBrokenPromises(
+    service_manager::SandboxType sandbox_type) {
+  if (sandbox_type != service_manager::SANDBOX_TYPE_RENDERER &&
+      sandbox_type != service_manager::SANDBOX_TYPE_PPAPI) {
+    return;
+  }
   // Make sure that any promise made with GetStatus() wasn't broken.
-  bool promised_seccomp_bpf_would_start = false;
-  if (process_type == switches::kRendererProcess ||
-      process_type == switches::kPpapiPluginProcess) {
-    promised_seccomp_bpf_would_start =
-        (sandbox_status_flags_ != kSandboxLinuxInvalid) &&
-        (GetStatus() & kSandboxLinuxSeccompBPF);
-  }
-  if (promised_seccomp_bpf_would_start) {
-    CHECK(seccomp_bpf_started_);
-  }
+  bool promised_seccomp_bpf_would_start =
+      (sandbox_status_flags_ != kSandboxLinuxInvalid) &&
+      (GetStatus() & kSandboxLinuxSeccompBPF);
+  CHECK(!promised_seccomp_bpf_would_start || seccomp_bpf_started_);
 }
 
 void LinuxSandbox::StopThreadAndEnsureNotCounted(base::Thread* thread) const {

@@ -11,6 +11,7 @@
 #include "core/page/scrolling/StickyPositionScrollingConstraints.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/PaintLayerScrollableArea.h"
+#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
@@ -987,6 +988,82 @@ TEST_F(LayoutBoxModelObjectTest, InvalidatePaintLayerOnStackedChange) {
   EXPECT_TRUE(new_compositing_container->NeedsRepaint());
   EXPECT_EQ(original_compositing_container,
             target->Layer()->CompositingContainer());
+}
+
+// Tests that when a sticky object is removed from the root scroller it
+// correctly clears its viewport constrained position: https://crbug.com/755307.
+TEST_F(LayoutBoxModelObjectTest, StickyRemovedFromRootScrollableArea) {
+  SetBodyInnerHTML(
+      "<style>"
+      "body { height: 5000px; }"
+      "#scroller { height: 100px; }"
+      "#sticky { position: sticky; top: 0; height: 50px; width: 50px; }"
+      "</style>"
+      "<div id='scroller'>"
+      "  <div id='sticky'></div>"
+      "  </div>");
+
+  LayoutBoxModelObject* sticky =
+      ToLayoutBoxModelObject(GetLayoutObjectByElementId("sticky"));
+  LayoutBoxModelObject* scroller =
+      ToLayoutBoxModelObject(GetLayoutObjectByElementId("scroller"));
+
+  // The 'scroller' starts as non-overflow, so the sticky element's ancestor
+  // overflow layer should be the outer scroller.
+  EXPECT_TRUE(sticky->Layer()->AncestorOverflowLayer()->IsRootLayer());
+
+  // We need the sticky element to not be a PaintLayer child of the scroller,
+  // so that it is later reparented under the scroller's PaintLayer
+  EXPECT_FALSE(scroller->Layer());
+
+  // Now make the scroller into an actual scroller. This will reparent the
+  // sticky element to be a child of the scroller, and will set its previous
+  // overflow layer to nullptr.
+  ToElement(scroller->GetNode())
+      ->SetInlineStyleProperty(CSSPropertyOverflow, "scroll");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // The sticky element should no longer be viewport constrained.
+  EXPECT_FALSE(GetDocument().View()->HasViewportConstrainedObjects());
+
+  // Making the scroller have visible overflow but still have a PaintLayer
+  // (in this case by making it position: relative) will cause us to need to
+  // recompute the sticky element's ancestor overflow layer.
+  ToElement(scroller->GetNode())
+      ->SetInlineStyleProperty(CSSPropertyPosition, "relative");
+  ToElement(scroller->GetNode())
+      ->SetInlineStyleProperty(CSSPropertyOverflow, "visible");
+
+  // Now try to scroll to the sticky element, this used to crash.
+  GetDocument().GetFrame()->DomWindow()->scrollTo(0, 500);
+}
+
+TEST_F(LayoutBoxModelObjectTest, BackfaceVisibilityChange) {
+  // TODO(wangxianzhu): Change this to V175.
+  ScopedSlimmingPaintV2ForTest spv2(true);
+
+  AtomicString base_style =
+      "width: 100px; height: 100px; background: blue; position: absolute";
+  SetBodyInnerHTML("<div id='target' style='" + base_style + "'></div>");
+
+  auto* target = GetDocument().getElementById("target");
+  auto* target_layer =
+      ToLayoutBoxModelObject(target->GetLayoutObject())->Layer();
+  ASSERT_NE(nullptr, target_layer);
+  EXPECT_FALSE(target_layer->NeedsRepaint());
+
+  target->setAttribute(HTMLNames::styleAttr,
+                       base_style + "; backface-visibility: hidden");
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
+  EXPECT_TRUE(target_layer->NeedsRepaint());
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_FALSE(target_layer->NeedsRepaint());
+
+  target->setAttribute(HTMLNames::styleAttr, base_style);
+  GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
+  EXPECT_TRUE(target_layer->NeedsRepaint());
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_FALSE(target_layer->NeedsRepaint());
 }
 
 }  // namespace blink

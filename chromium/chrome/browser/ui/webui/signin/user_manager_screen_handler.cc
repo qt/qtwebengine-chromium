@@ -14,7 +14,6 @@
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -69,10 +68,6 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_util.h"
-
-#if defined(USE_ASH)
-#include "ash/shell.h"  // nogncheck
-#endif
 
 namespace {
 // User dictionary keys.
@@ -214,6 +209,15 @@ void HandleLogRemoveUserWarningShown(const base::ListValue* args) {
       ProfileMetrics::DELETE_PROFILE_USER_MANAGER_SHOW_WARNING);
 }
 
+void DisplayErrorMessage(const base::string16 error_message,
+                         content::WebUI* web_ui) {
+  LoginUIServiceFactory::GetForProfile(
+      Profile::FromWebUI(web_ui)->GetOriginalProfile())
+      ->DisplayLoginResult(nullptr, error_message, base::string16());
+  UserManagerProfileDialog::ShowDialogAndDisplayErrorMessage(
+      web_ui->GetWebContents()->GetBrowserContext());
+}
+
 }  // namespace
 
 // ProfileUpdateObserver ------------------------------------------------------
@@ -261,11 +265,6 @@ class UserManagerScreenHandler::ProfileUpdateObserver
 
   void OnProfileHighResAvatarLoaded(
       const base::FilePath& profile_path) override {
-    // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/461175
-    // is fixed.
-    tracked_objects::ScopedTracker tracking_profile(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "461175 UserManagerScreenHandler::OnProfileHighResAvatarLoaded"));
     user_manager_handler_->SendUserList();
   }
 
@@ -465,13 +464,22 @@ void UserManagerScreenHandler::HandleAuthenticatedLaunchUser(
     // Supervised profile will only be locked when force-sign-in is enabled
     // and it shouldn't be unlocked. Display the error message directly via
     // the system profile to avoid profile creation.
-    LoginUIServiceFactory::GetForProfile(
-        Profile::FromWebUI(web_ui())->GetOriginalProfile())
-        ->DisplayLoginResult(nullptr,
-                             l10n_util::GetStringUTF16(
-                                 IDS_SUPERVISED_USER_NOT_ALLOWED_BY_POLICY),
-                             base::string16());
-    UserManagerProfileDialog::ShowDialogAndDisplayErrorMessage(browser_context);
+    DisplayErrorMessage(
+        l10n_util::GetStringUTF16(IDS_SUPERVISED_USER_NOT_ALLOWED_BY_POLICY),
+        web_ui());
+  } else if (entry->IsSigninRequired() && signin_util::IsForceSigninEnabled() &&
+             entry->GetActiveTime() != base::Time()) {
+    // If force-sign-in is enabled, do not allow users to sign in to a
+    // pre-existing locked profile, as this may force unexpected profile data
+    // merge. We consider a profile as pre-existing if it has been actived
+    // previously. A pre-existed profile can still be used if it has been signed
+    // in with an email address matched RestrictSigninToPattern policy already.
+    // TODO(crbug.com/775546, zmin): Improving the error message here.
+    DisplayErrorMessage(
+        l10n_util::GetStringFUTF16(
+            IDS_PLUGIN_BLOCKED_BY_POLICY,
+            l10n_util::GetStringUTF16(IDS_TASK_MANAGER_PROFILE_NAME_COLUMN)),
+        web_ui());
   } else {
     // Fresh sign in via user manager without existing email address.
     UserManagerProfileDialog::ShowSigninDialog(browser_context, profile_path);
@@ -494,7 +502,8 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
 
   DCHECK(profiles::IsMultipleProfilesEnabled());
 
-  if (profiles::AreAllNonChildNonSupervisedProfilesLocked()) {
+  if (!signin_util::IsForceSigninEnabled() &&
+      profiles::AreAllNonChildNonSupervisedProfilesLocked()) {
     web_ui()->CallJavascriptFunctionUnsafe(
         "cr.webUIListenerCallback", base::Value("show-error-dialog"),
         base::Value(l10n_util::GetStringUTF8(
@@ -864,12 +873,6 @@ void UserManagerScreenHandler::SendUserList() {
           GetAllProfilesAttributesSortedByName();
   user_auth_type_map_.clear();
 
-  // Profile deletion is not allowed in Metro mode.
-  bool can_remove = true;
-#if defined(USE_ASH)
-  can_remove = !ash::Shell::HasInstance();
-#endif
-
   for (const ProfileAttributesEntry* entry : entries) {
     // Don't show profiles still in the middle of being set up as new legacy
     // supervised users.
@@ -893,7 +896,7 @@ void UserManagerScreenHandler::SendUserList() {
     profile_value->SetBoolean(kKeyHasLocalCreds,
                               !entry->GetLocalAuthCredentials().empty());
     profile_value->SetBoolean(kKeyIsOwner, false);
-    profile_value->SetBoolean(kKeyCanRemove, can_remove);
+    profile_value->SetBoolean(kKeyCanRemove, true);
     profile_value->SetBoolean(kKeyIsDesktop, true);
     profile_value->SetString(kKeyAvatarUrl, GetAvatarImage(entry));
 

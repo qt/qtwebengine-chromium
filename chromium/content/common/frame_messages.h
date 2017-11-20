@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef CONTENT_COMMON_FRAME_MESSAGES_H_
+#define CONTENT_COMMON_FRAME_MESSAGES_H_
+
 // IPC messages for interacting with frames.
-// Multiply-included message file, hence no include guard.
 
 #include <stddef.h>
 #include <stdint.h>
@@ -26,7 +28,6 @@
 #include "content/common/frame_message_enums.h"
 #include "content/common/frame_owner_properties.h"
 #include "content/common/frame_replication_state.h"
-#include "content/common/message_port.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/navigation_params.h"
 #include "content/common/savable_subframe.h"
@@ -51,6 +52,7 @@
 #include "ipc/ipc_platform_file.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "ppapi/features/features.h"
+#include "third_party/WebKit/common/message_port/message_port_channel.h"
 #include "third_party/WebKit/public/platform/WebFeaturePolicy.h"
 #include "third_party/WebKit/public/platform/WebFocusType.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
@@ -73,8 +75,8 @@
 #endif
 
 // Singly-included section for type definitions.
-#ifndef CONTENT_COMMON_FRAME_MESSAGES_H_
-#define CONTENT_COMMON_FRAME_MESSAGES_H_
+#ifndef INTERNAL_CONTENT_COMMON_FRAME_MESSAGES_H_
+#define INTERNAL_CONTENT_COMMON_FRAME_MESSAGES_H_
 
 using FrameMsg_GetSerializedHtmlWithLocalLinks_UrlMap =
     std::map<GURL, base::FilePath>;
@@ -84,7 +86,7 @@ using FrameMsg_GetSerializedHtmlWithLocalLinks_FrameRoutingIdMap =
 using FrameMsg_SerializeAsMHTML_FrameRoutingIdToContentIdMap =
     std::map<int, std::string>;
 
-#endif  // CONTENT_COMMON_FRAME_MESSAGES_H_
+#endif  // INTERNAL_CONTENT_COMMON_FRAME_MESSAGES_H_
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -214,7 +216,6 @@ IPC_STRUCT_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::FrameNavigateParams)
   IPC_STRUCT_TRAITS_MEMBER(nav_entry_id)
-  IPC_STRUCT_TRAITS_MEMBER(frame_unique_name)
   IPC_STRUCT_TRAITS_MEMBER(item_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(document_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(url)
@@ -227,8 +228,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameNavigateParams)
   IPC_STRUCT_TRAITS_MEMBER(socket_address)
 IPC_STRUCT_TRAITS_END()
 
-// Parameters structure for FrameHostMsg_DidCommitProvisionalLoad, which has
-// too many data parameters to be reasonably put in a predefined IPC message.
+// Parameters structure for mojom::FrameHost::DidCommitProvisionalLoad.
+// TODO(https://crbug.com/729021): Convert this to a Mojo struct.
 IPC_STRUCT_BEGIN_WITH_PARENT(FrameHostMsg_DidCommitProvisionalLoad_Params,
                              content::FrameNavigateParams)
   IPC_STRUCT_TRAITS_PARENT(content::FrameNavigateParams)
@@ -340,7 +341,7 @@ IPC_STRUCT_BEGIN(FrameMsg_PostMessage_Params)
   IPC_STRUCT_MEMBER(base::string16, target_origin)
 
   // Information about the MessagePorts this message contains.
-  IPC_STRUCT_MEMBER(std::vector<content::MessagePort>, message_ports)
+  IPC_STRUCT_MEMBER(std::vector<blink::MessagePortChannel>, message_ports)
 IPC_STRUCT_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SourceLocation)
@@ -1091,9 +1092,12 @@ IPC_MESSAGE_ROUTED4(FrameHostMsg_DidAddMessageToConsole,
 //
 // Each of these messages will have a corresponding FrameHostMsg_Detach message
 // sent when the frame is detached from the DOM.
-IPC_SYNC_MESSAGE_CONTROL1_1(FrameHostMsg_CreateChildFrame,
+// Note that |new_render_frame_id| and |devtools_frame_token| are out
+// parameters. Browser process defines them for the renderer process.
+IPC_SYNC_MESSAGE_CONTROL1_2(FrameHostMsg_CreateChildFrame,
                             FrameHostMsg_CreateChildFrame_Params,
-                            int32_t /* new_routing_id */)
+                            int32_t /* new_routing_id */,
+                            base::UnguessableToken /* devtools_frame_token */)
 
 // Sent by the renderer to the parent RenderFrameHost when a child frame is
 // detached from the DOM.
@@ -1117,12 +1121,6 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_DidStartProvisionalLoad,
 // Sent when the renderer fails a provisional load with an error.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidFailProvisionalLoadWithError,
                     FrameHostMsg_DidFailProvisionalLoadWithError_Params)
-
-// Notifies the browser that a frame in the view has changed. This message
-// has a lot of parameters and is packed/unpacked by functions defined in
-// render_messages.h.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_DidCommitProvisionalLoad,
-                    FrameHostMsg_DidCommitProvisionalLoad_Params)
 
 // Notifies the browser that a document has been loaded.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidFinishDocumentLoad)
@@ -1468,10 +1466,6 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_SetIsInert, bool /* inert */)
 // propagated to any remote frames.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_SetHasReceivedUserGesture)
 
-// Used to tell the browser what the DevTools FrameId is. Needed by Headless
-// Chrome.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_SetDevToolsFrameId, std::string)
-
 // Used to tell the parent that the user right clicked on an area of the
 // content area, and a context menu should be shown for it. The params
 // object contains information about the node(s) that were selected when the
@@ -1692,6 +1686,13 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_RunFileChooser, content::FileChooserParams)
 IPC_MESSAGE_ROUTED1(FrameHostMsg_UpdateFaviconURL,
                     std::vector<content::FaviconURL> /* candidates */)
 
+// A message from HTML-based UI.  When (trusted) Javascript calls
+// send(message, args), this message is sent to the browser.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_WebUISend,
+                    GURL /* source_url */,
+                    std::string /* message */,
+                    base::ListValue /* args */)
+
 #if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 
 // Message to show/hide a popup menu using native controls.
@@ -1727,11 +1728,11 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_FindMatchRects_Reply,
 IPC_MESSAGE_ROUTED2(FrameHostMsg_GetNearestFindResult_Reply,
                     int /* nfr_request_id */,
                     float /* distance */)
-
-IPC_MESSAGE_ROUTED0(FrameHostMsg_NavigationHandledByEmbedder)
 #endif
 
 // Adding a new message? Stick to the sort order above: first platform
 // independent FrameMsg, then ifdefs for platform specific FrameMsg, then
 // platform independent FrameHostMsg, then ifdefs for platform specific
 // FrameHostMsg.
+
+#endif  // CONTENT_COMMON_FRAME_MESSAGES_H_

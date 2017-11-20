@@ -47,10 +47,8 @@ class NetworkDelegate;
 class NetworkErrorLoggingDelegate;
 class NetworkQualityEstimator;
 class ReportingService;
-class SdchManager;
 class ProxyService;
 class URLRequest;
-class URLRequestBackoffManager;
 class URLRequestJobFactory;
 class URLRequestThrottlerManager;
 
@@ -211,18 +209,6 @@ class NET_EXPORT URLRequestContext
     throttler_manager_ = throttler_manager;
   }
 
-  // May return nullptr.
-  URLRequestBackoffManager* backoff_manager() const { return backoff_manager_; }
-  void set_backoff_manager(URLRequestBackoffManager* backoff_manager) {
-    backoff_manager_ = backoff_manager;
-  }
-
-  // May return nullptr.
-  SdchManager* sdch_manager() const { return sdch_manager_; }
-  void set_sdch_manager(SdchManager* sdch_manager) {
-    sdch_manager_ = sdch_manager;
-  }
-
   // Gets the URLRequest objects that hold a reference to this
   // URLRequestContext.
   const std::set<const URLRequest*>& url_requests() const {
@@ -237,6 +223,10 @@ class NET_EXPORT URLRequestContext
   // additionally call AssertNoURLRequests() within their own destructor,
   // prior to implicit destruction of subclass-owned state.
   void AssertNoURLRequests() const;
+
+  // CHECKs that the passed URLRequest is present on this context.
+  // Added for http://crbug.com/754704; remove when that bug is resolved.
+  void AssertURLRequestPresent(const URLRequest* request) const;
 
   // Get the underlying |HttpUserAgentSettings| implementation that provides
   // the HTTP Accept-Language and User-Agent header values.
@@ -287,7 +277,8 @@ class NET_EXPORT URLRequestContext
   // Sets a name for this URLRequestContext. Currently the name is used in
   // MemoryDumpProvier to annotate memory usage. The name does not need to be
   // unique.
-  void set_name(const char* name) { name_ = name; }
+  void set_name(const std::string& name) { name_ = name; }
+  const std::string& name() const { return name_; }
 
   // MemoryDumpProvider implementation:
   // This is reported as
@@ -324,8 +315,6 @@ class NET_EXPORT URLRequestContext
   HttpTransactionFactory* http_transaction_factory_;
   const URLRequestJobFactory* job_factory_;
   URLRequestThrottlerManager* throttler_manager_;
-  URLRequestBackoffManager* backoff_manager_;
-  SdchManager* sdch_manager_;
   NetworkQualityEstimator* network_quality_estimator_;
   ReportingService* reporting_service_;
   NetworkErrorLoggingDelegate* network_error_logging_delegate_;
@@ -346,7 +335,7 @@ class NET_EXPORT URLRequestContext
   // An optional name which can be set to describe this URLRequestContext.
   // Used in MemoryDumpProvier to annotate memory usage. The name does not need
   // to be unique.
-  const char* name_;
+  std::string name_;
 
   // The largest number of outstanding URLRequests that have been created by
   // |this| and are not yet destroyed. This doesn't need to be in CopyFrom.

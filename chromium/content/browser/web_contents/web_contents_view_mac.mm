@@ -371,9 +371,9 @@ RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
                                              is_guest_view_hack)
           : new RenderWidgetHostViewMac(render_widget_host, is_guest_view_hack);
   if (delegate()) {
-    base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate> >
-        rw_delegate(
-            delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host));
+    base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate>>
+        rw_delegate(delegate()->CreateRenderWidgetHostViewDelegate(
+            render_widget_host, false));
 
     view->SetDelegate(rw_delegate.get());
   }
@@ -403,7 +403,15 @@ RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
 
 RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  return new RenderWidgetHostViewMac(render_widget_host, false);
+  RenderWidgetHostViewMac* view =
+      new RenderWidgetHostViewMac(render_widget_host, false);
+  if (delegate()) {
+    base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate>>
+        rw_delegate(delegate()->CreateRenderWidgetHostViewDelegate(
+            render_widget_host, true));
+    view->SetDelegate(rw_delegate.get());
+  }
+  return view;
 }
 
 void WebContentsViewMac::SetPageTitle(const base::string16& title) {
@@ -521,10 +529,9 @@ void WebContentsViewMac::CloseTab() {
 - (void)mouseEvent:(NSEvent*)theEvent {
   WebContentsImpl* webContents = [self webContents];
   if (webContents && webContents->GetDelegate()) {
-    NSPoint location = [NSEvent mouseLocation];
     webContents->GetDelegate()->ContentsMouseEvent(
-        webContents, gfx::Point(location.x, location.y),
-        [theEvent type] == NSMouseMoved, [theEvent type] == NSMouseExited);
+        webContents, [theEvent type] == NSMouseMoved,
+        [theEvent type] == NSMouseExited);
   }
 }
 

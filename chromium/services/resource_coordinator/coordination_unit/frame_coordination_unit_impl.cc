@@ -4,25 +4,25 @@
 
 #include "services/resource_coordinator/coordination_unit/frame_coordination_unit_impl.h"
 
-#include "services/resource_coordinator/coordination_unit/coordination_unit_graph_observer.h"
-#include "services/resource_coordinator/coordination_unit/web_contents_coordination_unit_impl.h"
+#include "services/resource_coordinator/coordination_unit/page_coordination_unit_impl.h"
+#include "services/resource_coordinator/observers/coordination_unit_graph_observer.h"
 
 namespace resource_coordinator {
 
 FrameCoordinationUnitImpl::FrameCoordinationUnitImpl(
     const CoordinationUnitID& id,
     std::unique_ptr<service_manager::ServiceContextRef> service_ref)
-    : CoordinationUnitImpl(id, std::move(service_ref)) {}
+    : CoordinationUnitBase(id, std::move(service_ref)) {}
 
 FrameCoordinationUnitImpl::~FrameCoordinationUnitImpl() = default;
 
-std::set<CoordinationUnitImpl*>
+std::set<CoordinationUnitBase*>
 FrameCoordinationUnitImpl::GetAssociatedCoordinationUnitsOfType(
     CoordinationUnitType type) const {
   switch (type) {
     case CoordinationUnitType::kProcess:
-    case CoordinationUnitType::kWebContents:
-      // Processes and WebContents are only associated with a frame if
+    case CoordinationUnitType::kPage:
+      // Processes and Page are only associated with a frame if
       // they are a direct parents of the frame.
       return GetParentCoordinationUnitsOfType(type);
     case CoordinationUnitType::kFrame: {
@@ -31,7 +31,7 @@ FrameCoordinationUnitImpl::GetAssociatedCoordinationUnitsOfType(
       // back to the root frame, get all child frame coordination units from the
       // root frame, add the root frame coordination unit and remove the current
       // frame coordination unit.
-      const CoordinationUnitImpl* root_frame_coordination_unit = this;
+      const CoordinationUnitBase* root_frame_coordination_unit = this;
       while (true) {
         bool has_parent_frame_cu = false;
         for (auto* parent : root_frame_coordination_unit->parents()) {
@@ -49,23 +49,23 @@ FrameCoordinationUnitImpl::GetAssociatedCoordinationUnitsOfType(
           root_frame_coordination_unit->GetChildCoordinationUnitsOfType(type);
       // Insert the root frame coordination unit.
       frame_coordination_units.insert(
-          const_cast<CoordinationUnitImpl*>(root_frame_coordination_unit));
+          const_cast<CoordinationUnitBase*>(root_frame_coordination_unit));
       // Remove itself.
       frame_coordination_units.erase(
           const_cast<FrameCoordinationUnitImpl*>(this));
       return frame_coordination_units;
     }
     default:
-      return std::set<CoordinationUnitImpl*>();
+      return std::set<CoordinationUnitBase*>();
   }
 }
 
-WebContentsCoordinationUnitImpl*
-FrameCoordinationUnitImpl::GetWebContentsCoordinationUnit() const {
+PageCoordinationUnitImpl* FrameCoordinationUnitImpl::GetPageCoordinationUnit()
+    const {
   for (auto* parent : parents_) {
-    if (parent->id().type != CoordinationUnitType::kWebContents)
+    if (parent->id().type != CoordinationUnitType::kPage)
       continue;
-    return CoordinationUnitImpl::ToWebContentsCoordinationUnit(parent);
+    return CoordinationUnitBase::ToPageCoordinationUnit(parent);
   }
   return nullptr;
 }

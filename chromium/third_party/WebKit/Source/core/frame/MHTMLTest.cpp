@@ -31,6 +31,7 @@
 #include <map>
 
 #include "build/build_config.h"
+#include "core/dom/ClassCollection.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementShadow.h"
@@ -43,11 +44,11 @@
 #include "platform/SharedBuffer.h"
 #include "platform/mhtml/MHTMLArchive.h"
 #include "platform/mhtml/MHTMLParser.h"
+#include "platform/testing/TestingPlatformSupport.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SchemeRegistry.h"
-#include "public/platform/Platform.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLLoaderMockFactory.h"
@@ -95,8 +96,7 @@ class MHTMLTest : public ::testing::Test {
   void SetUp() override { helper_.Initialize(); }
 
   void TearDown() override {
-    Platform::Current()
-        ->GetURLLoaderMockFactory()
+    platform_->GetURLLoaderMockFactory()
         ->UnregisterAllURLsAndClearMemoryCache();
   }
 
@@ -150,6 +150,24 @@ class MHTMLTest : public ::testing::Test {
     AddResource("http://www.test.com/ol-dot.png", "image/png", "ol-dot.png");
   }
 
+  static std::map<std::string, std::string> ExtractMHTMLHeaders(
+      RefPtr<RawData> mhtml_data) {
+    // Read the MHTML data per line until reaching the empty line.
+    std::map<std::string, std::string> mhtml_headers;
+    LineReader line_reader(
+        std::string(mhtml_data->data(), mhtml_data->length()));
+    std::string line;
+    while (line_reader.GetNextLine(&line) && line.length()) {
+      std::string::size_type pos = line.find(':');
+      if (pos == std::string::npos)
+        continue;
+      std::string key = line.substr(0, pos);
+      std::string value = line.substr(pos + 2);
+      mhtml_headers.emplace(key, value);
+    }
+    return mhtml_headers;
+  }
+
   static RefPtr<RawData> GenerateMHTMLData(
       const Vector<SerializedResource>& resources,
       MHTMLArchive::EncodingPolicy encoding_policy,
@@ -180,8 +198,8 @@ class MHTMLTest : public ::testing::Test {
   }
 
   RefPtr<RawData> Serialize(const KURL& url,
-                            const char* title,
-                            const char* mime,
+                            const String& title,
+                            const String& mime,
                             MHTMLArchive::EncodingPolicy encoding_policy) {
     return GenerateMHTMLData(resources_, encoding_policy, url, title, mime);
   }
@@ -195,6 +213,7 @@ class MHTMLTest : public ::testing::Test {
   String file_path_;
   Vector<SerializedResource> resources_;
   FrameTestHelpers::WebViewHelper helper_;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform_;
 };
 
 // Checks that the domain is set to the actual MHTML file, not the URL it was
@@ -212,41 +231,46 @@ TEST_F(MHTMLTest, CheckDomain) {
   Document* document = frame->GetDocument();
   ASSERT_TRUE(document);
 
-  EXPECT_STREQ(kFileURL, frame->DomWindow()->location()->href().Ascii().data());
+  EXPECT_STREQ(kFileURL,
+               frame->DomWindow()->location()->toString().Ascii().data());
 
   SecurityOrigin* origin = document->GetSecurityOrigin();
   EXPECT_STRNE("localhost", origin->Domain().Ascii().data());
 }
 
-TEST_F(MHTMLTest, TestMHTMLHeaders) {
+TEST_F(MHTMLTest, TestMHTMLHeadersWithTitleContainingAllPrintableCharacters) {
+  const char kURL[] = "http://www.example.com/";
+  const char kTitle[] = "abc";
+  AddTestResources();
+  RefPtr<RawData> data =
+      Serialize(ToKURL(kURL), String::FromUTF8(kTitle), "text/html",
+                MHTMLArchive::kUseDefaultEncoding);
+
+  std::map<std::string, std::string> mhtml_headers = ExtractMHTMLHeaders(data);
+
+  EXPECT_EQ("<Saved by Blink>", mhtml_headers["From"]);
+  EXPECT_FALSE(mhtml_headers["Date"].empty());
+  EXPECT_EQ("multipart/related;", mhtml_headers["Content-Type"]);
+  EXPECT_EQ("abc", mhtml_headers["Subject"]);
+  EXPECT_EQ(kURL, mhtml_headers["Snapshot-Content-Location"]);
+}
+
+TEST_F(MHTMLTest, TestMHTMLHeadersWithTitleContainingNonPrintableCharacters) {
   const char kURL[] = "http://www.example.com/";
   const char kTitle[] = u8"abc=\u261D\U0001F3FB";
   AddTestResources();
-  RefPtr<RawData> data = Serialize(ToKURL(kURL), kTitle, "text/html",
-                                   MHTMLArchive::kUseDefaultEncoding);
+  RefPtr<RawData> data =
+      Serialize(ToKURL(kURL), String::FromUTF8(kTitle), "text/html",
+                MHTMLArchive::kUseDefaultEncoding);
 
-  // Read the MHTML data per line until reaching the empty line.
-  std::map<std::string, std::string> mhtml_headers;
-  LineReader line_reader(std::string(data->data(), data->length()));
-  std::string line;
-  while (line_reader.GetNextLine(&line) && line.length()) {
-    std::string::size_type pos = line.find(':');
-    if (pos == std::string::npos)
-      continue;
-    std::string key = line.substr(0, pos);
-    std::string value = line.substr(pos + 2);
-    mhtml_headers.emplace(key, value);
-  }
+  std::map<std::string, std::string> mhtml_headers = ExtractMHTMLHeaders(data);
 
   EXPECT_EQ("<Saved by Blink>", mhtml_headers["From"]);
-  EXPECT_EQ("abc=???????", mhtml_headers["Subject"]);
   EXPECT_FALSE(mhtml_headers["Date"].empty());
   EXPECT_EQ("multipart/related;", mhtml_headers["Content-Type"]);
-
-  EXPECT_EQ("1.0", mhtml_headers["X-Snapshot-Version"]);
-  EXPECT_EQ("=?utf-8?Q?abc=3D=C3=A2=C2=98=C2=9D=C3=B0=C2=9F=C2=8F=C2=BB?=",
-            mhtml_headers["X-Snapshot-Title"]);
-  EXPECT_EQ(kURL, mhtml_headers["X-Snapshot-Content-Location"]);
+  EXPECT_EQ("=?utf-8?Q?abc=3D=E2=98=9D=F0=9F=8F=BB?=",
+            mhtml_headers["Subject"]);
+  EXPECT_EQ(kURL, mhtml_headers["Snapshot-Content-Location"]);
 }
 
 TEST_F(MHTMLTest, TestMHTMLEncoding) {
@@ -303,16 +327,16 @@ TEST_F(MHTMLTest, MHTMLFromScheme) {
 
   // MHTMLArchives can only be initialized from local schemes, http/https
   // schemes, and content scheme(Android specific).
-  EXPECT_NE(nullptr, MHTMLArchive::Create(http_url, data.Get()));
+  EXPECT_NE(nullptr, MHTMLArchive::Create(http_url, data.get()));
 #if defined(OS_ANDROID)
-  EXPECT_NE(nullptr, MHTMLArchive::Create(content_url, data.Get()));
+  EXPECT_NE(nullptr, MHTMLArchive::Create(content_url, data.get()));
 #else
-  EXPECT_EQ(nullptr, MHTMLArchive::Create(content_url, data.Get()));
+  EXPECT_EQ(nullptr, MHTMLArchive::Create(content_url, data.get()));
 #endif
-  EXPECT_NE(nullptr, MHTMLArchive::Create(file_url, data.Get()));
-  EXPECT_EQ(nullptr, MHTMLArchive::Create(special_scheme_url, data.Get()));
+  EXPECT_NE(nullptr, MHTMLArchive::Create(file_url, data.get()));
+  EXPECT_EQ(nullptr, MHTMLArchive::Create(special_scheme_url, data.get()));
   SchemeRegistry::RegisterURLSchemeAsLocal("fooscheme");
-  EXPECT_NE(nullptr, MHTMLArchive::Create(special_scheme_url, data.Get()));
+  EXPECT_NE(nullptr, MHTMLArchive::Create(special_scheme_url, data.get()));
 }
 
 // Checks that full sandboxing protection has been turned on.
@@ -341,6 +365,25 @@ TEST_F(MHTMLTest, EnforceSandboxFlags) {
 
   // The element to be created by the script is not there.
   EXPECT_FALSE(document->getElementById("mySpan"));
+
+  // Make sure the subframe is also sandboxed.
+  LocalFrame* child_frame =
+      ToLocalFrame(GetPage()->MainFrame()->Tree().FirstChild());
+  ASSERT_TRUE(child_frame);
+  Document* child_document = child_frame->GetDocument();
+  ASSERT_TRUE(child_document);
+
+  EXPECT_EQ(kSandboxAll & ~(kSandboxPopups |
+                            kSandboxPropagatesToAuxiliaryBrowsingContexts),
+            child_document->GetSandboxFlags());
+
+  // MHTML document should be loaded into unique origin.
+  EXPECT_TRUE(child_document->GetSecurityOrigin()->IsUnique());
+  // Script execution should be disabled.
+  EXPECT_FALSE(child_document->CanExecuteScripts(kNotAboutToExecuteScript));
+
+  // The element to be created by the script is not there.
+  EXPECT_FALSE(child_document->getElementById("mySpan"));
 }
 
 TEST_F(MHTMLTest, EnforceSandboxFlagsInXSLT) {
@@ -399,6 +442,27 @@ TEST_F(MHTMLTest, ShadowDom) {
                    ->Shadow()
                    ->OldestShadowRoot()
                    .getElementById("s2"));
+}
+
+TEST_F(MHTMLTest, FormControlElements) {
+  const char kURL[] = "http://www.example.com";
+
+  // Register the mocked frame and load it.
+  RegisterMockedURLLoad(kURL, "form.mht");
+  LoadURLInTopFrame(ToKURL(kURL));
+  ASSERT_TRUE(GetPage());
+  LocalFrame* frame = ToLocalFrame(GetPage()->MainFrame());
+  ASSERT_TRUE(frame);
+  Document* document = frame->GetDocument();
+  ASSERT_TRUE(document);
+
+  ClassCollection* formControlElements = document->getElementsByClassName("fc");
+  ASSERT_TRUE(formControlElements);
+  for (Element* element : *formControlElements)
+    EXPECT_TRUE(element->IsDisabledFormControl());
+
+  EXPECT_FALSE(document->getElementById("h1")->IsDisabledFormControl());
+  EXPECT_FALSE(document->getElementById("fm")->IsDisabledFormControl());
 }
 
 }  // namespace blink

@@ -32,7 +32,7 @@
 #define WebLocalFrameImpl_h
 
 #include "core/CoreExport.h"
-#include "core/editing/VisiblePosition.h"
+#include "core/editing/Forward.h"
 #include "core/exported/WebInputMethodControllerImpl.h"
 #include "core/frame/ContentSettingsClient.h"
 #include "core/frame/LocalFrame.h"
@@ -190,7 +190,8 @@ class CORE_EXPORT WebLocalFrameImpl final
   bool SelectWordAroundCaret() override;
   void SelectRange(const WebPoint& base, const WebPoint& extent) override;
   void SelectRange(const WebRange&,
-                   HandleVisibilityBehavior = kHideSelectionHandle) override;
+                   HandleVisibilityBehavior,
+                   blink::mojom::SelectionMenuBehavior) override;
   WebString RangeAsText(const WebRange&) override;
   void MoveRangeSelectionExtent(const WebPoint&) override;
   void MoveRangeSelection(
@@ -207,11 +208,13 @@ class CORE_EXPORT WebLocalFrameImpl final
   void DeleteSurroundingText(int before, int after) override;
   void DeleteSurroundingTextInCodePoints(int before, int after) override;
   void SetCaretVisible(bool) override;
+  void DispatchBeforePrintEvent() override;
   int PrintBegin(const WebPrintParams&,
                  const WebNode& constrain_to_node) override;
   float PrintPage(int page_to_print, WebCanvas*) override;
   float GetPrintPageShrink(int page) override;
   void PrintEnd() override;
+  void DispatchAfterPrintEvent() override;
   bool IsPrintScalingDisabledForPlugin(const WebNode&) override;
   bool GetPrintPresetOptionsForPlugin(const WebNode&,
                                       WebPrintPresetOptions*) override;
@@ -313,9 +316,7 @@ class CORE_EXPORT WebLocalFrameImpl final
   void ClearActiveFindMatch() override;
   void UsageCountChromeLoadTimes(const WebString& metric) override;
   WebFrameScheduler* Scheduler() const override;
-  SingleThreadTaskRunner* TimerTaskRunner() override;
-  SingleThreadTaskRunner* LoadingTaskRunner() override;
-  SingleThreadTaskRunner* UnthrottledTaskRunner() override;
+  SingleThreadTaskRunnerRefPtr GetTaskRunner(TaskType) override;
   WebInputMethodController* GetInputMethodController() override;
 
   void ExtractSmartClipData(WebRect rect_in_viewport,
@@ -398,8 +399,6 @@ class CORE_EXPORT WebLocalFrameImpl final
 
   void SetInputEventsScaleForEmulation(float);
 
-  static void SelectWordAroundPosition(LocalFrame*, VisiblePosition);
-
   TextCheckerClient& GetTextCheckerClient() const;
   WebTextCheckClient* TextCheckClient() const { return text_check_client_; }
 
@@ -431,7 +430,7 @@ class CORE_EXPORT WebLocalFrameImpl final
 
   std::unique_ptr<WebURLLoader> CreateURLLoader(
       const WebURLRequest&,
-      SingleThreadTaskRunner*) override;
+      SingleThreadTaskRunnerRefPtr) override;
 
   WebFrameWidgetBase* LocalRootFrameWidget();
 
@@ -464,6 +463,9 @@ class CORE_EXPORT WebLocalFrameImpl final
 
   // Returns true if the frame is focused.
   bool IsFocused() const;
+
+  // A helper for DispatchBeforePrintEvent() and DispatchAfterPrintEvent().
+  void DispatchPrintEventRecursively(const AtomicString& event_type);
 
   Member<LocalFrameClient> local_frame_client_;
 
@@ -515,6 +517,12 @@ class CORE_EXPORT WebLocalFrameImpl final
   // Accomplish that by keeping a self-referential Persistent<>. It is
   // cleared upon close().
   SelfKeepAlive<WebLocalFrameImpl> self_keep_alive_;
+
+#if DCHECK_IS_ON()
+  // True if DispatchBeforePrintEvent() was called, and
+  // DispatchAfterPrintEvent() is not called yet.
+  bool is_in_printing_ = false;
+#endif
 };
 
 DEFINE_TYPE_CASTS(WebLocalFrameImpl,

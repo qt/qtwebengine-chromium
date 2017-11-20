@@ -34,12 +34,12 @@
 
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
-#include "platform/FontFamilyNames.h"
 #include "platform/Histogram.h"
 #include "platform/InstanceCountersMemoryDumpProvider.h"
 #include "platform/Language.h"
 #include "platform/MemoryCoordinator.h"
 #include "platform/PartitionAllocMemoryDumpProvider.h"
+#include "platform/font_family_names.h"
 #include "platform/fonts/FontCacheMemoryDumpProvider.h"
 #include "platform/heap/BlinkGCMemoryDumpProvider.h"
 #include "platform/heap/GCTaskRunner.h"
@@ -61,9 +61,11 @@
 #include "public/platform/WebSocketHandshakeThrottle.h"
 #include "public/platform/WebStorageNamespace.h"
 #include "public/platform/WebThread.h"
+#include "public/platform/WebTrialTokenValidator.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerCacheStorage.h"
 #include "public/platform/modules/webmidi/WebMIDIAccessor.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "third_party/WebKit/common/origin_trials/trial_policy.h"
 
 namespace blink {
 
@@ -123,10 +125,13 @@ void Platform::Initialize(Platform* platform) {
 
   ProcessHeap::Init();
   MemoryCoordinator::Initialize();
-  if (base::ThreadTaskRunnerHandle::IsSet())
+  if (base::ThreadTaskRunnerHandle::IsSet()) {
+    base::trace_event::MemoryDumpProvider::Options options;
+    options.supports_heap_profiling = true;
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
         BlinkGCMemoryDumpProvider::Instance(), "BlinkGC",
-        base::ThreadTaskRunnerHandle::Get());
+        base::ThreadTaskRunnerHandle::Get(), options);
+  }
 
   ThreadState::AttachMainThread();
 
@@ -140,9 +145,11 @@ void Platform::Initialize(Platform* platform) {
   if (g_platform->main_thread_) {
     DCHECK(!g_gc_task_runner);
     g_gc_task_runner = new GCTaskRunner(g_platform->main_thread_);
+    base::trace_event::MemoryDumpProvider::Options heap_profiling_options;
+    heap_profiling_options.supports_heap_profiling = true;
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
         PartitionAllocMemoryDumpProvider::Instance(), "PartitionAlloc",
-        base::ThreadTaskRunnerHandle::Get());
+        base::ThreadTaskRunnerHandle::Get(), heap_profiling_options);
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
         FontCacheMemoryDumpProvider::Instance(), "FontCaches",
         base::ThreadTaskRunnerHandle::Get());
@@ -180,7 +187,7 @@ WebTaskRunner* Platform::FileTaskRunner() const {
   return file_thread_ ? file_thread_->GetWebTaskRunner() : nullptr;
 }
 
-base::TaskRunner* Platform::BaseFileTaskRunner() const {
+SingleThreadTaskRunnerRefPtr Platform::BaseFileTaskRunner() const {
   return file_thread_ ? file_thread_->GetSingleThreadTaskRunner() : nullptr;
 }
 
@@ -271,6 +278,13 @@ Platform::CreateWebSocketHandshakeThrottle() {
 std::unique_ptr<WebImageCaptureFrameGrabber>
 Platform::CreateImageCaptureFrameGrabber() {
   return nullptr;
+}
+
+std::unique_ptr<WebTrialTokenValidator> Platform::TrialTokenValidator() {
+  return std::unique_ptr<WebTrialTokenValidator>{};
+}
+std::unique_ptr<TrialPolicy> Platform::OriginTrialPolicy() {
+  return std::unique_ptr<TrialPolicy>{};
 }
 
 std::unique_ptr<WebFeaturePolicy> Platform::CreateFeaturePolicy(

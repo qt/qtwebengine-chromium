@@ -24,6 +24,7 @@ class Layer;
 
 namespace gfx {
 class Point;
+class Size;
 }
 
 namespace ui {
@@ -83,33 +84,14 @@ class UI_ANDROID_EXPORT ViewAndroid {
     // Default copy/assign disabled by move constructor.
   };
 
-  // Layout parameters used to set the view's position and size.
-  // Position is in parent's coordinate space, and all the values
-  // are in CSS pixel.
-  struct LayoutParams {
-    static LayoutParams MatchParent() { return {true, 0, 0, 0, 0}; }
-    static LayoutParams Normal(int x, int y, int width, int height) {
-      return {false, x, y, width, height};
-    };
-
-    bool match_parent;  // Bounds matches that of the parent if true.
-    int x;
-    int y;
-    int width;
-    int height;
-
-    LayoutParams(const LayoutParams& p) = default;
-
-   private:
-    LayoutParams(bool match_parent, int x, int y, int width, int height)
-        : match_parent(match_parent),
-          x(x),
-          y(y),
-          width(width),
-          height(height) {}
+  enum class LayoutType {
+    // Can have its own size given by |OnSizeChanged| events.
+    NORMAL,
+    // Always follows its parent's size.
+    MATCH_PARENT
   };
 
-  explicit ViewAndroid(ViewClient* view_client);
+  ViewAndroid(ViewClient* view_client, LayoutType layout_type);
 
   ViewAndroid();
   virtual ~ViewAndroid();
@@ -122,6 +104,9 @@ class UI_ANDROID_EXPORT ViewAndroid {
   // Returns the window at the root of this hierarchy, or |null|
   // if disconnected.
   virtual WindowAndroid* GetWindowAndroid() const;
+
+  // Virtual for testing.
+  virtual float GetDipScale();
 
   // Used to return and set the layer for this view. May be |null|.
   cc::Layer* GetLayer() const;
@@ -147,13 +132,12 @@ class UI_ANDROID_EXPORT ViewAndroid {
   bool HasFocus();
   void RequestFocus();
 
-  // Sets the layout relative to parent. Used to do hit testing against events.
-  void SetLayout(LayoutParams params);
-
   bool StartDragAndDrop(const base::android::JavaRef<jstring>& jtext,
                         const base::android::JavaRef<jobject>& jimage);
 
   gfx::Size GetPhysicalBackingSize();
+
+  void OnSizeChanged(int width, int height);
   void OnPhysicalBackingSizeChanged(const gfx::Size& size);
   void OnCursorChanged(int type,
                        const SkBitmap& custom_image,
@@ -179,12 +163,17 @@ class UI_ANDROID_EXPORT ViewAndroid {
   void AddObserver(ViewAndroidObserver* observer);
   void RemoveObserver(ViewAndroidObserver* observer);
 
-  float GetDipScale();
-
  protected:
   ViewAndroid* parent_;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(ViewAndroidBoundsTest, MatchesViewInFront);
+  FRIEND_TEST_ALL_PREFIXES(ViewAndroidBoundsTest, MatchesViewArea);
+  FRIEND_TEST_ALL_PREFIXES(ViewAndroidBoundsTest, MatchesViewAfterMove);
+  FRIEND_TEST_ALL_PREFIXES(ViewAndroidBoundsTest,
+                           MatchesViewSizeOfkMatchParent);
+  FRIEND_TEST_ALL_PREFIXES(ViewAndroidBoundsTest, MatchesViewsWithOffset);
+  FRIEND_TEST_ALL_PREFIXES(ViewAndroidBoundsTest, OnSizeChanged);
   friend class EventForwarder;
   friend class ViewAndroidBoundsTest;
 
@@ -198,9 +187,10 @@ class UI_ANDROID_EXPORT ViewAndroid {
   void OnAttachedToWindow();
   void OnDetachedFromWindow();
 
+  void SetLayoutForTesting(int x, int y, int width, int height);
+
   template <typename E>
-  using ViewClientCallback =
-      const base::Callback<bool(ViewClient*, const E&, const gfx::PointF&)>;
+  using ViewClientCallback = const base::Callback<bool(ViewClient*, const E&)>;
 
   template <typename E>
   bool HitTest(ViewClientCallback<E> send_to_client,
@@ -208,19 +198,17 @@ class UI_ANDROID_EXPORT ViewAndroid {
                const gfx::PointF& point);
 
   static bool SendDragEventToClient(ViewClient* client,
-                                    const DragEventAndroid& event,
-                                    const gfx::PointF& point);
+                                    const DragEventAndroid& event);
   static bool SendTouchEventToClient(ViewClient* client,
-                                     const MotionEventAndroid& event,
-                                     const gfx::PointF& point);
+                                     const MotionEventAndroid& event);
   static bool SendMouseEventToClient(ViewClient* client,
-                                     const MotionEventAndroid& event,
-                                     const gfx::PointF& point);
+                                     const MotionEventAndroid& event);
   static bool SendMouseWheelEventToClient(ViewClient* client,
-                                          const MotionEventAndroid& event,
-                                          const gfx::PointF& point);
+                                          const MotionEventAndroid& event);
 
   bool has_event_forwarder() const { return !!event_forwarder_; }
+
+  bool match_parent() const { return layout_type_ == LayoutType::MATCH_PARENT; }
 
   // Checks if there is any event forwarder in any node up to root.
   static bool RootPathHasEventForwarder(ViewAndroid* view);
@@ -228,6 +216,9 @@ class UI_ANDROID_EXPORT ViewAndroid {
   // Checks if there is any event forwarder in the node paths down to
   // each leaf of subtree.
   static bool SubtreeHasEventForwarder(ViewAndroid* view);
+
+  void OnSizeChangedInternal(const gfx::Size& size);
+  void DispatchOnSizeChanged();
 
   // Returns the Java delegate for this view. This is used to delegate work
   // up to the embedding view (or the embedder that can deal with the
@@ -243,8 +234,9 @@ class UI_ANDROID_EXPORT ViewAndroid {
   ViewClient* const client_;
 
   // Basic view layout information. Used to do hit testing deciding whether
-  // the passed events should be processed by the view.
-  LayoutParams layout_params_;
+  // the passed events should be processed by the view. Unit in DIP.
+  gfx::Rect view_rect_;
+  const LayoutType layout_type_;
 
   // In physical pixel.
   gfx::Size physical_size_;

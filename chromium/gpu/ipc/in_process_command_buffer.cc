@@ -7,7 +7,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <queue>
 #include <set>
 #include <utility>
 
@@ -15,6 +14,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/containers/queue.h"
 #include "base/debug/crash_logging.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
@@ -34,6 +34,7 @@
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
 #include "gpu/command_buffer/service/gpu_preferences.h"
+#include "gpu/command_buffer/service/gpu_tracer.h"
 #include "gpu/command_buffer/service/image_factory.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_program_cache.h"
@@ -137,13 +138,11 @@ scoped_refptr<InProcessCommandBuffer::Service> GetInitialService(
 
 InProcessCommandBuffer::Service::Service(
     const GpuPreferences& gpu_preferences,
-    gpu::gles2::MailboxManager* mailbox_manager,
+    gles2::MailboxManager* mailbox_manager,
     scoped_refptr<gl::GLShareGroup> share_group,
     const GpuFeatureInfo& gpu_feature_info)
     : gpu_preferences_(gpu_preferences),
       gpu_feature_info_(gpu_feature_info),
-      gpu_driver_bug_workarounds_(
-          gpu_feature_info.enabled_gpu_driver_bug_workarounds),
       mailbox_manager_(mailbox_manager),
       share_group_(share_group),
       shader_translator_cache_(gpu_preferences_) {
@@ -156,13 +155,8 @@ InProcessCommandBuffer::Service::Service(
 
 InProcessCommandBuffer::Service::~Service() {}
 
-const gpu::GpuPreferences& InProcessCommandBuffer::Service::gpu_preferences() {
+const GpuPreferences& InProcessCommandBuffer::Service::gpu_preferences() {
   return gpu_preferences_;
-}
-
-const gpu::GpuDriverBugWorkarounds&
-InProcessCommandBuffer::Service::gpu_driver_bug_workarounds() {
-  return gpu_driver_bug_workarounds_;
 }
 
 scoped_refptr<gl::GLShareGroup> InProcessCommandBuffer::Service::share_group() {
@@ -171,18 +165,24 @@ scoped_refptr<gl::GLShareGroup> InProcessCommandBuffer::Service::share_group() {
   return share_group_;
 }
 
-gpu::gles2::ProgramCache* InProcessCommandBuffer::Service::program_cache() {
+gles2::Outputter* InProcessCommandBuffer::Service::outputter() {
+  if (!outputter_)
+    outputter_.reset(new gles2::TraceOutputter("InProcessCommandBuffer Trace"));
+  return outputter_.get();
+}
+
+gles2::ProgramCache* InProcessCommandBuffer::Service::program_cache() {
   if (!program_cache_.get() &&
       (gl::g_current_gl_driver->ext.b_GL_ARB_get_program_binary ||
        gl::g_current_gl_driver->ext.b_GL_OES_get_program_binary) &&
       !gpu_preferences().disable_gpu_program_cache) {
-    const GpuDriverBugWorkarounds& workarounds = gpu_driver_bug_workarounds_;
     bool disable_disk_cache =
         gpu_preferences_.disable_gpu_shader_disk_cache ||
-        workarounds.disable_program_disk_cache;
+        gpu_feature_info_.IsWorkaroundEnabled(gpu::DISABLE_PROGRAM_DISK_CACHE);
     program_cache_.reset(new gles2::MemoryProgramCache(
         gpu_preferences_.gpu_program_cache_size, disable_disk_cache,
-        workarounds.disable_program_caching_for_transform_feedback,
+        gpu_feature_info_.IsWorkaroundEnabled(
+            gpu::DISABLE_PROGRAM_CACHING_FOR_TRANSFORM_FEEDBACK),
         &activity_flags_));
   }
   return program_cache_.get();
@@ -240,7 +240,7 @@ bool InProcessCommandBuffer::MakeCurrent() {
   }
   if (!decoder_->MakeCurrent()) {
     DLOG(ERROR) << "Context lost because MakeCurrent failed.";
-    command_buffer_->SetParseError(gpu::error::kLostContext);
+    command_buffer_->SetParseError(error::kLostContext);
     return false;
   }
   return true;
@@ -272,7 +272,7 @@ bool InProcessCommandBuffer::Initialize(
     client_thread_weak_ptr_ = client_thread_weak_ptr_factory_.GetWeakPtr();
   }
 
-  gpu::Capabilities capabilities;
+  Capabilities capabilities;
   InitializeOnGpuThreadParams params(is_offscreen, window, attribs,
                                      &capabilities, share_group, image_factory);
 
@@ -307,8 +307,10 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
                                          : service_->share_group();
 
   bool bind_generates_resource = false;
+  gpu::GpuDriverBugWorkarounds workarounds(
+      service_->gpu_feature_info().enabled_gpu_driver_bug_workarounds);
   scoped_refptr<gles2::FeatureInfo> feature_info =
-      new gles2::FeatureInfo(service_->gpu_driver_bug_workarounds());
+      new gles2::FeatureInfo(workarounds);
 
   context_group_ =
       params.context_group
@@ -326,6 +328,7 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
   command_buffer_ = base::MakeUnique<CommandBufferService>(
       this, transfer_buffer_manager_.get());
   decoder_.reset(gles2::GLES2Decoder::Create(this, command_buffer_.get(),
+                                             service_->outputter(),
                                              context_group_.get()));
 
   if (!surface_.get()) {
@@ -474,7 +477,7 @@ bool InProcessCommandBuffer::DestroyOnGpuThread() {
   context_group_ = nullptr;
 
   base::AutoLock lock(task_queue_lock_);
-  std::queue<std::unique_ptr<GpuTask>> empty;
+  base::queue<std::unique_ptr<GpuTask>> empty;
   task_queue_.swap(empty);
 
   return true;
@@ -629,7 +632,7 @@ void InProcessCommandBuffer::ScheduleDelayedWorkOnGpuThread() {
 
 void InProcessCommandBuffer::Flush(int32_t put_offset) {
   CheckSequencedThread();
-  if (GetLastState().error != gpu::error::kNoError)
+  if (GetLastState().error != error::kNoError)
     return;
 
   if (last_put_offset_ == put_offset)
@@ -654,7 +657,7 @@ CommandBuffer::State InProcessCommandBuffer::WaitForTokenInRange(int32_t start,
   CheckSequencedThread();
   State last_state = GetLastState();
   while (!InRange(start, end, last_state.token) &&
-         last_state.error == gpu::error::kNoError) {
+         last_state.error == error::kNoError) {
     flush_event_.Wait();
     last_state = GetLastState();
   }
@@ -669,7 +672,7 @@ CommandBuffer::State InProcessCommandBuffer::WaitForGetOffsetInRange(
   State last_state = GetLastState();
   while (((set_get_buffer_count != last_state.set_get_buffer_count) ||
           !InRange(start, end, last_state.get_offset)) &&
-         last_state.error == gpu::error::kNoError) {
+         last_state.error == error::kNoError) {
     flush_event_.Wait();
     last_state = GetLastState();
   }
@@ -678,7 +681,7 @@ CommandBuffer::State InProcessCommandBuffer::WaitForGetOffsetInRange(
 
 void InProcessCommandBuffer::SetGetBuffer(int32_t shm_id) {
   CheckSequencedThread();
-  if (GetLastState().error != gpu::error::kNoError)
+  if (GetLastState().error != error::kNoError)
     return;
 
   base::WaitableEvent completion(
@@ -728,8 +731,12 @@ void InProcessCommandBuffer::SetGpuControlClient(GpuControlClient* client) {
   gpu_control_client_ = client;
 }
 
-gpu::Capabilities InProcessCommandBuffer::GetCapabilities() {
+const Capabilities& InProcessCommandBuffer::GetCapabilities() const {
   return capabilities_;
+}
+
+const GpuFeatureInfo& InProcessCommandBuffer::GetGpuFeatureInfo() const {
+  return service_->gpu_feature_info();
 }
 
 int32_t InProcessCommandBuffer::CreateImage(ClientBuffer buffer,
@@ -745,9 +752,9 @@ int32_t InProcessCommandBuffer::CreateImage(ClientBuffer buffer,
 
   int32_t new_id = g_next_image_id.GetNext() + 1;
 
-  DCHECK(gpu::IsImageFromGpuMemoryBufferFormatSupported(
+  DCHECK(IsImageFromGpuMemoryBufferFormatSupported(
       gpu_memory_buffer->GetFormat(), capabilities_));
-  DCHECK(gpu::IsImageFormatCompatibleWithGpuMemoryBufferFormat(
+  DCHECK(IsImageFormatCompatibleWithGpuMemoryBufferFormat(
       internalformat, gpu_memory_buffer->GetFormat()));
 
   // This handle is owned by the GPU thread and must be passed to it or it
@@ -882,7 +889,7 @@ void InProcessCommandBuffer::OnFenceSyncRelease(uint64_t release) {
 
 bool InProcessCommandBuffer::OnWaitSyncToken(const SyncToken& sync_token) {
   DCHECK(!waiting_for_sync_point_);
-  gpu::SyncPointManager* sync_point_manager = service_->sync_point_manager();
+  SyncPointManager* sync_point_manager = service_->sync_point_manager();
   DCHECK(sync_point_manager);
 
   gles2::MailboxManager* mailbox_manager =
@@ -1093,7 +1100,7 @@ int32_t InProcessCommandBuffer::GetRouteID() const {
 void InProcessCommandBuffer::DidSwapBuffersCompleteOnOriginThread(
     SwapBuffersCompleteParams params) {
 #if defined(OS_MACOSX)
-  gpu::GpuProcessHostedCALayerTreeParamsMac params_mac;
+  GpuProcessHostedCALayerTreeParamsMac params_mac;
   params_mac.ca_context_id = params.ca_context_id;
   params_mac.fullscreen_low_power_ca_context_valid =
       params.fullscreen_low_power_ca_context_valid;
@@ -1103,9 +1110,9 @@ void InProcessCommandBuffer::DidSwapBuffersCompleteOnOriginThread(
   params_mac.pixel_size = params.pixel_size;
   params_mac.scale_factor = params.scale_factor;
   params_mac.responses = std::move(params.in_use_responses);
-  gpu::GpuProcessHostedCALayerTreeParamsMac* mac_frame_ptr = &params_mac;
+  GpuProcessHostedCALayerTreeParamsMac* mac_frame_ptr = &params_mac;
 #else
-  gpu::GpuProcessHostedCALayerTreeParamsMac* mac_frame_ptr = nullptr;
+  GpuProcessHostedCALayerTreeParamsMac* mac_frame_ptr = nullptr;
 #endif
   if (!swap_buffers_completion_callback_.is_null()) {
     if (!ui::LatencyInfo::Verify(

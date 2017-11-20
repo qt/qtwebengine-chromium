@@ -15,11 +15,12 @@
 #import "RTCVideoCodec+Private.h"
 #import "WebRTC/RTCVideoCodec.h"
 
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/sdk/objc/Framework/Classes/Video/objc_frame_buffer.h"
-#include "webrtc/system_wrappers/include/field_trial.h"
+#include "rtc_base/timeutils.h"
+#include "sdk/objc/Framework/Classes/Video/objc_frame_buffer.h"
+#include "system_wrappers/include/field_trial.h"
 
 const char kHighProfileExperiment[] = "WebRTC-H264HighProfile";
+static NSString *kH264CodecName = @"H264";
 static NSString *kLevel31ConstrainedHigh = @"640c1f";
 static NSString *kLevel31ConstrainedBaseline = @"42e01f";
 
@@ -35,7 +36,7 @@ bool IsHighProfileEnabled() {
 - (webrtc::CodecSpecificInfo)nativeCodecSpecificInfo {
   webrtc::CodecSpecificInfo codecSpecificInfo;
   codecSpecificInfo.codecType = webrtc::kVideoCodecH264;
-  codecSpecificInfo.codec_name = "H264";
+  codecSpecificInfo.codec_name = [kH264CodecName cStringUsingEncoding:NSUTF8StringEncoding];
   codecSpecificInfo.codecSpecific.H264.packetization_mode =
       (webrtc::H264PacketizationMode)_packetizationMode;
 
@@ -49,7 +50,7 @@ bool IsHighProfileEnabled() {
 
 - (NSArray<RTCVideoCodecInfo *> *)supportedCodecs {
   NSMutableArray<RTCVideoCodecInfo *> *codecs = [NSMutableArray array];
-  NSString *codecName = [NSString stringWithUTF8String:cricket::kH264CodecName];
+  NSString *codecName = kH264CodecName;
 
   if (IsHighProfileEnabled()) {
     NSDictionary<NSString *, NSString *> *constrainedHighParams = @{
@@ -88,7 +89,7 @@ bool IsHighProfileEnabled() {
 }
 
 - (NSArray<RTCVideoCodecInfo *> *)supportedCodecs {
-  NSString *codecName = [NSString stringWithUTF8String:cricket::kH264CodecName];
+  NSString *codecName = kH264CodecName;
   return @[ [[RTCVideoCodecInfo alloc] initWithName:codecName parameters:nil] ];
 }
 

@@ -320,6 +320,31 @@ TEST_F(DownloadSchedulerImplTest, UIPriorityLoadBalancing) {
   MakeEntryActive(next);
 }
 
+TEST_F(DownloadSchedulerImplTest, PickOlderDownloadIfSameParameters) {
+  BuildScheduler(std::vector<DownloadClient>{DownloadClient::TEST,
+                                             DownloadClient::TEST_2});
+
+  // Client TEST: entry 0(Low priority, No Cancel Time, Newer).
+  // Client TEST: entry 1(Low priority, No Cancel Time, Older).
+  // Client TEST: entry 2(Low priority, No Cancel Time, Newer).
+  BuildDataEntries(3);
+  entries_[0].client = DownloadClient::TEST;
+  entries_[0].scheduling_params.priority = SchedulingParams::Priority::LOW;
+  entries_[0].create_time = base::Time::Now();
+  entries_[1].client = DownloadClient::TEST;
+  entries_[1].scheduling_params.priority = SchedulingParams::Priority::LOW;
+  entries_[1].create_time = base::Time::Now() - base::TimeDelta::FromDays(1);
+  entries_[2].client = DownloadClient::TEST;
+  entries_[2].scheduling_params.priority = SchedulingParams::Priority::LOW;
+  entries_[2].create_time = base::Time::Now();
+
+  Entry* next = scheduler_->Next(
+      entries(),
+      BuildDeviceStatus(BatteryStatus::CHARGING, NetworkStatus::UNMETERED));
+  EXPECT_EQ(&entries_[1], next);
+  MakeEntryActive(next);
+}
+
 // When multiple UI priority entries exist, the next entry is selected based on
 // cancel time and load balancing.
 TEST_F(DownloadSchedulerImplTest, MultipleUIPriorityEntries) {
@@ -392,7 +417,7 @@ TEST_F(DownloadSchedulerImplTest, Reschedule) {
 
   Criteria criteria;
   EXPECT_CALL(task_scheduler_, CancelTask(DownloadTaskType::DOWNLOAD_TASK))
-      .RetiresOnSaturation();
+      .Times(0);
   EXPECT_CALL(task_scheduler_,
               ScheduleTask(DownloadTaskType::DOWNLOAD_TASK,
                            criteria.requires_unmetered_network,
@@ -404,7 +429,7 @@ TEST_F(DownloadSchedulerImplTest, Reschedule) {
       SchedulingParams::BatteryRequirements::BATTERY_INSENSITIVE;
   criteria.requires_battery_charging = false;
   EXPECT_CALL(task_scheduler_, CancelTask(DownloadTaskType::DOWNLOAD_TASK))
-      .RetiresOnSaturation();
+      .Times(0);
   EXPECT_CALL(task_scheduler_,
               ScheduleTask(DownloadTaskType::DOWNLOAD_TASK,
                            criteria.requires_unmetered_network,
@@ -416,13 +441,17 @@ TEST_F(DownloadSchedulerImplTest, Reschedule) {
       SchedulingParams::NetworkRequirements::NONE;
   criteria.requires_unmetered_network = false;
   EXPECT_CALL(task_scheduler_, CancelTask(DownloadTaskType::DOWNLOAD_TASK))
-      .RetiresOnSaturation();
+      .Times(0);
   EXPECT_CALL(task_scheduler_,
               ScheduleTask(DownloadTaskType::DOWNLOAD_TASK,
                            criteria.requires_unmetered_network,
                            criteria.requires_battery_charging, _, _))
       .RetiresOnSaturation();
   scheduler_->Reschedule(entries());
+
+  EXPECT_CALL(task_scheduler_, CancelTask(DownloadTaskType::DOWNLOAD_TASK))
+      .RetiresOnSaturation();
+  scheduler_->Reschedule(Model::EntryList());
 }
 
 }  // namespace

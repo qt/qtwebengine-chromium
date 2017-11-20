@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 
@@ -60,9 +60,9 @@ class CXFA_FFDocView {
   CXFA_FFWidget* GetFocusWidget() const;
   void KillFocus();
   bool SetFocus(CXFA_FFWidget* hWidget);
-  CXFA_FFWidget* GetWidgetByName(const CFX_WideString& wsName,
+  CXFA_FFWidget* GetWidgetByName(const WideString& wsName,
                                  CXFA_FFWidget* pRefWidget);
-  CXFA_WidgetAcc* GetWidgetAccByName(const CFX_WideString& wsName,
+  CXFA_WidgetAcc* GetWidgetAccByName(const WideString& wsName,
                                      CXFA_WidgetAcc* pRefWidgetAcc);
   CXFA_LayoutProcessor* GetXFALayout() const;
   void OnPageEvent(CXFA_ContainerLayoutItem* pSender, uint32_t dwEvent);
@@ -100,7 +100,7 @@ class CXFA_FFDocView {
                                        bool bRecursive,
                                        CXFA_Node* pExclude);
   bool m_bLayoutEvent;
-  std::vector<CFX_WideString> m_arrNullTestMsg;
+  std::vector<WideString> m_arrNullTestMsg;
   CXFA_FFWidget* m_pListFocusWidget;
   bool m_bInLayoutStatus;
 
@@ -116,12 +116,12 @@ class CXFA_FFDocView {
   bool ResetSingleWidgetAccData(CXFA_WidgetAcc* pWidgetAcc);
   CXFA_Node* GetRootSubform();
 
-  CFX_UnownedPtr<CXFA_FFDoc> const m_pDoc;
+  UnownedPtr<CXFA_FFDoc> const m_pDoc;
   std::unique_ptr<CXFA_FFWidgetHandler> m_pWidgetHandler;
   CXFA_LayoutProcessor* m_pXFADocLayout;  // Not owned.
-  CFX_UnownedPtr<CXFA_WidgetAcc> m_pFocusAcc;
-  CFX_UnownedPtr<CXFA_FFWidget> m_pFocusWidget;
-  CFX_UnownedPtr<CXFA_FFWidget> m_pOldFocusWidget;
+  UnownedPtr<CXFA_WidgetAcc> m_pFocusAcc;
+  UnownedPtr<CXFA_FFWidget> m_pFocusWidget;
+  UnownedPtr<CXFA_FFWidget> m_pOldFocusWidget;
   std::map<CXFA_FFPageView*, std::unique_ptr<CFX_RectF>> m_mapPageInvalidate;
   std::vector<CXFA_WidgetAcc*> m_ValidateAccs;
   std::vector<CXFA_WidgetAcc*> m_CalculateAccs;

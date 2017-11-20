@@ -10,39 +10,24 @@
 #include <vector>
 
 #include "base/strings/stringprintf.h"
-#include "cc/output/output_surface.h"
-#include "cc/quads/solid_color_draw_quad.h"
-#include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/scoped_resource.h"
-#include "cc/resources/single_release_callback_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/occlusion.h"
+#include "components/viz/common/quads/solid_color_draw_quad.h"
+#include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/resources/platform_color.h"
+#include "components/viz/common/resources/single_release_callback.h"
 
 namespace cc {
 
 TextureLayerImpl::TextureLayerImpl(LayerTreeImpl* tree_impl, int id)
-    : LayerImpl(tree_impl, id),
-      external_texture_resource_(0),
-      premultiplied_alpha_(true),
-      blend_background_color_(false),
-      flipped_(true),
-      nearest_neighbor_(false),
-      uv_top_left_(0.f, 0.f),
-      uv_bottom_right_(1.f, 1.f),
-      own_mailbox_(false),
-      valid_texture_copy_(false) {
-  vertex_opacity_[0] = 1.0f;
-  vertex_opacity_[1] = 1.0f;
-  vertex_opacity_[2] = 1.0f;
-  vertex_opacity_[3] = 1.0f;
-}
+    : LayerImpl(tree_impl, id) {}
 
 TextureLayerImpl::~TextureLayerImpl() { FreeTextureMailbox(); }
 
 void TextureLayerImpl::SetTextureMailbox(
     const viz::TextureMailbox& mailbox,
-    std::unique_ptr<SingleReleaseCallbackImpl> release_callback) {
+    std::unique_ptr<viz::SingleReleaseCallback> release_callback) {
   DCHECK_EQ(mailbox.IsValid(), !!release_callback);
   FreeTextureMailbox();
   texture_mailbox_ = mailbox;
@@ -63,7 +48,6 @@ bool TextureLayerImpl::IsSnapped() {
 
 void TextureLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   LayerImpl::PushPropertiesTo(layer);
-
   TextureLayerImpl* texture_layer = static_cast<TextureLayerImpl*>(layer);
   texture_layer->SetFlipped(flipped_);
   texture_layer->SetUVTopLeft(uv_top_left_);
@@ -80,7 +64,7 @@ void TextureLayerImpl::PushPropertiesTo(LayerImpl* layer) {
 }
 
 bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
-                                ResourceProvider* resource_provider) {
+                                LayerTreeResourceProvider* resource_provider) {
   if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
     return false;
 
@@ -113,7 +97,7 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
 
     if (!texture_copy_->id()) {
       texture_copy_->Allocate(texture_mailbox_.size_in_pixels(),
-                              ResourceProvider::TEXTURE_HINT_IMMUTABLE,
+                              ResourceProvider::TEXTURE_HINT_DEFAULT,
                               resource_provider->best_texture_format(),
                               gfx::ColorSpace());
     }
@@ -144,26 +128,27 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
          LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
-void TextureLayerImpl::AppendQuads(RenderPass* render_pass,
+void TextureLayerImpl::AppendQuads(viz::RenderPass* render_pass,
                                    AppendQuadsData* append_quads_data) {
   DCHECK(external_texture_resource_ || valid_texture_copy_);
 
+  SkColor bg_color =
+      blend_background_color_ ? background_color() : SK_ColorTRANSPARENT;
+  bool are_contents_opaque =
+      contents_opaque() || (SkColorGetA(bg_color) == 0xFF);
+
   viz::SharedQuadState* shared_quad_state =
       render_pass->CreateAndAppendSharedQuadState();
-  PopulateSharedQuadState(shared_quad_state);
+  PopulateSharedQuadState(shared_quad_state, are_contents_opaque);
 
-  AppendDebugBorderQuad(render_pass, bounds(), shared_quad_state,
+  AppendDebugBorderQuad(render_pass, gfx::Rect(bounds()), shared_quad_state,
                         append_quads_data);
-
-  SkColor bg_color = blend_background_color_ ?
-      background_color() : SK_ColorTRANSPARENT;
-  bool opaque = contents_opaque() || (SkColorGetA(bg_color) == 0xFF);
 
   gfx::Rect quad_rect(bounds());
   gfx::Rect visible_quad_rect =
       draw_properties().occlusion_in_content_space.GetUnoccludedContentRect(
           quad_rect);
-  bool needs_blending = !opaque;
+  bool needs_blending = !are_contents_opaque;
   if (visible_quad_rect.IsEmpty())
     return;
 
@@ -171,14 +156,12 @@ void TextureLayerImpl::AppendQuads(RenderPass* render_pass,
       !vertex_opacity_[3])
     return;
 
-  TextureDrawQuad* quad =
-      render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
+  auto* quad = render_pass->CreateAndAppendDrawQuad<viz::TextureDrawQuad>();
   viz::ResourceId id =
       valid_texture_copy_ ? texture_copy_->id() : external_texture_resource_;
   quad->SetNew(shared_quad_state, quad_rect, visible_quad_rect, needs_blending,
                id, premultiplied_alpha_, uv_top_left_, uv_bottom_right_,
-               bg_color, vertex_opacity_, flipped_, nearest_neighbor_,
-               texture_mailbox_.secure_output_only());
+               bg_color, vertex_opacity_, flipped_, nearest_neighbor_, false);
   if (!valid_texture_copy_) {
     quad->set_resource_size_in_pixels(texture_mailbox_.size_in_pixels());
   }
@@ -250,12 +233,8 @@ const char* TextureLayerImpl::LayerTypeAsString() const {
 void TextureLayerImpl::FreeTextureMailbox() {
   if (own_mailbox_) {
     DCHECK(!external_texture_resource_);
-    if (release_callback_) {
-      release_callback_->Run(texture_mailbox_.sync_token(), false,
-                             layer_tree_impl()
-                                 ->task_runner_provider()
-                                 ->blocking_main_thread_task_runner());
-    }
+    if (release_callback_)
+      release_callback_->Run(texture_mailbox_.sync_token(), false);
     texture_mailbox_ = viz::TextureMailbox();
     release_callback_ = nullptr;
   } else if (external_texture_resource_) {

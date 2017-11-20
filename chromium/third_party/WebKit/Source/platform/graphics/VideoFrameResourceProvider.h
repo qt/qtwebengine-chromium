@@ -2,7 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-namespace cc {
+#ifndef VideoFrameResourceProvider_h
+#define VideoFrameResourceProvider_h
+
+#include "cc/resources/video_resource_updater.h"
+#include "public/platform/WebVideoFrameSubmitter.h"
+
+namespace viz {
 class RenderPass;
 }
 
@@ -13,9 +19,17 @@ namespace blink {
 // frame.
 class VideoFrameResourceProvider {
  public:
-  VideoFrameResourceProvider();
+  explicit VideoFrameResourceProvider(WebContextProviderCallback);
 
-  void AppendQuads(cc::RenderPass&);
+  void Initialize(viz::ContextProvider*);
+  void AppendQuads(viz::RenderPass&);
+
+ private:
+  WebContextProviderCallback context_provider_callback_;
+  std::unique_ptr<cc::VideoResourceUpdater> resource_updater_;
+  base::WeakPtrFactory<VideoFrameResourceProvider> weak_ptr_factory_;
 };
 
 }  // namespace blink
+
+#endif  // VideoFrameResourceProvider_h

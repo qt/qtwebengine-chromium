@@ -12,7 +12,6 @@
 #include "base/build_time.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
@@ -394,19 +393,19 @@ class HuffmanDecoder {
 // PreloadResult is the result of resolving a specific name in the preloaded
 // data.
 struct PreloadResult {
-  uint32_t pinset_id;
+  uint32_t pinset_id = 0;
   // hostname_offset contains the number of bytes from the start of the given
   // hostname where the name of the matching entry starts.
-  size_t hostname_offset;
-  bool sts_include_subdomains;
-  bool pkp_include_subdomains;
-  bool force_https;
-  bool has_pins;
-  bool expect_ct;
-  uint32_t expect_ct_report_uri_id;
-  bool expect_staple;
-  bool expect_staple_include_subdomains;
-  uint32_t expect_staple_report_uri_id;
+  size_t hostname_offset = 0;
+  bool sts_include_subdomains = false;
+  bool pkp_include_subdomains = false;
+  bool force_https = false;
+  bool has_pins = false;
+  bool expect_ct = false;
+  uint32_t expect_ct_report_uri_id = 0;
+  bool expect_staple = false;
+  bool expect_staple_include_subdomains = false;
+  uint32_t expect_staple_report_uri_id = 0;
 };
 
 // DecodeHSTSPreloadRaw resolves |hostname| in the preloaded data. It returns
@@ -520,37 +519,51 @@ bool DecodeHSTSPreloadRaw(const std::string& search_hostname,
 
       if (c == kEndOfString) {
         PreloadResult tmp;
-        if (!reader.Next(&tmp.sts_include_subdomains) ||
-            !reader.Next(&tmp.force_https) || !reader.Next(&tmp.has_pins)) {
+        bool is_simple_entry;
+        if (!reader.Next(&is_simple_entry)) {
           return false;
         }
 
-        tmp.pkp_include_subdomains = tmp.sts_include_subdomains;
-
-        if (tmp.has_pins) {
-          if (!reader.Read(4, &tmp.pinset_id) ||
-              (!tmp.sts_include_subdomains &&
-               !reader.Next(&tmp.pkp_include_subdomains))) {
+        // Simple entries only configure HSTS with IncludeSubdomains and use a
+        // compact serialization format where the other policy flags are
+        // omitted. The omitted flags are assumed to be 0 and the associated
+        // policies are disabled.
+        if (is_simple_entry) {
+          tmp.force_https = true;
+          tmp.sts_include_subdomains = true;
+        } else {
+          if (!reader.Next(&tmp.sts_include_subdomains) ||
+              !reader.Next(&tmp.force_https) || !reader.Next(&tmp.has_pins)) {
             return false;
           }
-        }
 
-        if (!reader.Next(&tmp.expect_ct))
-          return false;
+          tmp.pkp_include_subdomains = tmp.sts_include_subdomains;
 
-        if (tmp.expect_ct) {
-          if (!reader.Read(4, &tmp.expect_ct_report_uri_id))
-            return false;
-        }
+          if (tmp.has_pins) {
+            if (!reader.Read(4, &tmp.pinset_id) ||
+                (!tmp.sts_include_subdomains &&
+                 !reader.Next(&tmp.pkp_include_subdomains))) {
+              return false;
+            }
+          }
 
-        if (!reader.Next(&tmp.expect_staple))
-          return false;
-        tmp.expect_staple_include_subdomains = false;
-        if (tmp.expect_staple) {
-          if (!reader.Next(&tmp.expect_staple_include_subdomains))
+          if (!reader.Next(&tmp.expect_ct))
             return false;
-          if (!reader.Read(4, &tmp.expect_staple_report_uri_id))
+
+          if (tmp.expect_ct) {
+            if (!reader.Read(4, &tmp.expect_ct_report_uri_id))
+              return false;
+          }
+
+          if (!reader.Next(&tmp.expect_staple))
             return false;
+          tmp.expect_staple_include_subdomains = false;
+          if (tmp.expect_staple) {
+            if (!reader.Next(&tmp.expect_staple_include_subdomains))
+              return false;
+            if (!reader.Read(4, &tmp.expect_staple_report_uri_id))
+              return false;
+          }
         }
 
         tmp.hostname_offset = hostname_offset;
@@ -1481,7 +1494,9 @@ void TransportSecurityState::ProcessExpectCTHeader(
   base::TimeDelta max_age;
   bool enforce;
   GURL report_uri;
-  if (!ParseExpectCTHeader(value, &max_age, &enforce, &report_uri))
+  bool parsed = ParseExpectCTHeader(value, &max_age, &enforce, &report_uri);
+  UMA_HISTOGRAM_BOOLEAN("Net.ExpectCTHeader.ParseSuccess", parsed);
+  if (!parsed)
     return;
   // Do not persist Expect-CT headers if the connection was not chained to a
   // public root or did not comply with CT policy.

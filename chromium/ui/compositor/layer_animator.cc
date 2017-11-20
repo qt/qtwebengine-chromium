@@ -271,8 +271,7 @@ void LayerAnimator::StartTogether(
 
   bool wait_for_group_start = false;
   for (iter = animations.begin(); iter != animations.end(); ++iter)
-    wait_for_group_start |= (*iter)->IsFirstElementThreaded();
-
+    wait_for_group_start |= (*iter)->IsFirstElementThreaded(delegate_);
   int group_id = cc::AnimationIdProvider::NextGroupId();
 
   // These animations (provided they don't animate any common properties) will
@@ -309,7 +308,7 @@ void LayerAnimator::ScheduleTogether(
 
   bool wait_for_group_start = false;
   for (iter = animations.begin(); iter != animations.end(); ++iter)
-    wait_for_group_start |= (*iter)->IsFirstElementThreaded();
+    wait_for_group_start |= (*iter)->IsFirstElementThreaded(delegate_);
 
   int group_id = cc::AnimationIdProvider::NextGroupId();
 
@@ -371,6 +370,23 @@ void LayerAnimator::RemoveObserver(LayerAnimationObserver* observer) {
   }
 }
 
+void LayerAnimator::AddOwnedObserver(
+    std::unique_ptr<ImplicitAnimationObserver> animation_observer) {
+  owned_observer_list_.push_back(std::move(animation_observer));
+}
+
+void LayerAnimator::RemoveAndDestroyOwnedObserver(
+    ImplicitAnimationObserver* animation_observer) {
+  owned_observer_list_.erase(
+      std::remove_if(
+          owned_observer_list_.begin(), owned_observer_list_.end(),
+          [animation_observer](
+              const std::unique_ptr<ImplicitAnimationObserver>& other) {
+            return other.get() == animation_observer;
+          }),
+      owned_observer_list_.end());
+}
+
 void LayerAnimator::OnThreadedAnimationStarted(
     base::TimeTicks monotonic_time,
     cc::TargetProperty::Type target_property,
@@ -403,7 +419,7 @@ void LayerAnimator::OnThreadedAnimationStarted(
     // Ensure that each sequence is only Started once, regardless of the
     // number of sequences in the group that have threaded first elements.
     if (((*iter).sequence()->animation_group_id() == group_id) &&
-        !(*iter).sequence()->IsFirstElementThreaded() &&
+        !(*iter).sequence()->IsFirstElementThreaded(delegate_) &&
         (*iter).sequence()->waiting_for_group_start()) {
       (*iter).sequence()->set_start_time(start_time);
       (*iter).sequence()->set_waiting_for_group_start(false);
@@ -544,9 +560,8 @@ LayerAnimationSequence* LayerAnimator::RemoveAnimation(
     }
   }
 
-  if (!to_return.get() ||
-      !to_return->waiting_for_group_start() ||
-      !to_return->IsFirstElementThreaded())
+  if (!to_return.get() || !to_return->waiting_for_group_start() ||
+      !to_return->IsFirstElementThreaded(delegate_))
     return to_return.release();
 
   // The removed sequence may have been responsible for making other sequences
@@ -557,7 +572,7 @@ LayerAnimationSequence* LayerAnimator::RemoveAnimation(
   for (AnimationQueue::iterator queue_iter = animation_queue_.begin();
        queue_iter != animation_queue_.end(); ++queue_iter) {
     if (((*queue_iter)->animation_group_id() == group_id) &&
-        (*queue_iter)->IsFirstElementThreaded()) {
+        (*queue_iter)->IsFirstElementThreaded(delegate_)) {
       is_wait_still_needed = true;
       break;
     }
@@ -853,7 +868,7 @@ bool LayerAnimator::StartSequenceImmediately(LayerAnimationSequence* sequence) {
   AddToQueueIfNotPresent(sequence);
 
   if (!sequence->waiting_for_group_start() ||
-      sequence->IsFirstElementThreaded()) {
+      sequence->IsFirstElementThreaded(delegate_)) {
     sequence->set_start_time(start_time);
     sequence->Start(delegate());
   }

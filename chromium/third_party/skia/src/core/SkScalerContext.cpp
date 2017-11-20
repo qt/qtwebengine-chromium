@@ -9,7 +9,7 @@
 
 #include "SkAutoMalloc.h"
 #include "SkAutoPixmapStorage.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkDescriptor.h"
 #include "SkDraw.h"
 #include "SkGlyph.h"
@@ -400,7 +400,7 @@ static void generateMask(const SkMask& mask, const SkPath& path,
     } else {
         dst.reset(info, mask.fImage, dstRB);
     }
-    sk_bzero(dst.writable_addr(), dst.getSafeSize());
+    sk_bzero(dst.writable_addr(), dst.computeByteSize());
 
     SkDraw  draw;
     draw.fDst   = dst;

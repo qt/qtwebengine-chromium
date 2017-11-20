@@ -45,17 +45,31 @@ public:
         return static_cast<T*>(this->findAndRefResourceByUniqueKey(key));
     }
 
+    /*
+     * Assigns a unique key to a proxy. The proxy will be findable via this key using
+     * findProxyByUniqueKey(). It is an error if an existing proxy already has a key.
+     */
+    void assignUniqueKeyToProxy(const GrUniqueKey&, GrTextureProxy*);
+
+    /*
+     * Removes a unique key from a proxy. If the proxy has already been instantiated, it will
+     * also remove the unique key from the target GrSurface.
+     */
+    void removeUniqueKeyFromProxy(const GrUniqueKey&, GrTextureProxy*);
+
+    /*
+     * Finds a proxy by unique key.
+     */
+    sk_sp<GrTextureProxy> findProxyByUniqueKey(const GrUniqueKey&, GrSurfaceOrigin);
+
+    /*
+     * Finds a proxy by unique key or creates a new one that wraps a resource matching the unique
+     * key.
+     */
+    sk_sp<GrTextureProxy> findOrCreateProxyByUniqueKey(const GrUniqueKey&, GrSurfaceOrigin);
+
     ///////////////////////////////////////////////////////////////////////////
     // Textures
-
-    /** Assigns a unique key to the texture. The texture will be findable via this key using
-    findTextureByUniqueKey(). If an existing texture has this key, it's key will be removed. */
-    void assignUniqueKeyToProxy(const GrUniqueKey& key, GrTextureProxy*);
-
-    /** Finds a texture by unique key. If the texture is found it is ref'ed and returned. */
-    // MDB TODO (caching): If this were actually caching proxies (rather than shallowly 
-    // wrapping GrSurface caching) we would not need the origin parameter.
-    sk_sp<GrTextureProxy> findProxyByUniqueKey(const GrUniqueKey& key, GrSurfaceOrigin);
 
     /**
      * Finds a texture that approximately matches the descriptor. Will be at least as large in width
@@ -163,22 +177,18 @@ public:
 
     /** These flags govern which scratch resources we are allowed to return */
     enum Flags {
-        kExact_Flag           = 0x1,
-
         /** If the caller intends to do direct reads/writes to/from the CPU then this flag must be
          *  set when accessing resources during a GrOpList flush. This includes the execution of
          *  GrOp objects. The reason is that these memory operations are done immediately and
          *  will occur out of order WRT the operations being flushed.
          *  Make this automatic: https://bug.skia.org/4156
          */
-        kNoPendingIO_Flag     = 0x2,
-
-        kNoCreate_Flag        = 0x4,
+        kNoPendingIO_Flag     = 0x1,
 
         /** Normally the caps may indicate a preference for client-side buffers. Set this flag when
          *  creating a buffer to guarantee it resides in GPU memory.
          */
-        kRequireGpuMemory_Flag = 0x8,
+        kRequireGpuMemory_Flag = 0x2,
     };
 
     /**
@@ -197,10 +207,10 @@ public:
 
 
     /**
-     * If passed in render target already has a stencil buffer, return it. Otherwise attempt to
-     * attach one.
+     * If passed in render target already has a stencil buffer, return true. Otherwise attempt to
+     * attach one and return true on success.
      */
-    GrStencilAttachment* attachStencilAttachment(GrRenderTarget* rt);
+    bool attachStencilAttachment(GrRenderTarget* rt);
 
      /**
       * Wraps an existing texture with a GrRenderTarget object. This is useful when the provided
@@ -254,8 +264,9 @@ public:
 
 private:
     GrTexture* findAndRefTextureByUniqueKey(const GrUniqueKey& key);
-    void assignUniqueKeyToTexture(const GrUniqueKey& key, GrTexture* texture);
 
+    // Attempts to find a resource in the cache that exactly matches the GrSurfaceDesc. Failing that
+    // it returns null. If non-null, the resulting texture is always budgeted.
     sk_sp<GrTexture> refScratchTexture(const GrSurfaceDesc&, uint32_t scratchTextureFlags);
 
     /*

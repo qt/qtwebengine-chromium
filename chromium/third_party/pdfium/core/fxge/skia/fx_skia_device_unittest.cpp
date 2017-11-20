@@ -4,6 +4,7 @@
 
 #include "core/fxge/skia/fx_skia_device.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -124,7 +125,7 @@ void Harness(void (*Test)(CFX_SkiaDeviceDriver*, const State&),
     return;
   FPDFBitmap_FillRect(bitmap, 0, 0, w, h, 0x00000000);
   CFX_DefaultRenderDevice geDevice;
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap(CFXBitmapFromFPDFBitmap(bitmap));
+  RetainPtr<CFX_DIBitmap> pBitmap(CFXBitmapFromFPDFBitmap(bitmap));
   geDevice.Attach(pBitmap, false, nullptr, false);
   CFX_SkiaDeviceDriver* driver =
       static_cast<CFX_SkiaDeviceDriver*>(geDevice.GetDeviceDriver());

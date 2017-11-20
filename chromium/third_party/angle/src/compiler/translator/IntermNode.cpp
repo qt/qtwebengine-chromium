@@ -480,10 +480,11 @@ bool TIntermAggregate::hasSideEffects() const
 
 void TIntermBlock::appendStatement(TIntermNode *statement)
 {
-    // Declaration nodes with no children can appear if all the declarators just added constants to
-    // the symbol table instead of generating code. They're no-ops so they aren't added to blocks.
-    if (statement != nullptr && (statement->getAsDeclarationNode() == nullptr ||
-                                 !statement->getAsDeclarationNode()->getSequence()->empty()))
+    // Declaration nodes with no children can appear if it was an empty declaration or if all the
+    // declarators just added constants to the symbol table instead of generating code. We still
+    // need to add the declaration to the AST in that case because it might be relevant to the
+    // validity of switch/case.
+    if (statement != nullptr)
     {
         mStatements.push_back(statement);
     }
@@ -526,6 +527,7 @@ bool TIntermSwitch::replaceChildNode(TIntermNode *original, TIntermNode *replace
 {
     REPLACE_IF_IS(mInit, TIntermTyped, original, replacement);
     REPLACE_IF_IS(mStatementList, TIntermBlock, original, replacement);
+    ASSERT(mStatementList);
     return false;
 }
 
@@ -803,6 +805,13 @@ TOperator TIntermBinary::GetMulAssignOpBasedOnOperands(const TType &left, const 
 //
 void TIntermUnary::promote()
 {
+    if (mOp == EOpArrayLength)
+    {
+        // Special case: the qualifier of .length() doesn't depend on the operand qualifier.
+        setType(TType(EbtInt, EbpUndefined, EvqConst));
+        return;
+    }
+
     TQualifier resultQualifier = EvqTemporary;
     if (mOperand->getQualifier() == EvqConst)
         resultQualifier = EvqConst;
@@ -929,6 +938,28 @@ TIntermLoop::TIntermLoop(TLoopType type,
     {
         mInit = nullptr;
     }
+}
+
+TIntermIfElse::TIntermIfElse(TIntermTyped *cond, TIntermBlock *trueB, TIntermBlock *falseB)
+    : TIntermNode(), mCondition(cond), mTrueBlock(trueB), mFalseBlock(falseB)
+{
+    // Prune empty false blocks so that there won't be unnecessary operations done on it.
+    if (mFalseBlock && mFalseBlock->getSequence()->empty())
+    {
+        mFalseBlock = nullptr;
+    }
+}
+
+TIntermSwitch::TIntermSwitch(TIntermTyped *init, TIntermBlock *statementList)
+    : TIntermNode(), mInit(init), mStatementList(statementList)
+{
+    ASSERT(mStatementList);
+}
+
+void TIntermSwitch::setStatementList(TIntermBlock *statementList)
+{
+    ASSERT(statementList);
+    mStatementList = statementList;
 }
 
 // static
@@ -1355,36 +1386,49 @@ TIntermTyped *TIntermBinary::fold(TDiagnostics *diagnostics)
 
 TIntermTyped *TIntermUnary::fold(TDiagnostics *diagnostics)
 {
-    TIntermConstantUnion *operandConstant = mOperand->getAsConstantUnion();
-    if (operandConstant == nullptr)
-    {
-        return this;
-    }
-
     TConstantUnion *constArray = nullptr;
-    switch (mOp)
+
+    if (mOp == EOpArrayLength)
     {
-        case EOpAny:
-        case EOpAll:
-        case EOpLength:
-        case EOpTranspose:
-        case EOpDeterminant:
-        case EOpInverse:
-        case EOpPackSnorm2x16:
-        case EOpUnpackSnorm2x16:
-        case EOpPackUnorm2x16:
-        case EOpUnpackUnorm2x16:
-        case EOpPackHalf2x16:
-        case EOpUnpackHalf2x16:
-        case EOpPackUnorm4x8:
-        case EOpPackSnorm4x8:
-        case EOpUnpackUnorm4x8:
-        case EOpUnpackSnorm4x8:
-            constArray = operandConstant->foldUnaryNonComponentWise(mOp);
-            break;
-        default:
-            constArray = operandConstant->foldUnaryComponentWise(mOp, diagnostics);
-            break;
+        if (mOperand->hasSideEffects())
+        {
+            return this;
+        }
+        constArray = new TConstantUnion[1];
+        constArray->setIConst(mOperand->getOutermostArraySize());
+    }
+    else
+    {
+        TIntermConstantUnion *operandConstant = mOperand->getAsConstantUnion();
+        if (operandConstant == nullptr)
+        {
+            return this;
+        }
+
+        switch (mOp)
+        {
+            case EOpAny:
+            case EOpAll:
+            case EOpLength:
+            case EOpTranspose:
+            case EOpDeterminant:
+            case EOpInverse:
+            case EOpPackSnorm2x16:
+            case EOpUnpackSnorm2x16:
+            case EOpPackUnorm2x16:
+            case EOpUnpackUnorm2x16:
+            case EOpPackHalf2x16:
+            case EOpUnpackHalf2x16:
+            case EOpPackUnorm4x8:
+            case EOpPackSnorm4x8:
+            case EOpUnpackUnorm4x8:
+            case EOpUnpackSnorm4x8:
+                constArray = operandConstant->foldUnaryNonComponentWise(mOp);
+                break;
+            default:
+                constArray = operandConstant->foldUnaryComponentWise(mOp, diagnostics);
+                break;
+        }
     }
     if (constArray == nullptr)
     {

@@ -6,7 +6,6 @@
 
 #include "core/css/CSSValueList.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
@@ -35,7 +34,6 @@ static bool ConsumePan(CSSParserTokenRange& range,
 }  // namespace
 
 const CSSValue* CSSPropertyAPITouchAction::ParseSingleValue(
-    CSSPropertyID,
     CSSParserTokenRange& range,
     const CSSParserContext& context,
     const CSSParserLocalContext&) const {

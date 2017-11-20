@@ -65,7 +65,7 @@ class HintsScope {
   ~HintsScope() { validator_->SetDownloadHints(nullptr); }
 
  private:
-  CFX_UnownedPtr<CPDF_ReadValidator> validator_;
+  UnownedPtr<CPDF_ReadValidator> validator_;
 };
 
 }  // namespace
@@ -76,7 +76,7 @@ CPDF_DataAvail::DownloadHints::~DownloadHints() {}
 
 CPDF_DataAvail::CPDF_DataAvail(
     FileAvail* pFileAvail,
-    const CFX_RetainPtr<IFX_SeekableReadStream>& pFileRead,
+    const RetainPtr<IFX_SeekableReadStream>& pFileRead,
     bool bSupportHintTable)
     : m_pFileAvail(pFileAvail) {
   ASSERT(pFileRead);
@@ -207,7 +207,7 @@ CPDF_DataAvail::DocAvailStatus CPDF_DataAvail::IsDocAvail(
   const HintsScope hints_scope(m_pFileRead.Get(), pHints);
 
   while (!m_bDocAvail) {
-    if (!CheckDocStatus(pHints))
+    if (!CheckDocStatus())
       return DataNotAvailable;
   }
 
@@ -261,14 +261,14 @@ bool CPDF_DataAvail::CheckAcroForm() {
   return true;
 }
 
-bool CPDF_DataAvail::CheckDocStatus(DownloadHints* pHints) {
+bool CPDF_DataAvail::CheckDocStatus() {
   switch (m_docStatus) {
     case PDF_DATAAVAIL_HEADER:
       return CheckHeader();
     case PDF_DATAAVAIL_FIRSTPAGE:
-      return CheckFirstPage(pHints);
+      return CheckFirstPage();
     case PDF_DATAAVAIL_HINTTABLE:
-      return CheckHintTables(pHints);
+      return CheckHintTables();
     case PDF_DATAAVAIL_END:
       return CheckEnd();
     case PDF_DATAAVAIL_CROSSREF:
@@ -278,7 +278,7 @@ bool CPDF_DataAvail::CheckDocStatus(DownloadHints* pHints) {
     case PDF_DATAAVAIL_TRAILER:
       return CheckTrailer();
     case PDF_DATAAVAIL_LOADALLCROSSREF:
-      return LoadAllXref(pHints);
+      return LoadAllXref();
     case PDF_DATAAVAIL_LOADALLFILE:
       return LoadAllFile();
     case PDF_DATAAVAIL_ROOT:
@@ -322,15 +322,14 @@ bool CPDF_DataAvail::CheckPageStatus() {
 }
 
 bool CPDF_DataAvail::LoadAllFile() {
-  if (GetValidator()->IsWholeFileAvailable()) {
+  if (GetValidator()->CheckWholeFileAndRequestIfUnavailable()) {
     m_docStatus = PDF_DATAAVAIL_DONE;
     return true;
   }
-  GetValidator()->ScheduleDownloadWholeFile();
   return false;
 }
 
-bool CPDF_DataAvail::LoadAllXref(DownloadHints* pHints) {
+bool CPDF_DataAvail::LoadAllXref() {
   m_parser.m_pSyntax->InitParser(m_pFileRead, (uint32_t)m_dwHeaderOffset);
   if (!m_parser.LoadAllCrossRefV4(m_dwLastXRefOffset) &&
       !m_parser.LoadAllCrossRefV5(m_dwLastXRefOffset)) {
@@ -473,7 +472,7 @@ bool CPDF_DataAvail::CheckPage() {
     if (!pObj->IsDictionary())
       continue;
 
-    CFX_ByteString type = pObj->GetDict()->GetStringFor("Type");
+    ByteString type = pObj->GetDict()->GetStringFor("Type");
     if (type == "Pages") {
       m_PagesArray.push_back(std::move(pObj));
       continue;
@@ -577,9 +576,10 @@ bool CPDF_DataAvail::CheckHeader() {
   return true;
 }
 
-bool CPDF_DataAvail::CheckFirstPage(DownloadHints* pHints) {
+bool CPDF_DataAvail::CheckFirstPage() {
   if (!m_pLinearized->GetFirstPageEndOffset() ||
-      !m_pLinearized->GetFileSize() || !m_pLinearized->GetLastXRefOffset()) {
+      !m_pLinearized->GetFileSize() ||
+      !m_pLinearized->GetMainXRefTableFirstEntryOffset()) {
     m_docStatus = PDF_DATAAVAIL_ERROR;
     return false;
   }
@@ -589,41 +589,18 @@ bool CPDF_DataAvail::CheckFirstPage(DownloadHints* pHints) {
   if ((FX_FILESIZE)dwEnd > m_dwFileLen)
     dwEnd = (uint32_t)m_dwFileLen;
 
-  int32_t iStartPos = (int32_t)(m_dwFileLen > 1024 ? 1024 : m_dwFileLen);
-  int32_t iSize = dwEnd > 1024 ? dwEnd - 1024 : 0;
-  if (!m_pFileAvail->IsDataAvail(iStartPos, iSize)) {
-    pHints->AddSegment(iStartPos, iSize);
+  const FX_FILESIZE start_pos = m_dwFileLen > 1024 ? 1024 : m_dwFileLen;
+  const size_t data_size = dwEnd > 1024 ? static_cast<size_t>(dwEnd - 1024) : 0;
+  if (!GetValidator()->CheckDataRangeAndRequestIfUnavailable(start_pos,
+                                                             data_size))
     return false;
-  }
 
   m_docStatus =
       m_bSupportHintTable ? PDF_DATAAVAIL_HINTTABLE : PDF_DATAAVAIL_DONE;
   return true;
 }
 
-bool CPDF_DataAvail::IsDataAvail(FX_FILESIZE offset,
-                                 uint32_t size,
-                                 DownloadHints* pHints) {
-  if (offset < 0 || offset > m_dwFileLen)
-    return true;
-
-  FX_SAFE_FILESIZE safeSize = offset;
-  safeSize += size;
-  safeSize += 512;
-  if (!safeSize.IsValid() || safeSize.ValueOrDie() > m_dwFileLen)
-    size = m_dwFileLen - offset;
-  else
-    size += 512;
-
-  if (!m_pFileAvail->IsDataAvail(offset, size)) {
-    if (pHints)
-      pHints->AddSegment(offset, size);
-    return false;
-  }
-  return true;
-}
-
-bool CPDF_DataAvail::CheckHintTables(DownloadHints* pHints) {
+bool CPDF_DataAvail::CheckHintTables() {
   if (m_pLinearized->GetPageCount() <= 1) {
     m_docStatus = PDF_DATAAVAIL_DONE;
     return true;
@@ -633,16 +610,17 @@ bool CPDF_DataAvail::CheckHintTables(DownloadHints* pHints) {
     return false;
   }
 
-  FX_FILESIZE szHintStart = m_pLinearized->GetHintStart();
-  FX_FILESIZE szHintLength = m_pLinearized->GetHintLength();
+  const FX_FILESIZE szHintStart = m_pLinearized->GetHintStart();
+  const uint32_t szHintLength = m_pLinearized->GetHintLength();
 
-  if (!IsDataAvail(szHintStart, szHintLength, pHints))
+  if (!GetValidator()->CheckDataRangeAndRequestIfUnavailable(szHintStart,
+                                                             szHintLength))
     return false;
 
   m_syntaxParser.InitParser(m_pFileRead, m_dwHeaderOffset);
 
-  auto pHintTables =
-      pdfium::MakeUnique<CPDF_HintTables>(this, m_pLinearized.get());
+  auto pHintTables = pdfium::MakeUnique<CPDF_HintTables>(GetValidator().Get(),
+                                                         m_pLinearized.get());
   std::unique_ptr<CPDF_Object> pHintStream =
       ParseIndirectObjectAt(szHintStart, 0);
   CPDF_Stream* pStream = ToStream(pHintStream.get());
@@ -657,32 +635,14 @@ std::unique_ptr<CPDF_Object> CPDF_DataAvail::ParseIndirectObjectAt(
     FX_FILESIZE pos,
     uint32_t objnum,
     CPDF_IndirectObjectHolder* pObjList) {
-  FX_FILESIZE SavedPos = m_syntaxParser.GetPos();
+  const FX_FILESIZE SavedPos = m_syntaxParser.GetPos();
   m_syntaxParser.SetPos(pos);
-
-  bool bIsNumber;
-  CFX_ByteString word = m_syntaxParser.GetNextWord(&bIsNumber);
-  if (!bIsNumber)
-    return nullptr;
-
-  uint32_t parser_objnum = FXSYS_atoui(word.c_str());
-  if (objnum && parser_objnum != objnum)
-    return nullptr;
-
-  word = m_syntaxParser.GetNextWord(&bIsNumber);
-  if (!bIsNumber)
-    return nullptr;
-
-  uint32_t gennum = FXSYS_atoui(word.c_str());
-  if (m_syntaxParser.GetKeyword() != "obj") {
-    m_syntaxParser.SetPos(SavedPos);
-    return nullptr;
-  }
-
-  std::unique_ptr<CPDF_Object> pObj =
-      m_syntaxParser.GetObject(pObjList, parser_objnum, gennum, true);
+  std::unique_ptr<CPDF_Object> result = m_syntaxParser.GetIndirectObject(
+      pObjList, CPDF_SyntaxParser::ParseType::kLoose);
   m_syntaxParser.SetPos(SavedPos);
-  return pObj;
+  return (result && (!objnum || result->GetObjNum() == objnum))
+             ? std::move(result)
+             : nullptr;
 }
 
 CPDF_DataAvail::DocLinearizationStatus CPDF_DataAvail::IsLinearizedPDF() {
@@ -723,7 +683,7 @@ bool CPDF_DataAvail::IsLinearizedFile(uint8_t* pData, uint32_t dwLen) {
   m_syntaxParser.SetPos(m_syntaxParser.m_HeaderOffset + 9);
 
   bool bNumber;
-  CFX_ByteString wordObjNum = m_syntaxParser.GetNextWord(&bNumber);
+  ByteString wordObjNum = m_syntaxParser.GetNextWord(&bNumber);
   if (!bNumber)
     return false;
 
@@ -761,7 +721,7 @@ bool CPDF_DataAvail::CheckEnd() {
   m_syntaxParser.GetNextWord(nullptr);
 
   bool bNumber;
-  CFX_ByteString xrefpos_str = m_syntaxParser.GetNextWord(&bNumber);
+  ByteString xrefpos_str = m_syntaxParser.GetNextWord(&bNumber);
   if (!bNumber) {
     m_docStatus = PDF_DATAAVAIL_ERROR;
     return false;
@@ -781,7 +741,7 @@ void CPDF_DataAvail::SetStartOffset(FX_FILESIZE dwOffset) {
   m_Pos = dwOffset;
 }
 
-bool CPDF_DataAvail::GetNextToken(CFX_ByteString* token) {
+bool CPDF_DataAvail::GetNextToken(ByteString* token) {
   uint8_t ch;
   if (!GetNextChar(ch))
     return false;
@@ -814,7 +774,7 @@ bool CPDF_DataAvail::GetNextToken(CFX_ByteString* token) {
 
         if (!PDFCharIsOther(ch) && !PDFCharIsNumeric(ch)) {
           m_Pos--;
-          *token = CFX_ByteString(buffer, index);
+          *token = ByteString(buffer, index);
           return true;
         }
         if (index < sizeof(buffer))
@@ -837,7 +797,7 @@ bool CPDF_DataAvail::GetNextToken(CFX_ByteString* token) {
       else
         m_Pos--;
     }
-    *token = CFX_ByteString(buffer, index);
+    *token = ByteString(buffer, index);
     return true;
   }
 
@@ -854,7 +814,7 @@ bool CPDF_DataAvail::GetNextToken(CFX_ByteString* token) {
     }
   }
 
-  *token = CFX_ByteString(buffer, index);
+  *token = ByteString(buffer, index);
   return true;
 }
 
@@ -885,7 +845,7 @@ bool CPDF_DataAvail::GetNextChar(uint8_t& ch) {
 }
 
 bool CPDF_DataAvail::CheckCrossRefItem() {
-  CFX_ByteString token;
+  ByteString token;
   while (1) {
     const CPDF_ReadValidator::Session read_session(GetValidator().Get());
     if (!GetNextToken(&token)) {
@@ -904,7 +864,7 @@ bool CPDF_DataAvail::CheckCrossRefItem() {
 
 bool CPDF_DataAvail::CheckCrossRef() {
   const CPDF_ReadValidator::Session read_session(GetValidator().Get());
-  CFX_ByteString token;
+  ByteString token;
   if (!GetNextToken(&token)) {
     if (!GetValidator()->has_read_problems())
       m_docStatus = PDF_DATAAVAIL_ERROR;
@@ -926,7 +886,7 @@ bool CPDF_DataAvail::CheckTrailer() {
   const CPDF_ReadValidator::Session read_session(GetValidator().Get());
   m_syntaxParser.SetPos(m_dwTrailerOffset);
   const std::unique_ptr<CPDF_Object> pTrailer =
-      m_syntaxParser.GetObject(nullptr, 0, 0, true);
+      m_syntaxParser.GetObjectBody(nullptr);
   if (!pTrailer) {
     if (!GetValidator()->has_read_problems())
       m_docStatus = PDF_DATAAVAIL_ERROR;
@@ -1046,7 +1006,7 @@ bool CPDF_DataAvail::CheckUnknownPageNode(uint32_t dwPageNo,
 
   pPageNode->m_dwPageNo = dwPageNo;
   CPDF_Dictionary* pDict = pPage->GetDict();
-  const CFX_ByteString type = pDict->GetStringFor("Type");
+  const ByteString type = pDict->GetStringFor("Type");
   if (type == "Page") {
     pPageNode->m_type = PDF_PAGENODE_PAGE;
     return true;
@@ -1204,26 +1164,32 @@ bool CPDF_DataAvail::LoadPages() {
   return false;
 }
 
-CPDF_DataAvail::DocAvailStatus CPDF_DataAvail::CheckLinearizedData(
-    DownloadHints* pHints) {
+CPDF_DataAvail::DocAvailStatus CPDF_DataAvail::CheckLinearizedData() {
   if (m_bLinearedDataOK)
     return DataAvailable;
   ASSERT(m_pLinearized);
-  if (!m_pLinearized->GetLastXRefOffset())
+  if (!m_pLinearized->GetMainXRefTableFirstEntryOffset() || !m_pDocument ||
+      !m_pDocument->GetParser() || !m_pDocument->GetParser()->GetTrailer()) {
     return DataError;
+  }
 
   if (!m_bMainXRefLoadTried) {
-    FX_SAFE_UINT32 data_size = m_dwFileLen;
-    data_size -= m_pLinearized->GetLastXRefOffset();
+    const FX_SAFE_FILESIZE main_xref_offset =
+        m_pDocument->GetParser()->GetTrailer()->GetIntegerFor("Prev");
+    if (!main_xref_offset.IsValid())
+      return DataError;
+
+    if (main_xref_offset.ValueOrDie() == 0)
+      return DataAvailable;
+
+    FX_SAFE_SIZE_T data_size = m_dwFileLen;
+    data_size -= main_xref_offset.ValueOrDie();
     if (!data_size.IsValid())
       return DataError;
 
-    if (!m_pFileAvail->IsDataAvail(m_pLinearized->GetLastXRefOffset(),
-                                   data_size.ValueOrDie())) {
-      pHints->AddSegment(m_pLinearized->GetLastXRefOffset(),
-                         data_size.ValueOrDie());
+    if (!GetValidator()->CheckDataRangeAndRequestIfUnavailable(
+            main_xref_offset.ValueOrDie(), data_size.ValueOrDie()))
       return DataNotAvailable;
-    }
 
     CPDF_Parser::Error eRet =
         m_pDocument->GetParser()->LoadLinearizedMainXRefTable();
@@ -1312,16 +1278,18 @@ CPDF_DataAvail::DocAvailStatus CPDF_DataAvail::IsPageAvail(
       return nRet;
     }
 
-    DocAvailStatus nResult = CheckLinearizedData(pHints);
+    DocAvailStatus nResult = CheckLinearizedData();
     if (nResult != DataAvailable)
       return nResult;
 
     if (m_pHintTables) {
-      nResult = m_pHintTables->CheckPage(dwPage, pHints);
+      nResult = m_pHintTables->CheckPage(dwPage);
       if (nResult != DataAvailable)
         return nResult;
-      m_pagesLoadState.insert(dwPage);
-      return GetPage(dwPage) ? DataAvailable : DataError;
+      if (GetPage(dwPage)) {
+        m_pagesLoadState.insert(dwPage);
+        return DataAvailable;
+      }
     }
 
     if (!m_bMainXRefLoadedOK) {
@@ -1426,11 +1394,11 @@ bool CPDF_DataAvail::CheckResources() {
   return true;
 }
 
-CFX_RetainPtr<IFX_SeekableReadStream> CPDF_DataAvail::GetFileRead() const {
+RetainPtr<IFX_SeekableReadStream> CPDF_DataAvail::GetFileRead() const {
   return m_pFileRead;
 }
 
-CFX_RetainPtr<CPDF_ReadValidator> CPDF_DataAvail::GetValidator() const {
+RetainPtr<CPDF_ReadValidator> CPDF_DataAvail::GetValidator() const {
   return m_pFileRead;
 }
 
@@ -1479,7 +1447,7 @@ CPDF_DataAvail::DocFormStatus CPDF_DataAvail::IsFormAvail(
 
   const HintsScope hints_scope(GetValidator().Get(), pHints);
   if (m_pLinearized) {
-    DocAvailStatus nDocStatus = CheckLinearizedData(pHints);
+    DocAvailStatus nDocStatus = CheckLinearizedData();
     if (nDocStatus == DataError)
       return FormError;
     if (nDocStatus == DataNotAvailable)

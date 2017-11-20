@@ -12,6 +12,7 @@
 #include "GrGpuCommandBuffer.h"
 #include "GrRect.h"
 #include "GrRenderTargetContext.h"
+#include "GrResourceAllocator.h"
 #include "instanced/InstancedRendering.h"
 #include "ops/GrClearOp.h"
 #include "ops/GrCopySurfaceOp.h"
@@ -179,7 +180,7 @@ bool GrRenderTargetOpList::onExecute(GrOpFlushState* flushState) {
     return true;
 }
 
-void GrRenderTargetOpList::reset() {
+void GrRenderTargetOpList::endFlush() {
     fLastClipStackGenID = SK_InvalidUniqueID;
     fRecordedOps.reset();
     if (fInstancedRendering) {
@@ -187,7 +188,7 @@ void GrRenderTargetOpList::reset() {
         fInstancedRendering = nullptr;
     }
 
-    INHERITED::reset();
+    INHERITED::endFlush();
 }
 
 void GrRenderTargetOpList::abandonGpuResources() {
@@ -220,6 +221,7 @@ void GrRenderTargetOpList::fullClear(const GrCaps& caps, GrColor color) {
     // buffer we will need a more elaborate tracking system (skbug.com/7002).
     if (this->isEmpty() || !fTarget.get()->asRenderTargetProxy()->needsStencil()) {
         fRecordedOps.reset();
+        fDeferredProxies.reset();
         fColorLoadOp = GrLoadOp::kClear;
         fLoadClearColor = color;
         return;
@@ -247,12 +249,28 @@ bool GrRenderTargetOpList::copySurface(const GrCaps& caps,
     if (!op) {
         return false;
     }
-#ifdef ENABLE_MDB
-    this->addDependency(src);
-#endif
 
-    this->recordOp(std::move(op), caps);
+    this->addOp(std::move(op), caps);
     return true;
+}
+
+void GrRenderTargetOpList::gatherProxyIntervals(GrResourceAllocator* alloc) const {
+    unsigned int cur = alloc->numOps();
+
+    // Add the interval for all the writes to this opList's target
+    alloc->addInterval(fTarget.get(), cur, cur+fRecordedOps.count()-1);
+
+    auto gather = [ alloc ] (GrSurfaceProxy* p) {
+        alloc->addInterval(p);
+    };
+    for (int i = 0; i < fRecordedOps.count(); ++i) {
+        SkASSERT(alloc->curOp() == cur+i);
+
+        const GrOp* op = fRecordedOps[i].fOp.get(); // only diff from the GrTextureOpList version
+        op->visitProxies(gather);
+
+        alloc->incOps();
+    }
 }
 
 static inline bool can_reorder(const SkRect& a, const SkRect& b) { return !GrRectsOverlap(a, b); }

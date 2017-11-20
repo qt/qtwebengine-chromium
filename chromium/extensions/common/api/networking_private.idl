@@ -307,6 +307,7 @@ namespace networkingPrivate {
   dictionary IPSecProperties {
     DOMString AuthenticationType;
     CertificatePattern? ClientCertPattern;
+    DOMString? ClientCertPKCS11Id;
     DOMString? ClientCertRef;
     DOMString? ClientCertType;
     EAPProperties? EAP;
@@ -314,6 +315,7 @@ namespace networkingPrivate {
     long? IKEVersion;
     DOMString? PSK;
     boolean? SaveCredentials;
+    DOMString[]? ServerCAPEMs;
     DOMString[]? ServerCARefs;
     XAUTHProperties? XAUTH;
   };
@@ -321,6 +323,7 @@ namespace networkingPrivate {
   dictionary ManagedIPSecProperties {
     ManagedDOMString AuthenticationType;
     ManagedCertificatePattern? ClientCertPattern;
+    ManagedDOMString? ClientCertPKCS11Id;
     ManagedDOMString? ClientCertRef;
     ManagedDOMString? ClientCertType;
     ManagedEAPProperties? EAP;
@@ -328,6 +331,7 @@ namespace networkingPrivate {
     ManagedLong? IKEVersion;
     ManagedDOMString? PSK;
     ManagedBoolean? SaveCredentials;
+    ManagedDOMStringList? ServerCAPEMs;
     ManagedDOMStringList? ServerCARefs;
     ManagedXAUTHProperties? XAUTH;
   };
@@ -405,8 +409,9 @@ namespace networkingPrivate {
     DOMString? AuthRetry;
     boolean? AuthNoCache;
     DOMString? Cipher;
-    DOMString? ClientCertRef;
+    DOMString? ClientCertPKCS11Id;
     CertificatePattern? ClientCertPattern;
+    DOMString? ClientCertRef;
     DOMString? ClientCertType;
     DOMString? CompLZO;
     boolean? CompNoAdapt;
@@ -423,6 +428,7 @@ namespace networkingPrivate {
     DOMString? RemoteCertTLS;
     long? RenegSec;
     boolean? SaveCredentials;
+    DOMString[]? ServerCAPEMs;
     DOMString[]? ServerCARefs;
     DOMString? ServerCertRef;
     long? ServerPollTimeout;
@@ -442,8 +448,9 @@ namespace networkingPrivate {
     ManagedDOMString? AuthRetry;
     ManagedBoolean? AuthNoCache;
     ManagedDOMString? Cipher;
-    ManagedDOMString? ClientCertRef;
+    ManagedDOMString? ClientCertPKCS11Id;
     ManagedCertificatePattern? ClientCertPattern;
+    ManagedDOMString? ClientCertRef;
     ManagedDOMString? ClientCertType;
     ManagedDOMString? CompLZO;
     ManagedBoolean? CompNoAdapt;
@@ -460,6 +467,7 @@ namespace networkingPrivate {
     ManagedDOMString? RemoteCertTLS;
     ManagedLong? RenegSec;
     ManagedBoolean? SaveCredentials;
+    ManagedDOMStringList? ServerCAPEMs;
     ManagedDOMStringList? ServerCARefs;
     ManagedDOMString? ServerCertRef;
     ManagedLong? ServerPollTimeout;
@@ -518,6 +526,7 @@ namespace networkingPrivate {
     PaymentPortal? PaymentPortal;
     long? PRLVersion;
     DOMString? RoamingState;
+    boolean? Scanning;
     CellularProviderProperties? ServingOperator;
     SIMLockStatus? SIMLockStatus;
     boolean? SIMPresent;
@@ -539,7 +548,7 @@ namespace networkingPrivate {
     DOMString? FirmwareRevision;
     FoundNetworkProperties[]? FoundNetworks;
     DOMString? HardwareRevision;
-    CellularProviderProperties[]? HomeProvider;
+    CellularProviderProperties? HomeProvider;
     DOMString? ICCID;
     DOMString? IMEI;
     APNProperties? LastGoodAPN;
@@ -552,6 +561,7 @@ namespace networkingPrivate {
     PaymentPortal? PaymentPortal;
     long? PRLVersion;
     DOMString? RoamingState;
+    boolean? Scanning;
     CellularProviderProperties? ServingOperator;
     SIMLockStatus? SIMLockStatus;
     boolean? SIMPresent;
@@ -598,6 +608,9 @@ namespace networkingPrivate {
     L2TPProperties? L2TP;
     OpenVPNProperties? OpenVPN;
     ThirdPartyVPNProperties? ThirdPartyVPN;
+    // The VPN type. This cannot be an enum because of 'L2TP-IPSec'.
+    // This is optional for NetworkConfigProperties which is passed to
+    // setProperties which may be used to set only specific properties.
     DOMString? Type;
   };
 
@@ -608,7 +621,7 @@ namespace networkingPrivate {
     ManagedL2TPProperties? L2TP;
     ManagedOpenVPNProperties? OpenVPN;
     ManagedThirdPartyVPNProperties? ThirdPartyVPN;
-    ManagedDOMString Type;
+    ManagedDOMString? Type;
   };
 
   dictionary VPNStateProperties {
@@ -977,7 +990,9 @@ namespace networkingPrivate {
     // update the list returned by $(ref:getVisibleNetworks). This is only a
     // request: the network subsystem can choose to ignore it.  If the list
     // is updated, then the $(ref:onNetworkListChanged) event will be fired.
-    static void requestNetworkScan();
+    // |networkType|: If provided, requests a scan specific to the type.
+    //     For Cellular a mobile network scan will be requested if supported.
+    static void requestNetworkScan(optional NetworkType networkType);
 
     // Starts a connection to the network with networkGuid.
     // |networkGuid|: The GUID of the network to connect to.
@@ -1099,6 +1114,17 @@ namespace networkingPrivate {
     static void setCellularSimState(DOMString networkGuid,
                                     CellularSimState simState,
                                     optional VoidCallback callback);
+
+    // Selects which Cellular Mobile Network to use. |networkId| must be the
+    // NetworkId property of a member of Cellular.FoundNetworks from the
+    // network properties for the specified Cellular network.
+    // |networkGuid|: The GUID of the cellular network to select the network
+    //     for. If empty, the default cellular device will be used.
+    // |networkId|: The networkId to select.
+    // |callback|: Called when the operation has completed.
+    static void selectCellularMobileNetwork(DOMString networkGuid,
+                                            DOMString networkId,
+                                            optional VoidCallback callback);
 
     // Gets the global policy properties. These properties are not expected to
     // change during a session.

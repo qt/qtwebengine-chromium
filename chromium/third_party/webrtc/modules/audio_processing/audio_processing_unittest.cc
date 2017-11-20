@@ -15,37 +15,38 @@
 #include <memory>
 #include <queue>
 
-#include "webrtc/common_audio/include/audio_util.h"
-#include "webrtc/common_audio/resampler/include/push_resampler.h"
-#include "webrtc/common_audio/resampler/push_sinc_resampler.h"
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_processing/aec_dump/aec_dump_factory.h"
-#include "webrtc/modules/audio_processing/audio_processing_impl.h"
-#include "webrtc/modules/audio_processing/beamformer/mock_nonlinear_beamformer.h"
-#include "webrtc/modules/audio_processing/common.h"
-#include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/modules/audio_processing/level_controller/level_controller_constants.h"
-#include "webrtc/modules/audio_processing/test/protobuf_utils.h"
-#include "webrtc/modules/audio_processing/test/test_utils.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/gtest_prod_util.h"
-#include "webrtc/rtc_base/ignore_wundef.h"
-#include "webrtc/rtc_base/protobuf_utils.h"
-#include "webrtc/rtc_base/safe_minmax.h"
-#include "webrtc/rtc_base/task_queue.h"
-#include "webrtc/rtc_base/thread.h"
-#include "webrtc/system_wrappers/include/event_wrapper.h"
-#include "webrtc/system_wrappers/include/trace.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include "common_audio/include/audio_util.h"
+#include "common_audio/resampler/include/push_resampler.h"
+#include "common_audio/resampler/push_sinc_resampler.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_processing/aec_dump/aec_dump_factory.h"
+#include "modules/audio_processing/audio_processing_impl.h"
+#include "modules/audio_processing/beamformer/mock_nonlinear_beamformer.h"
+#include "modules/audio_processing/common.h"
+#include "modules/audio_processing/include/audio_processing.h"
+#include "modules/audio_processing/include/mock_audio_processing.h"
+#include "modules/audio_processing/level_controller/level_controller_constants.h"
+#include "modules/audio_processing/test/protobuf_utils.h"
+#include "modules/audio_processing/test/test_utils.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/gtest_prod_util.h"
+#include "rtc_base/ignore_wundef.h"
+#include "rtc_base/protobuf_utils.h"
+#include "rtc_base/refcountedobject.h"
+#include "rtc_base/safe_minmax.h"
+#include "rtc_base/task_queue.h"
+#include "rtc_base/thread.h"
+#include "system_wrappers/include/event_wrapper.h"
+#include "test/gtest.h"
+#include "test/testsupport/fileutils.h"
 
 RTC_PUSH_IGNORING_WUNDEF()
 #ifdef WEBRTC_ANDROID_PLATFORM_BUILD
 #include "external/webrtc/webrtc/modules/audio_processing/test/unittest.pb.h"
 #else
-#include "webrtc/modules/audio_processing/test/unittest.pb.h"
+#include "modules/audio_processing/test/unittest.pb.h"
 #endif
 RTC_POP_IGNORING_WUNDEF()
 
@@ -237,7 +238,7 @@ void WriteStatsMessage(const AudioProcessing::Statistic& output,
 }
 #endif
 
-void OpenFileAndWriteMessage(const std::string filename,
+void OpenFileAndWriteMessage(const std::string& filename,
                              const MessageLite& msg) {
   FILE* file = fopen(filename.c_str(), "wb");
   ASSERT_TRUE(file != NULL);
@@ -253,7 +254,7 @@ void OpenFileAndWriteMessage(const std::string filename,
   fclose(file);
 }
 
-std::string ResourceFilePath(std::string name, int sample_rate_hz) {
+std::string ResourceFilePath(const std::string& name, int sample_rate_hz) {
   std::ostringstream ss;
   // Resource files are all stereo.
   ss << name << sample_rate_hz / 1000 << "_stereo";
@@ -265,7 +266,7 @@ std::string ResourceFilePath(std::string name, int sample_rate_hz) {
 // have competing filenames.
 std::map<std::string, std::string> temp_filenames;
 
-std::string OutputFilePath(std::string name,
+std::string OutputFilePath(const std::string& name,
                            int input_rate,
                            int output_rate,
                            int reverse_input_rate,
@@ -307,7 +308,7 @@ void ClearTempFiles() {
     remove(kv.second.c_str());
 }
 
-void OpenFileAndReadMessage(std::string filename, MessageLite* msg) {
+void OpenFileAndReadMessage(const std::string& filename, MessageLite* msg) {
   FILE* file = fopen(filename.c_str(), "rb");
   ASSERT_TRUE(file != NULL);
   ReadMessageFromFile(file, msg);
@@ -350,11 +351,9 @@ class ApmTest : public ::testing::Test {
   virtual void TearDown();
 
   static void SetUpTestCase() {
-    Trace::CreateTrace();
   }
 
   static void TearDownTestCase() {
-    Trace::ReturnTrace();
     ClearTempFiles();
   }
 
@@ -1305,7 +1304,7 @@ TEST_F(ApmTest, AgcOnlyAdaptsWhenTargetSignalIsPresent) {
   testing::NiceMock<MockNonlinearBeamformer>* beamformer =
       new testing::NiceMock<MockNonlinearBeamformer>(geometry, 1u);
   std::unique_ptr<AudioProcessing> apm(
-      AudioProcessing::Create(config, beamformer));
+      AudioProcessing::Create(config, nullptr, beamformer));
   EXPECT_EQ(kNoErr, apm->gain_control()->Enable(true));
   ChannelBuffer<float> src_buf(kSamplesPerChannel, kNumInputChannels);
   ChannelBuffer<float> dest_buf(kSamplesPerChannel, kNumOutputChannels);
@@ -2438,7 +2437,7 @@ class AudioProcessingTest
                             size_t num_output_channels,
                             size_t num_reverse_input_channels,
                             size_t num_reverse_output_channels,
-                            std::string output_file_prefix) {
+                            const std::string& output_file_prefix) {
     Config config;
     config.Set<ExperimentalAgc>(new ExperimentalAgc(false));
     std::unique_ptr<AudioProcessing> ap(AudioProcessing::Create(config));
@@ -2889,6 +2888,24 @@ TEST(ApmConfiguration, InValidConfigBehavior) {
   EXPECT_NEAR(kTargetLcPeakLeveldBFS,
               apm->config_.level_controller.initial_peak_level_dbfs,
               std::numeric_limits<float>::epsilon());
+}
+
+TEST(ApmConfiguration, EnablePostProcessing) {
+  // Verify that apm uses a capture post processing module if one is provided.
+  webrtc::Config webrtc_config;
+  auto mock_post_processor_ptr =
+      new testing::NiceMock<test::MockPostProcessing>();
+  auto mock_post_processor =
+      std::unique_ptr<PostProcessing>(mock_post_processor_ptr);
+  rtc::scoped_refptr<AudioProcessing> apm = AudioProcessing::Create(
+      webrtc_config, std::move(mock_post_processor), nullptr);
+
+  AudioFrame audio;
+  audio.num_channels_ = 1;
+  SetFrameSampleRate(&audio, AudioProcessing::NativeRate::kSampleRate16kHz);
+
+  EXPECT_CALL(*mock_post_processor_ptr, Process(testing::_)).Times(1);
+  std::cout << apm->ProcessStream(&audio) << std::endl;
 }
 
 }  // namespace webrtc

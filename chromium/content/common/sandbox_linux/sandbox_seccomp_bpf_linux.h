@@ -10,7 +10,9 @@
 
 #include "base/files/scoped_file.h"
 #include "base/macros.h"
+#include "build/build_config.h"
 #include "sandbox/linux/bpf_dsl/policy.h"
+#include "services/service_manager/sandbox/sandbox_type.h"
 
 namespace content {
 
@@ -19,22 +21,28 @@ namespace content {
 // a public content/ API and uses a supplied policy.
 class SandboxSeccompBPF {
  public:
+  struct Options {
+    bool use_amd_specific_policies = false;  // For ChromiumOs.
+  };
+
   // This is the API to enable a seccomp-bpf sandbox for content/
   // process-types:
   // Is the sandbox globally enabled, can anything use it at all ?
   // This looks at global command line flags to see if the sandbox
   // should be enabled at all.
   static bool IsSeccompBPFDesired();
-  // Should the sandbox be enabled for process_type ?
-  static bool ShouldEnableSeccompBPF(const std::string& process_type);
   // Check if the kernel supports seccomp-bpf.
   static bool SupportsSandbox();
+
+#if !defined(OS_NACL_NONSFI)
   // Check if the kernel supports TSYNC (thread synchronization) with seccomp.
   static bool SupportsSandboxWithTsync();
-  // Start the sandbox and apply the policy for process_type, depending on
-  // command line switches.
-  static bool StartSandbox(const std::string& process_type,
-                           base::ScopedFD proc_fd);
+  // Start the sandbox and apply the policy for sandbox_type, depending on
+  // command line switches and options.
+  static bool StartSandbox(service_manager::SandboxType sandbox_type,
+                           base::ScopedFD proc_fd,
+                           const Options& options);
+#endif  // !defined(OS_NACL_NONSFI)
 
   // This is the API to enable a seccomp-bpf sandbox by using an
   // external policy.

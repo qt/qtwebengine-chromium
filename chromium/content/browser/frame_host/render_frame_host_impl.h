@@ -57,6 +57,7 @@
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
 #include "third_party/WebKit/public/platform/WebSuddenTerminationDisablerType.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/web_bluetooth.mojom.h"
+#include "third_party/WebKit/public/platform/modules/presentation/presentation.mojom.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/WebKit/public/web/WebTreeScopeType.h"
 #include "ui/accessibility/ax_modes.h"
@@ -96,9 +97,11 @@ class FeaturePolicy;
 class FrameTree;
 class FrameTreeNode;
 class GeolocationServiceImpl;
+class KeepAliveHandleFactory;
 class MediaInterfaceProxy;
 class NavigationHandleImpl;
 class PermissionServiceContext;
+class PresentationServiceImpl;
 class RenderFrameHostDelegate;
 class RenderFrameProxyHost;
 class RenderProcessHost;
@@ -155,6 +158,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   RenderWidgetHostView* GetView() override;
   RenderFrameHostImpl* GetParent() override;
   int GetFrameTreeNodeId() override;
+  base::UnguessableToken GetDevToolsFrameToken() override;
   const std::string& GetFrameName() override;
   bool IsCrossProcessSubframe() override;
   const GURL& GetLastCommittedURL() override;
@@ -264,13 +268,14 @@ class CONTENT_EXPORT RenderFrameHostImpl
   int routing_id() const { return routing_id_; }
 
   // Called when this frame has added a child. This is a continuation of an IPC
-  // that was partially handled on the IO thread (to allocate |new_routing_id|),
-  // and is forwarded here. The renderer has already been told to create a
-  // RenderFrame with |new_routing_id|.
+  // that was partially handled on the IO thread (to allocate |new_routing_id|
+  // and |devtools_frame_token|), and is forwarded here. The renderer has
+  // already been told to create a RenderFrame with the specified ID values.
   void OnCreateChildFrame(int new_routing_id,
                           blink::WebTreeScopeType scope,
                           const std::string& frame_name,
                           const std::string& frame_unique_name,
+                          const base::UnguessableToken& devtools_frame_token,
                           blink::WebSandboxFlags sandbox_flags,
                           const ParsedFeaturePolicyHeader& container_policy,
                           const FrameOwnerProperties& frame_owner_properties);
@@ -630,13 +635,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
     return has_focused_editable_element_;
   }
 
-  // This value is sent from the renderer and shouldn't be trusted.
-  // TODO(alexclarke): Remove once there is a solution for stable frame IDs. See
-  // crbug.com/715541
-  const std::string& untrusted_devtools_frame_id() const {
-    return untrusted_devtools_frame_id_;
-  }
-
   // Cancels any blocked request for the frame and its subframes.
   void CancelBlockedRequestsForFrame();
 
@@ -660,6 +658,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   const StreamHandle* stream_handle_for_testing() const {
     return stream_handle_.get();
+  }
+
+  // Exposed so that tests can swap out the implementation and intercept calls.
+  mojo::AssociatedBinding<mojom::FrameHost>& frame_host_binding_for_testing() {
+    return frame_host_associated_binding_;
   }
 
  protected:
@@ -731,7 +734,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDidFailLoadWithError(const GURL& url,
                               int error_code,
                               const base::string16& error_description);
-  void OnDidCommitProvisionalLoad(const IPC::Message& msg);
   void OnUpdateState(const PageState& state);
   void OnBeforeUnloadACK(
       bool proceed,
@@ -815,14 +817,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnFocusedNodeChanged(bool is_editable_element,
                             const gfx::Rect& bounds_in_frame_widget);
   void OnSetHasReceivedUserGesture();
-  void OnSetDevToolsFrameId(const std::string& devtools_frame_id);
 
 #if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
   void OnShowPopup(const FrameHostMsg_ShowPopup_Params& params);
   void OnHidePopup();
 #endif
 #if defined(OS_ANDROID)
-  void OnNavigationHandledByEmbedder();
   void ForwardGetInterfaceToRenderFrame(const std::string& interface_name,
                                         mojo::ScopedMessagePipeHandle pipe);
 #endif
@@ -839,6 +839,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // mojom::FrameHost
   void CreateNewWindow(mojom::CreateNewWindowParamsPtr params,
                        CreateNewWindowCallback callback) override;
+  void IssueKeepAliveHandle(mojom::KeepAliveHandleRequest request) override;
+  void DidCommitProvisionalLoad(
+      std::unique_ptr<FrameHostMsg_DidCommitProvisionalLoad_Params>
+          validated_params) override;
 
   void RunCreateWindowCompleteCallback(CreateNewWindowCallback callback,
                                        mojom::CreateNewWindowReplyPtr reply,
@@ -949,6 +953,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
 #if defined(OS_ANDROID)
   void BindNFCRequest(device::mojom::NFCRequest request);
 #endif
+
+  void BindPresentationServiceRequest(
+      blink::mojom::PresentationServiceRequest request);
 
   // service_manager::mojom::InterfaceProvider:
   void GetInterface(const std::string& interface_name,
@@ -1267,6 +1274,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // media::mojom::InterfaceFactory calls to the remote "media" service.
   std::unique_ptr<MediaInterfaceProxy> media_interface_proxy_;
 
+  // Hosts blink::mojom::PresentationService for the RenderFrame.
+  std::unique_ptr<PresentationServiceImpl> presentation_service_;
+
   std::unique_ptr<AssociatedInterfaceProviderImpl>
       remote_associated_interfaces_;
 
@@ -1297,13 +1307,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // have created one yet.
   base::Optional<base::UnguessableToken> overlay_routing_token_;
 
-  // This value is sent from the renderer and shouldn't be trusted.
-  // TODO(alexclarke): Remove once there is a solution for stable frame IDs. See
-  // crbug.com/715541
-  std::string untrusted_devtools_frame_id_;
-
   mojom::FrameInputHandlerPtr frame_input_handler_;
   std::unique_ptr<LegacyIPCFrameInputHandler> legacy_frame_input_handler_;
+
+  std::unique_ptr<KeepAliveHandleFactory> keep_alive_handle_factory_;
 
   // NOTE: This must be the last member.
   base::WeakPtrFactory<RenderFrameHostImpl> weak_ptr_factory_;

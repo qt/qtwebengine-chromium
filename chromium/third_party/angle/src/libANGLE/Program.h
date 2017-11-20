@@ -135,15 +135,29 @@ class InfoLog : angle::NonCopyable
 // Struct used for correlating uniforms/elements of uniform arrays to handles
 struct VariableLocation
 {
-    VariableLocation();
-    VariableLocation(const std::string &name, unsigned int element, unsigned int index);
+    static constexpr unsigned int kUnused = GL_INVALID_INDEX;
 
-    std::string name;
-    unsigned int element;
+    VariableLocation();
+    VariableLocation(unsigned int arrayIndex, unsigned int index);
+
+    // If used is false, it means this location is only used to fill an empty space in an array,
+    // and there is no corresponding uniform variable for this location. It can also mean the
+    // uniform was optimized out by the implementation.
+    bool used() const { return (index != kUnused); }
+    void markUnused() { index = kUnused; }
+    void markIgnored() { ignored = true; }
+
+    bool areAllArrayIndicesZero() const;
+
+    // The "arrayIndices" vector stores indices for the GLSL array. "index" is an index of the
+    // location.
+    std::vector<unsigned int> arrayIndices;  // Outermost array indices are in the back.
     unsigned int index;
 
-    // If this is a valid uniform location
-    bool used;
+    unsigned int flattenedArrayOffset;  // For non-nested arrays this is the same as the array
+                                        // index. For arrays of arrays, the indices are converted to
+                                        // a single offset inside a one-dimensional array made up of
+                                        // the elements of the innermost arrays.
 
     // If this location was bound to an unreferenced uniform.  Setting data on this uniform is a
     // no-op.
@@ -244,6 +258,11 @@ class ProgramState final : angle::NonCopyable
         ASSERT(uniformBlockIndex < mUniformBlocks.size());
         return mUniformBlocks[uniformBlockIndex].binding;
     }
+    GLuint getShaderStorageBlockBinding(GLuint blockIndex) const
+    {
+        ASSERT(blockIndex < mShaderStorageBlocks.size());
+        return mShaderStorageBlocks[blockIndex].binding;
+    }
     const UniformBlockBindingMask &getActiveUniformBlockBindingsMask() const
     {
         return mActiveUniformBlockBindings;
@@ -253,12 +272,17 @@ class ProgramState final : angle::NonCopyable
     {
         return mActiveAttribLocationsMask;
     }
+    unsigned int getMaxActiveAttribLocation() const { return mMaxActiveAttribLocation; }
     DrawBufferMask getActiveOutputVariables() const { return mActiveOutputVariables; }
     const std::vector<sh::OutputVariable> &getOutputVariables() const { return mOutputVariables; }
     const std::map<int, VariableLocation> &getOutputLocations() const { return mOutputLocations; }
     const std::vector<LinkedUniform> &getUniforms() const { return mUniforms; }
     const std::vector<VariableLocation> &getUniformLocations() const { return mUniformLocations; }
-    const std::vector<UniformBlock> &getUniformBlocks() const { return mUniformBlocks; }
+    const std::vector<InterfaceBlock> &getUniformBlocks() const { return mUniformBlocks; }
+    const std::vector<InterfaceBlock> &getShaderStorageBlocks() const
+    {
+        return mShaderStorageBlocks;
+    }
     const std::vector<SamplerBinding> &getSamplerBindings() const { return mSamplerBindings; }
     const std::vector<ImageBinding> &getImageBindings() const { return mImageBindings; }
     const sh::WorkGroupSize &getComputeShaderLocalSize() const { return mComputeShaderLocalSize; }
@@ -307,6 +331,7 @@ class ProgramState final : angle::NonCopyable
 
     std::vector<sh::Attribute> mAttributes;
     angle::BitSet<MAX_VERTEX_ATTRIBS> mActiveAttribLocationsMask;
+    unsigned int mMaxActiveAttribLocation;
 
     // Uniforms are sorted in order:
     //  1. Non-opaque uniforms
@@ -317,7 +342,8 @@ class ProgramState final : angle::NonCopyable
     // This makes opaque uniform validation easier, since we don't need a separate list.
     std::vector<LinkedUniform> mUniforms;
     std::vector<VariableLocation> mUniformLocations;
-    std::vector<UniformBlock> mUniformBlocks;
+    std::vector<InterfaceBlock> mUniformBlocks;
+    std::vector<InterfaceBlock> mShaderStorageBlocks;
     std::vector<AtomicCounterBuffer> mAtomicCounterBuffers;
     RangeUI mSamplerUniformRange;
     RangeUI mImageUniformRange;
@@ -330,7 +356,6 @@ class ProgramState final : angle::NonCopyable
     std::vector<gl::ImageBinding> mImageBindings;
 
     std::vector<sh::OutputVariable> mOutputVariables;
-    // TODO(jmadill): use unordered/hash map when available
     std::map<int, VariableLocation> mOutputLocations;
     DrawBufferMask mActiveOutputVariables;
 
@@ -429,12 +454,17 @@ class Program final : angle::NonCopyable, public LabeledObject
                           GLchar *name) const;
     GLint getActiveUniformCount() const;
     GLint getActiveUniformMaxLength() const;
-    GLint getActiveUniformi(GLuint index, GLenum pname) const;
     bool isValidUniformLocation(GLint location) const;
     const LinkedUniform &getUniformByLocation(GLint location) const;
     const VariableLocation &getUniformLocation(GLint location) const;
     const std::vector<VariableLocation> &getUniformLocations() const;
     const LinkedUniform &getUniformByIndex(GLuint index) const;
+
+    enum SetUniformResult
+    {
+        SamplerChanged,
+        NoSamplerChange,
+    };
 
     GLint getUniformLocation(const std::string &name) const;
     GLuint getUniformIndex(const std::string &name) const;
@@ -442,7 +472,7 @@ class Program final : angle::NonCopyable, public LabeledObject
     void setUniform2fv(GLint location, GLsizei count, const GLfloat *v);
     void setUniform3fv(GLint location, GLsizei count, const GLfloat *v);
     void setUniform4fv(GLint location, GLsizei count, const GLfloat *v);
-    void setUniform1iv(GLint location, GLsizei count, const GLint *v);
+    SetUniformResult setUniform1iv(GLint location, GLsizei count, const GLint *v);
     void setUniform2iv(GLint location, GLsizei count, const GLint *v);
     void setUniform3iv(GLint location, GLsizei count, const GLint *v);
     void setUniform4iv(GLint location, GLsizei count, const GLint *v);
@@ -466,14 +496,16 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     void getActiveUniformBlockName(GLuint uniformBlockIndex, GLsizei bufSize, GLsizei *length, GLchar *uniformBlockName) const;
     GLuint getActiveUniformBlockCount() const;
+    GLuint getActiveShaderStorageBlockCount() const;
     GLint getActiveUniformBlockMaxLength() const;
 
     GLuint getUniformBlockIndex(const std::string &name) const;
 
     void bindUniformBlock(GLuint uniformBlockIndex, GLuint uniformBlockBinding);
     GLuint getUniformBlockBinding(GLuint uniformBlockIndex) const;
+    GLuint getShaderStorageBlockBinding(GLuint shaderStorageBlockIndex) const;
 
-    const UniformBlock &getUniformBlockByIndex(GLuint index) const;
+    const InterfaceBlock &getUniformBlockByIndex(GLuint index) const;
 
     void setTransformFeedbackVaryings(GLsizei count, const GLchar *const *varyings, GLenum bufferMode);
     void getTransformFeedbackVarying(GLuint index, GLsizei bufSize, GLsizei *length, GLsizei *size, GLenum *type, GLchar *name) const;
@@ -522,6 +554,7 @@ class Program final : angle::NonCopyable, public LabeledObject
     GLuint getOutputResourceIndex(const GLchar *name) const;
     void getInputResourceName(GLuint index, GLsizei bufSize, GLsizei *length, GLchar *name) const;
     void getOutputResourceName(GLuint index, GLsizei bufSize, GLsizei *length, GLchar *name) const;
+    void getUniformResourceName(GLuint index, GLsizei bufSize, GLsizei *length, GLchar *name) const;
     const sh::Attribute &getInputResource(GLuint index) const;
     const sh::OutputVariable &getOutputResource(GLuint index) const;
 
@@ -562,16 +595,12 @@ class Program final : angle::NonCopyable, public LabeledObject
     void unlink();
 
     bool linkAttributes(const Context *context, InfoLog &infoLog);
-    bool validateUniformBlocksCount(GLuint maxUniformBlocks,
-                                    const std::vector<sh::InterfaceBlock> &block,
-                                    const std::string &errorMessage,
-                                    InfoLog &infoLog) const;
     bool validateVertexAndFragmentInterfaceBlocks(
         const std::vector<sh::InterfaceBlock> &vertexInterfaceBlocks,
         const std::vector<sh::InterfaceBlock> &fragmentInterfaceBlocks,
         InfoLog &infoLog,
         bool webglCompatibility) const;
-    bool linkUniformBlocks(const Context *context, InfoLog &infoLog);
+    bool linkInterfaceBlocks(const Context *context, InfoLog &infoLog);
     bool linkVaryings(const Context *context, InfoLog &infoLog) const;
 
     bool linkUniforms(const Context *context,
@@ -606,28 +635,32 @@ class Program final : angle::NonCopyable, public LabeledObject
     void setUniformValuesFromBindingQualifiers();
 
     void gatherAtomicCounterBuffers();
+    void gatherComputeBlockInfo(const std::vector<sh::InterfaceBlock> &computeBlocks);
+    void gatherVertexAndFragmentBlockInfo(
+        const std::vector<sh::InterfaceBlock> &vertexInterfaceBlocks,
+        const std::vector<sh::InterfaceBlock> &fragmentInterfaceBlocks);
     void gatherInterfaceBlockInfo(const Context *context);
     template <typename VarT>
     void defineUniformBlockMembers(const std::vector<VarT> &fields,
                                    const std::string &prefix,
+                                   const std::string &mappedPrefix,
                                    int blockIndex);
 
-    void defineUniformBlock(const sh::InterfaceBlock &interfaceBlock, GLenum shaderType);
+    void defineInterfaceBlock(const sh::InterfaceBlock &interfaceBlock, GLenum shaderType);
 
     // Both these function update the cached uniform values and return a modified "count"
     // so that the uniform update doesn't overflow the uniform.
     template <typename T>
-    GLsizei setUniformInternal(GLint location, GLsizei count, int vectorSize, const T *v);
-    template <size_t cols, size_t rows, typename T>
-    GLsizei setMatrixUniformInternal(GLint location,
-                                     GLsizei count,
-                                     GLboolean transpose,
-                                     const T *v);
-    template <typename T>
-    void updateSamplerUniform(const VariableLocation &locationInfo,
-                              const uint8_t *destPointer,
-                              GLsizei clampedCount,
+    GLsizei clampUniformCount(const VariableLocation &locationInfo,
+                              GLsizei count,
+                              int vectorSize,
                               const T *v);
+    template <size_t cols, size_t rows, typename T>
+    GLsizei clampMatrixUniformCount(GLint location, GLsizei count, GLboolean transpose, const T *v);
+
+    void updateSamplerUniform(const VariableLocation &locationInfo,
+                              GLsizei clampedCount,
+                              const GLint *v);
 
     template <typename DestT>
     void getUniformInternal(const Context *context,
@@ -635,6 +668,13 @@ class Program final : angle::NonCopyable, public LabeledObject
                             GLint location,
                             GLenum nativeType,
                             int components) const;
+
+    template <typename T>
+    void getResourceName(GLuint index,
+                         const std::vector<T> &resources,
+                         GLsizei bufSize,
+                         GLsizei *length,
+                         GLchar *name) const;
 
     ProgramState mState;
     rx::ProgramImpl *mProgram;

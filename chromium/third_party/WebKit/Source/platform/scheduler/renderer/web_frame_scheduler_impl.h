@@ -36,7 +36,8 @@ class WebFrameSchedulerImpl : public WebFrameScheduler {
  public:
   WebFrameSchedulerImpl(RendererSchedulerImpl* renderer_scheduler,
                         WebViewSchedulerImpl* parent_web_view_scheduler,
-                        base::trace_event::BlameContext* blame_context);
+                        base::trace_event::BlameContext* blame_context,
+                        WebFrameScheduler::FrameType frame_type);
 
   ~WebFrameSchedulerImpl() override;
 
@@ -44,9 +45,15 @@ class WebFrameSchedulerImpl : public WebFrameScheduler {
   void AddThrottlingObserver(ObserverType, Observer*) override;
   void RemoveThrottlingObserver(ObserverType, Observer*) override;
   void SetFrameVisible(bool frame_visible) override;
+  bool IsFrameVisible() const override;
   void SetPageVisible(bool page_visible) override;
+  bool IsPageVisible() const override;
   void SetPaused(bool frame_paused) override;
+  void SetPageStopped(bool) override;
+
   void SetCrossOrigin(bool cross_origin) override;
+  bool IsCrossOrigin() const override;
+  WebFrameScheduler::FrameType GetFrameType() const override;
   RefPtr<WebTaskRunner> LoadingTaskRunner() override;
   RefPtr<WebTaskRunner> LoadingControlTaskRunner() override;
   RefPtr<WebTaskRunner> ThrottleableTaskRunner() override;
@@ -66,6 +73,7 @@ class WebFrameSchedulerImpl : public WebFrameScheduler {
   void OnFirstMeaningfulPaint() override;
   std::unique_ptr<ActiveConnectionHandle> OnActiveConnectionCreated() override;
   void AsValueInto(base::trace_event::TracedValue* state) const;
+  bool IsExemptFromThrottling() const override;
 
   bool has_active_connection() const { return active_connection_count_; }
 
@@ -88,6 +96,8 @@ class WebFrameSchedulerImpl : public WebFrameScheduler {
   void ApplyPolicyToThrottleableQueue();
   bool ShouldThrottleTimers() const;
   void UpdateThrottling(bool was_throttled);
+  WebFrameScheduler::ThrottlingState CalculateThrottlingState() const;
+  void UpdateThrottlingState();
 
   void DidOpenActiveConnection();
   void DidCloseActiveConnection();
@@ -117,10 +127,13 @@ class WebFrameSchedulerImpl : public WebFrameScheduler {
   WebViewSchedulerImpl* parent_web_view_scheduler_;  // NOT OWNED
   base::trace_event::BlameContext* blame_context_;   // NOT OWNED
   std::set<Observer*> loader_observers_;             // NOT OWNED
+  WebFrameScheduler::ThrottlingState throttling_state_;
   bool frame_visible_;
   bool page_visible_;
+  bool page_stopped_;
   bool frame_paused_;
   bool cross_origin_;
+  WebFrameScheduler::FrameType frame_type_;
   int active_connection_count_;
 
   base::WeakPtrFactory<WebFrameSchedulerImpl> weak_factory_;

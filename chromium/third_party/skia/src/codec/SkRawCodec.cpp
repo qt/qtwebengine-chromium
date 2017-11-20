@@ -7,7 +7,7 @@
 
 #include "SkCodec.h"
 #include "SkCodecPriv.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkData.h"
 #include "SkJpegCodec.h"
 #include "SkMakeUnique.h"
@@ -184,7 +184,7 @@ class SkRawStream {
 public:
     virtual ~SkRawStream() {}
 
-   /* 
+   /*
     * Gets the length of the stream. Depending on the type of stream, this may require reading to
     * the end of the stream.
     */
@@ -743,18 +743,17 @@ SkCodec::Result SkRawCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst,
             image->Get(buffer, dng_image::edge_zero);
         } catch (...) {
             *rowsDecoded = i;
-            return kIncompleteInput; 
+            return kIncompleteInput;
         }
 
         if (this->colorXform()) {
             swizzler->swizzle(xformBuffer.get(), &srcRow[0]);
 
             this->applyColorXform(dstRow, xformBuffer.get(), dstInfo.width(), kOpaque_SkAlphaType);
-            dstRow = SkTAddOffset<void>(dstRow, dstRowBytes);
         } else {
             swizzler->swizzle(dstRow, &srcRow[0]);
-            dstRow = SkTAddOffset<void>(dstRow, dstRowBytes);
         }
+        dstRow = SkTAddOffset<void>(dstRow, dstRowBytes);
     }
     return kSuccess;
 }

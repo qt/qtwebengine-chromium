@@ -15,18 +15,18 @@
 
 #include <utility>
 
-#include "webrtc/modules/desktop_capture/desktop_capture_options.h"
-#include "webrtc/modules/desktop_capture/desktop_capturer.h"
-#include "webrtc/modules/desktop_capture/desktop_frame.h"
-#include "webrtc/modules/desktop_capture/window_finder_mac.h"
-#include "webrtc/modules/desktop_capture/mac/desktop_configuration.h"
-#include "webrtc/modules/desktop_capture/mac/desktop_configuration_monitor.h"
-#include "webrtc/modules/desktop_capture/mac/full_screen_chrome_window_detector.h"
-#include "webrtc/modules/desktop_capture/mac/window_list_utils.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/macutils.h"
-#include "webrtc/rtc_base/scoped_ref_ptr.h"
+#include "modules/desktop_capture/desktop_capture_options.h"
+#include "modules/desktop_capture/desktop_capturer.h"
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/window_finder_mac.h"
+#include "modules/desktop_capture/mac/desktop_configuration.h"
+#include "modules/desktop_capture/mac/desktop_configuration_monitor.h"
+#include "modules/desktop_capture/mac/full_screen_chrome_window_detector.h"
+#include "modules/desktop_capture/mac/window_list_utils.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/macutils.h"
+#include "rtc_base/scoped_ref_ptr.h"
 
 namespace webrtc {
 
@@ -204,6 +204,14 @@ void WindowCapturerMac::CaptureFrame() {
 
   frame->mutable_updated_region()->SetRect(
       DesktopRect::MakeSize(frame->size()));
+  DesktopVector top_left = GetWindowBounds(on_screen_window).top_left();
+  if (configuration_monitor_) {
+    configuration_monitor_->Lock();
+    auto configuration = configuration_monitor_->desktop_configuration();
+    configuration_monitor_->Unlock();
+    top_left = top_left.subtract(configuration.bounds.top_left());
+  }
+  frame->set_top_left(top_left);
 
   callback_->OnCaptureResult(Result::SUCCESS, std::move(frame));
 

@@ -8,7 +8,9 @@
 #include "core/dom/TaskRunnerHelper.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/SelectionTemplate.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/commands/UndoStack.h"
@@ -19,8 +21,8 @@
 #include "core/editing/spellcheck/SpellCheckRequester.h"
 #include "core/editing/spellcheck/SpellChecker.h"
 #include "core/frame/LocalFrame.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/CurrentTime.h"
 
 namespace blink {
@@ -41,8 +43,8 @@ IdleSpellCheckCallback::~IdleSpellCheckCallback() {}
 DEFINE_TRACE(IdleSpellCheckCallback) {
   visitor->Trace(frame_);
   visitor->Trace(cold_mode_requester_);
-  IdleRequestCallback::Trace(visitor);
-  SynchronousMutationObserver::Trace(visitor);
+  DocumentShutdownObserver::Trace(visitor);
+  ScriptedIdleTaskController::IdleTask::Trace(visitor);
 }
 
 IdleSpellCheckCallback* IdleSpellCheckCallback::Create(LocalFrame& frame) {
@@ -164,8 +166,7 @@ void IdleSpellCheckCallback::HotModeInvocation(IdleDeadline* deadline) {
   }
 }
 
-void IdleSpellCheckCallback::handleEvent(IdleDeadline* deadline) {
-  DCHECK(RuntimeEnabledFeatures::IdleTimeSpellCheckingEnabled());
+void IdleSpellCheckCallback::invoke(IdleDeadline* deadline) {
   DCHECK(GetFrame().GetDocument());
   DCHECK(GetFrame().GetDocument()->IsActive());
   DCHECK_NE(idle_callback_handle_, kInvalidHandle);
@@ -215,12 +216,12 @@ void IdleSpellCheckCallback::ForceInvocationForTesting() {
       cold_mode_timer_.Stop();
       state_ = State::kColdModeRequested;
       idle_callback_handle_ = kDummyHandleForForcedInvocation;
-      handleEvent(deadline);
+      invoke(deadline);
       break;
     case State::kHotModeRequested:
     case State::kColdModeRequested:
       GetFrame().GetDocument()->CancelIdleCallback(idle_callback_handle_);
-      handleEvent(deadline);
+      invoke(deadline);
       break;
     case State::kInactive:
     case State::kInHotModeInvocation:

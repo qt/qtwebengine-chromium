@@ -97,10 +97,6 @@ void FakeMessageCenter::SetNotificationButtonIcon(
     const gfx::Image& image) {
 }
 
-void FakeMessageCenter::DisableNotificationsByNotifier(
-    const NotifierId& notifier_id) {
-}
-
 void FakeMessageCenter::ClickOnNotification(const std::string& id) {
 }
 
@@ -155,7 +151,5 @@ void FakeMessageCenter::SetProductOSName(
     const base::string16& product_os_name) {}
 
 void FakeMessageCenter::DisableTimersForTest() {}
-
-void FakeMessageCenter::EnableChangeQueueForTest(bool enabled) {}
 
 }  // namespace message_center

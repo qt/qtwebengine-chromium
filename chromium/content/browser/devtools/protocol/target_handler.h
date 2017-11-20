@@ -30,7 +30,8 @@ class TargetHandler : public DevToolsDomainHandler,
   static std::vector<TargetHandler*> ForAgentHost(DevToolsAgentHostImpl* host);
 
   void Wire(UberDispatcher* dispatcher) override;
-  void SetRenderFrameHost(RenderFrameHostImpl* host) override;
+  void SetRenderer(RenderProcessHost* process_host,
+                   RenderFrameHostImpl* frame_host) override;
   Response Disable() override;
 
   void DidCommitNavigation();
@@ -63,6 +64,7 @@ class TargetHandler : public DevToolsDomainHandler,
                         Maybe<int> width,
                         Maybe<int> height,
                         Maybe<std::string> context_id,
+                        Maybe<bool> enable_begin_frame_control,
                         std::string* out_target_id) override;
   Response GetTargets(
       std::unique_ptr<protocol::Array<Target::TargetInfo>>* target_infos)
@@ -81,6 +83,7 @@ class TargetHandler : public DevToolsDomainHandler,
   // DevToolsAgentHostObserver implementation.
   bool ShouldForceDevToolsAgentHostCreation() override;
   void DevToolsAgentHostCreated(DevToolsAgentHost* agent_host) override;
+  void DevToolsAgentHostNavigated(DevToolsAgentHost* agent_host) override;
   void DevToolsAgentHostDestroyed(DevToolsAgentHost* agent_host) override;
   void DevToolsAgentHostAttached(DevToolsAgentHost* agent_host) override;
   void DevToolsAgentHostDetached(DevToolsAgentHost* agent_host) override;

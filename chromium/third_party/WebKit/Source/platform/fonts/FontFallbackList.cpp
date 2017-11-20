@@ -28,7 +28,7 @@
 
 #include "platform/fonts/FontFallbackList.h"
 
-#include "platform/FontFamilyNames.h"
+#include "platform/font_family_names.h"
 #include "platform/fonts/AlternateFontFamily.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontCacheKey.h"
@@ -107,10 +107,9 @@ const SimpleFontData* FontFallbackList::DeterminePrimarySimpleFontData(
       if (font_data)
         return font_data->FontDataForCharacter(kSpaceCharacter);
 
+      FontCache* cache = FontCache::GetFontCache();
       SimpleFontData* last_resort_fallback =
-          FontCache::GetFontCache()
-              ->GetLastResortFallbackFont(font_description)
-              .Get();
+          cache->GetLastResortFallbackFont(font_description).get();
       DCHECK(last_resort_fallback);
       return last_resort_fallback;
     }
@@ -149,7 +148,7 @@ const SimpleFontData* FontFallbackList::DeterminePrimarySimpleFontData(
   }
 }
 
-PassRefPtr<FontData> FontFallbackList::GetFontData(
+RefPtr<FontData> FontFallbackList::GetFontData(
     const FontDescription& font_description,
     int& family_index) const {
   const FontFamily* curr_family = &font_description.Family();
@@ -217,9 +216,9 @@ FallbackListCompositeKey FontFallbackList::CompositeKey(
 const FontData* FontFallbackList::FontDataAt(
     const FontDescription& font_description,
     unsigned realized_font_index) const {
+  // This fallback font is already in our list.
   if (realized_font_index < font_list_.size())
-    return font_list_[realized_font_index]
-        .Get();  // This fallback font is already in our list.
+    return font_list_[realized_font_index].get();
 
   // Make sure we're not passing in some crazy value here.
   DCHECK_EQ(realized_font_index, font_list_.size());
@@ -239,7 +238,7 @@ const FontData* FontFallbackList::FontDataAt(
     if (result->IsLoadingFallback())
       has_loading_fallback_ = true;
   }
-  return result.Get();
+  return result.get();
 }
 
 bool FontFallbackList::IsValid() const {

@@ -29,7 +29,7 @@
 #include "modules/accessibility/AXSlider.h"
 
 #include "core/dom/ShadowRoot.h"
-#include "core/html/HTMLInputElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/layout/LayoutObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
@@ -124,7 +124,7 @@ bool AXSlider::OnNativeSetValueAction(const String& value) {
 }
 
 HTMLInputElement* AXSlider::GetInputElement() const {
-  return toHTMLInputElement(layout_object_->GetNode());
+  return ToHTMLInputElement(layout_object_->GetNode());
 }
 
 AXSliderThumb::AXSliderThumb(AXObjectCacheImpl& ax_object_cache)

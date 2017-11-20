@@ -15,6 +15,7 @@
 #include "gpu/command_buffer/service/command_buffer_direct.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gpu_preferences.h"
+#include "gpu/command_buffer/service/gpu_tracer.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager_impl.h"
 #include "gpu/command_buffer/service/service_discardable_manager.h"
@@ -58,7 +59,7 @@ class Context : public base::RefCountedThreadSafe<Context>,
 
   // GpuControl implementation.
   void SetGpuControlClient(gpu::GpuControlClient*) override;
-  gpu::Capabilities GetCapabilities() override;
+  const gpu::Capabilities& GetCapabilities() const override;
   int32_t CreateImage(ClientBuffer buffer,
                       size_t width,
                       size_t height,
@@ -115,6 +116,7 @@ class Context : public base::RefCountedThreadSafe<Context>,
   std::unique_ptr<gpu::gles2::GLES2CmdHelper> gles2_cmd_helper_;
 
   gpu::gles2::MailboxManagerImpl mailbox_manager_;
+  gpu::gles2::TraceOutputter outputter_;
   gpu::gles2::ImageManager image_manager_;
   gpu::ServiceDiscardableManager discardable_manager_;
   gpu::gles2::ShaderTranslatorCache translator_cache_;
@@ -125,6 +127,8 @@ class Context : public base::RefCountedThreadSafe<Context>,
   scoped_refptr<gl::GLContext> gl_context_;
 
   std::unique_ptr<gpu::gles2::GLES2Interface> client_gl_context_;
+
+  gpu::Capabilities capabilities_;
 
   DISALLOW_COPY_AND_ASSIGN(Context);
 };

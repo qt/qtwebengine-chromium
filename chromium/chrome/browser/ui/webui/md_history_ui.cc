@@ -4,6 +4,11 @@
 
 #include "chrome/browser/ui/webui/md_history_ui.h"
 
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
@@ -71,10 +76,6 @@ content::WebUIDataSource* CreateMdHistoryUIHTMLSource(Profile* profile,
                              IDS_HISTORY_OTHER_SESSIONS_EXPAND_SESSION);
   source->AddLocalizedString("foundSearchResults",
                              IDS_HISTORY_FOUND_SEARCH_RESULTS);
-  source->AddLocalizedString("hasSyncedResults",
-                             IDS_MD_HISTORY_HAS_SYNCED_RESULTS);
-  source->AddLocalizedString("hasSyncedResultsDescription",
-                             IDS_MD_HISTORY_HAS_SYNCED_RESULTS_DESCRIPTION);
   source->AddLocalizedString("historyMenuButton",
                              IDS_MD_HISTORY_HISTORY_MENU_DESCRIPTION);
   source->AddLocalizedString("historyMenuItem",
@@ -137,7 +138,7 @@ content::WebUIDataSource* CreateMdHistoryUIHTMLSource(Profile* profile,
      IDR_MD_HISTORY_IMAGES_100_SIGN_IN_PROMO_JPG},
     {"images/200/sign_in_promo.jpg",
      IDR_MD_HISTORY_IMAGES_200_SIGN_IN_PROMO_JPG},
-#if !BUILDFLAG(USE_VULCANIZE)
+#if !BUILDFLAG(OPTIMIZE_WEBUI)
     {"app.html", IDR_MD_HISTORY_APP_HTML},
     {"app.js", IDR_MD_HISTORY_APP_JS},
     {"browser_service.html", IDR_MD_HISTORY_BROWSER_SERVICE_HTML},
@@ -167,15 +168,14 @@ content::WebUIDataSource* CreateMdHistoryUIHTMLSource(Profile* profile,
 #endif
   };
 
-  std::unordered_set<std::string> exclude_from_gzip;
-  for (size_t i = 0; i < arraysize(uncompressed_resources); ++i) {
-    const UncompressedResource& resource = uncompressed_resources[i];
+  std::vector<std::string> exclude_from_gzip;
+  for (const auto& resource : uncompressed_resources) {
     source->AddResourcePath(resource.path, resource.idr);
-    exclude_from_gzip.insert(resource.path);
+    exclude_from_gzip.push_back(resource.path);
   }
   source->UseGzip(exclude_from_gzip);
 
-#if BUILDFLAG(USE_VULCANIZE)
+#if BUILDFLAG(OPTIMIZE_WEBUI)
   source->AddResourcePath("app.html",
                           IDR_MD_HISTORY_APP_VULCANIZED_HTML);
   source->AddResourcePath("app.crisper.js",

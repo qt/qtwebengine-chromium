@@ -17,6 +17,7 @@
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
 #include "content/utility/utility_thread_impl.h"
+#include "services/service_manager/sandbox/sandbox_type.h"
 
 #if defined(OS_LINUX)
 #include "content/common/sandbox_linux/sandbox_linux.h"
@@ -25,14 +26,20 @@
 #if defined(OS_WIN)
 #include "base/rand_util.h"
 #include "sandbox/win/src/sandbox.h"
+
+sandbox::TargetServices* g_utility_target_services = nullptr;
 #endif
 
 namespace content {
 
 // Mainline routine for running as the utility process.
 int UtilityMain(const MainFunctionParams& parameters) {
+  const base::MessageLoop::Type message_loop_type =
+      parameters.command_line.HasSwitch(switches::kMessageLoopTypeUi)
+          ? base::MessageLoop::TYPE_UI
+          : base::MessageLoop::TYPE_DEFAULT;
   // The main message loop of the utility process.
-  base::MessageLoop main_message_loop;
+  base::MessageLoop main_message_loop(message_loop_type);
   base::PlatformThread::SetName("CrUtilityMain");
 
   if (parameters.command_line.HasSwitch(switches::kUtilityStartupDialog))
@@ -44,6 +51,8 @@ int UtilityMain(const MainFunctionParams& parameters) {
   // Seccomp-BPF policy.
   if (parameters.zygote_child)
     LinuxSandbox::InitializeSandbox();
+#elif defined(OS_WIN)
+  g_utility_target_services = parameters.sandbox_info->target_services;
 #endif
 
   ChildProcess utility_process;
@@ -67,17 +76,17 @@ int UtilityMain(const MainFunctionParams& parameters) {
   }
 
 #if defined(OS_WIN)
-  bool no_sandbox = parameters.command_line.HasSwitch(switches::kNoSandbox);
-  if (!no_sandbox) {
-    sandbox::TargetServices* target_services =
-        parameters.sandbox_info->target_services;
-    if (!target_services)
+  auto sandbox_type =
+      service_manager::SandboxTypeFromCommandLine(parameters.command_line);
+  if (!service_manager::IsUnsandboxedSandboxType(sandbox_type) &&
+      sandbox_type != service_manager::SANDBOX_TYPE_CDM) {
+    if (!g_utility_target_services)
       return false;
     char buffer;
     // Ensure RtlGenRandom is warm before the token is lowered; otherwise,
     // base::RandBytes() will CHECK fail when v8 is initialized.
     base::RandBytes(&buffer, sizeof(buffer));
-    target_services->LowerToken();
+    g_utility_target_services->LowerToken();
   }
 #endif
 

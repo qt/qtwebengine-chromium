@@ -18,11 +18,11 @@
 #pragma message(">> INFO: Windows Core Audio is not supported in VS 2003")
 #endif
 
-#include "webrtc/modules/audio_device/audio_device_config.h"
+#include "modules/audio_device/audio_device_config.h"
 
 #ifdef WEBRTC_WINDOWS_CORE_AUDIO_BUILD
 
-#include "webrtc/modules/audio_device/win/audio_device_core_win.h"
+#include "modules/audio_device/win/audio_device_core_win.h"
 
 #include <assert.h>
 #include <string.h>
@@ -37,9 +37,9 @@
 
 #include <iomanip>
 
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/platform_thread.h"
-#include "webrtc/system_wrappers/include/sleep.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/platform_thread.h"
+#include "system_wrappers/include/sleep.h"
 
 // Macro that calls a COM method returning HRESULT value.
 #define EXIT_ON_ERROR(hres)    do { if (FAILED(hres)) goto Exit; } while(0)
@@ -438,7 +438,6 @@ AudioDeviceWindowsCore::AudioDeviceWindowsCore()
       _sndCardRecDelay(0),
       _writtenSamples(0),
       _readSamples(0),
-      _playAcc(0),
       _recAudioFrameSize(0),
       _recSampleRate(0),
       _recBlockSize(0),
@@ -465,13 +464,7 @@ AudioDeviceWindowsCore::AudioDeviceWindowsCore()
       _speakerIsInitialized(false),
       _microphoneIsInitialized(false),
       _AGC(false),
-      _playWarning(0),
-      _playError(0),
-      _recWarning(0),
-      _recError(0),
-      _playBufType(AudioDeviceModule::kAdaptiveBufferSize),
       _playBufDelay(80),
-      _playBufDelayFixed(80),
       _usingInputDeviceIndex(false),
       _usingOutputDeviceIndex(false),
       _inputDevice(AudioDeviceModule::kDefaultCommunicationDevice),
@@ -530,7 +523,6 @@ AudioDeviceWindowsCore::AudioDeviceWindowsCore()
 
   _perfCounterFreq.QuadPart = 1;
   _perfCounterFactor = 0.0;
-  _avgCPULoad = 0.0;
 
   // list of number of channels to use on recording side
   _recChannelsPrioList[0] = 2;  // stereo is prio 1
@@ -688,11 +680,6 @@ AudioDeviceGeneric::InitStatus AudioDeviceWindowsCore::Init() {
   if (_initialized) {
     return InitStatus::OK;
   }
-
-  _playWarning = 0;
-  _playError = 0;
-  _recWarning = 0;
-  _recError = 0;
 
   // Enumerate all audio rendering and capturing endpoint devices.
   // Note that, some of these will not be able to select by the user.
@@ -1084,23 +1071,6 @@ int32_t AudioDeviceWindowsCore::MinSpeakerVolume(uint32_t& minVolume) const
 }
 
 // ----------------------------------------------------------------------------
-//  SpeakerVolumeStepSize
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceWindowsCore::SpeakerVolumeStepSize(uint16_t& stepSize) const
-{
-
-    if (!_speakerIsInitialized)
-    {
-        return -1;
-    }
-
-    stepSize = CORE_SPEAKER_VOLUME_STEP_SIZE;
-
-    return 0;
-}
-
-// ----------------------------------------------------------------------------
 //  SpeakerMuteIsAvailable
 // ----------------------------------------------------------------------------
 
@@ -1324,47 +1294,6 @@ int32_t AudioDeviceWindowsCore::MicrophoneMute(bool& enabled) const
 Exit:
     _TraceCOMError(hr);
     SAFE_RELEASE(pVolume);
-    return -1;
-}
-
-// ----------------------------------------------------------------------------
-//  MicrophoneBoostIsAvailable
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceWindowsCore::MicrophoneBoostIsAvailable(bool& available)
-{
-
-    available = false;
-    return 0;
-}
-
-// ----------------------------------------------------------------------------
-//  SetMicrophoneBoost
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceWindowsCore::SetMicrophoneBoost(bool enable)
-{
-
-    if (!_microphoneIsInitialized)
-    {
-        return -1;
-    }
-
-    return -1;
-}
-
-// ----------------------------------------------------------------------------
-//  MicrophoneBoost
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceWindowsCore::MicrophoneBoost(bool& enabled) const
-{
-
-    if (!_microphoneIsInitialized)
-    {
-        return -1;
-    }
-
     return -1;
 }
 
@@ -1646,23 +1575,6 @@ int32_t AudioDeviceWindowsCore::MinMicrophoneVolume(uint32_t& minVolume) const
     }
 
     minVolume = static_cast<uint32_t> (MIN_CORE_MICROPHONE_VOLUME);
-
-    return 0;
-}
-
-// ----------------------------------------------------------------------------
-//  MicrophoneVolumeStepSize
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceWindowsCore::MicrophoneVolumeStepSize(uint16_t& stepSize) const
-{
-
-    if (!_microphoneIsInitialized)
-    {
-        return -1;
-    }
-
-    stepSize = CORE_MICROPHONE_VOLUME_STEP_SIZE;
 
     return 0;
 }
@@ -2827,8 +2739,6 @@ int32_t AudioDeviceWindowsCore::StartRecording()
     }
     LOG(LS_VERBOSE) << "capture audio stream has now started...";
 
-    _avgCPULoad = 0.0f;
-    _playAcc = 0;
     _recording = true;
 
     return 0;
@@ -3141,130 +3051,6 @@ bool AudioDeviceWindowsCore::Playing() const
 {
     return (_playing);
 }
-// ----------------------------------------------------------------------------
-//  SetPlayoutBuffer
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceWindowsCore::SetPlayoutBuffer(const AudioDeviceModule::BufferType type, uint16_t sizeMS)
-{
-
-    rtc::CritScope lock(&_critSect);
-
-    _playBufType = type;
-
-    if (type == AudioDeviceModule::kFixedBufferSize)
-    {
-        _playBufDelayFixed = sizeMS;
-    }
-
-    return 0;
-}
-
-// ----------------------------------------------------------------------------
-//  PlayoutBuffer
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceWindowsCore::PlayoutBuffer(AudioDeviceModule::BufferType& type, uint16_t& sizeMS) const
-{
-    rtc::CritScope lock(&_critSect);
-    type = _playBufType;
-
-    if (type == AudioDeviceModule::kFixedBufferSize)
-    {
-        sizeMS = _playBufDelayFixed;
-    }
-    else
-    {
-        // Use same value as for PlayoutDelay
-        sizeMS = static_cast<uint16_t>(_sndCardPlayDelay);
-    }
-
-    return 0;
-}
-
-// ----------------------------------------------------------------------------
-//  CPULoad
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceWindowsCore::CPULoad(uint16_t& load) const
-{
-
-    load = static_cast<uint16_t> (100*_avgCPULoad);
-
-    return 0;
-}
-
-// ----------------------------------------------------------------------------
-//  PlayoutWarning
-// ----------------------------------------------------------------------------
-
-bool AudioDeviceWindowsCore::PlayoutWarning() const
-{
-    return ( _playWarning > 0);
-}
-
-// ----------------------------------------------------------------------------
-//  PlayoutError
-// ----------------------------------------------------------------------------
-
-bool AudioDeviceWindowsCore::PlayoutError() const
-{
-    return ( _playError > 0);
-}
-
-// ----------------------------------------------------------------------------
-//  RecordingWarning
-// ----------------------------------------------------------------------------
-
-bool AudioDeviceWindowsCore::RecordingWarning() const
-{
-    return ( _recWarning > 0);
-}
-
-// ----------------------------------------------------------------------------
-//  RecordingError
-// ----------------------------------------------------------------------------
-
-bool AudioDeviceWindowsCore::RecordingError() const
-{
-    return ( _recError > 0);
-}
-
-// ----------------------------------------------------------------------------
-//  ClearPlayoutWarning
-// ----------------------------------------------------------------------------
-
-void AudioDeviceWindowsCore::ClearPlayoutWarning()
-{
-    _playWarning = 0;
-}
-
-// ----------------------------------------------------------------------------
-//  ClearPlayoutError
-// ----------------------------------------------------------------------------
-
-void AudioDeviceWindowsCore::ClearPlayoutError()
-{
-    _playError = 0;
-}
-
-// ----------------------------------------------------------------------------
-//  ClearRecordingWarning
-// ----------------------------------------------------------------------------
-
-void AudioDeviceWindowsCore::ClearRecordingWarning()
-{
-    _recWarning = 0;
-}
-
-// ----------------------------------------------------------------------------
-//  ClearRecordingError
-// ----------------------------------------------------------------------------
-
-void AudioDeviceWindowsCore::ClearRecordingError()
-{
-    _recError = 0;
-}
 
 // ============================================================================
 //                                 Private Methods
@@ -3387,10 +3173,6 @@ DWORD AudioDeviceWindowsCore::DoRenderThread()
     HANDLE waitArray[2] = {_hShutdownRenderEvent, _hRenderSamplesReadyEvent};
     HRESULT hr = S_OK;
     HANDLE hMmTask = NULL;
-
-    LARGE_INTEGER t1;
-    LARGE_INTEGER t2;
-    int32_t time(0);
 
     // Initialize COM as MTA in this thread.
     ScopedCOMInitializer comInit(ScopedCOMInitializer::kMTA);
@@ -3558,8 +3340,6 @@ DWORD AudioDeviceWindowsCore::DoRenderThread()
                     _ptrRenderClient->GetBuffer(_playBlockSizeInFrames, &pData);
                 EXIT_ON_ERROR(hr);
 
-                QueryPerformanceCounter(&t1);    // measure time: START
-
                 if (_ptrAudioBuffer)
                 {
                   // Request data to be played out (#bytes =
@@ -3595,10 +3375,6 @@ DWORD AudioDeviceWindowsCore::DoRenderThread()
                     // Get the actual (stored) data
                     nSamples = _ptrAudioBuffer->GetPlayoutData((int8_t*)pData);
                 }
-
-                QueryPerformanceCounter(&t2);    // measure time: STOP
-                time = (int)(t2.QuadPart-t1.QuadPart);
-                _playAcc += time;
 
                 DWORD dwFlags(0);
                 hr = _ptrRenderClient->ReleaseBuffer(_playBlockSizeInFrames,
@@ -3665,11 +3441,8 @@ Exit:
                 _TraceCOMError(hr);
             }
         }
-        // Trigger callback from module process thread
-        _playError = 1;
         LOG(LS_ERROR)
-            << "kPlayoutError message posted: rendering thread has ended"
-            << " pre-maturely";
+            << "Playout error: rendering thread has ended pre-maturely";
     }
     else
     {
@@ -3852,10 +3625,8 @@ DWORD AudioDeviceWindowsCore::DoCaptureThreadPollDMO()
 
     if (FAILED(hr))
     {
-        // Trigger callback from module process thread
-        _recError = 1;
-        LOG(LS_ERROR) << "kRecordingError message posted: capturing thread has"
-                      << " ended prematurely";
+        LOG(LS_ERROR)
+            << "Recording error: capturing thread has ended prematurely";
     }
     else
     {
@@ -3878,8 +3649,6 @@ DWORD AudioDeviceWindowsCore::DoCaptureThread()
     HRESULT hr = S_OK;
 
     LARGE_INTEGER t1;
-    LARGE_INTEGER t2;
-    int32_t time(0);
 
     BYTE* syncBuffer = NULL;
     UINT32 syncBufIndex = 0;
@@ -4068,21 +3837,9 @@ DWORD AudioDeviceWindowsCore::DoCaptureThread()
 
                         _ptrAudioBuffer->SetTypingStatus(KeyPressed());
 
-                        QueryPerformanceCounter(&t1);    // measure time: START
-
                         _UnLock();  // release lock while making the callback
                         _ptrAudioBuffer->DeliverRecordedData();
                         _Lock();    // restore the lock
-
-                        QueryPerformanceCounter(&t2);    // measure time: STOP
-
-                        // Measure "average CPU load".
-                        // Basically what we do here is to measure how many percent of our 10ms period
-                        // is used for encoding and decoding. This value shuld be used as a warning indicator
-                        // only and not seen as an absolute value. Running at ~100% will lead to bad QoS.
-                        time = (int)(t2.QuadPart - t1.QuadPart);
-                        _avgCPULoad = (float)(_avgCPULoad*.99 + (time + _playAcc) / (double)(_perfCounterFreq.QuadPart));
-                        _playAcc = 0;
 
                         // Sanity check to ensure that essential states are not modified during the unlocked period
                         if (_ptrCaptureClient == NULL || _ptrClientIn == NULL)
@@ -4169,11 +3926,8 @@ Exit:
             }
         }
 
-        // Trigger callback from module process thread
-        _recError = 1;
         LOG(LS_ERROR)
-            << "kRecordingError message posted: capturing thread has ended"
-            << " pre-maturely";
+            << "Recording error: capturing thread has ended pre-maturely";
     }
     else
     {

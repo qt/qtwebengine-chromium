@@ -4,6 +4,7 @@
 
 #include "content/browser/service_worker/foreign_fetch_request_handler.h"
 
+#include "base/bind_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/test/simple_test_clock.h"
@@ -27,6 +28,7 @@
 #include "net/url_request/url_request_test_util.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -55,8 +57,6 @@ const char* kValidUrl = "https://valid.example.com/foo/bar";
 // tokens in this test, but before the expiry timestamp of the valid ones.
 double kNowTimestamp = 1500000000;
 
-void EmptyCallback() {}
-
 }  // namespace
 
 class ForeignFetchRequestHandlerTest : public testing::Test {
@@ -77,9 +77,9 @@ class ForeignFetchRequestHandlerTest : public testing::Test {
 
     // Create a registration for the worker which has foreign fetch event
     // handler.
-    registration_ =
-        new ServiceWorkerRegistration(ServiceWorkerRegistrationOptions(kScope),
-                                      kRegistrationId, context()->AsWeakPtr());
+    registration_ = new ServiceWorkerRegistration(
+        blink::mojom::ServiceWorkerRegistrationOptions(kScope), kRegistrationId,
+        context()->AsWeakPtr());
     version_ = new ServiceWorkerVersion(registration_.get(), kResource1,
                                         kVersionId, context()->AsWeakPtr());
     version_->set_foreign_fetch_scopes({kScope});
@@ -90,7 +90,8 @@ class ForeignFetchRequestHandlerTest : public testing::Test {
     clock->SetNow(base::Time::FromDoubleT(kNowTimestamp));
     version_->SetClockForTesting(std::move(clock));
 
-    context()->storage()->LazyInitialize(base::Bind(&EmptyCallback));
+    context()->storage()->LazyInitializeForTest(
+        base::BindOnce(&base::DoNothing));
     base::RunLoop().RunUntilIdle();
 
     // Persist the registration data.
@@ -144,7 +145,7 @@ class ForeignFetchRequestHandlerTest : public testing::Test {
     http_info->ssl_info.security_bits = 0x100;
     // SSL3 TLS_DHE_RSA_WITH_AES_256_CBC_SHA
     http_info->ssl_info.connection_status = 0x300039;
-    http_info->headers = make_scoped_refptr(new net::HttpResponseHeaders(""));
+    http_info->headers = base::MakeRefCounted<net::HttpResponseHeaders>("");
     return http_info;
   }
 
@@ -187,8 +188,9 @@ class ForeignFetchRequestHandlerTest : public testing::Test {
     // fetch event handler.
     scoped_refptr<ServiceWorkerRegistration> registration =
         new ServiceWorkerRegistration(
-            ServiceWorkerRegistrationOptions(GURL("https://host/scope")), 1L,
-            context()->AsWeakPtr());
+            blink::mojom::ServiceWorkerRegistrationOptions(
+                GURL("https://host/scope")),
+            1L, context()->AsWeakPtr());
     scoped_refptr<ServiceWorkerVersion> version = new ServiceWorkerVersion(
         registration.get(), GURL("https://host/script.js"), 1L,
         context()->AsWeakPtr());
@@ -380,11 +382,11 @@ TEST_F(ForeignFetchRequestHandlerTest,
 
   // Make sure worker has a non-zero timeout.
   version->StartWorker(ServiceWorkerMetrics::EventType::UNKNOWN,
-                       base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
+                       base::BindOnce(&ServiceWorkerUtils::NoOpStatusCallback));
   base::RunLoop().RunUntilIdle();
   version->StartRequestWithCustomTimeout(
       ServiceWorkerMetrics::EventType::ACTIVATE,
-      base::Bind(&ServiceWorkerUtils::NoOpStatusCallback),
+      base::BindOnce(&ServiceWorkerUtils::NoOpStatusCallback),
       base::TimeDelta::FromSeconds(10), ServiceWorkerVersion::KILL_ON_TIMEOUT);
 
   // Advance clock by a couple seconds.

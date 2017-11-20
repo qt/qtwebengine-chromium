@@ -7,7 +7,7 @@
 
 #include "SkBmpCodec.h"
 #include "SkCodecPriv.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkData.h"
 #include "SkIcoCodec.h"
 #include "SkPngCodec.h"
@@ -29,8 +29,8 @@ bool SkIcoCodec::IsIco(const void* buffer, size_t bytesRead) {
 std::unique_ptr<SkCodec> SkIcoCodec::MakeFromStream(std::unique_ptr<SkStream> stream,
                                                     Result* result) {
     // Header size constants
-    static const uint32_t kIcoDirectoryBytes = 6;
-    static const uint32_t kIcoDirEntryBytes = 16;
+    constexpr uint32_t kIcoDirectoryBytes = 6;
+    constexpr uint32_t kIcoDirEntryBytes = 16;
 
     // Read the directory header
     std::unique_ptr<uint8_t[]> dirBuffer(new uint8_t[kIcoDirectoryBytes]);
@@ -173,7 +173,7 @@ std::unique_ptr<SkCodec> SkIcoCodec::MakeFromStream(std::unique_ptr<SkStream> st
     int maxIndex = 0;
     for (int i = 0; i < codecs->count(); i++) {
         SkImageInfo info = codecs->operator[](i)->getInfo();
-        size_t size = info.getSafeSize(info.minRowBytes());
+        size_t size = info.computeMinByteSize();
 
         if (size > maxSize) {
             maxSize = size;
@@ -204,8 +204,7 @@ SkIcoCodec::SkIcoCodec(int width, int height, const SkEncodedInfo& info,
     : INHERITED(width, height, info, SkColorSpaceXform::ColorFormat(), nullptr,
                 std::move(colorSpace))
     , fEmbeddedCodecs(codecs)
-    , fCurrScanlineCodec(nullptr)
-    , fCurrIncrementalCodec(nullptr)
+    , fCurrCodec(nullptr)
 {}
 
 /*
@@ -306,8 +305,7 @@ SkCodec::Result SkIcoCodec::onStartScanlineDecode(const SkImageInfo& dstInfo,
         SkCodec* embeddedCodec = fEmbeddedCodecs->operator[](index).get();
         result = embeddedCodec->startScanlineDecode(dstInfo, &options);
         if (kSuccess == result) {
-            fCurrScanlineCodec = embeddedCodec;
-            fCurrIncrementalCodec = nullptr;
+            fCurrCodec = embeddedCodec;
             return result;
         }
 
@@ -319,13 +317,13 @@ SkCodec::Result SkIcoCodec::onStartScanlineDecode(const SkImageInfo& dstInfo,
 }
 
 int SkIcoCodec::onGetScanlines(void* dst, int count, size_t rowBytes) {
-    SkASSERT(fCurrScanlineCodec);
-    return fCurrScanlineCodec->getScanlines(dst, count, rowBytes);
+    SkASSERT(fCurrCodec);
+    return fCurrCodec->getScanlines(dst, count, rowBytes);
 }
 
 bool SkIcoCodec::onSkipScanlines(int count) {
-    SkASSERT(fCurrScanlineCodec);
-    return fCurrScanlineCodec->skipScanlines(count);
+    SkASSERT(fCurrCodec);
+    return fCurrCodec->skipScanlines(count);
 }
 
 SkCodec::Result SkIcoCodec::onStartIncrementalDecode(const SkImageInfo& dstInfo,
@@ -341,8 +339,7 @@ SkCodec::Result SkIcoCodec::onStartIncrementalDecode(const SkImageInfo& dstInfo,
         switch (embeddedCodec->startIncrementalDecode(dstInfo,
                 pixels, rowBytes, &options)) {
             case kSuccess:
-                fCurrIncrementalCodec = embeddedCodec;
-                fCurrScanlineCodec = nullptr;
+                fCurrCodec = embeddedCodec;
                 return kSuccess;
             case kUnimplemented:
                 // FIXME: embeddedCodec is a BMP. If scanline decoding would work,
@@ -374,33 +371,23 @@ SkCodec::Result SkIcoCodec::onStartIncrementalDecode(const SkImageInfo& dstInfo,
 }
 
 SkCodec::Result SkIcoCodec::onIncrementalDecode(int* rowsDecoded) {
-    SkASSERT(fCurrIncrementalCodec);
-    return fCurrIncrementalCodec->incrementalDecode(rowsDecoded);
+    SkASSERT(fCurrCodec);
+    return fCurrCodec->incrementalDecode(rowsDecoded);
 }
 
 SkCodec::SkScanlineOrder SkIcoCodec::onGetScanlineOrder() const {
     // FIXME: This function will possibly return the wrong value if it is called
     //        before startScanlineDecode()/startIncrementalDecode().
-    if (fCurrScanlineCodec) {
-        SkASSERT(!fCurrIncrementalCodec);
-        return fCurrScanlineCodec->getScanlineOrder();
-    }
-
-    if (fCurrIncrementalCodec) {
-        return fCurrIncrementalCodec->getScanlineOrder();
+    if (fCurrCodec) {
+        return fCurrCodec->getScanlineOrder();
     }
 
     return INHERITED::onGetScanlineOrder();
 }
 
 SkSampler* SkIcoCodec::getSampler(bool createIfNecessary) {
-    if (fCurrScanlineCodec) {
-        SkASSERT(!fCurrIncrementalCodec);
-        return fCurrScanlineCodec->getSampler(createIfNecessary);
-    }
-
-    if (fCurrIncrementalCodec) {
-        return fCurrIncrementalCodec->getSampler(createIfNecessary);
+    if (fCurrCodec) {
+        return fCurrCodec->getSampler(createIfNecessary);
     }
 
     return nullptr;

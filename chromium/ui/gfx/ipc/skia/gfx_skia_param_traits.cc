@@ -41,7 +41,7 @@ struct SkBitmap_Data {
     if (!bitmap->tryAllocPixels(
             SkImageInfo::Make(width, height, color_type, alpha_type)))
       return false;
-    if (pixels_size != bitmap->getSize())
+    if (pixels_size != bitmap->computeByteSize())
       return false;
     memcpy(bitmap->getPixels(), pixels, pixels_size);
     return true;
@@ -52,18 +52,13 @@ struct SkBitmap_Data {
 
 namespace IPC {
 
-void ParamTraits<SkBitmap>::GetSize(base::PickleSizer* s, const param_type& p) {
-  s->AddData(sizeof(SkBitmap_Data));
-  s->AddData(static_cast<int>(p.getSize()));
-}
-
 void ParamTraits<SkBitmap>::Write(base::Pickle* m, const SkBitmap& p) {
   size_t fixed_size = sizeof(SkBitmap_Data);
   SkBitmap_Data bmp_data;
   bmp_data.InitSkBitmapDataForTransfer(p);
   m->WriteData(reinterpret_cast<const char*>(&bmp_data),
                static_cast<int>(fixed_size));
-  size_t pixel_size = p.getSize();
+  size_t pixel_size = p.computeByteSize();
   m->WriteData(reinterpret_cast<const char*>(p.getPixels()),
                static_cast<int>(pixel_size));
 }
@@ -93,11 +88,6 @@ bool ParamTraits<SkBitmap>::Read(const base::Pickle* m,
 
 void ParamTraits<SkBitmap>::Log(const SkBitmap& p, std::string* l) {
   l->append("<SkBitmap>");
-}
-
-void ParamTraits<gfx::Transform>::GetSize(base::PickleSizer* s,
-                                          const param_type& p) {
-  s->AddBytes(sizeof(SkMScalar) * 16);
 }
 
 void ParamTraits<gfx::Transform>::Write(base::Pickle* m, const param_type& p) {

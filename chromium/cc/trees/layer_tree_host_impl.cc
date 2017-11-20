@@ -45,12 +45,6 @@
 #include "cc/layers/scrollbar_layer_impl_base.h"
 #include "cc/layers/surface_layer_impl.h"
 #include "cc/layers/viewport.h"
-#include "cc/output/compositor_frame.h"
-#include "cc/output/compositor_frame_metadata.h"
-#include "cc/output/layer_tree_frame_sink.h"
-#include "cc/quads/render_pass_draw_quad.h"
-#include "cc/quads/solid_color_draw_quad.h"
-#include "cc/quads/texture_draw_quad.h"
 #include "cc/raster/bitmap_raster_buffer_provider.h"
 #include "cc/raster/gpu_raster_buffer_provider.h"
 #include "cc/raster/one_copy_raster_buffer_provider.h"
@@ -71,7 +65,9 @@
 #include "cc/trees/draw_property_utils.h"
 #include "cc/trees/effect_node.h"
 #include "cc/trees/frame_rate_counter.h"
+#include "cc/trees/image_animation_controller.h"
 #include "cc/trees/latency_info_swap_promise_monitor.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/mutator_host.h"
@@ -79,13 +75,19 @@
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/transform_node.h"
 #include "cc/trees/tree_synchronizer.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/delay_based_time_source.h"
-#include "components/viz/common/quads/copy_output_request.h"
+#include "components/viz/common/quads/compositor_frame.h"
+#include "components/viz/common/quads/compositor_frame_metadata.h"
+#include "components/viz/common/quads/render_pass_draw_quad.h"
 #include "components/viz/common/quads/shared_quad_state.h"
+#include "components/viz/common/quads/solid_color_draw_quad.h"
+#include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/traced_value.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "third_party/skia/include/gpu/GrContext.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/scroll_offset.h"
@@ -270,6 +272,16 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       settings.top_controls_hide_threshold);
 
   tile_manager_.SetDecodedImageTracker(&decoded_image_tracker_);
+
+  if (settings_.enable_image_animations) {
+    // It is safe to use base::Unretained here since we will outlive the
+    // ImageAnimationController.
+    base::Closure invalidation_callback =
+        base::Bind(&LayerTreeHostImpl::RequestInvalidationForAnimatedImages,
+                   base::Unretained(this));
+    image_animation_controller_.emplace(GetTaskRunner(),
+                                        std::move(invalidation_callback));
+  }
 }
 
 LayerTreeHostImpl::~LayerTreeHostImpl() {
@@ -344,9 +356,6 @@ void LayerTreeHostImpl::CommitComplete() {
 }
 
 void LayerTreeHostImpl::UpdateSyncTreeAfterCommitOrImplSideInvalidation() {
-  sync_tree()->InvalidateRegionForImages(
-      tile_manager_.TakeImagesToInvalidateOnSyncTree());
-
   if (CommitToActiveTree()) {
     active_tree_->HandleScrollbarShowRequestsFromMain();
 
@@ -382,6 +391,20 @@ void LayerTreeHostImpl::UpdateSyncTreeAfterCommitOrImplSideInvalidation() {
   // layer can or cannot use lcd text.  So, this is the cleanup pass to
   // determine if lcd state needs to switch due to draw properties.
   sync_tree()->UpdateCanUseLCDText();
+
+  // Defer invalidating images until UpdateDrawProperties is performed since
+  // that updates whether an image should be animated based on its visibility
+  // and the updated data for the image from the main frame.
+  PaintImageIdFlatSet images_to_invalidate =
+      tile_manager_.TakeImagesToInvalidateOnSyncTree();
+  if (image_animation_controller_.has_value()) {
+    const auto& animated_images =
+        image_animation_controller_.value().AnimateForSyncTree(
+            CurrentBeginFrameArgs().frame_time);
+    images_to_invalidate.insert(animated_images.begin(), animated_images.end());
+  }
+  sync_tree()->InvalidateRegionForImages(images_to_invalidate);
+
   // Start working on newly created tiles immediately if needed.
   // TODO(vmpstr): Investigate always having PrepareTiles issue
   // NotifyReadyToActivate, instead of handling it here.
@@ -744,7 +767,7 @@ DrawMode LayerTreeHostImpl::GetDrawMode() const {
 
 static void AppendQuadsToFillScreen(
     const gfx::Rect& root_scroll_layer_rect,
-    RenderPass* target_render_pass,
+    viz::RenderPass* target_render_pass,
     const RenderSurfaceImpl* root_render_surface,
     SkColor screen_background_color,
     const Region& fill_region) {
@@ -761,11 +784,13 @@ static void AppendQuadsToFillScreen(
   gfx::Rect root_target_rect = root_render_surface->content_rect();
   float opacity = 1.f;
   int sorting_context_id = 0;
+  bool are_contents_opaque = SkColorGetA(screen_background_color) == 0xFF;
   viz::SharedQuadState* shared_quad_state =
       target_render_pass->CreateAndAppendSharedQuadState();
   shared_quad_state->SetAll(gfx::Transform(), root_target_rect,
-                            root_target_rect, root_target_rect, false, opacity,
-                            SkBlendMode::kSrcOver, sorting_context_id);
+                            root_target_rect, root_target_rect, false,
+                            are_contents_opaque, opacity, SkBlendMode::kSrcOver,
+                            sorting_context_id);
 
   for (Region::Iterator fill_rects(fill_region); fill_rects.has_rect();
        fill_rects.next()) {
@@ -773,18 +798,18 @@ static void AppendQuadsToFillScreen(
     gfx::Rect visible_screen_space_rect = screen_space_rect;
     // Skip the quad culler and just append the quads directly to avoid
     // occlusion checks.
-    SolidColorDrawQuad* quad =
-        target_render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
+    auto* quad =
+        target_render_pass->CreateAndAppendDrawQuad<viz::SolidColorDrawQuad>();
     quad->SetNew(shared_quad_state, screen_space_rect,
                  visible_screen_space_rect, screen_background_color, false);
   }
 }
 
-static RenderPass* FindRenderPassById(const RenderPassList& list,
-                                      RenderPassId id) {
+static viz::RenderPass* FindRenderPassById(const viz::RenderPassList& list,
+                                           viz::RenderPassId id) {
   auto it = std::find_if(
       list.begin(), list.end(),
-      [id](const std::unique_ptr<RenderPass>& p) { return p->id == id; });
+      [id](const std::unique_ptr<viz::RenderPass>& p) { return p->id == id; });
   return it == list.end() ? nullptr : it->get();
 }
 
@@ -854,7 +879,7 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   // Damage rects for non-root passes aren't meaningful, so set them to be
   // equal to the output rect.
   for (size_t i = 0; i + 1 < frame->render_passes.size(); ++i) {
-    RenderPass* pass = frame->render_passes[i].get();
+    viz::RenderPass* pass = frame->render_passes[i].get();
     pass->damage_rect = pass->output_rect;
   }
 
@@ -865,7 +890,7 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   // damage visualizations are done off the LayerImpls and RenderSurfaceImpls,
   // changing the RenderPass does not affect them.
   if (active_tree_->hud_layer()) {
-    RenderPass* root_pass = frame->render_passes.back().get();
+    viz::RenderPass* root_pass = frame->render_passes.back().get();
     root_pass->damage_rect = root_pass->output_rect;
   }
 
@@ -899,7 +924,7 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   for (EffectTreeLayerListIterator it(active_tree());
        it.state() != EffectTreeLayerListIterator::State::END; ++it) {
     auto target_render_pass_id = it.target_render_surface()->id();
-    RenderPass* target_render_pass =
+    viz::RenderPass* target_render_pass =
         FindRenderPassById(frame->render_passes, target_render_pass_id);
 
     AppendQuadsData append_quads_data;
@@ -996,8 +1021,9 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   }
   DCHECK(frame->render_passes.back()->output_rect.origin().IsOrigin());
 #endif
-
-  if (!active_tree_->has_transparent_background()) {
+  bool has_transparent_background =
+      active_tree_->background_color() == SK_ColorTRANSPARENT;
+  if (!has_transparent_background) {
     frame->render_passes.back()->has_transparent_background = false;
     AppendQuadsToFillScreen(
         active_tree_->RootScrollLayerDeviceViewportBounds(),
@@ -1168,23 +1194,24 @@ void LayerTreeHostImpl::RemoveRenderPasses(FrameData* frame) {
   DCHECK_GE(frame->render_passes.size(), 1u);
 
   // A set of RenderPasses that we have seen.
-  base::flat_set<RenderPassId> pass_exists;
-  // A set of RenderPassDrawQuads that we have seen (stored by the RenderPasses
-  // they refer to).
-  base::flat_map<RenderPassId, int> pass_references;
+  base::flat_set<viz::RenderPassId> pass_exists;
+  // A set of viz::RenderPassDrawQuads that we have seen (stored by the
+  // RenderPasses they refer to).
+  base::flat_map<viz::RenderPassId, int> pass_references;
 
   // Iterate RenderPasses in draw order, removing empty render passes (except
   // the root RenderPass).
   for (size_t i = 0; i < frame->render_passes.size(); ++i) {
-    RenderPass* pass = frame->render_passes[i].get();
+    viz::RenderPass* pass = frame->render_passes[i].get();
 
-    // Remove orphan RenderPassDrawQuads.
+    // Remove orphan viz::RenderPassDrawQuads.
     for (auto it = pass->quad_list.begin(); it != pass->quad_list.end();) {
-      if (it->material != DrawQuad::RENDER_PASS) {
+      if (it->material != viz::DrawQuad::RENDER_PASS) {
         ++it;
         continue;
       }
-      const RenderPassDrawQuad* quad = RenderPassDrawQuad::MaterialCast(*it);
+      const viz::RenderPassDrawQuad* quad =
+          viz::RenderPassDrawQuad::MaterialCast(*it);
       // If the RenderPass doesn't exist, we can remove the quad.
       if (pass_exists.count(quad->render_pass_id)) {
         // Otherwise, save a reference to the RenderPass so we know there's a
@@ -1219,7 +1246,7 @@ void LayerTreeHostImpl::RemoveRenderPasses(FrameData* frame) {
     // Iterating from the back of the list to the front, skipping over the
     // back-most (root) pass, in order to remove each qualified RenderPass, and
     // drop references to earlier RenderPasses allowing them to be removed to.
-    RenderPass* pass =
+    viz::RenderPass* pass =
         frame->render_passes[frame->render_passes.size() - 2 - i].get();
     if (!pass->copy_requests.empty())
       continue;
@@ -1227,9 +1254,10 @@ void LayerTreeHostImpl::RemoveRenderPasses(FrameData* frame) {
       continue;
 
     for (auto it = pass->quad_list.begin(); it != pass->quad_list.end(); ++it) {
-      if (it->material != DrawQuad::RENDER_PASS)
+      if (it->material != viz::DrawQuad::RENDER_PASS)
         continue;
-      const RenderPassDrawQuad* quad = RenderPassDrawQuad::MaterialCast(*it);
+      const viz::RenderPassDrawQuad* quad =
+          viz::RenderPassDrawQuad::MaterialCast(*it);
       pass_references[quad->render_pass_id]--;
     }
 
@@ -1371,9 +1399,6 @@ void LayerTreeHostImpl::SetIsLikelyToRequireADraw(
 
 gfx::ColorSpace LayerTreeHostImpl::GetRasterColorSpace() const {
   gfx::ColorSpace result;
-  if (!settings_.enable_color_correct_rasterization)
-    return result;
-
   // The pending tree will have the most recently updated color space, so
   // prefer that.
   if (pending_tree_)
@@ -1399,6 +1424,16 @@ void LayerTreeHostImpl::RequestImplSideInvalidationForCheckerImagedTiles() {
   // not need to be flushed as an independent update through the pipeline.
   bool needs_first_draw_on_activation = false;
   client_->NeedsImplSideInvalidation(needs_first_draw_on_activation);
+}
+
+size_t LayerTreeHostImpl::GetFrameIndexForImage(const PaintImage& paint_image,
+                                                WhichTree tree) const {
+  DCHECK(image_animation_controller_.has_value());
+  if (!paint_image.ShouldAnimate())
+    return paint_image.frame_index();
+
+  return image_animation_controller_->GetFrameIndexForImage(
+      paint_image.stable_id(), tree);
 }
 
 void LayerTreeHostImpl::NotifyReadyToActivate() {
@@ -1626,8 +1661,9 @@ void LayerTreeHostImpl::OnCanDrawStateChangedForTree() {
   client_->OnCanDrawStateChanged(CanDraw());
 }
 
-CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() const {
-  CompositorFrameMetadata metadata;
+viz::CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata()
+    const {
+  viz::CompositorFrameMetadata metadata;
   metadata.device_scale_factor = active_tree_->painted_device_scale_factor() *
                                  active_tree_->device_scale_factor();
 
@@ -1734,14 +1770,14 @@ bool LayerTreeHostImpl::DrawLayers(FrameData* frame) {
   // drawn.
   if (active_tree_->hud_layer()) {
     TRACE_EVENT0("cc", "DrawLayers.UpdateHudTexture");
-    // TODO(sohanjg): Temporarily do not pass context provider, so that SW
-    // raster path is chosen till we fix the FPS drop issue with gpu raster
-    // crbug.com/751732
     active_tree_->hud_layer()->UpdateHudTexture(
-        draw_mode, resource_provider_.get(), nullptr, frame->render_passes);
+        draw_mode, resource_provider_.get(),
+        use_gpu_rasterization_ ? layer_tree_frame_sink_->context_provider()
+                               : nullptr,
+        frame->render_passes);
   }
 
-  CompositorFrameMetadata metadata = MakeCompositorFrameMetadata();
+  viz::CompositorFrameMetadata metadata = MakeCompositorFrameMetadata();
   metadata.may_contain_video = frame->may_contain_video;
   metadata.activation_dependencies = std::move(frame->activation_dependencies);
   active_tree()->FinishSwapPromises(&metadata);
@@ -1772,7 +1808,7 @@ bool LayerTreeHostImpl::DrawLayers(FrameData* frame) {
             frame->begin_frame_ack.sequence_number);
   metadata.begin_frame_ack = frame->begin_frame_ack;
 
-  CompositorFrame compositor_frame;
+  viz::CompositorFrame compositor_frame;
   compositor_frame.metadata = std::move(metadata);
   resource_provider_->PrepareSendToParent(resources,
                                           &compositor_frame.resource_list);
@@ -1849,21 +1885,50 @@ void LayerTreeHostImpl::SetContentHasNonAAPaint(bool flag) {
   }
 }
 
-bool LayerTreeHostImpl::CanUseGpuRasterization() {
+void LayerTreeHostImpl::GetGpuRasterizationCapabilities(
+    bool* gpu_rasterization_enabled,
+    bool* gpu_rasterization_supported,
+    int* max_msaa_samples,
+    bool* supports_disable_msaa) {
+  *gpu_rasterization_enabled = false;
+  *gpu_rasterization_supported = false;
+  *max_msaa_samples = 0;
+  *supports_disable_msaa = false;
+
   if (!(layer_tree_frame_sink_ && layer_tree_frame_sink_->context_provider() &&
         layer_tree_frame_sink_->worker_context_provider()))
-    return false;
+    return;
 
   viz::ContextProvider* context_provider =
       layer_tree_frame_sink_->worker_context_provider();
   viz::ContextProvider::ScopedContextLock scoped_context(context_provider);
-  if (!context_provider->GrContext())
-    return false;
 
-  return true;
+  const auto& caps = context_provider->ContextCapabilities();
+  *gpu_rasterization_enabled = caps.gpu_rasterization;
+  if (!*gpu_rasterization_enabled && !settings_.gpu_rasterization_forced)
+    return;
+
+  // Do not check GrContext above. It is lazy-created, and we only want to
+  // create it if it might be used.
+  GrContext* gr_context = context_provider->GrContext();
+  *gpu_rasterization_supported = !!gr_context;
+  if (!*gpu_rasterization_supported)
+    return;
+
+  *supports_disable_msaa = caps.multisample_compatibility;
+  if (!caps.msaa_is_slow && !caps.avoid_stencil_buffers) {
+    // Skia may blacklist MSAA independently of Chrome. Query skia for the
+    // requested sample count. This will return 0 if MSAA is unsupported.
+    *max_msaa_samples = gr_context->caps()->getSampleCount(
+        caps.max_samples, ToGrPixelConfig(settings_.preferred_tile_format));
+  }
 }
 
 bool LayerTreeHostImpl::UpdateGpuRasterizationStatus() {
+  if (!need_update_gpu_rasterization_status_)
+    return false;
+  need_update_gpu_rasterization_status_ = false;
+
   // TODO(danakj): Can we avoid having this run when there's no
   // LayerTreeFrameSink?
   // For now just early out and leave things unchanged, we'll come back here
@@ -1873,17 +1938,12 @@ bool LayerTreeHostImpl::UpdateGpuRasterizationStatus() {
 
   int requested_msaa_samples = RequestedMSAASampleCount();
   int max_msaa_samples = 0;
-  viz::ContextProvider* compositor_context_provider =
-      layer_tree_frame_sink_->context_provider();
   bool gpu_rasterization_enabled = false;
+  bool gpu_rasterization_supported = false;
   bool supports_disable_msaa = false;
-  if (compositor_context_provider) {
-    const auto& caps = compositor_context_provider->ContextCapabilities();
-    gpu_rasterization_enabled = caps.gpu_rasterization;
-    supports_disable_msaa = caps.multisample_compatibility;
-    if (!caps.msaa_is_slow && !caps.avoid_stencil_buffers)
-      max_msaa_samples = caps.max_samples;
-  }
+  GetGpuRasterizationCapabilities(&gpu_rasterization_enabled,
+                                  &gpu_rasterization_supported,
+                                  &max_msaa_samples, &supports_disable_msaa);
 
   bool use_gpu = false;
   bool use_msaa = false;
@@ -1911,7 +1971,7 @@ bool LayerTreeHostImpl::UpdateGpuRasterizationStatus() {
   }
 
   if (use_gpu && !use_gpu_rasterization_) {
-    if (!CanUseGpuRasterization()) {
+    if (!gpu_rasterization_supported) {
       // If GPU rasterization is unusable, e.g. if GlContext could not
       // be created due to losing the GL context, force use of software
       // raster.
@@ -1932,8 +1992,6 @@ bool LayerTreeHostImpl::UpdateGpuRasterizationStatus() {
 }
 
 void LayerTreeHostImpl::UpdateTreeResourcesForGpuRasterizationIfNeeded() {
-  if (!need_update_gpu_rasterization_status_)
-    return;
   if (!UpdateGpuRasterizationStatus())
     return;
 
@@ -2201,8 +2259,17 @@ void LayerTreeHostImpl::ActivateSyncTree() {
 
   UpdateViewportContainerSizes();
 
+  // Inform the ImageAnimationController and TileManager before dirtying tile
+  // priorities. Since these components cache tree specific state, these should
+  // be updated before DidModifyTilePriorities which can synchronously issue a
+  // PrepareTiles.
+  if (image_animation_controller_)
+    image_animation_controller_->DidActivate();
+  tile_manager_.DidActivateSyncTree();
+
   active_tree_->DidBecomeActive();
   client_->RenewTreePriority();
+
   // If we have any picture layers, then by activating we also modified tile
   // priorities.
   if (!active_tree_->picture_layers().empty())
@@ -2367,7 +2434,7 @@ void LayerTreeHostImpl::CreateResourceAndRasterBufferProvider(
   if (!compositor_context_provider) {
     *resource_pool =
         ResourcePool::Create(resource_provider_.get(), GetTaskRunner(),
-                             ResourceProvider::TEXTURE_HINT_IMMUTABLE,
+                             ResourceProvider::TEXTURE_HINT_DEFAULT,
                              ResourcePool::kDefaultExpirationDelay,
                              settings_.disallow_non_exact_resource_reuse);
 
@@ -2381,11 +2448,11 @@ void LayerTreeHostImpl::CreateResourceAndRasterBufferProvider(
   if (use_gpu_rasterization_) {
     DCHECK(worker_context_provider);
 
-    *resource_pool = ResourcePool::Create(
-        resource_provider_.get(), GetTaskRunner(),
-        ResourceProvider::TEXTURE_HINT_IMMUTABLE_FRAMEBUFFER,
-        ResourcePool::kDefaultExpirationDelay,
-        settings_.disallow_non_exact_resource_reuse);
+    *resource_pool =
+        ResourcePool::Create(resource_provider_.get(), GetTaskRunner(),
+                             ResourceProvider::TEXTURE_HINT_FRAMEBUFFER,
+                             ResourcePool::kDefaultExpirationDelay,
+                             settings_.disallow_non_exact_resource_reuse);
 
     int msaa_sample_count = use_msaa_ ? RequestedMSAASampleCount() : 0;
 
@@ -2421,7 +2488,7 @@ void LayerTreeHostImpl::CreateResourceAndRasterBufferProvider(
 
   *resource_pool =
       ResourcePool::Create(resource_provider_.get(), GetTaskRunner(),
-                           ResourceProvider::TEXTURE_HINT_IMMUTABLE,
+                           ResourceProvider::TEXTURE_HINT_DEFAULT,
                            ResourcePool::kDefaultExpirationDelay,
                            settings_.disallow_non_exact_resource_reuse);
 
@@ -2564,14 +2631,13 @@ bool LayerTreeHostImpl::InitializeRenderer(
       layer_tree_frame_sink_->context_provider(),
       layer_tree_frame_sink_->shared_bitmap_manager(),
       layer_tree_frame_sink_->gpu_memory_buffer_manager(),
-      task_runner_provider_->blocking_main_thread_task_runner(),
       layer_tree_frame_sink_->capabilities().delegated_sync_points_required,
-      settings_.enable_color_correct_rasterization,
       settings_.resource_settings);
 
   // Since the new context may be capable of MSAA, update status here. We don't
   // need to check the return value since we are recreating all resources
   // already.
+  SetNeedUpdateGpuRasterizationStatus();
   UpdateGpuRasterizationStatus();
 
   // See note in LayerTreeImpl::UpdateDrawProperties, new LayerTreeFrameSink
@@ -3771,15 +3837,6 @@ void LayerTreeHostImpl::PinchGestureEnd() {
   SetNeedsRedraw();
 }
 
-std::unique_ptr<BeginFrameCallbackList>
-LayerTreeHostImpl::ProcessLayerTreeMutations() {
-  std::unique_ptr<BeginFrameCallbackList> callbacks(new BeginFrameCallbackList);
-  const base::Closure& callback = mutator_host_->TakeMutations();
-  if (!callback.is_null())
-    callbacks->push_back(callback);
-  return callbacks;
-}
-
 static void CollectScrollDeltas(ScrollAndScaleSet* scroll_info,
                                 LayerTreeImpl* tree_impl) {
   if (tree_impl->LayerListIsEmpty())
@@ -3928,6 +3985,17 @@ void LayerTreeHostImpl::ActivateAnimations() {
     // Request another frame to run the next tick of the animation.
     SetNeedsOneBeginImplFrame();
   }
+}
+
+std::string LayerTreeHostImpl::LayerListAsJson() const {
+  auto list = std::make_unique<base::ListValue>();
+  for (auto* layer : *active_tree_) {
+    list->Append(layer->LayerAsJson());
+  }
+  std::string str;
+  base::JSONWriter::WriteWithOptions(
+      *list, base::JSONWriter::OPTIONS_PRETTY_PRINT, &str);
+  return str;
 }
 
 std::string LayerTreeHostImpl::LayerTreeAsJson() const {
@@ -4154,7 +4222,7 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
   }
 
   id = resource_provider_->CreateResource(
-      upload_size, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format,
+      upload_size, ResourceProvider::TEXTURE_HINT_DEFAULT, format,
       gfx::ColorSpace::CreateSRGB());
 
   if (!scaled) {
@@ -4426,9 +4494,8 @@ void LayerTreeHostImpl::ScrollOffsetAnimationFinished() {
 gfx::ScrollOffset LayerTreeHostImpl::GetScrollOffsetForAnimation(
     ElementId element_id) const {
   if (active_tree()) {
-    LayerImpl* layer = active_tree()->LayerByElementId(element_id);
-    if (layer)
-      return layer->ScrollOffsetForAnimation();
+    return active_tree()->property_trees()->scroll_tree.current_scroll_offset(
+        element_id);
   }
 
   return gfx::ScrollOffset();
@@ -4494,6 +4561,15 @@ void LayerTreeHostImpl::ShowScrollbarsForImplScroll(ElementId element_id) {
   if (ScrollbarAnimationController* animation_controller =
           ScrollbarAnimationControllerForElementId(element_id))
     animation_controller->DidScrollUpdate();
+}
+
+void LayerTreeHostImpl::RequestInvalidationForAnimatedImages() {
+  DCHECK(image_animation_controller_);
+
+  // If we are animating an image, we want at least one draw of the active tree
+  // before a new tree is activated.
+  bool needs_first_draw_on_activation = true;
+  client_->NeedsImplSideInvalidation(needs_first_draw_on_activation);
 }
 
 }  // namespace cc

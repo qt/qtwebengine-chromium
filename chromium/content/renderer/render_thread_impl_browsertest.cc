@@ -85,7 +85,7 @@ class TestTaskCounter : public base::SingleThreadTaskRunner {
   TestTaskCounter() : count_(0) {}
 
   // SingleThreadTaskRunner implementation.
-  bool PostDelayedTask(const tracked_objects::Location&,
+  bool PostDelayedTask(const base::Location&,
                        base::OnceClosure,
                        base::TimeDelta) override {
     base::AutoLock auto_lock(lock_);
@@ -93,7 +93,7 @@ class TestTaskCounter : public base::SingleThreadTaskRunner {
     return true;
   }
 
-  bool PostNonNestableDelayedTask(const tracked_objects::Location&,
+  bool PostNonNestableDelayedTask(const base::Location&,
                                   base::OnceClosure,
                                   base::TimeDelta) override {
     base::AutoLock auto_lock(lock_);
@@ -201,7 +201,7 @@ class RenderThreadImplBrowserTest : public testing::Test {
                                   nullptr, io_task_runner);
 
     mock_process_.reset(new MockRenderProcess);
-    test_task_counter_ = make_scoped_refptr(new TestTaskCounter());
+    test_task_counter_ = base::MakeRefCounted<TestTaskCounter>();
 
     // RenderThreadImpl expects the browser to pass these flags.
     base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
@@ -229,8 +229,8 @@ class RenderThreadImplBrowserTest : public testing::Test {
     cmd->InitFromArgv(old_argv);
 
     run_loop_ = base::MakeUnique<base::RunLoop>();
-    test_msg_filter_ = make_scoped_refptr(
-        new QuitOnTestMsgFilter(run_loop_->QuitWhenIdleClosure()));
+    test_msg_filter_ = base::MakeRefCounted<QuitOnTestMsgFilter>(
+        run_loop_->QuitWhenIdleClosure());
     thread_->AddFilter(test_msg_filter_.get());
   }
 
@@ -285,7 +285,8 @@ TEST_F(RenderThreadImplBrowserTest,
   ASSERT_TRUE(thread_->input_handler_manager());
 
   thread_->compositor_task_runner()->PostTask(
-      FROM_HERE, base::Bind(&CheckRenderThreadInputHandlerManager, thread_));
+      FROM_HERE,
+      base::BindOnce(&CheckRenderThreadInputHandlerManager, thread_));
 }
 
 // Disabled under LeakSanitizer due to memory leaks.

@@ -49,7 +49,8 @@ std::unique_ptr<CXFA_FFDoc> CXFA_FFApp::CreateDoc(
   return pDoc;
 }
 
-void CXFA_FFApp::SetDefaultFontMgr(std::unique_ptr<CXFA_DefFontMgr> pFontMgr) {
+void CXFA_FFApp::SetDefaultFontMgr(
+    std::unique_ptr<CFGAS_DefaultFontManager> pFontMgr) {
   if (!m_pFontMgr)
     m_pFontMgr = pdfium::MakeUnique<CXFA_FontMgr>();
   m_pFontMgr->SetDefFontMgr(std::move(pFontMgr));
@@ -61,12 +62,9 @@ CXFA_FontMgr* CXFA_FFApp::GetXFAFontMgr() const {
 
 CFGAS_FontMgr* CXFA_FFApp::GetFDEFontMgr() {
   if (!m_pFDEFontMgr) {
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-    m_pFDEFontMgr = CFGAS_FontMgr::Create(FX_GetDefFontEnumerator());
-#else
-    m_pFontSource = pdfium::MakeUnique<CFX_FontSourceEnum_File>();
-    m_pFDEFontMgr = CFGAS_FontMgr::Create(m_pFontSource.get());
-#endif
+    m_pFDEFontMgr = pdfium::MakeUnique<CFGAS_FontMgr>();
+    if (!m_pFDEFontMgr->EnumFonts())
+      m_pFDEFontMgr = nullptr;
   }
   return m_pFDEFontMgr.get();
 }
@@ -77,12 +75,9 @@ CXFA_FWLTheme* CXFA_FFApp::GetFWLTheme() {
   return m_pFWLTheme.get();
 }
 
-CXFA_FWLAdapterWidgetMgr* CXFA_FFApp::GetWidgetMgr(CFWL_WidgetMgr* pDelegate) {
-  if (!m_pAdapterWidgetMgr) {
+CXFA_FWLAdapterWidgetMgr* CXFA_FFApp::GetFWLAdapterWidgetMgr() {
+  if (!m_pAdapterWidgetMgr)
     m_pAdapterWidgetMgr = pdfium::MakeUnique<CXFA_FWLAdapterWidgetMgr>();
-    pDelegate->OnSetCapability(FWL_WGTMGR_DisableForm);
-    m_pWidgetMgr = pDelegate;
-  }
   return m_pAdapterWidgetMgr.get();
 }
 

@@ -75,7 +75,7 @@ SourcesTestRunner.runDebuggerTestSuite = function(testSuite) {
 };
 
 SourcesTestRunner.runTestFunction = function() {
-  TestRunner.evaluateInPage('scheduleTestFunction()');
+  TestRunner.evaluateInPageAnonymously('scheduleTestFunction()');
   TestRunner.addResult('Set timer for test function.');
 };
 
@@ -665,9 +665,7 @@ SourcesTestRunner.selectThread = function(target) {
 };
 
 SourcesTestRunner.evaluateOnCurrentCallFrame = function(code) {
-  return new Promise(
-      succ => TestRunner.debuggerModel.evaluateOnSelectedCallFrame(
-          code, 'console', false, true, false, false, TestRunner.safeWrap(succ)));
+  return TestRunner.debuggerModel.evaluateOnSelectedCallFrame({expression: code, objectGroup: 'console'});
 };
 
 SourcesTestRunner.waitJavaScriptSourceFrameBreakpoints = function(sourceFrame, inline) {
@@ -749,10 +747,8 @@ SourcesTestRunner.setEventListenerBreakpoint = function(id, enabled, targetName)
   }
 };
 
-TestRunner.initAsync(async function() {
-  await TestRunner.evaluateInPagePromise(`
-    function scheduleTestFunction() {
-      setTimeout(testFunction, 0);
-    }
-  `);
-});
+TestRunner.initAsync(`
+  function scheduleTestFunction() {
+    setTimeout(testFunction, 0);
+  }
+`);

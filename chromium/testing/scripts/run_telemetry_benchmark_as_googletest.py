@@ -53,6 +53,26 @@ def main():
   args, rest_args = parser.parse_known_args()
   for output_format in args.output_format:
     rest_args.append('--output-format=' + output_format)
+
+  rc, perf_results, json_test_results = run_benchmark(args, rest_args)
+
+  if perf_results:
+    if args.isolated_script_test_perf_output:
+      filename = args.isolated_script_test_perf_output
+    elif args.isolated_script_test_chartjson_output:
+      filename = args.isolated_script_test_chartjson_output
+    else:
+      filename = None
+
+    if filename is not None:
+      with open(filename, 'w') as perf_results_output_file:
+        json.dump(perf_results, perf_results_output_file)
+
+  json.dump(json_test_results, args.isolated_script_test_output)
+
+  return rc
+
+def run_benchmark(args, rest_args):
   env = os.environ.copy()
   # Assume we want to set up the sandbox environment variables all the
   # time; doing so is harmless on non-Linux platforms and is needed
@@ -61,8 +81,9 @@ def main():
   tempfile_dir = tempfile.mkdtemp('telemetry')
   valid = True
   num_failures = 0
+  histogram_results_present = 'histograms' in args.output_format
   chartjson_results_present = 'chartjson' in args.output_format
-  chartresults = None
+  perf_results = None
   json_test_results = None
 
   results = None
@@ -79,10 +100,16 @@ def main():
     # If we have also output chartjson read it in and return it.
     # results-chart.json is the file name output by telemetry when the
     # chartjson output format is included
-    if chartjson_results_present:
-      chart_tempfile_name = os.path.join(tempfile_dir, 'results-chart.json')
-      with open(chart_tempfile_name) as f:
-        chartresults = json.load(f)
+    if histogram_results_present:
+      tempfile_name = os.path.join(tempfile_dir, 'histograms.json')
+    elif chartjson_results_present:
+      tempfile_name = os.path.join(tempfile_dir, 'results-chart.json')
+    else:
+      tempfile_name = None
+
+    if tempfile_name is not None:
+      with open(tempfile_name) as f:
+        perf_results = json.load(f)
 
     # test-results.json is the file name output by telemetry when the
     # json-test-results format is included
@@ -105,20 +132,7 @@ def main():
     if rc == 0:
       rc = 1  # Signal an abnormal exit.
 
-  if chartjson_results_present:
-    if args.isolated_script_test_perf_output:
-      filename = args.isolated_script_test_perf_output
-    elif args.isolated_script_test_chartjson_output:
-      filename = args.isolated_script_test_chartjson_output
-    else:
-      filename = None
-
-    if filename is not None:
-      with open(filename, 'w') as chartjson_output_file:
-        json.dump(chartresults, chartjson_output_file)
-
-  json.dump(json_test_results, args.isolated_script_test_output)
-  return rc
+  return rc, perf_results, json_test_results
 
 
 # This is not really a "script test" so does not need to manually add

@@ -36,7 +36,6 @@
 
 #include "bindings/core/v8/ScriptController.h"
 #include "build/build_config.h"
-#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/events/WebInputEventConversion.h"
@@ -53,7 +52,6 @@
 #include "core/frame/WebFrameWidgetImpl.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/fullscreen/Fullscreen.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/forms/ColorChooser.h"
 #include "core/html/forms/ColorChooserClient.h"
 #include "core/html/forms/ColorChooserPopupUIController.h"
@@ -64,6 +62,7 @@
 #include "core/html/forms/ExternalDateTimeChooser.h"
 #include "core/html/forms/ExternalPopupMenu.h"
 #include "core/html/forms/FileChooser.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/forms/InternalPopupMenu.h"
 #include "core/inspector/DevToolsEmulator.h"
 #include "core/layout/HitTestResult.h"
@@ -77,13 +76,13 @@
 #include "platform/Cursor.h"
 #include "platform/Histogram.h"
 #include "platform/LayoutTestSupport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/WebFrameScheduler.h"
 #include "platform/animation/CompositorAnimationHost.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/TouchAction.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Optional.h"
@@ -104,7 +103,6 @@
 #include "public/web/WebInputElement.h"
 #include "public/web/WebKit.h"
 #include "public/web/WebNode.h"
-#include "public/web/WebPageImportanceSignals.h"
 #include "public/web/WebPlugin.h"
 #include "public/web/WebPopupMenuInfo.h"
 #include "public/web/WebSelection.h"
@@ -497,8 +495,8 @@ void ChromeClientImpl::ShowMouseOverURL(const HitTestResult& result) {
         !result.AbsoluteLinkURL().GetString().IsEmpty()) {
       url = result.AbsoluteLinkURL();
     } else if (result.InnerNode() &&
-               (isHTMLObjectElement(*result.InnerNode()) ||
-                isHTMLEmbedElement(*result.InnerNode()))) {
+               (IsHTMLObjectElement(*result.InnerNode()) ||
+                IsHTMLEmbedElement(*result.InnerNode()))) {
       LayoutObject* object = result.InnerNode()->GetLayoutObject();
       if (object && object->IsLayoutEmbeddedContent()) {
         PluginView* plugin_view = ToLayoutEmbeddedContent(object)->Plugin();
@@ -1080,7 +1078,7 @@ void ChromeClientImpl::UnregisterPopupOpeningObserver(
     PopupOpeningObserver* observer) {
   size_t index = popup_opening_observers_.Find(observer);
   DCHECK_NE(index, kNotFound);
-  popup_opening_observers_.erase(index);
+  popup_opening_observers_.EraseAt(index);
 }
 
 void ChromeClientImpl::NotifyPopupOpeningObservers() const {
@@ -1093,14 +1091,11 @@ FloatSize ChromeClientImpl::ElasticOverscroll() const {
   return web_view_->ElasticOverscroll();
 }
 
-void ChromeClientImpl::DidObserveNonGetFetchFromScript() const {
-  if (web_view_->PageImportanceSignals())
-    web_view_->PageImportanceSignals()->SetIssuedNonGetFetchFromScript();
-}
-
 std::unique_ptr<WebFrameScheduler> ChromeClientImpl::CreateFrameScheduler(
-    BlameContext* blame_context) {
-  return web_view_->Scheduler()->CreateFrameScheduler(blame_context);
+    BlameContext* blame_context,
+    WebFrameScheduler::FrameType frame_type) {
+  return web_view_->Scheduler()->CreateFrameScheduler(blame_context,
+                                                      frame_type);
 }
 
 double ChromeClientImpl::LastFrameTimeMonotonic() const {

@@ -20,8 +20,9 @@
 
 #include "core/html/forms/RadioButtonGroupScope.h"
 
-#include "core/InputTypeNames.h"
-#include "core/html/HTMLInputElement.h"
+#include "core/dom/AXObjectCache.h"
+#include "core/html/forms/HTMLInputElement.h"
+#include "core/input_type_names.h"
 #include "platform/wtf/HashMap.h"
 
 namespace blink {

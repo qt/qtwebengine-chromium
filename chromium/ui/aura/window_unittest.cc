@@ -16,7 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
-#include "cc/output/layer_tree_frame_sink.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "services/ui/public/interfaces/window_tree_constants.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/capture_client.h"
@@ -1747,6 +1747,13 @@ class WindowObserverTest : public WindowTest,
     int changed_count;
   };
 
+  struct WindowOpacityInfo {
+    int changed_count = 0;
+    Window* window = nullptr;
+    float old_opacity = 0.0f;
+    float new_opacity = 0.0f;
+  };
+
   WindowObserverTest()
       : added_count_(0),
         removed_count_(0),
@@ -1758,6 +1765,10 @@ class WindowObserverTest : public WindowTest,
 
   const VisibilityInfo* GetVisibilityInfo() const {
     return visibility_info_.get();
+  }
+
+  const WindowOpacityInfo& window_opacity_info() const {
+    return window_opacity_info_;
   }
 
   void ResetVisibilityInfo() {
@@ -1814,6 +1825,15 @@ class WindowObserverTest : public WindowTest,
     old_property_value_ = old;
   }
 
+  void OnWindowOpacityChanged(Window* window,
+                              float old_opacity,
+                              float new_opacity) override {
+    ++window_opacity_info_.changed_count;
+    window_opacity_info_.window = window;
+    window_opacity_info_.old_opacity = old_opacity;
+    window_opacity_info_.new_opacity = new_opacity;
+  }
+
   int added_count_;
   int removed_count_;
   int destroyed_count_;
@@ -1821,6 +1841,7 @@ class WindowObserverTest : public WindowTest,
   const void* property_key_;
   intptr_t old_property_value_;
   std::vector<std::pair<int, int> > transform_notifications_;
+  WindowOpacityInfo window_opacity_info_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowObserverTest);
 };
@@ -1946,6 +1967,18 @@ TEST_P(WindowObserverTest, PropertyChanged) {
   // Sanity check to see if |PropertyChangeInfoAndClear| really clears.
   EXPECT_EQ(PropertyChangeInfo(
       reinterpret_cast<const void*>(NULL), -3), PropertyChangeInfoAndClear());
+}
+
+// Verify that WindowObserver::OnWindowOpacityChanged() is notified when the
+// opacity of a Window's Layer changes.
+TEST_P(WindowObserverTest, WindowOpacityChanged) {
+  std::unique_ptr<Window> window(CreateTestWindowWithId(1, root_window()));
+  window->AddObserver(this);
+  window->layer()->SetOpacity(0.5f);
+  ASSERT_EQ(1, window_opacity_info().changed_count);
+  EXPECT_EQ(window.get(), window_opacity_info().window);
+  EXPECT_EQ(1.0f, window_opacity_info().old_opacity);
+  EXPECT_EQ(0.5f, window_opacity_info().new_opacity);
 }
 
 TEST_P(WindowTest, AcquireLayer) {
@@ -2880,17 +2913,26 @@ TEST_P(WindowTest, LocalSurfaceIdChanges) {
   EXPECT_TRUE(local_surface_id2.is_valid());
   EXPECT_NE(local_surface_id1, local_surface_id2);
 
-  window.OnDeviceScaleFactorChanged(3.0f);
+  window.OnDeviceScaleFactorChanged(1.0f, 3.0f);
   viz::LocalSurfaceId local_surface_id3 = window.GetLocalSurfaceId();
   EXPECT_TRUE(local_surface_id3.is_valid());
   EXPECT_NE(local_surface_id1, local_surface_id3);
   EXPECT_NE(local_surface_id2, local_surface_id3);
 
-  window.AllocateLocalSurfaceId();
+  window.RecreateLayer();
   viz::LocalSurfaceId local_surface_id4 = window.GetLocalSurfaceId();
+  EXPECT_TRUE(local_surface_id4.is_valid());
   EXPECT_NE(local_surface_id1, local_surface_id4);
   EXPECT_NE(local_surface_id2, local_surface_id4);
   EXPECT_NE(local_surface_id3, local_surface_id4);
+
+  window.AllocateLocalSurfaceId();
+  viz::LocalSurfaceId local_surface_id5 = window.GetLocalSurfaceId();
+  EXPECT_TRUE(local_surface_id5.is_valid());
+  EXPECT_NE(local_surface_id1, local_surface_id5);
+  EXPECT_NE(local_surface_id2, local_surface_id5);
+  EXPECT_NE(local_surface_id3, local_surface_id5);
+  EXPECT_NE(local_surface_id4, local_surface_id5);
 }
 
 INSTANTIATE_TEST_CASE_P(/* no prefix */,

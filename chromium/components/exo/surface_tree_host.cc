@@ -8,10 +8,13 @@
 
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
-#include "cc/output/compositor_frame.h"
-#include "cc/output/layer_tree_frame_sink.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "components/exo/layer_tree_frame_sink_holder.h"
 #include "components/exo/surface.h"
+#include "components/exo/wm_helper.h"
+#include "components/viz/common/quads/compositor_frame.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
+#include "services/ui/public/interfaces/window_tree_constants.mojom.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -83,7 +86,11 @@ SurfaceTreeHost::SurfaceTreeHost(const std::string& window_name,
   host_window_->SetName(window_name);
   host_window_->Init(ui::LAYER_NOT_DRAWN);
   host_window_->set_owned_by_parent(false);
-  host_window_->SetEventTargeter(base::MakeUnique<CustomWindowTargeter>(this));
+  // The host window is a container of surface tree. It doesn't handle pointer
+  // events.
+  host_window_->SetEventTargetingPolicy(
+      ui::mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
+  host_window_->SetEventTargeter(std::make_unique<CustomWindowTargeter>(this));
 
   surface_host_->SetName("ExoSurfaceHost");
   surface_host_->Init(ui::LAYER_SOLID_COLOR);
@@ -103,6 +110,8 @@ SurfaceTreeHost::~SurfaceTreeHost() {
     host_window_->layer()->GetCompositor()->vsync_manager()->RemoveObserver(
         this);
   }
+  LayerTreeFrameSinkHolder::DeleteWhenLastResourceHasBeenReclaimed(
+      std::move(layer_tree_frame_sink_holder_));
 }
 
 void SurfaceTreeHost::SetRootSurface(Surface* root_surface) {
@@ -249,6 +258,18 @@ void SurfaceTreeHost::OnWindowDestroying(aura::Window* window) {
 bool SurfaceTreeHost::OnBeginFrameDerivedImpl(const viz::BeginFrameArgs& args) {
   current_begin_frame_ack_ =
       viz::BeginFrameAck(args.source_id, args.sequence_number, false);
+
+  if (!frame_callbacks_.empty()) {
+    // In this case, the begin frame arrives just before
+    // |DidReceivedCompositorFrameAck()|, we need more begin frames to run
+    // |frame_callbacks_| which will be moved to |active_frame_callbacks_| by
+    // |DidReceivedCompositorFrameAck()| shortly.
+    layer_tree_frame_sink_holder_->DidNotProduceFrame(current_begin_frame_ack_);
+    current_begin_frame_ack_.sequence_number =
+        viz::BeginFrameArgs::kInvalidFrameNumber;
+    begin_frame_source_->DidFinishFrame(this);
+  }
+
   while (!active_frame_callbacks_.empty()) {
     active_frame_callbacks_.front().Run(args.frame_time);
     active_frame_callbacks_.pop_front();
@@ -291,7 +312,7 @@ void SurfaceTreeHost::OnLostResources() {
 
 void SurfaceTreeHost::SubmitCompositorFrame() {
   DCHECK(root_surface_);
-  cc::CompositorFrame frame;
+  viz::CompositorFrame frame;
   // If we commit while we don't have an active BeginFrame, we acknowledge a
   // manual one.
   if (current_begin_frame_ack_.sequence_number ==
@@ -301,8 +322,8 @@ void SurfaceTreeHost::SubmitCompositorFrame() {
     current_begin_frame_ack_.has_damage = true;
   }
   frame.metadata.begin_frame_ack = current_begin_frame_ack_;
-  frame.render_pass_list.push_back(cc::RenderPass::Create());
-  const std::unique_ptr<cc::RenderPass>& render_pass =
+  frame.render_pass_list.push_back(viz::RenderPass::Create());
+  const std::unique_ptr<viz::RenderPass>& render_pass =
       frame.render_pass_list.back();
   const int kRenderPassId = 1;
   render_pass->SetNew(kRenderPassId, gfx::Rect(), gfx::Rect(),
@@ -325,13 +346,23 @@ void SurfaceTreeHost::SubmitCompositorFrame() {
   for (auto* quad_state : render_pass->shared_quad_state_list)
     quad_state->quad_to_target_transform.ConcatTransform(translation);
 
-  layer_tree_frame_sink_holder_->frame_sink()->SubmitCompositorFrame(
-      std::move(frame));
+  if (WMHelper::GetInstance()->AreVerifiedSyncTokensNeeded()) {
+    std::vector<GLbyte*> sync_tokens;
+    for (auto& resource : frame.resource_list)
+      sync_tokens.push_back(resource.mailbox_holder.sync_token.GetData());
+    ui::ContextFactory* context_factory =
+        aura::Env::GetInstance()->context_factory();
+    gpu::gles2::GLES2Interface* gles2 =
+        context_factory->SharedMainThreadContextProvider()->ContextGL();
+    gles2->VerifySyncTokensCHROMIUM(sync_tokens.data(), sync_tokens.size());
+  }
+
+  layer_tree_frame_sink_holder_->SubmitCompositorFrame(std::move(frame));
 
   if (current_begin_frame_ack_.sequence_number !=
       viz::BeginFrameArgs::kInvalidFrameNumber) {
     if (!current_begin_frame_ack_.has_damage) {
-      layer_tree_frame_sink_holder_->frame_sink()->DidNotProduceFrame(
+      layer_tree_frame_sink_holder_->DidNotProduceFrame(
           current_begin_frame_ack_);
     }
     current_begin_frame_ack_.sequence_number =

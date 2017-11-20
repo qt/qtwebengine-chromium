@@ -116,7 +116,7 @@ void CXFA_FWLTheme::DrawText(CFWL_ThemeText* pParams) {
       mtPart.Concat(*pMatrix);
 
     m_pTextOut->SetMatrix(mtPart);
-    m_pTextOut->DrawLogicText(pRenderDevice, pParams->m_wsText.AsStringC(),
+    m_pTextOut->DrawLogicText(pRenderDevice, pParams->m_wsText.AsStringView(),
                               pParams->m_rtPart);
     return;
   }
@@ -141,7 +141,7 @@ void CXFA_FWLTheme::DrawText(CFWL_ThemeText* pParams) {
     mtPart.Concat(*pMatrix);
 
   m_pTextOut->SetMatrix(mtPart);
-  m_pTextOut->DrawLogicText(pRenderDevice, pParams->m_wsText.AsStringC(),
+  m_pTextOut->DrawLogicText(pRenderDevice, pParams->m_wsText.AsStringView(),
                             pParams->m_rtPart);
 }
 
@@ -185,7 +185,7 @@ float CXFA_FWLTheme::GetFontSize(CFWL_ThemePart* pThemePart) const {
   return FWLTHEME_CAPACITY_FontSize;
 }
 
-CFX_RetainPtr<CFGAS_GEFont> CXFA_FWLTheme::GetFont(
+RetainPtr<CFGAS_GEFont> CXFA_FWLTheme::GetFont(
     CFWL_ThemePart* pThemePart) const {
   if (CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pThemePart->m_pWidget))
     return pWidget->GetDataAcc()->GetFDEFont();

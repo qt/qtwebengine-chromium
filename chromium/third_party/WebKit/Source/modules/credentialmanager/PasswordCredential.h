@@ -6,7 +6,7 @@
 #define PasswordCredential_h
 
 #include "bindings/core/v8/serialization/SerializedScriptValue.h"
-#include "bindings/modules/v8/FormDataOrURLSearchParams.h"
+#include "bindings/modules/v8/form_data_or_url_search_params.h"
 #include "modules/ModulesExport.h"
 #include "modules/credentialmanager/Credential.h"
 #include "platform/bindings/ScriptWrappable.h"
@@ -50,7 +50,7 @@ class MODULES_EXPORT PasswordCredential final : public Credential {
   const KURL& iconURL() const;
 
   // Internal methods
-  PassRefPtr<EncodedFormData> EncodeFormData(String& content_type) const;
+  RefPtr<EncodedFormData> EncodeFormData(String& content_type) const;
   DECLARE_VIRTUAL_TRACE();
 
  private:

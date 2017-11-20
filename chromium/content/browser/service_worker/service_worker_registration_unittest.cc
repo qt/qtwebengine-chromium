@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
@@ -16,11 +17,14 @@
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/embedded_worker_test_helper.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
+#include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/service_worker/service_worker_registration_handle.h"
 #include "content/browser/service_worker/service_worker_test_utils.h"
 #include "content/common/service_worker/service_worker_utils.h"
+#include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -49,7 +53,8 @@ class ServiceWorkerRegistrationTest : public testing::Test {
   void SetUp() override {
     helper_.reset(new EmbeddedWorkerTestHelper(base::FilePath()));
 
-    helper_->context()->storage()->LazyInitialize(base::Bind(&base::DoNothing));
+    context()->storage()->LazyInitializeForTest(
+        base::BindOnce(&base::DoNothing));
     base::RunLoop().RunUntilIdle();
   }
 
@@ -108,8 +113,9 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
   const GURL kScript("http://www.example.not/service_worker.js");
   int64_t kRegistrationId = 1L;
   scoped_refptr<ServiceWorkerRegistration> registration =
-      new ServiceWorkerRegistration(ServiceWorkerRegistrationOptions(kScope),
-                                    kRegistrationId, context()->AsWeakPtr());
+      new ServiceWorkerRegistration(
+          blink::mojom::ServiceWorkerRegistrationOptions(kScope),
+          kRegistrationId, context()->AsWeakPtr());
 
   const int64_t version_1_id = 1L;
   const int64_t version_2_id = 2L;
@@ -174,13 +180,18 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
 TEST_F(ServiceWorkerRegistrationTest, FailedRegistrationNoCrash) {
   const GURL kScope("http://www.example.not/");
   int64_t kRegistrationId = 1L;
-  scoped_refptr<ServiceWorkerRegistration> registration =
-      new ServiceWorkerRegistration(ServiceWorkerRegistrationOptions(kScope),
-                                    kRegistrationId, context()->AsWeakPtr());
-  std::unique_ptr<ServiceWorkerRegistrationHandle> handle(
-      new ServiceWorkerRegistrationHandle(
-          context()->AsWeakPtr(), base::WeakPtr<ServiceWorkerProviderHost>(),
-          registration.get()));
+  auto registration = base::MakeRefCounted<ServiceWorkerRegistration>(
+      blink::mojom::ServiceWorkerRegistrationOptions(kScope), kRegistrationId,
+      context()->AsWeakPtr());
+  auto dispatcher_host = base::MakeRefCounted<ServiceWorkerDispatcherHost>(
+      helper_->mock_render_process_id(),
+      helper_->browser_context()->GetResourceContext());
+  // ServiceWorkerRegistrationHandle ctor will make |handle| be owned by
+  // |dispatcher_host|.
+  auto* handle = new ServiceWorkerRegistrationHandle(
+      context()->AsWeakPtr(), dispatcher_host.get(),
+      base::WeakPtr<ServiceWorkerProviderHost>(), registration.get());
+  ALLOW_UNUSED_LOCAL(handle);
   registration->NotifyRegistrationFailed();
   // Don't crash when handle gets destructed.
 }
@@ -190,9 +201,9 @@ TEST_F(ServiceWorkerRegistrationTest, NavigationPreload) {
   const GURL kScript("https://www.example.not/service_worker.js");
   // Setup.
   scoped_refptr<ServiceWorkerRegistration> registration =
-      new ServiceWorkerRegistration(ServiceWorkerRegistrationOptions(kScope),
-                                    storage()->NewRegistrationId(),
-                                    context()->AsWeakPtr());
+      new ServiceWorkerRegistration(
+          blink::mojom::ServiceWorkerRegistrationOptions(kScope),
+          storage()->NewRegistrationId(), context()->AsWeakPtr());
   scoped_refptr<ServiceWorkerVersion> version_1 = new ServiceWorkerVersion(
       registration.get(), kScript, storage()->NewVersionId(),
       context()->AsWeakPtr());
@@ -235,7 +246,7 @@ class ServiceWorkerActivationTest : public ServiceWorkerRegistrationTest {
     const GURL kScript("https://www.example.not/service_worker.js");
 
     registration_ = new ServiceWorkerRegistration(
-        ServiceWorkerRegistrationOptions(kScope),
+        blink::mojom::ServiceWorkerRegistrationOptions(kScope),
         storage()->NewRegistrationId(), context()->AsWeakPtr());
 
     // Create an active version.
@@ -280,6 +291,8 @@ class ServiceWorkerActivationTest : public ServiceWorkerRegistrationTest {
     version_2->set_fetch_handler_existence(
         ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
     registration_->SetWaitingVersion(version_2);
+    version_2->StartWorker(ServiceWorkerMetrics::EventType::INSTALL,
+                           base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
     version_2->SetStatus(ServiceWorkerVersion::INSTALLED);
 
     // Set it to activate when ready. The original version should still be

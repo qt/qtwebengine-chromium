@@ -38,12 +38,12 @@
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSSupportsRule.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverStats.h"
 #include "core/css/resolver/StyleRuleUsageTracker.h"
 #include "core/dom/ShadowRoot.h"
-#include "core/dom/StyleEngine.h"
 #include "core/style/ComputedStyle.h"
 
 namespace blink {
@@ -123,7 +123,7 @@ void ElementRuleCollector::CollectMatchingRulesForList(
   SelectorChecker::Init init;
   init.mode = mode_;
   init.is_ua_rule = matching_ua_rules_;
-  init.element_style = style_.Get();
+  init.element_style = style_.get();
   init.scrollbar = pseudo_style_request_.scrollbar;
   init.scrollbar_part = pseudo_style_request_.scrollbar_part;
   SelectorChecker checker(init);

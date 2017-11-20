@@ -4,7 +4,7 @@
 
 #include "core/css/parser/CSSLazyParsingState.h"
 #include "core/css/parser/CSSLazyPropertyParserImpl.h"
-#include "core/css/parser/CSSParserTokenRange.h"
+#include "core/css/parser/CSSParserTokenStream.h"
 #include "core/dom/Document.h"
 #include "core/frame/UseCounter.h"
 #include "platform/Histogram.h"
@@ -12,11 +12,9 @@
 namespace blink {
 
 CSSLazyParsingState::CSSLazyParsingState(const CSSParserContext* context,
-                                         Vector<String> escaped_strings,
                                          const String& sheet_text,
                                          StyleSheetContents* contents)
     : context_(context),
-      escaped_strings_(std::move(escaped_strings)),
       sheet_text_(sheet_text),
       owning_contents_(contents),
       parsed_style_rules_(0),
@@ -30,9 +28,9 @@ void CSSLazyParsingState::FinishInitialParsing() {
 }
 
 CSSLazyPropertyParserImpl* CSSLazyParsingState::CreateLazyParser(
-    const CSSParserTokenRange& block) {
+    const size_t offset) {
   ++total_style_rules_;
-  return new CSSLazyPropertyParserImpl(std::move(block), this);
+  return new CSSLazyPropertyParserImpl(offset, this);
 }
 
 const CSSParserContext* CSSLazyParsingState::Context() {
@@ -52,6 +50,15 @@ const CSSParserContext* CSSLazyParsingState::Context() {
   return context_;
 }
 
+StyleEngine& CSSLazyParsingState::GetStyleEngine() {
+  DCHECK(owning_contents_);
+  // Try as best as possible to grab a valid Document if the old Document has
+  // gone away so we can still use UseCounter.
+  if (!document_)
+    document_ = owning_contents_->AnyOwnerDocument();
+  return document_->GetStyleEngine();
+}
+
 void CSSLazyParsingState::CountRuleParsed() {
   ++parsed_style_rules_;
   while (parsed_style_rules_ > style_rules_needed_for_next_milestone_) {
@@ -59,35 +66,6 @@ void CSSLazyParsingState::CountRuleParsed() {
     ++usage_;
     RecordUsageMetrics();
   }
-}
-
-bool CSSLazyParsingState::ShouldLazilyParseProperties(
-    const CSSSelectorList& selectors,
-    const CSSParserTokenRange& block) const {
-  // Simple heuristic for an empty block. Note that |block| here does not
-  // include {} brackets. We avoid lazy parsing empty blocks so we can avoid
-  // considering them when possible for matching. Lazy blocks must always be
-  // considered. Three tokens is a reasonable minimum for a block:
-  // ident ':' <value>.
-  if (block.end() - block.begin() <= 2)
-    return false;
-
-  //  Disallow lazy parsing for blocks which have before/after in their selector
-  //  list. This ensures we don't cause a collectFeatures() when we trigger
-  //  parsing for attr() functions which would trigger expensive invalidation
-  //  propagation.
-  for (const auto* s = selectors.First(); s; s = CSSSelectorList::Next(*s)) {
-    for (const CSSSelector* current = s; current;
-         current = current->TagHistory()) {
-      const CSSSelector::PseudoType type(current->GetPseudoType());
-      if (type == CSSSelector::kPseudoBefore ||
-          type == CSSSelector::kPseudoAfter)
-        return false;
-      if (current->Relation() != CSSSelector::kSubSelector)
-        break;
-    }
-  }
-  return true;
 }
 
 void CSSLazyParsingState::RecordUsageMetrics() {

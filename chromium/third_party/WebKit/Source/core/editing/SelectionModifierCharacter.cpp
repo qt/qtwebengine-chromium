@@ -31,7 +31,9 @@
 #include "core/editing/SelectionModifier.h"
 
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/InlineBoxPosition.h"
 #include "core/editing/InlineBoxTraversal.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/layout/api/LineLayoutAPIShim.h"
 #include "core/layout/api/LineLayoutItem.h"
@@ -87,7 +89,7 @@ struct TraversalLeft {
   }
 
   static int ForwardGraphemeBoundaryOf(TextDirection direction,
-                                       Node* node,
+                                       const Node& node,
                                        int offset) {
     if (direction == TextDirection::kLtr)
       return PreviousGraphemeBoundaryOf(node, offset);
@@ -179,7 +181,7 @@ struct TraversalRight {
   }
 
   static int ForwardGraphemeBoundaryOf(TextDirection direction,
-                                       Node* node,
+                                       const Node& node,
                                        int offset) {
     if (direction == TextDirection::kLtr)
       return NextGraphemeBoundaryOf(node, offset);
@@ -274,7 +276,7 @@ static PositionTemplate<Strategy> TraverseInternalAlgorithm(
       }
 
       offset = Traversal::ForwardGraphemeBoundaryOf(
-          box->Direction(), line_layout_item.GetNode(), offset);
+          box->Direction(), *line_layout_item.GetNode(), offset);
 
       const int caret_min_offset = box->CaretMinOffset();
       const int caret_max_offset = box->CaretMaxOffset();

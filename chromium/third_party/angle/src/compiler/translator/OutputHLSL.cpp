@@ -130,8 +130,8 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
     mUsesFrontFacing             = false;
     mUsesPointSize               = false;
     mUsesInstanceID              = false;
-    mHasMultiviewExtensionEnabled = IsExtensionEnabled(mExtensionBehavior, "GL_OVR_multiview") ||
-                                    IsExtensionEnabled(mExtensionBehavior, "GL_OVR_multiview2");
+    mHasMultiviewExtensionEnabled =
+        IsExtensionEnabled(mExtensionBehavior, TExtension::OVR_multiview);
     mUsesViewID                  = false;
     mUsesVertexID                = false;
     mUsesFragDepth               = false;
@@ -418,9 +418,8 @@ void OutputHLSL::header(TInfoSinkBase &out, const BuiltInFunctionEmulator *built
 
     if (mShaderType == GL_FRAGMENT_SHADER)
     {
-        TExtensionBehavior::const_iterator iter = mExtensionBehavior.find("GL_EXT_draw_buffers");
-        const bool usingMRTExtension            = (iter != mExtensionBehavior.end() &&
-                                        (iter->second == EBhEnable || iter->second == EBhRequire));
+        const bool usingMRTExtension =
+            IsExtensionEnabled(mExtensionBehavior, TExtension::EXT_draw_buffers);
 
         out << "// Varyings\n";
         out << varyings;
@@ -516,6 +515,13 @@ void OutputHLSL::header(TInfoSinkBase &out, const BuiltInFunctionEmulator *built
                 // dx_ViewScale is only used in the fragment shader to correct
                 // the value for glFragCoord if necessary
                 out << "    float2 dx_ViewScale : packoffset(c3);\n";
+            }
+
+            if (mHasMultiviewExtensionEnabled)
+            {
+                // We have to add a value which we can use to keep track of which multi-view code
+                // path is to be selected in the GS.
+                out << "    float multiviewSelectViewportIndex : packoffset(c3.z);\n";
             }
 
             if (mOutputType == SH_HLSL_4_1_OUTPUT)
@@ -630,6 +636,13 @@ void OutputHLSL::header(TInfoSinkBase &out, const BuiltInFunctionEmulator *built
             out << "    float4 dx_ViewAdjust : packoffset(c1);\n";
             out << "    float2 dx_ViewCoords : packoffset(c2);\n";
             out << "    float2 dx_ViewScale  : packoffset(c3);\n";
+
+            if (mHasMultiviewExtensionEnabled)
+            {
+                // We have to add a value which we can use to keep track of which multi-view code
+                // path is to be selected in the GS.
+                out << "    float multiviewSelectViewportIndex : packoffset(c3.z);\n";
+            }
 
             if (mOutputType == SH_HLSL_4_1_OUTPUT)
             {
@@ -2122,18 +2135,13 @@ bool OutputHLSL::visitSwitch(Visit visit, TIntermSwitch *node)
 {
     TInfoSinkBase &out = getInfoSink();
 
-    if (node->getStatementList())
+    ASSERT(node->getStatementList());
+    if (visit == PreVisit)
     {
-        node->setStatementList(
-            RemoveSwitchFallThrough::removeFallThrough(node->getStatementList()));
-        outputTriplet(out, visit, "switch (", ") ", "");
-        // The curly braces get written when visiting the statementList aggregate
+        node->setStatementList(RemoveSwitchFallThrough(node->getStatementList()));
     }
-    else
-    {
-        // No statementList, so it won't output curly braces
-        outputTriplet(out, visit, "switch (", ") {", "}\n");
-    }
+    outputTriplet(out, visit, "switch (", ") ", "");
+    // The curly braces get written when visiting the statementList block.
     return true;
 }
 
@@ -2249,16 +2257,16 @@ bool OutputHLSL::visitLoop(Visit visit, TIntermLoop *node)
 
 bool OutputHLSL::visitBranch(Visit visit, TIntermBranch *node)
 {
-    TInfoSinkBase &out = getInfoSink();
-
-    switch (node->getFlowOp())
+    if (visit == PreVisit)
     {
-        case EOpKill:
-            outputTriplet(out, visit, "discard;\n", "", "");
-            break;
-        case EOpBreak:
-            if (visit == PreVisit)
-            {
+        TInfoSinkBase &out = getInfoSink();
+
+        switch (node->getFlowOp())
+        {
+            case EOpKill:
+                out << "discard";
+                break;
+            case EOpBreak:
                 if (mNestedLoopDepth > 1)
                 {
                     mUsesNestedBreak = true;
@@ -2272,35 +2280,25 @@ bool OutputHLSL::visitBranch(Visit visit, TIntermBranch *node)
                 }
                 else
                 {
-                    out << "break;\n";
+                    out << "break";
                 }
-            }
-            break;
-        case EOpContinue:
-            outputTriplet(out, visit, "continue;\n", "", "");
-            break;
-        case EOpReturn:
-            if (visit == PreVisit)
-            {
+                break;
+            case EOpContinue:
+                out << "continue";
+                break;
+            case EOpReturn:
                 if (node->getExpression())
                 {
                     out << "return ";
                 }
                 else
                 {
-                    out << "return;\n";
+                    out << "return";
                 }
-            }
-            else if (visit == PostVisit)
-            {
-                if (node->getExpression())
-                {
-                    out << ";\n";
-                }
-            }
-            break;
-        default:
-            UNREACHABLE();
+                break;
+            default:
+                UNREACHABLE();
+        }
     }
 
     return true;

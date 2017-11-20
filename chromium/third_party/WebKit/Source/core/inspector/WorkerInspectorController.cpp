@@ -43,8 +43,8 @@
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThread.h"
 #include "platform/LayoutTestSupport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/WebThreadSupportingGC.h"
+#include "platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -66,20 +66,24 @@ WorkerInspectorController::~WorkerInspectorController() {
   DCHECK(!thread_);
 }
 
-void WorkerInspectorController::ConnectFrontend(int session_id) {
+void WorkerInspectorController::ConnectFrontend(int session_id,
+                                                const String& host_id) {
   if (sessions_.find(session_id) != sessions_.end())
     return;
 
   InspectorSession* session = new InspectorSession(
       this, probe_sink_.Get(), session_id, debugger_->GetV8Inspector(),
       debugger_->ContextGroupId(thread_), nullptr);
-  session->Append(
-      new InspectorLogAgent(thread_->GetConsoleMessageStorage(), nullptr));
+  session->Append(new InspectorLogAgent(thread_->GetConsoleMessageStorage(),
+                                        nullptr, session->V8Session()));
   if (thread_->GlobalScope()->IsWorkerGlobalScope() &&
       RuntimeEnabledFeatures::OffMainThreadFetchEnabled()) {
-    DCHECK(ToWorkerGlobalScope(thread_->GlobalScope())->GetResourceFetcher());
-    session->Append(InspectorNetworkAgent::CreateForWorker(
-        ToWorkerGlobalScope(thread_->GlobalScope())));
+    DCHECK(ToWorkerGlobalScope(thread_->GlobalScope())->EnsureFetcher());
+    InspectorNetworkAgent* network_agent =
+        InspectorNetworkAgent::CreateForWorker(
+            ToWorkerGlobalScope(thread_->GlobalScope()));
+    session->Append(network_agent);
+    network_agent->SetHostId(host_id);
   }
   if (sessions_.IsEmpty())
     thread_->GetWorkerBackingThread().BackingThread().AddTaskObserver(this);

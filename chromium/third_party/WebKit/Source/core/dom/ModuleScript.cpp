@@ -11,19 +11,6 @@
 
 namespace blink {
 
-const char* ModuleInstantiationStateToString(ModuleInstantiationState state) {
-  switch (state) {
-    case ModuleInstantiationState::kUninstantiated:
-      return "uninstantiated";
-    case ModuleInstantiationState::kInstantiated:
-      return "instantiated";
-    case ModuleInstantiationState::kErrored:
-      return "errored";
-  }
-  NOTREACHED();
-  return "";
-}
-
 ModuleScript* ModuleScript::Create(
     const String& source_text,
     Modulator* modulator,
@@ -47,8 +34,8 @@ ModuleScript* ModuleScript::Create(
 
   // Delegate to Modulator::CompileModule to process Steps 3-5.
   ScriptModule result = modulator->CompileModule(
-      source_text, base_url.GetString(), access_control_status, start_position,
-      exception_state);
+      source_text, base_url.GetString(), access_control_status,
+      credentials_mode, nonce, parser_state, start_position, exception_state);
 
   // CreateInternal processes Steps 8-13.
   // [nospec] We initialize the other ModuleScript members anyway by running
@@ -248,7 +235,7 @@ DEFINE_TRACE(ModuleScript) {
 DEFINE_TRACE_WRAPPERS(ModuleScript) {
   // TODO(mlippautz): Support TraceWrappers(const
   // TraceWrapperV8Reference<v8::Module>&) to remove the cast.
-  visitor->TraceWrappers(record_.Cast<v8::Value>());
+  visitor->TraceWrappers(record_.UnsafeCast<v8::Value>());
   visitor->TraceWrappers(preinstantiation_error_);
 }
 

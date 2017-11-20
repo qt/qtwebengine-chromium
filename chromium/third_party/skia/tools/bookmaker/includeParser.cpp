@@ -7,22 +7,6 @@
 
 #include "bookmaker.h"
 
-enum class KeyProperty {
-    kNone,
-    kClassSection,
-    kFunction,
-    kModifier,
-    kNumber,
-    kObject,
-    kPreprocessor,
-};
-
-struct IncludeKey {
-    const char* fName;
-    KeyWord fKeyWord;
-    KeyProperty fProperty;
-};
-
 const IncludeKey kKeyWords[] = {
     { "",           KeyWord::kNone,         KeyProperty::kNone           },
     { "SK_API",     KeyWord::kSK_API,       KeyProperty::kModifier       },
@@ -55,7 +39,10 @@ const IncludeKey kKeyWords[] = {
     { "struct",     KeyWord::kStruct,       KeyProperty::kObject         },
     { "template",   KeyWord::kTemplate,     KeyProperty::kObject         },
     { "typedef",    KeyWord::kTypedef,      KeyProperty::kObject         },
+    { "uint16_t",   KeyWord::kUint16_t,     KeyProperty::kNumber         },
     { "uint32_t",   KeyWord::kUint32_t,     KeyProperty::kNumber         },
+    { "uint64_t",   KeyWord::kUint64_t,     KeyProperty::kNumber         },
+    { "uint8_t",    KeyWord::kUint8_t,      KeyProperty::kNumber         },
     { "union",      KeyWord::kUnion,        KeyProperty::kObject         },
     { "unsigned",   KeyWord::kUnsigned,     KeyProperty::kNumber         },
     { "void",       KeyWord::kVoid,         KeyProperty::kNumber         },
@@ -107,7 +94,7 @@ void IncludeParser::addKeyword(KeyWord keyWord) {
     }
 }
 
-void IncludeParser::checkForMissingParams(const vector<string>& methodParams, 
+void IncludeParser::checkForMissingParams(const vector<string>& methodParams,
         const vector<string>& foundParams) {
     for (auto& methodParam : methodParams) {
         bool found = false;
@@ -118,9 +105,7 @@ void IncludeParser::checkForMissingParams(const vector<string>& methodParams,
             }
         }
         if (!found) {
-            this->keywordStart("Param");
-            fprintf(fOut, "%s  ", methodParam.c_str());
-            this->keywordEnd();
+            this->writeEndTag("Param", methodParam, 2);
         }
     }
     for (auto& foundParam : foundParams) {
@@ -214,15 +199,47 @@ string IncludeParser::className() const {
     return result;
 }
 
+#include <sstream>
+#include <iostream>
+
 bool IncludeParser::crossCheck(BmhParser& bmhParser) {
-    string className = this->className();
-    string classPrefix = className + "::";
-    RootDefinition* root = &bmhParser.fClassMap[className];
-    root->clearVisited();
     for (auto& classMapper : fIClassMap) {
-        if (className != classMapper.first
-                && classPrefix != classMapper.first.substr(0, classPrefix.length())) {
+        string className = classMapper.first;
+        auto finder = bmhParser.fClassMap.find(className);
+        if (bmhParser.fClassMap.end() == finder) {
+            SkASSERT(string::npos != className.find("::"));
             continue;
+        }
+        RootDefinition* root = &finder->second;
+        root->clearVisited();
+    }
+    for (auto& classMapper : fIClassMap) {
+        string className = classMapper.first;
+        std::istringstream iss(className);
+        string classStr;
+        string classBase;
+        RootDefinition* root = nullptr;
+        while (std::getline(iss, classStr, ':')) {
+            if (root) {
+                if (!classStr.length()) {
+                    continue;
+                }
+                classBase += "::" + classStr;
+                auto finder = root->fBranches.find(classBase);
+                if (root->fBranches.end() != finder) {
+                    root = finder->second;
+                } else {
+                    SkASSERT(0);
+                }
+            } else {
+                classBase = classStr;
+                auto finder = bmhParser.fClassMap.find(classBase);
+                if (bmhParser.fClassMap.end() != finder) {
+                    root = &finder->second;
+                } else {
+                    SkASSERT(0);
+                }
+            }
         }
         auto& classMap = classMapper.second;
         auto& tokens = classMap.fTokens;
@@ -231,7 +248,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                 continue;
             }
             string fullName = classMapper.first + "::" + token.fName;
-            const Definition* def = root->find(fullName);
+            const Definition* def = root->find(fullName, RootDefinition::AllowParens::kYes);
             switch (token.fMarkType) {
                 case MarkType::kMethod: {
                     if (this->internalName(token)) {
@@ -241,7 +258,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         string paramName = className + "::";
                         paramName += string(token.fContentStart,
                                 token.fContentEnd - token.fContentStart);
-                        def = root->find(paramName);
+                        def = root->find(paramName, RootDefinition::AllowParens::kYes);
                         if (!def && 0 == token.fName.find("operator")) {
                             string operatorName = className + "::";
                             TextParser oper("", token.fStart, token.fContentEnd, 0);
@@ -258,7 +275,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                                 }
                             } while (!oper.eof() && oper.next() && parens > 0);
                             operatorName += string(start, oper.fChar - start);
-                            def = root->find(operatorName);
+                            def = root->find(operatorName, RootDefinition::AllowParens::kYes);
                         }
                     }
                     if (!def) {
@@ -267,17 +284,18 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         string constructorName = className + "::";
                         constructorName += string(token.fContentStart + skip,
                                 token.fContentEnd - token.fContentStart - skip);
-                        def = root->find(constructorName);
+                        def = root->find(constructorName, RootDefinition::AllowParens::kYes);
                     }
                     if (!def && 0 == token.fName.find("SK_")) {
                         string incName = token.fName + "()";
                         string macroName = className + "::" + incName;
-                        def = root->find(macroName);
+                        def = root->find(macroName, RootDefinition::AllowParens::kYes);
                         if (def) {
                             if (def->fName == incName) {
                                 def->fVisited = true;
                                 if ("SK_TO_STRING_NONVIRT" == token.fName) {
-                                    def = root->find(className + "::toString");
+                                    def = root->find(className + "::toString",
+                                            RootDefinition::AllowParens::kYes);
                                     if (def) {
                                         def->fVisited = true;
                                     } else {
@@ -300,7 +318,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         }
                         if (allLower) {
                             string lowerName = className + "::" + token.fName + "()";
-                            def = root->find(lowerName);
+                            def = root->find(lowerName, RootDefinition::AllowParens::kYes);
                         }
                     }
                     if (!def) {
@@ -314,7 +332,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                     if (!def) {
             // simple method names inside nested classes have a bug and are missing trailing parens
                         string withParens = fullName + "()"; // FIXME: this shouldn't be necessary
-                        def = root->find(withParens);
+                        def = root->find(withParens, RootDefinition::AllowParens::kNo);
                     }
                     if (!def) {
                         SkDebugf("method missing from bmh: %s\n", fullName.c_str());
@@ -344,7 +362,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         const char* savePos = firstMember.fChar;
                         firstMember.skipToNonAlphaNum();
                         const char* wordEnd = firstMember.fChar;
-                        firstMember.fChar = savePos; 
+                        firstMember.fChar = savePos;
                         const char* lastUnderscore = nullptr;
                         do {
                             if (!firstMember.skipToEndBracket('_')) {
@@ -357,9 +375,9 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         } while (firstMember.next());
                         if (lastUnderscore) {
                             ++lastUnderscore;
-                            string anonName = className + "::" + string(lastUnderscore, 
+                            string anonName = className + "::" + string(lastUnderscore,
                                     wordEnd - lastUnderscore) + 's';
-                            def = root->find(anonName);
+                            def = root->find(anonName, RootDefinition::AllowParens::kYes);
                         }
                         if (!def) {
                             SkDebugf("enum missing from bmh: %s\n", fullName.c_str());
@@ -386,10 +404,10 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         string constName = MarkType::kEnumClass == token.fMarkType ?
                                 fullName : className;
                         constName += "::" + child->fName;
-                        def = root->find(constName);
+                        def = root->find(constName, RootDefinition::AllowParens::kYes);
                         if (!def) {
                             string innerName = classMapper.first + "::" + child->fName;
-                            def = root->find(innerName);
+                            def = root->find(innerName, RootDefinition::AllowParens::kYes);
                         }
                         if (!def) {
                             if (string::npos == child->fName.find("Legacy_")) {
@@ -408,14 +426,24 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                     }
                     break;
                 default:
-                    SkASSERT(0);  // unhandled 
+                    SkASSERT(0);  // unhandled
                     break;
             }
         }
     }
-    if (!root->dumpUnVisited()) {
-        SkDebugf("some struct elements not found; struct finding in includeParser is missing\n");
+    for (auto& classMapper : fIClassMap) {
+        string className = classMapper.first;
+        auto finder = bmhParser.fClassMap.find(className);
+        if (bmhParser.fClassMap.end() == finder) {
+            continue;
+        }
+        RootDefinition* root = &finder->second;
+        if (!root->dumpUnVisited()) {
+            SkDebugf("some struct elements not found; struct finding in includeParser is missing\n");
+        }
+        SkDebugf("cross-checked %s\n", className.c_str());
     }
+    bmhParser.fWroteOut = true;
     return true;
 }
 
@@ -430,7 +458,7 @@ IClassDefinition* IncludeParser::defineClass(const Definition& includeDef,
         }
         test = test->fParent;
     }
-    className += name; 
+    className += name;
     unordered_map<string, IClassDefinition>& map = fIClassMap;
     IClassDefinition& markupDef = map[className];
     if (markupDef.fStart) {
@@ -460,90 +488,38 @@ void IncludeParser::dumpClassTokens(IClassDefinition& classDef) {
             continue;
         }
         if (MarkType::kMember != token.fMarkType) {
-            fprintf(fOut, "%s",
-              "# ------------------------------------------------------------------------------\n");
-            fprintf(fOut, ""                                                                  "\n");
+            this->writeString(
+              "# ------------------------------------------------------------------------------");
+            this->lf(2);
         }
         switch (token.fMarkType) {
             case MarkType::kEnum:
-                fprintf(fOut, "#Enum %s"                                                     "\n",
-                        token.fName.c_str());
-                fprintf(fOut, ""                                                             "\n");
-                fprintf(fOut, "#Code"                                                        "\n");
-                fprintf(fOut, "    enum %s {"                                                "\n",
-                        token.fName.c_str());
-                for (auto& child : token.fChildren) {
-                    fprintf(fOut, "        %s %.*s"                                          "\n",
-                            child->fName.c_str(), child->length(), child->fContentStart);
-                }
-                fprintf(fOut, "    };"                                                       "\n");
-                fprintf(fOut, "##"                                                           "\n");
-                fprintf(fOut, ""                                                             "\n");
-                this->dumpComment(&token);
-                for (auto& child : token.fChildren) {
-                    fprintf(fOut, "#Const %s", child->fName.c_str());
-                    TextParser val(child);
-                    if (!val.eof()) {
-                        if ('=' == val.fStart[0] || ',' == val.fStart[0]) {
-                            val.next();
-                            val.skipSpace();
-                            const char* valEnd = val.anyOf(",\n");
-                            if (!valEnd) {
-                                valEnd = val.fEnd;
-                            }
-                            fprintf(fOut, " %.*s", (int) (valEnd - val.fStart), val.fStart);
-                        } else {
-                            fprintf(fOut, " %.*s", 
-                                    (int) (child->fContentEnd - child->fContentStart),
-                                    child->fContentStart);
-                        }
-                    }
-                    fprintf(fOut, ""                                                         "\n");
-                    for (auto& token : child->fTokens) {
-                        if (MarkType::kComment == token.fMarkType) {
-                            this->dumpComment(&token);
-                        }
-                    }
-                    fprintf(fOut, "##"                                                       "\n");
-                }
-                fprintf(fOut, ""                                                             "\n");
+                this->dumpEnum(token);
             break;
             case MarkType::kMethod:
-                fprintf(fOut, "#Method %.*s"                                                 "\n",
-                        token.length(), token.fStart);
-                lfAlways(1);
-                this->dumpComment(&token);
+                this->dumpMethod(token);
             break;
             case MarkType::kMember:
-                this->keywordStart("Member");
-                fprintf(fOut, "%.*s  %s  ", (int) (token.fContentEnd - token.fContentStart),
-                        token.fContentStart, token.fName.c_str());           
-                lfAlways(1);
-                for (auto child : token.fChildren) {
-                    fprintf(fOut, "%.*s", (int) (child->fContentEnd - child->fContentStart),
-                            child->fContentStart);
-                    lfAlways(1);
-                }
-                this->keywordEnd();
+                this->dumpMember(token);
                 continue;
             break;
             default:
                 SkASSERT(0);
         }
         this->lf(2);
-        fprintf(fOut, "#Example"                                                             "\n");
-        fprintf(fOut, "##"                                                                   "\n");
-        fprintf(fOut, ""                                                                     "\n");
-        fprintf(fOut, "#ToDo incomplete ##"                                                  "\n");
-        fprintf(fOut, ""                                                                     "\n");
-        fprintf(fOut, "##"                                                                   "\n");
-        fprintf(fOut, ""                                                                     "\n");
+        this->writeTag("Example");
+        this->writeEndTag();
+        this->lf(2);
+        this->writeEndTag("ToDo", "incomplete");
+        this->lf(2);
+        this->writeEndTag();
+        this->lf(2);
     }
 }
-void IncludeParser::dumpComment(Definition* token) {
-    fLineCount = token->fLineCount;
-    fChar = fLine = token->fContentStart;
-    fEnd = token->fContentEnd;
+void IncludeParser::dumpComment(const Definition& token) {
+    fLineCount = token.fLineCount;
+    fChar = fLine = token.fContentStart;
+    fEnd = token.fContentEnd;
     bool sawParam = false;
     bool multiline = false;
     bool sawReturn = false;
@@ -552,11 +528,11 @@ void IncludeParser::dumpComment(Definition* token) {
     vector<string> methodParams;
     vector<string> foundParams;
     Definition methodName;
-    TextParser methodParser(token->fFileName, token->fContentStart, token->fContentEnd,
-            token->fLineCount);
-    if (MarkType::kMethod == token->fMarkType) {
-        methodName.fName = string(token->fContentStart,
-                (int) (token->fContentEnd - token->fContentStart));
+    TextParser methodParser(token.fFileName, token.fContentStart, token.fContentEnd,
+            token.fLineCount);
+    if (MarkType::kMethod == token.fMarkType) {
+        methodName.fName = string(token.fContentStart,
+                (int) (token.fContentEnd - token.fContentStart));
         methodHasReturn = !methodParser.startsWith("void ")
                 && !methodParser.strnchr('~', methodParser.fEnd);
         const char* paren = methodParser.strnchr('(', methodParser.fEnd);
@@ -571,8 +547,14 @@ void IncludeParser::dumpComment(Definition* token) {
             methodParams.push_back(paramName);
         } while (')' != nextEnd[0]);
     }
-    for (const auto& child : token->fTokens) {
+    for (const auto& child : token.fTokens) {
+        if (Definition::Type::kMark == child.fType && MarkType::kMember == child.fMarkType) {
+            break;
+        }
         if (Definition::Type::kMark == child.fType && MarkType::kComment == child.fMarkType) {
+            if (child.fPrivate) {
+                break;
+            }
             if ('@' == child.fContentStart[0]) {
                 TextParser parser(&child);
                 do {
@@ -595,9 +577,9 @@ void IncludeParser::dumpComment(Definition* token) {
                             }
                             if (sawParam) {
                                 if (multiline) {
-                                    this->lfAlways(1);
+                                    this->lf(1);
                                 }
-                                this->keywordEnd();
+                                this->writeEndTag();
                             } else {
                                 if (sawComment) {
                                     this->nl();
@@ -605,10 +587,10 @@ void IncludeParser::dumpComment(Definition* token) {
                                 this->lf(2);
                             }
                             foundParams.emplace_back(piece);
-                            this->keywordStart("Param");
-                            fprintf(fOut, "%s  ", piece.c_str());
-                            fprintf(fOut, "%.*s", (int) (parser.fEnd - parser.fChar), parser.fChar);
-                            this->lfAlways(1);
+                            this->writeTag("Param", piece);
+                            this->writeSpace(2);
+                            this->writeBlock(parser.fEnd - parser.fChar, parser.fChar);
+                            this->lf(1);
                             sawParam = true;
                             sawComment = false;
                         } while (parmName.length());
@@ -620,43 +602,59 @@ void IncludeParser::dumpComment(Definition* token) {
                         }
                         if (sawParam) {
                             if (multiline) {
-                                this->lfAlways(1);
+                                this->lf(1);
                             }
-                            this->keywordEnd();
+                            this->writeEndTag();
                         }
                         this->checkForMissingParams(methodParams, foundParams);
                         sawParam = false;
                         sawComment = false;
                         multiline = false;
                         this->lf(2);
-                        this->keywordStart("Return");
-                        fprintf(fOut, "%.*s ", (int) (parser.fEnd - parser.fChar),
-                                parser.fChar);
-                        this->lfAlways(1);
+                        this->writeTag("Return");
+                        this->writeSpace(2);
+                        this->writeBlock(parser.fEnd - parser.fChar, parser.fChar);
+                        this->lf(1);
                         sawReturn = true;
                         parser.skipTo(parser.fEnd);
                     } else {
                         this->reportError("unexpected doxygen directive");
                     }
                 } while (!parser.eof());
-            } else {
-                if (sawComment) {
-                    this->nl();
+            } else if (child.length() > 1) {
+                const char* start = child.fContentStart;
+                ptrdiff_t length = child.fContentEnd - start;
+                SkASSERT(length >= 0);
+                while (length && '/' == start[0]) {
+                    start += 1;
+                    --length;
                 }
-                this->lf(1);
-                fprintf(fOut, "%.*s ", child.length(), child.fContentStart);
-                sawComment = true;
-                if (sawParam || sawReturn) {
-                    multiline = true;
+                while (length && '/' == start[length - 1]) {
+                    length -= 1;
+                    if (length && '*' == start[length - 1]) {
+                        length -= 1;
+                    }
+                }
+                if (length) {
+                    this->lfAlways(sawComment || sawParam || sawReturn ? 1 : 2);
+                    if (sawParam || sawReturn) {
+                        this->indentToColumn(8);
+                    }
+                    this->writeBlock(length, start);
+                    this->writeSpace();
+                    sawComment = true;
+                    if (sawParam || sawReturn) {
+                        multiline = true;
+                    }
                 }
             }
         }
     }
     if (sawParam || sawReturn) {
         if (multiline) {
-            this->lfAlways(1);
+            this->lf(1);
         }
-        this->keywordEnd();
+        this->writeEndTag();
     }
     if (!sawReturn) {
         if (!sawParam) {
@@ -675,37 +673,172 @@ void IncludeParser::dumpComment(Definition* token) {
                 this->nl();
             }
             this->lf(2);
-            this->keywordStart("Return");
-            this->keywordEnd();
+            this->writeEndTag("Return");
         }
     }
 }
 
-    // dump equivalent markup 
-void IncludeParser::dumpTokens()  {
-    string skClassName = this->className();
-    string fileName = skClassName + ".bmh";
+void IncludeParser::dumpEnum(const Definition& token) {
+    this->writeTag("Enum", token.fName);
+    this->lf(2);
+    this->writeString("#Code");
+    this->lfAlways(1);
+    this->indentToColumn(4);
+    this->writeString("enum");
+    this->writeSpace();
+    if ("_anonymous" != token.fName.substr(0, 10)) {
+        this->writeString(token.fName);
+        this->writeSpace();
+    }
+    this->writeString("{");
+    this->lfAlways(1);
+    for (auto& child : token.fChildren) {
+        this->indentToColumn(8);
+        this->writeString(child->fName);
+        if (child->length()) {
+            this->writeSpace();
+            this->writeBlock(child->length(), child->fContentStart);
+        }
+        if (',' != fLastChar) {
+            this->writeString(",");
+        }
+        this->lfAlways(1);
+    }
+    this->indentToColumn(4);
+    this->writeString("};");
+    this->lf(1);
+    this->writeString("##");
+    this->lf(2);
+    this->dumpComment(token);
+    for (auto& child : token.fChildren) {
+    //     start here;
+        // get comments before
+        // or after const values
+        this->writeString("#Const");
+        this->writeSpace();
+        this->writeString(child->fName);
+        TextParser val(child);
+        if (!val.eof()) {
+            if ('=' == val.fStart[0] || ',' == val.fStart[0]) {
+                val.next();
+                val.skipSpace();
+                const char* valEnd = val.anyOf(",\n");
+                if (!valEnd) {
+                    valEnd = val.fEnd;
+                }
+                this->writeSpace();
+                this->writeBlock(valEnd - val.fStart, val.fStart);
+            } else {
+                this->writeSpace();
+                this->writeDefinition(*child);
+            }
+        }
+        this->lf(1);
+        for (auto comment : child->fChildren) {
+            if (MarkType::kComment == comment->fMarkType) {
+                TextParser parser(comment);
+                parser.skipExact("*");
+                parser.skipExact("*");
+                while (!parser.eof() && parser.skipWhiteSpace()) {
+                    parser.skipExact("*");
+                    parser.skipWhiteSpace();
+                    const char* start = parser.fChar;
+                    parser.skipToEndBracket('\n');
+                    this->lf(1);
+                    this->writeBlock(parser.fChar - start, start);
+                }
+            }
+        }
+        this->writeEndTag();
+    }
+    this->lf(2);
+}
+
+void IncludeParser::dumpMethod(const Definition& token) {
+    this->writeString("#Method");
+    this->writeSpace();
+    if ("SK_TO_STRING_NONVIRT" == token.fName) {
+        this->writeString("void toString(SkString* str) const;");
+        this->lf(2);
+        this->writeEndTag("DefinedBy", "SK_TO_STRING_NONVIRT()");
+        this->lf(2);
+        this->writeTag("Private");
+        this->lf(1);
+        this->writeString("macro expands to: void toString(SkString* str) const;");
+        this->writeEndTag();
+        this->lf(2);
+        const char desc[] =
+                "Creates string representation. The representation is read by\n"
+                "internal debugging tools. The interface and implementation may be\n"
+                "suppressed by defining SK_IGNORE_TO_STRING.";
+        this->writeBlock(sizeof(desc) - 1, desc);
+        this->lf(2);
+        this->writeTag("Param", "str");
+        this->writeSpace(2);
+        this->writeString("storage for string representation");
+        this->writeSpace();
+        this->writeString("##");
+        this->lf(2);
+        return;
+    }
+    this->writeBlock(token.length(), token.fStart);
+    this->lf(1);
+    this->dumpComment(token);
+}
+
+void IncludeParser::dumpMember(const Definition& token) {
+    this->writeTag("Member");
+    this->writeSpace();
+    this->writeDefinition(token, token.fName, 2);
+    lf(1);
+    for (auto child : token.fChildren) {
+        this->writeDefinition(*child);
+    }
+    this->writeEndTag();
+    lf(2);
+}
+
+bool IncludeParser::dumpTokens(const string& dir) {
+    for (const auto& member : fIClassMap) {
+        if (string::npos != member.first.find("::")) {
+            continue;
+        }
+        if (!this->dumpTokens(dir, member.first)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+    // dump equivalent markup
+bool IncludeParser::dumpTokens(const string& dir, const string& skClassName) {
+    string fileName = dir;
+    if (dir.length() && '/' != dir[dir.length() - 1]) {
+        fileName += '/';
+    }
+    fileName += skClassName + "_Reference.bmh";
     fOut = fopen(fileName.c_str(), "wb");
     if (!fOut) {
         SkDebugf("could not open output file %s\n", fileName.c_str());
-        return;
+        return false;
     }
     string prefixName = skClassName.substr(0, 2);
     string topicName = skClassName.length() > 2 && isupper(skClassName[2]) &&
         ("Sk" == prefixName || "Gr" == prefixName) ? skClassName.substr(2) : skClassName;
-    fprintf(fOut, "#Topic %s", topicName.c_str());
-    this->lfAlways(2);
-    fprintf(fOut, "#Class %s", skClassName.c_str());
-    this->lfAlways(2);
+    this->writeTagNoLF("Topic", topicName);
+    this->writeTag("Alias", topicName + "_Reference");
+    this->lf(2);
     auto& classMap = fIClassMap[skClassName];
+    const char* containerType = kKeyWords[(int) classMap.fKeyWord].fName;
+    this->writeTag(containerType, skClassName);
+    this->lf(2);
     auto& tokens = classMap.fTokens;
     for (auto& token : tokens) {
         if (Definition::Type::kMark != token.fType || MarkType::kComment != token.fMarkType) {
             continue;
         }
-        fprintf(fOut, "%.*s", (int) (token.fContentEnd - token.fContentStart),
-                token.fContentStart);
-        this->lfAlways(1);
+        this->writeDefinition(token);
+        this->lf(1);
     }
     this->lf(2);
     string className(skClassName.substr(2));
@@ -719,97 +852,132 @@ void IncludeParser::dumpTokens()  {
         maxLen = SkTMax(maxLen, structName.length());
         sortedClasses.emplace_back(structName);
     }
-    fprintf(fOut, "#Topic Overview");
-    this->lfAlways(2);
-    fprintf(fOut, "#Subtopic %s_Structs", className.c_str());
-    this->lfAlways(1);
-    fprintf(fOut, "#Table");
-    this->lfAlways(1);
-    fprintf(fOut, "#Legend");
-    this->lfAlways(1);
-    fprintf(fOut, "# %-*s # description ##", (int) maxLen, "struct");
-    this->lfAlways(1);
-    fprintf(fOut, "#Legend ##");
-    this->lfAlways(1);
-    fprintf(fOut, "#Table ##");
-    this->lfAlways(1);
-    for (auto& name : sortedClasses) {
-        fprintf(fOut, "# %-*s # ##", (int) maxLen, name.c_str());
-        this->lfAlways(1);
+    this->writeTag("Topic", "Overview");
+    this->lf(2);
+    this->writeTag("Subtopic", "Subtopics");
+    this->writeEndTag("ToDo", "manually add subtopics");
+    this->writeTableHeader("topics", 0, "description");
+    this->writeTableTrailer();
+    this->writeEndTag();
+    this->lf(2);
+    if (maxLen) {
+        this->writeTag("Subtopic", "Structs");
+        this->writeTableHeader("description", maxLen, "struct");
+         for (auto& name : sortedClasses) {
+             this->writeTableRow(maxLen, name);
+        }
+        this->writeTableTrailer();
+        this->writeEndTag("Subtopic");
+        this->lf(2);
     }
-    fprintf(fOut, "#Subtopic ##");
-    this->lfAlways(2);
-    fprintf(fOut, "#Subtopic %s_Member_Functions", className.c_str());
-    this->lfAlways(1);
-    fprintf(fOut, "#Table");
-    this->lfAlways(1);
-    fprintf(fOut, "#Legend");
-    this->lfAlways(1);
     maxLen = 0;
+    size_t constructorMax = 0;
+    size_t operatorMax = 0;
     vector<string> sortedNames;
+    vector<string> constructorNames;
+    vector<string> operatorNames;
     for (const auto& token : classMap.fTokens) {
         if (Definition::Type::kMark != token.fType || MarkType::kMethod != token.fMarkType) {
             continue;
         }
-        const string& name = token.fName;
+        string name = token.fName;
         if (name.substr(0, 7) == "android" || string::npos != name.find("nternal_")) {
+            continue;
+        }
+        if ((name.substr(0, 2) == "Sk" && 2 == name.find(className)) || '~' == name[0]) {
+            name = string(token.fContentStart, (int) (token.fContentEnd - token.fContentStart));
+            constructorMax = SkTMax(constructorMax, name.length());
+            constructorNames.emplace_back(name);
+            continue;
+        }
+        if (name.substr(0, 8) == "operator") {
+            name = string(token.fContentStart, (int) (token.fContentEnd - token.fContentStart));
+            operatorMax = SkTMax(operatorMax, name.length());
+            operatorNames.emplace_back(name);
             continue;
         }
         if (name[name.length() - 2] == '_' && isdigit(name[name.length() - 1])) {
             continue;
+        }
+        if ("SK_TO_STRING_NONVIRT" == name) {
+            name = "toString";
         }
         size_t paren = name.find('(');
         size_t funcLen = string::npos == paren ? name.length() : paren;
         maxLen = SkTMax(maxLen, funcLen);
         sortedNames.emplace_back(name);
     }
+    if (constructorMax) {
+        std::sort(constructorNames.begin(), constructorNames.end());
+        this->writeTag("Subtopic", "Constructors");
+        this->writeTableHeader("description", constructorMax, "function");
+        for (auto& name : constructorNames) {
+            this->writeTableRow(constructorMax, name);
+        }
+        this->writeTableTrailer();
+        this->writeEndTag("Subtopic");
+        this->lf(2);
+    }
+    if (operatorMax) {
+        std::sort(operatorNames.begin(), operatorNames.end());
+        this->writeTag("Subtopic", "Operators");
+        this->writeTableHeader("description", operatorMax, "function");
+        for (auto& name : operatorNames) {
+            this->writeTableRow(operatorMax, name);
+        }
+        this->writeTableTrailer();
+        this->writeEndTag("Subtopic");
+        this->lf(2);
+    }
     std::sort(sortedNames.begin(), sortedNames.end());
-    fprintf(fOut, "# %-*s # description   ##" "\n",
-            (int) maxLen, "function");
-    fprintf(fOut, "#Legend ##"                                                               "\n");
+    this->writeTag("Subtopic", "Member_Functions");
+    this->writeTableHeader("description", maxLen, "function");
     for (auto& name : sortedNames) {
         size_t paren = name.find('(');
         size_t funcLen = string::npos == paren ? name.length() : paren;
-        fprintf(fOut, "# %-*s # ##"                                                          "\n",
-                (int) maxLen, name.substr(0, funcLen).c_str());
+        this->writeTableRow(maxLen, name.substr(0, funcLen));
     }
-    fprintf(fOut, "#Table ##"                                                                "\n");
-    fprintf(fOut, "#Subtopic ##"                                                             "\n");
-    fprintf(fOut, ""                                                                         "\n");
-    fprintf(fOut, "#Topic ##"                                                                "\n");
-    fprintf(fOut, ""                                                                         "\n");
+    this->writeTableTrailer();
+    this->writeEndTag("Subtopic");
+    this->lf(2);
+    this->writeEndTag("Topic");
+    this->lf(2);
 
     for (auto& oneClass : fIClassMap) {
         if (skClassName + "::" != oneClass.first.substr(0, skClassName.length() + 2)) {
             continue;
         }
         string innerName = oneClass.first.substr(skClassName.length() + 2);
-        fprintf(fOut, "%s",
+        this->writeString(
             "# ------------------------------------------------------------------------------");
-        this->lfAlways(2);
-        fprintf(fOut, "#Struct %s", innerName.c_str());
-        this->lfAlways(2);
+        this->lf(2);
+        const char* containerType = kKeyWords[(int) oneClass.second.fKeyWord].fName;
+        this->writeTag(containerType, innerName);
+        this->lf(2);
+        this->writeTag("Code");
+        this->writeEndTag("ToDo", "fill this in manually");
+        this->writeEndTag();
+        this->lf(2);
         for (auto& token : oneClass.second.fTokens) {
             if (Definition::Type::kMark != token.fType || MarkType::kComment != token.fMarkType) {
                 continue;
             }
-            fprintf(fOut, "%.*s", (int) (token.fContentEnd - token.fContentStart),
-                    token.fContentStart);
-            this->lfAlways(1);
+            this->writeDefinition(token);
         }
         this->lf(2);
         this->dumpClassTokens(oneClass.second);
         this->lf(2);
-        fprintf(fOut, "#Struct %s ##", innerName.c_str());
-        this->lfAlways(2);
+        this->writeEndTag(containerType, innerName);
+        this->lf(2);
     }
     this->dumpClassTokens(classMap);
-    fprintf(fOut, "#Class %s ##"                                                             "\n",
-            skClassName.c_str());
-    fprintf(fOut, ""                                                                         "\n");
-    fprintf(fOut, "#Topic %s ##"                                                             "\n",
-            topicName.c_str());
+    this->writeEndTag(containerType, skClassName);
+    this->lf(2);
+    this->writeEndTag("Topic", topicName);
+    this->lfAlways(1);
     fclose(fOut);
+    SkDebugf("wrote %s\n", fileName.c_str());
+    return true;
 }
 
 bool IncludeParser::findComments(const Definition& includeDef, Definition* markupDef) {
@@ -863,9 +1031,6 @@ bool IncludeParser::internalName(const Definition& token) const {
 // caller calls reportError, so just return false here
 bool IncludeParser::parseClass(Definition* includeDef, IsStruct isStruct) {
     SkASSERT(includeDef->fTokens.size() > 0);
-    if (includeDef->fTokens.size() == 1) {
-        return true;  // forward declaration only
-    }
     // parse class header
     auto iter = includeDef->fTokens.begin();
     if (!strncmp(iter->fStart, "SK_API", iter->fContentEnd - iter->fStart)) {
@@ -874,24 +1039,28 @@ bool IncludeParser::parseClass(Definition* includeDef, IsStruct isStruct) {
     }
     string nameStr(iter->fStart, iter->fContentEnd - iter->fStart);
     includeDef->fName = nameStr;
+    iter = std::next(iter);
+    if (iter == includeDef->fTokens.end()) {
+        return true;  // forward declaration only
+    }
     do {
         if (iter == includeDef->fTokens.end()) {
-            return false;
+            return includeDef->reportError<bool>("unexpected end");
         }
         if ('{' == iter->fStart[0] && Definition::Type::kPunctuation == iter->fType) {
             break;
-        }   
+        }
     } while (static_cast<void>(iter = std::next(iter)), true);
     if (Punctuation::kLeftBrace != iter->fPunctuation) {
-        return false;
+        return iter->reportError<bool>("expected left brace");
     }
     IClassDefinition* markupDef = this->defineClass(*includeDef, nameStr);
     if (!markupDef) {
-        return false;
+        return iter->reportError<bool>("expected markup definition");
     }
     markupDef->fStart = iter->fStart;
     if (!this->findComments(*includeDef, markupDef)) {
-        return false;
+        return iter->reportError<bool>("find comments failed");
     }
 //    if (1 != includeDef->fChildren.size()) {
 //        return false;  // fix me: SkCanvasClipVisitor isn't correctly parsed
@@ -915,30 +1084,43 @@ bool IncludeParser::parseClass(Definition* includeDef, IsStruct isStruct) {
         (*childIter)->fPrivate = true;
         childIter = std::next(childIter);
     }
-    int lastPublic = publicIndex;
+    int keyIndex = publicIndex;
+    KeyWord currentKey = KeyWord::kPublic;
+    const char* publicName = kKeyWords[(int) KeyWord::kPublic].fName;
+    size_t publicLen = strlen(publicName);
     const char* protectedName = kKeyWords[(int) KeyWord::kProtected].fName;
     size_t protectedLen = strlen(protectedName);
     const char* privateName = kKeyWords[(int) KeyWord::kPrivate].fName;
     size_t privateLen = strlen(privateName);
-    while (iter != includeDef->fTokens.end()
-            && (protectedLen != (size_t) (iter->fContentEnd - iter->fStart)
-            || strncmp(iter->fStart, protectedName, protectedLen))
-            && (privateLen != (size_t) (iter->fContentEnd - iter->fStart)
-            || strncmp(iter->fStart, privateName, privateLen))) {
-        iter = std::next(iter);
-        ++lastPublic;
-    }
-    fLastObject = nullptr;
-    while (childIter != includeDef->fChildren.end() && (*childIter)->fParentIndex < lastPublic) {
+    while (childIter != includeDef->fChildren.end()) {
         Definition* child = *childIter;
-        if (!this->parseObject(child, markupDef)) {
-            return false;
+        while (child->fParentIndex > keyIndex && iter != includeDef->fTokens.end()) {
+            const char* testStart = iter->fStart;
+            size_t testLen = (size_t) (iter->fContentEnd - testStart);
+            iter = std::next(iter);
+            ++keyIndex;
+            if (publicLen == testLen && !strncmp(testStart, publicName, testLen)) {
+                currentKey = KeyWord::kPublic;
+                break;
+            }
+            if (protectedLen == testLen && !strncmp(testStart, protectedName, testLen)) {
+                currentKey = KeyWord::kProtected;
+                break;
+            }
+            if (privateLen == testLen && !strncmp(testStart, privateName, testLen)) {
+                currentKey = KeyWord::kPrivate;
+                break;
+            }
+        }
+        fLastObject = nullptr;
+        if (KeyWord::kPublic == currentKey) {
+            if (!this->parseObject(child, markupDef)) {
+                return false;
+            }
+        } else {
+            child->fPrivate = true;
         }
         fLastObject = child;
-        childIter = std::next(childIter);
-    }
-    while (childIter != includeDef->fChildren.end()) {
-        (*childIter)->fPrivate = true;
         childIter = std::next(childIter);
     }
     SkASSERT(fParent->fParent);
@@ -959,7 +1141,8 @@ bool IncludeParser::parseComment(const string& filename, const char* start, cons
             if (!parser.skipWord(kKeyWords[(int) markupDef->fKeyWord].fName)) {
                 return reportError<bool>("missing object type");
             }
-            if (!parser.skipWord(markupDef->fName.c_str())) {
+            if (!parser.skipWord(markupDef->fName.c_str()) &&
+                    KeyWord::kEnum != markupDef->fKeyWord) {
                 return reportError<bool>("missing object name");
             }
 
@@ -979,7 +1162,7 @@ bool IncludeParser::parseComment(const string& filename, const char* start, cons
             break;
         }
         const char* lineEnd = parser.trimmedLineEnd();
-        markupDef->fTokens.emplace_back(MarkType::kComment, parser.fChar, lineEnd, 
+        markupDef->fTokens.emplace_back(MarkType::kComment, parser.fChar, lineEnd,
                 parser.fLineCount, parent);
         parser.skipToEndBracket('\n');
     }
@@ -1014,16 +1197,16 @@ bool IncludeParser::parseEnum(Definition* child, Definition* markupDef) {
     }
     const char* nameStart = enumName.fChar;
     enumName.skipToSpace();
-    markupChild->fName = markupDef->fName + "::" + 
+    markupChild->fName = markupDef->fName + "::" +
             string(nameStart, (size_t) (enumName.fChar - nameStart));
     if (!this->findComments(*child, markupChild)) {
         return false;
     }
     TextParser parser(child);
     parser.skipToEndBracket('{');
+    parser.next();
     const char* dataEnd;
     do {
-        parser.next();
         parser.skipWhiteSpace();
         if ('}' == parser.peek()) {
             break;
@@ -1061,32 +1244,73 @@ bool IncludeParser::parseEnum(Definition* child, Definition* markupDef) {
         if ('}' == memberStart[0]) {
             break;
         }
+        // if there's comment on same the line as member def, output first as if it was before
+
         parser.skipToNonAlphaNum();
         string memberName(memberStart, parser.fChar);
-        parser.skipWhiteSpace();
+        if (parser.eof() || !parser.skipWhiteSpace()) {
+            return this->reportError<bool>("enum member must end with comma 1");
+        }
         const char* dataStart = parser.fChar;
-        SkASSERT('=' == dataStart[0] || ',' == dataStart[0] || '}' == dataStart[0]
-                 || '/' == dataStart[0]);
-        dataEnd = parser.anyOf(",}");
+        if ('=' == parser.peek()) {
+            parser.skipToEndBracket(',');
+        }
+        if (parser.eof() || ',' != parser.peek()) {
+            return this->reportError<bool>("enum member must end with comma 2");
+        }
+        dataEnd = parser.fChar;
+        const char* start = parser.anyOf("/\n");
+        SkASSERT(start);
+        parser.skipTo(start);
+        if ('/' == parser.next()) {
+            char slashStar = parser.next();
+            if ('/' == slashStar || '*' == slashStar) {
+                TextParser::Save save(&parser);
+                char doxCheck = parser.next();
+                if ((slashStar != doxCheck && '!' != doxCheck) || '<' != parser.next()) {
+                    save.restore();
+                }
+            }
+            parser.skipWhiteSpace();
+            const char* commentStart = parser.fChar;
+            if ('/' == slashStar) {
+                parser.skipToEndBracket('\n');
+            } else {
+                parser.skipToEndBracket("*/");
+            }
+            SkASSERT(!parser.eof());
+            const char* commentEnd = parser.fChar;
+            markupChild->fTokens.emplace_back(MarkType::kComment, commentStart, commentEnd,
+                    parser.fLineCount, markupChild);
+            comment = &markupChild->fTokens.back();
+            comment->fTerminator = commentEnd;
+        }
         markupChild->fTokens.emplace_back(MarkType::kMember, dataStart, dataEnd, parser.fLineCount,
                 markupChild);
         Definition* member = &markupChild->fTokens.back();
         member->fName = memberName;
         if (comment) {
             member->fChildren.push_back(comment);
+            comment->fPrivate = true;
         }
         markupChild->fChildren.push_back(member);
-        parser.skipToEndBracket(dataEnd[0]);
-    } while (',' == dataEnd[0]);
-    for (size_t index = 1; index < child->fChildren.size(); ++index) {
-        const Definition* follower = child->fChildren[index];
-        if (Definition::Type::kKeyWord == follower->fType) {
-            markupChild->fTokens.emplace_back(MarkType::kMember, follower->fContentStart, 
-                    follower->fContentEnd, follower->fLineCount, markupChild);
-            Definition* member = &markupChild->fTokens.back();
-            member->fName = follower->fName;
-            markupChild->fChildren.push_back(member);
+    } while (true);
+    for (auto count : child->fChildren) {
+        if (Definition::Type::kBracket == count->fType) {
+            continue;
         }
+        SkASSERT(Definition::Type::kKeyWord == count->fType);
+        if (KeyWord::kClass == count->fKeyWord) {
+            continue;
+        }
+        SkASSERT(KeyWord::kStatic == count->fKeyWord);
+        markupChild->fTokens.emplace_back(MarkType::kMember, count->fContentStart,
+                count->fContentEnd, count->fLineCount, markupChild);
+        Definition* member = &markupChild->fTokens.back();
+        member->fName = count->fName;
+        // FIXME: ? add comment as well ?
+        markupChild->fChildren.push_back(member);
+        break;
     }
     IClassDefinition& classDef = fIClassMap[markupDef->fName];
     SkASSERT(classDef.fStart);
@@ -1128,6 +1352,7 @@ bool IncludeParser::parseMember(Definition* child, Definition* markupDef) {
     IClassDefinition& classDef = fIClassMap[markupDef->fName];
     string uniqueName = this->uniqueName(classDef.fMethods, nameStr);
     markupChild->fName = uniqueName;
+    markupChild->fTerminator = markupChild->fContentEnd;
     classDef.fMembers[uniqueName] = markupChild;
     if (child->fParentIndex >= 2) {
         auto comment = child->fParent->fTokens.begin();
@@ -1142,7 +1367,7 @@ bool IncludeParser::parseMember(Definition* child, Definition* markupDef) {
                     break;
                 }
                 const char* start = parser.fChar;
-                const char* end = parser.trimmedBracketEnd('\n', OneLine::kYes);
+                const char* end = parser.trimmedBracketEnd('\n');
                 if (Bracket::kSlashStar == comment->fBracket) {
                     const char* commentEnd = parser.strnstr("*/", end);
                     if (commentEnd) {
@@ -1197,9 +1422,14 @@ bool IncludeParser::parseMethod(Definition* child, Definition* markupDef) {
     }
     tokenIter->fName = nameStr;
     tokenIter->fMarkType = MarkType::kMethod;
+    tokenIter->fPrivate = string::npos != nameStr.find("::");
     auto testIter = child->fParent->fTokens.begin();
     SkASSERT(child->fParentIndex > 0);
     std::advance(testIter, child->fParentIndex - 1);
+    if (tokenIter->fParent && KeyWord::kIfdef == tokenIter->fParent->fKeyWord &&
+            0 == tokenIter->fParentIndex) {
+        tokenIter = std::next(tokenIter);
+    }
     const char* start = tokenIter->fContentStart;
     const char* end = tokenIter->fContentEnd;
     const char kDebugCodeStr[] = "SkDEBUGCODE";
@@ -1231,6 +1461,20 @@ bool IncludeParser::parseMethod(Definition* child, Definition* markupDef) {
             break;
         }
     }
+    while (end > start && ' ' >= end[-1]) {
+        --end;
+    }
+    if (!markupDef) {
+        auto parentIter = child->fParent->fTokens.begin();
+        SkASSERT(child->fParentIndex > 0);
+        std::advance(parentIter, child->fParentIndex - 1);
+        Definition* methodName = &*parentIter;
+        TextParser name(methodName);
+        if (name.skipToEndBracket(':') && name.startsWith("::")) {
+            return true;  // expect this is inline class definition outside of class
+        }
+        SkASSERT(0);  // code incomplete
+    }
     markupDef->fTokens.emplace_back(MarkType::kMethod, start, end, tokenIter->fLineCount,
             markupDef);
     Definition* markupChild = &markupDef->fTokens.back();
@@ -1244,16 +1488,6 @@ bool IncludeParser::parseMethod(Definition* child, Definition* markupDef) {
     }
     classDef.fMethods[uniqueName] = markupChild;
     return true;
-}
-
-void IncludeParser::keywordEnd() {
-    fprintf(fOut, "##");
-    this->lfAlways(1);
-}
-
-void IncludeParser::keywordStart(const char* keyword) {
-    this->lf(1);
-    fprintf(fOut, "#%s ", keyword);
 }
 
 bool IncludeParser::parseObjects(Definition* parent, Definition* markupDef) {
@@ -1273,38 +1507,38 @@ bool IncludeParser::parseObject(Definition* child, Definition* markupDef) {
     switch (child->fType) {
         case Definition::Type::kKeyWord:
             switch (child->fKeyWord) {
-                case KeyWord::kClass: 
+                case KeyWord::kClass:
                     if (!this->parseClass(child, IsStruct::kNo)) {
-                        return this->reportError<bool>("failed to parse class");
+                        return false;
                     }
                     break;
                 case KeyWord::kEnum:
                     if (!this->parseEnum(child, markupDef)) {
-                        return this->reportError<bool>("failed to parse enum");
+                        return child->reportError<bool>("failed to parse enum");
                     }
                     break;
                 case KeyWord::kStruct:
                     if (!this->parseClass(child, IsStruct::kYes)) {
-                        return this->reportError<bool>("failed to parse struct");
+                        return child->reportError<bool>("failed to parse struct");
                     }
                     break;
                 case KeyWord::kTemplate:
                     if (!this->parseTemplate()) {
-                        return this->reportError<bool>("failed to parse template");
+                        return child->reportError<bool>("failed to parse template");
                     }
                     break;
                 case KeyWord::kTypedef:
                     if (!this->parseTypedef()) {
-                        return this->reportError<bool>("failed to parse typedef");
+                        return child->reportError<bool>("failed to parse typedef");
                     }
                     break;
                 case KeyWord::kUnion:
                     if (!this->parseUnion()) {
-                        return this->reportError<bool>("failed to parse union");
+                        return child->reportError<bool>("failed to parse union");
                     }
                     break;
                 default:
-                    return this->reportError<bool>("unhandled keyword");
+                    return child->reportError<bool>("unhandled keyword");
             }
             break;
         case Definition::Type::kBracket:
@@ -1313,13 +1547,24 @@ bool IncludeParser::parseObject(Definition* child, Definition* markupDef) {
                     if (fLastObject) {
                         TextParser checkDeprecated(child->fFileName, fLastObject->fTerminator + 1,
                                 child->fStart, fLastObject->fLineCount);
-                        checkDeprecated.skipWhiteSpace();
+                        if (!checkDeprecated.eof()) {
+                            checkDeprecated.skipWhiteSpace();
+                            if (checkDeprecated.startsWith("SK_ATTR_DEPRECATED")) {
+                                break;
+                            }
+                        }
+                    }
+                    {
+                        auto tokenIter = child->fParent->fTokens.begin();
+                        std::advance(tokenIter, child->fParentIndex);
+                        tokenIter = std::prev(tokenIter);
+                        TextParser checkDeprecated(&*tokenIter);
                         if (checkDeprecated.startsWith("SK_ATTR_DEPRECATED")) {
                             break;
                         }
                     }
                     if (!this->parseMethod(child, markupDef)) {
-                        return this->reportError<bool>("failed to parse method");
+                        return child->reportError<bool>("failed to parse method");
                     }
                 break;
                 case Bracket::kSlashSlash:
@@ -1356,7 +1601,7 @@ bool IncludeParser::parseObject(Definition* child, Definition* markupDef) {
                             break;
                         default:
                         preproError:
-                            return this->reportError<bool>("unhandled preprocessor");
+                            return child->reportError<bool>("unhandled preprocessor");
                     }
                     break;
                 case Bracket::kAngle:
@@ -1365,20 +1610,28 @@ bool IncludeParser::parseObject(Definition* child, Definition* markupDef) {
                 case Bracket::kDebugCode:
                     // todo: handle this
                     break;
+                case Bracket::kSquare: {
+                    // check to see if parent is operator, the only case we handle so far
+                    auto prev = child->fParent->fTokens.begin();
+                    std::advance(prev, child->fParentIndex - 1);
+                    if (KeyWord::kOperator != prev->fKeyWord) {
+                        return child->reportError<bool>("expected operator overload");
+                    }
+                    } break;
                 default:
-                    return this->reportError<bool>("unhandled bracket");
+                    return child->reportError<bool>("unhandled bracket");
             }
             break;
         case Definition::Type::kWord:
             if (MarkType::kMember != child->fMarkType) {
-                return this->reportError<bool>("unhandled word type");
+                return child->reportError<bool>("unhandled word type");
             }
             if (!this->parseMember(child, markupDef)) {
-                return this->reportError<bool>("unparsable member");
+                return child->reportError<bool>("unparsable member");
             }
             break;
         default:
-            return this->reportError<bool>("unhandled type");
+            return child->reportError<bool>("unhandled type");
             break;
     }
     return true;
@@ -1403,14 +1656,14 @@ bool IncludeParser::parseChar() {
     char test = *fChar;
     if ('\\' == fPrev) {
         if ('\n' == test) {
-            ++fLineCount;
+//            ++fLineCount;
             fLine = fChar + 1;
         }
         goto done;
     }
     switch (test) {
         case '\n':
-            ++fLineCount;
+//            ++fLineCount;
             fLine = fChar + 1;
             if (fInChar) {
                 return reportError<bool>("malformed char");
@@ -1450,10 +1703,11 @@ bool IncludeParser::parseChar() {
                     return reportError<bool>("malformed closing comment");
                 }
                 if (Bracket::kSlashStar == this->topBracket()) {
+                    this->next();  // include close in bracket -- FIXME? will this skip stuff?
                     this->popBracket();
                 }
                 break;
-            } 
+            }
             if (!fInCharCommentString && '/' == fPrev) {
                 this->pushBracket(Bracket::kSlashSlash);
                 break;
@@ -1571,7 +1825,7 @@ bool IncludeParser::parseChar() {
                                 if ("SK_ATTR_EXTERNALLY_DEPRECATED" == word) {
                                     deprecatedMacro = true;
                                     // remove macro paren (would confuse method parsing later)
-                                    fParent->fTokens.pop_back();  
+                                    fParent->fTokens.pop_back();
                                     fParent->fChildren.pop_back();
                                 }
                                 break;
@@ -1678,6 +1932,9 @@ bool IncludeParser::parseChar() {
                     }
                     Definition* member = &*namedIter;
                     member->fMarkType = MarkType::kMember;
+                    if (!member->fTerminator) {
+                        member->fTerminator = member->fContentEnd;
+                    }
                     fParent->fChildren.push_back(member);
                     for (auto nameType = baseIter; nameType != namedIter; ++nameType) {
                         member->fChildren.push_back(&*nameType);
@@ -1764,7 +2021,7 @@ bool IncludeParser::parseChar() {
         case 'k': case 'l': case 'm': case 'n': case 'o':
         case 'p': case 'q': case 'r': case 's': case 't':
         case 'u': case 'v': case 'w': case 'x': case 'y':
-        case 'z': 
+        case 'z':
             if (fInCharCommentString || fInBrace) {
                 break;
             }
@@ -1775,7 +2032,7 @@ bool IncludeParser::parseChar() {
     }
 done:
     fPrev = test;
-    ++fChar;
+    this->next();
     return true;
 }
 

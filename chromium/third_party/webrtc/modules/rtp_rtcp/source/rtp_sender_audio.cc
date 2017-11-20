@@ -8,20 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtp_sender_audio.h"
+#include "modules/rtp_rtcp/source/rtp_sender_audio.h"
 
 #include <string.h>
 
 #include <memory>
 #include <utility>
 
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_packet_to_send.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/rtc_base/trace_event.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/timeutils.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -65,13 +65,10 @@ int32_t RTPSenderAudio::RegisterAudioPayload(
     dtmf_payload_freq_ = frequency;
     return 0;
   }
-  *payload = new RtpUtility::Payload;
-  (*payload)->typeSpecific.Audio.frequency = frequency;
-  (*payload)->typeSpecific.Audio.channels = channels;
-  (*payload)->typeSpecific.Audio.rate = rate;
-  (*payload)->audio = true;
-  (*payload)->name[RTP_PAYLOAD_NAME_SIZE - 1] = '\0';
-  strncpy((*payload)->name, payloadName, RTP_PAYLOAD_NAME_SIZE - 1);
+  *payload = new RtpUtility::Payload(
+      payloadName,
+      PayloadUnion(AudioPayload{
+          SdpAudioFormat(payloadName, frequency, channels), rate}));
   return 0;
 }
 

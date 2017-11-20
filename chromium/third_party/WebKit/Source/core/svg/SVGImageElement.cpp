@@ -22,10 +22,10 @@
 #include "core/svg/SVGImageElement.h"
 
 #include "core/CSSPropertyNames.h"
-#include "core/SVGNames.h"
-#include "core/dom/StyleChangeReason.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/layout/LayoutImageResource.h"
 #include "core/layout/svg/LayoutSVGImage.h"
+#include "core/svg_names.h"
 
 namespace blink {
 
@@ -52,7 +52,8 @@ inline SVGImageElement::SVGImageElement(Document& document)
       preserve_aspect_ratio_(SVGAnimatedPreserveAspectRatio::Create(
           this,
           SVGNames::preserveAspectRatioAttr)),
-      image_loader_(SVGImageLoader::Create(this)) {
+      image_loader_(SVGImageLoader::Create(this)),
+      decoding_mode_(Image::kUnspecifiedDecode) {
   AddToPropertyMap(x_);
   AddToPropertyMap(y_);
   AddToPropertyMap(width_);
@@ -83,6 +84,11 @@ bool SVGImageElement::CurrentFrameHasSingleSecurityOrigin() const {
     }
   }
   return true;
+}
+
+ScriptPromise SVGImageElement::decode(ScriptState* script_state,
+                                      ExceptionState& exception_state) {
+  return GetImageLoader().Decode(script_state, exception_state);
 }
 
 void SVGImageElement::CollectStyleForPresentationAttribute(
@@ -145,6 +151,16 @@ void SVGImageElement::SvgAttributeChanged(const QualifiedName& attr_name) {
   SVGGraphicsElement::SvgAttributeChanged(attr_name);
 }
 
+void SVGImageElement::ParseAttribute(
+    const AttributeModificationParams& params) {
+  if (params.name == SVGNames::asyncAttr &&
+      RuntimeEnabledFeatures::ImageAsyncAttributeEnabled()) {
+    decoding_mode_ = ParseImageDecodingMode(params.new_value);
+  } else {
+    SVGElement::ParseAttribute(params);
+  }
+}
+
 bool SVGImageElement::SelfHasRelativeLengths() const {
   return x_->CurrentValue()->IsRelative() || y_->CurrentValue()->IsRelative() ||
          width_->CurrentValue()->IsRelative() ||
@@ -194,7 +210,7 @@ const AtomicString SVGImageElement::ImageSourceURL() const {
 }
 
 void SVGImageElement::DidMoveToNewDocument(Document& old_document) {
-  // TODO(fs): Initiate a new load (like HTMLImageElement.)
+  GetImageLoader().UpdateFromElement(ImageLoader::kUpdateIgnorePreviousError);
   GetImageLoader().ElementDidMoveToNewDocument();
   SVGGraphicsElement::DidMoveToNewDocument(old_document);
 }

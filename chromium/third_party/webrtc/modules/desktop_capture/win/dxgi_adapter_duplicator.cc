@@ -8,15 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/win/dxgi_adapter_duplicator.h"
+#include "modules/desktop_capture/win/dxgi_adapter_duplicator.h"
 
 #include <comdef.h>
 #include <DXGI.h>
 
 #include <algorithm>
 
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -89,6 +89,12 @@ bool DxgiAdapterDuplicator::DoInitialize() {
 
         duplicators_.push_back(std::move(duplicator));
         desktop_rect_.UnionWith(duplicators_.back().desktop_rect());
+      } else {
+        LOG(LS_ERROR) << (desc.AttachedToDesktop ? "Attached" : "Detached")
+                      << " output " << i << " (" << desc.DesktopCoordinates.top
+                      << ", " << desc.DesktopCoordinates.left << ") - ("
+                      << desc.DesktopCoordinates.bottom << ", "
+                      << desc.DesktopCoordinates.right << ") is ignored.";
       }
     } else {
       LOG(LS_WARNING) << "Failed to get output description of device " << i

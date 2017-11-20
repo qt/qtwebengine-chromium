@@ -24,6 +24,8 @@ using ::testing::_;
 namespace blink {
 namespace scheduler {
 namespace internal {
+// To avoid symbol collisions in jumbo builds.
+namespace task_queue_selector_unittest {
 
 class MockObserver : public TaskQueueSelector::Observer {
  public:
@@ -66,8 +68,8 @@ class TaskQueueSelectorTest : public ::testing::Test {
     for (size_t i = 0; i < num_tasks; i++) {
       changed_queue_set.insert(queue_indices[i]);
       task_queues_[queue_indices[i]]->immediate_work_queue()->Push(
-          TaskQueueImpl::Task(FROM_HERE, test_closure_, base::TimeTicks(), 0,
-                              true, i));
+          TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
+                              base::TimeTicks(), 0, i));
     }
   }
 
@@ -78,8 +80,8 @@ class TaskQueueSelectorTest : public ::testing::Test {
     for (size_t i = 0; i < num_tasks; i++) {
       changed_queue_set.insert(queue_indices[i]);
       task_queues_[queue_indices[i]]->immediate_work_queue()->Push(
-          TaskQueueImpl::Task(FROM_HERE, test_closure_, base::TimeTicks(), 0,
-                              true, enqueue_orders[i]));
+          TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
+                              base::TimeTicks(), 0, enqueue_orders[i]));
     }
   }
 
@@ -104,7 +106,7 @@ class TaskQueueSelectorTest : public ::testing::Test {
         new VirtualTimeDomain(base::TimeTicks()));
     for (size_t i = 0; i < kTaskQueueCount; i++) {
       std::unique_ptr<TaskQueueImpl> task_queue =
-          base::MakeUnique<TaskQueueImpl>(nullptr, virtual_time_domain_.get(),
+          std::make_unique<TaskQueueImpl>(nullptr, virtual_time_domain_.get(),
                                           TaskQueue::Spec("test"));
       selector_.AddQueue(task_queue.get());
       task_queues_.push_back(std::move(task_queue));
@@ -122,12 +124,12 @@ class TaskQueueSelectorTest : public ::testing::Test {
       // manually remove |task_queue| from the |selector_|.  Normally
       // UnregisterTaskQueue would do that.
       selector_.RemoveQueue(task_queue.get());
-      task_queue->UnregisterTaskQueue(nullptr);
+      task_queue->UnregisterTaskQueue();
     }
   }
 
   std::unique_ptr<TaskQueueImpl> NewTaskQueueWithBlockReporting() {
-    return base::MakeUnique<TaskQueueImpl>(
+    return std::make_unique<TaskQueueImpl>(
         nullptr, virtual_time_domain_.get(),
         TaskQueue::Spec("test").SetShouldReportWhenExecutionBlocked(true));
   }
@@ -402,8 +404,9 @@ TEST_F(TaskQueueSelectorTest, ChooseOldestWithPriority_Empty) {
 }
 
 TEST_F(TaskQueueSelectorTest, ChooseOldestWithPriority_OnlyDelayed) {
-  task_queues_[0]->delayed_work_queue()->Push(TaskQueueImpl::Task(
-      FROM_HERE, test_closure_, base::TimeTicks(), 0, true, 0));
+  task_queues_[0]->delayed_work_queue()->Push(
+      TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
+                          base::TimeTicks(), 0, 0));
 
   WorkQueue* chosen_work_queue = nullptr;
   bool chose_delayed_over_immediate = false;
@@ -415,8 +418,9 @@ TEST_F(TaskQueueSelectorTest, ChooseOldestWithPriority_OnlyDelayed) {
 }
 
 TEST_F(TaskQueueSelectorTest, ChooseOldestWithPriority_OnlyImmediate) {
-  task_queues_[0]->immediate_work_queue()->Push(TaskQueueImpl::Task(
-      FROM_HERE, test_closure_, base::TimeTicks(), 0, true, 0));
+  task_queues_[0]->immediate_work_queue()->Push(
+      TaskQueueImpl::Task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
+                          base::TimeTicks(), 0, 0));
 
   WorkQueue* chosen_work_queue = nullptr;
   bool chose_delayed_over_immediate = false;
@@ -440,8 +444,8 @@ TEST_F(TaskQueueSelectorTest, TestObserverWithOneBlockedQueue) {
   task_queue->SetQueueEnabledForTest(false);
   selector.DisableQueue(task_queue.get());
 
-  TaskQueueImpl::Task task(FROM_HERE, test_closure_, base::TimeTicks(), 0,
-                           true);
+  TaskQueueImpl::Task task(TaskQueue::PostedTask(test_closure_, FROM_HERE),
+                           base::TimeTicks(), 0);
   task.set_enqueue_order(0);
   task_queue->immediate_work_queue()->Push(std::move(task));
 
@@ -452,7 +456,7 @@ TEST_F(TaskQueueSelectorTest, TestObserverWithOneBlockedQueue) {
   task_queue->SetQueueEnabledForTest(true);
   selector.EnableQueue(task_queue.get());
   selector.RemoveQueue(task_queue.get());
-  task_queue->UnregisterTaskQueue(nullptr);
+  task_queue->UnregisterTaskQueue();
 }
 
 TEST_F(TaskQueueSelectorTest, TestObserverWithTwoBlockedQueues) {
@@ -472,10 +476,10 @@ TEST_F(TaskQueueSelectorTest, TestObserverWithTwoBlockedQueues) {
 
   selector.SetQueuePriority(task_queue2.get(), TaskQueue::CONTROL_PRIORITY);
 
-  TaskQueueImpl::Task task1(FROM_HERE, test_closure_, base::TimeTicks(), 0,
-                            true);
-  TaskQueueImpl::Task task2(FROM_HERE, test_closure_, base::TimeTicks(), 1,
-                            true);
+  TaskQueueImpl::Task task1(TaskQueue::PostedTask(test_closure_, FROM_HERE),
+                            base::TimeTicks(), 0);
+  TaskQueueImpl::Task task2(TaskQueue::PostedTask(test_closure_, FROM_HERE),
+                            base::TimeTicks(), 1);
   task1.set_enqueue_order(0);
   task2.set_enqueue_order(1);
   task_queue->immediate_work_queue()->Push(std::move(task1));
@@ -495,14 +499,14 @@ TEST_F(TaskQueueSelectorTest, TestObserverWithTwoBlockedQueues) {
   // Removing the second queue and selecting again should result in another
   // notification.
   selector.RemoveQueue(task_queue.get());
-  task_queue->UnregisterTaskQueue(nullptr);
+  task_queue->UnregisterTaskQueue();
   EXPECT_CALL(mock_observer, OnTriedToSelectBlockedWorkQueue(_)).Times(1);
   EXPECT_FALSE(selector.SelectWorkQueueToService(&chosen_work_queue));
 
   task_queue2->SetQueueEnabledForTest(true);
   selector.EnableQueue(task_queue2.get());
   selector.RemoveQueue(task_queue2.get());
-  task_queue2->UnregisterTaskQueue(nullptr);
+  task_queue2->UnregisterTaskQueue();
 }
 
 struct ChooseOldestWithPriorityTestParam {
@@ -527,15 +531,15 @@ class ChooseOldestWithPriorityTest
 };
 
 TEST_P(ChooseOldestWithPriorityTest, RoundRobinTest) {
-  task_queues_[0]->immediate_work_queue()->Push(
-      TaskQueueImpl::Task(FROM_HERE, test_closure_, base::TimeTicks(),
-                          GetParam().immediate_task_enqueue_order, true,
-                          GetParam().immediate_task_enqueue_order));
+  task_queues_[0]->immediate_work_queue()->Push(TaskQueueImpl::Task(
+      TaskQueue::PostedTask(test_closure_, FROM_HERE), base::TimeTicks(),
+      GetParam().immediate_task_enqueue_order,
+      GetParam().immediate_task_enqueue_order));
 
-  task_queues_[0]->delayed_work_queue()->Push(
-      TaskQueueImpl::Task(FROM_HERE, test_closure_, base::TimeTicks(),
-                          GetParam().delayed_task_enqueue_order, true,
-                          GetParam().delayed_task_enqueue_order));
+  task_queues_[0]->delayed_work_queue()->Push(TaskQueueImpl::Task(
+      TaskQueue::PostedTask(test_closure_, FROM_HERE), base::TimeTicks(),
+      GetParam().delayed_task_enqueue_order,
+      GetParam().delayed_task_enqueue_order));
 
   selector_.SetImmediateStarvationCountForTest(
       GetParam().immediate_starvation_count);
@@ -557,6 +561,7 @@ INSTANTIATE_TEST_CASE_P(
     ChooseOldestWithPriorityTest,
     ::testing::ValuesIn(kChooseOldestWithPriorityTestCases));
 
+}  // namespace task_queue_selector_unittest
 }  // namespace internal
 }  // namespace scheduler
 }  // namespace blink

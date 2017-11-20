@@ -16,14 +16,14 @@
 #include <string>
 #include <utility>
 
-#include "webrtc/api/audio/audio_mixer.h"
-#include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
-#include "webrtc/modules/audio_mixer/default_output_rate_calculator.h"
-#include "webrtc/rtc_base/bind.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/event.h"
-#include "webrtc/rtc_base/task_queue.h"
-#include "webrtc/test/gmock.h"
+#include "api/audio/audio_mixer.h"
+#include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/audio_mixer/default_output_rate_calculator.h"
+#include "rtc_base/bind.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/event.h"
+#include "rtc_base/task_queue.h"
+#include "test/gmock.h"
 
 using testing::_;
 using testing::Exactly;
@@ -35,12 +35,10 @@ namespace webrtc {
 namespace {
 
 constexpr int kDefaultSampleRateHz = 48000;
-constexpr int kId = 1;
 
 // Utility function that resets the frame member variables with
 // sensible defaults.
 void ResetFrame(AudioFrame* frame) {
-  frame->id_ = kId;
   frame->sample_rate_hz_ = kDefaultSampleRateHz;
   frame->num_channels_ = 1;
 

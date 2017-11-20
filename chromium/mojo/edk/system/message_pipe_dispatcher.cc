@@ -97,7 +97,7 @@ MessagePipeDispatcher::MessagePipeDispatcher(NodeController* node_controller,
            << " [pipe_id=" << pipe_id << "; endpoint=" << endpoint << "]";
 
   node_controller_->SetPortObserver(
-      port_, make_scoped_refptr(new PortObserverThunk(this)));
+      port_, base::MakeRefCounted<PortObserverThunk>(this));
 }
 
 bool MessagePipeDispatcher::Fuse(MessagePipeDispatcher* other) {
@@ -287,10 +287,7 @@ scoped_refptr<Dispatcher> MessagePipeDispatcher::Deserialize(
                                    state->pipe_id, state->endpoint);
 }
 
-MessagePipeDispatcher::~MessagePipeDispatcher() {
-  // TODO(crbug.com/740044): Remove this CHECK.
-  CHECK(port_closed_ && !in_transit_);
-}
+MessagePipeDispatcher::~MessagePipeDispatcher() = default;
 
 MojoResult MessagePipeDispatcher::CloseNoLock() {
   signal_lock_.AssertAcquired();

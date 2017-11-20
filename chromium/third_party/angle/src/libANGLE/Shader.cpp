@@ -61,12 +61,12 @@ bool CompareShaderVar(const sh::ShaderVariable &x, const sh::ShaderVariable &y)
     }
 
     // Special case for handling structs: we sort these to the end of the list
-    if (x.type == GL_STRUCT_ANGLEX)
+    if (x.type == GL_NONE)
     {
         return false;
     }
 
-    if (y.type == GL_STRUCT_ANGLEX)
+    if (y.type == GL_NONE)
     {
         return true;
     }
@@ -475,6 +475,38 @@ const std::vector<sh::OutputVariable> &Shader::getActiveOutputVariables(const Co
 {
     resolveCompile(context);
     return mState.getActiveOutputVariables();
+}
+
+std::string Shader::getTransformFeedbackVaryingMappedName(const std::string &tfVaryingName,
+                                                          const Context *context)
+{
+    const auto &varyings = getVaryings(context);
+    auto bracketPos      = tfVaryingName.find("[");
+    if (bracketPos != std::string::npos)
+    {
+        auto tfVaryingBaseName = tfVaryingName.substr(0, bracketPos);
+        for (const auto &varying : varyings)
+        {
+            if (varying.name == tfVaryingBaseName)
+            {
+                std::string mappedNameWithArrayIndex =
+                    varying.mappedName + tfVaryingName.substr(bracketPos);
+                return mappedNameWithArrayIndex;
+            }
+        }
+    }
+    else
+    {
+        for (const auto &varying : varyings)
+        {
+            if (varying.name == tfVaryingName)
+            {
+                return varying.mappedName;
+            }
+        }
+    }
+    UNREACHABLE();
+    return std::string();
 }
 
 const sh::WorkGroupSize &Shader::getWorkGroupSize(const Context *context)

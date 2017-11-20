@@ -6,6 +6,7 @@
 #define ng_box_fragment_painter_h
 
 #include "core/layout/BackgroundBleedAvoidance.h"
+#include "core/layout/api/HitTestAction.h"
 #include "core/paint/BoxPainterBase.h"
 #include "platform/geometry/LayoutSize.h"
 #include "platform/wtf/Allocator.h"
@@ -13,12 +14,14 @@
 namespace blink {
 
 class FillLayer;
-class LayoutRect;
-struct PaintInfo;
-class NGPhysicalFragment;
-class NGPhysicalBoxFragment;
-class NGPhysicalTextFragment;
+class HitTestLocation;
+class HitTestRequest;
+class HitTestResult;
 class Image;
+class LayoutRect;
+class NGPaintFragment;
+class NGPhysicalFragment;
+struct PaintInfo;
 
 // Painter for LayoutNG box fragments, paints borders and background. Delegates
 // to NGTextFragmentPainter to paint line box fragments.
@@ -26,7 +29,7 @@ class NGBoxFragmentPainter : public BoxPainterBase {
   STACK_ALLOCATED();
 
  public:
-  NGBoxFragmentPainter(const NGPhysicalBoxFragment&);
+  NGBoxFragmentPainter(const NGPaintFragment&);
 
   void Paint(const PaintInfo&, const LayoutPoint&);
   void PaintChildren(const PaintInfo&, const LayoutPoint&);
@@ -37,11 +40,17 @@ class NGBoxFragmentPainter : public BoxPainterBase {
                                             const LayoutRect&);
 
   static bool IsPaintingBackgroundOfPaintContainerIntoScrollingContentsLayer(
-      const NGPhysicalFragment&,
+      const NGPaintFragment&,
       const PaintInfo&);
 
   LayoutRect BoundsForDrawingRecorder(const PaintInfo&,
                                       const LayoutPoint& adjusted_paint_offset);
+
+  // TODO(eae): Change to take a HitTestResult pointer instead as it mutates.
+  bool NodeAtPoint(HitTestResult&,
+                   const HitTestLocation& location_in_container,
+                   const LayoutPoint& accumulated_offset,
+                   HitTestAction);
 
  protected:
   BoxPainterBase::FillLayerInfo GetFillLayerInfo(
@@ -61,10 +70,10 @@ class NGBoxFragmentPainter : public BoxPainterBase {
                                       const LayoutRect&) override;
 
  private:
-  void PaintChildren(const Vector<RefPtr<NGPhysicalFragment>>&,
+  void PaintChildren(const Vector<std::unique_ptr<const NGPaintFragment>>&,
                      const PaintInfo&,
                      const LayoutPoint&);
-  void PaintText(const NGPhysicalTextFragment&,
+  void PaintText(const NGPaintFragment&,
                  const PaintInfo&,
                  const LayoutPoint& paint_offset);
   void PaintBackground(const PaintInfo&,
@@ -72,7 +81,18 @@ class NGBoxFragmentPainter : public BoxPainterBase {
                        const Color& background_color,
                        BackgroundBleedAvoidance = kBackgroundBleedNone);
 
-  const NGPhysicalBoxFragment& box_fragment_;
+  bool VisibleToHitTestRequest(const HitTestRequest&) const;
+  bool HitTestChildren(HitTestResult&,
+                       const Vector<std::unique_ptr<const NGPaintFragment>>&,
+                       const HitTestLocation& location_in_container,
+                       const LayoutPoint& accumulated_offset,
+                       HitTestAction);
+  bool HitTestTextFragment(HitTestResult&,
+                           const NGPhysicalFragment&,
+                           const HitTestLocation& location_in_container,
+                           const LayoutPoint& accumulated_offset);
+
+  const NGPaintFragment& box_fragment_;
 };
 
 }  // namespace blink

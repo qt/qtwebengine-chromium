@@ -80,14 +80,13 @@ const float kSessionToStreamRatio = 1.5;
 
 // Run all tests with the cross products of all versions.
 struct TestParams {
-  TestParams(const QuicVersionVector& client_supported_versions,
-             const QuicVersionVector& server_supported_versions,
-             QuicVersion negotiated_version,
+  TestParams(const QuicTransportVersionVector& client_supported_versions,
+             const QuicTransportVersionVector& server_supported_versions,
+             QuicTransportVersion negotiated_version,
              bool client_supports_stateless_rejects,
              bool server_uses_stateless_rejects_if_peer_supported,
              QuicTag congestion_control_tag,
              bool disable_hpack_dynamic_table,
-             bool force_hol_blocking,
              bool use_cheap_stateless_reject)
       : client_supported_versions(client_supported_versions),
         server_supported_versions(server_supported_versions),
@@ -97,14 +96,13 @@ struct TestParams {
             server_uses_stateless_rejects_if_peer_supported),
         congestion_control_tag(congestion_control_tag),
         disable_hpack_dynamic_table(disable_hpack_dynamic_table),
-        force_hol_blocking(force_hol_blocking),
         use_cheap_stateless_reject(use_cheap_stateless_reject) {}
 
   friend std::ostream& operator<<(std::ostream& os, const TestParams& p) {
     os << "{ server_supported_versions: "
-       << QuicVersionVectorToString(p.server_supported_versions);
+       << QuicTransportVersionVectorToString(p.server_supported_versions);
     os << " client_supported_versions: "
-       << QuicVersionVectorToString(p.client_supported_versions);
+       << QuicTransportVersionVectorToString(p.client_supported_versions);
     os << " negotiated_version: " << QuicVersionToString(p.negotiated_version);
     os << " client_supports_stateless_rejects: "
        << p.client_supports_stateless_rejects;
@@ -113,20 +111,18 @@ struct TestParams {
     os << " congestion_control_tag: "
        << QuicTagToString(p.congestion_control_tag);
     os << " disable_hpack_dynamic_table: " << p.disable_hpack_dynamic_table;
-    os << " force_hol_blocking: " << p.force_hol_blocking;
     os << " use_cheap_stateless_reject: " << p.use_cheap_stateless_reject
        << " }";
     return os;
   }
 
-  QuicVersionVector client_supported_versions;
-  QuicVersionVector server_supported_versions;
-  QuicVersion negotiated_version;
+  QuicTransportVersionVector client_supported_versions;
+  QuicTransportVersionVector server_supported_versions;
+  QuicTransportVersion negotiated_version;
   bool client_supports_stateless_rejects;
   bool server_uses_stateless_rejects_if_peer_supported;
   QuicTag congestion_control_tag;
   bool disable_hpack_dynamic_table;
-  bool force_hol_blocking;
   bool use_cheap_stateless_reject;
 };
 
@@ -140,12 +136,13 @@ std::vector<TestParams> GetTestParams() {
   // these tests need to ensure that clients are never attempting
   // to do 0-RTT across incompatible versions. Chromium only supports
   // a single version at a time anyway. :)
-  QuicVersionVector all_supported_versions = AllSupportedVersions();
+  QuicTransportVersionVector all_supported_versions =
+      AllSupportedTransportVersions();
   // Even though this currently has one element, it may well get another
   // with future versions of QUIC, so don't remove it.
-  QuicVersionVector version_buckets[1];
+  QuicTransportVersionVector version_buckets[1];
 
-  for (const QuicVersion version : all_supported_versions) {
+  for (const QuicTransportVersion version : all_supported_versions) {
     // Versions: 35+
     // QUIC_VERSION_35 allows endpoints to independently set stream limit.
     version_buckets[0].push_back(version);
@@ -153,7 +150,7 @@ std::vector<TestParams> GetTestParams() {
 
   // This must be kept in sync with the number of nested for-loops below as it
   // is used to prune the number of tests that are run.
-  const int kMaxEnabledOptions = 5;
+  const int kMaxEnabledOptions = 4;
   int max_enabled_options = 0;
   std::vector<TestParams> params;
   for (bool server_uses_stateless_rejects_if_peer_supported : {true, false}) {
@@ -161,86 +158,81 @@ std::vector<TestParams> GetTestParams() {
       for (const QuicTag congestion_control_tag :
            {kRENO, kTBBR, kQBIC, kTPCC}) {
         for (bool disable_hpack_dynamic_table : {false}) {
-          for (bool force_hol_blocking : {true, false}) {
-            for (bool use_cheap_stateless_reject : {true, false}) {
-              int enabled_options = 0;
-              if (force_hol_blocking) {
-                ++enabled_options;
-              }
-              if (congestion_control_tag != kQBIC) {
-                ++enabled_options;
-              }
-              if (disable_hpack_dynamic_table) {
-                ++enabled_options;
-              }
-              if (client_supports_stateless_rejects) {
-                ++enabled_options;
-              }
-              if (server_uses_stateless_rejects_if_peer_supported) {
-                ++enabled_options;
-              }
-              if (use_cheap_stateless_reject) {
-                ++enabled_options;
-              }
-              CHECK_GE(kMaxEnabledOptions, enabled_options);
-              if (enabled_options > max_enabled_options) {
-                max_enabled_options = enabled_options;
-              }
+          for (bool use_cheap_stateless_reject : {true, false}) {
+            int enabled_options = 0;
+            if (congestion_control_tag != kQBIC) {
+              ++enabled_options;
+            }
+            if (disable_hpack_dynamic_table) {
+              ++enabled_options;
+            }
+            if (client_supports_stateless_rejects) {
+              ++enabled_options;
+            }
+            if (server_uses_stateless_rejects_if_peer_supported) {
+              ++enabled_options;
+            }
+            if (use_cheap_stateless_reject) {
+              ++enabled_options;
+            }
+            CHECK_GE(kMaxEnabledOptions, enabled_options);
+            if (enabled_options > max_enabled_options) {
+              max_enabled_options = enabled_options;
+            }
 
-              // Run tests with no options, a single option, or all the
-              // options enabled to avoid a combinatorial explosion.
+            // Run tests with no options, a single option, or all the
+            // options enabled to avoid a combinatorial explosion.
+            if (enabled_options > 1 && enabled_options < kMaxEnabledOptions) {
+              continue;
+            }
+
+            for (const QuicTransportVersionVector& client_versions :
+                 version_buckets) {
+              CHECK(!client_versions.empty());
+              if (FilterSupportedTransportVersions(client_versions).empty()) {
+                continue;
+              }
+              // Add an entry for server and client supporting all
+              // versions.
+              params.push_back(TestParams(
+                  client_versions, all_supported_versions,
+                  client_versions.front(), client_supports_stateless_rejects,
+                  server_uses_stateless_rejects_if_peer_supported,
+                  congestion_control_tag, disable_hpack_dynamic_table,
+                  use_cheap_stateless_reject));
+
+              // Run version negotiation tests tests with no options, or
+              // all the options enabled to avoid a combinatorial
+              // explosion.
               if (enabled_options > 1 && enabled_options < kMaxEnabledOptions) {
                 continue;
               }
 
-              for (const QuicVersionVector& client_versions : version_buckets) {
-                CHECK(!client_versions.empty());
-                if (FilterSupportedVersions(client_versions).empty()) {
+              // Test client supporting all versions and server supporting
+              // 1 version. Simulate an old server and exercise version
+              // downgrade in the client. Protocol negotiation should
+              // occur.  Skip the i = 0 case because it is essentially the
+              // same as the default case.
+              for (size_t i = 1; i < client_versions.size(); ++i) {
+                QuicTransportVersionVector server_supported_versions;
+                server_supported_versions.push_back(client_versions[i]);
+                if (FilterSupportedTransportVersions(server_supported_versions)
+                        .empty()) {
                   continue;
                 }
-                // Add an entry for server and client supporting all
-                // versions.
                 params.push_back(TestParams(
-                    client_versions, all_supported_versions,
-                    client_versions.front(), client_supports_stateless_rejects,
+                    client_versions, server_supported_versions,
+                    server_supported_versions.front(),
+                    client_supports_stateless_rejects,
                     server_uses_stateless_rejects_if_peer_supported,
                     congestion_control_tag, disable_hpack_dynamic_table,
-                    force_hol_blocking, use_cheap_stateless_reject));
-
-                // Run version negotiation tests tests with no options, or
-                // all the options enabled to avoid a combinatorial
-                // explosion.
-                if (enabled_options > 1 &&
-                    enabled_options < kMaxEnabledOptions) {
-                  continue;
-                }
-
-                // Test client supporting all versions and server supporting
-                // 1 version. Simulate an old server and exercise version
-                // downgrade in the client. Protocol negotiation should
-                // occur.  Skip the i = 0 case because it is essentially the
-                // same as the default case.
-                for (size_t i = 1; i < client_versions.size(); ++i) {
-                  QuicVersionVector server_supported_versions;
-                  server_supported_versions.push_back(client_versions[i]);
-                  if (FilterSupportedVersions(server_supported_versions)
-                          .empty()) {
-                    continue;
-                  }
-                  params.push_back(TestParams(
-                      client_versions, server_supported_versions,
-                      server_supported_versions.front(),
-                      client_supports_stateless_rejects,
-                      server_uses_stateless_rejects_if_peer_supported,
-                      congestion_control_tag, disable_hpack_dynamic_table,
-                      force_hol_blocking, use_cheap_stateless_reject));
-                }  // End of version for loop.
-              }    // End of 2nd version for loop.
-            }      // End of use_cheap_stateless_reject for loop.
-          }        // End of force_hol_blocking loop.
-        }          // End of disable_hpack_dynamic_table for loop.
-      }            // End of congestion_control_tag for loop.
-    }              // End of client_supports_stateless_rejects for loop.
+                    use_cheap_stateless_reject));
+              }  // End of version for loop.
+            }    // End of 2nd version for loop.
+          }      // End of use_cheap_stateless_reject for loop.
+        }        // End of disable_hpack_dynamic_table for loop.
+      }          // End of congestion_control_tag for loop.
+    }            // End of client_supports_stateless_rejects for loop.
     CHECK_EQ(kMaxEnabledOptions, max_enabled_options);
   }  // End of server_uses_stateless_rejects_if_peer_supported for loop.
   return params;
@@ -341,28 +333,28 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
   }
 
   void set_client_initial_stream_flow_control_receive_window(uint32_t window) {
-    CHECK(client_.get() == nullptr);
+    CHECK(client_ == nullptr);
     QUIC_DLOG(INFO) << "Setting client initial stream flow control window: "
                     << window;
     client_config_.SetInitialStreamFlowControlWindowToSend(window);
   }
 
   void set_client_initial_session_flow_control_receive_window(uint32_t window) {
-    CHECK(client_.get() == nullptr);
+    CHECK(client_ == nullptr);
     QUIC_DLOG(INFO) << "Setting client initial session flow control window: "
                     << window;
     client_config_.SetInitialSessionFlowControlWindowToSend(window);
   }
 
   void set_server_initial_stream_flow_control_receive_window(uint32_t window) {
-    CHECK(server_thread_.get() == nullptr);
+    CHECK(server_thread_ == nullptr);
     QUIC_DLOG(INFO) << "Setting server initial stream flow control window: "
                     << window;
     server_config_.SetInitialStreamFlowControlWindowToSend(window);
   }
 
   void set_server_initial_session_flow_control_receive_window(uint32_t window) {
-    CHECK(server_thread_.get() == nullptr);
+    CHECK(server_thread_ == nullptr);
     QUIC_DLOG(INFO) << "Setting server initial session flow control window: "
                     << window;
     server_config_.SetInitialSessionFlowControlWindowToSend(window);
@@ -406,9 +398,6 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
     }
     if (GetParam().disable_hpack_dynamic_table) {
       copt.push_back(kDHDT);
-    }
-    if (GetParam().force_hol_blocking) {
-      client_config_.SetForceHolBlocking();
     }
     client_config_.SetConnectionOptionsToSend(copt);
 
@@ -479,7 +468,7 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
   void StopServer() {
     if (!server_started_)
       return;
-    if (server_thread_.get()) {
+    if (server_thread_) {
       server_thread_->Quit();
       server_thread_->Join();
     }
@@ -598,10 +587,10 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
   bool server_started_;
   QuicConfig client_config_;
   QuicConfig server_config_;
-  QuicVersionVector client_supported_versions_;
-  QuicVersionVector server_supported_versions_;
+  QuicTransportVersionVector client_supported_versions_;
+  QuicTransportVersionVector server_supported_versions_;
   QuicTagVector client_extra_copts_;
-  QuicVersion negotiated_version_;
+  QuicTransportVersion negotiated_version_;
   size_t chlo_multiplier_;
   QuicTestServer::StreamFactory* stream_factory_;
   bool support_server_push_;
@@ -1756,11 +1745,9 @@ TEST_P(EndToEndTest, HeadersAndCryptoStreamsNoConnectionFlowControl) {
 
   QuicHeadersStream* headers_stream = QuicSpdySessionPeer::GetHeadersStream(
       client_->client()->client_session());
-  if (!client_->client()->client_session()->force_hol_blocking()) {
-    EXPECT_LT(QuicFlowControllerPeer::SendWindowSize(
-                  headers_stream->flow_controller()),
-              kStreamIFCW);
-  }
+  EXPECT_LT(
+      QuicFlowControllerPeer::SendWindowSize(headers_stream->flow_controller()),
+      kStreamIFCW);
   EXPECT_EQ(kSessionIFCW,
             QuicFlowControllerPeer::SendWindowSize(
                 client_->client()->client_session()->flow_controller()));
@@ -1832,33 +1819,22 @@ TEST_P(EndToEndTest, FlowControlsSynced) {
             ->flow_controller());
   }
 
-  if (!client_session->force_hol_blocking()) {
-    if (FLAGS_quic_reloadable_flag_quic_send_max_header_list_size) {
-      // Client *may* have received the SETTINGs frame.
-      // TODO(fayang): Rewrite this part because it is hacky.
-      float ratio1 =
-          static_cast<float>(QuicFlowControllerPeer::ReceiveWindowSize(
-              client_session->flow_controller())) /
-          QuicFlowControllerPeer::ReceiveWindowSize(
-              QuicSpdySessionPeer::GetHeadersStream(client_session)
-                  ->flow_controller());
-      float ratio2 =
-          static_cast<float>(QuicFlowControllerPeer::ReceiveWindowSize(
-              client_session->flow_controller())) /
-          (QuicFlowControllerPeer::ReceiveWindowSize(
-               QuicSpdySessionPeer::GetHeadersStream(client_session)
-                   ->flow_controller()) +
-           frame.size());
-      EXPECT_TRUE(ratio1 == kSessionToStreamRatio ||
-                  ratio2 == kSessionToStreamRatio);
-    } else {
-      EXPECT_EQ(static_cast<float>(QuicFlowControllerPeer::ReceiveWindowSize(
-                    client_session->flow_controller())) /
-                    QuicFlowControllerPeer::ReceiveWindowSize(
+  if (FLAGS_quic_reloadable_flag_quic_send_max_header_list_size) {
+    // Client *may* have received the SETTINGs frame.
+    // TODO(fayang): Rewrite this part because it is hacky.
+    float ratio1 = static_cast<float>(QuicFlowControllerPeer::ReceiveWindowSize(
+                       client_session->flow_controller())) /
+                   QuicFlowControllerPeer::ReceiveWindowSize(
+                       QuicSpdySessionPeer::GetHeadersStream(client_session)
+                           ->flow_controller());
+    float ratio2 = static_cast<float>(QuicFlowControllerPeer::ReceiveWindowSize(
+                       client_session->flow_controller())) /
+                   (QuicFlowControllerPeer::ReceiveWindowSize(
                         QuicSpdySessionPeer::GetHeadersStream(client_session)
-                            ->flow_controller()),
-                kSessionToStreamRatio);
-    }
+                            ->flow_controller()) +
+                    frame.size());
+    EXPECT_TRUE(ratio1 == kSessionToStreamRatio ||
+                ratio2 == kSessionToStreamRatio);
   }
 
   server_thread_->Resume();
@@ -2433,11 +2409,12 @@ class ClientSessionThatDropsBody : public QuicSpdyClientSession {
 
 class MockableQuicClientThatDropsBody : public MockableQuicClient {
  public:
-  MockableQuicClientThatDropsBody(QuicSocketAddress server_address,
-                                  const QuicServerId& server_id,
-                                  const QuicConfig& config,
-                                  const QuicVersionVector& supported_versions,
-                                  EpollServer* epoll_server)
+  MockableQuicClientThatDropsBody(
+      QuicSocketAddress server_address,
+      const QuicServerId& server_id,
+      const QuicConfig& config,
+      const QuicTransportVersionVector& supported_versions,
+      EpollServer* epoll_server)
       : MockableQuicClient(server_address,
                            server_id,
                            config,
@@ -2455,10 +2432,11 @@ class MockableQuicClientThatDropsBody : public MockableQuicClient {
 
 class QuicTestClientThatDropsBody : public QuicTestClient {
  public:
-  QuicTestClientThatDropsBody(QuicSocketAddress server_address,
-                              const string& server_hostname,
-                              const QuicConfig& config,
-                              const QuicVersionVector& supported_versions)
+  QuicTestClientThatDropsBody(
+      QuicSocketAddress server_address,
+      const string& server_hostname,
+      const QuicConfig& config,
+      const QuicTransportVersionVector& supported_versions)
       : QuicTestClient(server_address,
                        server_hostname,
                        config,
@@ -2977,7 +2955,7 @@ TEST_P(EndToEndTest, WindowUpdateInAck) {
   QuicConnection* client_connection =
       client_->client()->client_session()->connection();
   client_connection->set_debug_visitor(&observer);
-  QuicVersion version = client_connection->version();
+  QuicTransportVersion version = client_connection->transport_version();
   // 100KB body.
   string body(100 * 1024, 'a');
   SpdyHeaderBlock headers;
@@ -2994,6 +2972,17 @@ TEST_P(EndToEndTest, WindowUpdateInAck) {
   } else {
     EXPECT_EQ(0u, observer.num_window_update_frames());
   }
+}
+
+TEST_P(EndToEndTest, SendStatelessResetTokenInShlo) {
+  ASSERT_TRUE(Initialize());
+  EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
+  QuicConfig* config = client_->client()->session()->config();
+  if (FLAGS_quic_reloadable_flag_quic_send_reset_token_in_shlo) {
+    EXPECT_TRUE(config->HasReceivedStatelessResetToken());
+    EXPECT_EQ(1010101u, config->ReceivedStatelessResetToken());
+  }
+  client_->Disconnect();
 }
 
 class EndToEndBufferedPacketsTest : public EndToEndTest {

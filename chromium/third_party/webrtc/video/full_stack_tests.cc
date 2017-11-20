@@ -9,10 +9,10 @@
  */
 #include <stdio.h>
 
-#include "webrtc/modules/pacing/alr_detector.h"
-#include "webrtc/test/field_trial.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/video/video_quality_test.h"
+#include "modules/pacing/alr_detector.h"
+#include "test/field_trial.h"
+#include "test/gtest.h"
+#include "video/video_quality_test.h"
 
 namespace webrtc {
 
@@ -31,7 +31,7 @@ class FullStackTest : public VideoQualityTest {
       "WebRTC-SimulcastScreenshare/Enabled/";
   const std::string kAlrProbingExperiment =
       std::string(AlrDetector::kScreenshareProbingBweExperimentName) +
-      "/1.1,2875,85,20,-20/";
+      "/1.1,2875,85,20,-20,0/";
 };
 
 // VideoQualityTest::Params params = {
@@ -304,6 +304,7 @@ TEST_F(FullStackTest, ForemanCif1000kbps100msLimitedQueue) {
   RunTest(foreman_cif);
 }
 
+// TODO(sprang): Remove this if we have the similar ModerateLimits below?
 TEST_F(FullStackTest, ConferenceMotionHd2000kbps100msLimitedQueue) {
   VideoQualityTest::Params conf_motion_hd;
   conf_motion_hd.call.send_side_bwe = true;
@@ -314,6 +315,87 @@ TEST_F(FullStackTest, ConferenceMotionHd2000kbps100msLimitedQueue) {
   conf_motion_hd.analyzer = {"conference_motion_hd_2000kbps_100ms_32pkts_queue",
                              0.0, 0.0, kFullStackTestDurationSecs};
   conf_motion_hd.pipe.queue_length_packets = 32;
+  conf_motion_hd.pipe.queue_delay_ms = 100;
+  conf_motion_hd.pipe.link_capacity_kbps = 2000;
+  RunTest(conf_motion_hd);
+}
+
+TEST_F(FullStackTest, ConferenceMotionHd1TLModerateLimits) {
+  VideoQualityTest::Params conf_motion_hd;
+  conf_motion_hd.call.send_side_bwe = true;
+  conf_motion_hd.video = {
+      true,    1280,    720,   50,    30000,
+      3000000, 3000000, false, "VP8", 1,
+      -1,      0,       false, false, "ConferenceMotion_1280_720_50"};
+  conf_motion_hd.analyzer = {"conference_motion_hd_1tl_moderate_limits", 0.0,
+                             0.0, kFullStackTestDurationSecs};
+  conf_motion_hd.pipe.queue_length_packets = 50;
+  conf_motion_hd.pipe.loss_percent = 3;
+  conf_motion_hd.pipe.queue_delay_ms = 100;
+  conf_motion_hd.pipe.link_capacity_kbps = 2000;
+  RunTest(conf_motion_hd);
+}
+
+TEST_F(FullStackTest, ConferenceMotionHd2TLModerateLimits) {
+  VideoQualityTest::Params conf_motion_hd;
+  conf_motion_hd.call.send_side_bwe = true;
+  conf_motion_hd.video = {
+      true,    1280,    720,   50,    30000,
+      3000000, 3000000, false, "VP8", 2,
+      -1,      0,       false, false, "ConferenceMotion_1280_720_50"};
+  conf_motion_hd.analyzer = {"conference_motion_hd_2tl_moderate_limits", 0.0,
+                             0.0, kFullStackTestDurationSecs};
+  conf_motion_hd.pipe.queue_length_packets = 50;
+  conf_motion_hd.pipe.loss_percent = 3;
+  conf_motion_hd.pipe.queue_delay_ms = 100;
+  conf_motion_hd.pipe.link_capacity_kbps = 2000;
+  RunTest(conf_motion_hd);
+}
+
+TEST_F(FullStackTest, ConferenceMotionHd3TLModerateLimits) {
+  VideoQualityTest::Params conf_motion_hd;
+  conf_motion_hd.call.send_side_bwe = true;
+  conf_motion_hd.video = {
+      true,    1280,    720,   50,    30000,
+      3000000, 3000000, false, "VP8", 3,
+      -1,      0,       false, false, "ConferenceMotion_1280_720_50"};
+  conf_motion_hd.analyzer = {"conference_motion_hd_3tl_moderate_limits", 0.0,
+                             0.0, kFullStackTestDurationSecs};
+  conf_motion_hd.pipe.queue_length_packets = 50;
+  conf_motion_hd.pipe.loss_percent = 3;
+  conf_motion_hd.pipe.queue_delay_ms = 100;
+  conf_motion_hd.pipe.link_capacity_kbps = 2000;
+  RunTest(conf_motion_hd);
+}
+
+TEST_F(FullStackTest, ConferenceMotionHd4TLModerateLimits) {
+  VideoQualityTest::Params conf_motion_hd;
+  conf_motion_hd.call.send_side_bwe = true;
+  conf_motion_hd.video = {
+      true,    1280,    720,   50,    30000,
+      3000000, 3000000, false, "VP8", 4,
+      -1,      0,       false, false, "ConferenceMotion_1280_720_50"};
+  conf_motion_hd.analyzer = {"conference_motion_hd_4tl_moderate_limits", 0.0,
+                             0.0, kFullStackTestDurationSecs};
+  conf_motion_hd.pipe.queue_length_packets = 50;
+  conf_motion_hd.pipe.loss_percent = 3;
+  conf_motion_hd.pipe.queue_delay_ms = 100;
+  conf_motion_hd.pipe.link_capacity_kbps = 2000;
+  RunTest(conf_motion_hd);
+}
+
+TEST_F(FullStackTest, ConferenceMotionHd3TLModerateLimitsAltTLPattern) {
+  test::ScopedFieldTrials field_trial("WebRTC-UseShortVP8TL3Pattern/Enabled/");
+  VideoQualityTest::Params conf_motion_hd;
+  conf_motion_hd.call.send_side_bwe = true;
+  conf_motion_hd.video = {
+      true,    1280,    720,   50,    30000,
+      3000000, 3000000, false, "VP8", 3,
+      -1,      0,       false, false, "ConferenceMotion_1280_720_50"};
+  conf_motion_hd.analyzer = {"conference_motion_hd_3tl_alt_moderate_limits",
+                             0.0, 0.0, kFullStackTestDurationSecs};
+  conf_motion_hd.pipe.queue_length_packets = 50;
+  conf_motion_hd.pipe.loss_percent = 3;
   conf_motion_hd.pipe.queue_delay_ms = 100;
   conf_motion_hd.pipe.link_capacity_kbps = 2000;
   RunTest(conf_motion_hd);
@@ -697,8 +779,8 @@ TEST_F(FullStackTest, LargeRoomVP8_5thumb) {
   RunTest(large_room);
 }
 
-#if defined(WEBRTC_ANDROID)
-// Fails on Android:
+#if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
+// Fails on mobile devices:
 // https://bugs.chromium.org/p/webrtc/issues/detail?id=7301
 #define MAYBE_LargeRoomVP8_50thumb DISABLED_LargeRoomVP8_50thumb
 #define MAYBE_LargeRoomVP8_15thumb DISABLED_LargeRoomVP8_15thumb

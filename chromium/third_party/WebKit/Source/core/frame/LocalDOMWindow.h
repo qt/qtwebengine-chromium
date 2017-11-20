@@ -57,9 +57,7 @@ class EventQueue;
 class ExceptionState;
 class External;
 class FrameConsole;
-class FrameRequestCallback;
 class History;
-class IdleRequestCallback;
 class IdleRequestOptions;
 class MediaQueryList;
 class MessageEvent;
@@ -73,6 +71,8 @@ class SecurityOrigin;
 class SerializedScriptValue;
 class SourceLocation;
 class StyleMedia;
+class V8FrameRequestCallback;
+class V8IdleRequestCallback;
 
 enum PageshowEventPersistence {
   kPageshowEventNotPersisted = 0,
@@ -213,19 +213,20 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   MediaQueryList* matchMedia(const String&);
 
   // DOM Level 2 Style Interface
-  CSSStyleDeclaration* getComputedStyle(Element*,
-                                        const String& pseudo_elt) const;
+  CSSStyleDeclaration* getComputedStyle(
+      Element*,
+      const String& pseudo_elt = String()) const;
 
   // WebKit extension
   CSSRuleList* getMatchedCSSRules(Element*, const String& pseudo_elt) const;
 
   // WebKit animation extensions
-  int requestAnimationFrame(FrameRequestCallback*);
-  int webkitRequestAnimationFrame(FrameRequestCallback*);
+  int requestAnimationFrame(V8FrameRequestCallback*);
+  int webkitRequestAnimationFrame(V8FrameRequestCallback*);
   void cancelAnimationFrame(int id);
 
   // Idle callback extensions
-  int requestIdleCallback(IdleRequestCallback*, const IdleRequestOptions&);
+  int requestIdleCallback(V8IdleRequestCallback*, const IdleRequestOptions&);
   void cancelIdleCallback(int id);
 
   // Custom elements
@@ -305,7 +306,7 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   void EnqueuePopstateEvent(RefPtr<SerializedScriptValue>);
   void DispatchWindowLoadEvent();
   void DocumentWasClosed();
-  void StatePopped(PassRefPtr<SerializedScriptValue>);
+  void StatePopped(RefPtr<SerializedScriptValue>);
 
   // FIXME: This shouldn't be public once LocalDOMWindow becomes
   // ExecutionContext.
@@ -355,7 +356,7 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   mutable Member<BarProp> scrollbars_;
   mutable Member<BarProp> statusbar_;
   mutable Member<BarProp> toolbar_;
-  mutable Member<Navigator> navigator_;
+  mutable TraceWrapperMember<Navigator> navigator_;
   mutable Member<StyleMedia> media_;
   mutable TraceWrapperMember<CustomElementRegistry> custom_elements_;
   // We store reference to Modulator here to have it TraceWrapper-ed.

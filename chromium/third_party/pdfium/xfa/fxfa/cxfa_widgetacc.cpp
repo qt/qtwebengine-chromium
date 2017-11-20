@@ -91,7 +91,7 @@ class CXFA_ImageLayoutData : public CXFA_WidgetLayoutData {
     return !!m_pDIBitmap;
   }
 
-  CFX_RetainPtr<CFX_DIBitmap> m_pDIBitmap;
+  RetainPtr<CFX_DIBitmap> m_pDIBitmap;
   bool m_bNamedImage;
   int32_t m_iImageXDpi;
   int32_t m_iImageYDpi;
@@ -147,7 +147,7 @@ class CXFA_ImageEditData : public CXFA_FieldLayoutData {
     return !!m_pDIBitmap;
   }
 
-  CFX_RetainPtr<CFX_DIBitmap> m_pDIBitmap;
+  RetainPtr<CFX_DIBitmap> m_pDIBitmap;
   bool m_bNamedImage;
   int32_t m_iImageXDpi;
   int32_t m_iImageYDpi;
@@ -160,15 +160,15 @@ CXFA_WidgetAcc::CXFA_WidgetAcc(CXFA_FFDocView* pDocView, CXFA_Node* pNode)
 
 CXFA_WidgetAcc::~CXFA_WidgetAcc() {}
 
-bool CXFA_WidgetAcc::GetName(CFX_WideString& wsName, int32_t iNameType) {
+bool CXFA_WidgetAcc::GetName(WideString& wsName, int32_t iNameType) {
   if (iNameType == 0) {
     m_pNode->TryCData(XFA_ATTRIBUTE_Name, wsName);
     return !wsName.IsEmpty();
   }
   m_pNode->GetSOMExpression(wsName);
   if (iNameType == 2 && wsName.GetLength() >= 15) {
-    CFX_WideStringC wsPre = L"xfa[0].form[0].";
-    if (wsPre == CFX_WideStringC(wsName.c_str(), wsPre.GetLength()))
+    WideStringView wsPre = L"xfa[0].form[0].";
+    if (wsPre == WideStringView(wsName.c_str(), wsPre.GetLength()))
       wsName.Delete(0, wsPre.GetLength());
   }
   return true;
@@ -187,13 +187,13 @@ bool CXFA_WidgetAcc::ProcessValueChanged() {
 }
 
 void CXFA_WidgetAcc::ResetData() {
-  CFX_WideString wsValue;
+  WideString wsValue;
   XFA_Element eUIType = GetUIType();
   switch (eUIType) {
     case XFA_Element::ImageEdit: {
       CXFA_Value imageValue = GetDefaultValue();
       CXFA_Image image = imageValue.GetImage();
-      CFX_WideString wsContentType, wsHref;
+      WideString wsContentType, wsHref;
       if (image) {
         image.GetContent(wsValue);
         image.GetContentType(wsContentType);
@@ -222,7 +222,7 @@ void CXFA_WidgetAcc::ResetData() {
           if (!pItems)
             continue;
 
-          CFX_WideString itemText;
+          WideString itemText;
           if (pItems->CountChildren(XFA_Element::Unknown) > 1)
             itemText = pItems->GetChild(1, XFA_Element::Unknown)->GetContent();
 
@@ -244,15 +244,15 @@ void CXFA_WidgetAcc::ResetData() {
   }
 }
 
-void CXFA_WidgetAcc::SetImageEdit(const CFX_WideString& wsContentType,
-                                  const CFX_WideString& wsHref,
-                                  const CFX_WideString& wsData) {
+void CXFA_WidgetAcc::SetImageEdit(const WideString& wsContentType,
+                                  const WideString& wsHref,
+                                  const WideString& wsData) {
   CXFA_Image image = GetFormValue().GetImage();
   if (image) {
-    image.SetContentType(CFX_WideString(wsContentType));
+    image.SetContentType(WideString(wsContentType));
     image.SetHref(wsHref);
   }
-  CFX_WideString wsFormatValue(wsData);
+  WideString wsFormatValue(wsData);
   GetFormatDataValue(wsData, wsFormatValue);
   m_pNode->SetContent(wsData, wsFormatValue, true);
   CXFA_Node* pBind = GetDatasets();
@@ -367,8 +367,8 @@ void CXFA_WidgetAcc::ProcessScriptTestValidate(CXFA_Validate validate,
       if (!pAppProvider) {
         return;
       }
-      CFX_WideString wsTitle = pAppProvider->GetAppTitle();
-      CFX_WideString wsScriptMsg;
+      WideString wsTitle = pAppProvider->GetAppTitle();
+      WideString wsScriptMsg;
       validate.GetScriptMessageText(wsScriptMsg);
       int32_t eScriptTest = validate.GetScriptTest();
       if (eScriptTest == XFA_ATTRIBUTEENUM_Warning) {
@@ -397,9 +397,9 @@ void CXFA_WidgetAcc::ProcessScriptTestValidate(CXFA_Validate validate,
 
 int32_t CXFA_WidgetAcc::ProcessFormatTestValidate(CXFA_Validate validate,
                                                   bool bVersionFlag) {
-  CFX_WideString wsRawValue = GetRawValue();
+  WideString wsRawValue = GetRawValue();
   if (!wsRawValue.IsEmpty()) {
-    CFX_WideString wsPicture;
+    WideString wsPicture;
     validate.GetPicture(wsPicture);
     if (wsPicture.IsEmpty())
       return XFA_EVENTERROR_NotExist;
@@ -415,9 +415,9 @@ int32_t CXFA_WidgetAcc::ProcessFormatTestValidate(CXFA_Validate validate,
       if (!pAppProvider)
         return XFA_EVENTERROR_NotExist;
 
-      CFX_WideString wsFormatMsg;
+      WideString wsFormatMsg;
       validate.GetFormatMessageText(wsFormatMsg);
-      CFX_WideString wsTitle = pAppProvider->GetAppTitle();
+      WideString wsTitle = pAppProvider->GetAppTitle();
       int32_t eFormatTest = validate.GetFormatTest();
       if (eFormatTest == XFA_ATTRIBUTEENUM_Error) {
         if (wsFormatMsg.IsEmpty())
@@ -448,7 +448,7 @@ int32_t CXFA_WidgetAcc::ProcessFormatTestValidate(CXFA_Validate validate,
 int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
                                                 int32_t iFlags,
                                                 bool bVersionFlag) {
-  CFX_WideString wsValue;
+  WideString wsValue;
   GetValue(wsValue, XFA_VALUEPICTURE_Raw);
   if (!wsValue.IsEmpty())
     return XFA_EVENTERROR_Success;
@@ -456,7 +456,7 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
     return XFA_EVENTERROR_Success;
 
   int32_t eNullTest = validate.GetNullTest();
-  CFX_WideString wsNullMsg;
+  WideString wsNullMsg;
   validate.GetNullMessageText(wsNullMsg);
   if (iFlags & 0x01) {
     int32_t iRet = XFA_EVENTERROR_Success;
@@ -480,8 +480,8 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
   if (!pAppProvider)
     return XFA_EVENTERROR_NotExist;
 
-  CFX_WideString wsCaptionName;
-  CFX_WideString wsTitle = pAppProvider->GetAppTitle();
+  WideString wsCaptionName;
+  WideString wsTitle = pAppProvider->GetAppTitle();
   switch (eNullTest) {
     case XFA_ATTRIBUTEENUM_Error: {
       if (wsNullMsg.IsEmpty()) {
@@ -514,8 +514,8 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
   return XFA_EVENTERROR_Success;
 }
 
-CFX_WideString CXFA_WidgetAcc::GetValidateCaptionName(bool bVersionFlag) {
-  CFX_WideString wsCaptionName;
+WideString CXFA_WidgetAcc::GetValidateCaptionName(bool bVersionFlag) {
+  WideString wsCaptionName;
 
   if (!bVersionFlag) {
     if (CXFA_Caption caption = GetCaption()) {
@@ -531,10 +531,9 @@ CFX_WideString CXFA_WidgetAcc::GetValidateCaptionName(bool bVersionFlag) {
   return wsCaptionName;
 }
 
-CFX_WideString CXFA_WidgetAcc::GetValidateMessage(bool bError,
-                                                  bool bVersionFlag) {
-  CFX_WideString wsCaptionName = GetValidateCaptionName(bVersionFlag);
-  CFX_WideString wsMessage;
+WideString CXFA_WidgetAcc::GetValidateMessage(bool bError, bool bVersionFlag) {
+  WideString wsCaptionName = GetValidateCaptionName(bVersionFlag);
+  WideString wsMessage;
   if (bVersionFlag) {
     wsMessage.Format(L"%s validation failed", wsCaptionName.c_str());
     return wsMessage;
@@ -609,7 +608,7 @@ int32_t CXFA_WidgetAcc::ExecuteScript(CXFA_Script script,
   if (script.GetRunAt() == XFA_ATTRIBUTEENUM_Server)
     return XFA_EVENTERROR_Disabled;
 
-  CFX_WideString wsExpression;
+  WideString wsExpression;
   script.GetExpression(wsExpression);
   if (wsExpression.IsEmpty())
     return XFA_EVENTERROR_NotExist;
@@ -630,8 +629,8 @@ int32_t CXFA_WidgetAcc::ExecuteScript(CXFA_Script script,
   auto pTmpRetValue = pdfium::MakeUnique<CFXJSE_Value>(pContext->GetRuntime());
   ++m_nRecursionDepth;
   bool bRet = pContext->RunScript((XFA_SCRIPTLANGTYPE)eScriptType,
-                                  wsExpression.AsStringC(), pTmpRetValue.get(),
-                                  m_pNode);
+                                  wsExpression.AsStringView(),
+                                  pTmpRetValue.get(), m_pNode);
   --m_nRecursionDepth;
   int32_t iRet = XFA_EVENTERROR_Error;
   if (bRet) {
@@ -820,7 +819,7 @@ bool CXFA_WidgetAcc::CalculateWidgetAutoSize(CFX_SizeF& size) {
 
 void CXFA_WidgetAcc::CalculateTextContentSize(CFX_SizeF& size) {
   float fFontSize = GetFontSize();
-  CFX_WideString wsText;
+  WideString wsText;
   GetValue(wsText, XFA_VALUEPICTURE_Display);
   if (wsText.IsEmpty()) {
     size.height += fFontSize;
@@ -920,7 +919,7 @@ bool CXFA_WidgetAcc::CalculateImageAutoSize(CFX_SizeF& size) {
     LoadImageImage();
 
   size.clear();
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap = GetImageImage();
+  RetainPtr<CFX_DIBitmap> pBitmap = GetImageImage();
   if (pBitmap) {
     int32_t iImageXDpi = 0;
     int32_t iImageYDpi = 0;
@@ -950,7 +949,7 @@ bool CXFA_WidgetAcc::CalculateImageEditAutoSize(CFX_SizeF& size) {
     LoadImageEditImage();
 
   size.clear();
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap = GetImageEditImage();
+  RetainPtr<CFX_DIBitmap> pBitmap = GetImageEditImage();
   if (pBitmap) {
     int32_t iImageXDpi = 0;
     int32_t iImageYDpi = 0;
@@ -1218,7 +1217,7 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, float& fCalcHeight) {
       static_cast<CXFA_FieldLayoutData*>(m_pLayoutData.get());
   int32_t iLinesCount = 0;
   float fHeight = m_pLayoutData->m_fWidgetHeight;
-  CFX_WideString wsText;
+  WideString wsText;
   GetValue(wsText, XFA_VALUEPICTURE_Display);
   if (wsText.IsEmpty()) {
     iLinesCount = 1;
@@ -1460,22 +1459,21 @@ CXFA_TextLayout* CXFA_WidgetAcc::GetTextLayout() {
              : nullptr;
 }
 
-CFX_RetainPtr<CFX_DIBitmap> CXFA_WidgetAcc::GetImageImage() {
+RetainPtr<CFX_DIBitmap> CXFA_WidgetAcc::GetImageImage() {
   return m_pLayoutData
              ? static_cast<CXFA_ImageLayoutData*>(m_pLayoutData.get())
                    ->m_pDIBitmap
              : nullptr;
 }
 
-CFX_RetainPtr<CFX_DIBitmap> CXFA_WidgetAcc::GetImageEditImage() {
+RetainPtr<CFX_DIBitmap> CXFA_WidgetAcc::GetImageEditImage() {
   return m_pLayoutData
              ? static_cast<CXFA_ImageEditData*>(m_pLayoutData.get())
                    ->m_pDIBitmap
              : nullptr;
 }
 
-void CXFA_WidgetAcc::SetImageImage(
-    const CFX_RetainPtr<CFX_DIBitmap>& newImage) {
+void CXFA_WidgetAcc::SetImageImage(const RetainPtr<CFX_DIBitmap>& newImage) {
   CXFA_ImageLayoutData* pData =
       static_cast<CXFA_ImageLayoutData*>(m_pLayoutData.get());
   if (pData->m_pDIBitmap != newImage)
@@ -1483,7 +1481,7 @@ void CXFA_WidgetAcc::SetImageImage(
 }
 
 void CXFA_WidgetAcc::SetImageEditImage(
-    const CFX_RetainPtr<CFX_DIBitmap>& newImage) {
+    const RetainPtr<CFX_DIBitmap>& newImage) {
   CXFA_ImageEditData* pData =
       static_cast<CXFA_ImageEditData*>(m_pLayoutData.get());
   if (pData->m_pDIBitmap != newImage)
@@ -1494,14 +1492,14 @@ CXFA_WidgetLayoutData* CXFA_WidgetAcc::GetWidgetLayoutData() {
   return m_pLayoutData.get();
 }
 
-CFX_RetainPtr<CFGAS_GEFont> CXFA_WidgetAcc::GetFDEFont() {
-  CFX_WideStringC wsFontName = L"Courier";
+RetainPtr<CFGAS_GEFont> CXFA_WidgetAcc::GetFDEFont() {
+  WideStringView wsFontName = L"Courier";
   uint32_t dwFontStyle = 0;
   if (CXFA_Font font = GetFont(false)) {
     if (font.IsBold())
-      dwFontStyle |= FX_FONTSTYLE_Bold;
+      dwFontStyle |= FXFONT_BOLD;
     if (font.IsItalic())
-      dwFontStyle |= FX_FONTSTYLE_Italic;
+      dwFontStyle |= FXFONT_ITALIC;
     font.GetTypeface(wsFontName);
   }
 

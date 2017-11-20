@@ -31,9 +31,10 @@
 #include "core/editing/iterators/TextIterator.h"
 
 #include "core/dom/Document.h"
-#include "core/editing/EditingTestBase.h"
+#include "core/editing/EphemeralRange.h"
+#include "core/editing/testing/EditingTestBase.h"
 #include "core/frame/LocalFrameView.h"
-#include "core/html/TextControlElement.h"
+#include "core/html/forms/TextControlElement.h"
 
 namespace blink {
 

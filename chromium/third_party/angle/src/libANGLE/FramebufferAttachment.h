@@ -43,6 +43,16 @@ struct Format;
 class Renderbuffer;
 class Texture;
 
+enum class InitState
+{
+    MayNeedInit,
+    Initialized,
+};
+
+using OnAttachmentDirtyBinding  = angle::ChannelBinding<size_t, InitState>;
+using OnAttachmentDirtyChannel  = angle::BroadcastChannel<size_t, InitState>;
+using OnAttachmentDirtyReceiver = angle::SignalReceiver<size_t, InitState>;
+
 // FramebufferAttachment implements a GL framebuffer attachment.
 // Attachments are "light" containers, which store pointers to ref-counted GL objects.
 // We support GL texture (2D/3D/Cube/2D array) and renderbuffer object attachments.
@@ -115,6 +125,9 @@ class FramebufferAttachment final
     Texture *getTexture() const;
     const egl::Surface *getSurface() const;
     FramebufferAttachmentObject *getResource() const;
+    InitState initState() const;
+    Error initializeContents(const Context *context);
+    void setInitState(InitState initState) const;
 
     // "T" must be static_castable from FramebufferAttachmentRenderTarget
     template <typename T>
@@ -174,8 +187,8 @@ class FramebufferAttachment final
 class FramebufferAttachmentObject
 {
   public:
-    FramebufferAttachmentObject() {}
-    virtual ~FramebufferAttachmentObject() {}
+    FramebufferAttachmentObject();
+    virtual ~FramebufferAttachmentObject();
 
     virtual Extents getAttachmentSize(const ImageIndex &imageIndex) const = 0;
     virtual const Format &getAttachmentFormat(GLenum binding,
@@ -186,17 +199,23 @@ class FramebufferAttachmentObject
     virtual void onDetach(const Context *context) = 0;
     virtual GLuint getId() const = 0;
 
+    // These are used for robust resource initialization.
+    virtual InitState initState(const ImageIndex &imageIndex) const = 0;
+    virtual void setInitState(const ImageIndex &imageIndex, InitState initState) = 0;
+
     Error getAttachmentRenderTarget(const Context *context,
                                     GLenum binding,
                                     const ImageIndex &imageIndex,
                                     rx::FramebufferAttachmentRenderTarget **rtOut) const;
 
-    angle::BroadcastChannel<> *getDirtyChannel();
+    Error initializeContents(const Context *context, const ImageIndex &imageIndex);
+
+    OnAttachmentDirtyChannel *getDirtyChannel();
 
   protected:
     virtual rx::FramebufferAttachmentObjectImpl *getAttachmentImpl() const = 0;
 
-    angle::BroadcastChannel<> mDirtyChannel;
+    OnAttachmentDirtyChannel mDirtyChannel;
 };
 
 inline Extents FramebufferAttachment::getSize() const

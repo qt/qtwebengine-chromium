@@ -26,7 +26,6 @@
 
 #include "core/html/forms/TextControlInnerElements.h"
 
-#include "core/HTMLNames.h"
 #include "core/css/resolver/StyleAdjuster.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeComputedStyle.h"
@@ -35,8 +34,9 @@
 #include "core/events/TextEvent.h"
 #include "core/events/TextEventInputType.h"
 #include "core/frame/LocalFrame.h"
-#include "core/html/HTMLInputElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
+#include "core/html_names.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutTextControlSingleLine.h"
 #include "core/layout/api/LayoutTextControlItem.h"
@@ -175,7 +175,7 @@ void SearchFieldCancelButtonElement::DetachLayoutTree(
 
 void SearchFieldCancelButtonElement::DefaultEventHandler(Event* event) {
   // If the element is visible, on mouseup, clear the value, and set selection
-  HTMLInputElement* input(toHTMLInputElement(OwnerShadowHost()));
+  HTMLInputElement* input(ToHTMLInputElement(OwnerShadowHost()));
   if (!input || input->IsDisabledOrReadOnly()) {
     if (!event->DefaultHandled())
       HTMLDivElement::DefaultEventHandler(event);
@@ -196,7 +196,7 @@ void SearchFieldCancelButtonElement::DefaultEventHandler(Event* event) {
 }
 
 bool SearchFieldCancelButtonElement::WillRespondToMouseClickEvents() {
-  const HTMLInputElement* input = toHTMLInputElement(OwnerShadowHost());
+  const HTMLInputElement* input = ToHTMLInputElement(OwnerShadowHost());
   if (input && !input->IsDisabledOrReadOnly())
     return true;
 

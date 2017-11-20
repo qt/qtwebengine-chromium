@@ -48,12 +48,12 @@
 #include "core/loader/resource/LinkFetchResource.h"
 #include "platform/Prerender.h"
 #include "platform/loader/LinkHeader.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/loader/fetch/ResourceClient.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceFinishObserver.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
 #include "public/platform/WebPrerender.h"
 
@@ -84,7 +84,8 @@ class LinkLoader::FinishObserver final
  public:
   FinishObserver(LinkLoader* loader, Resource* resource)
       : loader_(loader), resource_(resource) {
-    resource_->AddFinishObserver(this);
+    resource_->AddFinishObserver(
+        this, loader_->client_->GetLoadingTaskRunner().get());
   }
 
   // ResourceFinishObserver implementation
@@ -292,6 +293,7 @@ static Resource* PreloadIfNeeded(const LinkRelAttribute& rel_attribute,
                                  const String& as,
                                  const String& mime_type,
                                  const String& media,
+                                 const String& nonce,
                                  CrossOriginAttributeValue cross_origin,
                                  LinkCaller caller,
                                  ViewportDescription* viewport_description,
@@ -357,6 +359,7 @@ static Resource* PreloadIfNeeded(const LinkRelAttribute& rel_attribute,
     link_fetch_params.SetCrossOriginAccessControl(document.GetSecurityOrigin(),
                                                   cross_origin);
   }
+  link_fetch_params.SetContentSecurityPolicyNonce(nonce);
   Settings* settings = document.GetSettings();
   if (settings && settings->GetLogPreload()) {
     document.AddConsoleMessage(ConsoleMessage::Create(
@@ -439,8 +442,8 @@ void LinkLoader::LoadLinksFromHeader(
       CrossOriginAttributeValue cross_origin =
           GetCrossOriginAttributeValue(header.CrossOrigin());
       PreloadIfNeeded(rel_attribute, url, *document, header.As(),
-                      header.MimeType(), header.Media(), cross_origin,
-                      kLinkCalledFromHeader, viewport_description,
+                      header.MimeType(), header.Media(), header.Nonce(),
+                      cross_origin, kLinkCalledFromHeader, viewport_description,
                       kReferrerPolicyDefault);
       PrefetchIfNeeded(*document, url, rel_attribute, cross_origin,
                        kReferrerPolicyDefault);
@@ -458,6 +461,7 @@ bool LinkLoader::LoadLink(
     const String& type,
     const String& as,
     const String& media,
+    const String& nonce,
     ReferrerPolicy referrer_policy,
     const KURL& href,
     Document& document,
@@ -476,7 +480,7 @@ bool LinkLoader::LoadLink(
                      kLinkCalledFromMarkup);
 
   Resource* resource = PreloadIfNeeded(
-      rel_attribute, href, document, as, type, media, cross_origin,
+      rel_attribute, href, document, as, type, media, nonce, cross_origin,
       kLinkCalledFromMarkup, nullptr, referrer_policy);
   if (!resource) {
     resource = PrefetchIfNeeded(document, href, rel_attribute, cross_origin,

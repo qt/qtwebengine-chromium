@@ -84,7 +84,7 @@ class FramebufferD3D : public FramebufferImpl
                          const gl::Rectangle &area,
                          GLenum format,
                          GLenum type,
-                         void *pixels) const override;
+                         void *pixels) override;
 
     gl::Error blit(const gl::Context *context,
                    const gl::Rectangle &sourceArea,
@@ -92,14 +92,12 @@ class FramebufferD3D : public FramebufferImpl
                    GLbitfield mask,
                    GLenum filter) override;
 
-    bool checkStatus() const override;
+    bool checkStatus(const gl::Context *context) const override;
 
     void syncState(const gl::Context *context,
                    const gl::Framebuffer::DirtyBits &dirtyBits) override;
 
     const gl::AttachmentList &getColorAttachmentsForRender(const gl::Context *context);
-
-    gl::Error getSamplePosition(size_t index, GLfloat *xy) const override;
 
   private:
     virtual gl::Error clearImpl(const gl::Context *context, const ClearParameters &clearParams) = 0;
@@ -110,7 +108,7 @@ class FramebufferD3D : public FramebufferImpl
                                      GLenum type,
                                      size_t outputPitch,
                                      const gl::PixelPackState &pack,
-                                     uint8_t *pixels) const = 0;
+                                     uint8_t *pixels) = 0;
 
     virtual gl::Error blitImpl(const gl::Context *context,
                                const gl::Rectangle &sourceArea,

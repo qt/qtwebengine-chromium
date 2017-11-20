@@ -7,28 +7,29 @@
 
 #include "base/macros.h"
 #include "cc/cc_export.h"
-#include "cc/output/direct_renderer.h"
+#include "components/viz/service/display/direct_renderer.h"
 #include "components/viz/service/viz_service_export.h"
 #include "ui/latency/latency_info.h"
 
 class SkNWayCanvas;
 
 namespace cc {
-class DebugBorderDrawQuad;
 class OutputSurface;
-class PictureDrawQuad;
 class RenderPassDrawQuad;
 class ResourceProvider;
-class SolidColorDrawQuad;
-class TextureDrawQuad;
-class TileDrawQuad;
 }  // namespace cc
 
 namespace viz {
-class VIZ_SERVICE_EXPORT SkiaRenderer : public cc::DirectRenderer {
+class DebugBorderDrawQuad;
+class PictureDrawQuad;
+class SolidColorDrawQuad;
+class TextureDrawQuad;
+class TileDrawQuad;
+
+class VIZ_SERVICE_EXPORT SkiaRenderer : public DirectRenderer {
  public:
   SkiaRenderer(const RendererSettings* settings,
-               cc::OutputSurface* output_surface,
+               OutputSurface* output_surface,
                cc::DisplayResourceProvider* resource_provider);
 
   ~SkiaRenderer() override;
@@ -47,18 +48,17 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public cc::DirectRenderer {
   void SetScissorTestRect(const gfx::Rect& scissor_rect) override;
   void PrepareSurfaceForPass(SurfaceInitializationMode initialization_mode,
                              const gfx::Rect& render_pass_scissor) override;
-  void DoDrawQuad(const cc::DrawQuad* quad,
-                  const gfx::QuadF* draw_region) override;
+  void DoDrawQuad(const DrawQuad* quad, const gfx::QuadF* draw_region) override;
   void BeginDrawingFrame() override;
   void FinishDrawingFrame() override;
   bool FlippedFramebuffer() const override;
   void EnsureScissorTestEnabled() override;
   void EnsureScissorTestDisabled() override;
-  void CopyCurrentRenderPassToBitmap(
-      std::unique_ptr<CopyOutputRequest> request) override;
+  void CopyDrawnRenderPass(std::unique_ptr<CopyOutputRequest> request) override;
   void SetEnableDCLayers(bool enable) override;
   void DidChangeVisibility() override;
   void FinishDrawingQuadList() override;
+  void GenerateMipmap() override;
 
  private:
   void ClearCanvas(SkColor color);
@@ -66,27 +66,27 @@ class VIZ_SERVICE_EXPORT SkiaRenderer : public cc::DirectRenderer {
   void SetClipRect(const gfx::Rect& rect);
   bool IsSoftwareResource(ResourceId resource_id) const;
 
-  void DrawDebugBorderQuad(const cc::DebugBorderDrawQuad* quad);
-  void DrawPictureQuad(const cc::PictureDrawQuad* quad);
-  void DrawRenderPassQuad(const cc::RenderPassDrawQuad* quad);
-  void DrawSolidColorQuad(const cc::SolidColorDrawQuad* quad);
-  void DrawTextureQuad(const cc::TextureDrawQuad* quad);
-  void DrawTileQuad(const cc::TileDrawQuad* quad);
-  void DrawUnsupportedQuad(const cc::DrawQuad* quad);
+  void DrawDebugBorderQuad(const DebugBorderDrawQuad* quad);
+  void DrawPictureQuad(const PictureDrawQuad* quad);
+  void DrawRenderPassQuad(const RenderPassDrawQuad* quad);
+  void DrawSolidColorQuad(const SolidColorDrawQuad* quad);
+  void DrawTextureQuad(const TextureDrawQuad* quad);
+  void DrawTileQuad(const TileDrawQuad* quad);
+  void DrawUnsupportedQuad(const DrawQuad* quad);
   bool ShouldApplyBackgroundFilters(
-      const cc::RenderPassDrawQuad* quad,
+      const RenderPassDrawQuad* quad,
       const cc::FilterOperations* background_filters) const;
   sk_sp<SkImage> ApplyImageFilter(SkImageFilter* filter,
-                                  const cc::RenderPassDrawQuad* quad,
+                                  const RenderPassDrawQuad* quad,
                                   const SkBitmap& to_filter,
                                   SkIRect* auto_bounds) const;
   gfx::Rect GetBackdropBoundingBoxForRenderPassQuad(
-      const cc::RenderPassDrawQuad* quad,
+      const RenderPassDrawQuad* quad,
       const gfx::Transform& contents_device_transform,
       const cc::FilterOperations* background_filters) const;
   SkBitmap GetBackdropBitmap(const gfx::Rect& bounding_rect) const;
   sk_sp<SkShader> GetBackgroundFilterShader(
-      const cc::RenderPassDrawQuad* quad,
+      const RenderPassDrawQuad* quad,
       SkShader::TileMode content_tile_mode) const;
 
   bool disable_picture_quad_image_filtering_ = false;

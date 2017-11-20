@@ -8,6 +8,8 @@
 #include "core/dom/Modulator.h"
 #include "core/dom/ModuleScript.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "core/loader/modulescript/DocumentModuleScriptFetcher.h"
+#include "core/loader/modulescript/ModuleScriptFetcher.h"
 #include "core/loader/modulescript/ModuleScriptLoaderClient.h"
 #include "core/loader/modulescript/ModuleScriptLoaderRegistry.h"
 #include "core/loader/modulescript/WorkletModuleScriptFetcher.h"
@@ -73,7 +75,6 @@ void ModuleScriptLoader::AdvanceState(ModuleScriptLoader::State new_state) {
 }
 
 void ModuleScriptLoader::Fetch(const ModuleScriptFetchRequest& module_request,
-                               ResourceFetcher* fetcher,
                                ModuleGraphLevel level) {
   // https://html.spec.whatwg.org/#fetch-a-single-module-script
 
@@ -125,8 +126,11 @@ void ModuleScriptLoader::Fetch(const ModuleScriptFetchRequest& module_request,
   fetch_params.SetCrossOriginAccessControl(modulator_->GetSecurityOrigin(),
                                            module_request.CredentialsMode());
 
-  // Module scripts are always async.
+  // Module scripts are always defer.
   fetch_params.SetDefer(FetchParameters::kLazyLoad);
+  // [nospec] Unlike defer/async classic scripts, module scripts are fetched at
+  // High priority.
+  fetch_params.MutableResourceRequest().SetPriority(kResourceLoadPriorityHigh);
 
   // Use UTF-8, according to Step 8:
   // "Let source text be the result of UTF-8 decoding response's body."
@@ -143,17 +147,8 @@ void ModuleScriptLoader::Fetch(const ModuleScriptFetchRequest& module_request,
   // steps.
   // Otherwise, fetch request. Return from this algorithm, and run the remaining
   // steps as part of the fetch's process response for the response response.
-  ExecutionContext* execution_context =
-      ExecutionContext::From(modulator_->GetScriptState());
-  if (execution_context->IsMainThreadWorkletGlobalScope()) {
-    MainThreadWorkletGlobalScope* global_scope =
-        ToMainThreadWorkletGlobalScope(execution_context);
-    module_fetcher_ = new WorkletModuleScriptFetcher(
-        fetch_params, fetcher, this, global_scope->ModuleResponsesMapProxy());
-  } else {
-    module_fetcher_ = new ModuleScriptFetcher(fetch_params, fetcher, this);
-  }
-  module_fetcher_->Fetch();
+  module_fetcher_ = modulator_->CreateModuleScriptFetcher();
+  module_fetcher_->Fetch(fetch_params, this);
 }
 
 void ModuleScriptLoader::NotifyFetchFinished(

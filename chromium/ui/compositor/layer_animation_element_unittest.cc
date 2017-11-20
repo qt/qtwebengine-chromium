@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/compiler_specific.h"
+#include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/compositor/layer_animation_delegate.h"
@@ -400,17 +401,40 @@ TEST(LayerAnimationElementTest, AbortTransformElement) {
                           delegate.GetTransformForAnimation());
 }
 
+// Check that an opacity element is not threaded if the start and target values
+// are the same.
+TEST(LayerAnimationElementTest, OpacityElementIsThreaded) {
+  TestLayerAnimationDelegate delegate;
+  float start = 0.0;
+  float target = 1.0;
+  delegate.SetOpacityFromAnimation(start);
+  base::TimeDelta delta = base::TimeDelta::FromSeconds(1);
+  std::unique_ptr<LayerAnimationElement> element =
+      LayerAnimationElement::CreateOpacityElement(target, delta);
+  EXPECT_TRUE(element->IsThreaded(&delegate));
+  element->ProgressToEnd(&delegate);
+  EXPECT_FLOAT_EQ(target, delegate.GetOpacityForAnimation());
+
+  start = 1.0;
+  delegate.SetOpacityFromAnimation(start);
+  element = LayerAnimationElement::CreateOpacityElement(target, delta);
+  EXPECT_FALSE(element->IsThreaded(&delegate));
+  element->ProgressToEnd(&delegate);
+  EXPECT_FLOAT_EQ(target, delegate.GetOpacityForAnimation());
+}
+
 TEST(LayerAnimationElementTest, ToString) {
   float target = 1.0;
   base::TimeDelta delta = base::TimeDelta::FromSeconds(1);
   std::unique_ptr<LayerAnimationElement> element =
       LayerAnimationElement::CreateOpacityElement(target, delta);
   element->set_animation_group_id(42);
-  // TODO(wkorman): Test varying last_progressed_fraction and
-  // start_frame_number.
+  // TODO(wkorman): Test varying last_progressed_fraction.
   EXPECT_EQ(
-      "LayerAnimationElement{name=ThreadedOpacityTransition, id=1, group=42, "
-      "last_progressed_fraction=0.00, start_frame_number=0}",
+      base::StringPrintf("LayerAnimationElement{name=ThreadedOpacityTransition,"
+                         " id=%d, group=42, "
+                         "last_progressed_fraction=0.00}",
+                         element->animation_id()),
       element->ToString());
 }
 

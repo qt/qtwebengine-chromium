@@ -5,6 +5,9 @@
 import("//media/media_options.gni")
 
 source_set("filters") {
+  # Do not expand the visibility here without double-checking with OWNERS, this
+  # is a roll-up target which is part of the //media component. Most other DEPs
+  # should be using //media and not directly DEP this roll-up target.
   visibility = [
     "//media",
     "//media/muxers",
@@ -52,6 +55,10 @@ source_set("filters") {
     "source_buffer_parse_warnings.h",
     "source_buffer_range.cc",
     "source_buffer_range.h",
+    "source_buffer_range_by_dts.cc",
+    "source_buffer_range_by_dts.h",
+    "source_buffer_range_by_pts.cc",
+    "source_buffer_range_by_pts.h",
     "source_buffer_state.cc",
     "source_buffer_state.h",
     "source_buffer_stream.cc",
@@ -273,6 +280,12 @@ source_set("unit_tests") {
     ]
 
     deps += [ "//ui/gl" ]
+  }
+
+  # libvpx for running vpx test on chromecast doesn't support high bit depth.
+  # This may cause some unit tests failure.
+  if (is_chromecast) {
+    defines = [ "LIBVPX_NO_HIGH_BIT_DEPTH" ]
   }
 
   if (media_use_ffmpeg) {

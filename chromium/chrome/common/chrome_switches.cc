@@ -14,7 +14,7 @@ namespace switches {
 
 // -----------------------------------------------------------------------------
 // Can't find the switch you are looking for? Try looking in:
-// ash/ash_switches.cc
+// ash/public/cpp/ash_switches.cc
 // base/base_switches.cc
 // chromeos/chromeos_switches.cc
 // etc.
@@ -289,9 +289,6 @@ const char kEasyUnlockAppPath[]             = "easy-unlock-app-path";
 const char kEnableAudioDebugRecordingsFromExtension[] =
     "enable-audio-debug-recordings-from-extension";
 
-// Inform users that their browser is being controlled by an automated test.
-const char kEnableAutomation[] = "enable-automation";
-
 // Enables the multi-level undo system for bookmarks.
 const char kEnableBookmarkUndo[]            = "enable-bookmark-undo";
 
@@ -333,9 +330,6 @@ const char kEnableExtensionActivityLogTesting[] =
 // crbug.com/142458 .
 const char kEnableFastUnload[] = "enable-fast-unload";
 
-// Enables the Material Design feedback form.
-const char kEnableMaterialDesignFeedback[] = "enable-md-feedback";
-
 // Runs the Native Client inside the renderer process and enables GPU plugin
 // (internally adds lEnableGpuPlugin to the command line).
 const char kEnableNaCl[]                    = "enable-nacl";
@@ -375,23 +369,12 @@ const char kEnablePowerOverlay[]            = "enable-power-overlay";
 const char kEnablePrintPreviewRegisterPromos[] =
     "enable-print-preview-register-promos";
 
-// Enables tracking of tasks in profiler for viewing via about:profiler.
-// To predominantly disable tracking (profiling), use the command line switch:
-// --enable-profiling=0
-// Some tracking will still take place at startup, but it will be turned off
-// during chrome_browser_main.
-const char kEnableProfiling[]               = "enable-profiling";
-
 // Enable background mode for the Push API.
 const char kEnablePushApiBackgroundMode[] = "enable-push-api-background-mode";
 
 // Enables the site settings all sites list and site details pages in the Chrome
 // settings UI.
 const char kEnableSiteSettings[] = "enable-site-settings";
-
-// Enables the supervised user managed bookmarks folder.
-const char kEnableSupervisedUserManagedBookmarksFolder[] =
-    "enable-supervised-user-managed-bookmarks-folder";
 
 // Enables user control over muting tab audio from the tab strip.
 const char kEnableTabAudioMuting[]  = "enable-tab-audio-muting";
@@ -503,7 +486,7 @@ const char kMediaCacheSize[]                = "media-cache-size";
 // Enables the out-of-process memory logging.
 const char kMemlog[] = "memlog";
 const char kMemlogModeAll[] = "all";
-const char kMemlogModeBrowser[] = "browser";
+const char kMemlogModeMinimal[] = "minimal";
 
 // Allows setting a different destination ID for connection-monitoring GCM
 // messages. Useful when running against a non-prod management server.
@@ -654,9 +637,6 @@ const char kSavePageAsMHTML[]               = "save-page-as-mhtml";
 
 // If true the app list will be shown.
 const char kShowAppList[]                   = "show-app-list";
-
-// If true the Certificate link will be shown in Page Info for HTTPS pages.
-const char kShowCertLink[] = "show-cert-link";
 
 // Does not show an infobar when an extension attaches to a page using
 // chrome.debugger page. Required to attach to extension background pages.
@@ -840,10 +820,6 @@ const char kDisableLoggingRedirect[] = "disable-logging-redirect";
 const char kDisableLoginScreenApps[] = "disable-login-screen-apps";
 #endif  // defined(OS_CHROMEOS)
 
-#if defined(USE_ASH)
-const char kOpenAsh[]                       = "open-ash";
-#endif
-
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
 // These flags show the man page on Linux. They are equivalent to each
 // other.
@@ -997,12 +973,6 @@ const char kMash[]                          = "mash";
 
 // Used to enable mus as a separate process, but chrome+ash still together.
 const char kMus[] = "mus";
-
-// This is added to child processes launched from mash or mus. The value of
-// this switch is either kMus or kMash. For example, if chrome is run with
-// '--mash' then the child process representing ash is launched with the
-// switch '--mus-config=mash'.
-const char kMusConfig[] = "mus-config";
 #endif
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
@@ -1051,11 +1021,6 @@ bool ExtensionsDisabled(const base::CommandLine& command_line) {
 
 bool ExtensionsDisabled() {
   return ExtensionsDisabled(*base::CommandLine::ForCurrentProcess());
-}
-
-bool MdFeedbackEnabled() {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      ::switches::kEnableMaterialDesignFeedback);
 }
 
 #if defined(OS_CHROMEOS)

@@ -8,21 +8,22 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/p2p/base/turnport.h"
+#include "p2p/base/turnport.h"
 
 #include <algorithm>
 #include <functional>
 
-#include "webrtc/p2p/base/common.h"
-#include "webrtc/p2p/base/stun.h"
-#include "webrtc/rtc_base/asyncpacketsocket.h"
-#include "webrtc/rtc_base/byteorder.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/nethelpers.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/rtc_base/socketaddress.h"
-#include "webrtc/rtc_base/stringencode.h"
+#include "api/optional.h"
+#include "p2p/base/common.h"
+#include "p2p/base/stun.h"
+#include "rtc_base/asyncpacketsocket.h"
+#include "rtc_base/byteorder.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/nethelpers.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/socketaddress.h"
+#include "rtc_base/stringencode.h"
 
 namespace cricket {
 
@@ -147,10 +148,15 @@ class TurnEntry : public sigslot::has_slots<> {
   const rtc::SocketAddress& address() const { return ext_addr_; }
   BindState state() const { return state_; }
 
-  int64_t destruction_timestamp() { return destruction_timestamp_; }
-  void set_destruction_timestamp(int64_t destruction_timestamp) {
-    destruction_timestamp_ = destruction_timestamp;
+  // If the destruction timestamp is set, that means destruction has been
+  // scheduled (will occur TURN_PERMISSION_TIMEOUT after it's scheduled).
+  rtc::Optional<int64_t> destruction_timestamp() {
+    return destruction_timestamp_;
   }
+  void set_destruction_timestamp(int64_t destruction_timestamp) {
+    destruction_timestamp_.emplace(destruction_timestamp);
+  }
+  void reset_destruction_timestamp() { destruction_timestamp_.reset(); }
 
   // Helper methods to send permission and channel bind requests.
   void SendCreatePermissionRequest(int delay);
@@ -174,11 +180,11 @@ class TurnEntry : public sigslot::has_slots<> {
   int channel_id_;
   rtc::SocketAddress ext_addr_;
   BindState state_;
-  // A non-zero value indicates that this entry is scheduled to be destroyed.
-  // It is also used as an ID of the event scheduling. When the destruction
-  // event actually fires, the TurnEntry will be destroyed only if the
-  // timestamp here matches the one in the firing event.
-  int64_t destruction_timestamp_ = 0;
+  // An unset value indicates that this entry is scheduled to be destroyed. It
+  // is also used as an ID of the event scheduling. When the destruction event
+  // actually fires, the TurnEntry will be destroyed only if the timestamp here
+  // matches the one in the firing event.
+  rtc::Optional<int64_t> destruction_timestamp_;
 };
 
 TurnPort::TurnPort(rtc::Thread* thread,
@@ -190,7 +196,8 @@ TurnPort::TurnPort(rtc::Thread* thread,
                    const ProtocolAddress& server_address,
                    const RelayCredentials& credentials,
                    int server_priority,
-                   const std::string& origin)
+                   const std::string& origin,
+                   webrtc::TurnCustomizer* customizer)
     : Port(thread,
            RELAY_PORT_TYPE,
            factory,
@@ -206,7 +213,8 @@ TurnPort::TurnPort(rtc::Thread* thread,
       next_channel_number_(TURN_CHANNEL_NUMBER_START),
       state_(STATE_CONNECTING),
       server_priority_(server_priority),
-      allocate_mismatch_retries_(0) {
+      allocate_mismatch_retries_(0),
+      turn_customizer_(customizer) {
   request_manager_.SignalSendPacket.connect(this, &TurnPort::OnSendStunPacket);
   request_manager_.set_origin(origin);
 }
@@ -222,7 +230,9 @@ TurnPort::TurnPort(rtc::Thread* thread,
                    const RelayCredentials& credentials,
                    int server_priority,
                    const std::string& origin,
-                   const std::vector<std::string>& tls_alpn_protocols)
+                   const std::vector<std::string>& tls_alpn_protocols,
+                   const std::vector<std::string>& tls_elliptic_curves,
+                   webrtc::TurnCustomizer* customizer)
     : Port(thread,
            RELAY_PORT_TYPE,
            factory,
@@ -233,6 +243,7 @@ TurnPort::TurnPort(rtc::Thread* thread,
            password),
       server_address_(server_address),
       tls_alpn_protocols_(tls_alpn_protocols),
+      tls_elliptic_curves_(tls_elliptic_curves),
       credentials_(credentials),
       socket_(NULL),
       resolver_(NULL),
@@ -241,7 +252,8 @@ TurnPort::TurnPort(rtc::Thread* thread,
       next_channel_number_(TURN_CHANNEL_NUMBER_START),
       state_(STATE_CONNECTING),
       server_priority_(server_priority),
-      allocate_mismatch_retries_(0) {
+      allocate_mismatch_retries_(0),
+      turn_customizer_(customizer) {
   request_manager_.SignalSendPacket.connect(this, &TurnPort::OnSendStunPacket);
   request_manager_.set_origin(origin);
 }
@@ -341,6 +353,7 @@ bool TurnPort::CreateTurnClientSocket() {
     rtc::PacketSocketTcpOptions tcp_options;
     tcp_options.opts = opts;
     tcp_options.tls_alpn_protocols = tls_alpn_protocols_;
+    tcp_options.tls_elliptic_curves = tls_elliptic_curves_;
     socket_ = socket_factory()->CreateClientTcpSocket(
         rtc::SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
         proxy(), user_agent(), tcp_options);
@@ -943,6 +956,7 @@ bool TurnPort::ScheduleRefresh(int lifetime) {
 }
 
 void TurnPort::SendRequest(StunRequest* req, int delay) {
+  TurnCustomizerMaybeModifyOutgoingStunMessage(req->mutable_msg());
   request_manager_.SendDelayed(req, delay);
 }
 
@@ -1037,9 +1051,21 @@ void TurnPort::CreateOrRefreshEntry(const rtc::SocketAddress& addr) {
     entry = new TurnEntry(this, next_channel_number_++, addr);
     entries_.push_back(entry);
   } else {
-    // The channel binding request for the entry will be refreshed automatically
-    // until the entry is destroyed.
-    CancelEntryDestruction(entry);
+    if (entry->destruction_timestamp()) {
+      // Destruction should have only been scheduled (indicated by
+      // destruction_timestamp being set) if there were no connections using
+      // this address.
+      RTC_DCHECK(!GetConnection(addr));
+      // Resetting the destruction timestamp will ensure that any queued
+      // destruction tasks, when executed, will see that the timestamp doesn't
+      // match and do nothing. We do this because (currently) there's not a
+      // convenient way to cancel queued tasks.
+      entry->reset_destruction_timestamp();
+    } else {
+      // The only valid reason for destruction not being scheduled is that
+      // there's still one connection.
+      RTC_DCHECK(GetConnection(addr));
+    }
   }
 }
 
@@ -1054,8 +1080,12 @@ void TurnPort::DestroyEntryIfNotCancelled(TurnEntry* entry, int64_t timestamp) {
   if (!EntryExists(entry)) {
     return;
   }
-  bool cancelled = timestamp != entry->destruction_timestamp();
-  if (!cancelled) {
+  // The destruction timestamp is used to manage pending destructions. Proceed
+  // with destruction if it's set, and matches the timestamp from the posted
+  // task. Note that CreateOrRefreshEntry will unset the timestamp, canceling
+  // destruction.
+  if (entry->destruction_timestamp() &&
+      timestamp == *entry->destruction_timestamp()) {
     DestroyEntry(entry);
   }
 }
@@ -1070,18 +1100,13 @@ void TurnPort::HandleConnectionDestroyed(Connection* conn) {
 }
 
 void TurnPort::ScheduleEntryDestruction(TurnEntry* entry) {
-  RTC_DCHECK(entry->destruction_timestamp() == 0);
+  RTC_DCHECK(!entry->destruction_timestamp().has_value());
   int64_t timestamp = rtc::TimeMillis();
   entry->set_destruction_timestamp(timestamp);
   invoker_.AsyncInvokeDelayed<void>(
       RTC_FROM_HERE, thread(),
       rtc::Bind(&TurnPort::DestroyEntryIfNotCancelled, this, entry, timestamp),
       TURN_PERMISSION_TIMEOUT);
-}
-
-void TurnPort::CancelEntryDestruction(TurnEntry* entry) {
-  RTC_DCHECK(entry->destruction_timestamp() != 0);
-  entry->set_destruction_timestamp(0);
 }
 
 bool TurnPort::SetEntryChannelId(const rtc::SocketAddress& address,
@@ -1120,6 +1145,24 @@ std::string TurnPort::ReconstructedServerUrl() {
   url << scheme << ":" << server_address_.address.ipaddr().ToString() << ":"
       << server_address_.address.port() << "?transport=" << transport;
   return url.str();
+}
+
+void TurnPort::TurnCustomizerMaybeModifyOutgoingStunMessage(
+    StunMessage* message) {
+  if (turn_customizer_ == nullptr) {
+    return;
+  }
+
+  turn_customizer_->MaybeModifyOutgoingStunMessage(this, message);
+}
+
+bool TurnPort::TurnCustomizerAllowChannelData(
+    const void* data, size_t size, bool payload) {
+  if (turn_customizer_ == nullptr) {
+    return true;
+  }
+
+  return turn_customizer_->AllowChannelData(this, data, size, payload);
 }
 
 TurnAllocateRequest::TurnAllocateRequest(TurnPort* port)
@@ -1513,8 +1556,10 @@ void TurnEntry::SendChannelBindRequest(int delay) {
 int TurnEntry::Send(const void* data, size_t size, bool payload,
                     const rtc::PacketOptions& options) {
   rtc::ByteBufferWriter buf;
-  if (state_ != STATE_BOUND) {
+  if (state_ != STATE_BOUND ||
+      !port_->TurnCustomizerAllowChannelData(data, size, payload)) {
     // If we haven't bound the channel yet, we have to use a Send Indication.
+    // The turn_customizer_ can also make us use Send Indication.
     TurnMessage msg;
     msg.SetType(TURN_SEND_INDICATION);
     msg.SetTransactionID(
@@ -1523,6 +1568,9 @@ int TurnEntry::Send(const void* data, size_t size, bool payload,
         STUN_ATTR_XOR_PEER_ADDRESS, ext_addr_));
     msg.AddAttribute(
         rtc::MakeUnique<StunByteStringAttribute>(STUN_ATTR_DATA, data, size));
+
+    port_->TurnCustomizerMaybeModifyOutgoingStunMessage(&msg);
+
     const bool success = msg.Write(&buf);
     RTC_DCHECK(success);
 

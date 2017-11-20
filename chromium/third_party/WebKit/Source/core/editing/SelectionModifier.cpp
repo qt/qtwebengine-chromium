@@ -28,6 +28,9 @@
 
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
+#include "core/editing/InlineBoxPosition.h"
+#include "core/editing/SelectionTemplate.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
@@ -817,11 +820,11 @@ static LayoutUnit LineDirectionPointForBlockDirectionNavigationOf(
   // relative to the text, not absolute 'up'.
   const FloatPoint& caret_point = caret_rect.layout_object->LocalToAbsolute(
       FloatPoint(caret_rect.rect.Location()));
-  LayoutObject* const containing_block =
+  const LayoutObject* const containing_block =
       caret_rect.layout_object->ContainingBlock();
   // Just use ourselves to determine the writing mode if we have no containing
   // block.
-  LayoutObject* const layout_object =
+  const LayoutObject* const layout_object =
       containing_block ? containing_block : caret_rect.layout_object;
   return LayoutUnit(layout_object->IsHorizontalWritingMode() ? caret_point.X()
                                                              : caret_point.Y());

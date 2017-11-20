@@ -36,6 +36,7 @@ namespace blink {
 
 class AbstractInlineTextBox;
 class InlineTextBox;
+class NGOffsetMappingResult;
 
 // LayoutText is the root class for anything that represents
 // a text node (see core/dom/Text.h).
@@ -190,9 +191,9 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   void SetSelectionState(SelectionState) final;
   LayoutRect LocalSelectionRect() const final;
   LayoutRect LocalCaretRect(
-      InlineBox*,
+      const InlineBox*,
       int caret_offset,
-      LayoutUnit* extra_width_to_end_of_line = nullptr) override;
+      LayoutUnit* extra_width_to_end_of_line = nullptr) const override;
 
   InlineTextBox* FirstTextBox() const { return first_text_box_; }
   InlineTextBox* LastTextBox() const { return last_text_box_; }
@@ -205,6 +206,9 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   int CaretMaxOffset() const override;
   unsigned ResolvedTextLength() const;
 
+  // True if any character remains after CSS white-space collapsing.
+  bool HasNonCollapsedText() const;
+
   bool ContainsReversedText() const { return contains_reversed_text_; }
 
   bool IsSecure() const {
@@ -214,7 +218,6 @@ class CORE_EXPORT LayoutText : public LayoutObject {
       unsigned last_typed_character_offset);
 
   bool IsAllCollapsibleWhitespace() const;
-  bool IsRenderedCharacter(int offset_in_node) const;
 
   void RemoveAndDestroyTextBoxes();
 
@@ -236,16 +239,22 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   void StyleWillChange(StyleDifference, const ComputedStyle&) final {}
   void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
 
-  void AddLayerHitTestRects(LayerHitTestRects&,
-                            const PaintLayer* current_layer,
-                            const LayoutPoint& layer_offset,
-                            const LayoutRect& container_rect) const override;
+  void AddLayerHitTestRects(
+      LayerHitTestRects&,
+      const PaintLayer* current_layer,
+      const LayoutPoint& layer_offset,
+      TouchAction supported_fast_actions,
+      const LayoutRect& container_rect,
+      TouchAction container_whitelisted_touch_action) const override;
 
   virtual InlineTextBox* CreateTextBox(
       int start,
       unsigned short length);  // Subclassed by SVG.
 
   void InvalidateDisplayItemClients(PaintInvalidationReason) const override;
+
+  bool ShouldUseNGAlternatives() const;
+  const NGOffsetMappingResult& GetNGOffsetMapping() const;
 
  private:
   void ComputePreferredLogicalWidths(float lead_width);

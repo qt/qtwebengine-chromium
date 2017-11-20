@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/rtc_base/task_queue.h"
+#include "rtc_base/task_queue.h"
 
 #include <fcntl.h>
 #include <signal.h>
@@ -16,15 +16,15 @@
 #include <unistd.h>
 
 #include "base/third_party/libevent/event.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/platform_thread.h"
-#include "webrtc/rtc_base/refcount.h"
-#include "webrtc/rtc_base/refcountedobject.h"
-#include "webrtc/rtc_base/safe_conversions.h"
-#include "webrtc/rtc_base/task_queue.h"
-#include "webrtc/rtc_base/task_queue_posix.h"
-#include "webrtc/rtc_base/timeutils.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/platform_thread.h"
+#include "rtc_base/refcount.h"
+#include "rtc_base/refcountedobject.h"
+#include "rtc_base/safe_conversions.h"
+#include "rtc_base/task_queue.h"
+#include "rtc_base/task_queue_posix.h"
+#include "rtc_base/timeutils.h"
 
 namespace rtc {
 using internal::GetQueuePtrTls;
@@ -119,7 +119,6 @@ class TaskQueue::Impl : public RefCountInterface {
   static TaskQueue* CurrentQueue();
 
   // Used for DCHECKing the current queue.
-  static bool IsCurrent(const char* queue_name);
   bool IsCurrent() const;
 
   void PostTask(std::unique_ptr<QueuedTask> task);
@@ -151,9 +150,9 @@ class TaskQueue::Impl : public RefCountInterface {
   std::unique_ptr<event> wakeup_event_;
   PlatformThread thread_;
   rtc::CriticalSection pending_lock_;
-  std::list<std::unique_ptr<QueuedTask>> pending_ GUARDED_BY(pending_lock_);
+  std::list<std::unique_ptr<QueuedTask>> pending_ RTC_GUARDED_BY(pending_lock_);
   std::list<scoped_refptr<ReplyTaskOwnerRef>> pending_replies_
-      GUARDED_BY(pending_lock_);
+      RTC_GUARDED_BY(pending_lock_);
 };
 
 struct TaskQueue::Impl::QueueContext {
@@ -337,12 +336,6 @@ TaskQueue* TaskQueue::Impl::CurrentQueue() {
   return nullptr;
 }
 
-// static
-bool TaskQueue::Impl::IsCurrent(const char* queue_name) {
-  TaskQueue::Impl* current = Current();
-  return current && current->thread_.name().compare(queue_name) == 0;
-}
-
 bool TaskQueue::Impl::IsCurrent() const {
   return IsThreadRefEqual(thread_.GetThreadRef(), CurrentThreadRef());
 }
@@ -503,11 +496,6 @@ TaskQueue* TaskQueue::Current() {
 }
 
 // Used for DCHECKing the current queue.
-// static
-bool TaskQueue::IsCurrent(const char* queue_name) {
-  return TaskQueue::Impl::IsCurrent(queue_name);
-}
-
 bool TaskQueue::IsCurrent() const {
   return impl_->IsCurrent();
 }

@@ -62,6 +62,7 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fRequiresCullFaceEnableDisableWhenDrawingLinesAfterNonLines = false;
 
     fBlitFramebufferFlags = kNoSupport_BlitFramebufferFlag;
+    fMaxInstancesPerDrawArraysWithoutCrashing = 0;
 
     fShaderCaps.reset(new GrShaderCaps(contextOptions));
 
@@ -307,10 +308,24 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         shaderCaps->fDualSourceBlendingSupport = (ctxInfo.version() >= GR_GL_VER(3, 3) ||
             ctxInfo.hasExtension("GL_ARB_blend_func_extended")) &&
             GrGLSLSupportsNamedFragmentShaderOutputs(ctxInfo.glslGeneration());
+
         shaderCaps->fShaderDerivativeSupport = true;
+
         // we don't support GL_ARB_geometry_shader4, just GL 3.2+ GS
         shaderCaps->fGeometryShaderSupport = ctxInfo.version() >= GR_GL_VER(3, 2) &&
             ctxInfo.glslGeneration() >= k150_GrGLSLGeneration;
+        if (shaderCaps->fGeometryShaderSupport) {
+            // On at least some MacBooks, GLSL 4.0 geometry shaders break if we use invocations.
+#ifndef SK_BUILD_FOR_MAC
+            if (ctxInfo.glslGeneration() >= k400_GrGLSLGeneration) {
+                shaderCaps->fGSInvocationsSupport = true;
+            } else if (ctxInfo.hasExtension("GL_ARB_gpu_shader5")) {
+                shaderCaps->fGSInvocationsSupport = true;
+                shaderCaps->fGSInvocationsExtensionString = "GL_ARB_gpu_shader5";
+            }
+#endif
+        }
+
         shaderCaps->fIntegerSupport = ctxInfo.version() >= GR_GL_VER(3, 0) &&
             ctxInfo.glslGeneration() >= k130_GrGLSLGeneration;
     }
@@ -321,6 +336,7 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
             ctxInfo.hasExtension("GL_OES_standard_derivatives");
 
         shaderCaps->fGeometryShaderSupport = ctxInfo.hasExtension("GL_EXT_geometry_shader");
+        shaderCaps->fGSInvocationsSupport = shaderCaps->fGeometryShaderSupport;
 
         shaderCaps->fIntegerSupport = ctxInfo.version() >= GR_GL_VER(3, 0) &&
             ctxInfo.glslGeneration() >= k330_GrGLSLGeneration; // We use this value for GLSL ES 3.0.
@@ -388,6 +404,26 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         fPreferClientSideDynamicBuffers = true;
     }
 
+    if (kARM_GrGLVendor == ctxInfo.vendor()) {
+        // Mali GPUs have rendering issues with CCPR. Blacklisting until we look into workarounds.
+        fBlacklistCoverageCounting = true;
+    }
+
+    if (kIntel_GrGLVendor == ctxInfo.vendor()) {
+#ifndef SK_BUILD_FOR_MAC
+        if (kIntel_GrGLDriver == ctxInfo.driver()) {
+            // Every Windows Intel bot either crashes with CCPR or does not draw properly. Hopefully
+            // this issue resolves itself when we move away from geometry shaders.
+            fBlacklistCoverageCounting = true;
+        }
+#endif
+        if (kMesa_GrGLDriver == ctxInfo.driver()) {
+            // Blocking old Intel/Mesa setups while we investigate
+            // https://bugs.chromium.org/p/skia/issues/detail?id=7134.
+            fBlacklistCoverageCounting = version < GR_GL_VER(4,0);
+        }
+    }
+
     if (!contextOptions.fAvoidStencilBuffers) {
         // To reduce surface area, if we avoid stencil buffers, we also disable MSAA.
         this->initFSAASupport(contextOptions, ctxInfo, gli);
@@ -444,6 +480,14 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
             fMapBufferType = kMapBuffer_MapBufferType;
         }
     }
+
+#if defined(__has_feature)
+#if defined(SK_BUILD_FOR_MAC) && __has_feature(thread_sanitizer)
+    // See skbug.com/7058
+    fMapBufferType = kNone_MapBufferType;
+    fMapBufferFlags = kNone_MapFlags;
+#endif
+#endif
 
     // We found that the Galaxy J5 with an Adreno 306 running 6.0.1 has a bug where
     // GL_INVALID_OPERATION thrown by glDrawArrays when using a buffer that was mapped. The same bug
@@ -541,7 +585,7 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
 
     // See crbug.com/755871. This could probably be narrowed to just partial clears as the driver
     // bugs seems to involve clearing too much and not skipping the clear.
-    // See crbug.com/768134. This is also needed for full clears and was seen on an nVidia K620 
+    // See crbug.com/768134. This is also needed for full clears and was seen on an nVidia K620
     // but only for D3D11 ANGLE.
     if (GrGLANGLEBackend::kD3D11 == ctxInfo.angleBackend()) {
         fUseDrawInsteadOfClear = true;
@@ -567,6 +611,12 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     if (kAdreno3xx_GrGLRenderer == ctxInfo.renderer() && kQualcomm_GrGLDriver == ctxInfo.driver() &&
         ctxInfo.driverVersion() > GR_GL_DRIVER_VER(53, 0)) {
         fRequiresCullFaceEnableDisableWhenDrawingLinesAfterNonLines = true;
+    }
+
+    // Our Chromebook with kPowerVRRogue_GrGLRenderer seems to crash when glDrawArraysInstanced is
+    // given 1 << 15 or more instances.
+    if (kPowerVRRogue_GrGLRenderer == ctxInfo.renderer()) {
+        fMaxInstancesPerDrawArraysWithoutCrashing = 0x7fff;
     }
 
     // Texture uploads sometimes seem to be ignored to textures bound to FBOS on Tegra3.
@@ -782,7 +832,9 @@ void GrGLCaps::initGLSL(const GrGLContextInfo& ctxInfo) {
         shaderCaps->fFlatInterpolationSupport =
             ctxInfo.glslGeneration() >= k330_GrGLSLGeneration; // This is the value for GLSL ES 3.0.
     }
-
+    // Flat interpolation appears to be slow on Qualcomm GPUs (tested Adreno 405 and 530).
+    shaderCaps->fPreferFlatInterpolation = shaderCaps->fFlatInterpolationSupport &&
+                                           kQualcomm_GrGLVendor != ctxInfo.vendor();
     if (kGL_GrGLStandard == standard) {
         shaderCaps->fNoPerspectiveInterpolationSupport =
             ctxInfo.glslGeneration() >= k130_GrGLSLGeneration;
@@ -930,13 +982,6 @@ void GrGLCaps::initGLSL(const GrGLContextInfo& ctxInfo) {
     if (shaderCaps->fFBFetchSupport && kQualcomm_GrGLVendor == ctxInfo.vendor()) {
         shaderCaps->fRequiresLocalOutputColorForFBFetch = true;
     }
-
-#ifdef SK_BUILD_FOR_MAC
-    // On at least some MacBooks, geometry shaders fall apart if we use more than one invocation. To
-    // work around this, we always use a single invocation and wrap the shader in a loop. The long-
-    // term plan for this WAR is for it to eventually be baked into SkSL.
-    shaderCaps->fMustImplementGSInvocationsWithLoop = true;
-#endif
 
     // Newer Mali GPUs do incorrect static analysis in specific situations: If there is uniform
     // color, and that uniform contains an opaque color, and the output of the shader is only based
@@ -1353,6 +1398,8 @@ void GrGLCaps::onDumpJSON(SkJSONWriter* writer) const {
                        fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO);
     writer->appendBool("Intermediate texture for all updates of textures bound to FBOs",
                        fUseDrawInsteadOfAllRenderTargetWrites);
+    writer->appendBool("Max instances per glDrawArraysInstanced without crashing (or zero)",
+                       fMaxInstancesPerDrawArraysWithoutCrashing);
 
     writer->beginArray("configs");
 
@@ -2018,11 +2065,8 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
             = GR_GL_ALPHA;
         fConfigTable[kAlpha_half_GrPixelConfig].fSwizzle = GrSwizzle::AAAA();
     }
-    // ANGLE always returns GL_HALF_FLOAT_OES for GL_IMPLEMENTATION_COLOR_READ_TYPE, even though
-    // ES3 would typically return GL_HALF_FLOAT. The correct fix is for us to respect the value
-    // returned when we query, but that turns into a bigger refactor, so just work around it.
-    if (kGL_GrGLStandard == ctxInfo.standard() ||
-        (ctxInfo.version() >= GR_GL_VER(3, 0) && kANGLE_GrGLDriver != ctxInfo.driver())) {
+
+    if (kGL_GrGLStandard == ctxInfo.standard() || ctxInfo.version() >= GR_GL_VER(3, 0)) {
         fConfigTable[kAlpha_half_GrPixelConfig].fFormats.fExternalType = GR_GL_HALF_FLOAT;
     } else {
         fConfigTable[kAlpha_half_GrPixelConfig].fFormats.fExternalType = GR_GL_HALF_FLOAT_OES;
@@ -2046,9 +2090,7 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
     fConfigTable[kRGBA_half_GrPixelConfig].fFormats.fSizedInternalFormat = GR_GL_RGBA16F;
     fConfigTable[kRGBA_half_GrPixelConfig].fFormats.fExternalFormat[kOther_ExternalFormatUsage] =
         GR_GL_RGBA;
-    // See comment above, re: ANGLE and ES3.
-    if (kGL_GrGLStandard == ctxInfo.standard() ||
-        (ctxInfo.version() >= GR_GL_VER(3, 0) && kANGLE_GrGLDriver != ctxInfo.driver())) {
+    if (kGL_GrGLStandard == ctxInfo.standard() || ctxInfo.version() >= GR_GL_VER(3, 0)) {
         fConfigTable[kRGBA_half_GrPixelConfig].fFormats.fExternalType = GR_GL_HALF_FLOAT;
     } else {
         fConfigTable[kRGBA_half_GrPixelConfig].fFormats.fExternalType = GR_GL_HALF_FLOAT_OES;

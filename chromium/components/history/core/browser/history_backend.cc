@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <limits>
 #include <list>
 #include <map>
 #include <memory>
@@ -15,8 +16,6 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/debug/dump_without_crashing.h"
-#include "base/feature_list.h"
 #include "base/files/file_enumerator.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
@@ -55,7 +54,6 @@
 #include "base/ios/scoped_critical_action.h"
 #endif
 
-using base::debug::DumpWithoutCrashing;
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
@@ -73,6 +71,11 @@ using syncer::ModelTypeChangeProcessor;
 */
 
 namespace history {
+
+// TODO(crbug.com/746268): Clean up this toggle after impact is measured via
+// Finch, which is expected to be neutral.
+const base::Feature kAvoidStrippingRefFromFaviconPageUrls{
+    "AvoidStrippingRefFromFaviconPageUrls", base::FEATURE_DISABLED_BY_DEFAULT};
 
 namespace {
 
@@ -219,10 +222,8 @@ void HistoryBackend::Init(
   if (base::FeatureList::IsEnabled(switches::kSyncUSSTypedURL)) {
     typed_url_sync_bridge_ = base::MakeUnique<TypedURLSyncBridge>(
         this, db_.get(),
-        base::BindRepeating(
-            &ModelTypeChangeProcessor::Create,
-            // TODO(gangwu): use ReportUnrecoverableError before launch.
-            base::BindRepeating(base::IgnoreResult(&DumpWithoutCrashing))));
+        base::BindRepeating(&ModelTypeChangeProcessor::Create,
+                            base::RepeatingClosure()));
     typed_url_sync_bridge_->Init();
   } else {
     typed_url_syncable_service_ =
@@ -976,9 +977,20 @@ void HistoryBackend::AddPageNoVisitForBookmark(const GURL& url,
 }
 
 bool HistoryBackend::GetAllTypedURLs(URLRows* urls) {
-  if (db_)
-    return db_->GetAllTypedUrls(urls);
-  return false;
+  DCHECK(urls);
+  if (!db_)
+    return false;
+  std::vector<URLID> url_ids;
+  if (!db_->GetAllURLIDsForTransition(ui::PAGE_TRANSITION_TYPED, &url_ids))
+    return false;
+  urls->reserve(url_ids.size());
+  for (const auto& url_id : url_ids) {
+    URLRow url;
+    if (!db_->GetURLRow(url_id, &url))
+      return false;
+    urls->push_back(url);
+  }
+  return true;
 }
 
 bool HistoryBackend::GetVisitsForURL(URLID id, VisitVector* visits) {
@@ -1325,7 +1337,7 @@ void HistoryBackend::QueryHistoryText(const base::string16& text_query,
   }
   result->SetURLResults(std::move(matching_visits));
 
-  if(!has_more_results && options.begin_time <= first_recorded_time_)
+  if (!has_more_results && options.begin_time <= first_recorded_time_)
     result->set_reached_beginning(true);
 }
 
@@ -1372,6 +1384,8 @@ void HistoryBackend::QueryMostVisitedURLs(int result_count,
   if (!db_)
     return;
 
+  base::TimeTicks begin_time = base::TimeTicks::Now();
+
   auto url_filter = backend_client_
                         ? base::Bind(&HistoryBackendClient::IsWebSafe,
                                      base::Unretained(backend_client_.get()))
@@ -1386,6 +1400,9 @@ void HistoryBackend::QueryMostVisitedURLs(int result_count,
     MostVisitedURL url = MakeMostVisitedURL(*current_data, redirects);
     result->push_back(url);
   }
+
+  UMA_HISTOGRAM_TIMES("History.QueryMostVisitedURLsTime",
+                      base::TimeTicks::Now() - begin_time);
 }
 
 void HistoryBackend::GetRedirectsFromSpecificVisit(VisitID cur_visit,
@@ -1453,7 +1470,7 @@ void HistoryBackend::GetFavicon(
     favicon_base::IconType icon_type,
     const std::vector<int>& desired_sizes,
     std::vector<favicon_base::FaviconRawBitmapResult>* bitmap_results) {
-  UpdateFaviconMappingsAndFetchImpl(std::set<GURL>(), icon_url, icon_type,
+  UpdateFaviconMappingsAndFetchImpl(base::flat_set<GURL>(), icon_url, icon_type,
                                     desired_sizes, bitmap_results);
 }
 
@@ -1533,18 +1550,19 @@ void HistoryBackend::GetLargestFaviconForURL(
   }
 
   base::Time last_updated;
+  base::Time last_requested;
   favicon_base::FaviconRawBitmapResult bitmap_result;
   bitmap_result.icon_url = icon_url;
   bitmap_result.icon_type = icon_type;
-  if (!thumbnail_db_->GetFaviconBitmap(largest_icon.bitmap_id,
-                                       &last_updated, nullptr,
-                                       &bitmap_result.bitmap_data,
-                                       &bitmap_result.pixel_size)) {
+  if (!thumbnail_db_->GetFaviconBitmap(
+          largest_icon.bitmap_id, &last_updated, &last_requested,
+          &bitmap_result.bitmap_data, &bitmap_result.pixel_size)) {
     return;
   }
 
   bitmap_result.expired =
       (Time::Now() - last_updated) > TimeDelta::FromDays(kFaviconRefetchDays);
+  bitmap_result.fetched_because_of_page_visit = last_requested.is_null();
   if (bitmap_result.is_valid())
     *favicon_bitmap_result = bitmap_result;
 
@@ -1585,7 +1603,7 @@ void HistoryBackend::GetFaviconForID(
 }
 
 void HistoryBackend::UpdateFaviconMappingsAndFetch(
-    const std::set<GURL>& page_urls,
+    const base::flat_set<GURL>& page_urls,
     const GURL& icon_url,
     favicon_base::IconType icon_type,
     const std::vector<int>& desired_sizes,
@@ -1754,11 +1772,11 @@ void HistoryBackend::MergeFavicon(
   ScheduleCommit();
 }
 
-void HistoryBackend::SetFavicons(const GURL& page_url,
+void HistoryBackend::SetFavicons(const base::flat_set<GURL>& page_urls,
                                  favicon_base::IconType icon_type,
                                  const GURL& icon_url,
                                  const std::vector<SkBitmap>& bitmaps) {
-  SetFaviconsImpl(page_url, icon_type, icon_url, bitmaps,
+  SetFaviconsImpl(page_urls, icon_type, icon_url, bitmaps,
                   FaviconBitmapType::ON_VISIT);
 }
 
@@ -1775,7 +1793,7 @@ bool HistoryBackend::SetOnDemandFavicons(const GURL& page_url,
     return false;
   }
 
-  return SetFaviconsImpl(page_url, icon_type, icon_url, bitmaps,
+  return SetFaviconsImpl({page_url}, icon_type, icon_url, bitmaps,
                          FaviconBitmapType::ON_DEMAND);
 }
 
@@ -1862,11 +1880,13 @@ void HistoryBackend::SetImportedFavicons(
   }
 }
 
-bool HistoryBackend::SetFaviconsImpl(const GURL& page_url,
+bool HistoryBackend::SetFaviconsImpl(const base::flat_set<GURL>& page_urls,
                                      favicon_base::IconType icon_type,
                                      const GURL& icon_url,
                                      const std::vector<SkBitmap>& bitmaps,
                                      FaviconBitmapType type) {
+  DCHECK(!page_urls.empty());
+
   if (!thumbnail_db_ || !db_)
     return false;
 
@@ -1887,12 +1907,14 @@ bool HistoryBackend::SetFaviconsImpl(const GURL& page_url,
   }
 
   std::vector<favicon_base::FaviconID> icon_ids(1u, icon_id);
-  bool mapping_changed =
-      SetFaviconMappingsForPageAndRedirects(page_url, icon_type, icon_ids);
+  for (const GURL& page_url : page_urls) {
+    bool mapping_changed =
+        SetFaviconMappingsForPageAndRedirects(page_url, icon_type, icon_ids);
 
-  if (mapping_changed) {
-    // Notify the UI that this function changed an icon mapping.
-    SendFaviconChangedNotificationForPageAndRedirects(page_url);
+    if (mapping_changed) {
+      // Notify the UI that this function changed an icon mapping.
+      SendFaviconChangedNotificationForPageAndRedirects(page_url);
+    }
   }
 
   if (favicon_data_modified && !favicon_created) {
@@ -1906,7 +1928,7 @@ bool HistoryBackend::SetFaviconsImpl(const GURL& page_url,
 }
 
 void HistoryBackend::UpdateFaviconMappingsAndFetchImpl(
-    const std::set<GURL>& page_urls,
+    const base::flat_set<GURL>& page_urls,
     const GURL& icon_url,
     favicon_base::IconType icon_type,
     const std::vector<int>& desired_sizes,
@@ -2095,17 +2117,19 @@ bool HistoryBackend::GetFaviconBitmapResultsForBestMatch(
 
   for (size_t i = 0; i < best_bitmap_ids.size(); ++i) {
     base::Time last_updated;
+    base::Time last_requested;
     favicon_base::FaviconRawBitmapResult bitmap_result;
     bitmap_result.icon_url = icon_url;
     bitmap_result.icon_type = icon_type;
-    if (!thumbnail_db_->GetFaviconBitmap(best_bitmap_ids[i], &last_updated,
-                                         nullptr, &bitmap_result.bitmap_data,
-                                         &bitmap_result.pixel_size)) {
+    if (!thumbnail_db_->GetFaviconBitmap(
+            best_bitmap_ids[i], &last_updated, &last_requested,
+            &bitmap_result.bitmap_data, &bitmap_result.pixel_size)) {
       return false;
     }
 
     bitmap_result.expired =
         (Time::Now() - last_updated) > TimeDelta::FromDays(kFaviconRefetchDays);
+    bitmap_result.fetched_because_of_page_visit = last_requested.is_null();
     if (bitmap_result.is_valid())
       favicon_bitmap_results->push_back(bitmap_result);
   }
@@ -2125,7 +2149,8 @@ bool HistoryBackend::SetFaviconMappingsForPageAndRedirects(
   GetCachedRecentRedirects(page_url, &redirects);
   bool mappings_changed = SetFaviconMappingsForPages(redirects, icon_type,
                                                      icon_ids);
-  if (page_url.has_ref()) {
+  if (page_url.has_ref() &&
+      !base::FeatureList::IsEnabled(kAvoidStrippingRefFromFaviconPageUrls)) {
     // Refs often gets added by Javascript, but the redirect chain is keyed to
     // the URL without a ref.
     // TODO(crbug.com/746268): This can cause orphan favicons, i.e. without a

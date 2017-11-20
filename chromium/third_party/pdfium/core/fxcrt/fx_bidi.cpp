@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-#include "core/fxcrt/fx_ucd.h"
+#include "core/fxcrt/fx_unicode.h"
 #include "third_party/base/ptr_util.h"
 
 #ifdef PDF_ENABLE_XFA
@@ -581,7 +581,7 @@ void CFX_BidiChar::StartNewSegment(CFX_BidiChar::Direction direction) {
   m_CurrentSegment.direction = direction;
 }
 
-CFX_BidiString::CFX_BidiString(const CFX_WideString& str)
+CFX_BidiString::CFX_BidiString(const WideString& str)
     : m_Str(str),
       m_pBidiChar(pdfium::MakeUnique<CFX_BidiChar>()),
       m_eOverallDirection(CFX_BidiChar::LEFT) {

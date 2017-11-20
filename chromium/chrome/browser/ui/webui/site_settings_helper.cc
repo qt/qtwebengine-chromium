@@ -50,6 +50,10 @@ typedef std::map<std::pair<GURL, std::string>, OneOriginObjects>
     AllOriginObjects;
 
 const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
+    // The following ContentSettingsTypes have UI in Content Settings
+    // and require a mapping from their Javascript string representation in
+    // chrome/browser/resources/settings/site_settings/constants.js to their C++
+    // ContentSettingsType provided here.
     {CONTENT_SETTINGS_TYPE_COOKIES, "cookies"},
     {CONTENT_SETTINGS_TYPE_IMAGES, "images"},
     {CONTENT_SETTINGS_TYPE_JAVASCRIPT, "javascript"},
@@ -58,20 +62,47 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
     {CONTENT_SETTINGS_TYPE_POPUPS, "popups"},
     {CONTENT_SETTINGS_TYPE_GEOLOCATION, "location"},
     {CONTENT_SETTINGS_TYPE_NOTIFICATIONS, "notifications"},
-    {CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE, "auto-select-certificate"},
     {CONTENT_SETTINGS_TYPE_PROTOCOL_HANDLERS, "register-protocol-handler"},
     {CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC, "media-stream-mic"},
     {CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA, "media-stream-camera"},
     {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, "ppapi-broker"},
     {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, "multiple-automatic-downloads"},
     {CONTENT_SETTINGS_TYPE_MIDI_SYSEX, "midi-sysex"},
-    {CONTENT_SETTINGS_TYPE_SSL_CERT_DECISIONS, "ssl-cert-decisions"},
-#if defined(OS_CHROMEOS)
     {CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER, "protectedContent"},
-#endif
     {CONTENT_SETTINGS_TYPE_BACKGROUND_SYNC, "background-sync"},
     {CONTENT_SETTINGS_TYPE_ADS, "ads"},
+
+    // Add new content settings here if a corresponding Javascript string
+    // representation for it is not required. Note some exceptions, such as
+    // USB_CHOOSER_DATA, do have UI in Content Settings but do not require a
+    // separate string.
+    {CONTENT_SETTINGS_TYPE_DEFAULT, nullptr},
+    {CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE, nullptr},
+    {CONTENT_SETTINGS_TYPE_MIXEDSCRIPT, nullptr},
+    {CONTENT_SETTINGS_TYPE_SSL_CERT_DECISIONS, nullptr},
+    {CONTENT_SETTINGS_TYPE_APP_BANNER, nullptr},
+    {CONTENT_SETTINGS_TYPE_SITE_ENGAGEMENT, nullptr},
+    {CONTENT_SETTINGS_TYPE_DURABLE_STORAGE, nullptr},
+    {CONTENT_SETTINGS_TYPE_USB_CHOOSER_DATA, nullptr},
+    {CONTENT_SETTINGS_TYPE_BLUETOOTH_GUARD, nullptr},
+    {CONTENT_SETTINGS_TYPE_AUTOPLAY, nullptr},
+    {CONTENT_SETTINGS_TYPE_PROMPT_NO_DECISION_COUNT, nullptr},
+    {CONTENT_SETTINGS_TYPE_IMPORTANT_SITE_INFO, nullptr},
+    {CONTENT_SETTINGS_TYPE_PERMISSION_AUTOBLOCKER_DATA, nullptr},
+    {CONTENT_SETTINGS_TYPE_ADS_DATA, nullptr},
+    {CONTENT_SETTINGS_TYPE_MIDI, nullptr},
+    {CONTENT_SETTINGS_TYPE_PUSH_MESSAGING, nullptr},
+    {CONTENT_SETTINGS_TYPE_PASSWORD_PROTECTION, nullptr},
+    {CONTENT_SETTINGS_TYPE_MEDIA_ENGAGEMENT, nullptr},
+    {CONTENT_SETTINGS_TYPE_SOUND, nullptr},
+    {CONTENT_SETTINGS_TYPE_CLIENT_HINTS, nullptr},
+    {CONTENT_SETTINGS_TYPE_SENSORS, nullptr},
 };
+static_assert(arraysize(kContentSettingsTypeGroupNames) ==
+                  // ContentSettingsType starts at -1, so add 1 here.
+                  static_cast<int>(CONTENT_SETTINGS_NUM_TYPES) + 1,
+              "kContentSettingsTypeGroupNames should have "
+              "CONTENT_SETTINGS_NUM_TYPES elements");
 
 struct SiteSettingSourceStringMapping {
   SiteSettingSource source;
@@ -80,6 +111,7 @@ struct SiteSettingSourceStringMapping {
 
 const SiteSettingSourceStringMapping kSiteSettingSourceStringMapping[] = {
     {SiteSettingSource::kDefault, "default"},
+    {SiteSettingSource::kDrmDisabled, "drm-disabled"},
     {SiteSettingSource::kEmbargo, "embargo"},
     {SiteSettingSource::kExtension, "extension"},
     {SiteSettingSource::kInsecureOrigin, "insecure-origin"},
@@ -98,14 +130,17 @@ static_assert(arraysize(kSiteSettingSourceStringMapping) ==
 //    2. Insecure origins (some permissions are denied to insecure origins).
 //    3. Enterprise policy.
 //    4. Extensions.
-//    5. User-set per-origin setting.
-//    6. Embargo.
-//    7. User-set patterns.
-//    8. User-set global default for a ContentSettingsType.
-//    9. Chrome's built-in default.
+//    5. DRM disabled (for CrOS's Protected Content ContentSettingsType only).
+//    6. User-set per-origin setting.
+//    7. Embargo.
+//    8. User-set patterns.
+//    9. User-set global default for a ContentSettingsType.
+//   10. Chrome's built-in default.
 SiteSettingSource CalculateSiteSettingSource(
+    Profile* profile,
+    const ContentSettingsType content_type,
     const content_settings::SettingInfo& info,
-    PermissionStatusSource permission_status_source) {
+    const PermissionStatusSource permission_status_source) {
   if (permission_status_source == PermissionStatusSource::KILL_SWITCH)
     return SiteSettingSource::kKillSwitch;  // Source #1.
 
@@ -120,6 +155,12 @@ SiteSettingSource CalculateSiteSettingSource(
   if (info.source == content_settings::SETTING_SOURCE_EXTENSION)
     return SiteSettingSource::kExtension;  // Source #4.
 
+  // Protected Content will be blocked if the |kEnableDRM| pref is off.
+  if (content_type == CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER &&
+      !profile->GetPrefs()->GetBoolean(prefs::kEnableDRM)) {
+    return SiteSettingSource::kDrmDisabled;  // Source #5.
+  }
+
   DCHECK_NE(content_settings::SETTING_SOURCE_NONE, info.source);
   if (info.source == content_settings::SETTING_SOURCE_USER) {
     if (permission_status_source ==
@@ -127,13 +168,13 @@ SiteSettingSource CalculateSiteSettingSource(
         permission_status_source ==
             PermissionStatusSource::MULTIPLE_DISMISSALS ||
         permission_status_source == PermissionStatusSource::MULTIPLE_IGNORES) {
-      return SiteSettingSource::kEmbargo;  // Source #6.
+      return SiteSettingSource::kEmbargo;  // Source #7.
     }
     if (info.primary_pattern == ContentSettingsPattern::Wildcard() &&
         info.secondary_pattern == ContentSettingsPattern::Wildcard()) {
-      return SiteSettingSource::kDefault;  // Source #8, #9.
+      return SiteSettingSource::kDefault;  // Source #9, #10.
     }
-    // Source #5, #7. When #5 is the source, |permission_status_source| won't
+    // Source #6, #8. When #6 is the source, |permission_status_source| won't
     // be set to any of the source #6 enum values, as PermissionManager is
     // aware of the difference between these two sources internally. The
     // subtlety here should go away when PermissionManager can handle all
@@ -149,8 +190,10 @@ SiteSettingSource CalculateSiteSettingSource(
 
 bool HasRegisteredGroupName(ContentSettingsType type) {
   for (size_t i = 0; i < arraysize(kContentSettingsTypeGroupNames); ++i) {
-    if (type == kContentSettingsTypeGroupNames[i].type)
+    if (type == kContentSettingsTypeGroupNames[i].type &&
+        kContentSettingsTypeGroupNames[i].name != nullptr) {
       return true;
+    }
   }
   return false;
 }
@@ -167,8 +210,12 @@ ContentSettingsType ContentSettingsTypeFromGroupName(const std::string& name) {
 
 std::string ContentSettingsTypeToGroupName(ContentSettingsType type) {
   for (size_t i = 0; i < arraysize(kContentSettingsTypeGroupNames); ++i) {
-    if (type == kContentSettingsTypeGroupNames[i].type)
-      return kContentSettingsTypeGroupNames[i].name;
+    if (type == kContentSettingsTypeGroupNames[i].type) {
+      const char* name = kContentSettingsTypeGroupNames[i].name;
+      if (name != nullptr)
+        return name;
+      break;
+    }
   }
 
   NOTREACHED() << type << " is not a recognized content settings type.";
@@ -416,15 +463,16 @@ ContentSetting GetContentSettingForOrigin(
         content_type, origin, origin);
   } else {
     DCHECK(value.get());
-    DCHECK_EQ(base::Value::Type::INTEGER, value->GetType());
+    DCHECK_EQ(base::Value::Type::INTEGER, value->type());
     result.content_setting =
         content_settings::ValueToContentSetting(value.get());
   }
 
   // Retrieve the source of the content setting.
   *source_string = SiteSettingSourceToString(
-      CalculateSiteSettingSource(info, result.source));
+      CalculateSiteSettingSource(profile, content_type, info, result.source));
   *display_name = GetDisplayNameForGURL(origin, extension_registry);
+
   return result.content_setting;
 }
 

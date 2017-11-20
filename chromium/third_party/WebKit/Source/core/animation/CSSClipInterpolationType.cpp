@@ -9,6 +9,7 @@
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSQuadValue.h"
 #include "core/css/resolver/StyleResolverState.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/wtf/PtrUtil.h"
 
 namespace blink {
@@ -84,7 +85,7 @@ class CSSClipNonInterpolableValue : public NonInterpolableValue {
 
   static RefPtr<CSSClipNonInterpolableValue> Create(
       const ClipAutos& clip_autos) {
-    return AdoptRef(new CSSClipNonInterpolableValue(clip_autos));
+    return WTF::AdoptRef(new CSSClipNonInterpolableValue(clip_autos));
   }
 
   const ClipAutos& GetClipAutos() const { return clip_autos_; }

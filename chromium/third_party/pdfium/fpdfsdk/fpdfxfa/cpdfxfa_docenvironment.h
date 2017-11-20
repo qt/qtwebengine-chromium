@@ -7,8 +7,8 @@
 #ifndef FPDFSDK_FPDFXFA_CPDFXFA_DOCENVIRONMENT_H_
 #define FPDFSDK_FPDFXFA_CPDFXFA_DOCENVIRONMENT_H_
 
-#include "core/fxcrt/cfx_retain_ptr.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "public/fpdfview.h"
 #include "xfa/fxfa/fxfa.h"
 
@@ -49,12 +49,12 @@ class CPDFXFA_DocEnvironment : public IXFA_DocEnvironment {
   void SetCurrentPage(CXFA_FFDoc* hDoc, int32_t iCurPage) override;
   bool IsCalculationsEnabled(CXFA_FFDoc* hDoc) override;
   void SetCalculationsEnabled(CXFA_FFDoc* hDoc, bool bEnabled) override;
-  void GetTitle(CXFA_FFDoc* hDoc, CFX_WideString& wsTitle) override;
-  void SetTitle(CXFA_FFDoc* hDoc, const CFX_WideString& wsTitle) override;
+  void GetTitle(CXFA_FFDoc* hDoc, WideString& wsTitle) override;
+  void SetTitle(CXFA_FFDoc* hDoc, const WideString& wsTitle) override;
   void ExportData(CXFA_FFDoc* hDoc,
-                  const CFX_WideString& wsFilePath,
+                  const WideString& wsFilePath,
                   bool bXDP) override;
-  void GotoURL(CXFA_FFDoc* hDoc, const CFX_WideString& bsURL) override;
+  void GotoURL(CXFA_FFDoc* hDoc, const WideString& bsURL) override;
   bool IsValidationsEnabled(CXFA_FFDoc* hDoc) override;
   void SetValidationsEnabled(CXFA_FFDoc* hDoc, bool bEnabled) override;
   void SetFocusWidget(CXFA_FFDoc* hDoc, CXFA_FFWidget* hWidget) override;
@@ -79,34 +79,34 @@ class CPDFXFA_DocEnvironment : public IXFA_DocEnvironment {
   bool SubmitData(CXFA_FFDoc* hDoc, CXFA_Submit submit) override;
 
   bool GetGlobalProperty(CXFA_FFDoc* hDoc,
-                         const CFX_ByteStringC& szPropName,
+                         const ByteStringView& szPropName,
                          CFXJSE_Value* pValue) override;
   bool SetGlobalProperty(CXFA_FFDoc* hDoc,
-                         const CFX_ByteStringC& szPropName,
+                         const ByteStringView& szPropName,
                          CFXJSE_Value* pValue) override;
 
-  CFX_RetainPtr<IFX_SeekableReadStream> OpenLinkedFile(
+  RetainPtr<IFX_SeekableReadStream> OpenLinkedFile(
       CXFA_FFDoc* hDoc,
-      const CFX_WideString& wsLink) override;
+      const WideString& wsLink) override;
 
  private:
   bool OnBeforeNotifySubmit();
   void OnAfterNotifySubmit();
   bool NotifySubmit(bool bPrevOrPost);
   bool SubmitDataInternal(CXFA_FFDoc* hDoc, CXFA_Submit submit);
-  bool MailToInfo(CFX_WideString& csURL,
-                  CFX_WideString& csToAddress,
-                  CFX_WideString& csCCAddress,
-                  CFX_WideString& csBCCAddress,
-                  CFX_WideString& csSubject,
-                  CFX_WideString& csMsg);
+  bool MailToInfo(WideString& csURL,
+                  WideString& csToAddress,
+                  WideString& csCCAddress,
+                  WideString& csBCCAddress,
+                  WideString& csSubject,
+                  WideString& csMsg);
   bool ExportSubmitFile(FPDF_FILEHANDLER* ppFileHandler,
                         int fileType,
                         FPDF_DWORD encodeType,
                         FPDF_DWORD flag);
-  void ToXFAContentFlags(CFX_WideString csSrcContent, FPDF_DWORD& flag);
+  void ToXFAContentFlags(WideString csSrcContent, FPDF_DWORD& flag);
 
-  CFX_UnownedPtr<CPDFXFA_Context> const m_pContext;
+  UnownedPtr<CPDFXFA_Context> const m_pContext;
 };
 
 #endif  // FPDFSDK_FPDFXFA_CPDFXFA_DOCENVIRONMENT_H_

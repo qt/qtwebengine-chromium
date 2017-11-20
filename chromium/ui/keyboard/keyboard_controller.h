@@ -16,6 +16,7 @@
 #include "ui/keyboard/keyboard_event_filter.h"
 #include "ui/keyboard/keyboard_export.h"
 #include "ui/keyboard/keyboard_layout_delegate.h"
+#include "ui/keyboard/keyboard_util.h"
 
 namespace aura {
 class Window;
@@ -134,7 +135,7 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   bool IsKeyboardWindowCreated();
 
   // Returns the current keyboard bounds. An empty rectangle will get returned
-  // when the keyboard is not shown or in FLOATING mode.
+  // when the keyboard is not shown.
   const gfx::Rect& current_keyboard_bounds() const {
     return current_keyboard_bounds_;
   }
@@ -147,6 +148,10 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
 
   // For access to SetContainerBounds.
   friend class KeyboardLayoutManager;
+
+  // For access to NotifyKeyboardConfigChanged
+  friend bool keyboard::UpdateKeyboardConfig(
+      const keyboard::KeyboardConfig& config);
 
   // aura::WindowObserver overrides
   void OnWindowHierarchyChanged(const HierarchyChangeParams& params) override;
@@ -188,11 +193,15 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   // display.
   void AdjustKeyboardBounds();
 
+  // Notifies keyboard config change to the observers.
+  // Only called from |UpdateKeyboardConfig| in keyboard_util.
+  void NotifyKeyboardConfigChanged();
+
   // Validates the state transition. Called from ChangeState.
   void CheckStateTransition(KeyboardControllerState prev,
                             KeyboardControllerState next);
 
-  // Changes the current state with validating the transition.
+  // Changes the current state and validates the transition.
   void ChangeState(KeyboardControllerState state);
 
   // Reports error histogram in case lingering in an intermediate state.

@@ -6,7 +6,7 @@ cr.define('extensions', function() {
   const ItemList = Polymer({
     is: 'extensions-item-list',
 
-    behaviors: [Polymer.IronResizableBehavior],
+    behaviors: [CrContainerShadowBehavior],
 
     properties: {
       /** @type {Array<!chrome.developerPrivate.ExtensionInfo>} */
@@ -20,6 +20,8 @@ cr.define('extensions', function() {
         value: false,
       },
 
+      isGuest: Boolean,
+
       filter: String,
 
       /** @private {Array<!chrome.developerPrivate.ExtensionInfo>} */
@@ -27,22 +29,6 @@ cr.define('extensions', function() {
         type: Array,
         computed: 'computeShownItems_(items.*, filter)',
       }
-    },
-
-    listeners: {
-      'list.extension-item-size-changed': 'itemSizeChanged_',
-      'view-enter-start': 'onViewEnterStart_',
-    },
-
-    /**
-     * Updates the size for a given item.
-     * @param {CustomEvent} e
-     * @private
-     * @suppress {checkTypes} Closure doesn't know $.list is an IronList.
-     */
-    itemSizeChanged_: function(e) {
-      this.$.list.updateSizeForItem(e.detail.item);
-      this.fire('resize');
     },
 
     /**
@@ -53,23 +39,20 @@ cr.define('extensions', function() {
      * @private
      */
     computeShownItems_: function(changeRecord, filter) {
-      return this.items.filter(function(item) {
-        return item.name.toLowerCase().includes(this.filter.toLowerCase());
-      }, this);
-    },
-
-    shouldShowEmptyItemsMessage_: function() {
-      return this.items.length === 0;
-    },
-
-    shouldShowEmptySearchMessage_: function() {
-      return !this.shouldShowEmptyItemsMessage_() &&
-          this.shownItems_.length === 0;
+      const formattedFilter = this.filter.trim().toLowerCase();
+      return this.items.filter(
+          item => item.name.toLowerCase().includes(formattedFilter));
     },
 
     /** @private */
-    onViewEnterStart_: function() {
-      this.fire('resize');  // This is needed to correctly render iron-list.
+    shouldShowEmptyItemsMessage_: function() {
+      return !this.isGuest && this.items.length === 0;
+    },
+
+    /** @private */
+    shouldShowEmptySearchMessage_: function() {
+      return !this.isGuest && !this.shouldShowEmptyItemsMessage_() &&
+          this.shownItems_.length === 0;
     },
   });
 

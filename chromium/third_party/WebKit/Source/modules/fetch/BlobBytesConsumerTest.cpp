@@ -4,7 +4,6 @@
 
 #include "modules/fetch/BlobBytesConsumer.h"
 
-#include "core/dom/Document.h"
 #include "core/loader/ThreadableLoader.h"
 #include "core/testing/DummyPageHolder.h"
 #include "modules/fetch/BytesConsumerTestUtil.h"
@@ -117,6 +116,7 @@ class BlobBytesConsumerTestClient final
 
  public:
   void OnStateChange() override { ++num_on_state_change_called_; }
+  String DebugName() const override { return "BlobBytesConsumerTestClient"; }
   int NumOnStateChangeCalled() const { return num_on_state_change_called_; }
 
  private:

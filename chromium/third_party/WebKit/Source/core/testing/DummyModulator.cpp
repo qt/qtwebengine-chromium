@@ -68,14 +68,6 @@ void DummyModulator::FetchTree(const ModuleScriptFetchRequest&,
   NOTREACHED();
 }
 
-void DummyModulator::FetchTreeInternal(const ModuleScriptFetchRequest&,
-                                       const AncestorList&,
-                                       ModuleGraphLevel,
-                                       ModuleTreeReachedUrlSet*,
-                                       ModuleTreeClient*) {
-  NOTREACHED();
-};
-
 void DummyModulator::FetchSingle(const ModuleScriptFetchRequest&,
                                  ModuleGraphLevel,
                                  SingleModuleClient*) {
@@ -102,9 +94,19 @@ bool DummyModulator::HasValidContext() {
   return true;
 }
 
+void DummyModulator::ResolveDynamically(const String&,
+                                        const KURL&,
+                                        const ReferrerScriptInfo&,
+                                        ScriptPromiseResolver*) {
+  NOTREACHED();
+}
+
 ScriptModule DummyModulator::CompileModule(const String& script,
                                            const String& url_str,
                                            AccessControlStatus,
+                                           WebURLRequest::FetchCredentialsMode,
+                                           const String& nonce,
+                                           ParserDisposition,
                                            const TextPosition&,
                                            ExceptionState&) {
   NOTREACHED();
@@ -132,8 +134,15 @@ Vector<Modulator::ModuleRequest> DummyModulator::ModuleRequestsFromScriptModule(
   return Vector<ModuleRequest>();
 }
 
-void DummyModulator::ExecuteModule(const ModuleScript*) {
+ScriptValue DummyModulator::ExecuteModule(const ModuleScript*,
+                                          CaptureEvalErrorFlag) {
   NOTREACHED();
+  return ScriptValue();
+}
+
+ModuleScriptFetcher* DummyModulator::CreateModuleScriptFetcher() {
+  NOTREACHED();
+  return nullptr;
 }
 
 }  // namespace blink

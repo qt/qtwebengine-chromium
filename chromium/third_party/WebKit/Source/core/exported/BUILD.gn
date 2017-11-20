@@ -39,6 +39,7 @@ blink_core_sources("exported") {
     "WebFormElementObserverImpl.cpp",
     "WebFormElementObserverImpl.h",
     "WebFrame.cpp",
+    "WebFrameClient.cpp",
     "WebFrameContentDumper.cpp",
     "WebFrameSerializer.cpp",
     "WebHeap.cpp",
@@ -95,11 +96,6 @@ blink_core_sources("exported") {
     "WebViewImpl.h",
     "WorkerShadowPage.cpp",
     "WorkerShadowPage.h",
-  ]
-
-  jumbo_excluded_sources = [
-    # Too many different toElement (ListedElement and Node). https://crbug.com/738389
-    "WebSearchableFormData.cpp",
   ]
 
   defines = [ "BLINK_IMPLEMENTATION=1" ]

@@ -45,13 +45,13 @@
 #include "core/paint/PaintLayer.h"
 
 #include "core/CSSPropertyNames.h"
-#include "core/HTMLNames.h"
 #include "core/css/PseudoStyleRequest.h"
 #include "core/dom/Document.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
+#include "core/html_names.h"
 #include "core/layout/FragmentainerIterator.h"
 #include "core/layout/HitTestRequest.h"
 #include "core/layout/HitTestResult.h"
@@ -75,7 +75,6 @@
 #include "core/paint/compositing/CompositedLayerMapping.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "platform/LengthFunctions.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/bindings/RuntimeCallStats.h"
 #include "platform/bindings/V8PerIsolateData.h"
 #include "platform/geometry/FloatPoint3D.h"
@@ -84,6 +83,7 @@
 #include "platform/graphics/CompositorFilterOperations.h"
 #include "platform/graphics/filters/Filter.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
@@ -1260,8 +1260,8 @@ LayoutRect PaintLayer::PaintingExtent(const PaintLayer* root_layer,
 }
 
 void* PaintLayer::operator new(size_t sz) {
-  return PartitionAlloc(WTF::Partitions::LayoutPartition(), sz,
-                        WTF_HEAP_PROFILER_TYPE_NAME(PaintLayer));
+  return WTF::PartitionAlloc(WTF::Partitions::LayoutPartition(), sz,
+                             WTF_HEAP_PROFILER_TYPE_NAME(PaintLayer));
 }
 
 void PaintLayer::operator delete(void* ptr) {
@@ -1630,7 +1630,11 @@ void PaintLayer::AppendSingleFragmentIgnoringPagination(
   if (respect_overflow_clip == kIgnoreOverflowClip)
     clip_rects_context.SetIgnoreOverflowClip();
   Clipper(geometry_mapper_option)
-      .CalculateRects(clip_rects_context, dirty_rect, fragment.layer_bounds,
+      .CalculateRects(clip_rects_context,
+                      geometry_mapper_option == kUseGeometryMapper
+                          ? GetLayoutObject().FirstFragment()
+                          : nullptr,
+                      dirty_rect, fragment.layer_bounds,
                       fragment.background_rect, fragment.foreground_rect,
                       offset_from_root);
   fragments.push_back(fragment);
@@ -1638,9 +1642,59 @@ void PaintLayer::AppendSingleFragmentIgnoringPagination(
 
 bool PaintLayer::ShouldFragmentCompositedBounds(
     const PaintLayer* compositing_layer) const {
+  if (!EnclosingPaginationLayer())
+    return false;
+  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    return true;
+  if (PaintsWithTransform(kGlobalPaintNormalPhase))
+    return true;
+  if (!compositing_layer) {
+    compositing_layer =
+        EnclosingLayerForPaintInvalidationCrossingFrameBoundaries();
+  }
+  if (!compositing_layer)
+    return true;
   // Composited layers may not be fragmented.
-  return EnclosingPaginationLayer() &&
-         !compositing_layer->EnclosingPaginationLayer();
+  return !compositing_layer->EnclosingPaginationLayer();
+}
+
+void PaintLayer::CollectFragmentsForPaint(
+    PaintLayerFragments& fragments,
+    const PaintLayer* root_layer,
+    const LayoutRect& dirty_rect,
+    ClipRectsCacheSlot clip_rects_cache_slot,
+    PaintLayer::GeometryMapperOption geometry_mapper_option,
+    OverlayScrollbarClipBehavior overlay_scrollbar_clip_behavior,
+    ShouldRespectOverflowClipType respect_overflow_clip,
+    const LayoutPoint* offset_from_root,
+    const LayoutSize& sub_pixel_accumulation) const {
+  // TODO(chrishtr): enable this once it works with rasterize-and-record.
+  // DCHECK_EQ(DocumentLifecycle::kInPaint,
+  //           GetLayoutObject().GetDocument().Lifecycle().GetState());
+  PaintLayerFragment fragment;
+  ClipRectsContext clip_rects_context(root_layer, clip_rects_cache_slot,
+                                      overlay_scrollbar_clip_behavior,
+                                      sub_pixel_accumulation);
+  if (respect_overflow_clip == kIgnoreOverflowClip)
+    clip_rects_context.SetIgnoreOverflowClip();
+
+  // The inherited offset_from_root does not include any pagination offsets.
+  // In the presence of fragmentation, we cannot use it.
+  bool offset_from_root_can_be_used =
+      !ShouldFragmentCompositedBounds(root_layer);
+  for (auto* fragment_data = GetLayoutObject().FirstFragment(); fragment_data;
+       fragment_data = fragment_data->NextFragment()) {
+    Clipper(geometry_mapper_option)
+        .CalculateRects(
+            clip_rects_context, fragment_data, dirty_rect,
+            fragment.layer_bounds, fragment.background_rect,
+            fragment.foreground_rect,
+            offset_from_root_can_be_used ? offset_from_root : nullptr);
+
+    fragment.pagination_offset = fragment_data->PaginationOffset();
+
+    fragments.push_back(fragment);
+  }
 }
 
 void PaintLayer::CollectFragments(
@@ -1654,6 +1708,9 @@ void PaintLayer::CollectFragments(
     const LayoutPoint* offset_from_root,
     const LayoutSize& sub_pixel_accumulation,
     const LayoutRect* layer_bounding_box) const {
+  DCHECK_NE(DocumentLifecycle::kInPaint,
+            GetLayoutObject().GetDocument().Lifecycle().GetState());
+
   // For unpaginated layers, there is only one fragment. We also avoid
   // fragmentation when compositing, due to implementation limitations.
   if (!EnclosingPaginationLayer() ||
@@ -1684,7 +1741,7 @@ void PaintLayer::CollectFragments(
   ClipRect foreground_rect_in_flow_thread;
   Clipper(geometry_mapper_option)
       .CalculateRects(
-          pagination_clip_rects_context,
+          pagination_clip_rects_context, nullptr,
           LayoutRect(LayoutRect::InfiniteIntRect()),
           layer_bounds_in_flow_thread, background_rect_in_flow_thread,
           foreground_rect_in_flow_thread, &offset_within_paginated_layer);
@@ -2088,8 +2145,8 @@ PaintLayer* PaintLayer::HitTestLayer(
   // the lowest z-index.
   PaintLayer* hit_layer = HitTestChildren(
       kPositiveZOrderChildren, root_layer, result, hit_test_rect,
-      hit_test_location, local_transform_state.Get(),
-      z_offset_for_descendants_ptr, z_offset, unflattened_transform_state.Get(),
+      hit_test_location, local_transform_state.get(),
+      z_offset_for_descendants_ptr, z_offset, unflattened_transform_state.get(),
       depth_sort_descendants);
   if (hit_layer) {
     if (!depth_sort_descendants)
@@ -2100,8 +2157,8 @@ PaintLayer* PaintLayer::HitTestLayer(
   // Now check our overflow objects.
   hit_layer = HitTestChildren(
       kNormalFlowChildren, root_layer, result, hit_test_rect, hit_test_location,
-      local_transform_state.Get(), z_offset_for_descendants_ptr, z_offset,
-      unflattened_transform_state.Get(), depth_sort_descendants);
+      local_transform_state.get(), z_offset_for_descendants_ptr, z_offset,
+      unflattened_transform_state.get(), depth_sort_descendants);
   if (hit_layer) {
     if (!depth_sort_descendants)
       return hit_layer;
@@ -2140,7 +2197,7 @@ PaintLayer* PaintLayer::HitTestLayer(
                                     hit_test_location, kHitTestDescendants,
                                     inside_fragment_foreground_rect) &&
         IsHitCandidate(this, false, z_offset_for_contents_ptr,
-                       unflattened_transform_state.Get())) {
+                       unflattened_transform_state.get())) {
       if (result.GetHitTestRequest().ListBased())
         result.Append(temp_result);
       else
@@ -2159,8 +2216,8 @@ PaintLayer* PaintLayer::HitTestLayer(
   // Now check our negative z-index children.
   hit_layer = HitTestChildren(
       kNegativeZOrderChildren, root_layer, result, hit_test_rect,
-      hit_test_location, local_transform_state.Get(),
-      z_offset_for_descendants_ptr, z_offset, unflattened_transform_state.Get(),
+      hit_test_location, local_transform_state.get(),
+      z_offset_for_descendants_ptr, z_offset, unflattened_transform_state.get(),
       depth_sort_descendants);
   if (hit_layer) {
     if (!depth_sort_descendants)
@@ -2181,7 +2238,7 @@ PaintLayer* PaintLayer::HitTestLayer(
                                     hit_test_location, kHitTestSelf,
                                     inside_fragment_background_rect) &&
         IsHitCandidate(this, false, z_offset_for_contents_ptr,
-                       unflattened_transform_state.Get())) {
+                       unflattened_transform_state.get())) {
       if (result.IsRectBasedTest())
         result.Append(temp_result);
       else
@@ -2317,7 +2374,7 @@ PaintLayer* PaintLayer::HitTestLayerByApplyingTransform(
 
   // Now do a hit test with the root layer shifted to be us.
   return HitTestLayer(this, container_layer, result, local_hit_test_rect,
-                      new_hit_test_location, true, new_transform_state.Get(),
+                      new_hit_test_location, true, new_transform_state.get(),
                       z_offset);
 }
 
@@ -2358,8 +2415,8 @@ bool PaintLayer::HitTestContents(HitTestResult& result,
     // to look for it manually like we do here, and give up on setting a local
     // point in the result, because that has bad implications for text selection
     // and caretRangeFromPoint(). See crbug.com/461791
-    if (!result.InnerNode())
-      result.SetInnerNode(e);
+    // This code path only ever hits in fullscreen tests.
+    result.SetInnerNode(e);
   }
   return true;
 }
@@ -2463,7 +2520,7 @@ bool PaintLayer::HitTestClippedOutByClipPath(
       ToReferenceClipPathOperation(*clip_path_operation);
   SVGElement* element =
       reference_clip_path_operation.FindElement(target_node->GetTreeScope());
-  if (!isSVGClipPathElement(element) || !element->GetLayoutObject())
+  if (!IsSVGClipPathElement(element) || !element->GetLayoutObject())
     return false;
   LayoutSVGResourceClipper* clipper = ToLayoutSVGResourceClipper(
       ToLayoutSVGResourceContainer(element->GetLayoutObject()));
@@ -2730,7 +2787,14 @@ BackgroundPaintLocation PaintLayer::GetBackgroundPaintLocation(
   if (!ScrollsOverflow() && !has_scrolling_layers) {
     location = kBackgroundPaintInGraphicsLayer;
   } else if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    location = GetLayoutObject().GetBackgroundPaintLocation(reasons);
+    // If we care about LCD text, paint root backgrounds into scrolling contents
+    // layer even if style suggests otherwise. (For non-root scrollers, we just
+    // avoid compositing - see PLSA::ComputeNeedsCompositedScrolling.)
+    DCHECK(Compositor());
+    if (IsRootLayer() && !Compositor()->PreferCompositingToLCDTextEnabled())
+      location = kBackgroundPaintInScrollingContents;
+    else
+      location = GetLayoutObject().GetBackgroundPaintLocation(reasons);
   } else {
     location = IsRootLayer()
                    ? kBackgroundPaintInGraphicsLayer
@@ -3178,6 +3242,15 @@ void PaintLayer::RemoveAncestorOverflowLayer(const PaintLayer* removed_layer) {
     return;
 
   if (AncestorOverflowLayer()) {
+    // If the previous AncestorOverflowLayer is the root and this object is a
+    // sticky viewport constrained object, it is no longer known to be
+    // constrained by the root.
+    if (AncestorOverflowLayer()->IsRootLayer() &&
+        GetLayoutObject().Style()->HasStickyConstrainedPosition()) {
+      if (LocalFrameView* frame_view = GetLayoutObject().GetFrameView())
+        frame_view->RemoveViewportConstrainedObject(GetLayoutObject());
+    }
+
     if (PaintLayerScrollableArea* ancestor_scrollable_area =
             AncestorOverflowLayer()->GetScrollableArea()) {
       // TODO(pdr): When slimming paint v2 is enabled, we will need to
@@ -3245,15 +3318,22 @@ bool PaintLayer::HasFilterThatMovesPixels() const {
   return false;
 }
 
-void PaintLayer::AddLayerHitTestRects(LayerHitTestRects& rects) const {
-  ComputeSelfHitTestRects(rects);
+void PaintLayer::AddLayerHitTestRects(
+    LayerHitTestRects& rects,
+    TouchAction supported_fast_actions) const {
+  ComputeSelfHitTestRects(rects, supported_fast_actions);
   for (PaintLayer* child = FirstChild(); child; child = child->NextSibling())
-    child->AddLayerHitTestRects(rects);
+    child->AddLayerHitTestRects(rects, supported_fast_actions);
 }
 
-void PaintLayer::ComputeSelfHitTestRects(LayerHitTestRects& rects) const {
-  if (!size().IsEmpty()) {
-    Vector<LayoutRect> rect;
+void PaintLayer::ComputeSelfHitTestRects(
+    LayerHitTestRects& rects,
+    TouchAction supported_fast_actions) const {
+  if (!Size().IsEmpty()) {
+    Vector<TouchActionRect> rect;
+    TouchAction whitelisted_touch_action =
+        GetLayoutObject().Style()->GetEffectiveTouchAction() &
+        supported_fast_actions;
 
     if (GetLayoutBox() && GetLayoutBox()->ScrollsOverflow()) {
       // For scrolling layers, rects are taken to be in the space of the
@@ -3262,21 +3342,26 @@ void PaintLayer::ComputeSelfHitTestRects(LayerHitTestRects& rects) const {
       // composited then the entire contents as well as they may be on another
       // composited layer. Skip reporting contents for non-composited layers as
       // they'll get projected to the same layer as the bounding box.
-      if (GetCompositingState() != kNotComposited && scrollable_area_)
-        rect.push_back(scrollable_area_->OverflowRect());
+      if (GetCompositingState() != kNotComposited && scrollable_area_) {
+        rect.push_back(TouchActionRect(scrollable_area_->OverflowRect(),
+                                       whitelisted_touch_action));
+      }
 
       rects.Set(this, rect);
       if (const PaintLayer* parent_layer = Parent()) {
         LayerHitTestRects::iterator iter = rects.find(parent_layer);
         if (iter == rects.end()) {
-          rects.insert(parent_layer, Vector<LayoutRect>())
-              .stored_value->value.push_back(PhysicalBoundingBox(parent_layer));
+          rects.insert(parent_layer, Vector<TouchActionRect>())
+              .stored_value->value.push_back(TouchActionRect(
+                  PhysicalBoundingBox(parent_layer), whitelisted_touch_action));
         } else {
-          iter->value.push_back(PhysicalBoundingBox(parent_layer));
+          iter->value.push_back(TouchActionRect(
+              PhysicalBoundingBox(parent_layer), whitelisted_touch_action));
         }
       }
     } else {
-      rect.push_back(LogicalBoundingBox());
+      rect.push_back(
+          TouchActionRect(LogicalBoundingBox(), whitelisted_touch_action));
       rects.Set(this, rect);
     }
   }

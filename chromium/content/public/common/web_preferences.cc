@@ -44,6 +44,14 @@ STATIC_ASSERT_ENUM(
     WebSettings::ProgressBarCompletion::
         kResourcesBeforeDCLAndSameOriginIFrames);
 
+STATIC_ASSERT_ENUM(SavePreviousDocumentResources::NEVER,
+                   WebSettings::SavePreviousDocumentResources::kNever);
+STATIC_ASSERT_ENUM(
+    SavePreviousDocumentResources::UNTIL_ON_DOM_CONTENT_LOADED,
+    WebSettings::SavePreviousDocumentResources::kUntilOnDOMContentLoaded);
+STATIC_ASSERT_ENUM(SavePreviousDocumentResources::UNTIL_ON_LOAD,
+                   WebSettings::SavePreviousDocumentResources::kUntilOnLoad);
+
 STATIC_ASSERT_ENUM(IMAGE_ANIMATION_POLICY_ALLOWED,
                    WebSettings::kImageAnimationPolicyAllowed);
 STATIC_ASSERT_ENUM(IMAGE_ANIMATION_POLICY_ANIMATION_ONCE,
@@ -98,7 +106,8 @@ WebPreferences::WebPreferences()
       hyperlink_auditing_enabled(true),
       allow_universal_access_from_file_urls(false),
       allow_file_access_from_file_urls(false),
-      experimental_webgl_enabled(false),
+      webgl1_enabled(true),
+      webgl2_enabled(true),
       pepper_3d_enabled(false),
       flash_3d_enabled(true),
       flash_stage3d_enabled(false),
@@ -172,6 +181,7 @@ WebPreferences::WebPreferences()
       navigate_on_drag_drop(true),
       v8_cache_options(V8_CACHE_OPTIONS_DEFAULT),
       record_whole_document(false),
+      save_previous_document_resources(SavePreviousDocumentResources::NEVER),
       cookie_enabled(true),
       pepper_accelerated_video_decode_enabled(false),
       animation_policy(IMAGE_ANIMATION_POLICY_ALLOWED),

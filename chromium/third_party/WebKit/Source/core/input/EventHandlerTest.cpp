@@ -7,13 +7,16 @@
 #include <memory>
 #include "core/dom/Document.h"
 #include "core/dom/Range.h"
-#include "core/editing/EditingTestBase.h"
 #include "core/editing/Editor.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/SelectionController.h"
+#include "core/editing/SelectionTemplate.h"
+#include "core/editing/testing/EditingTestBase.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/layout/LayoutObject.h"
 #include "core/loader/EmptyClients.h"
 #include "core/page/AutoscrollController.h"
@@ -89,7 +92,8 @@ void EventHandlerTest::SetUp() {
 }
 
 void EventHandlerTest::SetHtmlInnerHTML(const char* html_content) {
-  GetDocument().documentElement()->setInnerHTML(String::FromUTF8(html_content));
+  GetDocument().documentElement()->SetInnerHTMLFromString(
+      String::FromUTF8(html_content));
   GetDocument().View()->UpdateAllLifecyclePhases();
 }
 
@@ -432,23 +436,20 @@ TEST_F(EventHandlerTest, InputFieldsCanStartSelection) {
 TEST_F(EventHandlerTest, ReadOnlyInputDoesNotInheritUserSelect) {
   SetHtmlInnerHTML(
       "<div style='user-select: none'>"
-      "<input readonly value='blabla'>"
+      "<input id='sample' readonly value='blabla'>"
       "</div>");
-  Element* const field =
-      ToElement(GetDocument().body()->firstChild()->firstChild());
-  ShadowRoot* const shadow_root = field->UserAgentShadowRoot();
+  HTMLInputElement* const input =
+      ToHTMLInputElement(GetDocument().getElementById("sample"));
+  Node* const text = input->InnerEditorElement()->firstChild();
 
-  Element* const text = shadow_root->getElementById("inner-editor");
   LayoutPoint location = text->GetLayoutObject()->VisualRect().Center();
   HitTestResult hit =
       GetDocument().GetFrame()->GetEventHandler().HitTestResultAtPoint(
           location);
   EXPECT_TRUE(text->CanStartSelection());
-
-  // TODO(crbug.com/764661): Show I-beam because field is selectable.
-  // EXPECT_TRUE(
-  //   GetDocument().GetFrame()->GetEventHandler().ShouldShowIBeamForNode(field,
-  //                                                                      hit));
+  EXPECT_TRUE(
+      GetDocument().GetFrame()->GetEventHandler().ShouldShowIBeamForNode(text,
+                                                                         hit));
 }
 
 TEST_F(EventHandlerTest, ImagesCannotStartSelection) {
@@ -464,6 +465,21 @@ TEST_F(EventHandlerTest, ImagesCannotStartSelection) {
                                                                          hit));
 }
 
+TEST_F(EventHandlerTest, AnchorTextCannotStartSelection) {
+  SetHtmlInnerHTML("<a id='id' href=bala>Anchor Text</a>");
+  Node* const link = GetDocument().body()->firstChild();
+  LayoutPoint location = link->GetLayoutObject()->VisualRect().Center();
+  HitTestResult hit =
+      GetDocument().GetFrame()->GetEventHandler().HitTestResultAtPoint(
+          location);
+  Node* const text = link->firstChild();
+  EXPECT_FALSE(text->CanStartSelection());
+  EXPECT_TRUE(hit.IsOverLink());
+  EXPECT_TRUE(
+      GetDocument().GetFrame()->GetEventHandler().ShouldShowIBeamForNode(text,
+                                                                         hit));
+}
+
 // Regression test for http://crbug.com/641403 to verify we use up-to-date
 // layout tree for dispatching "contextmenu" event.
 TEST_F(EventHandlerTest, sendContextMenuEventWithHover) {
@@ -472,7 +488,7 @@ TEST_F(EventHandlerTest, sendContextMenuEventWithHover) {
       "<div>foo</div>");
   GetDocument().GetSettings()->SetScriptEnabled(true);
   Element* script = GetDocument().createElement("script");
-  script->setInnerHTML(
+  script->SetInnerHTMLFromString(
       "document.addEventListener('contextmenu', event => "
       "event.preventDefault());");
   GetDocument().body()->AppendChild(script);

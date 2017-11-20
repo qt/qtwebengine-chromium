@@ -37,15 +37,22 @@ DefaultGpuHost::DefaultGpuHost(GpuHostDelegate* delegate)
     : delegate_(delegate),
       next_client_id_(kInternalGpuChannelClientId + 1),
       main_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
-      gpu_host_binding_(this) {
+      gpu_host_binding_(this),
+      gpu_thread_("GpuThread"),
+      gpu_main_wait_(base::WaitableEvent::ResetPolicy::MANUAL,
+                     base::WaitableEvent::InitialState::NOT_SIGNALED) {
   // TODO(sad): Once GPU process is split, this would look like:
   //   connector->BindInterface("gpu", &gpu_main_);
-  gpu_main_impl_ = base::MakeUnique<GpuMain>(MakeRequest(&gpu_main_));
+  gpu_thread_.Start();
+  gpu_thread_.task_runner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&DefaultGpuHost::InitializeGpuMain, base::Unretained(this),
+                     base::Passed(MakeRequest(&gpu_main_))));
 
   // TODO(sad): Correctly initialize gpu::GpuPreferences (like it is initialized
   // in GpuProcessHost::Init()).
   gpu::GpuPreferences preferences;
-  mojom::GpuHostPtr gpu_host_proxy;
+  viz::mojom::GpuHostPtr gpu_host_proxy;
   gpu_host_binding_.Bind(mojo::MakeRequest(&gpu_host_proxy));
   gpu_main_->CreateGpuService(MakeRequest(&gpu_service_),
                               std::move(gpu_host_proxy), preferences,
@@ -55,7 +62,14 @@ DefaultGpuHost::DefaultGpuHost(GpuHostDelegate* delegate)
                                                           next_client_id_++);
 }
 
-DefaultGpuHost::~DefaultGpuHost() {}
+DefaultGpuHost::~DefaultGpuHost() {
+  // Make sure |gpu_main_impl_| has been successfully created (i.e. the task
+  // posted in the constructor to run InitializeGpuMain() has actually run).
+  gpu_main_wait_.Wait();
+  gpu_main_impl_->TearDown();
+  gpu_thread_.task_runner()->DeleteSoon(FROM_HERE, std::move(gpu_main_impl_));
+  gpu_thread_.Stop();
+}
 
 void DefaultGpuHost::Add(mojom::GpuRequest request) {
   AddInternal(std::move(request));
@@ -82,9 +96,9 @@ void DefaultGpuHost::CreateFrameSinkManager(
 }
 
 GpuClient* DefaultGpuHost::AddInternal(mojom::GpuRequest request) {
-  auto client(base::MakeUnique<GpuClient>(next_client_id_++, &gpu_info_,
-                                          gpu_memory_buffer_manager_.get(),
-                                          gpu_service_.get()));
+  auto client(base::MakeUnique<GpuClient>(
+      next_client_id_++, &gpu_info_, &gpu_feature_info_,
+      gpu_memory_buffer_manager_.get(), gpu_service_.get()));
   GpuClient* client_ref = client.get();
   gpu_bindings_.AddBinding(std::move(client), std::move(request));
   return client_ref;
@@ -96,10 +110,19 @@ void DefaultGpuHost::OnBadMessageFromGpu() {
   NOTIMPLEMENTED();
 }
 
+void DefaultGpuHost::InitializeGpuMain(mojom::GpuMainRequest request) {
+  GpuMain::ExternalDependencies deps;
+  deps.create_display_compositor = true;
+  gpu_main_impl_ = std::make_unique<GpuMain>(nullptr, std::move(deps));
+  gpu_main_impl_->Bind(std::move(request));
+  gpu_main_wait_.Signal();
+}
+
 void DefaultGpuHost::DidInitialize(
     const gpu::GPUInfo& gpu_info,
     const gpu::GpuFeatureInfo& gpu_feature_info) {
   gpu_info_ = gpu_info;
+  gpu_feature_info_ = gpu_feature_info;
   delegate_->OnGpuServiceInitialized();
 }
 

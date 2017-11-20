@@ -710,6 +710,21 @@ void NetworkingPrivateChromeOS::SetCellularSimState(
       base::Bind(&NetworkHandlerFailureCallback, failure_callback));
 }
 
+void NetworkingPrivateChromeOS::SelectCellularMobileNetwork(
+    const std::string& guid,
+    const std::string& network_id,
+    const VoidCallback& success_callback,
+    const FailureCallback& failure_callback) {
+  const chromeos::DeviceState* device_state = GetCellularDeviceState(guid);
+  if (!device_state) {
+    failure_callback.Run(networking_private::kErrorNetworkUnavailable);
+    return;
+  }
+  NetworkHandler::Get()->network_device_handler()->RegisterCellularNetwork(
+      device_state->path(), network_id, success_callback,
+      base::Bind(&NetworkHandlerFailureCallback, failure_callback));
+}
+
 std::unique_ptr<base::ListValue>
 NetworkingPrivateChromeOS::GetEnabledNetworkTypes() {
   chromeos::NetworkStateHandler* state_handler = GetStateHandler();
@@ -806,8 +821,10 @@ bool NetworkingPrivateChromeOS::DisableNetworkType(const std::string& type) {
   return true;
 }
 
-bool NetworkingPrivateChromeOS::RequestScan() {
-  GetStateHandler()->RequestScan();
+bool NetworkingPrivateChromeOS::RequestScan(const std::string& type) {
+  NetworkTypePattern pattern = chromeos::onc::NetworkTypePatternFromOncType(
+      type.empty() ? ::onc::network_type::kAllTypes : type);
+  GetStateHandler()->RequestScan(pattern);
   return true;
 }
 

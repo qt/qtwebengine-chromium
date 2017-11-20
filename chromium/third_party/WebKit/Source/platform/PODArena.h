@@ -61,8 +61,8 @@ class PODArena final : public RefCounted<PODArena> {
   // fastFree to allocate chunks of storage.
   class FastMallocAllocator : public Allocator {
    public:
-    static PassRefPtr<FastMallocAllocator> Create() {
-      return AdoptRef(new FastMallocAllocator);
+    static RefPtr<FastMallocAllocator> Create() {
+      return WTF::AdoptRef(new FastMallocAllocator);
     }
 
     void* Allocate(size_t size) override {
@@ -76,11 +76,11 @@ class PODArena final : public RefCounted<PODArena> {
   };
 
   // Creates a new PODArena configured with a FastMallocAllocator.
-  static PassRefPtr<PODArena> Create() { return AdoptRef(new PODArena); }
+  static RefPtr<PODArena> Create() { return WTF::AdoptRef(new PODArena); }
 
   // Creates a new PODArena configured with the given Allocator.
-  static PassRefPtr<PODArena> Create(PassRefPtr<Allocator> allocator) {
-    return AdoptRef(new PODArena(std::move(allocator)));
+  static RefPtr<PODArena> Create(RefPtr<Allocator> allocator) {
+    return WTF::AdoptRef(new PODArena(std::move(allocator)));
   }
 
   // Allocates an object from the arena.
@@ -107,7 +107,7 @@ class PODArena final : public RefCounted<PODArena> {
         current_(0),
         current_chunk_size_(kDefaultChunkSize) {}
 
-  explicit PODArena(PassRefPtr<Allocator> allocator)
+  explicit PODArena(RefPtr<Allocator> allocator)
       : allocator_(std::move(allocator)),
         current_(0),
         current_chunk_size_(kDefaultChunkSize) {}
@@ -130,7 +130,7 @@ class PODArena final : public RefCounted<PODArena> {
       if (rounded_size > current_chunk_size_)
         current_chunk_size_ = rounded_size;
       chunks_.push_back(
-          WTF::WrapUnique(new Chunk(allocator_.Get(), current_chunk_size_)));
+          WTF::WrapUnique(new Chunk(allocator_.get(), current_chunk_size_)));
       current_ = chunks_.back().get();
       ptr = current_->Allocate(rounded_size);
     }

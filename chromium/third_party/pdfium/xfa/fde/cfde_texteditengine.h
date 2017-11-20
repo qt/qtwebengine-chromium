@@ -11,9 +11,8 @@
 #include <utility>
 #include <vector>
 
-#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_string.h"
-#include "core/fxcrt/ifx_chariter.h"
+#include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/fx_dib.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
@@ -38,20 +37,19 @@ inline FDE_TEXTEDITPIECE::~FDE_TEXTEDITPIECE() = default;
 
 class CFDE_TextEditEngine {
  public:
-  class Iterator : public IFX_CharIter {
+  class Iterator {
    public:
-    explicit Iterator(CFDE_TextEditEngine* engine);
-    ~Iterator() override;
+    explicit Iterator(const CFDE_TextEditEngine* engine);
+    ~Iterator();
 
-    bool Next(bool bPrev = false) override;
-    wchar_t GetChar() const override;
-    void SetAt(int32_t nIndex) override;
-    int32_t GetAt() const override;
-    bool IsEOF(bool bTail = true) const override;
-    std::unique_ptr<IFX_CharIter> Clone() const override;
+    void Next(bool bPrev);
+    wchar_t GetChar() const;
+    void SetAt(size_t nIndex);
+    size_t FindNextBreakPos(bool bPrev);
+    bool IsEOF(bool bPrev) const;
 
    private:
-    CFX_UnownedPtr<CFDE_TextEditEngine> engine_;
+    UnownedPtr<const CFDE_TextEditEngine> engine_;
     int32_t current_position_;
   };
 
@@ -64,12 +62,12 @@ class CFDE_TextEditEngine {
 
   class Delegate {
    public:
+    virtual ~Delegate() = default;
     virtual void NotifyTextFull() = 0;
-
     virtual void OnCaretChanged() = 0;
-    virtual void OnTextChanged(const CFX_WideString& prevText) = 0;
+    virtual void OnTextChanged(const WideString& prevText) = 0;
     virtual void OnSelChanged() = 0;
-    virtual bool OnValidate(const CFX_WideString& wsText) = 0;
+    virtual bool OnValidate(const WideString& wsText) = 0;
     virtual void SetScrollOffset(float fScrollOffset) = 0;
   };
 
@@ -85,21 +83,21 @@ class CFDE_TextEditEngine {
   void Clear();
 
   void Insert(size_t idx,
-              const CFX_WideString& text,
+              const WideString& text,
               RecordOperation add_operation = RecordOperation::kInsertRecord);
-  CFX_WideString Delete(
+  WideString Delete(
       size_t start_idx,
       size_t length,
       RecordOperation add_operation = RecordOperation::kInsertRecord);
-  CFX_WideString GetText() const;
+  WideString GetText() const;
   size_t GetLength() const;
 
   // Non-const so we can force a layout.
   CFX_RectF GetContentsBoundingBox();
   void SetAvailableWidth(size_t width);
 
-  void SetFont(CFX_RetainPtr<CFGAS_GEFont> font);
-  CFX_RetainPtr<CFGAS_GEFont> GetFont() const { return font_; }
+  void SetFont(RetainPtr<CFGAS_GEFont> font);
+  RetainPtr<CFGAS_GEFont> GetFont() const { return font_; }
   void SetFontSize(float size);
   float GetFontSize() const { return font_size_; }
   void SetFontColor(FX_ARGB color) { font_color_ = color; }
@@ -131,27 +129,27 @@ class CFDE_TextEditEngine {
   bool Undo();
   void ClearOperationRecords();
 
-  // TODO(dsinclair): Implement ....
-  size_t GetIndexBefore(size_t pos) { return 0; }
-  size_t GetIndexLeft(size_t pos) { return 0; }
-  size_t GetIndexRight(size_t pos) { return 0; }
-  size_t GetIndexUp(size_t pos) { return 0; }
-  size_t GetIndexDown(size_t pos) { return 0; }
-  size_t GetIndexAtStartOfLine(size_t pos) { return 0; }
-  size_t GetIndexAtEndOfLine(size_t pos) { return 0; }
+  // This is not const it can trigger a |Layout|.
+  size_t GetIndexBefore(size_t pos);
+  size_t GetIndexLeft(size_t pos) const;
+  size_t GetIndexRight(size_t pos) const;
+  size_t GetIndexUp(size_t pos) const;
+  size_t GetIndexDown(size_t pos) const;
+  size_t GetIndexAtStartOfLine(size_t pos) const;
+  size_t GetIndexAtEndOfLine(size_t pos) const;
 
   void SelectAll();
-  void SetSelection(size_t start_idx, size_t end_idx);
+  void SetSelection(size_t start_idx, size_t count);
   void ClearSelection();
   bool HasSelection() const { return has_selection_; }
-  // Returns <start, end> indices of the selection.
+  // Returns <start_idx, count> of the selection.
   std::pair<size_t, size_t> GetSelection() const {
-    return {selection_.start_idx, selection_.end_idx};
+    return {selection_.start_idx, selection_.count};
   }
-  CFX_WideString GetSelectedText() const;
-  CFX_WideString DeleteSelectedText(
+  WideString GetSelectedText() const;
+  WideString DeleteSelectedText(
       RecordOperation add_operation = RecordOperation::kInsertRecord);
-  void ReplaceSelectedText(const CFX_WideString& str);
+  void ReplaceSelectedText(const WideString& str);
 
   void Layout();
 
@@ -160,6 +158,8 @@ class CFDE_TextEditEngine {
   size_t GetWidthOfChar(size_t idx);
   // Non-const so we can force a Layout() if needed.
   size_t GetIndexForPoint(const CFX_PointF& point);
+  // <start_idx, count>
+  std::pair<size_t, size_t> BoundsForWordAt(size_t idx) const;
 
   // Returns <bidi level, character rect>
   std::pair<int32_t, CFX_RectF> GetCharacterInfo(int32_t start_idx);
@@ -182,8 +182,7 @@ class CFDE_TextEditEngine {
   void SetCombTextWidth();
   void AdjustGap(size_t idx, size_t length);
   void RebuildPieces();
-  size_t CountCharsExceedingSize(const CFX_WideString& str,
-                                 size_t num_to_check);
+  size_t CountCharsExceedingSize(const WideString& str, size_t num_to_check);
   void AddOperationRecord(std::unique_ptr<Operation> op);
 
   bool IsAlignedRight() const {
@@ -197,19 +196,19 @@ class CFDE_TextEditEngine {
 
   struct Selection {
     size_t start_idx;
-    size_t end_idx;
+    size_t count;
   };
 
   CFX_RectF contents_bounding_box_;
-  CFX_UnownedPtr<Delegate> delegate_;
+  UnownedPtr<Delegate> delegate_;
   std::vector<FDE_TEXTEDITPIECE> text_piece_info_;
   std::vector<size_t> char_widths_;
   CFX_TxtBreak text_break_;
-  CFX_RetainPtr<CFGAS_GEFont> font_;
+  RetainPtr<CFGAS_GEFont> font_;
   FX_ARGB font_color_;
   float font_size_;
   float line_spacing_;
-  std::vector<CFX_WideString::CharType> content_;
+  std::vector<WideString::CharType> content_;
   size_t text_length_;
   size_t gap_position_;
   size_t gap_size_;

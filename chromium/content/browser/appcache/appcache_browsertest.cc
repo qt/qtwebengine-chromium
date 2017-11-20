@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <stdint.h>
-
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -36,7 +35,9 @@ class AppCacheNetworkServiceBrowserTest : public ContentBrowserTest {
   }
 
   // Call this to reset the request_count_.
-  void Clear() { request_count_ = 0; }
+  void Clear() {
+    request_count_ = 0;
+  }
 
   int request_count() const { return request_count_; }
 
@@ -49,7 +50,6 @@ class AppCacheNetworkServiceBrowserTest : public ContentBrowserTest {
  private:
   // Tracks the number of requests.
   int request_count_ = 0;
-
   DISALLOW_COPY_AND_ASSIGN(AppCacheNetworkServiceBrowserTest);
 };
 
@@ -79,11 +79,11 @@ IN_PROC_BROWSER_TEST_F(AppCacheNetworkServiceBrowserTest,
       embedded_test_server->GetURL("/appcache/simple_page_with_manifest.html");
 
   base::string16 expected_title = base::ASCIIToUTF16("AppCache updated");
-  TitleWatcher title_watcher(shell()->web_contents(), expected_title);
 
   // Load the main page twice. The second navigation should have AppCache
   // initialized for the page.
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  TitleWatcher title_watcher(shell()->web_contents(), expected_title);
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 
   TestNavigationObserver observer(shell()->web_contents());

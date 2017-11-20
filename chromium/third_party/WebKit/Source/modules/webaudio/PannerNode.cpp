@@ -61,12 +61,12 @@ PannerHandler::PannerHandler(AudioNode& node,
       cached_azimuth_(0),
       cached_elevation_(0),
       cached_distance_cone_gain_(1.0f),
-      position_x_(position_x),
-      position_y_(position_y),
-      position_z_(position_z),
-      orientation_x_(orientation_x),
-      orientation_y_(orientation_y),
-      orientation_z_(orientation_z) {
+      position_x_(&position_x),
+      position_y_(&position_y),
+      position_z_(&position_z),
+      orientation_x_(&orientation_x),
+      orientation_y_(&orientation_y),
+      orientation_z_(&orientation_z) {
   AddInput();
   AddOutput(2);
 
@@ -82,18 +82,17 @@ PannerHandler::PannerHandler(AudioNode& node,
   Initialize();
 }
 
-PassRefPtr<PannerHandler> PannerHandler::Create(
-    AudioNode& node,
-    float sample_rate,
-    AudioParamHandler& position_x,
-    AudioParamHandler& position_y,
-    AudioParamHandler& position_z,
-    AudioParamHandler& orientation_x,
-    AudioParamHandler& orientation_y,
-    AudioParamHandler& orientation_z) {
-  return AdoptRef(new PannerHandler(node, sample_rate, position_x, position_y,
-                                    position_z, orientation_x, orientation_y,
-                                    orientation_z));
+RefPtr<PannerHandler> PannerHandler::Create(AudioNode& node,
+                                            float sample_rate,
+                                            AudioParamHandler& position_x,
+                                            AudioParamHandler& position_y,
+                                            AudioParamHandler& position_z,
+                                            AudioParamHandler& orientation_x,
+                                            AudioParamHandler& orientation_y,
+                                            AudioParamHandler& orientation_z) {
+  return WTF::AdoptRef(new PannerHandler(node, sample_rate, position_x,
+                                         position_y, position_z, orientation_x,
+                                         orientation_y, orientation_z));
 }
 
 PannerHandler::~PannerHandler() {
@@ -573,7 +572,7 @@ void PannerHandler::MarkPannerAsDirty(unsigned dirty) {
 void PannerHandler::SetChannelCount(unsigned long channel_count,
                                     ExceptionState& exception_state) {
   DCHECK(IsMainThread());
-  BaseAudioContext::AutoLocker locker(Context());
+  BaseAudioContext::GraphAutoLocker locker(Context());
 
   // A PannerNode only supports 1 or 2 channels
   if (channel_count > 0 && channel_count <= 2) {
@@ -594,7 +593,7 @@ void PannerHandler::SetChannelCount(unsigned long channel_count,
 void PannerHandler::SetChannelCountMode(const String& mode,
                                         ExceptionState& exception_state) {
   DCHECK(IsMainThread());
-  BaseAudioContext::AutoLocker locker(Context());
+  BaseAudioContext::GraphAutoLocker locker(Context());
 
   ChannelCountMode old_mode = InternalChannelCountMode();
 

@@ -8,18 +8,56 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/mac/window_list_utils.h"
+#include "modules/desktop_capture/mac/window_list_utils.h"
 
 #include <ApplicationServices/ApplicationServices.h>
 
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/macutils.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/macutils.h"
 
 static_assert(
     static_cast<webrtc::WindowId>(kCGNullWindowID) == webrtc::kNullWindowId,
     "kNullWindowId needs to equal to kCGNullWindowID.");
 
 namespace webrtc {
+
+namespace {
+
+// Get CFDictionaryRef from |id| and call |on_window| against it. This function
+// returns false if native APIs fail, typically it indicates that the |id| does
+// not represent a window. |on_window| will not be called if false is returned
+// from this function.
+bool GetWindowRef(CGWindowID id,
+                  rtc::FunctionView<void(CFDictionaryRef)> on_window) {
+  RTC_DCHECK(on_window);
+
+  // TODO(zijiehe): |id| is a 32-bit integer, casting it to an array seems not
+  // safe enough. Maybe we should create a new
+  // const void* arr[] = {
+  //   reinterpret_cast<void*>(id) }
+  // };
+  CFArrayRef window_id_array =
+      CFArrayCreate(NULL, reinterpret_cast<const void**>(&id), 1, NULL);
+  CFArrayRef window_array =
+      CGWindowListCreateDescriptionFromArray(window_id_array);
+
+  bool result = false;
+  // TODO(zijiehe): CFArrayGetCount(window_array) should always return 1.
+  // Otherwise, we should treat it as failure.
+  if (window_array && CFArrayGetCount(window_array)) {
+    on_window(reinterpret_cast<CFDictionaryRef>(
+        CFArrayGetValueAtIndex(window_array, 0)));
+    result = true;
+  }
+
+  if (window_array) {
+    CFRelease(window_array);
+  }
+  CFRelease(window_id_array);
+  return result;
+}
+
+}  // namespace
 
 bool GetWindowList(rtc::FunctionView<bool(CFDictionaryRef)> on_window,
                    bool ignore_minimized) {
@@ -83,7 +121,7 @@ bool GetWindowList(rtc::FunctionView<bool(CFDictionaryRef)> on_window,
     }
 
     // Skip windows that are minimized and not full screen.
-    if (ignore_minimized && IsWindowMinimized(window) &&
+    if (ignore_minimized && !IsWindowOnScreen(window) &&
         !IsWindowFullScreen(desktop_config, window)) {
       continue;
     }
@@ -138,29 +176,21 @@ bool IsWindowFullScreen(
   return fullscreen;
 }
 
-bool IsWindowMinimized(CFDictionaryRef window) {
+bool IsWindowOnScreen(CFDictionaryRef window) {
   CFBooleanRef on_screen = reinterpret_cast<CFBooleanRef>(
       CFDictionaryGetValue(window, kCGWindowIsOnscreen));
-  return on_screen != NULL && !CFBooleanGetValue(on_screen);
+  return on_screen != NULL && CFBooleanGetValue(on_screen);
 }
 
-// Returns true if the window is minimized.
-bool IsWindowMinimized(CGWindowID id) {
-  CFArrayRef window_id_array =
-      CFArrayCreate(NULL, reinterpret_cast<const void **>(&id), 1, NULL);
-  CFArrayRef window_array =
-      CGWindowListCreateDescriptionFromArray(window_id_array);
-  bool minimized = false;
-
-  if (window_array && CFArrayGetCount(window_array)) {
-    minimized = IsWindowMinimized(reinterpret_cast<CFDictionaryRef>(
-        CFArrayGetValueAtIndex(window_array, 0)));
+bool IsWindowOnScreen(CGWindowID id) {
+  bool on_screen;
+  if (GetWindowRef(id,
+                   [&on_screen](CFDictionaryRef window) {
+                     on_screen = IsWindowOnScreen(window);
+                   })) {
+    return on_screen;
   }
-
-  CFRelease(window_id_array);
-  CFRelease(window_array);
-
-  return minimized;
+  return false;
 }
 
 std::string GetWindowTitle(CFDictionaryRef window) {
@@ -204,6 +234,17 @@ DesktopRect GetWindowBounds(CFDictionaryRef window) {
                                gc_window_rect.origin.y,
                                gc_window_rect.size.width,
                                gc_window_rect.size.height);
+}
+
+DesktopRect GetWindowBounds(CGWindowID id) {
+  DesktopRect result;
+  if (GetWindowRef(id,
+                   [&result](CFDictionaryRef window) {
+                     result = GetWindowBounds(window);
+                   })) {
+    return result;
+  }
+  return DesktopRect();
 }
 
 }  // namespace webrtc

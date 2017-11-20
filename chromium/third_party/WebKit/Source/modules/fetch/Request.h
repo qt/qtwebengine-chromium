@@ -6,7 +6,7 @@
 #define Request_h
 
 #include "bindings/core/v8/Dictionary.h"
-#include "bindings/modules/v8/RequestOrUSVString.h"
+#include "bindings/modules/v8/request_or_usv_string.h"
 #include "modules/ModulesExport.h"
 #include "modules/fetch/Body.h"
 #include "modules/fetch/FetchRequestData.h"
@@ -77,7 +77,7 @@ class MODULES_EXPORT Request final : public Body {
   const BodyStreamBuffer* BodyBuffer() const override {
     return request_->Buffer();
   }
-  PassRefPtr<EncodedFormData> AttachedCredential() const {
+  RefPtr<EncodedFormData> AttachedCredential() const {
     return request_->AttachedCredential();
   }
 

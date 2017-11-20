@@ -11,6 +11,7 @@
 
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_boolean.h"
+#include "core/fpdfapi/parser/cpdf_crypto_handler.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
@@ -22,9 +23,9 @@
 #include "third_party/base/stl_util.h"
 
 CPDF_Dictionary::CPDF_Dictionary()
-    : CPDF_Dictionary(CFX_WeakPtr<CFX_ByteStringPool>()) {}
+    : CPDF_Dictionary(WeakPtr<ByteStringPool>()) {}
 
-CPDF_Dictionary::CPDF_Dictionary(const CFX_WeakPtr<CFX_ByteStringPool>& pPool)
+CPDF_Dictionary::CPDF_Dictionary(const WeakPtr<ByteStringPool>& pPool)
     : m_pPool(pPool) {}
 
 CPDF_Dictionary::~CPDF_Dictionary() {
@@ -78,58 +79,56 @@ std::unique_ptr<CPDF_Object> CPDF_Dictionary::CloneNonCyclic(
   return std::move(pCopy);
 }
 
-CPDF_Object* CPDF_Dictionary::GetObjectFor(const CFX_ByteString& key) const {
+CPDF_Object* CPDF_Dictionary::GetObjectFor(const ByteString& key) const {
   auto it = m_Map.find(key);
   return it != m_Map.end() ? it->second.get() : nullptr;
 }
 
-CPDF_Object* CPDF_Dictionary::GetDirectObjectFor(
-    const CFX_ByteString& key) const {
+CPDF_Object* CPDF_Dictionary::GetDirectObjectFor(const ByteString& key) const {
   CPDF_Object* p = GetObjectFor(key);
   return p ? p->GetDirect() : nullptr;
 }
 
-CFX_ByteString CPDF_Dictionary::GetStringFor(const CFX_ByteString& key) const {
+ByteString CPDF_Dictionary::GetStringFor(const ByteString& key) const {
   CPDF_Object* p = GetObjectFor(key);
-  return p ? p->GetString() : CFX_ByteString();
+  return p ? p->GetString() : ByteString();
 }
 
-CFX_WideString CPDF_Dictionary::GetUnicodeTextFor(
-    const CFX_ByteString& key) const {
+WideString CPDF_Dictionary::GetUnicodeTextFor(const ByteString& key) const {
   CPDF_Object* p = GetObjectFor(key);
   if (CPDF_Reference* pRef = ToReference(p))
     p = pRef->GetDirect();
-  return p ? p->GetUnicodeText() : CFX_WideString();
+  return p ? p->GetUnicodeText() : WideString();
 }
 
-CFX_ByteString CPDF_Dictionary::GetStringFor(const CFX_ByteString& key,
-                                             const CFX_ByteString& def) const {
+ByteString CPDF_Dictionary::GetStringFor(const ByteString& key,
+                                         const ByteString& def) const {
   CPDF_Object* p = GetObjectFor(key);
-  return p ? p->GetString() : CFX_ByteString(def);
+  return p ? p->GetString() : ByteString(def);
 }
 
-int CPDF_Dictionary::GetIntegerFor(const CFX_ByteString& key) const {
+int CPDF_Dictionary::GetIntegerFor(const ByteString& key) const {
   CPDF_Object* p = GetObjectFor(key);
   return p ? p->GetInteger() : 0;
 }
 
-int CPDF_Dictionary::GetIntegerFor(const CFX_ByteString& key, int def) const {
+int CPDF_Dictionary::GetIntegerFor(const ByteString& key, int def) const {
   CPDF_Object* p = GetObjectFor(key);
   return p ? p->GetInteger() : def;
 }
 
-float CPDF_Dictionary::GetNumberFor(const CFX_ByteString& key) const {
+float CPDF_Dictionary::GetNumberFor(const ByteString& key) const {
   CPDF_Object* p = GetObjectFor(key);
   return p ? p->GetNumber() : 0;
 }
 
-bool CPDF_Dictionary::GetBooleanFor(const CFX_ByteString& key,
+bool CPDF_Dictionary::GetBooleanFor(const ByteString& key,
                                     bool bDefault) const {
   CPDF_Object* p = GetObjectFor(key);
   return ToBoolean(p) ? p->GetInteger() != 0 : bDefault;
 }
 
-CPDF_Dictionary* CPDF_Dictionary::GetDictFor(const CFX_ByteString& key) const {
+CPDF_Dictionary* CPDF_Dictionary::GetDictFor(const ByteString& key) const {
   CPDF_Object* p = GetDirectObjectFor(key);
   if (!p)
     return nullptr;
@@ -140,15 +139,15 @@ CPDF_Dictionary* CPDF_Dictionary::GetDictFor(const CFX_ByteString& key) const {
   return nullptr;
 }
 
-CPDF_Array* CPDF_Dictionary::GetArrayFor(const CFX_ByteString& key) const {
+CPDF_Array* CPDF_Dictionary::GetArrayFor(const ByteString& key) const {
   return ToArray(GetDirectObjectFor(key));
 }
 
-CPDF_Stream* CPDF_Dictionary::GetStreamFor(const CFX_ByteString& key) const {
+CPDF_Stream* CPDF_Dictionary::GetStreamFor(const ByteString& key) const {
   return ToStream(GetDirectObjectFor(key));
 }
 
-CFX_FloatRect CPDF_Dictionary::GetRectFor(const CFX_ByteString& key) const {
+CFX_FloatRect CPDF_Dictionary::GetRectFor(const ByteString& key) const {
   CFX_FloatRect rect;
   CPDF_Array* pArray = GetArrayFor(key);
   if (pArray)
@@ -156,7 +155,7 @@ CFX_FloatRect CPDF_Dictionary::GetRectFor(const CFX_ByteString& key) const {
   return rect;
 }
 
-CFX_Matrix CPDF_Dictionary::GetMatrixFor(const CFX_ByteString& key) const {
+CFX_Matrix CPDF_Dictionary::GetMatrixFor(const ByteString& key) const {
   CFX_Matrix matrix;
   CPDF_Array* pArray = GetArrayFor(key);
   if (pArray)
@@ -164,18 +163,15 @@ CFX_Matrix CPDF_Dictionary::GetMatrixFor(const CFX_ByteString& key) const {
   return matrix;
 }
 
-bool CPDF_Dictionary::KeyExist(const CFX_ByteString& key) const {
+bool CPDF_Dictionary::KeyExist(const ByteString& key) const {
   return pdfium::ContainsKey(m_Map, key);
 }
 
 bool CPDF_Dictionary::IsSignatureDict() const {
-  CPDF_Object* pType = GetDirectObjectFor("Type");
-  if (!pType)
-    pType = GetDirectObjectFor("FT");
-  return pType && pType->GetString() == "Sig";
+  return CPDF_CryptoHandler::IsSignatureDictionary(this);
 }
 
-CPDF_Object* CPDF_Dictionary::SetFor(const CFX_ByteString& key,
+CPDF_Object* CPDF_Dictionary::SetFor(const ByteString& key,
                                      std::unique_ptr<CPDF_Object> pObj) {
   if (!pObj) {
     m_Map.erase(key);
@@ -188,7 +184,7 @@ CPDF_Object* CPDF_Dictionary::SetFor(const CFX_ByteString& key,
 }
 
 void CPDF_Dictionary::ConvertToIndirectObjectFor(
-    const CFX_ByteString& key,
+    const ByteString& key,
     CPDF_IndirectObjectHolder* pHolder) {
   auto it = m_Map.find(key);
   if (it == m_Map.end() || it->second->IsReference())
@@ -198,8 +194,7 @@ void CPDF_Dictionary::ConvertToIndirectObjectFor(
   it->second = pdfium::MakeUnique<CPDF_Reference>(pHolder, pObj->GetObjNum());
 }
 
-std::unique_ptr<CPDF_Object> CPDF_Dictionary::RemoveFor(
-    const CFX_ByteString& key) {
+std::unique_ptr<CPDF_Object> CPDF_Dictionary::RemoveFor(const ByteString& key) {
   std::unique_ptr<CPDF_Object> result;
   auto it = m_Map.find(key);
   if (it != m_Map.end()) {
@@ -209,8 +204,8 @@ std::unique_ptr<CPDF_Object> CPDF_Dictionary::RemoveFor(
   return result;
 }
 
-void CPDF_Dictionary::ReplaceKey(const CFX_ByteString& oldkey,
-                                 const CFX_ByteString& newkey) {
+void CPDF_Dictionary::ReplaceKey(const ByteString& oldkey,
+                                 const ByteString& newkey) {
   auto old_it = m_Map.find(oldkey);
   if (old_it == m_Map.end())
     return;
@@ -223,7 +218,7 @@ void CPDF_Dictionary::ReplaceKey(const CFX_ByteString& oldkey,
   m_Map.erase(old_it);
 }
 
-void CPDF_Dictionary::SetRectFor(const CFX_ByteString& key,
+void CPDF_Dictionary::SetRectFor(const ByteString& key,
                                  const CFX_FloatRect& rect) {
   CPDF_Array* pArray = SetNewFor<CPDF_Array>(key);
   pArray->AddNew<CPDF_Number>(rect.left);
@@ -232,7 +227,7 @@ void CPDF_Dictionary::SetRectFor(const CFX_ByteString& key,
   pArray->AddNew<CPDF_Number>(rect.top);
 }
 
-void CPDF_Dictionary::SetMatrixFor(const CFX_ByteString& key,
+void CPDF_Dictionary::SetMatrixFor(const ByteString& key,
                                    const CFX_Matrix& matrix) {
   CPDF_Array* pArray = SetNewFor<CPDF_Array>(key);
   pArray->AddNew<CPDF_Number>(matrix.a);
@@ -243,7 +238,7 @@ void CPDF_Dictionary::SetMatrixFor(const CFX_ByteString& key,
   pArray->AddNew<CPDF_Number>(matrix.f);
 }
 
-CFX_ByteString CPDF_Dictionary::MaybeIntern(const CFX_ByteString& str) {
+ByteString CPDF_Dictionary::MaybeIntern(const ByteString& str) {
   return m_pPool ? m_pPool->Intern(str) : str;
 }
 
@@ -252,10 +247,10 @@ bool CPDF_Dictionary::WriteTo(IFX_ArchiveStream* archive) const {
     return false;
 
   for (const auto& it : *this) {
-    const CFX_ByteString& key = it.first;
+    const ByteString& key = it.first;
     CPDF_Object* pValue = it.second.get();
     if (!archive->WriteString("/") ||
-        !archive->WriteString(PDF_NameEncode(key).AsStringC())) {
+        !archive->WriteString(PDF_NameEncode(key).AsStringView())) {
       return false;
     }
 

@@ -28,7 +28,6 @@
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/ssl_host_state_delegate.h"
 #include "content/public/common/console_message_level.h"
-#include "net/cert/symantec_certs.h"
 #include "net/url_request/url_request.h"
 
 namespace content {
@@ -43,37 +42,6 @@ enum SSLGoodCertSeenEvent {
   HAD_PREVIOUS_EXCEPTION = 1,
   SSL_GOOD_CERT_SEEN_EVENT_MAX = 2
 };
-
-// Should be called on navigation commit. Checks if the navigation described by
-// |details| was a different-page navigation that used a legacy Symantec
-// certificate |cert|, and if so, logs a console warning in |web_contents|.
-void MaybeLogLegacySymantecWarning(
-    const LoadCommittedDetails& details,
-    const scoped_refptr<net::X509Certificate>& cert,
-    const net::HashValueVector& public_key_hashes,
-    content::WebContents* web_contents) {
-  // No need to log on same-page navigations, because the message would be
-  // redundant.
-  if (details.is_same_document)
-    return;
-  if (!net::IsLegacySymantecCert(public_key_hashes))
-    return;
-  std::string content_client_message;
-  GURL url = details.entry->GetURL();
-  bool message_overridden =
-      GetContentClient()->browser()->OverrideLegacySymantecCertConsoleMessage(
-          url, cert, &content_client_message);
-  web_contents->GetMainFrame()->AddMessageToConsole(
-      CONSOLE_MESSAGE_LEVEL_WARNING,
-      message_overridden ? content_client_message
-                         : "The certificate used to load " + url.spec() +
-                               " uses an SSL certificate that will be "
-                               "distrusted in the future. "
-                               "Once distrusted, users will be prevented from "
-                               "loading this resource. See "
-                               "https://g.co/chrome/symantecpkicerts for "
-                               "more information.");
-}
 
 void OnAllowCertificateWithRecordDecision(
     bool record_decision,
@@ -181,8 +149,8 @@ void SSLManager::OnSSLCertificateError(
   // on the UI thread for processing.
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&HandleSSLErrorOnUI, web_contents_getter, delegate,
-                 resource_type, url, ssl_info, fatal));
+      base::BindOnce(&HandleSSLErrorOnUI, web_contents_getter, delegate,
+                     resource_type, url, ssl_info, fatal));
 }
 
 // static
@@ -226,10 +194,6 @@ void SSLManager::DidCommitProvisionalLoad(const LoadCommittedDetails& details) {
   NavigationEntryImpl* entry = controller_->GetLastCommittedEntry();
   int add_content_status_flags = 0;
   int remove_content_status_flags = 0;
-
-  MaybeLogLegacySymantecWarning(details, entry->GetSSL().certificate,
-                                entry->GetSSL().public_key_hashes,
-                                controller_->delegate()->GetWebContents());
 
   if (!details.is_main_frame) {
     // If it wasn't a main-frame navigation, then carry over content
@@ -342,51 +306,13 @@ void SSLManager::OnCertError(std::unique_ptr<SSLErrorHandler> handler) {
     return;
   }
 
-  // For all other hosts, which must be DENIED, a blocking page is shown to the
-  // user every time they come back to the page.
-  int options_mask = 0;
-  switch (handler->cert_error()) {
-    case net::ERR_CERT_COMMON_NAME_INVALID:
-    case net::ERR_CERT_DATE_INVALID:
-    case net::ERR_CERT_AUTHORITY_INVALID:
-    case net::ERR_CERT_WEAK_SIGNATURE_ALGORITHM:
-    case net::ERR_CERT_WEAK_KEY:
-    case net::ERR_CERT_NAME_CONSTRAINT_VIOLATION:
-    case net::ERR_CERT_VALIDITY_TOO_LONG:
-    case net::ERR_CERTIFICATE_TRANSPARENCY_REQUIRED:
-      if (!handler->fatal())
-        options_mask |= OVERRIDABLE;
-      else
-        options_mask |= STRICT_ENFORCEMENT;
-      if (expired_previous_decision)
-        options_mask |= EXPIRED_PREVIOUS_DECISION;
-      OnCertErrorInternal(std::move(handler), options_mask);
-      break;
-    case net::ERR_CERT_NO_REVOCATION_MECHANISM:
-      // Ignore this error.
-      handler->ContinueRequest();
-      break;
-    case net::ERR_CERT_UNABLE_TO_CHECK_REVOCATION:
-      // We ignore this error but will show a warning status in the location
-      // bar.
-      handler->ContinueRequest();
-      break;
-    case net::ERR_CERT_CONTAINS_ERRORS:
-    case net::ERR_CERT_REVOKED:
-    case net::ERR_CERT_INVALID:
-    case net::ERR_SSL_WEAK_SERVER_EPHEMERAL_DH_KEY:
-    case net::ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN:
-      if (handler->fatal())
-        options_mask |= STRICT_ENFORCEMENT;
-      if (expired_previous_decision)
-        options_mask |= EXPIRED_PREVIOUS_DECISION;
-      OnCertErrorInternal(std::move(handler), options_mask);
-      break;
-    default:
-      NOTREACHED();
-      handler->CancelRequest();
-      break;
+  DCHECK(net::IsCertificateError(handler->cert_error()));
+  if (handler->cert_error() == net::ERR_CERT_NO_REVOCATION_MECHANISM ||
+      handler->cert_error() == net::ERR_CERT_UNABLE_TO_CHECK_REVOCATION) {
+    handler->ContinueRequest();
+    return;
   }
+  OnCertErrorInternal(std::move(handler), expired_previous_decision);
 }
 
 void SSLManager::DidStartResourceResponse(const GURL& url,
@@ -416,17 +342,13 @@ void SSLManager::DidStartResourceResponse(const GURL& url,
 }
 
 void SSLManager::OnCertErrorInternal(std::unique_ptr<SSLErrorHandler> handler,
-                                     int options_mask) {
-  bool overridable = (options_mask & OVERRIDABLE) != 0;
-  bool strict_enforcement = (options_mask & STRICT_ENFORCEMENT) != 0;
-  bool expired_previous_decision =
-      (options_mask & EXPIRED_PREVIOUS_DECISION) != 0;
-
+                                     bool expired_previous_decision) {
   WebContents* web_contents = handler->web_contents();
   int cert_error = handler->cert_error();
   const net::SSLInfo& ssl_info = handler->ssl_info();
   const GURL& request_url = handler->request_url();
   ResourceType resource_type = handler->resource_type();
+  bool fatal = handler->fatal();
 
   base::Callback<void(bool, content::CertificateRequestResultType)> callback =
       base::Bind(&OnAllowCertificate, base::Owned(handler.release()),
@@ -447,8 +369,8 @@ void SSLManager::OnCertErrorInternal(std::unique_ptr<SSLErrorHandler> handler,
   }
 
   GetContentClient()->browser()->AllowCertificateError(
-      web_contents, cert_error, ssl_info, request_url, resource_type,
-      overridable, strict_enforcement, expired_previous_decision,
+      web_contents, cert_error, ssl_info, request_url, resource_type, fatal,
+      expired_previous_decision,
       base::Bind(&OnAllowCertificateWithRecordDecision, true, callback));
 }
 

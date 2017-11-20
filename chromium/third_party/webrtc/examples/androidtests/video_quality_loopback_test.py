@@ -30,8 +30,7 @@ import time
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, os.pardir, os.pardir,
-                                        os.pardir))
+SRC_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, os.pardir, os.pardir))
 BAD_DEVICES_JSON = os.path.join(SRC_DIR,
                                 os.environ.get('CHROMIUM_OUT_DIR', 'out'),
                                 'bad_devices.json')
@@ -106,7 +105,7 @@ def main():
   download_tools_script = os.path.join(tools_dir, 'download_tools.py')
   _RunCommand([sys.executable, download_tools_script, toolchain_dir])
 
-  testing_tools_dir = os.path.join(SRC_DIR, 'webrtc', 'rtc_tools', 'testing')
+  testing_tools_dir = os.path.join(SRC_DIR, 'rtc_tools', 'testing')
 
   # Download, extract and build AppRTC.
   setup_apprtc_script = os.path.join(testing_tools_dir, 'setup_apprtc.py')
@@ -181,8 +180,7 @@ def main():
     ConvertVideo(reference_video, reference_video_yuv)
 
     # Run compare script.
-    compare_script = os.path.join(SRC_DIR, 'webrtc', 'rtc_tools',
-                                  'compare_videos.py')
+    compare_script = os.path.join(SRC_DIR, 'rtc_tools', 'compare_videos.py')
     zxing_path = os.path.join(toolchain_dir, 'linux', 'zxing')
 
     # The frame_analyzer binary should be built for local computer and not for

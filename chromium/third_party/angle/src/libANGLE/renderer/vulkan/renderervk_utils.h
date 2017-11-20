@@ -33,6 +33,7 @@ const char *VulkanResultString(VkResult result);
 bool HasStandardValidationLayer(const std::vector<VkLayerProperties> &layerProps);
 
 extern const char *g_VkStdValidationLayerName;
+extern const char *g_VkLoaderLayersPathEnv;
 
 enum class TextureDimension
 {
@@ -82,11 +83,24 @@ class ResourceVk
 
 namespace vk
 {
+class Buffer;
 class DeviceMemory;
 class Framebuffer;
 class Image;
 class Pipeline;
 class RenderPass;
+
+class MemoryProperties final : angle::NonCopyable
+{
+  public:
+    MemoryProperties();
+
+    void init(VkPhysicalDevice physicalDevice);
+    uint32_t findCompatibleMemoryIndex(uint32_t bitMask, uint32_t propertyFlags) const;
+
+  private:
+    VkPhysicalDeviceMemoryProperties mMemoryProperties;
+};
 
 class Error final
 {
@@ -103,10 +117,11 @@ class Error final
 
     operator gl::Error() const;
     operator egl::Error() const;
+
     template <typename T>
     operator gl::ErrorOrResult<T>() const
     {
-        return static_cast<gl::Error>(*this);
+        return operator gl::Error();
     }
 
     bool isError() const;
@@ -216,10 +231,18 @@ class CommandBuffer final : public WrappedObject<CommandBuffer, VkCommandBuffer>
               uint32_t firstVertex,
               uint32_t firstInstance);
 
+    void drawIndexed(uint32_t indexCount,
+                     uint32_t instanceCount,
+                     uint32_t firstIndex,
+                     int32_t vertexOffset,
+                     uint32_t firstInstance);
+
     void bindPipeline(VkPipelineBindPoint pipelineBindPoint, const vk::Pipeline &pipeline);
     void bindVertexBuffers(uint32_t firstBinding,
-                           const std::vector<VkBuffer> &buffers,
-                           const std::vector<VkDeviceSize> &offsets);
+                           uint32_t bindingCount,
+                           const VkBuffer *buffers,
+                           const VkDeviceSize *offsets);
+    void bindIndexBuffer(const vk::Buffer &buffer, VkDeviceSize offset, VkIndexType indexType);
 
   private:
     bool mStarted;
@@ -319,6 +342,13 @@ class RenderPass final : public WrappedObject<RenderPass, VkRenderPass>
     Error init(VkDevice device, const VkRenderPassCreateInfo &createInfo);
 };
 
+enum class StagingUsage
+{
+    Read,
+    Write,
+    Both,
+};
+
 class StagingImage final : angle::NonCopyable
 {
   public:
@@ -329,10 +359,11 @@ class StagingImage final : angle::NonCopyable
 
     vk::Error init(VkDevice device,
                    uint32_t queueFamilyIndex,
-                   uint32_t hostVisibleMemoryIndex,
+                   const MemoryProperties &memoryProperties,
                    TextureDimension dimension,
                    VkFormat format,
-                   const gl::Extents &extent);
+                   const gl::Extents &extent,
+                   StagingUsage usage);
 
     Image &getImage() { return mImage; }
     const Image &getImage() const { return mImage; }

@@ -11,7 +11,7 @@
 class CPDF_ReadValidator : public IFX_SeekableReadStream {
  public:
   template <typename T, typename... Args>
-  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
   class Session {
    public:
@@ -19,7 +19,7 @@ class CPDF_ReadValidator : public IFX_SeekableReadStream {
     ~Session();
 
    private:
-    CFX_UnownedPtr<CPDF_ReadValidator> validator_;
+    UnownedPtr<CPDF_ReadValidator> validator_;
     bool saved_read_error_;
     bool saved_has_unavailable_data_;
   };
@@ -37,31 +37,33 @@ class CPDF_ReadValidator : public IFX_SeekableReadStream {
 
   void ResetErrors();
 
-  bool IsDataRangeAvailable(FX_FILESIZE offset, uint32_t size) const;
   bool IsWholeFileAvailable();
 
-  void ScheduleDataDownload(FX_FILESIZE offset, uint32_t size);
-  void ScheduleDownloadWholeFile();
+  bool CheckDataRangeAndRequestIfUnavailable(FX_FILESIZE offset, size_t size);
+  bool CheckWholeFileAndRequestIfUnavailable();
 
   // IFX_SeekableReadStream overrides:
   bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override;
   FX_FILESIZE GetSize() override;
 
  protected:
-  CPDF_ReadValidator(const CFX_RetainPtr<IFX_SeekableReadStream>& file_read,
+  CPDF_ReadValidator(const RetainPtr<IFX_SeekableReadStream>& file_read,
                      CPDF_DataAvail::FileAvail* file_avail);
   ~CPDF_ReadValidator() override;
 
  private:
   void ScheduleDownload(FX_FILESIZE offset, size_t size);
+  bool IsDataRangeAvailable(FX_FILESIZE offset, size_t size) const;
 
-  CFX_RetainPtr<IFX_SeekableReadStream> file_read_;
-  CFX_UnownedPtr<CPDF_DataAvail::FileAvail> file_avail_;
+  RetainPtr<IFX_SeekableReadStream> file_read_;
+  UnownedPtr<CPDF_DataAvail::FileAvail> file_avail_;
 
-  CFX_UnownedPtr<CPDF_DataAvail::DownloadHints> hints_;
+  UnownedPtr<CPDF_DataAvail::DownloadHints> hints_;
 
   bool read_error_;
   bool has_unavailable_data_;
+  bool whole_file_already_available_;
+  const FX_FILESIZE file_size_;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_READ_VALIDATOR_H_

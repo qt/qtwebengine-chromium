@@ -10,11 +10,10 @@
 #include <memory>
 #include <vector>
 
-#include "core/fxcodec/fx_codec.h"
-#include "core/fxcrt/cfx_maybe_owned.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/maybe_owned.h"
 #include "core/fxge/cfx_folderfontinfo.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_windowsrenderdevice.h"
@@ -23,7 +22,6 @@
 #include "core/fxge/dib/cstretchengine.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/fx_freetype.h"
-#include "core/fxge/fx_text_int.h"
 #include "core/fxge/ifx_systemfontinfo.h"
 #include "core/fxge/win32/cfx_windowsdib.h"
 #include "core/fxge/win32/dwrite_int.h"
@@ -73,7 +71,7 @@ const FontNameMap g_JpFontNameMap[] = {
     {"MS Gothic", "Jun101-Light"},
 };
 
-bool GetSubFontName(CFX_ByteString* name) {
+bool GetSubFontName(ByteString* name) {
   for (size_t i = 0; i < FX_ArraySize(g_JpFontNameMap); ++i) {
     if (!FXSYS_stricmp(name->c_str(), g_JpFontNameMap[i].m_pSrcFontName)) {
       *name = g_JpFontNameMap[i].m_pSubFontName;
@@ -349,23 +347,21 @@ class CFX_Win32FontInfo final : public IFX_SystemFontInfo {
                        uint32_t table,
                        uint8_t* buffer,
                        uint32_t size) override;
-  bool GetFaceName(void* hFont, CFX_ByteString* name) override;
+  bool GetFaceName(void* hFont, ByteString* name) override;
   bool GetFontCharset(void* hFont, int* charset) override;
   void DeleteFont(void* hFont) override;
 
   bool IsOpenTypeFromDiv(const LOGFONTA* plf);
   bool IsSupportFontFormDiv(const LOGFONTA* plf);
   void AddInstalledFont(const LOGFONTA* plf, uint32_t FontType);
-  void GetGBPreference(CFX_ByteString& face, int weight, int picth_family);
-  void GetJapanesePreference(CFX_ByteString& face,
-                             int weight,
-                             int picth_family);
-  CFX_ByteString FindFont(const CFX_ByteString& name);
+  void GetGBPreference(ByteString& face, int weight, int picth_family);
+  void GetJapanesePreference(ByteString& face, int weight, int picth_family);
+  ByteString FindFont(const ByteString& name);
 
   HDC m_hDC;
-  CFX_UnownedPtr<CFX_FontMapper> m_pMapper;
-  CFX_ByteString m_LastFamily;
-  CFX_ByteString m_KaiTi, m_FangSong;
+  UnownedPtr<CFX_FontMapper> m_pMapper;
+  ByteString m_LastFamily;
+  ByteString m_KaiTi, m_FangSong;
 };
 
 int CALLBACK FontEnumProc(const LOGFONTA* plf,
@@ -429,7 +425,7 @@ bool CFX_Win32FontInfo::IsSupportFontFormDiv(const LOGFONTA* plf) {
 
 void CFX_Win32FontInfo::AddInstalledFont(const LOGFONTA* plf,
                                          uint32_t FontType) {
-  CFX_ByteString name(plf->lfFaceName);
+  ByteString name(plf->lfFaceName);
   if (name.GetLength() > 0 && name[0] == '@')
     return;
 
@@ -458,21 +454,21 @@ bool CFX_Win32FontInfo::EnumFontList(CFX_FontMapper* pMapper) {
   return true;
 }
 
-CFX_ByteString CFX_Win32FontInfo::FindFont(const CFX_ByteString& name) {
+ByteString CFX_Win32FontInfo::FindFont(const ByteString& name) {
   if (!m_pMapper)
     return name;
 
   for (size_t i = 0; i < m_pMapper->m_InstalledTTFonts.size(); ++i) {
-    CFX_ByteString thisname = m_pMapper->m_InstalledTTFonts[i];
+    ByteString thisname = m_pMapper->m_InstalledTTFonts[i];
     if (thisname.Left(name.GetLength()) == name)
       return m_pMapper->m_InstalledTTFonts[i];
   }
   for (size_t i = 0; i < m_pMapper->m_LocalizedTTFonts.size(); ++i) {
-    CFX_ByteString thisname = m_pMapper->m_LocalizedTTFonts[i].first;
+    ByteString thisname = m_pMapper->m_LocalizedTTFonts[i].first;
     if (thisname.Left(name.GetLength()) == name)
       return m_pMapper->m_LocalizedTTFonts[i].second;
   }
-  return CFX_ByteString();
+  return ByteString();
 }
 
 void* CFX_Win32FallbackFontInfo::MapFont(int weight,
@@ -500,7 +496,7 @@ void* CFX_Win32FallbackFontInfo::MapFont(int weight,
   return FindFont(weight, bItalic, charset, pitch_family, cstr_face, !bCJK);
 }
 
-void CFX_Win32FontInfo::GetGBPreference(CFX_ByteString& face,
+void CFX_Win32FontInfo::GetGBPreference(ByteString& face,
                                         int weight,
                                         int picth_family) {
   if (face.Contains("KaiTi") || face.Contains("\xbf\xac")) {
@@ -530,7 +526,7 @@ void CFX_Win32FontInfo::GetGBPreference(CFX_ByteString& face,
   }
 }
 
-void CFX_Win32FontInfo::GetJapanesePreference(CFX_ByteString& face,
+void CFX_Win32FontInfo::GetJapanesePreference(ByteString& face,
                                               int weight,
                                               int picth_family) {
   if (face.Contains("Gothic") ||
@@ -573,10 +569,10 @@ void* CFX_Win32FontInfo::MapFont(int weight,
                                  int pitch_family,
                                  const char* cstr_face,
                                  int& iExact) {
-  CFX_ByteString face = cstr_face;
+  ByteString face = cstr_face;
   int iBaseFont;
   for (iBaseFont = 0; iBaseFont < 12; iBaseFont++)
-    if (face == CFX_ByteStringC(g_Base14Substs[iBaseFont].m_pName)) {
+    if (face == ByteStringView(g_Base14Substs[iBaseFont].m_pName)) {
       face = g_Base14Substs[iBaseFont].m_pWinName;
       weight = g_Base14Substs[iBaseFont].m_bBold ? FW_BOLD : FW_NORMAL;
       bItalic = g_Base14Substs[iBaseFont].m_bItalic;
@@ -607,15 +603,15 @@ void* CFX_Win32FontInfo::MapFont(int weight,
   if (face.EqualNoCase(facebuf))
     return hFont;
 
-  CFX_WideString wsFace = CFX_WideString::FromLocal(facebuf);
+  WideString wsFace = WideString::FromLocal(facebuf);
   for (size_t i = 0; i < FX_ArraySize(g_VariantNames); ++i) {
     if (face != g_VariantNames[i].m_pFaceName)
       continue;
 
     const unsigned short* pName = reinterpret_cast<const unsigned short*>(
         g_VariantNames[i].m_pVariantName);
-    FX_STRSIZE len = CFX_WideString::WStringLength(pName);
-    CFX_WideString wsName = CFX_WideString::FromUTF16LE(pName, len);
+    size_t len = WideString::WStringLength(pName);
+    WideString wsName = WideString::FromUTF16LE(pName, len);
     if (wsFace == wsName)
       return hFont;
   }
@@ -665,7 +661,7 @@ uint32_t CFX_Win32FontInfo::GetFontData(void* hFont,
   return size;
 }
 
-bool CFX_Win32FontInfo::GetFaceName(void* hFont, CFX_ByteString* name) {
+bool CFX_Win32FontInfo::GetFaceName(void* hFont, ByteString* name) {
   char facebuf[100];
   HFONT hOldFont = (HFONT)::SelectObject(m_hDC, (HFONT)hFont);
   int ret = ::GetTextFaceA(m_hDC, 100, facebuf);
@@ -702,7 +698,7 @@ std::unique_ptr<IFX_SystemFontInfo> IFX_SystemFontInfo::CreateDefault(
   CHAR windows_path[MAX_PATH] = {};
   DWORD path_len = ::GetWindowsDirectoryA(windows_path, MAX_PATH);
   if (path_len > 0 && path_len < MAX_PATH) {
-    CFX_ByteString fonts_path(windows_path);
+    ByteString fonts_path(windows_path);
     fonts_path += "\\Fonts";
     pInfoFallback->AddPath(fonts_path);
   }
@@ -784,13 +780,12 @@ void CGdiDeviceDriver::RestoreState(bool bKeepSaved) {
     SaveDC(m_hDC);
 }
 
-bool CGdiDeviceDriver::GDI_SetDIBits(
-    const CFX_RetainPtr<CFX_DIBitmap>& pBitmap1,
-    const FX_RECT* pSrcRect,
-    int left,
-    int top) {
+bool CGdiDeviceDriver::GDI_SetDIBits(const RetainPtr<CFX_DIBitmap>& pBitmap1,
+                                     const FX_RECT* pSrcRect,
+                                     int left,
+                                     int top) {
   if (m_DeviceClass == FXDC_PRINTER) {
-    CFX_RetainPtr<CFX_DIBitmap> pBitmap = pBitmap1->FlipImage(false, true);
+    RetainPtr<CFX_DIBitmap> pBitmap = pBitmap1->FlipImage(false, true);
     if (!pBitmap)
       return false;
 
@@ -799,7 +794,7 @@ bool CGdiDeviceDriver::GDI_SetDIBits(
 
     int width = pSrcRect->Width(), height = pSrcRect->Height();
     LPBYTE pBuffer = pBitmap->GetBuffer();
-    CFX_ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
+    ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
     ((BITMAPINFOHEADER*)info.c_str())->biHeight *= -1;
     FX_RECT dst_rect(0, 0, width, height);
     dst_rect.Intersect(0, 0, pBitmap->GetWidth(), pBitmap->GetHeight());
@@ -809,7 +804,7 @@ bool CGdiDeviceDriver::GDI_SetDIBits(
                     dst_height, pBuffer, (BITMAPINFO*)info.c_str(),
                     DIB_RGB_COLORS, SRCCOPY);
   } else {
-    CFX_RetainPtr<CFX_DIBitmap> pBitmap = pBitmap1;
+    RetainPtr<CFX_DIBitmap> pBitmap = pBitmap1;
     if (pBitmap->IsCmykImage()) {
       pBitmap = pBitmap->CloneConvert(FXDIB_Rgb);
       if (!pBitmap)
@@ -817,7 +812,7 @@ bool CGdiDeviceDriver::GDI_SetDIBits(
     }
     int width = pSrcRect->Width(), height = pSrcRect->Height();
     LPBYTE pBuffer = pBitmap->GetBuffer();
-    CFX_ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
+    ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
     ::SetDIBitsToDevice(m_hDC, left, top, width, height, pSrcRect->left,
                         pBitmap->GetHeight() - pSrcRect->bottom, 0,
                         pBitmap->GetHeight(), pBuffer,
@@ -827,20 +822,20 @@ bool CGdiDeviceDriver::GDI_SetDIBits(
 }
 
 bool CGdiDeviceDriver::GDI_StretchDIBits(
-    const CFX_RetainPtr<CFX_DIBitmap>& pBitmap1,
+    const RetainPtr<CFX_DIBitmap>& pBitmap1,
     int dest_left,
     int dest_top,
     int dest_width,
     int dest_height,
     uint32_t flags) {
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap = pBitmap1;
+  RetainPtr<CFX_DIBitmap> pBitmap = pBitmap1;
   if (!pBitmap || dest_width == 0 || dest_height == 0)
     return false;
 
   if (pBitmap->IsCmykImage() && !pBitmap->ConvertFormat(FXDIB_Rgb))
     return false;
 
-  CFX_ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
+  ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
   if ((int64_t)abs(dest_width) * abs(dest_height) <
           (int64_t)pBitmap1->GetWidth() * pBitmap1->GetHeight() * 4 ||
       (flags & FXDIB_INTERPOL) || (flags & FXDIB_BICUBIC_INTERPOL)) {
@@ -848,13 +843,13 @@ bool CGdiDeviceDriver::GDI_StretchDIBits(
   } else {
     SetStretchBltMode(m_hDC, COLORONCOLOR);
   }
-  CFX_RetainPtr<CFX_DIBitmap> pToStrechBitmap = pBitmap;
+  RetainPtr<CFX_DIBitmap> pToStrechBitmap = pBitmap;
   if (m_DeviceClass == FXDC_PRINTER &&
       ((int64_t)pBitmap->GetWidth() * pBitmap->GetHeight() >
        (int64_t)abs(dest_width) * abs(dest_height))) {
     pToStrechBitmap = pBitmap->StretchTo(dest_width, dest_height, 0, nullptr);
   }
-  CFX_ByteString toStrechBitmapInfo =
+  ByteString toStrechBitmapInfo =
       CFX_WindowsDIB::GetBitmapInfo(pToStrechBitmap);
   ::StretchDIBits(m_hDC, dest_left, dest_top, dest_width, dest_height, 0, 0,
                   pToStrechBitmap->GetWidth(), pToStrechBitmap->GetHeight(),
@@ -865,14 +860,14 @@ bool CGdiDeviceDriver::GDI_StretchDIBits(
 }
 
 bool CGdiDeviceDriver::GDI_StretchBitMask(
-    const CFX_RetainPtr<CFX_DIBitmap>& pBitmap1,
+    const RetainPtr<CFX_DIBitmap>& pBitmap1,
     int dest_left,
     int dest_top,
     int dest_width,
     int dest_height,
     uint32_t bitmap_color,
     uint32_t flags) {
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap = pBitmap1;
+  RetainPtr<CFX_DIBitmap> pBitmap = pBitmap1;
   if (!pBitmap || dest_width == 0 || dest_height == 0)
     return false;
 
@@ -1164,7 +1159,7 @@ CGdiDisplayDriver::CGdiDisplayDriver(HDC hDC)
 
 CGdiDisplayDriver::~CGdiDisplayDriver() {}
 
-bool CGdiDisplayDriver::GetDIBits(const CFX_RetainPtr<CFX_DIBitmap>& pBitmap,
+bool CGdiDisplayDriver::GetDIBits(const RetainPtr<CFX_DIBitmap>& pBitmap,
                                   int left,
                                   int top) {
   bool ret = false;
@@ -1204,7 +1199,7 @@ bool CGdiDisplayDriver::GetDIBits(const CFX_RetainPtr<CFX_DIBitmap>& pBitmap,
   return ret;
 }
 
-bool CGdiDisplayDriver::SetDIBits(const CFX_RetainPtr<CFX_DIBSource>& pSource,
+bool CGdiDisplayDriver::SetDIBits(const RetainPtr<CFX_DIBSource>& pSource,
                                   uint32_t color,
                                   const FX_RECT* pSrcRect,
                                   int left,
@@ -1245,14 +1240,14 @@ bool CGdiDisplayDriver::SetDIBits(const CFX_RetainPtr<CFX_DIBSource>& pSource,
     return SetDIBits(bitmap, 0, &src_rect, left, top, FXDIB_BLEND_NORMAL);
   }
   CFX_DIBExtractor temp(pSource);
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap = temp.GetBitmap();
+  RetainPtr<CFX_DIBitmap> pBitmap = temp.GetBitmap();
   if (!pBitmap)
     return false;
   return GDI_SetDIBits(pBitmap, pSrcRect, left, top);
 }
 
 bool CGdiDisplayDriver::UseFoxitStretchEngine(
-    const CFX_RetainPtr<CFX_DIBSource>& pSource,
+    const RetainPtr<CFX_DIBSource>& pSource,
     uint32_t color,
     int dest_left,
     int dest_top,
@@ -1268,7 +1263,7 @@ bool CGdiDisplayDriver::UseFoxitStretchEngine(
     dest_top += dest_height;
 
   bitmap_clip.Offset(-dest_left, -dest_top);
-  CFX_RetainPtr<CFX_DIBitmap> pStretched =
+  RetainPtr<CFX_DIBitmap> pStretched =
       pSource->StretchTo(dest_width, dest_height, render_flags, &bitmap_clip);
   if (!pStretched)
     return true;
@@ -1278,16 +1273,15 @@ bool CGdiDisplayDriver::UseFoxitStretchEngine(
                    pClipRect->top, FXDIB_BLEND_NORMAL);
 }
 
-bool CGdiDisplayDriver::StretchDIBits(
-    const CFX_RetainPtr<CFX_DIBSource>& pSource,
-    uint32_t color,
-    int dest_left,
-    int dest_top,
-    int dest_width,
-    int dest_height,
-    const FX_RECT* pClipRect,
-    uint32_t flags,
-    int blend_type) {
+bool CGdiDisplayDriver::StretchDIBits(const RetainPtr<CFX_DIBSource>& pSource,
+                                      uint32_t color,
+                                      int dest_left,
+                                      int dest_top,
+                                      int dest_width,
+                                      int dest_height,
+                                      const FX_RECT* pClipRect,
+                                      uint32_t flags,
+                                      int blend_type) {
   ASSERT(pSource && pClipRect);
   if (flags || dest_width > 10000 || dest_width < -10000 ||
       dest_height > 10000 || dest_height < -10000) {
@@ -1304,7 +1298,7 @@ bool CGdiDisplayDriver::StretchDIBits(
     clip_rect.Intersect(*pClipRect);
     clip_rect.Offset(-image_rect.left, -image_rect.top);
     int clip_width = clip_rect.Width(), clip_height = clip_rect.Height();
-    CFX_RetainPtr<CFX_DIBitmap> pStretched(
+    RetainPtr<CFX_DIBitmap> pStretched(
         pSource->StretchTo(dest_width, dest_height, flags, &clip_rect));
     if (!pStretched)
       return true;
@@ -1328,7 +1322,7 @@ bool CGdiDisplayDriver::StretchDIBits(
         (CWin32Platform*)CFX_GEModule::Get()->GetPlatformData();
     if (pPlatform->m_GdiplusExt.IsAvailable() && !pSource->IsCmykImage()) {
       CFX_DIBExtractor temp(pSource);
-      CFX_RetainPtr<CFX_DIBitmap> pBitmap = temp.GetBitmap();
+      RetainPtr<CFX_DIBitmap> pBitmap = temp.GetBitmap();
       if (!pBitmap)
         return false;
       return pPlatform->m_GdiplusExt.StretchDIBits(
@@ -1339,14 +1333,14 @@ bool CGdiDisplayDriver::StretchDIBits(
                                  dest_width, dest_height, pClipRect, flags);
   }
   CFX_DIBExtractor temp(pSource);
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap = temp.GetBitmap();
+  RetainPtr<CFX_DIBitmap> pBitmap = temp.GetBitmap();
   if (!pBitmap)
     return false;
   return GDI_StretchDIBits(pBitmap, dest_left, dest_top, dest_width,
                            dest_height, flags);
 }
 
-bool CGdiDisplayDriver::StartDIBits(const CFX_RetainPtr<CFX_DIBSource>& pBitmap,
+bool CGdiDisplayDriver::StartDIBits(const RetainPtr<CFX_DIBSource>& pBitmap,
                                     int bitmap_alpha,
                                     uint32_t color,
                                     const CFX_Matrix* pMatrix,

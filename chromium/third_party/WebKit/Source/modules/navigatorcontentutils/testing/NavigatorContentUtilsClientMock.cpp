@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "NavigatorContentUtilsClientMock.h"
+#include "modules/navigatorcontentutils/testing/NavigatorContentUtilsClientMock.h"
 
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
-#include "platform/weborigin/KURL.h"
 #include "platform/wtf/text/StringHash.h"
 
 namespace blink {

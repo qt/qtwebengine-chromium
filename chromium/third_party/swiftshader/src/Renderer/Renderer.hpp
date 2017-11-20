@@ -39,8 +39,6 @@ namespace sw
 
 	extern int batchSize;
 	extern int threadCount;
-	extern int unitCount;
-	extern int clusterCount;
 
 	enum TranscendentalPrecision
 	{
@@ -110,8 +108,8 @@ namespace sw
 		}
 
 		bool building;
-		volatile int reference;
-		volatile unsigned int data;
+		AtomicInt reference;
+		AtomicInt data;
 
 		const Type type;
 	};
@@ -213,8 +211,8 @@ namespace sw
 
 		~DrawCall();
 
-		DrawType drawType;
-		int batchSize;
+		AtomicInt drawType;
+		AtomicInt batchSize;
 
 		Routine *vertexRoutine;
 		Routine *setupRoutine;
@@ -247,11 +245,11 @@ namespace sw
 
 		std::list<Query*> *queries;
 
-		int clipFlags;
+		AtomicInt clipFlags;
 
-		volatile int primitive;    // Current primitive to enter pipeline
-		volatile int count;        // Number of primitives to render
-		volatile int references;   // Remaining references to this draw call, 0 when done drawing, -1 when resources unlocked and slot is free
+		AtomicInt primitive;    // Current primitive to enter pipeline
+		AtomicInt count;        // Number of primitives to render
+		AtomicInt references;   // Remaining references to this draw call, 0 when done drawing, -1 when resources unlocked and slot is free
 
 		DrawData *data;
 	};
@@ -279,9 +277,9 @@ namespace sw
 				SUSPEND
 			};
 
-			volatile Type type;
-			volatile int primitiveUnit;
-			volatile int pixelCluster;
+			AtomicInt type;
+			AtomicInt primitiveUnit;
+			AtomicInt pixelCluster;
 		};
 
 		struct PrimitiveProgress
@@ -295,11 +293,11 @@ namespace sw
 				references = 0;
 			}
 
-			volatile int drawCall;
-			volatile int firstPrimitive;
-			volatile int primitiveCount;
-			volatile int visible;
-			volatile int references;
+			AtomicInt drawCall;
+			AtomicInt firstPrimitive;
+			AtomicInt primitiveCount;
+			AtomicInt visible;
+			AtomicInt references;
 		};
 
 		struct PixelProgress
@@ -311,9 +309,9 @@ namespace sw
 				executing = false;
 			}
 
-			volatile int drawCall;
-			volatile int processedPrimitives;
-			volatile bool executing;
+			AtomicInt drawCall;
+			AtomicInt processedPrimitives;
+			AtomicInt executing;
 		};
 
 	public:
@@ -405,6 +403,8 @@ namespace sw
 			void resetTimers();
 		#endif
 
+		static int getClusterCount() { return clusterCount; }
+
 	private:
 		static void threadFunction(void *parameters);
 		void threadLoop(int threadIndex);
@@ -449,8 +449,8 @@ namespace sw
 		Plane clipPlane[MAX_CLIP_PLANES];   // Tranformed to clip space
 		bool updateClipPlanes;
 
-		volatile bool exitThreads;
-		volatile int threadsAwake;
+		AtomicInt exitThreads;
+		AtomicInt threadsAwake;
 		Thread *worker[16];
 		Event *resume[16];         // Events for resuming threads
 		Event *suspend[16];        // Events for suspending threads
@@ -460,16 +460,26 @@ namespace sw
 		PixelProgress pixelProgress[16];
 		Task task[16];   // Current tasks for threads
 
-		enum {DRAW_COUNT = 16};   // Number of draw calls buffered
+		enum {
+			DRAW_COUNT = 16,   // Number of draw calls buffered (must be power of 2)
+			DRAW_COUNT_BITS = DRAW_COUNT - 1,
+		};
 		DrawCall *drawCall[DRAW_COUNT];
 		DrawCall *drawList[DRAW_COUNT];
 
-		volatile int currentDraw;
-		volatile int nextDraw;
+		AtomicInt currentDraw;
+		AtomicInt nextDraw;
 
-		Task taskQueue[32];
-		unsigned int qHead;
-		unsigned int qSize;
+		enum {
+			TASK_COUNT = 32,   // Size of the task queue (must be power of 2)
+			TASK_COUNT_BITS = TASK_COUNT - 1,
+		};
+		Task taskQueue[TASK_COUNT];
+		AtomicInt qHead;
+		AtomicInt qSize;
+
+		static AtomicInt unitCount;
+		static AtomicInt clusterCount;
 
 		MutexLock schedulerMutex;
 

@@ -24,7 +24,6 @@
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/network_service.mojom.h"
 #include "content/public/common/resource_type.h"
-#include "content/public/common/sandbox_type.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.mojom.h"
 #include "media/media_features.h"
@@ -33,6 +32,7 @@
 #include "net/cookies/canonical_cookie.h"
 #include "services/service_manager/embedder/embedded_service_info.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
+#include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
@@ -74,6 +74,7 @@ class ScopedInterfaceEndpointHandle;
 }
 
 namespace service_manager {
+class Identity;
 class Service;
 struct BindSourceInfo;
 }
@@ -82,11 +83,13 @@ namespace net {
 class ClientCertIdentity;
 using ClientCertIdentityList = std::vector<std::unique_ptr<ClientCertIdentity>>;
 class CookieOptions;
+class HttpRequestHeaders;
 class NetLog;
 class SSLCertRequestInfo;
 class SSLInfo;
 class URLRequest;
 class URLRequestContext;
+class URLRequestContextGetter;
 }
 
 namespace rappor {
@@ -172,7 +175,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // called on any thread.
   // Note: see related BrowserThread::PostAfterStartupTask.
   virtual void PostAfterStartupTask(
-      const tracked_objects::Location& from_here,
+      const base::Location& from_here,
       const scoped_refptr<base::TaskRunner>& task_runner,
       base::OnceClosure task);
 
@@ -279,6 +282,12 @@ class CONTENT_EXPORT ContentBrowserClient {
       const GURL& url,
       SiteInstance* parent_site_instance);
 
+  // Temporary hack to determine whether to skip OOPIFs on the new tab page.
+  // TODO(creis): Remove when https://crbug.com/566091 is fixed.
+  virtual bool ShouldStayInParentProcessForNTP(
+      const GURL& url,
+      SiteInstance* parent_site_instance);
+
   // Returns whether a new view for a given |site_url| can be launched in a
   // given |process_host|.
   virtual bool IsSuitableHost(RenderProcessHost* process_host,
@@ -329,6 +338,13 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
                                               int child_process_id) {}
 
+  // Allows the content embedder to adjust the command line arguments for
+  // a utility process started to run a service. This is called on a background
+  // thread.
+  virtual void AdjustUtilityServiceProcessCommandLine(
+      const service_manager::Identity& identity,
+      base::CommandLine* command_line) {}
+
   // Returns the locale used by the application.
   // This is called on the UI and IO threads.
   virtual std::string GetApplicationLocale();
@@ -342,7 +358,8 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Returns the fully qualified path to the log file name, or an empty path.
   // This function is used by the sandbox to allow write access to the log.
-  virtual base::FilePath GetLoggingFileName();
+  virtual base::FilePath GetLoggingFileName(
+      const base::CommandLine& command_line);
 
   // Allow the embedder to control if an AppCache can be used for the given url.
   // This is called on the IO thread.
@@ -362,6 +379,12 @@ class CONTENT_EXPORT ContentBrowserClient {
       const base::Callback<WebContents*(void)>& wc_getter);
 
   virtual bool IsDataSaverEnabled(BrowserContext* context);
+
+  // Allow the embedder to return additional headers that should be sent when
+  // fetching |url|. May return a nullptr.
+  virtual std::unique_ptr<net::HttpRequestHeaders>
+  GetAdditionalNavigationRequestHeaders(BrowserContext* context,
+                                        const GURL& url) const;
 
   // Allow the embedder to control if the given cookie can be read.
   // This is called on the IO thread.
@@ -434,6 +457,21 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual net::URLRequestContext* OverrideRequestContextForURL(
       const GURL& url, ResourceContext* context);
 
+  // Allows the embedder to provide a URLRequestContextGetter to use for network
+  // geolocation queries.
+  // * May be called from any thread. A URLRequestContextGetter is then provided
+  //   by invoking |callback| on the calling thread.
+  // * Default implementation provides nullptr URLRequestContextGetter.
+  virtual void GetGeolocationRequestContext(
+      base::OnceCallback<void(scoped_refptr<net::URLRequestContextGetter>)>
+          callback);
+
+  // Allows an embedder to provide a Google API Key to use for network
+  // geolocation queries.
+  // * May be called from any thread.
+  // * Default implementation returns empty string, meaning send no API key.
+  virtual std::string GetGeolocationApiKey();
+
   // Allow the embedder to specify a string version of the storage partition
   // config with a site.
   virtual std::string GetStoragePartitionIdForSite(
@@ -490,7 +528,6 @@ class CONTENT_EXPORT ContentBrowserClient {
       const net::SSLInfo& ssl_info,
       const GURL& request_url,
       ResourceType resource_type,
-      bool overridable,
       bool strict_enforcement,
       bool expired_previous_decision,
       const base::Callback<void(CertificateRequestResultType)>& callback);
@@ -698,17 +735,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Manager.
   virtual void RegisterInProcessServices(StaticServiceMap* services) {}
 
-  using OutOfProcessServiceMap =
-      std::map<std::string, std::pair<base::string16, SandboxType>>;
+  using OutOfProcessServiceMap = std::map<std::string, base::string16>;
 
-  // Registers services to be loaded out of the browser process, in an
-  // utility process. The value of each map entry should be a { process name,
-  // sandbox type } pair to use for the service's host process when launched.
-  //
-  // WARNING: SANDBOX_TYPE_NO_SANDBOX is NOT recommended as it creates an
-  // unsandboxed process! If a service needs another service that is only
-  // available out of the sandbox, it could ask the browser process to provide
-  // it. Only use this method when that approach does not work.
+  // Registers services to be loaded out of the browser process in an
+  // utility process. The value of each map entry should be a process name,
+  // to use for the service's host process when launched.
   virtual void RegisterOutOfProcessServices(OutOfProcessServiceMap* services) {}
 
   // Allow the embedder to provide a dictionary loaded from a JSON file
@@ -857,16 +888,17 @@ class CONTENT_EXPORT ContentBrowserClient {
       bool in_memory,
       const base::FilePath& relative_partition_path);
 
-  // Called when a main-frame navigation to |url| commits using a legacy
-  // Symantec certificate that will be distrusted in future. Allows the embedder
-  // to override the message that is added to the console to inform developers
-  // that their certificate will be distrusted in future. If the method returns
-  // true, then |*console_message| will be printed to the console; otherwise a
-  // generic mesage will be used.
-  virtual bool OverrideLegacySymantecCertConsoleMessage(
-      const GURL& url,
-      const scoped_refptr<net::X509Certificate>& cert,
-      std::string* console_messsage);
+#if defined(OS_ANDROID)
+  // Only used by Android WebView.
+  virtual bool ShouldOverrideUrlLoading(int frame_tree_node_id,
+                                        bool browser_initiated,
+                                        const GURL& gurl,
+                                        const std::string& request_method,
+                                        bool has_user_gesture,
+                                        bool is_redirect,
+                                        bool is_main_frame,
+                                        ui::PageTransition transition);
+#endif
 };
 
 }  // namespace content

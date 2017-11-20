@@ -35,14 +35,12 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "build/build_config.h"
-#include "core/HTMLNames.h"
-#include "core/InputTypeNames.h"
 #include "core/css/CSSFontSelector.h"
+#include "core/css/StyleEngine.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/StyleEngine.h"
 #include "core/dom/TaskRunnerHelper.h"
 #include "core/fileapi/File.h"
 #include "core/frame/LocalFrame.h"
@@ -50,16 +48,19 @@
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/HTMLInputElement.h"
-#include "core/html/HTMLSelectElement.h"
 #include "core/html/ImageData.h"
 #include "core/html/canvas/CanvasAsyncBlobCreator.h"
 #include "core/html/canvas/CanvasContextCreationAttributes.h"
 #include "core/html/canvas/CanvasFontCache.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/canvas/CanvasRenderingContextFactory.h"
+#include "core/html/forms/HTMLInputElement.h"
+#include "core/html/forms/HTMLSelectElement.h"
+#include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html_names.h"
 #include "core/imagebitmap/ImageBitmap.h"
 #include "core/imagebitmap/ImageBitmapOptions.h"
+#include "core/input_type_names.h"
 #include "core/layout/HitTestCanvasResult.h"
 #include "core/layout/LayoutHTMLCanvas.h"
 #include "core/layout/api/LayoutViewItem.h"
@@ -68,8 +69,8 @@
 #include "core/paint/PaintTiming.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "core/probe/CoreProbes.h"
+#include "gpu/config/gpu_feature_info.h"
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/CanvasHeuristicParameters.h"
 #include "platform/graphics/CanvasMetrics.h"
 #include "platform/graphics/GraphicsLayer.h"
@@ -80,6 +81,7 @@
 #include "platform/graphics/gpu/SharedGpuContext.h"
 #include "platform/graphics/paint/PaintCanvas.h"
 #include "platform/image-encoders/ImageEncoderUtils.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/transforms/AffineTransform.h"
 #include "platform/wtf/CheckedNumeric.h"
 #include "platform/wtf/PtrUtil.h"
@@ -194,24 +196,26 @@ Node::InsertionNotificationRequest HTMLCanvasElement::InsertedInto(
   return HTMLElement::InsertedInto(node);
 }
 
-void HTMLCanvasElement::setHeight(int value, ExceptionState& exception_state) {
+void HTMLCanvasElement::setHeight(unsigned value,
+                                  ExceptionState& exception_state) {
   if (IsPlaceholderRegistered()) {
     exception_state.ThrowDOMException(
         kInvalidStateError,
         "Cannot resize canvas after call to transferControlToOffscreen().");
     return;
   }
-  SetIntegralAttribute(heightAttr, value);
+  SetUnsignedIntegralAttribute(heightAttr, value, kDefaultHeight);
 }
 
-void HTMLCanvasElement::setWidth(int value, ExceptionState& exception_state) {
+void HTMLCanvasElement::setWidth(unsigned value,
+                                 ExceptionState& exception_state) {
   if (IsPlaceholderRegistered()) {
     exception_state.ThrowDOMException(
         kInvalidStateError,
         "Cannot resize canvas after call to transferControlToOffscreen().");
     return;
   }
-  SetIntegralAttribute(widthAttr, value);
+  SetUnsignedIntegralAttribute(widthAttr, value, kDefaultWidth);
 }
 
 void HTMLCanvasElement::SetSize(const IntSize& new_size) {
@@ -322,18 +326,34 @@ bool HTMLCanvasElement::IsAccelerated() const {
   return context_ && context_->IsAccelerated();
 }
 
-bool HTMLCanvasElement::IsWebGLAllowed() const {
+bool HTMLCanvasElement::IsWebGL1Enabled() const {
   Document& document = GetDocument();
   LocalFrame* frame = document.GetFrame();
-  if (!frame)
-    return false;
-  Settings* settings = frame->GetSettings();
-  // The LocalFrameClient might block creation of a new WebGL context despite
-  // the page settings; in particular, if WebGL contexts were lost one or more
-  // times via the GL_ARB_robustness extension.
-  if (!frame->Client()->AllowWebGL(settings && settings->GetWebGLEnabled()))
-    return false;
-  return true;
+  if (frame) {
+    Settings* settings = frame->GetSettings();
+    if (settings && settings->GetWebGL1Enabled())
+      return true;
+  }
+  return false;
+}
+
+bool HTMLCanvasElement::IsWebGL2Enabled() const {
+  Document& document = GetDocument();
+  LocalFrame* frame = document.GetFrame();
+  if (frame) {
+    Settings* settings = frame->GetSettings();
+    if (settings && settings->GetWebGL2Enabled())
+      return true;
+  }
+  return false;
+}
+
+bool HTMLCanvasElement::IsWebGLBlocked() const {
+  Document& document = GetDocument();
+  LocalFrame* frame = document.GetFrame();
+  if (frame && frame->Client()->ShouldBlockWebGL())
+    return true;
+  return false;
 }
 
 void HTMLCanvasElement::DidDraw(const FloatRect& rect) {
@@ -466,15 +486,18 @@ void HTMLCanvasElement::Reset() {
 
   dirty_rect_ = FloatRect();
 
-  bool ok;
   bool had_image_buffer = GetImageBuffer();
 
-  int w = getAttribute(widthAttr).ToInt(&ok);
-  if (!ok || w < 0)
+  unsigned w = 0;
+  AtomicString value = getAttribute(widthAttr);
+  if (value.IsEmpty() || !ParseHTMLNonNegativeInteger(value, w) ||
+      w > 0x7fffffffu)
     w = kDefaultWidth;
 
-  int h = getAttribute(heightAttr).ToInt(&ok);
-  if (!ok || h < 0)
+  unsigned h = 0;
+  value = getAttribute(heightAttr);
+  if (value.IsEmpty() || !ParseHTMLNonNegativeInteger(value, h) ||
+      h > 0x7fffffffu)
     h = kDefaultHeight;
 
   if (Is2d()) {
@@ -491,7 +514,7 @@ void HTMLCanvasElement::Reset() {
       !GetOrCreateImageBuffer()->IsRecording()) {
     if (!image_buffer_is_clear_) {
       image_buffer_is_clear_ = true;
-      context_->clearRect(0, 0, width(), height());
+      context_->ClearRect(0, 0, width(), height());
     }
     return;
   }
@@ -526,9 +549,9 @@ bool HTMLCanvasElement::PaintsIntoCanvasBuffer() const {
   return true;
 }
 
-CanvasColorParams HTMLCanvasElement::GetCanvasColorParams() const {
+CanvasColorParams HTMLCanvasElement::ColorParams() const {
   if (context_)
-    return context_->color_params();
+    return context_->ColorParams();
   return CanvasColorParams();
 }
 
@@ -591,7 +614,8 @@ void HTMLCanvasElement::Paint(GraphicsContext& context, const LayoutRect& r) {
 
   if (PlaceholderFrame()) {
     DCHECK(GetDocument().Printing());
-    context.DrawImage(PlaceholderFrame().Get(), PixelSnappedIntRect(r));
+    context.DrawImage(PlaceholderFrame().get(), Image::kSyncDecode,
+                      PixelSnappedIntRect(r));
     return;
   }
 
@@ -889,6 +913,28 @@ bool HTMLCanvasElement::ShouldAccelerate(AccelerationCriteria criteria) const {
       return false;
   }
 
+  // Avoid creating |contextProvider| until we're sure we want to try use it,
+  // since it costs us GPU memory.
+  WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper =
+      SharedGpuContext::ContextProviderWrapper();
+  if (!context_provider_wrapper) {
+    CanvasMetrics::CountCanvasContextUsage(
+        CanvasMetrics::kAccelerated2DCanvasGPUContextLost);
+    return false;
+  }
+
+  if (context_provider_wrapper->ContextProvider()->IsSoftwareRendering())
+    return false;  // Don't use accelerated canvas with swiftshader.
+
+  const gpu::GpuFeatureInfo& gpu_feature_info =
+      context_provider_wrapper->ContextProvider()->GetGpuFeatureInfo();
+  if (gpu::kGpuFeatureStatusEnabled !=
+      gpu_feature_info
+          .status_values[gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS]) {
+    // Accelerated 2D canvas is blacklisted.
+    return false;
+  }
+
   return true;
 }
 
@@ -896,7 +942,7 @@ bool HTMLCanvasElement::ShouldUseDisplayList() {
   // Rasterization of web contents will blend in the output space. Only embed
   // the canvas as a display list if it intended to do output space blending as
   // well.
-  if (!GetCanvasColorParams().UsesOutputSpaceBlending())
+  if (ColorParams().LinearPixelMath())
     return false;
 
   if (RuntimeEnabledFeatures::ForceDisplayList2dCanvasEnabled())
@@ -920,42 +966,28 @@ bool HTMLCanvasElement::ShouldUseDisplayList() {
 }
 
 std::unique_ptr<ImageBufferSurface>
-HTMLCanvasElement::CreateWebGLImageBufferSurface(OpacityMode opacity_mode) {
+HTMLCanvasElement::CreateWebGLImageBufferSurface() {
   DCHECK(Is3d());
   // If 3d, but the use of the canvas will be for non-accelerated content
   // then make a non-accelerated ImageBuffer. This means copying the internal
   // Image will require a pixel readback, but that is unavoidable in this case.
-  auto surface = WTF::MakeUnique<AcceleratedImageBufferSurface>(
-      Size(), opacity_mode, GetCanvasColorParams());
+  auto surface =
+      WTF::MakeUnique<AcceleratedImageBufferSurface>(Size(), ColorParams());
   if (surface->IsValid())
     return std::move(surface);
   return nullptr;
 }
 
 std::unique_ptr<ImageBufferSurface>
-HTMLCanvasElement::CreateAcceleratedImageBufferSurface(OpacityMode opacity_mode,
-                                                       int* msaa_sample_count) {
+HTMLCanvasElement::CreateAcceleratedImageBufferSurface(int* msaa_sample_count) {
   if (GetDocument().GetSettings()) {
     *msaa_sample_count =
         GetDocument().GetSettings()->GetAccelerated2dCanvasMSAASampleCount();
   }
 
-  // Avoid creating |contextProvider| until we're sure we want to try use it,
-  // since it costs us GPU memory.
-  WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper =
-      SharedGpuContext::ContextProviderWrapper();
-  if (!context_provider_wrapper) {
-    CanvasMetrics::CountCanvasContextUsage(
-        CanvasMetrics::kAccelerated2DCanvasGPUContextLost);
-    return nullptr;
-  }
-
-  if (context_provider_wrapper->ContextProvider()->IsSoftwareRendering())
-    return nullptr;  // Don't use accelerated canvas with swiftshader.
-
   auto surface = WTF::MakeUnique<Canvas2DLayerBridge>(
-      Size(), *msaa_sample_count, opacity_mode,
-      Canvas2DLayerBridge::kEnableAcceleration, GetCanvasColorParams());
+      Size(), *msaa_sample_count, Canvas2DLayerBridge::kEnableAcceleration,
+      ColorParams());
   if (!surface->IsValid()) {
     CanvasMetrics::CountCanvasContextUsage(
         CanvasMetrics::kGPUAccelerated2DCanvasImageBufferCreationFailed);
@@ -971,12 +1003,10 @@ HTMLCanvasElement::CreateAcceleratedImageBufferSurface(OpacityMode opacity_mode,
 }
 
 std::unique_ptr<ImageBufferSurface>
-HTMLCanvasElement::CreateUnacceleratedImageBufferSurface(
-    OpacityMode opacity_mode) {
+HTMLCanvasElement::CreateUnacceleratedImageBufferSurface() {
   if (ShouldUseDisplayList()) {
     auto surface = WTF::MakeUnique<RecordingImageBufferSurface>(
-        Size(), RecordingImageBufferSurface::kAllowFallback, opacity_mode,
-        GetCanvasColorParams());
+        Size(), RecordingImageBufferSurface::kAllowFallback, ColorParams());
     if (surface->IsValid()) {
       CanvasMetrics::CountCanvasContextUsage(
           CanvasMetrics::kDisplayList2DCanvasImageBufferCreated);
@@ -987,8 +1017,7 @@ HTMLCanvasElement::CreateUnacceleratedImageBufferSurface(
   }
 
   auto surface = WTF::MakeUnique<Canvas2DLayerBridge>(
-      Size(), 0, opacity_mode, Canvas2DLayerBridge::kDisableAcceleration,
-      GetCanvasColorParams());
+      Size(), 0, Canvas2DLayerBridge::kDisableAcceleration, ColorParams());
   if (surface->IsValid()) {
     CanvasMetrics::CountCanvasContextUsage(
         CanvasMetrics::kUnaccelerated2DCanvasImageBufferCreated);
@@ -1016,23 +1045,19 @@ void HTMLCanvasElement::CreateImageBufferInternal(
   if (!ImageBuffer::CanCreateImageBuffer(Size()))
     return;
 
-  OpacityMode opacity_mode = !context_ || context_->CreationAttributes().alpha()
-                                 ? kNonOpaque
-                                 : kOpaque;
   int msaa_sample_count = 0;
   std::unique_ptr<ImageBufferSurface> surface;
   if (external_surface) {
     if (external_surface->IsValid())
       surface = std::move(external_surface);
   } else if (Is3d()) {
-    surface = CreateWebGLImageBufferSurface(opacity_mode);
+    surface = CreateWebGLImageBufferSurface();
   } else {
     if (ShouldAccelerate(kNormalAccelerationCriteria)) {
-      surface =
-          CreateAcceleratedImageBufferSurface(opacity_mode, &msaa_sample_count);
+      surface = CreateAcceleratedImageBufferSurface(&msaa_sample_count);
     }
     if (!surface) {
-      surface = CreateUnacceleratedImageBufferSurface(opacity_mode);
+      surface = CreateUnacceleratedImageBufferSurface();
     }
   }
   if (!surface)
@@ -1098,7 +1123,7 @@ void HTMLCanvasElement::UpdateExternallyAllocatedMemory() const {
 
   // Multiplying number of buffers by bytes per pixel
   CheckedNumeric<intptr_t> checked_externally_allocated_memory =
-      buffer_count * GetCanvasColorParams().BytesPerPixel();
+      buffer_count * ColorParams().BytesPerPixel();
   if (Is3d()) {
     checked_externally_allocated_memory +=
         context_->ExternallyAllocatedBytesPerPixel();
@@ -1145,8 +1170,8 @@ ImageBuffer* HTMLCanvasElement::GetOrCreateImageBuffer() {
 void HTMLCanvasElement::CreateImageBufferUsingSurfaceForTesting(
     std::unique_ptr<ImageBufferSurface> surface) {
   DiscardImageBuffer();
-  SetIntegralAttribute(widthAttr, surface->size().Width());
-  SetIntegralAttribute(heightAttr, surface->size().Height());
+  SetIntegralAttribute(widthAttr, surface->Size().Width());
+  SetIntegralAttribute(heightAttr, surface->Size().Height());
   CreateImageBufferInternal(std::move(surface));
 }
 
@@ -1156,9 +1181,8 @@ void HTMLCanvasElement::EnsureUnacceleratedImageBuffer() {
       did_fail_to_create_image_buffer_)
     return;
   DiscardImageBuffer();
-  OpacityMode opacity_mode =
-      context_->CreationAttributes().alpha() ? kNonOpaque : kOpaque;
-  image_buffer_ = ImageBuffer::Create(Size(), opacity_mode);
+  image_buffer_ = ImageBuffer::Create(Size(), kInitializeImagePixels,
+                                      context_->ColorParams());
   did_fail_to_create_image_buffer_ = !image_buffer_;
 }
 
@@ -1201,7 +1225,7 @@ void HTMLCanvasElement::DiscardImageBuffer() {
 
 void HTMLCanvasElement::ClearCopiedImage() {
   if (copied_image_) {
-    copied_image_.Clear();
+    copied_image_ = nullptr;
     UpdateExternallyAllocatedMemory();
   }
 }
@@ -1250,11 +1274,9 @@ void HTMLCanvasElement::WillDrawImageTo2DContext(CanvasImageSource* source) {
       source->IsAccelerated() && GetOrCreateImageBuffer() &&
       !GetImageBuffer()->IsAccelerated() &&
       ShouldAccelerate(kIgnoreResourceLimitCriteria)) {
-    OpacityMode opacity_mode =
-        context_->CreationAttributes().alpha() ? kNonOpaque : kOpaque;
     int msaa_sample_count = 0;
     std::unique_ptr<ImageBufferSurface> surface =
-        CreateAcceleratedImageBufferSurface(opacity_mode, &msaa_sample_count);
+        CreateAcceleratedImageBufferSurface(&msaa_sample_count);
     if (surface) {
       GetOrCreateImageBuffer()->SetSurface(std::move(surface));
       SetNeedsCompositingUpdate();
@@ -1393,38 +1415,36 @@ bool HTMLCanvasElement::IsSupportedInteractiveCanvasFallback(
 
   // An a element that represents a hyperlink and that does not have any img
   // descendants.
-  if (isHTMLAnchorElement(element))
+  if (IsHTMLAnchorElement(element))
     return !Traversal<HTMLImageElement>::FirstWithin(element);
 
   // A button element
-  if (isHTMLButtonElement(element))
+  if (IsHTMLButtonElement(element))
     return true;
 
   // An input element whose type attribute is in one of the Checkbox or Radio
   // Button states.  An input element that is a button but its type attribute is
   // not in the Image Button state.
-  if (isHTMLInputElement(element)) {
-    const HTMLInputElement& input_element = toHTMLInputElement(element);
-    if (input_element.type() == InputTypeNames::checkbox ||
-        input_element.type() == InputTypeNames::radio ||
-        input_element.IsTextButton())
+  if (auto* input_element = ToHTMLInputElementOrNull(element)) {
+    if (input_element->type() == InputTypeNames::checkbox ||
+        input_element->type() == InputTypeNames::radio ||
+        input_element->IsTextButton())
       return true;
   }
 
   // A select element with a "multiple" attribute or with a display size greater
   // than 1.
-  if (isHTMLSelectElement(element)) {
-    const HTMLSelectElement& select_element = toHTMLSelectElement(element);
-    if (select_element.IsMultiple() || select_element.size() > 1)
+  if (auto* select_element = ToHTMLSelectElementOrNull(element)) {
+    if (select_element->IsMultiple() || select_element->size() > 1)
       return true;
   }
 
   // An option element that is in a list of options of a select element with a
   // "multiple" attribute or with a display size greater than 1.
-  if (isHTMLOptionElement(element) && element.parentNode() &&
-      isHTMLSelectElement(*element.parentNode())) {
+  if (IsHTMLOptionElement(element) && element.parentNode() &&
+      IsHTMLSelectElement(*element.parentNode())) {
     const HTMLSelectElement& select_element =
-        toHTMLSelectElement(*element.parentNode());
+        ToHTMLSelectElement(*element.parentNode());
     if (select_element.IsMultiple() || select_element.size() > 1)
       return true;
   }
@@ -1436,7 +1456,7 @@ bool HTMLCanvasElement::IsSupportedInteractiveCanvasFallback(
 
   // A non-interactive table, caption, thead, tbody, tfoot, tr, td, or th
   // element.
-  if (isHTMLTableElement(element) ||
+  if (IsHTMLTableElement(element) ||
       element.HasTagName(HTMLNames::captionTag) ||
       element.HasTagName(HTMLNames::theadTag) ||
       element.HasTagName(HTMLNames::tbodyTag) ||

@@ -33,13 +33,13 @@
 #include "cc/input/scrollbar.h"
 #include "cc/layers/layer_collections.h"
 #include "cc/layers/layer_list_iterator.h"
-#include "cc/output/layer_tree_frame_sink.h"
-#include "cc/output/swap_promise.h"
 #include "cc/trees/compositor_mode.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "cc/trees/mutator_host.h"
 #include "cc/trees/proxy.h"
+#include "cc/trees/swap_promise.h"
 #include "cc/trees/swap_promise_manager.h"
 #include "cc/trees/target_property.h"
 #include "components/viz/common/resources/resource_format.h"
@@ -307,13 +307,6 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
   void set_background_color(SkColor color) { background_color_ = color; }
   SkColor background_color() const { return background_color_; }
 
-  void set_has_transparent_background(bool transparent) {
-    has_transparent_background_ = transparent;
-  }
-  bool has_transparent_background() const {
-    return has_transparent_background_;
-  }
-
   void StartPageScaleAnimation(const gfx::Vector2d& target_offset,
                                bool use_anchor,
                                float scale,
@@ -349,6 +342,7 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
   // UseLayerLists() is true, which also implies that Slimming Paint
   // v2 is enabled.
   PropertyTrees* property_trees() { return &property_trees_; }
+  const PropertyTrees* property_trees() const { return &property_trees_; }
 
   void SetNeedsDisplayOnAllLayers();
 
@@ -626,7 +620,6 @@ class CC_EXPORT LayerTreeHost : public viz::SurfaceReferenceOwner,
   bool defer_commits_ = false;
 
   SkColor background_color_ = SK_ColorWHITE;
-  bool has_transparent_background_ = false;
 
   LayerSelection selection_;
 

@@ -31,7 +31,6 @@
 #include "public/platform/WebURLRequest.h"
 
 #include <memory>
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Noncopyable.h"
@@ -48,9 +47,9 @@ namespace {
 
 class URLRequestExtraDataContainer : public ResourceRequest::ExtraData {
  public:
-  static PassRefPtr<URLRequestExtraDataContainer> Create(
+  static RefPtr<URLRequestExtraDataContainer> Create(
       WebURLRequest::ExtraData* extra_data) {
-    return AdoptRef(new URLRequestExtraDataContainer(extra_data));
+    return WTF::AdoptRef(new URLRequestExtraDataContainer(extra_data));
   }
 
   ~URLRequestExtraDataContainer() override {}
@@ -375,7 +374,7 @@ WebURLRequest::ExtraData* WebURLRequest::GetExtraData() const {
   RefPtr<ResourceRequest::ExtraData> data = resource_request_->GetExtraData();
   if (!data)
     return 0;
-  return static_cast<URLRequestExtraDataContainer*>(data.Get())->GetExtraData();
+  return static_cast<URLRequestExtraDataContainer*>(data.get())->GetExtraData();
 }
 
 void WebURLRequest::SetExtraData(WebURLRequest::ExtraData* extra_data) {

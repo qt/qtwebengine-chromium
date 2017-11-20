@@ -24,11 +24,6 @@
 #include "ui/message_center/popup_timers_controller.h"
 
 namespace message_center {
-class MessageCenterImpl;
-
-namespace internal {
-class ChangeQueue;
-}
 
 // The default implementation of MessageCenter.
 class MessageCenterImpl : public MessageCenter,
@@ -68,7 +63,6 @@ class MessageCenterImpl : public MessageCenter,
   void SetNotificationButtonIcon(const std::string& notification_id,
                                  int button_index,
                                  const gfx::Image& image) override;
-  void DisableNotificationsByNotifier(const NotifierId& notifier_id) override;
   void ClickOnNotification(const std::string& id) override;
   void ClickOnNotificationButton(const std::string& id,
                                  int button_index) override;
@@ -86,7 +80,6 @@ class MessageCenterImpl : public MessageCenter,
   void PausePopupTimers() override;
   const base::string16& GetProductOSName() const override;
   void SetProductOSName(const base::string16& product_os_name) override;
-  void ForceNotificationFlush(const std::string& id) override;
 
   // NotificationBlocker::Observer overrides:
   void OnBlockingStateChanged(NotificationBlocker* blocker) override;
@@ -107,7 +100,6 @@ class MessageCenterImpl : public MessageCenter,
 
  protected:
   void DisableTimersForTest() override;
-  void EnableChangeQueueForTest(bool enable) override;
 
  private:
   struct NotificationCache {
@@ -134,10 +126,6 @@ class MessageCenterImpl : public MessageCenter,
 
   bool locked_ = false;
   bool visible_ = false;
-
-  // Queue for the notifications to delay the addition/updates when the message
-  // center is visible.
-  std::unique_ptr<internal::ChangeQueue> notification_queue_;
 
   base::string16 product_os_name_;
 

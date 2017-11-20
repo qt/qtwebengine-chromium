@@ -6,21 +6,19 @@ cr.exportPath('extensions');
 
 cr.define('extensions', function() {
   /** @interface */
-  const ToolbarDelegate = function() {};
-
-  ToolbarDelegate.prototype = {
+  class ToolbarDelegate {
     /**
      * Toggles whether or not the profile is in developer mode.
      * @param {boolean} inDevMode
      */
-    setProfileInDevMode: assertNotReached,
+    setProfileInDevMode(inDevMode) {}
 
     /** Opens the dialog to load unpacked extensions. */
-    loadUnpacked: assertNotReached,
+    loadUnpacked() {}
 
     /** Updates all extensions. */
-    updateAllExtensions: assertNotReached,
-  };
+    updateAllExtensions() {}
+  }
 
   const Toolbar = Polymer({
     is: 'extensions-toolbar',
@@ -35,6 +33,16 @@ cr.define('extensions', function() {
         type: Boolean,
         value: false,
       },
+
+      isGuest: Boolean,
+
+      // <if expr="chromeos">
+      kioskEnabled: Boolean,
+      // </if>
+    },
+
+    hostAttributes: {
+      role: 'banner',
     },
 
     /** @private */
@@ -51,6 +59,13 @@ cr.define('extensions', function() {
     onPackTap_: function() {
       this.fire('pack-tap');
     },
+
+    // <if expr="chromeos">
+    /** @private */
+    onKioskTap_: function() {
+      this.fire('kiosk-tap');
+    },
+    // </if>
 
     /** @private */
     onUpdateNowTap_: function() {

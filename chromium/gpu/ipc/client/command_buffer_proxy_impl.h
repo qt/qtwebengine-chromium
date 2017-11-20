@@ -106,7 +106,7 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
 
   // gpu::GpuControl implementation:
   void SetGpuControlClient(GpuControlClient* client) override;
-  gpu::Capabilities GetCapabilities() override;
+  const gpu::Capabilities& GetCapabilities() const override;
   int32_t CreateImage(ClientBuffer buffer,
                       size_t width,
                       size_t height,
@@ -191,7 +191,7 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
   void OnDestroyed(gpu::error::ContextLostReason reason,
                    gpu::error::Error error);
   void OnConsoleMessage(const GPUCommandBufferConsoleMessage& message);
-  void OnSignalAck(uint32_t id);
+  void OnSignalAck(uint32_t id, const CommandBuffer::State& state);
   void OnSwapBuffersCompleted(
       const GpuCommandBufferMsg_SwapBuffersCompleted_Params& params);
   void OnUpdateVSyncParameters(base::TimeTicks timebase,
@@ -207,7 +207,7 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
   // has an error.
   void TryUpdateStateDontReportError();
   // Sets the state, and calls OnGpuStateError() if the new state has an error.
-  void SetStateFromSyncReply(const gpu::CommandBuffer::State& state);
+  void SetStateFromMessageReply(const CommandBuffer::State& state);
 
   // Loses the context after we received an invalid reply from the GPU
   // process.

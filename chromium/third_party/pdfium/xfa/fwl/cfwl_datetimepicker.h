@@ -49,11 +49,11 @@ class CFWL_DateTimePicker : public CFWL_Widget {
   void GetCurSel(int32_t& iYear, int32_t& iMonth, int32_t& iDay);
   void SetCurSel(int32_t iYear, int32_t iMonth, int32_t iDay);
 
-  void SetEditText(const CFX_WideString& wsText);
-  CFX_WideString GetEditText() const;
+  void SetEditText(const WideString& wsText);
+  WideString GetEditText() const;
 
   bool HasSelection() const { return m_pEdit->HasSelection(); }
-  // Returns <start, end> indices of the selection.
+  // Returns <start, count> of the selection.
   std::pair<size_t, size_t> GetSelection() const {
     return m_pEdit->GetSelection();
   }
@@ -75,7 +75,7 @@ class CFWL_DateTimePicker : public CFWL_Widget {
   void FormatDateString(int32_t iYear,
                         int32_t iMonth,
                         int32_t iDay,
-                        CFX_WideString& wsText);
+                        WideString& wsText);
   void ResetEditAlignment();
   void InitProxyForm();
   void OnFocusChanged(CFWL_Message* pMsg, bool bSet);

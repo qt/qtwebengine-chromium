@@ -81,6 +81,12 @@ class WebSettings {
     kResourcesBeforeDCLAndSameOriginIFrames
   };
 
+  enum class SavePreviousDocumentResources {
+    kNever,
+    kUntilOnDOMContentLoaded,
+    kUntilOnLoad
+  };
+
   // Selection strategy defines how the selection granularity changes when the
   // selection extent is moved.
   enum class SelectionStrategyType {
@@ -179,7 +185,8 @@ class WebSettings {
   virtual void SetEnableTouchAdjustment(bool) = 0;
   virtual bool MultiTargetTapNotificationEnabled() = 0;
   virtual void SetMultiTargetTapNotificationEnabled(bool) = 0;
-  virtual void SetExperimentalWebGLEnabled(bool) = 0;
+  virtual void SetWebGL1Enabled(bool) = 0;
+  virtual void SetWebGL2Enabled(bool) = 0;
   virtual void SetFantasyFontFamily(const WebString&,
                                     UScriptCode = USCRIPT_COMMON) = 0;
   virtual void SetFixedFontFamily(const WebString&,
@@ -200,6 +207,8 @@ class WebSettings {
   virtual void SetLoadWithOverviewMode(bool) = 0;
   virtual void SetShouldReuseGlobalForUnownedMainFrame(bool) = 0;
   virtual void SetProgressBarCompletion(ProgressBarCompletion) = 0;
+  virtual void SetSavePreviousDocumentResources(
+      SavePreviousDocumentResources) = 0;
   virtual void SetLocalStorageEnabled(bool) = 0;
   virtual void SetMainFrameClipsContent(bool) = 0;
   virtual void SetMainFrameResizesAreOrientationChanges(bool) = 0;

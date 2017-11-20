@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Multiply-included message file, hence no include guard.
+#ifndef CONTENT_COMMON_APPCACHE_MESSAGES_H_
+#define CONTENT_COMMON_APPCACHE_MESSAGES_H_
 
 #include "ipc/ipc_message_macros.h"
 
 #include <stdint.h>
 
 #include "content/common/appcache_interfaces.h"
+#include "mojo/public/cpp/system/message_pipe.h"
 #include "url/ipc/url_param_traits.h"
 
 #define IPC_MESSAGE_START AppCacheMsgStart
@@ -160,3 +162,11 @@ IPC_MESSAGE_CONTROL3(AppCacheMsg_LogMessage,
 IPC_MESSAGE_CONTROL2(AppCacheMsg_ContentBlocked,
                      int /* host_id */,
                      GURL /* manifest_url */)
+
+// In the network service world this message sets the URLLoaderFactory to be
+// used for subresources.
+IPC_MESSAGE_CONTROL2(AppCacheMsg_SetSubresourceFactory,
+                     int /* host_id */,
+                     mojo::MessagePipeHandle /* url_loader_factory */)
+
+#endif  // CONTENT_COMMON_APPCACHE_MESSAGES_H_

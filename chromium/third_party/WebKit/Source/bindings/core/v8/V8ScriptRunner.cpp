@@ -26,6 +26,7 @@
 #include "bindings/core/v8/V8ScriptRunner.h"
 
 #include "bindings/core/v8/BindingSecurity.h"
+#include "bindings/core/v8/ReferrerScriptInfo.h"
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/ScriptStreamer.h"
 #include "bindings/core/v8/V8BindingForCore.h"
@@ -155,7 +156,7 @@ v8::MaybeLocal<v8::Script> CompileWithoutOptions(
 // Compile a script, and consume a V8 cache that was generated previously.
 static v8::MaybeLocal<v8::Script> CompileAndConsumeCache(
     CachedMetadataHandler* cache_handler,
-    PassRefPtr<CachedMetadata> cached_metadata,
+    RefPtr<CachedMetadata> cached_metadata,
     v8::ScriptCompiler::CompileOptions compile_options,
     v8::Isolate* isolate,
     v8::Local<v8::String> code,
@@ -218,7 +219,7 @@ v8::MaybeLocal<v8::Script> CompileAndConsumeOrProduce(
     v8::Local<v8::String> code,
     v8::ScriptOrigin origin) {
   RefPtr<CachedMetadata> code_cache(cache_handler->GetCachedMetadata(tag));
-  return code_cache.Get()
+  return code_cache.get()
              ? CompileAndConsumeCache(cache_handler, code_cache,
                                       consume_options, isolate, code, origin)
              : CompileAndProduceCache(cache_handler, tag, produce_options,
@@ -327,7 +328,7 @@ typedef Function<v8::MaybeLocal<v8::Script>(v8::Isolate*,
 static CompileFn SelectCompileFunction(
     V8CacheOptions cache_options,
     CachedMetadataHandler* cache_handler,
-    PassRefPtr<CachedMetadata> code_cache,
+    RefPtr<CachedMetadata> code_cache,
     v8::Local<v8::String> code,
     V8CompileHistogram::Cacheability cacheability_if_no_handler) {
   static const int kMinimalCodeLength = 1024;
@@ -418,12 +419,19 @@ v8::MaybeLocal<v8::Script> V8ScriptRunner::CompileScript(
     V8ThrowException::ThrowError(isolate, "Source file too large.");
     return v8::Local<v8::Script>();
   }
+  // https://html.spec.whatwg.org/multipage/webappapis.html#default-classic-script-fetch-options
+  // The "default classic fetch options" credentials mode is "omit".
+  // TODO(kouhei): Follow html spec proposal to allow different credentials
+  // mode. https://github.com/whatwg/html/pull/3044
+  const ReferrerScriptInfo referrer_info(
+      WebURLRequest::kFetchCredentialsModeOmit, source.Nonce(),
+      source.ParserState());
   return CompileScript(
       script_state, V8String(isolate, source.Source()), source.Url(),
       source.SourceMapUrl(), source.StartPosition(), source.GetResource(),
       source.Streamer(),
       source.GetResource() ? source.GetResource()->CacheHandler() : nullptr,
-      access_control_status, cache_options);
+      access_control_status, cache_options, referrer_info);
 }
 
 v8::MaybeLocal<v8::Script> V8ScriptRunner::CompileScript(
@@ -434,7 +442,8 @@ v8::MaybeLocal<v8::Script> V8ScriptRunner::CompileScript(
     const TextPosition& text_position,
     CachedMetadataHandler* cache_metadata_handler,
     AccessControlStatus access_control_status,
-    V8CacheOptions v8_cache_options) {
+    V8CacheOptions v8_cache_options,
+    const ReferrerScriptInfo& referrer_info) {
   v8::Isolate* isolate = script_state->GetIsolate();
   if (code.length() >= v8::String::kMaxLength) {
     V8ThrowException::ThrowError(isolate, "Source file too large.");
@@ -443,7 +452,7 @@ v8::MaybeLocal<v8::Script> V8ScriptRunner::CompileScript(
   return CompileScript(script_state, V8String(isolate, code), file_name,
                        source_map_url, text_position, nullptr, nullptr,
                        cache_metadata_handler, access_control_status,
-                       v8_cache_options);
+                       v8_cache_options, referrer_info);
 }
 
 v8::MaybeLocal<v8::Script> V8ScriptRunner::CompileScript(
@@ -456,14 +465,12 @@ v8::MaybeLocal<v8::Script> V8ScriptRunner::CompileScript(
     ScriptStreamer* streamer,
     CachedMetadataHandler* cache_handler,
     AccessControlStatus access_control_status,
-    V8CacheOptions cache_options) {
+    V8CacheOptions cache_options,
+    const ReferrerScriptInfo& referrer_info) {
   TRACE_EVENT2(
       "v8,devtools.timeline", "v8.compile", "fileName", file_name.Utf8(),
       "data",
       InspectorCompileScriptEvent::Data(file_name, script_start_position));
-  // TODO(maxlg): probe will use a execution context once
-  // DocumentWriteEvaluator::EnsureEvaluationContext provide script state, see
-  // https://crbug.com/746961.
   probe::V8Compile probe(ExecutionContext::From(script_state), file_name,
                          script_start_position.line_.ZeroBasedInt(),
                          script_start_position.column_.ZeroBasedInt());
@@ -474,13 +481,17 @@ v8::MaybeLocal<v8::Script> V8ScriptRunner::CompileScript(
   // NOTE: For compatibility with WebCore, ScriptSourceCode's line starts at
   // 1, whereas v8 starts at 0.
   v8::Isolate* isolate = script_state->GetIsolate();
+
   v8::ScriptOrigin origin(
       V8String(isolate, file_name),
       v8::Integer::New(isolate, script_start_position.line_.ZeroBasedInt()),
       v8::Integer::New(isolate, script_start_position.column_.ZeroBasedInt()),
       v8::Boolean::New(isolate, access_control_status == kSharableCrossOrigin),
       v8::Local<v8::Integer>(), V8String(isolate, source_map_url),
-      v8::Boolean::New(isolate, access_control_status == kOpaqueResource));
+      v8::Boolean::New(isolate, access_control_status == kOpaqueResource),
+      v8::False(isolate),  // is_wasm
+      v8::False(isolate),  // is_module
+      referrer_info.ToV8HostDefinedOptions(isolate));
 
   V8CompileHistogram::Cacheability cacheability_if_no_handler =
       V8CompileHistogram::Cacheability::kNoncacheable;
@@ -506,10 +517,10 @@ v8::MaybeLocal<v8::Module> V8ScriptRunner::CompileModule(
     const String& source,
     const String& file_name,
     AccessControlStatus access_control_status,
-    const TextPosition& start_position) {
+    const TextPosition& start_position,
+    const ReferrerScriptInfo& referrer_info) {
   TRACE_EVENT1("v8", "v8.compileModule", "fileName", file_name.Utf8());
-  // TODO(adamk): Add Inspector integration?
-  // TODO(adamk): Pass more info into ScriptOrigin.
+
   v8::ScriptOrigin origin(
       V8String(isolate, file_name),
       v8::Integer::New(isolate, start_position.line_.ZeroBasedInt()),
@@ -519,7 +530,8 @@ v8::MaybeLocal<v8::Module> V8ScriptRunner::CompileModule(
       v8::String::Empty(isolate),  // source_map_url
       v8::Boolean::New(isolate, access_control_status == kOpaqueResource),
       v8::False(isolate),  // is_wasm
-      v8::True(isolate));  // is_module
+      v8::True(isolate),   // is_module
+      referrer_info.ToV8HostDefinedOptions(isolate));
 
   v8::ScriptCompiler::Source script_source(V8String(isolate, source), origin);
   return v8::ScriptCompiler::CompileModule(isolate, &script_source);
@@ -567,10 +579,13 @@ v8::MaybeLocal<v8::Value> V8ScriptRunner::CompileAndRunInternalScript(
     const String& file_name,
     const TextPosition& script_start_position) {
   v8::Local<v8::Script> script;
-  if (!V8ScriptRunner::CompileScript(script_state, source, file_name, String(),
-                                     script_start_position, nullptr, nullptr,
-                                     nullptr, kSharableCrossOrigin,
-                                     kV8CacheOptionsDefault)
+  // Use default ScriptReferrerInfo here:
+  // - nonce: empty for internal script, and
+  // - parser_state: always "not parser inserted" for internal scripts.
+  if (!V8ScriptRunner::CompileScript(
+           script_state, source, file_name, String(), script_start_position,
+           nullptr, nullptr, nullptr, kSharableCrossOrigin,
+           kV8CacheOptionsDefault, ReferrerScriptInfo())
            .ToLocal(&script))
     return v8::MaybeLocal<v8::Value>();
 

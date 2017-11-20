@@ -133,6 +133,10 @@ void GrGLGetDriverInfo(GrGLStandard standard,
         }
         int n = sscanf(versionString, "%d.%d Mesa %d.%d",
                        &major, &minor, &driverMajor, &driverMinor);
+        if (4 != n) {
+            n = sscanf(versionString, "%d.%d (Core Profile) Mesa %d.%d",
+                       &major, &minor, &driverMajor, &driverMinor);
+        }
         if (4 == n) {
             *outDriver = kMesa_GrGLDriver;
             *outVersion = GR_GL_DRIVER_VER(driverMajor, driverMinor);
@@ -339,6 +343,9 @@ GrGLRenderer GrGLGetRendererFromString(const char* rendererString) {
             n = sscanf(rendererString, "Intel(R) HD Graphics %d", &intelNumber);
         }
         if (1 == n) {
+            if (intelNumber >= 4000 && intelNumber < 5000) {
+                return kIntel4xxx_GrGLRenderer;
+            }
             if (intelNumber >= 6000 && intelNumber < 7000) {
                 return kIntel6xxx_GrGLRenderer;
             }

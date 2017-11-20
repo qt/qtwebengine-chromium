@@ -18,6 +18,7 @@ namespace content {
 
 class DownloadUrlParameters;
 struct ResourceRequest;
+struct DownloadCreateInfo;
 struct DownloadSaveInfo;
 
 // Handle the url request completion status and return the interrupt reasons.
@@ -34,9 +35,18 @@ std::unique_ptr<ResourceRequest> CONTENT_EXPORT CreateResourceRequest(
 std::unique_ptr<net::URLRequest> CONTENT_EXPORT CreateURLRequestOnIOThread(
     DownloadUrlParameters* params);
 
+// Parse the HTTP server response code.
+// If |fetch_error_body| is true, most of HTTP response codes will be accepted
+// as successful response.
 DownloadInterruptReason CONTENT_EXPORT
 HandleSuccessfulServerResponse(const net::HttpResponseHeaders& http_headers,
-                               DownloadSaveInfo* save_info);
+                               DownloadSaveInfo* save_info,
+                               bool fetch_error_body);
+
+// Parse response headers and update |create_info| accordingly.
+CONTENT_EXPORT void HandleResponseHeaders(
+    const net::HttpResponseHeaders* headers,
+    DownloadCreateInfo* create_info);
 
 }  // namespace content
 

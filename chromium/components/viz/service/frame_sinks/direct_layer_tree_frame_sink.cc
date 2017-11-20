@@ -5,8 +5,8 @@
 #include "components/viz/service/frame_sinks/direct_layer_tree_frame_sink.h"
 
 #include "base/bind.h"
-#include "cc/output/compositor_frame.h"
-#include "cc/output/layer_tree_frame_sink_client.h"
+#include "cc/trees/layer_tree_frame_sink_client.h"
+#include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/common/surfaces/local_surface_id_allocator.h"
 #include "components/viz/service/display/display.h"
@@ -96,8 +96,7 @@ void DirectLayerTreeFrameSink::DetachFromClient() {
   cc::LayerTreeFrameSink::DetachFromClient();
 }
 
-void DirectLayerTreeFrameSink::SubmitCompositorFrame(
-    cc::CompositorFrame frame) {
+void DirectLayerTreeFrameSink::SubmitCompositorFrame(CompositorFrame frame) {
   DCHECK(frame.metadata.begin_frame_ack.has_damage);
   DCHECK_LE(BeginFrameArgs::kStartingFrameNumber,
             frame.metadata.begin_frame_ack.sequence_number);
@@ -129,7 +128,7 @@ void DirectLayerTreeFrameSink::DisplayOutputSurfaceLost() {
 
 void DirectLayerTreeFrameSink::DisplayWillDrawAndSwap(
     bool will_draw_and_swap,
-    const cc::RenderPassList& render_passes) {
+    const RenderPassList& render_passes) {
   // This notification is not relevant to our client outside of tests.
 }
 
@@ -152,12 +151,6 @@ void DirectLayerTreeFrameSink::OnBeginFrame(const BeginFrameArgs& args) {
 void DirectLayerTreeFrameSink::ReclaimResources(
     const std::vector<ReturnedResource>& resources) {
   client_->ReclaimResources(resources);
-}
-
-void DirectLayerTreeFrameSink::WillDrawSurface(
-    const LocalSurfaceId& local_surface_id,
-    const gfx::Rect& damage_rect) {
-  // TODO(staraz): Implement this.
 }
 
 void DirectLayerTreeFrameSink::OnBeginFramePausedChanged(bool paused) {

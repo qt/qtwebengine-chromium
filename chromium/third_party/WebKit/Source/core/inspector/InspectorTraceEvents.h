@@ -13,6 +13,7 @@
 #include "platform/heap/Handle.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
+#include "platform/loader/fetch/Resource.h"
 #include "platform/loader/fetch/ResourceLoadPriority.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/Functional.h"
@@ -36,6 +37,7 @@ class Element;
 class Event;
 class ExecutionContext;
 struct FetchInitiatorInfo;
+class FloatRect;
 class GraphicsLayer;
 class HitTestLocation;
 class HitTestRequest;
@@ -80,7 +82,8 @@ class CORE_EXPORT InspectorTraceEvents : public InspectorAgent {
                        DocumentLoader*,
                        ResourceRequest&,
                        const ResourceResponse& redirect_response,
-                       const FetchInitiatorInfo&);
+                       const FetchInitiatorInfo&,
+                       Resource::Type);
   void DidReceiveResourceResponse(unsigned long identifier,
                                   DocumentLoader*,
                                   const ResourceResponse&,

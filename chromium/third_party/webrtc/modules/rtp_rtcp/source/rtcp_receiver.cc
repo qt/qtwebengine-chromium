@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtcp_receiver.h"
+#include "modules/rtp_rtcp/source/rtcp_receiver.h"
 
 #include <string.h>
 
@@ -18,30 +18,30 @@
 #include <utility>
 #include <vector>
 
-#include "webrtc/common_types.h"
-#include "webrtc/common_video/include/video_bitrate_allocator.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/bye.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/compound_packet.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/fir.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/nack.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/pli.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/rapid_resync_request.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/remb.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sdes.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/tmmbn.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/tmmbr.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_config.h"
-#include "webrtc/modules/rtp_rtcp/source/time_util.h"
-#include "webrtc/modules/rtp_rtcp/source/tmmbr_help.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/trace_event.h"
-#include "webrtc/system_wrappers/include/ntp_time.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "common_video/include/video_bitrate_allocator.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/compound_packet.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/fir.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/nack.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/pli.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/rapid_resync_request.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/remb.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/sdes.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/tmmbn.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/tmmbr.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
+#include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
+#include "modules/rtp_rtcp/source/time_util.h"
+#include "modules/rtp_rtcp/source/tmmbr_help.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
+#include "system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
 namespace {
@@ -123,7 +123,7 @@ RTCPReceiver::RTCPReceiver(
       xr_rrtr_status_(false),
       xr_rr_rtt_ms_(0),
       oldest_tmmbr_info_ms_(0),
-      last_received_rr_ms_(0),
+      last_received_rb_ms_(0),
       last_increased_sequence_number_ms_(0),
       stats_callback_(nullptr),
       packet_type_counter_observer_(packet_type_counter_observer),
@@ -134,22 +134,21 @@ RTCPReceiver::RTCPReceiver(
 
 RTCPReceiver::~RTCPReceiver() {}
 
-bool RTCPReceiver::IncomingPacket(const uint8_t* packet, size_t packet_size) {
+void RTCPReceiver::IncomingPacket(const uint8_t* packet, size_t packet_size) {
   if (packet_size == 0) {
     LOG(LS_WARNING) << "Incoming empty RTCP packet";
-    return false;
+    return;
   }
 
   PacketInformation packet_information;
   if (!ParseCompoundPacket(packet, packet + packet_size, &packet_information))
-    return false;
+    return;
   TriggerCallbacksFromRtcpPacket(packet_information);
-  return true;
 }
 
-int64_t RTCPReceiver::LastReceivedReceiverReport() const {
+int64_t RTCPReceiver::LastReceivedReportBlockMs() const {
   rtc::CritScope lock(&rtcp_receiver_lock_);
-  return last_received_rr_ms_;
+  return last_received_rb_ms_;
 }
 
 void RTCPReceiver::SetRemoteSSRC(uint32_t ssrc) {
@@ -423,8 +422,6 @@ void RTCPReceiver::HandleReceiverReport(const CommonHeader& rtcp_block,
     return;
   }
 
-  last_received_rr_ms_ = clock_->TimeInMilliseconds();
-
   const uint32_t remote_ssrc = receiver_report.sender_ssrc();
 
   packet_information->remote_ssrc = remote_ssrc;
@@ -455,6 +452,8 @@ void RTCPReceiver::HandleReportBlock(const ReportBlock& report_block,
   // Filter out all report blocks that are not for us.
   if (registered_ssrcs_.count(report_block.source_ssrc()) == 0)
     return;
+
+  last_received_rb_ms_ = clock_->TimeInMilliseconds();
 
   ReportBlockWithRtt* report_block_info =
       &received_report_blocks_[report_block.source_ssrc()][remote_ssrc];
@@ -535,13 +534,13 @@ RTCPReceiver::TmmbrInformation* RTCPReceiver::GetTmmbrInformation(
 
 bool RTCPReceiver::RtcpRrTimeout(int64_t rtcp_interval_ms) {
   rtc::CritScope lock(&rtcp_receiver_lock_);
-  if (last_received_rr_ms_ == 0)
+  if (last_received_rb_ms_ == 0)
     return false;
 
   int64_t time_out_ms = kRrTimeoutIntervals * rtcp_interval_ms;
-  if (clock_->TimeInMilliseconds() > last_received_rr_ms_ + time_out_ms) {
+  if (clock_->TimeInMilliseconds() > last_received_rb_ms_ + time_out_ms) {
     // Reset the timer to only trigger one log.
-    last_received_rr_ms_ = 0;
+    last_received_rb_ms_ = 0;
     return true;
   }
   return false;

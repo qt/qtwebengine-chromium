@@ -66,6 +66,7 @@ namespace sw
 			bool occlusionEnabled                     : 1;
 			bool wBasedFog                            : 1;
 			bool perspective                          : 1;
+			bool depthClamp                           : 1;
 
 			bool alphaBlendActive                     : 1;
 			BlendFactor sourceBlendFactor             : BITS(BLEND_LAST);
@@ -149,7 +150,7 @@ namespace sw
 				writeMaskQ = replicate(writeMask);
 				invWriteMaskQ = ~writeMaskQ;
 				referenceMaskedQ = referenceQ & testMaskQ;
-				referenceMaskedSignedQ = replicate((reference + 0x80) & 0xFF & testMask);
+				referenceMaskedSignedQ = replicate(((reference & testMask) + 0x80) & 0xFF);
 			}
 
 			static int64_t replicate(int b)

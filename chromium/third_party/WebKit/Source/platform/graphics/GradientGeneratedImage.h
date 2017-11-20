@@ -36,10 +36,10 @@ class IntSize;
 
 class PLATFORM_EXPORT GradientGeneratedImage final : public GeneratedImage {
  public:
-  static PassRefPtr<GradientGeneratedImage> Create(
-      PassRefPtr<Gradient> generator,
-      const IntSize& size) {
-    return AdoptRef(new GradientGeneratedImage(std::move(generator), size));
+  static RefPtr<GradientGeneratedImage> Create(RefPtr<Gradient> generator,
+                                               const IntSize& size) {
+    return WTF::AdoptRef(
+        new GradientGeneratedImage(std::move(generator), size));
   }
 
   ~GradientGeneratedImage() override {}
@@ -52,10 +52,11 @@ class PLATFORM_EXPORT GradientGeneratedImage final : public GeneratedImage {
             const FloatRect&,
             const FloatRect&,
             RespectImageOrientationEnum,
-            ImageClampingMode) override;
+            ImageClampingMode,
+            ImageDecodingMode) override;
   void DrawTile(GraphicsContext&, const FloatRect&) override;
 
-  GradientGeneratedImage(PassRefPtr<Gradient> generator, const IntSize& size)
+  GradientGeneratedImage(RefPtr<Gradient> generator, const IntSize& size)
       : GeneratedImage(size), gradient_(std::move(generator)) {}
 
   RefPtr<Gradient> gradient_;

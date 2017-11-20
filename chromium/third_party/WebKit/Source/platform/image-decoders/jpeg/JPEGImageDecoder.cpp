@@ -40,7 +40,6 @@
 #include <memory>
 #include "build/build_config.h"
 #include "platform/instrumentation/PlatformInstrumentation.h"
-#include "platform/wtf/PtrUtil.h"
 
 extern "C" {
 #include <stdio.h>  // jpeglib.h needs stdio FILE.
@@ -376,7 +375,7 @@ class JPEGImageReader final {
   }
 
   void SetData(SegmentReader* data) {
-    if (data_.Get() == data)
+    if (data_.get() == data)
       return;
 
     data_ = data;
@@ -394,17 +393,11 @@ class JPEGImageReader final {
   }
 
   // Decode the JPEG data. If |only_size| is specified, then only the size
-  // information will be decoded. If |generate_all_sizes| is specified, this
-  // will generate the sizes for all possible numerators up to the desired
-  // numerator as dictated by the decoder class. Note that |generate_all_sizes|
-  // is only valid if |only_size| is set.
-  bool Decode(bool only_size, bool generate_all_sizes) {
+  // information will be decoded.
+  bool Decode(bool only_size) {
     // We need to do the setjmp here. Otherwise bad things will happen
     if (setjmp(err_.setjmp_buffer))
       return decoder_->SetFailed();
-
-    // Generate all sizes implies we only want the size.
-    DCHECK(!generate_all_sizes || only_size);
 
     J_COLOR_SPACE override_color_space = JCS_UNKNOWN;
     switch (state_) {
@@ -444,8 +437,21 @@ class JPEGImageReader final {
 
         // Calculate and set decoded size.
         int max_numerator = decoder_->DesiredScaleNumerator();
-        info_.scale_num = max_numerator;
         info_.scale_denom = g_scale_denomiator;
+
+        if (decoder_->ShouldGenerateAllSizes()) {
+          std::vector<SkISize> sizes;
+          sizes.reserve(max_numerator);
+          for (int numerator = 1; numerator <= max_numerator; ++numerator) {
+            info_.scale_num = numerator;
+            jpeg_calc_output_dimensions(&info_);
+            sizes.push_back(
+                SkISize::Make(info_.output_width, info_.output_height));
+          }
+          decoder_->SetSupportedDecodeSizes(std::move(sizes));
+        }
+
+        info_.scale_num = max_numerator;
         // Scaling caused by running low on memory isn't supported by YUV
         // decoding since YUV decoding is performed on full sized images. At
         // this point, buffers and various image info structs have already been
@@ -455,16 +461,6 @@ class JPEGImageReader final {
           override_color_space = JCS_UNKNOWN;
         jpeg_calc_output_dimensions(&info_);
         decoder_->SetDecodedSize(info_.output_width, info_.output_height);
-
-        if (generate_all_sizes) {
-          info_.scale_denom = g_scale_denomiator;
-          for (int numerator = 1; numerator <= max_numerator; ++numerator) {
-            info_.scale_num = numerator;
-            jpeg_calc_output_dimensions(&info_);
-            decoder_->AddSupportedDecodeSize(info_.output_width,
-                                             info_.output_height);
-          }
-        }
 
         decoder_->SetOrientation(ReadImageOrientation(Info()));
 
@@ -792,6 +788,10 @@ unsigned JPEGImageDecoder::DesiredScaleNumerator() const {
   return scale_numerator;
 }
 
+bool JPEGImageDecoder::ShouldGenerateAllSizes() const {
+  return supported_decode_sizes_.empty();
+}
+
 bool JPEGImageDecoder::CanDecodeToYUV() {
   // Calling IsSizeAvailable() ensures the reader is created and the output
   // color space is set.
@@ -813,23 +813,14 @@ void JPEGImageDecoder::SetImagePlanes(
   image_planes_ = std::move(image_planes);
 }
 
-void JPEGImageDecoder::AddSupportedDecodeSize(unsigned width, unsigned height) {
-#if DCHECK_IS_ON()
-  DCHECK(decoding_all_sizes_);
-#endif
-  supported_decode_sizes_.push_back(SkISize::Make(width, height));
+void JPEGImageDecoder::SetSupportedDecodeSizes(std::vector<SkISize> sizes) {
+  supported_decode_sizes_ = std::move(sizes);
 }
 
-std::vector<SkISize> JPEGImageDecoder::GetSupportedDecodeSizes() {
-  if (supported_decode_sizes_.empty()) {
-#if DCHECK_IS_ON()
-    decoding_all_sizes_ = true;
-#endif
-    Decode(true, true);
-#if DCHECK_IS_ON()
-    decoding_all_sizes_ = false;
-#endif
-  }
+std::vector<SkISize> JPEGImageDecoder::GetSupportedDecodeSizes() const {
+  // DCHECK IsDecodedSizeAvailable instead of IsSizeAvailable, since the latter
+  // has side effects of actually doing the decode.
+  DCHECK(IsDecodedSizeAvailable());
   return supported_decode_sizes_;
 }
 
@@ -1035,18 +1026,18 @@ inline bool IsComplete(const JPEGImageDecoder* decoder, bool only_size) {
   return decoder->FrameIsDecodedAtIndex(0);
 }
 
-void JPEGImageDecoder::Decode(bool only_size, bool generate_all_sizes) {
+void JPEGImageDecoder::Decode(bool only_size) {
   if (Failed())
     return;
 
   if (!reader_) {
-    reader_ = WTF::MakeUnique<JPEGImageReader>(this);
-    reader_->SetData(data_.Get());
+    reader_ = std::make_unique<JPEGImageReader>(this);
+    reader_->SetData(data_.get());
   }
 
   // If we couldn't decode the image but have received all the data, decoding
   // has failed.
-  if (!reader_->Decode(only_size, generate_all_sizes) && IsAllDataReceived())
+  if (!reader_->Decode(only_size) && IsAllDataReceived())
     SetFailed();
 
   // If decoding is done or failed, we don't need the JPEGImageReader anymore.

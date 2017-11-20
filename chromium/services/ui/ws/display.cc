@@ -93,6 +93,10 @@ const display::Display& Display::GetDisplay() {
   return display_;
 }
 
+const display::ViewportMetrics& Display::GetViewportMetrics() const {
+  return platform_display_->GetViewportMetrics();
+}
+
 DisplayManager* Display::display_manager() {
   return window_server_->display_manager();
 }
@@ -256,9 +260,10 @@ void Display::CreateWindowManagerDisplayRootFromFactory(
 void Display::CreateRootWindow(const gfx::Size& size) {
   DCHECK(!root_);
 
-  root_.reset(window_server_->CreateServerWindow(
-      display_manager()->GetAndAdvanceNextRootId(),
-      ServerWindow::Properties()));
+  WindowId id = display_manager()->GetAndAdvanceNextRootId();
+  ClientWindowId client_window_id(id.client_id, id.window_id);
+  root_.reset(window_server_->CreateServerWindow(id, client_window_id,
+                                                 ServerWindow::Properties()));
   root_->set_event_targeting_policy(
       mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
   root_->SetBounds(gfx::Rect(size), allocator_.GenerateId());
@@ -331,8 +336,9 @@ ServerWindow* Display::GetActiveRootWindow() {
 void Display::OnActivationChanged(ServerWindow* old_active_window,
                                   ServerWindow* new_active_window) {
   // Don't do anything here. We assume the window manager handles restacking. If
-  // we did attempt to restack than we would have to ensure clients see the
-  // restack.
+  // we did attempt to restack then we would be reordering windows owned by
+  // the window-manager, which breaks the assumption that only the owner of a
+  // window reorders the children.
 }
 
 void Display::OnFocusChanged(FocusControllerChangeSource change_source,
@@ -413,7 +419,7 @@ EventDispatchDetails Display::OnEventFromSource(Event* event) {
   WindowManagerDisplayRoot* display_root = GetActiveWindowManagerDisplayRoot();
   if (display_root) {
     WindowManagerState* wm_state = display_root->window_manager_state();
-    wm_state->ProcessEvent(*event, GetId());
+    wm_state->ProcessEvent(event, GetId());
   }
 
   UserActivityMonitor* activity_monitor =

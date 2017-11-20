@@ -5,8 +5,10 @@
 #include "core/editing/VisibleSelection.h"
 
 #include "core/dom/Range.h"
-#include "core/editing/EditingTestBase.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/SelectionAdjuster.h"
+#include "core/editing/SelectionTemplate.h"
+#include "core/editing/testing/EditingTestBase.h"
 
 #define LOREM_IPSUM                                                            \
   "Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod "  \

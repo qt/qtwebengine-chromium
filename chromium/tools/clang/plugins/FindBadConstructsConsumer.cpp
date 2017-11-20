@@ -16,42 +16,6 @@ namespace chrome_checker {
 
 namespace {
 
-const char kMethodRequiresOverride[] =
-    "[chromium-style] Overriding method must be marked with 'override' or "
-    "'final'.";
-const char kRedundantVirtualSpecifier[] =
-    "[chromium-style] %0 is redundant; %1 implies %0.";
-// http://llvm.org/bugs/show_bug.cgi?id=21051 has been filed to make this a
-// Clang warning.
-const char kBaseMethodVirtualAndFinal[] =
-    "[chromium-style] The virtual method does not override anything and is "
-    "final; consider making it non-virtual.";
-const char kNoExplicitDtor[] =
-    "[chromium-style] Classes that are ref-counted should have explicit "
-    "destructors that are declared protected or private.";
-const char kPublicDtor[] =
-    "[chromium-style] Classes that are ref-counted should have "
-    "destructors that are declared protected or private.";
-const char kProtectedNonVirtualDtor[] =
-    "[chromium-style] Classes that are ref-counted and have non-private "
-    "destructors should declare their destructor virtual.";
-const char kWeakPtrFactoryOrder[] =
-    "[chromium-style] WeakPtrFactory members which refer to their outer class "
-    "must be the last member in the outer class definition.";
-const char kBadLastEnumValue[] =
-    "[chromium-style] _LAST/Last constants of enum types must have the maximal "
-    "value for any constant of that type.";
-const char kAutoDeducedToAPointerType[] =
-    "[chromium-style] auto variable type must not deduce to a raw pointer "
-    "type.";
-const char kNoteInheritance[] = "[chromium-style] %0 inherits from %1 here";
-const char kNoteImplicitDtor[] =
-    "[chromium-style] No explicit destructor for %0 defined";
-const char kNotePublicDtor[] =
-    "[chromium-style] Public destructor declared here";
-const char kNoteProtectedNonVirtualDtor[] =
-    "[chromium-style] Protected non-virtual destructor declared here";
-
 // Returns the underlying Type for |type| by expanding typedefs and removing
 // any namespace qualifiers. This is similar to desugaring, except that for
 // ElaboratedTypes, desugar will unwrap too much.
@@ -143,39 +107,89 @@ FindBadConstructsConsumer::FindBadConstructsConsumer(CompilerInstance& instance,
     ipc_visitor_.reset(new CheckIPCVisitor(instance));
   }
 
-  // Messages for virtual method specifiers.
-  diag_method_requires_override_ =
-      diagnostic().getCustomDiagID(getErrorLevel(), kMethodRequiresOverride);
-  diag_redundant_virtual_specifier_ =
-      diagnostic().getCustomDiagID(getErrorLevel(), kRedundantVirtualSpecifier);
-  diag_base_method_virtual_and_final_ =
-      diagnostic().getCustomDiagID(getErrorLevel(), kBaseMethodVirtualAndFinal);
+  // Messages for virtual methods.
+  diag_method_requires_override_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] Overriding method must be marked with 'override' or "
+      "'final'.");
+  diag_redundant_virtual_specifier_ = diagnostic().getCustomDiagID(
+      getErrorLevel(), "[chromium-style] %0 is redundant; %1 implies %0.");
+  // http://llvm.org/bugs/show_bug.cgi?id=21051 has been filed to make this a
+  // Clang warning.
+  diag_base_method_virtual_and_final_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] The virtual method does not override anything and is "
+      "final; consider making it non-virtual.");
+  diag_virtual_with_inline_body_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] virtual methods with non-empty bodies shouldn't be "
+      "declared inline.");
+
+  // Messages for constructors.
+  diag_no_explicit_ctor_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] Complex class/struct needs an explicit out-of-line "
+      "constructor.");
+  diag_no_explicit_copy_ctor_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] Complex class/struct needs an explicit out-of-line "
+      "copy constructor.");
+  diag_inline_complex_ctor_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] Complex constructor has an inlined body.");
 
   // Messages for destructors.
-  diag_no_explicit_dtor_ =
-      diagnostic().getCustomDiagID(getErrorLevel(), kNoExplicitDtor);
-  diag_public_dtor_ =
-      diagnostic().getCustomDiagID(getErrorLevel(), kPublicDtor);
-  diag_protected_non_virtual_dtor_ =
-      diagnostic().getCustomDiagID(getErrorLevel(), kProtectedNonVirtualDtor);
+  diag_no_explicit_dtor_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] Complex class/struct needs an explicit out-of-line "
+      "destructor.");
+  diag_inline_complex_dtor_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] Complex destructor has an inline body.");
+
+  // Messages for refcounted objects.
+  diag_refcounted_needs_explicit_dtor_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] Classes that are ref-counted should have explicit "
+      "destructors that are declared protected or private.");
+  diag_refcounted_with_public_dtor_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] Classes that are ref-counted should have "
+      "destructors that are declared protected or private.");
+  diag_refcounted_with_protected_non_virtual_dtor_ =
+      diagnostic().getCustomDiagID(
+          getErrorLevel(),
+          "[chromium-style] Classes that are ref-counted and have non-private "
+          "destructors should declare their destructor virtual.");
 
   // Miscellaneous messages.
-  diag_weak_ptr_factory_order_ =
-      diagnostic().getCustomDiagID(getErrorLevel(), kWeakPtrFactoryOrder);
+  diag_weak_ptr_factory_order_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] WeakPtrFactory members which refer to their outer "
+      "class "
+      "must be the last member in the outer class definition.");
   diag_bad_enum_last_value_ =
-      diagnostic().getCustomDiagID(getErrorLevel(), kBadLastEnumValue);
-  diag_auto_deduced_to_a_pointer_type_ =
-      diagnostic().getCustomDiagID(getErrorLevel(), kAutoDeducedToAPointerType);
+      diagnostic().getCustomDiagID(getErrorLevel(),
+                                   "[chromium-style] _LAST/Last constants of "
+                                   "enum types must have the maximal "
+                                   "value for any constant of that type.");
+  diag_auto_deduced_to_a_pointer_type_ = diagnostic().getCustomDiagID(
+      getErrorLevel(),
+      "[chromium-style] auto variable type must not deduce to a raw pointer "
+      "type.");
 
   // Registers notes to make it easier to interpret warnings.
-  diag_note_inheritance_ =
-      diagnostic().getCustomDiagID(DiagnosticsEngine::Note, kNoteInheritance);
-  diag_note_implicit_dtor_ =
-      diagnostic().getCustomDiagID(DiagnosticsEngine::Note, kNoteImplicitDtor);
-  diag_note_public_dtor_ =
-      diagnostic().getCustomDiagID(DiagnosticsEngine::Note, kNotePublicDtor);
+  diag_note_inheritance_ = diagnostic().getCustomDiagID(
+      DiagnosticsEngine::Note, "[chromium-style] %0 inherits from %1 here");
+  diag_note_implicit_dtor_ = diagnostic().getCustomDiagID(
+      DiagnosticsEngine::Note,
+      "[chromium-style] No explicit destructor for %0 defined");
+  diag_note_public_dtor_ = diagnostic().getCustomDiagID(
+      DiagnosticsEngine::Note,
+      "[chromium-style] Public destructor declared here");
   diag_note_protected_non_virtual_dtor_ = diagnostic().getCustomDiagID(
-      DiagnosticsEngine::Note, kNoteProtectedNonVirtualDtor);
+      DiagnosticsEngine::Note,
+      "[chromium-style] Protected non-virtual destructor declared here");
 }
 
 void FindBadConstructsConsumer::Traverse(ASTContext& context) {
@@ -219,8 +233,10 @@ bool FindBadConstructsConsumer::VisitVarDecl(clang::VarDecl* var_decl) {
 void FindBadConstructsConsumer::CheckChromeClass(LocationType location_type,
                                                  SourceLocation record_location,
                                                  CXXRecordDecl* record) {
-  // TODO(dcheng): After emitWarning() is removed, move warning filtering into
-  // ReportIfSpellingLocNotIgnored.
+  // TODO(dcheng): This is needed because some of the diagnostics for refcounted
+  // classes use DiagnosticsEngine::Report() directly, and there are existing
+  // violations in Blink. This should be removed once the checks are
+  // modularized.
   if (location_type == LocationType::kBlink)
     return;
 
@@ -289,7 +305,8 @@ void FindBadConstructsConsumer::CheckChromeEnum(LocationType location_type,
     if (((name.size() > 4 && name.compare(name.size() - 4, 4, "Last") == 0) ||
          (name.size() > 5 && name.compare(name.size() - 5, 5, "_LAST") == 0)) &&
         iter->getInitVal() < max_so_far) {
-      diagnostic().Report(iter->getLocation(), diag_bad_enum_last_value_);
+      ReportIfSpellingLocNotIgnored(iter->getLocation(),
+                                    diag_bad_enum_last_value_);
     }
   }
 }
@@ -360,9 +377,7 @@ void FindBadConstructsConsumer::CheckCtorDtorWeight(
 
   if (ctor_score >= 10) {
     if (!record->hasUserDeclaredConstructor()) {
-      emitWarning(record_location,
-                  "Complex class/struct needs an explicit out-of-line "
-                  "constructor.");
+      ReportIfSpellingLocNotIgnored(record_location, diag_no_explicit_ctor_);
     } else {
       // Iterate across all the constructors in this file and yell if we
       // find one that tries to be inline.
@@ -386,9 +401,8 @@ void FindBadConstructsConsumer::CheckCtorDtorWeight(
             // be emitted on other platforms too, reevaluate if we want to keep
             // surpressing this then http://crbug.com/467288
             if (!record->hasAttr<DLLExportAttr>())
-              emitWarning(record_location,
-                          "Complex class/struct needs an explicit out-of-line "
-                          "copy constructor.");
+              ReportIfSpellingLocNotIgnored(record_location,
+                                            diag_no_explicit_copy_ctor_);
           } else {
             // See the comment in the previous branch about copy constructors.
             // This does the same for implicit move constructors.
@@ -397,8 +411,8 @@ void FindBadConstructsConsumer::CheckCtorDtorWeight(
                 !record->hasUserDeclaredMoveConstructor() &&
                 record->hasAttr<DLLExportAttr>();
             if (!is_likely_compiler_generated_dllexport_move_ctor)
-              emitWarning(it->getInnerLocStart(),
-                          "Complex constructor has an inlined body.");
+              ReportIfSpellingLocNotIgnored(it->getInnerLocStart(),
+                                            diag_inline_complex_ctor_);
           }
         } else if (it->isInlined() && !it->isInlineSpecified() &&
                    !it->isDeleted() && (!it->isCopyOrMoveConstructor() ||
@@ -408,8 +422,8 @@ void FindBadConstructsConsumer::CheckCtorDtorWeight(
           // constructors in the previously mentioned situation. To preserve
           // compatibility with existing Chromium code, only warn if it's an
           // explicitly defaulted copy or move constructor.
-          emitWarning(it->getInnerLocStart(),
-                      "Complex constructor has an inlined body.");
+          ReportIfSpellingLocNotIgnored(it->getInnerLocStart(),
+                                        diag_inline_complex_ctor_);
         }
       }
     }
@@ -419,14 +433,12 @@ void FindBadConstructsConsumer::CheckCtorDtorWeight(
   // trivial members; 20 ints don't need a destructor.
   if (dtor_score >= 10 && !record->hasTrivialDestructor()) {
     if (!record->hasUserDeclaredDestructor()) {
-      emitWarning(record_location,
-                  "Complex class/struct needs an explicit out-of-line "
-                  "destructor.");
+      ReportIfSpellingLocNotIgnored(record_location, diag_no_explicit_dtor_);
     } else if (CXXDestructorDecl* dtor = record->getDestructor()) {
       if (dtor->isInlined() && !dtor->isInlineSpecified() &&
           !dtor->isDeleted()) {
-        emitWarning(dtor->getInnerLocStart(),
-                    "Complex destructor has an inline body.");
+        ReportIfSpellingLocNotIgnored(dtor->getInnerLocStart(),
+                                      diag_inline_complex_dtor_);
       }
     }
   }
@@ -436,15 +448,13 @@ bool FindBadConstructsConsumer::InTestingNamespace(const Decl* record) {
   return GetNamespace(record).find("testing") != std::string::npos;
 }
 
-bool FindBadConstructsConsumer::IsMethodInBannedOrTestingNamespace(
+bool FindBadConstructsConsumer::IsMethodInTestingNamespace(
     const CXXMethodDecl* method) {
-  if (InBannedNamespace(method))
-    return true;
   for (CXXMethodDecl::method_iterator i = method->begin_overridden_methods();
        i != method->end_overridden_methods();
        ++i) {
     const CXXMethodDecl* overridden = *i;
-    if (IsMethodInBannedOrTestingNamespace(overridden) ||
+    if (IsMethodInTestingNamespace(overridden) ||
         // Provide an exception for ::testing::Test. gtest itself uses some
         // magic to try to make sure SetUp()/TearDown() aren't capitalized
         // incorrectly, but having the plugin enforce override is also nice.
@@ -460,10 +470,9 @@ bool FindBadConstructsConsumer::IsMethodInBannedOrTestingNamespace(
 SuppressibleDiagnosticBuilder
 FindBadConstructsConsumer::ReportIfSpellingLocNotIgnored(
     SourceLocation loc,
-    const Decl* record,
     unsigned diagnostic_id) {
-  LocationType type = ClassifyLocation(
-      instance().getSourceManager().getSpellingLoc(loc), record);
+  LocationType type =
+      ClassifyLocation(instance().getSourceManager().getSpellingLoc(loc));
   bool ignored =
       type == LocationType::kThirdParty || type == LocationType::kBlink;
   return SuppressibleDiagnosticBuilder(&diagnostic(), loc, diagnostic_id,
@@ -523,7 +532,7 @@ void FindBadConstructsConsumer::CheckVirtualSpecifiers(
   OverrideAttr* override_attr = method->getAttr<OverrideAttr>();
   FinalAttr* final_attr = method->getAttr<FinalAttr>();
 
-  if (IsMethodInBannedOrTestingNamespace(method))
+  if (IsMethodInTestingNamespace(method))
     return;
 
   SourceManager& manager = instance().getSourceManager();
@@ -535,7 +544,7 @@ void FindBadConstructsConsumer::CheckVirtualSpecifiers(
     // Note this is just an educated guess: the assumption here is that any
     // macro for declaring methods will probably be at the start of the method's
     // source range.
-    ReportIfSpellingLocNotIgnored(method->getLocStart(), method,
+    ReportIfSpellingLocNotIgnored(method->getLocStart(),
                                   diag_redundant_virtual_specifier_)
         << "'virtual'"
         << (override_attr ? static_cast<Attr*>(override_attr) : final_attr)
@@ -586,23 +595,23 @@ void FindBadConstructsConsumer::CheckVirtualSpecifiers(
     // Again, only emit the warning if it doesn't originate from a macro in
     // a system header.
     if (loc.isValid()) {
-      ReportIfSpellingLocNotIgnored(loc, method, diag_method_requires_override_)
+      ReportIfSpellingLocNotIgnored(loc, diag_method_requires_override_)
           << FixItHint::CreateInsertion(loc, " override");
     } else {
-      ReportIfSpellingLocNotIgnored(range.getBegin(), method,
+      ReportIfSpellingLocNotIgnored(range.getBegin(),
                                     diag_method_requires_override_);
     }
   }
 
   if (final_attr && override_attr) {
-    ReportIfSpellingLocNotIgnored(override_attr->getLocation(), method,
+    ReportIfSpellingLocNotIgnored(override_attr->getLocation(),
                                   diag_redundant_virtual_specifier_)
         << override_attr << final_attr
         << FixItHint::CreateRemoval(override_attr->getRange());
   }
 
   if (final_attr && !is_override) {
-    ReportIfSpellingLocNotIgnored(method->getLocStart(), method,
+    ReportIfSpellingLocNotIgnored(method->getLocStart(),
                                   diag_base_method_virtual_and_final_)
         << FixItRemovalForVirtual(manager, lang_opts, method)
         << FixItHint::CreateRemoval(final_attr->getRange());
@@ -623,8 +632,7 @@ void FindBadConstructsConsumer::CheckVirtualBodies(
         bool emit = true;
         if (loc.isMacroID()) {
           SourceManager& manager = instance().getSourceManager();
-          LocationType type =
-              ClassifyLocation(manager.getSpellingLoc(loc), method);
+          LocationType type = ClassifyLocation(manager.getSpellingLoc(loc));
           if (type == LocationType::kThirdParty || type == LocationType::kBlink)
             emit = false;
           else {
@@ -636,9 +644,7 @@ void FindBadConstructsConsumer::CheckVirtualBodies(
           }
         }
         if (emit)
-          emitWarning(loc,
-                      "virtual methods with non-empty bodies shouldn't be "
-                      "declared inline.");
+          ReportIfSpellingLocNotIgnored(loc, diag_virtual_with_inline_body_);
       }
     }
   }
@@ -804,9 +810,9 @@ void FindBadConstructsConsumer::PrintInheritanceChain(const CXXBasePath& path) {
 unsigned FindBadConstructsConsumer::DiagnosticForIssue(RefcountIssue issue) {
   switch (issue) {
     case ImplicitDestructor:
-      return diag_no_explicit_dtor_;
+      return diag_refcounted_needs_explicit_dtor_;
     case PublicDestructor:
-      return diag_public_dtor_;
+      return diag_refcounted_with_public_dtor_;
     case None:
       assert(false && "Do not call DiagnosticForIssue with issue None");
       return 0;
@@ -853,7 +859,8 @@ void FindBadConstructsConsumer::CheckRefCountedDtors(
           refcounted_path.begin()->back().Class->getDestructor()) {
     if (dtor->getAccess() == AS_protected && !dtor->isVirtual()) {
       loc = dtor->getInnerLocStart();
-      diagnostic().Report(loc, diag_protected_non_virtual_dtor_);
+      ReportIfSpellingLocNotIgnored(
+          loc, diag_refcounted_with_protected_non_virtual_dtor_);
       return;
     }
   }
@@ -907,12 +914,13 @@ void FindBadConstructsConsumer::CheckRefCountedDtors(
     issue = CheckRecordForRefcountIssue(problem_record, loc);
 
     if (issue == ImplicitDestructor) {
-      diagnostic().Report(record_location, diag_no_explicit_dtor_);
+      diagnostic().Report(record_location,
+                          diag_refcounted_needs_explicit_dtor_);
       PrintInheritanceChain(refcounted_path.front());
       diagnostic().Report(loc, diag_note_implicit_dtor_) << problem_record;
       PrintInheritanceChain(*it);
     } else if (issue == PublicDestructor) {
-      diagnostic().Report(record_location, diag_public_dtor_);
+      diagnostic().Report(record_location, diag_refcounted_with_public_dtor_);
       PrintInheritanceChain(refcounted_path.front());
       diagnostic().Report(loc, diag_note_public_dtor_);
       PrintInheritanceChain(*it);
@@ -969,8 +977,8 @@ void FindBadConstructsConsumer::CheckWeakPtrFactoryMembers(
     // one of those, it means there is at least one member after a factory.
     if (weak_ptr_factory_location.isValid() &&
         !param_is_weak_ptr_factory_to_self) {
-      diagnostic().Report(weak_ptr_factory_location,
-                          diag_weak_ptr_factory_order_);
+      ReportIfSpellingLocNotIgnored(weak_ptr_factory_location,
+                                    diag_weak_ptr_factory_order_);
     }
   }
 }
@@ -1015,9 +1023,8 @@ void FindBadConstructsConsumer::CheckVarDecl(clang::VarDecl* var_decl) {
           // should be fewer auto types than banned namespace/directory types,
           // so check this last.
           LocationType location_type =
-              ClassifyLocation(var_decl->getLocStart(), var_decl);
-          if (!InBannedNamespace(var_decl) &&
-              location_type != LocationType::kThirdParty) {
+              ClassifyLocation(var_decl->getLocStart());
+          if (location_type != LocationType::kThirdParty) {
             // The range starts from |var_decl|'s loc start, which is the
             // beginning of the full expression defining this |var_decl|. It
             // ends, however, where this |var_decl|'s type loc ends, since
@@ -1028,7 +1035,7 @@ void FindBadConstructsConsumer::CheckVarDecl(clang::VarDecl* var_decl) {
             clang::SourceRange range(
                 var_decl->getLocStart(),
                 var_decl->getTypeSourceInfo()->getTypeLoc().getLocEnd());
-            ReportIfSpellingLocNotIgnored(range.getBegin(), var_decl,
+            ReportIfSpellingLocNotIgnored(range.getBegin(),
                                           diag_auto_deduced_to_a_pointer_type_)
                 << FixItHint::CreateReplacement(
                        range,

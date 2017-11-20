@@ -40,6 +40,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/settings_resources.h"
 #include "chrome/grit/settings_resources_map.h"
+#include "components/password_manager/core/common/password_manager_features.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
@@ -60,7 +61,7 @@
 #endif  // defined(OS_WIN) || defined(OS_CHROMEOS)
 
 #if defined(OS_CHROMEOS)
-#include "ash/system/palette/palette_utils.h"
+#include "ash/public/cpp/stylus_utils.h"
 #include "ash/system/power/power_status.h"
 #include "chrome/browser/chromeos/arc/arc_util.h"
 #include "chrome/browser/chromeos/login/quick_unlock/quick_unlock_utils.h"
@@ -114,8 +115,8 @@ void MdSettingsUI::RegisterProfilePrefs(
 MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
     : content::WebUIController(web_ui),
       WebContentsObserver(web_ui->GetWebContents()) {
-#if BUILDFLAG(USE_VULCANIZE)
-  std::unordered_set<std::string> exclude_from_gzip;
+#if BUILDFLAG(OPTIMIZE_WEBUI)
+  std::vector<std::string> exclude_from_gzip;
 #endif
 
   Profile* profile = Profile::FromWebUI(web_ui);
@@ -188,9 +189,6 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 
   content::WebUIDataSource* html_source =
       content::WebUIDataSource::Create(chrome::kChromeUISettingsHost);
-  // This is used by a <base> tag in c/b/r/settings/BUILD.gn. TODO(dbeam): Is
-  // this still needed now that there's only 1 host name?
-  html_source->AddString("hostname", chrome::kChromeUISettingsHost);
 
 #if defined(OS_WIN)
   if (base::FeatureList::IsEnabled(safe_browsing::kInBrowserCleanerUIFeature)) {
@@ -207,18 +205,21 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 
     html_source->AddResourcePath("partner-logo.svg",
                                  IDR_CHROME_CLEANUP_PARTNER);
-#if BUILDFLAG(USE_VULCANIZE)
-    exclude_from_gzip.insert("partner-logo.svg");
+#if BUILDFLAG(OPTIMIZE_WEBUI)
+    exclude_from_gzip.push_back("partner-logo.svg");
 #endif
 #endif  // defined(GOOGLE_CHROME_BUILD)
   }
 #endif  // defined(OS_WIN)
 
 #if defined(SAFE_BROWSING_DB_LOCAL)
-  AddSettingsPageUIHandler(base::MakeUnique<ChangePasswordHandler>(profile));
-  html_source->AddBoolean("changePasswordEnabled",
-                          safe_browsing::ChromePasswordProtectionService::
-                              ShouldShowChangePasswordSettingUI(profile));
+  safe_browsing::ChromePasswordProtectionService* password_protection =
+      safe_browsing::ChromePasswordProtectionService::
+          GetPasswordProtectionService(profile);
+  if (password_protection) {
+    AddSettingsPageUIHandler(
+        base::MakeUnique<ChangePasswordHandler>(profile, password_protection));
+  }
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -242,7 +243,7 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   html_source->AddBoolean("fingerprintUnlockEnabled",
                           chromeos::quick_unlock::IsFingerprintEnabled());
   html_source->AddBoolean("hasInternalStylus",
-                          ash::palette_utils::HasInternalStylus());
+                          ash::stylus_utils::HasInternalStylus());
 
   // We have 2 variants of Android apps settings. Default case, when the Play
   // Store app exists we show expandable section that allows as to
@@ -265,6 +266,11 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   }
 #endif
 
+  html_source->AddBoolean(
+      "showImportExportPasswords",
+      base::FeatureList::IsEnabled(
+          password_manager::features::kPasswordImportExport));
+
   AddSettingsPageUIHandler(
       base::WrapUnique(AboutHandler::Create(html_source, profile)));
   AddSettingsPageUIHandler(
@@ -273,7 +279,7 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   // Add the metrics handler to write uma stats.
   web_ui->AddMessageHandler(base::MakeUnique<MetricsHandler>());
 
-#if BUILDFLAG(USE_VULCANIZE)
+#if BUILDFLAG(OPTIMIZE_WEBUI)
   html_source->AddResourcePath("crisper.js", IDR_MD_SETTINGS_CRISPER_JS);
   html_source->AddResourcePath("lazy_load.crisper.js",
                                IDR_MD_SETTINGS_LAZY_LOAD_CRISPER_JS);

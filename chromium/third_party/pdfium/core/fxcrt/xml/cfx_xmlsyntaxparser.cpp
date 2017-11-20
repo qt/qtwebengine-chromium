@@ -76,7 +76,7 @@ bool CFX_XMLSyntaxParser::IsXMLNameChar(wchar_t ch, bool bFirstChar) {
 }
 
 CFX_XMLSyntaxParser::CFX_XMLSyntaxParser(
-    const CFX_RetainPtr<CFX_SeekableStreamProxy>& pStream)
+    const RetainPtr<CFX_SeekableStreamProxy>& pStream)
     : m_pStream(pStream),
       m_iXMLPlaneSize(32 * 1024),
       m_iCurrentPos(0),
@@ -103,10 +103,10 @@ CFX_XMLSyntaxParser::CFX_XMLSyntaxParser(
 
   m_iXMLPlaneSize =
       std::min(m_iXMLPlaneSize,
-               pdfium::base::checked_cast<FX_STRSIZE>(m_pStream->GetLength()));
+               pdfium::base::checked_cast<size_t>(m_pStream->GetLength()));
   m_iCurrentPos = m_pStream->GetBOMLength();
 
-  FX_SAFE_STRSIZE alloc_size_safe = m_iXMLPlaneSize;
+  FX_SAFE_SIZE_T alloc_size_safe = m_iXMLPlaneSize;
   alloc_size_safe += 1;  // For NUL.
   if (!alloc_size_safe.IsValid() || alloc_size_safe.ValueOrDie() <= 0) {
     m_syntaxParserResult = FX_XmlSyntaxResult::Error;
@@ -623,7 +623,7 @@ void CFX_XMLSyntaxParser::ParseTextChar(wchar_t character) {
   m_pCurrentBlock[m_iIndexInBlock++] = character;
   m_BlockBuffer.IncrementDataLength();
   if (m_iEntityStart > -1 && character == L';') {
-    CFX_WideString csEntity = m_BlockBuffer.GetTextData(
+    WideString csEntity = m_BlockBuffer.GetTextData(
         m_iEntityStart + 1,
         m_BlockBuffer.GetDataLength() - 1 - m_iEntityStart - 1);
     int32_t iLen = csEntity.GetLength();

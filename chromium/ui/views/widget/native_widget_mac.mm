@@ -132,10 +132,12 @@ void NativeWidgetMac::InitNativeWidget(const Widget::InitParams& params) {
 
   delegate_->OnNativeWidgetCreated(true);
 
-  bridge_->SetFocusManager(GetWidget()->GetFocusManager());
-
   DCHECK(GetWidget()->GetRootView());
   bridge_->SetRootView(GetWidget()->GetRootView());
+  if (auto* focus_manager = GetWidget()->GetFocusManager()) {
+    [window makeFirstResponder:bridge_->ns_view()];
+    bridge_->SetFocusManager(focus_manager);
+  }
 
   // "Infer" must be handled by ViewsDelegate::OnBeforeWidgetInit().
   DCHECK_NE(Widget::InitParams::INFER_OPACITY, params.opacity);
@@ -278,7 +280,9 @@ bool NativeWidgetMac::SetWindowTitle(const base::string16& title) {
 
 void NativeWidgetMac::SetWindowIcons(const gfx::ImageSkia& window_icon,
                                      const gfx::ImageSkia& app_icon) {
-  NOTIMPLEMENTED();
+  // Per-window icons are not really a thing on Mac, so do nothing.
+  // TODO(tapted): Investigate whether to use NSWindowDocumentIconButton to set
+  // an icon next to the window title. See http://crbug.com/766897.
 }
 
 void NativeWidgetMac::InitModalType(ui::ModalType modal_type) {
@@ -326,7 +330,11 @@ void NativeWidgetMac::SetSize(const gfx::Size& size) {
 }
 
 void NativeWidgetMac::StackAbove(gfx::NativeView native_view) {
-  NOTIMPLEMENTED();
+  // NativeWidgetMac currently only has machinery for stacking windows, and only
+  // stacks child windows above parents. That's currently all this is used for.
+  // DCHECK if a new use case comes along.
+  DCHECK(bridge_ && bridge_->parent());
+  DCHECK_EQ([native_view window], bridge_->parent()->GetNSWindow());
 }
 
 void NativeWidgetMac::StackAtTop() {
@@ -355,7 +363,7 @@ void NativeWidgetMac::Close() {
   }
 
   // For other modal types, animate the close.
-  if (delegate_->IsModal()) {
+  if (bridge_->animate() && delegate_->IsModal()) {
     [ViewsNSWindowCloseAnimator closeWindowWithAnimation:window];
     return;
   }
@@ -579,7 +587,8 @@ void NativeWidgetMac::EndMoveLoop() {
 }
 
 void NativeWidgetMac::SetVisibilityChangedAnimationsEnabled(bool value) {
-  NOTIMPLEMENTED();
+  if (bridge_)
+    bridge_->set_animate(value);
 }
 
 void NativeWidgetMac::SetVisibilityAnimationDuration(

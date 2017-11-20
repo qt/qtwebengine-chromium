@@ -31,12 +31,6 @@ group("base") {
   }
 }
 
-config("rtc_base_approved_all_dependent_config") {
-  if (is_mac && !build_with_chromium) {
-    libs = [ "Foundation.framework" ]  # needed for logging_mac.mm
-  }
-}
-
 config("rtc_base_chromium_config") {
   defines = [ "NO_MAIN_THREAD_WRAPPING" ]
 }
@@ -86,8 +80,22 @@ source_set("compile_assert_c") {
   ]
 }
 
+rtc_source_set("rtc_base_approved") {
+  public_deps = [
+    ":rtc_base_approved_generic",
+  ]
+  if (is_mac && !build_with_chromium) {
+    public_deps += [ ":rtc_base_approved_objc" ]
+  }
+}
+
 # The subset of rtc_base approved for use outside of libjingle.
-rtc_static_library("rtc_base_approved") {
+rtc_source_set("rtc_base_approved_generic") {
+  visibility = [
+    ":rtc_base_approved",
+    ":rtc_base_approved_objc",
+  ]
+
   # TODO(kjellander): Remove (bugs.webrtc.org/7480)
   # Enabling GN check triggers a cyclic dependency caused by rate_limiter.cc:
   #   :rtc_base_approved -> ../system_wrappers -> :rtc_base_approved
@@ -95,10 +103,8 @@ rtc_static_library("rtc_base_approved") {
   defines = []
   libs = []
   deps = []
-  all_dependent_configs = [ ":rtc_base_approved_all_dependent_config" ]
 
   sources = [
-    "array_view.h",
     "arraysize.h",
     "atomicops.h",
     "base64.cc",
@@ -137,8 +143,6 @@ rtc_static_library("rtc_base_approved") {
     "mod_ops.h",
     "moving_max_counter.h",
     "onetimeevent.h",
-    "optional.cc",
-    "optional.h",
     "pathutils.cc",
     "pathutils.h",
     "platform_file.cc",
@@ -204,14 +208,13 @@ rtc_static_library("rtc_base_approved") {
     # Dependency on chromium's logging (in //base).
     deps += [ "//base:base" ]
     sources += [
-      "../../webrtc_overrides/webrtc/rtc_base/logging.cc",
-      "../../webrtc_overrides/webrtc/rtc_base/logging.h",
+      "../../webrtc_overrides/rtc_base/logging.cc",
+      "../../webrtc_overrides/rtc_base/logging.h",
     ]
   } else {
     sources += [
       "logging.cc",
       "logging.h",
-      "logging_mac.mm",
     ]
   }
   if (is_component_build && is_win) {
@@ -291,8 +294,22 @@ rtc_static_library("rtc_base_approved") {
   }
 }
 
-config("enable_libevent_config") {
-  defines = [ "WEBRTC_BUILD_LIBEVENT" ]
+if (is_mac && !build_with_chromium) {
+  config("rtc_base_approved_objc_all_dependent_config") {
+    visibility = [ ":rtc_base_approved_objc" ]
+    libs = [ "Foundation.framework" ]  # needed for logging_mac.mm
+  }
+
+  rtc_source_set("rtc_base_approved_objc") {
+    visibility = [ ":rtc_base_approved" ]
+    all_dependent_configs = [ ":rtc_base_approved_objc_all_dependent_config" ]
+    sources = [
+      "logging_mac.mm",
+    ]
+    deps = [
+      ":rtc_base_approved_generic",
+    ]
+  }
 }
 
 rtc_source_set("rtc_task_queue") {
@@ -315,15 +332,9 @@ rtc_source_set("rtc_task_queue") {
 # provided implementation should be used. An external implementation should
 # depend on rtc_task_queue_api.
 rtc_source_set("rtc_task_queue_api") {
-  if (build_with_chromium) {
-    sources = [
-      "../../webrtc_overrides/webrtc/rtc_base/task_queue.h",
-    ]
-  } else {
-    sources = [
-      "task_queue.h",
-    ]
-  }
+  sources = [
+    "task_queue.h",
+  ]
   deps = [
     ":rtc_base_approved",
   ]
@@ -336,7 +347,7 @@ rtc_source_set("rtc_task_queue_impl") {
   ]
   if (build_with_chromium) {
     sources = [
-      "../../webrtc_overrides/webrtc/rtc_base/task_queue.cc",
+      "../../webrtc_overrides/rtc_base/task_queue.cc",
     ]
   } else {
     if (rtc_build_libevent) {
@@ -348,7 +359,6 @@ rtc_source_set("rtc_task_queue_impl") {
         "task_queue_posix.cc",
         "task_queue_posix.h",
       ]
-      all_dependent_configs = [ ":enable_libevent_config" ]
     } else {
       if (is_mac || is_ios) {
         sources = [
@@ -430,12 +440,42 @@ rtc_source_set("rtc_json") {
 }
 
 rtc_static_library("rtc_base") {
+  public_deps = [
+    ":rtc_base_generic",
+  ]
+  if (is_win) {
+    sources = [
+      "noop.cc",
+    ]
+  }
+  if (is_ios || is_mac) {
+    sources = [
+      "noop.mm",
+    ]
+    public_deps += [ ":rtc_base_objc" ]
+  }
+}
+
+if (is_ios || is_mac) {
+  rtc_source_set("rtc_base_objc") {
+    sources = [
+      "thread_darwin.mm",
+    ]
+    deps = [
+      ":rtc_base_generic",
+    ]
+    visibility = [ ":rtc_base" ]
+  }
+}
+
+rtc_static_library("rtc_base_generic") {
   cflags = []
   cflags_cc = []
   libs = []
   defines = []
   deps = [
     "..:webrtc_common",
+    "../api:optional",
   ]
   public_deps = [
     ":rtc_base_approved",
@@ -486,6 +526,7 @@ rtc_static_library("rtc_base") {
     "nethelpers.h",
     "network.cc",
     "network.h",
+    "network_constants.h",
     "networkmonitor.cc",
     "networkmonitor.h",
     "nullsocketserver.cc",
@@ -513,6 +554,7 @@ rtc_static_library("rtc_base") {
     "signalthread.h",
     "sigslot.cc",
     "sigslot.h",
+    "sigslotrepeater.h",
     "socket.h",
     "socketadapters.cc",
     "socketadapters.h",
@@ -538,6 +580,11 @@ rtc_static_library("rtc_base") {
     "thread.h",
   ]
 
+  visibility = [
+    ":rtc_base",
+    ":rtc_base_objc",
+  ]
+
   # TODO(henrike): issue 3307, make rtc_base build with the Chromium default
   # compiler settings.
   suppressed_configs += [ "//build/config/compiler:chromium_code" ]
@@ -548,7 +595,7 @@ rtc_static_library("rtc_base") {
 
   if (build_with_chromium) {
     if (is_win) {
-      sources += [ "../../webrtc_overrides/webrtc/rtc_base/win32socketinit.cc" ]
+      sources += [ "../../webrtc_overrides/rtc_base/win32socketinit.cc" ]
     }
     include_dirs = [ "../../boringssl/src/include" ]
     public_configs += [ ":rtc_base_chromium_config" ]
@@ -597,10 +644,7 @@ rtc_static_library("rtc_base") {
   }
 
   if (is_ios || is_mac) {
-    sources += [
-      "macifaddrs_converter.cc",
-      "thread_darwin.mm",
-    ]
+    sources += [ "macifaddrs_converter.cc" ]
   }
 
   if (use_x11) {
@@ -728,6 +772,7 @@ rtc_source_set("rtc_base_tests_utils") {
     "nattypes.h",
     "proxyserver.cc",
     "proxyserver.h",
+    "refcount.h",
     "sha1.cc",
     "sha1.h",
     "sha1digest.cc",
@@ -835,7 +880,6 @@ if (rtc_include_tests) {
       #visibility = [ "..:rtc_unittests" ]
     }
     sources = [
-      "array_view_unittest.cc",
       "atomicops_unittest.cc",
       "base64_unittest.cc",
       "basictypes_unittest.cc",
@@ -856,7 +900,6 @@ if (rtc_include_tests) {
       "mod_ops_unittest.cc",
       "moving_max_counter_unittest.cc",
       "onetimeevent_unittest.cc",
-      "optional_unittest.cc",
       "pathutils_unittest.cc",
       "platform_thread_unittest.cc",
       "random_unittest.cc",
@@ -883,6 +926,7 @@ if (rtc_include_tests) {
       ":rtc_base_tests_main",
       ":rtc_base_tests_utils",
       ":rtc_task_queue",
+      "../api:array_view",
       "../system_wrappers:system_wrappers",
       "../test:test_support",
     ]
@@ -1033,9 +1077,6 @@ if (rtc_include_tests) {
         "win32window_unittest.cc",
       ]
     }
-    if (is_mac) {
-      sources += [ "macutils_unittest.cc" ]
-    }
     if (is_posix) {
       sources += [
         "openssladapter_unittest.cc",
@@ -1047,6 +1088,7 @@ if (rtc_include_tests) {
     deps = [
       ":rtc_base_tests_main",
       ":rtc_base_tests_utils",
+      "../api:optional",
       "../test:test_support",
     ]
     public_deps = [

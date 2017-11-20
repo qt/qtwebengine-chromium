@@ -37,6 +37,7 @@
 #include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameClient.h"
+#include "core/frame/WebFeature.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorNetworkAgent.h"
 #include "core/inspector/InspectorTraceEvents.h"
@@ -45,8 +46,6 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/loader/ThreadableLoadingContext.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/Page.h"
 #include "core/probe/CoreProbes.h"
 #include "platform/SharedBuffer.h"
 #include "platform/exported/WrappedResourceRequest.h"
@@ -291,24 +290,6 @@ void DocumentThreadableLoader::StartBlinkCORS(const ResourceRequest& request) {
   // cross-origin, we cancel the old request create a new one, and copy these
   // headers.
   request_headers_ = request.HttpHeaderFields();
-
-  // DocumentThreadableLoader is used by all javascript initiated fetch, so we
-  // use this chance to record non-GET fetch script requests. However, this is
-  // based on the following assumptions, so please be careful when adding
-  // similar logic:
-  // - ThreadableLoader is used as backend for all javascript initiated network
-  //   fetches.
-  // - Note that ThreadableLoader is also used for non-network fetch such as
-  //   FileReaderLoader. However it emulates GET method so signal is not
-  //   recorded here.
-  // - ThreadableLoader w/ non-GET request is only created from javascript
-  //   initiated fetch.
-  // - Some non-script initiated fetches such as WorkerScriptLoader also use
-  //   ThreadableLoader, but they are guaranteed to use GET method.
-  if (request.HttpMethod() != HTTPNames::GET && GetDocument()) {
-    if (Page* page = GetDocument()->GetPage())
-      page->GetChromeClient().DidObserveNonGetFetchFromScript();
-  }
 
   ResourceRequest new_request(request);
 
@@ -743,7 +724,7 @@ bool DocumentThreadableLoader::RedirectReceivedBlinkCORS(
     RefPtr<SecurityOrigin> original_origin =
         SecurityOrigin::Create(original_url);
     RefPtr<SecurityOrigin> new_origin = SecurityOrigin::Create(new_url);
-    if (!original_origin->IsSameSchemeHostPort(new_origin.Get()))
+    if (!original_origin->IsSameSchemeHostPort(new_origin.get()))
       security_origin_ = SecurityOrigin::CreateUnique();
   }
 
@@ -1326,7 +1307,7 @@ bool DocumentThreadableLoader::IsAllowedRedirect(
 
 SecurityOrigin* DocumentThreadableLoader::GetSecurityOrigin() const {
   return security_origin_
-             ? security_origin_.Get()
+             ? security_origin_.get()
              : loading_context_->GetFetchContext()->GetSecurityOrigin();
 }
 

@@ -9,9 +9,10 @@
 
 #include <algorithm>
 #include <memory>
+#include <vector>
 
-#include "core/fxcrt/cfx_string_pool_template.h"
-#include "core/fxcrt/cfx_weak_ptr.h"
+#include "core/fxcrt/string_pool_template.h"
+#include "core/fxcrt/weak_ptr.h"
 
 class CPDF_CryptoHandler;
 class CPDF_Dictionary;
@@ -23,44 +24,41 @@ class IFX_SeekableReadStream;
 
 class CPDF_SyntaxParser {
  public:
+  enum class ParseType { kStrict, kLoose };
+
   CPDF_SyntaxParser();
-  explicit CPDF_SyntaxParser(const CFX_WeakPtr<CFX_ByteStringPool>& pPool);
+  explicit CPDF_SyntaxParser(const WeakPtr<ByteStringPool>& pPool);
   ~CPDF_SyntaxParser();
 
-  void InitParser(const CFX_RetainPtr<IFX_SeekableReadStream>& pFileAccess,
+  void InitParser(const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
                   uint32_t HeaderOffset);
 
-  void InitParserWithValidator(
-      const CFX_RetainPtr<CPDF_ReadValidator>& pValidator,
-      uint32_t HeaderOffset);
+  void InitParserWithValidator(const RetainPtr<CPDF_ReadValidator>& pValidator,
+                               uint32_t HeaderOffset);
 
   FX_FILESIZE GetPos() const { return m_Pos; }
   void SetPos(FX_FILESIZE pos) { m_Pos = std::min(pos, m_FileLen); }
 
-  std::unique_ptr<CPDF_Object> GetObject(CPDF_IndirectObjectHolder* pObjList,
-                                         uint32_t objnum,
-                                         uint32_t gennum,
-                                         bool bDecrypt);
+  std::unique_ptr<CPDF_Object> GetObjectBody(
+      CPDF_IndirectObjectHolder* pObjList);
 
-  std::unique_ptr<CPDF_Object> GetObjectForStrict(
+  std::unique_ptr<CPDF_Object> GetIndirectObject(
       CPDF_IndirectObjectHolder* pObjList,
-      uint32_t objnum,
-      uint32_t gennum,
-      bool bDecrypt);
+      ParseType parse_type);
 
-  CFX_ByteString GetKeyword();
+  ByteString GetKeyword();
   void ToNextLine();
   void ToNextWord();
-  bool BackwardsSearchToWord(const CFX_ByteStringC& word, FX_FILESIZE limit);
-  FX_FILESIZE FindTag(const CFX_ByteStringC& tag, FX_FILESIZE limit);
-  void SetEncrypt(const CFX_RetainPtr<CPDF_CryptoHandler>& pCryptoHandler);
+  bool BackwardsSearchToWord(const ByteStringView& word, FX_FILESIZE limit);
+  FX_FILESIZE FindTag(const ByteStringView& tag, FX_FILESIZE limit);
   bool ReadBlock(uint8_t* pBuf, uint32_t size);
   bool GetCharAt(FX_FILESIZE pos, uint8_t& ch);
-  CFX_ByteString GetNextWord(bool* bIsNumber);
+  ByteString GetNextWord(bool* bIsNumber);
+  ByteString PeekNextWord(bool* bIsNumber);
 
-  CFX_RetainPtr<IFX_SeekableReadStream> GetFileAccess() const;
+  RetainPtr<IFX_SeekableReadStream> GetFileAccess() const;
 
-  const CFX_RetainPtr<CPDF_ReadValidator>& GetValidator() const {
+  const RetainPtr<CPDF_ReadValidator>& GetValidator() const {
     return m_pFileAccess;
   }
 
@@ -73,49 +71,36 @@ class CPDF_SyntaxParser {
   static int s_CurrentRecursionDepth;
 
   uint32_t GetDirectNum();
-  bool ReadChar(FX_FILESIZE read_pos, uint32_t read_size);
+  bool ReadBlockAt(FX_FILESIZE read_pos);
   bool GetNextChar(uint8_t& ch);
   bool GetCharAtBackward(FX_FILESIZE pos, uint8_t* ch);
   void GetNextWordInternal(bool* bIsNumber);
   bool IsWholeWord(FX_FILESIZE startpos,
                    FX_FILESIZE limit,
-                   const CFX_ByteStringC& tag,
+                   const ByteStringView& tag,
                    bool checkKeyword);
 
-  CFX_ByteString ReadString();
-  CFX_ByteString ReadHexString();
+  ByteString ReadString();
+  ByteString ReadHexString();
   unsigned int ReadEOLMarkers(FX_FILESIZE pos);
   std::unique_ptr<CPDF_Stream> ReadStream(
-      std::unique_ptr<CPDF_Dictionary> pDict,
-      uint32_t objnum,
-      uint32_t gennum);
+      std::unique_ptr<CPDF_Dictionary> pDict);
 
-  inline bool CheckPosition(FX_FILESIZE pos) {
-    return m_BufOffset >= pos ||
-           static_cast<FX_FILESIZE>(m_BufOffset + m_BufSize) <= pos;
-  }
+  bool IsPositionRead(FX_FILESIZE pos) const;
 
-  enum class ParseType { kStrict, kLoose };
-
-  std::unique_ptr<CPDF_Object> GetObjectInternal(
+  std::unique_ptr<CPDF_Object> GetObjectBodyInternal(
       CPDF_IndirectObjectHolder* pObjList,
-      uint32_t objnum,
-      uint32_t gennum,
-      bool bDecrypt,
       ParseType parse_type);
 
   FX_FILESIZE m_Pos;
-  uint32_t m_MetadataObjnum;
-  CFX_RetainPtr<CPDF_ReadValidator> m_pFileAccess;
+  RetainPtr<CPDF_ReadValidator> m_pFileAccess;
   FX_FILESIZE m_HeaderOffset;
   FX_FILESIZE m_FileLen;
-  uint8_t* m_pFileBuf;
-  uint32_t m_BufSize;
+  std::vector<uint8_t> m_pFileBuf;
   FX_FILESIZE m_BufOffset;
-  CFX_RetainPtr<CPDF_CryptoHandler> m_pCryptoHandler;
   uint8_t m_WordBuffer[257];
   uint32_t m_WordSize;
-  CFX_WeakPtr<CFX_ByteStringPool> m_pPool;
+  WeakPtr<ByteStringPool> m_pPool;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_SYNTAX_PARSER_H_

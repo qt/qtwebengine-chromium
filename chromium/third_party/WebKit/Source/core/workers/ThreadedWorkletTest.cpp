@@ -65,18 +65,6 @@ class ThreadedWorkletThreadForTest : public WorkerThread {
 
   void ClearWorkerBackingThread() override {}
 
-  WorkerOrWorkletGlobalScope* CreateWorkerGlobalScope(
-      std::unique_ptr<GlobalScopeCreationParams> creation_params) final {
-    RefPtr<SecurityOrigin> security_origin =
-        SecurityOrigin::Create(creation_params->script_url);
-    return new ThreadedWorkletGlobalScope(
-        creation_params->script_url, creation_params->user_agent,
-        std::move(security_origin), this->GetIsolate(), this,
-        creation_params->worker_clients);
-  }
-
-  bool IsOwningBackingThread() const final { return false; }
-
   static void EnsureSharedBackingThread() {
     DCHECK(IsMainThread());
     WorkletThreadHolder<ThreadedWorkletThreadForTest>::CreateForTest(
@@ -121,6 +109,19 @@ class ThreadedWorkletThreadForTest : public WorkerThread {
         ->Get(TaskType::kUnspecedTimer)
         ->PostTask(BLINK_FROM_HERE, CrossThreadBind(&testing::ExitRunLoop));
   }
+
+ private:
+  WorkerOrWorkletGlobalScope* CreateWorkerGlobalScope(
+      std::unique_ptr<GlobalScopeCreationParams> creation_params) final {
+    RefPtr<SecurityOrigin> security_origin =
+        SecurityOrigin::Create(creation_params->script_url);
+    return new ThreadedWorkletGlobalScope(
+        creation_params->script_url, creation_params->user_agent,
+        std::move(security_origin), this->GetIsolate(), this,
+        creation_params->worker_clients);
+  }
+
+  bool IsOwningBackingThread() const final { return false; }
 };
 
 class ThreadedWorkletMessagingProxyForTest
@@ -149,7 +150,7 @@ class ThreadedWorkletMessagingProxyForTest
             script_url, "fake user agent", "// fake source code",
             std::move(cached_meta_data), kDontPauseWorkerGlobalScopeOnStart,
             &content_security_policy_headers, referrer_policy,
-            security_origin_.Get(), worker_clients, kWebAddressSpaceLocal,
+            security_origin_.get(), worker_clients, kWebAddressSpaceLocal,
             &origin_trial_tokens, std::move(worker_settings),
             kV8CacheOptionsDefault),
         WTF::nullopt, script_url);

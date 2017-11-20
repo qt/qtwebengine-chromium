@@ -79,8 +79,9 @@ class BufferPoolBufferHandleProvider
       : buffer_pool_(std::move(buffer_pool)), buffer_id_(buffer_id) {}
 
   // Implementation of HandleProvider:
-  mojo::ScopedSharedBufferHandle GetHandleForInterProcessTransit() override {
-    return buffer_pool_->GetHandleForInterProcessTransit(buffer_id_);
+  mojo::ScopedSharedBufferHandle GetHandleForInterProcessTransit(
+      bool read_only) override {
+    return buffer_pool_->GetHandleForInterProcessTransit(buffer_id_, read_only);
   }
   base::SharedMemoryHandle GetNonOwnedSharedMemoryHandleForLegacyIPC()
       override {
@@ -416,9 +417,8 @@ VideoCaptureDeviceClient::ResurrectLastOutputBuffer(
   return MakeBufferStruct(buffer_pool_, buffer_id, new_frame_feedback_id);
 }
 
-void VideoCaptureDeviceClient::OnError(
-    const tracked_objects::Location& from_here,
-    const std::string& reason) {
+void VideoCaptureDeviceClient::OnError(const base::Location& from_here,
+                                       const std::string& reason) {
   const std::string log_message = base::StringPrintf(
       "error@ %s, %s, OS message: %s", from_here.ToString().c_str(),
       reason.c_str(),

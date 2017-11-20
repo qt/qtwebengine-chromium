@@ -22,6 +22,7 @@ class NGInlineBreakToken;
 class NGInlineNode;
 class NGInlineItem;
 class NGLineBoxFragmentBuilder;
+class NGTextFragmentBuilder;
 
 // A class for inline layout (e.g. a <span> with no special style).
 //
@@ -52,16 +53,37 @@ class CORE_EXPORT NGInlineLayoutAlgorithm final
   bool PlaceItems(NGLineInfo*,
                   const NGExclusionSpace&,
                   RefPtr<NGInlineBreakToken>);
+  void PlaceText(RefPtr<const ShapeResult>,
+                 RefPtr<const ComputedStyle>,
+                 LayoutUnit* position,
+                 NGInlineBoxState*,
+                 NGTextFragmentBuilder*,
+                 NGLineBoxFragmentBuilder*);
+  void PlaceGeneratedContent(RefPtr<const ShapeResult>,
+                             RefPtr<const ComputedStyle>,
+                             LayoutUnit* position,
+                             NGInlineBoxState*,
+                             NGTextFragmentBuilder*,
+                             NGLineBoxFragmentBuilder*);
   NGInlineBoxState* PlaceAtomicInline(const NGInlineItem&,
                                       NGInlineItemResult*,
                                       const NGLineInfo&,
                                       LayoutUnit position,
                                       NGLineBoxFragmentBuilder*);
+  void PlaceLayoutResult(NGInlineItemResult*,
+                         LayoutUnit position,
+                         NGInlineBoxState*,
+                         NGLineBoxFragmentBuilder*);
+  void PlaceListMarker(const NGInlineItem&,
+                       NGInlineItemResult*,
+                       const NGLineInfo&,
+                       NGLineBoxFragmentBuilder*);
 
-  void ApplyTextAlign(ETextAlign,
+  void ApplyTextAlign(const NGLineInfo&,
+                      ETextAlign,
                       LayoutUnit* line_left,
-                      LayoutUnit inline_size,
-                      LayoutUnit available_width);
+                      LayoutUnit inline_size);
+  bool ApplyJustify(NGLineInfo*);
 
   LayoutUnit ComputeContentSize(const NGLineInfo&,
                                 const NGExclusionSpace&,
@@ -77,10 +99,8 @@ class CORE_EXPORT NGInlineLayoutAlgorithm final
   LayoutUnit max_inline_size_;
   FontBaseline baseline_type_ = FontBaseline::kAlphabeticBaseline;
 
-  NGLogicalOffset bfc_offset_;
-  NGBfcRect current_opportunity_;
-
   unsigned is_horizontal_writing_mode_ : 1;
+  unsigned quirks_mode_ : 1;
 
   std::unique_ptr<NGExclusionSpace> exclusion_space_;
   Vector<RefPtr<NGUnpositionedFloat>> unpositioned_floats_;

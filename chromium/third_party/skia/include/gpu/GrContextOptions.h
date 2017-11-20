@@ -61,7 +61,7 @@ struct GrContextOptions {
      * If true this allows path mask textures to be cached. This is only really useful if paths
      * are commonly rendered at the same scale and fractional translation.
      */
-    bool fAllowPathMaskCaching = false;
+    bool fAllowPathMaskCaching = true;
 
     /**
      * If true, sRGB support will not be enabled unless sRGB decoding can be disabled (via an
@@ -118,6 +118,12 @@ struct GrContextOptions {
      * Include or exclude specific GPU path renderers.
      */
     GpuPathRenderers fGpuPathRenderers = GpuPathRenderers::kDefault;
+
+    /**
+     * Disables using multiple texture units to batch multiple images into a single draw on
+     * supported GPUs.
+     */
+    bool fDisableImageMultitexturing = false;
 #endif
 };
 

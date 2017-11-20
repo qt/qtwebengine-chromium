@@ -665,8 +665,9 @@ bool VPCodecConfigurationRecord::Parse(BoxReader* reader) {
       profile = VP9PROFILE_PROFILE3;
       break;
     default:
-      MEDIA_LOG(ERROR, reader->media_log()) << "Unsupported VP9 profile: "
-                                            << profile_indication;
+      MEDIA_LOG(ERROR, reader->media_log())
+          << "Unsupported VP9 profile: 0x" << std::hex
+          << static_cast<uint32_t>(profile_indication);
       return false;
   }
   return true;
@@ -738,14 +739,14 @@ bool VideoSampleEntry::Parse(BoxReader* reader) {
           avcConfig->profile_indication);
 
       frame_bitstream_converter =
-          make_scoped_refptr(new AVCBitstreamConverter(std::move(avcConfig)));
+          base::MakeRefCounted<AVCBitstreamConverter>(std::move(avcConfig));
 #if BUILDFLAG(ENABLE_DOLBY_VISION_DEMUXING)
       // It can be Dolby Vision stream if there is DVCC box.
       DolbyVisionConfiguration dvccConfig;
       if (reader->HasChild(&dvccConfig) && reader->ReadChild(&dvccConfig)) {
         DVLOG(2) << __func__ << " reading DolbyVisionConfiguration (dvcC)";
         static_cast<AVCBitstreamConverter*>(frame_bitstream_converter.get())
-            ->DisablePostAnnexbValidation();
+            ->disable_validation();
         video_codec = kCodecDolbyVision;
         video_codec_profile = dvccConfig.codec_profile;
       }
@@ -762,7 +763,7 @@ bool VideoSampleEntry::Parse(BoxReader* reader) {
       video_codec = kCodecHEVC;
       video_codec_profile = hevcConfig->GetVideoProfile();
       frame_bitstream_converter =
-          make_scoped_refptr(new HEVCBitstreamConverter(std::move(hevcConfig)));
+          base::MakeRefCounted<HEVCBitstreamConverter>(std::move(hevcConfig));
 #if BUILDFLAG(ENABLE_DOLBY_VISION_DEMUXING)
       // It can be Dolby Vision stream if there is DVCC box.
       DolbyVisionConfiguration dvccConfig;
@@ -783,7 +784,7 @@ bool VideoSampleEntry::Parse(BoxReader* reader) {
           new AVCDecoderConfigurationRecord());
       RCHECK(reader->ReadChild(avcConfig.get()));
       frame_bitstream_converter =
-          make_scoped_refptr(new AVCBitstreamConverter(std::move(avcConfig)));
+          base::MakeRefCounted<AVCBitstreamConverter>(std::move(avcConfig));
       DVLOG(2) << __func__ << " reading DolbyVisionConfiguration (dvcC)";
       DolbyVisionConfiguration dvccConfig;
       RCHECK(reader->ReadChild(&dvccConfig));
@@ -799,7 +800,7 @@ bool VideoSampleEntry::Parse(BoxReader* reader) {
           new HEVCDecoderConfigurationRecord());
       RCHECK(reader->ReadChild(hevcConfig.get()));
       frame_bitstream_converter =
-          make_scoped_refptr(new HEVCBitstreamConverter(std::move(hevcConfig)));
+          base::MakeRefCounted<HEVCBitstreamConverter>(std::move(hevcConfig));
       DVLOG(2) << __func__ << " reading DolbyVisionConfiguration (dvcC)";
       DolbyVisionConfiguration dvccConfig;
       RCHECK(reader->ReadChild(&dvccConfig));

@@ -9,12 +9,14 @@
 #include "base/threading/thread.h"
 #include "gpu/ipc/in_process_command_buffer.h"
 #include "gpu/ipc/service/gpu_init.h"
+#include "mojo/public/cpp/bindings/associated_binding_set.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/ui/gpu/interfaces/gpu_main.mojom.h"
 #include "services/viz/privileged/interfaces/gl/gpu_service.mojom.h"
 
 namespace gpu {
 class GpuMemoryBufferFactory;
+class SyncPointManager;
 }
 
 namespace viz {
@@ -27,46 +29,91 @@ namespace ui {
 
 class GpuMain : public gpu::GpuSandboxHelper, public mojom::GpuMain {
  public:
-  explicit GpuMain(mojom::GpuMainRequest request);
+  struct LogMessage {
+    int severity;
+    std::string header;
+    std::string message;
+  };
+  using LogMessages = std::vector<LogMessage>;
+
+  class Delegate {
+   public:
+    virtual ~Delegate() = default;
+
+    virtual void OnInitializationFailed() = 0;
+    virtual void OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) = 0;
+  };
+
+  struct ExternalDependencies {
+   public:
+    ExternalDependencies();
+    ExternalDependencies(ExternalDependencies&& other);
+    ~ExternalDependencies();
+
+    ExternalDependencies& operator=(ExternalDependencies&& other);
+
+    bool create_display_compositor = false;
+    gpu::SyncPointManager* sync_point_manager = nullptr;
+    base::WaitableEvent* shutdown_event = nullptr;
+    scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(ExternalDependencies);
+  };
+
+  GpuMain(Delegate* delegate,
+          ExternalDependencies dependencies,
+          std::unique_ptr<gpu::GpuInit> gpu_init = nullptr);
   ~GpuMain() override;
+
+  void SetLogMessagesForHost(LogMessages messages);
+
+  void Bind(mojom::GpuMainRequest request);
+  void BindAssociated(mojom::GpuMainAssociatedRequest request);
+
+  // Calling this from the gpu or compositor thread can lead to crash/deadlock.
+  // So this must be called from a different thread.
+  // TODO(crbug.com/609317): After the process split, we should revisit to make
+  // this cleaner.
+  void TearDown();
 
   // mojom::GpuMain implementation:
   void CreateGpuService(viz::mojom::GpuServiceRequest request,
-                        mojom::GpuHostPtr gpu_host,
+                        viz::mojom::GpuHostPtr gpu_host,
                         const gpu::GpuPreferences& preferences,
                         mojo::ScopedSharedBufferHandle activity_flags) override;
   void CreateFrameSinkManager(
       viz::mojom::FrameSinkManagerRequest request,
       viz::mojom::FrameSinkManagerClientPtr client) override;
 
-  void OnStart();
-
   viz::GpuServiceImpl* gpu_service() { return gpu_service_.get(); }
+  const viz::GpuServiceImpl* gpu_service() const { return gpu_service_.get(); }
 
  private:
-  void BindOnGpu(mojom::GpuMainRequest request);
-  void InitOnGpuThread(
-      scoped_refptr<base::SingleThreadTaskRunner> io_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> compositor_runner);
-
   void CreateFrameSinkManagerInternal(
       viz::mojom::FrameSinkManagerRequest request,
       viz::mojom::FrameSinkManagerClientPtrInfo client_info);
   void CreateFrameSinkManagerOnCompositorThread(
       viz::mojom::FrameSinkManagerRequest request,
       viz::mojom::FrameSinkManagerClientPtrInfo client_info);
-  void CreateGpuServiceOnGpuThread(viz::mojom::GpuServiceRequest request,
-                                   mojom::GpuHostPtr gpu_host,
-                                   const gpu::GpuPreferences& preferences,
-                                   gpu::GpuProcessActivityFlags activity_flags);
 
-  void TearDownOnCompositorThread();
-  void TearDownOnGpuThread();
+  void CloseGpuMainBindingOnGpuThread(base::WaitableEvent* wait);
+  void TearDownOnCompositorThread(base::WaitableEvent* wait);
+  void TearDownOnGpuThread(base::WaitableEvent* wait);
 
   // gpu::GpuSandboxHelper:
   void PreSandboxStartup() override;
-  bool EnsureSandboxInitialized(
-      gpu::GpuWatchdogThread* watchdog_thread) override;
+  bool EnsureSandboxInitialized(gpu::GpuWatchdogThread* watchdog_thread,
+                                const gpu::GPUInfo* gpu_info) override;
+
+  Delegate* const delegate_;
+
+  const ExternalDependencies dependencies_;
+
+  // The thread that handles IO events for Gpu (if one isn't already provided).
+  std::unique_ptr<base::Thread> io_thread_;
+
+  LogMessages log_messages_;
 
   std::unique_ptr<gpu::GpuInit> gpu_init_;
   std::unique_ptr<viz::GpuServiceImpl> gpu_service_;
@@ -86,17 +133,15 @@ class GpuMain : public gpu::GpuSandboxHelper, public mojom::GpuMain {
 
   std::unique_ptr<gpu::GpuMemoryBufferFactory> gpu_memory_buffer_factory_;
 
-  // The main thread for Gpu.
-  base::Thread gpu_thread_;
-  scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner_;
+  const scoped_refptr<base::SingleThreadTaskRunner> gpu_thread_task_runner_;
 
-  // The thread that handles IO events for Gpu.
-  base::Thread io_thread_;
-
+  // The main thread for the display compositor.
+  std::unique_ptr<base::Thread> compositor_thread_;
   scoped_refptr<base::SingleThreadTaskRunner> compositor_thread_task_runner_;
 
   std::unique_ptr<base::PowerMonitor> power_monitor_;
   mojo::Binding<mojom::GpuMain> binding_;
+  mojo::AssociatedBinding<mojom::GpuMain> associated_binding_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuMain);
 };

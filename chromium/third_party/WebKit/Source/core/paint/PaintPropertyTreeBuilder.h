@@ -10,6 +10,7 @@
 #include "platform/graphics/paint/EffectPaintPropertyNode.h"
 #include "platform/graphics/paint/ScrollPaintPropertyNode.h"
 #include "platform/graphics/paint/TransformPaintPropertyNode.h"
+#include "platform/wtf/Optional.h"
 #include "platform/wtf/RefPtr.h"
 
 namespace blink {
@@ -18,7 +19,14 @@ class FragmentData;
 class LayoutBoxModelObject;
 class LayoutObject;
 class LocalFrameView;
+class PaintLayer;
 class ObjectPaintProperties;
+
+struct FragmentClipContext {
+  LayoutRect fragment_clip;
+  // A paint offset that includes fragmentation effects.
+  LayoutPoint paint_offset;
+};
 
 // The context for PaintPropertyTreeBuilder.
 // It's responsible for bookkeeping tree state in other order, for example, the
@@ -38,7 +46,11 @@ struct PaintPropertyTreeBuilderFragmentContext {
     // to refer the object's border box, then the callee will derive its own
     // border box by translating the space with its own layout location.
     const TransformPaintPropertyNode* transform = nullptr;
+    // Corresponds to LayoutObject::PaintOffset, which does not include
+    // fragmentation offsets. See FragmentContext for the fragmented version.
     LayoutPoint paint_offset;
+    // The PaintLayer corresponding to the origin of |paint_offset|.
+    const LayoutObject* paint_offset_root = nullptr;
     // Whether newly created children should flatten their inherited transform
     // (equivalently, draw into the plane of their parent). Should generally
     // be updated whenever |transform| is; flattening only needs to happen
@@ -58,6 +70,10 @@ struct PaintPropertyTreeBuilderFragmentContext {
     // reference a scroll offset transform, scroll nodes should be updated if
     // the transform tree changes.
     const ScrollPaintPropertyNode* scroll = nullptr;
+
+    // True if any fixed-position children within this context are fixed to the
+    // root of the FrameView (and hence above its scroll).
+    bool fixed_position_children_fixed_to_root = false;
   };
 
   ContainingBlockContext current;
@@ -83,11 +99,10 @@ struct PaintPropertyTreeBuilderFragmentContext {
   // Therefore, we don't need extra bookkeeping for effect nodes and can
   // generate the effect tree from a DOM-order traversal.
   const EffectPaintPropertyNode* current_effect;
-  // Some effects are spatial, i.e. may refer to input pixels outside of output
-  // clip. The cull rect for its input shall be derived from its output clip.
-  // This variable represents the input cull of current effect, also serves as
-  // output clip of child effects that don't have a hard clip.
-  const ClipPaintPropertyNode* input_clip_of_current_effect;
+
+  // If the object is fragmented, FragmentContext contains the fragment
+  // clip and fragment paint offset.
+  Optional<FragmentClipContext> fragment_clip_context;
 };
 
 struct PaintPropertyTreeBuilderContext {
@@ -140,22 +155,40 @@ class PaintPropertyTreeBuilder {
                                    PaintPropertyTreeBuilderContext&);
 
  private:
+  ALWAYS_INLINE void UpdateFragmentPropertiesForSelf(
+      const LayoutObject&,
+      PaintPropertyTreeBuilderContext& full_context,
+      PaintPropertyTreeBuilderFragmentContext&,
+      FragmentData*);
+
   ALWAYS_INLINE static void UpdatePaintOffset(
+      const LayoutBoxModelObject&,
+      const LayoutObject* container_for_absolute_position,
+      PaintPropertyTreeBuilderFragmentContext&);
+  ALWAYS_INLINE static void GetPaintOffsetTranslation(
       const LayoutBoxModelObject&,
       PaintPropertyTreeBuilderFragmentContext&,
       const LayoutObject* container_for_absolute_position);
+  // Decides whether there should be a paint offset translation transform,
+  // and if so updates paint offset as appropriate and returns the translation
+  // offset.
+  ALWAYS_INLINE static Optional<IntPoint> UpdateForPaintOffsetTranslation(
+      const LayoutObject&,
+      PaintPropertyTreeBuilderFragmentContext&);
   ALWAYS_INLINE static void UpdatePaintOffsetTranslation(
-      const LayoutBoxModelObject&,
+      const LayoutObject&,
+      const Optional<IntPoint>& paint_offset_translation,
       PaintPropertyTreeBuilderFragmentContext&,
       ObjectPaintProperties&,
       bool& force_subtree_update);
   ALWAYS_INLINE static void UpdateForObjectLocationAndSize(
       const LayoutObject&,
       const LayoutObject* container_for_absolute_position,
-      ObjectPaintProperties*,
+      FragmentData*,
       bool& is_actually_needed,
       PaintPropertyTreeBuilderFragmentContext&,
-      bool& force_subtree_update);
+      bool& force_subtree_update,
+      Optional<IntPoint>& paint_offset_translation);
   ALWAYS_INLINE static void UpdateTransform(
       const LayoutObject&,
       ObjectPaintProperties&,
@@ -177,6 +210,12 @@ class PaintPropertyTreeBuilder {
       ObjectPaintProperties&,
       PaintPropertyTreeBuilderFragmentContext&,
       bool& force_subtree_update);
+  ALWAYS_INLINE void UpdateFragmentClip(
+      const LayoutObject&,
+      ObjectPaintProperties&,
+      PaintPropertyTreeBuilderFragmentContext&,
+      bool& force_subtree_update,
+      bool& clip_changed);
   ALWAYS_INLINE static void UpdateCssClip(
       const LayoutObject&,
       ObjectPaintProperties&,
@@ -187,6 +226,10 @@ class PaintPropertyTreeBuilder {
       const LayoutObject&,
       PaintPropertyTreeBuilderFragmentContext&,
       FragmentData*,
+      bool& force_subtree_update);
+  ALWAYS_INLINE static void UpdateCompositedLayerStates(
+      const LayoutObject&,
+      PaintPropertyTreeBuilderFragmentContext&,
       bool& force_subtree_update);
   ALWAYS_INLINE static void UpdateScrollbarPaintOffset(
       const LayoutObject&,
@@ -220,11 +263,15 @@ class PaintPropertyTreeBuilder {
       ObjectPaintProperties*,
       bool& force_subtree_update);
 
+  ALWAYS_INLINE static void InitSingleFragmentFromParent(
+      const LayoutObject&,
+      PaintPropertyTreeBuilderContext& full_context,
+      bool needs_paint_properties);
+
   // Ensure the ObjectPaintProperties object is created if it will be needed, or
   // cleared otherwise.
-  ALWAYS_INLINE static void UpdatePaintProperties(
-      const LayoutObject&,
-      PaintPropertyTreeBuilderContext&);
+  ALWAYS_INLINE static void UpdateFragments(const LayoutObject&,
+                                            PaintPropertyTreeBuilderContext&);
 };
 
 }  // namespace blink

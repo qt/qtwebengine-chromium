@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/task_runner_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/buildflag.h"
 #include "content/public/common/content_client.h"
@@ -31,6 +32,7 @@
 #include "media/filters/context_3d.h"
 #include "media/media_features.h"
 #include "media/renderers/default_renderer_factory.h"
+#include "media/video/gpu_video_accelerator_factories.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "services/service_manager/public/cpp/connect.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
@@ -101,6 +103,31 @@ class FrameFetchContext : public media::ResourceFetchContext {
   blink::WebLocalFrame* frame_;
   DISALLOW_COPY_AND_ASSIGN(FrameFetchContext);
 };
+
+void ObtainAndSetContextProvider(
+    base::OnceCallback<void(viz::ContextProvider*)>
+        set_context_provider_callback,
+    media::GpuVideoAcceleratorFactories* factories) {
+  viz::ContextProvider* context_provider = factories->GetMediaContextProvider();
+  std::move(set_context_provider_callback).Run(context_provider);
+}
+
+// Obtains the media ContextProvider and calls the given callback on the same
+// thread this is called on. Obtaining the media ContextProvider requires
+// getting GPuVideoAcceleratorFactories, which must be done on the main
+// thread.
+void PostMediaContextProviderToCallback(
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+    base::OnceCallback<void(viz::ContextProvider*)>
+        set_context_provider_callback) {
+  base::PostTaskAndReplyWithResult(
+      main_task_runner.get(), FROM_HERE, base::BindOnce([]() {
+        return content::RenderThreadImpl::current()->GetGpuFactories();
+      }),
+      base::BindOnce(&ObtainAndSetContextProvider,
+                     std::move(set_context_provider_callback)));
+}
+
 }  // namespace
 
 namespace content {
@@ -132,13 +159,6 @@ void MediaFactory::SetupMojo() {
       base::MakeUnique<media::remoting::SinkAvailabilityObserver>(
           std::move(remoting_source_request), std::move(remoter));
 #endif  // BUILDFLAG(ENABLE_MEDIA_REMOTING)
-}
-
-media::Context3D GetSharedMainThreadContext3D(
-    scoped_refptr<ui::ContextProviderCommandBuffer> provider) {
-  if (!provider)
-    return media::Context3D();
-  return media::Context3D(provider->ContextGL(), provider->GrContext());
 }
 
 #if defined(OS_ANDROID)
@@ -201,14 +221,6 @@ blink::WebMediaPlayer* MediaFactory::CreateMediaPlayer(
       AudioDeviceFactory::NewSwitchableAudioRendererSink(
           AudioDeviceFactory::kSourceMediaElement,
           render_frame_->GetRoutingID(), 0, sink_id.Utf8(), security_origin);
-  // We need to keep a reference to the context provider (see crbug.com/610527)
-  // but media/ can't depend on cc/, so for now, just keep a reference in the
-  // callback.
-  // TODO(piman): replace media::Context3D to scoped_refptr<ContextProvider> in
-  // media/ once ContextProvider is in gpu/.
-  media::WebMediaPlayerParams::Context3DCB context_3d_cb = base::Bind(
-      &GetSharedMainThreadContext3D,
-      RenderThreadImpl::current()->SharedMainThreadContextProvider());
 
   const WebPreferences webkit_preferences =
       render_frame_->GetWebkitPreferences();
@@ -278,7 +290,7 @@ blink::WebMediaPlayer* MediaFactory::CreateMediaPlayer(
                      GetWebMediaPlayerDelegate()->has_played_media()),
           audio_renderer_sink, render_thread->GetMediaThreadTaskRunner(),
           render_thread->GetWorkerTaskRunner(),
-          render_thread->compositor_task_runner(), context_3d_cb,
+          render_thread->compositor_task_runner(),
           base::Bind(&v8::Isolate::AdjustAmountOfExternalAllocatedMemory,
                      base::Unretained(blink::MainThreadIsolate())),
           initial_cdm, media_surface_manager_, request_routing_token_cb_,
@@ -288,7 +300,11 @@ blink::WebMediaPlayer* MediaFactory::CreateMediaPlayer(
           watch_time_recorder_provider_.get(),
           base::Bind(&MediaFactory::CreateVideoDecodeStatsRecorder,
                      base::Unretained(this)),
-          base::Bind(&blink::WebSurfaceLayerBridge::Create, layer_tree_view)));
+          base::Bind(&blink::WebSurfaceLayerBridge::Create, layer_tree_view),
+          base::BindRepeating(
+              &PostMediaContextProviderToCallback,
+              RenderThreadImpl::current()->GetCompositorMainThreadTaskRunner()),
+          RenderThreadImpl::current()->SharedMainThreadContextProvider()));
 
   media::WebMediaPlayerImpl* media_player = new media::WebMediaPlayerImpl(
       web_frame, client, encrypted_client, GetWebMediaPlayerDelegate(),

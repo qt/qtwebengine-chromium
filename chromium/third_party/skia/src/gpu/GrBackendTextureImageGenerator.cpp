@@ -118,7 +118,7 @@ void GrBackendTextureImageGenerator::ReleaseRefHelper_TextureReleaseProc(void* c
 
 sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(
         GrContext* context, const SkImageInfo& info, const SkIPoint& origin,
-        SkTransferFunctionBehavior) {
+        SkTransferFunctionBehavior, bool willNeedMipMaps) {
     SkASSERT(context);
 
     if (context->contextPriv().getBackend() != fBackendTexture.backend()) {
@@ -182,7 +182,10 @@ sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(
         desc.fWidth = info.width();
         desc.fHeight = info.height();
         desc.fConfig = proxy->config();
-        desc.fIsMipMapped = proxy->isMipMapped();
+        // TODO: We should support the case where we can allocate the mips ahead of time then copy
+        // the subregion into the base layer and then let the GPU generate the rest of the mip
+        // levels.
+        SkASSERT(!proxy->isMipMapped());
 
         sk_sp<GrSurfaceContext> sContext(context->contextPriv().makeDeferredSurfaceContext(
             desc, SkBackingFit::kExact, SkBudgeted::kYes));

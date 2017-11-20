@@ -16,13 +16,12 @@ namespace {
 bool check_unsigned_shorts(const char* expected,
                            const unsigned short* actual,
                            size_t length) {
-  if (length > strlen(expected) + 1) {
+  if (length > strlen(expected) + 1)
     return false;
-  }
+
   for (size_t i = 0; i < length; ++i) {
-    if (actual[i] != static_cast<unsigned short>(expected[i])) {
+    if (actual[i] != static_cast<unsigned short>(expected[i]))
       return false;
-    }
   }
   return true;
 }
@@ -43,6 +42,12 @@ TEST_F(FPDFTextEmbeddertest, Text) {
   unsigned short fixed_buffer[128];
   memset(fixed_buffer, 0xbd, sizeof(fixed_buffer));
 
+  // Check that unreasonable inputs are handled gracefully
+  EXPECT_EQ(0, FPDFText_GetText(textpage, 0, 128, nullptr));
+  EXPECT_EQ(0, FPDFText_GetText(textpage, -1, 128, fixed_buffer));
+  EXPECT_EQ(0, FPDFText_GetText(textpage, 0, 0, fixed_buffer));
+  EXPECT_EQ(0, FPDFText_GetText(textpage, 0, -1, fixed_buffer));
+
   // Check includes the terminating NUL that is provided.
   int num_chars = FPDFText_GetText(textpage, 0, 128, fixed_buffer);
   ASSERT_GE(num_chars, 0);
@@ -57,6 +62,16 @@ TEST_F(FPDFTextEmbeddertest, Text) {
               FPDFText_GetUnicode(textpage, i))
         << " at " << i;
   }
+
+  // Extracting using a buffer that will be completely filled. Small buffer is
+  // 12 elements long, since it will need 2 locations per displayed character in
+  // the expected string, plus 2 more for the terminating character.
+  static const char small_expected[] = "Hello";
+  unsigned short small_buffer[12];
+  memset(fixed_buffer, 0xbd, sizeof(fixed_buffer));
+  EXPECT_EQ(6, FPDFText_GetText(textpage, 0, 6, small_buffer));
+  EXPECT_TRUE(check_unsigned_shorts(small_expected, small_buffer,
+                                    sizeof(small_expected)));
 
   EXPECT_EQ(12.0, FPDFText_GetFontSize(textpage, 0));
   EXPECT_EQ(16.0, FPDFText_GetFontSize(textpage, 15));

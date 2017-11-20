@@ -1,29 +1,28 @@
 <link rel="import" href="chrome://resources/html/polymer.html">
 
 <link rel="import" href="chrome://resources/cr_elements/cr_icons_css.html">
+<link rel="import" href="chrome://resources/cr_elements/cr_toggle/cr_toggle.html">
 <link rel="import" href="chrome://resources/cr_elements/hidden_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/paper_button_style_css.html">
-<link rel="import" href="chrome://resources/cr_elements/paper_toggle_style_css.html">
 <link rel="import" href="chrome://resources/html/action_link.html">
 <link rel="import" href="chrome://resources/html/action_link_css.html">
 <link rel="import" href="chrome://resources/html/assert.html">
 <link rel="import" href="chrome://resources/html/cr.html">
 <link rel="import" href="chrome://resources/html/i18n_behavior.html">
-<link rel="import" href="chrome://resources/html/load_time_data.html">
-<link rel="import" href="chrome://extensions/icons.html">
-<link rel="import" href="chrome://extensions/item_util.html">
-<link rel="import" href="chrome://extensions/strings.html">
+<link rel="import" href="icons.html">
+<link rel="import" href="item_util.html">
+<link rel="import" href="strings.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/iron-icons.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/communication-icons.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-flex-layout/iron-flex-layout-classes.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-icon-button/paper-icon-button-light.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-styles/shadow.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/paper-toggle-button/paper-toggle-button.html">
-<link rel="import" href="chrome://extensions/navigation_helper.html">
+<link rel="import" href="navigation_helper.html">
 
 <dom-module id="extensions-item">
   <template>
-    <style include="iron-flex cr-hidden-style cr-icons action-link paper-button-style paper-toggle-style">
+    <style include=
+        "iron-flex cr-hidden-style cr-icons action-link paper-button-style">
       #icon-wrapper {
         align-self: flex-start;
         display: flex;
@@ -41,21 +40,18 @@
         display: flex;
         flex-direction: column;
         height: 160px;
-        width: 400px;
+        width: var(--extensions-card-width, 400px);
       }
 
       #card.dev-mode {
         height: 208px;
       }
 
-      #card.disabled {
-        opacity: 0.6;
-      }
-
       #main {
         display: flex;
         flex-grow: 1;
         padding: 16px 20px 17px;
+        position: relative;
       }
 
       #content {
@@ -135,24 +131,31 @@
         color: white;
         display: none;
         margin-top: 8px;
+        max-width: 150px;
         opacity: 0.6;
         padding: 8px 12px;
-        position: absolute;
         transform: translateX(-50%);  /* Move back 50% of width so that the
                                          text and icon share an x-center. */
+      }
+
+      :host-context([dir='rtl']) #source-indicator-text {
+        transform: translateX(50%);
       }
 
       #source-indicator:hover #source-indicator-text {
         display: block;
       }
 
-      paper-toggle-button {
+      cr-toggle {
         -webkit-margin-end: 8px;  /* Avoid ripple from overlapping container. */
-        cursor: pointer;
       }
 
       .action-button {
         color: var(--google-blue-500);
+      }
+
+      #errors-button {
+        color: var(--google-red-700);
       }
 
       #dev-reload-button {
@@ -255,13 +258,13 @@
             hidden$="[[!isTerminated_(data.state)]]">
           $i18n{itemReload}
         </paper-button>
-        <paper-toggle-button id="enable-toggle" class="action-button"
+        <cr-toggle id="enable-toggle" class="action-button"
             checked="[[isEnabled_(data.state)]]" on-change="onEnableChange_"
             disabled="[[!isEnableToggleEnabled_(data.*)]]"
             hidden$="[[!showEnableToggle_(data.*)]]">
-        </paper-toggle-button>
+        </cr-toggle>
       </div>
     </div>
   </template>
-  <script src="chrome://extensions/item.js"></script>
+  <script src="item.js"></script>
 </dom-module>

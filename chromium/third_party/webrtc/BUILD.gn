@@ -6,8 +6,6 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
-# TODO(kjellander): Rebase this to webrtc/build/common.gypi changes after r6330.
-
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("webrtc.gni")
@@ -15,6 +13,20 @@ import("//third_party/protobuf/proto_library.gni")
 if (is_android) {
   import("//build/config/android/config.gni")
   import("//build/config/android/rules.gni")
+}
+
+if (!build_with_chromium) {
+  group("default") {
+    testonly = true
+    deps = [
+      ":webrtc",
+      "examples",
+      "rtc_tools",
+    ]
+    if (rtc_include_tests) {
+      deps += [ ":webrtc_tests" ]
+    }
+  }
 }
 
 # Contains the defines and includes in common.gypi that are duplicated both as
@@ -53,7 +65,7 @@ config("common_inherited_config") {
 
       # Allow includes to be prefixed with webrtc/ in case it is not an
       # immediate subdirectory of the top-level.
-      "..",
+      ".",
     ]
   }
   if (is_posix) {
@@ -91,6 +103,10 @@ config("common_inherited_config") {
     assert(is_clang, "sanitizer coverage requires clang")
     cflags += [ "-fsanitize-coverage=${rtc_sanitize_coverage}" ]
     ldflags += [ "-fsanitize-coverage=${rtc_sanitize_coverage}" ]
+  }
+
+  if (is_ubsan) {
+    cflags += [ "-fsanitize=float-cast-overflow" ]
   }
 
   # TODO(GYP): Support these in GN.
@@ -303,7 +319,6 @@ if (!build_with_chromium) {
         "modules/remote_bitrate_estimator:bwe_simulations_tests",
         "modules/rtp_rtcp:test_packet_masks_metrics",
         "modules/video_capture:video_capture_internal_impl",
-        "modules/video_coding:plot_videoprocessor_integrationtest",
         "ortc:ortc_unittests",
         "pc:peerconnection_unittests",
         "pc:rtc_pc_unittests",
@@ -322,9 +337,6 @@ if (!build_with_chromium) {
         ]
       } else {
         deps += [ "modules/video_capture:video_capture_tests" ]
-      }
-      if (!is_ios) {
-        deps += [ "voice_engine:voe_auto_test" ]
       }
       if (rtc_enable_protobuf) {
         deps += [
@@ -347,8 +359,6 @@ rtc_static_library("webrtc_common") {
   sources = [
     "common_types.cc",
     "common_types.h",
-    "config.cc",
-    "config.h",
     "typedefs.h",
   ]
 
@@ -384,9 +394,6 @@ if (rtc_include_tests) {
 
   rtc_test("rtc_unittests") {
     testonly = true
-    sources = [
-      "config_unittest.cc",
-    ]
 
     deps = [
       ":webrtc_common",
@@ -421,8 +428,8 @@ if (rtc_include_tests) {
 
   # TODO(pbos): Rename test suite, this is no longer "just" for video targets.
   video_engine_tests_resources = [
-    "../resources/foreman_cif_short.yuv",
-    "../resources/voice_engine/audio_long16.pcm",
+    "resources/foreman_cif_short.yuv",
+    "resources/voice_engine/audio_long16.pcm",
   ]
 
   if (is_ios) {
@@ -465,19 +472,19 @@ if (rtc_include_tests) {
   }
 
   webrtc_perf_tests_resources = [
-    "../resources/audio_coding/speech_mono_16kHz.pcm",
-    "../resources/audio_coding/speech_mono_32_48kHz.pcm",
-    "../resources/audio_coding/testfile32kHz.pcm",
-    "../resources/ConferenceMotion_1280_720_50.yuv",
-    "../resources/difficult_photo_1850_1110.yuv",
-    "../resources/foreman_cif.yuv",
-    "../resources/google-wifi-3mbps.rx",
-    "../resources/paris_qcif.yuv",
-    "../resources/photo_1850_1110.yuv",
-    "../resources/presentation_1850_1110.yuv",
-    "../resources/verizon4g-downlink.rx",
-    "../resources/voice_engine/audio_long16.pcm",
-    "../resources/web_screenshot_1850_1110.yuv",
+    "resources/audio_coding/speech_mono_16kHz.pcm",
+    "resources/audio_coding/speech_mono_32_48kHz.pcm",
+    "resources/audio_coding/testfile32kHz.pcm",
+    "resources/ConferenceMotion_1280_720_50.yuv",
+    "resources/difficult_photo_1850_1110.yuv",
+    "resources/foreman_cif.yuv",
+    "resources/google-wifi-3mbps.rx",
+    "resources/paris_qcif.yuv",
+    "resources/photo_1850_1110.yuv",
+    "resources/presentation_1850_1110.yuv",
+    "resources/verizon4g-downlink.rx",
+    "resources/voice_engine/audio_long16.pcm",
+    "resources/web_screenshot_1850_1110.yuv",
   ]
 
   if (is_ios) {

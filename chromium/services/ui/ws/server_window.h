@@ -14,17 +14,19 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/observer_list.h"
+#include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/host/host_frame_sink_client.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/ui/public/interfaces/window_manager_constants.mojom.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
 #include "services/ui/ws/ids.h"
-#include "services/viz/privileged/interfaces/compositing/frame_sink_manager.mojom.h"
+#include "services/viz/privileged/interfaces/compositing/display_private.mojom.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "ui/base/window_tracker_template.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/transform.h"
 #include "ui/platform_window/text_input_state.h"
 
@@ -51,8 +53,11 @@ class ServerWindow : public viz::HostFrameSinkClient {
   using Windows = std::vector<ServerWindow*>;
 
   ServerWindow(ServerWindowDelegate* delegate, const WindowId& id);
+  // |frame_sink_id| needs to be an input here as we are creating frame_sink_id_
+  // based on the ClientWindowId clients provided.
   ServerWindow(ServerWindowDelegate* delegate,
                const WindowId& id,
+               const viz::FrameSinkId& frame_sink_id,
                const Properties& properties);
   ~ServerWindow() override;
 
@@ -241,14 +246,6 @@ class ServerWindow : public viz::HostFrameSinkClient {
 
   // Called when this window's stacking order among its siblings is changed.
   void OnStackingChanged();
-
-  static void ReorderImpl(ServerWindow* window,
-                          ServerWindow* relative,
-                          mojom::OrderDirection diretion);
-
-  // Returns a pointer to the stacking target that can be used by
-  // RestackTransientDescendants.
-  static ServerWindow** GetStackingTarget(ServerWindow* window);
 
   ServerWindowDelegate* const delegate_;
   const WindowId id_;

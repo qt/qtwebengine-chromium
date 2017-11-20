@@ -36,15 +36,14 @@ namespace blink {
 
 class PLATFORM_EXPORT CrossfadeGeneratedImage final : public GeneratedImage {
  public:
-  static PassRefPtr<CrossfadeGeneratedImage> Create(
-      PassRefPtr<Image> from_image,
-      PassRefPtr<Image> to_image,
-      float percentage,
-      IntSize crossfade_size,
-      const IntSize& size) {
-    return AdoptRef(new CrossfadeGeneratedImage(std::move(from_image),
-                                                std::move(to_image), percentage,
-                                                crossfade_size, size));
+  static RefPtr<CrossfadeGeneratedImage> Create(RefPtr<Image> from_image,
+                                                RefPtr<Image> to_image,
+                                                float percentage,
+                                                IntSize crossfade_size,
+                                                const IntSize& size) {
+    return WTF::AdoptRef(
+        new CrossfadeGeneratedImage(std::move(from_image), std::move(to_image),
+                                    percentage, crossfade_size, size));
   }
 
   bool UsesContainerSize() const override { return false; }
@@ -58,17 +57,21 @@ class PLATFORM_EXPORT CrossfadeGeneratedImage final : public GeneratedImage {
             const FloatRect&,
             const FloatRect&,
             RespectImageOrientationEnum,
-            ImageClampingMode) override;
+            ImageClampingMode,
+            ImageDecodingMode) override;
   void DrawTile(GraphicsContext&, const FloatRect&) final;
 
-  CrossfadeGeneratedImage(PassRefPtr<Image> from_image,
-                          PassRefPtr<Image> to_image,
+  CrossfadeGeneratedImage(RefPtr<Image> from_image,
+                          RefPtr<Image> to_image,
                           float percentage,
                           IntSize crossfade_size,
                           const IntSize&);
 
  private:
-  void DrawCrossfade(PaintCanvas*, const PaintFlags&, ImageClampingMode);
+  void DrawCrossfade(PaintCanvas*,
+                     const PaintFlags&,
+                     ImageClampingMode,
+                     ImageDecodingMode);
 
   RefPtr<Image> from_image_;
   RefPtr<Image> to_image_;

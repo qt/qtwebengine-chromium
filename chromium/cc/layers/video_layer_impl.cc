@@ -10,14 +10,14 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "cc/layers/video_frame_provider_client_impl.h"
-#include "cc/quads/stream_video_draw_quad.h"
-#include "cc/quads/texture_draw_quad.h"
-#include "cc/quads/yuv_video_draw_quad.h"
 #include "cc/resources/resource_provider.h"
-#include "cc/resources/single_release_callback_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/occlusion.h"
 #include "cc/trees/task_runner_provider.h"
+#include "components/viz/common/quads/stream_video_draw_quad.h"
+#include "components/viz/common/quads/texture_draw_quad.h"
+#include "components/viz/common/quads/yuv_video_draw_quad.h"
+#include "components/viz/common/resources/single_release_callback.h"
 #include "media/base/video_frame.h"
 #include "ui/gfx/color_space.h"
 
@@ -76,7 +76,7 @@ void VideoLayerImpl::DidBecomeActive() {
 }
 
 bool VideoLayerImpl::WillDraw(DrawMode draw_mode,
-                              ResourceProvider* resource_provider) {
+                              LayerTreeResourceProvider* resource_provider) {
   if (draw_mode == DRAW_MODE_RESOURCELESS_SOFTWARE)
     return false;
 
@@ -129,7 +129,7 @@ bool VideoLayerImpl::WillDraw(DrawMode draw_mode,
   for (size_t i = 0; i < external_resources.mailboxes.size(); ++i) {
     unsigned resource_id = resource_provider->CreateResourceFromTextureMailbox(
         external_resources.mailboxes[i],
-        SingleReleaseCallbackImpl::Create(
+        viz::SingleReleaseCallback::Create(
             external_resources.release_callbacks[i]),
         external_resources.read_lock_fences_enabled,
         external_resources.buffer_format);
@@ -142,7 +142,7 @@ bool VideoLayerImpl::WillDraw(DrawMode draw_mode,
   return true;
 }
 
-void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
+void VideoLayerImpl::AppendQuads(viz::RenderPass* render_pass,
                                  AppendQuadsData* append_quads_data) {
   DCHECK(frame_.get());
 
@@ -169,13 +169,14 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
 
   viz::SharedQuadState* shared_quad_state =
       render_pass->CreateAndAppendSharedQuadState();
-  shared_quad_state->SetAll(transform, gfx::Rect(rotated_size),
-                            visible_layer_rect(), clip_rect(), is_clipped(),
+  gfx::Rect rotated_size_rect(rotated_size);
+  shared_quad_state->SetAll(transform, rotated_size_rect, visible_layer_rect(),
+                            clip_rect(), is_clipped(), contents_opaque(),
                             draw_opacity(), SkBlendMode::kSrcOver,
                             GetSortingContextId());
 
-  AppendDebugBorderQuad(
-      render_pass, rotated_size, shared_quad_state, append_quads_data);
+  AppendDebugBorderQuad(render_pass, rotated_size_rect, shared_quad_state,
+                        append_quads_data);
 
   gfx::Rect quad_rect(rotated_size);
   gfx::Rect visible_rect = frame_->visible_rect();
@@ -209,8 +210,8 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
       float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
       bool flipped = false;
       bool nearest_neighbor = false;
-      TextureDrawQuad* texture_quad =
-          render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
+      auto* texture_quad =
+          render_pass->CreateAndAppendDrawQuad<viz::TextureDrawQuad>();
       texture_quad->SetNew(shared_quad_state, quad_rect, visible_quad_rect,
                            needs_blending, software_resources_[0],
                            premultiplied_alpha, uv_top_left, uv_bottom_right,
@@ -220,20 +221,24 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
       break;
     }
     case VideoFrameExternalResources::YUV_RESOURCE: {
-      YUVVideoDrawQuad::ColorSpace color_space = YUVVideoDrawQuad::REC_601;
+      auto color_space = viz::YUVVideoDrawQuad::REC_601;
       int videoframe_color_space;
       if (frame_->metadata()->GetInteger(media::VideoFrameMetadata::COLOR_SPACE,
                                          &videoframe_color_space)) {
         if (videoframe_color_space == media::COLOR_SPACE_JPEG) {
-          color_space = YUVVideoDrawQuad::JPEG;
+          color_space = viz::YUVVideoDrawQuad::JPEG;
         } else if (videoframe_color_space == media::COLOR_SPACE_HD_REC709) {
-          color_space = YUVVideoDrawQuad::REC_709;
+          color_space = viz::YUVVideoDrawQuad::REC_709;
         }
       }
 
       const gfx::Size ya_tex_size = coded_size;
-      gfx::Size uv_tex_size = media::VideoFrame::PlaneSize(
-          frame_->format(), media::VideoFrame::kUPlane, coded_size);
+
+      int u_width = media::VideoFrame::Columns(
+          media::VideoFrame::kUPlane, frame_->format(), coded_size.width());
+      int u_height = media::VideoFrame::Rows(
+          media::VideoFrame::kUPlane, frame_->format(), coded_size.height());
+      gfx::Size uv_tex_size(u_width, u_height);
 
       if (frame_->HasTextures()) {
         if (frame_->format() == media::PIXEL_FORMAT_NV12) {
@@ -244,9 +249,6 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
                     frame_resources_.size());  // Alpha is not supported yet.
         }
       } else {
-        DCHECK(uv_tex_size ==
-               media::VideoFrame::PlaneSize(
-                   frame_->format(), media::VideoFrame::kVPlane, coded_size));
         DCHECK_GE(frame_resources_.size(), 3u);
         DCHECK(frame_resources_.size() <= 3 ||
                ya_tex_size == media::VideoFrame::PlaneSize(
@@ -267,8 +269,8 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
           visible_rect.width() / uv_subsampling_factor_x,
           visible_rect.height() / uv_subsampling_factor_y);
 
-      YUVVideoDrawQuad* yuv_video_quad =
-          render_pass->CreateAndAppendDrawQuad<YUVVideoDrawQuad>();
+      auto* yuv_video_quad =
+          render_pass->CreateAndAppendDrawQuad<viz::YUVVideoDrawQuad>();
       yuv_video_quad->SetNew(
           shared_quad_state, quad_rect, visible_quad_rect, needs_blending,
           ya_tex_coord_rect, uv_tex_coord_rect, ya_tex_size, uv_tex_size,
@@ -297,8 +299,8 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
       float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
       bool flipped = false;
       bool nearest_neighbor = false;
-      TextureDrawQuad* texture_quad =
-          render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
+      auto* texture_quad =
+          render_pass->CreateAndAppendDrawQuad<viz::TextureDrawQuad>();
       texture_quad->SetNew(shared_quad_state, quad_rect, visible_quad_rect,
                            needs_blending, frame_resources_[0].id,
                            premultiplied_alpha, uv_top_left, uv_bottom_right,
@@ -314,8 +316,8 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
         break;
       gfx::Transform scale;
       scale.Scale(tex_width_scale, tex_height_scale);
-      StreamVideoDrawQuad* stream_video_quad =
-          render_pass->CreateAndAppendDrawQuad<StreamVideoDrawQuad>();
+      auto* stream_video_quad =
+          render_pass->CreateAndAppendDrawQuad<viz::StreamVideoDrawQuad>();
       stream_video_quad->SetNew(shared_quad_state, quad_rect, visible_quad_rect,
                                 needs_blending, frame_resources_[0].id,
                                 frame_resources_[0].size_in_pixels, scale);
@@ -328,7 +330,7 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
   }
 }
 
-void VideoLayerImpl::DidDraw(ResourceProvider* resource_provider) {
+void VideoLayerImpl::DidDraw(LayerTreeResourceProvider* resource_provider) {
   LayerImpl::DidDraw(resource_provider);
 
   DCHECK(frame_.get());
@@ -336,10 +338,7 @@ void VideoLayerImpl::DidDraw(ResourceProvider* resource_provider) {
   if (frame_resource_type_ ==
       VideoFrameExternalResources::SOFTWARE_RESOURCE) {
     for (size_t i = 0; i < software_resources_.size(); ++i) {
-      software_release_callback_.Run(gpu::SyncToken(), false,
-                                     layer_tree_impl()
-                                         ->task_runner_provider()
-                                         ->blocking_main_thread_task_runner());
+      software_release_callback_.Run(gpu::SyncToken(), false);
     }
 
     software_resources_.clear();

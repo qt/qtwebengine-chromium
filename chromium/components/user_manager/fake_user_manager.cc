@@ -18,7 +18,7 @@ namespace {
 
 class FakeTaskRunner : public base::TaskRunner {
  public:
-  bool PostDelayedTask(const tracked_objects::Location& from_here,
+  bool PostDelayedTask(const base::Location& from_here,
                        base::OnceClosure task,
                        base::TimeDelta delay) override {
     std::move(task).Run();
@@ -258,6 +258,18 @@ bool FakeUserManager::IsUserNonCryptohomeDataEphemeral(
 }
 
 bool FakeUserManager::AreSupervisedUsersAllowed() const {
+  return true;
+}
+
+bool FakeUserManager::IsGuestSessionAllowed() const {
+  return true;
+}
+
+bool FakeUserManager::IsGaiaUserAllowed(const user_manager::User& user) const {
+  return true;
+}
+
+bool FakeUserManager::IsUserAllowed(const user_manager::User& user) const {
   return true;
 }
 

@@ -73,6 +73,7 @@ public:
 
     bool shaderDerivativeSupport() const { return fShaderDerivativeSupport; }
     bool geometryShaderSupport() const { return fGeometryShaderSupport; }
+    bool gsInvocationsSupport() const { return fGSInvocationsSupport; }
     bool pathRenderingSupport() const { return fPathRenderingSupport; }
     bool dstReadInShaderSupport() const { return fDstReadInShaderSupport; }
     bool dualSourceBlendingSupport() const { return fDualSourceBlendingSupport; }
@@ -81,7 +82,7 @@ public:
     int imageLoadStoreSupport() const { return fImageLoadStoreSupport; }
 
     /**
-    * Get the precision info for a variable of type kFloat_GrSLType, kVec2f_GrSLType, etc in a
+    * Get the precision info for a variable of type kFloat_GrSLType, kFloat2_GrSLType, etc in a
     * given shader type. If the shader type is not supported or the precision level is not
     * supported in that shader type then the returned struct will report false when supported() is
     * called.
@@ -118,6 +119,8 @@ public:
     bool dropsTileOnZeroDivide() const { return fDropsTileOnZeroDivide; }
 
     bool flatInterpolationSupport() const { return fFlatInterpolationSupport; }
+
+    bool preferFlatInterpolation() const { return fPreferFlatInterpolation; }
 
     bool noperspectiveInterpolationSupport() const { return fNoPerspectiveInterpolationSupport; }
 
@@ -163,9 +166,6 @@ public:
 
     bool requiresLocalOutputColorForFBFetch() const { return fRequiresLocalOutputColorForFBFetch; }
 
-    // On MacBook, geometry shaders break if they have more than one invocation.
-    bool mustImplementGSInvocationsWithLoop() const { return fMustImplementGSInvocationsWithLoop; }
-
     bool mustObfuscateUniformColor() const { return fMustObfuscateUniformColor; }
 
     // The D3D shader compiler, when targeting PS 3.0 (ie within ANGLE) fails to compile certain
@@ -180,6 +180,14 @@ public:
     const char* shaderDerivativeExtensionString() const {
         SkASSERT(this->shaderDerivativeSupport());
         return fShaderDerivativeExtensionString;
+    }
+
+    // Returns the string of an extension that must be enabled in the shader to support
+    // geometry shader invocations. If nullptr is returned then no extension needs to be enabled.
+    // Before calling this function, the caller must verify that gsInvocationsSupport exists.
+    const char* gsInvocationsExtensionString() const {
+        SkASSERT(this->gsInvocationsSupport());
+        return fGSInvocationsExtensionString;
     }
 
     // Returns the string of an extension that will do all necessary coord transfomations needed
@@ -244,6 +252,8 @@ public:
 
     int maxCombinedImageStorages() const { return fMaxCombinedImageStorages; }
 
+    bool disableImageMultitexturingSupport() const { return fDisableImageMultitexturing; }
+
     /**
      * Given a texture's config, this determines what swizzle must be appended to accesses to the
      * texture in generated shader code. Swizzling may be implemented in texture parameters or a
@@ -275,6 +285,7 @@ private:
 
     bool fShaderDerivativeSupport   : 1;
     bool fGeometryShaderSupport     : 1;
+    bool fGSInvocationsSupport      : 1;
     bool fPathRenderingSupport      : 1;
     bool fDstReadInShaderSupport    : 1;
     bool fDualSourceBlendingSupport : 1;
@@ -289,6 +300,7 @@ private:
     bool fUsesPrecisionModifiers : 1;
     bool fCanUseAnyFunctionInShader : 1;
     bool fFlatInterpolationSupport : 1;
+    bool fPreferFlatInterpolation : 1;
     bool fNoPerspectiveInterpolationSupport : 1;
     bool fMultisampleInterpolationSupport : 1;
     bool fSampleVariablesSupport : 1;
@@ -296,6 +308,7 @@ private:
     bool fExternalTextureSupport : 1;
     bool fTexelFetchSupport : 1;
     bool fVertexIDSupport : 1;
+    bool fDisableImageMultitexturing : 1;
 
     // Used for specific driver bug work arounds
     bool fCanUseMinAndAbsTogether : 1;
@@ -303,7 +316,6 @@ private:
     bool fMustForceNegatedAtanParamToFloat : 1;
     bool fAtan2ImplementedAsAtanYOverX : 1;
     bool fRequiresLocalOutputColorForFBFetch : 1;
-    bool fMustImplementGSInvocationsWithLoop : 1;
     bool fMustObfuscateUniformColor : 1;
     bool fMustGuardDivisionEvenAfterExplicitZeroCheck : 1;
 
@@ -312,6 +324,7 @@ private:
     const char* fVersionDeclString;
 
     const char* fShaderDerivativeExtensionString;
+    const char* fGSInvocationsExtensionString;
     const char* fFragCoordConventionsExtensionString;
     const char* fSecondaryOutputExtensionString;
     const char* fExternalTextureExtensionString;

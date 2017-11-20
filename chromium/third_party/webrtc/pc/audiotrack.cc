@@ -8,9 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/pc/audiotrack.h"
+#include "pc/audiotrack.h"
 
-#include "webrtc/rtc_base/checks.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/refcountedobject.h"
 
 using rtc::scoped_refptr;
 

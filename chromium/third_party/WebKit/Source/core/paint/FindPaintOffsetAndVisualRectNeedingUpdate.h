@@ -50,7 +50,7 @@ class FindPaintOffsetNeedingUpdateScope {
                   ->PaintProperties()
                   ->PaintOffsetTranslation()
             : nullptr;
-    DCHECK_OBJECT_PROPERTY_EQ(object_, old_paint_offset_translation_.Get(),
+    DCHECK_OBJECT_PROPERTY_EQ(object_, old_paint_offset_translation_.get(),
                               paint_offset_translation);
   }
 
@@ -151,7 +151,7 @@ class FindObjectVisualRectNeedingUpdateScope
                                              context,
                                              object.VisualRect(),
                                              is_actually_needed),
-        old_location_(ObjectPaintInvalidator(object).LocationInBacking()) {}
+        old_location_(object.LocationInBacking()) {}
 
   ~FindObjectVisualRectNeedingUpdateScope() {
     CheckVisualRect(object_.VisualRect());
@@ -161,8 +161,7 @@ class FindObjectVisualRectNeedingUpdateScope
   void CheckLocation() {
     if (needed_visual_rect_update_)
       return;
-    LayoutPoint new_location =
-        ObjectPaintInvalidator(object_).LocationInBacking();
+    LayoutPoint new_location = object_.LocationInBacking();
     // Location of LayoutText and non-root SVG is location of the visual rect
     // which have been checked above.
     DCHECK(object_.IsText() || object_.IsSVGChild() ||

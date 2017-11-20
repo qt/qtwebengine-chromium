@@ -29,7 +29,7 @@ StringOrCSSVariableReferenceValue VariableReferenceValue(
   CSSStyleVariableReferenceValue* variable_reference =
       CSSStyleVariableReferenceValue::Create(variable_name.ToString(),
                                              unparsed_value);
-  return StringOrCSSVariableReferenceValue::fromCSSVariableReferenceValue(
+  return StringOrCSSVariableReferenceValue::FromCSSVariableReferenceValue(
       variable_reference);
 }
 
@@ -41,7 +41,7 @@ HeapVector<StringOrCSSVariableReferenceValue> ParserTokenRangeToFragments(
     if (range.Peek().FunctionId() == CSSValueVar) {
       if (!builder.IsEmpty()) {
         fragments.push_back(
-            StringOrCSSVariableReferenceValue::fromString(builder.ToString()));
+            StringOrCSSVariableReferenceValue::FromString(builder.ToString()));
         builder.Clear();
       }
       CSSParserTokenRange block = range.ConsumeBlock();
@@ -57,7 +57,7 @@ HeapVector<StringOrCSSVariableReferenceValue> ParserTokenRangeToFragments(
   }
   if (!builder.IsEmpty()) {
     fragments.push_back(
-        StringOrCSSVariableReferenceValue::fromString(builder.ToString()));
+        StringOrCSSVariableReferenceValue::FromString(builder.ToString()));
   }
   return fragments;
 }
@@ -71,26 +71,27 @@ CSSUnparsedValue* CSSUnparsedValue::FromCSSValue(
 }
 
 const CSSValue* CSSUnparsedValue::ToCSSValue() const {
-  StringBuilder tokens;
+  StringBuilder input;
 
   for (unsigned i = 0; i < fragments_.size(); i++) {
     if (i) {
-      tokens.Append("/**/");
+      input.Append("/**/");
     }
-    if (fragments_[i].isString()) {
-      tokens.Append(fragments_[i].getAsString());
-    } else if (fragments_[i].isCSSVariableReferenceValue()) {
-      tokens.Append(fragments_[i].getAsCSSVariableReferenceValue()->variable());
+    if (fragments_[i].IsString()) {
+      input.Append(fragments_[i].GetAsString());
+    } else if (fragments_[i].IsCSSVariableReferenceValue()) {
+      input.Append(fragments_[i].GetAsCSSVariableReferenceValue()->variable());
     } else {
       NOTREACHED();
     }
   }
 
-  CSSTokenizer tokenizer(tokens.ToString());
+  CSSTokenizer tokenizer(input.ToString());
+  const auto tokens = tokenizer.TokenizeToEOF();
   // TODO(alancutter): This should be using a real parser context instead of
   // StrictCSSParserContext.
   return CSSVariableReferenceValue::Create(
-      CSSVariableData::Create(tokenizer.TokenRange(),
+      CSSVariableData::Create(CSSParserTokenRange(tokens),
                               false /* isAnimationTainted */,
                               true /* needsVariableResolution */),
       *StrictCSSParserContext());

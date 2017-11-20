@@ -26,13 +26,12 @@
 #include "core/StylePropertyShorthand.h"
 #include "core/css/CSSCustomPropertyDeclaration.h"
 #include "core/css/CSSIdentifierValue.h"
-#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/StylePropertySerializer.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/css/parser/CSSParserContext.h"
+#include "core/css/properties/CSSPropertyAPI.h"
 #include "core/frame/UseCounter.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/wtf/text/StringBuilder.h"
 
 #ifndef NDEBUG
@@ -114,7 +113,10 @@ static bool IsPropertyMatch(const StylePropertyMetadata& metadata,
   DCHECK_EQ(id, property_id);
   bool result = metadata.property_id_ == id;
   // Only enabled properties should be part of the style.
-  DCHECK(!result || CSSPropertyMetadata::IsEnabledProperty(property_id));
+#if DCHECK_IS_ON()
+  DCHECK(!result ||
+         CSSPropertyAPI::Get(resolveCSSPropertyID(property_id)).IsEnabled());
+#endif
   return result;
 }
 
@@ -232,7 +234,7 @@ bool MutableStylePropertySet::RemovePropertyAtIndex(int property_index,
 
   // A more efficient removal strategy would involve marking entries as empty
   // and sweeping them when the vector grows too big.
-  property_vector_.erase(property_index);
+  property_vector_.EraseAt(property_index);
 
   return true;
 }

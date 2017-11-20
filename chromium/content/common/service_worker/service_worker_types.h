@@ -23,7 +23,8 @@
 #include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerClientType.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerResponseError.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerState.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_state.mojom.h"
 #include "url/gurl.h"
 
 // This file is to have common definitions that are to be shared by
@@ -49,8 +50,6 @@ extern const char kFetchScriptError[];
 
 // Constants for invalid identifiers.
 static const int kInvalidServiceWorkerHandleId = -1;
-static const int kInvalidServiceWorkerRegistrationHandleId = -1;
-static const int64_t kInvalidServiceWorkerRegistrationId = -1;
 static const int64_t kInvalidServiceWorkerVersionId = -1;
 static const int64_t kInvalidServiceWorkerResourceId = -1;
 static const int kInvalidEmbeddedWorkerThreadId = -1;
@@ -181,24 +180,8 @@ struct CONTENT_EXPORT ServiceWorkerObjectInfo {
 
   int handle_id;
   GURL url;
-  blink::WebServiceWorkerState state;
+  blink::mojom::ServiceWorkerState state;
   int64_t version_id;
-};
-
-// Represents options for register():
-// https://w3c.github.io/ServiceWorker/#dictdef-registrationoptions
-struct CONTENT_EXPORT ServiceWorkerRegistrationOptions {
-  ServiceWorkerRegistrationOptions() = default;
-  explicit ServiceWorkerRegistrationOptions(const GURL& scope);
-  GURL scope;
-  // TODO(yuryu): Other values will be added as they are supported later.
-};
-
-struct CONTENT_EXPORT ServiceWorkerRegistrationObjectInfo {
-  ServiceWorkerRegistrationObjectInfo();
-  int handle_id;
-  ServiceWorkerRegistrationOptions options;
-  int64_t registration_id;
 };
 
 struct CONTENT_EXPORT ServiceWorkerVersionAttributes {

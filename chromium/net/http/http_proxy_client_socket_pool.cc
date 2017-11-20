@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/optional.h"
@@ -296,11 +295,13 @@ void HttpProxyClientSocketPool::RequestSockets(
     const std::string& group_name,
     const void* params,
     int num_sockets,
-    const NetLogWithSource& net_log) {
+    const NetLogWithSource& net_log,
+    HttpRequestInfo::RequestMotivation motivation) {
   const scoped_refptr<HttpProxySocketParams>* casted_params =
       static_cast<const scoped_refptr<HttpProxySocketParams>*>(params);
 
-  base_.RequestSockets(group_name, *casted_params, num_sockets, net_log);
+  base_.RequestSockets(group_name, *casted_params, num_sockets, net_log,
+                       motivation);
 }
 
 void HttpProxyClientSocketPool::CancelRequest(

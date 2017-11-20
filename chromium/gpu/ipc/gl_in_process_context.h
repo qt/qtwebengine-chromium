@@ -19,6 +19,7 @@
 #include "ui/gl/gpu_preference.h"
 
 namespace gpu {
+struct GpuFeatureInfo;
 class InProcessCommandBuffer;
 struct SharedMemoryLimits;
 
@@ -50,7 +51,8 @@ class GL_IN_PROCESS_CONTEXT_EXPORT GLInProcessContext {
       ImageFactory* image_factory,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
-  virtual gpu::Capabilities GetCapabilities() = 0;
+  virtual const gpu::Capabilities& GetCapabilities() const = 0;
+  virtual const gpu::GpuFeatureInfo& GetGpuFeatureInfo() const = 0;
 
   // Allows direct access to the GLES2 implementation so a GLInProcessContext
   // can be used without making it current.

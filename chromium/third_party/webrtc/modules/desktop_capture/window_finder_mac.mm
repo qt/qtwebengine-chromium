@@ -8,11 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/window_finder_mac.h"
+#include "modules/desktop_capture/window_finder_mac.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 
-#include "webrtc/modules/desktop_capture/mac/window_list_utils.h"
+#include "modules/desktop_capture/mac/window_list_utils.h"
+#include "rtc_base/ptr_util.h"
 
 namespace webrtc {
 
@@ -31,6 +32,12 @@ WindowId WindowFinderMac::GetWindowUnderPoint(DesktopVector point) {
                 },
                 true);
   return id;
+}
+
+// static
+std::unique_ptr<WindowFinder> WindowFinder::Create(
+    const WindowFinder::Options& options) {
+  return rtc::MakeUnique<WindowFinderMac>();
 }
 
 }  // namespace webrtc

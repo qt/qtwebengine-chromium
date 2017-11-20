@@ -7,13 +7,13 @@
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaQueryEvaluator.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/StyleSheetList.h"
 #include "core/css/parser/CSSParserContext.h"
 #include "core/css/parser/MediaQueryParser.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/dom/ShadowRootInit.h"
-#include "core/dom/StyleEngine.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/html/HTMLElement.h"
 #include "core/testing/DummyPageHolder.h"
@@ -455,7 +455,7 @@ TEST_F(ApplyRulesetsTest, AddUniversalRuleToDocument) {
 }
 
 TEST_F(ApplyRulesetsTest, AddUniversalRuleToShadowTree) {
-  GetDocument().body()->setInnerHTML("<div id=host></div>");
+  GetDocument().body()->SetInnerHTMLFromString("<div id=host></div>");
   Element* host = GetDocument().getElementById("host");
   ASSERT_TRUE(host);
 
@@ -492,7 +492,7 @@ TEST_F(ApplyRulesetsTest, AddFontFaceRuleToDocument) {
 }
 
 TEST_F(ApplyRulesetsTest, AddFontFaceRuleToShadowTree) {
-  GetDocument().body()->setInnerHTML("<div id=host></div>");
+  GetDocument().body()->SetInnerHTMLFromString("<div id=host></div>");
   Element* host = GetDocument().getElementById("host");
   ASSERT_TRUE(host);
 
@@ -516,12 +516,13 @@ TEST_F(ApplyRulesetsTest, AddFontFaceRuleToShadowTree) {
 }
 
 TEST_F(ApplyRulesetsTest, RemoveSheetFromShadowTree) {
-  GetDocument().body()->setInnerHTML("<div id=host></div>");
+  GetDocument().body()->SetInnerHTMLFromString("<div id=host></div>");
   Element* host = GetDocument().getElementById("host");
   ASSERT_TRUE(host);
 
   ShadowRoot& shadow_root = AttachShadow(*host);
-  shadow_root.setInnerHTML("<style>::slotted(#dummy){color:pink}</style>");
+  shadow_root.SetInnerHTMLFromString(
+      "<style>::slotted(#dummy){color:pink}</style>");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   EXPECT_TRUE(GetStyleEngine().TreeBoundaryCrossingScopes().IsEmpty());

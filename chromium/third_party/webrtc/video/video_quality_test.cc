@@ -7,7 +7,7 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "webrtc/video/video_quality_test.h"
+#include "video/video_quality_test.h"
 
 #include <stdio.h>
 #include <algorithm>
@@ -18,49 +18,50 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/call/call.h"
-#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
-#include "webrtc/media/engine/webrtcvideoengine.h"
-#include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_format.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
-#include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
-#include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
-#include "webrtc/modules/video_coding/codecs/vp8/include/vp8_common_types.h"
-#include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/cpu_time.h"
-#include "webrtc/rtc_base/event.h"
-#include "webrtc/rtc_base/flags.h"
-#include "webrtc/rtc_base/format_macros.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/memory_usage.h"
-#include "webrtc/rtc_base/optional.h"
-#include "webrtc/rtc_base/pathutils.h"
-#include "webrtc/rtc_base/platform_file.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/system_wrappers/include/cpu_info.h"
-#include "webrtc/system_wrappers/include/field_trial.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/layer_filtering_transport.h"
-#include "webrtc/test/run_loop.h"
-#include "webrtc/test/statistics.h"
-#include "webrtc/test/testsupport/fileutils.h"
-#include "webrtc/test/testsupport/frame_writer.h"
-#include "webrtc/test/testsupport/test_output.h"
-#include "webrtc/test/vcm_capturer.h"
-#include "webrtc/test/video_renderer.h"
-#include "webrtc/voice_engine/include/voe_base.h"
+#include "api/optional.h"
+#include "call/call.h"
+#include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "logging/rtc_event_log/output/rtc_event_log_output_file.h"
+#include "logging/rtc_event_log/rtc_event_log.h"
+#include "media/engine/webrtcvideoengine.h"
+#include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "modules/rtp_rtcp/source/rtp_format.h"
+#include "modules/rtp_rtcp/source/rtp_utility.h"
+#include "modules/video_coding/codecs/h264/include/h264.h"
+#include "modules/video_coding/codecs/vp8/include/vp8.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_common_types.h"
+#include "modules/video_coding/codecs/vp9/include/vp9.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/cpu_time.h"
+#include "rtc_base/event.h"
+#include "rtc_base/flags.h"
+#include "rtc_base/format_macros.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/memory_usage.h"
+#include "rtc_base/pathutils.h"
+#include "rtc_base/platform_file.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/timeutils.h"
+#include "system_wrappers/include/cpu_info.h"
+#include "system_wrappers/include/field_trial.h"
+#include "test/gtest.h"
+#include "test/layer_filtering_transport.h"
+#include "test/run_loop.h"
+#include "test/statistics.h"
+#include "test/testsupport/fileutils.h"
+#include "test/testsupport/frame_writer.h"
+#include "test/testsupport/test_artifacts.h"
+#include "test/vcm_capturer.h"
+#include "test/video_renderer.h"
+#include "voice_engine/include/voe_base.h"
 
-#include "webrtc/test/rtp_file_writer.h"
+#include "test/rtp_file_writer.h"
 
 DEFINE_bool(save_worst_frame,
             false,
             "Enable saving a frame with the lowest PSNR to a jpeg file in the "
-            "test_output_dir");
+            "test_artifacts_dir");
 
 namespace {
 
@@ -649,7 +650,7 @@ class VideoAnalyzer : public PacketReceiver,
                           const VideoFrame& render,
                           bool dropped,
                           int64_t render_time_ms)
-      EXCLUSIVE_LOCKS_REQUIRED(crit_) {
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_) {
     int64_t reference_timestamp = wrap_handler_.Unwrap(reference.timestamp());
     int64_t send_time_ms = send_times_[reference_timestamp];
     send_times_.erase(reference_timestamp);
@@ -840,7 +841,7 @@ class VideoAnalyzer : public PacketReceiver,
     // jpeg is used here.
     if (FLAG_save_worst_frame && worst_frame_) {
       std::string output_dir;
-      test::GetTestOutputDir(&output_dir);
+      test::GetTestArtifactsDir(&output_dir);
       std::string output_path =
           rtc::Pathname(output_dir, test_label_ + ".jpg").pathname();
       LOG(LS_INFO) << "Saving worst frame to " << output_path;
@@ -1032,7 +1033,8 @@ class VideoAnalyzer : public PacketReceiver,
 
     VideoAnalyzer* const analyzer_;
     rtc::CriticalSection crit_;
-    rtc::VideoSinkInterface<VideoFrame>* send_stream_input_ GUARDED_BY(crit_);
+    rtc::VideoSinkInterface<VideoFrame>* send_stream_input_
+        RTC_GUARDED_BY(crit_);
     test::VideoCapturer* video_capturer_;
     Clock* clock_;
   };
@@ -1056,24 +1058,25 @@ class VideoAnalyzer : public PacketReceiver,
   const int selected_tl_;
   PreEncodeProxy pre_encode_proxy_;
   OnEncodeTimingProxy encode_timing_proxy_;
-  std::vector<Sample> samples_ GUARDED_BY(comparison_lock_);
-  std::map<int64_t, int> samples_encode_time_ms_ GUARDED_BY(comparison_lock_);
-  test::Statistics sender_time_ GUARDED_BY(comparison_lock_);
-  test::Statistics receiver_time_ GUARDED_BY(comparison_lock_);
-  test::Statistics psnr_ GUARDED_BY(comparison_lock_);
-  test::Statistics ssim_ GUARDED_BY(comparison_lock_);
-  test::Statistics end_to_end_ GUARDED_BY(comparison_lock_);
-  test::Statistics rendered_delta_ GUARDED_BY(comparison_lock_);
-  test::Statistics encoded_frame_size_ GUARDED_BY(comparison_lock_);
-  test::Statistics encode_frame_rate_ GUARDED_BY(comparison_lock_);
-  test::Statistics encode_time_ms_ GUARDED_BY(comparison_lock_);
-  test::Statistics encode_usage_percent_ GUARDED_BY(comparison_lock_);
-  test::Statistics decode_time_ms_ GUARDED_BY(comparison_lock_);
-  test::Statistics decode_time_max_ms_ GUARDED_BY(comparison_lock_);
-  test::Statistics media_bitrate_bps_ GUARDED_BY(comparison_lock_);
-  test::Statistics fec_bitrate_bps_ GUARDED_BY(comparison_lock_);
-  test::Statistics send_bandwidth_bps_ GUARDED_BY(comparison_lock_);
-  test::Statistics memory_usage_ GUARDED_BY(comparison_lock_);
+  std::vector<Sample> samples_ RTC_GUARDED_BY(comparison_lock_);
+  std::map<int64_t, int> samples_encode_time_ms_
+      RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics sender_time_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics receiver_time_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics psnr_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics ssim_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics end_to_end_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics rendered_delta_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics encoded_frame_size_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics encode_frame_rate_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics encode_time_ms_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics encode_usage_percent_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics decode_time_ms_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics decode_time_max_ms_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics media_bitrate_bps_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics fec_bitrate_bps_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics send_bandwidth_bps_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics memory_usage_ RTC_GUARDED_BY(comparison_lock_);
 
   struct FrameWithPsnr {
     double psnr;
@@ -1081,7 +1084,7 @@ class VideoAnalyzer : public PacketReceiver,
   };
 
   // Rendered frame with worst PSNR is saved for further analysis.
-  rtc::Optional<FrameWithPsnr> worst_frame_ GUARDED_BY(comparison_lock_);
+  rtc::Optional<FrameWithPsnr> worst_frame_ RTC_GUARDED_BY(comparison_lock_);
 
   size_t last_fec_bytes_;
 
@@ -1097,19 +1100,19 @@ class VideoAnalyzer : public PacketReceiver,
   int64_t first_sending_time_;
   int64_t last_sending_time_;
 
-  int64_t cpu_time_ GUARDED_BY(cpu_measurement_lock_);
-  int64_t wallclock_time_ GUARDED_BY(cpu_measurement_lock_);
+  int64_t cpu_time_ RTC_GUARDED_BY(cpu_measurement_lock_);
+  int64_t wallclock_time_ RTC_GUARDED_BY(cpu_measurement_lock_);
   rtc::CriticalSection cpu_measurement_lock_;
 
   rtc::CriticalSection crit_;
-  std::deque<VideoFrame> frames_ GUARDED_BY(crit_);
-  rtc::Optional<VideoFrame> last_rendered_frame_ GUARDED_BY(crit_);
-  rtc::TimestampWrapAroundHandler wrap_handler_ GUARDED_BY(crit_);
-  std::map<int64_t, int64_t> send_times_ GUARDED_BY(crit_);
-  std::map<int64_t, int64_t> recv_times_ GUARDED_BY(crit_);
-  std::map<int64_t, size_t> encoded_frame_sizes_ GUARDED_BY(crit_);
-  rtc::Optional<uint32_t> first_encoded_timestamp_ GUARDED_BY(crit_);
-  rtc::Optional<uint32_t> first_sent_timestamp_ GUARDED_BY(crit_);
+  std::deque<VideoFrame> frames_ RTC_GUARDED_BY(crit_);
+  rtc::Optional<VideoFrame> last_rendered_frame_ RTC_GUARDED_BY(crit_);
+  rtc::TimestampWrapAroundHandler wrap_handler_ RTC_GUARDED_BY(crit_);
+  std::map<int64_t, int64_t> send_times_ RTC_GUARDED_BY(crit_);
+  std::map<int64_t, int64_t> recv_times_ RTC_GUARDED_BY(crit_);
+  std::map<int64_t, size_t> encoded_frame_sizes_ RTC_GUARDED_BY(crit_);
+  rtc::Optional<uint32_t> first_encoded_timestamp_ RTC_GUARDED_BY(crit_);
+  rtc::Optional<uint32_t> first_sent_timestamp_ RTC_GUARDED_BY(crit_);
   const double avg_psnr_threshold_;
   const double avg_ssim_threshold_;
   bool is_quick_test_enabled_;
@@ -1118,7 +1121,7 @@ class VideoAnalyzer : public PacketReceiver,
   std::vector<rtc::PlatformThread*> comparison_thread_pool_;
   rtc::PlatformThread stats_polling_thread_;
   rtc::Event comparison_available_event_;
-  std::deque<FrameComparison> comparisons_ GUARDED_BY(comparison_lock_);
+  std::deque<FrameComparison> comparisons_ RTC_GUARDED_BY(comparison_lock_);
   rtc::Event done_;
 
   std::unique_ptr<test::RtpFileWriter> rtp_file_writer_;
@@ -1297,6 +1300,12 @@ VideoStream VideoQualityTest::DefaultVideoStream(const Params& params) {
   } else if (params.video.num_temporal_layers == 3) {
     stream.temporal_layer_thresholds_bps.push_back(stream.max_bitrate_bps / 4);
     stream.temporal_layer_thresholds_bps.push_back(stream.target_bitrate_bps);
+  } else {
+    RTC_CHECK_LE(params.video.num_temporal_layers, kMaxTemporalStreams);
+    for (int i = 0; i < params.video.num_temporal_layers - 1; ++i) {
+      stream.temporal_layer_thresholds_bps.push_back(static_cast<int>(
+          stream.max_bitrate_bps * kVp8LayerRateAlloction[0][i] + 0.5));
+    }
   }
   return stream;
 }
@@ -1398,9 +1407,6 @@ void VideoQualityTest::FillScalabilitySettings(
 
 void VideoQualityTest::SetupVideo(Transport* send_transport,
                                   Transport* recv_transport) {
-  if (params_.logging.logs)
-    trace_to_stderr_.reset(new test::TraceToStderr);
-
   size_t num_video_streams = params_.ss.streams.size();
   size_t num_flexfec_streams = params_.video.flexfec ? 1 : 0;
   CreateSendConfig(num_video_streams, 0, num_flexfec_streams, send_transport);
@@ -1531,6 +1537,9 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
           RtpExtension::kAbsSendTimeUri, test::kAbsSendTimeExtensionId));
     }
     flexfec_receive_configs_.push_back(flexfec_receive_config);
+    if (num_video_streams > 0) {
+      video_receive_configs_[0].rtp.protected_by_flexfec = true;
+    }
   }
 
   if (params_.video.ulpfec) {
@@ -1541,23 +1550,24 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
     if (decode_all_receive_streams) {
       for (auto it = video_receive_configs_.begin();
            it != video_receive_configs_.end(); ++it) {
-        it->rtp.ulpfec.red_payload_type =
+        it->rtp.red_payload_type =
             video_send_config_.rtp.ulpfec.red_payload_type;
-        it->rtp.ulpfec.ulpfec_payload_type =
+        it->rtp.ulpfec_payload_type =
             video_send_config_.rtp.ulpfec.ulpfec_payload_type;
-        it->rtp.ulpfec.red_rtx_payload_type =
-            video_send_config_.rtp.ulpfec.red_rtx_payload_type;
+        it->rtp.rtx_associated_payload_types[video_send_config_.rtp.ulpfec
+                                                 .red_rtx_payload_type] =
+            video_send_config_.rtp.ulpfec.red_payload_type;
       }
     } else {
-      video_receive_configs_[params_.ss.selected_stream]
-          .rtp.ulpfec.red_payload_type =
+      video_receive_configs_[params_.ss.selected_stream].rtp.red_payload_type =
           video_send_config_.rtp.ulpfec.red_payload_type;
       video_receive_configs_[params_.ss.selected_stream]
-          .rtp.ulpfec.ulpfec_payload_type =
+          .rtp.ulpfec_payload_type =
           video_send_config_.rtp.ulpfec.ulpfec_payload_type;
       video_receive_configs_[params_.ss.selected_stream]
-          .rtp.ulpfec.red_rtx_payload_type =
-          video_send_config_.rtp.ulpfec.red_rtx_payload_type;
+          .rtp.rtx_associated_payload_types[video_send_config_.rtp.ulpfec
+                                                .red_rtx_payload_type] =
+          video_send_config_.rtp.ulpfec.red_payload_type;
     }
   }
 }
@@ -1804,9 +1814,10 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
   }
 
   if (!params.logging.rtc_event_log_name.empty()) {
-    event_log_ = RtcEventLog::Create(clock_);
+    event_log_ = RtcEventLog::Create(clock_, RtcEventLog::EncodingType::Legacy);
     bool event_log_started =
-        event_log_->StartLogging(params.logging.rtc_event_log_name, -1);
+        event_log_->StartLogging(rtc::MakeUnique<RtcEventLogOutputFile>(
+            params.logging.rtc_event_log_name, RtcEventLog::kUnlimitedOutput));
     RTC_DCHECK(event_log_started);
   }
 
@@ -1900,6 +1911,8 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
 
   analyzer->Wait();
 
+  event_log_->StopLogging();
+
   task_queue_.SendTask([&]() {
     for (std::unique_ptr<test::VideoCapturer>& video_caputurer :
          thumbnail_capturers_)
@@ -1917,7 +1930,6 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
     DestroyStreams();
     DestroyThumbnailStreams();
 
-    event_log_->StopLogging();
     if (graph_data_output_file)
       fclose(graph_data_output_file);
 

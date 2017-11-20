@@ -63,7 +63,7 @@ bool D3D11PictureBuffer::Init(
   stream_ = eglCreateStreamKHR(egl_display, stream_attributes);
   RETURN_ON_FAILURE(!!stream_, "Could not create stream", false);
   gl_image_ =
-      make_scoped_refptr(new gl::GLImageDXGI(picture_buffer_.size(), stream_));
+      base::MakeRefCounted<gl::GLImageDXGI>(picture_buffer_.size(), stream_);
   gl::ScopedActiveTexture texture0(GL_TEXTURE0);
   gl::ScopedTextureBinder texture0_binder(
       GL_TEXTURE_EXTERNAL_OES, picture_buffer_.service_texture_ids()[0]);
@@ -143,8 +143,8 @@ scoped_refptr<H264Picture> D3D11H264Accelerator::CreateH264Picture() {
     return nullptr;
   }
   picture->set_in_picture_use(true);
-  return make_scoped_refptr(
-      new D3D11H264Picture(picture, client_->input_buffer_id()));
+  return base::MakeRefCounted<D3D11H264Picture>(picture,
+                                                client_->input_buffer_id());
 }
 
 bool D3D11H264Accelerator::SubmitFrameMetadata(

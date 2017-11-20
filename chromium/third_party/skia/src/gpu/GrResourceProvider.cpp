@@ -15,7 +15,6 @@
 #include "GrGpu.h"
 #include "GrPath.h"
 #include "GrPathRendering.h"
-#include "GrRenderTarget.h"
 #include "GrRenderTargetPriv.h"
 #include "GrResourceCache.h"
 #include "GrResourceKey.h"
@@ -78,7 +77,7 @@ sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc, Sk
                                                    SkDestinationSurfaceColorMode mipColorMode) {
     ASSERT_SINGLE_OWNER
 
-    SkASSERT(mipLevelCount >= 1);
+    SkASSERT(mipLevelCount > 1);
 
     if (this->isAbandoned()) {
         return nullptr;
@@ -98,7 +97,6 @@ sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc, Sk
 
 sk_sp<GrTexture> GrResourceProvider::getExactScratch(const GrSurfaceDesc& desc,
                                                      SkBudgeted budgeted, uint32_t flags) {
-    flags |= kExact_Flag | kNoCreate_Flag;
     sk_sp<GrTexture> tex(this->refScratchTexture(desc, flags));
     if (tex && SkBudgeted::kNo == budgeted) {
         tex->resourcePriv().makeUnbudgeted();
@@ -189,49 +187,55 @@ sk_sp<GrTexture> GrResourceProvider::createApproxTexture(const GrSurfaceDesc& de
         return nullptr;
     }
 
-    return this->refScratchTexture(desc, flags);
+    if (auto tex = this->refScratchTexture(desc, flags)) {
+        return tex;
+    }
+
+    SkTCopyOnFirstWrite<GrSurfaceDesc> copyDesc(desc);
+
+    // bin by pow2 with a reasonable min
+    if (!SkToBool(desc.fFlags & kPerformInitialClear_GrSurfaceFlag) &&
+        (fGpu->caps()->reuseScratchTextures() || (desc.fFlags & kRenderTarget_GrSurfaceFlag))) {
+        GrSurfaceDesc* wdesc = copyDesc.writable();
+        wdesc->fWidth  = SkTMax(kMinScratchTextureSize, GrNextPow2(desc.fWidth));
+        wdesc->fHeight = SkTMax(kMinScratchTextureSize, GrNextPow2(desc.fHeight));
+    }
+
+    if (auto tex = this->refScratchTexture(*copyDesc, flags)) {
+        return tex;
+    }
+
+    return fGpu->createTexture(*copyDesc, SkBudgeted::kYes);
 }
 
-sk_sp<GrTexture> GrResourceProvider::refScratchTexture(const GrSurfaceDesc& inDesc,
+sk_sp<GrTexture> GrResourceProvider::refScratchTexture(const GrSurfaceDesc& desc,
                                                        uint32_t flags) {
     ASSERT_SINGLE_OWNER
     SkASSERT(!this->isAbandoned());
-    SkASSERT(validate_desc(inDesc, *fCaps));
-
-    SkTCopyOnFirstWrite<GrSurfaceDesc> desc(inDesc);
+    SkASSERT(validate_desc(desc, *fCaps));
 
     // We could make initial clears work with scratch textures but it is a rare case so we just opt
     // to fall back to making a new texture.
-    if (!SkToBool(inDesc.fFlags & kPerformInitialClear_GrSurfaceFlag) &&
-        (fGpu->caps()->reuseScratchTextures() || (desc->fFlags & kRenderTarget_GrSurfaceFlag))) {
-        if (!(kExact_Flag & flags)) {
-            // bin by pow2 with a reasonable min
-            GrSurfaceDesc* wdesc = desc.writable();
-            wdesc->fWidth  = SkTMax(kMinScratchTextureSize, GrNextPow2(desc->fWidth));
-            wdesc->fHeight = SkTMax(kMinScratchTextureSize, GrNextPow2(desc->fHeight));
-        }
+    if (!SkToBool(desc.fFlags & kPerformInitialClear_GrSurfaceFlag) &&
+        (fGpu->caps()->reuseScratchTextures() || (desc.fFlags & kRenderTarget_GrSurfaceFlag))) {
 
         GrScratchKey key;
-        GrTexturePriv::ComputeScratchKey(*desc, &key);
+        GrTexturePriv::ComputeScratchKey(desc, &key);
         uint32_t scratchFlags = 0;
         if (kNoPendingIO_Flag & flags) {
             scratchFlags = GrResourceCache::kRequireNoPendingIO_ScratchFlag;
-        } else  if (!(desc->fFlags & kRenderTarget_GrSurfaceFlag)) {
+        } else  if (!(desc.fFlags & kRenderTarget_GrSurfaceFlag)) {
             // If it is not a render target then it will most likely be populated by
             // writePixels() which will trigger a flush if the texture has pending IO.
             scratchFlags = GrResourceCache::kPreferNoPendingIO_ScratchFlag;
         }
         GrGpuResource* resource = fCache->findAndRefScratchResource(key,
-                                                                   GrSurface::WorstCaseSize(*desc),
-                                                                   scratchFlags);
+                                                                    GrSurface::WorstCaseSize(desc),
+                                                                    scratchFlags);
         if (resource) {
             GrSurface* surface = static_cast<GrSurface*>(resource);
             return sk_sp<GrTexture>(surface->asTexture());
         }
-    }
-
-    if (!(kNoCreate_Flag & flags)) {
-        return fGpu->createTexture(*desc, SkBudgeted::kYes);
     }
 
     return nullptr;
@@ -272,6 +276,14 @@ void GrResourceProvider::assignUniqueKeyToResource(const GrUniqueKey& key,
     resource->resourcePriv().setUniqueKey(key);
 }
 
+void GrResourceProvider::removeUniqueKeyFromProxy(const GrUniqueKey& key, GrTextureProxy* proxy) {
+    ASSERT_SINGLE_OWNER
+    if (this->isAbandoned() || !proxy) {
+        return;
+    }
+    fCache->processInvalidProxyUniqueKey(key, proxy, true);
+}
+
 GrGpuResource* GrResourceProvider::findAndRefResourceByUniqueKey(const GrUniqueKey& key) {
     ASSERT_SINGLE_OWNER
     return this->isAbandoned() ? nullptr : fCache->findAndRefUniqueResource(key);
@@ -288,12 +300,6 @@ GrTexture* GrResourceProvider::findAndRefTextureByUniqueKey(const GrUniqueKey& k
     return nullptr;
 }
 
-void GrResourceProvider::assignUniqueKeyToTexture(const GrUniqueKey& key, GrTexture* texture) {
-    SkASSERT(key.isValid());
-    this->assignUniqueKeyToResource(key, texture);
-}
-
-// MDB TODO (caching): this side-steps the issue of texture proxies with unique IDs
 void GrResourceProvider::assignUniqueKeyToProxy(const GrUniqueKey& key, GrTextureProxy* proxy) {
     ASSERT_SINGLE_OWNER
     SkASSERT(key.isValid());
@@ -301,25 +307,19 @@ void GrResourceProvider::assignUniqueKeyToProxy(const GrUniqueKey& key, GrTextur
         return;
     }
 
-    if (!proxy->instantiate(this)) {
-        return;
-    }
-    GrTexture* texture = proxy->priv().peekTexture();
-
-    this->assignUniqueKeyToResource(key, texture);
+    fCache->assignUniqueKeyToProxy(key, proxy);
 }
 
-// MDB TODO (caching): this side-steps the issue of texture proxies with unique IDs
 sk_sp<GrTextureProxy> GrResourceProvider::findProxyByUniqueKey(const GrUniqueKey& key,
                                                                GrSurfaceOrigin origin) {
     ASSERT_SINGLE_OWNER
+    return this->isAbandoned() ? nullptr : fCache->findProxyByUniqueKey(key, origin);
+}
 
-    sk_sp<GrTexture> texture(this->findAndRefTextureByUniqueKey(key));
-    if (!texture) {
-        return nullptr;
-    }
-
-    return GrSurfaceProxy::MakeWrapped(std::move(texture), origin);
+sk_sp<GrTextureProxy> GrResourceProvider::findOrCreateProxyByUniqueKey(const GrUniqueKey& key,
+                                                                       GrSurfaceOrigin origin) {
+    ASSERT_SINGLE_OWNER
+    return this->isAbandoned() ? nullptr : fCache->findOrCreateProxyByUniqueKey(key, origin);
 }
 
 const GrBuffer* GrResourceProvider::createPatternedIndexBuffer(const uint16_t* pattern,
@@ -330,15 +330,16 @@ const GrBuffer* GrResourceProvider::createPatternedIndexBuffer(const uint16_t* p
     size_t bufferSize = patternSize * reps * sizeof(uint16_t);
 
     // This is typically used in GrMeshDrawOps, so we assume kNoPendingIO.
-    GrBuffer* buffer = this->createBuffer(bufferSize, kIndex_GrBufferType, kStatic_GrAccessPattern,
-                                          kNoPendingIO_Flag);
+    sk_sp<GrBuffer> buffer(this->createBuffer(bufferSize, kIndex_GrBufferType,
+                                              kStatic_GrAccessPattern, kNoPendingIO_Flag));
     if (!buffer) {
         return nullptr;
     }
     uint16_t* data = (uint16_t*) buffer->map();
-    bool useTempData = (nullptr == data);
-    if (useTempData) {
-        data = new uint16_t[reps * patternSize];
+    SkAutoTArray<uint16_t> temp;
+    if (!data) {
+        temp.reset(reps * patternSize);
+        data = temp.get();
     }
     for (int i = 0; i < reps; ++i) {
         int baseIdx = i * patternSize;
@@ -347,17 +348,15 @@ const GrBuffer* GrResourceProvider::createPatternedIndexBuffer(const uint16_t* p
             data[baseIdx+j] = baseVert + pattern[j];
         }
     }
-    if (useTempData) {
+    if (temp.get()) {
         if (!buffer->updateData(data, bufferSize)) {
-            buffer->unref();
             return nullptr;
         }
-        delete[] data;
     } else {
         buffer->unmap();
     }
-    this->assignUniqueKeyToResource(key, buffer);
-    return buffer;
+    this->assignUniqueKeyToResource(key, buffer.get());
+    return buffer.release();
 }
 
 static constexpr int kMaxQuads = 1 << 12;  // max possible: (1 << 14) - 1;
@@ -372,12 +371,20 @@ const GrBuffer* GrResourceProvider::createQuadIndexBuffer() {
 int GrResourceProvider::QuadCountOfQuadBuffer() { return kMaxQuads; }
 
 sk_sp<GrPath> GrResourceProvider::createPath(const SkPath& path, const GrStyle& style) {
+    if (this->isAbandoned()) {
+        return nullptr;
+    }
+
     SkASSERT(this->gpu()->pathRendering());
     return this->gpu()->pathRendering()->createPath(path, style);
 }
 
 sk_sp<GrPathRange> GrResourceProvider::createPathRange(GrPathRange::PathGenerator* gen,
                                                        const GrStyle& style) {
+    if (this->isAbandoned()) {
+        return nullptr;
+    }
+
     SkASSERT(this->gpu()->pathRendering());
     return this->gpu()->pathRendering()->createPathRange(gen, style);
 }
@@ -434,10 +441,10 @@ GrBuffer* GrResourceProvider::createBuffer(size_t size, GrBufferType intendedTyp
     return buffer;
 }
 
-GrStencilAttachment* GrResourceProvider::attachStencilAttachment(GrRenderTarget* rt) {
+bool GrResourceProvider::attachStencilAttachment(GrRenderTarget* rt) {
     SkASSERT(rt);
     if (rt->renderTargetPriv().getStencilAttachment()) {
-        return rt->renderTargetPriv().getStencilAttachment();
+        return true;
     }
 
     if (!rt->wasDestroyed() && rt->canAttemptStencilAttachment()) {
@@ -476,7 +483,7 @@ GrStencilAttachment* GrResourceProvider::attachStencilAttachment(GrRenderTarget*
 #endif
         }
     }
-    return rt->renderTargetPriv().getStencilAttachment();
+    return SkToBool(rt->renderTargetPriv().getStencilAttachment());
 }
 
 sk_sp<GrRenderTarget> GrResourceProvider::wrapBackendTextureAsRenderTarget(

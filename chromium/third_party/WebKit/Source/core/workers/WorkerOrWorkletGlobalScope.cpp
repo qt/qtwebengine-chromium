@@ -13,8 +13,8 @@
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThread.h"
 #include "platform/CrossThreadFunctional.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/Functional.h"
 
 namespace blink {
@@ -60,14 +60,20 @@ void WorkerOrWorkletGlobalScope::CountDeprecation(WebFeature feature) {
   ReportingProxy().CountDeprecation(feature);
 }
 
-ResourceFetcher* WorkerOrWorkletGlobalScope::GetResourceFetcher() {
+ResourceFetcher* WorkerOrWorkletGlobalScope::EnsureFetcher() {
   DCHECK(RuntimeEnabledFeatures::OffMainThreadFetchEnabled());
   DCHECK(!IsMainThreadWorkletGlobalScope());
   if (resource_fetcher_)
     return resource_fetcher_;
   WorkerFetchContext* fetch_context = WorkerFetchContext::Create(*this);
-  resource_fetcher_ =
-      ResourceFetcher::Create(fetch_context, fetch_context->GetTaskRunner());
+  resource_fetcher_ = ResourceFetcher::Create(fetch_context);
+  DCHECK(resource_fetcher_);
+  return resource_fetcher_;
+}
+ResourceFetcher* WorkerOrWorkletGlobalScope::Fetcher() const {
+  DCHECK(RuntimeEnabledFeatures::OffMainThreadFetchEnabled());
+  DCHECK(!IsMainThreadWorkletGlobalScope());
+  DCHECK(resource_fetcher_);
   return resource_fetcher_;
 }
 

@@ -25,9 +25,6 @@
 #include "core/svg/SVGElement.h"
 
 #include "bindings/core/v8/ScriptEventListener.h"
-#include "core/HTMLNames.h"
-#include "core/SVGNames.h"
-#include "core/XMLNames.h"
 #include "core/animation/DocumentAnimations.h"
 #include "core/animation/EffectStack.h"
 #include "core/animation/ElementAnimations.h"
@@ -43,6 +40,7 @@
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLElement.h"
+#include "core/html_names.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/svg/LayoutSVGResourceContainer.h"
@@ -54,6 +52,8 @@
 #include "core/svg/SVGTreeScopeResources.h"
 #include "core/svg/SVGUseElement.h"
 #include "core/svg/properties/SVGProperty.h"
+#include "core/svg_names.h"
+#include "core/xml_names.h"
 #include "platform/wtf/AutoReset.h"
 #include "platform/wtf/Threading.h"
 
@@ -127,7 +127,7 @@ SVGElementRareData* SVGElement::EnsureSVGRareData() {
 }
 
 bool SVGElement::IsOutermostSVGSVGElement() const {
-  if (!isSVGSVGElement(*this))
+  if (!IsSVGSVGElement(*this))
     return false;
 
   // Element may not be in the document, pretend we're outermost for viewport(),
@@ -137,7 +137,7 @@ bool SVGElement::IsOutermostSVGSVGElement() const {
 
   // We act like an outermost SVG element, if we're a direct child of a
   // <foreignObject> element.
-  if (isSVGForeignObjectElement(*parentNode()))
+  if (IsSVGForeignObjectElement(*parentNode()))
     return true;
 
   // If we're living in a shadow tree, we're a <svg> element that got created as
@@ -357,7 +357,7 @@ AffineTransform SVGElement::CalculateTransform(
     ComputedStyle::ApplyTransformOrigin apply_transform_origin =
         ComputedStyle::kIncludeTransformOrigin;
     // SVGTextElements need special handling for the text positioning code.
-    if (isSVGTextElement(this)) {
+    if (IsSVGTextElement(this)) {
       // Do not take into account transform-origin, or percentage values.
       reference_box = FloatRect();
       apply_transform_origin = ComputedStyle::kExcludeTransformOrigin;
@@ -410,10 +410,10 @@ Node::InsertionNotificationRequest SVGElement::InsertedInto(
   UpdateRelativeLengthsInformation();
   BuildPendingResourcesIfNeeded();
 
-  if (hasAttribute(nonceAttr) && getAttribute(nonceAttr) != g_empty_atom) {
-    setNonce(getAttribute(nonceAttr));
-    if (RuntimeEnabledFeatures::HideNonceContentAttributeEnabled() &&
-        InActiveDocument() &&
+  const AtomicString& nonce_value = FastGetAttribute(nonceAttr);
+  if (!nonce_value.IsEmpty()) {
+    setNonce(nonce_value);
+    if (InActiveDocument() &&
         GetDocument().GetContentSecurityPolicy()->HasHeaderDeliveredPolicy()) {
       setAttribute(nonceAttr, g_empty_atom);
     }
@@ -466,7 +466,7 @@ CSSPropertyID SVGElement::CssPropertyIdForSVGAttributeName(
   if (!attr_name.NamespaceURI().IsNull())
     return CSSPropertyInvalid;
 
-  static HashMap<StringImpl*, CSSPropertyID>* property_name_to_id_map = 0;
+  static HashMap<StringImpl*, CSSPropertyID>* property_name_to_id_map = nullptr;
   if (!property_name_to_id_map) {
     property_name_to_id_map = new HashMap<StringImpl*, CSSPropertyID>;
     // This is a list of all base CSS and SVG CSS properties which are exposed
@@ -587,14 +587,12 @@ void SVGElement::UpdateRelativeLengthsInformation(
   }
 
   // Register root SVG elements for top level viewport change notifications.
-  if (isSVGSVGElement(*client_element)) {
+  if (auto* svg = ToSVGSVGElementOrNull(*client_element)) {
     SVGDocumentExtensions& svg_extensions = GetDocument().AccessSVGExtensions();
     if (client_element->HasRelativeLengths())
-      svg_extensions.AddSVGRootWithRelativeLengthDescendents(
-          toSVGSVGElement(client_element));
+      svg_extensions.AddSVGRootWithRelativeLengthDescendents(svg);
     else
-      svg_extensions.RemoveSVGRootWithRelativeLengthDescendents(
-          toSVGSVGElement(client_element));
+      svg_extensions.RemoveSVGRootWithRelativeLengthDescendents(svg);
   }
 }
 
@@ -628,8 +626,8 @@ void SVGElement::InvalidateRelativeLengthClients(
 SVGSVGElement* SVGElement::ownerSVGElement() const {
   ContainerNode* n = ParentOrShadowHostNode();
   while (n) {
-    if (isSVGSVGElement(*n))
-      return toSVGSVGElement(n);
+    if (IsSVGSVGElement(*n))
+      return ToSVGSVGElement(n);
 
     n = n->ParentOrShadowHostNode();
   }
@@ -643,7 +641,7 @@ SVGElement* SVGElement::viewportElement() const {
   // work otherwhise.
   ContainerNode* n = ParentOrShadowHostNode();
   while (n) {
-    if (isSVGSVGElement(*n) || isSVGImageElement(*n) || isSVGSymbolElement(*n))
+    if (IsSVGSVGElement(*n) || IsSVGImageElement(*n) || IsSVGSymbolElement(*n))
       return ToSVGElement(n);
 
     n = n->ParentOrShadowHostNode();
@@ -697,8 +695,8 @@ SVGElement* SVGElement::CorrespondingElement() const {
 
 SVGUseElement* SVGElement::CorrespondingUseElement() const {
   if (ShadowRoot* root = ContainingShadowRoot()) {
-    if (isSVGUseElement(root->host()))
-      return &toSVGUseElement(root->host());
+    if (IsSVGUseElement(root->host()))
+      return &ToSVGUseElement(root->host());
   }
   return nullptr;
 }
@@ -898,7 +896,7 @@ void SVGElement::AddedEventListener(
   HeapHashSet<WeakMember<SVGElement>> instances;
   CollectInstancesForSVGElement(this, instances);
   AddEventListenerOptionsResolved options = registered_listener.Options();
-  EventListener* listener = registered_listener.Listener();
+  EventListener* listener = registered_listener.Callback();
   for (SVGElement* element : instances) {
     bool result =
         element->Node::AddEventListenerInternal(event_type, listener, options);
@@ -915,7 +913,7 @@ void SVGElement::RemovedEventListener(
   HeapHashSet<WeakMember<SVGElement>> instances;
   CollectInstancesForSVGElement(this, instances);
   EventListenerOptions options = registered_listener.Options();
-  const EventListener* listener = registered_listener.Listener();
+  const EventListener* listener = registered_listener.Callback();
   for (SVGElement* shadow_tree_element : instances) {
     DCHECK(shadow_tree_element);
 
@@ -946,7 +944,7 @@ static bool HasLoadListener(Element* element) {
 bool SVGElement::SendSVGLoadEventIfPossible() {
   if (!HaveLoadedRequiredResources())
     return false;
-  if ((IsStructurallyExternal() || isSVGSVGElement(*this)) &&
+  if ((IsStructurallyExternal() || IsSVGSVGElement(*this)) &&
       HasLoadListener(this))
     DispatchEvent(Event::Create(EventTypeNames::load));
   return true;
@@ -1290,7 +1288,7 @@ bool SVGElement::IsAnimatableAttribute(const QualifiedName& name) const {
 
 SVGElementProxySet* SVGElement::ElementProxySet() {
   // Limit to specific element types.
-  if (!isSVGFilterElement(*this) && !isSVGClipPathElement(*this))
+  if (!IsSVGFilterElement(*this) && !IsSVGClipPathElement(*this))
     return nullptr;
   return &EnsureSVGRareData()->EnsureElementProxySet();
 }

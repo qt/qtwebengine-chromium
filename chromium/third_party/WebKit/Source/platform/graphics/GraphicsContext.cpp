@@ -669,7 +669,7 @@ void GraphicsContext::DrawText(const Font& font,
 }
 
 void GraphicsContext::DrawText(const Font& font,
-                               const TextFragmentPaintInfo& text_info,
+                               const NGTextFragmentPaintInfo& text_info,
                                const FloatPoint& point,
                                const PaintFlags& flags) {
   DrawTextInternal(font, text_info, point, flags);
@@ -715,7 +715,7 @@ void GraphicsContext::DrawText(const Font& font,
 }
 
 void GraphicsContext::DrawText(const Font& font,
-                               const TextFragmentPaintInfo& text_info,
+                               const NGTextFragmentPaintInfo& text_info,
                                const FloatPoint& point) {
   DrawTextInternal(font, text_info, point);
 }
@@ -743,10 +743,11 @@ void GraphicsContext::DrawEmphasisMarks(const Font& font,
   DrawEmphasisMarksInternal(font, text_info, mark, point);
 }
 
-void GraphicsContext::DrawEmphasisMarks(const Font& font,
-                                        const TextFragmentPaintInfo& text_info,
-                                        const AtomicString& mark,
-                                        const FloatPoint& point) {
+void GraphicsContext::DrawEmphasisMarks(
+    const Font& font,
+    const NGTextFragmentPaintInfo& text_info,
+    const AtomicString& mark,
+    const FloatPoint& point) {
   DrawEmphasisMarksInternal(font, text_info, mark, point);
 }
 
@@ -783,6 +784,7 @@ void GraphicsContext::DrawHighlightForText(const Font& font,
 
 void GraphicsContext::DrawImage(
     Image* image,
+    Image::ImageDecodingMode decode_mode,
     const FloatRect& dest,
     const FloatRect* src_ptr,
     SkBlendMode op,
@@ -800,12 +802,13 @@ void GraphicsContext::DrawImage(
   if (ShouldApplyHighContrastFilterToImage(*image))
     image_flags.setColorFilter(high_contrast_filter_);
   image->Draw(canvas_, image_flags, dest, src, should_respect_image_orientation,
-              Image::kClampImageToSourceRect);
+              Image::kClampImageToSourceRect, decode_mode);
   paint_controller_.SetImagePainted();
 }
 
 void GraphicsContext::DrawImageRRect(
     Image* image,
+    Image::ImageDecodingMode decode_mode,
     const FloatRoundedRect& dest,
     const FloatRect& src_rect,
     SkBlendMode op,
@@ -814,7 +817,8 @@ void GraphicsContext::DrawImageRRect(
     return;
 
   if (!dest.IsRounded()) {
-    DrawImage(image, dest.Rect(), &src_rect, op, respect_orientation);
+    DrawImage(image, decode_mode, dest.Rect(), &src_rect, op,
+              respect_orientation);
     return;
   }
 
@@ -847,7 +851,8 @@ void GraphicsContext::DrawImageRRect(
     PaintCanvasAutoRestore auto_restore(canvas_, true);
     canvas_->clipRRect(dest, image_flags.isAntiAlias());
     image->Draw(canvas_, image_flags, dest.Rect(), src_rect,
-                respect_orientation, Image::kClampImageToSourceRect);
+                respect_orientation, Image::kClampImageToSourceRect,
+                decode_mode);
   }
 
   paint_controller_.SetImagePainted();
@@ -904,7 +909,9 @@ void GraphicsContext::DrawTiledImage(Image* image,
 
   if (h_rule == Image::kStretchTile && v_rule == Image::kStretchTile) {
     // Just do a scale.
-    DrawImage(image, dest, &src_rect, op);
+    // Since there is no way for the developer to specify decode behavior, use
+    // kSync by default.
+    DrawImage(image, Image::kSyncDecode, dest, &src_rect, op);
     return;
   }
 
@@ -1327,13 +1334,19 @@ sk_sp<SkColorFilter> GraphicsContext::WebCoreColorFilterToSkiaColorFilter(
   return nullptr;
 }
 
-bool GraphicsContext::ShouldApplyHighContrastFilterToImage(
-    const Image& image) const {
+bool GraphicsContext::ShouldApplyHighContrastFilterToImage(Image& image) {
   if (!high_contrast_filter_)
     return false;
 
-  return high_contrast_settings_.image_policy ==
-         HighContrastImagePolicy::kFilterAll;
+  switch (high_contrast_settings_.image_policy) {
+    case HighContrastImagePolicy::kFilterSmart:
+      return high_contrast_image_classifier_
+          .ShouldApplyHighContrastFilterToImage(image);
+    case HighContrastImagePolicy::kFilterAll:
+      return true;
+    default:
+      return false;
+  }
 }
 
 Color GraphicsContext::ApplyHighContrastFilter(const Color& input) const {

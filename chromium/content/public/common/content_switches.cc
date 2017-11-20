@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "build/build_config.h"
 #include "content/public/common/content_switches.h"
+
+#include "build/build_config.h"
 #include "media/media_features.h"
 
 namespace switches {
@@ -112,7 +113,7 @@ const char kDisableBackgroundTimerThrottling[] =
     "disable-background-timer-throttling";
 
 // Disable one or more Blink runtime-enabled features.
-// Use names from RuntimeEnabledFeatures.json5, separated by commas.
+// Use names from runtime_enabled_features.json5, separated by commas.
 // Applied after kEnableBlinkFeatures, and after other flags that change these
 // features.
 const char kDisableBlinkFeatures[]          = "disable-blink-features";
@@ -125,8 +126,11 @@ const char kDisableDatabases[]              = "disable-databases";
 const char kDisableDomainBlockingFor3DAPIs[] =
     "disable-domain-blocking-for-3d-apis";
 
-// Disable experimental WebGL support.
-const char kDisableExperimentalWebGL[]      = "disable-webgl";
+// Disable all versions of WebGL.
+const char kDisableWebGL[] = "disable-webgl";
+
+// Disable WebGL2.
+const char kDisableWebGL2[] = "disable-webgl2";
 
 // Comma-separated list of feature names to disable. See also kEnableFeatures.
 const char kDisableFeatures[]               = "disable-features";
@@ -147,6 +151,9 @@ const char kDisableGestureRequirementForPresentation[] =
 // Disables GPU hardware acceleration.  If software renderer is not in place,
 // then the GPU process won't launch.
 const char kDisableGpu[]                    = "disable-gpu";
+
+// Disable async worker context.
+const char kDisableGpuAsyncWorkerContext[] = "disable-gpu-async-worker-context";
 
 // Prevent the compositor from using its GPU implementation.
 const char kDisableGpuCompositing[]         = "disable-gpu-compositing";
@@ -274,11 +281,6 @@ const char kDisableSharedWorkers[]          = "disable-shared-workers";
 // useful for forcing a baseline code path for e.g. layout tests.
 const char kDisableSkiaRuntimeOpts[]        = "disable-skia-runtime-opts";
 
-// Disable paint invalidation based on slimming paint.
-// See kEnableSlimmingPaintInvalidation.
-const char kDisableSlimmingPaintInvalidation[] =
-    "disable-slimming-paint-invalidation";
-
 // Disable smooth scrolling for testing.
 const char kDisableSmoothScrolling[]        = "disable-smooth-scrolling";
 
@@ -347,13 +349,18 @@ const char kEnableBackgroundFetchPersistence[] =
     "enable-background-fetch-persistence";
 
 // Enable one or more Blink runtime-enabled features.
-// Use names from RuntimeEnabledFeatures.json5, separated by commas.
+// Use names from runtime_enabled_features.json5, separated by commas.
 // Applied before kDisableBlinkFeatures, and after other flags that change these
 // features.
 const char kEnableBlinkFeatures[]           = "enable-blink-features";
 
-// PlzNavigate: Use the experimental browser-side navigation path.
+// PlzNavigate: Use or not the experimental browser-side navigation path.
+const char kDisableBrowserSideNavigation[] = "disable-browser-side-navigation";
 const char kEnableBrowserSideNavigation[]   = "enable-browser-side-navigation";
+
+// Enable animating of images in the compositor instead of blink.
+const char kEnableCompositorImageAnimations[] =
+    "enable-compositor-image-animations";
 
 // Enables display list based 2d canvas implementation. Options:
 //  1. Enable: allow browser to use display list for 2d canvas (browser makes
@@ -377,16 +384,6 @@ const char kDisableOriginTrialControlledBlinkFeatures[] =
 
 // Comma-separated list of feature names to enable. See also kDisableFeatures.
 const char kEnableFeatures[] = "enable-features";
-
-// WebFonts intervention v2 flag and values.
-const char kEnableWebFontsInterventionV2[] = "enable-webfonts-intervention-v2";
-const char kEnableWebFontsInterventionV2SwitchValueEnabledWith2G[] =
-    "enabled-2g";
-const char kEnableWebFontsInterventionV2SwitchValueEnabledWith3G[] =
-    "enabled-3g";
-const char kEnableWebFontsInterventionV2SwitchValueEnabledWithSlow2G[] =
-    "enabled-slow2g";
-const char kEnableWebFontsInterventionV2SwitchValueDisabled[] = "disabled";
 
 // Makes the GL worker context run asynchronously by using a separate stream.
 const char kEnableGpuAsyncWorkerContext[] = "enable-gpu-async-worker-context";
@@ -449,13 +446,12 @@ const char kEnableSandboxLogging[]          = "enable-sandbox-logging";
 // Enables the Skia benchmarking extension
 const char kEnableSkiaBenchmarking[]        = "enable-skia-benchmarking";
 
+// Enables slimming paint phase 1.75:
+// http://www.chromium.org/blink/slimming-paint
+const char kEnableSlimmingPaintV175[] = "enable-slimming-paint-v175";
+
 // Enables slimming paint phase 2: http://www.chromium.org/blink/slimming-paint
 const char kEnableSlimmingPaintV2[]         = "enable-slimming-paint-v2";
-
-// Enables paint invalidation based on slimming paint but without
-// the full slimming paint v2 compositing code. See: https://goo.gl/eQczQW
-const char kEnableSlimmingPaintInvalidation[] =
-    "enable-slimming-paint-invalidation";
 
 // On platforms that support it, enables smooth scroll animation.
 const char kEnableSmoothScrolling[]         = "enable-smooth-scrolling";
@@ -475,10 +471,6 @@ const char kEnableStrictMixedContentChecking[] =
 // for example) that we haven't yet deprecated for the web at large.
 const char kEnableStrictPowerfulFeatureRestrictions[] =
     "enable-strict-powerful-feature-restrictions";
-
-// Enable use of experimental TCP sockets API for sending data in the
-// SYN packet.
-const char kEnableTcpFastOpen[]             = "enable-tcp-fastopen";
 
 // Enabled threaded compositing for layout tests.
 const char kEnableThreadedCompositing[]     = "enable-threaded-compositing";
@@ -506,10 +498,6 @@ const char kEnableVtune[]                   = "enable-vtune-support";
 
 // Enable Vulkan support, must also have ENABLE_VULKAN defined.
 const char kEnableVulkan[] = "enable-vulkan";
-
-// Enable WebFonts intervention and trigger the signal always.
-const char kEnableWebFontsInterventionTrigger[] =
-    "enable-webfonts-intervention-trigger";
 
 // Enables WebGL extensions not yet approved by the community.
 const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
@@ -634,6 +622,11 @@ const char kLogGpuControlListDecisions[]    = "log-gpu-control-list-decisions";
 // INFO = 0, WARNING = 1, LOG_ERROR = 2, LOG_FATAL = 3.
 const char kLoggingLevel[]                  = "log-level";
 
+// Overrides the default file name to use for general-purpose logging (does not
+// affect which events are logged). Currently supported only in app_shell.
+// TODO(crbug.com/760431): Make this work in chrome and content_shell too.
+const char kLogFile[] = "log-file";
+
 // Enables saving net log events to a file and sets the file name to use.
 const char kLogNetLog[]                     = "log-net-log";
 
@@ -645,6 +638,9 @@ const char kMainFrameResizesAreOrientationChanges[] =
 // Sets the width and height above which a composited layer will get tiled.
 const char kMaxUntiledLayerHeight[]         = "max-untiled-layer-height";
 const char kMaxUntiledLayerWidth[]          = "max-untiled-layer-width";
+
+// Indicates the utility process should run with a message loop type of UI.
+const char kMessageLoopTypeUi[] = "message-loop-type-ui";
 
 // Sets options for MHTML generator to skip no-store resources:
 //   "skip-nostore-main" - fails to save a page if main frame is 'no-store'
@@ -810,6 +806,13 @@ const char kRootLayerScrolls[]              = "root-layer-scrolls";
 // Causes the process to run as a sandbox IPC subprocess.
 const char kSandboxIPCProcess[]             = "sandbox-ipc";
 
+// Causes the renderer to keep an old document's cached resources alive until
+// the specified point in the next document's lifecycle.
+// By default, no explicit attempt to keep the resources alive is made, though
+// that doesn't necessarily mean they will be GCed promptly.
+const char kSavePreviousDocumentResources[] =
+    "save-previous-document-resources";
+
 // Visibly render a border around paint rects in the web page to help debug
 // and study painting behavior.
 const char kShowPaintRects[]                = "show-paint-rects";
@@ -906,10 +909,6 @@ const char kUtilityProcess[]                = "utility";
 const char kUtilityProcessAllowedDir[]      = "utility-allowed-dir";
 
 const char kUtilityProcessRunningElevated[] = "utility-run-elevated";
-
-// Type of sandbox to apply to the utility process. Options are "none",
-// "network", or "utility" (the default).
-const char kUtilityProcessSandboxType[] = "utility-sandbox-type";
 
 // Causes the utility process to display a dialog on launch.
 const char kUtilityStartupDialog[] = "utility-startup-dialog";
@@ -1017,6 +1016,9 @@ const char kEnableOSKOverscroll[]               = "enable-osk-overscroll";
 // Enable the aggressive flushing of DOM Storage to minimize data loss.
 const char kEnableAggressiveDOMStorageFlushing[] =
     "enable-aggressive-domstorage-flushing";
+
+// Enable indication that browser is controlled by automation.
+const char kEnableAutomation[] = "enable-automation";
 
 // Enable audio for desktop share.
 const char kDisableAudioSupportForDesktopShare[] =

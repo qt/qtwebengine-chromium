@@ -11,7 +11,6 @@
 #include "base/macros.h"
 #include "base/time/time.h"
 #include "cc/scheduler/scheduler.h"
-#include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/proxy.h"
 #include "cc/trees/task_runner_provider.h"
@@ -58,9 +57,12 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void SetMutator(std::unique_ptr<LayerTreeMutator> mutator) override;
   bool SupportsImplScrolling() const override;
   bool MainFrameWillHappenForTesting() override;
+
+  // Blink layout tests might call into this even though an unthreaded CC
+  // doesn't have BrowserControls itself.
   void UpdateBrowserControlsState(BrowserControlsState constraints,
                                   BrowserControlsState current,
-                                  bool animate) override;
+                                  bool animate) override {}
 
   // SchedulerClient implementation
   void WillBeginImplFrame(const viz::BeginFrameArgs& args) override;
@@ -147,8 +149,6 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   // Accessed from both threads.
   std::unique_ptr<Scheduler> scheduler_on_impl_thread_;
 
-  std::unique_ptr<BlockingTaskRunner::CapturePostTasks>
-      commit_blocking_task_runner_;
   bool next_frame_is_newly_committed_frame_;
 
 #if DCHECK_IS_ON()

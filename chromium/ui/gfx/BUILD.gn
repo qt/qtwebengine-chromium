@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/linux/pangocairo/pangocairo.gni")
 import("//build/config/ui.gni")
 import("//device/vr/features/features.gni")
 import("//testing/test.gni")
@@ -192,6 +193,7 @@ component("gfx") {
     "win/window_impl.cc",
     "win/window_impl.h",
   ]
+  deps = []
   if (!is_ios) {
     sources += [
       "blit.cc",
@@ -217,6 +219,7 @@ component("gfx") {
       "skia_paint_util.cc",
       "skia_paint_util.h",
     ]
+    deps += [ "//build/config/linux/pangocairo:features" ]
   }
 
   configs += [
@@ -244,7 +247,7 @@ component("gfx") {
     "//ui/gfx/geometry",
     "//ui/gfx/range",
   ]
-  deps = [
+  deps += [
     ":gfx_export",
     "//base",
     "//base:base_static",
@@ -299,7 +302,7 @@ component("gfx") {
   } else {
     deps += [
       "//cc/paint",
-      "//third_party/harfbuzz-ng",
+      "//third_party:freetype_harfbuzz",
     ]
   }
 
@@ -384,7 +387,7 @@ component("gfx") {
     sources -= [ "path_x11.cc" ]
   }
 
-  if (use_cairo) {
+  if (use_pangocairo) {
     configs += [ "//build/config/linux/pangocairo" ]
   }
 
@@ -407,13 +410,10 @@ component("color_space") {
     "icc_profile.cc",
     "icc_profile.h",
     "icc_profile_mac.mm",
-    "icc_profile_win.cc",
-    "icc_profile_x11.cc",
     "skia_color_space_util.cc",
     "skia_color_space_util.h",
   ]
   public_deps = [
-    ":gfx_switches",
     "//base",
     "//skia",
   ]
@@ -428,8 +428,6 @@ component("color_space") {
       "//ui/gfx/x",
     ]
     configs += [ "//build/config/linux:x11" ]
-  } else {
-    sources -= [ "icc_profile_x11.cc" ]
   }
   defines = [ "COLOR_SPACE_IMPLEMENTATION" ]
 }
@@ -552,7 +550,6 @@ source_set("memory_buffer_sources") {
   ]
 
   deps = [
-    ":gfx_switches",
     ":native_widget_types",
     "//base",
     "//ui/gfx/geometry",
@@ -570,15 +567,9 @@ source_set("memory_buffer_sources") {
   }
 }
 
-# TODO(ccameron): This should not be a separate component. Once the flag for
-# color correct rendering is removed, color_space_switches.h may be moved
-# into color_space (since it will be included in fewer places), and once the
-# "best monitor color profile" function is removed, switches.h may be moved
-# back into its own source_set.
+# TODO(ccameron): This can be moved into a separate source_set.
 component("gfx_switches") {
   sources = [
-    "color_space_switches.cc",
-    "color_space_switches.h",
     "switches.cc",
     "switches.h",
     "switches_export.h",
@@ -721,10 +712,6 @@ test("gfx_unittests") {
     sources += [ "paint_vector_icon_unittest.cc" ]
   }
 
-  if (!is_android && !is_ios) {
-    sources += [ "render_text_unittest.cc" ]
-  }
-
   # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
@@ -744,6 +731,11 @@ test("gfx_unittests") {
     "//ui/gfx/range",
     "//ui/resources:ui_test_pak",
   ]
+
+  if (!is_android && !is_ios) {
+    sources += [ "render_text_unittest.cc" ]
+    deps += [ "//third_party:freetype_harfbuzz" ]
+  }
 
   data_deps = [
     "//ui/resources:ui_test_pak",
@@ -816,7 +808,7 @@ if (is_android) {
   }
 }
 
-fuzzer_test("color_transform_fuzztest") {
+fuzzer_test("color_transform_fuzzer") {
   sources = [
     "color_transform_fuzzer.cc",
   ]

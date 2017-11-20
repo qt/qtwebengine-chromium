@@ -11,7 +11,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "cc/output/compositor_frame.h"
+#include "components/viz/common/quads/compositor_frame.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/compositor/test/no_transport_image_transport_factory.h"
 #include "content/browser/renderer_host/offscreen_canvas_surface_impl.h"
@@ -93,15 +93,15 @@ class StubCompositorFrameSinkClient
 };
 
 // Create a CompositorFrame suitable to send over IPC.
-cc::CompositorFrame MakeCompositorFrame() {
-  cc::CompositorFrame frame;
+viz::CompositorFrame MakeCompositorFrame() {
+  viz::CompositorFrame frame;
   frame.metadata.begin_frame_ack.source_id =
       viz::BeginFrameArgs::kManualSourceId;
   frame.metadata.begin_frame_ack.sequence_number =
       viz::BeginFrameArgs::kStartingFrameNumber;
   frame.metadata.device_scale_factor = 1.0f;
 
-  auto render_pass = cc::RenderPass::Create();
+  auto render_pass = viz::RenderPass::Create();
   render_pass->id = 1;
   render_pass->output_rect = gfx::Rect(100, 100);
   frame.render_pass_list.push_back(std::move(render_pass));
@@ -147,8 +147,8 @@ class OffscreenCanvasProviderImplTest : public testing::Test {
  protected:
   void SetUp() override {
 #if !defined(OS_ANDROID)
-    ImageTransportFactory::InitializeForUnitTests(
-        base::MakeUnique<NoTransportImageTransportFactory>());
+    ImageTransportFactory::SetFactory(
+        std::make_unique<NoTransportImageTransportFactory>());
 #endif
     host_frame_sink_manager_ = base::MakeUnique<viz::HostFrameSinkManager>();
 

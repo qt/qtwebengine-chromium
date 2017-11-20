@@ -6,6 +6,10 @@
 
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/SelectionTemplate.h"
+#include "core/editing/VisiblePosition.h"
+#include "core/editing/VisibleSelection.h"
+#include "core/editing/VisibleUnits.h"
 
 namespace blink {
 
@@ -40,12 +44,12 @@ static VisiblePosition NextWordBound(const VisiblePosition& pos,
   bool next_bound_if_on_bound =
       word_bound_adjust == BoundAdjust::kNextBoundIfOnBound;
   if (direction == SearchDirection::kSearchForward) {
-    EWordSide word_side =
-        next_bound_if_on_bound ? kRightWordIfOnBoundary : kLeftWordIfOnBoundary;
+    EWordSide word_side = next_bound_if_on_bound ? kNextWordIfOnBoundary
+                                                 : kPreviousWordIfOnBoundary;
     return EndOfWord(pos, word_side);
   }
-  EWordSide word_side =
-      next_bound_if_on_bound ? kLeftWordIfOnBoundary : kRightWordIfOnBoundary;
+  EWordSide word_side = next_bound_if_on_bound ? kPreviousWordIfOnBoundary
+                                               : kNextWordIfOnBoundary;
   return StartOfWord(pos, word_side);
 }
 

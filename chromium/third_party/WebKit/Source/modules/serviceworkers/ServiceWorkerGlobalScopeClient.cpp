@@ -86,48 +86,48 @@ WebURL ServiceWorkerGlobalScopeClient::Scope() const {
 
 void ServiceWorkerGlobalScopeClient::DidHandleActivateEvent(
     int event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleActivateEvent(event_id, result, event_dispatch_time);
+  client_.DidHandleActivateEvent(event_id, status, event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleBackgroundFetchAbortEvent(
     int event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleBackgroundFetchAbortEvent(event_id, result,
+  client_.DidHandleBackgroundFetchAbortEvent(event_id, status,
                                              event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleBackgroundFetchClickEvent(
     int event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleBackgroundFetchClickEvent(event_id, result,
+  client_.DidHandleBackgroundFetchClickEvent(event_id, status,
                                              event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleBackgroundFetchFailEvent(
     int event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleBackgroundFetchFailEvent(event_id, result,
+  client_.DidHandleBackgroundFetchFailEvent(event_id, status,
                                             event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleBackgroundFetchedEvent(
     int event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleBackgroundFetchedEvent(event_id, result,
+  client_.DidHandleBackgroundFetchedEvent(event_id, status,
                                           event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleExtendableMessageEvent(
     int event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleExtendableMessageEvent(event_id, result,
+  client_.DidHandleExtendableMessageEvent(event_id, status,
                                           event_dispatch_time);
 }
 
@@ -178,77 +178,77 @@ void ServiceWorkerGlobalScopeClient::RespondToPaymentRequestEvent(
 
 void ServiceWorkerGlobalScopeClient::DidHandleFetchEvent(
     int fetch_event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleFetchEvent(fetch_event_id, result, event_dispatch_time);
+  client_.DidHandleFetchEvent(fetch_event_id, status, event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleInstallEvent(
     int install_event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleInstallEvent(install_event_id, result, event_dispatch_time);
+  client_.DidHandleInstallEvent(install_event_id, status, event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleNotificationClickEvent(
     int event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleNotificationClickEvent(event_id, result,
+  client_.DidHandleNotificationClickEvent(event_id, status,
                                           event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleNotificationCloseEvent(
     int event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleNotificationCloseEvent(event_id, result,
+  client_.DidHandleNotificationCloseEvent(event_id, status,
                                           event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandlePushEvent(
     int push_event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandlePushEvent(push_event_id, result, event_dispatch_time);
+  client_.DidHandlePushEvent(push_event_id, status, event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleSyncEvent(
     int sync_event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleSyncEvent(sync_event_id, result, event_dispatch_time);
+  client_.DidHandleSyncEvent(sync_event_id, status, event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleAbortPaymentEvent(
     int abort_payment_event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleAbortPaymentEvent(abort_payment_event_id, result,
+  client_.DidHandleAbortPaymentEvent(abort_payment_event_id, status,
                                      event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandleCanMakePaymentEvent(
     int payment_request_event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandleCanMakePaymentEvent(payment_request_event_id, result,
+  client_.DidHandleCanMakePaymentEvent(payment_request_event_id, status,
                                        event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::DidHandlePaymentRequestEvent(
     int payment_request_event_id,
-    WebServiceWorkerEventResult result,
+    mojom::ServiceWorkerEventStatus status,
     double event_dispatch_time) {
-  client_.DidHandlePaymentRequestEvent(payment_request_event_id, result,
+  client_.DidHandlePaymentRequestEvent(payment_request_event_id, status,
                                        event_dispatch_time);
 }
 
 void ServiceWorkerGlobalScopeClient::PostMessageToClient(
     const WebString& client_uuid,
     const WebString& message,
-    WebMessagePortChannelArray web_channels) {
-  client_.PostMessageToClient(client_uuid, message, std::move(web_channels));
+    Vector<MessagePortChannel> channels) {
+  client_.PostMessageToClient(client_uuid, message, std::move(channels));
 }
 
 void ServiceWorkerGlobalScopeClient::SkipWaiting(

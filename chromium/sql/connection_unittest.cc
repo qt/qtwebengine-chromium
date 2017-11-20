@@ -14,13 +14,14 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/test/histogram_tester.h"
 #include "base/trace_event/process_memory_dump.h"
+#include "build/build_config.h"
 #include "sql/connection.h"
 #include "sql/connection_memory_dump_provider.h"
-#include "sql/correct_sql_test_base.h"
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/test/error_callback_support.h"
 #include "sql/test/scoped_error_expecter.h"
+#include "sql/test/sql_test_base.h"
 #include "sql/test/test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/sqlite/sqlite3.h"
@@ -606,8 +607,6 @@ TEST_F(SQLConnectionTest, RazeMultiple) {
   ASSERT_EQ(0, SqliteMasterCount(&other_db));
 }
 
-// TODO(erg): Enable this in the next patch once I add locking.
-#if !defined(MOJO_APPTEST_IMPL)
 TEST_F(SQLConnectionTest, RazeLocked) {
   const char* kCreateSql = "CREATE TABLE foo (id INTEGER PRIMARY KEY, value)";
   ASSERT_TRUE(db().Execute(kCreateSql));
@@ -642,7 +641,6 @@ TEST_F(SQLConnectionTest, RazeLocked) {
   ASSERT_FALSE(s.Step());
   ASSERT_TRUE(db().Raze());
 }
-#endif
 
 // Verify that Raze() can handle an empty file.  SQLite should treat
 // this as an empty database.
@@ -837,8 +835,8 @@ TEST_F(SQLConnectionTest, RazeAndCloseDiagnostics) {
   // Close normally to reset the poisoned flag.
   db().Close();
 
-  // DEATH tests not supported on Android or iOS.
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  // DEATH tests not supported on Android, iOS, or Fuchsia.
+#if !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_FUCHSIA)
   // Once the real Close() has been called, various calls enforce API
   // usage by becoming fatal in debug mode.  Since DEATH tests are
   // expensive, just test one of them.
@@ -918,9 +916,8 @@ TEST_F(SQLConnectionTest, Delete) {
   EXPECT_FALSE(GetPathExists(journal));
 }
 
-// This test manually sets on disk permissions; this doesn't apply to the mojo
-// fork.
-#if defined(OS_POSIX) && !defined(MOJO_APPTEST_IMPL)
+// This test manually sets on disk permissions, these don't exist on Fuchsia.
+#if defined(OS_POSIX) && !defined(OS_FUCHSIA)
 // Test that set_restrict_to_user() trims database permissions so that
 // only the owner (and root) can read.
 TEST_F(SQLConnectionTest, UserPermission) {
@@ -984,7 +981,7 @@ TEST_F(SQLConnectionTest, UserPermission) {
   EXPECT_TRUE(base::GetPosixFilePermissions(journal, &mode));
   ASSERT_EQ((mode & base::FILE_PERMISSION_USER_MASK), mode);
 }
-#endif  // defined(OS_POSIX)
+#endif  // defined(OS_POSIX) && !defined(OS_FUCHSIA)
 
 // Test that errors start happening once Poison() is called.
 TEST_F(SQLConnectionTest, Poison) {
@@ -1421,13 +1418,9 @@ TEST_F(SQLConnectionTest, OnMemoryDump) {
 // Test that the functions to collect diagnostic data run to completion, without
 // worrying too much about what they generate (since that will change).
 TEST_F(SQLConnectionTest, CollectDiagnosticInfo) {
-  // NOTE(shess): Mojo doesn't support everything CollectCorruptionInfo() uses,
-  // but it's not really clear if adding support would be useful.
-#if !defined(MOJO_APPTEST_IMPL)
   const std::string corruption_info = db().CollectCorruptionInfo();
   EXPECT_NE(std::string::npos, corruption_info.find("SQLITE_CORRUPT"));
   EXPECT_NE(std::string::npos, corruption_info.find("integrity_check"));
-#endif
 
   // A statement to see in the results.
   const char* kSimpleSql = "SELECT 'mountain'";
@@ -1455,7 +1448,6 @@ TEST_F(SQLConnectionTest, CollectDiagnosticInfo) {
   EXPECT_NE(std::string::npos, error_info.find("version: 4"));
 }
 
-#if !defined(MOJO_APPTEST_IMPL)
 TEST_F(SQLConnectionTest, RegisterIntentToUpload) {
   base::FilePath breadcrumb_path(
       db_path().DirName().Append(FILE_PATH_LITERAL("sqlite-diag")));
@@ -1489,7 +1481,6 @@ TEST_F(SQLConnectionTest, RegisterIntentToUpload) {
   ASSERT_TRUE(db().Open(db_path()));
   EXPECT_FALSE(db().RegisterIntentToUpload());
 }
-#endif  // !defined(MOJO_APPTEST_IMPL)
 
 // Test that a fresh database has mmap enabled by default, if mmap'ed I/O is
 // enabled by SQLite.
@@ -1654,11 +1645,11 @@ TEST_F(SQLConnectionTest, GetAppropriateMmapSizeAltStatus) {
 }
 
 // To prevent invalid SQL from accidentally shipping to production, prepared
-// statements which fail to compile with SQLITE_ERROR call DLOG(FATAL).  This
+// statements which fail to compile with SQLITE_ERROR call DLOG(DCHECK).  This
 // case cannot be suppressed with an error callback.
 TEST_F(SQLConnectionTest, CompileError) {
-  // DEATH tests not supported on Android or iOS.
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  // DEATH tests not supported on Android, iOS, or Fuchsia.
+#if !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_FUCHSIA)
   if (DLOG_IS_ON(FATAL)) {
     db().set_error_callback(base::Bind(&IgnoreErrorCallback));
     ASSERT_DEATH({

@@ -36,7 +36,6 @@ namespace cc {
 class AnimationHost;
 class Layer;
 class LayerTreeHost;
-class OutputSurface;
 }
 
 namespace viz {
@@ -44,6 +43,7 @@ class Display;
 class FrameSinkId;
 class FrameSinkManagerImpl;
 class HostFrameSinkManager;
+class OutputSurface;
 class VulkanContextProvider;
 }
 
@@ -80,7 +80,6 @@ class CONTENT_EXPORT CompositorImpl
   void SetRootLayer(scoped_refptr<cc::Layer> root) override;
   void SetSurface(jobject surface) override;
   void SetWindowBounds(const gfx::Size& size) override;
-  void SetHasTransparentBackground(bool flag) override;
   void SetRequiresAlphaChannel(bool flag) override;
   void SetNeedsComposite() override;
   ui::UIResourceProvider& GetUIResourceProvider() override;
@@ -138,13 +137,12 @@ class CONTENT_EXPORT CompositorImpl
       scoped_refptr<gpu::GpuChannelHost> gpu_channel_host);
   void OnGpuChannelTimeout();
   void InitializeDisplay(
-      std::unique_ptr<cc::OutputSurface> display_output_surface,
+      std::unique_ptr<viz::OutputSurface> display_output_surface,
       scoped_refptr<viz::VulkanContextProvider> vulkan_context_provider,
       scoped_refptr<viz::ContextProvider> context_provider);
   void DidSwapBuffers();
 
   bool HavePendingReadbacks();
-  void SetBackgroundColor(int color);
 
   viz::FrameSinkId frame_sink_id_;
 

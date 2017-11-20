@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/containers/queue.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -68,7 +69,7 @@
 class SkBitmap;
 struct FrameHostMsg_HittestData_Params;
 struct ViewHostMsg_SelectionBounds_Params;
-struct ViewHostMsg_UpdateRect_Params;
+struct ViewHostMsg_ResizeOrRepaint_ACK_Params;
 
 namespace blink {
 class WebInputEvent;
@@ -582,7 +583,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       viz::mojom::CompositorFrameSinkRequest request,
       viz::mojom::CompositorFrameSinkClientPtr client);
 
-  const cc::CompositorFrameMetadata& last_frame_metadata() {
+  const viz::CompositorFrameMetadata& last_frame_metadata() {
     return last_frame_metadata_;
   }
 
@@ -592,7 +593,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void SetNeedsBeginFrame(bool needs_begin_frame) override;
   void SubmitCompositorFrame(
       const viz::LocalSurfaceId& local_surface_id,
-      cc::CompositorFrame frame,
+      viz::CompositorFrame frame,
       viz::mojom::HitTestRegionListPtr hit_test_region_list,
       uint64_t submit_time) override;
   void DidNotProduceFrame(const viz::BeginFrameAck& ack) override;
@@ -607,8 +608,14 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // with the interface calls processed on the WidgetInputHandler.
   void SetWidgetInputHandler(
       mojom::WidgetInputHandlerAssociatedPtr widget_input_handler);
-  mojom::WidgetInputHandler* GetWidgetInputHandler() override;
   void SetWidget(mojom::WidgetPtr widget);
+
+  // InputRouterImplClient overrides.
+  mojom::WidgetInputHandler* GetWidgetInputHandler() override;
+  void OnImeCompositionRangeChanged(
+      const gfx::Range& range,
+      const std::vector<gfx::Rect>& character_bounds) override;
+  void OnImeCancelComposition() override;
 
  protected:
   // ---------------------------------------------------------------------------
@@ -669,17 +676,14 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnRequestMove(const gfx::Rect& pos);
   void OnSetTooltipText(const base::string16& tooltip_text,
                         blink::WebTextDirection text_direction_hint);
-  void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
+  void OnResizeOrRepaintACK(
+      const ViewHostMsg_ResizeOrRepaint_ACK_Params& params);
   void OnSetCursor(const WebCursor& cursor);
   void OnAutoscrollStart(const gfx::PointF& position);
   void OnAutoscrollFling(const gfx::Vector2dF& velocity);
   void OnAutoscrollEnd();
   void OnTextInputStateChanged(const TextInputState& params);
 
-  void OnImeCompositionRangeChanged(
-      const gfx::Range& range,
-      const std::vector<gfx::Rect>& character_bounds);
-  void OnImeCancelComposition();
   void OnLockMouse(bool user_gesture,
                    bool privileged);
   void OnUnlockMouse();
@@ -700,11 +704,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnFrameSwapMessagesReceived(uint32_t frame_token,
                                    std::vector<IPC::Message> messages);
 
-  // Called (either immediately or asynchronously) after we're done with our
-  // BackingStore and can send an ACK to the renderer so it can paint onto it
-  // again.
-  void DidUpdateBackingStore(const ViewHostMsg_UpdateRect_Params& params,
-                             const base::TimeTicks& paint_start);
+  // Called after resize or repaint has completed in the renderer.
+  void DidCompleteResizeOrRepaint(
+      const ViewHostMsg_ResizeOrRepaint_ACK_Params& params,
+      const base::TimeTicks& paint_start);
 
   // Give key press listeners a chance to handle this key press. This allow
   // widgets that don't have focus to still handle key presses.
@@ -742,7 +745,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Called when there is a new auto resize (using a post to avoid a stack
   // which may get in recursive loops).
-  void DelayedAutoResized();
+  void DelayedAutoResized(uint64_t sequence_number);
 
   void WindowSnapshotReachedScreen(int snapshot_id);
 
@@ -1005,7 +1008,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   mojo::Binding<viz::mojom::CompositorFrameSink> compositor_frame_sink_binding_;
   viz::mojom::CompositorFrameSinkClientPtr renderer_compositor_frame_sink_;
 
-  cc::CompositorFrameMetadata last_frame_metadata_;
+  viz::CompositorFrameMetadata last_frame_metadata_;
 
   // Last non-zero frame token received from the renderer. Any swap messsages
   // having a token less than or equal to this value will be processed.
@@ -1013,16 +1016,18 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // List of all swap messages that their corresponding frames have not arrived.
   // Sorted by frame token.
-  std::queue<std::pair<uint32_t, std::vector<IPC::Message>>> queued_messages_;
+  base::queue<std::pair<uint32_t, std::vector<IPC::Message>>> queued_messages_;
 
   // If a CompositorFrame is submitted that references SharedBitmaps that don't
   // exist yet, we keep it here until they are available.
   struct {
     viz::LocalSurfaceId local_surface_id;
-    cc::CompositorFrame frame;
+    viz::CompositorFrame frame;
     uint32_t max_shared_bitmap_sequence_number = 0;
     viz::mojom::HitTestRegionListPtr hit_test_region_list;
   } saved_frame_;
+
+  bool enable_surface_synchronization_ = false;
 
   // If the |associated_widget_input_handler_| is set it should always be
   // used to ensure in order delivery of related messages that may occur

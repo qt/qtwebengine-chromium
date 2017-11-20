@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef CONTENT_COMMON_RESOURCE_MESSAGES_H_
+#define CONTENT_COMMON_RESOURCE_MESSAGES_H_
+
 // IPC messages for resource loading.
 //
 // NOTE: All messages must send an |int request_id| as their first parameter.
-
-// Multiply-included message file, hence no include guard.
 
 #include <stdint.h>
 
@@ -31,8 +32,8 @@
 #include "net/url_request/redirect_info.h"
 #include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
 
-#ifndef CONTENT_COMMON_RESOURCE_MESSAGES_H_
-#define CONTENT_COMMON_RESOURCE_MESSAGES_H_
+#ifndef INTERNAL_CONTENT_COMMON_RESOURCE_MESSAGES_H_
+#define INTERNAL_CONTENT_COMMON_RESOURCE_MESSAGES_H_
 
 namespace net {
 struct LoadTimingInfo;
@@ -47,7 +48,6 @@ namespace IPC {
 template <>
 struct ParamTraits<scoped_refptr<net::HttpResponseHeaders> > {
   typedef scoped_refptr<net::HttpResponseHeaders> param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -58,7 +58,6 @@ struct ParamTraits<scoped_refptr<net::HttpResponseHeaders> > {
 template <>
 struct CONTENT_EXPORT ParamTraits<net::SSLInfo> {
   typedef net::SSLInfo param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -69,7 +68,6 @@ struct CONTENT_EXPORT ParamTraits<net::SSLInfo> {
 template <>
 struct CONTENT_EXPORT ParamTraits<net::HashValue> {
   typedef net::HashValue param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -80,7 +78,6 @@ struct CONTENT_EXPORT ParamTraits<net::HashValue> {
 template <>
 struct CONTENT_EXPORT ParamTraits<storage::DataElement> {
   typedef storage::DataElement param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -91,7 +88,6 @@ struct CONTENT_EXPORT ParamTraits<storage::DataElement> {
 template <>
 struct ParamTraits<scoped_refptr<content::ResourceDevToolsInfo> > {
   typedef scoped_refptr<content::ResourceDevToolsInfo> param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -102,7 +98,6 @@ struct ParamTraits<scoped_refptr<content::ResourceDevToolsInfo> > {
 template <>
 struct ParamTraits<net::LoadTimingInfo> {
   typedef net::LoadTimingInfo param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -113,7 +108,6 @@ struct ParamTraits<net::LoadTimingInfo> {
 template <>
 struct ParamTraits<scoped_refptr<content::ResourceRequestBody>> {
   typedef scoped_refptr<content::ResourceRequestBody> param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -124,7 +118,6 @@ struct ParamTraits<scoped_refptr<content::ResourceRequestBody>> {
 template <>
 struct ParamTraits<scoped_refptr<net::ct::SignedCertificateTimestamp>> {
   typedef scoped_refptr<net::ct::SignedCertificateTimestamp> param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -134,8 +127,7 @@ struct ParamTraits<scoped_refptr<net::ct::SignedCertificateTimestamp>> {
 
 }  // namespace IPC
 
-#endif  // CONTENT_COMMON_RESOURCE_MESSAGES_H_
-
+#endif  // INTERNAL_CONTENT_COMMON_RESOURCE_MESSAGES_H_
 
 #define IPC_MESSAGE_START ResourceMsgStart
 #undef IPC_MESSAGE_EXPORT
@@ -191,6 +183,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(mime_type)
   IPC_STRUCT_TRAITS_MEMBER(charset)
   IPC_STRUCT_TRAITS_MEMBER(has_major_certificate_errors)
+  IPC_STRUCT_TRAITS_MEMBER(is_legacy_symantec_cert)
+  IPC_STRUCT_TRAITS_MEMBER(cert_validity_start)
   IPC_STRUCT_TRAITS_MEMBER(content_length)
   IPC_STRUCT_TRAITS_MEMBER(encoded_data_length)
   IPC_STRUCT_TRAITS_MEMBER(encoded_body_length)
@@ -276,14 +270,13 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResourceRequest)
   IPC_STRUCT_TRAITS_MEMBER(fetch_frame_type)
   IPC_STRUCT_TRAITS_MEMBER(request_body)
   IPC_STRUCT_TRAITS_MEMBER(download_to_file)
+  IPC_STRUCT_TRAITS_MEMBER(keepalive)
   IPC_STRUCT_TRAITS_MEMBER(has_user_gesture)
   IPC_STRUCT_TRAITS_MEMBER(enable_load_timing)
   IPC_STRUCT_TRAITS_MEMBER(enable_upload_progress)
   IPC_STRUCT_TRAITS_MEMBER(do_not_prompt_for_login)
   IPC_STRUCT_TRAITS_MEMBER(render_frame_id)
   IPC_STRUCT_TRAITS_MEMBER(is_main_frame)
-  IPC_STRUCT_TRAITS_MEMBER(parent_is_main_frame)
-  IPC_STRUCT_TRAITS_MEMBER(parent_render_frame_id)
   IPC_STRUCT_TRAITS_MEMBER(transition_type)
   IPC_STRUCT_TRAITS_MEMBER(should_replace_current_entry)
   IPC_STRUCT_TRAITS_MEMBER(transferred_request_child_id)
@@ -415,3 +408,5 @@ IPC_MESSAGE_CONTROL3(ResourceHostMsg_DidChangePriority,
                      int /* request_id */,
                      net::RequestPriority,
                      int /* intra_priority_value */)
+
+#endif  // CONTENT_COMMON_RESOURCE_MESSAGES_H_

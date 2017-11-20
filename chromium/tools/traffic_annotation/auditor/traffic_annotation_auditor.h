@@ -40,8 +40,13 @@ struct AuditorException {
 
 class TrafficAnnotationAuditor {
  public:
+  // Creates an auditor object, storing the following paths:
+  //   |source_path|: Path to the src directory.
+  //   |build_path|: Path to a compiled build directory.
+  //   |clang_tool_path|: Path to the 'traffic_annotation_extractor' clang tool.
   TrafficAnnotationAuditor(const base::FilePath& source_path,
-                           const base::FilePath& build_path);
+                           const base::FilePath& build_path,
+                           const base::FilePath& clang_tool_path);
   ~TrafficAnnotationAuditor();
 
   // Runs traffic_annotation_extractor clang tool and puts its output in
@@ -66,9 +71,10 @@ class TrafficAnnotationAuditor {
                     AuditorException::ExceptionType exception_type);
 
   // Checks to see if any unique id or extra id or their hash code are
-  // duplicated. Adds errors to |errors_| and purges annotations with duplicate
-  // ids.
-  void CheckDuplicateHashes();
+  // duplicated, either in currently existing annotations, or in deprecated
+  // ones. Adds errors to |errors_| and purges annotations with duplicate ids.
+  // Returns false if any errors happen while checking.
+  bool CheckDuplicateHashes();
 
   // Checks to see if unique ids only include alphanumeric characters and
   // underline. Adds errors to |errors_| and purges annotations with
@@ -89,7 +95,7 @@ class TrafficAnnotationAuditor {
   bool CheckIfCallCanBeUnannotated(const CallInstance& call);
 
   // Performs all checks on extracted annotations and calls.
-  void RunAllChecks();
+  bool RunAllChecks();
 
   // Returns a mapping of reserved unique ids' hash codes to the unique ids'
   // texts. This list includes all unique ids that are defined in
@@ -135,9 +141,13 @@ class TrafficAnnotationAuditor {
     gn_file_for_test_ = file_path;
   }
 
+  // Returns the path to clang internal libraries.
+  base::FilePath GetClangLibraryPath();
+
  private:
   const base::FilePath source_path_;
   const base::FilePath build_path_;
+  const base::FilePath clang_tool_path_;
 
   std::string clang_tool_raw_output_;
   std::vector<AnnotationInstance> extracted_annotations_;

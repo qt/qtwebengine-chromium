@@ -677,26 +677,27 @@ static void add_line(const SkPoint p[2],
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool GrAAHairLinePathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
+GrPathRenderer::CanDrawPath
+GrAAHairLinePathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
     if (GrAAType::kCoverage != args.fAAType) {
-        return false;
+        return CanDrawPath::kNo;
     }
 
     if (!IsStrokeHairlineOrEquivalent(args.fShape->style(), *args.fViewMatrix, nullptr)) {
-        return false;
+        return CanDrawPath::kNo;
     }
 
     // We don't currently handle dashing in this class though perhaps we should.
     if (args.fShape->style().pathEffect()) {
-        return false;
+        return CanDrawPath::kNo;
     }
 
     if (SkPath::kLine_SegmentMask == args.fShape->segmentMask() ||
         args.fCaps->shaderCaps()->shaderDerivativeSupport()) {
-        return true;
+        return CanDrawPath::kYes;
     }
 
-    return false;
+    return CanDrawPath::kNo;
 }
 
 template <class VertexType>
@@ -784,6 +785,10 @@ public:
 
     const char* name() const override { return "AAHairlineOp"; }
 
+    void visitProxies(const VisitProxyFunc& func) const override {
+        fHelper.visitProxies(func);
+    }
+
     SkString dumpInfo() const override {
         SkString string;
         string.appendf("Color: 0x%08x Coverage: 0x%02x, Count: %d\n", fColor, fCoverage,
@@ -795,9 +800,10 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        return fHelper.xpRequiresDstTexture(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
-                                            &fColor);
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
+                                GrPixelConfigIsClamped dstIsClamped) override {
+        return fHelper.xpRequiresDstTexture(caps, clip, dstIsClamped,
+                                            GrProcessorAnalysisCoverage::kSingleChannel, &fColor);
     }
 
 private:

@@ -18,13 +18,14 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "base/values.h"
 #include "components/history/core/browser/history_service_observer.h"
+#include "components/safe_browsing/db/v4_protocol_manager_util.h"
 #include "components/safe_browsing/proto/csd.pb.h"
-#include "components/safe_browsing_db/v4_protocol_manager_util.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/protobuf/src/google/protobuf/repeated_field.h"
 
 namespace content {
 class WebContents;
+class NavigationHandle;
 }
 
 namespace history {
@@ -36,8 +37,9 @@ class HostContentSettingsMap;
 
 namespace safe_browsing {
 
-class SafeBrowsingDatabaseManager;
+class PasswordProtectionNavigationThrottle;
 class PasswordProtectionRequest;
+class SafeBrowsingDatabaseManager;
 
 // UMA metrics
 extern const char kPasswordOnFocusRequestOutcomeHistogram[];
@@ -54,12 +56,11 @@ extern const char kSyncPasswordChromeSettingsHistogram[];
 // HostContentSettingsMap instance.
 class PasswordProtectionService : public history::HistoryServiceObserver {
  public:
-  using TriggerType = LoginReputationClientRequest::TriggerType;
+  // TODO(jialiul): Remove all these aliases, since they are unnecessary.
   using SyncAccountType =
       LoginReputationClientRequest::PasswordReuseEvent::SyncAccountType;
-  using WebContentsToProtoMap = std::unordered_map<
-      content::WebContents*,
-      std::pair<LoginReputationClientRequest, LoginReputationClientResponse>>;
+  using TriggerType = LoginReputationClientRequest::TriggerType;
+  using VerdictType = LoginReputationClientResponse::VerdictType;
 
   // The outcome of the request. These values are used for UMA.
   // DO NOT CHANGE THE ORDERING OF THESE VALUES.
@@ -95,7 +96,7 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
     // User clicks on "Ignore" button.
     IGNORE_WARNING = 2,
 
-    // User navigates page away or hit "ESC" to close dialog.
+    // Dialog closed in reaction to change of user state.
     CLOSE = 3,
 
     // User explicitly mark the site as legitimate.
@@ -128,10 +129,9 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
   // Looks up |settings| to find the cached verdict response. If verdict is not
   // available or is expired, return VERDICT_TYPE_UNSPECIFIED. Can be called on
   // any thread.
-  LoginReputationClientResponse::VerdictType GetCachedVerdict(
-      const GURL& url,
-      TriggerType trigger_type,
-      LoginReputationClientResponse* out_response);
+  VerdictType GetCachedVerdict(const GURL& url,
+                               TriggerType trigger_type,
+                               LoginReputationClientResponse* out_response);
 
   // Stores |verdict| in |settings| based on its |trigger_type|, |url|,
   // |verdict| and |receive_time|.
@@ -186,32 +186,43 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
   // Records user action to corresponding UMA histograms.
   void RecordWarningAction(WarningUIType ui_type, WarningAction action);
 
-  // Called when user close warning UI or navigate away.
-  void OnWarningDone(content::WebContents* web_contents,
-                     WarningUIType ui_type,
-                     WarningAction action);
+  // If we want to show password reuse modal warning.
+  static bool ShouldShowModalWarning(TriggerType trigger_type,
+                                     bool matches_sync_password,
+                                     SyncAccountType account_type,
+                                     VerdictType verdict_type);
 
-  // Shows modal warning dialog on the current |web_contents| and store request
-  // and response protos in |web_contents_to_proto_map_|.
-  virtual void ShowModalWarning(
-      content::WebContents* web_contents,
-      const LoginReputationClientRequest* request_proto,
-      const LoginReputationClientResponse* response_proto) {}
+  // Shows modal warning dialog on the current |web_contents| and pass the
+  // |verdict_token| to callback of this dialog.
+  virtual void ShowModalWarning(content::WebContents* web_contents,
+                                const std::string& verdict_token) = 0;
 
-  // Record UMA stats and trigger event logger when warning UI is shown.
-  virtual void OnWarningShown(content::WebContents* web_contents,
-                              WarningUIType ui_type);
+  // Called when user interacts with warning UIs.
+  virtual void OnUserAction(content::WebContents* web_contents,
+                            WarningUIType ui_type,
+                            WarningAction action) = 0;
 
   // If we want to show softer warnings based on Finch parameters.
   static bool ShouldShowSofterWarning();
 
   virtual void UpdateSecurityState(safe_browsing::SBThreatType threat_type,
-                                   content::WebContents* web_contents) {}
+                                   content::WebContents* web_contents) = 0;
 
   // Log the |reason| to several UMA metrics, depending on the value
   // of |matches_sync_password|.
   static void LogPasswordEntryRequestOutcome(RequestOutcome reason,
                                              bool matches_sync_password);
+
+  // If user has clicked through any Safe Browsing interstitial on this given
+  // |web_contents|.
+  virtual bool UserClickedThroughSBInterstitial(
+      content::WebContents* web_contents) = 0;
+
+  // Called when a new navigation is starting. Create throttle if there is a
+  // pending sync password reuse ping or if there is a modal warning dialog
+  // showing in the corresponding web contents.
+  std::unique_ptr<PasswordProtectionNavigationThrottle>
+  MaybeCreateNavigationThrottle(content::NavigationHandle* navigation_handle);
 
  protected:
   friend class PasswordProtectionRequest;
@@ -269,10 +280,6 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
 
   virtual bool IsHistorySyncEnabled() = 0;
 
-  virtual void ShowPhishingInterstitial(const GURL& phishing_url,
-                                        const std::string& token,
-                                        content::WebContents* web_contents) = 0;
-
   // Gets the type of sync account associated with current profile or
   // |NOT_SIGNED_IN|.
   virtual SyncAccountType GetSyncAccountType() = 0;
@@ -288,13 +295,14 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
 
   HostContentSettingsMap* content_settings() const { return content_settings_; }
 
-  WebContentsToProtoMap web_contents_to_proto_map() const {
-    return web_contents_to_proto_map_;
-  }
+  void RemoveWarningRequestsByWebContents(content::WebContents* web_contents);
+
+  bool IsModalWarningShowingInWebContents(content::WebContents* web_contents);
 
  private:
   friend class PasswordProtectionServiceTest;
   friend class TestPasswordProtectionService;
+  friend class ChromePasswordProtectionServiceTest;
   FRIEND_TEST_ALL_PREFIXES(PasswordProtectionServiceTest,
                            TestParseInvalidVerdictEntry);
   FRIEND_TEST_ALL_PREFIXES(PasswordProtectionServiceTest,
@@ -367,8 +375,12 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
   // cookie store.
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
-  // Set of pending PasswordProtectionRequests.
-  std::set<scoped_refptr<PasswordProtectionRequest>> requests_;
+  // Set of pending PasswordProtectionRequests that are still waiting for
+  // verdict.
+  std::set<scoped_refptr<PasswordProtectionRequest>> pending_requests_;
+
+  // Set of PasswordProtectionRequests that are triggering modal warnings.
+  std::set<scoped_refptr<PasswordProtectionRequest>> warning_requests_;
 
   ScopedObserver<history::HistoryService, history::HistoryServiceObserver>
       history_service_observer_;
@@ -379,8 +391,6 @@ class PasswordProtectionService : public history::HistoryServiceObserver {
   // Weakptr can only cancel task if it is posted to the same thread. Therefore,
   // we need CancelableTaskTracker to cancel tasks posted to IO thread.
   base::CancelableTaskTracker tracker_;
-
-  WebContentsToProtoMap web_contents_to_proto_map_;
 
   base::WeakPtrFactory<PasswordProtectionService> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(PasswordProtectionService);

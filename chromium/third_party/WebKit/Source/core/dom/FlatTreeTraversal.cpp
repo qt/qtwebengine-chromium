@@ -66,12 +66,11 @@ Node* FlatTreeTraversal::ResolveDistributionStartingAt(
        sibling = (direction == kTraversalDirectionForward
                       ? sibling->nextSibling()
                       : sibling->previousSibling())) {
-    if (isHTMLSlotElement(*sibling)) {
-      const HTMLSlotElement& slot = toHTMLSlotElement(*sibling);
-      if (slot.SupportsDistribution()) {
+    if (auto* slot = ToHTMLSlotElementOrNull(*sibling)) {
+      if (slot->SupportsDistribution()) {
         if (Node* found = (direction == kTraversalDirectionForward
-                               ? slot.FirstDistributedNode()
-                               : slot.LastDistributedNode()))
+                               ? slot->FirstDistributedNode()
+                               : slot->LastDistributedNode()))
           return found;
         continue;
       }
@@ -86,8 +85,8 @@ Node* FlatTreeTraversal::ResolveDistributionStartingAt(
 Node* FlatTreeTraversal::V0ResolveDistributionStartingAt(
     const Node& node,
     TraversalDirection direction) {
-  DCHECK(!isHTMLSlotElement(node) ||
-         !toHTMLSlotElement(node).SupportsDistribution());
+  DCHECK(!IsHTMLSlotElement(node) ||
+         !ToHTMLSlotElement(node).SupportsDistribution());
   for (const Node* sibling = &node; sibling;
        sibling = (direction == kTraversalDirectionForward
                       ? sibling->nextSibling()
@@ -99,8 +98,8 @@ Node* FlatTreeTraversal::V0ResolveDistributionStartingAt(
                            ? insertion_point.FirstDistributedNode()
                            : insertion_point.LastDistributedNode()))
       return found;
-    DCHECK(isHTMLShadowElement(insertion_point) ||
-           (isHTMLContentElement(insertion_point) &&
+    DCHECK(IsHTMLShadowElement(insertion_point) ||
+           (IsHTMLContentElement(insertion_point) &&
             !insertion_point.HasChildren()));
   }
   return nullptr;
@@ -125,11 +124,9 @@ Node* FlatTreeTraversal::TraverseSiblings(const Node& node,
 
   // Slotted nodes are already handled in traverseSiblingsForV1HostChild()
   // above, here is for fallback contents.
-  Element* parent = node.parentElement();
-  if (parent && isHTMLSlotElement(parent)) {
-    HTMLSlotElement& slot = toHTMLSlotElement(*parent);
-    if (slot.SupportsDistribution() && slot.AssignedNodes().IsEmpty())
-      return TraverseSiblings(slot, direction);
+  if (auto* slot = ToHTMLSlotElementOrNull(node.parentElement())) {
+    if (slot->SupportsDistribution() && slot->AssignedNodes().IsEmpty())
+      return TraverseSiblings(*slot, direction);
   }
 
   if (!node.IsInV0ShadowTree())
@@ -190,13 +187,11 @@ ContainerNode* FlatTreeTraversal::TraverseParent(
     return TraverseParent(*slot);
   }
 
-  Element* parent = node.parentElement();
-  if (parent && isHTMLSlotElement(parent)) {
-    HTMLSlotElement& slot = toHTMLSlotElement(*parent);
-    if (slot.SupportsDistribution()) {
-      if (!slot.AssignedNodes().IsEmpty())
+  if (auto* slot = ToHTMLSlotElementOrNull(node.parentElement())) {
+    if (slot->SupportsDistribution()) {
+      if (!slot->AssignedNodes().IsEmpty())
         return nullptr;
-      return TraverseParent(slot, details);
+      return TraverseParent(*slot, details);
     }
   }
 

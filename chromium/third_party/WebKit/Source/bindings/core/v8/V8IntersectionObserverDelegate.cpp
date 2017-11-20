@@ -4,9 +4,9 @@
 
 #include "bindings/core/v8/V8IntersectionObserverDelegate.h"
 
-#include "bindings/core/v8/IntersectionObserverCallback.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8BindingForCore.h"
+#include "bindings/core/v8/v8_intersection_observer_callback.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/intersection_observer/IntersectionObserver.h"
 #include "platform/bindings/V8PrivateProperty.h"
@@ -15,9 +15,10 @@
 namespace blink {
 
 V8IntersectionObserverDelegate::V8IntersectionObserverDelegate(
-    IntersectionObserverCallback* callback,
+    V8IntersectionObserverCallback* callback,
     ScriptState* script_state)
-    : callback_(callback), script_state_(script_state) {}
+    : ContextClient(ExecutionContext::From(script_state)),
+      callback_(callback) {}
 
 V8IntersectionObserverDelegate::~V8IntersectionObserverDelegate() {}
 
@@ -30,11 +31,16 @@ void V8IntersectionObserverDelegate::Deliver(
 DEFINE_TRACE(V8IntersectionObserverDelegate) {
   visitor->Trace(callback_);
   IntersectionObserverDelegate::Trace(visitor);
+  ContextClient::Trace(visitor);
 }
 
 DEFINE_TRACE_WRAPPERS(V8IntersectionObserverDelegate) {
   visitor->TraceWrappers(callback_);
   IntersectionObserverDelegate::TraceWrappers(visitor);
+}
+
+ExecutionContext* V8IntersectionObserverDelegate::GetExecutionContext() const {
+  return ContextClient::GetExecutionContext();
 }
 
 }  // namespace blink

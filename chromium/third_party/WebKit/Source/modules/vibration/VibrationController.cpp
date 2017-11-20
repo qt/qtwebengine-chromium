@@ -19,7 +19,7 @@
 
 #include "modules/vibration/VibrationController.h"
 
-#include "bindings/modules/v8/UnsignedLongOrUnsignedLongSequence.h"
+#include "bindings/modules/v8/unsigned_long_or_unsigned_long_sequence.h"
 #include "core/dom/Document.h"
 #include "core/dom/TaskRunnerHelper.h"
 #include "core/frame/LocalFrame.h"
@@ -67,10 +67,10 @@ VibrationController::SanitizeVibrationPattern(
     const UnsignedLongOrUnsignedLongSequence& pattern) {
   VibrationPattern sanitized;
 
-  if (pattern.isUnsignedLong())
-    sanitized.push_back(pattern.getAsUnsignedLong());
-  else if (pattern.isUnsignedLongSequence())
-    sanitized = pattern.getAsUnsignedLongSequence();
+  if (pattern.IsUnsignedLong())
+    sanitized.push_back(pattern.GetAsUnsignedLong());
+  else if (pattern.IsUnsignedLongSequence())
+    sanitized = pattern.GetAsUnsignedLongSequence();
 
   return sanitizeVibrationPatternInternal(sanitized);
 }
@@ -145,12 +145,12 @@ void VibrationController::DidVibrate() {
 
   // Use the current vibration entry of the pattern as the initial interval.
   unsigned interval = pattern_[0];
-  pattern_.erase(0);
+  pattern_.EraseAt(0);
 
   // If there is another entry it is for a pause.
   if (!pattern_.IsEmpty()) {
     interval += pattern_[0];
-    pattern_.erase(0);
+    pattern_.EraseAt(0);
   }
 
   timer_do_vibrate_.StartOneShot(interval / 1000.0, BLINK_FROM_HERE);

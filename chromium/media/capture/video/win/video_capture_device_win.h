@@ -17,6 +17,7 @@
 #include <map>
 #include <string>
 
+#include "base/containers/queue.h"
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
 #include "base/win/scoped_comptr.h"
@@ -26,9 +27,9 @@
 #include "media/capture/video/win/sink_input_pin_win.h"
 #include "media/capture/video_capture_types.h"
 
-namespace tracked_objects {
+namespace base {
 class Location;
-}  // namespace tracked_objects
+}  // namespace base
 
 namespace media {
 
@@ -107,7 +108,7 @@ class VideoCaptureDeviceWin : public VideoCaptureDevice,
 
   bool CreateCapabilityMap();
   void SetAntiFlickerInCaptureFilter(const VideoCaptureParams& params);
-  void SetErrorState(const tracked_objects::Location& from_here,
+  void SetErrorState(const base::Location& from_here,
                      const std::string& reason,
                      HRESULT hr);
 
@@ -139,7 +140,7 @@ class VideoCaptureDeviceWin : public VideoCaptureDevice,
 
   base::TimeTicks first_ref_time_;
 
-  std::queue<TakePhotoCallback> take_photo_callbacks_;
+  base::queue<TakePhotoCallback> take_photo_callbacks_;
 
   base::ThreadChecker thread_checker_;
 

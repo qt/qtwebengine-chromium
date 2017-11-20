@@ -175,7 +175,6 @@ class AsyncResourceHandlerTest : public ::testing::Test,
         0,                                      // request_id
         0,                                      // render_frame_id
         false,                                  // is_main_frame
-        false,                                  // parent_is_main_frame
         RESOURCE_TYPE_IMAGE,                    // resource_type
         ui::PAGE_TRANSITION_LINK,               // transition_type
         false,                                  // should_replace_current_entry
@@ -186,6 +185,7 @@ class AsyncResourceHandlerTest : public ::testing::Test,
         false,                                  // enable load timing
         false,                                  // enable upload progress
         false,                                  // do_not_prompt_for_login
+        false,                                  // keep_alive
         blink::kWebReferrerPolicyDefault,       // referrer_policy
         blink::kWebPageVisibilityStateVisible,  // visibility_state
         resource_context_.get(),                // context

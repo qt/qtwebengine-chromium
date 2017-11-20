@@ -4,11 +4,11 @@
 
 #include "dbus/values_util.h"
 
+#include <memory>
 #include <utility>
 
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/values.h"
 #include "dbus/message.h"
 
@@ -66,7 +66,7 @@ bool PopDictionaryEntries(MessageReader* reader,
 
 // Gets the D-Bus type signature for the value.
 std::string GetTypeSignature(const base::Value& value) {
-  switch (value.GetType()) {
+  switch (value.type()) {
     case base::Value::Type::BOOLEAN:
       return "b";
     case base::Value::Type::INTEGER:
@@ -82,7 +82,7 @@ std::string GetTypeSignature(const base::Value& value) {
     case base::Value::Type::LIST:
       return "av";
     default:
-      DLOG(ERROR) << "Unexpected type " << value.GetType();
+      DLOG(ERROR) << "Unexpected type " << value.type();
       return std::string();
   }
 }
@@ -98,37 +98,37 @@ std::unique_ptr<base::Value> PopDataAsValue(MessageReader* reader) {
     case Message::BYTE: {
       uint8_t value = 0;
       if (reader->PopByte(&value))
-        result = base::MakeUnique<base::Value>(value);
+        result = std::make_unique<base::Value>(value);
       break;
     }
     case Message::BOOL: {
       bool value = false;
       if (reader->PopBool(&value))
-        result = base::MakeUnique<base::Value>(value);
+        result = std::make_unique<base::Value>(value);
       break;
     }
     case Message::INT16: {
       int16_t value = 0;
       if (reader->PopInt16(&value))
-        result = base::MakeUnique<base::Value>(value);
+        result = std::make_unique<base::Value>(value);
       break;
     }
     case Message::UINT16: {
       uint16_t value = 0;
       if (reader->PopUint16(&value))
-        result = base::MakeUnique<base::Value>(value);
+        result = std::make_unique<base::Value>(value);
       break;
     }
     case Message::INT32: {
       int32_t value = 0;
       if (reader->PopInt32(&value))
-        result = base::MakeUnique<base::Value>(value);
+        result = std::make_unique<base::Value>(value);
       break;
     }
     case Message::UINT32: {
       uint32_t value = 0;
       if (reader->PopUint32(&value)) {
-        result = base::MakeUnique<base::Value>(static_cast<double>(value));
+        result = std::make_unique<base::Value>(static_cast<double>(value));
       }
       break;
     }
@@ -137,7 +137,7 @@ std::unique_ptr<base::Value> PopDataAsValue(MessageReader* reader) {
       if (reader->PopInt64(&value)) {
         DLOG_IF(WARNING, !IsExactlyRepresentableByDouble(value)) <<
             value << " is not exactly representable by double";
-        result = base::MakeUnique<base::Value>(static_cast<double>(value));
+        result = std::make_unique<base::Value>(static_cast<double>(value));
       }
       break;
     }
@@ -146,26 +146,26 @@ std::unique_ptr<base::Value> PopDataAsValue(MessageReader* reader) {
       if (reader->PopUint64(&value)) {
         DLOG_IF(WARNING, !IsExactlyRepresentableByDouble(value)) <<
             value << " is not exactly representable by double";
-        result = base::MakeUnique<base::Value>(static_cast<double>(value));
+        result = std::make_unique<base::Value>(static_cast<double>(value));
       }
       break;
     }
     case Message::DOUBLE: {
       double value = 0;
       if (reader->PopDouble(&value))
-        result = base::MakeUnique<base::Value>(value);
+        result = std::make_unique<base::Value>(value);
       break;
     }
     case Message::STRING: {
       std::string value;
       if (reader->PopString(&value))
-        result = base::MakeUnique<base::Value>(value);
+        result = std::make_unique<base::Value>(value);
       break;
     }
     case Message::OBJECT_PATH: {
       ObjectPath value;
       if (reader->PopObjectPath(&value))
-        result = base::MakeUnique<base::Value>(value.value());
+        result = std::make_unique<base::Value>(value.value());
       break;
     }
     case Message::UNIX_FD: {
@@ -215,7 +215,7 @@ std::unique_ptr<base::Value> PopDataAsValue(MessageReader* reader) {
 }
 
 void AppendBasicTypeValueData(MessageWriter* writer, const base::Value& value) {
-  switch (value.GetType()) {
+  switch (value.type()) {
     case base::Value::Type::BOOLEAN: {
       bool bool_value = false;
       bool success = value.GetAsBoolean(&bool_value);
@@ -245,7 +245,7 @@ void AppendBasicTypeValueData(MessageWriter* writer, const base::Value& value) {
       break;
     }
     default:
-      DLOG(ERROR) << "Unexpected type " << value.GetType();
+      DLOG(ERROR) << "Unexpected type " << value.type();
       break;
   }
 }
@@ -259,7 +259,7 @@ void AppendBasicTypeValueDataAsVariant(MessageWriter* writer,
 }
 
 void AppendValueData(MessageWriter* writer, const base::Value& value) {
-  switch (value.GetType()) {
+  switch (value.type()) {
     case base::Value::Type::DICTIONARY: {
       const base::DictionaryValue* dictionary = NULL;
       value.GetAsDictionary(&dictionary);
@@ -294,7 +294,7 @@ void AppendValueData(MessageWriter* writer, const base::Value& value) {
       AppendBasicTypeValueData(writer, value);
       break;
     default:
-      DLOG(ERROR) << "Unexpected type: " << value.GetType();
+      DLOG(ERROR) << "Unexpected type: " << value.type();
   }
 }
 

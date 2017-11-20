@@ -26,15 +26,21 @@ Renderbuffer::Renderbuffer(rx::RenderbufferImpl *impl, GLuint id)
       mWidth(0),
       mHeight(0),
       mFormat(GL_RGBA4),
-      mSamples(0)
+      mSamples(0),
+      mInitState(InitState::MayNeedInit)
 {
 }
 
-void Renderbuffer::onDestroy(const Context *context)
+Error Renderbuffer::onDestroy(const Context *context)
 {
-    auto err = orphanImages(context);
-    // TODO(jmadill): Handle error.
-    ASSERT(!err.isError());
+    ANGLE_TRY(orphanImages(context));
+
+    if (mRenderbuffer)
+    {
+        ANGLE_TRY(mRenderbuffer->onDestroy(context));
+    }
+
+    return NoError();
 }
 
 Renderbuffer::~Renderbuffer()
@@ -59,14 +65,15 @@ Error Renderbuffer::setStorage(const Context *context,
 {
     ANGLE_TRY(orphanImages(context));
 
-    ANGLE_TRY(mRenderbuffer->setStorage(internalformat, width, height));
+    ANGLE_TRY(mRenderbuffer->setStorage(context, internalformat, width, height));
 
     mWidth          = static_cast<GLsizei>(width);
     mHeight         = static_cast<GLsizei>(height);
     mFormat         = Format(internalformat);
     mSamples = 0;
 
-    mDirtyChannel.signal();
+    mInitState = InitState::MayNeedInit;
+    mDirtyChannel.signal(mInitState);
 
     return NoError();
 }
@@ -79,14 +86,16 @@ Error Renderbuffer::setStorageMultisample(const Context *context,
 {
     ANGLE_TRY(orphanImages(context));
 
-    ANGLE_TRY(mRenderbuffer->setStorageMultisample(samples, internalformat, width, height));
+    ANGLE_TRY(
+        mRenderbuffer->setStorageMultisample(context, samples, internalformat, width, height));
 
     mWidth          = static_cast<GLsizei>(width);
     mHeight         = static_cast<GLsizei>(height);
     mFormat         = Format(internalformat);
     mSamples        = static_cast<GLsizei>(samples);
 
-    mDirtyChannel.signal();
+    mInitState = InitState::MayNeedInit;
+    mDirtyChannel.signal(mInitState);
 
     return NoError();
 }
@@ -95,7 +104,7 @@ Error Renderbuffer::setStorageEGLImageTarget(const Context *context, egl::Image 
 {
     ANGLE_TRY(orphanImages(context));
 
-    ANGLE_TRY(mRenderbuffer->setStorageEGLImageTarget(image));
+    ANGLE_TRY(mRenderbuffer->setStorageEGLImageTarget(context, image));
 
     setTargetImage(context, image);
 
@@ -104,7 +113,8 @@ Error Renderbuffer::setStorageEGLImageTarget(const Context *context, egl::Image 
     mFormat         = Format(image->getFormat());
     mSamples        = 0;
 
-    mDirtyChannel.signal();
+    mInitState = image->sourceInitState();
+    mDirtyChannel.signal(mInitState);
 
     return NoError();
 }
@@ -184,4 +194,27 @@ Extents Renderbuffer::getAttachmentSize(const gl::ImageIndex & /*imageIndex*/) c
 {
     return Extents(mWidth, mHeight, 1);
 }
+
+InitState Renderbuffer::initState(const gl::ImageIndex & /*imageIndex*/) const
+{
+    if (isEGLImageTarget())
+    {
+        return sourceEGLImageInitState();
+    }
+
+    return mInitState;
+}
+
+void Renderbuffer::setInitState(const gl::ImageIndex & /*imageIndex*/, InitState initState)
+{
+    if (isEGLImageTarget())
+    {
+        setSourceEGLImageInitState(initState);
+    }
+    else
+    {
+        mInitState = initState;
+    }
+}
+
 }  // namespace gl

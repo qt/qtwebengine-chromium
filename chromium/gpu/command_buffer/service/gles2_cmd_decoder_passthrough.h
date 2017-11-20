@@ -7,6 +7,7 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_PASSTHROUGH_H_
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_PASSTHROUGH_H_
 
+#include "base/containers/circular_deque.h"
 #include "base/memory/ref_counted.h"
 #include "gpu/command_buffer/common/debug_marker_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
@@ -22,8 +23,13 @@
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
+#include "ui/gl/gl_fence.h"
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_surface.h"
+
+namespace gl {
+class GLFence;
+}
 
 namespace gpu {
 namespace gles2 {
@@ -69,10 +75,39 @@ struct PassthroughResources {
   std::unordered_map<GLuint, MappedBuffer> mapped_buffer_map;
 };
 
+class ScopedFramebufferBindingReset {
+ public:
+  ScopedFramebufferBindingReset();
+  ~ScopedFramebufferBindingReset();
+
+ private:
+  GLint draw_framebuffer_;
+  GLint read_framebuffer_;
+};
+
+class ScopedRenderbufferBindingReset {
+ public:
+  ScopedRenderbufferBindingReset();
+  ~ScopedRenderbufferBindingReset();
+
+ private:
+  GLint renderbuffer_;
+};
+
+class ScopedTexture2DBindingReset {
+ public:
+  ScopedTexture2DBindingReset();
+  ~ScopedTexture2DBindingReset();
+
+ private:
+  GLint texture_;
+};
+
 class GPU_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
  public:
   GLES2DecoderPassthroughImpl(GLES2DecoderClient* client,
                               CommandBufferServiceBase* command_buffer_service,
+                              Outputter* outputter,
                               ContextGroup* group);
   ~GLES2DecoderPassthroughImpl() override;
 
@@ -254,6 +289,9 @@ class GPU_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
                  bool can_bind_to_sampler) override;
 
  private:
+  // Allow unittests to inspect internal state tracking
+  friend class GLES2DecoderPassthroughTestBase;
+
   const char* GetCommandName(unsigned int command_id) const;
 
   void* GetScratchMemory(size_t size);
@@ -306,12 +344,18 @@ class GPU_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
   GLenum PopError();
   bool FlushErrors();
 
+  // Inject a driver-level GL error that will replace the result of the next
+  // call to glGetError
+  void InjectDriverError(GLenum error);
+
   bool CheckResetStatus();
   bool IsRobustnessSupported();
 
   bool IsEmulatedQueryTarget(GLenum target) const;
   error::Error ProcessQueries(bool did_finish);
   void RemovePendingQuery(GLuint service_id);
+
+  error::Error ProcessReadPixels(bool did_finish);
 
   void UpdateTextureBinding(GLenum target,
                             GLuint client_id,
@@ -322,6 +366,8 @@ class GPU_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
                                           GLint image_id);
 
   void VerifyServiceTextureObjectsExist();
+
+  bool IsEmulatedFramebufferBound(GLenum target) const;
 
   GLES2DecoderClient* client_;
 
@@ -418,7 +464,7 @@ class GPU_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
     QuerySync* sync = nullptr;
     base::subtle::Atomic32 submit_count = 0;
   };
-  std::deque<PendingQuery> pending_queries_;
+  base::circular_deque<PendingQuery> pending_queries_;
 
   // Currently active queries
   struct ActiveQuery {
@@ -435,7 +481,115 @@ class GPU_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
   };
   std::unordered_map<GLenum, ActiveQuery> active_queries_;
 
+  // Pending async ReadPixels calls
+  struct PendingReadPixels {
+    PendingReadPixels();
+    ~PendingReadPixels();
+    PendingReadPixels(PendingReadPixels&&);
+    PendingReadPixels& operator=(PendingReadPixels&&);
+
+    std::unique_ptr<gl::GLFence> fence = nullptr;
+    GLuint buffer_service_id = 0;
+    uint32_t pixels_size = 0;
+    uint32_t pixels_shm_id = 0;
+    uint32_t pixels_shm_offset = 0;
+    uint32_t result_shm_id = 0;
+    uint32_t result_shm_offset = 0;
+
+    // Service IDs of GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM queries waiting for
+    // this read pixels operation to complete
+    base::flat_set<GLuint> waiting_async_pack_queries;
+
+    DISALLOW_COPY_AND_ASSIGN(PendingReadPixels);
+  };
+  base::circular_deque<PendingReadPixels> pending_read_pixels_;
+
+  // Error state
+  base::circular_deque<GLenum> injected_driver_errors_;
   std::set<GLenum> errors_;
+
+  // Default framebuffer emulation
+  struct EmulatedDefaultFramebufferFormat {
+    GLenum color_renderbuffer_internal_format = GL_NONE;
+    GLenum color_texture_internal_format = GL_NONE;
+    GLenum color_texture_format = GL_NONE;
+    GLenum color_texture_type = GL_NONE;
+    GLenum depth_stencil_internal_format = GL_NONE;
+    GLenum depth_internal_format = GL_NONE;
+    GLenum stencil_internal_format = GL_NONE;
+    GLint samples = 0;
+  };
+
+  struct EmulatedColorBuffer {
+    explicit EmulatedColorBuffer(
+        const EmulatedDefaultFramebufferFormat& format_in);
+    ~EmulatedColorBuffer();
+
+    bool Resize(const gfx::Size& new_size);
+    void Destroy(bool have_context);
+
+    scoped_refptr<TexturePassthrough> texture;
+
+    gfx::Size size;
+    EmulatedDefaultFramebufferFormat format;
+
+    DISALLOW_COPY_AND_ASSIGN(EmulatedColorBuffer);
+  };
+
+  struct EmulatedDefaultFramebuffer {
+    EmulatedDefaultFramebuffer(
+        const EmulatedDefaultFramebufferFormat& format_in,
+        const FeatureInfo* feature_info);
+    ~EmulatedDefaultFramebuffer();
+
+    // Set a new color buffer, return the old one
+    std::unique_ptr<EmulatedColorBuffer> SetColorBuffer(
+        std::unique_ptr<EmulatedColorBuffer> new_color_buffer);
+
+    // Blit this framebuffer into another same-sized color buffer
+    void Blit(EmulatedColorBuffer* target);
+
+    bool Resize(const gfx::Size& new_size, const FeatureInfo* feature_info);
+    void Destroy(bool have_context);
+
+    // Service ID of the framebuffer
+    GLuint framebuffer_service_id = 0;
+
+    // Service ID of the color renderbuffer (if multisampled)
+    GLuint color_buffer_service_id = 0;
+
+    // Color buffer texture (if not multisampled)
+    std::unique_ptr<EmulatedColorBuffer> color_texture;
+
+    // Service ID of the depth stencil renderbuffer
+    GLuint depth_stencil_buffer_service_id = 0;
+
+    // Service ID of the depth renderbuffer
+    GLuint depth_buffer_service_id = 0;
+
+    // Service ID of the stencil renderbuffer (
+    GLuint stencil_buffer_service_id = 0;
+
+    gfx::Size size;
+    EmulatedDefaultFramebufferFormat format;
+
+    DISALLOW_COPY_AND_ASSIGN(EmulatedDefaultFramebuffer);
+  };
+  EmulatedDefaultFramebufferFormat emulated_default_framebuffer_format_;
+  std::unique_ptr<EmulatedDefaultFramebuffer> emulated_back_buffer_;
+  std::unique_ptr<EmulatedColorBuffer> emulated_front_buffer_;
+  bool offscreen_single_buffer_;
+  bool offscreen_target_buffer_preserved_;
+  std::vector<std::unique_ptr<EmulatedColorBuffer>> in_use_color_textures_;
+  std::vector<std::unique_ptr<EmulatedColorBuffer>> available_color_textures_;
+  size_t create_color_buffer_count_for_test_;
+
+  // Maximum 2D texture size for limiting offscreen framebuffer sizes
+  GLint max_2d_texture_size_;
+
+  // State tracking of currently bound draw and read framebuffers (client IDs)
+  GLuint bound_draw_framebuffer_;
+  GLuint bound_read_framebuffer_;
 
   // Tracing
   std::unique_ptr<GPUTracer> gpu_tracer_;
@@ -448,6 +602,7 @@ class GPU_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
   bool has_robustness_extension_;
   bool context_lost_;
   bool reset_by_robustness_extension_;
+  bool lose_context_when_out_of_memory_;
 
   // Cache of scratch memory
   std::vector<uint8_t> scratch_memory_;

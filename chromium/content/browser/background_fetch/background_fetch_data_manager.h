@@ -8,9 +8,10 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <unordered_map>
+#include <tuple>
 
 #include "base/callback_forward.h"
+#include "base/containers/flat_map.h"
 #include "base/containers/queue.h"
 #include "base/macros.h"
 #include "base/optional.h"
@@ -38,12 +39,9 @@ class ServiceWorkerContextWrapper;
 // Service Worker database (except for deletions, e.g. it's safe for the Service
 // Worker code to remove a ServiceWorkerRegistration and all its keys).
 //
-// Schema design doc:
-// https://docs.google.com/document/d/1-WPPTP909Gb5PnaBOKP58tPVLw2Fq0Ln-u1EBviIBns/edit
+// Storage schema is documented in the .cc file.
 class CONTENT_EXPORT BackgroundFetchDataManager {
  public:
-  using CreateRegistrationCallback =
-      base::OnceCallback<void(blink::mojom::BackgroundFetchError)>;
   using DeleteRegistrationCallback =
       base::OnceCallback<void(blink::mojom::BackgroundFetchError)>;
   using NextRequestCallback =
@@ -58,10 +56,27 @@ class CONTENT_EXPORT BackgroundFetchDataManager {
 
   class DatabaseTask;
 
+  class Controller {
+   public:
+    virtual ~Controller() {}
+
+    // Called once UpdateRegistrationUI has been persisted to the database.
+    virtual void UpdateUI(const std::string& title) = 0;
+
+    // Should return the sum of the bytes downloaded by in progress requests.
+    virtual uint64_t GetInProgressDownloadedBytes() = 0;
+  };
+
   BackgroundFetchDataManager(
       BrowserContext* browser_context,
       scoped_refptr<ServiceWorkerContextWrapper> service_worker_context);
   ~BackgroundFetchDataManager();
+
+  // Sets the JobController that handles in-progress requests for a
+  // registration, and will be notified of relevant changes to the registration
+  // data. Must outlive |this| or call SetController(nullptr) in its destructor.
+  void SetController(const BackgroundFetchRegistrationId& registration_id,
+                     Controller* controller);
 
   // Creates and stores a new registration with the given properties. Will
   // invoke the |callback| when the registration has been created, which may
@@ -70,7 +85,20 @@ class CONTENT_EXPORT BackgroundFetchDataManager {
       const BackgroundFetchRegistrationId& registration_id,
       const std::vector<ServiceWorkerFetchRequest>& requests,
       const BackgroundFetchOptions& options,
-      CreateRegistrationCallback callback);
+      blink::mojom::BackgroundFetchService::FetchCallback callback);
+
+  // Get the BackgroundFetchOptions for a registration.
+  void GetRegistration(
+      int64_t service_worker_registration_id,
+      const url::Origin& origin,
+      const std::string& developer_id,
+      blink::mojom::BackgroundFetchService::GetRegistrationCallback callback);
+
+  // Updates the UI values for a Background Fetch registration.
+  void UpdateRegistrationUI(
+      const std::string& unique_id,
+      const std::string& title,
+      blink::mojom::BackgroundFetchService::UpdateUICallback callback);
 
   // Removes the next request, if any, from the pending requests queue, and
   // invokes the |callback| with that request, else a null request.
@@ -103,6 +131,12 @@ class CONTENT_EXPORT BackgroundFetchDataManager {
   void DeleteRegistration(const BackgroundFetchRegistrationId& registration_id,
                           DeleteRegistrationCallback callback);
 
+  // List all Background Fetch registration |developer_id|s for a Service
+  // Worker.
+  void GetDeveloperIdsForServiceWorker(
+      int64_t service_worker_registration_id,
+      blink::mojom::BackgroundFetchService::GetDeveloperIdsCallback callback);
+
  private:
   friend class BackgroundFetchDataManagerTest;
 
@@ -115,9 +149,20 @@ class CONTENT_EXPORT BackgroundFetchDataManager {
   // The blob storage request with which response information will be stored.
   scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
 
-  // Map of known background fetch registration ids to their associated data.
-  std::map<BackgroundFetchRegistrationId, std::unique_ptr<RegistrationData>>
-      registrations_;
+  // Map from {service_worker_registration_id, origin, developer_id} tuples to
+  // the |unique_id|s of active background fetch registrations (not
+  // completed/failed/aborted, so there will never be more than one entry for a
+  // given key).
+  std::map<std::tuple<int64_t, url::Origin, std::string>, std::string>
+      active_unique_ids_;
+
+  // Map from the |unique_id|s of known (but possibly inactive) background fetch
+  // registrations to their associated data.
+  std::map<std::string, std::unique_ptr<RegistrationData>> registrations_;
+
+  // Map from background fetch registration |unique_id|s to the controller that
+  // needs to be notified about changes to the registration.
+  base::flat_map<std::string, Controller*> controllers_;
 
   // Pending database operations, serialized to ensure consistency.
   // Invariant: the frontmost task, if any, has already been started.

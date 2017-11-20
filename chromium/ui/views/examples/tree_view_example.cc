@@ -10,9 +10,28 @@
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/tree/tree_view.h"
+#include "ui/views/controls/tree/tree_view_drawing_provider.h"
 #include "ui/views/layout/grid_layout.h"
 
 using base::ASCIIToUTF16;
+
+namespace {
+
+class ExampleTreeViewDrawingProvider : public views::TreeViewDrawingProvider {
+ public:
+  ExampleTreeViewDrawingProvider() {}
+  ~ExampleTreeViewDrawingProvider() override {}
+
+  base::string16 GetAuxiliaryTextForNode(views::TreeView* tree_view,
+                                         ui::TreeModelNode* node) override {
+    if (tree_view->GetSelectedNode() == node)
+      return base::UTF8ToUTF16("Selected");
+    return views::TreeViewDrawingProvider::GetAuxiliaryTextForNode(tree_view,
+                                                                   node);
+  }
+};
+
+}  // namespace
 
 namespace views {
 namespace examples {
@@ -44,6 +63,8 @@ void TreeViewExample::CreateExampleView(View* container) {
   tree_view_->SetRootShown(false);
   tree_view_->SetModel(&model_);
   tree_view_->SetController(this);
+  tree_view_->SetDrawingProvider(
+      base::MakeUnique<ExampleTreeViewDrawingProvider>());
   add_ = new LabelButton(this, ASCIIToUTF16("Add"));
   add_->SetFocusForPlatform();
   add_->set_request_focus_on_press(true);
@@ -54,8 +75,7 @@ void TreeViewExample::CreateExampleView(View* container) {
   change_title_->SetFocusForPlatform();
   change_title_->set_request_focus_on_press(true);
 
-  GridLayout* layout = new GridLayout(container);
-  container->SetLayoutManager(layout);
+  GridLayout* layout = GridLayout::CreateAndInstall(container);
 
   const int tree_view_column = 0;
   ColumnSet* column_set = layout->AddColumnSet(tree_view_column);

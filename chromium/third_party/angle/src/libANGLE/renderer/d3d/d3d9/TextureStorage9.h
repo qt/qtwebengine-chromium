@@ -39,15 +39,12 @@ class TextureStorage9 : public TextureStorage
                                       IDirect3DSurface9 **outSurface) = 0;
     virtual gl::Error getBaseTexture(const gl::Context *context,
                                      IDirect3DBaseTexture9 **outTexture) = 0;
-    virtual gl::Error getRenderTarget(const gl::Context *context,
-                                      const gl::ImageIndex &index,
-                                      RenderTargetD3D **outRT) = 0;
 
-    virtual int getTopLevel() const;
-    virtual bool isRenderTarget() const;
-    virtual bool isManaged() const;
+    int getTopLevel() const override;
+    bool isRenderTarget() const override;
+    bool isManaged() const override;
     bool supportsNativeMipmapFunction() const override;
-    virtual int getLevelCount() const;
+    int getLevelCount() const override;
 
     gl::Error setData(const gl::Context *context,
                       const gl::ImageIndex &index,
@@ -148,13 +145,10 @@ class TextureStorage9_Cube : public TextureStorage9
     gl::Error copyToStorage(const gl::Context *context, TextureStorage *destStorage) override;
 
   private:
-    static const size_t CUBE_FACE_COUNT = 6;
-
     IDirect3DCubeTexture9 *mTexture;
-    RenderTarget9 *mRenderTarget[CUBE_FACE_COUNT];
+    RenderTarget9 *mRenderTarget[gl::CUBE_FACE_COUNT];
 };
 
 }
 
 #endif // LIBANGLE_RENDERER_D3D_D3D9_TEXTURESTORAGE9_H_
-

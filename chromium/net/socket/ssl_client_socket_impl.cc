@@ -18,7 +18,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
@@ -447,7 +446,6 @@ SSLClientSocketImpl::SSLClientSocketImpl(
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
       ssl_session_cache_shard_(context.ssl_session_cache_shard),
-      ssl_session_cache_lookup_count_(0),
       next_handshake_state_(STATE_NONE),
       disconnected_(false),
       negotiated_protocol_(kProtoUnknown),
@@ -865,8 +863,8 @@ int SSLClientSocketImpl::Init() {
   }
 
   if (!ssl_session_cache_shard_.empty()) {
-    bssl::UniquePtr<SSL_SESSION> session = context->session_cache()->Lookup(
-        GetSessionCacheKey(), &ssl_session_cache_lookup_count_);
+    bssl::UniquePtr<SSL_SESSION> session =
+        context->session_cache()->Lookup(GetSessionCacheKey());
     if (session)
       SSL_set_session(ssl_.get(), session.get());
   }
@@ -896,11 +894,11 @@ int SSLClientSocketImpl::Init() {
     case kTLS13VariantExperiment:
       SSL_set_tls13_variant(ssl_.get(), tls13_experiment);
       break;
-    case kTLS13VariantRecordTypeExperiment:
-      SSL_set_tls13_variant(ssl_.get(), tls13_record_type_experiment);
+    case kTLS13VariantExperiment2:
+      SSL_set_tls13_variant(ssl_.get(), tls13_experiment2);
       break;
-    case kTLS13VariantNoSessionIDExperiment:
-      SSL_set_tls13_variant(ssl_.get(), tls13_no_session_id_experiment);
+    case kTLS13VariantExperiment3:
+      SSL_set_tls13_variant(ssl_.get(), tls13_experiment3);
       break;
   }
 
@@ -1016,11 +1014,6 @@ int SSLClientSocketImpl::DoHandshake() {
     rv = SSL_do_handshake(ssl_.get());
   } else {
     if (g_first_run_completed.Get().Get()) {
-      // TODO(cbentzel): Remove ScopedTracker below once crbug.com/424386 is
-      // fixed.
-      tracked_objects::ScopedTracker tracking_profile(
-          FROM_HERE_WITH_EXPLICIT_FUNCTION("424386 SSL_do_handshake()"));
-
       rv = SSL_do_handshake(ssl_.get());
     } else {
       g_first_run_completed.Get().Set(true);
@@ -1130,17 +1123,6 @@ int SSLClientSocketImpl::DoHandshakeComplete(int result) {
     negotiated_protocol_ = NextProtoFromString(proto);
   }
 
-  // If we got a session from the session cache, log how many concurrent
-  // handshakes that session was used in before we finished our handshake. This
-  // is only recorded if the session from the cache was actually used, and only
-  // if the ALPN protocol is h2 (under the assumption that TLS 1.3 servers will
-  // be speaking h2). See https://crbug.com/631988.
-  if (ssl_session_cache_lookup_count_ && negotiated_protocol_ == kProtoHTTP2 &&
-      SSL_session_reused(ssl_.get())) {
-    UMA_HISTOGRAM_EXACT_LINEAR("Net.SSLSessionConcurrentLookupCount",
-                               ssl_session_cache_lookup_count_, 20);
-  }
-
   RecordNegotiatedProtocol();
   RecordChannelIDSupport();
 
@@ -1209,9 +1191,9 @@ int SSLClientSocketImpl::DoVerifyCert(int result) {
   server_cert_ = x509_util::CreateX509CertificateFromBuffers(
       SSL_get0_peer_certificates(ssl_.get()));
 
-  // OpenSSL decoded the certificate, but the platform certificate
-  // implementation could not. This is treated as a fatal SSL-level protocol
-  // error rather than a certificate error. See https://crbug.com/91341.
+  // OpenSSL decoded the certificate, but the X509Certificate implementation
+  // could not. This is treated as a fatal SSL-level protocol error rather than
+  // a certificate error. See https://crbug.com/91341.
   if (!server_cert_)
     return ERR_SSL_SERVER_CERT_BAD_FORMAT;
 
@@ -1575,6 +1557,11 @@ int SSLClientSocketImpl::VerifyCT() {
     server_cert_verify_result_.cert_status |= CERT_STATUS_CT_COMPLIANCE_FAILED;
     server_cert_verify_result_.cert_status &= ~CERT_STATUS_IS_EV;
   }
+
+  UMA_HISTOGRAM_ENUMERATION(
+      "Net.CertificateTransparency.ConnectionComplianceStatus.SSL",
+      ct_verify_result_.cert_policy_compliance,
+      ct::CertPolicyCompliance::CERT_POLICY_MAX);
 
   if (transport_security_state_->CheckCTRequirements(
           host_and_port_, server_cert_verify_result_.is_issued_by_known_root,

@@ -66,11 +66,12 @@ EmulationHandler::EmulationHandler()
 EmulationHandler::~EmulationHandler() {
 }
 
-void EmulationHandler::SetRenderFrameHost(RenderFrameHostImpl* host) {
-  if (host_ == host)
+void EmulationHandler::SetRenderer(RenderProcessHost* process_host,
+                                   RenderFrameHostImpl* frame_host) {
+  if (host_ == frame_host)
     return;
 
-  host_ = host;
+  host_ = frame_host;
   if (touch_emulation_enabled_)
     UpdateTouchEventEmulationState();
   UpdateDeviceEmulationState();
@@ -155,7 +156,8 @@ Response EmulationHandler::SetDeviceMetricsOverride(
     Maybe<int> position_x,
     Maybe<int> position_y,
     Maybe<bool> dont_set_visible_size,
-    Maybe<Emulation::ScreenOrientation> screen_orientation) {
+    Maybe<Emulation::ScreenOrientation> screen_orientation,
+    Maybe<protocol::Page::Viewport> viewport) {
   const static int max_size = 10000000;
   const static double max_scale = 10;
   const static int max_orientation_angle = 360;
@@ -216,13 +218,33 @@ Response EmulationHandler::SetDeviceMetricsOverride(
                                   : blink::WebDeviceEmulationParams::kDesktop;
   params.screen_size =
       blink::WebSize(screen_width.fromMaybe(0), screen_height.fromMaybe(0));
-  params.view_position =
-      blink::WebPoint(position_x.fromMaybe(0), position_y.fromMaybe(0));
+  if (position_x.isJust() && position_y.isJust()) {
+    params.view_position =
+        blink::WebPoint(position_x.fromMaybe(0), position_y.fromMaybe(0));
+  }
   params.device_scale_factor = device_scale_factor;
   params.view_size = blink::WebSize(width, height);
   params.scale = scale.fromMaybe(1);
   params.screen_orientation_type = orientationType;
   params.screen_orientation_angle = orientationAngle;
+
+  if (viewport.isJust()) {
+    params.viewport_offset.x = viewport.fromJust()->GetX();
+    params.viewport_offset.y = viewport.fromJust()->GetY();
+
+    ScreenInfo screen_info;
+    widget_host->GetScreenInfo(&screen_info);
+    double dpfactor = device_scale_factor ? device_scale_factor /
+                                                screen_info.device_scale_factor
+                                          : 1;
+    params.viewport_scale = viewport.fromJust()->GetScale() * dpfactor;
+
+    // Resize the RenderWidgetHostView to the size of the overridden viewport.
+    width = gfx::ToRoundedInt(viewport.fromJust()->GetWidth() *
+                              params.viewport_scale);
+    height = gfx::ToRoundedInt(viewport.fromJust()->GetHeight() *
+                               params.viewport_scale);
+  }
 
   if (device_emulation_enabled_ && params == device_emulation_params_)
     return Response::OK();

@@ -19,7 +19,6 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
@@ -37,7 +36,6 @@
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_metrics.h"
 #include "components/signin/core/common/profile_management_switches.h"
-#include "components/strings/grit/components_strings.h"
 #include "components/sync/base/bind_to_task_runner.h"
 #include "components/sync/base/cryptographer.h"
 #include "components/sync/base/passphrase_type.h"
@@ -47,7 +45,6 @@
 #include "components/sync/base/system_encryptor.h"
 #include "components/sync/device_info/device_info.h"
 #include "components/sync/device_info/device_info_sync_bridge.h"
-#include "components/sync/device_info/device_info_sync_service.h"
 #include "components/sync/device_info/device_info_tracker.h"
 #include "components/sync/driver/backend_migrator.h"
 #include "components/sync/driver/directory_data_type_controller.h"
@@ -82,8 +79,6 @@
 #include "components/version_info/version_info_values.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/l10n/time_format.h"
 
 #if defined(OS_ANDROID)
 #include "components/sync/syncable/read_transaction.h"
@@ -96,7 +91,6 @@ using syncer::DataTypeController;
 using syncer::DataTypeManager;
 using syncer::DataTypeStatusTable;
 using syncer::DeviceInfoSyncBridge;
-using syncer::DeviceInfoSyncService;
 using syncer::JsBackend;
 using syncer::JsController;
 using syncer::JsEventDetails;
@@ -205,7 +199,7 @@ ProfileSyncService::~ProfileSyncService() {
     gaia_cookie_manager_service_->RemoveObserver(this);
   sync_prefs_.RemoveSyncPrefObserver(this);
   // Shutdown() should have been called before destruction.
-  CHECK(!engine_initialized_);
+  DCHECK(!engine_initialized_);
 }
 
 bool ProfileSyncService::CanSyncStart() const {
@@ -241,18 +235,13 @@ void ProfileSyncService::Initialize() {
                  sync_enabled_weak_factory_.GetWeakPtr(),
                  syncer::ModelTypeSet(syncer::SESSIONS)));
 
-  if (base::FeatureList::IsEnabled(switches::kSyncUSSDeviceInfo)) {
-    const syncer::ModelTypeStoreFactory& store_factory =
-        GetModelTypeStoreFactory(syncer::DEVICE_INFO, base_directory_);
-    device_info_sync_bridge_ = std::make_unique<DeviceInfoSyncBridge>(
-        local_device_.get(), store_factory,
-        base::BindRepeating(
-            &ModelTypeChangeProcessor::Create,
-            base::BindRepeating(&syncer::ReportUnrecoverableError, channel_)));
-  } else {
-    device_info_sync_service_ =
-        std::make_unique<DeviceInfoSyncService>(local_device_.get());
-  }
+  const syncer::ModelTypeStoreFactory& store_factory =
+      GetModelTypeStoreFactory(syncer::DEVICE_INFO, base_directory_);
+  device_info_sync_bridge_ = std::make_unique<DeviceInfoSyncBridge>(
+      local_device_.get(), store_factory,
+      base::BindRepeating(
+          &ModelTypeChangeProcessor::Create,
+          base::BindRepeating(&syncer::ReportUnrecoverableError, channel_)));
 
   syncer::SyncApiComponentFactory::RegisterDataTypesMethod
       register_platform_types_callback =
@@ -404,12 +393,7 @@ sync_sessions::FaviconCache* ProfileSyncService::GetFaviconCache() {
 
 syncer::DeviceInfoTracker* ProfileSyncService::GetDeviceInfoTracker() const {
   DCHECK(thread_checker_.CalledOnValidThread());
-  // One of the two should always be non-null after initialization is done.
-  if (device_info_sync_bridge_) {
-    return device_info_sync_bridge_.get();
-  } else {
-    return device_info_sync_service_.get();
-  }
+  return device_info_sync_bridge_.get();
 }
 
 syncer::LocalDeviceInfoProvider*
@@ -633,12 +617,6 @@ void ProfileSyncService::OnGetTokenFailure(
 void ProfileSyncService::OnRefreshTokenAvailable(
     const std::string& account_id) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460 is
-  // fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "422460 ProfileSyncService::OnRefreshTokenAvailable"));
-
   if (account_id == signin_->GetAccountIdToUse())
     OnRefreshTokensLoaded();
 }
@@ -822,14 +800,13 @@ void ProfileSyncService::ClearStaleErrors() {
 void ProfileSyncService::ClearUnrecoverableError() {
   unrecoverable_error_reason_ = ERROR_REASON_UNSET;
   unrecoverable_error_message_.clear();
-  unrecoverable_error_location_ = tracked_objects::Location();
+  unrecoverable_error_location_ = base::Location();
 }
 
 // An invariant has been violated.  Transition to an error state where we try
 // to do as little work as possible, to avoid further corruption or crashes.
-void ProfileSyncService::OnUnrecoverableError(
-    const tracked_objects::Location& from_here,
-    const std::string& message) {
+void ProfileSyncService::OnUnrecoverableError(const base::Location& from_here,
+                                              const std::string& message) {
   DCHECK(thread_checker_.CalledOnValidThread());
   // Unrecoverable errors that arrive via the syncer::UnrecoverableErrorHandler
   // interface are assumed to originate within the syncer.
@@ -838,7 +815,7 @@ void ProfileSyncService::OnUnrecoverableError(
 }
 
 void ProfileSyncService::OnUnrecoverableErrorImpl(
-    const tracked_objects::Location& from_here,
+    const base::Location& from_here,
     const std::string& message,
     bool delete_sync_database) {
   DCHECK(HasUnrecoverableError());
@@ -847,9 +824,7 @@ void ProfileSyncService::OnUnrecoverableErrorImpl(
 
   UMA_HISTOGRAM_ENUMERATION(kSyncUnrecoverableErrorHistogram,
                             unrecoverable_error_reason_, ERROR_REASON_LIMIT);
-  std::string location;
-  from_here.Write(true, true, &location);
-  LOG(ERROR) << "Unrecoverable error detected at " << location
+  LOG(ERROR) << "Unrecoverable error detected at " << from_here.ToString()
              << " -- ProfileSyncService unusable: " << message;
 
   // Shut all data types down.
@@ -1477,20 +1452,8 @@ bool ProfileSyncService::IsPassphraseRequiredForDecryption() const {
   return IsEncryptedDatatypeEnabled() && IsPassphraseRequired();
 }
 
-base::string16 ProfileSyncService::GetLastSyncedTimeString() const {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  const base::Time last_synced_time = sync_prefs_.GetLastSyncedTime();
-  if (last_synced_time.is_null())
-    return l10n_util::GetStringUTF16(IDS_SYNC_TIME_NEVER);
-
-  base::TimeDelta time_since_last_sync = base::Time::Now() - last_synced_time;
-
-  if (time_since_last_sync < base::TimeDelta::FromMinutes(1))
-    return l10n_util::GetStringUTF16(IDS_SYNC_TIME_JUST_NOW);
-
-  return ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_ELAPSED,
-                                ui::TimeFormat::LENGTH_SHORT,
-                                time_since_last_sync);
+base::Time ProfileSyncService::GetLastSyncedTime() const {
+  return sync_prefs_.GetLastSyncedTime();
 }
 
 void ProfileSyncService::UpdateSelectedTypesHistogram(
@@ -2228,7 +2191,7 @@ const DataTypeStatusTable& ProfileSyncService::data_type_status_table() const {
 }
 
 void ProfileSyncService::OnInternalUnrecoverableError(
-    const tracked_objects::Location& from_here,
+    const base::Location& from_here,
     const std::string& message,
     bool delete_sync_database,
     UnrecoverableErrorReason reason) {
@@ -2250,11 +2213,6 @@ std::string ProfileSyncService::GetAccessTokenForTest() const {
 syncer::SyncableService* ProfileSyncService::GetSessionsSyncableService() {
   DCHECK(thread_checker_.CalledOnValidThread());
   return sessions_sync_manager_.get();
-}
-
-syncer::SyncableService* ProfileSyncService::GetDeviceInfoSyncableService() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return device_info_sync_service_.get();
 }
 
 syncer::ModelTypeSyncBridge* ProfileSyncService::GetDeviceInfoSyncBridge() {
@@ -2391,8 +2349,7 @@ std::string ProfileSyncService::unrecoverable_error_message() const {
   return unrecoverable_error_message_;
 }
 
-tracked_objects::Location ProfileSyncService::unrecoverable_error_location()
-    const {
+base::Location ProfileSyncService::unrecoverable_error_location() const {
   DCHECK(thread_checker_.CalledOnValidThread());
   return unrecoverable_error_location_;
 }

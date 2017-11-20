@@ -22,6 +22,8 @@
 extern "C++" {
 
 #include <algorithm>
+#include <cassert>
+#include <cstdlib>
 #include <type_traits>
 
 namespace bssl {
@@ -92,15 +94,19 @@ class SpanBase {
 template <typename T>
 class Span : private internal::SpanBase<const T> {
  private:
-  template <bool B, class V = void>
-  using enable_if_t = typename std::enable_if<B, V>::type;
-
   // Heuristically test whether C is a container type that can be converted into
   // a Span by checking for data() and size() member functions.
+  //
+  // TODO(davidben): Switch everything to std::enable_if_t when we remove
+  // support for MSVC 2015. Although we could write our own enable_if_t and MSVC
+  // 2015 has std::enable_if_t anyway, MSVC 2015's SFINAE implementation is
+  // problematic and does not work below unless we write the ::type at use.
   template <typename C>
-  using EnableIfContainer = enable_if_t<
+  using EnableIfContainer = std::enable_if<
       std::is_convertible<decltype(std::declval<C>().data()), T *>::value &&
       std::is_integral<decltype(std::declval<C>().size())>::value>;
+
+  static const size_t npos = static_cast<size_t>(-1);
 
  public:
   constexpr Span() : Span(nullptr, 0) {}
@@ -109,30 +115,52 @@ class Span : private internal::SpanBase<const T> {
   template <size_t N>
   constexpr Span(T (&array)[N]) : Span(array, N) {}
 
-  template <typename C, typename = EnableIfContainer<C>,
-            typename = enable_if_t<std::is_const<T>::value, C>>
+  template <
+      typename C, typename = typename EnableIfContainer<C>::type,
+      typename = typename std::enable_if<std::is_const<T>::value, C>::type>
   Span(const C &container) : data_(container.data()), size_(container.size()) {}
 
-  template <typename C, typename = EnableIfContainer<C>,
-            typename = enable_if_t<!std::is_const<T>::value, C>>
+  template <
+      typename C, typename = typename EnableIfContainer<C>::type,
+      typename = typename std::enable_if<!std::is_const<T>::value, C>::type>
   explicit Span(C &container)
       : data_(container.data()), size_(container.size()) {}
 
   T *data() const { return data_; }
   size_t size() const { return size_; }
+  bool empty() const { return size_ == 0; }
 
   T *begin() const { return data_; }
   const T *cbegin() const { return data_; }
   T *end() const { return data_ + size_; };
   const T *cend() const { return end(); };
 
+  T &front() const {
+    assert(size_ != 0);
+    return data_[0];
+  }
+  T &back() const {
+    assert(size_ != 0);
+    return data_[size_ - 1];
+  }
+
   T &operator[](size_t i) const { return data_[i]; }
   T &at(size_t i) const { return data_[i]; }
+
+  Span subspan(size_t pos = 0, size_t len = npos) const {
+    if (pos > size_) {
+      abort();  // absl::Span throws an exception here.
+    }
+    return Span(data_ + pos, std::min(size_ - pos, len));
+  }
 
  private:
   T *data_;
   size_t size_;
 };
+
+template <typename T>
+const size_t Span<T>::npos;
 
 template <typename T>
 Span<T> MakeSpan(T *ptr, size_t size) {

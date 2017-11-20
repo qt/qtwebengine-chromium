@@ -4,10 +4,10 @@
 
 #include "modules/accessibility/AXRadioInput.h"
 
-#include "core/InputTypeNames.h"
 #include "core/dom/AccessibleNode.h"
-#include "core/html/HTMLInputElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/forms/RadioInputType.h"
+#include "core/input_type_names.h"
 #include "core/layout/LayoutObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 
@@ -124,7 +124,7 @@ int AXRadioInput::CountFromFirstElement() const {
 }
 
 HTMLInputElement* AXRadioInput::GetInputElement() const {
-  return toHTMLInputElement(layout_object_->GetNode());
+  return ToHTMLInputElement(layout_object_->GetNode());
 }
 
 int AXRadioInput::SizeOfRadioGroup() const {

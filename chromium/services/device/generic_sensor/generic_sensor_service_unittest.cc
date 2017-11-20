@@ -15,6 +15,7 @@
 #include "device/base/synchronization/one_writer_seqlock.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/device/device_service_test_base.h"
+#include "services/device/generic_sensor/fake_platform_sensor_and_provider.h"
 #include "services/device/generic_sensor/platform_sensor.h"
 #include "services/device/generic_sensor/platform_sensor_provider.h"
 #include "services/device/generic_sensor/sensor_provider_impl.h"
@@ -40,75 +41,6 @@ void CheckSuccess(base::OnceClosure quit_closure,
   std::move(quit_closure).Run();
 }
 
-class FakePlatformSensor : public PlatformSensor {
- public:
-  FakePlatformSensor(SensorType type,
-                     mojo::ScopedSharedBufferMapping mapping,
-                     PlatformSensorProvider* provider)
-      : PlatformSensor(type, std::move(mapping), provider) {}
-
-  bool StartSensor(const PlatformSensorConfiguration& configuration) override {
-    SensorReading reading;
-    // Only mocking the shared memory update for AMBIENT_LIGHT type is enough.
-    if (GetType() == SensorType::AMBIENT_LIGHT) {
-      // Set the shared buffer value as frequency for testing purpose.
-      reading.als.value = configuration.frequency();
-      UpdateSensorReading(reading);
-    }
-    return true;
-  }
-
-  void StopSensor() override {}
-
-  bool CheckSensorConfiguration(
-      const PlatformSensorConfiguration& configuration) override {
-    return configuration.frequency() <= GetMaximumSupportedFrequency() &&
-           configuration.frequency() >= GetMinimumSupportedFrequency();
-  }
-
-  PlatformSensorConfiguration GetDefaultConfiguration() override {
-    PlatformSensorConfiguration default_configuration;
-    default_configuration.set_frequency(30.0);
-    return default_configuration;
-  }
-
-  mojom::ReportingMode GetReportingMode() override {
-    // Set the ReportingMode as ON_CHANGE, so we can test the
-    // SensorReadingChanged() mojo interface.
-    return mojom::ReportingMode::ON_CHANGE;
-  }
-
-  double GetMaximumSupportedFrequency() override { return 50.0; }
-  double GetMinimumSupportedFrequency() override { return 1.0; }
-
- protected:
-  ~FakePlatformSensor() override = default;
-
-  DISALLOW_COPY_AND_ASSIGN(FakePlatformSensor);
-};
-
-class FakePlatformSensorProvider : public PlatformSensorProvider {
- public:
-  static FakePlatformSensorProvider* GetInstance() {
-    return base::Singleton<
-        FakePlatformSensorProvider,
-        base::LeakySingletonTraits<FakePlatformSensorProvider>>::get();
-  }
-
-  FakePlatformSensorProvider() = default;
-  ~FakePlatformSensorProvider() override = default;
-
-  void CreateSensorInternal(SensorType type,
-                            mojo::ScopedSharedBufferMapping mapping,
-                            const CreateSensorCallback& callback) override {
-    DCHECK(type >= SensorType::FIRST && type <= SensorType::LAST);
-    auto sensor = base::MakeRefCounted<FakePlatformSensor>(
-        type, std::move(mapping), this);
-    callback.Run(sensor);
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(FakePlatformSensorProvider);
-};
 
 class TestSensorClient : public mojom::SensorClient {
  public:
@@ -231,19 +163,35 @@ class GenericSensorServiceTest : public DeviceServiceTestBase {
   }
 
   void TearDown() override {
-    PlatformSensorProvider::SetProviderForTesting(nullptr);
+    io_thread_task_runner_->PostTask(
+        FROM_HERE, base::BindOnce(&GenericSensorServiceTest::TearDownOnIOThread,
+                                  base::Unretained(this)));
+    io_loop_finished_event_.Wait();
   }
 
   void SetUpOnIOThread() {
+    fake_platform_sensor_provider_ = new FakePlatformSensorProvider();
     PlatformSensorProvider::SetProviderForTesting(
-        FakePlatformSensorProvider::GetInstance());
+        fake_platform_sensor_provider_);
     io_loop_finished_event_.Signal();
   }
 
+  void TearDownOnIOThread() {
+    PlatformSensorProvider::SetProviderForTesting(nullptr);
+
+    DCHECK(fake_platform_sensor_provider_);
+    delete fake_platform_sensor_provider_;
+    fake_platform_sensor_provider_ = nullptr;
+
+    io_loop_finished_event_.Signal();
+  }
   mojom::SensorProviderPtr sensor_provider_;
   scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner_;
   base::WaitableEvent io_loop_finished_event_;
   base::test::ScopedFeatureList scoped_feature_list_;
+
+  // FakePlatformSensorProvider must be created and deleted in IO thread.
+  FakePlatformSensorProvider* fake_platform_sensor_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(GenericSensorServiceTest);
 };
@@ -307,6 +255,7 @@ TEST_F(GenericSensorServiceTest, ValidAddConfigurationTest) {
 
 // Tests adding an invalid configuation, the max allowed frequency is 50.0 in
 // the mocked SensorImpl, while we add one with 60.0.
+// Failing on Android Tests (dbg); see https://crbug.com/761742.
 TEST_F(GenericSensorServiceTest, InvalidAddConfigurationTest) {
   mojom::SensorPtr sensor;
   auto client =
@@ -374,6 +323,7 @@ TEST_F(GenericSensorServiceTest, MultipleClientsTest) {
 
 // Tests adding more than one clients. If mojo connection is broken on one
 // client, other clients should not be affected.
+// Failing on Android Tests (dbg); see https://crbug.com/761742.
 TEST_F(GenericSensorServiceTest, ClientMojoConnectionBrokenTest) {
   mojom::SensorPtr sensor_1;
   auto client_1 = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
@@ -478,6 +428,7 @@ TEST_F(GenericSensorServiceTest, AddAndRemoveConfigurationTest) {
 // AddConfiguration(). In this way we make sure it won't be missed by the
 // early quit of main thread (when there is an unexpected notification by
 // SensorReadingChanged()).
+// Failing on Android Tests (dbg); see https://crbug.com/761742.
 TEST_F(GenericSensorServiceTest, SuspendTest) {
   mojom::SensorPtr sensor;
   auto client = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
@@ -560,6 +511,7 @@ TEST_F(GenericSensorServiceTest, SuspendThenResumeTest) {
 
 // Test suspend when there are more than one client. The suspended client won't
 // receive SensorReadingChanged() notification.
+// Failing on Android Tests (dbg); see https://crbug.com/761742.
 TEST_F(GenericSensorServiceTest, MultipleClientsSuspendAndResumeTest) {
   mojom::SensorPtr sensor_1;
   auto client_1 = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);

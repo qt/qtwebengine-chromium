@@ -8,10 +8,10 @@
 
 #include <algorithm>
 #include <list>
+#include <memory>
 #include <numeric>
 #include <utility>
 
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/optional.h"
 #include "base/strings/string_number_conversions.h"
@@ -26,7 +26,7 @@
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/message_center/fake_message_center.h"
-#include "ui/message_center/message_center_style.h"
+#include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/message_center/views/desktop_popup_alignment_delegate.h"
 #include "ui/message_center/views/toast_contents_view.h"
 #include "ui/views/test/views_test_base.h"
@@ -38,7 +38,7 @@ namespace {
 std::unique_ptr<message_center::Notification> CreateTestNotification(
     std::string id,
     std::string text) {
-  return base::MakeUnique<message_center::Notification>(
+  return std::make_unique<message_center::Notification>(
       message_center::NOTIFICATION_TYPE_BASE_FORMAT, id,
       base::UTF8ToUTF16("test title"), base::ASCIIToUTF16(text), gfx::Image(),
       base::string16() /* display_source */, GURL(),
@@ -709,13 +709,14 @@ TEST_F(MessagePopupCollectionTest, ChangingNotificationSize) {
   };
   std::vector<TestCase> updates = {
       {"shrinking", ""},
-      {"enlarging", "abc\ndef\nghk\n"},
-      {"restoring", "abc\ndef\n"},
+      {"enlarging", "abc\ndef\nghi\n"},
+      {"restoring", "abc\n"},
   };
 
   std::vector<std::string> notification_ids;
   // adding notifications
   {
+    // adding popup notifications
     constexpr int max_visible_popup_notifications = 3;
     notification_ids.reserve(max_visible_popup_notifications);
     for (int i = 0; i < max_visible_popup_notifications; ++i) {
@@ -727,6 +728,10 @@ TEST_F(MessagePopupCollectionTest, ChangingNotificationSize) {
   }
 
   WaitForTransitionsDone();
+
+  // Confirms that there are 2 toasts of 3 notifications.
+  EXPECT_EQ(3u, GetToastCounts());
+  EXPECT_EQ(3u, MessageCenter::Get()->NotificationCount());
 
   // updating notifications one by one
   for (const std::string& id : notification_ids) {

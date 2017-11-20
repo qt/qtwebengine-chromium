@@ -81,7 +81,7 @@ class PLATFORM_EXPORT TransformOperations {
 
   size_t size() const { return operations_.size(); }
   const TransformOperation* at(size_t index) const {
-    return index < operations_.size() ? operations_.at(index).Get() : 0;
+    return index < operations_.size() ? operations_.at(index).get() : 0;
   }
 
   bool BlendedBoundsForBox(const FloatBox&,
@@ -91,7 +91,7 @@ class PLATFORM_EXPORT TransformOperations {
                            FloatBox* bounds) const;
   TransformOperations BlendByMatchingOperations(const TransformOperations& from,
                                                 const double& progress) const;
-  PassRefPtr<TransformOperation> BlendByUsingMatrixInterpolation(
+  RefPtr<TransformOperation> BlendByUsingMatrixInterpolation(
       const TransformOperations& from,
       double progress) const;
   TransformOperations Blend(const TransformOperations& from,

@@ -37,7 +37,6 @@
 #include "platform/heap/HeapAllocator.h"
 #include "platform/heap/Member.h"
 #include "platform/loader/fetch/FetchInitiatorInfo.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/loader/fetch/MemoryCache.h"
 #include "platform/loader/fetch/RawResource.h"
@@ -46,6 +45,7 @@
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/loader/fetch/ResourceTimingInfo.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/loader/testing/FetchTestingPlatformSupport.h"
 #include "platform/loader/testing/MockFetchContext.h"
 #include "platform/loader/testing/MockResource.h"
@@ -108,9 +108,8 @@ TEST_F(ResourceFetcherTest, StartLoadAfterFrameDetach) {
   KURL secure_url(kParsedURLString, "https://secureorigin.test/image.png");
   // Try to request a url. The request should fail, and a resource in an error
   // state should be returned, and no resource should be present in the cache.
-  ResourceFetcher* fetcher = ResourceFetcher::Create(
-      &FetchContext::NullInstance(),
-      Platform::Current()->CurrentThread()->GetWebTaskRunner());
+  ResourceFetcher* fetcher =
+      ResourceFetcher::Create(&FetchContext::NullInstance());
 
   ResourceRequest resource_request(secure_url);
   resource_request.SetRequestContext(WebURLRequest::kRequestContextInternal);
@@ -139,7 +138,7 @@ TEST_F(ResourceFetcherTest, UseExistingResource) {
   FetchParameters fetch_params{ResourceRequest(url)};
   Resource* resource = MockResource::Fetch(fetch_params, fetcher);
   ASSERT_TRUE(resource);
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   EXPECT_TRUE(resource->IsLoaded());
   EXPECT_TRUE(GetMemoryCache()->Contains(resource));
 
@@ -157,15 +156,14 @@ TEST_F(ResourceFetcherTest, Vary) {
   response.SetHTTPHeaderField(HTTPNames::Cache_Control, "max-age=3600");
   response.SetHTTPHeaderField(HTTPNames::Vary, "*");
   resource->ResponseReceived(response, nullptr);
-  resource->Finish();
+  resource->FinishForTest();
   ASSERT_TRUE(resource->MustReloadDueToVaryHeader(ResourceRequest(url)));
 
   ResourceFetcher* fetcher = ResourceFetcher::Create(Context());
   ResourceRequest resource_request(url);
   resource_request.SetRequestContext(WebURLRequest::kRequestContextInternal);
   FetchParameters fetch_params(resource_request);
-  Platform::Current()->GetURLLoaderMockFactory()->RegisterURL(
-      url, WebURLResponse(), "");
+  platform_->GetURLLoaderMockFactory()->RegisterURL(url, WebURLResponse(), "");
   Resource* new_resource = RawResource::Fetch(fetch_params, fetcher);
   EXPECT_NE(resource, new_resource);
   new_resource->Loader()->Cancel();
@@ -182,8 +180,7 @@ TEST_F(ResourceFetcherTest, NavigationTimingInfo) {
   resource_request.SetFrameType(WebURLRequest::kFrameTypeNested);
   resource_request.SetRequestContext(WebURLRequest::kRequestContextForm);
   FetchParameters fetch_params(resource_request);
-  Platform::Current()->GetURLLoaderMockFactory()->RegisterURL(
-      url, WebURLResponse(), "");
+  platform_->GetURLLoaderMockFactory()->RegisterURL(url, WebURLResponse(), "");
   Resource* resource =
       RawResource::FetchMainResource(fetch_params, fetcher, SubstituteData());
   resource->ResponseReceived(response, nullptr);
@@ -221,7 +218,7 @@ TEST_F(ResourceFetcherTest, VaryOnBack) {
   response.SetHTTPHeaderField(HTTPNames::Cache_Control, "max-age=3600");
   response.SetHTTPHeaderField(HTTPNames::Vary, "*");
   resource->ResponseReceived(response, nullptr);
-  resource->Finish();
+  resource->FinishForTest();
   ASSERT_TRUE(resource->MustReloadDueToVaryHeader(ResourceRequest(url)));
 
   ResourceRequest resource_request(url);
@@ -246,7 +243,7 @@ TEST_F(ResourceFetcherTest, VaryResource) {
   FetchParameters fetch_params_original{ResourceRequest(url)};
   Resource* resource = MockResource::Fetch(fetch_params_original, fetcher);
   ASSERT_TRUE(resource);
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   ASSERT_TRUE(resource->MustReloadDueToVaryHeader(ResourceRequest(url)));
 
   FetchParameters fetch_params{ResourceRequest(url)};
@@ -305,7 +302,7 @@ TEST_F(ResourceFetcherTest, RevalidateWhileFinishingLoading) {
   Persistent<RequestSameResourceOnComplete> client =
       new RequestSameResourceOnComplete(resource1);
   resource1->AddClient(client);
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   EXPECT_TRUE(client->NotifyFinishedCalled());
   resource1->RemoveClient(client);
 }
@@ -489,7 +486,7 @@ TEST_F(ResourceFetcherTest, PreloadResourceTwice) {
   ASSERT_TRUE(resource);
   EXPECT_TRUE(resource->IsLinkPreload());
   EXPECT_TRUE(fetcher->ContainsAsPreload(resource));
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
 
   FetchParameters fetch_params{ResourceRequest(url)};
   fetch_params.SetLinkPreload(true);
@@ -515,7 +512,7 @@ TEST_F(ResourceFetcherTest, LinkPreloadResourceAndUse) {
   Resource* resource = MockResource::Fetch(fetch_params_original, fetcher);
   ASSERT_TRUE(resource);
   EXPECT_TRUE(resource->IsLinkPreload());
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
 
   // Resource created by preload scanner
   FetchParameters fetch_params_preload_scanner{ResourceRequest(url)};
@@ -547,7 +544,7 @@ TEST_F(ResourceFetcherTest, PreloadMatchWithBypassingCache) {
   Resource* resource = MockResource::Fetch(fetch_params_original, fetcher);
   ASSERT_TRUE(resource);
   EXPECT_TRUE(resource->IsLinkPreload());
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
 
   FetchParameters fetch_params_second{ResourceRequest(url)};
   fetch_params_second.MutableResourceRequest().SetCachePolicy(
@@ -569,7 +566,7 @@ TEST_F(ResourceFetcherTest, CrossFramePreloadMatchIsNotAllowed) {
   Resource* resource = MockResource::Fetch(fetch_params_original, fetcher);
   ASSERT_TRUE(resource);
   EXPECT_TRUE(resource->IsLinkPreload());
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
 
   FetchParameters fetch_params_second{ResourceRequest(url)};
   fetch_params_second.MutableResourceRequest().SetCachePolicy(
@@ -595,7 +592,7 @@ TEST_F(ResourceFetcherTest, RepetitiveLinkPreloadShouldBeMerged) {
   ASSERT_TRUE(resource1);
   EXPECT_TRUE(resource1->IsUnusedPreload());
   EXPECT_TRUE(fetcher->ContainsAsPreload(resource1));
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
 
   // The second preload fetch returns the first preload.
   Resource* resource2 = MockResource::Fetch(fetch_params_for_preload, fetcher);
@@ -625,7 +622,7 @@ TEST_F(ResourceFetcherTest, RepetitiveSpeculativePreloadShouldBeMerged) {
   ASSERT_TRUE(resource1);
   EXPECT_TRUE(resource1->IsUnusedPreload());
   EXPECT_TRUE(fetcher->ContainsAsPreload(resource1));
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
 
   // The second preload fetch returns the first preload.
   Resource* resource2 = MockResource::Fetch(fetch_params_for_preload, fetcher);
@@ -659,7 +656,7 @@ TEST_F(ResourceFetcherTest, SpeculativePreloadShouldBePromotedToLinkePreload) {
   EXPECT_TRUE(resource1->IsUnusedPreload());
   EXPECT_FALSE(resource1->IsLinkPreload());
   EXPECT_TRUE(fetcher->ContainsAsPreload(resource1));
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
 
   // The second preload fetch returns the first preload.
   Resource* resource2 =
@@ -686,14 +683,13 @@ TEST_F(ResourceFetcherTest, Revalidate304) {
   response.SetHTTPStatusCode(304);
   response.SetHTTPHeaderField("etag", "1234567890");
   resource->ResponseReceived(response, nullptr);
-  resource->Finish();
+  resource->FinishForTest();
 
   ResourceFetcher* fetcher = ResourceFetcher::Create(Context());
   ResourceRequest resource_request(url);
   resource_request.SetRequestContext(WebURLRequest::kRequestContextInternal);
   FetchParameters fetch_params(resource_request);
-  Platform::Current()->GetURLLoaderMockFactory()->RegisterURL(
-      url, WebURLResponse(), "");
+  platform_->GetURLLoaderMockFactory()->RegisterURL(url, WebURLResponse(), "");
   Resource* new_resource = RawResource::Fetch(fetch_params, fetcher);
   fetcher->StopFetching();
 
@@ -721,7 +717,7 @@ TEST_F(ResourceFetcherTest, LinkPreloadResourceMultipleFetchersAndMove) {
       new MockResourceClient(new_resource2);
   EXPECT_NE(resource, new_resource2);
   EXPECT_EQ(0, fetcher2->BlockingRequestCount());
-  Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
+  platform_->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
 }
 
 TEST_F(ResourceFetcherTest, ContentTypeDataURL) {

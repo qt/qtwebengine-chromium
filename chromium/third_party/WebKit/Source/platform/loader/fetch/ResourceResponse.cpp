@@ -26,7 +26,7 @@
 
 #include "platform/loader/fetch/ResourceResponse.h"
 
-#include "platform/HTTPNames.h"
+#include "platform/http_names.h"
 #include "platform/network/HTTPParsers.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/CurrentTime.h"
@@ -88,6 +88,7 @@ ResourceResponse::ResourceResponse()
       have_parsed_expires_header_(false),
       have_parsed_last_modified_header_(false),
       has_major_certificate_errors_(false),
+      is_legacy_symantec_cert_(false),
       was_fetched_via_spdy_(false),
       was_fetched_via_proxy_(false),
       was_fetched_via_service_worker_(false),
@@ -128,6 +129,7 @@ ResourceResponse::ResourceResponse(const KURL& url,
       have_parsed_expires_header_(false),
       have_parsed_last_modified_header_(false),
       has_major_certificate_errors_(false),
+      is_legacy_symantec_cert_(false),
       was_fetched_via_spdy_(false),
       was_fetched_via_proxy_(false),
       was_fetched_via_service_worker_(false),
@@ -162,6 +164,8 @@ ResourceResponse::ResourceResponse(CrossThreadResourceResponseData* data)
   remote_ip_address_ = AtomicString(data->remote_ip_address_);
   remote_port_ = data->remote_port_;
   has_major_certificate_errors_ = data->has_major_certificate_errors_;
+  is_legacy_symantec_cert_ = data->is_legacy_symantec_cert_;
+  cert_validity_start_ = data->cert_validity_start_;
   was_fetched_via_spdy_ = data->was_fetched_via_spdy_;
   was_fetched_via_proxy_ = data->was_fetched_via_proxy_;
   was_fetched_via_service_worker_ = data->was_fetched_via_service_worker_;
@@ -223,6 +227,8 @@ std::unique_ptr<CrossThreadResourceResponseData> ResourceResponse::CopyData()
   data->remote_ip_address_ = remote_ip_address_.GetString().IsolatedCopy();
   data->remote_port_ = remote_port_;
   data->has_major_certificate_errors_ = has_major_certificate_errors_;
+  data->is_legacy_symantec_cert_ = is_legacy_symantec_cert_;
+  data->cert_validity_start_ = cert_validity_start_;
   data->was_fetched_via_spdy_ = was_fetched_via_spdy_;
   data->was_fetched_via_proxy_ = was_fetched_via_proxy_;
   data->was_fetched_via_service_worker_ = was_fetched_via_service_worker_;
@@ -554,7 +560,7 @@ void ResourceResponse::SetConnectionID(unsigned connection_id) {
 }
 
 ResourceLoadTiming* ResourceResponse::GetResourceLoadTiming() const {
-  return resource_load_timing_.Get();
+  return resource_load_timing_.get();
 }
 
 void ResourceResponse::SetResourceLoadTiming(
@@ -563,7 +569,7 @@ void ResourceResponse::SetResourceLoadTiming(
 }
 
 RefPtr<ResourceLoadInfo> ResourceResponse::GetResourceLoadInfo() const {
-  return resource_load_info_.Get();
+  return resource_load_info_.get();
 }
 
 void ResourceResponse::SetResourceLoadInfo(RefPtr<ResourceLoadInfo> load_info) {
@@ -600,7 +606,7 @@ void ResourceResponse::SetDownloadedFilePath(
     const String& downloaded_file_path) {
   downloaded_file_path_ = downloaded_file_path;
   if (downloaded_file_path_.IsEmpty()) {
-    downloaded_file_handle_.Clear();
+    downloaded_file_handle_ = nullptr;
     return;
   }
   // TODO(dmurph): Investigate whether we need the mimeType on this blob.

@@ -8,32 +8,43 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_SDK_OBJC_FRAMEWORK_CLASSES_PEERCONNECTION_OBJC_VIDEO_DECODER_FACTORY_H_
-#define WEBRTC_SDK_OBJC_FRAMEWORK_CLASSES_PEERCONNECTION_OBJC_VIDEO_DECODER_FACTORY_H_
+#ifndef SDK_OBJC_FRAMEWORK_CLASSES_PEERCONNECTION_OBJC_VIDEO_DECODER_FACTORY_H_
+#define SDK_OBJC_FRAMEWORK_CLASSES_PEERCONNECTION_OBJC_VIDEO_DECODER_FACTORY_H_
 
-#include "webrtc/media/base/codec.h"
-#include "webrtc/media/engine/webrtcvideodecoderfactory.h"
+#include "api/video_codecs/video_decoder_factory.h"
+#include "media/base/codec.h"
+#include "media/engine/webrtcvideodecoderfactory.h"
 
 @protocol RTCVideoDecoderFactory;
 
 namespace webrtc {
 
-class ObjCVideoDecoderFactory : public cricket::WebRtcVideoDecoderFactory {
+// TODO(andersc): Remove the inheritance from cricket::WebRtcVideoDecoderFactory
+// when the legacy path in [RTCPeerConnectionFactory init] is no longer needed.
+class ObjCVideoDecoderFactory : public VideoDecoderFactory,
+                                public cricket::WebRtcVideoDecoderFactory {
  public:
   explicit ObjCVideoDecoderFactory(id<RTCVideoDecoderFactory>);
   ~ObjCVideoDecoderFactory();
 
   id<RTCVideoDecoderFactory> wrapped_decoder_factory() const;
 
+  std::vector<SdpVideoFormat> GetSupportedFormats() const override;
+  std::unique_ptr<VideoDecoder> CreateVideoDecoder(
+      const SdpVideoFormat& format) override;
+
+  // Needed for WebRtcVideoDecoderFactory interface.
+  webrtc::VideoDecoder* CreateVideoDecoderWithParams(
+      const cricket::VideoCodec& codec,
+      cricket::VideoDecoderParams params) override;
   webrtc::VideoDecoder* CreateVideoDecoder(
       webrtc::VideoCodecType type) override;
   void DestroyVideoDecoder(webrtc::VideoDecoder* decoder) override;
 
  private:
   id<RTCVideoDecoderFactory> decoder_factory_;
-  std::vector<cricket::VideoCodec> supported_codecs_;
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_SDK_OBJC_FRAMEWORK_CLASSES_PEERCONNECTION_OBJC_VIDEO_DECODER_FACTORY_H_
+#endif  // SDK_OBJC_FRAMEWORK_CLASSES_PEERCONNECTION_OBJC_VIDEO_DECODER_FACTORY_H_

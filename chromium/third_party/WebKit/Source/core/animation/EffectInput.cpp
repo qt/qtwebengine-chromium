@@ -32,7 +32,7 @@
 
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/DictionaryHelperForBindings.h"
-#include "bindings/core/v8/DictionarySequenceOrDictionary.h"
+#include "bindings/core/v8/dictionary_sequence_or_dictionary.h"
 #include "core/animation/AnimationInputHelpers.h"
 #include "core/animation/CompositorAnimations.h"
 #include "core/animation/KeyframeEffectModel.h"
@@ -180,15 +180,15 @@ EffectModel* EffectInput::Convert(
     const DictionarySequenceOrDictionary& effect_input,
     ExecutionContext* execution_context,
     ExceptionState& exception_state) {
-  if (effect_input.isNull() || !element)
+  if (effect_input.IsNull() || !element)
     return nullptr;
 
-  if (effect_input.isDictionarySequence()) {
-    return ConvertArrayForm(*element, effect_input.getAsDictionarySequence(),
+  if (effect_input.IsDictionarySequence()) {
+    return ConvertArrayForm(*element, effect_input.GetAsDictionarySequence(),
                             execution_context, exception_state);
   }
 
-  const Dictionary& dictionary = effect_input.getAsDictionary();
+  const Dictionary& dictionary = effect_input.GetAsDictionary();
   DictionaryIterator iterator = dictionary.GetIterator(execution_context);
   if (!iterator.IsNull()) {
     // TODO(alancutter): Convert keyframes during iteration rather than after to
@@ -264,7 +264,7 @@ EffectModel* EffectInput::ConvertArrayForm(
       String value;
       DictionaryHelper::Get(keyframe_dictionary, property, value);
 
-      SetKeyframeValue(element, *keyframe.Get(), property, value,
+      SetKeyframeValue(element, *keyframe.get(), property, value,
                        execution_context);
     }
     keyframes.push_back(keyframe);
@@ -381,7 +381,7 @@ EffectModel* EffectInput::ConvertObjectForm(
         keyframe->SetComposite(EffectModel::kCompositeAdd);
       // TODO(alancutter): Support "accumulate" keyframe composition.
 
-      SetKeyframeValue(element, *keyframe.Get(), property, values[i],
+      SetKeyframeValue(element, *keyframe.get(), property, values[i],
                        execution_context);
       keyframes.push_back(keyframe);
     }

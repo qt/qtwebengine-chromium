@@ -25,10 +25,14 @@ class COMPOSITOR_EXPORT LayerDelegate {
   virtual void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) = 0;
 
   // Called when the layer's device scale factor has changed.
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) = 0;
+  virtual void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                          float new_device_scale_factor) = 0;
 
   // Invoked when the bounds have changed.
   virtual void OnLayerBoundsChanged(const gfx::Rect& old_bounds);
+
+  // Invoked when the layer's opacity has changed.
+  virtual void OnLayerOpacityChanged(float old_opacity, float new_opacity);
 
  protected:
   virtual ~LayerDelegate() {}

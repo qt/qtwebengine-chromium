@@ -94,6 +94,15 @@ class WMHelper : public aura::client::DragDropDelegate {
     virtual ~DragDropObserver() {}
   };
 
+  class VSyncObserver {
+   public:
+    virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
+                                         base::TimeDelta interval) = 0;
+
+   protected:
+    virtual ~VSyncObserver() {}
+  };
+
   ~WMHelper() override;
 
   static void SetInstance(WMHelper* helper);
@@ -117,6 +126,8 @@ class WMHelper : public aura::client::DragDropDelegate {
   void RemoveDragDropObserver(DragDropObserver* observer);
   void SetDragDropDelegate(aura::Window*);
   void ResetDragDropDelegate(aura::Window*);
+  void AddVSyncObserver(VSyncObserver* observer);
+  void RemoveVSyncObserver(VSyncObserver* observer);
 
   virtual const display::ManagedDisplayInfo& GetDisplayInfo(
       int64_t display_id) const = 0;
@@ -132,6 +143,7 @@ class WMHelper : public aura::client::DragDropDelegate {
   virtual void RemovePostTargetHandler(ui::EventHandler* handler) = 0;
   virtual bool IsTabletModeWindowManagerEnabled() const = 0;
   virtual double GetDefaultDeviceScaleFactor() const = 0;
+  virtual bool AreVerifiedSyncTokensNeeded() const = 0;
 
   // Overridden from aura::client::DragDropDelegate:
   void OnDragEntered(const ui::DropTargetEvent& event) override;
@@ -154,6 +166,8 @@ class WMHelper : public aura::client::DragDropDelegate {
   void NotifyTabletModeEnded();
   void NotifyKeyboardDeviceConfigurationChanged();
   void NotifyDisplayConfigurationChanged();
+  void NotifyUpdateVSyncParameters(base::TimeTicks timebase,
+                                   base::TimeDelta interval);
 
  private:
   base::ObserverList<ActivationObserver> activation_observers_;
@@ -163,6 +177,11 @@ class WMHelper : public aura::client::DragDropDelegate {
   base::ObserverList<InputDeviceEventObserver> input_device_event_observers_;
   base::ObserverList<DisplayConfigurationObserver> display_config_observers_;
   base::ObserverList<DragDropObserver> drag_drop_observers_;
+  base::ObserverList<VSyncObserver> vsync_observers_;
+
+  // The most recently cached VSync parameters, sent to observers on addition.
+  base::TimeTicks vsync_timebase_;
+  base::TimeDelta vsync_interval_;
 
   DISALLOW_COPY_AND_ASSIGN(WMHelper);
 };

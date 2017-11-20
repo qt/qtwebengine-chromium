@@ -27,7 +27,7 @@
 
 #include "core/xmlhttprequest/XMLHttpRequestProgressEventThrottle.h"
 
-#include "core/EventTypeNames.h"
+#include "core/event_type_names.h"
 #include "core/events/ProgressEvent.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/probe/CoreProbes.h"
@@ -77,8 +77,8 @@ Event* XMLHttpRequestProgressEventThrottle::DeferredEvent::Take() {
 
 XMLHttpRequestProgressEventThrottle::XMLHttpRequestProgressEventThrottle(
     XMLHttpRequest* target)
-    : TimerBase(
-          Platform::Current()->CurrentThread()->Scheduler()->TimerTaskRunner()),
+    : TimerBase(TaskRunnerHelper::Get(TaskType::kNetworking,
+                                      target->GetExecutionContext())),
       target_(target),
       has_dispatched_progress_progress_event_(false) {
   DCHECK(target);

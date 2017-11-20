@@ -97,11 +97,23 @@ public:
 
     const char* name() const override { return "AtlasTextOp"; }
 
+    void visitProxies(const VisitProxyFunc& func) const override {
+        fProcessors.visitProxies(func);
+
+        const sk_sp<GrTextureProxy>* proxies = fFontCache->getProxies(this->maskFormat());
+        for (int i = 0; i < kMaxTextures; ++i) {
+            if (proxies[i]) {
+                func(proxies[i].get());
+            }
+        }
+    }
+
     SkString dumpInfo() const override;
 
     FixedFunctionFlags fixedFunctionFlags() const override;
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override;
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
+                                GrPixelConfigIsClamped dstIsClamped) override;
 
 private:
     GrAtlasTextOp(GrPaint&& paint)
@@ -159,9 +171,12 @@ private:
 
     bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override;
 
+    static constexpr auto kMaxTextures = 4;
+
     // TODO just use class params
     sk_sp<GrGeometryProcessor> setupDfProcessor(const SkMatrix& viewMatrix, SkColor luminanceColor,
-                                                GrColor color, sk_sp<GrTextureProxy> proxy) const;
+                                                GrColor color,
+                                                const sk_sp<GrTextureProxy> [kMaxTextures]) const;
 
 
     // The minimum number of Geometry we will try to allocate.

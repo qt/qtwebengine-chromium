@@ -13,38 +13,39 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/api/audio_codecs/audio_encoder.h"
-#include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "webrtc/modules/audio_coding/acm2/acm_receive_test.h"
-#include "webrtc/modules/audio_coding/acm2/acm_send_test.h"
-#include "webrtc/modules/audio_coding/codecs/audio_format_conversion.h"
-#include "webrtc/modules/audio_coding/codecs/g711/audio_decoder_pcm.h"
-#include "webrtc/modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
-#include "webrtc/modules/audio_coding/codecs/isac/main/include/audio_encoder_isac.h"
-#include "webrtc/modules/audio_coding/codecs/opus/audio_encoder_opus.h"
-#include "webrtc/modules/audio_coding/include/audio_coding_module.h"
-#include "webrtc/modules/audio_coding/include/audio_coding_module_typedefs.h"
-#include "webrtc/modules/audio_coding/neteq/audio_decoder_impl.h"
-#include "webrtc/modules/audio_coding/neteq/tools/audio_checksum.h"
-#include "webrtc/modules/audio_coding/neteq/tools/audio_loop.h"
-#include "webrtc/modules/audio_coding/neteq/tools/constant_pcm_packet_source.h"
-#include "webrtc/modules/audio_coding/neteq/tools/input_audio_file.h"
-#include "webrtc/modules/audio_coding/neteq/tools/output_audio_file.h"
-#include "webrtc/modules/audio_coding/neteq/tools/output_wav_file.h"
-#include "webrtc/modules/audio_coding/neteq/tools/packet.h"
-#include "webrtc/modules/audio_coding/neteq/tools/rtp_file_source.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/rtc_base/criticalsection.h"
-#include "webrtc/rtc_base/md5digest.h"
-#include "webrtc/rtc_base/platform_thread.h"
-#include "webrtc/rtc_base/thread_annotations.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/event_wrapper.h"
-#include "webrtc/system_wrappers/include/sleep.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/mock_audio_decoder.h"
-#include "webrtc/test/mock_audio_encoder.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "modules/audio_coding/acm2/acm_receive_test.h"
+#include "modules/audio_coding/acm2/acm_send_test.h"
+#include "modules/audio_coding/codecs/audio_format_conversion.h"
+#include "modules/audio_coding/codecs/g711/audio_decoder_pcm.h"
+#include "modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
+#include "modules/audio_coding/codecs/isac/main/include/audio_encoder_isac.h"
+#include "modules/audio_coding/codecs/opus/audio_encoder_opus.h"
+#include "modules/audio_coding/include/audio_coding_module.h"
+#include "modules/audio_coding/include/audio_coding_module_typedefs.h"
+#include "modules/audio_coding/neteq/audio_decoder_impl.h"
+#include "modules/audio_coding/neteq/tools/audio_checksum.h"
+#include "modules/audio_coding/neteq/tools/audio_loop.h"
+#include "modules/audio_coding/neteq/tools/constant_pcm_packet_source.h"
+#include "modules/audio_coding/neteq/tools/input_audio_file.h"
+#include "modules/audio_coding/neteq/tools/output_audio_file.h"
+#include "modules/audio_coding/neteq/tools/output_wav_file.h"
+#include "modules/audio_coding/neteq/tools/packet.h"
+#include "modules/audio_coding/neteq/tools/rtp_file_source.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/md5digest.h"
+#include "rtc_base/platform_thread.h"
+#include "rtc_base/refcountedobject.h"
+#include "rtc_base/thread_annotations.h"
+#include "system_wrappers/include/clock.h"
+#include "system_wrappers/include/event_wrapper.h"
+#include "system_wrappers/include/sleep.h"
+#include "test/gtest.h"
+#include "test/mock_audio_decoder.h"
+#include "test/mock_audio_encoder.h"
+#include "test/testsupport/fileutils.h"
 
 using ::testing::AtLeast;
 using ::testing::Invoke;
@@ -146,19 +147,18 @@ class PacketizationCallbackStubOldApi : public AudioPacketizationCallback {
   }
 
  private:
-  int num_calls_ GUARDED_BY(crit_sect_);
-  FrameType last_frame_type_ GUARDED_BY(crit_sect_);
-  int last_payload_type_ GUARDED_BY(crit_sect_);
-  uint32_t last_timestamp_ GUARDED_BY(crit_sect_);
-  std::vector<uint8_t> last_payload_vec_ GUARDED_BY(crit_sect_);
+  int num_calls_ RTC_GUARDED_BY(crit_sect_);
+  FrameType last_frame_type_ RTC_GUARDED_BY(crit_sect_);
+  int last_payload_type_ RTC_GUARDED_BY(crit_sect_);
+  uint32_t last_timestamp_ RTC_GUARDED_BY(crit_sect_);
+  std::vector<uint8_t> last_payload_vec_ RTC_GUARDED_BY(crit_sect_);
   rtc::CriticalSection crit_sect_;
 };
 
 class AudioCodingModuleTestOldApi : public ::testing::Test {
  protected:
   AudioCodingModuleTestOldApi()
-      : id_(1),
-        rtp_utility_(new RtpUtility(kFrameSizeSamples, kPayloadType)),
+      : rtp_utility_(new RtpUtility(kFrameSizeSamples, kPayloadType)),
         clock_(Clock::GetRealTimeClock()) {}
 
   ~AudioCodingModuleTestOldApi() {}
@@ -166,7 +166,7 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
   void TearDown() {}
 
   void SetUp() {
-    acm_.reset(AudioCodingModule::Create(id_, clock_));
+    acm_.reset(AudioCodingModule::Create(clock_));
 
     rtp_utility_->Populate(&rtp_header_);
 
@@ -230,7 +230,6 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
     VerifyEncoding();
   }
 
-  const int id_;
   std::unique_ptr<RtpUtility> rtp_utility_;
   std::unique_ptr<AudioCodingModule> acm_;
   PacketizationCallbackStubOldApi packet_cb_;
@@ -314,7 +313,6 @@ TEST_F(AudioCodingModuleTestOldApi, VerifyOutputFrame) {
   bool muted;
   EXPECT_EQ(0, acm_->PlayoutData10Ms(kSampleRateHz, &audio_frame, &muted));
   ASSERT_FALSE(muted);
-  EXPECT_EQ(id_, audio_frame.id_);
   EXPECT_EQ(0u, audio_frame.timestamp_);
   EXPECT_GT(audio_frame.num_channels_, 0u);
   EXPECT_EQ(static_cast<size_t>(kSampleRateHz / 100),
@@ -607,9 +605,9 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
   const std::unique_ptr<EventWrapper> test_complete_;
   int send_count_;
   int insert_packet_count_;
-  int pull_audio_count_ GUARDED_BY(crit_sect_);
+  int pull_audio_count_ RTC_GUARDED_BY(crit_sect_);
   rtc::CriticalSection crit_sect_;
-  int64_t next_insert_packet_time_ms_ GUARDED_BY(crit_sect_);
+  int64_t next_insert_packet_time_ms_ RTC_GUARDED_BY(crit_sect_);
   std::unique_ptr<SimulatedClock> fake_clock_;
 };
 
@@ -879,9 +877,9 @@ class AcmReRegisterIsacMtTestOldApi : public AudioCodingModuleTestOldApi {
   rtc::PlatformThread codec_registration_thread_;
   const std::unique_ptr<EventWrapper> test_complete_;
   rtc::CriticalSection crit_sect_;
-  bool codec_registered_ GUARDED_BY(crit_sect_);
-  int receive_packet_count_ GUARDED_BY(crit_sect_);
-  int64_t next_insert_packet_time_ms_ GUARDED_BY(crit_sect_);
+  bool codec_registered_ RTC_GUARDED_BY(crit_sect_);
+  int receive_packet_count_ RTC_GUARDED_BY(crit_sect_);
+  int64_t next_insert_packet_time_ms_ RTC_GUARDED_BY(crit_sect_);
   std::unique_ptr<AudioEncoderIsacFloatImpl> isac_encoder_;
   std::unique_ptr<SimulatedClock> fake_clock_;
   test::AudioLoop audio_loop_;

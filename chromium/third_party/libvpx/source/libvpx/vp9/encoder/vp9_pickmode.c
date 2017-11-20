@@ -676,7 +676,9 @@ static void block_yrd(VP9_COMP *cpi, MACROBLOCK *x, RD_COST *this_rdc,
 #endif
 
   if (cpi->sf.use_simple_block_yrd && cpi->common.frame_type != KEY_FRAME &&
-      (bsize < BLOCK_32X32 || cpi->use_svc)) {
+      (bsize < BLOCK_32X32 ||
+       (cpi->use_svc &&
+        (bsize < BLOCK_32X32 || cpi->svc.temporal_layer_id > 0)))) {
     unsigned int var_y, sse_y;
     (void)tx_size;
     if (!rd_computed)
@@ -1182,19 +1184,6 @@ static const REF_MODE ref_mode_set_svc[RT_INTER_MODES] = {
   { LAST_FRAME, NEWMV },       { GOLDEN_FRAME, NEWMV }
 };
 
-static int set_intra_cost_penalty(const VP9_COMP *const cpi, BLOCK_SIZE bsize) {
-  const VP9_COMMON *const cm = &cpi->common;
-  // Reduce the intra cost penalty for small blocks (<=16x16).
-  int reduction_fac =
-      (bsize <= BLOCK_16X16) ? ((bsize <= BLOCK_8X8) ? 4 : 2) : 0;
-  if (cpi->noise_estimate.enabled && cpi->noise_estimate.level == kHigh)
-    // Don't reduce intra cost penalty if estimated noise level is high.
-    reduction_fac = 0;
-  return vp9_get_intra_cost_penalty(cm->base_qindex, cm->y_dc_delta_q,
-                                    cm->bit_depth) >>
-         reduction_fac;
-}
-
 static INLINE void find_predictors(
     VP9_COMP *cpi, MACROBLOCK *x, MV_REFERENCE_FRAME ref_frame,
     int_mv frame_mv[MB_MODE_COUNT][MAX_REF_FRAMES],
@@ -1441,6 +1430,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   TX_SIZE best_tx_size = TX_SIZES;
   INTERP_FILTER best_pred_filter = EIGHTTAP;
   int_mv frame_mv[MB_MODE_COUNT][MAX_REF_FRAMES];
+  uint8_t mode_checked[MB_MODE_COUNT][MAX_REF_FRAMES];
   struct buf_2d yv12_mb[4][MAX_MB_PLANE];
   static const int flag_list[4] = { 0, VP9_LAST_FLAG, VP9_GOLD_FLAG,
                                     VP9_ALT_FLAG };
@@ -1449,7 +1439,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   // var_y and sse_y are saved to be used in skipping checking
   unsigned int var_y = UINT_MAX;
   unsigned int sse_y = UINT_MAX;
-  const int intra_cost_penalty = set_intra_cost_penalty(cpi, bsize);
+  const int intra_cost_penalty =
+      vp9_get_intra_cost_penalty(cpi, bsize, cm->base_qindex, cm->y_dc_delta_q);
   int64_t inter_mode_thresh =
       RDCOST(x->rdmult, x->rddiv, intra_cost_penalty, 0);
   const int *const rd_threshes = cpi->rd.threshes[mi->segment_id][bsize];
@@ -1505,6 +1496,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   INTERP_FILTER filter_gf_svc = EIGHTTAP;
 
   init_ref_frame_cost(cm, xd, ref_frame_cost);
+
+  memset(&mode_checked[0][0], 0, MB_MODE_COUNT * MAX_REF_FRAMES);
 
   if (reuse_inter_pred) {
     int i;
@@ -1574,7 +1567,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   }
 #endif
 
-  if (cpi->rc.frames_since_golden == 0 && !cpi->use_svc) {
+  if (cpi->rc.frames_since_golden == 0 && !cpi->use_svc &&
+      !cpi->rc.alt_ref_gf_group && !cpi->rc.last_frame_is_src_altref) {
     usable_ref_frame = LAST_FRAME;
   } else {
     usable_ref_frame = GOLDEN_FRAME;
@@ -1587,6 +1581,15 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
     if (cpi->rc.is_src_frame_alt_ref) {
       skip_ref_find_pred[LAST_FRAME] = 1;
       skip_ref_find_pred[GOLDEN_FRAME] = 1;
+    }
+    if (cm->show_frame == 0) {
+      usable_ref_frame = GOLDEN_FRAME;
+      skip_ref_find_pred[ALTREF_FRAME] = 1;
+      if (cpi->rc.frames_since_key == 1) {
+        usable_ref_frame = LAST_FRAME;
+        skip_ref_find_pred[GOLDEN_FRAME] = 1;
+        skip_ref_find_pred[ALTREF_FRAME] = 1;
+      }
     }
   }
 
@@ -1645,6 +1648,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
     int is_skippable;
     int this_early_term = 0;
     int rd_computed = 0;
+    int inter_mv_mode = 0;
+    int skip_this_mv = 0;
 
     PREDICTION_MODE this_mode = ref_mode_set[idx].pred_mode;
 
@@ -1676,13 +1681,14 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
            frame_mv[this_mode][ref_frame].as_int != 0))
         continue;
 
-      if (cpi->rc.alt_ref_gf_group &&
+      if (cpi->rc.alt_ref_gf_group && cm->show_frame &&
           cpi->rc.frames_since_golden > (cpi->rc.baseline_gf_interval >> 1) &&
           ref_frame == GOLDEN_FRAME &&
           frame_mv[this_mode][ref_frame].as_int != 0)
         continue;
 
-      if (cpi->rc.alt_ref_gf_group &&
+      if (cpi->rc.alt_ref_gf_group && cm->show_frame &&
+          cpi->rc.frames_since_golden > 0 &&
           cpi->rc.frames_since_golden < (cpi->rc.baseline_gf_interval >> 1) &&
           ref_frame == ALTREF_FRAME &&
           frame_mv[this_mode][ref_frame].as_int != 0)
@@ -1849,6 +1855,22 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
         continue;
       }
     }
+
+    // TODO(jianj): Skipping the testing of (duplicate) non-zero motion vector
+    // causes some regression, leave it for duplicate zero-mv for now, until
+    // regression issue is resolved.
+    for (inter_mv_mode = NEARESTMV; inter_mv_mode <= NEWMV; inter_mv_mode++) {
+      if (inter_mv_mode == this_mode) continue;
+      if (mode_checked[inter_mv_mode][ref_frame] &&
+          frame_mv[this_mode][ref_frame].as_int ==
+              frame_mv[inter_mv_mode][ref_frame].as_int &&
+          frame_mv[inter_mv_mode][ref_frame].as_int == 0) {
+        skip_this_mv = 1;
+        break;
+      }
+    }
+
+    if (skip_this_mv) continue;
 
     // If use_golden_nonzeromv is false, NEWMV mode is skipped for golden, no
     // need to compute best_pred_sad which is only used to skip golden NEWMV.
@@ -2065,6 +2087,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
     (void)ctx;
 #endif
 
+    mode_checked[this_mode][ref_frame] = 1;
+
     if (this_rdc.rdcost < best_rdc.rdcost || x->skip) {
       best_rdc = this_rdc;
       best_mode = this_mode;
@@ -2139,15 +2163,15 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
           vpx_highbd_convolve_copy(
               CONVERT_TO_SHORTPTR(best_pred->data), best_pred->stride,
               CONVERT_TO_SHORTPTR(this_mode_pred->data), this_mode_pred->stride,
-              NULL, 0, NULL, 0, bw, bh, xd->bd);
+              NULL, 0, 0, 0, 0, bw, bh, xd->bd);
         else
           vpx_convolve_copy(best_pred->data, best_pred->stride,
                             this_mode_pred->data, this_mode_pred->stride, NULL,
-                            0, NULL, 0, bw, bh);
+                            0, 0, 0, 0, bw, bh);
 #else
         vpx_convolve_copy(best_pred->data, best_pred->stride,
                           this_mode_pred->data, this_mode_pred->stride, NULL, 0,
-                          NULL, 0, bw, bh);
+                          0, 0, 0, bw, bh);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
         best_pred = this_mode_pred;
       }
@@ -2241,14 +2265,14 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
       if (cm->use_highbitdepth)
         vpx_highbd_convolve_copy(
             CONVERT_TO_SHORTPTR(best_pred->data), best_pred->stride,
-            CONVERT_TO_SHORTPTR(pd->dst.buf), pd->dst.stride, NULL, 0, NULL, 0,
+            CONVERT_TO_SHORTPTR(pd->dst.buf), pd->dst.stride, NULL, 0, 0, 0, 0,
             bw, bh, xd->bd);
       else
         vpx_convolve_copy(best_pred->data, best_pred->stride, pd->dst.buf,
-                          pd->dst.stride, NULL, 0, NULL, 0, bw, bh);
+                          pd->dst.stride, NULL, 0, 0, 0, 0, bw, bh);
 #else
       vpx_convolve_copy(best_pred->data, best_pred->stride, pd->dst.buf,
-                        pd->dst.stride, NULL, 0, NULL, 0, bw, bh);
+                        pd->dst.stride, NULL, 0, 0, 0, 0, bw, bh);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
     }
   }
@@ -2273,6 +2297,11 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
     best_ref_frame = ctx_den.best_ref_frame;
   }
 #endif
+
+  if (best_ref_frame == ALTREF_FRAME)
+    x->arf_frame_usage++;
+  else if (best_ref_frame != INTRA_FRAME)
+    x->lastgolden_frame_usage++;
 
   if (cpi->sf.adaptive_rd_thresh) {
     THR_MODES best_mode_idx = mode_idx[best_ref_frame][mode_offset(mi->mode)];

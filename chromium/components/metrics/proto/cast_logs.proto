@@ -15,7 +15,7 @@ package metrics;
 // Next tag: 7
 message CastLogsProto {
   // Cast specific device information.
-  // Next tag: 6
+  // Next tag: 7
   message CastDeviceInfo {
     // The product type of Cast device sent from Cast-enabled devices.
     // Next tag: 8
@@ -43,6 +43,15 @@ message CastLogsProto {
 
     // The serial number.
     optional string serial_number = 5;
+
+    // Hardware information of the device.
+    message HardwareInfo {
+      optional string color = 1;
+      optional string mic = 2;
+      optional string memory = 3;
+      optional string nand = 4;
+    }
+    optional HardwareInfo hardware_info = 6;
   }
   // The device sends this information at least once per day.
   optional CastDeviceInfo cast_device_info = 1;
@@ -132,7 +141,7 @@ message CastLogsProto {
   repeated CastConnectionInfo cast_connection_info = 2;
 
   // Stores Cast-enabled device specific events with a various context data.
-  // Next tag: 13
+  // Next tag: 16
   message CastEventProto {
     // The name of the action, hashed by same logic used to hash user action
     // event and histogram.
@@ -172,6 +181,9 @@ message CastLogsProto {
     // Request ID of V2 Application Protocol, identifies a pair of request
     // and response.
     optional fixed32 request_id = 12;
+
+    // Optional values associated with the event.
+    repeated float feature_vector = 15;
   }
   repeated CastEventProto cast_event = 3;
 

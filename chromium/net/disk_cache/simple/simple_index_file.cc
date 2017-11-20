@@ -12,7 +12,6 @@
 #include "base/files/memory_mapped_file.h"
 #include "base/hash.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/pickle.h"
 #include "base/single_thread_task_runner.h"
@@ -255,13 +254,11 @@ void SimpleIndexFile::IndexMetadata::Serialize(base::Pickle* pickle) const {
 }
 
 // static
-bool SimpleIndexFile::SerializeFinalData(base::Time cache_modified,
+void SimpleIndexFile::SerializeFinalData(base::Time cache_modified,
                                          base::Pickle* pickle) {
-  if (!pickle->WriteInt64(cache_modified.ToInternalValue()))
-    return false;
+  pickle->WriteInt64(cache_modified.ToInternalValue());
   SimpleIndexFile::PickleHeader* header_p = pickle->headerT<PickleHeader>();
   header_p->crc = CalculatePickleCRC(*pickle);
-  return true;
 }
 
 bool SimpleIndexFile::IndexMetadata::Deserialize(base::PickleIterator* it) {

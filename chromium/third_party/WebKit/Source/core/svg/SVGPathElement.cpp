@@ -20,7 +20,7 @@
 
 #include "core/svg/SVGPathElement.h"
 
-#include "core/dom/StyleChangeReason.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/layout/svg/LayoutSVGPath.h"
 #include "core/svg/SVGMPathElement.h"
 #include "core/svg/SVGPathQuery.h"
@@ -112,7 +112,7 @@ void SVGPathElement::CollectStyleForPresentationAttribute(
     // If this is a <use> instance, return the referenced path to maximize
     // geometry sharing.
     if (const SVGElement* element = CorrespondingElement())
-      path = toSVGPathElement(element)->GetPath();
+      path = ToSVGPathElement(element)->GetPath();
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
                                             path->CssValue());
     return;
@@ -126,8 +126,8 @@ void SVGPathElement::InvalidateMPathDependencies() {
   // dependencies manually.
   if (SVGElementSet* dependencies = SetOfIncomingReferences()) {
     for (SVGElement* element : *dependencies) {
-      if (isSVGMPathElement(*element))
-        toSVGMPathElement(element)->TargetPathChanged();
+      if (auto* mpath = ToSVGMPathElementOrNull(*element))
+        mpath->TargetPathChanged();
     }
   }
 }

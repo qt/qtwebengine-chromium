@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "core/dom/Document.h"
-#include "core/dom/FrameRequestCallback.h"
+#include "core/dom/FrameRequestCallbackCollection.h"
 #include "core/geometry/DOMRect.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/layout/api/LayoutViewItem.h"
@@ -258,7 +258,7 @@ TEST_F(DocumentLoadingRenderingTest,
   // this by doing offsetTop in a setTimeout, or by a parent frame executing
   // script that touched offsetTop in the child frame.
   auto* child_frame =
-      toHTMLIFrameElement(GetDocument().getElementById("frame"));
+      ToHTMLIFrameElement(GetDocument().getElementById("frame"));
   child_frame->contentDocument()
       ->UpdateStyleAndLayoutIgnorePendingStylesheets();
 
@@ -287,9 +287,10 @@ TEST_F(DocumentLoadingRenderingTest,
 
 namespace {
 
-class CheckRafCallback final : public FrameRequestCallback {
+class CheckRafCallback final
+    : public FrameRequestCallbackCollection::FrameCallback {
  public:
-  void handleEvent(double high_res_time_ms) override { was_called_ = true; }
+  void Invoke(double high_res_time_ms) override { was_called_ = true; }
   bool WasCalled() const { return was_called_; }
 
  private:
@@ -319,7 +320,7 @@ TEST_F(DocumentLoadingRenderingTest,
       "<body style='background: blue'>");
 
   auto* child_frame =
-      toHTMLIFrameElement(GetDocument().getElementById("frame"));
+      ToHTMLIFrameElement(GetDocument().getElementById("frame"));
 
   // Frame while the child frame still has pending sheets.
   auto* frame1_callback = new CheckRafCallback();

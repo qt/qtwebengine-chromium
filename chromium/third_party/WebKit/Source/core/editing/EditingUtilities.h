@@ -28,11 +28,8 @@
 
 #include "core/CoreExport.h"
 #include "core/editing/EditingBoundary.h"
-#include "core/editing/EphemeralRange.h"
-#include "core/editing/Position.h"
-#include "core/editing/PositionWithAffinity.h"
-#include "core/editing/VisiblePosition.h"
-#include "core/editing/VisibleSelection.h"
+#include "core/editing/Forward.h"
+#include "core/editing/TextGranularity.h"
 #include "core/events/InputEvent.h"
 #include "platform/text/TextDirection.h"
 #include "platform/wtf/Forward.h"
@@ -215,11 +212,24 @@ Position PositionAfterContainingSpecialElement(
     const Position&,
     HTMLElement** containing_special_element = nullptr);
 
-inline Position FirstPositionInOrBeforeNode(Node* node) {
+// TODO(editing-dev): Renaming these two functions below is a first step
+// of moving all call sites from |Node*| to use |const Node&| as a parameter.
+// See crbug.com/766448
+// Instead of deprecated functions please use const-ref implementation below.
+inline Position FirstPositionInOrBeforeNodeDeprecated(Node* node) {
+  return Position::FirstPositionInOrBeforeNodeDeprecated(node);
+}
+
+inline Position LastPositionInOrAfterNodeDeprecated(Node* node) {
+  return Position::LastPositionInOrAfterNodeDeprecated(node);
+}
+
+// This is a |const Node&| versions of two deprecated functions above.
+inline Position FirstPositionInOrBeforeNode(const Node& node) {
   return Position::FirstPositionInOrBeforeNode(node);
 }
 
-inline Position LastPositionInOrAfterNode(Node* node) {
+inline Position LastPositionInOrAfterNode(const Node& node) {
   return Position::LastPositionInOrAfterNode(node);
 }
 
@@ -243,8 +253,8 @@ CORE_EXPORT PositionInFlatTree PreviousPositionOf(const PositionInFlatTree&,
 CORE_EXPORT PositionInFlatTree NextPositionOf(const PositionInFlatTree&,
                                               PositionMoveType);
 
-CORE_EXPORT int PreviousGraphemeBoundaryOf(const Node*, int current);
-CORE_EXPORT int NextGraphemeBoundaryOf(const Node*, int current);
+CORE_EXPORT int PreviousGraphemeBoundaryOf(const Node&, int current);
+CORE_EXPORT int NextGraphemeBoundaryOf(const Node&, int current);
 
 // comparision functions on Position
 
@@ -294,9 +304,11 @@ Position LeadingWhitespacePosition(
     const Position&,
     TextAffinity,
     WhitespacePositionOption = kNotConsiderNonCollapsibleWhitespace);
+
+// TDOO(editing-dev): We should move |TrailingWhitespacePosition()| to
+// "DeleteSelection.cpp" since it is used only in "DeleteSelection.cpp".
 Position TrailingWhitespacePosition(
     const Position&,
-    TextAffinity,
     WhitespacePositionOption = kNotConsiderNonCollapsibleWhitespace);
 unsigned NumEnclosingMailBlockquotes(const Position&);
 PositionWithAffinity PositionRespectingEditingBoundary(
@@ -370,9 +382,9 @@ HTMLSpanElement* CreateTabSpanElement(Document&, const String& tab_text);
 
 // Boolean functions on Element
 
-bool CanMergeLists(Element* first_list, Element* second_list);
+bool CanMergeLists(const Element& first_list, const Element& second_list);
 
-bool ElementCannotHaveEndTag(const Node&);
+CORE_EXPORT bool ElementCannotHaveEndTag(const Node&);
 
 // -------------------------------------------------------------------------
 // VisibleSelection

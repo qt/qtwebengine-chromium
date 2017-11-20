@@ -8,23 +8,23 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_CONGESTION_CONTROLLER_INCLUDE_SEND_SIDE_CONGESTION_CONTROLLER_H_
-#define WEBRTC_MODULES_CONGESTION_CONTROLLER_INCLUDE_SEND_SIDE_CONGESTION_CONTROLLER_H_
+#ifndef MODULES_CONGESTION_CONTROLLER_INCLUDE_SEND_SIDE_CONGESTION_CONTROLLER_H_
+#define MODULES_CONGESTION_CONTROLLER_INCLUDE_SEND_SIDE_CONGESTION_CONTROLLER_H_
 
 #include <memory>
 #include <vector>
 
-#include "webrtc/common_types.h"
-#include "webrtc/modules/congestion_controller/delay_based_bwe.h"
-#include "webrtc/modules/congestion_controller/transport_feedback_adapter.h"
-#include "webrtc/modules/include/module.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/pacing/paced_sender.h"
-#include "webrtc/modules/pacing/packet_router.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/criticalsection.h"
-#include "webrtc/rtc_base/networkroute.h"
-#include "webrtc/rtc_base/race_checker.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/congestion_controller/delay_based_bwe.h"
+#include "modules/congestion_controller/transport_feedback_adapter.h"
+#include "modules/include/module.h"
+#include "modules/include/module_common_types.h"
+#include "modules/pacing/paced_sender.h"
+#include "modules/pacing/packet_router.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/networkroute.h"
+#include "rtc_base/race_checker.h"
 
 namespace rtc {
 struct SentPacket;
@@ -126,7 +126,7 @@ class SendSideCongestionController : public CallStatsObserver,
   void LimitOutstandingBytes(size_t num_outstanding_bytes);
   const Clock* const clock_;
   rtc::CriticalSection observer_lock_;
-  Observer* observer_ GUARDED_BY(observer_lock_);
+  Observer* observer_ RTC_GUARDED_BY(observer_lock_);
   RtcEventLog* const event_log_;
   std::unique_ptr<PacedSender> owned_pacer_;
   PacedSender* pacer_;
@@ -136,27 +136,30 @@ class SendSideCongestionController : public CallStatsObserver,
   const std::unique_ptr<RateLimiter> retransmission_rate_limiter_;
   TransportFeedbackAdapter transport_feedback_adapter_;
   rtc::CriticalSection network_state_lock_;
-  uint32_t last_reported_bitrate_bps_ GUARDED_BY(network_state_lock_);
-  uint8_t last_reported_fraction_loss_ GUARDED_BY(network_state_lock_);
-  int64_t last_reported_rtt_ GUARDED_BY(network_state_lock_);
-  NetworkState network_state_ GUARDED_BY(network_state_lock_);
-  bool pause_pacer_ GUARDED_BY(network_state_lock_);
+  uint32_t last_reported_bitrate_bps_ RTC_GUARDED_BY(network_state_lock_);
+  uint8_t last_reported_fraction_loss_ RTC_GUARDED_BY(network_state_lock_);
+  int64_t last_reported_rtt_ RTC_GUARDED_BY(network_state_lock_);
+  NetworkState network_state_ RTC_GUARDED_BY(network_state_lock_);
+  bool pause_pacer_ RTC_GUARDED_BY(network_state_lock_);
   // Duplicate the pacer paused state to avoid grabbing a lock when
   // pausing the pacer. This can be removed when we move this class
   // over to the task queue.
   bool pacer_paused_;
   rtc::CriticalSection bwe_lock_;
-  int min_bitrate_bps_ GUARDED_BY(bwe_lock_);
-  std::unique_ptr<DelayBasedBwe> delay_based_bwe_ GUARDED_BY(bwe_lock_);
+  int min_bitrate_bps_ RTC_GUARDED_BY(bwe_lock_);
+  std::unique_ptr<DelayBasedBwe> delay_based_bwe_ RTC_GUARDED_BY(bwe_lock_);
   bool in_cwnd_experiment_;
   int64_t accepted_queue_ms_;
   bool was_in_alr_;
 
   rtc::RaceChecker worker_race_;
 
+  bool pacer_pushback_experiment_ = false;
+  float encoding_rate_ = 1.0;
+
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(SendSideCongestionController);
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_CONGESTION_CONTROLLER_INCLUDE_SEND_SIDE_CONGESTION_CONTROLLER_H_
+#endif  // MODULES_CONGESTION_CONTROLLER_INCLUDE_SEND_SIDE_CONGESTION_CONTROLLER_H_

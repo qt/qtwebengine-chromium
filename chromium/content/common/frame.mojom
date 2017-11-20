@@ -92,6 +92,13 @@ struct CreateNewWindowReply {
   int64 cloned_session_storage_namespace_id;
 };
 
+// An opaque handle that keeps alive the associated render process even after
+// the frame is detached. Used by resource requests with "keepalive" specified.
+interface KeepAliveHandle {};
+
+[Native]
+struct DidCommitProvisionalLoadParams;
+
 // Implemented by the frame server (i.e. the browser process). For messages that
 // must be associated with the IPC channel.
 interface FrameHost {
@@ -100,4 +107,11 @@ interface FrameHost {
   // be created.
   [Sync] CreateNewWindow(CreateNewWindowParams params)
       => (CreateNewWindowReply reply);
+
+  // Creates and returns a KeepAliveHandle.
+  IssueKeepAliveHandle(KeepAliveHandle& keep_alive_handle);
+
+  // Sent by the renderer when a navigation commits in the frame.
+  DidCommitProvisionalLoad(
+      DidCommitProvisionalLoadParams params);
 };

@@ -50,6 +50,10 @@ class ElementsAccessor {
     return HasElement(holder, index, holder->elements(), filter);
   }
 
+  // Note: this is currently not implemented for string wrapper and
+  // typed array elements.
+  virtual bool HasEntry(JSObject* holder, uint32_t entry) = 0;
+
   virtual Handle<Object> Get(Handle<JSObject> holder, uint32_t entry) = 0;
 
   virtual PropertyDetails GetDetails(JSObject* holder, uint32_t entry) = 0;
@@ -190,8 +194,9 @@ class ElementsAccessor {
   virtual Object* CopyElements(Handle<JSReceiver> source,
                                Handle<JSObject> destination, size_t length) = 0;
 
-  virtual Handle<FixedArray> CreateListFromArray(Isolate* isolate,
-                                                 Handle<JSArray> array) = 0;
+  virtual Handle<FixedArray> CreateListFromArrayLike(Isolate* isolate,
+                                                     Handle<JSObject> object,
+                                                     uint32_t length) = 0;
 
  protected:
   friend class LookupIterator;

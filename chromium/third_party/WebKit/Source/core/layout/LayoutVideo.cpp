@@ -25,9 +25,9 @@
 
 #include "core/layout/LayoutVideo.h"
 
-#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLVideoElement.h"
+#include "core/html_names.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutFullScreen.h"
 #include "core/paint/VideoPainter.h"
@@ -138,7 +138,7 @@ void LayoutVideo::UpdateLayout() {
 }
 
 HTMLVideoElement* LayoutVideo::VideoElement() const {
-  return toHTMLVideoElement(GetNode());
+  return ToHTMLVideoElement(GetNode());
 }
 
 void LayoutVideo::UpdateFromElement() {

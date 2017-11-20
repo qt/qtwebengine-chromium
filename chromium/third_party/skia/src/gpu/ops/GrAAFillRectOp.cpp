@@ -201,6 +201,10 @@ public:
 
     const char* name() const override { return "AAFillRectOp"; }
 
+    void visitProxies(const VisitProxyFunc& func) const override {
+        fHelper.visitProxies(func);
+    }
+
     SkString dumpInfo() const override {
         SkString str;
         str.append(INHERITED::dumpInfo());
@@ -219,10 +223,11 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
+                                GrPixelConfigIsClamped dstIsClamped) override {
         GrColor color = this->first()->color();
         auto result = fHelper.xpRequiresDstTexture(
-                caps, clip, GrProcessorAnalysisCoverage::kSingleChannel, &color);
+                caps, clip, dstIsClamped, GrProcessorAnalysisCoverage::kSingleChannel, &color);
         this->first()->setColor(color);
         return result;
     }

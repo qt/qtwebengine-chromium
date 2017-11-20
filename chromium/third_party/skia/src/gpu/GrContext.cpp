@@ -205,6 +205,7 @@ bool GrContext::init(const GrContextOptions& options) {
     fDrawingManager.reset(new GrDrawingManager(this, prcOptions, &fSingleOwner));
 
     fAtlasGlyphCache = new GrAtlasGlyphCache(this, options.fGlyphCacheTextureMaximumBytes);
+    this->contextPriv().addOnFlushCallbackObject(fAtlasGlyphCache);
 
     fTextBlobCache.reset(new GrTextBlobCache(TextBlobCacheOverBudgetCB, this));
 
@@ -613,6 +614,7 @@ bool GrContextPriv::readSurfacePixels(GrSurfaceContext* src,
                                                            tempDrawInfo.fTempSurfaceDesc.fConfig,
                                                            nullptr,
                                                            tempDrawInfo.fTempSurfaceDesc.fSampleCnt,
+                                                           false,
                                                            tempDrawInfo.fTempSurfaceDesc.fOrigin);
         if (tempRTC) {
             SkMatrix textureMatrix = SkMatrix::MakeTrans(SkIntToScalar(left), SkIntToScalar(top));
@@ -646,12 +648,6 @@ bool GrContextPriv::readSurfacePixels(GrSurfaceContext* src,
         return false;
     }
 
-    if (!proxyToRead->instantiate(fContext->resourceProvider())) {
-        return false;
-    }
-
-    GrSurface* surfaceToRead = proxyToRead->priv().peekSurface();
-
     if (GrGpu::kRequireDraw_DrawPreference == drawPreference && !didTempDraw) {
         return false;
     }
@@ -660,6 +656,13 @@ bool GrContextPriv::readSurfacePixels(GrSurfaceContext* src,
         this->flushSurfaceWrites(proxyToRead.get());
         configToRead = tempDrawInfo.fReadConfig;
     }
+
+    if (!proxyToRead->instantiate(fContext->resourceProvider())) {
+        return false;
+    }
+
+    GrSurface* surfaceToRead = proxyToRead->priv().peekSurface();
+
     if (!fContext->fGpu->readPixels(surfaceToRead, proxyToRead->origin(),
                                     left, top, width, height, configToRead, buffer, rowBytes)) {
         return false;
@@ -871,6 +874,7 @@ sk_sp<GrRenderTargetContext> GrContext::makeDeferredRenderTargetContextWithFallb
                                                                  GrPixelConfig config,
                                                                  sk_sp<SkColorSpace> colorSpace,
                                                                  int sampleCnt,
+                                                                 bool willNeedMipMaps,
                                                                  GrSurfaceOrigin origin,
                                                                  const SkSurfaceProps* surfaceProps,
                                                                  SkBudgeted budgeted) {
@@ -879,7 +883,8 @@ sk_sp<GrRenderTargetContext> GrContext::makeDeferredRenderTargetContextWithFallb
     }
 
     return this->makeDeferredRenderTargetContext(fit, width, height, config, std::move(colorSpace),
-                                                 sampleCnt, origin, surfaceProps, budgeted);
+                                                 sampleCnt, willNeedMipMaps, origin, surfaceProps,
+                                                 budgeted);
 }
 
 sk_sp<GrRenderTargetContext> GrContext::makeDeferredRenderTargetContext(
@@ -888,6 +893,7 @@ sk_sp<GrRenderTargetContext> GrContext::makeDeferredRenderTargetContext(
                                                         GrPixelConfig config,
                                                         sk_sp<SkColorSpace> colorSpace,
                                                         int sampleCnt,
+                                                        bool willNeedMipMaps,
                                                         GrSurfaceOrigin origin,
                                                         const SkSurfaceProps* surfaceProps,
                                                         SkBudgeted budgeted) {
@@ -903,8 +909,12 @@ sk_sp<GrRenderTargetContext> GrContext::makeDeferredRenderTargetContext(
     desc.fConfig = config;
     desc.fSampleCnt = sampleCnt;
 
-    sk_sp<GrTextureProxy> rtp = GrSurfaceProxy::MakeDeferred(this->resourceProvider(),
-                                                             desc, fit, budgeted);
+    sk_sp<GrTextureProxy> rtp;
+    if (!willNeedMipMaps) {
+        rtp = GrSurfaceProxy::MakeDeferred(this->resourceProvider(), desc, fit, budgeted);
+    } else {
+        rtp = GrSurfaceProxy::MakeDeferredMipMap(this->resourceProvider(), desc, budgeted);
+    }
     if (!rtp) {
         return nullptr;
     }

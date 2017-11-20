@@ -56,6 +56,8 @@ DSP_SRCS-$(HAVE_VSX) += ppc/intrapred_vsx.c
 ifeq ($(CONFIG_VP9_HIGHBITDEPTH),yes)
 DSP_SRCS-$(HAVE_SSE)  += x86/highbd_intrapred_sse2.asm
 DSP_SRCS-$(HAVE_SSE2) += x86/highbd_intrapred_sse2.asm
+DSP_SRCS-$(HAVE_SSE2) += x86/highbd_intrapred_intrin_sse2.c
+DSP_SRCS-$(HAVE_SSSE3) += x86/highbd_intrapred_intrin_ssse3.c
 DSP_SRCS-$(HAVE_NEON) += arm/highbd_intrapred_neon.c
 endif  # CONFIG_VP9_HIGHBITDEPTH
 
@@ -104,6 +106,7 @@ DSP_SRCS-$(HAVE_NEON)  += arm/highbd_vpx_convolve_neon.c
 endif
 
 DSP_SRCS-$(HAVE_SSE2)  += x86/vpx_convolve_copy_sse2.asm
+DSP_SRCS-$(HAVE_NEON)  += arm/vpx_scaled_convolve8_neon.c
 
 ifeq ($(HAVE_NEON_ASM),yes)
 DSP_SRCS-yes += arm/vpx_convolve_copy_neon_asm$(ASM)
@@ -282,10 +285,6 @@ DSP_SRCS-$(HAVE_NEON)   += arm/quantize_neon.c
 ifeq ($(CONFIG_VP9_HIGHBITDEPTH),yes)
 DSP_SRCS-$(HAVE_SSE2)   += x86/highbd_quantize_intrin_sse2.c
 endif
-ifeq ($(ARCH_X86_64),yes)
-DSP_SRCS-$(HAVE_SSSE3)  += x86/quantize_ssse3_x86_64.asm
-DSP_SRCS-$(HAVE_AVX)    += x86/quantize_avx_x86_64.asm
-endif
 
 # avg
 DSP_SRCS-yes           += avg.c
@@ -318,6 +317,7 @@ DSP_SRCS-$(HAVE_NEON)   += arm/subtract_neon.c
 DSP_SRCS-$(HAVE_MSA)    += mips/sad_msa.c
 DSP_SRCS-$(HAVE_MSA)    += mips/subtract_msa.c
 
+DSP_SRCS-$(HAVE_MMI)    += mips/sad_mmi.c
 DSP_SRCS-$(HAVE_MMI)    += mips/subtract_mmi.c
 
 DSP_SRCS-$(HAVE_SSE3)   += x86/sad_sse3.asm
@@ -352,6 +352,8 @@ DSP_SRCS-$(HAVE_NEON)   += arm/variance_neon.c
 DSP_SRCS-$(HAVE_MSA)    += mips/variance_msa.c
 DSP_SRCS-$(HAVE_MSA)    += mips/sub_pixel_variance_msa.c
 
+DSP_SRCS-$(HAVE_MMI)    += mips/variance_mmi.c
+
 DSP_SRCS-$(HAVE_SSE)    += x86/variance_sse2.c
 DSP_SRCS-$(HAVE_SSE2)   += x86/avg_pred_sse2.c
 DSP_SRCS-$(HAVE_SSE2)   += x86/variance_sse2.c  # Contains SSE2 and SSSE3
@@ -376,6 +378,7 @@ endif  # CONFIG_ENCODERS || CONFIG_POSTPROC || CONFIG_VP9_POSTPROC
 DSP_SRCS-$(HAVE_NEON) += arm/mem_neon.h
 DSP_SRCS-$(HAVE_NEON) += arm/sum_neon.h
 DSP_SRCS-$(HAVE_NEON) += arm/transpose_neon.h
+DSP_SRCS-$(HAVE_NEON) += arm/vpx_convolve8_neon.h
 
 # PPC VSX utilities
 DSP_SRCS-$(HAVE_VSX)  += ppc/types_vsx.h

@@ -81,7 +81,7 @@ TEST(fpdf_parser_decode, EncodeText) {
   struct EncodeTestData {
     const wchar_t* input;
     const char* expected_output;
-    FX_STRSIZE expected_length;
+    size_t expected_length;
   } test_data[] = {
       // Empty src string.
       {L"", "", 0},
@@ -99,11 +99,11 @@ TEST(fpdf_parser_decode, EncodeText) {
 
   for (size_t i = 0; i < FX_ArraySize(test_data); ++i) {
     const auto& test_case = test_data[i];
-    CFX_ByteString output = PDF_EncodeText(test_case.input);
+    ByteString output = PDF_EncodeText(test_case.input);
     ASSERT_EQ(test_case.expected_length, output.GetLength()) << "for case "
                                                              << i;
     const char* str_ptr = output.c_str();
-    for (FX_STRSIZE j = 0; j < test_case.expected_length; ++j) {
+    for (size_t j = 0; j < test_case.expected_length; ++j) {
       EXPECT_EQ(test_case.expected_output[j], str_ptr[j]) << "for case " << i
                                                           << " char " << j;
     }

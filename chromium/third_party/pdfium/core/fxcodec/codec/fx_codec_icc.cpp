@@ -6,15 +6,9 @@
 
 #include <memory>
 
+#include "core/fxcodec/codec/ccodec_iccmodule.h"
 #include "core/fxcodec/codec/codec_int.h"
-#include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/cfx_fixedbufgrow.h"
-
-#if defined(USE_SYSTEM_LCMS2)
-#include <lcms2.h>
-#else
-#include "third_party/lcms/include/lcms2.h"
-#endif
 
 namespace {
 
@@ -84,9 +78,6 @@ std::unique_ptr<CLcmsCmm> CCodec_IccModule::CreateTransform_sRGB(
   } else {
     srcFormat =
         COLORSPACE_SH(PT_ANY) | CHANNELS_SH(*nSrcComponents) | BYTES_SH(1);
-    if (srcCS == cmsSigRgbData && T_DOSWAP(Icc_FORMAT_DEFAULT)) {
-      srcFormat |= DOSWAP_SH(1);
-    }
   }
   cmsColorSpaceSignature dstCS = cmsGetColorSpace(dstProfile);
   if (!Check3Components(dstCS, true)) {
@@ -107,9 +98,8 @@ std::unique_ptr<CLcmsCmm> CCodec_IccModule::CreateTransform_sRGB(
                                       TYPE_BGR_8, intent, 0);
       break;
     case cmsSigCmykData:
-      hTransform = cmsCreateTransform(
-          srcProfile, srcFormat, dstProfile,
-          T_DOSWAP(Icc_FORMAT_DEFAULT) ? TYPE_KYMC_8 : TYPE_CMYK_8, intent, 0);
+      hTransform = cmsCreateTransform(srcProfile, srcFormat, dstProfile,
+                                      TYPE_CMYK_8, intent, 0);
       break;
     default:
       break;

@@ -29,12 +29,13 @@ struct FWL_NEEDREPAINTHITDATA {
 }  // namespace
 
 CFWL_WidgetMgr::CFWL_WidgetMgr(CXFA_FFApp* pAdapterNative)
-    : m_dwCapability(0), m_pAdapter(pAdapterNative->GetWidgetMgr(this)) {
+    : m_dwCapability(FWL_WGTMGR_DisableForm),
+      m_pAdapter(pAdapterNative->GetFWLAdapterWidgetMgr()) {
   ASSERT(m_pAdapter);
   m_mapWidgetItem[nullptr] = pdfium::MakeUnique<Item>();
-#if (_FX_OS_ == _FX_WIN32_DESKTOP_) || (_FX_OS_ == _FX_WIN64_)
+#if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   m_rtScreen.Reset();
-#endif
+#endif  // _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
 }
 
 CFWL_WidgetMgr::~CFWL_WidgetMgr() {}
@@ -385,10 +386,6 @@ void CFWL_WidgetMgr::GetAdapterPopupPos(CFWL_Widget* pWidget,
   m_pAdapter->GetPopupPos(pWidget, fMinHeight, fMaxHeight, rtAnchor, rtPopup);
 }
 
-void CFWL_WidgetMgr::OnSetCapability(uint32_t dwCapability) {
-  m_dwCapability = dwCapability;
-}
-
 void CFWL_WidgetMgr::OnProcessMessageToForm(CFWL_Message* pMessage) {
   if (!pMessage)
     return;
@@ -410,7 +407,7 @@ void CFWL_WidgetMgr::OnProcessMessageToForm(CFWL_Message* pMessage) {
   else
     pNoteDriver->QueueMessage(pMessage->Clone());
 
-#if (_FX_OS_ == _FX_MACOSX_)
+#if (_FX_OS_ == _FX_OS_MACOSX_)
   CFWL_NoteLoop* pTopLoop = pNoteDriver->GetTopLoop();
   if (pTopLoop)
     pNoteDriver->UnqueueMessageAndProcess(pTopLoop);
@@ -426,15 +423,15 @@ void CFWL_WidgetMgr::OnDrawWidget(CFWL_Widget* pWidget,
   CFX_RectF clipCopy(0, 0, pWidget->GetWidgetRect().Size());
   CFX_RectF clipBounds;
 
-#if _FX_OS_ == _FX_MACOSX_
+#if _FX_OS_ == _FX_OS_MACOSX_
   if (IsFormDisabled()) {
-#endif  // _FX_OS_ == _FX_MACOSX_
+#endif  // _FX_OS_ == _FX_OS_MACOSX_
 
     pWidget->GetDelegate()->OnDrawWidget(pGraphics, matrix);
     clipBounds = pGraphics->GetClipRect();
     clipCopy = clipBounds;
 
-#if _FX_OS_ == _FX_MACOSX_
+#if _FX_OS_ == _FX_OS_MACOSX_
   } else {
     clipBounds = CFX_RectF(matrix.a, matrix.b, matrix.c, matrix.d);
     // FIXME: const cast
@@ -442,7 +439,7 @@ void CFWL_WidgetMgr::OnDrawWidget(CFWL_Widget* pWidget,
     pMatrixHack->SetIdentity();
     pWidget->GetDelegate()->OnDrawWidget(pGraphics, *pMatrixHack);
   }
-#endif  // _FX_OS_ == _FX_MACOSX_
+#endif  // _FX_OS_ == _FX_OS_MACOSX_
 
   if (!IsFormDisabled())
     clipBounds.Intersect(pWidget->GetClientRect());
@@ -609,10 +606,10 @@ CFWL_WidgetMgr::Item::Item(CFWL_Widget* widget)
       pNext(nullptr),
       pWidget(widget),
       iRedrawCounter(0)
-#if (_FX_OS_ == _FX_WIN32_DESKTOP_) || (_FX_OS_ == _FX_WIN64_)
+#if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
       ,
       bOutsideChanged(false)
-#endif
+#endif  // _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
 {
 }
 

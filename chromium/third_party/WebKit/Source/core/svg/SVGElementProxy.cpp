@@ -4,13 +4,14 @@
 
 #include "core/svg/SVGElementProxy.h"
 
+#include "core/dom/Document.h"
 #include "core/dom/IdTargetObserver.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGResourceClient.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 
 namespace blink {
 

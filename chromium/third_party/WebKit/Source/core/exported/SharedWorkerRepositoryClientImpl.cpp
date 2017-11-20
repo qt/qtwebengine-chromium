@@ -42,16 +42,23 @@
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/WebContentSecurityPolicy.h"
-#include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/web/WebKit.h"
 #include "public/web/WebSharedWorker.h"
 #include "public/web/WebSharedWorkerConnectListener.h"
-#include "public/web/WebSharedWorkerCreationErrors.h"
 #include "public/web/WebSharedWorkerRepositoryClient.h"
 
 namespace blink {
+namespace {
+
+mojom::SharedWorkerCreationContextType ToCreationContextType(
+    bool is_secure_context) {
+  return is_secure_context ? mojom::SharedWorkerCreationContextType::kSecure
+                           : mojom::SharedWorkerCreationContextType::kNonsecure;
+}
+
+}  // namespace
 
 // Implementation of the callback interface passed to the embedder. This will be
 // destructed when a connection to a shared worker is established.
@@ -62,12 +69,15 @@ class SharedWorkerConnectListener final
       : worker_(worker) {}
 
   ~SharedWorkerConnectListener() override {
-    DCHECK(!worker_->IsBeingConnected());
+    // We have lost our connection to the worker. If this happens before
+    // Connected() is called, then it suggests that the document is gone or
+    // going away.
   }
 
   // WebSharedWorkerConnectListener overrides.
 
-  void WorkerCreated(WebWorkerCreationError creation_error) override {
+  void WorkerCreated(
+      mojom::SharedWorkerCreationContextType creation_context_type) override {
     worker_->SetIsBeingConnected(true);
 
     // No nested workers (for now) - connect() should only be called from
@@ -75,16 +85,12 @@ class SharedWorkerConnectListener final
     DCHECK(worker_->GetExecutionContext()->IsDocument());
     Document* document = ToDocument(worker_->GetExecutionContext());
     bool is_secure_context = worker_->GetExecutionContext()->IsSecureContext();
-    switch (creation_error) {
-      case kWebWorkerCreationErrorNone:
-        return;
-      case kWebWorkerCreationErrorSecureContextMismatch:
-        WebFeature feature =
-            is_secure_context
-                ? WebFeature::kNonSecureSharedWorkerAccessedFromSecureContext
-                : WebFeature::kSecureSharedWorkerAccessedFromNonSecureContext;
-        UseCounter::Count(document, feature);
-        return;
+    if (creation_context_type != ToCreationContextType(is_secure_context)) {
+      WebFeature feature =
+          is_secure_context
+              ? WebFeature::kNonSecureSharedWorkerAccessedFromSecureContext
+              : WebFeature::kSecureSharedWorkerAccessedFromNonSecureContext;
+      UseCounter::Count(document, feature);
     }
   }
 
@@ -95,9 +101,8 @@ class SharedWorkerConnectListener final
 
   void Connected() override { worker_->SetIsBeingConnected(false); }
 
-  void CountFeature(uint32_t feature) override {
-    UseCounter::Count(worker_->GetExecutionContext(),
-                      static_cast<WebFeature>(feature));
+  void CountFeature(WebFeature feature) override {
+    UseCounter::Count(worker_->GetExecutionContext(), feature);
   }
 
   Persistent<SharedWorker> worker_;
@@ -109,11 +114,10 @@ static WebSharedWorkerRepositoryClient::DocumentID GetId(void* document) {
       document);
 }
 
-void SharedWorkerRepositoryClientImpl::Connect(
-    SharedWorker* worker,
-    std::unique_ptr<WebMessagePortChannel> port,
-    const KURL& url,
-    const String& name) {
+void SharedWorkerRepositoryClientImpl::Connect(SharedWorker* worker,
+                                               MessagePortChannel port,
+                                               const KURL& url,
+                                               const String& name) {
   DCHECK(client_);
 
   // No nested workers (for now) - connect() should only be called from document
@@ -143,8 +147,7 @@ void SharedWorkerRepositoryClientImpl::Connect(
   client_->Connect(
       url, name, GetId(document), header, header_type,
       worker->GetExecutionContext()->GetSecurityContext().AddressSpace(),
-      is_secure_context ? kWebSharedWorkerCreationContextTypeSecure
-                        : kWebSharedWorkerCreationContextTypeNonsecure,
+      ToCreationContextType(is_secure_context),
       document->GetFrame()->GetSettings()->GetDataSaverEnabled(),
       std::move(port), std::move(listener));
 }

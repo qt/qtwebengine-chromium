@@ -5,12 +5,11 @@
 #include "core/css/properties/CSSPropertyAPIFontSizeAdjust.h"
 
 #include "core/css/parser/CSSPropertyParserHelpers.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 
 namespace blink {
 
 const CSSValue* CSSPropertyAPIFontSizeAdjust::ParseSingleValue(
-    CSSPropertyID,
     CSSParserTokenRange& range,
     const CSSParserContext& context,
     const CSSParserLocalContext&) const {

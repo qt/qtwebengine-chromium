@@ -177,6 +177,35 @@ bool IsWebGLDrawBuffersSupported(bool webglCompatibilityContext,
 
 }  // anonymous namespace.
 
+namespace {
+
+enum GpuTextureResultR16_L16 {
+  // Values synced with 'GpuTextureResultR16_L16' in
+  // src/tools/metrics/histograms/histograms.xml
+  kHaveNone = 0,
+  kHaveR16 = 1,
+  kHaveL16 = 2,
+  kHaveR16AndL16 = 3,
+  kMax = kHaveR16AndL16
+};
+
+// TODO(riju): For UMA, remove after crbug.com/759456 is resolved.
+bool g_r16_is_present;
+bool g_l16_is_present;
+
+GpuTextureResultR16_L16 GpuTextureUMAHelper() {
+  if (g_r16_is_present && g_l16_is_present) {
+    return GpuTextureResultR16_L16::kHaveR16AndL16;
+  } else if (g_r16_is_present) {
+    return GpuTextureResultR16_L16::kHaveR16;
+  } else if (g_l16_is_present) {
+    return GpuTextureResultR16_L16::kHaveL16;
+  }
+  return GpuTextureResultR16_L16::kHaveNone;
+}
+
+}  // anonymous namespace.
+
 FeatureInfo::FeatureFlags::FeatureFlags() {}
 
 FeatureInfo::FeatureInfo() {
@@ -1296,8 +1325,11 @@ void FeatureInfo::InitializeFeatures() {
   UMA_HISTOGRAM_BOOLEAN("GPU.TextureRG", feature_flags_.ext_texture_rg);
 
   if (gl_version_info_->is_desktop_core_profile ||
+      (gl_version_info_->IsAtLeastGL(2, 1) &&
+       gl::HasExtension(extensions, "GL_ARB_texture_rg")) ||
       gl::HasExtension(extensions, "GL_EXT_texture_norm16")) {
     feature_flags_.ext_texture_norm16 = true;
+    g_r16_is_present = true;
     AddExtensionString("GL_EXT_texture_norm16");
 
     // Note: EXT_texture_norm16 is not exposed through WebGL API so we validate
@@ -1307,6 +1339,10 @@ void FeatureInfo::InitializeFeatures() {
     validators_.texture_internal_format.AddValue(GL_RED_EXT);
     validators_.texture_unsized_internal_format.AddValue(GL_RED_EXT);
   }
+
+  UMA_HISTOGRAM_ENUMERATION(
+      "GPU.TextureR16Ext_LuminanceF16", GpuTextureUMAHelper(),
+      static_cast<int>(GpuTextureResultR16_L16::kMax) + 1);
 
   bool has_opengl_dual_source_blending =
       gl_version_info_->IsAtLeastGL(3, 3) ||
@@ -1385,6 +1421,11 @@ void FeatureInfo::InitializeFeatures() {
       gl::HasExtension(extensions, "GL_CHROMIUM_texture_filtering_hint");
   feature_flags_.ext_pixel_buffer_object =
       gl::HasExtension(extensions, "GL_NV_pixel_buffer_object");
+  feature_flags_.oes_rgb8_rgba8 =
+      gl::HasExtension(extensions, "GL_OES_rgb8_rgba8");
+  feature_flags_.angle_robust_resource_initialization =
+      gl::HasExtension(extensions, "GL_ANGLE_robust_resource_initialization");
+  feature_flags_.nv_fence = gl::HasExtension(extensions, "GL_NV_fence");
 }
 
 void FeatureInfo::InitializeFloatAndHalfFloatFeatures(
@@ -1406,8 +1447,14 @@ void FeatureInfo::InitializeFloatAndHalfFloatFeatures(
   // rendered to via framebuffer objects.
   if (gl::HasExtension(extensions, "GL_EXT_color_buffer_float"))
     enable_ext_color_buffer_float = true;
-  if (gl::HasExtension(extensions, "GL_EXT_color_buffer_half_float"))
+  if (gl::HasExtension(extensions, "GL_EXT_color_buffer_half_float")) {
+    // TODO(zmo): even if the underlying driver reports the extension, WebGL
+    // version of the extension requires RGBA16F to be color-renderable,
+    // whereas the OpenGL ES extension only requires one of the format to be
+    // color-renderable. So we still need to do some verification before
+    // exposing the extension.
     enable_ext_color_buffer_half_float = true;
+  }
 
   if (gl::HasExtension(extensions, "GL_ARB_texture_float") ||
       gl_version_info_->is_desktop_core_profile) {
@@ -1541,28 +1588,20 @@ void FeatureInfo::InitializeFloatAndHalfFloatFeatures(
     // Likewise for EXT_color_buffer_half_float on ES2 contexts. On desktop,
     // require at least GL 3.0, to ensure that all formats are defined.
     if (IsWebGL1OrES2Context() && !enable_ext_color_buffer_half_float &&
-        (gl_version_info_->is_es || gl_version_info_->IsAtLeastGL(3, 0))) {
-      bool full_half_float_support = true;
-      GLenum internal_formats[] = {
-          GL_R16F, GL_RG16F, GL_RGBA16F,
-      };
-      GLenum formats[] = {
-          GL_RED, GL_RG, GL_RGBA,
-      };
-      GLenum data_type = GL_FLOAT;
-      if (gl_version_info_->is_es2)
-        data_type = GL_HALF_FLOAT_OES;
-      if (gl_version_info_->is_es3)
-        data_type = GL_HALF_FLOAT;
-      DCHECK_EQ(arraysize(internal_formats), arraysize(formats));
-      for (size_t i = 0; i < arraysize(formats); ++i) {
-        glTexImage2D(GL_TEXTURE_2D, 0, internal_formats[i], width, width, 0,
-                     formats[i], data_type, NULL);
-        full_half_float_support &=
-            glCheckFramebufferStatusEXT(GL_FRAMEBUFFER) ==
-            GL_FRAMEBUFFER_COMPLETE;
-      }
-      enable_ext_color_buffer_half_float = full_half_float_support;
+        (gl_version_info_->IsAtLeastGLES(3, 0) ||
+         gl_version_info_->IsAtLeastGL(3, 0))) {
+      // EXT_color_buffer_half_float requires at least one of the formats is
+      // supported to be color-renderable. WebGL's extension requires RGBA16F
+      // to be the supported effective format. Here we only expose the extension
+      // if RGBA16F is color-renderable.
+      GLenum internal_format = GL_RGBA16F;
+      GLenum format = GL_RGBA;
+      GLenum data_type = GL_HALF_FLOAT;
+      glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, width, 0, format,
+                   data_type, nullptr);
+      enable_ext_color_buffer_half_float =
+          (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER) ==
+           GL_FRAMEBUFFER_COMPLETE);
     }
 
     glDeleteFramebuffersEXT(1, &fb_id);
@@ -1616,6 +1655,9 @@ void FeatureInfo::InitializeFloatAndHalfFloatFeatures(
           GL_LUMINANCE_ALPHA16F_EXT);
     }
   }
+
+  g_l16_is_present =
+      enable_texture_half_float && feature_flags_.ext_texture_storage;
 }
 
 bool FeatureInfo::IsES3Capable() const {

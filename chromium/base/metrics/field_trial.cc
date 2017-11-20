@@ -65,25 +65,19 @@ const char kAllocatorName[] = "FieldTrialAllocator";
 const size_t kFieldTrialAllocationSize = 128 << 10;  // 128 KiB
 
 // Writes out string1 and then string2 to pickle.
-bool WriteStringPair(Pickle* pickle,
+void WriteStringPair(Pickle* pickle,
                      const StringPiece& string1,
                      const StringPiece& string2) {
-  if (!pickle->WriteString(string1))
-    return false;
-  if (!pickle->WriteString(string2))
-    return false;
-  return true;
+  pickle->WriteString(string1);
+  pickle->WriteString(string2);
 }
 
 // Writes out the field trial's contents (via trial_state) to the pickle. The
 // format of the pickle looks like:
 // TrialName, GroupName, ParamKey1, ParamValue1, ParamKey2, ParamValue2, ...
 // If there are no parameters, then it just ends at GroupName.
-bool PickleFieldTrial(const FieldTrial::State& trial_state, Pickle* pickle) {
-  if (!WriteStringPair(pickle, *trial_state.trial_name,
-                       *trial_state.group_name)) {
-    return false;
-  }
+void PickleFieldTrial(const FieldTrial::State& trial_state, Pickle* pickle) {
+  WriteStringPair(pickle, *trial_state.trial_name, *trial_state.group_name);
 
   // Get field trial params.
   std::map<std::string, std::string> params;
@@ -91,11 +85,8 @@ bool PickleFieldTrial(const FieldTrial::State& trial_state, Pickle* pickle) {
       *trial_state.trial_name, *trial_state.group_name, &params);
 
   // Write params to pickle.
-  for (const auto& param : params) {
-    if (!WriteStringPair(pickle, param.first, param.second))
-      return false;
-  }
-  return true;
+  for (const auto& param : params)
+    WriteStringPair(pickle, param.first, param.second);
 }
 
 // Created a time value based on |year|, |month| and |day_of_month| parameters.
@@ -1140,8 +1131,9 @@ std::string FieldTrialList::SerializeSharedMemoryHandleMetadata(
 
 #if defined(OS_WIN) || defined(OS_FUCHSIA)
 
-template <class RawHandle>
-SharedMemoryHandle DeserializeImpl(const std::string& switch_value) {
+// static
+SharedMemoryHandle FieldTrialList::DeserializeSharedMemoryHandleMetadata(
+    const std::string& switch_value) {
   std::vector<base::StringPiece> tokens = base::SplitStringPiece(
       switch_value, ",", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
 
@@ -1151,8 +1143,10 @@ SharedMemoryHandle DeserializeImpl(const std::string& switch_value) {
   int field_trial_handle = 0;
   if (!base::StringToInt(tokens[0], &field_trial_handle))
     return SharedMemoryHandle();
-  RawHandle handle = reinterpret_cast<RawHandle>(field_trial_handle);
-#if defined(OS_WIN)
+#if defined(OS_FUCHSIA)
+  zx_handle_t handle = static_cast<zx_handle_t>(field_trial_handle);
+#elif defined(OS_WIN)
+  HANDLE handle = reinterpret_cast<HANDLE>(field_trial_handle);
   if (base::IsCurrentProcessElevated()) {
     // base::LaunchElevatedProcess doesn't have a way to duplicate the handle,
     // but this process can since by definition it's not sandboxed.
@@ -1162,7 +1156,7 @@ SharedMemoryHandle DeserializeImpl(const std::string& switch_value) {
                     FALSE, DUPLICATE_SAME_ACCESS);
     CloseHandle(parent_handle);
   }
-#endif
+#endif  // defined(OS_WIN)
 
   base::UnguessableToken guid;
   if (!DeserializeGUIDFromStringPieces(tokens[1], tokens[2], &guid))
@@ -1173,16 +1167,6 @@ SharedMemoryHandle DeserializeImpl(const std::string& switch_value) {
     return SharedMemoryHandle();
 
   return SharedMemoryHandle(handle, static_cast<size_t>(size), guid);
-}
-
-// static
-SharedMemoryHandle FieldTrialList::DeserializeSharedMemoryHandleMetadata(
-    const std::string& switch_value) {
-#if defined(OS_WIN)
-  return DeserializeImpl<HANDLE>(switch_value);
-#else
-  return DeserializeImpl<mx_handle_t>(switch_value);
-#endif
 }
 
 #elif defined(OS_POSIX) && !defined(OS_NACL)
@@ -1358,10 +1342,7 @@ void FieldTrialList::AddToAllocatorWhileLocked(
     return;
 
   Pickle pickle;
-  if (!PickleFieldTrial(trial_state, &pickle)) {
-    NOTREACHED();
-    return;
-  }
+  PickleFieldTrial(trial_state, &pickle);
 
   size_t total_size = sizeof(FieldTrial::FieldTrialEntry) + pickle.size();
   FieldTrial::FieldTrialRef ref = allocator->Allocate(

@@ -10,15 +10,15 @@
 
 #include <memory>
 
-#include "webrtc/rtc_base/asyncinvoker.h"
-#include "webrtc/rtc_base/asyncudpsocket.h"
-#include "webrtc/rtc_base/event.h"
-#include "webrtc/rtc_base/gunit.h"
-#include "webrtc/rtc_base/nullsocketserver.h"
-#include "webrtc/rtc_base/physicalsocketserver.h"
-#include "webrtc/rtc_base/sigslot.h"
-#include "webrtc/rtc_base/socketaddress.h"
-#include "webrtc/rtc_base/thread.h"
+#include "rtc_base/asyncinvoker.h"
+#include "rtc_base/asyncudpsocket.h"
+#include "rtc_base/event.h"
+#include "rtc_base/gunit.h"
+#include "rtc_base/nullsocketserver.h"
+#include "rtc_base/physicalsocketserver.h"
+#include "rtc_base/sigslot.h"
+#include "rtc_base/socketaddress.h"
+#include "rtc_base/thread.h"
 
 #if defined(WEBRTC_WIN)
 #include <comdef.h>  // NOLINT
@@ -336,7 +336,7 @@ TEST(ThreadTest, ThreeThreadsInvoke) {
 
    private:
     CriticalSection crit_;
-    bool value_ GUARDED_BY(crit_);
+    bool value_ RTC_GUARDED_BY(crit_);
   };
 
   struct LocalFuncs {

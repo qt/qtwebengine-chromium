@@ -203,6 +203,10 @@ ui::AXPlatformNode* NativeViewAccessibilityBase::GetFromNodeID(int32_t id) {
   return nullptr;
 }
 
+int NativeViewAccessibilityBase::GetIndexInParent() const {
+  return -1;
+}
+
 gfx::AcceleratedWidget
 NativeViewAccessibilityBase::GetTargetForNativeAccessibilityEvent() {
   return gfx::kNullAcceleratedWidget;
@@ -214,6 +218,11 @@ bool NativeViewAccessibilityBase::AccessibilityPerformAction(
 }
 
 bool NativeViewAccessibilityBase::ShouldIgnoreHoveredStateForTesting() {
+  return false;
+}
+
+bool NativeViewAccessibilityBase::IsOffscreen() const {
+  // TODO: need to implement.
   return false;
 }
 

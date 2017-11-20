@@ -29,11 +29,11 @@
 #include "cc/layers/layer_list_iterator.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/layers/scrollbar_layer_impl_base.h"
-#include "cc/output/layer_tree_frame_sink.h"
 #include "cc/resources/ui_resource_request.h"
 #include "cc/trees/clip_node.h"
 #include "cc/trees/draw_property_utils.h"
 #include "cc/trees/effect_node.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/mutator_host.h"
@@ -77,7 +77,6 @@ LayerTreeImpl::LayerTreeImpl(
       root_layer_for_testing_(nullptr),
       hud_layer_(nullptr),
       background_color_(0),
-      has_transparent_background_(false),
       last_scrolled_scroll_node_index_(ScrollTree::kInvalidNodeId),
       page_scale_factor_(page_scale_factor),
       min_page_scale_factor_(0),
@@ -453,7 +452,6 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   // LayerTreeHost::finishCommitOnImplThread().
   target_tree->set_source_frame_number(source_frame_number());
   target_tree->set_background_color(background_color());
-  target_tree->set_has_transparent_background(has_transparent_background());
   target_tree->set_have_scroll_event_handlers(have_scroll_event_handlers());
   target_tree->set_event_listener_properties(
       EventListenerClass::kTouchStartOrMove,
@@ -550,7 +548,7 @@ void LayerTreeImpl::AddToElementMap(LayerImpl* layer) {
   if (!element_id)
     return;
 
-  TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("compositor-worker"),
+  TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("layer-element"),
                "LayerTreeImpl::AddToElementMap", "element",
                element_id.AsValue().release(), "layer_id", layer->id());
 
@@ -572,7 +570,7 @@ void LayerTreeImpl::RemoveFromElementMap(LayerImpl* layer) {
   if (!layer->element_id())
     return;
 
-  TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("compositor-worker"),
+  TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("layer-element"),
                "LayerTreeImpl::RemoveFromElementMap", "element",
                layer->element_id().AsValue().release(), "layer_id",
                layer->id());
@@ -1121,6 +1119,11 @@ bool LayerTreeImpl::UpdateDrawProperties() {
                      "layers_updated_count", layers_updated_count);
   }
 
+  if (image_animation_controller()) {
+    image_animation_controller()->UpdateStateFromDrivers(
+        host_impl_->CurrentBeginFrameArgs().frame_time);
+  }
+
   DCHECK(!needs_update_draw_properties_)
       << "CalcDrawProperties should not set_needs_update_draw_properties()";
   return true;
@@ -1328,6 +1331,10 @@ TileManager* LayerTreeImpl::tile_manager() const {
 
 ImageDecodeCache* LayerTreeImpl::image_decode_cache() const {
   return host_impl_->image_decode_cache();
+}
+
+ImageAnimationController* LayerTreeImpl::image_animation_controller() const {
+  return host_impl_->image_animation_controller();
 }
 
 FrameRateCounter* LayerTreeImpl::frame_rate_counter() const {
@@ -1551,7 +1558,7 @@ void LayerTreeImpl::AppendSwapPromises(
   new_swap_promises.clear();
 }
 
-void LayerTreeImpl::FinishSwapPromises(CompositorFrameMetadata* metadata) {
+void LayerTreeImpl::FinishSwapPromises(viz::CompositorFrameMetadata* metadata) {
   for (const auto& swap_promise : swap_promise_list_)
     swap_promise->WillSwap(metadata);
   for (const auto& swap_promise : pinned_swap_promise_list_)
@@ -2046,13 +2053,13 @@ static gfx::SelectionBound ComputeViewportSelectionBound(
 }
 
 void LayerTreeImpl::GetViewportSelection(
-    Selection<gfx::SelectionBound>* selection) {
+    viz::Selection<gfx::SelectionBound>* selection) {
   DCHECK(selection);
 
   selection->start = ComputeViewportSelectionBound(
       selection_.start,
       selection_.start.layer_id ? LayerById(selection_.start.layer_id) : NULL,
-      device_scale_factor());
+      device_scale_factor() * painted_device_scale_factor());
   if (selection->start.type() == gfx::SelectionBound::CENTER ||
       selection->start.type() == gfx::SelectionBound::EMPTY) {
     selection->end = selection->start;
@@ -2060,7 +2067,7 @@ void LayerTreeImpl::GetViewportSelection(
     selection->end = ComputeViewportSelectionBound(
         selection_.end,
         selection_.end.layer_id ? LayerById(selection_.end.layer_id) : NULL,
-        device_scale_factor());
+        device_scale_factor() * painted_device_scale_factor());
   }
 }
 

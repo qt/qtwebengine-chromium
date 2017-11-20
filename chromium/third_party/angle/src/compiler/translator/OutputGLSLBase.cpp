@@ -49,43 +49,6 @@ bool isSingleStatement(TIntermNode *node)
     return true;
 }
 
-// If SH_SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS is enabled, layout qualifiers are spilled whenever
-// variables with specified layout qualifiers are copied. Additional checks are needed against the
-// type and storage qualifier of the variable to verify that layout qualifiers have to be outputted.
-// TODO (mradev): Fix layout qualifier spilling in ScalarizeVecAndMatConstructorArgs and remove
-// NeedsToWriteLayoutQualifier.
-bool NeedsToWriteLayoutQualifier(const TType &type)
-{
-    if (type.getBasicType() == EbtInterfaceBlock)
-    {
-        return false;
-    }
-
-    const TLayoutQualifier &layoutQualifier = type.getLayoutQualifier();
-
-    if ((type.getQualifier() == EvqFragmentOut || type.getQualifier() == EvqVertexIn) &&
-        layoutQualifier.location >= 0)
-    {
-        return true;
-    }
-
-    if (type.getQualifier() == EvqFragmentOut && layoutQualifier.yuv == true)
-    {
-        return true;
-    }
-
-    if (IsOpaqueType(type.getBasicType()) && layoutQualifier.binding != -1)
-    {
-        return true;
-    }
-
-    if (IsImage(type.getBasicType()) && layoutQualifier.imageInternalFormat != EiifUnspecified)
-    {
-        return true;
-    }
-    return false;
-}
-
 class CommaSeparatedListItemPrefixGenerator
 {
   public:
@@ -193,8 +156,10 @@ void TOutputGLSLBase::writeBuiltInFunctionTriplet(Visit visit,
     }
 }
 
-void TOutputGLSLBase::writeLayoutQualifier(const TType &type)
+void TOutputGLSLBase::writeLayoutQualifier(TIntermTyped *variable)
 {
+    const TType &type = variable->getType();
+
     if (!NeedsToWriteLayoutQualifier(type))
     {
         return;
@@ -206,7 +171,8 @@ void TOutputGLSLBase::writeLayoutQualifier(const TType &type)
 
     CommaSeparatedListItemPrefixGenerator listItemPrefix;
 
-    if (type.getQualifier() == EvqFragmentOut || type.getQualifier() == EvqVertexIn)
+    if (type.getQualifier() == EvqFragmentOut || type.getQualifier() == EvqVertexIn ||
+        IsVarying(type.getQualifier()))
     {
         if (layoutQualifier.location >= 0)
         {
@@ -734,6 +700,10 @@ bool TOutputGLSLBase::visitUnary(Visit visit, TIntermUnary *node)
         case EOpPreDecrement:
             preString = "(--";
             break;
+        case EOpArrayLength:
+            preString  = "((";
+            postString = ").length())";
+            break;
 
         case EOpRadians:
         case EOpDegrees:
@@ -842,16 +812,9 @@ bool TOutputGLSLBase::visitIfElse(Visit visit, TIntermIfElse *node)
 
 bool TOutputGLSLBase::visitSwitch(Visit visit, TIntermSwitch *node)
 {
-    if (node->getStatementList())
-    {
-        writeTriplet(visit, "switch (", ") ", nullptr);
-        // The curly braces get written when visiting the statementList aggregate
-    }
-    else
-    {
-        // No statementList, so it won't output curly braces
-        writeTriplet(visit, "switch (", ") {", "}\n");
-    }
+    ASSERT(node->getStatementList());
+    writeTriplet(visit, "switch (", ") ", nullptr);
+    // The curly braces get written when visiting the statementList aggregate
     return true;
 }
 
@@ -1024,8 +987,8 @@ bool TOutputGLSLBase::visitDeclaration(Visit visit, TIntermDeclaration *node)
     if (visit == PreVisit)
     {
         const TIntermSequence &sequence = *(node->getSequence());
-        const TIntermTyped *variable    = sequence.front()->getAsTyped();
-        writeLayoutQualifier(variable->getType());
+        TIntermTyped *variable          = sequence.front()->getAsTyped();
+        writeLayoutQualifier(variable);
         writeVariableType(variable->getType());
         out << " ";
         mDeclaringVariables = true;
@@ -1134,43 +1097,18 @@ void TOutputGLSLBase::visitCodeBlock(TIntermBlock *node)
 
 TString TOutputGLSLBase::getTypeName(const TType &type)
 {
-    if (type.getBasicType() == EbtStruct)
-        return hashName(TName(type.getStruct()->name()));
-    else
-        return type.getBuiltInTypeNameString();
+    return GetTypeName(type, mHashFunction, &mNameMap);
 }
 
 TString TOutputGLSLBase::hashName(const TName &name)
 {
-    if (name.getString().empty())
-    {
-        ASSERT(!name.isInternal());
-        return name.getString();
-    }
-    if (name.isInternal())
-    {
-        // TODO(oetuaho): Would be nicer to prefix non-internal names with "_" instead, like is
-        // done in the HLSL output, but that requires fairly complex changes elsewhere in the code
-        // as well.
-        // We need to use a prefix that is reserved in WebGL in order to guarantee that the internal
-        // names don't conflict with user-defined names from WebGL.
-        return "webgl_angle_" + name.getString();
-    }
-    if (mHashFunction == nullptr)
-    {
-        return name.getString();
-    }
-    NameMap::const_iterator it = mNameMap.find(name.getString().c_str());
-    if (it != mNameMap.end())
-        return it->second.c_str();
-    TString hashedName                 = HashName(name.getString(), mHashFunction);
-    mNameMap[name.getString().c_str()] = hashedName.c_str();
-    return hashedName;
+    return HashName(name, mHashFunction, &mNameMap);
 }
 
 TString TOutputGLSLBase::hashVariableName(const TName &name)
 {
-    if (mSymbolTable->findBuiltIn(name.getString(), mShaderVersion) != nullptr)
+    if (mSymbolTable->findBuiltIn(name.getString(), mShaderVersion) != nullptr ||
+        name.getString().substr(0, 3) == "gl_")
     {
         if (mCompileOptions & SH_TRANSLATE_VIEWID_OVR_TO_UNIFORM &&
             name.getString() == "gl_ViewID_OVR")
@@ -1186,10 +1124,8 @@ TString TOutputGLSLBase::hashVariableName(const TName &name)
 
 TString TOutputGLSLBase::hashFunctionNameIfNeeded(const TFunctionSymbolInfo &info)
 {
-    if (info.isMain() || info.getNameObj().isInternal())
+    if (info.isMain())
     {
-        // Internal function names are outputted as-is - they may refer to functions manually added
-        // to the output shader source that are not included in the AST at all.
         return info.getName();
     }
     else
@@ -1256,6 +1192,12 @@ void TOutputGLSLBase::declareInterfaceBlockLayout(const TInterfaceBlock *interfa
     }
 
     out << ", ";
+
+    if (interfaceBlock->blockBinding() > 0)
+    {
+        out << "binding = " << interfaceBlock->blockBinding();
+        out << ", ";
+    }
 
     switch (interfaceBlock->matrixPacking())
     {
@@ -1342,6 +1284,44 @@ void WriteGeometryShaderLayoutQualifiers(TInfoSinkBase &out,
         }
         out << ") out;\n";
     }
+}
+
+// If SH_SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS is enabled, layout qualifiers are spilled whenever
+// variables with specified layout qualifiers are copied. Additional checks are needed against the
+// type and storage qualifier of the variable to verify that layout qualifiers have to be outputted.
+// TODO (mradev): Fix layout qualifier spilling in ScalarizeVecAndMatConstructorArgs and remove
+// NeedsToWriteLayoutQualifier.
+bool NeedsToWriteLayoutQualifier(const TType &type)
+{
+    if (type.getBasicType() == EbtInterfaceBlock)
+    {
+        return false;
+    }
+
+    const TLayoutQualifier &layoutQualifier = type.getLayoutQualifier();
+
+    if ((type.getQualifier() == EvqFragmentOut || type.getQualifier() == EvqVertexIn ||
+         IsVarying(type.getQualifier())) &&
+        layoutQualifier.location >= 0)
+    {
+        return true;
+    }
+
+    if (type.getQualifier() == EvqFragmentOut && layoutQualifier.yuv == true)
+    {
+        return true;
+    }
+
+    if (IsOpaqueType(type.getBasicType()) && layoutQualifier.binding != -1)
+    {
+        return true;
+    }
+
+    if (IsImage(type.getBasicType()) && layoutQualifier.imageInternalFormat != EiifUnspecified)
+    {
+        return true;
+    }
+    return false;
 }
 
 }  // namespace sh

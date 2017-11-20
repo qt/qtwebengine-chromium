@@ -161,6 +161,7 @@ devtools_domains = [
   "dom_snapshot",
   "dom_storage",
   "emulation",
+  "headless_experimental",
   "heap_profiler",
   "indexeddb",
   "input",
@@ -245,8 +246,8 @@ if (headless_fontconfig_utils && !is_fuchsia) {
     ]
 
     deps = [
+      "//build/config/freetype",
       "//third_party/fontconfig",
-      "//third_party/freetype",
     ]
 
     configs += [ ":headless_implementation" ]
@@ -270,11 +271,12 @@ component("headless") {
     "lib/browser/headless_devtools.cc",
     "lib/browser/headless_devtools.h",
     "lib/browser/headless_devtools_client_impl.cc",
-    "lib/browser/headless_devtools_client_impl.h",
     "lib/browser/headless_devtools_manager_delegate.cc",
     "lib/browser/headless_devtools_manager_delegate.h",
     "lib/browser/headless_net_log.cc",
     "lib/browser/headless_net_log.h",
+    "lib/browser/headless_network_conditions.cc",
+    "lib/browser/headless_network_conditions.h",
     "lib/browser/headless_network_delegate.cc",
     "lib/browser/headless_network_delegate.h",
     "lib/browser/headless_permission_manager.cc",
@@ -301,6 +303,7 @@ component("headless") {
     "public/headless_devtools_target.h",
     "public/headless_export.h",
     "public/headless_web_contents.h",
+    "public/internal/headless_devtools_client_impl.h",
     "public/internal/message_dispatcher.h",
     "public/internal/value_conversions.h",
     "public/util/black_hole_protocol_handler.cc",
@@ -324,8 +327,6 @@ component("headless") {
     "public/util/managed_dispatch_url_request_job.cc",
     "public/util/managed_dispatch_url_request_job.h",
     "public/util/navigation_request.h",
-    "public/util/testing/generic_url_request_mocks.cc",
-    "public/util/testing/generic_url_request_mocks.h",
     "public/util/throttled_dispatcher.cc",
     "public/util/throttled_dispatcher.h",
     "public/util/url_fetcher.cc",
@@ -333,6 +334,8 @@ component("headless") {
     "public/util/url_request_dispatcher.h",
     "public/util/user_agent.cc",
     "public/util/user_agent.h",
+    "public/util/virtual_time_controller.cc",
+    "public/util/virtual_time_controller.h",
   ]
 
   if (!is_fuchsia) {
@@ -502,6 +505,29 @@ if (!is_component_build) {
   }
 }
 
+static_library("headless_test_support") {
+  testonly = true
+
+  sources = [
+    "public/util/testing/fake_managed_dispatch_url_request_job.cc",
+    "public/util/testing/fake_managed_dispatch_url_request_job.h",
+    "public/util/testing/generic_url_request_mocks.cc",
+    "public/util/testing/generic_url_request_mocks.h",
+    "public/util/testing/mock_devtools_agent_host.cc",
+    "public/util/testing/mock_devtools_agent_host.h",
+  ]
+
+  public_deps = [
+    ":headless_renderer",
+    "//base",
+    "//net",
+  ]
+
+  deps = [
+    "//testing/gmock",
+  ]
+}
+
 group("headless_tests") {
   testonly = true
 
@@ -519,9 +545,12 @@ test("headless_unittests") {
     "public/util/error_reporter_unittest.cc",
     "public/util/expedited_dispatcher_test.cc",
     "public/util/generic_url_request_job_test.cc",
-    "public/util/testing/fake_managed_dispatch_url_request_job.cc",
-    "public/util/testing/fake_managed_dispatch_url_request_job.h",
+    "public/util/testing/generic_url_request_mocks.cc",
+    "public/util/testing/generic_url_request_mocks.h",
+    "public/util/testing/test_in_memory_protocol_handler.cc",
+    "public/util/testing/test_in_memory_protocol_handler.h",
     "public/util/throttled_dispatcher_test.cc",
+    "public/util/virtual_time_controller_test.cc",
   ]
 
   if (!is_component_build) {
@@ -534,7 +563,7 @@ test("headless_unittests") {
   }
 
   deps = [
-    ":headless_renderer",
+    ":headless_test_support",
     "//base/test:run_all_unittests",
     "//base/test:test_support",
     "//components/security_state/content",
@@ -649,6 +678,12 @@ test("headless_browsertests") {
     "lib/headless_devtools_client_browsertest.cc",
     "lib/headless_web_contents_browsertest.cc",
     "lib/virtual_time_browsertest.cc",
+    "public/util/testing/fake_managed_dispatch_url_request_job.cc",
+    "public/util/testing/fake_managed_dispatch_url_request_job.h",
+    "public/util/testing/generic_url_request_mocks.cc",
+    "public/util/testing/generic_url_request_mocks.h",
+    "public/util/testing/test_in_memory_protocol_handler.cc",
+    "public/util/testing/test_in_memory_protocol_handler.h",
     "test/headless_browser_test.cc",
     "test/headless_browser_test.h",
     "test/headless_test_launcher.cc",
@@ -863,6 +898,12 @@ executable("headless_shell") {
     ":headless_shell_lib",
     "//build/config:exe_and_shlib_deps",
   ]
+
+  if (!headless_use_embedded_resources) {
+    data = [
+      "$root_out_dir/headless_lib.pak",
+    ]
+  }
 
   if (is_win) {
     deps += [ "//build/win:default_exe_manifest" ]

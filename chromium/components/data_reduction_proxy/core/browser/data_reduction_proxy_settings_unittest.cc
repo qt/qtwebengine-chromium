@@ -204,6 +204,8 @@ TEST(DataReductionProxySettingsStandaloneTest, TestEndToEndSecureProxyCheck) {
             .SkipSettingsInitialization()
             .Build();
 
+    drp_test_context->DisableWarmupURLFetch();
+
     context.set_net_log(drp_test_context->net_log());
     net::MockClientSocketFactory mock_socket_factory;
     context.set_client_socket_factory(&mock_socket_factory);
@@ -212,6 +214,7 @@ TEST(DataReductionProxySettingsStandaloneTest, TestEndToEndSecureProxyCheck) {
     // Start with the Data Reduction Proxy disabled.
     drp_test_context->SetDataReductionProxyEnabled(false);
     drp_test_context->InitSettings();
+    drp_test_context->RunUntilIdle();
 
     net::MockRead mock_reads[] = {
         net::MockRead(test_case.response_headers),
@@ -318,7 +321,7 @@ TEST_F(DataReductionProxySettingsTest, TestSetDataReductionProxyEnabled) {
   MockSettings* settings = static_cast<MockSettings*>(settings_.get());
   EXPECT_CALL(*settings, RecordStartupState(PROXY_ENABLED));
   test_context_->SetDataReductionProxyEnabled(true);
-  settings->SetLoFiModeActiveOnMainFrame(true);
+  settings->SetLoFiUsedThisSession();
   InitDataReductionProxy(true);
 
   ExpectSetProxyPrefs(false, false);
@@ -346,7 +349,7 @@ TEST_F(DataReductionProxySettingsTest, TestLoFiImplicitOptOutClicksPerSession) {
   for (int i = 1; i <= settings_->lo_fi_user_requests_for_images_per_session_;
        ++i) {
     settings_->IncrementLoFiUIShown();
-    settings_->SetLoFiModeActiveOnMainFrame(true);
+    settings_->SetLoFiUsedThisSession();
     settings_->IncrementLoFiUserRequestsForImages();
     EXPECT_EQ(i, test_context_->pref_service()->GetInteger(
                      prefs::kLoFiLoadImagesPerSession));
@@ -390,7 +393,7 @@ TEST_F(DataReductionProxySettingsTest, TestLoFiImplicitOptOutClicksPerSession) {
   for (int i = 1;
        i <= settings_->lo_fi_user_requests_for_images_per_session_ - 1; ++i) {
     settings_->IncrementLoFiUIShown();
-    settings_->SetLoFiModeActiveOnMainFrame(true);
+    settings_->SetLoFiUsedThisSession();
     settings_->IncrementLoFiUserRequestsForImages();
     EXPECT_EQ(i, test_context_->pref_service()->GetInteger(
                      prefs::kLoFiLoadImagesPerSession));
@@ -442,7 +445,7 @@ TEST_F(DataReductionProxySettingsTest,
     // for each session.
     for (int j = 1; j <= settings_->lo_fi_user_requests_for_images_per_session_;
          ++j) {
-      settings_->SetLoFiModeActiveOnMainFrame(true);
+      settings_->SetLoFiUsedThisSession();
       settings_->IncrementLoFiUserRequestsForImages();
       settings_->IncrementLoFiUIShown();
       EXPECT_EQ(j, test_context_->pref_service()->GetInteger(
@@ -497,7 +500,7 @@ TEST_F(DataReductionProxySettingsTest, TestLoFiImplicitOptOutHistograms) {
     // each session.
     for (int j = 1; j <= settings_->lo_fi_user_requests_for_images_per_session_;
          ++j) {
-      settings_->SetLoFiModeActiveOnMainFrame(true);
+      settings_->SetLoFiUsedThisSession();
       settings_->IncrementLoFiUserRequestsForImages();
     }
 
@@ -547,7 +550,7 @@ TEST_F(DataReductionProxySettingsTest, TestLoFiSessionStateHistograms) {
 
   // Disable Lo-Fi for |lo_fi_consecutive_session_disables_|.
   for (int i = 1; i <= settings_->lo_fi_consecutive_session_disables_; ++i) {
-    settings_->SetLoFiModeActiveOnMainFrame(true);
+    settings_->SetLoFiUsedThisSession();
 
     // Click "Show images" |lo_fi_show_images_clicks_per_session_| times for
     // each session. This would put user in either the temporarary opt out

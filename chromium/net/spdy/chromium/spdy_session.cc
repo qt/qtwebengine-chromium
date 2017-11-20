@@ -10,14 +10,11 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -641,29 +638,26 @@ SpdySession::UnclaimedPushedStreamContainer::erase(const_iterator it) {
   DCHECK(it != end());
   // Only allow cross-origin push for secure resources.
   if (it->first.SchemeIsCryptographic()) {
-    spdy_session_->pool_->UnregisterUnclaimedPushedStream(it->first,
-                                                          spdy_session_);
+    spdy_session_->pool_->push_promise_index()->UnregisterUnclaimedPushedStream(
+        it->first, spdy_session_);
   }
   return streams_.erase(it);
 }
 
-SpdySession::UnclaimedPushedStreamContainer::iterator
-SpdySession::UnclaimedPushedStreamContainer::insert(
-    const_iterator position,
+bool SpdySession::UnclaimedPushedStreamContainer::insert(
     const GURL& url,
     SpdyStreamId stream_id,
     const base::TimeTicks& creation_time) {
   DCHECK(spdy_session_->pool_);
   // Only allow cross-origin push for https resources.
   if (url.SchemeIsCryptographic()) {
-    spdy_session_->pool_->RegisterUnclaimedPushedStream(
+    spdy_session_->pool_->push_promise_index()->RegisterUnclaimedPushedStream(
         url, spdy_session_->GetWeakPtr());
   }
-  return streams_.insert(
-      position,
-      std::make_pair(
-          url, SpdySession::UnclaimedPushedStreamContainer::PushedStreamInfo(
-                   stream_id, creation_time)));
+  auto result = streams_.insert(std::make_pair(
+      url, SpdySession::UnclaimedPushedStreamContainer::PushedStreamInfo(
+               stream_id, creation_time)));
+  return result.second;
 }
 
 size_t SpdySession::UnclaimedPushedStreamContainer::EstimateMemoryUsage()
@@ -722,18 +716,19 @@ bool SpdySession::CanPool(TransportSecurityState* transport_security_state,
   return true;
 }
 
-SpdySession::SpdySession(const SpdySessionKey& spdy_session_key,
-                         HttpServerProperties* http_server_properties,
-                         TransportSecurityState* transport_security_state,
-                         const QuicVersionVector& quic_supported_versions,
-                         bool enable_sending_initial_data,
-                         bool enable_ping_based_connection_checking,
-                         size_t session_max_recv_window_size,
-                         const SettingsMap& initial_settings,
-                         TimeFunc time_func,
-                         ServerPushDelegate* push_delegate,
-                         ProxyDelegate* proxy_delegate,
-                         NetLog* net_log)
+SpdySession::SpdySession(
+    const SpdySessionKey& spdy_session_key,
+    HttpServerProperties* http_server_properties,
+    TransportSecurityState* transport_security_state,
+    const QuicTransportVersionVector& quic_supported_versions,
+    bool enable_sending_initial_data,
+    bool enable_ping_based_connection_checking,
+    size_t session_max_recv_window_size,
+    const SettingsMap& initial_settings,
+    TimeFunc time_func,
+    ServerPushDelegate* push_delegate,
+    ProxyDelegate* proxy_delegate,
+    NetLog* net_log)
     : in_io_loop_(false),
       spdy_session_key_(spdy_session_key),
       pool_(NULL),
@@ -1620,20 +1615,9 @@ void SpdySession::TryCreatePushStream(SpdyStreamId stream_id,
     }
   }
 
-  // There should not be an existing pushed stream with the same path.
-  UnclaimedPushedStreamContainer::const_iterator pushed_it =
-      unclaimed_pushed_streams_.lower_bound(gurl);
-  if (pushed_it != unclaimed_pushed_streams_.end() &&
-      pushed_it->first == gurl) {
-    EnqueueResetStreamFrame(
-        stream_id, request_priority, ERROR_CODE_REFUSED_STREAM,
-        "Received duplicate pushed stream with url: " + gurl.spec());
-    return;
-  }
-
   // "Promised requests MUST be cacheable and MUST be safe [...]" (RFC7540
   // Section 8.2).  Only cacheable safe request methods are GET and HEAD.
-  SpdyHeaderBlock::const_iterator it = headers.find(":method");
+  SpdyHeaderBlock::const_iterator it = headers.find(kHttp2MethodHeader);
   if (it == headers.end() ||
       (it->second.compare("GET") != 0 && it->second.compare("HEAD") != 0)) {
     EnqueueResetStreamFrame(
@@ -1641,6 +1625,14 @@ void SpdySession::TryCreatePushStream(SpdyStreamId stream_id,
         SpdyStringPrintf(
             "Rejected push stream %d due to inadequate request method",
             associated_stream_id));
+    return;
+  }
+
+  // Insertion fails if there already is a pushed stream with the same path.
+  if (!unclaimed_pushed_streams_.insert(gurl, stream_id, time_func_())) {
+    EnqueueResetStreamFrame(
+        stream_id, request_priority, ERROR_CODE_REFUSED_STREAM,
+        "Received duplicate pushed stream with url: " + gurl.spec());
     return;
   }
 
@@ -1663,10 +1655,6 @@ void SpdySession::TryCreatePushStream(SpdyStreamId stream_id,
   associated_it->second->AddRawReceivedBytes(last_compressed_frame_len_);
   last_compressed_frame_len_ = 0;
 
-  UnclaimedPushedStreamContainer::const_iterator inserted_pushed_it =
-      unclaimed_pushed_streams_.insert(pushed_it, gurl, stream_id,
-                                       time_func_());
-  DCHECK(inserted_pushed_it != pushed_it);
   DeleteExpiredPushedStreams();
 
   InsertActivatedStream(std::move(stream));
@@ -2019,10 +2007,6 @@ int SpdySession::DoWrite() {
       }
     }
 
-    // TODO(pkasting): Remove ScopedTracker below once crbug.com/457517 is
-    // fixed.
-    tracked_objects::ScopedTracker tracking_profile1(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION("457517 SpdySession::DoWrite1"));
     in_flight_write_ = producer->ProduceBuffer();
     if (!in_flight_write_) {
       NOTREACHED();
@@ -2039,9 +2023,6 @@ int SpdySession::DoWrite() {
   // Explicitly store in a scoped_refptr<IOBuffer> to avoid problems
   // with Socket implementations that don't store their IOBuffer
   // argument in a scoped_refptr<IOBuffer> (see crbug.com/232345).
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/457517 is fixed.
-  tracked_objects::ScopedTracker tracking_profile2(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION("457517 SpdySession::DoWrite2"));
   scoped_refptr<IOBuffer> write_io_buffer =
       in_flight_write_->GetIOBufferForRemainingData();
   return connection_->socket()->Write(
@@ -2202,14 +2183,26 @@ void SpdySession::HandleSetting(uint32_t id, uint32_t value) {
 }
 
 void SpdySession::UpdateStreamsSendWindowSize(int32_t delta_window_size) {
-  for (ActiveStreamMap::iterator it = active_streams_.begin();
-       it != active_streams_.end(); ++it) {
-    it->second->AdjustSendWindowSize(delta_window_size);
+  for (const auto& value : active_streams_) {
+    if (!value.second->AdjustSendWindowSize(delta_window_size)) {
+      DoDrainSession(
+          ERR_SPDY_FLOW_CONTROL_ERROR,
+          SpdyStringPrintf("New SETTINGS_INITIAL_WINDOW_SIZE value overflows "
+                           "flow control window of stream %d.",
+                           value.second->stream_id()));
+      return;
+    }
   }
 
-  for (CreatedStreamSet::const_iterator it = created_streams_.begin();
-       it != created_streams_.end(); it++) {
-    (*it)->AdjustSendWindowSize(delta_window_size);
+  for (auto* const stream : created_streams_) {
+    if (!stream->AdjustSendWindowSize(delta_window_size)) {
+      DoDrainSession(
+          ERR_SPDY_FLOW_CONTROL_ERROR,
+          SpdyStringPrintf("New SETTINGS_INITIAL_WINDOW_SIZE value overflows "
+                           "flow control window of stream %d.",
+                           stream->stream_id()));
+      return;
+    }
   }
 }
 
@@ -2992,10 +2985,10 @@ void SpdySession::OnAltSvc(
     // HttpStreamFactory::ProcessAlternativeServices
     // could use the the same function.
     // Check if QUIC version is supported. Filter supported QUIC versions.
-    QuicVersionVector advertised_versions;
+    QuicTransportVersionVector advertised_versions;
     if (protocol == kProtoQUIC && !altsvc.version.empty()) {
       bool match_found = false;
-      for (const QuicVersion& supported : quic_supported_versions_) {
+      for (const QuicTransportVersion& supported : quic_supported_versions_) {
         for (const uint16_t& advertised : altsvc.version) {
           if (supported == advertised) {
             match_found = true;
@@ -3203,7 +3196,7 @@ void SpdySession::ResumeSendStalledStreams() {
   // have to worry about streams being closed, as well as ourselves
   // being closed.
 
-  std::deque<SpdyStream*> streams_to_requeue;
+  base::circular_deque<SpdyStream*> streams_to_requeue;
 
   while (!IsSendStalled()) {
     size_t old_size = 0;
@@ -3236,7 +3229,7 @@ void SpdySession::ResumeSendStalledStreams() {
 
 SpdyStreamId SpdySession::PopStreamToPossiblyResume() {
   for (int i = MAXIMUM_PRIORITY; i >= MINIMUM_PRIORITY; --i) {
-    std::deque<SpdyStreamId>* queue = &stream_send_unstall_queue_[i];
+    base::circular_deque<SpdyStreamId>* queue = &stream_send_unstall_queue_[i];
     if (!queue->empty()) {
       SpdyStreamId stream_id = queue->front();
       queue->pop_front();

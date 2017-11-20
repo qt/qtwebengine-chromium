@@ -278,7 +278,7 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
 
   LayoutSize ContentOffsetInCompositingLayer() const;
 
-  LayoutPoint SquashingOffsetFromTransformedAncestor() {
+  LayoutPoint SquashingOffsetFromTransformedAncestor() const {
     return squashing_layer_offset_from_transformed_ancestor_;
   }
 
@@ -351,17 +351,13 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
       const PaintLayer* compositing_stacking_context,
       const PaintLayer* compositing_container,
       IntPoint graphics_layer_parent_location);
-  void UpdateChildContainmentLayerGeometry(
-      const IntRect& clipping_box,
-      const IntRect& local_compositing_bounds);
+  void UpdateChildContainmentLayerGeometry();
   void UpdateChildTransformLayerGeometry();
   void UpdateMaskLayerGeometry();
   void UpdateTransformGeometry(
       const IntPoint& snapped_offset_from_composited_ancestor,
       const IntRect& relative_compositing_bounds);
-  void UpdateForegroundLayerGeometry(
-      const FloatSize& relative_compositing_bounds_size,
-      const IntRect& clipping_box);
+  void UpdateForegroundLayerGeometry();
   void UpdateBackgroundLayerGeometry(
       const FloatSize& relative_compositing_bounds_size);
   void UpdateDecorationOutlineLayerGeometry(
@@ -369,10 +365,6 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
   void UpdateScrollingLayerGeometry(const IntRect& local_compositing_bounds);
   void UpdateChildClippingMaskLayerGeometry();
   void UpdateStickyConstraints(const ComputedStyle&);
-
-  // Returns true if the compositor will be responsible for applying the sticky
-  // position offset for this composited layer.
-  bool UsesCompositedStickyPosition() const;
 
   void CreatePrimaryGraphicsLayer();
   void DestroyGraphicsLayers();
@@ -447,7 +439,7 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
   // Result is transform origin in pixels.
   FloatPoint3D ComputeTransformOrigin(const IntRect& border_box) const;
 
-  void UpdateShouldHitTest(const bool&);
+  void UpdateHitTestableWithoutDrawsContent(const bool&);
   void UpdateOpacity(const ComputedStyle&);
   void UpdateTransform(const ComputedStyle&);
   void UpdateLayerBlendMode(const ComputedStyle&);

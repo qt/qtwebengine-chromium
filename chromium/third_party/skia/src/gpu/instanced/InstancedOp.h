@@ -28,6 +28,10 @@ public:
     ~InstancedOp() override;
     const char* name() const override { return "InstancedOp"; }
 
+    void visitProxies(const VisitProxyFunc& func) const override {
+        fProcessors.visitProxies(func);
+    }
+
     SkString dumpInfo() const override {
         SkString string;
         string.printf(
@@ -64,7 +68,8 @@ public:
         return GrAATypeIsHW(fInfo.aaType()) ? FixedFunctionFlags::kUsesHWAA
                                             : FixedFunctionFlags::kNone;
     }
-    RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*) override;
+    RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*,
+                                GrPixelConfigIsClamped) override;
 
     // Registers the op with the InstancedRendering list of tracked ops.
     void wasRecorded(GrRenderTargetOpList*) override;

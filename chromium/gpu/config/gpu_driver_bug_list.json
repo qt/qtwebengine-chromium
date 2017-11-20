@@ -1,6 +1,6 @@
 {
   "name": "gpu driver bug list",
-  "version": "10.30",
+  "version": "10.33",
   "entries": [
     {
       "id": 1,
@@ -786,7 +786,7 @@
       "os": {
         "type": "android"
       },
-      "gl_vendor": "Intel",
+      "gl_vendor": "Intel.*",
       "gl_renderer": "Intel.*BayTrail",
       "features": [
         "disable_chromium_framebuffer_multisample"
@@ -1046,7 +1046,8 @@
     {
       "id": 116,
       "description": "Adreno 420 support for EXT_multisampled_render_to_texture is buggy on Android < 5.1",
-      "cr_bugs": [490379],
+      "comment": "Corresponds to software rendering list #149",
+      "cr_bugs": [490379, 767913],
       "os": {
         "type": "android",
         "version": {
@@ -1057,6 +1058,9 @@
       "gl_renderer": "Adreno \\(TM\\) 4.*",
       "disabled_extensions": [
         "GL_EXT_multisampled_render_to_texture"
+      ],
+      "features": [
+        "disable_chromium_framebuffer_multisample"
       ]
     },
     {
@@ -1706,7 +1710,7 @@
     },
     {
       "id": 172,
-      "description": "Limited enabling of Chromium GL_INTEL_framebuffer_CMAA",
+      "description": "Use GL_INTEL_framebuffer_CMAA on ChromeOS",
       "cr_bugs": [535198],
       "exceptions" : [
         {
@@ -1716,7 +1720,6 @@
           "vendor_id": "0x8086",
           "driver_vendor": "Mesa",
           "gl_vendor": "Intel.*",
-          "gl_renderer": ".*Intel.*(Braswell|Broadwell|Skylake).*",
           "gl_type": "gles",
           "gl_version": {
             "op": ">=",
@@ -1769,7 +1772,7 @@
       "os": {
         "type": "android"
       },
-      "gl_vendor": "Intel",
+      "gl_vendor": "Intel.*",
       "gl_renderer": ".*Atom.*x5/x7.*",
       "features": [
         "gl_clear_broken"
@@ -2579,19 +2582,6 @@
       ]
     },
     {
-      "id": 238,
-      "description": "On Intel GPUs MSAA performance is not acceptable for GPU rasterization",
-      "cr_bugs": [527565, 751919],
-      "os": {
-        "type": "macosx"
-      },
-      "vendor_id": "0x8086",
-      "multi_gpu_category": "any",
-      "features": [
-        "msaa_is_slow"
-      ]
-    },
-    {
       "id": 239,
       "description": "Reset TexImage2D base level to 0 on Intel Mac 10.12.4",
       "cr_bugs": [705865],
@@ -2634,6 +2624,22 @@
       "gl_vendor": "Intel.*",
       "features": [
         "msaa_is_slow"
+      ]
+    },
+    {
+      "id": 242,
+      "description": "Code produced by local variable initialization often triggers crashes in Marshmallow Adreno driver",
+      "cr_bugs": [728271],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "7.0"
+        }
+      },
+      "gl_renderer": "Adreno \\(TM\\) 4.*",
+      "features": [
+        "dont_initialize_uninitialized_locals"
       ]
     }
   ],

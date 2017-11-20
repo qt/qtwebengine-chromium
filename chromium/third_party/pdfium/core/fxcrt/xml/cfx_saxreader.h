@@ -11,8 +11,8 @@
 #include <stack>
 #include <vector>
 
-#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/retain_ptr.h"
 
 class CFX_SAXCommentContext;
 class CFX_SAXContext;
@@ -45,13 +45,13 @@ class CFX_SAXFile {
   CFX_SAXFile();
   ~CFX_SAXFile();
 
-  bool StartFile(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
+  bool StartFile(const RetainPtr<IFX_SeekableReadStream>& pFile,
                  uint32_t dwStart,
                  uint32_t dwLen);
   bool ReadNextBlock();
   void Reset();
 
-  CFX_RetainPtr<IFX_SeekableReadStream> m_pFile;
+  RetainPtr<IFX_SeekableReadStream> m_pFile;
   uint32_t m_dwStart;
   uint32_t m_dwEnd;
   uint32_t m_dwCur;
@@ -75,31 +75,31 @@ class CFX_SAXReader {
   class HandlerIface {
    public:
     virtual ~HandlerIface() {}
-    virtual CFX_SAXContext* OnTagEnter(const CFX_ByteStringC& bsTagName,
+    virtual CFX_SAXContext* OnTagEnter(const ByteStringView& bsTagName,
                                        CFX_SAXItem::Type eType,
                                        uint32_t dwStartPos) = 0;
     virtual void OnTagAttribute(CFX_SAXContext* pTag,
-                                const CFX_ByteStringC& bsAttri,
-                                const CFX_ByteStringC& bsValue) = 0;
+                                const ByteStringView& bsAttri,
+                                const ByteStringView& bsValue) = 0;
     virtual void OnTagBreak(CFX_SAXContext* pTag) = 0;
     virtual void OnTagData(CFX_SAXContext* pTag,
                            CFX_SAXItem::Type eType,
-                           const CFX_ByteStringC& bsData,
+                           const ByteStringView& bsData,
                            uint32_t dwStartPos) = 0;
     virtual void OnTagClose(CFX_SAXContext* pTag, uint32_t dwEndPos) = 0;
     virtual void OnTagEnd(CFX_SAXContext* pTag,
-                          const CFX_ByteStringC& bsTagName,
+                          const ByteStringView& bsTagName,
                           uint32_t dwEndPos) = 0;
     virtual void OnTargetData(CFX_SAXContext* pTag,
                               CFX_SAXItem::Type eType,
-                              const CFX_ByteStringC& bsData,
+                              const ByteStringView& bsData,
                               uint32_t dwStartPos) = 0;
   };
 
   CFX_SAXReader();
   ~CFX_SAXReader();
 
-  int32_t StartParse(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
+  int32_t StartParse(const RetainPtr<IFX_SeekableReadStream>& pFile,
                      uint32_t dwStart = 0,
                      uint32_t dwLen = -1,
                      uint32_t dwParseMode = 0);

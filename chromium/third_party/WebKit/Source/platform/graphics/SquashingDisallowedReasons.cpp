@@ -62,13 +62,13 @@ const SquashingDisallowedReasonStringMap kSquashingDisallowedReasonStringMap[] =
         {kSquashingDisallowedReasonRenderingContextMismatch,
          "squashingLayerRenderingContextMismatch",
          "Cannot squash layers with different 3D contexts."},
-        {kSquashingDisallowedReasonNonTranslationTransform,
-         "SquashingDisallowedReasonNonTranslationTransform",
-         "Cannot squash layers with transforms that are not identity or "
-         "translation."},
         {kSquashingDisallowedReasonFragmentedContent,
          "SquashingDisallowedReasonFragmentedContent",
          "Cannot squash layers that are inside fragmentation contexts."},
+        {kSquashingDisallowedReasonBorderRadiusClipsDescendants,
+         "SquashingDisallowedReasonBorderRadiusClipsDecendants",
+         "Cannot squash layers that must apply a border radius clip to their "
+         "decendants"},
 };
 
 const size_t kNumberOfSquashingDisallowedReasons =

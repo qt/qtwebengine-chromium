@@ -233,12 +233,6 @@ def parse_args(args):
                 '--results-directory',
                 help='Location of test results'),
             optparse.make_option(
-                '--skip-failing-tests',
-                action='store_true',
-                default=False,
-                help=('Skip tests that are expected to fail. Note: When using this option, '
-                      'you might miss new crashes in these tests.')),
-            optparse.make_option(
                 '--smoke',
                 action='store_true',
                 help='Run just the SmokeTests'),
@@ -417,6 +411,18 @@ def parse_args(args):
                       '"only" == only run the SKIP tests, '
                       '"always" == always skip, even if listed on the command line.')),
             optparse.make_option(
+                '--skip-failing-tests',
+                action='store_true',
+                default=False,
+                help=('Skip tests that are expected to fail. Note: When using this option, '
+                      'you might miss new crashes in these tests.')),
+            optparse.make_option(
+                '--skip-timeouts',
+                action='store_true',
+                default=False,
+                help=('Skip tests marked TIMEOUT. Use it to speed up running the entire '
+                      'test suite.')),
+            optparse.make_option(
                 '--fastest',
                 action='store',
                 type='float',
@@ -449,6 +455,10 @@ def parse_args(args):
                 action='store_true',
                 default=False,
                 help='Do everything but actually run the tests or upload results.'),
+            optparse.make_option(
+                '-w', '--watch',
+                action='store_true',
+                help='Re-run tests quickly (e.g. avoid restarting the server)'),
         ]))
 
     # FIXME: Move these into json_results_generator.py.

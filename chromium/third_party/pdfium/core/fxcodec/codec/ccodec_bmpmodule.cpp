@@ -9,14 +9,13 @@
 #include "core/fxcodec/codec/codec_int.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcodec/lbmp/fx_bmp.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/fx_dib.h"
 #include "third_party/base/ptr_util.h"
 
 CBmpContext::CBmpContext(CCodec_BmpModule* pModule,
                          CCodec_BmpModule::Delegate* pDelegate)
     : m_pModule(pModule), m_pDelegate(pDelegate) {
-  memset(m_szLastError, 0, sizeof(m_szLastError));
 }
 
 CBmpContext::~CBmpContext() {}
@@ -29,7 +28,6 @@ std::unique_ptr<CCodec_BmpModule::Context> CCodec_BmpModule::Start(
     Delegate* pDelegate) {
   auto p = pdfium::MakeUnique<CBmpContext>(this, pDelegate);
   p->m_Bmp.context_ptr = p.get();
-  p->m_Bmp.err_ptr = p->m_szLastError;
   return p;
 }
 

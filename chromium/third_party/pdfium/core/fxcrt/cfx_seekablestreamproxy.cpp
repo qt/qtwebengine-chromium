@@ -6,9 +6,9 @@
 
 #include "core/fxcrt/cfx_seekablestreamproxy.h"
 
-#if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_
+#if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
 #include <io.h>
-#endif
+#endif  // _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
 
 #include <algorithm>
 #include <limits>
@@ -25,10 +25,10 @@
 namespace {
 
 // Returns {src bytes consumed, dst bytes produced}.
-std::pair<FX_STRSIZE, FX_STRSIZE> UTF8Decode(const char* pSrc,
-                                             FX_STRSIZE srcLen,
-                                             wchar_t* pDst,
-                                             FX_STRSIZE dstLen) {
+std::pair<size_t, size_t> UTF8Decode(const char* pSrc,
+                                     size_t srcLen,
+                                     wchar_t* pDst,
+                                     size_t dstLen) {
   ASSERT(pDst && dstLen > 0);
 
   if (srcLen < 1)
@@ -36,9 +36,9 @@ std::pair<FX_STRSIZE, FX_STRSIZE> UTF8Decode(const char* pSrc,
 
   uint32_t dwCode = 0;
   int32_t iPending = 0;
-  FX_STRSIZE iSrcNum = 0;
-  FX_STRSIZE iDstNum = 0;
-  FX_STRSIZE iIndex = 0;
+  size_t iSrcNum = 0;
+  size_t iDstNum = 0;
+  size_t iIndex = 0;
   int32_t k = 1;
   while (iIndex < srcLen) {
     uint8_t byte = static_cast<uint8_t>(*(pSrc + iIndex));
@@ -91,22 +91,19 @@ std::pair<FX_STRSIZE, FX_STRSIZE> UTF8Decode(const char* pSrc,
   return {iSrcNum, iDstNum};
 }
 
-void UTF16ToWChar(void* pBuffer, FX_STRSIZE iLength) {
+void UTF16ToWChar(void* pBuffer, size_t iLength) {
   ASSERT(pBuffer);
   ASSERT(iLength > 0);
   ASSERT(sizeof(wchar_t) > 2);
 
   uint16_t* pSrc = static_cast<uint16_t*>(pBuffer);
   wchar_t* pDst = static_cast<wchar_t*>(pBuffer);
-  for (FX_STRSIZE i = 0; i < iLength; i++)
+  for (size_t i = 0; i < iLength; i++)
     pDst[i] = static_cast<wchar_t>(pSrc[i]);
 }
 
-void SwapByteOrder(wchar_t* pStr, FX_STRSIZE iLength) {
+void SwapByteOrder(wchar_t* pStr, size_t iLength) {
   ASSERT(pStr);
-
-  if (iLength < 0)
-    iLength = FXSYS_wcslen(pStr);
 
   uint16_t wch;
   if (sizeof(wchar_t) > 2) {
@@ -137,7 +134,7 @@ void SwapByteOrder(wchar_t* pStr, FX_STRSIZE iLength) {
 #define BOM_UTF16_LE 0x0000FEFF
 
 CFX_SeekableStreamProxy::CFX_SeekableStreamProxy(
-    const CFX_RetainPtr<IFX_SeekableStream>& stream,
+    const RetainPtr<IFX_SeekableStream>& stream,
     bool isWriteStream)
     : m_IsWriteStream(isWriteStream),
       m_wCodePage(FX_CODEPAGE_DefANSI),
@@ -177,7 +174,7 @@ CFX_SeekableStreamProxy::CFX_SeekableStreamProxy(
   Seek(From::Begin, static_cast<FX_FILESIZE>(m_wBOMLength));
 }
 
-CFX_SeekableStreamProxy::CFX_SeekableStreamProxy(uint8_t* data, FX_STRSIZE size)
+CFX_SeekableStreamProxy::CFX_SeekableStreamProxy(uint8_t* data, size_t size)
     : CFX_SeekableStreamProxy(
           pdfium::MakeRetain<CFX_MemoryStream>(data, size, false),
           false) {}
@@ -206,15 +203,14 @@ void CFX_SeekableStreamProxy::SetCodePage(uint16_t wCodePage) {
   m_wCodePage = wCodePage;
 }
 
-FX_STRSIZE CFX_SeekableStreamProxy::ReadData(uint8_t* pBuffer,
-                                             FX_STRSIZE iBufferSize) {
+size_t CFX_SeekableStreamProxy::ReadData(uint8_t* pBuffer, size_t iBufferSize) {
   ASSERT(pBuffer && iBufferSize > 0);
 
   if (m_IsWriteStream)
     return 0;
 
   iBufferSize =
-      std::min(iBufferSize, static_cast<FX_STRSIZE>(GetLength() - m_iPosition));
+      std::min(iBufferSize, static_cast<size_t>(GetLength() - m_iPosition));
   if (iBufferSize <= 0)
     return 0;
 
@@ -227,19 +223,19 @@ FX_STRSIZE CFX_SeekableStreamProxy::ReadData(uint8_t* pBuffer,
   return new_pos.IsValid() ? iBufferSize : 0;
 }
 
-FX_STRSIZE CFX_SeekableStreamProxy::ReadString(wchar_t* pStr,
-                                               FX_STRSIZE iMaxLength,
-                                               bool* bEOS) {
-  ASSERT(pStr);
-  ASSERT(iMaxLength > 0);
+size_t CFX_SeekableStreamProxy::ReadString(wchar_t* pStr,
+                                           size_t iMaxLength,
+                                           bool* bEOS) {
+  if (!pStr || iMaxLength == 0)
+    return 0;
 
   if (m_IsWriteStream)
     return 0;
 
   if (m_wCodePage == FX_CODEPAGE_UTF16LE ||
       m_wCodePage == FX_CODEPAGE_UTF16BE) {
-    FX_FILESIZE iBytes = iMaxLength * 2;
-    FX_STRSIZE iLen = ReadData(reinterpret_cast<uint8_t*>(pStr), iBytes);
+    size_t iBytes = iMaxLength * 2;
+    size_t iLen = ReadData(reinterpret_cast<uint8_t*>(pStr), iBytes);
     iMaxLength = iLen / 2;
     if (sizeof(wchar_t) > 2 && iMaxLength > 0)
       UTF16ToWChar(pStr, iMaxLength);
@@ -249,17 +245,17 @@ FX_STRSIZE CFX_SeekableStreamProxy::ReadString(wchar_t* pStr,
 
   } else {
     FX_FILESIZE pos = GetPosition();
-    FX_STRSIZE iBytes =
-        std::min(iMaxLength, static_cast<FX_STRSIZE>(GetLength() - pos));
+    size_t iBytes =
+        std::min(iMaxLength, static_cast<size_t>(GetLength() - pos));
 
     if (iBytes > 0) {
       std::vector<uint8_t> buf(iBytes);
 
-      FX_STRSIZE iLen = ReadData(buf.data(), iBytes);
+      size_t iLen = ReadData(buf.data(), iBytes);
       if (m_wCodePage != FX_CODEPAGE_UTF8)
         return 0;
 
-      FX_STRSIZE iSrc = 0;
+      size_t iSrc = 0;
       std::tie(iSrc, iMaxLength) = UTF8Decode(
           reinterpret_cast<const char*>(buf.data()), iLen, pStr, iMaxLength);
       Seek(From::Current, iSrc - iLen);
@@ -272,7 +268,7 @@ FX_STRSIZE CFX_SeekableStreamProxy::ReadString(wchar_t* pStr,
   return iMaxLength;
 }
 
-void CFX_SeekableStreamProxy::WriteString(const CFX_WideStringC& str) {
+void CFX_SeekableStreamProxy::WriteString(const WideStringView& str) {
   if (!m_IsWriteStream || str.GetLength() == 0 ||
       m_wCodePage != FX_CODEPAGE_UTF8) {
     return;

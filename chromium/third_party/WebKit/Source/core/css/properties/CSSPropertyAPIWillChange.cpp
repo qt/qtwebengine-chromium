@@ -12,7 +12,6 @@
 namespace blink {
 
 const CSSValue* CSSPropertyAPIWillChange::ParseSingleValue(
-    CSSPropertyID,
     CSSParserTokenRange& range,
     const CSSParserContext& context,
     const CSSParserLocalContext&) const {
@@ -29,7 +28,10 @@ const CSSValue* CSSPropertyAPIWillChange::ParseSingleValue(
         UnresolvedCSSPropertyID(range.Peek().Value());
     if (unresolved_property != CSSPropertyInvalid &&
         unresolved_property != CSSPropertyVariable) {
-      DCHECK(CSSPropertyMetadata::IsEnabledProperty(unresolved_property));
+#if DCHECK_IS_ON()
+      DCHECK(CSSPropertyAPI::Get(resolveCSSPropertyID(unresolved_property))
+                 .IsEnabled());
+#endif
       // Now "all" is used by both CSSValue and CSSPropertyValue.
       // Need to return nullptr when currentValue is CSSPropertyAll.
       if (unresolved_property == CSSPropertyWillChange ||

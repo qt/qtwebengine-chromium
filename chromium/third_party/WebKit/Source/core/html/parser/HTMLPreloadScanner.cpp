@@ -28,8 +28,6 @@
 #include "core/html/parser/HTMLPreloadScanner.h"
 
 #include <memory>
-#include "core/HTMLNames.h"
-#include "core/InputTypeNames.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryEvaluator.h"
 #include "core/css/MediaValuesCached.h"
@@ -45,6 +43,8 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
 #include "core/html/parser/HTMLTokenizer.h"
+#include "core/html_names.h"
+#include "core/input_type_names.h"
 #include "core/loader/LinkLoader.h"
 #include "platform/Histogram.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
@@ -237,6 +237,12 @@ class TokenPreloadScanner::StartTagScanner {
         is_image_set, resource_width, client_hints_preferences, request_type);
     if (!request)
       return nullptr;
+
+    if (Match(tag_impl_, scriptTag)) {
+      request->SetScriptType(type_attribute_value_ == "module"
+                                 ? ScriptType::kModule
+                                 : ScriptType::kClassic);
+    }
 
     request->SetCrossOrigin(cross_origin_);
     request->SetNonce(nonce_);
@@ -520,10 +526,6 @@ class TokenPreloadScanner::StartTagScanner {
               ScriptLoader::kAllowLegacyTypeInTypeAttribute, script_type)) {
         return false;
       }
-      // TODO(kouhei): Enable preload for module scripts, with correct
-      // credentials mode.
-      if (type_attribute_value_ == "module")
-        return false;
       if (ScriptLoader::BlockForNoModule(script_type,
                                          nomodule_attribute_value_)) {
         return false;

@@ -12,11 +12,9 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_base.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "net/base/ip_address.h"
@@ -204,7 +202,7 @@ std::unique_ptr<base::Value> NetLogQuicVersionNegotiationPacketCallback(
     NetLogCaptureMode /* capture_mode */) {
   auto dict = std::make_unique<base::DictionaryValue>();
   auto versions = std::make_unique<base::ListValue>();
-  for (QuicVersionVector::const_iterator it = packet->versions.begin();
+  for (QuicTransportVersionVector::const_iterator it = packet->versions.begin();
        it != packet->versions.end(); ++it) {
     versions->AppendString(QuicVersionToString(*it));
   }
@@ -525,7 +523,7 @@ void QuicConnectionLogger::OnDuplicatePacket(QuicPacketNumber packet_number) {
 }
 
 void QuicConnectionLogger::OnProtocolVersionMismatch(
-    QuicVersion received_version) {
+    QuicTransportVersion received_version) {
   // TODO(rtenneti): Add logging.
 }
 
@@ -714,7 +712,7 @@ void QuicConnectionLogger::OnConnectionClosed(QuicErrorCode error,
 }
 
 void QuicConnectionLogger::OnSuccessfulVersionNegotiation(
-    const QuicVersion& version) {
+    const QuicTransportVersion& version) {
   if (!net_log_is_capturing_)
     return;
   string quic_version = QuicVersionToString(version);

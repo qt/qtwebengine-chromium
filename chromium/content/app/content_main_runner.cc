@@ -35,7 +35,6 @@
 #include "base/process/memory.h"
 #include "base/process/process.h"
 #include "base/process/process_handle.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -59,6 +58,7 @@
 #include "media/media_features.h"
 #include "ppapi/features/features.h"
 #include "services/service_manager/embedder/switches.h"
+#include "services/service_manager/sandbox/sandbox_type.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
 
@@ -110,10 +110,6 @@
 #include "content/gpu/in_process_gpu_thread.h"
 #include "content/renderer/in_process_renderer_thread.h"
 #include "content/utility/in_process_utility_thread.h"
-#endif
-
-#if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
-#include "content/common/media/cdm_host_files.h"
 #endif
 
 namespace content {
@@ -189,44 +185,56 @@ void LoadV8ContextSnapshotFile() {
 #endif  // OS
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
   gin::V8Initializer::LoadV8ContextSnapshot();
-#endif  // !CHROME_MULTIPLE_DLL_BROWSER
+#endif
 }
 
-void InitializeV8IfNeeded(
-    const base::CommandLine& command_line,
-    const std::string& process_type) {
-  if (process_type == switches::kGpuProcess)
-    return;
-
+void LoadV8SnapshotFile() {
 #if defined(V8_USE_EXTERNAL_STARTUP_DATA)
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   base::FileDescriptorStore& file_descriptor_store =
       base::FileDescriptorStore::GetInstance();
   base::MemoryMappedFile::Region region;
-  base::ScopedFD v8_snapshot_fd =
+  base::ScopedFD fd =
       file_descriptor_store.MaybeTakeFD(kV8SnapshotDataDescriptor, &region);
-  if (v8_snapshot_fd.is_valid()) {
-    gin::V8Initializer::LoadV8SnapshotFromFD(v8_snapshot_fd.get(),
-                                             region.offset, region.size);
-  } else {
-    gin::V8Initializer::LoadV8Snapshot();
+  if (fd.is_valid()) {
+    gin::V8Initializer::LoadV8SnapshotFromFD(fd.get(), region.offset,
+                                             region.size);
+    return;
   }
-  base::ScopedFD v8_natives_fd =
-      file_descriptor_store.MaybeTakeFD(kV8NativesDataDescriptor, &region);
-  if (v8_natives_fd.is_valid()) {
-    gin::V8Initializer::LoadV8NativesFromFD(v8_natives_fd.get(), region.offset,
-                                            region.size);
-  } else {
-    gin::V8Initializer::LoadV8Natives();
-  }
-#else
+#endif  // OS_POSIX && !OS_MACOSX
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
   gin::V8Initializer::LoadV8Snapshot();
-  gin::V8Initializer::LoadV8Natives();
-#endif  // !CHROME_MULTIPLE_DLL_BROWSER
-#endif  // OS_POSIX && !OS_MACOSX
+#endif
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
+}
 
+void LoadV8NativesFile() {
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+  base::FileDescriptorStore& file_descriptor_store =
+      base::FileDescriptorStore::GetInstance();
+  base::MemoryMappedFile::Region region;
+  base::ScopedFD fd =
+      file_descriptor_store.MaybeTakeFD(kV8NativesDataDescriptor, &region);
+  if (fd.is_valid()) {
+    gin::V8Initializer::LoadV8NativesFromFD(fd.get(), region.offset,
+                                            region.size);
+    return;
+  }
+#endif  // OS_POSIX && !OS_MACOSX
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
+  gin::V8Initializer::LoadV8Natives();
+#endif
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+}
+
+void InitializeV8IfNeeded(const base::CommandLine& command_line,
+                          const std::string& process_type) {
+  if (process_type == switches::kGpuProcess)
+    return;
+
+  LoadV8SnapshotFile();
+  LoadV8NativesFile();
   LoadV8ContextSnapshotFile();
 }
 
@@ -334,20 +342,16 @@ int RunZygote(const MainFunctionParams& main_function_params,
       command_line.GetSwitchValueASCII(switches::kProcessType);
   ContentClientInitializer::Set(process_type, delegate);
 
-#if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
-  if (process_type != switches::kPpapiPluginProcess) {
-    DVLOG(1) << "Closing CDM files for non-ppapi process.";
-    CdmHostFiles::TakeGlobalInstance().reset();
-  } else {
-    DVLOG(1) << "Not closing CDM files for ppapi process.";
-  }
-#endif
-
   MainFunctionParams main_params(command_line);
   main_params.zygote_child = true;
 
   std::unique_ptr<base::FieldTrialList> field_trial_list;
   InitializeFieldTrialAndFeatureList(&field_trial_list);
+
+  service_manager::SandboxType sandbox_type =
+      service_manager::SandboxTypeFromCommandLine(command_line);
+  if (sandbox_type == service_manager::SANDBOX_TYPE_PROFILING)
+    content::DisableLocaltimeOverride();
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name)
@@ -521,11 +525,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     }
 #endif  // !OS_ANDROID
 
-#if !defined(OS_ANDROID)
-    if (delegate_ && delegate_->ShouldEnableProfilerRecording())
-      tracked_objects::ScopedTracker::Enable();
-#endif  // !OS_ANDROID
-
     int exit_code = 0;
     if (delegate_ && delegate_->BasicStartupComplete(&exit_code))
       return exit_code;
@@ -659,7 +658,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       delegate_->PreSandboxStartup();
 
 #if defined(OS_WIN)
-    CHECK(InitializeSandbox(params.sandbox_info));
+    CHECK(InitializeSandbox(
+        service_manager::SandboxTypeFromCommandLine(command_line),
+        params.sandbox_info));
 #elif defined(OS_MACOSX)
     if (process_type == switches::kRendererProcess ||
         process_type == switches::kPpapiPluginProcess ||

@@ -46,8 +46,8 @@ OscillatorHandler::OscillatorHandler(AudioNode& node,
                                      AudioParamHandler& frequency,
                                      AudioParamHandler& detune)
     : AudioScheduledSourceHandler(kNodeTypeOscillator, node, sample_rate),
-      frequency_(frequency),
-      detune_(detune),
+      frequency_(&frequency),
+      detune_(&detune),
       first_render_(true),
       virtual_read_index_(0),
       phase_increments_(AudioUtilities::kRenderQuantumFrames),
@@ -75,15 +75,15 @@ OscillatorHandler::OscillatorHandler(AudioNode& node,
   Initialize();
 }
 
-PassRefPtr<OscillatorHandler> OscillatorHandler::Create(
+RefPtr<OscillatorHandler> OscillatorHandler::Create(
     AudioNode& node,
     float sample_rate,
     const String& oscillator_type,
     PeriodicWave* wave_table,
     AudioParamHandler& frequency,
     AudioParamHandler& detune) {
-  return AdoptRef(new OscillatorHandler(node, sample_rate, oscillator_type,
-                                        wave_table, frequency, detune));
+  return WTF::AdoptRef(new OscillatorHandler(node, sample_rate, oscillator_type,
+                                             wave_table, frequency, detune));
 }
 
 OscillatorHandler::~OscillatorHandler() {
@@ -433,8 +433,8 @@ OscillatorNode* OscillatorNode::Create(BaseAudioContext* context,
 
   node->HandleChannelOptions(options, exception_state);
 
-  node->detune()->setValue(options.detune());
-  node->frequency()->setValue(options.frequency());
+  node->detune()->setInitialValue(options.detune());
+  node->frequency()->setInitialValue(options.frequency());
 
   return node;
 }

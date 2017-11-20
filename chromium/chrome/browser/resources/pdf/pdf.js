@@ -103,6 +103,7 @@ function PDFViewer(browserApi) {
 
   this.isPrintPreview_ = location.origin === 'chrome://print';
   this.isPrintPreviewLoaded_ = false;
+  this.isUserInitiatedEvent_ = true;
 
   // Parse open pdf parameters.
   this.paramsParser_ =
@@ -139,7 +140,8 @@ function PDFViewer(browserApi) {
   this.viewport_ = new Viewport(
       window, this.sizer_, this.viewportChanged_.bind(this),
       this.beforeZoom_.bind(this), this.afterZoom_.bind(this),
-      getScrollbarWidth(), defaultZoom, topToolbarHeight);
+      this.setUserInitiated_.bind(this), getScrollbarWidth(), defaultZoom,
+      topToolbarHeight);
 
   // Create the plugin object dynamically so we can set its src. The plugin
   // element is sized to fill the entire window and is set to be fixed
@@ -218,6 +220,10 @@ function PDFViewer(browserApi) {
 
   document.body.addEventListener('change-page', e => {
     this.viewport_.goToPage(e.detail.page);
+  });
+
+  document.body.addEventListener('change-page-and-y', e => {
+    this.viewport_.goToPageAndY(e.detail.page, e.detail.y);
   });
 
   document.body.addEventListener('navigate', e => {
@@ -575,7 +581,9 @@ PDFViewer.prototype = {
     switch (message.data.type.toString()) {
       case 'documentDimensions':
         this.documentDimensions_ = message.data;
+        this.isUserInitiatedEvent_ = false;
         this.viewport_.setDocumentDimensions(this.documentDimensions_);
+        this.isUserInitiatedEvent_ = true;
         // If we received the document dimensions, the password was good so we
         // can dismiss the password screen.
         if (this.passwordScreen_.active)
@@ -675,6 +683,7 @@ PDFViewer.prototype = {
       var pinchPhase = this.viewport_.pinchPhase;
       this.plugin_.postMessage({
         type: 'viewport',
+        userInitiated: true,
         zoom: zoom,
         xOffset: position.x,
         yOffset: position.y,
@@ -697,6 +706,7 @@ PDFViewer.prototype = {
 
     this.plugin_.postMessage({
       type: 'viewport',
+      userInitiated: this.isUserInitiatedEvent_,
       zoom: zoom,
       xOffset: position.x,
       yOffset: position.y,
@@ -707,6 +717,19 @@ PDFViewer.prototype = {
       pinchVectorY: pinchVector.y
     });
     this.zoomManager_.onPdfZoomChange();
+  },
+
+  /**
+   * @param {boolean} userInitiated The value to set |isUserInitiatedEvent_|
+   *     to.
+   * @private
+   * A callback that sets |isUserInitiatedEvent_| to |userInitiated|.
+   */
+  setUserInitiated_: function(userInitiated) {
+    if (this.isUserInitiatedEvent_ == userInitiated) {
+      throw 'Trying to set user initiated to current value.';
+    }
+    this.isUserInitiatedEvent_ = userInitiated;
   },
 
   /**
@@ -850,7 +873,9 @@ PDFViewer.prototype = {
         this.loadState_ = LoadState.LOADING;
         if (!this.inPrintPreviewMode_) {
           this.inPrintPreviewMode_ = true;
+          this.isUserInitiatedEvent_ = false;
           this.zoomToolbar_.forceFitToPage();
+          this.isUserInitiatedEvent_ = true;
         }
 
         // Stash the scroll location so that it can be restored when the new

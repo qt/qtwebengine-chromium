@@ -13,7 +13,6 @@
 #include "base/files/file_util.h"
 #include "base/hash.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
@@ -84,7 +83,7 @@ void RecordWhetherOpenDidPrefetch(net::CacheType cache_type, bool result) {
 
 bool CanOmitEmptyFile(int file_index) {
   DCHECK_GE(file_index, 0);
-  DCHECK_LT(file_index, kSimpleEntryFileCount);
+  DCHECK_LT(file_index, kSimpleEntryNormalFileCount);
   return file_index == simple_util::GetFileIndexFromStreamIndex(2);
 }
 
@@ -490,6 +489,7 @@ void SimpleSynchronousEntry::ReadSparseData(
 
       int len_to_read = std::min(buf_len, range_len_after_offset);
       if (!ReadSparseRange(found_range, net_offset, len_to_read, buf)) {
+        Doom();
         *out_result = net::ERR_CACHE_READ_FAILURE;
         return;
       }
@@ -508,6 +508,7 @@ void SimpleSynchronousEntry::ReadSparseData(
     int range_len = base::saturated_cast<int>(found_range->length);
     int len_to_read = std::min(buf_len - read_so_far, range_len);
     if (!ReadSparseRange(found_range, 0, len_to_read, buf + read_so_far)) {
+      Doom();
       *out_result = net::ERR_CACHE_READ_FAILURE;
       return;
     }
@@ -533,6 +534,7 @@ void SimpleSynchronousEntry::WriteSparseData(
   int appended_so_far = 0;
 
   if (!sparse_file_open() && !CreateSparseFile()) {
+    Doom();
     *out_result = net::ERR_CACHE_WRITE_FAILURE;
     return;
   }
@@ -565,6 +567,7 @@ void SimpleSynchronousEntry::WriteSparseData(
 
       int len_to_write = std::min(buf_len, range_len_after_offset);
       if (!WriteSparseRange(found_range, net_offset, len_to_write, buf)) {
+        Doom();
         *out_result = net::ERR_CACHE_WRITE_FAILURE;
         return;
       }
@@ -583,6 +586,7 @@ void SimpleSynchronousEntry::WriteSparseData(
       if (!AppendSparseRange(offset + written_so_far,
                              len_to_append,
                              buf + written_so_far)) {
+        Doom();
         *out_result = net::ERR_CACHE_WRITE_FAILURE;
         return;
       }
@@ -595,6 +599,7 @@ void SimpleSynchronousEntry::WriteSparseData(
                           0,
                           len_to_write,
                           buf + written_so_far)) {
+      Doom();
       *out_result = net::ERR_CACHE_WRITE_FAILURE;
       return;
     }
@@ -607,6 +612,7 @@ void SimpleSynchronousEntry::WriteSparseData(
     if (!AppendSparseRange(offset + written_so_far,
                            len_to_append,
                            buf + written_so_far)) {
+      Doom();
       *out_result = net::ERR_CACHE_WRITE_FAILURE;
       return;
     }
@@ -782,7 +788,7 @@ void SimpleSynchronousEntry::Close(
       break;
     }
   }
-  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i) {
     if (empty_file_omitted_[i])
       continue;
 
@@ -828,7 +834,7 @@ SimpleSynchronousEntry::SimpleSynchronousEntry(net::CacheType cache_type,
       key_(key),
       have_open_files_(false),
       initialized_(false) {
-  for (int i = 0; i < kSimpleEntryFileCount; ++i)
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i)
     empty_file_omitted_[i] = false;
 }
 
@@ -892,7 +898,7 @@ bool SimpleSynchronousEntry::MaybeCreateFile(
 }
 
 bool SimpleSynchronousEntry::OpenFiles(SimpleEntryStat* out_entry_stat) {
-  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i) {
     File::Error error;
     if (!MaybeOpenFile(i, &error)) {
       // TODO(juliatuttle,gavinp): Remove one each of these triplets of
@@ -922,7 +928,7 @@ bool SimpleSynchronousEntry::OpenFiles(SimpleEntryStat* out_entry_stat) {
   have_open_files_ = true;
 
   base::TimeDelta entry_age = base::Time::Now() - base::Time::UnixEpoch();
-  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i) {
     if (empty_file_omitted_[i]) {
       out_entry_stat->set_data_size(i + 1, 0);
       continue;
@@ -973,7 +979,7 @@ bool SimpleSynchronousEntry::OpenFiles(SimpleEntryStat* out_entry_stat) {
 }
 
 bool SimpleSynchronousEntry::CreateFiles(SimpleEntryStat* out_entry_stat) {
-  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i) {
     File::Error error;
     if (!MaybeCreateFile(i, FILE_NOT_REQUIRED, &error)) {
       // TODO(juliatuttle,gavinp): Remove one each of these triplets of
@@ -1004,8 +1010,8 @@ bool SimpleSynchronousEntry::CreateFiles(SimpleEntryStat* out_entry_stat) {
   base::Time creation_time = Time::Now();
   out_entry_stat->set_last_modified(creation_time);
   out_entry_stat->set_last_used(creation_time);
-  for (int i = 0; i < kSimpleEntryStreamCount; ++i)
-      out_entry_stat->set_data_size(i, 0);
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i)
+    out_entry_stat->set_data_size(i, 0);
 
   files_created_ = true;
 
@@ -1019,14 +1025,13 @@ void SimpleSynchronousEntry::CloseFile(int index) {
     DCHECK(files_[index].IsValid());
     files_[index].Close();
   }
-
-  if (sparse_file_open())
-    CloseSparseFile();
 }
 
 void SimpleSynchronousEntry::CloseFiles() {
-  for (int i = 0; i < kSimpleEntryFileCount; ++i)
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i)
     CloseFile(i);
+  if (sparse_file_open())
+    CloseSparseFile();
 }
 
 bool SimpleSynchronousEntry::CheckHeaderAndKey(int file_index) {
@@ -1105,7 +1110,7 @@ int SimpleSynchronousEntry::InitializeForOpen(
     DLOG(WARNING) << "Could not open platform files for entry.";
     return net::ERR_FAILED;
   }
-  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i) {
     if (empty_file_omitted_[i])
       continue;
 
@@ -1204,7 +1209,7 @@ int SimpleSynchronousEntry::InitializeForCreate(
     DLOG(WARNING) << "Could not create platform files.";
     return net::ERR_FILE_EXISTS;
   }
-  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i) {
     if (empty_file_omitted_[i])
       continue;
 
@@ -1233,7 +1238,7 @@ int SimpleSynchronousEntry::ReadAndValidateStream0AndMaybe1(
     RecordWhetherOpenDidPrefetch(cache_type_, false);
   } else {
     RecordWhetherOpenDidPrefetch(cache_type_, true);
-    prefetch_buf = base::MakeUnique<char[]>(file_size);
+    prefetch_buf = std::make_unique<char[]>(file_size);
     if (files_[0].Read(0, prefetch_buf.get(), file_size) != file_size)
       return net::ERR_FAILED;
     file_0_prefetch.set(prefetch_buf.get(), file_size);
@@ -1395,7 +1400,7 @@ bool SimpleSynchronousEntry::DeleteFilesForEntryHash(
     const FilePath& path,
     const uint64_t entry_hash) {
   bool result = true;
-  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i) {
     if (!DeleteFileForEntryHash(path, entry_hash, i) && !CanOmitEmptyFile(i))
       result = false;
   }
@@ -1410,7 +1415,7 @@ bool SimpleSynchronousEntry::TruncateFilesForEntryHash(
     const FilePath& path,
     const uint64_t entry_hash) {
   bool result = true;
-  for (int i = 0; i < kSimpleEntryFileCount; ++i) {
+  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i) {
     FilePath filename_to_truncate =
         path.AppendASCII(GetFilenameFromEntryHashAndFileIndex(entry_hash, i));
     if (!TruncatePath(filename_to_truncate))

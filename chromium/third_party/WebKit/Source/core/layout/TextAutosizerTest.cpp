@@ -4,12 +4,39 @@
 
 #include "core/layout/LayoutObject.h"
 #include "core/layout/LayoutTestHelper.h"
+#include "core/loader/EmptyClients.h"
+#include "public/platform/WebFloatRect.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
+class TextAutosizerClient : public EmptyChromeClient {
+ public:
+  static TextAutosizerClient* Create() { return new TextAutosizerClient; }
+  float WindowToViewportScalar(const float value) const override {
+    return value * device_scale_factor_;
+  }
+  void set_device_scale_factor(float device_scale_factor) {
+    device_scale_factor_ = device_scale_factor;
+  }
+
+ private:
+  float device_scale_factor_;
+};
+
 class TextAutosizerTest : public RenderingTest {
+ public:
+  ChromeClient& GetChromeClient() const override {
+    return GetTextAutosizerClient();
+  }
+  TextAutosizerClient& GetTextAutosizerClient() const {
+    DEFINE_STATIC_LOCAL(TextAutosizerClient, client,
+                        (TextAutosizerClient::Create()));
+    return client;
+  }
+
  private:
   void SetUp() override {
+    GetTextAutosizerClient().set_device_scale_factor(1.f);
     RenderingTest::SetUp();
     GetDocument().GetSettings()->SetTextAutosizingEnabled(true);
     GetDocument().GetSettings()->SetTextAutosizingWindowSizeOverride(
@@ -517,7 +544,7 @@ TEST_F(TextAutosizerTest, ChangingSuperClusterFirstText) {
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* long_text_element = GetDocument().getElementById("longText");
-  long_text_element->setInnerHTML(
+  long_text_element->SetInnerHTMLFromString(
       "    Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed "
       "do eiusmod tempor"
       "    incididunt ut labore et dolore magna aliqua. Ut enim ad minim "
@@ -561,7 +588,7 @@ TEST_F(TextAutosizerTest, ChangingSuperClusterSecondText) {
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* long_text_element = GetDocument().getElementById("longText");
-  long_text_element->setInnerHTML(
+  long_text_element->SetInnerHTMLFromString(
       "    Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed "
       "do eiusmod tempor"
       "    incididunt ut labore et dolore magna aliqua. Ut enim ad minim "
@@ -605,7 +632,7 @@ TEST_F(TextAutosizerTest, AddingSuperCluster) {
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* container = GetDocument().getElementById("container");
-  container->setInnerHTML(
+  container->SetInnerHTMLFromString(
       "<div class='supercluster' id='longText'>"
       "    Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed "
       "do eiusmod tempor"
@@ -652,7 +679,7 @@ TEST_F(TextAutosizerTest, ChangingInheritedClusterTextInsideSuperCluster) {
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* long_text_element = GetDocument().getElementById("longText");
-  long_text_element->setInnerHTML(
+  long_text_element->SetInnerHTMLFromString(
       "    Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed "
       "do eiusmod tempor"
       "    incididunt ut labore et dolore magna aliqua. Ut enim ad minim "
@@ -737,7 +764,7 @@ TEST_F(TextAutosizerTest, ResizeAndGlyphOverflowChanged) {
   GetDocument().GetSettings()->SetTextAutosizingWindowSizeOverride(
       IntSize(360, 640));
   Element* html = GetDocument().body()->parentElement();
-  html->setInnerHTML(
+  html->SetInnerHTMLFromString(
       "<head>"
       "  <meta name='viewport' content='width=800'>"
       "  <style>"
@@ -777,7 +804,7 @@ TEST_F(TextAutosizerTest, ResizeAndGlyphOverflowChanged) {
 
 TEST_F(TextAutosizerTest, narrowContentInsideNestedWideBlock) {
   Element* html = GetDocument().body()->parentElement();
-  html->setInnerHTML(
+  html->SetInnerHTMLFromString(
       "<head>"
       "  <meta name='viewport' content='width=800'>"
       "  <style>"
@@ -813,7 +840,7 @@ TEST_F(TextAutosizerTest, narrowContentInsideNestedWideBlock) {
 
 TEST_F(TextAutosizerTest, LayoutViewWidthProvider) {
   Element* html = GetDocument().body()->parentElement();
-  html->setInnerHTML(
+  html->SetInnerHTMLFromString(
       "<head>"
       "  <meta name='viewport' content='width=800'>"
       "  <style>"
@@ -842,8 +869,8 @@ TEST_F(TextAutosizerTest, LayoutViewWidthProvider) {
   EXPECT_FLOAT_EQ(40.f,
                   content->GetLayoutObject()->Style()->ComputedFontSize());
 
-  GetDocument().getElementById("panel")->setInnerHTML("insert text");
-  content->setInnerHTML(content->innerHTML());
+  GetDocument().getElementById("panel")->SetInnerHTMLFromString("insert text");
+  content->SetInnerHTMLFromString(content->InnerHTMLAsString());
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   // (specified font-size = 16px) * (viewport width = 800px) /
@@ -854,7 +881,7 @@ TEST_F(TextAutosizerTest, LayoutViewWidthProvider) {
 
 TEST_F(TextAutosizerTest, MultiColumns) {
   Element* html = GetDocument().body()->parentElement();
-  html->setInnerHTML(
+  html->SetInnerHTMLFromString(
       "<head>"
       "  <meta name='viewport' content='width=800'>"
       "  <style>"
@@ -883,5 +910,47 @@ TEST_F(TextAutosizerTest, MultiColumns) {
   // (specified font-size = 16px) * ( thread flow layout width = 800px / 3) /
   // (window width = 320px) < 16px.
   EXPECT_FLOAT_EQ(16.f, target->GetLayoutObject()->Style()->ComputedFontSize());
+}
+
+TEST_F(TextAutosizerTest, ScaledbyDSF) {
+  GetTextAutosizerClient().set_device_scale_factor(1.f);
+  // Change setting triggers updating device scale factor
+  GetDocument().GetSettings()->SetTextAutosizingWindowSizeOverride(
+      IntSize(400, 300));
+  SetBodyInnerHTML(
+      "<style>"
+      "  html { font-size: 16px; }"
+      "  body { width: 800px; margin: 0; overflow-y: hidden; }"
+      "  .target { width: 560px; }"
+      "</style>"
+      "<body>"
+      "  <div id='target'>"
+      "    Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed "
+      "    do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+      "    Ut enim ad minim veniam, quis nostrud exercitation ullamco "
+      "    laboris nisi ut aliquip ex ea commodo consequat. Duis aute "
+      "    irure dolor in reprehenderit in voluptate velit esse cillum "
+      "    dolore eu fugiat nulla pariatur. Excepteur sint occaecat "
+      "    cupidatat non proident, sunt in culpa qui officia deserunt "
+      "  </div>"
+      "</body>");
+
+  Element* target = GetDocument().getElementById("target");
+  // (specified font-size = 16px) * (thread flow layout width = 800px) /
+  // (window width = 400px) = 32px.
+  EXPECT_FLOAT_EQ(32.0f,
+                  target->GetLayoutObject()->Style()->ComputedFontSize());
+
+  const float device_scale = 3.5f;
+  GetTextAutosizerClient().set_device_scale_factor(device_scale);
+  // Change setting triggers updating device scale factor
+  GetDocument().GetSettings()->SetTextAutosizingWindowSizeOverride(
+      IntSize(200, 150));
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // (specified font-size = 16px) * (thread flow layout width = 800px) /
+  // (window width = 200px) * (device scale factor) = 64px * device_scale.
+  EXPECT_FLOAT_EQ(64.0f * device_scale,
+                  target->GetLayoutObject()->Style()->ComputedFontSize());
 }
 }  // namespace blink

@@ -10,11 +10,13 @@ source_set("java_script_dialogs") {
     "java_script_dialog_mediator.mm",
     "java_script_dialog_overlay_presenter.h",
     "java_script_dialog_overlay_presenter.mm",
-    "java_script_dialog_request.h",
-    "java_script_dialog_request.mm",
   ]
 
   configs += [ "//build/config/compiler:enable_arc" ]
+
+  public_deps = [
+    ":java_script_dialog_request",
+  ]
 
   deps = [
     "//components/strings",
@@ -22,11 +24,30 @@ source_set("java_script_dialogs") {
     "//ios/chrome/browser/ui/browser_list",
     "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/ui/coordinators",
+    "//ios/chrome/browser/ui/dialogs",
     "//ios/chrome/browser/web_state_list",
     "//ios/clean/chrome/browser/ui/commands",
     "//ios/clean/chrome/browser/ui/dialogs:dialog_coordinator_support",
     "//ios/clean/chrome/browser/ui/dialogs:dialogs_ui",
+    "//ios/clean/chrome/browser/ui/dialogs/java_script_dialogs/dialog_blocking",
     "//ios/clean/chrome/browser/ui/overlays",
+    "//ios/web",
+    "//ui/base",
+    "//url",
+  ]
+}
+
+source_set("java_script_dialog_request") {
+  sources = [
+    "java_script_dialog_request.h",
+    "java_script_dialog_request.mm",
+  ]
+
+  configs += [ "//build/config/compiler:enable_arc" ]
+
+  deps = [
+    "//base",
+    "//components/strings",
     "//ios/web",
     "//ui/base",
     "//url",
@@ -42,6 +63,7 @@ source_set("unit_tests") {
   configs += [ "//build/config/compiler:enable_arc" ]
 
   deps = [
+    ":java_script_dialog_request",
     ":java_script_dialogs",
     "//base",
     "//base/test:test_support",

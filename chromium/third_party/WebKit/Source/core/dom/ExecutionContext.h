@@ -43,6 +43,10 @@
 #include "public/platform/WebTraceLocation.h"
 #include "v8/include/v8.h"
 
+namespace service_manager {
+class InterfaceProvider;
+}
+
 namespace blink {
 
 class ConsoleMessage;
@@ -54,6 +58,7 @@ class EventTarget;
 class LocalDOMWindow;
 class SuspendableObject;
 class PublicURLManager;
+class ResourceFetcher;
 class SecurityOrigin;
 class ScriptState;
 enum class TaskType : unsigned;
@@ -66,6 +71,7 @@ enum ReasonForCallingCanExecuteScripts {
 class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
                                      public Supplementable<ExecutionContext> {
   WTF_MAKE_NONCOPYABLE(ExecutionContext);
+  MERGE_GARBAGE_COLLECTED_MIXINS();
 
  public:
   DECLARE_VIRTUAL_TRACE();
@@ -87,7 +93,6 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   virtual bool IsDedicatedWorkerGlobalScope() const { return false; }
   virtual bool IsSharedWorkerGlobalScope() const { return false; }
   virtual bool IsServiceWorkerGlobalScope() const { return false; }
-  virtual bool IsCompositorWorkerGlobalScope() const { return false; }
   virtual bool IsAnimationWorkletGlobalScope() const { return false; }
   virtual bool IsAudioWorkletGlobalScope() const { return false; }
   virtual bool IsPaintWorkletGlobalScope() const { return false; }
@@ -109,6 +114,8 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   // DOMTimerCoordinator is owned by the ExecutionContext and should
   // not be used after the ExecutionContext is destroyed.
   virtual DOMTimerCoordinator* Timers() = 0;
+
+  virtual ResourceFetcher* Fetcher() const = 0;
 
   virtual SecurityContext& GetSecurityContext() = 0;
   KURL ContextURL() const { return VirtualURL(); }
@@ -185,6 +192,10 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   virtual ReferrerPolicy GetReferrerPolicy() const { return referrer_policy_; }
 
   virtual CoreProbeSink* GetProbeSink() { return nullptr; }
+
+  virtual service_manager::InterfaceProvider* GetInterfaceProvider() {
+    return nullptr;
+  }
 
  protected:
   ExecutionContext();

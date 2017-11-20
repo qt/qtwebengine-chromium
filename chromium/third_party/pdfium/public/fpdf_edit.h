@@ -42,6 +42,12 @@
 #define FPDF_PAGEOBJ_SHADING 4
 #define FPDF_PAGEOBJ_FORM 5
 
+// The path segment constants.
+#define FPDF_SEGMENT_UNKNOWN -1
+#define FPDF_SEGMENT_LINETO 0
+#define FPDF_SEGMENT_BEZIERTO 1
+#define FPDF_SEGMENT_MOVETO 2
+
 #define FPDF_FILLMODE_ALTERNATE 1
 #define FPDF_FILLMODE_WINDING 2
 
@@ -144,7 +150,16 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_InsertObject(FPDF_PAGE page,
 //   page - handle to a page.
 //
 // Returns the number of objects in |page|.
+//
+// DEPRECATED. Please use FPDFPage_CountObjects.
 FPDF_EXPORT int FPDF_CALLCONV FPDFPage_CountObject(FPDF_PAGE page);
+
+// Get number of page objects inside |page|.
+//
+//   page - handle to a page.
+//
+// Returns the number of objects in |page|.
+FPDF_EXPORT int FPDF_CALLCONV FPDFPage_CountObjects(FPDF_PAGE page);
 
 // Get object in |page| at |index|.
 //
@@ -385,7 +400,7 @@ FPDFImageObj_GetImageFilterCount(FPDF_PAGEOBJECT image_object);
 //
 //   image_object - handle to an image object.
 //   index        - the index of the filter requested.
-//   buffer       - buffer for holding filter string, encoded in UTF16-LE.
+//   buffer       - buffer for holding filter string, encoded in UTF-8.
 //   buflen       - length of the buffer.
 //
 // Returns the length of the filter string.
@@ -551,6 +566,56 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_GetFillColor(FPDF_PAGEOBJECT path,
                                                           unsigned int* G,
                                                           unsigned int* B,
                                                           unsigned int* A);
+
+// Experimental API.
+// Get number of segments inside |path|.
+//
+//   path - handle to a path.
+//
+// A segment is a command, created by e.g. FPDFPath_MoveTo(),
+// FPDFPath_LineTo() or FPDFPath_BezierTo().
+//
+// Returns the number of objects in |path| or -1 on failure.
+FPDF_EXPORT int FPDF_CALLCONV FPDFPath_CountSegments(FPDF_PAGEOBJECT path);
+
+// Experimental API.
+// Get segment in |path| at |index|.
+//
+//   path  - handle to a path.
+//   index - the index of a segment.
+//
+// Returns the handle to the segment, or NULL on faiure.
+FPDF_EXPORT FPDF_PATHSEGMENT FPDF_CALLCONV
+FPDFPath_GetPathSegment(FPDF_PAGEOBJECT path, int index);
+
+// Experimental API.
+// Get coordinates of |segment|.
+//
+//   segment  - handle to a segment.
+//   x      - the horizontal position of the segment.
+//   y      - the vertical position of the segment.
+//
+// Returns TRUE on success, otherwise |x| and |y| is not set.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPathSegment_GetPoint(FPDF_PATHSEGMENT segment, float* x, float* y);
+
+// Experimental API.
+// Get type of |segment|.
+//
+//   segment - handle to a segment.
+//
+// Returns one of the FPDF_SEGMENT_* values on success,
+// FPDF_SEGMENT_UNKNOWN on error.
+FPDF_EXPORT int FPDF_CALLCONV FPDFPathSegment_GetType(FPDF_PATHSEGMENT segment);
+
+// Experimental API.
+// Gets if the |segment| closes the current subpath of a given path.
+//
+//   segment - handle to a segment.
+//
+// Returns close flag for non-NULL segment, FALSE otherwise.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPathSegment_GetClose(FPDF_PATHSEGMENT segment);
 
 // Move a path's current point.
 //

@@ -44,6 +44,14 @@ void CORSURLLoader::SetPriority(net::RequestPriority priority,
   network_loader_->SetPriority(priority, intra_priority_value);
 }
 
+void CORSURLLoader::PauseReadingBodyFromNet() {
+  network_loader_->PauseReadingBodyFromNet();
+}
+
+void CORSURLLoader::ResumeReadingBodyFromNet() {
+  network_loader_->ResumeReadingBodyFromNet();
+}
+
 // mojom::URLLoaderClient for simply proxying network for now:
 void CORSURLLoader::OnReceiveResponse(
     const ResourceResponseHead& response_head,

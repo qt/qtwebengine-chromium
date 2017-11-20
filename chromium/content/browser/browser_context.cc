@@ -118,14 +118,16 @@ StoragePartition* GetStoragePartitionFromConfig(
     BrowserContext* browser_context,
     const std::string& partition_domain,
     const std::string& partition_name,
-    bool in_memory) {
+    bool in_memory,
+    bool can_create) {
   StoragePartitionImplMap* partition_map =
       GetStoragePartitionMap(browser_context);
 
   if (browser_context->IsOffTheRecord())
     in_memory = true;
 
-  return partition_map->Get(partition_domain, partition_name, in_memory);
+  return partition_map->Get(partition_domain, partition_name, in_memory,
+                            can_create);
 }
 
 void SaveSessionStateOnIOThread(
@@ -257,7 +259,8 @@ content::BrowsingDataRemover* content::BrowserContext::GetBrowsingDataRemover(
 
 StoragePartition* BrowserContext::GetStoragePartition(
     BrowserContext* browser_context,
-    SiteInstance* site_instance) {
+    SiteInstance* site_instance,
+    bool can_create) {
   std::string partition_domain;
   std::string partition_name;
   bool in_memory = false;
@@ -268,13 +271,14 @@ StoragePartition* BrowserContext::GetStoragePartition(
         &partition_domain, &partition_name, &in_memory);
   }
 
-  return GetStoragePartitionFromConfig(
-      browser_context, partition_domain, partition_name, in_memory);
+  return GetStoragePartitionFromConfig(browser_context, partition_domain,
+                                       partition_name, in_memory, can_create);
 }
 
 StoragePartition* BrowserContext::GetStoragePartitionForSite(
     BrowserContext* browser_context,
-    const GURL& site) {
+    const GURL& site,
+    bool can_create) {
   std::string partition_domain;
   std::string partition_name;
   bool in_memory;
@@ -283,8 +287,8 @@ StoragePartition* BrowserContext::GetStoragePartitionForSite(
       browser_context, site, true, &partition_domain, &partition_name,
       &in_memory);
 
-  return GetStoragePartitionFromConfig(
-      browser_context, partition_domain, partition_name, in_memory);
+  return GetStoragePartitionFromConfig(browser_context, partition_domain,
+                                       partition_name, in_memory, can_create);
 }
 
 void BrowserContext::ForEachStoragePartition(
@@ -315,7 +319,7 @@ void BrowserContext::CreateMemoryBackedBlob(BrowserContext* browser_context,
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&ChromeBlobStorageContext::CreateMemoryBackedBlob,
-                 make_scoped_refptr(blob_context), data, length),
+                 base::WrapRefCounted(blob_context), data, length),
       callback);
 }
 
@@ -334,7 +338,7 @@ void BrowserContext::CreateFileBackedBlob(
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&ChromeBlobStorageContext::CreateFileBackedBlob,
-                 make_scoped_refptr(blob_context), path, offset, size,
+                 base::WrapRefCounted(blob_context), path, offset, size,
                  expected_modification_time),
       callback);
 }
@@ -361,9 +365,8 @@ void BrowserContext::NotifyWillBeDestroyed(BrowserContext* browser_context) {
                           base::Bind(ShutdownServiceWorkerContext));
 
   // Shared workers also keep render process hosts alive, and are expected to
-  // return ref counts to 0 after documents close. However, shared worker
-  // bookkeeping is done on the IO thread and we want to ensure the hosts are
-  // destructed now, so forcibly release their ref counts here.
+  // return ref counts to 0 after documents close. However, to ensure that
+  // hosts are destructed now, forcibly release their ref counts here.
   for (RenderProcessHost::iterator host_iterator =
            RenderProcessHost::AllHostsIterator();
        !host_iterator.IsAtEnd(); host_iterator.Advance()) {
@@ -396,14 +399,14 @@ void BrowserContext::SaveSessionState(BrowserContext* browser_context) {
   database_tracker->task_runner()->PostTask(
       FROM_HERE,
       base::BindOnce(&storage::DatabaseTracker::SetForceKeepSessionState,
-                     make_scoped_refptr(database_tracker)));
+                     base::WrapRefCounted(database_tracker)));
 
   if (BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::BindOnce(
             &SaveSessionStateOnIOThread,
-            make_scoped_refptr(
+            base::WrapRefCounted(
                 BrowserContext::GetDefaultStoragePartition(browser_context)
                     ->GetURLRequestContext()),
             static_cast<AppCacheServiceImpl*>(
@@ -421,8 +424,9 @@ void BrowserContext::SaveSessionState(BrowserContext* browser_context) {
   // No task runner in unit tests.
   if (indexed_db_context_impl->TaskRunner()) {
     indexed_db_context_impl->TaskRunner()->PostTask(
-        FROM_HERE, base::BindOnce(&SaveSessionStateOnIndexedDBThread,
-                                  make_scoped_refptr(indexed_db_context_impl)));
+        FROM_HERE,
+        base::BindOnce(&SaveSessionStateOnIndexedDBThread,
+                       base::WrapRefCounted(indexed_db_context_impl)));
   }
 }
 

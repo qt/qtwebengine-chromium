@@ -30,8 +30,13 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   NGConstraintSpaceBuilder& SetPercentageResolutionSize(
       NGLogicalSize percentage_resolution_size);
 
-  NGConstraintSpaceBuilder& SetFragmentainerSpaceAvailable(LayoutUnit space) {
-    fragmentainer_space_available_ = space;
+  NGConstraintSpaceBuilder& SetFragmentainerBlockSize(LayoutUnit size) {
+    fragmentainer_block_size_ = size;
+    return *this;
+  }
+
+  NGConstraintSpaceBuilder& SetFragmentainerSpaceAtBfcStart(LayoutUnit space) {
+    fragmentainer_space_at_bfc_start_ = space;
     return *this;
   }
 
@@ -50,6 +55,7 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   NGConstraintSpaceBuilder& SetFragmentationType(NGFragmentationType);
   NGConstraintSpaceBuilder& SetIsNewFormattingContext(bool is_new_fc);
   NGConstraintSpaceBuilder& SetIsAnonymous(bool is_anonymous);
+  NGConstraintSpaceBuilder& SetUseFirstLineStyle(bool use_first_line_sytle);
 
   NGConstraintSpaceBuilder& SetUnpositionedFloats(
       Vector<RefPtr<NGUnpositionedFloat>>& unpositioned_floats);
@@ -86,7 +92,8 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   NGLogicalSize percentage_resolution_size_;
   Optional<NGLogicalSize> parent_percentage_resolution_size_;
   NGPhysicalSize initial_containing_block_size_;
-  LayoutUnit fragmentainer_space_available_;
+  LayoutUnit fragmentainer_block_size_;
+  LayoutUnit fragmentainer_space_at_bfc_start_;
 
   unsigned parent_writing_mode_ : 3;
   unsigned is_fixed_size_inline_ : 1;
@@ -97,6 +104,7 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   unsigned fragmentation_type_ : 2;
   unsigned is_new_fc_ : 1;
   unsigned is_anonymous_ : 1;
+  unsigned use_first_line_sytle_ : 1;
   unsigned text_direction_ : 1;
 
   NGMarginStrut margin_strut_;

@@ -11,6 +11,7 @@
 
 #include "common/bitset_utils.h"
 #include "libANGLE/Constants.h"
+#include "libANGLE/Error.h"
 #include "libANGLE/RefCountObject.h"
 
 #include <stdint.h>
@@ -324,7 +325,9 @@ using UniformBlockBindingMask = angle::BitSet<IMPLEMENTATION_MAX_COMBINED_SHADER
 using DrawBufferMask = angle::BitSet<IMPLEMENTATION_MAX_DRAW_BUFFERS>;
 
 using ContextID = uintptr_t;
-}
+
+constexpr size_t CUBE_FACE_COUNT = 6;
+}  // namespace gl
 
 namespace rx
 {
@@ -422,11 +425,80 @@ inline GLenum FramebufferBindingToEnum(FramebufferBinding binding)
             return GL_NONE;
     }
 }
+
+template <typename ObjT, typename ContextT>
+class DestroyThenDelete
+{
+  public:
+    DestroyThenDelete(const ContextT *context) : mContext(context) {}
+
+    void operator()(ObjT *obj)
+    {
+        ANGLE_SWALLOW_ERR(obj->onDestroy(mContext));
+        delete obj;
+    }
+
+  private:
+    const ContextT *mContext;
+};
+
+// Helper class for wrapping an onDestroy function.
+template <typename ObjT, typename DeleterT>
+class UniqueObjectPointerBase : angle::NonCopyable
+{
+  public:
+    template <typename ContextT>
+    UniqueObjectPointerBase(const ContextT *context) : mObject(nullptr), mDeleter(context)
+    {
+    }
+
+    template <typename ContextT>
+    UniqueObjectPointerBase(ObjT *obj, const ContextT *context) : mObject(obj), mDeleter(context)
+    {
+    }
+
+    ~UniqueObjectPointerBase()
+    {
+        if (mObject)
+        {
+            mDeleter(mObject);
+        }
+    }
+
+    ObjT *operator->() const { return mObject; }
+
+    ObjT *release()
+    {
+        auto obj = mObject;
+        mObject  = nullptr;
+        return obj;
+    }
+
+    ObjT *get() const { return mObject; }
+
+    void reset(ObjT *obj)
+    {
+        if (mObject)
+        {
+            mDeleter(mObject);
+        }
+        mObject = obj;
+    }
+
+  private:
+    ObjT *mObject;
+    DeleterT mDeleter;
+};
+
+template <typename ObjT, typename ContextT>
+using UniqueObjectPointer = UniqueObjectPointerBase<ObjT, DestroyThenDelete<ObjT, ContextT>>;
+
 }  // namespace angle
 
 namespace gl
 {
 class ContextState;
+
 }  // namespace gl
 
 #endif // LIBANGLE_ANGLETYPES_H_

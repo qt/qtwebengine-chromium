@@ -7,16 +7,13 @@
 #include "core/css/CSSValuePair.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 #include "core/css/properties/CSSPropertyAlignmentUtils.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
 const CSSValue* CSSPropertyAPIJustifyItems::ParseSingleValue(
-    CSSPropertyID,
     CSSParserTokenRange& range,
     const CSSParserContext& context,
     const CSSParserLocalContext&) const {
-  DCHECK(RuntimeEnabledFeatures::CSSGridLayoutEnabled());
   CSSParserTokenRange range_copy = range;
   CSSIdentifierValue* legacy =
       CSSPropertyParserHelpers::ConsumeIdent<CSSValueLegacy>(range_copy);

@@ -21,12 +21,12 @@
 
 #include "core/svg/SVGFEImageElement.h"
 
-#include "core/SVGNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/IdTargetObserver.h"
 #include "core/loader/resource/ImageResourceContent.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
 #include "core/svg/graphics/filters/SVGFEImage.h"
+#include "core/svg_names.h"
 #include "platform/graphics/Image.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
@@ -141,7 +141,7 @@ void SVGFEImageElement::ImageNotifyFinished(ImageResourceContent*) {
     return;
 
   Element* parent = parentElement();
-  if (!parent || !isSVGFilterElement(parent) || !parent->GetLayoutObject())
+  if (!parent || !IsSVGFilterElement(parent) || !parent->GetLayoutObject())
     return;
 
   if (LayoutObject* layout_object = this->GetLayoutObject())

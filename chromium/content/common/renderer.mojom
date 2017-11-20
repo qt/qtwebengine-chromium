@@ -6,8 +6,9 @@ module content.mojom;
 
 import "content/common/native_types.mojom";
 import "content/common/service_worker/embedded_worker.mojom";
-import "ipc/ipc.mojom";
+import "ipc/constants.mojom";
 import "mojo/common/time.mojom";
+import "mojo/common/unguessable_token.mojom";
 import "ui/gfx/geometry/mojo/geometry.mojom";
 import "ui/gfx/mojo/icc_profile.mojom";
 
@@ -43,6 +44,14 @@ struct CreateViewParams {
   // cases.
   FrameReplicationState replicated_frame_state;
 
+  // Used for devtools instrumentation and trace-ability. The token is
+  // propagated to Blink's LocalFrame and both Blink and content/
+  // can tag calls and requests with this instrumentation token in order to
+  // attribute them to the context frame.
+  // |devtools_main_frame_token| is only defined by the browser and is never
+  // sent back from the renderer in the control calls.
+  mojo.common.mojom.UnguessableToken devtools_main_frame_token;
+
   // The ID of the proxy object for the main frame in this view. It is only
   // used if |swapped_out| is true.
   int32 proxy_routing_id = IPC.mojom.kRoutingIdNone;
@@ -70,9 +79,6 @@ struct CreateViewParams {
 
   // The page zoom level.
   double page_zoom_level;
-
-  // The ICC profile of the output color space to use for image decode.
-  gfx.mojom.ICCProfile image_decode_color_space;
 };
 
 struct CreateFrameWidgetParams {
@@ -112,6 +118,14 @@ struct CreateFrameParams {
   // properties replicated from the process rendering the parent frame, such as
   // the new frame's sandbox flags.
   FrameReplicationState replication_state;
+
+  // Used for devtools instrumentation and trace-ability. The token is
+  // propagated to Blink's LocalFrame and both Blink and content/
+  // can tag calls and requests with this instrumentation token in order to
+  // attribute them to the context frame.
+  // |devtools_frame_token| is only defined by the browser and is never
+  // sent back from the renderer in the control calls.
+  mojo.common.mojom.UnguessableToken devtools_frame_token;
 
   // When the new frame has a parent, |frame_owner_properties| holds the
   // properties of the HTMLFrameOwnerElement from the parent process.
@@ -171,7 +185,7 @@ interface Renderer {
   // EffectiveConnectionType is the connection type whose typical performance is
   // most similar to the measured performance of the network in use.
   // The downstream throughput is computed in kilobits per second. If an
-  // estimate of the HTTP or transport RTT is unavailable, it will be set to 
+  // estimate of the HTTP or transport RTT is unavailable, it will be set to
   // net::nqe::internal::InvalidRTT(). If the throughput estimate is
   // unavailable, it will be set to net::nqe::internal::kInvalidThroughput.
   OnNetworkQualityChanged(EffectiveConnectionType effective_connection_type,

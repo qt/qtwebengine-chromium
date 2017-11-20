@@ -213,6 +213,11 @@ class EVENTS_EXPORT Event {
            !(flags() & EF_FROM_TOUCH));
   }
 
+  bool IsPinchEvent() const {
+    return type_ == ET_GESTURE_PINCH_BEGIN ||
+           type_ == ET_GESTURE_PINCH_UPDATE || type_ == ET_GESTURE_PINCH_END;
+  }
+
   bool IsScrollGestureEvent() const {
     return type_ == ET_GESTURE_SCROLL_BEGIN ||
            type_ == ET_GESTURE_SCROLL_UPDATE ||
@@ -378,7 +383,7 @@ class EVENTS_EXPORT LocatedEvent : public Event {
     gfx::Point offset = gfx::ToFlooredPoint(location_);
     T::ConvertPointToTarget(source, target, &offset);
     gfx::Vector2d diff = gfx::ToFlooredPoint(location_) - offset;
-    location_= location_ - diff;
+    location_ = location_ - diff;
   }
 
  protected:

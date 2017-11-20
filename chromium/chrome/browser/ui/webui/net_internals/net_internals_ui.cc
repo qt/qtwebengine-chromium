@@ -156,7 +156,7 @@ content::WebUIDataSource* CreateNetInternalsHTMLSource() {
   source->SetDefaultResource(IDR_NET_INTERNALS_INDEX_HTML);
   source->AddResourcePath("index.js", IDR_NET_INTERNALS_INDEX_JS);
   source->SetJsonPath("strings.js");
-  source->UseGzip(std::unordered_set<std::string>());
+  source->UseGzip();
   return source;
 }
 
@@ -213,7 +213,7 @@ class NetInternalsMessageHandler
   void OnCertificatesImported(
       const std::string& previous_error,
       bool success,
-      const net::CertificateList& onc_trusted_certificates);
+      net::ScopedCERTCertificateList onc_trusted_certificates);
 #endif
 
  private:
@@ -955,7 +955,7 @@ void NetInternalsMessageHandler::ImportONCFileToNSSDB(
 void NetInternalsMessageHandler::OnCertificatesImported(
     const std::string& previous_error,
     bool success,
-    const net::CertificateList& /* unused onc_trusted_certificates */) {
+    net::ScopedCERTCertificateList /* unused onc_trusted_certificates */) {
   std::string error = previous_error;
   if (!success)
     error += "Some certificates couldn't be imported. ";

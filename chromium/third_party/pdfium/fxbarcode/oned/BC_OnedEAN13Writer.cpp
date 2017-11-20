@@ -27,9 +27,11 @@
 #include <memory>
 #include <vector>
 
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "fxbarcode/BC_Writer.h"
 #include "fxbarcode/oned/BC_OneDimWriter.h"
+#include "fxbarcode/oned/BC_OnedEANChecksum.h"
 
 namespace {
 
@@ -54,16 +56,14 @@ CBC_OnedEAN13Writer::CBC_OnedEAN13Writer() {
 }
 CBC_OnedEAN13Writer::~CBC_OnedEAN13Writer() {}
 
-bool CBC_OnedEAN13Writer::CheckContentValidity(
-    const CFX_WideStringC& contents) {
+bool CBC_OnedEAN13Writer::CheckContentValidity(const WideStringView& contents) {
   return std::all_of(contents.begin(), contents.end(), std::iswdigit);
 }
 
-CFX_WideString CBC_OnedEAN13Writer::FilterContents(
-    const CFX_WideStringC& contents) {
-  CFX_WideString filtercontents;
+WideString CBC_OnedEAN13Writer::FilterContents(const WideStringView& contents) {
+  WideString filtercontents;
   wchar_t ch;
-  for (FX_STRSIZE i = 0; i < contents.GetLength(); i++) {
+  for (size_t i = 0; i < contents.GetLength(); i++) {
     ch = contents[i];
     if (ch > 175) {
       i++;
@@ -75,24 +75,12 @@ CFX_WideString CBC_OnedEAN13Writer::FilterContents(
   }
   return filtercontents;
 }
-int32_t CBC_OnedEAN13Writer::CalcChecksum(const CFX_ByteString& contents) {
-  int32_t odd = 0;
-  int32_t even = 0;
-  FX_STRSIZE j = 1;
-  for (FX_STRSIZE i = 0; i < contents.GetLength(); i++) {
-    if (j % 2) {
-      odd += FXSYS_atoi(contents.Mid(i, 1).c_str());
-    } else {
-      even += FXSYS_atoi(contents.Mid(i, 1).c_str());
-    }
-    j++;
-  }
-  int32_t checksum = (odd * 3 + even) % 10;
-  checksum = (10 - checksum) % 10;
-  return (checksum);
+
+int32_t CBC_OnedEAN13Writer::CalcChecksum(const ByteString& contents) {
+  return EANCalcChecksum(contents);
 }
 
-uint8_t* CBC_OnedEAN13Writer::EncodeWithHint(const CFX_ByteString& contents,
+uint8_t* CBC_OnedEAN13Writer::EncodeWithHint(const ByteString& contents,
                                              BCFORMAT format,
                                              int32_t& outWidth,
                                              int32_t& outHeight,
@@ -103,13 +91,13 @@ uint8_t* CBC_OnedEAN13Writer::EncodeWithHint(const CFX_ByteString& contents,
                                           hints);
 }
 
-uint8_t* CBC_OnedEAN13Writer::EncodeImpl(const CFX_ByteString& contents,
+uint8_t* CBC_OnedEAN13Writer::EncodeImpl(const ByteString& contents,
                                          int32_t& outLength) {
   if (contents.GetLength() != 13)
     return nullptr;
 
   m_iDataLenth = 13;
-  int32_t firstDigit = FXSYS_atoi(contents.Left(1).c_str());
+  int32_t firstDigit = FXSYS_DecimalCharToInt(contents.First());
   int32_t parities = FIRST_DIGIT_ENCODINGS[firstDigit];
   outLength = m_codeWidth;
   std::unique_ptr<uint8_t, FxFreeDeleter> result(
@@ -122,7 +110,7 @@ uint8_t* CBC_OnedEAN13Writer::EncodeImpl(const CFX_ByteString& contents,
 
   int32_t i = 0;
   for (i = 1; i <= 6; i++) {
-    int32_t digit = FXSYS_atoi(contents.Mid(i, 1).c_str());
+    int32_t digit = FXSYS_DecimalCharToInt(contents[i]);
     if ((parities >> (6 - i) & 1) == 1) {
       digit += 10;
     }
@@ -135,7 +123,7 @@ uint8_t* CBC_OnedEAN13Writer::EncodeImpl(const CFX_ByteString& contents,
     return nullptr;
 
   for (i = 7; i <= 12; i++) {
-    int32_t digit = FXSYS_atoi(contents.Mid(i, 1).c_str());
+    int32_t digit = FXSYS_DecimalCharToInt(contents[i]);
     pos += AppendPattern(result.get(), pos, L_PATTERNS[digit], 4, 1, e);
     if (e != BCExceptionNO)
       return nullptr;
@@ -146,7 +134,7 @@ uint8_t* CBC_OnedEAN13Writer::EncodeImpl(const CFX_ByteString& contents,
   return result.release();
 }
 
-bool CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
+bool CBC_OnedEAN13Writer::ShowChars(const WideStringView& contents,
                                     CFX_RenderDevice* device,
                                     const CFX_Matrix* matrix,
                                     int32_t barWidth,
@@ -156,12 +144,12 @@ bool CBC_OnedEAN13Writer::ShowChars(const CFX_WideStringC& contents,
 
   int32_t leftPadding = 7 * multiple;
   int32_t leftPosition = 3 * multiple + leftPadding;
-  CFX_ByteString str = FX_UTF8Encode(contents);
+  ByteString str = FX_UTF8Encode(contents);
   int32_t iLen = str.GetLength();
   std::vector<FXTEXT_CHARPOS> charpos(iLen);
   int32_t iFontSize = (int32_t)fabs(m_fFontSize);
   int32_t iTextHeight = iFontSize + 1;
-  CFX_ByteString tempStr = str.Mid(1, 6);
+  ByteString tempStr = str.Mid(1, 6);
   int32_t strWidth = multiple * 42;
 
   CFX_Matrix matr(m_outputHScale, 0.0, 0.0, 1.0, 0.0, 0.0);

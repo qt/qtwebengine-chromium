@@ -229,11 +229,13 @@ TEST_F(KeyboardTest, OnKeyboardTypeChanged) {
       aura::client::GetFocusClient(ash::Shell::GetPrimaryRootWindow());
   focus_client->FocusWindow(nullptr);
 
-  ui::DeviceDataManager* device_data_manager =
+  ui::DeviceHotplugEventObserver* device_data_manager =
       ui::DeviceDataManager::GetInstance();
   ASSERT_TRUE(device_data_manager != nullptr);
-  const std::vector<ui::InputDevice> keyboards =
-      device_data_manager->GetKeyboardDevices();
+  // Make sure that DeviceDataManager has one external keyboard.
+  const std::vector<ui::InputDevice> keyboards{ui::InputDevice(
+      2, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "keyboard")};
+  device_data_manager->OnKeyboardDevicesUpdated(keyboards);
 
   ash::TabletModeController* tablet_mode_controller =
       ash::Shell::Get()->tablet_mode_controller();
@@ -250,13 +252,12 @@ TEST_F(KeyboardTest, OnKeyboardTypeChanged) {
   // Removing all keyboard devices in tablet mode calls
   // OnKeyboardTypeChanged() with false.
   EXPECT_CALL(configuration_delegate, OnKeyboardTypeChanged(false));
-  static_cast<ui::DeviceHotplugEventObserver*>(device_data_manager)
-      ->OnKeyboardDevicesUpdated(std::vector<ui::InputDevice>({}));
+  device_data_manager->OnKeyboardDevicesUpdated(
+      std::vector<ui::InputDevice>({}));
 
   // Re-adding keyboards calls OnKeyboardTypeChanged() with true;
   EXPECT_CALL(configuration_delegate, OnKeyboardTypeChanged(true));
-  static_cast<ui::DeviceHotplugEventObserver*>(device_data_manager)
-      ->OnKeyboardDevicesUpdated(keyboards);
+  device_data_manager->OnKeyboardDevicesUpdated(keyboards);
 
   keyboard.reset();
 
@@ -277,7 +278,7 @@ TEST_F(KeyboardTest, KeyboardObserver) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  auto keyboard = base::MakeUnique<Keyboard>(&delegate);
+  auto keyboard = std::make_unique<Keyboard>(&delegate);
   MockKeyboardObserver observer;
   keyboard->AddObserver(&observer);
 
@@ -299,7 +300,7 @@ TEST_F(KeyboardTest, NeedKeyboardKeyAcks) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  auto keyboard = base::MakeUnique<Keyboard>(&delegate);
+  auto keyboard = std::make_unique<Keyboard>(&delegate);
 
   EXPECT_FALSE(keyboard->AreKeyboardKeyAcksNeeded());
   keyboard->SetNeedKeyboardKeyAcks(true);
@@ -312,7 +313,7 @@ TEST_F(KeyboardTest, NeedKeyboardKeyAcks) {
 
 TEST_F(KeyboardTest, AckKeyboardKey) {
   std::unique_ptr<Surface> surface(new Surface);
-  auto shell_surface = base::MakeUnique<TestShellSurface>(surface.get());
+  auto shell_surface = std::make_unique<TestShellSurface>(surface.get());
   gfx::Size buffer_size(10, 10);
   std::unique_ptr<Buffer> buffer(
       new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(buffer_size)));
@@ -390,7 +391,7 @@ TEST_F(KeyboardTest, AckKeyboardKey) {
 
 TEST_F(KeyboardTest, AckKeyboardKeyMoveFocus) {
   std::unique_ptr<Surface> surface(new Surface);
-  auto shell_surface = base::MakeUnique<TestShellSurface>(surface.get());
+  auto shell_surface = std::make_unique<TestShellSurface>(surface.get());
   gfx::Size buffer_size(10, 10);
   std::unique_ptr<Buffer> buffer(
       new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(buffer_size)));
@@ -432,7 +433,7 @@ TEST_F(KeyboardTest, AckKeyboardKeyMoveFocus) {
 
 TEST_F(KeyboardTest, AckKeyboardKeyExpired) {
   std::unique_ptr<Surface> surface(new Surface);
-  auto shell_surface = base::MakeUnique<TestShellSurface>(surface.get());
+  auto shell_surface = std::make_unique<TestShellSurface>(surface.get());
   gfx::Size buffer_size(10, 10);
   std::unique_ptr<Buffer> buffer(
       new Buffer(exo_test_helper()->CreateGpuMemoryBuffer(buffer_size)));
@@ -503,7 +504,7 @@ class TestShellSurfaceWithMovingFocusAccelerator : public ShellSurface {
 TEST_F(KeyboardTest, AckKeyboardKeyExpiredWithMovingFocusAccelerator) {
   std::unique_ptr<Surface> surface(new Surface);
   auto shell_surface =
-      base::MakeUnique<TestShellSurfaceWithMovingFocusAccelerator>(
+      std::make_unique<TestShellSurfaceWithMovingFocusAccelerator>(
           surface.get());
   gfx::Size buffer_size(10, 10);
   std::unique_ptr<Buffer> buffer(

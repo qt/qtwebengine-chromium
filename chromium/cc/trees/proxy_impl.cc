@@ -18,8 +18,8 @@
 #include "cc/base/devtools_instrumentation.h"
 #include "cc/benchmarks/benchmark_instrumentation.h"
 #include "cc/input/browser_controls_offset_manager.h"
-#include "cc/output/layer_tree_frame_sink.h"
 #include "cc/scheduler/compositor_timing_history.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/mutator_host.h"
@@ -110,7 +110,7 @@ ProxyImpl::~ProxyImpl() {
 
 void ProxyImpl::InitializeMutatorOnImpl(
     std::unique_ptr<LayerTreeMutator> mutator) {
-  TRACE_EVENT0("cc,compositor-worker", "ProxyImpl::InitializeMutatorOnImpl");
+  TRACE_EVENT0("cc", "ProxyImpl::InitializeMutatorOnImpl");
   DCHECK(IsImplThread());
   host_impl_->SetLayerTreeMutator(std::move(mutator));
 }
@@ -506,8 +506,6 @@ void ProxyImpl::ScheduledActionSendBeginMainFrame(
       new BeginMainFrameAndCommitState);
   begin_main_frame_state->begin_frame_id = begin_frame_id;
   begin_main_frame_state->begin_frame_args = args;
-  begin_main_frame_state->begin_frame_callbacks =
-      host_impl_->ProcessLayerTreeMutations();
   begin_main_frame_state->scroll_info = host_impl_->ProcessScrollDeltas();
   begin_main_frame_state->evicted_ui_resources =
       host_impl_->EvictedUIResourcesExist();

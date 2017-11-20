@@ -38,13 +38,14 @@ namespace protocol {
 class NetworkHandler : public DevToolsDomainHandler,
                        public Network::Backend {
  public:
-  NetworkHandler();
+  explicit NetworkHandler(const std::string& host_id);
   ~NetworkHandler() override;
 
   static std::vector<NetworkHandler*> ForAgentHost(DevToolsAgentHostImpl* host);
 
   void Wire(UberDispatcher* dispatcher) override;
-  void SetRenderFrameHost(RenderFrameHostImpl* host) override;
+  void SetRenderer(RenderProcessHost* process_host,
+                   RenderFrameHostImpl* frame_host) override;
 
   Response Enable(Maybe<int> max_total_size,
                   Maybe<int> max_resource_size) override;
@@ -78,10 +79,17 @@ class NetworkHandler : public DevToolsDomainHandler,
 
   Response SetUserAgentOverride(const std::string& user_agent) override;
   Response CanEmulateNetworkConditions(bool* result) override;
+  Response EmulateNetworkConditions(
+      bool offline,
+      double latency,
+      double download_throughput,
+      double upload_throughput,
+      Maybe<protocol::Network::ConnectionType> connection_type) override;
 
   DispatchResponse SetRequestInterceptionEnabled(
       bool enabled,
-      Maybe<protocol::Array<std::string>> patterns) override;
+      Maybe<protocol::Array<std::string>> patterns,
+      Maybe<protocol::Array<std::string>> resource_types) override;
   void ContinueInterceptedRequest(
       const std::string& request_id,
       Maybe<std::string> error_reason,
@@ -112,6 +120,7 @@ class NetworkHandler : public DevToolsDomainHandler,
 
   Network::Frontend* frontend() const { return frontend_.get(); }
 
+  static GURL ClearUrlRef(const GURL& url);
   static std::unique_ptr<Network::Request> CreateRequestFromURLRequest(
       const net::URLRequest* request);
 
@@ -124,12 +133,14 @@ class NetworkHandler : public DevToolsDomainHandler,
 
  private:
   std::unique_ptr<Network::Frontend> frontend_;
+  RenderProcessHost* process_;
   RenderFrameHostImpl* host_;
   bool enabled_;
   bool interception_enabled_;
   std::string user_agent_;
   base::flat_map<std::string, GlobalRequestID> navigation_requests_;
   base::flat_set<GlobalRequestID> canceled_navigation_requests_;
+  std::string host_id_;
   base::WeakPtrFactory<NetworkHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkHandler);

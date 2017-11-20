@@ -20,13 +20,13 @@
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
-#include "content/common/origin_trials/trial_token_validator.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "third_party/WebKit/common/origin_trials/trial_token_validator.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
-namespace tracked_objects {
+namespace base {
 class Location;
 }
 
@@ -77,7 +77,8 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
     base::Time last_update_check;
     std::vector<GURL> foreign_fetch_scopes;
     std::vector<url::Origin> foreign_fetch_origins;
-    base::Optional<TrialTokenValidator::FeatureToTokensMap> origin_trial_tokens;
+    base::Optional<blink::TrialTokenValidator::FeatureToTokensMap>
+        origin_trial_tokens;
     NavigationPreloadState navigation_preload_state;
     std::set<uint32_t> used_features;
 
@@ -198,11 +199,11 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
                       const std::vector<std::string>& user_data_names,
                       std::vector<std::string>* user_data_values);
 
-  // Reads user data for |registration_id| and |key_prefix| from the database.
-  // Returns OK only if keys matched to |key_prefix| are found; otherwise
-  // NOT_FOUND, and |user_data_values| will be empty.
+  // Reads user data for |registration_id| and |user_data_name_prefix| from the
+  // database. Returns OK only if keys matched to |user_data_name_prefix| are
+  // found; otherwise NOT_FOUND, and |user_data_values| will be empty.
   Status ReadUserDataByKeyPrefix(int64_t registration_id,
-                                 const std::string key_prefix,
+                                 const std::string& user_data_name_prefix,
                                  std::vector<std::string>* user_data_values);
 
   // Writes |name_value_pairs| into the database. Returns NOT_FOUND if the
@@ -217,6 +218,13 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // database.
   Status DeleteUserData(int64_t registration_id,
                         const std::vector<std::string>& user_data_names);
+
+  // Deletes user data for |registration_id| and |user_data_name_prefixes| from
+  // the database. Returns OK if all are successfully deleted or not found in
+  // the database.
+  Status DeleteUserDataByKeyPrefixes(
+      int64_t registration_id,
+      const std::vector<std::string>& user_data_name_prefixes);
 
   // Reads user data for all registrations that have data with |user_data_name|
   // from the database. Returns OK if they are successfully read or not found.
@@ -368,18 +376,10 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
 
   bool IsOpen();
 
-  void Disable(
-      const tracked_objects::Location& from_here,
-      Status status);
-  void HandleOpenResult(
-      const tracked_objects::Location& from_here,
-      Status status);
-  void HandleReadResult(
-      const tracked_objects::Location& from_here,
-      Status status);
-  void HandleWriteResult(
-      const tracked_objects::Location& from_here,
-      Status status);
+  void Disable(const base::Location& from_here, Status status);
+  void HandleOpenResult(const base::Location& from_here, Status status);
+  void HandleReadResult(const base::Location& from_here, Status status);
+  void HandleWriteResult(const base::Location& from_here, Status status);
 
   const base::FilePath path_;
   std::unique_ptr<leveldb::Env> env_;

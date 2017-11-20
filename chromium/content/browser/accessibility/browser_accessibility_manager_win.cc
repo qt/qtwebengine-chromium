@@ -96,13 +96,6 @@ HWND BrowserAccessibilityManagerWin::GetParentHWND() {
   return delegate->AccessibilityGetAcceleratedWidget();
 }
 
-IAccessible* BrowserAccessibilityManagerWin::GetParentIAccessible() {
-  BrowserAccessibilityDelegate* delegate = GetDelegateFromRootManager();
-  if (!delegate)
-    return NULL;
-  return delegate->AccessibilityGetNativeViewAccessible();
-}
-
 void BrowserAccessibilityManagerWin::OnIAccessible2Used() {
   // When IAccessible2 APIs have been used elsewhere in the codebase,
   // enable basic web accessibility support. (Full screen reader support is
@@ -144,12 +137,9 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
                              GetRoot());
   }
 
-  if (!can_fire_events &&
-      !load_complete_pending_ &&
-      event_type == ui::AX_EVENT_LOAD_COMPLETE &&
-      GetRoot() &&
-      !GetRoot()->HasState(ui::AX_STATE_OFFSCREEN) &&
-      GetRoot()->PlatformChildCount() > 0) {
+  if (!can_fire_events && !load_complete_pending_ &&
+      event_type == ui::AX_EVENT_LOAD_COMPLETE && GetRoot() &&
+      !GetRoot()->IsOffscreen() && GetRoot()->PlatformChildCount() > 0) {
     load_complete_pending_ = true;
   }
 

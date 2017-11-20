@@ -28,18 +28,18 @@
 
 #include <algorithm>
 #include <memory>
-#include "core/HTMLNames.h"
-#include "core/MediaTypeNames.h"
 #include "core/animation/DocumentAnimations.h"
 #include "core/css/FontFaceSetDocument.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/ElementVisibilityObserver.h"
-#include "core/dom/StyleChangeReason.h"
 #include "core/dom/TaskRunnerHelper.h"
 #include "core/editing/DragCaret.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/RenderedPosition.h"
+#include "core/editing/VisiblePosition.h"
+#include "core/editing/VisibleSelection.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 #include "core/events/ErrorEvent.h"
 #include "core/frame/BrowserControls.h"
@@ -55,8 +55,9 @@
 #include "core/fullscreen/Fullscreen.h"
 #include "core/html/HTMLFrameElement.h"
 #include "core/html/HTMLPlugInElement.h"
-#include "core/html/TextControlElement.h"
+#include "core/html/forms/TextControlElement.h"
 #include "core/html/parser/TextResourceDecoder.h"
+#include "core/html_names.h"
 #include "core/input/EventHandler.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/intersection_observer/IntersectionObserverController.h"
@@ -78,6 +79,7 @@
 #include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
+#include "core/media_type_names.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
@@ -100,12 +102,10 @@
 #include "core/probe/CoreProbes.h"
 #include "core/resize_observer/ResizeObserverController.h"
 #include "core/style/ComputedStyle.h"
-#include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGSVGElement.h"
 #include "platform/Histogram.h"
 #include "platform/Language.h"
 #include "platform/PlatformChromeClient.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/WebFrameScheduler.h"
 #include "platform/fonts/FontCache.h"
@@ -124,6 +124,7 @@
 #include "platform/instrumentation/tracing/TracedValue.h"
 #include "platform/json/JSONValues.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scroll/ScrollAnimatorBase.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/scroll/ScrollerSizeMetrics.h"
@@ -209,7 +210,6 @@ LocalFrameView::LocalFrameView(LocalFrame& frame, IntRect frame_rect)
           DocumentLifecycle::kUninitialized),
       past_layout_lifecycle_update_(false),
       scroll_anchor_(this),
-      in_perform_scroll_anchoring_adjustments_(false),
       scrollbar_manager_(*this),
       needs_scrollbars_update_(false),
       suppress_adjust_view_size_(false),
@@ -556,9 +556,6 @@ void LocalFrameView::InvalidateRect(const IntRect& rect) {
   paint_invalidation_rect.Move(
       (layout_item.BorderLeft() + layout_item.PaddingLeft()).ToInt(),
       (layout_item.BorderTop() + layout_item.PaddingTop()).ToInt());
-  // FIXME: We should not allow paint invalidation out of paint invalidation
-  // state. crbug.com/457415
-  DisablePaintInvalidationStateAsserts paint_invalidation_assert_disabler;
   layout_item.InvalidatePaintRectangle(LayoutRect(paint_invalidation_rect));
 }
 
@@ -717,11 +714,11 @@ Scrollbar* LocalFrameView::CreateScrollbar(ScrollbarOrientation orientation) {
   return scrollbar_manager_.CreateScrollbar(orientation);
 }
 
-void LocalFrameView::SetContentsSize(const IntSize& size) {
-  if (size == ContentsSize())
+void LocalFrameView::SetLayoutOverflowSize(const IntSize& size) {
+  if (size == layout_overflow_size_)
     return;
 
-  contents_size_ = size;
+  layout_overflow_size_ = size;
   needs_scrollbars_update_ = true;
   ScrollableArea::ContentsResized();
 
@@ -756,7 +753,7 @@ void LocalFrameView::AdjustViewSize() {
       SetScrollOrigin(origin);
   }
 
-  SetContentsSize(size);
+  SetLayoutOverflowSize(size);
 }
 
 void LocalFrameView::AdjustViewSizeAndLayout() {
@@ -826,6 +823,12 @@ void LocalFrameView::RecalcOverflowAfterStyleChange() {
 
   if (ScrollOriginChanged())
     SetNeedsLayout();
+}
+
+void LocalFrameView::UpdateCountersAfterStyleChange() {
+  LayoutViewItem layout_view_item = this->GetLayoutViewItem();
+  DCHECK(!layout_view_item.IsNull());
+  layout_view_item.UpdateCounters();
 }
 
 bool LocalFrameView::UsesCompositedScrolling() const {
@@ -1172,8 +1175,6 @@ void LocalFrameView::UpdateLayout() {
                                               false);
     nested_layout_count_++;
 
-    UpdateCounters();
-
     // If the layout view was marked as needing layout after we added items in
     // the subtree roots we need to clear the roots and do the layout from the
     // layoutView.
@@ -1198,9 +1199,9 @@ void LocalFrameView::UpdateLayout() {
       ClearLayoutSubtreeRootsAndMarkContainingBlocks();
       Node* body = document->body();
       if (body && body->GetLayoutObject()) {
-        if (isHTMLFrameSetElement(*body)) {
+        if (IsHTMLFrameSetElement(*body)) {
           body->GetLayoutObject()->SetChildNeedsLayout();
-        } else if (isHTMLBodyElement(*body)) {
+        } else if (IsHTMLBodyElement(*body)) {
           if (!first_layout_ && size_.Height() != GetLayoutSize().Height() &&
               body->GetLayoutObject()->EnclosingBox()->StretchesToViewport())
             body->GetLayoutObject()->SetChildNeedsLayout();
@@ -1226,6 +1227,11 @@ void LocalFrameView::UpdateLayout() {
         if (v_mode == kScrollbarAuto) {
           // This causes a vertical scrollbar to appear.
           SetVerticalScrollbarMode(kScrollbarAlwaysOn);
+          if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
+            GetLayoutView()
+                ->GetScrollableArea()
+                ->ForceVerticalScrollbarForFirstLayout();
+          }
         }
         // Set the initial hMode to AlwaysOff if we're auto.
         if (h_mode == kScrollbarAuto) {
@@ -1496,7 +1502,7 @@ void LocalFrameView::AddPartToUpdate(LayoutEmbeddedObject& object) {
   // Tell the DOM element that it needs a Plugin update.
   Node* node = object.GetNode();
   DCHECK(node);
-  if (isHTMLObjectElement(*node) || isHTMLEmbedElement(*node))
+  if (IsHTMLObjectElement(*node) || IsHTMLEmbedElement(*node))
     ToHTMLPlugInElement(node)->SetNeedsPluginUpdate(true);
 
   part_update_set_.insert(&object);
@@ -1736,8 +1742,25 @@ void LocalFrameView::ScrollContentsIfNeededRecursive() {
 
 void LocalFrameView::InvalidateBackgroundAttachmentFixedObjects() {
   for (const auto& layout_object : background_attachment_fixed_objects_) {
-    layout_object->SetShouldDoFullPaintInvalidation(
-        PaintInvalidationReason::kBackground);
+    bool needs_scrolling_contents_layer_invalidation = false;
+    if (layout_object->HasLayer()) {
+      PaintLayer* layer = ToLayoutBoxModelObject(layout_object)->Layer();
+      if (layer->GetBackgroundPaintLocation() ==
+          kBackgroundPaintInScrollingContents) {
+        needs_scrolling_contents_layer_invalidation = true;
+      }
+    }
+    if (needs_scrolling_contents_layer_invalidation) {
+      // BoxPaintInvalidator doesn't want to invalidate scrolling contents layer
+      // whenever the LayoutObject is marked ShouldDoFullPaintInvalidation() -
+      // see crrev.com/433093.  (LayoutObject doesn't track full-invalidation
+      // reasons independently, so it's not safe for BoxPaintInvalidator to have
+      // special handling of kBackground.)
+      layout_object->SetBackgroundChangedSinceLastPaintInvalidation();
+    } else {
+      layout_object->SetShouldDoFullPaintInvalidation(
+          PaintInvalidationReason::kBackground);
+    }
   }
 }
 
@@ -1828,9 +1851,6 @@ void LocalFrameView::ScrollContentsSlowPath() {
   if (ContentsInCompositedLayer()) {
     IntRect update_rect = VisibleContentRect();
     DCHECK(!GetLayoutViewItem().IsNull());
-    // FIXME: We should not allow paint invalidation out of paint invalidation
-    // state. crbug.com/457415
-    DisablePaintInvalidationStateAsserts disabler;
     GetLayoutViewItem().InvalidatePaintRectangle(LayoutRect(update_rect));
   }
   LayoutEmbeddedContentItem frame_layout_item = frame_->OwnerLayoutItem();
@@ -1840,9 +1860,6 @@ void LocalFrameView::ScrollContentsSlowPath() {
           frame_layout_item.BorderLeft() + frame_layout_item.PaddingLeft(),
           frame_layout_item.BorderTop() + frame_layout_item.PaddingTop(),
           LayoutUnit(VisibleWidth()), LayoutUnit(VisibleHeight()));
-      // FIXME: We should not allow paint invalidation out of paint invalidation
-      // state. crbug.com/457415
-      DisablePaintInvalidationStateAsserts disabler;
       frame_layout_item.InvalidatePaintRectangle(rect);
       return;
     }
@@ -1897,11 +1914,15 @@ bool LocalFrameView::ProcessUrlFragmentHelper(const String& name,
 
   if (frame_->GetDocument()->IsSVGDocument()) {
     if (SVGSVGElement* svg =
-            SVGDocumentExtensions::rootElement(*frame_->GetDocument())) {
+            ToSVGSVGElementOrNull(frame_->GetDocument()->documentElement())) {
       svg->SetupInitialView(name, anchor_node);
       if (!anchor_node)
         return true;
     }
+    // If this is not the top-level frame, then don't scroll to the
+    // anchor position.
+    if (!frame_->IsMainFrame())
+      behavior = kUrlFragmentDontScroll;
   }
 
   // Implement the rule that "" and "top" both mean top of page as in other
@@ -2268,7 +2289,7 @@ static bool PrepareOrthogonalWritingModeRootForLayout(LayoutObject& root) {
   if (!root.NeedsLayout() || root.IsOutOfFlowPositioned() ||
       root.IsColumnSpanAll() ||
       !root.StyleRef().LogicalHeight().IsIntrinsicOrAuto() ||
-      ToLayoutBox(root).IsGridItem())
+      ToLayoutBox(root).IsGridItem() || root.IsTablePart())
     return false;
 
   RemoveFloatingObjectsForSubtreeRoot(root);
@@ -2642,20 +2663,6 @@ void LocalFrameView::PostLayoutTimerFired(TimerBase*) {
   PerformPostLayoutTasks();
 }
 
-void LocalFrameView::UpdateCounters() {
-  LayoutView* view = GetLayoutView();
-  if (!view->HasLayoutCounters())
-    return;
-
-  for (LayoutObject* layout_object = view; layout_object;
-       layout_object = layout_object->NextInPreOrder()) {
-    if (!layout_object->IsCounter())
-      continue;
-
-    ToLayoutCounter(layout_object)->UpdateCounter();
-  }
-}
-
 bool LocalFrameView::ShouldUseIntegerScrollOffset() const {
   if (frame_->GetSettings() &&
       !frame_->GetSettings()->GetPreferCompositingToLCDTextEnabled())
@@ -2740,7 +2747,12 @@ LocalFrameView::ScrollingReasons LocalFrameView::GetScrollingReasons() const {
   // 4) scrolling: no;
 
   // Covers #1
-  IntSize contents_size = this->ContentsSize();
+  IntSize contents_size;
+  if (GetLayoutView())
+    contents_size = GetLayoutView()->DocumentRect().Size();
+  else
+    contents_size = ContentsSize();
+
   IntSize visible_content_size = VisibleContentRect().Size();
   if ((contents_size.Height() <= visible_content_size.Height() &&
        contents_size.Width() <= visible_content_size.Width()))
@@ -2823,7 +2835,8 @@ void LocalFrameView::NotifyPageThatContentAreaWillPaint() const {
 
 CompositorElementId LocalFrameView::GetCompositorElementId() const {
   if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
-    return CompositorElementIdFromUniqueObjectId(unique_id_);
+    return CompositorElementIdFromUniqueObjectId(
+        unique_id_, CompositorElementIdNamespace::kScroll);
   } else {
     return PaintInvalidationCapableScrollableArea::GetCompositorElementId();
   }
@@ -3271,20 +3284,18 @@ void LocalFrameView::EnqueueScrollAnchoringAdjustment(
 }
 
 void LocalFrameView::PerformScrollAnchoringAdjustments() {
-  // TODO(bokan): Temporary to get more information about crash in
-  // crbug.com/745686.
-  CHECK(!in_perform_scroll_anchoring_adjustments_);
-  in_perform_scroll_anchoring_adjustments_ = true;
+  // Adjust() will cause a scroll which could end up causing a layout and
+  // reentering this method. Copy and clear the queue so we don't modify it
+  // during iteration.
+  AnchoringAdjustmentQueue queue_copy = anchoring_adjustment_queue_;
+  anchoring_adjustment_queue_.clear();
 
-  for (WeakMember<ScrollableArea>& scroller : anchoring_adjustment_queue_) {
+  for (WeakMember<ScrollableArea>& scroller : queue_copy) {
     if (scroller) {
       DCHECK(scroller->GetScrollAnchor());
       scroller->GetScrollAnchor()->Adjust();
     }
   }
-  anchoring_adjustment_queue_.clear();
-
-  in_perform_scroll_anchoring_adjustments_ = false;
 }
 
 void LocalFrameView::PrePaint() {
@@ -3347,7 +3358,8 @@ void LocalFrameView::PaintTree() {
         graphics_context.SetHighContrast(high_contrast_settings);
       }
 
-      Paint(graphics_context, CullRect(LayoutRect::InfiniteIntRect()));
+      PaintInternal(graphics_context, kGlobalPaintNormalPhase,
+                    CullRect(LayoutRect::InfiniteIntRect()));
       paint_controller_->CommitNewDisplayItems();
     }
   } else {
@@ -3789,8 +3801,7 @@ void LocalFrameView::SetTracksPaintInvalidations(
               track_paint_invalidations);
         }
       } else {
-        layout_view.Compositor()->SetTracksRasterInvalidations(
-            track_paint_invalidations);
+        layout_view.Compositor()->UpdateTrackingRasterInvalidations();
       }
     }
   }
@@ -4092,7 +4103,9 @@ IntRect LocalFrameView::VisibleContentRect(
 }
 
 IntSize LocalFrameView::ContentsSize() const {
-  return contents_size_;
+  if (RuntimeEnabledFeatures::RootLayerScrollingEnabled())
+    return Size();
+  return layout_overflow_size_;
 }
 
 void LocalFrameView::ClipPaintRect(FloatRect* paint_rect) const {
@@ -4128,7 +4141,7 @@ int LocalFrameView::ScrollSize(ScrollbarOrientation orientation) const {
 
   // If no scrollbars are present, the content may still be scrollable.
   if (!scrollbar) {
-    IntSize scroll_size = contents_size_ - VisibleContentRect().Size();
+    IntSize scroll_size = ContentsSize() - VisibleContentRect().Size();
     scroll_size.ClampNegativeToZero();
     return orientation == kHorizontalScrollbar ? scroll_size.Width()
                                                : scroll_size.Height();
@@ -4182,7 +4195,7 @@ void LocalFrameView::UpdateScrollOffset(const ScrollOffset& offset,
   GetFrame().Loader().SaveScrollState();
   DidChangeScrollOffset();
 
-  if (scroll_type == kCompositorScroll && frame_->IsMainFrame()) {
+  if (scroll_type == kCompositorScroll || scroll_type == kUserScroll) {
     if (DocumentLoader* document_loader = frame_->Loader().GetDocumentLoader())
       document_loader->GetInitialScrollState().was_scrolled_by_user = true;
   }
@@ -4466,8 +4479,11 @@ void LocalFrameView::AdjustScrollOffsetFromUpdateScrollbars() {
 
 ScrollableArea* LocalFrameView::ScrollableAreaWithElementId(
     const CompositorElementId& id) {
-  if (id == GetCompositorElementId())
+  // With root layer scrolling the LocalFrameView does not scroll.
+  if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled() &&
+      id == GetCompositorElementId()) {
     return this;
+  }
   if (scrollable_areas_) {
     // This requires iterating over all scrollable areas. We may want to store a
     // map of ElementId to ScrollableArea if this is an issue for performance.
@@ -4705,6 +4721,8 @@ LayoutRect LocalFrameView::ScrollIntoView(const LayoutRect& rect_in_content,
                                           bool is_smooth,
                                           ScrollType scroll_type,
                                           bool is_for_scroll_sequence) {
+  GetLayoutBox()->SetPendingOffsetToScroll(LayoutSize());
+
   LayoutRect view_rect(VisibleContentRect());
   LayoutRect expose_rect = ScrollAlignment::GetRectToExpose(
       view_rect, rect_in_content, align_x, align_y);
@@ -4780,20 +4798,44 @@ ScrollBehavior LocalFrameView::ScrollBehaviorStyle() const {
 }
 
 void LocalFrameView::Paint(GraphicsContext& context,
-                           const CullRect& cull_rect) const {
-  Paint(context, kGlobalPaintNormalPhase, cull_rect);
-}
-
-void LocalFrameView::Paint(GraphicsContext& context,
                            const GlobalPaintFlags global_paint_flags,
                            const CullRect& cull_rect) const {
+  PaintInternal(context, global_paint_flags, cull_rect);
+}
+
+void LocalFrameView::PaintWithLifecycleUpdate(
+    GraphicsContext& context,
+    const GlobalPaintFlags global_paint_flags,
+    const CullRect& cull_rect) {
+  ForAllNonThrottledLocalFrameViews([](LocalFrameView& frame_view) {
+    frame_view.Lifecycle().AdvanceTo(DocumentLifecycle::kInPaint);
+  });
+
+  PaintInternal(context, global_paint_flags, cull_rect);
+
+  ForAllNonThrottledLocalFrameViews([](LocalFrameView& frame_view) {
+    frame_view.Lifecycle().AdvanceTo(DocumentLifecycle::kPaintClean);
+  });
+}
+
+void LocalFrameView::PaintInternal(GraphicsContext& context,
+                                   const GlobalPaintFlags global_paint_flags,
+                                   const CullRect& cull_rect) const {
   FramePainter(*this).Paint(context, global_paint_flags, cull_rect);
 }
 
 void LocalFrameView::PaintContents(GraphicsContext& context,
                                    const GlobalPaintFlags global_paint_flags,
-                                   const IntRect& damage_rect) const {
+                                   const IntRect& damage_rect) {
+  ForAllNonThrottledLocalFrameViews([](LocalFrameView& frame_view) {
+    frame_view.Lifecycle().AdvanceTo(DocumentLifecycle::kInPaint);
+  });
+
   FramePainter(*this).PaintContents(context, global_paint_flags, damage_rect);
+
+  ForAllNonThrottledLocalFrameViews([](LocalFrameView& frame_view) {
+    frame_view.Lifecycle().AdvanceTo(DocumentLifecycle::kPaintClean);
+  });
 }
 
 bool LocalFrameView::IsPointInScrollbarCorner(
@@ -5120,6 +5162,8 @@ void LocalFrameView::UpdateRenderThrottlingStatus(
   bool has_handlers =
       frame_->GetPage() &&
       (frame_->GetPage()->GetEventHandlerRegistry().HasEventHandlers(
+           EventHandlerRegistry::kTouchAction) ||
+       frame_->GetPage()->GetEventHandlerRegistry().HasEventHandlers(
            EventHandlerRegistry::kTouchStartOrMoveEventBlocking) ||
        frame_->GetPage()->GetEventHandlerRegistry().HasEventHandlers(
            EventHandlerRegistry::kTouchStartOrMoveEventBlockingLowLatency));

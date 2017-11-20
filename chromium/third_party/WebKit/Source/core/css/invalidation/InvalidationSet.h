@@ -48,6 +48,12 @@ class TracedValue;
 
 enum InvalidationType { kInvalidateDescendants, kInvalidateSiblings };
 
+class InvalidationSet;
+
+struct CORE_EXPORT InvalidationSetDeleter {
+  static void Destruct(const InvalidationSet*);
+};
+
 // Tracks data to determine which descendants in a DOM subtree, or
 // siblings and their descendants, need to have style recalculated.
 //
@@ -81,7 +87,8 @@ enum InvalidationType { kInvalidateDescendants, kInvalidateSiblings };
 //   the SiblingInvalidationSet also holding descendants containing class v.
 //
 // We avoid virtual functions to minimize space consumption.
-class CORE_EXPORT InvalidationSet {
+class CORE_EXPORT InvalidationSet
+    : public WTF::RefCounted<InvalidationSet, InvalidationSetDeleter> {
   WTF_MAKE_NONCOPYABLE(InvalidationSet);
   USING_FAST_MALLOC_WITH_TYPE_NAME(blink::InvalidationSet);
 
@@ -155,14 +162,6 @@ class CORE_EXPORT InvalidationSet {
     return *attributes_;
   }
 
-  void Ref() { ++ref_count_; }
-  void Deref() {
-    DCHECK_GT(ref_count_, 0);
-    --ref_count_;
-    if (!ref_count_)
-      Destroy();
-  }
-
   void Combine(const InvalidationSet& other);
 
  protected:
@@ -174,19 +173,13 @@ class CORE_EXPORT InvalidationSet {
   }
 
  private:
-  void Destroy();
+  friend struct InvalidationSetDeleter;
+  void Destroy() const;
 
   HashSet<AtomicString>& EnsureClassSet();
   HashSet<AtomicString>& EnsureIdSet();
   HashSet<AtomicString>& EnsureTagNameSet();
   HashSet<AtomicString>& EnsureAttributeSet();
-
-  // Implement reference counting manually so we can call a derived
-  // class destructor when the reference count decreases to 0.
-  // If we use RefCounted instead, at least one of our compilers
-  // requires the ability for RefCounted<InvalidationSet>::Deref()
-  // to call ~InvalidationSet(), but this is not a virtual call.
-  int ref_count_;
 
   // FIXME: optimize this if it becomes a memory issue.
   std::unique_ptr<HashSet<AtomicString>> classes_;
@@ -223,7 +216,7 @@ class CORE_EXPORT InvalidationSet {
 class CORE_EXPORT DescendantInvalidationSet final : public InvalidationSet {
  public:
   static RefPtr<DescendantInvalidationSet> Create() {
-    return AdoptRef(new DescendantInvalidationSet);
+    return WTF::AdoptRef(new DescendantInvalidationSet);
   }
 
  private:
@@ -234,7 +227,7 @@ class CORE_EXPORT SiblingInvalidationSet final : public InvalidationSet {
  public:
   static RefPtr<SiblingInvalidationSet> Create(
       RefPtr<DescendantInvalidationSet> descendants) {
-    return AdoptRef(new SiblingInvalidationSet(std::move(descendants)));
+    return WTF::AdoptRef(new SiblingInvalidationSet(std::move(descendants)));
   }
 
   unsigned MaxDirectAdjacentSelectors() const {
@@ -246,12 +239,12 @@ class CORE_EXPORT SiblingInvalidationSet final : public InvalidationSet {
   }
 
   DescendantInvalidationSet* SiblingDescendants() const {
-    return sibling_descendant_invalidation_set_.Get();
+    return sibling_descendant_invalidation_set_.get();
   }
   DescendantInvalidationSet& EnsureSiblingDescendants();
 
   DescendantInvalidationSet* Descendants() const {
-    return descendant_invalidation_set_.Get();
+    return descendant_invalidation_set_.get();
   }
   DescendantInvalidationSet& EnsureDescendants();
 

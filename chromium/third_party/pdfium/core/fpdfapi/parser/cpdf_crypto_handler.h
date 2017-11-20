@@ -11,31 +11,25 @@
 
 #include "core/fdrm/crypto/fx_crypt.h"
 #include "core/fxcrt/cfx_binarybuf.h"
-#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/retain_ptr.h"
 
 class CPDF_Dictionary;
+class CPDF_Object;
 class CPDF_SecurityHandler;
 
-class CPDF_CryptoHandler : public CFX_Retainable {
+class CPDF_CryptoHandler {
  public:
-  template <typename T, typename... Args>
-  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+  CPDF_CryptoHandler(int cipher, const uint8_t* key, int keylen);
+  ~CPDF_CryptoHandler();
 
-  bool Init(CPDF_Dictionary* pEncryptDict,
-            CPDF_SecurityHandler* pSecurityHandler);
-  uint32_t DecryptGetSize(uint32_t src_size);
-  void* DecryptStart(uint32_t objnum, uint32_t gennum);
-  CFX_ByteString Decrypt(uint32_t objnum,
-                         uint32_t gennum,
-                         const CFX_ByteString& str);
-  bool DecryptStream(void* context,
-                     const uint8_t* src_buf,
-                     uint32_t src_size,
-                     CFX_BinaryBuf& dest_buf);
-  bool DecryptFinish(void* context, CFX_BinaryBuf& dest_buf);
+  static bool IsSignatureDictionary(const CPDF_Dictionary* dictionary);
+
+  std::unique_ptr<CPDF_Object> DecryptObjectTree(
+      std::unique_ptr<CPDF_Object> object);
+
   uint32_t EncryptGetSize(uint32_t objnum,
                           uint32_t version,
                           const uint8_t* src_buf,
@@ -47,11 +41,17 @@ class CPDF_CryptoHandler : public CFX_Retainable {
                       uint8_t* dest_buf,
                       uint32_t& dest_size);
 
-  bool Init(int cipher, const uint8_t* key, int keylen);
+  bool IsCipherAES() const;
 
  private:
-  CPDF_CryptoHandler();
-  ~CPDF_CryptoHandler() override;
+  uint32_t DecryptGetSize(uint32_t src_size);
+  void* DecryptStart(uint32_t objnum, uint32_t gennum);
+  ByteString Decrypt(uint32_t objnum, uint32_t gennum, const ByteString& str);
+  bool DecryptStream(void* context,
+                     const uint8_t* src_buf,
+                     uint32_t src_size,
+                     CFX_BinaryBuf& dest_buf);
+  bool DecryptFinish(void* context, CFX_BinaryBuf& dest_buf);
 
   void PopulateKey(uint32_t objnum, uint32_t gennum, uint8_t* key);
   void CryptBlock(bool bEncrypt,

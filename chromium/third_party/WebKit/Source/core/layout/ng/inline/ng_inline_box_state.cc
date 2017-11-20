@@ -16,11 +16,14 @@
 namespace blink {
 
 void NGInlineBoxState::ComputeTextMetrics(const ComputedStyle& style,
-                                          FontBaseline baseline_type) {
+                                          FontBaseline baseline_type,
+                                          bool line_height_quirk) {
   text_metrics = NGLineHeightMetrics(style, baseline_type);
   text_top = -text_metrics.ascent;
   text_metrics.AddLeading(style.ComputedLineHeightAsFixed());
-  metrics.Unite(text_metrics);
+
+  if (!line_height_quirk)
+    metrics.Unite(text_metrics);
 
   include_used_fonts = style.LineHeight().IsNegative();
 }
@@ -38,9 +41,21 @@ void NGInlineBoxState::AccumulateUsedFonts(const ShapeResult* shape_result,
   }
 }
 
+bool NGInlineBoxState::CanAddTextOfStyle(
+    const ComputedStyle& text_style) const {
+  if (text_style.VerticalAlign() != EVerticalAlign::kBaseline)
+    return false;
+  DCHECK(style);
+  if (style == &text_style || &style->GetFont() == &text_style.GetFont() ||
+      style->GetFont().PrimaryFont() == text_style.GetFont().PrimaryFont())
+    return true;
+  return false;
+}
+
 NGInlineBoxState* NGInlineLayoutStateStack::OnBeginPlaceItems(
     const ComputedStyle* line_style,
-    FontBaseline baseline_type) {
+    FontBaseline baseline_type,
+    bool line_height_quirk) {
   if (stack_.IsEmpty()) {
     // For the first line, push a box state for the line itself.
     stack_.resize(1);
@@ -50,7 +65,10 @@ NGInlineBoxState* NGInlineLayoutStateStack::OnBeginPlaceItems(
     // For the following lines, clear states that are not shared across lines.
     for (auto& box : stack_) {
       box.fragment_start = 0;
-      box.metrics = box.text_metrics;
+      if (!line_height_quirk)
+        box.metrics = box.text_metrics;
+      else
+        box.metrics = NGLineHeightMetrics();
       if (box.needs_box_fragment) {
         box.line_left_position = LayoutUnit();
         // Existing box states are wrapped boxes, and hence no left edges.
@@ -67,7 +85,7 @@ NGInlineBoxState* NGInlineLayoutStateStack::OnBeginPlaceItems(
   // Use a "strut" (a zero-width inline box with the element's font and
   // line height properties) as the initial metrics for the line box.
   // https://drafts.csswg.org/css2/visudet.html#strut
-  line_box.ComputeTextMetrics(*line_style, baseline_type);
+  line_box.ComputeTextMetrics(*line_style, baseline_type, line_height_quirk);
 
   return &stack_.back();
 }
@@ -77,11 +95,9 @@ NGInlineBoxState* NGInlineLayoutStateStack::OnOpenTag(
     const NGInlineItemResult& item_result,
     NGLineBoxFragmentBuilder* line_box,
     LayoutUnit position) {
-  stack_.resize(stack_.size() + 1);
-  NGInlineBoxState* box = &stack_.back();
-  box->fragment_start = line_box->Children().size();
+  DCHECK(item.Style());
+  NGInlineBoxState* box = OnOpenTag(*item.Style(), line_box);
   box->item = &item;
-  box->style = item.Style();
 
   // Compute box properties regardless of needs_box_fragment since close tag may
   // also set needs_box_fragment.
@@ -92,8 +108,17 @@ NGInlineBoxState* NGInlineLayoutStateStack::OnOpenTag(
   return box;
 }
 
+NGInlineBoxState* NGInlineLayoutStateStack::OnOpenTag(
+    const ComputedStyle& style,
+    NGLineBoxFragmentBuilder* line_box) {
+  stack_.resize(stack_.size() + 1);
+  NGInlineBoxState* box = &stack_.back();
+  box->fragment_start = line_box->Children().size();
+  box->style = &style;
+  return box;
+}
+
 NGInlineBoxState* NGInlineLayoutStateStack::OnCloseTag(
-    const NGInlineItem& item,
     NGLineBoxFragmentBuilder* line_box,
     NGInlineBoxState* box,
     FontBaseline baseline_type) {
@@ -140,6 +165,7 @@ void NGInlineLayoutStateStack::EndBoxState(NGInlineBoxState* box,
 void NGInlineBoxState::SetNeedsBoxFragment(bool when_empty) {
   needs_box_fragment_when_empty = when_empty;
   if (!needs_box_fragment) {
+    DCHECK(item);
     needs_box_fragment = true;
     // We have left edge on open tag, and if the box is not a continuation.
     // TODO(kojii): Needs review when we change SplitInlines().
@@ -211,6 +237,7 @@ void NGInlineLayoutStateStack::AddBoxFragmentPlaceholder(
   // The "null" is added to the list to compute baseline shift of the box
   // separately from text fragments.
   unsigned fragment_end = line_box->Children().size();
+  DCHECK(box->item);
   box_placeholders_.push_back(BoxFragmentPlaceholder{
       box->fragment_start, fragment_end, box->item, size, box->border_edges});
   line_box->AddChild(nullptr, offset);
@@ -251,8 +278,6 @@ void NGInlineLayoutStateStack::CreateBoxFragments(
     // supported today.
     box.SetBorderEdges(placeholder.border_edges);
     box.SetSize(placeholder.size);
-    // TODO(kojii): Overflow size should be computed from children.
-    box.SetOverflowSize(placeholder.size);
     RefPtr<NGLayoutResult> layout_result = box.ToBoxFragment();
     DCHECK(!children[placeholder.fragment_end]);
     children[placeholder.fragment_end] =
@@ -276,13 +301,20 @@ NGInlineLayoutStateStack::ApplyBaselineShift(NGInlineBoxState* box,
   LayoutUnit baseline_shift;
   if (!box->pending_descendants.IsEmpty()) {
     for (auto& child : box->pending_descendants) {
+      if (child.metrics.IsEmpty()) {
+        // This can happen with boxes with no content in quirks mode
+        child.metrics = NGLineHeightMetrics(LayoutUnit(), LayoutUnit());
+      }
       switch (child.vertical_align) {
         case EVerticalAlign::kTextTop:
           DCHECK(!box->text_metrics.IsEmpty());
           baseline_shift = child.metrics.ascent + box->text_top;
           break;
         case EVerticalAlign::kTop:
-          baseline_shift = child.metrics.ascent - box->metrics.ascent;
+          if (box->metrics.IsEmpty())
+            baseline_shift = child.metrics.ascent;
+          else
+            baseline_shift = child.metrics.ascent - box->metrics.ascent;
           break;
         case EVerticalAlign::kTextBottom:
           if (const SimpleFontData* font_data =
@@ -295,7 +327,10 @@ NGInlineLayoutStateStack::ApplyBaselineShift(NGInlineBoxState* box,
           NOTREACHED();
         // Fall through.
         case EVerticalAlign::kBottom:
-          baseline_shift = box->metrics.descent - child.metrics.descent;
+          if (box->metrics.IsEmpty())
+            baseline_shift = -child.metrics.descent;
+          else
+            baseline_shift = box->metrics.descent - child.metrics.descent;
           break;
         default:
           NOTREACHED();

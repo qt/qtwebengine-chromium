@@ -95,7 +95,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) override;
   void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             cc::CompositorFrame frame) override;
+                             viz::CompositorFrame frame) override;
 #if defined(USE_AURA)
   void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                               InputEventAckState ack_result) override;
@@ -105,8 +105,10 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   void ProcessTouchEvent(const blink::WebTouchEvent& event,
                          const ui::LatencyInfo& latency) override;
 
+  void DidStopFlinging() override;
   bool LockMouse() override;
   void UnlockMouse() override;
+  viz::LocalSurfaceId GetLocalSurfaceId() const override;
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
       override;

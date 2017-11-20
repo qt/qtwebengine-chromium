@@ -30,7 +30,7 @@
 #include "platform/fonts/FontCacheClient.h"
 #include "platform/fonts/SegmentedFontData.h"
 #include "platform/wtf/Forward.h"
-#include "platform/wtf/PassRefPtr.h"
+#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/AtomicString.h"
 
 namespace blink {
@@ -61,6 +61,8 @@ class PLATFORM_EXPORT FontSelector : public FontCacheClient {
 
   virtual void RegisterForInvalidationCallbacks(FontSelectorClient*) = 0;
   virtual void UnregisterForInvalidationCallbacks(FontSelectorClient*) = 0;
+
+  virtual void FontFaceInvalidated(){};
 
  protected:
   static AtomicString FamilyNameFromSettings(

@@ -8,6 +8,7 @@
 
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
@@ -34,6 +35,7 @@
 #include "content/public/common/resource_type.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
+#include "net/cert/symantec_certs.h"
 #include "net/http/http_response_headers.h"
 #include "net/nqe/effective_connection_type.h"
 #include "net/nqe/network_quality_estimator.h"
@@ -103,6 +105,11 @@ void PopulateResourceResponse(
     response->head.has_major_certificate_errors =
         net::IsCertStatusError(request->ssl_info().cert_status) &&
         !net::IsCertStatusMinorError(request->ssl_info().cert_status);
+    response->head.is_legacy_symantec_cert =
+        !response->head.has_major_certificate_errors &&
+        net::IsLegacySymantecCert(request->ssl_info().public_key_hashes);
+    response->head.cert_validity_start =
+        request->ssl_info().cert->valid_start();
     if (info->ShouldReportRawHeaders()) {
       // Only pass these members when the network panel of the DevTools is open,
       // i.e. ShouldReportRawHeaders() is set. These data are used to populate
@@ -225,9 +232,13 @@ ResourceLoader::ResourceLoader(std::unique_ptr<net::URLRequest> request,
       times_cancelled_before_request_start_(0),
       started_request_(false),
       times_cancelled_after_request_start_(0),
+      request_context_(request_->context()),
       weak_ptr_factory_(this) {
   request_->set_delegate(this);
   handler_->SetDelegate(this);
+  // Added for http://crbug.com/754704; remove when that bug is resolved.
+  if (!GetRequestInfo())
+    base::debug::DumpWithoutCrashing();
 }
 
 ResourceLoader::~ResourceLoader() {
@@ -310,6 +321,12 @@ void ResourceLoader::ClearLoginDelegate() {
 
 void ResourceLoader::OutOfBandCancel(int error_code, bool tell_renderer) {
   CancelRequestInternal(error_code, !tell_renderer);
+}
+
+void ResourceLoader::AssertURLRequestPresent() const {
+  DCHECK(request_context_);
+  CHECK(request_);
+  request_context_->AssertURLRequestPresent(request_.get());
 }
 
 void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,

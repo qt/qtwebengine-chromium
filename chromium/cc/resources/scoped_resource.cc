@@ -25,6 +25,7 @@ void ScopedResource::Allocate(const gfx::Size& size,
   set_dimensions(size, format);
   set_id(resource_provider_->CreateResource(size, hint, format, color_space));
   set_color_space(color_space);
+  hint_ = hint;
 
 #if DCHECK_IS_ON()
   allocate_thread_id_ = base::PlatformThread::CurrentId();
@@ -41,9 +42,10 @@ void ScopedResource::AllocateWithGpuMemoryBuffer(
 
   set_dimensions(size, format);
   set_id(resource_provider_->CreateGpuMemoryBufferResource(
-      size, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format, usage,
+      size, ResourceProvider::TEXTURE_HINT_DEFAULT, format, usage,
       color_space));
   set_color_space(color_space);
+  hint_ = ResourceProvider::TEXTURE_HINT_DEFAULT;
 
 #if DCHECK_IS_ON()
   allocate_thread_id_ = base::PlatformThread::CurrentId();

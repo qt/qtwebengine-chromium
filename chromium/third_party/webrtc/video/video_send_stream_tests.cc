@@ -11,40 +11,40 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/call/call.h"
-#include "webrtc/call/rtp_transport_controller_send.h"
-#include "webrtc/common_video/include/frame_callback.h"
-#include "webrtc/common_video/include/video_frame.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_sender.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_format_vp9.h"
-#include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
-#include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
-#include "webrtc/rtc_base/bind.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/criticalsection.h"
-#include "webrtc/rtc_base/event.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/platform_thread.h"
-#include "webrtc/rtc_base/rate_limiter.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/system_wrappers/include/sleep.h"
-#include "webrtc/test/call_test.h"
-#include "webrtc/test/configurable_frame_size_encoder.h"
-#include "webrtc/test/fake_texture_frame.h"
-#include "webrtc/test/field_trial.h"
-#include "webrtc/test/frame_generator.h"
-#include "webrtc/test/frame_generator_capturer.h"
-#include "webrtc/test/frame_utils.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/null_transport.h"
-#include "webrtc/test/rtcp_packet_parser.h"
-#include "webrtc/test/testsupport/perf_test.h"
+#include "call/call.h"
+#include "call/rtp_transport_controller_send.h"
+#include "common_video/include/frame_callback.h"
+#include "common_video/include/video_frame.h"
+#include "modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "modules/rtp_rtcp/source/rtcp_sender.h"
+#include "modules/rtp_rtcp/source/rtp_format_vp9.h"
+#include "modules/video_coding/codecs/vp8/include/vp8.h"
+#include "modules/video_coding/codecs/vp9/include/vp9.h"
+#include "rtc_base/bind.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/event.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/platform_thread.h"
+#include "rtc_base/rate_limiter.h"
+#include "rtc_base/timeutils.h"
+#include "system_wrappers/include/sleep.h"
+#include "test/call_test.h"
+#include "test/configurable_frame_size_encoder.h"
+#include "test/fake_texture_frame.h"
+#include "test/field_trial.h"
+#include "test/frame_generator.h"
+#include "test/frame_generator_capturer.h"
+#include "test/frame_utils.h"
+#include "test/gtest.h"
+#include "test/null_transport.h"
+#include "test/rtcp_packet_parser.h"
+#include "test/testsupport/perf_test.h"
 
-#include "webrtc/video/send_statistics_proxy.h"
-#include "webrtc/video/transport_adapter.h"
-#include "webrtc/call/video_send_stream.h"
+#include "video/send_statistics_proxy.h"
+#include "video/transport_adapter.h"
+#include "call/video_send_stream.h"
 
 namespace webrtc {
 
@@ -520,9 +520,9 @@ class UlpfecObserver : public test::EndToEndTest {
       send_config->rtp.extensions.push_back(RtpExtension(
           RtpExtension::kAbsSendTimeUri, test::kAbsSendTimeExtensionId));
     }
-    (*receive_configs)[0].rtp.ulpfec.red_payload_type =
+    (*receive_configs)[0].rtp.red_payload_type =
         send_config->rtp.ulpfec.red_payload_type;
-    (*receive_configs)[0].rtp.ulpfec.ulpfec_payload_type =
+    (*receive_configs)[0].rtp.ulpfec_payload_type =
         send_config->rtp.ulpfec.ulpfec_payload_type;
   }
 
@@ -1223,7 +1223,7 @@ TEST_F(VideoSendStreamTest, SuspendBelowMinBitrate) {
     };
 
     virtual void SendRtcpFeedback(int remb_value)
-        EXCLUSIVE_LOCKS_REQUIRED(crit_) {
+        RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_) {
       FakeReceiveStatistics receive_stats(kVideoSendSsrcs[0],
                                           last_sequence_number_, rtp_count_, 0);
       RTCPSender rtcp_sender(false, clock_, &receive_stats, nullptr, nullptr,
@@ -1244,12 +1244,12 @@ TEST_F(VideoSendStreamTest, SuspendBelowMinBitrate) {
     VideoSendStream* stream_;
 
     rtc::CriticalSection crit_;
-    TestState test_state_ GUARDED_BY(crit_);
-    int rtp_count_ GUARDED_BY(crit_);
-    int last_sequence_number_ GUARDED_BY(crit_);
-    int suspended_frame_count_ GUARDED_BY(crit_);
-    int low_remb_bps_ GUARDED_BY(crit_);
-    int high_remb_bps_ GUARDED_BY(crit_);
+    TestState test_state_ RTC_GUARDED_BY(crit_);
+    int rtp_count_ RTC_GUARDED_BY(crit_);
+    int last_sequence_number_ RTC_GUARDED_BY(crit_);
+    int suspended_frame_count_ RTC_GUARDED_BY(crit_);
+    int low_remb_bps_ RTC_GUARDED_BY(crit_);
+    int high_remb_bps_ RTC_GUARDED_BY(crit_);
   } test;
 
   RunBaseTest(&test);
@@ -1326,8 +1326,8 @@ TEST_F(VideoSendStreamTest, NoPaddingWhenVideoIsMuted) {
     Clock* const clock_;
     std::unique_ptr<internal::TransportAdapter> transport_adapter_;
     rtc::CriticalSection crit_;
-    int64_t last_packet_time_ms_ GUARDED_BY(crit_);
-    test::FrameGeneratorCapturer* capturer_ GUARDED_BY(crit_);
+    int64_t last_packet_time_ms_ RTC_GUARDED_BY(crit_);
+    test::FrameGeneratorCapturer* capturer_ RTC_GUARDED_BY(crit_);
   } test;
 
   RunBaseTest(&test);
@@ -1395,8 +1395,8 @@ TEST_F(VideoSendStreamTest, PaddingIsPrimarilyRetransmissions) {
 
     rtc::CriticalSection crit_;
     Clock* const clock_;
-    size_t padding_length_ GUARDED_BY(crit_);
-    size_t total_length_ GUARDED_BY(crit_);
+    size_t padding_length_ RTC_GUARDED_BY(crit_);
+    size_t total_length_ RTC_GUARDED_BY(crit_);
     Call* call_;
   } test;
 
@@ -1634,7 +1634,7 @@ TEST_F(VideoSendStreamTest, ChangingTransportOverhead) {
     test::SingleThreadedTaskQueueForTesting* const task_queue_;
     Call* call_;
     rtc::CriticalSection lock_;
-    int packets_sent_ GUARDED_BY(lock_);
+    int packets_sent_ RTC_GUARDED_BY(lock_);
     int transport_overhead_;
     const size_t kMaxRtpPacketSize = 1000;
   } test(&task_queue_);
@@ -1742,10 +1742,10 @@ class MaxPaddingSetTest : public test::SendTest {
   rtc::CriticalSection crit_;
   rtc::Event content_switch_event_;
   Call* call_;
-  VideoSendStream* send_stream_ GUARDED_BY(crit_);
+  VideoSendStream* send_stream_ RTC_GUARDED_BY(crit_);
   VideoSendStream::Config send_stream_config_;
   VideoEncoderConfig encoder_config_;
-  uint32_t packets_sent_ GUARDED_BY(crit_);
+  uint32_t packets_sent_ RTC_GUARDED_BY(crit_);
   bool running_without_padding_;
   T* const stream_resetter_;
 };
@@ -1833,9 +1833,9 @@ TEST_F(VideoSendStreamTest,
 
     rtc::CriticalSection crit_;
     rtc::Event init_encode_called_;
-    size_t number_of_initializations_ GUARDED_BY(&crit_);
-    int last_initialized_frame_width_ GUARDED_BY(&crit_);
-    int last_initialized_frame_height_ GUARDED_BY(&crit_);
+    size_t number_of_initializations_ RTC_GUARDED_BY(&crit_);
+    int last_initialized_frame_width_ RTC_GUARDED_BY(&crit_);
+    int last_initialized_frame_height_ RTC_GUARDED_BY(&crit_);
   };
 
   test::NullTransport transport;
@@ -1902,7 +1902,7 @@ TEST_F(VideoSendStreamTest, CanReconfigureToUseStartBitrateAbovePreviousMax) {
    private:
     rtc::CriticalSection crit_;
     rtc::Event start_bitrate_changed_;
-    int start_bitrate_kbps_ GUARDED_BY(crit_);
+    int start_bitrate_kbps_ RTC_GUARDED_BY(crit_);
   };
 
   CreateSenderCall(Call::Config(event_log_.get()));
@@ -1992,7 +1992,7 @@ TEST_F(VideoSendStreamTest, VideoSendStreamStopSetEncoderRateToZero) {
     rtc::CriticalSection crit_;
     rtc::Event encoder_init_;
     rtc::Event bitrate_changed_;
-    rtc::Optional<int> bitrate_kbps_ GUARDED_BY(crit_);
+    rtc::Optional<int> bitrate_kbps_ RTC_GUARDED_BY(crit_);
   };
 
   test::NullTransport transport;
@@ -2244,10 +2244,10 @@ TEST_F(VideoSendStreamTest, EncoderIsProperlyInitializedAndDestroyed) {
     test::SingleThreadedTaskQueueForTesting* const task_queue_;
     rtc::CriticalSection crit_;
     VideoSendStream* stream_;
-    bool initialized_ GUARDED_BY(crit_);
-    bool callback_registered_ GUARDED_BY(crit_);
-    size_t num_releases_ GUARDED_BY(crit_);
-    bool released_ GUARDED_BY(crit_);
+    bool initialized_ RTC_GUARDED_BY(crit_);
+    bool callback_registered_ RTC_GUARDED_BY(crit_);
+    size_t num_releases_ RTC_GUARDED_BY(crit_);
+    bool released_ RTC_GUARDED_BY(crit_);
     VideoEncoderConfig encoder_config_;
   } test_encoder(&task_queue_);
 
@@ -2557,8 +2557,8 @@ TEST_F(VideoSendStreamTest, RtcpSenderReportContainsMediaBytesSent) {
     }
 
     rtc::CriticalSection crit_;
-    size_t rtp_packets_sent_ GUARDED_BY(&crit_);
-    size_t media_bytes_sent_ GUARDED_BY(&crit_);
+    size_t rtp_packets_sent_ RTC_GUARDED_BY(&crit_);
+    size_t media_bytes_sent_ RTC_GUARDED_BY(&crit_);
   } test;
 
   RunBaseTest(&test);
@@ -2792,7 +2792,7 @@ TEST_F(VideoSendStreamTest, ReconfigureBitratesSetsEncoderBitratesCorrectly) {
     rtc::Event init_encode_event_;
     rtc::Event bitrate_changed_event_;
     rtc::CriticalSection crit_;
-    uint32_t target_bitrate_ GUARDED_BY(&crit_);
+    uint32_t target_bitrate_ RTC_GUARDED_BY(&crit_);
 
     int num_initializations_;
     webrtc::Call* call_;
@@ -3457,8 +3457,8 @@ TEST_F(VideoSendStreamTest, RemoveOverheadFromBandwidth) {
     test::SingleThreadedTaskQueueForTesting* const task_queue_;
     Call* call_;
     rtc::CriticalSection crit_;
-    uint32_t max_bitrate_bps_ GUARDED_BY(&crit_);
-    bool first_packet_sent_ GUARDED_BY(&crit_);
+    uint32_t max_bitrate_bps_ RTC_GUARDED_BY(&crit_);
+    bool first_packet_sent_ RTC_GUARDED_BY(&crit_);
     rtc::Event bitrate_changed_event_;
   } test(&task_queue_);
   RunBaseTest(&test);

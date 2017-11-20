@@ -310,10 +310,6 @@ BrowserAccessibility* BrowserAccessibility::InternalGetParent() const {
   return nullptr;
 }
 
-int32_t BrowserAccessibility::GetIndexInParent() const {
-  return node_ ? node_->index_in_parent() : -1;
-}
-
 int32_t BrowserAccessibility::GetId() const {
   return node_ ? node_->id() : -1;
 }
@@ -339,8 +335,8 @@ gfx::Rect BrowserAccessibility::GetFrameBoundsRect() const {
   return RelativeToAbsoluteBounds(gfx::RectF(), true);
 }
 
-gfx::Rect BrowserAccessibility::GetPageBoundsRect() const {
-  return RelativeToAbsoluteBounds(gfx::RectF(), false);
+gfx::Rect BrowserAccessibility::GetPageBoundsRect(bool* offscreen) const {
+  return RelativeToAbsoluteBounds(gfx::RectF(), false, offscreen);
 }
 
 gfx::Rect BrowserAccessibility::GetPageBoundsForRange(int start, int len)
@@ -858,11 +854,12 @@ base::string16 BrowserAccessibility::GetInnerText() const {
 
 gfx::Rect BrowserAccessibility::RelativeToAbsoluteBounds(
     gfx::RectF bounds,
-    bool frame_only) const {
+    bool frame_only,
+    bool* offscreen) const {
   const BrowserAccessibility* node = this;
   while (node) {
-    bounds =
-        node->manager()->ax_tree()->RelativeToTreeBounds(node->node(), bounds);
+    bounds = node->manager()->ax_tree()->RelativeToTreeBounds(
+        node->node(), bounds, offscreen);
 
     // On some platforms we need to unapply root scroll offsets.
     const BrowserAccessibility* root = node->manager()->GetRoot();
@@ -883,6 +880,12 @@ gfx::Rect BrowserAccessibility::RelativeToAbsoluteBounds(
   }
 
   return gfx::ToEnclosingRect(bounds);
+}
+
+bool BrowserAccessibility::IsOffscreen() const {
+  bool offscreen = false;
+  RelativeToAbsoluteBounds(gfx::RectF(), false, &offscreen);
+  return offscreen;
 }
 
 gfx::NativeViewAccessible BrowserAccessibility::GetNativeViewAccessible() {
@@ -971,6 +974,10 @@ ui::AXPlatformNode* BrowserAccessibility::GetFromNodeID(int32_t id) {
   return nullptr;
 }
 
+int BrowserAccessibility::GetIndexInParent() const {
+  return node_ ? node_->index_in_parent() : -1;
+}
+
 gfx::AcceleratedWidget
 BrowserAccessibility::GetTargetForNativeAccessibilityEvent() {
   BrowserAccessibilityDelegate* root_delegate =
@@ -989,6 +996,28 @@ bool BrowserAccessibility::AccessibilityPerformAction(
 
   if (data.action == ui::AX_ACTION_FOCUS) {
     manager_->SetFocus(*this);
+    return true;
+  }
+
+  if (data.action == ui::AX_ACTION_SCROLL_TO_POINT) {
+    // target_point is in screen coordinates.  We need to convert this to frame
+    // coordinates because that's what BrowserAccessiblity cares about.
+    gfx::Point target =
+        data.target_point -
+        manager_->GetRootManager()->GetViewBounds().OffsetFromOrigin();
+
+    manager_->ScrollToPoint(*this, target);
+    return true;
+  }
+
+  if (data.action == ui::AX_ACTION_SCROLL_TO_MAKE_VISIBLE) {
+    // target_rect is in screen coordinates.  We need to convert this to frame
+    // coordinates because that's what BrowserAccessiblity cares about.
+    gfx::Rect target =
+        data.target_rect -
+        manager_->GetRootManager()->GetViewBounds().OffsetFromOrigin();
+
+    manager_->ScrollToMakeVisible(*this, target);
     return true;
   }
 

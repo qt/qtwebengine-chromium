@@ -7,9 +7,9 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "webrtc/sdk/android/src/jni/classreferenceholder.h"
+#include "sdk/android/src/jni/classreferenceholder.h"
 
-#include "webrtc/sdk/android/src/jni/jni_helpers.h"
+#include "sdk/android/src/jni/jni_helpers.h"
 
 namespace webrtc {
 namespace jni {
@@ -78,6 +78,7 @@ ClassReferenceHolder::ClassReferenceHolder(JNIEnv* jni) {
   LoadClass(jni, "org/webrtc/MediaCodecVideoEncoder$VideoCodecType");
   LoadClass(jni, "org/webrtc/MediaSource$State");
   LoadClass(jni, "org/webrtc/MediaStream");
+  LoadClass(jni, "org/webrtc/MediaStreamTrack");
   LoadClass(jni, "org/webrtc/MediaStreamTrack$MediaType");
   LoadClass(jni, "org/webrtc/MediaStreamTrack$State");
   LoadClass(jni, "org/webrtc/NetworkMonitor");
@@ -106,9 +107,16 @@ ClassReferenceHolder::ClassReferenceHolder(JNIEnv* jni) {
   LoadClass(jni, "org/webrtc/StatsReport$Value");
   LoadClass(jni, "org/webrtc/SurfaceTextureHelper");
   LoadClass(jni, "org/webrtc/VideoCapturer");
+  LoadClass(jni, "org/webrtc/VideoCodecInfo");
   LoadClass(jni, "org/webrtc/VideoCodecStatus");
   LoadClass(jni, "org/webrtc/VideoDecoder$Settings");
   LoadClass(jni, "org/webrtc/VideoDecoderWrapperCallback");
+  LoadClass(jni, "org/webrtc/VideoEncoder");
+  LoadClass(jni, "org/webrtc/VideoEncoder$BitrateAllocation");
+  LoadClass(jni, "org/webrtc/VideoEncoder$EncodeInfo");
+  LoadClass(jni, "org/webrtc/VideoEncoder$ScalingSettings");
+  LoadClass(jni, "org/webrtc/VideoEncoder$Settings");
+  LoadClass(jni, "org/webrtc/VideoEncoderWrapperCallback");
   LoadClass(jni, "org/webrtc/VideoFrame");
   LoadClass(jni, "org/webrtc/VideoFrame$Buffer");
   LoadClass(jni, "org/webrtc/VideoFrame$I420Buffer");

@@ -115,8 +115,7 @@ class AudioInputController::AudioCallback
   bool error_during_callback() const { return error_during_callback_; }
 
  private:
-  void OnData(AudioInputStream* stream,
-              const AudioBus* source,
+  void OnData(const AudioBus* source,
               base::TimeTicks capture_time,
               double volume) override {
     TRACE_EVENT0("audio", "AC::OnData");
@@ -130,7 +129,7 @@ class AudioInputController::AudioCallback
 #endif
   }
 
-  void OnError(AudioInputStream* stream) override {
+  void OnError() override {
     error_during_callback_ = true;
     controller_->task_runner_->PostTask(
         FROM_HERE,
@@ -433,6 +432,9 @@ void AudioInputController::DoClose() {
       }
     }
 
+    if (user_input_monitor_)
+      user_input_monitor_->DisableKeyPressMonitoring();
+
     audio_callback_.reset();
   } else {
     log_string =
@@ -445,9 +447,6 @@ void AudioInputController::DoClose() {
   stream_ = nullptr;
 
   sync_writer_->Close();
-
-  if (user_input_monitor_)
-    user_input_monitor_->DisableKeyPressMonitoring();
 
 #if defined(AUDIO_POWER_MONITORING)
   // Send UMA stats if enabled.

@@ -12,15 +12,15 @@
 
 #include <memory>
 
-#include "webrtc/modules/desktop_capture/desktop_capturer.h"
-#include "webrtc/modules/desktop_capture/desktop_frame_win.h"
-#include "webrtc/modules/desktop_capture/window_finder_win.h"
-#include "webrtc/modules/desktop_capture/win/screen_capture_utils.h"
-#include "webrtc/modules/desktop_capture/win/window_capture_utils.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/win32.h"
+#include "modules/desktop_capture/desktop_capturer.h"
+#include "modules/desktop_capture/desktop_frame_win.h"
+#include "modules/desktop_capture/window_finder_win.h"
+#include "modules/desktop_capture/win/screen_capture_utils.h"
+#include "modules/desktop_capture/win/window_capture_utils.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/win32.h"
 
 namespace webrtc {
 
@@ -79,6 +79,34 @@ BOOL CALLBACK WindowsEnumerationHandler(HWND hwnd, LPARAM param) {
   list->push_back(window);
 
   return TRUE;
+}
+
+// Retrieves the rectangle of the window rect which is drawable by either OS or
+// the owner application. The returned DesktopRect is in system coordinates.
+// This function returns false if native APIs fail.
+//
+// When |window| is maximized, its borders and shadow effect will be ignored by
+// OS and leave black. So we prefer to use GetCroppedWindowRect() when capturing
+// its content to avoid the black area in the final DesktopFrame. But when the
+// window is in normal mode, borders and shadow should be included.
+bool GetWindowDrawableRect(HWND window,
+                           DesktopRect* drawable_rect,
+                           DesktopRect* original_rect) {
+  if (!GetWindowRect(window, original_rect)) {
+    return false;
+  }
+
+  bool is_maximized = false;
+  if (!IsWindowMaximized(window, &is_maximized)) {
+    return false;
+  }
+
+  if (is_maximized) {
+    return GetCroppedWindowRect(
+        window, drawable_rect, /* original_rect */ nullptr);
+  }
+  *drawable_rect = *original_rect;
+  return true;
 }
 
 class WindowCapturerWin : public DesktopCapturer {
@@ -183,13 +211,10 @@ void WindowCapturerWin::CaptureFrame() {
     return;
   }
 
-  DesktopRect original_rect;
   DesktopRect cropped_rect;
-  // TODO(zijiehe): GetCroppedWindowRect() is not accurate, Windows won't draw
-  // the content below the |window_| with PrintWindow() or BitBlt(). See bug
-  // https://bugs.chromium.org/p/webrtc/issues/detail?id=8157.
-  if (!GetCroppedWindowRect(window_, &cropped_rect, &original_rect)) {
-    LOG(LS_WARNING) << "Failed to get window info: " << GetLastError();
+  DesktopRect original_rect;
+  if (!GetWindowDrawableRect(window_, &cropped_rect, &original_rect)) {
+    LOG(LS_WARNING) << "Failed to get drawable window area: " << GetLastError();
     callback_->OnCaptureResult(Result::ERROR_TEMPORARY, nullptr);
     return;
   }
@@ -291,6 +316,8 @@ void WindowCapturerWin::CaptureFrame() {
 
   frame->mutable_updated_region()->SetRect(
       DesktopRect::MakeSize(frame->size()));
+  frame->set_top_left(
+      cropped_rect.top_left().subtract(GetFullscreenRect().top_left()));
 
   if (result) {
     callback_->OnCaptureResult(Result::SUCCESS, std::move(frame));

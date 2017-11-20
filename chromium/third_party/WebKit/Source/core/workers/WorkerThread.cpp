@@ -35,10 +35,8 @@
 #include "core/inspector/InspectorTaskRunner.h"
 #include "core/inspector/WorkerInspectorController.h"
 #include "core/inspector/WorkerThreadDebugger.h"
-#include "core/origin_trials/OriginTrialContext.h"
 #include "core/probe/CoreProbes.h"
 #include "core/workers/GlobalScopeCreationParams.h"
-#include "core/workers/InstalledScriptsManager.h"
 #include "core/workers/ThreadedWorkletGlobalScope.h"
 #include "core/workers/WorkerBackingThread.h"
 #include "core/workers/WorkerClients.h"
@@ -46,12 +44,12 @@
 #include "core/workers/WorkerReportingProxy.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/WaitableEvent.h"
 #include "platform/WebThreadSupportingGC.h"
 #include "platform/bindings/Microtask.h"
 #include "platform/heap/SafePoint.h"
 #include "platform/heap/ThreadState.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/child/webthread_impl_for_worker_scheduler.h"
 #include "platform/scheduler/child/worker_global_scope_scheduler.h"
 #include "platform/weborigin/KURL.h"
@@ -406,58 +404,12 @@ void WorkerThread::InitializeOnWorkerThread(
   // TODO(nhiroki): Rename WorkerThreadStartMode to GlobalScopeStartMode.
   // (https://crbug.com/710364)
   WorkerThreadStartMode start_mode = global_scope_creation_params->start_mode;
-  V8CacheOptions v8_cache_options =
-      global_scope_creation_params->v8_cache_options;
 
-  String source_code;
-  std::unique_ptr<Vector<char>> cached_meta_data;
-  bool should_terminate = false;
-  if (RuntimeEnabledFeatures::ServiceWorkerScriptStreamingEnabled() &&
-      GetInstalledScriptsManager() &&
-      GetInstalledScriptsManager()->IsScriptInstalled(script_url)) {
-    // GetScriptData blocks until the script is received from the browser.
-    InstalledScriptsManager::ScriptData script_data;
-    InstalledScriptsManager::ScriptStatus status =
-        GetInstalledScriptsManager()->GetScriptData(script_url, &script_data);
-
-    // If an error occurred in the browser process while trying to read the
-    // installed script, the worker thread will terminate after initialization
-    // of the global scope since PrepareForShutdownOnWorkerThread() assumes the
-    // global scope has already been initialized.
-    switch (status) {
-      case InstalledScriptsManager::ScriptStatus::kTaken:
-        // InstalledScriptsManager::ScriptStatus::kTaken should not be returned
-        // since requesting the main script should be the first and no script
-        // has been taken until here.
-        NOTREACHED();
-      case InstalledScriptsManager::ScriptStatus::kFailed:
-        should_terminate = true;
-        break;
-      case InstalledScriptsManager::ScriptStatus::kSuccess:
-        DCHECK(source_code.IsEmpty());
-        DCHECK(!cached_meta_data);
-        source_code = script_data.TakeSourceText();
-        cached_meta_data = script_data.TakeMetaData();
-
-        global_scope_creation_params->content_security_policy_raw_headers =
-            script_data.GetContentSecurityPolicyResponseHeaders();
-        global_scope_creation_params->referrer_policy =
-            script_data.GetReferrerPolicy();
-        global_scope_creation_params->origin_trial_tokens =
-            script_data.CreateOriginTrialTokens();
-        // This may block until CSP and referrer policy are set on the main
-        // thread.
-        worker_reporting_proxy_.DidLoadInstalledScript(
-            global_scope_creation_params->content_security_policy_raw_headers
-                .value(),
-            global_scope_creation_params->referrer_policy);
-        break;
-    }
-  } else {
-    source_code = std::move(global_scope_creation_params->source_code);
-    cached_meta_data =
-        std::move(global_scope_creation_params->cached_meta_data);
-  }
+  // TODO(nhiroki): Separate these fields from GlobalScopeCreationParams because
+  // these are used not for creating a global scope but for evaluating a script.
+  String source_code = std::move(global_scope_creation_params->source_code);
+  std::unique_ptr<Vector<char>> cached_meta_data =
+      std::move(global_scope_creation_params->cached_meta_data);
 
   {
     MutexLocker lock(thread_state_mutex_);
@@ -492,7 +444,7 @@ void WorkerThread::InitializeOnWorkerThread(
   if (start_mode == kPauseWorkerGlobalScopeOnStart)
     StartRunningDebuggerTasksOnPauseOnWorkerThread();
 
-  if (CheckRequestedToTerminateOnWorkerThread() || should_terminate) {
+  if (CheckRequestedToTerminateOnWorkerThread()) {
     // Stop further worker tasks from running after this point. WorkerThread
     // was requested to terminate before initialization or during running
     // debugger tasks, or loading the installed main script
@@ -501,11 +453,13 @@ void WorkerThread::InitializeOnWorkerThread(
     return;
   }
 
+  // Worklet will evaluate the script later via Worklet.addModule().
   // TODO(nhiroki): Start module loading for workers here.
   // (https://crbug.com/680046)
+  if (GlobalScope()->IsWorkletGlobalScope())
+    return;
   GlobalScope()->EvaluateClassicScript(script_url, std::move(source_code),
-                                       std::move(cached_meta_data),
-                                       v8_cache_options);
+                                       std::move(cached_meta_data));
 }
 
 void WorkerThread::PrepareForShutdownOnWorkerThread() {

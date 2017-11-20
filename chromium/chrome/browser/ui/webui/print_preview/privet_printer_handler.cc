@@ -51,24 +51,32 @@ PrivetPrinterHandler::~PrivetPrinterHandler() {}
 
 void PrivetPrinterHandler::Reset() {
   weak_ptr_factory_.InvalidateWeakPtrs();
+  added_printers_callback_.Reset();
+  if (done_callback_)
+    done_callback_.Run();
+  done_callback_.Reset();
 }
 
 void PrivetPrinterHandler::StartGetPrinters(
-    const PrinterHandler::GetPrintersCallback& callback) {
+    const AddedPrintersCallback& added_printers_callback,
+    const GetPrintersDoneCallback& done_callback) {
   using local_discovery::ServiceDiscoverySharedClient;
   scoped_refptr<ServiceDiscoverySharedClient> service_discovery =
       ServiceDiscoverySharedClient::GetInstance();
-  get_printers_callback_ = callback;
+  DCHECK(!added_printers_callback_);
+  DCHECK(!done_callback_);
+  added_printers_callback_ = added_printers_callback;
+  done_callback_ = done_callback;
   StartLister(service_discovery);
 }
 
 void PrivetPrinterHandler::StartGetCapability(
     const std::string& destination_id,
-    const PrinterHandler::GetCapabilityCallback& callback) {
+    const GetCapabilityCallback& callback) {
   if (!CreateHTTP(destination_id,
                   base::Bind(&PrivetPrinterHandler::CapabilitiesUpdateClient,
                              weak_ptr_factory_.GetWeakPtr(), callback))) {
-    callback.Run(base::DictionaryValue());
+    callback.Run(nullptr);
   }
 }
 
@@ -79,7 +87,7 @@ void PrivetPrinterHandler::StartPrint(
     const std::string& ticket_json,
     const gfx::Size& page_size,
     const scoped_refptr<base::RefCountedBytes>& print_data,
-    const PrinterHandler::PrintCallback& callback) {
+    const PrintCallback& callback) {
   if (!CreateHTTP(
           destination_id,
           base::Bind(&PrivetPrinterHandler::PrintUpdateClient,
@@ -87,12 +95,6 @@ void PrivetPrinterHandler::StartPrint(
                      print_data, ticket_json, capability, page_size))) {
     callback.Run(false, base::Value(-1));
   }
-}
-
-void PrivetPrinterHandler::StartGrantPrinterAccess(
-    const std::string& printer_id,
-    const PrinterHandler::GetPrinterInfoCallback& callback) {
-  NOTREACHED();
 }
 
 void PrivetPrinterHandler::LocalPrinterChanged(
@@ -107,7 +109,7 @@ void PrivetPrinterHandler::LocalPrinterChanged(
                            printer_info.get());
     base::ListValue printers;
     printers.Set(0, std::move(printer_info));
-    get_printers_callback_.Run(printers, false);
+    added_printers_callback_.Run(printers);
   }
 }
 
@@ -147,14 +149,16 @@ void PrivetPrinterHandler::StopLister() {
   privet_lister_timer_.reset();
   if (printer_lister_)
     printer_lister_->Stop();
-  get_printers_callback_.Run(base::ListValue(), true);
+  done_callback_.Run();
+  added_printers_callback_.Reset();
+  done_callback_.Reset();
 }
 
 void PrivetPrinterHandler::CapabilitiesUpdateClient(
-    const PrinterHandler::GetCapabilityCallback& callback,
+    const GetCapabilityCallback& callback,
     std::unique_ptr<cloud_print::PrivetHTTPClient> http_client) {
   if (!UpdateClient(std::move(http_client))) {
-    callback.Run(base::DictionaryValue());
+    callback.Run(nullptr);
     return;
   }
 
@@ -166,11 +170,11 @@ void PrivetPrinterHandler::CapabilitiesUpdateClient(
 }
 
 void PrivetPrinterHandler::OnGotCapabilities(
-    const PrinterHandler::GetCapabilityCallback& callback,
+    const GetCapabilityCallback& callback,
     const base::DictionaryValue* capabilities) {
   if (!capabilities || capabilities->HasKey(cloud_print::kPrivetKeyError) ||
       !printer_lister_) {
-    callback.Run(base::DictionaryValue());
+    callback.Run(nullptr);
     return;
   }
 
@@ -179,25 +183,26 @@ void PrivetPrinterHandler::OnGotCapabilities(
       printer_lister_->GetDeviceDescription(name);
 
   if (!description) {
-    callback.Run(base::DictionaryValue());
+    callback.Run(nullptr);
     return;
   }
 
   std::unique_ptr<base::DictionaryValue> printer_info =
-      base::MakeUnique<base::DictionaryValue>();
+      std::make_unique<base::DictionaryValue>();
   FillPrinterDescription(name, *description, true, printer_info.get());
-  base::DictionaryValue printer_info_and_caps;
-  printer_info_and_caps.SetDictionary("printer", std::move(printer_info));
+  std::unique_ptr<base::DictionaryValue> printer_info_and_caps =
+      std::make_unique<base::DictionaryValue>();
+  printer_info_and_caps->SetDictionary("printer", std::move(printer_info));
   std::unique_ptr<base::DictionaryValue> capabilities_copy =
       capabilities->CreateDeepCopy();
-  printer_info_and_caps.SetDictionary("capabilities",
-                                      std::move(capabilities_copy));
-  callback.Run(printer_info_and_caps);
+  printer_info_and_caps->SetDictionary("capabilities",
+                                       std::move(capabilities_copy));
+  callback.Run(std::move(printer_info_and_caps));
   privet_capabilities_operation_.reset();
 }
 
 void PrivetPrinterHandler::PrintUpdateClient(
-    const PrinterHandler::PrintCallback& callback,
+    const PrintCallback& callback,
     const base::string16& job_title,
     const scoped_refptr<base::RefCountedBytes>& print_data,
     const std::string& print_ticket,

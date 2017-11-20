@@ -184,7 +184,7 @@ void IconCacherImpl::SaveIconForSite(const PopularSites::Site& site,
   gfx::Image img(image);
   favicon_base::SetFaviconColorSpace(&img);
 
-  favicon_service_->SetFavicons(site.url, IconURL(site), IconType(site),
+  favicon_service_->SetFavicons({site.url}, IconURL(site), IconType(site),
                                 std::move(img));
 }
 
@@ -200,7 +200,7 @@ IconCacherImpl::MaybeProvideDefaultIcon(
           &IconCacherImpl::SaveAndNotifyDefaultIconForSite,
           weak_ptr_factory_.GetWeakPtr(), site, preliminary_icon_available)));
   image_fetcher_->GetImageDecoder()->DecodeImage(
-      ResourceBundle::GetSharedInstance()
+      ui::ResourceBundle::GetSharedInstance()
           .GetRawDataResource(site.default_icon_resource)
           .as_string(),
       gfx::Size(kDesiredFrameSize, kDesiredFrameSize),

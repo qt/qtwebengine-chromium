@@ -21,7 +21,6 @@
 #include "xfa/fwl/cfwl_themetext.h"
 #include "xfa/fwl/cfwl_widgetmgr.h"
 #include "xfa/fwl/ifwl_themeprovider.h"
-#include "xfa/fwl/theme/cfwl_widgettp.h"
 
 CFWL_Form::CFWL_Form(const CFWL_App* app,
                      std::unique_ptr<CFWL_WidgetProperties> properties,
@@ -46,8 +45,8 @@ FWL_Type CFWL_Form::GetClassID() const {
   return FWL_Type::Form;
 }
 
-bool CFWL_Form::IsInstance(const CFX_WideStringC& wsClass) const {
-  if (wsClass == CFX_WideStringC(FWL_CLASS_Form))
+bool CFWL_Form::IsInstance(const WideStringView& wsClass) const {
+  if (wsClass == WideStringView(FWL_CLASS_Form))
     return true;
   return CFWL_Widget::IsInstance(wsClass);
 }
@@ -84,7 +83,7 @@ void CFWL_Form::DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix& matrix) {
   IFWL_ThemeProvider* pTheme = m_pProperties->m_pThemeProvider;
   DrawBackground(pGraphics, pTheme);
 
-#ifdef FWL_UseMacSystemBorder
+#if _FX_OS_ == _FX_OS_MACOSX_
   return;
 #endif
   CFWL_ThemeBackground param;
@@ -115,7 +114,7 @@ CFWL_Widget* CFWL_Form::DoModal() {
   RemoveStates(FWL_WGTSTATE_Invisible);
   pDriver->Run();
 
-#if _FX_OS_ != _FX_MACOSX_
+#if _FX_OS_ != _FX_OS_MACOSX_
   pDriver->PopNoteLoop();
 #endif
 
@@ -127,7 +126,7 @@ void CFWL_Form::EndDoModal() {
   if (!m_pNoteLoop)
     return;
 
-#if (_FX_OS_ == _FX_MACOSX_)
+#if (_FX_OS_ == _FX_OS_MACOSX_)
   m_pNoteLoop->EndModalLoop();
   const CFWL_App* pApp = GetOwnerApp();
   if (!pApp)
@@ -178,7 +177,7 @@ void CFWL_Form::SetWorkAreaRect() {
 void CFWL_Form::Layout() {
   m_rtRelative = GetRelativeRect();
 
-#ifndef FWL_UseMacSystemBorder
+#if _FX_OS_ == _FX_OS_MACOSX_
   IFWL_ThemeProvider* theme = GetAvailableTheme();
   m_fCXBorder = theme ? theme->GetCXBorderSize() : 0.0f;
   m_fCYBorder = theme ? theme->GetCYBorderSize() : 0.0f;
@@ -212,7 +211,7 @@ void CFWL_Form::UnRegisterForm() {
 }
 
 void CFWL_Form::OnProcessMessage(CFWL_Message* pMessage) {
-#ifndef FWL_UseMacSystemBorder
+#if _FX_OS_ == _FX_OS_MACOSX_
   if (!pMessage)
     return;
 
@@ -234,7 +233,7 @@ void CFWL_Form::OnProcessMessage(CFWL_Message* pMessage) {
     default:
       break;
   }
-#endif  // FWL_UseMacSystemBorder
+#endif  // _FX_OS_ == _FX_OS_MACOSX_
 }
 
 void CFWL_Form::OnDrawWidget(CXFA_Graphics* pGraphics,

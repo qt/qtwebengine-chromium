@@ -22,6 +22,7 @@
 #include "cc/test/fake_layer_tree_frame_sink.h"
 #include "cc/test/fake_layer_tree_frame_sink_client.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
+#include "cc/test/fake_paint_image_generator.h"
 #include "cc/test/fake_picture_layer_impl.h"
 #include "cc/test/fake_picture_layer_tiling_client.h"
 #include "cc/test/fake_raster_source.h"
@@ -29,7 +30,6 @@
 #include "cc/test/fake_tile_manager.h"
 #include "cc/test/fake_tile_task_manager.h"
 #include "cc/test/skia_common.h"
-#include "cc/test/stub_paint_image_generator.h"
 #include "cc/test/test_layer_tree_host_base.h"
 #include "cc/test/test_task_graph_runner.h"
 #include "cc/test/test_tile_priorities.h"
@@ -58,7 +58,7 @@ namespace {
 // posted should run synchronously.
 class SynchronousSimpleTaskRunner : public base::TestSimpleTaskRunner {
  public:
-  bool PostDelayedTask(const tracked_objects::Location& from_here,
+  bool PostDelayedTask(const base::Location& from_here,
                        base::OnceClosure task,
                        base::TimeDelta delay) override {
     TestSimpleTaskRunner::PostDelayedTask(from_here, std::move(task), delay);
@@ -67,7 +67,7 @@ class SynchronousSimpleTaskRunner : public base::TestSimpleTaskRunner {
     return true;
   }
 
-  bool PostNonNestableDelayedTask(const tracked_objects::Location& from_here,
+  bool PostNonNestableDelayedTask(const base::Location& from_here,
                                   base::OnceClosure task,
                                   base::TimeDelta delay) override {
     return PostDelayedTask(from_here, std::move(task), delay);
@@ -2307,10 +2307,10 @@ TEST_F(TileManagerReadyToDrawTest, ReadyToDrawRespectsRequirementChange) {
 
 class CheckerImagingTileManagerTest : public TestLayerTreeHostBase {
  public:
-  class MockImageGenerator : public StubPaintImageGenerator {
+  class MockImageGenerator : public FakePaintImageGenerator {
    public:
     explicit MockImageGenerator(const gfx::Size& size)
-        : StubPaintImageGenerator(
+        : FakePaintImageGenerator(
               SkImageInfo::MakeN32Premul(size.width(), size.height())) {}
 
     MOCK_METHOD5(GetPixels,
@@ -2337,7 +2337,7 @@ class CheckerImagingTileManagerTest : public TestLayerTreeHostBase {
       const LayerTreeSettings& settings,
       TaskRunnerProvider* task_runner_provider,
       TaskGraphRunner* task_graph_runner) override {
-    task_runner_ = make_scoped_refptr(new SynchronousSimpleTaskRunner);
+    task_runner_ = base::MakeRefCounted<SynchronousSimpleTaskRunner>();
     return std::make_unique<FakeLayerTreeHostImpl>(
         settings, task_runner_provider, task_graph_runner, task_runner_);
   }
@@ -2374,7 +2374,7 @@ TEST_F(CheckerImagingTileManagerTest,
 
   auto generator =
       sk_make_sp<testing::StrictMock<MockImageGenerator>>(gfx::Size(512, 512));
-  PaintImage image = PaintImageBuilder()
+  PaintImage image = PaintImageBuilder::WithDefault()
                          .set_id(PaintImage::GetNextId())
                          .set_paint_image_generator(generator)
                          .TakePaintImage();

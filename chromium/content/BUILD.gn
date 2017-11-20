@@ -103,6 +103,7 @@ if (is_component_build) {
       "//media:media_features",
       "//sandbox:sandbox_features",
       "//sandbox/linux:sandbox",
+      "//services/service_manager/sandbox",
     ]
   }
 } else {

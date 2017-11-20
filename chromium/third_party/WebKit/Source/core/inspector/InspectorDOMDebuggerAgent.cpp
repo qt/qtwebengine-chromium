@@ -40,6 +40,7 @@
 #include "core/dom/events/EventTarget.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/inspector/InspectorDOMAgent.h"
+#include "core/inspector/ResolveNode.h"
 #include "core/inspector/V8InspectorString.h"
 #include "core/probe/CoreProbes.h"
 
@@ -99,7 +100,7 @@ static void CollectEventListeners(v8::Isolate* isolate,
     if (!listeners)
       continue;
     for (size_t k = 0; k < listeners->size(); ++k) {
-      EventListener* event_listener = listeners->at(k).Listener();
+      EventListener* event_listener = listeners->at(k).Callback();
       if (event_listener->GetType() != EventListener::kJSEventListenerType)
         continue;
       V8AbstractEventListener* v8_listener =
@@ -120,7 +121,7 @@ static void CollectEventListeners(v8::Isolate* isolate,
       int backend_node_id = 0;
       if (target_node) {
         backend_node_id = DOMNodeIds::IdForNode(target_node);
-        target_wrapper = InspectorDOMAgent::NodeV8Value(
+        target_wrapper = NodeV8Value(
             report_for_all_contexts ? context : isolate->GetCurrentContext(),
             target_node);
       }
@@ -158,7 +159,7 @@ void InspectorDOMDebuggerAgent::EventListenersInfoForTarget(
     bool pierce,
     V8EventListenerInfoList* event_information) {
   // Special-case nodes, respect depth and pierce parameters in case of nodes.
-  Node* node = V8Node::toImplWithTypeCheck(isolate, value);
+  Node* node = V8Node::ToImplWithTypeCheck(isolate, value);
   if (node) {
     if (depth < 0)
       depth = INT_MAX;
@@ -173,7 +174,7 @@ void InspectorDOMDebuggerAgent::EventListenersInfoForTarget(
     return;
   }
 
-  EventTarget* target = V8EventTarget::toImplWithTypeCheck(isolate, value);
+  EventTarget* target = V8EventTarget::ToImplWithTypeCheck(isolate, value);
   // We need to handle LocalDOMWindow specially, because LocalDOMWindow wrapper
   // exists on prototype chain.
   if (!target)

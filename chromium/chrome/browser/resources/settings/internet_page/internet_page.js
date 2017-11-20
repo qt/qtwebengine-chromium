@@ -277,6 +277,20 @@ Polymer({
   },
 
   /**
+   * @param {string} type
+   * @return {string}
+   * @private
+   */
+  getAddNetworkClass_: function(type) {
+    if (loadTimeData.getBoolean('networkSettingsConfig')) {
+      if (type == CrOnc.Type.WI_FI)
+        return 'icon-add-wifi';
+      return 'icon-add-circle';
+    }
+    return 'icon-external';
+  },
+
+  /**
    * @param {string} subpageType
    * @param {!Object<!CrOnc.DeviceStateProperties>|undefined} deviceStates
    * @return {!CrOnc.DeviceStateProperties|undefined}
@@ -325,7 +339,10 @@ Polymer({
 
   /** @private */
   onAddVPNTap_: function() {
-    chrome.send('addNetwork', [CrOnc.Type.VPN]);
+    if (loadTimeData.getBoolean('networkSettingsConfig'))
+      this.showConfig_(CrOnc.Type.VPN);
+    else
+      chrome.send('addNetwork', [CrOnc.Type.VPN]);
   },
 
   /**

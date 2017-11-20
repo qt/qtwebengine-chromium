@@ -51,6 +51,7 @@ class SubSurface : public SurfaceDelegate, public SurfaceObserver {
   // Overridden from SurfaceDelegate:
   void OnSurfaceCommit() override;
   bool IsSurfaceSynchronized() const override;
+  void OnSetFrame(SurfaceFrameType type) override {}
 
   // Overridden from SurfaceObserver:
   void OnSurfaceDestroying(Surface* surface) override;

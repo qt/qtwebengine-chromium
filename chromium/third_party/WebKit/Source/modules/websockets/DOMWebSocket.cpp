@@ -33,7 +33,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/SourceLocation.h"
-#include "bindings/modules/v8/StringOrStringSequence.h"
+#include "bindings/modules/v8/string_or_string_sequence.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
@@ -266,16 +266,16 @@ DOMWebSocket* DOMWebSocket::Create(ExecutionContext* context,
   DOMWebSocket* web_socket = new DOMWebSocket(context);
   web_socket->SuspendIfNeeded();
 
-  if (protocols.isNull()) {
+  if (protocols.IsNull()) {
     Vector<String> protocols_vector;
     web_socket->Connect(url, protocols_vector, exception_state);
-  } else if (protocols.isString()) {
+  } else if (protocols.IsString()) {
     Vector<String> protocols_vector;
-    protocols_vector.push_back(protocols.getAsString());
+    protocols_vector.push_back(protocols.GetAsString());
     web_socket->Connect(url, protocols_vector, exception_state);
   } else {
-    DCHECK(protocols.isStringSequence());
-    web_socket->Connect(url, protocols.getAsStringSequence(), exception_state);
+    DCHECK(protocols.IsStringSequence());
+    web_socket->Connect(url, protocols.GetAsStringSequence(), exception_state);
   }
 
   if (exception_state.HadException())

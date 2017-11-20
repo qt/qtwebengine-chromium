@@ -14,6 +14,7 @@
 #include "xfa/fwl/cfwl_themepart.h"
 #include "xfa/fwl/cfx_barcode.h"
 #include "xfa/fwl/ifwl_themeprovider.h"
+#include "xfa/fwl/theme/cfwl_utils.h"
 
 CFWL_Barcode::CFWL_Barcode(const CFWL_App* app)
     : CFWL_Edit(app, pdfium::MakeUnique<CFWL_WidgetProperties>(), nullptr),
@@ -66,7 +67,7 @@ void CFWL_Barcode::SetType(BC_TYPE type) {
   m_dwStatus = XFA_BCS_NeedUpdate;
 }
 
-void CFWL_Barcode::SetText(const CFX_WideString& wsText) {
+void CFWL_Barcode::SetText(const WideString& wsText) {
   m_pBarcodeEngine.reset();
   m_dwStatus = XFA_BCS_NeedUpdate;
   CFWL_Edit::SetText(wsText);
@@ -166,7 +167,7 @@ void CFWL_Barcode::GenerateBarcodeImageCache() {
   if (pTheme) {
     CFWL_ThemePart part;
     part.m_pWidget = this;
-    if (CFX_RetainPtr<CFGAS_GEFont> pFont = pTheme->GetFont(&part)) {
+    if (RetainPtr<CFGAS_GEFont> pFont = pTheme->GetFont(&part)) {
       if (CFX_Font* pCXFont = pFont->GetDevFont())
         m_pBarcodeEngine->SetFont(pCXFont);
     }
@@ -203,7 +204,7 @@ void CFWL_Barcode::GenerateBarcodeImageCache() {
   if (m_dwAttributeMask & FWL_BCDATTRIBUTE_TRUNCATED)
     m_pBarcodeEngine->SetTruncated(m_bTruncated);
 
-  m_dwStatus = m_pBarcodeEngine->Encode(GetText().AsStringC(), true)
+  m_dwStatus = m_pBarcodeEngine->Encode(GetText().AsStringView())
                    ? XFA_BCS_EncodeSuccess
                    : 0;
 }

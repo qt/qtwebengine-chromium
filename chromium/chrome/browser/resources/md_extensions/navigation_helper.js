@@ -29,11 +29,19 @@ extensions.ShowingType = {
 
 /** @typedef {{page: Page,
                extensionId: (string|undefined),
-               subpage: (!Dialog|undefined)}} */
+               subpage: (!Dialog|undefined),
+               type: (!extensions.ShowingType|undefined)}} */
 let PageState;
 
 cr.define('extensions', function() {
   'use strict';
+
+  /**
+   * Regular expression that captures the leading slash, the content and the
+   * trailing slash in three different groups.
+   * @const {!RegExp}
+   */
+  const CANONICAL_PATH_REGEX = /(^\/)([\/-\w]+)(\/$)/;
 
   /**
    * A helper object to manage in-page navigations. Since the extensions page
@@ -42,12 +50,29 @@ cr.define('extensions', function() {
    */
   class NavigationHelper {
     constructor() {
-      /** @private {!Array<function(!PageState)>} */
-      this.listeners_ = [];
+      // Redirect if route not supported.
+      let validPathnames = ['/'];
+      if (!loadTimeData.getBoolean('isGuest')) {
+        validPathnames.push('/shortcuts', '/apps');
+      }
+      if (!validPathnames.includes(this.currentPath_)) {
+        window.history.replaceState(undefined, '', '/');
+      }
+
+      /** @private {number} */
+      this.nextListenerId_ = 1;
+
+      /** @private {!Map<number, function(!PageState)>} */
+      this.listeners_ = new Map();
 
       window.addEventListener('popstate', () => {
         this.notifyRouteChanged_(this.getCurrentPage());
       });
+    }
+
+    /** @private */
+    get currentPath_() {
+      return location.pathname.replace(CANONICAL_PATH_REGEX, '$1$2');
     }
 
     /**
@@ -66,10 +91,10 @@ cr.define('extensions', function() {
       if (id)
         return {page: Page.ERRORS, extensionId: id};
 
-      if (location.pathname == '/shortcuts')
+      if (this.currentPath_ == '/shortcuts')
         return {page: Page.SHORTCUTS};
 
-      if (location.pathname == '/apps')
+      if (this.currentPath_ == '/apps')
         return {page: Page.LIST, type: extensions.ShowingType.APPS};
 
       return {page: Page.LIST, type: extensions.ShowingType.EXTENSIONS};
@@ -78,9 +103,22 @@ cr.define('extensions', function() {
     /**
      * Function to add subscribers.
      * @param {!function(!PageState)} listener
+     * @return {number} A numerical ID to be used for removing the listener.
      */
-    onRouteChanged(listener) {
-      this.listeners_.push(listener);
+    addListener(listener) {
+      const nextListenerId = this.nextListenerId_++;
+      this.listeners_.set(nextListenerId, listener);
+      return nextListenerId;
+    }
+
+    /**
+     * Remove a previously registered listener.
+     * @param {number} id
+     * @return {boolean} Whether a listener with the given ID was actually found
+     *     and removed.
+     */
+    removeListener(id) {
+      return this.listeners_.delete(id);
     }
 
     /**
@@ -88,9 +126,9 @@ cr.define('extensions', function() {
      * @private
      */
     notifyRouteChanged_(newPage) {
-      for (const listener of this.listeners_) {
+      this.listeners_.forEach((listener, id) => {
         listener(newPage);
-      }
+      });
     }
 
     /**
@@ -117,7 +155,7 @@ cr.define('extensions', function() {
       let path;
       switch (entry.page) {
         case Page.LIST:
-          if (entry.type && entry.type == extensions.ShowingType.APPS)
+          if (entry.type == extensions.ShowingType.APPS)
             path = '/apps';
           else
             path = '/';
@@ -157,6 +195,8 @@ cr.define('extensions', function() {
   const navigation = new NavigationHelper();
 
   return {
+    // Constructor exposed for testing purposes.
+    NavigationHelper: NavigationHelper,
     navigation: navigation,
   };
 });

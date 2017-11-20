@@ -82,9 +82,9 @@
             image-src="[[getImageSrc_(selectedItem_)]]"
             image-type="[[getImageType_(selectedItem_)]]"
             discard-image-label="$i18n{discardPhoto}"
-            flip-photo-label="$i18n{flipPhoto}"
             preview-alt-text="$i18n{previewAltText}"
-            take-photo-label="$i18n{takePhoto}">
+            take-photo-label="$i18n{takePhoto}"
+            switch-mode-label="$i18n{switchMode}">
         </cr-picture-pane>
         <div id="authorCredit"
             hidden="[[!isAuthorCreditShown_(selectedItem_)]]">
@@ -103,7 +103,8 @@
           choose-file-label="$i18n{chooseFile}"
           old-image-label="$i18n{oldPhoto}"
           profile-image-label="$i18n{profilePhoto}"
-          take-photo-label="$i18n{takePhoto}">
+          take-photo-label="$i18n{takePhoto}"
+          switch-mode-label="$i18n{switchMode}">
       </cr-picture-list>
     </div>
   </template>

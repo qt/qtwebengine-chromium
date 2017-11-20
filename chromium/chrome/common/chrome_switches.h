@@ -19,7 +19,7 @@
 
 namespace base {
 class CommandLine;
-};
+}
 
 namespace switches {
 
@@ -97,7 +97,6 @@ extern const char kDnsLogDetails[];
 extern const char kDumpBrowserHistograms[];
 extern const char kEasyUnlockAppPath[];
 extern const char kEnableAudioDebugRecordingsFromExtension[];
-extern const char kEnableAutomation[];
 extern const char kEnableBookmarkUndo[];
 extern const char kEnableClearBrowsingDataCounters[];
 extern const char kEnableCloudPrintProxy[];
@@ -109,7 +108,6 @@ extern const char kEnableExperimentalHotwordHardware[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
 extern const char kEnableFastUnload[];
-extern const char kEnableMaterialDesignFeedback[];
 extern const char kEnableNaCl[];
 extern const char kEnableNavigationTracing[];
 extern const char kEnableNetBenchmarking[];
@@ -120,10 +118,8 @@ extern const char kEnablePictureInPicture[];
 extern const char kEnablePotentiallyAnnoyingSecurityFeatures[];
 extern const char kEnablePowerOverlay[];
 extern const char kEnablePrintPreviewRegisterPromos[];
-extern const char kEnableProfiling[];
 extern const char kEnablePushApiBackgroundMode[];
 extern const char kEnableSiteSettings[];
-extern const char kEnableSupervisedUserManagedBookmarksFolder[];
 extern const char kEnableTabAudioMuting[];
 extern const char kEnableWebNotificationCustomLayouts[];
 extern const char kEnableWebRtcEventLoggingFromExtension[];
@@ -156,7 +152,7 @@ extern const char kMakeDefaultBrowser[];
 extern const char kMediaCacheSize[];
 extern const char kMemlog[];
 extern const char kMemlogModeAll[];
-extern const char kMemlogModeBrowser[];
+extern const char kMemlogModeMinimal[];
 extern const char kMonitoringDestinationID[];
 extern const char kNetLogCaptureMode[];
 extern const char kNoDefaultBrowserCheck[];
@@ -191,7 +187,6 @@ extern const char kRemoteDebuggingTargets[];
 extern const char kRestoreLastSession[];
 extern const char kSavePageAsMHTML[];
 extern const char kShowAppList[];
-extern const char kShowCertLink[];
 extern const char kSilentDebuggerExtensionAPI[];
 extern const char kSilentLaunch[];
 extern const char kSimulateCriticalUpdate[];
@@ -253,10 +248,6 @@ extern const char kDisableLoggingRedirect[];
 extern const char kDisableLoginScreenApps[];
 #endif  // defined(OS_CHROMEOS)
 
-#if defined(USE_ASH)
-extern const char kOpenAsh[];
-#endif
-
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
 extern const char kHelp[];
 extern const char kHelpShort[];
@@ -306,7 +297,6 @@ extern const char kWindows10CustomTitlebar[];
 #if BUILDFLAG(ENABLE_PACKAGE_MASH_SERVICES)
 extern const char kMash[];
 extern const char kMus[];
-extern const char kMusConfig[];
 #endif
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
@@ -338,14 +328,9 @@ extern const char kUseSystemDefaultPrinter[];
 
 bool ExtensionsDisabled(const base::CommandLine& command_line);
 bool ExtensionsDisabled();
-bool MdFeedbackEnabled();
 
 #if defined(OS_CHROMEOS)
 bool PowerOverlayEnabled();
-#endif
-
-#if defined(OS_WIN)
-bool GDITextPrintingEnabled();
 #endif
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in

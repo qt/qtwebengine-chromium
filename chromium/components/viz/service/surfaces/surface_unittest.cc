@@ -5,7 +5,7 @@
 #include "components/viz/service/surfaces/surface.h"
 #include "base/memory/ptr_util.h"
 #include "cc/test/scheduler_test_common.h"
-#include "components/viz/common/quads/copy_output_result.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/surfaces/local_surface_id_allocator.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
@@ -65,25 +65,26 @@ TEST(SurfaceTest, CopyRequestLifetime) {
 
   LocalSurfaceId local_surface_id(6, base::UnguessableToken::Create());
   SurfaceId surface_id(kArbitraryFrameSinkId, local_surface_id);
-  cc::CompositorFrame frame = test::MakeCompositorFrame();
+  CompositorFrame frame = test::MakeCompositorFrame();
   support->SubmitCompositorFrame(local_surface_id, std::move(frame));
   Surface* surface = surface_manager->GetSurfaceForId(surface_id);
   ASSERT_TRUE(!!surface);
 
   bool copy_called = false;
-  support->RequestCopyOfSurface(CopyOutputRequest::CreateRequest(
+  support->RequestCopyOfSurface(std::make_unique<CopyOutputRequest>(
+      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
       base::BindOnce(&TestCopyResultCallback, &copy_called)));
   EXPECT_TRUE(surface_manager->GetSurfaceForId(surface_id));
   EXPECT_FALSE(copy_called);
 
   int max_frame = 3, start_id = 200;
   for (int i = 0; i < max_frame; ++i) {
-    cc::CompositorFrame frame = test::MakeEmptyCompositorFrame();
-    frame.render_pass_list.push_back(cc::RenderPass::Create());
+    CompositorFrame frame = test::MakeEmptyCompositorFrame();
+    frame.render_pass_list.push_back(RenderPass::Create());
     frame.render_pass_list.back()->id = i * 3 + start_id;
-    frame.render_pass_list.push_back(cc::RenderPass::Create());
+    frame.render_pass_list.push_back(RenderPass::Create());
     frame.render_pass_list.back()->id = i * 3 + start_id + 1;
-    frame.render_pass_list.push_back(cc::RenderPass::Create());
+    frame.render_pass_list.push_back(RenderPass::Create());
     frame.render_pass_list.back()->SetNew(i * 3 + start_id + 2,
                                           gfx::Rect(0, 0, 20, 20), gfx::Rect(),
                                           gfx::Transform());
@@ -104,7 +105,7 @@ TEST(SurfaceTest, CopyRequestLifetime) {
   // Last (root) pass should receive copy request.
   ASSERT_EQ(1u, copy_requests.count(last_pass_id));
   EXPECT_FALSE(copy_called);
-  copy_requests.find(last_pass_id)->second->SendEmptyResult();
+  copy_requests.clear();  // Deleted requests will auto-send an empty result.
   EXPECT_TRUE(copy_called);
 
   support->EvictCurrentSurface();

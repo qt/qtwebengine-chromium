@@ -16,7 +16,8 @@ NGConstraintSpaceBuilder::NGConstraintSpaceBuilder(
 NGConstraintSpaceBuilder::NGConstraintSpaceBuilder(NGWritingMode writing_mode,
                                                    NGPhysicalSize icb_size)
     : initial_containing_block_size_(icb_size),
-      fragmentainer_space_available_(NGSizeIndefinite),
+      fragmentainer_block_size_(NGSizeIndefinite),
+      fragmentainer_space_at_bfc_start_(NGSizeIndefinite),
       parent_writing_mode_(writing_mode),
       is_fixed_size_inline_(false),
       is_fixed_size_block_(false),
@@ -26,6 +27,7 @@ NGConstraintSpaceBuilder::NGConstraintSpaceBuilder(NGWritingMode writing_mode,
       fragmentation_type_(kFragmentNone),
       is_new_fc_(false),
       is_anonymous_(false),
+      use_first_line_sytle_(false),
       text_direction_(static_cast<unsigned>(TextDirection::kLtr)),
       exclusion_space_(nullptr) {}
 
@@ -129,6 +131,12 @@ NGConstraintSpaceBuilder& NGConstraintSpaceBuilder::SetIsAnonymous(
   return *this;
 }
 
+NGConstraintSpaceBuilder& NGConstraintSpaceBuilder::SetUseFirstLineStyle(
+    bool use_first_line_sytle) {
+  use_first_line_sytle_ = use_first_line_sytle;
+  return *this;
+}
+
 NGConstraintSpaceBuilder& NGConstraintSpaceBuilder::SetUnpositionedFloats(
     Vector<RefPtr<NGUnpositionedFloat>>& unpositioned_floats) {
   unpositioned_floats_ = unpositioned_floats;
@@ -218,31 +226,32 @@ RefPtr<NGConstraintSpace> NGConstraintSpaceBuilder::ToConstraintSpace(
   }
 
   if (is_in_parallel_flow) {
-    return AdoptRef(new NGConstraintSpace(
-        static_cast<NGWritingMode>(out_writing_mode),
+    return WTF::AdoptRef(new NGConstraintSpace(
+        static_cast<NGWritingMode>(out_writing_mode), false,
         static_cast<TextDirection>(text_direction_), available_size,
         percentage_resolution_size, parent_percentage_resolution_inline_size,
-        initial_containing_block_size_, fragmentainer_space_available_,
-        is_fixed_size_inline_, is_fixed_size_block_, is_shrink_to_fit_,
+        initial_containing_block_size_, fragmentainer_block_size_,
+        fragmentainer_space_at_bfc_start_, is_fixed_size_inline_,
+        is_fixed_size_block_, is_shrink_to_fit_,
         is_inline_direction_triggers_scrollbar_,
         is_block_direction_triggers_scrollbar_,
         static_cast<NGFragmentationType>(fragmentation_type_), is_new_fc_,
-        is_anonymous_, margin_strut, bfc_offset, floats_bfc_offset,
-        exclusion_space, unpositioned_floats_, clearance_offset,
-        baseline_requests_));
+        is_anonymous_, use_first_line_sytle_, margin_strut, bfc_offset,
+        floats_bfc_offset, exclusion_space, unpositioned_floats_,
+        clearance_offset, baseline_requests_));
   }
-  return AdoptRef(new NGConstraintSpace(
-      out_writing_mode, static_cast<TextDirection>(text_direction_),
+  return WTF::AdoptRef(new NGConstraintSpace(
+      out_writing_mode, true, static_cast<TextDirection>(text_direction_),
       available_size, percentage_resolution_size,
       parent_percentage_resolution_inline_size, initial_containing_block_size_,
-      fragmentainer_space_available_, is_fixed_size_block_,
-      is_fixed_size_inline_, is_shrink_to_fit_,
+      fragmentainer_block_size_, fragmentainer_space_at_bfc_start_,
+      is_fixed_size_block_, is_fixed_size_inline_, is_shrink_to_fit_,
       is_block_direction_triggers_scrollbar_,
       is_inline_direction_triggers_scrollbar_,
       static_cast<NGFragmentationType>(fragmentation_type_), is_new_fc_,
-      is_anonymous_, margin_strut, bfc_offset, floats_bfc_offset,
-      exclusion_space, unpositioned_floats_, clearance_offset,
-      baseline_requests_));
+      is_anonymous_, use_first_line_sytle_, margin_strut, bfc_offset,
+      floats_bfc_offset, exclusion_space, unpositioned_floats_,
+      clearance_offset, baseline_requests_));
 }
 
 }  // namespace blink

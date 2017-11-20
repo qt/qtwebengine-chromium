@@ -8,10 +8,12 @@
 #include "core/CSSPropertyNames.h"
 #include "core/css/CSSSyntaxDescriptor.h"
 #include "core/css/cssom/CSSStyleValue.h"
+#include "modules/csspaint/PaintRenderingContext2DSettings.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/bindings/TraceWrapperV8Reference.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/geometry/LayoutSize.h"
 #include "platform/heap/Handle.h"
 #include "v8/include/v8.h"
 
@@ -35,7 +37,7 @@ class CSSPaintDefinition final
       const Vector<CSSPropertyID>&,
       const Vector<AtomicString>& custom_invalidation_properties,
       const Vector<CSSSyntaxDescriptor>& input_argument_types,
-      bool has_alpha);
+      const PaintRenderingContext2DSettings&);
   virtual ~CSSPaintDefinition();
 
   // Invokes the javascript 'paint' callback on an instance of the javascript
@@ -44,9 +46,13 @@ class CSSPaintDefinition final
   //
   // This may return a nullptr (representing an invalid image) if javascript
   // throws an error.
-  PassRefPtr<Image> Paint(const ImageResourceObserver&,
-                          const IntSize&,
-                          const CSSStyleValueVector*);
+  //
+  // The |container_size| is the container size with subpixel snapping, where
+  // the |logical_size| is without it. Both sizes include zoom.
+  RefPtr<Image> Paint(const ImageResourceObserver&,
+                      const IntSize& container_size,
+                      const CSSStyleValueVector*,
+                      const LayoutSize* logical_size);
   const Vector<CSSPropertyID>& NativeInvalidationProperties() const {
     return native_invalidation_properties_;
   }
@@ -56,9 +62,12 @@ class CSSPaintDefinition final
   const Vector<CSSSyntaxDescriptor>& InputArgumentTypes() const {
     return input_argument_types_;
   }
-  bool HasAlpha() const { return has_alpha_; }
+  const PaintRenderingContext2DSettings& GetPaintRenderingContext2DSettings()
+      const {
+    return context_settings_;
+  }
 
-  ScriptState* GetScriptState() const { return script_state_.Get(); }
+  ScriptState* GetScriptState() const { return script_state_.get(); }
 
   v8::Local<v8::Function> PaintFunctionForTesting(v8::Isolate* isolate) {
     return paint_.NewLocal(isolate);
@@ -75,7 +84,7 @@ class CSSPaintDefinition final
       const Vector<CSSPropertyID>& native_invalidation_properties,
       const Vector<AtomicString>& custom_invalidation_properties,
       const Vector<CSSSyntaxDescriptor>& input_argument_types,
-      bool has_alpha);
+      const PaintRenderingContext2DSettings&);
 
   void MaybeCreatePaintInstance();
 
@@ -96,7 +105,7 @@ class CSSPaintDefinition final
   Vector<AtomicString> custom_invalidation_properties_;
   // Input argument types, if applicable.
   Vector<CSSSyntaxDescriptor> input_argument_types_;
-  bool has_alpha_;
+  PaintRenderingContext2DSettings context_settings_;
 };
 
 }  // namespace blink

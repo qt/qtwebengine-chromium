@@ -564,7 +564,7 @@ public:
             // emit attributes
             varyingHandler->emitAttributes(qe);
 
-            GrGLSLVertToFrag v(kVec4f_GrSLType);
+            GrGLSLVertToFrag v(kHalf4_GrSLType);
             varyingHandler->addVarying("QuadEdge", &v);
             vertBuilder->codeAppendf("%s = %s;", v.vsOut(), qe.fInQuadEdge->fName);
 
@@ -585,17 +585,17 @@ public:
                                  qe.fLocalMatrix,
                                  args.fFPCoordTransformHandler);
 
-            fragBuilder->codeAppendf("float edgeAlpha;");
+            fragBuilder->codeAppendf("half edgeAlpha;");
 
             // keep the derivative instructions outside the conditional
-            fragBuilder->codeAppendf("float2 duvdx = dFdx(%s.xy);", v.fsIn());
-            fragBuilder->codeAppendf("float2 duvdy = dFdy(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("half2 duvdx = dFdx(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("half2 duvdy = dFdy(%s.xy);", v.fsIn());
             fragBuilder->codeAppendf("if (%s.z > 0.0 && %s.w > 0.0) {", v.fsIn(), v.fsIn());
             // today we know z and w are in device space. We could use derivatives
             fragBuilder->codeAppendf("edgeAlpha = min(min(%s.z, %s.w) + 0.5, 1.0);", v.fsIn(),
                                      v.fsIn());
             fragBuilder->codeAppendf ("} else {");
-            fragBuilder->codeAppendf("float2 gF = float2(2.0*%s.x*duvdx.x - duvdx.y,"
+            fragBuilder->codeAppendf("half2 gF = half2(2.0*%s.x*duvdx.x - duvdx.y,"
                                      "               2.0*%s.x*duvdy.x - duvdy.y);",
                                      v.fsIn(), v.fsIn());
             fragBuilder->codeAppendf("edgeAlpha = (%s.x*%s.x - %s.y);", v.fsIn(), v.fsIn(),
@@ -603,7 +603,7 @@ public:
             fragBuilder->codeAppendf("edgeAlpha = "
                                      "clamp(0.5 - edgeAlpha / length(gF), 0.0, 1.0);}");
 
-            fragBuilder->codeAppendf("%s = float4(edgeAlpha);", args.fOutputCoverage);
+            fragBuilder->codeAppendf("%s = half4(edgeAlpha);", args.fOutputCoverage);
         }
 
         static inline void GenKey(const GrGeometryProcessor& gp,
@@ -634,11 +634,12 @@ public:
 
 private:
     QuadEdgeEffect(const SkMatrix& localMatrix, bool usesLocalCoords)
-            : fLocalMatrix(localMatrix), fUsesLocalCoords(usesLocalCoords) {
-        this->initClassID<QuadEdgeEffect>();
-        fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType);
-        fInColor = &this->addVertexAttrib("inColor", kVec4ub_GrVertexAttribType);
-        fInQuadEdge = &this->addVertexAttrib("inQuadEdge", kVec4f_GrVertexAttribType);
+            : INHERITED(kQuadEdgeEffect_ClassID)
+            , fLocalMatrix(localMatrix)
+            , fUsesLocalCoords(usesLocalCoords) {
+        fInPosition = &this->addVertexAttrib("inPosition", kFloat2_GrVertexAttribType);
+        fInColor = &this->addVertexAttrib("inColor", kUByte4_norm_GrVertexAttribType);
+        fInQuadEdge = &this->addVertexAttrib("inQuadEdge", kHalf4_GrVertexAttribType);
     }
 
     const Attribute* fInPosition;
@@ -665,10 +666,14 @@ sk_sp<GrGeometryProcessor> QuadEdgeEffect::TestCreate(GrProcessorTestData* d) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool GrAAConvexPathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
-    return (args.fCaps->shaderCaps()->shaderDerivativeSupport() &&
-            (GrAAType::kCoverage == args.fAAType) && args.fShape->style().isSimpleFill() &&
-            !args.fShape->inverseFilled() && args.fShape->knownToBeConvex());
+GrPathRenderer::CanDrawPath
+GrAAConvexPathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
+    if (args.fCaps->shaderCaps()->shaderDerivativeSupport() &&
+        (GrAAType::kCoverage == args.fAAType) && args.fShape->style().isSimpleFill() &&
+        !args.fShape->inverseFilled() && args.fShape->knownToBeConvex()) {
+        return CanDrawPath::kYes;
+    }
+    return CanDrawPath::kNo;
 }
 
 // extract the result vertices and indices from the GrAAConvexTessellator
@@ -729,6 +734,7 @@ private:
 
 public:
     DEFINE_OP_CLASS_ID
+
     static std::unique_ptr<GrDrawOp> Make(GrPaint&& paint, const SkMatrix& viewMatrix,
                                           const SkPath& path,
                                           const GrUserStencilSettings* stencilSettings) {
@@ -746,6 +752,10 @@ public:
 
     const char* name() const override { return "AAConvexPathOp"; }
 
+    void visitProxies(const VisitProxyFunc& func) const override {
+        fHelper.visitProxies(func);
+    }
+
     SkString dumpInfo() const override {
         SkString string;
         string.appendf("Count: %d\n", fPaths.count());
@@ -756,8 +766,10 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        return fHelper.xpRequiresDstTexture(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
+                                GrPixelConfigIsClamped dstIsClamped) override {
+        return fHelper.xpRequiresDstTexture(caps, clip, dstIsClamped,
+                                            GrProcessorAnalysisCoverage::kSingleChannel,
                                             &fPaths.back().fColor);
     }
 

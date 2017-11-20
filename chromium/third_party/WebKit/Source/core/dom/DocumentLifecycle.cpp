@@ -30,7 +30,7 @@
 
 #include "core/dom/DocumentLifecycle.h"
 
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/Assertions.h"
 
 #if DCHECK_IS_ON()
@@ -263,6 +263,8 @@ bool DocumentLifecycle::CanAdvanceTo(LifecycleState next_state) const {
           next_state == kInCompositingUpdate)
         return true;
       if (next_state == kInPrePaint)
+        return true;
+      if (next_state == kInPaint)
         return true;
       break;
     case kStopping:

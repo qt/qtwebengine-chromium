@@ -5,28 +5,47 @@
 #ifndef AnimationWorkletThread_h
 #define AnimationWorkletThread_h
 
-#include "modules/ModulesExport.h"
-#include "modules/compositorworker/AbstractAnimationWorkletThread.h"
 #include <memory>
+#include "core/workers/WorkerThread.h"
+#include "modules/ModulesExport.h"
 
 namespace blink {
 
+class ThreadableLoadingContext;
 class WorkerReportingProxy;
 
-class MODULES_EXPORT AnimationWorkletThread final
-    : public AbstractAnimationWorkletThread {
+// Represents the shared backing thread that is used by all animation worklets
+// and participates in Blink garbage collection process. At the moment, instead
+// of creating a dedicated backing thread it uses the existing compositor thread
+// (i.e., |Platform::CompositorThread()|).
+// TODO(petermayo): Use a dedicated thread: https://crbug.com/731727
+class MODULES_EXPORT AnimationWorkletThread final : public WorkerThread {
  public:
   static std::unique_ptr<AnimationWorkletThread> Create(
       ThreadableLoadingContext*,
       WorkerReportingProxy&);
   ~AnimationWorkletThread() override;
 
- protected:
-  WorkerOrWorkletGlobalScope* CreateWorkerGlobalScope(
-      std::unique_ptr<GlobalScopeCreationParams>) final;
+  WorkerBackingThread& GetWorkerBackingThread() override;
+
+  // The backing thread is cleared by clearSharedBackingThread().
+  void ClearWorkerBackingThread() override {}
+
+  // This may block the main thread.
+  static void CollectAllGarbage();
+
+  static void EnsureSharedBackingThread();
+  static void ClearSharedBackingThread();
+
+  static void CreateSharedBackingThreadForTest();
 
  private:
   AnimationWorkletThread(ThreadableLoadingContext*, WorkerReportingProxy&);
+
+  WorkerOrWorkletGlobalScope* CreateWorkerGlobalScope(
+      std::unique_ptr<GlobalScopeCreationParams>) final;
+
+  bool IsOwningBackingThread() const override { return false; }
 };
 
 }  // namespace blink

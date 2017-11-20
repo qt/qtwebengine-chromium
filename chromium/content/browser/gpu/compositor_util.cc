@@ -14,16 +14,17 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
+#include "base/numerics/ranges.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_info.h"
 #include "build/build_config.h"
-#include "cc/base/math_util.h"
 #include "cc/base/switches.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/public/browser/gpu_utils.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_feature_type.h"
+#include "gpu/config/gpu_finch_features.h"
 #include "gpu/ipc/host/gpu_memory_buffer_support.h"
 #include "media/media_features.h"
 #include "ui/gl/gl_switches.h"
@@ -80,7 +81,7 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
      " and hardware acceleration will be unavailable.",
      true},
     {kWebGLFeatureName, !manager->IsWebGLEnabled(),
-     command_line.HasSwitch(switches::kDisableExperimentalWebGL),
+     command_line.HasSwitch(switches::kDisableWebGL),
      "WebGL has been disabled via blacklist or the command line.", false},
     {"flash_3d", manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_FLASH3D),
      command_line.HasSwitch(switches::kDisableFlash3d),
@@ -141,9 +142,9 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
      "Native GpuMemoryBuffers have been disabled, either via about:flags"
      " or command line.",
      true},
-    {kWebGL2FeatureName,
-     manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL2),
-     command_line.HasSwitch(switches::kDisableES3APIs),
+    {kWebGL2FeatureName, !manager->IsWebGL2Enabled(),
+     command_line.HasSwitch(switches::kDisableWebGL) ||
+         command_line.HasSwitch(switches::kDisableWebGL2),
      "WebGL2 has been disabled via blacklist or the command line.", false},
     {kCheckerImagingFeatureName, false, !IsCheckerImagingEnabled(),
      "Checker-imaging has been disabled via finch trial or the command line.",
@@ -188,8 +189,8 @@ int NumberOfRendererRasterThreads() {
     }
   }
 
-  return cc::MathUtil::ClampToRange(num_raster_threads, kMinRasterThreads,
-                                    kMaxRasterThreads);
+  return base::ClampToRange(num_raster_threads, kMinRasterThreads,
+                            kMaxRasterThreads);
 }
 
 bool IsZeroCopyUploadEnabled() {
@@ -270,14 +271,9 @@ bool IsMainFrameBeforeActivationEnabled() {
   if (base::SysInfo::NumberOfProcessors() < 4)
     return false;
 
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(cc::switches::kDisableMainFrameBeforeActivation))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          cc::switches::kDisableMainFrameBeforeActivation))
     return false;
-
-  if (command_line.HasSwitch(cc::switches::kEnableMainFrameBeforeActivation))
-    return true;
 
   return true;
 }
@@ -292,6 +288,28 @@ bool IsCheckerImagingEnabled() {
     return true;
 
   if (base::FeatureList::IsEnabled(features::kCheckerImaging))
+    return true;
+
+  return false;
+}
+
+bool IsGpuAsyncWorkerContextEnabled() {
+  if (!base::FeatureList::IsEnabled(features::kGpuScheduler))
+    return false;
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpuAsyncWorkerContext))
+    return false;
+
+  return true;
+}
+
+bool IsCompositorImageAnimationEnabled() {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableCompositorImageAnimations))
+    return true;
+
+  if (base::FeatureList::IsEnabled(features::kCompositorImageAnimation))
     return true;
 
   return false;
@@ -324,7 +342,8 @@ std::unique_ptr<base::DictionaryValue> GetFeatureStatus() {
         status += "_off";
     } else {
       status = "enabled";
-      if (gpu_feature_info.name == kWebGLFeatureName &&
+      if ((gpu_feature_info.name == kWebGLFeatureName ||
+           gpu_feature_info.name == kWebGL2FeatureName) &&
           manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING))
         status += "_readback";
       if (gpu_feature_info.name == kRasterizationFeatureName) {
@@ -347,7 +366,8 @@ std::unique_ptr<base::DictionaryValue> GetFeatureStatus() {
         status += "_on";
       }
     }
-    if (gpu_feature_info.name == kWebGLFeatureName &&
+    if ((gpu_feature_info.name == kWebGLFeatureName ||
+         gpu_feature_info.name == kWebGL2FeatureName) &&
         (gpu_feature_info.blocked || gpu_access_blocked) &&
         manager->ShouldUseSwiftShader()) {
       status = "unavailable_software";

@@ -1298,10 +1298,6 @@ SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END
 #include "glsl/GrGLSLUniformHandler.h"
 #include "SkGr.h"
 
-static inline bool close_to_one_half(const SkFixed& val) {
-    return SkScalarNearlyEqual(SkFixedToScalar(val), SK_ScalarHalf);
-}
-
 static inline int color_type_to_color_count(GrGradientEffect::ColorType colorType) {
     switch (colorType) {
         case GrGradientEffect::kSingleHardStop_ColorType:
@@ -1348,8 +1344,7 @@ GrGradientEffect::ColorType GrGradientEffect::determineColorType(
 
     if (2 == shader.fColorCount) {
         return kTwo_ColorType;
-    } else if (3 == shader.fColorCount &&
-               close_to_one_half(shader.getRecs()[1].fPos)) {
+    } else if (3 == shader.fColorCount) {
         return kThree_ColorType;
     }
 
@@ -1360,17 +1355,15 @@ void GrGradientEffect::GLSLProcessor::emitUniforms(GrGLSLUniformHandler* uniform
                                                    const GrGradientEffect& ge) {
     if (int colorCount = color_type_to_color_count(ge.getColorType())) {
         fColorsUni = uniformHandler->addUniformArray(kFragment_GrShaderFlag,
-                                                     kVec4f_GrSLType,
-                                                     kDefault_GrSLPrecision,
+                                                     kHalf4_GrSLType,
                                                      "Colors",
                                                      colorCount);
-        if (ge.fColorType == kSingleHardStop_ColorType) {
-            fHardStopT = uniformHandler->addUniform(kFragment_GrShaderFlag, kFloat_GrSLType,
-                                                    kDefault_GrSLPrecision, "HardStopT");
+        if (kSingleHardStop_ColorType == ge.fColorType || kThree_ColorType == ge.fColorType) {
+            fExtraStopT = uniformHandler->addUniform(kFragment_GrShaderFlag, kFloat4_GrSLType,
+                                                     kHigh_GrSLPrecision, "ExtraStopT");
         }
     } else {
-        fFSYUni = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                             kFloat_GrSLType, kDefault_GrSLPrecision,
+        fFSYUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf_GrSLType,
                                              "GradientYCoordFS");
     }
 }
@@ -1468,12 +1461,17 @@ void GrGradientEffect::GLSLProcessor::onSetData(const GrGLSLProgramDataManager& 
 
     switch (e.getColorType()) {
         case GrGradientEffect::kSingleHardStop_ColorType:
-            pdman.set1f(fHardStopT, e.fPositions[1]);
+        case GrGradientEffect::kThree_ColorType:
+            // ( t, 1/t, 1/(1-t), t/(1-t) )
+            // This lets us compute relative t on either side of the stop with at most a single FMA
+            pdman.set4f(fExtraStopT, e.fPositions[1],
+                                     1.0f / e.fPositions[1],
+                                     1.0f / (1.0f - e.fPositions[1]),
+                                     e.fPositions[1] / (1.0f - e.fPositions[1]));
             // fall through
         case GrGradientEffect::kHardStopLeftEdged_ColorType:
         case GrGradientEffect::kHardStopRightEdged_ColorType:
-        case GrGradientEffect::kTwo_ColorType:
-        case GrGradientEffect::kThree_ColorType: {
+        case GrGradientEffect::kTwo_ColorType: {
             if (e.fColors4f.count() > 0) {
                 // Gamma-correct / color-space aware
                 if (GrGradientEffect::kBeforeInterp_PremulType == e.getPremulType()) {
@@ -1530,12 +1528,16 @@ uint32_t GrGradientEffect::GLSLProcessor::GenBaseGradientKey(const GrProcessor& 
         key |= kHardStopZeroOneOneKey;
     }
 
-    if (SkShader::TileMode::kClamp_TileMode == e.fTileMode) {
-        key |= kClampTileMode;
-    } else if (SkShader::TileMode::kRepeat_TileMode == e.fTileMode) {
-        key |= kRepeatTileMode;
-    } else {
-        key |= kMirrorTileMode;
+    switch (e.fWrapMode) {
+        case GrSamplerState::WrapMode::kClamp:
+            key |= kClampTileMode;
+            break;
+        case GrSamplerState::WrapMode::kRepeat:
+            key |= kRepeatTileMode;
+            break;
+        case GrSamplerState::WrapMode::kMirrorRepeat:
+            key |= kMirrorTileMode;
+            break;
     }
 
     key |= GrColorSpaceXform::XformKey(e.fColorSpaceXform.get()) << kReservedBits;
@@ -1551,45 +1553,47 @@ void GrGradientEffect::GLSLProcessor::emitAnalyticalColor(GrGLSLFPFragmentBuilde
                                                           const char* outputColor,
                                                           const char* inputColor) {
     // First, apply tiling rules.
-    switch (ge.fTileMode) {
-    case SkShader::kClamp_TileMode:
-        fragBuilder->codeAppendf("float clamp_t = clamp(%s, 0.0, 1.0);", t);
-        break;
-    case SkShader::kRepeat_TileMode:
-        fragBuilder->codeAppendf("float clamp_t = fract(%s);", t);
-        break;
-    case SkShader::kMirror_TileMode:
-        fragBuilder->codeAppendf("float t_1 = %s - 1.0;", t);
-        fragBuilder->codeAppendf("float clamp_t = abs(t_1 - 2.0 * floor(t_1 * 0.5) - 1.0);");
-        break;
+    switch (ge.fWrapMode) {
+        case GrSamplerState::WrapMode::kClamp:
+            fragBuilder->codeAppendf("half clamp_t = clamp(%s, 0.0, 1.0);", t);
+            break;
+        case GrSamplerState::WrapMode::kRepeat:
+            fragBuilder->codeAppendf("half clamp_t = fract(%s);", t);
+            break;
+        case GrSamplerState::WrapMode::kMirrorRepeat:
+            fragBuilder->codeAppendf("half t_1 = %s - 1.0;", t);
+            fragBuilder->codeAppendf("half clamp_t = abs(t_1 - 2.0 * floor(t_1 * 0.5) - 1.0);");
+            break;
     }
 
     // Calculate the color.
     const char* colors = uniformHandler->getUniformCStr(fColorsUni);
     switch (ge.getColorType()) {
         case kSingleHardStop_ColorType: {
-            const char* stopT = uniformHandler->getUniformCStr(fHardStopT);
+            // (t, 1/t, 1/(1-t), t/(1-t))
+            const char* stopT = uniformHandler->getUniformCStr(fExtraStopT);
 
-            fragBuilder->codeAppend ("float4 start, end;");
-            fragBuilder->codeAppend ("float relative_t;");
-            fragBuilder->codeAppendf("if (clamp_t < %s) {", stopT);
+            fragBuilder->codeAppend ("half4 start, end;");
+            fragBuilder->codeAppend ("half relative_t;");
+            fragBuilder->codeAppendf("if (clamp_t < %s.x) {", stopT);
             fragBuilder->codeAppendf("    start = %s[0];", colors);
             fragBuilder->codeAppendf("    end   = %s[1];", colors);
-            fragBuilder->codeAppendf("    relative_t = clamp_t / %s;", stopT);
+            fragBuilder->codeAppendf("    relative_t = clamp_t * %s.y;", stopT);
             fragBuilder->codeAppend ("} else {");
             fragBuilder->codeAppendf("    start = %s[2];", colors);
             fragBuilder->codeAppendf("    end   = %s[3];", colors);
-            fragBuilder->codeAppendf("    relative_t = (clamp_t - %s) / (1 - %s);", stopT, stopT);
+            // Want: (t-s)/(1-s), but arrange it as: t/(1-s) - s/(1-s), for FMA form
+            fragBuilder->codeAppendf("    relative_t = (clamp_t * %s.z) - %s.w;", stopT, stopT);
             fragBuilder->codeAppend ("}");
-            fragBuilder->codeAppend ("float4 colorTemp = mix(start, end, relative_t);");
+            fragBuilder->codeAppend ("half4 colorTemp = mix(start, end, relative_t);");
 
             break;
         }
 
         case kHardStopLeftEdged_ColorType: {
-            fragBuilder->codeAppendf("float4 colorTemp = mix(%s[1], %s[2], clamp_t);", colors,
+            fragBuilder->codeAppendf("half4 colorTemp = mix(%s[1], %s[2], clamp_t);", colors,
                                      colors);
-            if (SkShader::kClamp_TileMode == ge.fTileMode) {
+            if (GrSamplerState::WrapMode::kClamp == ge.fWrapMode) {
                 fragBuilder->codeAppendf("if (%s < 0.0) {", t);
                 fragBuilder->codeAppendf("    colorTemp = %s[0];", colors);
                 fragBuilder->codeAppendf("}");
@@ -1599,9 +1603,9 @@ void GrGradientEffect::GLSLProcessor::emitAnalyticalColor(GrGLSLFPFragmentBuilde
         }
 
         case kHardStopRightEdged_ColorType: {
-            fragBuilder->codeAppendf("float4 colorTemp = mix(%s[0], %s[1], clamp_t);", colors,
+            fragBuilder->codeAppendf("half4 colorTemp = mix(%s[0], %s[1], clamp_t);", colors,
                                      colors);
-            if (SkShader::kClamp_TileMode == ge.fTileMode) {
+            if (GrSamplerState::WrapMode::kClamp == ge.fWrapMode) {
                 fragBuilder->codeAppendf("if (%s > 1.0) {", t);
                 fragBuilder->codeAppendf("    colorTemp = %s[2];", colors);
                 fragBuilder->codeAppendf("}");
@@ -1611,19 +1615,29 @@ void GrGradientEffect::GLSLProcessor::emitAnalyticalColor(GrGLSLFPFragmentBuilde
         }
 
         case kTwo_ColorType: {
-            fragBuilder->codeAppendf("float4 colorTemp = mix(%s[0], %s[1], clamp_t);",
+            fragBuilder->codeAppendf("half4 colorTemp = mix(%s[0], %s[1], clamp_t);",
                                      colors, colors);
 
             break;
         }
 
         case kThree_ColorType: {
-            fragBuilder->codeAppendf("float oneMinus2t = 1.0 - (2.0 * clamp_t);");
-            fragBuilder->codeAppendf("float4 colorTemp = clamp(oneMinus2t, 0.0, 1.0) * %s[0];",
-                                     colors);
-            fragBuilder->codeAppendf("colorTemp += (1.0 - min(abs(oneMinus2t), 1.0)) * %s[1];",
-                                     colors);
-            fragBuilder->codeAppendf("colorTemp += clamp(-oneMinus2t, 0.0, 1.0) * %s[2];", colors);
+            // (t, 1/t, 1/(1-t), t/(1-t))
+            const char* stopT = uniformHandler->getUniformCStr(fExtraStopT);
+
+            fragBuilder->codeAppend("half4 start, end;");
+            fragBuilder->codeAppend("half relative_t;");
+            fragBuilder->codeAppendf("if (clamp_t < %s.x) {", stopT);
+            fragBuilder->codeAppendf("    start = %s[0];", colors);
+            fragBuilder->codeAppendf("    end   = %s[1];", colors);
+            fragBuilder->codeAppendf("    relative_t = clamp_t * %s.y;", stopT);
+            fragBuilder->codeAppend("} else {");
+            fragBuilder->codeAppendf("    start = %s[1];", colors);
+            fragBuilder->codeAppendf("    end   = %s[2];", colors);
+            // Want: (t-s)/(1-s), but arrange it as: t/(1-s) - s/(1-s), for FMA form
+            fragBuilder->codeAppendf("    relative_t = (clamp_t * %s.z) - %s.w;", stopT, stopT);
+            fragBuilder->codeAppend("}");
+            fragBuilder->codeAppend("half4 colorTemp = mix(start, end, relative_t);");
 
             break;
         }
@@ -1667,10 +1681,10 @@ void GrGradientEffect::GLSLProcessor::emitColor(GrGLSLFPFragmentBuilder* fragBui
 
     const char* fsyuni = uniformHandler->getUniformCStr(fFSYUni);
 
-    fragBuilder->codeAppendf("float2 coord = float2(%s, %s);", gradientTValue, fsyuni);
+    fragBuilder->codeAppendf("half2 coord = half2(%s, %s);", gradientTValue, fsyuni);
     fragBuilder->codeAppendf("%s = ", outputColor);
     fragBuilder->appendTextureLookupAndModulate(inputColor, texSamplers[0], "coord",
-                                                kVec2f_GrSLType, &fColorSpaceHelper);
+                                                kFloat2_GrSLType, &fColorSpaceHelper);
     fragBuilder->codeAppend(";");
 }
 
@@ -1683,8 +1697,8 @@ inline GrFragmentProcessor::OptimizationFlags GrGradientEffect::OptFlags(bool is
                    : kCompatibleWithCoverageAsAlpha_OptimizationFlag;
 }
 
-GrGradientEffect::GrGradientEffect(const CreateArgs& args, bool isOpaque)
-        : INHERITED(OptFlags(isOpaque)) {
+GrGradientEffect::GrGradientEffect(ClassID classID, const CreateArgs& args, bool isOpaque)
+        : INHERITED(classID, OptFlags(isOpaque)) {
     const SkGradientShaderBase& shader(*args.fShader);
 
     fIsOpaque = shader.isOpaque();
@@ -1702,10 +1716,13 @@ GrGradientEffect::GrGradientEffect(const CreateArgs& args, bool isOpaque)
 
         if (shader.fOrigPos) {
             fPositions = SkTDArray<SkScalar>(shader.fOrigPos, shader.fColorCount);
+        } else if (kThree_ColorType == fColorType) {
+            const SkScalar symmetricStops[] = { 0.0f, 0.5f, 1.0f };
+            fPositions = SkTDArray<SkScalar>(symmetricStops, 3);
         }
     }
 
-    fTileMode = args.fTileMode;
+    fWrapMode = args.fWrapMode;
 
     switch (fColorType) {
         // The two and three color specializations do not currently support tiling.
@@ -1760,18 +1777,16 @@ GrGradientEffect::GrGradientEffect(const CreateArgs& args, bool isOpaque)
 
             // We always filter the gradient table. Each table is one row of a texture, always
             // y-clamp.
-            GrSamplerParams params;
-            params.setFilterMode(GrSamplerParams::kBilerp_FilterMode);
-            params.setTileModeX(args.fTileMode);
+            GrSamplerState samplerState(args.fWrapMode, GrSamplerState::Filter::kBilerp);
 
             fRow = fAtlas->lockRow(bitmap);
             if (-1 != fRow) {
                 fYCoord = fAtlas->getYOffset(fRow)+SK_ScalarHalf*fAtlas->getNormalizedTexelHeight();
                 // This is 1/2 places where auto-normalization is disabled
                 fCoordTransform.reset(*args.fMatrix, fAtlas->asTextureProxyRef().get(), false);
-                fTextureSampler.reset(fAtlas->asTextureProxyRef(), params);
+                fTextureSampler.reset(fAtlas->asTextureProxyRef(), samplerState);
             } else {
-                // In this instance we know the params are:
+                // In this instance we know the samplerState state is:
                 //   clampY, bilerp
                 // and the proxy is:
                 //   exact fit, power of two in both dimensions
@@ -1787,7 +1802,7 @@ GrGradientEffect::GrGradientEffect(const CreateArgs& args, bool isOpaque)
                 }
                 // This is 2/2 places where auto-normalization is disabled
                 fCoordTransform.reset(*args.fMatrix, proxy.get(), false);
-                fTextureSampler.reset(std::move(proxy), params);
+                fTextureSampler.reset(std::move(proxy), samplerState);
                 fYCoord = SK_ScalarHalf;
             }
 
@@ -1800,12 +1815,12 @@ GrGradientEffect::GrGradientEffect(const CreateArgs& args, bool isOpaque)
 }
 
 GrGradientEffect::GrGradientEffect(const GrGradientEffect& that)
-        : INHERITED(OptFlags(that.fIsOpaque))
+        : INHERITED(that.classID(), OptFlags(that.fIsOpaque))
         , fColors(that.fColors)
         , fColors4f(that.fColors4f)
         , fColorSpaceXform(that.fColorSpaceXform)
         , fPositions(that.fPositions)
-        , fTileMode(that.fTileMode)
+        , fWrapMode(that.fWrapMode)
         , fCoordTransform(that.fCoordTransform)
         , fTextureSampler(that.fTextureSampler)
         , fYCoord(that.fYCoord)
@@ -1832,7 +1847,7 @@ GrGradientEffect::~GrGradientEffect() {
 bool GrGradientEffect::onIsEqual(const GrFragmentProcessor& processor) const {
     const GrGradientEffect& ge = processor.cast<GrGradientEffect>();
 
-    if (fTileMode != ge.fTileMode || fColorType != ge.getColorType()) {
+    if (fWrapMode != ge.fWrapMode || fColorType != ge.getColorType()) {
         return false;
     }
     SkASSERT(this->useAtlas() == ge.useAtlas());
@@ -1841,7 +1856,7 @@ bool GrGradientEffect::onIsEqual(const GrFragmentProcessor& processor) const {
             return false;
         }
     } else {
-        if (kSingleHardStop_ColorType == fColorType) {
+        if (kSingleHardStop_ColorType == fColorType || kThree_ColorType == fColorType) {
             if (!SkScalarNearlyEqual(ge.fPositions[1], fPositions[1])) {
                 return false;
             }

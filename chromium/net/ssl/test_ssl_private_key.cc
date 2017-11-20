@@ -4,11 +4,11 @@
 
 #include "net/ssl/test_ssl_private_key.h"
 
+#include <memory>
 #include <utility>
 
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "crypto/rsa_private_key.h"
 #include "net/base/net_errors.h"
 #include "net/ssl/ssl_platform_key_util.h"
@@ -104,9 +104,9 @@ scoped_refptr<SSLPrivateKey> WrapOpenSSLPrivateKey(
   if (!key)
     return nullptr;
 
-  return make_scoped_refptr(new ThreadedSSLPrivateKey(
+  return base::MakeRefCounted<ThreadedSSLPrivateKey>(
       std::make_unique<TestSSLPlatformKey>(std::move(key)),
-      GetSSLPlatformKeyTaskRunner()));
+      GetSSLPlatformKeyTaskRunner());
 }
 
 scoped_refptr<SSLPrivateKey> WrapRSAPrivateKey(

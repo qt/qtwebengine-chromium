@@ -99,7 +99,7 @@ class AutofillProfile : public AutofillDataModel {
   bool EqualsSansOrigin(const AutofillProfile& profile) const;
 
   // Same as operator==, but ignores differences in guid and cares about
-  // differences in usage stats.
+  // differences in usage stats and validity state.
   bool EqualsForSyncPurposes(const AutofillProfile& profile) const;
 
   // Equality operators compare GUIDs, origins, language code, and the contents
@@ -197,16 +197,20 @@ class AutofillProfile : public AutofillDataModel {
   void set_has_converted(bool has_converted) { has_converted_ = has_converted; }
 
   // Returns the validity state of the specified autofill type.
-  ValidityState GetValidityState(ServerFieldType type);
+  ValidityState GetValidityState(ServerFieldType type) const;
 
   // Sets the validity state of the specified autofill type.
   void SetValidityState(ServerFieldType type, ValidityState validity);
 
   // Returns whether autofill does the validation of the specified |type|.
-  bool IsValidationSupportedForType(ServerFieldType type);
+  bool IsValidationSupportedForType(ServerFieldType type) const;
 
   // Returns the bitfield value representing the validity state of this profile.
-  int GetValidityBitfieldValue();
+  int GetValidityBitfieldValue() const;
+
+  // Sets the validity state of the profile based on the specified
+  // |bitfield_value|.
+  void SetValidityFromBitfieldValue(int bitfield_value);
 
  private:
   typedef std::vector<const FormGroup*> FormGroupList;

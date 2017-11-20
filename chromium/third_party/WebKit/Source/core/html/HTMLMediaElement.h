@@ -28,6 +28,7 @@
 #define HTMLMediaElement_h
 
 #include <memory>
+#include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/Nullable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "core/CoreExport.h"
@@ -36,7 +37,6 @@
 #include "core/dom/events/MediaElementEventQueue.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/media/MediaControls.h"
-#include "core/html/track/TextTrack.h"
 #include "platform/Supplementable.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/audio/AudioSourceProvider.h"
@@ -65,6 +65,7 @@ class MediaError;
 class MediaStreamDescriptor;
 class HTMLMediaSource;
 class ScriptState;
+class TextTrack;
 class TextTrackContainer;
 class TextTrackList;
 class TimeRanges;
@@ -176,7 +177,7 @@ class CORE_EXPORT HTMLMediaElement
   double defaultPlaybackRate() const;
   void setDefaultPlaybackRate(double);
   double playbackRate() const;
-  void setPlaybackRate(double);
+  void setPlaybackRate(double, ExceptionState& = ASSERT_NO_EXCEPTION);
   void UpdatePlaybackRate();
   TimeRanges* played();
   TimeRanges* seekable() const;
@@ -737,7 +738,7 @@ class CORE_EXPORT HTMLMediaElement
 };
 
 inline bool IsHTMLMediaElement(const HTMLElement& element) {
-  return isHTMLAudioElement(element) || isHTMLVideoElement(element);
+  return IsHTMLAudioElement(element) || IsHTMLVideoElement(element);
 }
 
 DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLMediaElement);

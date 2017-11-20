@@ -34,9 +34,6 @@ class HidService {
   // GetDevicesCallback. Earlier might cause OnDeviceAdded() and
   // OnDeviceRemoved() to be called before the GetDevicesCallback, while later
   // might cause missing OnDeviceAdded() and OnDeviceRemoved() notifications.
-  // TODO(ke.he@intel.com): In the mojofication of HidService, clients should
-  // pass an mojom::ObserverPtr in the GetDevices() interface, HidService adds
-  // the observer immediately after calling the GetDevicesCallback.
   class Observer {
    public:
     virtual void OnDeviceAdded(device::mojom::HidDeviceInfoPtr info);
@@ -97,7 +94,7 @@ class HidService {
 
   bool enumeration_ready_ = false;
   std::vector<GetDevicesCallback> pending_enumerations_;
-  base::ObserverList<Observer, true> observer_list_;
+  base::ObserverList<Observer> observer_list_;
 
   DISALLOW_COPY_AND_ASSIGN(HidService);
 };

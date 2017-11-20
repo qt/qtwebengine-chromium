@@ -55,7 +55,7 @@
 #include "core/layout/shapes/ShapeOutsideInfo.h"
 #include "core/paint/BlockFlowPaintInvalidator.h"
 #include "core/paint/PaintLayer.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/PtrUtil.h"
 
 namespace blink {
@@ -77,6 +77,12 @@ struct SameSizeAsMarginInfo {
 
 static_assert(sizeof(LayoutBlockFlow::MarginValues) == sizeof(LayoutUnit[4]),
               "MarginValues should stay small");
+
+typedef HashMap<LayoutBlockFlow*, int> LayoutPassCountMap;
+static LayoutPassCountMap& GetLayoutPassCountMap() {
+  DEFINE_STATIC_LOCAL(LayoutPassCountMap, map, ());
+  return map;
+}
 
 // Caches all our current margin collapsing state.
 class MarginInfo {
@@ -406,6 +412,9 @@ void LayoutBlockFlow::UpdateBlockLayout(bool relayout_children) {
   DCHECK(NeedsLayout());
   DCHECK(IsInlineBlockOrInlineTable() || !IsInline());
 
+  if (RuntimeEnabledFeatures::TrackLayoutPassesPerBlockEnabled())
+    IncrementLayoutPassCount();
+
   if (!relayout_children && SimplifiedLayout())
     return;
 
@@ -491,7 +500,7 @@ void LayoutBlockFlow::UpdateBlockLayout(bool relayout_children) {
 
   UpdateAfterLayout();
 
-  if (isHTMLDialogElement(GetNode()) && IsOutOfFlowPositioned())
+  if (IsHTMLDialogElement(GetNode()) && IsOutOfFlowPositioned())
     PositionDialog();
 
   ClearNeedsLayout();
@@ -511,7 +520,7 @@ void LayoutBlockFlow::ResetLayout() {
   // in the middle of doing layout), so we only handle the simple case of an
   // anonymous block truncating when its parent is clipped.
   // Walk all the lines and delete our ellipsis line boxes if they exist.
-  if (ChildrenInline() && ShouldTruncateOverflowingText(this))
+  if (ChildrenInline() && ShouldTruncateOverflowingText())
     DeleteEllipsisLineBoxes();
 
   RebuildFloatsFromIntruding();
@@ -4038,7 +4047,8 @@ Node* LayoutBlockFlow::NodeForHitTest() const {
   // If we are in the margins of block elements that are part of a
   // continuation we're actually still inside the enclosing element
   // that was split. Use the appropriate inner node.
-  return IsAnonymousBlockContinuation() ? Continuation()->GetNode() : GetNode();
+  return IsAnonymousBlockContinuation() ? Continuation()->NodeForHitTest()
+                                        : LayoutBlock::NodeForHitTest();
 }
 
 bool LayoutBlockFlow::HitTestChildren(
@@ -4456,7 +4466,7 @@ LayoutBlockFlow::LayoutBlockFlowRareData& LayoutBlockFlow::EnsureRareData() {
 }
 
 void LayoutBlockFlow::PositionDialog() {
-  HTMLDialogElement* dialog = toHTMLDialogElement(GetNode());
+  HTMLDialogElement* dialog = ToHTMLDialogElement(GetNode());
   if (dialog->GetCenteringMode() == HTMLDialogElement::kNotCentered)
     return;
 
@@ -4750,6 +4760,19 @@ void LayoutBlockFlow::InvalidateDisplayItemClients(
     PaintInvalidationReason invalidation_reason) const {
   BlockFlowPaintInvalidator(*this).InvalidateDisplayItemClients(
       invalidation_reason);
+}
+
+void LayoutBlockFlow::IncrementLayoutPassCount() {
+  int layout_pass_count = 0;
+  HashMap<LayoutBlockFlow*, int>::iterator layout_count_iterator =
+      GetLayoutPassCountMap().find(this);
+  if (layout_count_iterator != GetLayoutPassCountMap().end())
+    layout_pass_count = layout_count_iterator->value;
+  GetLayoutPassCountMap().Set(this, ++layout_pass_count);
+}
+
+int LayoutBlockFlow::GetLayoutPassCountForTesting() {
+  return GetLayoutPassCountMap().find(this)->value;
 }
 
 }  // namespace blink

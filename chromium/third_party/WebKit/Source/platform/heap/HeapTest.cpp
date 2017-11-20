@@ -38,6 +38,7 @@
 #include "platform/heap/Heap.h"
 #include "platform/heap/HeapLinkedStack.h"
 #include "platform/heap/HeapTerminatedArrayBuilder.h"
+#include "platform/heap/HeapTestUtilities.h"
 #include "platform/heap/SafePoint.h"
 #include "platform/heap/SelfKeepAlive.h"
 #include "platform/heap/ThreadState.h"
@@ -53,17 +54,6 @@
 namespace blink {
 
 namespace {
-
-void PreciselyCollectGarbage() {
-  ThreadState::Current()->CollectGarbage(BlinkGC::kNoHeapPointersOnStack,
-                                         BlinkGC::kGCWithSweep,
-                                         BlinkGC::kForcedGC);
-}
-
-void ConservativelyCollectGarbage() {
-  ThreadState::Current()->CollectGarbage(
-      BlinkGC::kHeapPointersOnStack, BlinkGC::kGCWithSweep, BlinkGC::kForcedGC);
-}
 
 class IntWrapper : public GarbageCollectedFinalized<IntWrapper> {
  public:
@@ -339,11 +329,12 @@ class TestGCScope {
   explicit TestGCScope(BlinkGC::StackState state)
       : state_(ThreadState::Current()), safe_point_scope_(state) {
     DCHECK(state_->CheckThread());
-    state_->PreGC();
+    state_->MarkPhasePrologue(state, BlinkGC::kGCWithSweep,
+                              BlinkGC::kPreciseGC);
   }
 
   ~TestGCScope() {
-    state_->PostGC(BlinkGC::kGCWithSweep);
+    state_->MarkPhaseEpilogue();
     state_->PreSweep(BlinkGC::kGCWithSweep);
   }
 
@@ -429,22 +420,10 @@ class HeapAllocatedArray : public GarbageCollected<HeapAllocatedArray> {
   int8_t array_[kArraySize];
 };
 
-// Do several GCs to make sure that later GCs don't free up old memory from
-// previously run tests in this process.
-static void ClearOutOldGarbage() {
-  ThreadHeap& heap = ThreadState::Current()->Heap();
-  while (true) {
-    size_t used = heap.ObjectPayloadSizeForTesting();
-    PreciselyCollectGarbage();
-    if (heap.ObjectPayloadSizeForTesting() >= used)
-      break;
-  }
-}
-
 class OffHeapInt : public RefCounted<OffHeapInt> {
  public:
   static RefPtr<OffHeapInt> Create(int x) {
-    return AdoptRef(new OffHeapInt(x));
+    return WTF::AdoptRef(new OffHeapInt(x));
   }
 
   virtual ~OffHeapInt() { ++destructor_calls_; }
@@ -679,7 +658,7 @@ class ThreadPersistentHeapTester : public ThreadedTesterBase {
 
    private:
     explicit PersistentChain(int count) {
-      ref_counted_chain_ = AdoptRef(RefCountedChain::Create(count));
+      ref_counted_chain_ = WTF::AdoptRef(RefCountedChain::Create(count));
     }
 
     RefPtr<RefCountedChain> ref_counted_chain_;
@@ -941,7 +920,7 @@ class RefCountedAndGarbageCollected
 
   ~RefCountedAndGarbageCollected() { ++destructor_calls_; }
 
-  void Ref() {
+  void AddRef() {
     if (UNLIKELY(!ref_count_)) {
 #if DCHECK_IS_ON()
       DCHECK(ThreadState::Current()->FindPageFromAddress(
@@ -952,7 +931,7 @@ class RefCountedAndGarbageCollected
     ++ref_count_;
   }
 
-  void Deref() {
+  void Release() {
     DCHECK_GT(ref_count_, 0);
     if (!--ref_count_)
       keep_alive_.Clear();
@@ -4636,12 +4615,12 @@ void DestructorsCalledOnGC(bool add_lots) {
   {
     Set set;
     RefCountedWithDestructor* has_destructor = new RefCountedWithDestructor();
-    set.Add(AdoptRef(has_destructor));
+    set.Add(WTF::AdoptRef(has_destructor));
     EXPECT_FALSE(RefCountedWithDestructor::was_destructed_);
 
     if (add_lots) {
       for (int i = 0; i < 1000; i++) {
-        set.Add(AdoptRef(new RefCountedWithDestructor()));
+        set.Add(WTF::AdoptRef(new RefCountedWithDestructor()));
       }
     }
 
@@ -4662,12 +4641,12 @@ void DestructorsCalledOnClear(bool add_lots) {
   RefCountedWithDestructor::was_destructed_ = false;
   Set set;
   RefCountedWithDestructor* has_destructor = new RefCountedWithDestructor();
-  set.Add(AdoptRef(has_destructor));
+  set.Add(WTF::AdoptRef(has_destructor));
   EXPECT_FALSE(RefCountedWithDestructor::was_destructed_);
 
   if (add_lots) {
     for (int i = 0; i < 1000; i++) {
-      set.Add(AdoptRef(new RefCountedWithDestructor()));
+      set.Add(WTF::AdoptRef(new RefCountedWithDestructor()));
     }
   }
 
@@ -4965,7 +4944,7 @@ TEST(HeapTest, MapWithCustomWeaknessHandling) {
       PairWithWeakHandling(living_int, living_int),
       dupe_int);  // This one is identical to the previous and doesn't add
                   // anything.
-  dupe_int.Clear();
+  dupe_int = nullptr;
 
   EXPECT_EQ(0, OffHeapInt::destructor_calls_);
   EXPECT_EQ(4u, map1->size());
@@ -5047,7 +5026,7 @@ TEST(HeapTest, MapWithCustomWeaknessHandling2) {
   map1->insert(dupe_int, PairWithWeakHandling(living_int, living_int));
   // This one is identical to the previous and doesn't add anything.
   map1->insert(dupe_int, PairWithWeakHandling(living_int, living_int));
-  dupe_int.Clear();
+  dupe_int = nullptr;
 
   EXPECT_EQ(0, OffHeapInt::destructor_calls_);
   EXPECT_EQ(4u, map1->size());
@@ -6097,8 +6076,8 @@ TEST(HeapTest, DequeExpand) {
 
 class SimpleRefValue : public RefCounted<SimpleRefValue> {
  public:
-  static PassRefPtr<SimpleRefValue> Create(int i) {
-    return AdoptRef(new SimpleRefValue(i));
+  static RefPtr<SimpleRefValue> Create(int i) {
+    return WTF::AdoptRef(new SimpleRefValue(i));
   }
 
   int Value() const { return value_; }

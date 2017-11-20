@@ -38,6 +38,7 @@ namespace {
 // is performed when cache is enabled, regardless of the number of client calls.
 const int kNumCalls = 3;
 
+const auto kIgnoreLogMessageCB = base::BindRepeating([](const std::string&) {});
 // This class mocks the audio manager and overrides some methods to ensure that
 // we can run simulate device changes.
 class MockAudioManager : public media::FakeAudioManager {
@@ -142,8 +143,9 @@ class MediaDevicesManagerTest : public ::testing::Test {
 
  protected:
   void SetUp() override {
-    audio_manager_.reset(new MockAudioManager());
-    audio_system_ = media::AudioSystemImpl::Create(audio_manager_.get());
+    audio_manager_ = std::make_unique<MockAudioManager>();
+    audio_system_ =
+        std::make_unique<media::AudioSystemImpl>(audio_manager_.get());
     auto video_capture_device_factory =
         base::MakeUnique<MockVideoCaptureDeviceFactory>();
     video_capture_device_factory_ = video_capture_device_factory.get();
@@ -152,9 +154,9 @@ class MediaDevicesManagerTest : public ::testing::Test {
     auto video_capture_provider =
         base::MakeUnique<InProcessVideoCaptureProvider>(
             std::move(video_capture_system),
-            base::ThreadTaskRunnerHandle::Get());
-    video_capture_manager_ =
-        new VideoCaptureManager(std::move(video_capture_provider));
+            base::ThreadTaskRunnerHandle::Get(), kIgnoreLogMessageCB);
+    video_capture_manager_ = new VideoCaptureManager(
+        std::move(video_capture_provider), kIgnoreLogMessageCB);
     media_devices_manager_.reset(new MediaDevicesManager(
         audio_system_.get(), video_capture_manager_, nullptr));
   }

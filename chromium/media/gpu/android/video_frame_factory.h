@@ -10,12 +10,14 @@
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "media/gpu/android/promotion_hint_aggregator.h"
 #include "media/gpu/media_gpu_export.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace gpu {
 class GpuCommandBufferStub;
-}
+struct SyncToken;
+}  // namespace gpu
 
 namespace media {
 
@@ -31,7 +33,7 @@ class MEDIA_GPU_EXPORT VideoFrameFactory {
   using InitCb = base::Callback<void(scoped_refptr<SurfaceTextureGLOwner>)>;
 
   // These mirror types from MojoVideoDecoderService.
-  using ReleaseMailboxCB = base::Callback<void(const gpu::SyncToken&)>;
+  using ReleaseMailboxCB = base::OnceCallback<void(const gpu::SyncToken&)>;
   using OutputWithReleaseMailboxCB =
       base::Callback<void(ReleaseMailboxCB, const scoped_refptr<VideoFrame>&)>;
 
@@ -41,20 +43,22 @@ class MEDIA_GPU_EXPORT VideoFrameFactory {
   // Initializes the factory and runs |init_cb| on the current thread when it's
   // complete. If initialization fails, the returned surface texture will be
   // null.
-  virtual void Initialize(
-      scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner,
-      GetStubCb get_stub_cb,
-      InitCb init_cb) = 0;
+  virtual void Initialize(InitCb init_cb) = 0;
 
   // Creates a new VideoFrame backed by |output_buffer| and |surface_texture|.
   // |surface_texture| may be null if the buffer is backed by an overlay
-  // instead. Runs |frame_created_cb| on the current thread to return the frame.
+  // instead. Runs |output_cb| on the calling sequence to return the frame.
   virtual void CreateVideoFrame(
       std::unique_ptr<CodecOutputBuffer> output_buffer,
       scoped_refptr<SurfaceTextureGLOwner> surface_texture,
       base::TimeDelta timestamp,
       gfx::Size natural_size,
+      PromotionHintAggregator::NotifyPromotionHintCB promotion_hint_cb,
       OutputWithReleaseMailboxCB output_cb) = 0;
+
+  // Runs |closure| on the calling sequence after all previous
+  // CreateVideoFrame() calls have completed.
+  virtual void RunAfterPendingVideoFrames(base::OnceClosure closure) = 0;
 };
 
 }  // namespace media

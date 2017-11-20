@@ -138,7 +138,7 @@ class TParseContext : angle::NonCopyable
     void checkIsParameterQualifierValid(const TSourceLoc &line,
                                         const TTypeQualifierBuilder &typeQualifierBuilder,
                                         TType *type);
-    bool checkCanUseExtension(const TSourceLoc &line, const TString &extension);
+    bool checkCanUseExtension(const TSourceLoc &line, TExtension extension);
 
     // Done for all declarations, whether empty or not.
     void declarationQualifierErrorCheck(const sh::TQualifier qualifier,
@@ -168,13 +168,8 @@ class TParseContext : angle::NonCopyable
     {
         return mDirectiveHandler.extensionBehavior();
     }
-    bool supportsExtension(const char *extension);
-    bool isExtensionEnabled(const char *extension) const;
-    bool isMultiviewExtensionEnabled() const
-    {
-        return mMultiviewAvailable &&
-               (isExtensionEnabled("GL_OVR_multiview") || isExtensionEnabled("GL_OVR_multiview2"));
-    }
+    bool supportsExtension(TExtension extension);
+    bool isExtensionEnabled(TExtension extension) const;
     void handleExtensionDirective(const TSourceLoc &loc, const char *extName, const char *behavior);
     void handlePragmaDirective(const TSourceLoc &loc,
                                const char *name,
@@ -397,6 +392,7 @@ class TParseContext : angle::NonCopyable
     TIntermBranch *addBranch(TOperator op, const TSourceLoc &loc);
     TIntermBranch *addBranch(TOperator op, TIntermTyped *expression, const TSourceLoc &loc);
 
+    void checkTextureGather(TIntermAggregate *functionCall);
     void checkTextureOffsetConst(TIntermAggregate *functionCall);
     void checkImageMemoryAccessForBuiltinFunctions(TIntermAggregate *functionCall);
     void checkImageMemoryAccessForUserDefinedFunctions(const TFunction *functionDefinition,
@@ -581,7 +577,8 @@ class TParseContext : angle::NonCopyable
     int mMinProgramTexelOffset;
     int mMaxProgramTexelOffset;
 
-    bool mMultiviewAvailable;
+    int mMinProgramTextureGatherOffset;
+    int mMaxProgramTextureGatherOffset;
 
     // keep track of local group size declared in layout. It should be declared only once.
     bool mComputeShaderLocalSizeDeclared;

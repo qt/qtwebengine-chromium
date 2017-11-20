@@ -9,16 +9,16 @@
 
 #include <memory>
 
-#include "core/fxcodec/codec/ccodec_iccmodule.h"
-#include "core/fxcrt/cfx_retain_ptr.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 
+class CLcmsCmm;
 class CPDF_Stream;
 
-class CPDF_IccProfile : public CFX_Retainable {
+class CPDF_IccProfile : public Retainable {
  public:
   template <typename T, typename... Args>
-  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
   CPDF_Stream* GetStream() const { return m_pStream.Get(); }
   bool IsValid() const { return IsSRGB() || IsSupported(); }
@@ -32,7 +32,7 @@ class CPDF_IccProfile : public CFX_Retainable {
   ~CPDF_IccProfile() override;
 
   const bool m_bsRGB;
-  CFX_UnownedPtr<CPDF_Stream> const m_pStream;
+  UnownedPtr<CPDF_Stream> const m_pStream;
   std::unique_ptr<CLcmsCmm> m_Transform;
   uint32_t m_nSrcComponents = 0;
 };

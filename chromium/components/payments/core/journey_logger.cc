@@ -8,17 +8,10 @@
 
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "services/metrics/public/cpp/ukm_entry_builder.h"
+#include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 
 namespace payments {
-
-namespace internal {
-extern const char kUKMCheckoutEventsEntryName[] =
-    "PaymentRequest.CheckoutEvents";
-extern const char kUKMCompletionStatusMetricName[] = "CompletionStatus";
-extern const char kUKMEventsMetricName[] = "Events";
-}  // namespace internal
 
 namespace {
 
@@ -173,7 +166,6 @@ void JourneyLogger::RecordJourneyStatsHistograms(
   DCHECK(!has_recorded_);
   has_recorded_ = true;
 
-  RecordUrlKeyedMetrics(completion_status);
   RecordEventsMetric(completion_status);
 
   // These following metrics only make sense if the Payment Request was
@@ -243,23 +235,19 @@ void JourneyLogger::RecordEventsMetric(CompletionStatus completion_status) {
   if (sections_[SECTION_PAYMENT_METHOD].number_suggestions_shown_ > 0)
     events_ |= EVENT_HAD_INITIAL_FORM_OF_PAYMENT;
 
-  // Record the events.
+  // Record the events in UMA.
   UMA_HISTOGRAM_SPARSE_SLOWLY("PaymentRequest.Events", events_);
-}
 
-void JourneyLogger::RecordUrlKeyedMetrics(CompletionStatus completion_status) {
   if (!ukm_recorder_ || !url_.is_valid())
     return;
 
-  // Record the Checkout Funnel UKM.
+  // Record the events in UKM.
   ukm::SourceId source_id = ukm_recorder_->GetNewSourceID();
   ukm_recorder_->UpdateSourceURL(source_id, url_);
-  std::unique_ptr<ukm::UkmEntryBuilder> builder =
-      ukm_recorder_->GetEntryBuilder(source_id,
-                                     internal::kUKMCheckoutEventsEntryName);
-  builder->AddMetric(internal::kUKMCompletionStatusMetricName,
-                     completion_status);
-  builder->AddMetric(internal::kUKMEventsMetricName, events_);
+  ukm::builders::PaymentRequest_CheckoutEvents(source_id)
+      .SetCompletionStatus(completion_status)
+      .SetEvents(events_)
+      .Record(ukm_recorder_);
 }
 
 bool JourneyLogger::WasPaymentRequestTriggered() {

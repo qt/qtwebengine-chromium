@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sdes.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/sdes.h"
 
 #include <utility>
 
-#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -173,8 +173,8 @@ bool Sdes::Create(uint8_t* packet,
   for (const Sdes::Chunk& chunk : chunks_) {
     ByteWriter<uint32_t>::WriteBigEndian(&packet[*index + 0], chunk.ssrc);
     ByteWriter<uint8_t>::WriteBigEndian(&packet[*index + 4], kCnameTag);
-    ByteWriter<uint8_t>::WriteBigEndian(&packet[*index + 5],
-                                        chunk.cname.size());
+    ByteWriter<uint8_t>::WriteBigEndian(
+        &packet[*index + 5], static_cast<uint8_t>(chunk.cname.size()));
     memcpy(&packet[*index + 6], chunk.cname.data(), chunk.cname.size());
     *index += (6 + chunk.cname.size());
 

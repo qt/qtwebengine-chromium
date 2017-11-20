@@ -63,8 +63,8 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
 
   Document* getSVGDocument(ExceptionState&) const;
 
-  virtual bool LoadedNonEmptyDocument() const { return false; }
-  virtual void DidLoadNonEmptyDocument() {}
+  bool LoadedNonEmptyDocument() const { return did_load_non_empty_document_; }
+  void DidLoadNonEmptyDocument() { did_load_non_empty_document_ = true; }
 
   void SetEmbeddedContentView(EmbeddedContentView*);
   EmbeddedContentView* ReleaseEmbeddedContentView();
@@ -76,11 +76,20 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
     STACK_ALLOCATED();
 
    public:
-    PluginDisposeSuspendScope();
-    ~PluginDisposeSuspendScope();
+    PluginDisposeSuspendScope() { suspend_count_ += 2; }
+    ~PluginDisposeSuspendScope() {
+      suspend_count_ -= 2;
+      if (suspend_count_ == 1)
+        PerformDeferredPluginDispose();
+    }
 
    private:
     void PerformDeferredPluginDispose();
+
+    // Low bit indicates if there are plugins to dispose.
+    static int suspend_count_;
+
+    friend class HTMLFrameOwnerElement;
   };
 
   // FrameOwner overrides:
@@ -160,6 +169,7 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
   Member<Frame> content_frame_;
   Member<EmbeddedContentView> embedded_content_view_;
   SandboxFlags sandbox_flags_;
+  bool did_load_non_empty_document_;
 
   WebParsedFeaturePolicy container_policy_;
 };

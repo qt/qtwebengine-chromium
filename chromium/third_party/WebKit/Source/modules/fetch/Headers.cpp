@@ -6,7 +6,7 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/V8IteratorResultValue.h"
-#include "bindings/modules/v8/ByteStringSequenceSequenceOrByteStringByteStringRecord.h"
+#include "bindings/modules/v8/byte_string_sequence_sequence_or_byte_string_byte_string_record.h"
 #include "core/dom/Iterator.h"
 #include "platform/loader/fetch/FetchUtils.h"
 #include "platform/wtf/text/WTFString.h"
@@ -227,10 +227,10 @@ void Headers::FillWith(const Headers* object, ExceptionState& exception_state) {
 void Headers::FillWith(const HeadersInit& init,
                        ExceptionState& exception_state) {
   DCHECK_EQ(header_list_->size(), 0U);
-  if (init.isByteStringSequenceSequence()) {
-    FillWith(init.getAsByteStringSequenceSequence(), exception_state);
-  } else if (init.isByteStringByteStringRecord()) {
-    FillWith(init.getAsByteStringByteStringRecord(), exception_state);
+  if (init.IsByteStringSequenceSequence()) {
+    FillWith(init.GetAsByteStringSequenceSequence(), exception_state);
+  } else if (init.IsByteStringByteStringRecord()) {
+    FillWith(init.GetAsByteStringByteStringRecord(), exception_state);
   } else {
     NOTREACHED();
   }

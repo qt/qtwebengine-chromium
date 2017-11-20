@@ -47,20 +47,15 @@ void GrGLMatrixConvolutionEffect::emitCode(EmitArgs& args) {
     SkASSERT(4 * arrayCount >= kWidth * kHeight);
 
     GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
-    fImageIncrementUni = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                                    kVec2f_GrSLType, kDefault_GrSLPrecision,
+    fImageIncrementUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf2_GrSLType,
                                                     "ImageIncrement");
-    fKernelUni = uniformHandler->addUniformArray(kFragment_GrShaderFlag,
-                                                 kVec4f_GrSLType, kDefault_GrSLPrecision,
+    fKernelUni = uniformHandler->addUniformArray(kFragment_GrShaderFlag, kHalf4_GrSLType,
                                                  "Kernel",
                                                  arrayCount);
-    fKernelOffsetUni = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                                  kVec2f_GrSLType, kDefault_GrSLPrecision,
+    fKernelOffsetUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf2_GrSLType,
                                                   "KernelOffset");
-    fGainUni = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                          kFloat_GrSLType, kDefault_GrSLPrecision, "Gain");
-    fBiasUni = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                          kFloat_GrSLType, kDefault_GrSLPrecision, "Bias");
+    fGainUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf_GrSLType, "Gain");
+    fBiasUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf_GrSLType, "Bias");
 
     const char* kernelOffset = uniformHandler->getUniformCStr(fKernelOffsetUni);
     const char* imgInc = uniformHandler->getUniformCStr(fImageIncrementUni);
@@ -70,9 +65,9 @@ void GrGLMatrixConvolutionEffect::emitCode(EmitArgs& args) {
 
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
     SkString coords2D = fragBuilder->ensureCoords2D(args.fTransformedCoords[0]);
-    fragBuilder->codeAppend("float4 sum = float4(0, 0, 0, 0);");
+    fragBuilder->codeAppend("half4 sum = half4(0, 0, 0, 0);");
     fragBuilder->codeAppendf("float2 coord = %s - %s * %s;", coords2D.c_str(), kernelOffset, imgInc);
-    fragBuilder->codeAppend("float4 c;");
+    fragBuilder->codeAppend("half4 c;");
 
     const char* kVecSuffix[4] = { ".x", ".y", ".z", ".w" };
     for (int y = 0; y < kHeight; y++) {
@@ -80,10 +75,10 @@ void GrGLMatrixConvolutionEffect::emitCode(EmitArgs& args) {
             GrGLSLShaderBuilder::ShaderBlock block(fragBuilder);
             int offset = y*kWidth + x;
 
-            fragBuilder->codeAppendf("float k = %s[%d]%s;", kernel, offset / 4,
+            fragBuilder->codeAppendf("half k = %s[%d]%s;", kernel, offset / 4,
                                      kVecSuffix[offset & 0x3]);
             SkString coord;
-            coord.printf("coord + float2(%d, %d) * %s", x, y, imgInc);
+            coord.printf("coord + half2(%d, %d) * %s", x, y, imgInc);
             fDomain.sampleTexture(fragBuilder,
                                   uniformHandler,
                                   args.fShaderCaps,
@@ -160,7 +155,7 @@ GrMatrixConvolutionEffect::GrMatrixConvolutionEffect(sk_sp<GrTextureProxy> proxy
                                                      bool convolveAlpha)
         // To advertise either the modulation or opaqueness optimizations we'd have to examine the
         // parameters.
-        : INHERITED(kNone_OptimizationFlags)
+        : INHERITED(kGrMatrixConvolutionEffect_ClassID, kNone_OptimizationFlags)
         , fCoordTransform(proxy.get())
         , fDomain(proxy.get(), GrTextureDomain::MakeTexelDomainForMode(bounds, tileMode), tileMode)
         , fTextureSampler(std::move(proxy))
@@ -168,7 +163,6 @@ GrMatrixConvolutionEffect::GrMatrixConvolutionEffect(sk_sp<GrTextureProxy> proxy
         , fGain(SkScalarToFloat(gain))
         , fBias(SkScalarToFloat(bias) / 255.0f)
         , fConvolveAlpha(convolveAlpha) {
-    this->initClassID<GrMatrixConvolutionEffect>();
     this->addCoordTransform(&fCoordTransform);
     this->addTextureSampler(&fTextureSampler);
     for (int i = 0; i < kernelSize.width() * kernelSize.height(); i++) {
@@ -179,7 +173,7 @@ GrMatrixConvolutionEffect::GrMatrixConvolutionEffect(sk_sp<GrTextureProxy> proxy
 }
 
 GrMatrixConvolutionEffect::GrMatrixConvolutionEffect(const GrMatrixConvolutionEffect& that)
-        : INHERITED(kNone_OptimizationFlags)
+        : INHERITED(kGrMatrixConvolutionEffect_ClassID, kNone_OptimizationFlags)
         , fCoordTransform(that.fCoordTransform)
         , fDomain(that.fDomain)
         , fTextureSampler(that.fTextureSampler)
@@ -187,7 +181,6 @@ GrMatrixConvolutionEffect::GrMatrixConvolutionEffect(const GrMatrixConvolutionEf
         , fGain(that.fGain)
         , fBias(that.fBias)
         , fConvolveAlpha(that.fConvolveAlpha) {
-    this->initClassID<GrMatrixConvolutionEffect>();
     this->addCoordTransform(&fCoordTransform);
     this->addTextureSampler(&fTextureSampler);
     memcpy(fKernel, that.fKernel, sizeof(float) * fKernelSize.width() * fKernelSize.height());

@@ -37,8 +37,7 @@ struct NET_EXPORT CertPrincipal {
   explicit CertPrincipal(const std::string& name);
   ~CertPrincipal();
 
-#if BUILDFLAG(USE_BYTE_CERTS) || (defined(OS_MACOSX) && !defined(OS_IOS)) || \
-    defined(OS_WIN)
+#if BUILDFLAG(USE_BYTE_CERTS)
   // Configures handling of PrintableString values in the DistinguishedName. Do
   // not use non-default handling without consulting //net owners. With
   // kAsUTF8Hack, PrintableStrings are interpreted as UTF-8 strings.

@@ -111,13 +111,13 @@ TEST(PrefHashCalculatorTest, CatchHashChanges) {
   list_value->AppendInteger(100);
   list_value->AppendDouble(1.0);
 
-  ASSERT_EQ(base::Value::Type::NONE, null_value->GetType());
-  ASSERT_EQ(base::Value::Type::BOOLEAN, bool_value->GetType());
-  ASSERT_EQ(base::Value::Type::INTEGER, int_value->GetType());
-  ASSERT_EQ(base::Value::Type::DOUBLE, double_value->GetType());
-  ASSERT_EQ(base::Value::Type::STRING, string_value->GetType());
-  ASSERT_EQ(base::Value::Type::DICTIONARY, dict_value->GetType());
-  ASSERT_EQ(base::Value::Type::LIST, list_value->GetType());
+  ASSERT_EQ(base::Value::Type::NONE, null_value->type());
+  ASSERT_EQ(base::Value::Type::BOOLEAN, bool_value->type());
+  ASSERT_EQ(base::Value::Type::INTEGER, int_value->type());
+  ASSERT_EQ(base::Value::Type::DOUBLE, double_value->type());
+  ASSERT_EQ(base::Value::Type::STRING, string_value->type());
+  ASSERT_EQ(base::Value::Type::DICTIONARY, dict_value->type());
+  ASSERT_EQ(base::Value::Type::LIST, list_value->type());
 
   // Test every value type independently. Intentionally omits Type::BINARY which
   // isn't even allowed in JSONWriter's input.
@@ -193,6 +193,20 @@ TEST(PrefHashCalculatorTest, TestCompatibilityWithLegacyDeviceId) {
       "05ACCBD3B05C45C36CD06190F63EC577112311929D8380E26E5F13182EB68318";
 
   EXPECT_EQ(PrefHashCalculator::VALID_SECURE_LEGACY,
+            PrefHashCalculator(kSeed, kNewDeviceId, kLegacyDeviceId)
+                .Validate("pref.path", &string_value, kExpectedValue));
+}
+
+TEST(PrefHashCalculatorTest, TestNotCompatibleWithEmptyLegacyDeviceId) {
+  static const char kSeed[] = "0123456789ABCDEF0123456789ABCDEF";
+  static const char kNewDeviceId[] = "unused";
+  static const char kLegacyDeviceId[] = "";
+
+  const base::Value string_value("testing with special chars:\n<>{}:^^@#$\\/");
+  static const char kExpectedValue[] =
+      "F14F989B7CAABF3B36ECAE34492C4D8094D2500E7A86D9A3203E54B274C27CB5";
+
+  EXPECT_EQ(PrefHashCalculator::INVALID,
             PrefHashCalculator(kSeed, kNewDeviceId, kLegacyDeviceId)
                 .Validate("pref.path", &string_value, kExpectedValue));
 }

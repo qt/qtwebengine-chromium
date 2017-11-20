@@ -22,14 +22,13 @@ target("source_set", "network_sources") {
 
   sources = [
     "network_service.h",
+    "url_request_context_builder_mojo.cc",
+    "url_request_context_builder_mojo.h",
   ]
 
   deps = [
     "//base",
     "//content:export",
     "//content/common:mojo_bindings",
-    "//content/network:network_sources",
   ]
-
-  allow_circular_includes_from = [ "//content/network:network_sources" ]
 }

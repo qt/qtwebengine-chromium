@@ -8,24 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/p2p/base/turnserver.h"
+#include "p2p/base/turnserver.h"
 
 #include <tuple>  // for std::tie
 
-#include "webrtc/p2p/base/asyncstuntcpsocket.h"
-#include "webrtc/p2p/base/common.h"
-#include "webrtc/p2p/base/packetsocketfactory.h"
-#include "webrtc/p2p/base/stun.h"
-#include "webrtc/rtc_base/bind.h"
-#include "webrtc/rtc_base/bytebuffer.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/messagedigest.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/rtc_base/socketadapters.h"
-#include "webrtc/rtc_base/stringencode.h"
-#include "webrtc/rtc_base/thread.h"
+#include "p2p/base/asyncstuntcpsocket.h"
+#include "p2p/base/common.h"
+#include "p2p/base/packetsocketfactory.h"
+#include "p2p/base/stun.h"
+#include "rtc_base/bind.h"
+#include "rtc_base/bytebuffer.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/messagedigest.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/socketadapters.h"
+#include "rtc_base/stringencode.h"
+#include "rtc_base/thread.h"
 
 namespace cricket {
 
@@ -211,6 +211,9 @@ void TurnServer::OnInternalPacket(rtc::AsyncPacketSocket* socket,
     if (allocation) {
       allocation->HandleChannelData(data, size);
     }
+    if (stun_message_observer_ != nullptr) {
+      stun_message_observer_->ReceivedChannelData(data, size);
+    }
   }
 }
 
@@ -221,6 +224,10 @@ void TurnServer::HandleStunMessage(TurnServerConnection* conn, const char* data,
   if (!msg.Read(&buf) || (buf.Length() > 0)) {
     LOG(LS_WARNING) << "Received invalid STUN message";
     return;
+  }
+
+  if (stun_message_observer_ != nullptr) {
+    stun_message_observer_->ReceivedMessage(&msg);
   }
 
   // If it's a STUN binding request, handle that specially.

@@ -73,7 +73,7 @@ class CFX_ExternalFontInfo final : public IFX_SystemFontInfo {
     return m_pInfo->GetFontData(m_pInfo, hFont, table, buffer, size);
   }
 
-  bool GetFaceName(void* hFont, CFX_ByteString* name) override {
+  bool GetFaceName(void* hFont, ByteString* name) override {
     if (!m_pInfo->GetFaceName)
       return false;
     uint32_t size = m_pInfo->GetFaceName(m_pInfo, hFont, nullptr, 0);
@@ -81,7 +81,7 @@ class CFX_ExternalFontInfo final : public IFX_SystemFontInfo {
       return false;
     char* buffer = FX_Alloc(char, size);
     size = m_pInfo->GetFaceName(m_pInfo, hFont, buffer, size);
-    *name = CFX_ByteString(buffer, size);
+    *name = ByteString(buffer, size);
     FX_Free(buffer);
     return true;
   }
@@ -124,7 +124,7 @@ FPDF_EXPORT const FPDF_CharsetFontMap* FPDF_CALLCONV FPDF_GetDefaultTTFMap() {
 }
 
 struct FPDF_SYSFONTINFO_DEFAULT : public FPDF_SYSFONTINFO {
-  CFX_UnownedPtr<IFX_SystemFontInfo> m_pFontInfo;
+  UnownedPtr<IFX_SystemFontInfo> m_pFontInfo;
 };
 
 static void DefaultRelease(struct _FPDF_SYSFONTINFO* pThis) {
@@ -167,15 +167,15 @@ static unsigned long DefaultGetFaceName(struct _FPDF_SYSFONTINFO* pThis,
                                         void* hFont,
                                         char* buffer,
                                         unsigned long buf_size) {
-  CFX_ByteString name;
+  ByteString name;
   auto* pDefault = static_cast<FPDF_SYSFONTINFO_DEFAULT*>(pThis);
   if (!pDefault->m_pFontInfo->GetFaceName(hFont, &name))
     return 0;
-  if (name.GetLength() >= (long)buf_size)
+  if (name.GetLength() >= static_cast<size_t>(buf_size))
     return name.GetLength() + 1;
 
   strncpy(buffer, name.c_str(),
-          (name.GetLength() + 1) * sizeof(CFX_ByteString::CharType));
+          (name.GetLength() + 1) * sizeof(ByteString::CharType));
   return name.GetLength() + 1;
 }
 

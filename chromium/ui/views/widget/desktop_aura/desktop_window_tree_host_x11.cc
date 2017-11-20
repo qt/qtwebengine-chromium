@@ -443,7 +443,7 @@ void DesktopWindowTreeHostX11::OnNativeWidgetCreated(
 
 void DesktopWindowTreeHostX11::OnWidgetInitDone() {}
 
-void DesktopWindowTreeHostX11::OnNativeWidgetActivationChanged(bool active) {}
+void DesktopWindowTreeHostX11::OnActiveWindowChanged(bool active) {}
 
 std::unique_ptr<corewm::Tooltip> DesktopWindowTreeHostX11::CreateTooltip() {
   return base::WrapUnique(new corewm::TooltipAura);
@@ -1916,7 +1916,8 @@ void DesktopWindowTreeHostX11::MapWindow(ui::WindowShowState show_state) {
 }
 
 void DesktopWindowTreeHostX11::SetWindowTransparency() {
-  compositor()->SetHostHasTransparentBackground(use_argb_visual_);
+  compositor()->SetBackgroundColor(use_argb_visual_ ? SK_ColorTRANSPARENT
+                                                    : SK_ColorWHITE);
   window()->SetTransparent(use_argb_visual_);
   content_window_->SetTransparent(use_argb_visual_);
 }

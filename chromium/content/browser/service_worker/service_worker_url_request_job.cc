@@ -612,7 +612,7 @@ void ServiceWorkerURLRequestJob::CreateRequestBodyBlob(std::string* blob_uuid,
   *blob_uuid = blob_builder.uuid();
   *blob_size = request_body_blob_data_handle_->size();
 
-  if (base::FeatureList::IsEnabled(features::kMojoBlobs)) {
+  if (features::IsMojoBlobsEnabled()) {
     storage::mojom::BlobPtr blob_ptr;
     storage::BlobImpl::Create(base::MakeUnique<storage::BlobDataHandle>(
                                   *request_body_blob_data_handle_),
@@ -998,7 +998,8 @@ void ServiceWorkerURLRequestJob::RequestBodyFileSizesResolved(bool success) {
       CreateFetchRequest(), active_worker, resource_type_, timeout_,
       request()->net_log(),
       base::Bind(&ServiceWorkerURLRequestJob::DidPrepareFetchEvent,
-                 weak_factory_.GetWeakPtr(), make_scoped_refptr(active_worker)),
+                 weak_factory_.GetWeakPtr(),
+                 base::WrapRefCounted(active_worker)),
       base::Bind(&ServiceWorkerURLRequestJob::DidDispatchFetchEvent,
                  weak_factory_.GetWeakPtr())));
   worker_start_time_ = base::TimeTicks::Now();

@@ -21,6 +21,7 @@
 #include "third_party/libyuv/include/libyuv/convert_from.h"
 #include "third_party/libyuv/include/libyuv/scale.h"
 #include "third_party/webrtc/api/video/video_rotation.h"
+#include "third_party/webrtc/rtc_base/refcountedobject.h"
 
 namespace content {
 
@@ -129,7 +130,7 @@ class WebRtcVideoCapturerAdapter::TextureFrameCopier
         (kN32_SkColorType == kRGBA_8888_SkColorType) ? cricket::FOURCC_ABGR
                                                      : cricket::FOURCC_ARGB;
     libyuv::ConvertToI420(
-        static_cast<const uint8*>(pixmap.addr(0, 0)), pixmap.getSafeSize64(),
+        static_cast<const uint8*>(pixmap.addr(0, 0)), pixmap.computeByteSize(),
         (*new_frame)->visible_data(media::VideoFrame::kYPlane),
         (*new_frame)->stride(media::VideoFrame::kYPlane),
         (*new_frame)->visible_data(media::VideoFrame::kUPlane),

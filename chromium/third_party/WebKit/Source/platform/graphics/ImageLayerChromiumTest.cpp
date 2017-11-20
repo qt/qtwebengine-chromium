@@ -40,8 +40,8 @@ namespace {
 
 class TestImage : public Image {
  public:
-  static PassRefPtr<TestImage> Create(const IntSize& size, bool opaque) {
-    return AdoptRef(new TestImage(size, opaque));
+  static RefPtr<TestImage> Create(const IntSize& size, bool opaque) {
+    return WTF::AdoptRef(new TestImage(size, opaque));
   }
 
   bool CurrentFrameKnownToBeOpaque(
@@ -60,15 +60,13 @@ class TestImage : public Image {
             const FloatRect&,
             const FloatRect&,
             RespectImageOrientationEnum,
-            ImageClampingMode) override {
+            ImageClampingMode,
+            ImageDecodingMode) override {
     // Image pure virtual stub.
   }
 
   PaintImage PaintImageForCurrentFrame() override {
-    PaintImageBuilder builder;
-    InitPaintImageBuilder(builder);
-    builder.set_image(image_);
-    return builder.TakePaintImage();
+    return CreatePaintImageBuilder().set_image(image_).TakePaintImage();
   }
 
  private:
@@ -104,13 +102,13 @@ TEST(ImageLayerChromiumTest, imageLayerContentReset) {
 
   bool opaque = false;
   RefPtr<Image> image = TestImage::Create(IntSize(100, 100), opaque);
-  ASSERT_TRUE(image.Get());
+  ASSERT_TRUE(image.get());
 
-  graphics_layer->SetContentsToImage(image.Get());
+  graphics_layer->SetContentsToImage(image.get(), Image::kUnspecifiedDecode);
   ASSERT_TRUE(graphics_layer->HasContentsLayer());
   ASSERT_TRUE(graphics_layer->ContentsLayer());
 
-  graphics_layer->SetContentsToImage(0);
+  graphics_layer->SetContentsToImage(nullptr, Image::kUnspecifiedDecode);
   ASSERT_FALSE(graphics_layer->HasContentsLayer());
   ASSERT_FALSE(graphics_layer->ContentsLayer());
 }
@@ -123,17 +121,19 @@ TEST(ImageLayerChromiumTest, opaqueImages) {
 
   bool opaque = true;
   RefPtr<Image> opaque_image = TestImage::Create(IntSize(100, 100), opaque);
-  ASSERT_TRUE(opaque_image.Get());
+  ASSERT_TRUE(opaque_image.get());
   RefPtr<Image> non_opaque_image =
       TestImage::Create(IntSize(100, 100), !opaque);
-  ASSERT_TRUE(non_opaque_image.Get());
+  ASSERT_TRUE(non_opaque_image.get());
 
   ASSERT_FALSE(graphics_layer->ContentsLayer());
 
-  graphics_layer->SetContentsToImage(opaque_image.Get());
+  graphics_layer->SetContentsToImage(opaque_image.get(),
+                                     Image::kUnspecifiedDecode);
   ASSERT_TRUE(graphics_layer->ContentsLayer()->Opaque());
 
-  graphics_layer->SetContentsToImage(non_opaque_image.Get());
+  graphics_layer->SetContentsToImage(non_opaque_image.get(),
+                                     Image::kUnspecifiedDecode);
   ASSERT_FALSE(graphics_layer->ContentsLayer()->Opaque());
 }
 

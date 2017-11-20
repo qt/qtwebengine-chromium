@@ -11,7 +11,6 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/macros.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -55,7 +54,7 @@ bool ExtractOAuth2TokenPairResponse(const std::string& data,
   DCHECK(expires_in_secs);
 
   std::unique_ptr<base::Value> value = base::JSONReader::Read(data);
-  if (!value.get() || value->GetType() != base::Value::Type::DICTIONARY)
+  if (!value.get() || value->type() != base::Value::Type::DICTIONARY)
     return false;
 
   base::DictionaryValue* dict =
@@ -208,10 +207,6 @@ bool GaiaAuthFetcher::HasPendingFetch() {
 
 void GaiaAuthFetcher::SetPendingFetch(bool pending_fetch) {
   fetch_pending_ = pending_fetch;
-}
-
-void GaiaAuthFetcher::SetLogoutHeaders(const std::string& headers) {
-  logout_headers_ = headers;
 }
 
 void GaiaAuthFetcher::CancelRequest() {
@@ -486,7 +481,7 @@ bool GaiaAuthFetcher::ParseListIdpSessionsResponse(const std::string& data,
   DCHECK(login_hint);
 
   std::unique_ptr<base::Value> value = base::JSONReader::Read(data);
-  if (!value.get() || value->GetType() != base::Value::Type::DICTIONARY)
+  if (!value.get() || value->type() != base::Value::Type::DICTIONARY)
     return false;
 
   base::DictionaryValue* dict =
@@ -900,7 +895,7 @@ void GaiaAuthFetcher::StartLogOut() {
             }
           }
         })");
-  CreateAndStartGaiaFetcher(std::string(), logout_headers_, logout_gurl_,
+  CreateAndStartGaiaFetcher(std::string(), std::string(), logout_gurl_,
                             net::LOAD_NORMAL, traffic_annotation);
 }
 

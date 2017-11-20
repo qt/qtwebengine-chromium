@@ -31,6 +31,14 @@ enum ProcessType {
   PLUGIN
 };
 
+enum HeapProfilingMode {
+  DISABLED,
+  TASK_PROFILER,
+  BACKGROUND,
+  PSEUDO_STACK,
+  NATIVE_STACK
+};
+
 struct RequestArgs {
   uint64 dump_guid;
   DumpType dump_type;
@@ -46,7 +54,40 @@ struct ChromeMemDump {
 };
 
 // These structs are internal only (only for the communication between
-// the service and the ClientProcess library)
+// the service and the ClientProcess library).
+// See corresponding types in //base/trace_event for comments.
+
+struct RawAllocatorDumpEdge {
+  uint64 source_id;
+  uint64 target_id;
+  int64 importance;
+  bool overridable;
+};
+
+union RawAllocatorDumpEntryValue {
+  uint64 value_uint64;
+  string value_string;
+};
+
+struct RawAllocatorDumpEntry {
+  string name;
+  string units;
+  RawAllocatorDumpEntryValue value;
+};
+
+struct RawAllocatorDump {
+  uint64 id;
+  string absolute_name;
+  bool weak;
+  LevelOfDetail level_of_detail;
+  array<RawAllocatorDumpEntry> entries;
+};
+
+struct RawProcessMemoryDump {
+  LevelOfDetail level_of_detail;
+  array<RawAllocatorDumpEdge> allocator_dump_edges;
+  array<RawAllocatorDump> allocator_dumps;
+};
 
 struct VmRegion {
   const uint32 kProtectionFlagsRead = 4;
@@ -146,7 +187,11 @@ interface ClientProcess {
   // buffer of the target process and an ACK. A summary of the dump is also
   // returned in case of success.
   RequestChromeMemoryDump(RequestArgs args) =>
-      (bool success, uint64 dump_id, ChromeMemDump? chrome_memory_dump);
+      (bool success, uint64 dump_id, RawProcessMemoryDump? raw_process_memory_dump);
+
+  // Enable heap profiler in the client process.
+  EnableHeapProfiling(HeapProfilingMode mode) =>
+      (bool success);
 
   // Requests an OSMemDump for each pid in |pids|.
   // The Memory-infra service deals with two kinds of information:

@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
@@ -435,10 +436,9 @@ CdmAdapter::~CdmAdapter() {}
 CdmWrapper* CdmAdapter::CreateCdmInstance(const std::string& key_system) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  CreateCdmFunc create_cdm_func =
-      CdmModule::GetInstance()->GetCreateCdmFunc(key_system);
+  CreateCdmFunc create_cdm_func = CdmModule::GetInstance()->GetCreateCdmFunc();
   if (!create_cdm_func) {
-    DVLOG(1) << "Cannot get CreateCdmFunc for " + key_system;
+    LOG(ERROR) << "Failed to get CreateCdmFunc!";
     return nullptr;
   }
 
@@ -446,6 +446,16 @@ CdmWrapper* CdmAdapter::CreateCdmInstance(const std::string& key_system) {
                                        key_system.size(), GetCdmHost, this);
   DVLOG(1) << "CDM instance for " + key_system + (cdm ? "" : " could not be") +
                   " created.";
+
+  if (cdm) {
+    // The interface version is relatively small. So using normal histogram
+    // instead of a sparse histogram is okay. The following DCHECK asserts this.
+    DCHECK(cdm->GetInterfaceVersion() <= 30);
+    UMA_HISTOGRAM_ENUMERATION("Media.EME.CdmInterfaceVersion",
+                              cdm->GetInterfaceVersion(),
+                              cdm::ContentDecryptionModule::kVersion + 1);
+  }
+
   return cdm;
 }
 
@@ -1014,13 +1024,14 @@ cdm::FileIO* CdmAdapter::CreateFileIO(cdm::FileIOClient* client) {
   return file_io.release();
 }
 
-void CdmAdapter::RequestStorageId() {
-  helper_->GetStorageId(
-      base::Bind(&CdmAdapter::OnStorageIdObtained, weak_factory_.GetWeakPtr()));
+void CdmAdapter::RequestStorageId(uint32_t version) {
+  helper_->GetStorageId(version, base::Bind(&CdmAdapter::OnStorageIdObtained,
+                                            weak_factory_.GetWeakPtr()));
 }
 
-void CdmAdapter::OnStorageIdObtained(const std::vector<uint8_t>& storage_id) {
-  cdm_->OnStorageId(storage_id.data(), storage_id.size());
+void CdmAdapter::OnStorageIdObtained(uint32_t version,
+                                     const std::vector<uint8_t>& storage_id) {
+  cdm_->OnStorageId(version, storage_id.data(), storage_id.size());
 }
 
 bool CdmAdapter::AudioFramesDataToAudioFrames(

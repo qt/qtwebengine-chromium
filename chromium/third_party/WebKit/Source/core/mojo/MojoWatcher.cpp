@@ -4,7 +4,7 @@
 
 #include "core/mojo/MojoWatcher.h"
 
-#include "bindings/core/v8/MojoWatchCallback.h"
+#include "bindings/core/v8/v8_mojo_watch_callback.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/TaskRunnerHelper.h"
 #include "core/mojo/MojoHandleSignals.h"
@@ -14,7 +14,7 @@
 
 namespace blink {
 
-static void RunWatchCallback(MojoWatchCallback* callback,
+static void RunWatchCallback(V8MojoWatchCallback* callback,
                              ScriptWrappable* wrappable,
                              MojoResult result) {
   callback->call(wrappable, result);
@@ -23,7 +23,7 @@ static void RunWatchCallback(MojoWatchCallback* callback,
 // static
 MojoWatcher* MojoWatcher::Create(mojo::Handle handle,
                                  const MojoHandleSignals& signals_dict,
-                                 MojoWatchCallback* callback,
+                                 V8MojoWatchCallback* callback,
                                  ExecutionContext* context) {
   MojoWatcher* watcher = new MojoWatcher(context, callback);
   MojoResult result = watcher->Watch(handle, signals_dict);
@@ -70,7 +70,8 @@ void MojoWatcher::ContextDestroyed(ExecutionContext*) {
   cancel();
 }
 
-MojoWatcher::MojoWatcher(ExecutionContext* context, MojoWatchCallback* callback)
+MojoWatcher::MojoWatcher(ExecutionContext* context,
+                         V8MojoWatchCallback* callback)
     : ContextLifecycleObserver(context),
       task_runner_(TaskRunnerHelper::Get(TaskType::kUnspecedTimer, context)),
       callback_(callback) {}
@@ -102,13 +103,20 @@ MojoResult MojoWatcher::Watch(mojo::Handle handle,
   if (result == MOJO_RESULT_OK)
     return result;
 
-  // We couldn't arm the watcher because the handle is already ready to
-  // trigger a success notification. Post a notification manually.
-  DCHECK_EQ(MOJO_RESULT_FAILED_PRECONDITION, result);
-  task_runner_->PostTask(BLINK_FROM_HERE,
-                         WTF::Bind(&MojoWatcher::RunReadyCallback,
-                                   WrapPersistent(this), ready_result));
-  return MOJO_RESULT_OK;
+  if (result == MOJO_RESULT_FAILED_PRECONDITION) {
+    // We couldn't arm the watcher because the handle is already ready to
+    // trigger a success notification. Post a notification manually.
+    task_runner_->PostTask(BLINK_FROM_HERE,
+                           WTF::Bind(&MojoWatcher::RunReadyCallback,
+                                     WrapPersistent(this), ready_result));
+    return MOJO_RESULT_OK;
+  }
+
+  // If MojoWatch succeeds but Arm does not, that means another thread closed
+  // the watched handle in between. Treat it like we'd treat a MojoWatch trying
+  // to watch an invalid handle.
+  watcher_handle_.reset();
+  return MOJO_RESULT_INVALID_ARGUMENT;
 }
 
 MojoResult MojoWatcher::Arm(MojoResult* ready_result) {
@@ -126,10 +134,13 @@ MojoResult MojoWatcher::Arm(MojoResult* ready_result) {
   if (result == MOJO_RESULT_OK)
     return MOJO_RESULT_OK;
 
-  DCHECK_EQ(MOJO_RESULT_FAILED_PRECONDITION, result);
-  DCHECK_EQ(1u, num_ready_contexts);
-  DCHECK_EQ(reinterpret_cast<uintptr_t>(this), ready_context);
-  *ready_result = local_ready_result;
+  if (result == MOJO_RESULT_FAILED_PRECONDITION) {
+    DCHECK_EQ(1u, num_ready_contexts);
+    DCHECK_EQ(reinterpret_cast<uintptr_t>(this), ready_context);
+    *ready_result = local_ready_result;
+    return result;
+  }
+
   return result;
 }
 
@@ -183,11 +194,12 @@ void MojoWatcher::RunReadyCallback(MojoResult result) {
   if (arm_result == MOJO_RESULT_OK)
     return;
 
-  DCHECK_EQ(MOJO_RESULT_FAILED_PRECONDITION, arm_result);
-
-  task_runner_->PostTask(BLINK_FROM_HERE,
-                         WTF::Bind(&MojoWatcher::RunReadyCallback,
-                                   WrapWeakPersistent(this), ready_result));
+  if (arm_result == MOJO_RESULT_FAILED_PRECONDITION) {
+    task_runner_->PostTask(BLINK_FROM_HERE,
+                           WTF::Bind(&MojoWatcher::RunReadyCallback,
+                                     WrapWeakPersistent(this), ready_result));
+    return;
+  }
 }
 
 }  // namespace blink

@@ -10,29 +10,29 @@
 
 #include <memory>
 
-#include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "webrtc/api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "webrtc/call/call.h"
-#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
-#include "webrtc/media/base/fakemediaengine.h"
-#include "webrtc/media/base/fakenetworkinterface.h"
-#include "webrtc/media/base/fakertp.h"
-#include "webrtc/media/base/mediaconstants.h"
-#include "webrtc/media/engine/fakewebrtccall.h"
-#include "webrtc/media/engine/fakewebrtcvoiceengine.h"
-#include "webrtc/media/engine/webrtcvoiceengine.h"
-#include "webrtc/modules/audio_device/include/mock_audio_device.h"
-#include "webrtc/modules/audio_processing/include/mock_audio_processing.h"
-#include "webrtc/pc/channel.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/byteorder.h"
-#include "webrtc/rtc_base/safe_conversions.h"
-#include "webrtc/rtc_base/scoped_ref_ptr.h"
-#include "webrtc/test/field_trial.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/mock_audio_decoder_factory.h"
-#include "webrtc/test/mock_audio_encoder_factory.h"
-#include "webrtc/voice_engine/transmit_mixer.h"
+#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "api/audio_codecs/builtin_audio_encoder_factory.h"
+#include "call/call.h"
+#include "logging/rtc_event_log/rtc_event_log.h"
+#include "media/base/fakemediaengine.h"
+#include "media/base/fakenetworkinterface.h"
+#include "media/base/fakertp.h"
+#include "media/base/mediaconstants.h"
+#include "media/engine/fakewebrtccall.h"
+#include "media/engine/fakewebrtcvoiceengine.h"
+#include "media/engine/webrtcvoiceengine.h"
+#include "modules/audio_device/include/mock_audio_device.h"
+#include "modules/audio_processing/include/mock_audio_processing.h"
+#include "pc/channel.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/byteorder.h"
+#include "rtc_base/safe_conversions.h"
+#include "rtc_base/scoped_ref_ptr.h"
+#include "test/field_trial.h"
+#include "test/gtest.h"
+#include "test/mock_audio_decoder_factory.h"
+#include "test/mock_audio_encoder_factory.h"
+#include "voice_engine/transmit_mixer.h"
 
 using testing::_;
 using testing::ContainerEq;
@@ -546,6 +546,16 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
     stats.echo_return_loss_enhancement = 1234;
     stats.residual_echo_likelihood = 0.432f;
     stats.residual_echo_likelihood_recent_max = 0.6f;
+    stats.ana_statistics.bitrate_action_counter = rtc::Optional<uint32_t>(321);
+    stats.ana_statistics.channel_action_counter = rtc::Optional<uint32_t>(432);
+    stats.ana_statistics.dtx_action_counter = rtc::Optional<uint32_t>(543);
+    stats.ana_statistics.fec_action_counter = rtc::Optional<uint32_t>(654);
+    stats.ana_statistics.frame_length_increase_counter =
+        rtc::Optional<uint32_t>(765);
+    stats.ana_statistics.frame_length_decrease_counter =
+        rtc::Optional<uint32_t>(876);
+    stats.ana_statistics.uplink_packet_loss_fraction =
+        rtc::Optional<float>(987.0);
     stats.typing_noise_detected = true;
     return stats;
   }
@@ -577,6 +587,20 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
     EXPECT_EQ(info.residual_echo_likelihood, stats.residual_echo_likelihood);
     EXPECT_EQ(info.residual_echo_likelihood_recent_max,
               stats.residual_echo_likelihood_recent_max);
+    EXPECT_EQ(info.ana_statistics.bitrate_action_counter,
+              stats.ana_statistics.bitrate_action_counter);
+    EXPECT_EQ(info.ana_statistics.channel_action_counter,
+              stats.ana_statistics.channel_action_counter);
+    EXPECT_EQ(info.ana_statistics.dtx_action_counter,
+              stats.ana_statistics.dtx_action_counter);
+    EXPECT_EQ(info.ana_statistics.fec_action_counter,
+              stats.ana_statistics.fec_action_counter);
+    EXPECT_EQ(info.ana_statistics.frame_length_increase_counter,
+              stats.ana_statistics.frame_length_increase_counter);
+    EXPECT_EQ(info.ana_statistics.frame_length_decrease_counter,
+              stats.ana_statistics.frame_length_decrease_counter);
+    EXPECT_EQ(info.ana_statistics.uplink_packet_loss_fraction,
+              stats.ana_statistics.uplink_packet_loss_fraction);
     EXPECT_EQ(info.typing_noise_detected,
               stats.typing_noise_detected && is_sending);
   }
@@ -598,6 +622,8 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
     stats.audio_level = 1234;
     stats.total_samples_received = 5678901;
     stats.concealed_samples = 234;
+    stats.concealment_events = 12;
+    stats.jitter_buffer_delay_seconds = 34;
     stats.expand_rate = 5.67f;
     stats.speech_expand_rate = 8.90f;
     stats.secondary_decoded_rate = 1.23f;
@@ -637,6 +663,9 @@ class WebRtcVoiceEngineTestFake : public testing::Test {
     EXPECT_EQ(info.audio_level, stats.audio_level);
     EXPECT_EQ(info.total_samples_received, stats.total_samples_received);
     EXPECT_EQ(info.concealed_samples, stats.concealed_samples);
+    EXPECT_EQ(info.concealment_events, stats.concealment_events);
+    EXPECT_EQ(info.jitter_buffer_delay_seconds,
+              stats.jitter_buffer_delay_seconds);
     EXPECT_EQ(info.expand_rate, stats.expand_rate);
     EXPECT_EQ(info.speech_expand_rate, stats.speech_expand_rate);
     EXPECT_EQ(info.secondary_decoded_rate, stats.secondary_decoded_rate);
@@ -3312,9 +3341,6 @@ TEST(WebRtcVoiceEngineTest, StartupShutdownWithExternalADM) {
   testing::NiceMock<webrtc::test::MockAudioDeviceModule> adm;
   EXPECT_CALL(adm, AddRef()).Times(3).WillRepeatedly(Return(0));
   EXPECT_CALL(adm, Release()).Times(3).WillRepeatedly(Return(0));
-  // Return 100ms just in case this function gets called.  If we don't,
-  // we could enter a tight loop since the mock would return 0.
-  EXPECT_CALL(adm, TimeUntilNextProcess()).WillRepeatedly(Return(100));
   {
     rtc::scoped_refptr<webrtc::AudioProcessing> apm =
         webrtc::AudioProcessing::Create();

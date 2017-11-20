@@ -82,26 +82,26 @@ public:
 
             // Setup pass through color
             if (gp.hasVertexColor()) {
-                GrGLSLVertToFrag varying(kVec4f_GrSLType);
+                GrGLSLVertToFrag varying(kHalf4_GrSLType);
                 varyingHandler->addVarying("color", &varying);
 
                 // There are several optional steps to process the color. Start with the attribute:
-                vertBuilder->codeAppendf("float4 color = %s;", gp.inColor()->fName);
+                vertBuilder->codeAppendf("half4 color = %s;", gp.inColor()->fName);
 
                 // Linearize
                 if (gp.linearizeColor()) {
                     SkString srgbFuncName;
                     static const GrShaderVar gSrgbArgs[] = {
-                        GrShaderVar("x", kFloat_GrSLType),
+                        GrShaderVar("x", kHalf_GrSLType),
                     };
-                    vertBuilder->emitFunction(kFloat_GrSLType,
+                    vertBuilder->emitFunction(kHalf_GrSLType,
                                               "srgb_to_linear",
                                               SK_ARRAY_COUNT(gSrgbArgs),
                                               gSrgbArgs,
                                               "return (x <= 0.04045) ? (x / 12.92) "
                                               ": pow((x + 0.055) / 1.055, 2.4);",
                                               &srgbFuncName);
-                    vertBuilder->codeAppendf("color = float4(%s(%s.r), %s(%s.g), %s(%s.b), %s.a);",
+                    vertBuilder->codeAppendf("color = half4(%s(%s.r), %s(%s.g), %s(%s.b), %s.a);",
                                              srgbFuncName.c_str(), gp.inColor()->fName,
                                              srgbFuncName.c_str(), gp.inColor()->fName,
                                              srgbFuncName.c_str(), gp.inColor()->fName,
@@ -110,7 +110,7 @@ public:
 
                 // For SkColor, do a red/blue swap and premul
                 if (gp.fFlags & kColorAttributeIsSkColor_GPFlag) {
-                    vertBuilder->codeAppend("color = float4(color.a * color.bgr, color.a);");
+                    vertBuilder->codeAppend("color = half4(color.a * color.bgr, color.a);");
                 }
 
                 // Do color-correction to destination gamut
@@ -161,19 +161,18 @@ public:
 
             // Setup coverage as pass through
             if (gp.hasVertexCoverage()) {
-                fragBuilder->codeAppendf("float alpha = 1.0;");
+                fragBuilder->codeAppendf("half alpha = 1.0;");
                 varyingHandler->addPassThroughAttribute(gp.inCoverage(), "alpha");
-                fragBuilder->codeAppendf("%s = float4(alpha);", args.fOutputCoverage);
+                fragBuilder->codeAppendf("%s = half4(alpha);", args.fOutputCoverage);
             } else if (gp.coverage() == 0xff) {
-                fragBuilder->codeAppendf("%s = float4(1);", args.fOutputCoverage);
+                fragBuilder->codeAppendf("%s = half4(1);", args.fOutputCoverage);
             } else {
                 const char* fragCoverage;
                 fCoverageUniform = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                                              kFloat_GrSLType,
-                                                              kDefault_GrSLPrecision,
+                                                              kHalf_GrSLType,
                                                               "Coverage",
                                                               &fragCoverage);
-                fragBuilder->codeAppendf("%s = float4(%s);", args.fOutputCoverage, fragCoverage);
+                fragBuilder->codeAppendf("%s = half4(%s);", args.fOutputCoverage, fragCoverage);
             }
         }
 
@@ -249,26 +248,24 @@ private:
                    const SkMatrix& localMatrix,
                    uint8_t coverage,
                    bool localCoordsWillBeRead)
-            : fColor(color)
+            : INHERITED(kDefaultGeoProc_ClassID)
+            , fColor(color)
             , fViewMatrix(viewMatrix)
             , fLocalMatrix(localMatrix)
             , fCoverage(coverage)
             , fFlags(gpTypeFlags)
             , fLocalCoordsWillBeRead(localCoordsWillBeRead)
             , fColorSpaceXform(std::move(colorSpaceXform)) {
-        this->initClassID<DefaultGeoProc>();
-        fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType,
-                                             kHigh_GrSLPrecision);
+        fInPosition = &this->addVertexAttrib("inPosition", kFloat2_GrVertexAttribType);
         if (fFlags & kColorAttribute_GPFlag) {
-            fInColor = &this->addVertexAttrib("inColor", kVec4ub_GrVertexAttribType);
+            fInColor = &this->addVertexAttrib("inColor", kUByte4_norm_GrVertexAttribType);
         }
         if (fFlags & kLocalCoordAttribute_GPFlag) {
-            fInLocalCoords = &this->addVertexAttrib("inLocalCoord", kVec2f_GrVertexAttribType,
-                                                    kHigh_GrSLPrecision);
+            fInLocalCoords = &this->addVertexAttrib("inLocalCoord", kFloat2_GrVertexAttribType);
             this->setHasExplicitLocalCoords();
         }
         if (fFlags & kCoverageAttribute_GPFlag) {
-            fInCoverage = &this->addVertexAttrib("inCoverage", kFloat_GrVertexAttribType);
+            fInCoverage = &this->addVertexAttrib("inCoverage", kHalf_GrVertexAttribType);
         }
     }
 

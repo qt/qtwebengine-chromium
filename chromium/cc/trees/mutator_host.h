@@ -64,17 +64,6 @@ class MutatorHost {
   virtual bool UpdateAnimationState(bool start_ready_animations,
                                     MutatorEvents* events) = 0;
 
-  // Returns a callback which is responsible for applying layer tree mutations
-  // to DOM elements. The callback are transfered to main thread when we begin
-  // main frame and should only be invoked on the main thread.
-  //
-  // TODO(majidvp): http://crbug.com/756539 Eliminate this. Once we implement
-  // syncing animation local times from animation worklet to cc then we should
-  // not directly send mutations to main thread and eliminate of this method.
-  // Instead the animation local times should be send to main thread via
-  // existing cc->main plumbing for animations which is |SetAnimationEvents|.
-  virtual base::Closure TakeMutations() = 0;
-
   virtual std::unique_ptr<MutatorEvents> CreateEvents() = 0;
   virtual void SetAnimationEvents(std::unique_ptr<MutatorEvents> events) = 0;
 
@@ -102,13 +91,6 @@ class MutatorHost {
   virtual bool HasAnyAnimationTargetingProperty(
       ElementId element_id,
       TargetProperty::Type property) const = 0;
-
-  virtual bool HasTransformAnimationThatInflatesBounds(
-      ElementId element_id) const = 0;
-
-  virtual bool TransformAnimationBoundsForBox(ElementId element_id,
-                                              const gfx::BoxF& box,
-                                              gfx::BoxF* bounds) const = 0;
 
   virtual bool HasOnlyTranslationTransforms(
       ElementId element_id,

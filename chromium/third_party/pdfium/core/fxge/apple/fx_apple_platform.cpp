@@ -16,10 +16,10 @@
 #include "core/fxge/apple/apple_int.h"
 #include "core/fxge/cfx_cliprgn.h"
 #include "core/fxge/cfx_facecache.h"
+#include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/fx_freetype.h"
-#include "core/fxge/fx_text_int.h"
 
 #ifndef _SKIA_SUPPORT_
 
@@ -131,7 +131,7 @@ bool CFX_AggDeviceDriver::DrawDeviceText(int nChars,
     rect_cg =
         CGRectMake(m_pClipRgn->GetBox().left, m_pClipRgn->GetBox().top,
                    m_pClipRgn->GetBox().Width(), m_pClipRgn->GetBox().Height());
-    CFX_RetainPtr<CFX_DIBitmap> pClipMask = m_pClipRgn->GetMask();
+    RetainPtr<CFX_DIBitmap> pClipMask = m_pClipRgn->GetMask();
     if (pClipMask) {
       CGDataProviderRef pClipMaskDataProvider = CGDataProviderCreateWithData(
           nullptr, pClipMask->GetBuffer(),

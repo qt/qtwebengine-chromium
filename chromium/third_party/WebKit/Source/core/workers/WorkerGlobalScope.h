@@ -43,6 +43,12 @@
 #include "platform/heap/Handle.h"
 #include "platform/loader/fetch/CachedMetadataHandler.h"
 #include "platform/wtf/ListHashSet.h"
+#include "services/service_manager/public/cpp/interface_provider.h"
+#include "services/service_manager/public/interfaces/interface_provider.mojom-blink.h"
+
+namespace service_manager {
+class InterfaceProvider;
+}
 
 namespace blink {
 
@@ -53,6 +59,7 @@ class V8AbstractEventListener;
 class WorkerLocation;
 class WorkerNavigator;
 class WorkerThread;
+struct GlobalScopeCreationParams;
 
 class CORE_EXPORT WorkerGlobalScope
     : public EventTargetWithInlineData,
@@ -80,10 +87,10 @@ class CORE_EXPORT WorkerGlobalScope
   KURL CompleteURL(const String&) const;
 
   // WorkerOrWorkletGlobalScope
-  void EvaluateClassicScript(const KURL& script_url,
-                             String source_code,
-                             std::unique_ptr<Vector<char>> cached_meta_data,
-                             V8CacheOptions) final;
+  void EvaluateClassicScript(
+      const KURL& script_url,
+      String source_code,
+      std::unique_ptr<Vector<char>> cached_meta_data) override;
   bool IsClosing() const final { return closing_; }
   virtual void Dispose();
   WorkerThread* GetThread() const final { return thread_; }
@@ -132,6 +139,7 @@ class CORE_EXPORT WorkerGlobalScope
   void AddConsoleMessage(ConsoleMessage*) final;
   WorkerEventQueue* GetEventQueue() const final;
   bool IsSecureContext(String& error_message) const override;
+  service_manager::InterfaceProvider* GetInterfaceProvider() final;
 
   OffscreenFontSelector* GetFontSelector() { return font_selector_; }
 
@@ -149,29 +157,24 @@ class CORE_EXPORT WorkerGlobalScope
   WorkerSettings* GetWorkerSettings() const { return worker_settings_.get(); }
 
   DECLARE_VIRTUAL_TRACE();
+  DECLARE_VIRTUAL_TRACE_WRAPPERS();
 
  protected:
-  WorkerGlobalScope(const KURL&,
-                    const String& user_agent,
+  WorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
                     WorkerThread*,
-                    double time_origin,
-                    std::unique_ptr<SecurityOrigin::PrivilegeData>,
-                    WorkerClients*);
-  void SetWorkerSettings(std::unique_ptr<WorkerSettings>);
+                    double time_origin);
   void ApplyContentSecurityPolicyFromHeaders(
       const ContentSecurityPolicyResponseHeaders&);
-  void ApplyContentSecurityPolicyFromVector(
-      const Vector<CSPHeaderAndType>& headers);
-
-  void SetV8CacheOptions(V8CacheOptions v8_cache_options) {
-    v8_cache_options_ = v8_cache_options;
-  }
 
   // ExecutionContext
   void ExceptionThrown(ErrorEvent*) override;
   void RemoveURLFromMemoryCache(const KURL&) final;
 
  private:
+  void SetWorkerSettings(std::unique_ptr<WorkerSettings>);
+  void ApplyContentSecurityPolicyFromVector(
+      const Vector<CSPHeaderAndType>& headers);
+
   // |kNotHandled| is used when the script was not in
   // InstalledScriptsManager, which means either it was not an installed script
   // or it was already taken.
@@ -209,7 +212,7 @@ class CORE_EXPORT WorkerGlobalScope
 
   const KURL url_;
   const String user_agent_;
-  V8CacheOptions v8_cache_options_;
+  const V8CacheOptions v8_cache_options_;
   std::unique_ptr<WorkerSettings> worker_settings_;
 
   mutable Member<WorkerLocation> location_;
@@ -231,6 +234,8 @@ class CORE_EXPORT WorkerGlobalScope
   int last_pending_error_event_id_ = 0;
 
   Member<OffscreenFontSelector> font_selector_;
+
+  service_manager::InterfaceProvider interface_provider_;
 };
 
 DEFINE_TYPE_CASTS(WorkerGlobalScope,

@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/test/APITest.h"
+#include "modules/audio_coding/test/APITest.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -19,16 +19,15 @@
 #include <ostream>
 #include <string>
 
-#include "webrtc/common_types.h"
-#include "webrtc/modules/audio_coding/codecs/audio_format_conversion.h"
-#include "webrtc/modules/audio_coding/test/utility.h"
-#include "webrtc/rtc_base/platform_thread.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/system_wrappers/include/event_wrapper.h"
-#include "webrtc/system_wrappers/include/trace.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/testsupport/fileutils.h"
-#include "webrtc/typedefs.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/audio_coding/codecs/audio_format_conversion.h"
+#include "modules/audio_coding/test/utility.h"
+#include "rtc_base/platform_thread.h"
+#include "rtc_base/timeutils.h"
+#include "system_wrappers/include/event_wrapper.h"
+#include "test/gtest.h"
+#include "test/testsupport/fileutils.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -48,8 +47,8 @@ void APITest::Wait(uint32_t waitLengthMs) {
 }
 
 APITest::APITest()
-    : _acmA(AudioCodingModule::Create(1)),
-      _acmB(AudioCodingModule::Create(2)),
+    : _acmA(AudioCodingModule::Create()),
+      _acmB(AudioCodingModule::Create()),
       _channel_A2B(NULL),
       _channel_B2A(NULL),
       _writeToFile(true),
@@ -259,14 +258,7 @@ int16_t APITest::SetUp() {
   // B
   _outFreqHzB = _outFileB.SamplingFrequency();
 
-  //Trace::SetEncryptedTraceFile("ACMAPITestEncrypted.txt");
-
   char print[11];
-
-  // Create a trace file.
-  Trace::CreateTrace();
-  Trace::SetTraceFile(
-      (webrtc::test::OutputPath() + "acm_api_trace.txt").c_str());
 
   printf("\nRandom Test (y/n)?");
   EXPECT_TRUE(fgets(print, 10, stdin) != NULL);

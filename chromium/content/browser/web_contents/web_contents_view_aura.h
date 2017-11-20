@@ -172,7 +172,8 @@ class CONTENT_EXPORT WebContentsViewAura
   bool CanFocus() override;
   void OnCaptureLost() override;
   void OnPaint(const ui::PaintContext& context) override;
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override;
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override;
   void OnWindowDestroying(aura::Window* window) override;
   void OnWindowDestroyed(aura::Window* window) override;
   void OnWindowTargetVisibilityChanged(bool visible) override;
@@ -193,6 +194,8 @@ class CONTENT_EXPORT WebContentsViewAura
   void OnWindowVisibilityChanged(aura::Window* window, bool visible) override;
 
   FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest, EnableDisableOverscroll);
+
+  bool enable_surface_synchronization_ = false;
 
   std::unique_ptr<aura::Window> window_;
 

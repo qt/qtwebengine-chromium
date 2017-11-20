@@ -153,7 +153,7 @@ if (is_android) {
     ]
 
     data = [
-      "../../resources/reference_video_640x360_30fps.y4m",
+      "../resources/reference_video_640x360_30fps.y4m",
     ]
 
     # TODO(sakal): Fix build hooks crbug.com/webrtc/8148
@@ -233,6 +233,10 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       "objc/AppRTCMobile/ARDTURNClient+Internal.h",
       "objc/AppRTCMobile/ARDTURNClient.h",
       "objc/AppRTCMobile/ARDTURNClient.m",
+      "objc/AppRTCMobile/ARDVideoDecoderFactory.h",
+      "objc/AppRTCMobile/ARDVideoDecoderFactory.m",
+      "objc/AppRTCMobile/ARDVideoEncoderFactory.h",
+      "objc/AppRTCMobile/ARDVideoEncoderFactory.m",
       "objc/AppRTCMobile/ARDWebSocketChannel.h",
       "objc/AppRTCMobile/ARDWebSocketChannel.m",
       "objc/AppRTCMobile/RTCIceCandidate+JSON.h",
@@ -276,7 +280,6 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "objc/AppRTCMobile/ios/ARDVideoCallView.m",
         "objc/AppRTCMobile/ios/ARDVideoCallViewController.h",
         "objc/AppRTCMobile/ios/ARDVideoCallViewController.m",
-        "objc/AppRTCMobile/ios/AppRTCMobile-Prefix.pch",
         "objc/AppRTCMobile/ios/UIImage+ARDUtilities.h",
         "objc/AppRTCMobile/ios/UIImage+ARDUtilities.m",
       ]
@@ -315,7 +318,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "../sdk:framework_objc+link",
       ]
       sources = [
-        "$root_out_dir/WebRTC.framework",
+        "$root_build_dir/WebRTC.framework",
       ]
       outputs = [
         "{{bundle_resources_dir}}/Frameworks/{{source_file_part}}",
@@ -690,6 +693,7 @@ if (is_android) {
     output = "${root_out_dir}/lib.java${_target_dir_name}/${target_name}.jar"
     direct_deps_only = true
     use_interface_jars = false
+    requires_android = true
     deps = [
       ":webrtc_unity_java",
       "../modules/audio_device:audio_device_java",

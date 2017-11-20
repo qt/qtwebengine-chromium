@@ -43,6 +43,7 @@
 #include "sandbox/win/src/sandbox_nt_util.h"
 #include "sandbox/win/src/sandbox_policy_base.h"
 #include "sandbox/win/src/win_utils.h"
+#include "services/service_manager/sandbox/sandbox_type.h"
 
 #if !defined(NACL_WIN64)
 #include "ui/gfx/win/direct_write.h" // nogncheck: unused #ifdef NACL_WIN64
@@ -739,7 +740,7 @@ sandbox::ResultCode StartSandboxedProcess(
 
   ProcessDebugFlags(cmd_line);
 
-  if (IsUnsandboxedSandboxType(delegate->GetSandboxType()) ||
+  if (service_manager::IsUnsandboxedSandboxType(delegate->GetSandboxType()) ||
       browser_command_line.HasSwitch(switches::kNoSandbox) ||
       cmd_line->HasSwitch(switches::kNoSandbox)) {
     base::LaunchOptions options;
@@ -803,7 +804,9 @@ sandbox::ResultCode StartSandboxedProcess(
 
 #if !defined(NACL_WIN64)
   if (type_str == switches::kRendererProcess ||
-      type_str == switches::kPpapiPluginProcess) {
+      type_str == switches::kPpapiPluginProcess ||
+      delegate->GetSandboxType() ==
+          service_manager::SANDBOX_TYPE_PDF_COMPOSITOR) {
     AddDirectory(base::DIR_WINDOWS_FONTS, NULL, true,
                  sandbox::TargetPolicy::FILES_ALLOW_READONLY, policy.get());
   }

@@ -16,7 +16,7 @@
 #endif
 
 #if defined(OS_FUCHSIA)
-#include "base/fuchsia/scoped_mx_handle.h"
+#include "base/fuchsia/scoped_zx_handle.h"
 #endif
 
 #if defined(OS_MACOSX)
@@ -45,6 +45,8 @@ extern const Feature kMacAllowBackgroundingProcesses;
 // end up pointing to the wrong process.
 class BASE_EXPORT Process {
  public:
+  // On Windows, this takes ownership of |handle|. On POSIX, this does not take
+  // ownership of |handle|.
   explicit Process(ProcessHandle handle = kNullProcessHandle);
 
   Process(Process&& other);
@@ -102,6 +104,16 @@ class BASE_EXPORT Process {
   // Close the process handle. This will not terminate the process.
   void Close();
 
+  // Returns true if this process is still running. This is only safe on Windows
+  // (and maybe Fuchsia?), because the ProcessHandle will keep the zombie
+  // process information available until itself has been released. But on Posix,
+  // the OS may reuse the ProcessId.
+#if defined(OS_WIN)
+  bool IsRunning() const {
+    return !WaitForExitWithTimeout(base::TimeDelta(), nullptr);
+  }
+#endif
+
   // Terminates the process with extreme prejudice. The given |exit_code| will
   // be the exit code of the process. If |wait| is true, this method will wait
   // for up to one minute for the process to actually terminate.
@@ -143,9 +155,6 @@ class BASE_EXPORT Process {
   // Returns true if the priority was changed, false otherwise. If
   // |port_provider| is null, this is a no-op and it returns false.
   bool SetProcessBackgrounded(PortProvider* port_provider, bool value);
-
-  // Returns |true| if helper processes should participate in AppNap.
-  static bool IsAppNapEnabled();
 #else
   // A process is backgrounded when it's priority is lower than normal.
   // Return true if this process is backgrounded, false otherwise.
@@ -172,7 +181,7 @@ class BASE_EXPORT Process {
 #if defined(OS_WIN)
   win::ScopedHandle process_;
 #elif defined(OS_FUCHSIA)
-  ScopedMxHandle process_;
+  ScopedZxHandle process_;
 #else
   ProcessHandle process_;
 #endif

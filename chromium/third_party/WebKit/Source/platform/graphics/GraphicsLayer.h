@@ -57,11 +57,12 @@
 namespace blink {
 
 class CompositorFilterOperations;
+class CompositedLayerRasterInvalidator;
 class Image;
 class JSONObject;
 class LinkHighlight;
 class PaintController;
-struct RasterInvalidationTracking;
+class RasterInvalidationTracking;
 class ScrollableArea;
 class WebLayer;
 
@@ -182,8 +183,10 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   void SetBlendMode(WebBlendMode);
   void SetIsRootForIsolatedGroup(bool);
 
-  void SetShouldHitTest(bool);
-  bool GetShouldHitTestForTesting() { return should_hit_test_; }
+  void SetHitTestableWithoutDrawsContent(bool);
+  bool GetHitTestableWithoutDrawsContentForTesting() {
+    return hit_testable_without_draws_content_;
+  }
 
   void SetFilters(CompositorFilterOperations);
   void SetBackdropFilters(CompositorFilterOperations);
@@ -210,6 +213,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   // Layer contents
   void SetContentsToImage(
       Image*,
+      Image::ImageDecodingMode decode_mode,
       RespectImageOrientationEnum = kDoNotRespectImageOrientation);
   void SetContentsToPlatformLayer(WebLayer* layer) { SetContentsTo(layer); }
   bool HasContentsLayer() const { return contents_layer_; }
@@ -226,15 +230,10 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
 
   std::unique_ptr<JSONObject> LayerTreeAsJSON(LayerTreeFlags) const;
 
-  void SetTracksRasterInvalidations(bool);
-  bool IsTrackingOrCheckingRasterInvalidations() const {
-    return RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled() ||
-           is_tracking_raster_invalidations_;
-  }
-
+  void UpdateTrackingRasterInvalidations();
   void ResetTrackedRasterInvalidations();
   bool HasTrackedRasterInvalidations() const;
-  const RasterInvalidationTracking* GetRasterInvalidationTracking() const;
+  RasterInvalidationTracking* GetRasterInvalidationTracking() const;
   void TrackRasterInvalidation(const DisplayItemClient&,
                                const IntRect&,
                                PaintInvalidationReason);
@@ -261,7 +260,8 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   std::unique_ptr<base::trace_event::ConvertableToTraceFormat> TakeDebugInfo(
       cc::Layer*) override;
   void didUpdateMainThreadScrollingReasons() override;
-  void didChangeScrollbarsHidden(bool);
+  void didChangeScrollbarsHidden(bool) override;
+  void DidChangeLayerOpacity(float, float) override {}
 
   PaintController& GetPaintController() const;
 
@@ -270,8 +270,6 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
 
   void SetElementId(const CompositorElementId&);
   CompositorElementId GetElementId() const;
-
-  void SetCompositorMutableProperties(uint32_t);
 
   WebContentLayerClient& WebContentLayerClientForTesting() { return *this; }
 
@@ -284,12 +282,14 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   void SetScrollBoundaryBehavior(const WebScrollBoundaryBehavior&);
   void SetIsResizedByBrowserControls(bool);
 
+  void SetLayerState(PropertyTreeState&&, const IntPoint& layer_offset);
+
  protected:
   String DebugName(cc::Layer*) const;
   bool ShouldFlattenTransform() const { return should_flatten_transform_; }
 
   explicit GraphicsLayer(GraphicsLayerClient*);
-  // for testing
+
   friend class CompositedLayerMappingTest;
   friend class PaintControllerPaintTestBase;
 
@@ -332,11 +332,14 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   std::unique_ptr<JSONObject> LayerAsJSONInternal(
       LayerTreeFlags,
       RenderingContextMap&,
-      const FloatPoint& = FloatPoint()) const;
+      const FloatPoint& position) const;
   void AddTransformJSONProperties(JSONObject&, RenderingContextMap&) const;
+  void AddFlattenInheritedTransformJSON(JSONObject&) const;
   class LayersAsJSONArray;
 
   sk_sp<PaintRecord> CaptureRecord();
+
+  CompositedLayerRasterInvalidator& EnsureRasterInvalidator();
 
   GraphicsLayerClient* client_;
 
@@ -362,14 +365,12 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   bool draws_content_ : 1;
   bool contents_visible_ : 1;
   bool is_root_for_isolated_group_ : 1;
-  bool should_hit_test_ : 1;
+  bool hit_testable_without_draws_content_ : 1;
 
   bool has_scroll_parent_ : 1;
   bool has_clip_parent_ : 1;
 
   bool painted_ : 1;
-
-  bool is_tracking_raster_invalidations_ : 1;
 
   GraphicsLayerPaintingPhase painting_phase_;
 
@@ -403,6 +404,14 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   mutable std::unique_ptr<PaintController> paint_controller_;
 
   IntRect previous_interest_rect_;
+
+  struct LayerState {
+    PropertyTreeState state;
+    IntPoint offset;
+  };
+  std::unique_ptr<LayerState> layer_state_;
+
+  std::unique_ptr<CompositedLayerRasterInvalidator> raster_invalidator_;
 };
 
 // ObjectPaintInvalidatorWithContext::InvalidatePaintRectangleWithContext uses

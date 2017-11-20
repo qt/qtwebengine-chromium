@@ -8,23 +8,25 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/sdk/objc/Framework/Classes/VideoToolbox/objc_video_decoder_factory.h"
+#include "sdk/objc/Framework/Classes/VideoToolbox/objc_video_decoder_factory.h"
 
 #import "NSString+StdString.h"
 #import "RTCVideoCodec+Private.h"
+#import "RTCWrappedNativeVideoDecoder.h"
 #import "WebRTC/RTCVideoCodec.h"
 #import "WebRTC/RTCVideoCodecFactory.h"
 #import "WebRTC/RTCVideoCodecH264.h"
 #import "WebRTC/RTCVideoFrame.h"
 #import "WebRTC/RTCVideoFrameBuffer.h"
 
-#include "webrtc/api/video_codecs/video_decoder.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
-#include "webrtc/modules/video_coding/include/video_error_codes.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/sdk/objc/Framework/Classes/Video/objc_frame_buffer.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/video_decoder.h"
+#include "modules/include/module_common_types.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "modules/video_coding/include/video_error_codes.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/timeutils.h"
+#include "sdk/objc/Framework/Classes/Video/objc_frame_buffer.h"
 
 namespace webrtc {
 
@@ -103,17 +105,44 @@ id<RTCVideoDecoderFactory> ObjCVideoDecoderFactory::wrapped_decoder_factory() co
   return decoder_factory_;
 }
 
-VideoDecoder *ObjCVideoDecoderFactory::CreateVideoDecoder(VideoCodecType type) {
-  const char *codec_name = CodecTypeToPayloadString(type);
-
-  NSString *codecName = [NSString stringWithUTF8String:codec_name];
+std::unique_ptr<VideoDecoder> ObjCVideoDecoderFactory::CreateVideoDecoder(
+    const SdpVideoFormat &format) {
+  NSString *codecName = [NSString stringWithUTF8String:format.name.c_str()];
   for (RTCVideoCodecInfo *codecInfo in decoder_factory_.supportedCodecs) {
     if ([codecName isEqualToString:codecInfo.name]) {
       id<RTCVideoDecoder> decoder = [decoder_factory_ createDecoder:codecInfo];
-      return new ObjCVideoDecoder(decoder);
+
+      if ([decoder isKindOfClass:[RTCWrappedNativeVideoDecoder class]]) {
+        return [(RTCWrappedNativeVideoDecoder *)decoder releaseWrappedDecoder];
+      } else {
+        return std::unique_ptr<ObjCVideoDecoder>(new ObjCVideoDecoder(decoder));
+      }
     }
   }
 
+  return nullptr;
+}
+
+std::vector<SdpVideoFormat> ObjCVideoDecoderFactory::GetSupportedFormats() const {
+  std::vector<SdpVideoFormat> supported_formats;
+  for (RTCVideoCodecInfo *supportedCodec in decoder_factory_.supportedCodecs) {
+    SdpVideoFormat format = [supportedCodec nativeSdpVideoFormat];
+    supported_formats.push_back(format);
+  }
+
+  return supported_formats;
+}
+
+// WebRtcVideoDecoderFactory
+
+VideoDecoder *ObjCVideoDecoderFactory::CreateVideoDecoderWithParams(
+    const cricket::VideoCodec &codec, cricket::VideoDecoderParams params) {
+  return CreateVideoDecoder(SdpVideoFormat(codec.name, codec.params)).release();
+}
+
+VideoDecoder *ObjCVideoDecoderFactory::CreateVideoDecoder(VideoCodecType type) {
+  // This is implemented to avoid hiding an overloaded virtual function
+  RTC_NOTREACHED();
   return nullptr;
 }
 

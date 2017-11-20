@@ -21,7 +21,7 @@ class CXFA_TextPiece {
   CXFA_TextPiece();
   ~CXFA_TextPiece();
 
-  CFX_WideString szText;
+  WideString szText;
   std::vector<int32_t> Widths;
   int32_t iChars;
   int32_t iHorScale;
@@ -33,8 +33,8 @@ class CXFA_TextPiece {
   FX_ARGB dwColor;
   float fFontSize;
   CFX_RectF rtPiece;
-  CFX_RetainPtr<CFGAS_GEFont> pFont;
-  CFX_RetainPtr<CXFA_LinkUserData> pLinkData;
+  RetainPtr<CFGAS_GEFont> pFont;
+  RetainPtr<CXFA_LinkUserData> pLinkData;
 };
 
 #endif  // XFA_FXFA_CXFA_TEXTPIECE_H_

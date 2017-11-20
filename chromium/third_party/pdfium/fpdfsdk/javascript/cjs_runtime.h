@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "core/fxcrt/cfx_observable.h"
+#include "core/fxcrt/observable.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/javascript/JS_EventHandler.h"
 #include "fpdfsdk/javascript/ijs_runtime.h"
@@ -23,9 +23,9 @@ class CJS_EventContext;
 
 class CJS_Runtime : public IJS_Runtime,
                     public CFXJS_Engine,
-                    public CFX_Observable<CJS_Runtime> {
+                    public Observable<CJS_Runtime> {
  public:
-  using FieldEvent = std::pair<CFX_WideString, JS_EVENT_T>;
+  using FieldEvent = std::pair<WideString, JS_EVENT_T>;
 
   static CJS_Runtime* CurrentRuntimeFromIsolate(v8::Isolate* pIsolate);
 
@@ -36,8 +36,7 @@ class CJS_Runtime : public IJS_Runtime,
   IJS_EventContext* NewEventContext() override;
   void ReleaseEventContext(IJS_EventContext* pContext) override;
   CPDFSDK_FormFillEnvironment* GetFormFillEnv() const override;
-  int ExecuteScript(const CFX_WideString& script,
-                    CFX_WideString* info) override;
+  int ExecuteScript(const WideString& script, WideString* info) override;
 
   CJS_EventContext* GetCurrentEventContext() const;
 
@@ -50,9 +49,9 @@ class CJS_Runtime : public IJS_Runtime,
   bool IsBlocking() const { return m_bBlocking; }
 
 #ifdef PDF_ENABLE_XFA
-  bool GetValueByName(const CFX_ByteStringC& utf8Name,
+  bool GetValueByName(const ByteStringView& utf8Name,
                       CFXJSE_Value* pValue) override;
-  bool SetValueByName(const CFX_ByteStringC& utf8Name,
+  bool SetValueByName(const ByteStringView& utf8Name,
                       CFXJSE_Value* pValue) override;
 #endif  // PDF_ENABLE_XFA
 

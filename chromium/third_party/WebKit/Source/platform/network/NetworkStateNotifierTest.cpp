@@ -130,16 +130,16 @@ class StateObserver : public NetworkStateNotifier::NetworkStateObserver {
 class NetworkStateNotifierTest : public ::testing::Test {
  public:
   NetworkStateNotifierTest()
-      : task_runner_(AdoptRef(new FakeWebTaskRunner())),
-        task_runner2_(AdoptRef(new FakeWebTaskRunner())) {
+      : task_runner_(WTF::AdoptRef(new FakeWebTaskRunner())),
+        task_runner2_(WTF::AdoptRef(new FakeWebTaskRunner())) {
     // Initialize connection, so that future calls to setWebConnection issue
     // notifications.
     notifier_.SetWebConnection(kWebConnectionTypeUnknown, 0.0);
     notifier_.SetOnLine(false);
   }
 
-  WebTaskRunner* GetTaskRunner() { return task_runner_.Get(); }
-  WebTaskRunner* GetTaskRunner2() { return task_runner2_.Get(); }
+  WebTaskRunner* GetTaskRunner() { return task_runner_.get(); }
+  WebTaskRunner* GetTaskRunner2() { return task_runner2_.get(); }
 
   void TearDown() override {
     RunPendingTasks();
@@ -179,17 +179,17 @@ class NetworkStateNotifierTest : public ::testing::Test {
   void AddObserverOnNotification(StateObserver* observer,
                                  StateObserver* observer_to_add) {
     observer->SetNotificationCallback(
-        Bind(&NetworkStateNotifier::AddConnectionObserver,
-             WTF::Unretained(&notifier_), WTF::Unretained(observer_to_add),
-             WTF::Unretained(GetTaskRunner())));
+        WTF::Bind(&NetworkStateNotifier::AddConnectionObserver,
+                  WTF::Unretained(&notifier_), WTF::Unretained(observer_to_add),
+                  WTF::Unretained(GetTaskRunner())));
   }
 
   void RemoveObserverOnNotification(StateObserver* observer,
                                     StateObserver* observer_to_remove) {
-    observer->SetNotificationCallback(
-        Bind(&NetworkStateNotifier::RemoveConnectionObserver,
-             WTF::Unretained(&notifier_), WTF::Unretained(observer_to_remove),
-             WTF::Unretained(GetTaskRunner())));
+    observer->SetNotificationCallback(WTF::Bind(
+        &NetworkStateNotifier::RemoveConnectionObserver,
+        WTF::Unretained(&notifier_), WTF::Unretained(observer_to_remove),
+        WTF::Unretained(GetTaskRunner())));
   }
 
   bool VerifyObservations(

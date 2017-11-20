@@ -4,11 +4,29 @@
   <message name="IDS_MD_EXTENSIONS_DEVELOPER_MODE" desc="The text displayed next to the checkbox to toggle developer mode in the extensions page.">
     Developer mode
   </message>
+  <message name="IDS_MD_EXTENSIONS_DISABLED_UPDATE_REQUIRED_BY_POLICY" desc="Text shown in the extensions settings for extensions disabled due to minimum version requirement from enterprise policy">
+    This extension is outdated and disabled by enterprise policy. It might become enabled automatically when a newer version is available.
+  </message>
+  <message name="IDS_MD_EXTENSIONS_MENU_BUTTON_LABEL" desc="Tooltips for the sidebar menu button.">
+    Main menu
+  </message>
   <message name="IDS_MD_EXTENSIONS_ERROR_PAGE_HEADING" desc="The heading of the page displaying an extension's errors.">
     Errors
   </message>
+  <message name="IDS_MD_EXTENSIONS_ERROR_ANONYMOUS_FUNCTION" desc="The label indicating that an error was caused within an anonymous function in the code.">
+    anonymous function
+  </message>
+  <message name="IDS_MD_EXTENSIONS_ERROR_LAUNCH_DEVTOOLS" desc="The text for the button to view an extension error in the developer tools.">
+    View in Developer Tools
+  </message>
+  <message name="IDS_MD_EXTENSIONS_ERROR_STACK_TRACE" desc="The label for the stack trace of an extension's error.">
+    Stack Trace
+  </message>
   <message name="IDS_MD_EXTENSIONS_ITEM_ERRORS" desc="The label of the button to bring the user to the page showing an extension's errors.">
     Errors
+  </message>
+  <message name="IDS_MD_EXTENSIONS_GUEST_MODE" desc="The text displayed when viewing the page under guest-mode to indicate that guests cannot use this feature.">
+    Extension management is not available to Guest users. Please sign in to manage extensions.
   </message>
   <message name="IDS_MD_EXTENSIONS_ITEM_ID" desc="The text for the label next to the extension id.">
     &lt;span&gt;ID:&lt;/span&gt;<ph name="EXTENSION_ID">$1<ex>cfhdojbkjhnklbpkdaibdccddilifddb</ex></ph>
@@ -166,4 +184,37 @@
   <message name="IDS_MD_EXTENSIONS_TYPE_A_SHORTCUT" desc="The prompt to the user to enter a keyboard shortcut in order to assign it to an extension.">
     Type a shortcut
   </message>
+<if expr="chromeos">
+  <!-- Extensions Kiosk apps -->
+  <message name="IDS_MD_EXTENSIONS_MANAGE_KIOSK_APP" desc="Label of the button to bring up kiosk management overlay on chrome extensions page.">
+    Manage kiosk applications
+  </message>
+  <message name="IDS_MD_EXTENSIONS_KIOSK_ADD_APP" desc="Label above the application id text input in the kiosk settings overlay.">
+    Add kiosk application
+  </message>
+  <message name="IDS_MD_EXTENSIONS_KIOSK_ADD_APP_HINT" desc="Placeholder hint in  the application id text input in the kiosk settings overlay.">
+    Enter application ID or webstore URL
+  </message>
+  <message name="IDS_MD_EXTENSIONS_KIOSK_ENABLE_AUTO_LAUNCH" desc="Text for a button that enables an application to auto launch on startup in the kiosk settings overlay.">
+    Set to auto-launch
+  </message>
+  <message name="IDS_MD_EXTENSIONS_KIOSK_DISABLE_AUTO_LAUNCH" desc="Text for a button that disables an application to auto launch on startup in the kiosk settings overlay.">
+    Disable auto-launch
+  </message>
+  <message name="IDS_MD_EXTENSIONS_KIOSK_AUTO_LAUNCH" desc="Text shows besides an application that is set to auto launch on start up in the kiosk settings overlay.">
+    (auto-launched)
+  </message>
+  <message name="IDS_MD_EXTENSIONS_KIOSK_INVALID_APP" desc="Text shows besides an application that is not valid in the kiosk settings overlay.">
+    Invalid application
+  </message>
+  <message name="IDS_MD_EXTENSIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_LABEL" desc="Label text for a checkbox to disable kiosk application launch bail out shortcut.">
+    Permanently keep this device in kiosk mode
+  </message>
+  <message name="IDS_MD_EXTENSIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_WARNING_TITLE" desc="Bold text of the warning dialog for disabling kiosk application launch bail out shortcut.">
+    Are you sure you want to permanently keep this device in kiosk mode?
+  </message>
+  <message name="IDS_MD_EXTENSIONS_KIOSK_DISABLE_BAILOUT_SHORTCUT_WARNING_BODY" desc="Warning text of disabling kiosk application launch bail out shortcut.">
+    The only way to undo this is to re-install <ph name="IDS_SHORT_PRODUCT_OS_NAME">$1<ex>Chrome OS</ex></ph>
+  </message>
+</if>
 </grit-part>

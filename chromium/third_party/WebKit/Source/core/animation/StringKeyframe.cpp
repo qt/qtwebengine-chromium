@@ -7,10 +7,8 @@
 #include "core/StylePropertyShorthand.h"
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSCustomPropertyDeclaration.h"
-#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/svg/SVGElement.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
@@ -97,7 +95,7 @@ PropertyHandleSet StringKeyframe::Properties() const {
 }
 
 RefPtr<Keyframe> StringKeyframe::Clone() const {
-  return AdoptRef(new StringKeyframe(*this));
+  return WTF::AdoptRef(new StringKeyframe(*this));
 }
 
 RefPtr<Keyframe::PropertySpecificKeyframe>

@@ -7,6 +7,12 @@
   <structure name="IDR_CR_ELEMENTS_CR_ACTION_MENU_JS"
              file="../../webui/resources/cr_elements/cr_action_menu/cr_action_menu.js"
              type="chrome_html" />
+  <structure name="IDR_CR_ELEMENTS_CR_CONTAINER_SHADOW_BEHAVIOR_HTML"
+             file="../../webui/resources/cr_elements/cr_container_shadow_behavior.html"
+             type="chrome_html" />
+  <structure name="IDR_CR_ELEMENTS_CR_CONTAINER_SHADOW_BEHAVIOR_JS"
+             file="../../webui/resources/cr_elements/cr_container_shadow_behavior.js"
+             type="chrome_html" />
   <structure name="IDR_CR_ELEMENTS_CR_SCROLLABLE_BEHAVIOR_HTML"
              file="../../webui/resources/cr_elements/cr_scrollable_behavior.html"
              type="chrome_html" />
@@ -71,6 +77,12 @@
                type="chrome_html" />
     <structure name="IDR_CR_ELEMENTS_CHROMEOS_CR_PICTURE_CR_PICTURE_TYPES_JS"
                file="../../webui/resources/cr_elements/chromeos/cr_picture/cr_picture_types.js"
+               type="chrome_html" />
+    <structure name="IDR_CR_ELEMENTS_CHROMEOS_CR_PICTURE_CR_PNG_BEHAVIOR_HTML"
+               file="../../webui/resources/cr_elements/chromeos/cr_picture/cr_png_behavior.html"
+               type="chrome_html" />
+    <structure name="IDR_CR_ELEMENTS_CHROMEOS_CR_PICTURE_CR_PNG_BEHAVIOR_JS"
+               file="../../webui/resources/cr_elements/chromeos/cr_picture/cr_png_behavior.js"
                type="chrome_html" />
     <structure name="IDR_CR_ELEMENTS_CHROMEOS_CR_NETWORK_ICON_HTML"
                file="../../webui/resources/cr_elements/chromeos/network/cr_network_icon.html"
@@ -151,6 +163,12 @@
   <structure name="IDR_CR_ELEMENTS_CR_POLICY_PREF_INDICATOR_HTML"
              file="../../webui/resources/cr_elements/policy/cr_policy_pref_indicator.html"
              type="chrome_html" />
+  <structure name="IDR_CR_ELEMENTS_CR_TOGGLE_HTML"
+             file="../../webui/resources/cr_elements/cr_toggle/cr_toggle.html"
+             type="chrome_html" />
+  <structure name="IDR_CR_ELEMENTS_CR_TOGGLE_JS"
+             file="../../webui/resources/cr_elements/cr_toggle/cr_toggle.js"
+             type="chrome_html" />
   <structure name="IDR_CR_ELEMENTS_CR_TOOLTIP_ICON_HTML"
              file="../../webui/resources/cr_elements/policy/cr_tooltip_icon.html"
              type="chrome_html" />
@@ -191,6 +209,9 @@
   <structure name="IDR_CR_ELEMENTS_PAPER_CHECKBOX_STYLE_CSS_HTML"
              file="../../webui/resources/cr_elements/paper_checkbox_style_css.html"
              type="chrome_html" />
+  <structure name="IDR_CR_ELEMENTS_PAPER_INPUT_STYLE_CSS_HTML"
+             file="../../webui/resources/cr_elements/paper_input_style_css.html"
+             type="chrome_html" />
   <structure name="IDR_CR_ELEMENTS_PAPER_TOGGLE_STYLE_CSS_HTML"
              file="../../webui/resources/cr_elements/paper_toggle_style_css.html"
              type="chrome_html" />
@@ -214,5 +235,11 @@
              type="chrome_html" />
   <structure name="IDR_CR_ELEMENTS_CR_TOOLBAR_SELECTION_OVERLAY_JS"
              file="../../webui/resources/cr_elements/cr_toolbar/cr_toolbar_selection_overlay.js"
+             type="chrome_html" />
+  <structure name="IDR_CR_ELEMENTS_CR_TOAST_HTML"
+             file="../../webui/resources/cr_elements/cr_toast/cr_toast.html"
+             type="chrome_html" />
+  <structure name="IDR_CR_ELEMENTS_CR_TOAST_JS"
+             file="../../webui/resources/cr_elements/cr_toast/cr_toast.js"
              type="chrome_html" />
 </grit-part>

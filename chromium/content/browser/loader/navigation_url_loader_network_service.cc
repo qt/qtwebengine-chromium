@@ -39,9 +39,11 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_loader_factory.mojom.h"
 #include "net/base/load_flags.h"
+#include "net/http/http_content_disposition.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request_context.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "third_party/WebKit/common/mime_util/mime_util.h"
 
 namespace content {
 
@@ -50,6 +52,9 @@ namespace {
 // Request ID for browser initiated requests. We start at -2 on the same lines
 // as ResourceDispatcherHostImpl.
 int g_next_request_id = -2;
+
+// Max number of http redirects to follow.  Same number as the net library.
+const int kMaxRedirects = 20;
 
 WebContents* GetWebContentsFromFrameTreeNodeID(int frame_tree_node_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -106,15 +111,18 @@ const net::NetworkTrafficAnnotationTag kTrafficAnnotation =
 // of URLLoaderRequestHandler's and successively calls MaybeCreateLoader
 // on each until the request is successfully handled. The same sequence
 // may be performed multiple times when redirects happen.
+// TODO(michaeln): Expose this class and add more unittests.
 class NavigationURLLoaderNetworkService::URLLoaderRequestController
     : public mojom::URLLoaderClient {
  public:
   URLLoaderRequestController(
+      std::vector<std::unique_ptr<URLLoaderRequestHandler>> initial_handlers,
       std::unique_ptr<ResourceRequest> resource_request,
       ResourceContext* resource_context,
       scoped_refptr<URLLoaderFactoryGetter> default_url_loader_factory_getter,
       const base::WeakPtr<NavigationURLLoaderNetworkService>& owner)
-      : resource_request_(std::move(resource_request)),
+      : handlers_(std::move(initial_handlers)),
+        resource_request_(std::move(resource_request)),
         resource_context_(resource_context),
         default_url_loader_factory_getter_(default_url_loader_factory_getter),
         owner_(owner),
@@ -132,6 +140,8 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
       const base::Callback<WebContents*(void)>& web_contents_getter,
       std::unique_ptr<service_manager::Connector> connector) {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
+    DCHECK(!started_);
+    started_ = true;
     web_contents_getter_ = web_contents_getter;
     const ResourceType resource_type = request_info->is_main_frame
                                            ? RESOURCE_TYPE_MAIN_FRAME
@@ -155,7 +165,6 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
       return;
     }
 
-    DCHECK(handlers_.empty());
     if (service_worker_navigation_handle_core) {
       RequestContextFrameType frame_type =
           request_info->is_main_frame ? REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL
@@ -187,8 +196,15 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
     Restart();
   }
 
-  // This could be called multiple times.
+  // This could be called multiple times to follow a chain of redirects.
   void Restart() {
+    // Clear |url_loader_| if it's not the default one (network). This allows
+    // the restarted request to use a new loader, instead of, e.g., reusing the
+    // AppCache or service worker loader. For an optimization, we keep and reuse
+    // the default url loader if the all |handlers_| doesn't handle the
+    // redirected request.
+    if (!default_loader_used_)
+      url_loader_.reset();
     handler_index_ = 0;
     received_response_ = false;
     MaybeStartLoader(StartLoaderCallback());
@@ -196,6 +212,7 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
 
   void MaybeStartLoader(StartLoaderCallback start_loader_callback) {
     if (start_loader_callback) {
+      default_loader_used_ = false;
       url_loader_ = ThrottlingURLLoader::CreateLoaderAndStart(
           std::move(start_loader_callback),
           GetContentClient()->browser()->CreateURLLoaderThrottles(
@@ -221,6 +238,12 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
       return;
     }
 
+    if (url_loader_) {
+      DCHECK(!redirect_info_.new_url.is_empty());
+      url_loader_->FollowRedirect();
+      return;
+    }
+
     mojom::URLLoaderFactory* factory = nullptr;
     DCHECK_EQ(handlers_.size(), handler_index_);
     if (resource_request_->url.SchemeIs(url::kBlobScheme)) {
@@ -241,10 +264,89 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
   void FollowRedirect() {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     DCHECK(url_loader_);
-
     DCHECK(!response_url_loader_);
+    DCHECK(!redirect_info_.new_url.is_empty());
 
-    url_loader_->FollowRedirect();
+    // Update resource_request_ and call Restart to give our handlers_ a chance
+    // at handling the new location. If no handler wants to take over, we'll
+    // use the existing url_loader to follow the redirect, see MaybeStartLoader.
+    // TODO(michaeln): This is still WIP and is based on URLRequest::Redirect,
+    // there likely remains more to be done.
+    // a. For subframe navigations, the Origin header may need to be modified
+    //    differently?
+    // b. How should redirect_info_.referred_token_binding_host be handled?
+    // c. Maybe refactor for code reuse.
+
+    if (redirect_info_.new_method != resource_request_->method) {
+      resource_request_->method = redirect_info_.new_method;
+
+      // TODO(davidben): This logic still needs to be replicated at the
+      // consumers.
+      //
+      // The Origin header is sent on anything that is not a GET or HEAD, which
+      // suggests all redirects that change methods (since they always change to
+      // GET) should drop the Origin header.
+      // See https://fetch.spec.whatwg.org/#origin-header
+      // TODO(jww): This is Origin header removal is probably layering
+      // violation and should be refactored into //content.
+      // See https://crbug.com/471397.
+      // See also: https://crbug.com/760487
+      resource_request_->headers.RemoveHeader(net::HttpRequestHeaders::kOrigin);
+
+      // The inclusion of a multipart Content-Type header can cause problems
+      // with some servers:
+      // http://code.google.com/p/chromium/issues/detail?id=843
+      resource_request_->headers.RemoveHeader(
+          net::HttpRequestHeaders::kContentLength);
+      resource_request_->headers.RemoveHeader(
+          net::HttpRequestHeaders::kContentType);
+
+      // The request body is no longer applicable.
+      resource_request_->request_body = nullptr;
+      blob_handles_.clear();
+    }
+
+    // Cross-origin redirects should not result in an Origin header value that
+    // is equal to the original request's Origin header. This is necessary to
+    // a reflection of POST requests to bypass CSRF protections. If the header
+    // was prevent not set to "null", a POST request from origin A to a
+    // malicious origin M could be redirected by M back to A.
+    //
+    // This behavior is specified in step 10 of the HTTP-redirect fetch
+    // algorithm[1] (which supercedes the behavior outlined in RFC 6454[2].
+    //
+    // [1]: https://fetch.spec.whatwg.org/#http-redirect-fetch
+    // [2]: https://tools.ietf.org/html/rfc6454#section-7
+    //
+    // TODO(jww): This is a layering violation and should be refactored
+    // somewhere up into //net's embedder. https://crbug.com/471397
+    if (!url::Origin(redirect_info_.new_url)
+             .IsSameOriginWith(url::Origin(resource_request_->url)) &&
+        resource_request_->headers.HasHeader(
+            net::HttpRequestHeaders::kOrigin)) {
+      resource_request_->headers.SetHeader(net::HttpRequestHeaders::kOrigin,
+                                           url::Origin().Serialize());
+    }
+
+    resource_request_->url = redirect_info_.new_url;
+    resource_request_->site_for_cookies = redirect_info_.new_site_for_cookies;
+    resource_request_->referrer = GURL(redirect_info_.new_referrer);
+    resource_request_->referrer_policy =
+        Referrer::NetReferrerPolicyToBlinkReferrerPolicy(
+            redirect_info_.new_referrer_policy);
+
+    Restart();
+  }
+
+  // Navigation is intercepted, transfer the |resource_request_|, |url_loader_|
+  // and the |completion_status_| to the new owner. The new owner is
+  // responsible for handling all the mojom::URLLoaderClient callbacks from now
+  // on.
+  void InterceptNavigation(
+      NavigationURLLoader::NavigationInterceptionCB callback) {
+    std::move(callback).Run(std::move(resource_request_),
+                            std::move(url_loader_),
+                            std::move(completion_status_));
   }
 
   // Ownership of the URLLoaderFactoryPtrInfo instance is transferred to the
@@ -283,6 +385,15 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
 
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          const ResourceResponseHead& head) override {
+    if (--redirect_limit_ == 0) {
+      OnComplete(ResourceRequestCompletionStatus(net::ERR_TOO_MANY_REDIRECTS));
+      return;
+    }
+
+    // Store the redirect_info for later use in FollowRedirect where we give
+    // our handlers_ a chance to intercept the request for the new location.
+    redirect_info_ = redirect_info;
+
     scoped_refptr<ResourceResponse> response(new ResourceResponse());
     response->head = head;
 
@@ -299,13 +410,10 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
   }
 
   void OnDataDownloaded(int64_t data_length, int64_t encoded_length) override {}
-
   void OnUploadProgress(int64_t current_position,
                         int64_t total_size,
                         OnUploadProgressCallback callback) override {}
-
   void OnReceiveCachedMetadata(const std::vector<uint8_t>& data) override {}
-
   void OnTransferSizeUpdated(int32_t transfer_size_diff) override {}
 
   void OnStartLoadingResponseBody(
@@ -326,6 +434,7 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
       if (MaybeCreateLoaderForResponse(ResourceResponseHead()))
         return;
     }
+    completion_status_ = completion_status;
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
         base::BindOnce(&NavigationURLLoaderNetworkService::OnComplete, owner_,
@@ -333,50 +442,35 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
   }
 
   // Returns true if a handler wants to handle the response, i.e. return a
-  // different response. For e.g. AppCache may have fallback content to be
-  // returned for a TLD.
+  // different response. For e.g. AppCache may have fallback content.
   bool MaybeCreateLoaderForResponse(const ResourceResponseHead& response) {
     if (!default_loader_used_)
       return false;
 
-    // URLLoaderClient request pointer for response loaders, i.e loaders created
-    // for handing responses received from the network URLLoader.
-    mojom::URLLoaderClientRequest response_client_request;
-
-    for (size_t index = 0; index < handlers_.size(); ++index) {
-      if (handlers_[index]->MaybeCreateLoaderForResponse(
-              response, &response_url_loader_, &response_client_request)) {
-        OnResponseHandlerFound(std::move(response_client_request));
+    for (auto& handler : handlers_) {
+      mojom::URLLoaderClientRequest response_client_request;
+      if (handler->MaybeCreateLoaderForResponse(response, &response_url_loader_,
+                                                &response_client_request)) {
+        response_loader_binding_.Bind(std::move(response_client_request));
+        default_loader_used_ = false;
+        url_loader_.reset();
         return true;
       }
     }
     return false;
   }
 
-  // Called if we find a handler who delivers different content for the URL.
-  void OnResponseHandlerFound(
-      mojom::URLLoaderClientRequest response_client_request) {
-    response_loader_binding_.Bind(std::move(response_client_request));
-    // We reset this flag as we expect a new response from the handler.
-    default_loader_used_ = false;
-    // Disconnect from the network loader to stop receiving further data
-    // or notifications for the URL.
-    url_loader_->DisconnectClient();
-  }
-
   std::vector<std::unique_ptr<URLLoaderRequestHandler>> handlers_;
   size_t handler_index_ = 0;
 
   std::unique_ptr<ResourceRequest> resource_request_;
+  net::RedirectInfo redirect_info_;
+  int redirect_limit_ = kMaxRedirects;
   ResourceContext* resource_context_;
   base::Callback<WebContents*()> web_contents_getter_;
-
   scoped_refptr<URLLoaderFactoryGetter> default_url_loader_factory_getter_;
-
   mojom::URLLoaderFactoryPtr webui_factory_ptr_;
-
   std::unique_ptr<ThrottlingURLLoader> url_loader_;
-
   BlobHandles blob_handles_;
 
   // Currently used by the AppCache loader to pass its factory to the
@@ -402,6 +496,14 @@ class NavigationURLLoaderNetworkService::URLLoaderRequestController
   // URLLoaderClient::OnReceivedResponse() is called.
   bool received_response_ = false;
 
+  bool started_ = false;
+
+  // The completion status if it has been received. This is needed to handle
+  // the case that the response is intercepted by download, and OnComplete() is
+  // already called while we are transferring the |url_loader_| and response
+  // body to download code.
+  base::Optional<ResourceRequestCompletionStatus> completion_status_;
+
   DISALLOW_COPY_AND_ASSIGN(URLLoaderRequestController);
 };
 
@@ -412,8 +514,11 @@ NavigationURLLoaderNetworkService::NavigationURLLoaderNetworkService(
     std::unique_ptr<NavigationUIData> navigation_ui_data,
     ServiceWorkerNavigationHandle* service_worker_navigation_handle,
     AppCacheNavigationHandle* appcache_handle,
-    NavigationURLLoaderDelegate* delegate)
-    : delegate_(delegate), weak_factory_(this) {
+    NavigationURLLoaderDelegate* delegate,
+    std::vector<std::unique_ptr<URLLoaderRequestHandler>> initial_handlers)
+    : delegate_(delegate),
+      allow_download_(request_info->common_params.allow_download),
+      weak_factory_(this) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   TRACE_EVENT_ASYNC_BEGIN_WITH_TIMESTAMP1(
@@ -436,7 +541,7 @@ NavigationURLLoaderNetworkService::NavigationURLLoaderNetworkService(
   new_request->request_initiator = request_info->begin_params.initiator_origin;
   new_request->referrer = request_info->common_params.referrer.url;
   new_request->referrer_policy = request_info->common_params.referrer.policy;
-  new_request->headers = request_info->begin_params.headers;
+  new_request->headers.AddHeadersFromString(request_info->begin_params.headers);
 
   int load_flags = request_info->begin_params.load_flags;
   load_flags |= net::LOAD_VERIFY_EV_CERT;
@@ -451,6 +556,11 @@ NavigationURLLoaderNetworkService::NavigationURLLoaderNetworkService(
 
   new_request->request_body = request_info->common_params.post_data.get();
   new_request->report_raw_headers = request_info->report_raw_headers;
+  new_request->allow_download = allow_download_;
+
+  new_request->fetch_request_mode = FETCH_REQUEST_MODE_NAVIGATE;
+  new_request->fetch_credentials_mode = FETCH_CREDENTIALS_MODE_INCLUDE;
+  new_request->fetch_redirect_mode = FetchRedirectMode::MANUAL_MODE;
 
   int frame_tree_node_id = request_info->frame_tree_node_id;
 
@@ -468,7 +578,7 @@ NavigationURLLoaderNetworkService::NavigationURLLoaderNetworkService(
 
   DCHECK(!request_controller_);
   request_controller_ = base::MakeUnique<URLLoaderRequestController>(
-      std::move(new_request), resource_context,
+      std::move(initial_handlers), std::move(new_request), resource_context,
       static_cast<StoragePartitionImpl*>(storage_partition)
           ->url_loader_factory_getter(),
       weak_factory_.GetWeakPtr());
@@ -503,6 +613,15 @@ void NavigationURLLoaderNetworkService::FollowRedirect() {
 
 void NavigationURLLoaderNetworkService::ProceedWithResponse() {}
 
+void NavigationURLLoaderNetworkService::InterceptNavigation(
+    NavigationURLLoader::NavigationInterceptionCB callback) {
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::BindOnce(&URLLoaderRequestController::InterceptNavigation,
+                     base::Unretained(request_controller_.get()),
+                     std::move(callback)));
+}
+
 void NavigationURLLoaderNetworkService::OnReceiveResponse(
     scoped_refptr<ResourceResponse> response,
     const base::Optional<net::SSLInfo>& ssl_info,
@@ -520,8 +639,6 @@ void NavigationURLLoaderNetworkService::OnReceiveRedirect(
     const net::RedirectInfo& redirect_info,
     scoped_refptr<ResourceResponse> response) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  // TODO(kinuko): Perform the necessary check and call
-  // URLLoaderRequestController::Restart with the new URL??
   delegate_->OnRequestRedirected(redirect_info, std::move(response));
 }
 
@@ -539,7 +656,7 @@ void NavigationURLLoaderNetworkService::OnStartLoadingResponseBody(
   delegate_->OnResponseStarted(
       response_, nullptr, std::move(body), ssl_status_,
       std::unique_ptr<NavigationData>(), GlobalRequestID(-1, g_next_request_id),
-      false /* is_download? */, false /* is_stream */,
+      IsDownload(), false /* is_stream */,
       request_controller_->GetSubresourceURLLoaderFactory());
 }
 
@@ -559,6 +676,34 @@ void NavigationURLLoaderNetworkService::OnComplete(
   delegate_->OnRequestFailed(completion_status.exists_in_cache,
                              completion_status.error_code, ssl_info_,
                              should_ssl_errors_be_fatal);
+}
+
+bool NavigationURLLoaderNetworkService::IsDownload() const {
+  DCHECK(response_);
+
+  if (!allow_download_)
+    return false;
+
+  if (response_->head.headers) {
+    std::string disposition;
+    if (response_->head.headers->GetNormalizedHeader("content-disposition",
+                                                     &disposition) &&
+        !disposition.empty() &&
+        net::HttpContentDisposition(disposition, std::string())
+            .is_attachment()) {
+      return true;
+    }
+    // TODO(qinmin): Check whether this is special-case user script that needs
+    // to be downloaded.
+  }
+
+  if (blink::IsSupportedMimeType(response_->head.mime_type))
+    return false;
+
+  // TODO(qinmin): Check whether there is a plugin handler.
+
+  return (!response_->head.headers ||
+          response_->head.headers->response_code() / 100 == 2);
 }
 
 }  // namespace content

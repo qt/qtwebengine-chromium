@@ -100,14 +100,17 @@ private int mSuperNiftyDrawingProperty;
 
 ### Android Studio
 *   Build and install the desired target
-
+*   Open Android Studio ([instructions](android_studio.md))
 *   Click the "Attach debugger to Android process" (see
 [here](https://developer.android.com/studio/debug/index.html) for more)
 
 ## Waiting for Java Debugger on Early Startup
 
-*   To debug early startup, pass `--wait-for-java-debugger` as a command line
-    flag.
+*   To debug early startup, pass `--wait-for-java-debugger` to the wrapper
+    scripts (works for both apk wrappers as well as test wrappers).
+*   To debug a renderer process: `--args="--renderer-wait-for-java-debugger"`
+*   To debug the GPU process:
+    `adb shell am set-debug-app -w org.chromium.chrome:privileged_process0`
 
 ## Debugging C/C++
 

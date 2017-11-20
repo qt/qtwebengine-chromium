@@ -64,6 +64,10 @@ protodb::DownloadClient ProtoConversions::DownloadClientToProto(
       return protodb::DownloadClient::TEST_3;
     case DownloadClient::OFFLINE_PAGE_PREFETCH:
       return protodb::DownloadClient::OFFLINE_PAGE_PREFETCH;
+    case DownloadClient::BACKGROUND_FETCH:
+      return protodb::DownloadClient::BACKGROUND_FETCH;
+    case DownloadClient::DEBUGGING:
+      return protodb::DownloadClient::DEBUGGING;
     case DownloadClient::BOUNDARY:
       return protodb::DownloadClient::BOUNDARY;
   }
@@ -85,6 +89,10 @@ DownloadClient ProtoConversions::DownloadClientFromProto(
       return DownloadClient::TEST_3;
     case protodb::DownloadClient::OFFLINE_PAGE_PREFETCH:
       return DownloadClient::OFFLINE_PAGE_PREFETCH;
+    case protodb::DownloadClient::BACKGROUND_FETCH:
+      return DownloadClient::BACKGROUND_FETCH;
+    case protodb::DownloadClient::DEBUGGING:
+      return DownloadClient::DEBUGGING;
     case protodb::DownloadClient::BOUNDARY:
       return DownloadClient::BOUNDARY;
   }
@@ -265,6 +273,7 @@ Entry ProtoConversions::EntryFromProto(const protodb::Entry& proto) {
   entry.last_cleanup_check_time =
       base::Time::FromInternalValue(proto.last_cleanup_check_time());
   entry.attempt_count = proto.attempt_count();
+  entry.resumption_count = proto.resumption_count();
   entry.cleanup_attempt_count = proto.cleanup_attempt_count();
   entry.traffic_annotation =
       net::MutableNetworkTrafficAnnotationTag({proto.traffic_annotation()});
@@ -288,6 +297,7 @@ protodb::Entry ProtoConversions::EntryToProto(const Entry& entry) {
   proto.set_last_cleanup_check_time(
       entry.last_cleanup_check_time.ToInternalValue());
   proto.set_attempt_count(entry.attempt_count);
+  proto.set_resumption_count(entry.resumption_count);
   proto.set_cleanup_attempt_count(entry.cleanup_attempt_count);
   proto.set_traffic_annotation(entry.traffic_annotation.unique_id_hash_code);
   proto.set_bytes_downloaded(entry.bytes_downloaded);

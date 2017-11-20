@@ -4,34 +4,27 @@
 
 #include "core/css/parser/CSSPropertyParser.h"
 
-#include <memory>
 #include "core/StylePropertyShorthand.h"
 #include "core/css/CSSFontFaceSrcValue.h"
-#include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSInheritedValue.h"
 #include "core/css/CSSInitialValue.h"
 #include "core/css/CSSPendingSubstitutionValue.h"
-#include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSUnicodeRangeValue.h"
 #include "core/css/CSSUnsetValue.h"
 #include "core/css/CSSVariableReferenceValue.h"
 #include "core/css/HashTools.h"
-#include "core/css/parser/CSSParserFastPaths.h"
-#include "core/css/parser/CSSParserIdioms.h"
 #include "core/css/parser/CSSParserLocalContext.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 #include "core/css/parser/CSSVariableParser.h"
 #include "core/css/properties/CSSPropertyAPI.h"
-#include "core/css/properties/CSSPropertyAlignmentUtils.h"
-#include "core/css/properties/CSSPropertyBackgroundUtils.h"
 #include "core/css/properties/CSSPropertyFontUtils.h"
-#include "core/frame/UseCounter.h"
-#include "core/layout/LayoutTheme.h"
-#include "platform/wtf/text/StringBuilder.h"
+#include "platform/runtime_enabled_features.h"
 
 namespace blink {
 
 using namespace CSSPropertyParserHelpers;
+
+class CSSIdentifierValue;
 
 CSSPropertyParser::CSSPropertyParser(
     const CSSParserTokenRange& range,
@@ -39,20 +32,6 @@ CSSPropertyParser::CSSPropertyParser(
     HeapVector<CSSProperty, 256>* parsed_properties)
     : range_(range), context_(context), parsed_properties_(parsed_properties) {
   range_.ConsumeWhitespace();
-}
-
-// AddProperty takes implicit as an enum, below we're using a bool because
-// AddParsedProperty will be removed after we finish implemenation of property
-// APIs.
-void CSSPropertyParser::AddParsedProperty(CSSPropertyID resolved_property,
-                                          CSSPropertyID current_shorthand,
-                                          const CSSValue& value,
-                                          bool important,
-                                          bool implicit) {
-  AddProperty(resolved_property, current_shorthand, value, important,
-              implicit ? IsImplicitProperty::kImplicit
-                       : IsImplicitProperty::kNotImplicit,
-              *parsed_properties_);
 }
 
 bool CSSPropertyParser::ParseValue(
@@ -93,8 +72,10 @@ const CSSValue* CSSPropertyParser::ParseSingleValue(
     CSSPropertyID property,
     const CSSParserTokenRange& range,
     const CSSParserContext* context) {
+  DCHECK(context);
   CSSPropertyParser parser(range, context, nullptr);
-  const CSSValue* value = parser.ParseSingleValue(property);
+  const CSSValue* value = ParseLonghandViaAPI(property, CSSPropertyInvalid,
+                                              *parser.context_, parser.range_);
   if (!value || !parser.range_.AtEnd())
     return nullptr;
   return value;
@@ -109,16 +90,23 @@ bool CSSPropertyParser::ParseValueStart(CSSPropertyID unresolved_property,
   CSSPropertyID property_id = resolveCSSPropertyID(unresolved_property);
   bool is_shorthand = isShorthandProperty(property_id);
 
+  DCHECK(context_);
   if (is_shorthand) {
     // Variable references will fail to parse here and will fall out to the
     // variable ref parser below.
-    if (ParseShorthand(unresolved_property, important))
+    if (CSSPropertyAPI::Get(property_id)
+            .ParseShorthand(
+                important, range_, *context_,
+                CSSParserLocalContext(isPropertyAlias(unresolved_property),
+                                      property_id),
+                *parsed_properties_))
       return true;
   } else {
-    if (const CSSValue* parsed_value = ParseSingleValue(unresolved_property)) {
+    if (const CSSValue* parsed_value = ParseLonghandViaAPI(
+            unresolved_property, CSSPropertyInvalid, *context_, range_)) {
       if (range_.AtEnd()) {
-        AddParsedProperty(property_id, CSSPropertyInvalid, *parsed_value,
-                          important);
+        AddProperty(property_id, CSSPropertyInvalid, *parsed_value, important,
+                    IsImplicitProperty::kNotImplicit, *parsed_properties_);
         return true;
       }
     }
@@ -136,7 +124,8 @@ bool CSSPropertyParser::ParseValueStart(CSSPropertyID unresolved_property,
       AddExpandedPropertyForValue(property_id, pending_value, important,
                                   *parsed_properties_);
     } else {
-      AddParsedProperty(property_id, CSSPropertyInvalid, *variable, important);
+      AddProperty(property_id, CSSPropertyInvalid, *variable, important,
+                  IsImplicitProperty::kNotImplicit, *parsed_properties_);
     }
     return true;
   }
@@ -169,7 +158,7 @@ static CSSPropertyID UnresolvedCSSPropertyID(const CharacterType* property_name,
   if (!hash_table_entry)
     return CSSPropertyInvalid;
   CSSPropertyID property = static_cast<CSSPropertyID>(hash_table_entry->id);
-  if (!CSSPropertyMetadata::IsEnabledProperty(property))
+  if (!CSSPropertyAPI::Get(resolveCSSPropertyID(property)).IsEnabled())
     return CSSPropertyInvalid;
   return property;
 }
@@ -239,7 +228,8 @@ bool CSSPropertyParser::ConsumeCSSWideKeyword(CSSPropertyID unresolved_property,
   if (!shorthand.length()) {
     if (!CSSPropertyAPI::Get(property).IsProperty())
       return false;
-    AddParsedProperty(property, CSSPropertyInvalid, *value, important);
+    AddProperty(property, CSSPropertyInvalid, *value, important,
+                IsImplicitProperty::kNotImplicit, *parsed_properties_);
   } else {
     AddExpandedPropertyForValue(property, *value, important,
                                 *parsed_properties_);
@@ -270,16 +260,6 @@ static CSSValue* ConsumeFontVariantList(CSSParserTokenRange& range) {
     return values;
 
   return nullptr;
-}
-
-const CSSValue* CSSPropertyParser::ParseSingleValue(
-    CSSPropertyID unresolved_property,
-    CSSPropertyID current_shorthand) {
-  DCHECK(context_);
-  // FIXME(meade): This function can be deleted now that everything is handled
-  // in the CSSPropertyAPI classes.
-  return CSSPropertyParserHelpers::ParseLonghandViaAPI(
-      unresolved_property, current_shorthand, *context_, range_);
 }
 
 static CSSIdentifierValue* ConsumeFontDisplay(CSSParserTokenRange& range) {
@@ -410,7 +390,8 @@ bool CSSPropertyParser::ParseFontFaceDescriptor(CSSPropertyID prop_id) {
   if (!parsed_value || !range_.AtEnd())
     return false;
 
-  AddParsedProperty(prop_id, CSSPropertyInvalid, *parsed_value, false);
+  AddProperty(prop_id, CSSPropertyInvalid, *parsed_value, false,
+              IsImplicitProperty::kNotImplicit, *parsed_properties_);
   return true;
 }
 
@@ -470,10 +451,12 @@ bool CSSPropertyParser::ParseViewportDescriptor(CSSPropertyID prop_id,
       }
       if (!max_width || !range_.AtEnd())
         return false;
-      AddParsedProperty(CSSPropertyMinWidth, CSSPropertyInvalid, *min_width,
-                        important);
-      AddParsedProperty(CSSPropertyMaxWidth, CSSPropertyInvalid, *max_width,
-                        important);
+      AddProperty(CSSPropertyMinWidth, CSSPropertyInvalid, *min_width,
+                  important, IsImplicitProperty::kNotImplicit,
+                  *parsed_properties_);
+      AddProperty(CSSPropertyMaxWidth, CSSPropertyInvalid, *max_width,
+                  important, IsImplicitProperty::kNotImplicit,
+                  *parsed_properties_);
       return true;
     }
     case CSSPropertyHeight: {
@@ -488,10 +471,12 @@ bool CSSPropertyParser::ParseViewportDescriptor(CSSPropertyID prop_id,
       }
       if (!max_height || !range_.AtEnd())
         return false;
-      AddParsedProperty(CSSPropertyMinHeight, CSSPropertyInvalid, *min_height,
-                        important);
-      AddParsedProperty(CSSPropertyMaxHeight, CSSPropertyInvalid, *max_height,
-                        important);
+      AddProperty(CSSPropertyMinHeight, CSSPropertyInvalid, *min_height,
+                  important, IsImplicitProperty::kNotImplicit,
+                  *parsed_properties_);
+      AddProperty(CSSPropertyMaxHeight, CSSPropertyInvalid, *max_height,
+                  important, IsImplicitProperty::kNotImplicit,
+                  *parsed_properties_);
       return true;
     }
     case CSSPropertyMinWidth:
@@ -507,22 +492,13 @@ bool CSSPropertyParser::ParseViewportDescriptor(CSSPropertyID prop_id,
           ConsumeSingleViewportDescriptor(range_, prop_id, context_->Mode());
       if (!parsed_value || !range_.AtEnd())
         return false;
-      AddParsedProperty(prop_id, CSSPropertyInvalid, *parsed_value, important);
+      AddProperty(prop_id, CSSPropertyInvalid, *parsed_value, important,
+                  IsImplicitProperty::kNotImplicit, *parsed_properties_);
       return true;
     }
     default:
       return false;
   }
-}
-
-bool CSSPropertyParser::ParseShorthand(CSSPropertyID unresolved_property,
-                                       bool important) {
-  DCHECK(context_);
-  CSSPropertyID property = resolveCSSPropertyID(unresolved_property);
-  return CSSPropertyAPI::Get(property).ParseShorthand(
-      property, important, range_, *context_,
-      CSSParserLocalContext(isPropertyAlias(unresolved_property), property),
-      *parsed_properties_);
 }
 
 }  // namespace blink

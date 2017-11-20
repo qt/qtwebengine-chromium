@@ -41,6 +41,7 @@
 #include "services/device/public/interfaces/constants.mojom.h"
 #include "services/device/public/interfaces/wake_lock_provider.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/text/bytes_formatting.h"
 #include "ui/chromeos/devicetype_utils.h"
 
@@ -455,12 +456,16 @@ void EncryptionMigrationScreenHandler::HandleSkipMigration() {
 
 void EncryptionMigrationScreenHandler::HandleRequestRestartOnLowStorage() {
   RecordUserChoice(UserChoice::USER_CHOICE_RESTART_ON_LOW_STORAGE);
-  DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
+  DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart(
+      power_manager::REQUEST_RESTART_OTHER,
+      "login encryption migration low storage");
 }
 
 void EncryptionMigrationScreenHandler::HandleRequestRestartOnFailure() {
   RecordUserChoice(UserChoice::USER_CHOICE_RESTART_ON_FAILURE);
-  DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
+  DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart(
+      power_manager::REQUEST_RESTART_OTHER,
+      "login encryption migration failure");
 }
 
 void EncryptionMigrationScreenHandler::HandleOpenFeedbackDialog() {
@@ -719,7 +724,9 @@ void EncryptionMigrationScreenHandler::OnMigrationProgress(
           std::move(continue_login_callback_).Run(user_context_);
       } else {
         // Restart immediately after successful full migration.
-        DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
+        DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart(
+            power_manager::REQUEST_RESTART_OTHER,
+            "login encryption migration success");
       }
       break;
     case cryptohome::DIRCRYPTO_MIGRATION_FAILED:

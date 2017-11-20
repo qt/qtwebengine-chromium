@@ -30,11 +30,10 @@ CPDF_RenderContext::CPDF_RenderContext(CPDF_Document* pDoc,
 
 CPDF_RenderContext::~CPDF_RenderContext() {}
 
-void CPDF_RenderContext::GetBackground(
-    const CFX_RetainPtr<CFX_DIBitmap>& pBuffer,
-    const CPDF_PageObject* pObj,
-    const CPDF_RenderOptions* pOptions,
-    CFX_Matrix* pFinalMatrix) {
+void CPDF_RenderContext::GetBackground(const RetainPtr<CFX_DIBitmap>& pBuffer,
+                                       const CPDF_PageObject* pObj,
+                                       const CPDF_RenderOptions* pOptions,
+                                       CFX_Matrix* pFinalMatrix) {
   CFX_DefaultRenderDevice device;
   device.Attach(pBuffer, false, nullptr, false);
 
@@ -79,9 +78,11 @@ void CPDF_RenderContext::Render(CFX_RenderDevice* pDevice,
                         nullptr);
       status.RenderObjectList(layer.m_pObjectHolder.Get(), &layer.m_Matrix);
     }
-    if (status.m_Options.m_Flags & RENDER_LIMITEDIMAGECACHE)
-      m_pPageCache->CacheOptimization(status.m_Options.m_dwLimitCacheSize);
-    if (status.m_bStopped)
+    if (status.GetRenderOptions()->HasFlag(RENDER_LIMITEDIMAGECACHE)) {
+      m_pPageCache->CacheOptimization(
+          status.GetRenderOptions()->GetCacheSizeLimit());
+    }
+    if (status.IsStopped())
       break;
   }
 }

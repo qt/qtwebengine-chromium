@@ -54,6 +54,12 @@ struct CORE_EXPORT NGInlineItemResult {
   LayoutUnit borders_paddings_block_start;
   LayoutUnit borders_paddings_block_end;
 
+  // The amount of expansion for justification.
+  // Not used in NG paint, only to copy to InlineTextBox::SetExpansion().
+  // TODO(layout-dev): crbug.com/714962 Remove once fragment painting is enabled
+  // by default.
+  int expansion = 0;
+
   // Create a box when the box is empty, for open/close tags.
   bool needs_box_when_empty = false;
 
@@ -123,21 +129,41 @@ class CORE_EXPORT NGLineInfo {
 
   LayoutUnit TextIndent() const { return text_indent_; }
 
-  LayoutUnit LineLeft() const { return line_left_; }
+  NGLogicalOffset LineOffset() const { return line_offset_; }
   LayoutUnit AvailableWidth() const { return available_width_; }
-  LayoutUnit LineTop() const { return line_top_; }
-  void SetLineLocation(LayoutUnit line_left,
-                       LayoutUnit available_width,
-                       LayoutUnit line_top);
+  void SetLineOffset(NGLogicalOffset line_offset, LayoutUnit available_width);
+
+  // Start/end text offset of this line.
+  unsigned StartOffset() const { return start_offset_; }
+  unsigned EndOffset() const { return end_offset_; }
+  void SetStartOffset(unsigned offset) { start_offset_ = offset; }
+  void SetEndOffset(unsigned offset) { end_offset_ = offset; }
+
+  // The base direction of this line for the bidi algorithm.
+  TextDirection BaseDirection() const { return base_direction_; }
+  void SetBaseDirection(TextDirection direction) {
+    base_direction_ = direction;
+  }
+
+  // ShapeResult to append to the line end. Used by 'text-overflow: ellipsis'.
+  RefPtr<ShapeResult>& LineEndShapeResult() { return line_end_shape_result_; }
+  RefPtr<const ComputedStyle>& LineEndStyle() { return line_end_style_; }
+  void SetLineEndShapeResult(RefPtr<ShapeResult>, RefPtr<const ComputedStyle>);
 
  private:
   const ComputedStyle* line_style_ = nullptr;
   NGInlineItemResults results_;
+  RefPtr<ShapeResult> line_end_shape_result_;
+  RefPtr<const ComputedStyle> line_end_style_;
 
-  LayoutUnit line_left_;
+  NGLogicalOffset line_offset_;
   LayoutUnit available_width_;
-  LayoutUnit line_top_;
   LayoutUnit text_indent_;
+
+  unsigned start_offset_;
+  unsigned end_offset_;
+
+  TextDirection base_direction_ = TextDirection::kLtr;
 
   bool use_first_line_style_ = false;
   bool is_last_line_ = false;

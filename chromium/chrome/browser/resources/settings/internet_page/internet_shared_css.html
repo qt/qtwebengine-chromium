@@ -4,6 +4,10 @@
 <dom-module id="internet-shared">
   <template>
     <style include="settings-shared">
+      :root {
+        --network-control-width: 250px;
+      }
+
       cr-network-icon {
         -webkit-padding-end: var(--settings-box-row-padding);
       }
@@ -20,6 +24,7 @@
         };
         margin-bottom: 0;
         margin-top: -9px;
+        width: var(--network-control-width);
       }
 
       .indented {

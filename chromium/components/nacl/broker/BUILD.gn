@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/features.gni")
 import("//build/config/compiler/compiler.gni")
+import("//components/nacl/features.gni")
 import("//services/service_manager/public/service_manifest.gni")
 
 # This file builds nacl64.exe, which is a 64-bit x86 Windows executable
@@ -106,7 +106,6 @@ if (current_cpu == "x86") {
       ":nacl64_content",
       ":nacl64_crash_reporter_client",
       "//base",
-      "//breakpad:breakpad_handler",
       "//build/win:default_exe_manifest",
       "//chrome:nacl64_exe_version",
       "//chrome/install_static:install_static_util",
@@ -116,6 +115,7 @@ if (current_cpu == "x86") {
       "//content/public/common:static_switches",
       "//ppapi/proxy:ipc",
       "//sandbox",
+      "//third_party/breakpad:breakpad_handler",
     ]
   }
 
@@ -145,6 +145,7 @@ if (current_cpu == "x86") {
       "//base",
       "//content/public/common:static_switches",
       "//sandbox",
+      "//services/service_manager/sandbox",
     ]
   }
 

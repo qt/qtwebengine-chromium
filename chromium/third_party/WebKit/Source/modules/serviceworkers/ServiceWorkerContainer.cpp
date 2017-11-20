@@ -52,7 +52,6 @@
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
 #include "modules/serviceworkers/ServiceWorkerError.h"
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/V8ThrowException.h"
 #include "platform/weborigin/SchemeRegistry.h"
@@ -449,12 +448,12 @@ void ServiceWorkerContainer::SetController(
 void ServiceWorkerContainer::DispatchMessageEvent(
     std::unique_ptr<WebServiceWorker::Handle> handle,
     const WebString& message,
-    WebMessagePortChannelArray web_channels) {
+    WebVector<MessagePortChannel> channels) {
   if (!GetExecutionContext() || !GetExecutionContext()->ExecutingWindow())
     return;
 
-  MessagePortArray* ports = MessagePort::ToMessagePortArray(
-      GetExecutionContext(), std::move(web_channels));
+  MessagePortArray* ports =
+      MessagePort::EntanglePorts(*GetExecutionContext(), std::move(channels));
   RefPtr<SerializedScriptValue> value = SerializedScriptValue::Create(message);
   ServiceWorker* source = ServiceWorker::From(
       GetExecutionContext(), WTF::WrapUnique(handle.release()));

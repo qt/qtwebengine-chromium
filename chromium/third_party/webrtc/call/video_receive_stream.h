@@ -8,20 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_CALL_VIDEO_RECEIVE_STREAM_H_
-#define WEBRTC_CALL_VIDEO_RECEIVE_STREAM_H_
+#ifndef CALL_VIDEO_RECEIVE_STREAM_H_
+#define CALL_VIDEO_RECEIVE_STREAM_H_
 
 #include <limits>
 #include <map>
 #include <string>
 #include <vector>
 
-#include "webrtc/api/call/transport.h"
-#include "webrtc/common_types.h"
-#include "webrtc/common_video/include/frame_callback.h"
-#include "webrtc/config.h"
-#include "webrtc/media/base/videosinkinterface.h"
-#include "webrtc/rtc_base/platform_file.h"
+#include "api/call/transport.h"
+#include "api/rtpparameters.h"
+#include "call/rtp_config.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "common_video/include/frame_callback.h"
+#include "media/base/videosinkinterface.h"
+#include "rtc_base/platform_file.h"
 
 namespace webrtc {
 
@@ -165,8 +166,9 @@ class VideoReceiveStream {
       // See NackConfig for description.
       NackConfig nack;
 
-      // See UlpfecConfig for description.
-      UlpfecConfig ulpfec;
+      // Payload types for ULPFEC and RED, respectively.
+      int ulpfec_payload_type = -1;
+      int red_payload_type = -1;
 
       // SSRC for retransmissions.
       uint32_t rtx_ssrc = 0;
@@ -251,4 +253,4 @@ class VideoReceiveStream {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_CALL_VIDEO_RECEIVE_STREAM_H_
+#endif  // CALL_VIDEO_RECEIVE_STREAM_H_

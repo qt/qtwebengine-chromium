@@ -31,15 +31,15 @@
 #include "public/web/WebAXObject.h"
 
 #include "SkMatrix44.h"
-#include "core/HTMLNames.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
-#include "core/dom/Document.h"
 #include "core/dom/Node.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/editing/markers/DocumentMarker.h"
 #include "core/exported/WebViewImpl.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/VisualViewport.h"
 #include "core/frame/WebLocalFrameImpl.h"
+#include "core/html_names.h"
 #include "core/input/KeyboardEventManager.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/api/LayoutAPIShim.h"
@@ -965,25 +965,25 @@ WebString WebAXObject::ValueDescription() const {
   return private_->ValueDescription();
 }
 
-float WebAXObject::ValueForRange() const {
+bool WebAXObject::ValueForRange(float* out_value) const {
   if (IsDetached())
-    return 0.0;
+    return false;
 
-  return private_->ValueForRange();
+  return private_->ValueForRange(out_value);
 }
 
-float WebAXObject::MaxValueForRange() const {
+bool WebAXObject::MaxValueForRange(float* out_value) const {
   if (IsDetached())
-    return 0.0;
+    return false;
 
-  return private_->MaxValueForRange();
+  return private_->MaxValueForRange(out_value);
 }
 
-float WebAXObject::MinValueForRange() const {
+bool WebAXObject::MinValueForRange(float* out_value) const {
   if (IsDetached())
-    return 0.0;
+    return false;
 
-  return private_->MinValueForRange();
+  return private_->MinValueForRange(out_value);
 }
 
 WebNode WebAXObject::GetNode() const {

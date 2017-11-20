@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/ifx_systemfontinfo.h"
@@ -21,7 +21,7 @@ class CFX_FolderFontInfo : public IFX_SystemFontInfo {
   CFX_FolderFontInfo();
   ~CFX_FolderFontInfo() override;
 
-  void AddPath(const CFX_ByteString& path);
+  void AddPath(const ByteString& path);
 
   // IFX_SytemFontInfo:
   bool EnumFontList(CFX_FontMapper* pMapper) override;
@@ -43,17 +43,34 @@ class CFX_FolderFontInfo : public IFX_SystemFontInfo {
                        uint8_t* buffer,
                        uint32_t size) override;
   void DeleteFont(void* hFont) override;
-  bool GetFaceName(void* hFont, CFX_ByteString* name) override;
+  bool GetFaceName(void* hFont, ByteString* name) override;
   bool GetFontCharset(void* hFont, int* charset) override;
 
  protected:
-  void ScanPath(const CFX_ByteString& path);
-  void ScanFile(const CFX_ByteString& path);
-  void ReportFace(const CFX_ByteString& path,
+  class FontFaceInfo {
+   public:
+    FontFaceInfo(ByteString filePath,
+                 ByteString faceName,
+                 ByteString fontTables,
+                 uint32_t fontOffset,
+                 uint32_t fileSize);
+
+    const ByteString m_FilePath;
+    const ByteString m_FaceName;
+    const ByteString m_FontTables;
+    const uint32_t m_FontOffset;
+    const uint32_t m_FileSize;
+    uint32_t m_Styles;
+    uint32_t m_Charsets;
+  };
+
+  void ScanPath(const ByteString& path);
+  void ScanFile(const ByteString& path);
+  void ReportFace(const ByteString& path,
                   FILE* pFile,
                   uint32_t filesize,
                   uint32_t offset);
-  void* GetSubstFont(const CFX_ByteString& face);
+  void* GetSubstFont(const ByteString& face);
   void* FindFont(int weight,
                  bool bItalic,
                  int charset,
@@ -61,9 +78,9 @@ class CFX_FolderFontInfo : public IFX_SystemFontInfo {
                  const char* family,
                  bool bMatchName);
 
-  std::map<CFX_ByteString, std::unique_ptr<CFX_FontFaceInfo>> m_FontList;
-  std::vector<CFX_ByteString> m_PathList;
-  CFX_UnownedPtr<CFX_FontMapper> m_pMapper;
+  std::map<ByteString, std::unique_ptr<FontFaceInfo>> m_FontList;
+  std::vector<ByteString> m_PathList;
+  UnownedPtr<CFX_FontMapper> m_pMapper;
 };
 
 #endif  // CORE_FXGE_CFX_FOLDERFONTINFO_H_

@@ -26,7 +26,9 @@
 #include "core/editing/SelectionModifier.h"
 
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/InlineBoxPosition.h"
 #include "core/editing/RenderedPosition.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/layout/line/RootInlineBox.h"

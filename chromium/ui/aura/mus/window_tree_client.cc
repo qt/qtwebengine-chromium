@@ -12,6 +12,8 @@
 
 #include "base/auto_reset.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
@@ -61,13 +63,6 @@
 #include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/size.h"
-
-#if defined(HiWord)
-#undef HiWord
-#endif
-#if defined(LoWord)
-#undef LoWord
-#endif
 
 namespace aura {
 namespace {
@@ -144,12 +139,6 @@ void SetWindowTypeFromProperties(
   SetWindowType(window, window_type);
 }
 
-// Helper function to get the device_scale_factor() of the display::Display
-// nearest to |window|.
-float ScaleFactorForDisplay(Window* window) {
-  return ui::GetScaleFactorForNativeView(window);
-}
-
 // Create and return a MouseEvent or TouchEvent from |event| if |event| is a
 // PointerEvent, otherwise return the copy of |event|.
 std::unique_ptr<ui::Event> MapEvent(const ui::Event& event) {
@@ -167,7 +156,10 @@ std::unique_ptr<ui::Event> MapEvent(const ui::Event& event) {
 // the EventSink.
 void DispatchEventToTarget(ui::Event* event, WindowMus* target) {
   ui::Event::DispatcherApi dispatch_helper(event);
-  dispatch_helper.set_target(target->GetWindow());
+  // Ignore the target for key events. They need to go to the focused window,
+  // which may have changed by the time we process the event.
+  if (!event->IsKeyEvent())
+    dispatch_helper.set_target(target->GetWindow());
   GetWindowTreeHostMus(target)->SendEventToSink(event);
 }
 
@@ -260,6 +252,18 @@ WindowTreeClient::~WindowTreeClient() {
   // is necessary because of shutdown ordering (WindowTreeClient is destroyed
   // before windows).
   in_shutdown_ = true;
+
+  // Windows of type WindowMusType::OTHER were implicitly created from the
+  // server and may not have been destroyed. Delete them to ensure we don't
+  // leak.
+  WindowTracker windows_to_destroy;
+  for (auto& pair : windows_) {
+    if (pair.second->window_mus_type() == WindowMusType::OTHER)
+      windows_to_destroy.Add(pair.second->GetWindow());
+  }
+  while (!windows_to_destroy.windows().empty())
+    delete windows_to_destroy.Pop();
+
   IdToWindowMap windows;
   std::swap(windows, windows_);
   for (auto& pair : windows)
@@ -341,6 +345,13 @@ void WindowTreeClient::Embed(
 
   tree_->Embed(WindowMus::Get(window)->server_id(), std::move(client), flags,
                callback);
+}
+
+void WindowTreeClient::ScheduleEmbed(
+    ui::mojom::WindowTreeClientPtr client,
+    base::OnceCallback<void(const base::UnguessableToken&)> callback) {
+  tree_->ScheduleEmbed(std::move(client),
+                       base::AdaptCallbackForRepeating(std::move(callback)));
 }
 
 void WindowTreeClient::AttachCompositorFrameSink(
@@ -566,13 +577,19 @@ WindowMus* WindowTreeClient::NewWindowFromWindowData(
   std::unique_ptr<WindowPortMus> window_port_mus(
       CreateWindowPortMus(window_data, WindowMusType::OTHER));
   WindowPortMus* window_port_mus_ptr = window_port_mus.get();
+  // Children of windows created from another client need to be restacked by
+  // the client that created them. To do otherwise means two clients will
+  // attempt to restack the same windows, leading to raciness (and most likely
+  // be rejected by the server anyway).
+  window_port_mus_ptr->should_restack_transient_children_ = false;
   Window* window = new Window(nullptr, std::move(window_port_mus));
   WindowMus* window_mus = window_port_mus_ptr;
   SetWindowTypeFromProperties(window, window_data.properties);
   window->Init(ui::LAYER_NOT_DRAWN);
   SetLocalPropertiesFromServerProperties(window_mus, window_data);
   window_mus->SetBoundsFromServer(
-      gfx::ConvertRectToDIP(ScaleFactorForDisplay(window), window_data.bounds),
+      gfx::ConvertRectToDIP(window_mus->GetDeviceScaleFactor(),
+                            window_data.bounds),
       base::nullopt);
   if (parent)
     parent->AddChildFromServer(window_port_mus_ptr);
@@ -706,7 +723,7 @@ void WindowTreeClient::SetWindowBoundsFromServer(
   }
 
   window->SetBoundsFromServer(
-      gfx::ConvertRectToDIP(ScaleFactorForDisplay(window->GetWindow()),
+      gfx::ConvertRectToDIP(window->GetDeviceScaleFactor(),
                             revert_bounds_in_pixels),
       local_surface_id);
 }
@@ -880,7 +897,7 @@ void WindowTreeClient::OnWindowMusBoundsChanged(WindowMus* window,
     return;
   }
 
-  float device_scale_factor = ScaleFactorForDisplay(window->GetWindow());
+  float device_scale_factor = window->GetDeviceScaleFactor();
   ScheduleInFlightBoundsChange(
       window, gfx::ConvertRectToPixel(device_scale_factor, old_bounds),
       gfx::ConvertRectToPixel(device_scale_factor, new_bounds));
@@ -914,6 +931,7 @@ void WindowTreeClient::OnWindowMusRemoveChild(WindowMus* parent,
 void WindowTreeClient::OnWindowMusMoveChild(WindowMus* parent,
                                             size_t current_index,
                                             size_t dest_index) {
+  DCHECK_NE(current_index, dest_index);
   // TODO: add checks to ensure this can work, e.g. we own the parent.
   const uint32_t change_id = ScheduleInFlightChange(
       base::MakeUnique<CrashInFlightChange>(parent, ChangeType::REORDER));
@@ -986,6 +1004,21 @@ void WindowTreeClient::OnWindowMusPropertyChanged(
           window, transport_name, std::move(data_mus->transport_value)));
   tree_->SetWindowProperty(change_id, window->server_id(), transport_name,
                            transport_value_mojo);
+}
+
+void WindowTreeClient::OnWindowMusDeviceScaleFactorChanged(
+    WindowMus* window,
+    float old_scale_factor,
+    float new_scale_factor) {
+  // Root changes are handled else where.
+  if (IsRoot(window))
+    return;
+
+  const gfx::Rect old_bounds =
+      gfx::ConvertRectToPixel(old_scale_factor, window->GetWindow()->bounds());
+  const gfx::Rect new_bounds =
+      gfx::ConvertRectToPixel(new_scale_factor, window->GetWindow()->bounds());
+  ScheduleInFlightBoundsChange(window, old_bounds, new_bounds);
 }
 
 void WindowTreeClient::OnWmMoveLoopCompleted(uint32_t change_id,
@@ -1172,10 +1205,11 @@ void WindowTreeClient::OnTopLevelCreated(
     InFlightBoundsChange bounds_change(this, window, bounds, local_surface_id);
     InFlightChange* current_change =
         GetOldestInFlightChangeMatching(bounds_change);
-    if (current_change)
+    if (current_change) {
       current_change->SetRevertValueFrom(bounds_change);
-    else if (gfx::ConvertRectToPixel(ScaleFactorForDisplay(window->GetWindow()),
-                                     window->GetWindow()->bounds()) != bounds) {
+    } else if (gfx::ConvertRectToPixel(window->GetDeviceScaleFactor(),
+                                       window->GetWindow()->bounds()) !=
+               bounds) {
       SetWindowBoundsFromServer(window, bounds, local_surface_id);
     }
   }
@@ -1239,7 +1273,7 @@ void WindowTreeClient::OnClientAreaChanged(
   if (!window)
     return;
 
-  float device_scale_factor = ScaleFactorForDisplay(window->GetWindow());
+  float device_scale_factor = window->GetDeviceScaleFactor();
   std::vector<gfx::Rect> new_additional_client_areas_in_dip;
   for (const gfx::Rect& area : new_additional_client_areas) {
     new_additional_client_areas_in_dip.push_back(
@@ -1380,11 +1414,13 @@ void WindowTreeClient::OnWindowSharedPropertyChanged(
       name, transport_data.has_value() ? &transport_data.value() : nullptr);
 }
 
-void WindowTreeClient::OnWindowInputEvent(uint32_t event_id,
-                                          Id window_id,
-                                          int64_t display_id,
-                                          std::unique_ptr<ui::Event> event,
-                                          bool matches_pointer_watcher) {
+void WindowTreeClient::OnWindowInputEvent(
+    uint32_t event_id,
+    Id window_id,
+    int64_t display_id,
+    const gfx::PointF& event_location_in_screen_pixel_layout,
+    std::unique_ptr<ui::Event> event,
+    bool matches_pointer_watcher) {
   DCHECK(event);
 
   WindowMus* window = GetWindowByServerId(window_id);  // May be null.
@@ -1442,11 +1478,11 @@ void WindowTreeClient::OnWindowInputEvent(uint32_t event_id,
         static_cast<const base::NativeEvent&>(mapped_event.get()));
     // MouseEvent(NativeEvent) sets the root_location to location.
     mapped_event_with_native->set_root_location_f(
-        mapped_event->AsMouseEvent()->root_location_f());
+        event_location_in_screen_pixel_layout);
     // |mapped_event| is now the NativeEvent. It's expected the location of the
     // NativeEvent is the same as root_location.
     mapped_event->AsMouseEvent()->set_location_f(
-        mapped_event->AsMouseEvent()->root_location_f());
+        event_location_in_screen_pixel_layout);
     event_to_dispatch = mapped_event_with_native.get();
   }
 #endif
@@ -1682,7 +1718,7 @@ void WindowTreeClient::WmSetBounds(uint32_t change_id,
                                    const gfx::Rect& transit_bounds_in_pixels) {
   WindowMus* window = GetWindowByServerId(window_id);
   if (window) {
-    float device_scale_factor = ScaleFactorForDisplay(window->GetWindow());
+    float device_scale_factor = window->GetDeviceScaleFactor();
     DCHECK(window_manager_delegate_);
     gfx::Rect transit_bounds_in_dip =
         gfx::ConvertRectToDIP(device_scale_factor, transit_bounds_in_pixels);
@@ -1764,7 +1800,9 @@ void WindowTreeClient::WmClientJankinessChanged(ClientSpecificId client_id,
                                                 bool janky) {
   if (window_manager_delegate_) {
     auto it = embedded_windows_.find(client_id);
-    CHECK(it != embedded_windows_.end());
+    // TODO(sky): early return necessitated because of http://crbug.com/766890.
+    if (it == embedded_windows_.end())
+      return;
     window_manager_delegate_->OnWmClientJankinessChanged(
         embedded_windows_[client_id], janky);
   }
@@ -1981,9 +2019,10 @@ void WindowTreeClient::SetExtendedHitRegionForChildren(
   if (!window_manager_client_)
     return;
 
-  const float device_scale_factor = ScaleFactorForDisplay(window);
+  WindowMus* window_mus = WindowMus::Get(window);
+  const float device_scale_factor = window_mus->GetDeviceScaleFactor();
   window_manager_client_->SetExtendedHitRegionForChildren(
-      WindowMus::Get(window)->server_id(),
+      window_mus->server_id(),
       gfx::ConvertInsetsToPixel(device_scale_factor, mouse_insets),
       gfx::ConvertInsetsToPixel(device_scale_factor, touch_insets));
 }
@@ -2017,6 +2056,17 @@ void WindowTreeClient::SetGlobalOverrideCursor(
 void WindowTreeClient::SetCursorTouchVisible(bool enabled) {
   if (window_manager_client_)
     window_manager_client_->WmSetCursorTouchVisible(enabled);
+}
+
+void WindowTreeClient::InjectEvent(const ui::Event& event, int64_t display_id) {
+  if (!event_injector_)
+    connector()->BindInterface(ui::mojom::kServiceName, &event_injector_);
+  // Check event_injector_ so we don't crash if access to the interface was
+  // refused.
+  if (event_injector_) {
+    event_injector_->DispatchEvent(display_id, ui::Event::Clone(event),
+                                   base::Bind([](bool result) {}));
+  }
 }
 
 void WindowTreeClient::SetKeyEventsThatDontHideCursor(
@@ -2103,15 +2153,15 @@ void WindowTreeClient::OnWindowTreeHostClientAreaWillChange(
     const gfx::Insets& client_area,
     const std::vector<gfx::Rect>& additional_client_areas) {
   DCHECK(tree_);
-  Window* window = window_tree_host->window();
-  float device_scale_factor = ScaleFactorForDisplay(window);
+  WindowMus* window = WindowMus::Get(window_tree_host->window());
+  float device_scale_factor = window->GetDeviceScaleFactor();
   std::vector<gfx::Rect> additional_client_areas_in_pixel;
   for (const gfx::Rect& area : additional_client_areas) {
     additional_client_areas_in_pixel.push_back(
         gfx::ConvertRectToPixel(device_scale_factor, area));
   }
   tree_->SetClientArea(
-      WindowMus::Get(window)->server_id(),
+      window->server_id(),
       gfx::ConvertInsetsToPixel(device_scale_factor, client_area),
       additional_client_areas_in_pixel);
 }
@@ -2119,16 +2169,15 @@ void WindowTreeClient::OnWindowTreeHostClientAreaWillChange(
 void WindowTreeClient::OnWindowTreeHostHitTestMaskWillChange(
     WindowTreeHostMus* window_tree_host,
     const base::Optional<gfx::Rect>& mask_rect) {
-  Window* window = window_tree_host->window();
+  WindowMus* window = WindowMus::Get(window_tree_host->window());
 
   base::Optional<gfx::Rect> out_rect = base::nullopt;
   if (mask_rect) {
-    out_rect = gfx::ConvertRectToPixel(ScaleFactorForDisplay(window),
+    out_rect = gfx::ConvertRectToPixel(window->GetDeviceScaleFactor(),
                                        mask_rect.value());
   }
 
-  tree_->SetHitTestMask(WindowMus::Get(window_tree_host->window())->server_id(),
-                        out_rect);
+  tree_->SetHitTestMask(window->server_id(), out_rect);
 }
 
 void WindowTreeClient::OnWindowTreeHostSetOpacity(
@@ -2279,31 +2328,6 @@ void WindowTreeClient::OnTransientChildWindowRemoved(Window* parent,
       ScheduleInFlightChange(base::MakeUnique<CrashInFlightChange>(
           child_mus, ChangeType::REMOVE_TRANSIENT_WINDOW_FROM_PARENT));
   tree_->RemoveTransientWindowFromParent(change_id, child_mus->server_id());
-}
-
-void WindowTreeClient::OnWillRestackTransientChildAbove(
-    Window* parent,
-    Window* transient_child) {
-  DCHECK(parent->parent());
-  // See comments in OnTransientChildWindowAdded() for details on early return.
-  if (!IsWindowKnown(parent->parent()))
-    return;
-
-  DCHECK_EQ(parent->parent(), transient_child->parent());
-  WindowMus::Get(parent->parent())
-      ->PrepareForTransientRestack(WindowMus::Get(transient_child));
-}
-
-void WindowTreeClient::OnDidRestackTransientChildAbove(
-    Window* parent,
-    Window* transient_child) {
-  DCHECK(parent->parent());
-  // See comments in OnTransientChildWindowAdded() for details on early return.
-  if (!IsWindowKnown(parent->parent()))
-    return;
-  DCHECK_EQ(parent->parent(), transient_child->parent());
-  WindowMus::Get(parent->parent())
-      ->OnTransientRestackDone(WindowMus::Get(transient_child));
 }
 
 uint32_t WindowTreeClient::CreateChangeIdForDrag(WindowMus* window) {

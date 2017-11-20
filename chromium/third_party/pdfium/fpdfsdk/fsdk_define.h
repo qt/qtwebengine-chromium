@@ -28,16 +28,17 @@ class CPDF_PageRenderContext;
 class CPDF_PathObject;
 class CPDF_Stream;
 class IFSDK_PAUSE_Adapter;
+class FX_PATHPOINT;
 
 // Layering prevents fxcrt from knowing about FPDF_FILEACCESS, so this can't
 // be a static method of IFX_SeekableReadStream.
-CFX_RetainPtr<IFX_SeekableReadStream> MakeSeekableReadStream(
+RetainPtr<IFX_SeekableReadStream> MakeSeekableReadStream(
     FPDF_FILEACCESS* pFileAccess);
 
 #ifdef PDF_ENABLE_XFA
 // Layering prevents fxcrt from knowing about FPDF_FILEHANDLER, so this can't
 // be a static method of IFX_SeekableStream.
-CFX_RetainPtr<IFX_SeekableStream> MakeSeekableStream(
+RetainPtr<IFX_SeekableStream> MakeSeekableStream(
     FPDF_FILEHANDLER* pFileHandler);
 #endif  // PDF_ENABLE_XFA
 
@@ -70,11 +71,13 @@ CPDF_PageObject* CPDFPageObjectFromFPDFPageObject(FPDF_PAGEOBJECT page_object);
 
 CPDF_Object* CPDFObjectFromFPDFAttachment(FPDF_ATTACHMENT attachment);
 
-CFX_ByteString CFXByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
+ByteString CFXByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
 
 CFX_DIBitmap* CFXBitmapFromFPDFBitmap(FPDF_BITMAP bitmap);
 
-unsigned long Utf16EncodeMaybeCopyAndReturnLength(const CFX_WideString& text,
+const FX_PATHPOINT* FXPathPointFromFPDFPathSegment(FPDF_PATHSEGMENT segment);
+
+unsigned long Utf16EncodeMaybeCopyAndReturnLength(const WideString& text,
                                                   void* buffer,
                                                   unsigned long buflen);
 

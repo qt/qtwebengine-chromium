@@ -85,7 +85,7 @@ void IDBValueWrapper::Clone(ScriptState* script_state, ScriptValue* clone) {
                           << " called on wrapper with serialization exception";
   DCHECK(!wrap_called_) << "Clone() called after WrapIfBiggerThan()";
 #endif  // DCHECK_IS_ON()
-  *clone = DeserializeScriptValue(script_state, serialized_value_.Get(),
+  *clone = DeserializeScriptValue(script_state, serialized_value_.get(),
                                   &blob_info_);
 }
 
@@ -171,7 +171,7 @@ bool IDBValueUnwrapper::IsWrapped(IDBValue* value) {
 
 bool IDBValueUnwrapper::IsWrapped(const Vector<RefPtr<IDBValue>>& values) {
   for (const auto& value : values) {
-    if (IsWrapped(value.Get()))
+    if (IsWrapped(value.get()))
       return true;
   }
   return false;
@@ -260,7 +260,7 @@ bool IDBValueUnwrapper::ReadVarint(unsigned& value) {
 
 bool IDBValueUnwrapper::Reset() {
 #if DCHECK_IS_ON()
-  blob_handle_.Clear();
+  blob_handle_ = nullptr;
   current_ = nullptr;
   end_ = nullptr;
 #endif  // DCHECK_IS_ON()

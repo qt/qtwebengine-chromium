@@ -8,11 +8,11 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <utility>
 
 #include "base/feature_list.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
@@ -237,7 +237,7 @@ PasswordFormManager::PasswordFormManager(
       form_saver_(std::move(form_saver)),
       owned_form_fetcher_(
           form_fetcher ? nullptr
-                       : base::MakeUnique<FormFetcherImpl>(
+                       : std::make_unique<FormFetcherImpl>(
                              PasswordStore::FormDigest(observed_form),
                              client,
                              true /* should_migrate_http_passwords */,
@@ -364,7 +364,7 @@ void PasswordFormManager::PermanentlyBlacklist() {
   DCHECK(!client_->IsIncognito());
 
   if (!new_blacklisted_) {
-    new_blacklisted_ = base::MakeUnique<PasswordForm>(observed_form_);
+    new_blacklisted_ = std::make_unique<PasswordForm>(observed_form_);
     blacklisted_matches_.push_back(new_blacklisted_.get());
   }
   form_saver_->PermanentlyBlacklist(new_blacklisted_.get());
@@ -485,6 +485,11 @@ void PasswordFormManager::UpdateUsername(const base::string16& new_username) {
       }
     }
   }
+}
+
+void PasswordFormManager::UpdatePasswordValue(
+    const base::string16& new_password) {
+  pending_credentials_.password_value = new_password;
 }
 
 void PasswordFormManager::PresaveGeneratedPassword(
@@ -644,6 +649,12 @@ void PasswordFormManager::ProcessMatches(
 void PasswordFormManager::ProcessFrame(
     const base::WeakPtr<PasswordManagerDriver>& driver) {
   DCHECK_EQ(PasswordForm::SCHEME_HTML, observed_form_.scheme);
+
+  // Don't keep processing the same form.
+  if (autofills_left_ <= 0)
+    return;
+  autofills_left_--;
+
   if (form_fetcher_->GetState() == FormFetcher::State::NOT_WAITING)
     ProcessFrameInternal(driver);
 
@@ -780,20 +791,21 @@ bool PasswordFormManager::FindUsernameInOtherPossibleUsernames(
   return false;
 }
 
-void PasswordFormManager::FindCorrectedUsernameElement(
+bool PasswordFormManager::FindCorrectedUsernameElement(
     const base::string16& username,
     const base::string16& password) {
   for (const auto& key_value : best_matches_) {
     const PasswordForm* match = key_value.second;
     if ((match->password_value == password) &&
         FindUsernameInOtherPossibleUsernames(*match, username))
-      return;
+      return true;
   }
   for (const autofill::PasswordForm* match : not_best_matches_) {
     if ((match->password_value == password) &&
         FindUsernameInOtherPossibleUsernames(*match, username))
-      return;
+      return true;
   }
+  return false;
 }
 
 void PasswordFormManager::SendVoteOnCredentialsReuse(
@@ -1113,8 +1125,15 @@ void PasswordFormManager::CreatePendingCredentials() {
     // save new credentials.
     CreatePendingCredentialsForNewCredentials();
     // Generate username correction votes.
-    FindCorrectedUsernameElement(submitted_form_->username_value,
-                                 submitted_form_->password_value);
+    bool username_correction_found = FindCorrectedUsernameElement(
+        submitted_form_->username_value, submitted_form_->password_value);
+    UMA_HISTOGRAM_BOOLEAN("PasswordManager.UsernameCorrectionFound",
+                          username_correction_found);
+    if (username_correction_found) {
+      metrics_recorder_->RecordDetailedUserAction(
+          password_manager::PasswordFormMetricsRecorder::DetailedUserAction::
+              kCorrectedUsernameInForm);
+    }
   }
 
   if (!IsValidAndroidFacetURI(pending_credentials_.signon_realm)) {
@@ -1128,6 +1147,8 @@ void PasswordFormManager::CreatePendingCredentials() {
 
   pending_credentials_.password_value = password_to_save;
   pending_credentials_.preferred = submitted_form_->preferred;
+  pending_credentials_.form_has_autofilled_value =
+      submitted_form_->form_has_autofilled_value;
   CopyFieldPropertiesMasks(*submitted_form_, &pending_credentials_);
 
   // If we're dealing with an API-driven provisionally saved form, then take
@@ -1311,6 +1332,8 @@ void PasswordFormManager::CreatePendingCredentialsForNewCredentials() {
   pending_credentials_.username_value = submitted_form_->username_value;
   pending_credentials_.other_possible_usernames =
       submitted_form_->other_possible_usernames;
+  pending_credentials_.all_possible_passwords =
+      submitted_form_->all_possible_passwords;
 
   // The password value will be filled in later, remove any garbage for now.
   pending_credentials_.password_value.clear();
@@ -1406,7 +1429,7 @@ std::unique_ptr<PasswordFormManager> PasswordFormManager::Clone() {
   // renderer process, to which the driver serves as an interface. The full
   // |observed_form_| needs to be copied, because it is used to created the
   // blacklisting entry if needed.
-  auto result = base::MakeUnique<PasswordFormManager>(
+  auto result = std::make_unique<PasswordFormManager>(
       password_manager_, client_, base::WeakPtr<PasswordManagerDriver>(),
       observed_form_, form_saver_->Clone(), fetcher.get());
   result->Init(metrics_recorder_);
@@ -1426,11 +1449,11 @@ std::unique_ptr<PasswordFormManager> PasswordFormManager::Clone() {
   //   (3) They are not changed during ProcessMatches, triggered at some point
   //       by the cloned FormFetcher.
   if (submitted_form_)
-    result->submitted_form_ = base::MakeUnique<PasswordForm>(*submitted_form_);
+    result->submitted_form_ = std::make_unique<PasswordForm>(*submitted_form_);
   result->other_possible_username_action_ = other_possible_username_action_;
   if (username_correction_vote_) {
     result->username_correction_vote_ =
-        base::MakeUnique<PasswordForm>(*username_correction_vote_);
+        std::make_unique<PasswordForm>(*username_correction_vote_);
   }
   result->pending_credentials_ = pending_credentials_;
   result->is_new_login_ = is_new_login_;

@@ -99,6 +99,8 @@ class StateManagerGL final : angle::NonCopyable
     void setSampleAlphaToCoverageEnabled(bool enabled);
     void setSampleCoverageEnabled(bool enabled);
     void setSampleCoverage(float value, bool invert);
+    void setSampleMaskEnabled(bool enabled);
+    void setSampleMaski(GLuint maskNumber, GLbitfield mask);
 
     void setDepthTestEnabled(bool enabled);
     void setDepthFunc(GLenum depthFunc);
@@ -173,10 +175,10 @@ class StateManagerGL final : angle::NonCopyable
     gl::Error setDispatchComputeState(const gl::Context *context);
 
     void pauseTransformFeedback();
-    void pauseAllQueries();
-    void pauseQuery(GLenum type);
-    void resumeAllQueries();
-    void resumeQuery(GLenum type);
+    gl::Error pauseAllQueries();
+    gl::Error pauseQuery(GLenum type);
+    gl::Error resumeAllQueries();
+    gl::Error resumeQuery(GLenum type);
     gl::Error onMakeCurrent(const gl::Context *context);
 
     void syncState(const gl::Context *context, const gl::State::DirtyBits &glDirtyBits);
@@ -199,6 +201,8 @@ class StateManagerGL final : angle::NonCopyable
     void applyViewportOffsetsAndSetViewports(const gl::Rectangle &viewport,
                                              const gl::Framebuffer &drawFramebuffer);
     void propagateNumViewsToVAO(const gl::Program *program, VertexArrayGL *vao);
+
+    void updateProgramTextureAndSamplerBindings(const gl::Context *context);
 
     enum MultiviewDirtyBitType
     {
@@ -293,6 +297,8 @@ class StateManagerGL final : angle::NonCopyable
     bool mSampleCoverageEnabled;
     float mSampleCoverageValue;
     bool mSampleCoverageInvert;
+    bool mSampleMaskEnabled;
+    std::array<GLbitfield, gl::MAX_SAMPLE_MASK_WORDS> mSampleMaskValues;
 
     bool mDepthTestEnabled;
     GLenum mDepthFunc;
@@ -350,6 +356,8 @@ class StateManagerGL final : angle::NonCopyable
 
     // ANGLE_multiview dirty bits.
     angle::BitSet<MULTIVIEW_DIRTY_BIT_MAX> mMultiviewDirtyBits;
+
+    bool mProgramTexturesAndSamplersDirty;
 };
 }
 

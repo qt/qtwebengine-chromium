@@ -38,17 +38,16 @@ FileChooser* FileChooserClient::NewFileChooser(
     chooser_->DisconnectClient();
 
   chooser_ = FileChooser::Create(this, params);
-  return chooser_.Get();
+  return chooser_.get();
 }
 
 inline FileChooser::FileChooser(FileChooserClient* client,
                                 const WebFileChooserParams& params)
     : client_(client), params_(params) {}
 
-PassRefPtr<FileChooser> FileChooser::Create(
-    FileChooserClient* client,
-    const WebFileChooserParams& params) {
-  return AdoptRef(new FileChooser(client, params));
+RefPtr<FileChooser> FileChooser::Create(FileChooserClient* client,
+                                        const WebFileChooserParams& params) {
+  return WTF::AdoptRef(new FileChooser(client, params));
 }
 
 FileChooser::~FileChooser() {}

@@ -48,9 +48,11 @@ class VIEWS_EXPORT NativeViewAccessibilityBase
   gfx::NativeViewAccessible HitTestSync(int x, int y) override;
   gfx::NativeViewAccessible GetFocus() override;
   ui::AXPlatformNode* GetFromNodeID(int32_t id) override;
+  int GetIndexInParent() const override;
   gfx::AcceleratedWidget GetTargetForNativeAccessibilityEvent() override;
   bool AccessibilityPerformAction(const ui::AXActionData& data) override;
   bool ShouldIgnoreHoveredStateForTesting() override;
+  bool IsOffscreen() const override;
 
   // WidgetObserver
   void OnWidgetDestroying(Widget* widget) override;

@@ -8,16 +8,17 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/video/send_statistics_proxy.h"
+#include "video/send_statistics_proxy.h"
 
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "webrtc/system_wrappers/include/metrics.h"
-#include "webrtc/system_wrappers/include/metrics_default.h"
-#include "webrtc/test/gtest.h"
+#include "system_wrappers/include/metrics.h"
+#include "system_wrappers/include/metrics_default.h"
+#include "test/field_trial.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 namespace {
@@ -31,6 +32,7 @@ const int kWidth = 640;
 const int kHeight = 480;
 const int kQpIdx0 = 21;
 const int kQpIdx1 = 39;
+const int kMinFirstFallbackIntervalMs = 1500;
 const CodecSpecificInfo kDefaultCodecInfo = []() {
   CodecSpecificInfo codec_info;
   codec_info.codecType = kVideoCodecVP8;
@@ -41,8 +43,12 @@ const CodecSpecificInfo kDefaultCodecInfo = []() {
 
 class SendStatisticsProxyTest : public ::testing::Test {
  public:
-  SendStatisticsProxyTest()
-      : fake_clock_(1234), config_(GetTestConfig()), avg_delay_ms_(0),
+  SendStatisticsProxyTest() : SendStatisticsProxyTest("") {}
+  explicit SendStatisticsProxyTest(const std::string& field_trials)
+      : override_field_trials_(field_trials),
+        fake_clock_(1234),
+        config_(GetTestConfig()),
+        avg_delay_ms_(0),
         max_delay_ms_(0) {}
   virtual ~SendStatisticsProxyTest() {}
 
@@ -140,6 +146,7 @@ class SendStatisticsProxyTest : public ::testing::Test {
     }
   }
 
+  test::ScopedFieldTrials override_field_trials_;
   SimulatedClock fake_clock_;
   std::unique_ptr<SendStatisticsProxy> statistics_proxy_;
   VideoSendStream::Config config_;
@@ -176,17 +183,6 @@ TEST_F(SendStatisticsProxyTest, RtcpStatistics) {
   }
   VideoSendStream::Stats stats = statistics_proxy_->GetStats();
   ExpectEqual(expected_, stats);
-}
-
-TEST_F(SendStatisticsProxyTest, EncodedBitrateAndFramerate) {
-  int media_bitrate_bps = 500;
-  int encode_fps = 29;
-
-  statistics_proxy_->OnEncoderStatsUpdate(encode_fps, media_bitrate_bps);
-
-  VideoSendStream::Stats stats = statistics_proxy_->GetStats();
-  EXPECT_EQ(media_bitrate_bps, stats.media_bitrate_bps);
-  EXPECT_EQ(encode_fps, stats.encode_frame_rate);
 }
 
 TEST_F(SendStatisticsProxyTest, Suspended) {
@@ -812,13 +808,36 @@ TEST_F(SendStatisticsProxyTest, InputResolutionHistogramsAreUpdated) {
 }
 
 TEST_F(SendStatisticsProxyTest, SentResolutionHistogramsAreUpdated) {
+  const int64_t kMaxEncodedFrameWindowMs = 800;
+  const int kFps = 20;
+  const int kNumFramesPerWindow = kFps * kMaxEncodedFrameWindowMs / 1000;
+  const int kMinSamples =  // Sample added when removed from EncodedFrameMap.
+      SendStatisticsProxy::kMinRequiredMetricsSamples + kNumFramesPerWindow;
   EncodedImage encoded_image;
-  encoded_image._encodedWidth = kWidth;
-  encoded_image._encodedHeight = kHeight;
-  for (int i = 0; i <= SendStatisticsProxy::kMinRequiredMetricsSamples; ++i) {
-    encoded_image._timeStamp = i + 1;
+
+  // Not enough samples, stats should not be updated.
+  for (int i = 0; i < kMinSamples - 1; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    ++encoded_image._timeStamp;
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   }
+  SetUp();  // Reset stats proxy also causes histograms to be reported.
+  EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.SentWidthInPixels"));
+  EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.SentHeightInPixels"));
+
+  // Enough samples, max resolution per frame should be reported.
+  encoded_image._timeStamp = 0xfffffff0;  // Will wrap.
+  for (int i = 0; i < kMinSamples; ++i) {
+    fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
+    ++encoded_image._timeStamp;
+    encoded_image._encodedWidth = kWidth;
+    encoded_image._encodedHeight = kHeight;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+    encoded_image._encodedWidth = kWidth / 2;
+    encoded_image._encodedHeight = kHeight / 2;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+  }
+
   statistics_proxy_.reset();
   EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.SentWidthInPixels"));
   EXPECT_EQ(1, metrics::NumEvents("WebRTC.Video.SentWidthInPixels", kWidth));
@@ -844,9 +863,11 @@ TEST_F(SendStatisticsProxyTest, SentFpsHistogramIsUpdated) {
   const int kFps = 20;
   const int kMinPeriodicSamples = 6;
   int frames = kMinPeriodicSamples * kFpsPeriodicIntervalMs * kFps / 1000 + 1;
-  for (int i = 0; i <= frames; ++i) {
+  for (int i = 0; i < frames; ++i) {
     fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
-    encoded_image._timeStamp = i + 1;
+    ++encoded_image._timeStamp;
+    statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
+    // Frame with same timestamp should not be counted.
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
   }
   statistics_proxy_.reset();
@@ -883,7 +904,7 @@ TEST_F(SendStatisticsProxyTest, SentFpsHistogramExcludesSuspendedTime) {
   const int kSuspendTimeMs = 10000;
   const int kMinPeriodicSamples = 6;
   int frames = kMinPeriodicSamples * kFpsPeriodicIntervalMs * kFps / 1000;
-  for (int i = 0; i <= frames; ++i) {
+  for (int i = 0; i < frames; ++i) {
     fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
     encoded_image._timeStamp = i + 1;
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
@@ -892,7 +913,7 @@ TEST_F(SendStatisticsProxyTest, SentFpsHistogramExcludesSuspendedTime) {
   statistics_proxy_->OnSuspendChange(true);
   fake_clock_.AdvanceTimeMilliseconds(kSuspendTimeMs);
 
-  for (int i = 0; i <= frames; ++i) {
+  for (int i = 0; i < frames; ++i) {
     fake_clock_.AdvanceTimeMilliseconds(1000 / kFps);
     encoded_image._timeStamp = i + 1;
     statistics_proxy_->OnSendEncodedImage(encoded_image, nullptr);
@@ -1797,6 +1818,167 @@ TEST_F(SendStatisticsProxyTest, FecBitrateNotReportedWhenNotEnabled) {
   // FEC not enabled.
   statistics_proxy_.reset();
   EXPECT_EQ(0, metrics::NumSamples("WebRTC.Video.FecBitrateSentInKbps"));
+}
+
+TEST_F(SendStatisticsProxyTest, GetStatsReportsEncoderImplementationName) {
+  const char* kName = "encoderName";
+  EncodedImage encoded_image;
+  CodecSpecificInfo codec_info;
+  codec_info.codec_name = kName;
+  statistics_proxy_->OnSendEncodedImage(encoded_image, &codec_info);
+  EXPECT_STREQ(
+      kName, statistics_proxy_->GetStats().encoder_implementation_name.c_str());
+}
+
+class ForcedFallbackTest : public SendStatisticsProxyTest {
+ public:
+  explicit ForcedFallbackTest(const std::string& field_trials)
+      : SendStatisticsProxyTest(field_trials) {
+    codec_info_.codecType = kVideoCodecVP8;
+    codec_info_.codecSpecific.VP8.simulcastIdx = 0;
+    codec_info_.codecSpecific.VP8.temporalIdx = 0;
+    codec_info_.codec_name = "fake_codec";
+  }
+
+  ~ForcedFallbackTest() override {}
+
+ protected:
+  void InsertEncodedFrames(int num_frames, int interval_ms) {
+    // First frame is not updating stats, insert initial frame.
+    if (statistics_proxy_->GetStats().frames_encoded == 0) {
+      statistics_proxy_->OnSendEncodedImage(encoded_image_, &codec_info_);
+    }
+    for (int i = 0; i < num_frames; ++i) {
+      statistics_proxy_->OnSendEncodedImage(encoded_image_, &codec_info_);
+      fake_clock_.AdvanceTimeMilliseconds(interval_ms);
+    }
+    // Add frame to include last time interval.
+    statistics_proxy_->OnSendEncodedImage(encoded_image_, &codec_info_);
+  }
+
+  EncodedImage encoded_image_;
+  CodecSpecificInfo codec_info_;
+  const std::string kPrefix = "WebRTC.Video.Encoder.ForcedSw";
+  const int kFrameIntervalMs = 1000;
+  const int kMinFrames = 20;  // Min run time 20 sec.
+};
+
+class ForcedFallbackDisabled : public ForcedFallbackTest {
+ public:
+  ForcedFallbackDisabled()
+      : ForcedFallbackTest("WebRTC-VP8-Forced-Fallback-Encoder/Disabled/") {}
+};
+
+class ForcedFallbackEnabled : public ForcedFallbackTest {
+ public:
+  ForcedFallbackEnabled()
+      : ForcedFallbackTest("WebRTC-VP8-Forced-Fallback-Encoder/Enabled-1,2," +
+                           std::to_string(kMinFirstFallbackIntervalMs) +
+                           ",4/") {}
+};
+
+TEST_F(ForcedFallbackEnabled, StatsNotUpdatedIfMinRunTimeHasNotPassed) {
+  InsertEncodedFrames(kMinFrames, kFrameIntervalMs - 1);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
+}
+
+TEST_F(ForcedFallbackEnabled, StatsUpdated) {
+  InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(1, metrics::NumEvents(kPrefix + "FallbackTimeInPercent.Vp8", 0));
+  EXPECT_EQ(1, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
+  EXPECT_EQ(1, metrics::NumEvents(kPrefix + "FallbackChangesPerMinute.Vp8", 0));
+}
+
+TEST_F(ForcedFallbackEnabled, StatsNotUpdatedIfNotVp8) {
+  codec_info_.codecType = kVideoCodecVP9;
+  InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
+}
+
+TEST_F(ForcedFallbackEnabled, StatsNotUpdatedForTemporalLayers) {
+  codec_info_.codecSpecific.VP8.temporalIdx = 1;
+  InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
+}
+
+TEST_F(ForcedFallbackEnabled, StatsNotUpdatedForSimulcast) {
+  codec_info_.codecSpecific.VP8.simulcastIdx = 1;
+  InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
+}
+
+TEST_F(ForcedFallbackDisabled, StatsNotUpdatedIfNoFieldTrial) {
+  InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
+}
+
+TEST_F(ForcedFallbackEnabled, OneFallbackEvent) {
+  // One change. Video: 20000 ms, fallback: 5000 ms (25%).
+  InsertEncodedFrames(15, 1000);
+  codec_info_.codec_name = "libvpx";
+  InsertEncodedFrames(5, 1000);
+
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(1, metrics::NumEvents(kPrefix + "FallbackTimeInPercent.Vp8", 25));
+  EXPECT_EQ(1, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
+  EXPECT_EQ(1, metrics::NumEvents(kPrefix + "FallbackChangesPerMinute.Vp8", 3));
+}
+
+TEST_F(ForcedFallbackEnabled, ThreeFallbackEvents) {
+  codec_info_.codecSpecific.VP8.temporalIdx = kNoTemporalIdx;  // Should work.
+  const int kMaxFrameDiffMs = 2000;
+
+  // Three changes. Video: 60000 ms, fallback: 15000 ms (25%).
+  InsertEncodedFrames(10, 1000);
+  codec_info_.codec_name = "libvpx";
+  InsertEncodedFrames(15, 500);
+  codec_info_.codec_name = "notlibvpx";
+  InsertEncodedFrames(20, 1000);
+  InsertEncodedFrames(3, kMaxFrameDiffMs);  // Should not be included.
+  InsertEncodedFrames(10, 1000);
+  codec_info_.codec_name = "notlibvpx2";
+  InsertEncodedFrames(10, 500);
+  codec_info_.codec_name = "libvpx";
+  InsertEncodedFrames(15, 500);
+
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(1, metrics::NumEvents(kPrefix + "FallbackTimeInPercent.Vp8", 25));
+  EXPECT_EQ(1, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
+  EXPECT_EQ(1, metrics::NumEvents(kPrefix + "FallbackChangesPerMinute.Vp8", 3));
+}
+
+TEST_F(ForcedFallbackEnabled, NoFallbackIfMinIntervalHasNotPassed) {
+  InsertEncodedFrames(1, kMinFirstFallbackIntervalMs - 1);
+  codec_info_.codec_name = "libvpx";
+  InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
+
+  statistics_proxy_.reset();
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(0, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
+}
+
+TEST_F(ForcedFallbackEnabled, FallbackIfMinIntervalPassed) {
+  InsertEncodedFrames(1, kMinFirstFallbackIntervalMs);
+  codec_info_.codec_name = "libvpx";
+  InsertEncodedFrames(kMinFrames, kFrameIntervalMs);
+
+  statistics_proxy_.reset();
+  EXPECT_EQ(1, metrics::NumSamples(kPrefix + "FallbackTimeInPercent.Vp8"));
+  EXPECT_EQ(1, metrics::NumSamples(kPrefix + "FallbackChangesPerMinute.Vp8"));
 }
 
 }  // namespace webrtc

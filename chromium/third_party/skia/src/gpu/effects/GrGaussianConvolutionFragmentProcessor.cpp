@@ -41,11 +41,11 @@ void GrGLConvolutionEffect::emitCode(EmitArgs& args) {
             args.fFp.cast<GrGaussianConvolutionFragmentProcessor>();
 
     GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
-    fImageIncrementUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kVec2f_GrSLType,
-                                                    kDefault_GrSLPrecision, "ImageIncrement");
+    fImageIncrementUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf2_GrSLType,
+                                                    "ImageIncrement");
     if (ce.useBounds()) {
-        fBoundsUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kVec2f_GrSLType,
-                                                kDefault_GrSLPrecision, "Bounds");
+        fBoundsUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf2_GrSLType,
+                                                "Bounds");
     }
 
     int width = ce.width();
@@ -53,19 +53,19 @@ void GrGLConvolutionEffect::emitCode(EmitArgs& args) {
     int arrayCount = (width + 3) / 4;
     SkASSERT(4 * arrayCount >= width);
 
-    fKernelUni = uniformHandler->addUniformArray(kFragment_GrShaderFlag, kVec4f_GrSLType,
-                                                 kDefault_GrSLPrecision, "Kernel", arrayCount);
+    fKernelUni = uniformHandler->addUniformArray(kFragment_GrShaderFlag, kHalf4_GrSLType,
+                                                 "Kernel", arrayCount);
 
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
     SkString coords2D = fragBuilder->ensureCoords2D(args.fTransformedCoords[0]);
 
-    fragBuilder->codeAppendf("%s = float4(0, 0, 0, 0);", args.fOutputColor);
+    fragBuilder->codeAppendf("%s = half4(0, 0, 0, 0);", args.fOutputColor);
 
     const GrShaderVar& kernel = uniformHandler->getUniformVariable(fKernelUni);
     const char* imgInc = uniformHandler->getUniformCStr(fImageIncrementUni);
 
     fragBuilder->codeAppendf("float2 coord = %s - %d.0 * %s;", coords2D.c_str(), ce.radius(), imgInc);
-    fragBuilder->codeAppend("float2 coordSampled = float2(0, 0);");
+    fragBuilder->codeAppend("float2 coordSampled = half2(0, 0);");
 
     // Manually unroll loop because some drivers don't; yields 20-30% speedup.
     const char* kVecSuffix[4] = {".x", ".y", ".z", ".w"};
@@ -201,13 +201,13 @@ GrGaussianConvolutionFragmentProcessor::GrGaussianConvolutionFragmentProcessor(
                                                             float gaussianSigma,
                                                             GrTextureDomain::Mode mode,
                                                             int bounds[2])
-        : INHERITED(ModulateByConfigOptimizationFlags(proxy->config()))
+        : INHERITED(kGrGaussianConvolutionFragmentProcessor_ClassID,
+                    ModulateByConfigOptimizationFlags(proxy->config()))
         , fCoordTransform(proxy.get())
         , fTextureSampler(std::move(proxy))
         , fRadius(radius)
         , fDirection(direction)
         , fMode(mode) {
-    this->initClassID<GrGaussianConvolutionFragmentProcessor>();
     this->addCoordTransform(&fCoordTransform);
     this->addTextureSampler(&fTextureSampler);
     SkASSERT(radius <= kMaxKernelRadius);
@@ -219,13 +219,12 @@ GrGaussianConvolutionFragmentProcessor::GrGaussianConvolutionFragmentProcessor(
 
 GrGaussianConvolutionFragmentProcessor::GrGaussianConvolutionFragmentProcessor(
         const GrGaussianConvolutionFragmentProcessor& that)
-        : INHERITED(that.optimizationFlags())
+        : INHERITED(kGrGaussianConvolutionFragmentProcessor_ClassID, that.optimizationFlags())
         , fCoordTransform(that.fCoordTransform)
         , fTextureSampler(that.fTextureSampler)
         , fRadius(that.fRadius)
         , fDirection(that.fDirection)
         , fMode(that.fMode) {
-    this->initClassID<GrGaussianConvolutionFragmentProcessor>();
     this->addCoordTransform(&fCoordTransform);
     this->addTextureSampler(&fTextureSampler);
     memcpy(fKernel, that.fKernel, that.width() * sizeof(float));

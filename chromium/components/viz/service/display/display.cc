@@ -11,18 +11,18 @@
 #include "base/timer/elapsed_timer.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/benchmarks/benchmark_instrumentation.h"
-#include "cc/output/compositor_frame.h"
-#include "cc/output/direct_renderer.h"
-#include "cc/output/output_surface.h"
-#include "cc/output/software_renderer.h"
-#include "cc/output/texture_mailbox_deleter.h"
 #include "components/viz/common/display/renderer_settings.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
+#include "components/viz/common/quads/compositor_frame.h"
+#include "components/viz/service/display/direct_renderer.h"
 #include "components/viz/service/display/display_client.h"
 #include "components/viz/service/display/display_scheduler.h"
 #include "components/viz/service/display/gl_renderer.h"
+#include "components/viz/service/display/output_surface.h"
 #include "components/viz/service/display/skia_renderer.h"
+#include "components/viz/service/display/software_renderer.h"
 #include "components/viz/service/display/surface_aggregator.h"
+#include "components/viz/service/display/texture_mailbox_deleter.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -35,14 +35,13 @@
 
 namespace viz {
 
-Display::Display(
-    SharedBitmapManager* bitmap_manager,
-    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-    const RendererSettings& settings,
-    const FrameSinkId& frame_sink_id,
-    std::unique_ptr<cc::OutputSurface> output_surface,
-    std::unique_ptr<DisplayScheduler> scheduler,
-    std::unique_ptr<cc::TextureMailboxDeleter> texture_mailbox_deleter)
+Display::Display(SharedBitmapManager* bitmap_manager,
+                 gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+                 const RendererSettings& settings,
+                 const FrameSinkId& frame_sink_id,
+                 std::unique_ptr<OutputSurface> output_surface,
+                 std::unique_ptr<DisplayScheduler> scheduler,
+                 std::unique_ptr<TextureMailboxDeleter> texture_mailbox_deleter)
     : bitmap_manager_(bitmap_manager),
       gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
       settings_(settings),
@@ -181,12 +180,9 @@ void Display::SetOutputIsSecure(bool secure) {
 }
 
 void Display::InitializeRenderer() {
-  // Not relevant for display compositor since it's not delegated.
-  constexpr bool delegated_sync_points_required = false;
   resource_provider_ = base::MakeUnique<cc::DisplayResourceProvider>(
       output_surface_->context_provider(), bitmap_manager_,
-      gpu_memory_buffer_manager_, nullptr, delegated_sync_points_required,
-      settings_.enable_color_correct_rendering, settings_.resource_settings);
+      gpu_memory_buffer_manager_, settings_.resource_settings);
 
   if (output_surface_->context_provider()) {
     DCHECK(texture_mailbox_deleter_);
@@ -201,14 +197,13 @@ void Display::InitializeRenderer() {
   } else if (output_surface_->vulkan_context_provider()) {
 #if defined(ENABLE_VULKAN)
     DCHECK(texture_mailbox_deleter_);
-    renderer_ = base::MakeUnique<cc::VulkanRenderer>(
-        &settings_, output_surface_.get(), resource_provider_.get(),
-        texture_mailbox_deleter_.get(), settings_.highp_threshold_min);
+    renderer_ = base::MakeUnique<VulkanRenderer>(
+        &settings_, output_surface_.get(), resource_provider_.get());
 #else
     NOTREACHED();
 #endif
   } else {
-    auto renderer = base::MakeUnique<cc::SoftwareRenderer>(
+    auto renderer = base::MakeUnique<SoftwareRenderer>(
         &settings_, output_surface_.get(), resource_provider_.get());
     software_renderer_ = renderer.get();
     renderer_ = std::move(renderer);
@@ -256,7 +251,7 @@ bool Display::DrawAndSwap() {
   }
 
   base::ElapsedTimer aggregate_timer;
-  cc::CompositorFrame frame = aggregator_->Aggregate(current_surface_id_);
+  CompositorFrame frame = aggregator_->Aggregate(current_surface_id_);
   UMA_HISTOGRAM_COUNTS_1M("Compositing.SurfaceAggregator.AggregateUs",
                           aggregate_timer.Elapsed().InMicroseconds());
 
@@ -449,6 +444,11 @@ const SurfaceId& Display::CurrentSurfaceId() {
 void Display::ForceImmediateDrawAndSwapIfPossible() {
   if (scheduler_)
     scheduler_->ForceImmediateSwapIfPossible();
+}
+
+void Display::SetNeedsOneBeginFrame() {
+  if (scheduler_)
+    scheduler_->SetNeedsOneBeginFrame();
 }
 
 }  // namespace viz

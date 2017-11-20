@@ -30,8 +30,8 @@
 #include "core/dom/Document.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/TaskRunnerHelper.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/heap/Handle.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
@@ -281,12 +281,20 @@ bool ScriptRunner::DoTryStream(ScriptLoader* script_loader) {
   if (!pending_script)
     return false;
 
+#ifndef NDEBUG
+  bool was_already_streaming = pending_script->IsCurrentlyStreaming();
+#endif
+
   bool success = pending_script->StartStreamingIfPossible(
       ScriptStreamer::kAsync,
       WTF::Bind(&ScriptRunner::NotifyScriptStreamerFinished,
                 WrapPersistent(this)));
-  DCHECK_EQ(success, pending_script->IsCurrentlyStreaming());
 #ifndef NDEBUG
+  if (was_already_streaming) {
+    DCHECK(!success);
+  } else {
+    DCHECK_EQ(success, pending_script->IsCurrentlyStreaming());
+  }
   if (success)
     number_of_extra_tasks_++;
 #endif

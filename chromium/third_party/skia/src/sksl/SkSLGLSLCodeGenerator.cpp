@@ -42,6 +42,19 @@ void GLSLCodeGenerator::write(const String& s) {
     this->write(s.c_str());
 }
 
+void GLSLCodeGenerator::write(StringFragment s) {
+    if (!s.fLength) {
+        return;
+    }
+    if (fAtLineStart) {
+        for (int i = 0; i < fIndentation; i++) {
+            fOut->writeText("    ");
+        }
+    }
+    fOut->write(s.fChars, s.fLength);
+    fAtLineStart = false;
+}
+
 void GLSLCodeGenerator::writeLine(const String& s) {
     this->writeLine(s.c_str());
 }
@@ -51,7 +64,86 @@ void GLSLCodeGenerator::writeLine() {
 }
 
 void GLSLCodeGenerator::writeExtension(const Extension& ext) {
-    this->writeLine("#extension " + ext.fName + " : enable");
+    this->write("#extension ");
+    this->write(ext.fName);
+    this->writeLine(" : enable");
+}
+
+bool GLSLCodeGenerator::usesPrecisionModifiers() const {
+    return fProgram.fSettings.fCaps->usesPrecisionModifiers();
+}
+
+String GLSLCodeGenerator::getTypeName(const Type& type) {
+    switch (type.kind()) {
+        case Type::kVector_Kind: {
+            Type component = type.componentType();
+            String result;
+            if (component == *fContext.fFloat_Type || component == *fContext.fHalf_Type) {
+                result = "vec";
+            }
+            else if (component == *fContext.fDouble_Type) {
+                result = "dvec";
+            }
+            else if (component == *fContext.fInt_Type || component == *fContext.fShort_Type) {
+                result = "ivec";
+            }
+            else if (component == *fContext.fUInt_Type || component == *fContext.fUShort_Type) {
+                result = "uvec";
+            }
+            else if (component == *fContext.fBool_Type) {
+                result = "bvec";
+            }
+            else {
+                ABORT("unsupported vector type");
+            }
+            result += to_string(type.columns());
+            return result;
+        }
+        case Type::kMatrix_Kind: {
+            String result;
+            Type component = type.componentType();
+            if (component == *fContext.fFloat_Type || component == *fContext.fHalf_Type) {
+                result = "mat";
+            }
+            else if (component == *fContext.fDouble_Type) {
+                result = "dmat";
+            }
+            else {
+                ABORT("unsupported matrix type");
+            }
+            result += to_string(type.columns());
+            if (type.columns() != type.rows()) {
+                result += "x";
+                result += to_string(type.rows());
+            }
+            return result;
+        }
+        case Type::kArray_Kind: {
+            String result = this->getTypeName(type.componentType()) + "[";
+            if (type.columns() != -1) {
+                result += to_string(type.columns());
+            }
+            result += "]";
+            return result;
+        }
+        case Type::kScalar_Kind: {
+            if (type == *fContext.fHalf_Type) {
+                return "float";
+            }
+            else if (type == *fContext.fShort_Type) {
+                return "int";
+            }
+            else if (type == *fContext.fUShort_Type) {
+                return "uint";
+            }
+            else {
+                return type.name();
+            }
+            break;
+        }
+        default:
+            return type.name();
+    }
 }
 
 void GLSLCodeGenerator::writeType(const Type& type) {
@@ -59,92 +151,28 @@ void GLSLCodeGenerator::writeType(const Type& type) {
         for (const Type* search : fWrittenStructs) {
             if (*search == type) {
                 // already written
-                this->write(type.name());
+                this->write(type.fName);
                 return;
             }
         }
         fWrittenStructs.push_back(&type);
-        this->writeLine("struct " + type.name() + " {");
+        this->write("struct ");
+        this->write(type.fName);
+        this->writeLine(" {");
         fIndentation++;
         for (const auto& f : type.fields()) {
             this->writeModifiers(f.fModifiers, false);
             this->writeTypePrecision(*f.fType);
             // sizes (which must be static in structs) are part of the type name here
             this->writeType(*f.fType);
-            this->writeLine(" " + f.fName + ";");
+            this->write(" ");
+            this->write(f.fName);
+            this->writeLine(";");
         }
         fIndentation--;
         this->write("}");
     } else {
-        switch (type.kind()) {
-            case Type::kVector_Kind: {
-                Type component = type.componentType();
-                if (component == *fContext.fFloat_Type || component == *fContext.fHalf_Type) {
-                    this->write("vec");
-                }
-                else if (component == *fContext.fDouble_Type) {
-                    this->write("dvec");
-                }
-                else if (component == *fContext.fInt_Type || component == *fContext.fShort_Type) {
-                    this->write("ivec");
-                }
-                else if (component == *fContext.fUInt_Type || component == *fContext.fUShort_Type) {
-                    this->write("uvec");
-                }
-                else if (component == *fContext.fBool_Type) {
-                    this->write("bvec");
-                }
-                else {
-                    ABORT("unsupported vector type");
-                }
-                this->write(to_string(type.columns()));
-                break;
-            }
-            case Type::kMatrix_Kind: {
-                Type component = type.componentType();
-                if (component == *fContext.fFloat_Type || component == *fContext.fHalf_Type) {
-                    this->write("mat");
-                }
-                else if (component == *fContext.fDouble_Type) {
-                    this->write("dmat");
-                }
-                else {
-                    ABORT("unsupported matrix type");
-                }
-                this->write(to_string(type.columns()));
-                if (type.columns() != type.rows()) {
-                    this->write("x");
-                    this->write(to_string(type.rows()));
-                }
-                break;
-            }
-            case Type::kArray_Kind: {
-                this->writeType(type.componentType());
-                this->write("[");
-                if (type.columns() != -1) {
-                    this->write(to_string(type.columns()));
-                }
-                this->write("]");
-                break;
-            }
-            case Type::kScalar_Kind: {
-                if (type == *fContext.fHalf_Type) {
-                    this->write("float");
-                }
-                else if (type == *fContext.fShort_Type) {
-                    this->write("int");
-                }
-                else if (type == *fContext.fUShort_Type) {
-                    this->write("uint");
-                }
-                else {
-                    this->write(type.name());
-                }
-                break;
-            }
-            default:
-                this->write(type.name());
-        }
+        this->write(this->getTypeName(type));
     }
 }
 
@@ -157,7 +185,7 @@ void GLSLCodeGenerator::writeExpression(const Expression& expr, Precedence paren
             this->writeBoolLiteral((BoolLiteral&) expr);
             break;
         case Expression::kConstructor_Kind:
-            this->writeConstructor((Constructor&) expr);
+            this->writeConstructor((Constructor&) expr, parentPrecedence);
             break;
         case Expression::kIntLiteral_Kind:
             this->writeIntLiteral((IntLiteral&) expr);
@@ -210,8 +238,10 @@ void GLSLCodeGenerator::writeMinAbsHack(Expression& absExpr, Expression& otherEx
     ASSERT(!fProgram.fSettings.fCaps->canUseMinAndAbsTogether());
     String tmpVar1 = "minAbsHackVar" + to_string(fVarCount++);
     String tmpVar2 = "minAbsHackVar" + to_string(fVarCount++);
-    this->fFunctionHeader += "    " + absExpr.fType.name() + " " + tmpVar1 + ";\n";
-    this->fFunctionHeader += "    " + otherExpr.fType.name() + " " + tmpVar2 + ";\n";
+    this->fFunctionHeader += String("    ") + this->getTypePrecision(absExpr.fType) +
+                             this->getTypeName(absExpr.fType) + " " + tmpVar1 + ";\n";
+    this->fFunctionHeader += String("    ") + this->getTypePrecision(otherExpr.fType) +
+                             this->getTypeName(otherExpr.fType) + " " + tmpVar2 + ";\n";
     this->write("((" + tmpVar1 + " = ");
     this->writeExpression(absExpr, kTopLevel_Precedence);
     this->write(") < (" + tmpVar2 + " = ");
@@ -339,7 +369,15 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
     this->write(")");
 }
 
-void GLSLCodeGenerator::writeConstructor(const Constructor& c) {
+void GLSLCodeGenerator::writeConstructor(const Constructor& c, Precedence parentPrecedence) {
+    if (c.fArguments.size() == 1 &&
+        this->getTypeName(c.fType) == this->getTypeName(c.fArguments[0]->fType)) {
+        // in cases like half(float), they're different types as far as SkSL is concerned but the
+        // same type as far as GLSL is concerned. We avoid a redundant float(float) by just writing
+        // out the inner expression here.
+        this->writeExpression(*c.fArguments[0], parentPrecedence);
+        return;
+    }
     this->writeType(c.fType);
     this->write("(");
     const char* separator = "";
@@ -376,16 +414,14 @@ void GLSLCodeGenerator::writeFragCoord() {
             // depending on the surrounding code, accessing .xy with a uniform involved can
             // do the same thing. Copying gl_FragCoord.xy into a temp float2beforehand
             // (and only accessing .xy) seems to "fix" things.
-            const char* precision = fProgram.fSettings.fCaps->usesPrecisionModifiers() ? "highp "
-                                                                                       : "";
+            const char* precision = usesPrecisionModifiers() ? "highp " : "";
             fHeader.writeText("uniform ");
             fHeader.writeText(precision);
             fHeader.writeText("float " SKSL_RTHEIGHT_NAME ";\n");
             fSetupFragPositionGlobal = true;
         }
         if (!fSetupFragPositionLocal) {
-            const char* precision = fProgram.fSettings.fCaps->usesPrecisionModifiers() ? "highp "
-                                                                                       : "";
+            const char* precision = usesPrecisionModifiers() ? "highp " : "";
             fFunctionHeader += precision;
             fFunctionHeader += "    vec2 _sktmpCoord = gl_FragCoord.xy;\n";
             fFunctionHeader += precision;
@@ -444,7 +480,14 @@ void GLSLCodeGenerator::writeFieldAccess(const FieldAccess& f) {
             this->write("gl_ClipDistance");
             break;
         default:
-            this->write(f.fBase->fType.fields()[f.fFieldIndex].fName);
+            StringFragment name = f.fBase->fType.fields()[f.fFieldIndex].fName;
+            if (name == "sk_Position") {
+                this->write("gl_Position");
+            } else if (name == "sk_PointSize") {
+                this->write("gl_PointSize");
+            } else {
+                this->write(f.fBase->fType.fields()[f.fFieldIndex].fName);
+            }
     }
 }
 
@@ -503,7 +546,9 @@ void GLSLCodeGenerator::writeBinaryExpression(const BinaryExpression& b,
         this->write("(");
     }
     this->writeExpression(*b.fLeft, precedence);
-    this->write(" " + Token::OperatorName(b.fOperator) + " ");
+    this->write(" ");
+    this->write(Compiler::OperatorName(b.fOperator));
+    this->write(" ");
     this->writeExpression(*b.fRight, precedence);
     if (precedence >= parentPrecedence) {
         this->write(")");
@@ -530,7 +575,7 @@ void GLSLCodeGenerator::writePrefixExpression(const PrefixExpression& p,
     if (kPrefix_Precedence >= parentPrecedence) {
         this->write("(");
     }
-    this->write(Token::OperatorName(p.fOperator));
+    this->write(Compiler::OperatorName(p.fOperator));
     this->writeExpression(*p.fOperand, kPrefix_Precedence);
     if (kPrefix_Precedence >= parentPrecedence) {
         this->write(")");
@@ -543,7 +588,7 @@ void GLSLCodeGenerator::writePostfixExpression(const PostfixExpression& p,
         this->write("(");
     }
     this->writeExpression(*p.fOperand, kPostfix_Precedence);
-    this->write(Token::OperatorName(p.fOperator));
+    this->write(Compiler::OperatorName(p.fOperator));
     if (kPostfix_Precedence >= parentPrecedence) {
         this->write(")");
     }
@@ -570,6 +615,7 @@ void GLSLCodeGenerator::writeSetting(const Setting& s) {
 }
 
 void GLSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
+    this->writeTypePrecision(f.fDeclaration.fReturnType);
     this->writeType(f.fDeclaration.fReturnType);
     this->write(" " + f.fDeclaration.fName + "(");
     const char* separator = "";
@@ -583,6 +629,7 @@ void GLSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
             sizes.push_back(type->columns());
             type = &type->componentType();
         }
+        this->writeTypePrecision(*type);
         this->writeType(*type);
         this->write(" " + param->fName);
         for (int s : sizes) {
@@ -661,7 +708,7 @@ void GLSLCodeGenerator::writeModifiers(const Modifiers& modifiers,
     if (modifiers.fFlags & Modifiers::kConst_Flag) {
         this->write("const ");
     }
-    if (fProgram.fSettings.fCaps->usesPrecisionModifiers()) {
+    if (usesPrecisionModifiers()) {
         if (modifiers.fFlags & Modifiers::kLowp_Flag) {
             this->write("lowp ");
         }
@@ -711,23 +758,31 @@ void GLSLCodeGenerator::writeVarInitializer(const Variable& var, const Expressio
     this->writeExpression(value, kTopLevel_Precedence);
 }
 
-void GLSLCodeGenerator::writeTypePrecision(const Type& type) {
-    if (fProgram.fSettings.fCaps->usesPrecisionModifiers()) {
+const char* GLSLCodeGenerator::getTypePrecision(const Type& type) {
+    if (usesPrecisionModifiers()) {
         switch (type.kind()) {
             case Type::kScalar_Kind:
                 if (type == *fContext.fHalf_Type || type == *fContext.fShort_Type ||
                         type == *fContext.fUShort_Type) {
-                    this->write("mediump ");
+                    return fProgram.fSettings.fForceHighPrecision ? "highp " : "mediump ";
                 }
-                break;
+                if (type == *fContext.fFloat_Type || type == *fContext.fInt_Type ||
+                        type == *fContext.fUInt_Type) {
+                    return "highp ";
+                }
+                return "";
             case Type::kVector_Kind: // fall through
             case Type::kMatrix_Kind:
-                this->writeTypePrecision(type.componentType());
-                break;
+                return this->getTypePrecision(type.componentType());
             default:
                 break;
         }
     }
+    return "";
+}
+
+void GLSLCodeGenerator::writeTypePrecision(const Type& type) {
+    this->write(this->getTypePrecision(type));
 }
 
 void GLSLCodeGenerator::writeVarDeclarations(const VarDeclarations& decl, bool global) {
@@ -921,27 +976,6 @@ void GLSLCodeGenerator::writeHeader() {
     }
 }
 
-void GLSLCodeGenerator::writePrecisionModifier() {
-    if (fProgram.fSettings.fCaps->usesPrecisionModifiers()) {
-        this->write("precision ");
-        switch (fProgram.fDefaultPrecision) {
-            case Modifiers::kLowp_Flag:
-                this->write("lowp");
-                break;
-            case Modifiers::kMediump_Flag:
-                this->write("mediump");
-                break;
-            case Modifiers::kHighp_Flag:
-                this->write("highp");
-                break;
-            default:
-                ASSERT(false);
-                this->write("<error>");
-        }
-        this->writeLine(" float;");
-    }
-}
-
 void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
     switch (e.fKind) {
         case ProgramElement::kExtension_Kind:
@@ -957,7 +991,7 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
                 } else if (builtin == SK_FRAGCOLOR_BUILTIN &&
                            fProgram.fSettings.fCaps->mustDeclareFragmentShaderOutput()) {
                     this->write("out ");
-                    if (fProgram.fSettings.fCaps->usesPrecisionModifiers()) {
+                    if (usesPrecisionModifiers()) {
                         this->write("mediump ");
                     }
                     this->writeLine("vec4 sk_FragColor;");
@@ -971,10 +1005,20 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
         case ProgramElement::kFunction_Kind:
             this->writeFunction((FunctionDefinition&) e);
             break;
-        case ProgramElement::kModifiers_Kind:
-            this->writeModifiers(((ModifiersDeclaration&) e).fModifiers, true);
+        case ProgramElement::kModifiers_Kind: {
+            const Modifiers& modifiers = ((ModifiersDeclaration&) e).fModifiers;
+            if (!fFoundGSInvocations && modifiers.fLayout.fInvocations >= 0) {
+                if (fProgram.fSettings.fCaps->gsInvocationsExtensionString()) {
+                    fHeader.writeText("#extension ");
+                    fHeader.writeText(fProgram.fSettings.fCaps->gsInvocationsExtensionString());
+                    fHeader.writeText(" : require\n");
+                }
+                fFoundGSInvocations = true;
+            }
+            this->writeModifiers(modifiers, true);
             this->writeLine(";");
             break;
+        }
         default:
             printf("%s\n", e.description().c_str());
             ABORT("unsupported program element");
@@ -988,13 +1032,15 @@ bool GLSLCodeGenerator::generateCode() {
     this->writeHeader();
     StringStream body;
     fOut = &body;
-    this->writePrecisionModifier();
     for (const auto& e : fProgram.fElements) {
         this->writeProgramElement(*e);
     }
     fOut = rawOut;
 
     write_stringstream(fHeader, *rawOut);
+    if (this->usesPrecisionModifiers()) {
+        this->writeLine("precision mediump float;");
+    }
     write_stringstream(body, *rawOut);
     return true;
 }

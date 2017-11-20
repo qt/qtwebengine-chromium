@@ -29,7 +29,7 @@
 #include "core/dom/LayoutTreeBuilderTraversal.h"
 #include "core/dom/Node.h"
 #include "core/dom/V0InsertionPoint.h"
-#include "core/html/HTMLOptGroupElement.h"
+#include "core/html/forms/HTMLOptGroupElement.h"
 #include "core/layout/LayoutObject.h"
 
 namespace blink {
@@ -39,7 +39,7 @@ inline const ComputedStyle* Node::GetComputedStyle() const {
 }
 
 inline ComputedStyle* Node::MutableComputedStyle() const {
-  if (LayoutObject* layout_object = this->GetLayoutObject())
+  if (LayoutObject* layout_object = GetLayoutObject())
     return layout_object->MutableStyle();
 
   if (IsElementNode())

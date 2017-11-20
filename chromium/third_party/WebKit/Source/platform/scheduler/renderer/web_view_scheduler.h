@@ -6,14 +6,13 @@
 #define THIRD_PARTY_WEBKIT_SOURCE_PLATFORM_SCHEDULER_RENDERER_WEB_VIEW_SCHEDULER_H_
 
 #include "platform/PlatformExport.h"
+#include "platform/WebFrameScheduler.h"
 #include "platform/wtf/Functional.h"
 #include "public/platform/BlameContext.h"
 
 #include <memory>
 
 namespace blink {
-
-class WebFrameScheduler;
 
 class PLATFORM_EXPORT WebViewScheduler {
  public:
@@ -28,12 +27,15 @@ class PLATFORM_EXPORT WebViewScheduler {
 
   // The scheduler may throttle tasks associated with background pages.
   virtual void SetPageVisible(bool) = 0;
+  // The scheduler transitions app to and from STOPPED state in background.
+  virtual void SetPageStopped(bool) = 0;
 
   // Creates a new WebFrameScheduler. The caller is responsible for deleting
   // it. All tasks executed by the frame scheduler will be attributed to
-  // |BlameContext|.
+  // |blame_context|.
   virtual std::unique_ptr<WebFrameScheduler> CreateFrameScheduler(
-      BlameContext*) = 0;
+      BlameContext* blame_context,
+      WebFrameScheduler::FrameType) = 0;
 
   // Instructs this WebViewScheduler to use virtual time. When virtual time is
   // enabled the system doesn't actually sleep for the delays between tasks
@@ -78,19 +80,23 @@ class PLATFORM_EXPORT WebViewScheduler {
   // WebFrameSchedulers.
   virtual void SetVirtualTimePolicy(VirtualTimePolicy) = 0;
 
-  class VirtualTimeObserver {
+  class PLATFORM_EXPORT VirtualTimeObserver {
    public:
     virtual ~VirtualTimeObserver() {}
 
-    // Called the next microtask after virtual time pauses for any reason.
-    // |virtual_time_offset| is the offset between the current virtual time and
-    // the initial virtual time when EnableVirtualTime() was called.
+    // Called when virtual time advances. |virtual_time_offset| is the offset
+    // between the current virtual time and the initial virtual time when
+    // EnableVirtualTime() was called.
+    virtual void OnVirtualTimeAdvanced(base::TimeDelta virtual_time_offset) = 0;
+
+    // Called when virtual time pauses for any reason. |virtual_time_offset| is
+    // the offset between the current virtual time and the initial virtual time
+    // when EnableVirtualTime() was called.
     virtual void OnVirtualTimePaused(base::TimeDelta virtual_time_offset) = 0;
   };
 
   // Adds a VirtualTimeObserver instance to be notified when virtual time has
-  // been paused. Note the observer will fire in the microtask after the policy
-  // decision was made.
+  // been paused.
   virtual void AddVirtualTimeObserver(VirtualTimeObserver*) = 0;
   virtual void RemoveVirtualTimeObserver(VirtualTimeObserver*) = 0;
 

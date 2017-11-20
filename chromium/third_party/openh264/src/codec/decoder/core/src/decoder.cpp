@@ -310,10 +310,9 @@ void WelsDecoderDefaults (PWelsDecoderContext pCtx, SLogContext* pLogCtx) {
   pCtx->pPicBuff[LIST_1]          = NULL;
 
   pCtx->bAvcBasedFlag             = true;
-  pCtx->eErrorConMethod = ERROR_CON_SLICE_MV_COPY_CROSS_IDR_FREEZE_RES_CHANGE;
   pCtx->pPreviousDecodedPictureInDpb = NULL;
   pCtx->sDecoderStatistics.iAvgLumaQp = -1;
-  pCtx->bSpsLatePps = false;
+  pCtx->sDecoderStatistics.iStatisticsLogInterval = 1000;
   pCtx->bUseScalingList = false;
   pCtx->iSpsErrorIgnored = 0;
   pCtx->iSubSpsErrorIgnored = 0;
@@ -476,7 +475,7 @@ void WelsFreeDynamicMemory (PWelsDecoderContext pCtx) {
 /*!
  * \brief   Open decoder
  */
-int32_t WelsOpenDecoder (PWelsDecoderContext pCtx) {
+int32_t WelsOpenDecoder (PWelsDecoderContext pCtx, SLogContext* pLogCtx) {
   int iRet = ERR_NONE;
   // function pointers
   InitDecFuncs (pCtx, pCtx->uiCpuFlag);
@@ -486,8 +485,11 @@ int32_t WelsOpenDecoder (PWelsDecoderContext pCtx) {
 
   // static memory
   iRet = WelsInitStaticMemory (pCtx);
-  if (ERR_NONE != iRet)
+  if (ERR_NONE != iRet) {
+    pCtx->iErrorCode |= dsOutOfMemory;
+    WelsLog (pLogCtx, WELS_LOG_ERROR, "WelsInitStaticMemory() failed in WelsOpenDecoder().");
     return iRet;
+  }
 
 #ifdef LONG_TERM_REF
   pCtx->bParamSetsLostFlag = true;
@@ -534,10 +536,9 @@ int32_t DecoderConfigParam (PWelsDecoderContext pCtx, const SDecodingParam* kpPa
              ERROR_CON_SLICE_MV_COPY_CROSS_IDR_FREEZE_RES_CHANGE);
     pCtx->pParam->eEcActiveIdc = ERROR_CON_SLICE_MV_COPY_CROSS_IDR_FREEZE_RES_CHANGE;
   }
-  pCtx->eErrorConMethod = pCtx->pParam->eEcActiveIdc;
 
   if (pCtx->pParam->bParseOnly) //parse only, disable EC method
-    pCtx->eErrorConMethod = ERROR_CON_DISABLE;
+    pCtx->pParam->eEcActiveIdc = ERROR_CON_DISABLE;
   InitErrorCon (pCtx);
 
   if (VIDEO_BITSTREAM_SVC == pCtx->pParam->sVideoProperty.eVideoBsType ||
@@ -570,7 +571,7 @@ int32_t WelsInitDecoder (PWelsDecoderContext pCtx, SLogContext* pLogCtx) {
   }
 
   // open decoder
-  return WelsOpenDecoder (pCtx);
+  return WelsOpenDecoder (pCtx, pLogCtx);
 }
 
 /*!
@@ -819,17 +820,17 @@ int32_t SyncPictureResolutionExt (PWelsDecoderContext pCtx, const int32_t kiMbWi
   bool bReallocFlag = false;
   iErr = WelsRequestMem (pCtx, kiMbWidth, kiMbHeight, bReallocFlag); // common memory used
   if (ERR_NONE != iErr) {
-    WelsLog (& (pCtx->sLogCtx), WELS_LOG_WARNING,
+    WelsLog (& (pCtx->sLogCtx), WELS_LOG_ERROR,
              "SyncPictureResolutionExt()::WelsRequestMem--buffer allocated failure.");
-    pCtx->iErrorCode = dsOutOfMemory;
+    pCtx->iErrorCode |= dsOutOfMemory;
     return iErr;
   }
 
   iErr = InitialDqLayersContext (pCtx, kiPicWidth, kiPicHeight);
   if (ERR_NONE != iErr) {
-    WelsLog (& (pCtx->sLogCtx), WELS_LOG_WARNING,
+    WelsLog (& (pCtx->sLogCtx), WELS_LOG_ERROR,
              "SyncPictureResolutionExt()::InitialDqLayersContext--buffer allocated failure.");
-    pCtx->iErrorCode = dsOutOfMemory;
+    pCtx->iErrorCode |= dsOutOfMemory;
   }
 #if defined(MEMORY_MONITOR)
   if (bReallocFlag) {
@@ -1020,10 +1021,12 @@ void ResetDecStatNums (SDecoderStatistics* pDecStat) {
   uint32_t uiWidth = pDecStat->uiWidth;
   uint32_t uiHeight = pDecStat->uiHeight;
   int32_t iAvgLumaQp = pDecStat->iAvgLumaQp;
+  uint32_t iLogInterval = pDecStat->iStatisticsLogInterval;
   memset (pDecStat, 0, sizeof (SDecoderStatistics));
   pDecStat->uiWidth = uiWidth;
   pDecStat->uiHeight = uiHeight;
   pDecStat->iAvgLumaQp = iAvgLumaQp;
+  pDecStat->iStatisticsLogInterval = iLogInterval;
 }
 
 //update information when freezing occurs, including IDR/non-IDR number

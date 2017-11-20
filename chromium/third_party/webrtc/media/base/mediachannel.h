@@ -8,34 +8,35 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MEDIA_BASE_MEDIACHANNEL_H_
-#define WEBRTC_MEDIA_BASE_MEDIACHANNEL_H_
+#ifndef MEDIA_BASE_MEDIACHANNEL_H_
+#define MEDIA_BASE_MEDIACHANNEL_H_
 
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "webrtc/api/rtpparameters.h"
-#include "webrtc/api/rtpreceiverinterface.h"
-#include "webrtc/api/video/video_timing.h"
-#include "webrtc/config.h"
-#include "webrtc/media/base/codec.h"
-#include "webrtc/media/base/mediaconstants.h"
-#include "webrtc/media/base/streamparams.h"
-#include "webrtc/media/base/videosinkinterface.h"
-#include "webrtc/media/base/videosourceinterface.h"
-#include "webrtc/rtc_base/basictypes.h"
-#include "webrtc/rtc_base/buffer.h"
-#include "webrtc/rtc_base/copyonwritebuffer.h"
-#include "webrtc/rtc_base/dscp.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/networkroute.h"
-#include "webrtc/rtc_base/optional.h"
-#include "webrtc/rtc_base/sigslot.h"
-#include "webrtc/rtc_base/socket.h"
-#include "webrtc/rtc_base/window.h"
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/optional.h"
+#include "api/rtpparameters.h"
+#include "api/rtpreceiverinterface.h"
+#include "api/video/video_timing.h"
+#include "call/video_config.h"
+#include "media/base/codec.h"
+#include "media/base/mediaconstants.h"
+#include "media/base/streamparams.h"
+#include "media/base/videosinkinterface.h"
+#include "media/base/videosourceinterface.h"
+#include "rtc_base/basictypes.h"
+#include "rtc_base/buffer.h"
+#include "rtc_base/copyonwritebuffer.h"
+#include "rtc_base/dscp.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/networkroute.h"
+#include "rtc_base/sigslot.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/window.h"
 // TODO(juberti): re-evaluate this include
-#include "webrtc/pc/audiomonitor.h"
+#include "pc/audiomonitor.h"
 
 namespace rtc {
 class RateLimiter;
@@ -641,6 +642,7 @@ struct VoiceSenderInfo : public MediaSenderInfo {
   float residual_echo_likelihood;
   float residual_echo_likelihood_recent_max;
   bool typing_noise_detected;
+  webrtc::ANAStats ana_statistics;
 };
 
 struct VoiceReceiverInfo : public MediaReceiverInfo {
@@ -655,6 +657,8 @@ struct VoiceReceiverInfo : public MediaReceiverInfo {
         total_samples_received(0),
         total_output_duration(0.0),
         concealed_samples(0),
+        concealment_events(0),
+        jitter_buffer_delay_seconds(0),
         expand_rate(0),
         speech_expand_rate(0),
         secondary_decoded_rate(0),
@@ -676,18 +680,15 @@ struct VoiceReceiverInfo : public MediaReceiverInfo {
   int jitter_buffer_preferred_ms;
   int delay_estimate_ms;
   int audio_level;
-  // See description of "totalAudioEnergy" in the WebRTC stats spec:
-  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalaudioenergy
+  // Stats below correspond to similarly-named fields in the WebRTC stats spec.
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats
   double total_output_energy;
-  // See description of "totalSamplesReceived" in the WebRTC stats spec:
-  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalsamplesreceived
   uint64_t total_samples_received;
-  // See description of "totalSamplesDuration" in the WebRTC stats spec:
-  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalsamplesduration
   double total_output_duration;
-  // See description of "concealedSamples" in the WebRTC stats spec:
-  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-concealedsamples
   uint64_t concealed_samples;
+  uint64_t concealment_events;
+  double jitter_buffer_delay_seconds;
+  // Stats below DO NOT correspond directly to anything in the WebRTC stats
   // fraction of synthesized audio inserted through expansion.
   float expand_rate;
   // fraction of synthesized speech inserted through expansion.
@@ -731,7 +732,8 @@ struct VideoSenderInfo : public MediaSenderInfo {
         adapt_changes(0),
         avg_encode_ms(0),
         encode_usage_percent(0),
-        frames_encoded(0) {}
+        frames_encoded(0),
+        content_type(webrtc::VideoContentType::UNSPECIFIED) {}
 
   std::vector<SsrcGroup> ssrc_groups;
   // TODO(hbos): Move this to |VideoMediaInfo::send_codecs|?
@@ -752,6 +754,7 @@ struct VideoSenderInfo : public MediaSenderInfo {
   int encode_usage_percent;
   uint32_t frames_encoded;
   rtc::Optional<uint64_t> qp_sum;
+  webrtc::VideoContentType content_type;
 };
 
 struct VideoReceiverInfo : public MediaReceiverInfo {
@@ -1250,4 +1253,4 @@ class DataMediaChannel : public MediaChannel {
 
 }  // namespace cricket
 
-#endif  // WEBRTC_MEDIA_BASE_MEDIACHANNEL_H_
+#endif  // MEDIA_BASE_MEDIACHANNEL_H_

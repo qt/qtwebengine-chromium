@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/pc/webrtcsdp.h"
+#include "pc/webrtcsdp.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -20,24 +20,24 @@
 #include <unordered_map>
 #include <vector>
 
-#include "webrtc/api/jsepicecandidate.h"
-#include "webrtc/api/jsepsessiondescription.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/messagedigest.h"
-#include "webrtc/rtc_base/stringutils.h"
+#include "api/candidate.h"
+#include "api/jsepicecandidate.h"
+#include "api/jsepsessiondescription.h"
 // for RtpExtension
-#include "webrtc/config.h"
-#include "webrtc/media/base/codec.h"
-#include "webrtc/media/base/cryptoparams.h"
-#include "webrtc/media/base/mediaconstants.h"
-#include "webrtc/media/base/rtputils.h"
-#include "webrtc/media/sctp/sctptransportinternal.h"
-#include "webrtc/p2p/base/candidate.h"
-#include "webrtc/p2p/base/p2pconstants.h"
-#include "webrtc/p2p/base/port.h"
-#include "webrtc/pc/mediasession.h"
+#include "api/rtpparameters.h"
+#include "media/base/codec.h"
+#include "media/base/cryptoparams.h"
+#include "media/base/mediaconstants.h"
+#include "media/base/rtputils.h"
+#include "media/sctp/sctptransportinternal.h"
+#include "p2p/base/p2pconstants.h"
+#include "p2p/base/port.h"
+#include "pc/mediasession.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/messagedigest.h"
+#include "rtc_base/stringutils.h"
 
 using cricket::AudioContentDescription;
 using cricket::Candidate;
@@ -1505,6 +1505,12 @@ void BuildRtpContentAttributes(const MediaContentDescription* media_desc,
   // a=rtcp-rsize
   if (media_desc->rtcp_reduced_size()) {
     InitAttrLine(kAttributeRtcpReducedSize, &os);
+    AddLine(os.str(), message);
+  }
+
+  if (media_desc->conference_mode()) {
+    InitAttrLine(kAttributeXGoogleFlag, &os);
+    os << kSdpDelimiterColon << kValueConference;
     AddLine(os.str(), message);
   }
 

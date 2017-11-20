@@ -89,25 +89,48 @@ enum class GrAllowMixedSamples { kNo, kYes };
 GrAAType GrChooseAAType(GrAA, GrFSAAType, GrAllowMixedSamples, const GrCaps&);
 
 /**
+ * Some pixel configs are inherently clamped to [0,1], while others can hold values outside of that
+ * range. This is important for blending - the latter category may require manual clamping.
+ */
+enum class GrPixelConfigIsClamped : bool {
+    kNo,   // F16 or F32
+    kYes,  // Any UNORM type
+};
+
+static inline GrPixelConfigIsClamped GrGetPixelConfigIsClamped(GrPixelConfig config) {
+    return GrPixelConfigIsFloatingPoint(config) ? GrPixelConfigIsClamped::kNo
+                                                : GrPixelConfigIsClamped::kYes;
+}
+
+/**
  * Types of shader-language-specific boxed variables we can create. (Currently only GrGLShaderVars,
  * but should be applicable to other shader languages.)
  */
 enum GrSLType {
     kVoid_GrSLType,
     kBool_GrSLType,
-    kInt_GrSLType,
-    kUint_GrSLType,
+    kShort_GrSLType,
+    kUShort_GrSLType,
     kFloat_GrSLType,
-    kVec2f_GrSLType,
-    kVec3f_GrSLType,
-    kVec4f_GrSLType,
-    kVec2us_GrSLType,
-    kVec2i_GrSLType,
-    kVec3i_GrSLType,
-    kVec4i_GrSLType,
-    kMat22f_GrSLType,
-    kMat33f_GrSLType,
-    kMat44f_GrSLType,
+    kFloat2_GrSLType,
+    kFloat3_GrSLType,
+    kFloat4_GrSLType,
+    kFloat2x2_GrSLType,
+    kFloat3x3_GrSLType,
+    kFloat4x4_GrSLType,
+    kHalf_GrSLType,
+    kHalf2_GrSLType,
+    kHalf3_GrSLType,
+    kHalf4_GrSLType,
+    kHalf2x2_GrSLType,
+    kHalf3x3_GrSLType,
+    kHalf4x4_GrSLType,
+    kInt_GrSLType,
+    kInt2_GrSLType,
+    kInt3_GrSLType,
+    kInt4_GrSLType,
+    kUint_GrSLType,
+    kUint2_GrSLType,
     kTexture2DSampler_GrSLType,
     kITexture2DSampler_GrSLType,
     kTextureExternalSampler_GrSLType,
@@ -162,12 +185,19 @@ static const int kGrSLPrecisionCount = kLast_GrSLPrecision + 1;
 static inline bool GrSLTypeIsFloatType(GrSLType type) {
     switch (type) {
         case kFloat_GrSLType:
-        case kVec2f_GrSLType:
-        case kVec3f_GrSLType:
-        case kVec4f_GrSLType:
-        case kMat22f_GrSLType:
-        case kMat33f_GrSLType:
-        case kMat44f_GrSLType:
+        case kFloat2_GrSLType:
+        case kFloat3_GrSLType:
+        case kFloat4_GrSLType:
+        case kFloat2x2_GrSLType:
+        case kFloat3x3_GrSLType:
+        case kFloat4x4_GrSLType:
+        case kHalf_GrSLType:
+        case kHalf2_GrSLType:
+        case kHalf3_GrSLType:
+        case kHalf4_GrSLType:
+        case kHalf2x2_GrSLType:
+        case kHalf3x3_GrSLType:
+        case kHalf4x4_GrSLType:
             return true;
 
         case kVoid_GrSLType:
@@ -177,12 +207,14 @@ static inline bool GrSLTypeIsFloatType(GrSLType type) {
         case kTexture2DRectSampler_GrSLType:
         case kBufferSampler_GrSLType:
         case kBool_GrSLType:
+        case kShort_GrSLType:
+        case kUShort_GrSLType:
         case kInt_GrSLType:
+        case kInt2_GrSLType:
+        case kInt3_GrSLType:
+        case kInt4_GrSLType:
         case kUint_GrSLType:
-        case kVec2us_GrSLType:
-        case kVec2i_GrSLType:
-        case kVec3i_GrSLType:
-        case kVec4i_GrSLType:
+        case kUint2_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
         case kImageStorage2D_GrSLType:
@@ -203,20 +235,29 @@ static inline bool GrSLTypeIs2DCombinedSamplerType(GrSLType type) {
 
         case kVoid_GrSLType:
         case kFloat_GrSLType:
-        case kVec2f_GrSLType:
-        case kVec3f_GrSLType:
-        case kVec4f_GrSLType:
-        case kVec2us_GrSLType:
-        case kVec2i_GrSLType:
-        case kVec3i_GrSLType:
-        case kVec4i_GrSLType:
-        case kMat22f_GrSLType:
-        case kMat33f_GrSLType:
-        case kMat44f_GrSLType:
-        case kBufferSampler_GrSLType:
+        case kFloat2_GrSLType:
+        case kFloat3_GrSLType:
+        case kFloat4_GrSLType:
+        case kFloat2x2_GrSLType:
+        case kFloat3x3_GrSLType:
+        case kFloat4x4_GrSLType:
+        case kHalf_GrSLType:
+        case kHalf2_GrSLType:
+        case kHalf3_GrSLType:
+        case kHalf4_GrSLType:
+        case kHalf2x2_GrSLType:
+        case kHalf3x3_GrSLType:
+        case kHalf4x4_GrSLType:
         case kInt_GrSLType:
+        case kInt2_GrSLType:
+        case kInt3_GrSLType:
+        case kInt4_GrSLType:
         case kUint_GrSLType:
+        case kUint2_GrSLType:
+        case kBufferSampler_GrSLType:
         case kBool_GrSLType:
+        case kShort_GrSLType:
+        case kUShort_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
         case kImageStorage2D_GrSLType:
@@ -238,19 +279,28 @@ static inline bool GrSLTypeIsCombinedSamplerType(GrSLType type) {
 
         case kVoid_GrSLType:
         case kFloat_GrSLType:
-        case kVec2f_GrSLType:
-        case kVec3f_GrSLType:
-        case kVec4f_GrSLType:
-        case kVec2us_GrSLType:
-        case kVec2i_GrSLType:
-        case kVec3i_GrSLType:
-        case kVec4i_GrSLType:
-        case kMat22f_GrSLType:
-        case kMat33f_GrSLType:
-        case kMat44f_GrSLType:
+        case kFloat2_GrSLType:
+        case kFloat3_GrSLType:
+        case kFloat4_GrSLType:
+        case kFloat2x2_GrSLType:
+        case kFloat3x3_GrSLType:
+        case kFloat4x4_GrSLType:
+        case kHalf_GrSLType:
+        case kHalf2_GrSLType:
+        case kHalf3_GrSLType:
+        case kHalf4_GrSLType:
+        case kHalf2x2_GrSLType:
+        case kHalf3x3_GrSLType:
+        case kHalf4x4_GrSLType:
         case kInt_GrSLType:
+        case kInt2_GrSLType:
+        case kInt3_GrSLType:
+        case kInt4_GrSLType:
         case kUint_GrSLType:
+        case kUint2_GrSLType:
         case kBool_GrSLType:
+        case kShort_GrSLType:
+        case kUShort_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
         case kImageStorage2D_GrSLType:
@@ -269,19 +319,28 @@ static inline bool GrSLTypeIsImageStorage(GrSLType type) {
 
         case kVoid_GrSLType:
         case kFloat_GrSLType:
-        case kVec2f_GrSLType:
-        case kVec3f_GrSLType:
-        case kVec4f_GrSLType:
-        case kVec2us_GrSLType:
-        case kVec2i_GrSLType:
-        case kVec3i_GrSLType:
-        case kVec4i_GrSLType:
-        case kMat22f_GrSLType:
-        case kMat33f_GrSLType:
-        case kMat44f_GrSLType:
+        case kFloat2_GrSLType:
+        case kFloat3_GrSLType:
+        case kFloat4_GrSLType:
+        case kFloat2x2_GrSLType:
+        case kFloat3x3_GrSLType:
+        case kFloat4x4_GrSLType:
+        case kHalf_GrSLType:
+        case kHalf2_GrSLType:
+        case kHalf3_GrSLType:
+        case kHalf4_GrSLType:
+        case kHalf2x2_GrSLType:
+        case kHalf3x3_GrSLType:
+        case kHalf4x4_GrSLType:
         case kInt_GrSLType:
+        case kInt2_GrSLType:
+        case kInt3_GrSLType:
+        case kInt4_GrSLType:
         case kUint_GrSLType:
+        case kUint2_GrSLType:
         case kBool_GrSLType:
+        case kShort_GrSLType:
+        case kUShort_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
         case kTexture2DSampler_GrSLType:
@@ -297,19 +356,73 @@ static inline bool GrSLTypeIsImageStorage(GrSLType type) {
 
 static inline bool GrSLTypeAcceptsPrecision(GrSLType type) {
     switch (type) {
-        case kInt_GrSLType:
-        case kUint_GrSLType:
+        case kTexture2DSampler_GrSLType:
+        case kITexture2DSampler_GrSLType:
+        case kTextureExternalSampler_GrSLType:
+        case kTexture2DRectSampler_GrSLType:
+        case kBufferSampler_GrSLType:
+        case kTexture2D_GrSLType:
+        case kSampler_GrSLType:
+        case kImageStorage2D_GrSLType:
+        case kIImageStorage2D_GrSLType:
+            return true;
+
+        case kVoid_GrSLType:
+        case kBool_GrSLType:
+        case kShort_GrSLType:
+        case kUShort_GrSLType:
         case kFloat_GrSLType:
-        case kVec2f_GrSLType:
-        case kVec3f_GrSLType:
-        case kVec4f_GrSLType:
-        case kVec2us_GrSLType:
-        case kVec2i_GrSLType:
-        case kVec3i_GrSLType:
-        case kVec4i_GrSLType:
-        case kMat22f_GrSLType:
-        case kMat33f_GrSLType:
-        case kMat44f_GrSLType:
+        case kFloat2_GrSLType:
+        case kFloat3_GrSLType:
+        case kFloat4_GrSLType:
+        case kFloat2x2_GrSLType:
+        case kFloat3x3_GrSLType:
+        case kFloat4x4_GrSLType:
+        case kHalf_GrSLType:
+        case kHalf2_GrSLType:
+        case kHalf3_GrSLType:
+        case kHalf4_GrSLType:
+        case kHalf2x2_GrSLType:
+        case kHalf3x3_GrSLType:
+        case kHalf4x4_GrSLType:
+        case kInt_GrSLType:
+        case kInt2_GrSLType:
+        case kInt3_GrSLType:
+        case kInt4_GrSLType:
+        case kUint_GrSLType:
+        case kUint2_GrSLType:
+            return false;
+    }
+    SK_ABORT("Unexpected type");
+    return false;
+}
+
+// temporarily accepting (but ignoring) precision modifiers on the new types; this will be killed
+// in a future CL
+static inline bool GrSLTypeTemporarilyAcceptsPrecision(GrSLType type) {
+    switch (type) {
+        case kShort_GrSLType:
+        case kUShort_GrSLType:
+        case kFloat_GrSLType:
+        case kFloat2_GrSLType:
+        case kFloat3_GrSLType:
+        case kFloat4_GrSLType:
+        case kFloat2x2_GrSLType:
+        case kFloat3x3_GrSLType:
+        case kFloat4x4_GrSLType:
+        case kHalf_GrSLType:
+        case kHalf2_GrSLType:
+        case kHalf3_GrSLType:
+        case kHalf4_GrSLType:
+        case kHalf2x2_GrSLType:
+        case kHalf3x3_GrSLType:
+        case kHalf4x4_GrSLType:
+        case kInt_GrSLType:
+        case kInt2_GrSLType:
+        case kInt3_GrSLType:
+        case kInt4_GrSLType:
+        case kUint_GrSLType:
+        case kUint2_GrSLType:
         case kTexture2DSampler_GrSLType:
         case kITexture2DSampler_GrSLType:
         case kTextureExternalSampler_GrSLType:
@@ -336,19 +449,24 @@ static inline bool GrSLTypeAcceptsPrecision(GrSLType type) {
  */
 enum GrVertexAttribType {
     kFloat_GrVertexAttribType = 0,
-    kVec2f_GrVertexAttribType,
-    kVec3f_GrVertexAttribType,
-    kVec4f_GrVertexAttribType,
+    kFloat2_GrVertexAttribType,
+    kFloat3_GrVertexAttribType,
+    kFloat4_GrVertexAttribType,
+    kHalf_GrVertexAttribType,
+    kHalf2_GrVertexAttribType,
+    kHalf3_GrVertexAttribType,
+    kHalf4_GrVertexAttribType,
 
-    kVec2i_GrVertexAttribType,   // vector of 2 32-bit ints
-    kVec3i_GrVertexAttribType,   // vector of 3 32-bit ints
-    kVec4i_GrVertexAttribType,   // vector of 4 32-bit ints
+    kInt2_GrVertexAttribType,   // vector of 2 32-bit ints
+    kInt3_GrVertexAttribType,   // vector of 3 32-bit ints
+    kInt4_GrVertexAttribType,   // vector of 4 32-bit ints
 
-    kUByte_GrVertexAttribType,   // unsigned byte, e.g. coverage
-    kVec4ub_GrVertexAttribType,  // vector of 4 unsigned bytes, e.g. colors
+    kUByte_norm_GrVertexAttribType,  // unsigned byte, e.g. coverage, 0 -> 0.0f, 255 -> 1.0f.
+    kUByte4_norm_GrVertexAttribType, // vector of 4 unsigned bytes, e.g. colors, 0 -> 0.0f,
+                                     // 255 -> 1.0f.
 
-    kVec2us_norm_GrVertexAttribType, // vector of 2 shorts. 0 -> 0.0f, 65535 -> 1.0f.
-    kVec2us_uint_GrVertexAttribType, // vector of 2 shorts. 0 -> 0, 65535 -> 65535.
+    kUShort2_GrVertexAttribType,      // vector of 2 shorts. 0 -> 0, 65535 -> 65535.
+    kUShort2_norm_GrVertexAttribType, // vector of 2 shorts. 0 -> 0.0f, 65535 -> 1.0f.
 
     kInt_GrVertexAttribType,
     kUint_GrVertexAttribType,
@@ -364,24 +482,32 @@ static inline size_t GrVertexAttribTypeSize(GrVertexAttribType type) {
     switch (type) {
         case kFloat_GrVertexAttribType:
             return sizeof(float);
-        case kVec2f_GrVertexAttribType:
+        case kFloat2_GrVertexAttribType:
             return 2 * sizeof(float);
-        case kVec3f_GrVertexAttribType:
+        case kFloat3_GrVertexAttribType:
             return 3 * sizeof(float);
-        case kVec4f_GrVertexAttribType:
+        case kFloat4_GrVertexAttribType:
             return 4 * sizeof(float);
-        case kVec2i_GrVertexAttribType:
+        case kHalf_GrVertexAttribType:
+            return sizeof(float);
+        case kHalf2_GrVertexAttribType:
+            return 2 * sizeof(float);
+        case kHalf3_GrVertexAttribType:
+            return 3 * sizeof(float);
+        case kHalf4_GrVertexAttribType:
+            return 4 * sizeof(float);
+        case kInt2_GrVertexAttribType:
             return 2 * sizeof(int32_t);
-        case kVec3i_GrVertexAttribType:
+        case kInt3_GrVertexAttribType:
             return 3 * sizeof(int32_t);
-        case kVec4i_GrVertexAttribType:
+        case kInt4_GrVertexAttribType:
             return 4 * sizeof(int32_t);
-        case kUByte_GrVertexAttribType:
+        case kUByte_norm_GrVertexAttribType:
             return 1 * sizeof(char);
-        case kVec4ub_GrVertexAttribType:
+        case kUByte4_norm_GrVertexAttribType:
             return 4 * sizeof(char);
-        case kVec2us_norm_GrVertexAttribType: // fall through
-        case kVec2us_uint_GrVertexAttribType:
+        case kUShort2_norm_GrVertexAttribType: // fall through
+        case kUShort2_GrVertexAttribType:
             return 2 * sizeof(int16_t);
         case kInt_GrVertexAttribType:
             return sizeof(int32_t);
@@ -397,26 +523,34 @@ static inline size_t GrVertexAttribTypeSize(GrVertexAttribType type) {
  */
 static inline GrSLType GrVertexAttribTypeToSLType(GrVertexAttribType type) {
     switch (type) {
-        case kVec2us_norm_GrVertexAttribType: // fall through
-            return kVec2f_GrSLType;
-        case kVec2us_uint_GrVertexAttribType:
-            return kVec2us_GrSLType;
-        case kUByte_GrVertexAttribType:       // fall through
+        case kUShort2_norm_GrVertexAttribType: // fall through
+            return kFloat2_GrSLType;
+        case kUShort2_GrVertexAttribType:
+            return kUint2_GrSLType;
+        case kUByte_norm_GrVertexAttribType:   // fall through
         case kFloat_GrVertexAttribType:
             return kFloat_GrSLType;
-        case kVec2f_GrVertexAttribType:
-            return kVec2f_GrSLType;
-        case kVec3f_GrVertexAttribType:
-            return kVec3f_GrSLType;
-        case kVec4ub_GrVertexAttribType:
-        case kVec4f_GrVertexAttribType:
-            return kVec4f_GrSLType;
-        case kVec2i_GrVertexAttribType:
-            return kVec2i_GrSLType;
-        case kVec3i_GrVertexAttribType:
-            return kVec3i_GrSLType;
-        case kVec4i_GrVertexAttribType:
-            return kVec4i_GrSLType;
+        case kFloat2_GrVertexAttribType:
+            return kFloat2_GrSLType;
+        case kFloat3_GrVertexAttribType:
+            return kFloat3_GrSLType;
+        case kFloat4_GrVertexAttribType:
+            return kFloat4_GrSLType;
+        case kHalf_GrVertexAttribType:
+            return kHalf_GrSLType;
+        case kHalf2_GrVertexAttribType:
+            return kHalf2_GrSLType;
+        case kHalf3_GrVertexAttribType:
+            return kHalf3_GrSLType;
+        case kHalf4_GrVertexAttribType:
+        case kUByte4_norm_GrVertexAttribType:
+            return kHalf4_GrSLType;
+        case kInt2_GrVertexAttribType:
+            return kInt2_GrSLType;
+        case kInt3_GrVertexAttribType:
+            return kInt3_GrSLType;
+        case kInt4_GrVertexAttribType:
+            return kInt4_GrSLType;
         case kInt_GrVertexAttribType:
             return kInt_GrSLType;
         case kUint_GrVertexAttribType:

@@ -4,11 +4,10 @@
 
 #include "core/html/RelList.h"
 
-#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/origin_trials/OriginTrials.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "core/html_names.h"
+#include "core/origin_trials/origin_trials.h"
 #include "platform/wtf/HashMap.h"
 
 namespace blink {

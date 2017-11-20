@@ -17,7 +17,7 @@ namespace blink {
 class CORE_EXPORT AnimatableValueKeyframe : public Keyframe {
  public:
   static RefPtr<AnimatableValueKeyframe> Create() {
-    return AdoptRef(new AnimatableValueKeyframe);
+    return WTF::AdoptRef(new AnimatableValueKeyframe);
   }
   void SetPropertyValue(CSSPropertyID property, RefPtr<AnimatableValue> value) {
     property_values_.Set(property, std::move(value));
@@ -38,13 +38,13 @@ class CORE_EXPORT AnimatableValueKeyframe : public Keyframe {
         RefPtr<TimingFunction> easing,
         RefPtr<AnimatableValue> value,
         EffectModel::CompositeOperation composite) {
-      return AdoptRef(new PropertySpecificKeyframe(
+      return WTF::AdoptRef(new PropertySpecificKeyframe(
           offset, std::move(easing), std::move(value), composite));
     }
 
-    AnimatableValue* Value() const { return value_.Get(); }
+    AnimatableValue* Value() const { return value_.get(); }
     const AnimatableValue* GetAnimatableValue() const final {
-      return value_.Get();
+      return value_.get();
     }
 
     bool IsNeutral() const final { return false; }

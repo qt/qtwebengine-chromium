@@ -27,11 +27,11 @@
 #define ScrollableArea_h
 
 #include "platform/PlatformExport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/Color.h"
 #include "platform/heap/Handle.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scroll/ScrollAnimatorBase.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/Scrollbar.h"
@@ -74,7 +74,7 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
     return std::isfinite(value) ? value : 0.0;
   }
 
-  virtual PlatformChromeClient* GetChromeClient() const { return 0; }
+  virtual PlatformChromeClient* GetChromeClient() const { return nullptr; }
 
   virtual SmoothScrollSequencer* GetSmoothScrollSequencer() const {
     return nullptr;
@@ -298,10 +298,10 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   }
 
   virtual GraphicsLayer* LayerForContainer() const;
-  virtual GraphicsLayer* LayerForScrolling() const { return 0; }
-  virtual GraphicsLayer* LayerForHorizontalScrollbar() const { return 0; }
-  virtual GraphicsLayer* LayerForVerticalScrollbar() const { return 0; }
-  virtual GraphicsLayer* LayerForScrollCorner() const { return 0; }
+  virtual GraphicsLayer* LayerForScrolling() const { return nullptr; }
+  virtual GraphicsLayer* LayerForHorizontalScrollbar() const { return nullptr; }
+  virtual GraphicsLayer* LayerForVerticalScrollbar() const { return nullptr; }
+  virtual GraphicsLayer* LayerForScrollCorner() const { return nullptr; }
   bool HasLayerForHorizontalScrollbar() const;
   bool HasLayerForVerticalScrollbar() const;
   bool HasLayerForScrollCorner() const;
@@ -418,6 +418,9 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   virtual void ScrollbarVisibilityChanged() {}
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(ScrollableAreaTest,
+                           PopupOverlayScrollbarShouldNotFadeOut);
+
   void ProgrammaticScrollHelper(const ScrollOffset&, ScrollBehavior, bool);
   void UserScrollHelper(const ScrollOffset&, ScrollBehavior);
 

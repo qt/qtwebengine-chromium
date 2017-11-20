@@ -17,13 +17,14 @@
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/vpn_service_proxy.h"
 #include "content/public/common/content_features.h"
-#include "content/public/common/sandbox_type.h"
 #include "content/public/common/url_loader_throttle.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/cdm_factory.h"
 #include "media/media_features.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "net/ssl/client_cert_identity.h"
+#include "net/url_request/url_request_context_getter.h"
+#include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/shell_dialogs/select_file_policy.h"
@@ -38,7 +39,7 @@ BrowserMainParts* ContentBrowserClient::CreateBrowserMainParts(
 }
 
 void ContentBrowserClient::PostAfterStartupTask(
-    const tracked_objects::Location& from_here,
+    const base::Location& from_here,
     const scoped_refptr<base::TaskRunner>& task_runner,
     base::OnceClosure task) {
   task_runner->PostTask(from_here, std::move(task));
@@ -106,6 +107,12 @@ bool ContentBrowserClient::
   return false;
 }
 
+bool ContentBrowserClient::ShouldStayInParentProcessForNTP(
+    const GURL& url,
+    SiteInstance* parent_site_instance) {
+  return false;
+}
+
 bool ContentBrowserClient::IsSuitableHost(RenderProcessHost* process_host,
                                           const GURL& site_url) {
   return true;
@@ -165,7 +172,8 @@ const gfx::ImageSkia* ContentBrowserClient::GetDefaultFavicon() {
   return empty;
 }
 
-base::FilePath ContentBrowserClient::GetLoggingFileName() {
+base::FilePath ContentBrowserClient::GetLoggingFileName(
+    const base::CommandLine& command_line) {
   return base::FilePath();
 }
 
@@ -185,6 +193,13 @@ bool ContentBrowserClient::AllowServiceWorker(
 
 bool ContentBrowserClient::IsDataSaverEnabled(BrowserContext* context) {
   return false;
+}
+
+std::unique_ptr<net::HttpRequestHeaders>
+ContentBrowserClient::GetAdditionalNavigationRequestHeaders(
+    BrowserContext* context,
+    const GURL& url) const {
+  return nullptr;
 }
 
 bool ContentBrowserClient::AllowGetCookie(const GURL& url,
@@ -252,7 +267,6 @@ void ContentBrowserClient::AllowCertificateError(
     const net::SSLInfo& ssl_info,
     const GURL& request_url,
     ResourceType resource_type,
-    bool overridable,
     bool strict_enforcement,
     bool expired_previous_decision,
     const base::Callback<void(CertificateRequestResultType)>& callback) {
@@ -268,6 +282,16 @@ void ContentBrowserClient::SelectClientCertificate(
 net::URLRequestContext* ContentBrowserClient::OverrideRequestContextForURL(
     const GURL& url, ResourceContext* context) {
   return nullptr;
+}
+
+void ContentBrowserClient::GetGeolocationRequestContext(
+    base::OnceCallback<void(scoped_refptr<net::URLRequestContextGetter>)>
+        callback) {
+  std::move(callback).Run(scoped_refptr<net::URLRequestContextGetter>(nullptr));
+}
+
+std::string ContentBrowserClient::GetGeolocationApiKey() {
+  return std::string();
 }
 
 std::string ContentBrowserClient::GetStoragePartitionIdForSite(
@@ -507,11 +531,18 @@ mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
   return network_context;
 }
 
-bool ContentBrowserClient::OverrideLegacySymantecCertConsoleMessage(
-    const GURL& url,
-    const scoped_refptr<net::X509Certificate>& cert,
-    std::string* console_messsage) {
+#if defined(OS_ANDROID)
+bool ContentBrowserClient::ShouldOverrideUrlLoading(
+    int frame_tree_node_id,
+    bool browser_initiated,
+    const GURL& gurl,
+    const std::string& request_method,
+    bool has_user_gesture,
+    bool is_redirect,
+    bool is_main_frame,
+    ui::PageTransition transition) {
   return false;
 }
+#endif
 
 }  // namespace content

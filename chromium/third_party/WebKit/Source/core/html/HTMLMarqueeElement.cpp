@@ -26,7 +26,6 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/V8HTMLMarqueeElement.h"
 #include "core/CSSPropertyNames.h"
-#include "core/HTMLNames.h"
 #include "core/animation/DocumentTimeline.h"
 #include "core/animation/KeyframeEffect.h"
 #include "core/animation/KeyframeEffectModel.h"
@@ -36,13 +35,15 @@
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
-#include "core/dom/FrameRequestCallback.h"
+#include "core/dom/FrameRequestCallbackCollection.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLStyleElement.h"
+#include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html_names.h"
 #include "platform/wtf/Noncopyable.h"
 
 namespace blink {
@@ -76,21 +77,21 @@ void HTMLMarqueeElement::DidAddUserAgentShadowRoot(ShadowRoot& shadow_root) {
 }
 
 class HTMLMarqueeElement::RequestAnimationFrameCallback final
-    : public FrameRequestCallback {
+    : public FrameRequestCallbackCollection::FrameCallback {
   WTF_MAKE_NONCOPYABLE(RequestAnimationFrameCallback);
 
  public:
   explicit RequestAnimationFrameCallback(HTMLMarqueeElement* marquee)
       : marquee_(marquee) {}
 
-  void handleEvent(double) override {
+  void Invoke(double) override {
     marquee_->continue_callback_request_id_ = 0;
     marquee_->ContinueAnimation();
   }
 
   DEFINE_INLINE_VIRTUAL_TRACE() {
     visitor->Trace(marquee_);
-    FrameRequestCallback::Trace(visitor);
+    FrameRequestCallbackCollection::FrameCallback::Trace(visitor);
   }
 
  private:
@@ -144,42 +145,32 @@ bool HTMLMarqueeElement::IsHorizontal() const {
   return direction != kUp && direction != kDown;
 }
 
-int HTMLMarqueeElement::scrollAmount() const {
-  bool ok;
-  int scroll_amount = FastGetAttribute(HTMLNames::scrollamountAttr).ToInt(&ok);
-  if (!ok || scroll_amount < 0)
+unsigned HTMLMarqueeElement::scrollAmount() const {
+  unsigned scroll_amount = 0;
+  AtomicString value = FastGetAttribute(HTMLNames::scrollamountAttr);
+  if (value.IsEmpty() || !ParseHTMLNonNegativeInteger(value, scroll_amount) ||
+      scroll_amount > 0x7fffffffu)
     return kDefaultScrollAmount;
   return scroll_amount;
 }
 
-void HTMLMarqueeElement::setScrollAmount(int value,
-                                         ExceptionState& exception_state) {
-  if (value < 0) {
-    exception_state.ThrowDOMException(
-        kIndexSizeError,
-        "The provided value (" + String::Number(value) + ") is negative.");
-    return;
-  }
-  SetIntegralAttribute(HTMLNames::scrollamountAttr, value);
+void HTMLMarqueeElement::setScrollAmount(unsigned value) {
+  SetUnsignedIntegralAttribute(HTMLNames::scrollamountAttr, value,
+                               kDefaultScrollAmount);
 }
 
-int HTMLMarqueeElement::scrollDelay() const {
-  bool ok;
-  int scroll_delay = FastGetAttribute(HTMLNames::scrolldelayAttr).ToInt(&ok);
-  if (!ok || scroll_delay < 0)
+unsigned HTMLMarqueeElement::scrollDelay() const {
+  unsigned scroll_delay = 0;
+  AtomicString value = FastGetAttribute(HTMLNames::scrolldelayAttr);
+  if (value.IsEmpty() || !ParseHTMLNonNegativeInteger(value, scroll_delay) ||
+      scroll_delay > 0x7fffffffu)
     return kDefaultScrollDelayMS;
   return scroll_delay;
 }
 
-void HTMLMarqueeElement::setScrollDelay(int value,
-                                        ExceptionState& exception_state) {
-  if (value < 0) {
-    exception_state.ThrowDOMException(
-        kIndexSizeError,
-        "The provided value (" + String::Number(value) + ") is negative.");
-    return;
-  }
-  SetIntegralAttribute(HTMLNames::scrolldelayAttr, value);
+void HTMLMarqueeElement::setScrollDelay(unsigned value) {
+  SetUnsignedIntegralAttribute(HTMLNames::scrolldelayAttr, value,
+                               kDefaultScrollDelayMS);
 }
 
 int HTMLMarqueeElement::loop() const {
@@ -298,7 +289,7 @@ void HTMLMarqueeElement::ContinueAnimation() {
   Timing timing;
   timing.fill_mode = Timing::FillMode::FORWARDS;
   TimingInput::SetIterationDuration(
-      timing, UnrestrictedDoubleOrString::fromUnrestrictedDouble(duration),
+      timing, UnrestrictedDoubleOrString::FromUnrestrictedDouble(duration),
       ASSERT_NO_EXCEPTION);
 
   KeyframeEffect* keyframe_effect =
@@ -345,7 +336,7 @@ HTMLMarqueeElement::Direction HTMLMarqueeElement::GetDirection() const {
 HTMLMarqueeElement::Metrics HTMLMarqueeElement::GetMetrics() {
   Metrics metrics;
   CSSStyleDeclaration* marquee_style =
-      GetDocument().domWindow()->getComputedStyle(this, String());
+      GetDocument().domWindow()->getComputedStyle(this);
   // For marquees that are declared inline, getComputedStyle returns "auto" for
   // width and height. Setting all the metrics to zero disables animation for
   // inline marquees.
@@ -366,7 +357,7 @@ HTMLMarqueeElement::Metrics HTMLMarqueeElement::GetMetrics() {
                                  ASSERT_NO_EXCEPTION);
   }
   CSSStyleDeclaration* mover_style =
-      GetDocument().domWindow()->getComputedStyle(mover_, String());
+      GetDocument().domWindow()->getComputedStyle(mover_);
 
   metrics.content_width = mover_style->getPropertyValue("width").ToDouble();
   metrics.content_height = mover_style->getPropertyValue("height").ToDouble();

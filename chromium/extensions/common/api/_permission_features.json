@@ -368,7 +368,6 @@
       "12E618C3C6E97495AAECF2AC12DEB082353241C6",  // QO component extension
       "3727DD3E564B6055387425027AD74C58784ACC15",  // Editor
       "C41AD9DCD670210295614257EF8C9945AD68D86E",  // Google Now
-      "6EEEA7775E79C735E4BA1F24DBB191BDACB1262C",  // RU-NTP
       "7AE714FFD394E073F0294CFA134C9F91DB5FBAA4",  // CCD Development
       "C7DA3A55C2355F994D3FDDAD120B426A0DF63843",  // CCD Testing
       "75E3CFFFC530582C583E4690EF97C70B9C8423B7",  // CCD Release
@@ -402,6 +401,12 @@
       "B6C2EFAB3EC3BF6EF03701408B6B09A67B2D0069",  // http://crbug.com/642141
       "96FF2FFA5C9173C76D47184B3E86D267B37781DE",  // http://crbug.com/642141
       "0136FCB13DB29FD5CD442F56E59E53B61F1DF96F"   // http://crbug.com/642141
+    ]
+  },
+  "nativeMessaging": {
+    "channel": "stable",
+    "extension_types": [
+      "extension", "legacy_packaged_app", "platform_app"
     ]
   },
   "networking.config": {

@@ -134,7 +134,7 @@ bool CPDF_SimpleFont::LoadCommon() {
   } else {
     LoadSubstFont();
   }
-  if (!(m_Flags & FXFONT_SYMBOLIC))
+  if (!FontStyleIsSymbolic(m_Flags))
     m_BaseEncoding = PDFFONT_ENCODING_STANDARD;
   CPDF_Object* pEncoding = m_pFontDict->GetDirectObjectFor("Encoding");
   LoadPDFEncoding(pEncoding, m_BaseEncoding, &m_CharNames, !!m_pFontFile,
@@ -144,7 +144,7 @@ bool CPDF_SimpleFont::LoadCommon() {
   if (!m_Font.GetFace())
     return true;
 
-  if (m_Flags & FXFONT_ALLCAP) {
+  if (FontStyleIsAllCaps(m_Flags)) {
     unsigned char kLowercases[][2] = {{'a', 'z'}, {0xe0, 0xf6}, {0xf8, 0xfd}};
     for (size_t range = 0; range < FX_ArraySize(kLowercases); ++range) {
       const auto& lower = kLowercases[range];
@@ -166,7 +166,7 @@ bool CPDF_SimpleFont::LoadCommon() {
 }
 
 void CPDF_SimpleFont::LoadSubstFont() {
-  if (!m_bUseFontWidth && !(m_Flags & FXFONT_FIXED_PITCH)) {
+  if (!m_bUseFontWidth && !FontStyleIsFixedPitch(m_Flags)) {
     int width = 0, i;
     for (i = 0; i < 256; i++) {
       if (m_CharWidth[i] == 0 || m_CharWidth[i] == 0xffff)
@@ -196,13 +196,13 @@ bool CPDF_SimpleFont::IsUnicodeCompatible() const {
          m_BaseEncoding != PDFFONT_ENCODING_ZAPFDINGBATS;
 }
 
-CFX_WideString CPDF_SimpleFont::UnicodeFromCharCode(uint32_t charcode) const {
-  CFX_WideString unicode = CPDF_Font::UnicodeFromCharCode(charcode);
+WideString CPDF_SimpleFont::UnicodeFromCharCode(uint32_t charcode) const {
+  WideString unicode = CPDF_Font::UnicodeFromCharCode(charcode);
   if (!unicode.IsEmpty())
     return unicode;
   wchar_t ret = m_Encoding.UnicodeFromCharCode((uint8_t)charcode);
   if (ret == 0)
-    return CFX_WideString();
+    return WideString();
   return ret;
 }
 

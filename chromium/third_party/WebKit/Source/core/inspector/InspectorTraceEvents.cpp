@@ -12,9 +12,9 @@
 #include "bindings/core/v8/SourceLocation.h"
 #include "core/animation/Animation.h"
 #include "core/animation/KeyframeEffectReadOnly.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/css/invalidation/InvalidationSet.h"
 #include "core/dom/DOMNodeIds.h"
-#include "core/dom/StyleChangeReason.h"
 #include "core/dom/events/Event.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
@@ -114,7 +114,8 @@ void InspectorTraceEvents::WillSendRequest(
     DocumentLoader* loader,
     ResourceRequest& request,
     const ResourceResponse& redirect_response,
-    const FetchInitiatorInfo&) {
+    const FetchInitiatorInfo&,
+    Resource::Type) {
   LocalFrame* frame = loader ? loader->GetFrame() : nullptr;
   TRACE_EVENT_INSTANT1(
       "devtools.timeline", "ResourceSendRequest", TRACE_EVENT_SCOPE_THREAD,
@@ -308,6 +309,7 @@ const char* PseudoTypeToString(CSSSelector::PseudoType pseudo_type) {
     DEFINE_STRING_MAPPING(PseudoFirstPage)
     DEFINE_STRING_MAPPING(PseudoFullScreen)
     DEFINE_STRING_MAPPING(PseudoFullScreenAncestor)
+    DEFINE_STRING_MAPPING(PseudoFullscreen)
     DEFINE_STRING_MAPPING(PseudoInRange)
     DEFINE_STRING_MAPPING(PseudoOutOfRange)
     DEFINE_STRING_MAPPING(PseudoWebKitCustomElement)

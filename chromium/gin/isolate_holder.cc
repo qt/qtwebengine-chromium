@@ -46,7 +46,7 @@ IsolateHolder::IsolateHolder(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     AccessMode access_mode,
     AllowAtomicsWaitMode atomics_wait_mode,
-    intptr_t* reference,
+    const intptr_t* reference,
     v8::StartupData* startup_data)
     : access_mode_(access_mode) {
   v8::ArrayBuffer::Allocator* allocator = g_array_buffer_allocator;
@@ -63,8 +63,7 @@ IsolateHolder::IsolateHolder(
 
   if (startup_data) {
     CHECK(reference);
-    V8Initializer::GetV8ContextSnapshotData(&startup_data->data,
-                                            &startup_data->raw_size);
+    V8Initializer::GetV8ContextSnapshotData(startup_data);
     if (startup_data->data) {
       params.snapshot_blob = startup_data;
     }
@@ -74,12 +73,21 @@ IsolateHolder::IsolateHolder(
   SetUp(std::move(task_runner));
 }
 
-IsolateHolder::IsolateHolder(intptr_t* reference_table,
+IsolateHolder::IsolateHolder(const intptr_t* reference_table,
                              v8::StartupData* existing_blob)
-    : snapshot_creator_(
-          new v8::SnapshotCreator(reference_table, existing_blob)),
-      isolate_(snapshot_creator_->GetIsolate()),
-      access_mode_(AccessMode::kSingleThread) {
+    : access_mode_(AccessMode::kSingleThread) {
+  CHECK(existing_blob);
+
+  v8::StartupData unused_natives;
+  V8Initializer::GetV8ExternalSnapshotData(&unused_natives, existing_blob);
+  if (!existing_blob->data) {
+    existing_blob = nullptr;
+  }
+
+  snapshot_creator_.reset(
+      new v8::SnapshotCreator(reference_table, existing_blob));
+  isolate_ = snapshot_creator_->GetIsolate();
+
   SetUp(nullptr);
 }
 

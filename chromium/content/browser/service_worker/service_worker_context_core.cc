@@ -38,15 +38,15 @@
 #include "ipc/ipc_message.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
-#include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
 namespace {
 
 void CheckFetchHandlerOfInstalledServiceWorker(
-    const ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
+    ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
     scoped_refptr<ServiceWorkerRegistration> registration) {
   // Waiting Service Worker is a newer version, prefer that if available.
   ServiceWorkerVersion* preferred_version =
@@ -60,9 +60,10 @@ void CheckFetchHandlerOfInstalledServiceWorker(
 
   DCHECK_NE(existence, ServiceWorkerVersion::FetchHandlerExistence::UNKNOWN);
 
-  callback.Run(existence == ServiceWorkerVersion::FetchHandlerExistence::EXISTS
-                   ? ServiceWorkerCapability::SERVICE_WORKER_WITH_FETCH_HANDLER
-                   : ServiceWorkerCapability::SERVICE_WORKER_NO_FETCH_HANDLER);
+  std::move(callback).Run(
+      existence == ServiceWorkerVersion::FetchHandlerExistence::EXISTS
+          ? ServiceWorkerCapability::SERVICE_WORKER_WITH_FETCH_HANDLER
+          : ServiceWorkerCapability::SERVICE_WORKER_NO_FETCH_HANDLER);
 }
 
 void SuccessCollectorCallback(const base::Closure& done_closure,
@@ -116,8 +117,8 @@ bool FrameListContainsMainFrameOnUI(
 class ClearAllServiceWorkersHelper
     : public base::RefCounted<ClearAllServiceWorkersHelper> {
  public:
-  explicit ClearAllServiceWorkersHelper(const base::Closure& callback)
-      : callback_(callback) {
+  explicit ClearAllServiceWorkersHelper(base::OnceClosure callback)
+      : callback_(std::move(callback)) {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
   }
 
@@ -141,8 +142,7 @@ class ClearAllServiceWorkersHelper
       ServiceWorkerVersion* version(version_itr.second);
       if (version->running_status() == EmbeddedWorkerStatus::STARTING ||
           version->running_status() == EmbeddedWorkerStatus::RUNNING) {
-        version->StopWorker(
-            base::Bind(&ClearAllServiceWorkersHelper::OnResult, this));
+        version->StopWorker(base::BindOnce(&base::DoNothing));
       }
     }
     for (const auto& registration_info : registrations) {
@@ -156,10 +156,10 @@ class ClearAllServiceWorkersHelper
   friend class base::RefCounted<ClearAllServiceWorkersHelper>;
   ~ClearAllServiceWorkersHelper() {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, callback_);
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, std::move(callback_));
   }
 
-  const base::Closure callback_;
+  base::OnceClosure callback_;
   DISALLOW_COPY_AND_ASSIGN(ClearAllServiceWorkersHelper);
 };
 
@@ -239,7 +239,6 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
     scoped_refptr<base::SequencedTaskRunner> database_task_runner,
     storage::QuotaManagerProxy* quota_manager_proxy,
     storage::SpecialStoragePolicy* special_storage_policy,
-    base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
     URLLoaderFactoryGetter* url_loader_factory_getter,
     base::ObserverListThreadSafe<ServiceWorkerContextCoreObserver>*
         observer_list,
@@ -247,7 +246,6 @@ ServiceWorkerContextCore::ServiceWorkerContextCore(
     : wrapper_(wrapper),
       providers_(base::MakeUnique<ProcessToProviderMap>()),
       provider_by_uuid_(base::MakeUnique<ProviderByClientUUIDMap>()),
-      blob_storage_context_(std::move(blob_storage_context)),
       loader_factory_getter_(url_loader_factory_getter),
       force_update_on_page_load_(false),
       next_handle_id_(0),
@@ -427,7 +425,7 @@ ServiceWorkerProviderHost* ServiceWorkerContextCore::GetProviderHostByClientID(
 
 void ServiceWorkerContextCore::RegisterServiceWorker(
     const GURL& script_url,
-    const ServiceWorkerRegistrationOptions& options,
+    const blink::mojom::ServiceWorkerRegistrationOptions& options,
     ServiceWorkerProviderHost* provider_host,
     const RegistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -520,7 +518,8 @@ void ServiceWorkerContextCore::RegistrationComplete(
     ServiceWorkerRegistration* registration) {
   if (status != SERVICE_WORKER_OK) {
     DCHECK(!registration);
-    callback.Run(status, status_message, kInvalidServiceWorkerRegistrationId);
+    callback.Run(status, status_message,
+                 blink::mojom::kInvalidServiceWorkerRegistrationId);
     return;
   }
 
@@ -543,7 +542,8 @@ void ServiceWorkerContextCore::UpdateComplete(
     ServiceWorkerRegistration* registration) {
   if (status != SERVICE_WORKER_OK) {
     DCHECK(!registration);
-    callback.Run(status, status_message, kInvalidServiceWorkerRegistrationId);
+    callback.Run(status, status_message,
+                 blink::mojom::kInvalidServiceWorkerRegistrationId);
     return;
   }
 
@@ -716,11 +716,11 @@ void ServiceWorkerContextCore::TransferProviderHostIn(
 }
 
 void ServiceWorkerContextCore::ClearAllServiceWorkersForTest(
-    const base::Closure& callback) {
+    base::OnceClosure callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // |callback| will be called in the destructor of |helper| on the UI thread.
-  scoped_refptr<ClearAllServiceWorkersHelper> helper(
-      new ClearAllServiceWorkersHelper(callback));
+  auto helper =
+      base::MakeRefCounted<ClearAllServiceWorkersHelper>(std::move(callback));
   if (!was_service_worker_registered_)
     return;
   was_service_worker_registered_ = false;
@@ -732,11 +732,12 @@ void ServiceWorkerContextCore::ClearAllServiceWorkersForTest(
 void ServiceWorkerContextCore::CheckHasServiceWorker(
     const GURL& url,
     const GURL& other_url,
-    const ServiceWorkerContext::CheckHasServiceWorkerCallback callback) {
+    ServiceWorkerContext::CheckHasServiceWorkerCallback callback) {
   storage()->FindRegistrationForDocument(
-      url, base::Bind(&ServiceWorkerContextCore::
-                          DidFindRegistrationForCheckHasServiceWorker,
-                      AsWeakPtr(), other_url, callback));
+      url,
+      base::Bind(&ServiceWorkerContextCore::
+                     DidFindRegistrationForCheckHasServiceWorker,
+                 AsWeakPtr(), other_url, base::Passed(std::move(callback))));
 }
 
 void ServiceWorkerContextCore::UpdateVersionFailureCount(
@@ -892,44 +893,44 @@ ServiceWorkerProcessManager* ServiceWorkerContextCore::process_manager() {
 
 void ServiceWorkerContextCore::DidFindRegistrationForCheckHasServiceWorker(
     const GURL& other_url,
-    const ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
+    ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
     ServiceWorkerStatusCode status,
     scoped_refptr<ServiceWorkerRegistration> registration) {
   if (status != SERVICE_WORKER_OK) {
-    callback.Run(ServiceWorkerCapability::NO_SERVICE_WORKER);
+    std::move(callback).Run(ServiceWorkerCapability::NO_SERVICE_WORKER);
     return;
   }
 
   if (!ServiceWorkerUtils::ScopeMatches(registration->pattern(), other_url)) {
-    callback.Run(ServiceWorkerCapability::NO_SERVICE_WORKER);
+    std::move(callback).Run(ServiceWorkerCapability::NO_SERVICE_WORKER);
     return;
   }
 
   if (registration->is_uninstalling() || registration->is_uninstalled()) {
-    callback.Run(ServiceWorkerCapability::NO_SERVICE_WORKER);
+    std::move(callback).Run(ServiceWorkerCapability::NO_SERVICE_WORKER);
     return;
   }
 
   if (!registration->active_version() && !registration->waiting_version()) {
-    registration->RegisterRegistrationFinishedCallback(
-        base::Bind(&ServiceWorkerContextCore::
-                       OnRegistrationFinishedForCheckHasServiceWorker,
-                   AsWeakPtr(), callback, registration));
+    registration->RegisterRegistrationFinishedCallback(base::Bind(
+        &ServiceWorkerContextCore::
+            OnRegistrationFinishedForCheckHasServiceWorker,
+        AsWeakPtr(), base::Passed(std::move(callback)), registration));
     return;
   }
 
-  CheckFetchHandlerOfInstalledServiceWorker(callback, registration);
+  CheckFetchHandlerOfInstalledServiceWorker(std::move(callback), registration);
 }
 
 void ServiceWorkerContextCore::OnRegistrationFinishedForCheckHasServiceWorker(
-    const ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
+    ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
     scoped_refptr<ServiceWorkerRegistration> registration) {
   if (!registration->active_version() && !registration->waiting_version()) {
-    callback.Run(ServiceWorkerCapability::NO_SERVICE_WORKER);
+    std::move(callback).Run(ServiceWorkerCapability::NO_SERVICE_WORKER);
     return;
   }
 
-  CheckFetchHandlerOfInstalledServiceWorker(callback, registration);
+  CheckFetchHandlerOfInstalledServiceWorker(std::move(callback), registration);
 }
 
 }  // namespace content

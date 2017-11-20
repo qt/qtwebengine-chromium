@@ -30,8 +30,11 @@
 
 #include "core/editing/VisibleUnits.h"
 
+#include "core/dom/AXObjectCache.h"
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/InlineBoxPosition.h"
 #include "core/editing/RenderedPosition.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/layout/api/LineLayoutBlockFlow.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/layout/line/RootInlineBox.h"
@@ -87,10 +90,7 @@ ContainerNode* HighestEditableRoot(const Position& position,
 
 ContainerNode* HighestEditableRootOfNode(const Node& node,
                                          EditableType editable_type) {
-  // TODO(editing-dev): We should introduce |const Node&| version of
-  // |FirstPositionInOrBeforeNode()|. See http://crbug.com/734849
-  return HighestEditableRoot(
-      FirstPositionInOrBeforeNode(const_cast<Node*>(&node)), editable_type);
+  return HighestEditableRoot(FirstPositionInOrBeforeNode(node), editable_type);
 }
 
 Node* PreviousNodeConsideringAtomicNodes(const Node& start) {
@@ -263,8 +263,7 @@ LayoutPoint AbsoluteLineDirectionPointToLocalPointInBlock(
 bool InSameLine(const Node& node, const VisiblePosition& visible_position) {
   if (!node.GetLayoutObject())
     return true;
-  return InSameLine(CreateVisiblePosition(
-                        FirstPositionInOrBeforeNode(const_cast<Node*>(&node))),
+  return InSameLine(CreateVisiblePosition(FirstPositionInOrBeforeNode(node)),
                     visible_position);
 }
 
@@ -299,7 +298,7 @@ Position PreviousRootInlineBoxCandidatePosition(
       break;
 
     const Position& candidate =
-        isHTMLBRElement(*runner)
+        IsHTMLBRElement(*runner)
             ? Position::BeforeNode(*runner)
             : Position::EditingPositionOf(runner, CaretMaxOffset(runner));
     if (IsVisuallyEquivalentCandidate(candidate))
@@ -426,10 +425,10 @@ static VisiblePositionTemplate<Strategy> EndPositionForLine(
     end_node = end_box->GetLineLayoutItem().NonPseudoNode();
   }
 
-  if (isHTMLBRElement(*end_node)) {
+  if (IsHTMLBRElement(*end_node)) {
     return CreateVisiblePosition(
         PositionTemplate<Strategy>::BeforeNode(*end_node),
-        VP_UPSTREAM_IF_POSSIBLE);
+        TextAffinity::kUpstreamIfPossible);
   }
   if (end_box->IsInlineTextBox() && end_node->IsTextNode()) {
     InlineTextBox* end_text_box = ToInlineTextBox(end_box);
@@ -438,10 +437,10 @@ static VisiblePositionTemplate<Strategy> EndPositionForLine(
       end_offset += end_text_box->Len();
     return CreateVisiblePosition(
         PositionTemplate<Strategy>(ToText(end_node), end_offset),
-        VP_UPSTREAM_IF_POSSIBLE);
+        TextAffinity::kUpstreamIfPossible);
   }
   return CreateVisiblePosition(PositionTemplate<Strategy>::AfterNode(*end_node),
-                               VP_UPSTREAM_IF_POSSIBLE);
+                               TextAffinity::kUpstreamIfPossible);
 }
 
 // TODO(yosin) Rename this function to reflect the fact it ignores bidi levels.

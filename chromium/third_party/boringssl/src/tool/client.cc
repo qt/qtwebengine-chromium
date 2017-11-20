@@ -196,7 +196,15 @@ static bool WaitForSession(SSL *ssl, int sock) {
   }
 
   while (!resume_session) {
+#if defined(OPENSSL_WINDOWS)
+    // Windows sockets are really of type SOCKET, not int, but everything here
+    // casts them to ints. Clang gets unhappy about signed values as a result.
+    //
+    // TODO(davidben): Keep everything as the appropriate platform type.
+    FD_SET(static_cast<SOCKET>(sock), &read_fds);
+#else
     FD_SET(sock, &read_fds);
+#endif
     int ret = select(sock + 1, &read_fds, NULL, NULL, NULL);
     if (ret <= 0) {
       perror("select");
@@ -304,7 +312,8 @@ static bool DoConnection(SSL_CTX *ctx,
   }
 
   fprintf(stderr, "Connected.\n");
-  PrintConnectionInfo(ssl.get());
+  bssl::UniquePtr<BIO> bio_stderr(BIO_new_fp(stderr, BIO_NOCLOSE));
+  PrintConnectionInfo(bio_stderr.get(), ssl.get());
 
   return cb(ssl.get(), sock);
 }
@@ -318,12 +327,12 @@ static bool GetTLS13Variant(tls13_variant_t *out, const std::string &in) {
     *out = tls13_experiment;
     return true;
   }
-  if (in == "record-type") {
-    *out = tls13_record_type_experiment;
+  if (in == "experiment2") {
+    *out = tls13_experiment2;
     return true;
   }
-  if (in == "no-session-id") {
-    *out = tls13_no_session_id_experiment;
+  if (in == "experiment3") {
+    *out = tls13_experiment3;
     return true;
   }
   return false;

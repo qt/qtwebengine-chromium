@@ -5,17 +5,21 @@
 #ifndef CSSParserContext_h
 #define CSSParserContext_h
 
+#include "core/CSSPropertyNames.h"
 #include "core/CoreExport.h"
 #include "core/css/parser/CSSParserMode.h"
-#include "core/dom/Document.h"
-#include "core/frame/UseCounter.h"
+#include "core/frame/WebFeatureForward.h"
+#include "platform/heap/Handle.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/Referrer.h"
+#include "platform/wtf/text/TextEncoding.h"
 
 namespace blink {
 
 class CSSStyleSheet;
+class Document;
+class ExecutionContext;
 class StyleSheetContents;
 
 class CORE_EXPORT CSSParserContext
@@ -54,6 +58,8 @@ class CORE_EXPORT CSSParserContext
       ReferrerPolicy referrer_policy_override,
       const WTF::TextEncoding& charset = WTF::TextEncoding(),
       SelectorProfile = kDynamicProfile);
+  // This is used for workers, where we don't have a document.
+  static CSSParserContext* Create(const ExecutionContext&);
 
   bool operator==(const CSSParserContext&) const;
   bool operator!=(const CSSParserContext& other) const {

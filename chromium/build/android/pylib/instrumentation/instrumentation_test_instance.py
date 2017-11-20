@@ -17,6 +17,7 @@ from pylib.base import test_instance
 from pylib.constants import host_paths
 from pylib.instrumentation import test_result
 from pylib.instrumentation import instrumentation_parser
+from pylib.symbols import deobfuscator
 from pylib.symbols import stack_symbolizer
 from pylib.utils import dexdump
 from pylib.utils import instrumentation_tracing
@@ -56,6 +57,8 @@ _EXTRA_DRIVER_TARGET_CLASS = (
     'org.chromium.test.driver.OnDeviceInstrumentationDriver.TargetClass')
 _EXTRA_TIMEOUT_SCALE = (
     'org.chromium.test.driver.OnDeviceInstrumentationDriver.TimeoutScale')
+_TEST_LIST_JUNIT4_RUNNERS = [
+    'org.chromium.base.test.BaseChromiumAndroidJUnitRunner']
 
 _SKIP_PARAMETERIZATION = 'SkipCommandLineParameterization'
 _COMMANDLINE_PARAMETERIZATION = 'CommandLineParameter'
@@ -466,6 +469,7 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     self._test_package = None
     self._junit3_runner_class = None
     self._junit4_runner_class = None
+    self._junit4_runner_supports_listing = None
     self._test_support_apk = None
     self._initializeApkAttributes(args, error_func)
 
@@ -490,6 +494,7 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     self._render_results_dir = None
     self._screenshot_dir = None
     self._timeout_scale = None
+    self._wait_for_java_debugger = None
     self._initializeTestControlAttributes(args)
 
     self._coverage_directory = None
@@ -497,8 +502,8 @@ class InstrumentationTestInstance(test_instance.TestInstance):
 
     self._store_tombstones = False
     self._symbolizer = None
-    self._initializeTombstonesAttributes(args)
-
+    self._enable_java_deobfuscation = False
+    self._deobfuscator = None
     self._gs_results_bucket = None
     self._should_save_logcat = None
     self._initializeLogAttributes(args)
@@ -593,6 +598,16 @@ class InstrumentationTestInstance(test_instance.TestInstance):
       all_junit4_test_runner_classes[0]['android:name']
       if all_junit4_test_runner_classes else None)
 
+    if self._junit4_runner_class:
+      if self._test_apk_incremental_install_json:
+        self._junit4_runner_supports_listing = next(
+            (True for x in self._test_apk.GetAllMetadata()
+             if 'real-instr' in x[0] and x[1] in _TEST_LIST_JUNIT4_RUNNERS),
+            False)
+      else:
+        self._junit4_runner_supports_listing = (
+            self._junit4_runner_class in _TEST_LIST_JUNIT4_RUNNERS)
+
     self._package_info = None
     if self._apk_under_test:
       package_under_test = self._apk_under_test.GetPackageName()
@@ -674,17 +689,18 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     self._screenshot_dir = args.screenshot_dir
     self._timeout_scale = args.timeout_scale or 1
     self._ui_screenshot_dir = args.ui_screenshot_dir
+    self._wait_for_java_debugger = args.wait_for_java_debugger
 
   def _initializeTestCoverageAttributes(self, args):
     self._coverage_directory = args.coverage_dir
 
-  def _initializeTombstonesAttributes(self, args):
+  def _initializeLogAttributes(self, args):
+    self._enable_java_deobfuscation = args.enable_java_deobfuscation
     self._store_tombstones = args.store_tombstones
     self._symbolizer = stack_symbolizer.Symbolizer(
         self.apk_under_test.path if self.apk_under_test else None,
         args.enable_relocation_packing)
 
-  def _initializeLogAttributes(self, args):
     self._gs_results_bucket = args.gs_results_bucket
     self._should_save_logcat = bool(args.json_results_file)
 
@@ -756,6 +772,10 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     return self._junit4_runner_class
 
   @property
+  def junit4_runner_supports_listing(self):
+    return self._junit4_runner_supports_listing
+
+  @property
   def should_save_logcat(self):
     return self._should_save_logcat
 
@@ -819,6 +839,10 @@ class InstrumentationTestInstance(test_instance.TestInstance):
   def ui_screenshot_dir(self):
     return self._ui_screenshot_dir
 
+  @property
+  def wait_for_java_debugger(self):
+    return self._wait_for_java_debugger
+
   #override
   def TestType(self):
     return 'instrumentation'
@@ -827,6 +851,9 @@ class InstrumentationTestInstance(test_instance.TestInstance):
   def SetUp(self):
     self._data_deps.extend(
         self._data_deps_delegate(self._runtime_deps_path))
+    if self._enable_java_deobfuscation:
+      self._deobfuscator = deobfuscator.DeobfuscatorPool(
+          self.test_apk.path + '.mapping')
 
   def GetDataDependencies(self):
     return self._data_deps
@@ -837,6 +864,11 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     else:
       raw_tests = GetAllTestsFromApk(self.test_apk.path)
     return self.ProcessRawTests(raw_tests)
+
+  def MaybeDeobfuscateLines(self, lines):
+    if not self._deobfuscator:
+      return lines
+    return self._deobfuscator.TransformLines(lines)
 
   def ProcessRawTests(self, raw_tests):
     inflated_tests = self._ParameterizeTestsWithFlags(
@@ -915,3 +947,6 @@ class InstrumentationTestInstance(test_instance.TestInstance):
   #override
   def TearDown(self):
     self.symbolizer.CleanUp()
+    if self._deobfuscator:
+      self._deobfuscator.Close()
+      self._deobfuscator = None

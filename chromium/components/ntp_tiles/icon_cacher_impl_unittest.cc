@@ -4,9 +4,9 @@
 
 #include "components/ntp_tiles/icon_cacher_impl.h"
 
-#include <set>
 #include <utility>
 
+#include "base/containers/flat_set.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ptr_util.h"
 #include "base/path_service.h"
@@ -140,7 +140,7 @@ class IconCacherTestBase : public ::testing::Test {
                    favicon_base::IconType icon_type,
                    int width,
                    int height) {
-    favicon_service_.SetFavicons(url, icon_url, icon_type,
+    favicon_service_.SetFavicons({url}, icon_url, icon_type,
                                  gfx::test::CreateImage(width, height));
   }
 
@@ -193,7 +193,8 @@ class IconCacherTestPopularSites : public IconCacherTestBase {
               GURL("http://url.google/"),
               GURL("http://url.google/icon.png"),
               GURL("http://url.google/favicon.ico"),
-              GURL()),  // thumbnail, unused
+              GURL(),                     // thumbnail, unused
+              TileTitleSource::UNKNOWN),  // title_source, unused
         image_fetcher_(new ::testing::StrictMock<MockImageFetcher>),
         image_decoder_(new ::testing::StrictMock<MockImageDecoder>) {}
 

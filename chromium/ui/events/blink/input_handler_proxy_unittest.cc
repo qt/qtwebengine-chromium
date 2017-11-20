@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/bind.h"
+#include "base/containers/circular_deque.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted_memory.h"
@@ -609,7 +610,7 @@ class InputHandlerProxyEventQueueTest : public testing::TestWithParam<bool> {
     latency_info_recorder_.push_back(latency_info);
   }
 
-  std::deque<std::unique_ptr<EventWithCallback>>& event_queue() {
+  base::circular_deque<std::unique_ptr<EventWithCallback>>& event_queue() {
     return input_handler_proxy_->compositor_event_queue_->queue_;
   }
 
@@ -1372,6 +1373,9 @@ void InputHandlerProxyTest::GestureFlingAnimatesTouchpad() {
     EXPECT_CALL(mock_input_handler_, ScrollEnd(testing::_));
     EXPECT_CALL(mock_input_handler_, ScrollingShouldSwitchtoMainThread())
         .WillOnce(testing::Return(true));
+    // A GSB is sent to the main thread before transfering the fling.
+    EXPECT_CALL(mock_client_, DispatchNonBlockingEventToMainThread_(testing::_))
+        .Times(1);
   }
   // Expected wheel fling animation parameters:
   // *) fling_delta and fling_point should match the original GestureFlingStart
@@ -1609,6 +1613,9 @@ void InputHandlerProxyTest::GestureFlingTransferResetsTouchpad() {
         .WillOnce(testing::Return(scroll_result_did_not_scroll_));
     EXPECT_CALL(mock_input_handler_, ScrollingShouldSwitchtoMainThread())
         .WillOnce(testing::Return(true));
+    // A GSB is sent to the main thread before transfering the fling.
+    EXPECT_CALL(mock_client_, DispatchNonBlockingEventToMainThread_(testing::_))
+        .Times(1);
   }
 
   // Expected wheel fling animation parameters:
@@ -1735,6 +1742,9 @@ void InputHandlerProxyTest::GestureFlingTransferResetsTouchpad() {
         .WillOnce(testing::Return(scroll_result_did_not_scroll_));
     EXPECT_CALL(mock_input_handler_, ScrollingShouldSwitchtoMainThread())
         .WillOnce(testing::Return(true));
+    // A GSB is sent to the main thread before transfering the fling.
+    EXPECT_CALL(mock_client_, DispatchNonBlockingEventToMainThread_(testing::_))
+        .Times(1);
   }
 
   // We should get parameters from the second fling, nothing from the first

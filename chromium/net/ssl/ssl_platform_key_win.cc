@@ -5,13 +5,13 @@
 #include "net/ssl/ssl_platform_key_win.h"
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "crypto/openssl_util.h"
 #include "crypto/scoped_capi_types.h"
 #include "net/base/net_errors.h"
@@ -236,9 +236,9 @@ scoped_refptr<SSLPrivateKey> WrapCAPIPrivateKey(
     const X509Certificate* certificate,
     HCRYPTPROV prov,
     DWORD key_spec) {
-  return make_scoped_refptr(new ThreadedSSLPrivateKey(
+  return base::MakeRefCounted<ThreadedSSLPrivateKey>(
       std::make_unique<SSLPlatformKeyCAPI>(prov, key_spec),
-      GetSSLPlatformKeyTaskRunner()));
+      GetSSLPlatformKeyTaskRunner());
 }
 
 scoped_refptr<SSLPrivateKey> WrapCNGPrivateKey(
@@ -254,9 +254,9 @@ scoped_refptr<SSLPrivateKey> WrapCNGPrivateKey(
     return nullptr;
   }
 
-  return make_scoped_refptr(new ThreadedSSLPrivateKey(
+  return base::MakeRefCounted<ThreadedSSLPrivateKey>(
       std::make_unique<SSLPlatformKeyCNG>(key, key_type, max_length),
-      GetSSLPlatformKeyTaskRunner()));
+      GetSSLPlatformKeyTaskRunner());
 }
 
 scoped_refptr<SSLPrivateKey> FetchClientCertPrivateKey(

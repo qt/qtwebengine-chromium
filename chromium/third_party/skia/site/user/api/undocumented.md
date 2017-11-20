@@ -3,8 +3,6 @@ undocumented
 
 # <a name="Glyph"></a> Glyph
 
-# <a name="Curve"></a> Curve
-
 # <a name="Document"></a> Document
 
 # <a name="SkDocument"></a> Class SkDocument
@@ -21,40 +19,28 @@ SkCanvas* beginPage(SkScalar width, SkScalar height,
 
 ## <a name="PDF"></a> PDF
 
+# <a name="PostScript"></a> PostScript
+
+## <a name="Arct"></a> Arct
+
+# <a name="Size"></a> Size
+
 # <a name="Arc"></a> Arc
 
-# <a name="Rect"></a> Rect
-
-# <a name="SkRect"></a> Struct SkRect
-
-<a name="SkRect_MakeEmpty"></a>
-## MakeEmpty
-
-<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
-static constexpr SkRect SK_WARN_UNUSED_RESULT MakeEmpty()
-</pre>
-
----
-
-<a name="SkRect_dump"></a>
-## dump
-
-<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
-void dump() const
-</pre>
-
----
-
-<a name="SkRect_dumpHex"></a>
-## dumpHex
-
-<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
-void dumpHex() const
-</pre>
-
----
-
 # <a name="Line"></a> Line
+
+# <a name="Mip_Map"></a> Mip Map
+
+# <a name="Debugging"></a> Debugging
+
+<a name="SkDebugf"></a>
+## SkDebugf
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SK_API void SkDebugf(const char format[], ...)
+</pre>
+
+---
 
 # <a name="Region"></a> Region
 
@@ -67,6 +53,10 @@ void dumpHex() const
 # <a name="Vector"></a> Vector
 
 # <a name="SkVector"></a> Struct SkVector
+
+# <a name="Patch"></a> Patch
+
+# <a name="Curve"></a> Curve
 
 # <a name="Point"></a> Point
 
@@ -83,8 +73,6 @@ bool equalsWithinTolerance(const SkPoint& p) const
 
 ## <a name="Array"></a> Array
 
-# <a name="Patch"></a> Patch
-
 # <a name="Typeface"></a> Typeface
 
 # <a name="SkTypeface"></a> Class SkTypeface
@@ -93,15 +81,17 @@ bool equalsWithinTolerance(const SkPoint& p) const
 
 # <a name="SkDumpCanvas"></a> Class SkDumpCanvas
 
+# <a name="HTML_Canvas"></a> HTML Canvas
+
+## <a name="ArcTo"></a> ArcTo
+
+# <a name="Alias"></a> Alias
+
+# <a name="Anti-alias"></a> Anti-alias
+
 # <a name="BBH_Factory"></a> BBH Factory
 
 # <a name="SkBBHFactory"></a> Class SkBBHFactory
-
-# <a name="Bitmap"></a> Bitmap
-
-# <a name="SkBitmap"></a> Class SkBitmap
-
-## <a name="Row_Bytes"></a> Row Bytes
 
 # <a name="Blend_Mode"></a> Blend Mode
 
@@ -229,11 +219,42 @@ int SkColorSetARGB(a, r, g, b)
 
 # <a name="Color_Space"></a> Color Space
 
+# <a name="SkColorSpace"></a> Class SkColorSpace
+
+<a name="SkColorSpace_MakeSRGBLinear"></a>
+## MakeSRGBLinear
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+static sk_sp&lt;SkColorSpace&gt; MakeSRGBLinear()
+</pre>
+
+---
+
+## <a name="SkTransferFunctionBehavior"></a> Enum SkTransferFunctionBehavior
+
+### Constants
+
+<table>
+  <tr>
+    <td><a name="SkTransferFunctionBehavior_kRespect"> <code><strong>SkTransferFunctionBehavior::kRespect </strong></code> </a></td><td>0</td><td></td>
+  </tr>
+  <tr>
+    <td><a name="SkTransferFunctionBehavior_kIgnore"> <code><strong>SkTransferFunctionBehavior::kIgnore </strong></code> </a></td><td>1</td><td></td>
+  </tr>
+
+</table>
+
+# <a name="Core_Graphics"></a> Core Graphics
+
+# <a name="Core_Text"></a> Core Text
+
 # <a name="Data"></a> Data
 
 # <a name="Draw_Filter"></a> Draw Filter
 
 # <a name="SkDrawFilter"></a> Class SkDrawFilter
+
+# <a name="Draw_Layer"></a> Draw Layer
 
 # <a name="Draw_Looper"></a> Draw Looper
 
@@ -262,8 +283,8 @@ void draw(SkCanvas*, const SkMatrix* = NULL)
 ## MakeCanvas
 
 <pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
-static std::unique_ptr<SkCanvas> 
-                                            MakeCanvas(std::unique_ptr<SkRasterHandleAllocator>,
+static std::unique_ptr&lt;SkCanvas&gt; 
+                                            MakeCanvas(std::unique_ptr&lt;SkRasterHandleAllocator&gt;,
                                             const SkImageInfo&,
                                             const Rec* rec = nullptr)
 </pre>
@@ -292,6 +313,16 @@ static std::unique_ptr<SkCanvas>
 
 </table>
 
+## <a name="Nearest_Neighbor"></a> Nearest Neighbor
+
+## <a name="Bilerp"></a> Bilerp
+
+## <a name="MipMap"></a> MipMap
+
+## <a name="BiCubic"></a> BiCubic
+
+# <a name="Left_Side_Bearing"></a> Left Side Bearing
+
 # <a name="Font"></a> Font
 
 ## <a name="Advance"></a> Advance
@@ -316,7 +347,16 @@ static std::unique_ptr<SkCanvas>
 
 <table>
   <tr>
+    <td><a name="kUnknown_SkAlphaType"> <code><strong>kUnknown_SkAlphaType </strong></code> </a></td><td>0</td><td></td>
+  </tr>
+  <tr>
+    <td><a name="kOpaque_SkAlphaType"> <code><strong>kOpaque_SkAlphaType </strong></code> </a></td><td>1</td><td></td>
+  </tr>
+  <tr>
     <td><a name="kPremul_SkAlphaType"> <code><strong>kPremul_SkAlphaType </strong></code> </a></td><td>2</td><td></td>
+  </tr>
+  <tr>
+    <td><a name="kUnpremul_SkAlphaType"> <code><strong>kUnpremul_SkAlphaType </strong></code> </a></td><td>3</td><td></td>
   </tr>
 
 </table>
@@ -379,14 +419,145 @@ SkImageInfo()
 
 ---
 
+<a name="SkImageInfo_makeColorSpace"></a>
+## makeColorSpace
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkImageInfo makeColorSpace(sk_sp&lt;SkColorSpace&gt; cs) const
+</pre>
+
+---
+
+<a name="SkImageInfo_minRowBytes"></a>
+## minRowBytes
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+size_t minRowBytes() const
+</pre>
+
+---
+
+<a name="SkImageInfo_isOpaque"></a>
+## isOpaque
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+bool isOpaque() const
+</pre>
+
+---
+
+<a name="SkImageInfo_bytesPerPixel"></a>
+## bytesPerPixel
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+int bytesPerPixel() const
+</pre>
+
+---
+
+<a name="SkImageInfo_height"></a>
+## height
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+int height() const
+</pre>
+
+---
+
+<a name="SkImageInfo_width"></a>
+## width
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+int width() const
+</pre>
+
+---
+
+<a name="SkImageInfo_colorType"></a>
+## colorType
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkColorType colorType() const
+</pre>
+
+---
+
+<a name="SkImageInfo_alphaType"></a>
+## alphaType
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkAlphaType alphaType() const
+</pre>
+
+---
+
+<a name="SkImageInfo_colorSpace"></a>
+## colorSpace
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkColorSpace* colorSpace() const
+</pre>
+
+---
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+bool isOpaque() const
+</pre>
+
+---
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+size_t minRowBytes() const
+</pre>
+
+---
+
+<a name="SkImageInfo_computeByteSize"></a>
+## computeByteSize
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+size_t computeByteSize(size_t rowBytes) const
+</pre>
+
+---
+
 # <a name="SkImage"></a> Class SkImage
 
 <a name="SkImage_makeShader"></a>
 ## makeShader
 
 <pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
-sk_sp<SkShader> makeShader(SkShader::TileMode, SkShader::TileMode,
+sk_sp&lt;SkShader&gt; makeShader(SkShader::TileMode, SkShader::TileMode,
                            const SkMatrix* localMatrix = nullptr) const
+</pre>
+
+---
+
+<a name="SkImage_MakeRasterCopy"></a>
+## MakeRasterCopy
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+static sk_sp&lt;SkImage&gt; MakeRasterCopy(const SkPixmap&)
+</pre>
+
+---
+
+<a name="SkImage_readPixels"></a>
+## readPixels
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+bool readPixels(const SkPixmap& dst, int srcX, int srcY,
+                CachingHint = kAllow_CachingHint) const
+</pre>
+
+---
+
+<a name="SkImage_scalePixels"></a>
+## scalePixels
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+bool scalePixels(const SkPixmap& dst, SkFilterQuality,
+                 CachingHint = kAllow_CachingHint) const
 </pre>
 
 ---
@@ -399,11 +570,54 @@ sk_sp<SkShader> makeShader(SkShader::TileMode, SkShader::TileMode,
 
 # <a name="Image_Scaling"></a> Image Scaling
 
-# <a name="IRect"></a> IRect
+# <a name="Malloc_Pixel_Ref"></a> Malloc Pixel Ref
 
-# <a name="SkIRect"></a> Struct SkIRect
+# <a name="SkMallocPixelRef"></a> Class SkMallocPixelRef
+
+<a name="SkMallocPixelRef_MakeZeroed"></a>
+## MakeZeroed
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+static sk_sp&lt;SkPixelRef&gt; MakeZeroed(const SkImageInfo&, size_t rowBytes)
+</pre>
+
+---
+
+<a name="SkMallocPixelRef_MakeAllocate"></a>
+## MakeAllocate
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+static sk_sp&lt;SkPixelRef&gt; MakeAllocate(const SkImageInfo&, size_t rowBytes)
+</pre>
+
+---
 
 # <a name="Mask"></a> Mask
+
+# <a name="SkMask"></a> Class SkMask
+
+## <a name="SkMask_Format"></a> Enum SkMask::Format
+
+### Constants
+
+<table>
+  <tr>
+    <td><a name="SkMask_kBW_Format"> <code><strong>SkMask::kBW_Format </strong></code> </a></td><td>0</td><td></td>
+  </tr>
+  <tr>
+    <td><a name="SkMask_kA8_Format"> <code><strong>SkMask::kA8_Format </strong></code> </a></td><td>1</td><td></td>
+  </tr>
+  <tr>
+    <td><a name="SkMask_k3D_Format"> <code><strong>SkMask::k3D_Format </strong></code> </a></td><td>2</td><td></td>
+  </tr>
+  <tr>
+    <td><a name="SkMask_kARGB32_Format"> <code><strong>SkMask::kARGB32_Format </strong></code> </a></td><td>3</td><td></td>
+  </tr>
+k  <tr>
+    <td><a name="SkMask_LCD16_Format"> <code><strong>SkMask::LCD16_Format </strong></code> </a></td><td>4</td><td></td>
+  </tr>
+
+</table>
 
 # <a name="Mask_Alpha"></a> Mask Alpha
 
@@ -411,17 +625,126 @@ sk_sp<SkShader> makeShader(SkShader::TileMode, SkShader::TileMode,
 
 # <a name="SkMaskFilter"></a> Class SkMaskFilter
 
-# <a name="Matrix"></a> Matrix
+<a name="SkMaskFilter_filterMask"></a>
+## filterMask
 
-# <a name="SkMatrix"></a> Struct SkMatrix
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+virtual bool filterMask(SkMask* dst, const SkMask& src, const SkMatrix&,
+                        SkIPoint* margin) const
+</pre>
+
+---
+
+# <a name="Math"></a> Math
+
+<a name="sk_64_isS32"></a>
+## sk_64_isS32
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+static inline bool sk_64_isS32(int64_t value)
+</pre>
+
+---
+
+<a name="SkIntToScalar"></a>
+## SkIntToScalar
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkIntToScalar(x)
+</pre>
+
+---
+
+<a name="SkScalarRoundToInt"></a>
+## SkScalarRoundToInt
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkScalarRoundToInt(x)
+</pre>
+
+---
+
+<a name="SkScalarFloorToInt"></a>
+## SkScalarFloorToInt
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkScalarFloorToInt(x)
+</pre>
+
+---
+
+<a name="SkScalarCeilToInt"></a>
+## SkScalarCeilToInt
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkScalarCeilToInt(x)
+</pre>
+
+---
+
+<a name="SkScalarFloorToScalar"></a>
+## SkScalarFloorToScalar
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkScalarFloorToScalar(x)
+</pre>
+
+---
+
+<a name="SkScalarCeilToScalar"></a>
+## SkScalarCeilToScalar
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkScalarCeilToScalar(x)
+</pre>
+
+---
+
+<a name="SkScalarIsFinite"></a>
+## SkScalarIsFinite
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkScalarIsFinite(x)
+</pre>
+
+---
+
+<a name="SkScalarIsNaN"></a>
+## SkScalarIsNaN
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+SkScalarIsNaN(x)
+</pre>
+
+---
+
+<a name="SkTFitsIn"></a>
+## SkTFitsIn
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+template &lt;typename D, typename S&gt; inline bool SkTFitsIn(S s)
+</pre>
+
+---
 
 # <a name="Nine_Patch"></a> Nine Patch
 
 # <a name="Number_Types"></a> Number Types
 
+# <a name="Scalar"></a> Scalar
+
 ### Constants
 
 <table>
+  <tr>
+    <td><a name="SK_MinS32FitsInFloat"> <code><strong>SK_MinS32FitsInFloat </strong></code> </a></td><td>to be written</td><td></td>
+  </tr>
+  <tr>
+    <td><a name="SK_MaxS32FitsInFloat"> <code><strong>SK_MaxS32FitsInFloat </strong></code> </a></td><td>to be written</td><td></td>
+  </tr>
+  <tr>
+    <td><a name="SK_ScalarMin"> <code><strong>SK_ScalarMin </strong></code> </a></td><td>to be written</td><td></td>
+  </tr>
   <tr>
     <td><a name="SK_ScalarMax"> <code><strong>SK_ScalarMax </strong></code> </a></td><td>to be written</td><td></td>
   </tr>
@@ -434,7 +757,15 @@ sk_sp<SkShader> makeShader(SkShader::TileMode, SkShader::TileMode,
   <tr>
     <td><a name="SK_ScalarNaN"> <code><strong>SK_ScalarNaN </strong></code> </a></td><td>to be written</td><td></td>
   </tr>
+  <tr>
+    <td><a name="SK_MinS32"> <code><strong>SK_MinS32 </strong></code> </a></td><td>to be written</td><td></td>
+  </tr>
+  <tr>
+    <td><a name="SK_MaxS32"> <code><strong>SK_MaxS32 </strong></code> </a></td><td>to be written</td><td></td>
+  </tr>
 </table>
+
+# <a name="OS_X"></a> OS X
 
 # <a name="Paint_Defaults"></a> Paint Defaults
 
@@ -503,9 +834,49 @@ SkCanvas* beginRecording(const SkRect& bounds, SkBBHFactory* bbhFactory = NULL,
 
 ## <a name="Storage"></a> Storage
 
-# <a name="Pixmap"></a> Pixmap
+# <a name="Pixel_Ref"></a> Pixel Ref
 
-# <a name="SkPixmap"></a> Class SkPixmap
+# <a name="SkPixelRef"></a> Class SkPixelRef
+
+<a name="SkPixelRef_width"></a>
+## width
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+int width() const
+</pre>
+
+---
+
+<a name="SkPixelRef_height"></a>
+## height
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+int height() const
+</pre>
+
+---
+
+<a name="SkPixelRef_isImmutable"></a>
+## isImmutable
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+bool isImmutable() const
+</pre>
+
+---
+
+<a name="SkPixelRef_setImmutable"></a>
+## setImmutable
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+void setImmutable()
+</pre>
+
+---
+
+# <a name="Premultiply"></a> Premultiply
+
+# <a name="Raster_Engine"></a> Raster Engine
 
 # <a name="Raster_Surface"></a> Raster Surface
 
@@ -517,7 +888,11 @@ SkCanvas* beginRecording(const SkRect& bounds, SkBBHFactory* bbhFactory = NULL,
 
 # <a name="Reference_Count"></a> Reference Count
 
+# <a name="SkRefCnt"></a> Class SkRefCnt
+
 # <a name="sk_sp"></a> Class sk_sp
+
+# <a name="Right_Side_Bearing"></a> Right Side Bearing
 
 # <a name="Round_Rect"></a> Round Rect
 
@@ -564,7 +939,7 @@ void dumpHex() const
 ## MakeBitmapShader
 
 <pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
-static sk_sp<SkShader> MakeBitmapShader(const SkBitmap& src, TileMode tmx,
+static sk_sp&lt;SkShader&gt; MakeBitmapShader(const SkBitmap& src, TileMode tmx,
                                         TileMode tmy,
                                         const SkMatrix* localMatrix = nullptr)
 </pre>
@@ -583,6 +958,8 @@ static sk_sp<SkShader> MakeBitmapShader(const SkBitmap& src, TileMode tmx,
 
 # <a name="SkString"></a> Class SkString
 
+# <a name="Supersampling"></a> Supersampling
+
 # <a name="Surface"></a> Surface
 
 # <a name="SkSurface"></a> Class SkSurface
@@ -591,9 +968,18 @@ static sk_sp<SkShader> MakeBitmapShader(const SkBitmap& src, TileMode tmx,
 ## MakeRasterDirect
 
 <pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
-static sk_sp<SkSurface> MakeRasterDirect(const SkImageInfo&, void* pixels,
+static sk_sp&lt;SkSurface&gt; MakeRasterDirect(const SkImageInfo&, void* pixels,
                                          size_t rowBytes,
                                          const SkSurfaceProps* = nullptr)
+</pre>
+
+---
+
+<a name="SkSurface_readPixels"></a>
+## readPixels
+
+<pre style="padding: 1em 1em 1em 1em;width: 50em; background-color: #f0f0f0">
+bool readPixels(const SkPixmap& dst, int srcX, int srcY) ;
 </pre>
 
 ---
@@ -626,6 +1012,8 @@ static sk_sp<SkSurface> MakeRasterDirect(const SkImageInfo&, void* pixels,
 # <a name="Text_Blob"></a> Text Blob
 
 # <a name="SkTextBlob"></a> Class SkTextBlob
+
+# <a name="Unpremultiply"></a> Unpremultiply
 
 # <a name="Vertices"></a> Vertices
 

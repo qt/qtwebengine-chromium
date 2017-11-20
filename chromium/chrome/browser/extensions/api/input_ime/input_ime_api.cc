@@ -27,6 +27,12 @@ using input_method::InputMethodEngineBase;
 namespace {
 const char kErrorEngineNotAvailable[] = "Engine is not available";
 const char kErrorSetKeyEventsFail[] = "Could not send key events";
+
+bool IsKeyboardRestricted() {
+  const keyboard::KeyboardConfig config = keyboard::GetKeyboardConfig();
+  return !(config.spell_check && config.auto_complete && config.auto_correct &&
+           config.voice_input && config.handwriting);
+}
 }
 namespace ui {
 
@@ -201,7 +207,9 @@ std::string ImeObserver::ConvertInputContextType(
   // This is a hack, but tricking the virtual keyboard to think the
   // current input context is password will disable all keyboard features
   // that are not supported in restricted keyboard mode.
-  if (keyboard::GetKeyboardRestricted() &&
+  // TODO(oka): Remove this hack once VK extension starts to honor the
+  // virtualKeyboardPrivate.GetKeyboardConfig parameters.
+  if (IsKeyboardRestricted() &&
       input_context.type != ui::TEXT_INPUT_TYPE_TELEPHONE &&
       input_context.type != ui::TEXT_INPUT_TYPE_NUMBER) {
     return "password";
@@ -236,19 +244,19 @@ std::string ImeObserver::ConvertInputContextType(
 
 bool ImeObserver::ConvertInputContextAutoCorrect(
     ui::IMEEngineHandlerInterface::InputContext input_context) {
-  return !keyboard::GetKeyboardRestricted() &&
+  return keyboard::GetKeyboardConfig().auto_correct &&
          !(input_context.flags & ui::TEXT_INPUT_FLAG_AUTOCORRECT_OFF);
 }
 
 bool ImeObserver::ConvertInputContextAutoComplete(
     ui::IMEEngineHandlerInterface::InputContext input_context) {
-  return !keyboard::GetKeyboardRestricted() &&
+  return keyboard::GetKeyboardConfig().auto_complete &&
          !(input_context.flags & ui::TEXT_INPUT_FLAG_AUTOCOMPLETE_OFF);
 }
 
 bool ImeObserver::ConvertInputContextSpellCheck(
     ui::IMEEngineHandlerInterface::InputContext input_context) {
-  return !keyboard::GetKeyboardRestricted() &&
+  return keyboard::GetKeyboardConfig().spell_check &&
          !(input_context.flags & ui::TEXT_INPUT_FLAG_SPELLCHECK_OFF);
 }
 
@@ -425,13 +433,12 @@ void InputImeAPI::Shutdown() {
   registrar_.RemoveAll();
 }
 
-static base::LazyInstance<
-    BrowserContextKeyedAPIFactory<InputImeAPI>>::DestructorAtExit g_factory =
-    LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<InputImeAPI>>::
+    DestructorAtExit g_input_ime_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 BrowserContextKeyedAPIFactory<InputImeAPI>* InputImeAPI::GetFactoryInstance() {
-  return g_factory.Pointer();
+  return g_input_ime_factory.Pointer();
 }
 
 InputImeEventRouter* GetInputImeEventRouter(Profile* profile) {

@@ -16,15 +16,24 @@
 namespace crc32c {
 
 uint32_t Extend(uint32_t crc, const uint8_t* data, size_t count) {
-#if defined(HAVE_SSE42) && (defined(_M_X64) || defined(__x86_64__))
+#if HAVE_SSE42 && (defined(_M_X64) || defined(__x86_64__))
   static bool can_use_sse42 = CanUseSse42();
   if (can_use_sse42) return ExtendSse42(crc, data, count);
-#elif defined(HAVE_ARM64_CRC32C)
+#elif HAVE_ARM64_CRC32C
   static bool can_use_arm_linux = CanUseArm64Linux();
   if (can_use_arm_linux) return ExtendArm64(crc, data, count);
-#endif
+#endif  // HAVE_SSE42 && (defined(_M_X64) || defined(__x86_64__))
 
   return ExtendPortable(crc, data, count);
+}
+
+extern "C" uint32_t crc32c_extend(uint32_t crc, const uint8_t* data,
+                                  size_t count) {
+  return crc32c::Extend(crc, data, count);
+}
+
+extern "C" uint32_t crc32c_value(const uint8_t* data, size_t count) {
+  return crc32c::Crc32c(data, count);
 }
 
 }  // namespace crc32c

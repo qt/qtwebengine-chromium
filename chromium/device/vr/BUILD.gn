@@ -24,13 +24,9 @@ if (enable_vr) {
     sources += [
       "vr_device.cc",
       "vr_device.h",
-      "vr_device_manager.cc",
-      "vr_device_manager.h",
       "vr_device_provider.h",
       "vr_display_impl.cc",
       "vr_display_impl.h",
-      "vr_service_impl.cc",
-      "vr_service_impl.h",
     ]
 
     deps += [
@@ -47,8 +43,9 @@ if (enable_vr) {
         "android/gvr/cardboard_gamepad_data_provider.h",
         "android/gvr/gvr_delegate.cc",
         "android/gvr/gvr_delegate.h",
-        "android/gvr/gvr_delegate_provider.cc",
         "android/gvr/gvr_delegate_provider.h",
+        "android/gvr/gvr_delegate_provider_factory.cc",
+        "android/gvr/gvr_delegate_provider_factory.h",
         "android/gvr/gvr_device.cc",
         "android/gvr/gvr_device.h",
         "android/gvr/gvr_device_provider.cc",
@@ -59,6 +56,7 @@ if (enable_vr) {
       ]
 
       deps += [
+        ":jni_headers",
         "//device/gamepad",
         "//device/gamepad/public/cpp:shared_with_blink",
         "//third_party/WebKit/public:blink_headers",
@@ -87,6 +85,8 @@ if (enable_vr) {
   static_library("fakes") {
     testonly = true
 
+    defines = [ "DEVICE_VR_IMPLEMENTATION" ]
+
     sources = [
       "test/fake_vr_device.cc",
       "test/fake_vr_device.h",
@@ -96,6 +96,7 @@ if (enable_vr) {
       "test/fake_vr_display_impl_client.h",
       "test/fake_vr_service_client.cc",
       "test/fake_vr_service_client.h",
+      "vr_export.h",
     ]
 
     public_deps = [
@@ -111,6 +112,25 @@ if (enable_vr) {
     # compile this when webvr is disabled.
     sources = [
       "empty.cc",
+    ]
+  }
+}
+
+if (is_android && (current_cpu == "arm" || current_cpu == "arm64")) {
+  java_sources_needing_jni =
+      [ "android/java/src/org/chromium/device/vr/NonPresentingGvrContext.java" ]
+
+  generate_jni("jni_headers") {
+    sources = java_sources_needing_jni
+    jni_package = "device"
+  }
+
+  android_library("java") {
+    java_files = java_sources_needing_jni
+    deps = [
+      "//base:base_java",
+      "//third_party/gvr-android-sdk:gvr_common_java",
+      "//ui/android:ui_java",
     ]
   }
 }

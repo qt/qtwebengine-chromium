@@ -9,10 +9,10 @@
 #include "core/paint/ObjectPaintProperties.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/PaintLayer.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/paint/ClipDisplayItem.h"
 #include "platform/graphics/paint/PaintController.h"
+#include "platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -43,7 +43,7 @@ BoxClipper::BoxClipper(const LayoutBox& box,
   if (paint_info_.phase == kPaintPhaseMask)
     return;
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     const auto* object_properties =
         box_.FirstFragment() ? box_.FirstFragment()->PaintProperties()
                              : nullptr;

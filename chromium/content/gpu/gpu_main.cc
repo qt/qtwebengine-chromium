@@ -16,6 +16,7 @@
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/sys_info.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
 #include "base/timer/hi_res_timer_manager.h"
@@ -39,6 +40,8 @@
 #include "gpu/ipc/service/gpu_init.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
 #include "media/gpu/features.h"
+#include "services/ui/gpu/gpu_main.h"
+#include "third_party/skia/include/core/SkGraphics.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_context.h"
@@ -72,13 +75,15 @@
 #endif
 
 #if defined(OS_LINUX)
+#include "content/common/font_config_ipc_linux.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/public/common/sandbox_init.h"
+#include "third_party/skia/include/ports/SkFontConfigInterface.h"
 #endif
 
 #if defined(OS_MACOSX)
 #include "base/message_loop/message_pump_mac.h"
-#include "content/common/sandbox_mac.h"
+#include "services/service_manager/sandbox/mac/sandbox_mac.h"
 #endif
 
 #if defined(USE_OZONE)
@@ -94,19 +99,19 @@ namespace content {
 namespace {
 
 #if defined(OS_LINUX)
-bool StartSandboxLinux(gpu::GpuWatchdogThread*);
+bool StartSandboxLinux(gpu::GpuWatchdogThread*, const gpu::GPUInfo*);
 #elif defined(OS_WIN)
 bool StartSandboxWindows(const sandbox::SandboxInterfaceInfo*);
 #endif
 
-base::LazyInstance<GpuChildThread::DeferredMessages>::DestructorAtExit
+base::LazyInstance<ui::GpuMain::LogMessages>::DestructorAtExit
     deferred_messages = LAZY_INSTANCE_INITIALIZER;
 
 bool GpuProcessLogMessageHandler(int severity,
                                  const char* file, int line,
                                  size_t message_start,
                                  const std::string& str) {
-  GpuChildThread::LogMessage log;
+  ui::GpuMain::LogMessage log;
   log.severity = severity;
   log.header = str.substr(0, message_start);
   log.message = str.substr(message_start);
@@ -143,16 +148,20 @@ class ContentSandboxHelper : public gpu::GpuSandboxHelper {
     media::DXVAVideoDecodeAccelerator::PreSandboxInitialization();
     media::MediaFoundationVideoEncodeAccelerator::PreSandboxInitialization();
 #endif
+
+    // On Linux, reading system memory doesn't work through the GPU sandbox.
+    // This value is cached, so access it here to populate the cache.
+    base::SysInfo::AmountOfPhysicalMemory();
   }
 
-  bool EnsureSandboxInitialized(
-      gpu::GpuWatchdogThread* watchdog_thread) override {
+  bool EnsureSandboxInitialized(gpu::GpuWatchdogThread* watchdog_thread,
+                                const gpu::GPUInfo* gpu_info) override {
 #if defined(OS_LINUX)
-    return StartSandboxLinux(watchdog_thread);
+    return StartSandboxLinux(watchdog_thread, gpu_info);
 #elif defined(OS_WIN)
     return StartSandboxWindows(sandbox_info_);
 #elif defined(OS_MACOSX)
-    return Sandbox::SandboxIsCurrentlyActive();
+    return service_manager::Sandbox::SandboxIsCurrentlyActive();
 #else
     return false;
 #endif
@@ -250,13 +259,13 @@ int GpuMain(const MainFunctionParams& parameters) {
   base::PlatformThread::SetCurrentThreadPriority(base::ThreadPriority::DISPLAY);
 #endif
 
-  gpu::GpuInit gpu_init;
+  auto gpu_init = std::make_unique<gpu::GpuInit>();
   ContentSandboxHelper sandbox_helper;
 #if defined(OS_WIN)
   sandbox_helper.set_sandbox_info(parameters.sandbox_info);
 #endif
 
-  gpu_init.set_sandbox_helper(&sandbox_helper);
+  gpu_init->set_sandbox_helper(&sandbox_helper);
 
   // Gpu initialization may fail for various reasons, in which case we will need
   // to tear down this process. However, we can not do so safely until the IPC
@@ -266,13 +275,12 @@ int GpuMain(const MainFunctionParams& parameters) {
   // exits early, the browser process will never detect it.  For this reason we
   // defer tearing down the GPU process until receiving the initialization
   // message from the browser (through mojom::GpuMain::CreateGpuService()).
-  constexpr bool kInProcessGpu = false;
-  const bool init_success = gpu_init.InitializeAndStartSandbox(
-      const_cast<base::CommandLine*>(&command_line), kInProcessGpu);
+  const bool init_success = gpu_init->InitializeAndStartSandbox(
+      const_cast<base::CommandLine*>(&command_line));
   const bool dead_on_arrival = !init_success;
 
   logging::SetLogMessageHandler(NULL);
-  GetContentClient()->SetGpuInfo(gpu_init.gpu_info());
+  GetContentClient()->SetGpuInfo(gpu_init->gpu_info());
 
   base::ThreadPriority io_thread_priority = base::ThreadPriority::NORMAL;
 #if defined(OS_ANDROID) || defined(OS_CHROMEOS)
@@ -281,8 +289,7 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   GpuProcess gpu_process(io_thread_priority);
   GpuChildThread* child_thread = new GpuChildThread(
-      gpu_init.TakeWatchdogThread(), dead_on_arrival, gpu_init.gpu_info(),
-      gpu_init.gpu_feature_info(), std::move(deferred_messages.Get()));
+      std::move(gpu_init), std::move(deferred_messages.Get()));
   deferred_messages.Get().clear();
 
   child_thread->Init(start_time);
@@ -294,6 +301,15 @@ int GpuMain(const MainFunctionParams& parameters) {
       tracing::GraphicsMemoryDumpProvider::GetInstance(), "AndroidGraphics",
       nullptr);
 #endif
+
+  if (command_line.HasSwitch(switches::kEnableOOPRasterization)) {
+    SkGraphics::Init();
+#if defined(OS_LINUX)
+    // Set up the font IPC so that the GPU process can create typefaces.
+    SkFontConfigInterface::SetGlobal(new FontConfigIPC(GetSandboxFD()))
+        ->unref();
+#endif
+  }
 
   base::HighResolutionTimerManager hi_res_timer_manager;
 
@@ -308,7 +324,8 @@ int GpuMain(const MainFunctionParams& parameters) {
 namespace {
 
 #if defined(OS_LINUX)
-bool StartSandboxLinux(gpu::GpuWatchdogThread* watchdog_thread) {
+bool StartSandboxLinux(gpu::GpuWatchdogThread* watchdog_thread,
+                       const gpu::GPUInfo* gpu_info) {
   TRACE_EVENT0("gpu,startup", "Initialize sandbox");
 
   bool res = false;
@@ -321,7 +338,7 @@ bool StartSandboxLinux(gpu::GpuWatchdogThread* watchdog_thread) {
 
   // LinuxSandbox::InitializeSandbox() must always be called
   // with only one thread.
-  res = LinuxSandbox::InitializeSandbox();
+  res = LinuxSandbox::InitializeSandbox(gpu_info);
   if (watchdog_thread) {
     base::Thread::Options options;
     options.timer_slack = base::TIMER_SLACK_MAXIMUM;

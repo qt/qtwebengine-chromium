@@ -8,23 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_P2P_BASE_PORTALLOCATOR_H_
-#define WEBRTC_P2P_BASE_PORTALLOCATOR_H_
+#ifndef P2P_BASE_PORTALLOCATOR_H_
+#define P2P_BASE_PORTALLOCATOR_H_
 
 #include <deque>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "webrtc/p2p/base/port.h"
-#include "webrtc/p2p/base/portinterface.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/proxyinfo.h"
-#include "webrtc/rtc_base/sigslot.h"
-#include "webrtc/rtc_base/thread.h"
+#include "p2p/base/port.h"
+#include "p2p/base/portinterface.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/proxyinfo.h"
+#include "rtc_base/sigslot.h"
+#include "rtc_base/thread.h"
 
 namespace webrtc {
 class MetricsObserverInterface;
+class TurnCustomizer;
 }
 
 namespace cricket {
@@ -192,6 +193,7 @@ struct RelayServerConfig {
   int priority = 0;
   TlsCertPolicy tls_cert_policy = TlsCertPolicy::TLS_CERT_POLICY_SECURE;
   std::vector<std::string> tls_alpn_protocols;
+  std::vector<std::string> tls_elliptic_curves;
 };
 
 class PortAllocatorSession : public sigslot::has_slots<> {
@@ -361,7 +363,8 @@ class PortAllocator : public sigslot::has_slots<> {
   bool SetConfiguration(const ServerAddresses& stun_servers,
                         const std::vector<RelayServerConfig>& turn_servers,
                         int candidate_pool_size,
-                        bool prune_turn_ports);
+                        bool prune_turn_ports,
+                        webrtc::TurnCustomizer* turn_customizer = nullptr);
 
   const ServerAddresses& stun_servers() const { return stun_servers_; }
 
@@ -447,6 +450,12 @@ class PortAllocator : public sigslot::has_slots<> {
   void set_max_ipv6_networks(int networks) { max_ipv6_networks_ = networks; }
   int max_ipv6_networks() { return max_ipv6_networks_; }
 
+  // Delay between different candidate gathering phases (UDP, TURN, TCP).
+  // Defaults to 1 second, but PeerConnection sets it to 50ms.
+  // TODO(deadbeef): Get rid of this. Its purpose is to avoid sending too many
+  // STUN transactions at once, but that's already happening if you configure
+  // multiple STUN servers or have multiple network interfaces. We should
+  // implement some global pacing logic instead if that's our goal.
   uint32_t step_delay() const { return step_delay_; }
   void set_step_delay(uint32_t delay) { step_delay_ = delay; }
 
@@ -468,6 +477,10 @@ class PortAllocator : public sigslot::has_slots<> {
 
   void SetMetricsObserver(webrtc::MetricsObserverInterface* observer) {
     metrics_observer_ = observer;
+  }
+
+  webrtc::TurnCustomizer* turn_customizer() {
+    return turn_customizer_;
   }
 
  protected:
@@ -505,8 +518,13 @@ class PortAllocator : public sigslot::has_slots<> {
   bool prune_turn_ports_ = false;
 
   webrtc::MetricsObserverInterface* metrics_observer_ = nullptr;
+
+  // Customizer for TURN messages.
+  // The instance is owned by application and will be shared among
+  // all TurnPort(s) created.
+  webrtc::TurnCustomizer* turn_customizer_ = nullptr;
 };
 
 }  // namespace cricket
 
-#endif  // WEBRTC_P2P_BASE_PORTALLOCATOR_H_
+#endif  // P2P_BASE_PORTALLOCATOR_H_

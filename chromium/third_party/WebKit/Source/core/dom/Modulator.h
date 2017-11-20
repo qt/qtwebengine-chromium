@@ -7,7 +7,6 @@
 
 #include "bindings/core/v8/ScriptModule.h"
 #include "core/CoreExport.h"
-#include "core/dom/AncestorList.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/bindings/V8PerContextData.h"
 #include "platform/heap/Handle.h"
@@ -22,9 +21,11 @@ namespace blink {
 class ExceptionState;
 class ModuleScript;
 class ModuleScriptFetchRequest;
+class ModuleScriptFetcher;
 class ModuleScriptLoaderClient;
-class ModuleTreeReachedUrlSet;
+class ReferrerScriptInfo;
 class ScriptModuleResolver;
+class ScriptPromiseResolver;
 class ScriptState;
 class ScriptValue;
 class SecurityOrigin;
@@ -88,13 +89,6 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   virtual void FetchTree(const ModuleScriptFetchRequest&,
                          ModuleTreeClient*) = 0;
 
-  // https://html.spec.whatwg.org/#internal-module-script-graph-fetching-procedure
-  virtual void FetchTreeInternal(const ModuleScriptFetchRequest&,
-                                 const AncestorList&,
-                                 ModuleGraphLevel,
-                                 ModuleTreeReachedUrlSet*,
-                                 ModuleTreeClient*) = 0;
-
   // Asynchronously retrieve a module script from the module map, or fetch it
   // and put it in the map if it's not there already.
   // https://html.spec.whatwg.org/#fetch-a-single-module-script
@@ -115,11 +109,20 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   static KURL ResolveModuleSpecifier(const String& module_request,
                                      const KURL& base_url);
 
+  // https://tc39.github.io/proposal-dynamic-import/#sec-hostimportmoduledynamically
+  virtual void ResolveDynamically(const String& specifier,
+                                  const KURL&,
+                                  const ReferrerScriptInfo&,
+                                  ScriptPromiseResolver*) = 0;
+
   virtual bool HasValidContext() = 0;
 
   virtual ScriptModule CompileModule(const String& script,
                                      const String& url_str,
                                      AccessControlStatus,
+                                     WebURLRequest::FetchCredentialsMode,
+                                     const String& nonce,
+                                     ParserDisposition,
                                      const TextPosition&,
                                      ExceptionState&) = 0;
 
@@ -139,7 +142,19 @@ class CORE_EXPORT Modulator : public GarbageCollectedFinalized<Modulator>,
   virtual Vector<ModuleRequest> ModuleRequestsFromScriptModule(
       ScriptModule) = 0;
 
-  virtual void ExecuteModule(const ModuleScript*) = 0;
+  // ExecuteModule implements #run-a-module-script HTML spec algorithm.
+  // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+  // Note: "rethrow errors" flag in the spec corresponds to capture_error being
+  // CaptureEvalErrorFlag::kCapture. Here we rely on caller to handle the
+  // exception. The current only caller is
+  // DynamicImportTreeClinet::NotifyModuleTreeLoadFinished, which catches
+  // the exception immediately, so just returning the exception value here is
+  // more convenient and optimal.
+  virtual ScriptValue ExecuteModule(
+      const ModuleScript*,
+      CaptureEvalErrorFlag = CaptureEvalErrorFlag::kReport) = 0;
+
+  virtual ModuleScriptFetcher* CreateModuleScriptFetcher() = 0;
 
  private:
   friend class ModuleMap;

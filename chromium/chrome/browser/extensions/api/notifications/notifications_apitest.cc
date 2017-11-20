@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/containers/circular_deque.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -98,7 +99,7 @@ class UserGestureCatcher : public content::NotificationObserver {
   content::NotificationRegistrar registrar_;
 
   // A sequential list of user gesture notifications from the test extension(s).
-  std::deque<bool> results_;
+  base::circular_deque<bool> results_;
 
   // True if we're in a nested run loop waiting for results from
   // the extension.
@@ -298,8 +299,6 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestPartialUpdate) {
   Notification* notification = GetNotificationForExtension(extension);
   ASSERT_TRUE(notification);
 
-  LOG(INFO) << "Notification ID: " << notification->id();
-
   EXPECT_EQ(base::ASCIIToUTF16(kNewTitle), notification->title());
   EXPECT_EQ(base::ASCIIToUTF16(kNewMessage), notification->message());
   EXPECT_EQ(kNewPriority, notification->priority());
@@ -323,7 +322,7 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestGetPermissionLevel) {
     std::unique_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
         notification_function.get(), "[]", browser(), utils::NONE));
 
-    EXPECT_EQ(base::Value::Type::STRING, result->GetType());
+    EXPECT_EQ(base::Value::Type::STRING, result->type());
     std::string permission_level;
     EXPECT_TRUE(result->GetAsString(&permission_level));
     EXPECT_EQ("granted", permission_level);
@@ -346,7 +345,7 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestGetPermissionLevel) {
     std::unique_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
         notification_function.get(), "[]", browser(), utils::NONE));
 
-    EXPECT_EQ(base::Value::Type::STRING, result->GetType());
+    EXPECT_EQ(base::Value::Type::STRING, result->type());
     std::string permission_level;
     EXPECT_TRUE(result->GetAsString(&permission_level));
     EXPECT_EQ("denied", permission_level);

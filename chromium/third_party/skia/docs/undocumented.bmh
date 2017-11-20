@@ -1,30 +1,31 @@
 # external references that will be documented eventually ...
 #External
- DirectWrite TrueType Windows Linux Android
+ DirectWrite TrueType Windows Linux Android iOS
  FreeType FreeType-based Harfbuzz   
- PostScript PostScript_arct
- OS_X Core_Graphics Core_Text iOS
+ Descenders Kerning Unhinted 
  LCD RGB
- Premultiplied Unpremultiplied
  Unicode Unicode5 UTF-8 UTF-16 UTF-32 ASCII Unichar
- HTML_Canvas HTML_Canvas_arcTo
  API
  CPU
  GPU GPU-backed OpenGL Vulkan
- NULL
+ PDF XPS
  RFC
+ NaN NaNs
  Bezier Coons Cartesian
- C C++ 
+ C C++ Destructor Subclasses
  SaveLayerFlags # not external; need to add typedef support
- SkUserConfig.h  # not external, but still thinking about how markup refers to this
+ SkUserConfig  # not external, but still thinking about how markup refers to this
  SkXXX.h        # ditto
+ SkXXX_Reference # ditto
  Skia           # ditto
+ SK_ABORT       # ditto
+ SK_API         # ditto
+ SK_DEBUG       # ditto
+ SK_RELEASE     # ditto
  SK_USE_FREETYPE_EMBOLDEN # ditto
  SK_SUPPORT_LEGACY_PAINT_TEXTDECORATION # ditto
  SK_BUILD_FOR_ANDROID_FRAMEWORK # ditto
- Developer_Mode # ditto
- Draw_Layer # ditto
- Raster_Engine # ditto
+ SK_IGNORE_TO_STRING #  ditto
 
 # FreeType related
 FT_LOAD_TARGET_LIGHT
@@ -36,20 +37,23 @@ FT_Load_Glyph
 
 #External ##
 
+#Topic Alias
+#Alias Aliased
+#Alias Aliasing
+##
+
+#Topic Anti-alias
+#Alias Anti-aliased
+#Alias Anti-aliasing
+##
+
 #Topic Arc
-#Substitute arcs
+#Alias Arcs
 #Topic ##
 
 #Topic BBH_Factory
 #Class SkBBHFactory
 ##
-##
-
-#Topic Bitmap
-#Class SkBitmap
-    #Subtopic Row_Bytes
-    ##
-#Class ##
 ##
 
 #Topic Blend_Mode
@@ -64,7 +68,7 @@ FT_Load_Glyph
 #Topic ##
 
 #Topic Circle
-#Substitute circles
+#Alias Circles
 #Topic ##
 
 #Topic Clip_Op
@@ -103,18 +107,18 @@ FT_Load_Glyph
     #Const SK_ColorWHITE 0xFFFFFFFF 
     ##
     #Subtopic Alpha
-    #Substitute alpha
+        #Alias Alpha
     #Subtopic ##
     #Subtopic RGB
     #Substitute RGB
         #Subtopic Red
-        #Substitute red
+            #Alias Red
         #Subtopic ##
         #Subtopic Blue
-        #Substitute blue
+            #Alias Blue
         #Subtopic ##
         #Subtopic Green
-        #Substitute green
+            #Alias Green
         #Subtopic ##
     #Subtopic ##
     #Subtopic ARGB
@@ -137,6 +141,24 @@ FT_Load_Glyph
 #Topic ##
 
 #Topic Color_Space
+#Class SkColorSpace
+    #Method static sk_sp<SkColorSpace> MakeSRGBLinear()
+    ##
+##
+#EnumClass SkTransferFunctionBehavior
+#Const kRespect 0
+##
+#Const kIgnore 1
+##
+#EnumClass ##
+##
+
+#Topic Core_Graphics
+#Substitute Core Graphics
+##
+
+#Topic Core_Text
+#Substitute Core Text
 ##
 
 #Topic Curve
@@ -144,6 +166,11 @@ FT_Load_Glyph
 ##
 
 #Topic Data
+##
+
+#Topic Debugging
+#Method SK_API void SkDebugf(const char format[], ...)
+##
 ##
 
 #Topic Device
@@ -164,6 +191,9 @@ FT_Load_Glyph
 #Topic Draw_Filter
 #Class SkDrawFilter
 ##
+##
+
+#Topic Draw_Layer
 ##
 
 #Topic Draw_Looper
@@ -194,6 +224,18 @@ FT_Load_Glyph
     #Const kHigh_SkFilterQuality 3
     ##
 #Enum ##
+#Subtopic Nearest_Neighbor
+#Substitute nearest neighbor filter
+##
+#Subtopic Bilerp
+#Substitute bilerp filter
+##
+#Subtopic MipMap
+#Substitute mip-map filter
+##
+#Subtopic BiCubic
+#Substitute bicubic filter
+##
 #Topic ##
 
 #Topic Font
@@ -207,6 +249,7 @@ FT_Load_Glyph
 #Topic ##
 
 #Topic Glyph
+#Alias Glyphs
 ##
 
 #Topic GPU_Context
@@ -217,14 +260,30 @@ FT_Load_Glyph
 #Substitute GPU surface
 ##
 
+#Topic HTML_Canvas
+    #Substitute HTML Canvas
+    #Subtopic ArcTo
+        #Substitute HTML Canvas arcTo
+    ##
+##
+
 #Topic Image
     #Subtopic Alpha_Type
+    #Alias Alpha_Type
         #Enum SkAlphaType
+            #Const kUnknown_SkAlphaType 0
+            ##
+            #Const kOpaque_SkAlphaType 1
+            ##
             #Const kPremul_SkAlphaType 2
+            ##
+            #Const kUnpremul_SkAlphaType 3
             ##
         ##
     #Subtopic ##
-    #Subtopic Color_Type 
+    #Subtopic Color_Type
+    #Alias Color_Type
+    #Alias Color_Types
         #Enum SkColorType
             #Const kUnknown_SkColorType 0
             ##
@@ -253,11 +312,42 @@ FT_Load_Glyph
         #Struct SkImageInfo
             #Method SkImageInfo()
             ##
+            #Method SkImageInfo makeColorSpace(sk_sp<SkColorSpace> cs) const
+            ##
+            #Method size_t minRowBytes() const
+            ##
+            #Method bool isOpaque() const
+            ##
+            #Method int bytesPerPixel() const
+            ##
+            #Method int height() const
+            ##
+            #Method int width() const
+            ##
+            #Method SkColorType colorType() const
+            ##
+            #Method SkAlphaType alphaType() const
+            ##
+            #Method SkColorSpace* colorSpace() const
+            ##
+            #Method bool isOpaque() const
+            ##
+            #Method size_t minRowBytes() const
+            ##
+            #Method size_t computeByteSize(size_t rowBytes) const
+            ##
         ## 
     #Subtopic ##
     #Class SkImage
         #Method sk_sp<SkShader> makeShader(SkShader::TileMode, SkShader::TileMode,
                                    const SkMatrix* localMatrix = nullptr) const
+        ##
+        #Method static sk_sp<SkImage> MakeRasterCopy(const SkPixmap&)
+        ##
+        #Method bool readPixels(const SkPixmap& dst, int srcX, int srcY,
+                    CachingHint = kAllow_CachingHint) const
+        ##
+        #Method bool scalePixels(const SkPixmap& dst, SkFilterQuality, CachingHint = kAllow_CachingHint) const
         ##
     ##
 #Topic ##
@@ -272,17 +362,37 @@ FT_Load_Glyph
 #Topic Image_Scaling
 ##
 
-#Topic IRect
-#Struct SkIRect
-##
+#Topic Left_Side_Bearing 
 ##
 
 #Topic Line
-#Substitute lines
 #Alias Lines
 #Topic ##
 
+#Topic Malloc_Pixel_Ref
+#Class SkMallocPixelRef
+    #Method static sk_sp<SkPixelRef> MakeZeroed(const SkImageInfo&, size_t rowBytes)
+    ##
+    #Method static sk_sp<SkPixelRef> MakeAllocate(const SkImageInfo&, size_t rowBytes)
+    ##
+##
+##
+
 #Topic Mask
+#Class SkMask
+    #Enum Format
+        #Const kBW_Format 0
+        ##
+        #Const kA8_Format 1
+        ##
+        #Const k3D_Format 2
+        ##
+        #Const kARGB32_Format 3
+        ##
+        k#Const LCD16_Format 4
+        ##
+    ##
+##
 #Topic ##
 
 #Topic Mask_Alpha
@@ -290,13 +400,37 @@ FT_Load_Glyph
 
 #Topic Mask_Filter
 #Class SkMaskFilter
+#Method virtual bool filterMask(SkMask* dst, const SkMask& src, const SkMatrix&,
+                            SkIPoint* margin) const
+##
 #Class ##
 #Topic ##
 
-#Topic Matrix
-#Struct SkMatrix
-#Struct ##
-#Topic ##
+#Topic Math
+    #Method static inline bool sk_64_isS32(int64_t value)
+    ##
+    #Method SkIntToScalar(x)
+    ##
+    #Method SkScalarRoundToInt(x)
+    ##
+    #Method SkScalarFloorToInt(x)
+    ##
+    #Method SkScalarCeilToInt(x)
+    ##
+    #Method SkScalarFloorToScalar(x)
+    ##
+    #Method SkScalarCeilToScalar(x)
+    ##
+    #Method SkScalarIsFinite(x)
+    ##
+    #Method SkScalarIsNaN(x)
+    ##
+    #Method template <typename D, typename S> inline bool SkTFitsIn(S s)
+    ##
+##
+
+#Topic Mip_Map
+##
 
 #Topic Nine_Patch
 ##
@@ -304,8 +438,20 @@ FT_Load_Glyph
 #Topic Number_Types
     #Typedef SkGlyphID
     #Typedef ##
+    #Topic Scalar
+    #Alias Scalar
     #Typedef SkScalar
     #Typedef ##
+    ##
+    #Const SK_MinS32FitsInFloat
+    to be written
+    ##
+    #Const SK_MaxS32FitsInFloat
+    to be written
+    ##
+    #Const SK_ScalarMin
+    to be written
+    ##
     #Const SK_ScalarMax
     to be written
     ##
@@ -318,14 +464,24 @@ FT_Load_Glyph
     #Const SK_ScalarNaN
     to be written
     ##
+    #Const SK_MinS32
+    to be written
+    ##
+    #Const SK_MaxS32
+    to be written
+    ##
     #Typedef SkUnichar
     #Typedef ##
     #Typedef U8CPU
     #Typedef ##
 #Topic ##
 
+#Topic OS_X
+#Substitute OS X
+##
+
 #Topic Oval
-#Substitute ovals
+#Alias Ovals
 #Topic ##
 
 #Topic Paint_Defaults
@@ -340,7 +496,7 @@ FT_Load_Glyph
 #Topic ##
 
 #Topic Patch
-#Substitute patches
+#Alias Patches
 #Topic ##
 
 #Topic Path_Effect
@@ -376,12 +532,20 @@ FT_Load_Glyph
 ##
 ##
 
-#Enum SkPixelGeometry
+#Topic Pixel_Ref
+#Class SkPixelRef
+    #Method int width() const
+    ##
+    #Method int height() const
+    ##
+    #Method bool isImmutable() const
+    ##
+    #Method void setImmutable()
+    ##
+##
 ##
 
-#Topic Pixmap
-#Class SkPixmap
-##
+#Enum SkPixelGeometry
 ##
 
 #Topic Point
@@ -394,6 +558,20 @@ FT_Load_Glyph
     #Substitute SkPoint arrays
     #Subtopic ##
 #Topic ##
+
+#Topic PostScript
+#Substitute PostScript
+#Subtopic Arct
+#Substitute PostScript arct
+##
+##
+
+#Topic Premultiply
+#Alias Premultiplied
+##
+
+#Topic Raster_Engine
+##
 
 #Topic Raster_Handle_Allocator
 #Class SkRasterHandleAllocator
@@ -414,20 +592,10 @@ FT_Load_Glyph
 #Subtopic ##
 #Topic ##
 
-#Topic Rect
-#Alias Rects
-    #Struct SkRect
-        #Method static constexpr SkRect SK_WARN_UNUSED_RESULT MakeEmpty()
-        ##
-        #Method void dump() const
-        ##
-        #Method void dumpHex() const
-        ##
-    #Struct ##
-#Topic ##
-
 #Topic Reference_Count
 #Substitute SkRefCnt
+#Class SkRefCnt
+#Class ##
 #Class sk_sp
 #Class ##
 #Topic ##
@@ -436,6 +604,9 @@ FT_Load_Glyph
 #Class SkRegion
 ##
 #Topic ##
+
+#Topic Right_Side_Bearing
+##
 
 #Topic Round_Rect
     #Class SkRRect
@@ -465,8 +636,12 @@ FT_Load_Glyph
 #Subtopic ##
 #Topic ##
 
+#Topic Size
+#Alias ISize
+##
+
 #Topic Sprite
-#Substitute sprites
+#Alias Sprites
 #Topic ##
 
 #Topic Stream
@@ -479,10 +654,15 @@ FT_Load_Glyph
 #Class ##
 #Topic ##
 
+#Topic Supersampling
+##
+
 #Topic Surface
 #Class SkSurface
     #Method static sk_sp<SkSurface> MakeRasterDirect(const SkImageInfo&, void* pixels, size_t rowBytes,
                                              const SkSurfaceProps* = nullptr)
+    ##
+    #Method bool readPixels(const SkPixmap& dst, int srcX, int srcY);
     ##
 ##
 #Subtopic Properties
@@ -517,13 +697,16 @@ FT_Load_Glyph
 #Class ##
 #Topic ##
 
+#Topic Unpremultiply
+#Alias Unpremultiplied
+##
+
 #Topic Vector
 #Struct SkVector
 ##
 ##
 
 #Topic Vertices
-#Substitute vertices
 #Subtopic Colors
 ##
 #Subtopic Texs

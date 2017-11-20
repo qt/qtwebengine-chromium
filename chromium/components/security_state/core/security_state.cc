@@ -150,9 +150,12 @@ SecurityLevel GetSecurityLevelForRequest(
   }
 
   // data: URLs don't define a secure context, and are a vector for spoofing.
-  // Display a "Not secure" badge for all data URLs, regardless of whether
+  // Likewise, ftp: URLs are always non-secure, and are uncommon enough that
+  // we can treat them as such without significant user impact.
+  //
+  // Display a "Not secure" badge for all these URLs, regardless of whether
   // they show a password or credit card field.
-  if (url.SchemeIs(url::kDataScheme))
+  if (url.SchemeIs(url::kDataScheme) || url.SchemeIs(url::kFtpScheme))
     return SecurityLevel::HTTP_SHOW_WARNING;
 
   // Choose the appropriate security level for requests to HTTP and remaining
@@ -160,7 +163,8 @@ SecurityLevel GetSecurityLevelForRequest(
   // not need to be explicitly listed here.
   // TODO(meacer): Remove special case for blob (crbug.com/684751).
   if (!is_cryptographic_with_certificate) {
-    if (!is_origin_secure_callback.Run(url) &&
+    if (!visible_security_state.is_error_page &&
+        !is_origin_secure_callback.Run(url) &&
         (url.IsStandard() || url.SchemeIs(url::kBlobScheme))) {
       return GetSecurityLevelForNonSecureFieldTrial(
           visible_security_state.displayed_password_field_on_http ||
@@ -282,6 +286,7 @@ void SecurityInfoForRequest(
 
   security_info->incognito_downgraded_security_level =
       (visible_security_state.is_incognito &&
+       !visible_security_state.is_error_page &&
        security_info->security_level == HTTP_SHOW_WARNING &&
        (mark_http_as == NON_SECURE_WHILE_INCOGNITO ||
         mark_http_as == NON_SECURE_WHILE_INCOGNITO_OR_EDITING));
@@ -352,8 +357,24 @@ VisibleSecurityState::VisibleSecurityState()
       pkp_bypassed(false),
       displayed_password_field_on_http(false),
       displayed_credit_card_field_on_http(false),
-      is_incognito(false) {}
+      is_incognito(false),
+      is_error_page(false) {}
 
 VisibleSecurityState::~VisibleSecurityState() {}
+
+bool IsSchemeCryptographic(const GURL& url) {
+  return url.is_valid() && url.SchemeIsCryptographic();
+}
+
+bool IsOriginLocalhostOrFile(const GURL& url) {
+  return url.is_valid() &&
+         (net::IsLocalhost(url.HostNoBracketsPiece()) || url.SchemeIsFile());
+}
+
+bool IsSslCertificateValid(security_state::SecurityLevel security_level) {
+  return security_level == security_state::SECURE ||
+         security_level == security_state::EV_SECURE ||
+         security_level == security_state::SECURE_WITH_POLICY_INSTALLED_CERT;
+}
 
 }  // namespace security_state

@@ -35,7 +35,9 @@ FrameSinkManagerImpl::FrameSinkManagerImpl(
     DisplayProvider* display_provider)
     : display_provider_(display_provider),
       surface_manager_(lifetime_type),
+      hit_test_manager_(this),
       binding_(this) {
+  surface_manager_.AddObserver(&hit_test_manager_);
   surface_manager_.AddObserver(this);
 }
 
@@ -47,6 +49,7 @@ FrameSinkManagerImpl::~FrameSinkManagerImpl() {
   DCHECK_EQ(clients_.size(), 0u);
   DCHECK_EQ(registered_sources_.size(), 0u);
   surface_manager_.RemoveObserver(this);
+  surface_manager_.RemoveObserver(&hit_test_manager_);
 }
 
 void FrameSinkManagerImpl::BindAndSetClient(
@@ -79,6 +82,12 @@ void FrameSinkManagerImpl::InvalidateFrameSinkId(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   compositor_frame_sinks_.erase(frame_sink_id);
   surface_manager_.InvalidateFrameSinkId(frame_sink_id);
+}
+
+void FrameSinkManagerImpl::SetFrameSinkDebugLabel(
+    const FrameSinkId& frame_sink_id,
+    const std::string& debug_label) {
+  surface_manager_.SetFrameSinkDebugLabel(frame_sink_id, debug_label);
 }
 
 void FrameSinkManagerImpl::CreateRootCompositorFrameSink(
@@ -356,6 +365,19 @@ void FrameSinkManagerImpl::OnClientConnectionLost(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   if (client_)
     client_->OnClientConnectionClosed(frame_sink_id);
+}
+
+void FrameSinkManagerImpl::SubmitHitTestRegionList(
+    const SurfaceId& surface_id,
+    uint64_t frame_index,
+    mojom::HitTestRegionListPtr hit_test_region_list) {
+  hit_test_manager_.SubmitHitTestRegionList(surface_id, frame_index,
+                                            std::move(hit_test_region_list));
+}
+
+uint64_t FrameSinkManagerImpl::GetActiveFrameIndex(
+    const SurfaceId& surface_id) {
+  return surface_manager_.GetSurfaceForId(surface_id)->GetActiveFrameIndex();
 }
 
 void FrameSinkManagerImpl::OnAggregatedHitTestRegionListUpdated(

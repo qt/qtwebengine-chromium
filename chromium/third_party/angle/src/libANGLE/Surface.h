@@ -14,6 +14,7 @@
 #include <EGL/egl.h>
 
 #include "common/angleutils.h"
+#include "libANGLE/AttributeMap.h"
 #include "libANGLE/Error.h"
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/RefCountObject.h"
@@ -33,16 +34,16 @@ class EGLImplFactory;
 
 namespace egl
 {
-class AttributeMap;
 class Display;
 struct Config;
 
 struct SurfaceState final : private angle::NonCopyable
 {
-    SurfaceState(const egl::Config *configIn);
+    SurfaceState(const egl::Config *configIn, const AttributeMap &attributesIn);
 
     gl::Framebuffer *defaultFramebuffer;
     const egl::Config *config;
+    AttributeMap attributes;
 };
 
 class Surface : public gl::FramebufferAttachmentObject
@@ -119,6 +120,11 @@ class Surface : public gl::FramebufferAttachmentObject
 
     bool directComposition() const { return mDirectComposition; }
 
+    gl::InitState initState(const gl::ImageIndex &imageIndex) const override;
+    void setInitState(const gl::ImageIndex &imageIndex, gl::InitState initState) override;
+
+    bool isRobustResourceInitEnabled() const { return mRobustResourceInitialization; }
+
   protected:
     Surface(EGLint surfaceType, const egl::Config *config, const AttributeMap &attributes);
     virtual ~Surface();
@@ -155,6 +161,8 @@ class Surface : public gl::FramebufferAttachmentObject
     size_t mFixedHeight;
 
     bool mDirectComposition;
+
+    bool mRobustResourceInitialization;
 
     EGLenum mTextureFormat;
     EGLenum mTextureTarget;
@@ -212,7 +220,18 @@ class PixmapSurface final : public Surface
     ~PixmapSurface() override;
 };
 
-using SurfacePointer = angle::UniqueObjectPointer<Surface, Display>;
+class SurfaceDeleter final
+{
+  public:
+    SurfaceDeleter(const Display *display);
+    ~SurfaceDeleter();
+    void operator()(Surface *surface);
+
+  private:
+    const Display *mDisplay;
+};
+
+using SurfacePointer = angle::UniqueObjectPointerBase<Surface, SurfaceDeleter>;
 
 }  // namespace egl
 

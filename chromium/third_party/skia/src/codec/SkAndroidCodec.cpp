@@ -25,15 +25,11 @@ static void load_gamut(SkPoint rgb[], const SkMatrix44& xyz) {
     // rx = rX / (rX + rY + rZ)
     // ry = rY / (rX + rY + rZ)
     // gx, gy, bx, and gy are calulcated similarly.
-    float rSum = xyz.get(0, 0) + xyz.get(1, 0) + xyz.get(2, 0);
-    float gSum = xyz.get(0, 1) + xyz.get(1, 1) + xyz.get(2, 1);
-    float bSum = xyz.get(0, 2) + xyz.get(1, 2) + xyz.get(2, 2);
-    rgb[0].fX = xyz.get(0, 0) / rSum;
-    rgb[0].fY = xyz.get(1, 0) / rSum;
-    rgb[1].fX = xyz.get(0, 1) / gSum;
-    rgb[1].fY = xyz.get(1, 1) / gSum;
-    rgb[2].fX = xyz.get(0, 2) / bSum;
-    rgb[2].fY = xyz.get(1, 2) / bSum;
+    for (int rgbIdx = 0; rgbIdx < 3; rgbIdx++) {
+        float sum = xyz.get(0, rgbIdx) + xyz.get(1, rgbIdx) + xyz.get(2, rgbIdx);
+        rgb[rgbIdx].fX = xyz.get(0, rgbIdx) / sum;
+        rgb[rgbIdx].fY = xyz.get(1, rgbIdx) / sum;
+    }
 }
 
 /**
@@ -46,7 +42,7 @@ static float calculate_area(SkPoint abc[]) {
     return 0.5f * SkTAbs(a.fX*b.fY + b.fX*c.fY - a.fX*c.fY - c.fX*b.fY - b.fX*a.fY);
 }
 
-static const float kSRGB_D50_GamutArea = 0.084f;
+static constexpr float kSRGB_D50_GamutArea = 0.084f;
 
 static bool is_wide_gamut(const SkColorSpace* colorSpace) {
     // Determine if the source image has a gamut that is wider than sRGB.  If so, we

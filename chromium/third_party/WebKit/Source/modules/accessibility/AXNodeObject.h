@@ -52,8 +52,6 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   DECLARE_VIRTUAL_TRACE();
 
  protected:
-  // Protected data.
-  AccessibilityRole aria_role_;
   bool children_dirty_;
 #if DCHECK_IS_ON()
   bool initialized_ = false;
@@ -61,7 +59,7 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
 
   bool ComputeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const override;
   const AXObject* InheritsPresentationalRoleFrom() const override;
-  virtual AccessibilityRole DetermineAccessibilityRole();
+  AccessibilityRole DetermineAccessibilityRole() override;
   virtual AccessibilityRole NativeAccessibilityRoleIgnoringAria() const;
   String AccessibilityDescriptionForElements(
       HeapVector<Member<Element>>& elements) const;
@@ -69,7 +67,6 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   AXObject* ActiveDescendant() override;
   String AriaAccessibilityDescription() const;
   String AriaAutoComplete() const;
-  AccessibilityRole DetermineAriaRoleAttribute() const;
   void AccessibilityChildrenFromAOMProperty(AOMRelationListProperty,
                                             AXObject::AXObjectVector&) const;
 
@@ -81,7 +78,6 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   AXObject* MenuButtonForMenu() const;
   Element* MenuItemElementForMenu() const;
   Element* MouseButtonListener() const;
-  AccessibilityRole RemapAriaRoleDueToParent(AccessibilityRole) const;
   bool IsNativeCheckboxOrRadio() const;
   void SetNode(Node*);
   AXObject* CorrespondingControlForLabelElement() const;
@@ -95,8 +91,6 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   void Detach() override;
   bool IsDetached() const override { return !node_; }
   bool IsAXNodeObject() const final { return true; }
-
-  void GetSparseAXAttributes(AXSparseAttributeClient&) const override;
 
   // Check object role or purpose.
   bool IsAnchor() const final;
@@ -132,7 +126,6 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   bool IsModal() const final;
   bool IsRequired() const final;
   bool IsControl() const;
-  bool CanSupportAriaReadOnly() const;
   AXRestriction Restriction() const override;
 
   // Properties of static elements.
@@ -155,9 +148,9 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   // Only used when invalidState() returns InvalidStateOther.
   String AriaInvalidValue() const final;
   String ValueDescription() const override;
-  float ValueForRange() const override;
-  float MaxValueForRange() const override;
-  float MinValueForRange() const override;
+  bool ValueForRange(float* out_value) const override;
+  bool MaxValueForRange(float* out_value) const override;
+  bool MinValueForRange(float* out_value) const override;
   String StringValue() const override;
 
   // ARIA attributes.

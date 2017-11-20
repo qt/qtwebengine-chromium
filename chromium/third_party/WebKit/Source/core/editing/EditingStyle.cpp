@@ -27,13 +27,11 @@
 #include "core/editing/EditingStyle.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/HTMLNames.h"
 #include "core/css/CSSColorValue.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
-#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSValueList.h"
@@ -50,15 +48,18 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/QualifiedName.h"
 #include "core/editing/EditingStyleUtilities.h"
+#include "core/editing/EditingTriState.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/Position.h"
+#include "core/editing/VisibleSelection.h"
 #include "core/editing/commands/ApplyStyleCommand.h"
 #include "core/editing/serializers/HTMLInterchange.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLSpanElement.h"
+#include "core/html_names.h"
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutObject.h"
 #include "core/style/ComputedStyle.h"
@@ -67,14 +68,6 @@
 namespace blink {
 
 using namespace cssvalue;
-
-static const CSSPropertyID& TextDecorationPropertyForEditing() {
-  static const CSSPropertyID kProperty =
-      RuntimeEnabledFeatures::CSS3TextDecorationsEnabled()
-          ? CSSPropertyTextDecorationLine
-          : CSSPropertyTextDecoration;
-  return kProperty;
-}
 
 // Editing style properties must be preserved during editing operation.
 // e.g. when a user inserts a new paragraph, all properties listed here must be
@@ -103,11 +96,10 @@ enum EditingPropertiesType {
 static const Vector<CSSPropertyID>& AllEditingProperties() {
   DEFINE_STATIC_LOCAL(Vector<CSSPropertyID>, properties, ());
   if (properties.IsEmpty()) {
-    CSSPropertyMetadata::FilterEnabledCSSPropertiesIntoVector(
+    CSSPropertyAPI::FilterEnabledCSSPropertiesIntoVector(
         kStaticEditingProperties, WTF_ARRAY_LENGTH(kStaticEditingProperties),
         properties);
-    if (RuntimeEnabledFeatures::CSS3TextDecorationsEnabled())
-      properties.erase(properties.Find(CSSPropertyTextDecoration));
+    properties.EraseAt(properties.Find(CSSPropertyTextDecoration));
   }
   return properties;
 }
@@ -115,12 +107,12 @@ static const Vector<CSSPropertyID>& AllEditingProperties() {
 static const Vector<CSSPropertyID>& InheritableEditingProperties() {
   DEFINE_STATIC_LOCAL(Vector<CSSPropertyID>, properties, ());
   if (properties.IsEmpty()) {
-    CSSPropertyMetadata::FilterEnabledCSSPropertiesIntoVector(
+    CSSPropertyAPI::FilterEnabledCSSPropertiesIntoVector(
         kStaticEditingProperties, WTF_ARRAY_LENGTH(kStaticEditingProperties),
         properties);
     for (size_t index = 0; index < properties.size();) {
       if (!CSSPropertyAPI::Get(properties[index]).IsInherited()) {
-        properties.erase(index);
+        properties.EraseAt(index);
         continue;
       }
       ++index;
@@ -257,7 +249,7 @@ class HTMLTextDecorationEquivalent final : public HTMLElementEquivalent {
 HTMLTextDecorationEquivalent::HTMLTextDecorationEquivalent(
     CSSValueID primitive_value,
     const HTMLQualifiedName& tag_name)
-    : HTMLElementEquivalent(TextDecorationPropertyForEditing(),
+    : HTMLElementEquivalent(CSSPropertyTextDecorationLine,
                             primitive_value,
                             tag_name)
 // m_propertyID is used in HTMLElementEquivalent::addToStyle
@@ -266,7 +258,7 @@ HTMLTextDecorationEquivalent::HTMLTextDecorationEquivalent(
 bool HTMLTextDecorationEquivalent::PropertyExistsInStyle(
     const StylePropertySet* style) const {
   return style->GetPropertyCSSValue(CSSPropertyWebkitTextDecorationsInEffect) ||
-         style->GetPropertyCSSValue(TextDecorationPropertyForEditing());
+         style->GetPropertyCSSValue(CSSPropertyTextDecorationLine);
 }
 
 bool HTMLTextDecorationEquivalent::ValueIsPresentInStyle(
@@ -275,8 +267,7 @@ bool HTMLTextDecorationEquivalent::ValueIsPresentInStyle(
   const CSSValue* style_value =
       style->GetPropertyCSSValue(CSSPropertyWebkitTextDecorationsInEffect);
   if (!style_value)
-    style_value =
-        style->GetPropertyCSSValue(TextDecorationPropertyForEditing());
+    style_value = style->GetPropertyCSSValue(CSSPropertyTextDecorationLine);
   return Matches(element) && style_value && style_value->IsValueList() &&
          ToCSSValueList(style_value)->HasValue(*identifier_value_);
 }
@@ -496,6 +487,22 @@ void EditingStyle::Init(Node* node, PropertiesToInclude properties_to_include) {
 
   if (node && node->EnsureComputedStyle()) {
     const ComputedStyle* computed_style = node->EnsureComputedStyle();
+
+    // Fix for crbug.com/768261: due to text-autosizing, reading the current
+    // computed font size and re-writing it to an element may actually cause the
+    // font size to become larger (since the autosizer will run again on the new
+    // computed size). The fix is to toss out the computed size property here
+    // and use ComputedStyle::SpecifiedFontSize().
+    if (computed_style->ComputedFontSize() !=
+        computed_style->SpecifiedFontSize()) {
+      // ReplaceSelectionCommandTest_TextAutosizingDoesntInflateText gets here.
+      mutable_style_->SetProperty(
+          CSSPropertyFontSize,
+          CSSPrimitiveValue::Create(computed_style->SpecifiedFontSize(),
+                                    CSSPrimitiveValue::UnitType::kPixels)
+              ->CssText());
+    }
+
     RemoveInheritedColorsIfNeeded(computed_style);
     ReplaceFontSizeByKeywordIfPossible(computed_style,
                                        computed_style_at_position);
@@ -657,7 +664,7 @@ static const CSSPropertyID kStaticBlockProperties[] = {
 static const Vector<CSSPropertyID>& BlockPropertiesVector() {
   DEFINE_STATIC_LOCAL(Vector<CSSPropertyID>, properties, ());
   if (properties.IsEmpty())
-    CSSPropertyMetadata::FilterEnabledCSSPropertiesIntoVector(
+    CSSPropertyAPI::FilterEnabledCSSPropertiesIntoVector(
         kStaticBlockProperties, WTF_ARRAY_LENGTH(kStaticBlockProperties),
         properties);
   return properties;
@@ -739,13 +746,13 @@ void EditingStyle::CollapseTextDecorationProperties() {
   if (!text_decorations_in_effect)
     return;
 
-  if (text_decorations_in_effect->IsValueList())
-    mutable_style_->SetProperty(TextDecorationPropertyForEditing(),
-                                text_decorations_in_effect->CssText(),
-                                mutable_style_->PropertyIsImportant(
-                                    TextDecorationPropertyForEditing()));
-  else
-    mutable_style_->RemoveProperty(TextDecorationPropertyForEditing());
+  if (text_decorations_in_effect->IsValueList()) {
+    mutable_style_->SetProperty(
+        CSSPropertyTextDecorationLine, text_decorations_in_effect->CssText(),
+        mutable_style_->PropertyIsImportant(CSSPropertyTextDecorationLine));
+  } else {
+    mutable_style_->RemoveProperty(CSSPropertyTextDecorationLine);
+  }
   mutable_style_->RemoveProperty(CSSPropertyWebkitTextDecorationsInEffect);
 }
 
@@ -761,14 +768,14 @@ static const CSSPropertyID kTextOnlyProperties[] = {
     CSSPropertyColor,
 };
 
-TriState EditingStyle::TriStateOfStyle(EditingStyle* style) const {
+EditingTriState EditingStyle::TriStateOfStyle(EditingStyle* style) const {
   if (!style || !style->mutable_style_)
-    return kFalseTriState;
+    return EditingTriState::kFalse;
   return TriStateOfStyle(style->mutable_style_->EnsureCSSStyleDeclaration(),
                          kDoNotIgnoreTextOnlyProperties);
 }
 
-TriState EditingStyle::TriStateOfStyle(
+EditingTriState EditingStyle::TriStateOfStyle(
     CSSStyleDeclaration* style_to_compare,
     ShouldIgnoreTextOnlyProperties should_ignore_text_only_properties) const {
   MutableStylePropertySet* difference =
@@ -779,24 +786,24 @@ TriState EditingStyle::TriStateOfStyle(
                                       WTF_ARRAY_LENGTH(kTextOnlyProperties));
 
   if (difference->IsEmpty())
-    return kTrueTriState;
+    return EditingTriState::kTrue;
   if (difference->PropertyCount() == mutable_style_->PropertyCount())
-    return kFalseTriState;
+    return EditingTriState::kFalse;
 
-  return kMixedTriState;
+  return EditingTriState::kMixed;
 }
 
-TriState EditingStyle::TriStateOfStyle(
+EditingTriState EditingStyle::TriStateOfStyle(
     const VisibleSelection& selection) const {
   if (selection.IsNone())
-    return kFalseTriState;
+    return EditingTriState::kFalse;
 
   if (selection.IsCaret()) {
     return TriStateOfStyle(
         EditingStyleUtilities::CreateStyleAtSelectionStart(selection));
   }
 
-  TriState state = kFalseTriState;
+  EditingTriState state = EditingTriState::kFalse;
   bool node_is_start = true;
   for (Node& node : NodeTraversal::StartsAt(*selection.Start().AnchorNode())) {
     if (node.GetLayoutObject() && HasEditableStyle(node)) {
@@ -821,13 +828,13 @@ TriState EditingStyle::TriStateOfStyle(
         // Pass EditingStyle::DoNotIgnoreTextOnlyProperties without checking if
         // node.isTextNode() because the node can be an element node. See bug
         // http://crbug.com/584939.
-        TriState node_state = TriStateOfStyle(
+        EditingTriState node_state = TriStateOfStyle(
             node_style, EditingStyle::kDoNotIgnoreTextOnlyProperties);
         if (node_is_start) {
           state = node_state;
           node_is_start = false;
         } else if (state != node_state && node.IsTextNode()) {
-          state = kMixedTriState;
+          state = EditingTriState::kMixed;
           break;
         }
       }
@@ -860,20 +867,19 @@ bool EditingStyle::ConflictsWithInlineStyleOfElement(
       continue;
 
     if (property_id == CSSPropertyWebkitTextDecorationsInEffect &&
-        inline_style->GetPropertyCSSValue(TextDecorationPropertyForEditing())) {
+        inline_style->GetPropertyCSSValue(CSSPropertyTextDecorationLine)) {
       if (!conflicting_properties)
         return true;
       conflicting_properties->push_back(CSSPropertyTextDecoration);
-      // Because text-decoration expands to text-decoration-line when CSS3
-      // Text Decoration is enabled, we also state it as conflicting.
-      if (RuntimeEnabledFeatures::CSS3TextDecorationsEnabled())
-        conflicting_properties->push_back(CSSPropertyTextDecorationLine);
-      if (extracted_style)
+      // Because text-decoration expands to text-decoration-line,
+      // we also state it as conflicting.
+      conflicting_properties->push_back(CSSPropertyTextDecorationLine);
+      if (extracted_style) {
         extracted_style->SetProperty(
-            TextDecorationPropertyForEditing(),
-            inline_style->GetPropertyValue(TextDecorationPropertyForEditing()),
-            inline_style->PropertyIsImportant(
-                TextDecorationPropertyForEditing()));
+            CSSPropertyTextDecorationLine,
+            inline_style->GetPropertyValue(CSSPropertyTextDecorationLine),
+            inline_style->PropertyIsImportant(CSSPropertyTextDecorationLine));
+      }
       continue;
     }
 
@@ -1052,7 +1058,7 @@ bool EditingStyle::ElementIsStyledSpanOrHTMLEquivalent(
     const HTMLElement* element) {
   DCHECK(element);
   bool element_is_span_or_element_equivalent = false;
-  if (isHTMLSpanElement(*element)) {
+  if (IsHTMLSpanElement(*element)) {
     element_is_span_or_element_equivalent = true;
   } else {
     const HeapVector<Member<HTMLElementEquivalent>>& html_element_equivalents =
@@ -1284,7 +1290,7 @@ void EditingStyle::MergeStyle(const StylePropertySet* style,
     const CSSValue* value = mutable_style_->GetPropertyCSSValue(property.Id());
 
     // text decorations never override values
-    if ((property.Id() == TextDecorationPropertyForEditing() ||
+    if ((property.Id() == CSSPropertyTextDecorationLine ||
          property.Id() == CSSPropertyWebkitTextDecorationsInEffect) &&
         property.Value().IsValueList() && value) {
       if (value->IsValueList()) {
@@ -1495,11 +1501,11 @@ static void ReconcileTextDecorationProperties(MutableStylePropertySet* style) {
   const CSSValue* text_decorations_in_effect =
       style->GetPropertyCSSValue(CSSPropertyWebkitTextDecorationsInEffect);
   const CSSValue* text_decoration =
-      style->GetPropertyCSSValue(TextDecorationPropertyForEditing());
+      style->GetPropertyCSSValue(CSSPropertyTextDecorationLine);
   // "LayoutTests/editing/execCommand/insert-list-and-strikethrough.html" makes
   // both |textDecorationsInEffect| and |textDecoration| non-null.
   if (text_decorations_in_effect) {
-    style->SetProperty(TextDecorationPropertyForEditing(),
+    style->SetProperty(CSSPropertyTextDecorationLine,
                        text_decorations_in_effect->CssText());
     style->RemoveProperty(CSSPropertyWebkitTextDecorationsInEffect);
     text_decoration = text_decorations_in_effect;
@@ -1508,7 +1514,7 @@ static void ReconcileTextDecorationProperties(MutableStylePropertySet* style) {
   // If text-decoration is set to "none", remove the property because we don't
   // want to add redundant "text-decoration: none".
   if (text_decoration && !text_decoration->IsValueList())
-    style->RemoveProperty(TextDecorationPropertyForEditing());
+    style->RemoveProperty(CSSPropertyTextDecorationLine);
 }
 
 StyleChange::StyleChange(EditingStyle* style, const Position& position)
@@ -1603,7 +1609,7 @@ void StyleChange::ExtractTextStyles(Document* document,
   // Furthermore, text-decoration: none has been trimmed so that text-decoration
   // property is always a CSSValueList.
   const CSSValue* text_decoration =
-      style->GetPropertyCSSValue(TextDecorationPropertyForEditing());
+      style->GetPropertyCSSValue(CSSPropertyTextDecorationLine);
   if (text_decoration && text_decoration->IsValueList()) {
     DEFINE_STATIC_LOCAL(CSSIdentifierValue, underline,
                         (CSSIdentifierValue::Create(CSSValueUnderline)));
@@ -1617,7 +1623,7 @@ void StyleChange::ExtractTextStyles(Document* document,
 
     // If trimTextDecorations, delete underline and line-through
     SetTextDecorationProperty(style, new_text_decoration,
-                              TextDecorationPropertyForEditing());
+                              CSSPropertyTextDecorationLine);
   }
 
   int vertical_align = GetIdentifierValue(style, CSSPropertyVerticalAlign);
@@ -1718,7 +1724,7 @@ MutableStylePropertySet* GetPropertiesNotIn(
   const CSSValue* base_text_decorations_in_effect =
       base_style->GetPropertyCSSValueInternal(
           CSSPropertyWebkitTextDecorationsInEffect);
-  DiffTextDecorations(result, TextDecorationPropertyForEditing(),
+  DiffTextDecorations(result, CSSPropertyTextDecorationLine,
                       base_text_decorations_in_effect);
   DiffTextDecorations(result, CSSPropertyWebkitTextDecorationsInEffect,
                       base_text_decorations_in_effect);

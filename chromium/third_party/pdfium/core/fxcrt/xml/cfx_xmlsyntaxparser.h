@@ -11,9 +11,9 @@
 #include <vector>
 
 #include "core/fxcrt/cfx_blockbuffer.h"
-#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/cfx_seekablestreamproxy.h"
 #include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 
 enum class FX_XmlSyntaxResult {
@@ -39,7 +39,7 @@ class CFX_XMLSyntaxParser {
   static bool IsXMLNameChar(wchar_t ch, bool bFirstChar);
 
   explicit CFX_XMLSyntaxParser(
-      const CFX_RetainPtr<CFX_SeekableStreamProxy>& pStream);
+      const RetainPtr<CFX_SeekableStreamProxy>& pStream);
   ~CFX_XMLSyntaxParser();
 
   FX_XmlSyntaxResult DoSyntaxParse();
@@ -50,27 +50,27 @@ class CFX_XMLSyntaxParser {
   int32_t GetCurrentNodeNumber() const { return m_iCurrentNodeNum; }
   int32_t GetLastNodeNumber() const { return m_iLastNodeNum; }
 
-  CFX_WideString GetTargetName() const {
+  WideString GetTargetName() const {
     return m_BlockBuffer.GetTextData(0, m_iTextDataLength);
   }
 
-  CFX_WideString GetTagName() const {
+  WideString GetTagName() const {
     return m_BlockBuffer.GetTextData(0, m_iTextDataLength);
   }
 
-  CFX_WideString GetAttributeName() const {
+  WideString GetAttributeName() const {
     return m_BlockBuffer.GetTextData(0, m_iTextDataLength);
   }
 
-  CFX_WideString GetAttributeValue() const {
+  WideString GetAttributeValue() const {
     return m_BlockBuffer.GetTextData(0, m_iTextDataLength);
   }
 
-  CFX_WideString GetTextData() const {
+  WideString GetTextData() const {
     return m_BlockBuffer.GetTextData(0, m_iTextDataLength);
   }
 
-  CFX_WideString GetTargetData() const {
+  WideString GetTargetData() const {
     return m_BlockBuffer.GetTextData(0, m_iTextDataLength);
   }
 
@@ -100,15 +100,15 @@ class CFX_XMLSyntaxParser {
 
   void ParseTextChar(wchar_t ch);
 
-  CFX_RetainPtr<CFX_SeekableStreamProxy> m_pStream;
-  FX_STRSIZE m_iXMLPlaneSize;
+  RetainPtr<CFX_SeekableStreamProxy> m_pStream;
+  size_t m_iXMLPlaneSize;
   FX_FILESIZE m_iCurrentPos;
   int32_t m_iCurrentNodeNum;
   int32_t m_iLastNodeNum;
   int32_t m_iParsedBytes;
   FX_FILESIZE m_ParsedChars;
   std::vector<wchar_t> m_Buffer;
-  FX_STRSIZE m_iBufferChars;
+  size_t m_iBufferChars;
   bool m_bEOS;
   FX_FILESIZE m_Start;  // Start position in m_Buffer
   FX_FILESIZE m_End;    // End position in m_Buffer

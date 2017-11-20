@@ -15,19 +15,23 @@ class SkSVGRenderContext;
 
 enum class SkSVGAttribute {
     kClipPath,
-    kCx, // <circle>,<ellipse>: center x position
-    kCy, // <circle>,<ellipse>: center y position
+    kClipRule,
+    kCx, // <circle>, <ellipse>, <radialGradient>: center x position
+    kCy, // <circle>, <ellipse>, <radialGradient>: center y position
     kD,
     kFill,
     kFillOpacity,
     kFillRule,
+    kFx, // <radialGradient>: focal point x position
+    kFy, // <radialGradient>: focal point y position
     kGradientTransform,
     kHeight,
     kHref,
     kOffset,
     kOpacity,
+    kPatternTransform,
     kPoints,
-    kR,  // <circle>: radius
+    kR,  // <circle>, <radialGradient>: radius
     kRx, // <ellipse>,<rect>: horizontal (corner) radius
     kRy, // <ellipse>,<rect>: vertical (corner) radius
     kSpreadMethod,
@@ -37,6 +41,7 @@ enum class SkSVGAttribute {
     kStrokeOpacity,
     kStrokeLineCap,
     kStrokeLineJoin,
+    kStrokeMiterLimit,
     kStrokeWidth,
     kTransform,
     kViewBox,
@@ -59,10 +64,12 @@ struct SkSVGPresentationAttributes {
     SkTLazy<SkSVGPaint>      fFill;
     SkTLazy<SkSVGNumberType> fFillOpacity;
     SkTLazy<SkSVGFillRule>   fFillRule;
+    SkTLazy<SkSVGFillRule>   fClipRule;
 
     SkTLazy<SkSVGPaint>      fStroke;
     SkTLazy<SkSVGLineCap>    fStrokeLineCap;
     SkTLazy<SkSVGLineJoin>   fStrokeLineJoin;
+    SkTLazy<SkSVGNumberType> fStrokeMiterLimit;
     SkTLazy<SkSVGNumberType> fStrokeOpacity;
     SkTLazy<SkSVGLength>     fStrokeWidth;
 

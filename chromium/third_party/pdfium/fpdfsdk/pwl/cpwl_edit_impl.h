@@ -11,9 +11,9 @@
 #include <memory>
 #include <vector>
 
-#include "core/fpdfdoc/cpvt_secprops.h"
-#include "core/fpdfdoc/cpvt_wordprops.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fpdfdoc/cpdf_variabletext.h"
+#include "core/fpdfdoc/cpvt_wordrange.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 #define FX_EDIT_ISLATINWORD(u)                  \
   (u == 0x2D || (u <= 0x005A && u >= 0x0041) || \
@@ -135,8 +135,7 @@ class CFXEU_InsertWord : public IFX_Edit_UndoItem {
                    const CPVT_WordPlace& wpOldPlace,
                    const CPVT_WordPlace& wpNewPlace,
                    uint16_t word,
-                   int32_t charset,
-                   const CPVT_WordProps* pWordProps);
+                   int32_t charset);
   ~CFXEU_InsertWord() override;
 
   // IFX_Edit_UndoItem:
@@ -144,22 +143,19 @@ class CFXEU_InsertWord : public IFX_Edit_UndoItem {
   void Undo() override;
 
  private:
-  CFX_UnownedPtr<CPWL_EditImpl> m_pEdit;
+  UnownedPtr<CPWL_EditImpl> m_pEdit;
 
   CPVT_WordPlace m_wpOld;
   CPVT_WordPlace m_wpNew;
   uint16_t m_Word;
   int32_t m_nCharset;
-  CPVT_WordProps m_WordProps;
 };
 
 class CFXEU_InsertReturn : public IFX_Edit_UndoItem {
  public:
   CFXEU_InsertReturn(CPWL_EditImpl* pEdit,
                      const CPVT_WordPlace& wpOldPlace,
-                     const CPVT_WordPlace& wpNewPlace,
-                     const CPVT_SecProps* pSecProps,
-                     const CPVT_WordProps* pWordProps);
+                     const CPVT_WordPlace& wpNewPlace);
   ~CFXEU_InsertReturn() override;
 
   // IFX_Edit_UndoItem:
@@ -167,12 +163,10 @@ class CFXEU_InsertReturn : public IFX_Edit_UndoItem {
   void Undo() override;
 
  private:
-  CFX_UnownedPtr<CPWL_EditImpl> m_pEdit;
+  UnownedPtr<CPWL_EditImpl> m_pEdit;
 
   CPVT_WordPlace m_wpOld;
   CPVT_WordPlace m_wpNew;
-  CPVT_SecProps m_SecProps;
-  CPVT_WordProps m_WordProps;
 };
 
 class CFXEU_Backspace : public IFX_Edit_UndoItem {
@@ -181,9 +175,7 @@ class CFXEU_Backspace : public IFX_Edit_UndoItem {
                   const CPVT_WordPlace& wpOldPlace,
                   const CPVT_WordPlace& wpNewPlace,
                   uint16_t word,
-                  int32_t charset,
-                  const CPVT_SecProps& SecProps,
-                  const CPVT_WordProps& WordProps);
+                  int32_t charset);
   ~CFXEU_Backspace() override;
 
   // IFX_Edit_UndoItem:
@@ -191,14 +183,12 @@ class CFXEU_Backspace : public IFX_Edit_UndoItem {
   void Undo() override;
 
  private:
-  CFX_UnownedPtr<CPWL_EditImpl> m_pEdit;
+  UnownedPtr<CPWL_EditImpl> m_pEdit;
 
   CPVT_WordPlace m_wpOld;
   CPVT_WordPlace m_wpNew;
   uint16_t m_Word;
   int32_t m_nCharset;
-  CPVT_SecProps m_SecProps;
-  CPVT_WordProps m_WordProps;
 };
 
 class CFXEU_Delete : public IFX_Edit_UndoItem {
@@ -208,8 +198,6 @@ class CFXEU_Delete : public IFX_Edit_UndoItem {
                const CPVT_WordPlace& wpNewPlace,
                uint16_t word,
                int32_t charset,
-               const CPVT_SecProps& SecProps,
-               const CPVT_WordProps& WordProps,
                bool bSecEnd);
   ~CFXEU_Delete() override;
 
@@ -218,14 +206,12 @@ class CFXEU_Delete : public IFX_Edit_UndoItem {
   void Undo() override;
 
  private:
-  CFX_UnownedPtr<CPWL_EditImpl> m_pEdit;
+  UnownedPtr<CPWL_EditImpl> m_pEdit;
 
   CPVT_WordPlace m_wpOld;
   CPVT_WordPlace m_wpNew;
   uint16_t m_Word;
   int32_t m_nCharset;
-  CPVT_SecProps m_SecProps;
-  CPVT_WordProps m_WordProps;
   bool m_bSecEnd;
 };
 
@@ -233,7 +219,7 @@ class CFXEU_Clear : public IFX_Edit_UndoItem {
  public:
   CFXEU_Clear(CPWL_EditImpl* pEdit,
               const CPVT_WordRange& wrSel,
-              const CFX_WideString& swText);
+              const WideString& swText);
   ~CFXEU_Clear() override;
 
   // IFX_Edit_UndoItem:
@@ -241,10 +227,10 @@ class CFXEU_Clear : public IFX_Edit_UndoItem {
   void Undo() override;
 
  private:
-  CFX_UnownedPtr<CPWL_EditImpl> m_pEdit;
+  UnownedPtr<CPWL_EditImpl> m_pEdit;
 
   CPVT_WordRange m_wrSel;
-  CFX_WideString m_swText;
+  WideString m_swText;
 };
 
 class CFXEU_InsertText : public IFX_Edit_UndoItem {
@@ -252,7 +238,7 @@ class CFXEU_InsertText : public IFX_Edit_UndoItem {
   CFXEU_InsertText(CPWL_EditImpl* pEdit,
                    const CPVT_WordPlace& wpOldPlace,
                    const CPVT_WordPlace& wpNewPlace,
-                   const CFX_WideString& swText,
+                   const WideString& swText,
                    int32_t charset);
   ~CFXEU_InsertText() override;
 
@@ -261,11 +247,11 @@ class CFXEU_InsertText : public IFX_Edit_UndoItem {
   void Undo() override;
 
  private:
-  CFX_UnownedPtr<CPWL_EditImpl> m_pEdit;
+  UnownedPtr<CPWL_EditImpl> m_pEdit;
 
   CPVT_WordPlace m_wpOld;
   CPVT_WordPlace m_wpNew;
-  CFX_WideString m_swText;
+  WideString m_swText;
   int32_t m_nCharset;
 };
 
@@ -323,27 +309,27 @@ class CPWL_EditImpl {
   void OnVK_RIGHT(bool bShift, bool bCtrl);
   void OnVK_HOME(bool bShift, bool bCtrl);
   void OnVK_END(bool bShift, bool bCtrl);
-  void SetText(const CFX_WideString& sText);
+  void SetText(const WideString& sText);
   bool InsertWord(uint16_t word, int32_t charset);
   bool InsertReturn();
   bool Backspace();
   bool Delete();
   bool ClearSelection();
-  bool InsertText(const CFX_WideString& sText, int32_t charset);
+  bool InsertText(const WideString& sText, int32_t charset);
   bool Redo();
   bool Undo();
   CPVT_WordPlace WordIndexToWordPlace(int32_t index) const;
   CPVT_WordPlace SearchWordPlace(const CFX_PointF& point) const;
   int32_t GetCaret() const;
   CPVT_WordPlace GetCaretWordPlace() const;
-  CFX_WideString GetSelectedText() const;
-  CFX_WideString GetText() const;
+  WideString GetSelectedText() const;
+  WideString GetText() const;
   float GetFontSize() const;
   uint16_t GetPasswordChar() const;
   CFX_PointF GetScrollPos() const;
   int32_t GetCharArray() const;
   CFX_FloatRect GetContentRect() const;
-  CFX_WideString GetRangeText(const CPVT_WordRange& range) const;
+  WideString GetRangeText(const CPVT_WordRange& range) const;
   int32_t GetHorzScale() const;
   float GetCharSpace() const;
   void SetSelection(int32_t nStartChar, int32_t nEndChar);
@@ -366,15 +352,15 @@ class CPWL_EditImpl {
   bool Empty();
 
   CPVT_WordPlace DoInsertText(const CPVT_WordPlace& place,
-                              const CFX_WideString& sText,
+                              const WideString& sText,
                               int32_t charset);
   int32_t GetCharSetFromUnicode(uint16_t word, int32_t nOldCharset);
 
   int32_t GetTotalLines() const;
 
-  CFX_ByteString GetPDFWordString(int32_t nFontIndex,
-                                  uint16_t Word,
-                                  uint16_t SubWord);
+  ByteString GetPDFWordString(int32_t nFontIndex,
+                              uint16_t Word,
+                              uint16_t SubWord);
 
  private:
   friend class CPWL_EditImpl_Iterator;
@@ -398,17 +384,13 @@ class CPWL_EditImpl {
 
   bool InsertWord(uint16_t word,
                   int32_t charset,
-                  const CPVT_WordProps* pWordProps,
                   bool bAddUndo,
                   bool bPaint);
-  bool InsertReturn(const CPVT_SecProps* pSecProps,
-                    const CPVT_WordProps* pWordProps,
-                    bool bAddUndo,
-                    bool bPaint);
+  bool InsertReturn(bool bAddUndo, bool bPaint);
   bool Backspace(bool bAddUndo, bool bPaint);
   bool Delete(bool bAddUndo, bool bPaint);
   bool Clear(bool bAddUndo, bool bPaint);
-  bool InsertText(const CFX_WideString& sText,
+  bool InsertText(const WideString& sText,
                   int32_t charset,
                   bool bAddUndo,
                   bool bPaint);
@@ -430,8 +412,8 @@ class CPWL_EditImpl {
 
  private:
   std::unique_ptr<CPDF_VariableText> m_pVT;
-  CFX_UnownedPtr<CPWL_EditCtrl> m_pNotify;
-  CFX_UnownedPtr<CPWL_Edit> m_pOperationNotify;
+  UnownedPtr<CPWL_EditCtrl> m_pNotify;
+  UnownedPtr<CPWL_Edit> m_pOperationNotify;
   std::unique_ptr<CPWL_EditImpl_Provider> m_pVTProvider;
   CPVT_WordPlace m_wpCaret;
   CPVT_WordPlace m_wpOldCaret;
@@ -466,7 +448,7 @@ class CPWL_EditImpl_Iterator {
   const CPVT_WordPlace& GetAt() const;
 
  private:
-  CFX_UnownedPtr<CPWL_EditImpl> m_pEdit;
+  UnownedPtr<CPWL_EditImpl> m_pEdit;
   CPDF_VariableText::Iterator* m_pVTIterator;
 };
 

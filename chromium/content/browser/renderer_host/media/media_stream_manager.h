@@ -35,6 +35,7 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/power_monitor/power_observer.h"
 #include "base/threading/thread.h"
@@ -43,8 +44,9 @@
 #include "content/browser/renderer_host/media/media_stream_provider.h"
 #include "content/common/content_export.h"
 #include "content/common/media/media_devices.h"
-#include "content/common/media/media_stream_options.h"
+#include "content/common/media/media_stream_controls.h"
 #include "content/public/browser/media_request_state.h"
+#include "content/public/common/media_stream_request.h"
 #include "media/base/video_facing.h"
 
 namespace media {
@@ -138,7 +140,7 @@ class CONTENT_EXPORT MediaStreamManager
   // creates a new request which is identified by a unique string that's
   // returned to the caller.  |render_process_id| and |render_frame_id| are used
   // to determine where the infobar will appear to the user.
-  void GenerateStream(MediaStreamRequester* requester,
+  void GenerateStream(base::WeakPtr<MediaStreamRequester> requester,
                       int render_process_id,
                       int render_frame_id,
                       const std::string& salt,
@@ -166,7 +168,7 @@ class CONTENT_EXPORT MediaStreamManager
   // Open a device identified by |device_id|.  |type| must be either
   // MEDIA_DEVICE_AUDIO_CAPTURE or MEDIA_DEVICE_VIDEO_CAPTURE.
   // The request is identified using string returned to the caller.
-  void OpenDevice(MediaStreamRequester* requester,
+  void OpenDevice(base::WeakPtr<MediaStreamRequester> requester,
                   int render_process_id,
                   int render_frame_id,
                   const std::string& salt,
@@ -187,7 +189,7 @@ class CONTENT_EXPORT MediaStreamManager
                                    std::string* device_id) const;
 
   // Find |device_id| in the list of |requests_|, and returns its session id,
-  // or StreamDeviceInfo::kNoId if not found.
+  // or MediaStreamDevice::kNoId if not found.
   int VideoDeviceIdToSessionId(const std::string& device_id) const;
 
   // Called by UI to make sure the device monitor is started so that UI receive
@@ -201,8 +203,7 @@ class CONTENT_EXPORT MediaStreamManager
 
   // Returns all devices currently opened by a request with label |label|.
   // If no request with |label| exist, an empty array is returned.
-  StreamDeviceInfoArray GetDevicesOpenedByRequest(
-      const std::string& label) const;
+  MediaStreamDevices GetDevicesOpenedByRequest(const std::string& label) const;
 
   // This object gets deleted on the UI thread after the IO thread has been
   // destroyed. So we need to know when IO thread is being destroyed so that
@@ -223,9 +224,11 @@ class CONTENT_EXPORT MediaStreamManager
   void OnSuspend() override;
   void OnResume() override;
 
-  // Called by the tests to specify a fake UI that should be used for next
-  // generated stream (or when using --use-fake-ui-for-media-stream).
-  void UseFakeUIForTests(std::unique_ptr<FakeMediaStreamUIProxy> fake_ui);
+  // Called by the tests to specify a factory for creating
+  // FakeMediaStreamUIProxys to be used for generated streams.
+  void UseFakeUIFactoryForTests(
+      base::Callback<std::unique_ptr<FakeMediaStreamUIProxy>(void)>
+          fake_ui_factory);
 
   // Register and unregister a new callback for receiving native log entries.
   // The registered callback will be invoked on the IO thread.
@@ -267,7 +270,8 @@ class CONTENT_EXPORT MediaStreamManager
   // This method is called when an audio or video device is removed. It makes
   // sure all MediaStreams that use a removed device are stopped and that the
   // render process is notified.
-  void StopRemovedDevice(MediaDeviceType type, const MediaDeviceInfo& device);
+  void StopRemovedDevice(MediaDeviceType type,
+                         const MediaDeviceInfo& media_device_info);
 
   void SetGenerateStreamCallbackForTesting(
       GenerateStreamTestCallback test_callback);
@@ -339,18 +343,19 @@ class CONTENT_EXPORT MediaStreamManager
       DeviceRequest* request,
       const MediaDeviceEnumeration& enumeration);
   // Called when audio output parameters have been read if needed.
-  void PostRequestToUI(const std::string& label,
-                       DeviceRequest* request,
-                       const MediaDeviceEnumeration& enumeration,
-                       const media::AudioParameters& output_parameters);
+  void PostRequestToUI(
+      const std::string& label,
+      DeviceRequest* request,
+      const MediaDeviceEnumeration& enumeration,
+      const base::Optional<media::AudioParameters>& output_parameters);
   // Returns true if a device with |device_id| has already been requested with
   // a render procecss_id and render_frame_id and type equal to the the values
   // in |request|. If it has been requested, |device_info| contain information
   // about the device.
-  bool FindExistingRequestedDeviceInfo(
+  bool FindExistingRequestedDevice(
       const DeviceRequest& new_request,
-      const MediaStreamDevice& new_device_info,
-      StreamDeviceInfo* existing_device_info,
+      const MediaStreamDevice& new_device,
+      MediaStreamDevice* existing_device,
       MediaRequestState* existing_request_state) const;
 
   void FinalizeGenerateStream(const std::string& label, DeviceRequest* request);
@@ -389,7 +394,7 @@ class CONTENT_EXPORT MediaStreamManager
   // Handles the callback from MediaStreamUIProxy to receive the UI window id,
   // used for excluding the notification window in desktop capturing.
   void OnMediaStreamUIWindowId(MediaStreamType video_type,
-                               StreamDeviceInfoArray devices,
+                               const MediaStreamDevices& devices,
                                gfx::NativeViewId window_id);
 
   // Runs on the IO thread and does the actual [un]registration of callbacks.
@@ -422,8 +427,8 @@ class CONTENT_EXPORT MediaStreamManager
   // All non-closed request. Must be accessed on IO thread.
   DeviceRequests requests_;
 
-  bool use_fake_ui_;
-  std::unique_ptr<FakeMediaStreamUIProxy> fake_ui_;
+  base::Callback<std::unique_ptr<FakeMediaStreamUIProxy>(void)>
+      fake_ui_factory_;
 
   // Maps render process hosts to log callbacks. Used on the IO thread.
   std::map<int, base::Callback<void(const std::string&)>> log_callbacks_;

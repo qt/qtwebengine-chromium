@@ -17,7 +17,6 @@ struct ServiceWorkerMsg_SetControllerServiceWorker_Params;
 
 namespace content {
 
-struct ServiceWorkerRegistrationObjectInfo;
 struct ServiceWorkerVersionAttributes;
 
 class CONTENT_EXPORT ServiceWorkerMessageFilter
@@ -39,15 +38,6 @@ class CONTENT_EXPORT ServiceWorkerMessageFilter
   void OnStaleMessageReceived(const IPC::Message& msg) override;
 
   // Message handlers for stale messages.
-  void OnStaleGetRegistration(int thread_id,
-                              int request_id,
-                              const ServiceWorkerRegistrationObjectInfo& info,
-                              const ServiceWorkerVersionAttributes& attrs);
-  void OnStaleGetRegistrations(
-      int thread_id,
-      int request_id,
-      const std::vector<ServiceWorkerRegistrationObjectInfo>& info,
-      const std::vector<ServiceWorkerVersionAttributes>& attrs);
   void OnStaleSetVersionAttributes(
       int thread_id,
       int registration_handle_id,

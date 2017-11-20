@@ -10,9 +10,9 @@
 #include <sstream>
 #include <vector>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 class CPDF_Document;
 class CPDF_ImageObject;
@@ -37,12 +37,12 @@ class CPDF_PageContentGenerator {
   void ProcessGraphics(std::ostringstream* buf, CPDF_PageObject* pPageObj);
   void ProcessDefaultGraphics(std::ostringstream* buf);
   void ProcessText(std::ostringstream* buf, CPDF_TextObject* pTextObj);
-  CFX_ByteString RealizeResource(uint32_t dwResourceObjNum,
-                                 const CFX_ByteString& bsType);
+  ByteString RealizeResource(uint32_t dwResourceObjNum,
+                             const ByteString& bsType);
 
-  CFX_UnownedPtr<CPDF_PageObjectHolder> const m_pObjHolder;
-  CFX_UnownedPtr<CPDF_Document> const m_pDocument;
-  std::vector<CFX_UnownedPtr<CPDF_PageObject>> m_pageObjects;
+  UnownedPtr<CPDF_PageObjectHolder> const m_pObjHolder;
+  UnownedPtr<CPDF_Document> const m_pDocument;
+  std::vector<UnownedPtr<CPDF_PageObject>> m_pageObjects;
 };
 
 #endif  // CORE_FPDFAPI_EDIT_CPDF_PAGECONTENTGENERATOR_H_

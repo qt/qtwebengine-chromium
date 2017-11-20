@@ -40,7 +40,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameClient.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "core/html/HTMLFormElement.h"
+#include "core/html/forms/HTMLFormElement.h"
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FormSubmission.h"
@@ -326,12 +326,15 @@ class ScheduledFormSubmission final : public ScheduledNavigation {
   ScheduledFormSubmission(Document* document,
                           FormSubmission* submission,
                           bool replaces_current_item)
-      : ScheduledNavigation(Reason::kFormSubmission,
+      : ScheduledNavigation(submission->Method() == FormSubmission::kGetMethod
+                                ? Reason::kFormSubmissionGet
+                                : Reason::kFormSubmissionPost,
                             0,
                             document,
                             replaces_current_item,
                             true),
         submission_(submission) {
+    DCHECK_NE(submission->Method(), FormSubmission::kDialogMethod);
     DCHECK(submission_->Form());
   }
 
@@ -534,7 +537,7 @@ void NavigationScheduler::StartTimer() {
   // wrapWeakPersistent(this) is safe because a posted task is canceled when the
   // task handle is destroyed on the dtor of this NavigationScheduler.
   navigate_task_handle_ =
-      scheduler->LoadingTaskRunner()->PostDelayedCancellableTask(
+      frame_->FrameScheduler()->LoadingTaskRunner()->PostDelayedCancellableTask(
           BLINK_FROM_HERE,
           WTF::Bind(&NavigationScheduler::NavigateTask,
                     WrapWeakPersistent(this)),

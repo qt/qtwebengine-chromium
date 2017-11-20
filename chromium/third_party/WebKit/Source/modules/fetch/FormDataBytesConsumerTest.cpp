@@ -4,8 +4,7 @@
 
 #include "modules/fetch/FormDataBytesConsumer.h"
 
-#include "core/dom/Document.h"
-#include "core/html/FormData.h"
+#include "core/html/forms/FormData.h"
 #include "core/testing/DummyPageHolder.h"
 #include "core/typed_arrays/DOMArrayBuffer.h"
 #include "core/typed_arrays/DOMTypedArray.h"
@@ -29,7 +28,7 @@ using ::testing::Return;
 using Checkpoint = ::testing::StrictMock<::testing::MockFunction<void(int)>>;
 using MockBytesConsumer = BytesConsumerTestUtil::MockBytesConsumer;
 
-PassRefPtr<EncodedFormData> ComplexFormData() {
+RefPtr<EncodedFormData> ComplexFormData() {
   RefPtr<EncodedFormData> data = EncodedFormData::Create();
 
   data->AppendData("foo", 3);
@@ -54,6 +53,7 @@ class NoopClient final : public GarbageCollectedFinalized<NoopClient>,
 
  public:
   void OnStateChange() override {}
+  String DebugName() const override { return "NoopClient"; }
 };
 
 class FormDataBytesConsumerTest : public ::testing::Test {

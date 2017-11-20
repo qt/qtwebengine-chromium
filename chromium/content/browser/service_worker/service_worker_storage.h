@@ -7,7 +7,6 @@
 
 #include <stdint.h>
 
-#include <deque>
 #include <map>
 #include <set>
 #include <string>
@@ -15,6 +14,7 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/containers/circular_deque.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
@@ -197,6 +197,11 @@ class CONTENT_EXPORT ServiceWorkerStorage
   void ClearUserData(int64_t registration_id,
                      const std::vector<std::string>& keys,
                      const StatusCallback& callback);
+  // Responds OK if all are successfully deleted or not found in the database.
+  // Neither |key_prefixes| nor the prefixes within can be empty.
+  void ClearUserDataByKeyPrefixes(int64_t registration_id,
+                                  const std::vector<std::string>& key_prefixes,
+                                  const StatusCallback& callback);
   // Responds with all registrations that have user data with a particular key,
   // as well as that user data.
   void GetUserDataForAllRegistrations(
@@ -216,8 +221,8 @@ class CONTENT_EXPORT ServiceWorkerStorage
   void DeleteAndStartOver(const StatusCallback& callback);
 
   // Returns a new registration id which is guaranteed to be unique in the
-  // storage. Returns kInvalidServiceWorkerRegistrationId if the storage is
-  // disabled.
+  // storage. Returns blink::mojom::kInvalidServiceWorkerRegistrationId if the
+  // storage is disabled.
   int64_t NewRegistrationId();
 
   // Returns a new version id which is guaranteed to be unique in the storage.
@@ -245,38 +250,14 @@ class CONTENT_EXPORT ServiceWorkerStorage
   // |resources| must already be on the purgeable list.
   void PurgeResources(const ResourceList& resources);
 
+  bool LazyInitializeForTest(base::OnceClosure callback);
+
  private:
-  friend class ForeignFetchRequestHandlerTest;
-  friend class ServiceWorkerDispatcherHostTest;
-  friend class ServiceWorkerHandleTest;
   friend class ServiceWorkerStorageTest;
-  friend class ServiceWorkerStorageOriginTrialsTest;
-  friend class ServiceWorkerRegistrationTest;
   friend class ServiceWorkerResourceStorageTest;
-  friend class ServiceWorkerControlleeRequestHandlerTest;
-  friend class ServiceWorkerContextRequestHandlerTest;
-  friend class ServiceWorkerReadFromCacheJobTest;
-  friend class ServiceWorkerRequestHandlerTest;
-  friend class ServiceWorkerInstalledScriptsSenderTest;
-  friend class ServiceWorkerURLLoaderJobTest;
-  friend class ServiceWorkerURLRequestJobTest;
-  friend class ServiceWorkerVersionBrowserTest;
-  friend class ServiceWorkerVersionTest;
   friend class ServiceWorkerWriteToCacheJobTest;
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDispatcherHostTest,
-                           CleanupOnRendererCrash);
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
-                           DeleteRegistration_NoLiveVersion);
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
-                           DeleteRegistration_WaitingVersion);
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
-                           DeleteRegistration_ActiveVersion);
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
-                           UpdateRegistration);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageDiskTest,
                            CleanupOnRestart);
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageDiskTest,
-                           ClearOnExit);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageDiskTest,
                            DeleteAndStartOver);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageDiskTest,
@@ -359,8 +340,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
   base::FilePath GetDatabasePath();
   base::FilePath GetDiskCachePath();
 
-  bool LazyInitialize(
-      const base::Closure& callback);
+  bool LazyInitialize(base::OnceClosure callback);
   void DidReadInitialData(std::unique_ptr<InitialData> data,
                           ServiceWorkerDatabase::Status status);
   void DidFindRegistrationForDocument(
@@ -548,7 +528,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
   std::set<GURL> foreign_fetch_origins_;
 
   // Pending database tasks waiting for initialization.
-  std::vector<base::Closure> pending_tasks_;
+  std::vector<base::OnceClosure> pending_tasks_;
 
   int64_t next_registration_id_;
   int64_t next_version_id_;
@@ -589,7 +569,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
 
   std::unique_ptr<ServiceWorkerDiskCache> disk_cache_;
 
-  std::deque<int64_t> purgeable_resource_ids_;
+  base::circular_deque<int64_t> purgeable_resource_ids_;
   bool is_purge_pending_;
   bool has_checked_for_stale_resources_;
   std::set<int64_t> pending_deletions_;

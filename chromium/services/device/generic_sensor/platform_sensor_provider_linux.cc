@@ -77,12 +77,10 @@ void PlatformSensorProviderLinux::CreateSensorInternal(
 
   SensorInfoLinux* sensor_device = GetSensorDevice(type);
   if (!sensor_device) {
-    // If there are no sensors, stop polling thread.
-    if (!HasSensors())
-      AllSensorsRemoved();
     callback.Run(nullptr);
     return;
   }
+
   SensorDeviceFound(type, std::move(mapping), callback, sensor_device);
 }
 
@@ -112,7 +110,7 @@ void PlatformSensorProviderLinux::SetFileTaskRunner(
     file_task_runner_ = file_task_runner;
 }
 
-void PlatformSensorProviderLinux::AllSensorsRemoved() {
+void PlatformSensorProviderLinux::FreeResources() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(file_task_runner_);
   Shutdown();
@@ -238,8 +236,9 @@ void PlatformSensorProviderLinux::OnDeviceRemoved(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto it = sensor_devices_by_type_.find(type);
   if (it != sensor_devices_by_type_.end() &&
-      it->second->device_node == device_node)
+      it->second->device_node == device_node) {
     sensor_devices_by_type_.erase(it);
+  }
 }
 
 void PlatformSensorProviderLinux::CreateFusionSensor(

@@ -24,9 +24,9 @@ class Buffer9 : public BufferD3D
     virtual ~Buffer9();
 
     // BufferD3D implementation
-    virtual size_t getSize() const { return mSize; }
-    virtual bool supportsDirectBinding() const { return false; }
-    gl::Error getData(const uint8_t **outData) override;
+    size_t getSize() const override { return mSize; }
+    bool supportsDirectBinding() const override { return false; }
+    gl::Error getData(const gl::Context *context, const uint8_t **outData) override;
 
     // BufferImpl implementation
     gl::Error setData(const gl::Context *context,
@@ -51,7 +51,7 @@ class Buffer9 : public BufferD3D
                        GLbitfield access,
                        void **mapPtr) override;
     gl::Error unmap(const gl::Context *context, GLboolean *result) override;
-    gl::Error markTransformFeedbackUsage() override;
+    gl::Error markTransformFeedbackUsage(const gl::Context *context) override;
 
   private:
     angle::MemoryBuffer mMemory;

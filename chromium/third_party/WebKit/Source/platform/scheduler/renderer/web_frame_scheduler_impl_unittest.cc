@@ -7,11 +7,10 @@
 #include <memory>
 
 #include "base/callback.h"
-#include "base/memory/ptr_util.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "components/viz/test/ordered_simple_task_runner.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/WebTaskRunner.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/base/test_time_source.h"
 #include "platform/scheduler/child/scheduler_tqm_delegate_for_test.h"
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
@@ -21,6 +20,8 @@
 
 namespace blink {
 namespace scheduler {
+// To avoid symbol collisions in jumbo builds.
+namespace web_frame_scheduler_impl_unittest {
 
 class WebFrameSchedulerImplTest : public ::testing::Test {
  public:
@@ -31,14 +32,14 @@ class WebFrameSchedulerImplTest : public ::testing::Test {
     clock_.reset(new base::SimpleTestTickClock());
     clock_->Advance(base::TimeDelta::FromMicroseconds(5000));
     mock_task_runner_ =
-        make_scoped_refptr(new cc::OrderedSimpleTaskRunner(clock_.get(), true));
+        base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(clock_.get(), true);
     delegate_ = SchedulerTqmDelegateForTest::Create(
         mock_task_runner_, base::WrapUnique(new TestTimeSource(clock_.get())));
     scheduler_.reset(new RendererSchedulerImpl(delegate_));
     web_view_scheduler_.reset(
         new WebViewSchedulerImpl(nullptr, nullptr, scheduler_.get(), false));
-    web_frame_scheduler_ =
-        web_view_scheduler_->CreateWebFrameSchedulerImpl(nullptr);
+    web_frame_scheduler_ = web_view_scheduler_->CreateWebFrameSchedulerImpl(
+        nullptr, WebFrameScheduler::FrameType::kSubframe);
   }
 
   void TearDown() override {
@@ -60,15 +61,17 @@ namespace {
 
 class MockThrottlingObserver final : public WebFrameScheduler::Observer {
  public:
-  MockThrottlingObserver() : throttled_count_(0u), not_throttled_count_(0u) {}
+  MockThrottlingObserver()
+      : throttled_count_(0u), not_throttled_count_(0u), stopped_count_(0u) {}
 
   void CheckObserverState(size_t throttled_count_expectation,
-                          size_t not_throttled_count_expectation) {
+                          size_t not_throttled_count_expectation,
+                          size_t stopped_count_expectation) {
     EXPECT_EQ(throttled_count_expectation, throttled_count_);
     EXPECT_EQ(not_throttled_count_expectation, not_throttled_count_);
+    EXPECT_EQ(stopped_count_expectation, stopped_count_);
   }
 
-  // WebFrameScheduler::Observer.
   void OnThrottlingStateChanged(
       WebFrameScheduler::ThrottlingState state) override {
     switch (state) {
@@ -78,6 +81,9 @@ class MockThrottlingObserver final : public WebFrameScheduler::Observer {
       case WebFrameScheduler::ThrottlingState::kNotThrottled:
         not_throttled_count_++;
         break;
+      case WebFrameScheduler::ThrottlingState::kStopped:
+        stopped_count_++;
+        break;
         // We should not have another state, and compiler checks it.
     }
   }
@@ -85,6 +91,7 @@ class MockThrottlingObserver final : public WebFrameScheduler::Observer {
  private:
   size_t throttled_count_;
   size_t not_throttled_count_;
+  size_t stopped_count_;
 };
 
 void RunRepeatingTask(RefPtr<WebTaskRunner> task_runner, int* run_count);
@@ -98,7 +105,7 @@ WTF::Closure MakeRepeatingTask(RefPtr<blink::WebTaskRunner> task_runner,
 void RunRepeatingTask(RefPtr<WebTaskRunner> task_runner, int* run_count) {
   ++*run_count;
 
-  WebTaskRunner* task_runner_ptr = task_runner.Get();
+  WebTaskRunner* task_runner_ptr = task_runner.get();
   task_runner_ptr->PostDelayedTask(
       BLINK_FROM_HERE, MakeRepeatingTask(std::move(task_runner), run_count),
       TimeDelta::FromMilliseconds(1));
@@ -247,12 +254,14 @@ TEST_F(WebFrameSchedulerImplTest, PauseAndResume) {
 // Tests if throttling observer interfaces work.
 TEST_F(WebFrameSchedulerImplTest, ThrottlingObserver) {
   std::unique_ptr<MockThrottlingObserver> observer =
-      base::MakeUnique<MockThrottlingObserver>();
+      std::make_unique<MockThrottlingObserver>();
 
   size_t throttled_count = 0u;
   size_t not_throttled_count = 0u;
+  size_t stopped_count = 0u;
 
-  observer->CheckObserverState(throttled_count, not_throttled_count);
+  observer->CheckObserverState(throttled_count, not_throttled_count,
+                               stopped_count);
 
   web_frame_scheduler_->AddThrottlingObserver(
       WebFrameScheduler::ObserverType::kLoader, observer.get());
@@ -260,17 +269,36 @@ TEST_F(WebFrameSchedulerImplTest, ThrottlingObserver) {
   // Initial state should be synchronously notified here.
   // We assume kNotThrottled is notified as an initial state, but it could
   // depend on implementation details and can be changed.
-  observer->CheckObserverState(throttled_count, ++not_throttled_count);
+  observer->CheckObserverState(throttled_count, ++not_throttled_count,
+                               stopped_count);
 
   // Once the page gets to be invisible, it should notify the observer of
   // kThrottled synchronously.
   web_view_scheduler_->SetPageVisible(false);
-  observer->CheckObserverState(++throttled_count, not_throttled_count);
+  observer->CheckObserverState(++throttled_count, not_throttled_count,
+                               stopped_count);
+
+  // When no state has changed, observers are not called.
+  web_view_scheduler_->SetPageVisible(false);
+  observer->CheckObserverState(throttled_count, not_throttled_count,
+                               stopped_count);
+
+  // Setting background page to STOPPED, notifies observers of kStopped.
+  web_view_scheduler_->SetPageStopped(true);
+  observer->CheckObserverState(throttled_count, not_throttled_count,
+                               ++stopped_count);
+
+  // When page is not in the STOPPED state, then page visibility is used,
+  // notifying observer of kThrottled.
+  web_view_scheduler_->SetPageStopped(false);
+  observer->CheckObserverState(++throttled_count, not_throttled_count,
+                               stopped_count);
 
   // Going back to visible state should notify the observer of kNotThrottled
   // synchronously.
   web_view_scheduler_->SetPageVisible(true);
-  observer->CheckObserverState(throttled_count, ++not_throttled_count);
+  observer->CheckObserverState(throttled_count, ++not_throttled_count,
+                               stopped_count);
 
   // Remove from the observer list, and see if any other callback should not be
   // invoked when the condition is changed.
@@ -282,8 +310,10 @@ TEST_F(WebFrameSchedulerImplTest, ThrottlingObserver) {
   clock_->Advance(base::TimeDelta::FromSeconds(100));
   mock_task_runner_->RunUntilIdle();
 
-  observer->CheckObserverState(throttled_count, not_throttled_count);
+  observer->CheckObserverState(throttled_count, not_throttled_count,
+                               stopped_count);
 }
 
+}  // namespace web_frame_scheduler_impl_unittest
 }  // namespace scheduler
 }  // namespace blink

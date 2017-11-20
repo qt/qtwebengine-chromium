@@ -44,11 +44,11 @@
 #include "core/page/Page.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/loader/fetch/FetchInitiatorInfo.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/loader/fetch/ResourceTimingInfo.h"
 #include "platform/loader/fetch/UniqueIdentifier.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/loader/testing/MockResource.h"
 #include "platform/testing/HistogramTester.h"
 #include "platform/weborigin/KURL.h"
@@ -60,6 +60,7 @@
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/common/device_memory/approximated_device_memory.h"
 
 namespace blink {
 
@@ -521,14 +522,14 @@ TEST_F(FrameFetchContextHintsTest, MonitorDeviceMemoryHints) {
   ClientHintsPreferences preferences;
   preferences.SetShouldSendForTesting(mojom::WebClientHintsType::kDeviceMemory);
   document->GetClientHintsPreferences().UpdateFrom(preferences);
-  MemoryCoordinator::SetPhysicalMemoryMBForTesting(4096);
+  ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(4096);
   ExpectHeader("http://www.example.com/1.gif", "Device-Memory", true, "4");
-  MemoryCoordinator::SetPhysicalMemoryMBForTesting(2048);
+  ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(2048);
   ExpectHeader("http://www.example.com/1.gif", "Device-Memory", true, "2");
-  MemoryCoordinator::SetPhysicalMemoryMBForTesting(64385);
-  ExpectHeader("http://www.example.com/1.gif", "Device-Memory", true, "64");
-  MemoryCoordinator::SetPhysicalMemoryMBForTesting(768);
-  ExpectHeader("http://www.example.com/1.gif", "Device-Memory", true, "0.75");
+  ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(64385);
+  ExpectHeader("http://www.example.com/1.gif", "Device-Memory", true, "8");
+  ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(768);
+  ExpectHeader("http://www.example.com/1.gif", "Device-Memory", true, "0.5");
   ExpectHeader("http://www.example.com/1.gif", "DPR", false, "");
   ExpectHeader("http://www.example.com/1.gif", "Width", false, "");
   ExpectHeader("http://www.example.com/1.gif", "Viewport-Width", false, "");
@@ -588,7 +589,7 @@ TEST_F(FrameFetchContextHintsTest, MonitorAllHints) {
       mojom::WebClientHintsType::kResourceWidth);
   preferences.SetShouldSendForTesting(
       mojom::WebClientHintsType::kViewportWidth);
-  MemoryCoordinator::SetPhysicalMemoryMBForTesting(4096);
+  ApproximatedDeviceMemory::SetPhysicalMemoryMBForTesting(4096);
   document->GetClientHintsPreferences().UpdateFrom(preferences);
   ExpectHeader("http://www.example.com/1.gif", "Device-Memory", true, "4");
   ExpectHeader("http://www.example.com/1.gif", "DPR", true, "1");
@@ -968,14 +969,11 @@ TEST_F(FrameFetchContextTest, AddAdditionalRequestHeadersWhenDetached) {
 
   dummy_page_holder = nullptr;
 
-  EXPECT_FALSE(request.IsExternalRequest());
-
   fetch_context->AddAdditionalRequestHeaders(request, kFetchSubresource);
 
   EXPECT_EQ(origin, request.HttpHeaderField(HTTPNames::Origin));
   EXPECT_EQ(String(origin + "/"), request.HttpHeaderField(HTTPNames::Referer));
   EXPECT_EQ(String(), request.HttpHeaderField("Save-Data"));
-  EXPECT_TRUE(request.IsExternalRequest());
 }
 
 TEST_F(FrameFetchContextTest, ResourceRequestCachePolicyWhenDetached) {
@@ -1022,7 +1020,8 @@ TEST_F(FrameFetchContextTest, DispatchWillSendRequestWhenDetached) {
 
   dummy_page_holder = nullptr;
 
-  fetch_context->DispatchWillSendRequest(1, request, response, initiator_info);
+  fetch_context->DispatchWillSendRequest(1, request, response, Resource::kRaw,
+                                         initiator_info);
   // Should not crash.
 }
 
@@ -1192,7 +1191,7 @@ TEST_F(FrameFetchContextTest, UpdateTimingInfoForIFrameNavigationWhenDetached) {
 
   dummy_page_holder = nullptr;
 
-  fetch_context->UpdateTimingInfoForIFrameNavigation(info.Get());
+  fetch_context->UpdateTimingInfoForIFrameNavigation(info.get());
   // Should not crash.
 }
 
@@ -1218,7 +1217,7 @@ TEST_F(FrameFetchContextTest, GetSecurityOriginWhenDetached) {
   document->SetSecurityOrigin(origin);
 
   dummy_page_holder = nullptr;
-  EXPECT_EQ(origin.Get(), fetch_context->GetSecurityOrigin());
+  EXPECT_EQ(origin.get(), fetch_context->GetSecurityOrigin());
 }
 
 TEST_F(FrameFetchContextTest, PopulateResourceRequestWhenDetached) {

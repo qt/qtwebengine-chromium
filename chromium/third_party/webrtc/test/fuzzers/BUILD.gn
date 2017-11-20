@@ -25,7 +25,13 @@ rtc_static_library("webrtc_fuzzer_main") {
 template("webrtc_fuzzer_test") {
   fuzzer_test(target_name) {
     forward_variables_from(invoker, "*")
-    deps += [ ":webrtc_fuzzer_main" ]
+    deps += [
+      ":webrtc_fuzzer_main",
+
+      # Link unconditionally with webrtc's TaskQueue, regardless of
+      # rtc_link_task_queue_impl flag.
+      "../../rtc_base:rtc_task_queue_impl",
+    ]
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs = [ "//build/config/clang:find_bad_constructs" ]
@@ -207,6 +213,7 @@ rtc_static_library("audio_decoder_fuzzer") {
   ]
   deps = [
     "../..:webrtc_common",
+    "../../api:optional",
     "../../api/audio_codecs:audio_codecs_api",
     "../../modules/rtp_rtcp",
     "../../rtc_base:rtc_base_approved",
@@ -287,6 +294,7 @@ webrtc_fuzzer_test("neteq_rtp_fuzzer") {
     "neteq_rtp_fuzzer.cc",
   ]
   deps = [
+    "../../api:array_view",
     "../../modules/audio_coding:neteq",
     "../../modules/audio_coding:neteq_test_tools",
     "../../modules/audio_coding:neteq_tools_minimal",
@@ -354,6 +362,7 @@ webrtc_fuzzer_test("transport_feedback_packet_loss_tracker_fuzzer") {
     "transport_feedback_packet_loss_tracker_fuzzer.cc",
   ]
   deps = [
+    "../../api:array_view",
     "../../modules/rtp_rtcp",
     "../../rtc_base:rtc_base_approved",
     "../../voice_engine",
@@ -367,6 +376,7 @@ webrtc_fuzzer_test("audio_processing_fuzzer") {
     "audio_processing_fuzzer_configs.cc",
   ]
   deps = [
+    "../../api:optional",
     "../../modules:module_api",
     "../../modules/audio_processing",
     "../../rtc_base:rtc_base_approved",

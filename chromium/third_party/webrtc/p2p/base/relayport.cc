@@ -9,11 +9,11 @@
  */
 #include <algorithm>
 
-#include "webrtc/p2p/base/relayport.h"
-#include "webrtc/rtc_base/asyncpacketsocket.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/logging.h"
+#include "p2p/base/relayport.h"
+#include "rtc_base/asyncpacketsocket.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/logging.h"
 
 namespace cricket {
 
@@ -500,12 +500,9 @@ void RelayEntry::Connect() {
     LOG(LS_WARNING) << "Unknown protocol (" << ra->proto << ")";
   }
 
-  if (!socket) {
-    LOG(LS_WARNING) << "Socket creation failed";
-  }
-
   // If we failed to get a socket, move on to the next protocol.
   if (!socket) {
+    LOG(LS_WARNING) << "Socket creation failed";
     port()->thread()->Post(RTC_FROM_HERE, this, kMessageConnectTimeout);
     return;
   }

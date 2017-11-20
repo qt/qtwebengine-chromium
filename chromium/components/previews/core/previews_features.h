@@ -12,7 +12,9 @@ namespace features {
 
 extern const base::Feature kOfflinePreviews;
 extern const base::Feature kClientLoFi;
+extern const base::Feature kNoScriptPreviews;
 extern const base::Feature kStalePreviewsTimestamp;
+extern const base::Feature kAMPRedirection;
 
 }  // namespace features
 }  // namespace previews

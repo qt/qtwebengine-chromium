@@ -51,6 +51,8 @@ function frameToPluginCoordinate(coordinateInFrame) {
  * @param {Function} viewportChangedCallback is run when the viewport changes
  * @param {Function} beforeZoomCallback is run before a change in zoom
  * @param {Function} afterZoomCallback is run after a change in zoom
+ * @param {Function} setUserInitiatedCallback is run to indicate whether a zoom
+ *     event is user initiated.
  * @param {number} scrollbarWidth the width of scrollbars on the page
  * @param {number} defaultZoom The default zoom level.
  * @param {number} topToolbarHeight The number of pixels that should initially
@@ -58,12 +60,14 @@ function frameToPluginCoordinate(coordinateInFrame) {
  */
 function Viewport(
     window, sizer, viewportChangedCallback, beforeZoomCallback,
-    afterZoomCallback, scrollbarWidth, defaultZoom, topToolbarHeight) {
+    afterZoomCallback, setUserInitiatedCallback, scrollbarWidth, defaultZoom,
+    topToolbarHeight) {
   this.window_ = window;
   this.sizer_ = sizer;
   this.viewportChangedCallback_ = viewportChangedCallback;
   this.beforeZoomCallback_ = beforeZoomCallback;
   this.afterZoomCallback_ = afterZoomCallback;
+  this.setUserInitiatedCallback_ = setUserInitiatedCallback;
   this.allowedToChangeZoom_ = false;
   this.internalZoom_ = 1;
   this.zoomManager_ = new InactiveZoomManager(this, 1);
@@ -80,7 +84,7 @@ function Viewport(
   this.firstPinchCenterInFrame_ = null;
 
   window.addEventListener('scroll', this.updateViewport_.bind(this));
-  window.addEventListener('resize', this.resize_.bind(this));
+  window.addEventListener('resize', this.resizeWrapper_.bind(this));
 }
 
 /**
@@ -223,6 +227,16 @@ Viewport.prototype = {
 
   /**
    * @private
+   * Called when the browser window size changes.
+   */
+  resizeWrapper_: function() {
+    this.setUserInitiatedCallback_(false);
+    this.resize_();
+    this.setUserInitiatedCallback_(true);
+  },
+
+  /**
+   * @private
    * Called when the viewport size changes.
    */
   resize_: function() {
@@ -305,6 +319,7 @@ Viewport.prototype = {
 
   /**
    * @private
+   * @param {function} f Function to wrap
    * Used to wrap a function that might perform zooming on the viewport. This is
    * required so that we can notify the plugin that zooming is in progress
    * so that while zooming is taking place it can stop reacting to scroll events
@@ -721,6 +736,15 @@ Viewport.prototype = {
    * @param {number} page the index of the page to go to. zero-based.
    */
   goToPage: function(page) {
+    this.goToPageAndY(page, 0);
+  },
+
+  /**
+   * Go to the given y position in the given page index.
+   * @param {number} page the index of the page to go to. zero-based.
+   * @param {number} y the y position in the page to go to.
+   */
+  goToPageAndY: function(page, y) {
     this.mightZoom_(() => {
       if (this.pageDimensions_.length === 0)
         return;
@@ -737,7 +761,7 @@ Viewport.prototype = {
         toolbarOffset = this.topToolbarHeight_;
       this.position = {
         x: dimensions.x * this.zoom,
-        y: dimensions.y * this.zoom - toolbarOffset
+        y: (dimensions.y + y) * this.zoom - toolbarOffset
       };
       this.updateViewport_();
     });

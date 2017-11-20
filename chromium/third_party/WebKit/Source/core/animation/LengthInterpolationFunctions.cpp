@@ -19,7 +19,7 @@ class CSSLengthNonInterpolableValue : public NonInterpolableValue {
   ~CSSLengthNonInterpolableValue() final { NOTREACHED(); }
   static RefPtr<CSSLengthNonInterpolableValue> Create(bool has_percentage) {
     DEFINE_STATIC_REF(CSSLengthNonInterpolableValue, singleton,
-                      AdoptRef(new CSSLengthNonInterpolableValue()));
+                      WTF::AdoptRef(new CSSLengthNonInterpolableValue()));
     DCHECK(singleton);
     return has_percentage ? singleton : nullptr;
   }
@@ -120,8 +120,8 @@ PairwiseInterpolationValue LengthInterpolationFunctions::MergeSingles(
     InterpolationValue&& end) {
   return PairwiseInterpolationValue(
       std::move(start.interpolable_value), std::move(end.interpolable_value),
-      CSSLengthNonInterpolableValue::Merge(start.non_interpolable_value.Get(),
-                                           end.non_interpolable_value.Get()));
+      CSSLengthNonInterpolableValue::Merge(start.non_interpolable_value.get(),
+                                           end.non_interpolable_value.get()));
 }
 
 bool LengthInterpolationFunctions::NonInterpolableValuesAreCompatible(
@@ -141,7 +141,7 @@ void LengthInterpolationFunctions::Composite(
   underlying_interpolable_value->ScaleAndAdd(underlying_fraction,
                                              interpolable_value);
   underlying_non_interpolable_value = CSSLengthNonInterpolableValue::Merge(
-      underlying_non_interpolable_value.Get(), non_interpolable_value);
+      underlying_non_interpolable_value.get(), non_interpolable_value);
 }
 
 void LengthInterpolationFunctions::SubtractFromOneHundredPercent(

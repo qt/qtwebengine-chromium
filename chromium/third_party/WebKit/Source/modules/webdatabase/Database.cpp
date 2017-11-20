@@ -26,7 +26,7 @@
 #include "modules/webdatabase/Database.h"
 
 #include <memory>
-#include "bindings/modules/v8/DatabaseCallback.h"
+#include "bindings/modules/v8/v8_database_callback.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/TaskRunnerHelper.h"
@@ -227,7 +227,7 @@ Database::Database(DatabaseContext* database_context,
                    const String& expected_version,
                    const String& display_name,
                    unsigned estimated_size,
-                   DatabaseCallback* creation_callback)
+                   V8DatabaseCallback* creation_callback)
     : database_context_(database_context),
       name_(name.IsolatedCopy()),
       expected_version_(expected_version.IsolatedCopy()),
@@ -984,9 +984,9 @@ SecurityOrigin* Database::GetSecurityOrigin() const {
   if (!GetExecutionContext())
     return nullptr;
   if (GetExecutionContext()->IsContextThread())
-    return context_thread_security_origin_.Get();
+    return context_thread_security_origin_.get();
   if (GetDatabaseContext()->GetDatabaseThread()->IsDatabaseThread())
-    return database_thread_security_origin_.Get();
+    return database_thread_security_origin_.get();
   return nullptr;
 }
 
@@ -995,7 +995,7 @@ bool Database::Opened() {
 }
 
 WebTaskRunner* Database::GetDatabaseTaskRunner() const {
-  return database_task_runner_.Get();
+  return database_task_runner_.get();
 }
 
 }  // namespace blink

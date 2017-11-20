@@ -79,7 +79,7 @@ CFX_XMLNode* CXFA_TextLayout::GetXMLContainerNode() {
        pXMLChild = pXMLChild->GetNodeItem(CFX_XMLNode::NextSibling)) {
     if (pXMLChild->GetType() == FX_XMLNODE_Element) {
       CFX_XMLElement* pXMLElement = static_cast<CFX_XMLElement*>(pXMLChild);
-      CFX_WideString wsTag = pXMLElement->GetLocalTagName();
+      WideString wsTag = pXMLElement->GetLocalTagName();
       if (wsTag == L"body" || wsTag == L"html") {
         pXMLContainer = pXMLChild;
         break;
@@ -237,7 +237,7 @@ void CXFA_TextLayout::InitBreak(CFX_CSSComputedStyle* pStyle,
   m_pBreak->SetCharSpace(pStyle->GetLetterSpacing().GetValue());
 }
 
-int32_t CXFA_TextLayout::GetText(CFX_WideString& wsText) {
+int32_t CXFA_TextLayout::GetText(WideString& wsText) {
   GetTextDataNode();
   wsText.clear();
   if (!m_bRichText)
@@ -676,7 +676,7 @@ void CXFA_TextLayout::LoadText(CXFA_Node* pNode,
     }
   }
 
-  CFX_WideString wsText = pNode->GetContent();
+  WideString wsText = pNode->GetContent();
   wsText.TrimRight(L" ");
   bool bRet = AppendChar(wsText, fLinePos, fSpaceAbove, bSavePieces);
   if (bRet && m_pLoader)
@@ -689,9 +689,9 @@ bool CXFA_TextLayout::LoadRichText(
     CFX_XMLNode* pXMLNode,
     const CFX_SizeF& szText,
     float& fLinePos,
-    const CFX_RetainPtr<CFX_CSSComputedStyle>& pParentStyle,
+    const RetainPtr<CFX_CSSComputedStyle>& pParentStyle,
     bool bSavePieces,
-    CFX_RetainPtr<CXFA_LinkUserData> pLinkData,
+    RetainPtr<CXFA_LinkUserData> pLinkData,
     bool bEndBreak,
     bool bIsOl,
     int32_t iLiCount) {
@@ -703,8 +703,8 @@ bool CXFA_TextLayout::LoadRichText(
   CFX_CSSDisplay eDisplay = CFX_CSSDisplay::None;
   bool bContentNode = false;
   float fSpaceBelow = 0;
-  CFX_RetainPtr<CFX_CSSComputedStyle> pStyle;
-  CFX_WideString wsName;
+  RetainPtr<CFX_CSSComputedStyle> pStyle;
+  WideString wsName;
   if (bEndBreak) {
     bool bCurOl = false;
     bool bCurLi = false;
@@ -749,7 +749,7 @@ bool CXFA_TextLayout::LoadRichText(
 
         if (wsName == L"a") {
           ASSERT(pElement);
-          CFX_WideString wsLinkContent = pElement->GetString(L"href");
+          WideString wsLinkContent = pElement->GetString(L"href");
           if (!wsLinkContent.IsEmpty()) {
             pLinkData = pdfium::MakeRetain<CXFA_LinkUserData>(
                 wsLinkContent.GetBuffer(wsLinkContent.GetLength()));
@@ -761,7 +761,7 @@ bool CXFA_TextLayout::LoadRichText(
             bContentNode ? pParentStyle.Get() : pStyle.Get());
         bool bSpaceRun = m_textParser.IsSpaceRun(
             bContentNode ? pParentStyle.Get() : pStyle.Get());
-        CFX_WideString wsText;
+        WideString wsText;
         if (bContentNode && iTabCount == 0) {
           wsText = static_cast<CFX_XMLText*>(pXMLNode)->GetText();
         } else if (wsName == L"br") {
@@ -771,7 +771,7 @@ bool CXFA_TextLayout::LoadRichText(
           if (bIsOl)
             wsText.Format(L"%d.  ", iLiCount);
           else
-            wsText = 0x00B7 + CFX_WideStringC(L"  ", 1);
+            wsText = 0x00B7 + WideStringView(L"  ", 1);
         } else if (!bContentNode) {
           if (iTabCount > 0) {
             while (iTabCount-- > 0)
@@ -874,7 +874,7 @@ bool CXFA_TextLayout::LoadRichText(
   return true;
 }
 
-bool CXFA_TextLayout::AppendChar(const CFX_WideString& wsText,
+bool CXFA_TextLayout::AppendChar(const WideString& wsText,
                                  float& fLinePos,
                                  float fSpaceAbove,
                                  bool bSavePieces) {
@@ -915,7 +915,7 @@ bool CXFA_TextLayout::IsEnd(bool bSavePieces) {
   return false;
 }
 
-void CXFA_TextLayout::ProcessText(CFX_WideString& wsText) {
+void CXFA_TextLayout::ProcessText(WideString& wsText) {
   int32_t iLen = wsText.GetLength();
   if (iLen == 0)
     return;
@@ -1008,7 +1008,7 @@ void CXFA_TextLayout::AppendTextLine(CFX_BreakType dwStatus,
   if (iPieces < 1)
     return;
 
-  CFX_RetainPtr<CFX_CSSComputedStyle> pStyle;
+  RetainPtr<CFX_CSSComputedStyle> pStyle;
   if (bSavePieces) {
     auto pNew = pdfium::MakeUnique<CXFA_PieceLine>();
     CXFA_PieceLine* pPieceLine = pNew.get();

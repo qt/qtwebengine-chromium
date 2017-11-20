@@ -7,10 +7,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <algorithm>       // for min/max()
-#define _USE_MATH_DEFINES  // for M_PI
-#include <math.h>
-#include <cmath>  // for log() and pow()
+#include <algorithm>  // for min/max()
+#include <cmath>      // for log() and pow()
 #include <list>
 
 #include "base/logging.h"
@@ -56,6 +54,7 @@ const char kChromeExtension[] =
 const char kType[] = "type";
 // Viewport message arguments. (Page -> Plugin).
 const char kJSViewportType[] = "viewport";
+const char kJSUserInitiated[] = "userInitiated";
 const char kJSXOffset[] = "xOffset";
 const char kJSYOffset[] = "yOffset";
 const char kJSZoom[] = "zoom";
@@ -356,7 +355,7 @@ OutOfProcessInstance::OutOfProcessInstance(PP_Instance instance)
       did_call_start_loading_(false),
       stop_scrolling_(false),
       background_color_(0),
-      top_toolbar_height_(0),
+      top_toolbar_height_in_viewport_coords_(0),
       accessibility_state_(ACCESSIBILITY_STATE_OFF),
       is_print_preview_(false) {
   callback_factory_.Initialize(this);
@@ -367,6 +366,9 @@ OutOfProcessInstance::OutOfProcessInstance(PP_Instance instance)
   RequestFilteringInputEvents(PP_INPUTEVENT_CLASS_MOUSE);
   RequestFilteringInputEvents(PP_INPUTEVENT_CLASS_KEYBOARD);
   RequestFilteringInputEvents(PP_INPUTEVENT_CLASS_TOUCH);
+
+  for (size_t i = 0; i < PDFACTION_BUCKET_BOUNDARY; i++)
+    preview_action_recorded_[i] = false;
 }
 
 OutOfProcessInstance::~OutOfProcessInstance() {
@@ -410,18 +412,20 @@ bool OutOfProcessInstance::Init(uint32_t argc,
   const char* headers = nullptr;
   for (uint32_t i = 0; i < argc; ++i) {
     bool success = true;
-    if (strcmp(argn[i], "src") == 0)
+    if (strcmp(argn[i], "src") == 0) {
       original_url = argv[i];
-    else if (strcmp(argn[i], "stream-url") == 0)
+    } else if (strcmp(argn[i], "stream-url") == 0) {
       stream_url = argv[i];
-    else if (strcmp(argn[i], "top-level-url") == 0)
+    } else if (strcmp(argn[i], "top-level-url") == 0) {
       top_level_url = argv[i];
-    else if (strcmp(argn[i], "headers") == 0)
+    } else if (strcmp(argn[i], "headers") == 0) {
       headers = argv[i];
-    else if (strcmp(argn[i], "background-color") == 0)
+    } else if (strcmp(argn[i], "background-color") == 0) {
       success = base::HexStringToUInt(argv[i], &background_color_);
-    else if (strcmp(argn[i], "top-toolbar-height") == 0)
-      success = base::StringToInt(argv[i], &top_toolbar_height_);
+    } else if (strcmp(argn[i], "top-toolbar-height") == 0) {
+      success =
+          base::StringToInt(argv[i], &top_toolbar_height_in_viewport_coords_);
+    }
 
     if (!success)
       return false;
@@ -555,6 +559,10 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
 
     // Bound the input parameters.
     zoom = std::max(kMinZoom, zoom);
+    DCHECK(dict.Get(pp::Var(kJSUserInitiated)).is_bool());
+    if (dict.Get(pp::Var(kJSUserInitiated)).AsBool())
+      PrintPreviewHistogramEnumeration(UPDATE_ZOOM);
+
     SetZoom(zoom);
     scroll_offset = BoundScrollOffsetToDocument(scroll_offset);
     engine_->ScrolledToXPosition(scroll_offset.x() * device_scale_);
@@ -617,7 +625,7 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
     print_preview_page_count_ = print_preview_page_count;
     print_preview_loaded_page_count_ = 0;
     url_ = url;
-    preview_pages_info_ = std::queue<PreviewPageInfo>();
+    preview_pages_info_ = base::queue<PreviewPageInfo>();
     preview_document_load_state_ = LOAD_STATE_COMPLETE;
     document_load_state_ = LOAD_STATE_LOADING;
     LoadUrl(url_, /*is_print_preview=*/false);
@@ -627,6 +635,7 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
     engine_->New(url_.c_str(), nullptr /* empty header */);
 
     paint_manager_.InvalidateRect(pp::Rect(pp::Point(), plugin_size_));
+    PrintPreviewHistogramEnumeration(PRINT_PREVIEW_SHOWN);
   } else if (type == kJSLoadPreviewPageType &&
              dict.Get(pp::Var(kJSPreviewPageUrl)).is_string() &&
              dict.Get(pp::Var(kJSPreviewPageIndex)).is_int()) {
@@ -756,7 +765,8 @@ void OutOfProcessInstance::DidChangeView(const pp::View& view) {
     // JS), so we need to subtract the toolbar height to convert them into
     // viewport coordinates.
     pp::FloatPoint scroll_offset_float(
-        scroll_offset_.x(), scroll_offset_.y() - top_toolbar_height_);
+        scroll_offset_.x(),
+        scroll_offset_.y() - top_toolbar_height_in_viewport_coords_);
     scroll_offset_float = BoundScrollOffsetToDocument(scroll_offset_float);
     engine_->ScrolledToXPosition(scroll_offset_float.x() * device_scale_);
     engine_->ScrolledToYPosition(scroll_offset_float.y() * device_scale_);
@@ -881,7 +891,8 @@ void OutOfProcessInstance::SendNextAccessibilityPage(int32_t page_index) {
 void OutOfProcessInstance::SendAccessibilityViewportInfo() {
   PP_PrivateAccessibilityViewportInfo viewport_info;
   viewport_info.scroll.x = 0;
-  viewport_info.scroll.y = -top_toolbar_height_ * device_scale_;
+  viewport_info.scroll.y =
+      -top_toolbar_height_in_viewport_coords_ * device_scale_;
   viewport_info.offset = available_area_.point();
   viewport_info.zoom = zoom_ * device_scale_;
   pp::PDF::SetAccessibilityViewportInfo(GetPluginInstance(), &viewport_info);
@@ -1081,15 +1092,6 @@ void OutOfProcessInstance::DidOpen(int32_t result) {
   } else if (result != PP_ERROR_ABORTED) {  // Can happen in tests.
     DocumentLoadFailed();
   }
-
-  // If it's a progressive load, cancel the stream URL request so that requests
-  // can be made on the original URL.
-  // TODO(raymes): Make this clearer once the in-process plugin is deleted.
-  if (engine_->IsProgressiveLoad()) {
-    pp::VarDictionary message;
-    message.Set(kType, kJSCancelStreamUrlType);
-    PostMessage(message);
-  }
 }
 
 void OutOfProcessInstance::DidOpenPreview(int32_t result) {
@@ -1189,17 +1191,22 @@ void OutOfProcessInstance::Scroll(const pp::Point& point) {
     paint_manager_.ScrollRect(available_area_, point);
 }
 
-void OutOfProcessInstance::ScrollToX(int x) {
+void OutOfProcessInstance::ScrollToX(int x_in_screen_coords) {
   pp::VarDictionary position;
   position.Set(kType, kJSSetScrollPositionType);
-  position.Set(kJSPositionX, pp::Var(x / device_scale_));
+  position.Set(kJSPositionX, pp::Var(x_in_screen_coords / device_scale_));
   PostMessage(position);
 }
 
-void OutOfProcessInstance::ScrollToY(int y) {
+void OutOfProcessInstance::ScrollToY(int y_in_screen_coords,
+                                     bool compensate_for_toolbar) {
   pp::VarDictionary position;
   position.Set(kType, kJSSetScrollPositionType);
-  position.Set(kJSPositionY, pp::Var(y / device_scale_));
+  float new_y_viewport_coords = y_in_screen_coords / device_scale_;
+  if (compensate_for_toolbar) {
+    new_y_viewport_coords -= top_toolbar_height_in_viewport_coords_;
+  }
+  position.Set(kJSPositionY, pp::Var(new_y_viewport_coords));
   PostMessage(position);
 }
 
@@ -1494,15 +1501,16 @@ void OutOfProcessInstance::DocumentLoadComplete(int page_count) {
   }
 
   pp::PDF::SetContentRestriction(this, content_restrictions);
-
   HistogramCustomCounts("PDF.PageCount", page_count, 1, 1000000, 50);
 }
 
 void OutOfProcessInstance::RotateClockwise() {
+  PrintPreviewHistogramEnumeration(ROTATE);
   engine_->RotateClockwise();
 }
 
 void OutOfProcessInstance::RotateCounterclockwise() {
+  PrintPreviewHistogramEnumeration(ROTATE);
   engine_->RotateCounterclockwise();
 }
 
@@ -1644,7 +1652,8 @@ void OutOfProcessInstance::OnGeometryChanged(double old_zoom,
     available_area_.set_width(doc_width);
   }
   int bottom_of_document =
-      GetDocumentPixelHeight() + (top_toolbar_height_ * device_scale_);
+      GetDocumentPixelHeight() +
+      (top_toolbar_height_in_viewport_coords_ * device_scale_);
   if (bottom_of_document < available_area_.height())
     available_area_.set_height(bottom_of_document);
 
@@ -1709,11 +1718,19 @@ uint32_t OutOfProcessInstance::GetBackgroundColor() {
   return background_color_;
 }
 
+void OutOfProcessInstance::CancelBrowserDownload() {
+  pp::VarDictionary message;
+  message.Set(kType, kJSCancelStreamUrlType);
+  PostMessage(message);
+}
+
 void OutOfProcessInstance::IsSelectingChanged(bool is_selecting) {
   pp::VarDictionary message;
   message.Set(kType, kJSSetIsSelectingType);
   message.Set(kJSIsSelecting, pp::Var(is_selecting));
   PostMessage(message);
+  if (is_selecting)
+    PrintPreviewHistogramEnumeration(SELECT_TEXT);
 }
 
 void OutOfProcessInstance::ProcessPreviewPageInfo(const std::string& url,
@@ -1780,7 +1797,7 @@ pp::FloatPoint OutOfProcessInstance::BoundScrollOffsetToDocument(
     const pp::FloatPoint& scroll_offset) {
   float max_x = document_size_.width() * zoom_ - plugin_dip_size_.width();
   float x = std::max(std::min(scroll_offset.x(), max_x), 0.0f);
-  float min_y = -top_toolbar_height_;
+  float min_y = -top_toolbar_height_in_viewport_coords_;
   float max_y = document_size_.height() * zoom_ - plugin_dip_size_.height();
   float y = std::max(std::min(scroll_offset.y(), max_y), min_y);
   return pp::FloatPoint(x, y);
@@ -1804,6 +1821,16 @@ void OutOfProcessInstance::HistogramEnumeration(const std::string& name,
     return;
 
   uma_.HistogramEnumeration(name, sample, boundary_value);
+}
+
+void OutOfProcessInstance::PrintPreviewHistogramEnumeration(int32_t sample) {
+  if (!IsPrintPreview())
+    return;
+  if (preview_action_recorded_[sample])
+    return;
+  uma_.HistogramEnumeration("PrintPreview.PdfAction", sample,
+                            PDFACTION_BUCKET_BOUNDARY);
+  preview_action_recorded_[sample] = true;
 }
 
 }  // namespace chrome_pdf

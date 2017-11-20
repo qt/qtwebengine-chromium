@@ -24,6 +24,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_frame_subscriber.h"
 #include "content/common/frame_messages.h"
 #include "content/public/browser/gpu_data_manager.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_paths.h"
@@ -34,6 +35,7 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
+#include "content/test/did_commit_provisional_load_interceptor.h"
 #include "media/base/video_frame.h"
 #include "media/renderers/skcanvas_video_renderer.h"
 #include "net/base/filename_util.h"
@@ -208,25 +210,20 @@ class RenderWidgetHostViewBrowserTest : public ContentBrowserTest {
 
 // Helps to ensure that a navigation is committed after a compositor frame was
 // submitted by the renderer, but before corresponding ACK is sent back.
-class CommitBeforeSwapAckSentHelper : public WebContentsObserver {
+class CommitBeforeSwapAckSentHelper
+    : public DidCommitProvisionalLoadInterceptor {
  public:
   explicit CommitBeforeSwapAckSentHelper(WebContents* web_contents)
-      : WebContentsObserver(web_contents) {}
+      : DidCommitProvisionalLoadInterceptor(web_contents) {}
 
  private:
-  void WaitForSwapCompositorFrame() {
+  // DidCommitProvisionalLoadInterceptor:
+  void WillDispatchDidCommitProvisionalLoad(
+      RenderFrameHost* render_frame_host,
+      ::FrameHostMsg_DidCommitProvisionalLoad_Params*) override {
     base::MessageLoop::ScopedNestableTaskAllower allow(
         base::MessageLoop::current());
     FrameWatcher(web_contents()).WaitFrames(1);
-  }
-
-  bool OnMessageReceived(const IPC::Message& message,
-                         RenderFrameHost* rfh) override {
-    IPC_BEGIN_MESSAGE_MAP(CommitBeforeSwapAckSentHelper, message)
-      IPC_MESSAGE_HANDLER_GENERIC(FrameHostMsg_DidCommitProvisionalLoad,
-                                  WaitForSwapCompositorFrame())
-    IPC_END_MESSAGE_MAP()
-    return false;
   }
 
   DISALLOW_COPY_AND_ASSIGN(CommitBeforeSwapAckSentHelper);
@@ -268,15 +265,15 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewBrowserTestBase,
   {
     CommitBeforeSwapAckSentHelper commit_helper(web_contents);
     EXPECT_TRUE(WaitForLoadStop(web_contents));
-    EXPECT_NE(web_contents->GetRenderProcessHost(),
-              new_web_contents->GetRenderProcessHost());
+    EXPECT_NE(web_contents->GetMainFrame()->GetProcess(),
+              new_web_contents->GetMainFrame()->GetProcess());
   }
 
   // Go back and verify that the renderer continues to draw new frames.
   shell()->GoBackOrForward(-1);
   EXPECT_TRUE(WaitForLoadStop(web_contents));
-  EXPECT_EQ(web_contents->GetRenderProcessHost(),
-            new_web_contents->GetRenderProcessHost());
+  EXPECT_EQ(web_contents->GetMainFrame()->GetProcess(),
+            new_web_contents->GetMainFrame()->GetProcess());
   FrameWatcher(web_contents).WaitFrames(5);
 }
 

@@ -107,11 +107,19 @@ bool AXSystemCaretWin::AccessibilityPerformAction(const AXActionData& data) {
   return false;
 }
 
+int AXSystemCaretWin::GetIndexInParent() const {
+  return -1;
+}
+
 AXPlatformNode* AXSystemCaretWin::GetFromNodeID(int32_t id) {
   return nullptr;
 }
 
 bool AXSystemCaretWin::ShouldIgnoreHoveredStateForTesting() {
+  return false;
+}
+
+bool AXSystemCaretWin::IsOffscreen() const {
   return false;
 }
 

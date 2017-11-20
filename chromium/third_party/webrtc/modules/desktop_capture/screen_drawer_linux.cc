@@ -13,12 +13,12 @@
 
 #include <memory>
 
-#include "webrtc/modules/desktop_capture/screen_drawer.h"
-#include "webrtc/modules/desktop_capture/screen_drawer_lock_posix.h"
-#include "webrtc/modules/desktop_capture/x11/shared_x_display.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/system_wrappers/include/sleep.h"
+#include "modules/desktop_capture/screen_drawer.h"
+#include "modules/desktop_capture/screen_drawer_lock_posix.h"
+#include "modules/desktop_capture/x11/shared_x_display.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/ptr_util.h"
+#include "system_wrappers/include/sleep.h"
 
 namespace webrtc {
 
@@ -36,6 +36,7 @@ class ScreenDrawerLinux : public ScreenDrawer {
   void Clear() override;
   void WaitForPendingDraws() override;
   bool MayDrawIncompleteShapes() override;
+  WindowId window_id() const override;
 
  private:
   // Bring the window to the front, this can help to avoid the impact from other
@@ -134,6 +135,10 @@ void ScreenDrawerLinux::WaitForPendingDraws() {
 
 bool ScreenDrawerLinux::MayDrawIncompleteShapes() {
   return true;
+}
+
+WindowId ScreenDrawerLinux::window_id() const {
+  return window_;
 }
 
 void ScreenDrawerLinux::BringToFront() {

@@ -43,10 +43,10 @@
 #include "core/html/track/VideoTrackList.h"
 #include "modules/mediasource/MediaSourceRegistry.h"
 #include "modules/mediasource/SourceBufferTrackBaseSupplement.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/network/mime/ContentType.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/text/CString.h"
 #include "public/platform/WebMediaSource.h"
@@ -112,7 +112,7 @@ MediaSource* MediaSource::Create(ExecutionContext* context) {
 MediaSource::MediaSource(ExecutionContext* context)
     : ContextLifecycleObserver(context),
       ready_state_(ClosedKeyword()),
-      async_event_queue_(MediaElementEventQueue::Create(this)),
+      async_event_queue_(MediaElementEventQueue::Create(this, context)),
       attached_element_(nullptr),
       source_buffers_(SourceBufferList::Create(GetExecutionContext(),
                                                async_event_queue_.Get())),

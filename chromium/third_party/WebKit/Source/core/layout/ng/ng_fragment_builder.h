@@ -7,6 +7,7 @@
 
 #include "core/layout/ng/geometry/ng_bfc_offset.h"
 #include "core/layout/ng/geometry/ng_border_edges.h"
+#include "core/layout/ng/geometry/ng_physical_rect.h"
 #include "core/layout/ng/inline/ng_baseline.h"
 #include "core/layout/ng/ng_base_fragment_builder.h"
 #include "core/layout/ng/ng_break_token.h"
@@ -45,12 +46,20 @@ class CORE_EXPORT NGFragmentBuilder final : public NGBaseFragmentBuilder {
   NGFragmentBuilder& SetBlockSize(LayoutUnit);
   NGLogicalSize Size() const { return size_; }
 
-  NGFragmentBuilder& SetOverflowSize(const NGLogicalSize&);
-  NGFragmentBuilder& SetBlockOverflow(LayoutUnit);
+  NGFragmentBuilder& SetIntrinsicBlockSize(LayoutUnit);
 
   NGFragmentBuilder& AddChild(RefPtr<NGLayoutResult>, const NGLogicalOffset&);
   NGFragmentBuilder& AddChild(RefPtr<NGPhysicalFragment>,
                               const NGLogicalOffset&);
+
+  // Add a break token for a child that doesn't yet have any fragments, because
+  // its first fragment is to be produced in the next fragmentainer. This will
+  // add a break token for the child, but no fragment.
+  NGFragmentBuilder& AddBreakBeforeChild(NGLayoutInputNode child);
+
+  // Update if we have fragmented in this flow.
+  NGFragmentBuilder& PropagateBreak(RefPtr<NGLayoutResult>);
+  NGFragmentBuilder& PropagateBreak(RefPtr<NGPhysicalFragment>);
 
   NGFragmentBuilder& SetBfcOffset(const NGBfcOffset& offset);
 
@@ -81,6 +90,8 @@ class CORE_EXPORT NGFragmentBuilder final : public NGBaseFragmentBuilder {
   // See layout part for builder interaction.
   NGFragmentBuilder& AddOutOfFlowChildCandidate(NGBlockNode,
                                                 const NGLogicalOffset&);
+
+  void AddOutOfFlowLegacyCandidate(NGBlockNode, const NGStaticPosition&);
 
   void GetAndClearOutOfFlowDescendantCandidates(
       Vector<NGOutOfFlowPositionedDescendant>* descendant_candidates);
@@ -175,7 +186,7 @@ class CORE_EXPORT NGFragmentBuilder final : public NGBaseFragmentBuilder {
   LayoutObject* layout_object_;
 
   NGLogicalSize size_;
-  NGLogicalSize overflow_;
+  LayoutUnit intrinsic_block_size_;
 
   Vector<RefPtr<NGPhysicalFragment>> children_;
   Vector<NGLogicalOffset> offsets_;

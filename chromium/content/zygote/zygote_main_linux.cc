@@ -63,12 +63,13 @@
 #include "content/public/common/pepper_plugin_info.h"
 #endif
 
-#if BUILDFLAG(ENABLE_WEBRTC)
-#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+#include "content/public/common/cdm_info.h"
+#include "content/public/common/content_client.h"
 #endif
 
-#if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
-#include "content/common/media/cdm_host_files.h"
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 #endif
 
 namespace content {
@@ -91,6 +92,59 @@ void RunTwoClosures(const base::Closure* first, const base::Closure* second) {
   second->Run();
 }
 
+bool ReadTimeStruct(base::PickleIterator* iter,
+                    struct tm* output,
+                    char* timezone_out,
+                    size_t timezone_out_len) {
+  int result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_sec = result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_min = result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_hour = result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_mday = result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_mon = result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_year = result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_wday = result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_yday = result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_isdst = result;
+  if (!iter->ReadInt(&result))
+    return false;
+  output->tm_gmtoff = result;
+
+  std::string timezone;
+  if (!iter->ReadString(&timezone))
+    return false;
+  if (timezone_out_len) {
+    const size_t copy_len = std::min(timezone_out_len - 1, timezone.size());
+    memcpy(timezone_out, timezone.data(), copy_len);
+    timezone_out[copy_len] = 0;
+    output->tm_zone = timezone_out;
+  } else {
+    base::AutoLock lock(g_timezones_lock.Get());
+    auto ret_pair = g_timezones.Get().insert(timezone);
+    output->tm_zone = ret_pair.first->c_str();
+  }
+
+  return true;
+}
+
 }  // namespace
 
 // See https://chromium.googlesource.com/chromium/src/+/master/docs/linux_zygote.md
@@ -103,39 +157,24 @@ static void ProxyLocaltimeCallToBrowser(time_t input, struct tm* output,
   request.WriteString(
       std::string(reinterpret_cast<char*>(&input), sizeof(input)));
 
+  memset(output, 0, sizeof(struct tm));
+
   uint8_t reply_buf[512];
   const ssize_t r = base::UnixDomainSocket::SendRecvMsg(
       GetSandboxFD(), reply_buf, sizeof(reply_buf), NULL, request);
   if (r == -1) {
-    memset(output, 0, sizeof(struct tm));
     return;
   }
 
   base::Pickle reply(reinterpret_cast<char*>(reply_buf), r);
   base::PickleIterator iter(reply);
-  std::string result;
-  std::string timezone;
-  if (!iter.ReadString(&result) ||
-      !iter.ReadString(&timezone) ||
-      result.size() != sizeof(struct tm)) {
+  if (!ReadTimeStruct(&iter, output, timezone_out, timezone_out_len)) {
     memset(output, 0, sizeof(struct tm));
-    return;
-  }
-
-  memcpy(output, result.data(), sizeof(struct tm));
-  if (timezone_out_len) {
-    const size_t copy_len = std::min(timezone_out_len - 1, timezone.size());
-    memcpy(timezone_out, timezone.data(), copy_len);
-    timezone_out[copy_len] = 0;
-    output->tm_zone = timezone_out;
-  } else {
-    base::AutoLock lock(g_timezones_lock.Get());
-    auto ret_pair = g_timezones.Get().insert(timezone);
-    output->tm_zone = ret_pair.first->c_str();
   }
 }
 
 static bool g_am_zygote_or_renderer = false;
+static bool g_use_localtime_override = true;
 
 // Sandbox interception of libc calls.
 //
@@ -160,9 +199,9 @@ static bool g_am_zygote_or_renderer = false;
 //
 // Our replacement functions can check this global and either proxy
 // the call to the browser over the sandbox IPC
-// (https://chromium.googlesource.com/chromium/src/+/master/docs/linux_sandbox_ipc.md) or they can use
-// dlsym with RTLD_NEXT to resolve the symbol, ignoring any symbols in the
-// current module.
+// (https://chromium.googlesource.com/chromium/src/+/master/docs/linux_sandbox_ipc.md)
+// or they can use dlsym with RTLD_NEXT to resolve the symbol, ignoring any
+// symbols in the current module.
 //
 // Other avenues:
 //
@@ -224,7 +263,7 @@ struct tm* localtime_override(const time_t* timep) __asm__ ("localtime");
 
 __attribute__ ((__visibility__("default")))
 struct tm* localtime_override(const time_t* timep) {
-  if (g_am_zygote_or_renderer) {
+  if (g_am_zygote_or_renderer && g_use_localtime_override) {
     static struct tm time_struct;
     static char timezone_string[64];
     ProxyLocaltimeCallToBrowser(*timep, &time_struct, timezone_string,
@@ -248,7 +287,7 @@ struct tm* localtime64_override(const time_t* timep) __asm__ ("localtime64");
 
 __attribute__ ((__visibility__("default")))
 struct tm* localtime64_override(const time_t* timep) {
-  if (g_am_zygote_or_renderer) {
+  if (g_am_zygote_or_renderer && g_use_localtime_override) {
     static struct tm time_struct;
     static char timezone_string[64];
     ProxyLocaltimeCallToBrowser(*timep, &time_struct, timezone_string,
@@ -272,7 +311,7 @@ struct tm* localtime_r_override(const time_t* timep,
 
 __attribute__ ((__visibility__("default")))
 struct tm* localtime_r_override(const time_t* timep, struct tm* result) {
-  if (g_am_zygote_or_renderer) {
+  if (g_am_zygote_or_renderer && g_use_localtime_override) {
     ProxyLocaltimeCallToBrowser(*timep, result, NULL, 0);
     return result;
   }
@@ -293,7 +332,7 @@ struct tm* localtime64_r_override(const time_t* timep,
 
 __attribute__ ((__visibility__("default")))
 struct tm* localtime64_r_override(const time_t* timep, struct tm* result) {
-  if (g_am_zygote_or_renderer) {
+  if (g_am_zygote_or_renderer && g_use_localtime_override) {
     ProxyLocaltimeCallToBrowser(*timep, result, NULL, 0);
     return result;
   }
@@ -324,11 +363,27 @@ void PreloadPepperPlugins() {
                            << plugin.path.value() << " "
                            << error.ToString();
 
-      (void)library;  // Prevent release-mode warning.
+      ignore_result(library);  // Prevent release-mode warning.
     }
   }
 }
 #endif
+
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+// Loads registered library CDMs but does not initialize them. This is needed by
+// the zygote on Linux to get access to the CDMs before entering the sandbox.
+void PreloadLibraryCdms() {
+  std::vector<CdmInfo> cdms;
+  GetContentClient()->AddContentDecryptionModules(&cdms, nullptr);
+  for (const auto& cdm : cdms) {
+    base::NativeLibraryLoadError error;
+    base::NativeLibrary library = base::LoadNativeLibrary(cdm.path, &error);
+    VLOG_IF(1, !library) << "Unable to load CDM " << cdm.path.value()
+                         << " (error: " << error.ToString() << ")";
+    ignore_result(library);  // Prevent release-mode warning.
+  }
+}
+#endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
 // This function triggers the static and lazy construction of objects that need
 // to be created before imposing the sandbox.
@@ -358,12 +413,12 @@ static void ZygotePreSandboxInit() {
   // Ensure access to the Pepper plugins before the sandbox is turned on.
   PreloadPepperPlugins();
 #endif
+#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
+  // Ensure access to the library CDMs before the sandbox is turned on.
+  PreloadLibraryCdms();
+#endif
 #if BUILDFLAG(ENABLE_WEBRTC)
   InitializeWebRtcModule();
-#endif
-
-#if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
-  CdmHostFiles::CreateGlobalInstance();
 #endif
 
   SkFontConfigInterface::SetGlobal(
@@ -572,6 +627,10 @@ bool ZygoteMain(
                 extra_fds);
   // This function call can return multiple times, once per fork().
   return zygote.ProcessRequests();
+}
+
+void DisableLocaltimeOverride() {
+  g_use_localtime_override = false;
 }
 
 }  // namespace content

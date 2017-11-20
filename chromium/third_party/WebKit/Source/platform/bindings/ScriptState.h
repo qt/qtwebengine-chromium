@@ -88,8 +88,8 @@ class PLATFORM_EXPORT ScriptState : public RefCounted<ScriptState> {
     v8::Local<v8::Context> context_;
   };
 
-  static PassRefPtr<ScriptState> Create(v8::Local<v8::Context>,
-                                        PassRefPtr<DOMWrapperWorld>);
+  static RefPtr<ScriptState> Create(v8::Local<v8::Context>,
+                                    RefPtr<DOMWrapperWorld>);
   virtual ~ScriptState();
 
   static ScriptState* Current(v8::Isolate* isolate)  // DEPRECATED
@@ -146,7 +146,7 @@ class PLATFORM_EXPORT ScriptState : public RefCounted<ScriptState> {
   void DisposePerContextData();
 
  protected:
-  ScriptState(v8::Local<v8::Context>, PassRefPtr<DOMWrapperWorld>);
+  ScriptState(v8::Local<v8::Context>, RefPtr<DOMWrapperWorld>);
 
  private:
   v8::Isolate* isolate_;
@@ -180,8 +180,8 @@ class ScriptStateProtectingContext {
       context_.Set(script_state_->GetIsolate(), script_state_->GetContext());
   }
 
-  ScriptState* operator->() const { return script_state_.Get(); }
-  ScriptState* Get() const { return script_state_.Get(); }
+  ScriptState* operator->() const { return script_state_.get(); }
+  ScriptState* Get() const { return script_state_.get(); }
   void Clear() {
     script_state_ = nullptr;
     context_.Clear();

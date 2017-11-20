@@ -9,16 +9,14 @@
 
 #include <memory>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/pwl/cpwl_wnd.h"
 
 class CPWL_ListCtrl;
 class CPWL_List_Notify;
 class CPWL_ListBox;
 class IPWL_Filler_Notify;
-struct CPVT_SecProps;
 struct CPVT_WordPlace;
-struct CPVT_WordProps;
 
 class CPWL_List_Notify {
  public:
@@ -35,7 +33,7 @@ class CPWL_List_Notify {
   void IOnInvalidateRect(CFX_FloatRect* pRect);
 
  private:
-  CFX_UnownedPtr<CPWL_ListBox> m_pList;
+  UnownedPtr<CPWL_ListBox> m_pList;
 };
 
 class CPWL_ListBox : public CPWL_Wnd {
@@ -44,7 +42,7 @@ class CPWL_ListBox : public CPWL_Wnd {
   ~CPWL_ListBox() override;
 
   // CPWL_Wnd
-  CFX_ByteString GetClassName() const override;
+  ByteString GetClassName() const override;
   void OnCreated() override;
   void OnDestroy() override;
   void DrawThisAppearance(CFX_RenderDevice* pDevice,
@@ -61,16 +59,16 @@ class CPWL_ListBox : public CPWL_Wnd {
   void SetScrollInfo(const PWL_SCROLL_INFO& info) override;
   void SetScrollPosition(float pos) override;
   void ScrollWindowVertically(float pos) override;
-  void RePosChildWnd() override;
+  bool RePosChildWnd() override;
   CFX_FloatRect GetFocusRect() const override;
   void SetFontSize(float fFontSize) override;
   float GetFontSize() const override;
 
-  virtual CFX_WideString GetText() const;
+  virtual WideString GetText() const;
 
   bool OnNotifySelectionChanged(bool bKeyDown, uint32_t nFlag);
 
-  void AddString(const CFX_WideString& str);
+  void AddString(const WideString& str);
   void SetTopVisibleIndex(int32_t nItemIndex);
   void ScrollToListItem(int32_t nItemIndex);
   void ResetContent();
@@ -101,10 +99,10 @@ class CPWL_ListBox : public CPWL_Wnd {
   std::unique_ptr<CPWL_List_Notify> m_pListNotify;
   bool m_bMouseDown;
   bool m_bHoverSel;
-  CFX_UnownedPtr<IPWL_Filler_Notify> m_pFillerNotify;
+  UnownedPtr<IPWL_Filler_Notify> m_pFillerNotify;
 
  private:
-  CFX_UnownedPtr<CFFL_FormFiller> m_pFormFiller;
+  UnownedPtr<CFFL_FormFiller> m_pFormFiller;
 };
 
 #endif  // FPDFSDK_PWL_CPWL_LIST_BOX_H_

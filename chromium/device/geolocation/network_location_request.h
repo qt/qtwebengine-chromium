@@ -36,33 +36,27 @@ class NetworkLocationRequest : private net::URLFetcherDelegate {
   // server or network error - either no response or a 500 error code.
   typedef base::Callback<void(const Geoposition& /* position */,
                               bool /* server_error */,
-                              const base::string16& /* access_token */,
                               const WifiData& /* wifi_data */)>
       LocationResponseCallback;
 
-  // |url| is the server address to which the request wil be sent.
-  NetworkLocationRequest(
-      const scoped_refptr<net::URLRequestContextGetter>& context,
-      const GURL& url,
-      LocationResponseCallback callback);
+  NetworkLocationRequest(scoped_refptr<net::URLRequestContextGetter> context,
+                         const std::string& api_key,
+                         LocationResponseCallback callback);
   ~NetworkLocationRequest() override;
 
   // Makes a new request. Returns true if the new request was successfully
   // started. In all cases, any currently pending request will be canceled.
-  bool MakeRequest(const base::string16& access_token,
-                   const WifiData& wifi_data,
-                   const base::Time& wifi_timestamp);
+  bool MakeRequest(const WifiData& wifi_data, const base::Time& wifi_timestamp);
 
   bool is_request_pending() const { return url_fetcher_ != NULL; }
-  const GURL& url() const { return url_; }
 
  private:
   // net::URLFetcherDelegate
   void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   const scoped_refptr<net::URLRequestContextGetter> url_context_;
+  const std::string api_key_;
   const LocationResponseCallback location_response_callback_;
-  const GURL url_;
   std::unique_ptr<net::URLFetcher> url_fetcher_;
 
   // Keep a copy of the data sent in the request, so we can refer back to it

@@ -43,14 +43,9 @@ NGFragmentBuilder& NGFragmentBuilder::SetBlockSize(LayoutUnit size) {
   return *this;
 }
 
-NGFragmentBuilder& NGFragmentBuilder::SetOverflowSize(
-    const NGLogicalSize& size) {
-  overflow_ = size;
-  return *this;
-}
-
-NGFragmentBuilder& NGFragmentBuilder::SetBlockOverflow(LayoutUnit size) {
-  overflow_.block_size = size;
+NGFragmentBuilder& NGFragmentBuilder::SetIntrinsicBlockSize(
+    LayoutUnit intrinsic_block_size) {
+  intrinsic_block_size_ = intrinsic_block_size;
   return *this;
 }
 
@@ -72,11 +67,8 @@ NGFragmentBuilder& NGFragmentBuilder::AddChild(
     const NGLogicalOffset& child_offset) {
   switch (child->Type()) {
     case NGPhysicalBoxFragment::kFragmentBox:
-      // Update if we have fragmented in this flow.
-      if (child->BreakToken()) {
-        did_break_ |= !child->BreakToken()->IsFinished();
+      if (child->BreakToken())
         child_break_tokens_.push_back(child->BreakToken());
-      }
       break;
     case NGPhysicalBoxFragment::kFragmentLineBox:
       // NGInlineNode produces multiple line boxes in an anonymous box. Only
@@ -100,6 +92,34 @@ NGFragmentBuilder& NGFragmentBuilder::AddChild(
   return *this;
 }
 
+NGFragmentBuilder& NGFragmentBuilder::AddBreakBeforeChild(
+    NGLayoutInputNode child) {
+  // TODO(mstensho): Come up with a more intuitive way of creating an unfinished
+  // break token. We currently need to pass a Vector here, just to end up in the
+  // right NGBlockBreakToken constructor - the one that sets the token as
+  // unfinished.
+  Vector<RefPtr<NGBreakToken>> dummy;
+  auto token = NGBlockBreakToken::Create(child, LayoutUnit(), dummy);
+  child_break_tokens_.push_back(token);
+  return *this;
+}
+
+NGFragmentBuilder& NGFragmentBuilder::PropagateBreak(
+    RefPtr<NGLayoutResult> child_layout_result) {
+  if (!did_break_)
+    return PropagateBreak(child_layout_result->PhysicalFragment());
+  return *this;
+}
+
+NGFragmentBuilder& NGFragmentBuilder::PropagateBreak(
+    RefPtr<NGPhysicalFragment> child_fragment) {
+  if (!did_break_) {
+    const auto* token = child_fragment->BreakToken();
+    did_break_ = token && !token->IsFinished();
+  }
+  return *this;
+}
+
 NGFragmentBuilder& NGFragmentBuilder::SetBfcOffset(const NGBfcOffset& offset) {
   bfc_offset_ = offset;
   return *this;
@@ -118,6 +138,42 @@ NGFragmentBuilder& NGFragmentBuilder::AddOutOfFlowChildCandidate(
 
   child.SaveStaticOffsetForLegacy(child_offset);
   return *this;
+}
+
+void NGFragmentBuilder::AddOutOfFlowLegacyCandidate(
+    NGBlockNode node,
+    const NGStaticPosition& static_position) {
+  DCHECK_GE(size_.inline_size, LayoutUnit());
+  DCHECK_GE(size_.block_size, LayoutUnit());
+
+  NGOutOfFlowPositionedDescendant descendant{node, static_position};
+  // Need 0,0 physical coordinates as child offset. Because offset
+  // is stored as logical, must convert physical 0,0 to logical.
+  NGLogicalOffset zero_offset;
+  switch (WritingMode()) {
+    case kHorizontalTopBottom:
+      if (IsLtr(Direction()))
+        zero_offset = NGLogicalOffset();
+      else
+        zero_offset = NGLogicalOffset(size_.inline_size, LayoutUnit());
+      break;
+    case kVerticalRightLeft:
+    case kSidewaysRightLeft:
+      if (IsLtr(Direction()))
+        zero_offset = NGLogicalOffset(LayoutUnit(), size_.block_size);
+      else
+        zero_offset = NGLogicalOffset(size_.inline_size, size_.block_size);
+      break;
+    case kVerticalLeftRight:
+    case kSidewaysLeftRight:
+      if (IsLtr(Direction()))
+        zero_offset = NGLogicalOffset();
+      else
+        zero_offset = NGLogicalOffset(size_.inline_size, LayoutUnit());
+      break;
+  }
+  oof_positioned_candidates_.push_back(
+      NGOutOfFlowPositionedCandidate{descendant, zero_offset});
 }
 
 void NGFragmentBuilder::GetAndClearOutOfFlowDescendantCandidates(
@@ -179,10 +235,12 @@ RefPtr<NGLayoutResult> NGFragmentBuilder::ToBoxFragment() {
 
   NGPhysicalSize physical_size = size_.ConvertToPhysical(WritingMode());
 
+  NGPhysicalOffsetRect contents_visual_rect({}, physical_size);
   for (size_t i = 0; i < children_.size(); ++i) {
-    NGPhysicalFragment* child = children_[i].Get();
+    NGPhysicalFragment* child = children_[i].get();
     child->SetOffset(offsets_[i].ConvertToPhysical(
         WritingMode(), Direction(), physical_size, child->Size()));
+    child->PropagateContentsVisualRect(&contents_visual_rect);
   }
 
   RefPtr<NGBreakToken> break_token;
@@ -190,7 +248,6 @@ RefPtr<NGLayoutResult> NGFragmentBuilder::ToBoxFragment() {
     if (last_inline_break_token_) {
       DCHECK(!last_inline_break_token_->IsFinished());
       child_break_tokens_.push_back(std::move(last_inline_break_token_));
-      did_break_ = true;
     }
     if (did_break_) {
       break_token = NGBlockBreakToken::Create(node_, used_block_size_,
@@ -200,22 +257,23 @@ RefPtr<NGLayoutResult> NGFragmentBuilder::ToBoxFragment() {
     }
   }
 
-  RefPtr<NGPhysicalBoxFragment> fragment = AdoptRef(new NGPhysicalBoxFragment(
-      layout_object_, Style(), physical_size,
-      overflow_.ConvertToPhysical(WritingMode()), children_, baselines_,
-      border_edges_.ToPhysical(WritingMode()), std::move(break_token)));
+  RefPtr<NGPhysicalBoxFragment> fragment =
+      WTF::AdoptRef(new NGPhysicalBoxFragment(
+          layout_object_, Style(), physical_size, contents_visual_rect,
+          children_, baselines_, border_edges_.ToPhysical(WritingMode()),
+          std::move(break_token)));
 
-  return AdoptRef(new NGLayoutResult(
+  return WTF::AdoptRef(new NGLayoutResult(
       std::move(fragment), oof_positioned_descendants_, unpositioned_floats_,
       std::move(exclusion_space_), bfc_offset_, end_margin_strut_,
-      NGLayoutResult::kSuccess));
+      intrinsic_block_size_, NGLayoutResult::kSuccess));
 }
 
 RefPtr<NGLayoutResult> NGFragmentBuilder::Abort(
     NGLayoutResult::NGLayoutResultStatus status) {
-  return AdoptRef(new NGLayoutResult(
+  return WTF::AdoptRef(new NGLayoutResult(
       nullptr, Vector<NGOutOfFlowPositionedDescendant>(), unpositioned_floats_,
-      nullptr, bfc_offset_, end_margin_strut_, status));
+      nullptr, bfc_offset_, end_margin_strut_, LayoutUnit(), status));
 }
 
 }  // namespace blink

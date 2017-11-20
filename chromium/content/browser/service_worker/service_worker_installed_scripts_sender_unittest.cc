@@ -16,6 +16,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/test_completion_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -231,16 +232,21 @@ class ServiceWorkerInstalledScriptsSenderTest : public testing::Test {
   void SetUp() override {
     helper_ = base::MakeUnique<EmbeddedWorkerTestHelper>(base::FilePath());
 
-    context()->storage()->LazyInitialize(base::Bind(&base::DoNothing));
+    context()->storage()->LazyInitializeForTest(
+        base::BindOnce(&base::DoNothing));
     base::RunLoop().RunUntilIdle();
 
     pattern_ = GURL("http://www.example.com/test/");
     registration_ = base::MakeRefCounted<ServiceWorkerRegistration>(
-        ServiceWorkerRegistrationOptions(pattern_), 1L, context()->AsWeakPtr());
+        blink::mojom::ServiceWorkerRegistrationOptions(pattern_), 1L,
+        context()->AsWeakPtr());
     version_ = base::MakeRefCounted<ServiceWorkerVersion>(
         registration_.get(),
         GURL("http://www.example.com/test/service_worker.js"),
         context()->storage()->NewVersionId(), context()->AsWeakPtr());
+    version_->set_fetch_handler_existence(
+        ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
+    version_->SetStatus(ServiceWorkerVersion::INSTALLED);
   }
 
   void TearDown() override {
@@ -307,8 +313,8 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, SendScripts) {
     version()->script_cache_map()->SetResources(records);
   }
 
-  auto sender = base::MakeUnique<ServiceWorkerInstalledScriptsSender>(
-      version(), kMainScriptURL, context()->AsWeakPtr());
+  auto sender =
+      base::MakeUnique<ServiceWorkerInstalledScriptsSender>(version());
 
   std::unique_ptr<MockServiceWorkerInstalledScriptsManager> renderer_manager;
   {
@@ -367,8 +373,8 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, FailedToSendBody) {
     version()->script_cache_map()->SetResources(records);
   }
 
-  auto sender = base::MakeUnique<ServiceWorkerInstalledScriptsSender>(
-      version(), kMainScriptURL, context()->AsWeakPtr());
+  auto sender =
+      base::MakeUnique<ServiceWorkerInstalledScriptsSender>(version());
 
   std::unique_ptr<MockServiceWorkerInstalledScriptsManager> renderer_manager;
   {
@@ -429,8 +435,8 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, FailedToSendMetaData) {
     version()->script_cache_map()->SetResources(records);
   }
 
-  auto sender = base::MakeUnique<ServiceWorkerInstalledScriptsSender>(
-      version(), kMainScriptURL, context()->AsWeakPtr());
+  auto sender =
+      base::MakeUnique<ServiceWorkerInstalledScriptsSender>(version());
 
   std::unique_ptr<MockServiceWorkerInstalledScriptsManager> renderer_manager;
   {
@@ -503,8 +509,8 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, Histograms) {
     version()->script_cache_map()->SetResources(records);
   }
 
-  auto sender = base::MakeUnique<ServiceWorkerInstalledScriptsSender>(
-      version(), kMainScriptURL, context()->AsWeakPtr());
+  auto sender =
+      base::MakeUnique<ServiceWorkerInstalledScriptsSender>(version());
 
   std::unique_ptr<MockServiceWorkerInstalledScriptsManager> renderer_manager;
   {
@@ -546,21 +552,6 @@ TEST_F(ServiceWorkerInstalledScriptsSenderTest, Histograms) {
   histogram_tester.ExpectBucketCount(
       "ServiceWorker.DiskCache.ReadResponseResult",
       ServiceWorkerMetrics::ReadResponseResult::READ_OK, 4);
-}
-
-TEST_F(ServiceWorkerInstalledScriptsSenderTest, NoInstalledScript) {
-  // Create a scripts sender for a version that has no installed scripts.
-  const GURL kMainScriptURL = version()->script_url();
-  auto sender = base::MakeUnique<ServiceWorkerInstalledScriptsSender>(
-      version(), kMainScriptURL, context()->AsWeakPtr());
-  EXPECT_FALSE(sender->CreateInfoAndBind());
-  EXPECT_FALSE(sender->IsFinished());
-  EXPECT_EQ(SenderFinishedReason::kNotFinished, sender->finished_reason());
-
-  sender->Start();
-  // Finish immediately because there are no installed scripts.
-  EXPECT_TRUE(sender->IsFinished());
-  EXPECT_EQ(SenderFinishedReason::kSuccess, sender->finished_reason());
 }
 
 }  // namespace content

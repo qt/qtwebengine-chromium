@@ -1,7 +1,7 @@
 {% filter format_blink_cpp_source_code %}
 
 {% include 'copyright_block.txt' %}
-#include "{{v8_class}}.h"
+#include "{{this_include_header_name}}"
 
 {% for filename in cpp_includes %}
 #include "{{filename}}"
@@ -27,12 +27,12 @@ DEFINE_TRACE({{v8_class}}) {
   if (!script_state_->ContextIsValid())
     {{return_default}};
   ExecutionContext* executionContext =
-      ExecutionContext::From(script_state_.Get());
+      ExecutionContext::From(script_state_.get());
   DCHECK(!executionContext->IsContextSuspended());
   if (!executionContext || executionContext->IsContextDestroyed())
     {{return_default}};
 
-  ScriptState::Scope scope(script_state_.Get());
+  ScriptState::Scope scope(script_state_.get());
   {% if method.call_with_this_handle %}
   v8::Local<v8::Value> thisHandle = thisValue.V8Value();
   {% endif %}
@@ -50,7 +50,6 @@ DEFINE_TRACE({{v8_class}}) {
   v8::Isolate* isolate = script_state_->GetIsolate();
   {% set this_handle_parameter = 'thisHandle'
          if method.call_with_this_handle else 'v8::Undefined(isolate)' %}
-  {% if method.idl_type == 'boolean' %}
   v8::TryCatch exceptionCatcher(isolate);
   exceptionCatcher.SetVerbose(true);
   V8ScriptRunner::CallFunction(callback_.NewLocal(isolate),
@@ -59,14 +58,8 @@ DEFINE_TRACE({{v8_class}}) {
                                {{method.arguments | length}},
                                argv,
                                isolate);
+  {% if method.idl_type == 'boolean' %}
   return !exceptionCatcher.HasCaught();
-  {% else %}{# void #}
-  V8ScriptRunner::CallFunction(callback_.NewLocal(isolate),
-                               ExecutionContext::From(script_state_.Get()),
-                               {{this_handle_parameter}},
-                               {{method.arguments | length}},
-                               argv,
-                               isolate);
   {% endif %}
 }
 

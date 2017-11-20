@@ -5,12 +5,10 @@
 #include "net/dns/mdns_client_impl.h"
 
 #include <algorithm>
-#include <queue>
 #include <utility>
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/clock.h"
@@ -49,8 +47,8 @@ void MDnsSocketFactoryImpl::CreateSockets(
   for (size_t i = 0; i < interfaces.size(); ++i) {
     DCHECK(interfaces[i].second == ADDRESS_FAMILY_IPV4 ||
            interfaces[i].second == ADDRESS_FAMILY_IPV6);
-    std::unique_ptr<DatagramServerSocket> socket(
-        CreateAndBindMDnsSocket(interfaces[i].second, interfaces[i].first));
+    std::unique_ptr<DatagramServerSocket> socket(CreateAndBindMDnsSocket(
+        interfaces[i].second, interfaces[i].first, nullptr));
     if (socket)
       sockets->push_back(std::move(socket));
   }
@@ -145,8 +143,8 @@ bool MDnsConnection::Init(MDnsSocketFactory* socket_factory) {
   socket_factory->CreateSockets(&sockets);
 
   for (std::unique_ptr<DatagramServerSocket>& socket : sockets) {
-    socket_handlers_.push_back(base::WrapUnique(
-        new MDnsConnection::SocketHandler(std::move(socket), this)));
+    socket_handlers_.push_back(std::make_unique<MDnsConnection::SocketHandler>(
+        std::move(socket), this));
   }
 
   // All unbound sockets need to be bound before processing untrusted input.

@@ -82,11 +82,9 @@ class StringBuiltinsAssembler : public CodeStubAssembler {
   //  }
   //
   // Contains fast paths for Smi and RegExp objects.
-  // Important: {regexp_call} may not contain any code that can call into JS.
   typedef std::function<Node*()> NodeFunction0;
   typedef std::function<Node*(Node* fn)> NodeFunction1;
   void MaybeCallFunctionAtSymbol(Node* const context, Node* const object,
-                                 Node* const maybe_string,
                                  Handle<Symbol> symbol,
                                  const NodeFunction0& regexp_call,
                                  const NodeFunction1& generic_call,
@@ -102,6 +100,29 @@ class StringIncludesIndexOfAssembler : public StringBuiltinsAssembler {
   enum SearchVariant { kIncludes, kIndexOf };
 
   void Generate(SearchVariant variant);
+};
+
+class StringTrimAssembler : public StringBuiltinsAssembler {
+ public:
+  explicit StringTrimAssembler(compiler::CodeAssemblerState* state)
+      : StringBuiltinsAssembler(state) {}
+
+  void GotoIfNotWhiteSpaceOrLineTerminator(Node* const char_code,
+                                           Label* const if_not_whitespace);
+
+ protected:
+  void Generate(String::TrimMode mode, const char* method);
+
+  void ScanForNonWhiteSpaceOrLineTerminator(Node* const string_data,
+                                            Node* const string_data_offset,
+                                            Node* const is_stringonebyte,
+                                            Variable* const var_index,
+                                            Node* const end, int increment,
+                                            Label* const if_none_found);
+
+  void BuildLoop(Variable* const var_index, Node* const end, int increment,
+                 Label* const if_none_found, Label* const out,
+                 std::function<Node*(Node*)> get_character);
 };
 
 }  // namespace internal

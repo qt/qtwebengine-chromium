@@ -16,43 +16,32 @@
 
 namespace blink {
 
-namespace {
-
-// True if the container will contain an absolute descendant.
-bool IsContainingBlockForAbsoluteDescendant(
-    const ComputedStyle& container_style,
-    const ComputedStyle& descendant_style) {
-  EPosition position = descendant_style.GetPosition();
-  bool contains_fixed = container_style.CanContainFixedPositionObjects();
-  bool contains_absolute =
-      container_style.CanContainAbsolutePositionObjects() || contains_fixed;
-
-  return (contains_absolute && position == EPosition::kAbsolute) ||
-         (contains_fixed && position == EPosition::kFixed);
-}
-
-}  // namespace
-
 NGOutOfFlowLayoutPart::NGOutOfFlowLayoutPart(
+    const NGBlockNode container,
     const NGConstraintSpace& container_space,
     const ComputedStyle& container_style,
     NGFragmentBuilder* container_builder)
-    : container_style_(container_style), container_builder_(container_builder) {
+    : container_style_(container_style),
+      container_builder_(container_builder),
+      contains_absolute_(container.IsAbsoluteContainer()),
+      contains_fixed_(container.IsFixedContainer()) {
   NGWritingMode writing_mode(
       FromPlatformWritingMode(container_style_.GetWritingMode()));
 
   NGBoxStrut borders = ComputeBorders(container_space, container_style_);
-  container_border_offset_ =
-      NGLogicalOffset{borders.inline_start, borders.block_start};
-  container_border_physical_offset_ =
-      container_border_offset_.ConvertToPhysical(
-          writing_mode, container_style_.Direction(),
-          container_builder_->Size().ConvertToPhysical(writing_mode),
-          NGPhysicalSize());
+  NGBoxStrut scrollers = container.GetScrollbarSizes();
+  NGBoxStrut borders_and_scrollers = borders + scrollers;
+  content_offset_ = NGLogicalOffset{borders_and_scrollers.inline_start,
+                                    borders_and_scrollers.block_start};
+
+  NGPhysicalBoxStrut physical_borders = borders_and_scrollers.ConvertToPhysical(
+      writing_mode, container_style_.Direction());
+  content_physical_offset_ =
+      NGPhysicalOffset(physical_borders.left, physical_borders.top);
 
   container_size_ = container_builder_->Size();
-  container_size_.inline_size -= borders.InlineSum();
-  container_size_.block_size -= borders.BlockSum();
+  container_size_.inline_size -= borders_and_scrollers.InlineSum();
+  container_size_.block_size -= borders_and_scrollers.BlockSum();
 
   icb_size_ = container_space.InitialContainingBlockSize();
 }
@@ -64,12 +53,10 @@ void NGOutOfFlowLayoutPart::Run() {
 
   while (descendant_candidates.size() > 0) {
     for (auto& candidate : descendant_candidates) {
-      if (IsContainingBlockForAbsoluteDescendant(container_style_,
-                                                 candidate.node.Style())) {
+      if (IsContainingBlockForDescendant(candidate.node.Style())) {
         NGLogicalOffset offset;
         RefPtr<NGLayoutResult> result = LayoutDescendant(
             candidate.node, candidate.static_position, &offset);
-        // TODO(atotic) Need to adjust size of overflow rect per spec.
         container_builder_->AddChild(std::move(result), offset);
       } else {
         container_builder_->AddOutOfFlowDescendant(candidate);
@@ -97,7 +84,7 @@ RefPtr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
   // Adjust the static_position origin. The static_position coordinate origin is
   // relative to the container's border box, ng_absolute_utils expects it to be
   // relative to the container's padding box.
-  static_position.offset -= container_border_physical_offset_;
+  static_position.offset -= content_physical_offset_;
 
   // The block estimate is in the descendant's writing mode.
   RefPtr<NGConstraintSpace> descendant_constraint_space =
@@ -129,9 +116,9 @@ RefPtr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
   if (AbsoluteNeedsChildBlockSize(descendant.Style())) {
     layout_result = GenerateFragment(descendant, block_estimate, node_position);
 
-    NGBoxFragment fragment(
-        descendant_writing_mode,
-        ToNGPhysicalBoxFragment(layout_result->PhysicalFragment().Get()));
+    DCHECK(layout_result->PhysicalFragment().get());
+    NGFragment fragment(descendant_writing_mode,
+                        *layout_result->PhysicalFragment());
 
     block_estimate = fragment.BlockSize();
   }
@@ -151,12 +138,17 @@ RefPtr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
   // to the padding box so add back the container's borders.
   NGBoxStrut inset = node_position.inset.ConvertToLogical(
       container_writing_mode, container_style_.Direction());
-  offset->inline_offset =
-      inset.inline_start + container_border_offset_.inline_offset;
-  offset->block_offset =
-      inset.block_start + container_border_offset_.block_offset;
+  offset->inline_offset = inset.inline_start + content_offset_.inline_offset;
+  offset->block_offset = inset.block_start + content_offset_.block_offset;
 
   return layout_result;
+}
+
+bool NGOutOfFlowLayoutPart::IsContainingBlockForDescendant(
+    const ComputedStyle& descendant_style) {
+  EPosition position = descendant_style.GetPosition();
+  return (contains_absolute_ && position == EPosition::kAbsolute) ||
+         (contains_fixed_ && position == EPosition::kFixed);
 }
 
 // The fragment is generated in one of these two scenarios:

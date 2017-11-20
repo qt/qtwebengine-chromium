@@ -9,6 +9,8 @@
 
 #include <memory>
 #include <set>
+#include <string>
+#include <vector>
 
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
@@ -26,7 +28,6 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/stop_find_action.h"
-#include "ipc/ipc_sender.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_tree_update.h"
 #include "ui/base/window_open_disposition.h"
@@ -66,7 +67,6 @@ class BrowserPluginGuestDelegate;
 class InterstitialPage;
 class PageState;
 class RenderFrameHost;
-class RenderProcessHost;
 class RenderViewHost;
 class RenderWidgetHost;
 class RenderWidgetHostView;
@@ -100,7 +100,6 @@ struct RendererPreferences;
 // WebContents, navigate it backwards/forwards, etc. See navigation_controller.h
 // for more details.
 class WebContents : public PageNavigator,
-                    public IPC::Sender,
                     public base::SupportsUserData {
  public:
   struct CONTENT_EXPORT CreateParams {
@@ -241,12 +240,8 @@ class WebContents : public PageNavigator,
   // See also GetVisibleURL above, which may differ from this URL.
   virtual const GURL& GetLastCommittedURL() const = 0;
 
-  // Return the currently active RenderProcessHost and RenderViewHost. Each of
-  // these may change over time.
-  virtual RenderProcessHost* GetRenderProcessHost() const = 0;
-
   // Returns the main frame for the currently active view.
-  virtual RenderFrameHost* GetMainFrame() = 0;
+  virtual RenderFrameHost* GetMainFrame() const = 0;
 
   // Returns the focused frame for the currently active view.
   virtual RenderFrameHost* GetFocusedFrame() = 0;
@@ -316,15 +311,6 @@ class WebContents : public PageNavigator,
   // Returns the theme color for the underlying content as set by the
   // theme-color meta tag.
   virtual SkColor GetThemeColor() const = 0;
-
-  // Create a WebUI page for the given url. In most cases, this doesn't need to
-  // be called by embedders since content will create its own WebUI objects as
-  // necessary. However if the embedder wants to create its own WebUI object and
-  // keep track of it manually, it can use this. |frame_name| is used to
-  // identify the frame and cannot be empty.
-  virtual std::unique_ptr<WebUI> CreateSubframeWebUI(
-      const GURL& url,
-      const std::string& frame_name) = 0;
 
   // Returns the committed WebUI if one exists, otherwise the pending one.
   virtual WebUI* GetWebUI() const = 0;
@@ -514,7 +500,8 @@ class WebContents : public PageNavigator,
   // beginning of the document, a positive amount moves the selection towards
   // the end of the document.
   virtual void AdjustSelectionByCharacterOffset(int start_adjust,
-                                                int end_adjust) = 0;
+                                                int end_adjust,
+                                                bool show_selection_menu) = 0;
 
   // Replaces the currently selected word or a word around the cursor.
   virtual void Replace(const base::string16& word) = 0;
@@ -737,8 +724,9 @@ class WebContents : public PageNavigator,
 
   // Returns true if the WebContents is responsible for displaying a subframe
   // in a different process from its parent page.
-  // TODO: this doesn't really belong here. With site isolation, this should be
-  // removed since we can then embed iframes in different processes.
+  // TODO(lazyboy): https://crbug.com/542893: this doesn't really belong here.
+  // With site isolation, this should be removed since we can then embed iframes
+  // in different processes.
   virtual bool IsSubframe() const = 0;
 
   // Finds text on a page. |search_text| should not be empty.

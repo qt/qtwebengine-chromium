@@ -73,8 +73,13 @@ class PDFEngine {
     virtual void Scroll(const pp::Point& point) = 0;
 
     // Scroll the horizontal/vertical scrollbars to a given position.
-    virtual void ScrollToX(int position) = 0;
-    virtual void ScrollToY(int position) = 0;
+    // Values are in screen coordinates, where 0 is the top/left of the document
+    // and a positive value is the distance in pixels from that line.
+    // For ScrollToY, setting |compensate_for_toolbar| will align the position
+    // with the bottom of the toolbar so the given position is always visible.
+    virtual void ScrollToX(int x_in_screen_coords) = 0;
+    virtual void ScrollToY(int y_in_screen_coords,
+                           bool compensate_for_toolbar) = 0;
 
     // Scroll to zero-based |page|.
     virtual void ScrollToPage(int page) = 0;
@@ -187,6 +192,9 @@ class PDFEngine {
 
     // Get the background color of the PDF.
     virtual uint32_t GetBackgroundColor() = 0;
+
+    // Cancel browser initiated document download.
+    virtual void CancelBrowserDownload() = 0;
 
     // Sets selection status.
     virtual void IsSelectingChanged(bool is_selecting) {}
@@ -311,8 +319,6 @@ class PDFEngine {
   // general scrolling - the engine will not repaint due to this.
   virtual void SetScrollPosition(const pp::Point& position) = 0;
 #endif
-
-  virtual bool IsProgressiveLoad() = 0;
 
   virtual std::string GetMetadata(const std::string& key) = 0;
 

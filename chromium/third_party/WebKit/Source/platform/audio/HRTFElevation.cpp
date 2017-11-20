@@ -33,7 +33,6 @@
 #include <memory>
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/HRTFPanner.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/ThreadingPrimitives.h"
 #include "platform/wtf/text/StringHash.h"
 
@@ -65,7 +64,7 @@ const int kElevationIndexTable[kElevationIndexTableSize] = {
 
 // Lazily load a concatenated HRTF database for given subject and store it in a
 // local hash table to ensure quick efficient future retrievals.
-static PassRefPtr<AudioBus> GetConcatenatedImpulseResponsesForSubject(
+static RefPtr<AudioBus> GetConcatenatedImpulseResponsesForSubject(
     const String& subject_name) {
   typedef HashMap<String, RefPtr<AudioBus>> AudioBusMap;
   DEFINE_THREAD_SAFE_STATIC_LOCAL(AudioBusMap, audio_bus_map, ());
@@ -169,9 +168,9 @@ bool HRTFElevation::CalculateKernelsForAzimuthElevation(
   unsigned start_frame = index * kResponseFrameSize;
   unsigned stop_frame = start_frame + kResponseFrameSize;
   RefPtr<AudioBus> pre_sample_rate_converted_response(
-      AudioBus::CreateBufferFromRange(bus.Get(), start_frame, stop_frame));
+      AudioBus::CreateBufferFromRange(bus.get(), start_frame, stop_frame));
   RefPtr<AudioBus> response(AudioBus::CreateBySampleRateConverting(
-      pre_sample_rate_converted_response.Get(), false, sample_rate));
+      pre_sample_rate_converted_response.get(), false, sample_rate));
   AudioChannel* left_ear_impulse_response =
       response->Channel(AudioBus::kChannelLeft);
   AudioChannel* right_ear_impulse_response =
@@ -232,9 +231,9 @@ std::unique_ptr<HRTFElevation> HRTFElevation::CreateForSubject(
     return nullptr;
 
   std::unique_ptr<HRTFKernelList> kernel_list_l =
-      WTF::MakeUnique<HRTFKernelList>(kNumberOfTotalAzimuths);
+      std::make_unique<HRTFKernelList>(kNumberOfTotalAzimuths);
   std::unique_ptr<HRTFKernelList> kernel_list_r =
-      WTF::MakeUnique<HRTFKernelList>(kNumberOfTotalAzimuths);
+      std::make_unique<HRTFKernelList>(kNumberOfTotalAzimuths);
 
   // Load convolution kernels from HRTF files.
   int interpolated_index = 0;
@@ -289,9 +288,9 @@ std::unique_ptr<HRTFElevation> HRTFElevation::CreateByInterpolatingSlices(
   DCHECK_LT(x, 1.0);
 
   std::unique_ptr<HRTFKernelList> kernel_list_l =
-      WTF::MakeUnique<HRTFKernelList>(kNumberOfTotalAzimuths);
+      std::make_unique<HRTFKernelList>(kNumberOfTotalAzimuths);
   std::unique_ptr<HRTFKernelList> kernel_list_r =
-      WTF::MakeUnique<HRTFKernelList>(kNumberOfTotalAzimuths);
+      std::make_unique<HRTFKernelList>(kNumberOfTotalAzimuths);
 
   HRTFKernelList* kernel_list_l1 = hrtf_elevation1->KernelListL();
   HRTFKernelList* kernel_list_r1 = hrtf_elevation1->KernelListR();

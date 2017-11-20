@@ -21,8 +21,9 @@ using DeviceList = std::vector<const ui::TouchscreenDevice*>;
 // Helper method to associate |display| and |device|.
 void Associate(ManagedDisplayInfo* display,
                const ui::TouchscreenDevice* device) {
-  display->AddInputDevice(device->id);
-  display->set_touch_support(Display::TOUCH_SUPPORT_AVAILABLE);
+  uint32_t touch_device_identifier =
+      TouchCalibrationData::GenerateTouchDeviceIdentifier(*device);
+  display->AddTouchDevice(touch_device_identifier);
 }
 
 // Returns true if |path| is likely a USB device.
@@ -117,6 +118,23 @@ bool IsInternalDisplay(const ManagedDisplayInfo* display) {
 // Returns true if |device| is internal.
 bool IsInternalDevice(const ui::TouchscreenDevice* device) {
   return device->type == ui::InputDeviceType::INPUT_DEVICE_INTERNAL;
+}
+
+void AssociateSingleDisplayAndSingleDevice(DisplayInfoList* displays,
+                                           DeviceList* devices) {
+  if (displays->size() != 1 || devices->size() != 1)
+    return;
+  // If there is only one display and only one touch device, just associate
+  // them. This fixes the issue that usb tablet input device doesn't work
+  // with chromebook.
+  DisplayInfoList::iterator display_it = displays->begin();
+  DeviceList::iterator device_it = devices->begin();
+  Associate(*display_it, *device_it);
+  VLOG(2) << "=> Matched single device " << (*device_it)->name
+          << " to single display " << (*display_it)->name();
+  displays->erase(display_it);
+  devices->erase(device_it);
+  return;
 }
 
 void AssociateInternalDevices(DisplayInfoList* displays, DeviceList* devices) {
@@ -244,7 +262,7 @@ void AssociateTouchscreens(
   // Construct our initial set of display/devices that we will process.
   DisplayInfoList displays;
   for (ManagedDisplayInfo& display : *all_displays) {
-    display.ClearInputDevices();
+    display.ClearTouchDevices();
 
     if (display.GetNativeModeSize().IsEmpty()) {
       VLOG(2) << "Will not match display " << display.id()
@@ -270,6 +288,7 @@ void AssociateTouchscreens(
             << ", sys_path: " << device->sys_path.LossyDisplayName() << ")";
   }
 
+  AssociateSingleDisplayAndSingleDevice(&displays, &devices);
   AssociateInternalDevices(&displays, &devices);
   AssociateUdlDevices(&displays, &devices);
   AssociateSameSizeDevices(&displays, &devices);

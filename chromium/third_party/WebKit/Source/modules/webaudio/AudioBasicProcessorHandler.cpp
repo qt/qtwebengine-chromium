@@ -43,13 +43,13 @@ AudioBasicProcessorHandler::AudioBasicProcessorHandler(
   AddOutput(1);
 }
 
-PassRefPtr<AudioBasicProcessorHandler> AudioBasicProcessorHandler::Create(
+RefPtr<AudioBasicProcessorHandler> AudioBasicProcessorHandler::Create(
     NodeType node_type,
     AudioNode& node,
     float sample_rate,
     std::unique_ptr<AudioProcessor> processor) {
-  return AdoptRef(new AudioBasicProcessorHandler(node_type, node, sample_rate,
-                                                 std::move(processor)));
+  return WTF::AdoptRef(new AudioBasicProcessorHandler(
+      node_type, node, sample_rate, std::move(processor)));
 }
 
 AudioBasicProcessorHandler::~AudioBasicProcessorHandler() {

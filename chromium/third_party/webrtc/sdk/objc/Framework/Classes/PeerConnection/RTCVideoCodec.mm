@@ -16,14 +16,16 @@
 
 @implementation RTCVideoCodecInfo
 
-@synthesize payload = _payload;
 @synthesize name = _name;
 @synthesize parameters = _parameters;
+
+- (instancetype)initWithName:(NSString *)name {
+  return [self initWithName:name parameters:nil];
+}
 
 - (instancetype)initWithName:(NSString *)name
                   parameters:(nullable NSDictionary<NSString *, NSString *> *)parameters {
   if (self = [super init]) {
-    _payload = 0;
     _name = name;
     _parameters = (parameters ? parameters : @{});
   }
@@ -31,25 +33,50 @@
   return self;
 }
 
-- (instancetype)initWithNativeVideoCodec:(cricket::VideoCodec)videoCodec {
+- (instancetype)initWithNativeSdpVideoFormat:(webrtc::SdpVideoFormat)format {
   NSMutableDictionary *params = [NSMutableDictionary dictionary];
-  for (auto it = videoCodec.params.begin(); it != videoCodec.params.end(); ++it) {
+  for (auto it = format.parameters.begin(); it != format.parameters.end(); ++it) {
     [params setObject:[NSString stringForStdString:it->second]
                forKey:[NSString stringForStdString:it->first]];
   }
-  return [self initWithPayload:videoCodec.id
-                          name:[NSString stringForStdString:videoCodec.name]
-                    parameters:params];
+  return [self initWithName:[NSString stringForStdString:format.name] parameters:params];
 }
 
-- (instancetype)initWithPayload:(NSInteger)payload
-                           name:(NSString *)name
-                     parameters:(NSDictionary<NSString *, NSString *> *)parameters {
-  if (self = [self initWithName:name parameters:parameters]) {
-    _payload = payload;
+- (instancetype)initWithNativeVideoCodec:(cricket::VideoCodec)videoCodec {
+  return [self
+      initWithNativeSdpVideoFormat:webrtc::SdpVideoFormat(videoCodec.name, videoCodec.params)];
+}
+
+- (BOOL)isEqualToCodecInfo:(RTCVideoCodecInfo *)info {
+  if (!info ||
+      ![self.name isEqualToString:info.name] ||
+      ![self.parameters isEqualToDictionary:info.parameters]) {
+    return NO;
+  }
+  return YES;
+}
+
+- (BOOL)isEqual:(id)object {
+  if (self == object)
+    return YES;
+  if (![object isKindOfClass:[self class]])
+    return NO;
+  return [self isEqualToCodecInfo:object];
+}
+
+- (NSUInteger)hash {
+  return [self.name hash] ^ [self.parameters hash];
+}
+
+- (webrtc::SdpVideoFormat)nativeSdpVideoFormat {
+  std::map<std::string, std::string> parameters;
+  for (NSString *paramKey in _parameters.allKeys) {
+    std::string key = [NSString stdStringForString:paramKey];
+    std::string value = [NSString stdStringForString:_parameters[paramKey]];
+    parameters[key] = value;
   }
 
-  return self;
+  return webrtc::SdpVideoFormat([NSString stdStringForString:_name], parameters);
 }
 
 - (cricket::VideoCodec)nativeVideoCodec {

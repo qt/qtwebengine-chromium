@@ -1,5 +1,6 @@
 {
   "name": "ui",
+  "sandbox_type": "none",
   "display_name": "UI Service",
   "interface_provider_specs": {
     "service_manager:connector": {
@@ -23,6 +24,7 @@
           "ui::ozone::mojom::DrmDevice"
         ],
         "test": [
+          "ui::mojom::RemoteEventDispatcher",
           "ui::mojom::WindowServerTest"
         ],
         "discardable_memory": [
@@ -58,7 +60,9 @@
           "ui::mojom::DisplayManager",
           "ui::mojom::Gpu",
           "ui::mojom::IMEDriver",
+          "ui::mojom::InputDeviceController",
           "ui::mojom::InputDeviceServer",
+          "ui::mojom::RemoteEventDispatcher",
           "ui::mojom::TouchDeviceServer",
           "ui::mojom::UserActivityMonitor",
           "ui::mojom::WindowManagerWindowTreeFactory"

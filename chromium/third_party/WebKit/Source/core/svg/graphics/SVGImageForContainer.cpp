@@ -38,7 +38,8 @@ void SVGImageForContainer::Draw(PaintCanvas* canvas,
                                 const FloatRect& dst_rect,
                                 const FloatRect& src_rect,
                                 RespectImageOrientationEnum,
-                                ImageClampingMode) {
+                                ImageClampingMode,
+                                ImageDecodingMode) {
   image_->DrawForContainer(canvas, flags, container_size_, zoom_, dst_rect,
                            src_rect, url_);
 }
@@ -62,8 +63,8 @@ bool SVGImageForContainer::ApplyShader(PaintFlags& flags,
 }
 
 PaintImage SVGImageForContainer::PaintImageForCurrentFrame() {
-  PaintImageBuilder builder;
-  InitPaintImageBuilder(builder);
+  auto builder = CreatePaintImageBuilder().set_completion_state(
+      image_->completion_state());
   image_->PopulatePaintRecordForCurrentFrameForContainer(builder, url_, Size());
   return builder.TakePaintImage();
 }

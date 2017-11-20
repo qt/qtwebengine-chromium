@@ -8,29 +8,29 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/video/video_stream_encoder.h"
+#include "video/video_stream_encoder.h"
 
 #include <algorithm>
 #include <limits>
 #include <numeric>
 #include <utility>
 
-#include "webrtc/api/video/i420_buffer.h"
-#include "webrtc/common_video/include/video_bitrate_allocator.h"
-#include "webrtc/common_video/include/video_frame.h"
-#include "webrtc/modules/pacing/paced_sender.h"
-#include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
-#include "webrtc/modules/video_coding/include/video_codec_initializer.h"
-#include "webrtc/modules/video_coding/include/video_coding.h"
-#include "webrtc/modules/video_coding/include/video_coding_defines.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/location.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/rtc_base/trace_event.h"
-#include "webrtc/video/overuse_frame_detector.h"
-#include "webrtc/video/send_statistics_proxy.h"
+#include "api/video/i420_buffer.h"
+#include "common_video/include/video_bitrate_allocator.h"
+#include "common_video/include/video_frame.h"
+#include "modules/pacing/paced_sender.h"
+#include "modules/video_coding/codecs/vp8/temporal_layers.h"
+#include "modules/video_coding/include/video_codec_initializer.h"
+#include "modules/video_coding/include/video_coding.h"
+#include "modules/video_coding/include/video_coding_defines.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/location.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/timeutils.h"
+#include "rtc_base/trace_event.h"
+#include "video/overuse_frame_detector.h"
+#include "video/send_statistics_proxy.h"
 
 namespace webrtc {
 
@@ -342,7 +342,7 @@ class VideoStreamEncoder::VideoSourceProxy {
 
  private:
   rtc::VideoSinkWants GetActiveSinkWantsInternal()
-      EXCLUSIVE_LOCKS_REQUIRED(&crit_) {
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(&crit_) {
     rtc::VideoSinkWants wants = sink_wants_;
     // Clear any constraints from the current sink wants that don't apply to
     // the used degradation_preference.
@@ -367,20 +367,21 @@ class VideoStreamEncoder::VideoSourceProxy {
   rtc::CriticalSection crit_;
   rtc::SequencedTaskChecker main_checker_;
   VideoStreamEncoder* const video_stream_encoder_;
-  rtc::VideoSinkWants sink_wants_ GUARDED_BY(&crit_);
+  rtc::VideoSinkWants sink_wants_ RTC_GUARDED_BY(&crit_);
   VideoSendStream::DegradationPreference degradation_preference_
-      GUARDED_BY(&crit_);
-  rtc::VideoSourceInterface<VideoFrame>* source_ GUARDED_BY(&crit_);
+      RTC_GUARDED_BY(&crit_);
+  rtc::VideoSourceInterface<VideoFrame>* source_ RTC_GUARDED_BY(&crit_);
 
   RTC_DISALLOW_COPY_AND_ASSIGN(VideoSourceProxy);
 };
 
-VideoStreamEncoder::VideoStreamEncoder(uint32_t number_of_cores,
-                       SendStatisticsProxy* stats_proxy,
-                       const VideoSendStream::Config::EncoderSettings& settings,
-                       rtc::VideoSinkInterface<VideoFrame>* pre_encode_callback,
-                       EncodedFrameObserver* encoder_timing,
-                       std::unique_ptr<OveruseFrameDetector> overuse_detector)
+VideoStreamEncoder::VideoStreamEncoder(
+    uint32_t number_of_cores,
+    SendStatisticsProxy* stats_proxy,
+    const VideoSendStream::Config::EncoderSettings& settings,
+    rtc::VideoSinkInterface<VideoFrame>* pre_encode_callback,
+    EncodedFrameObserver* encoder_timing,
+    std::unique_ptr<OveruseFrameDetector> overuse_detector)
     : shutdown_event_(true /* manual_reset */, false),
       number_of_cores_(number_of_cores),
       initial_rampup_(0),
@@ -388,7 +389,7 @@ VideoStreamEncoder::VideoStreamEncoder(uint32_t number_of_cores,
       sink_(nullptr),
       settings_(settings),
       codec_type_(PayloadStringToCodecType(settings.payload_name)),
-      video_sender_(Clock::GetRealTimeClock(), this, this),
+      video_sender_(Clock::GetRealTimeClock(), this, nullptr),
       overuse_detector_(
           overuse_detector.get()
               ? overuse_detector.release()
@@ -866,12 +867,6 @@ void VideoStreamEncoder::OnDroppedFrame() {
     if (quality_scaler_)
       quality_scaler_->ReportDroppedFrame();
   });
-}
-
-void VideoStreamEncoder::SendStatistics(uint32_t bit_rate,
-                                        uint32_t frame_rate) {
-  RTC_DCHECK(module_process_thread_checker_.CalledOnValidThread());
-  stats_proxy_->OnEncoderStatsUpdate(frame_rate, bit_rate);
 }
 
 void VideoStreamEncoder::OnReceivedIntraFrameRequest(size_t stream_index) {

@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/bye.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
 
 #include <utility>
 
-#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
+#include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -97,7 +97,7 @@ bool Bye::Create(uint8_t* packet,
   }
   // Store the reason to leave.
   if (!reason_.empty()) {
-    uint8_t reason_length = reason_.size();
+    uint8_t reason_length = static_cast<uint8_t>(reason_.size());
     packet[(*index)++] = reason_length;
     memcpy(&packet[*index], reason_.data(), reason_length);
     *index += reason_length;

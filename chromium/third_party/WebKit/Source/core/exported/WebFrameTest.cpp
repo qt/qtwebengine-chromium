@@ -56,13 +56,13 @@
 #include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextFinder.h"
-#include "core/editing/VisiblePosition.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 #include "core/editing/spellcheck/IdleSpellCheckCallback.h"
 #include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/MouseEvent.h"
 #include "core/exported/WebRemoteFrameImpl.h"
 #include "core/exported/WebViewImpl.h"
+#include "core/frame/BrowserControls.h"
 #include "core/frame/FrameTestHelpers.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
@@ -72,10 +72,10 @@
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/fullscreen/Fullscreen.h"
 #include "core/html/HTMLBodyElement.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/html/ImageDocument.h"
+#include "core/html/forms/HTMLFormElement.h"
 #include "core/input/EventHandler.h"
 #include "core/inspector/DevToolsEmulator.h"
 #include "core/layout/HitTestResult.h"
@@ -99,7 +99,6 @@
 #include "platform/Cursor.h"
 #include "platform/DragImage.h"
 #include "platform/KeyboardCodes.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/bindings/Microtask.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/GraphicsLayer.h"
@@ -112,6 +111,7 @@
 #include "platform/scroll/Scrollbar.h"
 #include "platform/scroll/ScrollbarTestSuite.h"
 #include "platform/testing/HistogramTester.h"
+#include "platform/testing/PaintTestConfigurations.h"
 #include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
@@ -164,6 +164,7 @@
 #include "v8/include/v8.h"
 
 using blink::URLTestHelpers::ToKURL;
+using blink::mojom::SelectionMenuBehavior;
 using blink::testing::RunPendingTasks;
 using ::testing::ElementsAre;
 using ::testing::Mock;
@@ -283,7 +284,7 @@ class WebFrameTest : public ::testing::Test {
 
   // Both sets the inner html and runs the document lifecycle.
   void InitializeWithHTML(LocalFrame& frame, const String& html_content) {
-    frame.GetDocument()->body()->setInnerHTML(html_content);
+    frame.GetDocument()->body()->SetInnerHTMLFromString(html_content);
     frame.GetDocument()->View()->UpdateAllLifecyclePhases();
   }
 
@@ -1482,13 +1483,16 @@ TEST_P(ParameterizedWebFrameTest, WideViewportSetsTo980WithoutViewportTag) {
   EXPECT_EQ(980, web_view_helper.WebView()
                      ->MainFrameImpl()
                      ->GetFrameView()
+                     ->LayoutViewportScrollableArea()
                      ->ContentsSize()
                      .Width());
-  EXPECT_EQ(980.0 / viewport_width * viewport_height, web_view_helper.WebView()
-                                                          ->MainFrameImpl()
-                                                          ->GetFrameView()
-                                                          ->ContentsSize()
-                                                          .Height());
+  EXPECT_EQ(980.0 / viewport_width * viewport_height,
+            web_view_helper.WebView()
+                ->MainFrameImpl()
+                ->GetFrameView()
+                ->LayoutViewportScrollableArea()
+                ->ContentsSize()
+                .Height());
 }
 
 TEST_P(ParameterizedWebFrameTest, WideViewportSetsTo980WithXhtmlMp) {
@@ -2537,6 +2541,7 @@ TEST_P(ParameterizedWebFrameTest, pageScaleFactorDoesNotApplyCssTransform) {
   EXPECT_EQ(980, web_view_helper.WebView()
                      ->MainFrameImpl()
                      ->GetFrameView()
+                     ->LayoutViewportScrollableArea()
                      ->ContentsSize()
                      .Width());
 }
@@ -3132,19 +3137,22 @@ TEST_P(ParameterizedWebFrameTest, pageScaleFactorUpdatesScrollbars) {
   web_view_helper.Resize(WebSize(viewport_width, viewport_height));
 
   LocalFrameView* view = web_view_helper.LocalMainFrame()->GetFrameView();
-  EXPECT_EQ(view->ScrollSize(kHorizontalScrollbar),
-            view->ContentsSize().Width() - view->VisibleContentRect().Width());
-  EXPECT_EQ(
-      view->ScrollSize(kVerticalScrollbar),
-      view->ContentsSize().Height() - view->VisibleContentRect().Height());
+  ScrollableArea* scrollable_area = view->LayoutViewportScrollableArea();
+  EXPECT_EQ(scrollable_area->ScrollSize(kHorizontalScrollbar),
+            scrollable_area->ContentsSize().Width() -
+                view->VisibleContentRect().Width());
+  EXPECT_EQ(scrollable_area->ScrollSize(kVerticalScrollbar),
+            scrollable_area->ContentsSize().Height() -
+                view->VisibleContentRect().Height());
 
   web_view_helper.WebView()->SetPageScaleFactor(10);
 
-  EXPECT_EQ(view->ScrollSize(kHorizontalScrollbar),
-            view->ContentsSize().Width() - view->VisibleContentRect().Width());
-  EXPECT_EQ(
-      view->ScrollSize(kVerticalScrollbar),
-      view->ContentsSize().Height() - view->VisibleContentRect().Height());
+  EXPECT_EQ(scrollable_area->ScrollSize(kHorizontalScrollbar),
+            scrollable_area->ContentsSize().Width() -
+                view->VisibleContentRect().Width());
+  EXPECT_EQ(scrollable_area->ScrollSize(kVerticalScrollbar),
+            scrollable_area->ContentsSize().Height() -
+                view->VisibleContentRect().Height());
 }
 
 TEST_P(ParameterizedWebFrameTest, CanOverrideScaleLimits) {
@@ -3757,31 +3765,31 @@ TEST_P(ParameterizedWebFrameTest, BlockBoundTest) {
 
   block_bound = IntRect(
       web_view_helper.WebView()->ComputeBlockBound(WebPoint(9, 9), true));
-  EXPECT_RECT_EQ(rect_back, block_bound);
+  EXPECT_EQ(rect_back, block_bound);
 
   block_bound = IntRect(
       web_view_helper.WebView()->ComputeBlockBound(WebPoint(10, 10), true));
-  EXPECT_RECT_EQ(rect_left_top, block_bound);
+  EXPECT_EQ(rect_left_top, block_bound);
 
   block_bound = IntRect(
       web_view_helper.WebView()->ComputeBlockBound(WebPoint(50, 50), true));
-  EXPECT_RECT_EQ(rect_left_top, block_bound);
+  EXPECT_EQ(rect_left_top, block_bound);
 
   block_bound = IntRect(
       web_view_helper.WebView()->ComputeBlockBound(WebPoint(89, 89), true));
-  EXPECT_RECT_EQ(rect_left_top, block_bound);
+  EXPECT_EQ(rect_left_top, block_bound);
 
   block_bound = IntRect(
       web_view_helper.WebView()->ComputeBlockBound(WebPoint(90, 90), true));
-  EXPECT_RECT_EQ(rect_back, block_bound);
+  EXPECT_EQ(rect_back, block_bound);
 
   block_bound = IntRect(
       web_view_helper.WebView()->ComputeBlockBound(WebPoint(109, 109), true));
-  EXPECT_RECT_EQ(rect_back, block_bound);
+  EXPECT_EQ(rect_back, block_bound);
 
   block_bound = IntRect(
       web_view_helper.WebView()->ComputeBlockBound(WebPoint(110, 110), true));
-  EXPECT_RECT_EQ(rect_right_bottom, block_bound);
+  EXPECT_EQ(rect_right_bottom, block_bound);
 }
 
 TEST_P(ParameterizedWebFrameTest, DivMultipleTargetZoomMultipleDivsTest) {
@@ -5380,7 +5388,8 @@ TEST_P(ParameterizedWebFrameTest, SelectRangeDefaultHandleVisibility) {
                                  &web_view_helper);
 
   WebLocalFrameImpl* frame = web_view_helper.LocalMainFrame();
-  frame->SelectRange(WebRange(0, 5));
+  frame->SelectRange(WebRange(0, 5), WebLocalFrame::kHideSelectionHandle,
+                     SelectionMenuBehavior::kHide);
   EXPECT_FALSE(frame->SelectionRange().IsNull());
 
   EXPECT_FALSE(frame->GetFrame()->Selection().IsHandleVisible())
@@ -5395,7 +5404,8 @@ TEST_P(ParameterizedWebFrameTest, SelectRangeHideHandle) {
                                  &web_view_helper);
 
   WebLocalFrameImpl* frame = web_view_helper.LocalMainFrame();
-  frame->SelectRange(WebRange(0, 5), WebLocalFrame::kHideSelectionHandle);
+  frame->SelectRange(WebRange(0, 5), WebLocalFrame::kHideSelectionHandle,
+                     SelectionMenuBehavior::kHide);
 
   EXPECT_FALSE(frame->GetFrame()->Selection().IsHandleVisible())
       << "Selection handle should not be visible with kHideSelectionHandle";
@@ -5409,7 +5419,8 @@ TEST_P(ParameterizedWebFrameTest, SelectRangeShowHandle) {
                                  &web_view_helper);
 
   WebLocalFrameImpl* frame = web_view_helper.LocalMainFrame();
-  frame->SelectRange(WebRange(0, 5), WebLocalFrame::kShowSelectionHandle);
+  frame->SelectRange(WebRange(0, 5), WebLocalFrame::kShowSelectionHandle,
+                     SelectionMenuBehavior::kHide);
 
   EXPECT_TRUE(frame->GetFrame()->Selection().IsHandleVisible())
       << "Selection handle should be visible with kShowSelectionHandle";
@@ -5423,14 +5434,18 @@ TEST_P(ParameterizedWebFrameTest, SelectRangePreserveHandleVisibility) {
                                  &web_view_helper);
 
   WebLocalFrameImpl* frame = web_view_helper.LocalMainFrame();
-  frame->SelectRange(WebRange(0, 5), WebLocalFrame::kHideSelectionHandle);
-  frame->SelectRange(WebRange(0, 6), WebLocalFrame::kPreserveHandleVisibility);
+  frame->SelectRange(WebRange(0, 5), WebLocalFrame::kHideSelectionHandle,
+                     SelectionMenuBehavior::kHide);
+  frame->SelectRange(WebRange(0, 6), WebLocalFrame::kPreserveHandleVisibility,
+                     SelectionMenuBehavior::kHide);
 
   EXPECT_FALSE(frame->GetFrame()->Selection().IsHandleVisible())
       << "kPreserveHandleVisibility should keep handles invisible";
 
-  frame->SelectRange(WebRange(0, 5), WebLocalFrame::kShowSelectionHandle);
-  frame->SelectRange(WebRange(0, 6), WebLocalFrame::kPreserveHandleVisibility);
+  frame->SelectRange(WebRange(0, 5), WebLocalFrame::kShowSelectionHandle,
+                     SelectionMenuBehavior::kHide);
+  frame->SelectRange(WebRange(0, 6), WebLocalFrame::kPreserveHandleVisibility,
+                     SelectionMenuBehavior::kHide);
 
   EXPECT_TRUE(frame->GetFrame()->Selection().IsHandleVisible())
       << "kPreserveHandleVisibility should keep handles visible";
@@ -5749,9 +5764,8 @@ TEST_P(ParameterizedWebFrameTest, MoveRangeSelectionExtentScollsInputField) {
 }
 
 static int ComputeOffset(LayoutObject* layout_object, int x, int y) {
-  return CreateVisiblePosition(
-             layout_object->PositionForPoint(LayoutPoint(x, y)))
-      .DeepEquivalent()
+  return layout_object->PositionForPoint(LayoutPoint(x, y))
+      .GetPosition()
       .ComputeOffsetInContainerNode();
 }
 
@@ -5913,12 +5927,14 @@ class CompositedSelectionBoundsTestWebViewClient
   CompositedSelectionBoundsTestLayerTreeView test_layer_tree_view_;
 };
 
-class CompositedSelectionBoundsTest : public ParameterizedWebFrameTest {
+class CompositedSelectionBoundsTest
+    : public ParameterizedWebFrameTest,
+      private ScopedCompositedSelectionUpdateForTest {
  protected:
   CompositedSelectionBoundsTest()
-      : fake_selection_layer_tree_view_(
+      : ScopedCompositedSelectionUpdateForTest(true),
+        fake_selection_layer_tree_view_(
             fake_selection_web_view_client_.SelectionLayerTreeView()) {
-    RuntimeEnabledFeatures::SetCompositedSelectionUpdateEnabled(true);
     RegisterMockedHttpURLLoad("Ahem.ttf");
 
     web_view_helper_.Initialize(nullptr, &fake_selection_web_view_client_);
@@ -6046,7 +6062,7 @@ class CompositedSelectionBoundsTest : public ParameterizedWebFrameTest {
 
     EXPECT_FALSE(selection->IsNone());
 
-    blink::Node* layer_owner_node_for_start = V8Node::toImplWithTypeCheck(
+    blink::Node* layer_owner_node_for_start = V8Node::ToImplWithTypeCheck(
         v8::Isolate::GetCurrent(), expected_result.Get(0));
     ASSERT_TRUE(layer_owner_node_for_start);
     EXPECT_EQ(layer_owner_node_for_start->GetLayoutObject()
@@ -6063,7 +6079,7 @@ class CompositedSelectionBoundsTest : public ParameterizedWebFrameTest {
     EXPECT_EQ(start_edge_bottom_in_layer_x,
               select_start->edge_bottom_in_layer.x);
 
-    blink::Node* layer_owner_node_for_end = V8Node::toImplWithTypeCheck(
+    blink::Node* layer_owner_node_for_end = V8Node::ToImplWithTypeCheck(
         v8::Isolate::GetCurrent(),
         expected_result.Get(context, 5).ToLocalChecked());
 
@@ -6380,16 +6396,15 @@ TEST_P(ParameterizedWebFrameTest, DisambiguationPopupVisualViewport) {
 
   // Scroll main frame to the bottom of the document
   web_view_impl->MainFrameImpl()->SetScrollOffset(WebSize(0, 400));
-  EXPECT_SIZE_EQ(
-      ScrollOffset(0, 400),
-      frame->View()->LayoutViewportScrollableArea()->GetScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 400),
+            frame->View()->LayoutViewportScrollableArea()->GetScrollOffset());
 
   web_view_impl->SetPageScaleFactor(2.0);
 
   // Scroll visual viewport to the top of the main frame.
   VisualViewport& visual_viewport = frame->GetPage()->GetVisualViewport();
   visual_viewport.SetLocation(FloatPoint(0, 0));
-  EXPECT_SIZE_EQ(ScrollOffset(0, 0), visual_viewport.GetScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 0), visual_viewport.GetScrollOffset());
 
   // Tap at the top: there is nothing there.
   client.ResetTriggered();
@@ -6398,7 +6413,7 @@ TEST_P(ParameterizedWebFrameTest, DisambiguationPopupVisualViewport) {
 
   // Scroll visual viewport to the bottom of the main frame.
   visual_viewport.SetLocation(FloatPoint(0, 200));
-  EXPECT_SIZE_EQ(ScrollOffset(0, 200), visual_viewport.GetScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 200), visual_viewport.GetScrollOffset());
 
   // Now the tap with the same coordinates should hit two elements.
   client.ResetTriggered();
@@ -6644,16 +6659,16 @@ TEST_P(ParameterizedWebFrameTest, ReplaceMisspelledRange) {
   document->execCommand("InsertText", false, "_wellcome_.", exception_state);
   EXPECT_FALSE(exception_state.HadException());
 
-  if (RuntimeEnabledFeatures::IdleTimeSpellCheckingEnabled()) {
-    document->GetFrame()
-        ->GetSpellChecker()
-        .GetIdleSpellCheckCallback()
-        .ForceInvocationForTesting();
-  }
+  document->GetFrame()
+      ->GetSpellChecker()
+      .GetIdleSpellCheckCallback()
+      .ForceInvocationForTesting();
 
   const int kAllTextBeginOffset = 0;
   const int kAllTextLength = 11;
-  frame->SelectRange(WebRange(kAllTextBeginOffset, kAllTextLength));
+  frame->SelectRange(WebRange(kAllTextBeginOffset, kAllTextLength),
+                     WebLocalFrame::kHideSelectionHandle,
+                     SelectionMenuBehavior::kHide);
   EphemeralRange selection_range = frame->GetFrame()
                                        ->Selection()
                                        .ComputeVisibleSelectionInDOMTree()
@@ -6690,18 +6705,18 @@ TEST_P(ParameterizedWebFrameTest, RemoveSpellingMarkers) {
   document->execCommand("InsertText", false, "_wellcome_.", exception_state);
   EXPECT_FALSE(exception_state.HadException());
 
-  if (RuntimeEnabledFeatures::IdleTimeSpellCheckingEnabled()) {
-    document->GetFrame()
-        ->GetSpellChecker()
-        .GetIdleSpellCheckCallback()
-        .ForceInvocationForTesting();
-  }
+  document->GetFrame()
+      ->GetSpellChecker()
+      .GetIdleSpellCheckCallback()
+      .ForceInvocationForTesting();
 
   frame->RemoveSpellingMarkers();
 
   const int kAllTextBeginOffset = 0;
   const int kAllTextLength = 11;
-  frame->SelectRange(WebRange(kAllTextBeginOffset, kAllTextLength));
+  frame->SelectRange(WebRange(kAllTextBeginOffset, kAllTextLength),
+                     WebLocalFrame::kHideSelectionHandle,
+                     SelectionMenuBehavior::kHide);
   EphemeralRange selection_range = frame->GetFrame()
                                        ->Selection()
                                        .ComputeVisibleSelectionInDOMTree()
@@ -6741,11 +6756,10 @@ TEST_P(ParameterizedWebFrameTest, RemoveSpellingMarkersUnderWords) {
   document->execCommand("InsertText", false, " wellcome ", exception_state);
   EXPECT_FALSE(exception_state.HadException());
 
-  if (RuntimeEnabledFeatures::IdleTimeSpellCheckingEnabled()) {
-    frame->GetSpellChecker()
-        .GetIdleSpellCheckCallback()
-        .ForceInvocationForTesting();
-  }
+  frame->GetSpellChecker()
+      .GetIdleSpellCheckCallback()
+      .ForceInvocationForTesting();
+
   WebVector<unsigned> offsets1;
   GetSpellingMarkerOffsets(&offsets1, *frame->GetDocument());
   EXPECT_EQ(1U, offsets1.size());
@@ -6822,44 +6836,16 @@ TEST_P(ParameterizedWebFrameTest, SlowSpellcheckMarkerPosition) {
   document->execCommand("InsertText", false, "he", exception_state);
   EXPECT_FALSE(exception_state.HadException());
 
-  if (RuntimeEnabledFeatures::IdleTimeSpellCheckingEnabled()) {
-    document->GetFrame()
-        ->GetSpellChecker()
-        .GetIdleSpellCheckCallback()
-        .ForceInvocationForTesting();
-  }
+  document->GetFrame()
+      ->GetSpellChecker()
+      .GetIdleSpellCheckCallback()
+      .ForceInvocationForTesting();
 
   textcheck.Kick();
 
   WebVector<unsigned> offsets;
   GetSpellingMarkerOffsets(&offsets, *frame->GetFrame()->GetDocument());
   EXPECT_EQ(0U, offsets.size());
-}
-
-// This test verifies that cancelling spelling request does not cause a
-// write-after-free when there's no spellcheck client set.
-TEST_P(ParameterizedWebFrameTest, CancelSpellingRequestCrash) {
-  // The relevant code paths are obsolete with idle time spell checker.
-  if (RuntimeEnabledFeatures::IdleTimeSpellCheckingEnabled())
-    return;
-
-  RegisterMockedHttpURLLoad("spell.html");
-  FrameTestHelpers::WebViewHelper web_view_helper;
-  web_view_helper.InitializeAndLoad(base_url_ + "spell.html");
-
-  WebLocalFrameImpl* frame = web_view_helper.LocalMainFrame();
-  frame->SetTextCheckClient(0);
-
-  Document* document = frame->GetFrame()->GetDocument();
-  Element* element = document->getElementById("data");
-
-  web_view_helper.WebView()->GetSettings()->SetEditingBehavior(
-      WebSettings::kEditingBehaviorWin);
-
-  element->focus();
-  frame->GetFrame()->GetEditor().ReplaceSelectionWithText(
-      "A", false, false, InputEvent::InputType::kInsertReplacementText);
-  frame->GetFrame()->GetSpellChecker().CancelCheck();
 }
 
 TEST_P(ParameterizedWebFrameTest, SpellcheckResultErasesMarkers) {
@@ -6881,12 +6867,10 @@ TEST_P(ParameterizedWebFrameTest, SpellcheckResultErasesMarkers) {
   NonThrowableExceptionState exception_state;
   document->execCommand("InsertText", false, "welcome ", exception_state);
 
-  if (RuntimeEnabledFeatures::IdleTimeSpellCheckingEnabled()) {
-    document->GetFrame()
-        ->GetSpellChecker()
-        .GetIdleSpellCheckCallback()
-        .ForceInvocationForTesting();
-  }
+  document->GetFrame()
+      ->GetSpellChecker()
+      .GetIdleSpellCheckCallback()
+      .ForceInvocationForTesting();
 
   document->UpdateStyleAndLayout();
 
@@ -6920,12 +6904,10 @@ TEST_P(ParameterizedWebFrameTest, SpellcheckResultsSavedInDocument) {
   document->execCommand("InsertText", false, "wellcome ", exception_state);
   EXPECT_FALSE(exception_state.HadException());
 
-  if (RuntimeEnabledFeatures::IdleTimeSpellCheckingEnabled()) {
-    document->GetFrame()
-        ->GetSpellChecker()
-        .GetIdleSpellCheckCallback()
-        .ForceInvocationForTesting();
-  }
+  document->GetFrame()
+      ->GetSpellChecker()
+      .GetIdleSpellCheckCallback()
+      .ForceInvocationForTesting();
 
   textcheck.Kick();
   ASSERT_EQ(1U, document->Markers().Markers().size());
@@ -6936,12 +6918,10 @@ TEST_P(ParameterizedWebFrameTest, SpellcheckResultsSavedInDocument) {
   document->execCommand("InsertText", false, "wellcome ", exception_state);
   EXPECT_FALSE(exception_state.HadException());
 
-  if (RuntimeEnabledFeatures::IdleTimeSpellCheckingEnabled()) {
-    document->GetFrame()
-        ->GetSpellChecker()
-        .GetIdleSpellCheckCallback()
-        .ForceInvocationForTesting();
-  }
+  document->GetFrame()
+      ->GetSpellChecker()
+      .GetIdleSpellCheckCallback()
+      .ForceInvocationForTesting();
 
   textcheck.KickGrammar();
   ASSERT_EQ(1U, document->Markers().Markers().size());
@@ -7971,9 +7951,9 @@ TEST_P(ParameterizedWebFrameTest, FrameViewMoveWithSetFrameRect) {
   web_view_helper.WebView()->UpdateAllLifecyclePhases();
 
   LocalFrameView* frame_view = web_view_helper.LocalMainFrame()->GetFrameView();
-  EXPECT_RECT_EQ(IntRect(0, 0, 200, 200), frame_view->FrameRect());
+  EXPECT_EQ(IntRect(0, 0, 200, 200), frame_view->FrameRect());
   frame_view->SetFrameRect(IntRect(100, 100, 200, 200));
-  EXPECT_RECT_EQ(IntRect(100, 100, 200, 200), frame_view->FrameRect());
+  EXPECT_EQ(IntRect(100, 100, 200, 200), frame_view->FrameRect());
 }
 
 TEST_P(ParameterizedWebFrameTest, FrameViewScrollAccountsForBrowserControls) {
@@ -7993,26 +7973,28 @@ TEST_P(ParameterizedWebFrameTest, FrameViewScrollAccountsForBrowserControls) {
   web_view->UpdateAllLifecyclePhases();
 
   web_view->MainFrameImpl()->SetScrollOffset(WebSize(0, 2000));
-  EXPECT_SIZE_EQ(ScrollOffset(0, 1900),
-                 frame_view->LayoutViewportScrollableArea()->GetScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 1900),
+            frame_view->LayoutViewportScrollableArea()->GetScrollOffset());
 
   // Simulate the browser controls showing by 20px, thus shrinking the viewport
   // and allowing it to scroll an additional 20px.
   web_view->ApplyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(),
                                 1.0f, 20.0f / browser_controls_height);
-  EXPECT_SIZE_EQ(ScrollOffset(0, 1920), frame_view->MaximumScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 1920),
+            frame_view->LayoutViewportScrollableArea()->MaximumScrollOffset());
 
   // Show more, make sure the scroll actually gets clamped.
   web_view->ApplyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(),
                                 1.0f, 20.0f / browser_controls_height);
   web_view->MainFrameImpl()->SetScrollOffset(WebSize(0, 2000));
-  EXPECT_SIZE_EQ(ScrollOffset(0, 1940),
-                 frame_view->LayoutViewportScrollableArea()->GetScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 1940),
+            frame_view->LayoutViewportScrollableArea()->GetScrollOffset());
 
   // Hide until there's 10px showing.
   web_view->ApplyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(),
                                 1.0f, -30.0f / browser_controls_height);
-  EXPECT_SIZE_EQ(ScrollOffset(0, 1910), frame_view->MaximumScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 1910),
+            frame_view->LayoutViewportScrollableArea()->MaximumScrollOffset());
 
   // Simulate a LayoutEmbeddedContent::resize. The frame is resized to
   // accomodate the browser controls and Blink's view of the browser controls
@@ -8021,12 +8003,14 @@ TEST_P(ParameterizedWebFrameTest, FrameViewScrollAccountsForBrowserControls) {
                                 1.0f, 30.0f / browser_controls_height);
   web_view->ResizeWithBrowserControls(WebSize(100, 60), 40.0f, 0, true);
   web_view->UpdateAllLifecyclePhases();
-  EXPECT_SIZE_EQ(ScrollOffset(0, 1940), frame_view->MaximumScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 1940),
+            frame_view->LayoutViewportScrollableArea()->MaximumScrollOffset());
 
   // Now simulate hiding.
   web_view->ApplyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(),
                                 1.0f, -10.0f / browser_controls_height);
-  EXPECT_SIZE_EQ(ScrollOffset(0, 1930), frame_view->MaximumScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 1930),
+            frame_view->LayoutViewportScrollableArea()->MaximumScrollOffset());
 
   // Reset to original state: 100px widget height, browser controls fully
   // hidden.
@@ -8035,7 +8019,8 @@ TEST_P(ParameterizedWebFrameTest, FrameViewScrollAccountsForBrowserControls) {
   web_view->ResizeWithBrowserControls(WebSize(100, 100),
                                       browser_controls_height, 0, false);
   web_view->UpdateAllLifecyclePhases();
-  EXPECT_SIZE_EQ(ScrollOffset(0, 1900), frame_view->MaximumScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 1900),
+            frame_view->LayoutViewportScrollableArea()->MaximumScrollOffset());
 
   // Show the browser controls by just 1px, since we're zoomed in to 2X, that
   // should allow an extra 0.5px of scrolling in the visual viewport. Make
@@ -8043,11 +8028,13 @@ TEST_P(ParameterizedWebFrameTest, FrameViewScrollAccountsForBrowserControls) {
   // main frame.
   web_view->ApplyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(),
                                 1.0f, 1.0f / browser_controls_height);
-  EXPECT_SIZE_EQ(ScrollOffset(0, 1901), frame_view->MaximumScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 1901),
+            frame_view->LayoutViewportScrollableArea()->MaximumScrollOffset());
 
   web_view->ApplyViewportDeltas(WebFloatSize(), WebFloatSize(), WebFloatSize(),
                                 1.0f, 2.0f / browser_controls_height);
-  EXPECT_SIZE_EQ(ScrollOffset(0, 1903), frame_view->MaximumScrollOffset());
+  EXPECT_EQ(ScrollOffset(0, 1903),
+            frame_view->LayoutViewportScrollableArea()->MaximumScrollOffset());
 }
 
 TEST_P(ParameterizedWebFrameTest, MaximumScrollPositionCanBeNegative) {
@@ -8284,7 +8271,7 @@ TEST_P(ParameterizedWebFrameTest, FullscreenNestedExit) {
   Element* top_body = top_doc->body();
 
   HTMLIFrameElement* iframe =
-      toHTMLIFrameElement(top_doc->QuerySelector("iframe"));
+      ToHTMLIFrameElement(top_doc->QuerySelector("iframe"));
   Document* iframe_doc = iframe->contentDocument();
   Element* iframe_body = iframe_doc->body();
 
@@ -8573,7 +8560,7 @@ class TestFullscreenWebViewClient : public FrameTestHelpers::TestWebViewClient {
 }  // namespace
 
 TEST_P(ParameterizedWebFrameTest, OverlayFullscreenVideo) {
-  RuntimeEnabledFeatures::SetForceOverlayFullscreenVideoEnabled(true);
+  ScopedForceOverlayFullscreenVideoForTest force_overlay_fullscreen_video(true);
   RegisterMockedHttpURLLoad("fullscreen_video.html");
   TestFullscreenWebViewClient web_view_client;
   FrameTestHelpers::WebViewHelper web_view_helper;
@@ -8587,7 +8574,7 @@ TEST_P(ParameterizedWebFrameTest, OverlayFullscreenVideo) {
   std::unique_ptr<UserGestureIndicator> gesture =
       LocalFrame::CreateUserGesture(frame);
   HTMLVideoElement* video =
-      toHTMLVideoElement(frame->GetDocument()->getElementById("video"));
+      ToHTMLVideoElement(frame->GetDocument()->getElementById("video"));
   EXPECT_TRUE(video->UsesOverlayFullscreenVideo());
   EXPECT_FALSE(video->IsFullscreen());
   EXPECT_FALSE(layer_tree_view.has_transparent_background);
@@ -8785,8 +8772,8 @@ static void NodeImageTestValidation(const IntSize& reference_bitmap_size,
   EXPECT_EQ(reference_bitmap_size.Width(), drag_image->Size().Width());
   EXPECT_EQ(reference_bitmap_size.Height(), drag_image->Size().Height());
   const SkBitmap& drag_bitmap = drag_image->Bitmap();
-  EXPECT_EQ(
-      0, memcmp(bitmap.getPixels(), drag_bitmap.getPixels(), bitmap.getSize()));
+  EXPECT_EQ(0, memcmp(bitmap.getPixels(), drag_bitmap.getPixels(),
+                      bitmap.computeByteSize()));
 }
 
 TEST_P(ParameterizedWebFrameTest, NodeImageTestCSSTransformDescendant) {
@@ -8977,6 +8964,42 @@ TEST_P(WebFrameSwapTest, ValidateSizeOnRemoteToLocalMainFrameSwap) {
                    ->GetPage();
   EXPECT_EQ(size.width, page->GetVisualViewport().Size().Width());
   EXPECT_EQ(size.height, page->GetVisualViewport().Size().Height());
+}
+
+// Verify that size changes to browser controls while the main frame is remote
+// are preserved when the main frame swaps to a local frame.  See
+// https://crbug.com/769321.
+TEST_P(WebFrameSwapTest,
+       ValidateBrowserControlsSizeOnRemoteToLocalMainFrameSwap) {
+  WebRemoteFrame* remote_frame = FrameTestHelpers::CreateRemote();
+  MainFrame()->Swap(remote_frame);
+
+  // Create a provisional main frame frame but don't swap it in yet.
+  WebLocalFrame* local_frame =
+      FrameTestHelpers::CreateProvisional(*remote_frame);
+
+  WebViewImpl* web_view = static_cast<WebViewImpl*>(local_frame->View());
+  EXPECT_TRUE(web_view->MainFrame() &&
+              web_view->MainFrame()->IsWebRemoteFrame());
+
+  // Resize the browser controls.
+  float top_browser_controls_height = 40;
+  float bottom_browser_controls_height = 60;
+  web_view->ResizeWithBrowserControls(WebSize(100, 100),
+                                      top_browser_controls_height,
+                                      bottom_browser_controls_height, false);
+
+  // Swap the provisional frame in and verify that the browser controls size is
+  // correct.
+  remote_frame->Swap(local_frame);
+  Page* page = static_cast<WebViewImpl*>(local_frame->View())
+                   ->GetPage()
+                   ->MainFrame()
+                   ->GetPage();
+  EXPECT_EQ(top_browser_controls_height,
+            page->GetBrowserControls().TopHeight());
+  EXPECT_EQ(bottom_browser_controls_height,
+            page->GetBrowserControls().BottomHeight());
 }
 
 namespace {
@@ -10377,7 +10400,7 @@ TEST_P(WebFrameOverscrollTest, ScrollBoundaryBehaviorAffectsDidOverscroll) {
       web_view_helper.WebView()->MainFrame()->ToWebLocalFrame();
   mainFrame->ExecuteScript(
       WebScriptSource(WebString("document.body.style="
-                                "'scroll-boundary-behavior: auto;'")));
+                                "'overscroll-behavior: auto;'")));
 
   ScrollBegin(&web_view_helper, 100, 116);
   EXPECT_CALL(
@@ -10392,7 +10415,7 @@ TEST_P(WebFrameOverscrollTest, ScrollBoundaryBehaviorAffectsDidOverscroll) {
 
   mainFrame->ExecuteScript(
       WebScriptSource(WebString("document.body.style="
-                                "'scroll-boundary-behavior: contain;'")));
+                                "'overscroll-behavior: contain;'")));
 
   ScrollBegin(&web_view_helper, 100, 116);
   EXPECT_CALL(
@@ -10407,7 +10430,7 @@ TEST_P(WebFrameOverscrollTest, ScrollBoundaryBehaviorAffectsDidOverscroll) {
 
   mainFrame->ExecuteScript(
       WebScriptSource(WebString("document.body.style="
-                                "'scroll-boundary-behavior: none;'")));
+                                "'overscroll-behavior: none;'")));
 
   ScrollBegin(&web_view_helper, 100, 116);
   EXPECT_CALL(
@@ -10435,12 +10458,12 @@ TEST_P(WebFrameOverscrollTest, OnlyMainFrameScrollBoundaryBehaviorHasEffect) {
       web_view_helper.WebView()->MainFrame()->ToWebLocalFrame();
   mainFrame->ExecuteScript(
       WebScriptSource(WebString("document.body.style="
-                                "'scroll-boundary-behavior: auto;'")));
+                                "'overscroll-behavior: auto;'")));
   WebLocalFrame* subframe =
       web_view_helper.WebView()->MainFrame()->FirstChild()->ToWebLocalFrame();
   subframe->ExecuteScript(
       WebScriptSource(WebString("document.body.style="
-                                "'scroll-boundary-behavior: none;'")));
+                                "'overscroll-behavior: none;'")));
 
   ScrollBegin(&web_view_helper, 100, 116);
   EXPECT_CALL(
@@ -10455,7 +10478,7 @@ TEST_P(WebFrameOverscrollTest, OnlyMainFrameScrollBoundaryBehaviorHasEffect) {
 
   mainFrame->ExecuteScript(
       WebScriptSource(WebString("document.body.style="
-                                "'scroll-boundary-behavior: contain;'")));
+                                "'overscroll-behavior: contain;'")));
 
   EXPECT_CALL(
       client,
@@ -10469,7 +10492,7 @@ TEST_P(WebFrameOverscrollTest, OnlyMainFrameScrollBoundaryBehaviorHasEffect) {
 }
 
 TEST_P(ParameterizedWebFrameTest, OrientationFrameDetach) {
-  RuntimeEnabledFeatures::SetOrientationEventEnabled(true);
+  ScopedOrientationEventForTest orientation_event(true);
   RegisterMockedHttpURLLoad("orientation-frame-detach.html");
   FrameTestHelpers::WebViewHelper web_view_helper;
   WebViewImpl* web_view_impl = web_view_helper.InitializeAndLoad(
@@ -11095,13 +11118,13 @@ TEST_P(ParameterizedWebFrameTest, RootLayerMinimumHeight) {
           ->MainGraphicsLayer()
           ->GetRasterInvalidationTracking();
   ASSERT_TRUE(invalidation_tracking);
-  const auto* raster_invalidations = &invalidation_tracking->invalidations;
+  const auto& raster_invalidations = invalidation_tracking->Invalidations();
 
   // The newly revealed content at the bottom of the screen should have been
   // invalidated. There are additional invalidations for the position: fixed
   // element.
-  EXPECT_GT(raster_invalidations->size(), 0u);
-  EXPECT_TRUE((*raster_invalidations)[0].rect.Contains(
+  EXPECT_GT(raster_invalidations.size(), 0u);
+  EXPECT_TRUE(raster_invalidations[0].rect.Contains(
       IntRect(0, kViewportHeight - kBrowserControlsHeight, kViewportWidth,
               kBrowserControlsHeight)));
 
@@ -11859,16 +11882,9 @@ TEST_P(ParameterizedWebFrameTest, DidScrollCallbackAfterScrollableAreaChanges) {
       gfx::ScrollOffset(0, 3));
 }
 
-class SlimmingPaintWebFrameTest
-    : public ::testing::WithParamInterface<TestParamRootLayerScrolling>,
-      private ScopedRootLayerScrollingForTest,
-      private ScopedSlimmingPaintV2ForTest,
-      public WebFrameTest {
+class SlimmingPaintWebFrameTest : public PaintTestConfigurations,
+                                  public WebFrameTest {
  public:
-  SlimmingPaintWebFrameTest()
-      : ScopedRootLayerScrollingForTest(GetParam()),
-        ScopedSlimmingPaintV2ForTest(true) {}
-
   void SetUp() override {
     web_view_helper_ = WTF::MakeUnique<FrameTestHelpers::WebViewHelper>();
     web_view_helper_->Initialize(nullptr, &web_view_client_, nullptr,
@@ -11882,6 +11898,10 @@ class SlimmingPaintWebFrameTest
   }
 
   WebLocalFrame* LocalMainFrame() { return web_view_helper_->LocalMainFrame(); }
+
+  LocalFrameView* LocalFrameView() {
+    return web_view_helper_->LocalMainFrame()->GetFrameView();
+  }
 
   WebViewImpl* WebView() { return web_view_helper_->WebView(); }
 
@@ -11911,14 +11931,16 @@ class SlimmingPaintWebFrameTest
 
  private:
   PaintArtifactCompositor* paint_artifact_compositor() {
-    auto* frame_view = web_view_helper_->LocalMainFrame()->GetFrameView();
-    return frame_view->GetPaintArtifactCompositorForTesting();
+    return LocalFrameView()->GetPaintArtifactCompositorForTesting();
   }
   FrameTestHelpers::TestWebViewClient web_view_client_;
   std::unique_ptr<FrameTestHelpers::WebViewHelper> web_view_helper_;
 };
 
-INSTANTIATE_TEST_CASE_P(All, SlimmingPaintWebFrameTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(
+    All,
+    SlimmingPaintWebFrameTest,
+    ::testing::ValuesIn(kSlimmingPaintV2TestConfigurations));
 
 TEST_P(SlimmingPaintWebFrameTest, DidScrollCallbackAfterScrollableAreaChanges) {
   DCHECK(RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
@@ -11979,6 +12001,34 @@ TEST_P(SlimmingPaintWebFrameTest, DidScrollCallbackAfterScrollableAreaChanges) {
   EXPECT_EQ(ScrollHitTestLayerCount(), 0u);
 }
 
+TEST_P(SlimmingPaintWebFrameTest, FrameViewScroll) {
+  DCHECK(RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+
+  InitializeWithHTML(*WebView()->MainFrameImpl()->GetFrame(),
+                     "<style>"
+                     "  #forceScroll {"
+                     "    height: 2000px;"
+                     "    width: 100px;"
+                     "  }"
+                     "</style>"
+                     "<div id='forceScroll'></div>");
+
+  WebView()->UpdateAllLifecyclePhases();
+
+  auto* scrollable_area = LocalFrameView()->LayoutViewportScrollableArea();
+  EXPECT_NE(nullptr, scrollable_area);
+
+  EXPECT_EQ(ScrollHitTestLayerCount(), 1u);
+
+  // Ensure a synthetic impl-side scroll offset propagates to the scrollable
+  // area using the DidScroll callback.
+  EXPECT_EQ(ScrollOffset(), scrollable_area->GetScrollOffset());
+  ScrollHitTestLayerAt(0)->SetScrollOffsetFromImplSideForTesting(
+      gfx::ScrollOffset(0, 1));
+  WebView()->UpdateAllLifecyclePhases();
+  EXPECT_EQ(ScrollOffset(0, 1), scrollable_area->GetScrollOffset());
+}
+
 static void TestFramePrinting(WebLocalFrameImpl* frame) {
   WebPrintParams print_params;
   WebSize page_size(500, 500);
@@ -12004,6 +12054,18 @@ TEST_P(ParameterizedWebFrameTest, PrintIframeUnderDetached) {
   web_view_helper.InitializeAndLoad(base_url_ + "print-detached-iframe.html");
   TestFramePrinting(ToWebLocalFrameImpl(
       web_view_helper.LocalMainFrame()->FirstChild()->FirstChild()));
+}
+
+TEST_F(WebFrameTest, ExecuteCommandProducesUserGesture) {
+  FrameTestHelpers::WebViewHelper web_view_helper;
+  web_view_helper.InitializeAndLoad("about:blank");
+  WebLocalFrameImpl* frame = web_view_helper.LocalMainFrame();
+
+  EXPECT_FALSE(frame->GetFrame()->HasReceivedUserGesture());
+  frame->ExecuteScript(WebScriptSource(WebString("document.execCommand('copy');")));
+  EXPECT_FALSE(frame->GetFrame()->HasReceivedUserGesture());
+  frame->ExecuteCommand(WebString::FromUTF8("Paste"));
+  EXPECT_TRUE(frame->GetFrame()->HasReceivedUserGesture());
 }
 
 }  // namespace blink

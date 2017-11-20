@@ -23,6 +23,8 @@ void MojoMediaClient::Initialize(
     service_manager::Connector* connector,
     service_manager::ServiceContextRefFactory* context_ref_factory) {}
 
+void MojoMediaClient::EnsureSandboxed() {}
+
 std::unique_ptr<AudioDecoder> MojoMediaClient::CreateAudioDecoder(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   return nullptr;
@@ -32,7 +34,8 @@ std::unique_ptr<VideoDecoder> MojoMediaClient::CreateVideoDecoder(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     MediaLog* media_log,
     mojom::CommandBufferIdPtr command_buffer_id,
-    OutputWithReleaseMailboxCB output_cb) {
+    OutputWithReleaseMailboxCB output_cb,
+    RequestOverlayInfoCB request_overlay_info_cb) {
   return nullptr;
 }
 
@@ -55,5 +58,10 @@ std::unique_ptr<CdmFactory> MojoMediaClient::CreateCdmFactory(
     service_manager::mojom::InterfaceProvider* host_interfaces) {
   return nullptr;
 }
+
+#if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
+void MojoMediaClient::AddCdmHostFilePaths(
+    std::vector<media::CdmHostFilePath>* /* cdm_host_file_paths */) {}
+#endif  // BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
 
 }  // namespace media

@@ -29,7 +29,7 @@
 #define ResourceRequest_h
 
 #include <memory>
-#include "platform/HTTPNames.h"
+#include "platform/http_names.h"
 #include "platform/loader/fetch/ResourceLoadPriority.h"
 #include "platform/network/EncodedFormData.h"
 #include "platform/network/HTTPHeaderMap.h"
@@ -240,7 +240,7 @@ class PLATFORM_EXPORT ResourceRequest final {
   }
 
   // Extra data associated with this request.
-  ExtraData* GetExtraData() const { return extra_data_.Get(); }
+  ExtraData* GetExtraData() const { return extra_data_.get(); }
   void SetExtraData(RefPtr<ExtraData> extra_data) {
     extra_data_ = std::move(extra_data);
   }

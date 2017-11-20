@@ -135,21 +135,12 @@ size_t ServiceWorkerResponse::EstimatedStructSize() {
 
 ServiceWorkerObjectInfo::ServiceWorkerObjectInfo()
     : handle_id(kInvalidServiceWorkerHandleId),
-      state(blink::kWebServiceWorkerStateUnknown),
+      state(blink::mojom::ServiceWorkerState::kUnknown),
       version_id(kInvalidServiceWorkerVersionId) {}
 
 bool ServiceWorkerObjectInfo::IsValid() const {
   return handle_id != kInvalidServiceWorkerHandleId &&
          version_id != kInvalidServiceWorkerVersionId;
-}
-
-ServiceWorkerRegistrationOptions::ServiceWorkerRegistrationOptions(
-    const GURL& scope)
-    : scope(scope) {}
-
-ServiceWorkerRegistrationObjectInfo::ServiceWorkerRegistrationObjectInfo()
-    : handle_id(kInvalidServiceWorkerRegistrationHandleId),
-      registration_id(kInvalidServiceWorkerRegistrationId) {
 }
 
 ServiceWorkerClientQueryOptions::ServiceWorkerClientQueryOptions()

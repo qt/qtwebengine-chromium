@@ -276,6 +276,13 @@ IPC_STRUCT_TRAITS_BEGIN(extensions::EventFilteringInfo)
   IPC_STRUCT_TRAITS_MEMBER(window_exposed_by_default)
 IPC_STRUCT_TRAITS_END()
 
+// Identifier containing info about a service worker, used in event listener
+// IPCs.
+IPC_STRUCT_BEGIN(ServiceWorkerIdentifier)
+  IPC_STRUCT_MEMBER(GURL, scope)
+  IPC_STRUCT_MEMBER(int, thread_id)
+IPC_STRUCT_END()
+
 // Singly-included section for custom IPC traits.
 #ifndef EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
 #define EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
@@ -358,7 +365,6 @@ namespace IPC {
 template <>
 struct ParamTraits<URLPattern> {
   typedef URLPattern param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -369,7 +375,6 @@ struct ParamTraits<URLPattern> {
 template <>
 struct ParamTraits<extensions::URLPatternSet> {
   typedef extensions::URLPatternSet param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -380,7 +385,6 @@ struct ParamTraits<extensions::URLPatternSet> {
 template <>
 struct ParamTraits<extensions::APIPermission::ID> {
   typedef extensions::APIPermission::ID param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -391,7 +395,6 @@ struct ParamTraits<extensions::APIPermission::ID> {
 template <>
 struct ParamTraits<extensions::APIPermissionSet> {
   typedef extensions::APIPermissionSet param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -402,7 +405,6 @@ struct ParamTraits<extensions::APIPermissionSet> {
 template <>
 struct ParamTraits<extensions::ManifestPermissionSet> {
   typedef extensions::ManifestPermissionSet param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -413,7 +415,6 @@ struct ParamTraits<extensions::ManifestPermissionSet> {
 template <>
 struct ParamTraits<HostID> {
   typedef HostID param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -424,7 +425,6 @@ struct ParamTraits<HostID> {
 template <>
 struct ParamTraits<ExtensionMsg_PermissionSetStruct> {
   typedef ExtensionMsg_PermissionSetStruct param_type;
-  static void GetSize(base::PickleSizer* s, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -731,19 +731,27 @@ IPC_MESSAGE_CONTROL3(ExtensionHostMsg_RemoveLazyServiceWorkerListener,
 
 // Notify the browser that the given extension added a listener to instances of
 // the named event that satisfy the filter.
-IPC_MESSAGE_CONTROL4(ExtensionHostMsg_AddFilteredListener,
-                     std::string /* extension_id */,
-                     std::string /* name */,
-                     base::DictionaryValue /* filter */,
-                     bool /* lazy */)
+// If |sw_identifier| is specified, it implies that the listener is for a
+// service worker, and the param is used to identify the worker.
+IPC_MESSAGE_CONTROL5(
+    ExtensionHostMsg_AddFilteredListener,
+    std::string /* extension_id */,
+    std::string /* name */,
+    base::Optional<ServiceWorkerIdentifier> /* sw_identifier */,
+    base::DictionaryValue /* filter */,
+    bool /* lazy */)
 
 // Notify the browser that the given extension is no longer interested in
 // instances of the named event that satisfy the filter.
-IPC_MESSAGE_CONTROL4(ExtensionHostMsg_RemoveFilteredListener,
-                     std::string /* extension_id */,
-                     std::string /* name */,
-                     base::DictionaryValue /* filter */,
-                     bool /* lazy */)
+// If |sw_identifier| is specified, it implies that the listener is for a
+// service worker, and the param is used to identify the worker.
+IPC_MESSAGE_CONTROL5(
+    ExtensionHostMsg_RemoveFilteredListener,
+    std::string /* extension_id */,
+    std::string /* name */,
+    base::Optional<ServiceWorkerIdentifier> /* sw_identifier */,
+    base::DictionaryValue /* filter */,
+    bool /* lazy */)
 
 // Notify the browser that an event has finished being dispatched.
 IPC_MESSAGE_ROUTED1(ExtensionHostMsg_EventAck, int /* message_id */)
@@ -888,8 +896,8 @@ IPC_MESSAGE_CONTROL2(ExtensionHostMsg_AddDOMActionToActivityLog,
 //
 // * ExtensionMsg_WatchPages was received, updating the set of conditions.
 // * A new page is loaded.  This will be sent after
-//   FrameHostMsg_DidCommitProvisionalLoad. Currently this only fires for the
-//   main frame.
+//   mojom::FrameHost::DidCommitProvisionalLoad. Currently this only fires for
+//   the main frame.
 // * Something changed on an existing frame causing the set of matching searches
 //   to change.
 IPC_MESSAGE_ROUTED1(ExtensionHostMsg_OnWatchedPageChange,

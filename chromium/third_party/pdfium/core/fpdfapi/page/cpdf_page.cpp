@@ -97,7 +97,7 @@ void CPDF_Page::SetRenderContext(
   m_pRenderContext = std::move(pContext);
 }
 
-CPDF_Object* CPDF_Page::GetPageAttr(const CFX_ByteString& name) const {
+CPDF_Object* CPDF_Page::GetPageAttr(const ByteString& name) const {
   CPDF_Dictionary* pPageDict = m_pFormDict.Get();
   std::set<CPDF_Dictionary*> visited;
   while (1) {
@@ -112,7 +112,7 @@ CPDF_Object* CPDF_Page::GetPageAttr(const CFX_ByteString& name) const {
   return nullptr;
 }
 
-CFX_FloatRect CPDF_Page::GetBox(const CFX_ByteString& name) const {
+CFX_FloatRect CPDF_Page::GetBox(const ByteString& name) const {
   CFX_FloatRect box;
   CPDF_Array* pBox = ToArray(GetPageAttr(name));
   if (pBox) {
@@ -175,6 +175,35 @@ CFX_Matrix CPDF_Page::GetDisplayMatrix(int xPos,
   matrix.Concat(CFX_Matrix((x2 - x0) / m_PageWidth, (y2 - y0) / m_PageWidth,
                            (x1 - x0) / m_PageHeight, (y1 - y0) / m_PageHeight,
                            x0, y0));
+  return matrix;
+}
+
+// This method follows the same apparent logic as GetDisplayMatrix(). For
+// example, consider point 0. First, take the top left coordinate of the
+// rectangle in the transformed space. Now, calculate what this point was in the
+// original space by inverting. Note that this is not necessarily the same as
+// the top left corner of the original rectangle.
+CFX_Matrix CPDF_Page::GetDisplayMatrixWithTransformation(
+    int xPos,
+    int yPos,
+    int xSize,
+    int ySize,
+    const CFX_Matrix& transformation) {
+  CFX_FloatRect rect(xPos, yPos, xPos + xSize, yPos + ySize);
+  rect = transformation.TransformRect(rect);
+  CFX_Matrix inverse = transformation.GetInverse();
+  CFX_PointF point0(rect.left, rect.top);
+  CFX_PointF point1(rect.left, rect.bottom);
+  CFX_PointF point2(rect.right, rect.top);
+  point0 = inverse.Transform(point0);
+  point1 = inverse.Transform(point1);
+  point2 = inverse.Transform(point2);
+
+  CFX_Matrix matrix = m_PageMatrix;
+  matrix.Concat(CFX_Matrix(
+      (point2.x - point0.x) / m_PageWidth, (point2.y - point0.y) / m_PageWidth,
+      (point1.x - point0.x) / m_PageHeight,
+      (point1.y - point0.y) / m_PageHeight, point0.x, point0.y));
   return matrix;
 }
 

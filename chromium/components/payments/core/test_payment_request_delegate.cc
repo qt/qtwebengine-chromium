@@ -56,7 +56,8 @@ void TestPaymentRequestDelegate::DoFullCardRequest(
   full_card_result_delegate_ = result_delegate;
 }
 
-AddressNormalizer* TestPaymentRequestDelegate::GetAddressNormalizer() {
+autofill::AddressNormalizer*
+TestPaymentRequestDelegate::GetAddressNormalizer() {
   return &address_normalizer_;
 }
 
@@ -68,7 +69,8 @@ ukm::UkmRecorder* TestPaymentRequestDelegate::GetUkmRecorder() {
   return nullptr;
 }
 
-TestAddressNormalizer* TestPaymentRequestDelegate::test_address_normalizer() {
+autofill::TestAddressNormalizer*
+TestPaymentRequestDelegate::test_address_normalizer() {
   return &address_normalizer_;
 }
 
@@ -88,6 +90,10 @@ std::string TestPaymentRequestDelegate::GetAuthenticatedEmail() const {
 
 PrefService* TestPaymentRequestDelegate::GetPrefService() {
   return nullptr;
+}
+
+bool TestPaymentRequestDelegate::IsBrowserWindowActive() const {
+  return true;
 }
 
 TestPaymentsClientDelegate::TestPaymentsClientDelegate() {}

@@ -65,18 +65,22 @@ WindowPortLocal::~WindowPortLocal() {}
 
 void WindowPortLocal::OnPreInit(Window* window) {}
 
-void WindowPortLocal::OnDeviceScaleFactorChanged(float device_scale_factor) {
-  if (last_device_scale_factor_ != device_scale_factor &&
+void WindowPortLocal::OnDeviceScaleFactorChanged(
+    float old_device_scale_factor,
+    float new_device_scale_factor) {
+  if (last_device_scale_factor_ != new_device_scale_factor &&
       local_surface_id_.is_valid()) {
-    last_device_scale_factor_ = device_scale_factor;
+    last_device_scale_factor_ = new_device_scale_factor;
     local_surface_id_ = local_surface_id_allocator_.GenerateId();
     if (frame_sink_)
       frame_sink_->SetLocalSurfaceId(local_surface_id_);
   }
 
   ScopedCursorHider hider(window_);
-  if (window_->delegate())
-    window_->delegate()->OnDeviceScaleFactorChanged(device_scale_factor);
+  if (window_->delegate()) {
+    window_->delegate()->OnDeviceScaleFactorChanged(old_device_scale_factor,
+                                                    new_device_scale_factor);
+  }
 }
 
 void WindowPortLocal::OnWillAddChild(Window* child) {}
@@ -119,7 +123,8 @@ WindowPortLocal::CreateLayerTreeFrameSink() {
       aura::Env::GetInstance()->context_factory_private();
   frame_sink_id_ = context_factory_private->AllocateFrameSinkId();
   auto frame_sink = base::MakeUnique<LayerTreeFrameSinkLocal>(
-      frame_sink_id_, context_factory_private->GetHostFrameSinkManager());
+      frame_sink_id_, context_factory_private->GetHostFrameSinkManager(),
+      window_->GetName());
   frame_sink->SetSurfaceChangedCallback(base::Bind(
       &WindowPortLocal::OnSurfaceChanged, weak_factory_.GetWeakPtr()));
   frame_sink_ = frame_sink->GetWeakPtr();
@@ -176,6 +181,10 @@ void WindowPortLocal::OnSurfaceChanged(const viz::SurfaceInfo& surface_info) {
           ->reference_factory();
   window_->layer()->SetShowPrimarySurface(surface_info, reference_factory);
   window_->layer()->SetFallbackSurface(surface_info);
+}
+
+bool WindowPortLocal::ShouldRestackTransientChildren() {
+  return true;
 }
 
 }  // namespace aura

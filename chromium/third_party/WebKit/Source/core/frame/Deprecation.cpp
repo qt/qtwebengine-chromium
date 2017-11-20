@@ -9,13 +9,16 @@
 #include "core/frame/DeprecationReport.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/LocalFrameClient.h"
 #include "core/frame/Report.h"
 #include "core/frame/ReportingContext.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/page/Page.h"
 #include "core/workers/WorkerOrWorkletGlobalScope.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "public/platform/WebFeaturePolicyFeature.h"
+#include "public/platform/reporting.mojom-blink.h"
+#include "services/service_manager/public/cpp/interface_provider.h"
 
 namespace {
 
@@ -85,6 +88,15 @@ String DeprecatedWillBeDisabledByFeaturePolicyInCrossOriginIframe(
       "embedding document using Feature Policy, e.g. "
       "<iframe allow=\"%s\" ...>. See https://goo.gl/EuHzyv for more details.",
       function, milestoneString(milestone), allow_string);
+}
+
+String DeprecatedWebAudioDezippering(const char* audio_param_name) {
+  return String::Format(
+      "%s.value setter smoothing is deprecated and will be removed in %s. "
+      "Please use setTargetAtTime() instead if smoothing is needed. "
+      "See https://www.chromestatus.com/features/5287995770929152 for more "
+      "details.",
+      audio_param_name, milestoneString(M64));
 }
 
 }  // anonymous namespace
@@ -222,7 +234,7 @@ void Deprecation::CountDeprecationFeaturePolicy(
   // (until the general syntax is shipped) and this is also a good enough
   // approximation for deprecation messages.
   switch (feature) {
-    case WebFeaturePolicyFeature::kEme:
+    case WebFeaturePolicyFeature::kEncryptedMedia:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::
@@ -262,14 +274,22 @@ void Deprecation::GenerateReport(const LocalFrame* frame,
     return;
 
   Document* document = frame->GetDocument();
-  ReportingContext* reporting_context = ReportingContext::From(document);
-  if (!reporting_context->ObserverExists())
-    return;
 
-  // Send a deprecation report to any ReportingObservers.
-  ReportBody* body = new DeprecationReport(message, SourceLocation::Capture());
+  // Construct the deprecation report.
+  DeprecationReport* body =
+      new DeprecationReport(message, SourceLocation::Capture());
   Report* report = new Report("deprecation", document->Url().GetString(), body);
-  reporting_context->QueueReport(report);
+
+  // Send the deprecation report to any ReportingObservers.
+  ReportingContext* reporting_context = ReportingContext::From(document);
+  if (reporting_context->ObserverExists())
+    reporting_context->QueueReport(report);
+
+  // Send the deprecation report to the Reporting API.
+  mojom::blink::ReportingServiceProxyPtr service;
+  frame->Client()->GetInterfaceProvider()->GetInterface(&service);
+  service->QueueDeprecationReport(document->Url(), message, body->sourceFile(),
+                                  body->lineNumber());
 }
 
 String Deprecation::DeprecationMessage(WebFeature feature) {
@@ -331,8 +351,8 @@ String Deprecation::DeprecationMessage(WebFeature feature) {
              "For more help, check https://xhr.spec.whatwg.org/.";
 
     case WebFeature::kGetMatchedCSSRules:
-      return "'getMatchedCSSRules()' is deprecated. For more help, check "
-             "https://code.google.com/p/chromium/issues/detail?id=437569#c2";
+      return willBeRemoved("document.getMatchedCSSRules()", M64,
+                           "4606972603138048");
 
     case WebFeature::kPrefixedWindowURL:
       return replacedBy("'webkitURL'", "'URL'");
@@ -353,6 +373,16 @@ String Deprecation::DeprecationMessage(WebFeature feature) {
              "(e.g. `https://user:pass@host/`) are blocked. See "
              "https://www.chromestatus.com/feature/5669008342777856 for more "
              "details.";
+
+    // Blocked `<meta http-equiv="set-cookie" ...>`
+    case WebFeature::kMetaSetCookie:
+      return String::Format(
+          "Setting cookies via `<meta http-equiv='Set-Cookie' ...>` is "
+          "deprecated, and will stop working in %s. Consider switching "
+          "to `document.cookie = ...`, or to `Set-Cookie` HTTP headers "
+          "instead. See %s for more details.",
+          milestoneString(M65),
+          "https://www.chromestatus.com/feature/6170540112871424");
 
     // Powerful features on insecure origins (https://goo.gl/rStTGz)
     case WebFeature::kDeviceMotionInsecureOrigin:
@@ -442,11 +472,12 @@ String Deprecation::DeprecationMessage(WebFeature feature) {
           M63, "4668884095336448");
 
     case WebFeature::kCSSDeepCombinator:
-      return willBeRemoved("/deep/ combinator in CSS", M63, "4964279606312960");
-
-    case WebFeature::kCSSSelectorPseudoShadow:
-      return willBeRemoved("::shadow pseudo-element in CSS", M63,
-                           "6750456638341120");
+      return "/deep/ combinator is no longer supported in CSS dynamic profile."
+             "It is now effectively no-op, acting as if it were a descendant "
+             "combinator. /deep/ combinator will be removed, and will be "
+             "invalid at M65. You should remove it. See "
+             "https://www.chromestatus.com/features/4964279606312960 for more "
+             "details.";
 
     case WebFeature::kVREyeParametersOffset:
       return replacedBy("VREyeParameters.offset",
@@ -533,22 +564,22 @@ String Deprecation::DeprecationMessage(WebFeature feature) {
     case WebFeature::
         kEncryptedMediaDisallowedByFeaturePolicyInCrossOriginIframe:
       return DeprecatedWillBeDisabledByFeaturePolicyInCrossOriginIframe(
-          "requestMediaKeySystemAccess", "encrypted-media", M63);
+          "requestMediaKeySystemAccess", "encrypted-media", M64);
     case WebFeature::kGeolocationDisallowedByFeaturePolicyInCrossOriginIframe:
       return DeprecatedWillBeDisabledByFeaturePolicyInCrossOriginIframe(
-          "getCurrentPosition and watchPosition", "geolocation", M63);
+          "getCurrentPosition and watchPosition", "geolocation", M64);
     case WebFeature::
         kGetUserMediaMicDisallowedByFeaturePolicyInCrossOriginIframe:
       return DeprecatedWillBeDisabledByFeaturePolicyInCrossOriginIframe(
-          "getUserMedia (microphone)", "microphone", M63);
+          "getUserMedia (microphone)", "microphone", M64);
     case WebFeature::
         kGetUserMediaCameraDisallowedByFeaturePolicyInCrossOriginIframe:
       return DeprecatedWillBeDisabledByFeaturePolicyInCrossOriginIframe(
-          "getUserMedia (camera)", "camera", M63);
+          "getUserMedia (camera)", "camera", M64);
     case WebFeature::
         kRequestMIDIAccessDisallowedByFeaturePolicyInCrossOriginIframe:
       return DeprecatedWillBeDisabledByFeaturePolicyInCrossOriginIframe(
-          "requestMIDIAccess", "midi", M63);
+          "requestMIDIAccess", "midi", M64);
 
     case WebFeature::kPresentationRequestStartInsecureOrigin:
     case WebFeature::kPresentationReceiverInsecureOrigin:
@@ -562,6 +593,25 @@ String Deprecation::DeprecationMessage(WebFeature feature) {
       return replacedWillBeRemoved(
           "PaymentRequest's supportedMethods taking an array",
           "a single string", M64, "5177301645918208");
+
+    case WebFeature::kWebAudioDezipperGainNodeGain:
+      return DeprecatedWebAudioDezippering("GainNode.gain");
+    case WebFeature::kWebAudioDezipperStereoPannerNodePan:
+      return DeprecatedWebAudioDezippering("StereoPannerNode.pan");
+    case WebFeature::kWebAudioDezipperDelayNodeDelayTime:
+      return DeprecatedWebAudioDezippering("DelayNode.delayTime");
+    case WebFeature::kWebAudioDezipperOscillatorNodeFrequency:
+      return DeprecatedWebAudioDezippering("OscillatorNode.frequency");
+    case WebFeature::kWebAudioDezipperOscillatorNodeDetune:
+      return DeprecatedWebAudioDezippering("OscillatorNode.detune");
+    case WebFeature::kWebAudioDezipperBiquadFilterNodeFrequency:
+      return DeprecatedWebAudioDezippering("BiquadFilterNode.frequency");
+    case WebFeature::kWebAudioDezipperBiquadFilterNodeDetune:
+      return DeprecatedWebAudioDezippering("BiquadFilterNode.detune");
+    case WebFeature::kWebAudioDezipperBiquadFilterNodeQ:
+      return DeprecatedWebAudioDezippering("BiquadFilterNode.Q");
+    case WebFeature::kWebAudioDezipperBiquadFilterNodeGain:
+      return DeprecatedWebAudioDezippering("BiquadFilterNode.gain");
 
     // Features that aren't deprecated don't have a deprecation message.
     default:

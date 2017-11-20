@@ -6,6 +6,7 @@
  */
 
 #include "SkImageInfo.h"
+#include "SkSafeMath.h"
 #include "SkReadBuffer.h"
 #include "SkWriteBuffer.h"
 
@@ -70,12 +71,22 @@ static SkColorType stored_to_live(unsigned stored) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+size_t SkImageInfo::computeByteSize(size_t rowBytes) const {
+    if (0 == fHeight) {
+        return 0;
+    }
+    SkSafeMath safe;
+    size_t bytes = safe.add(safe.mul(fHeight - 1, rowBytes),
+                            safe.mul(fWidth, this->bytesPerPixel()));
+    return safe ? bytes : SK_MaxSizeT;
+}
+
 static bool alpha_type_is_valid(SkAlphaType alphaType) {
-    return (alphaType >= 0) && (alphaType <= kLastEnum_SkAlphaType);
+    return (alphaType >= kUnknown_SkAlphaType) && (alphaType <= kLastEnum_SkAlphaType);
 }
 
 static bool color_type_is_valid(SkColorType colorType) {
-    return (colorType >= 0) && (colorType <= kLastEnum_SkColorType);
+    return (colorType >= kUnknown_SkColorType) && (colorType <= kLastEnum_SkColorType);
 }
 
 SkImageInfo SkImageInfo::MakeS32(int width, int height, SkAlphaType at) {

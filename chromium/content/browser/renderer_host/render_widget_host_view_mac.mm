@@ -400,6 +400,10 @@ void RenderWidgetHostViewMac::BrowserCompositorMacOnBeginFrame() {
   UpdateNeedsBeginFramesInternal();
 }
 
+viz::LocalSurfaceId RenderWidgetHostViewMac::GetLocalSurfaceId() const {
+  return local_surface_id_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // AcceleratedWidgetMacNSView, public:
 
@@ -452,6 +456,7 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget,
 
   viz::FrameSinkId frame_sink_id =
       render_widget_host_->AllocateFrameSinkId(is_guest_view_hack_);
+  local_surface_id_ = local_surface_id_allocator_.GenerateId();
   browser_compositor_.reset(
       new BrowserCompositorMac(this, this, render_widget_host_->is_hidden(),
                                [cocoa_view_ window], frame_sink_id));
@@ -794,8 +799,6 @@ void RenderWidgetHostViewMac::SetSize(const gfx::Size& size) {
 void RenderWidgetHostViewMac::SetBounds(const gfx::Rect& rect) {
   // |rect.size()| is view coordinates, |rect.origin| is screen coordinates,
   // TODO(thakis): fix, http://crbug.com/73362
-  if (render_widget_host_->is_hidden())
-    return;
 
   // During the initial creation of the RenderWidgetHostView in
   // WebContentsImpl::CreateRenderViewForRenderManager, SetSize is called with
@@ -806,6 +809,11 @@ void RenderWidgetHostViewMac::SetBounds(const gfx::Rect& rect) {
   // empty then this is a valid request for a pop-up.
   if (rect.size().IsEmpty())
     return;
+
+  if (rect.size() != last_size_) {
+    local_surface_id_ = local_surface_id_allocator_.GenerateId();
+    last_size_ = rect.size();
+  }
 
   // Ignore the position of |rect| for non-popup rwhvs. This is because
   // background tabs do not have a window, but the window is required for the
@@ -1069,6 +1077,8 @@ void RenderWidgetHostViewMac::Destroy() {
 
   if (text_input_manager_)
     text_input_manager_->RemoveObserver(this);
+
+  mouse_wheel_phase_handler_.IgnorePendingWheelEndEvent();
 
   // We get this call just before |render_widget_host_| deletes
   // itself.  But we are owned by |cocoa_view_|, which may be retained
@@ -1428,7 +1438,7 @@ void RenderWidgetHostViewMac::DidCreateNewRendererCompositorFrameSink(
 
 void RenderWidgetHostViewMac::SubmitCompositorFrame(
     const viz::LocalSurfaceId& local_surface_id,
-    cc::CompositorFrame frame) {
+    viz::CompositorFrame frame) {
   TRACE_EVENT0("browser", "RenderWidgetHostViewMac::OnSwapCompositorFrame");
 
   last_frame_root_background_color_ = frame.metadata.root_background_color;
@@ -1544,9 +1554,22 @@ bool RenderWidgetHostViewMac::ShouldRouteEvent(
   // TODO(wjmaclean): Update this function if RenderWidgetHostViewMac implements
   // OnTouchEvent(), to match what we are doing in RenderWidgetHostViewAura.
   DCHECK(WebInputEvent::IsMouseEventType(event.GetType()) ||
-         event.GetType() == WebInputEvent::kMouseWheel);
+         event.GetType() == WebInputEvent::kMouseWheel ||
+         WebInputEvent::IsPinchGestureEventType(event.GetType()));
   return render_widget_host_->delegate() &&
          render_widget_host_->delegate()->GetInputEventRouter();
+}
+
+void RenderWidgetHostViewMac::SendGesturePinchEvent(WebGestureEvent* event) {
+  DCHECK(WebInputEvent::IsPinchGestureEventType(event->GetType()));
+  if (ShouldRouteEvent(*event)) {
+    DCHECK(event->source_device ==
+           blink::WebGestureDevice::kWebGestureDeviceTouchpad);
+    render_widget_host_->delegate()->GetInputEventRouter()->RouteGestureEvent(
+        this, event, ui::LatencyInfo(ui::SourceEventType::WHEEL));
+    return;
+  }
+  render_widget_host_->ForwardGestureEvent(*event);
 }
 
 void RenderWidgetHostViewMac::ProcessMouseEvent(
@@ -1641,13 +1664,13 @@ void RenderWidgetHostViewMac::SetBackgroundColor(SkColor color) {
   // to set a reasonable color to show before the web content generates its
   // first frame. This will be overridden by the web contents.
   SetBackgroundLayerColor(color);
+  browser_compositor_->SetBackgroundColor(color);
 
   DCHECK(SkColorGetA(color) == SK_AlphaOPAQUE ||
          SkColorGetA(color) == SK_AlphaTRANSPARENT);
   bool opaque = SkColorGetA(color) == SK_AlphaOPAQUE;
   if (background_is_opaque_ != opaque) {
     background_is_opaque_ = opaque;
-    browser_compositor_->SetHasTransparentBackground(!opaque);
     if (render_widget_host_)
       render_widget_host_->SetBackgroundOpaque(opaque);
   }
@@ -1744,6 +1767,10 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
     return;
 
   if (changed_metrics & DisplayObserver::DISPLAY_METRIC_DEVICE_SCALE_FACTOR) {
+    if (display.device_scale_factor() != last_device_scale_factor_) {
+      local_surface_id_ = local_surface_id_allocator_.GenerateId();
+      last_device_scale_factor_ = display.device_scale_factor();
+    }
     RenderWidgetHostImpl* host =
         RenderWidgetHostImpl::From(GetRenderWidgetHost());
     if (host && host->delegate())
@@ -2401,7 +2428,8 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
   if (gestureBeginPinchSent_) {
     WebGestureEvent endEvent(WebGestureEventBuilder::Build(event, self));
     endEvent.SetType(WebInputEvent::kGesturePinchEnd);
-    renderWidgetHostView_->render_widget_host_->ForwardGestureEvent(endEvent);
+    endEvent.source_device = blink::WebGestureDevice::kWebGestureDeviceTouchpad;
+    renderWidgetHostView_->SendGesturePinchEvent(&endEvent);
     gestureBeginPinchSent_ = NO;
   }
 }
@@ -2719,14 +2747,16 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
     }
     WebGestureEvent beginEvent(*gestureBeginEvent_);
     beginEvent.SetType(WebInputEvent::kGesturePinchBegin);
-    renderWidgetHostView_->render_widget_host_->ForwardGestureEvent(beginEvent);
+    beginEvent.source_device =
+        blink::WebGestureDevice::kWebGestureDeviceTouchpad;
+    renderWidgetHostView_->SendGesturePinchEvent(&beginEvent);
     gestureBeginPinchSent_ = YES;
   }
 
   // Send a GesturePinchUpdate event.
   WebGestureEvent updateEvent = WebGestureEventBuilder::Build(event, self);
   updateEvent.data.pinch_update.zoom_disabled = !pinchHasReachedZoomThreshold_;
-  renderWidgetHostView_->render_widget_host_->ForwardGestureEvent(updateEvent);
+  renderWidgetHostView_->SendGesturePinchEvent(&updateEvent);
 }
 
 - (void)viewWillMoveToWindow:(NSWindow*)newWindow {

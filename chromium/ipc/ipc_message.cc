@@ -168,12 +168,9 @@ bool Message::WriteAttachment(
     scoped_refptr<base::Pickle::Attachment> attachment) {
   size_t index;
   bool success = attachment_set()->AddAttachment(
-      make_scoped_refptr(static_cast<MessageAttachment*>(attachment.get())),
+      base::WrapRefCounted(static_cast<MessageAttachment*>(attachment.get())),
       &index);
   DCHECK(success);
-
-  // NOTE: If you add more data to the pickle, make sure to update
-  // PickleSizer::AddAttachment.
 
   // Write the index of the descriptor so that we don't have to
   // keep the current descriptor as extra decoding state when deserialising.

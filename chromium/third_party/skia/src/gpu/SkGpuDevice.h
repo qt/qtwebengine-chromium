@@ -17,7 +17,6 @@
 #include "GrClipStackClip.h"
 #include "GrRenderTargetContext.h"
 #include "GrContext.h"
-#include "GrSurfacePriv.h"
 #include "GrTypes.h"
 
 class GrAccelData;
@@ -164,10 +163,11 @@ private:
      */
 
     // The tileSize and clippedSrcRect will be valid only if true is returned.
-    bool shouldTileImageID(uint32_t imageID, const SkIRect& imageRect,
+    bool shouldTileImageID(uint32_t imageID,
+                           const SkIRect& imageRect,
                            const SkMatrix& viewMatrix,
                            const SkMatrix& srcToDstRectMatrix,
-                           const GrSamplerParams& params,
+                           const GrSamplerState& params,
                            const SkRect* srcRectPtr,
                            int maxTileSize,
                            int* tileSize,
@@ -189,7 +189,7 @@ private:
                          const SkMatrix& srcToDstMatrix,
                          const SkRect& srcRect,
                          const SkIRect& clippedSrcRect,
-                         const GrSamplerParams& params,
+                         const GrSamplerState& params,
                          const SkPaint& paint,
                          SkCanvas::SrcRectConstraint,
                          int tileSize,
@@ -200,7 +200,7 @@ private:
                         const SkMatrix& viewMatrix,
                         const SkRect& dstRect,
                         const SkRect& srcRect,
-                        const GrSamplerParams& params,
+                        const GrSamplerState& samplerState,
                         const SkPaint& paint,
                         SkCanvas::SrcRectConstraint,
                         bool bicubic,

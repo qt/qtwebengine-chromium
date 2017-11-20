@@ -60,6 +60,7 @@ class AURA_EXPORT WindowEventDispatcher : public ui::EventProcessor,
 
   Window* mouse_pressed_handler() { return mouse_pressed_handler_; }
   Window* mouse_moved_handler() { return mouse_moved_handler_; }
+  Window* touchpad_pinch_handler() { return touchpad_pinch_handler_; }
 
   // Overridden from ui::EventProcessor:
   ui::EventTargeter* GetDefaultEventTargeter() override;
@@ -184,6 +185,7 @@ class AURA_EXPORT WindowEventDispatcher : public ui::EventProcessor,
   void ReleaseNativeCapture() override;
 
   // Overridden from ui::EventProcessor:
+  ui::EventTarget* GetInitialEventTarget(ui::Event* event) override;
   ui::EventTarget* GetRootForEvent(ui::Event* event) override;
   void OnEventProcessingStarted(ui::Event* event) override;
   void OnEventProcessingFinished(ui::Event* event) override;
@@ -243,6 +245,8 @@ class AURA_EXPORT WindowEventDispatcher : public ui::EventProcessor,
                                                    ui::LocatedEvent* event);
   ui::EventDispatchDetails PreDispatchMouseEvent(Window* target,
                                                  ui::MouseEvent* event);
+  ui::EventDispatchDetails PreDispatchPinchEvent(Window* target,
+                                                 ui::GestureEvent* event);
   ui::EventDispatchDetails PreDispatchTouchEvent(Window* target,
                                                  ui::TouchEvent* event);
   ui::EventDispatchDetails PreDispatchKeyEvent(ui::KeyEvent* event);
@@ -251,6 +255,7 @@ class AURA_EXPORT WindowEventDispatcher : public ui::EventProcessor,
 
   Window* mouse_pressed_handler_;
   Window* mouse_moved_handler_;
+  Window* touchpad_pinch_handler_;
   Window* event_dispatch_target_;
   Window* old_dispatch_target_;
 

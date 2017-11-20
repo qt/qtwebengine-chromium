@@ -19,22 +19,24 @@
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_scheduler/post_task.h"
+#include "build/build_config.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/service_manager/common_browser_interfaces.h"
+#include "content/browser/utility_process_host_impl.h"
 #include "content/browser/wake_lock/wake_lock_context_host.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
 #include "content/grit/content_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/gpu_service_registry.h"
-#include "content/public/browser/utility_process_host.h"
 #include "content/public/browser/utility_process_host_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
+#include "device/geolocation/geolocation_provider.h"
 #include "media/mojo/features.h"
 #include "media/mojo/interfaces/constants.mojom.h"
 #include "mojo/edk/embedder/embedder.h"
@@ -55,6 +57,7 @@
 #include "services/service_manager/public/interfaces/service.mojom.h"
 #include "services/service_manager/runner/common/client_util.h"
 #include "services/service_manager/runner/host/service_process_launcher.h"
+#include "services/service_manager/sandbox/sandbox_type.h"
 #include "services/service_manager/service_manager.h"
 #include "services/shape_detection/public/interfaces/constants.mojom.h"
 #include "services/video_capture/public/cpp/constants.h"
@@ -66,6 +69,10 @@
 #include "jni/ContentNfcDelegate_jni.h"
 #endif
 
+#if defined(OS_WIN)
+#include "content/browser/renderer_host/dwrite_font_proxy_message_filter_win.h"
+#endif
+
 namespace content {
 
 namespace {
@@ -75,21 +82,43 @@ base::LazyInstance<std::unique_ptr<service_manager::Connector>>::Leaky
 
 void DestroyConnectorOnIOThread() { g_io_thread_connector.Get().reset(); }
 
+// Launch a process for a service once its sandbox type is known.
 void StartServiceInUtilityProcess(
     const std::string& service_name,
     const base::string16& process_name,
-    SandboxType sandbox_type,
-    service_manager::mojom::ServiceRequest request) {
+    service_manager::mojom::ServiceRequest request,
+    service_manager::mojom::ConnectResult query_result,
+    const std::string& sandbox_string) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  UtilityProcessHost* process_host =
-      UtilityProcessHost::Create(nullptr, nullptr);
+  service_manager::SandboxType sandbox_type =
+      service_manager::UtilitySandboxTypeFromString(sandbox_string);
+
+  UtilityProcessHostImpl* process_host =
+      new UtilityProcessHostImpl(nullptr, nullptr);
+#if defined(OS_WIN)
+  if (sandbox_type == service_manager::SANDBOX_TYPE_PPAPI)
+    process_host->AddFilter(new DWriteFontProxyMessageFilter());
+#endif
   process_host->SetName(process_name);
+  process_host->SetServiceIdentity(service_manager::Identity(service_name));
   process_host->SetSandboxType(sandbox_type);
   process_host->Start();
 
   service_manager::mojom::ServiceFactoryPtr service_factory;
   BindInterface(process_host, mojo::MakeRequest(&service_factory));
   service_factory->CreateService(std::move(request), service_name);
+}
+
+// Determine a sandbox type for a service and launch a process for it.
+void QueryAndStartServiceInUtilityProcess(
+    const std::string& service_name,
+    const base::string16& process_name,
+    service_manager::mojom::ServiceRequest request) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  ServiceManagerContext::GetConnectorForIOThread()->QueryService(
+      service_manager::Identity(service_name),
+      base::BindOnce(&StartServiceInUtilityProcess, service_name, process_name,
+                     std::move(request)));
 }
 
 // Request service_manager::mojom::ServiceFactory from GPU process host. Must be
@@ -177,6 +206,23 @@ class NullServiceProcessLauncherFactory
   DISALLOW_COPY_AND_ASSIGN(NullServiceProcessLauncherFactory);
 };
 
+// Helper to invoke GetGeolocationRequestContext on the currently-set
+// ContentBrowserClient.
+void GetGeolocationRequestContextFromContentClient(
+    base::OnceCallback<void(scoped_refptr<net::URLRequestContextGetter>)>
+        callback) {
+  // TODO(amoylan): Confirm whether either of the following can be replaced with
+  // DCHECKs owing to lifetime guarantees on ContentClient or
+  // ContentBrowserClient:
+  if (GetContentClient() && GetContentClient()->browser()) {
+    GetContentClient()->browser()->GetGeolocationRequestContext(
+        std::move(callback));
+  } else {
+    std::move(callback).Run(
+        scoped_refptr<net::URLRequestContextGetter>(nullptr));
+  }
+}
+
 }  // namespace
 
 // State which lives on the IO thread and drives the ServiceManager.
@@ -189,16 +235,19 @@ class ServiceManagerContext::InProcessServiceManagerContext
       service_manager::mojom::ServicePtrInfo packaged_services_service_info,
       std::unique_ptr<BuiltinManifestProvider> manifest_provider) {
     BrowserThread::GetTaskRunnerForThread(BrowserThread::IO)
-        ->PostTask(FROM_HERE,
-                   base::Bind(&InProcessServiceManagerContext::StartOnIOThread,
-                              this, base::Passed(&manifest_provider),
-                              base::Passed(&packaged_services_service_info)));
+        ->PostTask(
+            FROM_HERE,
+            base::BindOnce(&InProcessServiceManagerContext::StartOnIOThread,
+                           this, base::Passed(&manifest_provider),
+                           base::Passed(&packaged_services_service_info)));
   }
 
   void ShutDown() {
-    BrowserThread::GetTaskRunnerForThread(BrowserThread::IO)->PostTask(
-        FROM_HERE,
-        base::Bind(&InProcessServiceManagerContext::ShutDownOnIOThread, this));
+    BrowserThread::GetTaskRunnerForThread(BrowserThread::IO)
+        ->PostTask(
+            FROM_HERE,
+            base::BindOnce(&InProcessServiceManagerContext::ShutDownOnIOThread,
+                           this));
   }
 
  private:
@@ -324,6 +373,15 @@ ServiceManagerContext::ServiceManagerContext() {
   packaged_services_connection_->AddEmbeddedService(device::mojom::kServiceName,
                                                     device_info);
 
+  // Pipe embedder-supplied API key through to GeolocationProvider.
+  // TODO(amoylan): Once GeolocationProvider hangs off DeviceService
+  // (https://crbug.com/709301), pass these via CreateDeviceService above
+  // instead.
+  device::GeolocationProvider::SetRequestContextProducer(
+      base::BindRepeating(&GetGeolocationRequestContextFromContentClient));
+  device::GeolocationProvider::SetApiKey(
+      GetContentClient()->browser()->GetGeolocationApiKey());
+
   if (base::FeatureList::IsEnabled(features::kGlobalResourceCoordinator)) {
     service_manager::EmbeddedServiceInfo resource_coordinator_info;
     resource_coordinator_info.factory =
@@ -348,39 +406,35 @@ ServiceManagerContext::ServiceManagerContext() {
   GetContentClient()->browser()->RegisterOutOfProcessServices(
       &out_of_process_services);
 
-  out_of_process_services[data_decoder::mojom::kServiceName] = {
-      base::ASCIIToUTF16("Data Decoder Service"), SANDBOX_TYPE_UTILITY};
+  out_of_process_services[data_decoder::mojom::kServiceName] =
+      base::ASCIIToUTF16("Data Decoder Service");
 
   bool network_service_enabled =
       base::FeatureList::IsEnabled(features::kNetworkService);
   if (network_service_enabled) {
-    out_of_process_services[content::mojom::kNetworkServiceName] = {
-        base::ASCIIToUTF16("Network Service"), SANDBOX_TYPE_NETWORK};
+    out_of_process_services[content::mojom::kNetworkServiceName] =
+        base::ASCIIToUTF16("Network Service");
   }
 
   if (base::FeatureList::IsEnabled(video_capture::kMojoVideoCapture)) {
-    out_of_process_services[video_capture::mojom::kServiceName] = {
-        base::ASCIIToUTF16("Video Capture Service"), SANDBOX_TYPE_NO_SANDBOX};
+    out_of_process_services[video_capture::mojom::kServiceName] =
+        base::ASCIIToUTF16("Video Capture Service");
   }
 
 #if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_UTILITY_PROCESS)
-  out_of_process_services[media::mojom::kMediaServiceName] = {
-      base::ASCIIToUTF16("Media Service"), SANDBOX_TYPE_UTILITY};
+  out_of_process_services[media::mojom::kMediaServiceName] =
+      base::ASCIIToUTF16("Media Service");
 #endif
 
 #if BUILDFLAG(ENABLE_STANDALONE_CDM_SERVICE)
-  // TODO(xhwang): This is only used for test/experiment for now so it's okay
-  // to run it in an unsandboxed utility process. Fix CDM loading so that we can
-  // run it in the sandboxed utility process. See http://crbug.com/510604
-  out_of_process_services[media::mojom::kCdmServiceName] = {
-      base::ASCIIToUTF16("Content Decryption Module Service"),
-      SANDBOX_TYPE_NO_SANDBOX};
+  out_of_process_services[media::mojom::kCdmServiceName] =
+      base::ASCIIToUTF16("Content Decryption Module Service");
 #endif
 
   for (const auto& service : out_of_process_services) {
     packaged_services_connection_->AddServiceRequestHandler(
-        service.first, base::Bind(&StartServiceInUtilityProcess, service.first,
-                                  service.second.first, service.second.second));
+        service.first, base::Bind(&QueryAndStartServiceInUtilityProcess,
+                                  service.first, service.second));
   }
 
 #if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_GPU_PROCESS)
@@ -417,7 +471,7 @@ ServiceManagerContext::~ServiceManagerContext() {
   if (ServiceManagerConnection::GetForProcess())
     ServiceManagerConnection::DestroyForProcess();
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                          base::Bind(&DestroyConnectorOnIOThread));
+                          base::BindOnce(&DestroyConnectorOnIOThread));
 }
 
 // static

@@ -12,10 +12,10 @@
 #include "base/macros.h"
 #include "base/observer_list.h"
 #include "platform/PlatformExport.h"
-#include "platform/scheduler/base/cancelable_closure_holder.h"
 #include "platform/scheduler/base/task_queue.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/scheduler/child/web_task_runner_impl.h"
+#include "platform/scheduler/renderer/auto_advancing_virtual_time_domain.h"
 #include "platform/scheduler/renderer/task_queue_throttler.h"
 #include "platform/scheduler/renderer/web_view_scheduler.h"
 
@@ -33,7 +33,9 @@ class RendererSchedulerImpl;
 class CPUTimeBudgetPool;
 class WebFrameSchedulerImpl;
 
-class PLATFORM_EXPORT WebViewSchedulerImpl : public WebViewScheduler {
+class PLATFORM_EXPORT WebViewSchedulerImpl
+    : public WebViewScheduler,
+      public AutoAdvancingVirtualTimeDomain::Observer {
  public:
   WebViewSchedulerImpl(
       WebScheduler::InterventionReporter* intervention_reporter,
@@ -45,8 +47,10 @@ class PLATFORM_EXPORT WebViewSchedulerImpl : public WebViewScheduler {
 
   // WebViewScheduler implementation:
   void SetPageVisible(bool page_visible) override;
+  void SetPageStopped(bool) override;
   std::unique_ptr<WebFrameScheduler> CreateFrameScheduler(
-      BlameContext* blame_context) override;
+      BlameContext* blame_context,
+      WebFrameScheduler::FrameType frame_type) override;
   void EnableVirtualTime() override;
   void DisableVirtualTimeForTesting() override;
   bool VirtualTimeAllowedToAdvance() const override;
@@ -59,11 +63,15 @@ class PLATFORM_EXPORT WebViewSchedulerImpl : public WebViewScheduler {
   void AddVirtualTimeObserver(VirtualTimeObserver*) override;
   void RemoveVirtualTimeObserver(VirtualTimeObserver*) override;
 
+  // AutoAdvancingVirtualTimeDomain::Observer implementation:
+  void OnVirtualTimeAdvanced() override;
+
   // Virtual for testing.
   virtual void ReportIntervention(const std::string& message);
 
   std::unique_ptr<WebFrameSchedulerImpl> CreateWebFrameSchedulerImpl(
-      base::trace_event::BlameContext* blame_context);
+      base::trace_event::BlameContext* blame_context,
+      WebFrameScheduler::FrameType frame_type);
 
   void DidStartLoading(unsigned long identifier);
   void DidStopLoading(unsigned long identifier);
@@ -75,9 +83,15 @@ class PLATFORM_EXPORT WebViewSchedulerImpl : public WebViewScheduler {
   void DidBeginProvisionalLoad(WebFrameSchedulerImpl* frame_scheduler);
   void DidEndProvisionalLoad(WebFrameSchedulerImpl* frame_scheduler);
 
+  void OnBeginNestedRunLoop();
+  void OnExitNestedRunLoop();
+
   bool IsAudioPlaying() const;
 
   void OnConnectionUpdated();
+
+  // Return a number of child web frame schedulers for this WebViewScheduler.
+  size_t FrameCount() const;
 
   void AsValueInto(base::trace_event::TracedValue* state) const;
 
@@ -88,8 +102,7 @@ class PLATFORM_EXPORT WebViewSchedulerImpl : public WebViewScheduler {
   void MaybeInitializeBackgroundCPUTimeBudgetPool();
 
   void SetAllowVirtualTimeToAdvance(bool allow_virtual_time_to_advance);
-  void ApplyVirtualTimePolicyForLoading();
-  void ApplyVirtualTimePolicyToTimers();
+  void ApplyVirtualTimePolicy();
 
   void OnThrottlingReported(base::TimeDelta throttling_duration);
 
@@ -120,16 +133,14 @@ class PLATFORM_EXPORT WebViewSchedulerImpl : public WebViewScheduler {
   bool page_visible_;
   bool disable_background_timer_throttling_;
   bool allow_virtual_time_to_advance_;
-  bool virtual_time_paused_;
-  bool have_seen_loading_task_;
   bool virtual_time_;
   bool is_audio_playing_;
   bool reported_background_throttling_since_navigation_;
   bool has_active_connection_;
+  bool nested_runloop_;
   CPUTimeBudgetPool* background_time_budget_pool_;  // Not owned.
   WebViewScheduler::WebViewSchedulerDelegate* delegate_;  // Not owned.
   base::ObserverList<VirtualTimeObserver> virtual_time_observers_;
-  CancelableClosureHolder virtual_time_paused_notification_;
   base::TimeTicks initial_virtual_time_;
 
   DISALLOW_COPY_AND_ASSIGN(WebViewSchedulerImpl);

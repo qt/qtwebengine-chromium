@@ -436,8 +436,8 @@ void GuestViewBase::DidAttach(int guest_proxy_routing_id) {
 void GuestViewBase::DidDetach() {
   GuestViewManager::FromBrowserContext(browser_context_)->DetachGuest(this);
   StopTrackingEmbedderZoomLevel();
-  owner_web_contents()->Send(new GuestViewMsg_GuestDetached(
-      element_instance_id_));
+  owner_web_contents()->GetRenderViewHost()->Send(
+      new GuestViewMsg_GuestDetached(element_instance_id_));
   element_instance_id_ = kInstanceIDNone;
   if (ShouldDestroyOnDetach())
     Destroy(true);
@@ -608,14 +608,13 @@ void GuestViewBase::ActivateContents(WebContents* web_contents) {
 }
 
 void GuestViewBase::ContentsMouseEvent(WebContents* source,
-                                       const gfx::Point& location,
                                        bool motion,
                                        bool exited) {
   if (!attached() || !embedder_web_contents()->GetDelegate())
     return;
 
   embedder_web_contents()->GetDelegate()->ContentsMouseEvent(
-      embedder_web_contents(), location, motion, exited);
+      embedder_web_contents(), motion, exited);
 }
 
 void GuestViewBase::ContentsZoomChange(bool zoom_in) {

@@ -6,9 +6,10 @@
  */
 
 #include "GrVkTexture.h"
+
+#include "GrTexturePriv.h"
 #include "GrVkGpu.h"
 #include "GrVkImageView.h"
-#include "GrTexturePriv.h"
 #include "GrVkTextureRenderTarget.h"
 #include "GrVkUtil.h"
 
@@ -17,12 +18,12 @@
 #define VK_CALL(GPU, X) GR_VK_CALL(GPU->vkInterface(), X)
 
 // This method parallels GrTextureProxy::highestFilterMode
-static inline GrSamplerParams::FilterMode highest_filter_mode(GrPixelConfig config) {
+static inline GrSamplerState::Filter highest_filter_mode(GrPixelConfig config) {
     if (GrPixelConfigIsSint(config)) {
         // We only ever want to nearest-neighbor sample signed int textures.
-        return GrSamplerParams::kNone_FilterMode;
+        return GrSamplerState::Filter::kNearest;
     }
-    return GrSamplerParams::kMipMap_FilterMode;
+    return GrSamplerState::Filter::kMipMap;
 }
 
 // Because this class is virtually derived from GrSurface we must explicitly call its constructor.
@@ -30,11 +31,12 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
                          SkBudgeted budgeted,
                          const GrSurfaceDesc& desc,
                          const GrVkImageInfo& info,
-                         const GrVkImageView* view)
+                         const GrVkImageView* view,
+                         bool wasFullMipMapDataProvided)
     : GrSurface(gpu, desc)
     , GrVkImage(info, GrBackendObjectOwnership::kOwned)
     , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                info.fLevelCount > 1)
+                info.fLevelCount > 1, wasFullMipMapDataProvided)
     , fTextureView(view)
     , fLinearTextureView(nullptr) {
     this->registerWithCache(budgeted);
@@ -49,7 +51,7 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
     : GrSurface(gpu, desc)
     , GrVkImage(info, ownership)
     , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                info.fLevelCount > 1)
+                info.fLevelCount > 1, false)
     , fTextureView(view)
     , fLinearTextureView(nullptr) {
     this->registerWithCacheWrapped();
@@ -60,18 +62,20 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
                          const GrSurfaceDesc& desc,
                          const GrVkImageInfo& info,
                          const GrVkImageView* view,
-                         GrBackendObjectOwnership ownership)
+                         GrBackendObjectOwnership ownership,
+                         bool wasFullMipMapDataProvided)
     : GrSurface(gpu, desc)
     , GrVkImage(info, ownership)
     , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                info.fLevelCount > 1)
+                info.fLevelCount > 1, wasFullMipMapDataProvided)
     , fTextureView(view)
     , fLinearTextureView(nullptr) {
 }
 
 sk_sp<GrVkTexture> GrVkTexture::CreateNewTexture(GrVkGpu* gpu, SkBudgeted budgeted,
                                                  const GrSurfaceDesc& desc,
-                                                 const GrVkImage::ImageDesc& imageDesc) {
+                                                 const GrVkImage::ImageDesc& imageDesc,
+                                                 bool fullMipMapDataProvided) {
     SkASSERT(imageDesc.fUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT);
 
     GrVkImageInfo info;
@@ -87,7 +91,8 @@ sk_sp<GrVkTexture> GrVkTexture::CreateNewTexture(GrVkGpu* gpu, SkBudgeted budget
         return nullptr;
     }
 
-    return sk_sp<GrVkTexture>(new GrVkTexture(gpu, budgeted, desc, info, imageView));
+    return sk_sp<GrVkTexture>(new GrVkTexture(gpu, budgeted, desc, info, imageView,
+                                              fullMipMapDataProvided));
 }
 
 sk_sp<GrVkTexture> GrVkTexture::MakeWrappedTexture(GrVkGpu* gpu,
@@ -238,7 +243,8 @@ bool GrVkTexture::reallocForMipmap(GrVkGpu* gpu, uint32_t mipLevels) {
     this->setNewResource(info.fImage, info.fAlloc, info.fImageTiling);
     fTextureView = textureView;
     fInfo = info;
-    this->texturePriv().setMaxMipMapLevel(mipLevels);
+    // SetMaxMipMapLevel stores the max level not the number of levels
+    this->texturePriv().setMaxMipMapLevel(mipLevels-1);
 
     return true;
 }

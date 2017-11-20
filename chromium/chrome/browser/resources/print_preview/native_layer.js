@@ -28,14 +28,22 @@ print_preview.LocalDestinationInfo;
 
 /**
  * @typedef {{
- *   printerId: string,
+ *   isInKioskAutoPrintMode: boolean,
+ *   isInAppKioskMode: boolean,
+ *   thousandsDelimeter: string,
+ *   decimalDelimeter: string,
+ *   unitType: !print_preview.MeasurementSystemUnitType,
+ *   previewModifiable: boolean,
+ *   documentTitle: string,
+ *   documentHasSelection: boolean,
+ *   shouldPrintSelectionOnly: boolean,
  *   printerName: string,
- *   printerDescription: string,
- *   cupsEnterprisePrinter: (boolean | undefined),
- *   capabilities: !print_preview.Cdd,
+ *   serializedAppStateStr: ?string,
+ *   serializedDefaultDestinationSelectionRulesStr: ?string,
  * }}
+ * @see corresponding field name definitions in print_preview_handler.cc
  */
-print_preview.PrinterCapabilitiesResponse;
+print_preview.NativeInitialSettings;
 
 /**
  * @typedef {{
@@ -51,11 +59,13 @@ print_preview.PrivetPrinterDescription;
 
 /**
  * @typedef {{
- *   printer: !print_preview.PrivetPrinterDescription,
+ *   printer:(print_preview.PrivetPrinterDescription |
+ *            print_preview.LocalDestinationInfo |
+ *            undefined),
  *   capabilities: !print_preview.Cdd,
  * }}
  */
-print_preview.PrivetPrinterCapabilitiesResponse;
+print_preview.CapabilitiesResponse;
 
 /**
  * @typedef {{
@@ -85,6 +95,8 @@ print_preview.ProvisionalDestinationInfo;
 print_preview.PrinterType = {
   PRIVET_PRINTER: 0,
   EXTENSION_PRINTER: 1,
+  PDF_PRINTER: 2,
+  LOCAL_PRINTER: 3,
 };
 
 cr.define('print_preview', function() {
@@ -126,104 +138,35 @@ cr.define('print_preview', function() {
      * @return {!Promise<!print_preview.NativeInitialSettings>}
      */
     getInitialSettings() {
-      return cr.sendWithPromise('getInitialSettings')
-          .then(
-              /**
-               * @param {!Object} initialSettings Object containing the raw
-               *     Print Preview settings.
-               */
-              function(initialSettings) {
-                var numberFormatSymbols =
-                    print_preview.MeasurementSystem.parseNumberFormat(
-                        initialSettings['numberFormat']);
-                var unitType = print_preview.MeasurementSystemUnitType.IMPERIAL;
-                if (initialSettings['measurementSystem'] != null) {
-                  unitType = initialSettings['measurementSystem'];
-                }
-                return new print_preview.NativeInitialSettings(
-                    initialSettings['printAutomaticallyInKioskMode'] || false,
-                    initialSettings['appKioskMode'] || false,
-                    numberFormatSymbols[0] || ',',
-                    numberFormatSymbols[1] || '.', unitType,
-                    initialSettings['previewModifiable'] || false,
-                    initialSettings['initiatorTitle'] || '',
-                    initialSettings['documentHasSelection'] || false,
-                    initialSettings['shouldPrintSelectionOnly'] || false,
-                    initialSettings['printerName'] || null,
-                    initialSettings['appState'] || null,
-                    initialSettings['defaultDestinationSelectionRules'] ||
-                        null);
-              });
+      return cr.sendWithPromise('getInitialSettings');
     }
 
     /**
-     * Requests the system's local print destinations. The promise will be
-     * resolved with a list of the local destinations.
-     * @return {!Promise<!Array<print_preview.LocalDestinationInfo>>}
+     * Requests the system's print destinations. The promise will be resolved
+     * when all destinations of that type have been retrieved. One or more
+     * 'printers-added' events may be fired in response before resolution.
+     * @param {!print_preview.PrinterType} type The type of destinations to
+     *     request.
+     * @return {!Promise}
      */
-    getPrinters() {
-      return cr.sendWithPromise('getPrinters');
-    }
-
-    /**
-     * Requests the network's privet print destinations. After this is called,
-     * a number of privet-printer-changed events may be fired.
-     * @return {!Promise} Resolves when privet printer search is completed.
-     *     Rejected if privet printers are not enabled.
-     */
-    getPrivetPrinters() {
-      return cr.sendWithPromise(
-          'getExtensionOrPrivetPrinters',
-          print_preview.PrinterType.PRIVET_PRINTER);
-    }
-
-    /**
-     * Request a list of extension printers. Printers are reported as they are
-     * found by a series of 'extension-printers-added' events.
-     * @return {!Promise} Will be resolved when all extension managed printers
-     *     have been sent.
-     */
-    getExtensionPrinters() {
-      return cr.sendWithPromise(
-          'getExtensionOrPrivetPrinters',
-          print_preview.PrinterType.EXTENSION_PRINTER);
+    getPrinters(type) {
+      return cr.sendWithPromise('getPrinters', type);
     }
 
     /**
      * Requests the destination's printing capabilities. Returns a promise that
      * will be resolved with the capabilities if they are obtained successfully.
      * @param {string} destinationId ID of the destination.
-     * @return {!Promise<!print_preview.PrinterCapabilitiesResponse>}
+     * @param {!print_preview.PrinterType} type The destination's printer type.
+     * @return {!Promise<!print_preview.CapabilitiesResponse>}
      */
-    getPrinterCapabilities(destinationId) {
-      return cr.sendWithPromise('getPrinterCapabilities', destinationId);
-    }
-
-    /**
-     * Requests the privet destination's printing capabilities. Returns a
-     * promise that will be resolved with capabilities and printer information
-     * if capabilities are obtained successfully.
-     * @param {string} destinationId The ID of the destination
-     * @return {!Promise<!print_preview.PrivetPrinterCapabilitiesResponse>}
-     */
-    getPrivetPrinterCapabilities(destinationId) {
+    getPrinterCapabilities(destinationId, type) {
       return cr.sendWithPromise(
-          'getExtensionOrPrivetPrinterCapabilities', destinationId,
-          print_preview.PrinterType.PRIVET_PRINTER);
-    }
-
-    /**
-     * Requests the extension destination's printing capabilities. Returns a
-     * promise that will be resolved with the capabilities if capabilities are
-     * obtained successfully.
-     * @param {string} destinationId The ID of the destination whose
-     *     capabilities are requested.
-     * @return {!Promise<!print_preview.Cdd>}
-     */
-    getExtensionPrinterCapabilities(destinationId) {
-      return cr.sendWithPromise(
-          'getExtensionOrPrivetPrinterCapabilities', destinationId,
-          print_preview.PrinterType.EXTENSION_PRINTER);
+          'getPrinterCapabilities', destinationId,
+          destinationId ==
+                  print_preview.Destination.GooglePromotedId.SAVE_AS_PDF ?
+              print_preview.PrinterType.PDF_PRINTER :
+              type);
     }
 
     /**
@@ -571,185 +514,8 @@ cr.define('print_preview', function() {
    */
   NativeLayer.SERIALIZED_STATE_VERSION_ = 1;
 
-  /**
-   * Initial settings retrieved from the native layer.
-   */
-  class NativeInitialSettings {
-    /**
-     * @param {boolean} isInKioskAutoPrintMode Whether the print preview should
-     *     be in auto-print mode.
-     * @param {boolean} isInAppKioskMode Whether the print preview is in App
-     *     Kiosk mode.
-     * @param {string} thousandsDelimeter Character delimeter of thousands
-     *     digits.
-     * @param {string} decimalDelimeter Character delimeter of the decimal
-     *     point.
-     * @param {!print_preview.MeasurementSystemUnitType} unitType Unit type of
-     *     local machine's measurement system.
-     * @param {boolean} isDocumentModifiable Whether the document to print is
-     *     modifiable.
-     * @param {string} documentTitle Title of the document.
-     * @param {boolean} documentHasSelection Whether the document has selected
-     *     content.
-     * @param {boolean} selectionOnly Whether only selected content should be
-     *     printed.
-     * @param {?string} systemDefaultDestinationId ID of the system default
-     *     destination.
-     * @param {?string} serializedAppStateStr Serialized app state.
-     * @param {?string} serializedDefaultDestinationSelectionRulesStr Serialized
-     *     default destination selection rules.
-     */
-    constructor(
-        isInKioskAutoPrintMode, isInAppKioskMode, thousandsDelimeter,
-        decimalDelimeter, unitType, isDocumentModifiable, documentTitle,
-        documentHasSelection, selectionOnly, systemDefaultDestinationId,
-        serializedAppStateStr, serializedDefaultDestinationSelectionRulesStr) {
-      /**
-       * Whether the print preview should be in auto-print mode.
-       * @private {boolean}
-       */
-      this.isInKioskAutoPrintMode_ = isInKioskAutoPrintMode;
-
-      /**
-       * Whether the print preview should switch to App Kiosk mode.
-       * @private {boolean}
-       */
-      this.isInAppKioskMode_ = isInAppKioskMode;
-
-      /**
-       * Character delimeter of thousands digits.
-       * @private {string}
-       */
-      this.thousandsDelimeter_ = thousandsDelimeter;
-
-      /**
-       * Character delimeter of the decimal point.
-       * @private {string}
-       */
-      this.decimalDelimeter_ = decimalDelimeter;
-
-      /**
-       * Unit type of local machine's measurement system.
-       * @private {print_preview.MeasurementSystemUnitType}
-       */
-      this.unitType_ = unitType;
-
-      /**
-       * Whether the document to print is modifiable.
-       * @private {boolean}
-       */
-      this.isDocumentModifiable_ = isDocumentModifiable;
-
-      /**
-       * Title of the document.
-       * @private {string}
-       */
-      this.documentTitle_ = documentTitle;
-
-      /**
-       * Whether the document has selection.
-       * @private {boolean}
-       */
-      this.documentHasSelection_ = documentHasSelection;
-
-      /**
-       * Whether selection only should be printed.
-       * @private {boolean}
-       */
-      this.selectionOnly_ = selectionOnly;
-
-      /**
-       * ID of the system default destination.
-       * @private {?string}
-       */
-      this.systemDefaultDestinationId_ = systemDefaultDestinationId;
-
-      /**
-       * Serialized app state.
-       * @private {?string}
-       */
-      this.serializedAppStateStr_ = serializedAppStateStr;
-
-      /**
-       * Serialized default destination selection rules.
-       * @private {?string}
-       */
-      this.serializedDefaultDestinationSelectionRulesStr_ =
-          serializedDefaultDestinationSelectionRulesStr;
-    }
-
-    /**
-     * @return {boolean} Whether the print preview should be in auto-print mode.
-     */
-    get isInKioskAutoPrintMode() {
-      return this.isInKioskAutoPrintMode_;
-    }
-
-    /**
-     * @return {boolean} Whether the print preview should switch to App Kiosk
-     *     mode.
-     */
-    get isInAppKioskMode() {
-      return this.isInAppKioskMode_;
-    }
-
-    /** @return {string} Character delimeter of thousands digits. */
-    get thousandsDelimeter() {
-      return this.thousandsDelimeter_;
-    }
-
-    /** @return {string} Character delimeter of the decimal point. */
-    get decimalDelimeter() {
-      return this.decimalDelimeter_;
-    }
-
-    /**
-     * @return {!print_preview.MeasurementSystemUnitType} Unit type of local
-     *     machine's measurement system.
-     */
-    get unitType() {
-      return this.unitType_;
-    }
-
-    /** @return {boolean} Whether the document to print is modifiable. */
-    get isDocumentModifiable() {
-      return this.isDocumentModifiable_;
-    }
-
-    /** @return {string} Document title. */
-    get documentTitle() {
-      return this.documentTitle_;
-    }
-
-    /** @return {boolean} Whether the document has selection. */
-    get documentHasSelection() {
-      return this.documentHasSelection_;
-    }
-
-    /** @return {boolean} Whether selection only should be printed. */
-    get selectionOnly() {
-      return this.selectionOnly_;
-    }
-
-    /** @return {?string} ID of the system default destination. */
-    get systemDefaultDestinationId() {
-      return this.systemDefaultDestinationId_;
-    }
-
-    /** @return {?string} Serialized app state. */
-    get serializedAppStateStr() {
-      return this.serializedAppStateStr_;
-    }
-
-    /** @return {?string} Serialized default destination selection rules. */
-    get serializedDefaultDestinationSelectionRulesStr() {
-      return this.serializedDefaultDestinationSelectionRulesStr_;
-    }
-  }
-
   // Export
   return {
-    NativeInitialSettings: NativeInitialSettings,
     NativeLayer: NativeLayer
   };
 });

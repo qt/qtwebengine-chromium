@@ -12,10 +12,25 @@
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "testing/range_set.h"
 #include "testing/test_support.h"
 #include "testing/utils/path_service.h"
 
 namespace {
+
+class MockDownloadHints : public FX_DOWNLOADHINTS {
+ public:
+  static void SAddSegment(FX_DOWNLOADHINTS* pThis, size_t offset, size_t size) {
+  }
+
+  MockDownloadHints() {
+    FX_DOWNLOADHINTS::version = 1;
+    FX_DOWNLOADHINTS::AddSegment = SAddSegment;
+  }
+
+  ~MockDownloadHints() {}
+};
+
 class TestAsyncLoader : public FX_DOWNLOADHINTS, FX_FILEAVAIL {
  public:
   explicit TestAsyncLoader(const std::string& file_name) {
@@ -60,50 +75,25 @@ class TestAsyncLoader : public FX_DOWNLOADHINTS, FX_FILEAVAIL {
   }
 
   size_t max_already_available_bound() const {
-    return available_ranges_.empty() ? 0 : available_ranges_.rbegin()->second;
+    return available_ranges_.IsEmpty()
+               ? 0
+               : available_ranges_.ranges().rbegin()->second;
+  }
+
+  void FlushRequestedData() {
+    for (const auto& it : requested_segments_) {
+      SetDataAvailable(it.first, it.second);
+    }
+    ClearRequestedSegments();
   }
 
  private:
   void SetDataAvailable(size_t start, size_t size) {
-    if (size == 0)
-      return;
-    const auto range = std::make_pair(start, start + size);
-    if (available_ranges_.empty()) {
-      available_ranges_.insert(range);
-      return;
-    }
-    auto start_it = available_ranges_.upper_bound(range);
-    if (start_it != available_ranges_.begin())
-      --start_it;  // start now points to the key equal or lower than offset.
-    if (start_it->second < range.first)
-      ++start_it;  // start element is entirely before current range, skip it.
-
-    auto end_it = available_ranges_.upper_bound(
-        std::make_pair(range.second, range.second));
-    if (start_it == end_it) {  // No ranges to merge.
-      available_ranges_.insert(range);
-      return;
-    }
-
-    --end_it;
-
-    size_t new_start = std::min<size_t>(start_it->first, range.first);
-    size_t new_end = std::max(end_it->second, range.second);
-
-    available_ranges_.erase(start_it, ++end_it);
-    available_ranges_.insert(std::make_pair(new_start, new_end));
+    available_ranges_.Union(RangeSet::Range(start, start + size));
   }
 
   bool CheckDataAlreadyAvailable(size_t start, size_t size) const {
-    if (size == 0)
-      return false;
-    const auto range = std::make_pair(start, start + size);
-    auto it = available_ranges_.upper_bound(range);
-    if (it == available_ranges_.begin())
-      return false;  // No ranges includes range.start().
-
-    --it;  // Now it starts equal or before range.start().
-    return it->second >= range.second;
+    return available_ranges_.Contains(RangeSet::Range(start, start + size));
   }
 
   int GetBlockImpl(unsigned long pos, unsigned char* pBuf, unsigned long size) {
@@ -158,14 +148,7 @@ class TestAsyncLoader : public FX_DOWNLOADHINTS, FX_FILEAVAIL {
   size_t max_requested_bound_ = 0;
   bool is_new_data_available_ = true;
 
-  using Range = std::pair<size_t, size_t>;
-  struct range_compare {
-    bool operator()(const Range& lval, const Range& rval) const {
-      return lval.first < rval.first;
-    }
-  };
-  using RangesContainer = std::set<Range, range_compare>;
-  RangesContainer available_ranges_;
+  RangeSet available_ranges_;
 };
 
 }  // namespace
@@ -175,13 +158,15 @@ class FPDFDataAvailEmbeddertest : public EmbedderTest {};
 TEST_F(FPDFDataAvailEmbeddertest, TrailerUnterminated) {
   // Document must load without crashing but is too malformed to be available.
   EXPECT_FALSE(OpenDocument("trailer_unterminated.pdf"));
-  EXPECT_FALSE(FPDFAvail_IsDocAvail(avail_, &hints_));
+  MockDownloadHints hints;
+  EXPECT_FALSE(FPDFAvail_IsDocAvail(avail_, &hints));
 }
 
 TEST_F(FPDFDataAvailEmbeddertest, TrailerAsHexstring) {
   // Document must load without crashing but is too malformed to be available.
   EXPECT_FALSE(OpenDocument("trailer_as_hexstring.pdf"));
-  EXPECT_FALSE(FPDFAvail_IsDocAvail(avail_, &hints_));
+  MockDownloadHints hints;
+  EXPECT_FALSE(FPDFAvail_IsDocAvail(avail_, &hints));
 }
 
 TEST_F(FPDFDataAvailEmbeddertest, LoadUsingHintTables) {
@@ -197,6 +182,26 @@ TEST_F(FPDFDataAvailEmbeddertest, LoadUsingHintTables) {
   FPDF_PAGE page = FPDF_LoadPage(document(), 1);
   EXPECT_TRUE(page);
   FPDF_ClosePage(page);
+}
+
+TEST_F(FPDFDataAvailEmbeddertest, CheckFormAvailIfLinearized) {
+  TestAsyncLoader loader("feature_linearized_loading.pdf");
+  avail_ = FPDFAvail_Create(loader.file_avail(), loader.file_access());
+  ASSERT_EQ(PDF_DATA_AVAIL, FPDFAvail_IsDocAvail(avail_, loader.hints()));
+  document_ = FPDFAvail_GetDocument(avail_, nullptr);
+  ASSERT_TRUE(document_);
+
+  // Prevent access to non requested data to coerce the parser to send new
+  // request for non available (non requested before) data.
+  loader.set_is_new_data_available(false);
+  loader.ClearRequestedSegments();
+
+  int status = PDF_FORM_NOTAVAIL;
+  while (status == PDF_FORM_NOTAVAIL) {
+    loader.FlushRequestedData();
+    status = FPDFAvail_IsFormAvail(avail_, loader.hints());
+  }
+  EXPECT_NE(PDF_FORM_ERROR, status);
 }
 
 TEST_F(FPDFDataAvailEmbeddertest,
@@ -235,6 +240,34 @@ TEST_F(FPDFDataAvailEmbeddertest,
   // Prevent loading data, while page loading.
   loader.set_is_new_data_available(false);
   FPDF_PAGE page = FPDF_LoadPage(document(), first_page_num);
+  EXPECT_TRUE(page);
+  FPDF_ClosePage(page);
+}
+
+TEST_F(FPDFDataAvailEmbeddertest, LoadSecondPageIfLinearizedWithHints) {
+  TestAsyncLoader loader("feature_linearized_loading.pdf");
+  avail_ = FPDFAvail_Create(loader.file_avail(), loader.file_access());
+  ASSERT_EQ(PDF_DATA_AVAIL, FPDFAvail_IsDocAvail(avail_, loader.hints()));
+  document_ = FPDFAvail_GetDocument(avail_, nullptr);
+  ASSERT_TRUE(document_);
+
+  static constexpr uint32_t kSecondPageNum = 1;
+
+  // Prevent access to non requested data to coerce the parser to send new
+  // request for non available (non requested before) data.
+  loader.set_is_new_data_available(false);
+  loader.ClearRequestedSegments();
+
+  int status = PDF_DATA_NOTAVAIL;
+  while (status == PDF_DATA_NOTAVAIL) {
+    loader.FlushRequestedData();
+    status = FPDFAvail_IsPageAvail(avail_, kSecondPageNum, loader.hints());
+  }
+  EXPECT_EQ(PDF_DATA_AVAIL, status);
+
+  // Prevent loading data, while page loading.
+  loader.set_is_new_data_available(false);
+  FPDF_PAGE page = FPDF_LoadPage(document(), kSecondPageNum);
   EXPECT_TRUE(page);
   FPDF_ClosePage(page);
 }

@@ -117,7 +117,7 @@ class PersonalDataManagerMock : public PersonalDataManager {
 
   // PersonalDataManager:
   std::string SaveImportedProfile(const AutofillProfile& profile) override;
-  std::vector<AutofillProfile*> web_profiles() const override;
+  std::vector<AutofillProfile*> GetProfiles() const override;
 
  private:
   std::vector<std::unique_ptr<AutofillProfile>> profiles_;
@@ -146,7 +146,7 @@ std::string PersonalDataManagerMock::SaveImportedProfile(
   return merged_guid;
 }
 
-std::vector<AutofillProfile*> PersonalDataManagerMock::web_profiles() const {
+std::vector<AutofillProfile*> PersonalDataManagerMock::GetProfiles() const {
   std::vector<AutofillProfile*> result;
   for (const auto& profile : profiles_)
     result.push_back(profile.get());
@@ -273,7 +273,10 @@ void AutofillMergeTest::MergeProfiles(const std::string& profiles,
       std::unique_ptr<CreditCard> imported_credit_card;
       bool imported_credit_card_matches_masked_server_credit_card;
       personal_data_.ImportFormData(
-          form_structure, false, &imported_credit_card,
+          form_structure,
+          true,   // credit card autofill enabled
+          false,  // should return local card
+          &imported_credit_card,
           &imported_credit_card_matches_masked_server_credit_card);
       EXPECT_FALSE(imported_credit_card);
 
@@ -282,7 +285,7 @@ void AutofillMergeTest::MergeProfiles(const std::string& profiles,
     }
   }
 
-  *merged_profiles = SerializeProfiles(personal_data_.web_profiles());
+  *merged_profiles = SerializeProfiles(personal_data_.GetProfiles());
 }
 
 ServerFieldType AutofillMergeTest::StringToFieldType(const std::string& str) {

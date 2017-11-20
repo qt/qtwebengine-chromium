@@ -30,7 +30,7 @@
  *
  * Currently this can only be constructed from a path, rect, or rrect though it can become a path
  * applying style to the geometry. The idea is to expand this to cover most or all of the geometries
- * that have SkCanvas::draw APIs.
+ * that have fast paths in the GPU backend.
  */
 class GrShape {
 public:
@@ -46,7 +46,7 @@ public:
 
     explicit GrShape(const SkRect& rect) : GrShape(rect, GrStyle::SimpleFill()) {}
 
-    GrShape(const SkPath& path, const GrStyle& style) : fStyle(style) {
+    GrShape(const SkPath& path, const GrStyle& style) : fStyle(style), fOriginalPath(path) {
         this->initType(Type::kPath, &path);
         this->attemptToSimplifyPath();
     }
@@ -91,7 +91,7 @@ public:
         this->attemptToSimplifyRRect();
     }
 
-    GrShape(const SkPath& path, const SkPaint& paint) : fStyle(paint) {
+    GrShape(const SkPath& path, const SkPaint& paint) : fStyle(paint), fOriginalPath(path) {
         this->initType(Type::kPath, &path);
         this->attemptToSimplifyPath();
     }
@@ -120,6 +120,25 @@ public:
     GrShape& operator=(const GrShape& that);
 
     ~GrShape() { this->changeType(Type::kEmpty); }
+
+    /**
+     * Informs MakeFilled on how to modify that shape's fill rule when making a simple filled
+     * version of the shape.
+     */
+    enum class FillInversion {
+        kPreserve,
+        kFlip,
+        kForceNoninverted,
+        kForceInverted
+    };
+    /**
+     * Makes a filled shape from the pre-styled original shape and optionally modifies whether
+     * the fill is inverted or not. It's important to note that the original shape's geometry
+     * may already have been modified if doing so was neutral with respect to its style
+     * (e.g. filled paths are always closed when stored in a shape and dashed paths are always
+     * made non-inverted since dashing ignores inverseness).
+     */
+    static GrShape MakeFilled(const GrShape& original, FillInversion = FillInversion::kPreserve);
 
     const GrStyle& style() const { return fStyle; }
 
@@ -176,6 +195,10 @@ public:
             case Type::kEmpty:
                 out->reset();
                 break;
+            case Type::kInvertedEmpty:
+                out->reset();
+                out->setFillType(kDefaultPathInverseFillType);
+                break;
             case Type::kRRect:
                 out->reset();
                 out->addRRect(fRRectData.fRRect, fRRectData.fDir, fRRectData.fStart);
@@ -204,9 +227,9 @@ public:
 
     /**
      * Returns whether the geometry is empty. Note that applying the style could produce a
-     * non-empty shape.
+     * non-empty shape. It also may have an inverse fill.
      */
-    bool isEmpty() const { return Type::kEmpty == fType; }
+    bool isEmpty() const { return Type::kEmpty == fType || Type::kInvertedEmpty == fType; }
 
     /**
      * Gets the bounds of the geometry without reflecting the shape's styling. This ignores
@@ -229,6 +252,8 @@ public:
         switch (fType) {
             case Type::kEmpty:
                 return true;
+            case Type::kInvertedEmpty:
+                return true;
             case Type::kRRect:
                 return true;
             case Type::kLine:
@@ -250,6 +275,9 @@ public:
         switch (fType) {
             case Type::kEmpty:
                 ret = false;
+                break;
+            case Type::kInvertedEmpty:
+                ret = true;
                 break;
             case Type::kRRect:
                 ret = fRRectData.fInverted;
@@ -288,6 +316,8 @@ public:
         switch (fType) {
             case Type::kEmpty:
                 return true;
+            case Type::kInvertedEmpty:
+                return true;
             case Type::kRRect:
                 return true;
             case Type::kLine:
@@ -302,6 +332,8 @@ public:
     uint32_t segmentMask() const {
         switch (fType) {
             case Type::kEmpty:
+                return 0;
+            case Type::kInvertedEmpty:
                 return 0;
             case Type::kRRect:
                 if (fRRectData.fRRect.getType() == SkRRect::kOval_Type) {
@@ -333,9 +365,25 @@ public:
      */
     void writeUnstyledKey(uint32_t* key) const;
 
+    /**
+     * Adds a listener to the *original* path. Typically used to invalidate cached resources when
+     * a path is no longer in-use. If the shape started out as something other than a path, this
+     * does nothing (but will delete the listener).
+     */
+    void addGenIDChangeListener(SkPathRef::GenIDChangeListener* listener) const;
+
+    /**
+     * Helpers that are only exposed for unit tests, to determine if the shape is a path, and get
+     * the generation ID of the *original* path.
+     */
+    uint32_t testingOnly_getOriginalGenerationID() const;
+    bool testingOnly_isPath() const;
+
 private:
+
     enum class Type {
         kEmpty,
+        kInvertedEmpty,
         kRRect,
         kLine,
         kPath,
@@ -458,6 +506,7 @@ private:
         } fLineData;
     };
     GrStyle                     fStyle;
+    SkPath                      fOriginalPath;
     SkAutoSTArray<8, uint32_t>  fInheritedKey;
 };
 #endif

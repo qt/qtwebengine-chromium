@@ -31,17 +31,17 @@
 #include "core/html/HTMLSlotElement.h"
 
 #include <array>
-#include "core/HTMLNames.h"
+#include "core/css/StyleChangeReason.h"
+#include "core/css/StyleEngine.h"
 #include "core/dom/ElementShadow.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/SlotAssignment.h"
-#include "core/dom/StyleChangeReason.h"
-#include "core/dom/StyleEngine.h"
 #include "core/dom/V0InsertionPoint.h"
 #include "core/dom/WhitespaceAttacher.h"
 #include "core/dom/events/Event.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/AssignedNodesOptions.h"
+#include "core/html_names.h"
 #include "core/probe/CoreProbes.h"
 #include "platform/bindings/Microtask.h"
 
@@ -94,9 +94,9 @@ void HTMLSlotElement::AppendAssignedNode(Node& host_child) {
 void HTMLSlotElement::ResolveDistributedNodes() {
   for (auto& node : assigned_nodes_) {
     DCHECK(node->IsSlotable());
-    if (isHTMLSlotElement(*node) &&
-        toHTMLSlotElement(*node).SupportsDistribution())
-      AppendDistributedNodesFrom(toHTMLSlotElement(*node));
+    if (IsHTMLSlotElement(*node) &&
+        ToHTMLSlotElement(*node).SupportsDistribution())
+      AppendDistributedNodesFrom(ToHTMLSlotElement(*node));
     else
       AppendDistributedNode(*node);
 
@@ -278,8 +278,8 @@ void HTMLSlotElement::UpdateDistributedNodesWithFallback() {
   for (auto& child : NodeTraversal::ChildrenOf(*this)) {
     if (!child.IsSlotable())
       continue;
-    if (isHTMLSlotElement(child))
-      AppendDistributedNodesFrom(toHTMLSlotElement(child));
+    if (auto* slot = ToHTMLSlotElementOrNull(child))
+      AppendDistributedNodesFrom(*slot);
     else
       AppendDistributedNode(child);
   }

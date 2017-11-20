@@ -9,7 +9,6 @@
 #include "core/css/parser/CSSParserContext.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 #include "core/css/properties/CSSPropertyGridUtils.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
@@ -39,14 +38,12 @@ CSSValueList* ConsumeImplicitAutoFlow(CSSParserTokenRange& range,
 }  // namespace
 
 bool CSSShorthandPropertyAPIGrid::ParseShorthand(
-    CSSPropertyID,
     bool important,
     CSSParserTokenRange& range,
     const CSSParserContext& context,
     const CSSParserLocalContext&,
     HeapVector<CSSProperty, 256>& properties) const {
-  DCHECK(RuntimeEnabledFeatures::CSSGridLayoutEnabled());
-  DCHECK_EQ(shorthandForProperty(CSSPropertyGrid).length(), 8u);
+  DCHECK_EQ(shorthandForProperty(CSSPropertyGrid).length(), 6u);
 
   CSSParserTokenRange range_copy = range;
 
@@ -86,14 +83,6 @@ bool CSSShorthandPropertyAPIGrid::ParseShorthand(
         properties);
     CSSPropertyParserHelpers::AddProperty(
         CSSPropertyGridAutoRows, CSSPropertyGrid, *CSSInitialValue::Create(),
-        important, CSSPropertyParserHelpers::IsImplicitProperty::kNotImplicit,
-        properties);
-    CSSPropertyParserHelpers::AddProperty(
-        CSSPropertyGridColumnGap, CSSPropertyGrid, *CSSInitialValue::Create(),
-        important, CSSPropertyParserHelpers::IsImplicitProperty::kNotImplicit,
-        properties);
-    CSSPropertyParserHelpers::AddProperty(
-        CSSPropertyGridRowGap, CSSPropertyGrid, *CSSInitialValue::Create(),
         important, CSSPropertyParserHelpers::IsImplicitProperty::kNotImplicit,
         properties);
     return true;
@@ -181,14 +170,6 @@ bool CSSShorthandPropertyAPIGrid::ParseShorthand(
   CSSPropertyParserHelpers::AddProperty(
       CSSPropertyGridAutoRows, CSSPropertyGrid, *auto_rows_value, important,
       CSSPropertyParserHelpers::IsImplicitProperty::kNotImplicit, properties);
-  CSSPropertyParserHelpers::AddProperty(
-      CSSPropertyGridColumnGap, CSSPropertyGrid, *CSSInitialValue::Create(),
-      important, CSSPropertyParserHelpers::IsImplicitProperty::kNotImplicit,
-      properties);
-  CSSPropertyParserHelpers::AddProperty(
-      CSSPropertyGridRowGap, CSSPropertyGrid, *CSSInitialValue::Create(),
-      important, CSSPropertyParserHelpers::IsImplicitProperty::kNotImplicit,
-      properties);
   return true;
 }
 

@@ -63,6 +63,7 @@ public:
      *                      color from its geometry processor instead.
      */
     GrDrawOp::RequiresDstTexture xpRequiresDstTexture(const GrCaps& caps, const GrAppliedClip* clip,
+                                                      GrPixelConfigIsClamped dstIsClamped,
                                                       GrProcessorAnalysisCoverage geometryCoverage,
                                                       GrProcessorAnalysisColor* geometryColor);
 
@@ -72,6 +73,7 @@ public:
      * changed the op must override its geometry processor color output with the new color.
      */
     GrDrawOp::RequiresDstTexture xpRequiresDstTexture(const GrCaps&, const GrAppliedClip*,
+                                                      GrPixelConfigIsClamped dstIsClamped,
                                                       GrProcessorAnalysisCoverage geometryCoverage,
                                                       GrColor* geometryColor);
 
@@ -96,6 +98,12 @@ public:
 
         friend class GrSimpleMeshDrawOpHelper;
     };
+
+    void visitProxies(const std::function<void(GrSurfaceProxy*)>& func) const {
+        if (fProcessors) {
+            fProcessors->visitProxies(func);
+        }
+    }
 
     SkString dumpInfo() const;
 
@@ -127,6 +135,7 @@ class GrSimpleMeshDrawOpHelperWithStencil : private GrSimpleMeshDrawOpHelper {
 public:
     using MakeArgs = GrSimpleMeshDrawOpHelper::MakeArgs;
     using Flags = GrSimpleMeshDrawOpHelper::Flags;
+    using GrSimpleMeshDrawOpHelper::visitProxies;
 
     // using declarations can't be templated, so this is a pass through function instead.
     template <typename Op, typename... OpArgs>

@@ -42,8 +42,6 @@ const char* MainThreadTaskQueue::NameForQueueType(
       return "test_tq";
     case MainThreadTaskQueue::QueueType::FRAME_LOADING_CONTROL:
       return "frame_loading_control_tq";
-    case MainThreadTaskQueue::QueueType::BEST_EFFORT:
-      return "best_effort";
     case MainThreadTaskQueue::QueueType::COUNT:
       NOTREACHED();
       return nullptr;
@@ -59,7 +57,6 @@ MainThreadTaskQueue::QueueClass MainThreadTaskQueue::QueueClassForQueueType(
     case QueueType::DEFAULT:
     case QueueType::IDLE:
     case QueueType::TEST:
-    case QueueType::BEST_EFFORT:
       return QueueClass::NONE;
     case QueueType::DEFAULT_LOADING:
     case QueueType::FRAME_LOADING:
@@ -94,11 +91,15 @@ MainThreadTaskQueue::MainThreadTaskQueue(
       can_be_paused_(params.can_be_paused),
       can_be_stopped_(params.can_be_stopped),
       used_for_control_tasks_(params.used_for_control_tasks),
-      renderer_scheduler_(renderer_scheduler) {
-  GetTaskQueueImpl()->SetOnTaskStartedHandler(
-      base::Bind(&MainThreadTaskQueue::OnTaskStarted, base::Unretained(this)));
-  GetTaskQueueImpl()->SetOnTaskCompletedHandler(base::Bind(
-      &MainThreadTaskQueue::OnTaskCompleted, base::Unretained(this)));
+      renderer_scheduler_(renderer_scheduler),
+      web_frame_scheduler_(nullptr) {
+  if (GetTaskQueueImpl()) {
+    // TaskQueueImpl may be null for tests.
+    GetTaskQueueImpl()->SetOnTaskStartedHandler(base::Bind(
+        &MainThreadTaskQueue::OnTaskStarted, base::Unretained(this)));
+    GetTaskQueueImpl()->SetOnTaskCompletedHandler(base::Bind(
+        &MainThreadTaskQueue::OnTaskCompleted, base::Unretained(this)));
+  }
 }
 
 MainThreadTaskQueue::~MainThreadTaskQueue() {}

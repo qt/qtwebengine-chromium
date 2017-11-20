@@ -32,8 +32,8 @@
 #include "core/dom/DOMException.h"
 #include "core/imagebitmap/ImageBitmap.h"
 #include "core/imagebitmap/ImageBitmapOptions.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/ColorBehavior.h"
+#include "platform/wtf/ByteSwap.h"
 #include "third_party/skia/include/core/SkColorSpaceXform.h"
 #include "v8/include/v8.h"
 
@@ -319,10 +319,9 @@ ImageData* ImageData::Create(NotShared<DOMUint8ClampedArray> data,
 }
 
 bool ColorManagementEnabled(const ImageDataColorSettings& color_settings) {
-  if (CanvasColorParams::ColorCorrectRenderingInAnyColorSpace())
+  if (RuntimeEnabledFeatures::ColorCanvasExtensionsEnabled())
     return true;
-  if (CanvasColorParams::ColorCorrectRenderingInSRGBOnly() &&
-      color_settings.colorSpace() == kSRGBCanvasColorSpaceName)
+  if (color_settings.colorSpace() == kSRGBCanvasColorSpaceName)
     return true;
   return false;
 }
@@ -366,14 +365,14 @@ ImageData* ImageData::CreateImageData(ImageDataArray& data,
   // pixels.
   String storage_format_name;
 
-  if (data.isUint8ClampedArray()) {
-    buffer_view = data.getAsUint8ClampedArray().View();
+  if (data.IsUint8ClampedArray()) {
+    buffer_view = data.GetAsUint8ClampedArray().View();
     storage_format_name = kUint8ClampedArrayStorageFormatName;
-  } else if (data.isUint16Array()) {
-    buffer_view = data.getAsUint16Array().View();
+  } else if (data.IsUint16Array()) {
+    buffer_view = data.GetAsUint16Array().View();
     storage_format_name = kUint16ArrayStorageFormatName;
-  } else if (data.isFloat32Array()) {
-    buffer_view = data.getAsFloat32Array().View();
+  } else if (data.IsFloat32Array()) {
+    buffer_view = data.GetAsFloat32Array().View();
     storage_format_name = kFloat32ArrayStorageFormatName;
   } else {
     NOTREACHED();
@@ -463,7 +462,7 @@ ScriptPromise ImageData::CreateImageBitmap(ScriptState* script_state,
                                            EventTarget& event_target,
                                            Optional<IntRect> crop_rect,
                                            const ImageBitmapOptions& options) {
-  if (data()->BufferBase()->IsNeutered()) {
+  if (BufferBase()->IsNeutered()) {
     return ScriptPromise::RejectWithDOMException(
         script_state,
         DOMException::Create(kInvalidStateError,
@@ -706,7 +705,7 @@ CanvasColorParams ImageData::GetCanvasColorParams() {
   CanvasPixelFormat pixel_format = kRGBA8CanvasPixelFormat;
   if (color_settings_.storageFormat() != kUint8ClampedArrayStorageFormatName)
     pixel_format = kF16CanvasPixelFormat;
-  return CanvasColorParams(color_space, pixel_format);
+  return CanvasColorParams(color_space, pixel_format, kNonOpaque);
 }
 
 bool ImageData::ImageDataInCanvasColorSettings(
@@ -717,15 +716,16 @@ bool ImageData::ImageDataInCanvasColorSettings(
     return false;
 
   // If canvas and image data are both in the same color space and pixel format
-  // is 8-8-8-8, just return the embedded data.
+  // is 8-8-8-8, no conversion is needed.
   CanvasColorSpace image_data_color_space =
       ImageData::GetCanvasColorSpace(color_settings_.colorSpace());
   if (canvas_pixel_format == kRGBA8CanvasPixelFormat &&
       color_settings_.storageFormat() == kUint8ClampedArrayStorageFormatName) {
-    if ((canvas_color_space == kLegacyCanvasColorSpace ||
+    if (canvas_color_space == image_data_color_space ||
+        ((canvas_color_space == kLegacyCanvasColorSpace ||
          canvas_color_space == kSRGBCanvasColorSpace) &&
-        (image_data_color_space == kLegacyCanvasColorSpace ||
-         image_data_color_space == kSRGBCanvasColorSpace)) {
+            (image_data_color_space == kLegacyCanvasColorSpace ||
+             image_data_color_space == kSRGBCanvasColorSpace))) {
       memcpy(converted_pixels.get(), data_->Data(), data_->length());
       return true;
     }
@@ -733,75 +733,51 @@ bool ImageData::ImageDataInCanvasColorSettings(
 
   // Otherwise, color convert the pixels.
   unsigned num_pixels = size_.Width() * size_.Height();
-  unsigned data_length = num_pixels * 4;
-  void* src_data = nullptr;
-  std::unique_ptr<uint16_t[]> le_data;
+  void* src_data = this->BufferBase()->Data();
   SkColorSpaceXform::ColorFormat src_color_format =
       SkColorSpaceXform::ColorFormat::kRGBA_8888_ColorFormat;
-  if (data_) {
-    src_data = static_cast<void*>(data_->Data());
-    DCHECK(src_data);
-  } else if (data_u16_) {
-    src_data = static_cast<void*>(data_u16_->Data());
-    DCHECK(src_data);
+  if (data_u16_) {
     // SkColorSpaceXform::apply expects U16 data to be in Big Endian byte
-    // order, while srcData is always Little Endian. As we cannot consume
-    // ImageData here, we change the byte order in a copy.
-    le_data.reset(new uint16_t[data_length]());
-    memcpy(le_data.get(), src_data, data_length * 2);
-    uint16_t swap_value = 0;
-    for (unsigned i = 0; i < data_length; i++) {
-      swap_value = le_data[i];
-      le_data[i] = swap_value >> 8 | swap_value << 8;
-    }
-    src_data = static_cast<void*>(le_data.get());
-    DCHECK(src_data);
+    // order, while image data is always Little Endian.
+    uint16_t* src_data_u16 = static_cast<uint16_t*>(src_data);
+    for (unsigned i = 0; i < num_pixels * 4; i++)
+      *(src_data_u16 + i) = WTF::Bswap16(*(src_data_u16 + i));
     src_color_format = SkColorSpaceXform::ColorFormat::kRGBA_U16_BE_ColorFormat;
   } else if (data_f32_) {
-    src_data = static_cast<void*>(data_f32_->Data());
-    DCHECK(src_data);
     src_color_format = SkColorSpaceXform::ColorFormat::kRGBA_F32_ColorFormat;
-  } else {
-    NOTREACHED();
   }
 
-  sk_sp<SkColorSpace> src_color_space = nullptr;
-  if (data_) {
-    src_color_space =
-        CanvasColorParams(image_data_color_space, kRGBA8CanvasPixelFormat)
-            .GetSkColorSpaceForSkSurfaces();
-  } else {
-    src_color_space =
-        CanvasColorParams(image_data_color_space, kF16CanvasPixelFormat)
-            .GetSkColorSpaceForSkSurfaces();
-  }
-
+  sk_sp<SkColorSpace> src_color_space =
+      CanvasColorParams(image_data_color_space,
+                        data_ ? kRGBA8CanvasPixelFormat : kF16CanvasPixelFormat,
+                        kNonOpaque)
+          .GetSkColorSpaceForSkSurfaces();
   sk_sp<SkColorSpace> dst_color_space =
-      CanvasColorParams(canvas_color_space, canvas_pixel_format)
+      CanvasColorParams(canvas_color_space, canvas_pixel_format, kNonOpaque)
           .GetSkColorSpaceForSkSurfaces();
   SkColorSpaceXform::ColorFormat dst_color_format =
       SkColorSpaceXform::ColorFormat::kRGBA_8888_ColorFormat;
   if (canvas_pixel_format == kF16CanvasPixelFormat)
     dst_color_format = SkColorSpaceXform::ColorFormat::kRGBA_F16_ColorFormat;
-
-  if (SkColorSpace::Equals(src_color_space.get(), dst_color_space.get()) &&
-      src_color_format == dst_color_format)
-    return static_cast<unsigned char*>(src_data);
-
   std::unique_ptr<SkColorSpaceXform> xform =
       SkColorSpaceXform::New(src_color_space.get(), dst_color_space.get());
 
-  if (!xform->apply(dst_color_format, converted_pixels.get(), src_color_format,
-                    src_data, num_pixels, SkAlphaType::kUnpremul_SkAlphaType))
-    return false;
-  return true;
+  bool conversion_result =
+      xform->apply(dst_color_format, converted_pixels.get(), src_color_format,
+                   src_data, num_pixels, SkAlphaType::kUnpremul_SkAlphaType);
+  if (data_u16_) {
+    uint16_t* src_data_u16 = static_cast<uint16_t*>(src_data);
+    for (unsigned i = 0; i < num_pixels * 4; i++)
+      *(src_data_u16 + i) = WTF::Bswap16(*(src_data_u16 + i));
+  };
+  return conversion_result;
 }
 
 bool ImageData::ImageDataInCanvasColorSettings(
     const CanvasColorParams& canvas_color_params,
     std::unique_ptr<uint8_t[]>& converted_pixels) {
-  return ImageDataInCanvasColorSettings(canvas_color_params.color_space(),
-                                        canvas_color_params.pixel_format(),
+  return ImageDataInCanvasColorSettings(canvas_color_params.ColorSpace(),
+                                        canvas_color_params.PixelFormat(),
                                         converted_pixels);
 }
 
@@ -839,7 +815,7 @@ ImageData::ImageData(const IntSize& size,
       data_ = const_cast<DOMUint8ClampedArray*>(
           static_cast<const DOMUint8ClampedArray*>(data));
       DCHECK(data_);
-      data_union_.setUint8ClampedArray(data_);
+      data_union_.SetUint8ClampedArray(data_);
       SECURITY_CHECK(static_cast<unsigned>(size.Width() * size.Height() * 4) <=
                      data_->length());
       break;
@@ -849,7 +825,7 @@ ImageData::ImageData(const IntSize& size,
       data_u16_ =
           const_cast<DOMUint16Array*>(static_cast<const DOMUint16Array*>(data));
       DCHECK(data_u16_);
-      data_union_.setUint16Array(data_u16_);
+      data_union_.SetUint16Array(data_u16_);
       SECURITY_CHECK(static_cast<unsigned>(size.Width() * size.Height() * 4) <=
                      data_u16_->length());
       break;
@@ -859,7 +835,7 @@ ImageData::ImageData(const IntSize& size,
       data_f32_ = const_cast<DOMFloat32Array*>(
           static_cast<const DOMFloat32Array*>(data));
       DCHECK(data_f32_);
-      data_union_.setFloat32Array(data_f32_);
+      data_union_.SetFloat32Array(data_f32_);
       SECURITY_CHECK(static_cast<unsigned>(size.Width() * size.Height() * 4) <=
                      data_f32_->length());
       break;

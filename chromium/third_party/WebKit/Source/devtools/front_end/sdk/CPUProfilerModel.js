@@ -132,7 +132,9 @@ SDK.CPUProfilerModel = class extends SDK.SDKModel {
    * @return {!Promise}
    */
   startPreciseCoverage() {
-    return this._profilerAgent.startPreciseCoverage();
+    var callCount = false;
+    var detailed = true;
+    return this._profilerAgent.startPreciseCoverage(callCount, detailed);
   }
 
   /**
@@ -147,6 +149,13 @@ SDK.CPUProfilerModel = class extends SDK.SDKModel {
    */
   stopPreciseCoverage() {
     return this._profilerAgent.stopPreciseCoverage();
+  }
+
+  /**
+   * @return {!Promise<!Array<!Protocol.Profiler.ScriptCoverage>>}
+   */
+  bestEffortCoverage() {
+    return this._profilerAgent.getBestEffortCoverage().then(result => result || []);
   }
 };
 

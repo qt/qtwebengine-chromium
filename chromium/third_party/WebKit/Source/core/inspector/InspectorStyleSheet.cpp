@@ -37,6 +37,7 @@
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSSupportsRule.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleSheetContents.h"
@@ -45,7 +46,6 @@
 #include "core/dom/DOMNodeIds.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/StyleEngine.h"
 #include "core/html/HTMLStyleElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/IdentifiersFactory.h"
@@ -53,6 +53,7 @@
 #include "core/inspector/InspectorNetworkAgent.h"
 #include "core/inspector/InspectorResourceContainer.h"
 #include "core/svg/SVGStyleElement.h"
+#include "platform/wtf/Allocator.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "platform/wtf/text/TextPosition.h"
@@ -145,8 +146,9 @@ void GetClassNamesFromRule(CSSStyleRule* rule, HashSet<String>& unique_names) {
   }
 }
 
-class StyleSheetHandler final : public GarbageCollected<StyleSheetHandler>,
-                                public CSSParserObserver {
+class StyleSheetHandler final : public CSSParserObserver {
+  STACK_ALLOCATED();
+
  public:
   StyleSheetHandler(const String& parsed_text,
                     Document* document,
@@ -154,8 +156,6 @@ class StyleSheetHandler final : public GarbageCollected<StyleSheetHandler>,
       : parsed_text_(parsed_text), document_(document), result_(result) {
     DCHECK(result_);
   }
-
-  DECLARE_TRACE();
 
  private:
   void StartRuleHeader(StyleRule::RuleType, unsigned) override;
@@ -335,13 +335,6 @@ void StyleSheetHandler::ObserveComment(unsigned start_offset,
                             true, true, SourceRange(start_offset, end_offset)));
 }
 
-DEFINE_TRACE(StyleSheetHandler) {
-  visitor->Trace(document_);
-  visitor->Trace(result_);
-  visitor->Trace(current_rule_data_stack_);
-  visitor->Trace(current_rule_data_);
-}
-
 bool VerifyRuleText(Document* document, const String& rule_text) {
   DEFINE_STATIC_LOCAL(String, bogus_property_name, ("-webkit-boguz-propertee"));
   StyleSheetContents* style_sheet =
@@ -390,14 +383,19 @@ bool VerifyKeyframeKeyText(Document* document, const String& key_text) {
   CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
                                     style_sheet, text, handler);
 
-  // Exactly two should be parsed.
+  // Exactly one should be parsed.
   unsigned rule_count = source_data->size();
-  if (rule_count != 2 || source_data->at(0)->type != StyleRule::kKeyframes ||
-      source_data->at(1)->type != StyleRule::kKeyframe)
+  if (rule_count != 1 || source_data->at(0)->type != StyleRule::kKeyframes)
+    return false;
+
+  const CSSRuleSourceData& keyframe_data = *source_data->at(0);
+  if (keyframe_data.child_rules.size() != 1 ||
+      keyframe_data.child_rules.at(0)->type != StyleRule::kKeyframe)
     return false;
 
   // Exactly one property should be in keyframe rule.
-  unsigned property_count = source_data->at(1)->property_data.size();
+  const unsigned property_count =
+      keyframe_data.child_rules.at(0)->property_data.size();
   if (property_count != 1)
     return false;
 
@@ -1838,7 +1836,7 @@ Element* InspectorStyleSheet::OwnerStyleElement() {
     return nullptr;
   Element* owner_element = ToElement(owner_node);
 
-  if (!isHTMLStyleElement(owner_element) && !isSVGStyleElement(owner_element))
+  if (!IsHTMLStyleElement(owner_element) && !IsSVGStyleElement(owner_element))
     return nullptr;
   return owner_element;
 }

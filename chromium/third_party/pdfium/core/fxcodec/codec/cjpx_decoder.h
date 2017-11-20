@@ -7,9 +7,11 @@
 #ifndef CORE_FXCODEC_CODEC_CJPX_DECODER_H_
 #define CORE_FXCODEC_CODEC_CJPX_DECODER_H_
 
+#include <memory>
 #include <vector>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcodec/codec/codec_int.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "third_party/libopenjpeg20/openjpeg.h"
 
 class CPDF_ColorSpace;
@@ -28,10 +30,13 @@ class CJPX_Decoder {
  private:
   const uint8_t* m_SrcData;
   uint32_t m_SrcSize;
-  opj_image_t* image;
-  opj_codec_t* l_codec;
-  opj_stream_t* l_stream;
-  CFX_UnownedPtr<const CPDF_ColorSpace> const m_ColorSpace;
+  // TODO(rharrison): Convert these to unowned ptrs, if possible.
+  opj_image_t* m_Image;
+  opj_codec_t* m_Codec;
+  std::unique_ptr<DecodeData> m_DecodeData;
+  opj_stream_t* m_Stream;
+  opj_dparameters_t m_Parameters;
+  UnownedPtr<const CPDF_ColorSpace> const m_ColorSpace;
 };
 
 #endif  // CORE_FXCODEC_CODEC_CJPX_DECODER_H_

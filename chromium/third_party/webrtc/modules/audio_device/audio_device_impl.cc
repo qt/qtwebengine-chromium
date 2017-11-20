@@ -8,15 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_device/audio_device_impl.h"
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_device/audio_device_config.h"
-#include "webrtc/modules/audio_device/audio_device_generic.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/refcount.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/system_wrappers/include/metrics.h"
+#include "modules/audio_device/audio_device_impl.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_device/audio_device_config.h"
+#include "modules/audio_device/audio_device_generic.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/refcount.h"
+#include "rtc_base/refcountedobject.h"
+#include "rtc_base/timeutils.h"
+#include "system_wrappers/include/metrics.h"
 
 #include <assert.h>
 #include <string.h>
@@ -27,12 +28,12 @@
 #endif
 #elif defined(WEBRTC_ANDROID)
 #include <stdlib.h>
-#include "webrtc/modules/audio_device/android/audio_device_template.h"
-#include "webrtc/modules/audio_device/android/audio_manager.h"
-#include "webrtc/modules/audio_device/android/audio_record_jni.h"
-#include "webrtc/modules/audio_device/android/audio_track_jni.h"
-#include "webrtc/modules/audio_device/android/opensles_player.h"
-#include "webrtc/modules/audio_device/android/opensles_recorder.h"
+#include "modules/audio_device/android/audio_device_template.h"
+#include "modules/audio_device/android/audio_manager.h"
+#include "modules/audio_device/android/audio_record_jni.h"
+#include "modules/audio_device/android/audio_track_jni.h"
+#include "modules/audio_device/android/opensles_player.h"
+#include "modules/audio_device/android/opensles_recorder.h"
 #elif defined(WEBRTC_LINUX)
 #if defined(LINUX_ALSA)
 #include "audio_device_alsa_linux.h"
@@ -47,11 +48,11 @@
 #endif
 
 #if defined(WEBRTC_DUMMY_FILE_DEVICES)
-#include "webrtc/modules/audio_device/dummy/file_audio_device_factory.h"
+#include "modules/audio_device/dummy/file_audio_device_factory.h"
 #endif
 
-#include "webrtc/modules/audio_device/dummy/audio_device_dummy.h"
-#include "webrtc/modules/audio_device/dummy/file_audio_device.h"
+#include "modules/audio_device/dummy/audio_device_dummy.h"
+#include "modules/audio_device/dummy/file_audio_device.h"
 
 #define CHECK_INITIALIZED() \
   {                         \
@@ -116,11 +117,9 @@ rtc::scoped_refptr<AudioDeviceModule> AudioDeviceModule::Create(
 
 AudioDeviceModuleImpl::AudioDeviceModuleImpl(const int32_t id,
                                              const AudioLayer audioLayer)
-    : _ptrCbAudioDeviceObserver(NULL),
-      _ptrAudioDevice(NULL),
+    : _ptrAudioDevice(NULL),
       _id(id),
       _platformAudioLayer(audioLayer),
-      _lastProcessTime(rtc::TimeMillis()),
       _platformType(kPlatformNotSupported),
       _initialized(false),
       _lastError(kAdmErrNone) {
@@ -360,78 +359,6 @@ AudioDeviceModuleImpl::~AudioDeviceModuleImpl() {
 }
 
 // ============================================================================
-//                                  Module
-// ============================================================================
-
-// ----------------------------------------------------------------------------
-//  Module::TimeUntilNextProcess
-//
-//  Returns the number of milliseconds until the module want a worker thread
-//  to call Process().
-// ----------------------------------------------------------------------------
-
-int64_t AudioDeviceModuleImpl::TimeUntilNextProcess() {
-  int64_t now = rtc::TimeMillis();
-  int64_t deltaProcess = kAdmMaxIdleTimeProcess - (now - _lastProcessTime);
-  return deltaProcess;
-}
-
-// ----------------------------------------------------------------------------
-//  Module::Process
-//
-//  Check for posted error and warning reports. Generate callbacks if
-//  new reports exists.
-// ----------------------------------------------------------------------------
-
-void AudioDeviceModuleImpl::Process() {
-  _lastProcessTime = rtc::TimeMillis();
-
-  // kPlayoutWarning
-  if (_ptrAudioDevice->PlayoutWarning()) {
-    rtc::CritScope lock(&_critSectEventCb);
-    if (_ptrCbAudioDeviceObserver) {
-      LOG(WARNING) << "=> OnWarningIsReported(kPlayoutWarning)";
-      _ptrCbAudioDeviceObserver->OnWarningIsReported(
-          AudioDeviceObserver::kPlayoutWarning);
-    }
-    _ptrAudioDevice->ClearPlayoutWarning();
-  }
-
-  // kPlayoutError
-  if (_ptrAudioDevice->PlayoutError()) {
-    rtc::CritScope lock(&_critSectEventCb);
-    if (_ptrCbAudioDeviceObserver) {
-      LOG(LERROR) << "=> OnErrorIsReported(kPlayoutError)";
-      _ptrCbAudioDeviceObserver->OnErrorIsReported(
-          AudioDeviceObserver::kPlayoutError);
-    }
-    _ptrAudioDevice->ClearPlayoutError();
-  }
-
-  // kRecordingWarning
-  if (_ptrAudioDevice->RecordingWarning()) {
-    rtc::CritScope lock(&_critSectEventCb);
-    if (_ptrCbAudioDeviceObserver) {
-      LOG(WARNING) << "=> OnWarningIsReported(kRecordingWarning)";
-      _ptrCbAudioDeviceObserver->OnWarningIsReported(
-          AudioDeviceObserver::kRecordingWarning);
-    }
-    _ptrAudioDevice->ClearRecordingWarning();
-  }
-
-  // kRecordingError
-  if (_ptrAudioDevice->RecordingError()) {
-    rtc::CritScope lock(&_critSectEventCb);
-    if (_ptrCbAudioDeviceObserver) {
-      LOG(LERROR) << "=> OnErrorIsReported(kRecordingError)";
-      _ptrCbAudioDeviceObserver->OnErrorIsReported(
-          AudioDeviceObserver::kRecordingError);
-    }
-    _ptrAudioDevice->ClearRecordingError();
-  }
-}
-
-// ============================================================================
 //                                    Public API
 // ============================================================================
 
@@ -636,26 +563,6 @@ int32_t AudioDeviceModuleImpl::MinSpeakerVolume(uint32_t* minVolume) const {
 }
 
 // ----------------------------------------------------------------------------
-//  SpeakerVolumeStepSize
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::SpeakerVolumeStepSize(uint16_t* stepSize) const {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  uint16_t delta(0);
-
-  if (_ptrAudioDevice->SpeakerVolumeStepSize(delta) == -1) {
-    LOG(LERROR) << "failed to retrieve the speaker-volume step size";
-    return -1;
-  }
-
-  *stepSize = delta;
-  LOG(INFO) << "output: " << *stepSize;
-  return (0);
-}
-
-// ----------------------------------------------------------------------------
 //  SpeakerMuteIsAvailable
 // ----------------------------------------------------------------------------
 
@@ -748,54 +655,6 @@ int32_t AudioDeviceModuleImpl::MicrophoneMute(bool* enabled) const {
 
   *enabled = muted;
   LOG(INFO) << "output: " << muted;
-  return (0);
-}
-
-// ----------------------------------------------------------------------------
-//  MicrophoneBoostIsAvailable
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::MicrophoneBoostIsAvailable(bool* available) {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  bool isAvailable(0);
-
-  if (_ptrAudioDevice->MicrophoneBoostIsAvailable(isAvailable) == -1) {
-    return -1;
-  }
-
-  *available = isAvailable;
-  LOG(INFO) << "output: " << isAvailable;
-  return (0);
-}
-
-// ----------------------------------------------------------------------------
-//  SetMicrophoneBoost
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::SetMicrophoneBoost(bool enable) {
-  LOG(INFO) << __FUNCTION__ << "(" << enable << ")";
-  CHECK_INITIALIZED();
-  return (_ptrAudioDevice->SetMicrophoneBoost(enable));
-}
-
-// ----------------------------------------------------------------------------
-//  MicrophoneBoost
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::MicrophoneBoost(bool* enabled) const {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  bool onOff(false);
-
-  if (_ptrAudioDevice->MicrophoneBoost(onOff) == -1) {
-    return -1;
-  }
-
-  *enabled = onOff;
-  LOG(INFO) << "output: " << onOff;
   return (0);
 }
 
@@ -1121,26 +980,6 @@ int32_t AudioDeviceModuleImpl::MinMicrophoneVolume(uint32_t* minVolume) const {
 }
 
 // ----------------------------------------------------------------------------
-//  MicrophoneVolumeStepSize
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::MicrophoneVolumeStepSize(
-    uint16_t* stepSize) const {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  uint16_t delta(0);
-
-  if (_ptrAudioDevice->MicrophoneVolumeStepSize(delta) == -1) {
-    return -1;
-  }
-
-  *stepSize = delta;
-  LOG(INFO) << "output: " << *stepSize;
-  return (0);
-}
-
-// ----------------------------------------------------------------------------
 //  PlayoutDevices
 // ----------------------------------------------------------------------------
 
@@ -1409,19 +1248,6 @@ bool AudioDeviceModuleImpl::Recording() const {
 }
 
 // ----------------------------------------------------------------------------
-//  RegisterEventObserver
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::RegisterEventObserver(
-    AudioDeviceObserver* eventCallback) {
-  LOG(INFO) << __FUNCTION__;
-  rtc::CritScope lock(&_critSectEventCb);
-  _ptrCbAudioDeviceObserver = eventCallback;
-
-  return 0;
-}
-
-// ----------------------------------------------------------------------------
 //  RegisterAudioCallback
 // ----------------------------------------------------------------------------
 
@@ -1430,123 +1256,6 @@ int32_t AudioDeviceModuleImpl::RegisterAudioCallback(
   LOG(INFO) << __FUNCTION__;
   rtc::CritScope lock(&_critSectAudioCb);
   return _audioDeviceBuffer.RegisterAudioCallback(audioCallback);
-}
-
-// ----------------------------------------------------------------------------
-//  StartRawInputFileRecording
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::StartRawInputFileRecording(
-    const char pcmFileNameUTF8[kAdmMaxFileNameSize]) {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  if (NULL == pcmFileNameUTF8) {
-    return -1;
-  }
-
-  return (_audioDeviceBuffer.StartInputFileRecording(pcmFileNameUTF8));
-}
-
-// ----------------------------------------------------------------------------
-//  StopRawInputFileRecording
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::StopRawInputFileRecording() {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  return (_audioDeviceBuffer.StopInputFileRecording());
-}
-
-// ----------------------------------------------------------------------------
-//  StartRawOutputFileRecording
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::StartRawOutputFileRecording(
-    const char pcmFileNameUTF8[kAdmMaxFileNameSize]) {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  if (NULL == pcmFileNameUTF8) {
-    return -1;
-  }
-
-  return (_audioDeviceBuffer.StartOutputFileRecording(pcmFileNameUTF8));
-}
-
-// ----------------------------------------------------------------------------
-//  StopRawOutputFileRecording
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::StopRawOutputFileRecording() {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  return (_audioDeviceBuffer.StopOutputFileRecording());
-}
-
-// ----------------------------------------------------------------------------
-//  SetPlayoutBuffer
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::SetPlayoutBuffer(const BufferType type,
-                                                uint16_t sizeMS) {
-  if (type == kFixedBufferSize) {
-    LOG(INFO) << __FUNCTION__ << "(fixed buffer, " << sizeMS << "ms)";
-  } else if (type == kAdaptiveBufferSize) {
-    LOG(INFO) << __FUNCTION__ << "(adaptive buffer, " << sizeMS << "ms)";
-  } else {
-    LOG(INFO) << __FUNCTION__ << "(?, " << sizeMS << "ms)";
-  }
-  CHECK_INITIALIZED();
-
-  if (_ptrAudioDevice->PlayoutIsInitialized()) {
-    LOG(LERROR) << "unable to modify the playout buffer while playing side is "
-                   "initialized";
-    return -1;
-  }
-
-  int32_t ret(0);
-
-  if (kFixedBufferSize == type) {
-    if (sizeMS < kAdmMinPlayoutBufferSizeMs ||
-        sizeMS > kAdmMaxPlayoutBufferSizeMs) {
-      LOG(LERROR) << "size parameter is out of range";
-      return -1;
-    }
-  }
-
-  if ((ret = _ptrAudioDevice->SetPlayoutBuffer(type, sizeMS)) == -1) {
-    LOG(LERROR) << "failed to set the playout buffer (error: " << LastError()
-                << ")";
-  }
-
-  return ret;
-}
-
-// ----------------------------------------------------------------------------
-//  PlayoutBuffer
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::PlayoutBuffer(BufferType* type,
-                                             uint16_t* sizeMS) const {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  BufferType bufType;
-  uint16_t size(0);
-
-  if (_ptrAudioDevice->PlayoutBuffer(bufType, size) == -1) {
-    LOG(LERROR) << "failed to retrieve the buffer type and size";
-    return -1;
-  }
-
-  *type = bufType;
-  *sizeMS = size;
-
-  LOG(INFO) << "output: type = " << *type << ", sizeMS = " << *sizeMS;
-  return (0);
 }
 
 // ----------------------------------------------------------------------------
@@ -1584,26 +1293,6 @@ int32_t AudioDeviceModuleImpl::RecordingDelay(uint16_t* delayMS) const {
 
   *delayMS = delay;
   LOG(INFO) << "output: " << *delayMS;
-  return (0);
-}
-
-// ----------------------------------------------------------------------------
-//  CPULoad
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::CPULoad(uint16_t* load) const {
-  LOG(INFO) << __FUNCTION__;
-  CHECK_INITIALIZED();
-
-  uint16_t cpuLoad(0);
-
-  if (_ptrAudioDevice->CPULoad(cpuLoad) == -1) {
-    LOG(LERROR) << "failed to retrieve the CPU load";
-    return -1;
-  }
-
-  *load = cpuLoad;
-  LOG(INFO) << "output: " << *load;
   return (0);
 }
 
@@ -1679,16 +1368,6 @@ int32_t AudioDeviceModuleImpl::PlayoutSampleRate(
   *samplesPerSec = sampleRate;
   LOG(INFO) << "output: " << *samplesPerSec;
   return (0);
-}
-
-// ----------------------------------------------------------------------------
-//  ResetAudioDevice
-// ----------------------------------------------------------------------------
-
-int32_t AudioDeviceModuleImpl::ResetAudioDevice() {
-  LOG(INFO) << __FUNCTION__;
-  FATAL() << "Should never be called";
-  return -1;
 }
 
 // ----------------------------------------------------------------------------

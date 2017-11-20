@@ -13,7 +13,6 @@
 #include "core/css/parser/CSSParserContext.h"
 #include "core/css/parser/CSSParserIdioms.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/wtf/text/StringBuilder.h"
 
 namespace blink {
@@ -504,7 +503,6 @@ bool CSSPropertyGridUtils::ConsumeGridItemPositionShorthand(
   // Input should be nullptrs.
   DCHECK(!start_value);
   DCHECK(!end_value);
-  DCHECK(RuntimeEnabledFeatures::CSSGridLayoutEnabled());
 
   start_value = ConsumeGridLine(range);
   if (!start_value)
@@ -534,7 +532,6 @@ bool CSSPropertyGridUtils::ConsumeGridTemplateShorthand(
   DCHECK(!template_columns);
   DCHECK(!template_areas);
 
-  DCHECK(RuntimeEnabledFeatures::CSSGridLayoutEnabled());
   DCHECK_EQ(gridTemplateShorthand().length(), 3u);
 
   CSSParserTokenRange range_copy = range;

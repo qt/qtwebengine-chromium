@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "RecordTest.h"
+#include "core/testing/RecordTest.h"
 
 namespace blink {
 
@@ -73,7 +73,7 @@ RecordTest::returnStringByteStringSequenceRecord() {
 
 bool RecordTest::unionReceivedARecord(
     const BooleanOrByteStringByteStringRecord& arg) {
-  return arg.isByteStringByteStringRecord();
+  return arg.IsByteStringByteStringRecord();
 }
 
 DEFINE_TRACE(RecordTest) {

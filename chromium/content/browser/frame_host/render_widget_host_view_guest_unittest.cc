@@ -45,9 +45,8 @@ class RenderWidgetHostViewGuestTest : public testing::Test {
 
   void SetUp() override {
 #if !defined(OS_ANDROID)
-    ImageTransportFactory::InitializeForUnitTests(
-        std::unique_ptr<ImageTransportFactory>(
-            new NoTransportImageTransportFactory));
+    ImageTransportFactory::SetFactory(
+        std::make_unique<NoTransportImageTransportFactory>());
 #endif
     browser_context_.reset(new TestBrowserContext);
     MockRenderProcessHost* process_host =
@@ -144,9 +143,8 @@ class RenderWidgetHostViewGuestSurfaceTest
 
   void SetUp() override {
 #if !defined(OS_ANDROID)
-    ImageTransportFactory::InitializeForUnitTests(
-        std::unique_ptr<ImageTransportFactory>(
-            new NoTransportImageTransportFactory));
+    ImageTransportFactory::SetFactory(
+        std::make_unique<NoTransportImageTransportFactory>());
 #endif
     browser_context_.reset(new TestBrowserContext);
     MockRenderProcessHost* process_host =
@@ -224,14 +222,14 @@ class RenderWidgetHostViewGuestSurfaceTest
 };
 
 namespace {
-cc::CompositorFrame CreateDelegatedFrame(float scale_factor,
-                                         gfx::Size size,
-                                         const gfx::Rect& damage) {
-  cc::CompositorFrame frame;
+viz::CompositorFrame CreateDelegatedFrame(float scale_factor,
+                                          gfx::Size size,
+                                          const gfx::Rect& damage) {
+  viz::CompositorFrame frame;
   frame.metadata.device_scale_factor = scale_factor;
   frame.metadata.begin_frame_ack = viz::BeginFrameAck(0, 1, true);
 
-  std::unique_ptr<cc::RenderPass> pass = cc::RenderPass::Create();
+  std::unique_ptr<viz::RenderPass> pass = viz::RenderPass::Create();
   pass->SetNew(1, gfx::Rect(size), damage, gfx::Transform());
   frame.render_pass_list.push_back(std::move(pass));
   return frame;

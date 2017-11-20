@@ -239,6 +239,10 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Returns the cursor for the specified point, in window coordinates.
   gfx::NativeCursor GetCursor(const gfx::Point& point) const;
 
+  // Returns true if the children of thisshould be restacked by the
+  // transient window related classes to honor transient window stacking.
+  bool ShouldRestackTransientChildren();
+
   // Add/remove observer.
   void AddObserver(WindowObserver* observer);
   void RemoveObserver(WindowObserver* observer);
@@ -303,7 +307,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   //typedef void (*PropertyDeallocator)(int64_t value);
 
   // Overridden from ui::LayerDelegate:
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override;
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override;
+
+  // Overridden from ui::LayerOwner:
+  std::unique_ptr<ui::Layer> RecreateLayer() override;
 
 #if !defined(NDEBUG)
   // These methods are useful when debugging.
@@ -441,6 +449,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   void OnPaintLayer(const ui::PaintContext& context) override;
   void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override;
   void OnLayerBoundsChanged(const gfx::Rect& old_bounds) override;
+  void OnLayerOpacityChanged(float old_opacity, float new_opacity) override;
 
   // Overridden from ui::EventTarget:
   bool CanAcceptEvent(const ui::Event& event) override;

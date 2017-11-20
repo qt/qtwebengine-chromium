@@ -135,8 +135,12 @@ extern "C" {
 #define OPENSSL_NO_THREADS
 #endif
 
+#if !defined(OPENSSL_NO_THREADS)
+#define OPENSSL_THREADS
+#endif
+
 #define OPENSSL_IS_BORINGSSL
-#define OPENSSL_VERSION_NUMBER 0x100020af
+#define OPENSSL_VERSION_NUMBER 0x1010007f
 #define SSLEAY_VERSION_NUMBER OPENSSL_VERSION_NUMBER
 
 // BORINGSSL_API_VERSION is a positive integer that increments as BoringSSL
@@ -176,7 +180,7 @@ extern "C" {
 #endif  // defined(BORINGSSL_SHARED_LIBRARY)
 
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 // MinGW has two different printf implementations. Ensure the format macro
 // matches the selected implementation. See
 // https://sourceforge.net/p/mingw-w64/wiki2/gnu%20printf/.
@@ -217,6 +221,19 @@ extern "C" {
 #if __has_feature(memory_sanitizer)
 #define OPENSSL_MSAN
 #endif
+#endif
+
+// Have a generic fall-through for different versions of C/C++.
+#if defined(__cplusplus) && __cplusplus >= 201703L
+#define OPENSSL_FALLTHROUGH [[fallthrough]]
+#elif defined(__cplusplus) && __cplusplus >= 201103L && defined(__clang__)
+#define OPENSSL_FALLTHROUGH [[clang::fallthrough]]
+#elif defined(__cplusplus) && __cplusplus >= 201103L && __GNUC__ >= 7
+#define OPENSSL_FALLTHROUGH [[gnu::fallthrough]]
+#elif  __GNUC__ >= 7 // gcc 7
+#define OPENSSL_FALLTHROUGH __attribute__ ((fallthrough))
+#else // C++11 on gcc 6, and all other cases
+#define OPENSSL_FALLTHROUGH
 #endif
 
 // CRYPTO_THREADID is a dummy value.
@@ -305,6 +322,7 @@ typedef struct evp_pkey_st EVP_PKEY;
 typedef struct hmac_ctx_st HMAC_CTX;
 typedef struct md4_state_st MD4_CTX;
 typedef struct md5_state_st MD5_CTX;
+typedef struct ossl_init_settings_st OPENSSL_INIT_SETTINGS;
 typedef struct pkcs12_st PKCS12;
 typedef struct pkcs8_priv_key_info_st PKCS8_PRIV_KEY_INFO;
 typedef struct private_key_st X509_PKEY;

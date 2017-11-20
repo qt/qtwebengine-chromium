@@ -30,8 +30,8 @@
 
 #include "platform/weborigin/SecurityOrigin.h"
 
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/blob/BlobURL.h"
+#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "platform/weborigin/Suborigin.h"
@@ -80,24 +80,24 @@ TEST_F(SecurityOriginTest, LocalAccess) {
   RefPtr<SecurityOrigin> file2 =
       SecurityOrigin::CreateFromString("file:///etc/shadow");
 
-  EXPECT_TRUE(file1->IsSameSchemeHostPort(file1.Get()));
-  EXPECT_TRUE(file1->IsSameSchemeHostPort(file2.Get()));
-  EXPECT_TRUE(file2->IsSameSchemeHostPort(file1.Get()));
+  EXPECT_TRUE(file1->IsSameSchemeHostPort(file1.get()));
+  EXPECT_TRUE(file1->IsSameSchemeHostPort(file2.get()));
+  EXPECT_TRUE(file2->IsSameSchemeHostPort(file1.get()));
 
-  EXPECT_TRUE(file1->CanAccess(file1.Get()));
-  EXPECT_TRUE(file1->CanAccess(file2.Get()));
-  EXPECT_TRUE(file2->CanAccess(file1.Get()));
+  EXPECT_TRUE(file1->CanAccess(file1.get()));
+  EXPECT_TRUE(file1->CanAccess(file2.get()));
+  EXPECT_TRUE(file2->CanAccess(file1.get()));
 
   // Block |file1|'s access to local origins. It should now be same-origin
   // with itself, but shouldn't have access to |file2|.
   file1->BlockLocalAccessFromLocalOrigin();
-  EXPECT_TRUE(file1->IsSameSchemeHostPort(file1.Get()));
-  EXPECT_FALSE(file1->IsSameSchemeHostPort(file2.Get()));
-  EXPECT_FALSE(file2->IsSameSchemeHostPort(file1.Get()));
+  EXPECT_TRUE(file1->IsSameSchemeHostPort(file1.get()));
+  EXPECT_FALSE(file1->IsSameSchemeHostPort(file2.get()));
+  EXPECT_FALSE(file2->IsSameSchemeHostPort(file1.get()));
 
-  EXPECT_TRUE(file1->CanAccess(file1.Get()));
-  EXPECT_FALSE(file1->CanAccess(file2.Get()));
-  EXPECT_FALSE(file2->CanAccess(file1.Get()));
+  EXPECT_TRUE(file1->CanAccess(file1.get()));
+  EXPECT_FALSE(file1->CanAccess(file2.get()));
+  EXPECT_FALSE(file2->CanAccess(file1.get()));
 }
 
 TEST_F(SecurityOriginTest, IsPotentiallyTrustworthy) {
@@ -223,7 +223,7 @@ TEST_F(SecurityOriginTest, IsSecureViaTrustworthy) {
 }
 
 TEST_F(SecurityOriginTest, Suborigins) {
-  RuntimeEnabledFeatures::SetSuboriginsEnabled(true);
+  ScopedSuboriginsForTest suborigins(true);
 
   RefPtr<SecurityOrigin> origin =
       SecurityOrigin::CreateFromString("https://test.com");
@@ -259,7 +259,7 @@ TEST_F(SecurityOriginTest, Suborigins) {
   origin = SecurityOrigin::CreateFromString("https-so-so://foobar.test.com");
   EXPECT_FALSE(origin->HasSuborigin());
 
-  origin = AdoptRef<SecurityOrigin>(new SecurityOrigin);
+  origin = WTF::AdoptRef<SecurityOrigin>(new SecurityOrigin);
   EXPECT_FALSE(origin->HasSuborigin());
 
   origin = SecurityOrigin::CreateFromString("https-so://foobar.test.com");
@@ -268,7 +268,7 @@ TEST_F(SecurityOriginTest, Suborigins) {
 }
 
 TEST_F(SecurityOriginTest, SuboriginsParsing) {
-  RuntimeEnabledFeatures::SetSuboriginsEnabled(true);
+  ScopedSuboriginsForTest suborigins(true);
   String protocol, real_protocol, host, real_host, suborigin;
   protocol = "https";
   host = "test.com";
@@ -310,7 +310,7 @@ TEST_F(SecurityOriginTest, SuboriginsParsing) {
 }
 
 TEST_F(SecurityOriginTest, SuboriginsIsSameSchemeHostPortAndSuborigin) {
-  blink::RuntimeEnabledFeatures::SetSuboriginsEnabled(true);
+  ScopedSuboriginsForTest suborigins(true);
   RefPtr<SecurityOrigin> origin =
       SecurityOrigin::CreateFromString("https-so://foobar.test.com");
   RefPtr<SecurityOrigin> other1 =
@@ -322,15 +322,15 @@ TEST_F(SecurityOriginTest, SuboriginsIsSameSchemeHostPortAndSuborigin) {
   RefPtr<SecurityOrigin> other4 =
       SecurityOrigin::CreateFromString("https://test.com");
 
-  EXPECT_TRUE(origin->IsSameSchemeHostPortAndSuborigin(origin.Get()));
-  EXPECT_FALSE(origin->IsSameSchemeHostPortAndSuborigin(other1.Get()));
-  EXPECT_FALSE(origin->IsSameSchemeHostPortAndSuborigin(other2.Get()));
-  EXPECT_FALSE(origin->IsSameSchemeHostPortAndSuborigin(other3.Get()));
-  EXPECT_FALSE(origin->IsSameSchemeHostPortAndSuborigin(other4.Get()));
+  EXPECT_TRUE(origin->IsSameSchemeHostPortAndSuborigin(origin.get()));
+  EXPECT_FALSE(origin->IsSameSchemeHostPortAndSuborigin(other1.get()));
+  EXPECT_FALSE(origin->IsSameSchemeHostPortAndSuborigin(other2.get()));
+  EXPECT_FALSE(origin->IsSameSchemeHostPortAndSuborigin(other3.get()));
+  EXPECT_FALSE(origin->IsSameSchemeHostPortAndSuborigin(other4.get()));
 }
 
 TEST_F(SecurityOriginTest, CanAccess) {
-  RuntimeEnabledFeatures::SetSuboriginsEnabled(true);
+  ScopedSuboriginsForTest suborigins(true);
 
   struct TestCase {
     bool can_access;
@@ -351,12 +351,12 @@ TEST_F(SecurityOriginTest, CanAccess) {
         SecurityOrigin::CreateFromString(tests[i].origin1);
     RefPtr<SecurityOrigin> origin2 =
         SecurityOrigin::CreateFromString(tests[i].origin2);
-    EXPECT_EQ(tests[i].can_access, origin1->CanAccess(origin2.Get()));
+    EXPECT_EQ(tests[i].can_access, origin1->CanAccess(origin2.get()));
   }
 }
 
 TEST_F(SecurityOriginTest, CanRequest) {
-  RuntimeEnabledFeatures::SetSuboriginsEnabled(true);
+  ScopedSuboriginsForTest suborigins(true);
 
   struct TestCase {
     bool can_request;
@@ -479,7 +479,7 @@ TEST_F(SecurityOriginTest, UniquenessPropagatesToBlobUrls) {
     EXPECT_EQ(test.expected_uniqueness, origin->IsUnique());
     EXPECT_EQ(test.expected_origin_string, origin->ToString());
 
-    KURL blob_url = BlobURL::CreatePublicURL(origin.Get());
+    KURL blob_url = BlobURL::CreatePublicURL(origin.get());
     RefPtr<SecurityOrigin> blob_url_origin = SecurityOrigin::Create(blob_url);
     EXPECT_EQ(blob_url_origin->IsUnique(), origin->IsUnique());
     EXPECT_EQ(blob_url_origin->ToString(), origin->ToString());
@@ -492,11 +492,11 @@ TEST_F(SecurityOriginTest, UniqueOriginIsSameSchemeHostPort) {
   RefPtr<SecurityOrigin> tuple_origin =
       SecurityOrigin::CreateFromString("http://example.com");
 
-  EXPECT_TRUE(unique_origin->IsSameSchemeHostPort(unique_origin.Get()));
+  EXPECT_TRUE(unique_origin->IsSameSchemeHostPort(unique_origin.get()));
   EXPECT_FALSE(SecurityOrigin::CreateUnique()->IsSameSchemeHostPort(
-      unique_origin.Get()));
-  EXPECT_FALSE(tuple_origin->IsSameSchemeHostPort(unique_origin.Get()));
-  EXPECT_FALSE(unique_origin->IsSameSchemeHostPort(tuple_origin.Get()));
+      unique_origin.get()));
+  EXPECT_FALSE(tuple_origin->IsSameSchemeHostPort(unique_origin.get()));
+  EXPECT_FALSE(unique_origin->IsSameSchemeHostPort(tuple_origin.get()));
 }
 
 TEST_F(SecurityOriginTest, CanonicalizeHost) {

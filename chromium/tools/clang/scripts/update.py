@@ -27,14 +27,15 @@ import zipfile
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://chromium.googlesource.com/chromium/src/+/master/docs/updating_clang.md
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION = '310694'
+CLANG_REVISION = '313786'
 
-use_head_revision = 'LLVM_FORCE_HEAD_REVISION' in os.environ
+use_head_revision = bool(os.environ.get('LLVM_FORCE_HEAD_REVISION', '0')
+                         in ('1', 'YES'))
 if use_head_revision:
   CLANG_REVISION = 'HEAD'
 
 # This is incremented when pushing a new build of Clang at the same revision.
-CLANG_SUB_REVISION=2
+CLANG_SUB_REVISION=1
 
 PACKAGE_VERSION = "%s-%s" % (CLANG_REVISION, CLANG_SUB_REVISION)
 
@@ -388,11 +389,10 @@ def VeryifyVersionOfBuiltClangMatchesVERSION():
 
 
 def UpdateClang(args):
-  print 'Updating Clang to %s...' % PACKAGE_VERSION
-
   if ReadStampFile() == PACKAGE_VERSION and not args.force_local_build:
-    print 'Clang is already up to date.'
     return 0
+
+  print 'Updating Clang to %s...' % PACKAGE_VERSION
 
   # Reset the stamp file in case the build is unsuccessful.
   WriteStampFile('')
@@ -439,10 +439,8 @@ def UpdateClang(args):
 
   Checkout('LLVM', LLVM_REPO_URL + '/llvm/trunk', LLVM_DIR)
 
-  # Apply https://reviews.llvm.org/D36596 locally to see how it does.
-  # If you roll clang, you need to change this in some not yet clear way,
-  # see https://crbug.com/755777
-  assert use_head_revision or CLANG_REVISION == '310694'
+  # Back out previous local patches. This needs to be kept around a bit
+  # until all bots have cycled. See https://crbug.com/755777.
   files = [
     'lib/Transforms/InstCombine/InstructionCombining.cpp',
     'test/DebugInfo/X86/formal_parameter.ll',
@@ -451,18 +449,11 @@ def UpdateClang(args):
     'test/Transforms/InstCombine/debuginfo.ll',
     'test/Transforms/Util/simplify-dbg-declare-load.ll',
   ]
-  if use_head_revision:
-    for f in [os.path.join(LLVM_DIR, f) for f in files[1:]]:
-      RunCommand(['svn', 'revert', f])
-  else:
-    for f in [os.path.join(LLVM_DIR, f) for f in files[1:]]:
-      if os.path.exists(f):
-        os.remove(f)
-    shutil.copy(os.path.join(THIS_DIR, 'InstructionCombining.cpp'),
-                os.path.join(LLVM_DIR, files[0]))
+  for f in [os.path.join(LLVM_DIR, f) for f in files]:
+    RunCommand(['svn', 'revert', f])
 
   Checkout('Clang', LLVM_REPO_URL + '/cfe/trunk', CLANG_DIR)
-  if sys.platform != 'darwin':
+  if True:
     Checkout('LLD', LLVM_REPO_URL + '/lld/trunk', LLD_DIR)
   elif os.path.exists(LLD_DIR):
     # In case someone sends a tryjob that temporary adds lld to the checkout,
@@ -605,9 +596,10 @@ def UpdateClang(args):
 
   # Build PDBs for archival on Windows.  Don't use RelWithDebInfo since it
   # has different optimization defaults than Release.
+  # Also disable stack cookies (/GS-) for performance.
   if sys.platform == 'win32':
-    cflags += ['/Zi']
-    cxxflags += ['/Zi']
+    cflags += ['/Zi', '/GS-']
+    cxxflags += ['/Zi', '/GS-']
     ldflags += ['/DEBUG', '/OPT:REF', '/OPT:ICF']
 
   CreateChromeToolsShim()
@@ -652,11 +644,16 @@ def UpdateClang(args):
     # If any Chromium tools were built, install those now.
     RunCommand(['ninja', 'cr-install'], msvc_arch='x64')
 
-  if sys.platform == 'darwin':
-    # See http://crbug.com/256342
-    RunCommand(['strip', '-x', os.path.join(LLVM_BUILD_DIR, 'bin', 'clang')])
-  elif sys.platform.startswith('linux'):
-    RunCommand(['strip', os.path.join(LLVM_BUILD_DIR, 'bin', 'clang')])
+  stripped_binaries = ['clang', 'llvm-symbolizer', 'sancov']
+  if sys.platform.startswith('linux'):
+    stripped_binaries.append('lld')
+    stripped_binaries.append('llvm-ar')
+  for f in stripped_binaries:
+    if sys.platform == 'darwin':
+      # See http://crbug.com/256342
+      RunCommand(['strip', '-x', os.path.join(LLVM_BUILD_DIR, 'bin', f)])
+    elif sys.platform.startswith('linux'):
+      RunCommand(['strip', os.path.join(LLVM_BUILD_DIR, 'bin', f)])
 
   VeryifyVersionOfBuiltClangMatchesVERSION()
 
@@ -692,6 +689,8 @@ def UpdateClang(args):
              [LLVM_DIR if sys.platform == 'win32' else COMPILER_RT_DIR],
              msvc_arch='x86', env=deployment_env)
   RunCommand(['ninja', 'compiler-rt'], msvc_arch='x86')
+  if sys.platform != 'win32':
+    RunCommand(['ninja', 'fuzzer'])
 
   # Copy select output to the main tree.
   # TODO(hans): Make this (and the .gypi and .isolate files) version number
@@ -800,6 +799,7 @@ def main():
   parser = argparse.ArgumentParser(description='Build Clang.')
   parser.add_argument('--bootstrap', action='store_true',
                       help='first build clang with CC, then with itself.')
+  # TODO(phajdan.jr): remove --if-needed after fixing callers. It's no-op.
   parser.add_argument('--if-needed', action='store_true',
                       help="run only if the script thinks clang is needed")
   parser.add_argument('--force-local-build', action='store_true',
@@ -832,12 +832,6 @@ def main():
   if args.lto_lld and not sys.platform.startswith('linux'):
     print '--lto-lld is only effective on Linux. Ignoring the option.'
     args.lto_lld = False
-
-  if args.if_needed:
-    # TODO(thakis): Can probably remove this and --if-needed altogether.
-    if re.search(r'\b(make_clang_dir)=', os.environ.get('GYP_DEFINES', '')):
-      print 'Skipping Clang update (make_clang_dir= was set in GYP_DEFINES).'
-      return 0
 
   # Get svn if we're going to use it to check the revision or do a local build.
   if (use_head_revision or args.llvm_force_head_revision or

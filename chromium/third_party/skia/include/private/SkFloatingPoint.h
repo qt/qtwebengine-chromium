@@ -90,6 +90,15 @@ static inline int sk_float_saturate2int(float x) {
     return (int)x;
 }
 
+/**
+ *  Return the closest int for the given double. Returns SK_MaxS32 for NaN.
+ */
+static inline int sk_double_saturate2int(double x) {
+    x = SkTMin<double>(x, SK_MaxS32);
+    x = SkTMax<double>(x, SK_MinS32);
+    return (int)x;
+}
+
 #define sk_float_floor2int(x)   sk_float_saturate2int(sk_float_floor(x))
 #define sk_float_round2int(x)   sk_float_saturate2int(sk_float_floor((x) + 0.5f))
 #define sk_float_ceil2int(x)    sk_float_saturate2int(sk_float_ceil(x))
@@ -104,6 +113,16 @@ static inline int sk_float_saturate2int(float x) {
 #define sk_double_floor2int(x)      (int)floor(x)
 #define sk_double_round2int(x)      (int)floor((x) + 0.5f)
 #define sk_double_ceil2int(x)       (int)ceil(x)
+
+// Cast double to float, ignoring any warning about too-large finite values being cast to float.
+// Clang thinks this is undefined, but it's actually implementation defined to return either
+// the largest float or infinity (one of the two bracketing representable floats).  Good enough!
+#if defined(__clang__) && (__clang_major__ * 1000 + __clang_minor__) >= 3007
+__attribute__((no_sanitize("float-cast-overflow")))
+#endif
+static inline float sk_double_to_float(double x) {
+    return static_cast<float>(x);
+}
 
 static const uint32_t kIEEENotANumber = 0x7fffffff;
 #define SK_FloatNaN                 (*SkTCast<const float*>(&kIEEENotANumber))

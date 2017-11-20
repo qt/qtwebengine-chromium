@@ -12,12 +12,26 @@
 #include <tuple>
 #include <utility>
 
+#include "core/fxcodec/codec/ccodec_basicmodule.h"
+#include "core/fxcodec/codec/ccodec_faxmodule.h"
+#include "core/fxcodec/codec/ccodec_flatemodule.h"
+#include "core/fxcodec/codec/ccodec_iccmodule.h"
+#include "core/fxcodec/codec/ccodec_jbig2module.h"
+#include "core/fxcodec/codec/ccodec_jpegmodule.h"
+#include "core/fxcodec/codec/ccodec_jpxmodule.h"
+#include "core/fxcodec/codec/ccodec_scanlinedecoder.h"
 #include "core/fxcodec/codec/codec_int.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
-#include "core/fxcrt/ifx_pauseindicator.h"
 #include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
+
+#ifdef PDF_ENABLE_XFA
+#include "core/fxcodec/codec/ccodec_bmpmodule.h"
+#include "core/fxcodec/codec/ccodec_gifmodule.h"
+#include "core/fxcodec/codec/ccodec_pngmodule.h"
+#include "core/fxcodec/codec/ccodec_tiffmodule.h"
+#endif  // PDF_ENABLE_XFA
 
 namespace {
 
@@ -1350,69 +1364,24 @@ CCodec_ModuleMgr::CCodec_ModuleMgr()
 
 CCodec_ModuleMgr::~CCodec_ModuleMgr() {}
 
-CCodec_ScanlineDecoder::CCodec_ScanlineDecoder()
-    : CCodec_ScanlineDecoder(0, 0, 0, 0, 0, 0, 0) {}
-
-CCodec_ScanlineDecoder::CCodec_ScanlineDecoder(int nOrigWidth,
-                                               int nOrigHeight,
-                                               int nOutputWidth,
-                                               int nOutputHeight,
-                                               int nComps,
-                                               int nBpc,
-                                               uint32_t nPitch)
-    : m_OrigWidth(nOrigWidth),
-      m_OrigHeight(nOrigHeight),
-      m_OutputWidth(nOutputWidth),
-      m_OutputHeight(nOutputHeight),
-      m_nComps(nComps),
-      m_bpc(nBpc),
-      m_Pitch(nPitch),
-      m_NextLine(-1),
-      m_pLastScanline(nullptr) {}
-
-CCodec_ScanlineDecoder::~CCodec_ScanlineDecoder() {}
-
-const uint8_t* CCodec_ScanlineDecoder::GetScanline(int line) {
-  if (m_NextLine == line + 1)
-    return m_pLastScanline;
-
-  if (m_NextLine < 0 || m_NextLine > line) {
-    if (!v_Rewind())
-      return nullptr;
-    m_NextLine = 0;
-  }
-  while (m_NextLine < line) {
-    ReadNextLine();
-    m_NextLine++;
-  }
-  m_pLastScanline = ReadNextLine();
-  m_NextLine++;
-  return m_pLastScanline;
+#ifdef PDF_ENABLE_XFA
+void CCodec_ModuleMgr::SetBmpModule(std::unique_ptr<CCodec_BmpModule> module) {
+  m_pBmpModule = std::move(module);
 }
 
-bool CCodec_ScanlineDecoder::SkipToScanline(int line,
-                                            IFX_PauseIndicator* pPause) {
-  if (m_NextLine == line || m_NextLine == line + 1)
-    return false;
-
-  if (m_NextLine < 0 || m_NextLine > line) {
-    v_Rewind();
-    m_NextLine = 0;
-  }
-  m_pLastScanline = nullptr;
-  while (m_NextLine < line) {
-    m_pLastScanline = ReadNextLine();
-    m_NextLine++;
-    if (pPause && pPause->NeedToPauseNow()) {
-      return true;
-    }
-  }
-  return false;
+void CCodec_ModuleMgr::SetGifModule(std::unique_ptr<CCodec_GifModule> module) {
+  m_pGifModule = std::move(module);
 }
 
-uint8_t* CCodec_ScanlineDecoder::ReadNextLine() {
-  return v_GetNextLine();
+void CCodec_ModuleMgr::SetPngModule(std::unique_ptr<CCodec_PngModule> module) {
+  m_pPngModule = std::move(module);
 }
+
+void CCodec_ModuleMgr::SetTiffModule(
+    std::unique_ptr<CCodec_TiffModule> module) {
+  m_pTiffModule = std::move(module);
+}
+#endif  // PDF_ENABLE_XFA
 
 bool CCodec_BasicModule::RunLengthEncode(const uint8_t* src_buf,
                                          uint32_t src_size,

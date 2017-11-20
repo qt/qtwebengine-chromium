@@ -47,18 +47,18 @@ DynamicsCompressorHandler::DynamicsCompressorHandler(
     AudioParamHandler& attack,
     AudioParamHandler& release)
     : AudioHandler(kNodeTypeDynamicsCompressor, node, sample_rate),
-      threshold_(threshold),
-      knee_(knee),
-      ratio_(ratio),
+      threshold_(&threshold),
+      knee_(&knee),
+      ratio_(&ratio),
       reduction_(0),
-      attack_(attack),
-      release_(release) {
+      attack_(&attack),
+      release_(&release) {
   AddInput();
   AddOutput(defaultNumberOfOutputChannels);
   Initialize();
 }
 
-PassRefPtr<DynamicsCompressorHandler> DynamicsCompressorHandler::Create(
+RefPtr<DynamicsCompressorHandler> DynamicsCompressorHandler::Create(
     AudioNode& node,
     float sample_rate,
     AudioParamHandler& threshold,
@@ -66,8 +66,8 @@ PassRefPtr<DynamicsCompressorHandler> DynamicsCompressorHandler::Create(
     AudioParamHandler& ratio,
     AudioParamHandler& attack,
     AudioParamHandler& release) {
-  return AdoptRef(new DynamicsCompressorHandler(node, sample_rate, threshold,
-                                                knee, ratio, attack, release));
+  return WTF::AdoptRef(new DynamicsCompressorHandler(
+      node, sample_rate, threshold, knee, ratio, attack, release));
 }
 
 DynamicsCompressorHandler::~DynamicsCompressorHandler() {
@@ -139,7 +139,7 @@ void DynamicsCompressorHandler::SetChannelCount(
     unsigned long channel_count,
     ExceptionState& exception_state) {
   DCHECK(IsMainThread());
-  BaseAudioContext::AutoLocker locker(Context());
+  BaseAudioContext::GraphAutoLocker locker(Context());
 
   // A DynamicsCompressorNode only supports 1 or 2 channels
   if (channel_count > 0 && channel_count <= 2) {
@@ -161,7 +161,7 @@ void DynamicsCompressorHandler::SetChannelCountMode(
     const String& mode,
     ExceptionState& exception_state) {
   DCHECK(IsMainThread());
-  BaseAudioContext::AutoLocker locker(Context());
+  BaseAudioContext::GraphAutoLocker locker(Context());
 
   ChannelCountMode old_mode = InternalChannelCountMode();
 

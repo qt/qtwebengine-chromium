@@ -8,20 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_PACING_PACKET_ROUTER_H_
-#define WEBRTC_MODULES_PACING_PACKET_ROUTER_H_
+#ifndef MODULES_PACING_PACKET_ROUTER_H_
+#define MODULES_PACING_PACKET_ROUTER_H_
 
 #include <list>
 #include <vector>
 
-#include "webrtc/common_types.h"
-#include "webrtc/modules/pacing/paced_sender.h"
-#include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/criticalsection.h"
-#include "webrtc/rtc_base/race_checker.h"
-#include "webrtc/rtc_base/thread_annotations.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/pacing/paced_sender.h"
+#include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/race_checker.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 
@@ -37,7 +37,8 @@ class TransportFeedback;
 // receive modules.
 class PacketRouter : public PacedSender::PacketSender,
                      public TransportSequenceNumberAllocator,
-                     public RemoteBitrateObserver {
+                     public RemoteBitrateObserver,
+                     public TransportFeedbackSenderInterface {
  public:
   PacketRouter();
   ~PacketRouter() override;
@@ -92,40 +93,40 @@ class PacketRouter : public PacedSender::PacketSender,
                         const std::vector<uint32_t>& ssrcs);
 
   // Send transport feedback packet to send-side.
-  virtual bool SendTransportFeedback(rtcp::TransportFeedback* packet);
+  bool SendTransportFeedback(rtcp::TransportFeedback* packet) override;
 
  private:
   void AddRembModuleCandidate(RtpRtcp* candidate_module, bool sender)
-      EXCLUSIVE_LOCKS_REQUIRED(modules_crit_);
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(modules_crit_);
   void MaybeRemoveRembModuleCandidate(RtpRtcp* candidate_module, bool sender)
-      EXCLUSIVE_LOCKS_REQUIRED(modules_crit_);
-  void UnsetActiveRembModule() EXCLUSIVE_LOCKS_REQUIRED(modules_crit_);
-  void DetermineActiveRembModule() EXCLUSIVE_LOCKS_REQUIRED(modules_crit_);
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(modules_crit_);
+  void UnsetActiveRembModule() RTC_EXCLUSIVE_LOCKS_REQUIRED(modules_crit_);
+  void DetermineActiveRembModule() RTC_EXCLUSIVE_LOCKS_REQUIRED(modules_crit_);
 
   rtc::RaceChecker pacer_race_;
   rtc::CriticalSection modules_crit_;
-  std::list<RtpRtcp*> rtp_send_modules_ GUARDED_BY(modules_crit_);
-  std::vector<RtpRtcp*> rtp_receive_modules_ GUARDED_BY(modules_crit_);
+  std::list<RtpRtcp*> rtp_send_modules_ RTC_GUARDED_BY(modules_crit_);
+  std::vector<RtpRtcp*> rtp_receive_modules_ RTC_GUARDED_BY(modules_crit_);
 
   // TODO(eladalon): remb_crit_ only ever held from one function, and it's not
   // clear if that function can actually be called from more than one thread.
   rtc::CriticalSection remb_crit_;
   // The last time a REMB was sent.
-  int64_t last_remb_time_ms_ GUARDED_BY(remb_crit_);
-  uint32_t last_send_bitrate_bps_ GUARDED_BY(remb_crit_);
+  int64_t last_remb_time_ms_ RTC_GUARDED_BY(remb_crit_);
+  uint32_t last_send_bitrate_bps_ RTC_GUARDED_BY(remb_crit_);
   // The last bitrate update.
-  uint32_t bitrate_bps_ GUARDED_BY(remb_crit_);
-  uint32_t max_bitrate_bps_ GUARDED_BY(remb_crit_);
+  uint32_t bitrate_bps_ RTC_GUARDED_BY(remb_crit_);
+  uint32_t max_bitrate_bps_ RTC_GUARDED_BY(remb_crit_);
 
   // Candidates for the REMB module can be RTP sender/receiver modules, with
   // the sender modules taking precedence.
-  std::vector<RtpRtcp*> sender_remb_candidates_ GUARDED_BY(modules_crit_);
-  std::vector<RtpRtcp*> receiver_remb_candidates_ GUARDED_BY(modules_crit_);
-  RtpRtcp* active_remb_module_ GUARDED_BY(modules_crit_);
+  std::vector<RtpRtcp*> sender_remb_candidates_ RTC_GUARDED_BY(modules_crit_);
+  std::vector<RtpRtcp*> receiver_remb_candidates_ RTC_GUARDED_BY(modules_crit_);
+  RtpRtcp* active_remb_module_ RTC_GUARDED_BY(modules_crit_);
 
   volatile int transport_seq_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(PacketRouter);
 };
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_PACING_PACKET_ROUTER_H_
+#endif  // MODULES_PACING_PACKET_ROUTER_H_

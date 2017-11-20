@@ -78,7 +78,7 @@ void CFX_TxtBreak::AppendChar_Combination(CFX_Char* pCurChar) {
         pCurChar->m_dwCharStyles |= FX_TXTCHARSTYLE_ArabicShadda;
       }
     }
-    if (!m_pFont->GetCharWidth(wForm, iCharWidth, false))
+    if (!m_pFont->GetCharWidth(wForm, iCharWidth))
       iCharWidth = 0;
 
     iCharWidth *= m_iFontSize;
@@ -137,7 +137,7 @@ CFX_BreakType CFX_TxtBreak::AppendChar_Arabic(CFX_Char* pCurChar) {
       wForm = pdfium::arabic::GetFormChar(pLastChar, pPrevChar, pCurChar);
       bAlef = (wForm == 0xFEFF &&
                pLastChar->GetCharType() == FX_CHARTYPE_ArabicAlef);
-      m_pFont->GetCharWidth(wForm, iCharWidth, false);
+      m_pFont->GetCharWidth(wForm, iCharWidth);
 
       if (wForm == 0xFEFF)
         iCharWidth = m_iDefChar;
@@ -156,7 +156,7 @@ CFX_BreakType CFX_TxtBreak::AppendChar_Arabic(CFX_Char* pCurChar) {
   if (m_bCombText) {
     iCharWidth = m_iCombWidth;
   } else {
-    m_pFont->GetCharWidth(wForm, iCharWidth, false);
+    m_pFont->GetCharWidth(wForm, iCharWidth);
 
     if (wForm == 0xFEFF)
       iCharWidth = m_iDefChar;
@@ -183,7 +183,7 @@ CFX_BreakType CFX_TxtBreak::AppendChar_Others(CFX_Char* pCurChar) {
   if (m_bCombText) {
     iCharWidth = m_iCombWidth;
   } else {
-    if (!m_pFont->GetCharWidth(wForm, iCharWidth, false))
+    if (!m_pFont->GetCharWidth(wForm, iCharWidth))
       iCharWidth = m_iDefChar;
 
     iCharWidth *= m_iFontSize;
@@ -202,7 +202,7 @@ CFX_BreakType CFX_TxtBreak::AppendChar_Others(CFX_Char* pCurChar) {
 }
 
 CFX_BreakType CFX_TxtBreak::AppendChar(wchar_t wch) {
-  uint32_t dwProps = kTextLayoutCodeProperties[static_cast<uint16_t>(wch)];
+  uint32_t dwProps = FX_GetUnicodeProperties(wch);
   FX_CHARTYPE chartype = GetCharTypeFromProp(dwProps);
   m_pCurLine->m_LineChars.emplace_back(wch, dwProps, m_iHorizontalScale,
                                        m_iVerticalScale);
@@ -651,7 +651,7 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
   const wchar_t* pStr = pTxtRun->wsStr.c_str();
   int32_t* pWidths = pTxtRun->pWidths;
   int32_t iLength = pTxtRun->iLength - 1;
-  CFX_RetainPtr<CFGAS_GEFont> pFont = pTxtRun->pFont;
+  RetainPtr<CFGAS_GEFont> pFont = pTxtRun->pFont;
   uint32_t dwStyles = pTxtRun->dwStyles;
   CFX_RectF rtText(*pTxtRun->pRect);
   bool bRTLPiece = (pTxtRun->dwCharStyles & FX_TXTCHARSTYLE_OddBidiLevel) != 0;
@@ -665,7 +665,6 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
   float fX = rtText.left;
   float fY;
   float fCharWidth;
-  float fCharHeight;
   int32_t iHorScale = pTxtRun->iHorizontalScale;
   int32_t iVerScale = pTxtRun->iVerticalScale;
   bool bSkipSpace = pTxtRun->bSkipSpace;
@@ -811,11 +810,11 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
     if (bLam) {
       formChars[1].wForm = 0x0651;
       iCharWidth = 0;
-      pFont->GetCharWidth(0x0651, iCharWidth, false);
+      pFont->GetCharWidth(0x0651, iCharWidth);
       formChars[1].iWidth = iCharWidth;
       formChars[2].wForm = 0x0670;
       iCharWidth = 0;
-      pFont->GetCharWidth(0x0670, iCharWidth, false);
+      pFont->GetCharWidth(0x0670, iCharWidth);
       formChars[2].iWidth = iCharWidth;
     }
 
@@ -828,17 +827,14 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
         wLast = (wchar_t)formChars[j - 1].wForm;
       }
       if (!bEmptyChar || (bEmptyChar && !bSkipSpace)) {
-        pCharPos->m_GlyphIndex = pFont->GetGlyphIndex(wForm, false);
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+        pCharPos->m_GlyphIndex = pFont->GetGlyphIndex(wForm);
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
         pCharPos->m_ExtGID = pCharPos->m_GlyphIndex;
 #endif
         pCharPos->m_FontCharWidth = iCharWidth;
       }
 
-      int32_t iCharHeight = 1000;
-
       fCharWidth = fFontSize * iCharWidth / 1000.0f;
-      fCharHeight = fFontSize * iCharHeight / 1000.0f;
       if (bRTLPiece && chartype != FX_CHARTYPE_Combination)
         fX -= fCharWidth;
 
@@ -847,14 +843,14 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
 
         if ((dwStyles & FX_LAYOUTSTYLE_CombText) != 0) {
           int32_t iFormWidth = iCharWidth;
-          pFont->GetCharWidth(wForm, iFormWidth, false);
+          pFont->GetCharWidth(wForm, iFormWidth);
           float fOffset = fFontSize * (iCharWidth - iFormWidth) / 2000.0f;
           pCharPos->m_Origin.x += fOffset;
         }
 
         if (chartype == FX_CHARTYPE_Combination) {
           CFX_Rect rtBBox;
-          if (pFont->GetCharBBox(wForm, &rtBBox, false)) {
+          if (pFont->GetCharBBox(wForm, &rtBBox)) {
             pCharPos->m_Origin.y =
                 fYBase + fFontSize -
                 fFontSize * (float)rtBBox.height / (float)iMaxHeight;
@@ -864,7 +860,7 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
             if ((dwLastProps & FX_CHARTYPEBITSMASK) ==
                 FX_CHARTYPE_Combination) {
               CFX_Rect rtBox;
-              if (pFont->GetCharBBox(wLast, &rtBox, false))
+              if (pFont->GetCharBBox(wLast, &rtBox))
                 pCharPos->m_Origin.y -= fFontSize * rtBox.height / iMaxHeight;
             }
           }
@@ -913,7 +909,7 @@ std::vector<CFX_RectF> CFX_TxtBreak::GetCharRects(const FX_TXTRUN* pTxtRun,
   float fFontSize = pTxtRun->fFontSize;
   int32_t iFontSize = FXSYS_round(fFontSize * 20.0f);
   float fScale = fFontSize / 1000.0f;
-  CFX_RetainPtr<CFGAS_GEFont> pFont = pTxtRun->pFont;
+  RetainPtr<CFGAS_GEFont> pFont = pTxtRun->pFont;
   if (!pFont)
     bCharBBox = false;
 
@@ -961,7 +957,7 @@ std::vector<CFX_RectF> CFX_TxtBreak::GetCharRects(const FX_TXTRUN* pTxtRun,
 
     if (bCharBBox && !bRet) {
       int32_t iCharWidth = 1000;
-      pFont->GetCharWidth(wch, iCharWidth, false);
+      pFont->GetCharWidth(wch, iCharWidth);
       float fRTLeft = 0, fCharWidth = 0;
       if (iCharWidth > 0) {
         fCharWidth = iCharWidth * fScale;

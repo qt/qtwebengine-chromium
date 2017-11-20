@@ -119,7 +119,7 @@ namespace
 
 	const bool CPUID::ARM = CPUID::detectARM();
 	const bool CPUID::SSE4_1 = CPUID::detectSSE4_1();
-	const bool emulateIntrinsics = CPUID::ARM;
+	const bool emulateIntrinsics = false;
 	const bool emulateMismatchedBitCast = CPUID::ARM;
 }
 
@@ -843,7 +843,7 @@ namespace sw
 		int valueType = (int)reinterpret_cast<intptr_t>(type);
 		Ice::Variable *result = ::function->makeVariable(T(type));
 
-		if(valueType & EmulatedBits)
+		if((valueType & EmulatedBits) && (align != 0))   // Narrow vector not stored on stack.
 		{
 			if(emulateIntrinsics)
 			{
@@ -896,7 +896,7 @@ namespace sw
 	{
 		int valueType = (int)reinterpret_cast<intptr_t>(type);
 
-		if(valueType & EmulatedBits)
+		if((valueType & EmulatedBits) && (align != 0))   // Narrow vector not stored on stack.
 		{
 			if(emulateIntrinsics)
 			{
@@ -941,7 +941,7 @@ namespace sw
 		}
 		else
 		{
-			assert(T(value->getType()) == type);
+			assert(value->getType() == T(type));
 
 			auto store = Ice::InstStore::create(::function, value, ptr, align);
 			::basicBlock->appendInst(store);
@@ -2716,9 +2716,9 @@ namespace sw
 		return RValue<Byte8>(Nucleus::createInsertElement(val.value, element.value, i));
 	}
 
-	RValue<Byte> Saturate(RValue<UShort> x)
+	RValue<Byte> SaturateUnsigned(RValue<Short> x)
 	{
-		return Byte(IfThenElse(Int(x) > 0xFF, Int(0xFF), Int(x)));
+		return Byte(IfThenElse(Int(x) > 0xFF, Int(0xFF), IfThenElse(Int(x) < 0, Int(0), Int(x))));
 	}
 
 	RValue<Byte8> AddSat(RValue<Byte8> x, RValue<Byte8> y)
@@ -2726,14 +2726,14 @@ namespace sw
 		if(emulateIntrinsics)
 		{
 			Byte8 result;
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 0))) + UShort(Int(Extract(y, 0)))), 0);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 1))) + UShort(Int(Extract(y, 1)))), 1);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 2))) + UShort(Int(Extract(y, 2)))), 2);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 3))) + UShort(Int(Extract(y, 3)))), 3);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 4))) + UShort(Int(Extract(y, 4)))), 4);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 5))) + UShort(Int(Extract(y, 5)))), 5);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 6))) + UShort(Int(Extract(y, 6)))), 6);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 7))) + UShort(Int(Extract(y, 7)))), 7);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 0)) + Int(Extract(y, 0)))), 0);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 1)) + Int(Extract(y, 1)))), 1);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 2)) + Int(Extract(y, 2)))), 2);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 3)) + Int(Extract(y, 3)))), 3);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 4)) + Int(Extract(y, 4)))), 4);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 5)) + Int(Extract(y, 5)))), 5);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 6)) + Int(Extract(y, 6)))), 6);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 7)) + Int(Extract(y, 7)))), 7);
 
 			return result;
 		}
@@ -2756,14 +2756,14 @@ namespace sw
 		if(emulateIntrinsics)
 		{
 			Byte8 result;
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 0))) - UShort(Int(Extract(y, 0)))), 0);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 1))) - UShort(Int(Extract(y, 1)))), 1);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 2))) - UShort(Int(Extract(y, 2)))), 2);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 3))) - UShort(Int(Extract(y, 3)))), 3);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 4))) - UShort(Int(Extract(y, 4)))), 4);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 5))) - UShort(Int(Extract(y, 5)))), 5);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 6))) - UShort(Int(Extract(y, 6)))), 6);
-			result = Insert(result, Saturate(UShort(Int(Extract(x, 7))) - UShort(Int(Extract(y, 7)))), 7);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 0)) - Int(Extract(y, 0)))), 0);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 1)) - Int(Extract(y, 1)))), 1);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 2)) - Int(Extract(y, 2)))), 2);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 3)) - Int(Extract(y, 3)))), 3);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 4)) - Int(Extract(y, 4)))), 4);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 5)) - Int(Extract(y, 5)))), 5);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 6)) - Int(Extract(y, 6)))), 6);
+			result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 7)) - Int(Extract(y, 7)))), 7);
 
 			return result;
 		}
@@ -2847,7 +2847,7 @@ namespace sw
 
 	RValue<Int> SignMask(RValue<Byte8> x)
 	{
-		if(emulateIntrinsics)
+		if(emulateIntrinsics || CPUID::ARM)
 		{
 			Byte8 xx = As<Byte8>(As<SByte8>(x) >> 7) & Byte8(0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80);
 			return Int(Extract(xx, 0)) | Int(Extract(xx, 1)) | Int(Extract(xx, 2)) | Int(Extract(xx, 3)) | Int(Extract(xx, 4)) | Int(Extract(xx, 5)) | Int(Extract(xx, 6)) | Int(Extract(xx, 7));
@@ -3043,7 +3043,7 @@ namespace sw
 		return RValue<SByte8>(Nucleus::createNot(val.value));
 	}
 
-	RValue<SByte> Saturate(RValue<Short> x)
+	RValue<SByte> SaturateSigned(RValue<Short> x)
 	{
 		return SByte(IfThenElse(Int(x) > 0x7F, Int(0x7F), IfThenElse(Int(x) < -0x80, Int(0x80), Int(x))));
 	}
@@ -3053,14 +3053,14 @@ namespace sw
 		if(emulateIntrinsics)
 		{
 			SByte8 result;
-			result = Insert(result, Saturate(Short(Int(Extract(x, 0))) + Short(Int(Extract(y, 0)))), 0);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 1))) + Short(Int(Extract(y, 1)))), 1);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 2))) + Short(Int(Extract(y, 2)))), 2);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 3))) + Short(Int(Extract(y, 3)))), 3);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 4))) + Short(Int(Extract(y, 4)))), 4);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 5))) + Short(Int(Extract(y, 5)))), 5);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 6))) + Short(Int(Extract(y, 6)))), 6);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 7))) + Short(Int(Extract(y, 7)))), 7);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 0)) + Int(Extract(y, 0)))), 0);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 1)) + Int(Extract(y, 1)))), 1);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 2)) + Int(Extract(y, 2)))), 2);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 3)) + Int(Extract(y, 3)))), 3);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 4)) + Int(Extract(y, 4)))), 4);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 5)) + Int(Extract(y, 5)))), 5);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 6)) + Int(Extract(y, 6)))), 6);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 7)) + Int(Extract(y, 7)))), 7);
 
 			return result;
 		}
@@ -3083,14 +3083,14 @@ namespace sw
 		if(emulateIntrinsics)
 		{
 			SByte8 result;
-			result = Insert(result, Saturate(Short(Int(Extract(x, 0))) - Short(Int(Extract(y, 0)))), 0);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 1))) - Short(Int(Extract(y, 1)))), 1);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 2))) - Short(Int(Extract(y, 2)))), 2);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 3))) - Short(Int(Extract(y, 3)))), 3);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 4))) - Short(Int(Extract(y, 4)))), 4);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 5))) - Short(Int(Extract(y, 5)))), 5);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 6))) - Short(Int(Extract(y, 6)))), 6);
-			result = Insert(result, Saturate(Short(Int(Extract(x, 7))) - Short(Int(Extract(y, 7)))), 7);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 0)) - Int(Extract(y, 0)))), 0);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 1)) - Int(Extract(y, 1)))), 1);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 2)) - Int(Extract(y, 2)))), 2);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 3)) - Int(Extract(y, 3)))), 3);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 4)) - Int(Extract(y, 4)))), 4);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 5)) - Int(Extract(y, 5)))), 5);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 6)) - Int(Extract(y, 6)))), 6);
+			result = Insert(result, SaturateSigned(Short(Int(Extract(x, 7)) - Int(Extract(y, 7)))), 7);
 
 			return result;
 		}
@@ -3123,7 +3123,7 @@ namespace sw
 
 	RValue<Int> SignMask(RValue<SByte8> x)
 	{
-		if(emulateIntrinsics)
+		if(emulateIntrinsics || CPUID::ARM)
 		{
 			SByte8 xx = (x >> 7) & SByte8(0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80);
 			return Int(Extract(xx, 0)) | Int(Extract(xx, 1)) | Int(Extract(xx, 2)) | Int(Extract(xx, 3)) | Int(Extract(xx, 4)) | Int(Extract(xx, 5)) | Int(Extract(xx, 6)) | Int(Extract(xx, 7));
@@ -3491,7 +3491,7 @@ namespace sw
 	RValue<Short4> RoundShort4(RValue<Float4> cast)
 	{
 		RValue<Int4> int4 = RoundInt(cast);
-		return As<Short4>(Pack(int4, int4));
+		return As<Short4>(PackSigned(int4, int4));
 	}
 
 	RValue<Short4> Max(RValue<Short4> x, RValue<Short4> y)
@@ -3520,7 +3520,7 @@ namespace sw
 		return RValue<Short4>(V(result));
 	}
 
-	RValue<Short> Saturate(RValue<Int> x)
+	RValue<Short> SaturateSigned(RValue<Int> x)
 	{
 		return Short(IfThenElse(x > 0x7FFF, Int(0x7FFF), IfThenElse(x < -0x8000, Int(0x8000), x)));
 	}
@@ -3530,10 +3530,10 @@ namespace sw
 		if(emulateIntrinsics)
 		{
 			Short4 result;
-			result = Insert(result, Saturate(Int(Extract(x, 0)) + Int(Extract(y, 0))), 0);
-			result = Insert(result, Saturate(Int(Extract(x, 1)) + Int(Extract(y, 1))), 1);
-			result = Insert(result, Saturate(Int(Extract(x, 2)) + Int(Extract(y, 2))), 2);
-			result = Insert(result, Saturate(Int(Extract(x, 3)) + Int(Extract(y, 3))), 3);
+			result = Insert(result, SaturateSigned(Int(Extract(x, 0)) + Int(Extract(y, 0))), 0);
+			result = Insert(result, SaturateSigned(Int(Extract(x, 1)) + Int(Extract(y, 1))), 1);
+			result = Insert(result, SaturateSigned(Int(Extract(x, 2)) + Int(Extract(y, 2))), 2);
+			result = Insert(result, SaturateSigned(Int(Extract(x, 3)) + Int(Extract(y, 3))), 3);
 
 			return result;
 		}
@@ -3556,10 +3556,10 @@ namespace sw
 		if(emulateIntrinsics)
 		{
 			Short4 result;
-			result = Insert(result, Saturate(Int(Extract(x, 0)) - Int(Extract(y, 0))), 0);
-			result = Insert(result, Saturate(Int(Extract(x, 1)) - Int(Extract(y, 1))), 1);
-			result = Insert(result, Saturate(Int(Extract(x, 2)) - Int(Extract(y, 2))), 2);
-			result = Insert(result, Saturate(Int(Extract(x, 3)) - Int(Extract(y, 3))), 3);
+			result = Insert(result, SaturateSigned(Int(Extract(x, 0)) - Int(Extract(y, 0))), 0);
+			result = Insert(result, SaturateSigned(Int(Extract(x, 1)) - Int(Extract(y, 1))), 1);
+			result = Insert(result, SaturateSigned(Int(Extract(x, 2)) - Int(Extract(y, 2))), 2);
+			result = Insert(result, SaturateSigned(Int(Extract(x, 3)) - Int(Extract(y, 3))), 3);
 
 			return result;
 		}
@@ -3627,19 +3627,19 @@ namespace sw
 		}
 	}
 
-	RValue<SByte8> Pack(RValue<Short4> x, RValue<Short4> y)
+	RValue<SByte8> PackSigned(RValue<Short4> x, RValue<Short4> y)
 	{
 		if(emulateIntrinsics)
 		{
 			SByte8 result;
-			result = Insert(result, Saturate(Extract(x, 0)), 0);
-			result = Insert(result, Saturate(Extract(x, 1)), 1);
-			result = Insert(result, Saturate(Extract(x, 2)), 2);
-			result = Insert(result, Saturate(Extract(x, 3)), 3);
-			result = Insert(result, Saturate(Extract(y, 0)), 4);
-			result = Insert(result, Saturate(Extract(y, 1)), 5);
-			result = Insert(result, Saturate(Extract(y, 2)), 6);
-			result = Insert(result, Saturate(Extract(y, 3)), 7);
+			result = Insert(result, SaturateSigned(Extract(x, 0)), 0);
+			result = Insert(result, SaturateSigned(Extract(x, 1)), 1);
+			result = Insert(result, SaturateSigned(Extract(x, 2)), 2);
+			result = Insert(result, SaturateSigned(Extract(x, 3)), 3);
+			result = Insert(result, SaturateSigned(Extract(y, 0)), 4);
+			result = Insert(result, SaturateSigned(Extract(y, 1)), 5);
+			result = Insert(result, SaturateSigned(Extract(y, 2)), 6);
+			result = Insert(result, SaturateSigned(Extract(y, 3)), 7);
 
 			return result;
 		}
@@ -3654,6 +3654,36 @@ namespace sw
 			::basicBlock->appendInst(pack);
 
 			return As<SByte8>(Swizzle(As<Int4>(V(result)), 0x88));
+		}
+	}
+
+	RValue<Byte8> PackUnsigned(RValue<Short4> x, RValue<Short4> y)
+	{
+		if(emulateIntrinsics)
+		{
+			Byte8 result;
+			result = Insert(result, SaturateUnsigned(Extract(x, 0)), 0);
+			result = Insert(result, SaturateUnsigned(Extract(x, 1)), 1);
+			result = Insert(result, SaturateUnsigned(Extract(x, 2)), 2);
+			result = Insert(result, SaturateUnsigned(Extract(x, 3)), 3);
+			result = Insert(result, SaturateUnsigned(Extract(y, 0)), 4);
+			result = Insert(result, SaturateUnsigned(Extract(y, 1)), 5);
+			result = Insert(result, SaturateUnsigned(Extract(y, 2)), 6);
+			result = Insert(result, SaturateUnsigned(Extract(y, 3)), 7);
+
+			return result;
+		}
+		else
+		{
+			Ice::Variable *result = ::function->makeVariable(Ice::IceType_v16i8);
+			const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::VectorPackUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+			auto target = ::context->getConstantUndef(Ice::IceType_i32);
+			auto pack = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+			pack->addArg(x.value);
+			pack->addArg(y.value);
+			::basicBlock->appendInst(pack);
+
+			return As<Byte8>(Swizzle(As<Int4>(V(result)), 0x88));
 		}
 	}
 
@@ -3724,8 +3754,16 @@ namespace sw
 		{
 			if(CPUID::SSE4_1)
 			{
-				Int4 int4(Min(cast, Float4(0xFFFF)));   // packusdw takes care of 0x0000 saturation
-				*this = As<Short4>(Pack(As<UInt4>(int4), As<UInt4>(int4)));
+				// x86 produces 0x80000000 on 32-bit integer overflow/underflow.
+				// PackUnsigned takes care of 0x0000 saturation.
+				Int4 int4(Min(cast, Float4(0xFFFF)));
+				*this = As<UShort4>(PackUnsigned(int4, int4));
+			}
+			else if(CPUID::ARM)
+			{
+				// ARM saturates the 32-bit integer result on overflow/undeflow.
+				Int4 int4(cast);
+				*this = As<UShort4>(PackUnsigned(int4, int4));
 			}
 			else
 			{
@@ -3947,7 +3985,7 @@ namespace sw
 		return RValue<UShort4>(V(result));
 	}
 
-	RValue<UShort> SaturateUShort(RValue<Int> x)
+	RValue<UShort> SaturateUnsigned(RValue<Int> x)
 	{
 		return UShort(IfThenElse(x > 0xFFFF, Int(0xFFFF), IfThenElse(x < 0, Int(0), x)));
 	}
@@ -3957,10 +3995,10 @@ namespace sw
 		if(emulateIntrinsics)
 		{
 			UShort4 result;
-			result = Insert(result, SaturateUShort(Int(Extract(x, 0)) + Int(Extract(y, 0))), 0);
-			result = Insert(result, SaturateUShort(Int(Extract(x, 1)) + Int(Extract(y, 1))), 1);
-			result = Insert(result, SaturateUShort(Int(Extract(x, 2)) + Int(Extract(y, 2))), 2);
-			result = Insert(result, SaturateUShort(Int(Extract(x, 3)) + Int(Extract(y, 3))), 3);
+			result = Insert(result, SaturateUnsigned(Int(Extract(x, 0)) + Int(Extract(y, 0))), 0);
+			result = Insert(result, SaturateUnsigned(Int(Extract(x, 1)) + Int(Extract(y, 1))), 1);
+			result = Insert(result, SaturateUnsigned(Int(Extract(x, 2)) + Int(Extract(y, 2))), 2);
+			result = Insert(result, SaturateUnsigned(Int(Extract(x, 3)) + Int(Extract(y, 3))), 3);
 
 			return result;
 		}
@@ -3983,10 +4021,10 @@ namespace sw
 		if(emulateIntrinsics)
 		{
 			UShort4 result;
-			result = Insert(result, SaturateUShort(Int(Extract(x, 0)) - Int(Extract(y, 0))), 0);
-			result = Insert(result, SaturateUShort(Int(Extract(x, 1)) - Int(Extract(y, 1))), 1);
-			result = Insert(result, SaturateUShort(Int(Extract(x, 2)) - Int(Extract(y, 2))), 2);
-			result = Insert(result, SaturateUShort(Int(Extract(x, 3)) - Int(Extract(y, 3))), 3);
+			result = Insert(result, SaturateUnsigned(Int(Extract(x, 0)) - Int(Extract(y, 0))), 0);
+			result = Insert(result, SaturateUnsigned(Int(Extract(x, 1)) - Int(Extract(y, 1))), 1);
+			result = Insert(result, SaturateUnsigned(Int(Extract(x, 2)) - Int(Extract(y, 2))), 2);
+			result = Insert(result, SaturateUnsigned(Int(Extract(x, 3)) - Int(Extract(y, 3))), 3);
 
 			return result;
 		}
@@ -4033,36 +4071,6 @@ namespace sw
 	RValue<UShort4> Average(RValue<UShort4> x, RValue<UShort4> y)
 	{
 		assert(false && "UNIMPLEMENTED"); return RValue<UShort4>(V(nullptr));
-	}
-
-	RValue<Byte8> Pack(RValue<UShort4> x, RValue<UShort4> y)
-	{
-		if(emulateIntrinsics)
-		{
-			Byte8 result;
-			result = Insert(result, Saturate(Extract(x, 0)), 0);
-			result = Insert(result, Saturate(Extract(x, 1)), 1);
-			result = Insert(result, Saturate(Extract(x, 2)), 2);
-			result = Insert(result, Saturate(Extract(x, 3)), 3);
-			result = Insert(result, Saturate(Extract(y, 0)), 4);
-			result = Insert(result, Saturate(Extract(y, 1)), 5);
-			result = Insert(result, Saturate(Extract(y, 2)), 6);
-			result = Insert(result, Saturate(Extract(y, 3)), 7);
-
-			return result;
-		}
-		else
-		{
-			Ice::Variable *result = ::function->makeVariable(Ice::IceType_v16i8);
-			const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::VectorPackUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
-			auto target = ::context->getConstantUndef(Ice::IceType_i32);
-			auto pack = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
-			pack->addArg(x.value);
-			pack->addArg(y.value);
-			::basicBlock->appendInst(pack);
-
-			return As<Byte8>(Swizzle(As<Int4>(V(result)), 0x88));
-		}
 	}
 
 	Type *UShort4::getType()
@@ -4670,7 +4678,7 @@ namespace sw
 
 	RValue<Int> RoundInt(RValue<Float> cast)
 	{
-		if(emulateIntrinsics)
+		if(emulateIntrinsics || CPUID::ARM)
 		{
 			// Push the fractional part off the mantissa. Accurate up to +/-2^22.
 			return Int((cast + Float(0x00C00000)) - Float(0x00C00000));
@@ -5913,7 +5921,7 @@ namespace sw
 
 	RValue<Int4> RoundInt(RValue<Float4> cast)
 	{
-		if(emulateIntrinsics)
+		if(emulateIntrinsics || CPUID::ARM)
 		{
 			// Push the fractional part off the mantissa. Accurate up to +/-2^22.
 			return Int4((cast + Float4(0x00C00000)) - Float4(0x00C00000));
@@ -5931,19 +5939,19 @@ namespace sw
 		}
 	}
 
-	RValue<Short8> Pack(RValue<Int4> x, RValue<Int4> y)
+	RValue<Short8> PackSigned(RValue<Int4> x, RValue<Int4> y)
 	{
 		if(emulateIntrinsics)
 		{
 			Short8 result;
-			result = Insert(result, Saturate(Extract(x, 0)), 0);
-			result = Insert(result, Saturate(Extract(x, 1)), 1);
-			result = Insert(result, Saturate(Extract(x, 2)), 2);
-			result = Insert(result, Saturate(Extract(x, 3)), 3);
-			result = Insert(result, Saturate(Extract(y, 0)), 4);
-			result = Insert(result, Saturate(Extract(y, 1)), 5);
-			result = Insert(result, Saturate(Extract(y, 2)), 6);
-			result = Insert(result, Saturate(Extract(y, 3)), 7);
+			result = Insert(result, SaturateSigned(Extract(x, 0)), 0);
+			result = Insert(result, SaturateSigned(Extract(x, 1)), 1);
+			result = Insert(result, SaturateSigned(Extract(x, 2)), 2);
+			result = Insert(result, SaturateSigned(Extract(x, 3)), 3);
+			result = Insert(result, SaturateSigned(Extract(y, 0)), 4);
+			result = Insert(result, SaturateSigned(Extract(y, 1)), 5);
+			result = Insert(result, SaturateSigned(Extract(y, 2)), 6);
+			result = Insert(result, SaturateSigned(Extract(y, 3)), 7);
 
 			return result;
 		}
@@ -5961,6 +5969,32 @@ namespace sw
 		}
 	}
 
+	RValue<UShort8> PackUnsigned(RValue<Int4> x, RValue<Int4> y)
+	{
+		if(emulateIntrinsics || !(CPUID::SSE4_1 || CPUID::ARM))
+		{
+			RValue<Int4> sx = As<Int4>(x);
+			RValue<Int4> bx = (sx & ~(sx >> 31)) - Int4(0x8000);
+
+			RValue<Int4> sy = As<Int4>(y);
+			RValue<Int4> by = (sy & ~(sy >> 31)) - Int4(0x8000);
+
+			return As<UShort8>(PackSigned(bx, by) + Short8(0x8000u));
+		}
+		else
+		{
+			Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
+			const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::VectorPackUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
+			auto target = ::context->getConstantUndef(Ice::IceType_i32);
+			auto pack = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
+			pack->addArg(x.value);
+			pack->addArg(y.value);
+			::basicBlock->appendInst(pack);
+
+			return RValue<UShort8>(V(result));
+		}
+	}
+
 	RValue<Int> Extract(RValue<Int4> x, int i)
 	{
 		return RValue<Int>(Nucleus::createExtractElement(x.value, Int::getType(), i));
@@ -5973,7 +6007,7 @@ namespace sw
 
 	RValue<Int> SignMask(RValue<Int4> x)
 	{
-		if(emulateIntrinsics)
+		if(emulateIntrinsics || CPUID::ARM)
 		{
 			Int4 xx = (x >> 31) & Int4(0x00000001, 0x00000002, 0x00000004, 0x00000008);
 			return Extract(xx, 0) | Extract(xx, 1) | Extract(xx, 2) | Extract(xx, 3);
@@ -6327,32 +6361,6 @@ namespace sw
 		::basicBlock->appendInst(select);
 
 		return RValue<UInt4>(V(result));
-	}
-
-	RValue<UShort8> Pack(RValue<UInt4> x, RValue<UInt4> y)
-	{
-		if(CPUID::SSE4_1)
-		{
-			Ice::Variable *result = ::function->makeVariable(Ice::IceType_v8i16);
-			const Ice::Intrinsics::IntrinsicInfo intrinsic = {Ice::Intrinsics::VectorPackUnsigned, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F};
-			auto target = ::context->getConstantUndef(Ice::IceType_i32);
-			auto pack = Ice::InstIntrinsicCall::create(::function, 2, result, target, intrinsic);
-			pack->addArg(x.value);
-			pack->addArg(y.value);
-			::basicBlock->appendInst(pack);
-
-			return RValue<UShort8>(V(result));
-		}
-		else
-		{
-			RValue<Int4> sx = As<Int4>(x);
-			RValue<Int4> bx = (sx & ~(sx >> 31)) - Int4(0x8000);
-
-			RValue<Int4> sy = As<Int4>(y);
-			RValue<Int4> by = (sy & ~(sy >> 31)) - Int4(0x8000);
-
-			return As<UShort8>(Pack(bx, by) + Short8(0x8000u));
-		}
 	}
 
 	Type *UInt4::getType()
@@ -6837,7 +6845,7 @@ namespace sw
 
 	RValue<Float4> Sqrt(RValue<Float4> x)
 	{
-		if(emulateIntrinsics)
+		if(emulateIntrinsics || CPUID::ARM)
 		{
 			Float4 result;
 			result.x = Sqrt(Float(Float4(x).x));
@@ -6911,7 +6919,7 @@ namespace sw
 
 	RValue<Int> SignMask(RValue<Float4> x)
 	{
-		if(emulateIntrinsics)
+		if(emulateIntrinsics || CPUID::ARM)
 		{
 			Int4 xx = (As<Int4>(x) >> 31) & Int4(0x00000001, 0x00000002, 0x00000004, 0x00000008);
 			return Extract(xx, 0) | Extract(xx, 1) | Extract(xx, 2) | Extract(xx, 3);
@@ -6961,7 +6969,7 @@ namespace sw
 
 	RValue<Float4> Round(RValue<Float4> x)
 	{
-		if(emulateIntrinsics)
+		if(emulateIntrinsics || CPUID::ARM)
 		{
 			// Push the fractional part off the mantissa. Accurate up to +/-2^22.
 			return (x + Float4(0x00C00000)) - Float4(0x00C00000);

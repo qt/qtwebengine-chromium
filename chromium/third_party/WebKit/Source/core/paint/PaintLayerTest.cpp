@@ -100,7 +100,7 @@ TEST_P(PaintLayerTest, RootLayerCompositedBounds) {
 TEST_P(PaintLayerTest, RootLayerScrollBounds) {
   if (!RuntimeEnabledFeatures::RootLayerScrollingEnabled())
     return;
-  RuntimeEnabledFeatures::SetOverlayScrollbarsEnabled(false);
+  ScopedOverlayScrollbarsForTest overlay_scrollbars(false);
 
   SetBodyInnerHTML(
       "<style> body { width: 1000px; height: 1000px; margin: 0 } </style>");
@@ -263,6 +263,12 @@ TEST_P(PaintLayerTest, CompositedScrollingNoNeedsRepaint) {
 }
 
 TEST_P(PaintLayerTest, NonCompositedScrollingNeedsRepaint) {
+  // SPV2 scrolling raster invalidation decisions are made in
+  // ContentLayerClientImpl::GenerateRasterInvalidations through
+  // PaintArtifactCompositor.
+  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+    return;
+
   SetBodyInnerHTML(
       "<div id='scroll' style='width: 100px; height: 100px; overflow: scroll'>"
       "  <div id='content' style='position: relative; background: blue;"
@@ -477,7 +483,7 @@ TEST_P(PaintLayerTest, DescendantDependentFlagsStopsAtThrottledFrames) {
       "  style='transform: translate3d(4px, 5px, 6px);'/>");
 
   // Move the child frame offscreen so it becomes available for throttling.
-  auto* iframe = toHTMLIFrameElement(GetDocument().getElementById("iframe"));
+  auto* iframe = ToHTMLIFrameElement(GetDocument().getElementById("iframe"));
   iframe->setAttribute(HTMLNames::styleAttr, "transform: translateY(5555px)");
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Ensure intersection observer notifications get delivered.
@@ -1052,7 +1058,7 @@ TEST_P(PaintLayerTest, PaintLayerTransformUpdatedOnStyleTransformAnimation) {
       ComputedStyle::Clone(target_object->StyleRef());
   ComputedStyle* new_style = target_object->MutableStyle();
   new_style->SetHasCurrentTransformAnimation(true);
-  target_paint_layer->UpdateTransform(old_style.Get(), *new_style);
+  target_paint_layer->UpdateTransform(old_style.get(), *new_style);
 
   EXPECT_NE(nullptr, target_paint_layer->Transform());
 }
@@ -1118,6 +1124,14 @@ TEST_P(PaintLayerTest, NeedsRepaintOnRemovingStackedLayer) {
   EXPECT_TRUE(old_compositing_container->NeedsRepaint());
 
   GetDocument().View()->UpdateAllLifecyclePhases();
+}
+
+TEST_P(PaintLayerTest, FrameViewContentSize) {
+  bool rls = RuntimeEnabledFeatures::RootLayerScrollingEnabled();
+  SetBodyInnerHTML(
+      "<style> body { width: 1200px; height: 900px; margin: 0 } </style>");
+  EXPECT_EQ(rls ? IntSize(800, 600) : IntSize(1200, 900),
+            GetDocument().View()->ContentsSize());
 }
 
 }  // namespace blink

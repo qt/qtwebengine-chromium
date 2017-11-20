@@ -52,6 +52,9 @@ const size_t kMemoryThresholdToSubrect = 64 * 1024 * 1024;
 const int kMinDimensionToSubrect = 4 * 1024;
 const float kMemoryRatioToSubrect = 0.5f;
 
+// Tracing ID sequence for use in DecodedImage.
+base::AtomicSequenceNumber g_next_tracing_id_;
+
 class AutoRemoveKeyFromTaskMap {
  public:
   AutoRemoveKeyFromTaskMap(
@@ -217,28 +220,27 @@ SoftwareImageDecodeCache::~SoftwareImageDecodeCache() {
   base::MemoryCoordinatorClientRegistry::GetInstance()->Unregister(this);
 }
 
-bool SoftwareImageDecodeCache::GetTaskForImageAndRef(
+ImageDecodeCache::TaskResult SoftwareImageDecodeCache::GetTaskForImageAndRef(
     const DrawImage& image,
-    const TracingInfo& tracing_info,
-    scoped_refptr<TileTask>* task) {
+    const TracingInfo& tracing_info) {
   DCHECK_EQ(tracing_info.task_type, TaskType::kInRaster);
-  return GetTaskForImageAndRefInternal(
-      image, tracing_info, DecodeTaskType::USE_IN_RASTER_TASKS, task);
+  return GetTaskForImageAndRefInternal(image, tracing_info,
+                                       DecodeTaskType::USE_IN_RASTER_TASKS);
 }
 
-bool SoftwareImageDecodeCache::GetOutOfRasterDecodeTaskForImageAndRef(
-    const DrawImage& image,
-    scoped_refptr<TileTask>* task) {
+ImageDecodeCache::TaskResult
+SoftwareImageDecodeCache::GetOutOfRasterDecodeTaskForImageAndRef(
+    const DrawImage& image) {
   return GetTaskForImageAndRefInternal(
       image, TracingInfo(0, TilePriority::NOW, TaskType::kOutOfRaster),
-      DecodeTaskType::USE_OUT_OF_RASTER_TASKS, task);
+      DecodeTaskType::USE_OUT_OF_RASTER_TASKS);
 }
 
-bool SoftwareImageDecodeCache::GetTaskForImageAndRefInternal(
+ImageDecodeCache::TaskResult
+SoftwareImageDecodeCache::GetTaskForImageAndRefInternal(
     const DrawImage& image,
     const TracingInfo& tracing_info,
-    DecodeTaskType task_type,
-    scoped_refptr<TileTask>* task) {
+    DecodeTaskType task_type) {
   // If the image already exists or if we're going to create a task for it, then
   // we'll likely need to ref this image (the exception is if we're prerolling
   // the image only). That means the image is or will be in the cache. When the
@@ -254,8 +256,7 @@ bool SoftwareImageDecodeCache::GetTaskForImageAndRefInternal(
   // If the target size is empty, we can skip this image during draw (and thus
   // we don't need to decode it or ref it).
   if (key.target_size().IsEmpty()) {
-    *task = nullptr;
-    return false;
+    return TaskResult(false);
   }
 
   base::AutoLock lock(lock_);
@@ -269,14 +270,13 @@ bool SoftwareImageDecodeCache::GetTaskForImageAndRefInternal(
     if (image_was_locked ||
         (new_image_fits_in_memory && decoded_it->second->Lock())) {
       RefImage(key);
-      *task = nullptr;
 
       // If the image wasn't locked, then we just succeeded in locking it.
       if (!image_was_locked) {
         RecordLockExistingCachedImageHistogram(tracing_info.requesting_tile_bin,
                                                true);
       }
-      return true;
+      return TaskResult(true);
     }
 
     // If the image fits in memory, then we at least tried to lock it and
@@ -299,8 +299,7 @@ bool SoftwareImageDecodeCache::GetTaskForImageAndRefInternal(
           : pending_out_of_raster_image_tasks_[key];
   if (existing_task) {
     RefImage(key);
-    *task = existing_task;
-    return true;
+    return TaskResult(existing_task);
   }
 
   // At this point, we have to create a new image/task, so we need to abort if
@@ -310,17 +309,15 @@ bool SoftwareImageDecodeCache::GetTaskForImageAndRefInternal(
   // ref to the image that is now being reffed for the new schedule.
   if (!new_image_fits_in_memory && (decoded_images_ref_counts_.find(key) ==
                                     decoded_images_ref_counts_.end())) {
-    *task = nullptr;
-    return false;
+    return TaskResult(false);
   }
 
   // Actually create the task. RefImage will account for memory on the first
   // ref.
   RefImage(key);
-  existing_task = make_scoped_refptr(
-      new ImageDecodeTaskImpl(this, key, image, task_type, tracing_info));
-  *task = existing_task;
-  return true;
+  existing_task = base::MakeRefCounted<ImageDecodeTaskImpl>(
+      this, key, image, task_type, tracing_info);
+  return TaskResult(existing_task);
 }
 
 void SoftwareImageDecodeCache::RefImage(const ImageKey& key) {
@@ -452,12 +449,15 @@ SoftwareImageDecodeCache::DecodeImageInternal(const ImageKey& key,
   // that scale, or
   // - If we're not doing a scale at all (which is supported by all decoders and
   // subsetting is handled in the draw calls).
-  // TODO(vmpstr): See if we can subrect thing decoded to native scale.
+  // TODO(vmpstr): See if we can subrect the result of decoded to scale.
   SkIRect full_size_rect =
       SkIRect::MakeWH(paint_image.width(), paint_image.height());
   bool need_subset = (gfx::RectToSkIRect(key.src_rect()) != full_size_rect);
   SkISize exact_size =
       SkISize::Make(key.target_size().width(), key.target_size().height());
+  // TODO(vmpstr): If an image of a bigger size is already decoded and is
+  // lock-able then it might be faster to just scale that instead of redecoding
+  // to exact scale. We need to profile this.
   if ((!need_subset &&
        exact_size == paint_image.GetSupportedDecodeSize(exact_size)) ||
       SkIRect::MakeSize(exact_size) == full_size_rect) {
@@ -599,7 +599,8 @@ SoftwareImageDecodeCache::GetExactSizeImageDecode(
                  "SoftwareImageDecodeCache::GetOriginalSizeImageDecode - "
                  "decode");
     bool result = paint_image.Decode(decoded_pixels->data(), &decoded_info,
-                                     key.target_color_space().ToSkColorSpace());
+                                     key.target_color_space().ToSkColorSpace(),
+                                     key.frame_key().frame_index());
     if (!result) {
       decoded_pixels->Unlock();
       return nullptr;
@@ -607,8 +608,7 @@ SoftwareImageDecodeCache::GetExactSizeImageDecode(
   }
 
   return std::make_unique<DecodedImage>(decoded_info, std::move(decoded_pixels),
-                                        SkSize::Make(0, 0),
-                                        next_tracing_id_.GetNext());
+                                        SkSize::Make(0, 0));
 }
 
 std::unique_ptr<SoftwareImageDecodeCache::DecodedImage>
@@ -622,7 +622,8 @@ SoftwareImageDecodeCache::GetSubrectImageDecode(const ImageKey& key,
   // so. We could also subrect scaled images.
   SkIRect exact_size_rect = SkIRect::MakeWH(image.width(), image.height());
   DrawImage exact_size_draw_image(image, exact_size_rect, kNone_SkFilterQuality,
-                                  SkMatrix::I(), key.target_color_space());
+                                  SkMatrix::I(), key.frame_key().frame_index(),
+                                  key.target_color_space());
   ImageKey exact_size_key =
       ImageKey::FromDrawImage(exact_size_draw_image, color_type_);
 
@@ -672,11 +673,10 @@ SoftwareImageDecodeCache::GetSubrectImageDecode(const ImageKey& key,
     DCHECK(result);
   }
 
-  return base::WrapUnique(new DecodedImage(
+  return std::make_unique<DecodedImage>(
       subrect_info.makeColorSpace(decoded_draw_image.image()->refColorSpace()),
       std::move(subrect_pixels),
-      SkSize::Make(-key.src_rect().x(), -key.src_rect().y()),
-      next_tracing_id_.GetNext()));
+      SkSize::Make(-key.src_rect().x(), -key.src_rect().y()));
 }
 
 std::unique_ptr<SoftwareImageDecodeCache::DecodedImage>
@@ -696,7 +696,8 @@ SoftwareImageDecodeCache::GetScaledImageDecode(const ImageKey& key,
                 key.target_size().width(), key.target_size().height())));
 
   DrawImage exact_size_draw_image(image, exact_size_rect, kNone_SkFilterQuality,
-                                  SkMatrix::I(), key.target_color_space());
+                                  SkMatrix::I(), key.frame_key().frame_index(),
+                                  key.target_color_space());
   ImageKey exact_size_key =
       ImageKey::FromDrawImage(exact_size_draw_image, color_type_);
 
@@ -755,8 +756,7 @@ SoftwareImageDecodeCache::GetScaledImageDecode(const ImageKey& key,
   return std::make_unique<DecodedImage>(
       scaled_info.makeColorSpace(decoded_draw_image.image()->refColorSpace()),
       std::move(scaled_pixels),
-      SkSize::Make(-key.src_rect().x(), -key.src_rect().y()),
-      next_tracing_id_.GetNext());
+      SkSize::Make(-key.src_rect().x(), -key.src_rect().y()));
 }
 
 void SoftwareImageDecodeCache::DrawWithImageFinished(
@@ -994,6 +994,10 @@ ImageDecodeCacheKey ImageDecodeCacheKey::FromDrawImage(const DrawImage& image,
   } else {
     quality = kMedium_SkFilterQuality;
     // Update the target size to be a mip level size.
+    // TODO(vmpstr): MipMapUtil and JPEG decoders disagree on what to do with
+    // odd sizes. If width = 2k + 1, and the mip level is 1, then this will
+    // return width = k; JPEG decoder, however, will support decoding to width =
+    // k + 1. We need to figure out what to do in this case.
     SkSize mip_scale_adjustment =
         MipMapUtil::GetScaleAdjustmentForLevel(src_rect.size(), mip_level);
     target_size.set_width(src_rect.width() * mip_scale_adjustment.width());
@@ -1093,13 +1097,12 @@ std::string ImageDecodeCacheKey::ToString() const {
 SoftwareImageDecodeCache::DecodedImage::DecodedImage(
     const SkImageInfo& info,
     std::unique_ptr<base::DiscardableMemory> memory,
-    const SkSize& src_rect_offset,
-    uint64_t tracing_id)
+    const SkSize& src_rect_offset)
     : locked_(true),
       image_info_(info),
       memory_(std::move(memory)),
       src_rect_offset_(src_rect_offset),
-      tracing_id_(tracing_id) {
+      tracing_id_(g_next_tracing_id_.GetNext()) {
   SkPixmap pixmap(image_info_, memory_->data(), image_info_.minRowBytes());
   image_ = SkImage::MakeFromRaster(
       pixmap, [](const void* pixels, void* context) {}, nullptr);

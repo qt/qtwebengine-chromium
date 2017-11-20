@@ -120,7 +120,7 @@ class NET_EXPORT URLRequestContextBuilder {
   // Sets a name for this URLRequestContext. Currently the name is used in
   // MemoryDumpProvier to annotate memory usage. The name does not need to be
   // unique.
-  void set_name(const char* name) { name_ = name; }
+  void set_name(const std::string& name) { name_ = name; }
 
   // Sets whether Brotli compression is enabled.  Disabled by default;
   void set_enable_brotli(bool enable_brotli) { enable_brotli_ = enable_brotli; }
@@ -338,13 +338,6 @@ class NET_EXPORT URLRequestContextBuilder {
       std::unique_ptr<CookieStore> cookie_store,
       std::unique_ptr<ChannelIDService> channel_id_service);
 
-  // Note that if SDCH is enabled without a policy object observing
-  // the SDCH manager and handling at least Get-Dictionary events, the
-  // result will be "Content-Encoding: sdch" advertisements, but no
-  // dictionaries fetches and no specific dictionaries advertised.
-  // SdchOwner in net/sdch/sdch_owner.h is a simple policy object.
-  void set_sdch_enabled(bool enable) { sdch_enabled_ = enable; }
-
   // Sets a specific HttpServerProperties for use in the
   // URLRequestContext rather than creating a default HttpServerPropertiesImpl.
   void SetHttpServerProperties(
@@ -357,6 +350,11 @@ class NET_EXPORT URLRequestContextBuilder {
   void SetCreateHttpTransactionFactoryCallback(
       CreateHttpTransactionFactoryCallback
           create_http_network_transaction_factory);
+
+  // Returns the previous value passed to set_net_log(), or nullptr if it hasn't
+  // been called yet.
+  // TODO(mmenke): Remove this method.
+  net::NetLog* net_log() const { return net_log_; }
 
   // Creates a mostly self-contained URLRequestContext. May only be called once
   // per URLRequestContextBuilder. After this is called, the Builder can be
@@ -375,7 +373,7 @@ class NET_EXPORT URLRequestContextBuilder {
       NetLog* net_log);
 
  private:
-  const char* name_;
+  std::string name_;
   bool enable_brotli_;
   NetworkQualityEstimator* network_quality_estimator_;
 
@@ -395,7 +393,6 @@ class NET_EXPORT URLRequestContextBuilder {
 #endif
   bool http_cache_enabled_;
   bool throttling_enabled_;
-  bool sdch_enabled_;
   bool cookie_store_set_by_client_;
 
   HttpCacheParams http_cache_params_;

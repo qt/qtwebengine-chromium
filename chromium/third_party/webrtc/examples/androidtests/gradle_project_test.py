@@ -25,8 +25,7 @@ import tempfile
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, os.pardir, os.pardir,
-                                        os.pardir))
+SRC_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, os.pardir, os.pardir))
 GENERATE_GRADLE_SCRIPT = os.path.join(SRC_DIR,
                                       'build/android/gradle/generate_gradle.py')
 GRADLEW_BIN = os.path.join(SCRIPT_DIR, 'third_party/gradle/gradlew')
@@ -62,7 +61,7 @@ def main():
 
   try:
     _RunCommand([GENERATE_GRADLE_SCRIPT, '--output-directory', output_dir,
-        '--target', '//webrtc/examples:AppRTCMobile',
+        '--target', '//examples:AppRTCMobile',
         '--project-dir', project_dir,
         '--use-gradle-process-resources', '--split-projects', '--canary'])
     _RunCommand([GRADLEW_BIN, 'assembleDebug'], project_dir)

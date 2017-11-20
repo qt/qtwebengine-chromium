@@ -193,7 +193,7 @@ int32_t PPB_Graphics3D_Impl::DoSwapBuffers(const gpu::SyncToken& sync_token,
 #else
         GL_TEXTURE_2D,
 #endif
-        size, is_overlay_candidate, false);
+        size, is_overlay_candidate);
     taken_front_buffer_.SetZero();
     HostGlobals::Get()
         ->GetInstance(pp_instance())
@@ -226,7 +226,7 @@ bool PPB_Graphics3D_Impl::InitRaw(
 
   const WebPreferences& prefs = render_frame->GetWebkitPreferences();
 
-  // 3D access might be disabled or blacklisted.
+  // 3D access might be disabled.
   if (!prefs.pepper_3d_enabled)
     return false;
 
@@ -243,6 +243,12 @@ bool PPB_Graphics3D_Impl::InitRaw(
       render_thread->EstablishGpuChannelSync();
   if (!channel)
     return false;
+  // 3D access might be blacklisted.
+  if (channel->gpu_feature_info()
+          .status_values[gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL] ==
+      gpu::kGpuFeatureStatusBlacklisted) {
+    return false;
+  }
 
   has_alpha_ = requested_attribs.alpha_size > 0;
 

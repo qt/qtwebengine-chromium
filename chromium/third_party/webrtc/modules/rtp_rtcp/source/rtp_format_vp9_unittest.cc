@@ -11,11 +11,11 @@
 #include <memory>
 #include <vector>
 
-#include "webrtc/modules/rtp_rtcp/source/rtp_format_vp9.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_packet_to_send.h"
-#include "webrtc/test/gmock.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/typedefs.h"
+#include "modules/rtp_rtcp/source/rtp_format_vp9.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "test/gmock.h"
+#include "test/gtest.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 namespace {
@@ -579,37 +579,6 @@ TEST_F(RtpPacketizerVp9Test, TestRespectsLastPacketReductionLen) {
   ASSERT_TRUE(packetizer0.NextPacket(&packet));
   EXPECT_TRUE(packet.Marker());
 }
-
-TEST_F(RtpPacketizerVp9Test, TestBaseLayerProtectionAndStorageType) {
-  const size_t kFrameSize = 10;
-  const size_t kPacketSize = 12;
-
-  // I:0, P:0, L:1, F:1, B:1, E:1, V:0 (2hdr + 10 payload)
-  // L:   T:0, U:0, S:0, D:0
-  expected_.flexible_mode = true;
-  expected_.temporal_idx = 0;
-  Init(kFrameSize, kPacketSize);
-  EXPECT_EQ(kProtectedPacket, packetizer_->GetProtectionType());
-  EXPECT_EQ(kAllowRetransmission,
-            packetizer_->GetStorageType(kRetransmitBaseLayer));
-  EXPECT_EQ(kDontRetransmit, packetizer_->GetStorageType(kRetransmitOff));
-}
-
-TEST_F(RtpPacketizerVp9Test, TestHigherLayerProtectionAndStorageType) {
-  const size_t kFrameSize = 10;
-  const size_t kPacketSize = 12;
-
-  // I:0, P:0, L:1, F:1, B:1, E:1, V:0 (2hdr + 10 payload)
-  // L:   T:1, U:0, S:0, D:0
-  expected_.flexible_mode = true;
-  expected_.temporal_idx = 1;
-  Init(kFrameSize, kPacketSize);
-  EXPECT_EQ(kUnprotectedPacket, packetizer_->GetProtectionType());
-  EXPECT_EQ(kDontRetransmit, packetizer_->GetStorageType(kRetransmitBaseLayer));
-  EXPECT_EQ(kAllowRetransmission,
-            packetizer_->GetStorageType(kRetransmitHigherLayers));
-}
-
 
 class RtpDepacketizerVp9Test : public ::testing::Test {
  protected:

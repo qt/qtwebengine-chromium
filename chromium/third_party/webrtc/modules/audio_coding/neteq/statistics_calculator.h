@@ -8,20 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_STATISTICS_CALCULATOR_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_STATISTICS_CALCULATOR_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_STATISTICS_CALCULATOR_H_
+#define MODULES_AUDIO_CODING_NETEQ_STATISTICS_CALCULATOR_H_
 
 #include <deque>
 #include <string>
 
-#include "webrtc/modules/audio_coding/neteq/include/neteq.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/typedefs.h"
+#include "modules/audio_coding/neteq/include/neteq.h"
+#include "rtc_base/constructormagic.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
-// Forward declarations.
-class DecisionLogic;
 class DelayManager;
 
 // This class handles various network statistics in NetEq.
@@ -39,11 +37,11 @@ class StatisticsCalculator {
 
   // Reports that |num_samples| samples were produced through expansion, and
   // that the expansion produced other than just noise samples.
-  void ExpandedVoiceSamples(size_t num_samples);
+  void ExpandedVoiceSamples(size_t num_samples, bool is_new_concealment_event);
 
   // Reports that |num_samples| samples were produced through expansion, and
   // that the expansion produced only noise samples.
-  void ExpandedNoiseSamples(size_t num_samples);
+  void ExpandedNoiseSamples(size_t num_samples, bool is_new_concealment_event);
 
   // Corrects the statistics for number of samples produced through non-noise
   // expansion by adding |num_samples| (negative or positive) to the current
@@ -77,6 +75,9 @@ class StatisticsCalculator {
   // time is increasing.
   void IncreaseCounter(size_t num_samples, int fs_hz);
 
+  // Update jitter buffer delay counter.
+  void JitterBufferDelay(size_t num_samples, uint64_t waiting_time_ms);
+
   // Stores new packet waiting time in waiting time statistics.
   void StoreWaitingTime(int waiting_time_ms);
 
@@ -91,13 +92,21 @@ class StatisticsCalculator {
   // Returns the current network statistics in |stats|. The current sample rate
   // is |fs_hz|, the total number of samples in packet buffer and sync buffer
   // yet to play out is |num_samples_in_buffers|, and the number of samples per
-  // packet is |samples_per_packet|.
+  // packet is |samples_per_packet|. The method does not populate
+  // |preferred_buffer_size_ms|, |jitter_peaks_found| or |clockdrift_ppm|; use
+  // the PopulateDelayManagerStats method for those.
   void GetNetworkStatistics(int fs_hz,
                             size_t num_samples_in_buffers,
                             size_t samples_per_packet,
-                            const DelayManager& delay_manager,
-                            const DecisionLogic& decision_logic,
                             NetEqNetworkStatistics *stats);
+
+  // Populates |preferred_buffer_size_ms|, |jitter_peaks_found| and
+  // |clockdrift_ppm| in |stats|. This is a convenience method, and does not
+  // strictly have to be in the StatisticsCalculator class, but it makes sense
+  // since all other stats fields are populated by that class.
+  static void PopulateDelayManagerStats(int ms_per_packet,
+                                        const DelayManager& delay_manager,
+                                        NetEqNetworkStatistics* stats);
 
   // Returns a copy of this class's lifetime statistics. These statistics are
   // never reset.
@@ -159,11 +168,18 @@ class StatisticsCalculator {
     int counter_ = 0;
   };
 
+  // Corrects the concealed samples counter in lifetime_stats_. The value of
+  // num_samples_ is added directly to the stat if the correction is positive.
+  // If the correction is negative, it is cached and will be subtracted against
+  // future additions to the counter. This is meant to be called from
+  // Expanded{Voice,Noise}Samples{Correction}.
+  void ConcealedSamplesCorrection(int num_samples);
+
   // Calculates numerator / denominator, and returns the value in Q14.
   static uint16_t CalculateQ14Ratio(size_t numerator, uint32_t denominator);
 
-  // TODO(steveanton): Add unit tests for the lifetime stats.
   NetEqLifetimeStatistics lifetime_stats_;
+  size_t concealed_samples_correction_ = 0;
   size_t preemptive_samples_;
   size_t accelerate_samples_;
   size_t added_zero_samples_;
@@ -182,4 +198,4 @@ class StatisticsCalculator {
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_STATISTICS_CALCULATOR_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_STATISTICS_CALCULATOR_H_

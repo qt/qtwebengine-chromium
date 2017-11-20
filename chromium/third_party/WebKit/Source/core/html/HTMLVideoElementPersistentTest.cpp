@@ -41,18 +41,18 @@ class HTMLVideoElementPersistentTest : public ::testing::Test {
     clients.chrome_client = chrome_client_.Get();
 
     page_holder_ = DummyPageHolder::Create(IntSize(800, 600), &clients);
-    GetDocument().body()->setInnerHTML(
+    GetDocument().body()->SetInnerHTMLFromString(
         "<body><div><video></video></div></body>");
   }
 
   Document& GetDocument() { return page_holder_->GetDocument(); }
 
   HTMLVideoElement* VideoElement() {
-    return toHTMLVideoElement(GetDocument().QuerySelector("video"));
+    return ToHTMLVideoElement(GetDocument().QuerySelector("video"));
   }
 
   HTMLDivElement* DivElement() {
-    return toHTMLDivElement(GetDocument().QuerySelector("div"));
+    return ToHTMLDivElement(GetDocument().QuerySelector("div"));
   }
 
   Element* FullscreenElement() {

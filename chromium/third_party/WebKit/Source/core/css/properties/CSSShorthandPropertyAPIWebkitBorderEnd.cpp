@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 #include "core/css/properties/CSSShorthandPropertyAPIWebkitBorderEnd.h"
+
 #include "core/StylePropertyShorthand.h"
+#include "core/css/CSSProperty.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 
 namespace blink {
 
 bool CSSShorthandPropertyAPIWebkitBorderEnd::ParseShorthand(
-    CSSPropertyID,
     bool important,
     CSSParserTokenRange& range,
     const CSSParserContext& context,
@@ -17,5 +18,13 @@ bool CSSShorthandPropertyAPIWebkitBorderEnd::ParseShorthand(
     HeapVector<CSSProperty, 256>& properties) const {
   return CSSPropertyParserHelpers::ConsumeShorthandGreedilyViaLonghandAPIs(
       webkitBorderEndShorthand(), important, context, range, properties);
+}
+
+const CSSPropertyAPI&
+CSSShorthandPropertyAPIWebkitBorderEnd::ResolveDirectionAwareProperty(
+    TextDirection direction,
+    WritingMode writing_mode) const {
+  return ResolveToPhysicalPropertyAPI(direction, writing_mode, kEndSide,
+                                      CSSPropertyAPI::BorderDirections());
 }
 }  // namespace blink

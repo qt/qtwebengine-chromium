@@ -10,7 +10,9 @@
 #define CSSPropertyAPI_h
 
 #include "core/CSSPropertyNames.h"
-#include "core/css/parser/CSSParserTokenRange.h"
+#include "platform/heap/HeapAllocator.h"
+#include "platform/text/TextDirection.h"
+#include "platform/text/WritingMode.h"
 
 namespace blink {
 
@@ -18,25 +20,42 @@ class CSSParserContext;
 class CSSParserLocalContext;
 class CSSProperty;
 class CSSValue;
+class StyleResolverState;
+class StylePropertyShorthand;
+class CSSParserTokenRange;
 
-class CORE_EXPORT CSSPropertyAPI {
+enum LogicalBoxSide { kBeforeSide, kEndSide, kAfterSide, kStartSide };
+enum LogicalExtent { kLogicalWidth, kLogicalHeight };
+enum PhysicalBoxSide { kTopSide, kRightSide, kBottomSide, kLeftSide };
+
+class CSSPropertyAPI {
  public:
-  static const CSSPropertyAPI& Get(CSSPropertyID);
+  CORE_EXPORT static const CSSPropertyAPI& Get(CSSPropertyID);
 
-#if !defined(OS_WIN) || !defined(COMPILER_MSVC)
-  constexpr CSSPropertyAPI() {}
-#endif
+  constexpr CSSPropertyAPI(CSSPropertyID id) : id_(id) {}
 
-  virtual const CSSValue* ParseSingleValue(CSSPropertyID,
-                                           CSSParserTokenRange&,
+  // For backwards compatibility when passing around CSSPropertyAPI references.
+  // in case we need to call a function that hasn't been converted to using APIs
+  // yet.
+  CSSPropertyID PropertyID() const { return id_; }
+
+  // Parses and consumes a longhand property value from the token range.
+  // Returns nullptr if the input is invalid.
+  virtual const CSSValue* ParseSingleValue(CSSParserTokenRange&,
                                            const CSSParserContext&,
-                                           const CSSParserLocalContext&) const;
-  virtual bool ParseShorthand(CSSPropertyID,
-                              bool important,
+                                           const CSSParserLocalContext&) const {
+    return nullptr;
+  }
+  // Parses and consumes entire shorthand value from the token range and adds
+  // all constituent parsed longhand properties to the 'properties' set.
+  // Returns false if the input is invalid.
+  virtual bool ParseShorthand(bool important,
                               CSSParserTokenRange&,
                               const CSSParserContext&,
                               const CSSParserLocalContext&,
-                              HeapVector<CSSProperty, 256>&) const;
+                              HeapVector<CSSProperty, 256>& properties) const {
+    return false;
+  }
 
   virtual bool IsInterpolable() const { return false; }
   virtual bool IsInherited() const { return false; }
@@ -48,6 +67,36 @@ class CORE_EXPORT CSSPropertyAPI {
   virtual bool IsDescriptor() const { return false; }
   virtual bool SupportsPercentage() const { return false; }
   virtual bool IsProperty() const { return true; }
+  virtual bool IsEnabled() const { return true; }
+  virtual void ApplyInitial(StyleResolverState&) const { NOTREACHED(); }
+  virtual void ApplyInherit(StyleResolverState&) const { NOTREACHED(); }
+  virtual void ApplyValue(StyleResolverState&, const CSSValue&) const {
+    NOTREACHED();
+  }
+  virtual bool IsAffectedByAll() const { return IsEnabled() && IsProperty(); }
+  virtual const CSSPropertyAPI& ResolveDirectionAwareProperty(
+      TextDirection,
+      WritingMode) const {
+    return *this;
+  }
+  static void FilterEnabledCSSPropertiesIntoVector(const CSSPropertyID*,
+                                                   size_t length,
+                                                   Vector<CSSPropertyID>&);
+
+ protected:
+  static const CSSPropertyAPI& ResolveToPhysicalPropertyAPI(
+      TextDirection,
+      WritingMode,
+      LogicalBoxSide,
+      const StylePropertyShorthand&);
+  static const CSSPropertyAPI& ResolveToPhysicalPropertyAPI(
+      WritingMode,
+      LogicalExtent,
+      const CSSPropertyID*);
+  static const StylePropertyShorthand& BorderDirections();
+
+ private:
+  const CSSPropertyID id_;
 };
 
 {% for api_class_data in api_classes_by_property_id %}

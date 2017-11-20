@@ -7,18 +7,15 @@
 #include "core/StylePropertyShorthand.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 #include "core/css/properties/CSSPropertyGridUtils.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
 bool CSSShorthandPropertyAPIGridArea::ParseShorthand(
-    CSSPropertyID,
     bool important,
     CSSParserTokenRange& range,
     const CSSParserContext&,
     const CSSParserLocalContext&,
     HeapVector<CSSProperty, 256>& properties) const {
-  DCHECK(RuntimeEnabledFeatures::CSSGridLayoutEnabled());
   DCHECK_EQ(gridAreaShorthand().length(), 4u);
 
   CSSValue* row_start_value = CSSPropertyGridUtils::ConsumeGridLine(range);

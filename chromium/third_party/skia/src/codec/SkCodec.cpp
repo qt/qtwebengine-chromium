@@ -32,7 +32,7 @@ struct DecoderProc {
     std::unique_ptr<SkCodec> (*MakeFromStream)(std::unique_ptr<SkStream>, SkCodec::Result*);
 };
 
-static const DecoderProc gDecoderProcs[] = {
+static constexpr DecoderProc gDecoderProcs[] = {
 #ifdef SK_HAS_JPEG_LIBRARY
     { SkJpegCodec::IsJpeg, SkJpegCodec::MakeFromStream },
 #endif
@@ -138,6 +138,7 @@ SkCodec::SkCodec(int width, int height, const SkEncodedInfo& info,
     , fDstInfo()
     , fOptions()
     , fCurrScanline(-1)
+    , fStartedIncrementalDecode(false)
 {}
 
 SkCodec::SkCodec(const SkEncodedInfo& info, const SkImageInfo& imageInfo,
@@ -151,6 +152,7 @@ SkCodec::SkCodec(const SkEncodedInfo& info, const SkImageInfo& imageInfo,
     , fDstInfo()
     , fOptions()
     , fCurrScanline(-1)
+    , fStartedIncrementalDecode(false)
 {}
 
 SkCodec::~SkCodec() {}

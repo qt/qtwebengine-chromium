@@ -9,8 +9,8 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/timing/SubTaskAttribution.h"
-#include "platform/Timer.h"
 #include "platform/heap/Handle.h"
+#include "platform/loader/fetch/Resource.h"
 #include "platform/scheduler/base/task_time_observer.h"
 #include "platform/wtf/text/AtomicString.h"
 #include "public/platform/WebThread.h"
@@ -77,6 +77,8 @@ class CORE_EXPORT PerformanceMonitor final
                                      std::unique_ptr<SourceLocation>);
   static double Threshold(ExecutionContext*, Violation);
 
+  void BypassLongCompileThresholdOnceForTesting();
+
   // Instrumenting methods.
   void Will(const probe::RecalculateStyle&);
   void Did(const probe::RecalculateStyle&);
@@ -96,18 +98,6 @@ class CORE_EXPORT PerformanceMonitor final
   void Will(const probe::V8Compile&);
   void Did(const probe::V8Compile&);
 
-  void WillSendRequest(ExecutionContext*,
-                       unsigned long,
-                       DocumentLoader*,
-                       ResourceRequest&,
-                       const ResourceResponse&,
-                       const FetchInitiatorInfo&);
-  void DidFailLoading(unsigned long, DocumentLoader*, const ResourceError&);
-  void DidFinishLoading(unsigned long,
-                        DocumentLoader*,
-                        double,
-                        int64_t,
-                        int64_t);
   void DomContentLoadedEventFired(LocalFrame*);
 
   void DocumentWriteFetchScript(Document*);
@@ -143,7 +133,6 @@ class CORE_EXPORT PerformanceMonitor final
 
   void WillExecuteScript(ExecutionContext*);
   void DidExecuteScript();
-  void DidLoadResource();
 
   std::pair<String, DOMWindow*> SanitizedAttribution(
       const HeapHashSet<Member<Frame>>& frame_contexts,
@@ -170,8 +159,7 @@ class CORE_EXPORT PerformanceMonitor final
               typename DefaultHash<size_t>::Hash,
               WTF::UnsignedWithZeroKeyHashTraits<size_t>>
       subscriptions_;
-  double network_0_quiet_ = 0;
-  double network_2_quiet_ = 0;
+  bool bypass_long_compile_threshold_ = false;
 };
 
 }  // namespace blink

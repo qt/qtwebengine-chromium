@@ -52,14 +52,14 @@ class MockValidationContext : public ValidationContext
     {
     }
 
-    MOCK_METHOD1(handleError, Error(const Error &));
+    MOCK_METHOD1(handleError, void(const Error &));
 };
 
 // Test that ANGLE generates an INVALID_OPERATION when validating index data that uses a value
-// larger than MAX_ELEMENT_INDEX. Not specified in the GLES 3 spec, it's undefined behaviour,
-// but we want a test to ensure we maintain this behaviour.
-// TODO(jmadill): Re-enable when framebuffer sync state doesn't happen in validation.
-// Also broken because of change of api of the state initialize method.
+// larger than MAX_ELEMENT_INDEX and robust access is not enabled. Not specified in the GLES 3 spec,
+// it's undefined behaviour, but we want a test to ensure we maintain this behaviour. TODO(jmadill):
+// Re-enable when framebuffer sync state doesn't happen in validation. Also broken because of change
+// of api of the state initialize method.
 TEST(ValidationESTest, DISABLED_DrawElementsWithMaxIndexGivesError)
 {
     auto framebufferImpl = MakeFramebufferMock();
@@ -90,7 +90,8 @@ TEST(ValidationESTest, DISABLED_DrawElementsWithMaxIndexGivesError)
 
     Texture *texture = new Texture(&mockFactory, 0, GL_TEXTURE_2D);
     texture->addRef();
-    texture->setStorage(nullptr, GL_TEXTURE_2D, 1, GL_RGBA8, Extents(1, 1, 0));
+    EXPECT_FALSE(
+        texture->setStorage(nullptr, GL_TEXTURE_2D, 1, GL_RGBA8, Extents(1, 1, 0)).isError());
 
     VertexArray *vertexArray = new VertexArray(&mockFactory, 0, 1, 1);
     Framebuffer *framebuffer = new Framebuffer(caps, &mockFactory, 1);
@@ -116,8 +117,11 @@ TEST(ValidationESTest, DISABLED_DrawElementsWithMaxIndexGivesError)
                           3, 4, static_cast<GLuint>(caps.maxElementIndex)};
     EXPECT_TRUE(
         ValidateDrawElementsCommon(&testContext, GL_TRIANGLES, 3, GL_UNSIGNED_INT, indexData, 1));
-    EXPECT_FALSE(
-        ValidateDrawElementsCommon(&testContext, GL_TRIANGLES, 6, GL_UNSIGNED_INT, indexData, 2));
+    if (!testContext.getExtensions().robustBufferAccessBehavior)
+    {
+        EXPECT_FALSE(ValidateDrawElementsCommon(&testContext, GL_TRIANGLES, 6, GL_UNSIGNED_INT,
+                                                indexData, 2));
+    }
 
     texture->release(nullptr);
 

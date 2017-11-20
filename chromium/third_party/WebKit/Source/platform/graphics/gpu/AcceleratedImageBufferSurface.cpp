@@ -33,6 +33,7 @@
 #include "platform/graphics/AcceleratedStaticBitmapImage.h"
 #include "platform/graphics/gpu/SharedGpuContext.h"
 #include "platform/graphics/skia/SkiaUtils.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/RefPtr.h"
 #include "skia/ext/texture_handle.h"
@@ -42,9 +43,8 @@ namespace blink {
 
 AcceleratedImageBufferSurface::AcceleratedImageBufferSurface(
     const IntSize& size,
-    OpacityMode opacity_mode,
     const CanvasColorParams& color_params)
-    : ImageBufferSurface(size, opacity_mode, color_params) {
+    : ImageBufferSurface(size, color_params) {
   context_provider_wrapper_ = SharedGpuContext::ContextProviderWrapper();
   if (!context_provider_wrapper_)
     return;
@@ -53,28 +53,27 @@ AcceleratedImageBufferSurface::AcceleratedImageBufferSurface(
 
   CHECK(gr_context);
 
-  SkAlphaType alpha_type =
-      (kOpaque == opacity_mode) ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
-  SkImageInfo info = SkImageInfo::Make(
-      size.Width(), size.Height(), color_params.GetSkColorType(), alpha_type);
+  SkImageInfo info = SkImageInfo::Make(size.Width(), size.Height(),
+                                       color_params.GetSkColorType(),
+                                       color_params.GetSkAlphaType());
   // In legacy mode the backing SkSurface should not have any color space.
   // If color correct rendering is enabled only for SRGB, still the backing
   // surface should not have any color space and the treatment of legacy data
   // as SRGB will be managed by wrapping the internal SkCanvas inside a
   // SkColorSpaceXformCanvas. If color correct rendering is enbaled for other
   // color spaces, we set the color space properly.
-  if (CanvasColorParams::ColorCorrectRenderingInAnyColorSpace())
+  if (RuntimeEnabledFeatures::ColorCanvasExtensionsEnabled())
     info = info.makeColorSpace(color_params.GetSkColorSpaceForSkSurfaces());
 
   SkSurfaceProps disable_lcd_props(0, kUnknown_SkPixelGeometry);
-  surface_ = SkSurface::MakeRenderTarget(
-      gr_context, SkBudgeted::kYes, info, 0 /* sampleCount */,
-      kOpaque == opacity_mode ? nullptr : &disable_lcd_props);
+  surface_ = SkSurface::MakeRenderTarget(gr_context, SkBudgeted::kYes, info,
+                                         0 /* sampleCount */,
+                                         ColorParams().GetSkSurfaceProps());
   if (!surface_)
     return;
 
   sk_sp<SkColorSpace> xform_canvas_color_space = nullptr;
-  if (color_params.ColorCorrectNoColorSpaceToSRGB())
+  if (!color_params.LinearPixelMath())
     xform_canvas_color_space = color_params.GetSkColorSpace();
   canvas_ = WTF::WrapUnique(
       new SkiaPaintCanvas(surface_->getCanvas(), xform_canvas_color_space));

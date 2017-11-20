@@ -586,16 +586,34 @@ Example
 
   bundle_data("info_plist") {
     sources = [ "Info.plist" ]
-    outputs = [ "{{bundle_root_dir}}/Info.plist" ]
+    outputs = [ "{{bundle_contents_dir}}/Info.plist" ]
   }
 
   create_bundle("doom_melon.app") {
     deps = [ ":info_plist" ]
-    bundle_root_dir = root_build_dir + "/doom_melon.app/Contents"
-    bundle_resources_dir = bundle_root_dir + "/Resources"
-    bundle_executable_dir = bundle_root_dir + "/MacOS"
-    bundle_plugins_dir = bundle_root_dir + "/PlugIns"
+    bundle_root_dir = "${root_build_dir}/doom_melon.app"
+    bundle_contents_dir = "${bundle_root_dir}/Contents"
+    bundle_resources_dir = "${bundle_contents_dir}/Resources"
+    bundle_executable_dir = "${bundle_contents_dir}/MacOS"
+    bundle_plugins_dir = "${bundle_contents_dir}/PlugIns"
   }
+)";
+
+const char kBundleContentsDir[] = "bundle_contents_dir";
+const char kBundleContentsDir_HelpShort[] =
+    "bundle_contents_dir: "
+        "Expansion of {{bundle_contents_dir}} in create_bundle.";
+const char kBundleContentsDir_Help[] =
+    R"(bundle_contents_dir: Expansion of {{bundle_contents_dir}} in
+                             create_bundle.
+
+  A string corresponding to a path in $root_build_dir.
+
+  This string is used by the "create_bundle" target to expand the
+  {{bundle_contents_dir}} of the "bundle_data" target it depends on. This must
+  correspond to a path under "bundle_root_dir".
+
+  See "gn help bundle_root_dir" for examples.
 )";
 
 const char kBundleResourcesDir[] = "bundle_resources_dir";
@@ -954,7 +972,7 @@ const char kData_Help[] =
   However, no verification is done on these so GN doesn't enforce this. The
   paths are just rebased and passed along when requested.
 
-  Note: On iOS and OS X, create_bundle targets will not be recursed into when
+  Note: On iOS and macOS, create_bundle targets will not be recursed into when
   gathering data. See "gn help create_bundle" for details.
 
   See "gn help runtime_deps" for how these are used.
@@ -975,7 +993,7 @@ const char kDataDeps_Help[] =
   This is normally used for things like plugins or helper programs that a
   target needs at runtime.
 
-  Note: On iOS and OS X, create_bundle targets will not be recursed into when
+  Note: On iOS and macOS, create_bundle targets will not be recursed into when
   gathering data_deps. See "gn help create_bundle" for details.
 
   See also "gn help deps" and "gn help data".
@@ -1402,6 +1420,20 @@ Example
     output_prefix_override = true
     ...
   }
+)";
+
+const char kPartialInfoPlist[] = "partial_info_plist";
+const char kPartialInfoPlist_HelpShort[] =
+    "partial_info_plist: [filename] Path plist from asset catalog compiler.";
+const char kPartialInfoPlist_Help[] =
+    R"(partial_info_plist: [filename] Path plist from asset catalog compiler.
+
+  Valid for create_bundle target, corresponds to the path for the partial
+  Info.plist created by the asset catalog compiler that needs to be merged
+  with the application Info.plist (usually done by the code signing script).
+
+  The file will be generated regardless of whether the asset compiler has
+  been invoked or not. See "gn help create_bundle".
 )";
 
 const char kOutputs[] = "outputs";
@@ -1917,6 +1949,7 @@ const VariableInfoMap& GetTargetVariables() {
     INSERT_VARIABLE(Asmflags)
     INSERT_VARIABLE(AssertNoDeps)
     INSERT_VARIABLE(BundleRootDir)
+    INSERT_VARIABLE(BundleContentsDir)
     INSERT_VARIABLE(BundleResourcesDir)
     INSERT_VARIABLE(BundleDepsFilter)
     INSERT_VARIABLE(BundleExecutableDir)
@@ -1949,6 +1982,7 @@ const VariableInfoMap& GetTargetVariables() {
     INSERT_VARIABLE(OutputName)
     INSERT_VARIABLE(OutputPrefixOverride)
     INSERT_VARIABLE(Outputs)
+    INSERT_VARIABLE(PartialInfoPlist)
     INSERT_VARIABLE(Pool)
     INSERT_VARIABLE(PrecompiledHeader)
     INSERT_VARIABLE(PrecompiledHeaderType)

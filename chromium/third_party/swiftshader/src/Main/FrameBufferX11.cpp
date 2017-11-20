@@ -15,6 +15,7 @@
 #include "FrameBufferX11.hpp"
 
 #include "libX11.hpp"
+#include "Timer.hpp"
 
 #include <sys/ipc.h>
 #include <sys/shm.h>
@@ -84,8 +85,11 @@ namespace sw
 
 		if(!mit_shm)
 		{
-			buffer = new char[width * height * 4];
-			x_image = libX11->XCreateImage(x_display, visual, depth, ZPixmap, 0, buffer, width, height, 32, width * 4);
+			int bytes_per_line = width * 4;
+			int bytes_per_image = height * bytes_per_line;
+			buffer = new char[bytes_per_image];
+			memset(buffer, 0, bytes_per_image);
+			x_image = libX11->XCreateImage(x_display, visual, depth, ZPixmap, 0, buffer, width, height, 32, bytes_per_line);
 		}
 	}
 
@@ -140,6 +144,36 @@ namespace sw
 		}
 
 		libX11->XSync(x_display, False);
+
+		if(false)   // Draw the framerate on screen
+		{
+			static double fpsTime = sw::Timer::seconds();
+			static int frames = -1;
+
+			double time = sw::Timer::seconds();
+			double delta = time - fpsTime;
+			frames++;
+
+			static double FPS = 0.0;
+			static double maxFPS = 0.0;
+
+			if(delta > 1.0)
+			{
+				FPS = frames / delta;
+
+				fpsTime = time;
+				frames = 0;
+
+				if(FPS > maxFPS)
+				{
+					maxFPS = FPS;
+				}
+			}
+
+			char string[256];
+			sprintf(string, "FPS: %.2f (max: %.2f)", FPS, maxFPS);
+			libX11->XDrawString(x_display, x_window, x_gc, 50, 50, string, strlen(string));
+		}
 	}
 }
 

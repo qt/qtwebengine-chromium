@@ -18,8 +18,8 @@ class {{v8_class}}Constructor {
   STATIC_ONLY({{v8_class}}Constructor);
  public:
   static v8::Local<v8::FunctionTemplate> domTemplate(v8::Isolate*, const DOMWrapperWorld&);
-  {{exported}}static void NamedConstructorAttributeGetter(v8::Local<v8::Name> propertyName, const v8::PropertyCallbackInfo<v8::Value>& info);
-  {{exported}}static const WrapperTypeInfo wrapperTypeInfo;
+  static void NamedConstructorAttributeGetter(v8::Local<v8::Name> propertyName, const v8::PropertyCallbackInfo<v8::Value>& info);
+  static const WrapperTypeInfo wrapperTypeInfo;
 };
 
 {% endif %}
@@ -27,7 +27,7 @@ class {{v8_class}} {
   STATIC_ONLY({{v8_class}});
  public:
   {% if is_array_buffer_or_view %}
-  {{exported}}static {{cpp_class}}* toImpl(v8::Local<v8::Object> object);
+  {{exported}}static {{cpp_class}}* ToImpl(v8::Local<v8::Object> object);
   {% else %}
   {{exported}}static bool hasInstance(v8::Local<v8::Value>, v8::Isolate*);
   static v8::Local<v8::Object> findInstanceInPrototypeChain(v8::Local<v8::Value>, v8::Isolate*);
@@ -35,11 +35,11 @@ class {{v8_class}} {
   {% if has_named_properties_object %}
   {{exported}}static v8::Local<v8::FunctionTemplate> domTemplateForNamedPropertiesObject(v8::Isolate*, const DOMWrapperWorld&);
   {% endif %}
-  static {{cpp_class}}* toImpl(v8::Local<v8::Object> object) {
+  static {{cpp_class}}* ToImpl(v8::Local<v8::Object> object) {
     return ToScriptWrappable(object)->ToImpl<{{cpp_class}}>();
   }
   {% endif %}
-  {{exported}}static {{cpp_class}}* toImplWithTypeCheck(v8::Isolate*, v8::Local<v8::Value>);
+  {{exported}}static {{cpp_class}}* ToImplWithTypeCheck(v8::Isolate*, v8::Local<v8::Value>);
   {% if has_partial_interface %}
   {{exported}}static WrapperTypeInfo wrapperTypeInfo;
   {% else %}
@@ -169,7 +169,7 @@ class {{v8_class}} {
     {%- else -%}
     const v8::FunctionCallbackInfo<v8::Value>&
     {%- endif -%});
-  {% elif attribute.needs_constructor_getter_callback %}
+  {% else %}
   {{exported}}static void {{attribute.name}}ConstructorGetterCallback{{world_suffix}}(v8::Local<v8::Name>, const v8::PropertyCallbackInfo<v8::Value>&);
   {% endif %}
   {% if attribute.has_setter %}
@@ -245,7 +245,7 @@ class {{v8_class}} {
   {% if indexed_property_getter or named_property_setter %}
   {{exported}}static void indexedPropertySetterCallback(uint32_t index, v8::Local<v8::Value>, const v8::PropertyCallbackInfo<v8::Value>&);
   {% endif %}
-  {% if indexed_property_getter %}
+  {% if indexed_property_getter or named_property_getter %}
   {{exported}}static void indexedPropertyDescriptorCallback(uint32_t index, const v8::PropertyCallbackInfo<v8::Value>&);
   {% endif %}
   {% if indexed_property_deleter or named_property_deleter %}

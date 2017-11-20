@@ -22,11 +22,17 @@ public:
     }
 
     bool mipMapsAreDirty() const {
-        return GrTexture::kValid_MipMapsStatus != fTexture->fMipMapsStatus;
+        return GrTexture::kClean_MipMapsStatus != fTexture->fMipMapsStatus;
     }
 
     bool hasMipMaps() const {
         return GrTexture::kNotAllocated_MipMapsStatus != fTexture->fMipMapsStatus;
+    }
+
+    // Once we no longer support allocating mip levels after creation, we can also require that mips
+    // have been allocated to the valid check.
+    bool mipMapsAreValid() const {
+        return GrTexture::kInvalid_MipMapsStatus != fTexture->fMipMapsStatus;
     }
 
     void setMaxMipMapLevel(int maxMipMapLevel) const {
@@ -48,7 +54,7 @@ public:
     GrSLType samplerType() const { return fTexture->fSamplerType; }
 
     /** The filter used is clamped to this value in GrProcessor::TextureSampler. */
-    GrSamplerParams::FilterMode highestFilterMode() const { return fTexture->fHighestFilterMode; }
+    GrSamplerState::Filter highestFilterMode() const { return fTexture->fHighestFilterMode; }
 
     void setMipColorMode(SkDestinationSurfaceColorMode colorMode) const {
         fTexture->fMipColorMode = colorMode;

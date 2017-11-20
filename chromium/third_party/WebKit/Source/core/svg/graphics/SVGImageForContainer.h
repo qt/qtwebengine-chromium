@@ -64,8 +64,8 @@ class SVGImageForContainer final : public Image {
                                              const KURL& url) {
     FloatSize container_size_without_zoom(container_size);
     container_size_without_zoom.Scale(1 / zoom);
-    return AdoptRef(new SVGImageForContainer(image, container_size_without_zoom,
-                                             zoom, url));
+    return WTF::AdoptRef(new SVGImageForContainer(
+        image, container_size_without_zoom, zoom, url));
   }
 
   IntSize Size() const override;
@@ -82,7 +82,8 @@ class SVGImageForContainer final : public Image {
             const FloatRect&,
             const FloatRect&,
             RespectImageOrientationEnum,
-            ImageClampingMode) override;
+            ImageClampingMode,
+            ImageDecodingMode) override;
 
   // FIXME: Implement this to be less conservative.
   bool CurrentFrameKnownToBeOpaque(

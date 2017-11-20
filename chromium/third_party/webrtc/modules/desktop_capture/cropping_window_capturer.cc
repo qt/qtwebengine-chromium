@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/cropping_window_capturer.h"
+#include "modules/desktop_capture/cropping_window_capturer.h"
 
-#include "webrtc/modules/desktop_capture/cropped_desktop_frame.h"
-#include "webrtc/rtc_base/logging.h"
+#include "modules/desktop_capture/cropped_desktop_frame.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -98,6 +98,17 @@ void CroppingWindowCapturer::OnCaptureResult(
   callback_->OnCaptureResult(
       Result::SUCCESS,
       CreateCroppedDesktopFrame(std::move(screen_frame), window_rect));
+}
+
+bool CroppingWindowCapturer::IsOccluded(const DesktopVector& pos) {
+  // Returns true if either capturer returns true.
+  if (window_capturer_->IsOccluded(pos)) {
+    return true;
+  }
+  if (screen_capturer_ != nullptr && screen_capturer_->IsOccluded(pos)) {
+    return true;
+  }
+  return false;
 }
 
 #if !defined(WEBRTC_WIN)

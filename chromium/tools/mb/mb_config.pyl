@@ -96,7 +96,58 @@
       'Linux ChromiumOS Builder': 'chromeos_with_codecs_release_bot',
       'Linux ChromiumOS Builder (dbg)': 'chromeos_with_codecs_debug_bot',
       'Linux ChromiumOS Full': 'chromeos_with_codecs_release_bot',
-      'Linux ChromiumOS Ozone Builder': 'chromeos_with_codecs_release_bot',
+    },
+
+    'chromium.clang': {
+      'CFI Linux CF': 'cfi_full_cfi_diag_recover_release_static',
+      'CFI Linux ToT': 'clang_tot_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on',
+      'CFI Linux (icall)': 'cfi_full_diag_icall_release_static_dcheck_always_on',
+      'CrWinAsan': 'asan_clang_fuzzer_static_v8_heap_x86_full_symbols_release',
+      'CrWinAsan(dll)': 'asan_clang_shared_v8_heap_x86_full_symbols_release',
+      'CrWinAsanCov': 'asan_clang_edge_fuzzer_static_v8_heap_x86_full_symbols_release',
+
+      # If CrWinClang is modified, please update CrWinClangGoma on chromium.fyi
+      # in the same way.
+      'CrWinClang': 'clang_official_release_bot_minimal_symbols_x86',
+
+      'CrWinClang(dbg)': 'clang_debug_bot_minimal_symbols_x86',
+      'CrWinClang(shared)': 'clang_minimal_symbols_shared_release_bot_x86_dcheck',
+      'CrWinClang64': 'clang_official_release_bot_minimal_symbols',
+      'CrWinClang64(dbg)': 'win_clang_debug_bot',
+      'CrWinClang64(dll)': 'clang_shared_release_bot_dcheck',
+      'CrWinClangLLD': 'clang_tot_official_static_use_lld_x86',
+      'CrWinClangLLD64': 'clang_tot_shared_release_use_lld_dcheck',
+      'CrWinClngLLD64dbg': 'clang_tot_full_symbols_shared_debug_use_lld',
+      'CrWinClngLLDdbg': 'clang_tot_full_symbols_shared_debug_use_lld_x86',
+      'ToTAndroid': 'android_clang_tot_release',
+      'ToTAndroid64': 'android_clang_tot_release_arm64',
+      'ToTAndroidASan': 'android_clang_tot_asan',
+      'ToTAndroid (dbg)': 'android_clang_tot_dbg',
+      'ToTAndroid': 'android_clang_tot_release',
+      'ToTAndroid64': 'android_clang_tot_release_arm64',
+      'ToTAndroid x64': 'android_clang_tot_x64',
+      'ToTLinux': 'clang_tot_linux_full_symbols_shared_release',
+      'ToTLinux (dbg)': 'clang_tot_shared_debug',
+      'ToTLinuxASan': 'clang_tot_asan_lsan_static_release',
+      'ToTLinuxASanLibfuzzer': 'release_libfuzzer_asan_clang_tot',
+      'ToTLinuxMSan': 'clang_tot_msan_release',
+      'ToTLinuxLLD': 'clang_tot_lld_release_shared',
+      'ToTLinuxThinLTO': 'clang_tot_release_full_symbols_thin_lto_static_use_lld',
+      'ToTLinuxUBSanVptr': 'clang_tot_edge_ubsan_no_recover_hack_static_release',
+      'ToTMac': 'clang_tot_minimal_symbols_shared_release',
+      'ToTMac (dbg)': 'clang_tot_shared_debug',
+      'ToTMacASan': 'asan_disable_nacl_clang_tot_full_symbols_static_release',
+      'ToTWin': 'clang_tot_official_minimal_symbols_static_release_x86',
+      'ToTWin(dbg)': 'clang_tot_shared_debug_x86',
+      'ToTWin(dll)': 'clang_tot_minimal_symbols_shared_release_x86_dcheck',
+      'ToTWin64': 'clang_tot_official_minimal_symbols_static_release',
+      'ToTWin64(dbg)': 'clang_tot_shared_debug',
+      'ToTWin64(dll)': 'clang_tot_shared_release_dcheck',
+      'ToTWinCFI': 'clang_tot_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on_x86',
+      'ToTWinCFI64': 'clang_tot_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on',
+      'ToTWinThinLTO64': 'clang_tot_official_full_symbols_thin_lto_static_use_lld',
+      'ToTiOS': 'ios',
+      'UBSanVptr Linux': 'ubsan_vptr_release_bot',
     },
 
     'chromium.fyi': {
@@ -108,7 +159,7 @@
       'Browser Side Navigation Linux': 'release_bot',
       'CFI Linux CF': 'cfi_full_cfi_diag_recover_release_static',
       'CFI Linux ToT': 'clang_tot_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on',
-      'CFI Linux (icall)': 'cfi_full_diag_recover_icall_static',
+      'CFI Linux (icall)': 'cfi_full_diag_icall_release_static_dcheck_always_on',
       'ChromeOS amd64 Chromium Goma Canary': 'cros_chrome_sdk',
       'Chromium Linux Goma Canary': 'release_bot',
       'Chromium Linux Goma Canary': 'release_bot',
@@ -139,54 +190,20 @@
       'CrWin7Goma(clbr)': 'shared_release_bot_x86',
       'CrWin7Goma(dbg)': 'debug_bot_x86_minimal_symbols',
       'CrWin7Goma(dll)': 'shared_release_bot_x86',
-
-      # if CrWinClang is modified, please update CrWinClangGoma in the same way.
-      'CrWinClang': 'clang_official_release_bot_minimal_symbols_x86',
-
-      'CrWinClang(dbg)': 'clang_debug_bot_minimal_symbols_x86',
-      'CrWinClang64': 'clang_official_release_bot_minimal_symbols',
-      'CrWinClang64(dll)': 'clang_shared_release_bot_dcheck',
-      'CrWinClangGoma': 'clang_official_optimize_release_bot_minimal_symbols_x86',
       'CrWinGoma': 'release_bot_x86_minimal_symbols',
       'CrWinGoma(dll)': 'shared_release_bot_x86',
       'CrWinGoma(loc)': 'shared_release_bot_x86',
-      'ClangToTAndroidASan': 'android_clang_tot_asan',
-      'ClangToTAndroid (dbg)': 'android_clang_tot_dbg',
-      'ClangToTAndroid': 'android_clang_tot_release',
-      'ClangToTAndroid64': 'android_clang_tot_release_arm64',
-      'ClangToTAndroid x64': 'android_clang_tot_x64',
-      'ClangToTLinux': 'clang_tot_linux_full_symbols_shared_release',
-      'ClangToTLinux (dbg)': 'clang_tot_shared_debug',
-      'ClangToTLinuxASan': 'clang_tot_asan_lsan_static_release',
-      'ClangToTLinuxASanLibfuzzer': 'release_libfuzzer_asan_clang_tot',
-      'ClangToTLinuxLLD': 'clang_tot_lld_release_shared',
-      'ClangToTLinuxUBSanVptr': 'clang_tot_edge_ubsan_no_recover_hack_static_release',
-      'ClangToTMac': 'clang_tot_minimal_symbols_shared_release',
-      'ClangToTMac (dbg)': 'clang_tot_shared_debug',
-      'ClangToTMacASan': 'asan_disable_nacl_clang_tot_full_symbols_static_release',
-      'ClangToTWin': 'clang_tot_official_minimal_symbols_static_release_x86',
-      'ClangToTWin(dbg)': 'clang_tot_shared_debug_x86',
-      'ClangToTWin(dll)': 'clang_tot_minimal_symbols_shared_release_x86_dcheck',
-      'ClangToTWin64': 'clang_tot_official_minimal_symbols_static_release',
-      'ClangToTWin64(dbg)': 'clang_tot_shared_debug',
-      'ClangToTWin64(dll)': 'clang_tot_shared_release_dcheck',
-      'ClangToTiOS': 'ios',
-      'Closure Compilation Linux': 'closure_compilation',
-      'CrWinAsan': 'asan_clang_fuzzer_static_v8_heap_x86_full_symbols_release',
-      'CrWinAsan(dll)': 'asan_clang_shared_v8_heap_x86_full_symbols_release',
-      'CrWinAsanCov': 'asan_clang_edge_fuzzer_static_v8_heap_x86_full_symbols_release',
-      'CrWinClang(shared)': 'clang_minimal_symbols_shared_release_bot_x86_dcheck',
-      'CrWinClang64(dbg)': 'win_clang_debug_bot',
-      'CrWinClangLLD': 'clang_tot_official_static_use_lld_x86',
-      'CrWinClangLLD64': 'clang_tot_shared_release_use_lld_dcheck',
-      'CrWinClngLLD64dbg': 'clang_tot_full_symbols_shared_debug_use_lld',
-      'CrWinClngLLDdbg': 'clang_tot_full_symbols_shared_debug_use_lld_x86',
+      'CrWinClangGoma': 'clang_official_optimize_release_bot_minimal_symbols_x86',
+
       'EarlGreyiOS': 'ios',
       'Fuchsia': 'release_bot_fuchsia',
       'Fuchsia (dbg)': 'debug_bot_fuchsia',
       'GomaCanaryiOS': 'ios',
       'ios-simulator': 'ios',
       'Headless Linux (dbg)': 'headless_linux_debug_bot',
+      'Jumbo Linux x64': 'jumbo_release_bot',
+      'Jumbo Mac': 'jumbo_release_bot',
+      'Jumbo Win x64': 'jumbo_release_bot',
       'MD Top Chrome ChromeOS material-hybrid': 'chromeos_with_codecs_debug_bot',
       'MD Top Chrome ChromeOS non-material': 'chromeos_with_codecs_debug_bot',
       'MD Top Chrome Win material': 'debug_bot_minimal_symbols',
@@ -218,8 +235,6 @@
       'Site Isolation Android': 'android_release_bot_minimal_symbols_arm64',
       'Site Isolation Linux': 'release_trybot',
       'Site Isolation Win': 'release_trybot_x86',
-      'ThinLTO Linux ToT': 'thin_lto_clang_tot_full_symbols_release_static_use_lld',
-      'UBSanVptr Linux': 'ubsan_vptr_release_bot',
       'WebKit Linux - RandomOrder': 'release_trybot',
       'WebKit Mac - RandomOrder': 'release_trybot',
       'WebKit Win - RandomOrder': 'release_bot_x86_minimal_symbols',
@@ -235,6 +250,8 @@
       'CrWinGomaStaging': 'release_bot_x86_minimal_symbols',
       'Chromium Linux Goma GCE Staging': 'release_bot',
       'Chromium Mac Goma GCE Staging': 'release_bot',
+      'CrWinGomaGCEStaging': 'release_bot_x86_minimal_symbols',
+      'CrWinClangGomaGCEStaging': 'win_clang_release_bot',
     },
 
     'chromium.gpu': {
@@ -257,6 +274,7 @@
       'Android Release (Nexus 9)': 'android_release_trybot_arm64',
       'Android Release (NVIDIA Shield TV)': 'android_release_trybot_arm64',
       'GPU Linux Builder': 'gpu_fyi_tests_release_trybot',
+      'GPU Linux Ozone Builder': 'gpu_fyi_tests_ozone_linux_system_gbm_libdrm_release_trybot',
       'GPU Linux Builder (dbg)': 'gpu_fyi_tests_debug_trybot',
       'GPU Linux dEQP Builder': 'deqp_release_trybot',
       'GPU Mac Builder': 'gpu_fyi_tests_release_trybot',
@@ -269,9 +287,6 @@
       'GPU Win x64 Builder': 'gpu_fyi_tests_release_trybot',
       'GPU Win x64 Builder (dbg)': 'gpu_fyi_tests_debug_trybot',
       'GPU Win x64 dEQP Builder': 'deqp_release_no_clang_trybot',
-      'Linux ChromiumOS Builder': 'gpu_fyi_tests_chromeos_cros_release_trybot',
-      # This is, confusingly, apparently not actually building ChromiumOS.
-      'Linux ChromiumOS Ozone Builder': 'gpu_fyi_tests_ozone_linux_system_gbm_libdrm_release_trybot',
       'Linux GPU TSAN Release': 'gpu_fyi_tests_release_trybot_tsan',
       'Mac GPU ASAN Release': 'gpu_fyi_tests_release_trybot_asan',
     },
@@ -362,6 +377,7 @@
     },
 
     'chromium.perf.fyi': {
+      'Linux Compile FYI': 'official_goma_perf',
       'Android Builder FYI': 'official_goma_minimal_symbols_android',
       'Android arm64 Builder FYI': 'official_goma_minimal_symbols_android_arm64',
       'Win Builder FYI': 'official_goma',
@@ -371,12 +387,18 @@
       'Battor Agent Win': 'official_goma_minimal_symbols_clang',
     },
 
+    'chromium.sandbox': {
+      'Linux Builder SANDBOX': 'release_bot',
+      'Deterministic Linux SANDBOX': 'release_bot',
+      'Fuchsia Compile SANDBOX': 'release_bot_fuchsia',
+    },
+
     'chromium.swarm': {
       'Android N5 Swarm': 'android_release_bot_minimal_symbols',
       'Android N5X Swarm': 'android_release_bot_minimal_symbols_arm64',
       'Linux Swarm': 'release_bot',
       'Mac Swarm': 'release_bot_mac_strip',
-      'Windows Swarm': 'release_bot_x86_minimal_symbols',
+      'Windows Swarm': 'release_bot_minimal_symbols',
     },
 
     'client.nacl.sdk': {
@@ -425,7 +447,6 @@
       'WebKit Mac Builder': 'release_bot',
       'WebKit Mac10.11 (retina)': 'release_bot',
       'WebKit Mac10.12': 'release_bot',
-      'WebKit Mac10.9': 'release_bot',
       'WebKit Win Builder (dbg)': 'debug_bot_x86_minimal_symbols',
       'WebKit Win Builder': 'release_bot_x86_minimal_symbols',
       'WebKit Win x64 Builder (dbg)': 'debug_bot_minimal_symbols',
@@ -483,10 +504,6 @@
       'linux_trusty_blink_compile_rel': 'release_bot_minimal_symbols',
       'linux_trusty_blink_dbg': 'debug_trybot',
       'linux_trusty_blink_rel': 'release_bot_minimal_symbols',
-      'mac10.9_blink_compile_dbg': 'debug_trybot',
-      'mac10.9_blink_compile_rel': 'release_bot_minimal_symbols',
-      'mac10.9_blink_dbg': 'debug_trybot',
-      'mac10.9_blink_rel': 'release_bot_minimal_symbols',
       'mac10.10_blink_rel': 'release_bot_minimal_symbols',
       'mac10.11_blink_rel': 'release_bot_minimal_symbols',
       'mac10.11_retina_blink_rel': 'release_bot_minimal_symbols',
@@ -528,7 +545,7 @@
     'tryserver.chromium.angle': {
       'android_angle_rel_ng': 'gpu_tests_android_release_trybot_arm64',
       'android_angle_deqp_rel_ng': 'deqp_android_release_trybot_arm64',
-      'linux_angle_chromeos_rel_ng': 'gpu_fyi_tests_chromeos_cros_release_trybot',
+      'linux_angle_ozone_rel_ng': 'gpu_fyi_tests_ozone_linux_system_gbm_libdrm_release_trybot',
       'linux_angle_dbg_ng': 'gpu_fyi_tests_debug_trybot',
       'linux_angle_deqp_rel_ng': 'deqp_release_trybot',
       'linux_angle_rel_ng': 'gpu_fyi_tests_release_trybot',
@@ -543,8 +560,6 @@
     },
 
     'tryserver.chromium.linux': {
-      'Chromium Linux Codesearch Builder': 'codesearch',
-      'ChromiumOS Codesearch Builder': 'codesearch',
       'cast_shell_linux': 'cast_release_trybot',
       'cast_shell_audio_linux': 'cast_audio_release_trybot',
       'chromeos_amd64-generic_chromium_compile_only_ng': 'cros_chrome_sdk',
@@ -568,7 +583,6 @@
       'linux_chromium_chromeos_compile_rel_ng': 'chromeos_with_codecs_release_trybot',
       'linux_chromium_chromeos_dbg_ng': 'chromeos_with_codecs_debug_trybot',
       'linux_chromium_chromeos_msan_rel_ng': 'chromeos_msan_release_bot',
-      'linux_chromium_chromeos_ozone_rel_ng': 'chromeos_with_codecs_release_trybot',
       'linux_chromium_chromeos_rel_ng': 'chromeos_with_codecs_release_trybot',
       'linux_chromium_clobber_deterministic': 'release_trybot',
       'linux_chromium_clobber_rel_ng': 'release_trybot',
@@ -599,7 +613,7 @@
       'linux_layout_tests_layout_ng': 'release_bot',
 
       'linux_mojo': 'release_trybot',
-      'linux_mojo_chromeos': 'release_trybot',
+      'linux_mojo_chromeos': 'chromeos_with_codecs_release_trybot',
       'linux_nacl_sdk_build': 'release_bot',
       'linux_nacl_sdk': 'release_bot',
       'linux_optional_gpu_tests_rel': 'gpu_fyi_tests_release_trybot',
@@ -614,6 +628,7 @@
       'ios-simulator-eg': 'ios',
       'ios-simulator-cronet': 'ios',
       'ios-simulator-xcode-clang': 'ios',
+      'mac_chromium_10.10': 'gpu_tests_release_trybot',
       'mac_chromium_10.10_macviews': 'mac_views_browser_release_trybot',
       'mac_chromium_10.12_rel_ng': 'gpu_tests_release_trybot',
       'mac_chromium_archive_rel_ng': 'release_bot_mac_strip',
@@ -630,6 +645,8 @@
     },
 
     'tryserver.chromium.perf': {
+      'Android Compile': 'official_goma_minimal_symbols_android',
+      'Android arm64 Compile': 'official_goma_minimal_symbols_android_arm64',
       'android_arm64_perf_bisect_builder': 'official_goma_minimal_symbols_android_arm64',
       'android_fyi_perf_bisect': 'official_goma_minimal_symbols_android',
       'android_nexus5X_perf_bisect': 'official_goma_minimal_symbols_android',
@@ -641,6 +658,7 @@
       'android_perf_bisect_builder': 'official_goma_minimal_symbols_android',
       'android_s5_perf_bisect': 'official_goma_minimal_symbols_android',
       'android_webview_arm64_aosp_perf_bisect': 'official_goma_minimal_symbols_android',
+      'Linux Builder': 'official_goma_perf',
       'linux_fyi_perf_bisect': 'official_goma',
       'linux_perf_bisect': 'official_goma',
       'linux_perf_bisect_builder': 'official_goma',
@@ -653,6 +671,8 @@
       'mac_perf_bisect_builder': 'official_goma',
       'mac_retina_perf_bisect': 'official_goma',
       'mac_retina_perf_cq': 'official_goma',
+      'Win Builder': 'official_goma_x86',
+      'Win x64 Builder': 'official_goma',
       'win_8_perf_bisect': 'official_goma_x86',
       'win_fyi_perf_bisect': 'official_goma_x86',
       'win_perf_bisect': 'official_goma_x86',
@@ -1041,8 +1061,8 @@
       'cfi_full', 'cfi_diag', 'thin_lto', 'release', 'static', 'dcheck_always_on', 'goma',
     ],
 
-    'cfi_full_diag_recover_icall_static': [
-      'cfi_full', 'cfi_diag', 'cfi_recover', 'cfi_icall', 'thin_lto', 'static',
+    'cfi_full_diag_icall_release_static_dcheck_always_on': [
+      'cfi_full', 'cfi_diag', 'cfi_icall', 'thin_lto', 'release', 'static', 'dcheck_always_on',
     ],
 
     'chromeos_asan_lsan_edge_fuzzer_v8_heap_release_bot': [
@@ -1117,6 +1137,10 @@
       'clang_tot', 'cfi_full', 'cfi_diag', 'thin_lto', 'release', 'static', 'dcheck_always_on',
     ],
 
+    'clang_tot_cfi_full_cfi_diag_thin_lto_release_static_dcheck_always_on_x86': [
+      'clang_tot', 'cfi_full', 'cfi_diag', 'thin_lto', 'release', 'static', 'dcheck_always_on', 'x86',
+    ],
+
     'clang_tot_edge_ubsan_no_recover_hack_static_release': [
       'clang_tot', 'edge', 'ubsan_no_recover_hack', 'static', 'release',
     ],
@@ -1125,6 +1149,10 @@
       # Enable debug info, as on official builders, to catch issues with
       # optimized debug info.
       'clang_tot', 'full_symbols', 'shared', 'release',
+    ],
+
+    'clang_tot_msan_release': [
+      'clang_tot', 'msan', 'release',
     ],
 
     'clang_tot_shared_debug': [
@@ -1165,12 +1193,20 @@
       'clang_tot', 'minimal_symbols', 'shared', 'release', 'x86', 'dcheck_always_on',
     ],
 
+    'clang_tot_official_full_symbols_thin_lto_static_use_lld': [
+      'clang_tot', 'official', 'full_symbols', 'thin_lto', 'static', 'use_lld',
+    ],
+
     'clang_tot_official_minimal_symbols_static_release': [
       'clang_tot', 'official', 'minimal_symbols', 'static', 'release',
     ],
 
     'clang_tot_official_minimal_symbols_static_release_x86': [
       'clang_tot', 'official', 'minimal_symbols', 'static', 'release', 'x86',
+    ],
+
+    'clang_tot_release_full_symbols_thin_lto_static_use_lld': [
+      'clang_tot', 'release', 'full_symbols', 'thin_lto', 'static', 'use_lld',
     ],
 
     'clang_tot_lld_release_shared': [
@@ -1184,11 +1220,6 @@
 
     'closure_compilation': [
       # The closure bots run their own recipe and shouldn't go through MB.
-      'error',
-    ],
-
-    'codesearch': [
-      # The Codesearch bots run their own recipe and invoke GN directly.
       'error',
     ],
 
@@ -1283,10 +1314,6 @@
       'angle_deqp_tests', 'release_trybot',
     ],
 
-    'gpu_fyi_tests_chromeos_cros_release_trybot': [
-      'gpu_fyi_tests', 'chromeos', 'release_trybot',
-    ],
-
     'gpu_fyi_tests_debug_trybot': [
       'gpu_fyi_tests', 'debug_trybot',
     ],
@@ -1365,6 +1392,10 @@
     # It is an error to actually use one of these configs to generate the
     # build files.
     'ios': [ 'error'],
+
+    'jumbo_release_bot': [
+      'jumbo', 'release_bot'
+    ],
 
     'linux_chromium_analysis': [
       'analysis'
@@ -1452,7 +1483,7 @@
     ],
 
     'release_afl_asan': [
-      'release', 'afl', 'asan', 'chromeos_codecs', 'pdf_xfa', 'disable_nacl',
+      'release', 'afl', 'asan', 'chromeos_codecs', 'pdf_xfa', 'disable_nacl', 'optimize_for_fuzzing',
     ],
 
     'release_bot': [
@@ -1543,10 +1574,10 @@
 
     'syzyasan_no_pch_release_x86': [
       'syzyasan', 'no_pch', 'release', 'x86',
-    ],
-
-    'thin_lto_clang_tot_full_symbols_release_static_use_lld': [
-      'thin_lto', 'clang_tot', 'full_symbols', 'release', 'static', 'use_lld',
+      # The SyzyASAN build may default dcheck_always_on to true to produce
+      # official builds with DCHECK on. To counter this, the flag is fixed
+      # here. For details see https://crbug.com/596231#c71.
+      'disable_dcheck_always_on',
     ],
 
     'tsan_disable_nacl_debug_bot': [
@@ -1737,6 +1768,10 @@
       'gn_args': 'dcheck_always_on=true',
     },
 
+    'disable_dcheck_always_on': {
+      'gn_args': 'dcheck_always_on=false',
+    },
+
     'debug': {
       'gn_args': 'is_debug=true',
     },
@@ -1843,15 +1878,15 @@
       'gn_args': 'emma_coverage=true emma_filter="org.chromium.*"',
     },
 
+    'jumbo': {
+      'gn_args': 'use_jumbo_build=true',
+    },
+
     'libfuzzer': { 'gn_args': 'use_libfuzzer=true' },
 
     'lsan': {
       'gn_args': 'is_lsan=true',
     },
-
-    'lto': {
-       'gn_args': 'allow_posix_link_time_opt=true',
-     },
 
     'mac_strip': {
       'gn_args': 'enable_stripping=true',
@@ -1969,7 +2004,6 @@
 
     'thin_lto': {
       'gn_args': 'use_thin_lto=true',
-      'mixins': ['lto'],
     },
 
     'tsan': {
@@ -2023,6 +2057,6 @@
   },
 
   'luci_tryservers': {
-    'chromium.try': [ 'LUCI linux_chromium_rel_ng' ],
+    'chromium.try': [ 'linux_chromium_rel_ng' ],
   },
 }

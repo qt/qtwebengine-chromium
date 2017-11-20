@@ -71,6 +71,9 @@ test("device_unittests") {
     "sensors/sensor_manager_android_unittest.cc",
     "sensors/sensor_manager_chromeos_unittest.cc",
     "test/run_all_unittests.cc",
+    "u2f/u2f_apdu_unittest.cc",
+    "u2f/u2f_ble_frames_unittest.cc",
+    "u2f/u2f_message_unittest.cc",
   ]
 
   deps = [
@@ -90,6 +93,8 @@ test("device_unittests") {
     "//device/sensors",
     "//device/sensors/public/cpp:full",
     "//device/sensors/public/interfaces",
+    "//device/u2f",
+    "//device/u2f:mocks",
     "//mojo/common",
     "//mojo/edk/system",
     "//mojo/public/cpp/bindings",
@@ -114,9 +119,9 @@ test("device_unittests") {
       "hid/test_report_descriptors.cc",
       "hid/test_report_descriptors.h",
       "serial/serial_io_handler_posix_unittest.cc",
-      "u2f/u2f_apdu_unittest.cc",
+      "u2f/fake_hid_impl_for_testing.cc",
+      "u2f/fake_hid_impl_for_testing.h",
       "u2f/u2f_hid_device_unittest.cc",
-      "u2f/u2f_message_unittest.cc",
       "u2f/u2f_register_unittest.cc",
       "u2f/u2f_request_unittest.cc",
       "u2f/u2f_sign_unittest.cc",
@@ -125,9 +130,10 @@ test("device_unittests") {
       "//device/hid",
       "//device/hid:mocks",
       "//device/serial",
-      "//device/serial:test_support",
       "//device/u2f",
       "//device/u2f:mocks",
+      "//services/service_manager/public/cpp",
+      "//services/service_manager/public/interfaces",
     ]
   }
 
@@ -164,6 +170,10 @@ test("device_unittests") {
       "//device/usb/public/interfaces",
       "//net:test_support",
     ]
+
+    if (!is_android) {
+      deps += [ "//device/hid" ]
+    }
   }
 
   # UsbContext is a libusb-specific object.
@@ -240,15 +250,12 @@ test("device_unittests") {
   }
 
   if (enable_vr && is_android) {
-    sources += [
-      "vr/vr_device_manager_unittest.cc",
-      "vr/vr_display_impl_unittest.cc",
-      "vr/vr_service_impl_unittest.cc",
-    ]
+    sources += [ "vr/vr_display_impl_unittest.cc" ]
 
     deps += [
       "//device/vr",
       "//device/vr:fakes",
+      "//device/vr:java",
       "//device/vr:mojo_bindings",
     ]
   }

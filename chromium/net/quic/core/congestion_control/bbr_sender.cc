@@ -123,7 +123,7 @@ bool BbrSender::InSlowStart() const {
   return mode_ == STARTUP;
 }
 
-bool BbrSender::OnPacketSent(QuicTime sent_time,
+void BbrSender::OnPacketSent(QuicTime sent_time,
                              QuicByteCount bytes_in_flight,
                              QuicPacketNumber packet_number,
                              QuicByteCount bytes,
@@ -140,15 +140,10 @@ bool BbrSender::OnPacketSent(QuicTime sent_time,
 
   sampler_->OnPacketSent(sent_time, packet_number, bytes, bytes_in_flight,
                          is_retransmittable);
-  return is_retransmittable == HAS_RETRANSMITTABLE_DATA;
 }
 
-QuicTime::Delta BbrSender::TimeUntilSend(QuicTime /* now */,
-                                         QuicByteCount bytes_in_flight) {
-  if (bytes_in_flight < GetCongestionWindow()) {
-    return QuicTime::Delta::Zero();
-  }
-  return QuicTime::Delta::Infinite();
+bool BbrSender::CanSend(QuicByteCount bytes_in_flight) {
+  return bytes_in_flight < GetCongestionWindow();
 }
 
 QuicBandwidth BbrSender::PacingRate(QuicByteCount bytes_in_flight) const {
@@ -204,16 +199,10 @@ void BbrSender::SetFromConfig(const QuicConfig& config,
       config.HasClientRequestedIndependentOption(kBBRR, perspective)) {
     rate_based_recovery_ = true;
   }
-  if (FLAGS_quic_reloadable_flag_quic_bbr_ack_aggregation_bytes4 &&
-      config.HasClientRequestedIndependentOption(kBBR1, perspective)) {
-    QUIC_FLAG_COUNT_N(quic_reloadable_flag_quic_bbr_ack_aggregation_bytes4, 1,
-                      2);
+  if (config.HasClientRequestedIndependentOption(kBBR1, perspective)) {
     max_aggregation_bytes_multiplier_ = 1.5;
   }
-  if (FLAGS_quic_reloadable_flag_quic_bbr_ack_aggregation_bytes4 &&
-      config.HasClientRequestedIndependentOption(kBBR2, perspective)) {
-    QUIC_FLAG_COUNT_N(quic_reloadable_flag_quic_bbr_ack_aggregation_bytes4, 2,
-                      2);
+  if (config.HasClientRequestedIndependentOption(kBBR2, perspective)) {
     max_aggregation_bytes_multiplier_ = 2;
   }
 }
@@ -238,7 +227,7 @@ void BbrSender::OnCongestionEvent(bool /*rtt_updated*/,
                                   QuicByteCount prior_in_flight,
                                   QuicTime event_time,
                                   const AckedPacketVector& acked_packets,
-                                  const CongestionVector& lost_packets) {
+                                  const LostPacketVector& lost_packets) {
   const QuicByteCount total_bytes_acked_before = sampler_->total_bytes_acked();
 
   bool is_round_start = false;
@@ -287,7 +276,7 @@ void BbrSender::OnCongestionEvent(bool /*rtt_updated*/,
       sampler_->total_bytes_acked() - total_bytes_acked_before;
   QuicByteCount bytes_lost = 0;
   for (const auto& packet : lost_packets) {
-    bytes_lost += packet.second;
+    bytes_lost += packet.bytes_lost;
   }
 
   // After the model is updated, recalculate the pacing rate and congestion
@@ -344,9 +333,9 @@ void BbrSender::EnterProbeBandwidthMode(QuicTime now) {
   pacing_gain_ = kPacingGain[cycle_current_offset_];
 }
 
-void BbrSender::DiscardLostPackets(const CongestionVector& lost_packets) {
-  for (const auto& packet : lost_packets) {
-    sampler_->OnPacketLost(packet.first);
+void BbrSender::DiscardLostPackets(const LostPacketVector& lost_packets) {
+  for (const LostPacket& packet : lost_packets) {
+    sampler_->OnPacketLost(packet.packet_number);
   }
 }
 

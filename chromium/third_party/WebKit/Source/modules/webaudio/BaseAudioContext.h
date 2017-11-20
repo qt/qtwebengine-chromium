@@ -55,14 +55,13 @@ class AudioBuffer;
 class AudioBufferSourceNode;
 class AudioContextOptions;
 class AudioListener;
+class AudioWorkletMessagingProxy;
 class BiquadFilterNode;
 class ChannelMergerNode;
 class ChannelSplitterNode;
 class ConstantSourceNode;
 class ConvolverNode;
 class DelayNode;
-class DecodeErrorCallback;
-class DecodeSuccessCallback;
 class Document;
 class DynamicsCompressorNode;
 class ExceptionState;
@@ -82,6 +81,8 @@ class ScriptPromiseResolver;
 class ScriptState;
 class SecurityOrigin;
 class StereoPannerNode;
+class V8DecodeErrorCallback;
+class V8DecodeSuccessCallback;
 class WaveShaperNode;
 
 // BaseAudioContext is the cornerstone of the web audio API and all AudioNodes
@@ -122,7 +123,7 @@ class MODULES_EXPORT BaseAudioContext
 
   // Document notification
   void ContextDestroyed(ExecutionContext*) final;
-  bool HasPendingActivity() const final;
+  bool HasPendingActivity() const;
 
   // Cannnot be called from the audio thread.
   AudioDestinationNode* destination() const;
@@ -172,8 +173,8 @@ class MODULES_EXPORT BaseAudioContext
   // Asynchronous audio file data decoding.
   ScriptPromise decodeAudioData(ScriptState*,
                                 DOMArrayBuffer* audio_data,
-                                DecodeSuccessCallback*,
-                                DecodeErrorCallback*,
+                                V8DecodeSuccessCallback*,
+                                V8DecodeErrorCallback*,
                                 ExceptionState&);
 
   ScriptPromise decodeAudioData(ScriptState*,
@@ -182,15 +183,15 @@ class MODULES_EXPORT BaseAudioContext
 
   ScriptPromise decodeAudioData(ScriptState*,
                                 DOMArrayBuffer* audio_data,
-                                DecodeSuccessCallback*,
+                                V8DecodeSuccessCallback*,
                                 ExceptionState&);
 
   // Handles the promise and callbacks when |decodeAudioData| is finished
   // decoding.
   void HandleDecodeAudioData(AudioBuffer*,
                              ScriptPromiseResolver*,
-                             DecodeSuccessCallback*,
-                             DecodeErrorCallback*);
+                             V8DecodeSuccessCallback*,
+                             V8DecodeErrorCallback*);
 
   AudioListener* listener() { return listener_; }
 
@@ -298,7 +299,7 @@ class MODULES_EXPORT BaseAudioContext
   // Returns true if this thread owns the context's lock.
   bool IsGraphOwner() { return GetDeferredTaskHandler().IsGraphOwner(); }
 
-  using AutoLocker = DeferredTaskHandler::AutoLocker;
+  using GraphAutoLocker = DeferredTaskHandler::GraphAutoLocker;
 
   // Returns the maximum numuber of channels we can support.
   static unsigned MaxNumberOfChannels() { return kMaxNumberOfChannels; }
@@ -332,6 +333,10 @@ class MODULES_EXPORT BaseAudioContext
   // AudioScheduledSourceHandler or a AudioBufferSourceHandler without a user
   // gesture while the AudioContext requires a user gesture.
   void MaybeRecordStartAttempt();
+
+  void SetWorkletMessagingProxy(AudioWorkletMessagingProxy*);
+  AudioWorkletMessagingProxy* WorkletMessagingProxy();
+  bool HasWorkletMessagingProxy() const;
 
  protected:
   enum ContextType { kRealtimeContext, kOfflineContext };
@@ -481,8 +486,8 @@ class MODULES_EXPORT BaseAudioContext
   // Hold references to the |decodeAudioData| callbacks so that they
   // don't get prematurely GCed by v8 before |decodeAudioData| returns
   // and calls them.
-  HeapVector<TraceWrapperMember<DecodeSuccessCallback>> success_callbacks_;
-  HeapVector<TraceWrapperMember<DecodeErrorCallback>> error_callbacks_;
+  HeapVector<TraceWrapperMember<V8DecodeSuccessCallback>> success_callbacks_;
+  HeapVector<TraceWrapperMember<V8DecodeErrorCallback>> error_callbacks_;
 
   // When a context is closed, the sample rate is cleared.  But decodeAudioData
   // can be called after the context has been closed and it needs the sample
@@ -508,6 +513,9 @@ class MODULES_EXPORT BaseAudioContext
 
   Optional<AutoplayStatus> autoplay_status_;
   AudioIOPosition output_position_;
+
+  bool has_worklet_messaging_proxy_ = false;
+  Member<AudioWorkletMessagingProxy> worklet_messaging_proxy_;
 };
 
 }  // namespace blink

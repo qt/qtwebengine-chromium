@@ -13,7 +13,9 @@
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/default_clock.h"
 #include "base/values.h"
@@ -59,7 +61,8 @@ ContentSuggestionsService::ContentSuggestionsService(
     PrefService* pref_service,
     std::unique_ptr<CategoryRanker> category_ranker,
     std::unique_ptr<UserClassifier> user_classifier,
-    std::unique_ptr<RemoteSuggestionsScheduler> remote_suggestions_scheduler)
+    std::unique_ptr<RemoteSuggestionsScheduler> remote_suggestions_scheduler,
+    std::unique_ptr<Logger> debug_logger)
     : state_(state),
       signin_observer_(this),
       history_service_observer_(this),
@@ -68,7 +71,8 @@ ContentSuggestionsService::ContentSuggestionsService(
       pref_service_(pref_service),
       remote_suggestions_scheduler_(std::move(remote_suggestions_scheduler)),
       user_classifier_(std::move(user_classifier)),
-      category_ranker_(std::move(category_ranker)) {
+      category_ranker_(std::move(category_ranker)),
+      debug_logger_(std::move(debug_logger)) {
   // Can be null in tests.
   if (signin_manager) {
     signin_observer_.Add(signin_manager);
@@ -77,6 +81,8 @@ ContentSuggestionsService::ContentSuggestionsService(
   if (history_service) {
     history_service_observer_.Add(history_service);
   }
+
+  debug_logger_->Log(FROM_HERE, /*message=*/std::string());
 
   RestoreDismissedCategoriesFromPrefs();
 }
@@ -437,6 +443,22 @@ void ContentSuggestionsService::ReloadSuggestions() {
   }
 }
 
+void ContentSuggestionsService::OnChromeHomeStatusChanged(
+    bool is_chrome_home_enabled) {
+  debug_logger_->Log(
+      FROM_HERE, base::StringPrintf("Chrome Home enabled: %s",
+                                    is_chrome_home_enabled ? "true" : "false"));
+  if (is_chrome_home_enabled) {
+    // TODO(vitaliii): Make this code more general and do not hardcode specific
+    // categories.
+    DestroyCategoryAndItsProvider(
+        Category::FromKnownCategory(KnownCategories::BOOKMARKS));
+    DestroyCategoryAndItsProvider(
+        Category::FromKnownCategory(KnownCategories::DOWNLOADS));
+  }
+  // TODO(vitaliii): Recreate providers when Chrome Home is turned off.
+}
+
 bool ContentSuggestionsService::AreRemoteSuggestionsEnabled() const {
   return remote_suggestions_provider_ &&
          !remote_suggestions_provider_->IsDisabled();
@@ -703,6 +725,39 @@ void ContentSuggestionsService::StoreDismissedCategoriesToPrefs() {
   }
 
   pref_service_->Set(prefs::kDismissedCategories, list);
+}
+
+void ContentSuggestionsService::DestroyCategoryAndItsProvider(
+    Category category) {
+  // Destroying articles category is more complex and not implemented.
+  DCHECK_NE(category, Category::FromKnownCategory(KnownCategories::ARTICLES));
+
+  if (providers_by_category_.count(category) != 1) {
+    return;
+  }
+
+  {  // Destroy the provider and delete its mentions.
+    ContentSuggestionsProvider* raw_provider = providers_by_category_[category];
+    base::EraseIf(
+        providers_,
+        [&raw_provider](
+            const std::unique_ptr<ContentSuggestionsProvider>& provider) {
+          return provider.get() == raw_provider;
+        });
+    providers_by_category_.erase(category);
+
+    if (dismissed_providers_by_category_.count(category) == 1) {
+      dismissed_providers_by_category_[category] = nullptr;
+    }
+  }
+
+  suggestions_by_category_.erase(category);
+
+  auto it = std::find(categories_.begin(), categories_.end(), category);
+  categories_.erase(it);
+
+  // Notify observers that the category is gone.
+  NotifyCategoryStatusChanged(category);
 }
 
 }  // namespace ntp_snippets

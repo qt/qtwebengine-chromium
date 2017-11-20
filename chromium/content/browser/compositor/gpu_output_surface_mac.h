@@ -24,8 +24,8 @@ class GpuOutputSurfaceMac
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager);
   ~GpuOutputSurfaceMac() override;
 
-  // cc::OutputSurface implementation.
-  void SwapBuffers(cc::OutputSurfaceFrame frame) override;
+  // viz::OutputSurface implementation.
+  void SwapBuffers(viz::OutputSurfaceFrame frame) override;
   bool SurfaceIsSuspendForRecycle() const override;
 
   // BrowserCompositorOutputSurface implementation.

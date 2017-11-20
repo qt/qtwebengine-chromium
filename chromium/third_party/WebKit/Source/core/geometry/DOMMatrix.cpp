@@ -20,7 +20,7 @@ DOMMatrix* DOMMatrix::Create(ExecutionContext* execution_context,
 DOMMatrix* DOMMatrix::Create(ExecutionContext* execution_context,
                              StringOrUnrestrictedDoubleSequence& init,
                              ExceptionState& exception_state) {
-  if (init.isString()) {
+  if (init.IsString()) {
     if (!execution_context->IsDocument()) {
       exception_state.ThrowTypeError(
           "DOMMatrix can't be constructed with strings on workers.");
@@ -28,12 +28,12 @@ DOMMatrix* DOMMatrix::Create(ExecutionContext* execution_context,
     }
 
     DOMMatrix* matrix = new DOMMatrix(TransformationMatrix());
-    matrix->SetMatrixValueFromString(init.getAsString(), exception_state);
+    matrix->SetMatrixValueFromString(init.GetAsString(), exception_state);
     return matrix;
   }
 
-  if (init.isUnrestrictedDoubleSequence()) {
-    const Vector<double>& sequence = init.getAsUnrestrictedDoubleSequence();
+  if (init.IsUnrestrictedDoubleSequence()) {
+    const Vector<double>& sequence = init.GetAsUnrestrictedDoubleSequence();
     if (sequence.size() != 6 && sequence.size() != 16) {
       exception_state.ThrowTypeError(
           "The sequence must contain 6 elements for a 2D matrix or 16 elements "
@@ -94,6 +94,17 @@ DOMMatrix::DOMMatrix(T sequence, int size)
 
 DOMMatrix::DOMMatrix(const TransformationMatrix& matrix, bool is2d)
     : DOMMatrixReadOnly(matrix, is2d) {}
+
+DOMMatrix* DOMMatrix::fromMatrix2D(DOMMatrix2DInit& other,
+                                   ExceptionState& exception_state) {
+  if (!ValidateAndFixup2D(other, exception_state)) {
+    DCHECK(exception_state.HadException());
+    return nullptr;
+  }
+  return new DOMMatrix({other.m11(), other.m12(), other.m21(), other.m22(),
+                        other.m41(), other.m42()},
+                       true);
+}
 
 DOMMatrix* DOMMatrix::fromMatrix(DOMMatrixInit& other,
                                  ExceptionState& exception_state) {

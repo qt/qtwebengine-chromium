@@ -8,18 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/remote_bitrate_estimator/test/packet_sender.h"
+#include "modules/remote_bitrate_estimator/test/packet_sender.h"
 
 #include <algorithm>
 #include <list>
 #include <sstream>
 
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/pacing/pacer.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/bbr_paced_sender.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/bwe.h"
-#include "webrtc/modules/remote_bitrate_estimator/test/metric_recorder.h"
-#include "webrtc/rtc_base/checks.h"
+#include "modules/include/module_common_types.h"
+#include "modules/pacing/pacer.h"
+#include "modules/remote_bitrate_estimator/test/bbr_paced_sender.h"
+#include "modules/remote_bitrate_estimator/test/bwe.h"
+#include "modules/remote_bitrate_estimator/test/metric_recorder.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace testing {
@@ -159,9 +159,10 @@ PacedVideoSender::PacedVideoSender(PacketProcessorListener* listener,
                                    VideoSource* source,
                                    BandwidthEstimatorType estimator)
     : VideoSender(listener, source, estimator),
-      // Ugly hack to use BBR's pacer.
-      // TODO(gnish): Make pacer choice dependant on the algorithm being used.
-      pacer_(new BbrPacedSender(&clock_, this, nullptr)) {
+      pacer_(
+          estimator == kBbrEstimator
+              ? static_cast<Pacer*>(new BbrPacedSender(&clock_, this, nullptr))
+              : static_cast<Pacer*>(new PacedSender(&clock_, this, nullptr))) {
   modules_.push_back(pacer_.get());
   pacer_->SetEstimatedBitrate(source->bits_per_second());
 }

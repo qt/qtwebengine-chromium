@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_device/audio_device_generic.h"
-#include "webrtc/rtc_base/logging.h"
+#include "modules/audio_device/audio_device_generic.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -30,19 +30,6 @@ int32_t AudioDeviceGeneric::SetLoudspeakerStatus(bool enable) {
 }
 
 int32_t AudioDeviceGeneric::GetLoudspeakerStatus(bool& enable) const {
-  LOG_F(LS_ERROR) << "Not supported on this platform";
-  return -1;
-}
-
-int32_t AudioDeviceGeneric::ResetAudioDevice() {
-  LOG_F(LS_ERROR) << "Not supported on this platform";
-  return -1;
-}
-
-int32_t AudioDeviceGeneric::SoundDeviceControl(unsigned int par1,
-                                               unsigned int par2,
-                                               unsigned int par3,
-                                               unsigned int par4) {
   LOG_F(LS_ERROR) << "Not supported on this platform";
   return -1;
 }

@@ -22,10 +22,10 @@
 #include "platform/heap/Handle.h"
 #include "platform/heap/Heap.h"
 #include "platform/loader/fetch/FetchContext.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/MemoryCache.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceRequest.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/weborigin/KURL.h"
@@ -78,7 +78,7 @@ TEST_F(CSSStyleSheetResourceTest, DuplicateResourceNotCached) {
       CSSStyleSheetResource::CreateForTest(css_url, UTF8Encoding());
   css_resource->ResponseReceived(
       ResourceResponse(css_url, "style/css", 0, g_null_atom), nullptr);
-  css_resource->Finish();
+  css_resource->FinishForTest();
 
   CSSParserContext* parser_context =
       CSSParserContext::Create(kHTMLStandardMode);

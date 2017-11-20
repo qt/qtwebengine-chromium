@@ -61,18 +61,18 @@ class NonInterpolableList : public NonInterpolableValue {
   ~NonInterpolableList() final {}
 
   static RefPtr<NonInterpolableList> Create() {
-    return AdoptRef(new NonInterpolableList());
+    return WTF::AdoptRef(new NonInterpolableList());
   }
   static RefPtr<NonInterpolableList> Create(
       Vector<RefPtr<NonInterpolableValue>>&& list) {
-    return AdoptRef(new NonInterpolableList(std::move(list)));
+    return WTF::AdoptRef(new NonInterpolableList(std::move(list)));
   }
 
   size_t length() const { return list_.size(); }
   const NonInterpolableValue* Get(size_t index) const {
-    return list_[index].Get();
+    return list_[index].get();
   }
-  NonInterpolableValue* Get(size_t index) { return list_[index].Get(); }
+  NonInterpolableValue* Get(size_t index) { return list_[index].get(); }
   RefPtr<NonInterpolableValue>& GetMutable(size_t index) {
     return list_[index];
   }

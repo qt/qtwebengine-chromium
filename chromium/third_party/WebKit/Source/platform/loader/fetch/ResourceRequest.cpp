@@ -27,9 +27,9 @@
 #include "platform/loader/fetch/ResourceRequest.h"
 
 #include <memory>
-#include "platform/HTTPNames.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/http_names.h"
 #include "platform/network/NetworkUtils.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/WebAddressSpace.h"
@@ -287,7 +287,7 @@ void ResourceRequest::AddHTTPOriginIfNeeded(const SecurityOrigin* origin) {
 
 void ResourceRequest::AddHTTPOriginIfNeeded(const String& origin_string) {
   if (NeedsHTTPOrigin())
-    SetHTTPOrigin(SecurityOrigin::CreateFromString(origin_string).Get());
+    SetHTTPOrigin(SecurityOrigin::CreateFromString(origin_string).get());
 }
 
 void ResourceRequest::ClearHTTPUserAgent() {
@@ -295,7 +295,7 @@ void ResourceRequest::ClearHTTPUserAgent() {
 }
 
 EncodedFormData* ResourceRequest::HttpBody() const {
-  return http_body_.Get();
+  return http_body_.get();
 }
 
 void ResourceRequest::SetHTTPBody(RefPtr<EncodedFormData> http_body) {
@@ -303,7 +303,7 @@ void ResourceRequest::SetHTTPBody(RefPtr<EncodedFormData> http_body) {
 }
 
 EncodedFormData* ResourceRequest::AttachedCredential() const {
-  return attached_credential_.Get();
+  return attached_credential_.get();
 }
 
 void ResourceRequest::SetAttachedCredential(

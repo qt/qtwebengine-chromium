@@ -8,15 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/test/TestVADDTX.h"
+#include "modules/audio_coding/test/TestVADDTX.h"
 
 #include <string>
 
-#include "webrtc/modules/audio_coding/codecs/audio_format_conversion.h"
-#include "webrtc/modules/audio_coding/test/PCMFile.h"
-#include "webrtc/modules/audio_coding/test/utility.h"
-#include "webrtc/test/testsupport/fileutils.h"
-#include "webrtc/typedefs.h"
+#include "modules/audio_coding/codecs/audio_format_conversion.h"
+#include "modules/audio_coding/test/PCMFile.h"
+#include "modules/audio_coding/test/utility.h"
+#include "test/testsupport/fileutils.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -62,8 +62,8 @@ void ActivityMonitor::GetStatistics(uint32_t* counter) {
 }
 
 TestVadDtx::TestVadDtx()
-    : acm_send_(AudioCodingModule::Create(0)),
-      acm_receive_(AudioCodingModule::Create(1)),
+    : acm_send_(AudioCodingModule::Create()),
+      acm_receive_(AudioCodingModule::Create()),
       channel_(new Channel),
       monitor_(new ActivityMonitor) {
   EXPECT_EQ(0, acm_send_->RegisterTransportCallback(channel_.get()));

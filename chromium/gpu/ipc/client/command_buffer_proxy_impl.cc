@@ -13,7 +13,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/shared_memory.h"
 #include "base/optional.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
@@ -171,7 +170,14 @@ void CommandBufferProxyImpl::RemoveDeletionObserver(
   deletion_observers_.RemoveObserver(observer);
 }
 
-void CommandBufferProxyImpl::OnSignalAck(uint32_t id) {
+void CommandBufferProxyImpl::OnSignalAck(uint32_t id,
+                                         const CommandBuffer::State& state) {
+  {
+    base::AutoLock lock(last_state_lock_);
+    SetStateFromMessageReply(state);
+    if (last_state_.error != gpu::error::kNoError)
+      return;
+  }
   SignalTaskMap::iterator it = signal_tasks_.find(id);
   if (it == signal_tasks_.end()) {
     LOG(ERROR) << "Gpu process sent invalid SignalAck.";
@@ -208,11 +214,6 @@ bool CommandBufferProxyImpl::Initialize(
       channel->ShareToGpuProcess(shared_state_shm_->handle());
   if (!base::SharedMemory::IsHandleValid(handle))
     return false;
-
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/125248 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "125248 CommandBufferProxyImpl::Initialize"));
 
   // Route must be added before sending the message, otherwise messages sent
   // from the GPU process could race against adding ourselves to the filter.
@@ -332,7 +333,7 @@ gpu::CommandBuffer::State CommandBufferProxyImpl::WaitForTokenInRange(
     gpu::CommandBuffer::State state;
     if (Send(new GpuCommandBufferMsg_WaitForTokenInRange(route_id_, start, end,
                                                          &state))) {
-      SetStateFromSyncReply(state);
+      SetStateFromMessageReply(state);
     }
   }
   if (!InRange(start, end, last_state_.token) &&
@@ -366,7 +367,7 @@ gpu::CommandBuffer::State CommandBufferProxyImpl::WaitForGetOffsetInRange(
     gpu::CommandBuffer::State state;
     if (Send(new GpuCommandBufferMsg_WaitForGetOffsetInRange(
             route_id_, set_get_buffer_count, start, end, &state)))
-      SetStateFromSyncReply(state);
+      SetStateFromMessageReply(state);
   }
   if (((set_get_buffer_count != last_state_.set_get_buffer_count) ||
        !InRange(start, end, last_state_.get_offset)) &&
@@ -448,7 +449,7 @@ void CommandBufferProxyImpl::SetGpuControlClient(GpuControlClient* client) {
   gpu_control_client_ = client;
 }
 
-gpu::Capabilities CommandBufferProxyImpl::GetCapabilities() {
+const gpu::Capabilities& CommandBufferProxyImpl::GetCapabilities() const {
   return capabilities_;
 }
 
@@ -716,10 +717,12 @@ bool CommandBufferProxyImpl::Send(IPC::Message* msg) {
   return true;
 }
 
-void CommandBufferProxyImpl::SetStateFromSyncReply(
+void CommandBufferProxyImpl::SetStateFromMessageReply(
     const gpu::CommandBuffer::State& state) {
   CheckLock();
   last_state_lock_.AssertAcquired();
+  if (last_state_.error != gpu::error::kNoError)
+    return;
   // Handle wraparound. It works as long as we don't have more than 2B state
   // updates in flight across which reordering occurs.
   if (state.generation - last_state_.generation < 0x80000000U)

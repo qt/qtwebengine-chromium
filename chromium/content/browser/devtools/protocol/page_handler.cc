@@ -141,8 +141,9 @@ std::vector<PageHandler*> PageHandler::ForAgentHost(
       host, Page::Metainfo::domainName);
 }
 
-void PageHandler::SetRenderFrameHost(RenderFrameHostImpl* host) {
-  if (host_ == host)
+void PageHandler::SetRenderer(RenderProcessHost* process_host,
+                              RenderFrameHostImpl* frame_host) {
+  if (host_ == frame_host)
     return;
 
   RenderWidgetHostImpl* widget_host =
@@ -154,7 +155,7 @@ void PageHandler::SetRenderFrameHost(RenderFrameHostImpl* host) {
         content::Source<RenderWidgetHost>(widget_host));
   }
 
-  host_ = host;
+  host_ = frame_host;
   widget_host = host_ ? host_->GetRenderWidgetHost() : nullptr;
 
   if (widget_host) {
@@ -171,7 +172,7 @@ void PageHandler::Wire(UberDispatcher* dispatcher) {
 }
 
 void PageHandler::OnSwapCompositorFrame(
-    cc::CompositorFrameMetadata frame_metadata) {
+    viz::CompositorFrameMetadata frame_metadata) {
   last_compositor_frame_metadata_ = std::move(frame_metadata);
   has_compositor_frame_metadata_ = true;
 
@@ -180,7 +181,7 @@ void PageHandler::OnSwapCompositorFrame(
 }
 
 void PageHandler::OnSynchronousSwapCompositorFrame(
-    cc::CompositorFrameMetadata frame_metadata) {
+    viz::CompositorFrameMetadata frame_metadata) {
   if (has_compositor_frame_metadata_) {
     last_compositor_frame_metadata_ =
         std::move(next_compositor_frame_metadata_);
@@ -217,16 +218,15 @@ void PageHandler::DidDetachInterstitialPage() {
   frontend_->InterstitialHidden();
 }
 
-void PageHandler::DidRunJavaScriptDialog(
-    const GURL& url,
-    const base::string16& message,
-    const base::string16& default_prompt,
-    JavaScriptDialogType dialog_type,
-    const JavaScriptDialogCallback& callback) {
+void PageHandler::DidRunJavaScriptDialog(const GURL& url,
+                                         const base::string16& message,
+                                         const base::string16& default_prompt,
+                                         JavaScriptDialogType dialog_type,
+                                         JavaScriptDialogCallback callback) {
   if (!enabled_)
     return;
   DCHECK(pending_dialog_.is_null());
-  pending_dialog_ = callback;
+  pending_dialog_ = std::move(callback);
   std::string type = Page::DialogTypeEnum::Alert;
   if (dialog_type == JAVASCRIPT_DIALOG_TYPE_CONFIRM)
     type = Page::DialogTypeEnum::Confirm;
@@ -236,13 +236,12 @@ void PageHandler::DidRunJavaScriptDialog(
                                      type, base::UTF16ToUTF8(default_prompt));
 }
 
-void PageHandler::DidRunBeforeUnloadConfirm(
-    const GURL& url,
-    const JavaScriptDialogCallback& callback) {
+void PageHandler::DidRunBeforeUnloadConfirm(const GURL& url,
+                                            JavaScriptDialogCallback callback) {
   if (!enabled_)
     return;
   DCHECK(pending_dialog_.is_null());
-  pending_dialog_ = callback;
+  pending_dialog_ = std::move(callback);
   frontend_->JavascriptDialogOpening(url.spec(), std::string(),
                                      Page::DialogTypeEnum::Beforeunload,
                                      std::string());
@@ -266,9 +265,19 @@ Response PageHandler::Enable() {
 Response PageHandler::Disable() {
   enabled_ = false;
   screencast_enabled_ = false;
-  if (!pending_dialog_.is_null())
-    pending_dialog_.Run(false, base::string16());
-  pending_dialog_.Reset();
+
+  if (!pending_dialog_.is_null()) {
+    WebContentsImpl* web_contents = GetWebContents();
+    // Leave dialog hanging if there is a manager that can take care of it,
+    // cancel and send ack otherwise.
+    bool has_dialog_manager =
+        web_contents && web_contents->GetDelegate() &&
+        web_contents->GetDelegate()->GetJavaScriptDialogManager(web_contents);
+    if (!has_dialog_manager)
+      std::move(pending_dialog_).Run(false, base::string16());
+    pending_dialog_.Reset();
+  }
+
   download_manager_delegate_ = nullptr;
   return Response::FallThrough();
 }
@@ -591,15 +600,17 @@ Response PageHandler::HandleJavaScriptDialog(bool accept,
   base::string16 prompt_override;
   if (prompt_text.isJust())
     prompt_override = base::UTF8ToUTF16(prompt_text.fromJust());
-  pending_dialog_.Run(accept, prompt_override);
+  std::move(pending_dialog_).Run(accept, prompt_override);
 
   // Clean up the dialog UI if any.
-  JavaScriptDialogManager* manager =
-      web_contents->GetDelegate()->GetJavaScriptDialogManager(web_contents);
-  if (manager) {
-    manager->HandleJavaScriptDialog(
-        web_contents, accept,
-        prompt_text.isJust() ? &prompt_override : nullptr);
+  if (web_contents->GetDelegate()) {
+    JavaScriptDialogManager* manager =
+        web_contents->GetDelegate()->GetJavaScriptDialogManager(web_contents);
+    if (manager) {
+      manager->HandleJavaScriptDialog(
+          web_contents, accept,
+          prompt_text.isJust() ? &prompt_override : nullptr);
+    }
   }
 
   return Response::OK();
@@ -607,7 +618,7 @@ Response PageHandler::HandleJavaScriptDialog(bool accept,
 
 Response PageHandler::RequestAppBanner() {
   WebContentsImpl* web_contents = GetWebContents();
-  if (!web_contents)
+  if (!web_contents || !web_contents->GetDelegate())
     return Response::InternalError();
   web_contents->GetDelegate()->RequestAppBannerFromDevTools(web_contents);
   return Response::OK();
@@ -690,7 +701,7 @@ void PageHandler::InnerSwapCompositorFrame() {
   // TODO(vkuzkokov): do not use previous frame metadata.
   // TODO(miu): RWHV to provide an API to provide actual rendering size.
   // http://crbug.com/73362
-  cc::CompositorFrameMetadata& metadata = last_compositor_frame_metadata_;
+  viz::CompositorFrameMetadata& metadata = last_compositor_frame_metadata_;
 
   gfx::SizeF viewport_size_dip = gfx::ScaleSize(
       metadata.scrollable_viewport_size, metadata.page_scale_factor);
@@ -729,7 +740,7 @@ void PageHandler::InnerSwapCompositorFrame() {
   }
 }
 
-void PageHandler::ScreencastFrameCaptured(cc::CompositorFrameMetadata metadata,
+void PageHandler::ScreencastFrameCaptured(viz::CompositorFrameMetadata metadata,
                                           const SkBitmap& bitmap,
                                           ReadbackResponse response) {
   if (response != READBACK_SUCCESS) {
@@ -753,7 +764,7 @@ void PageHandler::ScreencastFrameCaptured(cc::CompositorFrameMetadata metadata,
                  base::Time::Now()));
 }
 
-void PageHandler::ScreencastFrameEncoded(cc::CompositorFrameMetadata metadata,
+void PageHandler::ScreencastFrameEncoded(viz::CompositorFrameMetadata metadata,
                                          const base::Time& timestamp,
                                          const std::string& data) {
   // Consider metadata empty in case it has no device scale factor.

@@ -13,6 +13,7 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_linearized_header.h"
+#include "core/fpdfapi/parser/cpdf_read_validator.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fxcrt/cfx_bitstream.h"
@@ -35,9 +36,9 @@ bool IsValidPageOffsetHintTableBitCount(uint32_t bits) {
 
 }  // namespace
 
-CPDF_HintTables::CPDF_HintTables(CPDF_DataAvail* pDataAvail,
+CPDF_HintTables::CPDF_HintTables(CPDF_ReadValidator* pValidator,
                                  CPDF_LinearizedHeader* pLinearized)
-    : m_pDataAvail(pDataAvail),
+    : m_pValidator(pValidator),
       m_pLinearized(pLinearized),
       m_nFirstPageSharedObjs(0),
       m_szFirstPageObjOffset(0) {
@@ -400,12 +401,7 @@ bool CPDF_HintTables::GetPagePos(uint32_t index,
   return true;
 }
 
-CPDF_DataAvail::DocAvailStatus CPDF_HintTables::CheckPage(
-    uint32_t index,
-    CPDF_DataAvail::DownloadHints* pHints) {
-  if (!pHints)
-    return CPDF_DataAvail::DataError;
-
+CPDF_DataAvail::DocAvailStatus CPDF_HintTables::CheckPage(uint32_t index) {
   int nFirstPageNum = GetFirstPageNumber();
   if (!pdfium::base::IsValueInRangeForNumericType<uint32_t>(nFirstPageNum))
     return CPDF_DataAvail::DataError;
@@ -418,7 +414,8 @@ CPDF_DataAvail::DocAvailStatus CPDF_HintTables::CheckPage(
   if (!dwLength)
     return CPDF_DataAvail::DataError;
 
-  if (!m_pDataAvail->IsDataAvail(m_szPageOffsetArray[index], dwLength, pHints))
+  if (!m_pValidator->CheckDataRangeAndRequestIfUnavailable(
+          m_szPageOffsetArray[index], dwLength))
     return CPDF_DataAvail::DataNotAvailable;
 
   // Download data of shared objects in the page.
@@ -449,8 +446,8 @@ CPDF_DataAvail::DocAvailStatus CPDF_HintTables::CheckPage(
     if (!dwLength)
       return CPDF_DataAvail::DataError;
 
-    if (!m_pDataAvail->IsDataAvail(m_szSharedObjOffsetArray[dwIndex], dwLength,
-                                   pHints)) {
+    if (!m_pValidator->CheckDataRangeAndRequestIfUnavailable(
+            m_szSharedObjOffsetArray[dwIndex], dwLength)) {
       return CPDF_DataAvail::DataNotAvailable;
     }
   }

@@ -16,7 +16,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -224,6 +223,13 @@ int HttpNetworkTransaction::RestartWithAuth(
 void HttpNetworkTransaction::PrepareForAuthRestart(HttpAuth::Target target) {
   DCHECK(HaveAuth(target));
   DCHECK(!stream_request_.get());
+
+  // Authorization schemes incompatible with HTTP/2 are unsupported for proxies.
+  if (target == HttpAuth::AUTH_SERVER &&
+      auth_controllers_[target]->NeedsHTTP11()) {
+    session_->http_server_properties()->SetHTTP11Required(
+        HostPortPair::FromURL(request_->url));
+  }
 
   bool keep_alive = false;
   // Even if the server says the connection is keep-alive, we have to be
@@ -853,11 +859,6 @@ int HttpNetworkTransaction::DoNotifyBeforeCreateStream() {
 }
 
 int HttpNetworkTransaction::DoCreateStream() {
-  // TODO(mmenke): Remove ScopedTracker below once crbug.com/424359 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "424359 HttpNetworkTransaction::DoCreateStream"));
-
   response_.network_accessed = true;
 
   next_state_ = STATE_CREATE_STREAM_COMPLETE;
@@ -1187,11 +1188,6 @@ int HttpNetworkTransaction::DoBuildRequestComplete(int result) {
 }
 
 int HttpNetworkTransaction::DoSendRequest() {
-  // TODO(mmenke): Remove ScopedTracker below once crbug.com/424359 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "424359 HttpNetworkTransaction::DoSendRequest"));
-
   send_start_time_ = base::TimeTicks::Now();
   next_state_ = STATE_SEND_REQUEST_COMPLETE;
 

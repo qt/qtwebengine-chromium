@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/rtc_tools/event_log_visualizer/analyzer.h"
+#include "rtc_tools/event_log_visualizer/analyzer.h"
 
 #include <algorithm>
 #include <limits>
@@ -17,34 +17,36 @@
 #include <string>
 #include <utility>
 
-#include "webrtc/call/audio_receive_stream.h"
-#include "webrtc/call/audio_send_stream.h"
-#include "webrtc/call/call.h"
-#include "webrtc/call/video_receive_stream.h"
-#include "webrtc/call/video_send_stream.h"
-#include "webrtc/common_types.h"
-#include "webrtc/modules/audio_coding/neteq/tools/audio_sink.h"
-#include "webrtc/modules/audio_coding/neteq/tools/fake_decode_from_file.h"
-#include "webrtc/modules/audio_coding/neteq/tools/neteq_delay_analyzer.h"
-#include "webrtc/modules/audio_coding/neteq/tools/neteq_replacement_input.h"
-#include "webrtc/modules/audio_coding/neteq/tools/neteq_test.h"
-#include "webrtc/modules/audio_coding/neteq/tools/resample_input_audio_file.h"
-#include "webrtc/modules/congestion_controller/include/send_side_congestion_controller.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/common_header.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/remb.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_header_extensions.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/format_macros.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/rtc_base/rate_statistics.h"
+#include "call/audio_receive_stream.h"
+#include "call/audio_send_stream.h"
+#include "call/call.h"
+#include "call/video_receive_stream.h"
+#include "call/video_send_stream.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "logging/rtc_event_log/rtc_stream_config.h"
+#include "modules/audio_coding/neteq/tools/audio_sink.h"
+#include "modules/audio_coding/neteq/tools/fake_decode_from_file.h"
+#include "modules/audio_coding/neteq/tools/neteq_delay_analyzer.h"
+#include "modules/audio_coding/neteq/tools/neteq_replacement_input.h"
+#include "modules/audio_coding/neteq/tools/neteq_test.h"
+#include "modules/audio_coding/neteq/tools/resample_input_audio_file.h"
+#include "modules/congestion_controller/include/receive_side_congestion_controller.h"
+#include "modules/congestion_controller/include/send_side_congestion_controller.h"
+#include "modules/include/module_common_types.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/receiver_report.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/remb.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
+#include "modules/rtp_rtcp/source/rtp_utility.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/format_macros.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/rate_statistics.h"
 
 namespace webrtc {
 namespace plotting {
@@ -372,7 +374,7 @@ EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log)
       }
       case ParsedRtcEventLog::RTP_EVENT: {
         RtpHeaderExtensionMap* extension_map = parsed_log_.GetRtpHeader(
-            i, &direction, header, &header_length, &total_length);
+            i, &direction, header, &header_length, &total_length, nullptr);
         RtpUtility::RtpHeaderParser rtp_parser(header, header_length);
         RTPHeader parsed_header;
         if (extension_map != nullptr) {
@@ -922,7 +924,8 @@ void EventLogAnalyzer::CreateTotalBitrateGraph(
   for (size_t i = 0; i < parsed_log_.GetNumberOfEvents(); i++) {
     ParsedRtcEventLog::EventType event_type = parsed_log_.GetEventType(i);
     if (event_type == ParsedRtcEventLog::RTP_EVENT) {
-      parsed_log_.GetRtpHeader(i, &direction, nullptr, nullptr, &total_length);
+      parsed_log_.GetRtpHeader(i, &direction, nullptr, nullptr, &total_length,
+                               nullptr);
       if (direction == desired_direction) {
         uint64_t timestamp = parsed_log_.GetTimestamp(i);
         packets.push_back(TimestampSize(timestamp, total_length));
@@ -998,6 +1001,8 @@ void EventLogAnalyzer::CreateTotalBitrateGraph(
           case BandwidthUsage::kBwOverusing:
             last_series = &overusing_series;
             break;
+          case BandwidthUsage::kLast:
+            RTC_NOTREACHED();
         }
       }
 
@@ -1029,7 +1034,6 @@ void EventLogAnalyzer::CreateTotalBitrateGraph(
       plot->AppendIntervalSeries(std::move(normal_series));
     }
 
-    plot->AppendTimeSeries(std::move(bitrate_series));
     plot->AppendTimeSeries(std::move(loss_series));
     plot->AppendTimeSeries(std::move(delay_series));
     plot->AppendTimeSeries(std::move(created_series));
@@ -1103,7 +1107,7 @@ void EventLogAnalyzer::CreateStreamBitrateGraph(
   }
 }
 
-void EventLogAnalyzer::CreateBweSimulationGraph(Plot* plot) {
+void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
   std::multimap<uint64_t, const LoggedRtpPacket*> outgoing_rtp;
   std::multimap<uint64_t, const LoggedRtcpPacket*> incoming_rtcp;
 
@@ -1222,7 +1226,85 @@ void EventLogAnalyzer::CreateBweSimulationGraph(Plot* plot) {
 
   plot->SetXAxis(0, call_duration_s_, "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 10, "Bitrate (kbps)", kBottomMargin, kTopMargin);
-  plot->SetTitle("Simulated BWE behavior");
+  plot->SetTitle("Simulated send-side BWE behavior");
+}
+
+void EventLogAnalyzer::CreateReceiveSideBweSimulationGraph(Plot* plot) {
+  class RembInterceptingPacketRouter : public PacketRouter {
+   public:
+    void OnReceiveBitrateChanged(const std::vector<uint32_t>& ssrcs,
+                                 uint32_t bitrate_bps) override {
+      last_bitrate_bps_ = bitrate_bps;
+      bitrate_updated_ = true;
+      PacketRouter::OnReceiveBitrateChanged(ssrcs, bitrate_bps);
+    }
+    uint32_t last_bitrate_bps() const { return last_bitrate_bps_; }
+    bool GetAndResetBitrateUpdated() {
+      bool bitrate_updated = bitrate_updated_;
+      bitrate_updated_ = false;
+      return bitrate_updated;
+    }
+
+   private:
+    uint32_t last_bitrate_bps_;
+    bool bitrate_updated_;
+  };
+
+  std::multimap<uint64_t, const LoggedRtpPacket*> incoming_rtp;
+
+  for (const auto& kv : rtp_packets_) {
+    if (kv.first.GetDirection() == PacketDirection::kIncomingPacket &&
+        IsVideoSsrc(kv.first)) {
+      for (const LoggedRtpPacket& rtp_packet : kv.second)
+        incoming_rtp.insert(std::make_pair(rtp_packet.timestamp, &rtp_packet));
+    }
+  }
+
+  SimulatedClock clock(0);
+  RembInterceptingPacketRouter packet_router;
+  // TODO(terelius): The PacketRrouter is the used as the RemoteBitrateObserver.
+  // Is this intentional?
+  ReceiveSideCongestionController rscc(&clock, &packet_router);
+  // TODO(holmer): Log the call config and use that here instead.
+  // static const uint32_t kDefaultStartBitrateBps = 300000;
+  // rscc.SetBweBitrates(0, kDefaultStartBitrateBps, -1);
+
+  TimeSeries time_series("Receive side estimate", LINE_DOT_GRAPH);
+  TimeSeries acked_time_series("Received bitrate", LINE_GRAPH);
+
+  RateStatistics acked_bitrate(250, 8000);
+  int64_t last_update_us = 0;
+  for (const auto& kv : incoming_rtp) {
+    const LoggedRtpPacket& packet = *kv.second;
+    int64_t arrival_time_ms = packet.timestamp / 1000;
+    size_t payload = packet.total_length; /*Should subtract header?*/
+    clock.AdvanceTimeMicroseconds(packet.timestamp -
+                                  clock.TimeInMicroseconds());
+    rscc.OnReceivedPacket(arrival_time_ms, payload, packet.header);
+    acked_bitrate.Update(payload, arrival_time_ms);
+    rtc::Optional<uint32_t> bitrate_bps = acked_bitrate.Rate(arrival_time_ms);
+    if (bitrate_bps) {
+      uint32_t y = *bitrate_bps / 1000;
+      float x = static_cast<float>(clock.TimeInMicroseconds() - begin_time_) /
+                1000000;
+      acked_time_series.points.emplace_back(x, y);
+    }
+    if (packet_router.GetAndResetBitrateUpdated() ||
+        clock.TimeInMicroseconds() - last_update_us >= 1e6) {
+      uint32_t y = packet_router.last_bitrate_bps() / 1000;
+      float x = static_cast<float>(clock.TimeInMicroseconds() - begin_time_) /
+                1000000;
+      time_series.points.emplace_back(x, y);
+      last_update_us = clock.TimeInMicroseconds();
+    }
+  }
+  // Add the data set to the plot.
+  plot->AppendTimeSeries(std::move(time_series));
+  plot->AppendTimeSeries(std::move(acked_time_series));
+
+  plot->SetXAxis(0, call_duration_s_, "Time (s)", kLeftMargin, kRightMargin);
+  plot->SetSuggestedYAxis(0, 10, "Bitrate (kbps)", kBottomMargin, kTopMargin);
+  plot->SetTitle("Simulated receive-side BWE behavior");
 }
 
 void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
@@ -1247,6 +1329,7 @@ void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
   SimulatedClock clock(0);
   TransportFeedbackAdapter feedback_adapter(&clock);
 
+  TimeSeries late_feedback_series("Late feedback results.", DOT_GRAPH);
   TimeSeries time_series("Network Delay Change", LINE_DOT_GRAPH);
   int64_t estimated_base_delay_ms = std::numeric_limits<int64_t>::max();
 
@@ -1266,6 +1349,7 @@ void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
   };
 
   int64_t time_us = std::min(NextRtpTime(), NextRtcpTime());
+  int64_t prev_y = 0;
   while (time_us != std::numeric_limits<int64_t>::max()) {
     clock.AdvanceTimeMicroseconds(time_us - clock.TimeInMicroseconds());
     if (clock.TimeInMicroseconds() >= NextRtcpTime()) {
@@ -1278,10 +1362,15 @@ void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
             feedback_adapter.GetTransportFeedbackVector();
         SortPacketFeedbackVector(&feedback);
         for (const PacketFeedback& packet : feedback) {
-          int64_t y = packet.arrival_time_ms - packet.send_time_ms;
           float x =
               static_cast<float>(clock.TimeInMicroseconds() - begin_time_) /
               1000000;
+          if (packet.send_time_ms == -1) {
+            late_feedback_series.points.emplace_back(x, prev_y);
+            continue;
+          }
+          int64_t y = packet.arrival_time_ms - packet.send_time_ms;
+          prev_y = y;
           estimated_base_delay_ms = std::min(y, estimated_base_delay_ms);
           time_series.points.emplace_back(x, y);
         }
@@ -1307,8 +1396,11 @@ void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
   // observed during the call.
   for (TimeSeriesPoint& point : time_series.points)
     point.y -= estimated_base_delay_ms;
+  for (TimeSeriesPoint& point : late_feedback_series.points)
+    point.y -= estimated_base_delay_ms;
   // Add the data set to the plot.
-  plot->AppendTimeSeries(std::move(time_series));
+  plot->AppendTimeSeriesIfNotEmpty(std::move(time_series));
+  plot->AppendTimeSeriesIfNotEmpty(std::move(late_feedback_series));
 
   plot->SetXAxis(0, call_duration_s_, "Time (s)", kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 10, "Delay (ms)", kBottomMargin, kTopMargin);

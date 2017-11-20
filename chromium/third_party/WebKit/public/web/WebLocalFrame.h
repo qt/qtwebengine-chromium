@@ -12,18 +12,17 @@
 #include "WebFrameLoadType.h"
 #include "WebHistoryItem.h"
 #include "WebImeTextSpan.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/WebCachePolicy.h"
 #include "public/platform/WebFocusType.h"
 #include "public/platform/WebSize.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/platform/scheduler/single_thread_task_runner.h"
 #include "public/platform/site_engagement.mojom-shared.h"
 #include "public/web/WebSandboxFlags.h"
+#include "public/web/selection_menu_behavior.mojom-shared.h"
 #include "v8/include/v8.h"
-
-namespace base {
-class SingleThreadTaskRunner;
-}
 
 namespace blink {
 
@@ -501,8 +500,10 @@ class WebLocalFrame : public WebFrame {
     // Keep the current handle visibility.
     kPreserveHandleVisibility,
   };
+
   virtual void SelectRange(const WebRange&,
-                           HandleVisibilityBehavior = kHideSelectionHandle) = 0;
+                           HandleVisibilityBehavior,
+                           mojom::SelectionMenuBehavior) = 0;
 
   virtual WebString RangeAsText(const WebRange&) = 0;
 
@@ -710,9 +711,7 @@ class WebLocalFrame : public WebFrame {
 
   // Returns frame-specific task runner to run tasks of this type on.
   // They have the same lifetime as the frame.
-  virtual base::SingleThreadTaskRunner* TimerTaskRunner() = 0;
-  virtual base::SingleThreadTaskRunner* LoadingTaskRunner() = 0;
-  virtual base::SingleThreadTaskRunner* UnthrottledTaskRunner() = 0;
+  virtual SingleThreadTaskRunnerRefPtr GetTaskRunner(TaskType) = 0;
 
   // Returns the WebInputMethodController associated with this local frame.
   virtual WebInputMethodController* GetInputMethodController() = 0;
@@ -723,7 +722,7 @@ class WebLocalFrame : public WebFrame {
   // frame is attached to a document.
   virtual std::unique_ptr<WebURLLoader> CreateURLLoader(
       const WebURLRequest&,
-      base::SingleThreadTaskRunner*) = 0;
+      SingleThreadTaskRunnerRefPtr) = 0;
 
   // Returns an AssociatedURLLoader that is associated with this frame.  The
   // loader will, for example, be cancelled when WebFrame::stopLoading is
@@ -766,6 +765,11 @@ class WebLocalFrame : public WebFrame {
 
   // Printing ------------------------------------------------------------
 
+  // Dispatch |beforeprint| event, and execute event handlers. They might detach
+  // this frame from the owner WebView.
+  // This function should be called before pairs of PrintBegin() and PrintEnd().
+  virtual void DispatchBeforePrintEvent() = 0;
+
   // Reformats the WebFrame for printing. WebPrintParams specifies the printable
   // content size, paper size, printable area size, printer DPI and print
   // scaling option. If constrainToNode node is specified, then only the given
@@ -788,6 +792,11 @@ class WebLocalFrame : public WebFrame {
 
   // Reformats the WebFrame for screen display.
   virtual void PrintEnd() = 0;
+
+  // Dispatch |afterprint| event, and execute event handlers. They might detach
+  // this frame from the owner WebView.
+  // This function should be called after pairs of PrintBegin() and PrintEnd().
+  virtual void DispatchAfterPrintEvent() = 0;
 
   // If the frame contains a full-frame plugin or the given node refers to a
   // plugin whose content indicates that printed output should not be scaled,

@@ -69,6 +69,22 @@ var PrinterMakeModel;
 var PrinterPpdMakeModel;
 
 /**
+ *  @enum {number}
+ *  These values must be kept in sync with the PrinterSetupResult enum in
+ *  chrome/browser/chromeos/printing/printer_configurer.h.
+ */
+var PrinterSetupResult = {
+  FATAL_ERROR: 0,
+  SUCCESS: 1,
+  PRINTER_UNREACHABLE: 2,
+  DBUS_ERROR: 3,
+  PPD_TOO_LARGE: 10,
+  INVALID_PPD: 11,
+  PPD_NOT_FOUND: 12,
+  PPD_UNRETRIEVABLE: 13,
+};
+
+/**
  * @typedef {{
  *   message: string
  * }}
@@ -135,6 +151,12 @@ cr.define('settings', function() {
      * @param{string} printerId
      */
     addDiscoveredPrinter(printerId) {}
+
+    /**
+     * Report to the handler that setup was cancelled.
+     * @param {!CupsPrinterInfo} newPrinter
+     */
+    cancelPrinterSetUp(newPrinter) {}
   }
 
   /**
@@ -199,6 +221,11 @@ cr.define('settings', function() {
     /** @override */
     addDiscoveredPrinter(printerId) {
       chrome.send('addDiscoveredPrinter', [printerId]);
+    }
+
+    /** @override */
+    cancelPrinterSetUp(newPrinter) {
+      chrome.send('cancelPrinterSetUp', [newPrinter]);
     }
   }
 

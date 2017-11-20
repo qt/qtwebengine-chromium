@@ -177,9 +177,9 @@ class PDFObjectsTest : public testing::Test {
   std::vector<std::unique_ptr<CPDF_Object>> m_DirectObjs;
   std::vector<int> m_DirectObjTypes;
   std::vector<std::unique_ptr<CPDF_Object>> m_RefObjs;
-  CFX_UnownedPtr<CPDF_Dictionary> m_DictObj;
-  CFX_UnownedPtr<CPDF_Dictionary> m_StreamDictObj;
-  CFX_UnownedPtr<CPDF_Array> m_ArrayObj;
+  UnownedPtr<CPDF_Dictionary> m_DictObj;
+  UnownedPtr<CPDF_Dictionary> m_StreamDictObj;
+  UnownedPtr<CPDF_Array> m_ArrayObj;
   std::vector<CPDF_Object*> m_IndirectObjs;
 };
 
@@ -697,8 +697,9 @@ TEST(PDFArrayTest, AddInteger) {
 }
 
 TEST(PDFArrayTest, AddStringAndName) {
-  const char* vals[] = {"",        "a", "ehjhRIOYTTFdfcdnv",  "122323",
-                        "$#%^&**", " ", "This is a test.\r\n"};
+  static constexpr const char* vals[] = {
+      "",        "a", "ehjhRIOYTTFdfcdnv",  "122323",
+      "$#%^&**", " ", "This is a test.\r\n"};
   auto string_array = pdfium::MakeUnique<CPDF_Array>();
   auto name_array = pdfium::MakeUnique<CPDF_Array>();
   for (size_t i = 0; i < FX_ArraySize(vals); ++i) {
@@ -826,6 +827,30 @@ TEST(PDFStreamTest, SetDataAndRemoveFilter) {
   // The "Filter" and "DecodeParms" should be removed.
   EXPECT_FALSE(stream->GetDict()->KeyExist("Filter"));
   EXPECT_FALSE(stream->GetDict()->KeyExist("DecodeParms"));
+}
+
+TEST(PDFStreamTest, LengthInDictionaryOnCreate) {
+  static constexpr uint32_t kBufSize = 100;
+  // The length field should be created on stream create.
+  {
+    std::unique_ptr<uint8_t, FxFreeDeleter> data;
+    data.reset(FX_Alloc(uint8_t, kBufSize));
+    auto stream = pdfium::MakeUnique<CPDF_Stream>(
+        std::move(data), kBufSize, pdfium::MakeUnique<CPDF_Dictionary>());
+    EXPECT_EQ(static_cast<int>(kBufSize),
+              stream->GetDict()->GetIntegerFor("Length"));
+  }
+  // The length field should be corrected on stream create.
+  {
+    std::unique_ptr<uint8_t, FxFreeDeleter> data;
+    data.reset(FX_Alloc(uint8_t, kBufSize));
+    auto dict = pdfium::MakeUnique<CPDF_Dictionary>();
+    dict->SetNewFor<CPDF_Number>("Length", 30000);
+    auto stream = pdfium::MakeUnique<CPDF_Stream>(std::move(data), kBufSize,
+                                                  std::move(dict));
+    EXPECT_EQ(static_cast<int>(kBufSize),
+              stream->GetDict()->GetIntegerFor("Length"));
+  }
 }
 
 TEST(PDFDictionaryTest, CloneDirectObject) {

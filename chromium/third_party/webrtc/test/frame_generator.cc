@@ -7,7 +7,7 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "webrtc/test/frame_generator.h"
+#include "test/frame_generator.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -15,27 +15,27 @@
 
 #include <memory>
 
-#include "webrtc/api/video/i420_buffer.h"
-#include "webrtc/common_video/include/video_frame_buffer.h"
-#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/keep_ref_until_done.h"
-#include "webrtc/rtc_base/random.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/test/frame_utils.h"
+#include "api/video/i420_buffer.h"
+#include "common_video/include/video_frame_buffer.h"
+#include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/keep_ref_until_done.h"
+#include "rtc_base/random.h"
+#include "system_wrappers/include/clock.h"
+#include "test/frame_utils.h"
 
 namespace webrtc {
 namespace test {
 namespace {
 
-// SquareGenerator is a FrameGenerator that draws 10 randomly sized and colored
-// squares. Between each new generated frame, the squares are moved slightly
-// towards the lower right corner.
+// SquareGenerator is a FrameGenerator that draws a given amount of randomly
+// sized and colored squares. Between each new generated frame, the squares
+// are moved slightly towards the lower right corner.
 class SquareGenerator : public FrameGenerator {
  public:
-  SquareGenerator(int width, int height) {
+  SquareGenerator(int width, int height, int num_squares) {
     ChangeResolution(width, height);
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < num_squares; ++i) {
       squares_.emplace_back(new Square(width, height, i + 1));
     }
   }
@@ -108,10 +108,10 @@ class SquareGenerator : public FrameGenerator {
   };
 
   rtc::CriticalSection crit_;
-  int width_ GUARDED_BY(&crit_);
-  int height_ GUARDED_BY(&crit_);
-  std::vector<std::unique_ptr<Square>> squares_ GUARDED_BY(&crit_);
-  std::unique_ptr<VideoFrame> frame_ GUARDED_BY(&crit_);
+  int width_ RTC_GUARDED_BY(&crit_);
+  int height_ RTC_GUARDED_BY(&crit_);
+  std::vector<std::unique_ptr<Square>> squares_ RTC_GUARDED_BY(&crit_);
+  std::unique_ptr<VideoFrame> frame_ RTC_GUARDED_BY(&crit_);
 };
 
 class YuvFileGenerator : public FrameGenerator {
@@ -397,7 +397,14 @@ bool FrameForwarder::has_sinks() const {
 std::unique_ptr<FrameGenerator> FrameGenerator::CreateSquareGenerator(
     int width,
     int height) {
-  return std::unique_ptr<FrameGenerator>(new SquareGenerator(width, height));
+  return std::unique_ptr<FrameGenerator>(
+      new SquareGenerator(width, height, 10));
+}
+
+std::unique_ptr<FrameGenerator>
+FrameGenerator::CreateSquareGenerator(int width, int height, int num_squares) {
+  return std::unique_ptr<FrameGenerator>(
+      new SquareGenerator(width, height, num_squares));
 }
 
 std::unique_ptr<FrameGenerator> FrameGenerator::CreateSlideGenerator(

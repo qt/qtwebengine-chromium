@@ -55,10 +55,8 @@
 #include "core/probe/CoreProbes.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/xmlhttprequest/XMLHttpRequest.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/blob/BlobData.h"
 #include "platform/loader/fetch/FetchInitiatorInfo.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/MemoryCache.h"
 #include "platform/loader/fetch/Resource.h"
 #include "platform/loader/fetch/ResourceError.h"
@@ -67,10 +65,12 @@
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/loader/fetch/UniqueIdentifier.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/NetworkStateNotifier.h"
 #include "platform/network/WebSocketHandshakeRequest.h"
 #include "platform/network/WebSocketHandshakeResponse.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/ReferrerPolicy.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -197,7 +197,7 @@ class InspectorFileReaderLoaderClient final : public FileReaderLoaderClient {
 
  private:
   void Dispose() {
-    raw_data_.Clear();
+    raw_data_ = nullptr;
     delete this;
   }
 
@@ -386,7 +386,7 @@ BuildObjectForResourceResponse(const ResourceResponse& response,
   if (response.IsNull())
     return nullptr;
 
-  double status;
+  int status;
   String status_text;
   if (response.GetResourceLoadInfo() &&
       response.GetResourceLoadInfo()->http_status_code) {
@@ -581,10 +581,14 @@ void InspectorNetworkAgent::DidBlockRequest(
     const ResourceRequest& request,
     DocumentLoader* loader,
     const FetchInitiatorInfo& initiator_info,
-    ResourceRequestBlockedReason reason) {
+    ResourceRequestBlockedReason reason,
+    Resource::Type resource_type) {
   unsigned long identifier = CreateUniqueIdentifier();
+  InspectorPageAgent::ResourceType type =
+      InspectorPageAgent::ToResourceType(resource_type);
+
   WillSendRequestInternal(execution_context, identifier, loader, request,
-                          ResourceResponse(), initiator_info);
+                          ResourceResponse(), initiator_info, type);
 
   String request_id = IdentifiersFactory::RequestId(identifier);
   String protocol_reason = BuildBlockedReason(reason);
@@ -610,19 +614,15 @@ void InspectorNetworkAgent::WillSendRequestInternal(
     DocumentLoader* loader,
     const ResourceRequest& request,
     const ResourceResponse& redirect_response,
-    const FetchInitiatorInfo& initiator_info) {
+    const FetchInitiatorInfo& initiator_info,
+    InspectorPageAgent::ResourceType type) {
   String request_id = IdentifiersFactory::RequestId(identifier);
   String loader_id = loader ? IdentifiersFactory::LoaderId(loader) : "";
   resources_data_->ResourceCreated(request_id, loader_id, request.Url());
-
-  InspectorPageAgent::ResourceType type = InspectorPageAgent::kOtherResource;
-  if (initiator_info.name == FetchInitiatorTypeNames::xmlhttprequest) {
+  if (initiator_info.name == FetchInitiatorTypeNames::xmlhttprequest)
     type = InspectorPageAgent::kXHRResource;
-    resources_data_->SetResourceType(request_id, type);
-  } else if (initiator_info.name == FetchInitiatorTypeNames::document) {
-    type = InspectorPageAgent::kDocumentResource;
-    resources_data_->SetResourceType(request_id, type);
-  }
+
+  resources_data_->SetResourceType(request_id, type);
 
   String frame_id = loader && loader->GetFrame()
                         ? IdentifiersFactory::FrameId(loader->GetFrame())
@@ -678,7 +678,8 @@ void InspectorNetworkAgent::WillSendRequest(
     DocumentLoader* loader,
     ResourceRequest& request,
     const ResourceResponse& redirect_response,
-    const FetchInitiatorInfo& initiator_info) {
+    const FetchInitiatorInfo& initiator_info,
+    Resource::Type resource_type) {
   // Ignore the request initiated internally.
   if (initiator_info.name == FetchInitiatorTypeNames::internal)
     return;
@@ -713,13 +714,17 @@ void InspectorNetworkAgent::WillSendRequest(
   if (state_->booleanProperty(NetworkAgentState::kBypassServiceWorker, false))
     request.SetServiceWorkerMode(WebURLRequest::ServiceWorkerMode::kNone);
 
-  WillSendRequestInternal(execution_context, identifier, loader, request,
-                          redirect_response, initiator_info);
+  InspectorPageAgent::ResourceType type =
+      InspectorPageAgent::ToResourceType(resource_type);
 
-  if (!host_id_.IsEmpty())
+  WillSendRequestInternal(execution_context, identifier, loader, request,
+                          redirect_response, initiator_info, type);
+
+  if (!host_id_.IsEmpty()) {
     request.AddHTTPHeaderField(
         HTTPNames::X_DevTools_Emulate_Network_Conditions_Client_Id,
         AtomicString(host_id_));
+  }
 }
 
 void InspectorNetworkAgent::MarkResourceAsCached(unsigned long identifier) {
@@ -741,8 +746,9 @@ void InspectorNetworkAgent::DidReceiveResourceResponse(
                                      &resource_is_empty);
 
   InspectorPageAgent::ResourceType type =
-      cached_resource ? InspectorPageAgent::CachedResourceType(*cached_resource)
-                      : InspectorPageAgent::kOtherResource;
+      cached_resource
+          ? InspectorPageAgent::ToResourceType(cached_resource->GetType())
+          : InspectorPageAgent::kOtherResource;
   // Override with already discovered resource type.
   InspectorPageAgent::ResourceType saved_type =
       resources_data_->GetResourceType(request_id);
@@ -947,7 +953,7 @@ void InspectorNetworkAgent::WillLoadXHR(XMLHttpRequest* xhr,
   pending_request_type_ = InspectorPageAgent::kXHRResource;
   pending_xhr_replay_data_ = XHRReplayData::Create(
       xhr->GetExecutionContext(), method, UrlWithoutFragment(url), async,
-      form_data.Get(), include_credentials);
+      form_data.get(), include_credentials);
   for (const auto& header : headers)
     pending_xhr_replay_data_->AddHeader(header.key, header.value);
 }
@@ -1432,7 +1438,7 @@ Response InspectorNetworkAgent::getCertificate(
   for (auto& resource : resources_data_->Resources()) {
     RefPtr<SecurityOrigin> resource_origin =
         SecurityOrigin::Create(resource->RequestedURL());
-    if (resource_origin->IsSameSchemeHostPort(security_origin.Get()) &&
+    if (resource_origin->IsSameSchemeHostPort(security_origin.get()) &&
         resource->Certificate().size()) {
       for (auto& cert : resource->Certificate())
         certificate->get()->addItem(Base64Encode(cert.Latin1()));

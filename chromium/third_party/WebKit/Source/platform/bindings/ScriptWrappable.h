@@ -33,7 +33,7 @@
 
 #include "build/build_config.h"
 #include "platform/PlatformExport.h"
-#include "platform/bindings/ScriptWrappableVisitor.h"
+#include "platform/bindings/TraceWrapperBase.h"
 #include "platform/bindings/WrapperTypeInfo.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Noncopyable.h"
@@ -41,16 +41,6 @@
 #include "v8/include/v8.h"
 
 namespace blink {
-
-class PLATFORM_EXPORT TraceWrapperBase {
-  WTF_MAKE_NONCOPYABLE(TraceWrapperBase);
-
- public:
-  TraceWrapperBase() = default;
-  virtual bool IsScriptWrappable() const { return false; }
-
-  DECLARE_VIRTUAL_TRACE_WRAPPERS(){};
-};
 
 // ScriptWrappable provides a way to map from/to C++ DOM implementation to/from
 // JavaScript object (platform object).  ToV8() converts a ScriptWrappable to
@@ -126,7 +116,7 @@ class PLATFORM_EXPORT ScriptWrappable : public TraceWrapperBase {
     wrapper_type_info->ConfigureWrapper(&main_world_wrapper_);
     main_world_wrapper_.SetWeak();
     DCHECK(ContainsWrapper());
-    ScriptWrappableVisitor::WriteBarrier(isolate, &main_world_wrapper_);
+    ScriptWrappableVisitor::WriteBarrier(isolate, main_world_wrapper_);
     return true;
   }
 

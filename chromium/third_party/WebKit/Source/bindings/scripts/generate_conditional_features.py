@@ -8,8 +8,6 @@
 # compute_interfaces_info_overall.py, and writes out the code which adds
 # bindings for origin-trial-enabled features at runtime.
 
-# pylint: disable=W0403
-
 import optparse
 import os
 import posixpath
@@ -21,7 +19,8 @@ from code_generator import (initialize_jinja_env, normalize_and_sort_includes,
 from idl_reader import IdlReader
 from utilities import (create_component_info_provider, write_file,
                        idl_filename_to_component)
-from v8_utilities import v8_class_name, v8_class_name_or_partial, uncapitalize
+from v8_utilities import (binding_header_basename, v8_class_name,
+                          v8_class_name_or_partial, uncapitalize)
 
 # Make sure extension is .py, not .pyc or .pyo, so doesn't depend on caching
 MODULE_PYNAME = os.path.splitext(os.path.basename(__file__))[0] + '.py'
@@ -40,12 +39,12 @@ def get_install_functions(interfaces, feature_names):
         be installed on those interfaces.
     """
     return [
-        {"condition": 'OriginTrials::%sEnabled' % uncapitalize(feature_name),
-         "name": feature_name,
-         "install_method": "install%s" % feature_name,
-         "interface_is_global": interface_info.is_global,
-         "v8_class": interface_info.v8_class,
-         "v8_class_or_partial": interface_info.v8_class_or_partial}
+        {'condition': 'OriginTrials::%sEnabled' % uncapitalize(feature_name),
+         'name': feature_name,
+         'install_method': 'install%s' % feature_name,
+         'interface_is_global': interface_info.is_global,
+         'v8_class': interface_info.v8_class,
+         'v8_class_or_partial': interface_info.v8_class_or_partial}
         for feature_name in feature_names
         for interface_info in interfaces]
 
@@ -80,7 +79,7 @@ def interface_is_global(interface):
             'PrimaryGlobal' in interface.extended_attributes)
 
 
-def conditional_features_info(info_provider, reader, idl_filenames, target_component):
+def conditional_features_info(info_provider, reader, idl_filenames, target_component, snake_case):
     """Read a set of IDL files and compile the mapping between interfaces and
     the conditional features defined on them.
 
@@ -121,13 +120,13 @@ def conditional_features_info(info_provider, reader, idl_filenames, target_compo
                 parent_component = idl_filename_to_component(
                     parent_interface_info.get('full_path'))
             if interface.is_partial and target_component != parent_component:
-                includes.add('bindings/%s/v8/V8%s.h' %
-                             (parent_component, interface.name))
-                includes.add('bindings/%s/v8/V8%sPartial.h' %
-                             (target_component, interface.name))
+                includes.add('bindings/%s/v8/%s' %
+                             (parent_component, binding_header_basename(interface.name, snake_case)))
+                includes.add('bindings/%s/v8/%s' %
+                             (target_component, binding_header_basename(interface.name + 'Partial', snake_case)))
             else:
-                includes.add('bindings/%s/v8/V8%s.h' %
-                             (target_component, interface.name))
+                includes.add('bindings/%s/v8/%s' %
+                             (target_component, binding_header_basename(interface.name, snake_case)))
                 # If this is a partial interface in the same component as
                 # its parent, then treat it as a non-partial interface.
                 interface.is_partial = False
@@ -143,7 +142,7 @@ def conditional_features_info(info_provider, reader, idl_filenames, target_compo
     return features_for_type, types_for_feature, includes
 
 
-def conditional_features_context(generator_name, feature_info):
+def conditional_features_context(generator_name, feature_info, snake_case):
     context = {'code_generator': generator_name}
 
     # Unpack the feature info tuple.
@@ -151,34 +150,34 @@ def conditional_features_context(generator_name, feature_info):
 
     # Add includes needed for cpp code and normalize.
     includes.update([
-        "core/context_features/ContextFeatureSettings.h",
-        "core/dom/ExecutionContext.h",
-        "core/frame/Frame.h",
-        "core/origin_trials/OriginTrials.h",
-        "platform/bindings/ConditionalFeatures.h",
-        "platform/bindings/ScriptState.h",
+        'core/context_features/ContextFeatureSettings.h',
+        'core/dom/ExecutionContext.h',
+        'core/frame/Frame.h',
+        'core/origin_trials/origin_trials.h',
+        'platform/bindings/ConditionalFeatures.h',
+        'platform/bindings/ScriptState.h',
         # TODO(iclelland): Remove the need to explicitly include this; it is
         # here because the ContextFeatureSettings code needs it.
-        "bindings/core/v8/V8Window.h",
+        'bindings/core/v8/V8Window.h',
     ])
-    context['includes'] = normalize_and_sort_includes(includes)
+    context['includes'] = normalize_and_sort_includes(includes, snake_case)
 
     # For each interface, collect a list of bindings installation functions to
     # call, organized by conditional feature.
     context['installers_by_interface'] = [
-        {"name": interface_info.name,
-         "is_global": interface_info.is_global,
-         "v8_class": interface_info.v8_class,
-         "installers": get_install_functions([interface_info], feature_names)}
+        {'name': interface_info.name,
+         'is_global': interface_info.is_global,
+         'v8_class': interface_info.v8_class,
+         'installers': get_install_functions([interface_info], feature_names)}
         for interface_info, feature_names in features_for_type.items()]
     context['installers_by_interface'].sort(key=lambda x: x['name'])
 
     # For each conditional feature, collect a list of bindings installation
     # functions to call, organized by interface.
     context['installers_by_feature'] = [
-        {"name": feature_name,
-         "name_constant": "OriginTrials::k%sTrialName" % feature_name,
-         "installers": get_install_functions(interfaces, [feature_name])}
+        {'name': feature_name,
+         'name_constant': 'OriginTrials::k%sTrialName' % feature_name,
+         'installers': get_install_functions(interfaces, [feature_name])}
         for feature_name, interfaces in types_for_feature.items()]
     context['installers_by_feature'].sort(key=lambda x: x['name'])
 
@@ -196,6 +195,9 @@ def parse_options():
                       choices=['Core', 'Modules'],
                       help='target component to generate code')
     parser.add_option('--idl-files-list')
+    # TODO(tkent): Remove the option after the great mv. crbug.com/760462
+    parser.add_option('--snake-case-generated-files',
+                      action='store_true', default=False)
 
     options, _ = parser.parse_args()
     if options.output_directory is None:
@@ -211,24 +213,25 @@ def generate_conditional_features(info_provider, options, idl_filenames):
     # from the global info provider and the supplied list of IDL files.
     feature_info = conditional_features_info(info_provider,
                                              reader, idl_filenames,
-                                             options.target_component.lower())
+                                             options.target_component.lower(),
+                                             options.snake_case_generated_files)
 
     # Convert that mapping into the context required for the Jinja2 templates.
     template_context = conditional_features_context(
-        MODULE_PYNAME, feature_info)
+        MODULE_PYNAME, feature_info, options.snake_case_generated_files)
 
     # Generate and write out the header file
     header_text = render_template(jinja_env.get_template(
-        "ConditionalFeaturesFor%s.h.tmpl" % options.target_component.title()), template_context)
+        'ConditionalFeaturesFor%s.h.tmpl' % options.target_component.title()), template_context)
     header_path = posixpath.join(options.output_directory,
-                                 "ConditionalFeaturesFor%s.h" % options.target_component.title())
+                                 'ConditionalFeaturesFor%s.h' % options.target_component.title())
     write_file(header_text, header_path)
 
     # Generate and write out the implementation file
     cpp_text = render_template(jinja_env.get_template(
-        "ConditionalFeaturesFor%s.cpp.tmpl" % options.target_component.title()), template_context)
+        'ConditionalFeaturesFor%s.cpp.tmpl' % options.target_component.title()), template_context)
     cpp_path = posixpath.join(options.output_directory,
-                              "ConditionalFeaturesFor%s.cpp" % options.target_component.title())
+                              'ConditionalFeaturesFor%s.cpp' % options.target_component.title())
     write_file(cpp_text, cpp_path)
 
 

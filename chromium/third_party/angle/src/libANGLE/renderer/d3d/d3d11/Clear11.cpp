@@ -1,4 +1,4 @@
-//
+
 // Copyright (c) 2013 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -56,9 +56,8 @@ namespace rx
 
 namespace
 {
-
-static constexpr uint32_t g_ConstantBufferSize = sizeof(RtvDsvClearInfo<float>);
-static constexpr uint32_t g_VertexSize         = sizeof(d3d11::PositionVertex);
+constexpr uint32_t g_ConstantBufferSize = sizeof(RtvDsvClearInfo<float>);
+constexpr uint32_t g_VertexSize         = sizeof(d3d11::PositionVertex);
 
 // Updates color, depth and alpha components of cached CB if necessary.
 // Returns true if any constants are updated, false otherwise.
@@ -702,10 +701,10 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
     memcpy(mBlendStateKey.rtvMasks, &rtvMasks[0], sizeof(mBlendStateKey.rtvMasks));
 
     // Get BlendState
-    ID3D11BlendState *blendState = nullptr;
+    const d3d11::BlendState *blendState = nullptr;
     ANGLE_TRY(mRenderer->getBlendState(mBlendStateKey, &blendState));
 
-    ID3D11DepthStencilState *dsState = nullptr;
+    const d3d11::DepthStencilState *dsState = nullptr;
     const float *zValue              = nullptr;
 
     if (dsv)
@@ -761,32 +760,25 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
         deviceContext->Unmap(mConstantBuffer.get(), 0);
     }
 
+    auto *stateManager = mRenderer->getStateManager();
+
     // Set the viewport to be the same size as the framebuffer.
-    D3D11_VIEWPORT viewport;
-    viewport.TopLeftX = 0;
-    viewport.TopLeftY = 0;
-    viewport.Width    = static_cast<FLOAT>(framebufferSize.width);
-    viewport.Height   = static_cast<FLOAT>(framebufferSize.height);
-    viewport.MinDepth = 0;
-    viewport.MaxDepth = 1;
-    deviceContext->RSSetViewports(1, &viewport);
+    stateManager->setSimpleViewport(framebufferSize);
 
     // Apply state
-    deviceContext->OMSetBlendState(blendState, nullptr, 0xFFFFFFFF);
+    stateManager->setSimpleBlendState(blendState);
 
     const UINT stencilValue = clearParams.stencilValue & 0xFF;
-    deviceContext->OMSetDepthStencilState(dsState, stencilValue);
+    stateManager->setDepthStencilState(dsState, stencilValue);
 
     if (needScissoredClear)
     {
-        deviceContext->RSSetState(mScissorEnabledRasterizerState.get());
+        stateManager->setRasterizerState(&mScissorEnabledRasterizerState);
     }
     else
     {
-        deviceContext->RSSetState(mScissorDisabledRasterizerState.get());
+        stateManager->setRasterizerState(&mScissorDisabledRasterizerState);
     }
-
-    auto *stateManager = mRenderer->getStateManager();
 
     // Get Shaders
     const d3d11::VertexShader *vs = nullptr;
@@ -800,11 +792,10 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
 
     // Apply Shaders
     stateManager->setDrawShaders(vs, gs, ps);
-    ID3D11Buffer *constantBuffer = mConstantBuffer.get();
-    deviceContext->PSSetConstantBuffers(0, 1, &constantBuffer);
+    stateManager->setPixelConstantBuffer(0, &mConstantBuffer);
 
     // Bind IL & VB if needed
-    deviceContext->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
+    stateManager->setIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
     stateManager->setInputLayout(il);
 
     if (useVertexBuffer())
@@ -820,7 +811,7 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
     stateManager->setPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     // Apply render targets
-    stateManager->setOneTimeRenderTargets(context, &rtvs[0], numRtvs, dsv);
+    stateManager->setRenderTargets(&rtvs[0], numRtvs, dsv);
 
     // If scissors are necessary to be applied, then the number of clears is the number of scissor
     // rects. If no scissors are necessary, then a single full-size clear is enough.
@@ -830,7 +821,7 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
         if (needScissoredClear)
         {
             ASSERT(i < scissorRects.size());
-            deviceContext->RSSetScissorRects(1, &scissorRects[i]);
+            stateManager->setScissorRectD3D(scissorRects[i]);
         }
         // Draw the fullscreen quad.
         if (!hasLayeredLayout || isSideBySideFBO)
@@ -844,9 +835,7 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
         }
     }
 
-    // Clean up
-    mRenderer->markAllStateDirty(context);
-
     return gl::NoError();
 }
+
 }  // namespace rx

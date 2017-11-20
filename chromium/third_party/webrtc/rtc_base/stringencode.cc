@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/rtc_base/stringencode.h"
+#include "rtc_base/stringencode.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/stringutils.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/stringutils.h"
 
 namespace rtc {
 
@@ -643,6 +643,28 @@ bool tokenize_first(const std::string& source,
   *token = source.substr(0, left_pos);
   *rest = source.substr(right_pos);
   return true;
+}
+
+std::string join(const std::vector<std::string>& source, char delimiter) {
+  if (source.size() == 0) {
+    return std::string();
+  }
+  // Find length of the string to be returned to pre-allocate memory.
+  size_t source_string_length = 0;
+  for (size_t i = 0; i < source.size(); ++i) {
+    source_string_length += source[i].length();
+  }
+
+  // Build the joined string.
+  std::string joined_string;
+  joined_string.reserve(source_string_length + source.size() - 1);
+  for (size_t i = 0; i < source.size(); ++i) {
+    if (i != 0) {
+      joined_string += delimiter;
+    }
+    joined_string += source[i];
+  }
+  return joined_string;
 }
 
 size_t split(const std::string& source, char delimiter,

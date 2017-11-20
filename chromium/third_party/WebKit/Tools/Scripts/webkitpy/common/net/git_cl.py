@@ -67,28 +67,67 @@ class GitCL(object):
         return self.run(['issue']).split()[2]
 
     def wait_for_try_jobs(self, poll_delay_seconds=10 * 60, timeout_seconds=120 * 60):
-        """Waits until all try jobs are finished.
-
-        Args:
-            poll_delay_seconds: Time to wait between fetching results.
-            timeout_seconds: Time to wait before aborting.
+        """Waits until all try jobs are finished and returns results, or None.
 
         Returns:
             A dict mapping Build objects to TryJobStatus objects, or
             None if a timeout occurred.
         """
-        start = self._host.time()
-        self._host.print_('Waiting for try jobs (timeout: %d seconds).' % timeout_seconds)
-        while self._host.time() - start < timeout_seconds:
-            self._host.sleep(poll_delay_seconds)
-            try_results = self.try_job_results()
-            _log.debug('Fetched try results: %s', try_results)
-            if try_results and self.all_finished(try_results):
+
+        def finished_try_job_results_or_none():
+            results = self.try_job_results()
+            _log.debug('Fetched try results: %s', results)
+            if results and self.all_finished(results):
                 self._host.print_('All jobs finished.')
-                return try_results
-            self._host.print_('Waiting. %d seconds passed.' % (self._host.time() - start))
+                return results
+            return None
+
+        return self._wait_for(
+            finished_try_job_results_or_none,
+            poll_delay_seconds, timeout_seconds,
+            message=' for try jobs')
+
+    def wait_for_closed_status(self, poll_delay_seconds=2 * 60, timeout_seconds=30 * 60):
+        """Waits until git cl reports that the current CL is closed."""
+
+        def closed_status_or_none():
+            status = self.run(['status', '--field=status']).strip()
+            if status == 'closed':
+                self._host.print_('CL is closed.')
+                return status
+            return None
+
+        return self._wait_for(
+            closed_status_or_none,
+            poll_delay_seconds, timeout_seconds,
+            message=' for closed status')
+
+    def _wait_for(self, poll_function, poll_delay_seconds, timeout_seconds, message=''):
+        """Waits for the given poll_function to return something other than None.
+
+        Args:
+            poll_function: A function with no args that returns something
+                when ready, or None when not ready.
+            poll_delay_seconds: Time to wait between fetching results.
+            timeout_seconds: Time to wait before aborting.
+            message: Message to print indicate what is being waited for.
+
+        Returns:
+            The value returned by poll_function, or None on timeout.
+        """
+        start = self._host.time()
+        self._host.print_(
+            'Waiting%s, timeout: %d seconds.' % (message, timeout_seconds))
+        while (self._host.time() - start) < timeout_seconds:
             self._host.sleep(poll_delay_seconds)
-        self._host.print_('Timed out waiting for try results.')
+            value = poll_function()
+            if value is not None:
+                return value
+            self._host.print_(
+                'Waiting%s. %d seconds passed.' %
+                (message, self._host.time() - start))
+            self._host.sleep(poll_delay_seconds)
+        self._host.print_('Timed out waiting%s.' % message)
         return None
 
     def latest_try_jobs(self, builder_names=None):
@@ -105,7 +144,9 @@ class GitCL(object):
             A dict mapping Build objects to TryJobStatus objects, with
             only the latest jobs included.
         """
-        return self.filter_latest(self.try_job_results(builder_names))
+        # TODO(crbug.com/771438): Update filter_latest to handle Swarming tasks.
+        return self.filter_latest(
+            self.try_job_results(builder_names, include_swarming_tasks=False))
 
     @staticmethod
     def filter_latest(try_results):
@@ -115,12 +156,15 @@ class GitCL(object):
         latest_builds = filter_latest_builds(try_results.keys())
         return {b: s for b, s in try_results.items() if b in latest_builds}
 
-    def try_job_results(self, builder_names=None):
+    def try_job_results(self, builder_names=None, include_swarming_tasks=True):
         """Returns a dict mapping Build objects to TryJobStatus objects."""
         raw_results = self.fetch_raw_try_job_results()
         build_to_status = {}
         for result in raw_results:
             if builder_names and result['builder_name'] not in builder_names:
+                continue
+            is_swarming_task = result['url'] and '/task/' in result['url']
+            if is_swarming_task and not include_swarming_tasks:
                 continue
             build_to_status[self._build(result)] = self._try_job_status(result)
         return build_to_status
@@ -151,7 +195,7 @@ class GitCL(object):
         if match:
             build_number = match.group(1)
             return Build(builder_name, int(build_number))
-        match = re.match(r'.*/task/([0-9a-f]+)/?$', url)
+        match = re.match(r'.*/task/([0-9a-f]+)(/?|\?.*)$', url)
         assert match, '%s did not match expected format' % url
         task_id = match.group(1)
         return Build(builder_name, task_id)

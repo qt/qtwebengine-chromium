@@ -7,7 +7,6 @@
 #include <memory>
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/frame/Frame.h"
@@ -28,10 +27,10 @@
 #include "modules/fetch/FormDataBytesConsumer.h"
 #include "modules/fetch/Response.h"
 #include "modules/fetch/ResponseInit.h"
-#include "platform/HTTPNames.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/V8ThrowException.h"
 #include "platform/exported/WrappedResourceResponse.h"
+#include "platform/http_names.h"
 #include "platform/loader/SubresourceIntegrity.h"
 #include "platform/loader/fetch/FetchUtils.h"
 #include "platform/loader/fetch/ResourceError.h"
@@ -69,11 +68,10 @@ class SRIBytesConsumer final : public BytesConsumer {
     DCHECK(underlying_);
     return underlying_->EndRead(read_size);
   }
-  PassRefPtr<BlobDataHandle> DrainAsBlobDataHandle(
-      BlobSizePolicy policy) override {
+  RefPtr<BlobDataHandle> DrainAsBlobDataHandle(BlobSizePolicy policy) override {
     return underlying_ ? underlying_->DrainAsBlobDataHandle(policy) : nullptr;
   }
-  PassRefPtr<EncodedFormData> DrainAsFormData() override {
+  RefPtr<EncodedFormData> DrainAsFormData() override {
     return underlying_ ? underlying_->DrainAsFormData() : nullptr;
   }
   void SetClient(BytesConsumer::Client* client) override {
@@ -193,6 +191,11 @@ class FetchManager::Loader final
           url_(url),
           finished_(false) {
       reader_ = handle_->ObtainReader(this);
+    }
+
+    void Cancel() {
+      reader_ = nullptr;
+      handle_ = nullptr;
     }
 
     void DidGetReadable() override {
@@ -384,7 +387,7 @@ void FetchManager::Loader::DidReceiveResponse(
       }
     }
   } else if (!SecurityOrigin::Create(response.Url())
-                  ->IsSameSchemeHostPort(request_->Origin().Get())) {
+                  ->IsSameSchemeHostPort(request_->Origin().get())) {
     // Recompute the tainting if the request was redirected to a different
     // origin.
     switch (request_->Mode()) {
@@ -592,7 +595,7 @@ void FetchManager::Loader::Start() {
   // Note we don't support to call this method with |CORS flag|
   // "- |request|'s mode is |navigate|".
   if ((SecurityOrigin::Create(request_->Url())
-           ->IsSameSchemeHostPortAndSuborigin(request_->Origin().Get())) ||
+           ->IsSameSchemeHostPortAndSuborigin(request_->Origin().get())) ||
       (request_->Url().ProtocolIsData() && request_->SameOriginDataURLFlag()) ||
       (request_->Url().ProtocolIsAbout()) ||
       (request_->Mode() == WebURLRequest::kFetchRequestModeNavigate)) {
@@ -648,6 +651,8 @@ void FetchManager::Loader::Dispose() {
     loader_->Cancel();
     loader_ = nullptr;
   }
+  if (integrity_verifier_)
+    integrity_verifier_->Cancel();
   execution_context_ = nullptr;
 }
 
@@ -759,7 +764,7 @@ void FetchManager::Loader::PerformHTTPFetch() {
 
   ResourceLoaderOptions resource_loader_options;
   resource_loader_options.data_buffering_policy = kDoNotBufferData;
-  resource_loader_options.security_origin = request_->Origin().Get();
+  resource_loader_options.security_origin = request_->Origin().get();
 
   ThreadableLoaderOptions threadable_loader_options;
 
@@ -788,7 +793,7 @@ void FetchManager::Loader::PerformDataFetch() {
 
   ResourceLoaderOptions resource_loader_options;
   resource_loader_options.data_buffering_policy = kDoNotBufferData;
-  resource_loader_options.security_origin = request_->Origin().Get();
+  resource_loader_options.security_origin = request_->Origin().get();
 
   ThreadableLoaderOptions threadable_loader_options;
 

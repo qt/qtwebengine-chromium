@@ -2,18 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//third_party/WebKit/Source/build/scripts/scripts.gni")
 import("//third_party/WebKit/Source/platform/platform_generated.gni")
 
 make_names("make_platform_loader_generated_fetch_initiator_type_names") {
-  in_files = [ "fetch/FetchInitiatorTypeNames.json5" ]
-  outputs = [
-    "$blink_platform_output_dir/loader/fetch/FetchInitiatorTypeNames.cpp",
-    "$blink_platform_output_dir/loader/fetch/FetchInitiatorTypeNames.h",
-  ]
+  in_files = [ "fetch/fetch_initiator_type_names.json5" ]
+  output_dir = "$blink_platform_output_dir/loader/fetch"
 }
 
-source_set("loader") {
+jumbo_source_set("loader") {
   # This target is a logical part of the platform and only the platform target
   # should depend on it.
   visibility = [ "//third_party/WebKit/Source/platform" ]
@@ -96,22 +94,24 @@ source_set("loader") {
     ":make_platform_loader_generated_fetch_initiator_type_names",
     "//components/link_header_util:link_header_util",
     "//mojo/public/cpp/system:system",
+
+    # "//services/network/public/interfaces:interfaces_blink" is included in
+    # "//third_party/WebKit/Source/platform", which will contain this source set
     "//storage/public/interfaces:interfaces_blink",
     "//third_party/WebKit/Source/platform:make_platform_generated",
+    "//third_party/WebKit/common:blink_common",
     "//third_party/WebKit/public:mojo_bindings_blink",
   ]
 
   public_deps = [
     "//base",
     "//net",
-    "//services/network/public/interfaces:interfaces_blink",
-    "//skia",
     "//third_party/icu",
     "//v8",
   ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   # This target defines test files for blink_platform_unittests and only the
   # blink_platform_unittests target should depend on it.
   visibility = [ "//third_party/WebKit/Source/platform:*" ]
@@ -143,14 +143,13 @@ source_set("unit_tests") {
   ]
 
   deps = [
-    "//services/network/public/interfaces:interfaces_blink",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/WebKit/Source/platform",
   ]
 }
 
-source_set("test_support") {
+jumbo_source_set("test_support") {
   # This target defines test files for platform:test_support that
   # blink_platform_unittests and webkit_unit_tests can use.
   visibility = [ "//third_party/WebKit/Source/platform:test_support" ]

@@ -53,7 +53,7 @@ bool GrRenderTargetProxy::instantiate(GrResourceProvider* resourceProvider) {
 
     if (!this->instantiateImpl(resourceProvider, fSampleCnt, fNeedsStencil, kFlags,
                                /* isMipped = */ false,
-                               SkDestinationSurfaceColorMode::kLegacy)) {
+                               SkDestinationSurfaceColorMode::kLegacy, nullptr)) {
         return false;
     }
     SkASSERT(fTarget->asRenderTarget());
@@ -77,28 +77,6 @@ sk_sp<GrSurface> GrRenderTargetProxy::createSurface(GrResourceProvider* resource
     SkASSERT(fRenderTargetFlags == surface->asRenderTarget()->renderTargetPriv().flags());
 
     return surface;
-}
-
-int GrRenderTargetProxy::worstCaseWidth() const {
-    if (fTarget) {
-        return fTarget->width();
-    }
-
-    if (SkBackingFit::kExact == fFit) {
-        return fWidth;
-    }
-    return SkTMax(GrResourceProvider::kMinScratchTextureSize, GrNextPow2(fWidth));
-}
-
-int GrRenderTargetProxy::worstCaseHeight() const {
-    if (fTarget) {
-        return fTarget->height();
-    }
-
-    if (SkBackingFit::kExact == fFit) {
-        return fHeight;
-    }
-    return SkTMax(GrResourceProvider::kMinScratchTextureSize, GrNextPow2(fHeight));
 }
 
 size_t GrRenderTargetProxy::onUninstantiatedGpuMemorySize() const {

@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/include/neteq.h"
+#include "modules/audio_coding/neteq/include/neteq.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -20,27 +20,27 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "webrtc/common_types.h"
-#include "webrtc/modules/audio_coding/codecs/pcm16b/pcm16b.h"
-#include "webrtc/modules/audio_coding/neteq/tools/audio_loop.h"
-#include "webrtc/modules/audio_coding/neteq/tools/rtp_file_source.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/rtc_base/flags.h"
-#include "webrtc/rtc_base/ignore_wundef.h"
-#include "webrtc/rtc_base/protobuf_utils.h"
-#include "webrtc/rtc_base/sha1digest.h"
-#include "webrtc/rtc_base/stringencode.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/testsupport/fileutils.h"
-#include "webrtc/typedefs.h"
+#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/audio_coding/codecs/pcm16b/pcm16b.h"
+#include "modules/audio_coding/neteq/tools/audio_loop.h"
+#include "modules/audio_coding/neteq/tools/rtp_file_source.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/flags.h"
+#include "rtc_base/ignore_wundef.h"
+#include "rtc_base/protobuf_utils.h"
+#include "rtc_base/sha1digest.h"
+#include "rtc_base/stringencode.h"
+#include "test/gtest.h"
+#include "test/testsupport/fileutils.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 #ifdef WEBRTC_NETEQ_UNITTEST_BITEXACT
 RTC_PUSH_IGNORING_WUNDEF()
 #ifdef WEBRTC_ANDROID_PLATFORM_BUILD
 #include "external/webrtc/webrtc/modules/audio_coding/neteq/neteq_unittest.pb.h"
 #else
-#include "webrtc/modules/audio_coding/neteq/neteq_unittest.pb.h"
+#include "modules/audio_coding/neteq/neteq_unittest.pb.h"
 #endif
 RTC_POP_IGNORING_WUNDEF()
 #endif
@@ -368,6 +368,8 @@ void NetEqDecodingTest::DecodeAndCompare(
 
   packet_ = rtp_source_->NextPacket();
   int i = 0;
+  uint64_t last_concealed_samples = 0;
+  uint64_t last_total_samples_received = 0;
   while (packet_) {
     std::ostringstream ss;
     ss << "Lap number " << i++ << " in DecodeAndCompare while loop";
@@ -386,6 +388,20 @@ void NetEqDecodingTest::DecodeAndCompare(
       // Compare with CurrentDelay, which should be identical.
       EXPECT_EQ(current_network_stats.current_buffer_size_ms,
                 neteq_->CurrentDelayMs());
+
+      // Verify that liftime stats and network stats report similar loss
+      // concealment rates.
+      auto lifetime_stats = neteq_->GetLifetimeStatistics();
+      const uint64_t delta_concealed_samples =
+          lifetime_stats.concealed_samples - last_concealed_samples;
+      last_concealed_samples = lifetime_stats.concealed_samples;
+      const uint64_t delta_total_samples_received =
+          lifetime_stats.total_samples_received - last_total_samples_received;
+      last_total_samples_received = lifetime_stats.total_samples_received;
+      // The tolerance is 1% but expressed in Q14.
+      EXPECT_NEAR(
+          (delta_concealed_samples << 14) / delta_total_samples_received,
+          current_network_stats.expand_rate, (2 << 14) / 100.0);
 
       // Process RTCPstat.
       RtcpStatistics current_rtcp_stats;
@@ -506,6 +522,7 @@ class NetEqDecodingTestFaxMode : public NetEqDecodingTest {
   NetEqDecodingTestFaxMode() : NetEqDecodingTest() {
     config_.playout_mode = kPlayoutFax;
   }
+  void TestJitterBufferDelay(bool apply_packet_loss);
 };
 
 TEST_F(NetEqDecodingTestFaxMode, TestFrameWaitingTimeStatistics) {
@@ -1632,6 +1649,100 @@ TEST_F(NetEqDecodingTest, LastDecodedTimestampsTwoDecoded) {
 
   EXPECT_EQ(std::vector<uint32_t>({kRtpTimestamp1, kRtpTimestamp2}),
             neteq_->LastDecodedTimestamps());
+}
+
+TEST_F(NetEqDecodingTest, TestConcealmentEvents) {
+  const int kNumConcealmentEvents = 19;
+  const size_t kSamples = 10 * 16;
+  const size_t kPayloadBytes = kSamples * 2;
+  int seq_no = 0;
+  RTPHeader rtp_info;
+  rtp_info.ssrc = 0x1234;     // Just an arbitrary SSRC.
+  rtp_info.payloadType = 94;  // PCM16b WB codec.
+  rtp_info.markerBit = 0;
+  const uint8_t payload[kPayloadBytes] = {0};
+  bool muted;
+
+  for (int i = 0; i < kNumConcealmentEvents; i++) {
+    // Insert some packets of 10 ms size.
+    for (int j = 0; j < 10; j++) {
+      rtp_info.sequenceNumber = seq_no++;
+      rtp_info.timestamp = rtp_info.sequenceNumber * kSamples;
+      neteq_->InsertPacket(rtp_info, payload, 0);
+      neteq_->GetAudio(&out_frame_, &muted);
+    }
+
+    // Lose a number of packets.
+    int num_lost = 1 + i;
+    for (int j = 0; j < num_lost; j++) {
+      seq_no++;
+      neteq_->GetAudio(&out_frame_, &muted);
+    }
+  }
+
+  // Check number of concealment events.
+  NetEqLifetimeStatistics stats = neteq_->GetLifetimeStatistics();
+  EXPECT_EQ(kNumConcealmentEvents, static_cast<int>(stats.concealment_events));
+}
+
+// Test that the jitter buffer delay stat is computed correctly.
+void NetEqDecodingTestFaxMode::TestJitterBufferDelay(bool apply_packet_loss) {
+  const int kNumPackets = 10;
+  const int kDelayInNumPackets = 2;
+  const int kPacketLenMs = 10;  // All packets are of 10 ms size.
+  const size_t kSamples = kPacketLenMs * 16;
+  const size_t kPayloadBytes = kSamples * 2;
+  RTPHeader rtp_info;
+  rtp_info.ssrc = 0x1234;     // Just an arbitrary SSRC.
+  rtp_info.payloadType = 94;  // PCM16b WB codec.
+  rtp_info.markerBit = 0;
+  const uint8_t payload[kPayloadBytes] = {0};
+  bool muted;
+  int packets_sent = 0;
+  int packets_received = 0;
+  int expected_delay = 0;
+  while (packets_received < kNumPackets) {
+    // Insert packet.
+    if (packets_sent < kNumPackets) {
+      rtp_info.sequenceNumber = packets_sent++;
+      rtp_info.timestamp = rtp_info.sequenceNumber * kSamples;
+      neteq_->InsertPacket(rtp_info, payload, 0);
+    }
+
+    // Get packet.
+    if (packets_sent > kDelayInNumPackets) {
+      neteq_->GetAudio(&out_frame_, &muted);
+      packets_received++;
+
+      // The delay reported by the jitter buffer never exceeds
+      // the number of samples previously fetched with GetAudio
+      // (hence the min()).
+      int packets_delay = std::min(packets_received, kDelayInNumPackets + 1);
+
+      // The increase of the expected delay is the product of
+      // the current delay of the jitter buffer in ms * the
+      // number of samples that are sent for play out.
+      int current_delay_ms = packets_delay * kPacketLenMs;
+      expected_delay += current_delay_ms * kSamples;
+    }
+  }
+
+  if (apply_packet_loss) {
+    // Extra call to GetAudio to cause concealment.
+    neteq_->GetAudio(&out_frame_, &muted);
+  }
+
+  // Check jitter buffer delay.
+  NetEqLifetimeStatistics stats = neteq_->GetLifetimeStatistics();
+  EXPECT_EQ(expected_delay, static_cast<int>(stats.jitter_buffer_delay_ms));
+}
+
+TEST_F(NetEqDecodingTestFaxMode, TestJitterBufferDelayWithoutLoss) {
+  TestJitterBufferDelay(false);
+}
+
+TEST_F(NetEqDecodingTestFaxMode, TestJitterBufferDelayWithLoss) {
+  TestJitterBufferDelay(true);
 }
 
 }  // namespace webrtc

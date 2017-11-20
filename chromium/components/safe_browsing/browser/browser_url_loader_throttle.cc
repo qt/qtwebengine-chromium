@@ -40,6 +40,9 @@ BrowserURLLoaderThrottle::~BrowserURLLoaderThrottle() {
     net_event_logger_->EndNetLogEvent(
         net::NetLogEventType::SAFE_BROWSING_DEFERRED, nullptr, nullptr);
   }
+
+  if (!user_action_involved_)
+    LogNoUserActionResourceLoadingDelay(total_delay_);
 }
 
 void BrowserURLLoaderThrottle::WillStartRequest(
@@ -66,9 +69,13 @@ void BrowserURLLoaderThrottle::WillStartRequest(
 void BrowserURLLoaderThrottle::WillRedirectRequest(
     const net::RedirectInfo& redirect_info,
     bool* defer) {
-  // If |blocked_| is true, the resource load has been canceled and there
-  // shouldn't be such a notification.
-  DCHECK(!blocked_);
+  if (blocked_) {
+    // OnCheckUrlResult() has set |blocked_| to true and called
+    // |delegate_->CancelWithError|, but this method is called before the
+    // request is actually cancelled. In that case, simply defer the request.
+    *defer = true;
+    return;
+  }
 
   pending_checks_++;
   url_checker_->CheckUrl(
@@ -78,14 +85,16 @@ void BrowserURLLoaderThrottle::WillRedirectRequest(
 }
 
 void BrowserURLLoaderThrottle::WillProcessResponse(bool* defer) {
-  // If |blocked_| is true, the resource load has been canceled and there
-  // shouldn't be such a notification.
-  DCHECK(!blocked_);
-
-  if (pending_checks_ == 0) {
-    LogDelay(base::TimeDelta());
+  if (blocked_) {
+    // OnCheckUrlResult() has set |blocked_| to true and called
+    // |delegate_->CancelWithError|, but this method is called before the
+    // request is actually cancelled. In that case, simply defer the request.
+    *defer = true;
     return;
   }
+
+  if (pending_checks_ == 0)
+    return;
 
   DCHECK(!deferred_);
   deferred_ = true;
@@ -105,17 +114,30 @@ void BrowserURLLoaderThrottle::set_net_event_logger(
     url_checker_->set_net_event_logger(net_event_logger);
 }
 
-void BrowserURLLoaderThrottle::OnCheckUrlResult(bool proceed,
-                                                bool showed_interstitial) {
-  if (blocked_)
-    return;
+void BrowserURLLoaderThrottle::OnCompleteCheck(bool slow_check,
+                                               bool proceed,
+                                               bool showed_interstitial) {
+  DCHECK(!blocked_);
 
   DCHECK_LT(0u, pending_checks_);
   pending_checks_--;
 
+  if (slow_check) {
+    DCHECK_LT(0u, pending_slow_checks_);
+    pending_slow_checks_--;
+  }
+
+  user_action_involved_ = user_action_involved_ || showed_interstitial;
+  // If the resource load is currently deferred and is going to exit that state
+  // (either being cancelled or resumed), record the total delay.
+  if (deferred_ && (!proceed || pending_checks_ == 0))
+    total_delay_ = base::TimeTicks::Now() - defer_start_time_;
+
   if (proceed) {
+    if (pending_slow_checks_ == 0 && slow_check)
+      delegate_->ResumeReadingBodyFromNet();
+
     if (pending_checks_ == 0 && deferred_) {
-      LogDelay(base::TimeTicks::Now() - defer_start_time_);
       deferred_ = false;
       if (net_event_logger_) {
         net_event_logger_->EndNetLogEvent(
@@ -125,11 +147,40 @@ void BrowserURLLoaderThrottle::OnCheckUrlResult(bool proceed,
       delegate_->Resume();
     }
   } else {
-    url_checker_.reset();
     blocked_ = true;
+
+    url_checker_.reset();
     pending_checks_ = 0;
+    pending_slow_checks_ = 0;
     delegate_->CancelWithError(net::ERR_ABORTED);
   }
+}
+
+void BrowserURLLoaderThrottle::OnCheckUrlResult(
+    NativeUrlCheckNotifier* slow_check_notifier,
+    bool proceed,
+    bool showed_interstitial) {
+  DCHECK(!blocked_);
+
+  if (!slow_check_notifier) {
+    OnCompleteCheck(false, proceed, showed_interstitial);
+    return;
+  }
+
+  pending_slow_checks_++;
+  // Pending slow checks indicate that the resource may be unsafe. In that case,
+  // pause reading response body from network to minimize the chance of
+  // processing unsafe contents (e.g., writing unsafe contents into cache),
+  // until we get the results. According to the results, we may resume reading
+  // or cancel the resource load.
+  if (pending_slow_checks_ == 1)
+    delegate_->PauseReadingBodyFromNet();
+
+  // In this case |proceed| and |showed_interstitial| should be ignored. The
+  // result will be returned by calling |*slow_check_notifier| callback.
+  *slow_check_notifier =
+      base::BindOnce(&BrowserURLLoaderThrottle::OnCompleteCheck,
+                     base::Unretained(this), true /* slow_check */);
 }
 
 }  // namespace safe_browsing

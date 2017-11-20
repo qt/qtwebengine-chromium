@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_API_VIDEO_VIDEO_CONTENT_TYPE_H_
-#define WEBRTC_API_VIDEO_VIDEO_CONTENT_TYPE_H_
+#ifndef API_VIDEO_VIDEO_CONTENT_TYPE_H_
+#define API_VIDEO_VIDEO_CONTENT_TYPE_H_
 
 #include <stdint.h>
 
@@ -23,21 +23,19 @@ enum class VideoContentType : uint8_t {
 };
 
 namespace videocontenttypehelpers {
-  bool SetExperimentId(VideoContentType* content_type,
-                              uint8_t experiment_id);
-  bool SetSimulcastId(VideoContentType* content_type,
-                             uint8_t simulcast_id);
+bool SetExperimentId(VideoContentType* content_type, uint8_t experiment_id);
+bool SetSimulcastId(VideoContentType* content_type, uint8_t simulcast_id);
 
-  uint8_t GetExperimentId(const VideoContentType& content_type);
-  uint8_t GetSimulcastId(const VideoContentType& content_type);
+uint8_t GetExperimentId(const VideoContentType& content_type);
+uint8_t GetSimulcastId(const VideoContentType& content_type);
 
-  bool IsScreenshare(const VideoContentType& content_type);
+bool IsScreenshare(const VideoContentType& content_type);
 
-  bool IsValidContentType(uint8_t value);
+bool IsValidContentType(uint8_t value);
 
-  const char* ToString(const VideoContentType& content_type);
+const char* ToString(const VideoContentType& content_type);
 }  // namespace videocontenttypehelpers
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_API_VIDEO_VIDEO_CONTENT_TYPE_H_
+#endif  // API_VIDEO_VIDEO_CONTENT_TYPE_H_

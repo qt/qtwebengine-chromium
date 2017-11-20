@@ -10,19 +10,18 @@
 
 #include <map>
 #include <memory>
-#include <queue>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/containers/queue.h"
 #include "base/i18n/rtl.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
-#include "cc/input/selection.h"
+#include "components/viz/client/frame_evictor.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
-#include "components/viz/service/frame_sinks/frame_evictor.h"
-#include "content/browser/android/content_view_core_observer.h"
+#include "components/viz/common/quads/selection.h"
 #include "content/browser/renderer_host/input/mouse_wheel_phase_handler.h"
 #include "content/browser/renderer_host/input/stylus_text_selector.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -76,7 +75,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       public viz::FrameEvictorClient,
       public StylusTextSelectorClient,
       public ui::TouchSelectionControllerClient,
-      public content::ContentViewCoreObserver,
       public content::TextInputManager::Observer,
       public ui::DelegatedFrameHostAndroid::Client,
       public viz::BeginFrameObserver {
@@ -158,7 +156,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
       override;
   void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             cc::CompositorFrame frame) override;
+                             viz::CompositorFrame frame) override;
   void OnDidNotProduceFrame(const viz::BeginFrameAck& ack) override;
   void ClearCompositorFrame() override;
   void SetIsInVR(bool is_in_vr) override;
@@ -215,9 +213,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnActivityStopped() override;
   void OnActivityStarted() override;
 
-  // content::ContentViewCoreObserver implementation.
-  void OnContentViewCoreDestroyed() override;
-
   // viz::FrameEvictor implementation
   void EvictDelegatedFrame() override;
 
@@ -236,6 +231,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
                                 const gfx::PointF& extent) override;
   void OnSelectionEvent(ui::SelectionEventType event) override;
   std::unique_ptr<ui::TouchHandleDrawable> CreateDrawable() override;
+  void DidScroll() override;
 
   // DelegatedFrameHostAndroid::Client implementation.
   void SetBeginFrameSource(viz::BeginFrameSource* begin_frame_source) override;
@@ -250,6 +246,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // Non-virtual methods
   void SetContentViewCore(ContentViewCore* content_view_core);
+  void OnContentViewCoreDestroyed();
   SkColor GetCachedBackgroundColor() const;
   void SendKeyEvent(const NativeWebKeyboardEvent& event);
   void SendMouseEvent(const ui::MotionEventAndroid&, int action_button);
@@ -294,7 +291,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
                                   int start_adjust,
                                   int end_adjust);
 
-  void SynchronousFrameMetadata(cc::CompositorFrameMetadata frame_metadata);
+  void SynchronousFrameMetadata(viz::CompositorFrameMetadata frame_metadata);
 
   void SetSynchronousCompositorClient(SynchronousCompositorClient* client);
 
@@ -339,8 +336,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   void SendReclaimCompositorResources(bool is_swap_ack);
 
-  void OnFrameMetadataUpdated(const cc::CompositorFrameMetadata& frame_metadata,
-                              bool is_transparent);
+  void OnFrameMetadataUpdated(
+      const viz::CompositorFrameMetadata& frame_metadata,
+      bool is_transparent);
 
   void ShowInternal();
   void HideInternal();
@@ -435,7 +433,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // The most recent surface size that was pushed to the surface layer.
   gfx::Size current_surface_size_;
 
-  std::queue<base::Closure> ack_callbacks_;
+  base::queue<base::Closure> ack_callbacks_;
 
   // Used to control and render overscroll-related effects.
   std::unique_ptr<OverscrollControllerAndroid> overscroll_controller_;

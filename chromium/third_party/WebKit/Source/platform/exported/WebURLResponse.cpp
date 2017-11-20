@@ -49,9 +49,9 @@ namespace {
 
 class URLResponseExtraDataContainer : public ResourceResponse::ExtraData {
  public:
-  static PassRefPtr<URLResponseExtraDataContainer> Create(
+  static RefPtr<URLResponseExtraDataContainer> Create(
       WebURLResponse::ExtraData* extra_data) {
-    return AdoptRef(new URLResponseExtraDataContainer(extra_data));
+    return WTF::AdoptRef(new URLResponseExtraDataContainer(extra_data));
   }
 
   ~URLResponseExtraDataContainer() override {}
@@ -125,8 +125,7 @@ void WebURLResponse::SetConnectionReused(bool connection_reused) {
 }
 
 void WebURLResponse::SetLoadTiming(const WebURLLoadTiming& timing) {
-  RefPtr<ResourceLoadTiming> load_timing =
-      PassRefPtr<ResourceLoadTiming>(timing);
+  RefPtr<ResourceLoadTiming> load_timing = RefPtr<ResourceLoadTiming>(timing);
   resource_response_->SetResourceLoadTiming(std::move(load_timing));
 }
 
@@ -230,6 +229,14 @@ void WebURLResponse::SetAppCacheManifestURL(const WebURL& url) {
 
 void WebURLResponse::SetHasMajorCertificateErrors(bool value) {
   resource_response_->SetHasMajorCertificateErrors(value);
+}
+
+void WebURLResponse::SetIsLegacySymantecCert(bool value) {
+  resource_response_->SetIsLegacySymantecCert(value);
+}
+
+void WebURLResponse::SetCertValidityStart(base::Time expiration) {
+  resource_response_->SetCertValidityStart(expiration);
 }
 
 void WebURLResponse::SetSecurityStyle(WebSecurityStyle security_style) {
@@ -364,7 +371,7 @@ WebURLResponse::ExtraData* WebURLResponse::GetExtraData() const {
   RefPtr<ResourceResponse::ExtraData> data = resource_response_->GetExtraData();
   if (!data)
     return 0;
-  return static_cast<URLResponseExtraDataContainer*>(data.Get())
+  return static_cast<URLResponseExtraDataContainer*>(data.get())
       ->GetExtraData();
 }
 

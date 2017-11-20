@@ -30,7 +30,6 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
-#include "core/HTMLNames.h"
 #include "core/clipboard/Pasteboard.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSIdentifierValue.h"
@@ -41,10 +40,14 @@
 #include "core/dom/UserGestureIndicator.h"
 #include "core/dom/events/Event.h"
 #include "core/editing/EditingStyleUtilities.h"
+#include "core/editing/EditingTriState.h"
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/SelectionModifier.h"
+#include "core/editing/SelectionTemplate.h"
 #include "core/editing/SetSelectionOptions.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/editing/commands/CreateLinkCommand.h"
 #include "core/editing/commands/EditorCommandNames.h"
 #include "core/editing/commands/FormatBlockCommand.h"
@@ -61,7 +64,8 @@
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLHRElement.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/TextControlElement.h"
+#include "core/html/forms/TextControlElement.h"
+#include "core/html_names.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutBox.h"
 #include "core/page/ChromeClient.h"
@@ -223,7 +227,7 @@ class EditorInternalCommand {
   bool (*execute)(LocalFrame&, Event*, EditorCommandSource, const String&);
   bool (*is_supported_from_dom)(LocalFrame*);
   bool (*is_enabled)(LocalFrame&, Event*, EditorCommandSource);
-  TriState (*state)(LocalFrame&, Event*);
+  EditingTriState (*state)(LocalFrame&, Event*);
   String (*value)(const EditorInternalCommand&, LocalFrame&, Event*);
   bool is_text_insertion;
   // TODO(yosin) We should have |canExecute()|, which checks clipboard
@@ -343,7 +347,7 @@ static bool ExecuteToggleStyle(LocalFrame& frame,
         frame.GetEditor().SelectionStartHasStyle(property_id, on_value);
   else
     style_is_present = frame.GetEditor().SelectionHasStyle(
-                           property_id, on_value) == kTrueTriState;
+                           property_id, on_value) == EditingTriState::kTrue;
 
   EditingStyle* style = EditingStyle::Create(
       property_id, style_is_present ? off_value : on_value);
@@ -419,13 +423,13 @@ static bool HasChildTags(Element& element, const QualifiedName& tag_name) {
   return !element.getElementsByTagName(tag_name.LocalName())->IsEmpty();
 }
 
-static TriState SelectionListState(const FrameSelection& selection,
-                                   const QualifiedName& tag_name) {
+static EditingTriState SelectionListState(const FrameSelection& selection,
+                                          const QualifiedName& tag_name) {
   if (selection.ComputeVisibleSelectionInDOMTreeDeprecated().IsCaret()) {
     if (EnclosingElementWithTag(
             selection.ComputeVisibleSelectionInDOMTreeDeprecated().Start(),
             tag_name))
-      return kTrueTriState;
+      return EditingTriState::kTrue;
   } else if (selection.ComputeVisibleSelectionInDOMTreeDeprecated().IsRange()) {
     Element* start_element = EnclosingElementWithTag(
         selection.ComputeVisibleSelectionInDOMTreeDeprecated().Start(),
@@ -438,22 +442,23 @@ static TriState SelectionListState(const FrameSelection& selection,
       // |FalseTriState|.
       // See http://crbug.com/385374
       if (HasChildTags(*start_element, tag_name.Matches(ulTag) ? olTag : ulTag))
-        return kFalseTriState;
-      return kTrueTriState;
+        return EditingTriState::kFalse;
+      return EditingTriState::kTrue;
     }
   }
 
-  return kFalseTriState;
+  return EditingTriState::kFalse;
 }
 
-static TriState StateStyle(LocalFrame& frame,
-                           CSSPropertyID property_id,
-                           const char* desired_value) {
+static EditingTriState StateStyle(LocalFrame& frame,
+                                  CSSPropertyID property_id,
+                                  const char* desired_value) {
   frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-  if (frame.GetEditor().Behavior().ShouldToggleStyleBasedOnStartOfSelection())
+  if (frame.GetEditor().Behavior().ShouldToggleStyleBasedOnStartOfSelection()) {
     return frame.GetEditor().SelectionStartHasStyle(property_id, desired_value)
-               ? kTrueTriState
-               : kFalseTriState;
+               ? EditingTriState::kTrue
+               : EditingTriState::kFalse;
+  }
   return frame.GetEditor().SelectionHasStyle(property_id, desired_value);
 }
 
@@ -580,8 +585,8 @@ static WritingDirection TextDirectionForSelection(
   return found_direction;
 }
 
-static TriState StateTextWritingDirection(LocalFrame& frame,
-                                          WritingDirection direction) {
+static EditingTriState StateTextWritingDirection(LocalFrame& frame,
+                                                 WritingDirection direction) {
   frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
 
   bool has_nested_or_multiple_embeddings;
@@ -592,8 +597,8 @@ static TriState StateTextWritingDirection(LocalFrame& frame,
   // direction && hasNestedOrMultipleEmbeddings
   return (selection_direction == direction &&
           !has_nested_or_multiple_embeddings)
-             ? kTrueTriState
-             : kFalseTriState;
+             ? EditingTriState::kTrue
+             : EditingTriState::kFalse;
 }
 
 static unsigned VerticalScrollDistance(LocalFrame& frame) {
@@ -2061,6 +2066,14 @@ static bool Supported(LocalFrame*) {
   return true;
 }
 
+static bool PasteSupported(LocalFrame* frame) {
+  const Settings* const settings = frame->GetSettings();
+  const bool default_value = settings &&
+                             settings->GetJavaScriptCanAccessClipboard() &&
+                             settings->GetDOMPasteAllowed();
+  return frame->GetEditor().Client().CanPaste(frame, default_value);
+}
+
 static bool SupportedFromMenuOrKeyBinding(LocalFrame*) {
   return false;
 }
@@ -2258,76 +2271,77 @@ static bool EnabledSelectAll(LocalFrame& frame,
 
 // State functions
 
-static TriState StateNone(LocalFrame&, Event*) {
-  return kFalseTriState;
+static EditingTriState StateNone(LocalFrame&, Event*) {
+  return EditingTriState::kFalse;
 }
 
-static TriState StateBold(LocalFrame& frame, Event*) {
+static EditingTriState StateBold(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyFontWeight, "bold");
 }
 
-static TriState StateItalic(LocalFrame& frame, Event*) {
+static EditingTriState StateItalic(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyFontStyle, "italic");
 }
 
-static TriState StateOrderedList(LocalFrame& frame, Event*) {
+static EditingTriState StateOrderedList(LocalFrame& frame, Event*) {
   return SelectionListState(frame.Selection(), olTag);
 }
 
-static TriState StateStrikethrough(LocalFrame& frame, Event*) {
+static EditingTriState StateStrikethrough(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyWebkitTextDecorationsInEffect,
                     "line-through");
 }
 
-static TriState StateStyleWithCSS(LocalFrame& frame, Event*) {
-  return frame.GetEditor().ShouldStyleWithCSS() ? kTrueTriState
-                                                : kFalseTriState;
+static EditingTriState StateStyleWithCSS(LocalFrame& frame, Event*) {
+  return frame.GetEditor().ShouldStyleWithCSS() ? EditingTriState::kTrue
+                                                : EditingTriState::kFalse;
 }
 
-static TriState StateSubscript(LocalFrame& frame, Event*) {
+static EditingTriState StateSubscript(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyVerticalAlign, "sub");
 }
 
-static TriState StateSuperscript(LocalFrame& frame, Event*) {
+static EditingTriState StateSuperscript(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyVerticalAlign, "super");
 }
 
-static TriState StateTextWritingDirectionLeftToRight(LocalFrame& frame,
-                                                     Event*) {
+static EditingTriState StateTextWritingDirectionLeftToRight(LocalFrame& frame,
+                                                            Event*) {
   return StateTextWritingDirection(frame, LeftToRightWritingDirection);
 }
 
-static TriState StateTextWritingDirectionNatural(LocalFrame& frame, Event*) {
+static EditingTriState StateTextWritingDirectionNatural(LocalFrame& frame,
+                                                        Event*) {
   return StateTextWritingDirection(frame, NaturalWritingDirection);
 }
 
-static TriState StateTextWritingDirectionRightToLeft(LocalFrame& frame,
-                                                     Event*) {
+static EditingTriState StateTextWritingDirectionRightToLeft(LocalFrame& frame,
+                                                            Event*) {
   return StateTextWritingDirection(frame, RightToLeftWritingDirection);
 }
 
-static TriState StateUnderline(LocalFrame& frame, Event*) {
+static EditingTriState StateUnderline(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyWebkitTextDecorationsInEffect,
                     "underline");
 }
 
-static TriState StateUnorderedList(LocalFrame& frame, Event*) {
+static EditingTriState StateUnorderedList(LocalFrame& frame, Event*) {
   return SelectionListState(frame.Selection(), ulTag);
 }
 
-static TriState StateJustifyCenter(LocalFrame& frame, Event*) {
+static EditingTriState StateJustifyCenter(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyTextAlign, "center");
 }
 
-static TriState StateJustifyFull(LocalFrame& frame, Event*) {
+static EditingTriState StateJustifyFull(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyTextAlign, "justify");
 }
 
-static TriState StateJustifyLeft(LocalFrame& frame, Event*) {
+static EditingTriState StateJustifyLeft(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyTextAlign, "left");
 }
 
-static TriState StateJustifyRight(LocalFrame& frame, Event*) {
+static EditingTriState StateJustifyRight(LocalFrame& frame, Event*) {
   return StateStyle(frame, CSSPropertyTextAlign, "right");
 }
 
@@ -2338,8 +2352,9 @@ static String ValueStateOrNull(const EditorInternalCommand& self,
                                Event* triggering_event) {
   if (self.state == StateNone)
     return String();
-  return self.state(frame, triggering_event) == kTrueTriState ? "true"
-                                                              : "false";
+  return self.state(frame, triggering_event) == EditingTriState::kTrue
+             ? "true"
+             : "false";
 }
 
 // The command has no value.
@@ -2398,7 +2413,8 @@ static String ValueFormatBlock(const EditorInternalCommand&,
                                Event*) {
   const VisibleSelection& selection =
       frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated();
-  if (!selection.IsNonOrphanedCaretOrRange() || !selection.IsContentEditable())
+  if (selection.IsNone() || !selection.IsValidFor(*(frame.GetDocument())) ||
+      !selection.IsContentEditable())
     return "";
   Element* format_block_element =
       FormatBlockCommand::ElementForFormatBlockCommand(
@@ -2767,8 +2783,8 @@ static const EditorInternalCommand* InternalCommand(
       {WebEditingCommandType::kOverWrite, ExecuteToggleOverwrite,
        SupportedFromMenuOrKeyBinding, EnabledInRichlyEditableText, StateNone,
        ValueStateOrNull, kNotTextInsertion, kDoNotAllowExecutionWhenDisabled},
-      {WebEditingCommandType::kPaste, ExecutePaste, Supported, EnabledPaste,
-       StateNone, ValueStateOrNull, kNotTextInsertion,
+      {WebEditingCommandType::kPaste, ExecutePaste, PasteSupported,
+       EnabledPaste, StateNone, ValueStateOrNull, kNotTextInsertion,
        kAllowExecutionWhenDisabled},
       {WebEditingCommandType::kPasteAndMatchStyle, ExecutePasteAndMatchStyle,
        Supported, EnabledPaste, StateNone, ValueStateOrNull, kNotTextInsertion,
@@ -3007,12 +3023,11 @@ bool Editor::Command::Execute(const String& parameter,
               EventTargetNodeForDocument(frame_->GetDocument()), input_type,
               GetTargetRanges()) != DispatchEventResult::kNotCanceled)
         return true;
+      // 'beforeinput' event handler may destroy target frame.
+      if (frame_->GetDocument()->GetFrame() != frame_)
+        return false;
     }
   }
-
-  // 'beforeinput' event handler may destroy target frame.
-  if (frame_->GetDocument()->GetFrame() != frame_)
-    return false;
 
   GetFrame().GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
   DEFINE_STATIC_LOCAL(SparseHistogram, command_histogram,
@@ -3044,9 +3059,9 @@ bool Editor::Command::IsEnabled(Event* triggering_event) const {
   return command_->is_enabled(*frame_, triggering_event, source_);
 }
 
-TriState Editor::Command::GetState(Event* triggering_event) const {
+EditingTriState Editor::Command::GetState(Event* triggering_event) const {
   if (!IsSupported() || !frame_)
-    return kFalseTriState;
+    return EditingTriState::kFalse;
   return command_->state(*frame_, triggering_event);
 }
 

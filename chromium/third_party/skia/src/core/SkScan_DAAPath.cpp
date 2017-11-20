@@ -150,13 +150,12 @@ public:
 };
 
 template<class Deltas> static SK_ALWAYS_INLINE
-void gen_alpha_deltas(const SkPath& path, const SkRegion& clipRgn, Deltas& result,
+void gen_alpha_deltas(const SkPath& path, const SkIRect& clipBounds, Deltas& result,
         SkBlitter* blitter, bool skipRect, bool pathContainedInClip) {
     // 1. Build edges
     SkEdgeBuilder builder;
     SkIRect ir               = path.getBounds().roundOut();
-    const SkIRect& clipRect  = clipRgn.getBounds();
-    int  count               = builder.build_edges(path, &clipRect, 0, pathContainedInClip,
+    int  count               = builder.build_edges(path, &clipBounds, 0, pathContainedInClip,
                                                    SkEdgeBuilder::kBezier);
     if (count == 0) {
         return;
@@ -173,8 +172,9 @@ void gen_alpha_deltas(const SkPath& path, const SkRegion& clipRgn, Deltas& resul
             SkBezier* lb = list[i];
             SkBezier* rb = list[i + 1];
 
-            bool lDX0 = lb->fP0.fX == lb->fP1.fX;
-            bool rDX0 = rb->fP0.fX == rb->fP1.fX;
+            // fCount == 2 ensures that lb and rb are lines instead of quads or cubics.
+            bool lDX0 = lb->fP0.fX == lb->fP1.fX && lb->fCount == 2;
+            bool rDX0 = rb->fP0.fX == rb->fP1.fX && rb->fCount == 2;
             if (!lDX0 || !rDX0) { // make sure that the edges are vertical
                 continue;
             }
@@ -265,7 +265,7 @@ void gen_alpha_deltas(const SkPath& path, const SkRegion& clipRgn, Deltas& resul
             if (lowerCeil <= upperFloor + SK_Fixed1) { // only one row is affected by the currE
                 SkFixed rowHeight = currE->fLowerY - currE->fUpperY;
                 SkFixed nextX = currE->fX + SkFixedMul(currE->fDX, rowHeight);
-                if (iy >= clipRect.fTop && iy < clipRect.fBottom) {
+                if (iy >= clipBounds.fTop && iy < clipBounds.fBottom) {
                     add_coverage_delta_segment<true>(iy, rowHeight, currE, nextX, &result);
                 }
                 continue;
@@ -304,7 +304,8 @@ void gen_alpha_deltas(const SkPath& path, const SkRegion& clipRgn, Deltas& resul
             }
 
             // last partial row
-            if (SkIntToFixed(iy) < currE->fLowerY && iy >= clipRect.fTop && iy < clipRect.fBottom) {
+            if (SkIntToFixed(iy) < currE->fLowerY &&
+                    iy >= clipBounds.fTop && iy < clipBounds.fBottom) {
                 rowHeight = currE->fLowerY - SkIntToFixed(iy);
                 nextX = currE->fX + SkFixedMul(currE->fDX, rowHeight);
                 add_coverage_delta_segment<true>(iy, rowHeight, currE, nextX, &result);
@@ -318,37 +319,37 @@ void SkScan::DAAFillPath(const SkPath& path, const SkRegion& origClip, SkBlitter
                          bool forceRLE) {
 
     FillPathFunc fillPathFunc = [](const SkPath& path, SkBlitter* blitter, bool isInverse,
-            const SkIRect& ir, const SkRegion* clipRgn, const SkIRect* clipRect, bool forceRLE){
+            const SkIRect& ir, const SkIRect& clipBounds, bool containedInClip, bool forceRLE){
         bool isEvenOdd  = path.getFillType() & 1;
         bool isConvex   = path.isConvex();
         bool skipRect   = isConvex && !isInverse;
 
-        const SkIRect& clipBounds = clipRgn->getBounds();
         SkIRect clippedIR = ir;
         clippedIR.intersect(clipBounds);
 
-        SkRect rect;
-        if (!isInverse && path.isRect(&rect) && clippedIR.height() >= 3 && clippedIR.width() >= 3) {
-            // The overhead of even constructing SkCoverageDeltaList/Mask is too big. So just blit.
-            bool nonEmpty = rect.intersect(SkRect::Make(clipBounds));
-            SkASSERT(nonEmpty); // do_fill_path should have already handled the empty case
-            if (nonEmpty) {
-                blitter->blitFatAntiRect(rect);
-            }
+        // The overhead of even constructing SkCoverageDeltaList/Mask is too big.
+        // So TryBlitFatAntiRect and return if it's successful.
+        if (TryBlitFatAntiRect(blitter, path, clipBounds)) {
             return;
         }
+
+#ifdef GOOGLE3
+        constexpr int STACK_SIZE = 12 << 10; // 12K stack size alloc; Google3 has 16K limit.
+#else
+        constexpr int STACK_SIZE = 64 << 10; // 64k stack size to avoid heap allocation
+#endif
+        SkSTArenaAlloc<STACK_SIZE> alloc; // avoid heap allocation with SkSTArenaAlloc
 
         // Only blitter->blitXXX need to be done in order in the threaded backend.
         // Everything before can be done out of order in the threaded backend.
         if (!forceRLE && !isInverse && SkCoverageDeltaMask::Suitable(clippedIR)) {
-            SkCoverageDeltaMask deltaMask(clippedIR);
-            gen_alpha_deltas(path, *clipRgn, deltaMask, blitter, skipRect, clipRect == nullptr);
+            SkCoverageDeltaMask deltaMask(&alloc, clippedIR);
+            gen_alpha_deltas(path, clipBounds, deltaMask, blitter, skipRect, containedInClip);
             deltaMask.convertCoverageToAlpha(isEvenOdd, isInverse, isConvex);
             blitter->blitMask(deltaMask.prepareSkMask(), clippedIR);
         } else {
-            SkCoverageDeltaAllocator alloc;
             SkCoverageDeltaList deltaList(&alloc, clippedIR.fTop, clippedIR.fBottom, forceRLE);
-            gen_alpha_deltas(path, *clipRgn, deltaList, blitter, skipRect, clipRect == nullptr);
+            gen_alpha_deltas(path, clipBounds, deltaList, blitter, skipRect, containedInClip);
             blitter->blitCoverageDeltas(&deltaList, clipBounds, isEvenOdd, isInverse, isConvex);
         }
     };

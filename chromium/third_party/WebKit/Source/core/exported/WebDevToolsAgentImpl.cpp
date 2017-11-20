@@ -74,7 +74,6 @@
 #include "core/probe/CoreProbes.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/LayoutTestSupport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/PaintController.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
@@ -361,7 +360,8 @@ InspectorSession* WebDevToolsAgentImpl::InitializeSession(int session_id,
 
   session->Append(new InspectorLogAgent(
       &inspected_frames_->Root()->GetPage()->GetConsoleMessageStorage(),
-      inspected_frames_->Root()->GetPerformanceMonitor()));
+      inspected_frames_->Root()->GetPerformanceMonitor(),
+      session->V8Session()));
 
   InspectorOverlayAgent* overlay_agent =
       new InspectorOverlayAgent(web_local_frame_impl_, inspected_frames_.Get(),
@@ -375,6 +375,7 @@ InspectorSession* WebDevToolsAgentImpl::InitializeSession(int session_id,
 
   tracing_agent->SetLayerTreeId(layer_tree_id_);
   network_agent->SetHostId(host_id);
+  worker_agent->SetHostId(host_id);
 
   if (include_view_agents_) {
     // TODO(dgozman): we should actually pass the view instead of frame, but
@@ -669,7 +670,8 @@ bool WebDevToolsAgent::ShouldInterruptForMethod(const WebString& method) {
   return method == "Debugger.pause" || method == "Debugger.setBreakpoint" ||
          method == "Debugger.setBreakpointByUrl" ||
          method == "Debugger.removeBreakpoint" ||
-         method == "Debugger.setBreakpointsActive";
+         method == "Debugger.setBreakpointsActive" ||
+         method == "Performance.getMetrics";
 }
 
 }  // namespace blink

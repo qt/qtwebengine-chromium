@@ -9,10 +9,10 @@
 #define RuntimeCallStats_h
 
 #include "platform/PlatformExport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/bindings/RuntimeCallStatsCountEverything.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Optional.h"
 #include "platform/wtf/Time.h"
@@ -203,7 +203,12 @@ class PLATFORM_EXPORT RuntimeCallStats {
   V(GcPrologue)        \
   V(PerformIdleLazySweep)
 
-#define PARSING_COUNTERS(V) V(DocumentFragmentParseHTML)
+#define PARSING_COUNTERS(V)      \
+  V(DocumentFragmentParseHTML)   \
+  V(ParserAppendChild)           \
+  V(ReplaceChildrenWithFragment) \
+  V(HTMLTokenizerNextToken)      \
+  V(ConstructTree)
 
 #define STYLE_COUNTERS(V) \
   V(ProcessStyleSheet)    \
@@ -221,7 +226,8 @@ class PLATFORM_EXPORT RuntimeCallStats {
   BINDINGS_METHOD(V, NodeRemoveChild)              \
   BINDINGS_METHOD(V, WindowSetTimeout)             \
   BINDINGS_ATTRIBUTE(V, DocumentCookie)            \
-  BINDINGS_ATTRIBUTE(V, ElementInnerHTML)
+  BINDINGS_ATTRIBUTE(V, ElementInnerHTML)          \
+  BINDINGS_READ_ONLY_ATTRIBUTE(V, NodeName)
 
 #define EXTRA_COUNTERS(V)                                               \
   V(V8)                                                                 \

@@ -17,10 +17,10 @@
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/notification.h"
 #include "ui/message_center/notification_list.h"
+#include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/message_center/views/message_view.h"
 #include "ui/message_center/views/message_view_context_menu_controller.h"
 #include "ui/message_center/views/message_view_factory.h"
@@ -104,9 +104,8 @@ void MessagePopupCollection::RemoveNotification(
 }
 
 std::unique_ptr<ui::MenuModel> MessagePopupCollection::CreateMenuModel(
-    const NotifierId& notifier_id,
-    const base::string16& display_source) {
-  return tray_->CreateNotificationMenuModel(notifier_id, display_source);
+    const Notification& notification) {
+  return tray_->CreateNotificationMenuModel(notification);
 }
 
 bool MessagePopupCollection::HasClickedListener(
@@ -182,7 +181,8 @@ void MessagePopupCollection::UpdateWidgets() {
   // items may be ignored if there are no room to place them.
   for (NotificationList::PopupNotifications::const_reverse_iterator iter =
            popups.rbegin(); iter != popups.rend(); ++iter) {
-    if (FindToast((*iter)->id()))
+    const Notification& notification = *(*iter);
+    if (FindToast(notification.id()))
       continue;
 
 #if defined(OS_CHROMEOS)
@@ -191,12 +191,12 @@ void MessagePopupCollection::UpdateWidgets() {
     // time.
     // TODO(yoshiki): Support custom popup notification on multiple display
     // (crbug.com/715370).
-    if (!is_primary_display && (*iter)->type() == NOTIFICATION_TYPE_CUSTOM)
+    if (!is_primary_display && notification.type() == NOTIFICATION_TYPE_CUSTOM)
       continue;
 #endif
 
     // Create top-level notification.
-    MessageView* view = MessageViewFactory::Create(NULL, *(*iter), true);
+    MessageView* view = MessageViewFactory::Create(nullptr, notification, true);
 #if defined(OS_CHROMEOS)
     // Disable pinned feature since this is a popup.
     view->set_force_disable_pinned();
@@ -205,8 +205,11 @@ void MessagePopupCollection::UpdateWidgets() {
 
     // TODO(yoshiki): Temporary disable context menu on custom notifications.
     // See crbug.com/750307 for detail.
-    if ((*iter)->type() != NOTIFICATION_TYPE_CUSTOM)
+    if (notification.type() != NOTIFICATION_TYPE_CUSTOM &&
+        notification.delegate() &&
+        notification.delegate()->ShouldDisplaySettingsButton()) {
       view->set_context_menu_controller(context_menu_controller_.get());
+    }
 
     int view_height = ToastContentsView::GetToastSizeForView(view).height();
     int height_available =
@@ -219,7 +222,7 @@ void MessagePopupCollection::UpdateWidgets() {
     }
 
     ToastContentsView* toast = new ToastContentsView(
-        (*iter)->id(), alignment_delegate_, weak_factory_.GetWeakPtr());
+        notification.id(), alignment_delegate_, weak_factory_.GetWeakPtr());
     // There will be no contents already since this is a new ToastContentsView.
     toast->SetContents(view, /*a11y_feedback_for_updates=*/false);
     toasts_.push_back(toast);
@@ -251,7 +254,7 @@ void MessagePopupCollection::UpdateWidgets() {
     }
 
     message_center_->DisplayedNotification(
-        (*iter)->id(), message_center::DISPLAY_SOURCE_POPUP);
+        notification.id(), message_center::DISPLAY_SOURCE_POPUP);
   }
 }
 

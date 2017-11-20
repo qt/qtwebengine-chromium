@@ -4,7 +4,7 @@
 
 #include "core/css/invalidation/StyleInvalidator.h"
 
-#include "core/dom/StyleEngine.h"
+#include "core/css/StyleEngine.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/html/HTMLElement.h"
 #include "core/testing/DummyPageHolder.h"
@@ -31,7 +31,7 @@ void StyleInvalidatorTest::SetUp() {
 }
 
 TEST_F(StyleInvalidatorTest, ScheduleOnDocumentNode) {
-  GetDocument().body()->setInnerHTML(
+  GetDocument().body()->SetInnerHTMLFromString(
       "<div id='d'></div><i id='i'></i><span></span>");
   GetDocument().View()->UpdateAllLifecyclePhases();
 

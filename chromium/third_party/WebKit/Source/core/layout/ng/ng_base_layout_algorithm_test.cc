@@ -37,7 +37,7 @@ NGBaseLayoutAlgorithmTest::RunBlockLayoutAlgorithmForElement(Element* element) {
 
   RefPtr<NGLayoutResult> result = NGBlockLayoutAlgorithm(node, *space).Layout();
   return std::make_pair(
-      ToNGPhysicalBoxFragment(result->PhysicalFragment().Get()),
+      ToNGPhysicalBoxFragment(result->PhysicalFragment().get()),
       std::move(space));
 }
 
@@ -52,7 +52,7 @@ const NGPhysicalBoxFragment* FragmentChildIterator::NextChild() {
     if (index_ >= parent_->Children().size())
       return nullptr;
   }
-  return ToNGPhysicalBoxFragment(parent_->Children()[index_++].Get());
+  return ToNGPhysicalBoxFragment(parent_->Children()[index_++].get());
 }
 
 RefPtr<NGConstraintSpace> ConstructBlockLayoutTestConstraintSpace(
@@ -75,7 +75,7 @@ RefPtr<NGConstraintSpace> ConstructBlockLayoutTestConstraintSpace(
       .SetTextDirection(direction)
       .SetIsShrinkToFit(shrink_to_fit)
       .SetIsNewFormattingContext(is_new_formatting_context)
-      .SetFragmentainerSpaceAvailable(fragmentainer_space_available)
+      .SetFragmentainerSpaceAtBfcStart(fragmentainer_space_available)
       .SetFragmentationType(block_fragmentation)
       .ToConstraintSpace(writing_mode);
 }

@@ -84,12 +84,22 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     Params(const Params& other);
     ~Params();
 
+    enum class TcpFastOpenMode {
+      DISABLED,
+      // If true, TCP fast open will be used for all HTTPS connections.
+      ENABLED_FOR_SSL_ONLY,
+      // TCP fast open will be used for all HTTP/HTTPS connections.
+      // TODO(mmenke): With 0-RTT session resumption, does this option make
+      // sense?
+      ENABLED_FOR_ALL,
+    };
+
     bool enable_server_push_cancellation;
     HostMappingRules host_mapping_rules;
     bool ignore_certificate_errors;
     uint16_t testing_fixed_http_port;
     uint16_t testing_fixed_https_port;
-    bool enable_tcp_fast_open_for_ssl;
+    TcpFastOpenMode tcp_fast_open_mode;
     bool enable_user_alternate_protocol_ports;
 
     // Use SPDY ping frames to test for connection health after idle.
@@ -110,7 +120,7 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     // QUIC runtime configuration options.
 
     // Versions of QUIC which may be used.
-    QuicVersionVector quic_supported_versions;
+    QuicTransportVersionVector quic_supported_versions;
     // User agent description to send in the QUIC handshake.
     std::string quic_user_agent_id;
     // Limit on the size of QUIC packets.
@@ -134,13 +144,13 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     // Retry requests which fail with QUIC_PROTOCOL_ERROR, and mark QUIC
     // broken if the retry succeeds.
     bool retry_without_alt_svc_on_quic_errors;
-    // If true, all QUIC sessions are closed when any local IP address changes.
-    bool quic_close_sessions_on_ip_change;
     // Specifies QUIC idle connection state lifetime.
     int quic_idle_connection_timeout_seconds;
     // Specifies the reduced ping timeout subsequent connections should use when
     // a connection was timed out with open streams.
     int quic_reduced_ping_timeout_seconds;
+    // If true, QUIC will attempt to explicitly use default network for sockets.
+    bool quic_connect_using_default_network;
     // If true, active QUIC sessions may be migrated onto a new network when
     // the platform indicates that the default network is changing.
     bool quic_migrate_sessions_on_network_change;

@@ -9,11 +9,12 @@
 #include <pk11pub.h>
 #include <prerror.h>
 
+#include <memory>
 #include <utility>
 
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
+#include "base/threading/scoped_blocking_call.h"
 #include "crypto/nss_crypto_module_delegate.h"
 #include "crypto/scoped_nss_types.h"
 #include "net/cert/x509_certificate.h"
@@ -44,8 +45,13 @@ void LogPRError(const char* message) {
 
 class SSLPlatformKeyNSS : public ThreadedSSLPrivateKey::Delegate {
  public:
-  SSLPlatformKeyNSS(int type, crypto::ScopedSECKEYPrivateKey key)
-      : type_(type), key_(std::move(key)) {}
+  SSLPlatformKeyNSS(int type,
+                    scoped_refptr<crypto::CryptoModuleBlockingPasswordDelegate>
+                        password_delegate,
+                    crypto::ScopedSECKEYPrivateKey key)
+      : type_(type),
+        password_delegate_(std::move(password_delegate)),
+        key_(std::move(key)) {}
   ~SSLPlatformKeyNSS() override {}
 
   std::vector<SSLPrivateKey::Hash> GetDigestPreferences() override {
@@ -146,6 +152,10 @@ class SSLPlatformKeyNSS : public ThreadedSSLPrivateKey::Delegate {
 
  private:
   int type_;
+  // NSS retains a pointer to the password delegate, so retain a reference here
+  // to ensure the lifetimes are correct.
+  scoped_refptr<crypto::CryptoModuleBlockingPasswordDelegate>
+      password_delegate_;
   crypto::ScopedSECKEYPrivateKey key_;
 
   DISALLOW_COPY_AND_ASSIGN(SSLPlatformKeyNSS);
@@ -156,7 +166,14 @@ class SSLPlatformKeyNSS : public ThreadedSSLPrivateKey::Delegate {
 scoped_refptr<SSLPrivateKey> FetchClientCertPrivateKey(
     const X509Certificate* certificate,
     CERTCertificate* cert_certificate,
-    crypto::CryptoModuleBlockingPasswordDelegate* password_delegate) {
+    scoped_refptr<crypto::CryptoModuleBlockingPasswordDelegate>
+        password_delegate) {
+  // This function may acquire the NSS lock or reenter this code via extension
+  // hooks (such as smart card UI). To ensure threads are not starved or
+  // deadlocked, the base::ScopedBlockingCall below increments the thread pool
+  // capacity if this method takes too much time to run.
+  base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
+
   void* wincx = password_delegate ? password_delegate->wincx() : nullptr;
   crypto::ScopedSECKEYPrivateKey key(
       PK11_FindKeyByAnyCert(cert_certificate, wincx));
@@ -168,9 +185,14 @@ scoped_refptr<SSLPrivateKey> FetchClientCertPrivateKey(
   if (!GetClientCertInfo(certificate, &type, &max_length))
     return nullptr;
 
-  return make_scoped_refptr(new ThreadedSSLPrivateKey(
-      std::make_unique<SSLPlatformKeyNSS>(type, std::move(key)),
-      GetSSLPlatformKeyTaskRunner()));
+  // Note that key contains a reference to password_delegate->wincx() and may
+  // use it in PK11_Sign. Thus password_delegate must outlive key. We pass it
+  // into SSLPlatformKeyNSS to tie the lifetimes together. See
+  // https://crbug.com/779090.
+  return base::MakeRefCounted<ThreadedSSLPrivateKey>(
+      std::make_unique<SSLPlatformKeyNSS>(type, std::move(password_delegate),
+                                          std::move(key)),
+      GetSSLPlatformKeyTaskRunner());
 }
 
 }  // namespace net

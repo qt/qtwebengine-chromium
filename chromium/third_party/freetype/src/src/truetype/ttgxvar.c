@@ -395,14 +395,14 @@
 
 
   /* some macros we need */
-  #define FT_FIXED_ONE  ( (FT_Fixed)0x10000 )
+#define FT_FIXED_ONE  ( (FT_Fixed)0x10000 )
 
-  #define FT_fdot14ToFixed( x )                \
-          ( (FT_Fixed)( (FT_ULong)(x) << 2 ) )
-  #define FT_intToFixed( i )                    \
-          ( (FT_Fixed)( (FT_ULong)(i) << 16 ) )
-  #define FT_fixedToInt( x )                                   \
-          ( (FT_Short)( ( (FT_UInt32)(x) + 0x8000U ) >> 16 ) )
+#define FT_fdot14ToFixed( x )                \
+        ( (FT_Fixed)( (FT_ULong)(x) << 2 ) )
+#define FT_intToFixed( i )                    \
+        ( (FT_Fixed)( (FT_ULong)(i) << 16 ) )
+#define FT_fixedToInt( x )                                   \
+        ( (FT_Short)( ( (FT_UInt32)(x) + 0x8000U ) >> 16 ) )
 
 
   static FT_Error
@@ -1940,11 +1940,11 @@
   TT_Get_MM_Var( TT_Face      face,
                  FT_MM_Var*  *master )
   {
-    FT_Stream            stream = face->root.stream;
-    FT_Memory            memory = face->root.memory;
+    FT_Stream            stream     = face->root.stream;
+    FT_Memory            memory     = face->root.memory;
     FT_ULong             table_len;
-    FT_Error             error  = FT_Err_Ok;
-    FT_ULong             fvar_start;
+    FT_Error             error      = FT_Err_Ok;
+    FT_ULong             fvar_start = 0;
     FT_UInt              i, j;
     FT_MM_Var*           mmvar = NULL;
     FT_Fixed*            next_coords;
@@ -1954,8 +1954,19 @@
     FT_Fixed*            c;
     FT_Var_Named_Style*  ns;
     GX_FVar_Head         fvar_head;
-    FT_Bool              usePsName;
+    FT_Bool              usePsName  = 0;
     FT_UInt              num_instances;
+    FT_UInt              num_axes;
+    FT_UShort*           axis_flags;
+
+    FT_Offset  mmvar_size;
+    FT_Offset  axis_flags_size;
+    FT_Offset  axis_size;
+    FT_Offset  namedstyle_size;
+    FT_Offset  next_coords_size;
+    FT_Offset  next_name_size;
+
+    FT_Bool  need_init;
 
     static const FT_Frame_Field  fvar_fields[] =
     {
@@ -1994,7 +2005,9 @@
     /* read the font data and set up the internal representation */
     /* if not already done                                       */
 
-    if ( !face->blend )
+    need_init = !face->blend;
+
+    if ( need_init )
     {
       FT_TRACE2(( "FVAR " ));
 
@@ -2036,19 +2049,49 @@
       if ( FT_NEW( face->blend ) )
         goto Exit;
 
-      /* `num_instances' holds the number of all named instances, */
-      /* including the default instance which might be missing    */
-      /* in fvar's table of named instances                       */
-      num_instances = face->root.style_flags >> 16;
+      num_axes = fvar_head.axisCount;
+    }
+    else
+      num_axes = face->blend->num_axis;
 
-      /* cannot overflow 32-bit arithmetic because of the size limits */
-      /* used in the `fvar' table validity check in `sfnt_init_face'  */
-      face->blend->mmvar_len =
-        sizeof ( FT_MM_Var ) +
-        fvar_head.axisCount * sizeof ( FT_Var_Axis ) +
-        num_instances * sizeof ( FT_Var_Named_Style ) +
-        num_instances * fvar_head.axisCount * sizeof ( FT_Fixed ) +
-        5 * fvar_head.axisCount;
+    /* `num_instances' holds the number of all named instances, */
+    /* including the default instance which might be missing    */
+    /* in fvar's table of named instances                       */
+    num_instances = face->root.style_flags >> 16;
+
+    /* prepare storage area for MM data; this cannot overflow   */
+    /* 32-bit arithmetic because of the size limits used in the */
+    /* `fvar' table validity check in `sfnt_init_face'          */
+
+    /* the various `*_size' variables, which we also use as     */
+    /* offsets into the `mmlen' array, must be multiples of the */
+    /* pointer size (except the last one); without such an      */
+    /* alignment there might be runtime errors due to           */
+    /* misaligned addresses                                     */
+#undef  ALIGN_SIZE
+#define ALIGN_SIZE( n ) \
+          ( ( (n) + sizeof (void*) - 1 ) & ~( sizeof (void*) - 1 ) )
+
+    mmvar_size       = ALIGN_SIZE( sizeof ( FT_MM_Var ) );
+    axis_flags_size  = ALIGN_SIZE( num_axes *
+                                   sizeof ( FT_UShort ) );
+    axis_size        = ALIGN_SIZE( num_axes *
+                                   sizeof ( FT_Var_Axis ) );
+    namedstyle_size  = ALIGN_SIZE( num_instances *
+                                   sizeof ( FT_Var_Named_Style ) );
+    next_coords_size = ALIGN_SIZE( num_instances *
+                                   num_axes *
+                                   sizeof ( FT_Fixed ) );
+    next_name_size   = num_axes * 5;
+
+    if ( need_init )
+    {
+      face->blend->mmvar_len = mmvar_size       +
+                               axis_flags_size  +
+                               axis_size        +
+                               namedstyle_size  +
+                               next_coords_size +
+                               next_name_size;
 
       if ( FT_ALLOC( mmvar, face->blend->mmvar_len ) )
         goto Exit;
@@ -2058,28 +2101,33 @@
       /* the data gets filled in later on                    */
 
       mmvar->num_axis =
-        fvar_head.axisCount;
+        num_axes;
       mmvar->num_designs =
         ~0U;                   /* meaningless in this context; each glyph */
                                /* may have a different number of designs  */
                                /* (or tuples, as called by Apple)         */
       mmvar->num_namedstyles =
         num_instances;
-      mmvar->axis =
-        (FT_Var_Axis*)&( mmvar[1] );
-      mmvar->namedstyle =
-        (FT_Var_Named_Style*)&( mmvar->axis[fvar_head.axisCount] );
 
-      next_coords =
-        (FT_Fixed*)&( mmvar->namedstyle[num_instances] );
+      /* alas, no public field in `FT_Var_Axis' for axis flags */
+      axis_flags =
+        (FT_UShort*)( (char*)mmvar + mmvar_size );
+      mmvar->axis =
+        (FT_Var_Axis*)( (char*)axis_flags + axis_flags_size );
+      mmvar->namedstyle =
+        (FT_Var_Named_Style*)( (char*)mmvar->axis + axis_size );
+
+      next_coords = (FT_Fixed*)( (char*)mmvar->namedstyle +
+                                 namedstyle_size );
       for ( i = 0; i < num_instances; i++ )
       {
         mmvar->namedstyle[i].coords  = next_coords;
-        next_coords                 += fvar_head.axisCount;
+        next_coords                 += num_axes;
       }
 
-      next_name = (FT_String*)next_coords;
-      for ( i = 0; i < fvar_head.axisCount; i++ )
+      next_name = (FT_String*)( (char*)mmvar->namedstyle +
+                                namedstyle_size + next_coords_size );
+      for ( i = 0; i < num_axes; i++ )
       {
         mmvar->axis[i].name  = next_name;
         next_name           += 5;
@@ -2091,7 +2139,7 @@
         goto Exit;
 
       a = mmvar->axis;
-      for ( i = 0; i < fvar_head.axisCount; i++ )
+      for ( i = 0; i < num_axes; i++ )
       {
         GX_FVar_Axis  axis_rec;
 
@@ -2110,6 +2158,8 @@
         a->name[3] = (FT_String)( ( a->tag       ) & 0xFF );
         a->name[4] = '\0';
 
+        *axis_flags = axis_rec.flags;
+
         if ( a->minimum > a->def ||
              a->def > a->maximum )
         {
@@ -2121,13 +2171,17 @@
           a->maximum = a->def;
         }
 
-        FT_TRACE5(( "  \"%s\": minimum=%.5f, default=%.5f, maximum=%.5f\n",
+        FT_TRACE5(( "  \"%s\":"
+                    " minimum=%.5f, default=%.5f, maximum=%.5f,"
+                    " flags=0x%04X\n",
                     a->name,
                     a->minimum / 65536.0,
                     a->def / 65536.0,
-                    a->maximum / 65536.0 ));
+                    a->maximum / 65536.0,
+                    *axis_flags ));
 
         a++;
+        axis_flags++;
       }
 
       FT_TRACE5(( "\n" ));
@@ -2135,7 +2189,7 @@
       /* named instance coordinates are stored as design coordinates; */
       /* we have to convert them to normalized coordinates also       */
       if ( FT_NEW_ARRAY( face->blend->normalized_stylecoords,
-                         fvar_head.axisCount * num_instances ) )
+                         num_axes * num_instances ) )
         goto Exit;
 
       if ( fvar_head.instanceCount && !face->blend->avar_loaded )
@@ -2155,14 +2209,14 @@
       {
         /* PostScript names add 2 bytes to the instance record size */
         if ( FT_FRAME_ENTER( ( usePsName ? 6L : 4L ) +
-                             4L * fvar_head.axisCount ) )
+                             4L * num_axes ) )
           goto Exit;
 
         ns->strid       =    FT_GET_USHORT();
         (void) /* flags = */ FT_GET_USHORT();
 
         c = ns->coords;
-        for ( j = 0; j < fvar_head.axisCount; j++, c++ )
+        for ( j = 0; j < num_axes; j++, c++ )
           *c = FT_GET_LONG();
 
         /* valid psid values are 6, [256;32767], and 0xFFFF */
@@ -2171,11 +2225,8 @@
         else
           ns->psid = 0xFFFF;
 
-        ft_var_to_normalized( face,
-                              fvar_head.axisCount,
-                              ns->coords,
-                              nsc );
-        nsc += fvar_head.axisCount;
+        ft_var_to_normalized( face, num_axes, ns->coords, nsc );
+        nsc += num_axes;
 
         FT_FRAME_EXIT();
       }
@@ -2224,7 +2275,7 @@
 
             a = mmvar->axis;
             c = ns->coords;
-            for ( j = 0; j < fvar_head.axisCount; j++, a++, c++ )
+            for ( j = 0; j < num_axes; j++, a++, c++ )
               *c = a->def;
           }
         }
@@ -2244,22 +2295,25 @@
         goto Exit;
       FT_MEM_COPY( mmvar, face->blend->mmvar, face->blend->mmvar_len );
 
+      axis_flags =
+        (FT_UShort*)( (char*)mmvar + mmvar_size );
       mmvar->axis =
-        (FT_Var_Axis*)&( mmvar[1] );
+        (FT_Var_Axis*)( (char*)axis_flags + axis_flags_size );
       mmvar->namedstyle =
-        (FT_Var_Named_Style*)&( mmvar->axis[mmvar->num_axis] );
-      next_coords =
-        (FT_Fixed*)&( mmvar->namedstyle[mmvar->num_namedstyles] );
+        (FT_Var_Named_Style*)( (char*)mmvar->axis+ axis_size );
 
+      next_coords = (FT_Fixed*)( (char*)mmvar->namedstyle +
+                                 namedstyle_size );
       for ( n = 0; n < mmvar->num_namedstyles; n++ )
       {
         mmvar->namedstyle[n].coords  = next_coords;
-        next_coords                 += mmvar->num_axis;
+        next_coords                 += num_axes;
       }
 
       a         = mmvar->axis;
-      next_name = (FT_String*)next_coords;
-      for ( n = 0; n < mmvar->num_axis; n++ )
+      next_name = (FT_String*)( (char*)mmvar->namedstyle +
+                                namedstyle_size + next_coords_size );
+      for ( n = 0; n < num_axes; n++ )
       {
         a->name = next_name;
 

@@ -7,21 +7,16 @@
 #include <utility>
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/IDLTypes.h"
-#include "bindings/core/v8/TestSequenceCallback.h"
 #include "bindings/core/v8/ToV8ForCore.h"
 #include "bindings/core/v8/V8BindingForTesting.h"
 #include "bindings/core/v8/V8Internals.h"
+#include "bindings/core/v8/v8_test_sequence_callback.h"
 #include "platform/wtf/Vector.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
 namespace {
-
-template <typename T>
-v8::Local<v8::Value> ToV8(V8TestingScope* scope, T value) {
-  return blink::ToV8(value, scope->GetContext()->Global(), scope->GetIsolate());
-}
 
 TEST(NativeValueTraitsImplTest, IDLInterface) {
   V8TestingScope scope;
@@ -37,8 +32,8 @@ TEST(NativeValueTraitsImplTest, IDLInterface) {
   }
   {
     DummyExceptionStateForTesting exception_state;
-    TestSequenceCallback* callback_function =
-        NativeValueTraits<TestSequenceCallback>::NativeValue(
+    V8TestSequenceCallback* callback_function =
+        NativeValueTraits<V8TestSequenceCallback>::NativeValue(
             scope.GetIsolate(), v8::Undefined(scope.GetIsolate()),
             exception_state);
     EXPECT_TRUE(exception_state.HadException());

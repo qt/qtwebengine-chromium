@@ -32,7 +32,7 @@ String CSSPaintValue::CustomCSSText() const {
   result.Append(name_->CustomCSSText());
   for (const auto& variable_data : argument_variable_data_) {
     result.Append(", ");
-    result.Append(variable_data.Get()->TokenRange().Serialize());
+    result.Append(variable_data.get()->TokenRange().Serialize());
   }
   result.Append(')');
   return result.ToString();
@@ -45,7 +45,8 @@ String CSSPaintValue::GetName() const {
 RefPtr<Image> CSSPaintValue::GetImage(const ImageResourceObserver& client,
                                       const Document& document,
                                       const ComputedStyle&,
-                                      const IntSize& size) {
+                                      const IntSize& container_size,
+                                      const LayoutSize* logical_size) {
   if (!generator_) {
     generator_ = CSSPaintImageGenerator::Create(
         GetName(), document, paint_image_generator_observer_);
@@ -54,7 +55,8 @@ RefPtr<Image> CSSPaintValue::GetImage(const ImageResourceObserver& client,
   if (!ParseInputArguments())
     return nullptr;
 
-  return generator_->Paint(client, size, parsed_input_arguments_);
+  return generator_->Paint(client, container_size, parsed_input_arguments_,
+                           logical_size);
 }
 
 bool CSSPaintValue::ParseInputArguments() {

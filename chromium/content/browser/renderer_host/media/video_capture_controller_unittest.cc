@@ -25,7 +25,6 @@
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
 #include "content/browser/renderer_host/media/video_capture_gpu_jpeg_decoder.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
-#include "content/common/media/media_stream_options.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "media/base/video_frame_metadata.h"
@@ -142,7 +141,8 @@ class VideoCaptureControllerTest
     auto device_launcher = base::MakeUnique<MockVideoCaptureDeviceLauncher>();
     controller_ = new VideoCaptureController(
         arbitrary_device_id, arbitrary_stream_type, arbitrary_params,
-        std::move(device_launcher));
+        std::move(device_launcher),
+        base::BindRepeating([](const std::string&) {}));
     InitializeNewDeviceClientAndBufferPoolInstances();
     auto mock_launched_device =
         base::MakeUnique<MockLaunchedVideoCaptureDevice>();

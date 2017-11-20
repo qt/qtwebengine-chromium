@@ -6,13 +6,10 @@ import("//mojo/public/tools/bindings/mojom.gni")
 
 mojom("interfaces") {
   sources = [
-    "context_lost_reason.mojom",
-    "gpu_host.mojom",
     "gpu_main.mojom",
   ]
 
   public_deps = [
-    "//cc/ipc:interfaces",
     "//gpu/ipc/common:interfaces",
     "//media/gpu/mojo:jpeg_decoder",
     "//media/mojo/interfaces",

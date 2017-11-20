@@ -16,9 +16,11 @@ class NGBreakToken;
 class NGConstraintSpace;
 class NGFragmentBuilder;
 class NGLayoutResult;
+class NGPhysicalBoxFragment;
 class NGPhysicalFragment;
 struct MinMaxSize;
 struct NGBaselineRequest;
+struct NGBoxStrut;
 struct NGLogicalOffset;
 
 // Represents a node to be laid out.
@@ -39,7 +41,13 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
   // both.
   MinMaxSize ComputeMinMaxSize();
 
+  NGBoxStrut GetScrollbarSizes() const;
+
   NGLayoutInputNode FirstChild();
+
+  // Layout an atomic inline; e.g., inline block.
+  RefPtr<NGLayoutResult> LayoutAtomicInline(const NGConstraintSpace&,
+                                            bool use_first_line_style);
 
   // Runs layout on the underlying LayoutObject and creates a fragment for the
   // resulting geometry.
@@ -59,7 +67,13 @@ class CORE_EXPORT NGBlockNode final : public NGLayoutInputNode {
  private:
   // After we run the layout algorithm, this function copies back the geometry
   // data to the layout box.
-  void CopyFragmentDataToLayoutBox(const NGConstraintSpace&, NGLayoutResult*);
+  void CopyFragmentDataToLayoutBox(const NGConstraintSpace&,
+                                   const NGLayoutResult&);
+  void PlaceChildrenInLayoutBox(const NGConstraintSpace&,
+                                const NGPhysicalBoxFragment&,
+                                const NGPhysicalOffset& offset_from_start);
+  void PlaceChildrenInFlowThread(const NGConstraintSpace&,
+                                 const NGPhysicalBoxFragment&);
   void CopyChildFragmentPosition(
       const NGPhysicalFragment& fragment,
       const NGPhysicalOffset& additional_offset = NGPhysicalOffset());

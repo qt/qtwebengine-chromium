@@ -4,10 +4,8 @@
 
 #include "net/ftp/ftp_network_transaction.h"
 
-#include <deque>
-
+#include "base/containers/circular_deque.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -217,7 +215,7 @@ class FtpSocketDataProvider : public SocketDataProvider {
 
  private:
   // List of reads to be consumed.
-  std::deque<MockRead> reads_;
+  base::circular_deque<MockRead> reads_;
 
   // Max number of bytes we will read at a time. 0 means no limit.
   int short_read_limit_;

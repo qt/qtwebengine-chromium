@@ -15,7 +15,7 @@ namespace blink {
 class CORE_EXPORT TransitionKeyframe : public Keyframe {
  public:
   static RefPtr<TransitionKeyframe> Create(const PropertyHandle& property) {
-    return AdoptRef(new TransitionKeyframe(property));
+    return WTF::AdoptRef(new TransitionKeyframe(property));
   }
   void SetValue(std::unique_ptr<TypedInterpolationValue> value) {
     value_ = std::move(value);
@@ -31,13 +31,13 @@ class CORE_EXPORT TransitionKeyframe : public Keyframe {
         EffectModel::CompositeOperation composite,
         std::unique_ptr<TypedInterpolationValue> value,
         RefPtr<AnimatableValue> compositor_value) {
-      return AdoptRef(new PropertySpecificKeyframe(
+      return WTF::AdoptRef(new PropertySpecificKeyframe(
           offset, std::move(easing), composite, std::move(value),
           std::move(compositor_value)));
     }
 
     const AnimatableValue* GetAnimatableValue() const final {
-      return compositor_value_.Get();
+      return compositor_value_.get();
     }
 
     bool IsNeutral() const final { return false; }
@@ -87,7 +87,7 @@ class CORE_EXPORT TransitionKeyframe : public Keyframe {
   bool IsTransitionKeyframe() const final { return true; }
 
   RefPtr<Keyframe> Clone() const final {
-    return AdoptRef(new TransitionKeyframe(*this));
+    return WTF::AdoptRef(new TransitionKeyframe(*this));
   }
 
   RefPtr<Keyframe::PropertySpecificKeyframe> CreatePropertySpecificKeyframe(

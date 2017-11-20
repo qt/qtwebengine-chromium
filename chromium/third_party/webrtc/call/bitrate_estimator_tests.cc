@@ -12,18 +12,18 @@
 #include <memory>
 #include <string>
 
-#include "webrtc/call/call.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/event.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/thread_annotations.h"
-#include "webrtc/test/call_test.h"
-#include "webrtc/test/direct_transport.h"
-#include "webrtc/test/encoder_settings.h"
-#include "webrtc/test/fake_decoder.h"
-#include "webrtc/test/fake_encoder.h"
-#include "webrtc/test/frame_generator_capturer.h"
-#include "webrtc/test/gtest.h"
+#include "call/call.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/event.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/thread_annotations.h"
+#include "test/call_test.h"
+#include "test/direct_transport.h"
+#include "test/encoder_settings.h"
+#include "test/fake_decoder.h"
+#include "test/fake_encoder.h"
+#include "test/frame_generator_capturer.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 namespace {
@@ -83,8 +83,8 @@ class LogObserver {
    private:
     typedef std::list<std::string> Strings;
     rtc::CriticalSection crit_sect_;
-    Strings received_log_lines_ GUARDED_BY(crit_sect_);
-    Strings expected_log_lines_ GUARDED_BY(crit_sect_);
+    Strings received_log_lines_ RTC_GUARDED_BY(crit_sect_);
+    Strings expected_log_lines_ RTC_GUARDED_BY(crit_sect_);
     rtc::Event done_;
   };
 

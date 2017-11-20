@@ -132,27 +132,28 @@ private:
 GrTessellatingPathRenderer::GrTessellatingPathRenderer() {
 }
 
-bool GrTessellatingPathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
+GrPathRenderer::CanDrawPath
+GrTessellatingPathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
     // This path renderer can draw fill styles, and can do screenspace antialiasing via a
     // one-pixel coverage ramp. It can do convex and concave paths, but we'll leave the convex
     // ones to simpler algorithms. We pass on paths that have styles, though they may come back
     // around after applying the styling information to the geometry to create a filled path. In
-    // the non-AA case, We skip paths thta don't have a key since the real advantage of this path
+    // the non-AA case, We skip paths that don't have a key since the real advantage of this path
     // renderer comes from caching the tessellated geometry. In the AA case, we do not cache, so we
     // accept paths without keys.
     if (!args.fShape->style().isSimpleFill() || args.fShape->knownToBeConvex()) {
-        return false;
+        return CanDrawPath::kNo;
     }
     if (GrAAType::kCoverage == args.fAAType) {
         SkPath path;
         args.fShape->asPath(&path);
         if (path.countVerbs() > 10) {
-            return false;
+            return CanDrawPath::kNo;
         }
     } else if (!args.fShape->hasUnstyledKey()) {
-        return false;
+        return CanDrawPath::kNo;
     }
-    return true;
+    return CanDrawPath::kYes;
 }
 
 namespace {
@@ -175,6 +176,10 @@ public:
     }
 
     const char* name() const override { return "TessellatingPathOp"; }
+
+    void visitProxies(const VisitProxyFunc& func) const override {
+        fHelper.visitProxies(func);
+    }
 
     SkString dumpInfo() const override {
         SkString string;
@@ -210,11 +215,12 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
+                                GrPixelConfigIsClamped dstIsClamped) override {
         GrProcessorAnalysisCoverage coverage = fAntiAlias
                                                        ? GrProcessorAnalysisCoverage::kSingleChannel
                                                        : GrProcessorAnalysisCoverage::kNone;
-        return fHelper.xpRequiresDstTexture(caps, clip, coverage, &fColor);
+        return fHelper.xpRequiresDstTexture(caps, clip, dstIsClamped, coverage, &fColor);
     }
 
 private:
@@ -274,6 +280,7 @@ private:
         info.fCount = count;
         key.setCustomData(SkData::MakeWithCopy(&info, sizeof(info)));
         rp->assignUniqueKeyToResource(key, allocator.vertexBuffer());
+        fShape.addGenIDChangeListener(new PathInvalidator(key));
     }
 
     void drawAA(Target* target, const GrGeometryProcessor* gp) {

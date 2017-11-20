@@ -20,8 +20,10 @@
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/coordinator.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/tracing_observer.h"
 #include "services/resource_coordinator/public/interfaces/memory_instrumentation/memory_instrumentation.mojom.h"
+#include "services/service_manager/public/cpp/identity.h"
 
 namespace service_manager {
+struct BindSourceInfo;
 class Connector;
 }
 
@@ -77,6 +79,22 @@ class CoordinatorImpl : public Coordinator, public mojom::Coordinator {
     const base::trace_event::MemoryDumpRequestArgs args;
     const RequestGlobalMemoryDumpCallback callback;
 
+    bool wants_mmaps() const {
+      return args.level_of_detail ==
+             base::trace_event::MemoryDumpLevelOfDetail::DETAILED;
+    }
+
+    // We always want to return chrome dumps, with exception of the special
+    // case below for the heap profiler, which cares only about mmaps.
+    bool wants_chrome_dumps() const {
+      return args.dump_type !=
+             base::trace_event::MemoryDumpType::VM_REGIONS_ONLY;
+    }
+
+    bool should_return_summaries() const {
+      return args.dump_type == base::trace_event::MemoryDumpType::SUMMARY_ONLY;
+    }
+
     struct PendingResponse {
       enum Type {
         kChromeDump,
@@ -96,7 +114,7 @@ class CoordinatorImpl : public Coordinator, public mojom::Coordinator {
 
       base::ProcessId process_id;
       mojom::ProcessType process_type;
-      mojom::ChromeMemDumpPtr chrome_dump_ptr;
+      std::unique_ptr<base::trace_event::ProcessMemoryDump> chrome_dump;
       OSMemDumpMap os_dumps;
     };
 
@@ -107,6 +125,7 @@ class CoordinatorImpl : public Coordinator, public mojom::Coordinator {
     std::set<QueuedMemoryDumpRequest::PendingResponse> pending_responses;
     std::map<mojom::ClientProcess*, Response> responses;
     int failed_memory_dump_count = 0;
+    bool dump_in_progress = false;
     // The time we started handling the request (does not including queuing
     // time).
     base::Time start_time;
@@ -125,10 +144,11 @@ class CoordinatorImpl : public Coordinator, public mojom::Coordinator {
   };
 
   // Callback of RequestChromeMemoryDump.
-  void OnChromeMemoryDumpResponse(mojom::ClientProcess*,
-                                  bool success,
-                                  uint64_t dump_guid,
-                                  mojom::ChromeMemDumpPtr chrome_memory_dump);
+  void OnChromeMemoryDumpResponse(
+      mojom::ClientProcess*,
+      bool success,
+      uint64_t dump_guid,
+      std::unique_ptr<base::trace_event::ProcessMemoryDump> chrome_memory_dump);
 
   // Callback of RequestOSMemoryDump.
   void OnOSMemoryDumpResponse(mojom::ClientProcess*,
@@ -142,13 +162,15 @@ class CoordinatorImpl : public Coordinator, public mojom::Coordinator {
   void FinalizeGlobalMemoryDumpIfAllManagersReplied();
   QueuedMemoryDumpRequest* GetCurrentRequest();
 
-  mojo::BindingSet<mojom::Coordinator, service_manager::Identity> bindings_;
-
   // Map of registered client processes.
   std::map<mojom::ClientProcess*, std::unique_ptr<ClientInfo>> clients_;
 
   // Outstanding dump requests, enqueued via RequestGlobalMemoryDump().
   std::list<QueuedMemoryDumpRequest> queued_memory_dump_requests_;
+
+  // There may be extant callbacks in |queued_memory_dump_requests_|. The
+  // bindings_ must be closed before destroying the un-run callbacks.
+  mojo::BindingSet<mojom::Coordinator, service_manager::Identity> bindings_;
 
   // Maintains a map of service_manager::Identity -> pid for registered clients.
   std::unique_ptr<ProcessMap> process_map_;

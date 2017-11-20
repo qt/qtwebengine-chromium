@@ -1,18 +1,29 @@
-# disable camel case warning
+# Copyright 2017 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+#
+# Note: running this test requires installing the package python-mock.
 # pylint: disable=C0103
+# pylint: disable=F0401
 import PRESUBMIT
 
 import mock
+import os.path
 import subprocess
+import sys
 import unittest
 
-from PRESUBMIT_test_mocks import MockInputApi, MockOutputApi, MockAffectedFile  # pylint: disable=F0401
+sys.path.append(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+
+from PRESUBMIT_test_mocks import MockInputApi
+from PRESUBMIT_test_mocks import MockOutputApi
+from PRESUBMIT_test_mocks import MockAffectedFile
 
 
 class Capture(object):
-    """
-    Class to capture a call argument that can be tested later on.
-    """
+    """Class to capture a call argument that can be tested later on."""
+
     def __init__(self):
         self.value = None
 
@@ -25,17 +36,16 @@ class PresubmitTest(unittest.TestCase):
 
     @mock.patch('subprocess.Popen')
     def testCheckChangeOnUploadWithWebKitAndChromiumFiles(self, _):
-        """
-        This verifies that CheckChangeOnUpload will only call check-webkit-style
+        """This verifies that CheckChangeOnUpload will only call check-webkit-style
         on WebKit files.
         """
         diff_file_webkit_h = ['some diff']
         diff_file_chromium_h = ['another diff']
         mock_input_api = MockInputApi()
-        mock_input_api.files = [MockAffectedFile('FileWebkit.h',
-                                                 diff_file_webkit_h),
-                                MockAffectedFile('file_chromium.h',
-                                                 diff_file_chromium_h)]
+        mock_input_api.files = [
+            MockAffectedFile('FileWebkit.h', diff_file_webkit_h),
+            MockAffectedFile('file_chromium.h', diff_file_chromium_h)
+        ]
         # Access to a protected member _CheckStyle
         # pylint: disable=W0212
         PRESUBMIT._CheckStyle(mock_input_api, MockOutputApi())
@@ -47,23 +57,118 @@ class PresubmitTest(unittest.TestCase):
 
     @mock.patch('subprocess.Popen')
     def testCheckChangeOnUploadWithEmptyAffectedFileList(self, _):
-        """
-        This verifies that CheckChangeOnUpload will skip calling
+        """This verifies that CheckChangeOnUpload will skip calling
         check-webkit-style if the affected file list is empty.
         """
         diff_file_chromium1_h = ['some diff']
         diff_file_chromium2_h = ['another diff']
         mock_input_api = MockInputApi()
-        mock_input_api.files = [MockAffectedFile('first_file_chromium.h',
-                                                 diff_file_chromium1_h),
-                                MockAffectedFile('second_file_chromium.h',
-                                                 diff_file_chromium2_h)]
+        mock_input_api.files = [
+            MockAffectedFile('first_file_chromium.h', diff_file_chromium1_h),
+            MockAffectedFile('second_file_chromium.h', diff_file_chromium2_h)
+        ]
         # Access to a protected member _CheckStyle
         # pylint: disable=W0212
         PRESUBMIT._CheckStyle(mock_input_api, MockOutputApi())
         # pylint: disable=E1101
         subprocess.Popen.assert_not_called()
 
+
+class CxxDependencyTest(unittest.TestCase):
+    allow_list = [
+        'gfx::ColorSpace',
+        'gfx::CubicBezier',
+        'gfx::ICCProfile',
+        'gfx::ScrollOffset',
+    ]
+    disallow_list = [
+        'scoped_refptr<base::SingleThreadTaskRunner>',
+        'base::Callback<void()>',
+        'base::OnceCallback<void()>',
+        'content::RenderFrame',
+        'gfx::Point',
+        'gfx::Rect',
+        'net::IPEndPoint',
+        'ui::Clipboard',
+    ]
+    disallow_message = [
+    ]
+
+    def runCheck(self, filename, file_contents):
+        mock_input_api = MockInputApi()
+        mock_input_api.files = [
+            MockAffectedFile(filename, file_contents),
+        ]
+        # Access to a protected member
+        # pylint: disable=W0212
+        return PRESUBMIT._CheckForForbiddenNamespace(mock_input_api, MockOutputApi())
+
+    # References in comments should never be checked.
+    def testCheckCommentsIgnored(self):
+        filename = 'third_party/WebKit/Source/core/frame/frame.cc'
+        for item in self.allow_list:
+            errors = self.runCheck(filename, ['// %s' % item])
+            self.assertEqual([], errors)
+
+        for item in self.disallow_list:
+            errors = self.runCheck(filename, ['// %s' % item])
+            self.assertEqual([], errors)
+
+    # core, modules, public, et cetera should all have dependency enforcement.
+    def testCheckCoreEnforcement(self):
+        filename = 'third_party/WebKit/Source/core/frame/frame.cc',
+        for item in self.allow_list:
+            errors = self.runCheck(filename, ['%s' % item])
+            self.assertEqual([], errors)
+
+        for item in self.disallow_list:
+            errors = self.runCheck(filename, ['%s' % item])
+            self.assertGreater(len(errors), 0)
+            self.assertRegexpMatches(
+                errors[0].message,
+                '^Do not use Chromium class from namespace [A-Za-z0-9_]+ inside Blink core:')
+            if len(errors) == 2:
+                self.assertRegexpMatches(errors[1].message, '^Do not use Chromium class [A-Za-z0-9_]+ inside Blink core:')
+            else:
+                self.assertEquals(1, len(errors))
+
+    def testCheckModulesEnforcement(self):
+        filename = 'third_party/WebKit/Source/modules/modules_initializer.cc',
+        for item in self.allow_list:
+            errors = self.runCheck(filename, ['%s' % item])
+            self.assertEqual([], errors)
+
+        for item in self.disallow_list:
+            errors = self.runCheck(filename, ['%s' % item])
+            self.assertGreater(len(errors), 0)
+            self.assertRegexpMatches(
+                errors[0].message,
+                '^Do not use Chromium class from namespace [A-Za-z0-9_]+ inside Blink core:')
+            if len(errors) == 2:
+                self.assertRegexpMatches(errors[1].message, '^Do not use Chromium class [A-Za-z0-9_]+ inside Blink core:')
+            else:
+                self.assertEquals(1, len(errors))
+
+    def testCheckPublicEnforcement(self):
+        filename = 'third_party/WebKit/Source/public/platform/WebThread.h',
+        for item in self.allow_list:
+            errors = self.runCheck(filename, ['%s' % item])
+            self.assertEqual([], errors)
+
+        for item in self.disallow_list:
+            errors = self.runCheck(filename, ['%s' % item])
+            self.assertGreater(len(errors), 0)
+            self.assertRegexpMatches(
+                errors[0].message,
+                '^Do not use Chromium class from namespace [A-Za-z0-9_]+ inside Blink core:')
+            if len(errors) == 2:
+                self.assertRegexpMatches(errors[1].message, '^Do not use Chromium class [A-Za-z0-9_]+ inside Blink core:')
+            else:
+                self.assertEquals(1, len(errors))
+
+    # platform and controller should be opted out of enforcement, but aren't
+    # currently checked because the PRESUBMIT test mocks are missing too
+    # much functionality...
 
 if __name__ == '__main__':
     unittest.main()

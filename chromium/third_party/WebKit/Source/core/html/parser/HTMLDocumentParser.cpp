@@ -26,7 +26,6 @@
 #include "core/html/parser/HTMLDocumentParser.h"
 
 #include <memory>
-#include "core/HTMLNames.h"
 #include "core/css/MediaValuesCached.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/DocumentFragment.h"
@@ -41,6 +40,7 @@
 #include "core/html/parser/HTMLParserScriptRunner.h"
 #include "core/html/parser/HTMLResourcePreloader.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
+#include "core/html_names.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/LinkLoader.h"
@@ -50,6 +50,8 @@
 #include "platform/Histogram.h"
 #include "platform/SharedBuffer.h"
 #include "platform/WebFrameScheduler.h"
+#include "platform/bindings/RuntimeCallStats.h"
+#include "platform/bindings/V8PerIsolateData.h"
 #include "platform/heap/Handle.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
@@ -135,7 +137,7 @@ HTMLDocumentParser::HTMLDocumentParser(Document& document,
           TaskRunnerHelper::Get(TaskType::kNetworking, &document)),
       parser_scheduler_(
           sync_policy == kAllowAsynchronousParsing
-              ? HTMLParserScheduler::Create(this, loading_task_runner_.Get())
+              ? HTMLParserScheduler::Create(this, loading_task_runner_.get())
               : nullptr),
       xss_auditor_delegate_(&document),
       weak_factory_(this),
@@ -656,8 +658,13 @@ void HTMLDocumentParser::PumpTokenizer() {
     if (xss_auditor_.IsEnabled())
       source_tracker_.Start(input_.Current(), tokenizer_.get(), Token());
 
-    if (!tokenizer_->NextToken(input_.Current(), Token()))
-      break;
+    {
+      RUNTIME_CALL_TIMER_SCOPE(
+          V8PerIsolateData::MainThreadIsolate(),
+          RuntimeCallStats::CounterId::kHTMLTokenizerNextToken);
+      if (!tokenizer_->NextToken(input_.Current(), Token()))
+        break;
+    }
 
     if (xss_auditor_.IsEnabled()) {
       source_tracker_.end(input_.Current(), tokenizer_.get(), Token());
@@ -809,7 +816,7 @@ void HTMLDocumentParser::StartBackgroundParser() {
   config->xss_auditor->Init(GetDocument(), &xss_auditor_delegate_);
 
   config->decoder = TakeDecoder();
-  config->tokenized_chunk_queue = tokenized_chunk_queue_.Get();
+  config->tokenized_chunk_queue = tokenized_chunk_queue_.get();
   if (GetDocument()->GetSettings()) {
     if (GetDocument()
             ->GetSettings()

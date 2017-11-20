@@ -37,6 +37,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "core/CoreExport.h"
+#include "core/animation/WorkletAnimationController.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/DocumentEncodingData.h"
 #include "core/dom/DocumentInit.h"
@@ -45,7 +46,10 @@
 #include "core/dom/DocumentShutdownObserver.h"
 #include "core/dom/DocumentTiming.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/dom/FrameRequestCallbackCollection.h"
+#include "core/dom/LiveNodeListRegistry.h"
 #include "core/dom/MutationObserver.h"
+#include "core/dom/ScriptedIdleTaskController.h"
 #include "core/dom/SynchronousMutationNotifier.h"
 #include "core/dom/SynchronousMutationObserver.h"
 #include "core/dom/Text.h"
@@ -113,7 +117,6 @@ class ExceptionState;
 class FloatQuad;
 class FloatRect;
 class FormController;
-class FrameRequestCallback;
 class HTMLAllCollection;
 class HTMLBodyElement;
 class HTMLCollection;
@@ -126,7 +129,6 @@ class HTMLImportsController;
 class HTMLLinkElement;
 class HTMLScriptElementOrSVGScriptElement;
 class HitTestRequest;
-class IdleRequestCallback;
 class IdleRequestOptions;
 class IntersectionObserverController;
 class LayoutPoint;
@@ -154,11 +156,11 @@ class ResourceFetcher;
 class RootScrollerController;
 class SVGDocumentExtensions;
 class SVGUseElement;
+class TrustedHTML;
 class ScriptElementBase;
 class ScriptRunner;
 class ScriptableDocumentParser;
 class ScriptedAnimationController;
-class ScriptedIdleTaskController;
 class SecurityOrigin;
 class SegmentedString;
 class SelectorQueryCache;
@@ -184,7 +186,7 @@ struct IconURL;
 using MouseEventWithHitTestResults = EventWithHitTestResults<WebMouseEvent>;
 using ExceptionCode = int;
 
-enum NodeListInvalidationType {
+enum NodeListInvalidationType : int {
   kDoNotInvalidateOnAttributeChanges = 0,
   kInvalidateOnClassAttrChange,
   kInvalidateOnIdNameAttrChange,
@@ -553,7 +555,7 @@ class CORE_EXPORT Document : public ContainerNode,
                                   int& margin_bottom,
                                   int& margin_left);
 
-  ResourceFetcher* Fetcher() const { return fetcher_.Get(); }
+  ResourceFetcher* Fetcher() const override { return fetcher_.Get(); }
 
   void Initialize();
   virtual void Shutdown();
@@ -623,6 +625,11 @@ class CORE_EXPORT Document : public ContainerNode,
                ExceptionState& = ASSERT_NO_EXCEPTION);
   void write(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
   void writeln(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
+
+  // TrustedHTML variants of the above.
+  // TODO(mkwst): Write a spec for this.
+  void write(LocalDOMWindow*, TrustedHTML*, ExceptionState&);
+  void writeln(LocalDOMWindow*, TrustedHTML*, ExceptionState&);
 
   bool WellFormed() const { return well_formed_; }
 
@@ -1062,7 +1069,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void EnforceSandboxFlags(SandboxFlags mask) override;
 
-  void StatePopped(PassRefPtr<SerializedScriptValue>);
+  void StatePopped(RefPtr<SerializedScriptValue>);
 
   enum LoadEventProgress {
     kLoadEventNotRun,
@@ -1147,11 +1154,12 @@ class CORE_EXPORT Document : public ContainerNode,
 
   const DocumentTiming& GetTiming() const { return document_timing_; }
 
-  int RequestAnimationFrame(FrameRequestCallback*);
+  int RequestAnimationFrame(FrameRequestCallbackCollection::FrameCallback*);
   void CancelAnimationFrame(int id);
   void ServiceScriptedAnimations(double monotonic_animation_start_time);
 
-  int RequestIdleCallback(IdleRequestCallback*, const IdleRequestOptions&);
+  int RequestIdleCallback(ScriptedIdleTaskController::IdleTask*,
+                          const IdleRequestOptions&);
   void CancelIdleCallback(int id);
 
   EventTarget* ErrorEventTarget() final;
@@ -1221,6 +1229,9 @@ class CORE_EXPORT Document : public ContainerNode,
   AnimationClock& GetAnimationClock();
   DocumentTimeline& Timeline() const { return *timeline_; }
   PendingAnimations& GetPendingAnimations() { return *pending_animations_; }
+  WorkletAnimationController& GetWorkletAnimationController() {
+    return *worklet_animation_controller_;
+  }
 
   void AddToTopLayer(Element*, const Element* before = nullptr);
   void RemoveFromTopLayer(Element*);
@@ -1354,6 +1365,7 @@ class CORE_EXPORT Document : public ContainerNode,
   void MaybeQueueSendDidEditFieldInInsecureContext();
 
   CoreProbeSink* GetProbeSink() final;
+  service_manager::InterfaceProvider* GetInterfaceProvider() final;
 
   void SetFeaturePolicy(const String& feature_policy_header);
 
@@ -1497,6 +1509,10 @@ class CORE_EXPORT Document : public ContainerNode,
   Member<LocalDOMWindow> dom_window_;
   TraceWrapperMember<HTMLImportsController> imports_controller_;
 
+  // The document of creator browsing context for frame-less documents such as
+  // documents created by DOMParser and DOMImplementation.
+  WeakMember<Document> context_document_;
+
   Member<ResourceFetcher> fetcher_;
   TraceWrapperMember<DocumentParser> parser_;
   Member<ContextFeatures> context_features_;
@@ -1615,11 +1631,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   HeapHashSet<WeakMember<const LiveNodeListBase>>
       lists_invalidated_at_document_;
-  // Oilpan keeps track of all registered NodeLists.
-  // TODO(Oilpan): improve - only need to know if a NodeList
-  // is currently alive or not for the different types.
-  HeapHashSet<WeakMember<const LiveNodeListBase>>
-      node_lists_[kNumNodeListInvalidationTypes];
+  LiveNodeListRegistry node_lists_;
 
   Member<SVGDocumentExtensions> svg_extensions_;
 
@@ -1646,10 +1658,6 @@ class CORE_EXPORT Document : public ContainerNode,
 
   LayoutView* layout_view_;
 
-  // The document of creator browsing context for frame-less documents such as
-  // documents created by DOMParser and DOMImplementation.
-  WeakMember<Document> context_document_;
-
   // For early return in Fullscreen::fromIfExists()
   bool has_fullscreen_supplement_;
 
@@ -1668,8 +1676,9 @@ class CORE_EXPORT Document : public ContainerNode,
   bool write_recursion_is_too_deep_;
   unsigned write_recursion_depth_;
 
-  Member<ScriptedAnimationController> scripted_animation_controller_;
-  Member<ScriptedIdleTaskController> scripted_idle_task_controller_;
+  TraceWrapperMember<ScriptedAnimationController>
+      scripted_animation_controller_;
+  TraceWrapperMember<ScriptedIdleTaskController> scripted_idle_task_controller_;
   Member<TextAutosizer> text_autosizer_;
 
   Member<V0CustomElementRegistrationContext> registration_context_;
@@ -1686,6 +1695,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   Member<DocumentTimeline> timeline_;
   Member<PendingAnimations> pending_animations_;
+  Member<WorkletAnimationController> worklet_animation_controller_;
 
   Member<Document> template_document_;
   Member<Document> template_document_host_;

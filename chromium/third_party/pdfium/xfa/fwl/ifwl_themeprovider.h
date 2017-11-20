@@ -8,7 +8,8 @@
 #define XFA_FWL_IFWL_THEMEPROVIDER_H_
 
 #include "core/fxcrt/fx_coordinates.h"
-#include "xfa/fwl/theme/cfwl_widgettp.h"
+#include "core/fxcrt/retain_ptr.h"
+#include "xfa/fgas/font/cfgas_gefont.h"
 
 class CFWL_ThemeBackground;
 class CFWL_ThemePart;
@@ -26,8 +27,7 @@ class IFWL_ThemeProvider {
   virtual float GetCYBorderSize() const = 0;
   virtual CFX_RectF GetUIMargin(CFWL_ThemePart* pThemePart) const = 0;
   virtual float GetFontSize(CFWL_ThemePart* pThemePart) const = 0;
-  virtual CFX_RetainPtr<CFGAS_GEFont> GetFont(
-      CFWL_ThemePart* pThemePart) const = 0;
+  virtual RetainPtr<CFGAS_GEFont> GetFont(CFWL_ThemePart* pThemePart) const = 0;
   virtual float GetLineHeight(CFWL_ThemePart* pThemePart) const = 0;
   virtual float GetScrollBarWidth() const = 0;
   virtual FX_COLORREF GetTextColor(CFWL_ThemePart* pThemePart) const = 0;

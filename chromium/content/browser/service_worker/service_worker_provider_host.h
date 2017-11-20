@@ -22,7 +22,6 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_container.mojom.h"
-#include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
 #include "content/common/service_worker/service_worker_provider_host_info.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/request_context_frame_type.h"
@@ -30,6 +29,11 @@
 #include "content/public/common/resource_type.h"
 #include "content/public/common/service_worker_modes.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
+
+namespace blink {
+class MessagePortChannel;
+}
 
 namespace storage {
 class BlobStorageContext;
@@ -37,13 +41,12 @@ class BlobStorageContext;
 
 namespace content {
 
-class MessagePort;
 class ResourceRequestBody;
 class ServiceWorkerContextCore;
 class ServiceWorkerDispatcherHost;
 class ServiceWorkerRequestHandler;
 class ServiceWorkerVersion;
-class BrowserSideServiceWorkerEventDispatcher;
+class BrowserSideControllerServiceWorker;
 class WebContents;
 
 // This class is the browser-process representation of a service worker
@@ -81,9 +84,6 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       public base::SupportsWeakPtr<ServiceWorkerProviderHost>,
       public mojom::ServiceWorkerContainerHost {
  public:
-  using GetRegistrationForReadyCallback =
-      base::Callback<void(ServiceWorkerRegistration* reigstration)>;
-
   using WebContentsGetter = base::Callback<WebContents*(void)>;
 
   // PlzNavigate
@@ -206,13 +206,14 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   bool IsProviderForClient() const;
   blink::WebServiceWorkerClientType client_type() const;
 
-  // Associates to |registration| to listen for its version change events and
-  // sets the controller. If |notify_controllerchange| is true, instructs the
-  // renderer to dispatch a 'controllerchange' event.
+  // For service worker clients. Associates to |registration| to listen for its
+  // version change events and sets the controller. If |notify_controllerchange|
+  // is true, instructs the renderer to dispatch a 'controllerchange' event.
   void AssociateRegistration(ServiceWorkerRegistration* registration,
                              bool notify_controllerchange);
 
-  // Clears the associated registration and stop listening to it.
+  // For service worker clients. Clears the associated registration and stops
+  // listening to it.
   void DisassociateRegistration();
 
   // Returns a handler for a request, the handler may return nullptr if
@@ -250,9 +251,10 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   bool IsContextAlive();
 
   // Dispatches message event to the document.
-  void PostMessageToClient(ServiceWorkerVersion* version,
-                           const base::string16& message,
-                           const std::vector<MessagePort>& sent_message_ports);
+  void PostMessageToClient(
+      ServiceWorkerVersion* version,
+      const base::string16& message,
+      const std::vector<blink::MessagePortChannel>& sent_message_ports);
 
   // Notifies the client that its controller used a feature, for UseCounter
   // purposes. This can only be called if IsProviderForClient() is true.
@@ -264,11 +266,6 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
 
   // |registration| claims the document to be controlled.
   void ClaimedByRegistration(ServiceWorkerRegistration* registration);
-
-  // Called by dispatcher host to get the registration for the "ready" property.
-  // Returns false if there's a completed or ongoing request for the document.
-  // https://slightlyoff.github.io/ServiceWorker/spec/service_worker/#navigator-service-worker-ready
-  bool GetRegistrationForReady(const GetRegistrationForReadyCallback& callback);
 
   // Methods to support cross site navigations.
   std::unique_ptr<ServiceWorkerProviderHost> PrepareForCrossSiteTransfer();
@@ -306,7 +303,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       ServiceWorkerVersion* active_version);
   void SendServiceWorkerStateChangedMessage(
       int worker_handle_id,
-      blink::WebServiceWorkerState state);
+      blink::mojom::ServiceWorkerState state);
 
   // Sets the worker thread id and flushes queued events.
   void SetReadyToSendMessagesToWorker(int render_thread_id);
@@ -343,15 +340,6 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDispatcherHostTest,
                            DispatchExtendableMessageEvent_Fail);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerProviderHostTest, ContextSecurity);
-
-  struct OneShotGetReadyCallback {
-    GetRegistrationForReadyCallback callback;
-    bool called;
-
-    explicit OneShotGetReadyCallback(
-        const GetRegistrationForReadyCallback& callback);
-    ~OneShotGetReadyCallback();
-  };
 
   ServiceWorkerProviderHost(
       int process_id,
@@ -402,6 +390,47 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void SendSetControllerServiceWorker(ServiceWorkerVersion* version,
                                       bool notify_controllerchange);
 
+  // Implements mojom::ServiceWorkerContainerHost.
+  void Register(const GURL& script_url,
+                blink::mojom::ServiceWorkerRegistrationOptionsPtr options,
+                RegisterCallback callback) override;
+  void GetRegistration(const GURL& client_url,
+                       GetRegistrationCallback callback) override;
+  void GetRegistrations(GetRegistrationsCallback callback) override;
+  void GetRegistrationForReady(
+      GetRegistrationForReadyCallback callback) override;
+  void GetControllerServiceWorker(
+      mojom::ControllerServiceWorkerRequest controller_request) override;
+
+  // Callback for ServiceWorkerContextCore::RegisterServiceWorker().
+  void RegistrationComplete(RegisterCallback callback,
+                            int64_t trace_id,
+                            ServiceWorkerStatusCode status,
+                            const std::string& status_message,
+                            int64_t registration_id);
+  // Callback for ServiceWorkerStorage::FindRegistrationForDocument().
+  void GetRegistrationComplete(
+      GetRegistrationCallback callback,
+      int64_t trace_id,
+      ServiceWorkerStatusCode status,
+      scoped_refptr<ServiceWorkerRegistration> registration);
+  // Callback for ServiceWorkerStorage::GetRegistrationsForOrigin().
+  void GetRegistrationsComplete(
+      GetRegistrationsCallback callback,
+      int64_t trace_id,
+      ServiceWorkerStatusCode status,
+      const std::vector<scoped_refptr<ServiceWorkerRegistration>>&
+          registrations);
+
+  bool IsValidRegisterMessage(
+      const GURL& script_url,
+      const blink::mojom::ServiceWorkerRegistrationOptions& options,
+      std::string* out_error) const;
+  bool IsValidGetRegistrationMessage(const GURL& client_url,
+                                     std::string* out_error) const;
+  bool IsValidGetRegistrationsMessage(std::string* out_error) const;
+  bool IsValidGetRegistrationForReadyMessage(std::string* out_error) const;
+
   const std::string client_uuid_;
   const base::TimeTicks create_time_;
   int render_process_id_;
@@ -434,10 +463,17 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // false.
   ServiceWorkerRegistrationMap matching_registrations_;
 
-  std::unique_ptr<OneShotGetReadyCallback> get_ready_callback_;
+  // The ready() promise is only allowed to be created once.
+  // |get_ready_callback_| has three states:
+  // 1. |get_ready_callback_| is null when ready() has not yet been called.
+  // 2. |*get_ready_callback_| is a valid OnceCallback after ready() has been
+  //    called and the callback has not yet been run.
+  // 3. |*get_ready_callback_| is a null OnceCallback after the callback has
+  //    been run.
+  std::unique_ptr<GetRegistrationForReadyCallback> get_ready_callback_;
   scoped_refptr<ServiceWorkerVersion> controller_;
-  std::unique_ptr<BrowserSideServiceWorkerEventDispatcher>
-      controller_event_dispatcher_;
+  std::unique_ptr<BrowserSideControllerServiceWorker>
+      controller_service_worker_;
 
   scoped_refptr<ServiceWorkerVersion> running_hosted_version_;
   base::WeakPtr<ServiceWorkerContextCore> context_;

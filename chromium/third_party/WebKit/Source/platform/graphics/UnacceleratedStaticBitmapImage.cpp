@@ -8,25 +8,23 @@
 
 namespace blink {
 
-PassRefPtr<UnacceleratedStaticBitmapImage>
-UnacceleratedStaticBitmapImage::Create(sk_sp<SkImage> image) {
+RefPtr<UnacceleratedStaticBitmapImage> UnacceleratedStaticBitmapImage::Create(
+    sk_sp<SkImage> image) {
   DCHECK(!image->isTextureBacked());
-  return AdoptRef(new UnacceleratedStaticBitmapImage(std::move(image)));
+  return WTF::AdoptRef(new UnacceleratedStaticBitmapImage(std::move(image)));
 }
 
 UnacceleratedStaticBitmapImage::UnacceleratedStaticBitmapImage(
     sk_sp<SkImage> image) {
   DCHECK(!image->isLazyGenerated());
 
-  PaintImageBuilder builder;
-  InitPaintImageBuilder(builder);
-  builder.set_image(std::move(image));
-  paint_image_ = builder.TakePaintImage();
+  paint_image_ =
+      CreatePaintImageBuilder().set_image(std::move(image)).TakePaintImage();
 }
 
-PassRefPtr<UnacceleratedStaticBitmapImage>
-UnacceleratedStaticBitmapImage::Create(PaintImage image) {
-  return AdoptRef(new UnacceleratedStaticBitmapImage(std::move(image)));
+RefPtr<UnacceleratedStaticBitmapImage> UnacceleratedStaticBitmapImage::Create(
+    PaintImage image) {
+  return WTF::AdoptRef(new UnacceleratedStaticBitmapImage(std::move(image)));
 }
 
 UnacceleratedStaticBitmapImage::UnacceleratedStaticBitmapImage(PaintImage image)
@@ -54,7 +52,8 @@ void UnacceleratedStaticBitmapImage::Draw(PaintCanvas* canvas,
                                           const FloatRect& dst_rect,
                                           const FloatRect& src_rect,
                                           RespectImageOrientationEnum,
-                                          ImageClampingMode clamp_mode) {
+                                          ImageClampingMode clamp_mode,
+                                          ImageDecodingMode) {
   StaticBitmapImage::DrawHelper(canvas, flags, dst_rect, src_rect, clamp_mode,
                                 PaintImageForCurrentFrame());
 }

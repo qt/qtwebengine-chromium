@@ -32,6 +32,7 @@ class Framebuffer;
 struct Limitations;
 class Path;
 class Program;
+class ProgramPipeline;
 class Renderbuffer;
 class Sampler;
 class Shader;
@@ -154,7 +155,7 @@ class TextureManager : public TypedResourceManager<Texture, HandleAllocator, Tex
     GLuint createTexture();
     Texture *getTexture(GLuint handle) const;
 
-    void invalidateTextureComplenessCache() const;
+    void signalAllTexturesDirty() const;
 
     Texture *checkTextureAllocation(rx::GLImplFactory *factory, GLuint handle, GLenum target)
     {
@@ -258,6 +259,25 @@ class FramebufferManager
 
   protected:
     ~FramebufferManager() override {}
+};
+
+class ProgramPipelineManager
+    : public TypedResourceManager<ProgramPipeline, HandleAllocator, ProgramPipelineManager>
+{
+  public:
+    GLuint createProgramPipeline();
+    ProgramPipeline *getProgramPipeline(GLuint handle) const;
+
+    ProgramPipeline *checkProgramPipelineAllocation(rx::GLImplFactory *factory, GLuint handle)
+    {
+        return checkObjectAllocation(factory, handle);
+    }
+
+    static ProgramPipeline *AllocateNewObject(rx::GLImplFactory *factory, GLuint handle);
+    static void DeleteObject(const Context *context, ProgramPipeline *pipeline);
+
+  protected:
+    ~ProgramPipelineManager() override {}
 };
 
 }  // namespace gl

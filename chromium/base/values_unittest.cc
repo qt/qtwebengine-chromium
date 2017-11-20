@@ -74,14 +74,14 @@ TEST(ValuesTest, ConstructStringFromConstCharPtr) {
   EXPECT_EQ("foobar", value.GetString());
 }
 
-TEST(ValuesTest, ConstructStringFromStdStringConstRef) {
+TEST(ValuesTest, ConstructStringFromStringPiece) {
   std::string str = "foobar";
-  Value value(str);
+  Value value{StringPiece(str)};
   EXPECT_EQ(Value::Type::STRING, value.type());
   EXPECT_EQ("foobar", value.GetString());
 }
 
-TEST(ValuesTest, ConstructStringFromStdStringRefRef) {
+TEST(ValuesTest, ConstructStringFromStdStringRRef) {
   std::string str = "foobar";
   Value value(std::move(str));
   EXPECT_EQ(Value::Type::STRING, value.type());
@@ -95,16 +95,9 @@ TEST(ValuesTest, ConstructStringFromConstChar16Ptr) {
   EXPECT_EQ("foobar", value.GetString());
 }
 
-TEST(ValuesTest, ConstructStringFromString16) {
+TEST(ValuesTest, ConstructStringFromStringPiece16) {
   string16 str = ASCIIToUTF16("foobar");
-  Value value(str);
-  EXPECT_EQ(Value::Type::STRING, value.type());
-  EXPECT_EQ("foobar", value.GetString());
-}
-
-TEST(ValuesTest, ConstructStringFromStringPiece) {
-  StringPiece str = "foobar";
-  Value value(str);
+  Value value{StringPiece16(str)};
   EXPECT_EQ(Value::Type::STRING, value.type());
   EXPECT_EQ("foobar", value.GetString());
 }
@@ -661,6 +654,46 @@ TEST(ValuesTest, SetPath) {
   EXPECT_FALSE(found);
 }
 
+TEST(ValuesTest, RemoveKey) {
+  Value root(Value::Type::DICTIONARY);
+  root.SetKey("one", Value(123));
+
+  // Removal of missing key should fail.
+  EXPECT_FALSE(root.RemoveKey("two"));
+
+  // Removal of existing key should succeed.
+  EXPECT_TRUE(root.RemoveKey("one"));
+
+  // Second removal of previously existing key should fail.
+  EXPECT_FALSE(root.RemoveKey("one"));
+}
+
+TEST(ValuesTest, RemovePath) {
+  Value root(Value::Type::DICTIONARY);
+  root.SetPath({"one", "two", "three"}, Value(123));
+
+  // Removal of missing key should fail.
+  EXPECT_FALSE(root.RemovePath({"one", "two", "four"}));
+
+  // Removal of existing key should succeed.
+  EXPECT_TRUE(root.RemovePath({"one", "two", "three"}));
+
+  // Second removal of previously existing key should fail.
+  EXPECT_FALSE(root.RemovePath({"one", "two", "three"}));
+
+  // Intermediate empty dictionaries should be cleared.
+  EXPECT_FALSE(root.FindPath({"one"}));
+
+  root.SetPath({"one", "two", "three"}, Value(123));
+  root.SetPath({"one", "two", "four"}, Value(124));
+
+  EXPECT_TRUE(root.RemovePath(std::vector<StringPiece>{"one", "two", "three"}));
+  // Intermediate non-empty dictionaries should be kept.
+  EXPECT_TRUE(root.FindPath({"one"}));
+  EXPECT_TRUE(root.FindPath({"one", "two"}));
+  EXPECT_TRUE(root.FindPath({"one", "two", "four"}));
+}
+
 TEST(ValuesTest, Basic) {
   // Test basic dictionary getting/setting
   DictionaryValue settings;
@@ -977,7 +1010,7 @@ TEST(ValuesTest, DictionaryWithoutPathExpansion) {
   EXPECT_FALSE(dict.Get("this.isnt.expanded", &value3));
   Value* value4;
   ASSERT_TRUE(dict.GetWithoutPathExpansion("this.isnt.expanded", &value4));
-  EXPECT_EQ(Value::Type::NONE, value4->GetType());
+  EXPECT_EQ(Value::Type::NONE, value4->type());
 }
 
 // Tests the deprecated version of SetWithoutPathExpansion.
@@ -1001,7 +1034,7 @@ TEST(ValuesTest, DictionaryWithoutPathExpansionDeprecated) {
   EXPECT_FALSE(dict.Get("this.isnt.expanded", &value3));
   Value* value4;
   ASSERT_TRUE(dict.GetWithoutPathExpansion("this.isnt.expanded", &value4));
-  EXPECT_EQ(Value::Type::NONE, value4->GetType());
+  EXPECT_EQ(Value::Type::NONE, value4->type());
 }
 
 TEST(ValuesTest, DictionaryRemovePath) {

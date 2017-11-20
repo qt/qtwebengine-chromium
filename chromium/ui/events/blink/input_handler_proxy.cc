@@ -276,12 +276,15 @@ void InputHandlerProxy::HandleInputEventWithLatencyInfo(
     bool is_scroll_end_from_wheel =
         gesture_event.source_device == blink::kWebGestureDeviceTouchpad &&
         gesture_event.GetType() == blink::WebGestureEvent::kGestureScrollEnd;
-    if (is_from_set_non_blocking_touch || is_scroll_end_from_wheel) {
-      // Gesture events was already delayed by blocking events in rAF aligned
+    if (is_from_set_non_blocking_touch || is_scroll_end_from_wheel ||
+        synchronous_input_handler_) {
+      // 1. Gesture events was already delayed by blocking events in rAF aligned
       // queue. We want to avoid additional one frame delay by flushing the
       // VSync queue immediately.
       // The first GSU latency was tracked by:
       // |smoothness.tough_scrolling_cases:first_gesture_scroll_update_latency|.
+      // 2. |synchronous_input_handler_| is WebView only. WebView has different
+      // mechanisms and we want to forward all events immediately.
       compositor_event_queue_->Queue(std::move(event_with_callback),
                                      tick_clock_->NowTicks());
       DispatchQueuedInputEvents();
@@ -1581,7 +1584,26 @@ bool InputHandlerProxy::TouchpadFlingScroll(
       return true;
     case DROP_EVENT:
       break;
-    case DID_NOT_HANDLE:
+    case DID_NOT_HANDLE: {
+      if (touchpad_and_wheel_scroll_latching_enabled_) {
+        // Send a GSB to the main thread before transfering the curve. This
+        // may cause scrolling a different target which will be a non-issue
+        // once fling is handled on browser side. https://crbug.com/249063
+        WebGestureEvent synthetic_begin(WebInputEvent::kGestureScrollBegin,
+                                        fling_parameters_.modifiers,
+                                        InSecondsF(base::TimeTicks::Now()));
+        synthetic_begin.x = fling_parameters_.point.x;
+        synthetic_begin.y = fling_parameters_.point.y;
+        synthetic_begin.global_x = fling_parameters_.global_point.x;
+        synthetic_begin.global_y = fling_parameters_.global_point.y;
+        synthetic_begin.source_device = blink::kWebGestureDeviceTouchpad;
+        synthetic_begin.data.scroll_begin.delta_x_hint =
+            fling_parameters_.delta.x;
+        synthetic_begin.data.scroll_begin.delta_y_hint =
+            fling_parameters_.delta.y;
+        client_->DispatchNonBlockingEventToMainThread(
+            ui::WebInputEventTraits::Clone(synthetic_begin), ui::LatencyInfo());
+      }
       TRACE_EVENT_INSTANT0("input",
                            "InputHandlerProxy::scrollBy::AbortFling",
                            TRACE_EVENT_SCOPE_THREAD);
@@ -1595,6 +1617,7 @@ bool InputHandlerProxy::TouchpadFlingScroll(
       fling_may_be_active_on_main_thread_ = true;
       CancelCurrentFlingWithoutNotifyingClient();
       break;
+    }
     case DID_NOT_HANDLE_NON_BLOCKING_DUE_TO_FLING:
     case DID_HANDLE_SHOULD_BUBBLE:
       NOTREACHED();

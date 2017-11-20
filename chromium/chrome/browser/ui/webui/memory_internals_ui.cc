@@ -43,8 +43,9 @@ namespace {
 std::string GetMessageString() {
 #if BUILDFLAG(USE_ALLOCATOR_SHIM)
   switch (profiling::ProfilingProcessHost::GetCurrentMode()) {
-    case profiling::ProfilingProcessHost::Mode::kBrowser:
-      return std::string("Memory logging is enabled for the browser only.");
+    case profiling::ProfilingProcessHost::Mode::kMinimal:
+      return std::string(
+          "Memory logging is enabled for the browser and GPU processes.");
 
     case profiling::ProfilingProcessHost::Mode::kAll:
       return std::string("Memory logging is enabled for all processes.");
@@ -54,8 +55,8 @@ std::string GetMessageString() {
       return std::string("Memory logging is not enabled. Start with --") +
              switches::kMemlog + "=" + switches::kMemlogModeAll +
              " to log all processes, or --" + switches::kMemlog + "=" +
-             switches::kMemlogModeBrowser +
-             " to log only the browser process. "
+             switches::kMemlogModeMinimal +
+             " to log only the browser and GPU processes. "
              "This is also configurable in chrome://flags";
   }
 #else
@@ -182,7 +183,7 @@ void MemoryInternalsDOMHandler::HandleDumpProcess(const base::ListValue* args) {
   PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
   base::FilePath output_path = user_data_dir.Append(default_file);
   profiling::ProfilingProcessHost::GetInstance()->RequestProcessDump(
-      pid, output_path);
+      pid, std::move(output_path), base::OnceClosure());
   (void)web_ui_;  // Avoid warning about not using private web_ui_ member.
 #else
   if (select_file_dialog_)
@@ -209,21 +210,33 @@ void MemoryInternalsDOMHandler::HandleReportProcess(
     return;
 
   int pid = pid_value.GetInt();
-  profiling::ProfilingProcessHost::GetInstance()->RequestProcessReport(pid);
+  profiling::ProfilingProcessHost::GetInstance()->RequestProcessReport(
+      pid, "MEMLOG_MANUAL_TRIGGER");
 }
 
 void MemoryInternalsDOMHandler::GetChildProcessesOnIOThread(
     base::WeakPtr<MemoryInternalsDOMHandler> dom_handler) {
   std::vector<base::Value> result;
 
-  if (profiling::ProfilingProcessHost::GetCurrentMode() ==
-      profiling::ProfilingProcessHost::Mode::kAll) {
+  if (profiling::ProfilingProcessHost::GetCurrentMode() !=
+      profiling::ProfilingProcessHost::Mode::kNone) {
     // Add child processes (this does not include renderers).
     for (content::BrowserChildProcessHostIterator iter; !iter.Done(); ++iter) {
       // Note that ChildProcessData.id is a child ID and not an OS PID.
       const content::ChildProcessData& data = iter.GetData();
-      result.push_back(MakeProcessInfo(base::GetProcId(data.handle),
-                                       GetChildDescription(data)));
+
+      bool show_process = true;
+      if (profiling::ProfilingProcessHost::GetCurrentMode() ==
+          profiling::ProfilingProcessHost::Mode::kMinimal) {
+        show_process =
+            data.process_type == content::ProcessType::PROCESS_TYPE_BROWSER ||
+            data.process_type == content::ProcessType::PROCESS_TYPE_GPU;
+      }
+
+      if (show_process) {
+        result.push_back(MakeProcessInfo(base::GetProcId(data.handle),
+                                         GetChildDescription(data)));
+      }
     }
   }
 
@@ -285,7 +298,8 @@ void MemoryInternalsDOMHandler::FileSelected(const base::FilePath& path,
                                              void* params) {
   // The PID to dump was stashed in the params.
   int pid = reinterpret_cast<intptr_t>(params);
-  profiling::ProfilingProcessHost::GetInstance()->RequestProcessDump(pid, path);
+  profiling::ProfilingProcessHost::GetInstance()->RequestProcessDump(
+      pid, path, base::OnceClosure());
   select_file_dialog_ = nullptr;
 }
 

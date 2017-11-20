@@ -695,7 +695,7 @@ class SyntheticGestureControllerTestBase {
   void QueueSyntheticGesture(std::unique_ptr<SyntheticGesture> gesture) {
     controller_->QueueSyntheticGesture(
         std::move(gesture),
-        base::Bind(
+        base::BindOnce(
             &SyntheticGestureControllerTestBase::OnSyntheticGestureCompleted,
             base::Unretained(this)));
   }
@@ -1161,8 +1161,8 @@ TEST_F(SyntheticGestureControllerTest, MultiScrollGestureMouseHorizontal) {
   // floating point precision issues with diagonal scrolls.
   EXPECT_FLOAT_EQ(params.distances[0].Length() + params.distances[1].Length(),
                   scroll_target->total_abs_move_distance_length());
-  EXPECT_EQ(params.distances[0] + params.distances[1],
-            scroll_target->start_to_end_distance());
+  EXPECT_FLOAT_EQ((params.distances[0] + params.distances[1]).x(),
+                  scroll_target->start_to_end_distance().x());
 }
 
 void CheckIsWithinRangeMulti(float scroll_distance,

@@ -18,7 +18,7 @@ namespace scheduler {
 
 RefPtr<WebTaskRunnerImpl> WebTaskRunnerImpl::Create(
     scoped_refptr<TaskQueue> task_queue) {
-  return AdoptRef(new WebTaskRunnerImpl(std::move(task_queue)));
+  return WTF::AdoptRef(new WebTaskRunnerImpl(std::move(task_queue)));
 }
 
 bool WebTaskRunnerImpl::RunsTasksInCurrentSequence() {
@@ -48,8 +48,16 @@ base::TimeTicks WebTaskRunnerImpl::Now() const {
   return time_domain->Now();
 }
 
-base::SingleThreadTaskRunner* WebTaskRunnerImpl::ToSingleThreadTaskRunner() {
+scoped_refptr<base::SingleThreadTaskRunner>
+WebTaskRunnerImpl::ToSingleThreadTaskRunner() {
   return task_queue_.get();
+}
+
+bool WebTaskRunnerImpl::PostDelayedTask(const base::Location& location,
+                                        base::OnceClosure task,
+                                        base::TimeDelta delay) {
+  return task_queue_->PostTaskWithMetadata(
+      TaskQueue::PostedTask(std::move(task), location, delay));
 }
 
 }  // namespace scheduler

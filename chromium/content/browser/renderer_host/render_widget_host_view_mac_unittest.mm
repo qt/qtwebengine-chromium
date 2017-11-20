@@ -10,6 +10,7 @@
 #include <tuple>
 
 #include "base/command_line.h"
+#include "base/containers/queue.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/mac/sdk_forward_declarations.h"
@@ -47,6 +48,7 @@
 #import "third_party/ocmock/ocmock_extensions.h"
 #import "ui/base/test/scoped_fake_nswindow_focus.h"
 #include "ui/events/base_event_utils.h"
+#include "ui/events/blink/blink_features.h"
 #include "ui/events/blink/web_input_event_traits.h"
 #include "ui/events/test/cocoa_test_event_utils.h"
 #import "ui/gfx/test/ui_cocoa_test_helper.h"
@@ -118,22 +120,6 @@
 namespace content {
 
 namespace {
-
-std::string GetInputMessageTypes(MockRenderProcessHost* process) {
-  std::string result;
-  for (size_t i = 0; i < process->sink().message_count(); ++i) {
-    const IPC::Message* message = process->sink().GetMessageAt(i);
-    EXPECT_EQ(InputMsg_HandleInputEvent::ID, message->type());
-    InputMsg_HandleInputEvent::Param params;
-    EXPECT_TRUE(InputMsg_HandleInputEvent::Read(message, &params));
-    const blink::WebInputEvent* event = std::get<0>(params);
-    if (i != 0)
-      result += " ";
-    result += blink::WebInputEvent::GetName(event->GetType());
-  }
-  process->sink().ClearMessages();
-  return result;
-}
 
 blink::WebPointerProperties::PointerType GetInputMessagePointerTypes(
     MockRenderProcessHost* process) {
@@ -295,7 +281,7 @@ void GenerateCompositionRectArray(const gfx::Point& origin,
   DCHECK(output);
   output->clear();
 
-  std::queue<int> break_point_queue;
+  base::queue<int> break_point_queue;
   for (size_t i = 0; i < break_points.size(); ++i)
     break_point_queue.push(break_points[i]);
   break_point_queue.push(length);
@@ -374,6 +360,9 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
       EnableWheelScrollLatching();
     else
       DisableWheelScrollLatching();
+
+    vsync_feature_list_.InitAndEnableFeature(
+        features::kVsyncAlignedInputEvents);
   }
 
   void SetUp() override {
@@ -450,6 +439,7 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
 
   RenderWidgetHostView* old_rwhv_;
 
+  base::test::ScopedFeatureList vsync_feature_list_;
   base::test::ScopedFeatureList feature_list_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewMacTest);
@@ -1284,8 +1274,9 @@ void RenderWidgetHostViewMacTest::
   host->OnMessageReceived(*response1);
 
   if (scroll_latching_) {
-    // Only wheel event ack exists since GSB event is blocking.
-    ASSERT_EQ(1U, process_host->sink().message_count());
+    // GestureEventQueue allows multiple in-flight events.
+    ASSERT_EQ("GestureScrollBegin GestureScrollUpdate",
+              GetInputMessageTypes(process_host));
     // Send GSB ack.
     InputEventAck unhandled_scroll_ack(
         InputEventAckSource::COMPOSITOR_THREAD,
@@ -1295,7 +1286,9 @@ void RenderWidgetHostViewMacTest::
         new InputHostMsg_HandleInputEvent_ACK(0, unhandled_scroll_ack));
     host->OnMessageReceived(*scroll_response1);
   } else {
-    ASSERT_EQ(2U, process_host->sink().message_count());
+    // GestureEventQueue allows multiple in-flight events.
+    ASSERT_EQ("GestureScrollBegin GestureScrollUpdate GestureScrollEnd",
+              GetInputMessageTypes(process_host));
   }
   process_host->sink().ClearMessages();
 
@@ -1313,12 +1306,7 @@ void RenderWidgetHostViewMacTest::
   // Send another wheel event, this time for scrolling by 0 lines (empty event).
   NSEvent* event2 = MockScrollWheelEventWithPhase(@selector(phaseChanged), 0);
   [view->cocoa_view() scrollWheel:event2];
-  if (scroll_latching_) {
-    ASSERT_EQ(1U, process_host->sink().message_count());
-  } else {
-    // The second message will be nonblocking GSB's ack.
-    ASSERT_EQ(2U, process_host->sink().message_count());
-  }
+  ASSERT_EQ("MouseWheel", GetInputMessageTypes(process_host));
 
   // Indicate that the wheel event was also unhandled.
   std::unique_ptr<IPC::Message> response2(
@@ -1490,9 +1478,10 @@ TEST_F(RenderWidgetHostViewMacWithWheelScrollLatchingEnabledTest,
   std::unique_ptr<IPC::Message> response1(
       new InputHostMsg_HandleInputEvent_ACK(0, unhandled_ack));
   host->OnMessageReceived(*response1);
-  // Only wheel event ack exists since GSB event is blocking.
-  ASSERT_EQ(1U, process_host->sink().message_count());
-  process_host->sink().ClearMessages();
+  // Both GSB and GSU will be sent since GestureEventQueue allows multiple
+  // in-flight events.
+  ASSERT_EQ("GestureScrollBegin GestureScrollUpdate",
+            GetInputMessageTypes(process_host));
 
   // Send a wheel event with phaseEnded. When wheel scroll latching is enabled
   // the event will be dropped and the mouse_wheel_end_dispatch_timer_ will
@@ -1505,6 +1494,17 @@ TEST_F(RenderWidgetHostViewMacWithWheelScrollLatchingEnabledTest,
   process_host->sink().ClearMessages();
 
   host->ShutdownAndDestroyWidget(true);
+
+  // Wait for the mouse_wheel_end_dispatch_timer_ to expire after host is
+  // destroyed. The pending wheel end event won't get dispatched since the
+  // render_widget_host_ is null. This waiting confirms that no crash happens
+  // because of an attempt to send the pending wheel end event.
+  // https://crbug.com/770057
+  base::RunLoop run_loop;
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, run_loop.QuitClosure(),
+      base::TimeDelta::FromMilliseconds(100));
+  run_loop.Run();
 }
 
 TEST_F(RenderWidgetHostViewMacWithWheelScrollLatchingEnabledTest,
@@ -1537,9 +1537,10 @@ TEST_F(RenderWidgetHostViewMacWithWheelScrollLatchingEnabledTest,
   std::unique_ptr<IPC::Message> response1(
       new InputHostMsg_HandleInputEvent_ACK(0, unhandled_ack));
   host->OnMessageReceived(*response1);
-  // Only wheel event ack exists since GSB event is blocking.
-  ASSERT_EQ(1U, process_host->sink().message_count());
-  process_host->sink().ClearMessages();
+  // Both GSB and GSU will be sent since GestureEventQueue allows multiple
+  // in-flight events.
+  ASSERT_EQ("GestureScrollBegin GestureScrollUpdate",
+            GetInputMessageTypes(process_host));
 
   // Send a wheel event with phaseEnded. When wheel scroll latching is enabled
   // the event will be dropped and the mouse_wheel_end_dispatch_timer_ will
@@ -1594,9 +1595,10 @@ TEST_F(RenderWidgetHostViewMacWithWheelScrollLatchingEnabledTest,
   std::unique_ptr<IPC::Message> response1(
       new InputHostMsg_HandleInputEvent_ACK(0, unhandled_ack));
   host->OnMessageReceived(*response1);
-  // Only wheel event ack exists since GSB event is blocking.
-  ASSERT_EQ(1U, process_host->sink().message_count());
-  process_host->sink().ClearMessages();
+  // Both GSB and GSU will be sent since GestureEventQueue allows multiple
+  // in-flight events.
+  ASSERT_EQ("GestureScrollBegin GestureScrollUpdate",
+            GetInputMessageTypes(process_host));
 
   // Send a wheel event with phaseEnded. When wheel scroll latching is enabled
   // the event will be dropped and the mouse_wheel_end_dispatch_timer_ will
@@ -1615,7 +1617,8 @@ TEST_F(RenderWidgetHostViewMacWithWheelScrollLatchingEnabledTest,
       MockScrollWheelEventWithPhase(@selector(phaseBegan), 3);
   ASSERT_TRUE(wheelEvent3);
   [view->cocoa_view() scrollWheel:wheelEvent3];
-  ASSERT_EQ(2U, process_host->sink().message_count());
+  ASSERT_EQ("MouseWheel GestureScrollEnd MouseWheel",
+            GetInputMessageTypes(process_host));
   DCHECK(!view->HasPendingWheelEndEventForTesting());
   process_host->sink().ClearMessages();
 

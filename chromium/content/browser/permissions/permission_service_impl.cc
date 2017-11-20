@@ -73,7 +73,7 @@ blink::WebFeaturePolicyFeature PermissionTypeToFeaturePolicyFeature(
     case PermissionType::GEOLOCATION:
       return blink::WebFeaturePolicyFeature::kGeolocation;
     case PermissionType::PROTECTED_MEDIA_IDENTIFIER:
-      return blink::WebFeaturePolicyFeature::kEme;
+      return blink::WebFeaturePolicyFeature::kEncryptedMedia;
     case PermissionType::AUDIO_CAPTURE:
       return blink::WebFeaturePolicyFeature::kMicrophone;
     case PermissionType::VIDEO_CAPTURE:
@@ -105,11 +105,6 @@ bool AllowedByFeaturePolicy(RenderFrameHost* rfh, PermissionType type) {
       PermissionTypeToFeaturePolicyFeature(type);
   if (feature_policy_feature == blink::WebFeaturePolicyFeature::kNotFound)
     return true;
-
-  // If there is no frame, there is no policy, so disable the feature for
-  // safety.
-  if (!rfh)
-    return false;
 
   return rfh->IsFeatureEnabled(feature_policy_feature);
 }
@@ -204,8 +199,8 @@ void PermissionServiceImpl::RequestPermission(
   std::vector<PermissionDescriptorPtr> permissions;
   permissions.push_back(std::move(permission));
   RequestPermissions(std::move(permissions), origin, user_gesture,
-                     base::Bind(&PermissionRequestResponseCallbackWrapper,
-                                base::Passed(&callback)));
+                     base::BindOnce(&PermissionRequestResponseCallbackWrapper,
+                                    base::Passed(&callback)));
 }
 
 void PermissionServiceImpl::RequestPermissions(
@@ -342,7 +337,11 @@ PermissionStatus PermissionServiceImpl::GetPermissionStatusFromType(
   if (!browser_context)
     return PermissionStatus::DENIED;
 
-  if (!browser_context->GetPermissionManager() ||
+  if (!browser_context->GetPermissionManager())
+    return PermissionStatus::DENIED;
+
+  // If there is no frame (i.e. this is a worker) ignore the feature policy.
+  if (context_->render_frame_host() &&
       !AllowedByFeaturePolicy(context_->render_frame_host(), type)) {
     return PermissionStatus::DENIED;
   }

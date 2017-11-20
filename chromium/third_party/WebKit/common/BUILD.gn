@@ -5,6 +5,7 @@
 import("//build/buildflag_header.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/features.gni")
+import("//mojo/public/tools/bindings/mojom.gni")
 import("//testing/test.gni")
 
 component("blink_common") {
@@ -20,13 +21,33 @@ component("blink_common") {
   defines = [ "BLINK_COMMON_IMPLEMENTATION=1" ]
 
   sources = [
+    "client_hints/client_hints.cc",
+    "client_hints/client_hints.h",
     "common_export.h",
+    "device_memory/approximated_device_memory.cc",
+    "device_memory/approximated_device_memory.h",
+    "message_port/message_port_channel.cc",
+    "message_port/message_port_channel.h",
+    "message_port/message_port_message.cc",
+    "message_port/message_port_message.h",
+    "message_port/message_port_message_struct_traits.cc",
+    "message_port/message_port_message_struct_traits.h",
     "mime_util/mime_util.cc",
     "mime_util/mime_util.h",
+    "origin_trials/trial_token.cc",
+    "origin_trials/trial_token.h",
+    "origin_trials/trial_token_validator.cc",
+    "origin_trials/trial_token_validator.h",
+  ]
+
+  public_deps = [
+    ":mojo_bindings",
   ]
 
   deps = [
     "//base",
+    "//mojo/common:common_base",
+    "//mojo/public/cpp/system",
     "//net",
   ]
 
@@ -40,7 +61,10 @@ test("blink_common_unittests") {
   visibility = [ "*" ]
 
   sources = [
+    "device_memory/approximated_device_memory_unittest.cc",
     "mime_util/mime_util_unittest.cc",
+    "origin_trials/trial_token_unittest.cc",
+    "origin_trials/trial_token_validator_unittest.cc",
     "test/run_all_unittests.cc",
   ]
 
@@ -50,5 +74,14 @@ test("blink_common_unittests") {
     "//base/test:test_support",
     "//net",
     "//testing/gtest",
+    "//third_party/boringssl",
+  ]
+}
+
+mojom("mojo_bindings") {
+  visibility = [ "//third_party/WebKit/*" ]
+
+  sources = [
+    "message_port/message_port.mojom",
   ]
 }

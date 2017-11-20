@@ -43,9 +43,9 @@
 #include "core/timing/PerformanceObserver.h"
 #include "core/timing/PerformanceResourceTiming.h"
 #include "core/timing/PerformanceUserTiming.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/loader/fetch/ResourceTimingInfo.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/StdLibExtras.h"
@@ -320,6 +320,9 @@ void PerformanceBase::AddResourceTiming(const ResourceTimingInfo& info) {
           info, allow_timing_details
                     ? PerformanceServerTiming::ShouldAllowTimingDetails::Yes
                     : PerformanceServerTiming::ShouldAllowTimingDetails::No);
+  if (serverTiming.size()) {
+    UseCounter::Count(context, WebFeature::kPerformanceServerTiming);
+  }
 
   if (info.RedirectChain().IsEmpty()) {
     PerformanceEntry* entry = PerformanceResourceTiming::Create(

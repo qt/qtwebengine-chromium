@@ -225,7 +225,8 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void InstallSupplements(LocalFrame&) override {}
 
   std::unique_ptr<WebFrameScheduler> CreateFrameScheduler(
-      BlameContext*) override;
+      BlameContext*,
+      WebFrameScheduler::FrameType) override;
 };
 
 class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
@@ -373,6 +374,7 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
   }
 
   void AnnotatedRegionsChanged() override {}
+  String GetInstrumentationToken() override { return g_empty_string; };
 
  protected:
   EmptyLocalFrameClient() {}

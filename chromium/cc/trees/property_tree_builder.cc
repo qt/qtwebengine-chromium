@@ -18,11 +18,10 @@
 #include "cc/trees/effect_node.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/layer_tree_settings.h"
-#include "cc/trees/mutable_properties.h"
 #include "cc/trees/mutator_host.h"
 #include "cc/trees/scroll_node.h"
 #include "cc/trees/transform_node.h"
-#include "components/viz/common/quads/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
 
@@ -343,8 +342,7 @@ void PropertyTreeBuilderContext<LayerType>::AddClipNodeIfNeeded(
     } else {
       DCHECK(Filters(layer).HasFilterThatMovesPixels());
       node.clip_type = ClipNode::ClipType::EXPANDS_CLIP;
-      node.clip_expander =
-          std::make_unique<ClipExpander>(layer->effect_tree_index());
+      node.clip_expander = ClipExpander(layer->effect_tree_index());
     }
     data_for_children->clip_tree_parent = clip_tree_.Insert(node, parent_id);
   }
@@ -411,9 +409,6 @@ bool PropertyTreeBuilderContext<LayerType>::AddTransformNodeIfNeeded(
   const bool has_any_transform_animation =
       HasAnyAnimationTargetingProperty(layer, TargetProperty::TRANSFORM);
 
-  const bool has_proxied_transform_related_property =
-      !!(layer->mutable_properties() & MutableProperty::kTransformRelated);
-
   const bool has_surface = created_render_surface;
 
   const bool is_at_boundary_of_3d_rendering_context =
@@ -423,8 +418,7 @@ bool PropertyTreeBuilderContext<LayerType>::AddTransformNodeIfNeeded(
   bool requires_node = is_root || is_snapped || has_significant_transform ||
                        has_any_transform_animation || has_surface || is_fixed ||
                        is_page_scale_layer || is_overscroll_elasticity_layer ||
-                       has_proxied_transform_related_property || is_sticky ||
-                       is_at_boundary_of_3d_rendering_context;
+                       is_sticky || is_at_boundary_of_3d_rendering_context;
 
   int parent_index = TransformTree::kRootNodeId;
   int source_index = TransformTree::kRootNodeId;
@@ -626,6 +620,14 @@ static inline bool DoubleSided(LayerImpl* layer) {
   return layer->test_properties()->double_sided;
 }
 
+static inline bool TrilinearFiltering(Layer* layer) {
+  return layer->trilinear_filtering();
+}
+
+static inline bool TrilinearFiltering(LayerImpl* layer) {
+  return layer->test_properties()->trilinear_filtering;
+}
+
 static inline bool CacheRenderSurface(Layer* layer) {
   return layer->cache_render_surface();
 }
@@ -761,6 +763,11 @@ bool ShouldCreateRenderSurface(LayerType* layer,
     return true;
   }
 
+  // If the layer uses trilinear filtering.
+  if (TrilinearFiltering(layer)) {
+    return true;
+  }
+
   // If the layer uses a CSS filter.
   if (!Filters(layer).IsEmpty() || !BackgroundFilters(layer).IsEmpty()) {
     return true;
@@ -786,8 +793,8 @@ bool ShouldCreateRenderSurface(LayerType* layer,
 
   // If the layer has blending.
   // TODO(rosca): this is temporary, until blending is implemented for other
-  // types of quads than RenderPassDrawQuad. Layers having descendants that draw
-  // content will still create a separate rendering surface.
+  // types of quads than viz::RenderPassDrawQuad. Layers having descendants that
+  // draw content will still create a separate rendering surface.
   if (BlendMode(layer) != SkBlendMode::kSrcOver) {
     TRACE_EVENT_INSTANT0(
         "cc", "PropertyTreeBuilder::ShouldCreateRenderSurface blending",
@@ -908,8 +915,6 @@ bool PropertyTreeBuilderContext<LayerType>::AddEffectNodeIfNeeded(
       HasPotentialOpacityAnimation(layer);
   const bool has_potential_filter_animation =
       HasPotentiallyRunningFilterAnimation(layer);
-  const bool has_proxied_opacity =
-      !!(layer->mutable_properties() & MutableProperty::kOpacity);
 
   data_for_children->animation_axis_aligned_since_render_target &=
       AnimationsPreserveAxisAlignment(layer);
@@ -928,10 +933,9 @@ bool PropertyTreeBuilderContext<LayerType>::AddEffectNodeIfNeeded(
   bool has_non_axis_aligned_clip =
       not_axis_aligned_since_last_clip && LayerClipsSubtree(layer);
 
-  bool requires_node = is_root || has_transparency ||
-                       has_potential_opacity_animation || has_proxied_opacity ||
-                       has_non_axis_aligned_clip ||
-                       should_create_render_surface;
+  bool requires_node =
+      is_root || has_transparency || has_potential_opacity_animation ||
+      has_non_axis_aligned_clip || should_create_render_surface;
 
   int parent_id = data_from_ancestor.effect_tree_parent;
 
@@ -954,6 +958,7 @@ bool PropertyTreeBuilderContext<LayerType>::AddEffectNodeIfNeeded(
   node->filters = Filters(layer);
   node->background_filters = BackgroundFilters(layer);
   node->filters_origin = FiltersOrigin(layer);
+  node->trilinear_filtering = TrilinearFiltering(layer);
   node->has_potential_opacity_animation = has_potential_opacity_animation;
   node->has_potential_filter_animation = has_potential_filter_animation;
   node->double_sided = DoubleSided(layer);

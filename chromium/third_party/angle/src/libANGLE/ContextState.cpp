@@ -88,7 +88,8 @@ ContextState::ContextState(ContextID contextIn,
       mSamplers(AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mSamplers)),
       mSyncs(AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mSyncs)),
       mPaths(AllocateOrGetSharedResourceManager(shareContextState, &ContextState::mPaths)),
-      mFramebuffers(new FramebufferManager())
+      mFramebuffers(new FramebufferManager()),
+      mPipelines(new ProgramPipelineManager())
 {
 }
 
@@ -182,7 +183,6 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
         case GL_RENDERBUFFER_BINDING:
         case GL_CURRENT_PROGRAM:
         case GL_PACK_ALIGNMENT:
-        case GL_PACK_REVERSE_ROW_ORDER_ANGLE:
         case GL_UNPACK_ALIGNMENT:
         case GL_GENERATE_MIPMAP_HINT:
         case GL_RED_BITS:
@@ -229,6 +229,16 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
         case GL_RESET_NOTIFICATION_STRATEGY_EXT:
         case GL_NUM_PROGRAM_BINARY_FORMATS_OES:
         {
+            *type      = GL_INT;
+            *numParams = 1;
+            return true;
+        }
+        case GL_PACK_REVERSE_ROW_ORDER_ANGLE:
+        {
+            if (!getExtensions().packReverseRowOrder)
+            {
+                return false;
+            }
             *type      = GL_INT;
             *numParams = 1;
             return true;
@@ -441,7 +451,7 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
     }
 
     if (getExtensions().robustResourceInitialization &&
-        pname == GL_CONTEXT_ROBUST_RESOURCE_INITIALIZATION_ANGLE)
+        pname == GL_ROBUST_RESOURCE_INITIALIZATION_ANGLE)
     {
         *type      = GL_BOOL;
         *numParams = 1;
@@ -682,6 +692,10 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
             *type      = GL_INT_64_ANGLEX;
             *numParams = 1;
             return true;
+        case GL_SAMPLE_MASK:
+            *type      = GL_BOOL;
+            *numParams = 1;
+            return true;
     }
 
     return false;
@@ -731,6 +745,7 @@ bool ValidationContext::getIndexedQueryParameterInfo(GLenum target,
         case GL_VERTEX_BINDING_DIVISOR:
         case GL_VERTEX_BINDING_OFFSET:
         case GL_VERTEX_BINDING_STRIDE:
+        case GL_SAMPLE_MASK_VALUE:
         {
             *type      = GL_INT;
             *numParams = 1;
@@ -778,6 +793,11 @@ bool ValidationContext::isRenderbufferGenerated(GLuint renderbuffer) const
 bool ValidationContext::isFramebufferGenerated(GLuint framebuffer) const
 {
     return mState.mFramebuffers->isHandleGenerated(framebuffer);
+}
+
+bool ValidationContext::isProgramPipelineGenerated(GLuint pipeline) const
+{
+    return mState.mPipelines->isHandleGenerated(pipeline);
 }
 
 bool ValidationContext::usingDisplayTextureShareGroup() const

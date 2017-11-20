@@ -42,6 +42,7 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/arc/arc_prefs.h"
 #include "ui/chromeos/events/pref_names.h"
 #endif
 
@@ -191,8 +192,6 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   // Search page.
   (*s_whitelist)[DefaultSearchManager::kDefaultSearchProviderDataPrefName] =
       settings_private::PrefType::PREF_TYPE_DICTIONARY;
-  (*s_whitelist)[::prefs::kGoogleNowLauncherEnabled] =
-      settings_private::PrefType::PREF_TYPE_BOOLEAN;
 
   // Site Settings prefs.
   (*s_whitelist)[::prefs::kBlockThirdPartyCookies] =
@@ -205,21 +204,33 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   // Clear browsing data settings.
   (*s_whitelist)[browsing_data::prefs::kDeleteBrowsingHistory] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[browsing_data::prefs::kDeleteBrowsingHistoryBasic] =
+      settings_private::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeleteDownloadHistory] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeleteCache] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[browsing_data::prefs::kDeleteCacheBasic] =
+      settings_private::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeleteCookies] =
+      settings_private::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[browsing_data::prefs::kDeleteCookiesBasic] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeletePasswords] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeleteFormData] =
+      settings_private::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[browsing_data::prefs::kDeleteSiteSettings] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeleteHostedAppsData] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeleteMediaLicenses] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeleteTimePeriod] =
+      settings_private::PrefType::PREF_TYPE_NUMBER;
+  (*s_whitelist)[browsing_data::prefs::kDeleteTimePeriodBasic] =
+      settings_private::PrefType::PREF_TYPE_NUMBER;
+  (*s_whitelist)[browsing_data::prefs::kLastClearBrowsingDataTab] =
       settings_private::PrefType::PREF_TYPE_NUMBER;
 
 #if defined(OS_CHROMEOS)
@@ -278,15 +289,15 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
 
   // Android Apps.
-  (*s_whitelist)[::prefs::kArcEnabled] =
+  (*s_whitelist)[arc::prefs::kArcEnabled] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
 
   // Google Assistant.
-  (*s_whitelist)[::prefs::kArcVoiceInteractionValuePropAccepted] =
+  (*s_whitelist)[arc::prefs::kArcVoiceInteractionValuePropAccepted] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
-  (*s_whitelist)[::prefs::kVoiceInteractionEnabled] =
+  (*s_whitelist)[arc::prefs::kVoiceInteractionEnabled] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
-  (*s_whitelist)[::prefs::kVoiceInteractionContextEnabled] =
+  (*s_whitelist)[arc::prefs::kVoiceInteractionContextEnabled] =
       settings_private::PrefType::PREF_TYPE_BOOLEAN;
 
   // Misc.
@@ -382,6 +393,11 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_private::PrefType::PREF_TYPE_NUMBER;
   (*s_whitelist)[::prefs::kLanguageXkbAutoRepeatInterval] =
       settings_private::PrefType::PREF_TYPE_NUMBER;
+
+  // Multidevice settings.
+  (*s_whitelist)[arc::prefs::kSmsConnectEnabled] =
+      settings_private::PrefType::PREF_TYPE_BOOLEAN;
+
 #else
   (*s_whitelist)[::prefs::kAcceptLanguages] =
       settings_private::PrefType::PREF_TYPE_STRING;

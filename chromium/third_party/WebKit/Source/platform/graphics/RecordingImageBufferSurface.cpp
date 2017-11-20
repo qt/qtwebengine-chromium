@@ -15,17 +15,16 @@
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "platform/graphics/paint/PaintRecorder.h"
 #include "platform/wtf/CheckedNumeric.h"
-#include "platform/wtf/PassRefPtr.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
 RecordingImageBufferSurface::RecordingImageBufferSurface(
     const IntSize& size,
     AllowFallback allow_fallback,
-    OpacityMode opacity_mode,
     const CanvasColorParams& color_params)
-    : ImageBufferSurface(size, opacity_mode, color_params),
+    : ImageBufferSurface(size, color_params),
       allow_fallback_(allow_fallback),
       image_buffer_(0),
       current_frame_pixel_count_(0),
@@ -42,7 +41,7 @@ RecordingImageBufferSurface::~RecordingImageBufferSurface() {}
 void RecordingImageBufferSurface::InitializeCurrentFrame() {
   current_frame_ = WTF::WrapUnique(new PaintRecorder);
   PaintCanvas* canvas =
-      current_frame_->beginRecording(size().Width(), size().Height());
+      current_frame_->beginRecording(Size().Width(), Size().Height());
   // Always save an initial frame, to support resetting the top level matrix
   // and clip.
   canvas->save();
@@ -73,7 +72,7 @@ bool RecordingImageBufferSurface::WritePixels(const SkImageInfo& orig_info,
                                               int y) {
   if (!fallback_surface_) {
     IntRect write_rect(x, y, orig_info.width(), orig_info.height());
-    if (write_rect.Contains(IntRect(IntPoint(), size())))
+    if (write_rect.Contains(IntRect(IntPoint(), Size())))
       WillOverwriteCanvas();
     FallBackToRasterCanvas(kFallbackReasonWritePixels);
     if (!fallback_surface_->IsValid())
@@ -98,7 +97,7 @@ void RecordingImageBufferSurface::FallBackToRasterCanvas(
   canvas_fallback_histogram.Count(reason);
 
   fallback_surface_ = WTF::WrapUnique(new UnacceleratedImageBufferSurface(
-      size(), GetOpacityMode(), kInitializeImagePixels, color_params()));
+      Size(), kInitializeImagePixels, ColorParams()));
   // If the fallback surface fails to be created, then early out.
   if (!fallback_surface_->IsValid())
     return;
@@ -375,8 +374,8 @@ bool RecordingImageBufferSurface::IsExpensiveToPaint() {
   if (fallback_surface_)
     return fallback_surface_->IsExpensiveToPaint();
 
-  CheckedNumeric<int> overdraw_limit_checked = size().Width();
-  overdraw_limit_checked *= size().Height();
+  CheckedNumeric<int> overdraw_limit_checked = Size().Width();
+  overdraw_limit_checked *= Size().Height();
   overdraw_limit_checked *=
       CanvasHeuristicParameters::kExpensiveOverdrawThreshold;
   int overdraw_limit =

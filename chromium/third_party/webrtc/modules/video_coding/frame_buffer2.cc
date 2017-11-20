@@ -8,20 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/video_coding/frame_buffer2.h"
+#include "modules/video_coding/frame_buffer2.h"
 
 #include <algorithm>
 #include <cstring>
 #include <queue>
 
-#include "webrtc/modules/video_coding/include/video_coding_defines.h"
-#include "webrtc/modules/video_coding/jitter_estimator.h"
-#include "webrtc/modules/video_coding/timing.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/trace_event.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/metrics.h"
+#include "modules/video_coding/include/video_coding_defines.h"
+#include "modules/video_coding/jitter_estimator.h"
+#include "modules/video_coding/timing.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
+#include "system_wrappers/include/clock.h"
+#include "system_wrappers/include/field_trial.h"
+#include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
 namespace video_coding {
@@ -147,6 +148,9 @@ FrameBuffer::ReturnReason FrameBuffer::NextFrame(
         float rtt_mult = protection_mode_ == kProtectionNackFEC ? 0.0 : 1.0;
         timing_->SetJitterDelay(jitter_estimator_->GetJitterEstimate(rtt_mult));
         timing_->UpdateCurrentDelay(frame->RenderTime(), now_ms);
+      } else {
+        if (webrtc::field_trial::IsEnabled("WebRTC-AddRttToPlayoutDelay"))
+          jitter_estimator_->FrameNacked();
       }
 
       // Gracefully handle bad RTP timestamps and render time issues.
@@ -247,10 +251,19 @@ void FrameBuffer::Stop() {
   new_continuous_frame_event_.Set();
 }
 
+void FrameBuffer::UpdateRtt(int64_t rtt_ms) {
+  rtc::CritScope lock(&crit_);
+  jitter_estimator_->UpdateRtt(rtt_ms);
+}
+
 bool FrameBuffer::ValidReferences(const FrameObject& frame) const {
+  if (frame.picture_id < 0)
+    return false;
+
   for (size_t i = 0; i < frame.num_references; ++i) {
-    if (AheadOrAt(frame.references[i], frame.picture_id))
+    if (frame.references[i] < 0 || frame.references[i] >= frame.picture_id)
       return false;
+
     for (size_t j = i + 1; j < frame.num_references; ++j) {
       if (frame.references[i] == frame.references[j])
         return false;

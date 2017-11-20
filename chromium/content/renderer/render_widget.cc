@@ -25,10 +25,10 @@
 #include "build/build_config.h"
 #include "cc/animation/animation_host.h"
 #include "cc/input/touch_action.h"
-#include "cc/output/layer_tree_frame_sink.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/layer_tree_host.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
-#include "components/viz/common/quads/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/common/drag_messages.h"
@@ -54,6 +54,7 @@
 #include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/input/main_thread_event_queue.h"
 #include "content/renderer/input/widget_input_handler_manager.h"
+#include "content/renderer/mash_util.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_frame_proxy.h"
@@ -402,6 +403,8 @@ RenderWidget::RenderWidget(int32_t widget_routing_id,
   }
 #if defined(USE_AURA)
   RendererWindowTreeClient::CreateIfNecessary(routing_id_);
+  if (IsRunningInMash())
+    RendererWindowTreeClient::Get(routing_id_)->SetVisible(!is_hidden_);
 #endif
 }
 
@@ -544,7 +547,7 @@ void RenderWidget::Init(const ShowCallback& show_callback,
     RenderThreadImpl* render_thread_impl = RenderThreadImpl::current();
 
     widget_input_handler_manager_ = WidgetInputHandlerManager::Create(
-        weak_ptr_factory_.GetWeakPtr(), RenderThread::Get()->GetChannel(),
+        weak_ptr_factory_.GetWeakPtr(),
         render_thread_impl && compositor_
             ? render_thread_impl->compositor_task_runner()
             : nullptr,
@@ -632,6 +635,8 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_ShowContextMenu, OnShowContextMenu)
     IPC_MESSAGE_HANDLER(ViewMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewMsg_Resize, OnResize)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetLocalSurfaceIdForAutoResize,
+                        OnSetLocalSurfaceIdForAutoResize)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableDeviceEmulation,
                         OnEnableDeviceEmulation)
     IPC_MESSAGE_HANDLER(ViewMsg_DisableDeviceEmulation,
@@ -743,7 +748,7 @@ void RenderWidget::OnClose() {
     // now.  Post a task that only gets invoked when there are no nested message
     // loops.
     base::ThreadTaskRunnerHandle::Get()->PostNonNestableTask(
-        FROM_HERE, base::Bind(&RenderWidget::Close, this));
+        FROM_HERE, base::BindOnce(&RenderWidget::Close, this));
   }
 
   // Balances the AddRef taken when we called AddRoute.
@@ -760,6 +765,15 @@ void RenderWidget::OnResize(const ResizeParams& params) {
   }
 
   Resize(params);
+}
+
+void RenderWidget::OnSetLocalSurfaceIdForAutoResize(
+    uint64_t sequence_number,
+    const viz::LocalSurfaceId& local_surface_id) {
+  if (!auto_resize_mode_ || resize_or_repaint_ack_num_ != sequence_number)
+    return;
+  local_surface_id_ = local_surface_id;
+  compositor_->SetViewportSize(physical_backing_size_, local_surface_id);
 }
 
 void RenderWidget::OnEnableDeviceEmulation(
@@ -967,18 +981,7 @@ void RenderWidget::DidCompletePageScaleAnimation() {}
 
 void RenderWidget::DidReceiveCompositorFrameAck() {
   TRACE_EVENT0("renderer", "RenderWidget::DidReceiveCompositorFrameAck");
-
-  if (!next_paint_flags_ && !need_update_rect_for_auto_resize_) {
-    return;
-  }
-
-  ViewHostMsg_UpdateRect_Params params;
-  params.view_size = size_;
-  params.flags = next_paint_flags_;
-
-  Send(new ViewHostMsg_UpdateRect(routing_id_, params));
-  next_paint_flags_ = 0;
-  need_update_rect_for_auto_resize_ = false;
+  DidResizeOrRepaintAck();
 }
 
 bool RenderWidget::IsClosing() const {
@@ -1097,7 +1100,13 @@ void RenderWidget::ClearEditCommands() {
 }
 
 void RenderWidget::OnDidOverscroll(const ui::DidOverscrollParams& params) {
-  Send(new InputHostMsg_DidOverscroll(routing_id_, params));
+  if (widget_input_handler_manager_) {
+    WidgetInputHandlerManager::WidgetInputHandlerHost host =
+        widget_input_handler_manager_->GetWidgetInputHandlerHost();
+    (*host)->DidOverscroll(params);
+  } else {
+    Send(new InputHostMsg_DidOverscroll(routing_id_, params));
+  }
 }
 
 void RenderWidget::SetInputHandler(RenderWidgetInputHandler* input_handler) {
@@ -1160,6 +1169,7 @@ void RenderWidget::UpdateTextInputStateInternal(bool show_virtual_keyboard,
     params.type = new_type;
     params.mode = new_mode;
     params.flags = new_info.flags;
+#if defined(OS_ANDROID)
     if (next_previous_flags_ == kInvalidNextPreviousFlagsValue) {
       // Due to a focus change, values will be reset by the frame.
       // That case we only need fresh NEXT/PREVIOUS information.
@@ -1174,6 +1184,9 @@ void RenderWidget::UpdateTextInputStateInternal(bool show_virtual_keyboard,
         next_previous_flags_ = 0;
       }
     }
+#else
+    next_previous_flags_ = 0;
+#endif
     params.flags |= next_previous_flags_;
     params.value = new_info.value.Utf8();
     params.selection_start = new_info.selection_start;
@@ -1265,11 +1278,15 @@ void RenderWidget::Resize(const ResizeParams& params) {
     local_surface_id_ = *params.local_surface_id;
 
   if (compositor_) {
-    // If surface synchronization is enable, then this will use the provided
+    // If surface synchronization is enabled, then this will use the provided
     // |local_surface_id_| to submit the next generated CompositorFrame.
     // If the ID is not valid, then the compositor will defer commits until
     // it receives a valid surface ID. This is a no-op if surface
     // synchronization is disabled.
+    // TODO(crbug.com/758387): Re-enable this DCHECK once the mash login screen
+    // is fixed.
+    // DCHECK(!compositor_->IsSurfaceSynchronizationEnabled() ||
+    //       local_surface_id_.is_valid());
     compositor_->SetViewportSize(params.physical_backing_size,
                                  local_surface_id_);
     compositor_->SetBrowserControlsHeight(
@@ -1309,8 +1326,9 @@ void RenderWidget::Resize(const ResizeParams& params) {
   // send an ACK if we are resized to a non-empty rect.
   if (params.new_size.IsEmpty() || params.physical_backing_size.IsEmpty()) {
     // In this case there is no paint/composite and therefore no
-    // ViewHostMsg_UpdateRect to send the resize ack with. We'd need to send the
-    // ack through a fake ViewHostMsg_UpdateRect or a different message.
+    // ViewHostMsg_ResizeOrRepaint_ACK to send the resize ack with. We'd need to
+    // send the ack through a fake ViewHostMsg_ResizeOrRepaint_ACK or a
+    // different message.
     DCHECK(!params.needs_resize_ack);
   }
 
@@ -1543,7 +1561,7 @@ void RenderWidget::CloseWidgetSoon() {
   // message back to the message loop, which won't run until the JS is
   // complete, and then the Close message can be sent.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&RenderWidget::DoDeferredClose, this));
+      FROM_HERE, base::BindOnce(&RenderWidget::DoDeferredClose, this));
 }
 
 void RenderWidget::Close() {
@@ -1677,7 +1695,13 @@ void RenderWidget::OnImeSetComposition(
     // If we failed to set the composition text, then we need to let the browser
     // process to cancel the input method's ongoing composition session, to make
     // sure we are in a consistent state.
-    Send(new InputHostMsg_ImeCancelComposition(routing_id()));
+    if (widget_input_handler_manager_) {
+      WidgetInputHandlerManager::WidgetInputHandlerHost host =
+          widget_input_handler_manager_->GetWidgetInputHandlerHost();
+      (*host)->ImeCancelComposition();
+    } else {
+      Send(new InputHostMsg_ImeCancelComposition(routing_id()));
+    }
   }
   UpdateCompositionInfo(false /* not an immediate request */);
 }
@@ -1926,8 +1950,15 @@ void RenderWidget::UpdateCompositionInfo(bool immediate_request) {
   }
   composition_character_bounds_ = character_bounds;
   composition_range_ = range;
-  Send(new InputHostMsg_ImeCompositionRangeChanged(
-      routing_id(), composition_range_, composition_character_bounds_));
+  if (widget_input_handler_manager_) {
+    WidgetInputHandlerManager::WidgetInputHandlerHost host =
+        widget_input_handler_manager_->GetWidgetInputHandlerHost();
+    (*host)->ImeCompositionRangeChanged(composition_range_,
+                                        composition_character_bounds_);
+  } else {
+    Send(new InputHostMsg_ImeCompositionRangeChanged(
+        routing_id(), composition_range_, composition_character_bounds_));
+  }
 }
 
 void RenderWidget::ConvertViewportToWindow(blink::WebRect* rect) {
@@ -1991,7 +2022,14 @@ void RenderWidget::OnOrientationChange() {
   WebWidget* web_widget = GetWebWidget();
   if (web_widget && web_widget->IsWebFrameWidget()) {
     WebFrameWidget* web_frame_widget = static_cast<WebFrameWidget*>(web_widget);
-    web_frame_widget->LocalRoot()->SendOrientationChangeEvent();
+    // LocalRoot() might return null for provisional main frames. In this case,
+    // the frame hasn't committed a navigation and is not swapped into the tree
+    // yet, so it doesn't make sense to send orientation change events to it.
+    //
+    // TODO(https://crbug.com/578349): This check should be cleaned up
+    // once provisional frames are gone.
+    if (web_frame_widget->LocalRoot())
+      web_frame_widget->LocalRoot()->SendOrientationChangeEvent();
   }
 }
 
@@ -2002,6 +2040,11 @@ void RenderWidget::SetHidden(bool hidden) {
   // The status has changed.  Tell the RenderThread about it and ensure
   // throttled acks are released in case frame production ceases.
   is_hidden_ = hidden;
+
+#if defined(USE_AURA)
+  if (IsRunningInMash())
+    RendererWindowTreeClient::Get(routing_id_)->SetVisible(!hidden);
+#endif
 
   if (is_hidden_) {
     RenderThreadImpl::current()->WidgetHidden();
@@ -2025,15 +2068,16 @@ void RenderWidget::DidToggleFullscreen() {
 }
 
 bool RenderWidget::next_paint_is_resize_ack() const {
-  return ViewHostMsg_UpdateRect_Flags::is_resize_ack(next_paint_flags_);
+  return ViewHostMsg_ResizeOrRepaint_ACK_Flags::is_resize_ack(
+      next_paint_flags_);
 }
 
 void RenderWidget::set_next_paint_is_resize_ack() {
-  next_paint_flags_ |= ViewHostMsg_UpdateRect_Flags::IS_RESIZE_ACK;
+  next_paint_flags_ |= ViewHostMsg_ResizeOrRepaint_ACK_Flags::IS_RESIZE_ACK;
 }
 
 void RenderWidget::set_next_paint_is_repaint_ack() {
-  next_paint_flags_ |= ViewHostMsg_UpdateRect_Flags::IS_REPAINT_ACK;
+  next_paint_flags_ |= ViewHostMsg_ResizeOrRepaint_ACK_Flags::IS_REPAINT_ACK;
 }
 
 void RenderWidget::OnImeEventGuardStart(ImeEventGuard* guard) {
@@ -2136,8 +2180,17 @@ void RenderWidget::DidAutoResize(const gfx::Size& new_size) {
 
     AutoResizeCompositor();
 
-    if (!resizing_mode_selector_->is_synchronous_mode())
+    if (!resizing_mode_selector_->is_synchronous_mode()) {
       need_update_rect_for_auto_resize_ = true;
+      // If surface synchronization is off, then ResizeAcks go to the browser in
+      // response to a DidReceiveCompositorFrame. With surface synchronization
+      // on, that notification will not arrive here because the compositor is
+      // deferring commits and thus submission of CompositorFrames.
+      if (!size_.IsEmpty() && compositor_ &&
+          compositor_->IsSurfaceSynchronizationEnabled()) {
+        DidResizeOrRepaintAck();
+      }
+    }
   }
 }
 
@@ -2330,7 +2383,11 @@ void RenderWidget::SetTouchAction(cc::TouchAction touch_action) {
   if (!input_handler_->ProcessTouchAction(touch_action))
     return;
 
-  Send(new InputHostMsg_SetTouchAction(routing_id_, touch_action));
+  if (widget_input_handler_manager_) {
+    widget_input_handler_manager_->ProcessTouchAction(touch_action);
+  } else {
+    Send(new InputHostMsg_SetTouchAction(routing_id_, touch_action));
+  }
 }
 
 void RenderWidget::RegisterRenderFrameProxy(RenderFrameProxy* proxy) {
@@ -2423,9 +2480,11 @@ blink::WebInputMethodController* RenderWidget::GetInputMethodController()
       ->GetActiveWebInputMethodController();
 }
 
-void RenderWidget::GetWidgetInputHandler(
-    mojom::WidgetInputHandlerRequest request) {
+void RenderWidget::SetupWidgetInputHandler(
+    mojom::WidgetInputHandlerRequest request,
+    mojom::WidgetInputHandlerHostPtr host) {
   widget_input_handler_manager_->AddInterface(std::move(request));
+  widget_input_handler_manager_->SetWidgetInputHandlerHost(std::move(host));
 }
 
 void RenderWidget::SetWidgetBinding(mojom::WidgetRequest request) {
@@ -2433,6 +2492,20 @@ void RenderWidget::SetWidgetBinding(mojom::WidgetRequest request) {
   // A RenderWidgetHost should not need more than one channel.
   widget_binding_.Close();
   widget_binding_.Bind(std::move(request));
+}
+
+void RenderWidget::DidResizeOrRepaintAck() {
+  if (!next_paint_flags_ && !need_update_rect_for_auto_resize_)
+    return;
+
+  ViewHostMsg_ResizeOrRepaint_ACK_Params params;
+  params.view_size = size_;
+  params.flags = next_paint_flags_;
+  params.sequence_number = ++resize_or_repaint_ack_num_;
+
+  Send(new ViewHostMsg_ResizeOrRepaint_ACK(routing_id_, params));
+  next_paint_flags_ = 0;
+  need_update_rect_for_auto_resize_ = false;
 }
 
 #if BUILDFLAG(ENABLE_PLUGINS)

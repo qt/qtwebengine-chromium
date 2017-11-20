@@ -32,20 +32,22 @@
 
 #include <memory>
 #include "bindings/core/v8/V8BindingForTesting.h"
+#include "core/dom/DocumentFragment.h"
 #include "core/dom/NodeWithIndex.h"
 #include "core/dom/SynchronousMutationObserver.h"
 #include "core/dom/Text.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLHeadElement.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLinkElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/Page.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/heap/Handle.h"
+#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/weborigin/ReferrerPolicy.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -75,7 +77,8 @@ void DocumentTest::SetUp() {
 }
 
 void DocumentTest::SetHtmlInnerHTML(const char* html_content) {
-  GetDocument().documentElement()->setInnerHTML(String::FromUTF8(html_content));
+  GetDocument().documentElement()->SetInnerHTMLFromString(
+      String::FromUTF8(html_content));
   GetDocument().View()->UpdateAllLifecyclePhases();
 }
 
@@ -813,8 +816,8 @@ TEST_F(DocumentTest, ValidationMessageCleanup) {
       "document.querySelector('input').reportValidity(); };");
   GetDocument().body()->AppendChild(script);
   HTMLInputElement* input =
-      toHTMLInputElement(GetDocument().body()->firstChild());
-  DVLOG(0) << GetDocument().body()->outerHTML();
+      ToHTMLInputElement(GetDocument().body()->firstChild());
+  DVLOG(0) << GetDocument().body()->OuterHTMLAsString();
 
   // Sanity check.
   input->reportValidity();
@@ -850,7 +853,7 @@ TEST_F(DocumentTest, SandboxDisablesAppCache) {
 }
 
 TEST_F(DocumentTest, SuboriginDisablesAppCache) {
-  RuntimeEnabledFeatures::SetSuboriginsEnabled(true);
+  ScopedSuboriginsForTest suborigins(true);
   RefPtr<SecurityOrigin> origin =
       SecurityOrigin::CreateFromString("https://test.com");
   Suborigin suborigin;
@@ -875,7 +878,7 @@ TEST_F(DocumentTest, SuboriginDisablesAppCache) {
 // as it is more expensive than just doing layout.
 TEST_F(DocumentTest,
        EnsurePaintLocationDataValidForNodeCompositingInputsOnlyWhenNecessary) {
-  GetDocument().body()->setInnerHTML(
+  GetDocument().body()->SetInnerHTMLFromString(
       "<div id='ancestor'>"
       "  <div id='sticky' style='position:sticky;'>"
       "    <div id='stickyChild'></div>"

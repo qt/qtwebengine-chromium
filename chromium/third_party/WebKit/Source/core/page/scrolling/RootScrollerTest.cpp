@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "bindings/core/v8/NodeOrString.h"
+#include "bindings/core/v8/node_or_string.h"
 #include "core/exported/WebRemoteFrameImpl.h"
 #include "core/frame/BrowserControls.h"
 #include "core/frame/FrameTestHelpers.h"
@@ -44,10 +44,12 @@ namespace {
 
 class RootScrollerTest : public ::testing::Test,
                          public ::testing::WithParamInterface<bool>,
-                         private ScopedRootLayerScrollingForTest {
+                         private ScopedRootLayerScrollingForTest,
+                         private ScopedRootScrollerForTest {
  public:
   RootScrollerTest()
       : ScopedRootLayerScrollingForTest(GetParam()),
+        ScopedRootScrollerForTest(true),
         base_url_("http://www.test.com/") {
     RegisterMockedHttpURLLoad("overflow-scrolling.html");
     RegisterMockedHttpURLLoad("root-scroller.html");
@@ -165,8 +167,6 @@ class RootScrollerTest : public ::testing::Test,
 
   WebViewImpl* InitializeInternal(const std::string& url,
                                   FrameTestHelpers::TestWebViewClient* client) {
-    RuntimeEnabledFeatures::SetSetRootScrollerEnabled(true);
-
     helper_.InitializeAndLoad(url, nullptr, client, nullptr,
                               &ConfigureSettings);
 
@@ -219,7 +219,7 @@ TEST_P(RootScrollerTest, defaultEffectiveRootScrollerIsDocumentNode) {
   // should remain the same.
   NonThrowableExceptionState non_throw;
   HeapVector<NodeOrString> nodes;
-  nodes.push_back(NodeOrString::fromNode(iframe));
+  nodes.push_back(NodeOrString::FromNode(iframe));
   document->documentElement()->ReplaceWith(nodes, non_throw);
 
   MainFrameView()->UpdateAllLifecyclePhases();
@@ -856,7 +856,7 @@ TEST_P(RootScrollerTest, RemoveRootScrollerFromDom) {
     ASSERT_EQ(inner_container,
               EffectiveRootScroller(iframe->contentDocument()));
 
-    iframe->contentDocument()->body()->setInnerHTML("");
+    iframe->contentDocument()->body()->SetInnerHTMLFromString("");
 
     // If the root scroller wasn't updated by the DOM removal above, this
     // will touch the disposed root scroller's ScrollableArea.
@@ -927,7 +927,8 @@ TEST_P(RootScrollerTest, UseVisualViewportScrollbarsIframe) {
 
   MainFrameView()->UpdateAllLifecyclePhases();
 
-  ScrollableArea* container_scroller = child_frame->View();
+  ScrollableArea* container_scroller =
+      child_frame->View()->LayoutViewportScrollableArea();
 
   EXPECT_FALSE(container_scroller->HorizontalScrollbar());
   EXPECT_FALSE(container_scroller->VerticalScrollbar());

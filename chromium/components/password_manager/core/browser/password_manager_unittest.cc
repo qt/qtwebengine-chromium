@@ -4,13 +4,13 @@
 
 #include "components/password_manager/core/browser/password_manager.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "base/feature_list.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -105,6 +105,9 @@ class MockPasswordManagerClient : public StubPasswordManagerClient {
 class MockPasswordManagerDriver : public StubPasswordManagerDriver {
  public:
   MOCK_METHOD1(FillPasswordForm, void(const autofill::PasswordFormFillData&));
+  MOCK_METHOD1(AutofillDataReceived,
+               void(const std::map<autofill::FormData,
+                                   autofill::PasswordFormFieldPredictionMap>&));
   MOCK_METHOD0(GetPasswordManager, PasswordManager*());
   MOCK_METHOD0(GetPasswordAutofillManager, PasswordAutofillManager*());
 };
@@ -112,7 +115,7 @@ class MockPasswordManagerDriver : public StubPasswordManagerDriver {
 // Invokes the password store consumer with a single copy of |form|.
 ACTION_P(InvokeConsumer, form) {
   std::vector<std::unique_ptr<PasswordForm>> result;
-  result.push_back(base::MakeUnique<PasswordForm>(form));
+  result.push_back(std::make_unique<PasswordForm>(form));
   arg0->OnGetPasswordStoreResults(std::move(result));
 }
 
@@ -485,6 +488,49 @@ TEST_F(PasswordManagerTest, AnyMatchFormToManager) {
             form_manager_to_save->submitted_form()->action);
   EXPECT_EQ(changed_form.form_data.name,
             form_manager_to_save->submitted_form()->form_data.name);
+}
+
+// Tests that a credential wouldn't be saved if it is already in the store.
+TEST_F(PasswordManagerTest, DontSaveAlreadySavedCredential) {
+  EXPECT_CALL(client_, IsSavingAndFillingEnabledForCurrentPage())
+      .WillRepeatedly(Return(true));
+
+  std::vector<PasswordForm> observed;
+  PasswordForm form(MakeSimpleForm());
+  observed.push_back(form);
+  EXPECT_CALL(*store_, GetLogins(_, _))
+      .WillOnce(WithArg<1>(InvokeConsumer(form)));
+  EXPECT_CALL(driver_, FillPasswordForm(_)).Times(2);
+  manager()->OnPasswordFormsParsed(&driver_, observed);
+  manager()->OnPasswordFormsRendered(&driver_, observed, true);
+
+  // The user is typing a credential manually. Till the credential is different
+  // from the saved one, the fallback should be available.
+  PasswordForm incomplete_match(form);
+  incomplete_match.password_value =
+      form.password_value.substr(0, form.password_value.length() - 1);
+  std::unique_ptr<PasswordFormManager> form_manager_to_save;
+  EXPECT_CALL(client_, ShowManualFallbackForSavingPtr(_, false, true))
+      .WillOnce(WithArg<0>(SaveToScopedPtr(&form_manager_to_save)));
+  manager()->ShowManualFallbackForSaving(&driver_, incomplete_match);
+  ASSERT_TRUE(form_manager_to_save);
+  EXPECT_THAT(form_manager_to_save->pending_credentials(),
+              FormMatches(incomplete_match));
+
+  // The user completes typing the credential. No fallback should be available,
+  // because the credential is already in the store.
+  EXPECT_CALL(client_, ShowManualFallbackForSavingPtr(_, false, true)).Times(0);
+  EXPECT_CALL(client_, HideManualFallbackForSaving());
+  manager()->ShowManualFallbackForSaving(&driver_, form);
+
+  // The user submits the form. No prompt should pop up. The credential is
+  // updated in background.
+  OnPasswordFormSubmitted(form);
+  EXPECT_CALL(client_, PromptUserToSaveOrUpdatePasswordPtr(_)).Times(0);
+  EXPECT_CALL(*store_, UpdateLogin(_));
+  observed.clear();
+  manager()->OnPasswordFormsParsed(&driver_, observed);
+  manager()->OnPasswordFormsRendered(&driver_, observed, true);
 }
 
 TEST_F(PasswordManagerTest, FormSeenThenLeftPage) {
@@ -1900,9 +1946,8 @@ TEST_F(PasswordManagerTest, NotSavingSyncPasswordHash_NoUsername) {
 // not qualified as sync credentials.
 TEST_F(PasswordManagerTest, NotSavingSyncPasswordHash_NotSyncCredentials) {
   // Simulate loading a simple form with no existing stored password.
-  std::vector<PasswordForm> observed;
   PasswordForm form(MakeSimpleGAIAForm());
-  observed.push_back(form);
+  std::vector<PasswordForm> observed = {form};
   EXPECT_CALL(*store_, GetLogins(_, _))
       .WillRepeatedly(WithArg<1>(InvokeEmptyConsumerWithForms()));
   manager()->OnPasswordFormsRendered(&driver_, observed, true);
@@ -2028,6 +2073,66 @@ TEST_F(PasswordManagerTest, ManualFallbackForSaving_GeneratedPassword) {
   EXPECT_CALL(client_, HideManualFallbackForSaving());
   manager()->OnPasswordNoLongerGenerated(form);
   manager()->HideManualFallbackForSaving();
+}
+
+// Tests that Autofill predictions are processed correctly. If at least one of
+// these predictions can be converted to a |PasswordFormFieldPredictionMap|, the
+// predictions map is updated accordingly.
+TEST_F(PasswordManagerTest, ProcessAutofillPredictions) {
+  // Create FormData form with two fields.
+  autofill::FormData form;
+  form.origin = GURL("http://foo.com");
+  autofill::FormFieldData field;
+  field.form_control_type = "text";
+
+  field.label = ASCIIToUTF16("username");
+  field.name = ASCIIToUTF16("username");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("password");
+  field.name = ASCIIToUTF16("password");
+  form.fields.push_back(field);
+
+  FormStructure form_structure(form);
+  std::vector<FormStructure*> forms;
+  forms.push_back(&form_structure);
+
+  autofill::AutofillQueryResponseContents response;
+  // If there are multiple predictions for the field,
+  // |AutofillField::overall_server_type_| will store only autofill vote, but
+  // not password vote. |AutofillField::server_predictions_| should store all
+  // predictions.
+  autofill::AutofillQueryResponseContents_Field* field0 = response.add_field();
+  field0->set_overall_type_prediction(autofill::PHONE_HOME_NUMBER);
+  autofill::AutofillQueryResponseContents_Field_FieldPrediction*
+      field_prediction0 = field0->add_predictions();
+  field_prediction0->set_type(autofill::PHONE_HOME_NUMBER);
+  autofill::AutofillQueryResponseContents_Field_FieldPrediction*
+      field_prediction1 = field0->add_predictions();
+  field_prediction1->set_type(autofill::USERNAME);
+
+  autofill::AutofillQueryResponseContents_Field* field1 = response.add_field();
+  field1->set_overall_type_prediction(autofill::PASSWORD);
+  autofill::AutofillQueryResponseContents_Field_FieldPrediction*
+      field_prediction2 = field1->add_predictions();
+  field_prediction2->set_type(autofill::PASSWORD);
+  autofill::AutofillQueryResponseContents_Field_FieldPrediction*
+      field_prediction3 = field1->add_predictions();
+  field_prediction3->set_type(autofill::PROBABLY_NEW_PASSWORD);
+
+  std::string response_string;
+  ASSERT_TRUE(response.SerializeToString(&response_string));
+  FormStructure::ParseQueryResponse(response_string, forms);
+
+  // Check that Autofill predictions are converted to password related
+  // predictions.
+  std::map<autofill::FormData, autofill::PasswordFormFieldPredictionMap>
+      predictions;
+  predictions[form][form.fields[0]] = autofill::PREDICTION_USERNAME;
+  predictions[form][form.fields[1]] = autofill::PREDICTION_CURRENT_PASSWORD;
+  EXPECT_CALL(driver_, AutofillDataReceived(predictions));
+
+  manager()->ProcessAutofillPredictions(&driver_, forms);
 }
 
 }  // namespace password_manager

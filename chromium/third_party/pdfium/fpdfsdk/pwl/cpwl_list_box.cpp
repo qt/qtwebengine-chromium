@@ -72,7 +72,7 @@ CPWL_ListBox::CPWL_ListBox()
 
 CPWL_ListBox::~CPWL_ListBox() {}
 
-CFX_ByteString CPWL_ListBox::GetClassName() const {
+ByteString CPWL_ListBox::GetClassName() const {
   return "CPWL_ListBox";
 }
 
@@ -83,7 +83,7 @@ void CPWL_ListBox::OnCreated() {
 
   SetHoverSel(HasFlag(PLBS_HOVERSEL));
   m_pList->SetMultipleSel(HasFlag(PLBS_MULTIPLESEL));
-  m_pList->SetFontSize(GetCreationParam().fFontSize);
+  m_pList->SetFontSize(GetCreationParams().fFontSize);
 
   m_bHoverSel = HasFlag(PLBS_HOVERSEL);
 }
@@ -250,10 +250,12 @@ void CPWL_ListBox::KillFocus() {
   CPWL_Wnd::KillFocus();
 }
 
-void CPWL_ListBox::RePosChildWnd() {
-  CPWL_Wnd::RePosChildWnd();
+bool CPWL_ListBox::RePosChildWnd() {
+  if (!CPWL_Wnd::RePosChildWnd())
+    return false;
 
   m_pList->SetPlateRect(GetListRect());
+  return true;
 }
 
 bool CPWL_ListBox::OnNotifySelectionChanged(bool bKeyDown, uint32_t nFlag) {
@@ -262,8 +264,8 @@ bool CPWL_ListBox::OnNotifySelectionChanged(bool bKeyDown, uint32_t nFlag) {
 
   CPWL_Wnd::ObservedPtr thisObserved(this);
 
-  CFX_WideString swChange = GetText();
-  CFX_WideString strChangeEx;
+  WideString swChange = GetText();
+  WideString strChangeEx;
   int nSelStart = 0;
   int nSelEnd = swChange.GetLength();
   bool bRC;
@@ -288,11 +290,11 @@ CFX_FloatRect CPWL_ListBox::GetFocusRect() const {
   return CPWL_Wnd::GetFocusRect();
 }
 
-void CPWL_ListBox::AddString(const CFX_WideString& str) {
+void CPWL_ListBox::AddString(const WideString& str) {
   m_pList->AddString(str);
 }
 
-CFX_WideString CPWL_ListBox::GetText() const {
+WideString CPWL_ListBox::GetText() const {
   return m_pList->GetText();
 }
 

@@ -51,7 +51,7 @@ class BLINK_PLATFORM_EXPORT WebCORSPreflightResultCacheItem
       const WebHTTPHeaderMap&,
       WebString& error_description);
 
-  bool AllowsCrossOriginMethod(const WebString&,
+  bool AllowsCrossOriginMethod(const WebString& method,
                                WebString& error_description) const;
   bool AllowsCrossOriginHeaders(const WebHTTPHeaderMap&,
                                 WebString& error_description) const;
@@ -90,11 +90,13 @@ class BLINK_PLATFORM_EXPORT WebCORSPreflightResultCache
                         WebURLRequest::FetchCredentialsMode,
                         const WebString& method,
                         const WebHTTPHeaderMap& request_headers);
-  WebCORSPreflightResultCache() {}
-
-  ~WebCORSPreflightResultCache();
 
  protected:
+  friend class WTF::ThreadSpecific<WebCORSPreflightResultCache>;
+
+  WebCORSPreflightResultCache();
+  virtual ~WebCORSPreflightResultCache();
+
   typedef std::map<
       std::string,
       std::map<std::string, std::unique_ptr<WebCORSPreflightResultCacheItem>>>

@@ -18,8 +18,8 @@
 #include "core/css/resolver/CSSVariableResolver.h"
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverState.h"
+#include "core/style/ComputedStyle.h"
 #include "core/style/DataEquivalency.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/wtf/PtrUtil.h"
 
 namespace blink {
@@ -301,10 +301,12 @@ void CSSInterpolationType::ApplyCustomPropertyValue(
   // TODO(alancutter): Defer tokenization of the CSSValue until it is needed.
   String string_value = css_value->CssText();
   CSSTokenizer tokenizer(string_value);
+  const auto tokens = tokenizer.TokenizeToEOF();
   bool is_animation_tainted = true;
   bool needs_variable_resolution = false;
-  RefPtr<CSSVariableData> variable_data = CSSVariableData::Create(
-      tokenizer.TokenRange(), is_animation_tainted, needs_variable_resolution);
+  RefPtr<CSSVariableData> variable_data =
+      CSSVariableData::Create(CSSParserTokenRange(tokens), is_animation_tainted,
+                              needs_variable_resolution);
   ComputedStyle& style = *state.Style();
   const PropertyHandle property = GetProperty();
   const AtomicString& property_name = property.CustomPropertyName();

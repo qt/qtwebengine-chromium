@@ -4,6 +4,7 @@
 
 #include "platform/bindings/ScriptWrappableVisitor.h"
 
+#include "platform/Supplementable.h"
 #include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/bindings/DOMWrapperWorld.h"
 #include "platform/bindings/ScopedPersistent.h"
@@ -96,8 +97,10 @@ void ScriptWrappableVisitor::PerformCleanup() {
 }
 
 void ScriptWrappableVisitor::ScheduleIdleLazyCleanup() {
-  // Some threads (e.g. PPAPI thread) don't have a scheduler.
-  if (!Platform::Current()->CurrentThread()->Scheduler())
+  WebThread* const thread = Platform::Current()->CurrentThread();
+  // Thread might already be gone, or some threads (e.g. PPAPI) don't have a
+  // scheduler.
+  if (!thread || !thread->Scheduler())
     return;
 
   if (idle_cleanup_task_scheduled_)
@@ -224,26 +227,15 @@ void ScriptWrappableVisitor::MarkWrappersInAllWorlds(
 
 void ScriptWrappableVisitor::WriteBarrier(
     v8::Isolate* isolate,
-    const TraceWrapperV8Reference<v8::Value>* dst_object) {
-  if (!dst_object || dst_object->IsEmpty() ||
-      !ThreadState::Current()->WrapperTracingInProgress()) {
+    const TraceWrapperV8Reference<v8::Value>& dst_object) {
+  ScriptWrappableVisitor* visitor = CurrentVisitor(isolate);
+  if (dst_object.IsEmpty() || !visitor->WrapperTracingInProgress())
     return;
-  }
 
   // Conservatively assume that the source object containing |dst_object| is
   // marked.
-  CurrentVisitor(isolate)->MarkWrapper(
-      &(const_cast<TraceWrapperV8Reference<v8::Value>*>(dst_object)->Get()));
-}
-
-void ScriptWrappableVisitor::WriteBarrier(
-    v8::Isolate* isolate,
-    const v8::Persistent<v8::Object>* dst_object) {
-  if (!dst_object || dst_object->IsEmpty() ||
-      !ThreadState::Current()->WrapperTracingInProgress()) {
-    return;
-  }
-  CurrentVisitor(isolate)->MarkWrapper(&(dst_object->As<v8::Value>()));
+  visitor->MarkWrapper(
+      &(const_cast<TraceWrapperV8Reference<v8::Value>&>(dst_object).Get()));
 }
 
 void ScriptWrappableVisitor::TraceWrappers(
@@ -264,6 +256,11 @@ void ScriptWrappableVisitor::MarkWrapper(
 
 void ScriptWrappableVisitor::DispatchTraceWrappers(
     const TraceWrapperBase* wrapper_base) const {
+  wrapper_base->TraceWrappers(this);
+}
+
+void ScriptWrappableVisitor::DispatchTraceWrappersForSupplement(
+    const TraceWrapperBaseForSupplement* wrapper_base) const {
   wrapper_base->TraceWrappers(this);
 }
 

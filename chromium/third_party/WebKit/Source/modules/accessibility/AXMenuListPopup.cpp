@@ -25,7 +25,7 @@
 
 #include "modules/accessibility/AXMenuListPopup.h"
 
-#include "core/html/HTMLSelectElement.h"
+#include "core/html/forms/HTMLSelectElement.h"
 #include "modules/accessibility/AXMenuListOption.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 
@@ -59,7 +59,7 @@ bool AXMenuListPopup::ComputeAccessibilityIsIgnored(
 AXMenuListOption* AXMenuListPopup::MenuListOptionAXObject(
     HTMLElement* element) const {
   DCHECK(element);
-  if (!isHTMLOptionElement(*element))
+  if (!IsHTMLOptionElement(*element))
     return 0;
 
   AXObject* object = AxObjectCache().GetOrCreate(element);
@@ -74,10 +74,10 @@ int AXMenuListPopup::GetSelectedIndex() const {
     return -1;
 
   Node* parent_node = parent_->GetNode();
-  if (!isHTMLSelectElement(parent_node))
+  if (!IsHTMLSelectElement(parent_node))
     return -1;
 
-  HTMLSelectElement* html_select_element = toHTMLSelectElement(parent_node);
+  HTMLSelectElement* html_select_element = ToHTMLSelectElement(parent_node);
   return html_select_element->selectedIndex();
 }
 
@@ -94,10 +94,10 @@ void AXMenuListPopup::AddChildren() {
     return;
 
   Node* parent_node = parent_->GetNode();
-  if (!isHTMLSelectElement(parent_node))
+  if (!IsHTMLSelectElement(parent_node))
     return;
 
-  HTMLSelectElement* html_select_element = toHTMLSelectElement(parent_node);
+  HTMLSelectElement* html_select_element = ToHTMLSelectElement(parent_node);
   have_children_ = true;
 
   if (active_index_ == -1)

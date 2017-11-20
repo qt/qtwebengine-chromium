@@ -41,7 +41,7 @@
 #include "core/dom/NodeComputedStyle.h"
 #include "core/dom/UserGestureIndicator.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/InputMethodController.h"
+#include "core/editing/ime/InputMethodController.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 #include "core/exported/FakeWebPlugin.h"
 #include "core/exported/WebSettingsImpl.h"
@@ -55,9 +55,9 @@
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/fullscreen/Fullscreen.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLObjectElement.h"
-#include "core/html/HTMLTextAreaElement.h"
+#include "core/html/forms/HTMLInputElement.h"
+#include "core/html/forms/HTMLTextAreaElement.h"
 #include "core/inspector/DevToolsEmulator.h"
 #include "core/layout/api/LayoutViewItem.h"
 #include "core/loader/DocumentLoader.h"
@@ -508,9 +508,14 @@ TEST_P(WebViewTest, SetBaseBackgroundColorAndBlendWithExistingContent) {
   LayoutRect paint_rect(0, 0, kWidth, kHeight);
   PaintLayerPaintingInfo painting_info(root_layer, paint_rect,
                                        kGlobalPaintNormalPhase, LayoutSize());
+
+  view->GetLayoutView()->GetDocument().Lifecycle().AdvanceTo(
+      DocumentLifecycle::kInPaint);
   PaintLayerPainter(*root_layer)
       .PaintLayerContents(builder.Context(), painting_info,
                           kPaintLayerPaintingCompositingAllPhases);
+  view->GetLayoutView()->GetDocument().Lifecycle().AdvanceTo(
+      DocumentLifecycle::kPaintClean);
   builder.EndRecording()->Playback(&canvas);
 
   // The result should be a blend of red and green.
@@ -2879,7 +2884,7 @@ TEST_P(WebViewTest, TouchDoesntSelectEmptyTextarea) {
   web_view->HandleInputEvent(WebCoalescedInputEvent(event));
   EXPECT_TRUE(frame->SelectionAsText().IsEmpty());
 
-  HTMLTextAreaElement* text_area_element = toHTMLTextAreaElement(
+  HTMLTextAreaElement* text_area_element = ToHTMLTextAreaElement(
       web_view->MainFrameImpl()->GetDocument().GetElementById(
           blanklinestextbox));
   text_area_element->setValue("hello");
@@ -3096,7 +3101,7 @@ class MiddleClickAutoscrollWebWidgetClient
 
 TEST_P(WebViewTest, MiddleClickAutoscrollCursor) {
   MiddleClickAutoscrollWebWidgetClient client;
-  RuntimeEnabledFeatures::SetMiddleClickAutoscrollEnabled(true);
+  ScopedMiddleClickAutoscrollForTest middle_click_autoscroll(true);
   RegisterMockedHttpURLLoad("content-width-1000.html");
 
   WebViewImpl* web_view = web_view_helper_.InitializeAndLoad(
@@ -3490,9 +3495,7 @@ TEST_P(WebViewTest, DISABLED_ChooseValueFromDateTimeChooser) {
 #else
 TEST_P(WebViewTest, ChooseValueFromDateTimeChooser) {
 #endif
-  bool original_multiple_fields_flag =
-      RuntimeEnabledFeatures::InputMultipleFieldsUIEnabled();
-  RuntimeEnabledFeatures::SetInputMultipleFieldsUIEnabled(false);
+  ScopedInputMultipleFieldsUIForTest input_multiple_fields_ui(false);
   DateTimeChooserWebViewClient client;
   std::string url = RegisterMockedHttpURLLoad("date_time_chooser.html");
   WebViewImpl* web_view_impl =
@@ -3503,7 +3506,7 @@ TEST_P(WebViewTest, ChooseValueFromDateTimeChooser) {
 
   HTMLInputElement* input_element;
 
-  input_element = toHTMLInputElement(document->getElementById("date"));
+  input_element = ToHTMLInputElement(document->getElementById("date"));
   OpenDateTimeChooser(web_view_impl, input_element);
   client.ChooserCompletion()->DidChooseValue(0);
   client.ClearChooserCompletion();
@@ -3515,7 +3518,7 @@ TEST_P(WebViewTest, ChooseValueFromDateTimeChooser) {
   client.ClearChooserCompletion();
   EXPECT_STREQ("", input_element->value().Utf8().data());
 
-  input_element = toHTMLInputElement(document->getElementById("datetimelocal"));
+  input_element = ToHTMLInputElement(document->getElementById("datetimelocal"));
   OpenDateTimeChooser(web_view_impl, input_element);
   client.ChooserCompletion()->DidChooseValue(0);
   client.ClearChooserCompletion();
@@ -3527,7 +3530,7 @@ TEST_P(WebViewTest, ChooseValueFromDateTimeChooser) {
   client.ClearChooserCompletion();
   EXPECT_STREQ("", input_element->value().Utf8().data());
 
-  input_element = toHTMLInputElement(document->getElementById("month"));
+  input_element = ToHTMLInputElement(document->getElementById("month"));
   OpenDateTimeChooser(web_view_impl, input_element);
   client.ChooserCompletion()->DidChooseValue(0);
   client.ClearChooserCompletion();
@@ -3539,7 +3542,7 @@ TEST_P(WebViewTest, ChooseValueFromDateTimeChooser) {
   client.ClearChooserCompletion();
   EXPECT_STREQ("", input_element->value().Utf8().data());
 
-  input_element = toHTMLInputElement(document->getElementById("time"));
+  input_element = ToHTMLInputElement(document->getElementById("time"));
   OpenDateTimeChooser(web_view_impl, input_element);
   client.ChooserCompletion()->DidChooseValue(0);
   client.ClearChooserCompletion();
@@ -3551,7 +3554,7 @@ TEST_P(WebViewTest, ChooseValueFromDateTimeChooser) {
   client.ClearChooserCompletion();
   EXPECT_STREQ("", input_element->value().Utf8().data());
 
-  input_element = toHTMLInputElement(document->getElementById("week"));
+  input_element = ToHTMLInputElement(document->getElementById("week"));
   OpenDateTimeChooser(web_view_impl, input_element);
   client.ChooserCompletion()->DidChooseValue(0);
   client.ClearChooserCompletion();
@@ -3566,8 +3569,6 @@ TEST_P(WebViewTest, ChooseValueFromDateTimeChooser) {
   // Clear the WebViewClient from the webViewHelper to avoid use-after-free in
   // the WebViewHelper destructor.
   web_view_helper_.Reset();
-  RuntimeEnabledFeatures::SetInputMultipleFieldsUIEnabled(
-      original_multiple_fields_flag);
 }
 
 TEST_P(WebViewTest, DispatchesFocusBlurOnViewToggle) {
@@ -3885,7 +3886,7 @@ TEST_P(WebViewTest, HasTouchEventHandlers) {
   Element* child_frame = document->getElementById("childframe");
   DCHECK(child_frame);
   Document* child_document =
-      toHTMLIFrameElement(child_frame)->contentDocument();
+      ToHTMLIFrameElement(child_frame)->contentDocument();
   Element* child_div = child_document->getElementById("childdiv");
   DCHECK(child_div);
   registry->DidAddEventHandler(*child_div, kTouchEvent);
@@ -3977,7 +3978,7 @@ TEST_P(WebViewTest, TextInputFlags) {
   // (A.1) Verifies autocorrect/autocomplete/spellcheck flags are Off and
   // autocapitalize is set to none.
   HTMLInputElement* input_element =
-      toHTMLInputElement(document->getElementById("input"));
+      ToHTMLInputElement(document->getElementById("input"));
   document->SetFocusedElement(
       input_element,
       FocusParams(SelectionBehaviorOnFocus::kNone, kWebFocusTypeNone, nullptr));
@@ -3990,7 +3991,7 @@ TEST_P(WebViewTest, TextInputFlags) {
 
   // (A.2) Verifies autocorrect/autocomplete/spellcheck flags are On and
   // autocapitalize is set to sentences.
-  input_element = toHTMLInputElement(document->getElementById("input2"));
+  input_element = ToHTMLInputElement(document->getElementById("input2"));
   document->SetFocusedElement(
       input_element,
       FocusParams(SelectionBehaviorOnFocus::kNone, kWebFocusTypeNone, nullptr));
@@ -4004,7 +4005,7 @@ TEST_P(WebViewTest, TextInputFlags) {
   // (B) <textarea> Verifies the default text input flags are
   // WebTextInputFlagAutocapitalizeSentences.
   HTMLTextAreaElement* text_area_element =
-      toHTMLTextAreaElement(document->getElementById("textarea"));
+      ToHTMLTextAreaElement(document->getElementById("textarea"));
   document->SetFocusedElement(
       text_area_element,
       FocusParams(SelectionBehaviorOnFocus::kNone, kWebFocusTypeNone, nullptr));
@@ -4374,7 +4375,7 @@ TEST_P(WebViewTest, StopLoadingIfJavaScriptURLReturnsNoStringResult) {
           "var win = window.open('javascript:false'); win.document"));
   ASSERT_TRUE(v8_value->IsObject());
   Document* document =
-      V8Document::toImplWithTypeCheck(v8::Isolate::GetCurrent(), v8_value);
+      V8Document::ToImplWithTypeCheck(v8::Isolate::GetCurrent(), v8_value);
   ASSERT_TRUE(document);
   EXPECT_FALSE(document->GetFrame()->IsLoading());
 }
@@ -4919,7 +4920,7 @@ TEST_P(WebViewTest, SetZoomLevelWhilePluginFocused) {
   // Verify the plugin is loaded.
   LocalFrame* main_frame = web_view->MainFrameImpl()->GetFrame();
   HTMLObjectElement* plugin_element =
-      toHTMLObjectElement(main_frame->GetDocument()->body()->firstChild());
+      ToHTMLObjectElement(main_frame->GetDocument()->body()->firstChild());
   EXPECT_TRUE(plugin_element->OwnedPlugin());
   // Focus the plugin element, and then change the zoom level on the WebView.
   plugin_element->focus();

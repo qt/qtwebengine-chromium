@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_P2P_BASE_PACKETSOCKETFACTORY_H_
-#define WEBRTC_P2P_BASE_PACKETSOCKETFACTORY_H_
+#ifndef P2P_BASE_PACKETSOCKETFACTORY_H_
+#define P2P_BASE_PACKETSOCKETFACTORY_H_
 
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/proxyinfo.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/proxyinfo.h"
 
 namespace rtc {
 
@@ -20,6 +20,7 @@ namespace rtc {
 struct PacketSocketTcpOptions {
   int opts;
   std::vector<std::string> tls_alpn_protocols;
+  std::vector<std::string> tls_elliptic_curves;
 };
 
 class AsyncPacketSocket;
@@ -82,4 +83,4 @@ class PacketSocketFactory {
 
 }  // namespace rtc
 
-#endif  // WEBRTC_P2P_BASE_PACKETSOCKETFACTORY_H_
+#endif  // P2P_BASE_PACKETSOCKETFACTORY_H_

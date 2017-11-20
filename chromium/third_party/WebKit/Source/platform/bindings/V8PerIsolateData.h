@@ -108,7 +108,7 @@ class PLATFORM_EXPORT V8PerIsolateData {
   };
 
   static v8::Isolate* Initialize(WebTaskRunner*,
-                                 intptr_t* refernce_table,
+                                 const intptr_t* reference_table,
                                  V8ContextSnapshotMode);
 
   static V8PerIsolateData* From(v8::Isolate* isolate) {
@@ -244,13 +244,22 @@ class PLATFORM_EXPORT V8PerIsolateData {
 
  private:
   V8PerIsolateData(WebTaskRunner*,
-                   intptr_t* reference_table,
+                   const intptr_t* reference_table,
                    V8ContextSnapshotMode);
-  explicit V8PerIsolateData(intptr_t* reference_table);
+  explicit V8PerIsolateData(const intptr_t* reference_table);
   ~V8PerIsolateData();
 
+  // A really simple hash function, which makes lookups faster. The set of
+  // possible keys for this is relatively small and fixed at compile time, so
+  // collisions are less of a worry than they would otherwise be.
+  struct SimplePtrHash : WTF::PtrHash<const void> {
+    static unsigned GetHash(const void* key) {
+      uintptr_t k = reinterpret_cast<uintptr_t>(key);
+      return static_cast<unsigned>(k ^ (k >> 8));
+    }
+  };
   using V8FunctionTemplateMap =
-      HashMap<const void*, v8::Eternal<v8::FunctionTemplate>>;
+      HashMap<const void*, v8::Eternal<v8::FunctionTemplate>, SimplePtrHash>;
   V8FunctionTemplateMap& SelectInterfaceTemplateMap(const DOMWrapperWorld&);
   V8FunctionTemplateMap& SelectOperationTemplateMap(const DOMWrapperWorld&);
   bool HasInstance(const WrapperTypeInfo* untrusted,
@@ -279,8 +288,7 @@ class PLATFORM_EXPORT V8PerIsolateData {
   HashMap<const void*, Vector<v8::Eternal<v8::Name>>> eternal_name_cache_;
 
   // Members required for the V8 context snapshot.
-  // v8::Context is created from this blob data image. This needs to be
-  // instantiated before |isolate_holder_| gets instantiated.
+  // v8::Context is created from this blob data image.
   v8::StartupData startup_data_;
   // When taking a V8 context snapshot, we can't keep V8 objects with eternal
   // handles. So we use a special interface map that doesn't use eternal handles

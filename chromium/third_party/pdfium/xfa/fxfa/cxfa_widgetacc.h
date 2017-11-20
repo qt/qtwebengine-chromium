@@ -9,8 +9,8 @@
 
 #include <memory>
 
-#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/fx_dib.h"
 #include "xfa/fxfa/parser/cxfa_box.h"
@@ -37,13 +37,13 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   CXFA_WidgetAcc(CXFA_FFDocView* pDocView, CXFA_Node* pNode);
   ~CXFA_WidgetAcc();
 
-  bool GetName(CFX_WideString& wsName, int32_t iNameType = 0);
+  bool GetName(WideString& wsName, int32_t iNameType = 0);
   bool ProcessValueChanged();
   void ResetData();
 
-  void SetImageEdit(const CFX_WideString& wsContentType,
-                    const CFX_WideString& wsHref,
-                    const CFX_WideString& wsData);
+  void SetImageEdit(const WideString& wsContentType,
+                    const WideString& wsHref,
+                    const WideString& wsData);
 
   CXFA_WidgetAcc* GetExclGroup();
   CXFA_FFDocView* GetDocView();
@@ -70,14 +70,14 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   void GetImageEditDpi(int32_t& iImageXDpi, int32_t& iImageYDpi);
   CXFA_TextLayout* GetCaptionTextLayout();
   CXFA_TextLayout* GetTextLayout();
-  CFX_RetainPtr<CFX_DIBitmap> GetImageImage();
-  CFX_RetainPtr<CFX_DIBitmap> GetImageEditImage();
-  void SetImageImage(const CFX_RetainPtr<CFX_DIBitmap>& newImage);
-  void SetImageEditImage(const CFX_RetainPtr<CFX_DIBitmap>& newImage);
+  RetainPtr<CFX_DIBitmap> GetImageImage();
+  RetainPtr<CFX_DIBitmap> GetImageEditImage();
+  void SetImageImage(const RetainPtr<CFX_DIBitmap>& newImage);
+  void SetImageEditImage(const RetainPtr<CFX_DIBitmap>& newImage);
   void UpdateUIDisplay(CXFA_FFWidget* pExcept = nullptr);
 
   CXFA_Node* GetDatasets();
-  CFX_RetainPtr<CFGAS_GEFont> GetFDEFont();
+  RetainPtr<CFGAS_GEFont> GetFDEFont();
   float GetFontSize();
   FX_ARGB GetTextColor();
   float GetLineHeight();
@@ -92,8 +92,8 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   int32_t ProcessNullTestValidate(CXFA_Validate validate,
                                   int32_t iFlags,
                                   bool bVersionFlag);
-  CFX_WideString GetValidateCaptionName(bool bVersionFlag);
-  CFX_WideString GetValidateMessage(bool bError, bool bVersionFlag);
+  WideString GetValidateCaptionName(bool bVersionFlag);
+  WideString GetValidateMessage(bool bError, bool bVersionFlag);
   void CalcCaptionSize(CFX_SizeF& szCap);
   bool CalculateFieldAutoSize(CFX_SizeF& size);
   bool CalculateWidgetAutoSize(CFX_SizeF& size);

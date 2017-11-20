@@ -8,9 +8,9 @@
 #include <stdint.h>
 
 #include <memory>
-#include <queue>
 #include <string>
 
+#include "base/containers/queue.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/thread_checker.h"
@@ -195,11 +195,12 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
 
   void CloseInternal();
 
-  void ReadDataInternal(int index,
-                        int offset,
-                        net::IOBuffer* buf,
-                        int buf_len,
-                        const CompletionCallback& callback);
+  int ReadDataInternal(bool sync_possible,
+                       int index,
+                       int offset,
+                       net::IOBuffer* buf,
+                       int buf_len,
+                       const CompletionCallback& callback);
 
   void WriteDataInternal(int index,
                          int offset,
@@ -305,13 +306,13 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   void RecordWriteDependencyType(const SimpleEntryOperation& operation) const;
 
   // Completes a read from the stream data kept in memory, logging metrics
-  // and updating metadata. If |callback| is non-null, it will be posted to the
-  // current task runner with the return code.
-  void ReadFromBufferAndPostReply(net::GrowableIOBuffer* in_buf,
-                                  int offset,
-                                  int buf_len,
-                                  net::IOBuffer* out_buf,
-                                  const CompletionCallback& callback);
+  // and updating metadata. Returns the # of bytes read successfully.
+  // This asumes the caller has already range-checked offset and buf_len
+  // appropriately.
+  int ReadFromBuffer(net::GrowableIOBuffer* in_buf,
+                     int offset,
+                     int buf_len,
+                     net::IOBuffer* out_buf);
 
   // Copies data from |buf| to the internal in-memory buffer for stream 0. If
   // |truncate| is set to true, the target buffer will be truncated at |offset|
@@ -389,7 +390,7 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   // would leak the SimpleSynchronousEntry.
   SimpleSynchronousEntry* synchronous_entry_;
 
-  std::queue<SimpleEntryOperation> pending_operations_;
+  base::queue<SimpleEntryOperation> pending_operations_;
 
   net::NetLogWithSource net_log_;
 

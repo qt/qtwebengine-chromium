@@ -66,8 +66,8 @@ static void RasterizeSourceOOP(
   gpu::gles2::GLES2Interface* gl = context_provider->ContextGL();
   GLuint texture_id = resource_lock->ConsumeTexture(gl);
 
-  auto setup_list = make_scoped_refptr(
-      new DisplayItemList(DisplayItemList::kTopLevelDisplayItemList));
+  auto setup_list = base::MakeRefCounted<DisplayItemList>(
+      DisplayItemList::kTopLevelDisplayItemList);
   setup_list->StartPaint();
   setup_list->push<DrawRecordOp>(SetupForRaster(raster_source, raster_full_rect,
                                                 playback_rect, transform));
@@ -81,9 +81,9 @@ static void RasterizeSourceOOP(
                           resource_lock->PixelConfig());
   gl->RasterCHROMIUM(setup_list.get(), playback_rect.x(), playback_rect.y(),
                      playback_rect.width(), playback_rect.height());
-  gl->RasterCHROMIUM(raster_source->display_list(), playback_rect.x(),
-                     playback_rect.y(), playback_rect.width(),
-                     playback_rect.height());
+  gl->RasterCHROMIUM(raster_source->GetDisplayItemList().get(),
+                     playback_rect.x(), playback_rect.y(),
+                     playback_rect.width(), playback_rect.height());
   gl->EndRasterCHROMIUM();
 
   gl->DeleteTextures(1, &texture_id);

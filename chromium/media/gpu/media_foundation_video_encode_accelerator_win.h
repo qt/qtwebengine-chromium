@@ -10,10 +10,10 @@
 #include <stdint.h>
 #include <strmif.h>
 
-#include <deque>
 #include <memory>
 
 #include "base/bind.h"
+#include "base/containers/circular_deque.h"
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
@@ -54,8 +54,9 @@ class MEDIA_GPU_EXPORT MediaFoundationVideoEncodeAccelerator
       const scoped_refptr<base::SingleThreadTaskRunner>& encode_task_runner)
       override;
 
-  // Preload dlls required for encoding.
-  static void PreSandboxInitialization();
+  // Preload dlls required for encoding. Returns true if all required dlls are
+  // correctly loaded.
+  static bool PreSandboxInitialization();
 
  protected:
   ~MediaFoundationVideoEncodeAccelerator() override;
@@ -112,10 +113,11 @@ class MEDIA_GPU_EXPORT MediaFoundationVideoEncodeAccelerator
   void ReleaseEncoderResources();
 
   // Bitstream buffers ready to be used to return encoded output as a FIFO.
-  std::deque<std::unique_ptr<BitstreamBufferRef>> bitstream_buffer_queue_;
+  base::circular_deque<std::unique_ptr<BitstreamBufferRef>>
+      bitstream_buffer_queue_;
 
   // EncodeOutput needs to be copied into a BitstreamBufferRef as a FIFO.
-  std::deque<std::unique_ptr<EncodeOutput>> encoder_output_queue_;
+  base::circular_deque<std::unique_ptr<EncodeOutput>> encoder_output_queue_;
 
   gfx::Size input_visible_size_;
   size_t bitstream_buffer_size_;

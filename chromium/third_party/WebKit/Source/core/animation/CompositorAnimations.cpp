@@ -352,10 +352,10 @@ CompositorAnimations::CheckCanStartElementOnCompositor(
     // the DCHECK below.
     // DCHECK(document().lifecycle().state() >=
     // DocumentLifecycle::PrePaintClean);
-    if (FragmentData* fragment =
+    if (FragmentData* fragment_data =
             target_element.GetLayoutObject()->FirstFragment()) {
       const ObjectPaintProperties* paint_properties =
-          target_element.GetLayoutObject()->FirstFragment()->PaintProperties();
+          fragment_data->PaintProperties();
       const TransformPaintPropertyNode* transform_node =
           paint_properties->Transform();
       const EffectPaintPropertyNode* effect_node = paint_properties->Effect();
@@ -610,7 +610,7 @@ void AddKeyframeToCurve(CompositorTransformAnimationCurve& curve,
 template <typename PlatformAnimationCurveType>
 void AddKeyframesToCurve(PlatformAnimationCurveType& curve,
                          const PropertySpecificKeyframeVector& keyframes) {
-  auto* last_keyframe = keyframes.back().Get();
+  auto* last_keyframe = keyframes.back().get();
   for (const auto& keyframe : keyframes) {
     const TimingFunction* keyframe_timing_function = 0;
     // Ignore timing function of last frame.
@@ -620,7 +620,7 @@ void AddKeyframesToCurve(PlatformAnimationCurveType& curve,
       keyframe_timing_function = &keyframe->Easing();
 
     const AnimatableValue* value = keyframe->GetAnimatableValue();
-    AddKeyframeToCurve(curve, keyframe.Get(), value, *keyframe_timing_function);
+    AddKeyframeToCurve(curve, keyframe.get(), value, *keyframe_timing_function);
   }
 }
 

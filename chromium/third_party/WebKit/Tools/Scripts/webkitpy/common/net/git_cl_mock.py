@@ -10,7 +10,7 @@ class MockGitCL(object):
 
     def __init__(self, host, results=None, issue_number='1234'):
         self._host = host
-        self._results = results or {}
+        self._results = results
         self._issue_number = issue_number
         self.calls = []
 
@@ -33,6 +33,9 @@ class MockGitCL(object):
 
     def wait_for_try_jobs(self, **_):
         return self._results
+
+    def wait_for_closed_status(self, **_):
+        return 'closed'
 
     def latest_try_jobs(self, builder_names=None):
         return self.filter_latest(self._results)

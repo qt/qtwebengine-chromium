@@ -6,8 +6,8 @@
 #ifndef CHUNKCOPY_H
 #define CHUNKCOPY_H
 
-#include "zutil.h"
 #include <arm_neon.h>
+#include "zutil.h"
 
 #if __STDC_VERSION__ >= 199901L
 #define Z_RESTRICT restrict
@@ -22,18 +22,18 @@ typedef uint8x16_t chunkcopy_chunk_t;
    Ask the compiler to perform a wide, unaligned load with an machine
    instruction appropriate for the chunkcopy_chunk_t type.
  */
-static inline chunkcopy_chunk_t loadchunk(const unsigned char FAR *s) {
-    chunkcopy_chunk_t c;
-    __builtin_memcpy(&c, s, sizeof(c));
-    return c;
+static inline chunkcopy_chunk_t loadchunk(const unsigned char FAR* s) {
+  chunkcopy_chunk_t c;
+  __builtin_memcpy(&c, s, sizeof(c));
+  return c;
 }
 
 /*
    Ask the compiler to perform a wide, unaligned store with an machine
    instruction appropriate for the chunkcopy_chunk_t type.
  */
-static inline void storechunk(unsigned char FAR *d, chunkcopy_chunk_t c) {
-    __builtin_memcpy(d, &c, sizeof(c));
+static inline void storechunk(unsigned char FAR* d, chunkcopy_chunk_t c) {
+  __builtin_memcpy(d, &c, sizeof(c));
 }
 
 /*
@@ -50,20 +50,20 @@ static inline void storechunk(unsigned char FAR *d, chunkcopy_chunk_t c) {
    without iteration, which will hopefully make the branch prediction more
    reliable.
  */
-static inline unsigned char FAR *chunkcopy_core(unsigned char FAR *out,
-                                                const unsigned char FAR *from,
+static inline unsigned char FAR* chunkcopy_core(unsigned char FAR* out,
+                                                const unsigned char FAR* from,
                                                 unsigned len) {
-    int bump = (--len % CHUNKCOPY_CHUNK_SIZE) + 1;
+  int bump = (--len % CHUNKCOPY_CHUNK_SIZE) + 1;
+  storechunk(out, loadchunk(from));
+  out += bump;
+  from += bump;
+  len /= CHUNKCOPY_CHUNK_SIZE;
+  while (len-- > 0) {
     storechunk(out, loadchunk(from));
-    out += bump;
-    from += bump;
-    len /= CHUNKCOPY_CHUNK_SIZE;
-    while (len-- > 0) {
-        storechunk(out, loadchunk(from));
-        out += CHUNKCOPY_CHUNK_SIZE;
-        from += CHUNKCOPY_CHUNK_SIZE;
-    }
-    return out;
+    out += CHUNKCOPY_CHUNK_SIZE;
+    from += CHUNKCOPY_CHUNK_SIZE;
+  }
+  return out;
 }
 
 /*
@@ -74,20 +74,35 @@ static inline unsigned char FAR *chunkcopy_core(unsigned char FAR *out,
    output buffer is beyond the end of the current copy, and this can still be
    exploited.
  */
-static inline unsigned char FAR *chunkcopy_core_safe(unsigned char FAR *out,
-                                                     const unsigned char FAR * from,
-                                                     unsigned len,
-                                                     unsigned char FAR *limit) {
-    Assert(out + len <= limit, "chunk copy exceeds safety limit");
-    if (limit - out < CHUNKCOPY_CHUNK_SIZE) {
-        const unsigned char FAR * Z_RESTRICT rfrom = from;
-        if (len & 8) { __builtin_memcpy(out, rfrom, 8); out += 8; rfrom += 8; }
-        if (len & 4) { __builtin_memcpy(out, rfrom, 4); out += 4; rfrom += 4; }
-        if (len & 2) { __builtin_memcpy(out, rfrom, 2); out += 2; rfrom += 2; }
-        if (len & 1) { *out++ = *rfrom++; }
-        return out;
+static inline unsigned char FAR* chunkcopy_core_safe(
+    unsigned char FAR* out,
+    const unsigned char FAR* from,
+    unsigned len,
+    unsigned char FAR* limit) {
+  Assert(out + len <= limit, "chunk copy exceeds safety limit");
+  if (limit - out < CHUNKCOPY_CHUNK_SIZE) {
+    const unsigned char FAR* Z_RESTRICT rfrom = from;
+    if (len & 8) {
+      __builtin_memcpy(out, rfrom, 8);
+      out += 8;
+      rfrom += 8;
     }
-    return chunkcopy_core(out, from, len);
+    if (len & 4) {
+      __builtin_memcpy(out, rfrom, 4);
+      out += 4;
+      rfrom += 4;
+    }
+    if (len & 2) {
+      __builtin_memcpy(out, rfrom, 2);
+      out += 2;
+      rfrom += 2;
+    }
+    if (len & 1) {
+      *out++ = *rfrom++;
+    }
+    return out;
+  }
+  return chunkcopy_core(out, from, len);
 }
 
 /*
@@ -100,29 +115,29 @@ static inline unsigned char FAR *chunkcopy_core_safe(unsigned char FAR *out,
    iteration with at least 258 bytes of output space available (258 being the
    maximum length output from a single token; see inffast.c).
  */
-static inline unsigned char FAR *chunkunroll_relaxed(unsigned char FAR *out,
-                                                     unsigned FAR *dist,
-                                                     unsigned FAR *len) {
-    const unsigned char FAR *from = out - *dist;
-    while (*dist < *len && *dist < CHUNKCOPY_CHUNK_SIZE) {
-        storechunk(out, loadchunk(from));
-        out += *dist;
-        *len -= *dist;
-        *dist += *dist;
-    }
-    return out;
+static inline unsigned char FAR* chunkunroll_relaxed(unsigned char FAR* out,
+                                                     unsigned FAR* dist,
+                                                     unsigned FAR* len) {
+  const unsigned char FAR* from = out - *dist;
+  while (*dist < *len && *dist < CHUNKCOPY_CHUNK_SIZE) {
+    storechunk(out, loadchunk(from));
+    out += *dist;
+    *len -= *dist;
+    *dist += *dist;
+  }
+  return out;
 }
 
-
-static inline uint8x16_t chunkset_vld1q_dup_u8x8(const unsigned char FAR * Z_RESTRICT from) {
+static inline uint8x16_t chunkset_vld1q_dup_u8x8(
+    const unsigned char FAR* Z_RESTRICT from) {
 #if defined(__clang__) || defined(__aarch64__)
-    return vreinterpretq_u8_u64(vld1q_dup_u64((void *)from));
+  return vreinterpretq_u8_u64(vld1q_dup_u64((void*)from));
 #else
-    /* 32-bit GCC uses an alignment hint for vld1q_dup_u64, even when given a
-     * void pointer, so here's an alternate implementation.
-     */
-    uint8x8_t h = vld1_u8(from);
-    return vcombine_u8(h, h);
+  /* 32-bit GCC uses an alignment hint for vld1q_dup_u64, even when given a
+   * void pointer, so here's an alternate implementation.
+   */
+  uint8x8_t h = vld1_u8(from);
+  return vcombine_u8(h, h);
 #endif
 }
 
@@ -132,69 +147,69 @@ static inline uint8x16_t chunkset_vld1q_dup_u8x8(const unsigned char FAR * Z_RES
    that it's OK to overwrite at least CHUNKCOPY_CHUNK_SIZE*3 bytes of output
    even if the length is shorter than this.
  */
-static inline unsigned char FAR *chunkset_core(unsigned char FAR *out,
+static inline unsigned char FAR* chunkset_core(unsigned char FAR* out,
                                                unsigned period,
                                                unsigned len) {
-    uint8x16_t f;
-    int bump = ((len - 1) % sizeof(f)) + 1;
+  uint8x16_t f;
+  int bump = ((len - 1) % sizeof(f)) + 1;
 
-    switch (period) {
+  switch (period) {
     case 1:
-        f = vld1q_dup_u8(out - 1);
+      f = vld1q_dup_u8(out - 1);
+      vst1q_u8(out, f);
+      out += bump;
+      len -= bump;
+      while (len > 0) {
         vst1q_u8(out, f);
-        out += bump;
-        len -= bump;
-        while (len > 0) {
-            vst1q_u8(out, f);
-            out += sizeof(f);
-            len -= sizeof(f);
-        }
-        return out;
+        out += sizeof(f);
+        len -= sizeof(f);
+      }
+      return out;
     case 2:
-        f = vreinterpretq_u8_u16(vld1q_dup_u16((void *)(out - 2)));
-        vst1q_u8(out, f);
-        out += bump;
-        len -= bump;
-        if (len > 0) {
-            f = vreinterpretq_u8_u16(vld1q_dup_u16((void *)(out - 2)));
-            do {
-                vst1q_u8(out, f);
-                out += sizeof(f);
-                len -= sizeof(f);
-            } while (len > 0);
-        }
-        return out;
+      f = vreinterpretq_u8_u16(vld1q_dup_u16((void*)(out - 2)));
+      vst1q_u8(out, f);
+      out += bump;
+      len -= bump;
+      if (len > 0) {
+        f = vreinterpretq_u8_u16(vld1q_dup_u16((void*)(out - 2)));
+        do {
+          vst1q_u8(out, f);
+          out += sizeof(f);
+          len -= sizeof(f);
+        } while (len > 0);
+      }
+      return out;
     case 4:
-        f = vreinterpretq_u8_u32(vld1q_dup_u32((void *)(out - 4)));
-        vst1q_u8(out, f);
-        out += bump;
-        len -= bump;
-        if (len > 0) {
-            f = vreinterpretq_u8_u32(vld1q_dup_u32((void *)(out - 4)));
-            do {
-                vst1q_u8(out, f);
-                out += sizeof(f);
-                len -= sizeof(f);
-            } while (len > 0);
-        }
-        return out;
+      f = vreinterpretq_u8_u32(vld1q_dup_u32((void*)(out - 4)));
+      vst1q_u8(out, f);
+      out += bump;
+      len -= bump;
+      if (len > 0) {
+        f = vreinterpretq_u8_u32(vld1q_dup_u32((void*)(out - 4)));
+        do {
+          vst1q_u8(out, f);
+          out += sizeof(f);
+          len -= sizeof(f);
+        } while (len > 0);
+      }
+      return out;
     case 8:
+      f = chunkset_vld1q_dup_u8x8(out - 8);
+      vst1q_u8(out, f);
+      out += bump;
+      len -= bump;
+      if (len > 0) {
         f = chunkset_vld1q_dup_u8x8(out - 8);
-        vst1q_u8(out, f);
-        out += bump;
-        len -= bump;
-        if (len > 0) {
-            f = chunkset_vld1q_dup_u8x8(out - 8);
-            do {
-                vst1q_u8(out, f);
-                out += sizeof(f);
-                len -= sizeof(f);
-            } while (len > 0);
-        }
-        return out;
-    }
-    out = chunkunroll_relaxed(out, &period, &len);
-    return chunkcopy_core(out, out - period, len);
+        do {
+          vst1q_u8(out, f);
+          out += sizeof(f);
+          len -= sizeof(f);
+        } while (len > 0);
+      }
+      return out;
+  }
+  out = chunkunroll_relaxed(out, &period, &len);
+  return chunkcopy_core(out, out - period, len);
 }
 
 /*
@@ -207,10 +222,11 @@ static inline unsigned char FAR *chunkset_core(unsigned char FAR *out,
    This is reflected in the `restrict`-qualified pointers, allowing the
    compiler to reorder loads and stores.
  */
-static inline unsigned char FAR *chunkcopy_relaxed(unsigned char FAR * Z_RESTRICT out,
-                                                   const unsigned char FAR * Z_RESTRICT from,
-                                                   unsigned len) {
-    return chunkcopy_core(out, from, len);
+static inline unsigned char FAR* chunkcopy_relaxed(
+    unsigned char FAR* Z_RESTRICT out,
+    const unsigned char FAR* Z_RESTRICT from,
+    unsigned len) {
+  return chunkcopy_core(out, from, len);
 }
 
 /*
@@ -226,12 +242,13 @@ static inline unsigned char FAR *chunkcopy_relaxed(unsigned char FAR * Z_RESTRIC
    output buffer is beyond the end of the current copy, and this can still be
    exploited.
  */
-static inline unsigned char FAR *chunkcopy_safe(unsigned char FAR *out,
-                                                const unsigned char FAR * Z_RESTRICT from,
-                                                unsigned len,
-                                                unsigned char FAR *limit) {
-    Assert(out + len <= limit, "chunk copy exceeds safety limit");
-    return chunkcopy_core_safe(out, from, len, limit);
+static inline unsigned char FAR* chunkcopy_safe(
+    unsigned char FAR* out,
+    const unsigned char FAR* Z_RESTRICT from,
+    unsigned len,
+    unsigned char FAR* limit) {
+  Assert(out + len <= limit, "chunk copy exceeds safety limit");
+  return chunkcopy_core_safe(out, from, len, limit);
 }
 
 /*
@@ -241,37 +258,38 @@ static inline unsigned char FAR *chunkcopy_safe(unsigned char FAR *out,
    Assumes that len > 0 on entry, and that it's safe to write at least
    CHUNKCOPY_CHUNK_SIZE*3 bytes to the output.
  */
-static inline unsigned char FAR *chunkcopy_lapped_relaxed(unsigned char FAR *out,
-                                                          unsigned dist,
-                                                          unsigned len) {
-    if (dist < len && dist < CHUNKCOPY_CHUNK_SIZE) {
-        return chunkset_core(out, dist, len);
-    }
-    return chunkcopy_core(out, out - dist, len);
+static inline unsigned char FAR*
+chunkcopy_lapped_relaxed(unsigned char FAR* out, unsigned dist, unsigned len) {
+  if (dist < len && dist < CHUNKCOPY_CHUNK_SIZE) {
+    return chunkset_core(out, dist, len);
+  }
+  return chunkcopy_core(out, out - dist, len);
 }
 
 /*
-   Behave like chunkcopy_lapped_relaxed, but avoid writing beyond of legal output.
+   Behave like chunkcopy_lapped_relaxed, but avoid writing beyond of legal
+   output.
 
    Accepts an additional pointer to the end of safe output.  A generic safe
    copy would use (out + len), but it's normally the case that the end of the
    output buffer is beyond the end of the current copy, and this can still be
    exploited.
  */
-static inline unsigned char FAR *chunkcopy_lapped_safe(unsigned char FAR *out,
-                                                       unsigned dist,
-                                                       unsigned len,
-                                                       unsigned char FAR *limit) {
-    Assert(out + len <= limit, "chunk copy exceeds safety limit");
-    if (limit - out < CHUNKCOPY_CHUNK_SIZE * 3) {
-        /* TODO: try harder to optimise this */
-        while (len-- > 0) {
-            *out = *(out - dist);
-            out++;
-        }
-        return out;
+static inline unsigned char FAR* chunkcopy_lapped_safe(
+    unsigned char FAR* out,
+    unsigned dist,
+    unsigned len,
+    unsigned char FAR* limit) {
+  Assert(out + len <= limit, "chunk copy exceeds safety limit");
+  if (limit - out < CHUNKCOPY_CHUNK_SIZE * 3) {
+    /* TODO: try harder to optimise this */
+    while (len-- > 0) {
+      *out = *(out - dist);
+      out++;
     }
-    return chunkcopy_lapped_relaxed(out, dist, len);
+    return out;
+  }
+  return chunkcopy_lapped_relaxed(out, dist, len);
 }
 
 #undef Z_RESTRICT

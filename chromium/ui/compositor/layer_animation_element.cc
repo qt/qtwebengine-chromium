@@ -309,7 +309,9 @@ class ThreadedLayerAnimationElement : public LayerAnimationElement {
   }
   ~ThreadedLayerAnimationElement() override {}
 
-  bool IsThreaded() const override { return !duration().is_zero(); }
+  bool IsThreaded(LayerAnimationDelegate* delegate) const override {
+    return !duration().is_zero();
+  }
 
  protected:
   explicit ThreadedLayerAnimationElement(const LayerAnimationElement& element)
@@ -323,7 +325,7 @@ class ThreadedLayerAnimationElement : public LayerAnimationElement {
     if (t < 1.0)
       return false;
 
-    if (Started() && IsThreaded()) {
+    if (Started() && IsThreaded(delegate)) {
       LayerThreadedAnimationDelegate* threaded =
           delegate->GetThreadedAnimationDelegate();
       DCHECK(threaded);
@@ -335,7 +337,7 @@ class ThreadedLayerAnimationElement : public LayerAnimationElement {
   }
 
   void OnAbort(LayerAnimationDelegate* delegate) override {
-    if (delegate && Started() && IsThreaded()) {
+    if (delegate && Started() && IsThreaded(delegate)) {
       LayerThreadedAnimationDelegate* threaded =
           delegate->GetThreadedAnimationDelegate();
       DCHECK(threaded);
@@ -345,7 +347,7 @@ class ThreadedLayerAnimationElement : public LayerAnimationElement {
 
   void RequestEffectiveStart(LayerAnimationDelegate* delegate) override {
     DCHECK(animation_group_id());
-    if (!IsThreaded()) {
+    if (!IsThreaded(delegate)) {
       set_effective_start_time(requested_start_time());
       return;
     }
@@ -410,6 +412,17 @@ class ThreadedOpacityTransition : public ThreadedLayerAnimationElement {
 
   void OnGetTarget(TargetValue* target) const override {
     target->opacity = target_;
+  }
+
+  bool IsThreaded(LayerAnimationDelegate* delegate) const override {
+    // If the start and target values are the same, we do not create cc
+    // animation so that we will not create render pass in this case.
+    // http://crbug.com/764575.
+    if (duration().is_zero())
+      return false;
+    if (Started())
+      return start_ != target_;
+    return delegate->GetOpacityForAnimation() != target_;
   }
 
  private:
@@ -624,7 +637,7 @@ void LayerAnimationElement::GetTargetValue(TargetValue* target) const {
   OnGetTarget(target);
 }
 
-bool LayerAnimationElement::IsThreaded() const {
+bool LayerAnimationElement::IsThreaded(LayerAnimationDelegate* delegate) const {
   return false;
 }
 
@@ -644,10 +657,9 @@ std::string LayerAnimationElement::ToString() const {
   // beyond just their name.
   return base::StringPrintf(
       "LayerAnimationElement{name=%s, id=%d, group=%d, "
-      "last_progressed_fraction=%0.2f, "
-      "start_frame_number=%d}",
+      "last_progressed_fraction=%0.2f}",
       DebugName().c_str(), animation_id_, animation_group_id_,
-      last_progressed_fraction_, start_frame_number_);
+      last_progressed_fraction_);
 }
 
 std::string LayerAnimationElement::DebugName() const {

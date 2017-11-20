@@ -28,13 +28,13 @@
 
 #include "core/layout/LayoutImage.h"
 
-#include "core/HTMLNames.h"
 #include "core/dom/PseudoElement.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
+#include "core/html_names.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutView.h"
 #include "core/loader/resource/ImageResourceContent.h"
@@ -98,9 +98,9 @@ void LayoutImage::ImageChanged(WrappedImagePtr new_image, const IntRect* rect) {
   if (new_image != image_resource_->ImagePtr())
     return;
 
-  if (IsGeneratedContent() && isHTMLImageElement(GetNode()) &&
+  if (IsGeneratedContent() && IsHTMLImageElement(GetNode()) &&
       image_resource_->ErrorOccurred()) {
-    toHTMLImageElement(GetNode())->EnsureFallbackForGeneratedContent();
+    ToHTMLImageElement(GetNode())->EnsureFallbackForGeneratedContent();
     return;
   }
 
@@ -145,8 +145,6 @@ void LayoutImage::InvalidatePaintAndMarkForLayoutIfNeeded() {
     return;
 
   bool image_source_has_changed_size = old_intrinsic_size != new_intrinsic_size;
-  if (image_source_has_changed_size)
-    SetPreferredLogicalWidthsDirty();
 
   // If the actual area occupied by the image has changed and it is not
   // constrained by style then a layout is required.
@@ -162,9 +160,9 @@ void LayoutImage::InvalidatePaintAndMarkForLayoutIfNeeded() {
       Style()->LogicalMaxWidth().IsPercentOrCalc() ||
       Style()->LogicalMinWidth().IsPercentOrCalc();
 
-  if (image_source_has_changed_size &&
-      (!image_size_is_constrained ||
-       containing_block_needs_to_recompute_preferred_size)) {
+  if ((image_source_has_changed_size && !image_size_is_constrained) ||
+      containing_block_needs_to_recompute_preferred_size) {
+    SetPreferredLogicalWidthsDirty();
     SetNeedsLayoutAndFullPaintInvalidation(
         LayoutInvalidationReason::kSizeChanged);
     return;
@@ -267,8 +265,7 @@ LayoutUnit LayoutImage::MinimumReplacedHeight() const {
 }
 
 HTMLMapElement* LayoutImage::ImageMap() const {
-  HTMLImageElement* i =
-      isHTMLImageElement(GetNode()) ? toHTMLImageElement(GetNode()) : 0;
+  HTMLImageElement* i = ToHTMLImageElementOrNull(GetNode());
   return i ? i->GetTreeScope().GetImageMap(i->FastGetAttribute(usemapAttr)) : 0;
 }
 
@@ -327,10 +324,8 @@ LayoutReplaced* LayoutImage::EmbeddedReplacedContent() const {
     return nullptr;
 
   ImageResourceContent* cached_image = image_resource_->CachedImage();
-  // TODO(japhet): This shouldn't need to worry about cache validation.
-  // https://crbug.com/761026
-  if (cached_image && !cached_image->IsCacheValidator() &&
-      cached_image->GetImage() && cached_image->GetImage()->IsSVGImage())
+  if (cached_image && cached_image->GetImage() &&
+      cached_image->GetImage()->IsSVGImage())
     return ToSVGImage(cached_image->GetImage())->EmbeddedReplacedContent();
 
   return nullptr;

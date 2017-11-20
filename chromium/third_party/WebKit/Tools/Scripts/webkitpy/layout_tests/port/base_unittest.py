@@ -206,7 +206,8 @@ class PortTest(unittest.TestCase):
         # primary_driver_flag() comes from rwt.flag or --additional-driver-flag
         # additional_driver_flags() excludes primary_driver_flag()
 
-        port_a = self.make_port()
+        port_a = self.make_port(options=optparse.Values(
+            {'additional_driver_flag': []}))
         port_b = self.make_port(options=optparse.Values(
             {'additional_driver_flag': ['--bb']}))
         port_c = self.make_port(options=optparse.Values(
@@ -387,8 +388,6 @@ class PortTest(unittest.TestCase):
         self.assertTrue(is_test_file('', 'foo.html'))
         self.assertTrue(is_test_file('', 'foo.svg'))
         self.assertTrue(is_test_file('', 'test-ref-test.html'))
-        self.assertTrue(is_test_file('inspector-unit', 'trie.js'))
-        self.assertFalse(is_test_file('inspector-unit', 'foo.html'))
         self.assertFalse(is_test_file('inspector', 'devtools.js'))
         self.assertFalse(is_test_file('', 'foo.png'))
         self.assertFalse(is_test_file('', 'foo-expected.html'))

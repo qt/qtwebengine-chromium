@@ -788,7 +788,7 @@ bool ValidCap(const Context *context, GLenum cap, bool queryOnly)
         case GL_SAMPLE_MASK:
             return context->getClientVersion() >= Version(3, 1);
 
-        case GL_CONTEXT_ROBUST_RESOURCE_INITIALIZATION_ANGLE:
+        case GL_ROBUST_RESOURCE_INITIALIZATION_ANGLE:
             return queryOnly && context->getExtensions().robustResourceInitialization;
 
         default:
@@ -4101,7 +4101,7 @@ bool ValidateCreateShader(Context *context, GLenum type)
         case GL_COMPUTE_SHADER:
             if (context->getClientVersion() < Version(3, 1))
             {
-                context->handleError(InvalidEnum() << "GL_COMPUTE_SHADER requires OpenGL ES 3.1.");
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), ES31Required);
                 return false;
             }
             break;
@@ -4398,16 +4398,18 @@ bool ValidateBindRenderbuffer(ValidationContext *context, GLenum target, GLuint 
     return true;
 }
 
-static bool ValidBlendEquationMode(GLenum mode)
+static bool ValidBlendEquationMode(const ValidationContext *context, GLenum mode)
 {
     switch (mode)
     {
         case GL_FUNC_ADD:
         case GL_FUNC_SUBTRACT:
         case GL_FUNC_REVERSE_SUBTRACT:
+            return true;
+
         case GL_MIN:
         case GL_MAX:
-            return true;
+            return context->getClientVersion() >= ES_3_0 || context->getExtensions().blendMinMax;
 
         default:
             return false;
@@ -4425,7 +4427,7 @@ bool ValidateBlendColor(ValidationContext *context,
 
 bool ValidateBlendEquation(ValidationContext *context, GLenum mode)
 {
-    if (!ValidBlendEquationMode(mode))
+    if (!ValidBlendEquationMode(context, mode))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBlendEquation);
         return false;
@@ -4436,13 +4438,13 @@ bool ValidateBlendEquation(ValidationContext *context, GLenum mode)
 
 bool ValidateBlendEquationSeparate(ValidationContext *context, GLenum modeRGB, GLenum modeAlpha)
 {
-    if (!ValidBlendEquationMode(modeRGB))
+    if (!ValidBlendEquationMode(context, modeRGB))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBlendEquation);
         return false;
     }
 
-    if (!ValidBlendEquationMode(modeAlpha))
+    if (!ValidBlendEquationMode(context, modeAlpha))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBlendEquation);
         return false;
@@ -5271,8 +5273,7 @@ bool ValidateHint(ValidationContext *context, GLenum target, GLenum mode)
             if (context->getClientVersion() < ES_3_0 &&
                 !context->getExtensions().standardDerivatives)
             {
-                context->handleError(InvalidOperation()
-                                     << "hint requires OES_standard_derivatives.");
+                context->handleError(InvalidEnum() << "hint requires OES_standard_derivatives.");
                 return false;
             }
             break;
@@ -5373,6 +5374,12 @@ bool ValidatePixelStorei(ValidationContext *context, GLenum pname, GLint param)
             break;
 
         case GL_PACK_REVERSE_ROW_ORDER_ANGLE:
+            if (!context->getExtensions().packReverseRowOrder)
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), EnumNotSupported);
+            }
+            break;
+
         case GL_UNPACK_ROW_LENGTH:
         case GL_UNPACK_IMAGE_HEIGHT:
         case GL_UNPACK_SKIP_IMAGES:
@@ -6058,37 +6065,40 @@ bool ValidateGenerateMipmap(Context *context, GLenum target)
     }
 
     GLenum baseTarget  = (target == GL_TEXTURE_CUBE_MAP) ? GL_TEXTURE_CUBE_MAP_POSITIVE_X : target;
-    const auto &format = texture->getFormat(baseTarget, effectiveBaseLevel);
-    const TextureCaps &formatCaps = context->getTextureCaps().get(format.info->sizedInternalFormat);
-
-    if (format.info->compressed)
+    const auto &format = *(texture->getFormat(baseTarget, effectiveBaseLevel).info);
+    if (format.sizedInternalFormat == GL_NONE || format.compressed || format.depthBits > 0 ||
+        format.stencilBits > 0)
     {
         ANGLE_VALIDATION_ERR(context, InvalidOperation(), GenerateMipmapNotAllowed);
         return false;
     }
 
-    // GenerateMipmap should not generate an INVALID_OPERATION for textures created with
-    // unsized formats or that are color renderable and filterable. Since we do not track if
-    // the texture was created with sized or unsized format (only sized formats are stored),
-    // it is not possible to make sure the the LUMA formats can generate mipmaps (they should
-    // be able to) because they aren't color renderable.  Simply do a special case for LUMA
-    // textures since they're the only texture format that can be created with unsized formats
-    // that is not color renderable.  New unsized formats are unlikely to be added, since ES2
-    // was the last version to use add them.
-    if (format.info->depthBits > 0 || format.info->stencilBits > 0 || !formatCaps.filterable ||
-        (!formatCaps.renderable && !format.info->isLUMA()))
+    // GenerateMipmap accepts formats that are unsized or both color renderable and filterable.
+    bool formatUnsized = !format.sized;
+    bool formatColorRenderableAndFilterable =
+        format.filterSupport(context->getClientVersion(), context->getExtensions()) &&
+        format.renderSupport(context->getClientVersion(), context->getExtensions());
+    if (!formatUnsized && !formatColorRenderableAndFilterable)
     {
-        context->handleError(InvalidOperation());
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), GenerateMipmapNotAllowed);
         return false;
     }
 
-    // ES3 and WebGL grant mipmap generation for sRGB textures but GL_EXT_sRGB does not.
+    // GL_EXT_sRGB adds an unsized SRGB (no alpha) format which has explicitly disabled mipmap
+    // generation
+    if (format.colorEncoding == GL_SRGB && format.format == GL_RGB)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), GenerateMipmapNotAllowed);
+        return false;
+    }
+
+    // ES3 and WebGL grant mipmap generation for sRGBA (with alpha) textures but GL_EXT_sRGB does
+    // not.
     bool supportsSRGBMipmapGeneration =
         context->getClientVersion() >= ES_3_0 || context->getExtensions().webglCompatibility;
-    if (!supportsSRGBMipmapGeneration && format.info->colorEncoding == GL_SRGB)
+    if (!supportsSRGBMipmapGeneration && format.colorEncoding == GL_SRGB)
     {
-        context->handleError(InvalidOperation()
-                             << "Mipmap generation of sRGB textures is not allowed.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), GenerateMipmapNotAllowed);
         return false;
     }
 

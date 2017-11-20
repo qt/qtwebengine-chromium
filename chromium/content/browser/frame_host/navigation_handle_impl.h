@@ -165,6 +165,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   RestoreType GetRestoreType() override;
   const GURL& GetBaseURLForDataURL() override;
   const GlobalRequestID& GetGlobalRequestID() override;
+  bool IsDownload() override;
 
   // Resume and CancelDeferredNavigation must only be called by the
   // NavigationThrottle that is currently deferring the navigation.
@@ -185,11 +186,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // enabled. Make it work in both modes.
   bool is_form_submission() const { return is_form_submission_; }
 
-  // Whether the navigation request is a download. This is useful when the
-  // navigation hasn't committed yet, in which case HasCommitted() will return
-  // false even if the navigation request is not a download.
-  bool is_download() const { return is_download_; }
-
   // The NavigatorDelegate to notify/query for various navigation events.
   // Normally this is the WebContents, except if this NavigationHandle was
   // created during a navigation to an interstitial page. In this case it will
@@ -198,8 +194,8 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // Note: due to the interstitial navigation case, all calls that can possibly
   // expose the NavigationHandle to code outside of content/ MUST go though the
   // NavigatorDelegate. In particular, the ContentBrowserClient should not be
-  // called directly form the NavigationHandle code. Thus, these calls will not
-  // expose the NavigationHandle when navigating to an InterstialPage.
+  // called directly from the NavigationHandle code. Thus, these calls will not
+  // expose the NavigationHandle when navigating to an InterstitialPage.
   NavigatorDelegate* GetDelegate() const;
 
   RequestContextType request_context_type() const {

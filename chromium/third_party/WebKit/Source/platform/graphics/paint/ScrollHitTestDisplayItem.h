@@ -7,7 +7,6 @@
 
 #include "base/memory/ref_counted.h"
 #include "platform/PlatformExport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/paint/DisplayItem.h"
 #include "platform/graphics/paint/TransformPaintPropertyNode.h"
 
@@ -28,7 +27,7 @@ class PLATFORM_EXPORT ScrollHitTestDisplayItem final : public DisplayItem {
   ScrollHitTestDisplayItem(
       const DisplayItemClient&,
       Type,
-      PassRefPtr<const TransformPaintPropertyNode> scroll_offset_node);
+      RefPtr<const TransformPaintPropertyNode> scroll_offset_node);
   ~ScrollHitTestDisplayItem();
 
   const TransformPaintPropertyNode& scroll_offset_node() const {
@@ -41,7 +40,7 @@ class PLATFORM_EXPORT ScrollHitTestDisplayItem final : public DisplayItem {
                                   WebDisplayItemList*) const override;
   bool Equals(const DisplayItem&) const override;
 #ifndef NDEBUG
-  void DumpPropertiesAsDebugString(StringBuilder&) const override;
+  void PropertiesAsJSON(JSONObject&) const override;
 #endif
 
   // Create and append a ScrollHitTestDisplayItem onto the context. This is
@@ -51,7 +50,7 @@ class PLATFORM_EXPORT ScrollHitTestDisplayItem final : public DisplayItem {
       GraphicsContext&,
       const DisplayItemClient&,
       DisplayItem::Type,
-      PassRefPtr<const TransformPaintPropertyNode> scroll_offset_node);
+      RefPtr<const TransformPaintPropertyNode> scroll_offset_node);
 
  private:
   const ScrollPaintPropertyNode& scroll_node() const {

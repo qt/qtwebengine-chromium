@@ -53,7 +53,7 @@ void CFWL_WidgetTP::DrawText(CFWL_ThemeText* pParams) {
   pMatrix->Concat(*pGraphics->GetMatrix());
   m_pTextOut->SetMatrix(*pMatrix);
   m_pTextOut->DrawLogicText(pGraphics->GetRenderDevice(),
-                            CFX_WideStringC(pParams->m_wsText.c_str(), iLen),
+                            WideStringView(pParams->m_wsText.c_str(), iLen),
                             pParams->m_rtPart);
 }
 
@@ -260,27 +260,25 @@ CFWL_FontData::CFWL_FontData() : m_dwStyles(0), m_dwCodePage(0) {}
 
 CFWL_FontData::~CFWL_FontData() {}
 
-bool CFWL_FontData::Equal(const CFX_WideStringC& wsFontFamily,
+bool CFWL_FontData::Equal(const WideStringView& wsFontFamily,
                           uint32_t dwFontStyles,
                           uint16_t wCodePage) {
   return m_wsFamily == wsFontFamily && m_dwStyles == dwFontStyles &&
          m_dwCodePage == wCodePage;
 }
 
-bool CFWL_FontData::LoadFont(const CFX_WideStringC& wsFontFamily,
+bool CFWL_FontData::LoadFont(const WideStringView& wsFontFamily,
                              uint32_t dwFontStyles,
                              uint16_t dwCodePage) {
   m_wsFamily = wsFontFamily;
   m_dwStyles = dwFontStyles;
   m_dwCodePage = dwCodePage;
   if (!m_pFontMgr) {
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-    m_pFontMgr = CFGAS_FontMgr::Create(FX_GetDefFontEnumerator());
-#else
-    m_pFontSource = pdfium::MakeUnique<CFX_FontSourceEnum_File>();
-    m_pFontMgr = CFGAS_FontMgr::Create(m_pFontSource.get());
-#endif
+    m_pFontMgr = pdfium::MakeUnique<CFGAS_FontMgr>();
+    if (!m_pFontMgr->EnumFonts())
+      m_pFontMgr = nullptr;
   }
+
   // TODO(tsepez): check usage of c_str() below.
   m_pFont = CFGAS_GEFont::LoadFont(wsFontFamily.unterminated_c_str(),
                                    dwFontStyles, dwCodePage, m_pFontMgr.get());
@@ -303,8 +301,8 @@ CFWL_FontManager::CFWL_FontManager() {}
 
 CFWL_FontManager::~CFWL_FontManager() {}
 
-CFX_RetainPtr<CFGAS_GEFont> CFWL_FontManager::FindFont(
-    const CFX_WideStringC& wsFontFamily,
+RetainPtr<CFGAS_GEFont> CFWL_FontManager::FindFont(
+    const WideStringView& wsFontFamily,
     uint32_t dwFontStyles,
     uint16_t wCodePage) {
   for (const auto& pData : m_FontsArray) {

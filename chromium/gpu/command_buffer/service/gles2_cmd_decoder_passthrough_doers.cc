@@ -61,8 +61,13 @@ error::Error DeleteHelper(GLsizei n,
   std::vector<ServiceType> service_ids(n, 0);
   for (GLsizei ii = 0; ii < n; ++ii) {
     ClientType client_id = client_ids[ii];
-    service_ids[ii] = id_map->GetServiceIDOrInvalid(client_id);
-    id_map->RemoveClientID(client_id);
+
+    // Don't pass service IDs of objects with a client ID of 0.  They are
+    // emulated and should not be deleteable
+    if (client_id != 0) {
+      service_ids[ii] = id_map->GetServiceIDOrInvalid(client_id);
+      id_map->RemoveClientID(client_id);
+    }
   }
 
   delete_function(n, service_ids.data());
@@ -273,6 +278,35 @@ class ScopedPackStateRowLengthReset {
   GLint row_length_ = 0;
 };
 
+bool ModifyAttachmentForEmulatedFramebuffer(GLenum* attachment) {
+  switch (*attachment) {
+    case GL_BACK:
+      *attachment = GL_COLOR_ATTACHMENT0;
+      return true;
+
+    case GL_DEPTH:
+      *attachment = GL_DEPTH_ATTACHMENT;
+      return true;
+
+    case GL_STENCIL:
+      *attachment = GL_STENCIL_ATTACHMENT;
+      return true;
+
+    default:
+      return false;
+  }
+}
+
+bool ModifyAttachmentsForEmulatedFramebuffer(std::vector<GLenum>* attachments) {
+  for (GLenum& attachment : *attachments) {
+    if (!ModifyAttachmentForEmulatedFramebuffer(&attachment)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 }  // anonymous namespace
 
 // Implementations of commands
@@ -357,9 +391,34 @@ error::Error GLES2DecoderPassthroughImpl::DoBindBufferRange(GLenum target,
 error::Error GLES2DecoderPassthroughImpl::DoBindFramebuffer(
     GLenum target,
     GLuint framebuffer) {
+  FlushErrors();
   glBindFramebufferEXT(
       target, GetFramebufferServiceID(framebuffer, &framebuffer_id_map_,
                                       bind_generates_resource_));
+  if (FlushErrors()) {
+    return error::kNoError;
+  }
+
+  // Update tracking of the bound framebuffer
+  switch (target) {
+    case GL_FRAMEBUFFER_EXT:
+      bound_draw_framebuffer_ = framebuffer;
+      bound_read_framebuffer_ = framebuffer;
+      break;
+
+    case GL_DRAW_FRAMEBUFFER:
+      bound_draw_framebuffer_ = framebuffer;
+      break;
+
+    case GL_READ_FRAMEBUFFER:
+      bound_read_framebuffer_ = framebuffer;
+      break;
+
+    default:
+      NOTREACHED();
+      break;
+  }
+
   return error::kNoError;
 }
 
@@ -746,7 +805,29 @@ error::Error GLES2DecoderPassthroughImpl::DoDeleteFramebuffers(
     InsertError(GL_INVALID_VALUE, "n cannot be negative.");
     return error::kNoError;
   }
-  return DeleteHelper(n, framebuffers, &framebuffer_id_map_,
+
+  std::vector<GLuint> framebuffers_copy(framebuffers, framebuffers + n);
+
+  // If a bound framebuffer is deleted, it's binding is reset to 0.  In the case
+  // of an emulated default framebuffer, bind the emulated one.
+  for (GLuint framebuffer : framebuffers_copy) {
+    if (framebuffer == bound_draw_framebuffer_) {
+      bound_draw_framebuffer_ = 0;
+      if (emulated_back_buffer_) {
+        glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER,
+                             emulated_back_buffer_->framebuffer_service_id);
+      }
+    }
+    if (framebuffer == bound_read_framebuffer_) {
+      bound_read_framebuffer_ = 0;
+      if (emulated_back_buffer_) {
+        glBindFramebufferEXT(GL_READ_FRAMEBUFFER,
+                             emulated_back_buffer_->framebuffer_service_id);
+      }
+    }
+  }
+
+  return DeleteHelper(n, framebuffers_copy.data(), &framebuffer_id_map_,
                       [](GLsizei n, GLuint* framebuffers) {
                         glDeleteFramebuffersEXT(n, framebuffers);
                       });
@@ -927,11 +1008,21 @@ error::Error GLES2DecoderPassthroughImpl::DoFenceSync(GLenum condition,
 
 error::Error GLES2DecoderPassthroughImpl::DoFinish() {
   glFinish();
+
+  error::Error error = ProcessReadPixels(true);
+  if (error != error::kNoError) {
+    return error;
+  }
   return ProcessQueries(true);
 }
 
 error::Error GLES2DecoderPassthroughImpl::DoFlush() {
   glFlush();
+
+  error::Error error = ProcessReadPixels(false);
+  if (error != error::kNoError) {
+    return error;
+  }
   return ProcessQueries(false);
 }
 
@@ -991,6 +1082,11 @@ error::Error GLES2DecoderPassthroughImpl::DoFramebufferRenderbuffer(
     GLenum attachment,
     GLenum renderbuffertarget,
     GLuint renderbuffer) {
+  if (IsEmulatedFramebufferBound(target)) {
+    InsertError(GL_INVALID_OPERATION,
+                "Cannot change the attachments of the default framebuffer.");
+    return error::kNoError;
+  }
   glFramebufferRenderbufferEXT(
       target, attachment, renderbuffertarget,
       GetRenderbufferServiceID(renderbuffer, resources_, false));
@@ -1003,6 +1099,11 @@ error::Error GLES2DecoderPassthroughImpl::DoFramebufferTexture2D(
     GLenum textarget,
     GLuint texture,
     GLint level) {
+  if (IsEmulatedFramebufferBound(target)) {
+    InsertError(GL_INVALID_OPERATION,
+                "Cannot change the attachments of the default framebuffer.");
+    return error::kNoError;
+  }
   glFramebufferTexture2DEXT(target, attachment, textarget,
                             GetTextureServiceID(texture, resources_, false),
                             level);
@@ -1015,6 +1116,11 @@ error::Error GLES2DecoderPassthroughImpl::DoFramebufferTextureLayer(
     GLuint texture,
     GLint level,
     GLint layer) {
+  if (IsEmulatedFramebufferBound(target)) {
+    InsertError(GL_INVALID_OPERATION,
+                "Cannot change the attachments of the default framebuffer.");
+    return error::kNoError;
+  }
   glFramebufferTextureLayer(target, attachment,
                             GetTextureServiceID(texture, resources_, false),
                             level, layer);
@@ -1290,14 +1396,43 @@ error::Error GLES2DecoderPassthroughImpl::DoGetFramebufferAttachmentParameteriv(
     GLsizei bufsize,
     GLsizei* length,
     GLint* params) {
+  GLenum updated_attachment = attachment;
+  if (IsEmulatedFramebufferBound(target)) {
+    // Update the attachment do the equivalent one in the emulated framebuffer
+    if (!ModifyAttachmentForEmulatedFramebuffer(&updated_attachment)) {
+      InsertError(GL_INVALID_OPERATION, "Invalid attachment.");
+      *length = 0;
+      return error::kNoError;
+    }
+
+    // Generate errors for parameter names that are only valid for non-default
+    // framebuffers
+    switch (pname) {
+      case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
+      case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
+      case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE:
+      case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER:
+        InsertError(GL_INVALID_ENUM, "Invalid parameter name.");
+        *length = 0;
+        return error::kNoError;
+    }
+  }
+
+  FlushErrors();
+
   // Get a scratch buffer to hold the result of the query
   GLint* scratch_params = GetTypedScratchMemory<GLint>(bufsize);
   glGetFramebufferAttachmentParameterivRobustANGLE(
-      target, attachment, pname, bufsize, length, scratch_params);
+      target, updated_attachment, pname, bufsize, length, scratch_params);
+
+  if (FlushErrors()) {
+    DCHECK(*length == 0);
+    return error::kNoError;
+  }
 
   // Update the results of the query, if needed
   error::Error error = PatchGetFramebufferAttachmentParameter(
-      target, attachment, pname, *length, scratch_params);
+      target, updated_attachment, pname, *length, scratch_params);
   if (error != error::kNoError) {
     *length = 0;
     return error;
@@ -1702,7 +1837,15 @@ error::Error GLES2DecoderPassthroughImpl::DoInvalidateFramebuffer(
     InsertError(GL_INVALID_VALUE, "count cannot be negative.");
     return error::kNoError;
   }
+
   std::vector<GLenum> attachments_copy(attachments, attachments + count);
+  if (IsEmulatedFramebufferBound(target)) {
+    // Update the attachment do the equivalent one in the emulated framebuffer
+    if (!ModifyAttachmentsForEmulatedFramebuffer(&attachments_copy)) {
+      InsertError(GL_INVALID_OPERATION, "Invalid attachment.");
+      return error::kNoError;
+    }
+  }
   glInvalidateFramebuffer(target, count, attachments_copy.data());
   return error::kNoError;
 }
@@ -1720,7 +1863,15 @@ error::Error GLES2DecoderPassthroughImpl::DoInvalidateSubFramebuffer(
     InsertError(GL_INVALID_VALUE, "count cannot be negative.");
     return error::kNoError;
   }
+
   std::vector<GLenum> attachments_copy(attachments, attachments + count);
+  if (IsEmulatedFramebufferBound(target)) {
+    // Update the attachment do the equivalent one in the emulated framebuffer
+    if (!ModifyAttachmentsForEmulatedFramebuffer(&attachments_copy)) {
+      InsertError(GL_INVALID_OPERATION, "Invalid attachment.");
+      return error::kNoError;
+    }
+  }
   glInvalidateSubFramebuffer(target, count, attachments_copy.data(), x, y,
                              width, height);
   return error::kNoError;
@@ -1840,6 +1991,84 @@ error::Error GLES2DecoderPassthroughImpl::DoReadPixels(GLint x,
   glReadPixelsRobustANGLE(x, y, width, height, format, type, bufsize, length,
                           columns, rows, pixels);
   *success = FlushErrors() ? 0 : 1;
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoReadPixelsAsync(
+    GLint x,
+    GLint y,
+    GLsizei width,
+    GLsizei height,
+    GLenum format,
+    GLenum type,
+    GLsizei bufsize,
+    GLsizei* length,
+    GLsizei* columns,
+    GLsizei* rows,
+    uint32_t pixels_shm_id,
+    uint32_t pixels_shm_offset,
+    uint32_t result_shm_id,
+    uint32_t result_shm_offset) {
+  DCHECK(feature_info_->feature_flags().use_async_readpixels &&
+         bound_buffers_[GL_PIXEL_PACK_BUFFER] == 0);
+
+  FlushErrors();
+  ScopedPackStateRowLengthReset reset_row_length(
+      bufsize != 0 && feature_info_->gl_version_info().is_es3);
+
+  PendingReadPixels pending_read_pixels;
+  pending_read_pixels.pixels_shm_id = pixels_shm_id;
+  pending_read_pixels.pixels_shm_offset = pixels_shm_offset;
+  pending_read_pixels.result_shm_id = result_shm_id;
+  pending_read_pixels.result_shm_offset = result_shm_offset;
+
+  glGenBuffersARB(1, &pending_read_pixels.buffer_service_id);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, pending_read_pixels.buffer_service_id);
+
+  // GL_STREAM_READ is not available until ES3.
+  const GLenum usage_hint = feature_info_->gl_version_info().IsAtLeastGLES(3, 0)
+                                ? GL_STREAM_READ
+                                : GL_STATIC_DRAW;
+
+  const uint32_t bytes_per_pixel =
+      GLES2Util::ComputeImageGroupSize(format, type);
+  if (bytes_per_pixel == 0) {
+    InsertError(GL_INVALID_ENUM, "Invalid ReadPixels format or type.");
+    return error::kNoError;
+  }
+
+  if (width < 0 || height < 0) {
+    InsertError(GL_INVALID_VALUE, "Width and height cannot be negative.");
+    return error::kNoError;
+  }
+
+  if (!base::CheckMul(bytes_per_pixel, width, height)
+           .AssignIfValid(&pending_read_pixels.pixels_size)) {
+    return error::kOutOfBounds;
+  }
+
+  glBufferData(GL_PIXEL_PACK_BUFFER_ARB, pending_read_pixels.pixels_size,
+               nullptr, usage_hint);
+
+  // No need to worry about ES3 pixel pack parameters, because no
+  // PIXEL_PACK_BUFFER is bound, and all these settings haven't been
+  // sent to GL.
+  glReadPixels(x, y, width, height, format, type, nullptr);
+
+  glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, 0);
+
+  // Test for errors now before creating a fence
+  if (FlushErrors()) {
+    return error::kNoError;
+  }
+
+  pending_read_pixels.fence.reset(gl::GLFence::Create());
+
+  if (FlushErrors()) {
+    return error::kNoError;
+  }
+
+  pending_read_pixels_.push_back(std::move(pending_read_pixels));
   return error::kNoError;
 }
 
@@ -2591,6 +2820,11 @@ error::Error GLES2DecoderPassthroughImpl::DoFramebufferTexture2DMultisampleEXT(
     return error::kUnknownCommand;
   }
 
+  if (IsEmulatedFramebufferBound(target)) {
+    InsertError(GL_INVALID_OPERATION,
+                "Cannot change the attachments of the default framebuffer.");
+    return error::kNoError;
+  }
   glFramebufferTexture2DMultisampleEXT(
       target, attachment, textarget,
       GetTextureServiceID(texture, resources_, false), level, samples);
@@ -2769,9 +3003,16 @@ error::Error GLES2DecoderPassthroughImpl::DoBeginTransformFeedback(
 error::Error GLES2DecoderPassthroughImpl::DoEndQueryEXT(GLenum target,
                                                         uint32_t submit_count) {
   if (IsEmulatedQueryTarget(target)) {
-    if (active_queries_.find(target) == active_queries_.end()) {
+    auto active_query_iter = active_queries_.find(target);
+    if (active_query_iter == active_queries_.end()) {
       InsertError(GL_INVALID_OPERATION, "No active query on target.");
       return error::kNoError;
+    }
+    if (target == GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM &&
+        !pending_read_pixels_.empty()) {
+      GLuint query_service_id = active_query_iter->second.service_id;
+      pending_read_pixels_.back().waiting_async_pack_queries.insert(
+          query_service_id);
     }
   } else {
     // Flush all previous errors
@@ -2872,7 +3113,55 @@ error::Error GLES2DecoderPassthroughImpl::DoBindVertexArrayOES(GLuint array) {
 
 error::Error GLES2DecoderPassthroughImpl::DoSwapBuffers() {
   if (offscreen_) {
-    NOTIMPLEMENTED();
+    if (offscreen_single_buffer_) {
+      return error::kNoError;
+    }
+
+    DCHECK(emulated_back_buffer_);
+
+    // Make sure the emulated front buffer is allocated and the correct size
+    if (emulated_front_buffer_ &&
+        emulated_front_buffer_->size != emulated_back_buffer_->size) {
+      emulated_front_buffer_->Destroy(true);
+      emulated_front_buffer_ = nullptr;
+    }
+
+    if (emulated_front_buffer_ == nullptr) {
+      if (!available_color_textures_.empty()) {
+        emulated_front_buffer_ = std::move(available_color_textures_.back());
+        available_color_textures_.pop_back();
+      } else {
+        emulated_front_buffer_.reset(
+            new EmulatedColorBuffer(emulated_default_framebuffer_format_));
+        if (!emulated_front_buffer_->Resize(emulated_back_buffer_->size)) {
+          DLOG(ERROR)
+              << "Failed to create a new emulated front buffer texture.";
+          return error::kLostContext;
+        }
+      }
+    }
+
+    DCHECK(emulated_front_buffer_->size == emulated_back_buffer_->size);
+
+    if (emulated_default_framebuffer_format_.samples > 0) {
+      // Resolve the multisampled renderbuffer into the emulated_front_buffer_
+      emulated_back_buffer_->Blit(emulated_front_buffer_.get());
+    } else {
+      DCHECK(emulated_back_buffer_->color_texture != nullptr);
+      // If the offscreen buffer should be preserved, copy the old backbuffer
+      // into the new one
+      if (offscreen_target_buffer_preserved_) {
+        emulated_back_buffer_->Blit(emulated_front_buffer_.get());
+      }
+
+      // Swap the front and back buffer textures and update the framebuffer
+      // attachment.
+      std::unique_ptr<EmulatedColorBuffer> old_front_buffer =
+          std::move(emulated_front_buffer_);
+      emulated_front_buffer_ =
+          emulated_back_buffer_->SetColorBuffer(std::move(old_front_buffer));
+    }
+
     return error::kNoError;
   }
 
@@ -3012,30 +3301,33 @@ error::Error GLES2DecoderPassthroughImpl::DoResizeCHROMIUM(GLuint width,
                                                            GLfloat scale_factor,
                                                            GLenum color_space,
                                                            GLboolean alpha) {
-  gl::GLSurface::ColorSpace surface_color_space =
-      gl::GLSurface::ColorSpace::UNSPECIFIED;
-  switch (color_space) {
-    case GL_COLOR_SPACE_UNSPECIFIED_CHROMIUM:
-      surface_color_space = gl::GLSurface::ColorSpace::UNSPECIFIED;
-      break;
-    case GL_COLOR_SPACE_SCRGB_LINEAR_CHROMIUM:
-      surface_color_space = gl::GLSurface::ColorSpace::SCRGB_LINEAR;
-      break;
-    case GL_COLOR_SPACE_SRGB_CHROMIUM:
-      surface_color_space = gl::GLSurface::ColorSpace::SRGB;
-      break;
-    case GL_COLOR_SPACE_DISPLAY_P3_CHROMIUM:
-      surface_color_space = gl::GLSurface::ColorSpace::DISPLAY_P3;
-      break;
-    default:
-      LOG(ERROR) << "GLES2DecoderPassthroughImpl: Context lost because "
-                    "specified color space was invalid.";
-      return error::kLostContext;
-  }
   if (offscreen_) {
-    // TODO: crbug.com/665521
-    NOTIMPLEMENTED();
+    if (!ResizeOffscreenFramebuffer(gfx::Size(width, height))) {
+      LOG(ERROR) << "GLES2DecoderPassthroughImpl: Context lost because "
+                 << "ResizeOffscreenFramebuffer failed.";
+      return error::kLostContext;
+    }
   } else {
+    gl::GLSurface::ColorSpace surface_color_space =
+        gl::GLSurface::ColorSpace::UNSPECIFIED;
+    switch (color_space) {
+      case GL_COLOR_SPACE_UNSPECIFIED_CHROMIUM:
+        surface_color_space = gl::GLSurface::ColorSpace::UNSPECIFIED;
+        break;
+      case GL_COLOR_SPACE_SCRGB_LINEAR_CHROMIUM:
+        surface_color_space = gl::GLSurface::ColorSpace::SCRGB_LINEAR;
+        break;
+      case GL_COLOR_SPACE_SRGB_CHROMIUM:
+        surface_color_space = gl::GLSurface::ColorSpace::SRGB;
+        break;
+      case GL_COLOR_SPACE_DISPLAY_P3_CHROMIUM:
+        surface_color_space = gl::GLSurface::ColorSpace::DISPLAY_P3;
+        break;
+      default:
+        LOG(ERROR) << "GLES2DecoderPassthroughImpl: Context lost because "
+                      "specified color space was invalid.";
+        return error::kLostContext;
+    }
     if (!surface_->Resize(gfx::Size(width, height), scale_factor,
                           surface_color_space, !!alpha)) {
       LOG(ERROR)
@@ -3542,6 +3834,9 @@ error::Error GLES2DecoderPassthroughImpl::DoDrawArraysInstancedANGLE(
     GLint first,
     GLsizei count,
     GLsizei primcount) {
+  if (!feature_info_->feature_flags().angle_instanced_arrays) {
+    return error::kUnknownCommand;
+  }
   glDrawArraysInstancedANGLE(mode, first, count, primcount);
   return error::kNoError;
 }
@@ -3552,6 +3847,9 @@ error::Error GLES2DecoderPassthroughImpl::DoDrawElementsInstancedANGLE(
     GLenum type,
     const void* indices,
     GLsizei primcount) {
+  if (!feature_info_->feature_flags().angle_instanced_arrays) {
+    return error::kUnknownCommand;
+  }
   glDrawElementsInstancedANGLE(mode, count, type, indices, primcount);
   return error::kNoError;
 }
@@ -3559,6 +3857,9 @@ error::Error GLES2DecoderPassthroughImpl::DoDrawElementsInstancedANGLE(
 error::Error GLES2DecoderPassthroughImpl::DoVertexAttribDivisorANGLE(
     GLuint index,
     GLuint divisor) {
+  if (!feature_info_->feature_flags().angle_instanced_arrays) {
+    return error::kUnknownCommand;
+  }
   glVertexAttribDivisorANGLE(index, divisor);
   return error::kNoError;
 }

@@ -888,15 +888,15 @@ FT_BEGIN_HEADER
   /*                           are set to~0 if there is only one face in   */
   /*                           the font file.                              */
   /*                                                                       */
-  /*                           Bits 16-30 are relevant to GX and OpenType  */
-  /*                           variation fonts only, holding the named     */
-  /*                           instance index for the current face index   */
-  /*                           (starting with value~1; value~0 indicates   */
-  /*                           font access without a named instance).  For */
-  /*                           non-variation fonts, bits 16-30 are         */
-  /*                           ignored.  If we have the third named        */
-  /*                           instance of face~4, say, `face_index' is    */
-  /*                           set to 0x00030004.                          */
+  /*                           [Since 2.6.1] Bits 16-30 are relevant to GX */
+  /*                           and OpenType variation fonts only, holding  */
+  /*                           the named instance index for the current    */
+  /*                           face index (starting with value~1; value~0  */
+  /*                           indicates font access without a named       */
+  /*                           instance).  For non-variation fonts, bits   */
+  /*                           16-30 are ignored.  If we have the third    */
+  /*                           named instance of face~4, say, `face_index' */
+  /*                           is set to 0x00030004.                       */
   /*                                                                       */
   /*                           Bit 31 is always zero (this is,             */
   /*                           `face_index' is always a positive value).   */
@@ -907,15 +907,16 @@ FT_BEGIN_HEADER
   /*                                                                       */
   /*    style_flags         :: The lower 16~bits contain a set of bit      */
   /*                           flags indicating the style of the face; see */
-  /*                           @FT_STYLE_FLAG_XXX for the details.  Bits   */
-  /*                           16-30 hold the number of named instances    */
-  /*                           available for the current face if we have a */
-  /*                           GX or OpenType variation (sub)font.  Bit 31 */
-  /*                           is always zero (this is, `style_flags' is   */
-  /*                           always a positive value).  Note that a      */
-  /*                           variation font has always at least one      */
-  /*                           named instance, namely the default          */
-  /*                           instance.                                   */
+  /*                           @FT_STYLE_FLAG_XXX for the details.         */
+  /*                                                                       */
+  /*                           [Since 2.6.1]  Bits 16-30 hold the number   */
+  /*                           of named instances available for the        */
+  /*                           current face if we have a GX or OpenType    */
+  /*                           variation (sub)font.  Bit 31 is always zero */
+  /*                           (this is, `style_flags' is always a         */
+  /*                           positive value).  Note that a variation     */
+  /*                           font has always at least one named          */
+  /*                           instance, namely the default instance.      */
   /*                                                                       */
   /*    num_glyphs          :: The number of glyphs in the face.  If the   */
   /*                           face is scalable and has sbits (see         */
@@ -1212,8 +1213,8 @@ FT_BEGIN_HEADER
   /*      tricky fonts; they are hard-coded in file `ttobjs.c'.            */
   /*                                                                       */
   /*    FT_FACE_FLAG_COLOR ::                                              */
-  /*      The face has color glyph tables.  To access color glyphs use     */
-  /*      @FT_LOAD_COLOR.                                                  */
+  /*      [Since 2.5.1] The face has color glyph tables.  To access color  */
+  /*      glyphs use @FT_LOAD_COLOR.                                       */
   /*                                                                       */
 #define FT_FACE_FLAG_SCALABLE          ( 1L <<  0 )
 #define FT_FACE_FLAG_FIXED_SIZES       ( 1L <<  1 )
@@ -1391,6 +1392,9 @@ FT_BEGIN_HEADER
    *   A macro that returns true whenever a face object is a named instance
    *   of a GX or OpenType variation font.
    *
+   * @since:
+   *   2.7
+   *
    */
 #define FT_IS_NAMED_INSTANCE( face ) \
           ( (face)->face_index & 0x7FFF0000L )
@@ -1436,6 +1440,9 @@ FT_BEGIN_HEADER
    * @description:
    *   A macro that returns true whenever a face object contains
    *   tables for color glyphs.
+   *
+   * @since:
+   *   2.5.1
    *
    */
 #define FT_HAS_COLOR( face ) \
@@ -1781,7 +1788,7 @@ FT_BEGIN_HEADER
   /*         and add it to `origin_x'>                                     */
   /*                                                                       */
   /*        origin_x += slot->advance.x;                                   */
-  /*        origin_x += slot->rsb_delta - slot->lsb_relta;                 */
+  /*        origin_x += slot->rsb_delta - slot->lsb_delta;                 */
   /*      endfor                                                           */
   /*    }                                                                  */
   /*                                                                       */
@@ -2155,14 +2162,14 @@ FT_BEGIN_HEADER
   /*                  with value~0).  Set it to~0 if there is only one     */
   /*                  face in the font file.                               */
   /*                                                                       */
-  /*                  Bits 16-30 are relevant to GX and OpenType variation */
-  /*                  fonts only, specifying the named instance index for  */
-  /*                  the current face index (starting with value~1;       */
-  /*                  value~0 makes FreeType ignore named instances).  For */
-  /*                  non-variation fonts, bits 16-30 are ignored.         */
-  /*                  Assuming that you want to access the third named     */
-  /*                  instance in face~4, `face_index' should be set to    */
-  /*                  0x00030004.  If you want to access face~4 without    */
+  /*                  [Since 2.6.1] Bits 16-30 are relevant to GX and      */
+  /*                  OpenType variation fonts only, specifying the named  */
+  /*                  instance index for the current face index (starting  */
+  /*                  with value~1; value~0 makes FreeType ignore named    */
+  /*                  instances).  For non-variation fonts, bits 16-30 are */
+  /*                  ignored.  Assuming that you want to access the third */
+  /*                  named instance in face~4, `face_index' should be set */
+  /*                  to 0x00030004.  If you want to access face~4 without */
   /*                  variation handling, simply set `face_index' to       */
   /*                  value~4.                                             */
   /*                                                                       */
@@ -2869,26 +2876,26 @@ FT_BEGIN_HEADER
    *     Disable the auto-hinter.  See also the note below.
    *
    *   FT_LOAD_COLOR ::
-   *     Load embedded color bitmap images.  The resulting color bitmaps,
-   *     if available, will have the @FT_PIXEL_MODE_BGRA format.  If the
-   *     flag is not set and color bitmaps are found, they are converted
-   *     to 256-level gray bitmaps transparently, using the
+   *     [Since 2.5] Load embedded color bitmap images.  The resulting color
+   *     bitmaps, if available, will have the @FT_PIXEL_MODE_BGRA format.
+   *     If the flag is not set and color bitmaps are found, they are
+   *     converted to 256-level gray bitmaps transparently, using the
    *     @FT_PIXEL_MODE_GRAY format.
    *
    *   FT_LOAD_COMPUTE_METRICS ::
-   *     Compute glyph metrics from the glyph data, without the use of
-   *     bundled metrics tables (for example, the `hdmx' table in TrueType
-   *     fonts).  This flag is mainly used by font validating or font
-   *     editing applications, which need to ignore, verify, or edit those
-   *     tables.
+   *     [Since 2.6.1] Compute glyph metrics from the glyph data, without
+   *     the use of bundled metrics tables (for example, the `hdmx' table in
+   *     TrueType fonts).  This flag is mainly used by font validating or
+   *     font editing applications, which need to ignore, verify, or edit
+   *     those tables.
    *
    *     Currently, this flag is only implemented for TrueType fonts.
    *
    *   FT_LOAD_BITMAP_METRICS_ONLY ::
-   *     Request loading of the metrics and bitmap image information of a
-   *     (possibly embedded) bitmap glyph without allocating or copying
-   *     the bitmap image data itself.  No effect if the target glyph is
-   *     not a bitmap image.
+   *     [Since 2.7.1] Request loading of the metrics and bitmap image
+   *     information of a (possibly embedded) bitmap glyph without
+   *     allocating or copying the bitmap image data itself.  No effect if
+   *     the target glyph is not a bitmap image.
    *
    *     This flag unsets @FT_LOAD_RENDER.
    *
@@ -3131,11 +3138,13 @@ FT_BEGIN_HEADER
   /*      glyph outline in pixels and use the @FT_PIXEL_MODE_LCD_V mode.   */
   /*                                                                       */
   /* <Note>                                                                */
-  /*    The LCD-optimized glyph bitmaps produced by `FT_Render_Glyph' can  */
-  /*    be filtered to reduce color-fringes by using                       */
-  /*    @FT_Library_SetLcdFilter (not active in the default builds).  It   */
-  /*    is up to the caller to either call `FT_Library_SetLcdFilter' (if   */
-  /*    available) or do the filtering itself.                             */
+  /*    Should you define FT_CONFIG_OPTION_SUBPIXEL_RENDERING in your      */
+  /*    `ftoption.h', which enables patented ClearType-style rendering,    */
+  /*    the LCD-optimized glyph bitmaps should be filtered to reduce color */
+  /*    fringes inherent to this technology.  You can either set up LCD    */
+  /*    filtering with @FT_Library_SetLcdFilter or @FT_Face_Properties,    */
+  /*    or do the filtering yourself.  The default FreeType LCD rendering  */
+  /*    technology does not require filtering.                             */
   /*                                                                       */
   /*    The selected render mode only affects vector glyphs of a font.     */
   /*    Embedded bitmaps often have a different pixel mode like            */
@@ -3772,6 +3781,9 @@ FT_BEGIN_HEADER
    *
    *     FT_Face_Properties( face, 1, &property );
    *   }
+   *
+   * @since:
+   *   2.8
    *
    */
   FT_EXPORT( FT_Error )
@@ -4455,7 +4467,7 @@ FT_BEGIN_HEADER
    */
 #define FREETYPE_MAJOR  2
 #define FREETYPE_MINOR  8
-#define FREETYPE_PATCH  0
+#define FREETYPE_PATCH  1
 
 
   /*************************************************************************/

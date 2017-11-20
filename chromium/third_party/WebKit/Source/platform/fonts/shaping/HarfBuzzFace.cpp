@@ -71,7 +71,7 @@ void HbFaceDeleter::operator()(hb_face_t* face) {
     hb_face_destroy(face);
 }
 
-static PassRefPtr<HbFontCacheEntry> CreateHbFontCacheEntry(hb_face_t*);
+static RefPtr<HbFontCacheEntry> CreateHbFontCacheEntry(hb_face_t*);
 
 HarfBuzzFace::HarfBuzzFace(FontPlatformData* platform_data, uint64_t unique_id)
     : platform_data_(platform_data), unique_id_(unique_id) {
@@ -81,7 +81,7 @@ HarfBuzzFace::HarfBuzzFace(FontPlatformData* platform_data, uint64_t unique_id)
     HbFaceUniquePtr face(CreateFace());
     result.stored_value->value = CreateHbFontCacheEntry(face.get());
   }
-  result.stored_value->value->Ref();
+  result.stored_value->value->AddRef();
   unscaled_font_ = result.stored_value->value->HbFont();
   harf_buzz_font_data_ = result.stored_value->value->HbFontData();
 }
@@ -90,9 +90,9 @@ HarfBuzzFace::~HarfBuzzFace() {
   HarfBuzzFontCache::iterator result =
       FontGlobalContext::GetHarfBuzzFontCache().find(unique_id_);
   SECURITY_DCHECK(result != FontGlobalContext::GetHarfBuzzFontCache().end());
-  DCHECK_GT(result.Get()->value->RefCount(), 1);
-  result.Get()->value->Deref();
-  if (result.Get()->value->RefCount() == 1)
+  DCHECK(!result.Get()->value->HasOneRef());
+  result.Get()->value->Release();
+  if (result.Get()->value->HasOneRef())
     FontGlobalContext::GetHarfBuzzFontCache().erase(unique_id_);
 }
 
@@ -306,7 +306,7 @@ hb_face_t* HarfBuzzFace::CreateFace() {
   return face;
 }
 
-PassRefPtr<HbFontCacheEntry> CreateHbFontCacheEntry(hb_face_t* face) {
+RefPtr<HbFontCacheEntry> CreateHbFontCacheEntry(hb_face_t* face) {
   HbFontUniquePtr ot_font(hb_font_create(face));
   hb_ot_font_set_funcs(ot_font.get());
   // Creating a sub font means that non-available functions
@@ -331,7 +331,7 @@ static_assert(
     "size.");
 
 hb_font_t* HarfBuzzFace::GetScaledFont(
-    PassRefPtr<UnicodeRangeSet> range_set) const {
+    RefPtr<UnicodeRangeSet> range_set) const {
   platform_data_->SetupPaint(&harf_buzz_font_data_->paint_);
   harf_buzz_font_data_->paint_.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
   harf_buzz_font_data_->range_set_ = std::move(range_set);

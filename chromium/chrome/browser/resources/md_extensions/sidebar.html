@@ -50,7 +50,7 @@
         width: 15px;
       }
     </style>
-    <paper-menu id="section-menu" selected="0">
+    <paper-menu id="section-menu" selected="{{selected_}}">
       <paper-item class="section-item" id="sections-extensions"
           on-tap="onExtensionsTap_">
         <span>$i18n{sidebarExtensions}</span>
@@ -70,5 +70,5 @@
       <button class="open-in-new" is="paper-icon-button-light"></button>
     </a>
   </template>
-  <script src="chrome://extensions/sidebar.js"></script>
+  <script src="sidebar.js"></script>
 </dom-module>

@@ -227,7 +227,7 @@ syncer::SyncDataList AutofillProfileSyncableService::GetAllSyncData(
 }
 
 syncer::SyncError AutofillProfileSyncableService::ProcessSyncChanges(
-    const tracked_objects::Location& from_here,
+    const base::Location& from_here,
     const syncer::SyncChangeList& change_list) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!sync_processor_.get()) {
@@ -407,6 +407,14 @@ bool AutofillProfileSyncableService::OverwriteProfileWithServerData(
     diff = true;
   }
 
+  // Update the validity state bitfield.
+  if (specifics.has_validity_state_bitfield() &&
+      specifics.validity_state_bitfield() !=
+          profile->GetValidityBitfieldValue()) {
+    profile->SetValidityFromBitfieldValue(specifics.validity_state_bitfield());
+    diff = true;
+  }
+
   if (static_cast<size_t>(specifics.use_count()) != profile->use_count()) {
     profile->set_use_count(specifics.use_count());
     diff = true;
@@ -471,6 +479,7 @@ void AutofillProfileSyncableService::WriteAutofillProfile(
       LimitData(
           UTF16ToUTF8(profile.GetRawInfo(ADDRESS_HOME_DEPENDENT_LOCALITY))));
   specifics->set_address_home_language_code(LimitData(profile.language_code()));
+  specifics->set_validity_state_bitfield(profile.GetValidityBitfieldValue());
 
   // TODO(estade): this should be set_email_address.
   specifics->add_email_address(

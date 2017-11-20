@@ -14,8 +14,8 @@
 #include "core/fpdfapi/page/cpdf_pageobjectholder.h"
 #include "core/fxcodec/codec/ccodec_progressivedecoder.h"
 #include "core/fxcodec/fx_codec.h"
-#include "core/fxcrt/cfx_maybe_owned.h"
 #include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/maybe_owned.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_imagerenderer.h"
@@ -899,6 +899,17 @@ void XFA_DrawBox(CXFA_Box box,
   XFA_BOX_Stroke(box, strokes, pGS, rtWidget, matrix, dwFlags);
 }
 
+bool IsFXCodecErrorStatus(FXCODEC_STATUS status) {
+  return (status == FXCODEC_STATUS_ERROR ||
+#ifdef PDF_ENABLE_XFA
+          status == FXCODEC_STATUS_ERR_MEMORY ||
+#endif  // PDF_ENABLE_XFA
+          status == FXCODEC_STATUS_ERR_READ ||
+          status == FXCODEC_STATUS_ERR_FLUSH ||
+          status == FXCODEC_STATUS_ERR_FORMAT ||
+          status == FXCODEC_STATUS_ERR_PARAMS);
+}
+
 }  // namespace
 
 CXFA_FFWidget::CXFA_FFWidget(CXFA_WidgetAcc* pDataAcc)
@@ -966,7 +977,7 @@ CXFA_WidgetAcc* CXFA_FFWidget::GetDataAcc() {
   return m_pDataAcc.Get();
 }
 
-bool CXFA_FFWidget::GetToolTip(CFX_WideString& wsToolTip) {
+bool CXFA_FFWidget::GetToolTip(WideString& wsToolTip) {
   if (CXFA_Assist assist = m_pDataAcc->GetAssist()) {
     if (CXFA_ToolTip toolTip = assist.GetToolTip()) {
       return toolTip.GetTip(wsToolTip);
@@ -1032,7 +1043,7 @@ void CXFA_FFWidget::AddInvalidateRect() {
   m_pDocView->AddInvalidateRect(m_pPageView, rtWidget);
 }
 
-bool CXFA_FFWidget::GetCaptionText(CFX_WideString& wsCap) {
+bool CXFA_FFWidget::GetCaptionText(WideString& wsCap) {
   CXFA_TextLayout* pCapTextlayout = m_pDataAcc->GetCaptionTextLayout();
   if (!pCapTextlayout) {
     return false;
@@ -1168,15 +1179,15 @@ bool CXFA_FFWidget::CanDeSelect() {
   return CanCopy();
 }
 
-bool CXFA_FFWidget::Copy(CFX_WideString& wsCopy) {
+bool CXFA_FFWidget::Copy(WideString& wsCopy) {
   return false;
 }
 
-bool CXFA_FFWidget::Cut(CFX_WideString& wsCut) {
+bool CXFA_FFWidget::Cut(WideString& wsCut) {
   return false;
 }
 
-bool CXFA_FFWidget::Paste(const CFX_WideString& wsPaste) {
+bool CXFA_FFWidget::Paste(const WideString& wsPaste) {
   return false;
 }
 
@@ -1187,12 +1198,12 @@ void CXFA_FFWidget::Delete() {}
 void CXFA_FFWidget::DeSelect() {}
 
 void CXFA_FFWidget::GetSuggestWords(CFX_PointF pointf,
-                                    std::vector<CFX_ByteString>* pWords) {
+                                    std::vector<ByteString>* pWords) {
   pWords->clear();
 }
 
 bool CXFA_FFWidget::ReplaceSpellCheckWord(CFX_PointF pointf,
-                                          const CFX_ByteStringC& bsReplace) {
+                                          const ByteStringView& bsReplace) {
   return false;
 }
 
@@ -1414,7 +1425,7 @@ class CXFA_ImageRenderer {
   ~CXFA_ImageRenderer();
 
   bool Start(CFX_RenderDevice* pDevice,
-             const CFX_RetainPtr<CFX_DIBSource>& pDIBSource,
+             const RetainPtr<CFX_DIBSource>& pDIBSource,
              FX_ARGB bitmap_argb,
              int bitmap_alpha,
              const CFX_Matrix* pImage2Device,
@@ -1424,7 +1435,7 @@ class CXFA_ImageRenderer {
 
  protected:
   bool StartDIBSource();
-  void CompositeDIBitmap(const CFX_RetainPtr<CFX_DIBitmap>& pDIBitmap,
+  void CompositeDIBitmap(const RetainPtr<CFX_DIBitmap>& pDIBitmap,
                          int left,
                          int top,
                          FX_ARGB mask_argb,
@@ -1435,8 +1446,8 @@ class CXFA_ImageRenderer {
   CFX_RenderDevice* m_pDevice;
   int m_Status;
   CFX_Matrix m_ImageMatrix;
-  CFX_RetainPtr<CFX_DIBSource> m_pDIBSource;
-  CFX_RetainPtr<CFX_DIBitmap> m_pCloneConvert;
+  RetainPtr<CFX_DIBSource> m_pDIBSource;
+  RetainPtr<CFX_DIBitmap> m_pCloneConvert;
   int m_BitmapAlpha;
   FX_ARGB m_FillArgb;
   uint32_t m_Flags;
@@ -1461,7 +1472,7 @@ CXFA_ImageRenderer::CXFA_ImageRenderer()
 CXFA_ImageRenderer::~CXFA_ImageRenderer() {}
 
 bool CXFA_ImageRenderer::Start(CFX_RenderDevice* pDevice,
-                               const CFX_RetainPtr<CFX_DIBSource>& pDIBSource,
+                               const RetainPtr<CFX_DIBSource>& pDIBSource,
                                FX_ARGB bitmap_argb,
                                int bitmap_alpha,
                                const CFX_Matrix* pImage2Device,
@@ -1497,7 +1508,7 @@ bool CXFA_ImageRenderer::StartDIBSource() {
       m_Result = false;
       return false;
     }
-    CFX_RetainPtr<CFX_DIBSource> pDib = m_pDIBSource;
+    RetainPtr<CFX_DIBSource> pDib = m_pDIBSource;
     if (m_pDIBSource->HasAlpha() &&
         !(m_pDevice->GetRenderCaps() & FXRC_ALPHA_IMAGE) &&
         !(m_pDevice->GetRenderCaps() & FXRC_GET_BITS)) {
@@ -1549,7 +1560,7 @@ bool CXFA_ImageRenderer::StartDIBSource() {
   FX_RECT dest_clip(
       dest_rect.left - image_rect.left, dest_rect.top - image_rect.top,
       dest_rect.right - image_rect.left, dest_rect.bottom - image_rect.top);
-  CFX_RetainPtr<CFX_DIBitmap> pStretched =
+  RetainPtr<CFX_DIBitmap> pStretched =
       m_pDIBSource->StretchTo(dest_width, dest_height, m_Flags, &dest_clip);
   if (pStretched) {
     CompositeDIBitmap(pStretched, dest_rect.left, dest_rect.top, m_FillArgb,
@@ -1563,7 +1574,7 @@ bool CXFA_ImageRenderer::Continue() {
     if (m_pTransformer->Continue(nullptr))
       return true;
 
-    CFX_RetainPtr<CFX_DIBitmap> pBitmap = m_pTransformer->DetachBitmap();
+    RetainPtr<CFX_DIBitmap> pBitmap = m_pTransformer->DetachBitmap();
     if (!pBitmap)
       return false;
 
@@ -1589,7 +1600,7 @@ bool CXFA_ImageRenderer::Continue() {
 }
 
 void CXFA_ImageRenderer::CompositeDIBitmap(
-    const CFX_RetainPtr<CFX_DIBitmap>& pDIBitmap,
+    const RetainPtr<CFX_DIBitmap>& pDIBitmap,
     int left,
     int top,
     FX_ARGB mask_argb,
@@ -1635,10 +1646,10 @@ void CXFA_ImageRenderer::CompositeDIBitmap(
       FX_RECT rect(left, top, left + pDIBitmap->GetWidth(),
                    top + pDIBitmap->GetHeight());
       rect.Intersect(m_pDevice->GetClipBox());
-      CFX_RetainPtr<CFX_DIBitmap> pClone;
+      RetainPtr<CFX_DIBitmap> pClone;
       if (m_pDevice->GetBackDrop() && m_pDevice->GetBitmap()) {
         pClone = m_pDevice->GetBackDrop()->Clone(&rect);
-        CFX_RetainPtr<CFX_DIBitmap> pForeBitmap = m_pDevice->GetBitmap();
+        RetainPtr<CFX_DIBitmap> pForeBitmap = m_pDevice->GetBitmap();
         pClone->CompositeBitmap(0, 0, pClone->GetWidth(), pClone->GetHeight(),
                                 pForeBitmap, rect.left, rect.top);
         left = left >= 0 ? 0 : left;
@@ -1667,8 +1678,7 @@ void CXFA_ImageRenderer::CompositeDIBitmap(
       (m_pDevice->GetRenderCaps() & FXRC_ALPHA_IMAGE)) {
     return;
   }
-  CFX_RetainPtr<CFX_DIBitmap> pCloneConvert =
-      pDIBitmap->CloneConvert(FXDIB_Rgb);
+  RetainPtr<CFX_DIBitmap> pCloneConvert = pDIBitmap->CloneConvert(FXDIB_Rgb);
   if (!pCloneConvert)
     return;
 
@@ -1684,7 +1694,7 @@ void CXFA_ImageRenderer::CompositeDIBitmap(
 void XFA_DrawImage(CXFA_Graphics* pGS,
                    const CFX_RectF& rtImage,
                    const CFX_Matrix& matrix,
-                   const CFX_RetainPtr<CFX_DIBitmap>& pDIBitmap,
+                   const RetainPtr<CFX_DIBitmap>& pDIBitmap,
                    int32_t iAspect,
                    int32_t iImageXDpi,
                    int32_t iImageYDpi,
@@ -1770,7 +1780,7 @@ static uint8_t* XFA_RemoveBase64Whitespace(const uint8_t* pStr, int32_t iLen) {
   uint8_t* pCP;
   int32_t i = 0, j = 0;
   if (iLen == 0) {
-    iLen = FXSYS_strlen((char*)pStr);
+    iLen = strlen((char*)pStr);
   }
   pCP = FX_Alloc(uint8_t, iLen + 1);
   for (; i < iLen; i++) {
@@ -1789,11 +1799,11 @@ static int32_t XFA_Base64Decode(const char* pStr, uint8_t* pOutBuffer) {
     return 0;
   }
   uint8_t* pBuffer =
-      XFA_RemoveBase64Whitespace((uint8_t*)pStr, FXSYS_strlen((char*)pStr));
+      XFA_RemoveBase64Whitespace((uint8_t*)pStr, strlen((char*)pStr));
   if (!pBuffer) {
     return 0;
   }
-  int32_t iLen = FXSYS_strlen((char*)pBuffer);
+  int32_t iLen = strlen((char*)pBuffer);
   int32_t i = 0, j = 0;
   uint32_t dwLimb = 0;
   for (; i + 3 < iLen; i += 4) {
@@ -1869,8 +1879,8 @@ char* XFA_Base64Encode(const uint8_t* buf, int32_t buf_len) {
   out[j] = '\0';
   return out;
 }
-FXCODEC_IMAGE_TYPE XFA_GetImageType(const CFX_WideString& wsType) {
-  CFX_WideString wsContentType(wsType);
+FXCODEC_IMAGE_TYPE XFA_GetImageType(const WideString& wsType) {
+  WideString wsContentType(wsType);
   wsContentType.MakeLower();
   if (wsContentType == L"image/jpg")
     return FXCODEC_IMAGE_JPG;
@@ -1885,29 +1895,29 @@ FXCODEC_IMAGE_TYPE XFA_GetImageType(const CFX_WideString& wsType) {
   return FXCODEC_IMAGE_UNKNOWN;
 }
 
-CFX_RetainPtr<CFX_DIBitmap> XFA_LoadImageData(CXFA_FFDoc* pDoc,
-                                              CXFA_Image* pImage,
-                                              bool& bNameImage,
-                                              int32_t& iImageXDpi,
-                                              int32_t& iImageYDpi) {
-  CFX_WideString wsHref;
-  CFX_WideString wsImage;
+RetainPtr<CFX_DIBitmap> XFA_LoadImageData(CXFA_FFDoc* pDoc,
+                                          CXFA_Image* pImage,
+                                          bool& bNameImage,
+                                          int32_t& iImageXDpi,
+                                          int32_t& iImageYDpi) {
+  WideString wsHref;
+  WideString wsImage;
   pImage->GetHref(wsHref);
   pImage->GetContent(wsImage);
   if (wsHref.IsEmpty() && wsImage.IsEmpty())
     return nullptr;
 
-  CFX_WideString wsContentType;
+  WideString wsContentType;
   pImage->GetContentType(wsContentType);
   FXCODEC_IMAGE_TYPE type = XFA_GetImageType(wsContentType);
-  CFX_ByteString bsContent;
+  ByteString bsContent;
   uint8_t* pImageBuffer = nullptr;
-  CFX_RetainPtr<IFX_SeekableReadStream> pImageFileRead;
+  RetainPtr<IFX_SeekableReadStream> pImageFileRead;
   if (wsImage.GetLength() > 0) {
     XFA_ATTRIBUTEENUM iEncoding =
         (XFA_ATTRIBUTEENUM)pImage->GetTransferEncoding();
     if (iEncoding == XFA_ATTRIBUTEENUM_Base64) {
-      CFX_ByteString bsData = wsImage.UTF8Encode();
+      ByteString bsData = wsImage.UTF8Encode();
       int32_t iLength = bsData.GetLength();
       pImageBuffer = FX_Alloc(uint8_t, iLength);
       int32_t iRead = XFA_Base64Decode(bsData.c_str(), pImageBuffer);
@@ -1916,16 +1926,16 @@ CFX_RetainPtr<CFX_DIBitmap> XFA_LoadImageData(CXFA_FFDoc* pDoc,
             pdfium::MakeRetain<CFX_MemoryStream>(pImageBuffer, iRead, false);
       }
     } else {
-      bsContent = CFX_ByteString::FromUnicode(wsImage);
+      bsContent = ByteString::FromUnicode(wsImage);
       pImageFileRead = pdfium::MakeRetain<CFX_MemoryStream>(
           const_cast<uint8_t*>(bsContent.raw_str()), bsContent.GetLength(),
           false);
     }
   } else {
-    CFX_WideString wsURL = wsHref;
+    WideString wsURL = wsHref;
     if (wsURL.Left(7) != L"http://" && wsURL.Left(6) != L"ftp://") {
-      CFX_RetainPtr<CFX_DIBitmap> pBitmap =
-          pDoc->GetPDFNamedImage(wsURL.AsStringC(), iImageXDpi, iImageYDpi);
+      RetainPtr<CFX_DIBitmap> pBitmap =
+          pDoc->GetPDFNamedImage(wsURL.AsStringView(), iImageXDpi, iImageYDpi);
       if (pBitmap) {
         bNameImage = true;
         return pBitmap;
@@ -1938,7 +1948,7 @@ CFX_RetainPtr<CFX_DIBitmap> XFA_LoadImageData(CXFA_FFDoc* pDoc,
     return nullptr;
   }
   bNameImage = false;
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap =
+  RetainPtr<CFX_DIBitmap> pBitmap =
       XFA_LoadImageFromBuffer(pImageFileRead, type, iImageXDpi, iImageYDpi);
   FX_Free(pImageBuffer);
   return pBitmap;
@@ -1964,8 +1974,8 @@ static FXDIB_Format XFA_GetDIBFormat(FXCODEC_IMAGE_TYPE type,
   return dibFormat;
 }
 
-CFX_RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
-    const CFX_RetainPtr<IFX_SeekableReadStream>& pImageFileRead,
+RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
+    const RetainPtr<IFX_SeekableReadStream>& pImageFileRead,
     FXCODEC_IMAGE_TYPE type,
     int32_t& iImageXDpi,
     int32_t& iImageYDpi) {
@@ -1998,18 +2008,33 @@ CFX_RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
   int32_t iComponents = pProgressiveDecoder->GetNumComponents();
   int32_t iBpc = pProgressiveDecoder->GetBPC();
   FXDIB_Format dibFormat = XFA_GetDIBFormat(type, iComponents, iBpc);
-  CFX_RetainPtr<CFX_DIBitmap> pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
+  RetainPtr<CFX_DIBitmap> pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   pBitmap->Create(pProgressiveDecoder->GetWidth(),
                   pProgressiveDecoder->GetHeight(), dibFormat);
   pBitmap->Clear(0xffffffff);
+
   int32_t nFrames;
-  if ((pProgressiveDecoder->GetFrames(nFrames) ==
-       FXCODEC_STATUS_DECODE_READY) &&
-      (nFrames > 0)) {
-    pProgressiveDecoder->StartDecode(pBitmap, 0, 0, pBitmap->GetWidth(),
-                                     pBitmap->GetHeight());
-    pProgressiveDecoder->ContinueDecode();
+  if (pProgressiveDecoder->GetFrames(&nFrames) != FXCODEC_STATUS_DECODE_READY ||
+      nFrames <= 0) {
+    pBitmap = nullptr;
+    return pBitmap;
   }
+
+  FXCODEC_STATUS status = pProgressiveDecoder->StartDecode(
+      pBitmap, 0, 0, pBitmap->GetWidth(), pBitmap->GetHeight());
+  if (IsFXCodecErrorStatus(status)) {
+    pBitmap = nullptr;
+    return pBitmap;
+  }
+
+  while (status == FXCODEC_STATUS_DECODE_TOBECONTINUE) {
+    status = pProgressiveDecoder->ContinueDecode();
+    if (IsFXCodecErrorStatus(status)) {
+      pBitmap = nullptr;
+      return pBitmap;
+    }
+  }
+
   return pBitmap;
 }
 

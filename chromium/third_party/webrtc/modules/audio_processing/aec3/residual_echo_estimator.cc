@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/aec3/residual_echo_estimator.h"
+#include "modules/audio_processing/aec3/residual_echo_estimator.h"
 
 #include <numeric>
 #include <vector>
 
-#include "webrtc/rtc_base/checks.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace {
@@ -88,7 +88,6 @@ ResidualEchoEstimator::ResidualEchoEstimator(
 ResidualEchoEstimator::~ResidualEchoEstimator() = default;
 
 void ResidualEchoEstimator::Estimate(
-    bool using_subtractor_output,
     const AecState& aec_state,
     const RenderBuffer& render_buffer,
     const std::array<float, kFftLengthBy2Plus1>& S2_linear,
@@ -106,9 +105,8 @@ void ResidualEchoEstimator::Estimate(
   RenderNoisePower(render_buffer, &X2_noise_floor_, &X2_noise_floor_counter_);
 
   // Estimate the residual echo power.
-  const bool use_linear_echo_power =
-      aec_state.UsableLinearEstimate() && using_subtractor_output;
-  if (use_linear_echo_power && !aec_state.HeadsetDetected()) {
+
+  if (aec_state.LinearEchoEstimate()) {
     RTC_DCHECK(aec_state.FilterDelay());
     const int filter_delay = *aec_state.FilterDelay();
     LinearEstimate(S2_linear, aec_state.Erle(), filter_delay, R2);

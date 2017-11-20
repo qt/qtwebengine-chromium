@@ -95,6 +95,10 @@ class PasswordFormManager : public FormFetcher::Consumer {
     IGNORE_OTHER_POSSIBLE_USERNAMES
   };
 
+  // The upper limit on how many times Chrome will try to autofill the same
+  // form.
+  static constexpr int kMaxTimesAutofill = 5;
+
   // Chooses between the current and new password value which one to save. This
   // is whichever is non-empty, with the preference being given to the new one.
   static base::string16 PasswordToSave(const autofill::PasswordForm& form);
@@ -159,6 +163,12 @@ class PasswordFormManager : public FormFetcher::Consumer {
   // the save button. Updates the username and modifies internal state
   // accordingly. This function should be called after ProvisionallySave().
   void UpdateUsername(const base::string16& new_username);
+
+  // Updates the password value. Called when user selects a password from the
+  // password selection dropdown and clicks the save button. Updates the
+  // password and modifies internal state accordingly. This function should be
+  // called after ProvisionallySave().
+  void UpdatePasswordValue(const base::string16& new_password);
 
   // Call these if/when we know the form submission worked or failed.
   // These routines are used to update internal statistics ("ActionsTaken").
@@ -362,18 +372,19 @@ class PasswordFormManager : public FormFetcher::Consumer {
   bool UpdatePendingCredentialsIfOtherPossibleUsername(
       const base::string16& username);
 
-  // Searches for |username| in |other_possible_usernames| of |best_matches_|
-  // and |not_best_matches_|. If the username value is found in
-  // |other_possible_usernames| and the password value of the match is equal to
-  // |password|, the match is saved to |username_correction_vote_|.
-  void FindCorrectedUsernameElement(const base::string16& username,
-                                    const base::string16& password);
-
   // Searches for |username| in |other_possible_usernames| of |match|. If the
   // username value is found, the match is saved to |username_correction_vote_|
   // and the function returns true.
   bool FindUsernameInOtherPossibleUsernames(const autofill::PasswordForm& match,
                                             const base::string16& username);
+
+  // Searches for |username| in |other_possible_usernames| of |best_matches_|
+  // and |not_best_matches_|. If the username value is found in
+  // |other_possible_usernames| and the password value of the match is equal to
+  // |password|, the match is saved to |username_correction_vote_| and the
+  // method returns true.
+  bool FindCorrectedUsernameElement(const base::string16& username,
+                                    const base::string16& password);
 
   // Returns true if |form| is a username update of a credential already in
   // |best_matches_|. Sets |pending_credentials_| to the appropriate
@@ -590,6 +601,12 @@ class PasswordFormManager : public FormFetcher::Consumer {
   // Tracks if a form with same origin as |observed_form_| found in blacklisted
   // forms.
   bool blacklisted_origin_found_ = false;
+
+  // If Chrome has already autofilled a few times, it is probable that autofill
+  // is triggered by programmatic changes in the page. We set a maximum number
+  // of times that Chrome will autofill to avoid being stuck in an infinite
+  // loop.
+  int autofills_left_ = kMaxTimesAutofill;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordFormManager);
 };

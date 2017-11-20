@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <stack>
 #include <string>
 #include <unordered_map>
 
@@ -858,8 +857,8 @@ void LayerTreeHost::UpdateBrowserControlsState(
     BrowserControlsState constraints,
     BrowserControlsState current,
     bool animate) {
-  // Browser controls are only used in threaded mode.
-  DCHECK(IsThreaded());
+  // Browser controls are only used in threaded mode but Blink layout tests may
+  // call into this. The single threaded version is a no-op.
   proxy_->UpdateBrowserControlsState(constraints, current, animate);
 }
 
@@ -1234,7 +1233,6 @@ void LayerTreeHost::PushLayerTreePropertiesTo(LayerTreeImpl* tree_impl) {
   }
 
   tree_impl->set_background_color(background_color_);
-  tree_impl->set_has_transparent_background(has_transparent_background_);
   tree_impl->set_have_scroll_event_handlers(have_scroll_event_handlers_);
   tree_impl->set_event_listener_properties(
       EventListenerClass::kTouchStartOrMove,
@@ -1458,9 +1456,7 @@ void LayerTreeHost::ElementIsAnimatingChanged(
 
 gfx::ScrollOffset LayerTreeHost::GetScrollOffsetForAnimation(
     ElementId element_id) const {
-  Layer* layer = LayerByElementId(element_id);
-  DCHECK(layer);
-  return layer->ScrollOffsetForAnimation();
+  return property_trees()->scroll_tree.current_scroll_offset(element_id);
 }
 
 void LayerTreeHost::QueueImageDecode(

@@ -123,9 +123,9 @@ public:
 
 private:
     PremulInputFragmentProcessor()
-            : INHERITED(kPreservesOpaqueInput_OptimizationFlag |
+            : INHERITED(kPremulInputFragmentProcessor_ClassID,
+                        kPreservesOpaqueInput_OptimizationFlag |
                         kConstantOutputForConstantInput_OptimizationFlag) {
-        this->initClassID<PremulInputFragmentProcessor>();
     }
 
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override {
@@ -165,9 +165,9 @@ public:
 
 private:
     UnpremulInputFragmentProcessor()
-            : INHERITED(kPreservesOpaqueInput_OptimizationFlag |
+            : INHERITED(kUnpremulInputFragmentProcessor_ClassID,
+                        kPreservesOpaqueInput_OptimizationFlag |
                         kConstantOutputForConstantInput_OptimizationFlag) {
-        this->initClassID<UnpremulInputFragmentProcessor>();
     }
 
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override {
@@ -177,7 +177,7 @@ private:
                 GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
 
                 fragBuilder->codeAppendf("%s = %s;", args.fOutputColor, args.fInputColor);
-                fragBuilder->codeAppendf("float invAlpha = %s.a <= 0.0 ? 0.0 : 1.0 / %s.a;",
+                fragBuilder->codeAppendf("half invAlpha = %s.a <= 0.0 ? 0.0 : 1.0 / %s.a;",
                                          args.fInputColor, args.fInputColor);
                 fragBuilder->codeAppendf("%s.rgb *= invAlpha;", args.fOutputColor);
             }
@@ -243,9 +243,8 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::SwizzleOutput(
 
     private:
         SwizzleFragmentProcessor(const GrSwizzle& swizzle)
-                : INHERITED(kAll_OptimizationFlags)
+                : INHERITED(kSwizzleFragmentProcessor_ClassID, kAll_OptimizationFlags)
                 , fSwizzle(swizzle) {
-            this->initClassID<SwizzleFragmentProcessor>();
         }
 
         GrGLSLFragmentProcessor* onCreateGLSLInstance() const override {
@@ -310,8 +309,7 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::MakeInputPremulAndMulB
 
     private:
         PremulFragmentProcessor(std::unique_ptr<GrFragmentProcessor> processor)
-                : INHERITED(OptFlags(processor.get())) {
-            this->initClassID<PremulFragmentProcessor>();
+                : INHERITED(kPremulFragmentProcessor_ClassID, OptFlags(processor.get())) {
             this->registerChildProcessor(std::move(processor));
         }
 
@@ -387,8 +385,7 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::OverrideInput(
                 void emitCode(EmitArgs& args) override {
                     const char* colorName;
                     fColorUni = args.fUniformHandler->addUniform(kFragment_GrShaderFlag,
-                                                                 kVec4f_GrSLType,
-                                                                 kDefault_GrSLPrecision,
+                                                                 kHalf4_GrSLType,
                                                                  "Color", &colorName);
                     this->emitChild(0, colorName, args);
                 }
@@ -413,8 +410,8 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::OverrideInput(
         }
 
         ReplaceInputFragmentProcessor(std::unique_ptr<GrFragmentProcessor> child, GrColor4f color)
-                : INHERITED(OptFlags(child.get(), color)), fColor(color) {
-            this->initClassID<ReplaceInputFragmentProcessor>();
+                : INHERITED(kReplaceInputFragmentProcessor_ClassID, OptFlags(child.get(), color))
+                , fColor(color) {
             this->registerChildProcessor(std::move(child));
         }
 
@@ -495,9 +492,8 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::RunInSeries(
         }
 
         SeriesFragmentProcessor(std::unique_ptr<GrFragmentProcessor>* children, int cnt)
-                : INHERITED(OptFlags(children, cnt)) {
+                : INHERITED(kSeriesFragmentProcessor_ClassID, OptFlags(children, cnt)) {
             SkASSERT(cnt > 1);
-            this->initClassID<SeriesFragmentProcessor>();
             for (int i = 0; i < cnt; ++i) {
                 this->registerChildProcessor(std::move(children[i]));
             }

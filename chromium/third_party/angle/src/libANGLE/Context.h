@@ -58,6 +58,7 @@ class Texture;
 class TransformFeedback;
 class VertexArray;
 struct VertexAttribute;
+class ProgramPipeline;
 
 class Context final : public ValidationContext
 {
@@ -68,8 +69,7 @@ class Context final : public ValidationContext
             TextureManager *shareTextures,
             MemoryProgramCache *memoryProgramCache,
             const egl::AttributeMap &attribs,
-            const egl::DisplayExtensions &displayExtensions,
-            bool robustResourceInit);
+            const egl::DisplayExtensions &displayExtensions);
 
     egl::Error onDestroy(const egl::Display *display);
     ~Context() override;
@@ -85,6 +85,7 @@ class Context final : public ValidationContext
     GLuint createTexture();
     GLuint createRenderbuffer();
     GLuint createPaths(GLsizei range);
+    GLuint createProgramPipeline();
 
     void deleteBuffer(GLuint buffer);
     void deleteShader(GLuint shader);
@@ -92,6 +93,7 @@ class Context final : public ValidationContext
     void deleteTexture(GLuint texture);
     void deleteRenderbuffer(GLuint renderbuffer);
     void deletePaths(GLuint first, GLsizei range);
+    void deleteProgramPipeline(GLuint pipeline);
 
     // CHROMIUM_path_rendering
     bool hasPathData(GLuint path) const;
@@ -159,6 +161,7 @@ class Context final : public ValidationContext
     void useProgram(GLuint program);
     void bindTransformFeedback(GLenum target, GLuint transformFeedbackHandle);
     void bindDrawIndirectBuffer(GLuint bufferHandle);
+    void bindProgramPipeline(GLuint pipelineHandle);
 
     void beginQuery(GLenum target, GLuint query);
     void endQuery(GLenum target);
@@ -213,6 +216,11 @@ class Context final : public ValidationContext
                               GLsizei *length,
                               GLint *params);
 
+    void getProgramInterfaceiv(GLuint program,
+                               GLenum programInterface,
+                               GLenum pname,
+                               GLint *params);
+
     Buffer *getBuffer(GLuint handle) const;
     FenceNV *getFenceNV(GLuint handle);
     Sync *getSync(GLsync handle) const;
@@ -224,6 +232,8 @@ class Context final : public ValidationContext
     Query *getQuery(GLuint handle, bool create, GLenum type);
     Query *getQuery(GLuint handle) const;
     TransformFeedback *getTransformFeedback(GLuint handle) const;
+    ProgramPipeline *getProgramPipeline(GLuint handle) const;
+
     void objectLabel(GLenum identifier, GLuint name, GLsizei length, const GLchar *label);
     void objectPtrLabel(const void *ptr, GLsizei length, const GLchar *label);
     void getObjectLabel(GLenum identifier,
@@ -279,6 +289,7 @@ class Context final : public ValidationContext
     void pixelStorei(GLenum pname, GLint param);
     void polygonOffset(GLfloat factor, GLfloat units);
     void sampleCoverage(GLfloat value, GLboolean invert);
+    void sampleMaski(GLuint maskNumber, GLbitfield mask);
     void scissor(GLint x, GLint y, GLsizei width, GLsizei height);
     void stencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask);
     void stencilMaskSeparate(GLenum face, GLuint mask);
@@ -873,8 +884,14 @@ class Context final : public ValidationContext
                              GLsizei bufSize,
                              GLint *params);
 
-    // Returns the error.
-    Error handleError(const Error &error) override;
+    void programUniform1iv(GLuint program, GLint location, GLsizei count, const GLint *value);
+
+    void deleteProgramPipelines(GLsizei n, const GLuint *pipelines);
+    void genProgramPipelines(GLsizei n, GLuint *pipelines);
+    GLboolean isProgramPipeline(GLuint pipeline);
+
+    // Consumes the error.
+    void handleError(const Error &error) override;
 
     GLenum getError();
     void markContextLost();
@@ -922,12 +939,17 @@ class Context final : public ValidationContext
                       GLsizei height,
                       GLsizei depth);
 
+    // Notification for a state change in a Texture.
+    void onTextureChange(const Texture *texture);
+
     egl::Display *getCurrentDisplay() const { return mCurrentDisplay; }
     egl::Surface *getCurrentDrawSurface() const { return mCurrentSurface; }
     egl::Surface *getCurrentReadSurface() const { return mCurrentSurface; }
 
+    bool isRobustResourceInitEnabled() const { return mGLState.isRobustResourceInitEnabled(); }
+
   private:
-    Error prepareForDraw(GLenum drawMode);
+    Error prepareForDraw();
     void syncRendererState();
     void syncRendererState(const State::DirtyBits &bitMask, const State::DirtyObjects &objectMask);
     void syncStateForReadPixels();
@@ -944,12 +966,13 @@ class Context final : public ValidationContext
     void detachVertexArray(GLuint vertexArray);
     void detachTransformFeedback(GLuint transformFeedback);
     void detachSampler(GLuint sampler);
+    void detachProgramPipeline(GLuint pipeline);
 
     void initRendererString();
     void initVersionStrings();
     void initExtensionStrings();
 
-    void initCaps(const egl::DisplayExtensions &displayExtensions);
+    void initCaps(const egl::DisplayExtensions &displayExtensions, bool robustResourceInit);
     void updateCaps();
     void initWorkarounds();
 

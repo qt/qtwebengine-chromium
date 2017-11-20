@@ -36,16 +36,16 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameClient.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "core/html/FormData.h"
+#include "core/html/forms/FormData.h"
 #include "core/typed_arrays/DOMArrayBufferView.h"
 #include "platform/loader/fetch/FetchContext.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/FetchUtils.h"
 #include "platform/loader/fetch/RawResource.h"
 #include "platform/loader/fetch/ResourceError.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/loader/fetch/ResourceRequest.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/network/EncodedFormData.h"
 #include "platform/network/ParsedContentType.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -159,7 +159,7 @@ class BeaconFormData final : public Beacon {
   }
 
   void Serialize(ResourceRequest& request) const override {
-    request.SetHTTPBody(entity_body_.Get());
+    request.SetHTTPBody(entity_body_.get());
     request.SetHTTPContentType(content_type_);
   }
 
@@ -212,6 +212,12 @@ bool SendBeaconCommon(LocalFrame* frame,
   request.SetRequestContext(WebURLRequest::kRequestContextBeacon);
   beacon.Serialize(request);
   FetchParameters params(request);
+  // The spec says:
+  //  - If mimeType is not null:
+  //   - If mimeType value is a CORS-safelisted request-header value for the
+  //     Content-Type header, set corsMode to "no-cors".
+  // As we don't support requests with non CORS-safelisted Content-Type, the
+  // mode should always be "no-cors".
   params.MutableOptions().initiator_info.name = FetchInitiatorTypeNames::beacon;
 
   Resource* resource =
@@ -258,7 +264,7 @@ void PingLoader::SendLinkAuditPing(LocalFrame* frame,
                              AtomicString(destination_url.GetString()));
   RefPtr<SecurityOrigin> ping_origin = SecurityOrigin::Create(ping_url);
   if (ProtocolIs(frame->GetDocument()->Url().GetString(), "http") ||
-      frame->GetDocument()->GetSecurityOrigin()->CanAccess(ping_origin.Get())) {
+      frame->GetDocument()->GetSecurityOrigin()->CanAccess(ping_origin.get())) {
     request.SetHTTPHeaderField(
         HTTPNames::Ping_From,
         AtomicString(frame->GetDocument()->Url().GetString()));

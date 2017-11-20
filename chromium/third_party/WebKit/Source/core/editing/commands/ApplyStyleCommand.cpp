@@ -27,7 +27,6 @@
 
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
-#include "core/HTMLNames.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/StylePropertySet.h"
@@ -39,13 +38,18 @@
 #include "core/editing/EditingStyle.h"
 #include "core/editing/EditingStyleUtilities.h"
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/PlainTextRange.h"
+#include "core/editing/SelectionTemplate.h"
+#include "core/editing/VisiblePosition.h"
+#include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/editing/serializers/HTMLInterchange.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLSpanElement.h"
+#include "core/html_names.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/LayoutText.h"
 #include "platform/heap/Handle.h"
@@ -74,28 +78,30 @@ static bool HasNoAttributeOrOnlyStyleAttribute(
 }
 
 bool IsStyleSpanOrSpanWithOnlyStyleAttribute(const Element* element) {
-  if (!isHTMLSpanElement(element))
-    return false;
-  return HasNoAttributeOrOnlyStyleAttribute(toHTMLSpanElement(element),
-                                            kAllowNonEmptyStyleAttribute);
+  if (auto* span = ToHTMLSpanElementOrNull(element)) {
+    return HasNoAttributeOrOnlyStyleAttribute(span,
+                                              kAllowNonEmptyStyleAttribute);
+  }
+  return false;
 }
 
 static inline bool IsSpanWithoutAttributesOrUnstyledStyleSpan(
     const Node* node) {
-  if (!isHTMLSpanElement(node))
-    return false;
-  return HasNoAttributeOrOnlyStyleAttribute(toHTMLSpanElement(node),
-                                            kStyleAttributeShouldBeEmpty);
+  if (auto* span = ToHTMLSpanElementOrNull(node)) {
+    return HasNoAttributeOrOnlyStyleAttribute(span,
+                                              kStyleAttributeShouldBeEmpty);
+  }
+  return false;
 }
 
 bool IsEmptyFontTag(
     const Element* element,
     ShouldStyleAttributeBeEmpty should_style_attribute_be_empty) {
-  if (!isHTMLFontElement(element))
-    return false;
-
-  return HasNoAttributeOrOnlyStyleAttribute(toHTMLFontElement(element),
-                                            should_style_attribute_be_empty);
+  if (auto* font = ToHTMLFontElementOrNull(element)) {
+    return HasNoAttributeOrOnlyStyleAttribute(font,
+                                              should_style_attribute_be_empty);
+  }
+  return false;
 }
 
 static bool OffsetIsBeforeLastNodeOffset(int offset, Node* anchor_node) {
@@ -866,7 +872,7 @@ void ApplyStyleCommand::FixRangeAndApplyInlineStyle(
   if (start.ComputeEditingOffset() >= CaretMaxOffset(start.AnchorNode())) {
     start_node = NodeTraversal::Next(*start_node);
     if (!start_node ||
-        ComparePositions(end, FirstPositionInOrBeforeNode(start_node)) < 0)
+        ComparePositions(end, FirstPositionInOrBeforeNode(*start_node)) < 0)
       return;
   }
 
@@ -876,7 +882,7 @@ void ApplyStyleCommand::FixRangeAndApplyInlineStyle(
 
   // FIXME: Callers should perform this operation on a Range that includes the
   // br if they want style applied to the empty line.
-  if (start == end && isHTMLBRElement(*start.AnchorNode()))
+  if (start == end && IsHTMLBRElement(*start.AnchorNode()))
     past_end_node = NodeTraversal::Next(*start.AnchorNode());
 
   // Start from the highest fully selected ancestor so that we can modify the
@@ -1000,7 +1006,7 @@ void ApplyStyleCommand::ApplyInlineStyleToNodeRange(
     Node* sibling = node->nextSibling();
     while (sibling && sibling != past_end_node &&
            !sibling->contains(past_end_node) &&
-           (!IsEnclosingBlock(sibling) || isHTMLBRElement(*sibling)) &&
+           (!IsEnclosingBlock(sibling) || IsHTMLBRElement(*sibling)) &&
            !ContainsNonEditableRegion(*sibling)) {
       run_end = sibling;
       sibling = run_end->nextSibling();
@@ -1267,7 +1273,7 @@ HTMLElement* ApplyStyleCommand::HighestAncestorWithConflictingInlineStyle(
 
   HTMLElement* result = nullptr;
   Node* unsplittable_element =
-      UnsplittableElementForPosition(FirstPositionInOrBeforeNode(node));
+      UnsplittableElementForPosition(FirstPositionInOrBeforeNode(*node));
 
   for (Node* n = node; n; n = n->parentNode()) {
     if (n->IsHTMLElement() &&
@@ -1291,7 +1297,7 @@ void ApplyStyleCommand::ApplyInlineStyleToPushDown(
   node->GetDocument().UpdateStyleAndLayoutTree();
 
   if (!style || style->IsEmpty() || !node->GetLayoutObject() ||
-      isHTMLIFrameElement(*node))
+      IsHTMLIFrameElement(*node))
     return;
 
   EditingStyle* new_inline_style = style;
@@ -1372,7 +1378,7 @@ void ApplyStyleCommand::PushDownInlineStyleAroundNode(
           // Delete id attribute from the second element because the same id
           // cannot be used for more than one element
           element->removeAttribute(HTMLNames::idAttr);
-          if (isHTMLAnchorElement(element))
+          if (IsHTMLAnchorElement(element))
             element->removeAttribute(HTMLNames::nameAttr);
           SurroundNodeRangeWithElement(child, child, wrapper, editing_state);
           if (editing_state->IsAborted())
@@ -1497,7 +1503,7 @@ void ApplyStyleCommand::RemoveInlineStyle(EditingStyle* style,
           DCHECK(s.IsBeforeAnchor() || s.IsBeforeChildren() ||
                  s.OffsetInContainerNode() <= 0)
               << s;
-          s = FirstPositionInOrBeforeNode(next);
+          s = FirstPositionInOrBeforeNodeDeprecated(next);
         }
         if (e.AnchorNode() == elem) {
           // Since elem must have been fully selected, and it is at the end
@@ -1507,7 +1513,7 @@ void ApplyStyleCommand::RemoveInlineStyle(EditingStyle* style,
                  !OffsetIsBeforeLastNodeOffset(s.OffsetInContainerNode(),
                                                s.ComputeContainerNode()))
               << s;
-          e = LastPositionInOrAfterNode(prev);
+          e = LastPositionInOrAfterNodeDeprecated(prev);
         }
       }
 
@@ -1528,16 +1534,16 @@ void ApplyStyleCommand::RemoveInlineStyle(EditingStyle* style,
   UpdateStartEnd(s, e);
 }
 
-bool ApplyStyleCommand::ElementFullySelected(HTMLElement& element,
+bool ApplyStyleCommand::ElementFullySelected(const HTMLElement& element,
                                              const Position& start,
                                              const Position& end) const {
   // The tree may have changed and Position::upstream() relies on an up-to-date
   // layout.
   element.GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
 
-  return ComparePositions(FirstPositionInOrBeforeNode(&element), start) >= 0 &&
+  return ComparePositions(FirstPositionInOrBeforeNode(element), start) >= 0 &&
          ComparePositions(
-             MostBackwardCaretPosition(LastPositionInOrAfterNode(&element)),
+             MostBackwardCaretPosition(LastPositionInOrAfterNode(element)),
              end) <= 0;
 }
 
@@ -1702,7 +1708,7 @@ bool ApplyStyleCommand::MergeEndWithNextIfIdentical(
     end_node = end.AnchorNode()->parentNode();
   }
 
-  if (!end_node->IsElementNode() || isHTMLBRElement(*end_node))
+  if (!end_node->IsElementNode() || IsHTMLBRElement(*end_node))
     return false;
 
   Node* next_sibling = end_node->nextSibling();
@@ -1834,6 +1840,7 @@ Position ApplyStyleCommand::PositionToComputeInlineStyleChange(
     Node* start_node,
     Member<HTMLSpanElement>& dummy_element,
     EditingState* editing_state) {
+  DCHECK(start_node);
   // It's okay to obtain the style at the startNode because we've removed all
   // relevant styles from the current run.
   if (!start_node->IsElementNode()) {
@@ -1845,7 +1852,7 @@ Position ApplyStyleCommand::PositionToComputeInlineStyleChange(
     return Position::BeforeNode(*dummy_element);
   }
 
-  return FirstPositionInOrBeforeNode(start_node);
+  return FirstPositionInOrBeforeNode(*start_node);
 }
 
 void ApplyStyleCommand::ApplyInlineStyleChange(
@@ -1864,12 +1871,12 @@ void ApplyStyleCommand::ApplyInlineStyleChange(
   HTMLElement* style_container = nullptr;
   for (Node* container = start_node; container && start_node == end_node;
        container = container->firstChild()) {
-    if (isHTMLFontElement(*container))
-      font_container = toHTMLFontElement(container);
-    bool style_container_is_not_span = !isHTMLSpanElement(style_container);
+    if (auto* font = ToHTMLFontElementOrNull(container))
+      font_container = font;
+    bool style_container_is_not_span = !IsHTMLSpanElement(style_container);
     if (container->IsHTMLElement()) {
       HTMLElement* container_element = ToHTMLElement(container);
-      if (isHTMLSpanElement(*container_element) ||
+      if (IsHTMLSpanElement(*container_element) ||
           (style_container_is_not_span && container_element->HasChildren()))
         style_container = ToHTMLElement(container);
     }

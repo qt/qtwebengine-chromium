@@ -26,8 +26,15 @@ static const Type& index_type(const Context& context, const Type& type) {
                 case 4: return *context.fFloat4_Type;
                 default: ASSERT(false);
             }
+        } else if (type.componentType() == *context.fHalf_Type) {
+            switch (type.rows()) {
+                case 2: return *context.fHalf2_Type;
+                case 3: return *context.fHalf3_Type;
+                case 4: return *context.fHalf4_Type;
+                default: ASSERT(false);
+            }
         } else {
-            ASSERT(type.componentType() == *context.fDouble_Type);
+           ASSERT(type.componentType() == *context.fDouble_Type);
             switch (type.rows()) {
                 case 2: return *context.fDouble2_Type;
                 case 3: return *context.fDouble3_Type;
@@ -45,7 +52,7 @@ static const Type& index_type(const Context& context, const Type& type) {
 struct IndexExpression : public Expression {
     IndexExpression(const Context& context, std::unique_ptr<Expression> base,
                     std::unique_ptr<Expression> index)
-    : INHERITED(base->fPosition, kIndex_Kind, index_type(context, base->fType))
+    : INHERITED(base->fOffset, kIndex_Kind, index_type(context, base->fType))
     , fBase(std::move(base))
     , fIndex(std::move(index)) {
         ASSERT(fIndex->fType == *context.fInt_Type || fIndex->fType == *context.fUInt_Type);

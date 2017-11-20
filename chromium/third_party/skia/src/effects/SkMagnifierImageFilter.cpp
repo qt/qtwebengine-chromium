@@ -8,7 +8,7 @@
 #include "SkMagnifierImageFilter.h"
 
 #include "SkBitmap.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkColorSpaceXformer.h"
 #include "SkReadBuffer.h"
 #include "SkSpecialImage.h"
@@ -98,8 +98,9 @@ private:
                       float yInvZoom,
                       float xInvInset,
                       float yInvInset)
-            : INHERITED{ModulateByConfigOptimizationFlags(proxy->config())}
-            // TODO: no GrSamplerParams::kBilerp_FilterMode?
+            : INHERITED{kGrMagnifierEffect_ClassID,
+                        ModulateByConfigOptimizationFlags(proxy->config())}
+            // TODO: no GrSamplerState::Filter::kBilerp?
             , fCoordTransform(proxy.get())
             , fTextureSampler(std::move(proxy))
             , fColorSpaceXform(std::move(colorSpaceXform))
@@ -109,13 +110,12 @@ private:
             , fYInvZoom(yInvZoom)
             , fXInvInset(xInvInset)
             , fYInvInset(yInvInset) {
-        this->initClassID<GrMagnifierEffect>();
         this->addCoordTransform(&fCoordTransform);
         this->addTextureSampler(&fTextureSampler);
     }
 
     explicit GrMagnifierEffect(const GrMagnifierEffect& that)
-            : INHERITED(that.optimizationFlags())
+            : INHERITED(kGrMagnifierEffect_ClassID, that.optimizationFlags())
             , fCoordTransform(that.fCoordTransform)
             , fTextureSampler(that.fTextureSampler)
             , fColorSpaceXform(that.fColorSpaceXform)
@@ -125,7 +125,6 @@ private:
             , fYInvZoom(that.fYInvZoom)
             , fXInvInset(that.fXInvInset)
             , fYInvInset(that.fYInvInset) {
-        this->initClassID<GrMagnifierEffect>();
         this->addCoordTransform(&fCoordTransform);
         this->addTextureSampler(&fTextureSampler);
     }
@@ -180,17 +179,13 @@ private:
 void GrGLMagnifierEffect::emitCode(EmitArgs& args) {
     GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
     fOffsetVar = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                            kVec2f_GrSLType, kDefault_GrSLPrecision,
-                                            "Offset");
+                                            kHalf2_GrSLType, "Offset");
     fInvZoomVar = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                             kVec2f_GrSLType, kDefault_GrSLPrecision,
-                                             "InvZoom");
+                                             kHalf2_GrSLType, "InvZoom");
     fInvInsetVar = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                              kVec2f_GrSLType, kDefault_GrSLPrecision,
-                                              "InvInset");
+                                              kHalf2_GrSLType, "InvInset");
     fBoundsVar = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                            kVec4f_GrSLType, kDefault_GrSLPrecision,
-                                            "Bounds");
+                                            kHalf4_GrSLType, "Bounds");
 
     const GrMagnifierEffect& zoom = args.fFp.cast<GrMagnifierEffect>();
     fColorSpaceHelper.emitCode(uniformHandler, zoom.colorSpaceXform());
@@ -204,14 +199,14 @@ void GrGLMagnifierEffect::emitCode(EmitArgs& args) {
                              uniformHandler->getUniformCStr(fInvZoomVar));
     const char* bounds = uniformHandler->getUniformCStr(fBoundsVar);
     fragBuilder->codeAppendf("\t\tfloat2 delta = (coord - %s.xy) * %s.zw;\n", bounds, bounds);
-    fragBuilder->codeAppendf("\t\tdelta = min(delta, float2(1.0, 1.0) - delta);\n");
+    fragBuilder->codeAppendf("\t\tdelta = min(delta, half2(1.0, 1.0) - delta);\n");
     fragBuilder->codeAppendf("\t\tdelta = delta * %s;\n",
                              uniformHandler->getUniformCStr(fInvInsetVar));
 
-    fragBuilder->codeAppend("\t\tfloat weight = 0.0;\n");
+    fragBuilder->codeAppend("\t\thalf weight = 0.0;\n");
     fragBuilder->codeAppend("\t\tif (delta.s < 2.0 && delta.t < 2.0) {\n");
-    fragBuilder->codeAppend("\t\t\tdelta = float2(2.0, 2.0) - delta;\n");
-    fragBuilder->codeAppend("\t\t\tfloat dist = length(delta);\n");
+    fragBuilder->codeAppend("\t\t\tdelta = half2(2.0, 2.0) - delta;\n");
+    fragBuilder->codeAppend("\t\t\thalf dist = length(delta);\n");
     fragBuilder->codeAppend("\t\t\tdist = max(2.0 - dist, 0.0);\n");
     fragBuilder->codeAppend("\t\t\tweight = min(dist * dist, 1.0);\n");
     fragBuilder->codeAppend("\t\t} else {\n");
@@ -220,8 +215,8 @@ void GrGLMagnifierEffect::emitCode(EmitArgs& args) {
     fragBuilder->codeAppend("\t\t}\n");
 
     fragBuilder->codeAppend("\t\tfloat2 mix_coord = mix(coord, zoom_coord, weight);\n");
-    fragBuilder->codeAppend("\t\tfloat4 output_color = ");
-    fragBuilder->appendTextureLookup(args.fTexSamplers[0], "mix_coord", kVec2f_GrSLType,
+    fragBuilder->codeAppend("\t\thalf4 output_color = ");
+    fragBuilder->appendTextureLookup(args.fTexSamplers[0], "mix_coord", kHalf2_GrSLType,
                                      &fColorSpaceHelper);
     fragBuilder->codeAppend(";\n");
 

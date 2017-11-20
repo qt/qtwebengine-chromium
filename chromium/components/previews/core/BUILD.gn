@@ -4,6 +4,8 @@
 
 static_library("core") {
   sources = [
+    "previews_amp_converter.cc",
+    "previews_amp_converter.h",
     "previews_black_list.cc",
     "previews_black_list.h",
     "previews_black_list_item.cc",
@@ -15,6 +17,9 @@ static_library("core") {
     "previews_features.h",
     "previews_io_data.cc",
     "previews_io_data.h",
+    "previews_logger.cc",
+    "previews_logger.h",
+    "previews_logger_observer.h",
     "previews_opt_out_store.h",
     "previews_opt_out_store_sql.cc",
     "previews_opt_out_store_sql.h",
@@ -27,6 +32,7 @@ static_library("core") {
     "//components/variations",
     "//net:net",
     "//sql",
+    "//third_party/re2",
     "//url:url",
   ]
 }
@@ -34,10 +40,12 @@ static_library("core") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "previews_amp_converter_unittest.cc",
     "previews_black_list_item_unittest.cc",
     "previews_black_list_unittest.cc",
     "previews_experiments_unittest.cc",
     "previews_io_data_unittest.cc",
+    "previews_logger_unittest.cc",
     "previews_opt_out_store_sql_unittest.cc",
     "previews_ui_service_unittest.cc",
   ]

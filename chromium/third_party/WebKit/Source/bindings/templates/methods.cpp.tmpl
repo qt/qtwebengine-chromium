@@ -41,9 +41,9 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
   // Same-origin methods are never exposed via the cross-origin interceptors.
   // Since same-origin access requires a LocalDOMWindow, it is safe to downcast
   // here.
-  LocalDOMWindow* impl = ToLocalDOMWindow({{v8_class}}::toImpl(info.Holder()));
+  LocalDOMWindow* impl = ToLocalDOMWindow({{v8_class}}::ToImpl(info.Holder()));
   {% else %}
-  {{cpp_class}}* impl = {{v8_class}}::toImpl(info.Holder());
+  {{cpp_class}}* impl = {{v8_class}}::ToImpl(info.Holder());
   {% endif %}{# interface_name == 'Window' and not method.is_cross_origin #}
   {% endif %}{# not method.is_static #}
 
@@ -148,8 +148,16 @@ if (UNLIKELY(numArgsPassed <= {{argument.index}})) {
 {# FIXME: remove EventListener/NodeFilter special case. crbug.com/630986 #}
 {% if argument.idl_type == 'EventListener' %}
 {% if method.name == 'removeEventListener' or method.name == 'removeListener' %}
+if (!IsUndefinedOrNull(info[{{argument.index}}]) && !info[{{argument.index}}]->IsObject()) {
+  {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not a function.")}}
+  return;
+}
 {{argument.name}} = V8EventListenerHelper::GetEventListener(ScriptState::Current(info.GetIsolate()), info[{{argument.index}}], false, kListenerFindOnly);
 {% else %}{# method.name == 'AddEventListener' #}
+if (!IsUndefinedOrNull(info[{{argument.index}}]) && !info[{{argument.index}}]->IsObject()) {
+  {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not a function.")}}
+  return;
+}
 {{argument.name}} = V8EventListenerHelper::GetEventListener(ScriptState::Current(info.GetIsolate()), info[{{argument.index}}], false, kListenerFindOrCreate);
 {% endif %}{# method.name #}
 {% elif argument.idl_type == 'NodeFilter' %}
@@ -187,7 +195,7 @@ for (int i = {{argument.index}}; i < info.Length(); ++i) {
     {{throw_argument_error(method, argument, "parameter %(index)d is not of type '%(type)s'.")}}
     return;
   }
-  {{argument.name}}.push_back(V8{{argument.idl_type}}::toImpl(v8::Local<v8::Object>::Cast(info[i])));
+  {{argument.name}}.push_back(V8{{argument.idl_type}}::ToImpl(v8::Local<v8::Object>::Cast(info[i])));
 }
 {% elif argument.is_dictionary %}
 {% if not argument.use_permissive_dictionary_conversion %}
@@ -280,9 +288,14 @@ if (exceptionState.HadException()) {
 {% endif %}
 {# Set return value #}
 {% if method.is_new_object and not method.do_not_test_new_object %}
+{% if not method.returns_promise %}
+{# We currently only add the DCHECK for IDL interfaces. Even though #}
+{# [NewObject] also applies to promises, there is nothing for us to check at #}
+{# the moment. #}
 // [NewObject] must always create a new wrapper.  Check that a wrapper
 // does not exist yet.
 DCHECK(!result || DOMDataStore::GetWrapper(result, info.GetIsolate()).IsEmpty());
+{% endif %}{# not method.returns_promise #}
 {% endif %}
 {% if method.is_constructor %}
 {{generate_constructor_wrapper(method)}}
@@ -311,14 +324,14 @@ V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToC
 {%- else %}
 V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("{{method.name}}", "{{interface_name}}", {{error_message}}));
 {%- endif %}
-{% endmacro %}
+{%- endmacro %}
 
 
 {##############################################################################}
 {% macro throw_argument_error(method, argument, error_message) %}
 {% set quoted_message = '"%s"' % (error_message | replace('\"', '\\\"')) %}
 {{throw_type_error(method, quoted_message | format(index=(argument.index + 1), name=argument.name, type=argument.idl_type))}}
-{% endmacro %}
+{%- endmacro %}
 
 
 {##############################################################################}
@@ -486,7 +499,7 @@ static void postMessageImpl(const char* interfaceName, {{cpp_class}}* instance, 
   // FIXME: Only pass scriptState/exceptionState if instance really requires it.
   ScriptState* scriptState = ScriptState::Current(info.GetIsolate());
   message->UnregisterMemoryAllocatedWithCurrentScriptContext();
-  instance->postMessage(scriptState, message.Get(), transferables.message_ports, exceptionState);
+  instance->postMessage(scriptState, message.get(), transferables.message_ports, exceptionState);
 }
 {% endmacro %}
 
@@ -526,7 +539,7 @@ void {{v8_class_or_partial}}::{{method.name}}MethodCallback{{world_suffix}}(cons
   {% if method.is_custom %}
   {{v8_class}}::{{method.name}}MethodCustom(info);
   {% elif method.is_post_message %}
-  {{cpp_class_or_partial}}V8Internal::postMessageImpl("{{interface_name}}", {{v8_class}}::toImpl(info.Holder()), info);
+  {{cpp_class_or_partial}}V8Internal::postMessageImpl("{{interface_name}}", {{v8_class}}::ToImpl(info.Holder()), info);
   {% else %}
   {{cpp_class_or_partial}}V8Internal::{{method.name}}Method{{world_suffix}}(info);
   {% endif %}
@@ -550,7 +563,7 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
   // Return the function by default, unless the user script has overwritten it.
   V8SetReturnValue(info, methodTemplate->GetFunction(info.GetIsolate()->GetCurrentContext()).ToLocalChecked());
 
-  {{cpp_class}}* impl = {{v8_class}}::toImpl(info.Holder());
+  {{cpp_class}}* impl = {{v8_class}}::ToImpl(info.Holder());
   if (!BindingSecurity::ShouldAllowAccessTo(CurrentDOMWindow(info.GetIsolate()), impl, BindingSecurity::ErrorReportOption::kDoNotReport)) {
     return;
   }

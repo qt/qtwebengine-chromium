@@ -29,8 +29,8 @@
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "bindings/modules/v8/DecodeErrorCallback.h"
-#include "bindings/modules/v8/DecodeSuccessCallback.h"
+#include "bindings/modules/v8/v8_decode_error_callback.h"
+#include "bindings/modules/v8/v8_decode_success_callback.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
@@ -50,6 +50,7 @@
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "modules/webaudio/AudioWorklet.h"
+#include "modules/webaudio/AudioWorkletMessagingProxy.h"
 #include "modules/webaudio/BiquadFilterNode.h"
 #include "modules/webaudio/ChannelMergerNode.h"
 #include "modules/webaudio/ChannelSplitterNode.h"
@@ -160,10 +161,11 @@ void BaseAudioContext::Initialize() {
   }
 
   // Check if a document or a frame supports AudioWorklet. If not, AudioWorklet
-  // cannot be accssed.
-  if (RuntimeEnabledFeatures::AudioWorkletEnabled() &&
-      WindowAudioWorklet::audioWorklet(this)) {
-    WindowAudioWorklet::audioWorklet(this)->RegisterContext(this);
+  // cannot be accessed.
+  if (RuntimeEnabledFeatures::AudioWorkletEnabled()) {
+    AudioWorklet* audioWorklet = WindowAudioWorklet::audioWorklet(this);
+    if (audioWorklet)
+      audioWorklet->RegisterContext(this);
   }
 }
 
@@ -180,9 +182,12 @@ void BaseAudioContext::Uninitialize() {
 
   // AudioWorklet may be destroyed before the context goes away. So we have to
   // check the pointer. See: crbug.com/503845
-  if (RuntimeEnabledFeatures::AudioWorkletEnabled() &&
-      WindowAudioWorklet::audioWorklet(this)) {
-    WindowAudioWorklet::audioWorklet(this)->UnregisterContext(this);
+  if (RuntimeEnabledFeatures::AudioWorkletEnabled()) {
+    AudioWorklet* audioWorklet = WindowAudioWorklet::audioWorklet(this);
+    if (audioWorklet) {
+      audioWorklet->UnregisterContext(this);
+      worklet_messaging_proxy_.Clear();
+    }
   }
 
   if (!IsDestinationInitialized())
@@ -294,7 +299,7 @@ ScriptPromise BaseAudioContext::decodeAudioData(
 ScriptPromise BaseAudioContext::decodeAudioData(
     ScriptState* script_state,
     DOMArrayBuffer* audio_data,
-    DecodeSuccessCallback* success_callback,
+    V8DecodeSuccessCallback* success_callback,
     ExceptionState& exception_state) {
   return decodeAudioData(script_state, audio_data, success_callback, nullptr,
                          exception_state);
@@ -303,8 +308,8 @@ ScriptPromise BaseAudioContext::decodeAudioData(
 ScriptPromise BaseAudioContext::decodeAudioData(
     ScriptState* script_state,
     DOMArrayBuffer* audio_data,
-    DecodeSuccessCallback* success_callback,
-    DecodeErrorCallback* error_callback,
+    V8DecodeSuccessCallback* success_callback,
+    V8DecodeErrorCallback* error_callback,
     ExceptionState& exception_state) {
   DCHECK(IsMainThread());
   DCHECK(audio_data);
@@ -355,8 +360,8 @@ ScriptPromise BaseAudioContext::decodeAudioData(
 void BaseAudioContext::HandleDecodeAudioData(
     AudioBuffer* audio_buffer,
     ScriptPromiseResolver* resolver,
-    DecodeSuccessCallback* success_callback,
-    DecodeErrorCallback* error_callback) {
+    V8DecodeSuccessCallback* success_callback,
+    V8DecodeErrorCallback* error_callback) {
   DCHECK(IsMainThread());
 
   if (audio_buffer) {
@@ -386,13 +391,13 @@ void BaseAudioContext::HandleDecodeAudioData(
   if (success_callback) {
     size_t index = success_callbacks_.Find(success_callback);
     DCHECK_NE(index, kNotFound);
-    success_callbacks_.erase(index);
+    success_callbacks_.EraseAt(index);
   }
 
   if (error_callback) {
     size_t index = error_callbacks_.Find(error_callback);
     DCHECK_NE(index, kNotFound);
-    error_callbacks_.erase(index);
+    error_callbacks_.EraseAt(index);
   }
 }
 
@@ -738,7 +743,7 @@ bool BaseAudioContext::AreAutoplayRequirementsFulfilled() const {
 
 void BaseAudioContext::NotifySourceNodeStartedProcessing(AudioNode* node) {
   DCHECK(IsMainThread());
-  AutoLocker locker(this);
+  GraphAutoLocker locker(this);
 
   active_source_nodes_.push_back(node);
   node->Handler().MakeConnection();
@@ -807,7 +812,7 @@ void BaseAudioContext::HandlePostRenderTasks() {
 
 void BaseAudioContext::PerformCleanupOnMainThread() {
   DCHECK(IsMainThread());
-  AutoLocker locker(this);
+  GraphAutoLocker locker(this);
 
   if (is_resolving_resume_promises_) {
     for (auto& resolver : resume_resolvers_) {
@@ -926,7 +931,7 @@ bool BaseAudioContext::IsAllowedToStart() const {
 
 AudioIOPosition BaseAudioContext::OutputPosition() {
   DCHECK(IsMainThread());
-  AutoLocker locker(this);
+  GraphAutoLocker locker(this);
   return output_position_;
 }
 
@@ -997,11 +1002,11 @@ DEFINE_TRACE(BaseAudioContext) {
   visitor->Trace(success_callbacks_);
   visitor->Trace(error_callbacks_);
   visitor->Trace(decode_audio_resolvers_);
-
   visitor->Trace(periodic_wave_sine_);
   visitor->Trace(periodic_wave_square_);
   visitor->Trace(periodic_wave_sawtooth_);
   visitor->Trace(periodic_wave_triangle_);
+  visitor->Trace(worklet_messaging_proxy_);
   EventTargetWithInlineData::Trace(visitor);
   SuspendableObject::Trace(visitor);
 }
@@ -1024,6 +1029,24 @@ SecurityOrigin* BaseAudioContext::GetSecurityOrigin() const {
     return GetExecutionContext()->GetSecurityOrigin();
 
   return nullptr;
+}
+
+bool BaseAudioContext::HasWorkletMessagingProxy() const {
+  return has_worklet_messaging_proxy_;
+}
+
+void BaseAudioContext::SetWorkletMessagingProxy(
+    AudioWorkletMessagingProxy* proxy) {
+  DCHECK(!worklet_messaging_proxy_);
+  worklet_messaging_proxy_ = proxy;
+  has_worklet_messaging_proxy_ = true;
+  // TODO(hongchan): If the context was already running, stop the destination
+  // and restart the context with the worklet thread.
+}
+
+AudioWorkletMessagingProxy* BaseAudioContext::WorkletMessagingProxy() {
+  DCHECK(worklet_messaging_proxy_);
+  return worklet_messaging_proxy_;
 }
 
 }  // namespace blink

@@ -18,10 +18,14 @@
 namespace content {
 
 GpuServiceFactory::GpuServiceFactory(
-    base::WeakPtr<media::MediaGpuChannelManager> media_gpu_channel_manager) {
+    const gpu::GpuPreferences& gpu_preferences,
+    base::WeakPtr<media::MediaGpuChannelManager> media_gpu_channel_manager,
+    media::AndroidOverlayMojoFactoryCB android_overlay_factory_cb) {
 #if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_GPU_PROCESS)
+  gpu_preferences_ = gpu_preferences;
   task_runner_ = base::ThreadTaskRunnerHandle::Get();
   media_gpu_channel_manager_ = std::move(media_gpu_channel_manager);
+  android_overlay_factory_cb_ = std::move(android_overlay_factory_cb);
 #endif
 }
 
@@ -30,8 +34,9 @@ GpuServiceFactory::~GpuServiceFactory() {}
 void GpuServiceFactory::RegisterServices(ServiceMap* services) {
 #if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_GPU_PROCESS)
   service_manager::EmbeddedServiceInfo info;
-  info.factory = base::Bind(&media::CreateGpuMediaService, task_runner_,
-                            media_gpu_channel_manager_);
+  info.factory =
+      base::Bind(&media::CreateGpuMediaService, gpu_preferences_, task_runner_,
+                 media_gpu_channel_manager_, android_overlay_factory_cb_);
   info.use_own_thread = true;
   services->insert(std::make_pair("media", info));
 #endif

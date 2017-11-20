@@ -30,7 +30,11 @@
 #ifndef AXObject_h
 #define AXObject_h
 
-#include "core/editing/VisiblePosition.h"
+#include <ostream>
+
+#include "core/dom/Element.h"
+#include "core/editing/Forward.h"
+#include "core/editing/TextAffinity.h"
 #include "core/editing/markers/DocumentMarker.h"
 #include "core/inspector/protocol/Accessibility.h"
 #include "modules/ModulesExport.h"
@@ -38,6 +42,7 @@
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/Color.h"
+#include "platform/weborigin/KURL.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/Vector.h"
 
@@ -48,7 +53,6 @@ namespace blink {
 class AccessibleNodeList;
 class AXObject;
 class AXObjectCacheImpl;
-class Element;
 class IntPoint;
 class LayoutObject;
 class LocalFrameView;
@@ -329,7 +333,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   // unique ID, then added to AXObjectCacheImpl, and finally init() must
   // be called last.
   void SetAXObjectID(AXID ax_object_id) { id_ = ax_object_id; }
-  virtual void Init() {}
+  virtual void Init();
 
   // When the corresponding WebCore object that this AXObject
   // wraps is deleted, it must be detached.
@@ -351,13 +355,15 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
 
   // Wrappers that retrieve either an Accessibility Object Model property,
   // or the equivalent ARIA attribute, in that order.
-  const AtomicString& GetAOMPropertyOrARIAAttribute(AOMStringProperty) const;
+  virtual const AtomicString& GetAOMPropertyOrARIAAttribute(
+      AOMStringProperty) const;
   Element* GetAOMPropertyOrARIAAttribute(AOMRelationProperty) const;
   bool HasAOMProperty(AOMRelationListProperty,
                       HeapVector<Member<Element>>& result) const;
   bool HasAOMPropertyOrARIAAttribute(AOMRelationListProperty,
                                      HeapVector<Member<Element>>& result) const;
-  bool HasAOMPropertyOrARIAAttribute(AOMBooleanProperty, bool& result) const;
+  virtual bool HasAOMPropertyOrARIAAttribute(AOMBooleanProperty,
+                                             bool& result) const;
   bool AOMPropertyOrARIAAttributeIsTrue(AOMBooleanProperty) const;
   bool AOMPropertyOrARIAAttributeIsFalse(AOMBooleanProperty) const;
   bool HasAOMPropertyOrARIAAttribute(AOMUIntProperty, uint32_t& result) const;
@@ -365,8 +371,11 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   bool HasAOMPropertyOrARIAAttribute(AOMFloatProperty, float& result) const;
   bool HasAOMPropertyOrARIAAttribute(AOMStringProperty,
                                      AtomicString& result) const;
+  virtual AccessibleNode* GetAccessibleNode() const;
 
-  virtual void GetSparseAXAttributes(AXSparseAttributeClient&) const {}
+  void TokenVectorFromAttribute(Vector<String>&, const QualifiedName&) const;
+
+  virtual void GetSparseAXAttributes(AXSparseAttributeClient&) const;
 
   // Determine subclass type.
   virtual bool IsAXNodeObject() const { return false; }
@@ -440,6 +449,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual bool IsTextControl() const { return false; }
   virtual bool IsTableCol() const { return false; }
   bool IsTree() const { return RoleValue() == kTreeRole; }
+  virtual bool IsVirtualObject() const { return false; }
   bool IsWebArea() const { return RoleValue() == kWebAreaRole; }
 
   // Check object state.
@@ -624,18 +634,20 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   // Only used when invalidState() returns InvalidStateOther.
   virtual String AriaInvalidValue() const { return String(); }
   virtual String ValueDescription() const { return String(); }
-  virtual float ValueForRange() const { return 0.0f; }
-  virtual float MaxValueForRange() const { return 0.0f; }
-  virtual float MinValueForRange() const { return 0.0f; }
+  virtual bool ValueForRange(float* out_value) const { return false; }
+  virtual bool MaxValueForRange(float* out_value) const { return false; }
+  virtual bool MinValueForRange(float* out_value) const { return false; }
   virtual String StringValue() const { return String(); }
-  virtual AXRestriction Restriction() const { return kNone; }
+  virtual AXRestriction Restriction() const;
 
   // ARIA attributes.
+  virtual AccessibilityRole DetermineAccessibilityRole();
+  AccessibilityRole DetermineAriaRoleAttribute() const;
+  virtual AccessibilityRole AriaRoleAttribute() const;
   virtual AXObject* ActiveDescendant() { return nullptr; }
   virtual String AriaAutoComplete() const { return String(); }
   virtual void AriaOwnsElements(AXObjectVector& owns) const {}
   virtual void AriaDescribedbyElements(AXObjectVector&) const {}
-  virtual void AriaLabelledbyElements(AXObjectVector&) const {}
   virtual bool AriaHasPopup() const { return false; }
   virtual bool IsEditable() const { return false; }
   bool IsEditableRoot() const;
@@ -643,7 +655,6 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual bool IsRichlyEditable() const { return false; }
   bool AriaCheckedIsPresent() const;
   bool AriaPressedIsPresent() const;
-  virtual AccessibilityRole AriaRoleAttribute() const { return kUnknownRole; }
   bool SupportsActiveDescendant() const;
   bool SupportsARIAAttributes() const;
   virtual bool SupportsARIADragging() const { return false; }
@@ -668,7 +679,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   AXObject* LiveRegionRoot() const;
   virtual const AtomicString& LiveRegionStatus() const { return g_null_atom; }
   virtual const AtomicString& LiveRegionRelevant() const { return g_null_atom; }
-  virtual bool LiveRegionAtomic() const { return false; }
+  bool LiveRegionAtomic() const;
 
   const AtomicString& ContainerLiveRegionStatus() const;
   const AtomicString& ContainerLiveRegionRelevant() const;
@@ -728,6 +739,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual void ClearChildren();
   virtual void DetachFromParent() { parent_ = 0; }
   virtual AXObject* ScrollBar(AccessibilityOrientation) { return 0; }
+  virtual void AddAccessibleNodeChildren();
 
   // Properties of the object's owning document or page.
   virtual double EstimatedLoadingProgress() const { return 0; }
@@ -813,9 +825,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual void UpdateAccessibilityRole() {}
 
   // Text metrics. Most of these should be deprecated, needs major cleanup.
-  virtual VisiblePosition VisiblePositionForIndex(int) const {
-    return VisiblePosition();
-  }
+  virtual VisiblePosition VisiblePositionForIndex(int) const;
   int LineForPosition(const VisiblePosition&) const;
   virtual int Index(const VisiblePosition&) const { return -1; }
   virtual void LineBreaks(Vector<int>&) const {}
@@ -836,6 +846,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   AXObjectVector children_;
   mutable bool have_children_;
   AccessibilityRole role_;
+  AccessibilityRole aria_role_;
   AXObjectInclusion last_known_is_ignored_value_;
   LayoutRect explicit_element_rect_;
   AXID explicit_container_id_;
@@ -857,17 +868,21 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
                           AXObjectSet& visited,
                           HeapVector<Member<Element>>& elements,
                           AXRelatedObjectVector* related_objects) const;
-  void TokenVectorFromAttribute(Vector<String>&, const QualifiedName&) const;
   void ElementsFromAttribute(HeapVector<Member<Element>>& elements,
-                             const QualifiedName&) const;
-  void AriaLabelledbyElementVector(HeapVector<Member<Element>>& elements) const;
+                             const QualifiedName&,
+                             Vector<String>& ids) const;
+  void AriaLabelledbyElementVector(HeapVector<Member<Element>>& elements,
+                                   Vector<String>& ids) const;
   String TextFromAriaLabelledby(AXObjectSet& visited,
-                                AXRelatedObjectVector* related_objects) const;
-  String TextFromAriaDescribedby(AXRelatedObjectVector* related_objects) const;
+                                AXRelatedObjectVector* related_objects,
+                                Vector<String>& ids) const;
+  String TextFromAriaDescribedby(AXRelatedObjectVector* related_objects,
+                                 Vector<String>& ids) const;
   virtual const AXObject* InheritsPresentationalRoleFrom() const { return 0; }
 
   bool CanReceiveAccessibilityFocus() const;
   bool NameFromContents(bool recursive) const;
+  bool CanSupportAriaReadOnly() const;
 
   AccessibilityRole ButtonRoleType() const;
 
@@ -908,9 +923,12 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   static bool IsNativeCheckboxInMixedState(const Node*);
   static bool IncludesARIAWidgetRole(const String&);
   static bool HasInteractiveARIAAttribute(const Element&);
+  AccessibilityRole RemapAriaRoleDueToParent(AccessibilityRole) const;
 
   static unsigned number_of_live_ax_objects_;
 };
+
+MODULES_EXPORT std::ostream& operator<<(std::ostream&, const AXObject&);
 
 #define DEFINE_AX_OBJECT_TYPE_CASTS(thisType, predicate)           \
   DEFINE_TYPE_CASTS(thisType, AXObject, object, object->predicate, \

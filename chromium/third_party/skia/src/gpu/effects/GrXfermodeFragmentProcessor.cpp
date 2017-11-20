@@ -58,8 +58,8 @@ private:
     ComposeTwoFragmentProcessor(std::unique_ptr<GrFragmentProcessor> src,
                                 std::unique_ptr<GrFragmentProcessor> dst,
                                 SkBlendMode mode)
-            : INHERITED(OptFlags(src.get(), dst.get(), mode)), fMode(mode) {
-        this->initClassID<ComposeTwoFragmentProcessor>();
+            : INHERITED(kComposeTwoFragmentProcessor_ClassID, OptFlags(src.get(), dst.get(), mode))
+            , fMode(mode) {
         SkDEBUGCODE(int shaderAChildIndex = )this->registerChildProcessor(std::move(src));
         SkDEBUGCODE(int shaderBChildIndex = )this->registerChildProcessor(std::move(dst));
         SkASSERT(0 == shaderAChildIndex);
@@ -217,7 +217,7 @@ void GLComposeTwoFragmentProcessor::emitCode(EmitArgs& args) {
     const char* inputColor = nullptr;
     if (args.fInputColor) {
         inputColor = "inputColor";
-        fragBuilder->codeAppendf("float4 inputColor = float4(%s.rgb, 1.0);", args.fInputColor);
+        fragBuilder->codeAppendf("half4 inputColor = half4(%s.rgb, 1.0);", args.fInputColor);
     }
 
     // declare outputColor and emit the code for each of the two children
@@ -421,8 +421,9 @@ private:
 private:
     ComposeOneFragmentProcessor(std::unique_ptr<GrFragmentProcessor> fp, SkBlendMode mode,
                                 Child child)
-            : INHERITED(OptFlags(fp.get(), mode, child)), fMode(mode), fChild(child) {
-        this->initClassID<ComposeOneFragmentProcessor>();
+            : INHERITED(kComposeOneFragmentProcessor_ClassID, OptFlags(fp.get(), mode, child))
+            , fMode(mode)
+            , fChild(child) {
         SkDEBUGCODE(int dstIndex =) this->registerChildProcessor(std::move(fp));
         SkASSERT(0 == dstIndex);
     }
@@ -452,7 +453,7 @@ public:
         const char* inputColor = args.fInputColor;
         // We don't try to optimize for this case at all
         if (!inputColor) {
-            fragBuilder->codeAppendf("const float4 ones = float4(1);");
+            fragBuilder->codeAppendf("const half4 ones = half4(1);");
             inputColor = "ones";
         }
 

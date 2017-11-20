@@ -40,7 +40,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectedFrames.h"
 #include "core/inspector/V8InspectorString.h"
-#include "modules/IndexedDBNames.h"
+#include "modules/indexed_db_names.h"
 #include "modules/indexeddb/GlobalIndexedDB.h"
 #include "modules/indexeddb/IDBCursor.h"
 #include "modules/indexeddb/IDBCursorWithValue.h"
@@ -219,9 +219,9 @@ class ExecutableWithDatabase
   virtual void Execute(IDBDatabase*) = 0;
   virtual RequestCallback* GetRequestCallback() = 0;
   ExecutionContext* Context() const {
-    return ExecutionContext::From(script_state_.Get());
+    return ExecutionContext::From(script_state_.get());
   }
-  ScriptState* GetScriptState() const { return script_state_.Get(); }
+  ScriptState* GetScriptState() const { return script_state_.get(); }
 
  private:
   RefPtr<ScriptState> script_state_;
@@ -320,7 +320,7 @@ static IDBTransaction* TransactionForDatabase(
     const String& mode = IndexedDBNames::readonly) {
   DummyExceptionStateForTesting exception_state;
   StringOrStringSequence scope;
-  scope.setString(object_store_name);
+  scope.SetString(object_store_name);
   IDBTransaction* idb_transaction =
       idb_database->transaction(script_state, scope, mode, exception_state);
   if (exception_state.HadException())
@@ -381,10 +381,10 @@ static std::unique_ptr<KeyPath> KeyPathFromIDBKeyPath(
 class DatabaseLoader final
     : public ExecutableWithDatabase<RequestDatabaseCallback> {
  public:
-  static PassRefPtr<DatabaseLoader> Create(
+  static RefPtr<DatabaseLoader> Create(
       ScriptState* script_state,
       std::unique_ptr<RequestDatabaseCallback> request_callback) {
-    return AdoptRef(
+    return WTF::AdoptRef(
         new DatabaseLoader(script_state, std::move(request_callback)));
   }
 
@@ -575,10 +575,10 @@ class OpenCursorCallback final : public EventListener {
     }
 
     Document* document =
-        ToDocument(ExecutionContext::From(script_state_.Get()));
+        ToDocument(ExecutionContext::From(script_state_.get()));
     if (!document)
       return;
-    ScriptState* script_state = script_state_.Get();
+    ScriptState* script_state = script_state_.get();
     ScriptState::Scope scope(script_state);
     v8::Local<v8::Context> context = script_state->GetContext();
     v8_inspector::StringView object_group =
@@ -628,7 +628,7 @@ class OpenCursorCallback final : public EventListener {
 
 class DataLoader final : public ExecutableWithDatabase<RequestDataCallback> {
  public:
-  static PassRefPtr<DataLoader> Create(
+  static RefPtr<DataLoader> Create(
       v8_inspector::V8InspectorSession* v8_session,
       ScriptState* script_state,
       std::unique_ptr<RequestDataCallback> request_callback,
@@ -637,7 +637,7 @@ class DataLoader final : public ExecutableWithDatabase<RequestDataCallback> {
       IDBKeyRange* idb_key_range,
       int skip_count,
       unsigned page_size) {
-    return AdoptRef(new DataLoader(
+    return WTF::AdoptRef(new DataLoader(
         v8_session, script_state, std::move(request_callback),
         object_store_name, index_name, idb_key_range, skip_count, page_size));
   }
@@ -910,12 +910,12 @@ class ClearObjectStoreListener final : public EventListener {
 class ClearObjectStore final
     : public ExecutableWithDatabase<ClearObjectStoreCallback> {
  public:
-  static PassRefPtr<ClearObjectStore> Create(
+  static RefPtr<ClearObjectStore> Create(
       ScriptState* script_state,
       const String& object_store_name,
       std::unique_ptr<ClearObjectStoreCallback> request_callback) {
-    return AdoptRef(new ClearObjectStore(script_state, object_store_name,
-                                         std::move(request_callback)));
+    return WTF::AdoptRef(new ClearObjectStore(script_state, object_store_name,
+                                              std::move(request_callback)));
   }
 
   ClearObjectStore(ScriptState* script_state,

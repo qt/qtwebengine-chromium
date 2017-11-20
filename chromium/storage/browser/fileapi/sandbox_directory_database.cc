@@ -11,8 +11,8 @@
 #include <algorithm>
 #include <memory>
 #include <set>
-#include <stack>
 
+#include "base/containers/stack.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
@@ -29,7 +29,7 @@
 
 namespace {
 
-bool PickleFromFileInfo(const storage::SandboxDirectoryDatabase::FileInfo& info,
+void PickleFromFileInfo(const storage::SandboxDirectoryDatabase::FileInfo& info,
                         base::Pickle* pickle) {
   DCHECK(pickle);
   std::string data_path;
@@ -41,14 +41,10 @@ bool PickleFromFileInfo(const storage::SandboxDirectoryDatabase::FileInfo& info,
   data_path = storage::FilePathToString(info.data_path);
   name = storage::FilePathToString(base::FilePath(info.name));
 
-  if (pickle->WriteInt64(info.parent_id) &&
-      pickle->WriteString(data_path) &&
-      pickle->WriteString(name) &&
-      pickle->WriteInt64(time.ToInternalValue()))
-    return true;
-
-  NOTREACHED();
-  return false;
+  pickle->WriteInt64(info.parent_id);
+  pickle->WriteString(data_path);
+  pickle->WriteString(name);
+  pickle->WriteInt64(time.ToInternalValue());
 }
 
 bool FileInfoFromPickle(const base::Pickle& pickle,
@@ -291,7 +287,7 @@ bool DatabaseCheckHelper::ScanDirectory() {
   };
 
   // Any path in |pending_directories| is relative to |path_|.
-  std::stack<base::FilePath> pending_directories;
+  base::stack<base::FilePath> pending_directories;
   pending_directories.push(base::FilePath());
 
   while (!pending_directories.empty()) {
@@ -340,7 +336,7 @@ bool DatabaseCheckHelper::ScanHierarchy() {
   size_t visited_files = 0;
   size_t visited_links = 0;
 
-  std::stack<FileId> directories;
+  base::stack<FileId> directories;
   directories.push(0);
 
   // Check if the root directory exists as a directory.
@@ -637,8 +633,7 @@ bool SandboxDirectoryDatabase::UpdateModificationTime(
     return false;
   info.modification_time = modification_time;
   base::Pickle pickle;
-  if (!PickleFromFileInfo(info, &pickle))
-    return false;
+  PickleFromFileInfo(info, &pickle);
   leveldb::Status status = db_->Put(
       leveldb::WriteOptions(),
       GetFileLookupKey(file_id),
@@ -669,8 +664,7 @@ bool SandboxDirectoryDatabase::OverwritingMoveFile(
   if (!RemoveFileInfoHelper(src_file_id, &batch))
     return false;
   base::Pickle pickle;
-  if (!PickleFromFileInfo(dest_file_info, &pickle))
-    return false;
+  PickleFromFileInfo(dest_file_info, &pickle);
   batch.Put(
       GetFileLookupKey(dest_file_id),
       leveldb::Slice(reinterpret_cast<const char *>(pickle.data()),
@@ -917,8 +911,7 @@ bool SandboxDirectoryDatabase::AddFileInfoHelper(
     batch->Put(child_key, id_string);
   }
   base::Pickle pickle;
-  if (!PickleFromFileInfo(info, &pickle))
-    return false;
+  PickleFromFileInfo(info, &pickle);
   batch->Put(
       id_string,
       leveldb::Slice(reinterpret_cast<const char *>(pickle.data()),
@@ -948,9 +941,8 @@ bool SandboxDirectoryDatabase::RemoveFileInfoHelper(
   return true;
 }
 
-void SandboxDirectoryDatabase::HandleError(
-    const tracked_objects::Location& from_here,
-    const leveldb::Status& status) {
+void SandboxDirectoryDatabase::HandleError(const base::Location& from_here,
+                                           const leveldb::Status& status) {
   LOG(ERROR) << "SandboxDirectoryDatabase failed at: "
              << from_here.ToString() << " with error: " << status.ToString();
   db_.reset();

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import contextlib
 import datetime
 import functools
 import logging
@@ -9,21 +10,31 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 
 import devil_chromium
 from devil import base_error
 from devil.android import device_blacklist
 from devil.android import device_errors
-from devil.android import device_list
 from devil.android import device_utils
 from devil.android import logcat_monitor
 from devil.android.sdk import adb_wrapper
 from devil.utils import file_utils
 from devil.utils import parallelizer
 from pylib import constants
+from pylib.android import logdog_logcat_monitor
 from pylib.base import environment
 from pylib.utils import instrumentation_tracing
 from py_trace_event import trace_event
+from py_utils import contextlib_ext
+
+
+LOGCAT_FILTERS = [
+  'chromium:v',
+  'cr_*:v',
+  'DEBUG:I',
+  'StrictMode:D',
+]
 
 
 def _DeviceCachePath(device):
@@ -75,6 +86,39 @@ def handle_shard_failures_with(on_failure):
   return decorator
 
 
+# TODO(jbudorick): Reconcile this with the output manager logic in
+# https://codereview.chromium.org/2933993002/ once that lands.
+@contextlib.contextmanager
+def OptionalPerTestLogcat(
+    device, test_name, condition, additional_filter_specs=None,
+    deobfuscate_func=None):
+  """Conditionally capture logcat and stream it to logdog.
+
+  Args:
+    device: (DeviceUtils) the device from which logcat should be captured.
+    test_name: (str) the test name to use in the stream name.
+    condition: (bool) whether or not to capture the logcat.
+    additional_filter_specs: (list) additional logcat filters.
+    deobfuscate_func: (callable) an optional unary function that
+      deobfuscates logcat lines. The callable should take an iterable
+      of logcat lines and return a list of deobfuscated logcat lines.
+  Yields:
+    A LogdogLogcatMonitor instance whether condition is true or not,
+    though it may not be active.
+  """
+  stream_name = 'logcat_%s_%s_%s' % (
+      test_name,
+      time.strftime('%Y%m%dT%H%M%S-UTC', time.gmtime()),
+      device.serial)
+  filter_specs = LOGCAT_FILTERS + (additional_filter_specs or [])
+  logmon = logdog_logcat_monitor.LogdogLogcatMonitor(
+      device.adb, stream_name, filter_specs=filter_specs,
+      deobfuscate_func=deobfuscate_func)
+
+  with contextlib_ext.Optional(logmon, condition):
+    yield logmon
+
+
 class LocalDeviceEnvironment(environment.Environment):
 
   def __init__(self, args, _error_func):
@@ -92,7 +136,6 @@ class LocalDeviceEnvironment(environment.Environment):
     self._logcat_output_file = args.logcat_output_file
     self._max_tries = 1 + args.num_retries
     self._skip_clear_data = args.skip_clear_data
-    self._target_devices_file = args.target_devices_file
     self._tool_name = args.tool
     self._trace_output = None
     if hasattr(args, 'trace_output'):
@@ -122,17 +165,7 @@ class LocalDeviceEnvironment(environment.Environment):
 
   def _InitDevices(self):
     device_arg = 'default'
-    if self._target_devices_file:
-      device_arg = device_list.GetPersistentDeviceList(
-          self._target_devices_file)
-      if not device_arg:
-        logging.warning('No target devices specified. Falling back to '
-                        'running on all available devices.')
-        device_arg = 'default'
-      else:
-        logging.info(
-            'Read device list %s from target devices file.', str(device_arg))
-    elif self._device_serials:
+    if self._device_serials:
       device_arg = self._device_serials
 
     self._devices = device_utils.DeviceUtils.HealthyDevices(

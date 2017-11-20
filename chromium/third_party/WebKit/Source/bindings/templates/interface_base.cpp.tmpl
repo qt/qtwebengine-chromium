@@ -1,7 +1,7 @@
 {% filter format_blink_cpp_source_code %}
 
 {% include 'copyright_block.txt' %}
-#include "{{v8_class_or_partial}}.h"
+#include "{{this_include_header_name}}"
 
 {% for filename in cpp_includes if filename != '%s.h' % cpp_class_or_partial %}
 #include "{{filename}}"
@@ -143,6 +143,7 @@ static void (*{{method.name}}MethodForPartialInterface)(const v8::FunctionCallba
 {% block named_property_setter %}{% endblock %}
 {% block named_property_deleter %}{% endblock %}
 {% block named_property_query %}{% endblock %}
+{% block named_property_descriptor %}{% endblock %}
 {% block named_property_enumerator %}{% endblock %}
 {% block indexed_property_getter %}{% endblock %}
 {% block indexed_property_descriptor %}{% endblock %}
@@ -196,7 +197,7 @@ static const struct {
 {% for world_suffix in attribute.world_suffixes %}
 {% if not attribute.constructor_type %}
 {{attribute_getter_callback(attribute, world_suffix)}}
-{% elif attribute.needs_constructor_getter_callback %}
+{% else %}
 {{constructor_getter_callback(attribute, world_suffix)}}
 {% endif %}
 {% if attribute.has_setter %}
@@ -250,10 +251,10 @@ bool {{v8_class_or_partial}}::securityCheck(v8::Local<v8::Context> accessingCont
   if (window.IsEmpty())
     return false;  // the frame is gone.
 
-  const DOMWindow* targetWindow = V8Window::toImpl(window);
+  const DOMWindow* targetWindow = V8Window::ToImpl(window);
   return BindingSecurity::ShouldAllowAccessTo(ToLocalDOMWindow(accessingContext), targetWindow, BindingSecurity::ErrorReportOption::kDoNotReport);
   {% elif interface_name == 'Location' %}
-  {{cpp_class}}* impl = {{v8_class}}::toImpl(accessedObject);
+  {{cpp_class}}* impl = {{v8_class}}::ToImpl(accessedObject);
   return BindingSecurity::ShouldAllowAccessTo(ToLocalDOMWindow(accessingContext), impl, BindingSecurity::ErrorReportOption::kDoNotReport);
   {% else %}
   #error "Unexpected security check for interface {{interface_name}}"

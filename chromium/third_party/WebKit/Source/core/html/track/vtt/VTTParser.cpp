@@ -36,8 +36,8 @@
 #include "core/html/track/vtt/VTTElement.h"
 #include "core/html/track/vtt/VTTRegion.h"
 #include "core/html/track/vtt/VTTScanner.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/loader/fetch/TextResourceDecoderOptions.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/text/SegmentedString.h"
 #include "platform/wtf/text/CharacterNames.h"
 #include "platform/wtf/text/WTFString.h"
@@ -392,9 +392,9 @@ void VTTParser::CreateNewRegion(const String& header_value) {
   VTTRegion* region = VTTRegion::Create();
   region->SetRegionSettings(header_value);
 
-  if (region->Id().IsEmpty())
+  if (region->id().IsEmpty())
     return;
-  region_map_.Set(region->Id(), region);
+  region_map_.Set(region->id(), region);
 }
 
 bool VTTParser::CollectTimeStamp(const String& line, double& time_stamp) {

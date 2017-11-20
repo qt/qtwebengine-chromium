@@ -4,9 +4,6 @@
 
 #include "modules/accessibility/AXEnums.h"
 
-#include "core/HTMLElementTypeHelpers.h"
-#include "core/dom/Element.h"
-#include "core/dom/Node.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/HashSet.h"
 #include "platform/wtf/text/StringHash.h"
@@ -136,6 +133,8 @@ STATIC_ASSERT_ENUM(WebAXDefaultActionVerb::kActivate,
                    AXDefaultActionVerb::kActivate);
 STATIC_ASSERT_ENUM(WebAXDefaultActionVerb::kCheck, AXDefaultActionVerb::kCheck);
 STATIC_ASSERT_ENUM(WebAXDefaultActionVerb::kClick, AXDefaultActionVerb::kClick);
+STATIC_ASSERT_ENUM(WebAXDefaultActionVerb::kClickAncestor,
+                   AXDefaultActionVerb::kClickAncestor);
 STATIC_ASSERT_ENUM(WebAXDefaultActionVerb::kJump, AXDefaultActionVerb::kJump);
 STATIC_ASSERT_ENUM(WebAXDefaultActionVerb::kOpen, AXDefaultActionVerb::kOpen);
 STATIC_ASSERT_ENUM(WebAXDefaultActionVerb::kPress, AXDefaultActionVerb::kPress);

@@ -89,6 +89,13 @@ class WebLayer {
 
   virtual void SetOpacity(float) = 0;
   virtual float Opacity() const = 0;
+  // If set to true, content opaqueness cannot be changed using
+  // WebLayer::SetOpaque. However, it can still be modified using
+  // SetContentsOpaque on the cc::Layer. This is a roundabout way of allowing
+  // creators of WebLayers to specify opaqueness without
+  // CompositedLayerMapping/PaintArtifactCompositor clobbering it later. This
+  // will be addressed once WebLayer is removed.
+  virtual void SetContentsOpaqueIsFixed(bool) = 0;
 
   virtual void SetBlendMode(WebBlendMode) = 0;
   virtual WebBlendMode BlendMode() const = 0;
@@ -96,8 +103,7 @@ class WebLayer {
   virtual void SetIsRootForIsolatedGroup(bool) = 0;
   virtual bool IsRootForIsolatedGroup() = 0;
 
-  virtual void SetShouldHitTest(bool) = 0;
-  virtual bool ShouldHitTest() = 0;
+  virtual void SetHitTestableWithoutDrawsContent(bool) = 0;
 
   virtual void SetOpaque(bool) = 0;
   virtual bool Opaque() const = 0;
@@ -237,9 +243,6 @@ class WebLayer {
 
   virtual void SetElementId(const cc::ElementId&) = 0;
   virtual cc::ElementId GetElementId() const = 0;
-
-  virtual void SetCompositorMutableProperties(uint32_t) = 0;
-  virtual uint32_t CompositorMutableProperties() const = 0;
 
   virtual void SetHasWillChangeTransformHint(bool) = 0;
 

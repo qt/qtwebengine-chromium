@@ -30,8 +30,6 @@
 
 #include "core/events/WebInputEventConversion.h"
 
-#include "core/dom/Touch.h"
-#include "core/dom/TouchList.h"
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
@@ -39,6 +37,8 @@
 #include "core/events/WheelEvent.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/VisualViewport.h"
+#include "core/input/Touch.h"
+#include "core/input/TouchList.h"
 #include "core/layout/api/LayoutItem.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
@@ -59,13 +59,11 @@ float FrameScale(const LocalFrameView* frame_view) {
 }
 
 FloatPoint FrameTranslation(const LocalFrameView* frame_view) {
-  float scale = 1;
   IntPoint visual_viewport;
   FloatSize overscroll_offset;
   if (frame_view) {
     LocalFrameView* root_view = frame_view->GetFrame().LocalFrameRoot().View();
     if (root_view) {
-      scale = root_view->InputEventsScaleFactor();
       visual_viewport = FlooredIntPoint(
           root_view->GetPage()->GetVisualViewport().VisibleRect().Location());
       overscroll_offset =

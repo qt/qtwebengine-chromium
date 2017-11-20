@@ -4,6 +4,8 @@
 
 #include "extensions/browser/guest_view/web_view/web_view_apitest.h"
 
+#include <memory>
+#include <string>
 #include <utility>
 
 #include "base/command_line.h"
@@ -17,7 +19,9 @@
 #include "components/guest_view/browser/guest_view_manager_delegate.h"
 #include "components/guest_view/browser/guest_view_manager_factory.h"
 #include "components/guest_view/browser/test_guest_view_manager.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_renderer_host.h"
@@ -293,6 +297,13 @@ content::WebContents* WebViewAPITest::GetGuestWebContents() {
 #define MAYBE_AcceptTouchEvents AcceptTouchEvents
 #endif
 IN_PROC_BROWSER_TEST_F(WebViewAPITest, MAYBE_AcceptTouchEvents) {
+  // This test only makes sense for non-OOPIF WebView, since with
+  // GuestViewCrossProcessFrames events are routed directly to the
+  // guest, so the embedder does not need to know about the installation of
+  // touch handlers.
+  if (base::FeatureList::IsEnabled(::features::kGuestViewCrossProcessFrames))
+    return;
+
   LaunchApp("web_view/accept_touch_events");
 
   content::RenderViewHost* embedder_rvh =
@@ -681,7 +692,8 @@ IN_PROC_BROWSER_TEST_F(WebViewAPITest, TestRemoveWebviewOnExit) {
                                      "runTest('testRemoveWebviewOnExit')"));
 
   content::WebContents* guest_web_contents = GetGuestWebContents();
-  EXPECT_TRUE(guest_web_contents->GetRenderProcessHost()->IsForGuestsOnly());
+  EXPECT_TRUE(
+      guest_web_contents->GetMainFrame()->GetProcess()->IsForGuestsOnly());
   ASSERT_TRUE(guest_loaded_listener.WaitUntilSatisfied());
 
   content::WebContentsDestroyedWatcher destroyed_watcher(guest_web_contents);
@@ -711,7 +723,13 @@ IN_PROC_BROWSER_TEST_F(WebViewAPITest, TestRemoveWebviewAfterNavigation) {
   RunTest("testRemoveWebviewAfterNavigation", "web_view/apitest");
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewAPITest, TestResizeWebviewResizesContent) {
+#if defined(OS_WIN)
+#define MAYBE_TestResizeWebviewResizesContent \
+  DISABLED_TestResizeWebviewResizesContent
+#else
+#define MAYBE_TestResizeWebviewResizesContent TestResizeWebviewResizesContent
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewAPITest, MAYBE_TestResizeWebviewResizesContent) {
   RunTest("testResizeWebviewResizesContent", "web_view/apitest");
 }
 

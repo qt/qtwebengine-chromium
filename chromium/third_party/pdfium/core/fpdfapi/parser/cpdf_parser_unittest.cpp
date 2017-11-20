@@ -7,36 +7,12 @@
 
 #include "core/fpdfapi/parser/cpdf_parser.h"
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
-#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_stream.h"
+#include "core/fxcrt/retain_ptr.h"
+#include "testing/fx_string_testhelpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/utils/path_service.h"
-
-// Provide a way to read test data from a buffer instead of a file.
-class CFX_TestBufferRead : public IFX_SeekableReadStream {
- public:
-  template <typename T, typename... Args>
-  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
-  // IFX_SeekableReadStream:
-  bool ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override {
-    if (offset < 0 || offset + size > total_size_)
-      return false;
-
-    memcpy(buffer, buffer_ + offset, size);
-    return true;
-  }
-
-  FX_FILESIZE GetSize() override { return (FX_FILESIZE)total_size_; };
-
- protected:
-  CFX_TestBufferRead(const unsigned char* buffer_in, size_t buf_size)
-      : buffer_(buffer_in), total_size_(buf_size) {}
-
-  const unsigned char* buffer_;
-  size_t total_size_;
-};
 
 // A wrapper class to help test member functions of CPDF_Parser.
 class CPDF_TestParser : public CPDF_Parser {
@@ -46,7 +22,7 @@ class CPDF_TestParser : public CPDF_Parser {
 
   // Setup reading from a file and initial states.
   bool InitTestFromFile(const char* path) {
-    CFX_RetainPtr<IFX_SeekableReadStream> pFileAccess =
+    RetainPtr<IFX_SeekableReadStream> pFileAccess =
         IFX_SeekableReadStream::CreateFromFilename(path);
     if (!pFileAccess)
       return false;
@@ -59,8 +35,8 @@ class CPDF_TestParser : public CPDF_Parser {
   // Setup reading from a buffer and initial states.
   bool InitTestFromBuffer(const unsigned char* buffer, size_t len) {
     // For the test file, the header is set at the beginning.
-    m_pSyntax->InitParser(pdfium::MakeRetain<CFX_TestBufferRead>(buffer, len),
-                          0);
+    m_pSyntax->InitParser(
+        pdfium::MakeRetain<CFX_BufferSeekableReadStream>(buffer, len), 0);
     return true;
   }
 
@@ -116,15 +92,15 @@ TEST(cpdf_parser, LoadCrossRefV4) {
     ASSERT_TRUE(
         parser.InitTestFromBuffer(xref_table, FX_ArraySize(xref_table)));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, false));
+    ASSERT_TRUE(parser.LoadCrossRefV4(0, false));
     const FX_FILESIZE offsets[] = {0, 17, 81, 0, 331, 409};
-    const CPDF_Parser::ObjectType types[] = {
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kNotCompressed};
+    const CPDF_TestParser::ObjectType types[] = {
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kNotCompressed};
     for (size_t i = 0; i < FX_ArraySize(offsets); ++i) {
       EXPECT_EQ(offsets[i], parser.m_ObjectInfo[i].pos);
       EXPECT_EQ(types[i], parser.m_ObjectInfo[i].type);
@@ -147,23 +123,23 @@ TEST(cpdf_parser, LoadCrossRefV4) {
     ASSERT_TRUE(
         parser.InitTestFromBuffer(xref_table, FX_ArraySize(xref_table)));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, false));
+    ASSERT_TRUE(parser.LoadCrossRefV4(0, false));
     const FX_FILESIZE offsets[] = {0, 0,     0,     25325, 0, 0,    0,
                                    0, 25518, 25635, 0,     0, 25777};
-    const CPDF_Parser::ObjectType types[] = {
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed};
+    const CPDF_TestParser::ObjectType types[] = {
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed};
     for (size_t i = 0; i < FX_ArraySize(offsets); ++i) {
       EXPECT_EQ(offsets[i], parser.m_ObjectInfo[i].pos);
       EXPECT_EQ(types[i], parser.m_ObjectInfo[i].type);
@@ -186,23 +162,23 @@ TEST(cpdf_parser, LoadCrossRefV4) {
     ASSERT_TRUE(
         parser.InitTestFromBuffer(xref_table, FX_ArraySize(xref_table)));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, false));
+    ASSERT_TRUE(parser.LoadCrossRefV4(0, false));
     const FX_FILESIZE offsets[] = {0, 0, 0,     25325, 0, 0,    0,
                                    0, 0, 25635, 0,     0, 25777};
-    const CPDF_Parser::ObjectType types[] = {
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed};
+    const CPDF_TestParser::ObjectType types[] = {
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed};
     for (size_t i = 0; i < FX_ArraySize(offsets); ++i) {
       EXPECT_EQ(offsets[i], parser.m_ObjectInfo[i].pos);
       EXPECT_EQ(types[i], parser.m_ObjectInfo[i].type);
@@ -224,16 +200,16 @@ TEST(cpdf_parser, LoadCrossRefV4) {
     ASSERT_TRUE(
         parser.InitTestFromBuffer(xref_table, FX_ArraySize(xref_table)));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, 0, false));
+    ASSERT_TRUE(parser.LoadCrossRefV4(0, false));
     const FX_FILESIZE offsets[] = {0, 23, 0, 0, 0, 45, 179};
-    const CPDF_Parser::ObjectType types[] = {
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kFree,
-        CPDF_Parser::ObjectType::kNotCompressed,
-        CPDF_Parser::ObjectType::kNotCompressed};
+    const CPDF_TestParser::ObjectType types[] = {
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kFree,
+        CPDF_TestParser::ObjectType::kNotCompressed,
+        CPDF_TestParser::ObjectType::kNotCompressed};
     for (size_t i = 0; i < FX_ArraySize(offsets); ++i) {
       EXPECT_EQ(offsets[i], parser.m_ObjectInfo[i].pos);
       EXPECT_EQ(types[i], parser.m_ObjectInfo[i].type);

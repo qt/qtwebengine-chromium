@@ -4,7 +4,10 @@
 
 #include "content/browser/frame_host/render_frame_host_impl.h"
 
+#include <utility>
+
 #include "base/macros.h"
+#include "base/run_loop.h"
 #include "content/browser/frame_host/navigation_handle_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/frame_messages.h"
@@ -17,6 +20,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/controllable_http_response.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
@@ -201,13 +205,13 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager,
                            JavaScriptDialogType dialog_type,
                            const base::string16& message_text,
                            const base::string16& default_prompt_text,
-                           const DialogClosedCallback& callback,
+                           DialogClosedCallback callback,
                            bool* did_suppress_message) override {}
 
   void RunBeforeUnloadDialog(WebContents* web_contents,
                              bool is_reload,
-                             const DialogClosedCallback& callback) override {
-    callback_ = callback;
+                             DialogClosedCallback callback) override {
+    callback_ = std::move(callback);
     message_loop_runner_->Quit();
   }
 
@@ -285,7 +289,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   main_frame->GetProcess()->AddFilter(filter.get());
 
   // Answer the dialog.
-  dialog_manager.callback().Run(true, base::string16());
+  std::move(dialog_manager.callback()).Run(true, base::string16());
 
   // There will be no beforeunload ACK, so if the beforeunload ACK timer isn't
   // functioning then the navigation will hang forever and this test will time
@@ -324,7 +328,7 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   dialog_manager.Wait();
 
   // Answer the dialog.
-  dialog_manager.callback().Run(true, base::string16());
+  std::move(dialog_manager.callback()).Run(true, base::string16());
   EXPECT_TRUE(WaitForLoadStop(wc));
 
   // The reload should have cleared the user gesture bit, so upon leaving again
@@ -641,35 +645,113 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
 // XMLHttpRequests.
 // See https://crbug.com/762945.
 IN_PROC_BROWSER_TEST_F(
-    RenderFrameHostImplBrowserTest,
+    ContentBrowserTest,
     AbortedRendererInitiatedNavigationDoNotCancelPendingXHR) {
+  ControllableHttpResponse xhr_response(embedded_test_server(), "/xhr_request");
+  EXPECT_TRUE(embedded_test_server()->Start());
+
   GURL main_url(embedded_test_server()->GetURL("/title1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
   EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
 
-  // 1) Send an XHR that is slow to complete.
-  const char* send_slow_XHR =
+  // 1) Send an xhr request, but do not send its response for the moment.
+  const char* send_slow_xhr =
       "var request = new XMLHttpRequest();"
-      "request.addEventListener('abort', () => document.title = 'XHR aborted');"
-      "request.addEventListener('load', () => document.title = 'XHR loaded');"
+      "request.addEventListener('abort', () => document.title = 'xhr aborted');"
+      "request.addEventListener('load', () => document.title = 'xhr loaded');"
       "request.open('GET', '%s');"
       "request.send();";
-  const GURL slow_url = embedded_test_server()->GetURL("/slow?1");
+  const GURL slow_url = embedded_test_server()->GetURL("/xhr_request");
   EXPECT_TRUE(content::ExecuteScript(
-      shell(), base::StringPrintf(send_slow_XHR, slow_url.spec().c_str())));
+      shell(), base::StringPrintf(send_slow_xhr, slow_url.spec().c_str())));
+  xhr_response.WaitForRequest();
 
   // 2) In the meantime, create a renderer-initiated navigation. It will be
   // aborted.
+  TestNavigationManager observer(shell()->web_contents(),
+                                 GURL("customprotocol:aborted"));
   EXPECT_TRUE(content::ExecuteScript(
       shell(), "window.location = 'customprotocol:aborted'"));
+  EXPECT_FALSE(observer.WaitForResponse());
+  observer.WaitForNavigationFinished();
 
-  // 3) Wait for the XHR request to complete.
-  const base::string16 XHR_aborted = base::ASCIIToUTF16("XHR aborted");
-  const base::string16 XHR_loaded = base::ASCIIToUTF16("XHR loaded");
-  TitleWatcher watcher(shell()->web_contents(), XHR_loaded);
-  watcher.AlsoWaitForTitle(XHR_aborted);
+  // 3) Send the response for the XHR requests.
+  xhr_response.Send(
+      "HTTP/1.1 200 OK\r\n"
+      "Connection: close\r\n"
+      "Content-Length: 2\r\n"
+      "Content-Type: text/plain; charset=utf-8\r\n"
+      "\r\n"
+      "OK");
+  xhr_response.Done();
 
-  EXPECT_EQ(XHR_loaded, watcher.WaitAndGetTitle());
+  // 4) Wait for the XHR request to complete.
+  const base::string16 xhr_aborted_title = base::ASCIIToUTF16("xhr aborted");
+  const base::string16 xhr_loaded_title = base::ASCIIToUTF16("xhr loaded");
+  TitleWatcher watcher(shell()->web_contents(), xhr_loaded_title);
+  watcher.AlsoWaitForTitle(xhr_aborted_title);
+
+  EXPECT_EQ(xhr_loaded_title, watcher.WaitAndGetTitle());
+}
+
+// A browser-initiated javascript-url navigation must not prevent the current
+// document from loading.
+// See https://crbug.com/766149.
+IN_PROC_BROWSER_TEST_F(ContentBrowserTest,
+                       BrowserInitiatedJavascriptUrlDoNotPreventLoading) {
+  ControllableHttpResponse main_document_response(embedded_test_server(),
+                                                  "/main_document");
+  EXPECT_TRUE(embedded_test_server()->Start());
+
+  GURL main_document_url(embedded_test_server()->GetURL("/main_document"));
+  TestNavigationManager main_document_observer(shell()->web_contents(),
+                                               main_document_url);
+
+  // 1) Navigate. Send the header but not the body. The navigation commits in
+  //    the browser. The renderer is still loading the document.
+  {
+    shell()->LoadURL(main_document_url);
+    EXPECT_TRUE(main_document_observer.WaitForRequestStart());
+    main_document_observer.ResumeNavigation();  // Send the request.
+
+    main_document_response.WaitForRequest();
+    main_document_response.Send(
+        "HTTP/1.1 200 OK\r\n"
+        "Connection: close\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        "\r\n");
+
+    EXPECT_TRUE(main_document_observer.WaitForResponse());
+    main_document_observer.ResumeNavigation();  // Commit the navigation.
+  }
+
+  // 2) A browser-initiated javascript-url navigation happens.
+  {
+    GURL javascript_url(
+        "javascript:window.domAutomationController.send('done')");
+    shell()->LoadURL(javascript_url);
+    DOMMessageQueue dom_message_queue(WebContents::FromRenderFrameHost(
+        shell()->web_contents()->GetMainFrame()));
+    std::string done;
+    EXPECT_TRUE(dom_message_queue.WaitForMessage(&done));
+    EXPECT_EQ("\"done\"", done);
+  }
+
+  // 3) The end of the response is issued. The renderer must be able to receive
+  //    it.
+  {
+    const base::string16 document_loaded_title =
+        base::ASCIIToUTF16("document loaded");
+    TitleWatcher watcher(shell()->web_contents(), document_loaded_title);
+    main_document_response.Send(
+        "<script>"
+        "   window.onload = function(){"
+        "     document.title = 'document loaded'"
+        "   }"
+        "</script>");
+    main_document_response.Done();
+    EXPECT_EQ(document_loaded_title, watcher.WaitAndGetTitle());
+  }
 }
 
 }  // namespace content

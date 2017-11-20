@@ -11,7 +11,6 @@
 #include "core/loader/resource/ImageResourceObserver.h"
 #include "core/svg/graphics/SVGImage.h"
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/BitmapImage.h"
@@ -224,7 +223,7 @@ blink::Image* ImageResourceContent::GetImage() {
   }
 
   if (image_)
-    return image_.Get();
+    return image_.get();
 
   return blink::Image::NullImage();
 }
@@ -254,7 +253,7 @@ LayoutSize ImageResourceContent::ImageSize(
 
   if (image_->IsBitmapImage() &&
       should_respect_image_orientation == kRespectImageOrientation) {
-    size = LayoutSize(ToBitmapImage(image_.Get())->SizeRespectingOrientation());
+    size = LayoutSize(ToBitmapImage(image_.get())->SizeRespectingOrientation());
   } else {
     size = LayoutSize(image_->Size());
   }
@@ -328,7 +327,7 @@ void ImageResourceContent::ClearImage() {
   // If our Image has an observer, it's always us so we need to clear the back
   // pointer before dropping our reference.
   image_->ClearImageObserver();
-  image_.Clear();
+  image_ = nullptr;
   size_available_ = Image::kSizeUnavailable;
 }
 
@@ -552,10 +551,7 @@ void ImageResourceContent::UpdateImageAnimationPolicy() {
     }
   }
 
-  if (image_->AnimationPolicy() != new_policy) {
-    image_->ResetAnimation();
-    image_->SetAnimationPolicy(new_policy);
-  }
+  image_->SetAnimationPolicy(new_policy);
 }
 
 void ImageResourceContent::ChangedInRect(const blink::Image* image,
@@ -624,10 +620,6 @@ const ResourceResponse& ImageResourceContent::GetResponse() const {
 
 const ResourceError& ImageResourceContent::GetResourceError() const {
   return info_->GetResourceError();
-}
-
-bool ImageResourceContent::IsCacheValidator() const {
-  return info_->IsCacheValidator();
 }
 
 }  // namespace blink

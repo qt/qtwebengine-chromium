@@ -142,6 +142,7 @@
 #include <utility>
 
 #include <openssl/err.h>
+#include <openssl/hmac.h>
 #include <openssl/lhash.h>
 #include <openssl/mem.h>
 #include <openssl/rand.h>
@@ -152,9 +153,9 @@
 
 namespace bssl {
 
-/* The address of this is a magic value, a pointer to which is returned by
- * SSL_magic_pending_session_ptr(). It allows a session callback to indicate
- * that it needs to asynchronously fetch session information. */
+// The address of this is a magic value, a pointer to which is returned by
+// SSL_magic_pending_session_ptr(). It allows a session callback to indicate
+// that it needs to asynchronously fetch session information.
 static const char g_pending_session_magic = 0;
 
 static CRYPTO_EX_DATA_CLASS g_ex_data_class =
@@ -194,13 +195,13 @@ UniquePtr<SSL_SESSION> SSL_SESSION_dup(SSL_SESSION *session, int dup_flags) {
   new_session->sid_ctx_length = session->sid_ctx_length;
   OPENSSL_memcpy(new_session->sid_ctx, session->sid_ctx, session->sid_ctx_length);
 
-  /* Copy the key material. */
+  // Copy the key material.
   new_session->master_key_length = session->master_key_length;
   OPENSSL_memcpy(new_session->master_key, session->master_key,
          session->master_key_length);
   new_session->cipher = session->cipher;
 
-  /* Copy authentication state. */
+  // Copy authentication state.
   if (session->psk_identity != NULL) {
     new_session->psk_identity = BUF_strdup(session->psk_identity);
     if (new_session->psk_identity == NULL) {
@@ -242,20 +243,13 @@ UniquePtr<SSL_SESSION> SSL_SESSION_dup(SSL_SESSION *session, int dup_flags) {
                  SHA256_DIGEST_LENGTH);
   new_session->peer_sha256_valid = session->peer_sha256_valid;
 
-  if (session->tlsext_hostname != NULL) {
-    new_session->tlsext_hostname = BUF_strdup(session->tlsext_hostname);
-    if (new_session->tlsext_hostname == NULL) {
-      return nullptr;
-    }
-  }
-
   new_session->peer_signature_algorithm = session->peer_signature_algorithm;
 
   new_session->timeout = session->timeout;
   new_session->auth_timeout = session->auth_timeout;
   new_session->time = session->time;
 
-  /* Copy non-authentication connection properties. */
+  // Copy non-authentication connection properties.
   if (dup_flags & SSL_SESSION_INCLUDE_NONAUTH) {
     new_session->session_id_length = session->session_id_length;
     OPENSSL_memcpy(new_session->session_id, session->session_id,
@@ -283,7 +277,7 @@ UniquePtr<SSL_SESSION> SSL_SESSION_dup(SSL_SESSION *session, int dup_flags) {
     new_session->early_alpn_len = session->early_alpn_len;
   }
 
-  /* Copy the ticket. */
+  // Copy the ticket.
   if (dup_flags & SSL_SESSION_INCLUDE_TICKET) {
     if (session->tlsext_tick != NULL) {
       new_session->tlsext_tick =
@@ -295,7 +289,7 @@ UniquePtr<SSL_SESSION> SSL_SESSION_dup(SSL_SESSION *session, int dup_flags) {
     new_session->tlsext_ticklen = session->tlsext_ticklen;
   }
 
-  /* The new_session does not get a copy of the ex_data. */
+  // The new_session does not get a copy of the ex_data.
 
   new_session->not_resumable = 1;
   return new_session;
@@ -305,8 +299,8 @@ void ssl_session_rebase_time(SSL *ssl, SSL_SESSION *session) {
   struct OPENSSL_timeval now;
   ssl_get_current_time(ssl, &now);
 
-  /* To avoid overflows and underflows, if we've gone back in time, update the
-   * time, but mark the session expired. */
+  // To avoid overflows and underflows, if we've gone back in time, update the
+  // time, but mark the session expired.
   if (session->time > now.tv_sec) {
     session->time = now.tv_sec;
     session->timeout = 0;
@@ -314,8 +308,8 @@ void ssl_session_rebase_time(SSL *ssl, SSL_SESSION *session) {
     return;
   }
 
-  /* Adjust the session time and timeouts. If the session has already expired,
-   * clamp the timeouts at zero. */
+  // Adjust the session time and timeouts. If the session has already expired,
+  // clamp the timeouts at zero.
   uint64_t delta = now.tv_sec - session->time;
   session->time = now.tv_sec;
   if (session->timeout < delta) {
@@ -332,8 +326,8 @@ void ssl_session_rebase_time(SSL *ssl, SSL_SESSION *session) {
 
 void ssl_session_renew_timeout(SSL *ssl, SSL_SESSION *session,
                                uint32_t timeout) {
-  /* Rebase the timestamp relative to the current time so |timeout| is measured
-   * correctly. */
+  // Rebase the timestamp relative to the current time so |timeout| is measured
+  // correctly.
   ssl_session_rebase_time(ssl, session);
 
   if (session->timeout > timeout) {
@@ -346,11 +340,11 @@ void ssl_session_renew_timeout(SSL *ssl, SSL_SESSION *session,
   }
 }
 
-uint16_t SSL_SESSION_protocol_version(const SSL_SESSION *session) {
+uint16_t ssl_session_protocol_version(const SSL_SESSION *session) {
   uint16_t ret;
   if (!ssl_protocol_version_from_wire(&ret, session->ssl_version)) {
-    /* An |SSL_SESSION| will never have an invalid version. This is enforced by
-     * the parser. */
+    // An |SSL_SESSION| will never have an invalid version. This is enforced by
+    // the parser.
     assert(0);
     return 0;
   }
@@ -358,8 +352,8 @@ uint16_t SSL_SESSION_protocol_version(const SSL_SESSION *session) {
   return ret;
 }
 
-const EVP_MD *SSL_SESSION_get_digest(const SSL_SESSION *session) {
-  return ssl_get_handshake_digest(SSL_SESSION_protocol_version(session),
+const EVP_MD *ssl_session_get_digest(const SSL_SESSION *session) {
+  return ssl_get_handshake_digest(ssl_session_protocol_version(session),
                                   session->cipher);
 }
 
@@ -378,28 +372,28 @@ int ssl_get_new_session(SSL_HANDSHAKE *hs, int is_server) {
   session->is_server = is_server;
   session->ssl_version = ssl->version;
 
-  /* Fill in the time from the |SSL_CTX|'s clock. */
+  // Fill in the time from the |SSL_CTX|'s clock.
   struct OPENSSL_timeval now;
   ssl_get_current_time(ssl, &now);
   session->time = now.tv_sec;
 
   uint16_t version = ssl3_protocol_version(ssl);
   if (version >= TLS1_3_VERSION) {
-    /* TLS 1.3 uses tickets as authenticators, so we are willing to use them for
-     * longer. */
+    // TLS 1.3 uses tickets as authenticators, so we are willing to use them for
+    // longer.
     session->timeout = ssl->session_ctx->session_psk_dhe_timeout;
     session->auth_timeout = SSL_DEFAULT_SESSION_AUTH_TIMEOUT;
   } else {
-    /* TLS 1.2 resumption does not incorporate new key material, so we use a
-     * much shorter timeout. */
+    // TLS 1.2 resumption does not incorporate new key material, so we use a
+    // much shorter timeout.
     session->timeout = ssl->session_ctx->session_timeout;
     session->auth_timeout = ssl->session_ctx->session_timeout;
   }
 
   if (is_server) {
     if (hs->ticket_expected || version >= TLS1_3_VERSION) {
-      /* Don't set session IDs for sessions resumed with tickets. This will keep
-       * them out of the session cache. */
+      // Don't set session IDs for sessions resumed with tickets. This will keep
+      // them out of the session cache.
       session->session_id_length = 0;
     } else {
       session->session_id_length = SSL3_SSL_SESSION_ID_LENGTH;
@@ -419,7 +413,7 @@ int ssl_get_new_session(SSL_HANDSHAKE *hs, int is_server) {
                  ssl->cert->sid_ctx_length);
   session->sid_ctx_length = ssl->cert->sid_ctx_length;
 
-  /* The session is marked not resumable until it is completely filled in. */
+  // The session is marked not resumable until it is completely filled in.
   session->not_resumable = 1;
   session->verify_result = X509_V_ERR_INVALID_CALL;
 
@@ -432,8 +426,8 @@ int ssl_ctx_rotate_ticket_encryption_key(SSL_CTX *ctx) {
   OPENSSL_timeval now;
   ssl_ctx_get_current_time(ctx, &now);
   {
-    /* Avoid acquiring a write lock in the common case (i.e. a non-default key
-     * is used or the default keys have not expired yet). */
+    // Avoid acquiring a write lock in the common case (i.e. a non-default key
+    // is used or the default keys have not expired yet).
     MutexReadLock lock(&ctx->lock);
     if (ctx->tlsext_ticket_key_current &&
         (ctx->tlsext_ticket_key_current->next_rotation_tv_sec == 0 ||
@@ -448,16 +442,16 @@ int ssl_ctx_rotate_ticket_encryption_key(SSL_CTX *ctx) {
   if (!ctx->tlsext_ticket_key_current ||
       (ctx->tlsext_ticket_key_current->next_rotation_tv_sec != 0 &&
        ctx->tlsext_ticket_key_current->next_rotation_tv_sec <= now.tv_sec)) {
-    /* The current key has not been initialized or it is expired. */
+    // The current key has not been initialized or it is expired.
     auto new_key = bssl::MakeUnique<struct tlsext_ticket_key>();
     if (!new_key) {
       return 0;
     }
     OPENSSL_memset(new_key.get(), 0, sizeof(struct tlsext_ticket_key));
     if (ctx->tlsext_ticket_key_current) {
-      /* The current key expired. Rotate it to prev and bump up its rotation
-       * timestamp. Note that even with the new rotation time it may still be
-       * expired and get droppped below. */
+      // The current key expired. Rotate it to prev and bump up its rotation
+      // timestamp. Note that even with the new rotation time it may still be
+      // expired and get droppped below.
       ctx->tlsext_ticket_key_current->next_rotation_tv_sec +=
           SSL_DEFAULT_TICKET_KEY_ROTATION_INTERVAL;
       OPENSSL_free(ctx->tlsext_ticket_key_prev);
@@ -471,7 +465,7 @@ int ssl_ctx_rotate_ticket_encryption_key(SSL_CTX *ctx) {
         now.tv_sec + SSL_DEFAULT_TICKET_KEY_ROTATION_INTERVAL;
   }
 
-  /* Drop an expired prev key. */
+  // Drop an expired prev key.
   if (ctx->tlsext_ticket_key_prev &&
       ctx->tlsext_ticket_key_prev->next_rotation_tv_sec <= now.tv_sec) {
     OPENSSL_free(ctx->tlsext_ticket_key_prev);
@@ -487,8 +481,8 @@ static int ssl_encrypt_ticket_with_cipher_ctx(SSL *ssl, CBB *out,
   ScopedEVP_CIPHER_CTX ctx;
   ScopedHMAC_CTX hctx;
 
-  /* If the session is too long, emit a dummy value rather than abort the
-   * connection. */
+  // If the session is too long, emit a dummy value rather than abort the
+  // connection.
   static const size_t kMaxTicketOverhead =
       16 + EVP_MAX_IV_LENGTH + EVP_MAX_BLOCK_LENGTH + EVP_MAX_MD_SIZE;
   if (session_len > 0xffff - kMaxTicketOverhead) {
@@ -497,8 +491,8 @@ static int ssl_encrypt_ticket_with_cipher_ctx(SSL *ssl, CBB *out,
                          strlen(kTicketPlaceholder));
   }
 
-  /* Initialize HMAC and cipher contexts. If callback present it does all the
-   * work otherwise use generated values from parent ctx. */
+  // Initialize HMAC and cipher contexts. If callback present it does all the
+  // work otherwise use generated values from parent ctx.
   SSL_CTX *tctx = ssl->session_ctx;
   uint8_t iv[EVP_MAX_IV_LENGTH];
   uint8_t key_name[16];
@@ -508,7 +502,7 @@ static int ssl_encrypt_ticket_with_cipher_ctx(SSL *ssl, CBB *out,
       return 0;
     }
   } else {
-    /* Rotate ticket key if necessary. */
+    // Rotate ticket key if necessary.
     if (!ssl_ctx_rotate_ticket_encryption_key(tctx)) {
       return 0;
     }
@@ -590,7 +584,7 @@ static int ssl_encrypt_ticket_with_method(SSL *ssl, CBB *out,
 }
 
 int ssl_encrypt_ticket(SSL *ssl, CBB *out, const SSL_SESSION *session) {
-  /* Serialize the SSL_SESSION to be encoded into the ticket. */
+  // Serialize the SSL_SESSION to be encoded into the ticket.
   uint8_t *session_buf = NULL;
   size_t session_len;
   if (!SSL_SESSION_to_bytes_for_ticket(session, &session_buf, &session_len)) {
@@ -627,7 +621,7 @@ int ssl_session_is_time_valid(const SSL *ssl, const SSL_SESSION *session) {
   struct OPENSSL_timeval now;
   ssl_get_current_time(ssl, &now);
 
-  /* Reject tickets from the future to avoid underflow. */
+  // Reject tickets from the future to avoid underflow.
   if (now.tv_sec < session->time) {
     return 0;
   }
@@ -639,38 +633,38 @@ int ssl_session_is_resumable(const SSL_HANDSHAKE *hs,
                              const SSL_SESSION *session) {
   const SSL *const ssl = hs->ssl;
   return ssl_session_is_context_valid(ssl, session) &&
-         /* The session must have been created by the same type of end point as
-          * we're now using it with. */
+         // The session must have been created by the same type of end point as
+         // we're now using it with.
          ssl->server == session->is_server &&
-         /* The session must not be expired. */
+         // The session must not be expired.
          ssl_session_is_time_valid(ssl, session) &&
          /* Only resume if the session's version matches the negotiated
            * version. */
          ssl->version == session->ssl_version &&
-         /* Only resume if the session's cipher matches the negotiated one. */
+         // Only resume if the session's cipher matches the negotiated one.
          hs->new_cipher == session->cipher &&
-         /* If the session contains a client certificate (either the full
-          * certificate or just the hash) then require that the form of the
-          * certificate matches the current configuration. */
+         // If the session contains a client certificate (either the full
+         // certificate or just the hash) then require that the form of the
+         // certificate matches the current configuration.
          ((sk_CRYPTO_BUFFER_num(session->certs) == 0 &&
            !session->peer_sha256_valid) ||
           session->peer_sha256_valid ==
               ssl->retain_only_sha256_of_client_certs);
 }
 
-/* ssl_lookup_session looks up |session_id| in the session cache and sets
- * |*out_session| to an |SSL_SESSION| object if found. */
-static enum ssl_session_result_t ssl_lookup_session(
+// ssl_lookup_session looks up |session_id| in the session cache and sets
+// |*out_session| to an |SSL_SESSION| object if found.
+static enum ssl_hs_wait_t ssl_lookup_session(
     SSL *ssl, UniquePtr<SSL_SESSION> *out_session, const uint8_t *session_id,
     size_t session_id_len) {
   out_session->reset();
 
   if (session_id_len == 0 || session_id_len > SSL_MAX_SSL_SESSION_ID_LENGTH) {
-    return ssl_session_success;
+    return ssl_hs_ok;
   }
 
   UniquePtr<SSL_SESSION> session;
-  /* Try the internal cache, if it exists. */
+  // Try the internal cache, if it exists.
   if (!(ssl->session_ctx->session_cache_mode &
         SSL_SESS_CACHE_NO_INTERNAL_LOOKUP)) {
     SSL_SESSION data;
@@ -678,40 +672,45 @@ static enum ssl_session_result_t ssl_lookup_session(
     data.session_id_length = session_id_len;
     OPENSSL_memcpy(data.session_id, session_id, session_id_len);
 
-    CRYPTO_MUTEX_lock_read(&ssl->session_ctx->lock);
+    MutexReadLock lock(&ssl->session_ctx->lock);
     session.reset(lh_SSL_SESSION_retrieve(ssl->session_ctx->sessions, &data));
     if (session) {
-      /* |lh_SSL_SESSION_retrieve| returns a non-owning pointer. */
+      // |lh_SSL_SESSION_retrieve| returns a non-owning pointer.
       SSL_SESSION_up_ref(session.get());
     }
-    /* TODO(davidben): This should probably move it to the front of the list. */
-    CRYPTO_MUTEX_unlock_read(&ssl->session_ctx->lock);
+    // TODO(davidben): This should probably move it to the front of the list.
   }
 
-  /* Fall back to the external cache, if it exists. */
-  if (!session && ssl->session_ctx->get_session_cb != NULL) {
+  // Fall back to the external cache, if it exists.
+  if (!session && (ssl->session_ctx->get_session_cb != nullptr ||
+                   ssl->session_ctx->get_session_cb_legacy != nullptr)) {
     int copy = 1;
-    session.reset(ssl->session_ctx->get_session_cb(ssl, (uint8_t *)session_id,
-                                                   session_id_len, &copy));
+    if (ssl->session_ctx->get_session_cb != nullptr) {
+      session.reset(ssl->session_ctx->get_session_cb(ssl, session_id,
+                                                     session_id_len, &copy));
+    } else {
+      session.reset(ssl->session_ctx->get_session_cb_legacy(
+          ssl, const_cast<uint8_t *>(session_id), session_id_len, &copy));
+    }
 
     if (!session) {
-      return ssl_session_success;
+      return ssl_hs_ok;
     }
 
     if (session.get() == SSL_magic_pending_session_ptr()) {
       session.release();  // This pointer is not actually owned.
-      return ssl_session_retry;
+      return ssl_hs_pending_session;
     }
 
-    /* Increment reference count now if the session callback asks us to do so
-     * (note that if the session structures returned by the callback are shared
-     * between threads, it must handle the reference count itself [i.e. copy ==
-     * 0], or things won't be thread-safe). */
+    // Increment reference count now if the session callback asks us to do so
+    // (note that if the session structures returned by the callback are shared
+    // between threads, it must handle the reference count itself [i.e. copy ==
+    // 0], or things won't be thread-safe).
     if (copy) {
       SSL_SESSION_up_ref(session.get());
     }
 
-    /* Add the externally cached session to the internal cache if necessary. */
+    // Add the externally cached session to the internal cache if necessary.
     if (!(ssl->session_ctx->session_cache_mode &
           SSL_SESS_CACHE_NO_INTERNAL_STORE)) {
       SSL_CTX_add_session(ssl->session_ctx, session.get());
@@ -719,27 +718,29 @@ static enum ssl_session_result_t ssl_lookup_session(
   }
 
   if (session && !ssl_session_is_time_valid(ssl, session.get())) {
-    /* The session was from the cache, so remove it. */
+    // The session was from the cache, so remove it.
     SSL_CTX_remove_session(ssl->session_ctx, session.get());
     session.reset();
   }
 
   *out_session = std::move(session);
-  return ssl_session_success;
+  return ssl_hs_ok;
 }
 
-enum ssl_session_result_t ssl_get_prev_session(
-    SSL *ssl, UniquePtr<SSL_SESSION> *out_session, int *out_tickets_supported,
-    int *out_renew_ticket, const SSL_CLIENT_HELLO *client_hello) {
-  /* This is used only by servers. */
+enum ssl_hs_wait_t ssl_get_prev_session(SSL *ssl,
+                                        UniquePtr<SSL_SESSION> *out_session,
+                                        bool *out_tickets_supported,
+                                        bool *out_renew_ticket,
+                                        const SSL_CLIENT_HELLO *client_hello) {
+  // This is used only by servers.
   assert(ssl->server);
   UniquePtr<SSL_SESSION> session;
-  int renew_ticket = 0;
+  bool renew_ticket = false;
 
-  /* If tickets are disabled, always behave as if no tickets are present. */
+  // If tickets are disabled, always behave as if no tickets are present.
   const uint8_t *ticket = NULL;
   size_t ticket_len = 0;
-  const int tickets_supported =
+  const bool tickets_supported =
       !(SSL_get_options(ssl) & SSL_OP_NO_TICKET) &&
       ssl->version > SSL3_VERSION &&
       SSL_early_callback_ctx_extension_get(
@@ -754,15 +755,15 @@ enum ssl_session_result_t ssl_get_prev_session(
         assert(!session);
         break;
       case ssl_ticket_aead_error:
-        return ssl_session_error;
+        return ssl_hs_error;
       case ssl_ticket_aead_retry:
-        return ssl_session_ticket_retry;
+        return ssl_hs_pending_ticket;
     }
   } else {
-    /* The client didn't send a ticket, so the session ID is a real ID. */
-    enum ssl_session_result_t lookup_ret = ssl_lookup_session(
+    // The client didn't send a ticket, so the session ID is a real ID.
+    enum ssl_hs_wait_t lookup_ret = ssl_lookup_session(
         ssl, &session, client_hello->session_id, client_hello->session_id_len);
-    if (lookup_ret != ssl_session_success) {
+    if (lookup_ret != ssl_hs_ok) {
       return lookup_ret;
     }
   }
@@ -770,7 +771,7 @@ enum ssl_session_result_t ssl_get_prev_session(
   *out_session = std::move(session);
   *out_tickets_supported = tickets_supported;
   *out_renew_ticket = renew_ticket;
-  return ssl_session_success;
+  return ssl_hs_ok;
 }
 
 static int remove_session_lock(SSL_CTX *ctx, SSL_SESSION *session, int lock) {
@@ -815,16 +816,16 @@ void ssl_set_session(SSL *ssl, SSL_SESSION *session) {
   }
 }
 
-/* locked by SSL_CTX in the calling function */
+// locked by SSL_CTX in the calling function
 static void SSL_SESSION_list_remove(SSL_CTX *ctx, SSL_SESSION *session) {
   if (session->next == NULL || session->prev == NULL) {
     return;
   }
 
   if (session->next == (SSL_SESSION *)&ctx->session_cache_tail) {
-    /* last element in list */
+    // last element in list
     if (session->prev == (SSL_SESSION *)&ctx->session_cache_head) {
-      /* only one element in list */
+      // only one element in list
       ctx->session_cache_head = NULL;
       ctx->session_cache_tail = NULL;
     } else {
@@ -833,10 +834,10 @@ static void SSL_SESSION_list_remove(SSL_CTX *ctx, SSL_SESSION *session) {
     }
   } else {
     if (session->prev == (SSL_SESSION *)&ctx->session_cache_head) {
-      /* first element in list */
+      // first element in list
       ctx->session_cache_head = session->next;
       session->next->prev = (SSL_SESSION *)&(ctx->session_cache_head);
-    } else { /* middle of list */
+    } else {  // middle of list
       session->next->prev = session->prev;
       session->prev->next = session->next;
     }
@@ -887,13 +888,11 @@ void SSL_SESSION_free(SSL_SESSION *session) {
   OPENSSL_cleanse(session->session_id, sizeof(session->session_id));
   sk_CRYPTO_BUFFER_pop_free(session->certs, CRYPTO_BUFFER_free);
   session->x509_method->session_clear(session);
-  OPENSSL_free(session->tlsext_hostname);
   OPENSSL_free(session->tlsext_tick);
   CRYPTO_BUFFER_free(session->signed_cert_timestamp_list);
   CRYPTO_BUFFER_free(session->ocsp_response);
   OPENSSL_free(session->psk_identity);
   OPENSSL_free(session->early_alpn);
-  OPENSSL_cleanse(session, sizeof(*session));
   OPENSSL_free(session);
 }
 
@@ -911,7 +910,7 @@ uint32_t SSL_SESSION_get_timeout(const SSL_SESSION *session) {
 
 uint64_t SSL_SESSION_get_time(const SSL_SESSION *session) {
   if (session == NULL) {
-    /* NULL should crash, but silently accept it here for compatibility. */
+    // NULL should crash, but silently accept it here for compatibility.
     return 0;
   }
   return session->time;
@@ -923,7 +922,7 @@ X509 *SSL_SESSION_get0_peer(const SSL_SESSION *session) {
 
 size_t SSL_SESSION_get_master_key(const SSL_SESSION *session, uint8_t *out,
                                   size_t max_out) {
-  /* TODO(davidben): Fix master_key_length's type and remove these casts. */
+  // TODO(davidben): Fix master_key_length's type and remove these casts.
   if (max_out == 0) {
     return (size_t)session->master_key_length;
   }
@@ -967,14 +966,38 @@ int SSL_SESSION_set1_id_context(SSL_SESSION *session, const uint8_t *sid_ctx,
   return 1;
 }
 
+int SSL_SESSION_should_be_single_use(const SSL_SESSION *session) {
+  return ssl_session_protocol_version(session) >= TLS1_3_VERSION;
+}
+
+int SSL_SESSION_is_resumable(const SSL_SESSION *session) {
+  return !session->not_resumable;
+}
+
+int SSL_SESSION_has_ticket(const SSL_SESSION *session) {
+  return session->tlsext_ticklen > 0;
+}
+
+void SSL_SESSION_get0_ticket(const SSL_SESSION *session,
+                             const uint8_t **out_ticket, size_t *out_len) {
+  if (out_ticket != nullptr) {
+    *out_ticket = session->tlsext_tick;
+  }
+  *out_len = session->tlsext_ticklen;
+}
+
+uint32_t SSL_SESSION_get_ticket_lifetime_hint(const SSL_SESSION *session) {
+  return session->tlsext_tick_lifetime_hint;
+}
+
 SSL_SESSION *SSL_magic_pending_session_ptr(void) {
   return (SSL_SESSION *)&g_pending_session_magic;
 }
 
 SSL_SESSION *SSL_get_session(const SSL *ssl) {
-  /* Once the handshake completes we return the established session. Otherwise
-   * we return the intermediate session, either |session| (for resumption) or
-   * |new_session| if doing a full handshake. */
+  // Once the handshake completes we return the established session. Otherwise
+  // we return the intermediate session, either |session| (for resumption) or
+  // |new_session| if doing a full handshake.
   if (!SSL_in_init(ssl)) {
     return ssl->s3->established_session;
   }
@@ -1017,44 +1040,47 @@ void *SSL_SESSION_get_ex_data(const SSL_SESSION *session, int idx) {
 }
 
 int SSL_CTX_add_session(SSL_CTX *ctx, SSL_SESSION *session) {
-  /* Although |session| is inserted into two structures (a doubly-linked list
-   * and the hash table), |ctx| only takes one reference. */
+  // Although |session| is inserted into two structures (a doubly-linked list
+  // and the hash table), |ctx| only takes one reference.
   SSL_SESSION_up_ref(session);
+  UniquePtr<SSL_SESSION> owned_session(session);
 
   SSL_SESSION *old_session;
-  CRYPTO_MUTEX_lock_write(&ctx->lock);
+  MutexWriteLock lock(&ctx->lock);
   if (!lh_SSL_SESSION_insert(ctx->sessions, &old_session, session)) {
-    CRYPTO_MUTEX_unlock_write(&ctx->lock);
-    SSL_SESSION_free(session);
     return 0;
   }
+  // |ctx->sessions| took ownership of |session| and gave us back a reference to
+  // |old_session|. (|old_session| may be the same as |session|, in which case
+  // we traded identical references with |ctx->sessions|.)
+  owned_session.release();
+  owned_session.reset(old_session);
 
   if (old_session != NULL) {
     if (old_session == session) {
-      /* |session| was already in the cache. */
-      CRYPTO_MUTEX_unlock_write(&ctx->lock);
-      SSL_SESSION_free(old_session);
+      // |session| was already in the cache. There are no linked list pointers
+      // to update.
       return 0;
     }
 
-    /* There was a session ID collision. |old_session| must be removed from
-     * the linked list and released. */
+    // There was a session ID collision. |old_session| was replaced with
+    // |session| in the hash table, so |old_session| must be removed from the
+    // linked list to match.
     SSL_SESSION_list_remove(ctx, old_session);
-    SSL_SESSION_free(old_session);
   }
 
   SSL_SESSION_list_add(ctx, session);
 
-  /* Enforce any cache size limits. */
+  // Enforce any cache size limits.
   if (SSL_CTX_sess_get_cache_size(ctx) > 0) {
-    while (SSL_CTX_sess_number(ctx) > SSL_CTX_sess_get_cache_size(ctx)) {
+    while (lh_SSL_SESSION_num_items(ctx->sessions) >
+           SSL_CTX_sess_get_cache_size(ctx)) {
       if (!remove_session_lock(ctx, ctx->session_cache_tail, 0)) {
         break;
       }
     }
   }
 
-  CRYPTO_MUTEX_unlock_write(&ctx->lock);
   return 1;
 }
 
@@ -1063,10 +1089,10 @@ int SSL_CTX_remove_session(SSL_CTX *ctx, SSL_SESSION *session) {
 }
 
 int SSL_set_session(SSL *ssl, SSL_SESSION *session) {
-  /* SSL_set_session may only be called before the handshake has started. */
+  // SSL_set_session may only be called before the handshake has started.
   if (ssl->s3->initial_handshake_complete ||
       ssl->s3->hs == NULL ||
-      ssl->s3->hs->state != SSL_ST_INIT) {
+      ssl->s3->hs->state != 0) {
     abort();
   }
 
@@ -1079,7 +1105,7 @@ uint32_t SSL_CTX_set_timeout(SSL_CTX *ctx, uint32_t timeout) {
     return 0;
   }
 
-  /* Historically, zero was treated as |SSL_DEFAULT_SESSION_TIMEOUT|. */
+  // Historically, zero was treated as |SSL_DEFAULT_SESSION_TIMEOUT|.
   if (timeout == 0) {
     timeout = SSL_DEFAULT_SESSION_TIMEOUT;
   }
@@ -1113,9 +1139,8 @@ static void timeout_doall_arg(SSL_SESSION *session, void *void_param) {
   if (param->time == 0 ||
       session->time + session->timeout < session->time ||
       param->time > (session->time + session->timeout)) {
-    /* timeout */
-    /* The reason we don't call SSL_CTX_remove_session() is to
-     * save on locking overhead */
+    // The reason we don't call SSL_CTX_remove_session() is to
+    // save on locking overhead
     (void) lh_SSL_SESSION_delete(param->cache, session);
     SSL_SESSION_list_remove(param->ctx, session);
     if (param->ctx->remove_session_cb != NULL) {
@@ -1134,9 +1159,8 @@ void SSL_CTX_flush_sessions(SSL_CTX *ctx, uint64_t time) {
     return;
   }
   tp.time = time;
-  CRYPTO_MUTEX_lock_write(&ctx->lock);
+  MutexWriteLock lock(&ctx->lock);
   lh_SSL_SESSION_doall_arg(tp.cache, timeout_doall_arg, &tp);
-  CRYPTO_MUTEX_unlock_write(&ctx->lock);
 }
 
 void SSL_CTX_sess_set_new_cb(SSL_CTX *ctx,
@@ -1159,14 +1183,21 @@ void (*SSL_CTX_sess_get_remove_cb(SSL_CTX *ctx))(SSL_CTX *ctx,
 }
 
 void SSL_CTX_sess_set_get_cb(SSL_CTX *ctx,
-                             SSL_SESSION *(*cb)(SSL *ssl,
-                                                uint8_t *id, int id_len,
-                                                int *out_copy)) {
+                             SSL_SESSION *(*cb)(SSL *ssl, const uint8_t *id,
+                                                int id_len, int *out_copy)) {
   ctx->get_session_cb = cb;
 }
 
-SSL_SESSION *(*SSL_CTX_sess_get_get_cb(SSL_CTX *ctx))(
-    SSL *ssl, uint8_t *id, int id_len, int *out_copy) {
+void SSL_CTX_sess_set_get_cb(SSL_CTX *ctx,
+                             SSL_SESSION *(*cb)(SSL *ssl, uint8_t *id,
+                                                int id_len, int *out_copy)) {
+  ctx->get_session_cb_legacy = cb;
+}
+
+SSL_SESSION *(*SSL_CTX_sess_get_get_cb(SSL_CTX *ctx))(SSL *ssl,
+                                                      const uint8_t *id,
+                                                      int id_len,
+                                                      int *out_copy) {
   return ctx->get_session_cb;
 }
 

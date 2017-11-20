@@ -141,7 +141,7 @@ void AnimationHost::RegisterPlayerForElement(ElementId element_id,
     element_animations->InitAffectedElementTypes();
   }
 
-  element_animations->AddPlayer(player);
+  element_animations->AddTicker(player->animation_ticker());
 }
 
 void AnimationHost::UnregisterPlayerForElement(ElementId element_id,
@@ -152,7 +152,7 @@ void AnimationHost::UnregisterPlayerForElement(ElementId element_id,
   scoped_refptr<ElementAnimations> element_animations =
       GetElementAnimationsForElementId(element_id);
   DCHECK(element_animations);
-  element_animations->RemovePlayer(player);
+  element_animations->RemoveTicker(player->animation_ticker());
 
   if (element_animations->IsEmpty()) {
     element_animations->ClearAffectedElementTypes();
@@ -168,9 +168,6 @@ void AnimationHost::SetMutatorHostClient(MutatorHostClient* client) {
     return;
 
   mutator_host_client_ = client;
-
-  if (needs_push_properties() && mutator_host_client())
-    SetNeedsPushProperties();
 }
 
 void AnimationHost::SetNeedsCommit() {
@@ -231,23 +228,18 @@ void AnimationHost::PushPropertiesToImplThread(AnimationHost* host_impl) {
   // to happen before the element animations are synced below.
   for (auto& kv : id_to_timeline_map_) {
     AnimationTimeline* timeline = kv.second.get();
-    if (timeline->needs_push_properties()) {
-      AnimationTimeline* timeline_impl =
-          host_impl->GetTimelineById(timeline->id());
-      if (timeline_impl)
-        timeline->PushPropertiesTo(timeline_impl);
+    if (AnimationTimeline* timeline_impl =
+            host_impl->GetTimelineById(timeline->id())) {
+      timeline->PushPropertiesTo(timeline_impl);
     }
   }
 
   // Sync properties for created ElementAnimations.
   for (auto& kv : element_to_animations_map_) {
     const auto& element_animations = kv.second;
-    if (element_animations->needs_push_properties()) {
-      auto element_animations_impl =
-          host_impl->GetElementAnimationsForElementId(kv.first);
-      if (element_animations_impl)
-        element_animations->PushPropertiesTo(
-            std::move(element_animations_impl));
+    if (auto element_animations_impl =
+            host_impl->GetElementAnimationsForElementId(kv.first)) {
+      element_animations->PushPropertiesTo(std::move(element_animations_impl));
     }
   }
 
@@ -345,13 +337,6 @@ bool AnimationHost::UpdateAnimationState(bool start_ready_animations,
     it->UpdateState(start_ready_animations, animation_events);
 
   return true;
-}
-
-base::Closure AnimationHost::TakeMutations() {
-  if (mutator_)
-    return mutator_->TakeMutations();
-
-  return base::Closure();
 }
 
 std::unique_ptr<MutatorEvents> AnimationHost::CreateEvents() {
@@ -469,24 +454,6 @@ bool AnimationHost::HasAnyAnimationTargetingProperty(
     return false;
 
   return element_animations->HasAnyAnimationTargetingProperty(property);
-}
-
-bool AnimationHost::HasTransformAnimationThatInflatesBounds(
-    ElementId element_id) const {
-  auto element_animations = GetElementAnimationsForElementId(element_id);
-  return element_animations
-             ? element_animations->HasTransformAnimationThatInflatesBounds()
-             : false;
-}
-
-bool AnimationHost::TransformAnimationBoundsForBox(ElementId element_id,
-                                                   const gfx::BoxF& box,
-                                                   gfx::BoxF* bounds) const {
-  *bounds = gfx::BoxF();
-  auto element_animations = GetElementAnimationsForElementId(element_id);
-  return element_animations
-             ? element_animations->TransformAnimationBoundsForBox(box, bounds)
-             : true;
 }
 
 bool AnimationHost::HasOnlyTranslationTransforms(

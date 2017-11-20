@@ -130,11 +130,12 @@ void GL_APIENTRY GetProgramInterfaceiv(GLuint program,
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!context->skipValidation())
+        if (!context->skipValidation() &&
+            !ValidateGetProgramInterfaceiv(context, program, programInterface, pname, params))
         {
-            context->handleError(InvalidOperation() << "Entry point not implemented");
+            return;
         }
-        UNIMPLEMENTED();
+        context->getProgramInterfaceiv(program, programInterface, pname, params);
     }
 }
 
@@ -279,11 +280,12 @@ void GL_APIENTRY BindProgramPipeline(GLuint pipeline)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (pipeline != 0)
+        if (!context->skipValidation() && !ValidateBindProgramPipeline(context, pipeline))
         {
-            // Binding non-zero pipelines is not implemented yet.
-            UNIMPLEMENTED();
+            return;
         }
+
+        context->bindProgramPipeline(pipeline);
     }
 }
 
@@ -293,11 +295,12 @@ void GL_APIENTRY DeleteProgramPipelines(GLsizei n, const GLuint *pipelines)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!context->skipValidation())
+        if (!context->skipValidation() && !ValidateDeleteProgramPipelines(context, n, pipelines))
         {
-            context->handleError(InvalidOperation() << "Entry point not implemented");
+            return;
         }
-        UNIMPLEMENTED();
+
+        context->deleteProgramPipelines(n, pipelines);
     }
 }
 
@@ -307,11 +310,12 @@ void GL_APIENTRY GenProgramPipelines(GLsizei n, GLuint *pipelines)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!context->skipValidation())
+        if (!context->skipValidation() && !ValidateGenProgramPipelines(context, n, pipelines))
         {
-            context->handleError(InvalidOperation() << "Entry point not implemented");
+            return;
         }
-        UNIMPLEMENTED();
+
+        context->genProgramPipelines(n, pipelines);
     }
 }
 
@@ -321,13 +325,15 @@ GLboolean GL_APIENTRY IsProgramPipeline(GLuint pipeline)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!context->skipValidation())
+        if (!context->skipValidation() && !ValidateIsProgramPipeline(context, pipeline))
         {
-            context->handleError(InvalidOperation() << "Entry point not implemented");
+            return GL_FALSE;
         }
-        UNIMPLEMENTED();
+
+        return context->isProgramPipeline(pipeline);
     }
-    return false;
+
+    return GL_FALSE;
 }
 
 void GL_APIENTRY GetProgramPipelineiv(GLuint pipeline, GLenum pname, GLint *params)
@@ -435,9 +441,7 @@ void GL_APIENTRY ProgramUniform1iv(GLuint program,
             return;
         }
 
-        Program *programObject = context->getProgram(program);
-        ASSERT(programObject);
-        programObject->setUniform1iv(location, count, value);
+        context->programUniform1iv(program, location, count, value);
     }
 }
 
@@ -1069,11 +1073,11 @@ void GL_APIENTRY SampleMaski(GLuint maskNumber, GLbitfield mask)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (mask != ~GLbitfield(0))
+        if (!context->skipValidation() && !ValidateSampleMaski(context, maskNumber))
         {
-            // Setting a non-default sample mask is not implemented yet.
-            UNIMPLEMENTED();
+            return;
         }
+        context->sampleMaski(maskNumber, mask);
     }
 }
 

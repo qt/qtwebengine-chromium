@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_PC_RTPTRANSPORTINTERNAL_H_
-#define WEBRTC_PC_RTPTRANSPORTINTERNAL_H_
+#ifndef PC_RTPTRANSPORTINTERNAL_H_
+#define PC_RTPTRANSPORTINTERNAL_H_
 
-#include "webrtc/api/ortc/rtptransportinterface.h"
-#include "webrtc/rtc_base/sigslot.h"
+#include "api/ortc/rtptransportinterface.h"
+#include "rtc_base/sigslot.h"
 
 namespace rtc {
 class CopyOnWriteBuffer;
@@ -54,10 +54,13 @@ class RtpTransportInternal : public RtpTransportInterface,
 
   virtual bool IsWritable(bool rtcp) const = 0;
 
-  virtual bool SendPacket(bool rtcp,
-                          rtc::CopyOnWriteBuffer* packet,
-                          const rtc::PacketOptions& options,
-                          int flags) = 0;
+  virtual bool SendRtpPacket(rtc::CopyOnWriteBuffer* packet,
+                             const rtc::PacketOptions& options,
+                             int flags) = 0;
+
+  virtual bool SendRtcpPacket(rtc::CopyOnWriteBuffer* packet,
+                              const rtc::PacketOptions& options,
+                              int flags) = 0;
 
   virtual bool HandlesPayloadType(int payload_type) const = 0;
 
@@ -66,4 +69,4 @@ class RtpTransportInternal : public RtpTransportInterface,
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_PC_RTPTRANSPORTINTERNAL_H_
+#endif  // PC_RTPTRANSPORTINTERNAL_H_

@@ -39,12 +39,12 @@ static const char kLibjingle[] = "libjingle";
 #include <ostream>
 #include <vector>
 
-#include "webrtc/rtc_base/criticalsection.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/platform_thread.h"
-#include "webrtc/rtc_base/stringencode.h"
-#include "webrtc/rtc_base/stringutils.h"
-#include "webrtc/rtc_base/timeutils.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/platform_thread.h"
+#include "rtc_base/stringencode.h"
+#include "rtc_base/stringutils.h"
+#include "rtc_base/timeutils.h"
 
 namespace rtc {
 namespace {
@@ -111,7 +111,7 @@ CriticalSection g_log_crit;
 // Note: we explicitly do not clean this up, because of the uncertain ordering
 // of destructors at program exit.  Let the person who sets the stream trigger
 // cleanup by setting to null, or let it leak (safe at program exit).
-LogMessage::StreamList LogMessage::streams_ GUARDED_BY(g_log_crit);
+LogMessage::StreamList LogMessage::streams_ RTC_GUARDED_BY(g_log_crit);
 
 // Boolean options default to false (0)
 bool LogMessage::thread_, LogMessage::timestamp_;
@@ -333,7 +333,8 @@ void LogMessage::ConfigureLogging(const char* params) {
   LogToDebug(debug_level);
 }
 
-void LogMessage::UpdateMinLogSeverity() EXCLUSIVE_LOCKS_REQUIRED(g_log_crit) {
+void LogMessage::UpdateMinLogSeverity()
+    RTC_EXCLUSIVE_LOCKS_REQUIRED(g_log_crit) {
   LoggingSeverity min_sev = dbg_sev_;
   for (auto& kv : streams_) {
     min_sev = std::min(dbg_sev_, kv.second);

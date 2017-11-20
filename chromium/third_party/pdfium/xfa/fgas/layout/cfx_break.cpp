@@ -73,7 +73,7 @@ void CFX_Break::SetVerticalScale(int32_t iScale) {
   m_iVerticalScale = iScale;
 }
 
-void CFX_Break::SetFont(const CFX_RetainPtr<CFGAS_GEFont>& pFont) {
+void CFX_Break::SetFont(const RetainPtr<CFGAS_GEFont>& pFont) {
   if (!pFont || pFont == m_pFont)
     return;
 
@@ -112,7 +112,7 @@ void CFX_Break::FontChanged() {
   if (!m_pFont || m_wDefChar == 0xFEFF)
     return;
 
-  m_pFont->GetCharWidth(m_wDefChar, m_iDefChar, false);
+  m_pFont->GetCharWidth(m_wDefChar, m_iDefChar);
   m_iDefChar *= m_iFontSize;
 }
 
@@ -129,7 +129,7 @@ void CFX_Break::SetDefaultChar(wchar_t wch) {
   if (m_wDefChar == 0xFEFF || !m_pFont)
     return;
 
-  m_pFont->GetCharWidth(m_wDefChar, m_iDefChar, false);
+  m_pFont->GetCharWidth(m_wDefChar, m_iDefChar);
   if (m_iDefChar < 0)
     m_iDefChar = 0;
   else

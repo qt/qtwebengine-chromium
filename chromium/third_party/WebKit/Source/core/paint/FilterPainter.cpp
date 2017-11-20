@@ -8,19 +8,19 @@
 #include "core/paint/FilterEffectBuilder.h"
 #include "core/paint/LayerClipRecorder.h"
 #include "core/paint/PaintLayer.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/CompositorFilterOperations.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/filters/FilterEffect.h"
 #include "platform/graphics/paint/FilterDisplayItem.h"
 #include "platform/graphics/paint/PaintController.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 
 sk_sp<SkImageFilter> FilterPainter::GetImageFilter(PaintLayer& layer) {
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled())
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
     return nullptr;
 
   if (!layer.PaintsWithFilters())

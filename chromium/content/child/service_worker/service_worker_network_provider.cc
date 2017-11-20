@@ -10,7 +10,6 @@
 #include "content/child/service_worker/service_worker_dispatcher.h"
 #include "content/child/service_worker/service_worker_handle_reference.h"
 #include "content/child/service_worker/service_worker_provider_context.h"
-#include "content/child/service_worker/service_worker_registration_handle_reference.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/navigation_params.h"
 #include "content/common/service_worker/service_worker_messages.h"
@@ -97,7 +96,7 @@ class WebServiceWorkerNetworkProviderForFrame
 
   std::unique_ptr<blink::WebURLLoader> CreateURLLoader(
       const blink::WebURLRequest& request,
-      base::SingleThreadTaskRunner* task_runner) override {
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner) override {
     // ChildThreadImpl is nullptr in some tests.
     if (!ChildThreadImpl::current())
       return nullptr;
@@ -122,10 +121,18 @@ class WebServiceWorkerNetworkProviderForFrame
       return nullptr;
 
     // S13nServiceWorker:
+    // If the service worker mode is not all, no need to intercept the request.
+    if (request.GetServiceWorkerMode() !=
+        blink::WebURLRequest::ServiceWorkerMode::kAll) {
+      return nullptr;
+    }
+
+    // S13nServiceWorker:
     // Create our own SubresourceLoader to route the request
     // to the controller ServiceWorker.
     return base::MakeUnique<WebURLLoaderImpl>(
-        ChildThreadImpl::current()->resource_dispatcher(), task_runner,
+        ChildThreadImpl::current()->resource_dispatcher(),
+        std::move(task_runner),
         provider_->context()->subresource_loader_factory());
   }
 
@@ -239,11 +246,6 @@ int ServiceWorkerNetworkProvider::provider_id() const {
 }
 
 bool ServiceWorkerNetworkProvider::IsControlledByServiceWorker() const {
-  if (ServiceWorkerUtils::IsServicificationEnabled()) {
-    // Interception for subresource loading is not working (yet)
-    // when servicification is enabled.
-    return false;
-  }
   return context() && context()->controller();
 }
 
@@ -310,17 +312,15 @@ ServiceWorkerNetworkProvider::ServiceWorkerNetworkProvider(
       info->provider_id, SERVICE_WORKER_PROVIDER_FOR_CONTROLLER,
       std::move(info->client_request), std::move(info->host_ptr_info),
       dispatcher, nullptr /* loader_factory_getter */);
-  std::unique_ptr<ServiceWorkerRegistrationHandleReference> registration =
-      ServiceWorkerRegistrationHandleReference::Adopt(info->registration,
-                                                      sender);
   std::unique_ptr<ServiceWorkerHandleReference> installing =
       ServiceWorkerHandleReference::Adopt(info->attributes.installing, sender);
   std::unique_ptr<ServiceWorkerHandleReference> waiting =
       ServiceWorkerHandleReference::Adopt(info->attributes.waiting, sender);
   std::unique_ptr<ServiceWorkerHandleReference> active =
       ServiceWorkerHandleReference::Adopt(info->attributes.active, sender);
-  context_->SetRegistration(std::move(registration), std::move(installing),
-                            std::move(waiting), std::move(active));
+  context_->SetRegistrationForServiceWorkerGlobalScope(
+      std::move(info->registration), std::move(installing), std::move(waiting),
+      std::move(active));
 
   if (info->script_loader_factory_ptr_info.is_valid()) {
     script_loader_factory_.Bind(

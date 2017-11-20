@@ -27,6 +27,21 @@ var LOG_TYPE = {
 
 
 /**
+ * The different sources where an NTP tile's title can originate from.
+ * Note: Keep in sync with components/ntp_tiles/tile_title_source.h
+ * @enum {number}
+ * @const
+ */
+var TileTitleSource = {
+  UNKNOWN: 0,
+  MANIFEST: 1,
+  META_TAG: 2,
+  TITLE: 3,
+  INFERRED: 4
+};
+
+
+/**
  * The different sources that an NTP tile can have.
  * Note: Keep in sync with components/ntp_tiles/tile_source.h
  * @enum {number}
@@ -113,23 +128,31 @@ var logEvent = function(eventType) {
 /**
  * Log impression of an NTP tile.
  * @param {number} tileIndex Position of the tile, >= 0 and < NUMBER_OF_TILES.
+ * @param {number} tileTitleSource The title's source from TileTitleSource.
  * @param {number} tileSource The source from TileSource.
  * @param {number} tileType The type from TileVisualType.
+ * @param {Date} dataGenerationTime Timestamp representing when the tile was
+ *               produced by a ranking algorithm.
  */
-function logMostVisitedImpression(tileIndex, tileSource, tileType) {
+function logMostVisitedImpression(
+    tileIndex, tileTitleSource, tileSource, tileType, dataGenerationTime) {
   chrome.embeddedSearch.newTabPage.logMostVisitedImpression(
-      tileIndex, tileSource, tileType);
+      tileIndex, tileTitleSource, tileSource, tileType, dataGenerationTime);
 }
 
 /**
  * Log click on an NTP tile.
  * @param {number} tileIndex Position of the tile, >= 0 and < NUMBER_OF_TILES.
+ * @param {number} tileTitleSource The title's source from TileTitleSource.
  * @param {number} tileSource The source from TileSource.
  * @param {number} tileType The type from TileVisualType.
+ * @param {Date} dataGenerationTime Timestamp representing when the tile was
+ *               produced by a ranking algorithm.
  */
-function logMostVisitedNavigation(tileIndex, tileSource, tileType) {
+function logMostVisitedNavigation(
+    tileIndex, tileTitleSource, tileSource, tileType, dataGenerationTime) {
   chrome.embeddedSearch.newTabPage.logMostVisitedNavigation(
-      tileIndex, tileSource, tileType);
+      tileIndex, tileTitleSource, tileSource, tileType, dataGenerationTime);
 }
 
 /**
@@ -305,8 +328,7 @@ var swapInNewTiles = function() {
  */
 var addTile = function(args) {
   if (isFinite(args.rid)) {
-    // If a valid number passed in |args.rid|: a local Chrome suggestion. Grab
-    // the data from the embeddedSearch API.
+    // An actual suggestion. Grab the data from the embeddedSearch API.
     var data =
         chrome.embeddedSearch.newTabPage.getMostVisitedItemData(args.rid);
     if (!data)
@@ -318,15 +340,8 @@ var addTile = function(args) {
           window.devicePixelRatio + 'x/' + data.renderViewId + '/' + data.tid;
     }
     tiles.appendChild(renderTile(data));
-  } else if (args.url) {
-    // If a URL is passed: a server-side suggestion.
-    args.tileSource = TileSource.SUGGESTIONS_SERVICE;
-    // check sanity of the arguments
-    if (/^javascript:/i.test(args.url) ||
-        /^javascript:/i.test(args.thumbnailUrl))
-      return;
-    tiles.appendChild(renderTile(args));
-  } else {  // an empty tile
+  } else {
+    // An empty tile
     tiles.appendChild(renderTile(null));
   }
 };
@@ -395,7 +410,9 @@ var renderTile = function(data) {
   tile.title = data.title;
 
   tile.addEventListener('click', function(ev) {
-    logMostVisitedNavigation(position, data.tileSource, tileType);
+    logMostVisitedNavigation(
+        position, data.tileTitleSource, data.tileSource, tileType,
+        data.dataGenerationTime);
   });
 
   tile.addEventListener('keydown', function(event) {
@@ -455,7 +472,9 @@ var renderTile = function(data) {
   img.addEventListener('load', function(ev) {
     // Store the type for a potential later navigation.
     tileType = TileVisualType.THUMBNAIL;
-    logMostVisitedImpression(position, data.tileSource, tileType);
+    logMostVisitedImpression(
+        position, data.tileTitleSource, data.tileSource, tileType,
+        data.dataGenerationTime);
     // Note: It's important to call countLoad last, because that might emit the
     // NTP_ALL_TILES_LOADED event, which must happen after the impression log.
     countLoad();
@@ -465,7 +484,9 @@ var renderTile = function(data) {
     thumb.removeChild(img);
     // Store the type for a potential later navigation.
     tileType = TileVisualType.THUMBNAIL_FAILED;
-    logMostVisitedImpression(position, data.tileSource, tileType);
+    logMostVisitedImpression(
+        position, data.tileTitleSource, data.tileSource, tileType,
+        data.dataGenerationTime);
     // Note: It's important to call countLoad last, because that might emit the
     // NTP_ALL_TILES_LOADED event, which must happen after the impression log.
     countLoad();
@@ -473,21 +494,17 @@ var renderTile = function(data) {
   thumb.appendChild(img);
 
   var favicon = tile.querySelector('.mv-favicon');
-  if (data.faviconUrl) {
-    var fi = document.createElement('img');
-    fi.src = data.faviconUrl;
-    // Set the title to empty so screen readers won't say the image name.
-    fi.title = '';
-    loadedCounter += 1;
-    fi.addEventListener('load', countLoad);
-    fi.addEventListener('error', countLoad);
-    fi.addEventListener('error', function(ev) {
-      favicon.classList.add('failed-favicon');
-    });
-    favicon.appendChild(fi);
-  } else {
+  var fi = document.createElement('img');
+  fi.src = data.faviconUrl;
+  // Set the title to empty so screen readers won't say the image name.
+  fi.title = '';
+  loadedCounter += 1;
+  fi.addEventListener('load', countLoad);
+  fi.addEventListener('error', countLoad);
+  fi.addEventListener('error', function(ev) {
     favicon.classList.add('failed-favicon');
-  }
+  });
+  favicon.appendChild(fi);
 
   var mvx = tile.querySelector('.mv-x');
   mvx.addEventListener('click', function(ev) {

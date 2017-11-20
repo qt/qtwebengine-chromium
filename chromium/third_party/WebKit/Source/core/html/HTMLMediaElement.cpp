@@ -32,7 +32,6 @@
 #include "bindings/core/v8/ScriptEventListener.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/CoreInitializer.h"
-#include "core/HTMLNames.h"
 #include "core/css/MediaList.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/DOMException.h"
@@ -65,6 +64,7 @@
 #include "core/html/track/TextTrackList.h"
 #include "core/html/track/VideoTrack.h"
 #include "core/html/track/VideoTrackList.h"
+#include "core/html_names.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/layout/IntersectionGeometry.h"
 #include "core/layout/LayoutMedia.h"
@@ -74,7 +74,6 @@
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "platform/Histogram.h"
 #include "platform/LayoutTestSupport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/AudioSourceProviderClient.h"
 #include "platform/bindings/Microtask.h"
@@ -84,6 +83,7 @@
 #include "platform/network/ParsedContentType.h"
 #include "platform/network/mime/ContentType.h"
 #include "platform/network/mime/MIMETypeFromURL.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/AutoReset.h"
 #include "platform/wtf/CurrentTime.h"
@@ -161,6 +161,10 @@ enum class PlayPromiseRejectReason {
   kInterruptedByLoad,
   kCount,
 };
+
+// Limits the range of media playback rate.
+const double kMinRate = 0.0625;
+const double kMaxRate = 16.0;
 
 void ReportContentTypeResultToUMA(String content_type,
                                   MIMETypeRegistry::SupportsType result) {
@@ -458,7 +462,7 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
           this,
           &HTMLMediaElement::CheckViewportIntersectionTimerFired),
       played_time_ranges_(),
-      async_event_queue_(MediaElementEventQueue::Create(this)),
+      async_event_queue_(MediaElementEventQueue::Create(this, &document)),
       playback_rate_(1.0f),
       default_playback_rate_(1.0f),
       network_state_(kNetworkEmpty),
@@ -2135,8 +2139,30 @@ double HTMLMediaElement::playbackRate() const {
   return playback_rate_;
 }
 
-void HTMLMediaElement::setPlaybackRate(double rate) {
+void HTMLMediaElement::setPlaybackRate(double rate,
+                                       ExceptionState& exception_state) {
   BLINK_MEDIA_LOG << "setPlaybackRate(" << (void*)this << ", " << rate << ")";
+
+  // TODO(apacible): While visible clamping is currently experimental, do NOT
+  // clamp the values of |playback_rate_| in |this|. Instead, clamp these
+  // values in WebMediaPlayerImpl until .
+  if (rate != 0.0 && (rate < kMinRate || rate > kMaxRate)) {
+    UseCounter::Count(GetDocument(),
+                      WebFeature::kHTMLMediaElementMediaPlaybackRateOutOfRange);
+
+    // Experimental: crbug/747082.
+    // When the proposed playbackRate is unsupported, throw a NotSupportedError
+    // DOMException and don't update the value.
+    if (RuntimeEnabledFeatures::PreloadDefaultIsMetadataEnabled()) {
+      exception_state.ThrowDOMException(
+          kNotSupportedError, "The provided playback rate (" +
+                                  String::Number(rate) + ") is not in the " +
+                                  "supported playback range.");
+
+      // Do not update |playback_rate_|.
+      return;
+    }
+  }
 
   if (playback_rate_ != rate) {
     playback_rate_ = rate;
@@ -2832,7 +2858,7 @@ void HTMLMediaElement::DidRemoveTrackElement(HTMLTrackElement* track_element) {
 
   size_t index = text_tracks_when_resource_selection_began_.Find(text_track);
   if (index != kNotFound)
-    text_tracks_when_resource_selection_began_.erase(index);
+    text_tracks_when_resource_selection_began_.EraseAt(index);
 }
 
 void HTMLMediaElement::HonorUserPreferencesForAutomaticTextTrackSelection() {
@@ -2905,12 +2931,12 @@ KURL HTMLMediaElement::SelectNextSourceChild(
       continue;
     looking_for_start_node = false;
 
-    if (!isHTMLSourceElement(*node))
+    if (!IsHTMLSourceElement(*node))
       continue;
     if (node->parentNode() != this)
       continue;
 
-    source = toHTMLSourceElement(node);
+    source = ToHTMLSourceElement(node);
 
     // 2. If candidate does not have a src attribute, or if its src
     // attribute's value is the empty string ... jump down to the failed

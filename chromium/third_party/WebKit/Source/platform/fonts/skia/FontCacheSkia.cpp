@@ -38,9 +38,10 @@
 #include "SkTypeface.h"
 
 #include "build/build_config.h"
-#include "platform/FontFamilyNames.h"
 #include "platform/Language.h"
+#include "platform/font_family_names.h"
 #include "platform/fonts/AlternateFontFamily.h"
+#include "platform/fonts/BitmapGlyphsBlacklist.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontFaceCreationParams.h"
@@ -121,7 +122,7 @@ AtomicString FontCache::GetFamilyNameForCharacter(
 
 void FontCache::PlatformInit() {}
 
-PassRefPtr<SimpleFontData> FontCache::FallbackOnStandardFontStyle(
+RefPtr<SimpleFontData> FontCache::FallbackOnStandardFontStyle(
     const FontDescription& font_description,
     UChar32 character) {
   FontDescription substitute_description(font_description);
@@ -146,7 +147,7 @@ PassRefPtr<SimpleFontData> FontCache::FallbackOnStandardFontStyle(
   return nullptr;
 }
 
-PassRefPtr<SimpleFontData> FontCache::GetLastResortFallbackFont(
+RefPtr<SimpleFontData> FontCache::GetLastResortFallbackFont(
     const FontDescription& description,
     ShouldRetain should_retain) {
   const FontFaceCreationParams fallback_creation_params(
@@ -273,8 +274,7 @@ sk_sp<SkTypeface> FontCache::CreateTypeface(
   // FIXME: Use m_fontManager, matchFamilyStyle instead of
   // legacyCreateTypeface on all platforms.
   sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
-  return sk_sp<SkTypeface>(
-      fm->legacyCreateTypeface(name.data(), font_description.SkiaFontStyle()));
+  return fm->legacyMakeTypeface(name.data(), font_description.SkiaFontStyle());
 }
 
 #if !defined(OS_WIN)
@@ -289,15 +289,22 @@ std::unique_ptr<FontPlatformData> FontCache::CreateFontPlatformData(
   if (!tf)
     return nullptr;
 
-  return WTF::WrapUnique(new FontPlatformData(
-      tf, name.data(), font_size,
-      (font_description.Weight() >
-           FontSelectionValue(200) +
-               FontSelectionValue(tf->fontStyle().weight()) ||
-       font_description.IsSyntheticBold()),
-      ((font_description.Style() == ItalicSlopeValue()) && !tf->isItalic()) ||
-          font_description.IsSyntheticItalic(),
-      font_description.Orientation()));
+  std::unique_ptr<FontPlatformData> font_platform_data =
+      WTF::WrapUnique(new FontPlatformData(
+          tf, name.data(), font_size,
+          (font_description.Weight() >
+               FontSelectionValue(200) +
+                   FontSelectionValue(tf->fontStyle().weight()) ||
+           font_description.IsSyntheticBold()),
+          ((font_description.Style() == ItalicSlopeValue()) &&
+           !tf->isItalic()) ||
+              font_description.IsSyntheticItalic(),
+          font_description.Orientation()));
+
+  font_platform_data->SetAvoidEmbeddedBitmaps(
+      BitmapGlyphsBlacklist::AvoidEmbeddedBitmapsForTypeface(tf.get()));
+
+  return font_platform_data;
 }
 #endif  // !defined(OS_WIN)
 

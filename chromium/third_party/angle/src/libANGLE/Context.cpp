@@ -26,6 +26,7 @@
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/Path.h"
 #include "libANGLE/Program.h"
+#include "libANGLE/ProgramPipeline.h"
 #include "libANGLE/Query.h"
 #include "libANGLE/Renderbuffer.h"
 #include "libANGLE/ResourceManager.h"
@@ -117,7 +118,7 @@ gl::Error GetQueryObjectParameter(gl::Query *query, GLenum pname, T *params)
             gl::Error error = query->isResultAvailable(&available);
             if (!error.isError())
             {
-                *params = gl::ConvertFromGLboolean<T>(available);
+                *params = gl::CastFromStateValue<T>(pname, static_cast<GLuint>(available));
             }
             return error;
         }
@@ -209,6 +210,11 @@ bool GetClientArraysEnabled(const egl::AttributeMap &attribs)
     return (attribs.get(EGL_CONTEXT_CLIENT_ARRAYS_ENABLED_ANGLE, EGL_TRUE) == EGL_TRUE);
 }
 
+bool GetRobustResourceInit(const egl::AttributeMap &attribs)
+{
+    return (attribs.get(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE, EGL_FALSE) == EGL_TRUE);
+}
+
 std::string GetObjectLabelFromPointer(GLsizei length, const GLchar *label)
 {
     std::string labelName;
@@ -239,6 +245,12 @@ void GetObjectLabelBase(const std::string &objectLabel,
     }
 }
 
+template <typename CapT, typename MaxT>
+void LimitCap(CapT *cap, MaxT maximum)
+{
+    *cap = std::min(*cap, static_cast<CapT>(maximum));
+}
+
 }  // anonymous namespace
 
 namespace gl
@@ -250,8 +262,7 @@ Context::Context(rx::EGLImplFactory *implFactory,
                  TextureManager *shareTextures,
                  MemoryProgramCache *memoryProgramCache,
                  const egl::AttributeMap &attribs,
-                 const egl::DisplayExtensions &displayExtensions,
-                 bool robustResourceInit)
+                 const egl::DisplayExtensions &displayExtensions)
 
     : ValidationContext(shareContext,
                         shareTextures,
@@ -280,12 +291,10 @@ Context::Context(rx::EGLImplFactory *implFactory,
       mScratchBuffer(1000u),
       mZeroFilledBuffer(1000u)
 {
-    if (mRobustAccess)
-    {
-        UNIMPLEMENTED();
-    }
+    mImplementation->setMemoryProgramCache(memoryProgramCache);
 
-    initCaps(displayExtensions);
+    bool robustResourceInit = GetRobustResourceInit(attribs);
+    initCaps(displayExtensions, robustResourceInit);
     initWorkarounds();
 
     mGLState.initialize(this, GetDebug(attribs), GetBindGeneratesResource(attribs),
@@ -456,7 +465,7 @@ egl::Error Context::onDestroy(const egl::Display *display)
 
     for (auto &zeroTexture : mZeroTextures)
     {
-        zeroTexture.second->onDestroy(this);
+        ANGLE_TRY(zeroTexture.second->onDestroy(this));
         zeroTexture.second.set(this, nullptr);
     }
     mZeroTextures.clear();
@@ -476,6 +485,7 @@ egl::Error Context::onDestroy(const egl::Display *display)
     mState.mSyncs->release(this);
     mState.mPaths->release(this);
     mState.mFramebuffers->release(this);
+    mState.mPipelines->release(this);
 
     return egl::NoError();
 }
@@ -510,6 +520,7 @@ egl::Error Context::makeCurrent(egl::Display *display, egl::Surface *surface)
 
     // TODO(jmadill): Rework this when we support ContextImpl
     mGLState.setAllDirtyBits();
+    mGLState.setAllDirtyObjects();
 
     ANGLE_TRY(releaseSurface(display));
 
@@ -630,6 +641,11 @@ GLuint Context::createFenceNV()
     return handle;
 }
 
+GLuint Context::createProgramPipeline()
+{
+    return mState.mPipelines->createProgramPipeline();
+}
+
 void Context::deleteBuffer(GLuint buffer)
 {
     if (mState.mBuffers->getBuffer(buffer))
@@ -677,6 +693,16 @@ void Context::deleteSync(GLsync sync)
     // and since our API is currently designed for being called from a single thread, we can delete
     // the fence immediately.
     mState.mSyncs->deleteObject(this, static_cast<GLuint>(reinterpret_cast<uintptr_t>(sync)));
+}
+
+void Context::deleteProgramPipeline(GLuint pipeline)
+{
+    if (mState.mPipelines->getProgramPipeline(pipeline))
+    {
+        detachProgramPipeline(pipeline);
+    }
+
+    mState.mPipelines->deleteObject(this, pipeline);
 }
 
 void Context::deletePaths(GLuint first, GLsizei range)
@@ -824,6 +850,11 @@ TransformFeedback *Context::getTransformFeedback(GLuint handle) const
     return mTransformFeedbackMap.query(handle);
 }
 
+ProgramPipeline *Context::getProgramPipeline(GLuint handle) const
+{
+    return mState.mPipelines->getProgramPipeline(handle);
+}
+
 LabeledObject *Context::getLabeledObject(GLenum identifier, GLuint name) const
 {
     switch (identifier)
@@ -866,6 +897,10 @@ void Context::objectLabel(GLenum identifier, GLuint name, GLsizei length, const 
 
     std::string labelName = GetObjectLabelFromPointer(length, label);
     object->setLabel(labelName);
+
+    // TODO(jmadill): Determine if the object is dirty based on 'name'. Conservatively assume the
+    // specified object is active until we do this.
+    mGLState.setObjectDirty(identifier);
 }
 
 void Context::objectPtrLabel(const void *ptr, GLsizei length, const GLchar *label)
@@ -1086,6 +1121,13 @@ void Context::bindTransformFeedback(GLenum target, GLuint transformFeedbackHandl
     TransformFeedback *transformFeedback =
         checkTransformFeedbackAllocation(transformFeedbackHandle);
     mGLState.setTransformFeedbackBinding(this, transformFeedback);
+}
+
+void Context::bindProgramPipeline(GLuint pipelineHandle)
+{
+    ProgramPipeline *pipeline =
+        mState.mPipelines->checkProgramPipelineAllocation(mImplementation.get(), pipelineHandle);
+    mGLState.setProgramPipelineBinding(this, pipeline);
 }
 
 void Context::beginQuery(GLenum target, GLuint query)
@@ -1724,36 +1766,40 @@ void Context::texParameterf(GLenum target, GLenum pname, GLfloat param)
 {
     Texture *texture = getTargetTexture(target);
     SetTexParameterf(this, texture, pname, param);
+    onTextureChange(texture);
 }
 
 void Context::texParameterfv(GLenum target, GLenum pname, const GLfloat *params)
 {
     Texture *texture = getTargetTexture(target);
     SetTexParameterfv(this, texture, pname, params);
+    onTextureChange(texture);
 }
 
 void Context::texParameteri(GLenum target, GLenum pname, GLint param)
 {
     Texture *texture = getTargetTexture(target);
     SetTexParameteri(this, texture, pname, param);
+    onTextureChange(texture);
 }
 
 void Context::texParameteriv(GLenum target, GLenum pname, const GLint *params)
 {
     Texture *texture = getTargetTexture(target);
     SetTexParameteriv(this, texture, pname, params);
+    onTextureChange(texture);
 }
 
 void Context::drawArrays(GLenum mode, GLint first, GLsizei count)
 {
-    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
+    ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(mImplementation->drawArrays(this, mode, first, count));
     MarkTransformFeedbackBufferUsage(mGLState.getCurrentTransformFeedback());
 }
 
 void Context::drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount)
 {
-    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
+    ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(
         mImplementation->drawArraysInstanced(this, mode, first, count, instanceCount));
     MarkTransformFeedbackBufferUsage(mGLState.getCurrentTransformFeedback());
@@ -1761,7 +1807,7 @@ void Context::drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsiz
 
 void Context::drawElements(GLenum mode, GLsizei count, GLenum type, const void *indices)
 {
-    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
+    ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(mImplementation->drawElements(this, mode, count, type, indices));
 }
 
@@ -1771,7 +1817,7 @@ void Context::drawElementsInstanced(GLenum mode,
                                     const void *indices,
                                     GLsizei instances)
 {
-    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
+    ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(
         mImplementation->drawElementsInstanced(this, mode, count, type, indices, instances));
 }
@@ -1783,20 +1829,20 @@ void Context::drawRangeElements(GLenum mode,
                                 GLenum type,
                                 const void *indices)
 {
-    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
+    ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(
         mImplementation->drawRangeElements(this, mode, start, end, count, type, indices));
 }
 
 void Context::drawArraysIndirect(GLenum mode, const void *indirect)
 {
-    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
+    ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(mImplementation->drawArraysIndirect(this, mode, indirect));
 }
 
 void Context::drawElementsIndirect(GLenum mode, GLenum type, const void *indirect)
 {
-    ANGLE_CONTEXT_TRY(prepareForDraw(mode));
+    ANGLE_CONTEXT_TRY(prepareForDraw());
     ANGLE_CONTEXT_TRY(mImplementation->drawElementsIndirect(this, mode, type, indirect));
 }
 
@@ -2093,7 +2139,16 @@ void Context::getProgramResourceiv(GLuint program,
                            length, params);
 }
 
-Error Context::handleError(const Error &error)
+void Context::getProgramInterfaceiv(GLuint program,
+                                    GLenum programInterface,
+                                    GLenum pname,
+                                    GLint *params)
+{
+    const auto *programObject = getProgram(program);
+    QueryProgramInterfaceiv(programObject, programInterface, pname, params);
+}
+
+void Context::handleError(const Error &error)
 {
     if (error.isError())
     {
@@ -2111,8 +2166,6 @@ Error Context::handleError(const Error &error)
                                  GL_DEBUG_SEVERITY_HIGH, error.getMessage());
         }
     }
-
-    return error;
 }
 
 // Get one of the recorded errors and clear its flag, if any.
@@ -2342,6 +2395,11 @@ void Context::detachSampler(GLuint sampler)
     mGLState.detachSampler(this, sampler);
 }
 
+void Context::detachProgramPipeline(GLuint pipeline)
+{
+    mGLState.detachProgramPipeline(this, pipeline);
+}
+
 void Context::vertexAttribDivisor(GLuint index, GLuint divisor)
 {
     mGLState.setVertexAttribDivisor(this, index, divisor);
@@ -2352,6 +2410,7 @@ void Context::samplerParameteri(GLuint sampler, GLenum pname, GLint param)
     Sampler *samplerObject =
         mState.mSamplers->checkSamplerAllocation(mImplementation.get(), sampler);
     SetSamplerParameteri(samplerObject, pname, param);
+    mGLState.setObjectDirty(GL_SAMPLER);
 }
 
 void Context::samplerParameteriv(GLuint sampler, GLenum pname, const GLint *param)
@@ -2359,6 +2418,7 @@ void Context::samplerParameteriv(GLuint sampler, GLenum pname, const GLint *para
     Sampler *samplerObject =
         mState.mSamplers->checkSamplerAllocation(mImplementation.get(), sampler);
     SetSamplerParameteriv(samplerObject, pname, param);
+    mGLState.setObjectDirty(GL_SAMPLER);
 }
 
 void Context::samplerParameterf(GLuint sampler, GLenum pname, GLfloat param)
@@ -2366,6 +2426,7 @@ void Context::samplerParameterf(GLuint sampler, GLenum pname, GLfloat param)
     Sampler *samplerObject =
         mState.mSamplers->checkSamplerAllocation(mImplementation.get(), sampler);
     SetSamplerParameterf(samplerObject, pname, param);
+    mGLState.setObjectDirty(GL_SAMPLER);
 }
 
 void Context::samplerParameterfv(GLuint sampler, GLenum pname, const GLfloat *param)
@@ -2373,6 +2434,7 @@ void Context::samplerParameterfv(GLuint sampler, GLenum pname, const GLfloat *pa
     Sampler *samplerObject =
         mState.mSamplers->checkSamplerAllocation(mImplementation.get(), sampler);
     SetSamplerParameterfv(samplerObject, pname, param);
+    mGLState.setObjectDirty(GL_SAMPLER);
 }
 
 void Context::getSamplerParameteriv(GLuint sampler, GLenum pname, GLint *params)
@@ -2380,6 +2442,7 @@ void Context::getSamplerParameteriv(GLuint sampler, GLenum pname, GLint *params)
     const Sampler *samplerObject =
         mState.mSamplers->checkSamplerAllocation(mImplementation.get(), sampler);
     QuerySamplerParameteriv(samplerObject, pname, params);
+    mGLState.setObjectDirty(GL_SAMPLER);
 }
 
 void Context::getSamplerParameterfv(GLuint sampler, GLenum pname, GLfloat *params)
@@ -2387,6 +2450,7 @@ void Context::getSamplerParameterfv(GLuint sampler, GLenum pname, GLfloat *param
     const Sampler *samplerObject =
         mState.mSamplers->checkSamplerAllocation(mImplementation.get(), sampler);
     QuerySamplerParameterfv(samplerObject, pname, params);
+    mGLState.setObjectDirty(GL_SAMPLER);
 }
 
 void Context::programParameteri(GLuint program, GLenum pname, GLint value)
@@ -2522,12 +2586,12 @@ void Context::requestExtension(const char *name)
     // Release the shader compiler so it will be re-created with the requested extensions enabled.
     releaseShaderCompiler();
 
-    // Invalidate all cached completenesses for textures and framebuffer. Some extensions make new
-    // formats renderable or sampleable.
-    mState.mTextures->invalidateTextureComplenessCache();
+    // Invalidate all textures and framebuffer. Some extensions make new formats renderable or
+    // sampleable.
+    mState.mTextures->signalAllTexturesDirty();
     for (auto &zeroTexture : mZeroTextures)
     {
-        zeroTexture.second->invalidateCompletenessCache();
+        zeroTexture.second->signalDirty(InitState::Initialized);
     }
 
     mState.mFramebuffers->invalidateFramebufferComplenessCache();
@@ -2559,7 +2623,7 @@ bool Context::hasActiveTransformFeedback(GLuint program) const
     return false;
 }
 
-void Context::initCaps(const egl::DisplayExtensions &displayExtensions)
+void Context::initCaps(const egl::DisplayExtensions &displayExtensions, bool robustResourceInit)
 {
     mCaps = mImplementation->getNativeCaps();
 
@@ -2607,26 +2671,38 @@ void Context::initCaps(const egl::DisplayExtensions &displayExtensions)
     mExtensions.robustClientMemory = true;
 
     // Determine robust resource init availability from EGL.
-    mExtensions.robustResourceInitialization =
-        egl::Display::GetClientExtensions().displayRobustResourceInitialization;
+    mExtensions.robustResourceInitialization = robustResourceInit;
+
+    // mExtensions.robustBufferAccessBehavior is true only if robust access is true and the backend
+    // supports it.
+    mExtensions.robustBufferAccessBehavior =
+        mRobustAccess && mExtensions.robustBufferAccessBehavior;
 
     // Enable the cache control query unconditionally.
     mExtensions.programCacheControl = true;
 
     // Apply implementation limits
-    mCaps.maxVertexAttributes = std::min<GLuint>(mCaps.maxVertexAttributes, MAX_VERTEX_ATTRIBS);
-    mCaps.maxVertexAttribBindings =
-        getClientVersion() < ES_3_1
-            ? mCaps.maxVertexAttributes
-            : std::min<GLuint>(mCaps.maxVertexAttribBindings, MAX_VERTEX_ATTRIB_BINDINGS);
+    LimitCap(&mCaps.maxVertexAttributes, MAX_VERTEX_ATTRIBS);
 
-    mCaps.maxVertexUniformBlocks = std::min<GLuint>(
-        mCaps.maxVertexUniformBlocks, IMPLEMENTATION_MAX_VERTEX_SHADER_UNIFORM_BUFFERS);
-    mCaps.maxVertexOutputComponents =
-        std::min<GLuint>(mCaps.maxVertexOutputComponents, IMPLEMENTATION_MAX_VARYING_VECTORS * 4);
+    if (getClientVersion() < ES_3_1)
+    {
+        mCaps.maxVertexAttribBindings = mCaps.maxVertexAttributes;
+    }
+    else
+    {
+        LimitCap(&mCaps.maxVertexAttribBindings, MAX_VERTEX_ATTRIB_BINDINGS);
+    }
 
-    mCaps.maxFragmentInputComponents =
-        std::min<GLuint>(mCaps.maxFragmentInputComponents, IMPLEMENTATION_MAX_VARYING_VECTORS * 4);
+    LimitCap(&mCaps.maxVertexUniformBlocks, IMPLEMENTATION_MAX_VERTEX_SHADER_UNIFORM_BUFFERS);
+    LimitCap(&mCaps.maxVertexOutputComponents, IMPLEMENTATION_MAX_VARYING_VECTORS * 4);
+    LimitCap(&mCaps.maxFragmentInputComponents, IMPLEMENTATION_MAX_VARYING_VECTORS * 4);
+
+    // Limit textures as well, so we can use fast bitsets with texture bindings.
+    LimitCap(&mCaps.maxCombinedTextureImageUnits, IMPLEMENTATION_MAX_ACTIVE_TEXTURES);
+    LimitCap(&mCaps.maxVertexTextureImageUnits, IMPLEMENTATION_MAX_ACTIVE_TEXTURES / 2);
+    LimitCap(&mCaps.maxTextureImageUnits, IMPLEMENTATION_MAX_ACTIVE_TEXTURES / 2);
+
+    mCaps.maxSampleMaskWords = std::min<GLuint>(mCaps.maxSampleMaskWords, MAX_SAMPLE_MASK_WORDS);
 
     // WebGL compatibility
     mExtensions.webglCompatibility = mWebGLContext;
@@ -2745,35 +2821,29 @@ void Context::initWorkarounds()
     mWorkarounds.loseContextOnOutOfMemory = (mResetStrategy == GL_LOSE_CONTEXT_ON_RESET_EXT);
 }
 
-Error Context::prepareForDraw(GLenum drawMode)
+Error Context::prepareForDraw()
 {
     syncRendererState();
-
-    InfoLog infoLog;
-    Error err = mImplementation->triggerDrawCallProgramRecompilation(this, &infoLog,
-                                                                     mMemoryProgramCache, drawMode);
-    if (err.isError() || infoLog.getLength() > 0)
-    {
-        WARN() << "Dynamic recompilation error log: " << infoLog.str();
-    }
-    return err;
+    ANGLE_TRY(mGLState.clearUnclearedActiveTextures(this));
+    ANGLE_TRY(mGLState.getDrawFramebuffer()->ensureDrawAttachmentsInitialized(this));
+    return NoError();
 }
 
 void Context::syncRendererState()
 {
+    mGLState.syncDirtyObjects(this);
     const State::DirtyBits &dirtyBits = mGLState.getDirtyBits();
     mImplementation->syncState(this, dirtyBits);
     mGLState.clearDirtyBits();
-    mGLState.syncDirtyObjects(this);
 }
 
 void Context::syncRendererState(const State::DirtyBits &bitMask,
                                 const State::DirtyObjects &objectMask)
 {
+    mGLState.syncDirtyObjects(this, objectMask);
     const State::DirtyBits &dirtyBits = (mGLState.getDirtyBits() & bitMask);
     mImplementation->syncState(this, dirtyBits);
     mGLState.clearDirtyBits(dirtyBits);
-    mGLState.syncDirtyObjects(this, objectMask);
 }
 
 void Context::blitFramebuffer(GLint srcX0,
@@ -2874,7 +2944,7 @@ void Context::copyTexImage2D(GLenum target,
 
     Rectangle sourceArea(x, y, width, height);
 
-    const Framebuffer *framebuffer = mGLState.getReadFramebuffer();
+    Framebuffer *framebuffer = mGLState.getReadFramebuffer();
     Texture *texture =
         getTargetTexture(IsCubeMapTextureTarget(target) ? GL_TEXTURE_CUBE_MAP : target);
     handleError(texture->copyImage(this, target, level, sourceArea, internalformat, framebuffer));
@@ -2900,7 +2970,7 @@ void Context::copyTexSubImage2D(GLenum target,
     Offset destOffset(xoffset, yoffset, 0);
     Rectangle sourceArea(x, y, width, height);
 
-    const Framebuffer *framebuffer = mGLState.getReadFramebuffer();
+    Framebuffer *framebuffer = mGLState.getReadFramebuffer();
     Texture *texture =
         getTargetTexture(IsCubeMapTextureTarget(target) ? GL_TEXTURE_CUBE_MAP : target);
     handleError(texture->copySubImage(this, target, level, destOffset, sourceArea, framebuffer));
@@ -2927,8 +2997,8 @@ void Context::copyTexSubImage3D(GLenum target,
     Offset destOffset(xoffset, yoffset, zoffset);
     Rectangle sourceArea(x, y, width, height);
 
-    const Framebuffer *framebuffer = mGLState.getReadFramebuffer();
-    Texture *texture               = getTargetTexture(target);
+    Framebuffer *framebuffer = mGLState.getReadFramebuffer();
+    Texture *texture         = getTargetTexture(target);
     handleError(texture->copySubImage(this, target, level, destOffset, sourceArea, framebuffer));
 }
 
@@ -3665,6 +3735,11 @@ void Context::sampleCoverage(GLfloat value, GLboolean invert)
     mGLState.setSampleCoverageParams(clamp01(value), invert == GL_TRUE);
 }
 
+void Context::sampleMaski(GLuint maskNumber, GLbitfield mask)
+{
+    mGLState.setSampleMaskParams(maskNumber, mask);
+}
+
 void Context::scissor(GLint x, GLint y, GLsizei width, GLsizei height)
 {
     mGLState.setScissorParams(x, y, width, height);
@@ -4107,8 +4182,10 @@ void Context::texStorage2DMultisample(GLenum target,
 
 void Context::getMultisamplefv(GLenum pname, GLuint index, GLfloat *val)
 {
-    mGLState.syncDirtyObject(this, GL_READ_FRAMEBUFFER);
-    const Framebuffer *framebuffer = mGLState.getReadFramebuffer();
+    // According to spec 3.1 Table 20.49: Framebuffer Dependent Values,
+    // the sample position should be queried by DRAW_FRAMEBUFFER.
+    mGLState.syncDirtyObject(this, GL_DRAW_FRAMEBUFFER);
+    const Framebuffer *framebuffer = mGLState.getDrawFramebuffer();
 
     switch (pname)
     {
@@ -4191,7 +4268,10 @@ void Context::dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGr
         return;
     }
 
-    mImplementation->dispatchCompute(this, numGroupsX, numGroupsY, numGroupsZ);
+    // TODO(jmadill): Dirty bits for compute.
+    ANGLE_CONTEXT_TRY(mGLState.clearUnclearedActiveTextures(this));
+
+    handleError(mImplementation->dispatchCompute(this, numGroupsX, numGroupsY, numGroupsZ));
 }
 
 void Context::texStorage2D(GLenum target,
@@ -4603,6 +4683,7 @@ void Context::linkProgram(GLuint program)
     Program *programObject = getProgram(program);
     ASSERT(programObject);
     handleError(programObject->link(this));
+    mGLState.onProgramExecutableChange(programObject);
 }
 
 void Context::releaseShaderCompiler()
@@ -4660,13 +4741,19 @@ void Context::uniform1fv(GLint location, GLsizei count, const GLfloat *v)
 void Context::uniform1i(GLint location, GLint x)
 {
     Program *program = mGLState.getProgram();
-    program->setUniform1iv(location, 1, &x);
+    if (program->setUniform1iv(location, 1, &x) == Program::SetUniformResult::SamplerChanged)
+    {
+        mGLState.setObjectDirty(GL_PROGRAM);
+    }
 }
 
 void Context::uniform1iv(GLint location, GLsizei count, const GLint *v)
 {
     Program *program = mGLState.getProgram();
-    program->setUniform1iv(location, count, v);
+    if (program->setUniform1iv(location, count, v) == Program::SetUniformResult::SamplerChanged)
+    {
+        mGLState.setObjectDirty(GL_PROGRAM);
+    }
 }
 
 void Context::uniform2f(GLint location, GLfloat x, GLfloat y)
@@ -5114,7 +5201,7 @@ void Context::getActiveUniformsiv(GLuint program,
     for (int uniformId = 0; uniformId < uniformCount; uniformId++)
     {
         const GLuint index = uniformIndices[uniformId];
-        params[uniformId]  = programObject->getActiveUniformi(index, pname);
+        params[uniformId]  = GetUniformResourceProperty(programObject, index, pname);
     }
 }
 
@@ -5241,6 +5328,53 @@ void Context::getInternalformativ(GLenum target,
 {
     const TextureCaps &formatCaps = mTextureCaps.get(internalformat);
     QueryInternalFormativ(formatCaps, pname, bufSize, params);
+}
+
+void Context::programUniform1iv(GLuint program, GLint location, GLsizei count, const GLint *value)
+{
+    Program *programObject = getProgram(program);
+    ASSERT(programObject);
+    if (programObject->setUniform1iv(location, count, value) ==
+        Program::SetUniformResult::SamplerChanged)
+    {
+        mGLState.setObjectDirty(GL_PROGRAM);
+    }
+}
+
+void Context::onTextureChange(const Texture *texture)
+{
+    // Conservatively assume all textures are dirty.
+    // TODO(jmadill): More fine-grained update.
+    mGLState.setObjectDirty(GL_TEXTURE);
+}
+
+void Context::genProgramPipelines(GLsizei count, GLuint *pipelines)
+{
+    for (int i = 0; i < count; i++)
+    {
+        pipelines[i] = createProgramPipeline();
+    }
+}
+
+void Context::deleteProgramPipelines(GLsizei count, const GLuint *pipelines)
+{
+    for (int i = 0; i < count; i++)
+    {
+        if (pipelines[i] != 0)
+        {
+            deleteProgramPipeline(pipelines[i]);
+        }
+    }
+}
+
+GLboolean Context::isProgramPipeline(GLuint pipeline)
+{
+    if (pipeline == 0)
+    {
+        return GL_FALSE;
+    }
+
+    return (getProgramPipeline(pipeline) ? GL_TRUE : GL_FALSE);
 }
 
 }  // namespace gl

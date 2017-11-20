@@ -14,7 +14,7 @@
 #include "SkArenaAlloc.h"
 #include "SkAutoMalloc.h"
 #include "SkClampRange.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkColorSpace.h"
 #include "SkOnce.h"
 #include "SkPM4fPriv.h"
@@ -340,17 +340,41 @@ public:
                    SkShader::TileMode tileMode,
                    sk_sp<GrColorSpaceXform> colorSpaceXform,
                    bool gammaCorrect)
-            : fContext(context)
-            , fShader(shader)
-            , fMatrix(matrix)
-            , fTileMode(tileMode)
-            , fColorSpaceXform(std::move(colorSpaceXform))
-            , fGammaCorrect(gammaCorrect) {}
+                : fContext(context)
+                , fShader(shader)
+                , fMatrix(matrix)
+                , fColorSpaceXform(std::move(colorSpaceXform))
+                , fGammaCorrect(gammaCorrect) {
+            switch (tileMode) {
+                case SkShader::kClamp_TileMode:
+                    fWrapMode = GrSamplerState::WrapMode::kClamp;
+                    break;
+                case SkShader::kRepeat_TileMode:
+                    fWrapMode = GrSamplerState::WrapMode::kRepeat;
+                    break;
+                case SkShader::kMirror_TileMode:
+                    fWrapMode = GrSamplerState::WrapMode::kMirrorRepeat;
+                    break;
+            }
+        }
+
+        CreateArgs(GrContext* context,
+                   const SkGradientShaderBase* shader,
+                   const SkMatrix* matrix,
+                   GrSamplerState::WrapMode wrapMode,
+                   sk_sp<GrColorSpaceXform> colorSpaceXform,
+                   bool gammaCorrect)
+                : fContext(context)
+                , fShader(shader)
+                , fMatrix(matrix)
+                , fWrapMode(wrapMode)
+                , fColorSpaceXform(std::move(colorSpaceXform))
+                , fGammaCorrect(gammaCorrect) {}
 
         GrContext*                  fContext;
         const SkGradientShaderBase* fShader;
         const SkMatrix*             fMatrix;
-        SkShader::TileMode          fTileMode;
+        GrSamplerState::WrapMode    fWrapMode;
         sk_sp<GrColorSpaceXform>    fColorSpaceXform;
         bool                        fGammaCorrect;
     };
@@ -364,7 +388,7 @@ public:
 
     enum ColorType {
         kTwo_ColorType,
-        kThree_ColorType, // Symmetric three color
+        kThree_ColorType,              // 0, t, 1
         kTexture_ColorType,
         kSingleHardStop_ColorType,     // 0, t, t, 1
         kHardStopLeftEdged_ColorType,  // 0, 0, 1
@@ -402,7 +426,7 @@ public:
     }
 
 protected:
-    GrGradientEffect(const CreateArgs&, bool isOpaque);
+    GrGradientEffect(ClassID classID, const CreateArgs&, bool isOpaque);
     explicit GrGradientEffect(const GrGradientEffect&);  // facilitates clone() implementations
 
     #if GR_TEST_UTILS
@@ -442,13 +466,13 @@ private:
 
     // If we're in legacy mode, then fColors will be populated. If we're gamma-correct, then
     // fColors4f and fColorSpaceXform will be populated.
-    SkTDArray<SkColor>       fColors;
+    SkTDArray<SkColor> fColors;
 
-    SkTDArray<SkColor4f>     fColors4f;
+    SkTDArray<SkColor4f> fColors4f;
     sk_sp<GrColorSpaceXform> fColorSpaceXform;
 
-    SkTDArray<SkScalar>      fPositions;
-    SkShader::TileMode       fTileMode;
+    SkTDArray<SkScalar> fPositions;
+    GrSamplerState::WrapMode fWrapMode;
 
     GrCoordTransform fCoordTransform;
     TextureSampler fTextureSampler;
@@ -533,7 +557,7 @@ private:
 
     SkScalar fCachedYCoord;
     GrGLSLProgramDataManager::UniformHandle fColorsUni;
-    GrGLSLProgramDataManager::UniformHandle fHardStopT;
+    GrGLSLProgramDataManager::UniformHandle fExtraStopT;
     GrGLSLProgramDataManager::UniformHandle fFSYUni;
     GrGLSLColorSpaceXformHelper             fColorSpaceHelper;
 

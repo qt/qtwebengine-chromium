@@ -59,8 +59,10 @@ if (rtc_include_tests) {
     ]
     deps = [
       ":bitrate_controller",
+      "../../logging:rtc_event_log_api",
       "../../test:field_trial",
       "../../test:test_support",
+      "../pacing:mock_paced_sender",
       "../remote_bitrate_estimator:remote_bitrate_estimator",
       "//testing/gmock",
     ]

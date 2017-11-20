@@ -27,6 +27,7 @@
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/card_unmask_delegate.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/form_types.h"
 #include "components/autofill/core/browser/payments/full_card_request.h"
 #include "components/autofill/core/browser/payments/payments_client.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
@@ -200,6 +201,10 @@ class AutofillManager : public AutofillHandler,
   // Returns true if all the conditions for enabling the upload of credit card
   // are satisfied.
   virtual bool IsCreditCardUploadEnabled();
+
+  // Returns true if the value of the AutofillCreditCardEnabled pref is true and
+  // the client supports Autofill.
+  virtual bool IsCreditCardAutofillEnabled();
 
   // Shared code to determine if |form| should be uploaded to the Autofill
   // server. It verifies that uploading is allowed and |form| meets conditions
@@ -582,6 +587,10 @@ class AutofillManager : public AutofillHandler,
   // determined to be a CVC field via heuristics has a valid CVC |value|.
   bool found_cvc_value_in_non_cvc_field_;
 
+  // Ablation experiment turns off autofill, but logging still has to be kept
+  // for metrics analysis.
+  bool enable_ablation_logging_;
+
   GURL pending_upload_request_url_;
 
 #ifdef ENABLE_FORM_DEBUG_DUMP
@@ -632,6 +641,18 @@ class AutofillManager : public AutofillHandler,
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, CreditCardSubmittedFormEvents);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest,
                            CreditCardCheckoutFlowUserActions);
+  FRIEND_TEST_ALL_PREFIXES(
+      AutofillMetricsTest,
+      CreditCardSubmittedWithoutSelectingSuggestionsNoCard);
+  FRIEND_TEST_ALL_PREFIXES(
+      AutofillMetricsTest,
+      CreditCardSubmittedWithoutSelectingSuggestionsUnknownCard);
+  FRIEND_TEST_ALL_PREFIXES(
+      AutofillMetricsTest,
+      CreditCardSubmittedWithoutSelectingSuggestionsKnownCard);
+  FRIEND_TEST_ALL_PREFIXES(
+      AutofillMetricsTest,
+      ShouldNotLogSubmitWithoutSelectingSuggestionsIfSuggestionFilled);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, ProfileCheckoutFlowUserActions);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, DeveloperEngagement);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, FormFillDuration);
@@ -646,7 +667,10 @@ class AutofillManager : public AutofillHandler,
                            TestTabContentsWithExternalDelegate);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest,
                            UserHappinessFormLoadAndSubmission);
-  FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, UserHappinessFormInteraction);
+  FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest,
+                           UserHappinessFormInteraction_AddressForm);
+  FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest,
+                           UserHappinessFormInteraction_CreditCardForm);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
                            OnLoadedServerPredictions);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,

@@ -8,20 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/remote_bitrate_estimator/remote_bitrate_estimator_abs_send_time.h"
+#include "modules/remote_bitrate_estimator/remote_bitrate_estimator_abs_send_time.h"
 
 #include <math.h>
 
 #include <algorithm>
 
-#include "webrtc/modules/pacing/paced_sender.h"
-#include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/thread_annotations.h"
-#include "webrtc/system_wrappers/include/metrics.h"
-#include "webrtc/typedefs.h"
+#include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/thread_annotations.h"
+#include "system_wrappers/include/metrics.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -94,7 +93,6 @@ bool RemoteBitrateEstimatorAbsSendTime::IsWithinClusterBounds(
         uma_recorded_(false) {
     RTC_DCHECK(observer_);
     LOG(LS_INFO) << "RemoteBitrateEstimatorAbsSendTime: Instantiating.";
-    network_thread_.DetachFromThread();
 }
 
 void RemoteBitrateEstimatorAbsSendTime::ComputeClusters(
@@ -112,8 +110,11 @@ void RemoteBitrateEstimatorAbsSendTime::ComputeClusters(
         ++current.num_above_min_delta;
       }
       if (!IsWithinClusterBounds(send_delta_ms, current)) {
-        if (current.count >= kMinClusterSize)
+        if (current.count >= kMinClusterSize &&
+            current.send_mean_ms > 0.0f &&
+            current.recv_mean_ms > 0.0f) {
           AddCluster(clusters, &current);
+        }
         current = Cluster();
       }
       current.send_mean_ms += send_delta_ms;
@@ -124,8 +125,11 @@ void RemoteBitrateEstimatorAbsSendTime::ComputeClusters(
     prev_send_time = it->send_time_ms;
     prev_recv_time = it->recv_time_ms;
   }
-  if (current.count >= kMinClusterSize)
+  if (current.count >= kMinClusterSize &&
+      current.send_mean_ms > 0.0f &&
+      current.recv_mean_ms > 0.0f) {
     AddCluster(clusters, &current);
+  }
 }
 
 std::list<Cluster>::const_iterator
@@ -211,7 +215,7 @@ void RemoteBitrateEstimatorAbsSendTime::IncomingPacket(
     int64_t arrival_time_ms,
     size_t payload_size,
     const RTPHeader& header) {
-  RTC_DCHECK(network_thread_.CalledOnValidThread());
+  RTC_DCHECK_RUNS_SERIALIZED(&network_race_);
   if (!header.extension.hasAbsoluteSendTime) {
     LOG(LS_WARNING) << "RemoteBitrateEstimatorAbsSendTimeImpl: Incoming packet "
                        "is missing absolute send time extension!";

@@ -13,7 +13,7 @@
 #include "core/fxge/ifx_systemfontinfo.h"
 #include "third_party/base/ptr_util.h"
 
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_LINUX_
+#if _FX_PLATFORM_ == _FX_PLATFORM_LINUX_
 namespace {
 
 const size_t kLinuxGpNameSize = 6;
@@ -44,7 +44,7 @@ const char* const g_LinuxHGFontList[] = {
 size_t GetJapanesePreference(const char* facearr,
                              int weight,
                              int pitch_family) {
-  CFX_ByteString face = facearr;
+  ByteString face = facearr;
   if (face.Contains("Gothic") ||
       face.Contains("\x83\x53\x83\x56\x83\x62\x83\x4e")) {
     if (face.Contains("PGothic") ||
@@ -59,7 +59,7 @@ size_t GetJapanesePreference(const char* facearr,
     }
     return 3;
   }
-  if (!(pitch_family & FXFONT_FF_ROMAN) && weight > 400)
+  if (!FontFamilyIsRoman(pitch_family) && weight > 400)
     return 0;
 
   return 2;
@@ -162,4 +162,4 @@ void CFX_GEModule::InitPlatform() {
 }
 
 void CFX_GEModule::DestroyPlatform() {}
-#endif  // _FXM_PLATFORM_ == _FXM_PLATFORM_LINUX_
+#endif  // _FX_PLATFORM_ == _FX_PLATFORM_LINUX_

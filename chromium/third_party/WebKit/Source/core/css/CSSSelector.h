@@ -208,8 +208,12 @@ class CORE_EXPORT CSSSelector {
     kPseudoLeftPage,
     kPseudoRightPage,
     kPseudoFirstPage,
+    // TODO(foolip): When the unprefixed Fullscreen API is enabled, merge
+    // kPseudoFullScreen and kPseudoFullscreen into one. (kPseudoFullscreen is
+    // controlled by the FullscreenUnprefixed REF, but is otherwise an alias.)
     kPseudoFullScreen,
     kPseudoFullScreenAncestor,
+    kPseudoFullscreen,
     kPseudoInRange,
     kPseudoOutOfRange,
     // Pseudo elements in UA ShadowRoots. Available in any stylesheets.
@@ -264,7 +268,7 @@ class CORE_EXPORT CSSSelector {
 
   // WARNING: Use of QualifiedName by attribute() is a lie.
   // attribute() will return a QualifiedName with prefix and namespaceURI
-  // set to starAtom to mean "matches any namespace". Be very careful
+  // set to g_star_atom to mean "matches any namespace". Be very careful
   // how you use the returned QualifiedName.
   // http://www.w3.org/TR/css3-selectors/#attrnmsp
   const QualifiedName& Attribute() const;
@@ -383,7 +387,7 @@ class CORE_EXPORT CSSSelector {
 
   struct RareData : public RefCounted<RareData> {
     static RefPtr<RareData> Create(const AtomicString& value) {
-      return AdoptRef(new RareData(value));
+      return WTF::AdoptRef(new RareData(value));
     }
     ~RareData();
 
@@ -448,9 +452,9 @@ inline void CSSSelector::SetValue(const AtomicString& value,
   // Need to do ref counting manually for the union.
   if (!has_rare_data_) {
     if (data_.value_)
-      data_.value_->Deref();
+      data_.value_->Release();
     data_.value_ = value.Impl();
-    data_.value_->Ref();
+    data_.value_->AddRef();
     return;
   }
   data_.rare_data_->matching_value_ =
@@ -481,7 +485,7 @@ inline CSSSelector::CSSSelector(const QualifiedName& tag_q_name,
       tag_is_implicit_(tag_is_implicit),
       relation_is_affected_by_pseudo_content_(false) {
   data_.tag_q_name_ = tag_q_name.Impl();
-  data_.tag_q_name_->Ref();
+  data_.tag_q_name_->AddRef();
 }
 
 inline CSSSelector::CSSSelector(const CSSSelector& o)
@@ -497,23 +501,23 @@ inline CSSSelector::CSSSelector(const CSSSelector& o)
           o.relation_is_affected_by_pseudo_content_) {
   if (o.match_ == kTag) {
     data_.tag_q_name_ = o.data_.tag_q_name_;
-    data_.tag_q_name_->Ref();
+    data_.tag_q_name_->AddRef();
   } else if (o.has_rare_data_) {
     data_.rare_data_ = o.data_.rare_data_;
-    data_.rare_data_->Ref();
+    data_.rare_data_->AddRef();
   } else if (o.data_.value_) {
     data_.value_ = o.data_.value_;
-    data_.value_->Ref();
+    data_.value_->AddRef();
   }
 }
 
 inline CSSSelector::~CSSSelector() {
   if (match_ == kTag)
-    data_.tag_q_name_->Deref();
+    data_.tag_q_name_->Release();
   else if (has_rare_data_)
-    data_.rare_data_->Deref();
+    data_.rare_data_->Release();
   else if (data_.value_)
-    data_.value_->Deref();
+    data_.value_->Release();
 }
 
 inline const QualifiedName& CSSSelector::TagQName() const {

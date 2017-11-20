@@ -63,13 +63,13 @@ static bool IsMainWorldId(int world_id) {
 }
 #endif
 
-PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::Create(v8::Isolate* isolate,
-                                                    WorldType world_type) {
+RefPtr<DOMWrapperWorld> DOMWrapperWorld::Create(v8::Isolate* isolate,
+                                                WorldType world_type) {
   DCHECK_NE(WorldType::kIsolated, world_type);
   int world_id = GenerateWorldIdForType(world_type);
   if (world_id == kInvalidWorldId)
     return nullptr;
-  return AdoptRef(new DOMWrapperWorld(isolate, world_type, world_id));
+  return WTF::AdoptRef(new DOMWrapperWorld(isolate, world_type, world_id));
 }
 
 DOMWrapperWorld::DOMWrapperWorld(v8::Isolate* isolate,
@@ -150,7 +150,7 @@ void DOMWrapperWorld::Dispose() {
   GetWorldMap().erase(world_id_);
 }
 
-PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::EnsureIsolatedWorld(
+RefPtr<DOMWrapperWorld> DOMWrapperWorld::EnsureIsolatedWorld(
     v8::Isolate* isolate,
     int world_id) {
 #if DCHECK_IS_ON()
@@ -166,7 +166,8 @@ PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::EnsureIsolatedWorld(
     return world;
   }
 
-  return AdoptRef(new DOMWrapperWorld(isolate, WorldType::kIsolated, world_id));
+  return WTF::AdoptRef(
+      new DOMWrapperWorld(isolate, WorldType::kIsolated, world_id));
 }
 
 typedef HashMap<int, RefPtr<SecurityOrigin>> IsolatedWorldSecurityOriginMap;
@@ -180,12 +181,12 @@ SecurityOrigin* DOMWrapperWorld::IsolatedWorldSecurityOrigin() {
   DCHECK(this->IsIsolatedWorld());
   IsolatedWorldSecurityOriginMap& origins = IsolatedWorldSecurityOrigins();
   IsolatedWorldSecurityOriginMap::iterator it = origins.find(GetWorldId());
-  return it == origins.end() ? 0 : it->value.Get();
+  return it == origins.end() ? 0 : it->value.get();
 }
 
 void DOMWrapperWorld::SetIsolatedWorldSecurityOrigin(
     int world_id,
-    PassRefPtr<SecurityOrigin> security_origin) {
+    RefPtr<SecurityOrigin> security_origin) {
 #if DCHECK_IS_ON()
   DCHECK(IsIsolatedWorldId(world_id));
 #endif

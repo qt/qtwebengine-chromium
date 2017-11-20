@@ -4,6 +4,7 @@
 
 #include "platform/scheduler/child/compositor_worker_scheduler.h"
 
+#include <memory>
 #include <utility>
 
 #include "base/callback.h"
@@ -12,7 +13,6 @@
 #include "platform/scheduler/base/task_queue.h"
 #include "platform/scheduler/child/scheduler_helper.h"
 #include "platform/scheduler/child/scheduler_tqm_delegate.h"
-#include "platform/wtf/PtrUtil.h"
 
 namespace blink {
 namespace scheduler {
@@ -20,7 +20,8 @@ namespace scheduler {
 CompositorWorkerScheduler::CompositorWorkerScheduler(
     base::Thread* thread,
     scoped_refptr<SchedulerTqmDelegate> main_task_runner)
-    : WorkerScheduler(WTF::MakeUnique<WorkerSchedulerHelper>(main_task_runner)),
+    : WorkerScheduler(
+          std::make_unique<WorkerSchedulerHelper>(main_task_runner)),
       thread_(thread) {}
 
 CompositorWorkerScheduler::~CompositorWorkerScheduler() {}
@@ -42,8 +43,8 @@ CompositorWorkerScheduler::IdleTaskRunner() {
   // an idle task runner with the semantics we want for the compositor thread
   // which runs them after the current frame has been drawn before the next
   // vsync. https://crbug.com/609532
-  return make_scoped_refptr(
-      new SingleThreadIdleTaskRunner(thread_->task_runner(), this));
+  return base::MakeRefCounted<SingleThreadIdleTaskRunner>(
+      thread_->task_runner(), this);
 }
 
 bool CompositorWorkerScheduler::CanExceedIdleDeadlineIfRequired() const {

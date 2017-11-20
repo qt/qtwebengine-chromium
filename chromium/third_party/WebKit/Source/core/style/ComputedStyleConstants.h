@@ -168,17 +168,6 @@ inline TextDecorationSkip& operator|=(TextDecorationSkip& a,
 
 enum OffsetRotationType { kOffsetRotationAuto, kOffsetRotationFixed };
 
-enum class TextEmphasisMark {
-  kNone,
-  kAuto,
-  kDot,
-  kCircle,
-  kDoubleCircle,
-  kTriangle,
-  kSesame,
-  kCustom
-};
-
 static const size_t kGridAutoFlowBits = 4;
 enum InternalGridAutoFlowAlgorithm {
   kInternalAutoFlowAlgorithmSparse = 0x1,
@@ -285,7 +274,7 @@ enum SnapAxis {
   kSnapAxisInline,
 };
 
-enum SnapStrictness { kSnapStrictnessProximity, kSnapStrictnessMandatory };
+enum class SnapStrictness { kProximity, kMandatory };
 
 enum SnapAlignment {
   kSnapAlignmentNone,

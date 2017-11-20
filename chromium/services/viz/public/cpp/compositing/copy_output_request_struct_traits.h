@@ -5,9 +5,9 @@
 #ifndef SERVICES_VIZ_PUBLIC_CPP_COMPOSITING_COPY_OUTPUT_REQUEST_STRUCT_TRAITS_H_
 #define SERVICES_VIZ_PUBLIC_CPP_COMPOSITING_COPY_OUTPUT_REQUEST_STRUCT_TRAITS_H_
 
-#include "cc/ipc/texture_mailbox_struct_traits.h"
-#include "components/viz/common/quads/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "mojo/common/common_custom_types_struct_traits.h"
+#include "services/viz/public/cpp/compositing/texture_mailbox_struct_traits.h"
 #include "services/viz/public/interfaces/compositing/copy_output_request.mojom.h"
 #include "ui/gfx/geometry/mojo/geometry_struct_traits.h"
 
@@ -16,14 +16,24 @@ namespace mojo {
 template <>
 struct StructTraits<viz::mojom::CopyOutputRequestDataView,
                     std::unique_ptr<viz::CopyOutputRequest>> {
+  static viz::CopyOutputRequest::ResultFormat result_format(
+      const std::unique_ptr<viz::CopyOutputRequest>& request) {
+    return request->result_format();
+  }
+
+  static const gfx::Vector2d& scale_from(
+      const std::unique_ptr<viz::CopyOutputRequest>& request) {
+    return request->scale_from();
+  }
+
+  static const gfx::Vector2d& scale_to(
+      const std::unique_ptr<viz::CopyOutputRequest>& request) {
+    return request->scale_to();
+  }
+
   static const base::Optional<base::UnguessableToken>& source(
       const std::unique_ptr<viz::CopyOutputRequest>& request) {
     return request->source_;
-  }
-
-  static bool force_bitmap_result(
-      const std::unique_ptr<viz::CopyOutputRequest>& request) {
-    return request->force_bitmap_result_;
   }
 
   static const base::Optional<gfx::Rect>& area(

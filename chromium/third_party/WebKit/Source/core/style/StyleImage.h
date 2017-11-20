@@ -43,7 +43,7 @@ typedef void* WrappedImagePtr;
 
 class CORE_EXPORT StyleImage : public GarbageCollectedFinalized<StyleImage> {
  public:
-  virtual ~StyleImage() {}
+  virtual ~StyleImage();
 
   bool operator==(const StyleImage& other) const {
     return Data() == other.Data();
@@ -68,10 +68,17 @@ class CORE_EXPORT StyleImage : public GarbageCollectedFinalized<StyleImage> {
   // Note that the container_size is in the effective zoom level of
   // the style that applies to the given ImageResourceObserver, i.e if the zoom
   // level is 1.0 the container_size should be unzoomed.
+  // The |logical_size| is the |container_size| without applying subpixel
+  // snapping. Both sizes include zoom. This size is only currently computed for
+  // BoxPainterBase and NinePieceImagePainter as these are the only painters
+  // which use custom paint. We pass a nullptr for other subclasses.
+  // TODO(schenney): Pass the |container_size| unsnapped as a LayoutSize so that
+  // we don't need to pass an additional parameter.
   virtual RefPtr<Image> GetImage(const ImageResourceObserver&,
                                  const Document&,
                                  const ComputedStyle&,
-                                 const IntSize& container_size) const = 0;
+                                 const IntSize& container_size,
+                                 const LayoutSize* logical_size) const = 0;
   virtual WrappedImagePtr Data() const = 0;
   virtual float ImageScaleFactor() const { return 1; }
   virtual bool KnownToBeOpaque(const Document&, const ComputedStyle&) const = 0;
@@ -85,6 +92,10 @@ class CORE_EXPORT StyleImage : public GarbageCollectedFinalized<StyleImage> {
   }
   ALWAYS_INLINE bool IsInvalidImage() const { return is_invalid_image_; }
   ALWAYS_INLINE bool IsPaintImage() const { return is_paint_image_; }
+
+  // If the StyleImage belongs to a User Agent stylesheet, it should be flagged
+  // so that it can persist beyond a navigation.
+  void FlagAsUserAgentResource();
 
   DEFINE_INLINE_VIRTUAL_TRACE() {}
 
@@ -102,6 +113,8 @@ class CORE_EXPORT StyleImage : public GarbageCollectedFinalized<StyleImage> {
   bool is_image_resource_set_ : 1;
   bool is_invalid_image_ : 1;
   bool is_paint_image_ : 1;
+
+  bool is_ua_css_resource_ = false;
 
   static LayoutSize ApplyZoom(const LayoutSize&, float multiplier);
   LayoutSize ImageSizeForSVGImage(SVGImage*,

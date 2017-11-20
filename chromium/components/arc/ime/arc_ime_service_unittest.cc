@@ -152,13 +152,13 @@ class ArcImeServiceTest : public testing::Test {
 
  private:
   void SetUp() override {
-    arc_bridge_service_ = base::MakeUnique<ArcBridgeService>();
+    arc_bridge_service_ = std::make_unique<ArcBridgeService>();
     instance_ =
-        base::MakeUnique<ArcImeService>(nullptr, arc_bridge_service_.get());
+        std::make_unique<ArcImeService>(nullptr, arc_bridge_service_.get());
     fake_arc_ime_bridge_ = new FakeArcImeBridge();
     instance_->SetImeBridgeForTesting(base::WrapUnique(fake_arc_ime_bridge_));
 
-    fake_input_method_ = base::MakeUnique<FakeInputMethod>();
+    fake_input_method_ = std::make_unique<FakeInputMethod>();
 
     fake_window_delegate_ = new FakeArcWindowDelegate(fake_input_method_.get());
     instance_->SetArcWindowDelegateForTesting(

@@ -18,7 +18,16 @@
 #include "xfa/fwl/cfwl_notedriver.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
+
+namespace {
+
+CFWL_Edit* ToEdit(CFWL_Widget* widget) {
+  return static_cast<CFWL_Edit*>(widget);
+}
+
+}  // namespace
 
 CXFA_FFTextEdit::CXFA_FFTextEdit(CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFField(pDataAcc), m_pOldDelegate(nullptr) {}
@@ -47,7 +56,7 @@ bool CXFA_FFTextEdit::LoadWidget() {
   m_pNormalWidget->LockUpdate();
   UpdateWidgetProperty();
 
-  CFX_WideString wsText;
+  WideString wsText;
   m_pDataAcc->GetValue(wsText, XFA_VALUEPICTURE_Display);
   pFWLEdit->SetText(wsText);
   m_pNormalWidget->UnlockUpdate();
@@ -173,8 +182,7 @@ bool CXFA_FFTextEdit::OnKillFocus(CXFA_FFWidget* pNewWidget) {
 }
 
 bool CXFA_FFTextEdit::CommitData() {
-  CFX_WideString wsText =
-      static_cast<CFWL_Edit*>(m_pNormalWidget.get())->GetText();
+  WideString wsText = static_cast<CFWL_Edit*>(m_pNormalWidget.get())->GetText();
   if (m_pDataAcc->SetValue(wsText, XFA_VALUEPICTURE_Edit)) {
     m_pDataAcc->UpdateUIDisplay(this);
     return true;
@@ -183,7 +191,7 @@ bool CXFA_FFTextEdit::CommitData() {
   return false;
 }
 
-void CXFA_FFTextEdit::ValidateNumberField(const CFX_WideString& wsText) {
+void CXFA_FFTextEdit::ValidateNumberField(const WideString& wsText) {
   CXFA_WidgetAcc* pAcc = GetDataAcc();
   if (!pAcc || pAcc->GetUIType() != XFA_Element::NumericEdit)
     return;
@@ -192,10 +200,10 @@ void CXFA_FFTextEdit::ValidateNumberField(const CFX_WideString& wsText) {
   if (!pAppProvider)
     return;
 
-  CFX_WideString wsSomField;
+  WideString wsSomField;
   pAcc->GetNode()->GetSOMExpression(wsSomField);
 
-  CFX_WideString wsMessage;
+  WideString wsMessage;
   wsMessage.Format(L"%s can not contain %s", wsText.c_str(),
                    wsSomField.c_str());
   pAppProvider->MsgBox(wsMessage, pAppProvider->GetAppTitle(), XFA_MBICON_Error,
@@ -272,10 +280,10 @@ bool CXFA_FFTextEdit::UpdateFWLData() {
     bUpdate = true;
   }
 
-  CFX_WideString wsText;
+  WideString wsText;
   m_pDataAcc->GetValue(wsText, eType);
 
-  CFX_WideString wsOldText = pEdit->GetText();
+  WideString wsOldText = pEdit->GetText();
   if (wsText != wsOldText || (eType == XFA_VALUEPICTURE_Edit && bUpdate)) {
     pEdit->SetText(wsText);
     bUpdate = true;
@@ -287,8 +295,8 @@ bool CXFA_FFTextEdit::UpdateFWLData() {
 }
 
 void CXFA_FFTextEdit::OnTextChanged(CFWL_Widget* pWidget,
-                                    const CFX_WideString& wsChanged,
-                                    const CFX_WideString& wsPrevText) {
+                                    const WideString& wsChanged,
+                                    const WideString& wsPrevText) {
   m_dwStatus |= XFA_WidgetStatus_TextEditValueChanged;
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Change;
@@ -300,8 +308,9 @@ void CXFA_FFTextEdit::OnTextChanged(CFWL_Widget* pWidget,
     CFWL_DateTimePicker* pDateTime = (CFWL_DateTimePicker*)pEdit;
     eParam.m_wsNewText = pDateTime->GetEditText();
     if (pDateTime->HasSelection()) {
-      std::tie(eParam.m_iSelStart, eParam.m_iSelEnd) =
-          pDateTime->GetSelection();
+      size_t count;
+      std::tie(eParam.m_iSelStart, count) = pDateTime->GetSelection();
+      eParam.m_iSelEnd = eParam.m_iSelStart + count;
     }
   } else {
     eParam.m_wsNewText = pEdit->GetText();
@@ -318,7 +327,7 @@ void CXFA_FFTextEdit::OnTextFull(CFWL_Widget* pWidget) {
   m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Full, &eParam);
 }
 
-bool CXFA_FFTextEdit::CheckWord(const CFX_ByteStringC& sWord) {
+bool CXFA_FFTextEdit::CheckWord(const ByteStringView& sWord) {
   return sWord.IsEmpty() || m_pDataAcc->GetUIType() != XFA_Element::TextEdit;
 }
 
@@ -332,7 +341,7 @@ void CXFA_FFTextEdit::OnProcessEvent(CFWL_Event* pEvent) {
     case CFWL_Event::Type::TextChanged: {
       CFWL_EventTextChanged* event =
           static_cast<CFWL_EventTextChanged*>(pEvent);
-      CFX_WideString wsChange;
+      WideString wsChange;
       OnTextChanged(m_pNormalWidget.get(), wsChange, event->wsPrevText);
       break;
     }
@@ -341,9 +350,9 @@ void CXFA_FFTextEdit::OnProcessEvent(CFWL_Event* pEvent) {
       break;
     }
     case CFWL_Event::Type::CheckWord: {
-      CFX_WideString wstr(L"FWL_EVENT_DTP_SelectChanged");
+      WideString wstr(L"FWL_EVENT_DTP_SelectChanged");
       CFWL_EventCheckWord* event = static_cast<CFWL_EventCheckWord*>(pEvent);
-      event->bCheckWord = CheckWord(event->bsWord.AsStringC());
+      event->bCheckWord = CheckWord(event->bsWord.AsStringView());
       break;
     }
     default:
@@ -355,4 +364,63 @@ void CXFA_FFTextEdit::OnProcessEvent(CFWL_Event* pEvent) {
 void CXFA_FFTextEdit::OnDrawWidget(CXFA_Graphics* pGraphics,
                                    const CFX_Matrix& matrix) {
   m_pOldDelegate->OnDrawWidget(pGraphics, matrix);
+}
+
+bool CXFA_FFTextEdit::CanUndo() {
+  return ToEdit(m_pNormalWidget.get())->CanUndo();
+}
+
+bool CXFA_FFTextEdit::CanRedo() {
+  return ToEdit(m_pNormalWidget.get())->CanRedo();
+}
+
+bool CXFA_FFTextEdit::Undo() {
+  return ToEdit(m_pNormalWidget.get())->Undo();
+}
+
+bool CXFA_FFTextEdit::Redo() {
+  return ToEdit(m_pNormalWidget.get())->Redo();
+}
+
+bool CXFA_FFTextEdit::CanCopy() {
+  return ToEdit(m_pNormalWidget.get())->HasSelection();
+}
+
+bool CXFA_FFTextEdit::CanCut() {
+  if (ToEdit(m_pNormalWidget.get())->GetStylesEx() & FWL_STYLEEXT_EDT_ReadOnly)
+    return false;
+  return ToEdit(m_pNormalWidget.get())->HasSelection();
+}
+
+bool CXFA_FFTextEdit::CanPaste() {
+  return !(ToEdit(m_pNormalWidget.get())->GetStylesEx() &
+           FWL_STYLEEXT_EDT_ReadOnly);
+}
+
+bool CXFA_FFTextEdit::CanSelectAll() {
+  return ToEdit(m_pNormalWidget.get())->GetTextLength() > 0;
+}
+
+bool CXFA_FFTextEdit::Copy(WideString& wsCopy) {
+  return ToEdit(m_pNormalWidget.get())->Copy(wsCopy);
+}
+
+bool CXFA_FFTextEdit::Cut(WideString& wsCut) {
+  return ToEdit(m_pNormalWidget.get())->Copy(wsCut);
+}
+
+bool CXFA_FFTextEdit::Paste(const WideString& wsPaste) {
+  return ToEdit(m_pNormalWidget.get())->Paste(wsPaste);
+}
+
+void CXFA_FFTextEdit::SelectAll() {
+  ToEdit(m_pNormalWidget.get())->SelectAll();
+}
+
+void CXFA_FFTextEdit::Delete() {
+  ToEdit(m_pNormalWidget.get())->ClearText();
+}
+
+void CXFA_FFTextEdit::DeSelect() {
+  ToEdit(m_pNormalWidget.get())->ClearSelection();
 }

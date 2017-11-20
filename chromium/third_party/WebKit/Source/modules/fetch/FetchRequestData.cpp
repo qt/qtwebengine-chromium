@@ -11,8 +11,8 @@
 #include "modules/fetch/BodyStreamBuffer.h"
 #include "modules/fetch/BytesConsumer.h"
 #include "modules/fetch/FetchHeaderList.h"
-#include "platform/HTTPNames.h"
 #include "platform/bindings/ScriptState.h"
+#include "platform/http_names.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "public/platform/WebURLRequest.h"
@@ -112,7 +112,7 @@ void FetchRequestData::SetCredentials(
     WebURLRequest::FetchCredentialsMode credentials) {
   credentials_ = credentials;
   if (credentials_ != WebURLRequest::kFetchCredentialsModePassword)
-    attached_credential_.Clear();
+    attached_credential_ = nullptr;
 }
 
 DEFINE_TRACE(FetchRequestData) {

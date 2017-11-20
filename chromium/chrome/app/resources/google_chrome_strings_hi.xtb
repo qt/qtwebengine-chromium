@@ -7,6 +7,7 @@
 <translation id="1088300314857992706"><ph name="USER_EMAIL_ADDRESS" /> पहले Chrome का उपयोग कर रहा था</translation>
 <translation id="1104959162601287462">&amp;Chrome OS के बारे में</translation>
 <translation id="110877069173485804">यह आपका Chrome है</translation>
+<translation id="1142745911746664600">Chrome को अपडेट नहीं किया जा सकता</translation>
 <translation id="123620459398936149">Chrome OS आपका डेटा समन्वयित नहीं कर सका. कृपया अपना समन्वयन पासफ़्रेज़ अपडेट करें.</translation>
 <translation id="127345590676626841">Chrome अपने आप अपडेट हो जाता है ताकि आपके पास हमेशा सबसे नवीनतम वर्शन रहे. जब यह डाउनलोड पूर्ण हो जाता है, तो Chrome पुन: प्रारंभ होगा और आप आगे बढ़ जाएंगे.</translation>
 <translation id="1302523850133262269">कृपया Chrome के द्वारा नवीनतम सिस्टम अपडेट इंस्टॉल करने के दौरान प्रतीक्षा करें.</translation>
@@ -24,6 +25,7 @@
 <translation id="1628000112320670027">Chrome में सहायता प्राप्त करें</translation>
 <translation id="163860049029591106">Chrome OS के साथ आरंभ करना</translation>
 <translation id="1653828314016431939">ठीक - अब पुन: प्रारंभ करें</translation>
+<translation id="1674870198290878346">Chrome गु&amp;प्त विंडो में लिंक खोलें</translation>
 <translation id="1682634494516646069">Google Chrome अपनी डेटा निर्देशिका को पढ़ और उस पर लिख नहीं सकता :\n\n<ph name="USER_DATA_DIRECTORY" /></translation>
 <translation id="1698376642261615901">Google Chrome एक ऐसा वेब ब्राउज़र है, जो वेब पेज और ऐप्स  को बिजली की गति से चलाता है. यह तेज़, स्थिर, और उपयोग में आसान है. Google Chrome में अंतर्निहित मैलवेयर और फ़िशिंग सुरक्षा के साथ अधिक सुरक्षित रूप से वेब ब्राउज़ करें.</translation>
 <translation id="1718131156967340976"><ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Google Chrome<ph name="END_BOLD" /> चुनें</translation>
@@ -32,7 +34,6 @@
 <translation id="1759842336958782510">Chrome</translation>
 <translation id="1773601347087397504">Chrome OS का उपयोग करने के बारे में सहायता प्राप्त करें</translation>
 <translation id="1795405610103747296">अपने फ़ोन पर Chrome इंस्टॉल करें. हम आपके फ़ोन पर एक SMS भेजेंगे: <ph name="PHONE_NUMBER" /></translation>
-<translation id="1818142563254268765">Chrome स्वयं को नवीनतम वर्शन में अपडेट नहीं कर सका, इसलिए आप शानदार नई सुविधाओं और सुरक्षा समाधानों का लाभ नहीं ले पा रहे हैं. आपको Chrome को अपडेट करना होगा.</translation>
 <translation id="1874309113135274312">Google Chrome बीटा (mDNS-In)</translation>
 <translation id="1877026089748256423">Chrome पुराना हो गया है</translation>
 <translation id="2063848847527508675">अपडेट लागू करने के लिए Chrome OS को फिर से चालू करने की आवश्यकता होती है.</translation>
@@ -58,9 +59,9 @@
 <translation id="2446511512801740068">Chrome पुराना हो गया है क्योंकि उसे कुछ समय से फिर से लॉन्च नहीं किया गया है. एक अपडेट उपलब्ध है और जैसे ही आप फिर से लॉन्च करेंगे, अपडेट लागू कर दिया जाएगा.</translation>
 <translation id="2485422356828889247">विस्थापित करें</translation>
 <translation id="2580411288591421699">Google Chrome के उस वर्शन के समान वर्शन को इंस्‍टॉल नहीं कर सकता, जो वर्तमान में चल रहा है. कृपया Google Chrome बंद करें और फिर से प्रयास करें.</translation>
-<translation id="2582790009689336987">यह कंप्‍यूटर जल्‍दी ही Google Chrome के अपडेट प्राप्‍त करना बंद कर देगा क्‍योंकि यह Linux सिस्टम अब समर्थित नहीं रहेगा.</translation>
 <translation id="2586406160782125153">ऐसा करने से इस डिवाइस से आपका ब्राउज़िंग डेटा हट जाएगा. बाद में अपना डेटा पाने के लिए, Chrome में <ph name="USER_EMAIL" /> के रूप में प्रवेश करें.</translation>
 <translation id="2588322182880276190">Chrome लोगो</translation>
+<translation id="2652691236519827073">नए Chrome &amp;टैब में लिंक खोलें</translation>
 <translation id="2664962310688259219">Chrome OS ओपन सोर्स लाइसेंस</translation>
 <translation id="2665296953892887393">Google को क्रैश रिपोर्ट और <ph name="UMA_LINK" /> भेजकर Google Chrome को बेहतर बनाने में सहायता करें</translation>
 <translation id="2689103672227170538">इस एक्सटेंशन ने यह बदल दिया है कि जब आप Chrome प्रारंभ करते हैं तब कौन सा पृष्‍ठ दिखाया जाए.</translation>
@@ -84,7 +85,6 @@
 
 कृपया अतिरिक्त निर्देशों के लिए <ph name="ACCOUNT_EMAIL" /> पर अपना ईमेल देखें.</translation>
 <translation id="3282568296779691940">Chrome में प्रवेश करें</translation>
-<translation id="3311976847535831054">यह कंप्यूटर अब 32-बिट Google Chrome अपडेट प्राप्त नहीं करेगा. कृपया 64-बिट Google Chrome में अपग्रेड करें.</translation>
 <translation id="3360895254066713204">Chrome सहायक</translation>
 <translation id="3395323229510056640">Chrome OS में सहायता प्राप्त करें</translation>
 <translation id="3396977131400919238">स्थापित करने के दौरान ऑपरेटिंग सिस्टम में गड़बड़ी आई. कृपया Google Chrome फिर से डाउनलोड करें.</translation>
@@ -99,11 +99,12 @@
 <translation id="3738139272394829648">खोजने के लिए स्पर्श करें</translation>
 <translation id="3780814664026482060">Chrome - <ph name="PAGE_TITLE" /></translation>
 <translation id="3784527566857328444">Chrome से नि‍कालें...</translation>
-<translation id="3847841918622877581">Google Chrome आपके ब्राउज़िंग अनुभव को बेहतर बनाने के लिए वेब सेवाओं का उपयोग कर सकता है.</translation>
 <translation id="386202838227397562">कृपया सभी Google Chrome विंडो बंद करें और फिर से प्रयास करें.</translation>
 <translation id="3870154837782082782">Google Inc.</translation>
+<translation id="3873044882194371212">Chrome गु&amp;प्त विंडो में लिंक खोलें</translation>
 <translation id="3889417619312448367">Google Chrome को विस्थापित करें</translation>
 <translation id="4028693306634653894">Chrome पर तेज़ी से पहुंचें</translation>
+<translation id="4031074602479304239">Chrome ने इस साइट को रोक दिया ताकि वह आपको दूसरे वेबलिंक पर नहीं ले जाए</translation>
 <translation id="4042449298237264661">यह कंप्‍यूटर अब Google Chrome के अपडेट प्राप्‍त नहीं करेगा क्‍योंकि Windows XP और Windows Vista अब समर्थित नहीं है.</translation>
 <translation id="4050175100176540509">महत्‍वपूर्ण सुरक्षा सुधार और नई सुविधाएं नवीनतम वर्शन में उपलब्‍ध हैं.</translation>
 <translation id="4053720452172726777">Google Chrome कस्टमाइज़ करें और नियंत्रित करें</translation>
@@ -114,26 +115,26 @@
 <translation id="4309555186815777032">(Chrome <ph name="BEGIN_BUTTON" />पुन: प्रारंभ<ph name="END_BUTTON" /> करना आवश्यक है)</translation>
 <translation id="4328355335528187361">Google Chrome डेवलपर (mDNS-In)</translation>
 <translation id="4331809312908958774">Chrome OS</translation>
-<translation id="437002079035561265">यह कंप्यूटर अब Google Chrome अपडेट प्राप्त नहीं करेगा क्योंकि यह Linux सिस्टम अब समर्थित नहीं है.</translation>
 <translation id="4407807842708586359">Google Chrome OS</translation>
 <translation id="4458285410772214805">इस परिवर्तन के प्रभावी होने के लिए, कृपया प्रस्थान करें और पुन: प्रवेश करें.</translation>
 <translation id="4458462641685292929">Google Chrome पर कोई और क्रिया चल रही है. कृपया बाद में फिर से कोशिश करें.</translation>
 <translation id="4480040274068703980">प्रवेश करने संबंधी गड़बड़ी के कारण Chrome OS आपका डेटा सिंक नहीं कर सका.</translation>
 <translation id="4561051373932531560">Google Chrome आपको वेब पर फ़ोन नंबर क्लिक करने और उसे Skype से कॉल करने की सुविधा देता है!</translation>
 <translation id="4567424176335768812">आपने <ph name="USER_EMAIL_ADDRESS" /> के रूप में प्रवेश किया हुआ है. अब आप अपने सभी प्रवेश किए हुए डिवाइस पर अपने बुकमार्क, इतिहास, और अन्य सेटिंग की एक्सेस कर सकेंगे.</translation>
+<translation id="4600710005438004015">Chrome सबसे नए वर्शन में अपडेट नहीं कर सका, इसलिए आपको नई सुविधाएं और सुरक्षा सुधार नहीं मिल रहे हैं.</translation>
 <translation id="4631713731678262610">Chrome मेनू में छिपाएं</translation>
 <translation id="4633000520311261472">Chrome को अधिक सुरक्षित बनाने के लिए, हमने ऐसे कुछ एक्सटेंशन अक्षम कर दिए हैं जो <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> में सूचीबद्ध नहीं हैं और आपकी जानकारी के बिना जोड़े गए हो सकते हैं.</translation>
 <translation id="4664415150087723341">Google Chrome के लिए एक विशेष सुरक्षा अपडेट अभी-अभी लागू किया गया था; उसके प्रभावी होने के लिए आपको अभी पुन: प्रारंभ करना चाहिए (हम आपके टैब पुनर्स्‍थापित कर देंगे).</translation>
-<translation id="4700157086864140907">Google Chrome आपके द्वारा ब्राउज़र में लिखे गए टेक्स्ट को Google सर्वर को भेजकर शानदार वर्तनी-जांच प्रदान करता है, जो आपको Google खोज द्वारा उपयोग की जाने वाली वर्तनी-जांच के समान वर्तनी जांच तकनीक का उपयोग करने की अनुमति देता है.</translation>
+<translation id="4700157086864140907">Google Chrome आपके द्वारा ब्राउज़र में लिखे गए टेक्स्ट को Google सर्वर को भेजकर शानदार वर्तनी-जाँच प्रदान करता है, जो आपको Google खोज द्वारा उपयोग की जाने वाली वर्तनी-जाँच के समान वर्तनी जाँच तकनीक का उपयोग करने की अनुमति देता है.</translation>
 <translation id="4728575227883772061">अनिर्दिष्ट कारण से स्थापना विफल हुई. यदि Google Chrome अभी खुला हुआ है, तो कृपया उसे बंद करें और फिर से प्रयास करें.</translation>
 <translation id="4743926867934016338">स्‍वीकार करें और खोजें</translation>
 <translation id="4750550185319565338"><ph name="PLUGIN_NAME" /> सक्षम करने के लिए Chrome फिर से चालू करें</translation>
-<translation id="4751441238232965030">यह कंप्यूटर जल्दी ही 32-बिट Google Chrome के अपडेट प्राप्त करना बंद करेगा. कृपया 64-बिट Google Chrome में अपग्रेड करें.</translation>
 <translation id="4754614261631455953">Google Chrome Canary (mDNS-In)</translation>
 <translation id="4771048833395599659">यह फ़ाइल खतरनाक हो सकती है, इसलिए Chrome ने इसे अवरुद्ध कर दिया है.</translation>
 <translation id="4794050651896644714">Chrome में विवरण सहेजें</translation>
 <translation id="4804732725083176494">Chrome में साइन इन करने की सुविधा इस डिवाइस के व्‍यवस्‍थापक ने बंद कर दी है.</translation>
 <translation id="4891791193823137474">Google Chrome को पृष्ठभूमि में चलने दें</translation>
+<translation id="4895437082222824641">नए Chrome &amp;टैब में लिंक खोलें</translation>
 <translation id="4921569541910214635">कंप्यूटर साझा करते हैं? अब आप Chrome जैसा चाहें वैसा सेट कर सकते हैं.</translation>
 <translation id="4953650215774548573">Google Chrome को अपने डिफ़ॉल्ट ब्राउज़र के रूप में सेट करना</translation>
 <translation id="495931528404527476">Chrome में</translation>
@@ -157,13 +158,13 @@
 <translation id="5430073640787465221">आपकी प्राथमिकताएं फ़ाइल दूषित या अमान्‍य है. Google Chrome आपकी सेटिंग पुनर्प्राप्त करने में असमर्थ है.</translation>
 <translation id="5453904507266736060">Google Chrome को पृष्ठभूमि में चलने दें</translation>
 <translation id="5495581687705680288">Google Chrome में लोड किए गए मॉड्यूल</translation>
+<translation id="5524843473235508879">दूसरे वेबलिंक पर भेजना ब्लॉक किया हुआ है.</translation>
 <translation id="556024056938947818">Google Chrome पासवर्ड दिखाने का प्रयास कर रहा है.</translation>
 <translation id="5563479599352954471">एकल स्पर्श से खोजें</translation>
 <translation id="5566025111015594046">Google Chrome (mDNS-In)</translation>
 <translation id="557283862590186398">Chrome को इस साइट के लिए आपका माइक्रोफ़ोन एक्सेस करने की अनुमति चाहिए.</translation>
 <translation id="5620765574781326016">पेज को छोड़े बिना वेबसाइटों पर दिए गए विषयों के बारे में जानें.</translation>
 <translation id="565744775970812598"><ph name="FILE_NAME" /> खरतरनाक हो सकता है, इसलिए Chrome ने उसे अवरोधित कर दिया है.</translation>
-<translation id="568643307450491754">Chrome मेनू में या बुकमार्क बार पर अपने बुकमार्क ढूंढें.</translation>
 <translation id="573759479754913123">Chrome OS के बारे में</translation>
 <translation id="5749068826913805084">फ़ाइलें डाउनलोड करने के लिए Chrome को मेमोरी ऐक्‍सेस की आवश्‍यकता होगी.</translation>
 <translation id="5774845247549698882">Chrome OS इस भाषा में प्रदर्शित किया जा रहा है</translation>
@@ -207,7 +208,6 @@
 <translation id="6989339256997917931">Google Chrome को अपडेट कर दिया गया  है, लेकिन आपने इसका कम से कम 30 दिन से उपयोग नहीं किया है.</translation>
 <translation id="7098166902387133879">Google Chrome आपके माइक्रोफ़ोन का उपयोग कर रहा है.</translation>
 <translation id="7106741999175697885">काम का प्रबंधक - Google Chrome</translation>
-<translation id="7125719106133729027">Chrome स्वयं को नवीनतम वर्शन में अपडेट नहीं कर सका, इसलिए आप शानदार नई सुविधाओं और सुरक्षा समाधानों का लाभ नहीं ले पा रहे हैं. आपको Chrome को मैन्युअल रूप से फिर से इंस्टॉल करना होगा.</translation>
 <translation id="7161904924553537242">Google Chrome में आपका स्वागत है</translation>
 <translation id="7164397146364144019">आप Google को संभावित सुरक्षा घटनाओं के विवरणों की अपने आप रिपोर्ट करके Chrome को अधिक सुरक्षित और आसान बनाने में सहायता कर सकते हैं.</translation>
 <translation id="7185038942300673794"><ph name="EXTENSION_NAME" /> को Chrome में जोड़ दिया गया है.</translation>
@@ -217,7 +217,6 @@
 <translation id="7339898014177206373">नई विंडो</translation>
 <translation id="7369650938475876456">Chrome की ओर से जनरेट किए गए सशक्त पासवर्ड का उपयोग करें</translation>
 <translation id="7398801000654795464">आप Chrome में <ph name="USER_EMAIL_ADDRESS" /> के रूप में प्रवेश थे. पुन: प्रवेश करने के लिए कृपया उसी खाते का उपयोग करें.</translation>
-<translation id="7400722733683201933">Google Chrome के बारे में</translation>
 <translation id="7408085963519505752">Chrome OS शर्तें</translation>
 <translation id="7419046106786626209">Chrome OS आपका डेटा समन्वयित नहीं कर सका क्योंकि आपके डोमेन के लिए समन्वयन उपलब्ध नहीं है.</translation>
 <translation id="7437998757836447326">Chrome से प्रस्थान करें</translation>
@@ -229,7 +228,7 @@
 <translation id="7552219221109926349">Chrome OS इस भाषा में दिखाएं</translation>
 <translation id="7592736734348559088">Google Chrome आपका डेटा समन्‍वयित नहीं कर सका क्‍योंकि आपके खाते के प्रवेश विवरण पुराने हैं.</translation>
 <translation id="7626032353295482388">Chrome में आपका स्वागत है</translation>
-<translation id="7747138024166251722">इंस्टॉलर अस्थायी निर्देशिका नहीं बना सकता. कृपया डिस्क में खाली जगह और सॉफ़्टवेयर को इंस्‍टॉल करने की अनुमति की जांच करें.</translation>
+<translation id="7747138024166251722">इंस्टॉलर अस्थायी निर्देशिका नहीं बना सकता. कृपया डिस्क में खाली जगह और सॉफ़्टवेयर को इंस्‍टॉल करने की अनुमति की जाँच करें.</translation>
 <translation id="7756122083761163394">इस व्यक्ति का ब्राउज़िंग डेटा इस डिवाइस से हटा दिया जाएगा. डेटा वापस पाने के लिए, $2 के रूप में Chrome में प्रवेश करें.</translation>
 <translation id="7761834446675418963">Chrome को खोलने और ब्राउज़ करना प्रारंभ करने के लिए अपना नाम क्लिक करें.</translation>
 <translation id="7781002470561365167">Google Chrome का एक नया वर्शन उपलब्ध है.</translation>
@@ -255,7 +254,7 @@
 <translation id="8342675569599923794">यह फ़ाइल खतरनाक है, इसलिए Chrome ने इसे अवरुद्ध कर दिया है.</translation>
 <translation id="8406086379114794905">Chrome को बेहतर बनाने में सहायता करें</translation>
 <translation id="8439301513305169426">Chrome इस पासवर्ड को <ph name="SAVED_PASSWORD_LINK" /> से सहेज लेगा. आपके इसे याद रखने की ज़रूरत नहीं है.</translation>
-<translation id="8455999171311319804">वैकल्पिक: Google को निदान और उपयोग डेटा अपने आप भेजकर Chrome OS को बेहतर बनाने में सहायता करें.</translation>
+<translation id="8455999171311319804">वैकल्पिक: Google को गड़बड़ी और उपयोग का डेटा अपने आप भेजकर Chrome OS को बेहतर बनाने में सहायता करें.</translation>
 <translation id="8478823064122749032">अपने फ़ोन पर Chrome इंस्टॉल करें. हम आपके खाता पुनर्प्राप्ति फ़ोन नंबर पर एक SMS भेजेंगे: <ph name="PHONE_NUMBER" /></translation>
 <translation id="8521348052903287641">mDNS ट्रैफ़िक की अनुमति देने के लिए Google Chrome का इनबाउंड नियम.</translation>
 <translation id="8540666473246803645">Google Chrome</translation>

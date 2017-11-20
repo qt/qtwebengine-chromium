@@ -35,23 +35,23 @@
 #include "core/animation/KeyframeEffectReadOnly.h"
 #include "core/animation/PendingAnimations.h"
 #include "core/animation/css/CSSAnimations.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/dom/DOMNodeIds.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/StyleChangeReason.h"
 #include "core/dom/TaskRunnerHelper.h"
 #include "core/events/AnimationPlaybackEvent.h"
 #include "core/frame/UseCounter.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/paint/PaintLayer.h"
 #include "core/probe/CoreProbes.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/animation/CompositorAnimationPlayer.h"
 #include "platform/heap/Persistent.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/MathExtras.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
@@ -717,7 +717,16 @@ void Animation::setPlaybackRate(double playback_rate) {
 
   PlayStateUpdateScope update_scope(*this, kTimingUpdateOnDemand);
 
+  double start_time_before = start_time_;
   SetPlaybackRateInternal(playback_rate);
+
+  // Adds a UseCounter to check if setting playbackRate causes a compensatory
+  // seek forcing a change in start_time_
+  if (!std::isnan(start_time_before) && start_time_ != start_time_before &&
+      play_state_ != kFinished) {
+    UseCounter::Count(GetExecutionContext(),
+                      WebFeature::kAnimationSetPlaybackRateCompensatorySeek);
+  }
 }
 
 void Animation::SetPlaybackRateInternal(double playback_rate) {

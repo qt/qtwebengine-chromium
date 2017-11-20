@@ -113,7 +113,7 @@ class CheckerImageTrackerTest : public testing::Test,
     }
 
     auto generator = CreatePaintImageGenerator(gfx::Size(dimension, dimension));
-    return DrawImage(PaintImageBuilder()
+    return DrawImage(PaintImageBuilder::WithDefault()
                          .set_id(PaintImage::GetNextId())
                          .set_paint_image_generator(std::move(generator))
                          .set_animation_type(animation)
@@ -121,13 +121,12 @@ class CheckerImageTrackerTest : public testing::Test,
                          .set_is_multipart(is_multipart)
                          .TakePaintImage(),
                      SkIRect::MakeWH(dimension, dimension),
-                     kNone_SkFilterQuality, SkMatrix::I(), gfx::ColorSpace());
+                     kNone_SkFilterQuality, SkMatrix::I(),
+                     PaintImage::kDefaultFrameIndex, gfx::ColorSpace());
   }
 
   bool ShouldCheckerImage(const DrawImage& draw_image, WhichTree tree) {
-    bool required_for_activation = true;
-    return checker_image_tracker_->ShouldCheckerImage(draw_image, tree,
-                                                      required_for_activation);
+    return checker_image_tracker_->ShouldCheckerImage(draw_image, tree);
   }
 
   CheckerImageTracker::ImageDecodeQueue BuildImageDecodeQueue(
@@ -428,12 +427,13 @@ TEST_F(CheckerImageTrackerTest, CheckersOnlyStaticCompletedImages) {
   gfx::Size image_size = gfx::Size(partial_image.paint_image().width(),
                                    partial_image.paint_image().height());
   DrawImage completed_paint_image = DrawImage(
-      PaintImageBuilder()
+      PaintImageBuilder::WithDefault()
           .set_id(partial_image.paint_image().stable_id())
           .set_paint_image_generator(CreatePaintImageGenerator(image_size))
           .TakePaintImage(),
       SkIRect::MakeWH(image_size.width(), image_size.height()),
-      kNone_SkFilterQuality, SkMatrix::I(), gfx::ColorSpace());
+      kNone_SkFilterQuality, SkMatrix::I(), PaintImage::kDefaultFrameIndex,
+      gfx::ColorSpace());
   EXPECT_FALSE(
       ShouldCheckerImage(completed_paint_image, WhichTree::PENDING_TREE));
 }
@@ -460,10 +460,12 @@ TEST_F(CheckerImageTrackerTest, ChoosesMaxScaleAndQuality) {
   SetUpTracker(true);
 
   DrawImage image = CreateImage(ImageType::CHECKERABLE);
-  DrawImage scaled_image1(image, 0.5f, gfx::ColorSpace());
+  DrawImage scaled_image1(image, 0.5f, PaintImage::kDefaultFrameIndex,
+                          gfx::ColorSpace());
   DrawImage scaled_image2 =
       DrawImage(image.paint_image(), image.src_rect(), kHigh_SkFilterQuality,
-                SkMatrix::MakeScale(1.8f), gfx::ColorSpace());
+                SkMatrix::MakeScale(1.8f), PaintImage::kDefaultFrameIndex,
+                gfx::ColorSpace());
 
   std::vector<DrawImage> draw_images = {scaled_image1, scaled_image2};
   CheckerImageTracker::ImageDecodeQueue image_decode_queue =
@@ -538,7 +540,7 @@ TEST_F(CheckerImageTrackerTest, UseSrcRectForSize) {
   DrawImage image = CreateImage(ImageType::CHECKERABLE);
   image = DrawImage(image.paint_image(), SkIRect::MakeWH(200, 200),
                     image.filter_quality(), SkMatrix::I(),
-                    image.target_color_space());
+                    PaintImage::kDefaultFrameIndex, image.target_color_space());
   EXPECT_FALSE(ShouldCheckerImage(image, WhichTree::PENDING_TREE));
 }
 
@@ -558,27 +560,6 @@ TEST_F(CheckerImageTrackerTest, DisableForSoftwareRaster) {
   // New image should not be checkered while disabled.
   DrawImage image2 = CreateImage(ImageType::CHECKERABLE);
   EXPECT_FALSE(ShouldCheckerImage(image2, WhichTree::PENDING_TREE));
-}
-
-TEST_F(CheckerImageTrackerTest, OnlyCheckerRequiredForActivation) {
-  SetUpTracker(true);
-
-  // Should checker when required for activation.
-  DrawImage image1 = CreateImage(ImageType::CHECKERABLE);
-  bool required_for_activation = true;
-  EXPECT_TRUE(checker_image_tracker_->ShouldCheckerImage(
-      image1, WhichTree::PENDING_TREE, required_for_activation));
-
-  // Now the same image is not required for activation. We should still continue
-  // checkering it.
-  required_for_activation = false;
-  EXPECT_TRUE(checker_image_tracker_->ShouldCheckerImage(
-      image1, WhichTree::PENDING_TREE, required_for_activation));
-
-  // New image should not be checkered if it is not required for activation.
-  DrawImage image2 = CreateImage(ImageType::CHECKERABLE);
-  EXPECT_FALSE(checker_image_tracker_->ShouldCheckerImage(
-      image2, WhichTree::PENDING_TREE, required_for_activation));
 }
 
 }  // namespace

@@ -18,7 +18,7 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/fsdk_define.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
@@ -26,7 +26,7 @@
 namespace {
 
 CPDF_Object* PageDictGetInheritableTag(CPDF_Dictionary* pDict,
-                                       const CFX_ByteString& bsSrcTag) {
+                                       const ByteString& bsSrcTag) {
   if (!pDict || bsSrcTag.IsEmpty())
     return nullptr;
   if (!pDict->KeyExist("Parent") || !pDict->KeyExist("Type"))
@@ -58,7 +58,7 @@ CPDF_Object* PageDictGetInheritableTag(CPDF_Dictionary* pDict,
 
 bool CopyInheritable(CPDF_Dictionary* pCurPageDict,
                      CPDF_Dictionary* pSrcPageDict,
-                     const CFX_ByteString& key) {
+                     const ByteString& key) {
   if (pCurPageDict->KeyExist(key))
     return true;
 
@@ -70,23 +70,23 @@ bool CopyInheritable(CPDF_Dictionary* pCurPageDict,
   return true;
 }
 
-bool ParserPageRangeString(CFX_ByteString rangstring,
+bool ParserPageRangeString(ByteString rangstring,
                            std::vector<uint16_t>* pageArray,
                            int nCount) {
   if (rangstring.IsEmpty())
     return true;
 
   rangstring.Remove(' ');
-  FX_STRSIZE nLength = rangstring.GetLength();
-  CFX_ByteString cbCompareString("0123456789-,");
-  for (FX_STRSIZE i = 0; i < nLength; ++i) {
+  size_t nLength = rangstring.GetLength();
+  ByteString cbCompareString("0123456789-,");
+  for (size_t i = 0; i < nLength; ++i) {
     if (!cbCompareString.Contains(rangstring[i]))
       return false;
   }
 
-  CFX_ByteString cbMidRange;
-  FX_STRSIZE nStringFrom = 0;
-  pdfium::Optional<FX_STRSIZE> nStringTo = 0;
+  ByteString cbMidRange;
+  size_t nStringFrom = 0;
+  pdfium::Optional<size_t> nStringTo = 0;
   while (nStringTo < nLength) {
     nStringTo = rangstring.Find(',', nStringFrom);
     if (!nStringTo.has_value())
@@ -106,7 +106,7 @@ bool ParserPageRangeString(CFX_ByteString rangstring,
         return false;
 
       nMid = nMid.value() + 1;
-      FX_STRSIZE nEnd = cbMidRange.GetLength() - nMid.value();
+      size_t nEnd = cbMidRange.GetLength() - nMid.value();
       if (nEnd == 0)
         return false;
 
@@ -141,8 +141,8 @@ class CPDF_PageOrganizer {
   bool UpdateReference(CPDF_Object* pObj, ObjectNumberMap* pObjNumberMap);
   uint32_t GetNewObjId(ObjectNumberMap* pObjNumberMap, CPDF_Reference* pRef);
 
-  CFX_UnownedPtr<CPDF_Document> m_pDestPDFDoc;
-  CFX_UnownedPtr<CPDF_Document> m_pSrcPDFDoc;
+  UnownedPtr<CPDF_Document> m_pDestPDFDoc;
+  UnownedPtr<CPDF_Document> m_pSrcPDFDoc;
 };
 
 CPDF_PageOrganizer::CPDF_PageOrganizer(CPDF_Document* pDestPDFDoc,
@@ -165,7 +165,7 @@ bool CPDF_PageOrganizer::PDFDocInit() {
 
   pDocInfoDict->SetNewFor<CPDF_String>("Producer", "PDFium", false);
 
-  CFX_ByteString cbRootType = pNewRoot->GetStringFor("Type", "");
+  ByteString cbRootType = pNewRoot->GetStringFor("Type", "");
   if (cbRootType.IsEmpty())
     pNewRoot->SetNewFor<CPDF_Name>("Type", "Catalog");
 
@@ -178,7 +178,7 @@ bool CPDF_PageOrganizer::PDFDocInit() {
                                         pNewPages->GetObjNum());
   }
 
-  CFX_ByteString cbPageType = pNewPages->GetStringFor("Type", "");
+  ByteString cbPageType = pNewPages->GetStringFor("Type", "");
   if (cbPageType.IsEmpty())
     pNewPages->SetNewFor<CPDF_Name>("Type", "Pages");
 
@@ -205,7 +205,7 @@ bool CPDF_PageOrganizer::ExportPage(const std::vector<uint16_t>& pageNums,
 
     // Clone the page dictionary
     for (const auto& it : *pSrcPageDict) {
-      const CFX_ByteString& cbSrcKeyStr = it.first;
+      const ByteString& cbSrcKeyStr = it.first;
       if (cbSrcKeyStr == "Type" || cbSrcKeyStr == "Parent")
         continue;
 
@@ -271,7 +271,7 @@ bool CPDF_PageOrganizer::UpdateReference(CPDF_Object* pObj,
       CPDF_Dictionary* pDict = pObj->AsDictionary();
       auto it = pDict->begin();
       while (it != pDict->end()) {
-        const CFX_ByteString& key = it->first;
+        const ByteString& key = it->first;
         CPDF_Object* pNextObj = it->second.get();
         ++it;
         if (key == "Parent" || key == "Prev" || key == "First")
@@ -330,7 +330,7 @@ uint32_t CPDF_PageOrganizer::GetNewObjId(ObjectNumberMap* pObjNumberMap,
   std::unique_ptr<CPDF_Object> pClone = pDirect->Clone();
   if (CPDF_Dictionary* pDictClone = pClone->AsDictionary()) {
     if (pDictClone->KeyExist("Type")) {
-      CFX_ByteString strType = pDictClone->GetStringFor("Type");
+      ByteString strType = pDictClone->GetStringFor("Type");
       if (!FXSYS_stricmp(strType.c_str(), "Pages"))
         return 4;
       if (!FXSYS_stricmp(strType.c_str(), "Page"))

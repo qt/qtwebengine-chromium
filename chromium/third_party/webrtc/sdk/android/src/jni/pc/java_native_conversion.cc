@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/sdk/android/src/jni/pc/java_native_conversion.h"
+#include "sdk/android/src/jni/pc/java_native_conversion.h"
 
 #include <string>
 
-#include "webrtc/pc/webrtcsdp.h"
-#include "webrtc/sdk/android/src/jni/classreferenceholder.h"
+#include "pc/webrtcsdp.h"
+#include "sdk/android/src/jni/classreferenceholder.h"
 
 namespace webrtc {
 namespace jni {
@@ -349,8 +349,8 @@ void JavaToNativeIceServers(JNIEnv* jni,
                             PeerConnectionInterface::IceServers* ice_servers) {
   for (jobject j_ice_server : Iterable(jni, j_ice_servers)) {
     jclass j_ice_server_class = GetObjectClass(jni, j_ice_server);
-    jfieldID j_ice_server_uri_id =
-        GetFieldID(jni, j_ice_server_class, "uri", "Ljava/lang/String;");
+    jfieldID j_ice_server_urls_id =
+        GetFieldID(jni, j_ice_server_class, "urls", "Ljava/util/List;");
     jfieldID j_ice_server_username_id =
         GetFieldID(jni, j_ice_server_class, "username", "Ljava/lang/String;");
     jfieldID j_ice_server_password_id =
@@ -364,8 +364,9 @@ void JavaToNativeIceServers(JNIEnv* jni,
         GetFieldID(jni, j_ice_server_class, "hostname", "Ljava/lang/String;");
     jfieldID j_ice_server_tls_alpn_protocols_id = GetFieldID(
         jni, j_ice_server_class, "tlsAlpnProtocols", "Ljava/util/List;");
-    jstring uri = reinterpret_cast<jstring>(
-        GetObjectField(jni, j_ice_server, j_ice_server_uri_id));
+    jfieldID j_ice_server_tls_elliptic_curves_id = GetFieldID(
+        jni, j_ice_server_class, "tlsEllipticCurves", "Ljava/util/List;");
+    jobject urls = GetObjectField(jni, j_ice_server, j_ice_server_urls_id);
     jstring username = reinterpret_cast<jstring>(
         GetObjectField(jni, j_ice_server, j_ice_server_username_id));
     jstring password = reinterpret_cast<jstring>(
@@ -376,13 +377,17 @@ void JavaToNativeIceServers(JNIEnv* jni,
         GetObjectField(jni, j_ice_server, j_ice_server_hostname_id));
     jobject tls_alpn_protocols = GetNullableObjectField(
         jni, j_ice_server, j_ice_server_tls_alpn_protocols_id);
+    jobject tls_elliptic_curves = GetNullableObjectField(
+        jni, j_ice_server, j_ice_server_tls_elliptic_curves_id);
     PeerConnectionInterface::IceServer server;
-    server.uri = JavaToStdString(jni, uri);
+    server.urls = JavaToStdVectorStrings(jni, urls);
     server.username = JavaToStdString(jni, username);
     server.password = JavaToStdString(jni, password);
     server.tls_cert_policy = tls_cert_policy;
     server.hostname = JavaToStdString(jni, hostname);
     server.tls_alpn_protocols = JavaToStdVectorStrings(jni, tls_alpn_protocols);
+    server.tls_elliptic_curves =
+        JavaToStdVectorStrings(jni, tls_elliptic_curves);
     ice_servers->push_back(server);
   }
 }
@@ -473,6 +478,15 @@ void JavaToNativeRTCConfiguration(
   jmethodID get_max_id =
       GetMethodID(jni, j_interval_range_class, "getMax", "()I");
 
+  jfieldID j_turn_customizer_type_id = GetFieldID(
+      jni, j_rtc_config_class, "turnCustomizer", "Lorg/webrtc/TurnCustomizer;");
+  jobject j_turn_customizer =
+      GetNullableObjectField(jni, j_rtc_config, j_turn_customizer_type_id);
+
+  jclass j_turn_customizer_class = jni->FindClass("org/webrtc/TurnCustomizer");
+  jfieldID j_native_turn_customizer_id =
+      GetFieldID(jni, j_turn_customizer_class, "nativeTurnCustomizer", "J");
+
   rtc_config->type = JavaToNativeIceTransportsType(jni, j_ice_transports_type);
   rtc_config->bundle_policy = JavaToNativeBundlePolicy(jni, j_bundle_policy);
   rtc_config->rtcp_mux_policy =
@@ -516,6 +530,11 @@ void JavaToNativeRTCConfiguration(
     int min = jni->CallIntMethod(j_ice_regather_interval_range, get_min_id);
     int max = jni->CallIntMethod(j_ice_regather_interval_range, get_max_id);
     rtc_config->ice_regather_interval_range.emplace(min, max);
+  }
+
+  if (!IsNull(jni, j_turn_customizer)) {
+    rtc_config->turn_customizer = reinterpret_cast<webrtc::TurnCustomizer*>(
+        GetLongField(jni, j_turn_customizer, j_native_turn_customizer_id));
   }
 }
 

@@ -32,7 +32,6 @@
 
 #include <memory>
 #include "bindings/core/v8/SourceLocation.h"
-#include "core/dom/Document.h"
 #include "core/dom/SecurityContext.h"
 #include "core/dom/TaskRunnerHelper.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
@@ -53,12 +52,12 @@
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeProxy.h"
 #include "modules/serviceworkers/ServiceWorkerInstalledScriptsManager.h"
 #include "modules/serviceworkers/ServiceWorkerThread.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
 #include "platform/heap/Handle.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/loader/fetch/SubstituteData.h"
 #include "platform/network/NetworkUtils.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Functional.h"
 #include "platform/wtf/PtrUtil.h"
@@ -165,7 +164,7 @@ void WebEmbeddedWorkerImpl::TerminateWorkerContext() {
   }
   if (main_script_loader_) {
     main_script_loader_->Cancel();
-    main_script_loader_.Clear();
+    main_script_loader_ = nullptr;
     // This deletes 'this'.
     worker_context_client_->WorkerContextFailedToStart();
     return;
@@ -400,7 +399,7 @@ void WebEmbeddedWorkerImpl::StartWorkerThread() {
         worker_clients, main_script_loader_->ResponseAddressSpace(),
         main_script_loader_->OriginTrialTokens(), std::move(worker_settings),
         static_cast<V8CacheOptions>(worker_start_data_.v8_cache_options));
-    main_script_loader_.Clear();
+    main_script_loader_ = nullptr;
   } else {
     // ContentSecurityPolicy and ReferrerPolicy are applied to |document| at
     // SetContentSecurityPolicyAndReferrerPolicy() before evaluating the main

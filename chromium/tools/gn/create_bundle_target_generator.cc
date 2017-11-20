@@ -33,6 +33,9 @@ void CreateBundleTargetGenerator::DoRun() {
   if (!FillBundleDir(SourceDir(), variables::kBundleRootDir,
                      &bundle_data.root_dir()))
     return;
+  if (!FillBundleDir(bundle_data.root_dir(), variables::kBundleContentsDir,
+                     &bundle_data.contents_dir()))
+    return;
   if (!FillBundleDir(bundle_data.root_dir(), variables::kBundleResourcesDir,
                      &bundle_data.resources_dir()))
     return;
@@ -47,6 +50,9 @@ void CreateBundleTargetGenerator::DoRun() {
     return;
 
   if (!FillProductType())
+    return;
+
+  if (!FillPartialInfoPlist())
     return;
 
   if (!FillXcodeTestApplicationName())
@@ -134,6 +140,29 @@ bool CreateBundleTargetGenerator::FillProductType() {
     return false;
 
   target_->bundle_data().product_type().assign(value->string_value());
+  return true;
+}
+
+bool CreateBundleTargetGenerator::FillPartialInfoPlist() {
+  const Value* value = scope_->GetValue(variables::kPartialInfoPlist, true);
+  if (!value)
+    return true;
+
+  if (!value->VerifyTypeIs(Value::STRING, err_))
+    return false;
+
+  const BuildSettings* build_settings = scope_->settings()->build_settings();
+  SourceFile path = scope_->GetSourceDir().ResolveRelativeFile(
+      *value, err_, build_settings->root_path_utf8());
+
+  if (err_->has_error())
+    return false;
+
+  if (!EnsureStringIsInOutputDir(build_settings->build_dir(), path.value(),
+                                 value->origin(), err_))
+    return false;
+
+  target_->bundle_data().set_partial_info_plist(path);
   return true;
 }
 

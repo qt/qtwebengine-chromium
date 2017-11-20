@@ -8,18 +8,15 @@
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 #include "core/css/properties/CSSPropertyAlignmentUtils.h"
 #include "core/css/properties/CSSPropertyPlaceUtils.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
 bool CSSShorthandPropertyAPIPlaceContent::ParseShorthand(
-    CSSPropertyID,
     bool important,
     CSSParserTokenRange& range,
     const CSSParserContext&,
     const CSSParserLocalContext&,
     HeapVector<CSSProperty, 256>& properties) const {
-  DCHECK(RuntimeEnabledFeatures::CSSGridLayoutEnabled());
   DCHECK_EQ(shorthandForProperty(CSSPropertyPlaceContent).length(), 2u);
 
   CSSValue* align_content_value = nullptr;

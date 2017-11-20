@@ -25,7 +25,6 @@
 #include "core/html/HTMLObjectElement.h"
 
 #include "bindings/core/v8/ScriptEventListener.h"
-#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
@@ -40,6 +39,7 @@
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html_names.h"
 #include "core/layout/api/LayoutEmbeddedItem.h"
 #include "core/plugins/PluginView.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
@@ -206,7 +206,7 @@ bool HTMLObjectElement::HasFallbackContent() const {
     if (child->IsTextNode()) {
       if (!ToText(child)->ContainsOnlyWhitespace())
         return true;
-    } else if (!isHTMLParamElement(*child)) {
+    } else if (!IsHTMLParamElement(*child)) {
       return true;
     }
   }
@@ -396,7 +396,7 @@ bool HTMLObjectElement::IsExposed() const {
       return false;
   }
   for (HTMLElement& element : Traversal<HTMLElement>::DescendantsOf(*this)) {
-    if (isHTMLObjectElement(element) || isHTMLEmbedElement(element))
+    if (IsHTMLObjectElement(element) || IsHTMLEmbedElement(element))
       return false;
   }
   return true;
@@ -407,13 +407,13 @@ bool HTMLObjectElement::ContainsJavaApplet() const {
     return true;
 
   for (HTMLElement& child : Traversal<HTMLElement>::ChildrenOf(*this)) {
-    if (isHTMLParamElement(child) &&
+    if (IsHTMLParamElement(child) &&
         DeprecatedEqualIgnoringCase(child.GetNameAttribute(), "type") &&
         MIMETypeRegistry::IsJavaAppletMIMEType(
             child.getAttribute(valueAttr).GetString()))
       return true;
-    if (isHTMLObjectElement(child) &&
-        toHTMLObjectElement(child).ContainsJavaApplet())
+    if (IsHTMLObjectElement(child) &&
+        ToHTMLObjectElement(child).ContainsJavaApplet())
       return true;
   }
 

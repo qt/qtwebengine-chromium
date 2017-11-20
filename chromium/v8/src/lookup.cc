@@ -48,6 +48,7 @@ LookupIterator LookupIterator::PropertyOrElement(Isolate* isolate,
                                                  Handle<Object> key,
                                                  bool* success,
                                                  Configuration configuration) {
+  // TODO(mslekova): come up with better way to avoid duplication
   uint32_t index = 0;
   if (key->ToArrayIndex(&index)) {
     *success = true;

@@ -9,6 +9,7 @@
 #include <string>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
@@ -106,7 +107,6 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
 
   // AudioManager:
   void ShutdownOnAudioThread() override;
-  base::string16 GetAudioInputDeviceModel() override;
 
   void GetAudioInputDeviceDescriptions(
       AudioDeviceDescriptions* device_descriptions) final;
@@ -159,6 +159,14 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   CreateAudioDebugRecordingManager(
       scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
+  // These functions assign group ids to devices based on their device ids. The
+  // default implementation is an attempt to do this based on
+  // GetAssociatedOutputDeviceID. They may be overridden by subclasses that want
+  // a different logic for assigning group ids. Must be called on the audio
+  // worker thread (see GetTaskRunner()).
+  virtual std::string GetGroupIDOutput(const std::string& output_device_id);
+  virtual std::string GetGroupIDInput(const std::string& input_device_id);
+
  private:
   FRIEND_TEST_ALL_PREFIXES(AudioManagerTest, AudioDebugRecording);
 
@@ -169,13 +177,6 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
 
   // AudioManager:
   void InitializeOutputDebugRecording() final;
-
-  // These functions assign group ids to devices based on their device ids.
-  // The default implementation is an attempt to do this based on
-  // GetAssociatedOutputDeviceID. Must be called on the audio worker thread
-  // (see GetTaskRunner()).
-  std::string GetGroupIDOutput(const std::string& output_device_id);
-  std::string GetGroupIDInput(const std::string& input_device_id);
 
   // Max number of open output streams, modified by
   // SetMaxOutputStreamsAllowed().

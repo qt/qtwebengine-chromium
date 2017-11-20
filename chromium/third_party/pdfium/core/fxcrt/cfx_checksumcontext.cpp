@@ -105,7 +105,7 @@ void CFX_ChecksumContext::StartChecksum() {
 }
 
 bool CFX_ChecksumContext::UpdateChecksum(
-    const CFX_RetainPtr<IFX_SeekableReadStream>& pSrcFile,
+    const RetainPtr<IFX_SeekableReadStream>& pSrcFile,
     FX_FILESIZE offset,
     size_t size) {
   if (!m_pSAXReader || !pSrcFile)
@@ -140,11 +140,11 @@ void CFX_ChecksumContext::FinishChecksum() {
   }
 }
 
-CFX_ByteString CFX_ChecksumContext::GetChecksum() const {
+ByteString CFX_ChecksumContext::GetChecksum() const {
   return m_bsChecksum;
 }
 
-void CFX_ChecksumContext::Update(const CFX_ByteStringC& bsText) {
+void CFX_ChecksumContext::Update(const ByteStringView& bsText) {
   if (!m_pByteContext)
     return;
 

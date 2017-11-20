@@ -8,17 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/media/base/rtpdataengine.h"
+#include "media/base/rtpdataengine.h"
 
-#include "webrtc/media/base/codec.h"
-#include "webrtc/media/base/mediaconstants.h"
-#include "webrtc/media/base/rtputils.h"
-#include "webrtc/media/base/streamparams.h"
-#include "webrtc/rtc_base/copyonwritebuffer.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/ratelimiter.h"
-#include "webrtc/rtc_base/stringutils.h"
+#include "media/base/codec.h"
+#include "media/base/mediaconstants.h"
+#include "media/base/rtputils.h"
+#include "media/base/streamparams.h"
+#include "rtc_base/copyonwritebuffer.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/ratelimiter.h"
+#include "rtc_base/sanitizer.h"
+#include "rtc_base/stringutils.h"
 
 namespace cricket {
 
@@ -74,9 +75,12 @@ RtpDataMediaChannel::~RtpDataMediaChannel() {
   }
 }
 
-void RtpClock::Tick(double now, int* seq_num, uint32_t* timestamp) {
+void RTC_NO_SANITIZE("float-cast-overflow")  // bugs.webrtc.org/8204
+RtpClock::Tick(double now, int* seq_num, uint32_t* timestamp) {
   *seq_num = ++last_seq_num_;
   *timestamp = timestamp_offset_ + static_cast<uint32_t>(now * clockrate_);
+  // UBSan: 5.92374e+10 is outside the range of representable values of type
+  // 'unsigned int'
 }
 
 const DataCodec* FindUnknownCodec(const std::vector<DataCodec>& codecs) {

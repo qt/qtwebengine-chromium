@@ -129,6 +129,9 @@
         {
           "vendor_id": "0x1414",
           "device_id": ["0x02c1"]
+        },
+        {
+          "driver_vendor": "swiftshader"
         }
       ],
       "features": [
@@ -1241,7 +1244,7 @@
         "value": "4.1"
       },
       "features": [
-        "webgl2"
+        "accelerated_webgl2"
       ]
     },
     {
@@ -1326,6 +1329,9 @@
         },
         {
           "gl_renderer": ".*Gallium.*llvmpipe.*"
+        },
+        {
+          "gl_renderer": "Mesa OffScreen"
         }
       ],
       "features": [
@@ -1411,7 +1417,7 @@
       "cr_bugs": [449116, 698197],
       "gl_renderer": "Adreno \\(TM\\) 3.*",
       "features": [
-        "webgl2"
+        "accelerated_webgl2"
       ]
     },
     {
@@ -1425,7 +1431,7 @@
         }
       },
       "features": [
-        "webgl2"
+        "accelerated_webgl2"
       ]
     },
     {
@@ -1441,7 +1447,7 @@
         "value": "8.17.12.6973"
       },
       "features": [
-        "webgl2"
+        "accelerated_webgl2"
       ]
     },
     {
@@ -1453,7 +1459,7 @@
       },
       "vendor_id": "0x102b",
       "features": [
-        "webgl2"
+        "accelerated_webgl2"
       ]
     },
     {
@@ -1469,7 +1475,7 @@
         "value": "2011.1"
       },
       "features": [
-        "webgl2"
+        "accelerated_webgl2"
       ]
     },
     {
@@ -1485,7 +1491,7 @@
         "value": "8.16"
       },
       "features": [
-        "webgl2"
+        "accelerated_webgl2"
       ]
     },
     {
@@ -1501,7 +1507,7 @@
       },
       "multi_gpu_style": "amd_switchable",
       "features": [
-        "webgl2"
+        "accelerated_webgl2"
       ]
     },
     {
@@ -1534,6 +1540,23 @@
       ]
     },
     {
+      "id": 149,
+      "description": "Adreno 420 support for EXT_multisampled_render_to_texture is buggy on Android < 5.1",
+      "comment": "Corresponds to GPU driver bug #116",
+      "cr_bugs": [490379, 767913],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "5.1"
+        }
+      },
+      "gl_renderer": "Adreno \\(TM\\) 4.*",
+      "features": [
+        "accelerated_webgl2"
+      ]
+    },
+    {
       "id": 150,
       "description": "Macs with NVidia GPUs experience rendering issues on High Sierra",
       "cr_bugs": [773705],
@@ -1547,7 +1570,6 @@
       "vendor_id": "0x10de",
       "multi_gpu_category": "any",
       "features": [
-        "accelerated_2d_canvas",
         "gpu_rasterization"
       ]
     }

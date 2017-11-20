@@ -661,8 +661,7 @@ static CSSValueList* ValuesForBackgroundShorthand(
 
 static CSSValueList*
 ValueForContentPositionAndDistributionWithOverflowAlignment(
-    const StyleContentAlignmentData& data,
-    CSSValueID normal_behavior_value_id) {
+    const StyleContentAlignmentData& data) {
   CSSValueList* result = CSSValueList::CreateSpaceSeparated();
   // Handle content-distribution values
   if (data.Distribution() != kContentDistributionDefault)
@@ -673,10 +672,7 @@ ValueForContentPositionAndDistributionWithOverflowAlignment(
     case kContentPositionNormal:
       // Handle 'normal' value, not valid as content-distribution fallback.
       if (data.Distribution() == kContentDistributionDefault) {
-        result->Append(*CSSIdentifierValue::Create(
-            RuntimeEnabledFeatures::CSSGridLayoutEnabled()
-                ? CSSValueNormal
-                : normal_behavior_value_id));
+        result->Append(*CSSIdentifierValue::Create(CSSValueNormal));
       }
       break;
     case kContentPositionLastBaseline:
@@ -914,6 +910,55 @@ static CSSValue* ValueForFontVariantNumeric(const ComputedStyle& style) {
   if (variant_numeric.SlashedZeroValue() == FontVariantNumeric::kSlashedZeroOn)
     value_list->Append(*CSSIdentifierValue::Create(CSSValueSlashedZero));
 
+  return value_list;
+}
+
+static CSSValue* ValueForFontVariantEastAsian(const ComputedStyle& style) {
+  FontVariantEastAsian east_asian =
+      style.GetFontDescription().VariantEastAsian();
+  if (east_asian.IsAllNormal())
+    return CSSIdentifierValue::Create(CSSValueNormal);
+
+  CSSValueList* value_list = CSSValueList::CreateSpaceSeparated();
+  switch (east_asian.Form()) {
+    case FontVariantEastAsian::kNormalForm:
+      break;
+    case FontVariantEastAsian::kJis78:
+      value_list->Append(*CSSIdentifierValue::Create(CSSValueJis78));
+      break;
+    case FontVariantEastAsian::kJis83:
+      value_list->Append(*CSSIdentifierValue::Create(CSSValueJis83));
+      break;
+    case FontVariantEastAsian::kJis90:
+      value_list->Append(*CSSIdentifierValue::Create(CSSValueJis90));
+      break;
+    case FontVariantEastAsian::kJis04:
+      value_list->Append(*CSSIdentifierValue::Create(CSSValueJis04));
+      break;
+    case FontVariantEastAsian::kSimplified:
+      value_list->Append(*CSSIdentifierValue::Create(CSSValueSimplified));
+      break;
+    case FontVariantEastAsian::kTraditional:
+      value_list->Append(*CSSIdentifierValue::Create(CSSValueTraditional));
+      break;
+    default:
+      NOTREACHED();
+  }
+  switch (east_asian.Width()) {
+    case FontVariantEastAsian::kNormalWidth:
+      break;
+    case FontVariantEastAsian::kFullWidth:
+      value_list->Append(*CSSIdentifierValue::Create(CSSValueFullWidth));
+      break;
+    case FontVariantEastAsian::kProportionalWidth:
+      value_list->Append(
+          *CSSIdentifierValue::Create(CSSValueProportionalWidth));
+      break;
+    default:
+      NOTREACHED();
+  }
+  if (east_asian.Ruby())
+    value_list->Append(*CSSIdentifierValue::Create(CSSValueRuby));
   return value_list;
 }
 
@@ -1410,12 +1455,13 @@ static CSSValue* ValueForAnimationTimingFunction(
     const CSSTimingData* timing_data) {
   CSSValueList* list = CSSValueList::CreateCommaSeparated();
   if (timing_data) {
-    for (size_t i = 0; i < timing_data->TimingFunctionList().size(); ++i)
+    for (size_t i = 0; i < timing_data->TimingFunctionList().size(); ++i) {
       list->Append(*CreateTimingFunctionValue(
-          timing_data->TimingFunctionList()[i].Get()));
+          timing_data->TimingFunctionList()[i].get()));
+    }
   } else {
     list->Append(*CreateTimingFunctionValue(
-        CSSTimingData::InitialTimingFunction().Get()));
+        CSSTimingData::InitialTimingFunction().get()));
   }
   return list;
 }
@@ -1444,8 +1490,12 @@ static const CSSValue& ValueForBorderRadiusCorner(LengthSize radius,
   return list;
 }
 
-static CSSFunctionValue* ValueForMatrixTransform(TransformationMatrix transform,
-                                                 const ComputedStyle& style) {
+static CSSFunctionValue* ValueForMatrixTransform(
+    const TransformationMatrix& transform_param,
+    const ComputedStyle& style) {
+  // Take TransformationMatrix by reference and then copy it because VC++
+  // doesn't guarantee alignment of function parameters.
+  TransformationMatrix transform = transform_param;
   CSSFunctionValue* transform_value = nullptr;
   transform.Zoom(1 / style.EffectiveZoom());
   if (transform.IsAffine()) {
@@ -2008,6 +2058,7 @@ CSSValue* ComputedStyleCSSValueMapping::ValueForFont(
   // this serialization.
   CSSValue* ligatures_value = ValueForFontVariantLigatures(style);
   CSSValue* numeric_value = ValueForFontVariantNumeric(style);
+  CSSValue* east_asian_value = ValueForFontVariantEastAsian(style);
   // FIXME: Use DataEquivalent<CSSValue>(...) once http://crbug.com/729447 is
   // resolved.
   if (!DataEquivalent(
@@ -2015,6 +2066,9 @@ CSSValue* ComputedStyleCSSValueMapping::ValueForFont(
           static_cast<CSSValue*>(CSSIdentifierValue::Create(CSSValueNormal))) ||
       !DataEquivalent(
           numeric_value,
+          static_cast<CSSValue*>(CSSIdentifierValue::Create(CSSValueNormal))) ||
+      !DataEquivalent(
+          east_asian_value,
           static_cast<CSSValue*>(CSSIdentifierValue::Create(CSSValueNormal))))
     return nullptr;
 
@@ -2170,13 +2224,15 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
     const LayoutObject* layout_object,
     Node* styled_node,
     bool allow_visited_style) {
+  if (property_id == CSSPropertyInvalid)
+    return nullptr;
   const SVGComputedStyle& svg_style = style.SvgStyle();
-  property_id = CSSProperty::ResolveDirectionAwareProperty(
-      property_id, style.Direction(), style.GetWritingMode());
+  property_id = CSSPropertyAPI::Get(property_id)
+                    .ResolveDirectionAwareProperty(style.Direction(),
+                                                   style.GetWritingMode())
+                    .PropertyID();
+  DCHECK_NE(property_id, CSSPropertyInvalid);
   switch (property_id) {
-    case CSSPropertyInvalid:
-      return nullptr;
-
     case CSSPropertyBackgroundColor:
       return allow_visited_style
                  ? CSSColorValue::Create(
@@ -2500,7 +2556,7 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
     }
     case CSSPropertyAlignContent:
       return ValueForContentPositionAndDistributionWithOverflowAlignment(
-          style.AlignContent(), CSSValueStretch);
+          style.AlignContent());
     case CSSPropertyAlignItems:
       return ValueForItemPositionWithOverflowAlignment(style.AlignItems());
     case CSSPropertyAlignSelf:
@@ -2526,7 +2582,7 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
       return CSSIdentifierValue::Create(style.FlexWrap());
     case CSSPropertyJustifyContent:
       return ValueForContentPositionAndDistributionWithOverflowAlignment(
-          style.JustifyContent(), CSSValueFlexStart);
+          style.JustifyContent());
     case CSSPropertyOrder:
       return CSSPrimitiveValue::Create(style.Order(),
                                        CSSPrimitiveValue::UnitType::kNumber);
@@ -2914,11 +2970,9 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
     case CSSPropertyTextAlignLast:
       return CSSIdentifierValue::Create(style.TextAlignLast());
     case CSSPropertyTextDecoration:
-      if (RuntimeEnabledFeatures::CSS3TextDecorationsEnabled())
-        return ValuesForShorthandProperty(textDecorationShorthand(), style,
-                                          layout_object, styled_node,
-                                          allow_visited_style);
-    // Fall through.
+      return ValuesForShorthandProperty(textDecorationShorthand(), style,
+                                        layout_object, styled_node,
+                                        allow_visited_style);
     case CSSPropertyTextDecorationLine:
       return RenderTextDecorationFlagsToCSSValue(style.GetTextDecoration());
     case CSSPropertyTextDecorationSkip:
@@ -3085,6 +3139,8 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
       return ValueForFontVariantCaps(style);
     case CSSPropertyFontVariantNumeric:
       return ValueForFontVariantNumeric(style);
+    case CSSPropertyFontVariantEastAsian:
+      return ValueForFontVariantEastAsian(style);
     case CSSPropertyZIndex:
       if (style.HasAutoZIndex() || !style.IsStackingContext())
         return CSSIdentifierValue::Create(CSSValueAuto);
@@ -3184,7 +3240,7 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
           list->Append(*CreateTimingFunctionValue(
               CSSTimingData::GetRepeated(animation_data->TimingFunctionList(),
                                          i)
-                  .Get()));
+                  .get()));
           list->Append(*CSSPrimitiveValue::Create(
               CSSTimingData::GetRepeated(animation_data->DelayList(), i),
               CSSPrimitiveValue::UnitType::kSeconds));
@@ -3209,7 +3265,7 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
           *CSSPrimitiveValue::Create(CSSAnimationData::InitialDuration(),
                                      CSSPrimitiveValue::UnitType::kSeconds));
       list->Append(*CreateTimingFunctionValue(
-          CSSAnimationData::InitialTimingFunction().Get()));
+          CSSAnimationData::InitialTimingFunction().get()));
       list->Append(
           *CSSPrimitiveValue::Create(CSSAnimationData::InitialDelay(),
                                      CSSPrimitiveValue::UnitType::kSeconds));
@@ -3383,7 +3439,7 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
           list->Append(*CreateTimingFunctionValue(
               CSSTimingData::GetRepeated(transition_data->TimingFunctionList(),
                                          i)
-                  .Get()));
+                  .get()));
           list->Append(*CSSPrimitiveValue::Create(
               CSSTimingData::GetRepeated(transition_data->DelayList(), i),
               CSSPrimitiveValue::UnitType::kSeconds));
@@ -3399,7 +3455,7 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
           *CSSPrimitiveValue::Create(CSSTransitionData::InitialDuration(),
                                      CSSPrimitiveValue::UnitType::kSeconds));
       list->Append(*CreateTimingFunctionValue(
-          CSSTransitionData::InitialTimingFunction().Get()));
+          CSSTransitionData::InitialTimingFunction().get()));
       list->Append(
           *CSSPrimitiveValue::Create(CSSTransitionData::InitialDelay(),
                                      CSSPrimitiveValue::UnitType::kSeconds));
@@ -3832,14 +3888,16 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
     case CSSPropertyScrollSnapMarginInlineEnd:
       return ZoomAdjustedPixelValueForLength(style.ScrollSnapMarginInlineEnd(),
                                              style);
-    case CSSPropertyScrollBoundaryBehavior:
-      if (style.ScrollBoundaryBehaviorX() == style.ScrollBoundaryBehaviorY())
-        return CSSIdentifierValue::Create(style.ScrollBoundaryBehaviorX());
-      return nullptr;
-    case CSSPropertyScrollBoundaryBehaviorX:
-      return CSSIdentifierValue::Create(style.ScrollBoundaryBehaviorX());
-    case CSSPropertyScrollBoundaryBehaviorY:
-      return CSSIdentifierValue::Create(style.ScrollBoundaryBehaviorY());
+    case CSSPropertyOverscrollBehavior: {
+      CSSValueList* list = CSSValueList::CreateSpaceSeparated();
+      list->Append(*CSSIdentifierValue::Create(style.OverscrollBehaviorX()));
+      list->Append(*CSSIdentifierValue::Create(style.OverscrollBehaviorY()));
+      return list;
+    }
+    case CSSPropertyOverscrollBehaviorX:
+      return CSSIdentifierValue::Create(style.OverscrollBehaviorX());
+    case CSSPropertyOverscrollBehaviorY:
+      return CSSIdentifierValue::Create(style.OverscrollBehaviorY());
     case CSSPropertyTranslate: {
       if (!style.Translate())
         return CSSIdentifierValue::Create(CSSValueNone);

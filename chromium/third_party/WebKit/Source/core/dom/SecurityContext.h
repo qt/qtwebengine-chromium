@@ -56,7 +56,7 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
 
   using InsecureNavigationsSet = HashSet<unsigned, WTF::AlreadyHashed>;
 
-  SecurityOrigin* GetSecurityOrigin() const { return security_origin_.Get(); }
+  SecurityOrigin* GetSecurityOrigin() const { return security_origin_.get(); }
   ContentSecurityPolicy* GetContentSecurityPolicy() const {
     return content_security_policy_.Get();
   }
@@ -74,6 +74,9 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
   void SetAddressSpace(WebAddressSpace space) { address_space_ = space; }
   WebAddressSpace AddressSpace() const { return address_space_; }
   String addressSpaceForBindings() const;
+
+  void SetRequireTrustedTypes() { require_safe_types_ = true; }
+  bool RequireTrustedTypes() const { return require_safe_types_; }
 
   void AddInsecureNavigationUpgrade(unsigned hashed_host) {
     insecure_navigations_to_upgrade_.insert(hashed_host);
@@ -115,6 +118,7 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
   WebAddressSpace address_space_;
   WebInsecureRequestPolicy insecure_request_policy_;
   InsecureNavigationsSet insecure_navigations_to_upgrade_;
+  bool require_safe_types_;
 };
 
 }  // namespace blink

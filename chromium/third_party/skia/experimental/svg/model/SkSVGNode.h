@@ -27,11 +27,14 @@ enum class SkSVGTag {
     kLine,
     kLinearGradient,
     kPath,
+    kPattern,
     kPolygon,
     kPolyline,
+    kRadialGradient,
     kRect,
     kStop,
-    kSvg
+    kSvg,
+    kUse
 };
 
 class SkSVGNode : public SkRefCnt {
@@ -49,6 +52,7 @@ public:
     void setAttribute(SkSVGAttribute, const SkSVGValue&);
 
     void setClipPath(const SkSVGClip&);
+    void setClipRule(const SkSVGFillRule&);
     void setFill(const SkSVGPaint&);
     void setFillOpacity(const SkSVGNumberType&);
     void setFillRule(const SkSVGFillRule&);

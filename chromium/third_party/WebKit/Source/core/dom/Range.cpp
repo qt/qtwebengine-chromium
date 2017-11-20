@@ -39,6 +39,7 @@
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/SelectionTemplate.h"
 #include "core/editing/SetSelectionOptions.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
@@ -1014,7 +1015,7 @@ DocumentFragment* Range::createContextualFragment(
     element = node->parentElement();
 
   // Step 2.
-  if (!element || isHTMLHtmlElement(element)) {
+  if (!element || IsHTMLHtmlElement(element)) {
     Document& document = node->GetDocument();
 
     if (document.IsSVGDocument()) {

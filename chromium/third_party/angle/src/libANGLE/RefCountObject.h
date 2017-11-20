@@ -12,9 +12,9 @@
 #ifndef LIBANGLE_REFCOUNTOBJECT_H_
 #define LIBANGLE_REFCOUNTOBJECT_H_
 
-#include "common/debug.h"
-
 #include "angle_gl.h"
+#include "common/debug.h"
+#include "libANGLE/Error.h"
 
 #include <cstddef>
 
@@ -26,7 +26,7 @@ class RefCountObjectNoID : angle::NonCopyable
 {
   public:
     RefCountObjectNoID() : mRefCount(0) {}
-    virtual void onDestroy(const gl::Context *context) {}
+    virtual Error onDestroy(const Context *context) { return NoError(); }
 
     void addRef() const { ++mRefCount; }
 
@@ -45,6 +45,19 @@ class RefCountObjectNoID : angle::NonCopyable
   protected:
     virtual ~RefCountObjectNoID() { ASSERT(mRefCount == 0); }
 
+    // A specialized release method for objects which need a destroy context.
+    void release(const gl::Context *context)
+    {
+        ASSERT(mRefCount > 0);
+        if (--mRefCount == 0)
+        {
+            ANGLE_SWALLOW_ERR(onDestroy(context));
+            delete this;
+        }
+    }
+
+    template <class ObjectType>
+    friend class BindingPointer;
     mutable std::size_t mRefCount;
 };
 
@@ -58,17 +71,7 @@ class RefCountObject : RefCountObjectNoID
 
     GLuint id() const { return mId; }
 
-    // A specialized release method for objects which need a destroy context.
-    void release(const gl::Context *context)
-    {
-        ASSERT(mRefCount > 0);
-        if (--mRefCount == 0)
-        {
-            onDestroy(context);
-            delete this;
-        }
-    }
-
+    using RefCountObjectNoID::release;
     using RefCountObjectNoID::addRef;
     using RefCountObjectNoID::getRefCount;
 
@@ -76,8 +79,6 @@ class RefCountObject : RefCountObjectNoID
     ~RefCountObject() override {}
 
   private:
-    template <class ObjectType>
-    friend class BindingPointer;
     GLuint mId;
 };
 
@@ -112,9 +113,9 @@ class BindingPointer
     virtual void set(const Context *context, ObjectType *newObject)
     {
         // addRef first in case newObject == mObject and this is the last reference to it.
-        if (newObject != nullptr) reinterpret_cast<const RefCountObject*>(newObject)->addRef();
+        if (newObject != nullptr) reinterpret_cast<const RefCountObjectNoID*>(newObject)->addRef();
         if (mObject != nullptr)
-            reinterpret_cast<RefCountObject *>(mObject)->release(context);
+            reinterpret_cast<RefCountObjectNoID *>(mObject)->release(context);
         mObject = newObject;
     }
 

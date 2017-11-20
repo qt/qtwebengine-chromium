@@ -26,6 +26,7 @@ class BytesConsumerTestClient final
 
  public:
   void OnStateChange() override { ++num_on_state_change_called_; }
+  String DebugName() const override { return "BytesConsumerTestClient"; }
   int NumOnStateChangeCalled() const { return num_on_state_change_called_; }
 
  private:
@@ -44,7 +45,7 @@ class BytesConsumerTeeTest : public ::testing::Test {
 
 class FakeBlobBytesConsumer : public BytesConsumer {
  public:
-  explicit FakeBlobBytesConsumer(PassRefPtr<BlobDataHandle> handle)
+  explicit FakeBlobBytesConsumer(RefPtr<BlobDataHandle> handle)
       : blob_handle_(std::move(handle)) {}
   ~FakeBlobBytesConsumer() override {}
 
@@ -62,7 +63,7 @@ class FakeBlobBytesConsumer : public BytesConsumer {
     state_ = PublicState::kErrored;
     return Result::kError;
   }
-  PassRefPtr<BlobDataHandle> DrainAsBlobDataHandle(BlobSizePolicy policy) {
+  RefPtr<BlobDataHandle> DrainAsBlobDataHandle(BlobSizePolicy policy) {
     if (state_ != PublicState::kReadableOrWaiting)
       return nullptr;
     DCHECK(blob_handle_);

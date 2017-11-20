@@ -11,6 +11,8 @@
 #include "core/css/CSSVariableReferenceValue.h"
 #include "core/css/PropertyDescriptor.h"
 #include "core/css/PropertyRegistry.h"
+#include "core/css/StyleChangeReason.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/parser/CSSParserContext.h"
 #include "core/css/parser/CSSTokenizer.h"
@@ -18,8 +20,6 @@
 #include "core/css/resolver/StyleBuilderConverter.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/StyleChangeReason.h"
-#include "core/dom/StyleEngine.h"
 
 namespace blink {
 
@@ -114,9 +114,10 @@ void PropertyRegistration::registerProperty(
   RefPtr<CSSVariableData> initial_variable_data;
   if (descriptor.hasInitialValue()) {
     CSSTokenizer tokenizer(descriptor.initialValue());
+    const auto tokens = tokenizer.TokenizeToEOF();
     bool is_animation_tainted = false;
     initial = syntax_descriptor.Parse(
-        tokenizer.TokenRange(),
+        CSSParserTokenRange(tokens),
         document->ElementSheet().Contents()->ParserContext(),
         is_animation_tainted);
     if (!initial) {
@@ -134,7 +135,7 @@ void PropertyRegistration::registerProperty(
     initial =
         &StyleBuilderConverter::ConvertRegisteredPropertyInitialValue(*initial);
     initial_variable_data = CSSVariableData::Create(
-        tokenizer.TokenRange(), is_animation_tainted, false);
+        CSSParserTokenRange(tokens), is_animation_tainted, false);
   } else {
     if (!syntax_descriptor.IsTokenStream()) {
       exception_state.ThrowDOMException(

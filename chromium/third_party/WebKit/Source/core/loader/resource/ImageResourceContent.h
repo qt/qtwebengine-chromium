@@ -59,7 +59,7 @@ class CORE_EXPORT ImageResourceContent final
 
   // Returns the nullImage() if the image is not available yet.
   blink::Image* GetImage();
-  bool HasImage() const { return image_.Get(); }
+  bool HasImage() const { return image_.get(); }
 
   static std::pair<blink::Image*, float> BrokenImage(
       float
@@ -122,9 +122,6 @@ class CORE_EXPORT ImageResourceContent final
   bool IsAccessAllowed(SecurityOrigin*);
   const ResourceResponse& GetResponse() const;
   const ResourceError& GetResourceError() const;
-  // DEPRECATED: ImageResourceContents consumers shouldn't need to worry about
-  // whether the underlying Resource is being revalidated.
-  bool IsCacheValidator() const;
 
   // For FrameSerializer.
   bool HasCacheControlNoStoreHeader() const;

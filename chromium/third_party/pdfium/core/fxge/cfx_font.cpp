@@ -4,7 +4,7 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fxge/fx_font.h"
+#include "core/fxge/cfx_font.h"
 
 #include <algorithm>
 #include <limits>
@@ -22,7 +22,6 @@
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_substfont.h"
 #include "core/fxge/fx_freetype.h"
-#include "core/fxge/fx_text_int.h"
 #include "third_party/base/ptr_util.h"
 
 #define EM_ADJUST(em, a) (em == 0 ? (a) : (a)*1000 / em)
@@ -54,7 +53,7 @@ void FTStreamClose(FXFT_Stream stream) {}
 
 bool LoadFileImp(FXFT_Library library,
                  FXFT_Face* Face,
-                 const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
+                 const RetainPtr<IFX_SeekableReadStream>& pFile,
                  int32_t faceIndex,
                  std::unique_ptr<FXFT_StreamRec>* stream) {
   auto stream1 = pdfium::MakeUnique<FXFT_StreamRec>();
@@ -218,7 +217,7 @@ CFX_Font::CFX_Font()
       m_pFontData(nullptr),
       m_pGsubData(nullptr),
       m_dwSize(0),
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
       m_pPlatformFont(nullptr),
 #endif
       m_bEmbedded(false),
@@ -234,7 +233,11 @@ bool CFX_Font::LoadClone(const CFX_Font* pFont) {
   if (pFont->m_pSubstFont) {
     m_pSubstFont = pdfium::MakeUnique<CFX_SubstFont>();
     m_pSubstFont->m_Charset = pFont->m_pSubstFont->m_Charset;
-    m_pSubstFont->m_SubstFlags = pFont->m_pSubstFont->m_SubstFlags;
+    m_pSubstFont->m_bFlagMM = pFont->m_pSubstFont->m_bFlagMM;
+    m_pSubstFont->m_bFlagExact = pFont->m_pSubstFont->m_bFlagExact;
+#ifdef PDF_ENABLE_XFA
+    m_pSubstFont->m_bFlagItalic = pFont->m_pSubstFont->m_bFlagItalic;
+#endif  // PDF_ENABLE_XFA
     m_pSubstFont->m_Weight = pFont->m_pSubstFont->m_Weight;
     m_pSubstFont->m_Family = pFont->m_pSubstFont->m_Family;
     m_pSubstFont->m_ItalicAngle = pFont->m_pSubstFont->m_ItalicAngle;
@@ -245,7 +248,7 @@ bool CFX_Font::LoadClone(const CFX_Font* pFont) {
   m_dwSize = pFont->m_dwSize;
   m_pFontData = pFont->m_pFontData;
   m_pGsubData = pFont->m_pGsubData;
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   m_pPlatformFont = pFont->m_pPlatformFont;
 #endif
   m_pOwnedStream = pFont->m_pOwnedStream;
@@ -277,7 +280,7 @@ CFX_Font::~CFX_Font() {
   delete m_pOwnedStream;
 #endif  // PDF_ENABLE_XFA
   FX_Free(m_pGsubData);
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_ && !defined _SKIA_SUPPORT_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_ && !defined _SKIA_SUPPORT_
   ReleasePlatformResource();
 #endif
 }
@@ -291,7 +294,7 @@ void CFX_Font::DeleteFace() {
   m_Face = nullptr;
 }
 
-void CFX_Font::LoadSubst(const CFX_ByteString& face_name,
+void CFX_Font::LoadSubst(const ByteString& face_name,
                          bool bTrueType,
                          uint32_t flags,
                          int weight,
@@ -311,7 +314,7 @@ void CFX_Font::LoadSubst(const CFX_ByteString& face_name,
 }
 
 #ifdef PDF_ENABLE_XFA
-bool CFX_Font::LoadFile(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
+bool CFX_Font::LoadFile(const RetainPtr<IFX_SeekableReadStream>& pFile,
                         int nFaceIndex) {
   m_bEmbedded = false;
 
@@ -332,7 +335,7 @@ bool CFX_Font::LoadFile(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
 int CFX_Font::GetGlyphWidth(uint32_t glyph_index) {
   if (!m_Face)
     return 0;
-  if (m_pSubstFont && (m_pSubstFont->m_SubstFlags & FXFONT_SUBST_MM))
+  if (m_pSubstFont && m_pSubstFont->m_bFlagMM)
     AdjustMMParams(glyph_index, 0, 0);
   int err = FXFT_Load_Glyph(
       m_Face, glyph_index,
@@ -446,7 +449,7 @@ bool CFX_Font::IsItalic() const {
   if (FXFT_Is_Face_Italic(m_Face) == FXFT_STYLE_FLAG_ITALIC)
     return true;
 
-  CFX_ByteString str(FXFT_Get_Face_Style_Name(m_Face));
+  ByteString str(FXFT_Get_Face_Style_Name(m_Face));
   str.MakeLower();
   return str.Contains("italic");
 }
@@ -459,31 +462,31 @@ bool CFX_Font::IsFixedWidth() const {
   return m_Face && FXFT_Is_Face_fixedwidth(m_Face) != 0;
 }
 
-CFX_ByteString CFX_Font::GetPsName() const {
+ByteString CFX_Font::GetPsName() const {
   if (!m_Face)
-    return CFX_ByteString();
+    return ByteString();
 
-  CFX_ByteString psName = FXFT_Get_Postscript_Name(m_Face);
+  ByteString psName = FXFT_Get_Postscript_Name(m_Face);
   if (psName.IsEmpty())
     psName = "Untitled";
   return psName;
 }
 
-CFX_ByteString CFX_Font::GetFamilyName() const {
+ByteString CFX_Font::GetFamilyName() const {
   if (!m_Face && !m_pSubstFont)
-    return CFX_ByteString();
+    return ByteString();
   if (m_Face)
-    return CFX_ByteString(FXFT_Get_Face_Family_Name(m_Face));
+    return ByteString(FXFT_Get_Face_Family_Name(m_Face));
 
   return m_pSubstFont->m_Family;
 }
 
-CFX_ByteString CFX_Font::GetFaceName() const {
+ByteString CFX_Font::GetFaceName() const {
   if (!m_Face && !m_pSubstFont)
-    return CFX_ByteString();
+    return ByteString();
   if (m_Face) {
-    CFX_ByteString style = CFX_ByteString(FXFT_Get_Face_Style_Name(m_Face));
-    CFX_ByteString facename = GetFamilyName();
+    ByteString style = ByteString(FXFT_Get_Face_Style_Name(m_Face));
+    ByteString facename = GetFamilyName();
     if (facename.IsEmpty())
       facename = "Untitled";
     if (!style.IsEmpty() && style != "Regular")
@@ -591,7 +594,7 @@ CFX_PathData* CFX_Font::LoadGlyphPathImpl(uint32_t glyph_index,
       else
         ft_matrix.xy -= ft_matrix.xx * skew / 100;
     }
-    if (m_pSubstFont->m_SubstFlags & FXFONT_SUBST_MM)
+    if (m_pSubstFont->m_bFlagMM)
       AdjustMMParams(glyph_index, dest_width, m_pSubstFont->m_Weight);
   }
   ScopedFontTransform scoped_transform(m_Face, &ft_matrix);
@@ -600,7 +603,7 @@ CFX_PathData* CFX_Font::LoadGlyphPathImpl(uint32_t glyph_index,
     load_flags |= FT_LOAD_NO_HINTING;
   if (FXFT_Load_Glyph(m_Face, glyph_index, load_flags))
     return nullptr;
-  if (m_pSubstFont && !(m_pSubstFont->m_SubstFlags & FXFONT_SUBST_MM) &&
+  if (m_pSubstFont && !m_pSubstFont->m_bFlagMM &&
       m_pSubstFont->m_Weight > 400) {
     uint32_t index = (m_pSubstFont->m_Weight - 400) / 10;
     index = std::min(index, static_cast<uint32_t>(kWeightPowArraySize - 1));

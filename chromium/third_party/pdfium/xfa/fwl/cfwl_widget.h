@@ -9,16 +9,15 @@
 
 #include <memory>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fwl/cfwl_event.h"
 #include "xfa/fwl/cfwl_themepart.h"
 #include "xfa/fwl/cfwl_widgetmgr.h"
 #include "xfa/fwl/fwl_widgethit.h"
 #include "xfa/fwl/ifwl_widgetdelegate.h"
-#include "xfa/fwl/theme/cfwl_widgettp.h"
 
 enum class FWL_Type {
   Unknown = 0,
@@ -54,7 +53,7 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
   ~CFWL_Widget() override;
 
   virtual FWL_Type GetClassID() const = 0;
-  virtual bool IsInstance(const CFX_WideStringC& wsClass) const;
+  virtual bool IsInstance(const WideStringView& wsClass) const;
   virtual CFX_RectF GetAutosizedWidgetRect();
   virtual CFX_RectF GetWidgetRect();
   virtual CFX_RectF GetClientRect();
@@ -128,10 +127,10 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
   float GetBorderSize(bool bCX);
   CFX_RectF GetRelativeRect();
   IFWL_ThemeProvider* GetAvailableTheme();
-  CFX_SizeF CalcTextSize(const CFX_WideString& wsText,
+  CFX_SizeF CalcTextSize(const WideString& wsText,
                          IFWL_ThemeProvider* pTheme,
                          bool bMultiLine);
-  void CalcTextRect(const CFX_WideString& wsText,
+  void CalcTextRect(const WideString& wsText,
                     IFWL_ThemeProvider* pTheme,
                     const FDE_TextStyle& dwTTOStyles,
                     FDE_TextAlignment iTTOAlign,
@@ -149,8 +148,8 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
                   IFWL_ThemeProvider* pTheme,
                   const CFX_Matrix& pMatrix);
 
-  CFX_UnownedPtr<const CFWL_App> const m_pOwnerApp;
-  CFX_UnownedPtr<CFWL_WidgetMgr> const m_pWidgetMgr;
+  UnownedPtr<const CFWL_App> const m_pOwnerApp;
+  UnownedPtr<CFWL_WidgetMgr> const m_pWidgetMgr;
   std::unique_ptr<CFWL_WidgetProperties> m_pProperties;
   CFWL_Widget* m_pOuter;
   int32_t m_iLock;
@@ -185,7 +184,7 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
 
   CXFA_FFWidget* m_pLayoutItem;
   uint32_t m_nEventKey;
-  CFX_UnownedPtr<IFWL_WidgetDelegate> m_pDelegate;
+  UnownedPtr<IFWL_WidgetDelegate> m_pDelegate;
 };
 
 #endif  // XFA_FWL_CFWL_WIDGET_H_

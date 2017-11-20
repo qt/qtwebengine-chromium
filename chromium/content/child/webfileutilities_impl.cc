@@ -8,7 +8,6 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "content/child/file_info_util.h"
-#include "net/base/file_stream.h"
 #include "net/base/filename_util.h"
 #include "third_party/WebKit/public/platform/FilePathConversion.h"
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
@@ -23,8 +22,7 @@ WebFileUtilitiesImpl::WebFileUtilitiesImpl()
     : sandbox_enabled_(true) {
 }
 
-WebFileUtilitiesImpl::~WebFileUtilitiesImpl() {
-}
+WebFileUtilitiesImpl::~WebFileUtilitiesImpl() = default;
 
 bool WebFileUtilitiesImpl::GetFileInfo(const WebString& path,
                                        blink::WebFileInfo& web_file_info) {
@@ -33,8 +31,7 @@ bool WebFileUtilitiesImpl::GetFileInfo(const WebString& path,
     return false;
   }
   base::File::Info file_info;
-  if (!base::GetFileInfo(blink::WebStringToFilePath(path),
-                         reinterpret_cast<base::File::Info*>(&file_info)))
+  if (!base::GetFileInfo(blink::WebStringToFilePath(path), &file_info))
     return false;
 
   FileInfoToWebFileInfo(file_info, &web_file_info);

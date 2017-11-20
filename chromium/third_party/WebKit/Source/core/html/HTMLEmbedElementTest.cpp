@@ -35,7 +35,8 @@ void HTMLEmbedElementTest::SetUp() {
 }
 
 void HTMLEmbedElementTest::SetHtmlInnerHTML(const char* html_content) {
-  GetDocument().documentElement()->setInnerHTML(String::FromUTF8(html_content));
+  GetDocument().documentElement()->SetInnerHTMLFromString(
+      String::FromUTF8(html_content));
   GetDocument().View()->UpdateAllLifecyclePhases();
 }
 
@@ -55,8 +56,7 @@ TEST_F(HTMLEmbedElementTest, FallbackState) {
 
   auto* object_element = GetDocument().getElementById("fco");
   ASSERT_TRUE(object_element);
-  ASSERT_TRUE(isHTMLObjectElement(object_element));
-  HTMLObjectElement* object = toHTMLObjectElement(object_element);
+  HTMLObjectElement* object = ToHTMLObjectElement(object_element);
 
   // At this moment updatePlugin() function is not called, so
   // useFallbackContent() will return false.
@@ -67,8 +67,7 @@ TEST_F(HTMLEmbedElementTest, FallbackState) {
 
   auto* embed_element = GetDocument().getElementById("fce");
   ASSERT_TRUE(embed_element);
-  ASSERT_TRUE(isHTMLEmbedElement(embed_element));
-  HTMLEmbedElement* embed = toHTMLEmbedElement(embed_element);
+  HTMLEmbedElement* embed = ToHTMLEmbedElement(embed_element);
 
   GetDocument().View()->UpdateAllLifecyclePhases();
 

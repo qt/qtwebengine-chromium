@@ -82,15 +82,11 @@ void BUF_MEM_free(BUF_MEM *buf) {
     return;
   }
 
-  if (buf->data != NULL) {
-    OPENSSL_cleanse(buf->data, buf->max);
-    OPENSSL_free(buf->data);
-  }
-
+  OPENSSL_free(buf->data);
   OPENSSL_free(buf);
 }
 
-static int buf_mem_reserve(BUF_MEM *buf, size_t cap, int clean) {
+int BUF_MEM_reserve(BUF_MEM *buf, size_t cap) {
   if (buf->max >= cap) {
     return 1;
   }
@@ -109,17 +105,7 @@ static int buf_mem_reserve(BUF_MEM *buf, size_t cap, int clean) {
     return 0;
   }
 
-  char *new_buf;
-  if (buf->data == NULL) {
-    new_buf = OPENSSL_malloc(alloc_size);
-  } else {
-    if (clean) {
-      new_buf = OPENSSL_realloc_clean(buf->data, buf->max, alloc_size);
-    } else {
-      new_buf = OPENSSL_realloc(buf->data, alloc_size);
-    }
-  }
-
+  char *new_buf = OPENSSL_realloc(buf->data, alloc_size);
   if (new_buf == NULL) {
     OPENSSL_PUT_ERROR(BUF, ERR_R_MALLOC_FAILURE);
     return 0;
@@ -130,12 +116,8 @@ static int buf_mem_reserve(BUF_MEM *buf, size_t cap, int clean) {
   return 1;
 }
 
-int BUF_MEM_reserve(BUF_MEM *buf, size_t cap) {
-  return buf_mem_reserve(buf, cap, 0 /* don't clear old buffer contents. */);
-}
-
-static size_t buf_mem_grow(BUF_MEM *buf, size_t len, int clean) {
-  if (!buf_mem_reserve(buf, len, clean)) {
+size_t BUF_MEM_grow(BUF_MEM *buf, size_t len) {
+  if (!BUF_MEM_reserve(buf, len)) {
     return 0;
   }
   if (buf->length < len) {
@@ -145,12 +127,8 @@ static size_t buf_mem_grow(BUF_MEM *buf, size_t len, int clean) {
   return len;
 }
 
-size_t BUF_MEM_grow(BUF_MEM *buf, size_t len) {
-  return buf_mem_grow(buf, len, 0 /* don't clear old buffer contents. */);
-}
-
 size_t BUF_MEM_grow_clean(BUF_MEM *buf, size_t len) {
-  return buf_mem_grow(buf, len, 1 /* clear old buffer contents. */);
+  return BUF_MEM_grow(buf, len);
 }
 
 char *BUF_strdup(const char *str) {

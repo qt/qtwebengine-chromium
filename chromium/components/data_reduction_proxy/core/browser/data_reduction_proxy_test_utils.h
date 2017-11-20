@@ -384,6 +384,10 @@ class DataReductionProxyTestContext {
   // |net::MockClientSocketFactory| specified.
   void EnableDataReductionProxyWithSecureProxyCheckSuccess();
 
+  // Disables the fetch of the warmup URL. Useful for testing to avoid setting
+  // up the network mock sockets.
+  void DisableWarmupURLFetch();
+
   // Returns the underlying |MockDataReductionProxyConfig|. This can only be
   // called if built with WithMockConfig.
   MockDataReductionProxyConfig* mock_config() const;
@@ -454,6 +458,8 @@ class DataReductionProxyTestContext {
     return params_;
   }
 
+  void InitSettingsWithoutCheck();
+
   // Returns the proxies that are currently configured for "http://" requests,
   // excluding any that are invalid or direct.
   std::vector<net::ProxyServer> GetConfiguredProxiesForHttp() const;
@@ -485,8 +491,6 @@ class DataReductionProxyTestContext {
       std::unique_ptr<TestConfigStorer> config_storer,
       TestDataReductionProxyParams* params,
       unsigned int test_context_flags);
-
-  void InitSettingsWithoutCheck();
 
   std::unique_ptr<DataReductionProxyService>
   CreateDataReductionProxyServiceInternal(DataReductionProxySettings* settings);

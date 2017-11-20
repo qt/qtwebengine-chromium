@@ -10,7 +10,6 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "base/bind.h"
 #include "base/callback.h"
@@ -29,6 +28,7 @@
 #include "content/child/ftp_directory_listing_response_delegate.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/resource_dispatcher.h"
+#include "content/child/scoped_child_process_reference.h"
 #include "content/child/shared_memory_data_consumer_handle.h"
 #include "content/child/sync_load_response.h"
 #include "content/child/web_url_request_util.h"
@@ -39,6 +39,7 @@
 #include "content/public/child/request_peer.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/referrer.h"
 #include "content/public/common/resource_request.h"
 #include "content/public/common/resource_request_body.h"
 #include "content/public/common/service_worker_modes.h"
@@ -92,6 +93,18 @@ namespace content {
 namespace {
 
 using HeadersVector = ResourceDevToolsInfo::HeadersVector;
+
+class KeepAliveHandleWithChildProcessReference {
+ public:
+  explicit KeepAliveHandleWithChildProcessReference(
+      mojom::KeepAliveHandlePtr ptr)
+      : keep_alive_handle_(std::move(ptr)) {}
+  ~KeepAliveHandleWithChildProcessReference() {}
+
+ private:
+  mojom::KeepAliveHandlePtr keep_alive_handle_;
+  ScopedChildProcessReference reference_;
+};
 
 // TODO(estark): Figure out a way for the embedder to provide the
 // security style for a resource. Ideally, the logic for assigning
@@ -173,35 +186,6 @@ net::RequestPriority ConvertWebKitPriorityToNetPriority(
       NOTREACHED();
       return net::LOW;
   }
-}
-
-blink::WebReferrerPolicy NetReferrerPolicyToBlinkReferrerPolicy(
-    net::URLRequest::ReferrerPolicy net_policy) {
-  switch (net_policy) {
-    case net::URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE:
-      return blink::kWebReferrerPolicyNoReferrerWhenDowngrade;
-    case net::URLRequest::
-        REDUCE_REFERRER_GRANULARITY_ON_TRANSITION_CROSS_ORIGIN:
-      return blink::
-          kWebReferrerPolicyNoReferrerWhenDowngradeOriginWhenCrossOrigin;
-    case net::URLRequest::ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN:
-      return blink::kWebReferrerPolicyOriginWhenCrossOrigin;
-    case net::URLRequest::NEVER_CLEAR_REFERRER:
-      return blink::kWebReferrerPolicyAlways;
-    case net::URLRequest::ORIGIN:
-      return blink::kWebReferrerPolicyOrigin;
-    case net::URLRequest::CLEAR_REFERRER_ON_TRANSITION_CROSS_ORIGIN:
-      return blink::kWebReferrerPolicySameOrigin;
-    case net::URLRequest::ORIGIN_CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE:
-      return blink::kWebReferrerPolicyStrictOrigin;
-    case net::URLRequest::NO_REFERRER:
-      return blink::kWebReferrerPolicyNever;
-    case net::URLRequest::MAX_REFERRER_POLICY:
-      NOTREACHED();
-      return blink::kWebReferrerPolicyDefault;
-  }
-  NOTREACHED();
-  return blink::kWebReferrerPolicyDefault;
 }
 
 // Extracts info from a data scheme URL |url| into |info| and |data|. Returns
@@ -370,7 +354,8 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context> {
   Context(WebURLLoaderImpl* loader,
           ResourceDispatcher* resource_dispatcher,
           scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-          mojom::URLLoaderFactory* factory);
+          mojom::URLLoaderFactory* factory,
+          mojom::KeepAliveHandlePtr keep_alive_handle);
 
   WebURLLoaderClient* client() const { return client_; }
   void set_client(WebURLLoaderClient* client) { client_ = client; }
@@ -407,6 +392,9 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context> {
   bool CanHandleDataURLRequestLocally(const WebURLRequest& request) const;
   void HandleDataURL();
 
+  static net::NetworkTrafficAnnotationTag GetTrafficAnnotationTag(
+      const blink::WebURLRequest& request);
+
   WebURLLoaderImpl* loader_;
 
   WebURL url_;
@@ -425,6 +413,7 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context> {
   std::unique_ptr<FtpDirectoryListingResponseDelegate> ftp_listing_delegate_;
   std::unique_ptr<StreamOverrideParameters> stream_override_;
   std::unique_ptr<SharedMemoryDataConsumerHandle::Writer> body_stream_writer_;
+  std::unique_ptr<KeepAliveHandleWithChildProcessReference> keep_alive_handle_;
   enum DeferState {NOT_DEFERRING, SHOULD_DEFER, DEFERRED_DATA};
   DeferState defers_loading_;
   int request_id_;
@@ -467,20 +456,26 @@ WebURLLoaderImpl::Context::Context(
     WebURLLoaderImpl* loader,
     ResourceDispatcher* resource_dispatcher,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    mojom::URLLoaderFactory* url_loader_factory)
+    mojom::URLLoaderFactory* url_loader_factory,
+    mojom::KeepAliveHandlePtr keep_alive_handle_ptr)
     : loader_(loader),
       use_stream_on_response_(false),
       report_raw_headers_(false),
       client_(NULL),
       resource_dispatcher_(resource_dispatcher),
       task_runner_(std::move(task_runner)),
+      keep_alive_handle_(
+          keep_alive_handle_ptr
+              ? base::MakeUnique<KeepAliveHandleWithChildProcessReference>(
+                    std::move(keep_alive_handle_ptr))
+              : nullptr),
       defers_loading_(NOT_DEFERRING),
       request_id_(-1),
       url_loader_factory_(url_loader_factory) {
 #if DCHECK_IS_ON()
   const bool mojo_loading_enabled =
       base::FeatureList::IsEnabled(features::kLoadingWithMojo);
-  DCHECK(url_loader_factory_ || !mojo_loading_enabled);
+  DCHECK(url_loader_factory_ || !mojo_loading_enabled || !resource_dispatcher);
 #endif
 }
 
@@ -620,6 +615,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   resource_request->request_body =
       GetRequestBodyForWebURLRequest(request).get();
   resource_request->download_to_file = request.DownloadToFile();
+  resource_request->keepalive = request.GetKeepalive();
   resource_request->has_user_gesture = request.HasUserGesture();
   resource_request->enable_load_timing = true;
   resource_request->enable_upload_progress = request.ReportUploadProgress();
@@ -661,8 +657,8 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
 
     resource_dispatcher_->StartSync(
         std::move(resource_request), request.RequestorID(),
-        extra_data->frame_origin(), sync_load_response,
-        request.GetLoadingIPCType(), url_loader_factory_,
+        extra_data->frame_origin(), GetTrafficAnnotationTag(request),
+        sync_load_response, request.GetLoadingIPCType(), url_loader_factory_,
         extra_data->TakeURLLoaderThrottles());
     return;
   }
@@ -671,7 +667,8 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
                          TRACE_EVENT_FLAG_FLOW_OUT);
   request_id_ = resource_dispatcher_->StartAsync(
       std::move(resource_request), request.RequestorID(), task_runner_,
-      extra_data->frame_origin(), false /* is_sync */,
+      extra_data->frame_origin(), GetTrafficAnnotationTag(request),
+      false /* is_sync */,
       base::MakeUnique<WebURLLoaderImpl::RequestPeerImpl>(this),
       request.GetLoadingIPCType(), url_loader_factory_,
       extra_data->TakeURLLoaderThrottles(), std::move(consumer_handle));
@@ -703,7 +700,8 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
   return client_->WillFollowRedirect(
       url_, redirect_info.new_site_for_cookies,
       WebString::FromUTF8(redirect_info.new_referrer),
-      NetReferrerPolicyToBlinkReferrerPolicy(redirect_info.new_referrer_policy),
+      Referrer::NetReferrerPolicyToBlinkReferrerPolicy(
+          redirect_info.new_referrer_policy),
       WebString::FromUTF8(redirect_info.new_method), response,
       report_raw_headers_);
 }
@@ -1004,6 +1002,116 @@ void WebURLLoaderImpl::Context::HandleDataURL() {
                      data.size());
 }
 
+// static
+net::NetworkTrafficAnnotationTag
+WebURLLoaderImpl::Context::GetTrafficAnnotationTag(
+    const blink::WebURLRequest& request) {
+  switch (request.GetRequestContext()) {
+    case WebURLRequest::kRequestContextUnspecified:
+    case WebURLRequest::kRequestContextAudio:
+    case WebURLRequest::kRequestContextBeacon:
+    case WebURLRequest::kRequestContextCSPReport:
+    case WebURLRequest::kRequestContextDownload:
+    case WebURLRequest::kRequestContextEventSource:
+    case WebURLRequest::kRequestContextFetch:
+    case WebURLRequest::kRequestContextFont:
+    case WebURLRequest::kRequestContextForm:
+    case WebURLRequest::kRequestContextFrame:
+    case WebURLRequest::kRequestContextHyperlink:
+    case WebURLRequest::kRequestContextIframe:
+    case WebURLRequest::kRequestContextImage:
+    case WebURLRequest::kRequestContextImageSet:
+    case WebURLRequest::kRequestContextImport:
+    case WebURLRequest::kRequestContextInternal:
+    case WebURLRequest::kRequestContextLocation:
+    case WebURLRequest::kRequestContextManifest:
+    case WebURLRequest::kRequestContextPing:
+    case WebURLRequest::kRequestContextPrefetch:
+    case WebURLRequest::kRequestContextScript:
+    case WebURLRequest::kRequestContextServiceWorker:
+    case WebURLRequest::kRequestContextSharedWorker:
+    case WebURLRequest::kRequestContextSubresource:
+    case WebURLRequest::kRequestContextStyle:
+    case WebURLRequest::kRequestContextTrack:
+    case WebURLRequest::kRequestContextVideo:
+    case WebURLRequest::kRequestContextWorker:
+    case WebURLRequest::kRequestContextXMLHttpRequest:
+    case WebURLRequest::kRequestContextXSLT:
+      return net::DefineNetworkTrafficAnnotation("blink_resource_loader", R"(
+      semantics {
+        sender: "Blink Resource Loader"
+        description:
+          "Blink-initiated request, which includes all resources for "
+          "normal page loads, chrome URLs, and downloads."
+        trigger:
+          "The user navigates to a URL or downloads a file. Also when a "
+          "webpage, ServiceWorker, or chrome:// uses any network communication."
+        data: "Anything the initiator wants to send."
+        destination: OTHER
+      }
+      policy {
+        cookies_allowed: YES
+        cookies_store: "user"
+        setting: "These requests cannot be disabled in settings."
+        policy_exception_justification:
+          "Not implemented. Without these requests, Chrome will be unable "
+          "to load any webpage."
+      })");
+
+    case WebURLRequest::kRequestContextEmbed:
+    case WebURLRequest::kRequestContextObject:
+    case WebURLRequest::kRequestContextPlugin:
+      return net::DefineNetworkTrafficAnnotation(
+          "blink_extension_resource_loader", R"(
+        semantics {
+          sender: "Blink Resource Loader"
+          description:
+            "Blink-initiated request for resources required for NaCl instances "
+            "tagged with <embed> or <object>, or installed extensions."
+          trigger:
+            "An extension or NaCl instance may initiate a request at any time, "
+            "even in the background."
+          data: "Anything the initiator wants to send."
+          destination: OTHER
+        }
+        policy {
+          cookies_allowed: YES
+          cookies_store: "user"
+          setting:
+            "These requests cannot be disabled in settings, but they are "
+            "sent only if user installs extensions."
+          chrome_policy {
+            ExtensionInstallBlacklist {
+              ExtensionInstallBlacklist: {
+                entries: '*'
+              }
+            }
+          }
+        })");
+
+    case WebURLRequest::kRequestContextFavicon:
+      return net::DefineNetworkTrafficAnnotation("favicon_loader", R"(
+        semantics {
+          sender: "Blink Resource Loader"
+          description:
+            "Chrome sends a request to download favicon for a URL."
+          trigger:
+            "Navigating to a URL."
+          data: "None."
+          destination: WEBSITE
+        }
+        policy {
+          cookies_allowed: YES
+          cookies_store: "user"
+          setting: "These requests cannot be disabled in settings."
+          policy_exception_justification:
+            "Not implemented."
+        })");
+  }
+
+  return net::NetworkTrafficAnnotationTag::NotReached();
+}
+
 // WebURLLoaderImpl::RequestPeerImpl ------------------------------------------
 
 WebURLLoaderImpl::RequestPeerImpl::RequestPeerImpl(Context* context)
@@ -1065,10 +1173,21 @@ WebURLLoaderImpl::WebURLLoaderImpl(
     ResourceDispatcher* resource_dispatcher,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     mojom::URLLoaderFactory* url_loader_factory)
+    : WebURLLoaderImpl(resource_dispatcher,
+                       std::move(task_runner),
+                       url_loader_factory,
+                       nullptr) {}
+
+WebURLLoaderImpl::WebURLLoaderImpl(
+    ResourceDispatcher* resource_dispatcher,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+    mojom::URLLoaderFactory* url_loader_factory,
+    mojom::KeepAliveHandlePtr keep_alive_handle)
     : context_(new Context(this,
                            resource_dispatcher,
                            std::move(task_runner),
-                           url_loader_factory)) {}
+                           url_loader_factory,
+                           std::move(keep_alive_handle))) {}
 
 WebURLLoaderImpl::~WebURLLoaderImpl() {
   Cancel();
@@ -1084,6 +1203,8 @@ void WebURLLoaderImpl::PopulateURLResponse(const WebURL& url,
   response->SetTextEncodingName(WebString::FromUTF8(info.charset));
   response->SetExpectedContentLength(info.content_length);
   response->SetHasMajorCertificateErrors(info.has_major_certificate_errors);
+  response->SetIsLegacySymantecCert(info.is_legacy_symantec_cert);
+  response->SetCertValidityStart(info.cert_validity_start);
   response->SetAppCacheID(info.appcache_id);
   response->SetAppCacheManifestURL(info.appcache_manifest_url);
   response->SetWasCached(!info.load_timing.request_start_time.is_null() &&

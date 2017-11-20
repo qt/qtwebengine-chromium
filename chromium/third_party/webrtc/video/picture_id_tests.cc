@@ -7,14 +7,15 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "webrtc/media/engine/internalencoderfactory.h"
-#include "webrtc/media/engine/simulcast_encoder_adapter.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_format.h"
-#include "webrtc/modules/video_coding/sequence_number_util.h"
-#include "webrtc/test/call_test.h"
+#include "media/engine/internalencoderfactory.h"
+#include "media/engine/simulcast_encoder_adapter.h"
+#include "modules/rtp_rtcp/source/rtp_format.h"
+#include "modules/video_coding/sequence_number_util.h"
+#include "test/call_test.h"
+#include "test/field_trial.h"
 
 namespace webrtc {
-
+namespace {
 const int kFrameMaxWidth = 1280;
 const int kFrameMaxHeight = 720;
 const int kFrameRate = 30;
@@ -23,6 +24,10 @@ const int kMaxFramesLost = kFrameRate * kMaxSecondsLost;
 const int kMinPacketsToObserve = 10;
 const int kEncoderBitrateBps = 100000;
 const uint32_t kPictureIdWraparound = (1 << 15);
+
+const char kVp8ForcedFallbackEncoderEnabled[] =
+    "WebRTC-VP8-Forced-Fallback-Encoder/Enabled/";
+}  // namespace
 
 class PictureIdObserver : public test::RtpRtcpObserver {
  public:
@@ -105,7 +110,17 @@ class PictureIdObserver : public test::RtpRtcpObserver {
       // Picture id should not increase more than expected.
       const int picture_id_diff = ForwardDiff<uint16_t, kPictureIdWraparound>(
           last_observed_picture_id_[ssrc], picture_id);
-      EXPECT_LE(picture_id_diff - 1, max_expected_picture_id_gap_);
+
+      // For delta frames, expect continuously increasing picture id.
+      if (parsed_payload.frame_type != kVideoFrameKey) {
+        EXPECT_EQ(picture_id_diff, 1);
+      }
+      // Any frames still in queue is lost when a VideoSendStream is destroyed.
+      // The first frame after recreation should be a key frame.
+      if (picture_id_diff > 1) {
+        EXPECT_EQ(kVideoFrameKey, parsed_payload.frame_type);
+        EXPECT_LE(picture_id_diff - 1, max_expected_picture_id_gap_);
+      }
     }
     last_observed_timestamp_[ssrc] = timestamp;
     last_observed_picture_id_[ssrc] = picture_id;
@@ -124,17 +139,18 @@ class PictureIdObserver : public test::RtpRtcpObserver {
   }
 
   rtc::CriticalSection crit_;
-  std::map<uint32_t, uint32_t> last_observed_timestamp_ GUARDED_BY(crit_);
-  std::map<uint32_t, uint16_t> last_observed_picture_id_ GUARDED_BY(crit_);
-  std::map<uint32_t, size_t> num_packets_sent_ GUARDED_BY(crit_);
-  int max_expected_picture_id_gap_ GUARDED_BY(crit_);
-  size_t num_ssrcs_to_observe_ GUARDED_BY(crit_);
-  std::set<uint32_t> observed_ssrcs_ GUARDED_BY(crit_);
+  std::map<uint32_t, uint32_t> last_observed_timestamp_ RTC_GUARDED_BY(crit_);
+  std::map<uint32_t, uint16_t> last_observed_picture_id_ RTC_GUARDED_BY(crit_);
+  std::map<uint32_t, size_t> num_packets_sent_ RTC_GUARDED_BY(crit_);
+  int max_expected_picture_id_gap_ RTC_GUARDED_BY(crit_);
+  size_t num_ssrcs_to_observe_ RTC_GUARDED_BY(crit_);
+  std::set<uint32_t> observed_ssrcs_ RTC_GUARDED_BY(crit_);
 };
 
-class PictureIdTest : public test::CallTest {
+class PictureIdTest : public test::CallTest,
+                      public ::testing::WithParamInterface<std::string> {
  public:
-  PictureIdTest() {}
+  PictureIdTest() : scoped_field_trial_(GetParam()) {}
 
   virtual ~PictureIdTest() {
     EXPECT_EQ(nullptr, video_send_stream_);
@@ -156,8 +172,14 @@ class PictureIdTest : public test::CallTest {
       const std::vector<int>& ssrc_counts);
 
  private:
+  test::ScopedFieldTrials scoped_field_trial_;
   PictureIdObserver observer;
 };
+
+INSTANTIATE_TEST_CASE_P(TestWithForcedFallbackEncoderEnabled,
+                        PictureIdTest,
+                        ::testing::Values(kVp8ForcedFallbackEncoderEnabled,
+                                          ""));
 
 // Use a special stream factory to ensure that all simulcast streams are being
 // sent.
@@ -235,7 +257,7 @@ void PictureIdTest::TestPictureIdContinuousAfterReconfigure(
   EXPECT_TRUE(observer.Wait()) << "Timed out waiting for packets.";
 
   // Reconfigure VideoEncoder and test picture id increase.
-  // Expect continously increasing picture id, equivalent to no gaps.
+  // Expect continuously increasing picture id, equivalent to no gaps.
   observer.SetMaxExpectedPictureIdGap(0);
   for (int ssrc_count : ssrc_counts) {
     video_encoder_config_.number_of_streams = ssrc_count;
@@ -301,19 +323,19 @@ void PictureIdTest::TestPictureIdIncreaseAfterRecreateStreams(
   });
 }
 
-TEST_F(PictureIdTest, PictureIdContinuousAfterReconfigureVp8) {
+TEST_P(PictureIdTest, PictureIdContinuousAfterReconfigureVp8) {
   std::unique_ptr<VideoEncoder> encoder(VP8Encoder::Create());
   SetupEncoder(encoder.get());
   TestPictureIdContinuousAfterReconfigure({1, 3, 3, 1, 1});
 }
 
-TEST_F(PictureIdTest, PictureIdIncreasingAfterRecreateStreamVp8) {
+TEST_P(PictureIdTest, PictureIdIncreasingAfterRecreateStreamVp8) {
   std::unique_ptr<VideoEncoder> encoder(VP8Encoder::Create());
   SetupEncoder(encoder.get());
   TestPictureIdIncreaseAfterRecreateStreams({1, 3, 3, 1, 1});
 }
 
-TEST_F(PictureIdTest, PictureIdIncreasingAfterStreamCountChangeVp8) {
+TEST_P(PictureIdTest, PictureIdIncreasingAfterStreamCountChangeVp8) {
   std::unique_ptr<VideoEncoder> encoder(VP8Encoder::Create());
   // Make sure that that the picture id is not reset if the stream count goes
   // down and then up.
@@ -322,7 +344,7 @@ TEST_F(PictureIdTest, PictureIdIncreasingAfterStreamCountChangeVp8) {
   TestPictureIdContinuousAfterReconfigure(ssrc_counts);
 }
 
-TEST_F(PictureIdTest,
+TEST_P(PictureIdTest,
        PictureIdContinuousAfterReconfigureSimulcastEncoderAdapter) {
   cricket::InternalEncoderFactory internal_encoder_factory;
   SimulcastEncoderAdapter simulcast_encoder_adapter(&internal_encoder_factory);
@@ -330,7 +352,7 @@ TEST_F(PictureIdTest,
   TestPictureIdContinuousAfterReconfigure({1, 3, 3, 1, 1});
 }
 
-TEST_F(PictureIdTest,
+TEST_P(PictureIdTest,
        PictureIdIncreasingAfterRecreateStreamSimulcastEncoderAdapter) {
   cricket::InternalEncoderFactory internal_encoder_factory;
   SimulcastEncoderAdapter simulcast_encoder_adapter(&internal_encoder_factory);
@@ -341,16 +363,20 @@ TEST_F(PictureIdTest,
 // When using the simulcast encoder adapter, the picture id is randomly set
 // when the ssrc count is reduced and then increased. This means that we are
 // not spec compliant in that particular case.
-TEST_F(
-    PictureIdTest,
-    DISABLED_PictureIdIncreasingAfterStreamCountChangeSimulcastEncoderAdapter) {
-  cricket::InternalEncoderFactory internal_encoder_factory;
-  SimulcastEncoderAdapter simulcast_encoder_adapter(&internal_encoder_factory);
-  // Make sure that that the picture id is not reset if the stream count goes
-  // down and then up.
-  std::vector<int> ssrc_counts = {3, 1, 3};
-  SetupEncoder(&simulcast_encoder_adapter);
-  TestPictureIdContinuousAfterReconfigure(ssrc_counts);
+TEST_P(PictureIdTest,
+       PictureIdIncreasingAfterStreamCountChangeSimulcastEncoderAdapter) {
+  // If forced fallback is enabled, the picture id is set in the PayloadRouter
+  // and the sequence should be continuous.
+  if (GetParam() == kVp8ForcedFallbackEncoderEnabled) {
+    cricket::InternalEncoderFactory internal_encoder_factory;
+    SimulcastEncoderAdapter simulcast_encoder_adapter(
+        &internal_encoder_factory);
+    // Make sure that that the picture id is not reset if the stream count goes
+    // down and then up.
+    std::vector<int> ssrc_counts = {3, 1, 3};
+    SetupEncoder(&simulcast_encoder_adapter);
+    TestPictureIdContinuousAfterReconfigure(ssrc_counts);
+  }
 }
 
 }  // namespace webrtc

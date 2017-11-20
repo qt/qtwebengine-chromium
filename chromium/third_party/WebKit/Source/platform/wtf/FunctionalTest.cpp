@@ -25,10 +25,12 @@
 
 #include "platform/wtf/Functional.h"
 
+#include <memory>
+#include <utility>
 #include "platform/wtf/RefCounted.h"
+#include "platform/wtf/WTFTestHelper.h"
 #include "platform/wtf/WeakPtr.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include <utility>
 
 namespace WTF {
 
@@ -306,30 +308,43 @@ TEST(FunctionalTest, MemberFunctionPartBind) {
 }
 
 TEST(FunctionalTest, MemberFunctionBindByUniquePtr) {
-  Function<int()> function1 = WTF::Bind(&A::F, WTF::MakeUnique<A>(10));
+  Function<int()> function1 = WTF::Bind(&A::F, std::make_unique<A>(10));
   EXPECT_EQ(10, function1());
 }
 
 TEST(FunctionalTest, MemberFunctionBindByPassedUniquePtr) {
   Function<int()> function1 =
-      WTF::Bind(&A::F, WTF::Passed(WTF::MakeUnique<A>(10)));
+      WTF::Bind(&A::F, WTF::Passed(std::make_unique<A>(10)));
   EXPECT_EQ(10, function1());
 }
 
-class Number : public RefCounted<Number> {
+class Number {
  public:
-  static PassRefPtr<Number> Create(int value) {
-    return AdoptRef(new Number(value));
+  REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
+  static RefPtr<Number> Create(int value) {
+    return WTF::AdoptRef(new Number(value));
   }
 
   ~Number() { value_ = 0; }
 
   int Value() const { return value_; }
 
+  int RefCount() const { return ref_count_; }
+  bool HasOneRef() const { return ref_count_ == 1; }
+
+  // For RefPtr support.
+  void Adopted() const {}
+  void AddRef() const { ++ref_count_; }
+  void Release() const {
+    if (--ref_count_ == 0)
+      delete this;
+  }
+
  private:
   explicit Number(int value) : value_(value) {}
 
   int value_;
+  mutable int ref_count_ = 1;
 };
 
 int MultiplyNumberByTwo(Number* number) {
@@ -338,20 +353,20 @@ int MultiplyNumberByTwo(Number* number) {
 
 TEST(FunctionalTest, RefCountedStorage) {
   RefPtr<Number> five = Number::Create(5);
-  EXPECT_EQ(1, five->RefCount());
+  EXPECT_TRUE(five->HasOneRef());
   Function<int()> multiply_five_by_two_function =
-      Bind(MultiplyNumberByTwo, five);
+      WTF::Bind(MultiplyNumberByTwo, WTF::RetainedRef(five));
   EXPECT_EQ(2, five->RefCount());
   EXPECT_EQ(10, multiply_five_by_two_function());
   EXPECT_EQ(2, five->RefCount());
 
   Function<int()> multiply_four_by_two_function =
-      Bind(MultiplyNumberByTwo, Number::Create(4));
+      WTF::Bind(MultiplyNumberByTwo, WTF::RetainedRef(Number::Create(4)));
   EXPECT_EQ(8, multiply_four_by_two_function());
 
   RefPtr<Number> six = Number::Create(6);
   Function<int()> multiply_six_by_two_function =
-      Bind(MultiplyNumberByTwo, std::move(six));
+      WTF::Bind(MultiplyNumberByTwo, WTF::RetainedRef(std::move(six)));
   EXPECT_FALSE(six);
   EXPECT_EQ(12, multiply_six_by_two_function());
 }
@@ -360,7 +375,7 @@ TEST(FunctionalTest, UnretainedWithRefCounted) {
   RefPtr<Number> five = Number::Create(5);
   EXPECT_EQ(1, five->RefCount());
   Function<int()> multiply_five_by_two_function =
-      Bind(MultiplyNumberByTwo, WTF::Unretained(five.Get()));
+      WTF::Bind(MultiplyNumberByTwo, WTF::Unretained(five.get()));
   EXPECT_EQ(1, five->RefCount());
   EXPECT_EQ(10, multiply_five_by_two_function());
   EXPECT_EQ(1, five->RefCount());
@@ -416,26 +431,6 @@ TEST(FunctionalTest, LotsOfBoundVariables) {
   EXPECT_TRUE(all_bound());
 }
 
-class MoveOnly {
- public:
-  explicit MoveOnly(int value) : value_(value) {}
-  MoveOnly(MoveOnly&& other) : value_(other.value_) {
-    // Reset the value on move.
-    other.value_ = 0;
-  }
-
-  int Value() const { return value_; }
-
- private:
-  MoveOnly(const MoveOnly&) = delete;
-  MoveOnly& operator=(const MoveOnly&) = delete;
-
-  // Disable move-assignment, since it isn't used within bind().
-  MoveOnly& operator=(MoveOnly&&) = delete;
-
-  int value_;
-};
-
 int SingleMoveOnlyByRvalueReference(MoveOnly&& move_only) {
   int value = move_only.Value();
   MoveOnly(std::move(move_only));
@@ -484,42 +479,42 @@ TEST(FunctionalTest, BindMoveOnlyObjects) {
   EXPECT_EQ(0, bound());
 }
 
-class CountCopy {
+class CountGeneration {
  public:
-  CountCopy() : copies_(0) {}
-  CountCopy(const CountCopy& other) : copies_(other.copies_ + 1) {}
+  CountGeneration() : copies_(0) {}
+  CountGeneration(const CountGeneration& other) : copies_(other.copies_ + 1) {}
 
   int Copies() const { return copies_; }
 
  private:
   // Copy/move-assignment is not needed in the test.
-  CountCopy& operator=(const CountCopy&) = delete;
-  CountCopy& operator=(CountCopy&&) = delete;
+  CountGeneration& operator=(const CountGeneration&) = delete;
+  CountGeneration& operator=(CountGeneration&&) = delete;
 
   int copies_;
 };
 
-int TakeCountCopyAsConstReference(const CountCopy& counter) {
+int TakeCountCopyAsConstReference(const CountGeneration& counter) {
   return counter.Copies();
 }
 
-int TakeCountCopyAsValue(CountCopy counter) {
+int TakeCountCopyAsValue(CountGeneration counter) {
   return counter.Copies();
 }
 
 TEST(FunctionalTest, CountCopiesOfBoundArguments) {
-  CountCopy lvalue;
+  CountGeneration lvalue;
   Function<int()> bound = Bind(TakeCountCopyAsConstReference, lvalue);
   EXPECT_EQ(2, bound());  // wrapping and unwrapping.
 
-  bound = Bind(TakeCountCopyAsConstReference, CountCopy());  // Rvalue.
+  bound = Bind(TakeCountCopyAsConstReference, CountGeneration());  // Rvalue.
   EXPECT_EQ(2, bound());
 
   bound = Bind(TakeCountCopyAsValue, lvalue);
   // wrapping, unwrapping and copying in the final function argument.
   EXPECT_EQ(3, bound());
 
-  bound = Bind(TakeCountCopyAsValue, CountCopy());
+  bound = Bind(TakeCountCopyAsValue, CountGeneration());
   EXPECT_EQ(3, bound());
 }
 
@@ -543,17 +538,18 @@ TEST(FunctionalTest, MoveUnboundArgumentsByRvalueReference) {
 }
 
 TEST(FunctionalTest, CountCopiesOfUnboundArguments) {
-  CountCopy lvalue;
-  Function<int(const CountCopy&)> bound1 = Bind(TakeCountCopyAsConstReference);
+  CountGeneration lvalue;
+  Function<int(const CountGeneration&)> bound1 =
+      Bind(TakeCountCopyAsConstReference);
   EXPECT_EQ(0, bound1(lvalue));  // No copies!
-  EXPECT_EQ(0, bound1(CountCopy()));
+  EXPECT_EQ(0, bound1(CountGeneration()));
 
-  Function<int(CountCopy)> bound2 = Bind(TakeCountCopyAsValue);
+  Function<int(CountGeneration)> bound2 = Bind(TakeCountCopyAsValue);
   // At Function::operator(), at Callback::Run() and at the destination
   // function.
   EXPECT_EQ(3, bound2(lvalue));
   // Compiler is allowed to optimize one copy away if the argument is rvalue.
-  EXPECT_LE(bound2(CountCopy()), 2);
+  EXPECT_LE(bound2(CountGeneration()), 2);
 }
 
 TEST(FunctionalTest, WeakPtr) {

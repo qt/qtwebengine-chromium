@@ -32,7 +32,6 @@
 
 #include <memory>
 #include "core/loader/resource/MockImageResourceObserver.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
 #include "platform/exported/WrappedResourceResponse.h"
 #include "platform/graphics/BitmapImage.h"
@@ -187,7 +186,7 @@ void ReceiveResponse(ImageResource* image_resource,
   image_resource->NotifyStartLoad();
   image_resource->ResponseReceived(response, nullptr);
   image_resource->AppendData(data, data_size);
-  image_resource->Finish();
+  image_resource->FinishForTest();
 }
 
 void TestThatReloadIsStartedThenServeReload(const KURL& test_url,
@@ -346,11 +345,6 @@ ResourceFetcher* CreateFetcher() {
       MockFetchContext::Create(MockFetchContext::kShouldLoadNewResource));
 }
 
-using ScopedClientPlaceholderForServerLoFiForTest =
-    ScopedRuntimeEnabledFeatureForTest<
-        RuntimeEnabledFeatures::ClientPlaceholdersForServerLoFiEnabled,
-        RuntimeEnabledFeatures::SetClientPlaceholdersForServerLoFiEnabled>;
-
 TEST(ImageResourceTest, MultipartImage) {
   ResourceFetcher* fetcher = CreateFetcher();
   KURL test_url(kParsedURLString, kTestURL);
@@ -475,6 +469,10 @@ TEST(ImageResourceTest, CancelOnRemoveObserver) {
   ScopedMockedURLLoad scoped_mocked_url_load(test_url, GetTestFilePath());
 
   ResourceFetcher* fetcher = CreateFetcher();
+  scheduler::FakeWebTaskRunner* task_runner =
+      static_cast<scheduler::FakeWebTaskRunner*>(
+          fetcher->Context().GetLoadingTaskRunner().get());
+  task_runner->SetTime(1);
 
   // Emulate starting a real load.
   ImageResource* image_resource = ImageResource::CreateForTest(test_url);
@@ -495,7 +493,7 @@ TEST(ImageResourceTest, CancelOnRemoveObserver) {
 
   // Trigger the cancel timer, ensure the load was cancelled and the resource
   // was evicted from the cache.
-  blink::testing::RunPendingTasks();
+  task_runner->RunUntilIdle();
   EXPECT_EQ(ResourceStatus::kLoadError, image_resource->GetStatus());
   EXPECT_FALSE(GetMemoryCache()->ResourceForURL(test_url));
 }
@@ -535,7 +533,8 @@ TEST(ImageResourceTest, CancelWithImageAndFinishObserver) {
   GetMemoryCache()->Add(image_resource);
 
   Persistent<MockFinishObserver> finish_observer = MockFinishObserver::Create();
-  image_resource->AddFinishObserver(finish_observer);
+  image_resource->AddFinishObserver(
+      finish_observer, fetcher->Context().GetLoadingTaskRunner().get());
 
   // Send the image response.
   image_resource->ResponseReceived(
@@ -578,7 +577,7 @@ TEST(ImageResourceTest, DecodedDataRemainsWhileHasClients) {
   image_resource->AppendData(reinterpret_cast<const char*>(kJpegImage),
                              sizeof(kJpegImage));
   EXPECT_NE(0u, image_resource->EncodedSizeMemoryUsageForTesting());
-  image_resource->Finish();
+  image_resource->FinishForTest();
   EXPECT_EQ(0u, image_resource->EncodedSizeMemoryUsageForTesting());
   EXPECT_FALSE(image_resource->ErrorOccurred());
   ASSERT_TRUE(image_resource->GetContent()->HasImage());
@@ -617,7 +616,7 @@ TEST(ImageResourceTest, UpdateBitmapImages) {
       nullptr);
   image_resource->AppendData(reinterpret_cast<const char*>(kJpegImage),
                              sizeof(kJpegImage));
-  image_resource->Finish();
+  image_resource->FinishForTest();
   EXPECT_FALSE(image_resource->ErrorOccurred());
   ASSERT_TRUE(image_resource->GetContent()->HasImage());
   EXPECT_FALSE(image_resource->GetContent()->GetImage()->IsNull());
@@ -626,20 +625,18 @@ TEST(ImageResourceTest, UpdateBitmapImages) {
   EXPECT_TRUE(image_resource->GetContent()->GetImage()->IsBitmapImage());
 }
 
-class ImageResourceReloadTest : public ::testing::TestWithParam<bool> {
+class ImageResourceReloadTest
+    : public ::testing::TestWithParam<bool>,
+      private ScopedClientPlaceholdersForServerLoFiForTest {
  public:
+  ImageResourceReloadTest()
+      : ScopedClientPlaceholdersForServerLoFiForTest(GetParam()) {}
   ~ImageResourceReloadTest() override {}
 
   bool IsClientPlaceholderForServerLoFiEnabled() const { return GetParam(); }
 
   void SetUp() override {
-    scoped_show_placeholder_.reset(
-        new ScopedClientPlaceholderForServerLoFiForTest(GetParam()));
   }
-
- private:
-  std::unique_ptr<ScopedClientPlaceholderForServerLoFiForTest>
-      scoped_show_placeholder_;
 };
 
 TEST_P(ImageResourceReloadTest, ReloadIfLoFiOrPlaceholderAfterFinished) {
@@ -662,7 +659,7 @@ TEST_P(ImageResourceReloadTest, ReloadIfLoFiOrPlaceholderAfterFinished) {
   image_resource->ResponseReceived(resource_response, nullptr);
   image_resource->AppendData(reinterpret_cast<const char*>(kJpegImage),
                              sizeof(kJpegImage));
-  image_resource->Finish();
+  image_resource->FinishForTest();
   EXPECT_FALSE(image_resource->ErrorOccurred());
   ASSERT_TRUE(image_resource->GetContent()->HasImage());
   EXPECT_FALSE(image_resource->GetContent()->GetImage()->IsNull());
@@ -709,7 +706,7 @@ TEST_P(ImageResourceReloadTest,
   image_resource->ResponseReceived(resource_response, nullptr);
   image_resource->AppendData(reinterpret_cast<const char*>(kJpegImage),
                              sizeof(kJpegImage));
-  image_resource->Finish();
+  image_resource->FinishForTest();
   EXPECT_FALSE(image_resource->ErrorOccurred());
   ASSERT_TRUE(image_resource->GetContent()->HasImage());
   EXPECT_FALSE(image_resource->GetContent()->GetImage()->IsNull());
@@ -758,7 +755,7 @@ TEST_P(ImageResourceReloadTest,
       nullptr);
   image_resource->AppendData(reinterpret_cast<const char*>(kJpegImage),
                              sizeof(kJpegImage));
-  image_resource->Finish();
+  image_resource->FinishForTest();
   EXPECT_FALSE(image_resource->ErrorOccurred());
   ASSERT_TRUE(image_resource->GetContent()->HasImage());
   EXPECT_FALSE(image_resource->GetContent()->GetImage()->IsNull());
@@ -1912,7 +1909,7 @@ TEST(ImageResourceTest, PeriodicFlushTest) {
   image_resource->AppendData(
       reinterpret_cast<const char*>(kJpegImage2) + bytes_sent,
       sizeof(kJpegImage2) - bytes_sent);
-  image_resource->Finish();
+  image_resource->FinishForTest();
 
   EXPECT_FALSE(image_resource->ErrorOccurred());
   ASSERT_TRUE(image_resource->GetContent()->HasImage());

@@ -33,8 +33,8 @@ SpeechRecognitionAudioSink::SpeechRecognitionAudioSink(
   DCHECK(main_render_thread_checker_.CalledOnValidThread());
   DCHECK(params.IsValid());
   DCHECK(IsSupportedTrack(track));
-  const size_t kSharedMemorySize = sizeof(media::AudioInputBufferParameters) +
-                                   media::AudioBus::CalculateMemorySize(params);
+  const size_t kSharedMemorySize =
+      media::ComputeAudioInputBufferSize(params, 1u);
   CHECK(shared_memory_.Map(kSharedMemorySize));
 
   media::AudioInputBuffer* buffer =
@@ -66,9 +66,9 @@ bool SpeechRecognitionAudioSink::IsSupportedTrack(
   if (!native_source)
     return false;
 
-  const StreamDeviceInfo& device_info = native_source->device_info();
+  const MediaStreamDevice& device = native_source->device();
   // Purposely only support tracks from an audio device. Dissallow WebAudio.
-  return (device_info.device.type == content::MEDIA_DEVICE_AUDIO_CAPTURE);
+  return (device.type == content::MEDIA_DEVICE_AUDIO_CAPTURE);
 }
 
 void SpeechRecognitionAudioSink::OnSetFormat(

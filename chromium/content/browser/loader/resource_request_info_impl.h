@@ -55,7 +55,6 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
       int request_id,
       int render_frame_id,
       bool is_main_frame,
-      bool parent_is_main_frame,
       ResourceType resource_type,
       ui::PageTransition transition_type,
       bool should_replace_current_entry,
@@ -66,6 +65,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
       bool enable_load_timing,
       bool enable_upload_progress,
       bool do_not_prompt_for_login,
+      bool keepalive,
       blink::WebReferrerPolicy referrer_policy,
       blink::WebPageVisibilityState visibility_state,
       ResourceContext* context,
@@ -87,7 +87,6 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   int GetRenderFrameID() const override;
   int GetFrameTreeNodeId() const override;
   bool IsMainFrame() const override;
-  bool ParentIsMainFrame() const override;
   ResourceType GetResourceType() const override;
   int GetProcessType() const override;
   blink::WebReferrerPolicy GetReferrerPolicy() const override;
@@ -102,6 +101,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   PreviewsState GetPreviewsState() const override;
   bool ShouldReportRawHeaders() const;
   NavigationUIData* GetNavigationUIData() const override;
+  bool CanceledByDevTools() const override;
 
   CONTENT_EXPORT void AssociateWithRequest(net::URLRequest* request);
 
@@ -143,6 +143,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   void set_detachable_handler(DetachableResourceHandler* h) {
     detachable_handler_ = h;
   }
+  bool keepalive() const { return keepalive_; }
 
   // Downloads are allowed only as a top level request.
   bool allow_download() const { return allow_download_; }
@@ -197,6 +198,10 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
     on_transfer_ = on_transfer;
   }
 
+  void set_canceled_by_devtools(bool canceled_by_devtools) {
+    canceled_by_devtools_ = canceled_by_devtools;
+  }
+
   void SetBlobHandles(BlobHandles blob_handles);
 
  private:
@@ -214,7 +219,6 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   int request_id_;
   int render_frame_id_;
   bool is_main_frame_;
-  bool parent_is_main_frame_;
   bool should_replace_current_entry_;
   bool is_download_;
   bool is_stream_;
@@ -223,6 +227,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   bool enable_load_timing_;
   bool enable_upload_progress_;
   bool do_not_prompt_for_login_;
+  bool keepalive_;
   bool counted_as_in_flight_request_;
   ResourceType resource_type_;
   ui::PageTransition transition_type_;
@@ -232,6 +237,7 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   ResourceContext* context_;
   bool report_raw_headers_;
   bool is_async_;
+  bool canceled_by_devtools_;
   PreviewsState previews_state_;
   scoped_refptr<ResourceRequestBody> body_;
   bool initiated_in_secure_context_;

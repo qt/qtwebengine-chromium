@@ -57,7 +57,8 @@ class StubBufferHandleProvider
 
   ~StubBufferHandleProvider() override {}
 
-  mojo::ScopedSharedBufferHandle GetHandleForInterProcessTransit() override {
+  mojo::ScopedSharedBufferHandle GetHandleForInterProcessTransit(
+      bool read_only) override {
     NOTREACHED();
     return mojo::ScopedSharedBufferHandle();
   }
@@ -101,7 +102,7 @@ VideoCaptureDevice::Client::Buffer CreateStubBuffer(int buffer_id,
 class MockClient : public VideoCaptureDevice::Client {
  public:
   MOCK_METHOD2(OnError,
-               void(const tracked_objects::Location& from_here,
+               void(const base::Location& from_here,
                     const std::string& reason));
   MOCK_METHOD0(OnStarted, void(void));
 

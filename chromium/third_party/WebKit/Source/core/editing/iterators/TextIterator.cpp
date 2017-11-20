@@ -28,8 +28,6 @@
 #include "core/editing/iterators/TextIterator.h"
 
 #include <unicode/utf16.h>
-#include "core/HTMLNames.h"
-#include "core/InputTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/editing/EditingUtilities.h"
@@ -41,8 +39,10 @@
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/HTMLInputElement.h"
-#include "core/html/TextControlElement.h"
+#include "core/html/forms/HTMLInputElement.h"
+#include "core/html/forms/TextControlElement.h"
+#include "core/html_names.h"
+#include "core/input_type_names.h"
 #include "core/layout/LayoutTableCell.h"
 #include "core/layout/LayoutTableRow.h"
 #include "platform/fonts/Font.h"
@@ -350,10 +350,10 @@ void TextIteratorAlgorithm<Strategy>::Advance() {
                     layout_object->IsLayoutEmbeddedContent() ||
                     (node_ && node_->IsHTMLElement() &&
                      (IsHTMLFormControlElement(ToHTMLElement(*node_)) ||
-                      isHTMLLegendElement(ToHTMLElement(*node_)) ||
-                      isHTMLImageElement(ToHTMLElement(*node_)) ||
-                      isHTMLMeterElement(ToHTMLElement(*node_)) ||
-                      isHTMLProgressElement(ToHTMLElement(*node_)))))) {
+                      IsHTMLLegendElement(ToHTMLElement(*node_)) ||
+                      IsHTMLImageElement(ToHTMLElement(*node_)) ||
+                      IsHTMLMeterElement(ToHTMLElement(*node_)) ||
+                      IsHTMLProgressElement(ToHTMLElement(*node_)))))) {
           HandleReplacedElement();
         } else {
           HandleNonTextNode();
@@ -371,7 +371,7 @@ void TextIteratorAlgorithm<Strategy>::Advance() {
     // To support |TextIteratorEmitsImageAltText|, we don't traversal child
     // nodes, in flat tree.
     Node* next =
-        iteration_progress_ < kHandledChildren && !isHTMLImageElement(*node_)
+        iteration_progress_ < kHandledChildren && !IsHTMLImageElement(*node_)
             ? Strategy::FirstChild(*node_)
             : nullptr;
     if (!next) {
@@ -496,10 +496,10 @@ bool TextIteratorAlgorithm<Strategy>::SupportsAltText(Node* node) {
   HTMLElement& element = ToHTMLElement(*node);
 
   // FIXME: Add isSVGImageElement.
-  if (isHTMLImageElement(element))
+  if (IsHTMLImageElement(element))
     return true;
-  if (isHTMLInputElement(ToHTMLElement(*node)) &&
-      toHTMLInputElement(*node).type() == InputTypeNames::image)
+  if (IsHTMLInputElement(ToHTMLElement(*node)) &&
+      ToHTMLInputElement(*node).type() == InputTypeNames::image)
     return true;
   return false;
 }
@@ -574,10 +574,10 @@ bool TextIteratorAlgorithm<Strategy>::ShouldEmitNewlineForNode(
     bool emits_original_text) {
   LayoutObject* layout_object = node->GetLayoutObject();
 
-  if (layout_object ? !layout_object->IsBR() : !isHTMLBRElement(node))
+  if (layout_object ? !layout_object->IsBR() : !IsHTMLBRElement(node))
     return false;
   return emits_original_text || !(node->IsInShadowTree() &&
-                                  isHTMLInputElement(*node->OwnerShadowHost()));
+                                  IsHTMLInputElement(*node->OwnerShadowHost()));
 }
 
 static bool ShouldEmitNewlinesBeforeAndAfterNode(Node& node) {
@@ -599,7 +599,7 @@ static bool ShouldEmitNewlinesBeforeAndAfterNode(Node& node) {
 
   // Need to make an exception for option and optgroup, because we want to
   // keep the legacy behavior before we added layoutObjects to them.
-  if (isHTMLOptionElement(node) || isHTMLOptGroupElement(node))
+  if (IsHTMLOptionElement(node) || IsHTMLOptGroupElement(node))
     return false;
 
   // Need to make an exception for table cells, because they are blocks, but we
@@ -642,30 +642,13 @@ bool TextIteratorAlgorithm<Strategy>::ShouldEmitNewlineBeforeNode(Node& node) {
 }
 
 static bool ShouldEmitExtraNewlineForNode(Node* node) {
-  // When there is a significant collapsed bottom margin, emit an extra
-  // newline for a more realistic result. We end up getting the right
-  // result even without margin collapsing. For example: <div><p>text</p></div>
-  // will work right even if both the <div> and the <p> have bottom margins.
+  // https://html.spec.whatwg.org/multipage/dom.html#the-innertext-idl-attribute
+  // Append two required linebreaks after a P element.
   LayoutObject* r = node->GetLayoutObject();
   if (!r || !r->IsBox())
     return false;
 
-  // NOTE: We only do this for a select set of nodes, and fwiw WinIE appears
-  // not to do this at all
-  if (node->HasTagName(h1Tag) || node->HasTagName(h2Tag) ||
-      node->HasTagName(h3Tag) || node->HasTagName(h4Tag) ||
-      node->HasTagName(h5Tag) || node->HasTagName(h6Tag) ||
-      node->HasTagName(pTag)) {
-    const ComputedStyle* style = r->Style();
-    if (style) {
-      int bottom_margin = ToLayoutBox(r)->CollapsedMarginAfter().ToInt();
-      int font_size = style->GetFontDescription().ComputedPixelSize();
-      if (bottom_margin * 2 >= font_size)
-        return true;
-    }
-  }
-
-  return false;
+  return node->HasTagName(pTag);
 }
 
 // Whether or not we should emit a character as we enter m_node (if it's a
@@ -723,7 +706,7 @@ bool TextIteratorAlgorithm<Strategy>::ShouldRepresentNodeOffsetZero() {
           EVisibility::kVisible ||
       (node_->GetLayoutObject()->IsLayoutBlockFlow() &&
        !ToLayoutBlock(node_->GetLayoutObject())->Size().Height() &&
-       !isHTMLBodyElement(*node_)))
+       !IsHTMLBodyElement(*node_)))
     return false;
 
   // The startPos.isNotNull() check is needed because the start could be before

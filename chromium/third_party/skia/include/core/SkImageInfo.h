@@ -117,7 +117,7 @@ static int SkColorTypeShiftPerPixel(SkColorType ct) {
     };
     static_assert(SK_ARRAY_COUNT(gShift) == (size_t)(kLastEnum_SkColorType + 1),
                   "size_mismatch_with_SkColorType_enum");
-    
+
     SkASSERT((size_t)ct < SK_ARRAY_COUNT(gShift));
     return gShift[ct];
 }
@@ -225,7 +225,7 @@ public:
     static SkImageInfo MakeUnknown() {
         return MakeUnknown(0, 0);
     }
-    
+
     int width() const { return fWidth; }
     int height() const { return fHeight; }
     SkColorType colorType() const { return fColorType; }
@@ -257,7 +257,7 @@ public:
     SkImageInfo makeAlphaType(SkAlphaType newAlphaType) const {
         return Make(fWidth, fHeight, fColorType, newAlphaType, fColorSpace);
     }
-    
+
     SkImageInfo makeColorType(SkColorType newColorType) const {
         return Make(fWidth, fHeight, newColorType, fAlphaType, fColorSpace);
     }
@@ -300,6 +300,7 @@ public:
     void unflatten(SkReadBuffer&);
     void flatten(SkWriteBuffer&) const;
 
+#ifdef SK_SUPPORT_LEGACY_SAFESIZE64
     int64_t getSafeSize64(size_t rowBytes) const {
         if (0 == fHeight) {
             return 0;
@@ -314,10 +315,42 @@ public:
         }
         return sk_64_asS32(size);
     }
+#endif
+
+    /**
+     *  Returns the size (in bytes) of the image buffer that this info needs, given the specified
+     *  rowBytes. The rowBytes must be >= this->minRowBytes().
+     *
+     *  if (height == 0) {
+     *      return 0;
+     *  } else {
+     *      return (height - 1) * rowBytes + width * bytes_per_pixel;
+     *  }
+     *
+     *  If the calculation overflows this returns SK_MaxSizeT
+     */
+    size_t computeByteSize(size_t rowBytes) const;
+
+    /**
+     *  Returns the minimum size (in bytes) of the image buffer that this info needs.
+     *  If the calculation overflows, or if the height is 0, this returns 0.
+     */
+    size_t computeMinByteSize() const {
+        return this->computeByteSize(this->minRowBytes());
+    }
+
+    // Returns true if the result of computeByteSize (or computeMinByteSize) overflowed
+    static bool ByteSizeOverflowed(size_t byteSize) {
+#ifdef SK_SUPPORT_LEGACY_COMPUTEBYTESIZE_RET_0
+        return 0 == byteSize;
+#else
+        return SK_MaxSizeT == byteSize;
+#endif
+    }
 
     bool validRowBytes(size_t rowBytes) const {
-        uint64_t rb = sk_64_mul(fWidth, this->bytesPerPixel());
-        return rowBytes >= rb;
+        uint64_t minRB = sk_64_mul(fWidth, this->bytesPerPixel());
+        return rowBytes >= minRB;
     }
 
     void reset() {

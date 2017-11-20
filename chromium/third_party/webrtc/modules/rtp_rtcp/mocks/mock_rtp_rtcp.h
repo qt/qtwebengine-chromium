@@ -8,20 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_MOCKS_MOCK_RTP_RTCP_H_
-#define WEBRTC_MODULES_RTP_RTCP_MOCKS_MOCK_RTP_RTCP_H_
+#ifndef MODULES_RTP_RTCP_MOCKS_MOCK_RTP_RTCP_H_
+#define MODULES_RTP_RTCP_MOCKS_MOCK_RTP_RTCP_H_
 
 #include <set>
 #include <utility>
 #include <vector>
 
-#include "webrtc/modules/include/module.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/optional.h"
-#include "webrtc/test/gmock.h"
+#include "api/optional.h"
+#include "modules/include/module.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
+#include "rtc_base/checks.h"
+#include "test/gmock.h"
 
 namespace webrtc {
 
@@ -42,7 +42,7 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_METHOD1(RegisterSyncModule, int32_t(RtpRtcp* module));
   MOCK_METHOD0(DeRegisterSyncModule, int32_t());
   MOCK_METHOD2(IncomingRtcpPacket,
-               int32_t(const uint8_t* incoming_packet, size_t packet_length));
+               void(const uint8_t* incoming_packet, size_t packet_length));
   MOCK_METHOD1(SetRemoteSSRC, void(uint32_t ssrc));
   MOCK_METHOD4(IncomingAudioNTP,
                int32_t(uint32_t audio_received_ntp_secs,
@@ -209,4 +209,4 @@ class MockRtpRtcp : public RtpRtcp {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_RTP_RTCP_MOCKS_MOCK_RTP_RTCP_H_
+#endif  // MODULES_RTP_RTCP_MOCKS_MOCK_RTP_RTCP_H_

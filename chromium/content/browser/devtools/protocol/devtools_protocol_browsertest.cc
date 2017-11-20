@@ -51,6 +51,7 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
+#include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_download_manager_delegate.h"
 #include "content/test/content_browser_test_utils_internal.h"
 #include "net/dns/mock_host_resolver.h"
@@ -123,8 +124,7 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager,
 
   void Handle() {
     if (!callback_.is_null()) {
-      callback_.Run(true, base::string16());
-      callback_.Reset();
+      std::move(callback_).Run(true, base::string16());
     } else {
       handle_ = true;
     }
@@ -142,19 +142,19 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager,
                            JavaScriptDialogType dialog_type,
                            const base::string16& message_text,
                            const base::string16& default_prompt_text,
-                           const DialogClosedCallback& callback,
+                           DialogClosedCallback callback,
                            bool* did_suppress_message) override {
     if (handle_) {
       handle_ = false;
-      callback.Run(true, base::string16());
+      std::move(callback).Run(true, base::string16());
     } else {
-      callback_ = callback;
+      callback_ = std::move(callback);
     }
   };
 
   void RunBeforeUnloadDialog(WebContents* web_contents,
                              bool is_reload,
-                             const DialogClosedCallback& callback) override {}
+                             DialogClosedCallback callback) override {}
 
   bool HandleJavaScriptDialog(WebContents* web_contents,
                               bool accept,
@@ -627,20 +627,17 @@ std::unique_ptr<SkBitmap> DecodeJPEG(std::string base64_data) {
       jpeg_data.size());
 }
 
-bool ColorsMatchWithinLimit(SkColor color1,
-                            SkColor color2,
-                            int32_t error_limit) {
-  auto a_distance = std::abs(static_cast<int32_t>(SkColorGetA(color1)) -
-                             static_cast<int32_t>(SkColorGetA(color2)));
-  auto r_distance = std::abs(static_cast<int32_t>(SkColorGetR(color1)) -
-                             static_cast<int32_t>(SkColorGetR(color2)));
-  auto g_distance = std::abs(static_cast<int32_t>(SkColorGetG(color1)) -
-                             static_cast<int32_t>(SkColorGetG(color2)));
-  auto b_distance = std::abs(static_cast<int32_t>(SkColorGetB(color1)) -
-                             static_cast<int32_t>(SkColorGetB(color2)));
-
-  return a_distance * a_distance + r_distance * r_distance +
-             g_distance * g_distance + b_distance * b_distance <=
+bool ColorsMatchWithinLimit(SkColor color1, SkColor color2, int error_limit) {
+  auto a_diff = static_cast<int>(SkColorGetA(color1)) -
+                static_cast<int>(SkColorGetA(color2));
+  auto r_diff = static_cast<int>(SkColorGetR(color1)) -
+                static_cast<int>(SkColorGetR(color2));
+  auto g_diff = static_cast<int>(SkColorGetG(color1)) -
+                static_cast<int>(SkColorGetG(color2));
+  auto b_diff = static_cast<int>(SkColorGetB(color1)) -
+                static_cast<int>(SkColorGetB(color2));
+  return a_diff * a_diff + r_diff * r_diff + g_diff * g_diff +
+             b_diff * b_diff <=
          error_limit * error_limit;
 }
 
@@ -675,7 +672,7 @@ bool MatchesBitmap(const SkBitmap& expected_bmp,
       SkColor expected_color = expected_bmp.getColor(x, y);
       if (!ColorsMatchWithinLimit(actual_color, expected_color, error_limit)) {
         if (error_pixels_count < 10) {
-          LOG(ERROR) << "Pixel (" << x << "," << y << "): expected "
+          LOG(ERROR) << "Pixel (" << x << "," << y << "): expected " << std::hex
                      << expected_color << " actual " << actual_color;
         }
         error_pixels_count++;
@@ -722,16 +719,11 @@ class CaptureScreenshotTest : public DevToolsProtocolTest {
     std::string base64;
     EXPECT_TRUE(result_->GetString("data", &base64));
     std::unique_ptr<SkBitmap> result_bitmap;
-    int error_limit = 0;
     if (encoding == ENCODING_PNG) {
       result_bitmap.reset(new SkBitmap());
       EXPECT_TRUE(DecodePNG(base64, result_bitmap.get()));
     } else {
       result_bitmap = DecodeJPEG(base64);
-      // Even with quality 100, jpeg isn't lossless. So, we allow some skew in
-      // pixel values. Not that this assumes that there is no skew in pixel
-      // positions, so will only work reliably if all pixels have equal values.
-      error_limit = 3;
     }
     EXPECT_TRUE(result_bitmap);
 
@@ -741,6 +733,14 @@ class CaptureScreenshotTest : public DevToolsProtocolTest {
     // rounded corners.
     matching_mask.Inset(4, 4, 4, 4);
 #endif
+
+    // A color profile can be installed on the host that could affect
+    // pixel colors. Also JPEG compression could further distort the color.
+    // Allow some error between actual and expected pixel values.
+    // That assumes there is no shift in pixel positions, so it only works
+    // reliably if all pixels have equal values.
+    int error_limit = 16;
+
     EXPECT_TRUE(MatchesBitmap(expected_bitmap, *result_bitmap, matching_mask,
                               device_scale_factor, error_limit));
   }
@@ -857,7 +857,7 @@ IN_PROC_BROWSER_TEST_F(CaptureScreenshotTest, CaptureScreenshotJpeg) {
 }
 
 // Setting frame size (through RWHV) is not supported on Android.
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_LINUX)
 #define MAYBE_CaptureScreenshotArea DISABLED_CaptureScreenshotArea
 #else
 #define MAYBE_CaptureScreenshotArea CaptureScreenshotArea
@@ -1297,6 +1297,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, JavaScriptDialogInterop) {
   WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
   wc->SetDelegate(&dialog_manager);
   SendCommand("Page.enable", nullptr, true);
+  SendCommand("Runtime.enable", nullptr, true);
 
   std::unique_ptr<base::DictionaryValue> params(new base::DictionaryValue());
   params->SetString("expression", "alert('42')");
@@ -1307,6 +1308,56 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, JavaScriptDialogInterop) {
   WaitForNotification("Page.javascriptDialogClosed", true);
   wc->SetDelegate(nullptr);
   wc->SetJavaScriptDialogManagerForTesting(nullptr);
+}
+
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, PageDisableWithOpenedDialog) {
+  NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
+  Attach();
+  TestJavaScriptDialogManager dialog_manager;
+  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
+  wc->SetDelegate(&dialog_manager);
+
+  SendCommand("Page.enable", nullptr, true);
+  SendCommand("Runtime.enable", nullptr, true);
+
+  std::unique_ptr<base::DictionaryValue> params(new base::DictionaryValue());
+  params->SetString("expression", "alert('42')");
+  SendCommand("Runtime.evaluate", std::move(params), false);
+  WaitForNotification("Page.javascriptDialogOpening");
+  EXPECT_TRUE(wc->IsJavaScriptDialogShowing());
+
+  EXPECT_FALSE(dialog_manager.is_handled());
+  SendCommand("Page.disable", nullptr, false);
+  EXPECT_TRUE(wc->IsJavaScriptDialogShowing());
+  EXPECT_FALSE(dialog_manager.is_handled());
+  dialog_manager.Handle();
+  EXPECT_FALSE(wc->IsJavaScriptDialogShowing());
+
+  params.reset(new base::DictionaryValue());
+  params->SetString("expression", "42");
+  SendCommand("Runtime.evaluate", std::move(params), true);
+
+  wc->SetDelegate(nullptr);
+  wc->SetJavaScriptDialogManagerForTesting(nullptr);
+}
+
+IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, PageDisableWithNoDialogManager) {
+  NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
+  Attach();
+  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
+  wc->SetDelegate(nullptr);
+
+  SendCommand("Page.enable", nullptr, true);
+  SendCommand("Runtime.enable", nullptr, true);
+
+  std::unique_ptr<base::DictionaryValue> params(new base::DictionaryValue());
+  params->SetString("expression", "alert('42');");
+  SendCommand("Runtime.evaluate", std::move(params), false);
+  WaitForNotification("Page.javascriptDialogOpening");
+  EXPECT_TRUE(wc->IsJavaScriptDialogShowing());
+
+  SendCommand("Page.disable", nullptr, true);
+  EXPECT_FALSE(wc->IsJavaScriptDialogShowing());
 }
 
 IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, BeforeUnloadDialog) {
@@ -1779,6 +1830,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, TargetDiscovery) {
   GURL third_url = embedded_test_server()->GetURL("/devtools/navigation.html");
   Shell* third = CreateBrowser();
   NavigateToURLBlockUntilNavigationsComplete(third, third_url, 1);
+
   params = WaitForNotification("Target.targetCreated", true);
   EXPECT_TRUE(params->GetString("targetInfo.type", &temp));
   EXPECT_EQ("page", temp);
@@ -1788,6 +1840,14 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, TargetDiscovery) {
   EXPECT_FALSE(is_attached);
   std::string attached_id = temp;
   ids.insert(temp);
+
+  params = WaitForNotification("Target.targetInfoChanged", true);
+  EXPECT_TRUE(params->GetString("targetInfo.url", &temp));
+  EXPECT_EQ("about:blank", temp);
+
+  params = WaitForNotification("Target.targetInfoChanged", true);
+  EXPECT_TRUE(params->GetString("targetInfo.url", &temp));
+  EXPECT_EQ(third_url, temp);
   EXPECT_TRUE(notifications_.empty());
 
   second->Close();
@@ -1811,6 +1871,18 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, TargetDiscovery) {
   EXPECT_TRUE(params->GetString("sessionId", &session_id));
   EXPECT_TRUE(params->GetString("targetInfo.targetId", &temp));
   EXPECT_EQ(attached_id, temp);
+  EXPECT_TRUE(notifications_.empty());
+
+  WebContents::CreateParams create_params(
+      ShellContentBrowserClient::Get()->browser_context(), NULL);
+  std::unique_ptr<content::WebContents> web_contents(
+      content::WebContents::Create(create_params));
+  EXPECT_TRUE(notifications_.empty());
+
+  web_contents->SetDelegate(this);
+  params = WaitForNotification("Target.targetCreated", true);
+  EXPECT_TRUE(params->GetString("targetInfo.type", &temp));
+  EXPECT_EQ("page", temp);
   EXPECT_TRUE(notifications_.empty());
 
   command_params.reset(new base::DictionaryValue());
@@ -2007,9 +2079,13 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTouchTest, EnableTouch) {
   std::unique_ptr<base::DictionaryValue> params;
   bool result;
 
+  content::SetupCrossSiteRedirector(embedded_test_server());
   ASSERT_TRUE(embedded_test_server()->Start());
-  GURL test_url = embedded_test_server()->GetURL("/devtools/enable_touch.html");
-  NavigateToURLBlockUntilNavigationsComplete(shell(), test_url, 1);
+  GURL test_url1 =
+      embedded_test_server()->GetURL("A.com", "/devtools/enable_touch.html");
+  GURL test_url2 =
+      embedded_test_server()->GetURL("B.com", "/devtools/enable_touch.html");
+  NavigateToURLBlockUntilNavigationsComplete(shell(), test_url1, 1);
   Attach();
 
   params.reset(new base::DictionaryValue());
@@ -2029,7 +2105,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTouchTest, EnableTouch) {
   EXPECT_TRUE(result);
 
   params.reset(new base::DictionaryValue());
-  SendCommand("Page.reload", std::move(params), false);
+  params->SetString("url", test_url2.spec());
+  SendCommand("Page.navigate", std::move(params), false);
   WaitForNotification("Page.frameStoppedLoading");
   ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
       shell()->web_contents(),
@@ -2136,7 +2213,7 @@ class CountingDownloadFile : public DownloadFileImpl {
  public:
   CountingDownloadFile(std::unique_ptr<DownloadSaveInfo> save_info,
                        const base::FilePath& default_downloads_directory,
-                       std::unique_ptr<ByteStreamReader> stream,
+                       std::unique_ptr<DownloadManager::InputStream> stream,
                        const net::NetLogWithSource& net_log,
                        base::WeakPtr<DownloadDestinationObserver> observer)
       : DownloadFileImpl(std::move(save_info),
@@ -2193,7 +2270,7 @@ class CountingDownloadFileFactory : public DownloadFileFactory {
   DownloadFile* CreateFile(
       std::unique_ptr<DownloadSaveInfo> save_info,
       const base::FilePath& default_downloads_directory,
-      std::unique_ptr<ByteStreamReader> stream,
+      std::unique_ptr<DownloadManager::InputStream> stream,
       const net::NetLogWithSource& net_log,
       base::WeakPtr<DownloadDestinationObserver> observer) override {
     return new CountingDownloadFile(std::move(save_info),

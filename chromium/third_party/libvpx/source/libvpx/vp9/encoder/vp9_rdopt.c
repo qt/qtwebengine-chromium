@@ -600,7 +600,7 @@ static void dist_block(const VP9_COMP *cpi, MACROBLOCK *x, int plane,
 #if CONFIG_VP9_HIGHBITDEPTH
       if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
         vpx_highbd_convolve_copy(CONVERT_TO_SHORTPTR(dst), dst_stride, recon16,
-                                 32, NULL, 0, NULL, 0, bs, bs, xd->bd);
+                                 32, NULL, 0, 0, 0, 0, bs, bs, xd->bd);
         if (xd->lossless) {
           vp9_highbd_iwht4x4_add(dqcoeff, recon16, 32, *eob, xd->bd);
         } else {
@@ -623,7 +623,7 @@ static void dist_block(const VP9_COMP *cpi, MACROBLOCK *x, int plane,
         recon = CONVERT_TO_BYTEPTR(recon16);
       } else {
 #endif  // CONFIG_VP9_HIGHBITDEPTH
-        vpx_convolve_copy(dst, dst_stride, recon, 32, NULL, 0, NULL, 0, bs, bs);
+        vpx_convolve_copy(dst, dst_stride, recon, 32, NULL, 0, 0, 0, 0, bs, bs);
         switch (tx_size) {
           case TX_32X32: vp9_idct32x32_add(dqcoeff, recon, 32, *eob); break;
           case TX_16X16: vp9_idct16x16_add(dqcoeff, recon, 32, *eob); break;
@@ -3038,8 +3038,8 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
   int64_t dist_uv[TX_SIZES];
   int skip_uv[TX_SIZES];
   PREDICTION_MODE mode_uv[TX_SIZES];
-  const int intra_cost_penalty = vp9_get_intra_cost_penalty(
-      cm->base_qindex, cm->y_dc_delta_q, cm->bit_depth);
+  const int intra_cost_penalty =
+      vp9_get_intra_cost_penalty(cpi, bsize, cm->base_qindex, cm->y_dc_delta_q);
   int best_skip2 = 0;
   uint8_t ref_frame_skip_mask[2] = { 0 };
   uint16_t mode_skip_mask[MAX_REF_FRAMES] = { 0 };
@@ -3802,8 +3802,8 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi, TileDataEnc *tile_data,
   int64_t dist_uv;
   int skip_uv;
   PREDICTION_MODE mode_uv = DC_PRED;
-  const int intra_cost_penalty = vp9_get_intra_cost_penalty(
-      cm->base_qindex, cm->y_dc_delta_q, cm->bit_depth);
+  const int intra_cost_penalty =
+      vp9_get_intra_cost_penalty(cpi, bsize, cm->base_qindex, cm->y_dc_delta_q);
   int_mv seg_mvs[4][MAX_REF_FRAMES];
   b_mode_info best_bmodes[4];
   int best_skip2 = 0;

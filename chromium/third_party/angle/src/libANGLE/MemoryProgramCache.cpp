@@ -12,6 +12,7 @@
 #include <GLSLANG/ShaderVars.h>
 #include <anglebase/sha1.h>
 
+#include "common/utilities.h"
 #include "common/version.h"
 #include "libANGLE/BinaryStream.h"
 #include "libANGLE/Context.h"
@@ -87,6 +88,26 @@ void LoadShaderVariableBuffer(BinaryInputStream *stream, ShaderVariableBuffer *v
     {
         var->memberIndexes.push_back(stream->readInt<unsigned int>());
     }
+}
+
+void WriteInterfaceBlock(BinaryOutputStream *stream, const InterfaceBlock &block)
+{
+    stream->writeString(block.name);
+    stream->writeString(block.mappedName);
+    stream->writeInt(block.isArray);
+    stream->writeInt(block.arrayElement);
+
+    WriteShaderVariableBuffer(stream, block);
+}
+
+void LoadInterfaceBlock(BinaryInputStream *stream, InterfaceBlock *block)
+{
+    block->name         = stream->readString();
+    block->mappedName   = stream->readString();
+    block->isArray      = stream->readBool();
+    block->arrayElement = stream->readInt<unsigned int>();
+
+    LoadShaderVariableBuffer(stream, block);
 }
 
 class HashStream final : angle::NonCopyable
@@ -206,6 +227,8 @@ LinkResult MemoryProgramCache::Deserialize(const Context *context,
         uniform.blockInfo.matrixStride     = stream.readInt<int>();
         uniform.blockInfo.isRowMajorMatrix = stream.readBool();
 
+        uniform.typeInfo = &GetUniformTypeInfo(uniform.type);
+
         state->mUniforms.push_back(uniform);
     }
 
@@ -215,10 +238,9 @@ LinkResult MemoryProgramCache::Deserialize(const Context *context,
          uniformIndexIndex++)
     {
         VariableLocation variable;
-        stream.readString(&variable.name);
-        stream.readInt(&variable.element);
+        stream.readIntVector<unsigned int>(&variable.arrayIndices);
         stream.readInt(&variable.index);
-        stream.readBool(&variable.used);
+        stream.readInt(&variable.flattenedArrayOffset);
         stream.readBool(&variable.ignored);
 
         state->mUniformLocations.push_back(variable);
@@ -229,17 +251,23 @@ LinkResult MemoryProgramCache::Deserialize(const Context *context,
     for (unsigned int uniformBlockIndex = 0; uniformBlockIndex < uniformBlockCount;
          ++uniformBlockIndex)
     {
-        UniformBlock uniformBlock;
-        stream.readString(&uniformBlock.name);
-        stream.readBool(&uniformBlock.isArray);
-        stream.readInt(&uniformBlock.arrayElement);
-
-        LoadShaderVariableBuffer(&stream, &uniformBlock);
-
+        InterfaceBlock uniformBlock;
+        LoadInterfaceBlock(&stream, &uniformBlock);
         state->mUniformBlocks.push_back(uniformBlock);
 
         state->mActiveUniformBlockBindings.set(uniformBlockIndex, uniformBlock.binding != 0);
     }
+
+    unsigned int shaderStorageBlockCount = stream.readInt<unsigned int>();
+    ASSERT(state->mShaderStorageBlocks.empty());
+    for (unsigned int shaderStorageBlockIndex = 0;
+         shaderStorageBlockIndex < shaderStorageBlockCount; ++shaderStorageBlockIndex)
+    {
+        InterfaceBlock shaderStorageBlock;
+        LoadInterfaceBlock(&stream, &shaderStorageBlock);
+        state->mShaderStorageBlocks.push_back(shaderStorageBlock);
+    }
+
     unsigned int atomicCounterBufferCount = stream.readInt<unsigned int>();
     ASSERT(state->mAtomicCounterBuffers.empty());
     for (unsigned int bufferIndex = 0; bufferIndex < atomicCounterBufferCount; ++bufferIndex)
@@ -292,9 +320,10 @@ LinkResult MemoryProgramCache::Deserialize(const Context *context,
     {
         int locationIndex = stream.readInt<int>();
         VariableLocation locationData;
-        stream.readInt(&locationData.element);
+        stream.readIntVector<unsigned int>(&locationData.arrayIndices);
         stream.readInt(&locationData.index);
-        stream.readString(&locationData.name);
+        stream.readInt(&locationData.flattenedArrayOffset);
+        stream.readBool(&locationData.ignored);
         state->mOutputLocations[locationIndex] = locationData;
     }
 
@@ -400,21 +429,22 @@ void MemoryProgramCache::Serialize(const Context *context,
     stream.writeInt(state.getUniformLocations().size());
     for (const auto &variable : state.getUniformLocations())
     {
-        stream.writeString(variable.name);
-        stream.writeInt(variable.element);
-        stream.writeInt(variable.index);
-        stream.writeInt(variable.used);
+        stream.writeIntVector(variable.arrayIndices);
+        stream.writeIntOrNegOne(variable.index);
+        stream.writeInt(variable.flattenedArrayOffset);
         stream.writeInt(variable.ignored);
     }
 
     stream.writeInt(state.getUniformBlocks().size());
-    for (const UniformBlock &uniformBlock : state.getUniformBlocks())
+    for (const InterfaceBlock &uniformBlock : state.getUniformBlocks())
     {
-        stream.writeString(uniformBlock.name);
-        stream.writeInt(uniformBlock.isArray);
-        stream.writeInt(uniformBlock.arrayElement);
+        WriteInterfaceBlock(&stream, uniformBlock);
+    }
 
-        WriteShaderVariableBuffer(&stream, uniformBlock);
+    stream.writeInt(state.getShaderStorageBlocks().size());
+    for (const InterfaceBlock &shaderStorageBlock : state.getShaderStorageBlocks())
+    {
+        WriteInterfaceBlock(&stream, shaderStorageBlock);
     }
 
     stream.writeInt(state.mAtomicCounterBuffers.size());
@@ -454,9 +484,10 @@ void MemoryProgramCache::Serialize(const Context *context,
     for (const auto &outputPair : state.getOutputLocations())
     {
         stream.writeInt(outputPair.first);
-        stream.writeIntOrNegOne(outputPair.second.element);
-        stream.writeInt(outputPair.second.index);
-        stream.writeString(outputPair.second.name);
+        stream.writeIntVector(outputPair.second.arrayIndices);
+        stream.writeIntOrNegOne(outputPair.second.index);
+        stream.writeInt(outputPair.second.flattenedArrayOffset);
+        stream.writeInt(outputPair.second.ignored);
     }
 
     stream.writeInt(state.mOutputVariableTypes.size());

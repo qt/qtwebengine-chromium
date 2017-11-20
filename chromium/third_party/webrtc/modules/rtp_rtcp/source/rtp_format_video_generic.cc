@@ -10,10 +10,10 @@
 
 #include <string>
 
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_format_video_generic.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_packet_to_send.h"
-#include "webrtc/rtc_base/logging.h"
+#include "modules/include/module_common_types.h"
+#include "modules/rtp_rtcp/source/rtp_format_video_generic.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -106,15 +106,6 @@ bool RtpPacketizerGeneric::NextPacket(RtpPacketToSend* packet) {
   packet->SetMarker(payload_size_ == 0);
 
   return true;
-}
-
-ProtectionType RtpPacketizerGeneric::GetProtectionType() {
-  return kProtectedPacket;
-}
-
-StorageType RtpPacketizerGeneric::GetStorageType(
-    uint32_t retransmission_settings) {
-  return kAllowRetransmission;
 }
 
 std::string RtpPacketizerGeneric::ToString() {

@@ -7,7 +7,7 @@
 
 #include "SkAtomics.h"
 #include "SkBitmap.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkColorTable.h"
 #include "SkConvertPixels.h"
 #include "SkData.h"
@@ -190,15 +190,15 @@ void SkBitmap::setPixelRef(sk_sp<SkPixelRef> pr, int dx, int dy) {
 #ifdef SK_DEBUG
     if (pr) {
         if (kUnknown_SkColorType != fInfo.colorType()) {
-            SkASSERT(fInfo.width() + dx <= pr->width());
-            SkASSERT(fInfo.height() + dy <= pr->height());
+            SkASSERT(dx >= 0 && fInfo.width() + dx <= pr->width());
+            SkASSERT(dy >= 0 && fInfo.height() + dy <= pr->height());
         }
     }
 #endif
-
-    fPixelRef = std::move(pr);
+    fPixelRef = kUnknown_SkColorType != fInfo.colorType() ? std::move(pr) : nullptr;
     if (fPixelRef) {
-        fPixelRefOrigin.set(SkTPin(dx, 0, fPixelRef->width()), SkTPin(dy, 0, fPixelRef->height()));
+        fPixelRefOrigin.set(dx, dy);
+        fRowBytes = fPixelRef->rowBytes();
         this->updatePixelsFromRef();
     } else {
         // ignore dx,dy if there is no pixelref
@@ -245,6 +245,9 @@ bool SkBitmap::tryAllocPixels(const SkImageInfo& requestedInfo, size_t rowBytes)
 
     // setInfo may have corrected info (e.g. 565 is always opaque).
     const SkImageInfo& correctedInfo = this->info();
+    if (kUnknown_SkColorType == correctedInfo.colorType()) {
+        return true;
+    }
     // setInfo may have computed a valid rowbytes if 0 were passed in
     rowBytes = this->rowBytes();
 
@@ -656,9 +659,8 @@ void SkBitmap::WriteRawPixels(SkWriteBuffer* buffer, const SkBitmap& bitmap) {
 }
 
 bool SkBitmap::ReadRawPixels(SkReadBuffer* buffer, SkBitmap* bitmap) {
-    const size_t snugRB = buffer->readUInt();
-    if (0 == snugRB) {  // no pixels
-        return false;
+    if (0 == buffer->readUInt()) {
+        return false;  // no pixels
     }
 
     SkImageInfo info;
@@ -669,34 +671,22 @@ bool SkBitmap::ReadRawPixels(SkReadBuffer* buffer, SkBitmap* bitmap) {
     }
 
     // If there was an error reading "info" or if it is bogus,
-    // don't use it to compute minRowBytes()
+    // don't use it to compute minRowBytes().
     if (!buffer->validate(SkColorTypeValidateAlphaType(info.colorType(),
                                                        info.alphaType()))) {
         return false;
     }
 
-    const size_t ramRB = info.minRowBytes();
-    const int height = SkMax32(info.height(), 0);
-    const uint64_t snugSize = sk_64_mul(snugRB, height);
-    const uint64_t ramSize = sk_64_mul(ramRB, height);
-    static const uint64_t max_size_t = (size_t)(-1);
-    if (!buffer->validate((snugSize <= ramSize) && (ramSize <= max_size_t))) {
+    // write_raw_pixels() always writes snug buffers with rowBytes == minRowBytes().
+    size_t bytes = info.computeMinByteSize();
+    if (!buffer->validate(bytes != 0)) {
         return false;
     }
 
-    sk_sp<SkData> data(SkData::MakeUninitialized(SkToSizeT(ramSize)));
+    sk_sp<SkData> data(SkData::MakeUninitialized(bytes));
     unsigned char* dst = (unsigned char*)data->writable_data();
-    buffer->readByteArray(dst, SkToSizeT(snugSize));
-
-    if (snugSize != ramSize) {
-        const unsigned char* srcRow = dst + snugRB * (height - 1);
-        unsigned char* dstRow = dst + ramRB * (height - 1);
-        for (int y = height - 1; y >= 1; --y) {
-            memmove(dstRow, srcRow, snugRB);
-            srcRow -= snugRB;
-            dstRow -= ramRB;
-        }
-        SkASSERT(srcRow == dstRow); // first row does not need to be moved
+    if (!buffer->readByteArray(dst, bytes)) {
+        return false;
     }
 
     if (buffer->readBool()) {

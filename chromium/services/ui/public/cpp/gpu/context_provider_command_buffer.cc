@@ -17,7 +17,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
-#include "cc/output/managed_memory_policy.h"
 #include "components/viz/common/gpu/context_cache_controller.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
@@ -413,11 +412,23 @@ base::Lock* ContextProviderCommandBuffer::GetLock() {
   return &context_lock_;
 }
 
-gpu::Capabilities ContextProviderCommandBuffer::ContextCapabilities() {
+const gpu::Capabilities& ContextProviderCommandBuffer::ContextCapabilities()
+    const {
   DCHECK(bind_succeeded_);
   DCHECK(context_thread_checker_.CalledOnValidThread());
   // Skips past the trace_impl_ as it doesn't have capabilities.
   return gles2_impl_->capabilities();
+}
+
+const gpu::GpuFeatureInfo& ContextProviderCommandBuffer::GetGpuFeatureInfo()
+    const {
+  DCHECK(bind_succeeded_);
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+  if (!command_buffer_ || !command_buffer_->channel()) {
+    static const gpu::GpuFeatureInfo default_gpu_feature_info;
+    return default_gpu_feature_info;
+  }
+  return command_buffer_->channel()->gpu_feature_info();
 }
 
 void ContextProviderCommandBuffer::OnLostContext() {

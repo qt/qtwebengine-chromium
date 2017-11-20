@@ -13,6 +13,7 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "base/power_monitor/power_observer.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_states.h"
@@ -310,12 +311,6 @@ class NET_EXPORT URLRequestJob : public base::PowerObserver {
   // or nullptr on error.
   virtual std::unique_ptr<SourceStream> SetUpSourceStream();
 
-  // At or near destruction time, a derived class may request that the filters
-  // be destroyed so that statistics can be gathered while the derived class is
-  // still present to assist in calculations. This is used by URLRequestHttpJob
-  // to get SDCH to emit stats.
-  void DestroySourceStream();
-
   // Provides derived classes with access to the request's network delegate.
   NetworkDelegate* network_delegate() { return network_delegate_; }
 
@@ -396,9 +391,6 @@ class NET_EXPORT URLRequestJob : public base::PowerObserver {
   // read since the last invocation.
   virtual void UpdatePacketReadTimes();
 
-  // Computes a new RedirectInfo based on receiving a redirect response of
-  // |location| and |http_status_code|.
-  RedirectInfo ComputeRedirectInfo(const GURL& location, int http_status_code);
 
   // Notify the network delegate that more bytes have been received or sent over
   // the network, if bytes have been received or sent since the previous
@@ -436,7 +428,7 @@ class NET_EXPORT URLRequestJob : public base::PowerObserver {
 
   // Set when a redirect is deferred. Redirects are deferred after validity
   // checks are performed, so this field must not be modified.
-  RedirectInfo deferred_redirect_info_;
+  base::Optional<RedirectInfo> deferred_redirect_info_;
 
   // The network delegate to use with this request, if any.
   NetworkDelegate* network_delegate_;

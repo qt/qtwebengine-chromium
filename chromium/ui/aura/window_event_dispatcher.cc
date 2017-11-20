@@ -83,6 +83,7 @@ WindowEventDispatcher::WindowEventDispatcher(WindowTreeHost* host)
     : host_(host),
       mouse_pressed_handler_(NULL),
       mouse_moved_handler_(NULL),
+      touchpad_pinch_handler_(nullptr),
       event_dispatch_target_(NULL),
       old_dispatch_target_(NULL),
       synthesize_mouse_move_(false),
@@ -332,6 +333,8 @@ void WindowEventDispatcher::OnWindowHidden(Window* invisible,
     mouse_pressed_handler_ = NULL;
   if (invisible->Contains(mouse_moved_handler_))
     mouse_moved_handler_ = NULL;
+  if (invisible->Contains(touchpad_pinch_handler_))
+    touchpad_pinch_handler_ = nullptr;
 
   // If events are being dispatched from a nested message-loop, and the target
   // of the outer loop is hidden or moved to another dispatcher during
@@ -443,6 +446,45 @@ void WindowEventDispatcher::ReleaseNativeCapture() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // WindowEventDispatcher, ui::EventProcessor implementation:
+
+ui::EventTarget* WindowEventDispatcher::GetInitialEventTarget(
+    ui::Event* event) {
+  if (Env::GetInstance()->mode() == Env::Mode::LOCAL ||
+      !event->IsLocatedEvent() || !event->target()) {
+    return nullptr;
+  }
+
+  ui::LocatedEvent* located_event = event->AsLocatedEvent();
+
+  Window* priority_target = static_cast<Window*>(
+      event_targeter_->GetPriorityTargetInRootWindow(window(), *located_event));
+  if (!priority_target)
+    return nullptr;
+
+  Window* original_target = static_cast<Window*>(event->target());
+
+  // The event has a target but we need to dispatch it using the normal path.
+  // Reset the target and location so the normal flow is used.
+  const gfx::PointF original_location = located_event->location_f();
+  ui::Event::DispatcherApi(event).set_target(nullptr);
+  located_event->set_location_f(located_event->root_location_f());
+  if (event_targeter_->ProcessEventIfTargetsDifferentRootWindow(
+          window(), static_cast<Window*>(priority_target), event)) {
+    // Make sure the event was marked handled so that EventProcessor doesn't
+    // attempt to process the event as well.
+    event->SetHandled();
+    return nullptr;
+  }
+  located_event->set_location_f(original_location);
+  if (original_target != priority_target) {
+    // Don't convert from the root as it may be offset by the bounds of the
+    // root's host.
+    located_event->ConvertLocationToTarget(original_target, window());
+    located_event->ConvertLocationToTarget(window(), priority_target);
+  }
+  return priority_target;
+}
+
 ui::EventTarget* WindowEventDispatcher::GetRootForEvent(ui::Event* event) {
   if (Env::GetInstance()->mode() == Env::Mode::LOCAL)
     return window();
@@ -526,6 +568,8 @@ ui::EventDispatchDetails WindowEventDispatcher::PreDispatchEvent(
     details = PreDispatchTouchEvent(target_window, event->AsTouchEvent());
   } else if (event->IsKeyEvent()) {
     details = PreDispatchKeyEvent(event->AsKeyEvent());
+  } else if (event->IsPinchEvent()) {
+    details = PreDispatchPinchEvent(target_window, event->AsGestureEvent());
   }
   if (details.dispatcher_destroyed || details.target_destroyed)
     return details;
@@ -912,6 +956,25 @@ DispatchDetails WindowEventDispatcher::PreDispatchMouseEvent(
       break;
     case ui::ET_MOUSE_RELEASED:
       mouse_pressed_handler_ = NULL;
+      break;
+    default:
+      break;
+  }
+
+  return PreDispatchLocatedEvent(target, event);
+}
+
+DispatchDetails WindowEventDispatcher::PreDispatchPinchEvent(
+    Window* target,
+    ui::GestureEvent* event) {
+  if (event->details().device_type() != ui::GestureDeviceType::DEVICE_TOUCHPAD)
+    return PreDispatchLocatedEvent(target, event);
+  switch (event->type()) {
+    case ui::ET_GESTURE_PINCH_BEGIN:
+      touchpad_pinch_handler_ = target;
+      break;
+    case ui::ET_GESTURE_PINCH_END:
+      touchpad_pinch_handler_ = nullptr;
       break;
     default:
       break;

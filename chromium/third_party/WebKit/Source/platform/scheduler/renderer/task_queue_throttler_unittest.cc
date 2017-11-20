@@ -10,7 +10,6 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "components/viz/test/ordered_simple_task_runner.h"
 #include "platform/scheduler/base/real_time_domain.h"
@@ -27,7 +26,11 @@
 
 using ::testing::ElementsAre;
 
-namespace {
+namespace blink {
+namespace scheduler {
+// To avoid symbol collisions in jumbo builds.
+namespace task_queue_throttler_unittest {
+
 bool MessageLoopTaskCounter(size_t* count) {
   *count = *count + 1;
   return true;
@@ -39,12 +42,6 @@ void AddOneTask(size_t* count) {
   (*count)++;
 }
 
-}  // namespace
-
-namespace blink {
-namespace scheduler {
-
-namespace {
 void RunTenTimesTask(size_t* count, scoped_refptr<TaskQueue> timer_queue) {
   if (++(*count) < 10) {
     timer_queue->PostTask(FROM_HERE,
@@ -73,8 +70,6 @@ class AutoAdvancingTestClock : public base::SimpleTestTickClock {
   base::TimeDelta advancing_interval_;
 };
 
-}  // namespace
-
 class TaskQueueThrottlerTest : public ::testing::Test {
  public:
   TaskQueueThrottlerTest() {}
@@ -84,9 +79,9 @@ class TaskQueueThrottlerTest : public ::testing::Test {
     clock_ = CreateClock();
     clock_->Advance(base::TimeDelta::FromMicroseconds(5000));
     mock_task_runner_ =
-        make_scoped_refptr(new cc::OrderedSimpleTaskRunner(clock_.get(), true));
+        base::MakeRefCounted<cc::OrderedSimpleTaskRunner>(clock_.get(), true);
     delegate_ = SchedulerTqmDelegateForTest::Create(
-        mock_task_runner_, base::MakeUnique<TestTimeSource>(clock_.get()));
+        mock_task_runner_, std::make_unique<TestTimeSource>(clock_.get()));
     scheduler_.reset(new RendererSchedulerImpl(delegate_));
     task_queue_throttler_ = scheduler_->task_queue_throttler();
     timer_queue_ = scheduler_->NewTimerTaskQueue(
@@ -132,7 +127,7 @@ class TaskQueueThrottlerTest : public ::testing::Test {
 
  protected:
   virtual std::unique_ptr<AutoAdvancingTestClock> CreateClock() {
-    return base::MakeUnique<AutoAdvancingTestClock>(base::TimeDelta());
+    return std::make_unique<AutoAdvancingTestClock>(base::TimeDelta());
   }
 
   std::unique_ptr<AutoAdvancingTestClock> clock_;
@@ -157,7 +152,7 @@ class TaskQueueThrottlerWithAutoAdvancingTimeTest
 
  protected:
   std::unique_ptr<AutoAdvancingTestClock> CreateClock() override {
-    return base::MakeUnique<AutoAdvancingTestClock>(
+    return std::make_unique<AutoAdvancingTestClock>(
         auto_advance_time_interval_);
   }
 
@@ -1273,5 +1268,6 @@ TEST_P(TaskQueueThrottlerWithAutoAdvancingTimeTest,
                   base::TimeTicks() + base::TimeDelta::FromMilliseconds(3003)));
 }
 
+}  // namespace task_queue_throttler_unittest
 }  // namespace scheduler
 }  // namespace blink

@@ -30,6 +30,7 @@
 #include "components/viz/common/resources/platform_color.h"
 #include "components/viz/test/test_gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/common/sync_token.h"
+#include "gpu/config/gpu_feature_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -82,13 +83,16 @@ class PerfContextProvider : public viz::ContextProvider {
  public:
   PerfContextProvider()
       : context_gl_(new PerfGLES2Interface),
-        cache_controller_(&support_, nullptr) {}
+        cache_controller_(&support_, nullptr) {
+    capabilities_.sync_query = true;
+  }
 
   bool BindToCurrentThread() override { return true; }
-  gpu::Capabilities ContextCapabilities() override {
-    gpu::Capabilities capabilities;
-    capabilities.sync_query = true;
-    return capabilities;
+  const gpu::Capabilities& ContextCapabilities() const override {
+    return capabilities_;
+  }
+  const gpu::GpuFeatureInfo& GetGpuFeatureInfo() const override {
+    return gpu_feature_info_;
   }
   gpu::gles2::GLES2Interface* ContextGL() override { return context_gl_.get(); }
   gpu::ContextSupport* ContextSupport() override { return &support_; }
@@ -121,6 +125,8 @@ class PerfContextProvider : public viz::ContextProvider {
   TestContextSupport support_;
   viz::ContextCacheController cache_controller_;
   base::Lock context_lock_;
+  gpu::Capabilities capabilities_;
+  gpu::GpuFeatureInfo gpu_feature_info_;
 };
 
 enum RasterBufferProviderType {
@@ -221,8 +227,8 @@ class RasterBufferProviderPerfTestBase {
 
   RasterBufferProviderPerfTestBase()
       : compositor_context_provider_(
-            make_scoped_refptr(new PerfContextProvider)),
-        worker_context_provider_(make_scoped_refptr(new PerfContextProvider)),
+            base::MakeRefCounted<PerfContextProvider>()),
+        worker_context_provider_(base::MakeRefCounted<PerfContextProvider>()),
         task_runner_(new base::TestSimpleTaskRunner),
         task_graph_runner_(new SynchronousTaskGraphRunner),
         timer_(kWarmupRuns,
@@ -244,7 +250,7 @@ class RasterBufferProviderPerfTestBase {
     for (unsigned i = 0; i < num_raster_tasks; ++i) {
       auto resource =
           std::make_unique<ScopedResource>(resource_provider_.get());
-      resource->Allocate(size, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
+      resource->Allocate(size, ResourceProvider::TEXTURE_HINT_DEFAULT,
                          viz::RGBA_8888, gfx::ColorSpace());
 
       // No tile ids are given to support partial updates.
@@ -484,16 +490,14 @@ class RasterBufferProviderPerfTest
 
  private:
   void Create3dResourceProvider() {
-    resource_provider_ =
-        FakeResourceProvider::Create<LayerTreeResourceProvider>(
-            compositor_context_provider_.get(), nullptr,
-            &gpu_memory_buffer_manager_);
+    resource_provider_ = FakeResourceProvider::CreateLayerTreeResourceProvider(
+        compositor_context_provider_.get(), nullptr,
+        &gpu_memory_buffer_manager_);
   }
 
   void CreateSoftwareResourceProvider() {
-    resource_provider_ =
-        FakeResourceProvider::Create<LayerTreeResourceProvider>(
-            nullptr, &shared_bitmap_manager_, nullptr);
+    resource_provider_ = FakeResourceProvider::CreateLayerTreeResourceProvider(
+        nullptr, &shared_bitmap_manager_, nullptr);
   }
 
   std::string TestModifierString() const {
@@ -557,9 +561,8 @@ class RasterBufferProviderCommonPerfTest
  public:
   // Overridden from testing::Test:
   void SetUp() override {
-    resource_provider_ =
-        FakeResourceProvider::Create<LayerTreeResourceProvider>(
-            compositor_context_provider_.get(), nullptr);
+    resource_provider_ = FakeResourceProvider::CreateLayerTreeResourceProvider(
+        compositor_context_provider_.get(), nullptr);
   }
 
   void RunBuildTileTaskGraphTest(const std::string& test_name,

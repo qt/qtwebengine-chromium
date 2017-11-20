@@ -11,16 +11,15 @@
 #include <memory>
 #include <string>
 
-#include "webrtc/api/jsepicecandidate.h"
-#include "webrtc/api/jsepsessiondescription.h"
-#include "webrtc/p2p/base/candidate.h"
-#include "webrtc/p2p/base/p2pconstants.h"
-#include "webrtc/p2p/base/sessiondescription.h"
-#include "webrtc/pc/mediasession.h"
-#include "webrtc/rtc_base/gunit.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/ssladapter.h"
-#include "webrtc/rtc_base/stringencode.h"
+#include "api/candidate.h"
+#include "api/jsepicecandidate.h"
+#include "api/jsepsessiondescription.h"
+#include "api/webrtcsdp.h"
+#include "p2p/base/p2pconstants.h"
+#include "p2p/base/sessiondescription.h"
+#include "pc/mediasession.h"
+#include "rtc_base/gunit.h"
+#include "rtc_base/stringencode.h"
 
 using webrtc::IceCandidateCollection;
 using webrtc::IceCandidateInterface;
@@ -97,7 +96,7 @@ class JsepSessionDescriptionTest : public testing::Test {
 
   SessionDescriptionInterface* DeSerialize(const std::string& sdp) {
     JsepSessionDescription* desc(new JsepSessionDescription("dummy"));
-    EXPECT_TRUE(desc->Initialize(sdp, NULL));
+    EXPECT_TRUE(webrtc::SdpDeserialize(sdp, desc, nullptr));
     return desc;
   }
 

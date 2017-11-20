@@ -27,25 +27,27 @@ class OpenVRDevice : public VRDevice {
   ~OpenVRDevice() override;
 
   // VRDevice
-  void CreateVRDisplayInfo(
-      const base::Callback<void(mojom::VRDisplayInfoPtr)>& on_created) override;
-
-  void RequestPresent(mojom::VRSubmitFrameClientPtr submit_client,
-                      mojom::VRPresentationProviderRequest request,
-                      const base::Callback<void(bool)>& callback) override;
+  mojom::VRDisplayInfoPtr GetVRDisplayInfo() override;
+  void RequestPresent(
+      VRDisplayImpl* display,
+      mojom::VRSubmitFrameClientPtr submit_client,
+      mojom::VRPresentationProviderRequest request,
+      mojom::VRDisplayHost::RequestPresentCallback callback) override;
   void ExitPresent() override;
-  void GetNextMagicWindowPose(
-      mojom::VRDisplay::GetNextMagicWindowPoseCallback callback) override;
+  void GetPose(mojom::VRMagicWindowProvider::GetPoseCallback callback) override;
 
   void OnPollingEvents();
 
  private:
+  void CreateVRDisplayInfo();
+
   // TODO (BillOrr): This should not be a unique_ptr because the render_loop_
   // binds to VRVSyncProvider requests, so its lifetime should be tied to the
   // lifetime of that binding.
   std::unique_ptr<OpenVRRenderLoop> render_loop_;
 
   mojom::VRSubmitFrameClientPtr submit_client_;
+  mojom::VRDisplayInfoPtr display_info_;
 
   vr::IVRSystem* vr_system_;
 

@@ -24,7 +24,7 @@
 #include "fpdfsdk/javascript/cjs_runtime.h"
 #include "fpdfsdk/javascript/resource.h"
 
-#if _FX_OS_ == _FX_ANDROID_
+#if _FX_OS_ == _FX_OS_ANDROID_
 #include <ctype.h>
 #endif
 
@@ -76,7 +76,7 @@ util::~util() {}
 bool util::printf(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
-                  CFX_WideString& sError) {
+                  WideString& sError) {
   const size_t iSize = params.size();
   if (iSize < 1)
     return false;
@@ -111,7 +111,7 @@ bool util::printf(CJS_Runtime* pRuntime,
       continue;
     }
 
-    CFX_WideString strSegment;
+    WideString strSegment;
     switch (ParseDataType(&c_strFormat)) {
       case UTIL_INT:
         strSegment.Format(c_strFormat.c_str(), params[iIndex].ToInt(pRuntime));
@@ -139,7 +139,7 @@ bool util::printf(CJS_Runtime* pRuntime,
 bool util::printd(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
-                  CFX_WideString& sError) {
+                  WideString& sError) {
   const size_t iSize = params.size();
   if (iSize < 2)
     return false;
@@ -158,7 +158,7 @@ bool util::printd(CJS_Runtime* pRuntime,
   }
 
   if (p1.GetType() == CJS_Value::VT_number) {
-    CFX_WideString swResult;
+    WideString swResult;
     switch (p1.ToInt(pRuntime)) {
       case 0:
         swResult.Format(L"D:%04d%02d%02d%02d%02d%02d", jsDate.GetYear(pRuntime),
@@ -206,7 +206,7 @@ bool util::printd(CJS_Runtime* pRuntime,
       int iEnd;
       while ((iEnd = cFormat.find(TbConvertTable[i].lpszJSMark, iStart)) !=
              -1) {
-        cFormat.replace(iEnd, FXSYS_wcslen(TbConvertTable[i].lpszJSMark),
+        cFormat.replace(iEnd, wcslen(TbConvertTable[i].lpszJSMark),
                         TbConvertTable[i].lpszCppMark);
         iStart = iEnd;
       }
@@ -231,7 +231,7 @@ bool util::printd(CJS_Runtime* pRuntime,
     };
 
     for (size_t i = 0; i < FX_ArraySize(cTableAd); ++i) {
-      CFX_WideString sValue;
+      WideString sValue;
       sValue.Format(L"%d", cTableAd[i].iValue);
 
       int iStart = 0;
@@ -243,8 +243,7 @@ bool util::printd(CJS_Runtime* pRuntime,
             continue;
           }
         }
-        cFormat.replace(iEnd, FXSYS_wcslen(cTableAd[i].lpszJSMark),
-                        sValue.c_str());
+        cFormat.replace(iEnd, wcslen(cTableAd[i].lpszJSMark), sValue.c_str());
         iStart = iEnd;
       }
     }
@@ -271,7 +270,7 @@ bool util::printd(CJS_Runtime* pRuntime,
 bool util::printx(CJS_Runtime* pRuntime,
                   const std::vector<CJS_Value>& params,
                   CJS_Value& vRet,
-                  CFX_WideString& sError) {
+                  WideString& sError) {
   if (params.size() < 2) {
     sError = JSGetStringFromID(IDS_STRING_JSPARAMERROR);
     return false;
@@ -294,11 +293,11 @@ static wchar_t TranslateCase(wchar_t input, CaseMode eMode) {
   return input;
 }
 
-CFX_WideString util::printx(const CFX_WideString& wsFormat,
-                            const CFX_WideString& wsSource) {
-  CFX_WideString wsResult;
-  FX_STRSIZE iSourceIdx = 0;
-  FX_STRSIZE iFormatIdx = 0;
+WideString util::printx(const WideString& wsFormat,
+                        const WideString& wsSource) {
+  WideString wsResult;
+  size_t iSourceIdx = 0;
+  size_t iFormatIdx = 0;
   CaseMode eCaseMode = kPreserveCase;
   bool bEscaped = false;
   while (iFormatIdx < wsFormat.GetLength()) {
@@ -385,12 +384,12 @@ CFX_WideString util::printx(const CFX_WideString& wsFormat,
 bool util::scand(CJS_Runtime* pRuntime,
                  const std::vector<CJS_Value>& params,
                  CJS_Value& vRet,
-                 CFX_WideString& sError) {
+                 WideString& sError) {
   if (params.size() < 2)
     return false;
 
-  CFX_WideString sFormat = params[0].ToCFXWideString(pRuntime);
-  CFX_WideString sDate = params[1].ToCFXWideString(pRuntime);
+  WideString sFormat = params[0].ToCFXWideString(pRuntime);
+  WideString sDate = params[1].ToCFXWideString(pRuntime);
   double dDate = JS_GetDateTime();
   if (sDate.GetLength() > 0) {
     dDate = CJS_PublicMethods::MakeRegularDate(sDate, sFormat, nullptr);
@@ -408,7 +407,7 @@ bool util::scand(CJS_Runtime* pRuntime,
 bool util::byteToChar(CJS_Runtime* pRuntime,
                       const std::vector<CJS_Value>& params,
                       CJS_Value& vRet,
-                      CFX_WideString& sError) {
+                      WideString& sError) {
   if (params.size() < 1) {
     sError = JSGetStringFromID(IDS_STRING_JSPARAMERROR);
     return false;
@@ -420,7 +419,7 @@ bool util::byteToChar(CJS_Runtime* pRuntime,
     return false;
   }
 
-  CFX_WideString wStr(static_cast<wchar_t>(arg));
+  WideString wStr(static_cast<wchar_t>(arg));
   vRet = CJS_Value(pRuntime, wStr.c_str());
   return true;
 }

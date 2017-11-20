@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 
-#include <cassert>
 #include <iosfwd>
 #include <type_traits>
 
@@ -74,7 +73,7 @@ class BASE_EXPORT RefCountedBase {
     }
 #endif
 
-    ++ref_count_;
+    AddRefImpl();
   }
 
   // Returns true if the object should self-delete.
@@ -132,11 +131,17 @@ class BASE_EXPORT RefCountedBase {
 #endif
   }
 
+#if defined(ARCH_CPU_64_BIT)
+  void AddRefImpl() const;
+#else
+  void AddRefImpl() const { ++ref_count_; }
+#endif
+
 #if DCHECK_IS_ON()
   bool CalledOnValidSequence() const;
 #endif
 
-  mutable size_t ref_count_ = 0;
+  mutable uint32_t ref_count_ = 0;
 
 #if DCHECK_IS_ON()
   mutable bool needs_adopt_ref_ = false;
@@ -161,7 +166,11 @@ class BASE_EXPORT RefCountedThreadSafeBase {
 #endif
   }
 
+#if DCHECK_IS_ON()
   ~RefCountedThreadSafeBase();
+#else
+  ~RefCountedThreadSafeBase() = default;
+#endif
 
 // Release and AddRef are suitable for inlining on X86 because they generate
 // very small code sequences. On other platforms (ARM), it causes a size
@@ -292,7 +301,17 @@ class BASE_EXPORT ScopedAllowCrossThreadRefCountAccess final {
   static constexpr ::base::subtle::StartRefCountFromOneTag \
       kRefCountPreference = ::base::subtle::kStartRefCountFromOneTag
 
-template <class T>
+template <class T, typename Traits>
+class RefCounted;
+
+template <typename T>
+struct DefaultRefCountedTraits {
+  static void Destruct(const T* x) {
+    RefCounted<T, DefaultRefCountedTraits>::DeleteInternal(x);
+  }
+};
+
+template <class T, typename Traits = DefaultRefCountedTraits<T>>
 class RefCounted : public subtle::RefCountedBase {
  public:
   static constexpr subtle::StartRefCountFromZeroTag kRefCountPreference =
@@ -311,7 +330,7 @@ class RefCounted : public subtle::RefCountedBase {
       // lifetime guarantees of the refcounting system.
       ANALYZER_SKIP_THIS_PATH();
 
-      delete static_cast<const T*>(this);
+      Traits::Destruct(static_cast<const T*>(this));
     }
   }
 
@@ -319,6 +338,12 @@ class RefCounted : public subtle::RefCountedBase {
   ~RefCounted() = default;
 
  private:
+  friend struct DefaultRefCountedTraits<T>;
+  template <typename U>
+  static void DeleteInternal(const U* x) {
+    delete x;
+  }
+
   DISALLOW_COPY_AND_ASSIGN(RefCounted);
 };
 
@@ -378,7 +403,10 @@ class RefCountedThreadSafe : public subtle::RefCountedThreadSafeBase {
 
  private:
   friend struct DefaultRefCountedThreadSafeTraits<T>;
-  static void DeleteInternal(const T* x) { delete x; }
+  template <typename U>
+  static void DeleteInternal(const U* x) {
+    delete x;
+  }
 
   DISALLOW_COPY_AND_ASSIGN(RefCountedThreadSafe);
 };
@@ -393,6 +421,7 @@ class RefCountedData
  public:
   RefCountedData() : data() {}
   RefCountedData(const T& in_value) : data(in_value) {}
+  RefCountedData(T&& in_value) : data(std::move(in_value)) {}
 
   T data;
 
@@ -431,11 +460,18 @@ scoped_refptr<T> AdoptRefIfNeeded(T* obj, StartRefCountFromOneTag) {
 }  // namespace subtle
 
 // Constructs an instance of T, which is a ref counted type, and wraps the
-// object into a scoped_refptr.
+// object into a scoped_refptr<T>.
 template <typename T, typename... Args>
 scoped_refptr<T> MakeRefCounted(Args&&... args) {
   T* obj = new T(std::forward<Args>(args)...);
   return subtle::AdoptRefIfNeeded(obj, T::kRefCountPreference);
+}
+
+// Takes an instance of T, which is a ref counted type, and wraps the object
+// into a scoped_refptr<T>.
+template <typename T>
+scoped_refptr<T> WrapRefCounted(T* t) {
+  return scoped_refptr<T>(t);
 }
 
 }  // namespace base
@@ -538,12 +574,12 @@ class scoped_refptr {
   T* get() const { return ptr_; }
 
   T& operator*() const {
-    assert(ptr_ != nullptr);
+    DCHECK(ptr_);
     return *ptr_;
   }
 
   T* operator->() const {
-    assert(ptr_ != nullptr);
+    DCHECK(ptr_);
     return ptr_;
   }
 
@@ -638,13 +674,6 @@ void scoped_refptr<T>::AddRef(T* ptr) {
 template <typename T>
 void scoped_refptr<T>::Release(T* ptr) {
   ptr->Release();
-}
-
-// Handy utility for creating a scoped_refptr<T> out of a T* explicitly without
-// having to retype all the template arguments
-template <typename T>
-scoped_refptr<T> make_scoped_refptr(T* t) {
-  return scoped_refptr<T>(t);
 }
 
 template <typename T, typename U>

@@ -142,7 +142,7 @@ def origin_trial_features(interface, constants, attributes, methods):
 
     if features:
         includes.add('platform/bindings/ScriptState.h')
-        includes.add('core/origin_trials/OriginTrials.h')
+        includes.add('core/origin_trials/origin_trials.h')
     return features
 
 
@@ -179,7 +179,6 @@ def runtime_call_stats_context(interface):
         'cross_origin_named_getter_counter': counter_prefix + 'CrossOriginNamedGetter',
         'cross_origin_named_setter_counter': counter_prefix + 'CrossOriginNamedSetter',
         'indexed_property_getter_counter': counter_prefix + 'IndexedPropertyGetter',
-        'named_constructor_attribute_getter_counter': counter_prefix + 'NamedConstructorAttributeGetter',
         'named_property_getter_counter': counter_prefix + 'NamedPropertyGetter',
         'named_property_query_counter': counter_prefix + 'NamedPropertyQuery',
         'named_property_setter_counter': counter_prefix + 'NamedPropertySetter',
@@ -1411,9 +1410,7 @@ def property_getter(getter, cpp_arguments):
         return None
 
     def is_null_expression(idl_type):
-        if idl_type.use_output_parameter_for_result:
-            return 'result.isNull()'
-        if idl_type.is_string_type:
+        if idl_type.use_output_parameter_for_result or idl_type.is_string_type:
             return 'result.IsNull()'
         if idl_type.is_interface_type:
             return '!result'

@@ -24,26 +24,28 @@ public:
                                                      sk_sp<GrColorSpaceXform>
                                                              colorSpaceXform,
                                                      const SkMatrix& matrix) {
-        return std::unique_ptr<GrFragmentProcessor>(new GrSimpleTextureEffect(
-                std::move(proxy), std::move(colorSpaceXform), matrix,
-                GrSamplerParams(SkShader::kClamp_TileMode, GrSamplerParams::kNone_FilterMode)));
-    }
-
-    static std::unique_ptr<GrFragmentProcessor> Make(sk_sp<GrTextureProxy> proxy,
-                                                     sk_sp<GrColorSpaceXform>
-                                                             colorSpaceXform,
-                                                     const SkMatrix& matrix,
-                                                     GrSamplerParams::FilterMode filterMode) {
         return std::unique_ptr<GrFragmentProcessor>(
                 new GrSimpleTextureEffect(std::move(proxy), std::move(colorSpaceXform), matrix,
-                                          GrSamplerParams(SkShader::kClamp_TileMode, filterMode)));
+                                          GrSamplerState(GrSamplerState::WrapMode::kClamp,
+                                                         GrSamplerState::Filter::kNearest)));
+    }
+
+    /* clamp mode */
+    static std::unique_ptr<GrFragmentProcessor> Make(sk_sp<GrTextureProxy> proxy,
+                                                     sk_sp<GrColorSpaceXform>
+                                                             colorSpaceXform,
+                                                     const SkMatrix& matrix,
+                                                     GrSamplerState::Filter filter) {
+        return std::unique_ptr<GrFragmentProcessor>(new GrSimpleTextureEffect(
+                std::move(proxy), std::move(colorSpaceXform), matrix,
+                GrSamplerState(GrSamplerState::WrapMode::kClamp, filter)));
     }
 
     static std::unique_ptr<GrFragmentProcessor> Make(sk_sp<GrTextureProxy> proxy,
                                                      sk_sp<GrColorSpaceXform>
                                                              colorSpaceXform,
                                                      const SkMatrix& matrix,
-                                                     const GrSamplerParams& p) {
+                                                     const GrSamplerState& p) {
         return std::unique_ptr<GrFragmentProcessor>(
                 new GrSimpleTextureEffect(std::move(proxy), std::move(colorSpaceXform), matrix, p));
     }
@@ -53,18 +55,18 @@ public:
 
 private:
     GrSimpleTextureEffect(sk_sp<GrTextureProxy> image, sk_sp<GrColorSpaceXform> colorXform,
-                          SkMatrix44 matrix, GrSamplerParams samplerParams)
-            : INHERITED((OptimizationFlags)kCompatibleWithCoverageAsAlpha_OptimizationFlag |
-                        (GrPixelConfigIsOpaque(image->config())
-                                 ? kPreservesOpaqueInput_OptimizationFlag
-                                 : kNone_OptimizationFlags))
+                          SkMatrix44 matrix, GrSamplerState samplerParams)
+            : INHERITED(kGrSimpleTextureEffect_ClassID,
+                        (OptimizationFlags)kCompatibleWithCoverageAsAlpha_OptimizationFlag |
+                                (GrPixelConfigIsOpaque(image->config())
+                                         ? kPreservesOpaqueInput_OptimizationFlag
+                                         : kNone_OptimizationFlags))
             , fImage(std::move(image), samplerParams)
             , fColorXform(colorXform)
             , fMatrix(matrix)
             , fImageCoordTransform(matrix, fImage.proxy()) {
         this->addTextureSampler(&fImage);
         this->addCoordTransform(&fImageCoordTransform);
-        this->initClassID<GrSimpleTextureEffect>();
     }
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;

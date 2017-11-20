@@ -96,13 +96,13 @@ class CORE_EXPORT HTMLCanvasElement final
   ~HTMLCanvasElement() override;
 
   // Attributes and functions exposed to script
-  int width() const { return Size().Width(); }
-  int height() const { return Size().Height(); }
+  unsigned width() const { return Size().Width(); }
+  unsigned height() const { return Size().Height(); }
 
   const IntSize& Size() const override { return size_; }
 
-  void setWidth(int, ExceptionState&);
-  void setHeight(int, ExceptionState&);
+  void setWidth(unsigned, ExceptionState&);
+  void setHeight(unsigned, ExceptionState&);
 
   void SetSize(const IntSize& new_size);
 
@@ -265,7 +265,9 @@ class CORE_EXPORT HTMLCanvasElement final
     return DispatchEvent(event);
   }
 
-  bool IsWebGLAllowed() const override;
+  bool IsWebGL1Enabled() const override;
+  bool IsWebGL2Enabled() const override;
+  bool IsWebGLBlocked() const override;
 
  protected:
   void DidMoveToNewDocument(Document& old_document) override;
@@ -291,13 +293,10 @@ class CORE_EXPORT HTMLCanvasElement final
 
   void Reset();
 
-  std::unique_ptr<ImageBufferSurface> CreateWebGLImageBufferSurface(
-      OpacityMode);
+  std::unique_ptr<ImageBufferSurface> CreateWebGLImageBufferSurface();
   std::unique_ptr<ImageBufferSurface> CreateAcceleratedImageBufferSurface(
-      OpacityMode,
       int* msaa_sample_count);
-  std::unique_ptr<ImageBufferSurface> CreateUnacceleratedImageBufferSurface(
-      OpacityMode);
+  std::unique_ptr<ImageBufferSurface> CreateUnacceleratedImageBufferSurface();
   void CreateImageBuffer();
   void CreateImageBufferInternal(
       std::unique_ptr<ImageBufferSurface> external_surface);
@@ -306,7 +305,7 @@ class CORE_EXPORT HTMLCanvasElement final
   void SetSurfaceSize(const IntSize&);
 
   bool PaintsIntoCanvasBuffer() const;
-  CanvasColorParams GetCanvasColorParams() const;
+  CanvasColorParams ColorParams() const;
 
   ImageData* ToImageData(SourceDrawingBuffer, SnapshotReason) const;
 

@@ -66,7 +66,8 @@
 #endif
 
 #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
-#include "content/common/media/cdm_host_files.h"
+#include "media/cdm/cdm_host_file.h"
+#include "media/cdm/cdm_host_files.h"
 #endif
 
 #if defined(OS_WIN)
@@ -358,36 +359,32 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
 
 #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
   // Use a local instance of CdmHostFiles so that if we return early for any
-  // error, all files will closed automatically.
-  std::unique_ptr<CdmHostFiles> cdm_host_files;
-  CdmHostFiles::Status cdm_status = CdmHostFiles::Status::kNotCalled;
+  // error, all files will be closed automatically.
+  media::CdmHostFiles cdm_host_files;
+  auto cdm_status = media::CdmHostFiles::Status::kNotCalled;
 
-#if defined(OS_WIN) || defined(OS_MACOSX)
   // Open CDM host files before the process is sandboxed.
-  if (!is_broker_ && IsCdm(path))
-    cdm_host_files = CdmHostFiles::Create(path);
-#elif defined(OS_LINUX)
-  cdm_host_files = CdmHostFiles::TakeGlobalInstance();
-  if (is_broker_ || !IsCdm(path))
-    cdm_host_files.reset();  // Close all opened files.
-#endif  // defined(OS_WIN) || defined(OS_MACOSX)
+  if (!is_broker_ && media::IsCdm(path)) {
+    std::vector<media::CdmHostFilePath> cdm_host_file_paths;
+    GetContentClient()->AddContentDecryptionModules(nullptr,
+                                                    &cdm_host_file_paths);
+    cdm_host_files.InitializeWithAdapter(path, cdm_host_file_paths);
 
 #if defined(OS_WIN)
-  // On Windows, initialize CDM host verification unsandboxed. On other
-  // platforms, this is called sandboxed below.
-  if (cdm_host_files) {
-    DCHECK(!is_broker_ && IsCdm(path));
-    cdm_status = cdm_host_files->InitVerification(library.get(), path);
+    // On Windows, initialize CDM host verification unsandboxed. On other
+    // platforms, this is called sandboxed below.
+    cdm_status =
+        cdm_host_files.InitVerificationWithAdapter(library.get(), path);
     // Ignore other failures for backward compatibility, e.g. when using an old
     // CDM which doesn't implement the verification API.
-    if (cdm_status == CdmHostFiles::Status::kInitVerificationFailed) {
+    if (cdm_status == media::CdmHostFiles::Status::kInitVerificationFailed) {
       LOG(WARNING) << "CDM host verification failed.";
       // TODO(xhwang): Add a new load result if needed.
       ReportLoadResult(path, INIT_FAILED);
       return;
     }
-  }
 #endif  // defined(OS_WIN)
+  }
 #endif  // BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
 
 #if defined(OS_WIN)
@@ -463,26 +460,25 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
 #endif
 
 #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
+    if (!is_broker_ && media::IsCdm(path)) {
 #if !defined(OS_WIN)
-    // Now we are sandboxed, initialize CDM host verification.
-    if (cdm_host_files) {
-      DCHECK(!is_broker_ && IsCdm(path));
-      cdm_status = cdm_host_files->InitVerification(library.get(), path);
+      // Now we are sandboxed, initialize CDM host verification.
+      cdm_status =
+          cdm_host_files.InitVerificationWithAdapter(library.get(), path);
       // Ignore other failures for backward compatibility, e.g. when using an
       // old CDM which doesn't implement the verification API.
-      if (cdm_status == CdmHostFiles::Status::kInitVerificationFailed) {
+      if (cdm_status == media::CdmHostFiles::Status::kInitVerificationFailed) {
         LOG(WARNING) << "CDM host verification failed.";
         // TODO(xhwang): Add a new load result if needed.
         ReportLoadResult(path, INIT_FAILED);
         return;
       }
-    }
 #endif  // !defined(OS_WIN)
-    if (!is_broker_ && IsCdm(path)) {
       UMA_HISTOGRAM_ENUMERATION("Media.EME.CdmHostVerificationStatus",
-                                cdm_status, CdmHostFiles::Status::kStatusCount);
+                                cdm_status,
+                                media::CdmHostFiles::Status::kStatusCount);
     }
-#endif  // BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION) && !defined(OS_WIN)
+#endif  // BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
 
     int32_t init_error = plugin_entry_points_.initialize_module(
         local_pp_module_, &ppapi::proxy::PluginDispatcher::GetBrowserInterface);

@@ -9,6 +9,7 @@
 
 #include "base/callback_list.h"
 #include "device/geolocation/geolocation_export.h"
+#include "net/url_request/url_request_context_getter.h"
 
 namespace device {
 class GeolocationDelegate;
@@ -30,8 +31,25 @@ class GeolocationProvider {
   DEVICE_GEOLOCATION_EXPORT static GeolocationProvider* GetInstance();
 
   // Optional: provide a Delegate to override typical services.
+  // Call before using Init() on the singleton GetInstance(), and call no more
+  // than once.
   DEVICE_GEOLOCATION_EXPORT static void SetGeolocationDelegate(
       GeolocationDelegate* delegate);
+
+  // Callback type for a function that asynchronously produces a
+  // URLRequestContextGetter.
+  using RequestContextProducer = base::RepeatingCallback<void(
+      base::OnceCallback<void(scoped_refptr<net::URLRequestContextGetter>)>)>;
+
+  // Optional: Provide a callback to produce a request context for network
+  // geolocation requests.
+  // Call before using GetInstance().
+  DEVICE_GEOLOCATION_EXPORT static void SetRequestContextProducer(
+      RequestContextProducer request_context_producer);
+
+  // Optional: Provide a Google API key for network geolocation requests.
+  // Call before using Init() on the singleton GetInstance().
+  DEVICE_GEOLOCATION_EXPORT static void SetApiKey(const std::string& api_key);
 
   typedef base::Callback<void(const Geoposition&)> LocationUpdateCallback;
   typedef base::CallbackList<void(const Geoposition&)>::Subscription

@@ -10,9 +10,11 @@
 
 namespace blink {
 
+class AudioWorkletHandler;
 class CrossThreadAudioParamInfo;
 class CrossThreadAudioWorkletProcessorInfo;
 class ExecutionContext;
+class WebThread;
 class WorkerThread;
 
 // AudioWorkletMessagingProxy is a main thread interface for
@@ -21,6 +23,17 @@ class WorkerThread;
 class AudioWorkletMessagingProxy final : public ThreadedWorkletMessagingProxy {
  public:
   AudioWorkletMessagingProxy(ExecutionContext*, WorkerClients*);
+
+  // Since the creation of AudioWorkletProcessor needs to be done in the
+  // different thread, this method is a wrapper for cross-thread task posting.
+  void CreateProcessor(AudioWorkletHandler*);
+
+  // Invokes AudioWorkletGlobalScope to create an instance of
+  // AudioWorkletProcessor.
+  void CreateProcessorOnRenderingThread(WorkerThread*,
+                                        AudioWorkletHandler*,
+                                        const String& name,
+                                        float sample_rate);
 
   // Invoked by AudioWorkletObjectProxy on AudioWorkletThread to fetch the
   // information from AudioWorkletGlobalScope to AudioWorkletMessagingProxy
@@ -36,6 +49,8 @@ class AudioWorkletMessagingProxy final : public ThreadedWorkletMessagingProxy {
 
   const Vector<CrossThreadAudioParamInfo> GetParamInfoListForProcessor(
       const String& name) const;
+
+  WebThread* GetWorkletBackingThread();
 
  private:
   ~AudioWorkletMessagingProxy() override;

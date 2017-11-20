@@ -27,7 +27,6 @@
 
 #include "bindings/core/v8/ScriptEventListener.h"
 #include "core/CoreInitializer.h"
-#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/TaskRunnerHelper.h"
@@ -37,9 +36,10 @@
 #include "core/html/CrossOriginAttribute.h"
 #include "core/html/LinkManifest.h"
 #include "core/html/imports/LinkImport.h"
+#include "core/html_names.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/loader/NetworkHintsInterface.h"
-#include "core/origin_trials/OriginTrials.h"
+#include "core/origin_trials/origin_trials.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/WebIconSizesParser.h"
 #include "public/platform/WebSize.h"
@@ -127,12 +127,13 @@ bool HTMLLinkElement::ShouldLoadLink() {
 bool HTMLLinkElement::LoadLink(const String& type,
                                const String& as,
                                const String& media,
+                               const String& nonce,
                                ReferrerPolicy referrer_policy,
                                const KURL& url) {
   return link_loader_->LoadLink(rel_attribute_,
                                 GetCrossOriginAttributeValue(FastGetAttribute(
                                     HTMLNames::crossoriginAttr)),
-                                type, as, media, referrer_policy, url,
+                                type, as, media, nonce, referrer_policy, url,
                                 GetDocument(), NetworkHintsInterfaceImpl());
 }
 

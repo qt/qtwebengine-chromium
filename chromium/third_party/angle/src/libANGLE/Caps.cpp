@@ -172,11 +172,11 @@ Extensions::Extensions()
       maxTextureAnisotropy(0.0f),
       occlusionQueryBoolean(false),
       fence(false),
-      timerQuery(false),
       disjointTimerQuery(false),
       queryCounterBitsTimeElapsed(0),
       queryCounterBitsTimestamp(0),
       robustness(false),
+      robustBufferAccessBehavior(false),
       blendMinMax(false),
       framebufferBlit(false),
       framebufferMultisample(false),
@@ -184,9 +184,6 @@ Extensions::Extensions()
       packReverseRowOrder(false),
       standardDerivatives(false),
       shaderTextureLOD(false),
-      shaderFramebufferFetch(false),
-      ARMshaderFramebufferFetch(false),
-      NVshaderFramebufferFetch(false),
       fragDepth(false),
       multiview(false),
       maxViews(1u),
@@ -623,9 +620,9 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_rgb8_rgba8"] = esOnlyExtension(&Extensions::rgb8rgba8);
         map["GL_EXT_texture_format_BGRA8888"] = esOnlyExtension(&Extensions::textureFormatBGRA8888);
         map["GL_EXT_read_format_bgra"] = esOnlyExtension(&Extensions::readFormatBGRA);
-        map["GL_NV_pixel_buffer_object"] = esOnlyExtension(&Extensions::pixelBufferObject);
-        map["GL_OES_mapbuffer"] = esOnlyExtension(&Extensions::mapBuffer);
-        map["GL_EXT_map_buffer_range"] = esOnlyExtension(&Extensions::mapBufferRange);
+        map["GL_NV_pixel_buffer_object"] = enableableExtension(&Extensions::pixelBufferObject);
+        map["GL_OES_mapbuffer"] = enableableExtension(&Extensions::mapBuffer);
+        map["GL_EXT_map_buffer_range"] = enableableExtension(&Extensions::mapBufferRange);
         map["GL_EXT_color_buffer_half_float"] = enableableExtension(&Extensions::colorBufferHalfFloat);
         map["GL_OES_texture_half_float"] = enableableExtension(&Extensions::textureHalfFloat);
         map["GL_OES_texture_half_float_linear"] = enableableExtension(&Extensions::textureHalfFloatLinear);
@@ -646,34 +643,31 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_texture_npot"] = enableableExtension(&Extensions::textureNPOT);
         map["GL_EXT_draw_buffers"] = enableableExtension(&Extensions::drawBuffers);
         map["GL_EXT_texture_filter_anisotropic"] = enableableExtension(&Extensions::textureFilterAnisotropic);
-        map["GL_EXT_occlusion_query_boolean"] = esOnlyExtension(&Extensions::occlusionQueryBoolean);
+        map["GL_EXT_occlusion_query_boolean"] = enableableExtension(&Extensions::occlusionQueryBoolean);
         map["GL_NV_fence"] = esOnlyExtension(&Extensions::fence);
-        map["GL_ANGLE_timer_query"] = esOnlyExtension(&Extensions::timerQuery);
-        map["GL_EXT_disjoint_timer_query"] = esOnlyExtension(&Extensions::disjointTimerQuery);
+        map["GL_EXT_disjoint_timer_query"] = enableableExtension(&Extensions::disjointTimerQuery);
         map["GL_EXT_robustness"] = esOnlyExtension(&Extensions::robustness);
-        map["GL_EXT_blend_minmax"] = esOnlyExtension(&Extensions::blendMinMax);
+        map["GL_KHR_robust_buffer_access_behavior"] = esOnlyExtension(&Extensions::robustBufferAccessBehavior);
+        map["GL_EXT_blend_minmax"] = enableableExtension(&Extensions::blendMinMax);
         map["GL_ANGLE_framebuffer_blit"] = esOnlyExtension(&Extensions::framebufferBlit);
-        map["GL_ANGLE_framebuffer_multisample"] = esOnlyExtension(&Extensions::framebufferMultisample);
-        map["GL_ANGLE_instanced_arrays"] = esOnlyExtension(&Extensions::instancedArrays);
-        map["GL_ANGLE_pack_reverse_row_order"] = esOnlyExtension(&Extensions::packReverseRowOrder);
+        map["GL_ANGLE_framebuffer_multisample"] = enableableExtension(&Extensions::framebufferMultisample);
+        map["GL_ANGLE_instanced_arrays"] = enableableExtension(&Extensions::instancedArrays);
+        map["GL_ANGLE_pack_reverse_row_order"] = enableableExtension(&Extensions::packReverseRowOrder);
         map["GL_OES_standard_derivatives"] = enableableExtension(&Extensions::standardDerivatives);
         map["GL_EXT_shader_texture_lod"] = enableableExtension(&Extensions::shaderTextureLOD);
-        map["GL_NV_shader_framebuffer_fetch"] = esOnlyExtension(&Extensions::NVshaderFramebufferFetch);
-        map["GL_ARM_shader_framebuffer_fetch"] = esOnlyExtension(&Extensions::ARMshaderFramebufferFetch);
-        map["GL_EXT_shader_framebuffer_fetch"] = esOnlyExtension(&Extensions::shaderFramebufferFetch);
         map["GL_EXT_frag_depth"] = enableableExtension(&Extensions::fragDepth);
         map["GL_ANGLE_multiview"] = enableableExtension(&Extensions::multiview);
         map["GL_ANGLE_texture_usage"] = esOnlyExtension(&Extensions::textureUsage);
         map["GL_ANGLE_translated_shader_source"] = esOnlyExtension(&Extensions::translatedShaderSource);
-        map["GL_OES_fbo_render_mipmap"] = esOnlyExtension(&Extensions::fboRenderMipmap);
+        map["GL_OES_fbo_render_mipmap"] = enableableExtension(&Extensions::fboRenderMipmap);
         map["GL_EXT_discard_framebuffer"] = esOnlyExtension(&Extensions::discardFramebuffer);
         map["GL_EXT_debug_marker"] = esOnlyExtension(&Extensions::debugMarker);
         map["GL_OES_EGL_image"] = esOnlyExtension(&Extensions::eglImage);
         map["GL_OES_EGL_image_external"] = esOnlyExtension(&Extensions::eglImageExternal);
         map["GL_OES_EGL_image_external_essl3"] = esOnlyExtension(&Extensions::eglImageExternalEssl3);
         map["GL_NV_EGL_stream_consumer_external"] = esOnlyExtension(&Extensions::eglStreamConsumerExternal);
-        map["GL_EXT_unpack_subimage"] = esOnlyExtension(&Extensions::unpackSubimage);
-        map["GL_NV_pack_subimage"] = esOnlyExtension(&Extensions::packSubimage);
+        map["GL_EXT_unpack_subimage"] = enableableExtension(&Extensions::unpackSubimage);
+        map["GL_NV_pack_subimage"] = enableableExtension(&Extensions::packSubimage);
         map["GL_EXT_color_buffer_float"] = enableableExtension(&Extensions::colorBufferFloat);
         map["GL_OES_vertex_array_object"] = esOnlyExtension(&Extensions::vertexArrayObject);
         map["GL_KHR_debug"] = esOnlyExtension(&Extensions::debug);
@@ -681,7 +675,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         //map["GL_KHR_no_error"] = esOnlyExtension(&Extensions::noError);
         map["GL_ANGLE_lossy_etc_decode"] = esOnlyExtension(&Extensions::lossyETCDecode);
         map["GL_CHROMIUM_bind_uniform_location"] = esOnlyExtension(&Extensions::bindUniformLocation);
-        map["GL_CHROMIUM_sync_query"] = esOnlyExtension(&Extensions::syncQuery);
+        map["GL_CHROMIUM_sync_query"] = enableableExtension(&Extensions::syncQuery);
         map["GL_CHROMIUM_copy_texture"] = esOnlyExtension(&Extensions::copyTexture);
         map["GL_CHROMIUM_copy_compressed_texture"] = esOnlyExtension(&Extensions::copyCompressedTexture);
         map["GL_ANGLE_webgl_compatibility"] = esOnlyExtension(&Extensions::webglCompatibility);
@@ -1093,7 +1087,8 @@ DisplayExtensions::DisplayExtensions()
       surfacelessContext(false),
       displayTextureShareGroup(false),
       createContextClientArrays(false),
-      programCacheControl(false)
+      programCacheControl(false),
+      robustResourceInitialization(false)
 {
 }
 
@@ -1137,6 +1132,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_ANGLE_display_texture_share_group",               displayTextureShareGroup,           &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_client_arrays",              createContextClientArrays,          &extensionStrings);
     InsertExtensionString("EGL_ANGLE_program_cache_control",                     programCacheControl,                &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_robust_resource_initialization",            robustResourceInitialization,       &extensionStrings);
     // TODO(jmadill): Enable this when complete.
     //InsertExtensionString("KHR_create_context_no_error",                       createContextNoError,               &extensionStrings);
     // clang-format on
@@ -1171,8 +1167,7 @@ ClientExtensions::ClientExtensions()
       deviceCreationD3D11(false),
       x11Visual(false),
       experimentalPresentPath(false),
-      clientGetAllProcAddresses(false),
-      displayRobustResourceInitialization(false)
+      clientGetAllProcAddresses(false)
 {
 }
 
@@ -1195,7 +1190,6 @@ std::vector<std::string> ClientExtensions::getStrings() const
     InsertExtensionString("EGL_ANGLE_x11_visual",                  x11Visual,                 &extensionStrings);
     InsertExtensionString("EGL_ANGLE_experimental_present_path",   experimentalPresentPath,   &extensionStrings);
     InsertExtensionString("EGL_KHR_client_get_all_proc_addresses", clientGetAllProcAddresses, &extensionStrings);
-    InsertExtensionString("EGL_ANGLE_display_robust_resource_initialization", displayRobustResourceInitialization, &extensionStrings);
     // clang-format on
 
     return extensionStrings;

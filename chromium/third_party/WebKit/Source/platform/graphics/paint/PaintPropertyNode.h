@@ -6,9 +6,10 @@
 #define PaintPropertyNode_h
 
 #include "platform/PlatformExport.h"
-#include "platform/wtf/PassRefPtr.h"
+#include "platform/json/JSONValues.h"
 #include "platform/wtf/RefCounted.h"
 #include "platform/wtf/RefPtr.h"
+#include "platform/wtf/text/WTFString.h"
 
 namespace blink {
 
@@ -35,7 +36,7 @@ template <typename NodeType>
 class PaintPropertyNode : public RefCounted<NodeType> {
  public:
   // Parent property node, or nullptr if this is the root node.
-  const NodeType* Parent() const { return parent_.Get(); }
+  const NodeType* Parent() const { return parent_.get(); }
   bool IsRoot() const { return !parent_; }
 
   bool IsAncestorOf(const NodeType& other) const {
@@ -75,11 +76,15 @@ class PaintPropertyNode : public RefCounted<NodeType> {
       n->changed_ = false;
   }
 
+  String ToString() const {
+    return static_cast<const NodeType*>(this)->ToJSON()->ToJSONString();
+  }
+
  protected:
-  PaintPropertyNode(PassRefPtr<const NodeType> parent)
+  PaintPropertyNode(RefPtr<const NodeType> parent)
       : parent_(std::move(parent)), changed_(false) {}
 
-  bool Update(PassRefPtr<const NodeType> parent) {
+  bool Update(RefPtr<const NodeType> parent) {
     DCHECK(!IsRoot());
     DCHECK(parent != this);
     if (parent == parent_)

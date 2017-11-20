@@ -11,6 +11,7 @@
 #include "core/css/CSSValueList.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/TransformBuilder.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/transforms/TransformOperations.h"
 #include "platform/transforms/TranslateTransformOperation.h"
 #include "platform/wtf/PtrUtil.h"
@@ -21,7 +22,7 @@ class CSSTransformNonInterpolableValue : public NonInterpolableValue {
  public:
   static RefPtr<CSSTransformNonInterpolableValue> Create(
       TransformOperations&& transform) {
-    return AdoptRef(new CSSTransformNonInterpolableValue(
+    return WTF::AdoptRef(new CSSTransformNonInterpolableValue(
         true, std::move(transform), EmptyTransformOperations(), false, false));
   }
 
@@ -30,7 +31,7 @@ class CSSTransformNonInterpolableValue : public NonInterpolableValue {
       double start_fraction,
       CSSTransformNonInterpolableValue&& end,
       double end_fraction) {
-    return AdoptRef(new CSSTransformNonInterpolableValue(
+    return WTF::AdoptRef(new CSSTransformNonInterpolableValue(
         false, start.GetInterpolatedTransform(start_fraction),
         end.GetInterpolatedTransform(end_fraction), start.IsAdditive(),
         end.IsAdditive()));

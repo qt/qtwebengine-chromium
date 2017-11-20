@@ -24,16 +24,16 @@
 #import "WebRTC/RTCVideoFrameBuffer.h"
 #import "helpers.h"
 #include "libyuv/convert_from.h"
-#include "webrtc/common_video/h264/h264_bitstream_parser.h"
-#include "webrtc/common_video/h264/profile_level_id.h"
-#include "webrtc/common_video/include/bitrate_adjuster.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/video_coding/include/video_error_codes.h"
-#include "webrtc/rtc_base/buffer.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/sdk/objc/Framework/Classes/VideoToolbox/nalu_rewriter.h"
-#include "webrtc/system_wrappers/include/clock.h"
+#include "common_video/h264/h264_bitstream_parser.h"
+#include "common_video/h264/profile_level_id.h"
+#include "common_video/include/bitrate_adjuster.h"
+#include "modules/include/module_common_types.h"
+#include "modules/video_coding/include/video_error_codes.h"
+#include "rtc_base/buffer.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/timeutils.h"
+#include "sdk/objc/Framework/Classes/VideoToolbox/nalu_rewriter.h"
+#include "system_wrappers/include/clock.h"
 
 @interface RTCVideoEncoderH264 ()
 
@@ -48,6 +48,8 @@
                rotation:(RTCVideoRotation)rotation;
 
 @end
+
+namespace {  // anonymous namespace
 
 // The ratio between kVTCompressionPropertyKey_DataRateLimits and
 // kVTCompressionPropertyKey_AverageBitRate. The data rate limit is set higher
@@ -148,8 +150,10 @@ void compressionOutputCallback(void *encoder,
                                OSStatus status,
                                VTEncodeInfoFlags infoFlags,
                                CMSampleBufferRef sampleBuffer) {
+  RTC_CHECK(params);
   std::unique_ptr<RTCFrameEncodeParams> encodeParams(
       reinterpret_cast<RTCFrameEncodeParams *>(params));
+  RTC_CHECK(encodeParams->encoder);
   [encodeParams->encoder frameWasEncoded:status
                                    flags:infoFlags
                             sampleBuffer:sampleBuffer
@@ -165,9 +169,9 @@ void compressionOutputCallback(void *encoder,
 // specific VideoToolbox profile for the specified level, AutoLevel will be
 // returned. The user must initialize the encoder with a resolution and
 // framerate conforming to the selected H264 level regardless.
-CFStringRef ExtractProfile(const cricket::VideoCodec &codec) {
+CFStringRef ExtractProfile(webrtc::SdpVideoFormat videoFormat) {
   const rtc::Optional<webrtc::H264::ProfileLevelId> profile_level_id =
-      webrtc::H264::ParseSdpProfileLevelId(codec.params);
+      webrtc::H264::ParseSdpProfileLevelId(videoFormat.parameters);
   RTC_DCHECK(profile_level_id);
   switch (profile_level_id->profile) {
     case webrtc::H264::kProfileConstrainedBaseline:
@@ -266,10 +270,11 @@ CFStringRef ExtractProfile(const cricket::VideoCodec &codec) {
       }
   }
 }
+}  // namespace
 
 @implementation RTCVideoEncoderH264 {
   RTCVideoCodecInfo *_codecInfo;
-  webrtc::BitrateAdjuster *_bitrateAdjuster;
+  std::unique_ptr<webrtc::BitrateAdjuster> _bitrateAdjuster;
   uint32_t _targetBitrateBps;
   uint32_t _encoderBitrateBps;
   RTCH264PacketizationMode _packetizationMode;
@@ -294,11 +299,16 @@ CFStringRef ExtractProfile(const cricket::VideoCodec &codec) {
 - (instancetype)initWithCodecInfo:(RTCVideoCodecInfo *)codecInfo {
   if (self = [super init]) {
     _codecInfo = codecInfo;
-    _bitrateAdjuster = new webrtc::BitrateAdjuster(webrtc::Clock::GetRealTimeClock(), .5, .95);
+    _bitrateAdjuster.reset(new webrtc::BitrateAdjuster(
+        webrtc::Clock::GetRealTimeClock(), .5, .95));
     _packetizationMode = RTCH264PacketizationModeNonInterleaved;
-    _profile = ExtractProfile([codecInfo nativeVideoCodec]);
+    _profile = ExtractProfile([codecInfo nativeSdpVideoFormat]);
     LOG(LS_INFO) << "Using profile " << CFStringToString(_profile);
     RTC_CHECK([codecInfo.name isEqualToString:@"H264"]);
+
+#if defined(WEBRTC_IOS)
+    [RTCUIApplicationStatusObserver prepareForUse];
+#endif
   }
   return self;
 }
@@ -664,10 +674,10 @@ CFStringRef ExtractProfile(const cricket::VideoCodec &codec) {
   std::unique_ptr<rtc::Buffer> buffer(new rtc::Buffer());
   RTCRtpFragmentationHeader *header;
   {
-    webrtc::RTPFragmentationHeader *header_cpp;
+    std::unique_ptr<webrtc::RTPFragmentationHeader> header_cpp;
     bool result =
         H264CMSampleBufferToAnnexBBuffer(sampleBuffer, isKeyframe, buffer.get(), &header_cpp);
-    header = [[RTCRtpFragmentationHeader alloc] initWithNativeFragmentationHeader:header_cpp];
+    header = [[RTCRtpFragmentationHeader alloc] initWithNativeFragmentationHeader:header_cpp.get()];
     if (!result) {
       return;
     }

@@ -10,7 +10,7 @@
 #include "core/css/parser/CSSParserContext.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/UseCounter.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/PtrUtil.h"
 
 namespace blink {
@@ -448,10 +448,6 @@ std::unique_ptr<CSSParserSelector> CSSSelectorParser::ConsumePseudo(
   AtomicString value = token.Value().ToAtomicString().LowerASCII();
   bool has_arguments = token.GetType() == kFunctionToken;
   selector->UpdatePseudoType(value, *context_, has_arguments, context_->Mode());
-
-  if (!RuntimeEnabledFeatures::CSSSelectorsFocusWithinEnabled() &&
-      selector->GetPseudoType() == CSSSelector::kPseudoFocusWithin)
-    return nullptr;
 
   if (selector->Match() == CSSSelector::kPseudoElement &&
       disallow_pseudo_elements_)

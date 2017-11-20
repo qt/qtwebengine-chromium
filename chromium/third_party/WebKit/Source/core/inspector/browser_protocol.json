@@ -453,13 +453,14 @@
                     { "name": "height", "type": "integer", "description": "Overriding height value in pixels (minimum 0, maximum 10000000). 0 disables the override." },
                     { "name": "deviceScaleFactor", "type": "number", "description": "Overriding device scale factor value. 0 disables the override." },
                     { "name": "mobile", "type": "boolean", "description": "Whether to emulate mobile device. This includes viewport meta tag, overlay scrollbars, text autosizing and more." },
-                    { "name": "scale", "type": "number", "optional": true, "description": "Scale to apply to resulting view image. Ignored in |fitWindow| mode." },
-                    { "name": "screenWidth", "type": "integer", "optional": true, "description": "Overriding screen width value in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|." },
-                    { "name": "screenHeight", "type": "integer", "optional": true, "description": "Overriding screen height value in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|." },
-                    { "name": "positionX", "type": "integer", "optional": true, "description": "Overriding view X position on screen in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|." },
-                    { "name": "positionY", "type": "integer", "optional": true, "description": "Overriding view Y position on screen in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|." },
+                    { "name": "scale", "type": "number", "optional": true, "description": "Scale to apply to resulting view image." },
+                    { "name": "screenWidth", "type": "integer", "optional": true, "description": "Overriding screen width value in pixels (minimum 0, maximum 10000000)." },
+                    { "name": "screenHeight", "type": "integer", "optional": true, "description": "Overriding screen height value in pixels (minimum 0, maximum 10000000)." },
+                    { "name": "positionX", "type": "integer", "optional": true, "description": "Overriding view X position on screen in pixels (minimum 0, maximum 10000000)." },
+                    { "name": "positionY", "type": "integer", "optional": true, "description": "Overriding view Y position on screen in pixels (minimum 0, maximum 10000000)." },
                     { "name": "dontSetVisibleSize", "type": "boolean", "optional": true, "description": "Do not set visible view size, rely upon explicit setVisibleSize call." },
-                    { "name": "screenOrientation", "$ref": "Emulation.ScreenOrientation", "optional": true, "description": "Screen orientation override." }
+                    { "name": "screenOrientation", "$ref": "Emulation.ScreenOrientation", "optional": true, "description": "Screen orientation override." },
+                    { "name": "viewport", "$ref": "Viewport", "optional": true, "description": "The viewport dimensions and scale. If not set, the override is cleared." }
                 ],
                 "redirect": "Emulation",
                 "experimental": true
@@ -647,6 +648,7 @@
             {
                 "name": "lifecycleEvent",
                 "parameters": [
+                    { "name": "frameId", "$ref": "FrameId", "description": "Id of the frame." },
                     { "name": "name", "type": "string" },
                     { "name": "timestamp", "$ref": "Network.MonotonicTime" }
                 ],
@@ -697,7 +699,7 @@
                 "parameters": [
                     { "name": "frameId", "$ref": "FrameId", "description": "Id of the frame that has scheduled a navigation." },
                     { "name": "delay", "type": "number", "description": "Delay (in seconds) until the navigation is scheduled to begin. The navigation is not guaranteed to start." },
-                    { "name": "reason", "type": "string", "experimental": true, "enum": ["formSubmission", "httpHeaderRefresh", "scriptInitiated", "metaTagRefresh", "pageBlockInterstitial", "reload"], "description": "The reason for the navigation." },
+                    { "name": "reason", "type": "string", "experimental": true, "enum": ["formSubmissionGet", "formSubmissionPost", "httpHeaderRefresh", "scriptInitiated", "metaTagRefresh", "pageBlockInterstitial", "reload"], "description": "The reason for the navigation." },
                     { "name": "url", "type": "string", "experimental": true, "description": "The destination URL for the scheduled navigation." }
                 ],
                 "experimental": true
@@ -757,6 +759,17 @@
             {
                 "name": "interstitialHidden",
                 "description": "Fired when interstitial page was hidden"
+            },
+            {
+                "name": "windowOpen",
+                "description": "Fired when window.open() was called",
+                "parameters": [
+                    { "name": "url", "type": "string", "description": "The URL for the new window." },
+                    { "name": "windowName", "type": "string", "description": "Window name passed to window.open()."},
+                    { "name": "windowFeatures", "type": "string", "description": "Window features passed to window.open()."},
+                    { "name": "userGesture", "type": "boolean", "description": "Whether or not window.open() was triggered by user gesture."}
+                ],
+                "experimental": true
             }
         ]
     },
@@ -942,7 +955,7 @@
     {
         "domain": "Emulation",
         "description": "This domain emulates different environments for the page.",
-        "dependencies": ["DOM"],
+        "dependencies": ["DOM", "Page"],
         "types": [
             {
                 "id": "ScreenOrientation",
@@ -974,13 +987,14 @@
                     { "name": "height", "type": "integer", "description": "Overriding height value in pixels (minimum 0, maximum 10000000). 0 disables the override." },
                     { "name": "deviceScaleFactor", "type": "number", "description": "Overriding device scale factor value. 0 disables the override." },
                     { "name": "mobile", "type": "boolean", "description": "Whether to emulate mobile device. This includes viewport meta tag, overlay scrollbars, text autosizing and more." },
-                    { "name": "scale", "type": "number", "optional": true, "description": "Scale to apply to resulting view image. Ignored in |fitWindow| mode." },
-                    { "name": "screenWidth", "type": "integer", "optional": true, "experimental": true, "description": "Overriding screen width value in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|." },
-                    { "name": "screenHeight", "type": "integer", "optional": true, "experimental": true, "description": "Overriding screen height value in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|." },
-                    { "name": "positionX", "type": "integer", "optional": true, "experimental": true, "description": "Overriding view X position on screen in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|." },
-                    { "name": "positionY", "type": "integer", "optional": true, "experimental": true, "description": "Overriding view Y position on screen in pixels (minimum 0, maximum 10000000). Only used for |mobile==true|." },
+                    { "name": "scale", "type": "number", "optional": true, "description": "Scale to apply to resulting view image." },
+                    { "name": "screenWidth", "type": "integer", "optional": true, "experimental": true, "description": "Overriding screen width value in pixels (minimum 0, maximum 10000000)." },
+                    { "name": "screenHeight", "type": "integer", "optional": true, "experimental": true, "description": "Overriding screen height value in pixels (minimum 0, maximum 10000000)." },
+                    { "name": "positionX", "type": "integer", "optional": true, "experimental": true, "description": "Overriding view X position on screen in pixels (minimum 0, maximum 10000000)." },
+                    { "name": "positionY", "type": "integer", "optional": true, "experimental": true, "description": "Overriding view Y position on screen in pixels (minimum 0, maximum 10000000)." },
                     { "name": "dontSetVisibleSize", "type": "boolean", "optional": true, "experimental": true, "description": "Do not set visible view size, rely upon explicit setVisibleSize call." },
-                    { "name": "screenOrientation", "$ref": "ScreenOrientation", "optional": true, "description": "Screen orientation override." }
+                    { "name": "screenOrientation", "$ref": "ScreenOrientation", "optional": true, "description": "Screen orientation override." },
+                    { "name": "viewport", "$ref": "Page.Viewport", "optional": true, "experimental": true, "description": "If set, the visible area of the page will be overridden to this viewport. This viewport change is not observed by the page, e.g. viewport-relative elements do not change positions." }
                 ]
             },
             {
@@ -1082,6 +1096,14 @@
                 "experimental": true
             },
             {
+                "name": "setNavigatorOverrides",
+                "description": "Overrides value returned by the javascript navigator object.",
+                "parameters": [
+                    { "name": "platform", "type": "string", "description": "The platform navigator.platform should return." }
+                ],
+                "experimental": true
+            },
+            {
                 "name": "setDefaultBackgroundColorOverride",
                 "description": "Sets or clears an override of the default background color of the frame. This override is used if the content does not specify one.",
                 "parameters": [
@@ -1095,6 +1117,14 @@
                 "name": "virtualTimeBudgetExpired",
                 "experimental": true,
                 "description": "Notification sent after the virtual time budget for the current VirtualTimePolicy has run out."
+            },
+            {
+                "name": "virtualTimeAdvanced",
+                "experimental": true,
+                "parameters": [
+                    { "name": "virtualTimeElapsed", "type": "integer", "description": "The amount of virtual time that has elapsed in milliseconds since virtual time was first enabled." }
+                ],
+                "description": "Notification sent after the virtual time has advanced."
             },
             {
                 "name": "virtualTimePaused",
@@ -1277,7 +1307,7 @@
                 "id": "ConnectionType",
                 "type": "string",
                 "enum": ["none", "cellular2g", "cellular3g", "cellular4g", "bluetooth", "ethernet", "wifi", "wimax", "other"],
-                "description": "Loading priority of a resource request."
+                "description": "The underlying connection technology that the browser is supposedly using."
             },
             {
                 "id": "CookieSameSite",
@@ -1376,7 +1406,7 @@
                 "description": "HTTP response data.",
                 "properties": [
                     { "name": "url", "type": "string", "description": "Response URL. This URL can be different from CachedResource.url in case of redirect." },
-                    { "name": "status", "type": "number", "description": "HTTP response status code." },
+                    { "name": "status", "type": "integer", "description": "HTTP response status code." },
                     { "name": "statusText", "type": "string", "description": "HTTP response status text." },
                     { "name": "headers", "$ref": "Headers", "description": "HTTP response headers." },
                     { "name": "headersText", "type": "string", "optional": true, "description": "HTTP response headers text." },
@@ -1411,7 +1441,7 @@
                 "description": "WebSocket response data.",
                 "experimental": true,
                 "properties": [
-                    { "name": "status", "type": "number", "description": "HTTP response status code." },
+                    { "name": "status", "type": "integer", "description": "HTTP response status code." },
                     { "name": "statusText", "type": "string", "description": "HTTP response status text." },
                     { "name": "headers", "$ref": "Headers", "description": "HTTP response headers." },
                     { "name": "headersText", "type": "string", "optional": true, "description": "HTTP response headers text." },
@@ -1657,9 +1687,9 @@
                 "description": "Activates emulation of network conditions.",
                 "parameters": [
                     { "name": "offline", "type": "boolean", "description": "True to emulate internet disconnection." },
-                    { "name": "latency", "type": "number", "description": "Additional latency (ms)." },
-                    { "name": "downloadThroughput", "type": "number", "description": "Maximal aggregated download throughput." },
-                    { "name": "uploadThroughput", "type": "number", "description": "Maximal aggregated upload throughput." },
+                    { "name": "latency", "type": "number", "description": "Minimum latency from request sent to response headers received (ms)." },
+                    { "name": "downloadThroughput", "type": "number", "description": "Maximal aggregated download throughput (bytes/sec). -1 disables download throttling." },
+                    { "name": "uploadThroughput", "type": "number", "description": "Maximal aggregated upload throughput (bytes/sec).  -1 disables upload throttling." },
                     { "name": "connectionType", "$ref": "ConnectionType", "optional": true, "description": "Connection type if known."}
                 ]
             },
@@ -1700,10 +1730,11 @@
             },
             {
                 "name": "setRequestInterceptionEnabled",
-                "description": "Sets the requests to intercept that match a the provided patterns.",
+                "description": "Sets the requests to intercept that match a the provided patterns and optionally resource types.",
                 "parameters": [
                     { "name": "enabled", "type": "boolean", "description": "Whether requests should be intercepted. If patterns is not set, matches all and resets any previously set patterns. Other parameters are ignored if false." },
-                    { "name": "patterns", "type": "array", "optional": true, "items": { "type": "string" }, "description": "URLs matching any of these patterns will be forwarded and wait for the corresponding continueInterceptedRequest call. Wildcards ('*' -> zero or more, '?' -> exactly one) are allowed. Escape character is backslash. If omitted equivalent to ['*'] (intercept all)." }
+                    { "name": "patterns", "type": "array", "optional": true, "items": { "type": "string" }, "description": "URLs matching any of these patterns will be forwarded and wait for the corresponding continueInterceptedRequest call. Wildcards ('*' -> zero or more, '?' -> exactly one) are allowed. Escape character is backslash. If omitted equivalent to ['*'] (intercept all)." },
+                    { "name": "resourceTypes", "type": "array", "optional": true, "items": { "$ref": "Page.ResourceType" }, "description": "If set, only requests for matching resource types will be intercepted." }
                 ],
                 "experimental": true
             },
@@ -2724,7 +2755,7 @@
                 "returns": [
                     { "name": "nodeIds", "type": "array", "items": { "$ref": "NodeId" }, "description": "Ids of the search result nodes." }
                 ],
-                "description": "Returns search results from given <code>fromIndex</code> to given <code>toIndex</code> from the sarch with the given identifier.",
+                "description": "Returns search results from given <code>fromIndex</code> to given <code>toIndex</code> from the search with the given identifier.",
                 "experimental": true
             },
             {
@@ -3803,7 +3834,8 @@
                     { "name": "type", "type": "string" },
                     { "name": "title", "type": "string" },
                     { "name": "url", "type": "string" },
-                    { "name": "attached", "type": "boolean", "description": "Whether the target has an attached client." }
+                    { "name": "attached", "type": "boolean", "description": "Whether the target has an attached client." },
+                    { "name": "openerId", "optional": true, "$ref": "TargetID", "description": "Opener target Id" }
                 ]
             },
             {
@@ -3922,7 +3954,8 @@
                     { "name": "url", "type": "string", "description": "The initial URL the page will be navigated to." },
                     { "name": "width", "type": "integer", "description": "Frame width in DIP (headless chrome only).", "optional": true },
                     { "name": "height", "type": "integer", "description": "Frame height in DIP (headless chrome only).", "optional": true },
-                    { "name": "browserContextId", "$ref": "BrowserContextID", "description": "The browser context to create the page in (headless chrome only).", "optional": true }
+                    { "name": "browserContextId", "$ref": "BrowserContextID", "description": "The browser context to create the page in (headless chrome only).", "optional": true },
+                    { "name": "enableBeginFrameControl", "type": "boolean", "description": "Whether BeginFrames for this target will be controlled via DevTools (headless chrome only, not supported on MacOS yet, false by default).", "optional": true, "experimental": true }
                 ],
                 "returns": [
                     { "name": "targetId", "$ref": "TargetID", "description": "The id of the page opened." }
@@ -3983,6 +4016,60 @@
                     { "name": "message", "type": "string" },
                     { "name": "targetId", "$ref": "TargetID", "optional": true, "deprecated": true, "description": "Deprecated." }
                 ]
+            }
+        ]
+    },
+    {
+        "domain": "HeadlessExperimental",
+        "experimental": true,
+        "description": "This domain provides experimental commands only supported in headless mode.",
+        "dependencies": ["Page", "Runtime"],
+        "types": [
+            {
+                "id": "ScreenshotParams",
+                "type": "object",
+                "properties": [
+                    { "name": "format", "type": "string", "optional": true, "enum": ["jpeg", "png"], "description": "Image compression format (defaults to png)." },
+                    { "name": "quality", "type": "integer", "optional": true, "description": "Compression quality from range [0..100] (jpeg only)." }
+                ],
+                "description": "Encoding options for a screenshot."
+            }
+        ],
+        "commands": [
+            {
+                "name": "enable",
+                "description": "Enables headless events for the target."
+            },
+            {
+                "name": "disable",
+                "description": "Disables headless events for the target."
+            },
+            {
+                "name": "beginFrame",
+                "parameters": [
+                    { "name": "frameTime", "$ref": "Runtime.Timestamp", "optional": true, "description": "Timestamp of this BeginFrame (milliseconds since epoch). If not set, the current time will be used." },
+                    { "name": "deadline", "$ref": "Runtime.Timestamp", "optional": true, "description": "Deadline of this BeginFrame (milliseconds since epoch). If not set, the deadline will be calculated from the frameTime and interval." },
+                    { "name": "interval", "type": "number", "optional": true, "description": "The interval between BeginFrames that is reported to the compositor, in milliseconds. Defaults to a 60 frames/second interval, i.e. about 16.666 milliseconds." },
+                    { "name": "screenshot", "$ref": "ScreenshotParams", "optional": true, "description": "If set, a screenshot of the frame will be captured and returned in the response. Otherwise, no screenshot will be captured." }
+                ],
+                "returns": [
+                    { "name": "hasDamage", "type": "boolean", "description": "Whether the BeginFrame resulted in damage and, thus, a new frame was committed to the display." },
+                    { "name": "screenshotData", "type": "string", "optional": true, "description": "Base64-encoded image data of the screenshot, if one was requested and successfully taken." }
+                ],
+                "description": "Sends a BeginFrame to the target and returns when the frame was completed. Optionally captures a screenshot from the resulting frame. Requires that the target was created with enabled BeginFrameControl."
+            }
+        ],
+        "events": [
+            {
+                "name": "needsBeginFramesChanged",
+                "description": "Issued when the target starts or stops needing BeginFrames.",
+                "parameters": [
+                    { "name": "needsBeginFrames", "type": "boolean", "description": "True if BeginFrames are needed, false otherwise." }
+                ]
+            },
+            {
+                "name": "mainFrameReadyForScreenshots",
+                "description": "Issued when the main frame has first submitted a frame to the browser. May only be fired while a BeginFrame is in flight. Before this event, screenshotting requests may fail."
             }
         ]
     },
@@ -4078,6 +4165,9 @@
                 ]
             },
             {
+                "name": "stopAllWorkers"
+            },
+            {
                 "name": "inspectWorker",
                 "parameters": [
                     { "name": "versionId", "type": "string" }
@@ -4136,10 +4226,10 @@
                 "type": "object",
                 "experimental": true,
                 "properties": [
-                    { "name": "x", "type": "integer", "description": "X coordinate of the event relative to the main frame's viewport in CSS pixels."},
-                    { "name": "y", "type": "integer", "description": "Y coordinate of the event relative to the main frame's viewport in CSS pixels. 0 refers to the top of the viewport and Y increases as it proceeds towards the bottom of the viewport."},
-                    { "name": "radiusX", "type": "integer", "optional": true, "description": "X radius of the touch area (default: 1)."},
-                    { "name": "radiusY", "type": "integer", "optional": true, "description": "Y radius of the touch area (default: 1)."},
+                    { "name": "x", "type": "number", "description": "X coordinate of the event relative to the main frame's viewport in CSS pixels."},
+                    { "name": "y", "type": "number", "description": "Y coordinate of the event relative to the main frame's viewport in CSS pixels. 0 refers to the top of the viewport and Y increases as it proceeds towards the bottom of the viewport."},
+                    { "name": "radiusX", "type": "number", "optional": true, "description": "X radius of the touch area (default: 1.0)."},
+                    { "name": "radiusY", "type": "number", "optional": true, "description": "Y radius of the touch area (default: 1.0)."},
                     { "name": "rotationAngle", "type": "number", "optional": true, "description": "Rotation angle (default: 0.0)."},
                     { "name": "force", "type": "number", "optional": true, "description": "Force (default: 1.0)."},
                     { "name": "id", "type": "number", "optional": true, "description": "Identifier used to track touch sources between events, must be unique within an event."}
@@ -4573,8 +4663,8 @@
                     { "name": "playbackRate", "type": "number", "description": "<code>Animation</code>'s playback rate." },
                     { "name": "startTime", "type": "number", "description": "<code>Animation</code>'s start time." },
                     { "name": "currentTime", "type": "number", "description": "<code>Animation</code>'s current time." },
-                    { "name": "source", "$ref": "AnimationEffect", "description": "<code>Animation</code>'s source animation node." },
                     { "name": "type", "type": "string", "enum": ["CSSTransition", "CSSAnimation", "WebAnimation"], "description": "Animation type of <code>Animation</code>." },
+                    { "name": "source", "$ref": "AnimationEffect", "optional": true, "description": "<code>Animation</code>'s source animation node." },
                     { "name": "cssId", "type": "string", "optional": true, "description": "A unique ID for <code>Animation</code> representing the sources that triggered this CSS animation/transition."}
                 ],
                 "description": "Animation instance."
@@ -4591,7 +4681,7 @@
                     { "name": "duration", "type": "number", "description": "<code>AnimationEffect</code>'s iteration duration." },
                     { "name": "direction", "type": "string", "description": "<code>AnimationEffect</code>'s playback direction." },
                     { "name": "fill", "type": "string", "description": "<code>AnimationEffect</code>'s fill mode." },
-                    { "name": "backendNodeId", "$ref": "DOM.BackendNodeId", "description": "<code>AnimationEffect</code>'s target node." },
+                    { "name": "backendNodeId", "$ref": "DOM.BackendNodeId", "optional": true, "description": "<code>AnimationEffect</code>'s target node." },
                     { "name": "keyframesRule", "$ref": "KeyframesRule", "optional": true, "description": "<code>AnimationEffect</code>'s keyframes." },
                     { "name": "easing", "type": "string", "description": "<code>AnimationEffect</code>'s timing function." }
                 ],
@@ -4916,6 +5006,20 @@
                     { "name": "origin", "type": "string", "description": "Security origin." }
                 ],
                 "description": "Unregisters origin from receiving notifications for cache storage."
+            },
+            {
+                "name": "trackIndexedDBForOrigin",
+                "parameters": [
+                    { "name": "origin", "type": "string", "description": "Security origin." }
+                ],
+                "description": "Registers origin to be notified when an update occurs to its IndexedDB."
+            },
+            {
+                "name": "untrackIndexedDBForOrigin",
+                "parameters": [
+                    { "name": "origin", "type": "string", "description": "Security origin." }
+                ],
+                "description": "Unregisters origin from receiving notifications for IndexedDB."
             }
         ],
         "events": [
@@ -4933,6 +5037,22 @@
                     { "name": "cacheName", "type": "string", "description": "Name of cache in origin." }
                 ],
                 "description": "A cache's contents have been modified."
+            },
+            {
+                "name": "indexedDBListUpdated",
+                "parameters": [
+                    { "name": "origin", "type": "string", "description": "Origin to update." }
+                ],
+                "description": "The origin's IndexedDB database list has been modified."
+            },
+            {
+                "name": "indexedDBContentUpdated",
+                "parameters": [
+                    { "name": "origin", "type": "string", "description": "Origin to update." },
+                    { "name": "databaseName", "type": "string", "description": "Database to update." },
+                    { "name": "objectStoreName", "type": "string", "description": "ObjectStore to update." }
+                ],
+                "description": "The origin's IndexedDB object store has been modified."
             }
         ]
     },
@@ -4947,7 +5067,7 @@
                 "type": "object",
                 "description": "Log entry.",
                 "properties": [
-                    { "name": "source", "type": "string", "enum": ["xml", "javascript", "network", "storage", "appcache", "rendering", "security", "deprecation", "worker", "violation", "intervention", "other"], "description": "Log entry source." },
+                    { "name": "source", "type": "string", "enum": ["xml", "javascript", "network", "storage", "appcache", "rendering", "security", "deprecation", "worker", "violation", "intervention", "recommendation", "other"], "description": "Log entry source." },
                     { "name": "level", "type": "string", "enum": ["verbose", "info", "warning", "error"], "description": "Log entry severity." },
                     { "name": "text", "type": "string", "description": "Logged text." },
                     { "name": "timestamp", "$ref": "Runtime.Timestamp", "description": "Timestamp when this entry was added." },
@@ -4955,7 +5075,8 @@
                     { "name": "lineNumber", "type": "integer", "optional": true, "description": "Line number in the resource." },
                     { "name": "stackTrace", "$ref": "Runtime.StackTrace", "optional": true, "description": "JavaScript stack trace." },
                     { "name": "networkRequestId", "$ref": "Network.RequestId", "optional": true, "description": "Identifier of the network request associated with this entry." },
-                    { "name": "workerId", "type": "string", "optional": true, "description": "Identifier of the worker associated with this entry." }
+                    { "name": "workerId", "type": "string", "optional": true, "description": "Identifier of the worker associated with this entry." },
+                    { "name": "args", "type": "array", "items": { "$ref": "Runtime.RemoteObject" }, "optional": true, "description": "Call arguments." }
                 ]
             },
             {
@@ -5104,6 +5225,10 @@
             }
         ],
         "commands": [
+            {
+                "name": "close",
+                "description": "Close browser gracefully."
+            },
             {
                 "name": "getWindowForTarget",
                 "description": "Get the browser window that contains the devtools target.",

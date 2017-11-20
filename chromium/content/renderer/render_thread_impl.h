@@ -63,7 +63,6 @@
 #endif
 
 class SkBitmap;
-struct WorkerProcessMsg_CreateWorker_Params;
 
 namespace blink {
 namespace scheduler {
@@ -131,7 +130,6 @@ class BlobMessageFilter;
 class BrowserPluginManager;
 class CacheStorageDispatcher;
 class CompositorForwardingMessageFilter;
-class DBMessageFilter;
 class DevToolsAgentFilter;
 class DomStorageDispatcher;
 class FrameSwapMessageQueue;
@@ -225,8 +223,6 @@ class CONTENT_EXPORT RenderThreadImpl
   bool ResolveProxy(const GURL& url, std::string* proxy_list) override;
   base::WaitableEvent* GetShutdownEvent() override;
   int32_t GetClientId() override;
-  scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner() override;
-  scoped_refptr<base::SingleThreadTaskRunner> GetLoadingTaskRunner() override;
   void SetRendererProcessType(
       blink::scheduler::RendererProcessType type) override;
 
@@ -583,8 +579,6 @@ class CONTENT_EXPORT RenderThreadImpl
   void OnMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
 
-  void OnCreateNewSharedWorker(
-      const WorkerProcessMsg_CreateWorker_Params& params);
   bool RendererIsHidden() const;
   void OnRendererHidden();
   void OnRendererVisible();
@@ -622,7 +616,6 @@ class CONTENT_EXPORT RenderThreadImpl
 
   // Used on the renderer and IPC threads.
   scoped_refptr<BlobMessageFilter> blob_message_filter_;
-  scoped_refptr<DBMessageFilter> db_message_filter_;
   scoped_refptr<AudioInputMessageFilter> audio_input_message_filter_;
   scoped_refptr<MidiMessageFilter> midi_message_filter_;
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;

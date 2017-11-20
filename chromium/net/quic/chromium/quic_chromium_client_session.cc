@@ -200,7 +200,7 @@ QuicChromiumClientSession::Handle::Handle(
       quic_error_(QUIC_NO_ERROR),
       port_migration_detected_(false),
       server_id_(session_->server_id()),
-      quic_version_(session->connection()->version()),
+      quic_version_(session->connection()->transport_version()),
       push_handle_(nullptr),
       was_ever_used_(false) {
   DCHECK(session_);
@@ -223,7 +223,7 @@ void QuicChromiumClientSession::Handle::OnCryptoHandshakeConfirmed() {
 }
 
 void QuicChromiumClientSession::Handle::OnSessionClosed(
-    QuicVersion quic_version,
+    QuicTransportVersion quic_version,
     int net_error,
     QuicErrorCode quic_error,
     bool port_migration_detected,
@@ -275,11 +275,11 @@ void QuicChromiumClientSession::Handle::PopulateNetErrorDetails(
   }
 }
 
-QuicVersion QuicChromiumClientSession::Handle::GetQuicVersion() const {
+QuicTransportVersion QuicChromiumClientSession::Handle::GetQuicVersion() const {
   if (!session_)
     return quic_version_;
 
-  return session_->connection()->version();
+  return session_->connection()->transport_version();
 }
 
 void QuicChromiumClientSession::Handle::ResetPromised(
@@ -801,9 +801,9 @@ void QuicChromiumClientSession::OnStreamFrame(const QuicStreamFrame& frame) {
 void QuicChromiumClientSession::AddHandle(Handle* handle) {
   if (going_away_) {
     RecordUnexpectedObservers(ADD_OBSERVER);
-    handle->OnSessionClosed(connection()->version(), ERR_UNEXPECTED, error(),
-                            port_migration_detected_, GetConnectTiming(),
-                            WasConnectionEverUsed());
+    handle->OnSessionClosed(connection()->transport_version(), ERR_UNEXPECTED,
+                            error(), port_migration_detected_,
+                            GetConnectTiming(), WasConnectionEverUsed());
     return;
   }
 
@@ -899,13 +899,11 @@ bool QuicChromiumClientSession::WasConnectionEverUsed() {
 }
 
 QuicChromiumClientStream*
-QuicChromiumClientSession::CreateOutgoingDynamicStream(SpdyPriority priority) {
+QuicChromiumClientSession::CreateOutgoingDynamicStream() {
   if (!ShouldCreateOutgoingDynamicStream()) {
     return nullptr;
   }
   QuicChromiumClientStream* stream = CreateOutgoingReliableStreamImpl();
-  if (stream != nullptr)
-    stream->SetPriority(priority);
   return stream;
 }
 
@@ -1363,7 +1361,7 @@ void QuicChromiumClientSession::OnConnectionClosed(
   }
 
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.QuicVersion",
-                              connection()->version());
+                              connection()->transport_version());
   NotifyFactoryOfSessionGoingAway();
   QuicSession::OnConnectionClosed(error, error_details, source);
 
@@ -1383,7 +1381,7 @@ void QuicChromiumClientSession::OnConnectionClosed(
 }
 
 void QuicChromiumClientSession::OnSuccessfulVersionNegotiation(
-    const QuicVersion& version) {
+    const QuicTransportVersion& version) {
   logger_->OnSuccessfulVersionNegotiation(version);
   QuicSpdySession::OnSuccessfulVersionNegotiation(version);
 }
@@ -1405,7 +1403,7 @@ int QuicChromiumClientSession::HandleWriteError(
   task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&QuicChromiumClientSession::MigrateSessionOnWriteError,
-                 weak_factory_.GetWeakPtr()));
+                 weak_factory_.GetWeakPtr(), error_code));
 
   // Store packet in the session since the actual migration and packet rewrite
   // can happen via this posted task or via an async network notification.
@@ -1418,14 +1416,15 @@ int QuicChromiumClientSession::HandleWriteError(
   return ERR_IO_PENDING;
 }
 
-void QuicChromiumClientSession::MigrateSessionOnWriteError() {
+void QuicChromiumClientSession::MigrateSessionOnWriteError(int error_code) {
   // If migration_pending_ is false, an earlier task completed migration.
   if (!migration_pending_)
     return;
 
   MigrationResult result = MigrationResult::FAILURE;
   if (stream_factory_ != nullptr)
-    result = stream_factory_->MaybeMigrateSingleSession(this, WRITE_ERROR);
+    result = stream_factory_->MaybeMigrateSingleSessionOnWriteError(this,
+                                                                    error_code);
 
   if (result == MigrationResult::SUCCESS)
     return;
@@ -1528,7 +1527,7 @@ void QuicChromiumClientSession::OnWriteUnblocked() {
 
 void QuicChromiumClientSession::OnPathDegrading() {
   if (stream_factory_) {
-    stream_factory_->MaybeMigrateSingleSession(this, EARLY_MIGRATION);
+    stream_factory_->MaybeMigrateSingleSessionOnPathDegrading(this);
   }
 }
 
@@ -1611,9 +1610,9 @@ void QuicChromiumClientSession::CloseAllHandles(int net_error) {
   while (!handles_.empty()) {
     Handle* handle = *handles_.begin();
     handles_.erase(handle);
-    handle->OnSessionClosed(connection()->version(), net_error, error(),
-                            port_migration_detected_, GetConnectTiming(),
-                            WasConnectionEverUsed());
+    handle->OnSessionClosed(connection()->transport_version(), net_error,
+                            error(), port_migration_detected_,
+                            GetConnectTiming(), WasConnectionEverUsed());
   }
 }
 
@@ -1639,7 +1638,8 @@ void QuicChromiumClientSession::NotifyRequestsOfConfirmation(int net_error) {
 std::unique_ptr<base::Value> QuicChromiumClientSession::GetInfoAsValue(
     const std::set<HostPortPair>& aliases) {
   std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
-  dict->SetString("version", QuicVersionToString(connection()->version()));
+  dict->SetString("version",
+                  QuicVersionToString(connection()->transport_version()));
   dict->SetInteger("open_streams", GetNumOpenOutgoingStreams());
   std::unique_ptr<base::ListValue> stream_list(new base::ListValue());
   for (DynamicStreamMap::const_iterator it = dynamic_streams().begin();
@@ -1856,8 +1856,8 @@ QuicChromiumClientSession::GetConnectTiming() {
   return connect_timing_;
 }
 
-QuicVersion QuicChromiumClientSession::GetQuicVersion() const {
-  return connection()->version();
+QuicTransportVersion QuicChromiumClientSession::GetQuicVersion() const {
+  return connection()->transport_version();
 }
 
 size_t QuicChromiumClientSession::EstimateMemoryUsage() const {

@@ -13,7 +13,7 @@
 
 namespace {
 
-int RI_StringToId(const CFX_ByteString& ri) {
+int RI_StringToId(const ByteString& ri) {
   uint32_t id = ri.GetID();
   if (id == FXBSTR_ID('A', 'b', 's', 'o'))
     return 1;
@@ -27,7 +27,7 @@ int RI_StringToId(const CFX_ByteString& ri) {
   return 0;
 }
 
-int GetBlendTypeInternal(const CFX_ByteString& mode) {
+int GetBlendTypeInternal(const ByteString& mode) {
   switch (mode.GetID()) {
     case FXBSTR_ID('N', 'o', 'r', 'm'):
     case FXBSTR_ID('C', 'o', 'm', 'p'):
@@ -75,45 +75,45 @@ CPDF_GeneralState::CPDF_GeneralState(const CPDF_GeneralState& that)
 
 CPDF_GeneralState::~CPDF_GeneralState() {}
 
-void CPDF_GeneralState::SetRenderIntent(const CFX_ByteString& ri) {
+void CPDF_GeneralState::SetRenderIntent(const ByteString& ri) {
   m_Ref.GetPrivateCopy()->m_RenderIntent = RI_StringToId(ri);
 }
-CFX_ByteString CPDF_GeneralState::GetBlendMode() const {
+ByteString CPDF_GeneralState::GetBlendMode() const {
   switch (GetBlendType()) {
     case FXDIB_BLEND_NORMAL:
-      return CFX_ByteString("Normal");
+      return ByteString("Normal");
     case FXDIB_BLEND_MULTIPLY:
-      return CFX_ByteString("Multiply");
+      return ByteString("Multiply");
     case FXDIB_BLEND_SCREEN:
-      return CFX_ByteString("Screen");
+      return ByteString("Screen");
     case FXDIB_BLEND_OVERLAY:
-      return CFX_ByteString("Overlay");
+      return ByteString("Overlay");
     case FXDIB_BLEND_DARKEN:
-      return CFX_ByteString("Darken");
+      return ByteString("Darken");
     case FXDIB_BLEND_LIGHTEN:
-      return CFX_ByteString("Lighten");
+      return ByteString("Lighten");
     case FXDIB_BLEND_COLORDODGE:
-      return CFX_ByteString("ColorDodge");
+      return ByteString("ColorDodge");
     case FXDIB_BLEND_COLORBURN:
-      return CFX_ByteString("ColorBurn");
+      return ByteString("ColorBurn");
     case FXDIB_BLEND_HARDLIGHT:
-      return CFX_ByteString("HardLight");
+      return ByteString("HardLight");
     case FXDIB_BLEND_SOFTLIGHT:
-      return CFX_ByteString("SoftLight");
+      return ByteString("SoftLight");
     case FXDIB_BLEND_DIFFERENCE:
-      return CFX_ByteString("Difference");
+      return ByteString("Difference");
     case FXDIB_BLEND_EXCLUSION:
-      return CFX_ByteString("Exclusion");
+      return ByteString("Exclusion");
     case FXDIB_BLEND_HUE:
-      return CFX_ByteString("Hue");
+      return ByteString("Hue");
     case FXDIB_BLEND_SATURATION:
-      return CFX_ByteString("Saturation");
+      return ByteString("Saturation");
     case FXDIB_BLEND_COLOR:
-      return CFX_ByteString("Color");
+      return ByteString("Color");
     case FXDIB_BLEND_LUMINOSITY:
-      return CFX_ByteString("Luminosity");
+      return ByteString("Luminosity");
   }
-  return CFX_ByteString("Normal");
+  return ByteString("Normal");
 }
 
 int CPDF_GeneralState::GetBlendType() const {
@@ -161,17 +161,17 @@ void CPDF_GeneralState::SetTR(CPDF_Object* pObject) {
   m_Ref.GetPrivateCopy()->m_pTR = pObject;
 }
 
-CFX_RetainPtr<CPDF_TransferFunc> CPDF_GeneralState::GetTransferFunc() const {
+RetainPtr<CPDF_TransferFunc> CPDF_GeneralState::GetTransferFunc() const {
   const StateData* pData = m_Ref.GetObject();
   return pData ? pData->m_pTransferFunc : nullptr;
 }
 
 void CPDF_GeneralState::SetTransferFunc(
-    const CFX_RetainPtr<CPDF_TransferFunc>& pFunc) {
+    const RetainPtr<CPDF_TransferFunc>& pFunc) {
   m_Ref.GetPrivateCopy()->m_pTransferFunc = pFunc;
 }
 
-void CPDF_GeneralState::SetBlendMode(const CFX_ByteString& mode) {
+void CPDF_GeneralState::SetBlendMode(const ByteString& mode) {
   StateData* pData = m_Ref.GetPrivateCopy();
   pData->m_BlendMode = mode;
   pData->m_BlendType = GetBlendTypeInternal(mode);
@@ -304,17 +304,18 @@ CPDF_GeneralState::StateData::StateData(const StateData& that)
   m_Matrix = that.m_Matrix;
   m_SMaskMatrix = that.m_SMaskMatrix;
 
-  if (that.m_pTransferFunc && that.m_pTransferFunc->m_pPDFDoc) {
+  if (that.m_pTransferFunc && that.m_pTransferFunc->GetDocument()) {
     CPDF_DocRenderData* pDocCache =
-        that.m_pTransferFunc->m_pPDFDoc->GetRenderData();
+        that.m_pTransferFunc->GetDocument()->GetRenderData();
     if (pDocCache)
       m_pTransferFunc = pDocCache->GetTransferFunc(m_pTR.Get());
   }
 }
 
 CPDF_GeneralState::StateData::~StateData() {
-  if (m_pTransferFunc && m_pTransferFunc->m_pPDFDoc) {
-    CPDF_DocRenderData* pDocCache = m_pTransferFunc->m_pPDFDoc->GetRenderData();
+  if (m_pTransferFunc && m_pTransferFunc->GetDocument()) {
+    CPDF_DocRenderData* pDocCache =
+        m_pTransferFunc->GetDocument()->GetRenderData();
     if (pDocCache) {
       m_pTransferFunc.Reset();  // Give up our reference first.
       pDocCache->MaybePurgeTransferFunc(m_pTR.Get());

@@ -70,7 +70,6 @@ class BackendMigrator;
 class BaseTransaction;
 class DataTypeManager;
 class DeviceInfoSyncBridge;
-class DeviceInfoSyncService;
 class DeviceInfoTracker;
 class LocalDeviceInfoProvider;
 class NetworkResources;
@@ -295,13 +294,13 @@ class ProfileSyncService : public syncer::SyncServiceBase,
   SyncTokenStatus GetSyncTokenStatus() const override;
   std::string QuerySyncStatusSummaryString() override;
   bool QueryDetailedSyncStatus(syncer::SyncStatus* result) override;
-  base::string16 GetLastSyncedTimeString() const override;
+  base::Time GetLastSyncedTime() const override;
   std::string GetEngineInitializationStateString() const override;
   syncer::SyncCycleSnapshot GetLastCycleSnapshot() const override;
   std::unique_ptr<base::Value> GetTypeStatusMap() override;
   const GURL& sync_service_url() const override;
   std::string unrecoverable_error_message() const override;
-  tracked_objects::Location unrecoverable_error_location() const override;
+  base::Location unrecoverable_error_location() const override;
   void AddProtocolEventObserver(
       syncer::ProtocolEventObserver* observer) override;
   void RemoveProtocolEventObserver(
@@ -330,9 +329,6 @@ class ProfileSyncService : public syncer::SyncServiceBase,
 
   // Returns the SyncableService for syncer::SESSIONS.
   virtual syncer::SyncableService* GetSessionsSyncableService();
-
-  // Returns the SyncableService for syncer::DEVICE_INFO.
-  virtual syncer::SyncableService* GetDeviceInfoSyncableService();
 
   // Returns the ModelTypeSyncBridge for syncer::DEVICE_INFO.
   virtual syncer::ModelTypeSyncBridge* GetDeviceInfoSyncBridge();
@@ -444,7 +440,7 @@ class ProfileSyncService : public syncer::SyncServiceBase,
   virtual bool IsManaged() const;
 
   // syncer::UnrecoverableErrorHandler implementation.
-  void OnUnrecoverableError(const tracked_objects::Location& from_here,
+  void OnUnrecoverableError(const base::Location& from_here,
                             const std::string& message) override;
 
   // The functions below (until ActivateDataType()) should only be
@@ -638,7 +634,7 @@ class ProfileSyncService : public syncer::SyncServiceBase,
   // Helper for OnUnrecoverableError.
   // TODO(tim): Use an enum for |delete_sync_database| here, in ShutdownImpl,
   // and in SyncEngine::Shutdown.
-  void OnUnrecoverableErrorImpl(const tracked_objects::Location& from_here,
+  void OnUnrecoverableErrorImpl(const base::Location& from_here,
                                 const std::string& message,
                                 bool delete_sync_database);
 
@@ -685,7 +681,7 @@ class ProfileSyncService : public syncer::SyncServiceBase,
 
   // Internal unrecoverable error handler. Used to track error reason via
   // Sync.UnrecoverableErrors histogram.
-  void OnInternalUnrecoverableError(const tracked_objects::Location& from_here,
+  void OnInternalUnrecoverableError(const base::Location& from_here,
                                     const std::string& message,
                                     bool delete_sync_database,
                                     UnrecoverableErrorReason reason);
@@ -793,7 +789,7 @@ class ProfileSyncService : public syncer::SyncServiceBase,
   // Information describing an unrecoverable error.
   UnrecoverableErrorReason unrecoverable_error_reason_;
   std::string unrecoverable_error_message_;
-  tracked_objects::Location unrecoverable_error_location_;
+  base::Location unrecoverable_error_location_;
 
   // Manages the start and stop of the data types.
   std::unique_ptr<syncer::DataTypeManager> data_type_manager_;
@@ -864,7 +860,6 @@ class ProfileSyncService : public syncer::SyncServiceBase,
 
   // Locally owned SyncableService and ModelTypeSyncBridge implementations.
   std::unique_ptr<sync_sessions::SessionsSyncManager> sessions_sync_manager_;
-  std::unique_ptr<syncer::DeviceInfoSyncService> device_info_sync_service_;
   std::unique_ptr<syncer::DeviceInfoSyncBridge> device_info_sync_bridge_;
 
   std::unique_ptr<syncer::NetworkResources> network_resources_;

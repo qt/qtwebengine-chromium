@@ -30,9 +30,9 @@
 
 #include "core/dom/ShadowRoot.h"
 #include "core/events/KeyboardEvent.h"
-#include "core/html/HTMLFormElement.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FormController.h"
+#include "core/html/forms/HTMLFormElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/layout/LayoutObject.h"
 
 namespace blink {
@@ -107,8 +107,6 @@ void InputTypeView::Blur() {
 bool InputTypeView::HasCustomFocusLogic() const {
   return true;
 }
-
-void InputTypeView::HandleFocusEvent(Element*, WebFocusType) {}
 
 void InputTypeView::HandleBlurEvent() {}
 

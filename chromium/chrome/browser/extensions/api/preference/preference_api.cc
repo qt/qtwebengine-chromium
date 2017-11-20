@@ -563,14 +563,13 @@ void PreferenceAPI::Shutdown() {
   content_settings_store()->RemoveObserver(this);
 }
 
-static base::LazyInstance<
-    BrowserContextKeyedAPIFactory<PreferenceAPI>>::DestructorAtExit g_factory =
-    LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<PreferenceAPI>>::
+    DestructorAtExit g_preference_api_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
 BrowserContextKeyedAPIFactory<PreferenceAPI>*
 PreferenceAPI::GetFactoryInstance() {
-  return g_factory.Pointer();
+  return g_preference_api_factory.Pointer();
 }
 
 // static
@@ -765,7 +764,7 @@ ExtensionFunction::ResponseAction SetPreferenceFunction::Run() {
     EXTENSION_FUNCTION_VALIDATE(!bad_message);
     return RespondNow(Error(error));
   }
-  EXTENSION_FUNCTION_VALIDATE(browser_pref_value->GetType() == pref->GetType());
+  EXTENSION_FUNCTION_VALIDATE(browser_pref_value->type() == pref->GetType());
 
   // Validate also that the stored value can be converted back by the
   // transformer.

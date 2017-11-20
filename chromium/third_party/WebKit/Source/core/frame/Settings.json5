@@ -75,7 +75,7 @@
     // draw canvas in software.
     {
       name: "minimumAccelerated2dCanvasSize",
-      initial: "257*256",
+      initial: "129*128",
       type: "int",
     },
 
@@ -178,10 +178,14 @@
       invalidate: "AcceleratedCompositing",
     },
 
-    // 3D canvas (WebGL) support.
     {
-      name: "webGLEnabled",
-      initial: false,
+      name: "webGL1Enabled",
+      initial: true,
+    },
+
+    {
+      name: "webGL2Enabled",
+      initial: true,
     },
 
     {
@@ -810,6 +814,12 @@
     },
 
     {
+      name: "savePreviousDocumentResources",
+      initial: "SavePreviousDocumentResources::kNever",
+      type: "SavePreviousDocumentResources",
+    },
+
+    {
       name: "progressBarCompletion",
       initial: "ProgressBarCompletion::kLoadEvent",
       type: "ProgressBarCompletion",
@@ -970,6 +980,10 @@
     {
       name: "forceDisplayList2dCanvasEnabled",
       initial: false,
+    },
+    {
+      name: "navigatorPlatformOverride",
+      type: "String",
     },
   ],
 }

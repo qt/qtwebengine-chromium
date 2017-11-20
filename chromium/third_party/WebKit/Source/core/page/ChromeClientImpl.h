@@ -219,10 +219,9 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
 
   FloatSize ElasticOverscroll() const override;
 
-  void DidObserveNonGetFetchFromScript() const override;
-
   std::unique_ptr<WebFrameScheduler> CreateFrameScheduler(
-      BlameContext*) override;
+      BlameContext*,
+      WebFrameScheduler::FrameType) override;
 
   double LastFrameTimeMonotonic() const override;
 

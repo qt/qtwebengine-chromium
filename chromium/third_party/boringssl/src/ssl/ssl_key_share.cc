@@ -17,6 +17,8 @@
 #include <assert.h>
 #include <string.h>
 
+#include <utility>
+
 #include <openssl/bn.h>
 #include <openssl/bytestring.h>
 #include <openssl/curve25519.h>
@@ -42,14 +44,14 @@ class ECKeyShare : public SSLKeyShare {
 
   bool Offer(CBB *out) override {
     assert(!private_key_);
-    /* Set up a shared |BN_CTX| for all operations. */
+    // Set up a shared |BN_CTX| for all operations.
     UniquePtr<BN_CTX> bn_ctx(BN_CTX_new());
     if (!bn_ctx) {
       return false;
     }
     BN_CTXScope scope(bn_ctx.get());
 
-    /* Generate a private key. */
+    // Generate a private key.
     UniquePtr<EC_GROUP> group(EC_GROUP_new_by_curve_name(nid_));
     private_key_.reset(BN_new());
     if (!group || !private_key_ ||
@@ -58,7 +60,7 @@ class ECKeyShare : public SSLKeyShare {
       return false;
     }
 
-    /* Compute the corresponding public key and serialize it. */
+    // Compute the corresponding public key and serialize it.
     UniquePtr<EC_POINT> public_key(EC_POINT_new(group.get()));
     if (!public_key ||
         !EC_POINT_mul(group.get(), public_key.get(), private_key_.get(), NULL,
@@ -71,12 +73,12 @@ class ECKeyShare : public SSLKeyShare {
     return true;
   }
 
-  bool Finish(uint8_t **out_secret, size_t *out_secret_len, uint8_t *out_alert,
-              const uint8_t *peer_key, size_t peer_key_len) override {
+  bool Finish(Array<uint8_t> *out_secret, uint8_t *out_alert,
+              Span<const uint8_t> peer_key) override {
     assert(private_key_);
     *out_alert = SSL_AD_INTERNAL_ERROR;
 
-    /* Set up a shared |BN_CTX| for all operations. */
+    // Set up a shared |BN_CTX| for all operations.
     UniquePtr<BN_CTX> bn_ctx(BN_CTX_new());
     if (!bn_ctx) {
       return false;
@@ -95,13 +97,13 @@ class ECKeyShare : public SSLKeyShare {
       return false;
     }
 
-    if (!EC_POINT_oct2point(group.get(), peer_point.get(), peer_key,
-                            peer_key_len, bn_ctx.get())) {
+    if (!EC_POINT_oct2point(group.get(), peer_point.get(), peer_key.data(),
+                            peer_key.size(), bn_ctx.get())) {
       *out_alert = SSL_AD_DECODE_ERROR;
       return false;
     }
 
-    /* Compute the x-coordinate of |peer_key| * |private_key_|. */
+    // Compute the x-coordinate of |peer_key| * |private_key_|.
     if (!EC_POINT_mul(group.get(), result.get(), NULL, peer_point.get(),
                       private_key_.get(), bn_ctx.get()) ||
         !EC_POINT_get_affine_coordinates_GFp(group.get(), result.get(), x, NULL,
@@ -109,15 +111,14 @@ class ECKeyShare : public SSLKeyShare {
       return false;
     }
 
-    /* Encode the x-coordinate left-padded with zeros. */
-    size_t secret_len = (EC_GROUP_get_degree(group.get()) + 7) / 8;
-    UniquePtr<uint8_t> secret((uint8_t *)OPENSSL_malloc(secret_len));
-    if (!secret || !BN_bn2bin_padded(secret.get(), secret_len, x)) {
+    // Encode the x-coordinate left-padded with zeros.
+    Array<uint8_t> secret;
+    if (!secret.Init((EC_GROUP_get_degree(group.get()) + 7) / 8) ||
+        !BN_bn2bin_padded(secret.data(), secret.size(), x)) {
       return false;
     }
 
-    *out_secret = secret.release();
-    *out_secret_len = secret_len;
+    *out_secret = std::move(secret);
     return true;
   }
 
@@ -142,24 +143,24 @@ class X25519KeyShare : public SSLKeyShare {
     return !!CBB_add_bytes(out, public_key, sizeof(public_key));
   }
 
-  bool Finish(uint8_t **out_secret, size_t *out_secret_len, uint8_t *out_alert,
-              const uint8_t *peer_key, size_t peer_key_len) override {
+  bool Finish(Array<uint8_t> *out_secret, uint8_t *out_alert,
+              Span<const uint8_t> peer_key) override {
     *out_alert = SSL_AD_INTERNAL_ERROR;
 
-    UniquePtr<uint8_t> secret((uint8_t *)OPENSSL_malloc(32));
-    if (!secret) {
+    Array<uint8_t> secret;
+    if (!secret.Init(32)) {
       OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
       return false;
     }
 
-    if (peer_key_len != 32 || !X25519(secret.get(), private_key_, peer_key)) {
+    if (peer_key.size() != 32 ||
+        !X25519(secret.data(), private_key_, peer_key.data())) {
       *out_alert = SSL_AD_DECODE_ERROR;
       OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_ECPOINT);
       return false;
     }
 
-    *out_secret = secret.release();
-    *out_secret_len = 32;
+    *out_secret = std::move(secret);
     return true;
   }
 
@@ -167,7 +168,7 @@ class X25519KeyShare : public SSLKeyShare {
   uint8_t private_key_[32];
 };
 
-const struct {
+CONSTEXPR_ARRAY struct {
   int nid;
   uint16_t group_id;
   const char name[8];
@@ -202,12 +203,11 @@ UniquePtr<SSLKeyShare> SSLKeyShare::Create(uint16_t group_id) {
   }
 }
 
-bool SSLKeyShare::Accept(CBB *out_public_key, uint8_t **out_secret,
-                         size_t *out_secret_len, uint8_t *out_alert,
-                         const uint8_t *peer_key, size_t peer_key_len) {
+bool SSLKeyShare::Accept(CBB *out_public_key, Array<uint8_t> *out_secret,
+                         uint8_t *out_alert, Span<const uint8_t> peer_key) {
   *out_alert = SSL_AD_INTERNAL_ERROR;
   return Offer(out_public_key) &&
-         Finish(out_secret, out_secret_len, out_alert, peer_key, peer_key_len);
+         Finish(out_secret, out_alert, peer_key);
 }
 
 int ssl_nid_to_group_id(uint16_t *out_group_id, int nid) {

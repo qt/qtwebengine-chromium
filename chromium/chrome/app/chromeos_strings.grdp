@@ -78,6 +78,45 @@ Press any key to continue exploring.
     The current wallpaper is set by '<ph name="APP_NAME">$1</ph>'. You may need to uninstall '<ph name="APP_NAME">$1</ph>' before selecting a different wallpaper.
   </message>
 
+  <!-- Zip Archiver -->
+  <message desc="The product name for Zip Archiver." name="IDS_ZIP_ARCHIVER_NAME">
+    Zip Archiver
+  </message>
+  <message desc="The product description, displayed in the Chrome Extensions page." name="IDS_ZIP_ARCHIVER_DESCRIPTION">
+    Zip Archiver - Open and pack ZIP files in Files app.
+  </message>
+  <message desc="Title of the password input dialog." name="IDS_ZIP_ARCHIVER_PASSPHRASE_TITLE">
+    Enter your password to gain access
+  </message>
+  <message desc="Label of the password input field." name="IDS_ZIP_ARCHIVER_PASSPHRASE_INPUT_LABEL">
+    Password
+  </message>
+  <message desc="Short name of the password accept button." name="IDS_ZIP_ARCHIVER_PASSPHRASE_ACCEPT">
+    Unlock
+  </message>
+  <message desc="Short name of the password cancel button." name="IDS_ZIP_ARCHIVER_PASSPHRASE_CANCEL">
+    Cancel
+  </message>
+  <message desc="Title for of a checkbox whether the password should be remembered. Please keep it as short." name="IDS_ZIP_ARCHIVER_PASSPHRASE_REMEMBER">
+    Remember
+  </message>
+  <message desc="Error message when opening an archive fails because of an unknown reason." name="IDS_ZIP_ARCHIVER_OTHER_ERROR_MESSAGE">
+    The archive format is not supported, or the file is broken.
+  </message>
+  <message desc="Message shown when opening an archive takes long time." name="IDS_ZIP_ARCHIVER_MOUNTING_MESSAGE">
+    Please wait, the archive is being scanned...
+  </message>
+  <message desc="Message shown when packing an archive takes long time." name="IDS_ZIP_ARCHIVER_PACKING_DEFERRED_MESSAGE">
+    Please wait...
+  </message>
+  <message desc="Message shown when packing fails." name="IDS_ZIP_ARCHIVER_PACKING_ERROR_MESSAGE">
+    Packing failed.
+  </message>
+  <message desc="Message shown when packing is in progress." name="IDS_ZIP_ARCHIVER_PACKING_PROGRESS_MESSAGE">
+    Please wait, packing...
+  </message>
+
+
   <!-- File Manager -->
   <message name="IDS_FILE_SYSTEM_PROVIDER_UNRESPONSIVE_WARNING" desc="A warning shown in a notification that an operation is taking longer than expected.">
     An operation is taking longer than expected. Do you want to abort it?
@@ -238,11 +277,11 @@ Press any key to continue exploring.
   <message name="IDS_FILE_BROWSER_ERROR_WHITESPACE_NAME" desc="Error message displayed when the user enters a file name consisting of only whitespace characters.">
     Invalid name
   </message>
-  <message name="IDS_FILE_BROWSER_ERROR_LONG_NAME" desc="Error message displayed when user trys to enter too long name for a file or a folder.">
-    This name is too long
+  <message name="IDS_FILE_BROWSER_ERROR_LONG_NAME" desc="Error message displayed when user tries to enter too long name for a file or a folder.">
+    Use a shorter name
   </message>
-  <message name="IDS_FILE_BROWSER_ERROR_EXTERNAL_DRIVE_LONG_NAME" desc="Error message displayed when user trys to enter too long name for an external drive.">
-    This name is too long and exceeds $1 character length limit.
+  <message name="IDS_FILE_BROWSER_ERROR_EXTERNAL_DRIVE_LONG_NAME" desc="Error message displayed when user tries to enter too long name for an external drive.">
+    Use a name that's <ph name="MAX_LENGTH">$1<ex>11</ex></ph> characters or less
   </message>
   <message name="IDS_FILE_BROWSER_EMPTY_FOLDER" desc="Label shown in an empty folder.">
     Nothing to see here...
@@ -539,16 +578,16 @@ Press any key to continue exploring.
     Show hidden files
   </message>
   <message name="IDS_FILE_BROWSER_TASKS_BUTTON_LABEL" desc="Label for button that selects a task to open the current file.">
-    Tasks
+    Open
   </message>
   <message name="IDS_FILE_BROWSER_CANCEL_SELECTION_BUTTON_LABEL" desc="Label for button that unselects all selected items.">
     Cancel selection
   </message>
   <message name="IDS_FILE_BROWSER_CHANGE_TO_LISTVIEW_BUTTON_LABEL" desc="Label for button that changes the view mode to 'list view' mode.">
-    List view
+    Switch to list view
   </message>
   <message name="IDS_FILE_BROWSER_CHANGE_TO_THUMBNAILVIEW_BUTTON_LABEL" desc="Label for button that changes the view mode to 'thumbnail view' mode.">
-    Thumbnail view
+    Switch to thumbnail view
   </message>
   <message name="IDS_FILE_BROWSER_CLOUD_IMPORT_TITLE" desc="Title of the cloud import feature.">
     Cloud backup
@@ -830,8 +869,8 @@ Press any key to continue exploring.
   <message name="IDS_FILE_BROWSER_METADATA_BOX_CREATION_TIME" desc="Label for file creation time.">
     Created Time
   </message>
-  <message name="IDS_FILE_BROWSER_METADATA_BOX_DIMENSION" desc="Label for image dimension.">
-    Dimension
+  <message name="IDS_FILE_BROWSER_METADATA_BOX_DIMENSION" desc="Label for image dimensions.">
+    Dimensions
   </message>
   <message name="IDS_FILE_BROWSER_METADATA_BOX_DURATION" desc="Label for audio/video duration.">
     Duration
@@ -1404,8 +1443,8 @@ Press any key to continue exploring.
   </message>
 
   <!-- Chrome OS Strings -->
-  <message name="IDS_ECHO_CONSENT_DIALOG_TEXT" desc="Dialog text shown when user is asked to give consent to proceed with redeeming ECHO offer.">
-    <ph name="SERVICE_NAME">$1<ex>Google Drive</ex></ph> wants to check if your Chrome OS device is eligible for an offer. <ph name="MORE_INFO_LINK">$2<ex>More info</ex></ph>
+  <message name="IDS_ECHO_CONSENT_DIALOG_TEXT" desc="Dialog text shown when user is asked to give consent to proceed with redeeming an ECHO offer.">
+    <ph name="SERVICE_NAME">$1<ex>Google Drive</ex></ph> wants to check if you are using an eligible Chrome OS device. <ph name="MORE_INFO_LINK">$2<ex>More info</ex></ph>
   </message>
   <message name="IDS_ECHO_DISABLED_CONSENT_DIALOG_TEXT" desc="Dialog text shown when user is informed that redeeming offers is disabled for the device.">
     Your IT administrator has disabled Chrome Goodies for your device. <ph name="MORE_INFO_LINK">$1<ex>More info</ex></ph>
@@ -1529,9 +1568,6 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_ADD_WI_FI_NETWORK_MENU_NAME" desc="OOBE 'Available Networks' list menu entry that opens 'Add New WiFi Network' dialog">
     Add other WiFi network
-  </message>
-  <message name="IDS_ADD_MOBILE_NETWORK_MENU_NAME" desc="OOBE 'Available Networks' list menu entry that opens 'Add New Mobile Network' dialog">
-    Add other mobile network
   </message>
   <message name="IDS_AUTOSTART_WARNING_TITLE" desc="Title of the kiosk autostart screen">
     Auto-launch permission requested
@@ -2173,12 +2209,6 @@ Press any key to continue exploring.
   <message name="IDS_OFFLINE_LOGIN_HTML" desc="Text which suggests enter as an existing user when valid network isn't presented.">
     If you've already registered on this device, you can <ph name="LINK2_START">$1<ex>&gt;a&lt;</ex></ph>sign in as an existing user<ph name="LINK2_END">$2<ex>&gt;/a&lt;</ex></ph>.
   </message>
-  <message name="IDS_RESTART_BUTTON" desc="Text shown on reboot button on login/locker screen">
-    Restart
-  </message>
-  <message name="IDS_SHUTDOWN_BUTTON" desc="Text shown on shutdown button on login/locker screen">
-    Shut down
-  </message>
   <message name="IDS_KIOSK_APPS_BUTTON" desc="Text shown on a button that brings up the kiosk apps menu on login screen">
     Apps
   </message>
@@ -2290,7 +2320,10 @@ Press any key to continue exploring.
   <message name="IDS_NETWORK_LIST_INITIALIZING" desc="Text in the network list element when a Cellular network is initiailizing.">
     Initializing...
   </message>
-  <message name="IDS_NETWORK_LIST_NOT_CONNECTED" desc="Text in the network list element when there is no network for the type.">
+  <message name="IDS_NETWORK_LIST_NOT_CONNECTED" desc="Text in the network list element when there is a network for the type, but it is not connected or connecting.">
+    Not connected
+  </message>
+  <message name="IDS_NETWORK_LIST_NO_NETWORK" desc="Text in the network list element when there is no network for the type.">
     No network
   </message>
   <message name="IDS_NETWORK_LIST_CONNECTING_TO" desc="Text in a network summary element when the default network for a type (e.g. WiFi) is connecting.">
@@ -2427,14 +2460,8 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_PHOTO_DISCARD_ACCESSIBLE_TEXT" desc="The accessible message to speak to announce that a photo was discarded.">
     Photo was discarded
   </message>
-  <message name="IDS_OPTIONS_CHANGE_PICTURE_FLIP_PHOTO" desc="The text on the button to flip the camera image horizontally.">
-    Flip camera image horizontally
-  </message>
-  <message name="IDS_OPTIONS_PHOTO_FLIP_ACCESSIBLE_TEXT" desc="The accessible message to speak to announce horizontal flip of camera image.">
-    Photo flipped
-  </message>
-  <message name="IDS_OPTIONS_PHOTO_FLIPBACK_ACCESSIBLE_TEXT" desc="The accessible message to speak to announce horizontal back-flip of camera image to not-flipped state.">
-    Photo flipped back
+  <message name="IDS_OPTIONS_CHANGE_PICTURE_SWITCH_MODE" desc="The text on the button to switch the mode of the camera between photo and video.">
+    Switch camera mode
   </message>
   <message name="IDS_IMAGE_SCREEN_PROFILE_PHOTO" desc="The title of the Google profile photo of the user on image selection screen. Please keep in sync with IDS_OPTIONS_CHANGE_PICTURE_PROFILE_PHOTO.">
     Google Profile photo
@@ -4261,31 +4288,6 @@ Battery full
     <ph name="DOMAIN">$1<ex>example.com</ex></ph> wants your device's identity to be verified, by Google, to determine eligibility for enhanced playback of protected content. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>.
   </message>
 
-  <!-- Multi-profiles mode -->
-  <message name="IDS_MULTIPROFILES_INTRO_HEADLINE" desc="Describes which feature multi-profiles intro dialog presents.">
-    Multiple sign-in
-  </message>
-  <message name="IDS_MULTIPROFILES_INTRO_MESSAGE" desc="Content of the multi-profiles intro dialog shown when the user adds another user in multi-profiles mode.">
-    This feature allows you to quickly access any signed-in user without requiring a password.
-
-Only use this feature with accounts you trust.
-  </message>
-  <message name="IDS_MULTIPROFILES_INTRO_EXPLANATION" desc="Content of the multi-profiles intro dialog shown when the user adds another user in multi-profiles mode.">
-  </message>
-  <message name="IDS_MULTIPROFILES_INTRO_NOSHOW_AGAIN" desc="In multi-profiles intro dialog, text for no-show-again option.">
-    Got it, don't show me this again.
-  </message>
-  <message name="IDS_MULTIPROFILES_SESSION_ABORT_HEADLINE" desc="Describes that the current multi profile session ends because one user left.">
-    Multiple sign-in has been disallowed for a user in this session
-  </message>
-  <message name="IDS_MULTIPROFILES_SESSION_ABORT_MESSAGE" desc="Content of the description that the current multi profile session ended because one user left.">
-    An administrator has disallowed multiple sign-in for <ph name="USER_EMAIL">$1<ex>john@google.com</ex></ph>.
-All users must sign out to continue.
-  </message>
-  <message name="IDS_MULTIPROFILES_SESSION_ABORT_BUTTON_LABEL" desc="Button label for the button in the multi profile session ended because one user left dialog.">
-    Sign out
-  </message>
-
   <!-- First-run tutorial -->
   <message name="IDS_FIRST_RUN_GREETING_STEP_HEADER" desc="Greeting message shown as header of the first dialog of first-run tutorial.">
     Howdy, <ph name="USER_GIVEN_NAME">$1<ex>John</ex></ph>.
@@ -4306,7 +4308,7 @@ All users must sign out to continue.
     Get to your apps fast
   </message>
   <message name="IDS_FIRST_RUN_APP_LIST_STEP_TEXT_1" desc="First part of message on the first-run tutorial bubble pointing to application list button.">
-    Use the Launcher to quickly get to new apps and activities.
+    Use the Launcher to quickly get to new apps and activities. To get here by keyboard, press Alt + Shift + L.
   </message>
   <message name="IDS_FIRST_RUN_APP_LIST_STEP_TEXT_2" desc="Second part of message on the first-run tutorial bubble pointing to application list button. Only shown if the device is Google Assistant capable.">
     Just hold the Launcher icon to talk to your Google Assistant.
@@ -4315,7 +4317,7 @@ All users must sign out to continue.
     Check your Chromebook status
   </message>
   <message name="IDS_FIRST_RUN_TRAY_STEP_TEXT" desc="Text on the first-run tutorial bubble pointing to system tray bubble.">
-    Manage connections, updates, and settings with the status tray.
+    Manage connections, updates, and settings with the status tray. To get here by keyboard, press Alt + Shift + S.
   </message>
   <message name="IDS_FIRST_RUN_HELP_STEP_HEADER" desc="Header of the first-run tutorial bubble pointing to help button in system tray.">
     Explore your Chromebook
@@ -4369,6 +4371,9 @@ All users must sign out to continue.
   </message>
 
   <!-- 3G data Notifications -->
+  <message name="IDS_MOBILE_DATA_NOTIFICATION_TITLE" desc="Title of notification telling that mobile data is enabled.">
+    Mobile data
+  </message>
   <message name="IDS_3G_NOTIFICATION_MESSAGE" desc="Text of the 3G data notification telling that 3G data is enabled.">
     Google Chrome will use mobile data if you're not connected to another network.
   </message>
@@ -4863,11 +4868,17 @@ All users must sign out to continue.
   <message name="IDS_NETWORK_UI_GLOBAL_POLICY" desc="Label for global policy properties">
     Global Policy:
   </message>
+  <message name="IDS_NETWORK_UI_NETWORK_LISTS" desc="Label for network lists section">
+    Network (Service) and Device properties
+  </message>
   <message name="IDS_NETWORK_UI_VISIBLE_NETWORKS" desc="Label for list of visible networks">
     Visible Networks:
   </message>
   <message name="IDS_NETWORK_UI_FAVORITE_NETWORKS" desc="Label for list of favorite networks">
     Favorite Networks:
+  </message>
+  <message name="IDS_NETWORK_UI_DEVICES" desc="Label for list of network devices, e.g. wifi or cellular">
+    Devices:
   </message>
 
   <message name="IDS_DEVICE_LOG_LINK_TEXT" desc="Message preceeding link to chrome://device-log">
@@ -4940,6 +4951,9 @@ All users must sign out to continue.
   <message name="IDS_ARC_NOTIFICATION_TITLE" desc="Title of the first-run notification that enables Android apps.">
     Google Play on your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
   </message>
+  <message name="IDS_ARC_NOTIFICATION_DISPLAY_SOURCE" desc="Context title of the first-run notification that enables Android apps.">
+    Google Play
+  </message>
   <message name="IDS_ARC_NOTIFICATION_MESSAGE" desc="Description message of the first-run notification that enables Android apps.">
     Install apps and games from Google Play
   </message>
@@ -4970,7 +4984,7 @@ All users must sign out to continue.
   <message name="IDS_ARC_OPT_IN_DIALOG_BUTTON_SEND_FEEDBACK" desc="Send feedback button of the opt-in dialog for Android apps.">
     Send feedback
   </message>
-  <message name="IDS_ARC_OPT_IN_DIALOG_PROGRESS_LSO" desc="Name of LSO loading progress of the opt-in dialog for Android apps.">
+  <message name="IDS_ARC_OPT_IN_DIALOG_PROGRESS_TERMS" desc="Name of Terms Of Services loading progress of the opt-in dialog for Android apps.">
     Just a sec...
   </message>
   <message name="IDS_ARC_OPT_IN_DIALOG_PROGRESS_ANDROID" desc="Name of Android loading progress of the opt-in dialog for Android apps.">
@@ -5194,6 +5208,9 @@ All users must sign out to continue.
   </message>
 
   <!-- Print Job Notification -->
+  <message name="IDS_PRINT_JOB_NOTIFICATION_DISPLAY_SOURCE" desc="The context title of printing notification.">
+    Print
+  </message>
   <message name="IDS_PRINT_JOB_PRINTING_NOTIFICATION_TITLE" desc="Title of the printing-in-progress notification.">
     Now printing <ph name="DOCUMENT_NAME">$1<ex>document.pdf</ex></ph>
   </message>
@@ -5263,4 +5280,67 @@ All users must sign out to continue.
     <ph name="PRINTER_MAKE_OR_MODEL">$1<ex>OfficeJet 8710</ex></ph> (USB)
   </message>
 
+  <!-- Unlock Strings -->
+   <message name="IDS_QUICK_UNLOCK_NOTIFICATION_TITLE" desc="The title of the notification for Quick Unlock feature notification.">
+    QU Feature notification title here
+  </message>
+  <message name="IDS_QUICK_UNLOCK_NOTIFICATION_BODY" desc="The body of the notification for Quick Unlock feature notification.">
+    QU Feature notification body goes here. QU Feature notification body goes here. QU Feature notification body goes here. QU Feature notification body goes here. QU Feature notification body goes here.
+  </message>
+  <message name="IDS_FINGERPRINT_NOTIFICATION_TITLE" desc="The title of the notification for fingerprint unlock feature notification.">
+    Enable Fingerprint unlock?
+  </message>
+  <message name="IDS_FINGERPRINT_NOTIFICATION_BODY" desc="The body of the notification for fingerprint unlock feature notification.">
+    Skip the lock screen by just tapping the fingerprint sensor. Click to configure.
+  </message>
+  <message name="IDS_FINGERPRINT_UNLOCK_FEATURE_NOTIFIER_NAME" desc="The name of fingerprint unlock feature notifier that is a system component">
+    Fingerprint Unlock Feature
+  </message>
+  <message name="IDS_PIN_UNLOCK_FEATURE_NOTIFIER_NAME" desc="The name of PIN unlock feature notifier that is a system component">
+    PIN Unlock Feature
+  </message>
+
+  <message name="IDS_WIFI_SCANNING_MESSAGE" desc="Scanning for wifi networks">
+    Searching for Wi-Fi networks...
+  </message>
+
+  <!-- Screenshot notification -->
+  <message name="IDS_SCREENSHOT_NOTIFICATION_TITLE_SUCCESS" desc="The title of the notification when a screenshot was taken.">
+    Screenshot taken
+  </message>
+  <message name="IDS_SCREENSHOT_NOTIFICATION_TITLE_DISABLED" desc="The title of the notification when taking a screenshot failed because screenshots are disabled.">
+    Screenshots disabled
+  </message>
+  <message name="IDS_SCREENSHOT_NOTIFICATION_TITLE_FAIL" desc="The title of the notification when taking a screenshot failed.">
+    An error occurred
+  </message>
+  <message name="IDS_SCREENSHOT_NOTIFICATION_TEXT_SUCCESS" desc="The text of the notification when a screenshot was taken. If clicked, the screenshot file is displayed in the Files app.">
+    Show in folder
+  </message>
+  <message name="IDS_SCREENSHOT_NOTIFICATION_TEXT_DISABLED" desc="The text of the notification when taking a screenshot failed because screenshots are disabled by administrator policy.">
+    The ability to take screenshots has been disabled by your administrator.
+  </message>
+  <message name="IDS_SCREENSHOT_NOTIFICATION_TEXT_FAIL" desc="The text of the notification when taking a screenshot failed.">
+    Failed to save screenshot
+  </message>
+  <message name="IDS_SCREENSHOT_NOTIFICATION_NOTIFIER_NAME" desc="The name of screenshot notifier that is a system component">
+    Screenshot
+  </message>
+  <message name="IDS_SCREENSHOT_NOTIFICATION_BUTTON_COPY_TO_CLIPBOARD" desc="The button label for the screenshot notification which copies the screenshot image to clipboard on click.">
+    Copy to clipboard
+  </message>
+  <message name="IDS_SCREENSHOT_NOTIFICATION_BUTTON_ANNOTATE" desc="The label for the screenshot notification button that opens the note-taking app to annotate the screenhsot.">
+    Annotate image
+  </message>
+
+  <!-- HaTS Strings -->
+  <message name="IDS_HATS_NOTIFICATION_TITLE" desc="The title of the notification for Happiness Tracking Survey.">
+    Help us improve Chromebooks
+  </message>
+  <message name="IDS_HATS_NOTIFICATION_BODY" desc="The body of the notification for Happiness Tracking Survey.">
+    Let us know how we’re doing.
+  </message>
+  <message name="IDS_HATS_NOTIFICATION_TAKE_SURVEY_BUTTON" desc="The title of the button in the notification for Happiness Tracking Survey to take the said survey.">
+    Take survey
+  </message>
 </grit-part>

@@ -29,23 +29,23 @@
 
 #include "base/time/time.h"
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
 #include "platform/loader/fetch/FetchContext.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/MemoryCache.h"
 #include "platform/loader/fetch/RawResource.h"
 #include "platform/loader/fetch/ResourceLoader.h"
 #include "platform/loader/fetch/ResourceLoadingLog.h"
 #include "platform/loader/fetch/ResourceTimingInfo.h"
 #include "platform/loader/fetch/UniqueIdentifier.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/mhtml/ArchiveResource.h"
 #include "platform/mhtml/MHTMLArchive.h"
 #include "platform/network/NetworkInstrumentation.h"
 #include "platform/network/NetworkUtils.h"
 #include "platform/probe/PlatformProbes.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/weborigin/KnownPorts.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -270,24 +270,14 @@ WebURLRequest::RequestContext ResourceFetcher::DetermineRequestContext(
   return WebURLRequest::kRequestContextSubresource;
 }
 
-ResourceFetcher::ResourceFetcher(FetchContext* new_context,
-                                 RefPtr<WebTaskRunner> task_runner)
+ResourceFetcher::ResourceFetcher(FetchContext* new_context)
     : context_(new_context),
       scheduler_(ResourceLoadScheduler::Create(&Context())),
       archive_(Context().IsMainFrame() ? nullptr : Context().Archive()),
       resource_timing_report_timer_(
-          std::move(task_runner),
+          Context().GetLoadingTaskRunner(),
           this,
           &ResourceFetcher::ResourceTimingReportTimerFired),
-      // keepalive_loaders_timer_ shouldn't use a frame associated timer because
-      // it will be run after frame destruction.
-      keepalive_loaders_timer_(
-          Platform::Current()
-              ->CurrentThread()
-              ->Scheduler()
-              ->LoadingTaskRunner(),
-          this,
-          &ResourceFetcher::StopFetchingIncludingKeepaliveLoaders),
       auto_load_images_(true),
       images_enabled_(true),
       allow_stale_resources_(false),
@@ -299,6 +289,19 @@ Resource* ResourceFetcher::CachedResource(const KURL& resource_url) const {
   KURL url = MemoryCache::RemoveFragmentIdentifierIfNeeded(resource_url);
   const WeakMember<Resource>& resource = cached_resources_map_.at(url);
   return resource.Get();
+}
+
+void ResourceFetcher::HoldResourcesFromPreviousFetcher(
+    ResourceFetcher* old_fetcher) {
+  DCHECK(resources_from_previous_fetcher_.IsEmpty());
+  for (Resource* resource : old_fetcher->document_resources_) {
+    if (GetMemoryCache()->Contains(resource))
+      resources_from_previous_fetcher_.insert(resource);
+  }
+}
+
+void ResourceFetcher::ClearResourcesFromPreviousFetcher() {
+  resources_from_previous_fetcher_.clear();
 }
 
 bool ResourceFetcher::IsControlledByServiceWorker() const {
@@ -346,7 +349,7 @@ void ResourceFetcher::RequestLoadStarted(unsigned long identifier,
     RefPtr<ResourceTimingInfo> info = ResourceTimingInfo::Create(
         params.Options().initiator_info.name, MonotonicallyIncreasingTime(),
         resource->GetType() == Resource::kMainResource);
-    PopulateTimingInfo(info.Get(), resource);
+    PopulateTimingInfo(info.get(), resource);
     info->ClearLoadTimings();
     info->SetLoadFinishTime(info->InitialTime());
     scheduled_resource_timing_reports_.push_back(std::move(info));
@@ -365,9 +368,9 @@ void ResourceFetcher::DidLoadResourceFromMemoryCache(
       original_resource_request.GetRequestContext());
   Context().DispatchDidLoadResourceFromMemoryCache(identifier, resource_request,
                                                    resource->GetResponse());
-  Context().DispatchWillSendRequest(identifier, resource_request,
-                                    ResourceResponse() /* redirects */,
-                                    resource->Options().initiator_info);
+  Context().DispatchWillSendRequest(
+      identifier, resource_request, ResourceResponse() /* redirects */,
+      resource->GetType(), resource->Options().initiator_info);
   Context().DispatchDidReceiveResponse(
       identifier, resource->GetResponse(), resource_request.GetFrameType(),
       resource_request.GetRequestContext(), resource,
@@ -443,7 +446,6 @@ Resource* ResourceFetcher::ResourceForStaticData(
 
   Resource* resource = factory.Create(
       params.GetResourceRequest(), params.Options(), params.DecoderOptions());
-  resource->SetNeedsSynchronousCacheHit(substitute_data.ForceSynchronousLoad());
   // FIXME: We should provide a body stream here.
   resource->SetStatus(ResourceStatus::kPending);
   resource->NotifyStartLoad();
@@ -453,7 +455,7 @@ Resource* ResourceFetcher::ResourceForStaticData(
     resource->SetResourceBuffer(data);
   resource->SetIdentifier(CreateUniqueIdentifier());
   resource->SetCacheIdentifier(cache_identifier);
-  resource->Finish();
+  resource->Finish(0.0, Context().GetLoadingTaskRunner().get());
 
   if (ShouldResourceBeAddedToMemoryCache(params, resource) &&
       !substitute_data.IsValid()) {
@@ -472,7 +474,8 @@ Resource* ResourceFetcher::ResourceForBlockedRequest(
   resource->SetStatus(ResourceStatus::kPending);
   resource->NotifyStartLoad();
   resource->FinishAsError(ResourceError::CancelledDueToAccessCheckError(
-      params.Url(), blocked_reason));
+                              params.Url(), blocked_reason),
+                          Context().GetLoadingTaskRunner().get());
   return resource;
 }
 
@@ -599,10 +602,8 @@ ResourceFetcher::PrepareRequestResult ResourceFetcher::PrepareRequest(
       MemoryCache::RemoveFragmentIdentifierIfNeeded(params.Url()), options,
       reporting_policy, params.GetOriginRestriction(),
       resource_request.GetRedirectStatus());
-  if (blocked_reason != ResourceRequestBlockedReason::kNone) {
-    DCHECK(!substitute_data.ForceSynchronousLoad());
+  if (blocked_reason != ResourceRequestBlockedReason::kNone)
     return kBlock;
-  }
 
   // For initial requests, call prepareRequest() here before revalidation
   // policy is determined.
@@ -647,7 +648,8 @@ Resource* ResourceFetcher::RequestResource(
   ResourceRequest& resource_request = params.MutableResourceRequest();
   network_instrumentation::ScopedResourceLoadTracker
       scoped_resource_load_tracker(identifier, resource_request);
-  SCOPED_BLINK_UMA_HISTOGRAM_TIMER("Blink.Fetch.RequestResourceTime");
+  SCOPED_BLINK_UMA_HISTOGRAM_TIMER_THREAD_SAFE(
+      "Blink.Fetch.RequestResourceTime");
   // TODO(dproy): Remove this. http://crbug.com/659666
   TRACE_EVENT1("blink", "ResourceFetcher::requestResource", "url",
                UrlForTraceEvent(params.Url()));
@@ -874,7 +876,7 @@ void ResourceFetcher::StorePerformanceTimingInitiatorInformation(
   }
 
   if (!is_main_resource ||
-      Context().UpdateTimingInfoForIFrameNavigation(info.Get())) {
+      Context().UpdateTimingInfoForIFrameNavigation(info.get())) {
     resource_timing_info_map_.insert(resource, std::move(info));
   }
 }
@@ -926,7 +928,7 @@ Resource* ResourceFetcher::MatchPreload(const FetchParameters& params,
       !resource->CanReuse(params))
     return nullptr;
 
-  if (!resource->MatchPreload(params))
+  if (!resource->MatchPreload(params, Context().GetLoadingTaskRunner().get()))
     return nullptr;
   preloads_.erase(it);
   matched_preloads_.push_back(resource);
@@ -1195,15 +1197,29 @@ void ResourceFetcher::ReloadImagesIfNotDeferred() {
 }
 
 void ResourceFetcher::ClearContext() {
+  DCHECK(resources_from_previous_fetcher_.IsEmpty());
   scheduler_->Shutdown();
   ClearPreloads(ResourceFetcher::kClearAllPreloads);
   context_ = Context().Detach();
 
+  // Make sure the only requests still going are keepalive requests.
+  // Callers of ClearContext() should be calling StopFetching() prior
+  // to this, but it's possible for additional requests to start during
+  // StopFetching() (e.g., fallback fonts that only trigger when the
+  // first choice font failed to load).
+  StopFetching();
+
   if (!loaders_.IsEmpty() || !non_blocking_loaders_.IsEmpty()) {
     // There are some keepalive requests.
-    self_keep_alive_ = this;
-    keepalive_loaders_timer_.StartOneShot(kKeepaliveLoadersTimeout,
-                                          BLINK_FROM_HERE);
+    // The use of WrapPersistent creates a reference cycle intentionally,
+    // to keep the ResourceFetcher and ResourceLoaders alive until the requests
+    // complete or the timer fires.
+    keepalive_loaders_task_handle_ =
+        Context().GetLoadingTaskRunner()->PostDelayedCancellableTask(
+            BLINK_FROM_HERE,
+            WTF::Bind(&ResourceFetcher::StopFetchingIncludingKeepaliveLoaders,
+                      WrapPersistent(this)),
+            kKeepaliveLoadersTimeout);
   }
 }
 
@@ -1288,7 +1304,7 @@ ArchiveResource* ResourceFetcher::CreateArchive(Resource* resource) {
 }
 
 ResourceTimingInfo* ResourceFetcher::GetNavigationTimingInfo() {
-  return navigation_timing_info_.Get();
+  return navigation_timing_info_.get();
 }
 
 void ResourceFetcher::HandleLoadCompletion(Resource* resource) {
@@ -1319,9 +1335,9 @@ void ResourceFetcher::HandleLoaderFinish(Resource* resource,
   if (resource->GetType() == Resource::kMainResource) {
     DCHECK(navigation_timing_info_);
     // Store redirect responses that were packed inside the final response.
-    AddRedirectsToTimingInfo(resource, navigation_timing_info_.Get());
+    AddRedirectsToTimingInfo(resource, navigation_timing_info_.get());
     if (resource->GetResponse().IsHTTP()) {
-      PopulateTimingInfo(navigation_timing_info_.Get(), resource);
+      PopulateTimingInfo(navigation_timing_info_.get(), resource);
       navigation_timing_info_->AddFinalTransferSize(
           encoded_data_length == -1 ? 0 : encoded_data_length);
     }
@@ -1329,11 +1345,11 @@ void ResourceFetcher::HandleLoaderFinish(Resource* resource,
   if (RefPtr<ResourceTimingInfo> info =
           resource_timing_info_map_.Take(resource)) {
     // Store redirect responses that were packed inside the final response.
-    AddRedirectsToTimingInfo(resource, info.Get());
+    AddRedirectsToTimingInfo(resource, info.get());
 
     if (resource->GetResponse().IsHTTP() &&
         resource->GetResponse().HttpStatusCode() < 400) {
-      PopulateTimingInfo(info.Get(), resource);
+      PopulateTimingInfo(info.get(), resource);
       info->SetLoadFinishTime(finish_time);
       // encodedDataLength == -1 means "not available".
       // TODO(ricea): Find cases where it is not available but the
@@ -1353,7 +1369,7 @@ void ResourceFetcher::HandleLoaderFinish(Resource* resource,
       resource->GetResponse().DecodedBodyLength());
 
   if (type == kDidFinishLoading)
-    resource->Finish(finish_time);
+    resource->Finish(finish_time, Context().GetLoadingTaskRunner().get());
 
   HandleLoadCompletion(resource);
 }
@@ -1375,7 +1391,7 @@ void ResourceFetcher::HandleLoaderError(Resource* resource,
 
   if (error.IsCancellation())
     RemovePreload(resource);
-  resource->FinishAsError(error);
+  resource->FinishAsError(error, Context().GetLoadingTaskRunner().get());
 
   HandleLoadCompletion(resource);
 }
@@ -1415,6 +1431,7 @@ bool ResourceFetcher::StartLoad(Resource* resource) {
                                             resource->Options().initiator_info);
 
     Context().DispatchWillSendRequest(resource->Identifier(), request, response,
+                                      resource->GetType(),
                                       resource->Options().initiator_info);
 
     // Resource requests from suborigins should not be intercepted by the
@@ -1459,10 +1476,8 @@ void ResourceFetcher::RemoveResourceLoader(ResourceLoader* loader) {
   else
     NOTREACHED();
 
-  if (loaders_.IsEmpty() && non_blocking_loaders_.IsEmpty()) {
-    self_keep_alive_.Clear();
-    keepalive_loaders_timer_.Stop();
-  }
+  if (loaders_.IsEmpty() && non_blocking_loaders_.IsEmpty())
+    keepalive_loaders_task_handle_.Cancel();
 }
 
 void ResourceFetcher::StopFetching() {
@@ -1575,39 +1590,52 @@ void ResourceFetcher::LogPreloadStats(ClearPreloadsPolicy policy) {
         NOTREACHED();
     }
   }
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, image_preloads,
-                      ("PreloadScanner.Counts2.Image", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, image_preload_misses,
-                      ("PreloadScanner.Counts2.Miss.Image", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, script_preloads,
-                      ("PreloadScanner.Counts2.Script", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, script_preload_misses,
-                      ("PreloadScanner.Counts2.Miss.Script", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, stylesheet_preloads,
-                      ("PreloadScanner.Counts2.CSSStyleSheet", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(
+
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, image_preloads,
+                                  ("PreloadScanner.Counts2.Image", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, image_preload_misses,
+      ("PreloadScanner.Counts2.Miss.Image", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, script_preloads,
+      ("PreloadScanner.Counts2.Script", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, script_preload_misses,
+      ("PreloadScanner.Counts2.Miss.Script", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, stylesheet_preloads,
+      ("PreloadScanner.Counts2.CSSStyleSheet", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
       CustomCountHistogram, stylesheet_preload_misses,
       ("PreloadScanner.Counts2.Miss.CSSStyleSheet", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, font_preloads,
-                      ("PreloadScanner.Counts2.Font", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, font_preload_misses,
-                      ("PreloadScanner.Counts2.Miss.Font", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, media_preloads,
-                      ("PreloadScanner.Counts2.Media", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, media_preload_misses,
-                      ("PreloadScanner.Counts2.Miss.Media", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, text_track_preloads,
-                      ("PreloadScanner.Counts2.TextTrack", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, text_track_preload_misses,
-                      ("PreloadScanner.Counts2.Miss.TextTrack", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, import_preloads,
-                      ("PreloadScanner.Counts2.Import", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, import_preload_misses,
-                      ("PreloadScanner.Counts2.Miss.Import", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, raw_preloads,
-                      ("PreloadScanner.Counts2.Raw", 0, 100, 25));
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, raw_preload_misses,
-                      ("PreloadScanner.Counts2.Miss.Raw", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, font_preloads,
+                                  ("PreloadScanner.Counts2.Font", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, font_preload_misses,
+      ("PreloadScanner.Counts2.Miss.Font", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, media_preloads,
+                                  ("PreloadScanner.Counts2.Media", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, media_preload_misses,
+      ("PreloadScanner.Counts2.Miss.Media", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, text_track_preloads,
+      ("PreloadScanner.Counts2.TextTrack", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, text_track_preload_misses,
+      ("PreloadScanner.Counts2.Miss.TextTrack", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, import_preloads,
+      ("PreloadScanner.Counts2.Import", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, import_preload_misses,
+      ("PreloadScanner.Counts2.Miss.Import", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, raw_preloads,
+                                  ("PreloadScanner.Counts2.Raw", 0, 100, 25));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, raw_preload_misses,
+      ("PreloadScanner.Counts2.Miss.Raw", 0, 100, 25));
+
   if (images)
     image_preloads.Count(images);
   if (image_misses)
@@ -1692,9 +1720,8 @@ void ResourceFetcher::StopFetchingInternal(StopFetchingTarget target) {
   }
 }
 
-void ResourceFetcher::StopFetchingIncludingKeepaliveLoaders(TimerBase*) {
+void ResourceFetcher::StopFetchingIncludingKeepaliveLoaders() {
   StopFetchingInternal(StopFetchingTarget::kIncludingKeepaliveLoaders);
-  self_keep_alive_.Clear();
 }
 
 DEFINE_TRACE(ResourceFetcher) {
@@ -1705,6 +1732,7 @@ DEFINE_TRACE(ResourceFetcher) {
   visitor->Trace(non_blocking_loaders_);
   visitor->Trace(cached_resources_map_);
   visitor->Trace(document_resources_);
+  visitor->Trace(resources_from_previous_fetcher_);
   visitor->Trace(preloads_);
   visitor->Trace(matched_preloads_);
   visitor->Trace(resource_timing_info_map_);

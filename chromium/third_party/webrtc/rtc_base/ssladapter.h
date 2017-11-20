@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_RTC_BASE_SSLADAPTER_H_
-#define WEBRTC_RTC_BASE_SSLADAPTER_H_
+#ifndef RTC_BASE_SSLADAPTER_H_
+#define RTC_BASE_SSLADAPTER_H_
 
-#include "webrtc/rtc_base/asyncsocket.h"
-#include "webrtc/rtc_base/sslstreamadapter.h"
+#include "rtc_base/asyncsocket.h"
+#include "rtc_base/sslstreamadapter.h"
 
 namespace rtc {
 
@@ -48,7 +48,9 @@ class SSLAdapter : public AsyncSocketAdapter {
   // TODO(juberti): Remove the opportunistic encryption mechanism in
   // BasicPacketSocketFactory that uses this function.
   virtual void SetIgnoreBadCert(bool ignore) = 0;
+
   virtual void SetAlpnProtocols(const std::vector<std::string>& protos) = 0;
+  virtual void SetEllipticCurves(const std::vector<std::string>& curves) = 0;
 
   // Do DTLS or TLS (default is TLS, if unspecified)
   virtual void SetMode(SSLMode mode) = 0;
@@ -94,4 +96,4 @@ bool CleanupSSL();
 
 }  // namespace rtc
 
-#endif  // WEBRTC_RTC_BASE_SSLADAPTER_H_
+#endif  // RTC_BASE_SSLADAPTER_H_

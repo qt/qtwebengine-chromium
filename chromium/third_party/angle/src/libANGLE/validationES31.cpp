@@ -13,6 +13,7 @@
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/validationES.h"
+#include "libANGLE/validationES2.h"
 #include "libANGLE/validationES3.h"
 
 #include "common/utilities.h"
@@ -256,8 +257,10 @@ bool ValidateProgramResourceIndex(const Program *programObject,
         case GL_PROGRAM_OUTPUT:
             return (index < static_cast<GLuint>(programObject->getOutputResourceCount()));
 
-        // TODO(jie.a.chen@intel.com): more interfaces.
         case GL_UNIFORM:
+            return (index < static_cast<GLuint>(programObject->getActiveUniformCount()));
+
+        // TODO(jie.a.chen@intel.com): more interfaces.
         case GL_UNIFORM_BLOCK:
         case GL_TRANSFORM_FEEDBACK_VARYING:
         case GL_BUFFER_VARIABLE:
@@ -638,8 +641,9 @@ bool ValidateGetMultisamplefv(Context *context, GLenum pname, GLuint index, GLfl
         return false;
     }
 
-    GLint maxSamples = context->getCaps().maxSamples;
-    if (index >= static_cast<GLuint>(maxSamples))
+    Framebuffer *framebuffer = context->getGLState().getDrawFramebuffer();
+
+    if (index >= static_cast<GLuint>(framebuffer->getSamples(context)))
     {
         context->handleError(InvalidValue() << "Index must be less than the value of SAMPLES.");
         return false;
@@ -1153,7 +1157,7 @@ bool ValidateGetProgramResourceiv(Context *context,
 {
     if (context->getClientVersion() < ES_3_1)
     {
-        context->handleError(InvalidOperation() << "Context does not support GLES3.1.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -1195,6 +1199,135 @@ bool ValidateGetProgramResourceiv(Context *context,
             return false;
         }
     }
+    return true;
+}
+
+bool ValidateGetProgramInterfaceiv(Context *context,
+                                   GLuint program,
+                                   GLenum programInterface,
+                                   GLenum pname,
+                                   GLint *params)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
+        return false;
+    }
+
+    Program *programObject = GetValidProgram(context, program);
+    if (programObject == nullptr)
+    {
+        return false;
+    }
+
+    if (!ValidateProgramInterface(programInterface))
+    {
+        context->handleError(InvalidEnum() << "Invalid program interface.");
+        return false;
+    }
+
+    switch (pname)
+    {
+        case GL_ACTIVE_RESOURCES:
+        case GL_MAX_NAME_LENGTH:
+        case GL_MAX_NUM_ACTIVE_VARIABLES:
+            break;
+
+        default:
+            context->handleError(InvalidEnum() << "Unknown property of program interface.");
+            return false;
+    }
+
+    if (pname == GL_MAX_NAME_LENGTH && programInterface == GL_ATOMIC_COUNTER_BUFFER)
+    {
+        context->handleError(InvalidOperation()
+                             << "Active atomic counter resources are not assigned name strings.");
+        return false;
+    }
+
+    if (pname == GL_MAX_NUM_ACTIVE_VARIABLES)
+    {
+        switch (programInterface)
+        {
+            case GL_ATOMIC_COUNTER_BUFFER:
+            case GL_SHADER_STORAGE_BLOCK:
+            case GL_UNIFORM_BLOCK:
+                break;
+
+            default:
+                context->handleError(
+                    InvalidOperation()
+                    << "MAX_NUM_ACTIVE_VARIABLES requires a buffer or block interface.");
+                return false;
+        }
+    }
+
+    return true;
+}
+
+static bool ValidateGenOrDeleteES31(Context *context, GLint n)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
+        return false;
+    }
+
+    return ValidateGenOrDelete(context, n);
+}
+
+bool ValidateGenProgramPipelines(Context *context, GLint n, GLuint *)
+{
+    return ValidateGenOrDeleteES31(context, n);
+}
+
+bool ValidateDeleteProgramPipelines(Context *context, GLint n, const GLuint *)
+{
+    return ValidateGenOrDeleteES31(context, n);
+}
+
+bool ValidateBindProgramPipeline(Context *context, GLuint pipeline)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
+        return false;
+    }
+
+    if (!context->isProgramPipelineGenerated(pipeline))
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ObjectNotGenerated);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateIsProgramPipeline(Context *context, GLuint pipeline)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateSampleMaski(Context *context, GLuint maskNumber)
+{
+    if (context->getClientVersion() < ES_3_1)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
+        return false;
+    }
+
+    if (maskNumber >= context->getCaps().maxSampleMaskWords)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidSampleMaskNumber);
+        return false;
+    }
+
     return true;
 }
 

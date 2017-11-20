@@ -7,6 +7,8 @@
 #include <stddef.h>
 
 #include <algorithm>
+#include <string>
+#include <utility>
 
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
@@ -36,6 +38,7 @@
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/drag_messages.h"
+#include "content/common/input/ime_text_span_conversions.h"
 #include "content/common/input_messages.h"
 #include "content/common/site_isolation_policy.h"
 #include "content/common/text_input_state.h"
@@ -62,26 +65,15 @@ namespace content {
 
 namespace {
 
-ui::ImeTextSpan::Type ConvertWebTypeToUiType(blink::WebImeTextSpan::Type type) {
-  switch (type) {
-    case blink::WebImeTextSpan::Type::kComposition:
-      return ui::ImeTextSpan::Type::kComposition;
-    case blink::WebImeTextSpan::Type::kSuggestion:
-      return ui::ImeTextSpan::Type::kSuggestion;
-  }
-
-  NOTREACHED();
-  return ui::ImeTextSpan::Type::kComposition;
-}
-
 std::vector<ui::ImeTextSpan> ConvertToUiImeTextSpan(
     const std::vector<blink::WebImeTextSpan>& ime_text_spans) {
   std::vector<ui::ImeTextSpan> ui_ime_text_spans;
   for (const auto& ime_text_span : ime_text_spans) {
     ui_ime_text_spans.emplace_back(ui::ImeTextSpan(
-        ConvertWebTypeToUiType(ime_text_span.type), ime_text_span.start_offset,
-        ime_text_span.end_offset, ime_text_span.underline_color,
-        ime_text_span.thick, ime_text_span.background_color,
+        ConvertWebImeTextSpanTypeToUiType(ime_text_span.type),
+        ime_text_span.start_offset, ime_text_span.end_offset,
+        ime_text_span.underline_color, ime_text_span.thick,
+        ime_text_span.background_color,
         ime_text_span.suggestion_highlight_color, ime_text_span.suggestions));
   }
   return ui_ime_text_spans;
@@ -637,10 +629,7 @@ std::unique_ptr<IPC::Message> BrowserPluginGuest::UpdateInstanceIdIfNecessary(
   bool read_success = iter.ReadBytes(&data, remaining_bytes);
   CHECK(read_success)
       << "Unexpected failure reading remaining IPC::Message payload.";
-  bool write_success = new_msg->WriteBytes(data, remaining_bytes);
-  CHECK(write_success)
-      << "Unexpected failure writing remaining IPC::Message payload.";
-
+  new_msg->WriteBytes(data, remaining_bytes);
   return new_msg;
 }
 
@@ -712,8 +701,12 @@ void BrowserPluginGuest::RenderViewReady() {
   // associated BrowserPlugin know. We only need to send this if we're attached,
   // as guest_crashed_ is cleared automatically on attach anyways.
   if (attached()) {
-    SendMessageToEmbedder(base::MakeUnique<BrowserPluginMsg_GuestReady>(
-        browser_plugin_instance_id()));
+    RenderWidgetHostViewGuest* rwhv = static_cast<RenderWidgetHostViewGuest*>(
+        web_contents()->GetRenderWidgetHostView());
+    if (rwhv) {
+      SendMessageToEmbedder(std::make_unique<BrowserPluginMsg_GuestReady>(
+          browser_plugin_instance_id(), rwhv->GetFrameSinkId()));
+    }
   }
 
   RenderWidgetHostImpl::From(rvh->GetWidget())
@@ -995,7 +988,10 @@ void BrowserPluginGuest::OnLockMouse(bool user_gesture,
   if (pending_lock_request_) {
     // Immediately reject the lock because only one pointerLock may be active
     // at a time.
-    Send(new ViewMsg_LockMouse_ACK(routing_id(), false));
+    RenderWidgetHost* widget_host =
+        web_contents()->GetRenderViewHost()->GetWidget();
+    widget_host->Send(
+        new ViewMsg_LockMouse_ACK(widget_host->GetRoutingID(), false));
     return;
   }
 
@@ -1013,7 +1009,10 @@ void BrowserPluginGuest::OnLockMouse(bool user_gesture,
 
 void BrowserPluginGuest::OnLockMouseAck(int browser_plugin_instance_id,
                                         bool succeeded) {
-  Send(new ViewMsg_LockMouse_ACK(routing_id(), succeeded));
+  RenderWidgetHost* widget_host =
+      web_contents()->GetRenderViewHost()->GetWidget();
+  widget_host->Send(
+      new ViewMsg_LockMouse_ACK(widget_host->GetRoutingID(), succeeded));
   pending_lock_request_ = false;
   if (succeeded)
     mouse_locked_ = true;
@@ -1059,17 +1058,28 @@ void BrowserPluginGuest::OnUnlockMouseAck(int browser_plugin_instance_id) {
   // mouse_locked_ could be false here if the lock attempt was cancelled due
   // to window focus, or for various other reasons before the guest was informed
   // of the lock's success.
-  if (mouse_locked_)
-    Send(new ViewMsg_MouseLockLost(routing_id()));
+  if (mouse_locked_) {
+    RenderWidgetHost* widget_host =
+        web_contents()->GetRenderViewHost()->GetWidget();
+    widget_host->Send(new ViewMsg_MouseLockLost(widget_host->GetRoutingID()));
+  }
   mouse_locked_ = false;
 }
 
-void BrowserPluginGuest::OnUpdateGeometry(int browser_plugin_instance_id,
-                                          const gfx::Rect& view_rect) {
+void BrowserPluginGuest::OnUpdateGeometry(
+    int browser_plugin_instance_id,
+    const gfx::Rect& view_rect,
+    const viz::LocalSurfaceId& local_surface_id) {
   // The plugin has moved within the embedder without resizing or the
   // embedder/container's view rect changing.
   guest_window_rect_ = view_rect;
   GetWebContents()->SendScreenRects();
+  if (local_surface_id_ != local_surface_id) {
+    local_surface_id_ = local_surface_id;
+    RenderWidgetHostView* view = web_contents()->GetRenderWidgetHostView();
+    if (view)
+      view->GetRenderWidgetHost()->WasResized();
+  }
 }
 
 void BrowserPluginGuest::OnHasTouchEventHandlers(bool accept) {
@@ -1105,7 +1115,7 @@ void BrowserPluginGuest::OnShowPopup(
 
 void BrowserPluginGuest::OnShowWidget(int route_id,
                                       const gfx::Rect& initial_rect) {
-  int process_id = GetWebContents()->GetRenderProcessHost()->GetID();
+  int process_id = GetWebContents()->GetMainFrame()->GetProcess()->GetID();
   GetWebContents()->ShowCreatedWidget(process_id, route_id, initial_rect);
 }
 

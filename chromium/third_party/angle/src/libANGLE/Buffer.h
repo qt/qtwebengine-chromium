@@ -65,7 +65,7 @@ class Buffer final : public RefCountObject, public LabeledObject
   public:
     Buffer(rx::GLImplFactory *factory, GLuint id);
     ~Buffer() override;
-    void onDestroy(const Context *context) override;
+    Error onDestroy(const Context *context) override;
 
     void setLabel(const std::string &label) override;
     const std::string &getLabel() const override;
@@ -92,7 +92,8 @@ class Buffer final : public RefCountObject, public LabeledObject
     void onTransformFeedback();
     void onPixelUnpack();
 
-    Error getIndexRange(GLenum type,
+    Error getIndexRange(const gl::Context *context,
+                        GLenum type,
                         size_t offset,
                         size_t count,
                         bool primitiveRestartEnabled,

@@ -171,6 +171,19 @@ void SkImageShader::toString(SkString* str) const {
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrSimpleTextureEffect.h"
 
+static GrSamplerState::WrapMode tile_mode_to_wrap_mode(const SkShader::TileMode tileMode) {
+    switch (tileMode) {
+        case SkShader::TileMode::kClamp_TileMode:
+            return GrSamplerState::WrapMode::kClamp;
+        case SkShader::TileMode::kRepeat_TileMode:
+            return GrSamplerState::WrapMode::kRepeat;
+        case SkShader::TileMode::kMirror_TileMode:
+            return GrSamplerState::WrapMode::kMirrorRepeat;
+    }
+    SK_ABORT("Unknown tile mode.");
+    return GrSamplerState::WrapMode::kClamp;
+}
+
 std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
         const AsFPArgs& args) const {
     SkMatrix lmInverse;
@@ -185,22 +198,21 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
         lmInverse.postConcat(inv);
     }
 
-    SkShader::TileMode tm[] = { fTileModeX, fTileModeY };
+    GrSamplerState::WrapMode wrapModes[] = {tile_mode_to_wrap_mode(fTileModeX),
+                                            tile_mode_to_wrap_mode(fTileModeY)};
 
     // Must set wrap and filter on the sampler before requesting a texture. In two places below
     // we check the matrix scale factors to determine how to interpret the filter quality setting.
     // This completely ignores the complexity of the drawVertices case where explicit local coords
     // are provided by the caller.
     bool doBicubic;
-    GrSamplerParams::FilterMode textureFilterMode =
-    GrSkFilterQualityToGrFilterMode(args.fFilterQuality, *args.fViewMatrix, this->getLocalMatrix(),
-                                    &doBicubic);
-    GrSamplerParams params(tm, textureFilterMode);
+    GrSamplerState::Filter textureFilterMode = GrSkFilterQualityToGrFilterMode(
+            args.fFilterQuality, *args.fViewMatrix, this->getLocalMatrix(), &doBicubic);
+    GrSamplerState samplerState(wrapModes, textureFilterMode);
     sk_sp<SkColorSpace> texColorSpace;
     SkScalar scaleAdjust[2] = { 1.0f, 1.0f };
-    sk_sp<GrTextureProxy> proxy(as_IB(fImage)->asTextureProxyRef(args.fContext, params,
-                                                                 args.fDstColorSpace,
-                                                                 &texColorSpace, scaleAdjust));
+    sk_sp<GrTextureProxy> proxy(as_IB(fImage)->asTextureProxyRef(
+            args.fContext, samplerState, args.fDstColorSpace, &texColorSpace, scaleAdjust));
     if (!proxy) {
         return nullptr;
     }
@@ -213,11 +225,11 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
                                                                        args.fDstColorSpace);
     std::unique_ptr<GrFragmentProcessor> inner;
     if (doBicubic) {
-        inner = GrBicubicEffect::Make(std::move(proxy),
-                                      std::move(colorSpaceXform), lmInverse, tm);
+        inner = GrBicubicEffect::Make(std::move(proxy), std::move(colorSpaceXform), lmInverse,
+                                      wrapModes);
     } else {
-        inner = GrSimpleTextureEffect::Make(std::move(proxy),
-                                            std::move(colorSpaceXform), lmInverse, params);
+        inner = GrSimpleTextureEffect::Make(std::move(proxy), std::move(colorSpaceXform), lmInverse,
+                                            samplerState);
     }
 
     if (isAlphaOnly) {
@@ -312,9 +324,11 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
     misc->paint_color = SkColor4f_from_SkColor(rec.fPaint.getColor(), rec.fDstCS);
     p->append_matrix(alloc, matrix);
 
-    auto gather = alloc->make<SkJumper_MemoryCtx>();
+    auto gather = alloc->make<SkJumper_GatherCtx>();
     gather->pixels = pm.writable_addr();  // Don't worry, we won't write to it.
     gather->stride = pm.rowBytesAsPixels();
+    gather->width  = pm.width();
+    gather->height = pm.height();
 
     auto limit_x = alloc->make<SkJumper_TileCtx>(),
          limit_y = alloc->make<SkJumper_TileCtx>();
@@ -325,12 +339,12 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
 
     auto append_tiling_and_gather = [&] {
         switch (fTileModeX) {
-            case kClamp_TileMode:  p->append(SkRasterPipeline::clamp_x,  limit_x); break;
+            case kClamp_TileMode:  /* The gather_xxx stage will clamp for us. */   break;
             case kMirror_TileMode: p->append(SkRasterPipeline::mirror_x, limit_x); break;
             case kRepeat_TileMode: p->append(SkRasterPipeline::repeat_x, limit_x); break;
         }
         switch (fTileModeY) {
-            case kClamp_TileMode:  p->append(SkRasterPipeline::clamp_y,  limit_y); break;
+            case kClamp_TileMode:  /* The gather_xxx stage will clamp for us. */   break;
             case kMirror_TileMode: p->append(SkRasterPipeline::mirror_y, limit_y); break;
             case kRepeat_TileMode: p->append(SkRasterPipeline::repeat_y, limit_y); break;
         }

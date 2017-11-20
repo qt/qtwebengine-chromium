@@ -23,15 +23,19 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
+#include "cc/animation/animation_events.h"
+#include "cc/animation/animation_host.h"
 #include "cc/animation/animation_player.h"
+#include "cc/animation/animation_ticker.h"
 #include "cc/layers/layer.h"
 #include "cc/test/pixel_test_utils.h"
-#include "components/viz/common/quads/copy_output_request.h"
-#include "components/viz/common/quads/copy_output_result.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/surfaces/sequence_surface_reference_factory.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "components/viz/common/surfaces/surface_reference_factory.h"
 #include "components/viz/common/surfaces/surface_sequence.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/compositor/compositor_observer.h"
@@ -46,6 +50,7 @@
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/compositor/test/draw_waiter_for_test.h"
+#include "ui/compositor/test/layer_animator_test_controller.h"
 #include "ui/compositor/test/test_compositor_host.h"
 #include "ui/compositor/test/test_layers.h"
 #include "ui/gfx/canvas.h"
@@ -88,7 +93,8 @@ class ColoredLayer : public Layer, public LayerDelegate {
 
   void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
 
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override {}
 
  private:
   SkColor color_;
@@ -114,7 +120,8 @@ class DrawFadedStringLayerDelegate : public LayerDelegate {
 
   void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
 
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override {}
 
  private:
   const SkColor background_color_;
@@ -199,7 +206,8 @@ class LayerWithRealCompositorTest : public testing::Test {
   void ReadPixels(SkBitmap* bitmap, gfx::Rect source_rect) {
     scoped_refptr<ReadbackHolder> holder(new ReadbackHolder);
     std::unique_ptr<viz::CopyOutputRequest> request =
-        viz::CopyOutputRequest::CreateBitmapRequest(
+        std::make_unique<viz::CopyOutputRequest>(
+            viz::CopyOutputRequest::ResultFormat::RGBA_BITMAP,
             base::BindOnce(&ReadbackHolder::OutputRequestCallback, holder));
     request->set_area(source_rect);
 
@@ -247,7 +255,10 @@ class LayerWithRealCompositorTest : public testing::Test {
     ReadbackHolder() : run_loop_(new base::RunLoop) {}
 
     void OutputRequestCallback(std::unique_ptr<viz::CopyOutputResult> result) {
-      result_ = result->TakeBitmap();
+      if (result->IsEmpty())
+        result_.reset();
+      else
+        result_ = std::make_unique<SkBitmap>(result->AsSkBitmap());
       run_loop_->Quit();
     }
 
@@ -301,9 +312,12 @@ class TestLayerDelegate : public LayerDelegate {
 
   void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
 
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override {
-    device_scale_factor_ = device_scale_factor;
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override {
+    device_scale_factor_ = new_device_scale_factor;
   }
+
+  MOCK_METHOD2(OnLayerOpacityChanged, void(float, float));
 
   void reset() {
     color_index_ = 0;
@@ -340,7 +354,8 @@ class DrawTreeLayerDelegate : public LayerDelegate {
     recorder.canvas()->DrawColor(SK_ColorWHITE);
   }
   void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override {}
 
   bool painted_;
   const gfx::Rect layer_bounds_;
@@ -354,11 +369,18 @@ class NullLayerDelegate : public LayerDelegate {
   NullLayerDelegate() {}
   ~NullLayerDelegate() override {}
 
+  gfx::Rect invalidation() const { return invalidation_; }
+
  private:
+  gfx::Rect invalidation_;
+
   // Overridden from LayerDelegate:
-  void OnPaintLayer(const ui::PaintContext& context) override {}
+  void OnPaintLayer(const ui::PaintContext& context) override {
+    invalidation_ = context.InvalidationForTesting();
+  }
   void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override {}
 
   DISALLOW_COPY_AND_ASSIGN(NullLayerDelegate);
 };
@@ -737,6 +759,7 @@ TEST_F(LayerWithDelegateTest, Cloning) {
   const float temperature = 0.8f;
   layer->SetLayerTemperature(temperature);
   layer->AddCacheRenderSurfaceRequest();
+  layer->AddTrilinearFilteringRequest();
 
   auto clone = layer->Clone();
 
@@ -749,6 +772,9 @@ TEST_F(LayerWithDelegateTest, Cloning) {
   // Cloning should not preserve cache_render_surface flag.
   EXPECT_NE(layer->cc_layer_for_testing()->cache_render_surface(),
             clone->cc_layer_for_testing()->cache_render_surface());
+  // Cloning should not preserve trilinear_filtering flag.
+  EXPECT_NE(layer->cc_layer_for_testing()->trilinear_filtering(),
+            clone->cc_layer_for_testing()->trilinear_filtering());
 
   layer->SetTransform(gfx::Transform());
   layer->SetColor(SK_ColorGREEN);
@@ -901,6 +927,10 @@ class LayerWithNullDelegateTest : public LayerWithDelegateTest {
     Layer* layer = CreateLayer(LAYER_NOT_DRAWN);
     layer->SetBounds(bounds);
     return layer;
+  }
+
+  gfx::Rect LastInvalidation() const {
+    return default_layer_delegate_->invalidation();
   }
 
  private:
@@ -1160,6 +1190,53 @@ TEST_F(LayerWithNullDelegateTest, EmptyDamagedRect) {
 
   // Wait for texture mailbox release to avoid DCHECKs.
   run_loop.Run();
+}
+
+// Tests that in deferred paint request, the layer damage will be accumulated.
+TEST_F(LayerWithNullDelegateTest, UpdateDamageInDeferredPaint) {
+  gfx::Rect bound(gfx::Rect(500, 500));
+  std::unique_ptr<Layer> root(CreateTextureRootLayer(bound));
+  EXPECT_EQ(bound, root->damaged_region_for_testing());
+  WaitForCommit();
+  EXPECT_EQ(gfx::Rect(), root->damaged_region_for_testing());
+  EXPECT_EQ(bound, LastInvalidation());
+
+  // Deferring paint.
+  root->AddDeferredPaintRequest();
+
+  // During deferring paint request, invalid_rect will not be set to
+  // cc_layer_->inputs_->update_rect, and the paint_region is empty.
+  gfx::Rect bound1(gfx::Rect(100, 100));
+  root->SchedulePaint(bound1);
+  EXPECT_EQ(bound1, root->damaged_region_for_testing());
+  root->SendDamagedRects();
+  EXPECT_EQ(gfx::Rect(), root->cc_layer_for_testing()->update_rect());
+  root->PaintContentsToDisplayList(
+      cc::ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
+  EXPECT_EQ(gfx::Rect(), LastInvalidation());
+
+  // During deferring paint request, a new invalid_rect will be accumulated.
+  gfx::Rect bound2(gfx::Rect(100, 200, 100, 100));
+  gfx::Rect bound_union(bound1);
+  bound_union.Union(bound2);
+  root->SchedulePaint(bound2);
+  EXPECT_EQ(bound_union, root->damaged_region_for_testing().bounds());
+  root->SendDamagedRects();
+  EXPECT_EQ(gfx::Rect(), root->cc_layer_for_testing()->update_rect());
+  root->PaintContentsToDisplayList(
+      cc::ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
+  EXPECT_EQ(gfx::Rect(), LastInvalidation());
+
+  // Remove deferring paint request.
+  root->RemoveDeferredPaintRequest();
+
+  // The invalidation region should be accumulated invalid_rect during deferred
+  // paint, i.e. union of bound1 and bound2.
+  root->SendDamagedRects();
+  EXPECT_EQ(bound_union, root->cc_layer_for_testing()->update_rect());
+  root->PaintContentsToDisplayList(
+      cc::ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
+  EXPECT_EQ(bound_union, LastInvalidation());
 }
 
 void ExpectRgba(int x, int y, SkColor expected_color, SkColor actual_color) {
@@ -1552,7 +1629,8 @@ class SchedulePaintLayerDelegate : public LayerDelegate {
 
   void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
 
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override {}
 
   int paint_count_;
   Layer* layer_;
@@ -2019,6 +2097,23 @@ TEST_F(LayerWithRealCompositorTest, SwitchCCLayerCacheRenderSurface) {
   EXPECT_TRUE(l1->cc_layer_for_testing()->cache_render_surface());
 }
 
+// Tests that when a layer with trilinear_filtering flag has its CC layer
+// switched, that the trilinear_filtering flag is maintained.
+TEST_F(LayerWithRealCompositorTest, SwitchCCLayerTrilinearFiltering) {
+  std::unique_ptr<Layer> root(CreateLayer(LAYER_TEXTURED));
+  std::unique_ptr<Layer> l1(CreateLayer(LAYER_TEXTURED));
+  GetCompositor()->SetRootLayer(root.get());
+  root->Add(l1.get());
+
+  l1->AddTrilinearFilteringRequest();
+
+  // Change l1's cc::Layer.
+  l1->SwitchCCLayerForTest();
+
+  // Ensure that the trilinear_filtering flag is maintained.
+  EXPECT_TRUE(l1->cc_layer_for_testing()->trilinear_filtering());
+}
+
 // Tests that the animators in the layer tree is added to the
 // animator-collection when the root-layer is set to the compositor.
 TEST_F(LayerWithDelegateTest, RootLayerAnimatorsInCompositor) {
@@ -2201,6 +2296,72 @@ TEST(LayerDelegateTest, DelegatedFrameDamage) {
   layer->OnDelegatedFrameDamage(damage_rect);
   EXPECT_TRUE(delegate.delegated_frame_damage_called());
   EXPECT_EQ(damage_rect, delegate.delegated_frame_damage_rect());
+}
+
+TEST(LayerDelegateTest, OnLayerOpacityChanged) {
+  auto layer = std::make_unique<Layer>(LAYER_TEXTURED);
+  testing::StrictMock<TestLayerDelegate> delegate;
+  layer->set_delegate(&delegate);
+  EXPECT_CALL(delegate, OnLayerOpacityChanged(1.0f, 0.5f));
+  layer->SetOpacity(0.5f);
+}
+
+TEST(LayerDelegateTest, OnLayerOpacityDidNotChange) {
+  auto layer = std::make_unique<Layer>(LAYER_TEXTURED);
+  testing::StrictMock<TestLayerDelegate> delegate;
+  layer->set_delegate(&delegate);
+  // Since |delegate| is a StrictMock, the test will fail if the observer is
+  // notified.
+  layer->SetOpacity(1.0f);
+}
+
+// Verify that LayerDelegate::OnLayerOpacityChanged() is called everytime the
+// opacity of a Layer is changed by an animation.
+TEST(LayerDelegateTest, OnLayerOpacityChangedAnimation) {
+  bool enable_pixel_output = false;
+  ContextFactory* context_factory = nullptr;
+  ContextFactoryPrivate* context_factory_private = nullptr;
+  InitializeContextFactoryForTests(enable_pixel_output, &context_factory,
+                                   &context_factory_private);
+  std::unique_ptr<TestCompositorHost> host(TestCompositorHost::Create(
+      gfx::Rect(), context_factory, context_factory_private));
+
+  ScopedAnimationDurationScaleMode scoped_animation_duration_scale_mode(
+      ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+  LayerAnimatorTestController test_controller(
+      LayerAnimator::CreateImplicitAnimator());
+  LayerAnimator* const animator = test_controller.animator();
+
+  auto layer = std::make_unique<Layer>(LAYER_TEXTURED);
+  testing::StrictMock<TestLayerDelegate> delegate;
+  host->GetCompositor()->SetRootLayer(layer.get());
+  layer->set_delegate(&delegate);
+  layer->SetAnimator(animator);
+  animator->AttachLayerAndTimeline(host->GetCompositor());
+
+  // Start the animation.
+  layer->SetOpacity(0.5f);
+  const base::TimeTicks start_time = animator->last_step_time();
+  const base::TimeDelta duration = animator->GetTransitionDuration();
+  animator->GetAnimationPlayerForTesting()
+      ->animation_ticker()
+      ->NotifyAnimationStarted(
+          {cc::AnimationEvent::STARTED, cc::ElementId(),
+           test_controller
+               .GetRunningSequence(ui::LayerAnimationElement::OPACITY)
+               ->animation_group_id(),
+           cc::TargetProperty::OPACITY, start_time});
+
+  // Play the animation.
+  EXPECT_CALL(delegate, OnLayerOpacityChanged(1.0f, 0.75f));
+  animator->GetAnimationPlayerForTesting()->Tick(start_time + duration / 2);
+  testing::Mock::VerifyAndClear(&delegate);
+
+  EXPECT_CALL(delegate, OnLayerOpacityChanged(0.75f, 0.5f));
+  animator->GetAnimationPlayerForTesting()->Tick(start_time + duration);
+  testing::Mock::VerifyAndClear(&delegate);
+
+  animator->DetachLayerAndTimeline(host->GetCompositor());
 }
 
 TEST_F(LayerWithRealCompositorTest, CompositorAnimationObserverTest) {

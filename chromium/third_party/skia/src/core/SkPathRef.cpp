@@ -10,6 +10,7 @@
 #include "SkOnce.h"
 #include "SkPath.h"
 #include "SkPathRef.h"
+#include "SkPathPriv.h"
 #include <limits>
 
 //////////////////////////////////////////////////////////////////////////////
@@ -235,14 +236,6 @@ SkPathRef* SkPathRef::CreateFromBuffer(SkRBuffer* buffer) {
 
     ref->fIsFinite = (packed >> kIsFinite_SerializationShift) & 1;
     uint8_t segmentMask = (packed >> kSegmentMask_SerializationShift) & 0xF;
-    bool isOval  = (packed >> kIsOval_SerializationShift) & 1;
-    bool isRRect  = (packed >> kIsRRect_SerializationShift) & 1;
-    if (isOval && isRRect) {
-        // Fuzzing generates data with both oval and rrect flags set; abort early in this case/
-        return nullptr;
-    }
-    bool rrectOrOvalIsCCW = (packed >> kRRectOrOvalIsCCW_SerializationShift) & 1;
-    unsigned rrectOrOvalStartIdx = (packed >> kRRectOrOvalStartIdx_SerializationShift) & 0x7;
 
     int32_t verbCount, pointCount, conicCount;
     if (!buffer->readU32(&(ref->fGenerationID)) ||
@@ -303,10 +296,6 @@ SkPathRef* SkPathRef::CreateFromBuffer(SkRBuffer* buffer) {
 
     // resetToSize clears fSegmentMask and fIsOval
     ref->fSegmentMask = segmentMask;
-    ref->fIsOval = isOval;
-    ref->fIsRRect = isRRect;
-    ref->fRRectOrOvalIsCCW = rrectOrOvalIsCCW;
-    ref->fRRectOrOvalStartIdx = rrectOrOvalStartIdx;
     return ref.release();
 }
 
@@ -387,11 +376,7 @@ void SkPathRef::writeToBuffer(SkWBuffer* buffer) const {
     // and fIsFinite are computed.
     const SkRect& bounds = this->getBounds();
 
-    int32_t packed = ((fRRectOrOvalStartIdx & 7) << kRRectOrOvalStartIdx_SerializationShift) |
-                     ((fRRectOrOvalIsCCW & 1) << kRRectOrOvalIsCCW_SerializationShift) |
-                     ((fIsFinite & 1) << kIsFinite_SerializationShift) |
-                     ((fIsOval & 1) << kIsOval_SerializationShift) |
-                     ((fIsRRect & 1) << kIsRRect_SerializationShift) |
+    int32_t packed = ((fIsFinite & 1) << kIsFinite_SerializationShift) |
                      (fSegmentMask << kSegmentMask_SerializationShift);
     buffer->write32(packed);
 
@@ -592,7 +577,7 @@ SkPoint* SkPathRef::growForVerb(int /* SkPath::Verb*/ verb, SkScalar weight) {
 
 uint32_t SkPathRef::genID() const {
     SkASSERT(!fEditorsAttached);
-    static const uint32_t kMask = (static_cast<int64_t>(1) << SkPath::kPathRefGenIDBitCnt) - 1;
+    static const uint32_t kMask = (static_cast<int64_t>(1) << SkPathPriv::kPathRefGenIDBitCnt) - 1;
     if (!fGenerationID) {
         if (0 == fPointCnt && 0 == fVerbCnt) {
             fGenerationID = kEmptyGenID;

@@ -39,7 +39,6 @@
 #include <memory>
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/serialization/SerializedScriptValue.h"
-#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/TaskRunnerHelper.h"
@@ -57,8 +56,9 @@
 #include "core/frame/Settings.h"
 #include "core/frame/VisualViewport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/html/forms/HTMLFormElement.h"
+#include "core/html_names.h"
 #include "core/input/EventHandler.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/loader/DocumentLoadTiming.h"
@@ -381,17 +381,14 @@ void FrameLoader::DidExplicitOpen() {
 void FrameLoader::ReplaceDocumentWhileExecutingJavaScriptURL(
     const String& source,
     Document* owner_document) {
-  DocumentLoader* document_loader = frame_->GetDocument()->Loader();
-
-  if (!document_loader ||
-      frame_->GetDocument()->PageDismissalEventBeingDispatched() !=
-          Document::kNoDismissal)
+  Document* document = frame_->GetDocument();
+  if (!document_loader_ ||
+      document->PageDismissalEventBeingDispatched() != Document::kNoDismissal)
     return;
 
-  UseCounter::Count(*frame_->GetDocument(),
-                    WebFeature::kReplaceDocumentViaJavaScriptURL);
+  UseCounter::Count(*document, WebFeature::kReplaceDocumentViaJavaScriptURL);
 
-  const KURL& url = frame_->GetDocument()->Url();
+  const KURL& url = document->Url();
 
   // Compute this before clearing the frame, because it may need to inherit an
   // aliased security context.
@@ -401,17 +398,17 @@ void FrameLoader::ReplaceDocumentWhileExecutingJavaScriptURL(
   // Don't allow any new child frames to load in this frame: attaching a new
   // child frame during or after detaching children results in an attached
   // frame on a detached DOM tree, which is bad.
-  SubframeLoadingDisabler disabler(frame_->GetDocument());
+  SubframeLoadingDisabler disabler(document);
   frame_->DetachChildren();
-  frame_->GetDocument()->Shutdown();
 
-  // detachChildren() potentially detaches the frame from the document. The
-  // loading cannot continue in that case.
-  if (!frame_->GetPage())
+  // detachChildren() potentially detaches or navigates this frame. The load
+  // cannot continue in those cases.
+  if (!frame_->IsAttached() || document != frame_->GetDocument())
     return;
 
+  frame_->GetDocument()->Shutdown();
   Client()->TransitionToCommittedForNewPage();
-  document_loader->ReplaceDocumentWhileExecutingJavaScriptURL(
+  document_loader_->ReplaceDocumentWhileExecutingJavaScriptURL(
       url, owner_document, should_reuse_default_view, source);
 }
 
@@ -543,13 +540,12 @@ void FrameLoader::DetachDocumentLoader(Member<DocumentLoader>& loader) {
   loader = nullptr;
 }
 
-void FrameLoader::LoadInSameDocument(
-    const KURL& url,
-    PassRefPtr<SerializedScriptValue> state_object,
-    FrameLoadType frame_load_type,
-    HistoryItem* history_item,
-    ClientRedirectPolicy client_redirect,
-    Document* initiating_document) {
+void FrameLoader::LoadInSameDocument(const KURL& url,
+                                     RefPtr<SerializedScriptValue> state_object,
+                                     FrameLoadType frame_load_type,
+                                     HistoryItem* history_item,
+                                     ClientRedirectPolicy client_redirect,
+                                     Document* initiating_document) {
   // If we have a state object, we cannot also be a new navigation.
   DCHECK(!state_object || frame_load_type == kFrameLoadTypeBackForward);
 
@@ -669,14 +665,14 @@ FrameLoadType FrameLoader::DetermineFrameLoadType(
       document_loader_->LoadType() == kFrameLoadTypeReload)
     return kFrameLoadTypeReload;
 
-  if (request.OriginDocument() &&
-      !request.OriginDocument()->CanCreateHistoryEntry())
-    return kFrameLoadTypeReplaceCurrentItem;
-
   if (request.GetResourceRequest().Url().IsEmpty() &&
       request.GetSubstituteData().FailingURL().IsEmpty()) {
     return kFrameLoadTypeReplaceCurrentItem;
   }
+
+  if (request.OriginDocument() &&
+      !request.OriginDocument()->CanCreateHistoryEntry())
+    return kFrameLoadTypeReplaceCurrentItem;
 
   return kFrameLoadTypeStandard;
 }
@@ -966,8 +962,7 @@ void FrameLoader::StopAllLoaders() {
   // It's possible that the above actions won't have stopped loading if load
   // completion had been blocked on parsing or if we were in the middle of
   // committing an empty document. In that case, emulate a failed navigation.
-  if (!provisional_document_loader_ && document_loader_ &&
-      frame_->IsLoading()) {
+  if (document_loader_ && !document_loader_->SentDidFinishLoad()) {
     document_loader_->LoadFailed(
         ResourceError::CancelledError(document_loader_->Url()));
   }
@@ -1543,7 +1538,7 @@ bool FrameLoader::ShouldTreatURLAsSrcdocDocument(const KURL& url) const {
   if (!url.IsAboutSrcdocURL())
     return false;
   HTMLFrameOwnerElement* owner_element = frame_->DeprecatedLocalOwner();
-  if (!isHTMLIFrameElement(owner_element))
+  if (!IsHTMLIFrameElement(owner_element))
     return false;
   return owner_element->FastHasAttribute(srcdocAttr);
 }

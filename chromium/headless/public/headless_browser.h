@@ -18,7 +18,7 @@
 #include "headless/public/headless_browser_context.h"
 #include "headless/public/headless_export.h"
 #include "headless/public/headless_web_contents.h"
-#include "net/base/ip_endpoint.h"
+#include "net/base/host_port_pair.h"
 #include "ui/gfx/geometry/size.h"
 
 #if defined(OS_WIN)
@@ -116,7 +116,7 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
 
   // Address at which DevTools should listen for connections. Disabled by
   // default. Mutually exclusive with devtools_socket_fd.
-  net::IPEndPoint devtools_endpoint;
+  net::HostPortPair devtools_endpoint;
 
   // The fd of an already-open socket inherited from a parent process. Disabled
   // by default. Mutually exclusive with devtools_endpoint.
@@ -136,6 +136,9 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
   // Run the browser without renderer sandbox. This option can be
   // a security risk and should be used with caution.
   bool disable_sandbox;
+
+  // Whether or not to enable content::ResourceScheduler. Enabled by default.
+  bool enable_resource_scheduler;
 
   // Choose the GL implementation to use for rendering. A suitable
   // implementantion is selected by default. Setting this to an empty
@@ -200,11 +203,12 @@ class HEADLESS_EXPORT HeadlessBrowser::Options::Builder {
 
   // Browser-wide settings.
 
-  Builder& EnableDevToolsServer(const net::IPEndPoint& endpoint);
+  Builder& EnableDevToolsServer(const net::HostPortPair& endpoint);
   Builder& EnableDevToolsServer(const size_t socket_fd);
   Builder& SetMessagePump(base::MessagePump* message_pump);
   Builder& SetSingleProcessMode(bool single_process_mode);
   Builder& SetDisableSandbox(bool disable_sandbox);
+  Builder& SetEnableResourceScheduler(bool enable_resource_scheduler);
   Builder& SetGLImplementation(const std::string& gl_implementation);
   Builder& AddMojoServiceName(const std::string& mojo_service_name);
 #if defined(OS_WIN)

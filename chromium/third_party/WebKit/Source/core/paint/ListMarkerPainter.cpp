@@ -11,6 +11,7 @@
 #include "core/paint/BoxModelObjectPainter.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/SelectionPaintingUtils.h"
 #include "core/paint/TextPainter.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
@@ -72,18 +73,22 @@ void ListMarkerPainter::Paint(const PaintInfo& paint_info,
   GraphicsContext& context = paint_info.context;
 
   if (layout_list_marker_.IsImage()) {
+    // Since there is no way for the developer to specify decode behavior, use
+    // kSync by default.
     context.DrawImage(
         layout_list_marker_.GetImage()
             ->GetImage(layout_list_marker_, layout_list_marker_.GetDocument(),
-                       layout_list_marker_.StyleRef(), marker.Size())
-            .Get(),
-        marker);
+                       layout_list_marker_.StyleRef(), marker.Size(), nullptr)
+            .get(),
+        Image::kSyncDecode, marker);
     if (layout_list_marker_.GetSelectionState() != SelectionState::kNone) {
       LayoutRect sel_rect = layout_list_marker_.LocalSelectionRect();
       sel_rect.MoveBy(box_origin);
-      context.FillRect(
-          PixelSnappedIntRect(sel_rect),
-          layout_list_marker_.ListItem()->SelectionBackgroundColor());
+      Color selection_bg = SelectionPaintingUtils::SelectionBackgroundColor(
+          layout_list_marker_.ListItem()->GetDocument(),
+          layout_list_marker_.ListItem()->StyleRef(),
+          layout_list_marker_.ListItem()->GetNode());
+      context.FillRect(PixelSnappedIntRect(sel_rect), selection_bg);
     }
     return;
   }

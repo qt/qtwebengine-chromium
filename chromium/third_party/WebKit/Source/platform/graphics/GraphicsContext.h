@@ -34,6 +34,7 @@
 #include "platform/graphics/DashArray.h"
 #include "platform/graphics/DrawLooperBuilder.h"
 #include "platform/graphics/GraphicsContextState.h"
+#include "platform/graphics/HighContrastImageClassifier.h"
 #include "platform/graphics/HighContrastSettings.h"
 #include "platform/graphics/ImageOrientation.h"
 #include "platform/graphics/paint/PaintRecord.h"
@@ -200,12 +201,14 @@ class PLATFORM_EXPORT GraphicsContext {
                        SkBlendMode);
 
   void DrawImage(Image*,
+                 Image::ImageDecodingMode,
                  const FloatRect& dest_rect,
                  const FloatRect* src_rect = nullptr,
                  SkBlendMode = SkBlendMode::kSrcOver,
                  RespectImageOrientationEnum = kDoNotRespectImageOrientation);
   void DrawImageRRect(
       Image*,
+      Image::ImageDecodingMode,
       const FloatRoundedRect& dest,
       const FloatRect& src_rect,
       SkBlendMode = SkBlendMode::kSrcOver,
@@ -253,14 +256,14 @@ class PLATFORM_EXPORT GraphicsContext {
                 SkClipOp = SkClipOp::kIntersect);
 
   void DrawText(const Font&, const TextRunPaintInfo&, const FloatPoint&);
-  void DrawText(const Font&, const TextFragmentPaintInfo&, const FloatPoint&);
+  void DrawText(const Font&, const NGTextFragmentPaintInfo&, const FloatPoint&);
 
   void DrawText(const Font&,
                 const TextRunPaintInfo&,
                 const FloatPoint&,
                 const PaintFlags&);
   void DrawText(const Font&,
-                const TextFragmentPaintInfo&,
+                const NGTextFragmentPaintInfo&,
                 const FloatPoint&,
                 const PaintFlags&);
 
@@ -269,7 +272,7 @@ class PLATFORM_EXPORT GraphicsContext {
                          const AtomicString& mark,
                          const FloatPoint&);
   void DrawEmphasisMarks(const Font&,
-                         const TextFragmentPaintInfo&,
+                         const NGTextFragmentPaintInfo&,
                          const AtomicString& mark,
                          const FloatPoint&);
 
@@ -452,7 +455,7 @@ class PLATFORM_EXPORT GraphicsContext {
 
   const SkMetaData& MetaData() const { return meta_data_; }
 
-  bool ShouldApplyHighContrastFilterToImage(const Image&) const;
+  bool ShouldApplyHighContrastFilterToImage(Image&);
   Color ApplyHighContrastFilter(const Color& input) const;
   PaintFlags ApplyHighContrastFilter(const PaintFlags* input) const;
 
@@ -488,6 +491,7 @@ class PLATFORM_EXPORT GraphicsContext {
 
   HighContrastSettings high_contrast_settings_;
   sk_sp<SkColorFilter> high_contrast_filter_;
+  HighContrastImageClassifier high_contrast_image_classifier_;
 
   unsigned printing_ : 1;
   unsigned has_meta_data_ : 1;

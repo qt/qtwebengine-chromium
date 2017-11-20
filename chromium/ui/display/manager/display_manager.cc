@@ -452,7 +452,7 @@ void DisplayManager::RegisterDisplayProperty(
     const gfx::Insets* overscan_insets,
     const gfx::Size& resolution_in_pixels,
     float device_scale_factor,
-    const TouchCalibrationData* touch_calibration_data) {
+    std::map<uint32_t, TouchCalibrationData>* touch_calibration_data_map) {
   if (display_info_.find(display_id) == display_info_.end())
     display_info_[display_id] =
         ManagedDisplayInfo(display_id, std::string(), false);
@@ -472,8 +472,12 @@ void DisplayManager::RegisterDisplayProperty(
     display_info_[display_id].set_configured_ui_scale(ui_scale);
   if (overscan_insets)
     display_info_[display_id].SetOverscanInsets(*overscan_insets);
-  if (touch_calibration_data)
-    display_info_[display_id].SetTouchCalibrationData(*touch_calibration_data);
+  if (touch_calibration_data_map) {
+    display_info_[display_id].SetTouchCalibrationDataMap(
+        *touch_calibration_data_map);
+  } else {
+    display_info_[display_id].ClearAllTouchCalibrationData();
+  }
   if (!resolution_in_pixels.IsEmpty()) {
     DCHECK(!Display::IsInternalDisplayId(display_id));
     // Default refresh rate, until OnNativeDisplaysChanged() updates us with the
@@ -977,9 +981,9 @@ void DisplayManager::SetMirrorMode(bool mirror) {
 
 #if defined(OS_CHROMEOS)
   if (configure_displays_) {
-    MultipleDisplayState new_state = mirror
-                                         ? MULTIPLE_DISPLAY_STATE_DUAL_MIRROR
-                                         : MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED;
+    MultipleDisplayState new_state =
+        mirror ? MULTIPLE_DISPLAY_STATE_DUAL_MIRROR
+               : MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED;
     delegate_->display_configurator()->SetDisplayMode(new_state);
     return;
   }
@@ -1040,39 +1044,64 @@ bool DisplayManager::SoftwareMirroringEnabled() const {
 void DisplayManager::SetTouchCalibrationData(
     int64_t display_id,
     const TouchCalibrationData::CalibrationPointPairQuad& point_pair_quad,
-    const gfx::Size& display_bounds) {
+    const gfx::Size& display_bounds,
+    uint32_t touch_device_identifier) {
+  // If the touch device identifier is associated with a touch device for the
+  // then do not perform any calibration. We do not want to modify any
+  // calibration information related to the internal display.
+  if (Display::HasInternalDisplay()) {
+    int64_t intenral_display_id = Display::InternalDisplayId();
+    if (GetDisplayInfo(intenral_display_id)
+            .HasTouchDevice(touch_device_identifier)) {
+      return;
+    }
+  }
   bool update = false;
   TouchCalibrationData calibration_data(point_pair_quad, display_bounds);
+
   DisplayInfoList display_info_list;
   for (const auto& display : active_display_list_) {
     ManagedDisplayInfo info = GetDisplayInfo(display.id());
     if (info.id() == display_id) {
-      info.SetTouchCalibrationData(calibration_data);
+      info.SetTouchCalibrationData(touch_device_identifier, calibration_data);
       update = true;
     }
     display_info_list.push_back(info);
   }
   if (update)
     UpdateDisplaysWith(display_info_list);
-  else
-    display_info_[display_id].SetTouchCalibrationData(calibration_data);
+  else {
+    display_info_[display_id].SetTouchCalibrationData(touch_device_identifier,
+                                                      calibration_data);
+  }
 }
 
-void DisplayManager::ClearTouchCalibrationData(int64_t display_id) {
+void DisplayManager::ClearTouchCalibrationData(
+    int64_t display_id,
+    base::Optional<uint32_t> touch_device_identifier) {
   bool update = false;
   DisplayInfoList display_info_list;
   for (const auto& display : active_display_list_) {
     ManagedDisplayInfo info = GetDisplayInfo(display.id());
     if (info.id() == display_id) {
-      info.clear_touch_calibration_data();
+      if (touch_device_identifier)
+        info.ClearTouchCalibrationData(*touch_device_identifier);
+      else
+        info.ClearAllTouchCalibrationData();
       update = true;
     }
     display_info_list.push_back(info);
   }
   if (update)
     UpdateDisplaysWith(display_info_list);
-  else
-    display_info_[display_id].clear_touch_calibration_data();
+  else {
+    if (touch_device_identifier) {
+      display_info_[display_id].ClearTouchCalibrationData(
+          *touch_device_identifier);
+    } else {
+      display_info_[display_id].ClearAllTouchCalibrationData();
+    }
+  }
 }
 #endif
 
@@ -1286,9 +1315,9 @@ void DisplayManager::CreateSoftwareMirroringDisplayInfo(
           });
 
       scoped_refptr<ManagedDisplayMode> dm(*iter);
-      *iter = make_scoped_refptr(new ManagedDisplayMode(
+      *iter = base::MakeRefCounted<ManagedDisplayMode>(
           dm->size(), dm->refresh_rate(), dm->is_interlaced(),
-          true /* native */, dm->ui_scale(), dm->device_scale_factor()));
+          true /* native */, dm->ui_scale(), dm->device_scale_factor());
 
       info.SetManagedDisplayModes(modes);
       info.set_device_scale_factor(dm->device_scale_factor());

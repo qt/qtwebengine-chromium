@@ -9,9 +9,9 @@
 
 #include <memory>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/javascript/ijs_event_context.h"
 
 class CJS_EventHandler;
@@ -24,10 +24,10 @@ class CJS_EventContext : public IJS_EventContext {
   ~CJS_EventContext() override;
 
   // IJS_EventContext
-  bool RunScript(const CFX_WideString& script, CFX_WideString* info) override;
+  bool RunScript(const WideString& script, WideString* info) override;
   void OnApp_Init() override;
   void OnDoc_Open(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                  const CFX_WideString& strTargetName) override;
+                  const WideString& strTargetName) override;
   void OnDoc_WillPrint(CPDFSDK_FormFillEnvironment* pFormFillEnv) override;
   void OnDoc_DidPrint(CPDFSDK_FormFillEnvironment* pFormFillEnv) override;
   void OnDoc_WillSave(CPDFSDK_FormFillEnvironment* pFormFillEnv) override;
@@ -52,37 +52,37 @@ class CJS_EventContext : public IJS_EventContext {
   void OnField_Focus(bool bModifier,
                      bool bShift,
                      CPDF_FormField* pTarget,
-                     const CFX_WideString& Value) override;
+                     const WideString& Value) override;
   void OnField_Blur(bool bModifier,
                     bool bShift,
                     CPDF_FormField* pTarget,
-                    const CFX_WideString& Value) override;
+                    const WideString& Value) override;
   void OnField_Calculate(CPDF_FormField* pSource,
                          CPDF_FormField* pTarget,
-                         CFX_WideString& Value,
+                         WideString& Value,
                          bool& bRc) override;
   void OnField_Format(CPDF_FormField* pTarget,
-                      CFX_WideString& Value,
+                      WideString& Value,
                       bool bWillCommit) override;
-  void OnField_Keystroke(CFX_WideString& strChange,
-                         const CFX_WideString& strChangeEx,
+  void OnField_Keystroke(WideString& strChange,
+                         const WideString& strChangeEx,
                          bool bKeyDown,
                          bool bModifier,
                          int& nSelEnd,
                          int& nSelStart,
                          bool bShift,
                          CPDF_FormField* pTarget,
-                         CFX_WideString& Value,
+                         WideString& Value,
                          bool bWillCommit,
                          bool bFieldFull,
                          bool& bRc) override;
-  void OnField_Validate(CFX_WideString& strChange,
-                        const CFX_WideString& strChangeEx,
+  void OnField_Validate(WideString& strChange,
+                        const WideString& strChangeEx,
                         bool bKeyDown,
                         bool bModifier,
                         bool bShift,
                         CPDF_FormField* pTarget,
-                        CFX_WideString& Value,
+                        WideString& Value,
                         bool& bRc) override;
   void OnScreen_Focus(bool bModifier,
                       bool bShift,
@@ -117,7 +117,7 @@ class CJS_EventContext : public IJS_EventContext {
   void OnBookmark_MouseUp(CPDF_Bookmark* pBookMark) override;
   void OnLink_MouseUp(CPDFSDK_FormFillEnvironment* pFormFillEnv) override;
   void OnMenu_Exec(CPDFSDK_FormFillEnvironment* pFormFillEnv,
-                   const CFX_WideString& strTargetName) override;
+                   const WideString& strTargetName) override;
   void OnBatchExec(CPDFSDK_FormFillEnvironment* pFormFillEnv) override;
   void OnConsole_Exec() override;
   void OnExternal_Exec() override;
@@ -128,7 +128,7 @@ class CJS_EventContext : public IJS_EventContext {
   CPDFSDK_FormFillEnvironment* GetFormFillEnv();
 
  private:
-  CFX_UnownedPtr<CJS_Runtime> const m_pRuntime;
+  UnownedPtr<CJS_Runtime> const m_pRuntime;
   std::unique_ptr<CJS_EventHandler> m_pEventHandler;
   bool m_bBusy;
 };

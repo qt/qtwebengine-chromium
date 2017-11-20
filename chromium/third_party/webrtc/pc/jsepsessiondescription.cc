@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/api/jsepsessiondescription.h"
+#include "api/jsepsessiondescription.h"
 
 #include <memory>
 
-#include "webrtc/pc/mediasession.h"
-#include "webrtc/pc/webrtcsdp.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/stringencode.h"
+#include "pc/mediasession.h"
+#include "pc/webrtcsdp.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/stringencode.h"
 
 using cricket::SessionDescription;
 
@@ -121,7 +121,7 @@ SessionDescriptionInterface* CreateSessionDescription(const std::string& type,
   }
 
   JsepSessionDescription* jsep_desc = new JsepSessionDescription(type);
-  if (!jsep_desc->Initialize(sdp, error)) {
+  if (!SdpDeserialize(sdp, jsep_desc, error)) {
     delete jsep_desc;
     return NULL;
   }
@@ -146,11 +146,6 @@ bool JsepSessionDescription::Initialize(
   description_.reset(description);
   candidate_collection_.resize(number_of_mediasections());
   return true;
-}
-
-bool JsepSessionDescription::Initialize(const std::string& sdp,
-                                        SdpParseError* error) {
-  return SdpDeserialize(sdp, this, error);
 }
 
 bool JsepSessionDescription::AddCandidate(

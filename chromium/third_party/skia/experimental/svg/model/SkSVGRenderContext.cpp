@@ -174,6 +174,13 @@ void commitToPaint<SkSVGAttribute::kStrokeLineJoin>(const SkSVGPresentationAttri
 }
 
 template <>
+void commitToPaint<SkSVGAttribute::kStrokeMiterLimit>(const SkSVGPresentationAttributes& attrs,
+                                                      const SkSVGRenderContext&,
+                                                      SkSVGPresentationContext* pctx) {
+    pctx->fStrokePaint.setStrokeMiter(*attrs.fStrokeMiterLimit.get());
+}
+
+template <>
 void commitToPaint<SkSVGAttribute::kStrokeOpacity>(const SkSVGPresentationAttributes& attrs,
                                                    const SkSVGRenderContext&,
                                                    SkSVGPresentationContext* pctx) {
@@ -194,6 +201,13 @@ void commitToPaint<SkSVGAttribute::kFillRule>(const SkSVGPresentationAttributes&
                                               const SkSVGRenderContext&,
                                               SkSVGPresentationContext*) {
     // Not part of the SkPaint state; applied to the path at render time.
+}
+
+template <>
+void commitToPaint<SkSVGAttribute::kClipRule>(const SkSVGPresentationAttributes&,
+                                              const SkSVGRenderContext&,
+                                              SkSVGPresentationContext*) {
+    // Not part of the SkPaint state; applied to the path at clip time.
 }
 
 } // anonymous ns
@@ -218,6 +232,7 @@ SkSVGPresentationContext::SkSVGPresentationContext()
     commitToPaint<SkSVGAttribute::kStroke>(fInherited, dummy, this);
     commitToPaint<SkSVGAttribute::kStrokeLineCap>(fInherited, dummy, this);
     commitToPaint<SkSVGAttribute::kStrokeLineJoin>(fInherited, dummy, this);
+    commitToPaint<SkSVGAttribute::kStrokeMiterLimit>(fInherited, dummy, this);
     commitToPaint<SkSVGAttribute::kStrokeOpacity>(fInherited, dummy, this);
     commitToPaint<SkSVGAttribute::kStrokeWidth>(fInherited, dummy, this);
 }
@@ -234,6 +249,12 @@ SkSVGRenderContext::SkSVGRenderContext(SkCanvas* canvas,
 
 SkSVGRenderContext::SkSVGRenderContext(const SkSVGRenderContext& other)
     : SkSVGRenderContext(other.fCanvas,
+                         other.fIDMapper,
+                         *other.fLengthContext,
+                         *other.fPresentationContext) {}
+
+SkSVGRenderContext::SkSVGRenderContext(const SkSVGRenderContext& other, SkCanvas* canvas)
+    : SkSVGRenderContext(canvas,
                          other.fIDMapper,
                          *other.fLengthContext,
                          *other.fPresentationContext) {}
@@ -267,9 +288,11 @@ void SkSVGRenderContext::applyPresentationAttributes(const SkSVGPresentationAttr
     ApplyLazyInheritedAttribute(Fill);
     ApplyLazyInheritedAttribute(FillOpacity);
     ApplyLazyInheritedAttribute(FillRule);
+    ApplyLazyInheritedAttribute(ClipRule);
     ApplyLazyInheritedAttribute(Stroke);
     ApplyLazyInheritedAttribute(StrokeLineCap);
     ApplyLazyInheritedAttribute(StrokeLineJoin);
+    ApplyLazyInheritedAttribute(StrokeMiterLimit);
     ApplyLazyInheritedAttribute(StrokeOpacity);
     ApplyLazyInheritedAttribute(StrokeWidth);
 
@@ -316,6 +339,15 @@ void SkSVGRenderContext::applyOpacity(SkScalar opacity, uint32_t flags) {
     }
 }
 
+void SkSVGRenderContext::saveOnce() {
+    // The canvas only needs to be saved once, per local SkSVGRenderContext.
+    if (fCanvas->getSaveCount() == fCanvasSaveCount) {
+        fCanvas->save();
+    }
+
+    SkASSERT(fCanvas->getSaveCount() > fCanvasSaveCount);
+}
+
 void SkSVGRenderContext::applyClip(const SkSVGClip& clip) {
     if (clip.type() != SkSVGClip::Type::kIRI) {
         return;
@@ -335,10 +367,7 @@ void SkSVGRenderContext::applyClip(const SkSVGClip& clip) {
     //
     // TODO: the two uses are exclusive, avoid canvas churn when non needed.
 
-    // Only save if needed
-    if (fCanvas->getSaveCount() == fCanvasSaveCount) {
-        fCanvas->save();
-    }
+    this->saveOnce();
 
     fCanvas->clipPath(clipPath, true);
     fClipPath.set(clipPath);

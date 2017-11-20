@@ -37,8 +37,8 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/WebLocalFrameImpl.h"
-#include "core/html/HTMLOptionElement.h"
-#include "core/html/HTMLSelectElement.h"
+#include "core/html/forms/HTMLOptionElement.h"
+#include "core/html/forms/HTMLSelectElement.h"
 #include "core/layout/LayoutBox.h"
 #include "core/page/Page.h"
 #include "core/style/ComputedStyle.h"
@@ -251,13 +251,13 @@ void ExternalPopupMenu::GetPopupMenuInfo(WebPopupMenuInfo& info,
     popup_item.label = owner_element.ItemText(item_element);
     popup_item.tool_tip = item_element.title();
     popup_item.checked = false;
-    if (isHTMLHRElement(item_element)) {
+    if (IsHTMLHRElement(item_element)) {
       popup_item.type = WebMenuItemInfo::kSeparator;
-    } else if (isHTMLOptGroupElement(item_element)) {
+    } else if (IsHTMLOptGroupElement(item_element)) {
       popup_item.type = WebMenuItemInfo::kGroup;
     } else {
       popup_item.type = WebMenuItemInfo::kOption;
-      popup_item.checked = toHTMLOptionElement(item_element).Selected();
+      popup_item.checked = ToHTMLOptionElement(item_element).Selected();
     }
     popup_item.enabled = !item_element.IsDisabledFormControl();
     const ComputedStyle& style = *owner_element.ItemComputedStyle(item_element);

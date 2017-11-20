@@ -13,12 +13,18 @@
 #include "SkRefCnt.h"
 #include "SkTDArray.h"
 
-//#define ENABLE_MDB 1
+
+// Turn on/off the explicit distribution of GPU resources at flush time
+//#define MDB_ALLOC_RESOURCES 1
+
+// Turn on/off the sorting of opLists at flush time
+//#define ENABLE_MDB_SORT 1
 
 class GrAuditTrail;
 class GrCaps;
 class GrOpFlushState;
 class GrRenderTargetOpList;
+class GrResourceAllocator;
 class GrResourceProvider;
 class GrSurfaceProxy;
 class GrTextureProxy;
@@ -27,19 +33,15 @@ class GrTextureOpList;
 struct SkIPoint;
 struct SkIRect;
 
-class GrPrepareCallback : SkNoncopyable {
-public:
-    virtual ~GrPrepareCallback() {}
-    virtual void operator()(GrOpFlushState*) = 0;
-};
-
 class GrOpList : public SkRefCnt {
 public:
     GrOpList(GrResourceProvider*, GrSurfaceProxy*, GrAuditTrail*);
     ~GrOpList() override;
 
-    // These three methods are invoked at flush time
+    // These four methods are invoked at flush time
     bool instantiate(GrResourceProvider* resourceProvider);
+    // Instantiates any "threaded" texture proxies that are being prepared elsewhere
+    void instantiateDeferredProxies(GrResourceProvider* resourceProvider);
     void prepare(GrOpFlushState* flushState);
     bool execute(GrOpFlushState* flushState) { return this->onExecute(flushState); }
 
@@ -56,11 +58,10 @@ public:
         }
     }
 
-    virtual void reset();
-
-    void addPrepareCallback(std::unique_ptr<GrPrepareCallback> callback) {
-        fPrepareCallbacks.push_back(std::move(callback));
-    }
+    // Called when this class will survive a flush and needs to truncate its ops and start over.
+    // TODO: ultimately it should be invalid for an op list to survive a flush.
+    // https://bugs.chromium.org/p/skia/issues/detail?id=7111
+    virtual void endFlush();
 
     // TODO: in an MDB world, where the OpLists don't allocate GPU resources, it seems like
     // these could go away
@@ -78,7 +79,13 @@ public:
      * Does this opList depend on 'dependedOn'?
      */
     bool dependsOn(GrOpList* dependedOn) const {
-        return fDependencies.find(dependedOn) >= 0;
+        for (int i = 0; i < fDependencies.count(); ++i) {
+            if (fDependencies[i] == dependedOn) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /*
@@ -105,6 +112,8 @@ public:
     void setStencilLoadOp(GrLoadOp loadOp) { fStencilLoadOp = loadOp; }
 
 protected:
+    SkDEBUGCODE(bool isInstantiated() const;)
+
     GrSurfaceProxyRef fTarget;
     GrAuditTrail*     fAuditTrail;
 
@@ -112,8 +121,14 @@ protected:
     GrColor           fLoadClearColor = 0x0;
     GrLoadOp          fStencilLoadOp  = GrLoadOp::kLoad;
 
+    // List of texture proxies whose contents are being prepared on a worker thread
+    SkTArray<GrTextureProxy*, true> fDeferredProxies;
+
 private:
-    friend class GrDrawingManager; // for resetFlag & TopoSortTraits
+    friend class GrDrawingManager; // for resetFlag, TopoSortTraits & gatherProxyIntervals
+
+    // Feed proxy usage intervals to the GrResourceAllocator class
+    virtual void gatherProxyIntervals(GrResourceAllocator*) const = 0;
 
     static uint32_t CreateUniqueID();
 
@@ -165,14 +180,11 @@ private:
 
     void addDependency(GrOpList* dependedOn);
 
-    uint32_t              fUniqueID;
-    uint32_t              fFlags;
+    uint32_t               fUniqueID;
+    uint32_t               fFlags;
 
     // 'this' GrOpList relies on the output of the GrOpLists in 'fDependencies'
-    SkTDArray<GrOpList*>  fDependencies;
-
-    // These are used rarely, most clients never produce any
-    SkTArray<std::unique_ptr<GrPrepareCallback>> fPrepareCallbacks;
+    SkSTArray<1, GrOpList*, true> fDependencies;
 
     typedef SkRefCnt INHERITED;
 };

@@ -36,6 +36,7 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
     fInstanceAttribSupport = true;
 
     fUseDrawInsteadOfClear = false;
+    fBlacklistCoverageCounting = true; // blacklisting ccpr until we work through a few issues.
     fFenceSyncSupport = true;   // always available in Vulkan
     fCrossContextTextureSupport = false;
 
@@ -234,11 +235,16 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties, uint
     // Vulkan is based off ES 3.0 so the following should all be supported
     shaderCaps->fUsesPrecisionModifiers = true;
     shaderCaps->fFlatInterpolationSupport = true;
+    // Flat interpolation appears to be slow on Qualcomm GPUs. This was tested in GL and is assumed
+    // to be true with Vulkan as well.
+    shaderCaps->fPreferFlatInterpolation = kQualcomm_VkVendor != properties.vendorID;
 
     // GrShaderCaps
 
     shaderCaps->fShaderDerivativeSupport = true;
+
     shaderCaps->fGeometryShaderSupport = SkToBool(featureFlags & kGeometryShader_GrVkFeatureFlag);
+    shaderCaps->fGSInvocationsSupport = shaderCaps->fGeometryShaderSupport;
 
     shaderCaps->fDualSourceBlendingSupport = SkToBool(featureFlags & kDualSrcBlend_GrVkFeatureFlag);
     if (kAMD_VkVendor == properties.vendorID) {

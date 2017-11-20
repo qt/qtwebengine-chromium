@@ -6,11 +6,14 @@
 
 #include <utility>
 
+#include "base/callback_helpers.h"
 #include "base/guid.h"
 #include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "content/browser/service_worker/browser_side_service_worker_event_dispatcher.h"
+#include "content/browser/bad_message.h"
+#include "content/browser/service_worker/browser_side_controller_service_worker.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_request_handler.h"
@@ -25,6 +28,8 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_client.h"
@@ -33,10 +38,26 @@
 #include "mojo/public/cpp/bindings/strong_associated_binding.h"
 #include "net/base/url_util.h"
 #include "storage/browser/blob/blob_storage_context.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
 namespace content {
 
 namespace {
+
+const char kNoDocumentURLErrorMessage[] =
+    "No URL is associated with the caller's document.";
+const char kShutdownErrorMessage[] = "The Service Worker system has shutdown.";
+const char kUserDeniedPermissionMessage[] =
+    "The user denied permission to use Service Worker.";
+
+const char kBadMessageInvalidURL[] = "Some URLs are invalid.";
+const char kBadMessageInproperOrigins[] =
+    "Origins are not matching, or some cannot access service worker.";
+const char kBadMessageFromNonWindow[] =
+    "The request message should not come from a non-window client.";
+const char kBadMessageGetRegistrationForReadyDuplicated[] =
+    "There's already a completed or ongoing request to get the ready "
+    "registration.";
 
 // Provider host for navigation with PlzNavigate or when service worker's
 // context is created on the browser side. This function provides the next
@@ -97,16 +118,13 @@ void RemoveProviderHost(base::WeakPtr<ServiceWorkerContextCore> context,
   context->RemoveProviderHost(process_id, provider_id);
 }
 
+WebContents* GetWebContents(int render_process_id, int render_frame_id) {
+  RenderFrameHost* rfh =
+      RenderFrameHost::FromID(render_process_id, render_frame_id);
+  return WebContents::FromRenderFrameHost(rfh);
+}
+
 }  // anonymous namespace
-
-ServiceWorkerProviderHost::OneShotGetReadyCallback::OneShotGetReadyCallback(
-    const GetRegistrationForReadyCallback& callback)
-    : callback(callback),
-      called(false) {
-}
-
-ServiceWorkerProviderHost::OneShotGetReadyCallback::~OneShotGetReadyCallback() {
-}
 
 // static
 std::unique_ptr<ServiceWorkerProviderHost>
@@ -241,7 +259,7 @@ void ServiceWorkerProviderHost::OnVersionAttributesChanged(
     ServiceWorkerRegistration* registration,
     ChangedVersionAttributesMask changed_mask,
     const ServiceWorkerRegistrationInfo& /* info */) {
-  if (!get_ready_callback_ || get_ready_callback_->called)
+  if (!get_ready_callback_ || get_ready_callback_->is_null())
     return;
   if (changed_mask.active_changed() && registration->active_version()) {
     // Wait until the state change so we don't send the get for ready
@@ -302,12 +320,12 @@ void ServiceWorkerProviderHost::SetControllerVersionAttribute(
   controller_ = version;
 
   // This will drop the message pipes to the client pages as well.
-  controller_event_dispatcher_.reset();
+  controller_service_worker_.reset();
 
   if (version) {
     version->AddControllee(this);
-    controller_event_dispatcher_ =
-        base::MakeUnique<BrowserSideServiceWorkerEventDispatcher>(version);
+    controller_service_worker_ =
+        base::MakeUnique<BrowserSideControllerServiceWorker>(version);
   }
   if (previous_version.get())
     previous_version->RemoveControllee(this);
@@ -353,6 +371,7 @@ void ServiceWorkerProviderHost::AssociateRegistration(
     ServiceWorkerRegistration* registration,
     bool notify_controllerchange) {
   CHECK(IsContextSecureForServiceWorker());
+  DCHECK(IsProviderForClient());
   DCHECK(CanAssociateRegistration(registration));
   associated_registration_ = registration;
   AddMatchingRegistration(registration);
@@ -361,6 +380,7 @@ void ServiceWorkerProviderHost::AssociateRegistration(
 }
 
 void ServiceWorkerProviderHost::DisassociateRegistration() {
+  DCHECK(IsProviderForClient());
   queued_events_.clear();
   if (!associated_registration_.get())
     return;
@@ -489,7 +509,7 @@ bool ServiceWorkerProviderHost::CanAssociateRegistration(
 void ServiceWorkerProviderHost::PostMessageToClient(
     ServiceWorkerVersion* version,
     const base::string16& message,
-    const std::vector<MessagePort>& sent_message_ports) {
+    const std::vector<blink::MessagePortChannel>& sent_message_ports) {
   if (!dispatcher_host_)
     return;
 
@@ -528,15 +548,6 @@ void ServiceWorkerProviderHost::ClaimedByRegistration(
     DisassociateRegistration();
     AssociateRegistration(registration, true /* notify_controllerchange */);
   }
-}
-
-bool ServiceWorkerProviderHost::GetRegistrationForReady(
-    const GetRegistrationForReadyCallback& callback) {
-  if (get_ready_callback_)
-    return false;
-  get_ready_callback_.reset(new OneShotGetReadyCallback(callback));
-  ReturnRegistrationForReadyIfNeeded();
-  return true;
 }
 
 std::unique_ptr<ServiceWorkerProviderHost>
@@ -674,7 +685,7 @@ ServiceWorkerProviderHost::CompleteStartWorkerPreparation(
   ServiceWorkerRegistration* registration = context_->GetLiveRegistration(
       running_hosted_version()->registration_id());
   DCHECK(registration);
-  ServiceWorkerRegistrationObjectInfo info;
+  blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info;
   ServiceWorkerVersionAttributes attrs;
   dispatcher_host->GetRegistrationObjectInfoAndVersionAttributes(
       AsWeakPtr(), registration, &info, &attrs);
@@ -691,8 +702,7 @@ ServiceWorkerProviderHost::CompleteStartWorkerPreparation(
   if (ServiceWorkerUtils::IsServicificationEnabled()) {
     mojo::MakeStrongAssociatedBinding(
         base::MakeUnique<ServiceWorkerScriptURLLoaderFactory>(
-            context_, AsWeakPtr(), context_->blob_storage_context(),
-            context_->loader_factory_getter()),
+            context_, AsWeakPtr(), context_->loader_factory_getter()),
         mojo::MakeRequest(&script_loader_factory_ptr_info));
     provider_info->script_loader_factory_ptr_info =
         std::move(script_loader_factory_ptr_info);
@@ -760,7 +770,7 @@ void ServiceWorkerProviderHost::SendSetVersionAttributesMessage(
 
 void ServiceWorkerProviderHost::SendServiceWorkerStateChangedMessage(
     int worker_handle_id,
-    blink::WebServiceWorkerState state) {
+    blink::mojom::ServiceWorkerState state) {
   if (!dispatcher_host_)
     return;
 
@@ -771,8 +781,8 @@ void ServiceWorkerProviderHost::SendServiceWorkerStateChangedMessage(
     return;
   }
 
-  Send(new ServiceWorkerMsg_ServiceWorkerStateChanged(
-      render_thread_id_, worker_handle_id, state));
+  Send(new ServiceWorkerMsg_ServiceWorkerStateChanged(render_thread_id_,
+                                                      worker_handle_id, state));
 }
 
 void ServiceWorkerProviderHost::SetReadyToSendMessagesToWorker(
@@ -824,17 +834,25 @@ void ServiceWorkerProviderHost::DecreaseProcessReference(
 }
 
 void ServiceWorkerProviderHost::ReturnRegistrationForReadyIfNeeded() {
-  if (!get_ready_callback_ || get_ready_callback_->called)
+  if (!get_ready_callback_ || get_ready_callback_->is_null())
     return;
   ServiceWorkerRegistration* registration = MatchRegistration();
-  if (!registration)
+  if (!registration || !registration->active_version())
     return;
-  if (registration->active_version()) {
-    get_ready_callback_->callback.Run(registration);
-    get_ready_callback_->callback.Reset();
-    get_ready_callback_->called = true;
+  TRACE_EVENT_ASYNC_END1("ServiceWorker",
+                         "ServiceWorkerProviderHost::GetRegistrationForReady",
+                         this, "Registration ID", registration->id());
+  if (!dispatcher_host_ || !IsContextAlive()) {
+    // Here no need to run or destroy |get_ready_callback_|, which will destroy
+    // together with |binding_| when |this| destroys.
     return;
   }
+
+  blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info;
+  ServiceWorkerVersionAttributes attrs;
+  dispatcher_host_->GetRegistrationObjectInfoAndVersionAttributes(
+      AsWeakPtr(), registration, &info, &attrs);
+  std::move(*get_ready_callback_).Run(std::move(info), attrs);
 }
 
 bool ServiceWorkerProviderHost::IsReadyToSendMessages() const {
@@ -868,16 +886,412 @@ void ServiceWorkerProviderHost::SendSetControllerServiceWorker(
   params.provider_id = provider_id();
   params.object_info = GetOrCreateServiceWorkerHandle(version);
   params.should_notify_controllerchange = notify_controllerchange;
-  if (version) {
+  if (version)
     params.used_features = version->used_features();
-    if (ServiceWorkerUtils::IsServicificationEnabled()) {
-      params.controller_event_dispatcher =
-          controller_event_dispatcher_->CreateEventDispatcherPtrInfo()
-              .PassHandle()
-              .release();
+  Send(new ServiceWorkerMsg_SetControllerServiceWorker(params));
+}
+
+void ServiceWorkerProviderHost::Register(
+    const GURL& script_url,
+    blink::mojom::ServiceWorkerRegistrationOptionsPtr options,
+    RegisterCallback callback) {
+  if (!dispatcher_host_ || !IsContextAlive()) {
+    std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kAbort,
+                            std::string(kServiceWorkerRegisterErrorPrefix) +
+                                std::string(kShutdownErrorMessage),
+                            nullptr, base::nullopt);
+    return;
+  }
+  // TODO(falken): This check can be removed once crbug.com/439697 is fixed.
+  if (document_url().is_empty()) {
+    std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kSecurity,
+                            std::string(kServiceWorkerRegisterErrorPrefix) +
+                                std::string(kNoDocumentURLErrorMessage),
+                            nullptr, base::nullopt);
+    return;
+  }
+
+  std::string error_message;
+  if (!IsValidRegisterMessage(script_url, *options, &error_message)) {
+    mojo::ReportBadMessage(error_message);
+    // ReportBadMessage() will kill the renderer process, but Mojo complains if
+    // the callback is not run. Just run it with nonsense arguments.
+    std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kUnknown,
+                            std::string(), nullptr, base::nullopt);
+    return;
+  }
+
+  if (!GetContentClient()->browser()->AllowServiceWorker(
+          options->scope, topmost_frame_url(),
+          dispatcher_host_->resource_context(),
+          base::Bind(&GetWebContents, render_process_id_, frame_id()))) {
+    std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kDisabled,
+                            std::string(kServiceWorkerRegisterErrorPrefix) +
+                                std::string(kUserDeniedPermissionMessage),
+                            nullptr, base::nullopt);
+    return;
+  }
+
+  int64_t trace_id = base::TimeTicks::Now().since_origin().InMicroseconds();
+  TRACE_EVENT_ASYNC_BEGIN2(
+      "ServiceWorker", "ServiceWorkerProviderHost::Register", trace_id, "Scope",
+      options->scope.spec(), "Script URL", script_url.spec());
+  context_->RegisterServiceWorker(
+      script_url, *options, this,
+      base::AdaptCallbackForRepeating(
+          base::BindOnce(&ServiceWorkerProviderHost::RegistrationComplete,
+                         AsWeakPtr(), std::move(callback), trace_id)));
+}
+
+void ServiceWorkerProviderHost::RegistrationComplete(
+    RegisterCallback callback,
+    int64_t trace_id,
+    ServiceWorkerStatusCode status,
+    const std::string& status_message,
+    int64_t registration_id) {
+  TRACE_EVENT_ASYNC_END2("ServiceWorker", "ServiceWorkerProviderHost::Register",
+                         trace_id, "Status", status, "Registration ID",
+                         registration_id);
+  if (!dispatcher_host_ || !IsContextAlive()) {
+    std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kAbort,
+                            std::string(kServiceWorkerRegisterErrorPrefix) +
+                                std::string(kShutdownErrorMessage),
+                            nullptr, base::nullopt);
+    return;
+  }
+
+  if (status != SERVICE_WORKER_OK) {
+    std::string error_message;
+    blink::mojom::ServiceWorkerErrorType error_type;
+    GetServiceWorkerErrorTypeForRegistration(status, status_message,
+                                             &error_type, &error_message);
+    std::move(callback).Run(error_type,
+                            kServiceWorkerRegisterErrorPrefix + error_message,
+                            nullptr, base::nullopt);
+    return;
+  }
+
+  ServiceWorkerRegistration* registration =
+      context_->GetLiveRegistration(registration_id);
+  // ServiceWorkerRegisterJob calls its completion callback, which results in
+  // this function being called, while the registration is live.
+  DCHECK(registration);
+
+  blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info;
+  ServiceWorkerVersionAttributes attrs;
+  dispatcher_host_->GetRegistrationObjectInfoAndVersionAttributes(
+      AsWeakPtr(), registration, &info, &attrs);
+
+  std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kNone,
+                          base::nullopt, std::move(info), attrs);
+}
+
+void ServiceWorkerProviderHost::GetRegistration(
+    const GURL& client_url,
+    GetRegistrationCallback callback) {
+  if (!dispatcher_host_ || !IsContextAlive()) {
+    std::move(callback).Run(
+        blink::mojom::ServiceWorkerErrorType::kAbort,
+        std::string(kServiceWorkerGetRegistrationErrorPrefix) +
+            std::string(kShutdownErrorMessage),
+        nullptr, base::nullopt);
+    return;
+  }
+  // TODO(falken): This check can be removed once crbug.com/439697 is fixed.
+  if (document_url().is_empty()) {
+    std::move(callback).Run(
+        blink::mojom::ServiceWorkerErrorType::kSecurity,
+        std::string(kServiceWorkerGetRegistrationErrorPrefix) +
+            std::string(kNoDocumentURLErrorMessage),
+        nullptr, base::nullopt);
+    return;
+  }
+
+  std::string error_message;
+  if (!IsValidGetRegistrationMessage(client_url, &error_message)) {
+    mojo::ReportBadMessage(error_message);
+    // ReportBadMessage() will kill the renderer process, but Mojo complains if
+    // the callback is not run. Just run it with nonsense arguments.
+    std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kUnknown,
+                            std::string(), nullptr, base::nullopt);
+    return;
+  }
+
+  if (!GetContentClient()->browser()->AllowServiceWorker(
+          document_url(), topmost_frame_url(),
+          dispatcher_host_->resource_context(),
+          base::Bind(&GetWebContents, render_process_id_, frame_id()))) {
+    std::move(callback).Run(
+        blink::mojom::ServiceWorkerErrorType::kDisabled,
+        std::string(kServiceWorkerGetRegistrationErrorPrefix) +
+            std::string(kUserDeniedPermissionMessage),
+        nullptr, base::nullopt);
+    return;
+  }
+
+  int64_t trace_id = base::TimeTicks::Now().since_origin().InMicroseconds();
+  TRACE_EVENT_ASYNC_BEGIN1("ServiceWorker",
+                           "ServiceWorkerProviderHost::GetRegistration",
+                           trace_id, "Client URL", client_url.spec());
+  context_->storage()->FindRegistrationForDocument(
+      client_url, base::AdaptCallbackForRepeating(base::BindOnce(
+                      &ServiceWorkerProviderHost::GetRegistrationComplete,
+                      AsWeakPtr(), std::move(callback), trace_id)));
+}
+
+void ServiceWorkerProviderHost::GetRegistrations(
+    GetRegistrationsCallback callback) {
+  if (!dispatcher_host_ || !IsContextAlive()) {
+    std::move(callback).Run(
+        blink::mojom::ServiceWorkerErrorType::kAbort,
+        std::string(kServiceWorkerGetRegistrationsErrorPrefix) +
+            std::string(kShutdownErrorMessage),
+        base::nullopt, base::nullopt);
+    return;
+  }
+  // TODO(falken): This check can be removed once crbug.com/439697 is fixed.
+  if (document_url().is_empty()) {
+    std::move(callback).Run(
+        blink::mojom::ServiceWorkerErrorType::kSecurity,
+        std::string(kServiceWorkerGetRegistrationsErrorPrefix) +
+            std::string(kNoDocumentURLErrorMessage),
+        base::nullopt, base::nullopt);
+    return;
+  }
+
+  std::string error_message;
+  if (!IsValidGetRegistrationsMessage(&error_message)) {
+    mojo::ReportBadMessage(error_message);
+    // ReportBadMessage() will kill the renderer process, but Mojo complains if
+    // the callback is not run. Just run it with nonsense arguments.
+    std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kUnknown,
+                            std::string(), base::nullopt, base::nullopt);
+    return;
+  }
+
+  if (!GetContentClient()->browser()->AllowServiceWorker(
+          document_url(), topmost_frame_url(),
+          dispatcher_host_->resource_context(),
+          base::Bind(&GetWebContents, render_process_id_, frame_id()))) {
+    std::move(callback).Run(
+        blink::mojom::ServiceWorkerErrorType::kDisabled,
+        std::string(kServiceWorkerGetRegistrationsErrorPrefix) +
+            std::string(kUserDeniedPermissionMessage),
+        base::nullopt, base::nullopt);
+    return;
+  }
+
+  int64_t trace_id = base::TimeTicks::Now().since_origin().InMicroseconds();
+  TRACE_EVENT_ASYNC_BEGIN0(
+      "ServiceWorker", "ServiceWorkerProviderHost::GetRegistrations", trace_id);
+  context_->storage()->GetRegistrationsForOrigin(
+      document_url().GetOrigin(),
+      base::AdaptCallbackForRepeating(
+          base::BindOnce(&ServiceWorkerProviderHost::GetRegistrationsComplete,
+                         AsWeakPtr(), std::move(callback), trace_id)));
+}
+
+void ServiceWorkerProviderHost::GetRegistrationComplete(
+    GetRegistrationCallback callback,
+    int64_t trace_id,
+    ServiceWorkerStatusCode status,
+    scoped_refptr<ServiceWorkerRegistration> registration) {
+  TRACE_EVENT_ASYNC_END2(
+      "ServiceWorker", "ServiceWorkerProviderHost::GetRegistration", trace_id,
+      "Status", status, "Registration ID",
+      registration ? registration->id()
+                   : blink::mojom::kInvalidServiceWorkerRegistrationId);
+  if (!dispatcher_host_ || !IsContextAlive()) {
+    std::move(callback).Run(
+        blink::mojom::ServiceWorkerErrorType::kAbort,
+        std::string(kServiceWorkerGetRegistrationErrorPrefix) +
+            std::string(kShutdownErrorMessage),
+        nullptr, base::nullopt);
+    return;
+  }
+
+  if (status != SERVICE_WORKER_OK && status != SERVICE_WORKER_ERROR_NOT_FOUND) {
+    std::string error_message;
+    blink::mojom::ServiceWorkerErrorType error_type;
+    GetServiceWorkerErrorTypeForRegistration(status, std::string(), &error_type,
+                                             &error_message);
+    std::move(callback).Run(
+        error_type, kServiceWorkerGetRegistrationErrorPrefix + error_message,
+        nullptr, base::nullopt);
+    return;
+  }
+
+  auto info = blink::mojom::ServiceWorkerRegistrationObjectInfo::New();
+  info->options = blink::mojom::ServiceWorkerRegistrationOptions::New();
+  ServiceWorkerVersionAttributes attrs;
+  if (status == SERVICE_WORKER_OK) {
+    DCHECK(registration.get());
+    if (!registration->is_uninstalling()) {
+      dispatcher_host_->GetRegistrationObjectInfoAndVersionAttributes(
+          AsWeakPtr(), registration.get(), &info, &attrs);
     }
   }
-  Send(new ServiceWorkerMsg_SetControllerServiceWorker(params));
+
+  std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kNone,
+                          base::nullopt, std::move(info), attrs);
+}
+
+void ServiceWorkerProviderHost::GetRegistrationsComplete(
+    GetRegistrationsCallback callback,
+    int64_t trace_id,
+    ServiceWorkerStatusCode status,
+    const std::vector<scoped_refptr<ServiceWorkerRegistration>>&
+        registrations) {
+  TRACE_EVENT_ASYNC_END1("ServiceWorker",
+                         "ServiceWorkerProviderHost::GetRegistrations",
+                         trace_id, "Status", status);
+  if (!dispatcher_host_ || !IsContextAlive()) {
+    std::move(callback).Run(
+        blink::mojom::ServiceWorkerErrorType::kAbort,
+        std::string(kServiceWorkerGetRegistrationsErrorPrefix) +
+            std::string(kShutdownErrorMessage),
+        base::nullopt, base::nullopt);
+    return;
+  }
+
+  if (status != SERVICE_WORKER_OK) {
+    std::string error_message;
+    blink::mojom::ServiceWorkerErrorType error_type;
+    GetServiceWorkerErrorTypeForRegistration(status, std::string(), &error_type,
+                                             &error_message);
+    std::move(callback).Run(
+        error_type, kServiceWorkerGetRegistrationsErrorPrefix + error_message,
+        base::nullopt, base::nullopt);
+    return;
+  }
+
+  std::vector<blink::mojom::ServiceWorkerRegistrationObjectInfoPtr>
+      object_infos;
+  std::vector<ServiceWorkerVersionAttributes> version_attrs;
+
+  for (const auto& registration : registrations) {
+    DCHECK(registration.get());
+    if (!registration->is_uninstalling()) {
+      blink::mojom::ServiceWorkerRegistrationObjectInfoPtr object_info;
+      ServiceWorkerVersionAttributes version_attr;
+      dispatcher_host_->GetRegistrationObjectInfoAndVersionAttributes(
+          AsWeakPtr(), registration.get(), &object_info, &version_attr);
+      object_infos.push_back(std::move(object_info));
+      version_attrs.push_back(version_attr);
+    }
+  }
+
+  std::move(callback).Run(blink::mojom::ServiceWorkerErrorType::kNone,
+                          base::nullopt, std::move(object_infos),
+                          version_attrs);
+}
+
+void ServiceWorkerProviderHost::GetRegistrationForReady(
+    GetRegistrationForReadyCallback callback) {
+  std::string error_message;
+  if (!IsValidGetRegistrationForReadyMessage(&error_message)) {
+    mojo::ReportBadMessage(error_message);
+    // ReportBadMessage() will kill the renderer process, but Mojo complains if
+    // the callback is not run. Just run it with nonsense arguments.
+    std::move(callback).Run(nullptr, base::nullopt);
+    return;
+  }
+
+  TRACE_EVENT_ASYNC_BEGIN0("ServiceWorker",
+                           "ServiceWorkerProviderHost::GetRegistrationForReady",
+                           this);
+  DCHECK(!get_ready_callback_);
+  get_ready_callback_ =
+      base::MakeUnique<GetRegistrationForReadyCallback>(std::move(callback));
+  ReturnRegistrationForReadyIfNeeded();
+}
+
+void ServiceWorkerProviderHost::GetControllerServiceWorker(
+    mojom::ControllerServiceWorkerRequest controller_request) {
+  // TODO(kinuko): Log the reasons we drop the request.
+  if (!dispatcher_host_ || !IsContextAlive() || !controller_service_worker_)
+    return;
+
+  // TODO(kinuko): Call version_->StartWorker() here and pass the
+  // controller_request to the ServiceWorker.
+  // (Note that this could get called multiple times before the service
+  // worker is started)
+  DCHECK(ServiceWorkerUtils::IsServicificationEnabled());
+  controller_service_worker_->AddBinding(std::move(controller_request));
+}
+
+bool ServiceWorkerProviderHost::IsValidRegisterMessage(
+    const GURL& script_url,
+    const blink::mojom::ServiceWorkerRegistrationOptions& options,
+    std::string* out_error) const {
+  if (client_type() != blink::kWebServiceWorkerClientTypeWindow) {
+    *out_error = kBadMessageFromNonWindow;
+    return false;
+  }
+  if (!options.scope.is_valid() || !script_url.is_valid()) {
+    *out_error = kBadMessageInvalidURL;
+    return false;
+  }
+  if (ServiceWorkerUtils::ContainsDisallowedCharacter(options.scope, script_url,
+                                                      out_error)) {
+    return false;
+  }
+  std::vector<GURL> urls = {document_url(), options.scope, script_url};
+  if (!ServiceWorkerUtils::AllOriginsMatchAndCanAccessServiceWorkers(urls)) {
+    *out_error = kBadMessageInproperOrigins;
+    return false;
+  }
+
+  return true;
+}
+
+bool ServiceWorkerProviderHost::IsValidGetRegistrationMessage(
+    const GURL& client_url,
+    std::string* out_error) const {
+  if (client_type() != blink::kWebServiceWorkerClientTypeWindow) {
+    *out_error = kBadMessageFromNonWindow;
+    return false;
+  }
+  if (!client_url.is_valid()) {
+    *out_error = kBadMessageInvalidURL;
+    return false;
+  }
+  std::vector<GURL> urls = {document_url(), client_url};
+  if (!ServiceWorkerUtils::AllOriginsMatchAndCanAccessServiceWorkers(urls)) {
+    *out_error = kBadMessageInproperOrigins;
+    return false;
+  }
+
+  return true;
+}
+
+bool ServiceWorkerProviderHost::IsValidGetRegistrationsMessage(
+    std::string* out_error) const {
+  if (client_type() != blink::kWebServiceWorkerClientTypeWindow) {
+    *out_error = kBadMessageFromNonWindow;
+    return false;
+  }
+  if (!OriginCanAccessServiceWorkers(document_url())) {
+    *out_error = kBadMessageInproperOrigins;
+    return false;
+  }
+
+  return true;
+}
+
+bool ServiceWorkerProviderHost::IsValidGetRegistrationForReadyMessage(
+    std::string* out_error) const {
+  if (client_type() != blink::kWebServiceWorkerClientTypeWindow) {
+    *out_error = kBadMessageFromNonWindow;
+    return false;
+  }
+
+  if (get_ready_callback_) {
+    *out_error = kBadMessageGetRegistrationForReadyDuplicated;
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace content

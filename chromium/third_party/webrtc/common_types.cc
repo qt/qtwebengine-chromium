@@ -8,15 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/common_types.h"
+#include "common_types.h"  // NOLINT(build/include)
 
 #include <string.h>
 #include <algorithm>
 #include <limits>
 #include <type_traits>
 
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/stringutils.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/stringutils.h"
 
 namespace webrtc {
 
@@ -57,6 +57,12 @@ RTPHeaderExtension::RTPHeaderExtension()
       videoContentType(VideoContentType::UNSPECIFIED),
       has_video_timing(false) {}
 
+RTPHeaderExtension::RTPHeaderExtension(const RTPHeaderExtension& other) =
+    default;
+
+RTPHeaderExtension& RTPHeaderExtension::operator=(
+    const RTPHeaderExtension& other) = default;
+
 RTPHeader::RTPHeader()
     : markerBit(false),
       payloadType(0),
@@ -69,6 +75,10 @@ RTPHeader::RTPHeader()
       headerLength(0),
       payload_type_frequency(0),
       extension() {}
+
+RTPHeader::RTPHeader(const RTPHeader& other) = default;
+
+RTPHeader& RTPHeader::operator=(const RTPHeader& other) = default;
 
 VideoCodec::VideoCodec()
     : codecType(kVideoCodecUnknown),
@@ -166,16 +176,6 @@ VideoCodecType PayloadStringToCodecType(const std::string& name) {
   if (CodecNamesEq(name.c_str(), kPayloadNameULPFEC))
     return kVideoCodecULPFEC;
   return kVideoCodecGeneric;
-}
-
-// TODO(kthelgason): Remove these methods once upstream projects
-// have been updated.
-rtc::Optional<const char*> CodecTypeToPayloadName(VideoCodecType type) {
-  return rtc::Optional<const char*>(CodecTypeToPayloadString(type));
-}
-
-rtc::Optional<VideoCodecType> PayloadNameToCodecType(const std::string& name) {
-  return rtc::Optional<VideoCodecType>(PayloadStringToCodecType(name));
 }
 
 const uint32_t BitrateAllocation::kMaxBitrateBps =

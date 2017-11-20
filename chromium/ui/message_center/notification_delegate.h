@@ -53,7 +53,12 @@ class MESSAGE_CENTER_EXPORT NotificationDelegate
   virtual bool SettingsClick();
 
   // To be called in order to detect if a settings button should be displayed.
+  // This also controls whether a context menu is enabled (as the context menu
+  // is also used for controlling settings).
   virtual bool ShouldDisplaySettingsButton();
+
+  // Called when the user attempts to disable the notification.
+  virtual void DisableNotification();
 
 #if defined(TOOLKIT_VIEWS) && !defined(OS_MACOSX)
   // To be called to construct the message view for notifications whose type is

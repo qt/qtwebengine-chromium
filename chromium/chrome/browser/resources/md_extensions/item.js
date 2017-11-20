@@ -4,57 +4,55 @@
 
 cr.define('extensions', function() {
   /** @interface */
-  const ItemDelegate = function() {};
-
-  ItemDelegate.prototype = {
+  class ItemDelegate {
     /** @param {string} id */
-    deleteItem: assertNotReached,
+    deleteItem(id) {}
 
     /**
      * @param {string} id
      * @param {boolean} isEnabled
      */
-    setItemEnabled: assertNotReached,
+    setItemEnabled(id, isEnabled) {}
 
     /**
      * @param {string} id
      * @param {boolean} isAllowedIncognito
      */
-    setItemAllowedIncognito: assertNotReached,
+    setItemAllowedIncognito(id, isAllowedIncognito) {}
 
     /**
      * @param {string} id
      * @param {boolean} isAllowedOnFileUrls
      */
-    setItemAllowedOnFileUrls: assertNotReached,
+    setItemAllowedOnFileUrls(id, isAllowedOnFileUrls) {}
 
     /**
      * @param {string} id
      * @param {boolean} isAllowedOnAllSites
      */
-    setItemAllowedOnAllSites: assertNotReached,
+    setItemAllowedOnAllSites(id, isAllowedOnAllSites) {}
 
     /**
      * @param {string} id
      * @param {boolean} collectsErrors
      */
-    setItemCollectsErrors: assertNotReached,
+    setItemCollectsErrors(id, collectsErrors) {}
 
     /**
      * @param {string} id
      * @param {chrome.developerPrivate.ExtensionView} view
      */
-    inspectItemView: assertNotReached,
+    inspectItemView(id, view) {}
 
     /** @param {string} id */
-    reloadItem: assertNotReached,
+    reloadItem(id) {}
 
     /** @param {string} id */
-    repairItem: assertNotReached,
+    repairItem(id) {}
 
     /** @param {string} id */
-    showItemOptionsPage: assertNotReached,
-  };
+    showItemOptionsPage(id) {}
+  }
 
   const Item = Polymer({
     is: 'extensions-item',
@@ -100,7 +98,6 @@ cr.define('extensions', function() {
         assert(this.data);
         idElement.innerHTML = this.i18n('itemId', this.data.id);
       }
-      this.fire('extension-item-size-changed', {item: this.data});
     },
 
     /**
@@ -282,11 +279,11 @@ cr.define('extensions', function() {
      */
     computeDevReloadButtonHidden_: function() {
       // Only display the reload spinner if the extension is unpacked and
-      // not terminated (since if it's terminated, we'll show a crashed reload
-      // buton).
+      // enabled. There's no point in reloading a disabled extension, and we'll
+      // show a crashed reload buton if it's terminated.
       const showIcon =
           this.data.location == chrome.developerPrivate.Location.UNPACKED &&
-          this.data.state != chrome.developerPrivate.ExtensionState.TERMINATED;
+          this.data.state == chrome.developerPrivate.ExtensionState.ENABLED;
       return !showIcon;
     },
 

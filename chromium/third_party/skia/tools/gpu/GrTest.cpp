@@ -38,22 +38,16 @@ void SetupAlwaysEvictAtlas(GrContext* context) {
     GrDrawOpAtlasConfig configs[3];
     configs[kA8_GrMaskFormat].fWidth = dim;
     configs[kA8_GrMaskFormat].fHeight = dim;
-    configs[kA8_GrMaskFormat].fLog2Width = SkNextLog2(dim);
-    configs[kA8_GrMaskFormat].fLog2Height = SkNextLog2(dim);
     configs[kA8_GrMaskFormat].fPlotWidth = dim;
     configs[kA8_GrMaskFormat].fPlotHeight = dim;
 
     configs[kA565_GrMaskFormat].fWidth = dim;
     configs[kA565_GrMaskFormat].fHeight = dim;
-    configs[kA565_GrMaskFormat].fLog2Width = SkNextLog2(dim);
-    configs[kA565_GrMaskFormat].fLog2Height = SkNextLog2(dim);
     configs[kA565_GrMaskFormat].fPlotWidth = dim;
     configs[kA565_GrMaskFormat].fPlotHeight = dim;
 
     configs[kARGB_GrMaskFormat].fWidth = dim;
     configs[kARGB_GrMaskFormat].fHeight = dim;
-    configs[kARGB_GrMaskFormat].fLog2Width = SkNextLog2(dim);
-    configs[kARGB_GrMaskFormat].fLog2Height = SkNextLog2(dim);
     configs[kARGB_GrMaskFormat].fPlotWidth = dim;
     configs[kARGB_GrMaskFormat].fPlotHeight = dim;
 
@@ -153,14 +147,14 @@ void GrContext::printGpuStats() const {
 sk_sp<SkImage> GrContext::getFontAtlasImage_ForTesting(GrMaskFormat format) {
     GrAtlasGlyphCache* cache = this->getAtlasGlyphCache();
 
-    sk_sp<GrTextureProxy> proxy = cache->getProxy(format);
-    if (!proxy) {
+    const sk_sp<GrTextureProxy>* proxies = cache->getProxies(format);
+    if (!proxies[0]) {
         return nullptr;
     }
 
-    SkASSERT(proxy->priv().isExact());
+    SkASSERT(proxies[0]->priv().isExact());
     sk_sp<SkImage> image(new SkImage_Gpu(this, kNeedNewImageUniqueID, kPremul_SkAlphaType,
-                                         std::move(proxy), nullptr, SkBudgeted::kNo));
+                                         std::move(proxies[0]), nullptr, SkBudgeted::kNo));
     return image;
 }
 

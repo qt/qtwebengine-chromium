@@ -11,9 +11,9 @@
 #include <memory>
 #include <vector>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 class CPWL_EditImpl;
 class CPWL_EditImpl_Iterator;
@@ -68,13 +68,13 @@ class CPWL_ListCtrl {
   CFX_FloatRect GetContentRect() const;
 
   int32_t GetItemIndex(const CFX_PointF& point) const;
-  void AddString(const CFX_WideString& str);
+  void AddString(const WideString& str);
   void SetTopItem(int32_t nIndex);
   void Select(int32_t nItemIndex);
   void SetCaret(int32_t nItemIndex);
   void Empty();
   void Cancel();
-  CFX_WideString GetText() const;
+  WideString GetText() const;
 
   void SetFontMap(IPVT_FontMap* pFontMap) { m_pFontMap = pFontMap; }
   void SetFontSize(float fFontSize) { m_fFontSize = fFontSize; }
@@ -102,9 +102,9 @@ class CPWL_ListCtrl {
 
     void SetRect(const CFX_FloatRect& rect) { m_rcListItem = rect; }
     void SetSelect(bool bSelected) { m_bSelected = bSelected; }
-    void SetText(const CFX_WideString& text);
+    void SetText(const WideString& text);
     void SetFontSize(float fFontSize);
-    CFX_WideString GetText() const;
+    WideString GetText() const;
 
     CFX_FloatRect GetRect() const { return m_rcListItem; }
     bool IsSelected() const { return m_bSelected; }
@@ -142,8 +142,8 @@ class CPWL_ListCtrl {
   bool IsItemVisible(int32_t nItemIndex) const;
   void SetScrollInfo();
   void SetScrollPosY(float fy);
-  void AddItem(const CFX_WideString& str);
-  CFX_WideString GetItemText(int32_t nIndex) const;
+  void AddItem(const WideString& str);
+  WideString GetItemText(int32_t nIndex) const;
   void SetItemSelect(int32_t nItemIndex, bool bSelected);
   int32_t GetLastSelected() const;
   CFX_PointF GetBTPoint() const {
@@ -152,7 +152,7 @@ class CPWL_ListCtrl {
 
   CFX_FloatRect m_rcPlate;
   CFX_FloatRect m_rcContent;
-  CFX_UnownedPtr<CPWL_List_Notify> m_pNotify;
+  UnownedPtr<CPWL_List_Notify> m_pNotify;
   bool m_bNotifyFlag;
   CFX_PointF m_ptScrollPos;
   CPLST_Select m_aSelItems;  // for multiple
@@ -162,7 +162,7 @@ class CPWL_ListCtrl {
   int32_t m_nCaretIndex;     // for multiple
   std::vector<std::unique_ptr<Item>> m_ListItems;
   float m_fFontSize;
-  CFX_UnownedPtr<IPVT_FontMap> m_pFontMap;
+  UnownedPtr<IPVT_FontMap> m_pFontMap;
   bool m_bMultiple;
 };
 

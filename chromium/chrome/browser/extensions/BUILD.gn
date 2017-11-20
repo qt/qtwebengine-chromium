@@ -5,6 +5,7 @@
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//chrome/common/features.gni")
+import("//components/nacl/features.gni")
 import("//extensions/features/features.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
@@ -452,6 +453,8 @@ static_library("extensions") {
     "blacklist_state_fetcher.h",
     "bookmark_app_helper.cc",
     "bookmark_app_helper.h",
+    "bookmark_app_navigation_throttle.cc",
+    "bookmark_app_navigation_throttle.h",
     "browser_action_test_util.h",
     "browser_context_keyed_service_factories.cc",
     "browser_context_keyed_service_factories.h",
@@ -783,7 +786,7 @@ static_library("extensions") {
   # browser, then we can clean up these dependencies.
   public_deps = [
     "//chrome/common/extensions/api",
-    "//components/safe_browsing_db:util",
+    "//components/safe_browsing/db:util",
     "//content/public/browser",
   ]
   deps = [
@@ -826,6 +829,8 @@ static_library("extensions") {
     "//components/history/core/browser",
     "//components/infobars/core",
     "//components/keyed_service/content",
+    "//components/language/core/browser:browser",
+    "//components/nacl/common:features",
     "//components/navigation_interception",
     "//components/net_log",
     "//components/omnibox/browser",
@@ -841,7 +846,7 @@ static_library("extensions") {
     "//components/rappor",
     "//components/resources",
     "//components/safe_browsing/common:safe_browsing_prefs",
-    "//components/safe_browsing_db:database_manager",
+    "//components/safe_browsing/db:database_manager",
     "//components/safe_json",
     "//components/search_engines",
     "//components/sessions",
@@ -900,6 +905,8 @@ static_library("extensions") {
     "//ui/display/manager",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/message_center",
+    "//ui/message_center/public/cpp",
     "//ui/native_theme",
     "//ui/resources",
     "//ui/shell_dialogs",
@@ -966,6 +973,8 @@ static_library("extensions") {
       configs += [ "//build/config/linux/dbus" ]
     }
     deps += [
+      "//ash",
+      "//ash/public/cpp:ash_public_cpp",
       "//components/arc",
       "//components/chrome_apps",
       "//components/constrained_window",
@@ -979,7 +988,8 @@ static_library("extensions") {
       "//ui/chromeos",
       "//ui/chromeos/events",
       "//ui/file_manager",
-      "//ui/views/",
+      "//ui/ozone",
+      "//ui/views",
     ]
     if (enable_nacl) {
       deps += [ "//chrome/browser/resources/chromeos/zip_archiver" ]
@@ -1127,13 +1137,6 @@ static_library("extensions") {
 
   if (toolkit_views) {
     deps += [ "//ui/views" ]
-  }
-
-  if (use_ash) {
-    deps += [
-      "//ash",
-      "//ash/public/cpp:ash_public_cpp",
-    ]
   }
 
   if (use_aura) {

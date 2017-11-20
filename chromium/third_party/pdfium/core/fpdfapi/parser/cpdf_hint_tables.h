@@ -10,16 +10,17 @@
 #include <vector>
 
 #include "core/fpdfapi/parser/cpdf_data_avail.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_stream.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 class CFX_BitStream;
 class CPDF_LinearizedHeader;
 class CPDF_Stream;
+class CPDF_ReadValidator;
 
 class CPDF_HintTables {
  public:
-  CPDF_HintTables(CPDF_DataAvail* pDataAvail,
+  CPDF_HintTables(CPDF_ReadValidator* pValidator,
                   CPDF_LinearizedHeader* pLinearized);
   virtual ~CPDF_HintTables();
 
@@ -28,9 +29,7 @@ class CPDF_HintTables {
                   FX_FILESIZE* szPageLength,
                   uint32_t* dwObjNum);
 
-  CPDF_DataAvail::DocAvailStatus CheckPage(
-      uint32_t index,
-      CPDF_DataAvail::DownloadHints* pHints);
+  CPDF_DataAvail::DocAvailStatus CheckPage(uint32_t index);
 
   bool LoadHintStream(CPDF_Stream* pHintStream);
 
@@ -50,11 +49,11 @@ class CPDF_HintTables {
   uint32_t GetItemLength(uint32_t index,
                          const std::vector<FX_FILESIZE>& szArray);
 
-  // Owner, outlives this object.
-  CFX_UnownedPtr<CPDF_DataAvail> const m_pDataAvail;
+  // Owned by |m_pDataAvail|.
+  UnownedPtr<CPDF_ReadValidator> m_pValidator;
 
   // Owned by |m_pDataAvail|.
-  CFX_UnownedPtr<CPDF_LinearizedHeader> const m_pLinearized;
+  UnownedPtr<CPDF_LinearizedHeader> const m_pLinearized;
 
   uint32_t m_nFirstPageSharedObjs;
   FX_FILESIZE m_szFirstPageObjOffset;

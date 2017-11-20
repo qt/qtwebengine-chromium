@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/rtc_base/openssladapter.h"
+#include "rtc_base/openssladapter.h"
 
 #if defined(WEBRTC_POSIX)
 #include <unistd.h>
 #endif
 
 // Must be included first before openssl headers.
-#include "webrtc/rtc_base/win32.h"  // NOLINT
+#include "rtc_base/win32.h"  // NOLINT
 
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
@@ -25,14 +25,15 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/openssl.h"
-#include "webrtc/rtc_base/safe_conversions.h"
-#include "webrtc/rtc_base/sslroots.h"
-#include "webrtc/rtc_base/stringutils.h"
-#include "webrtc/rtc_base/thread.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/openssl.h"
+#include "rtc_base/safe_conversions.h"
+#include "rtc_base/sslroots.h"
+#include "rtc_base/stringencode.h"
+#include "rtc_base/stringutils.h"
+#include "rtc_base/thread.h"
 
 #ifndef OPENSSL_IS_BORINGSSL
 
@@ -311,6 +312,10 @@ void OpenSSLAdapter::SetAlpnProtocols(const std::vector<std::string>& protos) {
   alpn_protocols_ = protos;
 }
 
+void OpenSSLAdapter::SetEllipticCurves(const std::vector<std::string>& curves) {
+  elliptic_curves_ = curves;
+}
+
 void OpenSSLAdapter::SetMode(SSLMode mode) {
   RTC_DCHECK(!ssl_ctx_);
   RTC_DCHECK(state_ == SSL_NONE);
@@ -443,6 +448,10 @@ int OpenSSLAdapter::BeginSSL() {
           ssl_, reinterpret_cast<const unsigned char*>(tls_alpn_string.data()),
           tls_alpn_string.size());
     }
+  }
+
+  if (!elliptic_curves_.empty()) {
+    SSL_set1_curves_list(ssl_, rtc::join(elliptic_curves_, ':').c_str());
   }
 
   // Now that the initial config is done, transfer ownership of |bio| to the

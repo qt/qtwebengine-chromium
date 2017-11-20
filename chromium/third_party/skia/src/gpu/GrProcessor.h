@@ -14,7 +14,7 @@
 #include "GrGpuResourceRef.h"
 #include "GrProcessorUnitTest.h"
 #include "GrProgramElement.h"
-#include "GrSamplerParams.h"
+#include "GrSamplerState.h"
 #include "GrShaderVar.h"
 #include "GrSurfaceProxyPriv.h"
 #include "GrTextureProxy.h"
@@ -64,6 +64,96 @@ private:
  */
 class GrProcessor {
 public:
+    enum ClassID {
+        kAARectEffect_ClassID,
+        kBigKeyProcessor_ClassID,
+        kBlockInputFragmentProcessor_ClassID,
+        kCircleGeometryProcessor_ClassID,
+        kCircleInside2PtConicalEffect_ClassID,
+        kCircleOutside2PtConicalEffect_ClassID,
+        kCircularRRectEffect_ClassID,
+        kColorMatrixEffect_ClassID,
+        kColorTableEffect_ClassID,
+        kComposeOneFragmentProcessor_ClassID,
+        kComposeTwoFragmentProcessor_ClassID,
+        kCoverageSetOpXP_ClassID,
+        kCustomXP_ClassID,
+        kDashingCircleEffect_ClassID,
+        kDashingLineEffect_ClassID,
+        kDefaultGeoProc_ClassID,
+        kDIEllipseGeometryProcessor_ClassID,
+        kDisableColorXP_ClassID,
+        kEdge2PtConicalEffect_ClassID,
+        kEllipseGeometryProcessor_ClassID,
+        kEllipticalRRectEffect_ClassID,
+        kFocalInside2PtConicalEffect_ClassID,
+        kFocalOutside2PtConicalEffect_ClassID,
+        kGP_ClassID,
+        kGrAlphaThresholdFragmentProcessor_ClassID,
+        kGrArithmeticFP_ClassID,
+        kGrBicubicEffect_ClassID,
+        kGrBitmapTextGeoProc_ClassID,
+        kGrBlurredEdgeFragmentProcessor_ClassID,
+        kGrCCPRCoverageProcessor_ClassID,
+        kGrCCPRPathProcessor_ClassID,
+        kGrCircleBlurFragmentProcessor_ClassID,
+        kGrCircleEffect_ClassID,
+        kGrConfigConversionEffect_ClassID,
+        kGrConicEffect_ClassID,
+        kGrConstColorProcessor_ClassID,
+        kGrConvexPolyEffect_ClassID,
+        kGrCubicEffect_ClassID,
+        kGrDeviceSpaceTextureDecalFragmentProcessor_ClassID,
+        kGrDiffuseLightingEffect_ClassID,
+        kGrDisplacementMapEffect_ClassID,
+        kGrDistanceFieldA8TextGeoProc_ClassID,
+        kGrDistanceFieldLCDTextGeoProc_ClassID,
+        kGrDistanceFieldPathGeoProc_ClassID,
+        kGrDitherEffect_ClassID,
+        kGrEllipseEffect_ClassID,
+        kGrGaussianConvolutionFragmentProcessor_ClassID,
+        kGrImprovedPerlinNoiseEffect_ClassID,
+        kGrLightingEffect_ClassID,
+        kGrLinearGradient_ClassID,
+        kGrMagnifierEffect_ClassID,
+        kGrMatrixConvolutionEffect_ClassID,
+        kGrMeshTestProcessor_ClassID,
+        kGrMorphologyEffect_ClassID,
+        kGrNonlinearColorSpaceXformEffect_ClassID,
+        kGrPathProcessor_ClassID,
+        kGrPerlinNoise2Effect_ClassID,
+        kGrPipelineDynamicStateTestProcessor_ClassID,
+        kGrQuadEffect_ClassID,
+        kGrRadialGradient_ClassID,
+        kGrRectBlurEffect_ClassID,
+        kGrRRectBlurEffect_ClassID,
+        kGrRRectShadowGeoProc_ClassID,
+        kGrSimpleTextureEffect_ClassID,
+        kGrSpecularLightingEffect_ClassID,
+        kGrSRGBEffect_ClassID,
+        kGrSweepGradient_ClassID,
+        kGrTextureDomainEffect_ClassID,
+        kHighContrastFilterEffect_ClassID,
+        kInstanceProcessor_ClassID,
+        kLumaColorFilterEffect_ClassID,
+        kMSAAQuadProcessor_ClassID,
+        kOverdrawFragmentProcessor_ClassID,
+        kPDLCDXferProcessor_ClassID,
+        kPorterDuffXferProcessor_ClassID,
+        kPremulFragmentProcessor_ClassID,
+        kPremulInputFragmentProcessor_ClassID,
+        kQuadEdgeEffect_ClassID,
+        kReplaceInputFragmentProcessor_ClassID,
+        kRRectsGaussianEdgeFP_ClassID,
+        kSeriesFragmentProcessor_ClassID,
+        kShaderPDXferProcessor_ClassID,
+        kSwizzleFragmentProcessor_ClassID,
+        kTestFP_ClassID,
+        kTextureGeometryProcessor_ClassID,
+        kUnpremulInputFragmentProcessor_ClassID,
+        kYUVtoRGBEffect_ClassID
+    };
+
     virtual ~GrProcessor() = default;
 
     /** Human-meaningful string to identify this prcoessor; may be embedded in generated shader
@@ -102,10 +192,12 @@ public:
     /** Helper for down-casting to a GrProcessor subclass */
     template <typename T> const T& cast() const { return *static_cast<const T*>(this); }
 
-    uint32_t classID() const { SkASSERT(kIllegalProcessorClassID != fClassID); return fClassID; }
+    ClassID classID() const { return fClassID; }
 
 protected:
-    GrProcessor() : fClassID(kIllegalProcessorClassID), fRequiredFeatures(kNone_RequiredFeatures) {}
+    GrProcessor(ClassID classID)
+    : fClassID(classID)
+    , fRequiredFeatures(kNone_RequiredFeatures) {}
 
     /**
      * If the prcoessor will generate code that uses platform specific built-in features, then it
@@ -118,34 +210,12 @@ protected:
         fRequiredFeatures |= other.fRequiredFeatures;
     }
 
-    template <typename PROC_SUBCLASS> void initClassID() {
-         static uint32_t kClassID = GenClassID();
-         fClassID = kClassID;
-    }
-
 private:
     GrProcessor(const GrProcessor&) = delete;
     GrProcessor& operator=(const GrProcessor&) = delete;
 
-    static uint32_t GenClassID() {
-        // fCurrProcessorClassID has been initialized to kIllegalProcessorClassID. The
-        // atomic inc returns the old value not the incremented value. So we add
-        // 1 to the returned value.
-        uint32_t id = static_cast<uint32_t>(sk_atomic_inc(&gCurrProcessorClassID)) + 1;
-        if (!id) {
-            SK_ABORT("This should never wrap as it should only be called once for each GrProcessor "
-                   "subclass.");
-        }
-        return id;
-    }
-
-    enum {
-        kIllegalProcessorClassID = 0,
-    };
-    static int32_t gCurrProcessorClassID;
-
-    uint32_t                                        fClassID;
-    RequiredFeatures                                fRequiredFeatures;
+    ClassID          fClassID;
+    RequiredFeatures fRequiredFeatures;
 };
 
 GR_MAKE_BITFIELD_OPS(GrProcessor::RequiredFeatures);
@@ -180,7 +250,8 @@ public:
     bool instantiate(GrResourceProvider* resourceProvider) const;
 
 protected:
-    GrResourceIOProcessor() {}
+    GrResourceIOProcessor(ClassID classID)
+    : INHERITED(classID) {}
 
     /**
      * Subclasses call these from their constructor to register sampler/image sources. The processor
@@ -209,7 +280,7 @@ private:
 
 /**
  * Used to represent a texture that is required by a GrResourceIOProcessor. It holds a GrTexture
- * along with an associated GrSamplerParams. TextureSamplers don't perform any coord manipulation to
+ * along with an associated GrSamplerState. TextureSamplers don't perform any coord manipulation to
  * account for texture origin.
  */
 class GrResourceIOProcessor::TextureSampler {
@@ -225,29 +296,28 @@ public:
      */
     explicit TextureSampler(const TextureSampler& that)
             : fProxyRef(sk_ref_sp(that.fProxyRef.get()), that.fProxyRef.ioType())
-            , fParams(that.fParams)
+            , fSamplerState(that.fSamplerState)
             , fVisibility(that.fVisibility) {}
 
-    TextureSampler(sk_sp<GrTextureProxy>, const GrSamplerParams&);
+    TextureSampler(sk_sp<GrTextureProxy>, const GrSamplerState&);
 
     explicit TextureSampler(sk_sp<GrTextureProxy>,
-                            GrSamplerParams::FilterMode = GrSamplerParams::kNone_FilterMode,
-                            SkShader::TileMode tileXAndY = SkShader::kClamp_TileMode,
+                            GrSamplerState::Filter = GrSamplerState::Filter::kNearest,
+                            GrSamplerState::WrapMode wrapXAndY = GrSamplerState::WrapMode::kClamp,
                             GrShaderFlags visibility = kFragment_GrShaderFlag);
 
     TextureSampler& operator=(const TextureSampler&) = delete;
 
-    void reset(sk_sp<GrTextureProxy>, const GrSamplerParams&,
+    void reset(sk_sp<GrTextureProxy>, const GrSamplerState&,
                GrShaderFlags visibility = kFragment_GrShaderFlag);
     void reset(sk_sp<GrTextureProxy>,
-               GrSamplerParams::FilterMode = GrSamplerParams::kNone_FilterMode,
-               SkShader::TileMode tileXAndY = SkShader::kClamp_TileMode,
+               GrSamplerState::Filter = GrSamplerState::Filter::kNearest,
+               GrSamplerState::WrapMode wrapXAndY = GrSamplerState::WrapMode::kClamp,
                GrShaderFlags visibility = kFragment_GrShaderFlag);
 
     bool operator==(const TextureSampler& that) const {
         return this->proxy()->underlyingUniqueID() == that.proxy()->underlyingUniqueID() &&
-               fParams == that.fParams &&
-               fVisibility == that.fVisibility;
+               fSamplerState == that.fSamplerState && fVisibility == that.fVisibility;
     }
 
     bool operator!=(const TextureSampler& other) const { return !(*this == other); }
@@ -265,7 +335,7 @@ public:
 
     GrTextureProxy* proxy() const { return fProxyRef.get()->asTextureProxy(); }
     GrShaderFlags visibility() const { return fVisibility; }
-    const GrSamplerParams& params() const { return fParams; }
+    const GrSamplerState& samplerState() const { return fSamplerState; }
 
     bool isInitialized() const { return SkToBool(fProxyRef.get()); }
     /**
@@ -274,9 +344,9 @@ public:
     const GrSurfaceProxyRef* programProxy() const { return &fProxyRef; }
 
 private:
-    GrSurfaceProxyRef               fProxyRef;
-    GrSamplerParams                 fParams;
-    GrShaderFlags                   fVisibility;
+    GrSurfaceProxyRef fProxyRef;
+    GrSamplerState fSamplerState;
+    GrShaderFlags fVisibility;
 };
 
 /**

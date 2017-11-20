@@ -63,20 +63,10 @@ class CSSPropertyParser {
   // TODO(timloh): Rename once the CSSParserValue-based parseValue is removed
   bool ParseValueStart(CSSPropertyID unresolved_property, bool important);
   bool ConsumeCSSWideKeyword(CSSPropertyID unresolved_property, bool important);
-  const CSSValue* ParseSingleValue(CSSPropertyID,
-                                   CSSPropertyID = CSSPropertyInvalid);
-
-  bool InQuirksMode() const { return IsQuirksModeBehavior(context_->Mode()); }
 
   bool ParseViewportDescriptor(CSSPropertyID prop_id, bool important);
   bool ParseFontFaceDescriptor(CSSPropertyID);
 
-  void AddParsedProperty(CSSPropertyID resolved_property,
-                         CSSPropertyID current_shorthand,
-                         const CSSValue&,
-                         bool important,
-                         bool implicit = false);
-  bool ParseShorthand(CSSPropertyID, bool important);
  private:
   // Inputs:
   CSSParserTokenRange range_;

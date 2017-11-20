@@ -365,6 +365,7 @@ static void set_rt_speed_feature_framesize_independent(
   sf->use_source_sad = 0;
   sf->use_simple_block_yrd = 0;
   sf->adapt_partition_source_sad = 0;
+  sf->use_altref_onepass = 0;
 
   if (speed >= 1) {
     sf->allow_txfm_domain_distortion = 1;
@@ -442,6 +443,8 @@ static void set_rt_speed_feature_framesize_independent(
 
   if (speed >= 4) {
     int i;
+    if (cpi->oxcf.rc_mode == VPX_VBR && cpi->oxcf.lag_in_frames > 0)
+      sf->use_altref_onepass = 1;
     sf->last_partitioning_redo_frequency = 4;
     sf->adaptive_rd_thresh = 5;
     sf->use_fast_coef_costing = 0;
@@ -467,6 +470,7 @@ static void set_rt_speed_feature_framesize_independent(
   }
 
   if (speed >= 5) {
+    sf->use_altref_onepass = 0;
     sf->use_quant_fp = !is_keyframe;
     sf->auto_min_max_partition_size =
         is_keyframe ? RELAXED_NEIGHBORING_MIN_MAX : STRICT_NEIGHBORING_MIN_MAX;
@@ -523,20 +527,24 @@ static void set_rt_speed_feature_framesize_independent(
 
   if (speed >= 6) {
     sf->partition_search_type = VAR_BASED_PARTITION;
+    if (cpi->oxcf.rc_mode == VPX_VBR && cpi->oxcf.lag_in_frames > 0 &&
+        !is_keyframe) {
+      if (sf->use_altref_onepass && cpi->refresh_alt_ref_frame) {
+        sf->partition_search_type = REFERENCE_PARTITION;
+      }
+    }
     // Turn on this to use non-RD key frame coding mode.
     sf->use_nonrd_pick_mode = 1;
     sf->mv.search_method = NSTEP;
     sf->mv.reduce_first_step_size = 1;
     sf->skip_encode_sb = 0;
-    // TODO(jianj/marpan): There is a test failure under highbitdepth build in
-    // MotionVectorTestLarge/41 for 4K when source_sad is used for speed 6.
-    // See issue webm:1452. Remove this resolution constraint when issue is
-    // solved.
-    if (!cpi->external_resize && cm->width <= 1920) sf->use_source_sad = 1;
+
+    if (!cpi->external_resize) sf->use_source_sad = 1;
 
     if (sf->use_source_sad) {
-      if (cm->width * cm->height <= 640 * 360)
-        sf->adapt_partition_source_sad = 1;
+      sf->adapt_partition_source_sad = 1;
+      sf->adapt_partition_thresh =
+          (cm->width * cm->height <= 640 * 360) ? 40000 : 80000;
       if (cpi->content_state_sb_fd == NULL &&
           (!cpi->use_svc ||
            cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1)) {
@@ -560,12 +568,16 @@ static void set_rt_speed_feature_framesize_independent(
     sf->adaptive_rd_thresh = 3;
     sf->mv.search_method = FAST_DIAMOND;
     sf->mv.fullpel_search_step_param = 10;
+    // For SVC: use better mv search on base temporal layer, and only
+    // on base spatial layer if highest resolution is above 640x360.
     if (cpi->svc.number_temporal_layers > 2 &&
-        cpi->svc.temporal_layer_id == 0) {
+        cpi->svc.temporal_layer_id == 0 &&
+        (cpi->svc.spatial_layer_id == 0 ||
+         cpi->oxcf.width * cpi->oxcf.height <= 640 * 360)) {
       sf->mv.search_method = NSTEP;
       sf->mv.fullpel_search_step_param = 6;
     }
-    if (cpi->svc.temporal_layer_id > 0) {
+    if (cpi->svc.temporal_layer_id > 0 || cpi->svc.spatial_layer_id > 1) {
       sf->use_simple_block_yrd = 1;
       if (cpi->svc.non_reference_frame)
         sf->mv.subpel_search_method = SUBPEL_TREE_PRUNED_EVENMORE;
@@ -589,6 +601,7 @@ static void set_rt_speed_feature_framesize_independent(
 
   if (speed >= 8) {
     sf->adaptive_rd_thresh = 4;
+    sf->skip_encode_sb = 1;
     if (!cpi->use_svc) cpi->max_copied_frame = 4;
     if (cpi->row_mt && cpi->oxcf.max_threads > 1)
       sf->adaptive_rd_thresh_row_mt = 1;
@@ -622,6 +635,20 @@ static void set_rt_speed_feature_framesize_independent(
     }
     sf->limit_newmv_early_exit = 0;
     sf->use_simple_block_yrd = 1;
+  }
+  if (sf->use_altref_onepass) {
+    if (cpi->rc.is_src_frame_alt_ref && cm->frame_type != KEY_FRAME) {
+      sf->partition_search_type = FIXED_PARTITION;
+      sf->always_this_block_size = BLOCK_64X64;
+    }
+    if (cpi->count_arf_frame_usage == NULL)
+      cpi->count_arf_frame_usage =
+          (uint8_t *)vpx_calloc((cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1),
+                                sizeof(*cpi->count_arf_frame_usage));
+    if (cpi->count_lastgolden_frame_usage == NULL)
+      cpi->count_lastgolden_frame_usage =
+          (uint8_t *)vpx_calloc((cm->mi_stride >> 3) * ((cm->mi_rows >> 3) + 1),
+                                sizeof(*cpi->count_lastgolden_frame_usage));
   }
 }
 

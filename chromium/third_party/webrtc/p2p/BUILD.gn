@@ -64,8 +64,6 @@ rtc_static_library("rtc_p2p") {
     "base/tcpport.cc",
     "base/tcpport.h",
     "base/transport.h",
-    "base/transportcontroller.cc",
-    "base/transportcontroller.h",
     "base/transportdescription.cc",
     "base/transportdescription.h",
     "base/transportdescriptionfactory.cc",
@@ -86,6 +84,7 @@ rtc_static_library("rtc_p2p") {
 
   deps = [
     "../api:libjingle_peerconnection_api",
+    "../api:optional",
     "../api:ortc_api",
     "../rtc_base:rtc_base",
     "../system_wrappers:field_trial_api",
@@ -146,10 +145,10 @@ if (rtc_include_tests) {
       "base/fakeicetransport.h",
       "base/fakepackettransport.h",
       "base/fakeportallocator.h",
-      "base/faketransportcontroller.h",
       "base/mockicetransport.h",
       "base/testrelayserver.h",
       "base/teststunserver.h",
+      "base/testturncustomizer.h",
       "base/testturnserver.h",
     ]
     deps = [
@@ -188,7 +187,6 @@ if (rtc_include_tests) {
       "base/stunrequest_unittest.cc",
       "base/stunserver_unittest.cc",
       "base/tcpport_unittest.cc",
-      "base/transportcontroller_unittest.cc",
       "base/transportdescriptionfactory_unittest.cc",
       "base/turnport_unittest.cc",
       "base/turnserver_unittest.cc",

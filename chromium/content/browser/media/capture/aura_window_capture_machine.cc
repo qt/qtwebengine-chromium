@@ -9,9 +9,9 @@
 
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/gl_helper.h"
-#include "components/viz/common/quads/copy_output_request.h"
-#include "components/viz/common/quads/copy_output_result.h"
 #include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/media/capture/desktop_capture_device_uma_types.h"
 #include "content/public/browser/browser_thread.h"
@@ -24,7 +24,6 @@
 #include "services/device/public/interfaces/wake_lock_provider.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "skia/ext/image_operations.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -81,15 +80,15 @@ bool AuraWindowCaptureMachine::InternalStart(
   // Update capture size.
   UpdateCaptureSize();
 
-  // Start observing for GL context losses.
-  ImageTransportFactory::GetInstance()->GetContextFactory()->AddObserver(this);
-
   // Start observing compositor updates.
   aura::WindowTreeHost* const host = desktop_window_->GetHost();
   ui::Compositor* const compositor = host ? host->compositor() : nullptr;
   if (!compositor)
     return false;
   compositor->AddAnimationObserver(this);
+
+  // Start observing for GL context losses.
+  compositor->context_factory()->AddObserver(this);
 
   DCHECK(!wake_lock_);
   // Request Wake Lock. In some testing contexts, the service manager
@@ -160,17 +159,16 @@ void AuraWindowCaptureMachine::InternalStop(const base::Closure& callback) {
   // Stop observing compositor and window events.
   if (desktop_window_) {
     if (aura::WindowTreeHost* host = desktop_window_->GetHost()) {
-      if (ui::Compositor* compositor = host->compositor())
+      if (ui::Compositor* compositor = host->compositor()) {
         compositor->RemoveAnimationObserver(this);
+        compositor->context_factory()->RemoveObserver(this);
+      }
     }
     desktop_window_->RemoveObserver(this);
     desktop_window_ = NULL;
     cursor_renderer_.reset();
   }
 
-  // Stop observing for GL context losses.
-  ImageTransportFactory::GetInstance()->GetContextFactory()->RemoveObserver(
-      this);
   OnLostResources();
 
   callback.Run();
@@ -237,7 +235,8 @@ void AuraWindowCaptureMachine::Capture(base::TimeTicks event_time) {
   if (oracle_proxy_->ObserveEventAndDecideCapture(
           event, gfx::Rect(), event_time, &frame, &capture_frame_cb)) {
     std::unique_ptr<viz::CopyOutputRequest> request =
-        viz::CopyOutputRequest::CreateRequest(
+        std::make_unique<viz::CopyOutputRequest>(
+            viz::CopyOutputRequest::ResultFormat::RGBA_TEXTURE,
             base::BindOnce(&AuraWindowCaptureMachine::DidCopyOutput,
                            weak_factory_.GetWeakPtr(), std::move(frame),
                            event_time, start_time, capture_frame_cb));
@@ -301,11 +300,7 @@ bool AuraWindowCaptureMachine::ProcessCopyOutputResponse(
     return false;
   }
   if (result->IsEmpty()) {
-    VLOG(1) << "CopyOutputRequest failed: No texture or bitmap in result.";
-    return false;
-  }
-  if (result->size().IsEmpty()) {
-    VLOG(1) << "CopyOutputRequest failed: Zero-area texture/bitmap result.";
+    VLOG(1) << "CopyOutputRequest failed: Empty result.";
     return false;
   }
   DCHECK(video_frame);
@@ -336,27 +331,38 @@ bool AuraWindowCaptureMachine::ProcessCopyOutputResponse(
 
   viz::TextureMailbox texture_mailbox;
   std::unique_ptr<viz::SingleReleaseCallback> release_callback;
-  result->TakeTexture(&texture_mailbox, &release_callback);
-  DCHECK(texture_mailbox.IsTexture());
+  if (auto* mailbox = result->GetTextureMailbox()) {
+    texture_mailbox = *mailbox;
+    release_callback = result->TakeTextureOwnership();
+  }
   if (!texture_mailbox.IsTexture()) {
     VLOG(1) << "Aborting capture: Failed to take texture from mailbox.";
     return false;
   }
 
-  gfx::Rect result_rect(result->size());
-  if (!yuv_readback_pipeline_ ||
-      yuv_readback_pipeline_->scaler()->SrcSize() != result_rect.size() ||
-      yuv_readback_pipeline_->scaler()->SrcSubrect() != result_rect ||
-      yuv_readback_pipeline_->scaler()->DstSize() != region_in_frame.size()) {
-    yuv_readback_pipeline_.reset(gl_helper->CreateReadbackPipelineYUV(
-        viz::GLHelper::SCALER_QUALITY_FAST, result_rect.size(), result_rect,
-        region_in_frame.size(), true, true));
+  if (!yuv_readback_pipeline_)
+    yuv_readback_pipeline_ = gl_helper->CreateReadbackPipelineYUV(true, true);
+  viz::GLHelper::ScalerInterface* const scaler =
+      yuv_readback_pipeline_->scaler();
+  const gfx::Vector2d scale_from(result->size().width(),
+                                 result->size().height());
+  const gfx::Vector2d scale_to(region_in_frame.width(),
+                               region_in_frame.height());
+  if (scale_from == scale_to) {
+    if (scaler)
+      yuv_readback_pipeline_->SetScaler(nullptr);
+  } else if (!scaler || !scaler->IsSameScaleRatio(scale_from, scale_to)) {
+    std::unique_ptr<viz::GLHelper::ScalerInterface> scaler =
+        gl_helper->CreateScaler(viz::GLHelper::SCALER_QUALITY_FAST, scale_from,
+                                scale_to, false, false);
+    DCHECK(scaler);  // Arguments to CreateScaler() should never be invalid.
+    yuv_readback_pipeline_->SetScaler(std::move(scaler));
   }
 
   cursor_renderer_->SnapshotCursorState(region_in_frame);
   yuv_readback_pipeline_->ReadbackYUV(
-      texture_mailbox.mailbox(), texture_mailbox.sync_token(),
-      video_frame->visible_rect(),
+      texture_mailbox.mailbox(), texture_mailbox.sync_token(), result->size(),
+      gfx::Rect(region_in_frame.size()),
       video_frame->stride(media::VideoFrame::kYPlane),
       video_frame->data(media::VideoFrame::kYPlane),
       video_frame->stride(media::VideoFrame::kUPlane),
@@ -438,8 +444,10 @@ void AuraWindowCaptureMachine::OnWindowRemovingFromRootWindow(
   DCHECK(window == desktop_window_);
 
   if (aura::WindowTreeHost* host = window->GetHost()) {
-    if (ui::Compositor* compositor = host->compositor())
+    if (ui::Compositor* compositor = host->compositor()) {
       compositor->RemoveAnimationObserver(this);
+      compositor->context_factory()->RemoveObserver(this);
+    }
   }
 }
 
@@ -468,6 +476,7 @@ void AuraWindowCaptureMachine::OnCompositingShuttingDown(
     ui::Compositor* compositor) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   compositor->RemoveAnimationObserver(this);
+  compositor->context_factory()->RemoveObserver(this);
 }
 
 void AuraWindowCaptureMachine::OnLostResources() {

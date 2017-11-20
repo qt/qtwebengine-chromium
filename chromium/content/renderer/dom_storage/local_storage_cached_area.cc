@@ -110,16 +110,24 @@ bool LocalStorageCachedArea::SetItem(const base::string16& key,
     return false;
 
   EnsureLoaded();
-  base::NullableString16 unused;
-  if (!map_->SetItem(key, value, &unused))
+  bool result = false;
+  base::NullableString16 old_nullable_value;
+  if (should_send_old_value_on_mutations_)
+    result = map_->SetItem(key, value, &old_nullable_value);
+  else
+    result = map_->SetItem(key, value, nullptr);
+  if (!result)
     return false;
 
   // Ignore mutations to |key| until OnSetItemComplete.
   ignore_key_mutations_[key]++;
+  base::Optional<std::vector<uint8_t>> optional_old_value;
+  if (!old_nullable_value.is_null())
+    optional_old_value = String16ToUint8Vector(old_nullable_value.string());
   leveldb_->Put(String16ToUint8Vector(key), String16ToUint8Vector(value),
-                PackSource(page_url, storage_area_id),
-                base::Bind(&LocalStorageCachedArea::OnSetItemComplete,
-                           weak_factory_.GetWeakPtr(), key));
+                optional_old_value, PackSource(page_url, storage_area_id),
+                base::BindOnce(&LocalStorageCachedArea::OnSetItemComplete,
+                               weak_factory_.GetWeakPtr(), key));
   return true;
 }
 
@@ -127,16 +135,24 @@ void LocalStorageCachedArea::RemoveItem(const base::string16& key,
                                         const GURL& page_url,
                                         const std::string& storage_area_id) {
   EnsureLoaded();
-  base::string16 unused;
-  if (!map_->RemoveItem(key, &unused))
+  bool result = false;
+  base::string16 old_value;
+  if (should_send_old_value_on_mutations_)
+    result = map_->RemoveItem(key, &old_value);
+  else
+    result = map_->RemoveItem(key, nullptr);
+  if (!result)
     return;
 
   // Ignore mutations to |key| until OnRemoveItemComplete.
   ignore_key_mutations_[key]++;
-  leveldb_->Delete(String16ToUint8Vector(key),
+  base::Optional<std::vector<uint8_t>> optional_old_value;
+  if (should_send_old_value_on_mutations_)
+    optional_old_value = String16ToUint8Vector(old_value);
+  leveldb_->Delete(String16ToUint8Vector(key), optional_old_value,
                    PackSource(page_url, storage_area_id),
-                   base::Bind(&LocalStorageCachedArea::OnRemoveItemComplete,
-                              weak_factory_.GetWeakPtr(), key));
+                   base::BindOnce(&LocalStorageCachedArea::OnRemoveItemComplete,
+                                  weak_factory_.GetWeakPtr(), key));
 }
 
 void LocalStorageCachedArea::Clear(const GURL& page_url,
@@ -146,8 +162,8 @@ void LocalStorageCachedArea::Clear(const GURL& page_url,
   map_ = new DOMStorageMap(kPerStorageAreaQuota);
   ignore_all_mutations_ = true;
   leveldb_->DeleteAll(PackSource(page_url, storage_area_id),
-                      base::Bind(&LocalStorageCachedArea::OnClearComplete,
-                                  weak_factory_.GetWeakPtr()));
+                      base::BindOnce(&LocalStorageCachedArea::OnClearComplete,
+                                     weak_factory_.GetWeakPtr()));
 }
 
 void LocalStorageCachedArea::AreaCreated(LocalStorageArea* area) {
@@ -249,10 +265,8 @@ void LocalStorageCachedArea::KeyDeleted(const std::vector<uint8_t>& key,
     // remove it from our cache if we haven't already changed it and are waiting
     // for the confirmation callback. In the latter case, we won't do anything
     // because ignore_key_mutations_ won't be updated until the callback runs.
-    if (ignore_key_mutations_.find(key_string) == ignore_key_mutations_.end()) {
-      base::string16 unused;
-      map_->RemoveItem(key_string, &unused);
-    }
+    if (ignore_key_mutations_.find(key_string) == ignore_key_mutations_.end())
+      map_->RemoveItem(key_string, nullptr);
   }
 
   blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
@@ -279,10 +293,8 @@ void LocalStorageCachedArea::AllDeleted(const std::string& source) {
     auto iter = ignore_key_mutations_.begin();
     while (iter != ignore_key_mutations_.end()) {
       base::NullableString16 value = old->GetItem(iter->first);
-      if (!value.is_null()) {
-        base::NullableString16 unused;
-        map_->SetItem(iter->first, value.string(), &unused);
-      }
+      if (!value.is_null())
+        map_->SetItem(iter->first, value.string(), nullptr);
       ++iter;
     }
   }
@@ -290,6 +302,10 @@ void LocalStorageCachedArea::AllDeleted(const std::string& source) {
   blink::WebStorageEventDispatcher::DispatchLocalStorageEvent(
       blink::WebString(), blink::WebString(), blink::WebString(),
       origin_.GetURL(), page_url, originating_area);
+}
+
+void LocalStorageCachedArea::ShouldSendOldValueOnMutations(bool value) {
+  should_send_old_value_on_mutations_ = value;
 }
 
 void LocalStorageCachedArea::KeyAddedOrChanged(
@@ -316,9 +332,8 @@ void LocalStorageCachedArea::KeyAddedOrChanged(
     if (ignore_key_mutations_.find(key_string) == ignore_key_mutations_.end()) {
       // We turn off quota checking here to accomodate the over budget allowance
       // that's provided in the browser process.
-      base::NullableString16 unused;
       map_->set_quota(std::numeric_limits<int32_t>::max());
-      map_->SetItem(key_string, new_value_string, &unused);
+      map_->SetItem(key_string, new_value_string, nullptr);
       map_->set_quota(kPerStorageAreaQuota);
     }
   }
@@ -355,7 +370,7 @@ void LocalStorageCachedArea::EnsureLoaded() {
   base::TimeDelta time_to_prime = base::TimeTicks::Now() - before;
   UMA_HISTOGRAM_TIMES("LocalStorage.MojoTimeToPrime", time_to_prime);
 
-  size_t local_storage_size_kb = map_->bytes_used() / 1024;
+  size_t local_storage_size_kb = map_->storage_used() / 1024;
   // Track localStorage size, from 0-6MB. Note that the maximum size should be
   // 5MB, but we add some slop since we want to make sure the max size is always
   // above what we see in practice, since histograms can't change.

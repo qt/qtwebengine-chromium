@@ -11,16 +11,16 @@
 #include <memory>
 #include <utility>  // For std::pair, std::move.
 
-#include "webrtc/api/ortc/ortcfactoryinterface.h"
-#include "webrtc/ortc/testrtpparameters.h"
-#include "webrtc/p2p/base/udptransport.h"
-#include "webrtc/pc/test/fakeaudiocapturemodule.h"
-#include "webrtc/pc/test/fakeperiodicvideocapturer.h"
-#include "webrtc/pc/test/fakevideotrackrenderer.h"
-#include "webrtc/rtc_base/criticalsection.h"
-#include "webrtc/rtc_base/fakenetwork.h"
-#include "webrtc/rtc_base/gunit.h"
-#include "webrtc/rtc_base/virtualsocketserver.h"
+#include "api/ortc/ortcfactoryinterface.h"
+#include "ortc/testrtpparameters.h"
+#include "p2p/base/udptransport.h"
+#include "pc/test/fakeaudiocapturemodule.h"
+#include "pc/test/fakeperiodicvideocapturer.h"
+#include "pc/test/fakevideotrackrenderer.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/fakenetwork.h"
+#include "rtc_base/gunit.h"
+#include "rtc_base/virtualsocketserver.h"
 
 namespace {
 
@@ -471,6 +471,7 @@ TEST_F(OrtcFactoryIntegrationTest, SetTrackWhileSending) {
 //
 // Uses muxed RTCP, and minimal parameters with hard-coded configs that are
 // known to work.
+#if !(defined(WEBRTC_IOS) && defined(WEBRTC_ARCH_64_BITS) && !defined(NDEBUG))
 TEST_F(OrtcFactoryIntegrationTest,
        BasicTwoWayAudioVideoRtpSendersAndReceivers) {
   auto udp_transports = CreateAndConnectUdpTransportPair();
@@ -481,7 +482,6 @@ TEST_F(OrtcFactoryIntegrationTest,
                                         expect_success);
 }
 
-#if !(defined(WEBRTC_IOS) && defined(WEBRTC_ARCH_64_BITS) && !defined(NDEBUG))
 TEST_F(OrtcFactoryIntegrationTest,
        BasicTwoWayAudioVideoSrtpSendersAndReceivers) {
   auto udp_transports = CreateAndConnectUdpTransportPair();

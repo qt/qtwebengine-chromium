@@ -11,7 +11,6 @@
 #include "base/strings/stringprintf.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/host/renderer_settings_creation.h"
-#include "services/ui/common/transient_window_utils.h"
 #include "services/ui/public/interfaces/window_manager.mojom.h"
 #include "services/ui/ws/server_window_delegate.h"
 #include "services/ui/ws/server_window_observer.h"
@@ -22,14 +21,18 @@ namespace ui {
 namespace ws {
 
 ServerWindow::ServerWindow(ServerWindowDelegate* delegate, const WindowId& id)
-    : ServerWindow(delegate, id, Properties()) {}
+    : ServerWindow(delegate,
+                   id,
+                   viz::FrameSinkId(id.client_id, id.window_id),
+                   Properties()) {}
 
 ServerWindow::ServerWindow(ServerWindowDelegate* delegate,
                            const WindowId& id,
+                           const viz::FrameSinkId& frame_sink_id,
                            const Properties& properties)
     : delegate_(delegate),
       id_(id),
-      frame_sink_id_((id_.client_id << 16) | id_.window_id, 0),
+      frame_sink_id_(frame_sink_id),
       parent_(nullptr),
       stacking_target_(nullptr),
       transient_parent_(nullptr),
@@ -50,9 +53,14 @@ ServerWindow::ServerWindow(ServerWindowDelegate* delegate,
   DCHECK(delegate);  // Must provide a delegate.
   // TODO(kylechar): Add method to reregister |frame_sink_id_| when viz service
   // has crashed.
+  DCHECK(frame_sink_id_.is_valid());
   auto* host_frame_sink_manager = delegate_->GetHostFrameSinkManager();
-  if (host_frame_sink_manager)
+  if (host_frame_sink_manager) {
     host_frame_sink_manager->RegisterFrameSinkId(frame_sink_id_, this);
+#if DCHECK_IS_ON()
+    host_frame_sink_manager->SetFrameSinkDebugLabel(frame_sink_id_, GetName());
+#endif
+  }
 }
 
 ServerWindow::~ServerWindow() {
@@ -142,11 +150,6 @@ void ServerWindow::Add(ServerWindow* child) {
   child->parent_ = this;
   children_.push_back(child);
 
-  // Stack the child properly if it is a transient child of a sibling.
-  if (child->transient_parent_ && child->transient_parent_->parent() == this)
-    RestackTransientDescendants(child->transient_parent_, &GetStackingTarget,
-                                &ReorderImpl);
-
   for (auto& observer : child->observers_)
     observer.OnWindowHierarchyChanged(child, this, old_parent);
 }
@@ -162,18 +165,26 @@ void ServerWindow::Remove(ServerWindow* child) {
 
   RemoveImpl(child);
 
-  // Stack the child properly if it is a transient child of a sibling.
-  if (child->transient_parent_ && child->transient_parent_->parent() == this)
-    RestackTransientDescendants(child->transient_parent_, &GetStackingTarget,
-                                &ReorderImpl);
-
   for (auto& observer : child->observers_)
     observer.OnWindowHierarchyChanged(child, nullptr, this);
 }
 
 void ServerWindow::Reorder(ServerWindow* relative,
                            mojom::OrderDirection direction) {
-  ReorderImpl(this, relative, direction);
+  parent_->children_.erase(
+      std::find(parent_->children_.begin(), parent_->children_.end(), this));
+  Windows::iterator i =
+      std::find(parent_->children_.begin(), parent_->children_.end(), relative);
+  if (direction == mojom::OrderDirection::ABOVE) {
+    DCHECK(i != parent_->children_.end());
+    parent_->children_.insert(++i, this);
+  } else if (direction == mojom::OrderDirection::BELOW) {
+    DCHECK(i != parent_->children_.end());
+    parent_->children_.insert(i, this);
+  }
+  for (auto& observer : observers_)
+    observer.OnWindowReordered(this, relative, direction);
+  OnStackingChanged();
 }
 
 void ServerWindow::StackChildAtBottom(ServerWindow* child) {
@@ -257,11 +268,6 @@ bool ServerWindow::AddTransientWindow(ServerWindow* child) {
   transient_children_.push_back(child);
   child->transient_parent_ = this;
 
-  // Restack |child| properly above its transient parent, if they share the same
-  // parent.
-  if (child->parent() == parent())
-    RestackTransientDescendants(this, &GetStackingTarget, &ReorderImpl);
-
   for (auto& observer : observers_)
     observer.OnTransientWindowAdded(this, child);
   return true;
@@ -274,12 +280,6 @@ void ServerWindow::RemoveTransientWindow(ServerWindow* child) {
   transient_children_.erase(i);
   DCHECK_EQ(this, child->transient_parent());
   child->transient_parent_ = nullptr;
-
-  // If |child| and its former transient parent share the same parent, |child|
-  // should be restacked properly so it is not among transient children of its
-  // former parent, anymore.
-  if (parent() == child->parent())
-    RestackTransientDescendants(this, &GetStackingTarget, &ReorderImpl);
 
   for (auto& observer : observers_)
     observer.OnTransientWindowRemoved(this, child);
@@ -390,6 +390,11 @@ void ServerWindow::SetProperty(const std::string& name,
   } else if (it != properties_.end()) {
     properties_.erase(it);
   }
+#if DCHECK_IS_ON()
+  auto* host_frame_sink_manager = delegate_->GetHostFrameSinkManager();
+  if (host_frame_sink_manager && name == mojom::WindowManager::kName_Property)
+    host_frame_sink_manager->SetFrameSinkDebugLabel(frame_sink_id_, GetName());
+#endif
 
   for (auto& observer : observers_)
     observer.OnWindowSharedPropertyChanged(this, name, value);
@@ -494,41 +499,6 @@ void ServerWindow::OnStackingChanged() {
       return;
     }
   }
-  RestackTransientDescendants(this, &GetStackingTarget, &ReorderImpl);
-}
-
-// static
-void ServerWindow::ReorderImpl(ServerWindow* window,
-                               ServerWindow* relative,
-                               mojom::OrderDirection direction) {
-  DCHECK(relative);
-  DCHECK_NE(window, relative);
-  DCHECK_EQ(window->parent(), relative->parent());
-
-  if (!AdjustStackingForTransientWindows(&window, &relative, &direction,
-                                         window->stacking_target_))
-    return;
-
-  window->parent_->children_.erase(std::find(window->parent_->children_.begin(),
-                                             window->parent_->children_.end(),
-                                             window));
-  Windows::iterator i = std::find(window->parent_->children_.begin(),
-                                  window->parent_->children_.end(), relative);
-  if (direction == mojom::OrderDirection::ABOVE) {
-    DCHECK(i != window->parent_->children_.end());
-    window->parent_->children_.insert(++i, window);
-  } else if (direction == mojom::OrderDirection::BELOW) {
-    DCHECK(i != window->parent_->children_.end());
-    window->parent_->children_.insert(i, window);
-  }
-  for (auto& observer : window->observers_)
-    observer.OnWindowReordered(window, relative, direction);
-  window->OnStackingChanged();
-}
-
-// static
-ServerWindow** ServerWindow::GetStackingTarget(ServerWindow* window) {
-  return &window->stacking_target_;
 }
 
 }  // namespace ws

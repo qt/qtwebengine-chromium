@@ -33,13 +33,12 @@
 #include <memory>
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "platform/CrossThreadFunctional.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UUID.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/blob/BlobBytesProvider.h"
 #include "platform/blob/BlobRegistry.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/text/LineEnding.h"
-#include "platform/wtf/PassRefPtr.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
@@ -90,10 +89,7 @@ const long long BlobDataItem::kToEndOfFile = -1;
 
 RawData::RawData() {}
 
-void RawData::DetachFromCurrentThread() {}
-
 void BlobDataItem::DetachFromCurrentThread() {
-  data->DetachFromCurrentThread();
   path = path.IsolatedCopy();
   file_system_url = file_system_url.Copy();
 }
@@ -145,7 +141,7 @@ void BlobData::SetContentType(const String& content_type) {
     content_type_ = "";
 }
 
-void BlobData::AppendData(PassRefPtr<RawData> data,
+void BlobData::AppendData(RefPtr<RawData> data,
                           long long offset,
                           long long length) {
   DCHECK_EQ(file_composition_, FileCompositionStatus::NO_UNKNOWN_SIZE_FILES)
@@ -168,7 +164,7 @@ void BlobData::AppendFile(const String& path,
       BlobDataItem(path, offset, length, expected_modification_time));
 }
 
-void BlobData::AppendBlob(PassRefPtr<BlobDataHandle> data_handle,
+void BlobData::AppendBlob(RefPtr<BlobDataHandle> data_handle,
                           long long offset,
                           long long length) {
   DCHECK_EQ(file_composition_, FileCompositionStatus::NO_UNKNOWN_SIZE_FILES)

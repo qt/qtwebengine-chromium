@@ -9,11 +9,11 @@
 
 #include <stdint.h>
 
-#include <deque>
 #include <map>
 #include <memory>
 #include <string>
 
+#include "base/containers/circular_deque.h"
 #include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/linked_ptr.h"
@@ -29,6 +29,7 @@
 #include "ipc/ipc_sender.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/request_priority.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -91,6 +92,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
       std::unique_ptr<ResourceRequest> request,
       int routing_id,
       const url::Origin& frame_origin,
+      const net::NetworkTrafficAnnotationTag& traffic_annotation,
       SyncLoadResponse* response,
       blink::WebURLRequest::LoadingIPCType ipc_type,
       mojom::URLLoaderFactory* url_loader_factory,
@@ -111,6 +113,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
       int routing_id,
       scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner,
       const url::Origin& frame_origin,
+      const net::NetworkTrafficAnnotationTag& traffic_annotation,
       bool is_sync,
       std::unique_ptr<RequestPeer> peer,
       blink::WebURLRequest::LoadingIPCType ipc_type,
@@ -170,7 +173,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   friend class URLResponseBodyConsumer;
   friend class ResourceDispatcherTest;
 
-  typedef std::deque<IPC::Message*> MessageQueue;
+  using MessageQueue = base::circular_deque<IPC::Message*>;
   struct PendingRequestInfo {
     PendingRequestInfo(std::unique_ptr<RequestPeer> peer,
                        ResourceType resource_type,

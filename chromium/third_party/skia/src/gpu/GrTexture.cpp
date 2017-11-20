@@ -19,12 +19,12 @@
 
 void GrTexture::dirtyMipMaps(bool mipMapsDirty) {
     if (mipMapsDirty) {
-        if (kValid_MipMapsStatus == fMipMapsStatus) {
-            fMipMapsStatus = kAllocated_MipMapsStatus;
+        if (kInvalid_MipMapsStatus == fMipMapsStatus || kClean_MipMapsStatus == fMipMapsStatus) {
+            fMipMapsStatus = kDirty_MipMapsStatus;
         }
     } else {
         const bool sizeChanged = kNotAllocated_MipMapsStatus == fMipMapsStatus;
-        fMipMapsStatus = kValid_MipMapsStatus;
+        fMipMapsStatus = kClean_MipMapsStatus;
         if (sizeChanged) {
             // This must not be called until after changing fMipMapsStatus.
             this->didChangeGpuMemorySize();
@@ -41,14 +41,21 @@ size_t GrTexture::onGpuMemorySize() const {
 
 /////////////////////////////////////////////////////////////////////////////
 GrTexture::GrTexture(GrGpu* gpu, const GrSurfaceDesc& desc, GrSLType samplerType,
-                     GrSamplerParams::FilterMode highestFilterMode, bool wasMipMapDataProvided)
-    : INHERITED(gpu, desc)
-    , fSamplerType(samplerType)
-    , fHighestFilterMode(highestFilterMode)
-    // Mip color mode is explicitly set after creation via GrTexturePriv
-    , fMipColorMode(SkDestinationSurfaceColorMode::kLegacy) {
-    if (wasMipMapDataProvided) {
-        fMipMapsStatus = kValid_MipMapsStatus;
+                     GrSamplerState::Filter highestFilterMode,
+                     bool mipsAllocated, bool wasFullMipMapDataProvided)
+        : INHERITED(gpu, desc)
+        , fSamplerType(samplerType)
+        , fHighestFilterMode(highestFilterMode)
+        // Mip color mode is explicitly set after creation via GrTexturePriv
+        , fMipColorMode(SkDestinationSurfaceColorMode::kLegacy) {
+    if (mipsAllocated) {
+        if (wasFullMipMapDataProvided) {
+            fMipMapsStatus = kClean_MipMapsStatus;
+        } else {
+            // Currently we should only hit this case when none of the mips were uploaded including
+            // the base. Thus we set this to invalid.
+            fMipMapsStatus = kInvalid_MipMapsStatus;
+        }
         fMaxMipMapLevel = SkMipMap::ComputeLevelCount(this->width(), this->height());
     } else {
         fMipMapsStatus = kNotAllocated_MipMapsStatus;
@@ -91,5 +98,5 @@ void GrTexturePriv::ComputeScratchKey(const GrSurfaceDesc& desc, GrScratchKey* k
     // Note: the fOrigin field is not used in the scratch key
     return ComputeScratchKey(desc.fConfig, desc.fWidth, desc.fHeight,
                              SkToBool(desc.fFlags & kRenderTarget_GrSurfaceFlag), desc.fSampleCnt,
-                             desc.fIsMipMapped, key);
+                             false, key);
 }

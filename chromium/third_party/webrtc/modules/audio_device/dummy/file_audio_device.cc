@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_device/dummy/file_audio_device.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/platform_thread.h"
-#include "webrtc/system_wrappers/include/sleep.h"
+#include "modules/audio_device/dummy/file_audio_device.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/platform_thread.h"
+#include "system_wrappers/include/sleep.h"
 
 namespace webrtc {
 
@@ -333,10 +333,6 @@ int32_t FileAudioDevice::MinSpeakerVolume(uint32_t& minVolume) const {
   return -1;
 }
 
-int32_t FileAudioDevice::SpeakerVolumeStepSize(uint16_t& stepSize) const {
-  return -1;
-}
-
 int32_t FileAudioDevice::MicrophoneVolumeIsAvailable(bool& available) {
   return -1;
 }
@@ -355,10 +351,6 @@ int32_t FileAudioDevice::MinMicrophoneVolume(uint32_t& minVolume) const {
   return -1;
 }
 
-int32_t FileAudioDevice::MicrophoneVolumeStepSize(uint16_t& stepSize) const {
-  return -1;
-}
-
 int32_t FileAudioDevice::SpeakerMuteIsAvailable(bool& available) { return -1; }
 
 int32_t FileAudioDevice::SetSpeakerMute(bool enable) { return -1; }
@@ -372,14 +364,6 @@ int32_t FileAudioDevice::MicrophoneMuteIsAvailable(bool& available) {
 int32_t FileAudioDevice::SetMicrophoneMute(bool enable) { return -1; }
 
 int32_t FileAudioDevice::MicrophoneMute(bool& enabled) const { return -1; }
-
-int32_t FileAudioDevice::MicrophoneBoostIsAvailable(bool& available) {
-  return -1;
-}
-
-int32_t FileAudioDevice::SetMicrophoneBoost(bool enable) { return -1; }
-
-int32_t FileAudioDevice::MicrophoneBoost(bool& enabled) const { return -1; }
 
 int32_t FileAudioDevice::StereoPlayoutIsAvailable(bool& available) {
   available = true;
@@ -408,41 +392,11 @@ int32_t FileAudioDevice::StereoRecording(bool& enabled) const {
   return 0;
 }
 
-int32_t FileAudioDevice::SetPlayoutBuffer(
-    const AudioDeviceModule::BufferType type,
-    uint16_t sizeMS) {
-  return 0;
-}
-
-int32_t FileAudioDevice::PlayoutBuffer(AudioDeviceModule::BufferType& type,
-                                        uint16_t& sizeMS) const {
-  type = _playBufType;
-  return 0;
-}
-
 int32_t FileAudioDevice::PlayoutDelay(uint16_t& delayMS) const {
   return 0;
 }
 
 int32_t FileAudioDevice::RecordingDelay(uint16_t& delayMS) const { return -1; }
-
-int32_t FileAudioDevice::CPULoad(uint16_t& load) const { return -1; }
-
-bool FileAudioDevice::PlayoutWarning() const { return false; }
-
-bool FileAudioDevice::PlayoutError() const { return false; }
-
-bool FileAudioDevice::RecordingWarning() const { return false; }
-
-bool FileAudioDevice::RecordingError() const { return false; }
-
-void FileAudioDevice::ClearPlayoutWarning() {}
-
-void FileAudioDevice::ClearPlayoutError() {}
-
-void FileAudioDevice::ClearRecordingWarning() {}
-
-void FileAudioDevice::ClearRecordingError() {}
 
 void FileAudioDevice::AttachAudioBuffer(AudioDeviceBuffer* audioBuffer) {
   rtc::CritScope lock(&_critSect);

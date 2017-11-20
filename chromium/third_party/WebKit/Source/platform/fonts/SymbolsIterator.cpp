@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "SymbolsIterator.h"
+#include "platform/fonts/SymbolsIterator.h"
 
 #include <unicode/uchar.h>
 #include <unicode/uniset.h>
-#include "platform/wtf/PtrUtil.h"
+#include <memory>
 
 namespace blink {
 
 using namespace WTF::Unicode;
 
 SymbolsIterator::SymbolsIterator(const UChar* buffer, unsigned buffer_size)
-    : utf16_iterator_(WTF::MakeUnique<UTF16TextIterator>(buffer, buffer_size)),
+    : utf16_iterator_(std::make_unique<UTF16TextIterator>(buffer, buffer_size)),
       buffer_size_(buffer_size),
       next_char_(0),
       at_end_(buffer_size == 0),

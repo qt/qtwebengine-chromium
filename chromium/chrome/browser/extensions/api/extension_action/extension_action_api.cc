@@ -91,7 +91,7 @@ ExtensionActionAPI::Observer::~Observer() {
 //
 
 static base::LazyInstance<BrowserContextKeyedAPIFactory<ExtensionActionAPI>>::
-    DestructorAtExit g_factory = LAZY_INSTANCE_INITIALIZER;
+    DestructorAtExit g_extension_action_api_factory = LAZY_INSTANCE_INITIALIZER;
 
 ExtensionActionAPI::ExtensionActionAPI(content::BrowserContext* context)
     : browser_context_(context),
@@ -129,7 +129,7 @@ ExtensionActionAPI::~ExtensionActionAPI() {
 // static
 BrowserContextKeyedAPIFactory<ExtensionActionAPI>*
 ExtensionActionAPI::GetFactoryInstance() {
-  return g_factory.Pointer();
+  return g_extension_action_api_factory.Pointer();
 }
 
 // static
@@ -358,7 +358,7 @@ bool ExtensionActionFunction::ExtractDataFromArguments() {
   if (!args_->Get(0, &first_arg))
     return true;
 
-  switch (first_arg->GetType()) {
+  switch (first_arg->type()) {
     case base::Value::Type::INTEGER:
       CHECK(first_arg->GetAsInteger(&tab_id_));
       break;
@@ -369,7 +369,7 @@ bool ExtensionActionFunction::ExtractDataFromArguments() {
       // Still need to check for the tabId within details.
       base::Value* tab_id_value = NULL;
       if (details_->Get("tabId", &tab_id_value)) {
-        switch (tab_id_value->GetType()) {
+        switch (tab_id_value->type()) {
           case base::Value::Type::NONE:
             // OK; tabId is optional, leave it default.
             return true;

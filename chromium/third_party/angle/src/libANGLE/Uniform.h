@@ -18,6 +18,10 @@
 
 namespace gl
 {
+struct UniformTypeInfo;
+
+template <typename T>
+void MarkResourceStaticUse(T *resource, GLenum shaderType, bool used);
 
 // Helper struct representing a single shader uniform
 struct LinkedUniform : public sh::Uniform
@@ -37,19 +41,6 @@ struct LinkedUniform : public sh::Uniform
     LinkedUniform &operator=(const LinkedUniform &uniform);
     ~LinkedUniform();
 
-    size_t dataSize() const;
-    uint8_t *data()
-    {
-        if (mLazyData.empty())
-        {
-            // dataSize() will init the data store.
-            size_t size = dataSize();
-            memset(mLazyData.data(), 0, size);
-        }
-
-        return mLazyData.data();
-    }
-    const uint8_t *data() const;
     bool isSampler() const;
     bool isImage() const;
     bool isAtomicCounter() const;
@@ -57,15 +48,16 @@ struct LinkedUniform : public sh::Uniform
     bool isField() const;
     size_t getElementSize() const;
     size_t getElementComponents() const;
-    uint8_t *getDataPtrToElement(size_t elementIndex);
-    const uint8_t *getDataPtrToElement(size_t elementIndex) const;
+
+    const UniformTypeInfo *typeInfo;
 
     // Identifies the containing buffer backed resource -- interface block or atomic counter buffer.
     int bufferIndex;
     sh::BlockMemberInfo blockInfo;
 
-  private:
-    mutable angle::MemoryBuffer mLazyData;
+    bool vertexStaticUse;
+    bool fragmentStaticUse;
+    bool computeStaticUse;
 };
 
 // Parent struct for atomic counter, uniform block, and shader storage block buffer, which all
@@ -73,9 +65,7 @@ struct LinkedUniform : public sh::Uniform
 struct ShaderVariableBuffer
 {
     ShaderVariableBuffer();
-    virtual ~ShaderVariableBuffer();
-    ShaderVariableBuffer(const ShaderVariableBuffer &other) = default;
-    ShaderVariableBuffer &operator=(const ShaderVariableBuffer &other) = default;
+    virtual ~ShaderVariableBuffer(){};
     int numActiveVariables() const { return static_cast<int>(memberIndexes.size()); }
 
     int binding;
@@ -89,20 +79,21 @@ struct ShaderVariableBuffer
 
 using AtomicCounterBuffer = ShaderVariableBuffer;
 
-// Helper struct representing a single shader uniform block
-struct UniformBlock : public ShaderVariableBuffer
+// Helper struct representing a single shader interface block
+struct InterfaceBlock : public ShaderVariableBuffer
 {
-    UniformBlock();
-    UniformBlock(const std::string &nameIn,
-                 bool isArrayIn,
-                 unsigned int arrayElementIn,
-                 int bindingIn);
-    UniformBlock(const UniformBlock &other) = default;
-    UniformBlock &operator=(const UniformBlock &other) = default;
+    InterfaceBlock();
+    InterfaceBlock(const std::string &nameIn,
+                   const std::string &mappedNameIn,
+                   bool isArrayIn,
+                   unsigned int arrayElementIn,
+                   int bindingIn);
 
     std::string nameWithArrayIndex() const;
+    std::string mappedNameWithArrayIndex() const;
 
     std::string name;
+    std::string mappedName;
     bool isArray;
     unsigned int arrayElement;
 };

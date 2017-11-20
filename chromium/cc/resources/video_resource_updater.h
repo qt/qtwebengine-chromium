@@ -17,8 +17,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "cc/cc_export.h"
-#include "cc/resources/release_callback_impl.h"
 #include "components/viz/common/quads/texture_mailbox.h"
+#include "components/viz/common/resources/release_callback.h"
 #include "components/viz/common/resources/resource_format.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/geometry/size.h"
@@ -54,14 +54,14 @@ class CC_EXPORT VideoFrameExternalResources {
 
   ResourceType type;
   std::vector<viz::TextureMailbox> mailboxes;
-  std::vector<ReleaseCallbackImpl> release_callbacks;
+  std::vector<viz::ReleaseCallback> release_callbacks;
   bool read_lock_fences_enabled;
   // Format of the storage of the resource, if known.
   gfx::BufferFormat buffer_format;
 
   // TODO(danakj): Remove these too.
   std::vector<unsigned> software_resources;
-  ReleaseCallbackImpl software_release_callback;
+  viz::ReleaseCallback software_release_callback;
 
   // Used by hardware textures which do not return values in the 0-1 range.
   // After a lookup, subtract offset and multiply by multiplier.
@@ -85,6 +85,10 @@ class CC_EXPORT VideoResourceUpdater {
 
   VideoFrameExternalResources CreateExternalResourcesFromVideoFrame(
       scoped_refptr<media::VideoFrame> video_frame);
+
+  void SetUseR16ForTesting(bool use_r16_for_testing) {
+    use_r16_for_testing_ = use_r16_for_testing;
+  }
 
  private:
   class PlaneResource {
@@ -150,14 +154,12 @@ class CC_EXPORT VideoResourceUpdater {
       viz::ResourceFormat resource_format,
       const gfx::ColorSpace& color_space,
       bool software_resource,
-      bool immutable_hint,
       int unique_id,
       int plane_index);
   ResourceList::iterator AllocateResource(const gfx::Size& plane_size,
                                           viz::ResourceFormat format,
                                           const gfx::ColorSpace& color_space,
-                                          bool has_mailbox,
-                                          bool immutable_hint);
+                                          bool has_mailbox);
   void DeleteResource(ResourceList::iterator resource_it);
   void CopyPlaneTexture(media::VideoFrame* video_frame,
                         const gfx::ColorSpace& resource_color_space,
@@ -171,19 +173,18 @@ class CC_EXPORT VideoResourceUpdater {
   static void RecycleResource(base::WeakPtr<VideoResourceUpdater> updater,
                               unsigned resource_id,
                               const gpu::SyncToken& sync_token,
-                              bool lost_resource,
-                              BlockingTaskRunner* main_thread_task_runner);
+                              bool lost_resource);
   static void ReturnTexture(base::WeakPtr<VideoResourceUpdater> updater,
                             const scoped_refptr<media::VideoFrame>& video_frame,
                             const gpu::SyncToken& sync_token,
-                            bool lost_resource,
-                            BlockingTaskRunner* main_thread_task_runner);
+                            bool lost_resource);
 
   viz::ContextProvider* context_provider_;
   ResourceProvider* resource_provider_;
   const bool use_stream_video_draw_quad_;
   std::unique_ptr<media::SkCanvasVideoRenderer> video_renderer_;
   std::vector<uint8_t> upload_pixels_;
+  bool use_r16_for_testing_ = false;
 
   // Recycle resources so that we can reduce the number of allocations and
   // data transfers.

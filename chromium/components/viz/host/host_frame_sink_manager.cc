@@ -10,8 +10,8 @@
 #include "base/stl_util.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
-#include "components/viz/service/frame_sinks/compositor_frame_sink_support_client.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
+#include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 
 namespace viz {
 
@@ -70,6 +70,12 @@ void HostFrameSinkManager::InvalidateFrameSinkId(
     frame_sink_data_map_.erase(frame_sink_id);
 
   display_hit_test_query_.erase(frame_sink_id);
+}
+
+void HostFrameSinkManager::SetFrameSinkDebugLabel(
+    const FrameSinkId& frame_sink_id,
+    const std::string& debug_label) {
+  frame_sink_manager_->SetFrameSinkDebugLabel(frame_sink_id, debug_label);
 }
 
 void HostFrameSinkManager::CreateRootCompositorFrameSink(
@@ -156,7 +162,7 @@ void HostFrameSinkManager::DropTemporaryReference(const SurfaceId& surface_id) {
 
 std::unique_ptr<CompositorFrameSinkSupport>
 HostFrameSinkManager::CreateCompositorFrameSinkSupport(
-    CompositorFrameSinkSupportClient* client,
+    mojom::CompositorFrameSinkClient* client,
     const FrameSinkId& frame_sink_id,
     bool is_root,
     bool needs_sync_points) {

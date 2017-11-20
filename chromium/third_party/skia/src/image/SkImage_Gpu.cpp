@@ -40,7 +40,7 @@
 SkImage_Gpu::SkImage_Gpu(GrContext* context, uint32_t uniqueID, SkAlphaType at,
                          sk_sp<GrTextureProxy> proxy,
                          sk_sp<SkColorSpace> colorSpace, SkBudgeted budgeted)
-    : INHERITED(proxy->width(), proxy->height(), uniqueID)
+    : INHERITED(proxy->worstCaseWidth(), proxy->worstCaseHeight(), uniqueID)
     , fContext(context)
     , fProxy(std::move(proxy))
     , fAlphaType(at)
@@ -110,7 +110,7 @@ bool SkImage_Gpu::getROPixels(SkBitmap* dst, SkColorSpace*, CachingHint chint) c
 }
 
 sk_sp<GrTextureProxy> SkImage_Gpu::asTextureProxyRef(GrContext* context,
-                                                     const GrSamplerParams& params,
+                                                     const GrSamplerState& params,
                                                      SkColorSpace* dstColorSpace,
                                                      sk_sp<SkColorSpace>* texColorSpace,
                                                      SkScalar scaleAdjust[2]) const {
@@ -125,7 +125,7 @@ sk_sp<GrTextureProxy> SkImage_Gpu::asTextureProxyRef(GrContext* context,
 
     GrTextureAdjuster adjuster(fContext, fProxy, this->alphaType(), this->bounds(),
                                this->uniqueID(), this->fColorSpace.get());
-    return adjuster.refTextureProxySafeForParams(params, nullptr, scaleAdjust);
+    return adjuster.refTextureProxySafeForParams(params, scaleAdjust);
 }
 
 static void apply_premul(const SkImageInfo& info, void* pixels, size_t rowBytes) {
@@ -387,6 +387,7 @@ static sk_sp<SkImage> make_from_yuv_textures_copy(GrContext* ctx, SkYUVColorSpac
                                                                          kRGBA_8888_GrPixelConfig,
                                                                          std::move(imageColorSpace),
                                                                          0,
+                                                                         false,
                                                                          origin));
     if (!renderTargetContext) {
         return nullptr;
@@ -433,9 +434,8 @@ static sk_sp<SkImage> create_image_from_maker(GrContext* context, GrTextureMaker
                                               SkAlphaType at, uint32_t id,
                                               SkColorSpace* dstColorSpace) {
     sk_sp<SkColorSpace> texColorSpace;
-    sk_sp<GrTextureProxy> proxy(maker->refTextureProxyForParams(GrSamplerParams::ClampNoFilter(),
-                                                                dstColorSpace,
-                                                                &texColorSpace, nullptr));
+    sk_sp<GrTextureProxy> proxy(maker->refTextureProxyForParams(
+            GrSamplerState::ClampNearest(), dstColorSpace, &texColorSpace, nullptr));
     if (!proxy) {
         return nullptr;
     }
@@ -480,11 +480,11 @@ sk_sp<SkImage> SkImage::MakeCrossContextFromEncoded(GrContext* context, sk_sp<Sk
     // Turn the codec image into a GrTextureProxy
     GrImageTextureMaker maker(context, codecImage.get(), kDisallow_CachingHint);
     sk_sp<SkColorSpace> texColorSpace;
-    GrSamplerParams params(SkShader::kClamp_TileMode,
-                           buildMips ? GrSamplerParams::kMipMap_FilterMode
-                                     : GrSamplerParams::kBilerp_FilterMode);
-    sk_sp<GrTextureProxy> proxy(maker.refTextureProxyForParams(params, dstColorSpace,
-                                                               &texColorSpace, nullptr));
+    GrSamplerState samplerState(
+            GrSamplerState::WrapMode::kClamp,
+            buildMips ? GrSamplerState::Filter::kMipMap : GrSamplerState::Filter::kBilerp);
+    sk_sp<GrTextureProxy> proxy(
+            maker.refTextureProxyForParams(samplerState, dstColorSpace, &texColorSpace, nullptr));
     if (!proxy) {
         return codecImage;
     }
@@ -519,7 +519,7 @@ sk_sp<SkImage> SkImage::makeNonTextureImage() const {
     }
     SkImageInfo info = as_IB(this)->onImageInfo();
     size_t rowBytes = info.minRowBytes();
-    size_t size = info.getSafeSize(rowBytes);
+    size_t size = info.computeByteSize(rowBytes);
     auto data = SkData::MakeUninitialized(size);
     if (!data) {
         return nullptr;
@@ -668,7 +668,7 @@ size_t SkImage::getDeferredTextureImageData(const GrContextThreadSafeProxy& prox
     size_t pixelSize = 0;
     if (!isScaled && this->peekPixels(&pixmap) && pixmap.info().colorType() == dstColorType) {
         info = pixmap.info();
-        pixelSize = SkAlign8(pixmap.getSafeSize());
+        pixelSize = SkAlign8(pixmap.computeByteSize());
         if (!dstColorSpace) {
             pixmap.setColorSpace(nullptr);
             info = info.makeColorSpace(nullptr);
@@ -774,7 +774,7 @@ size_t SkImage::getDeferredTextureImageData(const GrContextThreadSafeProxy& prox
     void* pixels = pixelsAsCharPtr;
 
     memcpy(reinterpret_cast<void*>(SkAlign8(reinterpret_cast<uintptr_t>(pixelsAsCharPtr))),
-                                   pixmap.addr(), pixmap.getSafeSize());
+                                   pixmap.addr(), pixmap.computeByteSize());
 
     // If the context has sRGB support, and we're intending to render to a surface with an attached
     // color space, and the image has an sRGB-like color space attached, then use our gamma (sRGB)
@@ -825,7 +825,7 @@ size_t SkImage::getDeferredTextureImageData(const GrContextThreadSafeProxy& prox
     }
 
     // Fill in the mipmap levels if they exist
-    char* mipLevelPtr = pixelsAsCharPtr + SkAlign8(pixmap.getSafeSize());
+    char* mipLevelPtr = pixelsAsCharPtr + SkAlign8(pixmap.computeByteSize());
 
     if (useMipMaps) {
         static_assert(std::is_standard_layout<MipMapLevelData>::value,
@@ -846,13 +846,10 @@ size_t SkImage::getDeferredTextureImageData(const GrContextThreadSafeProxy& prox
             // Make sure the mipmap data starts before the end of the buffer
             SkASSERT(mipLevelPtr < bufferAsCharPtr + pixelOffset + pixelSize);
             // Make sure the mipmap data ends before the end of the buffer
-            SkASSERT(mipLevelPtr + mipLevel.fPixmap.getSafeSize() <=
+            SkASSERT(mipLevelPtr + mipLevel.fPixmap.computeByteSize() <=
                      bufferAsCharPtr + pixelOffset + pixelSize);
 
-            // getSafeSize includes rowbyte padding except for the last row,
-            // right?
-
-            memcpy(mipLevelPtr, mipLevel.fPixmap.addr(), mipLevel.fPixmap.getSafeSize());
+            memcpy(mipLevelPtr, mipLevel.fPixmap.addr(), mipLevel.fPixmap.computeByteSize());
 
             memcpy(bufferAsCharPtr + offsetof(DeferredTextureImage, fMipMapLevelData) +
                    sizeof(MipMapLevelData) * (generatedMipLevelIndex + 1) +
@@ -862,7 +859,7 @@ size_t SkImage::getDeferredTextureImageData(const GrContextThreadSafeProxy& prox
                    sizeof(MipMapLevelData) * (generatedMipLevelIndex + 1) +
                    offsetof(MipMapLevelData, fRowBytes), &rowBytes, sizeof(rowBytes));
 
-            mipLevelPtr += SkAlign8(mipLevel.fPixmap.getSafeSize());
+            mipLevelPtr += SkAlign8(mipLevel.fPixmap.computeByteSize());
         }
     }
     return size;
@@ -922,6 +919,13 @@ sk_sp<SkImage> SkImage::MakeTextureFromMipMap(GrContext* ctx, const SkImageInfo&
     SkASSERT(mipLevelCount >= 1);
     if (!ctx) {
         return nullptr;
+    }
+    // For images where the client is passing the mip data we require that all the mip levels have
+    // valid data.
+    for (int i = 0; i < mipLevelCount; ++i) {
+        if (!texels[i].fPixels) {
+            return nullptr;
+        }
     }
     sk_sp<GrTextureProxy> proxy(GrUploadMipMapToTextureProxy(ctx, info, texels, mipLevelCount,
                                                              colorMode));

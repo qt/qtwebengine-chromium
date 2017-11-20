@@ -95,7 +95,7 @@ if (!is_android) {
   }
 
   grit("settings_resources") {
-    if (use_vulcanize) {
+    if (optimize_webui) {
       source = "settings/settings_resources_vulcanized.grd"
 
       # The .grd contains references to generated files.
@@ -124,6 +124,34 @@ if (!is_android) {
 }
 
 if (enable_extensions) {
+  grit("extensions_resources") {
+    if (optimize_webui) {
+      source = "md_extensions/extensions_resources_vulcanized.grd"
+
+      # The .grd contains references to generated files.
+      source_is_generated = true
+
+      deps = [
+        "//chrome/browser/resources/md_extensions:build",
+      ]
+      grit_flags = [
+        "-E",
+        "root_gen_dir=" + rebase_path(root_gen_dir, root_build_dir),
+      ]
+    } else {
+      source = "md_extensions/extensions_resources.grd"
+    }
+
+    defines = chrome_grit_defines
+    outputs = [
+      "grit/extensions_resources.h",
+      "grit/extensions_resources_map.cc",
+      "grit/extensions_resources_map.h",
+      "extensions_resources.pak",
+    ]
+    output_dir = "$root_gen_dir/chrome"
+  }
+
   grit("sync_file_system_internals_resources") {
     source = "sync_file_system_internals_resources.grd"
     defines = chrome_grit_defines

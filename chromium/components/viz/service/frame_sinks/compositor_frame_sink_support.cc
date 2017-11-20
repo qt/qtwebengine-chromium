@@ -7,11 +7,10 @@
 #include <algorithm>
 #include <utility>
 
-#include "cc/output/compositor_frame.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
+#include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/service/display/display.h"
-#include "components/viz/service/frame_sinks/compositor_frame_sink_support_client.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_reference.h"
@@ -20,7 +19,7 @@ namespace viz {
 
 // static
 std::unique_ptr<CompositorFrameSinkSupport> CompositorFrameSinkSupport::Create(
-    CompositorFrameSinkSupportClient* client,
+    mojom::CompositorFrameSinkClient* client,
     FrameSinkManagerImpl* frame_sink_manager,
     const FrameSinkId& frame_sink_id,
     bool is_root,
@@ -50,6 +49,11 @@ CompositorFrameSinkSupport::~CompositorFrameSinkSupport() {
 
   EvictCurrentSurface();
   frame_sink_manager_->UnregisterFrameSinkManagerClient(frame_sink_id_);
+}
+
+void CompositorFrameSinkSupport::SetWillDrawSurfaceCallback(
+    WillDrawCallback callback) {
+  will_draw_callback_ = std::move(callback);
 }
 
 void CompositorFrameSinkSupport::SetDestructionCallback(
@@ -132,9 +136,19 @@ void CompositorFrameSinkSupport::DidNotProduceFrame(const BeginFrameAck& ack) {
     begin_frame_source_->DidFinishFrame(this);
 }
 
+void CompositorFrameSinkSupport::SubmitCompositorFrame(
+    const LocalSurfaceId& local_surface_id,
+    CompositorFrame frame,
+    mojom::HitTestRegionListPtr hit_test_region_list,
+    uint64_t submit_time) {
+  SubmitCompositorFrame(local_surface_id, std::move(frame),
+                        std::move(hit_test_region_list));
+}
+
 bool CompositorFrameSinkSupport::SubmitCompositorFrame(
     const LocalSurfaceId& local_surface_id,
-    cc::CompositorFrame frame) {
+    CompositorFrame frame,
+    mojom::HitTestRegionListPtr hit_test_region_list) {
   TRACE_EVENT0("cc", "CompositorFrameSinkSupport::SubmitCompositorFrame");
   DCHECK(local_surface_id.is_valid());
   DCHECK(!frame.render_pass_list.empty());
@@ -190,8 +204,7 @@ bool CompositorFrameSinkSupport::SubmitCompositorFrame(
       std::move(frame), frame_index,
       base::BindOnce(&CompositorFrameSinkSupport::DidReceiveCompositorFrameAck,
                      weak_factory_.GetWeakPtr()),
-      base::BindRepeating(&CompositorFrameSinkSupport::WillDrawSurface,
-                          weak_factory_.GetWeakPtr()));
+      will_draw_callback_);
 
   if (!result) {
     EvictCurrentSurface();
@@ -202,6 +215,9 @@ bool CompositorFrameSinkSupport::SubmitCompositorFrame(
     current_surface->SetPreviousFrameSurface(prev_surface);
     surface_manager_->DestroySurface(prev_surface->surface_id());
   }
+
+  frame_sink_manager()->SubmitHitTestRegionList(
+      current_surface_id_, frame_index, std::move(hit_test_region_list));
 
   if (begin_frame_source_)
     begin_frame_source_->DidFinishFrame(this);
@@ -267,15 +283,8 @@ void CompositorFrameSinkSupport::DidReceiveCompositorFrameAck() {
   surface_returned_resources_.clear();
 }
 
-void CompositorFrameSinkSupport::WillDrawSurface(
-    const LocalSurfaceId& local_surface_id,
-    const gfx::Rect& damage_rect) {
-  if (client_)
-    client_->WillDrawSurface(local_surface_id, damage_rect);
-}
-
 CompositorFrameSinkSupport::CompositorFrameSinkSupport(
-    CompositorFrameSinkSupportClient* client,
+    mojom::CompositorFrameSinkClient* client,
     const FrameSinkId& frame_sink_id,
     bool is_root,
     bool needs_sync_tokens)

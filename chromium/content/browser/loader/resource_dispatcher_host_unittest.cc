@@ -23,6 +23,7 @@
 #include "base/strings/string_split.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/task_scheduler/task_traits.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -45,6 +46,7 @@
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_context.h"
@@ -55,6 +57,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/child_process_host.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/resource_request.h"
 #include "content/public/common/resource_response.h"
@@ -174,15 +177,15 @@ static ResourceRequest CreateResourceRequest(const char* method,
   request.download_to_file = false;
   request.should_reset_appcache = false;
   request.is_main_frame = true;
-  request.parent_is_main_frame = false;
   request.transition_type = ui::PAGE_TRANSITION_LINK;
   request.allow_download = true;
+  request.keepalive = (type == RESOURCE_TYPE_PING);
   return request;
 }
 
 // Spin up the message loop to kick off the request.
 static void KickOffRequest() {
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 }
 
 // We may want to move this to a shared space if it is useful for something else
@@ -859,7 +862,7 @@ class ResourceDispatcherHostTest : public testing::Test, public IPC::Sender {
     host_.SetLoaderDelegate(&loader_delegate_);
     browser_context_.reset(new TestBrowserContext());
     BrowserContext::EnsureResourceContextInitialized(browser_context_.get());
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
 
     filter_ = MakeForwardingFilter();
     // TODO(cbentzel): Better way to get URLRequestContext?
@@ -910,8 +913,8 @@ class ResourceDispatcherHostTest : public testing::Test, public IPC::Sender {
         new TestWebContentsObserver(web_contents_.get()));
     web_contents_filter_ = new TestFilterSpecifyingChild(
         browser_context_->GetResourceContext(),
-        web_contents_->GetRenderProcessHost()->GetID());
-    child_ids_.insert(web_contents_->GetRenderProcessHost()->GetID());
+        web_contents_->GetMainFrame()->GetProcess()->GetID());
+    child_ids_.insert(web_contents_->GetMainFrame()->GetProcess()->GetID());
     request_context_getter_ = new net::TestURLRequestContextGetter(
         content::BrowserThread::GetTaskRunnerForThread(
             content::BrowserThread::UI));
@@ -940,7 +943,7 @@ class ResourceDispatcherHostTest : public testing::Test, public IPC::Sender {
           browser_context_->GetResourceContext());
 
     browser_context_.reset();
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
   }
 
   // Creates a new ForwardingFilter and registers it with |child_ids_| so as not
@@ -1099,7 +1102,7 @@ class ResourceDispatcherHostTest : public testing::Test, public IPC::Sender {
     // Flush all pending requests.
     while (net::URLRequestTestJob::ProcessOnePendingMessage()) {
     }
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
 
     // Sorts out all the messages we saw by request.
     ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -1203,7 +1206,7 @@ void ResourceDispatcherHostTest::
                                                          const GURL& url,
                                                          ResourceType type) {
   ResourceRequest request = CreateResourceRequest("GET", type, url);
-  request.origin_pid = web_contents_->GetRenderProcessHost()->GetID();
+  request.origin_pid = web_contents_->GetMainFrame()->GetProcess()->GetID();
   request.render_frame_id = web_contents_->GetMainFrame()->GetRoutingID();
   ResourceHostMsg_RequestResource msg(
       web_contents_->GetRenderViewHost()->GetRoutingID(), request_id, request,
@@ -1245,7 +1248,7 @@ void ResourceDispatcherHostTest::MakeWebContentsAssociatedDownloadRequest(
   DownloadManagerImpl::BeginDownloadRequest(
       std::move(request), Referrer(), browser_context_->GetResourceContext(),
       false,  // is_content_initiated
-      web_contents_->GetRenderProcessHost()->GetID(),
+      web_contents_->GetRenderViewHost()->GetProcess()->GetID(),
       web_contents_->GetRenderViewHost()->GetRoutingID(),
       web_contents_->GetMainFrame()->GetRoutingID(), false);
 }
@@ -1375,7 +1378,7 @@ TEST_F(ResourceDispatcherHostTest, TestMany) {
   // Finish the redirection
   ResourceHostMsg_FollowRedirect redirect_msg(5);
   OnMessageReceived(redirect_msg, filter_.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // flush all the pending requests
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
@@ -1419,7 +1422,7 @@ TEST_F(ResourceDispatcherHostTest, Cancel) {
 
   // flush all the pending requests
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Everything should be out now.
   EXPECT_EQ(0, host_.pending_requests());
@@ -1473,7 +1476,7 @@ TEST_F(ResourceDispatcherHostTest, DownloadToNetworkCache) {
   // Flush all the pending requests.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {
   }
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Everything should be out now.
   EXPECT_EQ(0, host_.pending_requests());
@@ -1509,7 +1512,7 @@ TEST_F(ResourceDispatcherHostTest, DetachedResourceTimesOut) {
   ASSERT_TRUE(info->detachable_handler());
   info->detachable_handler()->set_cancel_delay(
       base::TimeDelta::FromMilliseconds(200));
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   RendererCancelRequest(1);
 
@@ -1549,7 +1552,7 @@ TEST_F(ResourceDispatcherHostTest, SyncLoadSuccess) {
   std::tuple<SyncLoadResult> result;
   ResourceHostMsg_SyncLoad sync_load_msg(0, 1, request, &std::get<0>(result));
   OnMessageReceived(sync_load_msg, filter_.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   const IPC::Message* reply = accum_.GetReply(sync_load_msg);
   ASSERT_TRUE(reply);
@@ -1567,7 +1570,7 @@ TEST_F(ResourceDispatcherHostTest, SyncLoadError) {
   std::tuple<SyncLoadResult> result;
   ResourceHostMsg_SyncLoad sync_load_msg(0, 1, request, &std::get<0>(result));
   OnMessageReceived(sync_load_msg, filter_.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   const IPC::Message* reply = accum_.GetReply(sync_load_msg);
   ASSERT_TRUE(reply);
@@ -1587,7 +1590,7 @@ TEST_F(ResourceDispatcherHostTest, SyncLoadCancel) {
 
   OnMessageReceived(sync_load_msg, filter_.get());
   host_.CancelRequestsForProcess(filter_->child_id());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   const IPC::Message* reply = accum_.GetReply(sync_load_msg);
   ASSERT_TRUE(reply);
@@ -1596,7 +1599,14 @@ TEST_F(ResourceDispatcherHostTest, SyncLoadCancel) {
 
 // If the filter has disappeared then detachable resources should continue to
 // load.
+// RESOURCE_TYPE_PING requests Handling is affected by
+// "KeepAliveRendererForKeepaliveRequests" feature. We keep this test so that
+// we can unship the feature easily if needed.
+// TODO(yhirano): Add a corresponding test case with the feature.
 TEST_F(ResourceDispatcherHostTest, DeletedFilterDetached) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      features::kKeepAliveRendererForKeepaliveRequests);
   // test_url_1's data is available synchronously, so use 2 and 3.
   ResourceRequest request_prefetch = CreateResourceRequest(
       "GET", RESOURCE_TYPE_PREFETCH, net::URLRequestTestJob::test_url_2());
@@ -1640,7 +1650,7 @@ TEST_F(ResourceDispatcherHostTest, DeletedFilterDetached) {
   EXPECT_EQ(2, host_.pending_requests());
 
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(0, host_.pending_requests());
   EXPECT_EQ(2, network_delegate()->completed_requests());
@@ -1690,7 +1700,7 @@ TEST_F(ResourceDispatcherHostTest, DeletedFilterDetachedRedirect) {
 
   // Finish up the request.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(0, host_.pending_requests());
   EXPECT_EQ(1, network_delegate()->completed_requests());
@@ -1717,7 +1727,7 @@ TEST_F(ResourceDispatcherHostTest, CancelWhileStartIsDeferred) {
   // calling CancelRequest.
   EXPECT_FALSE(was_deleted);
 
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   EXPECT_TRUE(was_deleted);
 }
@@ -1744,7 +1754,7 @@ TEST_F(ResourceDispatcherHostTest, DetachWhileStartIsDeferred) {
   // However, it is still throttled because the defer happened above the
   // DetachableResourceHandler.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
   EXPECT_FALSE(was_deleted);
 
   // Resume the request.
@@ -1755,7 +1765,7 @@ TEST_F(ResourceDispatcherHostTest, DetachWhileStartIsDeferred) {
 
   // Now, the request completes.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
   EXPECT_TRUE(was_deleted);
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->canceled_requests());
@@ -1773,7 +1783,7 @@ TEST_F(ResourceDispatcherHostTest, CancelInResourceThrottleWillStartRequest) {
 
   // flush all the pending requests
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   ResourceIPCAccumulator::ClassifiedMessages msgs;
   accum_.GetClassifiedMessages(&msgs);
@@ -1798,7 +1808,7 @@ TEST_F(ResourceDispatcherHostTest, PausedStartError) {
 
   // flush all the pending requests
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(0, host_.pending_requests());
 }
@@ -1825,7 +1835,7 @@ TEST_F(ResourceDispatcherHostTest, ThrottleAndResumeTwice) {
   ASSERT_FALSE(GenericResourceThrottle::active_throttle());
 
   // The request is started asynchronously.
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Flush all the pending requests.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
@@ -1852,7 +1862,7 @@ TEST_F(ResourceDispatcherHostTest, CancelInDelegate) {
 
   // flush all the pending requests
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   ResourceIPCAccumulator::ClassifiedMessages msgs;
   accum_.GetClassifiedMessages(&msgs);
@@ -1864,7 +1874,14 @@ TEST_F(ResourceDispatcherHostTest, CancelInDelegate) {
   CheckRequestCompleteErrorCode(msgs[0][0], net::ERR_ACCESS_DENIED);
 }
 
+// RESOURCE_TYPE_PING requests Handling is affected by
+// "KeepAliveRendererForKeepaliveRequests" feature. We keep this test so that
+// we can unship the feature easily if needed.
+// TODO(yhirano): Add a corresponding test case with the feature.
 TEST_F(ResourceDispatcherHostTest, CancelRequestsForRoute) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      features::kKeepAliveRendererForKeepaliveRequests);
   job_factory_->SetDelayedStartJobGeneration(true);
   MakeTestRequestWithRenderFrame(0, 11, 1, net::URLRequestTestJob::test_url_1(),
                                  RESOURCE_TYPE_XHR);
@@ -1906,7 +1923,7 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForRoute) {
   while (host_.pending_requests() > 0) {
     while (net::URLRequestTestJob::ProcessOnePendingMessage()) {
     }
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
   }
 }
 
@@ -1937,7 +1954,7 @@ TEST_F(ResourceDispatcherHostTest, TestProcessCancel) {
 
   // Make sure all requests have finished stage one. test_url_1 will have
   // finished.
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // TODO(mbelshe):
   // Now that the async IO path is in place, the IO always completes on the
@@ -2030,7 +2047,7 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsOnRenderFrameDeleted) {
   DeleteRenderFrame(GlobalFrameRoutingId(filter_->child_id(), 10));
   DeleteRenderFrame(GlobalFrameRoutingId(filter_->child_id(), 11));
   host_.OnRenderViewHostDeleted(filter_->child_id(), 0);
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
   EXPECT_EQ(3, network_delegate_.created_requests());
   EXPECT_EQ(4, network_delegate_.canceled_requests());
 
@@ -2051,7 +2068,7 @@ TEST_F(ResourceDispatcherHostTest, TestProcessCancelDetachedTimesOut) {
   ASSERT_TRUE(info->detachable_handler());
   info->detachable_handler()->set_cancel_delay(
       base::TimeDelta::FromMilliseconds(200));
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Cancel the requests to the test process.
   host_.CancelRequestsForProcess(filter_->child_id());
@@ -2071,7 +2088,7 @@ TEST_F(ResourceDispatcherHostTest, TestProcessCancelDetachedTimesOut) {
 
   // In case any messages are still to be processed.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   ResourceIPCAccumulator::ClassifiedMessages msgs;
   accum_.GetClassifiedMessages(&msgs);
@@ -2364,7 +2381,7 @@ TEST_F(ResourceDispatcherHostTest, TooMuchOutstandingRequestsMemory) {
 
   // Flush all the pending requests.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Sorts out all the messages we saw by request.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -2435,7 +2452,7 @@ TEST_F(ResourceDispatcherHostTest, TooManyOutstandingRequests) {
 
   // Flush all the pending requests.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Sorts out all the messages we saw by request.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -2624,7 +2641,7 @@ TEST_F(ResourceDispatcherHostTest, IgnoreCancelForDownloads) {
   // Return some data so that the request is identified as a download
   // and the proper resource handlers are created.
   EXPECT_TRUE(net::URLRequestTestJob::ProcessOnePendingMessage());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // And now simulate a cancellation coming from the renderer.
   ResourceHostMsg_CancelRequest msg(request_id);
@@ -2636,7 +2653,7 @@ TEST_F(ResourceDispatcherHostTest, IgnoreCancelForDownloads) {
   EXPECT_EQ(1, host_.pending_requests());
 
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 }
 
 TEST_F(ResourceDispatcherHostTest, CancelRequestsForContext) {
@@ -2667,7 +2684,7 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContext) {
   // Return some data so that the request is identified as a download
   // and the proper resource handlers are created.
   EXPECT_TRUE(net::URLRequestTestJob::ProcessOnePendingMessage());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // And now simulate a cancellation coming from the renderer.
   ResourceHostMsg_CancelRequest msg(request_id);
@@ -2688,7 +2705,7 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContext) {
 
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {
   }
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 }
 
 TEST_F(ResourceDispatcherHostTest, CancelRequestsForContextDetached) {
@@ -2798,7 +2815,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationHtml) {
               kResponseBody);
   ResourceHostMsg_FollowRedirect redirect_msg(request_id);
   OnMessageReceived(redirect_msg, filter_.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Flush all the pending requests to get the response through the
   // MimeTypeResourceHandler.
@@ -2819,7 +2836,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationHtml) {
       new_render_view_id, new_request_id, request,
       net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
   OnMessageReceived(transfer_request_msg, second_filter.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Check generated messages.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -2889,7 +2906,7 @@ TEST_F(ResourceDispatcherHostTest, TransferTwoNavigationsHtml) {
       new_render_view_id, new_request_id, request,
       net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
   OnMessageReceived(transfer_request_msg, second_filter.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Transfer the second request.
   int new_second_request_id = 6;
@@ -2902,7 +2919,7 @@ TEST_F(ResourceDispatcherHostTest, TransferTwoNavigationsHtml) {
       new_render_view_id, new_second_request_id, second_request,
       net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
   OnMessageReceived(second_transfer_request_msg, second_filter.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Check generated messages.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -2951,12 +2968,12 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationText) {
               kResponseBody);
   ResourceHostMsg_FollowRedirect redirect_msg(request_id);
   OnMessageReceived(redirect_msg, filter_.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Flush all the pending requests to get the response through the
   // MimeTypeResourceHandler.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // This second filter is used to emulate a second process.
   scoped_refptr<ForwardingFilter> second_filter = MakeForwardingFilter();
@@ -2973,7 +2990,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationText) {
       new_render_view_id, new_request_id, request,
       net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
   OnMessageReceived(transfer_request_msg, second_filter.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Check generated messages.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -3020,7 +3037,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationWithProcessCrash) {
         render_view_id, request_id, first_request,
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
     OnMessageReceived(first_request_msg, first_filter.get());
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
 
     // Now that we're blocked on the redirect, update the response and unblock
     // by telling the AsyncResourceHandler to follow the redirect.
@@ -3029,7 +3046,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationWithProcessCrash) {
                 kResponseBody);
     ResourceHostMsg_FollowRedirect redirect_msg(request_id);
     OnMessageReceived(redirect_msg, first_filter.get());
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
 
     // Flush all the pending requests to get the response through the
     // MimeTypeResourceHandler.
@@ -3059,7 +3076,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationWithProcessCrash) {
       new_render_view_id, new_request_id, request,
       net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
   OnMessageReceived(transfer_request_msg, second_filter.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Check generated messages.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -3101,7 +3118,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationWithTwoRedirects) {
               "Location: http://other.com/blerg\n\n");
   ResourceHostMsg_FollowRedirect redirect_msg(request_id);
   OnMessageReceived(redirect_msg, filter_.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Now that we're blocked on the second redirect, update the response and
   // unblock by telling the AsyncResourceHandler to follow the redirect.
@@ -3113,12 +3130,12 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationWithTwoRedirects) {
               kResponseBody);
   ResourceHostMsg_FollowRedirect redirect_msg2(request_id);
   OnMessageReceived(redirect_msg2, filter_.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Flush all the pending requests to get the response through the
   // MimeTypeResourceHandler.
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {}
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // This second filter is used to emulate a second process.
   scoped_refptr<ForwardingFilter> second_filter = MakeForwardingFilter();
@@ -3148,7 +3165,7 @@ TEST_F(ResourceDispatcherHostTest, TransferNavigationWithTwoRedirects) {
   EXPECT_EQ(second_filter.get(), info->requester_info()->filter());
 
   // Let request complete.
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Check generated messages.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -3181,7 +3198,7 @@ TEST_F(ResourceDispatcherHostTest, DataReceivedACKs) {
   HandleScheme("big-job");
   MakeTestRequest(0, 1, GURL("big-job:0123456789,1000000"));
 
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Sort all the messages we saw by request.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -3260,7 +3277,7 @@ TEST_F(ResourceDispatcherHostTest, DelayedDataReceivedACKs) {
   HandleScheme("big-job");
   MakeTestRequest(0, 1, GURL("big-job:0123456789,1000000"));
 
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Sort all the messages we saw by request.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -3294,7 +3311,7 @@ TEST_F(ResourceDispatcherHostTest, DelayedDataReceivedACKs) {
       OnMessageReceived(msg, filter_.get());
     }
 
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
 
     msgs.clear();
     accum_.GetClassifiedMessages(&msgs);
@@ -3309,7 +3326,7 @@ TEST_F(ResourceDispatcherHostTest, DataReceivedUnexpectedACKs) {
   HandleScheme("big-job");
   MakeTestRequest(0, 1, GURL("big-job:0123456789,1000000"));
 
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Sort all the messages we saw by request.
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -3348,7 +3365,7 @@ TEST_F(ResourceDispatcherHostTest, DataReceivedUnexpectedACKs) {
       OnMessageReceived(msg, filter_.get());
     }
 
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
 
     msgs.clear();
     accum_.GetClassifiedMessages(&msgs);
@@ -3393,7 +3410,7 @@ TEST_F(ResourceDispatcherHostTest, RegisterDownloadedTempFile) {
   // on the delete happening on the FILE thread which is mapped to main thread
   // in this test.)
   deletable_file = nullptr;
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // The file is no longer readable to the child and has been deleted.
   EXPECT_FALSE(ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
@@ -3433,7 +3450,7 @@ TEST_F(ResourceDispatcherHostTest, RegisterDownloadedTempFileWithMojo) {
 
   // The child releases from the request.
   downloaded_file_ptr = nullptr;
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // Still readable because there is another reference to the file. (The child
   // may take additional blob references.)
@@ -3444,7 +3461,7 @@ TEST_F(ResourceDispatcherHostTest, RegisterDownloadedTempFileWithMojo) {
   // on the delete happening on the FILE thread which is mapped to main thread
   // in this test.)
   deletable_file = nullptr;
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // The file is no longer readable to the child and has been deleted.
   EXPECT_FALSE(ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
@@ -3476,7 +3493,7 @@ TEST_F(ResourceDispatcherHostTest, ReleaseTemporiesOnProcessExit) {
 
   // Let the process die.
   filter_->OnChannelClosing();
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   // The file is no longer readable to the child and has been deleted.
   EXPECT_FALSE(ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
@@ -3495,11 +3512,11 @@ TEST_F(ResourceDispatcherHostTest, DownloadToFile) {
   OnMessageReceived(request_msg, filter_.get());
 
   // Running the message loop until idle does not work because
-  // RedirectToFileResourceHandler posts things to base::WorkerPool. Instead,
-  // wait for the ResourceMsg_RequestComplete to go out. Then run the event loop
-  // until idle so the loader is gone.
+  // ResourceDispatcherHostImpl posts tasks to TaskScheduler. Instead, wait for
+  // the ResourceMsg_RequestComplete to go out. Then, wait until no
+  // TaskScheduler or main thread tasks remain.
   WaitForRequestComplete();
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
   EXPECT_EQ(0, host_.pending_requests());
 
   ResourceIPCAccumulator::ClassifiedMessages msgs;
@@ -3552,7 +3569,7 @@ TEST_F(ResourceDispatcherHostTest, DownloadToFile) {
   // The release callback runs before the delete is scheduled, so pump the
   // message loop for the delete itself. (This relies on the delete happening on
   // the FILE thread which is mapped to main thread in this test.)
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   EXPECT_FALSE(base::PathExists(response_head.download_file_path));
   EXPECT_FALSE(ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
@@ -3728,7 +3745,7 @@ TEST_F(ResourceDispatcherHostTest, TransferResponseStarted) {
   int initial_count = web_contents_observer_->resource_response_start_count();
 
   MakeWebContentsAssociatedTestRequest(1, net::URLRequestTestJob::test_url_1());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(initial_count + 1,
             web_contents_observer_->resource_response_start_count());
@@ -3741,7 +3758,7 @@ TEST_F(ResourceDispatcherHostTest, TransferRequestRedirected) {
 
   MakeWebContentsAssociatedTestRequest(
       1, net::URLRequestTestJob::test_url_redirect_to_url_2());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(initial_count + 1,
             web_contents_observer_->resource_request_redirect_count());
@@ -3775,7 +3792,7 @@ TEST_F(ResourceDispatcherHostTest, DidChangePriority) {
   // scheduled later, so it is not currently running.
   ResourceHostMsg_DidChangePriority priority_msg(3, net::MAXIMUM_PRIORITY, 0);
   OnMessageReceived(priority_msg, filter_.get());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 
   EXPECT_EQ(3, job_factory_->url_request_jobs_created_count());
 
@@ -3791,7 +3808,7 @@ TEST_F(ResourceDispatcherHostTest, TransferResponseStartedDownload) {
 
   MakeWebContentsAssociatedDownloadRequest(
       1, net::URLRequestTestJob::test_url_1());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
   EXPECT_EQ(initial_count,
             web_contents_observer_->resource_response_start_count());
 }
@@ -3803,7 +3820,7 @@ TEST_F(ResourceDispatcherHostTest, TransferRequestRedirectedDownload) {
 
   MakeWebContentsAssociatedDownloadRequest(
       1, net::URLRequestTestJob::test_url_redirect_to_url_2());
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
   EXPECT_EQ(initial_count,
             web_contents_observer_->resource_request_redirect_count());
 }
@@ -3837,7 +3854,7 @@ TEST_F(ResourceDispatcherHostTest, ThrottleMustProcessResponseBeforeRead) {
 
   while (net::URLRequestTestJob::ProcessOnePendingMessage()) {
   }
-  content::RunAllBlockingPoolTasksUntilIdle();
+  content::RunAllTasksUntilIdle();
 }
 
 // A URLRequestTestJob that sets a test certificate on the |ssl_info|

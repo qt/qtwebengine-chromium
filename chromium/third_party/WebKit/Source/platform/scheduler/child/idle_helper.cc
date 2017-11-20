@@ -37,7 +37,7 @@ IdleHelper::IdleHelper(
       &IdleHelper::OnIdleTaskPostedOnMainThread, weak_idle_helper_ptr_));
 
   idle_task_runner_ =
-      make_scoped_refptr(new SingleThreadIdleTaskRunner(idle_queue_, this));
+      base::MakeRefCounted<SingleThreadIdleTaskRunner>(idle_queue_, this);
 
   // This fence will block any idle tasks from running.
   idle_queue_->InsertFence(TaskQueue::InsertFencePosition::BEGINNING_OF_TIME);
@@ -56,7 +56,7 @@ void IdleHelper::Shutdown() {
   is_shutdown_ = true;
   weak_factory_.InvalidateWeakPtrs();
   // Belt & braces, might not be needed.
-  idle_queue_->InsertFence(TaskQueue::InsertFencePosition::BEGINNING_OF_TIME);
+  idle_queue_->UnregisterTaskQueue();
 }
 
 IdleHelper::Delegate::Delegate() {}

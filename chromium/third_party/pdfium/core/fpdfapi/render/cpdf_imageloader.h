@@ -9,8 +9,8 @@
 
 #include <memory>
 
-#include "core/fxcrt/cfx_retain_ptr.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/fx_dib.h"
 
 class CPDF_ImageObject;
@@ -31,16 +31,16 @@ class CPDF_ImageLoader {
              CPDF_RenderStatus* pRenderStatus);
   bool Continue(IFX_PauseIndicator* pPause, CPDF_RenderStatus* pRenderStatus);
 
-  CFX_RetainPtr<CFX_DIBSource> m_pBitmap;
-  CFX_RetainPtr<CFX_DIBSource> m_pMask;
+  RetainPtr<CFX_DIBSource> m_pBitmap;
+  RetainPtr<CFX_DIBSource> m_pMask;
   uint32_t m_MatteColor;
   bool m_bCached;
 
  private:
   void HandleFailure();
 
-  CFX_UnownedPtr<CPDF_PageRenderCache> m_pCache;
-  CFX_UnownedPtr<CPDF_ImageObject> m_pImageObject;
+  UnownedPtr<CPDF_PageRenderCache> m_pCache;
+  UnownedPtr<CPDF_ImageObject> m_pImageObject;
 };
 
 #endif  // CORE_FPDFAPI_RENDER_CPDF_IMAGELOADER_H_

@@ -570,7 +570,7 @@ namespace sw
 	void SamplerCore::border(Short4 &mask, Float4 &coordinates)
 	{
 		Int4 border = As<Int4>(CmpLT(Abs(coordinates - Float4(0.5f)), Float4(0.5f)));
-		mask = As<Short4>(Int2(As<Int4>(Pack(border, border))));
+		mask = As<Short4>(Int2(As<Int4>(PackSigned(border, border))));
 	}
 
 	void SamplerCore::border(Int4 &mask, Float4 &coordinates)
@@ -1695,19 +1695,20 @@ namespace sw
 					wwww = applyOffset(wwww, offset.z, Int4(*Pointer<UShort4>(mipmap + OFFSET(Mipmap, depth))), texelFetch ? ADDRESSING_TEXELFETCH : state.addressingModeW);
 				}
 			}
-			Short4 www2 = wwww;
-			wwww = As<Short4>(UnpackLow(wwww, Short4(0x0000)));
-			www2 = As<Short4>(UnpackHigh(www2, Short4(0x0000)));
-			wwww = As<Short4>(MulAdd(wwww, *Pointer<Short4>(mipmap + OFFSET(Mipmap,sliceP))));
-			www2 = As<Short4>(MulAdd(www2, *Pointer<Short4>(mipmap + OFFSET(Mipmap,sliceP))));
-			uuuu = As<Short4>(As<Int2>(uuuu) + As<Int2>(wwww));
-			uuu2 = As<Short4>(As<Int2>(uuu2) + As<Int2>(www2));
+			UInt4 uv(As<UInt2>(uuuu), As<UInt2>(uuu2));
+			uv += As<UInt4>(Int4(As<UShort4>(wwww))) * *Pointer<UInt4>(mipmap + OFFSET(Mipmap, sliceP));
+			index[0] = Extract(As<Int4>(uv), 0);
+			index[1] = Extract(As<Int4>(uv), 1);
+			index[2] = Extract(As<Int4>(uv), 2);
+			index[3] = Extract(As<Int4>(uv), 3);
 		}
-
-		index[0] = Extract(As<Int2>(uuuu), 0);
-		index[1] = Extract(As<Int2>(uuuu), 1);
-		index[2] = Extract(As<Int2>(uuu2), 0);
-		index[3] = Extract(As<Int2>(uuu2), 1);
+		else
+		{
+			index[0] = Extract(As<Int2>(uuuu), 0);
+			index[1] = Extract(As<Int2>(uuuu), 1);
+			index[2] = Extract(As<Int2>(uuu2), 0);
+			index[3] = Extract(As<Int2>(uuu2), 1);
+		}
 
 		if(texelFetch)
 		{
@@ -2271,7 +2272,7 @@ namespace sw
 
 			// Clamp
 			convert -= Int4(0x00008000, 0x00008000, 0x00008000, 0x00008000);
-			convert = As<Int4>(Pack(convert, convert));
+			convert = As<Int4>(PackSigned(convert, convert));
 
 			return As<Short4>(Int2(convert)) + Short4(0x8000u);
 		}

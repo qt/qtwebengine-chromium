@@ -3,6 +3,8 @@ include_rules = [
   "+components/viz/common",
   "+device/screen_orientation/public/interfaces",
   "+services/device/public/interfaces",
+  "+services/service_manager/sandbox",
+  "+services/resource_coordinator/public",
 ]
 
 specific_include_rules = {

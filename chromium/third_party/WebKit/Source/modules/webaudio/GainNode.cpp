@@ -37,7 +37,7 @@ GainHandler::GainHandler(AudioNode& node,
                          AudioParamHandler& gain)
     : AudioHandler(kNodeTypeGain, node, sample_rate),
       last_gain_(1.0),
-      gain_(gain),
+      gain_(&gain),
       sample_accurate_gain_values_(
           AudioUtilities::kRenderQuantumFrames)  // FIXME: can probably
                                                  // share temp buffer
@@ -49,10 +49,10 @@ GainHandler::GainHandler(AudioNode& node,
   Initialize();
 }
 
-PassRefPtr<GainHandler> GainHandler::Create(AudioNode& node,
-                                            float sample_rate,
-                                            AudioParamHandler& gain) {
-  return AdoptRef(new GainHandler(node, sample_rate, gain));
+RefPtr<GainHandler> GainHandler::Create(AudioNode& node,
+                                        float sample_rate,
+                                        AudioParamHandler& gain) {
+  return WTF::AdoptRef(new GainHandler(node, sample_rate, gain));
 }
 
 void GainHandler::Process(size_t frames_to_process) {
@@ -169,7 +169,7 @@ GainNode* GainNode::Create(BaseAudioContext* context,
 
   node->HandleChannelOptions(options, exception_state);
 
-  node->gain()->setValue(options.gain());
+  node->gain()->setInitialValue(options.gain());
 
   return node;
 }

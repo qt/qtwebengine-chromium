@@ -582,7 +582,10 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         self.assertEqual(details.exit_code, 2)
         json_string = host.filesystem.read_text_file('/tmp/layout-test-results/full_results.json')
         self.assertTrue(json_string.find(
-            '"text-image-checksum.html":{"expected":"PASS","actual":"IMAGE+TEXT","is_unexpected":true') != -1)
+            '"text-image-checksum.html":{'
+            '"expected":"PASS",'
+            '"text_mismatch":"general text mismatch",'
+            '"actual":"IMAGE+TEXT","is_unexpected":true') != -1)
         self.assertTrue(json_string.find(
             '"missing_text.html":{"expected":"PASS","is_missing_text":true,"actual":"MISSING","is_unexpected":true') != -1)
         self.assertTrue(json_string.find('"num_regressions":2') != -1)
@@ -620,6 +623,15 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         expected_token = '"pixeldir":{"image_in_pixeldir.html":{"expected":"PASS","actual":"IMAGE","is_unexpected":true'
         json_string = host.filesystem.read_text_file('/tmp/layout-test-results/full_results.json')
         self.assertTrue(json_string.find(expected_token) != -1)
+
+    def test_watch(self):
+        host = MockHost()
+        host.user.set_canned_responses(['r', 'r', 'q'])
+        _, output, _ = logging_run(['--watch', 'failures/unexpected/text.html'], tests_included=True, host=host)
+        output_string = output.getvalue()
+        self.assertIn(
+            'Link to pretty diff:\nfile:///tmp/layout-test-results/failures/unexpected/text-pretty-diff.html', output_string)
+        self.assertEqual(output_string.count('[1/1] failures/unexpected/text.html failed unexpectedly (text diff)'), 3)
 
     def test_crash_with_stderr(self):
         host = MockHost()
@@ -801,7 +813,10 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         json_string = host.filesystem.read_text_file('/tmp/layout-test-results/full_results.json')
         results = parse_full_results(json_string)
         self.assertEqual(results['tests']['failures']['unexpected']['text-image-checksum.html'],
-                         {'expected': 'PASS', 'actual': 'TEXT IMAGE+TEXT IMAGE+TEXT IMAGE+TEXT', 'is_unexpected': True})
+                         {'expected': 'PASS',
+                          'actual': 'TEXT IMAGE+TEXT IMAGE+TEXT IMAGE+TEXT',
+                          'is_unexpected': True,
+                          'text_mismatch': 'general text mismatch'})
         self.assertFalse(results['pixel_tests_enabled'])
         self.assertTrue(details.enabled_pixel_tests_in_retry)
 
@@ -968,22 +983,6 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         self.assertEqual(res, exit_codes.UNEXPECTED_ERROR_EXIT_STATUS)
         self.assertEqual(stdout.getvalue(), '')
         self.assertTrue('unsupported platform' in stderr.getvalue())
-
-    def test_build_check(self):
-        # By using a port_name for a different platform than the one
-        # we're running on, the build check should always fail because
-        # the binary should not be present.
-        if sys.platform == 'darwin':
-            port_name = 'linux-trusty'
-        else:
-            port_name = 'mac-mac10.11'
-        stdout = StringIO.StringIO()
-        stderr = StringIO.StringIO()
-        self.assertEqual(
-            run_webkit_tests.main(['--platform', port_name, 'fast/harness/results.html'], stdout, stderr),
-            exit_codes.UNEXPECTED_ERROR_EXIT_STATUS)
-        self.assertIn('Checking build ...', stderr.getvalue())
-        self.assertIn('Build check failed', stderr.getvalue())
 
     def test_verbose_in_child_processes(self):
         # When we actually run multiple processes, we may have to reconfigure logging in the

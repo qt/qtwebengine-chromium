@@ -21,13 +21,13 @@
 
 #include "core/html/HTMLImageLoader.h"
 
-#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "core/dom/events/Event.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLObjectElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html_names.h"
 #include "core/loader/resource/ImageResourceContent.h"
 #include "platform/loader/fetch/ResourceLoadingLog.h"
 
@@ -44,11 +44,11 @@ void HTMLImageLoader::DispatchLoadEvent() {
 
   // HTMLVideoElement uses this class to load the poster image, but it should
   // not fire events for loading or failure.
-  if (isHTMLVideoElement(*GetElement()))
+  if (IsHTMLVideoElement(*GetElement()))
     return;
 
   bool error_occurred = GetImage()->ErrorOccurred();
-  if (isHTMLObjectElement(*GetElement()) && !error_occurred) {
+  if (IsHTMLObjectElement(*GetElement()) && !error_occurred) {
     // An <object> considers a 404 to be an error and should fire onerror.
     error_occurred = (GetImage()->GetResponse().HttpStatusCode() >= 400);
   }
@@ -62,10 +62,10 @@ void HTMLImageLoader::NoImageResourceToLoad() {
   if (ToHTMLElement(GetElement())->AltText().IsEmpty())
     return;
 
-  if (isHTMLImageElement(GetElement()))
-    toHTMLImageElement(GetElement())->EnsureCollapsedOrFallbackContent();
-  else if (isHTMLInputElement(GetElement()))
-    toHTMLInputElement(GetElement())->EnsureFallbackContent();
+  if (auto* image = ToHTMLImageElementOrNull(GetElement()))
+    image->EnsureCollapsedOrFallbackContent();
+  else if (auto* input = ToHTMLInputElementOrNull(GetElement()))
+    input->EnsureFallbackContent();
 }
 
 void HTMLImageLoader::ImageNotifyFinished(ImageResourceContent*) {
@@ -74,24 +74,23 @@ void HTMLImageLoader::ImageNotifyFinished(ImageResourceContent*) {
   ImageLoader::ImageNotifyFinished(cached_image);
 
   bool load_error = cached_image->ErrorOccurred();
-  if (isHTMLImageElement(*element)) {
-    toHTMLImageElement(element)->ImageNotifyFinished(!load_error);
+  if (auto* image = ToHTMLImageElementOrNull(*element)) {
     if (load_error)
-      toHTMLImageElement(element)->EnsureCollapsedOrFallbackContent();
+      image->EnsureCollapsedOrFallbackContent();
     else
-      toHTMLImageElement(element)->EnsurePrimaryContent();
+      image->EnsurePrimaryContent();
   }
 
-  if (isHTMLInputElement(*element)) {
+  if (auto* input = ToHTMLInputElementOrNull(*element)) {
     if (load_error)
-      toHTMLInputElement(element)->EnsureFallbackContent();
+      input->EnsureFallbackContent();
     else
-      toHTMLInputElement(element)->EnsurePrimaryContent();
+      input->EnsurePrimaryContent();
   }
 
   if ((load_error || cached_image->GetResponse().HttpStatusCode() >= 400) &&
-      isHTMLObjectElement(*element))
-    toHTMLObjectElement(element)->RenderFallbackContent();
+      IsHTMLObjectElement(*element))
+    ToHTMLObjectElement(element)->RenderFallbackContent();
 }
 
 }  // namespace blink

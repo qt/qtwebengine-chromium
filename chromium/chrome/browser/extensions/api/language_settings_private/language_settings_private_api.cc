@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/feature_list.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
@@ -24,6 +25,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/language_settings_private/language_settings_private_delegate.h"
 #include "chrome/browser/extensions/api/language_settings_private/language_settings_private_delegate_factory.h"
+#include "chrome/browser/language/language_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
@@ -31,8 +33,11 @@
 #include "chrome/browser/translate/translate_service.h"
 #include "chrome/common/extensions/api/language_settings_private.h"
 #include "chrome/common/pref_names.h"
+#include "components/language/core/browser/language_model.h"
 #include "components/spellcheck/common/spellcheck_common.h"
 #include "components/translate/core/browser/translate_download_manager.h"
+#include "components/translate/core/browser/translate_prefs.h"
+#include "components/translate/core/common/translate_util.h"
 #include "third_party/icu/source/i18n/unicode/coll.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_collator.h"
@@ -236,7 +241,14 @@ LanguageSettingsPrivateGetLanguageListFunction::Run() {
       language.supports_ui.reset(new bool(true));
     if (spellcheck_language_set.count(pair.first) > 0)
       language.supports_spellcheck.reset(new bool(true));
-    if (translate_language_set.count(pair.first) > 0)
+
+    std::string supports_translate_code = pair.first;
+    if (base::FeatureList::IsEnabled(translate::kImprovedLanguageSettings)) {
+      // Extract the base language: if the base language can be translated, then
+      // even the regional one should be marked as such.
+      translate::ToTranslateLanguageSynonym(&supports_translate_code);
+    }
+    if (translate_language_set.count(supports_translate_code) > 0)
       language.supports_translate.reset(new bool(true));
 
     language_list->Append(language.ToValue());
@@ -265,14 +277,15 @@ LanguageSettingsPrivateEnableLanguageFunction::Run() {
 
   std::vector<std::string> languages;
   translate_prefs->GetLanguageList(&languages);
+  std::string chrome_language = language_code;
+  translate::ToChromeLanguageSynonym(&chrome_language);
 
-  if (base::ContainsValue(languages, language_code)) {
-    LOG(ERROR) << "Language " << language_code << " already enabled";
+  if (base::ContainsValue(languages, chrome_language)) {
+    LOG(ERROR) << "Language " << chrome_language << " already enabled";
     return RespondNow(NoArguments());
   }
 
-  languages.push_back(parameters->language_code);
-  translate_prefs->UpdateLanguageList(languages);
+  translate_prefs->AddToLanguageList(language_code, /*force_blocked=*/false);
 
   return RespondNow(NoArguments());
 }
@@ -298,15 +311,47 @@ LanguageSettingsPrivateDisableLanguageFunction::Run() {
 
   std::vector<std::string> languages;
   translate_prefs->GetLanguageList(&languages);
+  std::string chrome_language = language_code;
+  translate::ToChromeLanguageSynonym(&chrome_language);
 
-  auto it = std::find(languages.begin(), languages.end(), language_code);
+  auto it = std::find(languages.begin(), languages.end(), chrome_language);
   if (it == languages.end()) {
-    LOG(ERROR) << "Language " << language_code << " not enabled";
+    LOG(ERROR) << "Language " << chrome_language << " not enabled";
     return RespondNow(NoArguments());
   }
 
-  languages.erase(it);
-  translate_prefs->UpdateLanguageList(languages);
+  translate_prefs->RemoveFromLanguageList(language_code);
+
+  return RespondNow(NoArguments());
+}
+
+LanguageSettingsPrivateSetEnableTranslationForLanguageFunction::
+    LanguageSettingsPrivateSetEnableTranslationForLanguageFunction()
+    : chrome_details_(this) {}
+
+LanguageSettingsPrivateSetEnableTranslationForLanguageFunction::
+    ~LanguageSettingsPrivateSetEnableTranslationForLanguageFunction() {}
+
+ExtensionFunction::ResponseAction
+LanguageSettingsPrivateSetEnableTranslationForLanguageFunction::Run() {
+  const std::unique_ptr<
+      language_settings_private::SetEnableTranslationForLanguage::Params>
+      parameters = language_settings_private::SetEnableTranslationForLanguage::
+          Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(parameters.get());
+  const std::string& language_code = parameters->language_code;
+  // True if translation enabled, false if disabled.
+  const bool enable = parameters->enable;
+
+  std::unique_ptr<translate::TranslatePrefs> translate_prefs =
+      ChromeTranslateClient::CreateTranslatePrefs(
+          chrome_details_.GetProfile()->GetPrefs());
+
+  if (enable) {
+    translate_prefs->UnblockLanguage(language_code);
+  } else {
+    translate_prefs->BlockLanguage(language_code);
+  }
 
   return RespondNow(NoArguments());
 }
@@ -438,9 +483,12 @@ LanguageSettingsPrivateGetTranslateTargetLanguageFunction::
 
 ExtensionFunction::ResponseAction
 LanguageSettingsPrivateGetTranslateTargetLanguageFunction::Run() {
+  Profile* profile = chrome_details_.GetProfile();
+  language::LanguageModel* language_model =
+      LanguageModelFactory::GetInstance()->GetForBrowserContext(profile);
   return RespondNow(OneArgument(
       base::MakeUnique<base::Value>(TranslateService::GetTargetLanguage(
-          chrome_details_.GetProfile()->GetPrefs()))));
+          profile->GetPrefs(), language_model))));
 }
 
 #if defined(OS_CHROMEOS)

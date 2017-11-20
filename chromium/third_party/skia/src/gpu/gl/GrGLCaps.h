@@ -125,6 +125,15 @@ public:
             return SkToBool(fConfigTable[config].fFlags & ConfigInfo::kRenderable_Flag);
         }
     }
+
+    bool isConfigCopyable(GrPixelConfig config) const override {
+        // In GL we have three ways to be able to copy. CopyTexImage, blit, and draw. CopyTexImage
+        // requires the src to be an FBO attachment, blit requires both src and dst to be FBO
+        // attachments, and draw requires the dst to be an FBO attachment. Thus to copy from and to
+        // the same config, we need that config to be renderable so we can attach it to an FBO.
+        return this->isConfigRenderable(config, false);
+    }
+
     bool canConfigBeImageStorage(GrPixelConfig config) const override {
         return SkToBool(fConfigTable[config].fFlags & ConfigInfo::kCanUseAsImageStorage_Flag);
     }
@@ -390,6 +399,15 @@ public:
         return fRequiresCullFaceEnableDisableWhenDrawingLinesAfterNonLines;
     }
 
+    // Returns the observed maximum number of instances the driver can handle in a single call to
+    // glDrawArraysInstanced without crashing, or 'pendingInstanceCount' if this
+    // workaround is not necessary.
+    // NOTE: the return value may be larger than pendingInstanceCount.
+    int maxInstancesPerDrawArraysWithoutCrashing(int pendingInstanceCount) const {
+        return fMaxInstancesPerDrawArraysWithoutCrashing ? fMaxInstancesPerDrawArraysWithoutCrashing
+                                                         : pendingInstanceCount;
+    }
+
     bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
                             bool* rectsMustMatch, bool* disallowSubrect) const override;
 
@@ -470,6 +488,7 @@ private:
     bool fRequiresCullFaceEnableDisableWhenDrawingLinesAfterNonLines : 1;
 
     uint32_t fBlitFramebufferFlags;
+    int fMaxInstancesPerDrawArraysWithoutCrashing;
 
     /** Number type of the components (with out considering number of bits.) */
     enum FormatType {

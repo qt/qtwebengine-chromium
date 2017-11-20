@@ -9,16 +9,15 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/base/trace_constants.h"
+#include "net/base/url_util.h"
 #include "net/http/http_proxy_client_socket.h"
 #include "net/http/http_proxy_client_socket_pool.h"
 #include "net/log/net_log_source_type.h"
@@ -128,9 +127,11 @@ SSLConnectJob::SSLConnectJob(const std::string& group_name,
                context.transport_security_state,
                context.cert_transparency_verifier,
                context.ct_policy_enforcer,
-               (params->privacy_mode() == PRIVACY_MODE_ENABLED
-                    ? "pm/" + context.ssl_session_cache_shard
-                    : context.ssl_session_cache_shard)),
+               (context.ssl_session_cache_shard.empty()
+                    ? context.ssl_session_cache_shard
+                    : (params->privacy_mode() == PRIVACY_MODE_ENABLED
+                           ? "pm/" + context.ssl_session_cache_shard
+                           : context.ssl_session_cache_shard))),
       callback_(
           base::Bind(&SSLConnectJob::OnIOComplete, base::Unretained(this))),
       version_interference_probe_(false),
@@ -304,10 +305,6 @@ int SSLConnectJob::DoTunnelConnectComplete(int result) {
 
 int SSLConnectJob::DoSSLConnect() {
   TRACE_EVENT0(kNetTracingCategory, "SSLConnectJob::DoSSLConnect");
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/462815 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION("462815 SSLConnectJob::DoSSLConnect"));
-
   next_state_ = STATE_SSL_CONNECT_COMPLETE;
 
   // Reset the timeout to just the time allowed for the SSL handshake.
@@ -344,11 +341,6 @@ int SSLConnectJob::DoSSLConnect() {
 int SSLConnectJob::DoSSLConnectComplete(int result) {
   // Version interference probes should not result in success.
   DCHECK(!version_interference_probe_ || result != OK);
-
-  // TODO(rvargas): Remove ScopedTracker below once crbug.com/462784 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "462784 SSLConnectJob::DoSSLConnectComplete"));
 
   connect_timing_.ssl_end = base::TimeTicks::Now();
 
@@ -395,11 +387,7 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
       host == "google.com" ||
       (host.size() > 11 && host.rfind(".google.com") == host.size() - 11);
 
-  // These are hosts that we intend to use in the initial TLS 1.3 deployment.
-  // TLS connections to them, whether or not this browser is in the experiment
-  // group, form the basis of our comparisons.
-  bool tls13_supported = (host == "inbox.google.com" ||
-                          host == "mail.google.com" || host == "gmail.com");
+  bool tls13_supported = IsTLS13ExperimentHost(host);
 
   if (result == OK ||
       ssl_socket_->IgnoreCertError(result, params_->load_flags())) {
@@ -660,14 +648,17 @@ int SSLClientSocketPool::RequestSocket(const std::string& group_name,
                              respect_limits, handle, callback, net_log);
 }
 
-void SSLClientSocketPool::RequestSockets(const std::string& group_name,
-                                         const void* params,
-                                         int num_sockets,
-                                         const NetLogWithSource& net_log) {
+void SSLClientSocketPool::RequestSockets(
+    const std::string& group_name,
+    const void* params,
+    int num_sockets,
+    const NetLogWithSource& net_log,
+    HttpRequestInfo::RequestMotivation motivation) {
   const scoped_refptr<SSLSocketParams>* casted_params =
       static_cast<const scoped_refptr<SSLSocketParams>*>(params);
 
-  base_.RequestSockets(group_name, *casted_params, num_sockets, net_log);
+  base_.RequestSockets(group_name, *casted_params, num_sockets, net_log,
+                       motivation);
 }
 
 void SSLClientSocketPool::SetPriority(const std::string& group_name,

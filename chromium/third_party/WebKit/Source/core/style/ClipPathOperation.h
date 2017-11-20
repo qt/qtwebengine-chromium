@@ -67,7 +67,7 @@ class ReferenceClipPathOperation final : public ClipPathOperation {
   static RefPtr<ReferenceClipPathOperation> Create(
       const String& url,
       SVGElementProxy& element_proxy) {
-    return AdoptRef(new ReferenceClipPathOperation(url, element_proxy));
+    return WTF::AdoptRef(new ReferenceClipPathOperation(url, element_proxy));
   }
 
   void AddClient(SVGResourceClient*);
@@ -97,11 +97,11 @@ DEFINE_TYPE_CASTS(ReferenceClipPathOperation,
 class ShapeClipPathOperation final : public ClipPathOperation {
  public:
   static RefPtr<ShapeClipPathOperation> Create(RefPtr<BasicShape> shape) {
-    return AdoptRef(new ShapeClipPathOperation(std::move(shape)));
+    return WTF::AdoptRef(new ShapeClipPathOperation(std::move(shape)));
   }
 
-  const BasicShape* GetBasicShape() const { return shape_.Get(); }
-  bool IsValid() const { return shape_.Get(); }
+  const BasicShape* GetBasicShape() const { return shape_.get(); }
+  bool IsValid() const { return shape_.get(); }
   const Path& GetPath(const FloatRect& bounding_rect) {
     DCHECK(shape_);
     path_.reset();
@@ -131,9 +131,9 @@ inline bool ShapeClipPathOperation::operator==(
     const ClipPathOperation& o) const {
   if (!IsSameType(o))
     return false;
-  BasicShape* other_shape = ToShapeClipPathOperation(o).shape_.Get();
-  if (!shape_.Get() || !other_shape)
-    return static_cast<bool>(shape_.Get()) == static_cast<bool>(other_shape);
+  BasicShape* other_shape = ToShapeClipPathOperation(o).shape_.get();
+  if (!shape_.get() || !other_shape)
+    return static_cast<bool>(shape_.get()) == static_cast<bool>(other_shape);
   return *shape_ == *other_shape;
 }
 

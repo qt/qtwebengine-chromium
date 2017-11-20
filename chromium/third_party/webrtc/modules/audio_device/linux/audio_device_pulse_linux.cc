@@ -10,11 +10,11 @@
 
 #include <assert.h>
 
-#include "webrtc/modules/audio_device/audio_device_config.h"
-#include "webrtc/modules/audio_device/linux/audio_device_pulse_linux.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/system_wrappers/include/event_wrapper.h"
+#include "modules/audio_device/audio_device_config.h"
+#include "modules/audio_device/linux/audio_device_pulse_linux.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "system_wrappers/include/event_wrapper.h"
 
 webrtc::adm_linux_pulse::PulseAudioSymbolTable PaSymbolTable;
 
@@ -40,7 +40,6 @@ AudioDeviceLinuxPulse::AudioDeviceLinuxPulse()
       sample_rate_hz_(0),
       _recChannels(1),
       _playChannels(1),
-      _playBufType(AudioDeviceModule::kFixedBufferSize),
       _initialized(false),
       _recording(false),
       _playing(false),
@@ -52,14 +51,9 @@ AudioDeviceLinuxPulse::AudioDeviceLinuxPulse()
       _stopPlay(false),
       _AGC(false),
       update_speaker_volume_at_startup_(false),
-      _playBufDelayFixed(20),
       _sndCardPlayDelay(0),
       _sndCardRecDelay(0),
       _writeErrors(0),
-      _playWarning(0),
-      _playError(0),
-      _recWarning(0),
-      _recError(0),
       _deviceIndex(-1),
       _numPlayDevices(0),
       _numRecDevices(0),
@@ -161,11 +155,6 @@ AudioDeviceGeneric::InitStatus AudioDeviceLinuxPulse::Init() {
     }
     return InitStatus::OTHER_ERROR;
   }
-
-  _playWarning = 0;
-  _playError = 0;
-  _recWarning = 0;
-  _recError = 0;
 
   // Get X display handle for typing detection
   _XDisplay = XOpenDisplay(NULL);
@@ -398,19 +387,6 @@ int32_t AudioDeviceLinuxPulse::MinSpeakerVolume(uint32_t& minVolume) const {
   return 0;
 }
 
-int32_t AudioDeviceLinuxPulse::SpeakerVolumeStepSize(uint16_t& stepSize) const {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  uint16_t delta(0);
-
-  if (_mixerManager.SpeakerVolumeStepSize(delta) == -1) {
-    return -1;
-  }
-
-  stepSize = delta;
-
-  return 0;
-}
-
 int32_t AudioDeviceLinuxPulse::SpeakerMuteIsAvailable(bool& available) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   bool isAvailable(false);
@@ -499,52 +475,6 @@ int32_t AudioDeviceLinuxPulse::MicrophoneMute(bool& enabled) const {
   }
 
   enabled = muted;
-  return 0;
-}
-
-int32_t AudioDeviceLinuxPulse::MicrophoneBoostIsAvailable(bool& available) {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  bool isAvailable(false);
-  bool wasInitialized = _mixerManager.MicrophoneIsInitialized();
-
-  // Enumerate all avaliable microphone and make an attempt to open up the
-  // input mixer corresponding to the currently selected input device.
-  //
-  if (!wasInitialized && InitMicrophone() == -1) {
-    // If we end up here it means that the selected microphone has no
-    // volume control, hence it is safe to state that there is no
-    // boost control already at this stage.
-    available = false;
-    return 0;
-  }
-
-  // Check if the selected microphone has a boost control
-  _mixerManager.MicrophoneBoostIsAvailable(isAvailable);
-  available = isAvailable;
-
-  // Close the initialized input mixer
-  if (!wasInitialized) {
-    _mixerManager.CloseMicrophone();
-  }
-
-  return 0;
-}
-
-int32_t AudioDeviceLinuxPulse::SetMicrophoneBoost(bool enable) {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  return (_mixerManager.SetMicrophoneBoost(enable));
-}
-
-int32_t AudioDeviceLinuxPulse::MicrophoneBoost(bool& enabled) const {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  bool onOff(0);
-
-  if (_mixerManager.MicrophoneBoost(onOff) == -1) {
-    return -1;
-  }
-
-  enabled = onOff;
-
   return 0;
 }
 
@@ -723,20 +653,6 @@ int32_t AudioDeviceLinuxPulse::MinMicrophoneVolume(uint32_t& minVolume) const {
   }
 
   minVolume = minVol;
-
-  return 0;
-}
-
-int32_t AudioDeviceLinuxPulse::MicrophoneVolumeStepSize(
-    uint16_t& stepSize) const {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  uint16_t delta(0);
-
-  if (_mixerManager.MicrophoneVolumeStepSize(delta) == -1) {
-    return -1;
-  }
-
-  stepSize = delta;
 
   return 0;
 }
@@ -1367,76 +1283,6 @@ bool AudioDeviceLinuxPulse::Playing() const {
   return (_playing);
 }
 
-int32_t AudioDeviceLinuxPulse::SetPlayoutBuffer(
-    const AudioDeviceModule::BufferType type,
-    uint16_t sizeMS) {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  if (type != AudioDeviceModule::kFixedBufferSize) {
-    LOG(LS_ERROR) << "Adaptive buffer size not supported on this platform";
-    return -1;
-  }
-
-  _playBufType = type;
-  _playBufDelayFixed = sizeMS;
-
-  return 0;
-}
-
-int32_t AudioDeviceLinuxPulse::PlayoutBuffer(
-    AudioDeviceModule::BufferType& type,
-    uint16_t& sizeMS) const {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  type = _playBufType;
-  sizeMS = _playBufDelayFixed;
-
-  return 0;
-}
-
-int32_t AudioDeviceLinuxPulse::CPULoad(uint16_t& /*load*/) const {
-  LOG(LS_WARNING) << "API call not supported on this platform";
-  return -1;
-}
-
-bool AudioDeviceLinuxPulse::PlayoutWarning() const {
-  rtc::CritScope lock(&_critSect);
-  return (_playWarning > 0);
-}
-
-bool AudioDeviceLinuxPulse::PlayoutError() const {
-  rtc::CritScope lock(&_critSect);
-  return (_playError > 0);
-}
-
-bool AudioDeviceLinuxPulse::RecordingWarning() const {
-  rtc::CritScope lock(&_critSect);
-  return (_recWarning > 0);
-}
-
-bool AudioDeviceLinuxPulse::RecordingError() const {
-  rtc::CritScope lock(&_critSect);
-  return (_recError > 0);
-}
-
-void AudioDeviceLinuxPulse::ClearPlayoutWarning() {
-  rtc::CritScope lock(&_critSect);
-  _playWarning = 0;
-}
-
-void AudioDeviceLinuxPulse::ClearPlayoutError() {
-  rtc::CritScope lock(&_critSect);
-  _playError = 0;
-}
-
-void AudioDeviceLinuxPulse::ClearRecordingWarning() {
-  rtc::CritScope lock(&_critSect);
-  _recWarning = 0;
-}
-
-void AudioDeviceLinuxPulse::ClearRecordingError() {
-  rtc::CritScope lock(&_critSect);
-  _recError = 0;
-}
-
 // ============================================================================
 //                                 Private Methods
 // ============================================================================
@@ -2052,7 +1898,7 @@ int32_t AudioDeviceLinuxPulse::LatencyUsecs(pa_stream* stream) {
 
 int32_t AudioDeviceLinuxPulse::ReadRecordedData(const void* bufferData,
                                                 size_t bufferSize)
-    EXCLUSIVE_LOCKS_REQUIRED(_critSect) {
+    RTC_EXCLUSIVE_LOCKS_REQUIRED(_critSect) {
   size_t size = bufferSize;
   uint32_t numRecSamples = _recordBufferSize / (2 * _recChannels);
 
@@ -2122,7 +1968,7 @@ int32_t AudioDeviceLinuxPulse::ReadRecordedData(const void* bufferData,
 int32_t AudioDeviceLinuxPulse::ProcessRecordedData(int8_t* bufferData,
                                                    uint32_t bufferSizeInSamples,
                                                    uint32_t recDelay)
-    EXCLUSIVE_LOCKS_REQUIRED(_critSect) {
+    RTC_EXCLUSIVE_LOCKS_REQUIRED(_critSect) {
   uint32_t currentMicLevel(0);
   uint32_t newMicLevel(0);
 
@@ -2296,12 +2142,7 @@ bool AudioDeviceLinuxPulse::PlayThreadProcess() {
               NULL, (int64_t)0, PA_SEEK_RELATIVE) != PA_OK) {
         _writeErrors++;
         if (_writeErrors > 10) {
-          if (_playError == 1) {
-            LOG(LS_WARNING) << "pending playout error exists";
-          }
-          // Triggers callback from module process thread.
-          _playError = 1;
-          LOG(LS_ERROR) << "kPlayoutError message posted: _writeErrors="
+          LOG(LS_ERROR) << "Playout error: _writeErrors="
                         << _writeErrors
                         << ", error=" << LATE(pa_context_errno)(_paContext);
           _writeErrors = 0;
@@ -2345,12 +2186,7 @@ bool AudioDeviceLinuxPulse::PlayThreadProcess() {
                                 NULL, (int64_t)0, PA_SEEK_RELATIVE) != PA_OK) {
         _writeErrors++;
         if (_writeErrors > 10) {
-          if (_playError == 1) {
-            LOG(LS_WARNING) << "pending playout error exists";
-          }
-          // Triggers callback from module process thread.
-          _playError = 1;
-          LOG(LS_ERROR) << "kPlayoutError message posted: _writeErrors="
+          LOG(LS_ERROR) << "Playout error: _writeErrors="
                         << _writeErrors
                         << ", error=" << LATE(pa_context_errno)(_paContext);
           _writeErrors = 0;
@@ -2463,8 +2299,7 @@ bool AudioDeviceLinuxPulse::RecThreadProcess() {
       size_t sampleDataSize;
 
       if (LATE(pa_stream_peek)(_recStream, &sampleData, &sampleDataSize) != 0) {
-        _recError = 1;  // triggers callback from module process thread
-        LOG(LS_ERROR) << "RECORD_ERROR message posted, error = "
+        LOG(LS_ERROR) << "RECORD_ERROR, error = "
                       << LATE(pa_context_errno)(_paContext);
         break;
       }

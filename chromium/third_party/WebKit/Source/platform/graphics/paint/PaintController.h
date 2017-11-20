@@ -8,7 +8,6 @@
 #include <memory>
 #include <utility>
 #include "platform/PlatformExport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/graphics/ContiguousContainer.h"
@@ -19,6 +18,7 @@
 #include "platform/graphics/paint/PaintChunker.h"
 #include "platform/graphics/paint/RasterInvalidationTracking.h"
 #include "platform/graphics/paint/Transform3DDisplayItem.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/Alignment.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/HashMap.h"
@@ -102,7 +102,7 @@ class PLATFORM_EXPORT PaintController {
   // item construction is disabled, no list mutations will be performed.
   template <typename DisplayItemClass, typename... Args>
   void EndItem(Args&&... args) {
-    DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+    DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
 
     if (DisplayItemConstructionIsDisabled())
       return;
@@ -181,7 +181,7 @@ class PLATFORM_EXPORT PaintController {
   DisplayItemList& NewDisplayItemList() { return new_display_item_list_; }
 
   void AppendDebugDrawingAfterCommit(const DisplayItemClient&,
-                                     sk_sp<PaintRecord>,
+                                     sk_sp<const PaintRecord>,
                                      const FloatRect& record_bounds);
 
   void ShowDebugData() const;
@@ -306,9 +306,8 @@ class PLATFORM_EXPORT PaintController {
 
   void CheckUnderInvalidation();
   bool IsCheckingUnderInvalidation() const {
-    return under_invalidation_checking_end_ -
-               under_invalidation_checking_begin_ >
-           0;
+    return under_invalidation_checking_end_ >
+           under_invalidation_checking_begin_;
   }
 
   struct SubsequenceMarkers {

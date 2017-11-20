@@ -20,9 +20,9 @@ class CFDE_TextEditEngineTest : public testing::Test {
     void NotifyTextFull() override { text_is_full = true; }
 
     void OnCaretChanged() override {}
-    void OnTextChanged(const CFX_WideString& prevText) override {}
+    void OnTextChanged(const WideString& prevText) override {}
     void OnSelChanged() override {}
-    bool OnValidate(const CFX_WideString& wsText) override {
+    bool OnValidate(const WideString& wsText) override {
       return !fail_validation;
     }
     void SetScrollOffset(float fScrollOffset) override {}
@@ -49,7 +49,7 @@ class CFDE_TextEditEngineTest : public testing::Test {
   CFDE_TextEditEngine* engine() const { return engine_.get(); }
 
  private:
-  CFX_RetainPtr<CFGAS_GEFont> font_;
+  RetainPtr<CFGAS_GEFont> font_;
   std::unique_ptr<CFDE_TextEditEngine> engine_;
 };
 
@@ -244,10 +244,10 @@ TEST_F(CFDE_TextEditEngineTest, Selection) {
 
   engine()->SelectAll();
   size_t start_idx;
-  size_t end_idx;
-  std::tie(start_idx, end_idx) = engine()->GetSelection();
+  size_t count;
+  std::tie(start_idx, count) = engine()->GetSelection();
   EXPECT_EQ(0U, start_idx);
-  EXPECT_EQ(10U, end_idx);
+  EXPECT_EQ(11U, count);
 
   // Selection before gap.
   EXPECT_STREQ(L"Hello World", engine()->GetSelectedText().c_str());
@@ -272,7 +272,7 @@ TEST_F(CFDE_TextEditEngineTest, Selection) {
   EXPECT_STREQ(L"", engine()->GetText().c_str());
 
   engine()->Insert(0, L"Hello World");
-  engine()->SetSelection(5, 9);
+  engine()->SetSelection(5, 5);
   EXPECT_STREQ(L" Worl", engine()->DeleteSelectedText().c_str());
   EXPECT_FALSE(engine()->HasSelection());
   EXPECT_STREQ(L"Hellod", engine()->GetText().c_str());
@@ -415,4 +415,282 @@ TEST_F(CFDE_TextEditEngineTest, GetIndexForPoint) {
   EXPECT_EQ(0U, engine()->GetIndexForPoint({0.0f, 0.0f}));
   EXPECT_EQ(11U, engine()->GetIndexForPoint({999999.0f, 9999999.0f}));
   EXPECT_EQ(1U, engine()->GetIndexForPoint({10.0f, 5.0f}));
+}
+
+TEST_F(CFDE_TextEditEngineTest, BoundsForWordAt) {
+  size_t start_idx;
+  size_t count;
+
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(100);
+  EXPECT_EQ(0U, start_idx);
+  EXPECT_EQ(0U, count);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"Hello");
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(0);
+  EXPECT_EQ(0U, start_idx);
+  EXPECT_EQ(5U, count);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"Hello", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"Hello World");
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(100);
+  EXPECT_EQ(0U, start_idx);
+  EXPECT_EQ(0U, count);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"", engine()->GetSelectedText().c_str());
+
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(0);
+  EXPECT_EQ(0U, start_idx);
+  EXPECT_EQ(5U, count);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"Hello", engine()->GetSelectedText().c_str());
+
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(1);
+  EXPECT_EQ(0U, start_idx);
+  EXPECT_EQ(5U, count);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"Hello", engine()->GetSelectedText().c_str());
+
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(4);
+  EXPECT_EQ(0U, start_idx);
+  EXPECT_EQ(5U, count);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"Hello", engine()->GetSelectedText().c_str());
+
+  // Select the space
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(5);
+  EXPECT_EQ(5U, start_idx);
+  EXPECT_EQ(1U, count);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L" ", engine()->GetSelectedText().c_str());
+
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(6);
+  EXPECT_EQ(6U, start_idx);
+  EXPECT_EQ(5U, count);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"World", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"123 456 789");
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(5);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"456", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"123def789");
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(5);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"123def789", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"abc456ghi");
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(5);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"abc456ghi", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"hello, world");
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(0);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"hello", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"hello, world");
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(5);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L",", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"np-complete");
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(6);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"complete", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"(123) 456-7890");
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(0);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"(", engine()->GetSelectedText().c_str());
+
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(1);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"123", engine()->GetSelectedText().c_str());
+
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(7);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"456", engine()->GetSelectedText().c_str());
+
+  std::tie(start_idx, count) = engine()->BoundsForWordAt(11);
+  engine()->SetSelection(start_idx, count);
+  EXPECT_STREQ(L"7890", engine()->GetSelectedText().c_str());
+
+  // Tests from:
+  // http://unicode.org/Public/UNIDATA/auxiliary/WordBreakTest.html#samples
+  struct bounds {
+    size_t start;
+    size_t end;
+  };
+  struct {
+    const wchar_t* str;
+    std::vector<const wchar_t*> results;
+  } tests[] = {
+      // {L"\r\na\n\u0308", {L"\r\n", L"a", L"\n", L"\u0308"}},
+      // {L"a\u0308", {L"a\u0308"}},
+      // {L" \u200d\u0646", {L" \u200d", L"\u0646"}},
+      // {L"\u0646\u200d ", {L"\u0646\u200d", L" "}},
+      {L"AAA", {L"AAA"}},
+      {L"A:A", {L"A:A"}},
+      {L"A::A", {L"A", L":", L":", L"A"}},
+      // {L"\u05d0'", {L"\u05d0'"}},
+      // {L"\u05d0\"\u05d0", {L"\u05d0\"\u05d0"}},
+      {L"A00A", {L"A00A"}},
+      {L"0,0", {L"0,0"}},
+      {L"0,,0", {L"0", L",", L",", L"0"}},
+      {L"\u3031\u3031", {L"\u3031\u3031"}},
+      {L"A_0_\u3031_", {L"A_0_\u3031_"}},
+      {L"A__A", {L"A__A"}},
+      // {L"\u200d\u2640", {L"\u200d\u2640"}},
+      // {L"a\u0308\u200b\u0308b", {L"a\u0308\u200b\u0308b"}},
+  };
+
+  for (auto t : tests) {
+    engine()->Clear();
+    engine()->Insert(0, t.str);
+
+    size_t idx = 0;
+    for (const auto* res : t.results) {
+      std::tie(start_idx, count) = engine()->BoundsForWordAt(idx);
+      engine()->SetSelection(start_idx, count);
+      EXPECT_STREQ(res, engine()->GetSelectedText().c_str())
+          << "Input: '" << t.str << "'";
+      idx += count;
+    }
+  }
+}
+
+TEST_F(CFDE_TextEditEngineTest, CursorMovement) {
+  engine()->Clear();
+  engine()->Insert(0, L"Hello");
+
+  EXPECT_EQ(0U, engine()->GetIndexLeft(0));
+  EXPECT_EQ(5U, engine()->GetIndexRight(5));
+  EXPECT_EQ(2U, engine()->GetIndexUp(2));
+  EXPECT_EQ(2U, engine()->GetIndexDown(2));
+  EXPECT_EQ(1U, engine()->GetIndexLeft(2));
+  EXPECT_EQ(1U, engine()->GetIndexBefore(2));
+  EXPECT_EQ(3U, engine()->GetIndexRight(2));
+  EXPECT_EQ(0U, engine()->GetIndexAtStartOfLine(2));
+  EXPECT_EQ(5U, engine()->GetIndexAtEndOfLine(2));
+
+  engine()->Clear();
+  engine()->Insert(0, L"The book is \"مدخل إلى C++\"");
+  EXPECT_EQ(2U, engine()->GetIndexBefore(3));    // Before is to left.
+  EXPECT_EQ(16U, engine()->GetIndexBefore(15));  // Before is to right.
+  EXPECT_EQ(22U, engine()->GetIndexBefore(23));  // Before is to left.
+
+  engine()->Clear();
+  engine()->Insert(0, L"Hello\r\nWorld\r\nTest");
+  // Move to end of Hello from start of World.
+  engine()->SetSelection(engine()->GetIndexBefore(7U), 7);
+  EXPECT_STREQ(L"\r\nWorld", engine()->GetSelectedText().c_str());
+
+  // Second letter in Hello from second letter in World.
+  engine()->SetSelection(engine()->GetIndexUp(8U), 2);
+  EXPECT_STREQ(L"el", engine()->GetSelectedText().c_str());
+
+  // Second letter in World from second letter in Test.
+  engine()->SetSelection(engine()->GetIndexUp(15U), 2);
+  EXPECT_STREQ(L"or", engine()->GetSelectedText().c_str());
+
+  // Second letter in World from second letter in Hello.
+  engine()->SetSelection(engine()->GetIndexDown(1U), 2);
+  EXPECT_STREQ(L"or", engine()->GetSelectedText().c_str());
+
+  // Second letter in Test from second letter in World.
+  engine()->SetSelection(engine()->GetIndexDown(8U), 2);
+  EXPECT_STREQ(L"es", engine()->GetSelectedText().c_str());
+
+  size_t start_idx = engine()->GetIndexAtStartOfLine(8U);
+  size_t end_idx = engine()->GetIndexAtEndOfLine(8U);
+  engine()->SetSelection(start_idx, end_idx - start_idx);
+  EXPECT_STREQ(L"World", engine()->GetSelectedText().c_str());
+
+  // Move past \r\n to before W.
+  engine()->SetSelection(engine()->GetIndexRight(5U), 5);
+  EXPECT_STREQ(L"World", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"Short\nAnd a very long line");
+  engine()->SetSelection(engine()->GetIndexUp(14U), 11);
+  EXPECT_STREQ(L"\nAnd a very", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"A Very long line\nShort");
+  EXPECT_EQ(engine()->GetLength(), engine()->GetIndexDown(8U));
+
+  engine()->Clear();
+  engine()->Insert(0, L"Hello\rWorld\rTest");
+  // Move to end of Hello from start of World.
+  engine()->SetSelection(engine()->GetIndexBefore(6U), 6);
+  EXPECT_STREQ(L"\rWorld", engine()->GetSelectedText().c_str());
+
+  // Second letter in Hello from second letter in World.
+  engine()->SetSelection(engine()->GetIndexUp(7U), 2);
+  EXPECT_STREQ(L"el", engine()->GetSelectedText().c_str());
+
+  // Second letter in World from second letter in Test.
+  engine()->SetSelection(engine()->GetIndexUp(13U), 2);
+  EXPECT_STREQ(L"or", engine()->GetSelectedText().c_str());
+
+  // Second letter in World from second letter in Hello.
+  engine()->SetSelection(engine()->GetIndexDown(1U), 2);
+  EXPECT_STREQ(L"or", engine()->GetSelectedText().c_str());
+
+  // Second letter in Test from second letter in World.
+  engine()->SetSelection(engine()->GetIndexDown(7U), 2);
+  EXPECT_STREQ(L"es", engine()->GetSelectedText().c_str());
+
+  start_idx = engine()->GetIndexAtStartOfLine(7U);
+  end_idx = engine()->GetIndexAtEndOfLine(7U);
+  engine()->SetSelection(start_idx, end_idx - start_idx);
+  EXPECT_STREQ(L"World", engine()->GetSelectedText().c_str());
+
+  // Move past \r to before W.
+  engine()->SetSelection(engine()->GetIndexRight(5U), 5);
+  EXPECT_STREQ(L"World", engine()->GetSelectedText().c_str());
+
+  engine()->Clear();
+  engine()->Insert(0, L"Hello\nWorld\nTest");
+  // Move to end of Hello from start of World.
+  engine()->SetSelection(engine()->GetIndexBefore(6U), 6);
+  EXPECT_STREQ(L"\nWorld", engine()->GetSelectedText().c_str());
+
+  // Second letter in Hello from second letter in World.
+  engine()->SetSelection(engine()->GetIndexUp(7U), 2);
+  EXPECT_STREQ(L"el", engine()->GetSelectedText().c_str());
+
+  // Second letter in World from second letter in Test.
+  engine()->SetSelection(engine()->GetIndexUp(13U), 2);
+  EXPECT_STREQ(L"or", engine()->GetSelectedText().c_str());
+
+  // Second letter in World from second letter in Hello.
+  engine()->SetSelection(engine()->GetIndexDown(1U), 2);
+  EXPECT_STREQ(L"or", engine()->GetSelectedText().c_str());
+
+  // Second letter in Test from second letter in World.
+  engine()->SetSelection(engine()->GetIndexDown(7U), 2);
+  EXPECT_STREQ(L"es", engine()->GetSelectedText().c_str());
+
+  start_idx = engine()->GetIndexAtStartOfLine(7U);
+  end_idx = engine()->GetIndexAtEndOfLine(7U);
+  engine()->SetSelection(start_idx, end_idx - start_idx);
+  EXPECT_STREQ(L"World", engine()->GetSelectedText().c_str());
+
+  // Move past \r to before W.
+  engine()->SetSelection(engine()->GetIndexRight(5U), 5);
+  EXPECT_STREQ(L"World", engine()->GetSelectedText().c_str());
 }

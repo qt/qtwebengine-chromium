@@ -24,6 +24,7 @@
 using ::testing::_;
 using ::testing::NiceMock;
 using ::testing::Return;
+using ::testing::ReturnRef;
 using ::testing::StrictMock;
 
 namespace content {
@@ -133,13 +134,15 @@ class ParallelDownloadJobTest : public testing::Test {
                          int64_t min_slice_size,
                          int min_remaining_time) {
     item_delegate_ = base::MakeUnique<DownloadItemImplDelegate>();
-    download_item_ = base::MakeUnique<NiceMock<MockDownloadItemImpl>>(
-        item_delegate_.get(), slices);
+    received_slices_ = slices;
+    download_item_ =
+        base::MakeUnique<NiceMock<MockDownloadItemImpl>>(item_delegate_.get());
     EXPECT_CALL(*download_item_, GetTotalBytes())
-        .WillRepeatedly(
-            testing::Return(initial_request_offset + content_length));
+        .WillRepeatedly(Return(initial_request_offset + content_length));
     EXPECT_CALL(*download_item_, GetReceivedBytes())
-        .WillRepeatedly(testing::Return(initial_request_offset));
+        .WillRepeatedly(Return(initial_request_offset));
+    EXPECT_CALL(*download_item_, GetReceivedSlices())
+        .WillRepeatedly(ReturnRef(received_slices_));
 
     DownloadCreateInfo info;
     info.offset = initial_request_offset;
@@ -162,6 +165,10 @@ class ParallelDownloadJobTest : public testing::Test {
 
   void BuildParallelRequests() { job_->BuildParallelRequests(); }
 
+  void set_received_slices(const DownloadItem::ReceivedSlices& slices) {
+    received_slices_ = slices;
+  }
+
   bool IsJobCanceled() const { return job_->is_canceled_; };
 
   void MakeWorkerReady(
@@ -174,7 +181,7 @@ class ParallelDownloadJobTest : public testing::Test {
     create_info->request_handle = std::move(request_handle);
     delegate->OnUrlDownloadStarted(
         std::move(create_info),
-        base::MakeUnique<UrlDownloadHandler::InputStream>(
+        base::MakeUnique<DownloadManager::InputStream>(
             base::MakeUnique<MockByteStreamReader>()),
         DownloadUrlParameters::OnStartedCallback());
   }
@@ -197,6 +204,10 @@ class ParallelDownloadJobTest : public testing::Test {
   bool file_initialized_;
   // Request handle for the original request.
   MockDownloadRequestHandle* mock_request_handle_;
+
+  // The received slices used to return in
+  // |MockDownloadItemImpl::GetReceivedSlices| mock function.
+  DownloadItem::ReceivedSlices received_slices_;
 };
 
 // Test if parallel requests can be built correctly for a new download without
@@ -293,6 +304,61 @@ TEST_F(ParallelDownloadJobTest, CreateNewDownloadRequestsWithSlices) {
   DestroyParallelJob();
 }
 
+// Ensure that in download resumption, if the first hole is filled before
+// sending multiple requests, the new requests can be correctly calculated.
+TEST_F(ParallelDownloadJobTest, CreateResumptionRequestsFirstSliceFilled) {
+  DownloadItem::ReceivedSlices slices = {DownloadItem::ReceivedSlice(0, 10),
+                                         DownloadItem::ReceivedSlice(40, 10),
+                                         DownloadItem::ReceivedSlice(80, 10)};
+
+  // The updated slices that has filled the first hole.
+  DownloadItem::ReceivedSlices updated_slices = slices;
+  updated_slices[0].received_bytes = 40;
+
+  CreateParallelJob(10, 90, slices, 3, 1, 10);
+  // Now let download item to return an updated received slice, that the first
+  // hole in the file has been filled.
+  set_received_slices(updated_slices);
+  BuildParallelRequests();
+
+  // Since the first hole is filled, parallel requests are created to fill other
+  // two holes.
+  EXPECT_EQ(2u, job_->workers().size());
+  VerifyWorker(50, 30);
+  VerifyWorker(90, 0);
+  DestroyParallelJob();
+}
+
+// Simulate an edge case that we have one received slice in the middle. The
+// parallel request should be created correctly.
+// This may not happen under current implementation, but should be also handled
+// correctly.
+TEST_F(ParallelDownloadJobTest, CreateResumptionRequestsTwoSlicesToFill) {
+  DownloadItem::ReceivedSlices slices = {DownloadItem::ReceivedSlice(40, 10)};
+
+  CreateParallelJob(0, 100, slices, 3, 1, 10);
+  BuildParallelRequests();
+
+  EXPECT_EQ(1u, job_->workers().size());
+  VerifyWorker(50, 0);
+  DestroyParallelJob();
+
+  DownloadItem::ReceivedSlices updated_slices = {
+      DownloadItem::ReceivedSlice(0, 10), DownloadItem::ReceivedSlice(40, 10)};
+
+  CreateParallelJob(0, 100, slices, 3, 1, 10);
+  // Now let download item to return an updated received slice, that the first
+  // hole in the file is not fully filled.
+  set_received_slices(updated_slices);
+  BuildParallelRequests();
+
+  // Because the initial request is working on the first hole, there should be
+  // only one parallel request to fill the second hole.
+  EXPECT_EQ(1u, job_->workers().size());
+  VerifyWorker(50, 0);
+  DestroyParallelJob();
+}
+
 // Pause, cancel, resume can be called before or after the worker establish
 // the byte stream.
 // These tests ensure the states consistency between the job and workers.
@@ -384,8 +450,9 @@ TEST_F(ParallelDownloadJobTest, ParallelRequestNotCreatedUntilFileInitialized) {
       observer.get());
   auto download_file = base::MakeUnique<DownloadFileImpl>(
       std::move(save_info), base::FilePath(),
-      std::unique_ptr<ByteStreamReader>(input_stream), net::NetLogWithSource(),
-      observer_factory.GetWeakPtr());
+      base::MakeUnique<DownloadManager::InputStream>(
+          std::unique_ptr<ByteStreamReader>(input_stream)),
+      net::NetLogWithSource(), observer_factory.GetWeakPtr());
   CreateParallelJob(0, 100, DownloadItem::ReceivedSlices(), 2, 0, 0);
   job_->Start(download_file.get(),
               base::Bind(&ParallelDownloadJobTest::OnFileInitialized,

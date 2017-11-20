@@ -40,9 +40,9 @@
 #include "bindings/core/v8/Nullable.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/ScriptValue.h"
-#include "bindings/modules/v8/RTCIceCandidateInitOrRTCIceCandidate.h"
 #include "bindings/modules/v8/V8MediaStreamTrack.h"
 #include "bindings/modules/v8/V8RTCCertificate.h"
+#include "bindings/modules/v8/rtc_ice_candidate_init_or_rtc_ice_candidate.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/DOMTimeStamp.h"
 #include "core/dom/Document.h"
@@ -80,12 +80,12 @@
 #include "modules/peerconnection/RTCTrackEvent.h"
 #include "modules/peerconnection/RTCVoidRequestImpl.h"
 #include "modules/peerconnection/RTCVoidRequestPromiseImpl.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/bindings/Microtask.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/V8ThrowException.h"
 #include "platform/peerconnection/RTCAnswerOptionsPlatform.h"
 #include "platform/peerconnection/RTCOfferOptionsPlatform.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
@@ -150,14 +150,14 @@ bool CallErrorCallbackIfSignalingStateClosed(
 
 bool IsIceCandidateMissingSdp(
     const RTCIceCandidateInitOrRTCIceCandidate& candidate) {
-  if (candidate.isRTCIceCandidateInit()) {
+  if (candidate.IsRTCIceCandidateInit()) {
     const RTCIceCandidateInit& ice_candidate_init =
-        candidate.getAsRTCIceCandidateInit();
+        candidate.GetAsRTCIceCandidateInit();
     return !ice_candidate_init.hasSdpMid() &&
            !ice_candidate_init.hasSdpMLineIndex();
   }
 
-  DCHECK(candidate.isRTCIceCandidate());
+  DCHECK(candidate.IsRTCIceCandidate());
   return false;
 }
 
@@ -184,10 +184,10 @@ WebRTCAnswerOptions ConvertToWebRTCAnswerOptions(
 WebRTCICECandidate ConvertToWebRTCIceCandidate(
     ExecutionContext* context,
     const RTCIceCandidateInitOrRTCIceCandidate& candidate) {
-  DCHECK(!candidate.isNull());
-  if (candidate.isRTCIceCandidateInit()) {
+  DCHECK(!candidate.IsNull());
+  if (candidate.IsRTCIceCandidateInit()) {
     const RTCIceCandidateInit& ice_candidate_init =
-        candidate.getAsRTCIceCandidateInit();
+        candidate.GetAsRTCIceCandidateInit();
     // TODO(guidou): Change default value to -1. crbug.com/614958.
     unsigned short sdp_m_line_index = 0;
     if (ice_candidate_init.hasSdpMLineIndex()) {
@@ -200,8 +200,8 @@ WebRTCICECandidate ConvertToWebRTCIceCandidate(
                               ice_candidate_init.sdpMid(), sdp_m_line_index);
   }
 
-  DCHECK(candidate.isRTCIceCandidate());
-  return candidate.getAsRTCIceCandidate()->WebCandidate();
+  DCHECK(candidate.IsRTCIceCandidate());
+  return candidate.GetAsRTCIceCandidate()->WebCandidate();
 }
 
 // Helper class for RTCPeerConnection::generateCertificate.
@@ -281,11 +281,11 @@ WebRTCConfiguration ParseConfiguration(ExecutionContext* context,
       if (ice_server.hasURLs()) {
         UseCounter::Count(context, WebFeature::kRTCIceServerURLs);
         const StringOrStringSequence& urls = ice_server.urls();
-        if (urls.isString()) {
-          url_strings.push_back(urls.getAsString());
+        if (urls.IsString()) {
+          url_strings.push_back(urls.GetAsString());
         } else {
-          DCHECK(urls.isStringSequence());
-          url_strings = urls.getAsStringSequence();
+          DCHECK(urls.IsStringSequence());
+          url_strings = urls.GetAsStringSequence();
         }
       } else if (ice_server.hasURL()) {
         UseCounter::Count(context, WebFeature::kRTCIceServerURL);
@@ -859,8 +859,8 @@ ScriptPromise RTCPeerConnection::generateCertificate(
   // Check if |keygenAlgorithm| contains the optional DOMTimeStamp |expires|
   // attribute.
   Nullable<DOMTimeStamp> expires;
-  if (keygen_algorithm.isDictionary()) {
-    Dictionary keygen_algorithm_dict = keygen_algorithm.getAsDictionary();
+  if (keygen_algorithm.IsDictionary()) {
+    Dictionary keygen_algorithm_dict = keygen_algorithm.GetAsDictionary();
     if (keygen_algorithm_dict.HasProperty("expires", exception_state)) {
       v8::Local<v8::Value> expires_value;
       keygen_algorithm_dict.Get("expires", expires_value);
@@ -1135,7 +1135,7 @@ void RTCPeerConnection::removeStream(MediaStream* stream,
   if (pos == kNotFound)
     return;
 
-  local_streams_.erase(pos);
+  local_streams_.EraseAt(pos);
   stream->UnregisterObserver(this);
 
   peer_handler_->RemoveStream(stream->Descriptor());
@@ -1506,7 +1506,7 @@ void RTCPeerConnection::DidRemoveRemoteStream(
 
   size_t pos = remote_streams_.Find(stream);
   DCHECK(pos != kNotFound);
-  remote_streams_.erase(pos);
+  remote_streams_.EraseAt(pos);
   stream->UnregisterObserver(this);
   // TODO(hbos): When we listen to receivers/tracks being added and removed
   // instead of streams we should remove the receiver(s) from |rtp_receivers_|

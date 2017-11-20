@@ -102,6 +102,7 @@ detail below.
     by notifying about events, and checking whether In-Product Help should be
     displayed.
 *   [Configure UMA](#Configuring-UMA).
+*   [Add a local field trial testing configuration](#Adding-a-local-field-trial-testing-configuration).
 
 ### Declaring your feature
 
@@ -236,6 +237,44 @@ configuration:
         *   `<action name="InProductHelp.ShouldTriggerHelpUI.IPH_MyFunFeature">`
         *   `<action name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_MyFunFeature">`
         *   `<action name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_MyFunFeature">`
+        *   `<action name="InProductHelp.ShouldTriggerHelpUIResult.WouldHaveTriggered.IPH_MyFunFeature">`
+
+### Adding a local field trial testing configuration
+
+For each in-product help feature, it is required to also configure the expected
+launch configuration as the main testing configuration. See
+[Field Trial Testing Configuration][field-trial-testing-configuration] for
+details.
+
+Basically this requires you to add a new section to
+`//testing/variations/fieldtrial_testing_config.json` for your feature. The
+format is described in the documentation linked above, but it will probably
+look something like this:
+
+```javascript
+{
+  "MyFunFeatureStudy": [
+    {
+      "platforms": ["android"],
+      "experiments": [
+        {
+          "name": "MyFunFeatureLaunchConfig",
+          "params": {
+            "availability": ">=30",
+            "session_rate": "<1",
+            "event_used": "name:fun_event_happened;comparator:any;window:360;storage:360",
+            "event_trigger": "name:fun_feature_iph_triggered;comparator:any;window:360;storage:360",
+            "event_1": "name:related_fun_thing_happened;comparator:>=1;window:360;storage:360"
+          },
+          "enable_features": ["IPH_MyFunFeature"],
+          "disable_features": []
+        }
+      ]
+    }
+  ],
+  ...
+}
+```
 
 ## Demo mode
 
@@ -288,9 +327,11 @@ Format:
 {
   "availability": "{Comparator}",
   "session_rate": "{Comparator}",
+  "session_rate_impact": "{SessionRateImpact}",
   "event_used": "{EventConfig}",
   "event_trigger": "{EventConfig}",
   "event_???": "{EventConfig}",
+  "tracking_only": "{Boolean}"
   "x_???": "..."
  }
 ```
@@ -299,29 +340,52 @@ The `FeatureConfig` fields `availability`, `session_rate`, `event_used` and
 `event_trigger` are required, and there can be an arbitrary amount of other
 `event_???` entries.
 
-*   `availability`
+*   `availability` __REQUIRED__
     *   For how long must an in-product help experiment have been available to
         the end user.
     *   The value of the `Comparator` is in a number of days.
-*   `session_rate`
+    *   See [Comparator](#Comparator) below for details.
+*   `session_rate` __REQUIRED__
     *   How many other in-product help have been displayed within the current
         end user session.
     *   The value of the `Comparator` is a count of total In-Product Help
         displayed in the current end user session.
-*   `event_used`
+    *   See [Comparator](#Comparator) below for details.
+*   `session_rate_impact`
+    *   Which other in-product help features showing the current IPH impacts.
+    *   By default, a feature impacts every other feature.
+    *   Defaults to `all`.
+    *   See [SessionRateImpact](#SessionRateImpact) below for details.
+*   `event_used` __REQUIRED__
     *   Relates to what the in-product help wants to highlight, i.e. teach the
         user about and increase usage of.
     *   This is typically the action that the In-Product Help should stimulate
         usage of.
     *   Special UMA is tracked for this.
-*   `event_trigger`
+    *   See [EventConfig](#EventConfig) below for details.
+*   `event_trigger` __REQUIRED__
     *   Relates to the times in-product help is triggered.
     *   Special UMA is tracked for this.
+    *   See [EventConfig](#EventConfig) below for details.
 *   `event_???`
     *   Similar to the other `event_` items, but for all other preconditions
         that must have been met.
     *   Name must match `/^event_[a-zA-Z0-9-_]+$/` and not be `event_used` or
         `event_trigger`.
+    *   See [EventConfig](#EventConfig) below for details.
+*   `tracking_only`
+    *   Set to true if in-product help should never trigger.
+    *   Tracker::ShouldTriggerHelpUI(...) will always return false, but if all
+        other conditions are met, it will still be recorded as having been
+        shown in the internal database and through UMA.
+    *   This is meant to be used by either local tests or for comparisons
+        between different experiment groups.
+    *   If you want to later transition users with this flag set to `true` to
+        in fact display in-product help, you might want to use a different
+        `EventConfig::name` for the `event_trigger` configuration than the
+        non-tracking configuration.
+    *   Defaults to `false`.
+    *   See [Boolean](#Boolean) below for details.
 *   `x_???`
     *   Any parameter starting with `x_` is ignored by the feature engagement
         tracker.
@@ -410,6 +474,55 @@ any
 <15
 ```
 
+### Boolean
+
+Format: ```[true|false]```
+
+The following values are allowed:
+
+*   `true`
+*   `false`
+
+The value must be quoted (like all the other values).
+
+**Examples**
+
+```
+true
+false
+TRUE
+FALSE
+True
+False
+```
+
+### SessionRateImpact
+
+Format: ```[all|none|comma-separated list]```
+
+*   `all` means this feature impacts every other feature regarding their
+    `session_rate` calculations. This is the default.
+*   `none` means that this feature does not impact any other features regarding
+    the `session_rate`. This feature may therefore be shown an unlimited amount
+    of times, without making other features go over their `session_rate` config.
+*   `[comma-separated list]` means that this feature only impacts the particular
+    features listed. Use the `base::Feature` name of the feature in the list.
+    For features in the list, this feature will affect their `session_rate`
+    conditions, and for features not in the list, this feature will not affect
+    their `session_rate` calculations.
+    *   It is *NOT* valid to use the feature names `all` or `none`. They must
+        only be used alone with no comma, at which point they work as described
+        above.
+
+**Examples**
+
+```
+all
+none
+IPH_DownloadHome
+IPH_DonwloadPage,IPH_DownloadHome
+```
+
 ### Using Chrome Variations at runtime
 
 It is possible to test the whole backend from parsing the configuration,
@@ -487,3 +600,5 @@ ninja -C out/Debug components_unittests ;
 
 When adding new test suites, also remember to add the suite to the filter file:
 `//components/feature_engagement/components_unittests.filter`.
+
+[field-trial-testing-configuration]: https://chromium.googlesource.com/chromium/src/+/master/testing/variations/README.md

@@ -32,6 +32,7 @@ PipelineMetadata DefaultMetadata(VideoCodec codec) {
   data.has_video = true;
   data.video_decoder_config = TestVideoConfig::Normal(codec);
   data.audio_decoder_config = TestAudioConfig::Normal();
+  data.natural_size = gfx::Size(1920, 1080);
   return data;
 }
 
@@ -96,9 +97,13 @@ class RendererControllerTest : public ::testing::Test,
     activate_viewport_intersection_monitoring_ = activate;
   }
 
+  double Duration() const override { return duration_in_sec_; }
+
   size_t VideoDecodedByteCount() const override { return decoded_bytes_; }
 
   size_t AudioDecodedByteCount() const override { return 0; }
+
+  unsigned DecodedFrameCount() const override { return decoded_frames_; }
 
   void UpdateRemotePlaybackCompatibility(bool is_compatibe) override {}
 
@@ -143,7 +148,7 @@ class RendererControllerTest : public ::testing::Test,
     return controller_->delayed_start_stability_timer_.IsRunning();
   }
 
-  void DelayedStartEnds(bool too_high_bitrate) {
+  void DelayedStartEnds(bool too_high_bitrate, double frame_rate = 30) {
     EXPECT_TRUE(IsInDelayedStart());
     if (too_high_bitrate) {
       decoded_bytes_ =
@@ -152,6 +157,7 @@ class RendererControllerTest : public ::testing::Test,
       decoded_bytes_ =
           kNormalSpeedBitsPerSecond * kDelayedStartDuration.InSeconds() / 8.0;
     }
+    decoded_frames_ = frame_rate * kDelayedStartDuration.InSeconds();
     clock_->Advance(kDelayedStartDuration);
     RunUntilIdle();
     const base::Closure callback =
@@ -191,9 +197,11 @@ class RendererControllerTest : public ::testing::Test,
   bool activate_viewport_intersection_monitoring_ = false;
   bool disable_pipeline_suspend_ = false;
   size_t decoded_bytes_ = 0;
+  unsigned decoded_frames_ = 0;
   base::SimpleTestTickClock* clock_;  // Own by |controller_|;
   std::string sink_name_;
   std::unique_ptr<RendererController> controller_;
+  double duration_in_sec_ = 120;  // 2m duration.
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RendererControllerTest);
@@ -272,6 +280,16 @@ TEST_F(RendererControllerTest, ToggleRendererOnDisableChange) {
   // disableRemotePlayback attribute), this should shut down remoting.
   controller_->OnRemotePlaybackDisabled(true);
   RunUntilIdle();
+  ExpectInLocalRendering();
+}
+
+TEST_F(RendererControllerTest, NotStartForShortContent) {
+  const scoped_refptr<SharedSession> shared_session =
+      FakeRemoterFactory::CreateSharedSession(false);
+  duration_in_sec_ = 30;
+  InitializeControllerAndBecomeDominant(shared_session,
+                                        DefaultMetadata(VideoCodec::kCodecVP8),
+                                        GetDefaultSinkMetadata(true));
   ExpectInLocalRendering();
 }
 
@@ -384,6 +402,34 @@ TEST_F(RendererControllerTest, WithOpusAudioCodec) {
   DelayedStartEnds(false);
   RunUntilIdle();
   ExpectInRemoting();  // All requirements now satisfied.
+}
+
+TEST_F(RendererControllerTest, StartFailedWithHighFrameRate) {
+  const scoped_refptr<SharedSession> shared_session =
+      FakeRemoterFactory::CreateSharedSession(false);
+  InitializeControllerAndBecomeDominant(shared_session,
+                                        DefaultMetadata(VideoCodec::kCodecVP8),
+                                        GetDefaultSinkMetadata(true));
+  RunUntilIdle();
+  ExpectInDelayedStart();
+  DelayedStartEnds(false, 60);
+  RunUntilIdle();
+  ExpectInLocalRendering();
+}
+
+TEST_F(RendererControllerTest, StartSuccessWithHighFrameRate) {
+  const scoped_refptr<SharedSession> shared_session =
+      FakeRemoterFactory::CreateSharedSession(false);
+  mojom::RemotingSinkMetadata sink_metadata = GetDefaultSinkMetadata(true);
+  sink_metadata.video_capabilities.push_back(
+      mojom::RemotingSinkVideoCapability::SUPPORT_4K);
+  InitializeControllerAndBecomeDominant(
+      shared_session, DefaultMetadata(VideoCodec::kCodecVP8), sink_metadata);
+  RunUntilIdle();
+  ExpectInDelayedStart();
+  DelayedStartEnds(false, 60);
+  RunUntilIdle();
+  ExpectInRemoting();
 }
 
 #endif  // OS_ANDROID

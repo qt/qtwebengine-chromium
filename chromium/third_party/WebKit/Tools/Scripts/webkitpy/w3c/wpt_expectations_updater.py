@@ -16,7 +16,6 @@ import logging
 from webkitpy.common.memoized import memoized
 from webkitpy.common.net.git_cl import GitCL
 from webkitpy.common.path_finder import PathFinder
-from webkitpy.layout_tests.models.test_expectations import TestExpectationLine, TestExpectations
 from webkitpy.w3c.wpt_manifest import WPTManifest
 
 _log = logging.getLogger(__name__)
@@ -222,7 +221,6 @@ class WPTExpectationsUpdater(object):
         return merged_dict
 
     def get_expectations(self, results, test_name=''):
-
         """Returns a set of test expectations to use based on results.
 
         Returns a set of one or more test expectations based on the expected
@@ -334,7 +332,9 @@ class WPTExpectationsUpdater(object):
         for name in sorted(port_names):
             specifiers.append(self.host.builders.version_specifier_for_port_name(name))
 
-        specifiers.extend(self.skipped_specifiers(test_name))
+        if self.specifiers_can_extend_to_all_platforms(specifiers, test_name):
+            return ''
+
         specifiers = self.simplify_specifiers(specifiers, self.port.configuration_specifier_macros())
         if not specifiers:
             return ''
@@ -346,6 +346,16 @@ class WPTExpectationsUpdater(object):
         if isinstance(tuple_or_value, tuple):
             return list(tuple_or_value)
         return [tuple_or_value]
+
+    def specifiers_can_extend_to_all_platforms(self, specifiers, test_name):
+        """Tests whether a list of specifiers can be extended to all platforms.
+
+        Tries to add skipped platform specifiers to the list and tests if the
+        extended list covers all platforms.
+        """
+        extended_specifiers = specifiers + self.skipped_specifiers(test_name)
+        # If the list is simplified to empty, then all platforms are covered.
+        return not self.simplify_specifiers(extended_specifiers, self.port.configuration_specifier_macros())
 
     def skipped_specifiers(self, test_name):
         """Returns a list of platform specifiers for which the test is skipped."""
@@ -361,7 +371,7 @@ class WPTExpectationsUpdater(object):
         return [self.host.port_factory.get_from_builder_name(name) for name in self._get_try_bots()]
 
     @staticmethod
-    def simplify_specifiers(specifiers, configuration_specifier_macros):  # pylint: disable=unused-argument
+    def simplify_specifiers(specifiers, configuration_specifier_macros):
         """Converts some collection of specifiers to an equivalent and maybe shorter list.
 
         The input strings are all case-insensitive, but the strings in the
@@ -411,10 +421,6 @@ class WPTExpectationsUpdater(object):
         expectations_file_path = self.port.path_to_generic_test_expectations_file()
         file_contents = self.host.filesystem.read_text_file(expectations_file_path)
 
-        line_list = [line for line in line_list if self._test_name_from_expectation_string(line) not in file_contents]
-        if not line_list:
-            return
-
         marker_comment_index = file_contents.find(MARKER_COMMENT)
         if marker_comment_index == -1:
             file_contents += '\n%s\n' % MARKER_COMMENT
@@ -424,10 +430,6 @@ class WPTExpectationsUpdater(object):
             file_contents = file_contents[:end_of_marker_line + 1] + '\n'.join(line_list) + file_contents[end_of_marker_line:]
 
         self.host.filesystem.write_text_file(expectations_file_path, file_contents)
-
-    @staticmethod
-    def _test_name_from_expectation_string(expectation_string):
-        return TestExpectationLine.tokenize_line(filename='', expectation_string=expectation_string, line_number=0).name
 
     def download_text_baselines(self, test_results):
         """Fetches new baseline files for tests that should be rebaselined.

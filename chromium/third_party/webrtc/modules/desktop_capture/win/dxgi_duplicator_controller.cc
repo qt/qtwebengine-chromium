@@ -8,22 +8,43 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/desktop_capture/win/dxgi_duplicator_controller.h"
+#include "modules/desktop_capture/win/dxgi_duplicator_controller.h"
 
 #include <windows.h>
 
 #include <algorithm>
 #include <string>
 
-#include "webrtc/modules/desktop_capture/desktop_capture_types.h"
-#include "webrtc/modules/desktop_capture/win/dxgi_frame.h"
-#include "webrtc/modules/desktop_capture/win/screen_capture_utils.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/system_wrappers/include/sleep.h"
+#include "modules/desktop_capture/desktop_capture_types.h"
+#include "modules/desktop_capture/win/dxgi_frame.h"
+#include "modules/desktop_capture/win/screen_capture_utils.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/timeutils.h"
+#include "system_wrappers/include/sleep.h"
 
 namespace webrtc {
+
+// static
+std::string DxgiDuplicatorController::ResultName(
+    DxgiDuplicatorController::Result result) {
+  switch (result) {
+    case Result::SUCCEEDED:
+      return "Succeeded";
+    case Result::UNSUPPORTED_SESSION:
+      return "Unsupported session";
+    case Result::FRAME_PREPARE_FAILED:
+      return "Frame preparation failed";
+    case Result::INITIALIZATION_FAILED:
+      return "Initialization failed";
+    case Result::DUPLICATION_FAILED:
+      return "Duplication failed";
+    case Result::INVALID_MONITOR_ID:
+      return "Invalid monitor id";
+    default:
+      return "Unknown error";
+  }
+}
 
 // static
 rtc::scoped_refptr<DxgiDuplicatorController>
@@ -305,7 +326,7 @@ bool DxgiDuplicatorController::DoDuplicateUnlocked(Context* context,
   }
 
   if (result) {
-    target->set_dpi(dpi());
+    target->set_dpi(dpi_);
     return true;
   }
 
@@ -333,6 +354,7 @@ bool DxgiDuplicatorController::DoDuplicateOne(Context* context,
     } else {
       if (duplicators_[i].DuplicateMonitor(&context->contexts[i], monitor_id,
                                            target)) {
+        target->set_top_left(duplicators_[i].ScreenRect(monitor_id).top_left());
         return true;
       }
       return false;
@@ -438,6 +460,8 @@ bool DxgiDuplicatorController::EnsureFrameCaptured(Context* context,
       return false;
     }
     if (rtc::TimeMillis() - start_ms > timeout_ms) {
+      LOG(LS_ERROR) << "Failed to capture " << frames_to_skip << " frames "
+                       "within " << timeout_ms << " milliseconds.";
       return false;
     }
   }

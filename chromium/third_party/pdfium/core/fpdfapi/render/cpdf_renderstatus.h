@@ -13,7 +13,7 @@
 #include "core/fpdfapi/page/cpdf_clippath.h"
 #include "core/fpdfapi/page/cpdf_graphicstates.h"
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_renderdevice.h"
 
 class CFX_PathData;
@@ -64,21 +64,41 @@ class CPDF_RenderStatus {
                             IFX_PauseIndicator* pPause);
   void ProcessClipPath(const CPDF_ClipPath& ClipPath,
                        const CFX_Matrix* pObj2Device);
+
+  uint32_t GetGroupFamily() const { return m_GroupFamily; }
+  bool GetLoadMask() const { return m_bLoadMask; }
+  bool GetDropObjects() const { return m_bDropObjects; }
+  bool IsPrint() const { return m_bPrint; }
+  bool IsStopped() const { return m_bStopped; }
   CPDF_RenderContext* GetContext() const { return m_pContext.Get(); }
+  CPDF_Dictionary* GetFormResource() const { return m_pFormResource.Get(); }
+  CPDF_Dictionary* GetPageResource() const { return m_pPageResource.Get(); }
+  CFX_RenderDevice* GetRenderDevice() const { return m_pDevice; }
+  const CPDF_RenderOptions* GetRenderOptions() const { return &m_Options; }
 
 #if defined _SKIA_SUPPORT_
   void DebugVerifyDeviceIsPreMultiplied() const;
 #endif
 
-  CPDF_RenderOptions m_Options;
-  CFX_UnownedPtr<CPDF_Dictionary> m_pFormResource;
-  CFX_UnownedPtr<CPDF_Dictionary> m_pPageResource;
-  std::vector<CPDF_Type3Font*> m_Type3FontCache;
+  RetainPtr<CPDF_TransferFunc> GetTransferFunc(CPDF_Object* pObject) const;
+  FX_ARGB GetFillArgb(CPDF_PageObject* pObj, bool bType3 = false) const;
+  void DrawTilingPattern(CPDF_TilingPattern* pPattern,
+                         CPDF_PageObject* pPageObj,
+                         const CFX_Matrix* pObj2Device,
+                         bool bStroke);
+  void DrawShadingPattern(CPDF_ShadingPattern* pPattern,
+                          const CPDF_PageObject* pPageObj,
+                          const CFX_Matrix* pObj2Device,
+                          bool bStroke);
+  void CompositeDIBitmap(const RetainPtr<CFX_DIBitmap>& pDIBitmap,
+                         int left,
+                         int top,
+                         FX_ARGB mask_argb,
+                         int bitmap_alpha,
+                         int blend_mode,
+                         int bIsolated);
 
  private:
-  friend class CPDF_ImageRenderer;
-  friend class CPDF_RenderContext;
-
   bool ProcessTransparency(CPDF_PageObject* PageObj,
                            const CFX_Matrix* pObj2Device);
   void ProcessObjectNoClip(CPDF_PageObject* PageObj,
@@ -95,25 +115,10 @@ class CPDF_RenderStatus {
                            const CFX_Matrix* pObj2Device,
                            const CPDF_Color* pColor,
                            bool bStroke);
-  void DrawTilingPattern(CPDF_TilingPattern* pPattern,
-                         CPDF_PageObject* pPageObj,
-                         const CFX_Matrix* pObj2Device,
-                         bool bStroke);
-  void DrawShadingPattern(CPDF_ShadingPattern* pPattern,
-                          const CPDF_PageObject* pPageObj,
-                          const CFX_Matrix* pObj2Device,
-                          bool bStroke);
   bool SelectClipPath(const CPDF_PathObject* pPathObj,
                       const CFX_Matrix* pObj2Device,
                       bool bStroke);
   bool ProcessImage(CPDF_ImageObject* pImageObj, const CFX_Matrix* pObj2Device);
-  void CompositeDIBitmap(const CFX_RetainPtr<CFX_DIBitmap>& pDIBitmap,
-                         int left,
-                         int top,
-                         FX_ARGB mask_argb,
-                         int bitmap_alpha,
-                         int blend_mode,
-                         int bIsolated);
   void ProcessShading(const CPDF_ShadingObject* pShadingObj,
                       const CFX_Matrix* pObj2Device);
   void DrawShading(CPDF_ShadingPattern* pPattern,
@@ -135,20 +140,18 @@ class CPDF_RenderStatus {
                                bool bStroke);
   bool ProcessForm(const CPDF_FormObject* pFormObj,
                    const CFX_Matrix* pObj2Device);
-  CFX_RetainPtr<CFX_DIBitmap> GetBackdrop(const CPDF_PageObject* pObj,
-                                          const FX_RECT& rect,
-                                          int& left,
-                                          int& top,
-                                          bool bBackAlphaRequired);
-  CFX_RetainPtr<CFX_DIBitmap> LoadSMask(CPDF_Dictionary* pSMaskDict,
-                                        FX_RECT* pClipRect,
-                                        const CFX_Matrix* pMatrix);
-  static CFX_RetainPtr<CPDF_Type3Cache> GetCachedType3(CPDF_Type3Font* pFont);
+  RetainPtr<CFX_DIBitmap> GetBackdrop(const CPDF_PageObject* pObj,
+                                      const FX_RECT& rect,
+                                      int& left,
+                                      int& top,
+                                      bool bBackAlphaRequired);
+  RetainPtr<CFX_DIBitmap> LoadSMask(CPDF_Dictionary* pSMaskDict,
+                                    FX_RECT* pClipRect,
+                                    const CFX_Matrix* pMatrix);
+  static RetainPtr<CPDF_Type3Cache> GetCachedType3(CPDF_Type3Font* pFont);
   static std::unique_ptr<CPDF_GraphicStates> CloneObjStates(
       const CPDF_GraphicStates* pPathObj,
       bool bStroke);
-  CFX_RetainPtr<CPDF_TransferFunc> GetTransferFunc(CPDF_Object* pObject) const;
-  FX_ARGB GetFillArgb(CPDF_PageObject* pObj, bool bType3 = false) const;
   FX_ARGB GetStrokeArgb(CPDF_PageObject* pObj) const;
   bool GetObjectClippedRect(const CPDF_PageObject* pObj,
                             const CFX_Matrix* pObj2Device,
@@ -159,7 +162,11 @@ class CPDF_RenderStatus {
   static const int kRenderMaxRecursionDepth = 64;
   static int s_CurrentRecursionDepth;
 
-  CFX_UnownedPtr<CPDF_RenderContext> m_pContext;
+  CPDF_RenderOptions m_Options;
+  UnownedPtr<CPDF_Dictionary> m_pFormResource;
+  UnownedPtr<CPDF_Dictionary> m_pPageResource;
+  std::vector<CPDF_Type3Font*> m_Type3FontCache;
+  UnownedPtr<CPDF_RenderContext> m_pContext;
   bool m_bStopped;
   CFX_RenderDevice* m_pDevice;
   CFX_Matrix m_DeviceMatrix;
@@ -174,7 +181,7 @@ class CPDF_RenderStatus {
   bool m_bStdCS;
   uint32_t m_GroupFamily;
   bool m_bLoadMask;
-  CFX_UnownedPtr<CPDF_Type3Char> m_pType3Char;
+  UnownedPtr<CPDF_Type3Char> m_pType3Char;
   FX_ARGB m_T3FillColor;
   int m_curBlend;
 };

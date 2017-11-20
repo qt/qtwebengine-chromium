@@ -20,10 +20,10 @@
 #include "cc/input/scroll_boundary_behavior.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/layer_list_iterator.h"
-#include "cc/output/swap_promise.h"
 #include "cc/resources/ui_resource_client.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/property_tree.h"
+#include "cc/trees/swap_promise.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 
 namespace base {
@@ -111,6 +111,7 @@ class CC_EXPORT LayerTreeImpl {
   LayerTreeResourceProvider* resource_provider() const;
   TileManager* tile_manager() const;
   ImageDecodeCache* image_decode_cache() const;
+  ImageAnimationController* image_animation_controller() const;
   FrameRateCounter* frame_rate_counter() const;
   MemoryHistory* memory_history() const;
   gfx::Size device_viewport_size() const;
@@ -167,6 +168,7 @@ class CC_EXPORT LayerTreeImpl {
     // DCHECK(lifecycle().AllowsPropertyTreeAccess());
     return &property_trees_;
   }
+  const PropertyTrees* property_trees() const { return &property_trees_; }
 
   void PushPropertyTreesTo(LayerTreeImpl* tree_impl);
   void PushPropertiesTo(LayerTreeImpl* tree_impl);
@@ -256,13 +258,6 @@ class CC_EXPORT LayerTreeImpl {
 
   SkColor background_color() const { return background_color_; }
   void set_background_color(SkColor color) { background_color_ = color; }
-
-  bool has_transparent_background() const {
-    return has_transparent_background_;
-  }
-  void set_has_transparent_background(bool transparent) {
-    has_transparent_background_ = transparent;
-  }
 
   void UpdatePropertyTreeAnimationFromMainThread();
 
@@ -371,8 +366,7 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* LayerById(int id) const;
 
   // TODO(jaydasika): this is deprecated. It is used by
-  // animation/compositor-worker to look up layers to mutate, but in future, we
-  // will update property trees.
+  // scrolling animation to look up layers to mutate.
   LayerImpl* LayerByElementId(ElementId element_id) const;
   void AddToElementMap(LayerImpl* layer);
   void RemoveFromElementMap(LayerImpl* layer);
@@ -444,7 +438,7 @@ class CC_EXPORT LayerTreeImpl {
       std::vector<std::unique_ptr<SwapPromise>> new_swap_promises);
   void AppendSwapPromises(
       std::vector<std::unique_ptr<SwapPromise>> new_swap_promises);
-  void FinishSwapPromises(CompositorFrameMetadata* metadata);
+  void FinishSwapPromises(viz::CompositorFrameMetadata* metadata);
   void ClearSwapPromises();
   void BreakSwapPromises(SwapPromise::DidNotSwapReason reason);
 
@@ -479,7 +473,7 @@ class CC_EXPORT LayerTreeImpl {
 
   // Compute the current selection handle location and visbility with respect to
   // the viewport.
-  void GetViewportSelection(Selection<gfx::SelectionBound>* selection);
+  void GetViewportSelection(viz::Selection<gfx::SelectionBound>* selection);
 
   void set_browser_controls_shrink_blink_size(bool shrink);
   bool browser_controls_shrink_blink_size() const {
@@ -576,7 +570,6 @@ class CC_EXPORT LayerTreeImpl {
   HeadsUpDisplayLayerImpl* hud_layer_;
   PropertyTrees property_trees_;
   SkColor background_color_;
-  bool has_transparent_background_;
 
   int last_scrolled_scroll_node_index_;
 

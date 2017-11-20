@@ -310,7 +310,7 @@ class SQL_EXPORT Connection {
   // was razed.
   //
   // false is returned if the database is locked by some other
-  // process.  RazeWithTimeout() may be used if appropriate.
+  // process.
   //
   // NOTE(shess): Raze() will DCHECK in the following situations:
   // - database is not open.
@@ -334,7 +334,6 @@ class SQL_EXPORT Connection {
   // TODO(shess): Bake auto_vacuum into Connection's API so it can
   // just pick up the default.
   bool Raze();
-  bool RazeWithTimout(base::TimeDelta timeout);
 
   // Breaks all outstanding transactions (as initiated by
   // BeginTransaction()), closes the SQLite database, and poisons the
@@ -498,7 +497,7 @@ class SQL_EXPORT Connection {
   // Returns |true| if there is an error expecter (see SetErrorExpecter), and
   // that expecter returns |true| when passed |error|.  Clients which provide an
   // |error_callback| should use IsExpectedSqliteError() to check for unexpected
-  // errors; if one is detected, DLOG(FATAL) is generally appropriate (see
+  // errors; if one is detected, DLOG(DCHECK) is generally appropriate (see
   // OnSqliteError implementation).
   static bool IsExpectedSqliteError(int error);
 

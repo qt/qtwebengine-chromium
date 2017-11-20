@@ -13,6 +13,7 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
 <translation id="1396446129537741364">Chromium is trying to show passwords.</translation>
 <translation id="1403254041219632970">Future versions of Chromium will no longer support Mac OS X 10.6, 10.7 or 10.8.</translation>
 <translation id="1414495520565016063">You're signed in to Chromium!</translation>
+<translation id="1440917365206527807">Chromium stopped this site from taking you to</translation>
 <translation id="1444754455097148408">Chromium open source licences</translation>
 <translation id="1502360822835740515">Make Chromium your default browser</translation>
 <translation id="151962892725702025">Chromium OS could not sync your data because Sync is not available for your domain.</translation>
@@ -37,7 +38,6 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
 <translation id="2265088490657775772">get Chromium on your iPhone</translation>
 <translation id="2316129865977710310">No, thank you</translation>
 <translation id="2347108572062610441">This extension has changed the page that is shown when you start Chromium.</translation>
-<translation id="2372704305038231957">32-bit Chromium may not function correctly because it is no longer supported on this Linux system. Please upgrade to 64-bit Chromium.</translation>
 <translation id="2389622953163669926">{NUM_DOWNLOAD,plural, =1{A download is currently in progress. Do you want to cancel the download and exit Chromium?}other{# downloads are currently in progress. Do you want to cancel the downloads and exit Chromium?}}</translation>
 <translation id="2396765026452590966">The extension "<ph name="EXTENSION_NAME" />" has changed the page that is shown when you start Chromium.</translation>
 <translation id="2483889755041906834">In Chromium</translation>
@@ -65,6 +65,7 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
 <translation id="3103660991484857065">The installer failed to uncompress archive. Please download Chromium again.</translation>
 <translation id="3130323860337406239">Chromium is using your microphone.</translation>
 <translation id="3155163173539279776">Relaunch Chromium</translation>
+<translation id="3179665906251668410">Open Link in Chromium Inco&amp;gnito Window</translation>
 <translation id="3190315855212034486">Whoa! Chromium has crashed. Relaunch now?</translation>
 <translation id="3256316712990552818">Copied to Chromium</translation>
 <translation id="3258596308407688501">Chromium cannot read and write to its data directory:
@@ -80,6 +81,7 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
 <translation id="3549345495227188780">Get Started with Chromium OS</translation>
 <translation id="3582788516608077514">Updating Chromium ...</translation>
 <translation id="358997566136285270">Chromium logo</translation>
+<translation id="3713809861844741608">Open link in new Chromium &amp;tab</translation>
 <translation id="3738139272394829648">Touch to Search</translation>
 <translation id="3762167353400286894">Chromium OS is displayed in this language</translation>
 <translation id="378917192836375108">Chromium lets you click a phone number on the web and call it with Skype!</translation>
@@ -132,6 +134,7 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
 <translation id="5466153949126434691">Chromium updates automatically so you always have the freshest version. When this download completes, Chromium will restart and you'll be on your way.</translation>
 <translation id="5479196819031988440">Chromium OS can't open this page.</translation>
 <translation id="549669000822060376">Please wait while Chromium installs the latest system updates.</translation>
+<translation id="5524843473235508879">Redirect blocked.</translation>
 <translation id="5563479599352954471">Search with one touch</translation>
 <translation id="5620765574781326016">Learn about topics on websites without leaving the page.</translation>
 <translation id="5634636535844844681">Chromium requires Windows 7 or higher.</translation>
@@ -142,8 +145,6 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
 <translation id="5772805321386874569">(requires Chromium <ph name="BEGIN_BUTTON" />restart<ph name="END_BUTTON" />)</translation>
 <translation id="5796460469508169315">Chromium is almost ready.</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
-<translation id="5823381412099532241">Chromium could not update itself to the latest version, so you are missing out on amazing new features and security fixes. You need to update Chromium.</translation>
-<translation id="5859963531214966875">Future versions of Chromium will no longer support this Linux system.</translation>
 <translation id="5862307444128926510">Welcome to Chromium</translation>
 <translation id="5877064549588274448">Channel changed. Restart your device to apply changes.</translation>
 <translation id="5895138241574237353">Restart</translation>
@@ -169,9 +170,6 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
 <translation id="6505742536731484931">Chromium needs access to your location to share your location with this site.</translation>
 <translation id="6510925080656968729">Uninstall Chromium</translation>
 <translation id="6526111688217511984">Chromium needs storage access to download files.</translation>
-<translation id="6584627348340620412">Future versions of 32-bit Chromium will no longer support this Linux system, please upgrade to 64-bit Chromium.</translation>
-<translation id="6593914713218535185">Chromium may not function correctly because it is no longer supported on this Linux system.</translation>
-<translation id="6638567566961868659">Find your bookmarks in the Chromium menu or on the bookmarks bar.</translation>
 <translation id="6676384891291319759">Access the Internet</translation>
 <translation id="6717134281241384636">Your profile can not be used because it is from a newer version of Chromium.
 
@@ -183,12 +181,11 @@ Some features may be unavailable. Please specify a different profile directory o
 <translation id="6883876366448858277">sends a word and its surrounding context to Google Search, returning definitions, pictures and other search results.</translation>
 <translation id="6893813176749746474">Chromium has been updated, but you haven't used it for 30 days or more.</translation>
 <translation id="6944967875980567883">Modules loaded into Chromium</translation>
+<translation id="6964305034639999644">Open link in Chromium inco&amp;gnito window</translation>
 <translation id="6970811910055250180">Updating your device...</translation>
-<translation id="7027298027173928763">Chromium could not update itself to the latest version, so you are missing out on amazing new features and security fixes. You need to manually reinstall Chromium.</translation>
 <translation id="705851970750939768">Update Chromium</translation>
 <translation id="7066436765290594559">Chromium OS could not sync your data. Please update your Sync passphrase.</translation>
 <translation id="707471633328071618">Google Payments (copied to Chromium)</translation>
-<translation id="7138853919861947730">Chromium may use web services to improve your browsing experience.</translation>
 <translation id="7162152143154757523">Chromium can provide smarter spell-checking by sending what you type in the browser to Google servers, allowing you to use the same spell-checking technology used by Google search.</translation>
 <translation id="7205698830395646142">Hide in Chromium Menu</translation>
 <translation id="7223968959479464213">Task Manager - Chromium</translation>
@@ -220,6 +217,7 @@ Please check your email at <ph name="ACCOUNT_EMAIL" /> for further instructions.
 <translation id="7747138024166251722">The installer couldn't create a temporary directory. Please check for free disk space and permission to install software.</translation>
 <translation id="7756122083761163394">This person's browsing data will be deleted from this device. To recover the data, sign in to Chrome as $2.</translation>
 <translation id="7774736947049807614">Authentication certificate failed. Please sign in to Chromium again as <ph name="USER_NAME" /> or contact your administrator for more information. <ph name="ADDITIONAL_EXPLANATION" /></translation>
+<translation id="7867198900892795913">Chromium couldn't update to the latest version, so you're missing out on new features and security fixes.</translation>
 <translation id="7937630085815544518">You were signed in to Chromium as <ph name="USER_EMAIL_ADDRESS" />. Please use the same account to sign in again.</translation>
 <translation id="795025003224538582">Don't restart</translation>
 <translation id="7962572577636132072">Chromium updates automatically so you always have the freshest version.</translation>
@@ -252,6 +250,7 @@ Please check your email at <ph name="ACCOUNT_EMAIL" /> for further instructions.
 <translation id="8862326446509486874">You do not have appropriate rights for system-level installation. Try running the installer again as Administrator.</translation>
 <translation id="8897323336392112261">It also controls what page is shown when you start Chromium or click the Home button.</translation>
 <translation id="8907580949721785412">Chromium is trying to show passwords. Type your Windows password to allow this.</translation>
+<translation id="8941642502866065432">Can't update Chromium</translation>
 <translation id="894903460958736500">Software running on your computer is incompatible with Chromium.</translation>
 <translation id="8968921422458636175">Chromium will save this password with <ph name="SAVED_PASSWORD_LINK" />. You don’t have to remember it.</translation>
 <translation id="8974095189086268230">Chromium OS is made possible by additional <ph name="BEGIN_LINK_CROS_OSS" />open source software<ph name="END_LINK_CROS_OSS" />.</translation>
@@ -263,6 +262,7 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
 <translation id="9022552996538154597">Sign in to Chromium</translation>
 <translation id="9036189287518468038">Chromium App Launcher</translation>
 <translation id="9089354809943900324">Chromium is out of date</translation>
+<translation id="91086099826398415">Open Link in New Chromium &amp;tab</translation>
 <translation id="911206726377975832">Also delete your browsing data?</translation>
 <translation id="918373042641772655">Disconnecting <ph name="USERNAME" /> will clear your history, bookmarks, settings and other Chromium data stored on this device. Data stored in your Google Account will not be cleared and can be managed on <ph name="GOOGLE_DASHBOARD_LINK" />Google Dashboard<ph name="END_GOOGLE_DASHBOARD_LINK" />.</translation>
 <translation id="9190841055450128916">Chromium (mDNS-In)</translation>

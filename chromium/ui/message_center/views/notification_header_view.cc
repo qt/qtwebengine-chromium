@@ -4,7 +4,8 @@
 
 #include "ui/message_center/views/notification_header_view.h"
 
-#include "base/memory/ptr_util.h"
+#include <memory>
+
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -13,7 +14,7 @@
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/paint_vector_icon.h"
-#include "ui/message_center/message_center_style.h"
+#include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/message_center/vector_icons.h"
 #include "ui/message_center/views/notification_control_buttons_view.h"
 #include "ui/strings/grit/ui_strings.h"
@@ -56,7 +57,7 @@ constexpr int kExpandIconSize = 8;
 // Paddings of the expand buttons.
 // Top: 13px = 15px (from the mock) - 2px (outer padding)
 // Bottom: 9px from the mock
-constexpr gfx::Insets kExpandIconViewPadding(13, 0, 9, 0);
+constexpr gfx::Insets kExpandIconViewPadding(13, 2, 9, 0);
 
 // Bullet character. The divider symbol between different parts of the header.
 constexpr wchar_t kNotificationHeaderDivider[] = L" \u2022 ";
@@ -90,7 +91,7 @@ class ExpandButton : public views::ImageView {
 
 ExpandButton::ExpandButton() {
   focus_painter_ = views::Painter::CreateSolidFocusPainter(
-      kFocusBorderColor, gfx::Insets(1, 2, 2, 2));
+      kFocusBorderColor, gfx::Insets(0, 0, 1, 1));
   SetFocusBehavior(FocusBehavior::ALWAYS);
 }
 
@@ -98,7 +99,9 @@ ExpandButton::~ExpandButton() = default;
 
 void ExpandButton::OnPaint(gfx::Canvas* canvas) {
   views::ImageView::OnPaint(canvas);
-  views::Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
+  if (HasFocus())
+    views::Painter::PaintPainterAt(canvas, focus_painter_.get(),
+                                   GetContentsBounds());
 }
 
 void ExpandButton::OnFocus() {
@@ -268,7 +271,8 @@ void NotificationHeaderView::SetAppIcon(const gfx::ImageSkia& img) {
 }
 
 void NotificationHeaderView::ClearAppIcon() {
-  app_icon_view_->SetImage(gfx::CreateVectorIcon(kProductIcon, accent_color_));
+  app_icon_view_->SetImage(
+      gfx::CreateVectorIcon(kProductIcon, kSmallImageSizeMD, accent_color_));
 }
 
 void NotificationHeaderView::SetAppName(const base::string16& name) {

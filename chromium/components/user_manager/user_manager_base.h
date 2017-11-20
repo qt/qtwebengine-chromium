@@ -110,6 +110,7 @@ class USER_MANAGER_EXPORT UserManagerBase : public UserManager {
   void NotifyUserProfileImageUpdated(
       const User& user,
       const gfx::ImageSkia& profile_image) override;
+  void NotifyUsersSignInConstraintsChanged() override;
   void ChangeUserChildStatus(User* user, bool is_child) override;
   void ResetProfileEverInitialized(const AccountId& account_id) override;
   void Initialize() override;
@@ -117,9 +118,6 @@ class USER_MANAGER_EXPORT UserManagerBase : public UserManager {
   // This method updates "User was added to the device in this session nad is
   // not full initialized yet" flag.
   virtual void SetIsCurrentUserNew(bool is_new);
-
-  // TODO(xiyuan): Figure out a better way to expose this info.
-  virtual bool HasPendingBootstrap(const AccountId& account_id) const;
 
   // Helper function that converts users from |users_list| to |users_vector| and
   // |users_set|. Duplicates and users already present in |existing_users| are

@@ -126,6 +126,9 @@ int GetGpuBlacklistHistogramValueWin(gpu::GpuFeatureStatus status) {
     case gpu::kGpuFeatureStatusDisabled:
       entry_index += 2;
       break;
+    case gpu::kGpuFeatureStatusSoftware:
+      entry_index += 3;
+      break;
     case gpu::kGpuFeatureStatusUndefined:
     case gpu::kGpuFeatureStatusMax:
       NOTREACHED();
@@ -172,7 +175,8 @@ void UpdateStats(const gpu::GPUInfo& gpu_info,
       gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS,
       gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING,
       gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION,
-      gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL, gpu::GPU_FEATURE_TYPE_WEBGL2};
+      gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL,
+      gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL2};
   const std::string kGpuBlacklistFeatureHistogramNames[] = {
       "GPU.BlacklistFeatureTestResults.Accelerated2dCanvas",
       "GPU.BlacklistFeatureTestResults.GpuCompositing",
@@ -183,9 +187,9 @@ void UpdateStats(const gpu::GPUInfo& gpu_info,
       command_line.HasSwitch(switches::kDisableAccelerated2dCanvas),
       command_line.HasSwitch(switches::kDisableGpu),
       command_line.HasSwitch(switches::kDisableGpuRasterization),
-      command_line.HasSwitch(switches::kDisableExperimentalWebGL),
-      (!command_line.HasSwitch(switches::kEnableES3APIs) ||
-       command_line.HasSwitch(switches::kDisableES3APIs))};
+      command_line.HasSwitch(switches::kDisableWebGL),
+      (command_line.HasSwitch(switches::kDisableWebGL) ||
+       command_line.HasSwitch(switches::kDisableWebGL2))};
 #if defined(OS_WIN)
   const std::string kGpuBlacklistFeatureHistogramNamesWin[] = {
       "GPU.BlacklistFeatureTestResultsWindows.Accelerated2dCanvas",
@@ -355,17 +359,9 @@ bool GpuDataManagerImplPrivate::IsWebGLEnabled() const {
          !blacklisted_features_.count(gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL);
 }
 
-bool GpuDataManagerImplPrivate::IsDriverBugWorkaroundActive(int feature) const {
-  switch (feature) {
-    // TODO(zmo): Remove these use cases and obsolete this function.
-    case gpu::DISABLE_OVERLAY_CA_LAYERS:
-    case gpu::DONT_DISABLE_WEBGL_WHEN_COMPOSITOR_CONTEXT_LOST:
-    case gpu::WAKE_UP_GPU_BEFORE_DRAWING:
-      return gpu_feature_info_.IsWorkaroundEnabled(feature);
-    default:
-      NOTREACHED();
-      return false;
-  }
+bool GpuDataManagerImplPrivate::IsWebGL2Enabled() const {
+  return /*use_swiftshader_ ||*/ // Uncomment to enable WebGL 2 with SwiftShader
+         !blacklisted_features_.count(gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL2);
 }
 
 size_t GpuDataManagerImplPrivate::GetBlacklistedFeatureCount() const {
@@ -420,7 +416,7 @@ bool GpuDataManagerImplPrivate::GpuAccessAllowed(
     if (feature_diffs.size()) {
       // TODO(zmo): Other features might also be OK to ignore here.
       feature_diffs.erase(gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL);
-      feature_diffs.erase(gpu::GPU_FEATURE_TYPE_WEBGL2);
+      feature_diffs.erase(gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL2);
       feature_diffs.erase(gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS);
     }
     if (feature_diffs.size()) {
@@ -712,6 +708,10 @@ void GpuDataManagerImplPrivate::UpdateGpuFeatureInfo(
   }
 }
 
+gpu::GpuFeatureInfo GpuDataManagerImplPrivate::GetGpuFeatureInfo() const {
+  return gpu_feature_info_;
+}
+
 void GpuDataManagerImplPrivate::AppendRendererCommandLine(
     base::CommandLine* command_line) const {
   DCHECK(command_line);
@@ -723,9 +723,6 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
   if (!CanUseGpuBrowserCompositor())
     command_line->AppendSwitch(switches::kDisableGpuCompositing);
 #endif
-
-  if (IsGpuSchedulerEnabled())
-    command_line->AppendSwitch(switches::kEnableGpuAsyncWorkerContext);
 }
 
 void GpuDataManagerImplPrivate::AppendGpuCommandLine(
@@ -819,21 +816,6 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     WebPreferences* prefs) const {
   DCHECK(prefs);
 
-  if (!IsWebGLEnabled()) {
-    prefs->experimental_webgl_enabled = false;
-    prefs->pepper_3d_enabled = false;
-  }
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_FLASH3D))
-    prefs->flash_3d_enabled = false;
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_FLASH_STAGE3D)) {
-    prefs->flash_stage3d_enabled = false;
-    prefs->flash_stage3d_baseline_enabled = false;
-  }
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_FLASH_STAGE3D_BASELINE))
-    prefs->flash_stage3d_baseline_enabled = false;
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS))
-    prefs->accelerated_2d_canvas_enabled = false;
-
 #if defined(USE_AURA)
   if (!CanUseGpuBrowserCompositor()) {
     prefs->accelerated_2d_canvas_enabled = false;
@@ -856,16 +838,11 @@ void GpuDataManagerImplPrivate::UpdateGpuPreferences(
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
 
-  if (IsGpuSchedulerEnabled())
+  if (base::FeatureList::IsEnabled(features::kGpuScheduler))
     gpu_preferences->enable_gpu_scheduler = true;
 
   if (ShouldDisableAcceleratedVideoDecode(command_line))
     gpu_preferences->disable_accelerated_video_decode = true;
-
-  gpu_preferences->enable_es3_apis =
-      (command_line->HasSwitch(switches::kEnableES3APIs) ||
-       !IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL2)) &&
-      !command_line->HasSwitch(switches::kDisableES3APIs);
 
   gpu_preferences->gpu_program_cache_size =
       gpu::ShaderDiskCache::CacheSizeBytes();
@@ -1020,10 +997,6 @@ bool GpuDataManagerImplPrivate::UpdateActiveGpu(uint32_t vendor_id,
   return true;
 }
 
-bool GpuDataManagerImplPrivate::IsGpuSchedulerEnabled() const {
-  return base::FeatureList::IsEnabled(features::kGpuScheduler);
-}
-
 bool GpuDataManagerImplPrivate::CanUseGpuBrowserCompositor() const {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuCompositing))
@@ -1174,7 +1147,7 @@ void GpuDataManagerImplPrivate::UpdateBlacklistedFeatures(
   if (card_blacklisted_) {
     blacklisted_features_.insert(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING);
     blacklisted_features_.insert(gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL);
-    blacklisted_features_.insert(gpu::GPU_FEATURE_TYPE_WEBGL2);
+    blacklisted_features_.insert(gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGL2);
   }
 
   EnableSwiftShaderIfNecessary();

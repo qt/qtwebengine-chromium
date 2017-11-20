@@ -4,8 +4,8 @@
 
 #include "platform/scheduler/child/worker_global_scope_scheduler.h"
 
+#include <memory>
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/test/test_simple_task_runner.h"
 #include "platform/scheduler/base/test_time_source.h"
@@ -18,15 +18,13 @@ using ::testing::ElementsAreArray;
 
 namespace blink {
 namespace scheduler {
-
-namespace {
+// To avoid symbol collisions in jumbo builds.
+namespace worker_global_scope_scheduler_unittest {
 
 void AppendToVectorTestTask(std::vector<std::string>* vector,
                             std::string value) {
   vector->push_back(value);
 }
-
-}  // namespace
 
 class WorkerGlobalScopeSchedulerTest : public ::testing::Test {
  public:
@@ -45,7 +43,7 @@ class WorkerGlobalScopeSchedulerTest : public ::testing::Test {
   void SetUp() override {
     scheduler_->Init();
     global_scope_scheduler_ =
-        base::MakeUnique<WorkerGlobalScopeScheduler>(scheduler_.get());
+        std::make_unique<WorkerGlobalScopeScheduler>(scheduler_.get());
   }
 
   void RunUntilIdle() { mock_task_runner_->RunUntilIdle(); }
@@ -87,5 +85,6 @@ TEST_F(WorkerGlobalScopeSchedulerTest, TestPostTasks) {
   EXPECT_TRUE(run_order.empty());
 }
 
+}  // namespace worker_global_scope_scheduler_unittest
 }  // namespace scheduler
 }  // namespace blink

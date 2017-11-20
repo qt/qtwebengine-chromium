@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/pc/iceserverparsing.h"
+#include "pc/iceserverparsing.h"
 
 #include <cctype>  // For std::isdigit.
 #include <string>
 
-#include "webrtc/rtc_base/arraysize.h"
+#include "rtc_base/arraysize.h"
 
 namespace webrtc {
 
@@ -258,6 +258,7 @@ static RTCErrorType ParseIceServerUrl(
             cricket::TlsCertPolicy::TLS_CERT_POLICY_INSECURE_NO_CHECK;
       }
       config.tls_alpn_protocols = server.tls_alpn_protocols;
+      config.tls_elliptic_curves = server.tls_elliptic_curves;
 
       turn_servers->push_back(config);
       break;

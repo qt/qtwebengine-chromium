@@ -5,6 +5,7 @@
 #ifndef HarfBuzzFontCache_h
 #define HarfBuzzFontCache_h
 
+#include <memory>
 #include "platform/fonts/UnicodeRangeSet.h"
 
 struct hb_font_t;
@@ -44,7 +45,7 @@ struct HarfBuzzFontData {
     SimpleFontData* simple_font_data =
         FontCache::GetFontCache()
             ->FontDataFromFontPlatformData(platform_data)
-            .Get();
+            .get();
     if (simple_font_data_)
       FontCache::GetFontCache()->ReleaseFontData(simple_font_data_);
     simple_font_data_ = simple_font_data;
@@ -64,9 +65,9 @@ struct HarfBuzzFontData {
 // FontPlatformData object independent of size, then consider using this here.
 class HbFontCacheEntry : public RefCounted<HbFontCacheEntry> {
  public:
-  static PassRefPtr<HbFontCacheEntry> Create(hb_font_t* hb_font) {
+  static RefPtr<HbFontCacheEntry> Create(hb_font_t* hb_font) {
     DCHECK(hb_font);
-    return AdoptRef(new HbFontCacheEntry(hb_font));
+    return WTF::AdoptRef(new HbFontCacheEntry(hb_font));
   }
 
   hb_font_t* HbFont() { return hb_font_.get(); }
@@ -75,7 +76,7 @@ class HbFontCacheEntry : public RefCounted<HbFontCacheEntry> {
  private:
   explicit HbFontCacheEntry(hb_font_t* font)
       : hb_font_(HbFontUniquePtr(font)),
-        hb_font_data_(WTF::MakeUnique<HarfBuzzFontData>()){};
+        hb_font_data_(std::make_unique<HarfBuzzFontData>()){};
 
   HbFontUniquePtr hb_font_;
   std::unique_ptr<HarfBuzzFontData> hb_font_data_;

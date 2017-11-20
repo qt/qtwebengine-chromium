@@ -7,8 +7,10 @@
 
 #include <stdint.h>
 
+#include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/strings/string16.h"
@@ -35,7 +37,6 @@ class GURL;
 
 namespace base {
 class FilePath;
-class ListValue;
 }
 
 namespace content {
@@ -58,7 +59,6 @@ struct SecurityStyleExplanations;
 }  // namespace content
 
 namespace gfx {
-class Point;
 class Rect;
 class Size;
 }
@@ -157,12 +157,10 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void UpdateTargetURL(WebContents* source,
                                const GURL& url) {}
 
-  // Notification that there was a mouse event, along with the absolute
-  // coordinates of the mouse pointer and the type of event. If |motion| is
-  // true, this is a normal motion event. If |exited| is true, the pointer left
-  // the contents area.
+  // Notification that there was a mouse event, along with the type of event.
+  // If |motion| is true, this is a normal motion event. If |exited| is true,
+  // the pointer left the contents area.
   virtual void ContentsMouseEvent(WebContents* source,
-                                  const gfx::Point& location,
                                   bool motion,
                                   bool exited) {}
 
@@ -441,12 +439,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void ResizeDueToAutoResize(WebContents* web_contents,
                                      const gfx::Size& new_size) {}
 
-  // Notification message from HTML UI.
-  virtual void WebUISend(WebContents* web_contents,
-                         const GURL& source_url,
-                         const std::string& name,
-                         const base::ListValue& args) {}
-
   // Requests to lock the mouse. Once the request is approved or rejected,
   // GotResponseToLockMouseRequest() will be called on the requesting tab
   // contents.
@@ -547,6 +539,13 @@ class CONTENT_EXPORT WebContentsDelegate {
 
   // Called when audio change occurs
   virtual void OnAudioStateChanged(bool audible) {}
+
+  // Called when a suspicious navigation of the main frame has been blocked.
+  // Allows the delegate to provide some UI to let the user know about the
+  // blocked navigation and give them the option to recover from it. The given
+  // URL is the blocked navigation target.
+  virtual void OnDidBlockFramebust(content::WebContents* web_contents,
+                                   const GURL& url) {}
 
   // Reports that passive mixed content was found at the specified url.
   virtual void PassiveInsecureContentFound(const GURL& resource_url) {}

@@ -27,7 +27,6 @@
 
 #include <memory>
 #include "core/CSSPropertyNames.h"
-#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
@@ -39,15 +38,16 @@
 #include "core/html/media/MediaCustomControlsFullscreenDetector.h"
 #include "core/html/media/MediaRemotingInterstitial.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html_names.h"
 #include "core/imagebitmap/ImageBitmap.h"
 #include "core/imagebitmap/ImageBitmapOptions.h"
 #include "core/layout/LayoutImage.h"
 #include "core/layout/LayoutVideo.h"
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/gpu/Extensions3DUtil.h"
+#include "platform/runtime_enabled_features.h"
 #include "public/platform/WebCanvas.h"
 
 namespace blink {
@@ -311,9 +311,12 @@ void HTMLVideoElement::UpdateDisplayState() {
     SetDisplayMode(kPoster);
 }
 
-void HTMLVideoElement::PaintCurrentFrame(PaintCanvas* canvas,
-                                         const IntRect& dest_rect,
-                                         const PaintFlags* flags) const {
+void HTMLVideoElement::PaintCurrentFrame(
+    PaintCanvas* canvas,
+    const IntRect& dest_rect,
+    const PaintFlags* flags,
+    int already_uploaded_id,
+    WebMediaPlayer::VideoFrameUploadMetadata* out_metadata) const {
   if (!GetWebMediaPlayer())
     return;
 
@@ -325,7 +328,8 @@ void HTMLVideoElement::PaintCurrentFrame(PaintCanvas* canvas,
     media_flags.setFilterQuality(kLow_SkFilterQuality);
   }
 
-  GetWebMediaPlayer()->Paint(canvas, dest_rect, media_flags);
+  GetWebMediaPlayer()->Paint(canvas, dest_rect, media_flags,
+                             already_uploaded_id, out_metadata);
 }
 
 bool HTMLVideoElement::CopyVideoTextureToPlatformTexture(
@@ -337,13 +341,15 @@ bool HTMLVideoElement::CopyVideoTextureToPlatformTexture(
     GLenum type,
     GLint level,
     bool premultiply_alpha,
-    bool flip_y) {
+    bool flip_y,
+    int already_uploaded_id,
+    WebMediaPlayer::VideoFrameUploadMetadata* out_metadata) {
   if (!GetWebMediaPlayer())
     return false;
 
   return GetWebMediaPlayer()->CopyVideoTextureToPlatformTexture(
       gl, target, texture, internal_format, format, type, level,
-      premultiply_alpha, flip_y);
+      premultiply_alpha, flip_y, already_uploaded_id, out_metadata);
 }
 
 bool HTMLVideoElement::TexImageImpl(

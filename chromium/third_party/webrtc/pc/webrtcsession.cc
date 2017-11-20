@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/pc/webrtcsession.h"
+#include "pc/webrtcsession.h"
 
 #include <limits.h>
 
@@ -17,29 +17,29 @@
 #include <utility>
 #include <vector>
 
-#include "webrtc/api/call/audio_sink.h"
-#include "webrtc/api/jsepicecandidate.h"
-#include "webrtc/api/jsepsessiondescription.h"
-#include "webrtc/api/peerconnectioninterface.h"
-#include "webrtc/call/call.h"
-#include "webrtc/media/base/mediaconstants.h"
-#include "webrtc/media/sctp/sctptransportinternal.h"
-#include "webrtc/p2p/base/portallocator.h"
-#include "webrtc/pc/channel.h"
-#include "webrtc/pc/channelmanager.h"
-#include "webrtc/pc/mediasession.h"
-#include "webrtc/pc/sctputils.h"
-#include "webrtc/pc/webrtcsessiondescriptionfactory.h"
-#include "webrtc/rtc_base/basictypes.h"
-#include "webrtc/rtc_base/bind.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/stringencode.h"
-#include "webrtc/rtc_base/stringutils.h"
+#include "api/call/audio_sink.h"
+#include "api/jsepicecandidate.h"
+#include "api/jsepsessiondescription.h"
+#include "api/peerconnectioninterface.h"
+#include "call/call.h"
+#include "media/base/mediaconstants.h"
+#include "media/sctp/sctptransportinternal.h"
+#include "p2p/base/portallocator.h"
+#include "pc/channel.h"
+#include "pc/channelmanager.h"
+#include "pc/mediasession.h"
+#include "pc/sctputils.h"
+#include "pc/webrtcsessiondescriptionfactory.h"
+#include "rtc_base/basictypes.h"
+#include "rtc_base/bind.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/stringencode.h"
+#include "rtc_base/stringutils.h"
 
 #ifdef HAVE_QUIC
-#include "webrtc/p2p/quic/quictransportchannel.h"
+#include "p2p/quic/quictransportchannel.h"
 #endif  // HAVE_QUIC
 
 using cricket::ContentInfo;
@@ -519,13 +519,13 @@ WebRtcSession::WebRtcSession(
 
 WebRtcSession::~WebRtcSession() {
   RTC_DCHECK(signaling_thread()->IsCurrent());
-  // Destroy video_channel_ first since it may have a pointer to the
-  // voice_channel_.
-  if (video_channel_) {
-    DestroyVideoChannel();
+  // Destroy video channels first since they may have a pointer to a voice
+  // channel.
+  for (auto* channel : video_channels_) {
+    DestroyVideoChannel(channel);
   }
-  if (voice_channel_) {
-    DestroyVoiceChannel();
+  for (auto* channel : voice_channels_) {
+    DestroyVoiceChannel(channel);
   }
   if (rtp_data_channel_) {
     DestroyDataChannel();
@@ -646,8 +646,8 @@ void WebRtcSession::Close() {
   SetState(STATE_CLOSED);
   RemoveUnusedChannels(nullptr);
   call_ = nullptr;
-  RTC_DCHECK(!voice_channel_);
-  RTC_DCHECK(!video_channel_);
+  RTC_DCHECK(voice_channels_.empty());
+  RTC_DCHECK(video_channels_.empty());
   RTC_DCHECK(!rtp_data_channel_);
   RTC_DCHECK(!sctp_transport_);
 }
@@ -665,10 +665,6 @@ cricket::BaseChannel* WebRtcSession::GetChannel(
     return rtp_data_channel();
   }
   return nullptr;
-}
-
-cricket::SecurePolicy WebRtcSession::SdesPolicy() const {
-  return webrtc_session_desc_factory_->SdesPolicy();
 }
 
 bool WebRtcSession::GetSctpSslRole(rtc::SSLRole* role) {
@@ -859,6 +855,21 @@ bool WebRtcSession::SetRemoteDescription(SessionDescriptionInterface* desc,
   return true;
 }
 
+// TODO(steveanton): Eventually it'd be nice to store the channels as a single
+// vector of BaseChannel pointers instead of separate voice and video channel
+// vectors. At that point, this will become a simple getter.
+std::vector<cricket::BaseChannel*> WebRtcSession::Channels() const {
+  std::vector<cricket::BaseChannel*> channels;
+  channels.insert(channels.end(), voice_channels_.begin(),
+                  voice_channels_.end());
+  channels.insert(channels.end(), video_channels_.begin(),
+                  video_channels_.end());
+  if (rtp_data_channel_) {
+    channels.push_back(rtp_data_channel_.get());
+  }
+  return channels;
+}
+
 void WebRtcSession::LogState(State old_state, State new_state) {
   LOG(LS_INFO) << "Session:" << id()
                << " Old state:" << GetStateString(old_state)
@@ -965,30 +976,40 @@ bool WebRtcSession::PushdownMediaDescription(
     cricket::ContentAction action,
     cricket::ContentSource source,
     std::string* err) {
-  auto set_content = [this, action, source, err](cricket::BaseChannel* ch) {
-    if (!ch) {
-      return true;
-    } else if (source == cricket::CS_LOCAL) {
-      return ch->PushdownLocalDescription(local_description()->description(),
-                                          action, err);
-    } else {
-      return ch->PushdownRemoteDescription(remote_description()->description(),
-                                           action, err);
+  const SessionDescription* sdesc =
+      (source == cricket::CS_LOCAL ? local_description() : remote_description())
+          ->description();
+  RTC_DCHECK(sdesc);
+  bool all_success = true;
+  for (auto* channel : Channels()) {
+    // TODO(steveanton): Add support for multiple channels of the same type.
+    const ContentInfo* content_info =
+        cricket::GetFirstMediaContent(sdesc->contents(), channel->media_type());
+    if (!content_info) {
+      continue;
     }
-  };
-
-  bool ret = (set_content(voice_channel()) && set_content(video_channel()) &&
-              set_content(rtp_data_channel()));
+    const MediaContentDescription* content_desc =
+        static_cast<const MediaContentDescription*>(content_info->description);
+    if (content_desc && !content_info->rejected) {
+      bool success = (source == cricket::CS_LOCAL)
+                         ? channel->SetLocalContent(content_desc, action, err)
+                         : channel->SetRemoteContent(content_desc, action, err);
+      if (!success) {
+        all_success = false;
+        break;
+      }
+    }
+  }
   // Need complete offer/answer with an SCTP m= section before starting SCTP,
   // according to https://tools.ietf.org/html/draft-ietf-mmusic-sctp-sdp-19
   if (sctp_transport_ && local_description() && remote_description() &&
       cricket::GetFirstDataContent(local_description()->description()) &&
       cricket::GetFirstDataContent(remote_description()->description())) {
-    ret &= network_thread_->Invoke<bool>(
+    all_success &= network_thread_->Invoke<bool>(
         RTC_FROM_HERE,
         rtc::Bind(&WebRtcSession::PushdownSctpParameters_n, this, source));
   }
-  return ret;
+  return all_success;
 }
 
 bool WebRtcSession::PushdownSctpParameters_n(cricket::ContentSource source) {
@@ -1564,13 +1585,19 @@ void WebRtcSession::OnTransportControllerDtlsHandshakeError(
   }
 }
 
-// Enabling voice and video (and RTP data) channel.
+// Enabling voice and video (and RTP data) channels.
 void WebRtcSession::EnableChannels() {
-  if (voice_channel_ && !voice_channel_->enabled())
-    voice_channel_->Enable(true);
+  for (cricket::VoiceChannel* voice_channel : voice_channels_) {
+    if (!voice_channel->enabled()) {
+      voice_channel->Enable(true);
+    }
+  }
 
-  if (video_channel_ && !video_channel_->enabled())
-    video_channel_->Enable(true);
+  for (cricket::VideoChannel* video_channel : video_channels_) {
+    if (!video_channel->enabled()) {
+      video_channel->Enable(true);
+    }
+  }
 
   if (rtp_data_channel_ && !rtp_data_channel_->enabled())
     rtp_data_channel_->Enable(true);
@@ -1664,18 +1691,17 @@ bool WebRtcSession::UseCandidate(const IceCandidateInterface* candidate) {
 }
 
 void WebRtcSession::RemoveUnusedChannels(const SessionDescription* desc) {
-  // Destroy video_channel_ first since it may have a pointer to the
-  // voice_channel_.
-  const cricket::ContentInfo* video_info =
-      cricket::GetFirstVideoContent(desc);
-  if ((!video_info || video_info->rejected) && video_channel_) {
-    DestroyVideoChannel();
+  // TODO(steveanton): Add support for multiple audio/video channels.
+  // Destroy video channel first since it may have a pointer to the
+  // voice channel.
+  const cricket::ContentInfo* video_info = cricket::GetFirstVideoContent(desc);
+  if ((!video_info || video_info->rejected) && video_channel()) {
+    RemoveAndDestroyVideoChannel(video_channel());
   }
 
-  const cricket::ContentInfo* voice_info =
-      cricket::GetFirstAudioContent(desc);
-  if ((!voice_info || voice_info->rejected) && voice_channel_) {
-    DestroyVoiceChannel();
+  const cricket::ContentInfo* voice_info = cricket::GetFirstAudioContent(desc);
+  if ((!voice_info || voice_info->rejected) && voice_channel()) {
+    RemoveAndDestroyVoiceChannel(voice_channel());
   }
 
   const cricket::ContentInfo* data_info =
@@ -1721,6 +1747,7 @@ const std::string* WebRtcSession::GetBundleTransportName(
 }
 
 bool WebRtcSession::CreateChannels(const SessionDescription* desc) {
+  // TODO(steveanton): Add support for multiple audio/video channels.
   const cricket::ContentGroup* bundle_group = nullptr;
   if (bundle_policy_ == PeerConnectionInterface::kBundlePolicyMaxBundle) {
     bundle_group = desc->GetGroupByName(cricket::GROUP_TYPE_BUNDLE);
@@ -1731,7 +1758,7 @@ bool WebRtcSession::CreateChannels(const SessionDescription* desc) {
   }
   // Creating the media channels and transport proxies.
   const cricket::ContentInfo* voice = cricket::GetFirstAudioContent(desc);
-  if (voice && !voice->rejected && !voice_channel_) {
+  if (voice && !voice->rejected && !voice_channel()) {
     if (!CreateVoiceChannel(voice,
                             GetBundleTransportName(voice, bundle_group))) {
       LOG(LS_ERROR) << "Failed to create voice channel.";
@@ -1740,7 +1767,7 @@ bool WebRtcSession::CreateChannels(const SessionDescription* desc) {
   }
 
   const cricket::ContentInfo* video = cricket::GetFirstVideoContent(desc);
-  if (video && !video->rejected && !video_channel_) {
+  if (video && !video->rejected && !video_channel()) {
     if (!CreateVideoChannel(video,
                             GetBundleTransportName(video, bundle_group))) {
       LOG(LS_ERROR) << "Failed to create video channel.";
@@ -1762,6 +1789,10 @@ bool WebRtcSession::CreateChannels(const SessionDescription* desc) {
 
 bool WebRtcSession::CreateVoiceChannel(const cricket::ContentInfo* content,
                                        const std::string* bundle_transport) {
+  // TODO(steveanton): Check to see if it's safe to create multiple voice
+  // channels.
+  RTC_DCHECK(voice_channels_.empty());
+
   bool require_rtcp_mux =
       rtcp_mux_policy_ == PeerConnectionInterface::kRtcpMuxPolicyRequire;
 
@@ -1777,33 +1808,40 @@ bool WebRtcSession::CreateVoiceChannel(const cricket::ContentInfo* content,
         transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTCP);
   }
 
-  voice_channel_.reset(channel_manager_->CreateVoiceChannel(
+  cricket::VoiceChannel* voice_channel = channel_manager_->CreateVoiceChannel(
       call_, media_config_, rtp_dtls_transport, rtcp_dtls_transport,
       transport_controller_->signaling_thread(), content->name, SrtpRequired(),
-      audio_options_));
-  if (!voice_channel_) {
+      audio_options_);
+  if (!voice_channel) {
     transport_controller_->DestroyDtlsTransport(
         transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP);
     if (rtcp_dtls_transport) {
       transport_controller_->DestroyDtlsTransport(
-          transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP);
+          transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTCP);
     }
     return false;
   }
 
-  voice_channel_->SignalRtcpMuxFullyActive.connect(
+  voice_channels_.push_back(voice_channel);
+
+  voice_channel->SignalRtcpMuxFullyActive.connect(
       this, &WebRtcSession::DestroyRtcpTransport_n);
-  voice_channel_->SignalDtlsSrtpSetupFailure.connect(
+  voice_channel->SignalDtlsSrtpSetupFailure.connect(
       this, &WebRtcSession::OnDtlsSrtpSetupFailure);
 
+  // TODO(steveanton): This should signal which voice channel was created since
+  // we can have multiple.
   SignalVoiceChannelCreated();
-  voice_channel_->SignalSentPacket.connect(this,
-                                           &WebRtcSession::OnSentPacket_w);
+  voice_channel->SignalSentPacket.connect(this, &WebRtcSession::OnSentPacket_w);
   return true;
 }
 
 bool WebRtcSession::CreateVideoChannel(const cricket::ContentInfo* content,
                                        const std::string* bundle_transport) {
+  // TODO(steveanton): Check to see if it's safe to create multiple video
+  // channels.
+  RTC_DCHECK(video_channels_.empty());
+
   bool require_rtcp_mux =
       rtcp_mux_policy_ == PeerConnectionInterface::kRtcpMuxPolicyRequire;
 
@@ -1819,29 +1857,32 @@ bool WebRtcSession::CreateVideoChannel(const cricket::ContentInfo* content,
         transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTCP);
   }
 
-  video_channel_.reset(channel_manager_->CreateVideoChannel(
+  cricket::VideoChannel* video_channel = channel_manager_->CreateVideoChannel(
       call_, media_config_, rtp_dtls_transport, rtcp_dtls_transport,
       transport_controller_->signaling_thread(), content->name, SrtpRequired(),
-      video_options_));
+      video_options_);
 
-  if (!video_channel_) {
+  if (!video_channel) {
     transport_controller_->DestroyDtlsTransport(
         transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP);
     if (rtcp_dtls_transport) {
       transport_controller_->DestroyDtlsTransport(
-          transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP);
+          transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTCP);
     }
     return false;
   }
 
-  video_channel_->SignalRtcpMuxFullyActive.connect(
+  video_channels_.push_back(video_channel);
+
+  video_channel->SignalRtcpMuxFullyActive.connect(
       this, &WebRtcSession::DestroyRtcpTransport_n);
-  video_channel_->SignalDtlsSrtpSetupFailure.connect(
+  video_channel->SignalDtlsSrtpSetupFailure.connect(
       this, &WebRtcSession::OnDtlsSrtpSetupFailure);
 
+  // TODO(steveanton): This should signal which video channel was created since
+  // we can have multiple.
   SignalVideoChannelCreated();
-  video_channel_->SignalSentPacket.connect(this,
-                                           &WebRtcSession::OnSentPacket_w);
+  video_channel->SignalSentPacket.connect(this, &WebRtcSession::OnSentPacket_w);
   return true;
 }
 
@@ -1894,7 +1935,7 @@ bool WebRtcSession::CreateDataChannel(const cricket::ContentInfo* content,
           transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP);
       if (rtcp_dtls_transport) {
         transport_controller_->DestroyDtlsTransport(
-            transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP);
+            transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTCP);
       }
       return false;
     }
@@ -2386,13 +2427,30 @@ void WebRtcSession::DestroyRtcpTransport_n(const std::string& transport_name) {
       transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTCP);
 }
 
-void WebRtcSession::DestroyVideoChannel() {
+void WebRtcSession::RemoveAndDestroyVideoChannel(
+    cricket::VideoChannel* video_channel) {
+  auto it =
+      std::find(video_channels_.begin(), video_channels_.end(), video_channel);
+  RTC_DCHECK(it != video_channels_.end());
+  if (it == video_channels_.end()) {
+    return;
+  }
+  video_channels_.erase(it);
+  DestroyVideoChannel(video_channel);
+}
+
+void WebRtcSession::DestroyVideoChannel(cricket::VideoChannel* video_channel) {
+  // TODO(steveanton): This should take an identifier for the video channel
+  // since we now support more than one.
   SignalVideoChannelDestroyed();
-  RTC_DCHECK(video_channel_->rtp_dtls_transport());
-  std::string transport_name;
-  transport_name = video_channel_->rtp_dtls_transport()->transport_name();
-  bool need_to_delete_rtcp = (video_channel_->rtcp_dtls_transport() != nullptr);
-  channel_manager_->DestroyVideoChannel(video_channel_.release());
+  RTC_DCHECK(video_channel->rtp_dtls_transport());
+  const std::string transport_name =
+      video_channel->rtp_dtls_transport()->transport_name();
+  const bool need_to_delete_rtcp =
+      (video_channel->rtcp_dtls_transport() != nullptr);
+  // The above need to be cached before destroying the video channel so that we
+  // do not access uninitialized memory.
+  channel_manager_->DestroyVideoChannel(video_channel);
   transport_controller_->DestroyDtlsTransport(
       transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP);
   if (need_to_delete_rtcp) {
@@ -2401,13 +2459,30 @@ void WebRtcSession::DestroyVideoChannel() {
   }
 }
 
-void WebRtcSession::DestroyVoiceChannel() {
+void WebRtcSession::RemoveAndDestroyVoiceChannel(
+    cricket::VoiceChannel* voice_channel) {
+  auto it =
+      std::find(voice_channels_.begin(), voice_channels_.end(), voice_channel);
+  RTC_DCHECK(it != voice_channels_.end());
+  if (it == voice_channels_.end()) {
+    return;
+  }
+  voice_channels_.erase(it);
+  DestroyVoiceChannel(voice_channel);
+}
+
+void WebRtcSession::DestroyVoiceChannel(cricket::VoiceChannel* voice_channel) {
+  // TODO(steveanton): This should take an identifier for the voice channel
+  // since we now support more than one.
   SignalVoiceChannelDestroyed();
-  RTC_DCHECK(voice_channel_->rtp_dtls_transport());
-  std::string transport_name;
-  transport_name = voice_channel_->rtp_dtls_transport()->transport_name();
-  bool need_to_delete_rtcp = (voice_channel_->rtcp_dtls_transport() != nullptr);
-  channel_manager_->DestroyVoiceChannel(voice_channel_.release());
+  RTC_DCHECK(voice_channel->rtp_dtls_transport());
+  const std::string transport_name =
+      voice_channel->rtp_dtls_transport()->transport_name();
+  const bool need_to_delete_rtcp =
+      (voice_channel->rtcp_dtls_transport() != nullptr);
+  // The above need to be cached before destroying the video channel so that we
+  // do not access uninitialized memory.
+  channel_manager_->DestroyVoiceChannel(voice_channel);
   transport_controller_->DestroyDtlsTransport(
       transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP);
   if (need_to_delete_rtcp) {

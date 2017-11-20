@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_COMMON_TYPES_H_
-#define WEBRTC_COMMON_TYPES_H_
+#ifndef COMMON_TYPES_H_
+#define COMMON_TYPES_H_
 
 #include <stddef.h>
 #include <string.h>
@@ -17,14 +17,14 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/api/video/video_content_type.h"
-#include "webrtc/api/video/video_rotation.h"
-#include "webrtc/api/video/video_timing.h"
-#include "webrtc/rtc_base/array_view.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/deprecation.h"
-#include "webrtc/rtc_base/optional.h"
-#include "webrtc/typedefs.h"
+#include "api/array_view.h"
+#include "api/optional.h"
+#include "api/video/video_content_type.h"
+#include "api/video/video_rotation.h"
+#include "api/video/video_timing.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/deprecation.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 #if defined(_MSC_VER)
 // Disable "new behavior: elements of array will be default initialized"
@@ -78,71 +78,14 @@ class OutStream : public RewindableStream {
   virtual bool Write(const void* buf, size_t len) = 0;
 };
 
-enum TraceModule {
-  kTraceUndefined = 0,
-  // not a module, triggered from the engine code
-  kTraceVoice = 0x0001,
-  // not a module, triggered from the engine code
-  kTraceVideo = 0x0002,
-  // not a module, triggered from the utility code
-  kTraceUtility = 0x0003,
-  kTraceRtpRtcp = 0x0004,
-  kTraceTransport = 0x0005,
-  kTraceSrtp = 0x0006,
-  kTraceAudioCoding = 0x0007,
-  kTraceAudioMixerServer = 0x0008,
-  kTraceAudioMixerClient = 0x0009,
-  kTraceFile = 0x000a,
-  kTraceAudioProcessing = 0x000b,
-  kTraceVideoCoding = 0x0010,
-  kTraceVideoMixer = 0x0011,
-  kTraceAudioDevice = 0x0012,
-  kTraceVideoRenderer = 0x0014,
-  kTraceVideoCapture = 0x0015,
-  kTraceRemoteBitrateEstimator = 0x0017,
-};
-
-enum TraceLevel {
-  kTraceNone = 0x0000,  // no trace
-  kTraceStateInfo = 0x0001,
-  kTraceWarning = 0x0002,
-  kTraceError = 0x0004,
-  kTraceCritical = 0x0008,
-  kTraceApiCall = 0x0010,
-  kTraceDefault = 0x00ff,
-
-  kTraceModuleCall = 0x0020,
-  kTraceMemory = 0x0100,  // memory info
-  kTraceTimer = 0x0200,   // timing info
-  kTraceStream = 0x0400,  // "continuous" stream of data
-
-  // used for debug purposes
-  kTraceDebug = 0x0800,  // debug
-  kTraceInfo = 0x1000,   // debug info
-
-  // Non-verbose level used by LS_INFO of logging.h. Do not use directly.
-  kTraceTerseInfo = 0x2000,
-
-  kTraceAll = 0xffff
-};
-
-// External Trace API
-class TraceCallback {
- public:
-  virtual void Print(TraceLevel level, const char* message, int length) = 0;
-
- protected:
-  virtual ~TraceCallback() {}
-  TraceCallback() {}
-};
-
 enum FileFormats {
   kFileFormatWavFile = 1,
   kFileFormatCompressedFile = 2,
   kFileFormatPreencodedFile = 4,
   kFileFormatPcm16kHzFile = 7,
   kFileFormatPcm8kHzFile = 8,
-  kFileFormatPcm32kHzFile = 9
+  kFileFormatPcm32kHzFile = 9,
+  kFileFormatPcm48kHzFile = 10
 };
 
 enum FrameType {
@@ -367,13 +310,13 @@ struct NetworkStatistics {
   uint16_t preferredBufferSize;
   // adding extra delay due to "peaky jitter"
   bool jitterPeaksFound;
-  // Total number of audio samples received, including synthesized samples.
-  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalsamplesreceived
+  // Stats below correspond to similarly-named fields in the WebRTC stats spec.
+  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats
   uint64_t totalSamplesReceived;
-  // Total number of inbound audio samples that are based on synthesized data to
-  // conceal packet loss.
-  // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-concealedsamples
   uint64_t concealedSamples;
+  uint64_t concealmentEvents;
+  uint64_t jitterBufferDelayMs;
+  // Stats below DO NOT correspond directly to anything in the WebRTC stats
   // Loss rate (network + late); fraction between 0 and 1, scaled to Q14.
   uint16_t currentPacketLossRate;
   // Late loss rate; fraction between 0 and 1, scaled to Q14.
@@ -553,10 +496,6 @@ enum VideoCodecType {
 // Translates from name of codec to codec type and vice versa.
 const char* CodecTypeToPayloadString(VideoCodecType type);
 VideoCodecType PayloadStringToCodecType(const std::string& name);
-// TODO(kthelgason): Remove these methods once upstream projects
-// have been updated.
-rtc::Optional<const char*> CodecTypeToPayloadName(VideoCodecType type);
-rtc::Optional<VideoCodecType> PayloadNameToCodecType(const std::string& name);
 
 union VideoCodecUnion {
   VideoCodecVP8 VP8;
@@ -791,6 +730,8 @@ typedef StringRtpHeaderExtension Mid;
 
 struct RTPHeaderExtension {
   RTPHeaderExtension();
+  RTPHeaderExtension(const RTPHeaderExtension& other);
+  RTPHeaderExtension& operator=(const RTPHeaderExtension& other);
 
   bool hasTransmissionTimeOffset;
   int32_t transmissionTimeOffset;
@@ -834,6 +775,8 @@ struct RTPHeaderExtension {
 
 struct RTPHeader {
   RTPHeader();
+  RTPHeader(const RTPHeader& other);
+  RTPHeader& operator=(const RTPHeader& other);
 
   bool markerBit;
   uint8_t payloadType;
@@ -969,6 +912,11 @@ struct RtpKeepAliveConfig final {
   bool operator!=(const RtpKeepAliveConfig& o) const { return !(*this == o); }
 };
 
+// Currently only VP8/VP9 specific.
+struct RtpPayloadState {
+  int16_t picture_id = -1;
+};
+
 }  // namespace webrtc
 
-#endif  // WEBRTC_COMMON_TYPES_H_
+#endif  // COMMON_TYPES_H_

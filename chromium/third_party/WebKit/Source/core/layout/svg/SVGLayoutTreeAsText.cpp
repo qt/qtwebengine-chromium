@@ -349,7 +349,7 @@ static TextStream& operator<<(TextStream& ts, const LayoutSVGShape& shape) {
   const ComputedStyle& style = shape.StyleRef();
   const SVGComputedStyle& svg_style = style.SvgStyle();
 
-  if (isSVGRectElement(*svg_element)) {
+  if (IsSVGRectElement(*svg_element)) {
     WriteNameValuePair(ts, "x",
                        length_context.ValueForLength(svg_style.X(), style,
                                                      SVGLengthMode::kWidth));
@@ -362,8 +362,8 @@ static TextStream& operator<<(TextStream& ts, const LayoutSVGShape& shape) {
     WriteNameValuePair(ts, "height",
                        length_context.ValueForLength(style.Height(), style,
                                                      SVGLengthMode::kHeight));
-  } else if (isSVGLineElement(*svg_element)) {
-    SVGLineElement& element = toSVGLineElement(*svg_element);
+  } else if (IsSVGLineElement(*svg_element)) {
+    SVGLineElement& element = ToSVGLineElement(*svg_element);
     WriteNameValuePair(ts, "x1",
                        element.x1()->CurrentValue()->Value(length_context));
     WriteNameValuePair(ts, "y1",
@@ -372,7 +372,7 @@ static TextStream& operator<<(TextStream& ts, const LayoutSVGShape& shape) {
                        element.x2()->CurrentValue()->Value(length_context));
     WriteNameValuePair(ts, "y2",
                        element.y2()->CurrentValue()->Value(length_context));
-  } else if (isSVGEllipseElement(*svg_element)) {
+  } else if (IsSVGEllipseElement(*svg_element)) {
     WriteNameValuePair(ts, "cx",
                        length_context.ValueForLength(svg_style.Cx(), style,
                                                      SVGLengthMode::kWidth));
@@ -385,7 +385,7 @@ static TextStream& operator<<(TextStream& ts, const LayoutSVGShape& shape) {
     WriteNameValuePair(ts, "ry",
                        length_context.ValueForLength(svg_style.Ry(), style,
                                                      SVGLengthMode::kHeight));
-  } else if (isSVGCircleElement(*svg_element)) {
+  } else if (IsSVGCircleElement(*svg_element)) {
     WriteNameValuePair(ts, "cx",
                        length_context.ValueForLength(svg_style.Cx(), style,
                                                      SVGLengthMode::kWidth));
@@ -401,7 +401,7 @@ static TextStream& operator<<(TextStream& ts, const LayoutSVGShape& shape) {
                                 .Points()
                                 ->CurrentValue()
                                 ->ValueAsString());
-  } else if (isSVGPathElement(*svg_element)) {
+  } else if (IsSVGPathElement(*svg_element)) {
     const StylePath& path =
         svg_style.D() ? *svg_style.D() : *StylePath::EmptyPath();
     WriteNameAndQuotedValue(ts, "data",
@@ -572,7 +572,7 @@ void WriteSVGResourceContainer(TextStream& ts,
     Filter* dummy_filter =
         Filter::Create(dummy_rect, dummy_rect, 1, Filter::kBoundingBox);
     SVGFilterBuilder builder(dummy_filter->GetSourceGraphic());
-    builder.BuildGraph(dummy_filter, toSVGFilterElement(*filter->GetElement()),
+    builder.BuildGraph(dummy_filter, ToSVGFilterElement(*filter->GetElement()),
                        dummy_rect);
     if (FilterEffect* last_effect = builder.LastEffect())
       last_effect->ExternalRepresentation(ts, indent + 1);
@@ -598,7 +598,7 @@ void WriteSVGResourceContainer(TextStream& ts,
     // patterns using xlink:href, we need to build the full inheritance chain,
     // aka. collectPatternProperties()
     PatternAttributes attributes;
-    toSVGPatternElement(pattern->GetElement())
+    ToSVGPatternElement(pattern->GetElement())
         ->CollectPatternAttributes(attributes);
 
     WriteNameValuePair(ts, "patternUnits", attributes.PatternUnits());
@@ -618,7 +618,7 @@ void WriteSVGResourceContainer(TextStream& ts,
     // gradients using xlink:href, we need to build the full inheritance chain,
     // aka. collectGradientProperties()
     LinearGradientAttributes attributes;
-    toSVGLinearGradientElement(gradient->GetElement())
+    ToSVGLinearGradientElement(gradient->GetElement())
         ->CollectGradientAttributes(attributes);
     WriteCommonGradientProperties(ts, attributes.SpreadMethod(),
                                   attributes.GradientTransform(),
@@ -635,7 +635,7 @@ void WriteSVGResourceContainer(TextStream& ts,
     // gradients using xlink:href, we need to build the full inheritance chain,
     // aka. collectGradientProperties()
     RadialGradientAttributes attributes;
-    toSVGRadialGradientElement(gradient->GetElement())
+    ToSVGRadialGradientElement(gradient->GetElement())
         ->CollectGradientAttributes(attributes);
     WriteCommonGradientProperties(ts, attributes.SpreadMethod(),
                                   attributes.GradientTransform(),
@@ -718,7 +718,7 @@ void WriteSVGGradientStop(TextStream& ts,
                           int indent) {
   WriteStandardPrefix(ts, stop, indent);
 
-  SVGStopElement* stop_element = toSVGStopElement(stop.GetNode());
+  SVGStopElement* stop_element = ToSVGStopElement(stop.GetNode());
   DCHECK(stop_element);
   DCHECK(stop.Style());
 

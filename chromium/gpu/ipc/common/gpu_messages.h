@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef GPU_IPC_COMMON_GPU_MESSAGES_H_
+#define GPU_IPC_COMMON_GPU_MESSAGES_H_
+
 // Multiply-included message file, hence no include guard here, but see below
 // for a much smaller-than-usual include guard section.
 
@@ -234,7 +237,9 @@ IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_SignalQuery,
                     uint32_t /* signal_id */)
 
 // Response to SignalSyncPoint, SignalSyncToken, and SignalQuery.
-IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SignalAck, uint32_t /* signal_id */)
+IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_SignalAck,
+                    uint32_t /* signal_id */,
+                    gpu::CommandBuffer::State /* state */)
 
 // Create an image from an existing gpu memory buffer. The id that can be
 // used to identify the image from a command buffer.
@@ -252,3 +257,5 @@ IPC_SYNC_MESSAGE_ROUTED2_1(GpuCommandBufferMsg_CreateStreamTexture,
 
 // Start or stop VSync sygnal production on GPU side (Windows only).
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetNeedsVSync, bool /* needs_vsync */)
+
+#endif  // GPU_IPC_COMMON_GPU_MESSAGES_H_

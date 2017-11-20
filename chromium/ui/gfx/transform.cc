@@ -2,15 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// MSVC++ requires this to be set before any other includes to get M_PI.
-#define _USE_MATH_DEFINES
-
 #include "ui/gfx/transform.h"
-
-#include <cmath>
 
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "ui/gfx/geometry/angle_conversions.h"
 #include "ui/gfx/geometry/box_f.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point3_f.h"
@@ -28,8 +24,7 @@ namespace {
 const SkMScalar kEpsilon = std::numeric_limits<float>::epsilon();
 
 SkMScalar TanDegrees(double degrees) {
-  double radians = degrees * M_PI / 180;
-  return SkDoubleToMScalar(std::tan(radians));
+  return SkDoubleToMScalar(std::tan(gfx::DegToRad(degrees)));
 }
 
 inline bool ApproximatelyZero(SkMScalar x, SkMScalar tolerance) {
@@ -38,12 +33,6 @@ inline bool ApproximatelyZero(SkMScalar x, SkMScalar tolerance) {
 
 inline bool ApproximatelyOne(SkMScalar x, SkMScalar tolerance) {
   return std::abs(x - SkDoubleToMScalar(1.0)) <= tolerance;
-}
-
-static float Round(float f) {
-  if (f == 0.f)
-    return f;
-  return (f > 0.f) ? std::floor(f + 0.5f) : std::ceil(f - 0.5f);
 }
 
 }  // namespace
@@ -121,7 +110,7 @@ Transform::Transform(const Quaternion& q)
 }
 
 void Transform::RotateAboutXAxis(double degrees) {
-  double radians = degrees * M_PI / 180;
+  double radians = gfx::DegToRad(degrees);
   SkMScalar cosTheta = SkDoubleToMScalar(std::cos(radians));
   SkMScalar sinTheta = SkDoubleToMScalar(std::sin(radians));
   if (matrix_.isIdentity()) {
@@ -138,7 +127,7 @@ void Transform::RotateAboutXAxis(double degrees) {
 }
 
 void Transform::RotateAboutYAxis(double degrees) {
-  double radians = degrees * M_PI / 180;
+  double radians = gfx::DegToRad(degrees);
   SkMScalar cosTheta = SkDoubleToMScalar(std::cos(radians));
   SkMScalar sinTheta = SkDoubleToMScalar(std::sin(radians));
   if (matrix_.isIdentity()) {
@@ -157,7 +146,7 @@ void Transform::RotateAboutYAxis(double degrees) {
 }
 
 void Transform::RotateAboutZAxis(double degrees) {
-  double radians = degrees * M_PI / 180;
+  double radians = gfx::DegToRad(degrees);
   SkMScalar cosTheta = SkDoubleToMScalar(std::cos(radians));
   SkMScalar sinTheta = SkDoubleToMScalar(std::sin(radians));
   if (matrix_.isIdentity()) {
@@ -533,8 +522,10 @@ bool Transform::Blend(const Transform& from, double progress) {
 }
 
 void Transform::RoundTranslationComponents() {
-  matrix_.set(0, 3, Round(matrix_.get(0, 3)));
-  matrix_.set(1, 3, Round(matrix_.get(1, 3)));
+  // TODO(pkasting): Use SkMScalarRound() when
+  // https://bugs.chromium.org/p/skia/issues/detail?id=6852 is fixed.
+  matrix_.set(0, 3, std::round(matrix_.get(0, 3)));
+  matrix_.set(1, 3, std::round(matrix_.get(1, 3)));
 }
 
 void Transform::TransformPointInternal(const SkMatrix44& xform,

@@ -10,7 +10,6 @@
 #include "base/bind_helpers.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "crypto/signature_verifier.h"
@@ -67,7 +66,7 @@ class ProofVerifierChromium::Job {
       const std::string& hostname,
       const uint16_t port,
       const std::string& server_config,
-      QuicVersion quic_version,
+      QuicTransportVersion quic_version,
       QuicStringPiece chlo_hash,
       const std::vector<std::string>& certs,
       const std::string& cert_sct,
@@ -112,7 +111,7 @@ class ProofVerifierChromium::Job {
   int DoVerifyCertComplete(int result);
 
   bool VerifySignature(const std::string& signed_data,
-                       QuicVersion quic_version,
+                       QuicTransportVersion quic_version,
                        QuicStringPiece chlo_hash,
                        const std::string& signature,
                        const std::string& cert);
@@ -198,7 +197,7 @@ QuicAsyncStatus ProofVerifierChromium::Job::VerifyProof(
     const string& hostname,
     const uint16_t port,
     const string& server_config,
-    QuicVersion quic_version,
+    QuicTransportVersion quic_version,
     QuicStringPiece chlo_hash,
     const std::vector<string>& certs,
     const std::string& cert_sct,
@@ -379,6 +378,8 @@ int ProofVerifierChromium::Job::DoVerifyCert(int result) {
 }
 
 int ProofVerifierChromium::Job::DoVerifyCertComplete(int result) {
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.CertVerificationResult",
+                              -result);
   cert_verifier_request_.reset();
 
   const CertVerifyResult& cert_verify_result =
@@ -404,6 +405,11 @@ int ProofVerifierChromium::Job::DoVerifyCertComplete(int result) {
           CERT_STATUS_CT_COMPLIANCE_FAILED;
       verify_details_->cert_verify_result.cert_status &= ~CERT_STATUS_IS_EV;
     }
+
+    UMA_HISTOGRAM_ENUMERATION(
+        "Net.CertificateTransparency.ConnectionComplianceStatus.QUIC",
+        verify_details_->ct_verify_result.cert_policy_compliance,
+        ct::CertPolicyCompliance::CERT_POLICY_MAX);
 
     int ct_result = OK;
     if (transport_security_state_->CheckCTRequirements(
@@ -457,11 +463,12 @@ int ProofVerifierChromium::Job::DoVerifyCertComplete(int result) {
   return result;
 }
 
-bool ProofVerifierChromium::Job::VerifySignature(const string& signed_data,
-                                                 QuicVersion quic_version,
-                                                 QuicStringPiece chlo_hash,
-                                                 const string& signature,
-                                                 const string& cert) {
+bool ProofVerifierChromium::Job::VerifySignature(
+    const string& signed_data,
+    QuicTransportVersion quic_version,
+    QuicStringPiece chlo_hash,
+    const string& signature,
+    const string& cert) {
   QuicStringPiece spki;
   if (!asn1::ExtractSPKIFromDERCert(cert, &spki)) {
     DLOG(WARNING) << "ExtractSPKIFromDERCert failed";
@@ -542,7 +549,7 @@ QuicAsyncStatus ProofVerifierChromium::VerifyProof(
     const std::string& hostname,
     const uint16_t port,
     const std::string& server_config,
-    QuicVersion quic_version,
+    QuicTransportVersion quic_version,
     QuicStringPiece chlo_hash,
     const std::vector<std::string>& certs,
     const std::string& cert_sct,

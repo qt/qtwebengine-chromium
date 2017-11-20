@@ -9,7 +9,6 @@
 #include "base/auto_reset.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
@@ -573,14 +572,12 @@ void Scheduler::DrawIfPossible() {
   bool drawing_with_new_active_tree =
       state_machine_.active_tree_needs_first_draw() &&
       !state_machine_.previous_pending_tree_was_impl_side();
-  bool main_thread_missed_last_deadline =
-      state_machine_.main_thread_missed_last_deadline();
   compositor_timing_history_->WillDraw();
   state_machine_.WillDraw();
   DrawResult result = client_->ScheduledActionDrawIfPossible();
   state_machine_.DidDraw(result);
   compositor_timing_history_->DidDraw(
-      drawing_with_new_active_tree, main_thread_missed_last_deadline,
+      drawing_with_new_active_tree,
       begin_impl_frame_tracker_.DangerousMethodCurrentOrLast().frame_time);
 }
 
@@ -588,14 +585,12 @@ void Scheduler::DrawForced() {
   bool drawing_with_new_active_tree =
       state_machine_.active_tree_needs_first_draw() &&
       !state_machine_.previous_pending_tree_was_impl_side();
-  bool main_thread_missed_last_deadline =
-      state_machine_.main_thread_missed_last_deadline();
   compositor_timing_history_->WillDraw();
   state_machine_.WillDraw();
   DrawResult result = client_->ScheduledActionDrawForced();
   state_machine_.DidDraw(result);
   compositor_timing_history_->DidDraw(
-      drawing_with_new_active_tree, main_thread_missed_last_deadline,
+      drawing_with_new_active_tree,
       begin_impl_frame_tracker_.DangerousMethodCurrentOrLast().frame_time);
 }
 

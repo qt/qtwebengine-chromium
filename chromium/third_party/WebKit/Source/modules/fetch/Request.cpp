@@ -5,19 +5,18 @@
 #include "modules/fetch/Request.h"
 
 #include "bindings/core/v8/Dictionary.h"
-#include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/loader/ThreadableLoader.h"
 #include "modules/fetch/BodyStreamBuffer.h"
 #include "modules/fetch/FetchManager.h"
 #include "modules/fetch/RequestInit.h"
-#include "platform/HTTPNames.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/bindings/V8PrivateProperty.h"
+#include "platform/http_names.h"
 #include "platform/loader/fetch/FetchUtils.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/network/HTTPParsers.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/OriginAccessEntry.h"
 #include "platform/weborigin/Referrer.h"
 #include "public/platform/WebURLRequest.h"
@@ -195,7 +194,7 @@ Request* Request::CreateRequestWithRequestOrString(
         // substeps."
         request->SetReferrerString(FetchRequestData::ClientReferrerString());
       } else if (!origin->IsSameSchemeHostPortAndSuborigin(
-                     SecurityOrigin::Create(parsed_referrer).Get())) {
+                     SecurityOrigin::Create(parsed_referrer).get())) {
         // "If |parsedReferrer|'s origin is not same origin with
         // |origin|, throw a TypeError."
         exception_state.ThrowTypeError(
@@ -245,7 +244,7 @@ Request* Request::CreateRequestWithRequestOrString(
   } else if (init.credentials == "include") {
     request->SetCredentials(WebURLRequest::kFetchCredentialsModeInclude);
   } else if (init.credentials == "password") {
-    if (!init.attached_credential.Get()) {
+    if (!init.attached_credential.get()) {
       exception_state.ThrowTypeError(
           "Cannot construct a Request with a credential mode of 'password' "
           "without a PasswordCredential.");
@@ -319,7 +318,7 @@ Request* Request::CreateRequestWithRequestOrString(
   // We don't create a copy of r's Headers object when init's headers member
   // is present.
   Headers* headers = nullptr;
-  if (init.headers.isNull()) {
+  if (init.headers.IsNull()) {
     headers = r->getHeaders()->Clone();
   }
   // "Empty |r|'s request's header list."
@@ -333,18 +332,11 @@ Request* Request::CreateRequestWithRequestOrString(
                                      "' is unsupported in no-cors mode.");
       return nullptr;
     }
-    // "If |request|'s integrity metadata is not the empty string, throw a
-    // TypeError."
-    if (!request->Integrity().IsEmpty()) {
-      exception_state.ThrowTypeError(
-          "The integrity attribute is unsupported in no-cors mode.");
-      return nullptr;
-    }
     // "Set |r|'s Headers object's guard to "request-no-cors"."
     r->getHeaders()->SetGuard(Headers::kRequestNoCORSGuard);
   }
   // "Fill |r|'s Headers object with |headers|. Rethrow any exceptions."
-  if (!init.headers.isNull()) {
+  if (!init.headers.IsNull()) {
     r->getHeaders()->FillWith(init.headers, exception_state);
   } else {
     DCHECK(headers);
@@ -436,10 +428,10 @@ Request* Request::Create(ScriptState* script_state,
                          const RequestInfo& input,
                          const Dictionary& init,
                          ExceptionState& exception_state) {
-  DCHECK(!input.isNull());
-  if (input.isUSVString())
-    return Create(script_state, input.getAsUSVString(), init, exception_state);
-  return Create(script_state, input.getAsRequest(), init, exception_state);
+  DCHECK(!input.IsNull());
+  if (input.IsUSVString())
+    return Create(script_state, input.GetAsUSVString(), init, exception_state);
+  return Create(script_state, input.GetAsRequest(), init, exception_state);
 }
 
 Request* Request::Create(ScriptState* script_state,

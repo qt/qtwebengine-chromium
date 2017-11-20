@@ -35,7 +35,6 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "bindings/core/v8/V8Node.h"
-#include "core/InputTypeNames.h"
 #include "core/dom/Attr.h"
 #include "core/dom/CharacterData.h"
 #include "core/dom/ContainerNode.h"
@@ -55,18 +54,20 @@
 #include "core/editing/serializers/Serialization.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/HTMLSlotElement.h"
 #include "core/html/HTMLTemplateElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/imports/HTMLImportChild.h"
 #include "core/html/imports/HTMLImportLoader.h"
+#include "core/input_type_names.h"
 #include "core/inspector/DOMEditor.h"
 #include "core/inspector/DOMPatchSupport.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorHighlight.h"
 #include "core/inspector/InspectorHistory.h"
+#include "core/inspector/ResolveNode.h"
 #include "core/inspector/V8InspectorString.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutInline.h"
@@ -319,10 +320,9 @@ void InspectorDOMAgent::Unbind(Node* node, NodeToIdMap* nodes_map) {
     if (element->GetPseudoElement(kPseudoIdAfter))
       Unbind(element->GetPseudoElement(kPseudoIdAfter), nodes_map);
 
-    if (isHTMLLinkElement(*element)) {
-      HTMLLinkElement& link_element = toHTMLLinkElement(*element);
-      if (link_element.IsImport() && link_element.import())
-        Unbind(link_element.import(), nodes_map);
+    if (auto* link_element = ToHTMLLinkElementOrNull(*element)) {
+      if (link_element->IsImport() && link_element->import())
+        Unbind(link_element->import(), nodes_map);
     }
   }
 
@@ -1144,7 +1144,7 @@ Response InspectorDOMAgent::NodeForRemoteObjectId(const String& object_id,
     return Response::Error(ToCoreString(std::move(error)));
   if (!V8Node::hasInstance(value, isolate_))
     return Response::Error("Object id doesn't reference a Node");
-  node = V8Node::toImpl(v8::Local<v8::Object>::Cast(value));
+  node = V8Node::ToImpl(v8::Local<v8::Object>::Cast(value));
   if (!node) {
     return Response::Error(
         "Couldn't convert object with given objectId to Node");
@@ -1271,14 +1271,14 @@ Response InspectorDOMAgent::setFileInputFiles(
   Response response = AssertNode(node_id, backend_node_id, object_id, node);
   if (!response.isSuccess())
     return response;
-  if (!isHTMLInputElement(*node) ||
-      toHTMLInputElement(*node).type() != InputTypeNames::file)
+  if (!IsHTMLInputElement(*node) ||
+      ToHTMLInputElement(*node).type() != InputTypeNames::file)
     return Response::Error("Node is not a file input element");
 
   Vector<String> paths;
   for (size_t index = 0; index < files->length(); ++index)
     paths.push_back(files->get(index));
-  toHTMLInputElement(node)->SetFilesFromPaths(paths);
+  ToHTMLInputElement(node)->SetFilesFromPaths(paths);
   return Response::OK();
 }
 
@@ -1344,7 +1344,7 @@ Response InspectorDOMAgent::resolveNode(
 
   if (!node)
     return Response::Error("No node with given id found");
-  *result = ResolveNode(node, object_group_name);
+  *result = ResolveNode(v8_session_, node, object_group_name);
   if (!*result) {
     return Response::Error(
         "Node with given id does not belong to the document");
@@ -1479,20 +1479,18 @@ std::unique_ptr<protocol::DOM::Node> InspectorDOMAgent::BuildObjectForNode(
       force_push_children = true;
     }
 
-    if (isHTMLLinkElement(*element)) {
-      HTMLLinkElement& link_element = toHTMLLinkElement(*element);
-      if (link_element.IsImport() && link_element.import() &&
-          InnerParentNode(link_element.import()) == link_element) {
+    if (auto* link_element = ToHTMLLinkElementOrNull(*element)) {
+      if (link_element->IsImport() && link_element->import() &&
+          InnerParentNode(link_element->import()) == link_element) {
         value->setImportedDocument(BuildObjectForNode(
-            link_element.import(), 0, pierce, nodes_map, flatten_result));
+            link_element->import(), 0, pierce, nodes_map, flatten_result));
       }
       force_push_children = true;
     }
 
-    if (isHTMLTemplateElement(*element)) {
-      value->setTemplateContent(
-          BuildObjectForNode(toHTMLTemplateElement(*element).content(), 0,
-                             pierce, nodes_map, flatten_result));
+    if (auto* template_element = ToHTMLTemplateElementOrNull(*element)) {
+      value->setTemplateContent(BuildObjectForNode(
+          template_element->content(), 0, pierce, nodes_map, flatten_result));
       force_push_children = true;
     }
 
@@ -1517,9 +1515,8 @@ std::unique_ptr<protocol::DOM::Node> InspectorDOMAgent::BuildObjectForNode(
           BuildArrayForDistributedNodes(ToV0InsertionPoint(element)));
       force_push_children = true;
     }
-    if (isHTMLSlotElement(*element)) {
-      value->setDistributedNodes(
-          BuildDistributedNodesForSlot(toHTMLSlotElement(element)));
+    if (auto* slot = ToHTMLSlotElementOrNull(*element)) {
+      value->setDistributedNodes(BuildDistributedNodesForSlot(slot));
       force_push_children = true;
     }
   } else if (node->IsDocumentNode()) {
@@ -1737,18 +1734,6 @@ bool InspectorDOMAgent::IsWhitespace(Node* node) {
 }
 
 // static
-v8::Local<v8::Value> InspectorDOMAgent::NodeV8Value(
-    v8::Local<v8::Context> context,
-    Node* node) {
-  v8::Isolate* isolate = context->GetIsolate();
-  if (!node || !BindingSecurity::ShouldAllowAccessTo(
-                   CurrentDOMWindow(isolate), node,
-                   BindingSecurity::ErrorReportOption::kDoNotReport))
-    return v8::Null(isolate);
-  return ToV8(node, context->Global(), isolate);
-}
-
-// static
 void InspectorDOMAgent::CollectNodes(Node* node,
                                      int depth,
                                      bool pierce,
@@ -1778,11 +1763,10 @@ void InspectorDOMAgent::CollectNodes(Node* node,
       }
     }
 
-    if (isHTMLLinkElement(*element)) {
-      HTMLLinkElement& link_element = toHTMLLinkElement(*element);
-      if (link_element.IsImport() && link_element.import() &&
-          InnerParentNode(link_element.import()) == link_element) {
-        CollectNodes(link_element.import(), depth, pierce, filter, result);
+    if (auto* link_element = ToHTMLLinkElementOrNull(*element)) {
+      if (link_element->IsImport() && link_element->import() &&
+          InnerParentNode(link_element->import()) == link_element) {
+        CollectNodes(link_element->import(), depth, pierce, filter, result);
       }
     }
   }
@@ -2151,8 +2135,7 @@ class InspectableNode final
       : node_id_(DOMNodeIds::IdForNode(node)) {}
 
   v8::Local<v8::Value> get(v8::Local<v8::Context> context) override {
-    return InspectorDOMAgent::NodeV8Value(context,
-                                          DOMNodeIds::NodeForId(node_id_));
+    return NodeV8Value(context, DOMNodeIds::NodeForId(node_id_));
   }
 
  private:
@@ -2205,24 +2188,6 @@ protocol::Response InspectorDOMAgent::describeNode(
   *result = BuildObjectForNode(node, depth.fromMaybe(0),
                                pierce.fromMaybe(false), nullptr, nullptr);
   return Response::OK();
-}
-
-std::unique_ptr<v8_inspector::protocol::Runtime::API::RemoteObject>
-InspectorDOMAgent::ResolveNode(Node* node, const String& object_group) {
-  Document* document =
-      node->IsDocumentNode() ? &node->GetDocument() : node->ownerDocument();
-  LocalFrame* frame = document ? document->GetFrame() : nullptr;
-  if (!frame)
-    return nullptr;
-
-  ScriptState* script_state = ToScriptStateForMainWorld(frame);
-  if (!script_state)
-    return nullptr;
-
-  ScriptState::Scope scope(script_state);
-  return v8_session_->wrapObject(script_state->GetContext(),
-                                 NodeV8Value(script_state->GetContext(), node),
-                                 ToV8InspectorStringView(object_group));
 }
 
 Response InspectorDOMAgent::PushDocumentUponHandlelessOperation() {

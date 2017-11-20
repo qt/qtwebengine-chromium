@@ -159,6 +159,26 @@ namespace sw
 		return T(type)->getPrimitiveSizeInBits() / 8;
 	}
 
+	static unsigned int elementCount(Type *type)
+	{
+		uintptr_t t = reinterpret_cast<uintptr_t>(type);
+		if(t < EmulatedTypeCount)
+		{
+			switch(t)
+			{
+			case Type_v2i32: return 2;
+			case Type_v4i16: return 4;
+			case Type_v2i16: return 2;
+			case Type_v8i8:  return 8;
+			case Type_v4i8:  return 4;
+			case Type_v2f32: return 2;
+			default: assert(false);
+			}
+		}
+
+		return llvm::cast<llvm::VectorType>(T(type))->getNumElements();
+	}
+
 	Nucleus::Nucleus()
 	{
 		::codegenMutex.lock();   // Reactor and LLVM are currently not thread safe
@@ -905,31 +925,33 @@ namespace sw
 	Value *Nucleus::createConstantVector(const int64_t *constants, Type *type)
 	{
 		assert(llvm::isa<llvm::VectorType>(T(type)));
-		const int numConstants = llvm::cast<llvm::VectorType>(T(type))->getNumElements();
-		assert(numConstants <= 16);
+		const int numConstants = elementCount(type);                                       // Number of provided constants for the (emulated) type.
+		const int numElements = llvm::cast<llvm::VectorType>(T(type))->getNumElements();   // Number of elements of the underlying vector type.
+		assert(numElements <= 16 && numConstants <= numElements);
 		llvm::Constant *constantVector[16];
 
-		for(int i = 0; i < numConstants; i++)
+		for(int i = 0; i < numElements; i++)
 		{
-			constantVector[i] = llvm::ConstantInt::get(T(type)->getContainedType(0), constants[i]);
+			constantVector[i] = llvm::ConstantInt::get(T(type)->getContainedType(0), constants[i % numConstants]);
 		}
 
-		return V(llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(constantVector, numConstants)));
+		return V(llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(constantVector, numElements)));
 	}
 
 	Value *Nucleus::createConstantVector(const double *constants, Type *type)
 	{
 		assert(llvm::isa<llvm::VectorType>(T(type)));
-		const int numConstants = llvm::cast<llvm::VectorType>(T(type))->getNumElements();
-		assert(numConstants <= 8);
+		const int numConstants = elementCount(type);                                       // Number of provided constants for the (emulated) type.
+		const int numElements = llvm::cast<llvm::VectorType>(T(type))->getNumElements();   // Number of elements of the underlying vector type.
+		assert(numElements <= 8 && numConstants <= numElements);
 		llvm::Constant *constantVector[8];
 
-		for(int i = 0; i < numConstants; i++)
+		for(int i = 0; i < numElements; i++)
 		{
-			constantVector[i] = llvm::ConstantFP::get(T(type)->getContainedType(0), constants[i]);
+			constantVector[i] = llvm::ConstantFP::get(T(type)->getContainedType(0), constants[i % numConstants]);
 		}
 
-		return V(llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(constantVector, numConstants)));
+		return V(llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant*>(constantVector, numElements)));
 	}
 
 	Type *Void::getType()
@@ -2769,7 +2791,7 @@ namespace sw
 	RValue<Short4> RoundShort4(RValue<Float4> cast)
 	{
 		RValue<Int4> int4 = RoundInt(cast);
-		return As<Short4>(Pack(int4, int4));
+		return As<Short4>(PackSigned(int4, int4));
 	}
 
 	RValue<Short4> Max(RValue<Short4> x, RValue<Short4> y)
@@ -2802,11 +2824,18 @@ namespace sw
 		return x86::pmaddwd(x, y);
 	}
 
-	RValue<SByte8> Pack(RValue<Short4> x, RValue<Short4> y)
+	RValue<SByte8> PackSigned(RValue<Short4> x, RValue<Short4> y)
 	{
 		auto result = x86::packsswb(x, y);
 
 		return As<SByte8>(Swizzle(As<Int4>(result), 0x88));
+	}
+
+	RValue<Byte8> PackUnsigned(RValue<Short4> x, RValue<Short4> y)
+	{
+		auto result = x86::packuswb(x, y);
+
+		return As<Byte8>(Swizzle(As<Int4>(result), 0x88));
 	}
 
 	RValue<Int2> UnpackLow(RValue<Short4> x, RValue<Short4> y)
@@ -2877,7 +2906,7 @@ namespace sw
 			if(CPUID::supportsSSE4_1())
 			{
 				Int4 int4(Min(cast, Float4(0xFFFF)));   // packusdw takes care of 0x0000 saturation
-				*this = As<Short4>(Pack(As<UInt4>(int4), As<UInt4>(int4)));
+				*this = As<Short4>(PackUnsigned(int4, int4));
 			}
 			else
 			{
@@ -3069,13 +3098,6 @@ namespace sw
 	RValue<UShort4> Average(RValue<UShort4> x, RValue<UShort4> y)
 	{
 		return x86::pavgw(x, y);
-	}
-
-	RValue<Byte8> Pack(RValue<UShort4> x, RValue<UShort4> y)
-	{
-		auto result = x86::packuswb(x, y);
-
-		return As<Byte8>(Swizzle(As<Int4>(result), 0x88));
 	}
 
 	Type *UShort4::getType()
@@ -4824,9 +4846,14 @@ namespace sw
 		return x86::cvtps2dq(cast);
 	}
 
-	RValue<Short8> Pack(RValue<Int4> x, RValue<Int4> y)
+	RValue<Short8> PackSigned(RValue<Int4> x, RValue<Int4> y)
 	{
 		return x86::packssdw(x, y);
+	}
+
+	RValue<UShort8> PackUnsigned(RValue<Int4> x, RValue<Int4> y)
+	{
+		return x86::packusdw(x, y);
 	}
 
 	RValue<Int> Extract(RValue<Int4> x, int i)
@@ -5156,11 +5183,6 @@ namespace sw
 			RValue<UInt4> less = CmpLT(x, y);
 			return (x & less) | (y & ~less);
 		}
-	}
-
-	RValue<UShort8> Pack(RValue<UInt4> x, RValue<UInt4> y)
-	{
-		return x86::packusdw(As<Int4>(x), As<Int4>(y));
 	}
 
 	Type *UInt4::getType()
@@ -6183,7 +6205,7 @@ namespace sw
 			return As<SByte8>(V(::builder->CreateCall2(packsswb, x.value, y.value)));
 		}
 
-		RValue<Byte8> packuswb(RValue<UShort4> x, RValue<UShort4> y)
+		RValue<Byte8> packuswb(RValue<Short4> x, RValue<Short4> y)
 		{
 			llvm::Function *packuswb = llvm::Intrinsic::getDeclaration(::module, llvm::Intrinsic::x86_sse2_packuswb_128);
 

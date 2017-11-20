@@ -15,7 +15,6 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "net/android/keystore.h"
 #include "net/android/legacy_openssl.h"
 #include "net/base/net_errors.h"
@@ -142,13 +141,6 @@ class SSLPlatformKeyAndroid : public ThreadedSSLPrivateKey::Delegate {
           signature->data(), legacy_rsa_, android::ANDROID_RSA_PKCS1_PADDING);
       if (ret < 0) {
         LOG(WARNING) << "Could not sign message with legacy RSA key!";
-        // System OpenSSL will use a separate error queue, so it is still
-        // necessary to push a new error.
-        //
-        // TODO(davidben): It would be good to also clear the system error queue
-        // if there were some way to convince Java to do it. (Without going
-        // through Java, it's difficult to get a handle on a system OpenSSL
-        // function; dlopen loads a second copy.)
         return ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED;
       }
       signature->resize(ret);
@@ -212,9 +204,9 @@ scoped_refptr<SSLPrivateKey> WrapJavaPrivateKey(
     }
   }
 
-  return make_scoped_refptr(new ThreadedSSLPrivateKey(
+  return base::MakeRefCounted<ThreadedSSLPrivateKey>(
       std::make_unique<SSLPlatformKeyAndroid>(type, key, max_length, sys_rsa),
-      GetSSLPlatformKeyTaskRunner()));
+      GetSSLPlatformKeyTaskRunner());
 }
 
 }  // namespace net

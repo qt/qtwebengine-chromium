@@ -13,7 +13,7 @@
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fpdfdoc/cpdf_annotlist.h"
 #include "core/fpdfdoc/cpdf_interform.h"
-#include "core/fxcrt/cfx_autorestorer.h"
+#include "core/fxcrt/autorestorer.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
 #include "fpdfsdk/cpdfsdk_annotiteration.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
@@ -117,7 +117,8 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
   CPDFSDK_AnnotIteration annotIteration(this, true);
   for (const auto& pSDKAnnot : annotIteration) {
     m_pFormFillEnv->GetAnnotHandlerMgr()->Annot_OnDraw(
-        this, pSDKAnnot.Get(), pDevice, pUser2Device, pOptions->m_bDrawAnnots);
+        this, pSDKAnnot.Get(), pDevice, pUser2Device,
+        pOptions->GetDrawAnnots());
   }
 }
 
@@ -241,17 +242,17 @@ CPDFSDK_Annot* CPDFSDK_PageView::GetAnnotByXFAWidget(CXFA_FFWidget* hWidget) {
 }
 #endif  // PDF_ENABLE_XFA
 
-CFX_WideString CPDFSDK_PageView::GetSelectedText() {
+WideString CPDFSDK_PageView::GetSelectedText() {
   if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
     CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
         m_pFormFillEnv->GetAnnotHandlerMgr();
     return pAnnotHandlerMgr->Annot_GetSelectedText(pAnnot);
   }
 
-  return CFX_WideString();
+  return WideString();
 }
 
-void CPDFSDK_PageView::ReplaceSelection(const CFX_WideString& text) {
+void CPDFSDK_PageView::ReplaceSelection(const WideString& text) {
   if (CPDFSDK_Annot* pAnnot = GetFocusAnnot()) {
     CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
         m_pFormFillEnv->GetAnnotHandlerMgr();
@@ -422,11 +423,11 @@ void CPDFSDK_PageView::LoadFXAnnots() {
   CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr =
       m_pFormFillEnv->GetAnnotHandlerMgr();
 
-  CFX_AutoRestorer<bool> lock(&m_bLocked);
+  AutoRestorer<bool> lock(&m_bLocked);
   m_bLocked = true;
 
 #ifdef PDF_ENABLE_XFA
-  CFX_RetainPtr<CPDFXFA_Page> protector(m_page);
+  RetainPtr<CPDFXFA_Page> protector(m_page);
   if (m_pFormFillEnv->GetXFAContext()->GetDocType() == XFA_DocType::Dynamic) {
     CXFA_FFPageView* pageView = m_page->GetXFAPageView();
     std::unique_ptr<IXFA_WidgetIterator> pWidgetHandler(

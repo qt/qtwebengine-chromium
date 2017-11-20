@@ -36,7 +36,7 @@
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
 #include "core/frame/VisualViewport.h"
-#include "core/html/HTMLTextAreaElement.h"
+#include "core/html/forms/HTMLTextAreaElement.h"
 #include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutListItem.h"
@@ -48,6 +48,7 @@
 #include "core/layout/LayoutView.h"
 #include "core/layout/api/LayoutAPIShim.h"
 #include "core/layout/api/LayoutViewItem.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "platform/wtf/PtrUtil.h"
 
@@ -73,7 +74,7 @@ static bool IsNonTextAreaFormControl(const LayoutObject* layout_object) {
     return false;
   const Element* element = ToElement(node);
 
-  return (element->IsFormControlElement() && !isHTMLTextAreaElement(element));
+  return (element->IsFormControlElement() && !IsHTMLTextAreaElement(element));
 }
 
 static bool IsPotentialClusterRoot(const LayoutObject* layout_object) {
@@ -592,7 +593,8 @@ void TextAutosizer::UpdatePageInfo() {
              ->GetViewportDescription()
              .IsSpecifiedByAuthor()) {
       page_info_.device_scale_adjustment_ =
-          document_->GetSettings()->GetDeviceScaleAdjustment();
+          document_->GetPage()->GetChromeClient().WindowToViewportScalar(
+              document_->GetSettings()->GetDeviceScaleAdjustment());
     } else {
       page_info_.device_scale_adjustment_ = 1.0f;
     }

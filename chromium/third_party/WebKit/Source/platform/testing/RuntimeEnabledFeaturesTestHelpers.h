@@ -5,7 +5,7 @@
 #ifndef RuntimeEnabledFeaturesTestHelpers_h
 #define RuntimeEnabledFeaturesTestHelpers_h
 
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/Assertions.h"
 
 namespace blink {
@@ -37,13 +37,17 @@ typedef ScopedRuntimeEnabledFeatureForTest<
     RuntimeEnabledFeatures::SetCompositeOpaqueScrollersEnabled>
     ScopedCompositeOpaqueScrollersForTest;
 typedef ScopedRuntimeEnabledFeatureForTest<
-    RuntimeEnabledFeatures::CompositorWorkerEnabled,
-    RuntimeEnabledFeatures::SetCompositorWorkerEnabled>
-    ScopedCompositorWorkerForTest;
+    RuntimeEnabledFeatures::AnimationWorkletEnabled,
+    RuntimeEnabledFeatures::SetAnimationWorkletEnabled>
+    ScopedAnimationWorkleForTest;
 typedef ScopedRuntimeEnabledFeatureForTest<
     RuntimeEnabledFeatures::RootLayerScrollingEnabled,
     RuntimeEnabledFeatures::SetRootLayerScrollingEnabled>
     ScopedRootLayerScrollingForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::SlimmingPaintV175Enabled,
+    RuntimeEnabledFeatures::SetSlimmingPaintV175Enabled>
+    ScopedSlimmingPaintV175ForTest;
 typedef ScopedRuntimeEnabledFeatureForTest<
     RuntimeEnabledFeatures::SlimmingPaintV2Enabled,
     RuntimeEnabledFeatures::SetSlimmingPaintV2Enabled>
@@ -60,7 +64,154 @@ typedef ScopedRuntimeEnabledFeatureForTest<
     RuntimeEnabledFeatures::MojoBlobsEnabled,
     RuntimeEnabledFeatures::SetMojoBlobsEnabled>
     ScopedMojoBlobsForTest;
-
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::OverlayScrollbarsEnabled,
+    RuntimeEnabledFeatures::SetOverlayScrollbarsEnabled>
+    ScopedOverlayScrollbarsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::SkipCompositingSmallScrollersEnabled,
+    RuntimeEnabledFeatures::SetSkipCompositingSmallScrollersEnabled>
+    ScopedSkipCompositingSmallScrollersForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::ExperimentalCanvasFeaturesEnabled,
+    RuntimeEnabledFeatures::SetExperimentalCanvasFeaturesEnabled>
+    ScopedExperimentalCanvasFeaturesForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::ColorCanvasExtensionsEnabled,
+    RuntimeEnabledFeatures::SetColorCanvasExtensionsEnabled>
+    ScopedColorCanvasExtensionsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::CSSVariables2Enabled,
+    RuntimeEnabledFeatures::SetCSSVariables2Enabled>
+    ScopedCSSVariables2ForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::CSSAdditiveAnimationsEnabled,
+    RuntimeEnabledFeatures::SetCSSAdditiveAnimationsEnabled>
+    ScopedCSSAdditiveAnimationsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::StackedCSSPropertyAnimationsEnabled,
+    RuntimeEnabledFeatures::SetStackedCSSPropertyAnimationsEnabled>
+    ScopedStackedCSSPropertyAnimationsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::CSSPaintAPIArgumentsEnabled,
+    RuntimeEnabledFeatures::SetCSSPaintAPIArgumentsEnabled>
+    ScopedCSSPaintAPIArgumentsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::SuboriginsEnabled,
+    RuntimeEnabledFeatures::SetSuboriginsEnabled>
+    ScopedSuboriginsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::CompositedSelectionUpdateEnabled,
+    RuntimeEnabledFeatures::SetCompositedSelectionUpdateEnabled>
+    ScopedCompositedSelectionUpdateForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::ForceOverlayFullscreenVideoEnabled,
+    RuntimeEnabledFeatures::SetForceOverlayFullscreenVideoEnabled>
+    ScopedForceOverlayFullscreenVideoForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::OrientationEventEnabled,
+    RuntimeEnabledFeatures::SetOrientationEventEnabled>
+    ScopedOrientationEventForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::MiddleClickAutoscrollEnabled,
+    RuntimeEnabledFeatures::SetMiddleClickAutoscrollEnabled>
+    ScopedMiddleClickAutoscrollForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::InputMultipleFieldsUIEnabled,
+    RuntimeEnabledFeatures::SetInputMultipleFieldsUIEnabled>
+    ScopedInputMultipleFieldsUIForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::CorsRFC1918Enabled,
+    RuntimeEnabledFeatures::SetCorsRFC1918Enabled>
+    ScopedCorsRFC1918ForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::FeaturePolicyEnabled,
+    RuntimeEnabledFeatures::SetFeaturePolicyEnabled>
+    ScopedFeaturePolicyForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::FractionalScrollOffsetsEnabled,
+    RuntimeEnabledFeatures::SetFractionalScrollOffsetsEnabled>
+    ScopedFractionalScrollOffsetsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::ScrollAnchoringEnabled,
+    RuntimeEnabledFeatures::SetScrollAnchoringEnabled>
+    ScopedScrollAnchoringForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::SetRootScrollerEnabled,
+    RuntimeEnabledFeatures::SetSetRootScrollerEnabled>
+    ScopedRootScrollerForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::VideoFullscreenDetectionEnabled,
+    RuntimeEnabledFeatures::SetVideoFullscreenDetectionEnabled>
+    ScopedVideoFullscreenDetectionForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::TrackLayoutPassesPerBlockEnabled,
+    RuntimeEnabledFeatures::SetTrackLayoutPassesPerBlockEnabled>
+    ScopedTrackLayoutPassesPerBlockForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::LayoutNGEnabled,
+    RuntimeEnabledFeatures::SetLayoutNGEnabled>
+    ScopedLayoutNGForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::ClientPlaceholdersForServerLoFiEnabled,
+    RuntimeEnabledFeatures::SetClientPlaceholdersForServerLoFiEnabled>
+    ScopedClientPlaceholdersForServerLoFiForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::OriginTrialsEnabled,
+    RuntimeEnabledFeatures::SetOriginTrialsEnabled>
+    ScopedOriginTrialsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::TimerThrottlingForBackgroundTabsEnabled,
+    RuntimeEnabledFeatures::SetTimerThrottlingForBackgroundTabsEnabled>
+    ScopedTimerThrottlingForBackgroundTabsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::Canvas2dFixedRenderingModeEnabled,
+    RuntimeEnabledFeatures::SetCanvas2dFixedRenderingModeEnabled>
+    ScopedCanvas2dFixedRenderingModeForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::MediaCastOverlayButtonEnabled,
+    RuntimeEnabledFeatures::SetMediaCastOverlayButtonEnabled>
+    ScopedMediaCastOverlayButtonForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::VideoRotateToFullscreenEnabled,
+    RuntimeEnabledFeatures::SetVideoRotateToFullscreenEnabled>
+    ScopedVideoRotateToFullscreenForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::VideoFullscreenOrientationLockEnabled,
+    RuntimeEnabledFeatures::SetVideoFullscreenOrientationLockEnabled>
+    ScopedVideoFullscreenOrientationLockForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::RemotePlaybackBackendEnabled,
+    RuntimeEnabledFeatures::SetRemotePlaybackBackendEnabled>
+    ScopedRemotePlaybackBackendForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::NewRemotePlaybackPipelineEnabled,
+    RuntimeEnabledFeatures::SetNewRemotePlaybackPipelineEnabled>
+    ScopedNewRemotePlaybackPipelineForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::FramesTimingFunctionEnabled,
+    RuntimeEnabledFeatures::SetFramesTimingFunctionEnabled>
+    ScopedFramesTimingFunctionForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::BlinkRuntimeCallStatsEnabled,
+    RuntimeEnabledFeatures::SetBlinkRuntimeCallStatsEnabled>
+    ScopedBlinkRuntimeCallStatsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::CompositorImageAnimationsEnabled,
+    RuntimeEnabledFeatures::SetCompositorImageAnimationsEnabled>
+    ScopedCompositorImageAnimationsForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::Canvas2dImageChromiumEnabled,
+    RuntimeEnabledFeatures::SetCanvas2dImageChromiumEnabled>
+    ScopedCanvas2dImageChromiumForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::WebGLImageChromiumEnabled,
+    RuntimeEnabledFeatures::SetWebGLImageChromiumEnabled>
+    ScopedWebGLImageChromiumForTest;
+typedef ScopedRuntimeEnabledFeatureForTest<
+    RuntimeEnabledFeatures::SignatureBasedIntegrityEnabled,
+    RuntimeEnabledFeatures::SetSignatureBasedIntegrityEnabled>
+    ScopedSignatureBasedIntegrityForTest;
 }  // namespace blink
 
 #endif  // RuntimeEnabledFeaturesTestHelpers_h

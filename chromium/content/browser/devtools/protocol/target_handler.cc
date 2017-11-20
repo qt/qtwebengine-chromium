@@ -15,13 +15,17 @@ namespace protocol {
 namespace {
 
 std::unique_ptr<Target::TargetInfo> CreateInfo(DevToolsAgentHost* host) {
-  return Target::TargetInfo::Create()
-      .SetTargetId(host->GetId())
-      .SetTitle(host->GetTitle())
-      .SetUrl(host->GetURL().spec())
-      .SetType(host->GetType())
-      .SetAttached(host->IsAttached())
-      .Build();
+  std::unique_ptr<Target::TargetInfo> target_info =
+      Target::TargetInfo::Create()
+          .SetTargetId(host->GetId())
+          .SetTitle(host->GetTitle())
+          .SetUrl(host->GetURL().spec())
+          .SetType(host->GetType())
+          .SetAttached(host->IsAttached())
+          .Build();
+  if (!host->GetOpenerId().empty())
+    target_info->SetOpenerId(host->GetOpenerId());
+  return target_info;
 }
 
 }  // namespace
@@ -114,8 +118,9 @@ void TargetHandler::Wire(UberDispatcher* dispatcher) {
   Target::Dispatcher::wire(dispatcher, this);
 }
 
-void TargetHandler::SetRenderFrameHost(RenderFrameHostImpl* render_frame_host) {
-  auto_attacher_.SetRenderFrameHost(render_frame_host);
+void TargetHandler::SetRenderer(RenderProcessHost* process_host,
+                                RenderFrameHostImpl* frame_host) {
+  auto_attacher_.SetRenderFrameHost(frame_host);
 }
 
 Response TargetHandler::Disable() {
@@ -292,6 +297,7 @@ Response TargetHandler::CreateTarget(const std::string& url,
                                      Maybe<int> width,
                                      Maybe<int> height,
                                      Maybe<std::string> context_id,
+                                     Maybe<bool> enable_begin_frame_control,
                                      std::string* out_target_id) {
   DevToolsManagerDelegate* delegate =
       DevToolsManager::GetInstance()->delegate();
@@ -326,6 +332,12 @@ void TargetHandler::DevToolsAgentHostCreated(DevToolsAgentHost* host) {
     return;
   frontend_->TargetCreated(CreateInfo(host));
   reported_hosts_.insert(host);
+}
+
+void TargetHandler::DevToolsAgentHostNavigated(DevToolsAgentHost* host) {
+  if (reported_hosts_.find(host) == reported_hosts_.end())
+    return;
+  frontend_->TargetInfoChanged(CreateInfo(host));
 }
 
 void TargetHandler::DevToolsAgentHostDestroyed(DevToolsAgentHost* host) {

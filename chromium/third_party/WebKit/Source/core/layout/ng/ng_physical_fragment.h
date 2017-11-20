@@ -9,15 +9,22 @@
 #include "core/layout/ng/geometry/ng_physical_offset.h"
 #include "core/layout/ng/geometry/ng_physical_size.h"
 #include "core/layout/ng/ng_break_token.h"
-#include "core/loader/resource/ImageResourceObserver.h"
-#include "platform/graphics/paint/DisplayItemClient.h"
+#include "platform/geometry/LayoutRect.h"
 #include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
 class ComputedStyle;
 class LayoutObject;
+class Node;
+struct NGPhysicalOffsetRect;
 struct NGPixelSnappedPhysicalBoxStrut;
+
+class NGPhysicalFragment;
+
+struct CORE_EXPORT NGPhysicalFragmentTraits {
+  static void Destruct(const NGPhysicalFragment*);
+};
 
 // The NGPhysicalFragment contains the output geometry from layout. The
 // fragment stores all of its information in the physical coordinate system for
@@ -30,18 +37,8 @@ struct NGPixelSnappedPhysicalBoxStrut;
 // Layout code should only access geometry information through the
 // NGFragment wrapper classes which transforms information into the logical
 // coordinate system.
-//
-// NGPhysicalFragment is an ImageResourceObserver, which means that it gets
-// notified when associated images are changed.
-// This is used for 2 main use cases:
-// - reply to 'background-image' as we need to invalidate the background in this
-//   case.
-//   (See https://drafts.csswg.org/css-backgrounds-3/#the-background-image)
-// - image (<img>, svg <image>) or video (<video>) elements that are
-//   placeholders for displaying them.
-class CORE_EXPORT NGPhysicalFragment : public RefCounted<NGPhysicalFragment>,
-                                       public DisplayItemClient,
-                                       public ImageResourceObserver {
+class CORE_EXPORT NGPhysicalFragment
+    : public RefCounted<NGPhysicalFragment, NGPhysicalFragmentTraits> {
  public:
   enum NGFragmentType {
     kFragmentBox = 0,
@@ -54,6 +51,10 @@ class CORE_EXPORT NGPhysicalFragment : public RefCounted<NGPhysicalFragment>,
   ~NGPhysicalFragment();
 
   NGFragmentType Type() const { return static_cast<NGFragmentType>(type_); }
+  bool IsContainer() const {
+    return Type() == NGFragmentType::kFragmentBox ||
+           Type() == NGFragmentType::kFragmentLineBox;
+  }
   bool IsBox() const { return Type() == NGFragmentType::kFragmentBox; }
   bool IsText() const { return Type() == NGFragmentType::kFragmentText; }
   bool IsLineBox() const { return Type() == NGFragmentType::kFragmentLineBox; }
@@ -75,22 +76,16 @@ class CORE_EXPORT NGPhysicalFragment : public RefCounted<NGPhysicalFragment>,
     return offset_;
   }
 
-  NGBreakToken* BreakToken() const { return break_token_.Get(); }
+  NGBreakToken* BreakToken() const { return break_token_.get(); }
   const ComputedStyle& Style() const;
+  Node* GetNode() const;
 
   // GetLayoutObject should only be used when necessary for compatibility
   // with LegacyLayout.
   LayoutObject* GetLayoutObject() const { return layout_object_; }
 
-  // DisplayItemClient methods.
-  String DebugName() const override { return "NGPhysicalFragment"; }
-
-  // TODO(layout-dev): Implement when we have oveflow support.
-  bool HasOverflowClip() const { return false; }
-  LayoutRect VisualRect() const {
-    return LayoutRect(LayoutPoint(), LayoutSize(Size().width, Size().height));
-  }
-  LayoutRect VisualOverflowRect() const { return VisualRect(); }
+  // Unite visual rect to propagate to parent's ContentsVisualRect.
+  void PropagateContentsVisualRect(NGPhysicalOffsetRect*) const;
 
   // Should only be used by the parent fragment's layout.
   void SetOffset(NGPhysicalOffset offset) {
@@ -105,16 +100,23 @@ class CORE_EXPORT NGPhysicalFragment : public RefCounted<NGPhysicalFragment>,
 
   String ToString() const;
 
+  enum DumpFlag {
+    DumpHeaderText = 0x1,
+    DumpSubtree = 0x2,
+    DumpIndentation = 0x4,
+    DumpType = 0x8,
+    DumpOffset = 0x10,
+    DumpSize = 0x20,
+    DumpTextOffsets = 0x40,
+    DumpAll = -1
+  };
+  typedef int DumpFlags;
+
+  String DumpFragmentTree(DumpFlags) const;
+
 #ifndef NDEBUG
   void ShowFragmentTree() const;
 #endif
-
-  // Override RefCounted's deref() to ensure operator delete is called on the
-  // appropriate subclass type.
-  void Deref() const {
-    if (DerefBase())
-      Destroy();
-  }
 
  protected:
   NGPhysicalFragment(LayoutObject* layout_object,
@@ -134,6 +136,7 @@ class CORE_EXPORT NGPhysicalFragment : public RefCounted<NGPhysicalFragment>,
   unsigned border_edge_ : 4;  // NGBorderEdges::Physical
 
  private:
+  friend struct NGPhysicalFragmentTraits;
   void Destroy() const;
 };
 

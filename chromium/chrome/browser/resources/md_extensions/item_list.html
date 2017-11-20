@@ -1,21 +1,21 @@
 <link rel="import" href="chrome://resources/html/polymer.html">
 
-<link rel="import" href="chrome://resources/cr_elements/hidden_style_css.html">
+<link rel="import" href="chrome://resources/cr_elements/cr_container_shadow_behavior.html">
+<link rel="import" href="chrome://resources/cr_elements/shared_style_css.html">
 <link rel="import" href="chrome://resources/html/cr.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/iron-list/iron-list.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/iron-resizable-behavior/iron-resizable-behavior.html">
-<link rel="import" href="chrome://extensions/item.html">
+<link rel="import" href="item.html">
 
 <dom-module id="extensions-item-list">
   <template>
-    <style include="cr-hidden-style">
-      :host {
-        @apply(--layout-vertical);
+    <style include="cr-shared-style">
+      #items-container,
+      extensions-item {
+        --extensions-card-width: 400px;
       }
 
-      iron-list {
-        @apply(--layout-flex);
-        margin-top: 18px;
+      #container {
+        height: 100%;
+        overflow: overlay;
       }
 
       .empty-list-message {
@@ -26,29 +26,45 @@
         text-align: center;
       }
 
-      .wrapper {
-        padding: 6px;
+      #items-container {
+        --grid-gutter: 12px;
+        --max-columns: 3;
+        display: grid;
+        grid-column-gap: var(--grid-gutter);
+        grid-row-gap: var(--grid-gutter);
+        grid-template-columns: repeat(auto-fill, var(--extensions-card-width));
+        justify-content: center;
+        margin: auto;
+        max-width: calc(var(--extensions-card-width) * var(--max-columns) +
+            var(--grid-gutter) * var(--max-columns));
+        padding: calc(var(--grid-gutter) / 2);
+      }
+
+      extensions-item {
+        grid-column-start: auto;
+        grid-row-start: auto;
       }
     </style>
-    <div id="no-items" class="empty-list-message"
-        hidden$="[[!shouldShowEmptyItemsMessage_(items.length)]]">
-      <span>$i18nRaw{noExtensionsOrApps}</span>
-    </div>
-    <div id="no-search-results" class="empty-list-message"
-        hidden$="[[!shouldShowEmptySearchMessage_(shownItems_.length)]]">
-      <span>$i18n{noSearchResults}</span>
-    </div>
-
-    <iron-list id="list" items="[[shownItems_]]"
-        as="item" grid>
-      <template>
-        <div class="wrapper">
+    <div id="container">
+      <div class="empty-list-message" hidden="[[!isGuest]]">
+        $i18n{guestModeMessage}
+      </div>
+      <div id="no-items" class="empty-list-message"
+          hidden$="[[!shouldShowEmptyItemsMessage_(items.length)]]">
+        <span>$i18nRaw{noExtensionsOrApps}</span>
+      </div>
+      <div id="no-search-results" class="empty-list-message"
+          hidden$="[[!shouldShowEmptySearchMessage_(shownItems_.length)]]">
+        <span>$i18n{noSearchResults}</span>
+      </div>
+      <div id="items-container">
+        <template is="dom-repeat" items="[[shownItems_]]">
           <extensions-item data="[[item]]" delegate="[[delegate]]"
-              id="[[item.id]]" in-dev-mode="[[inDevMode]]">
+              in-dev-mode="[[inDevMode]]">
           </extensions-item>
-        </div>
-      </template>
-    </iron-list>
+        </template>
+      </div>
+    </div>
   </template>
-  <script src="chrome://extensions/item_list.js"></script>
+  <script src="item_list.js"></script>
 </dom-module>

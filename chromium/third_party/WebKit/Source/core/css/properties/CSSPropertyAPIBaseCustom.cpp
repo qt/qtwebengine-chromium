@@ -2,55 +2,144 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// This file contains methods of CSSPropertyAPI that are not generated.
+
 #include "core/css/properties/CSSPropertyAPI.h"
 
-#include "core/CSSPropertyNames.h"
 #include "core/StylePropertyShorthand.h"
-#include "core/css/CSSValue.h"
-#include "core/css/parser/CSSParserContext.h"
-#include "core/css/parser/CSSParserLocalContext.h"
-#include "core/css/parser/CSSPropertyParserHelpers.h"
-#include "core/css/properties/CSSPropertyAnimationTimingFunctionUtils.h"
-#include "core/css/properties/CSSPropertyBackgroundUtils.h"
-#include "core/css/properties/CSSPropertyBorderImageUtils.h"
-#include "core/css/properties/CSSPropertyBoxShadowUtils.h"
-#include "core/css/properties/CSSPropertyGridUtils.h"
-#include "core/css/properties/CSSPropertyLengthUtils.h"
-#include "core/css/properties/CSSPropertyMarginUtils.h"
-#include "core/css/properties/CSSPropertyPositionUtils.h"
-#include "core/css/properties/CSSPropertyTextDecorationLineUtils.h"
-#include "core/css/properties/CSSPropertyTransitionPropertyUtils.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
-using namespace CSSPropertyParserHelpers;
+namespace {
 
-const CSSValue* CSSPropertyAPI::ParseSingleValue(
-    CSSPropertyID property,
-    CSSParserTokenRange& range,
-    const CSSParserContext& context,
-    const CSSParserLocalContext& local_context) const {
-  // This is the legacy ParseSingleValue code.
-  // TODO(bugsnash): Move all of this to individual CSSPropertyAPI subclasses.
-  switch (property) {
-    case CSSPropertyTextDecoration:
-      DCHECK(!RuntimeEnabledFeatures::CSS3TextDecorationsEnabled());
-      return CSSPropertyTextDecorationLineUtils::ConsumeTextDecorationLine(
-          range);
+CSSPropertyID ResolveToPhysicalProperty(
+    TextDirection direction,
+    WritingMode writing_mode,
+    LogicalBoxSide logical_side,
+    const StylePropertyShorthand& shorthand) {
+  if (direction == TextDirection::kLtr) {
+    if (IsHorizontalWritingMode(writing_mode)) {
+      // The common case. The logical and physical box sides match.
+      // Left = Start, Right = End, Before = Top, After = Bottom
+      return shorthand.properties()[logical_side];
+    }
+
+    if (IsFlippedLinesWritingMode(writing_mode)) {
+      // Start = Top, End = Bottom, Before = Left, After = Right.
+      switch (logical_side) {
+        case kStartSide:
+          return shorthand.properties()[kTopSide];
+        case kEndSide:
+          return shorthand.properties()[kBottomSide];
+        case kBeforeSide:
+          return shorthand.properties()[kLeftSide];
+        default:
+          return shorthand.properties()[kRightSide];
+      }
+    }
+
+    // Start = Top, End = Bottom, Before = Right, After = Left
+    switch (logical_side) {
+      case kStartSide:
+        return shorthand.properties()[kTopSide];
+      case kEndSide:
+        return shorthand.properties()[kBottomSide];
+      case kBeforeSide:
+        return shorthand.properties()[kRightSide];
+      default:
+        return shorthand.properties()[kLeftSide];
+    }
+  }
+
+  if (IsHorizontalWritingMode(writing_mode)) {
+    // Start = Right, End = Left, Before = Top, After = Bottom
+    switch (logical_side) {
+      case kStartSide:
+        return shorthand.properties()[kRightSide];
+      case kEndSide:
+        return shorthand.properties()[kLeftSide];
+      case kBeforeSide:
+        return shorthand.properties()[kTopSide];
+      default:
+        return shorthand.properties()[kBottomSide];
+    }
+  }
+
+  if (IsFlippedLinesWritingMode(writing_mode)) {
+    // Start = Bottom, End = Top, Before = Left, After = Right
+    switch (logical_side) {
+      case kStartSide:
+        return shorthand.properties()[kBottomSide];
+      case kEndSide:
+        return shorthand.properties()[kTopSide];
+      case kBeforeSide:
+        return shorthand.properties()[kLeftSide];
+      default:
+        return shorthand.properties()[kRightSide];
+    }
+  }
+
+  // Start = Bottom, End = Top, Before = Right, After = Left
+  switch (logical_side) {
+    case kStartSide:
+      return shorthand.properties()[kBottomSide];
+    case kEndSide:
+      return shorthand.properties()[kTopSide];
+    case kBeforeSide:
+      return shorthand.properties()[kRightSide];
     default:
-      return nullptr;
+      return shorthand.properties()[kLeftSide];
   }
 }
 
-bool CSSPropertyAPI::ParseShorthand(
-    CSSPropertyID property,
-    bool important,
-    CSSParserTokenRange& range,
-    const CSSParserContext& context,
-    const CSSParserLocalContext& local_context,
-    HeapVector<CSSProperty, 256>& properties) const {
-  return false;
+CSSPropertyID ResolveToPhysicalProperty(WritingMode writing_mode,
+                                        LogicalExtent logical_side,
+                                        const CSSPropertyID* properties) {
+  if (IsHorizontalWritingMode(writing_mode))
+    return properties[logical_side];
+  return logical_side == kLogicalWidth ? properties[1] : properties[0];
+}
+
+}  // namespace
+
+const CSSPropertyAPI& CSSPropertyAPI::ResolveToPhysicalPropertyAPI(
+    TextDirection direction,
+    WritingMode writing_mode,
+    LogicalBoxSide logical_side,
+    const StylePropertyShorthand& shorthand) {
+  CSSPropertyID id = ResolveToPhysicalProperty(direction, writing_mode,
+                                               logical_side, shorthand);
+  return Get(id);
+}
+
+const CSSPropertyAPI& CSSPropertyAPI::ResolveToPhysicalPropertyAPI(
+    WritingMode writing_mode,
+    LogicalExtent logical_side,
+    const CSSPropertyID* properties) {
+  CSSPropertyID id =
+      ResolveToPhysicalProperty(writing_mode, logical_side, properties);
+  return Get(id);
+}
+
+const StylePropertyShorthand& CSSPropertyAPI::BorderDirections() {
+  static const CSSPropertyID kProperties[4] = {
+      CSSPropertyBorderTop, CSSPropertyBorderRight, CSSPropertyBorderBottom,
+      CSSPropertyBorderLeft};
+  DEFINE_STATIC_LOCAL(
+      StylePropertyShorthand, border_directions,
+      (CSSPropertyBorder, kProperties, WTF_ARRAY_LENGTH(kProperties)));
+  return border_directions;
+}
+
+void CSSPropertyAPI::FilterEnabledCSSPropertiesIntoVector(
+    const CSSPropertyID* properties,
+    size_t propertyCount,
+    Vector<CSSPropertyID>& outVector) {
+  for (unsigned i = 0; i < propertyCount; i++) {
+    CSSPropertyID property = properties[i];
+    if (Get(property).IsEnabled())
+      outVector.push_back(property);
+  }
 }
 
 }  // namespace blink

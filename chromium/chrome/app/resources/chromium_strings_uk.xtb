@@ -11,6 +11,7 @@
 <translation id="1396446129537741364">Chromium намагається показати паролі.</translation>
 <translation id="1403254041219632970">Наступні версії Chromium не підтримуватимуть Mac OS X версій 10.6, 10.7 і 10.8.</translation>
 <translation id="1414495520565016063">Ви ввійшли в Chromium.</translation>
+<translation id="1440917365206527807">Chromium заблокував переспрямування з цієї сторінки</translation>
 <translation id="1444754455097148408">Ліцензії Chromium із відкритим кодом</translation>
 <translation id="1502360822835740515">Як зробити Chromium веб-переглядачем за умовчанням</translation>
 <translation id="151962892725702025">ОС Chromium не вдалося синхронізувати ваші дані, оскільки синхронізація для вашого домену недоступна.</translation>
@@ -35,7 +36,6 @@
 <translation id="2265088490657775772">завантажити Chromium на iPhone</translation>
 <translation id="2316129865977710310">Ні, дякую</translation>
 <translation id="2347108572062610441">Це розширення змінило сторінку, яка відкривається під час запуску Chromium.</translation>
-<translation id="2372704305038231957">32-розрядна версія Chromium може працювати неналежним чином, оскільки ця система Linux більше не підтримується. Установіть 64-розрядну версію Chromium.</translation>
 <translation id="2389622953163669926">{NUM_DOWNLOAD,plural, =1{Триває завантаження. Скасувати його та вийти з Chromium?}one{Триває # завантаження. Скасувати їх і вийти з Chromium?}few{Тривають # завантаження. Скасувати їх і вийти з Chromium?}many{Тривають # завантажень. Скасувати їх і вийти з Chromium?}other{Тривають # завантаження. Скасувати їх і вийти з Chromium?}}</translation>
 <translation id="2396765026452590966">Розширення "<ph name="EXTENSION_NAME" />" змінило сторінку, яка відкривається під час запуску Chromium.</translation>
 <translation id="2483889755041906834">У Chromium</translation>
@@ -63,6 +63,7 @@
 <translation id="3103660991484857065">Програмі встановлення не вдалося видобути архів. Завантажте Chromium ще раз.</translation>
 <translation id="3130323860337406239">Chromium використовує ваш мікрофон.</translation>
 <translation id="3155163173539279776">Перезапустити Chromium</translation>
+<translation id="3179665906251668410">Відкрити посилання в аноні&amp;мному вікні Chromium</translation>
 <translation id="3190315855212034486">Помилка. Chromium аварійно завершив роботу. Перезапустити зараз?</translation>
 <translation id="3256316712990552818">Скопійовано в Chromium</translation>
 <translation id="3258596308407688501">Chromium не може читати та писати дані у свій каталог даних:
@@ -78,6 +79,7 @@
 <translation id="3549345495227188780">Початок роботи з ОС Chromium</translation>
 <translation id="3582788516608077514">Оновлення Chromium...</translation>
 <translation id="358997566136285270">Логотип Chromium</translation>
+<translation id="3713809861844741608">Відкрити посилання в новій &amp;вкладці Chromium</translation>
 <translation id="3738139272394829648">Пошук дотиком</translation>
 <translation id="3762167353400286894">Для ОС Chromium вибрано цю мову</translation>
 <translation id="378917192836375108">Chromium дозволяє натиснути номер телефону в Інтернеті та зателефонувати за ним через Skype.</translation>
@@ -130,6 +132,7 @@
 <translation id="5466153949126434691">Chromium оновлюється автоматично, щоб у вас завжди була найновіша версія. Щойно це завантаження завершиться, Chromium перезапуститься й ви зможете продовжувати роботу.</translation>
 <translation id="5479196819031988440">Неможливо відкрити цю сторінку в ОС Chromium.</translation>
 <translation id="549669000822060376">Зачекайте, доки Chromium установить найновіші оновлення системи.</translation>
+<translation id="5524843473235508879">Переспрямування заблоковано.</translation>
 <translation id="5563479599352954471">Пошук одним дотиком</translation>
 <translation id="5620765574781326016">Дізнавайтеся про теми на веб-сайтах, залишаючись на сторінці.</translation>
 <translation id="5634636535844844681">Для роботи Chromium потрібно мати ОС Windows 7 або новішої версії.</translation>
@@ -140,8 +143,6 @@
 <translation id="5772805321386874569">(потрібно <ph name="BEGIN_BUTTON" />перезапустити<ph name="END_BUTTON" /> Chromium)</translation>
 <translation id="5796460469508169315">Chromium майже готовий.</translation>
 <translation id="5820394555380036790">ОС Chromium</translation>
-<translation id="5823381412099532241">Не вдалось оновити Chromium до останньої версії. Щоб застосувати виправлення системи безпеки та скористатись новими цікавими функціями, потрібно оновити Chromium.</translation>
-<translation id="5859963531214966875">Наступні версії Chromium не підтримуватимуть цю систему Linux.</translation>
 <translation id="5862307444128926510">Вітаємо в Chromium</translation>
 <translation id="5877064549588274448">Канал змінено. Перезапустіть пристрій, щоб застосувати зміни.</translation>
 <translation id="5895138241574237353">Перезапустити</translation>
@@ -167,9 +168,6 @@
 <translation id="6505742536731484931">Chromium потрібен доступ до місцезнаходження, щоб повідомляти ваші геодані цьому сайту.</translation>
 <translation id="6510925080656968729">Видалити Chromium</translation>
 <translation id="6526111688217511984">Щоб завантажувати файли, Chromium потребує доступу до пам’яті.</translation>
-<translation id="6584627348340620412">Наступні 32-розрядні версії Chromium не підтримуватимуть цю систему Linux. Установіть 64-розрядну версію.</translation>
-<translation id="6593914713218535185">Chromium може працювати неналежним чином, оскільки ця система Linux більше не підтримується.</translation>
-<translation id="6638567566961868659">Шукайте свої закладки в меню Chromium або на панелі закладок.</translation>
 <translation id="6676384891291319759">Доступ до Інтернету</translation>
 <translation id="6717134281241384636">Ваш профіль не можна використовувати, оскільки він створений у новішій версії Chromium.
 
@@ -181,12 +179,11 @@
 <translation id="6883876366448858277">надсилає слово та його контекст у Пошук Google і повертає визначення, зображення й інші результати пошуку.</translation>
 <translation id="6893813176749746474">Chromium оновлено, проте ви не користувалися цим веб-переглядачем щонайменше 30 днів.</translation>
 <translation id="6944967875980567883">Модулі, завантажені в Chromium</translation>
+<translation id="6964305034639999644">Відкрити посилання в аноні&amp;мному вікні Chromium</translation>
 <translation id="6970811910055250180">Оновлення пристрою...</translation>
-<translation id="7027298027173928763">Не вдалось оновити Chromium до останньої версії. Щоб застосувати виправлення системи безпеки та скористатись новими цікавими функціями, потрібно вручну перевстановити Chromium.</translation>
 <translation id="705851970750939768">Оновити Chromium</translation>
 <translation id="7066436765290594559">ОС Chromium не вдалося синхронізувати ваші дані. Оновіть свою парольну фразу для синхронізації.</translation>
 <translation id="707471633328071618">Google Payments (скопійовано в Chromium)</translation>
-<translation id="7138853919861947730">Chromium може використовувати веб-служби для покращення умов перегляду.</translation>
 <translation id="7162152143154757523">Chromium може точніше перевіряти правопис, надсилаючи текст, який ви вводите у веб-переглядачі, на сервери Google. Це дозволяє використовувати ту саму технологію перевірки правопису, що й у Пошуку Google.</translation>
 <translation id="7205698830395646142">Сховати в меню Chromium</translation>
 <translation id="7223968959479464213">Диспетчер завдань – Chromium</translation>
@@ -218,6 +215,7 @@ Chromium не може відновити ваші налаштування.</tr
 <translation id="7747138024166251722">Програмі встановлення не вдалося створити тимчасовий каталог. Перевірте наявність вільного простору на диску та дозволу на встановлення програмного забезпечення.</translation>
 <translation id="7756122083761163394">Дані веб-перегляду цього користувача буде видалено з цього пристрою. Щоб відновити дані, увійдіть в обліковий запис Chrome як $2.</translation>
 <translation id="7774736947049807614">Не вдалось отримати сертифікат автентифікації. Щоб дізнатися більше, знову ввійдіть в обліковий запис Chromium як користувач <ph name="USER_NAME" /> або зв’яжіться з адміністратором. <ph name="ADDITIONAL_EXPLANATION" /></translation>
+<translation id="7867198900892795913">Не вдалось оновити Chromium до останньої версії. Ви не зможете скористатися новими функціями та застосувати виправлення системи безпеки.</translation>
 <translation id="7937630085815544518">Ви ввійшли в Chromium як <ph name="USER_EMAIL_ADDRESS" />. Скористайтеся тим самим обліковим записом, щоб увійти знову.</translation>
 <translation id="795025003224538582">Не перезапускати</translation>
 <translation id="7962572577636132072">Chromium оновлюється автоматично, щоб у вас завжди була найновіша версія.</translation>
@@ -250,6 +248,7 @@ Chromium не може відновити ваші налаштування.</tr
 <translation id="8862326446509486874">У вас немає відповідних прав для встановлення на рівні системи. Спробуйте запустити програму встановлення, увійшовши з правами адміністратора.</translation>
 <translation id="8897323336392112261">Розширення також змінило сторінку, яка відкривається під час запуску Chromium або натискання кнопки "Домашня сторінка".</translation>
 <translation id="8907580949721785412">Chromium намагається показати паролі. Щоб дозволити, введіть свій пароль Windows.</translation>
+<translation id="8941642502866065432">Не вдається оновити Chromium</translation>
 <translation id="894903460958736500">Програмне забезпечення, запущене на вашому комп’ютері, не сумісне з Chromium.</translation>
 <translation id="8968921422458636175">Chromium збереже цей пароль тут: <ph name="SAVED_PASSWORD_LINK" />. Не потрібно його запам’ятовувати.</translation>
 <translation id="8974095189086268230">ОС Chromium стала можливою завдяки додатковому <ph name="BEGIN_LINK_CROS_OSS" />програмному забезпеченню з відкритим кодом<ph name="END_LINK_CROS_OSS" />.</translation>
@@ -261,6 +260,7 @@ Chromium не може відновити ваші налаштування.</tr
 <translation id="9022552996538154597">Вхід у Chromium</translation>
 <translation id="9036189287518468038">Панель запуску програм Chromium</translation>
 <translation id="9089354809943900324">Версія Chromium застаріла</translation>
+<translation id="91086099826398415">Відкрити посилання в новій &amp;вкладці Chromium</translation>
 <translation id="911206726377975832">Також видалити дані веб-перегляду?</translation>
 <translation id="918373042641772655">Якщо від’єднати користувача <ph name="USERNAME" />, вашу історію, закладки, налаштування й інші дані Chromium, збережені на цьому пристрої, буде видалено. Дані, які зберігаються в обліковому записі Google, не буде видалено. Ними можна керувати на <ph name="GOOGLE_DASHBOARD_LINK" />Інформаційній панелі Google<ph name="END_GOOGLE_DASHBOARD_LINK" />.</translation>
 <translation id="9190841055450128916">Chromium (mDNS-In)</translation>

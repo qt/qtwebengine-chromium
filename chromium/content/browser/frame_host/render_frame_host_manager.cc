@@ -1293,6 +1293,14 @@ RenderFrameHostManager::DetermineSiteInstanceForURL(
         dest_url.SchemeIs(kChromeUIScheme)) {
       return SiteInstanceDescriptor(parent_site_instance);
     }
+
+    // TEMPORARY HACK: Don't create OOPIFs on the NTP.  Remove this when the NTP
+    // supports OOPIFs or is otherwise omitted from site isolation policy.
+    // See https://crbug.com/566091.
+    if (GetContentClient()->browser()->ShouldStayInParentProcessForNTP(
+            dest_url, parent_site_instance)) {
+      return SiteInstanceDescriptor(parent_site_instance);
+    }
   }
 
   // If we haven't used our SiteInstance (and thus RVH) yet, then we can use it
@@ -1481,8 +1489,19 @@ bool RenderFrameHostManager::IsRendererTransferNeededForNavigation(
     const GURL& dest_url) {
   // A transfer is not needed if the current SiteInstance doesn't yet have a
   // site.  This is the case for tests that use NavigateToURL.
+  //
+  // One exception is that a siteless SiteInstance may still have a process,
+  // which might be unsuitable for |dest_url|.  For example, another navigation
+  // could share that process (e.g., when over process limit) and lock it to a
+  // different origin before this SiteInstance sets its site.  Hence, we also
+  // check for cases like this.  See https://crbug.com/773809.
+  //
+  // TODO(alexmos): We should always check HasWrongProcessForURL regardless of
+  // HasSite, but currently we cannot do that because of hosted app workarounds
+  // (see https://crbug.com/92669).  Revisit this once hosted apps swap
+  // processes for cross-site web iframes and popups.
   if (!rfh->GetSiteInstance()->HasSite())
-    return false;
+    return rfh->GetSiteInstance()->HasWrongProcessForURL(dest_url);
 
   // We do not currently swap processes for navigations in webview tag guests.
   if (rfh->GetSiteInstance()->GetSiteURL().SchemeIs(kGuestScheme))
@@ -1608,9 +1627,15 @@ void RenderFrameHostManager::CreatePendingRenderFrameHost(
 
   CreateProxiesForNewRenderFrameHost(old_instance, new_instance);
 
-  // Create a non-swapped-out RFH with the given opener.
   pending_render_frame_host_ =
       CreateRenderFrame(new_instance, delegate_->IsHidden(), nullptr);
+
+  // If RenderViewHost was created along with the pending RenderFrameHost,
+  // ensure that RenderViewCreated is fired for it.  It is important to do this
+  // after pending_render_frame_host_ is assigned, so that observers processing
+  // RenderViewCreated can find it via RenderViewHostImpl::GetMainFrame().
+  if (pending_render_frame_host_)
+    pending_render_frame_host_->render_view_host()->DispatchRenderViewCreated();
 }
 
 void RenderFrameHostManager::CreateProxiesForNewRenderFrameHost(
@@ -1621,13 +1646,12 @@ void RenderFrameHostManager::CreateProxiesForNewRenderFrameHost(
     CreateOpenerProxies(new_instance, frame_tree_node_);
   } else {
     // Ensure that the frame tree has RenderFrameProxyHosts for the
-    // new SiteInstance in all nodes except the current one.  We do this for
-    // all frames in the tree, whether they are in the same BrowsingInstance or
-    // not.  If |new_instance| is in the same BrowsingInstance as
-    // |old_instance|, this will be done as part of CreateOpenerProxies above;
-    // otherwise, we do this here.  We will still check whether two frames are
-    // in the same BrowsingInstance before we allow them to interact (e.g.,
-    // postMessage).
+    // new SiteInstance in all necessary nodes.  We do this for all frames in
+    // the tree, whether they are in the same BrowsingInstance or not.  If
+    // |new_instance| is in the same BrowsingInstance as |old_instance|, this
+    // will be done as part of CreateOpenerProxies above; otherwise, we do this
+    // here.  We will still check whether two frames are in the same
+    // BrowsingInstance before we allow them to interact (e.g., postMessage).
     frame_tree_node_->frame_tree()->CreateProxiesForSiteInstance(
         frame_tree_node_, new_instance);
   }
@@ -1719,6 +1743,16 @@ bool RenderFrameHostManager::CreateSpeculativeRenderFrameHost(
   speculative_render_frame_host_ =
       CreateRenderFrame(new_instance, delegate_->IsHidden(), nullptr);
 
+  // If RenderViewHost was created along with the speculative RenderFrameHost,
+  // ensure that RenderViewCreated is fired for it.  It is important to do this
+  // after speculative_render_frame_host_ is assigned, so that observers
+  // processing RenderViewCreated can find it via
+  // RenderViewHostImpl::GetMainFrame().
+  if (speculative_render_frame_host_) {
+    speculative_render_frame_host_->render_view_host()
+        ->DispatchRenderViewCreated();
+  }
+
   return !!speculative_render_frame_host_;
 }
 
@@ -1736,8 +1770,8 @@ std::unique_ptr<RenderFrameHostImpl> RenderFrameHostManager::CreateRenderFrame(
   if (view_routing_id_ptr)
     *view_routing_id_ptr = MSG_ROUTING_NONE;
 
-  // We are creating a pending, speculative or swapped out RFH here. We should
-  // never create it in the same SiteInstance as our current RFH.
+  // We are creating a pending or speculative RFH here. We should never create
+  // it in the same SiteInstance as our current RFH.
   CHECK_NE(render_frame_host_->GetSiteInstance(), instance);
 
   // A RenderFrame in a different process from its parent RenderFrame
@@ -1913,6 +1947,7 @@ bool RenderFrameHostManager::InitRenderView(
   bool created = delegate_->CreateRenderViewForRenderManager(
       render_view_host, opener_frame_routing_id,
       proxy ? proxy->GetRoutingID() : MSG_ROUTING_NONE,
+      frame_tree_node_->devtools_frame_token(),
       frame_tree_node_->current_replication_state());
 
   if (created && proxy)
@@ -2600,9 +2635,6 @@ void RenderFrameHostManager::CreateOpenerProxiesForFrameTree(
   // actually work correctly for subframes as well, so if that need ever
   // arises, it should be sufficient to remove this DCHECK.
   DCHECK(frame_tree_node_->IsMainFrame());
-
-  if (frame_tree_node_ == skip_this_node)
-    return;
 
   FrameTree* frame_tree = frame_tree_node_->frame_tree();
 

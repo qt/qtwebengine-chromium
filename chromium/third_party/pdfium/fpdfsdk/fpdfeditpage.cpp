@@ -34,7 +34,7 @@
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #endif  // PDF_ENABLE_XFA
 
-#if _FX_OS_ == _FX_ANDROID_
+#if _FX_OS_ == _FX_OS_ANDROID_
 #include <time.h>
 #else
 #include <ctime>
@@ -100,7 +100,7 @@ FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV FPDF_CreateNewDocument() {
   pDoc->CreateNewDoc();
 
   time_t currentTime;
-  CFX_ByteString DateStr;
+  ByteString DateStr;
   if (FSDK_IsSandBoxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS)) {
     if (time(&currentTime) != -1) {
       tm* pTM = localtime(&currentTime);
@@ -183,6 +183,10 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_InsertObject(FPDF_PAGE page,
 }
 
 FPDF_EXPORT int FPDF_CALLCONV FPDFPage_CountObject(FPDF_PAGE page) {
+  return FPDFPage_CountObjects(page);
+}
+
+FPDF_EXPORT int FPDF_CALLCONV FPDFPage_CountObjects(FPDF_PAGE page) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!IsPageObject(pPage))
     return -1;

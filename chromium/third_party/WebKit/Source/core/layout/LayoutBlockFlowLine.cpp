@@ -182,6 +182,19 @@ InlineFlowBox* LayoutBlockFlow::CreateLineBoxes(LineLayoutItem line_layout_item,
   InlineFlowBox* parent_box = nullptr;
   InlineFlowBox* result = nullptr;
   do {
+    if (line_depth++ >= kCMaxLineDepth ||
+        (IsLayoutNGBlockFlow() && line_layout_item.IsLayoutBlockFlow())) {
+      // If we've exceeded our line depth, then jump straight to the root and
+      // skip all the remaining intermediate inline flows. Additionally, if
+      // we're in LayoutNG, abort once we find a block in the ancestry. It may
+      // be that it's not |this|. This happens in multicol, because LayoutNG
+      // doesn't see the flow thread, and treats DOM children of the multicol
+      // container as actual children of the multicol container, without any
+      // intervening flow thread block (although that block does exist in the
+      // layout tree).
+      line_layout_item = LineLayoutItem(this);
+    }
+
     SECURITY_DCHECK(line_layout_item.IsLayoutInline() ||
                     line_layout_item.IsEqual(this));
 
@@ -232,12 +245,7 @@ InlineFlowBox* LayoutBlockFlow::CreateLineBoxes(LineLayoutItem line_layout_item,
       child_box = parent_box;
     }
 
-    // If we've exceeded our line depth, then jump straight to the root and skip
-    // all the remaining intermediate inline flows.
-    line_layout_item = (++line_depth >= kCMaxLineDepth)
-                           ? LineLayoutItem(this)
-                           : line_layout_item.Parent();
-
+    line_layout_item = line_layout_item.Parent();
   } while (true);
 
   return result;
@@ -1904,10 +1912,10 @@ static bool IsInlineWithOutlineAndContinuation(const LayoutObject& o) {
          !o.IsElementContinuation() && ToLayoutInline(o).Continuation();
 }
 
-bool LayoutBlockFlow::ShouldTruncateOverflowingText(const LayoutBlockFlow* block) const {
-  const LayoutObject* object_to_check = block;
-  if (block->IsAnonymousBlock()) {
-    const LayoutObject* parent = block->Parent();
+bool LayoutBlockFlow::ShouldTruncateOverflowingText() const {
+  const LayoutObject* object_to_check = this;
+  if (IsAnonymousBlock()) {
+    const LayoutObject* parent = Parent();
     if (!parent || !parent->BehavesLikeBlockContainer())
       return false;
     object_to_check = parent;
@@ -1941,6 +1949,11 @@ void LayoutBlockFlow::LayoutInlineChildren(bool relayout_children,
     for (InlineWalker walker(LineLayoutBlockFlow(this)); !walker.AtEnd();
          walker.Advance()) {
       LayoutObject* o = walker.Current().GetLayoutObject();
+
+      // Layout may change LayoutInline's LinesBoundingBox() which affects
+      // MaskClip.
+      if (o->IsLayoutInline() && o->HasMask())
+        o->SetNeedsPaintPropertyUpdate();
 
       if (!layout_state.HasInlineChild() && o->IsInline())
         layout_state.SetHasInlineChild(true);
@@ -2013,7 +2026,7 @@ void LayoutBlockFlow::LayoutInlineChildren(bool relayout_children,
                    IsHorizontalWritingMode() ? kHorizontalLine : kVerticalLine,
                    kPositionOfInteriorLineBoxes));
 
-  if (ShouldTruncateOverflowingText(this))
+  if (ShouldTruncateOverflowingText())
     CheckLinesForTextOverflow();
 
   // Ensure the new line boxes will be painted.
@@ -2364,7 +2377,24 @@ void LayoutBlockFlow::DeleteEllipsisLineBoxes() {
 
       curr->MoveInInlineDirection(logical_left - curr->LogicalLeft());
     }
+    ClearTruncationOnAtomicInlines(curr);
     indent_text = kDoNotIndentText;
+  }
+}
+
+void LayoutBlockFlow::ClearTruncationOnAtomicInlines(RootInlineBox* root) {
+  bool ltr = Style()->IsLeftToRightDirection();
+  InlineBox* first_child = ltr ? root->LastChild() : root->FirstChild();
+  for (InlineBox* box = first_child; box;
+       box = ltr ? box->PrevOnLine() : box->NextOnLine()) {
+    if (!box->GetLineLayoutItem().IsAtomicInlineLevel() ||
+        !box->GetLineLayoutItem().IsLayoutBlockFlow()) {
+      continue;
+    }
+
+    if (!box->GetLineLayoutItem().IsTruncated())
+      return;
+    box->GetLineLayoutItem().SetIsTruncated(false);
   }
 }
 
@@ -2466,6 +2496,7 @@ void LayoutBlockFlow::CheckLinesForTextOverflow() {
           curr, LogicalRightOffsetForContent(), LogicalLeftOffsetForContent(),
           width, selected_ellipsis_str, box_truncation_starts_at);
     }
+
     indent_text = kDoNotIndentText;
   }
 }

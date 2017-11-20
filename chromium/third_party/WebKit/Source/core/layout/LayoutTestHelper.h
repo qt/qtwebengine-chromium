@@ -95,7 +95,8 @@ class RenderingTest : public ::testing::Test {
 
   // Both sets the inner html and runs the document lifecycle.
   void SetBodyInnerHTML(const String& html_content) {
-    GetDocument().body()->setInnerHTML(html_content, ASSERT_NO_EXCEPTION);
+    GetDocument().body()->SetInnerHTMLFromString(html_content,
+                                                 ASSERT_NO_EXCEPTION);
     GetDocument().View()->UpdateAllLifecyclePhases();
   }
 
@@ -115,9 +116,13 @@ class RenderingTest : public ::testing::Test {
     GetDocument().View()->UpdateAllLifecyclePhases();
   }
 
+  Element* GetElementById(const char* id) const {
+    return GetDocument().getElementById(id);
+  }
+
   LayoutObject* GetLayoutObjectByElementId(const char* id) const {
-    Node* node = GetDocument().getElementById(id);
-    return node ? node->GetLayoutObject() : nullptr;
+    const auto* element = GetElementById(id);
+    return element ? element->GetLayoutObject() : nullptr;
   }
 
   void LoadAhem();

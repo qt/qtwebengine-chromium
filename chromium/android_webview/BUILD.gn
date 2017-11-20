@@ -689,7 +689,6 @@ source_set("common") {
     "//components/metrics",
     "//components/metrics:gpu",
     "//components/metrics:net",
-    "//components/metrics:profiler",
     "//components/metrics:ui",
     "//components/navigation_interception",
     "//components/network_session_configurator/common",
@@ -737,6 +736,7 @@ source_set("common") {
     "//net:extras",
     "//printing",
     "//services/service_manager/public/cpp",
+    "//services/viz/public/interfaces",
     "//skia",
     "//storage/browser",
     "//storage/common",
@@ -774,6 +774,7 @@ android_library("android_webview_java") {
     "java/src/org/chromium/android_webview/AwBrowserProcess.java",
     "java/src/org/chromium/android_webview/AwContentVideoViewEmbedder.java",
     "java/src/org/chromium/android_webview/AwContents.java",
+    "java/src/org/chromium/android_webview/AwConsoleMessage.java",
     "java/src/org/chromium/android_webview/AwContentsBackgroundThreadClient.java",
     "java/src/org/chromium/android_webview/AwContentsClient.java",
     "java/src/org/chromium/android_webview/AwContentsClientBridge.java",
@@ -877,7 +878,7 @@ android_library("android_webview_java") {
     ":android_webview_java_enums_srcjar",
     ":aw_error_ui",
     ":aw_safe_browsing_action",
-    "//components/safe_browsing_db:sb_threat_values",
+    "//components/safe_browsing/db:sb_threat_values",
   ]
 
   # Manifest used for linting (determining unused resources).

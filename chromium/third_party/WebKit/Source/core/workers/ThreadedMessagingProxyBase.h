@@ -6,7 +6,7 @@
 #define ThreadedMessagingProxyBase_h
 
 #include "core/CoreExport.h"
-#include "core/frame/UseCounter.h"
+#include "core/frame/WebFeatureForward.h"
 #include "core/inspector/ConsoleTypes.h"
 #include "core/workers/ParentFrameTaskRunners.h"
 #include "core/workers/WorkerBackingThreadStartupData.h"
@@ -30,7 +30,7 @@ struct GlobalScopeCreationParams;
 // accessed and destroyed on the parent context thread.
 //
 // This has a unique lifetime: this is co-owned by the parent object (e.g.,
-// InProcessWorkerBase, AnimationWorklet) and by itself via SelfKeepAlive. The
+// DedicatedWorker, AnimationWorklet) and by itself via SelfKeepAlive. The
 // parent object releases the reference on its destructor and SelfKeepAlive is
 // cleared when the worker thread is terminated.
 //

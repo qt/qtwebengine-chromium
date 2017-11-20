@@ -13,7 +13,9 @@
 #include "core/paint/PaintInfo.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/RoundedInnerRectClipper.h"
+#include "core/paint/SelectionPaintingUtils.h"
 #include "core/paint/compositing/CompositedLayerMapping.h"
+#include "platform/graphics/paint/ScopedPaintChunkProperties.h"
 #include "platform/wtf/Optional.h"
 
 namespace blink {
@@ -23,11 +25,49 @@ static bool ShouldApplyViewportClip(const LayoutReplaced& layout_replaced) {
          ToLayoutSVGRoot(&layout_replaced)->ShouldApplyViewportClip();
 }
 
+bool ReplacedPainter::ShouldAdjustForPaintOffsetTranslation(
+    const PaintInfo& paint_info,
+    const LayoutPoint& paint_offset) const {
+  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled())
+    return false;
+  if (layout_replaced_.HasSelfPaintingLayer())
+    return false;
+  if (!layout_replaced_.FirstFragment())
+    return false;
+  auto* paint_properties = layout_replaced_.FirstFragment()->PaintProperties();
+  if (!paint_properties)
+    return false;
+  if (!paint_properties->PaintOffsetTranslation())
+    return false;
+
+  return true;
+}
+
 void ReplacedPainter::Paint(const PaintInfo& paint_info,
                             const LayoutPoint& paint_offset) {
-  ObjectPainter(layout_replaced_).CheckPaintOffset(paint_info, paint_offset);
-  LayoutPoint adjusted_paint_offset =
-      paint_offset + layout_replaced_.Location();
+  Optional<ScopedPaintChunkProperties> scoped_contents_properties;
+  LayoutPoint adjusted_paint_offset;
+  PaintInfo local_paint_info(paint_info);
+  if (ShouldAdjustForPaintOffsetTranslation(local_paint_info, paint_offset)) {
+    auto* paint_properties =
+        layout_replaced_.FirstFragment()->PaintProperties();
+    const auto* local_border_box_properties =
+        layout_replaced_.FirstFragment()->LocalBorderBoxProperties();
+    PaintChunkProperties chunk_properties(
+        paint_info.context.GetPaintController().CurrentPaintChunkProperties());
+    chunk_properties.property_tree_state = *local_border_box_properties;
+    scoped_contents_properties.emplace(paint_info.context.GetPaintController(),
+                                       layout_replaced_, chunk_properties);
+
+    adjusted_paint_offset = layout_replaced_.PaintOffset();
+    local_paint_info.UpdateCullRect(paint_properties->PaintOffsetTranslation()
+                                        ->Matrix()
+                                        .ToAffineTransform());
+  } else {
+    ObjectPainter(layout_replaced_).CheckPaintOffset(paint_info, paint_offset);
+    adjusted_paint_offset = paint_offset + layout_replaced_.Location();
+  }
+
   if (!ShouldPaint(paint_info, adjusted_paint_offset))
     return;
 
@@ -132,8 +172,10 @@ void ReplacedPainter::Paint(const PaintInfo& paint_info,
     LayoutObjectDrawingRecorder drawing_recorder(
         paint_info.context, layout_replaced_, DisplayItem::kSelectionTint,
         selection_painting_int_rect);
-    paint_info.context.FillRect(selection_painting_int_rect,
-                                layout_replaced_.SelectionBackgroundColor());
+    Color selection_bg = SelectionPaintingUtils::SelectionBackgroundColor(
+        layout_replaced_.GetDocument(), layout_replaced_.StyleRef(),
+        layout_replaced_.GetNode());
+    paint_info.context.FillRect(selection_painting_int_rect, selection_bg);
   }
 }
 

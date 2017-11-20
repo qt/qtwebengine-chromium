@@ -12,7 +12,9 @@
 
 #include "../private/SkTArray.h"
 #include "SkScalar.h"
+#include "SkRefCnt.h"
 
+#include <atomic>
 #include <stdarg.h>
 
 /*  Some helper functions for C strings
@@ -239,14 +241,25 @@ public:
 private:
     struct Rec {
     public:
+        constexpr Rec(uint32_t len, int32_t refCnt)
+            : fLength(len), fRefCnt(refCnt), fBeginningOfData(0)
+        { }
+        static sk_sp<Rec> Make(const char text[], size_t len);
         uint32_t    fLength; // logically size_t, but we want it to stay 32bits
-        int32_t     fRefCnt;
+        mutable std::atomic<int32_t> fRefCnt;
         char        fBeginningOfData;
 
         char* data() { return &fBeginningOfData; }
         const char* data() const { return &fBeginningOfData; }
+
+        void ref() const;
+        void unref() const;
+        bool unique() const;
+    private:
+        // Ensure the unsized delete is called.
+        void operator delete(void* p) { ::operator delete(p); }
     };
-    Rec* fRec;
+    sk_sp<Rec> fRec;
 
 #ifdef SK_DEBUG
     void validate() const;
@@ -255,8 +268,6 @@ private:
 #endif
 
     static const Rec gEmptyRec;
-    static Rec* AllocRec(const char text[], size_t len);
-    static Rec* RefRec(Rec*);
 };
 
 /// Creates a new string and writes into it using a printf()-style format.

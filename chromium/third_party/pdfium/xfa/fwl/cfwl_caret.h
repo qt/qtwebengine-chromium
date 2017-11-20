@@ -16,8 +16,6 @@
 class CFWL_WidgetProperties;
 class CFWL_Widget;
 
-#define FWL_STATE_CAT_HightLight 1
-
 class CFWL_Caret : public CFWL_Widget {
  public:
   CFWL_Caret(const CFWL_App* app,
@@ -51,7 +49,7 @@ class CFWL_Caret : public CFWL_Widget {
                    const CFX_Matrix* pMatrix);
 
   std::unique_ptr<CFWL_Caret::Timer> m_pTimer;
-  CFX_UnownedPtr<CFWL_TimerInfo> m_pTimerInfo;
+  UnownedPtr<CFWL_TimerInfo> m_pTimerInfo;
 };
 
 #endif  // XFA_FWL_CFWL_CARET_H_

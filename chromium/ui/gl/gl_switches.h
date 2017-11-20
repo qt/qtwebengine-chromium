@@ -46,15 +46,11 @@ GL_EXPORT extern const char kUseANGLE[];
 GL_EXPORT extern const char kUseGL[];
 GL_EXPORT extern const char kTestGLLib[];
 GL_EXPORT extern const char kUseGpuInTests[];
-GL_EXPORT extern const char kEnableES3APIs[];
-GL_EXPORT extern const char kDisableES3APIs[];
 GL_EXPORT extern const char kEnableSgiVideoSync[];
 GL_EXPORT extern const char kDisableGLExtensions[];
 GL_EXPORT extern const char kEnableSwapBuffersWithBounds[];
 GL_EXPORT extern const char kEnableDirectCompositionLayers[];
 GL_EXPORT extern const char kDisableDirectCompositionLayers[];
-
-GL_EXPORT extern const char kUsePassthroughCmdDecoder[];
 
 // These flags are used by the test harness code, not passed in by users.
 GL_EXPORT extern const char kDisableGLDrawingForTests[];

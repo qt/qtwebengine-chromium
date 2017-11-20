@@ -35,7 +35,6 @@
 #include "build/build_config.h"
 #include "core/CSSValueKeywords.h"
 #include "core/CoreInitializer.h"
-#include "core/HTMLNames.h"
 #include "core/animation/CompositorMutatorImpl.h"
 #include "core/clipboard/DataObject.h"
 #include "core/dom/ContextFeaturesClientImpl.h"
@@ -45,8 +44,10 @@
 #include "core/dom/UserGestureIndicator.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/InputMethodController.h"
+#include "core/editing/SelectionTemplate.h"
+#include "core/editing/ime/InputMethodController.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/editing/serializers/HTMLInterchange.h"
 #include "core/editing/serializers/Serialization.h"
@@ -75,8 +76,9 @@
 #include "core/fullscreen/Fullscreen.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLPlugInElement.h"
-#include "core/html/HTMLTextAreaElement.h"
 #include "core/html/PluginDocument.h"
+#include "core/html/forms/HTMLTextAreaElement.h"
+#include "core/html_names.h"
 #include "core/input/ContextMenuAllowedScope.h"
 #include "core/input/EventHandler.h"
 #include "core/input/TouchActionUtil.h"
@@ -112,7 +114,6 @@
 #include "platform/Cursor.h"
 #include "platform/Histogram.h"
 #include "platform/KeyboardCodes.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/animation/CompositorAnimationHost.h"
 #include "platform/exported/WebActiveGestureAnimation.h"
 #include "platform/fonts/FontCache.h"
@@ -128,6 +129,7 @@
 #include "platform/image-decoders/ImageDecoder.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/loader/fetch/UniqueIdentifier.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "platform/scroll/ScrollbarTheme.h"
@@ -299,7 +301,9 @@ WebView* WebView::Create(WebViewClient* client,
 WebViewImpl* WebViewImpl::Create(WebViewClient* client,
                                  WebPageVisibilityState visibility_state) {
   // Pass the WebViewImpl's self-reference to the caller.
-  return AdoptRef(new WebViewImpl(client, visibility_state)).LeakRef();
+  auto web_view = WTF::AdoptRef(new WebViewImpl(client, visibility_state));
+  web_view->AddRef();
+  return web_view.get();
 }
 
 void WebView::UpdateVisitedLinkState(unsigned long long link_hash) {
@@ -473,7 +477,7 @@ void WebViewImpl::HandleMouseDown(LocalFrame& main_frame,
   }
 
   if (page_popup_ && page_popup &&
-      page_popup_->HasSamePopupClient(page_popup.Get())) {
+      page_popup_->HasSamePopupClient(page_popup.get())) {
     // That click triggered a page popup that is the same as the one we just
     // closed.  It needs to be closed.
     CancelPagePopup();
@@ -704,7 +708,7 @@ WebInputEventResult WebViewImpl::HandleGestureEvent(
       }
 
       if (page_popup_ && last_hidden_page_popup_ &&
-          page_popup_->HasSamePopupClient(last_hidden_page_popup_.Get())) {
+          page_popup_->HasSamePopupClient(last_hidden_page_popup_.get())) {
         // The tap triggered a page popup that is the same as the one we just
         // closed. It needs to be closed.
         CancelPagePopup();
@@ -1533,14 +1537,14 @@ PagePopup* WebViewImpl::OpenPagePopup(PagePopupClient* client) {
   }
   EnablePopupMouseWheelEventListener(WebLocalFrameImpl::FromFrame(
       client->OwnerElement().GetDocument().GetFrame()->LocalFrameRoot()));
-  return page_popup_.Get();
+  return page_popup_.get();
 }
 
 void WebViewImpl::ClosePagePopup(PagePopup* popup) {
   DCHECK(popup);
   WebPagePopupImpl* popup_impl = ToWebPagePopupImpl(popup);
-  DCHECK_EQ(page_popup_.Get(), popup_impl);
-  if (page_popup_.Get() != popup_impl)
+  DCHECK_EQ(page_popup_.get(), popup_impl);
+  if (page_popup_.get() != popup_impl)
     return;
   page_popup_->ClosePopup();
 }
@@ -1608,7 +1612,7 @@ void WebViewImpl::Close() {
   // deleted.
   client_ = nullptr;
 
-  Deref();  // Balances ref() acquired in WebView::create
+  Release();  // Balances a reference acquired in WebView::Create
 }
 
 WebSize WebViewImpl::Size() {
@@ -1761,6 +1765,9 @@ void WebViewImpl::ResizeWithBrowserControls(
     size_ = new_size;
     GetPageScaleConstraintsSet().DidChangeInitialContainingBlockSize(size_);
     GetPage()->GetVisualViewport().SetSize(size_);
+    GetPage()->GetBrowserControls().SetHeight(top_controls_height,
+                                              bottom_controls_height,
+                                              browser_controls_shrink_layout);
     return;
   }
 
@@ -2287,7 +2294,7 @@ WebColor WebViewImpl::BackgroundColor() const {
 }
 
 WebPagePopupImpl* WebViewImpl::GetPagePopup() const {
-  return page_popup_.Get();
+  return page_popup_.get();
 }
 
 // TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
@@ -2841,10 +2848,6 @@ void WebViewImpl::SetZoomFactorForDeviceScaleFactor(
   SetZoomLevel(zoom_level_);
 }
 
-void WebViewImpl::SetDeviceColorProfile(const gfx::ICCProfile& color_profile) {
-  ColorBehavior::SetGlobalTargetColorProfile(color_profile);
-}
-
 void WebViewImpl::EnableAutoResizeMode(const WebSize& min_size,
                                        const WebSize& max_size) {
   should_auto_resize_ = true;
@@ -3131,7 +3134,7 @@ void WebViewImpl::PerformMediaPlayerAction(const WebMediaPlayerAction& action,
                                            const WebPoint& location) {
   HitTestResult result = HitTestResultForViewportPos(location);
   Node* node = result.InnerNode();
-  if (!isHTMLVideoElement(*node) && !isHTMLAudioElement(*node))
+  if (!IsHTMLVideoElement(*node) && !IsHTMLAudioElement(*node))
     return;
 
   HTMLMediaElement* media_element = ToHTMLMediaElement(node);
@@ -3162,7 +3165,7 @@ void WebViewImpl::PerformPluginAction(const WebPluginAction& action,
   // FIXME: Location is probably in viewport coordinates
   HitTestResult result = HitTestResultForRootFramePos(location);
   Node* node = result.InnerNode();
-  if (!isHTMLObjectElement(*node) && !isHTMLEmbedElement(*node))
+  if (!IsHTMLObjectElement(*node) && !IsHTMLEmbedElement(*node))
     return;
 
   LayoutObject* object = node->GetLayoutObject();

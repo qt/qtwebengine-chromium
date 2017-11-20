@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/testing/DummyPageHolder.h"
 #include "modules/document_metadata/CopylessPasteExtractor.h"
@@ -67,7 +66,7 @@ void CopylessPasteExtractorTest::SetUp() {
 }
 
 void CopylessPasteExtractorTest::SetHTMLInnerHTML(const String& html_content) {
-  GetDocument().documentElement()->setInnerHTML((html_content));
+  GetDocument().documentElement()->SetInnerHTMLFromString((html_content));
 }
 
 void CopylessPasteExtractorTest::SetURL(const String& url) {

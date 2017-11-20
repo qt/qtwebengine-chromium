@@ -7,11 +7,11 @@
 
 #include <stddef.h>
 
-#include <set>
 #include <vector>
 
 #include "base/callback_forward.h"
 #include "base/cancelable_callback.h"
+#include "base/containers/flat_set.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/cancelable_task_tracker.h"
@@ -122,9 +122,6 @@ class FaviconHandler {
 
     // Returns whether the user is operating in an off-the-record context.
     virtual bool IsOffTheRecord() = 0;
-
-    // Returns whether |url| is bookmarked.
-    virtual bool IsBookmarked(const GURL& url) = 0;
 
     // Notifies that the favicon image has been updated. Most delegates
     // propagate the notification to FaviconDriverObserver::OnFaviconUpdated().
@@ -253,8 +250,6 @@ class FaviconHandler {
       const std::vector<SkBitmap>& bitmaps,
       const std::vector<gfx::Size>& original_bitmap_sizes);
 
-  bool ShouldSaveFavicon(const GURL& page_url) const;
-
   // Updates |best_favicon_| and returns true if it was considered a satisfying
   // image (e.g. exact size match).
   bool UpdateFaviconCandidate(const DownloadedFavicon& downloaded_favicon);
@@ -301,7 +296,7 @@ class FaviconHandler {
 
   // URL of the page(s) we're requesting the favicon for. They can be multiple
   // in case of in-page navigations (e.g. fragment navigations).
-  std::set<GURL> page_urls_;
+  base::flat_set<GURL> page_urls_;
   // The last page URL reported via FetchFavicon().
   GURL last_page_url_;
 

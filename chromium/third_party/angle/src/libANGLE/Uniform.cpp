@@ -13,8 +13,38 @@
 namespace gl
 {
 
+template <typename T>
+void MarkResourceStaticUse(T *resource, GLenum shaderType, bool used)
+{
+    switch (shaderType)
+    {
+        case GL_VERTEX_SHADER:
+            resource->vertexStaticUse = used;
+            break;
+
+        case GL_FRAGMENT_SHADER:
+            resource->fragmentStaticUse = used;
+            break;
+
+        case GL_COMPUTE_SHADER:
+            resource->computeStaticUse = used;
+            break;
+
+        default:
+            UNREACHABLE();
+    }
+}
+
+template void MarkResourceStaticUse(LinkedUniform *resource, GLenum shaderType, bool used);
+template void MarkResourceStaticUse(InterfaceBlock *resource, GLenum shaderType, bool used);
+
 LinkedUniform::LinkedUniform()
-    : bufferIndex(-1), blockInfo(sh::BlockMemberInfo::getDefaultBlockInfo())
+    : typeInfo(nullptr),
+      bufferIndex(-1),
+      blockInfo(sh::BlockMemberInfo::getDefaultBlockInfo()),
+      vertexStaticUse(false),
+      fragmentStaticUse(false),
+      computeStaticUse(false)
 {
 }
 
@@ -27,7 +57,12 @@ LinkedUniform::LinkedUniform(GLenum typeIn,
                              const int locationIn,
                              const int bufferIndexIn,
                              const sh::BlockMemberInfo &blockInfoIn)
-    : bufferIndex(bufferIndexIn), blockInfo(blockInfoIn)
+    : typeInfo(&GetUniformTypeInfo(typeIn)),
+      bufferIndex(bufferIndexIn),
+      blockInfo(blockInfoIn),
+      vertexStaticUse(false),
+      fragmentStaticUse(false),
+      computeStaticUse(false)
 {
     type      = typeIn;
     precision = precisionIn;
@@ -39,25 +74,37 @@ LinkedUniform::LinkedUniform(GLenum typeIn,
 }
 
 LinkedUniform::LinkedUniform(const sh::Uniform &uniform)
-    : sh::Uniform(uniform), bufferIndex(-1), blockInfo(sh::BlockMemberInfo::getDefaultBlockInfo())
+    : sh::Uniform(uniform),
+      typeInfo(&GetUniformTypeInfo(type)),
+      bufferIndex(-1),
+      blockInfo(sh::BlockMemberInfo::getDefaultBlockInfo()),
+      vertexStaticUse(false),
+      fragmentStaticUse(false),
+      computeStaticUse(false)
 {
 }
 
 LinkedUniform::LinkedUniform(const LinkedUniform &uniform)
-    : sh::Uniform(uniform), bufferIndex(uniform.bufferIndex), blockInfo(uniform.blockInfo)
+    : sh::Uniform(uniform),
+      typeInfo(uniform.typeInfo),
+      bufferIndex(uniform.bufferIndex),
+      blockInfo(uniform.blockInfo),
+      vertexStaticUse(uniform.vertexStaticUse),
+      fragmentStaticUse(uniform.fragmentStaticUse),
+      computeStaticUse(uniform.computeStaticUse)
+
 {
-    // This function is not intended to be called during runtime.
-    ASSERT(uniform.mLazyData.empty());
 }
 
 LinkedUniform &LinkedUniform::operator=(const LinkedUniform &uniform)
 {
-    // This function is not intended to be called during runtime.
-    ASSERT(uniform.mLazyData.empty());
-
     sh::Uniform::operator=(uniform);
+    typeInfo             = uniform.typeInfo;
     bufferIndex          = uniform.bufferIndex;
     blockInfo            = uniform.blockInfo;
+    vertexStaticUse      = uniform.vertexStaticUse;
+    fragmentStaticUse    = uniform.fragmentStaticUse;
+    computeStaticUse     = uniform.computeStaticUse;
 
     return *this;
 }
@@ -71,31 +118,14 @@ bool LinkedUniform::isInDefaultBlock() const
     return bufferIndex == -1;
 }
 
-size_t LinkedUniform::dataSize() const
-{
-    ASSERT(type != GL_STRUCT_ANGLEX);
-    if (mLazyData.empty())
-    {
-        mLazyData.resize(VariableExternalSize(type) * elementCount());
-        ASSERT(!mLazyData.empty());
-    }
-
-    return mLazyData.size();
-}
-
-const uint8_t *LinkedUniform::data() const
-{
-    return const_cast<LinkedUniform *>(this)->data();
-}
-
 bool LinkedUniform::isSampler() const
 {
-    return IsSamplerType(type);
+    return typeInfo->isSampler;
 }
 
 bool LinkedUniform::isImage() const
 {
-    return IsImageType(type);
+    return typeInfo->isImageType;
 }
 
 bool LinkedUniform::isAtomicCounter() const
@@ -110,23 +140,12 @@ bool LinkedUniform::isField() const
 
 size_t LinkedUniform::getElementSize() const
 {
-    return VariableExternalSize(type);
+    return typeInfo->externalSize;
 }
 
 size_t LinkedUniform::getElementComponents() const
 {
-    return VariableComponentCount(type);
-}
-
-uint8_t *LinkedUniform::getDataPtrToElement(size_t elementIndex)
-{
-    ASSERT((!isArray() && elementIndex == 0) || (isArray() && elementIndex < arraySize));
-    return data() + (elementIndex > 0 ? (getElementSize() * elementIndex) : 0u);
-}
-
-const uint8_t *LinkedUniform::getDataPtrToElement(size_t elementIndex) const
-{
-    return const_cast<LinkedUniform *>(this)->getDataPtrToElement(elementIndex);
+    return typeInfo->componentCount;
 }
 
 ShaderVariableBuffer::ShaderVariableBuffer()
@@ -138,27 +157,36 @@ ShaderVariableBuffer::ShaderVariableBuffer()
 {
 }
 
-ShaderVariableBuffer::~ShaderVariableBuffer()
+InterfaceBlock::InterfaceBlock() : isArray(false), arrayElement(0)
 {
 }
 
-UniformBlock::UniformBlock() : isArray(false), arrayElement(0)
-{
-}
-
-UniformBlock::UniformBlock(const std::string &nameIn,
-                           bool isArrayIn,
-                           unsigned int arrayElementIn,
-                           int bindingIn)
-    : name(nameIn), isArray(isArrayIn), arrayElement(arrayElementIn)
+InterfaceBlock::InterfaceBlock(const std::string &nameIn,
+                               const std::string &mappedNameIn,
+                               bool isArrayIn,
+                               unsigned int arrayElementIn,
+                               int bindingIn)
+    : name(nameIn), mappedName(mappedNameIn), isArray(isArrayIn), arrayElement(arrayElementIn)
 {
     binding = bindingIn;
 }
 
-std::string UniformBlock::nameWithArrayIndex() const
+std::string InterfaceBlock::nameWithArrayIndex() const
 {
     std::stringstream fullNameStr;
     fullNameStr << name;
+    if (isArray)
+    {
+        fullNameStr << "[" << arrayElement << "]";
+    }
+
+    return fullNameStr.str();
+}
+
+std::string InterfaceBlock::mappedNameWithArrayIndex() const
+{
+    std::stringstream fullNameStr;
+    fullNameStr << mappedName;
     if (isArray)
     {
         fullNameStr << "[" << arrayElement << "]";

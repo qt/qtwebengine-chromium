@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-source_set("scheduler") {
+import("//build/config/jumbo.gni")
+
+jumbo_source_set("scheduler") {
   sources = [
     "base/cancelable_closure_holder.cc",
     "base/cancelable_closure_holder.h",
@@ -33,8 +35,6 @@ source_set("scheduler") {
     "base/time_converter.h",
     "base/time_domain.cc",
     "base/time_domain.h",
-    "base/trace_helper.cc",
-    "base/trace_helper.h",
     "base/virtual_time_domain.cc",
     "base/virtual_time_domain.h",
     "base/work_queue.cc",
@@ -97,7 +97,6 @@ source_set("scheduler") {
     "renderer/renderer_web_scheduler_impl.h",
     "renderer/task_cost_estimator.cc",
     "renderer/task_cost_estimator.h",
-    "renderer/task_duration_metric_reporter.cc",
     "renderer/task_duration_metric_reporter.h",
     "renderer/task_queue_throttler.cc",
     "renderer/task_queue_throttler.h",
@@ -114,7 +113,8 @@ source_set("scheduler") {
     "renderer/web_view_scheduler_impl.h",
     "renderer/webthread_impl_for_renderer_scheduler.cc",
     "renderer/webthread_impl_for_renderer_scheduler.h",
-    "util/state_tracer.h",
+    "util/tracing_helper.cc",
+    "util/tracing_helper.h",
     "utility/webthread_impl_for_utility_thread.cc",
     "utility/webthread_impl_for_utility_thread.h",
   ]
@@ -123,7 +123,6 @@ source_set("scheduler") {
     "//base",
     "//cc",
     "//device/base/synchronization",
-    "//skia",
     "//third_party/WebKit/Source/platform:make_platform_generated",
     "//third_party/WebKit/Source/platform/instrumentation",
     "//third_party/WebKit/Source/platform/wtf",
@@ -135,7 +134,7 @@ source_set("scheduler") {
   ]
 }
 
-source_set("test_support") {
+jumbo_source_set("test_support") {
   testonly = true
 
   sources = [
@@ -147,6 +146,7 @@ source_set("test_support") {
     "child/scheduler_tqm_delegate_for_test.cc",
     "child/scheduler_tqm_delegate_for_test.h",
     "test/fake_renderer_scheduler.cc",
+    "test/fake_web_frame_scheduler.h",
     "test/fake_web_task_runner.cc",
     "test/fake_web_task_runner.h",
     "test/lazy_scheduler_message_loop_delegate_for_tests.cc",
@@ -159,13 +159,12 @@ source_set("test_support") {
   deps = [
     "//base",
     "//base/test:test_support",
-    "//skia",
   ]
 
   configs += [ "//third_party/WebKit/Source/platform:blink_platform_config" ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
 
   sources = [
@@ -200,6 +199,7 @@ source_set("unit_tests") {
     "renderer/web_frame_scheduler_impl_unittest.cc",
     "renderer/web_view_scheduler_impl_unittest.cc",
     "renderer/webthread_impl_for_renderer_scheduler_unittest.cc",
+    "util/tracing_helper_unittest.cc",
   ]
 
   deps = [
@@ -207,7 +207,6 @@ source_set("unit_tests") {
     "//base/test:test_support",
     "//components/viz/common",
     "//components/viz/test:test_support",
-    "//skia",
     "//testing/gmock",
     "//testing/gtest",
   ]
@@ -225,7 +224,6 @@ source_set("perf_tests") {
   deps = [
     "//base",
     "//base/test:test_support",
-    "//skia",
     "//testing/gmock",
     "//testing/gtest",
     "//testing/perf",

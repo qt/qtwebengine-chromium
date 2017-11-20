@@ -12,8 +12,8 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "cc/output/compositor_frame.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
+#include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_client.h"
 #include "components/viz/service/frame_sinks/referenced_surface_tracker.h"
@@ -21,6 +21,8 @@
 #include "components/viz/service/frame_sinks/surface_resource_holder_client.h"
 #include "components/viz/service/surfaces/surface_client.h"
 #include "components/viz/service/viz_service_export.h"
+#include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
+#include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom.h"
 
 namespace {
 // The frame index starts at 2 so that empty frames will be treated as
@@ -31,7 +33,6 @@ constexpr int kFrameIndexStart = 2;
 namespace viz {
 
 class FrameSinkManagerImpl;
-class CompositorFrameSinkSupportClient;
 class Surface;
 class SurfaceManager;
 
@@ -39,10 +40,15 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
     : public BeginFrameObserver,
       public SurfaceResourceHolderClient,
       public FrameSinkManagerClient,
-      public SurfaceClient {
+      public SurfaceClient,
+      public mojom::CompositorFrameSink {
  public:
+  using WillDrawCallback =
+      base::RepeatingCallback<void(const LocalSurfaceId& local_surface_id,
+                                   const gfx::Rect& damage_rect)>;
+
   static std::unique_ptr<CompositorFrameSinkSupport> Create(
-      CompositorFrameSinkSupportClient* client,
+      mojom::CompositorFrameSinkClient* client,
       FrameSinkManagerImpl* frame_sink_manager,
       const FrameSinkId& frame_sink_id,
       bool is_root,
@@ -52,9 +58,16 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
 
   const FrameSinkId& frame_sink_id() const { return frame_sink_id_; }
 
-  FrameSinkManagerImpl* frame_sink_manager() { return frame_sink_manager_; }
-  SurfaceManager* surface_manager() { return surface_manager_; }
+  const LocalSurfaceId& local_surface_id() const {
+    return current_surface_id_.local_surface_id();
+  }
 
+  FrameSinkManagerImpl* frame_sink_manager() { return frame_sink_manager_; }
+
+  // Sets callback that will be provided to Surface::QueueFrame().
+  void SetWillDrawSurfaceCallback(WillDrawCallback callback);
+
+  // Sets callback called on destruction.
   void SetDestructionCallback(base::OnceCallback<void()> callback);
 
   // SurfaceClient implementation.
@@ -69,24 +82,36 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   // FrameSinkManagerClient implementation.
   void SetBeginFrameSource(BeginFrameSource* begin_frame_source) override;
 
+  // mojom::CompositorFrameSink implementation.
+  void SetNeedsBeginFrame(bool needs_begin_frame) override;
+  void DidNotProduceFrame(const BeginFrameAck& ack) override;
+  void SubmitCompositorFrame(const LocalSurfaceId& local_surface_id,
+                             CompositorFrame frame,
+                             mojom::HitTestRegionListPtr hit_test_region_list,
+                             uint64_t submit_time) override;
+
   void EvictCurrentSurface();
-  void SetNeedsBeginFrame(bool needs_begin_frame);
-  void DidNotProduceFrame(const BeginFrameAck& ack);
-  bool SubmitCompositorFrame(const LocalSurfaceId& local_surface_id,
-                             cc::CompositorFrame frame);
+
+  // Submits a new CompositorFrame to |local_surface_id|. If |local_surface_id|
+  // hasn't been submitted to before then a new Surface will be created for it.
+  // Returns false if |frame| was rejected due to invalid data.
+  // TODO(kylechar): Merge the two SubmitCompositorFrame() methods.
+  bool SubmitCompositorFrame(
+      const LocalSurfaceId& local_surface_id,
+      CompositorFrame frame,
+      mojom::HitTestRegionListPtr hit_test_region_list = nullptr);
   void RequestCopyOfSurface(std::unique_ptr<CopyOutputRequest> request);
 
   Surface* GetCurrentSurfaceForTesting();
 
- protected:
-  CompositorFrameSinkSupport(CompositorFrameSinkSupportClient* client,
+ private:
+  CompositorFrameSinkSupport(mojom::CompositorFrameSinkClient* client,
                              const FrameSinkId& frame_sink_id,
                              bool is_root,
                              bool needs_sync_tokens);
 
   void Init(FrameSinkManagerImpl* frame_sink_manager);
 
- private:
   // Updates surface references using |active_referenced_surfaces| from the most
   // recent CompositorFrame. This will add and remove top-level root references
   // if |is_root_| is true and |local_surface_id| has changed. Modifies surface
@@ -99,8 +124,6 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   SurfaceReference MakeTopLevelRootReference(const SurfaceId& surface_id);
 
   void DidReceiveCompositorFrameAck();
-  void WillDrawSurface(const LocalSurfaceId& local_surface_id,
-                       const gfx::Rect& damage_rect);
 
   // BeginFrameObserver implementation.
   void OnBeginFrame(const BeginFrameArgs& args) override;
@@ -110,7 +133,7 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   void UpdateNeedsBeginFramesInternal();
   Surface* CreateSurface(const SurfaceInfo& surface_info);
 
-  CompositorFrameSinkSupportClient* const client_;
+  mojom::CompositorFrameSinkClient* const client_;
 
   FrameSinkManagerImpl* frame_sink_manager_ = nullptr;
   SurfaceManager* surface_manager_ = nullptr;
@@ -147,6 +170,9 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
 
   // A callback that will be run at the start of the destructor if set.
   base::OnceCallback<void()> destruction_callback_;
+
+  // A callback that will be provided to Surface::QueueFrame().
+  WillDrawCallback will_draw_callback_;
 
   uint64_t last_frame_index_ = kFrameIndexStart;
 

@@ -16,6 +16,7 @@
 #include "libANGLE/renderer/gl/FunctionsGL.h"
 #include "libANGLE/renderer/gl/PathGL.h"
 #include "libANGLE/renderer/gl/ProgramGL.h"
+#include "libANGLE/renderer/gl/ProgramPipelineGL.h"
 #include "libANGLE/renderer/gl/QueryGL.h"
 #include "libANGLE/renderer/gl/RenderbufferGL.h"
 #include "libANGLE/renderer/gl/RendererGL.h"
@@ -117,9 +118,14 @@ TransformFeedbackImpl *ContextGL::createTransformFeedback(const gl::TransformFee
     return new TransformFeedbackGL(state, getFunctions(), getStateManager());
 }
 
-SamplerImpl *ContextGL::createSampler()
+SamplerImpl *ContextGL::createSampler(const gl::SamplerState &state)
 {
-    return new SamplerGL(getFunctions(), getStateManager());
+    return new SamplerGL(state, getFunctions(), getStateManager());
+}
+
+ProgramPipelineImpl *ContextGL::createProgramPipeline(const gl::ProgramPipelineState &data)
+{
+    return new ProgramPipelineGL(data, getFunctions());
 }
 
 std::vector<PathImpl *> ContextGL::createPaths(GLsizei range)
@@ -353,7 +359,7 @@ GLint64 ContextGL::getTimestamp()
 void ContextGL::onMakeCurrent(const gl::Context *context)
 {
     // Queries need to be paused/resumed on context switches
-    mRenderer->getStateManager()->onMakeCurrent(context);
+    ANGLE_SWALLOW_ERR(mRenderer->getStateManager()->onMakeCurrent(context));
 }
 
 const gl::Caps &ContextGL::getNativeCaps() const

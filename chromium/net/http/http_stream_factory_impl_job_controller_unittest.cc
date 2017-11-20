@@ -321,7 +321,7 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, ProxyResolutionFailsSync) {
   proxy_config.set_pac_mandatory(true);
   session_deps_.proxy_service.reset(new ProxyService(
       std::make_unique<ProxyConfigServiceFixed>(proxy_config),
-      base::WrapUnique(new FailingProxyResolverFactory), nullptr));
+      std::make_unique<FailingProxyResolverFactory>(), nullptr));
   HttpRequestInfo request_info;
   request_info.method = "GET";
   request_info.url = GURL("http://www.google.com");
@@ -1562,6 +1562,53 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, FailAlternativeProxy) {
   EXPECT_TRUE(HttpStreamFactoryImplPeer::IsJobControllerDeleted(factory_));
 }
 
+// Verifies that if the alternative proxy server job fails due to network
+// disconnection, then the proxy delegate is not notified.
+TEST_F(HttpStreamFactoryImplJobControllerTest,
+       InternetDisconnectedAlternativeProxy) {
+  quic_data_ = std::make_unique<MockQuicData>();
+  quic_data_->AddConnect(SYNCHRONOUS, ERR_INTERNET_DISCONNECTED);
+  tcp_data_ = std::make_unique<SequencedSocketData>(nullptr, 0, nullptr, 0);
+  tcp_data_->set_connect_data(MockConnect(SYNCHRONOUS, OK));
+  SSLSocketDataProvider ssl_data(ASYNC, OK);
+  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl_data);
+
+  UseAlternativeProxy();
+
+  HttpRequestInfo request_info;
+  request_info.method = "GET";
+  request_info.url = GURL("http://mail.example.org/");
+  Initialize(request_info);
+  EXPECT_TRUE(test_proxy_delegate()->alternative_proxy_server().is_quic());
+
+  // Enable delayed TCP and set time delay for waiting job.
+  QuicStreamFactory* quic_stream_factory = session_->quic_stream_factory();
+  quic_stream_factory->set_require_confirmation(false);
+  ServerNetworkStats stats1;
+  stats1.srtt = base::TimeDelta::FromMicroseconds(300 * 1000);
+  session_->http_server_properties()->SetServerNetworkStats(
+      url::SchemeHostPort(GURL("https://myproxy.org")), stats1);
+
+  request_ =
+      job_controller_->Start(&request_delegate_, nullptr, net_log_.bound(),
+                             HttpStreamRequest::HTTP_STREAM, DEFAULT_PRIORITY);
+  EXPECT_TRUE(job_controller_->main_job());
+  EXPECT_TRUE(job_controller_->alternative_job());
+
+  EXPECT_CALL(request_delegate_, OnStreamReadyImpl(_, _, _));
+
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_FALSE(job_controller_->alternative_job());
+  EXPECT_TRUE(job_controller_->main_job());
+
+  // The alternative proxy server should not be marked as bad.
+  EXPECT_TRUE(test_proxy_delegate()->alternative_proxy_server().is_valid());
+  EXPECT_EQ(1, test_proxy_delegate()->get_alternative_proxy_invocations());
+  request_.reset();
+  EXPECT_TRUE(HttpStreamFactoryImplPeer::IsJobControllerDeleted(factory_));
+}
+
 TEST_F(HttpStreamFactoryImplJobControllerTest,
        AlternativeProxyServerJobFailsAfterMainJobSucceeds) {
   base::HistogramTester histogram_tester;
@@ -2170,7 +2217,7 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, GetAlternativeServiceInfoFor) {
 
   // Set alternative service with no advertised version.
   session_->http_server_properties()->SetQuicAlternativeService(
-      server, alternative_service, expiration, QuicVersionVector());
+      server, alternative_service, expiration, QuicTransportVersionVector());
 
   AlternativeServiceInfo alt_svc_info =
       JobControllerPeer::GetAlternativeServiceInfoFor(
@@ -2181,7 +2228,7 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, GetAlternativeServiceInfoFor) {
 
   // Set alternative service for the same server with the same list of versions
   // that is supported.
-  QuicVersionVector supported_versions =
+  QuicTransportVersionVector supported_versions =
       session_->params().quic_supported_versions;
   ASSERT_TRUE(session_->http_server_properties()->SetQuicAlternativeService(
       server, alternative_service, expiration, supported_versions));
@@ -2192,9 +2239,9 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, GetAlternativeServiceInfoFor) {
   std::sort(supported_versions.begin(), supported_versions.end());
   EXPECT_EQ(supported_versions, alt_svc_info.advertised_versions());
 
-  QuicVersion unsupported_version_1(QUIC_VERSION_UNSUPPORTED);
-  QuicVersion unsupported_version_2(QUIC_VERSION_UNSUPPORTED);
-  for (const QuicVersion& version : AllSupportedVersions()) {
+  QuicTransportVersion unsupported_version_1(QUIC_VERSION_UNSUPPORTED);
+  QuicTransportVersion unsupported_version_2(QUIC_VERSION_UNSUPPORTED);
+  for (const QuicTransportVersion& version : AllSupportedTransportVersions()) {
     if (std::find(supported_versions.begin(), supported_versions.end(),
                   version) != supported_versions.end())
       continue;
@@ -2209,7 +2256,7 @@ TEST_F(HttpStreamFactoryImplJobControllerTest, GetAlternativeServiceInfoFor) {
   // Set alternative service for the same server with two QUIC versions:
   // - one unsupported version: |unsupported_version_1|,
   // - one supported version: session_->params().quic_supported_versions[0].
-  QuicVersionVector mixed_quic_versions = {
+  QuicTransportVersionVector mixed_quic_versions = {
       unsupported_version_1, session_->params().quic_supported_versions[0]};
   ASSERT_TRUE(session_->http_server_properties()->SetQuicAlternativeService(
       server, alternative_service, expiration, mixed_quic_versions));

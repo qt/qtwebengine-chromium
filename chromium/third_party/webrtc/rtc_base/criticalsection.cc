@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/rtc_base/criticalsection.h"
+#include "rtc_base/criticalsection.h"
 
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/platform_thread.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/platform_thread.h"
 
 // TODO(tommi): Split this file up to per-platform implementation files.
 
@@ -56,7 +56,7 @@ CriticalSection::~CriticalSection() {
 #endif
 }
 
-void CriticalSection::Enter() const EXCLUSIVE_LOCK_FUNCTION() {
+void CriticalSection::Enter() const RTC_EXCLUSIVE_LOCK_FUNCTION() {
 #if defined(WEBRTC_WIN)
   EnterCriticalSection(&crit_);
 #elif defined(WEBRTC_POSIX)
@@ -115,7 +115,7 @@ void CriticalSection::Enter() const EXCLUSIVE_LOCK_FUNCTION() {
 #endif
 }
 
-bool CriticalSection::TryEnter() const EXCLUSIVE_TRYLOCK_FUNCTION(true) {
+bool CriticalSection::TryEnter() const RTC_EXCLUSIVE_TRYLOCK_FUNCTION(true) {
 #if defined(WEBRTC_WIN)
   return TryEnterCriticalSection(&crit_) != FALSE;
 #elif defined(WEBRTC_POSIX)
@@ -148,7 +148,7 @@ bool CriticalSection::TryEnter() const EXCLUSIVE_TRYLOCK_FUNCTION(true) {
 #endif
 }
 
-void CriticalSection::Leave() const UNLOCK_FUNCTION() {
+void CriticalSection::Leave() const RTC_UNLOCK_FUNCTION() {
   RTC_DCHECK(CurrentThreadIsOwner());
 #if defined(WEBRTC_WIN)
   LeaveCriticalSection(&crit_);

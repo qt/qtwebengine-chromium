@@ -37,9 +37,11 @@
 #include "core/dom/UserGestureIndicator.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/InputMethodController.h"
 #include "core/editing/PlainTextRange.h"
+#include "core/editing/SelectionTemplate.h"
+#include "core/editing/ime/InputMethodController.h"
 #include "core/events/WebInputEventConversion.h"
 #include "core/exported/WebDevToolsAgentImpl.h"
 #include "core/exported/WebPagePopupImpl.h"
@@ -53,7 +55,7 @@
 #include "core/frame/VisualViewport.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/frame/WebViewFrameWidget.h"
-#include "core/html/HTMLTextAreaElement.h"
+#include "core/html/forms/HTMLTextAreaElement.h"
 #include "core/input/ContextMenuAllowedScope.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutView.h"
@@ -817,7 +819,7 @@ void WebFrameWidgetImpl::HandleMouseDown(LocalFrame& main_frame,
   }
 
   if (view_impl->GetPagePopup() && page_popup &&
-      view_impl->GetPagePopup()->HasSamePopupClient(page_popup.Get())) {
+      view_impl->GetPagePopup()->HasSamePopupClient(page_popup.get())) {
     // That click triggered a page popup that is the same as the one we just
     // closed.  It needs to be closed.
     view_impl->HidePopups();

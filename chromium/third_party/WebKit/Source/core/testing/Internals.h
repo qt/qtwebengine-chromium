@@ -269,6 +269,7 @@ class Internals final : public GarbageCollected<Internals>,
 
   int lastSpellCheckRequestSequence(Document*, ExceptionState&);
   int lastSpellCheckProcessedSequence(Document*, ExceptionState&);
+  void cancelCurrentSpellCheckRequest(Document*, ExceptionState&);
   String idleTimeSpellCheckerState(Document*, ExceptionState&);
   void runIdleTimeSpellChecker(Document*, ExceptionState&);
 
@@ -585,6 +586,10 @@ class Internals final : public GarbageCollected<Internals>,
   // "windows-1252", "Latin-1", "iso-8859-1", etc).
   // The order is not defined.
   Vector<String> supportedTextEncodingLabels() const;
+
+  void simulateRasterUnderInvalidations(bool enable);
+
+  void BypassLongCompileThresholdOnce(ExceptionState&);
 
  private:
   explicit Internals(ExecutionContext*);

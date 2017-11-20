@@ -12,10 +12,11 @@
 #include <vector>
 
 #include "base/macros.h"
-#include "third_party/harfbuzz-ng/src/hb.h"
 #include "third_party/icu/source/common/unicode/ubidi.h"
 #include "third_party/icu/source/common/unicode/uscript.h"
 #include "ui/gfx/render_text.h"
+
+#include <hb.h>
 
 namespace base {
 namespace i18n {
@@ -56,9 +57,10 @@ struct GFX_EXPORT TextRunHarfBuzz {
   RangeF GetGraphemeBounds(RenderTextHarfBuzz* render_text,
                            size_t text_index) const;
 
-  // Returns the width of the given |char_range| handling grapheme boundaries
-  // within glyphs.
-  float GetGraphemeWidthForCharRange(RenderTextHarfBuzz* render_text,
+  // Returns the horizontal span of the given |char_range| handling grapheme
+  // boundaries within glyphs. Returned value is in text-space (assumes all runs
+  // are on the same line).
+  RangeF GetGraphemeSpanForCharRange(RenderTextHarfBuzz* render_text,
                                      const Range& char_range) const;
 
   // Returns the glyph width for the given character range. |char_range| is in

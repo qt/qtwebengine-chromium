@@ -263,7 +263,7 @@ class MojoAsyncResourceHandlerWithStubOperations
   }
 
   std::unique_ptr<UploadProgressTracker> CreateUploadProgressTracker(
-      const tracked_objects::Location& from_here,
+      const base::Location& from_here,
       UploadProgressTracker::UploadProgressReportCallback callback) override {
     DCHECK(!upload_progress_tracker_);
 
@@ -343,7 +343,6 @@ class MojoAsyncResourceHandlerTestBase {
         kRouteId,                                // render_view_id
         0,                                       // render_frame_id
         true,                                    // is_main_frame
-        false,                                   // parent_is_main_frame
         false,                                   // allow_download
         true,                                    // is_async
         PREVIEWS_OFF                             // previews_state
@@ -388,7 +387,7 @@ class MojoAsyncResourceHandlerTestBase {
   // Returns false if something bad happens.
   bool CallOnResponseStarted() {
     MockResourceLoader::Status result = mock_loader_->OnResponseStarted(
-        make_scoped_refptr(new ResourceResponse()));
+        base::MakeRefCounted<ResourceResponse>());
     EXPECT_EQ(MockResourceLoader::Status::IDLE, result);
     if (result != MockResourceLoader::Status::IDLE)
       return false;
@@ -633,7 +632,7 @@ TEST_F(MojoAsyncResourceHandlerTest, OnResponseCompleted2) {
             mock_loader_->OnWillStart(request_->url()));
   ASSERT_EQ(MockResourceLoader::Status::IDLE,
             mock_loader_->OnResponseStarted(
-                make_scoped_refptr(new ResourceResponse())));
+                base::MakeRefCounted<ResourceResponse>()));
   ASSERT_FALSE(url_loader_client_.has_received_response());
   url_loader_client_.RunUntilResponseReceived();
 
@@ -1181,7 +1180,7 @@ TEST_P(MojoAsyncResourceHandlerWithAllocationSizeTest, RedirectHandling) {
   redirect_info.status_code = 301;
   ASSERT_EQ(MockResourceLoader::Status::CALLBACK_PENDING,
             mock_loader_->OnRequestRedirected(
-                redirect_info, make_scoped_refptr(new ResourceResponse())));
+                redirect_info, base::MakeRefCounted<ResourceResponse>()));
 
   ASSERT_FALSE(url_loader_client_.has_received_response());
   ASSERT_FALSE(url_loader_client_.has_received_redirect());
@@ -1201,7 +1200,7 @@ TEST_P(MojoAsyncResourceHandlerWithAllocationSizeTest, RedirectHandling) {
   redirect_info.status_code = 302;
   ASSERT_EQ(MockResourceLoader::Status::CALLBACK_PENDING,
             mock_loader_->OnRequestRedirected(
-                redirect_info, make_scoped_refptr(new ResourceResponse())));
+                redirect_info, base::MakeRefCounted<ResourceResponse>()));
 
   ASSERT_FALSE(url_loader_client_.has_received_response());
   ASSERT_FALSE(url_loader_client_.has_received_redirect());
@@ -1219,7 +1218,7 @@ TEST_P(MojoAsyncResourceHandlerWithAllocationSizeTest, RedirectHandling) {
   // Give the final response.
   ASSERT_EQ(MockResourceLoader::Status::IDLE,
             mock_loader_->OnResponseStarted(
-                make_scoped_refptr(new ResourceResponse())));
+                base::MakeRefCounted<ResourceResponse>()));
 
   net::URLRequestStatus status(net::URLRequestStatus::SUCCESS, net::OK);
   ASSERT_EQ(MockResourceLoader::Status::IDLE,
@@ -1251,7 +1250,7 @@ TEST_P(
             mock_loader_->OnWillStart(request_->url()));
   ASSERT_EQ(MockResourceLoader::Status::IDLE,
             mock_loader_->OnResponseStarted(
-                make_scoped_refptr(new ResourceResponse())));
+                base::MakeRefCounted<ResourceResponse>()));
 
   ASSERT_FALSE(url_loader_client_.has_received_response());
   url_loader_client_.RunUntilResponseReceived();
@@ -1303,7 +1302,7 @@ TEST_P(
 
   ASSERT_EQ(MockResourceLoader::Status::IDLE,
             mock_loader_->OnResponseStarted(
-                make_scoped_refptr(new ResourceResponse())));
+                base::MakeRefCounted<ResourceResponse>()));
 
   ASSERT_FALSE(url_loader_client_.has_received_response());
   url_loader_client_.RunUntilResponseReceived();

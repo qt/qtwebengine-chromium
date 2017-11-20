@@ -30,7 +30,7 @@ class CFX_RTFBreakTest : public testing::Test {
   }
 
  private:
-  CFX_RetainPtr<CFGAS_GEFont> font_;
+  RetainPtr<CFGAS_GEFont> font_;
 };
 
 // As soon as you get one of the control characters the break is complete
@@ -39,7 +39,7 @@ class CFX_RTFBreakTest : public testing::Test {
 TEST_F(CFX_RTFBreakTest, AddChars) {
   auto b = CreateBreak(FX_LAYOUTSTYLE_ExpandTab);
 
-  CFX_WideString str(L"Input String.");
+  WideString str(L"Input String.");
   for (const auto& c : str)
     EXPECT_EQ(CFX_BreakType::None, b->AppendChar(c));
 

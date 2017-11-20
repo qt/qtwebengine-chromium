@@ -7,12 +7,12 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include "webrtc/modules/audio_processing/aec3/echo_canceller3.h"
+#include "modules/audio_processing/aec3/echo_canceller3.h"
 
 #include <sstream>
 
-#include "webrtc/modules/audio_processing/logging/apm_data_dumper.h"
-#include "webrtc/rtc_base/atomicops.h"
+#include "modules/audio_processing/logging/apm_data_dumper.h"
+#include "rtc_base/atomicops.h"
 
 namespace webrtc {
 
@@ -146,7 +146,7 @@ class EchoCanceller3::RenderWriter {
                int frame_length,
                int num_bands);
   ~RenderWriter();
-  void Insert(AudioBuffer* render);
+  void Insert(AudioBuffer* input);
 
  private:
   ApmDataDumper* data_dumper_;

@@ -47,25 +47,28 @@ class FPDFEditEmbeddertest : public EmbedderTest {
     // Check that the font descriptor has the required keys according to spec
     // 1.7 Table 5.19
     ASSERT_TRUE(font_desc->KeyExist("Flags"));
+
     int font_flags = font_desc->GetIntegerFor("Flags");
-    if (bold)
-      EXPECT_TRUE(font_flags & FXFONT_BOLD);
-    else
-      EXPECT_FALSE(font_flags & FXFONT_BOLD);
-    if (italic)
-      EXPECT_TRUE(font_flags & FXFONT_ITALIC);
-    else
-      EXPECT_FALSE(font_flags & FXFONT_ITALIC);
-    EXPECT_TRUE(font_flags & FXFONT_NONSYMBOLIC);
+    EXPECT_EQ(bold, FontStyleIsBold(font_flags));
+    EXPECT_EQ(italic, FontStyleIsItalic(font_flags));
+    EXPECT_TRUE(FontStyleIsNonSymbolic(font_flags));
     ASSERT_TRUE(font_desc->KeyExist("FontBBox"));
-    EXPECT_EQ(4U, font_desc->GetArrayFor("FontBBox")->GetCount());
+
+    CPDF_Array* fontBBox = font_desc->GetArrayFor("FontBBox");
+    ASSERT_TRUE(fontBBox);
+    EXPECT_EQ(4U, fontBBox->GetCount());
+    // Check that the coordinates are in the preferred order according to spec
+    // 1.7 Section 3.8.4
+    EXPECT_TRUE(fontBBox->GetIntegerAt(0) < fontBBox->GetIntegerAt(2));
+    EXPECT_TRUE(fontBBox->GetIntegerAt(1) < fontBBox->GetIntegerAt(3));
+
     EXPECT_TRUE(font_desc->KeyExist("ItalicAngle"));
     EXPECT_TRUE(font_desc->KeyExist("Ascent"));
     EXPECT_TRUE(font_desc->KeyExist("Descent"));
     EXPECT_TRUE(font_desc->KeyExist("CapHeight"));
     EXPECT_TRUE(font_desc->KeyExist("StemV"));
-    CFX_ByteString present("FontFile");
-    CFX_ByteString absent("FontFile2");
+    ByteString present("FontFile");
+    ByteString absent("FontFile2");
     if (font_type == FPDF_FONT_TRUETYPE)
       std::swap(present, absent);
     EXPECT_TRUE(font_desc->KeyExist(present));
@@ -74,6 +77,10 @@ class FPDFEditEmbeddertest : public EmbedderTest {
     // Check that the font stream is the one that was provided
     CPDF_Stream* font_stream = font_desc->GetStreamFor(present);
     ASSERT_EQ(size, font_stream->GetRawSize());
+    if (font_type == FPDF_FONT_TRUETYPE) {
+      ASSERT_EQ(static_cast<int>(size),
+                font_stream->GetDict()->GetIntegerFor("Length1"));
+    }
     uint8_t* stream_data = font_stream->GetRawData();
     for (size_t j = 0; j < size; j++)
       EXPECT_EQ(data[j], stream_data[j]) << " at byte " << j;
@@ -256,6 +263,43 @@ TEST_F(FPDFEditEmbeddertest, AddPaths) {
   EXPECT_EQ(0U, B);
   EXPECT_EQ(128U, A);
 
+  // Make sure the path has 5 points (1 FXPT_TYPE::MoveTo and 4
+  // FXPT_TYPE::LineTo).
+  ASSERT_EQ(5, FPDFPath_CountSegments(green_rect));
+  // Verify actual coordinates.
+  FPDF_PATHSEGMENT segment = FPDFPath_GetPathSegment(green_rect, 0);
+  float x;
+  float y;
+  EXPECT_TRUE(FPDFPathSegment_GetPoint(segment, &x, &y));
+  EXPECT_EQ(100, x);
+  EXPECT_EQ(100, y);
+  EXPECT_EQ(FPDF_SEGMENT_MOVETO, FPDFPathSegment_GetType(segment));
+  EXPECT_FALSE(FPDFPathSegment_GetClose(segment));
+  segment = FPDFPath_GetPathSegment(green_rect, 1);
+  EXPECT_TRUE(FPDFPathSegment_GetPoint(segment, &x, &y));
+  EXPECT_EQ(100, x);
+  EXPECT_EQ(140, y);
+  EXPECT_EQ(FPDF_SEGMENT_LINETO, FPDFPathSegment_GetType(segment));
+  EXPECT_FALSE(FPDFPathSegment_GetClose(segment));
+  segment = FPDFPath_GetPathSegment(green_rect, 2);
+  EXPECT_TRUE(FPDFPathSegment_GetPoint(segment, &x, &y));
+  EXPECT_EQ(140, x);
+  EXPECT_EQ(140, y);
+  EXPECT_EQ(FPDF_SEGMENT_LINETO, FPDFPathSegment_GetType(segment));
+  EXPECT_FALSE(FPDFPathSegment_GetClose(segment));
+  segment = FPDFPath_GetPathSegment(green_rect, 3);
+  EXPECT_TRUE(FPDFPathSegment_GetPoint(segment, &x, &y));
+  EXPECT_EQ(140, x);
+  EXPECT_EQ(100, y);
+  EXPECT_EQ(FPDF_SEGMENT_LINETO, FPDFPathSegment_GetType(segment));
+  EXPECT_FALSE(FPDFPathSegment_GetClose(segment));
+  segment = FPDFPath_GetPathSegment(green_rect, 4);
+  EXPECT_TRUE(FPDFPathSegment_GetPoint(segment, &x, &y));
+  EXPECT_EQ(100, x);
+  EXPECT_EQ(100, y);
+  EXPECT_EQ(FPDF_SEGMENT_LINETO, FPDFPathSegment_GetType(segment));
+  EXPECT_TRUE(FPDFPathSegment_GetClose(segment));
+
   EXPECT_TRUE(FPDFPath_SetDrawMode(green_rect, FPDF_FILLMODE_WINDING, 0));
   FPDFPage_InsertObject(page, green_rect);
   page_bitmap = RenderPage(page);
@@ -269,6 +313,32 @@ TEST_F(FPDFEditEmbeddertest, AddPaths) {
   EXPECT_TRUE(FPDFPath_LineTo(black_path, 400, 200));
   EXPECT_TRUE(FPDFPath_LineTo(black_path, 300, 100));
   EXPECT_TRUE(FPDFPath_Close(black_path));
+
+  // Make sure the path has 3 points (1 FXPT_TYPE::MoveTo and 2
+  // FXPT_TYPE::LineTo).
+  ASSERT_EQ(3, FPDFPath_CountSegments(black_path));
+  // Verify actual coordinates.
+  segment = FPDFPath_GetPathSegment(black_path, 0);
+  EXPECT_TRUE(FPDFPathSegment_GetPoint(segment, &x, &y));
+  EXPECT_EQ(400, x);
+  EXPECT_EQ(100, y);
+  EXPECT_EQ(FPDF_SEGMENT_MOVETO, FPDFPathSegment_GetType(segment));
+  EXPECT_FALSE(FPDFPathSegment_GetClose(segment));
+  segment = FPDFPath_GetPathSegment(black_path, 1);
+  EXPECT_TRUE(FPDFPathSegment_GetPoint(segment, &x, &y));
+  EXPECT_EQ(400, x);
+  EXPECT_EQ(200, y);
+  EXPECT_EQ(FPDF_SEGMENT_LINETO, FPDFPathSegment_GetType(segment));
+  EXPECT_FALSE(FPDFPathSegment_GetClose(segment));
+  segment = FPDFPath_GetPathSegment(black_path, 2);
+  EXPECT_TRUE(FPDFPathSegment_GetPoint(segment, &x, &y));
+  EXPECT_EQ(300, x);
+  EXPECT_EQ(100, y);
+  EXPECT_EQ(FPDF_SEGMENT_LINETO, FPDFPathSegment_GetType(segment));
+  EXPECT_TRUE(FPDFPathSegment_GetClose(segment));
+  // Make sure out of bounds index access fails properly.
+  EXPECT_EQ(nullptr, FPDFPath_GetPathSegment(black_path, 3));
+
   FPDFPage_InsertObject(page, black_path);
   page_bitmap = RenderPage(page);
   CompareBitmap(page_bitmap, 612, 792, "eadc8020a14dfcf091da2688733d8806");
@@ -299,6 +369,33 @@ TEST_F(FPDFEditEmbeddertest, AddPaths) {
   TestAndCloseSaved(612, 792, last_md5);
 }
 
+TEST_F(FPDFEditEmbeddertest, PathsPoints) {
+  CreateNewDocument();
+  FPDF_PAGEOBJECT img = FPDFPageObj_NewImageObj(document_);
+  // This should fail gracefully, even if img is not a path.
+  ASSERT_EQ(-1, FPDFPath_CountSegments(img));
+
+  // This should fail gracefully, even if path is NULL.
+  ASSERT_EQ(-1, FPDFPath_CountSegments(nullptr));
+
+  // FPDFPath_GetPathSegment() with a non-path.
+  ASSERT_EQ(nullptr, FPDFPath_GetPathSegment(img, 0));
+  // FPDFPath_GetPathSegment() with a NULL path.
+  ASSERT_EQ(nullptr, FPDFPath_GetPathSegment(nullptr, 0));
+  float x;
+  float y;
+  // FPDFPathSegment_GetPoint() with a NULL segment.
+  EXPECT_FALSE(FPDFPathSegment_GetPoint(nullptr, &x, &y));
+
+  // FPDFPathSegment_GetType() with a NULL segment.
+  ASSERT_EQ(FPDF_SEGMENT_UNKNOWN, FPDFPathSegment_GetType(nullptr));
+
+  // FPDFPathSegment_GetClose() with a NULL segment.
+  EXPECT_FALSE(FPDFPathSegment_GetClose(nullptr));
+
+  FPDFPageObj_Destroy(img);
+}
+
 TEST_F(FPDFEditEmbeddertest, PathOnTopOfText) {
   // Load document with some text
   EXPECT_TRUE(OpenDocument("hello_world.pdf"));
@@ -322,7 +419,7 @@ TEST_F(FPDFEditEmbeddertest, PathOnTopOfText) {
 
   // Render and check the result. Text is slightly different on Mac.
   FPDF_BITMAP bitmap = RenderPage(page);
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "f9e6fa74230f234286bfcada9f7606d8";
 #else
   const char md5[] = "bc6e6eb50dda4695ba0fb4d04ed82ada";
@@ -448,7 +545,7 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText) {
   FPDFPageObj_Transform(text_object1, 1, 0, 0, 1, 20, 20);
   FPDFPage_InsertObject(page, text_object1);
   FPDF_BITMAP page_bitmap = RenderPage(page);
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "a4dddc1a3930fa694bbff9789dab4161";
 #else
   const char md5[] = "7a35771853a1cbba38f6775807878625";
@@ -466,9 +563,9 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText) {
   FPDFPageObj_Transform(text_object2, 1, 0, 0, 1, 100, 600);
   FPDFPage_InsertObject(page, text_object2);
   page_bitmap = RenderPage(page);
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_2[] = "a5c4ace4c6f27644094813fe1441a21c";
-#elif _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   const char md5_2[] = "b231b329a4b566fb9b42bfc15fe59bb7";
 #else
   const char md5_2[] = "f85fae151851436072b7b3c6703e506a";
@@ -486,9 +583,9 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText) {
   FPDFPageObj_Transform(text_object3, 1, 1.5, 2, 0.5, 200, 200);
   FPDFPage_InsertObject(page, text_object3);
   page_bitmap = RenderPage(page);
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_3[] = "40b3ef04f915ff4c4208948001763544";
-#elif _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   const char md5_3[] = "ba874b3b137f984510c4e287ed4ba7ae";
 #else
   const char md5_3[] = "c5aed6a8ef05558c8c47d58c87cbcb46";
@@ -789,11 +886,11 @@ TEST_F(FPDFEditEmbeddertest, AddTrueTypeFontText) {
     FPDFPageObj_Transform(text_object, 1, 0, 0, 1, 400, 400);
     FPDFPage_InsertObject(page, text_object);
     FPDF_BITMAP page_bitmap = RenderPage(page);
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5[] = "17d2b6cd574cf66170b09c8927529a94";
 #else
     const char md5[] = "1722c6a9deed953d730de9cd13dcbd55";
-#endif  // _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#endif  // _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     CompareBitmap(page_bitmap, 612, 792, md5);
     FPDFBitmap_Destroy(page_bitmap);
 
@@ -807,11 +904,11 @@ TEST_F(FPDFEditEmbeddertest, AddTrueTypeFontText) {
     FPDFPage_InsertObject(page, text_object2);
   }
   FPDF_BITMAP page_bitmap2 = RenderPage(page);
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_2[] = "8eded4193ff1f0f77b8b600a825e97ea";
 #else
   const char md5_2[] = "9d7885072058f6c3e68ecaf32e917f30";
-#endif  // _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+#endif  // _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   CompareBitmap(page_bitmap2, 612, 792, md5_2);
   FPDFBitmap_Destroy(page_bitmap2);
 
@@ -840,7 +937,7 @@ TEST_F(FPDFEditEmbeddertest, TransformAnnot) {
 }
 
 // TODO(npm): Add tests using Japanese fonts in other OS.
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_LINUX_
+#if _FX_PLATFORM_ == _FX_PLATFORM_LINUX_
 TEST_F(FPDFEditEmbeddertest, AddCIDFontText) {
   // Start with a blank page
   FPDF_PAGE page = FPDFPage_New(CreateNewDocument(), 0, 612, 792);
@@ -894,7 +991,7 @@ TEST_F(FPDFEditEmbeddertest, AddCIDFontText) {
   FPDF_ClosePage(page);
   TestAndCloseSaved(612, 792, md5);
 }
-#endif  // _FXM_PLATFORM_ == _FXM_PLATFORM_LINUX_
+#endif  // _FX_PLATFORM_ == _FX_PLATFORM_LINUX_
 
 TEST_F(FPDFEditEmbeddertest, SaveAndRender) {
   const char md5[] = "3c20472b0552c0c22b88ab1ed8c6202b";
@@ -931,7 +1028,7 @@ TEST_F(FPDFEditEmbeddertest, ExtractImageBitmap) {
   ASSERT_TRUE(OpenDocument("embedded_images.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
-  ASSERT_EQ(39, FPDFPage_CountObject(page));
+  ASSERT_EQ(39, FPDFPage_CountObjects(page));
 
   FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page, 32);
   EXPECT_NE(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
@@ -985,7 +1082,7 @@ TEST_F(FPDFEditEmbeddertest, GetImageData) {
   EXPECT_TRUE(OpenDocument("embedded_images.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
-  ASSERT_EQ(39, FPDFPage_CountObject(page));
+  ASSERT_EQ(39, FPDFPage_CountObjects(page));
 
   // Retrieve an image object with flate-encoded data stream.
   FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page, 33);
@@ -1056,10 +1153,10 @@ TEST_F(FPDFEditEmbeddertest, GetImageFilters) {
   ASSERT_EQ(1, FPDFImageObj_GetImageFilterCount(obj));
   unsigned long len = FPDFImageObj_GetImageFilter(obj, 0, nullptr, 0);
   std::vector<char> buf(len);
-  EXPECT_EQ(24u, FPDFImageObj_GetImageFilter(obj, 0, buf.data(), len));
-  EXPECT_STREQ(L"FlateDecode",
-               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
-                   .c_str());
+  static constexpr char kFlateDecode[] = "FlateDecode";
+  EXPECT_EQ(sizeof(kFlateDecode),
+            FPDFImageObj_GetImageFilter(obj, 0, buf.data(), len));
+  EXPECT_STREQ(kFlateDecode, buf.data());
   EXPECT_EQ(0u, FPDFImageObj_GetImageFilter(obj, 1, nullptr, 0));
 
   // Verify all the filters for an image object with a list of filters.
@@ -1069,18 +1166,18 @@ TEST_F(FPDFEditEmbeddertest, GetImageFilters) {
   len = FPDFImageObj_GetImageFilter(obj, 0, nullptr, 0);
   buf.clear();
   buf.resize(len);
-  EXPECT_EQ(30u, FPDFImageObj_GetImageFilter(obj, 0, buf.data(), len));
-  EXPECT_STREQ(L"ASCIIHexDecode",
-               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
-                   .c_str());
+  static constexpr char kASCIIHexDecode[] = "ASCIIHexDecode";
+  EXPECT_EQ(sizeof(kASCIIHexDecode),
+            FPDFImageObj_GetImageFilter(obj, 0, buf.data(), len));
+  EXPECT_STREQ(kASCIIHexDecode, buf.data());
 
   len = FPDFImageObj_GetImageFilter(obj, 1, nullptr, 0);
   buf.clear();
   buf.resize(len);
-  EXPECT_EQ(20u, FPDFImageObj_GetImageFilter(obj, 1, buf.data(), len));
-  EXPECT_STREQ(L"DCTDecode",
-               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
-                   .c_str());
+  static constexpr char kDCTDecode[] = "DCTDecode";
+  EXPECT_EQ(sizeof(kDCTDecode),
+            FPDFImageObj_GetImageFilter(obj, 1, buf.data(), len));
+  EXPECT_STREQ(kDCTDecode, buf.data());
 
   UnloadPage(page);
 }

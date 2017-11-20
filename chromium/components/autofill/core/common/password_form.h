@@ -183,6 +183,14 @@ struct PasswordForm {
   // When parsing an HTML form, this is typically empty.
   PossibleUsernamesVector other_possible_usernames;
 
+  // This member is populated in cases where we there are multiple posssible
+  // password values. Used in pending password state, to populate a dropdown
+  // for possible passwords. Contains all possible passwords. Optional.
+  std::vector<base::string16> all_possible_passwords;
+
+  // True if |all_possible_passwords| have autofilled value or its part.
+  bool form_has_autofilled_value;
+
   // The name of the input element corresponding to the current password.
   // Optional (improves scoring).
   //
@@ -332,7 +340,11 @@ struct PasswordForm {
 
   PasswordForm();
   PasswordForm(const PasswordForm& other);
+  PasswordForm(PasswordForm&& other);
   ~PasswordForm();
+
+  PasswordForm& operator=(const PasswordForm& form);
+  PasswordForm& operator=(PasswordForm&& form);
 };
 
 // True if the unique keys for the forms are the same. The unique key is
@@ -349,6 +361,10 @@ struct LessThanUniqueKey {
 // Converts a vector of possible usernames to string.
 base::string16 OtherPossibleUsernamesToString(
     const PossibleUsernamesVector& possible_usernames);
+
+// Converts a vector of possible passwords to string.
+base::string16 AllPossiblePasswordsToString(
+    const std::vector<base::string16>& possible_passwords);
 
 // For testing.
 std::ostream& operator<<(std::ostream& os, PasswordForm::Layout layout);

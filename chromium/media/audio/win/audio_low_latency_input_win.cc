@@ -6,6 +6,7 @@
 
 #include <objbase.h>
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 
@@ -50,7 +51,7 @@ bool IsSupportedFormatForConversion(const WAVEFORMATEX& format) {
 
   return true;
 }
-}
+}  // namespace
 
 WASAPIAudioInputStream::WASAPIAudioInputStream(AudioManagerWin* manager,
                                                const AudioParameters& params,
@@ -462,13 +463,13 @@ void WASAPIAudioInputStream::Run() {
               break;
             }
             converter_->Convert(convert_bus_.get());
-            sink_->OnData(this, convert_bus_.get(), capture_time, volume);
+            sink_->OnData(convert_bus_.get(), capture_time, volume);
 
             // Move the capture time forward for each vended block.
             capture_time += AudioTimestampHelper::FramesToTime(
                 convert_bus_->frames(), format_.nSamplesPerSec);
           } else {
-            sink_->OnData(this, fifo_->Consume(), capture_time, volume);
+            sink_->OnData(fifo_->Consume(), capture_time, volume);
 
             // Move the capture time forward for each vended block.
             capture_time += AudioTimestampHelper::FramesToTime(
@@ -500,7 +501,7 @@ void WASAPIAudioInputStream::Run() {
 void WASAPIAudioInputStream::HandleError(HRESULT err) {
   NOTREACHED() << "Error code: " << err;
   if (sink_)
-    sink_->OnError(this);
+    sink_->OnError();
 }
 
 HRESULT WASAPIAudioInputStream::SetCaptureDevice() {
@@ -533,8 +534,10 @@ HRESULT WASAPIAudioInputStream::SetCaptureDevice() {
     hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole,
                                              endpoint_device_.GetAddressOf());
 
-    endpoint_device_->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, NULL,
-                               &system_audio_volume_);
+    if (SUCCEEDED(hr)) {
+      endpoint_device_->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL,
+                                 NULL, &system_audio_volume_);
+    }
   } else if (device_id_ == AudioDeviceDescription::kLoopbackInputDeviceId) {
     // Capture the default playback stream.
     hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole,

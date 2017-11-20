@@ -187,7 +187,7 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
       // window. Make sure the transient bubble is only visible if the parent is
       // visible, otherwise the bubble may not make sense by itself.
       if (params.type == Widget::InitParams::TYPE_BUBBLE) {
-        wm::TransientWindowManager::Get(window_)
+        wm::TransientWindowManager::GetOrCreate(window_)
             ->set_parent_controls_visibility(true);
       }
     }
@@ -836,8 +836,11 @@ void NativeWidgetAura::OnPaint(const ui::PaintContext& context) {
   delegate_->OnNativeWidgetPaint(context);
 }
 
-void NativeWidgetAura::OnDeviceScaleFactorChanged(float device_scale_factor) {
-  GetWidget()->DeviceScaleFactorChanged(device_scale_factor);
+void NativeWidgetAura::OnDeviceScaleFactorChanged(
+    float old_device_scale_factor,
+    float new_device_scale_factor) {
+  GetWidget()->DeviceScaleFactorChanged(old_device_scale_factor,
+                                        new_device_scale_factor);
 }
 
 void NativeWidgetAura::OnWindowDestroying(aura::Window* window) {

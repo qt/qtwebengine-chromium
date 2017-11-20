@@ -26,16 +26,12 @@
 #define Element_h
 
 #include "core/CoreExport.h"
-#include "core/HTMLNames.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSSelector.h"
-#include "core/dom/AXObjectCache.h"
-#include "core/dom/Attribute.h"
 #include "core/dom/ContainerNode.h"
-#include "core/dom/Document.h"
 #include "core/dom/ElementData.h"
-#include "core/dom/SpaceSplitString.h"
 #include "core/dom/WhitespaceAttacher.h"
+#include "core/html_names.h"
 #include "core/resize_observer/ResizeObserver.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/heap/Handle.h"
@@ -44,20 +40,21 @@
 
 namespace blink {
 
-class ElementAnimations;
 class AccessibleNode;
 class Attr;
 class Attribute;
 class CSSStyleDeclaration;
-class CompositorMutation;
 class CustomElementDefinition;
 class DOMRect;
 class DOMRectList;
 class DOMStringMap;
 class DOMTokenList;
+class Document;
+class ElementAnimations;
 class ElementRareData;
 class ElementShadow;
 class ExceptionState;
+class FloatQuad;
 class Image;
 class InputDeviceCapabilities;
 class Locale;
@@ -74,6 +71,9 @@ class ScrollStateCallback;
 class ScrollToOptions;
 class ShadowRoot;
 class ShadowRootInit;
+class SpaceSplitString;
+class StringOrTrustedHTML;
+class StringOrTrustedScriptURL;
 class StylePropertySet;
 class StylePropertyMap;
 class V0CustomElementDefinition;
@@ -91,10 +91,9 @@ enum ElementFlags {
   kContainsFullScreenElement = 1 << 3,
   kIsInTopLayer = 1 << 4,
   kHasPendingResources = 1 << 5,
-  kAlreadySpellChecked = 1 << 6,
-  kContainsPersistentVideo = 1 << 7,
+  kContainsPersistentVideo = 1 << 6,
 
-  kNumberOfElementFlags = 8,  // Size of bitfield used to store the flags.
+  kNumberOfElementFlags = 7,  // Size of bitfield used to store the flags.
 };
 
 enum class ShadowRootType;
@@ -153,8 +152,8 @@ class CORE_EXPORT Element : public ContainerNode {
   bool hasAttribute(const QualifiedName&) const;
   const AtomicString& getAttribute(const QualifiedName&) const;
 
-  // Passing nullAtom as the second parameter removes the attribute when calling
-  // either of these set methods.
+  // Passing g_null_atom as the second parameter removes the attribute when
+  // calling either of these set methods.
   void setAttribute(const QualifiedName&, const AtomicString& value);
   void SetSynchronizedLazyAttribute(const QualifiedName&,
                                     const AtomicString& value);
@@ -196,7 +195,14 @@ class CORE_EXPORT Element : public ContainerNode {
 
   void setAttribute(const AtomicString& name,
                     const AtomicString& value,
-                    ExceptionState& = ASSERT_NO_EXCEPTION);
+                    ExceptionState&);
+  void setAttribute(const AtomicString& name, const AtomicString& value);
+
+  // Trusted Type variant of the above.
+  void setAttribute(const QualifiedName&,
+                    const StringOrTrustedScriptURL&,
+                    ExceptionState&);
+
   static bool ParseAttributeName(QualifiedName&,
                                  const AtomicString& namespace_uri,
                                  const AtomicString& qualified_name,
@@ -452,7 +458,7 @@ class CORE_EXPORT Element : public ContainerNode {
       const WhitespaceAttacher& whitespace_attacher) const {
     return NeedsReattachLayoutTree() || ChildNeedsReattachLayoutTree() ||
            IsActiveSlotOrActiveV0InsertionPoint() ||
-           (whitespace_attacher.LastTextNodeNeedsReattach() &&
+           (whitespace_attacher.TraverseIntoDisplayContents() &&
             HasDisplayContentsStyle());
   }
   void RebuildLayoutTree(WhitespaceAttacher&);
@@ -473,12 +479,14 @@ class CORE_EXPORT Element : public ContainerNode {
   // TODO(esprehn): These take a ScriptState only for calling
   // HostsUsingFeatures::countMainWorldOnly, which should be handled in the
   // bindings instead so adding a ShadowRoot from C++ doesn't need one.
-  ShadowRoot* createShadowRoot(const ScriptState* = nullptr,
-                               ExceptionState& = ASSERT_NO_EXCEPTION);
+  ShadowRoot* createShadowRoot(const ScriptState*, ExceptionState&);
   ShadowRoot* attachShadow(const ScriptState*,
                            const ShadowRootInit&,
                            ExceptionState&);
-  ShadowRoot* CreateShadowRootInternal(ShadowRootType, ExceptionState&);
+  ShadowRoot& CreateShadowRootInternal();
+  ShadowRoot& CreateUserAgentShadowRoot();
+  ShadowRoot& AttachShadowRootInternal(ShadowRootType,
+                                       bool delegates_focus = false);
 
   ShadowRoot* OpenShadowRoot() const;
   ShadowRoot* ClosedShadowRoot() const;
@@ -551,6 +559,8 @@ class CORE_EXPORT Element : public ContainerNode {
   KURL HrefURL() const;
 
   KURL GetURLAttribute(const QualifiedName&) const;
+  void GetURLAttribute(const QualifiedName&, StringOrTrustedScriptURL&) const;
+
   KURL GetNonEmptyURLAttribute(const QualifiedName&) const;
 
   virtual const AtomicString ImageSourceURL() const;
@@ -606,10 +616,11 @@ class CORE_EXPORT Element : public ContainerNode {
 
   virtual String innerText();
   String outerText();
-  String innerHTML() const;
-  String outerHTML() const;
-  void setInnerHTML(const String&, ExceptionState& = ASSERT_NO_EXCEPTION);
-  void setOuterHTML(const String&, ExceptionState&);
+  String InnerHTMLAsString() const;
+  String OuterHTMLAsString() const;
+  void SetInnerHTMLFromString(const String& html, ExceptionState&);
+  void SetInnerHTMLFromString(const String& html);
+  void SetOuterHTMLFromString(const String& html, ExceptionState&);
 
   Element* insertAdjacentElement(const String& where,
                                  Element* new_child,
@@ -619,6 +630,17 @@ class CORE_EXPORT Element : public ContainerNode {
                           ExceptionState&);
   void insertAdjacentHTML(const String& where,
                           const String& html,
+                          ExceptionState&);
+
+  // TrustedTypes variants of the above.
+  // TODO(mkwst): Write a spec for these bits. https://crbug.com/739170
+  void innerHTML(StringOrTrustedHTML&) const;
+  void outerHTML(StringOrTrustedHTML&) const;
+  void setInnerHTML(const StringOrTrustedHTML&, ExceptionState&);
+  void setInnerHTML(const StringOrTrustedHTML&);
+  void setOuterHTML(const StringOrTrustedHTML&, ExceptionState&);
+  void insertAdjacentHTML(const String& where,
+                          const StringOrTrustedHTML&,
                           ExceptionState&);
 
   void setPointerCapture(int pointer_id, ExceptionState&);
@@ -675,12 +697,12 @@ class CORE_EXPORT Element : public ContainerNode {
   virtual bool MatchesValidityPseudoClasses() const { return false; }
 
   // https://dom.spec.whatwg.org/#dom-element-matches
-  bool matches(const AtomicString& selectors,
-               ExceptionState& = ASSERT_NO_EXCEPTION);
+  bool matches(const AtomicString& selectors, ExceptionState&);
+  bool matches(const AtomicString& selectors);
 
   // https://dom.spec.whatwg.org/#dom-element-closest
-  Element* closest(const AtomicString& selectors,
-                   ExceptionState& = ASSERT_NO_EXCEPTION);
+  Element* closest(const AtomicString& selectors, ExceptionState&);
+  Element* closest(const AtomicString& selectors);
 
   virtual bool ShouldAppearIndeterminate() const { return false; }
 
@@ -717,13 +739,6 @@ class CORE_EXPORT Element : public ContainerNode {
   void SetHasPendingResources() { SetElementFlag(kHasPendingResources); }
   void ClearHasPendingResources() { ClearElementFlag(kHasPendingResources); }
   virtual void BuildPendingResource() {}
-
-  bool IsAlreadySpellChecked() const {
-    return HasElementFlag(kAlreadySpellChecked);
-  }
-  void SetAlreadySpellChecked(bool value) {
-    SetElementFlag(kAlreadySpellChecked, value);
-  }
 
   void V0SetCustomElementDefinition(V0CustomElementDefinition*);
   V0CustomElementDefinition* GetV0CustomElementDefinition() const;
@@ -770,8 +785,6 @@ class CORE_EXPORT Element : public ContainerNode {
 
   void setTabIndex(int);
   int tabIndex() const override;
-
-  void UpdateFromCompositorMutation(const CompositorMutation&);
 
   // Helpers for V8DOMActivityLogger::logEvent.  They call logEvent only if
   // the element is isConnected() and the context is an isolated world.
@@ -881,6 +894,8 @@ class CORE_EXPORT Element : public ContainerNode {
       delete;  // This will catch anyone doing an unnecessary check.
   bool IsDocumentNode() const =
       delete;  // This will catch anyone doing an unnecessary check.
+
+  bool CanAttachShadowRoot() const;
 
   void StyleAttributeChanged(const AtomicString& new_style_string,
                              AttributeModificationReason);
@@ -1167,37 +1182,6 @@ inline UniqueElementData& Element::EnsureUniqueElementData() {
   return ToUniqueElementData(*element_data_);
 }
 
-inline Node::InsertionNotificationRequest Node::InsertedInto(
-    ContainerNode* insertion_point) {
-  DCHECK(!ChildNeedsStyleInvalidation());
-  DCHECK(!NeedsStyleInvalidation());
-  DCHECK(insertion_point->isConnected() || insertion_point->IsInShadowTree() ||
-         IsContainerNode());
-  if (insertion_point->isConnected()) {
-    SetFlag(kIsConnectedFlag);
-    insertion_point->GetDocument().IncrementNodeCount();
-  }
-  if (ParentOrShadowHostNode()->IsInShadowTree())
-    SetFlag(kIsInShadowTreeFlag);
-  if (ChildNeedsDistributionRecalc() &&
-      !insertion_point->ChildNeedsDistributionRecalc())
-    insertion_point->MarkAncestorsWithChildNeedsDistributionRecalc();
-  return kInsertionDone;
-}
-
-inline void Node::RemovedFrom(ContainerNode* insertion_point) {
-  DCHECK(insertion_point->isConnected() || IsContainerNode() ||
-         IsInShadowTree());
-  if (insertion_point->isConnected()) {
-    ClearFlag(kIsConnectedFlag);
-    insertion_point->GetDocument().DecrementNodeCount();
-  }
-  if (IsInShadowTree() && !ContainingTreeScope().RootNode().IsShadowRoot())
-    ClearFlag(kIsInShadowTreeFlag);
-  if (AXObjectCache* cache = GetDocument().ExistingAXObjectCache())
-    cache->Remove(this);
-}
-
 inline void Element::InvalidateStyleAttribute() {
   DCHECK(GetElementData());
   GetElementData()->style_attribute_is_dirty_ = true;
@@ -1219,12 +1203,6 @@ inline void Element::SetTagNameForCreateElementNS(
   DCHECK_EQ(tag_name.LocalName(), tag_name_.LocalName());
   DCHECK_EQ(tag_name.NamespaceURI(), tag_name_.NamespaceURI());
   tag_name_ = tag_name;
-}
-
-inline AtomicString Element::LocalNameForSelectorMatching() const {
-  if (IsHTMLElement() || !GetDocument().IsHTMLDocument())
-    return localName();
-  return localName().DeprecatedLower();
 }
 
 inline bool IsShadowHost(const Node* node) {

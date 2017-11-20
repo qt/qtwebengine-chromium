@@ -47,23 +47,19 @@ class CPDF_TextObject : public CPDF_PageObject {
   CPDF_Font* GetFont() const;
   float GetFontSize() const;
 
-  void SetText(const CFX_ByteString& text);
+  void SetText(const ByteString& text);
+  void SetPosition(CFX_PointF pos) { m_Pos = pos; }
   void SetPosition(float x, float y);
 
   void RecalcPositionData();
 
- private:
-  friend class CPDF_RenderStatus;
-  friend class CPDF_StreamContentParser;
-  friend class CPDF_TextRenderer;
-  friend class CPDF_PageContentGenerator;
+  const std::vector<uint32_t>& GetCharCodes() const { return m_CharCodes; }
+  const std::vector<float>& GetCharPositions() const { return m_CharPos; }
 
-  void SetSegments(const CFX_ByteString* pStrs,
-                   const float* pKerning,
-                   int nSegs);
-
+  void SetSegments(const ByteString* pStrs, const float* pKerning, int nSegs);
   CFX_PointF CalcPositionData(float horz_scale);
 
+ private:
   CFX_PointF m_Pos;
   std::vector<uint32_t> m_CharCodes;
   std::vector<float> m_CharPos;

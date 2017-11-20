@@ -19,6 +19,8 @@ rtc_static_library("pacing") {
     "paced_sender.cc",
     "paced_sender.h",
     "pacer.h",
+    "packet_queue.cc",
+    "packet_queue.h",
     "packet_router.cc",
     "packet_router.h",
   ]
@@ -31,6 +33,7 @@ rtc_static_library("pacing") {
   deps = [
     "..:module_api",
     "../../:webrtc_common",
+    "../../api:optional",
     "../../logging:rtc_event_log_api",
     "../../rtc_base:rtc_base_approved",
     "../../system_wrappers",
@@ -62,6 +65,7 @@ if (rtc_include_tests) {
       "../../rtc_base:rtc_base_approved",
       "../../rtc_base:rtc_base_tests_utils",
       "../../system_wrappers:system_wrappers",
+      "../../test:field_trial",
       "../../test:test_support",
       "../rtp_rtcp",
       "../rtp_rtcp:mock_rtp_rtcp",
@@ -74,5 +78,17 @@ if (rtc_include_tests) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
+  }
+
+  rtc_source_set("mock_paced_sender") {
+    testonly = true
+    sources = [
+      "mock/mock_paced_sender.h",
+    ]
+    deps = [
+      ":pacing",
+      "../../system_wrappers",
+      "../../test:test_support",
+    ]
   }
 }

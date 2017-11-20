@@ -37,7 +37,7 @@ ERRMSG(ExtensionNotEnabled, "Extension is not enabled.");
 ERRMSG(FeedbackLoop, "Feedback loop formed between Framebuffer and active Texture.");
 ERRMSG(FramebufferIncompleteAttachment,
        "Attachment type must be compatible with attachment object.");
-ERRMSG(GenerateMipmapNotAllowed, "Compressed textures do not support mipmap generation.");
+ERRMSG(GenerateMipmapNotAllowed, "Texture format does not support mipmap generation.");
 ERRMSG(IndexExceedsMaxActiveUniform, "Index exceeds program active uniform count.");
 ERRMSG(IndexExceedsMaxDrawBuffer, "Index exceeds MAX_DRAW_BUFFERS.");
 ERRMSG(IndexExceedsMaxVertexAttribute, "Index exceeds MAX_VERTEX_ATTRIBS.");
@@ -87,6 +87,8 @@ ERRMSG(InvalidRenderbufferTarget, "Invalid renderbuffer target.");
 ERRMSG(InvalidRenderbufferTextureParameter, "Invalid parameter name for renderbuffer attachment.");
 ERRMSG(InvalidRenderbufferWidthHeight,
        "Renderbuffer width and height cannot be negative and cannot exceed maximum texture size.");
+ERRMSG(InvalidSampleMaskNumber,
+       "MaskNumber cannot be greater than or equal to the value of MAX_SAMPLE_MASK_WORDS.");
 ERRMSG(InvalidSampler, "Sampler is not valid");
 ERRMSG(InvalidShaderName, "Shader object expected.");
 ERRMSG(InvalidShaderType, "Invalid shader type.");

@@ -13,33 +13,33 @@
 #include <memory>
 #include <string>
 
-#include "webrtc/api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "webrtc/call/call.h"
-#include "webrtc/config.h"
-#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
-#include "webrtc/modules/audio_coding/include/audio_coding_module.h"
-#include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/rtc_base/thread_annotations.h"
-#include "webrtc/system_wrappers/include/metrics_default.h"
-#include "webrtc/test/call_test.h"
-#include "webrtc/test/direct_transport.h"
-#include "webrtc/test/drifting_clock.h"
-#include "webrtc/test/encoder_settings.h"
-#include "webrtc/test/fake_audio_device.h"
-#include "webrtc/test/fake_encoder.h"
-#include "webrtc/test/field_trial.h"
-#include "webrtc/test/frame_generator.h"
-#include "webrtc/test/frame_generator_capturer.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/rtp_rtcp_observer.h"
-#include "webrtc/test/single_threaded_task_queue.h"
-#include "webrtc/test/testsupport/fileutils.h"
-#include "webrtc/test/testsupport/perf_test.h"
-#include "webrtc/video/transport_adapter.h"
-#include "webrtc/voice_engine/include/voe_base.h"
+#include "api/audio_codecs/builtin_audio_encoder_factory.h"
+#include "call/call.h"
+#include "call/video_config.h"
+#include "logging/rtc_event_log/rtc_event_log.h"
+#include "modules/audio_coding/include/audio_coding_module.h"
+#include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/thread_annotations.h"
+#include "system_wrappers/include/metrics_default.h"
+#include "test/call_test.h"
+#include "test/direct_transport.h"
+#include "test/drifting_clock.h"
+#include "test/encoder_settings.h"
+#include "test/fake_audio_device.h"
+#include "test/fake_encoder.h"
+#include "test/field_trial.h"
+#include "test/frame_generator.h"
+#include "test/frame_generator_capturer.h"
+#include "test/gtest.h"
+#include "test/rtp_rtcp_observer.h"
+#include "test/single_threaded_task_queue.h"
+#include "test/testsupport/fileutils.h"
+#include "test/testsupport/perf_test.h"
+#include "video/transport_adapter.h"
+#include "voice_engine/include/voe_base.h"
 
 using webrtc::test::DriftingClock;
 using webrtc::test::FakeAudioDevice;
@@ -131,7 +131,7 @@ class VideoRtcpAndSyncObserver : public test::RtpRtcpObserver,
   const int64_t creation_time_ms_;
   int64_t first_time_in_sync_;
   rtc::CriticalSection crit_;
-  VideoReceiveStream* receive_stream_ GUARDED_BY(crit_);
+  VideoReceiveStream* receive_stream_ RTC_GUARDED_BY(crit_);
   std::vector<int> sync_offset_ms_list_;
 };
 
@@ -238,9 +238,8 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
     if (fec == FecMode::kOn) {
       video_send_config_.rtp.ulpfec.red_payload_type = kRedPayloadType;
       video_send_config_.rtp.ulpfec.ulpfec_payload_type = kUlpfecPayloadType;
-      video_receive_configs_[0].rtp.ulpfec.red_payload_type = kRedPayloadType;
-      video_receive_configs_[0].rtp.ulpfec.ulpfec_payload_type =
-          kUlpfecPayloadType;
+      video_receive_configs_[0].rtp.red_payload_type = kRedPayloadType;
+      video_receive_configs_[0].rtp.ulpfec_payload_type = kUlpfecPayloadType;
     }
     video_receive_configs_[0].rtp.nack.rtp_history_ms = 1000;
     video_receive_configs_[0].renderer = &observer;
@@ -463,13 +462,15 @@ void CallPerfTest::TestCaptureNtpTime(const FakeNetworkPipe::Config& net_config,
     bool rtp_start_timestamp_set_;
     uint32_t rtp_start_timestamp_;
     typedef std::map<uint32_t, uint32_t> FrameCaptureTimeList;
-    FrameCaptureTimeList capture_time_list_ GUARDED_BY(&crit_);
+    FrameCaptureTimeList capture_time_list_ RTC_GUARDED_BY(&crit_);
     std::vector<int> time_offset_ms_list_;
   } test(net_config, threshold_ms, start_time_ms, run_time_ms);
 
   RunBaseTest(&test);
 }
 
+// Flaky tests, disabled on Mac due to webrtc:8291.
+#if !(defined(WEBRTC_MAC))
 TEST_F(CallPerfTest, CaptureNtpTimeWithNetworkDelay) {
   FakeNetworkPipe::Config net_config;
   net_config.queue_delay_ms = 100;
@@ -492,6 +493,7 @@ TEST_F(CallPerfTest, CaptureNtpTimeWithNetworkJitter) {
   const int kRunTimeMs = 20000;
   TestCaptureNtpTime(net_config, kThresholdMs, kStartTimeMs, kRunTimeMs);
 }
+#endif
 
 TEST_F(CallPerfTest, ReceivesCpuOveruseAndUnderuse) {
   // Minimal normal usage at the start, then 30s overuse to allow filter to

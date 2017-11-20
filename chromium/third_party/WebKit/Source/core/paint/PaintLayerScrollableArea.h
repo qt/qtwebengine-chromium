@@ -225,6 +225,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
   ~PaintLayerScrollableArea() override;
   void Dispose();
 
+  void ForceVerticalScrollbarForFirstLayout() { SetHasVerticalScrollbar(true); }
   bool HasHorizontalScrollbar() const { return HorizontalScrollbar(); }
   bool HasVerticalScrollbar() const { return VerticalScrollbar(); }
 
@@ -503,6 +504,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
   void UpdateScrollbarEnabledState();
 
   void UpdateScrollOffset(const ScrollOffset&, ScrollType) override;
+  void InvalidatePaintForScrollOffsetChange(bool offset_was_zero);
 
   int VerticalScrollbarStart(int min_x, int max_x) const;
   int HorizontalScrollbarStart(int min_x) const;

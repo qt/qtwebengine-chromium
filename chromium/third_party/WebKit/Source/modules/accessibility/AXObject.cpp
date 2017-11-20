@@ -29,25 +29,28 @@
 #include "modules/accessibility/AXObject.h"
 
 #include "SkMatrix44.h"
-#include "core/InputTypeNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/AccessibleNode.h"
+#include "core/dom/AccessibleNodeList.h"
 #include "core/dom/UserGestureIndicator.h"
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLDialogElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/html/HTMLInputElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/input/ContextMenuAllowedScope.h"
 #include "core/input/EventHandler.h"
+#include "core/input_type_names.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutView.h"
 #include "core/page/Page.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
+#include "modules/accessibility/AXSparseAttributeSetter.h"
 #include "platform/text/PlatformLocale.h"
 #include "platform/wtf/HashSet.h"
 #include "platform/wtf/StdLibExtras.h"
@@ -335,6 +338,7 @@ AXObject::AXObject(AXObjectCacheImpl& ax_object_cache)
     : id_(0),
       have_children_(false),
       role_(kUnknownRole),
+      aria_role_(kUnknownRole),
       last_known_is_ignored_value_(kDefaultBehavior),
       explicit_container_id_(0),
       parent_(nullptr),
@@ -356,6 +360,10 @@ AXObject::~AXObject() {
   --number_of_live_ax_objects_;
 }
 
+void AXObject::Init() {
+  role_ = DetermineAccessibilityRole();
+}
+
 void AXObject::Detach() {
   // Clear any children and call detachFromParent on them so that
   // no children are left with dangling pointers to their parent.
@@ -370,9 +378,11 @@ bool AXObject::IsDetached() const {
 
 const AtomicString& AXObject::GetAOMPropertyOrARIAAttribute(
     AOMStringProperty property) const {
-  if (Element* element = this->GetElement())
-    return AccessibleNode::GetPropertyOrARIAAttribute(element, property);
-  return g_null_atom;
+  Element* element = this->GetElement();
+  if (!element)
+    return g_null_atom;
+
+  return AccessibleNode::GetPropertyOrARIAAttribute(element, property);
 }
 
 Element* AXObject::GetAOMPropertyOrARIAAttribute(
@@ -477,6 +487,44 @@ bool AXObject::HasAOMPropertyOrARIAAttribute(AOMStringProperty property,
   return !result.IsNull();
 }
 
+AccessibleNode* AXObject::GetAccessibleNode() const {
+  Element* element = GetElement();
+  if (!element)
+    return nullptr;
+
+  return element->ExistingAccessibleNode();
+}
+
+void AXObject::GetSparseAXAttributes(
+    AXSparseAttributeClient& sparse_attribute_client) const {
+  AXSparseAttributeAOMPropertyClient property_client(*ax_object_cache_,
+                                                     sparse_attribute_client);
+  HashSet<QualifiedName> shadowed_aria_attributes;
+
+  AccessibleNode* accessible_node = GetAccessibleNode();
+  if (accessible_node) {
+    accessible_node->GetAllAOMProperties(&property_client,
+                                         shadowed_aria_attributes);
+  }
+
+  Element* element = GetElement();
+  if (!element)
+    return;
+
+  AXSparseAttributeSetterMap& ax_sparse_attribute_setter_map =
+      GetSparseAttributeSetterMap();
+  AttributeCollection attributes = element->AttributesWithoutUpdate();
+  for (const Attribute& attr : attributes) {
+    if (shadowed_aria_attributes.Contains(attr.GetName()))
+      continue;
+
+    AXSparseAttributeSetter* setter =
+        ax_sparse_attribute_setter_map.at(attr.GetName());
+    if (setter)
+      setter->Run(*this, sparse_attribute_client, attr.Value());
+  }
+}
+
 bool AXObject::IsARIATextControl() const {
   return AriaRoleAttribute() == kTextFieldRole ||
          AriaRoleAttribute() == kSearchBoxRole ||
@@ -548,8 +596,8 @@ AccessibilityCheckedState AXObject::CheckedState() const {
     if (IsNativeCheckboxInMixedState(node))
       return kCheckedStateMixed;
 
-    if (isHTMLInputElement(*node) &&
-        toHTMLInputElement(*node).ShouldAppearChecked()) {
+    if (IsHTMLInputElement(*node) &&
+        ToHTMLInputElement(*node).ShouldAppearChecked()) {
       return kCheckedStateTrue;
     }
   }
@@ -558,10 +606,10 @@ AccessibilityCheckedState AXObject::CheckedState() const {
 }
 
 bool AXObject::IsNativeCheckboxInMixedState(const Node* node) {
-  if (!isHTMLInputElement(node))
+  if (!IsHTMLInputElement(node))
     return false;
 
-  const HTMLInputElement* input = toHTMLInputElement(node);
+  const HTMLInputElement* input = ToHTMLInputElement(node);
   const auto inputType = input->type();
   if (inputType != InputTypeNames::checkbox)
     return false;
@@ -827,6 +875,9 @@ bool AXObject::DispatchEventToAOMEventListeners(Event& event,
     if (!ancestor_accessible_node)
       continue;
 
+    if (!ancestor_accessible_node->HasEventListeners(event.type()))
+      continue;
+
     event_path.push_back(ancestor_accessible_node);
   }
 
@@ -1090,7 +1141,7 @@ String AXObject::GetName(AXNameFrom& name_from,
                                 &related_objects, nullptr);
 
   AccessibilityRole role = RoleValue();
-  if (!GetNode() || (!isHTMLBRElement(GetNode()) && role != kStaticTextRole &&
+  if (!GetNode() || (!IsHTMLBRElement(GetNode()) && role != kStaticTextRole &&
                      role != kInlineTextBoxRole))
     text = CollapseWhitespace(text);
 
@@ -1225,8 +1276,11 @@ String AXObject::AriaTextAlternative(bool recursive,
         // the set of visited objects is preserved unmodified for future
         // calculations.
         AXObjectSet visited_copy = visited;
+        Vector<String> ids;
         text_alternative =
-            TextFromAriaLabelledby(visited_copy, related_objects);
+            TextFromAriaLabelledby(visited_copy, related_objects, ids);
+        if (!ids.IsEmpty())
+          AxObjectCache().UpdateReverseRelations(this, ids);
         if (!text_alternative.IsNull()) {
           if (name_sources) {
             NameSource& source = name_sources->back();
@@ -1319,8 +1373,8 @@ void AXObject::TokenVectorFromAttribute(Vector<String>& tokens,
 }
 
 void AXObject::ElementsFromAttribute(HeapVector<Member<Element>>& elements,
-                                     const QualifiedName& attribute) const {
-  Vector<String> ids;
+                                     const QualifiedName& attribute,
+                                     Vector<String>& ids) const {
   TokenVectorFromAttribute(ids, attribute);
   if (ids.IsEmpty())
     return;
@@ -1333,26 +1387,27 @@ void AXObject::ElementsFromAttribute(HeapVector<Member<Element>>& elements,
 }
 
 void AXObject::AriaLabelledbyElementVector(
-    HeapVector<Member<Element>>& elements) const {
+    HeapVector<Member<Element>>& elements,
+    Vector<String>& ids) const {
   // Try both spellings, but prefer aria-labelledby, which is the official spec.
-  ElementsFromAttribute(elements, aria_labelledbyAttr);
-  if (!elements.size())
-    ElementsFromAttribute(elements, aria_labeledbyAttr);
+  ElementsFromAttribute(elements, aria_labelledbyAttr, ids);
+  if (!ids.size())
+    ElementsFromAttribute(elements, aria_labeledbyAttr, ids);
 }
 
-String AXObject::TextFromAriaLabelledby(
-    AXObjectSet& visited,
-    AXRelatedObjectVector* related_objects) const {
+String AXObject::TextFromAriaLabelledby(AXObjectSet& visited,
+                                        AXRelatedObjectVector* related_objects,
+                                        Vector<String>& ids) const {
   HeapVector<Member<Element>> elements;
-  AriaLabelledbyElementVector(elements);
+  AriaLabelledbyElementVector(elements, ids);
   return TextFromElements(true, visited, elements, related_objects);
 }
 
-String AXObject::TextFromAriaDescribedby(
-    AXRelatedObjectVector* related_objects) const {
+String AXObject::TextFromAriaDescribedby(AXRelatedObjectVector* related_objects,
+                                         Vector<String>& ids) const {
   AXObjectSet visited;
   HeapVector<Member<Element>> elements;
-  ElementsFromAttribute(elements, aria_describedbyAttr);
+  ElementsFromAttribute(elements, aria_describedbyAttr, ids);
   return TextFromElements(true, visited, elements, related_objects);
 }
 
@@ -1368,7 +1423,8 @@ AccessibilityOrientation AXObject::Orientation() const {
 }
 
 AXDefaultActionVerb AXObject::Action() const {
-  if (!ActionElement())
+  Element* action_element = ActionElement();
+  if (!action_element)
     return AXDefaultActionVerb::kNone;
 
   // TODO(dmazzoni): Ensure that combo box text field is handled here.
@@ -1398,7 +1454,9 @@ AXDefaultActionVerb AXObject::Action() const {
     case kPopUpButtonRole:
       return AXDefaultActionVerb::kOpen;
     default:
-      return AXDefaultActionVerb::kClick;
+      if (action_element == GetNode())
+        return AXDefaultActionVerb::kClick;
+      return AXDefaultActionVerb::kClickAncestor;
   }
 }
 
@@ -1468,6 +1526,101 @@ bool AXObject::IsLiveRegion() const {
   return !live_region.IsEmpty() && !EqualIgnoringASCIICase(live_region, "off");
 }
 
+AXRestriction AXObject::Restriction() const {
+  // According to ARIA, all elements of the base markup can be disabled.
+  // According to CORE-AAM, any focusable descendant of aria-disabled
+  // ancestor is also disabled.
+  bool is_disabled;
+  if (HasAOMPropertyOrARIAAttribute(AOMBooleanProperty::kDisabled,
+                                    is_disabled)) {
+    // Has aria-disabled, overrides native markup determining disabled.
+    if (is_disabled)
+      return kDisabled;
+  } else if (CanSetFocusAttribute() && IsDescendantOfDisabledNode()) {
+    // No aria-disabled, but other markup says it's disabled.
+    return kDisabled;
+  }
+
+  // Check aria-readonly if supported by current role.
+  bool is_read_only;
+  if (CanSupportAriaReadOnly() &&
+      HasAOMPropertyOrARIAAttribute(AOMBooleanProperty::kReadOnly,
+                                    is_read_only)) {
+    // ARIA overrides other readonly state markup.
+    return is_read_only ? kReadOnly : kNone;
+  }
+
+  // This is a node that is not readonly and not disabled.
+  return kNone;
+}
+
+AccessibilityRole AXObject::DetermineAccessibilityRole() {
+  aria_role_ = DetermineAriaRoleAttribute();
+  return aria_role_;
+}
+
+AccessibilityRole AXObject::AriaRoleAttribute() const {
+  return aria_role_;
+}
+
+AccessibilityRole AXObject::DetermineAriaRoleAttribute() const {
+  const AtomicString& aria_role =
+      GetAOMPropertyOrARIAAttribute(AOMStringProperty::kRole);
+  if (aria_role.IsNull() || aria_role.IsEmpty())
+    return kUnknownRole;
+
+  AccessibilityRole role = AriaRoleToWebCoreRole(aria_role);
+
+  // ARIA states if an item can get focus, it should not be presentational.
+  if ((role == kNoneRole || role == kPresentationalRole) &&
+      CanSetFocusAttribute())
+    return kUnknownRole;
+
+  if (role == kButtonRole)
+    role = ButtonRoleType();
+
+  role = RemapAriaRoleDueToParent(role);
+
+  if (role)
+    return role;
+
+  return kUnknownRole;
+}
+
+AccessibilityRole AXObject::RemapAriaRoleDueToParent(
+    AccessibilityRole role) const {
+  // Some objects change their role based on their parent.
+  // However, asking for the unignoredParent calls accessibilityIsIgnored(),
+  // which can trigger a loop.  While inside the call stack of creating an
+  // element, we need to avoid accessibilityIsIgnored().
+  // https://bugs.webkit.org/show_bug.cgi?id=65174
+
+  if (role != kListBoxOptionRole && role != kMenuItemRole)
+    return role;
+
+  for (AXObject* parent = ParentObject();
+       parent && !parent->AccessibilityIsIgnored();
+       parent = parent->ParentObject()) {
+    AccessibilityRole parent_aria_role = parent->AriaRoleAttribute();
+
+    // Selects and listboxes both have options as child roles, but they map to
+    // different roles within WebCore.
+    if (role == kListBoxOptionRole && parent_aria_role == kMenuRole)
+      return kMenuItemRole;
+    // An aria "menuitem" may map to MenuButton or MenuItem depending on its
+    // parent.
+    if (role == kMenuItemRole && parent_aria_role == kGroupRole)
+      return kMenuButtonRole;
+
+    // If the parent had a different role, then we don't need to continue
+    // searching up the chain.
+    if (parent_aria_role)
+      break;
+  }
+
+  return role;
+}
+
 bool AXObject::IsEditableRoot() const {
   UpdateCachedAttributeValuesIfNeeded();
   return cached_is_editable_root_;
@@ -1476,6 +1629,16 @@ bool AXObject::IsEditableRoot() const {
 AXObject* AXObject::LiveRegionRoot() const {
   UpdateCachedAttributeValuesIfNeeded();
   return cached_live_region_root_;
+}
+
+bool AXObject::LiveRegionAtomic() const {
+  bool atomic = false;
+  if (HasAOMPropertyOrARIAAttribute(AOMBooleanProperty::kAtomic, atomic))
+    return atomic;
+
+  // ARIA roles "alert" and "status" should have an implicit aria-atomic value
+  // of true.
+  return RoleValue() == kAlertRole || RoleValue() == kStatusRole;
 }
 
 const AtomicString& AXObject::ContainerLiveRegionStatus() const {
@@ -1594,6 +1757,19 @@ void AXObject::ClearChildren() {
 
   children_.clear();
   have_children_ = false;
+}
+
+void AXObject::AddAccessibleNodeChildren() {
+  Element* element = GetElement();
+  if (!element)
+    return;
+
+  AccessibleNode* accessible_node = element->ExistingAccessibleNode();
+  if (!accessible_node)
+    return;
+
+  for (const auto& child : accessible_node->GetChildren())
+    children_.push_back(AxObjectCache().GetOrCreate(child));
 }
 
 Element* AXObject::GetElement() const {
@@ -1723,7 +1899,7 @@ void AXObject::GetRelativeBounds(AXObject** out_container,
   if (IsWebArea()) {
     if (layout_object->GetFrame()->View()) {
       out_bounds_in_container.SetSize(
-          FloatSize(layout_object->GetFrame()->View()->ContentsSize()));
+          FloatSize(layout_object->GetFrame()->View()->Size()));
     }
     return;
   }
@@ -1829,9 +2005,13 @@ bool AXObject::OnNativeClickAction() {
   std::unique_ptr<UserGestureIndicator> gesture_indicator =
       LocalFrame::CreateUserGesture(document->GetFrame(),
                                     UserGestureToken::kNewGesture);
-  Element* action_elem = ActionElement();
-  if (action_elem) {
-    action_elem->AccessKeyAction(true);
+
+  Element* element = GetElement();
+  if (!element && GetNode())
+    element = GetNode()->parentElement();
+
+  if (element) {
+    element->AccessKeyAction(true);
     return true;
   }
 
@@ -2244,6 +2424,38 @@ bool AXObject::NameFromContents(bool recursive) const {
   return result;
 }
 
+bool AXObject::CanSupportAriaReadOnly() const {
+  switch (RoleValue()) {
+    case kCellRole:
+    case kCheckBoxRole:
+    case kColorWellRole:
+    case kColumnHeaderRole:
+    case kComboBoxRole:
+    case kDateRole:
+    case kDateTimeRole:
+    case kGridRole:
+    case kInputTimeRole:
+    case kListBoxRole:
+    case kMenuButtonRole:
+    case kMenuItemCheckBoxRole:
+    case kMenuItemRadioRole:
+    case kPopUpButtonRole:
+    case kRadioGroupRole:
+    case kRowHeaderRole:
+    case kSearchBoxRole:
+    case kSliderRole:
+    case kSpinButtonRole:
+    case kSwitchRole:
+    case kTextFieldRole:
+    case kToggleButtonRole:
+    case kTreeGridRole:
+      return true;
+    default:
+      break;
+  }
+  return false;
+}
+
 AccessibilityRole AXObject::ButtonRoleType() const {
   // If aria-pressed is present, then it should be exposed as a toggle button.
   // http://www.w3.org/TR/wai-aria/states_and_properties#aria-pressed
@@ -2268,6 +2480,15 @@ const AtomicString& AXObject::InternalRoleName(AccessibilityRole role) {
       CreateInternalRoleNameVector();
 
   return internal_role_name_vector->at(role);
+}
+
+VisiblePosition AXObject::VisiblePositionForIndex(int) const {
+  return VisiblePosition();
+}
+
+std::ostream& operator<<(std::ostream& stream, const AXObject& obj) {
+  return stream << AXObject::InternalRoleName(obj.RoleValue()) << ": "
+                << obj.ComputedName();
 }
 
 DEFINE_TRACE(AXObject) {

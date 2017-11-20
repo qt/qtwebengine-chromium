@@ -46,7 +46,6 @@
 
 #include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -446,11 +445,6 @@ bool CanonicalCookie::IsCanonical() const {
   }
 
   return true;
-}
-
-void CanonicalCookie::SetCreationDate(base::Time new_creation_date) {
-  DCHECK(CreationDate().is_null());
-  creation_date_ = new_creation_date;
 }
 
 // static

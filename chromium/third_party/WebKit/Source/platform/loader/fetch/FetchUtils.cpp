@@ -4,7 +4,7 @@
 
 #include "platform/loader/fetch/FetchUtils.h"
 
-#include "platform/HTTPNames.h"
+#include "platform/http_names.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/HTTPParsers.h"
 #include "platform/wtf/HashSet.h"
@@ -103,7 +103,7 @@ bool FetchUtils::IsCORSSafelistedHeader(const AtomicString& name,
       EqualIgnoringASCIICase(name, "content-language") ||
       EqualIgnoringASCIICase(
           name, HTTPNames::X_DevTools_Emulate_Network_Conditions_Client_Id) ||
-      EqualIgnoringASCIICase(name, "save-data") ||
+      EqualIgnoringASCIICase(name, HTTPNames::Save_Data) ||
       EqualIgnoringASCIICase(name, "intervention"))
     return true;
 

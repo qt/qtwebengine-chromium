@@ -52,18 +52,17 @@
 #include "core/workers/WorkerInspectorProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "platform/CrossThreadFunctional.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/heap/Handle.h"
 #include "platform/heap/Persistent.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Functional.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/WebContentSettingsClient.h"
-#include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
@@ -90,9 +89,14 @@ void WebSharedWorkerImpl::TerminateWorkerThread() {
   if (asked_to_terminate_)
     return;
   asked_to_terminate_ = true;
+  if (shadow_page_ && !shadow_page_->WasInitialized()) {
+    client_->WorkerScriptLoadFailed();
+    delete this;
+    return;
+  }
   if (main_script_loader_) {
     main_script_loader_->Cancel();
-    main_script_loader_.Clear();
+    main_script_loader_ = nullptr;
     client_->WorkerScriptLoadFailed();
     delete this;
     return;
@@ -163,7 +167,7 @@ WebSharedWorkerImpl::CreateClientMessageLoop() {
 
 void WebSharedWorkerImpl::CountFeature(WebFeature feature) {
   DCHECK(IsMainThread());
-  client_->CountFeature(static_cast<uint32_t>(feature));
+  client_->CountFeature(feature);
 }
 
 void WebSharedWorkerImpl::PostMessageToPageInspector(int session_id,
@@ -185,8 +189,7 @@ void WebSharedWorkerImpl::DidTerminateWorkerThread() {
   delete this;
 }
 
-void WebSharedWorkerImpl::Connect(
-    std::unique_ptr<WebMessagePortChannel> web_channel) {
+void WebSharedWorkerImpl::Connect(MessagePortChannel web_channel) {
   DCHECK(IsMainThread());
   // The HTML spec requires to queue a connect event using the DOM manipulation
   // task source.
@@ -200,7 +203,7 @@ void WebSharedWorkerImpl::Connect(
 }
 
 void WebSharedWorkerImpl::ConnectTaskOnWorkerThread(
-    std::unique_ptr<WebMessagePortChannel> channel) {
+    MessagePortChannel channel) {
   // Wrap the passed-in channel in a MessagePort, and send it off via a connect
   // event.
   DCHECK(worker_thread_->IsCurrentThread());
@@ -330,7 +333,7 @@ void WebSharedWorkerImpl::OnScriptLoaderFinished() {
       name_, ThreadableLoadingContext::Create(*document), *reporting_proxy_);
   probe::scriptImported(document, main_script_loader_->Identifier(),
                         main_script_loader_->SourceText());
-  main_script_loader_.Clear();
+  main_script_loader_ = nullptr;
 
   auto thread_startup_data = WorkerBackingThreadStartupData::CreateDefault();
   thread_startup_data.atomics_wait_mode =

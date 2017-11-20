@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_device/mac/audio_device_mac.h"
-#include "webrtc/modules/audio_device/audio_device_config.h"
-#include "webrtc/modules/audio_device/mac/portaudio/pa_ringbuffer.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/platform_thread.h"
-#include "webrtc/system_wrappers/include/event_wrapper.h"
+#include "modules/audio_device/mac/audio_device_mac.h"
+#include "modules/audio_device/audio_device_config.h"
+#include "modules/audio_device/mac/portaudio/pa_ringbuffer.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/platform_thread.h"
+#include "system_wrappers/include/event_wrapper.h"
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <libkern/OSAtomic.h>  // OSAtomicCompareAndSwap()
@@ -125,7 +125,6 @@ AudioDeviceMac::AudioDeviceMac()
       _playChannels(N_PLAY_CHANNELS),
       _captureBufData(NULL),
       _renderBufData(NULL),
-      _playBufType(AudioDeviceModule::kFixedBufferSize),
       _initialized(false),
       _isShutDown(false),
       _recording(false),
@@ -145,11 +144,6 @@ AudioDeviceMac::AudioDeviceMac()
       _captureDelayUs(0),
       _renderDelayUs(0),
       _renderDelayOffsetSamples(0),
-      _playBufDelayFixed(20),
-      _playWarning(0),
-      _playError(0),
-      _recWarning(0),
-      _recError(0),
       _paCaptureBuffer(NULL),
       _paRenderBuffer(NULL),
       _captureBufSizeSamples(0),
@@ -341,11 +335,6 @@ AudioDeviceGeneric::InitStatus AudioDeviceMac::Init() {
       _macBookPro = true;
     }
   }
-
-  _playWarning = 0;
-  _playError = 0;
-  _recWarning = 0;
-  _recError = 0;
 
   get_mic_volume_counter_ms_ = 0;
 
@@ -570,17 +559,6 @@ int32_t AudioDeviceMac::MinSpeakerVolume(uint32_t& minVolume) const {
   return 0;
 }
 
-int32_t AudioDeviceMac::SpeakerVolumeStepSize(uint16_t& stepSize) const {
-  uint16_t delta(0);
-
-  if (_mixerManager.SpeakerVolumeStepSize(delta) == -1) {
-    return -1;
-  }
-
-  stepSize = delta;
-  return 0;
-}
-
 int32_t AudioDeviceMac::SpeakerMuteIsAvailable(bool& available) {
   bool isAvailable(false);
   bool wasInitialized = _mixerManager.SpeakerIsInitialized();
@@ -667,50 +645,6 @@ int32_t AudioDeviceMac::MicrophoneMute(bool& enabled) const {
   }
 
   enabled = muted;
-  return 0;
-}
-
-int32_t AudioDeviceMac::MicrophoneBoostIsAvailable(bool& available) {
-  bool isAvailable(false);
-  bool wasInitialized = _mixerManager.MicrophoneIsInitialized();
-
-  // Enumerate all avaliable microphone and make an attempt to open up the
-  // input mixer corresponding to the currently selected input device.
-  //
-  if (!wasInitialized && InitMicrophone() == -1) {
-    // If we end up here it means that the selected microphone has no volume
-    // control, hence it is safe to state that there is no boost control
-    // already at this stage.
-    available = false;
-    return 0;
-  }
-
-  // Check if the selected microphone has a boost control
-  //
-  _mixerManager.MicrophoneBoostIsAvailable(isAvailable);
-  available = isAvailable;
-
-  // Close the initialized input mixer
-  //
-  if (!wasInitialized) {
-    _mixerManager.CloseMicrophone();
-  }
-
-  return 0;
-}
-
-int32_t AudioDeviceMac::SetMicrophoneBoost(bool enable) {
-  return (_mixerManager.SetMicrophoneBoost(enable));
-}
-
-int32_t AudioDeviceMac::MicrophoneBoost(bool& enabled) const {
-  bool onOff(0);
-
-  if (_mixerManager.MicrophoneBoost(onOff) == -1) {
-    return -1;
-  }
-
-  enabled = onOff;
   return 0;
 }
 
@@ -873,17 +807,6 @@ int32_t AudioDeviceMac::MinMicrophoneVolume(uint32_t& minVolume) const {
   return 0;
 }
 
-int32_t AudioDeviceMac::MicrophoneVolumeStepSize(uint16_t& stepSize) const {
-  uint16_t delta(0);
-
-  if (_mixerManager.MicrophoneVolumeStepSize(delta) == -1) {
-    return -1;
-  }
-
-  stepSize = delta;
-  return 0;
-}
-
 int16_t AudioDeviceMac::PlayoutDevices() {
   AudioDeviceID playDevices[MaxNumberDevices];
   return GetNumberDevices(kAudioDevicePropertyScopeOutput, playDevices,
@@ -1039,6 +962,7 @@ int32_t AudioDeviceMac::RecordingIsAvailable(bool& available) {
 }
 
 int32_t AudioDeviceMac::InitPlayout() {
+  LOG(LS_INFO) << "InitPlayout";
   rtc::CritScope lock(&_critSect);
 
   if (_playing) {
@@ -1174,6 +1098,7 @@ int32_t AudioDeviceMac::InitPlayout() {
 }
 
 int32_t AudioDeviceMac::InitRecording() {
+  LOG(LS_INFO) << "InitRecording";
   rtc::CritScope lock(&_critSect);
 
   if (_recording) {
@@ -1369,6 +1294,7 @@ int32_t AudioDeviceMac::InitRecording() {
 }
 
 int32_t AudioDeviceMac::StartRecording() {
+  LOG(LS_INFO) << "StartRecording";
   rtc::CritScope lock(&_critSect);
 
   if (!_recIsInitialized) {
@@ -1405,6 +1331,7 @@ int32_t AudioDeviceMac::StartRecording() {
 }
 
 int32_t AudioDeviceMac::StopRecording() {
+  LOG(LS_INFO) << "StopRecording";
   rtc::CritScope lock(&_critSect);
 
   if (!_recIsInitialized) {
@@ -1412,11 +1339,10 @@ int32_t AudioDeviceMac::StopRecording() {
   }
 
   OSStatus err = noErr;
-
-  // Stop device
   int32_t captureDeviceIsAlive = AtomicGet32(&_captureDeviceIsAlive);
-  if (_twoDevices) {
-    if (_recording && captureDeviceIsAlive == 1) {
+  if (_twoDevices && captureDeviceIsAlive == 1) {
+    // Recording side uses its own dedicated device and IOProc.
+    if (_recording) {
       _recording = false;
       _doStopRec = true;  // Signal to io proc to stop audio device
       _critSect.Leave();  // Cannot be under lock, risk of deadlock
@@ -1425,14 +1351,17 @@ int32_t AudioDeviceMac::StopRecording() {
         LOG(LS_WARNING)
             << "Timed out stopping the capture IOProc."
             << "We may have failed to detect a device removal.";
-
         WEBRTC_CA_LOG_WARN(AudioDeviceStop(_inputDeviceID, _inDeviceIOProcID));
         WEBRTC_CA_LOG_WARN(
-            AudioDeviceDestroyIOProcID(_inputDeviceID, _inDeviceIOProcID));
+          AudioDeviceDestroyIOProcID(_inputDeviceID, _inDeviceIOProcID));
       }
       _critSect.Enter();
       _doStopRec = false;
-      LOG(LS_VERBOSE) << "Recording stopped";
+      LOG(LS_INFO) << "Recording stopped (input device)";
+    } else if (_recIsInitialized) {
+      WEBRTC_CA_LOG_WARN(
+          AudioDeviceDestroyIOProcID(_inputDeviceID, _inDeviceIOProcID));
+      LOG(LS_INFO) << "Recording uninitialized (input device)";
     }
   } else {
     // We signal a stop for a shared device even when rendering has
@@ -1451,7 +1380,6 @@ int32_t AudioDeviceMac::StopRecording() {
         LOG(LS_WARNING)
             << "Timed out stopping the shared IOProc."
             << "We may have failed to detect a device removal.";
-
         // We assume rendering on a shared device has stopped as well if
         // the IOProc times out.
         WEBRTC_CA_LOG_WARN(AudioDeviceStop(_outputDeviceID, _deviceIOProcID));
@@ -1460,7 +1388,11 @@ int32_t AudioDeviceMac::StopRecording() {
       }
       _critSect.Enter();
       _doStop = false;
-      LOG(LS_VERBOSE) << "Recording stopped (shared)";
+      LOG(LS_INFO) << "Recording stopped (shared device)";
+    } else if (_recIsInitialized && !_playing && !_playIsInitialized) {
+      WEBRTC_CA_LOG_WARN(
+            AudioDeviceDestroyIOProcID(_outputDeviceID, _deviceIOProcID));
+      LOG(LS_INFO) << "Recording uninitialized (shared device)";
     }
   }
 
@@ -1505,6 +1437,7 @@ bool AudioDeviceMac::PlayoutIsInitialized() const {
 }
 
 int32_t AudioDeviceMac::StartPlayout() {
+  LOG(LS_INFO) << "StartPlayout";
   rtc::CritScope lock(&_critSect);
 
   if (!_playIsInitialized) {
@@ -1531,6 +1464,7 @@ int32_t AudioDeviceMac::StartPlayout() {
 }
 
 int32_t AudioDeviceMac::StopPlayout() {
+  LOG(LS_INFO) << "StopPlayout";
   rtc::CritScope lock(&_critSect);
 
   if (!_playIsInitialized) {
@@ -1538,7 +1472,6 @@ int32_t AudioDeviceMac::StopPlayout() {
   }
 
   OSStatus err = noErr;
-
   int32_t renderDeviceIsAlive = AtomicGet32(&_renderDeviceIsAlive);
   if (_playing && renderDeviceIsAlive == 1) {
     // We signal a stop for a shared device even when capturing has not
@@ -1565,7 +1498,15 @@ int32_t AudioDeviceMac::StopPlayout() {
     }
     _critSect.Enter();
     _doStop = false;
-    LOG(LS_VERBOSE) << "Playout stopped";
+    LOG(LS_INFO) << "Playout stopped";
+  } else if (_twoDevices && _playIsInitialized) {
+    WEBRTC_CA_LOG_WARN(
+          AudioDeviceDestroyIOProcID(_outputDeviceID, _deviceIOProcID));
+    LOG(LS_INFO) << "Playout uninitialized (output device)";
+  } else if (!_twoDevices && _playIsInitialized && !_recIsInitialized) {
+    WEBRTC_CA_LOG_WARN(
+          AudioDeviceDestroyIOProcID(_outputDeviceID, _deviceIOProcID));
+    LOG(LS_INFO) << "Playout uninitialized (shared device)";
   }
 
   // Setting this signal will allow the worker thread to be stopped.
@@ -1621,66 +1562,6 @@ int32_t AudioDeviceMac::RecordingDelay(uint16_t& delayMS) const {
 
 bool AudioDeviceMac::Playing() const {
   return (_playing);
-}
-
-int32_t AudioDeviceMac::SetPlayoutBuffer(
-    const AudioDeviceModule::BufferType type,
-    uint16_t sizeMS) {
-  if (type != AudioDeviceModule::kFixedBufferSize) {
-    LOG(LS_ERROR) << "Adaptive buffer size not supported on this platform";
-    return -1;
-  }
-
-  _playBufType = type;
-  _playBufDelayFixed = sizeMS;
-  return 0;
-}
-
-int32_t AudioDeviceMac::PlayoutBuffer(AudioDeviceModule::BufferType& type,
-                                      uint16_t& sizeMS) const {
-  type = _playBufType;
-  sizeMS = _playBufDelayFixed;
-
-  return 0;
-}
-
-// Not implemented for Mac.
-int32_t AudioDeviceMac::CPULoad(uint16_t& /*load*/) const {
-  LOG(LS_WARNING) << "API call not supported on this platform";
-
-  return -1;
-}
-
-bool AudioDeviceMac::PlayoutWarning() const {
-  return (_playWarning > 0);
-}
-
-bool AudioDeviceMac::PlayoutError() const {
-  return (_playError > 0);
-}
-
-bool AudioDeviceMac::RecordingWarning() const {
-  return (_recWarning > 0);
-}
-
-bool AudioDeviceMac::RecordingError() const {
-  return (_recError > 0);
-}
-
-void AudioDeviceMac::ClearPlayoutWarning() {
-  _playWarning = 0;
-}
-
-void AudioDeviceMac::ClearPlayoutError() {
-  _playError = 0;
-}
-
-void AudioDeviceMac::ClearRecordingWarning() {
-  _recWarning = 0;
-}
-
-void AudioDeviceMac::ClearRecordingError() {
-  _recError = 0;
 }
 
 // ============================================================================
@@ -1936,9 +1817,9 @@ int32_t AudioDeviceMac::InitDevice(const uint16_t userDeviceIndex,
                                                      0, NULL, &size, devManf));
 
   if (isInput) {
-    LOG(LS_VERBOSE) << "Input device: " << devManf << " " << devName;
+    LOG(LS_INFO) << "Input device: " << devManf << " " << devName;
   } else {
-    LOG(LS_VERBOSE) << "Output device: " << devManf << " " << devName;
+    LOG(LS_INFO) << "Output device: " << devManf << " " << devName;
   }
 
   return 0;
@@ -1978,9 +1859,10 @@ OSStatus AudioDeviceMac::SetDesiredPlayoutFormat() {
   WEBRTC_CA_RETURN_ON_ERR(AudioConverterNew(
       &_outDesiredFormat, &_outStreamFormat, &_renderConverter));
 
-  // Try to set buffer size to desired value (_playBufDelayFixed).
+  // Try to set buffer size to desired value set to 20ms.
+  const uint16_t kPlayBufDelayFixed = 20;
   UInt32 bufByteCount = static_cast<UInt32>(
-      (_outStreamFormat.mSampleRate / 1000.0) * _playBufDelayFixed *
+      (_outStreamFormat.mSampleRate / 1000.0) * kPlayBufDelayFixed *
       _outStreamFormat.mChannelsPerFrame * sizeof(Float32));
   if (_outStreamFormat.mFramesPerPacket != 0) {
     if (bufByteCount % _outStreamFormat.mFramesPerPacket != 0) {
@@ -2094,10 +1976,6 @@ int32_t AudioDeviceMac::HandleDeviceChange() {
       LOG(LS_WARNING) << "Capture device is not alive (probably removed)";
       AtomicSet32(&_captureDeviceIsAlive, 0);
       _mixerManager.CloseMicrophone();
-      if (_recError == 1) {
-        LOG(LS_WARNING) << "pending recording error exists";
-      }
-      _recError = 1;  // triggers callback from module process thread
     } else if (err != noErr) {
       logCAMsg(rtc::LS_ERROR,
                "Error in AudioDeviceGetProperty()", (const char*)&err);
@@ -2117,10 +1995,6 @@ int32_t AudioDeviceMac::HandleDeviceChange() {
       LOG(LS_WARNING) << "Render device is not alive (probably removed)";
       AtomicSet32(&_renderDeviceIsAlive, 0);
       _mixerManager.CloseSpeaker();
-      if (_playError == 1) {
-        LOG(LS_WARNING) << "pending playout error exists";
-      }
-      _playError = 1;  // triggers callback from module process thread
     } else if (err != noErr) {
       logCAMsg(rtc::LS_ERROR,
                "Error in AudioDeviceGetProperty()", (const char*)&err);

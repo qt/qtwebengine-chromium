@@ -38,13 +38,6 @@ ScriptModule::ScriptModule() {
   CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
 }
 
-ScriptModule::ScriptModule(WTF::HashTableDeletedValueType)
-    : module_(WTF::kHashTableDeletedValue) {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-}
-
 ScriptModule::ScriptModule(v8::Isolate* isolate, v8::Local<v8::Module> module)
     : module_(SharedPersistent<v8::Module>::Create(module, isolate)),
       identity_hash_(static_cast<unsigned>(module->GetIdentityHash())) {
@@ -57,20 +50,26 @@ ScriptModule::ScriptModule(v8::Isolate* isolate, v8::Local<v8::Module> module)
 
 ScriptModule::~ScriptModule() {}
 
-ScriptModule ScriptModule::Compile(v8::Isolate* isolate,
-                                   const String& source,
-                                   const String& file_name,
-                                   AccessControlStatus access_control_status,
-                                   const TextPosition& start_position,
-                                   ExceptionState& exception_state) {
+ScriptModule ScriptModule::Compile(
+    v8::Isolate* isolate,
+    const String& source,
+    const String& file_name,
+    AccessControlStatus access_control_status,
+    WebURLRequest::FetchCredentialsMode credentials_mode,
+    const String& nonce,
+    ParserDisposition parser_state,
+    const TextPosition& text_position,
+    ExceptionState& exception_state) {
   // We ensure module-related code is not executed without the flag.
   // https://crbug.com/715376
   CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
 
   v8::TryCatch try_catch(isolate);
   v8::Local<v8::Module> module;
-  if (!V8ScriptRunner::CompileModule(isolate, source, file_name,
-                                     access_control_status, start_position)
+
+  if (!V8ScriptRunner::CompileModule(
+           isolate, source, file_name, access_control_status, text_position,
+           ReferrerScriptInfo(credentials_mode, nonce, parser_state))
            .ToLocal(&module)) {
     DCHECK(try_catch.HasCaught());
     exception_state.RethrowV8Exception(try_catch.Exception());
@@ -100,14 +99,18 @@ ScriptValue ScriptModule::Instantiate(ScriptState* script_state) {
   return ScriptValue();
 }
 
-void ScriptModule::Evaluate(ScriptState* script_state) const {
+ScriptValue ScriptModule::Evaluate(ScriptState* script_state,
+                                   CaptureEvalErrorFlag capture_error) const {
   v8::Isolate* isolate = script_state->GetIsolate();
 
   // Isolate exceptions that occur when executing the code. These exceptions
   // should not interfere with javascript code we might evaluate from C++ when
   // returning from here.
   v8::TryCatch try_catch(isolate);
-  try_catch.SetVerbose(true);
+
+  // "If rethrow errors is true, .... Otherwise, report the exception
+  // given by evaluationStatus.[[Value]]." [spec text]
+  try_catch.SetVerbose(capture_error == CaptureEvalErrorFlag::kReport);
 
   probe::ExecuteScript probe(ExecutionContext::From(script_state));
   // TODO(kouhei): We currently don't have a code-path which use return value of
@@ -116,8 +119,16 @@ void ScriptModule::Evaluate(ScriptState* script_state) const {
   if (!V8ScriptRunner::EvaluateModule(module_->NewLocal(isolate),
                                       script_state->GetContext(), isolate)
            .ToLocal(&result)) {
-    return;
+    DCHECK(try_catch.HasCaught());
+    switch (capture_error) {
+      case CaptureEvalErrorFlag::kCapture:
+        return ScriptValue(script_state, try_catch.Exception());
+      case CaptureEvalErrorFlag::kReport:
+        return ScriptValue();
+    }
   }
+
+  return ScriptValue();
 }
 
 void ScriptModule::ReportException(ScriptState* script_state,

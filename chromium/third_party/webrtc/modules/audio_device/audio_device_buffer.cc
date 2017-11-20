@@ -11,17 +11,17 @@
 #include <algorithm>
 #include <cmath>
 
-#include "webrtc/modules/audio_device/audio_device_buffer.h"
+#include "modules/audio_device/audio_device_buffer.h"
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_device/audio_device_config.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/bind.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/format_macros.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/system_wrappers/include/metrics.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_device/audio_device_config.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/bind.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/format_macros.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/timeutils.h"
+#include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
 
@@ -280,28 +280,6 @@ void AudioDeviceBuffer::SetVQEData(int play_delay_ms,
   clock_drift_ = clock_drift;
 }
 
-int32_t AudioDeviceBuffer::StartInputFileRecording(
-    const char fileName[kAdmMaxFileNameSize]) {
-  LOG(LS_WARNING) << "Not implemented";
-  return 0;
-}
-
-int32_t AudioDeviceBuffer::StopInputFileRecording() {
-  LOG(LS_WARNING) << "Not implemented";
-  return 0;
-}
-
-int32_t AudioDeviceBuffer::StartOutputFileRecording(
-    const char fileName[kAdmMaxFileNameSize]) {
-  LOG(LS_WARNING) << "Not implemented";
-  return 0;
-}
-
-int32_t AudioDeviceBuffer::StopOutputFileRecording() {
-  LOG(LS_WARNING) << "Not implemented";
-  return 0;
-}
-
 int32_t AudioDeviceBuffer::SetRecordedBuffer(const void* audio_buffer,
                                              size_t samples_per_channel) {
   RTC_DCHECK_RUN_ON(&recording_thread_checker_);
@@ -398,8 +376,8 @@ int32_t AudioDeviceBuffer::RequestPlayoutData(size_t samples_per_channel) {
   }
   // Update playout stats which is used as base for periodic logging of the
   // audio output state.
-  UpdatePlayStats(max_abs, num_samples_out);
-  return static_cast<int32_t>(num_samples_out);
+  UpdatePlayStats(max_abs, num_samples_out / play_channels_);
+  return static_cast<int32_t>(num_samples_out / play_channels_);
 }
 
 int32_t AudioDeviceBuffer::GetPlayoutData(void* audio_buffer) {

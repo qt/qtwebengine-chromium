@@ -9,11 +9,11 @@
 
 #include <algorithm>
 
-#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/retain_ptr.h"
 
-class CFX_SeekableStreamProxy : public CFX_Retainable {
+class CFX_SeekableStreamProxy : public Retainable {
  public:
   enum class From {
     Begin = 0,
@@ -21,34 +21,34 @@ class CFX_SeekableStreamProxy : public CFX_Retainable {
   };
 
   template <typename T, typename... Args>
-  friend CFX_RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
   FX_FILESIZE GetLength() const { return m_pStream->GetSize(); }
   FX_FILESIZE GetPosition() { return m_iPosition; }
-  FX_STRSIZE GetBOMLength() const { return std::max(0, m_wBOMLength); }
+  size_t GetBOMLength() const { return m_wBOMLength; }
   bool IsEOF() const { return m_iPosition >= GetLength(); }
 
   void Seek(From eSeek, FX_FILESIZE iOffset);
-  FX_STRSIZE ReadString(wchar_t* pStr, FX_STRSIZE iMaxLength, bool* bEOS);
+  size_t ReadString(wchar_t* pStr, size_t iMaxLength, bool* bEOS);
 
-  void WriteString(const CFX_WideStringC& str);
+  void WriteString(const WideStringView& str);
 
   uint16_t GetCodePage() const { return m_wCodePage; }
   void SetCodePage(uint16_t wCodePage);
 
  private:
-  CFX_SeekableStreamProxy(const CFX_RetainPtr<IFX_SeekableStream>& stream,
+  CFX_SeekableStreamProxy(const RetainPtr<IFX_SeekableStream>& stream,
                           bool isWriteSteam);
-  CFX_SeekableStreamProxy(uint8_t* data, FX_STRSIZE size);
+  CFX_SeekableStreamProxy(uint8_t* data, size_t size);
   ~CFX_SeekableStreamProxy() override;
 
-  FX_STRSIZE ReadData(uint8_t* pBuffer, FX_STRSIZE iBufferSize);
+  size_t ReadData(uint8_t* pBuffer, size_t iBufferSize);
 
   bool m_IsWriteStream;
   uint16_t m_wCodePage;
-  FX_STRSIZE m_wBOMLength;
+  size_t m_wBOMLength;
   FX_FILESIZE m_iPosition;
-  CFX_RetainPtr<IFX_SeekableStream> m_pStream;
+  RetainPtr<IFX_SeekableStream> m_pStream;
 };
 
 #endif  // CORE_FXCRT_CFX_SEEKABLESTREAMPROXY_H_

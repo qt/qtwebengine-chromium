@@ -8,16 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_SDK_ANDROID_SRC_JNI_VIDEODECODERWRAPPER_H_
-#define WEBRTC_SDK_ANDROID_SRC_JNI_VIDEODECODERWRAPPER_H_
+#ifndef SDK_ANDROID_SRC_JNI_VIDEODECODERWRAPPER_H_
+#define SDK_ANDROID_SRC_JNI_VIDEODECODERWRAPPER_H_
 
 #include <jni.h>
 #include <deque>
 
-#include "webrtc/api/video_codecs/video_decoder.h"
-#include "webrtc/common_video/h264/h264_bitstream_parser.h"
-#include "webrtc/sdk/android/src/jni/jni_helpers.h"
-#include "webrtc/sdk/android/src/jni/native_handle_impl.h"
+#include "api/video_codecs/video_decoder.h"
+#include "common_video/h264/h264_bitstream_parser.h"
+#include "sdk/android/src/jni/jni_helpers.h"
+#include "sdk/android/src/jni/native_handle_impl.h"
 
 namespace webrtc {
 namespace jni {
@@ -58,7 +58,7 @@ class VideoDecoderWrapper : public VideoDecoder {
 
  private:
   struct FrameExtraInfo {
-    uint32_t capture_time_ms;  // Used as an identifier of the frame.
+    uint64_t capture_time_ns;  // Used as an identifier of the frame.
 
     uint32_t timestamp_rtp;
     rtc::Optional<uint8_t> qp;
@@ -118,4 +118,4 @@ class VideoDecoderWrapper : public VideoDecoder {
 }  // namespace jni
 }  // namespace webrtc
 
-#endif  // WEBRTC_SDK_ANDROID_SRC_JNI_VIDEODECODERWRAPPER_H_
+#endif  // SDK_ANDROID_SRC_JNI_VIDEODECODERWRAPPER_H_

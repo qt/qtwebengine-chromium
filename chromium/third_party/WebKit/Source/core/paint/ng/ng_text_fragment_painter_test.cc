@@ -13,14 +13,17 @@
 #include "core/paint/PaintInfo.h"
 #include "core/paint/PaintLayerPainter.h"
 #include "core/style/ComputedStyle.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/PaintController.h"
+#include "platform/runtime_enabled_features.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
 using NGTextFragmentPainterTest = PaintControllerPaintTest;
+INSTANTIATE_TEST_CASE_P(All,
+                        NGTextFragmentPainterTest,
+                        ::testing::Values(0, kRootLayerScrolling));
 
 class EnableLayoutNGForScope {
  public:
@@ -40,7 +43,7 @@ class EnableLayoutNGForScope {
   bool paint_fragments_;
 };
 
-TEST_F(NGTextFragmentPainterTest, TestTextStyle) {
+TEST_P(NGTextFragmentPainterTest, TestTextStyle) {
   EnableLayoutNGForScope enable_layout_ng;
 
   SetBodyInnerHTML(R"HTML(
@@ -50,7 +53,6 @@ TEST_F(NGTextFragmentPainterTest, TestTextStyle) {
     </body>
   )HTML");
 
-  LayoutView& layout_view = *GetDocument().GetLayoutView();
   LayoutObject& container = *GetLayoutObjectByElementId("container");
 
   const LayoutNGBlockFlow& block_flow = ToLayoutNGBlockFlow(container);
@@ -60,17 +62,29 @@ TEST_F(NGTextFragmentPainterTest, TestTextStyle) {
   IntRect interest_rect(0, 0, 640, 480);
   Paint(&interest_rect);
 
-  const NGPhysicalBoxFragment& root_fragment = *block_flow.RootFragment();
-  const NGPhysicalBoxFragment& box_fragment =
-      ToNGPhysicalBoxFragment(*root_fragment.Children()[0].Get());
-  const NGPhysicalLineBoxFragment& line_box_fragment =
-      ToNGPhysicalLineBoxFragment(*box_fragment.Children()[0].Get());
-  const NGPhysicalTextFragment& text_fragment =
-      ToNGPhysicalTextFragment(*line_box_fragment.Children()[0].Get());
+  DisplayItemClient* background_client = nullptr;
+  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
+      RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
+    // With SPv1 and RLS, the document background uses the scrolling contents
+    // layer as its DisplayItemClient.
+    background_client = GetLayoutView().Layer()->GraphicsLayerBacking();
+  } else {
+    background_client = &GetLayoutView();
+  }
+
+  const NGPaintFragment& root_fragment = *block_flow.PaintFragment();
+  EXPECT_EQ(1u, root_fragment.Children().size());
+  const NGPaintFragment& box_fragment = *root_fragment.Children()[0];
+  EXPECT_EQ(1u, box_fragment.Children().size());
+  const NGPaintFragment& line_box_fragment = *box_fragment.Children()[0];
+  EXPECT_EQ(1u, line_box_fragment.Children().size());
+  const NGPaintFragment& text_fragment = *line_box_fragment.Children()[0];
 
   EXPECT_DISPLAY_LIST(
-      RootPaintController().GetDisplayItemList(), 2,
-      TestDisplayItem(layout_view, DisplayItem::kDocumentBackground),
+      RootPaintController().GetDisplayItemList(), 4,
+      TestDisplayItem(*background_client, DisplayItem::kDocumentBackground),
+      TestDisplayItem(root_fragment, DisplayItem::kBoxDecorationBackground),
+      TestDisplayItem(box_fragment, DisplayItem::kBoxDecorationBackground),
       TestDisplayItem(text_fragment, kForegroundType));
 }
 

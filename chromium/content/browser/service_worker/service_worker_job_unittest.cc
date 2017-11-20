@@ -38,6 +38,8 @@
 #include "net/base/test_completion_callback.h"
 #include "net/http/http_response_headers.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_event_status.mojom.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
 using net::IOBuffer;
 using net::TestCompletionCallback;
@@ -60,8 +62,17 @@ class KeepHandlesDispatcherHost : public ServiceWorkerDispatcherHost {
     handles_.push_back(std::move(handle));
   }
   void RegisterServiceWorkerRegistrationHandle(
-      std::unique_ptr<ServiceWorkerRegistrationHandle> handle) override {
-    registration_handles_.push_back(std::move(handle));
+      ServiceWorkerRegistrationHandle* handle) override {
+    registration_handles_.push_back(base::WrapUnique(handle));
+  }
+  void UnregisterServiceWorkerRegistrationHandle(int handle_id) override {
+    auto iter = registration_handles_.begin();
+    for (; iter != registration_handles_.end(); ++iter) {
+      if ((*iter)->handle_id() == handle_id)
+        break;
+    }
+    ASSERT_NE(registration_handles_.end(), iter);
+    registration_handles_.erase(iter);
   }
 
   void RemoveHandles() {
@@ -150,18 +161,6 @@ ServiceWorkerUnregisterJob::UnregistrationCallback SaveUnregistration(
   return base::Bind(&SaveUnregistrationCallback, expected_status, called);
 }
 
-ServiceWorkerStatusCode EventResultToStatus(
-    blink::WebServiceWorkerEventResult result) {
-  switch (result) {
-    case blink::kWebServiceWorkerEventResultCompleted:
-      return SERVICE_WORKER_OK;
-    case blink::kWebServiceWorkerEventResultRejected:
-      return SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED;
-  }
-  NOTREACHED() << "Got invalid result: " << result;
-  return SERVICE_WORKER_ERROR_FAILED;
-}
-
 // This is for the test of mojom::ServiceWorkerInstallEventMethods.
 void RegisterForeignFetchScopes(
     mojom::ServiceWorkerInstallEventMethodsAssociatedPtrInfo client) {
@@ -226,8 +225,8 @@ scoped_refptr<ServiceWorkerRegistration> ServiceWorkerJobTest::RunRegisterJob(
   scoped_refptr<ServiceWorkerRegistration> registration;
   bool called;
   job_coordinator()->Register(
-      script_url, ServiceWorkerRegistrationOptions(pattern), nullptr,
-      SaveRegistration(expected_status, &called, &registration));
+      script_url, blink::mojom::ServiceWorkerRegistrationOptions(pattern),
+      nullptr, SaveRegistration(expected_status, &called, &registration));
   EXPECT_FALSE(called);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
@@ -321,7 +320,8 @@ TEST_F(ServiceWorkerJobTest, DifferentMatchDifferentRegistration) {
   scoped_refptr<ServiceWorkerRegistration> original_registration1;
   job_coordinator()->Register(
       GURL("http://www.example.com/service_worker.js"),
-      ServiceWorkerRegistrationOptions(GURL("http://www.example.com/one/")),
+      blink::mojom::ServiceWorkerRegistrationOptions(
+          GURL("http://www.example.com/one/")),
       nullptr,
       SaveRegistration(SERVICE_WORKER_OK, &called1, &original_registration1));
 
@@ -329,7 +329,8 @@ TEST_F(ServiceWorkerJobTest, DifferentMatchDifferentRegistration) {
   scoped_refptr<ServiceWorkerRegistration> original_registration2;
   job_coordinator()->Register(
       GURL("http://www.example.com/service_worker.js"),
-      ServiceWorkerRegistrationOptions(GURL("http://www.example.com/two/")),
+      blink::mojom::ServiceWorkerRegistrationOptions(
+          GURL("http://www.example.com/two/")),
       nullptr,
       SaveRegistration(SERVICE_WORKER_OK, &called2, &original_registration2));
 
@@ -365,8 +366,8 @@ class RegisterForeignFetchTestHelper : public EmbeddedWorkerTestHelper {
           callback) override {
     RegisterForeignFetchScopes(std::move(client));
     dispatched_events()->push_back(Event::Install);
-    std::move(callback).Run(SERVICE_WORKER_OK, true /* has_fetch_handler */,
-                            base::Time::Now());
+    std::move(callback).Run(blink::mojom::ServiceWorkerEventStatus::COMPLETED,
+                            true /* has_fetch_handler */, base::Time::Now());
   }
 };
 
@@ -547,7 +548,8 @@ TEST_F(ServiceWorkerJobTest, ParallelRegUnreg) {
   bool registration_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration;
   job_coordinator()->Register(
-      script_url, ServiceWorkerRegistrationOptions(pattern), nullptr,
+      script_url, blink::mojom::ServiceWorkerRegistrationOptions(pattern),
+      nullptr,
       SaveRegistration(SERVICE_WORKER_OK, &registration_called, &registration));
 
   bool unregistration_called = false;
@@ -577,7 +579,8 @@ TEST_F(ServiceWorkerJobTest, ParallelRegNewScript) {
   bool registration1_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration1;
   job_coordinator()->Register(
-      script_url1, ServiceWorkerRegistrationOptions(pattern), nullptr,
+      script_url1, blink::mojom::ServiceWorkerRegistrationOptions(pattern),
+      nullptr,
       SaveRegistration(SERVICE_WORKER_OK, &registration1_called,
                        &registration1));
 
@@ -585,7 +588,8 @@ TEST_F(ServiceWorkerJobTest, ParallelRegNewScript) {
   bool registration2_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration2;
   job_coordinator()->Register(
-      script_url2, ServiceWorkerRegistrationOptions(pattern), nullptr,
+      script_url2, blink::mojom::ServiceWorkerRegistrationOptions(pattern),
+      nullptr,
       SaveRegistration(SERVICE_WORKER_OK, &registration2_called,
                        &registration2));
 
@@ -611,14 +615,16 @@ TEST_F(ServiceWorkerJobTest, ParallelRegSameScript) {
   bool registration1_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration1;
   job_coordinator()->Register(
-      script_url, ServiceWorkerRegistrationOptions(pattern), nullptr,
+      script_url, blink::mojom::ServiceWorkerRegistrationOptions(pattern),
+      nullptr,
       SaveRegistration(SERVICE_WORKER_OK, &registration1_called,
                        &registration1));
 
   bool registration2_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration2;
   job_coordinator()->Register(
-      script_url, ServiceWorkerRegistrationOptions(pattern), nullptr,
+      script_url, blink::mojom::ServiceWorkerRegistrationOptions(pattern),
+      nullptr,
       SaveRegistration(SERVICE_WORKER_OK, &registration2_called,
                        &registration2));
 
@@ -677,14 +683,16 @@ TEST_F(ServiceWorkerJobTest, AbortAll_Register) {
   bool registration_called1 = false;
   scoped_refptr<ServiceWorkerRegistration> registration1;
   job_coordinator()->Register(
-      script_url1, ServiceWorkerRegistrationOptions(pattern1), nullptr,
+      script_url1, blink::mojom::ServiceWorkerRegistrationOptions(pattern1),
+      nullptr,
       SaveRegistration(SERVICE_WORKER_ERROR_ABORT, &registration_called1,
                        &registration1));
 
   bool registration_called2 = false;
   scoped_refptr<ServiceWorkerRegistration> registration2;
   job_coordinator()->Register(
-      script_url2, ServiceWorkerRegistrationOptions(pattern2), nullptr,
+      script_url2, blink::mojom::ServiceWorkerRegistrationOptions(pattern2),
+      nullptr,
       SaveRegistration(SERVICE_WORKER_ERROR_ABORT, &registration_called2,
                        &registration2));
 
@@ -748,7 +756,8 @@ TEST_F(ServiceWorkerJobTest, AbortAll_RegUnreg) {
   bool registration_called = false;
   scoped_refptr<ServiceWorkerRegistration> registration;
   job_coordinator()->Register(
-      script_url, ServiceWorkerRegistrationOptions(pattern), nullptr,
+      script_url, blink::mojom::ServiceWorkerRegistrationOptions(pattern),
+      nullptr,
       SaveRegistration(SERVICE_WORKER_ERROR_ABORT, &registration_called,
                        &registration));
 
@@ -948,8 +957,9 @@ class UpdateJobTestHelper
     bool called = false;
     job_coordinator()->Register(
         test_origin.Resolve(kScript),
-        ServiceWorkerRegistrationOptions(test_origin.Resolve(kScope)), nullptr,
-        SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
+        blink::mojom::ServiceWorkerRegistrationOptions(
+            test_origin.Resolve(kScope)),
+        nullptr, SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(called);
     EXPECT_TRUE(registration.get());
@@ -980,7 +990,7 @@ class UpdateJobTestHelper
                      version != registration->active_version();
 
     ASSERT_TRUE(version);
-    observed_versions_.push_back(make_scoped_refptr(version));
+    observed_versions_.push_back(base::WrapRefCounted(version));
     version->AddListener(this);
 
     // Simulate network access.
@@ -1113,7 +1123,7 @@ class EvictIncumbentVersionHelper : public UpdateJobTestHelper {
       // Evict the incumbent worker.
       ASSERT_FALSE(registration->waiting_version());
       registration->DeleteVersion(
-          make_scoped_refptr(registration->active_version()));
+          base::WrapRefCounted(registration->active_version()));
     }
     UpdateJobTestHelper::OnStartWorker(
         embedded_worker_id, version_id, scope, script, pause_after_download,
@@ -1602,8 +1612,10 @@ class EventCallbackHelper : public EmbeddedWorkerTestHelper {
  public:
   EventCallbackHelper()
       : EmbeddedWorkerTestHelper(base::FilePath()),
-        install_event_result_(blink::kWebServiceWorkerEventResultCompleted),
-        activate_event_result_(blink::kWebServiceWorkerEventResultCompleted) {}
+        install_event_result_(
+            blink::mojom::ServiceWorkerEventStatus::COMPLETED),
+        activate_event_result_(
+            blink::mojom::ServiceWorkerEventStatus::COMPLETED) {}
 
   void OnInstallEvent(
       mojom::ServiceWorkerInstallEventMethodsAssociatedPtrInfo client,
@@ -1611,24 +1623,24 @@ class EventCallbackHelper : public EmbeddedWorkerTestHelper {
           callback) override {
     if (!install_callback_.is_null())
       install_callback_.Run();
-    std::move(callback).Run(EventResultToStatus(install_event_result_),
-                            has_fetch_handler_, base::Time::Now());
+    std::move(callback).Run(install_event_result_, has_fetch_handler_,
+                            base::Time::Now());
   }
 
   void OnActivateEvent(
       mojom::ServiceWorkerEventDispatcher::DispatchActivateEventCallback
           callback) override {
-    std::move(callback).Run(EventResultToStatus(activate_event_result_),
-                            base::Time::Now());
+    std::move(callback).Run(activate_event_result_, base::Time::Now());
   }
 
   void set_install_callback(const base::Closure& callback) {
     install_callback_ = callback;
   }
-  void set_install_event_result(blink::WebServiceWorkerEventResult result) {
+  void set_install_event_result(blink::mojom::ServiceWorkerEventStatus result) {
     install_event_result_ = result;
   }
-  void set_activate_event_result(blink::WebServiceWorkerEventResult result) {
+  void set_activate_event_result(
+      blink::mojom::ServiceWorkerEventStatus result) {
     activate_event_result_ = result;
   }
   void set_has_fetch_handler(bool has_fetch_handler) {
@@ -1637,8 +1649,8 @@ class EventCallbackHelper : public EmbeddedWorkerTestHelper {
 
  private:
   base::Closure install_callback_;
-  blink::WebServiceWorkerEventResult install_event_result_;
-  blink::WebServiceWorkerEventResult activate_event_result_;
+  blink::mojom::ServiceWorkerEventStatus install_event_result_;
+  blink::mojom::ServiceWorkerEventStatus activate_event_result_;
   bool has_fetch_handler_ = true;
 };
 
@@ -1705,7 +1717,8 @@ TEST_F(ServiceWorkerJobTest, RemoveControlleeDuringRejectedInstall) {
   helper->set_install_callback(
       base::Bind(&ServiceWorkerVersion::RemoveControllee,
                  old_version, host.get()));
-  helper->set_install_event_result(blink::kWebServiceWorkerEventResultRejected);
+  helper->set_install_event_result(
+      blink::mojom::ServiceWorkerEventStatus::REJECTED);
   EXPECT_EQ(registration, RunRegisterJob(pattern, script2));
 
   // Verify the registration was uninstalled.
@@ -1742,7 +1755,7 @@ TEST_F(ServiceWorkerJobTest, RemoveControlleeDuringInstall_RejectActivate) {
       base::Bind(&ServiceWorkerVersion::RemoveControllee,
                  old_version, host.get()));
   helper->set_activate_event_result(
-      blink::kWebServiceWorkerEventResultRejected);
+      blink::mojom::ServiceWorkerEventStatus::REJECTED);
   EXPECT_EQ(registration, RunRegisterJob(pattern, script2));
 
   // Verify the registration remains.
@@ -1873,7 +1886,7 @@ TEST_F(ServiceWorkerJobTest, ActivateCancelsOnShutdown) {
   // easy to cause a failure with set_force_start_worker_failure after
   // shutdown is simulated. Otherwise our test helper often fails on
   // DCHECK(context)).
-  new_version->StopWorker(base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
+  new_version->StopWorker(base::BindOnce(&base::DoNothing));
 
   // Remove the controllee. The new version should be activating, and delayed
   // until the runner runs again.

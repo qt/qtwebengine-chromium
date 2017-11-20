@@ -54,7 +54,7 @@ class MediaRouterWebUIMessageHandler : public content::WebUIMessageHandler {
                                      const MediaRoute* route);
   void ReturnSearchResult(const std::string& sink_id);
 
-  void UpdateIssue(const Issue& issue);
+  virtual void UpdateIssue(const Issue& issue);
   void ClearIssue();
 
   // Updates the maximum dialog height to allow the WebUI properly scale when
@@ -124,6 +124,7 @@ class MediaRouterWebUIMessageHandler : public content::WebUIMessageHandler {
   void OnSeekCurrentMedia(const base::ListValue* args);
   void OnSetCurrentMediaMute(const base::ListValue* args);
   void OnSetCurrentMediaVolume(const base::ListValue* args);
+  void OnSetHangoutsLocalPresent(const base::ListValue* args);
 
   // Performs an action for an Issue of |type|.
   // |args| contains additional parameter that varies based on |type|.

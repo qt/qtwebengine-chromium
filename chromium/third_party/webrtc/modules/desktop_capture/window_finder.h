@@ -8,13 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_DESKTOP_CAPTURE_WINDOW_FINDER_H_
-#define WEBRTC_MODULES_DESKTOP_CAPTURE_WINDOW_FINDER_H_
+#ifndef MODULES_DESKTOP_CAPTURE_WINDOW_FINDER_H_
+#define MODULES_DESKTOP_CAPTURE_WINDOW_FINDER_H_
 
-#include "webrtc/modules/desktop_capture/desktop_capture_types.h"
-#include "webrtc/modules/desktop_capture/desktop_geometry.h"
+#include <memory>
+
+#include "modules/desktop_capture/desktop_capture_types.h"
+#include "modules/desktop_capture/desktop_geometry.h"
 
 namespace webrtc {
+
+#if defined(USE_X11)
+class XAtomCache;
+#endif
 
 // An interface to return the id of the visible window under a certain point.
 class WindowFinder {
@@ -28,8 +34,19 @@ class WindowFinder {
   // |point| is always in system coordinate, i.e. the primary monitor always
   // starts from (0, 0).
   virtual WindowId GetWindowUnderPoint(DesktopVector point) = 0;
+
+  struct Options {
+#if defined(USE_X11)
+    XAtomCache* cache = nullptr;
+#endif
+  };
+
+  // Creates a platform-independent WindowFinder implementation. This function
+  // returns nullptr if |options| does not contain enough information or
+  // WindowFinder does not support current platform.
+  static std::unique_ptr<WindowFinder> Create(const Options& options);
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_DESKTOP_CAPTURE_WINDOW_FINDER_H_
+#endif  // MODULES_DESKTOP_CAPTURE_WINDOW_FINDER_H_

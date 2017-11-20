@@ -149,6 +149,8 @@ source_set("browser_sources") {
     "extension_prefs_scope.h",
     "extension_protocols.cc",
     "extension_protocols.h",
+    "extension_registrar.cc",
+    "extension_registrar.h",
     "extension_registry.cc",
     "extension_registry.h",
     "extension_registry_factory.cc",
@@ -366,6 +368,7 @@ source_set("browser_sources") {
     "//extensions/strings",
     "//google_apis",
     "//ppapi/features",
+    "//services/device/public/interfaces",
     "//services/preferences/public/cpp",
     "//services/service_manager/public/cpp",
     "//ui/display",
@@ -433,7 +436,7 @@ source_set("browser_tests") {
     "//content/test:test_support",
     "//device/base:mocks",
     "//device/bluetooth:mocks",
-    "//device/hid:mocks",
+    "//device/hid",
     "//device/usb:test_support",
     "//extensions:test_support",
     "//extensions/common",
@@ -441,6 +444,8 @@ source_set("browser_tests") {
     "//extensions/shell:app_shell_lib",
     "//extensions/shell:browser_tests",
     "//net:test_support",
+    "//services/device/public/interfaces",
+    "//services/service_manager/public/cpp",
   ]
 
   if (is_mac) {
@@ -470,7 +475,9 @@ source_set("test_support") {
   deps = [
     "//base",
     "//extensions/browser",
+    "//extensions/browser/api/declarative_net_request:test_support",
     "//extensions/common",
+    "//extensions/common:test_support",
     "//testing/gtest",
   ]
 }
@@ -524,6 +531,7 @@ source_set("unit_tests") {
     "extension_api_frame_id_map_unittest.cc",
     "extension_icon_image_unittest.cc",
     "extension_pref_value_map_unittest.cc",
+    "extension_registrar_unittest.cc",
     "extension_registry_unittest.cc",
     "extension_throttle_simulation_unittest.cc",
     "extension_throttle_test_support.cc",
@@ -594,6 +602,7 @@ source_set("unit_tests") {
   if (is_chromeos) {
     sources += [
       "api/audio/audio_device_id_calculator_unittest.cc",
+      "api/feedback_private/access_rate_limiter_chromeos_unittest.cc",
       "api/feedback_private/feedback_private_api_chromeos_unittest.cc",
       "api/feedback_private/feedback_private_api_unittest_base_chromeos.cc",
       "api/feedback_private/feedback_private_api_unittest_base_chromeos.h",

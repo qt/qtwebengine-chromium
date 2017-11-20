@@ -34,10 +34,9 @@ private:
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
 
     AARectEffect(GrPrimitiveEdgeType edgeType, const SkRect& rect)
-            : INHERITED(kCompatibleWithCoverageAsAlpha_OptimizationFlag)
+            : INHERITED(kAARectEffect_ClassID, kCompatibleWithCoverageAsAlpha_OptimizationFlag)
             , fRect(rect)
             , fEdgeType(edgeType) {
-        this->initClassID<AARectEffect>();
     }
 
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
@@ -103,8 +102,7 @@ void GLAARectEffect::emitCode(EmitArgs& args) {
     // The rect uniform's xyzw refer to (left + 0.5, top + 0.5, right - 0.5, bottom - 0.5),
     // respectively.
     fRectUniform = args.fUniformHandler->addUniform(kFragment_GrShaderFlag,
-                                                    kVec4f_GrSLType,
-                                                    kDefault_GrSLPrecision,
+                                                    kHalf4_GrSLType,
                                                     "rect",
                                                     &rectName);
 
@@ -112,16 +110,16 @@ void GLAARectEffect::emitCode(EmitArgs& args) {
     if (GrProcessorEdgeTypeIsAA(aare.getEdgeType())) {
         // The amount of coverage removed in x and y by the edges is computed as a pair of negative
         // numbers, xSub and ySub.
-        fragBuilder->codeAppend("\t\tfloat xSub, ySub;\n");
+        fragBuilder->codeAppend("\t\thalf xSub, ySub;\n");
         fragBuilder->codeAppendf("\t\txSub = min(sk_FragCoord.x - %s.x, 0.0);\n", rectName);
         fragBuilder->codeAppendf("\t\txSub += min(%s.z - sk_FragCoord.x, 0.0);\n", rectName);
         fragBuilder->codeAppendf("\t\tySub = min(sk_FragCoord.y - %s.y, 0.0);\n", rectName);
         fragBuilder->codeAppendf("\t\tySub += min(%s.w - sk_FragCoord.y, 0.0);\n", rectName);
         // Now compute coverage in x and y and multiply them to get the fraction of the pixel
         // covered.
-        fragBuilder->codeAppendf("\t\tfloat alpha = (1.0 + max(xSub, -1.0)) * (1.0 + max(ySub, -1.0));\n");
+        fragBuilder->codeAppendf("\t\thalf alpha = (1.0 + max(xSub, -1.0)) * (1.0 + max(ySub, -1.0));\n");
     } else {
-        fragBuilder->codeAppendf("\t\tfloat alpha = 1.0;\n");
+        fragBuilder->codeAppendf("\t\thalf alpha = 1.0;\n");
         fragBuilder->codeAppendf("\t\talpha *= (sk_FragCoord.x - %s.x) > -0.5 ? 1.0 : 0.0;\n",
                                  rectName);
         fragBuilder->codeAppendf("\t\talpha *= (%s.z - sk_FragCoord.x) > -0.5 ? 1.0 : 0.0;\n",
@@ -191,16 +189,15 @@ void GrGLConvexPolyEffect::emitCode(EmitArgs& args) {
 
     const char *edgeArrayName;
     fEdgeUniform = args.fUniformHandler->addUniformArray(kFragment_GrShaderFlag,
-                                                         kVec3f_GrSLType,
-                                                         kDefault_GrSLPrecision,
+                                                         kHalf3_GrSLType,
                                                          "edges",
                                                          cpe.getEdgeCount(),
                                                          &edgeArrayName);
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
-    fragBuilder->codeAppend("\t\tfloat alpha = 1.0;\n");
-    fragBuilder->codeAppend("\t\tfloat edge;\n");
+    fragBuilder->codeAppend("\t\thalf alpha = 1.0;\n");
+    fragBuilder->codeAppend("\t\thalf edge;\n");
     for (int i = 0; i < cpe.getEdgeCount(); ++i) {
-        fragBuilder->codeAppendf("\t\tedge = dot(%s[%d], float3(sk_FragCoord.x, sk_FragCoord.y, "
+        fragBuilder->codeAppendf("\t\tedge = dot(%s[%d], half3(sk_FragCoord.x, sk_FragCoord.y, "
                                                              "1));\n",
                                  edgeArrayName, i);
         if (GrProcessorEdgeTypeIsAA(cpe.getEdgeType())) {
@@ -328,10 +325,9 @@ GrGLSLFragmentProcessor* GrConvexPolyEffect::onCreateGLSLInstance() const  {
 }
 
 GrConvexPolyEffect::GrConvexPolyEffect(GrPrimitiveEdgeType edgeType, int n, const SkScalar edges[])
-        : INHERITED(kCompatibleWithCoverageAsAlpha_OptimizationFlag)
+        : INHERITED(kGrConvexPolyEffect_ClassID, kCompatibleWithCoverageAsAlpha_OptimizationFlag)
         , fEdgeType(edgeType)
         , fEdgeCount(n) {
-    this->initClassID<GrConvexPolyEffect>();
     // Factory function should have already ensured this.
     SkASSERT(n <= kMaxEdges);
     memcpy(fEdges, edges, 3 * n * sizeof(SkScalar));
@@ -343,10 +339,9 @@ GrConvexPolyEffect::GrConvexPolyEffect(GrPrimitiveEdgeType edgeType, int n, cons
 }
 
 GrConvexPolyEffect::GrConvexPolyEffect(const GrConvexPolyEffect& that)
-        : INHERITED(kCompatibleWithCoverageAsAlpha_OptimizationFlag)
+        : INHERITED(kGrConvexPolyEffect_ClassID, kCompatibleWithCoverageAsAlpha_OptimizationFlag)
         , fEdgeType(that.fEdgeType)
         , fEdgeCount(that.fEdgeCount) {
-    this->initClassID<GrConvexPolyEffect>();
     memcpy(fEdges, that.fEdges, 3 * that.fEdgeCount * sizeof(SkScalar));
 }
 

@@ -22,7 +22,7 @@
 #define LayoutButton_h
 
 #include "core/editing/EditingUtilities.h"
-#include "core/html/HTMLInputElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/layout/LayoutFlexibleBox.h"
 
 namespace blink {
@@ -64,7 +64,7 @@ class LayoutButton final : public LayoutFlexibleBox {
   void UpdateAnonymousChildStyle(const LayoutObject& child,
                                  ComputedStyle& child_style) const override;
 
-  bool HasLineIfEmpty() const override { return isHTMLInputElement(GetNode()); }
+  bool HasLineIfEmpty() const override { return IsHTMLInputElement(GetNode()); }
 
   LayoutBlock* inner_;
 };

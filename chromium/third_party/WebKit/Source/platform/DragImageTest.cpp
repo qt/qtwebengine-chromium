@@ -37,7 +37,6 @@
 #include "platform/graphics/Image.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "platform/weborigin/KURL.h"
-#include "platform/wtf/PassRefPtr.h"
 #include "platform/wtf/RefPtr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -50,12 +49,12 @@ namespace blink {
 
 class TestImage : public Image {
  public:
-  static PassRefPtr<TestImage> Create(sk_sp<SkImage> image) {
-    return AdoptRef(new TestImage(image));
+  static RefPtr<TestImage> Create(sk_sp<SkImage> image) {
+    return WTF::AdoptRef(new TestImage(image));
   }
 
-  static PassRefPtr<TestImage> Create(const IntSize& size) {
-    return AdoptRef(new TestImage(size));
+  static RefPtr<TestImage> Create(const IntSize& size) {
+    return WTF::AdoptRef(new TestImage(size));
   }
 
   IntSize Size() const override {
@@ -78,15 +77,13 @@ class TestImage : public Image {
             const FloatRect&,
             const FloatRect&,
             RespectImageOrientationEnum,
-            ImageClampingMode) override {
+            ImageClampingMode,
+            ImageDecodingMode) override {
     // Image pure virtual stub.
   }
 
   PaintImage PaintImageForCurrentFrame() override {
-    PaintImageBuilder builder;
-    InitPaintImageBuilder(builder);
-    builder.set_image(image_);
-    return builder.TakePaintImage();
+    return CreatePaintImageBuilder().set_image(image_).TakePaintImage();
   }
 
  private:
@@ -113,12 +110,12 @@ TEST(DragImageTest, NullHandling) {
   EXPECT_FALSE(DragImage::Create(0));
 
   RefPtr<TestImage> null_test_image(TestImage::Create(IntSize()));
-  EXPECT_FALSE(DragImage::Create(null_test_image.Get()));
+  EXPECT_FALSE(DragImage::Create(null_test_image.get()));
 }
 
 TEST(DragImageTest, NonNullHandling) {
   RefPtr<TestImage> test_image(TestImage::Create(IntSize(2, 2)));
-  std::unique_ptr<DragImage> drag_image = DragImage::Create(test_image.Get());
+  std::unique_ptr<DragImage> drag_image = DragImage::Create(test_image.get());
   ASSERT_TRUE(drag_image);
 
   drag_image->Scale(0.5, 0.5);
@@ -132,7 +129,7 @@ TEST(DragImageTest, CreateDragImage) {
   // of imageForCurrentFrame().
   // FIXME: how is this test any different from test NullHandling?
   RefPtr<TestImage> test_image(TestImage::Create(IntSize()));
-  EXPECT_FALSE(DragImage::Create(test_image.Get()));
+  EXPECT_FALSE(DragImage::Create(test_image.get()));
 }
 
 TEST(DragImageTest, TrimWhitespace) {
@@ -175,7 +172,7 @@ TEST(DragImageTest, InterpolationNone) {
   RefPtr<TestImage> test_image =
       TestImage::Create(SkImage::MakeFromBitmap(test_bitmap));
   std::unique_ptr<DragImage> drag_image = DragImage::Create(
-      test_image.Get(), kDoNotRespectImageOrientation, 1, kInterpolationNone);
+      test_image.get(), kDoNotRespectImageOrientation, 1, kInterpolationNone);
   ASSERT_TRUE(drag_image);
   drag_image->Scale(2, 2);
   const SkBitmap& drag_bitmap = drag_image->Bitmap();

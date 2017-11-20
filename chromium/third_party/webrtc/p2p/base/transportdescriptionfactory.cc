@@ -8,15 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/p2p/base/transportdescriptionfactory.h"
+#include "p2p/base/transportdescriptionfactory.h"
 
 #include <memory>
 
-#include "webrtc/p2p/base/transportdescription.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/messagedigest.h"
-#include "webrtc/rtc_base/sslfingerprint.h"
+#include "p2p/base/transportdescription.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/messagedigest.h"
+#include "rtc_base/sslfingerprint.h"
 
 namespace cricket {
 
@@ -117,20 +117,6 @@ bool TransportDescriptionFactory::SetSecurityInfo(
   desc->identity_fingerprint.reset(
       rtc::SSLFingerprint::CreateFromCertificate(certificate_));
   if (!desc->identity_fingerprint) {
-    return false;
-  }
-  std::string digest_alg;
-  if (!certificate_->ssl_certificate().GetSignatureDigestAlgorithm(
-          &digest_alg)) {
-    LOG(LS_ERROR) << "Failed to retrieve the certificate's digest algorithm";
-    return false;
-  }
-
-  desc->identity_fingerprint.reset(
-      rtc::SSLFingerprint::Create(digest_alg, certificate_->identity()));
-  if (!desc->identity_fingerprint.get()) {
-    LOG(LS_ERROR) << "Failed to create identity fingerprint, alg="
-                  << digest_alg;
     return false;
   }
 

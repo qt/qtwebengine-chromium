@@ -44,11 +44,12 @@ Buffer::~Buffer()
     SafeDelete(mImpl);
 }
 
-void Buffer::onDestroy(const Context *context)
+Error Buffer::onDestroy(const Context *context)
 {
     // In tests, mImpl might be null.
     if (mImpl)
         mImpl->destroy(context);
+    return NoError();
 }
 
 void Buffer::setLabel(const std::string &label)
@@ -191,7 +192,8 @@ void Buffer::onPixelUnpack()
     mIndexRangeCache.clear();
 }
 
-Error Buffer::getIndexRange(GLenum type,
+Error Buffer::getIndexRange(const gl::Context *context,
+                            GLenum type,
                             size_t offset,
                             size_t count,
                             bool primitiveRestartEnabled,
@@ -202,7 +204,8 @@ Error Buffer::getIndexRange(GLenum type,
         return NoError();
     }
 
-    ANGLE_TRY(mImpl->getIndexRange(type, offset, count, primitiveRestartEnabled, outRange));
+    ANGLE_TRY(
+        mImpl->getIndexRange(context, type, offset, count, primitiveRestartEnabled, outRange));
 
     mIndexRangeCache.addRange(type, offset, count, primitiveRestartEnabled, *outRange);
 

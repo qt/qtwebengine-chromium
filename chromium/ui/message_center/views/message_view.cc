@@ -14,7 +14,7 @@
 #include "ui/gfx/shadow_util.h"
 #include "ui/gfx/shadow_value.h"
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/message_center_style.h"
+#include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/message_center/views/message_center_controller.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
@@ -64,7 +64,6 @@ MessageView::MessageView(MessageCenterController* controller,
                          const Notification& notification)
     : controller_(controller),
       notification_id_(notification.id()),
-      notifier_id_(notification.notifier_id()),
       slide_out_controller_(this, this) {
   SetFocusBehavior(FocusBehavior::ALWAYS);
 
@@ -79,7 +78,7 @@ MessageView::MessageView(MessageCenterController* controller,
   AddChildView(background_view_);
 
   focus_painter_ = views::Painter::CreateSolidFocusPainter(
-      kFocusBorderColor, gfx::Insets(0, 1, 3, 2));
+      kFocusBorderColor, gfx::Insets(0, 0, 1, 1));
 
   UpdateWithNotification(notification);
 }
@@ -88,7 +87,6 @@ MessageView::~MessageView() {
 }
 
 void MessageView::UpdateWithNotification(const Notification& notification) {
-  display_source_ = notification.display_source();
   pinned_ = notification.pinned();
   accessible_name_ = CreateAccessibleName(notification);
   slide_out_controller_.set_enabled(!GetPinned());

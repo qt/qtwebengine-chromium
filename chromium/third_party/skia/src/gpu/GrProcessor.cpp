@@ -9,8 +9,7 @@
 #include "GrContext.h"
 #include "GrGeometryProcessor.h"
 #include "GrMemoryPool.h"
-#include "GrSamplerParams.h"
-#include "GrTexturePriv.h"
+#include "GrSamplerState.h"
 #include "GrTextureProxy.h"
 #include "GrXferProcessor.h"
 #include "SkSpinlock.h"
@@ -94,7 +93,9 @@ void GrXPFactoryTestFactory::VerifyFactoryCount() {
 // memory barrier between accesses of a context on different threads. Also, there may be multiple
 // GrContexts and those contexts may be in use concurrently on different threads.
 namespace {
+#if !defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)
 static SkSpinlock gProcessorSpinlock;
+#endif
 class MemoryPoolAccessor {
 public:
 
@@ -113,8 +114,6 @@ public:
     }
 };
 }
-
-int32_t GrProcessor::gCurrProcessorClassID = GrProcessor::kIllegalProcessorClassID;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -221,33 +220,33 @@ bool GrResourceIOProcessor::hasSameSamplersAndAccesses(const GrResourceIOProcess
 GrResourceIOProcessor::TextureSampler::TextureSampler() {}
 
 GrResourceIOProcessor::TextureSampler::TextureSampler(sk_sp<GrTextureProxy> proxy,
-                                                      const GrSamplerParams& params) {
-    this->reset(std::move(proxy), params);
+                                                      const GrSamplerState& samplerState) {
+    this->reset(std::move(proxy), samplerState);
 }
 
 GrResourceIOProcessor::TextureSampler::TextureSampler(sk_sp<GrTextureProxy> proxy,
-                                                      GrSamplerParams::FilterMode filterMode,
-                                                      SkShader::TileMode tileXAndY,
+                                                      GrSamplerState::Filter filterMode,
+                                                      GrSamplerState::WrapMode wrapXAndY,
                                                       GrShaderFlags visibility) {
-    this->reset(std::move(proxy), filterMode, tileXAndY, visibility);
+    this->reset(std::move(proxy), filterMode, wrapXAndY, visibility);
 }
 
 void GrResourceIOProcessor::TextureSampler::reset(sk_sp<GrTextureProxy> proxy,
-                                                  const GrSamplerParams& params,
+                                                  const GrSamplerState& samplerState,
                                                   GrShaderFlags visibility) {
-    fParams = params;
+    fSamplerState = samplerState;
     fProxyRef.setProxy(std::move(proxy), kRead_GrIOType);
-    fParams.setFilterMode(SkTMin(params.filterMode(), this->proxy()->highestFilterMode()));
+    fSamplerState.setFilterMode(SkTMin(samplerState.filter(), this->proxy()->highestFilterMode()));
     fVisibility = visibility;
 }
 
 void GrResourceIOProcessor::TextureSampler::reset(sk_sp<GrTextureProxy> proxy,
-                                                  GrSamplerParams::FilterMode filterMode,
-                                                  SkShader::TileMode tileXAndY,
+                                                  GrSamplerState::Filter filterMode,
+                                                  GrSamplerState::WrapMode wrapXAndY,
                                                   GrShaderFlags visibility) {
     fProxyRef.setProxy(std::move(proxy), kRead_GrIOType);
     filterMode = SkTMin(filterMode, this->proxy()->highestFilterMode());
-    fParams.reset(tileXAndY, filterMode);
+    fSamplerState = GrSamplerState(wrapXAndY, filterMode);
     fVisibility = visibility;
 }
 

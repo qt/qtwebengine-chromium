@@ -13,6 +13,7 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -70,7 +71,9 @@ void VideoInputDevicesEnumerated(base::Closure quit_closure,
 // video_capture_host. This is an arbitrary value.
 static const int kDeviceId = 555;
 
-class MockMediaStreamRequester : public MediaStreamRequester {
+class MockMediaStreamRequester
+    : public MediaStreamRequester,
+      public base::SupportsWeakPtr<MockMediaStreamRequester> {
  public:
   MockMediaStreamRequester() {}
   virtual ~MockMediaStreamRequester() {}
@@ -80,24 +83,21 @@ class MockMediaStreamRequester : public MediaStreamRequester {
                void(int render_frame_id,
                     int page_request_id,
                     const std::string& label,
-                    const StreamDeviceInfoArray& audio_devices,
-                    const StreamDeviceInfoArray& video_devices));
+                    const MediaStreamDevices& audio_devices,
+                    const MediaStreamDevices& video_devices));
   MOCK_METHOD3(StreamGenerationFailed,
       void(int render_frame_id,
            int page_request_id,
            content::MediaStreamRequestResult result));
-  MOCK_METHOD3(DeviceStopped, void(int render_frame_id,
-                                   const std::string& label,
-                                   const StreamDeviceInfo& device));
-  MOCK_METHOD4(DevicesEnumerated, void(int render_frame_id,
-                                       int page_request_id,
-                                       const std::string& label,
-                                       const StreamDeviceInfoArray& devices));
-  MOCK_METHOD4(DeviceOpened, void(int render_frame_id,
-                                  int page_request_id,
-                                  const std::string& label,
-                                  const StreamDeviceInfo& device_info));
-  MOCK_METHOD1(DevicesChanged, void(MediaStreamType type));
+  MOCK_METHOD3(DeviceStopped,
+               void(int render_frame_id,
+                    const std::string& label,
+                    const MediaStreamDevice& device));
+  MOCK_METHOD4(DeviceOpened,
+               void(int render_frame_id,
+                    int page_request_id,
+                    const std::string& label,
+                    const MediaStreamDevice& device));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockMediaStreamRequester);
@@ -115,9 +115,10 @@ class VideoCaptureTest : public testing::Test,
  public:
   VideoCaptureTest()
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
-        audio_manager_(new media::MockAudioManager(
-            base::MakeUnique<media::TestAudioThread>())),
-        audio_system_(media::AudioSystemImpl::Create(audio_manager_.get())),
+        audio_manager_(std::make_unique<media::MockAudioManager>(
+            std::make_unique<media::TestAudioThread>())),
+        audio_system_(
+            std::make_unique<media::AudioSystemImpl>(audio_manager_.get())),
         task_runner_(base::ThreadTaskRunnerHandle::Get()),
         opened_session_id_(kInvalidMediaCaptureSessionId),
         observer_binding_(this) {}
@@ -177,9 +178,9 @@ class VideoCaptureTest : public testing::Test,
     // Open the first device.
     {
       base::RunLoop run_loop;
-      StreamDeviceInfo opened_device;
+      MediaStreamDevice opened_device;
       media_stream_manager_->OpenDevice(
-          &stream_requester_, render_process_id, render_frame_id,
+          stream_requester_.AsWeakPtr(), render_process_id, render_frame_id,
           browser_context_.GetMediaDeviceIDSalt(), page_request_id,
           video_devices[0].device_id, MEDIA_DEVICE_VIDEO_CAPTURE,
           security_origin);
@@ -191,7 +192,7 @@ class VideoCaptureTest : public testing::Test,
                           SaveArg<3>(&opened_device)));
       run_loop.Run();
       Mock::VerifyAndClearExpectations(&stream_requester_);
-      ASSERT_NE(StreamDeviceInfo::kNoId, opened_device.session_id);
+      ASSERT_NE(MediaStreamDevice::kNoId, opened_device.session_id);
       opened_session_id_ = opened_device.session_id;
     }
   }

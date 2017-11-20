@@ -160,8 +160,11 @@
       <message name="IDS_PAGE_INFO_CERTIFICATE_INVALID_LINK" desc="This appears in the Page Info bubble when a HTTPS site is loaded with an invalid certificate, e.g. https://wrong.host.badssl.com/. Text of the link that launches the Certificate Viewer.">
         Invalid
       </message>
-      <message name="IDS_PAGE_INFO_CERTIFICATE_VALID_LINK_TOOLTIP" desc="The text of the tooltip on IDS_PAGE_INFO_CERTIFICATE_VALID_LINK">
-        Issued by <ph name="ISSUER">$1<ex>Let's Encrypt X3</ex></ph>
+      <message name="IDS_PAGE_INFO_CERTIFICATE_VALID_LINK_TOOLTIP" desc="The text of the tooltip on IDS_PAGE_INFO_CERTIFICATE_VALID_LINK.">
+        Show certificate (issued by <ph name="ISSUER">$1<ex>Let's Encrypt X3</ex></ph>)
+      </message>
+      <message name="IDS_PAGE_INFO_CERTIFICATE_INVALID_LINK_TOOLTIP" desc="The text of the tooltip on IDS_PAGE_INFO_CERTIFICATE_INVALID_LINK.">
+        Show certificate
       </message>
     </if>
 
@@ -197,7 +200,7 @@
     <message name="IDS_PAGE_INFO_TYPE_FLASH" desc="The label used for Flash permissions in the Page Info popup.">
       Flash
     </message>
-    <message name="IDS_PAGE_INFO_TYPE_LOCATION" desc="The label used for location permission controls in the Page Info popup.">
+    <message name="IDS_PAGE_INFO_TYPE_LOCATION" desc="The label used for geolocation permission controls in the Page Info popup." meaning="Geolocation">
       Location
     </message>
     <message name="IDS_PAGE_INFO_TYPE_NOTIFICATIONS" desc="The label used for notifications permission controls in the Page Info popup.">
@@ -322,14 +325,6 @@
     <!-- VR browser -->
     <message name="IDS_PAGE_INFO_VR_BROWSER_UNSUPPORTED_MODE" desc="This text is displayed as a large toast to inform the user that they cannot currently browse in VR and they will soon exit VR mode.">
       This page contains features not yet supported in VR. Exiting...
-    </message>
-
-    <!-- WebVR -->
-    <message name="IDS_PAGE_INFO_INSECURE_WEBVR_CONTENT_TRANSIENT" desc="Text that is displayed temporarily as a large toast on first entering a WebVR page over non-secure transport.">
-      Your connection to this site is not private. To exit VR mode at any time, remove headset and press back.
-    </message>
-    <message name="IDS_PAGE_INFO_INSECURE_WEBVR_CONTENT_PERMANENT" desc="Text that is displayed in a small permanent notification on a WebVR page loaded over non-secure transport. (Should be short, does not need to be a complete sentence.)">
-      Not secure
     </message>
 
     <!-- Password Protection -->

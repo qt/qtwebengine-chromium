@@ -92,7 +92,6 @@ class CORE_EXPORT WebPluginContainerImpl final
   bool CanProcessDrag() const override;
   bool WantsWheelEvents() override;
   void UpdateAllLifecyclePhases() override;
-  void InvalidatePaint() override { IssuePaintInvalidations(); }
   void InvalidateRect(const IntRect&);
   void SetFocused(bool, WebFocusType) override;
   void HandleEvent(Event*) override;
@@ -104,7 +103,9 @@ class CORE_EXPORT WebPluginContainerImpl final
   // EmbeddedContentView methods
   void SetFrameRect(const IntRect&) override;
   const IntRect& FrameRect() const override { return frame_rect_; }
-  void Paint(GraphicsContext&, const CullRect&) const override;
+  void Paint(GraphicsContext&,
+             const GlobalPaintFlags,
+             const CullRect&) const override;
   void UpdateGeometry() override;
   void Show() override;
   void Hide() override;
@@ -221,8 +222,6 @@ class CORE_EXPORT WebPluginContainerImpl final
 
   void FocusPlugin();
 
-  void IssuePaintInvalidations();
-
   void CalculateGeometry(IntRect& window_rect,
                          IntRect& clip_rect,
                          IntRect& unobscured_rect);
@@ -233,7 +232,6 @@ class CORE_EXPORT WebPluginContainerImpl final
   WebPlugin* web_plugin_;
   WebLayer* web_layer_;
   IntRect frame_rect_;
-  IntRect pending_invalidation_rect_;
   TouchEventRequestType touch_event_request_type_;
   bool wants_wheel_events_;
   bool self_visible_;

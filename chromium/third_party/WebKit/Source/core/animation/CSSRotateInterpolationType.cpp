@@ -6,6 +6,7 @@
 
 #include <memory>
 #include "core/css/resolver/StyleBuilderConverter.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/transforms/RotateTransformOperation.h"
 #include "platform/transforms/Rotation.h"
 #include "platform/wtf/PtrUtil.h"
@@ -53,14 +54,14 @@ class CSSRotateNonInterpolableValue : public NonInterpolableValue {
  public:
   static RefPtr<CSSRotateNonInterpolableValue> Create(
       const OptionalRotation& rotation) {
-    return AdoptRef(new CSSRotateNonInterpolableValue(
+    return WTF::AdoptRef(new CSSRotateNonInterpolableValue(
         true, rotation, OptionalRotation(), false, false));
   }
 
   static RefPtr<CSSRotateNonInterpolableValue> Create(
       const CSSRotateNonInterpolableValue& start,
       const CSSRotateNonInterpolableValue& end) {
-    return AdoptRef(new CSSRotateNonInterpolableValue(
+    return WTF::AdoptRef(new CSSRotateNonInterpolableValue(
         false, start.GetOptionalRotation(), end.GetOptionalRotation(),
         start.IsAdditive(), end.IsAdditive()));
   }

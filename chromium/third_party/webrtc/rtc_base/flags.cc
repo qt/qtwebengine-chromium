@@ -8,16 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/rtc_base/flags.h"
+#include "rtc_base/flags.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "webrtc/rtc_base/checks.h"
+#include "rtc_base/checks.h"
 
 #if defined(WEBRTC_WIN)
-#include "webrtc/rtc_base/win32.h"
+#include "rtc_base/win32.h"
 #include <shellapi.h>
 #endif
 
@@ -149,7 +149,7 @@ void FlagList::SplitArgument(const char* arg,
     arg++;  // remove 1st '-'
     if (*arg == '-')
       arg++;  // remove 2nd '-'
-    if (arg[0] == 'n' && arg[1] == 'o') {
+    if (arg[0] == 'n' && arg[1] == 'o' && Lookup(arg + 2)) {
       arg += 2;  // remove "no"
       *is_bool = true;
     }

@@ -9,7 +9,7 @@
 
 #include <stdint.h>
 
-#include "core/fxcrt/fx_ucd.h"
+#include "core/fxcrt/fx_unicode.h"
 
 enum class CFX_BreakType { None = 0, Piece, Line, Paragraph, Page };
 
@@ -40,7 +40,7 @@ class CFX_Char {
   int16_t m_iBidiOrder;
   int32_t m_iFontSize;
   uint32_t m_dwIdentity;
-  CFX_RetainPtr<CFX_Retainable> m_pUserData;
+  RetainPtr<Retainable> m_pUserData;
 
  private:
   uint16_t m_wCharCode;

@@ -39,8 +39,8 @@
 
 namespace blink {
 
+class DedicatedWorkerObjectProxy;
 class DedicatedWorkerThread;
-class InProcessWorkerObjectProxy;
 class ScriptState;
 struct GlobalScopeCreationParams;
 
@@ -48,10 +48,9 @@ class CORE_EXPORT DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  static DedicatedWorkerGlobalScope* Create(
-      DedicatedWorkerThread*,
-      std::unique_ptr<GlobalScopeCreationParams>,
-      double time_origin);
+  DedicatedWorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
+                             DedicatedWorkerThread*,
+                             double time_origin);
   ~DedicatedWorkerGlobalScope() override;
 
   bool IsDedicatedWorkerGlobalScope() const override { return true; }
@@ -72,16 +71,7 @@ class CORE_EXPORT DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
   DECLARE_VIRTUAL_TRACE();
 
  private:
-  friend class DedicatedWorkerThreadForTest;
-
-  DedicatedWorkerGlobalScope(const KURL&,
-                             const String& user_agent,
-                             DedicatedWorkerThread*,
-                             double time_origin,
-                             std::unique_ptr<SecurityOrigin::PrivilegeData>,
-                             WorkerClients*);
-
-  InProcessWorkerObjectProxy& WorkerObjectProxy() const;
+  DedicatedWorkerObjectProxy& WorkerObjectProxy() const;
 };
 
 }  // namespace blink

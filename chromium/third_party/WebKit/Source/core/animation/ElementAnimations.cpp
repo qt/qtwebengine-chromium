@@ -30,6 +30,8 @@
 
 #include "core/animation/ElementAnimations.h"
 
+#include "core/style/ComputedStyle.h"
+
 namespace blink {
 
 ElementAnimations::ElementAnimations() : animation_style_change_(false) {}
@@ -88,7 +90,6 @@ void ElementAnimations::RestartAnimationOnCompositor() {
 
 DEFINE_TRACE(ElementAnimations) {
   visitor->Trace(css_animations_);
-  visitor->Trace(custom_compositor_animations_);
   visitor->Trace(effect_stack_);
   visitor->Trace(animations_);
 }
@@ -96,7 +97,7 @@ DEFINE_TRACE(ElementAnimations) {
 const ComputedStyle* ElementAnimations::BaseComputedStyle() const {
 #if !DCHECK_IS_ON()
   if (IsAnimationStyleChange())
-    return base_computed_style_.Get();
+    return base_computed_style_.get();
 #endif
   return nullptr;
 }

@@ -27,6 +27,7 @@ component("views") {
   deps = [
     "//base",
     "//chrome/app:command_ids",
+    "//components/keep_alive_registry",
     "//components/vector_icons",
     "//content/public/browser",
     "//printing/features",
@@ -38,7 +39,7 @@ component("views") {
     "//url",
   ]
 
-  if (use_ash) {
+  if (is_chromeos) {
     deps += [ "//ash" ]
   }
 }

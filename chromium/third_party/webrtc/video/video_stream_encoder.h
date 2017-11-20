@@ -8,31 +8,31 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_VIDEO_VIDEO_STREAM_ENCODER_H_
-#define WEBRTC_VIDEO_VIDEO_STREAM_ENCODER_H_
+#ifndef VIDEO_VIDEO_STREAM_ENCODER_H_
+#define VIDEO_VIDEO_STREAM_ENCODER_H_
 
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "webrtc/api/video/video_rotation.h"
-#include "webrtc/api/video_codecs/video_encoder.h"
-#include "webrtc/call/call.h"
-#include "webrtc/common_types.h"
-#include "webrtc/common_video/include/video_bitrate_allocator.h"
-#include "webrtc/media/base/videosinkinterface.h"
-#include "webrtc/modules/video_coding/include/video_coding_defines.h"
-#include "webrtc/modules/video_coding/utility/quality_scaler.h"
-#include "webrtc/modules/video_coding/video_coding_impl.h"
-#include "webrtc/rtc_base/criticalsection.h"
-#include "webrtc/rtc_base/event.h"
-#include "webrtc/rtc_base/sequenced_task_checker.h"
-#include "webrtc/rtc_base/task_queue.h"
-#include "webrtc/system_wrappers/include/atomic32.h"
-#include "webrtc/typedefs.h"
-#include "webrtc/video/overuse_frame_detector.h"
-#include "webrtc/call/video_send_stream.h"
+#include "api/video/video_rotation.h"
+#include "api/video_codecs/video_encoder.h"
+#include "call/call.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "common_video/include/video_bitrate_allocator.h"
+#include "media/base/videosinkinterface.h"
+#include "modules/video_coding/include/video_coding_defines.h"
+#include "modules/video_coding/utility/quality_scaler.h"
+#include "modules/video_coding/video_coding_impl.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/event.h"
+#include "rtc_base/sequenced_task_checker.h"
+#include "rtc_base/task_queue.h"
+#include "system_wrappers/include/atomic32.h"
+#include "typedefs.h"  // NOLINT(build/include)
+#include "video/overuse_frame_detector.h"
+#include "call/video_send_stream.h"
 
 namespace webrtc {
 
@@ -50,7 +50,6 @@ class VideoBitrateAllocationObserver;
 //  Call Stop() when done.
 class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
                            public EncodedImageCallback,
-                           public VCMSendStatisticsCallback,
                            public AdaptationObserverInterface {
  public:
   // Interface for receiving encoded video frames and notifications about
@@ -126,7 +125,7 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   // be called on |encoder_queue_|.
   rtc::TaskQueue* encoder_queue() { return &encoder_queue_; }
 
-  // webrtc::ScalingObserverInterface implementation.
+  // AdaptationObserverInterface implementation.
   // These methods are protected for easier testing.
   void AdaptUp(AdaptReason reason) override;
   void AdaptDown(AdaptReason reason) override;
@@ -160,10 +159,6 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
 
   // Implements VideoSinkInterface.
   void OnFrame(const VideoFrame& video_frame) override;
-
-  // Implements VideoSendStatisticsCallback.
-  void SendStatistics(uint32_t bit_rate,
-                      uint32_t frame_rate) override;
 
   void EncodeVideoFrame(const VideoFrame& frame,
                         int64_t time_when_posted_in_ms);
@@ -217,10 +212,10 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
     std::vector<int> resolution_counters_;
   };
 
-  AdaptCounter& GetAdaptCounter() RUN_ON(&encoder_queue_);
-  const AdaptCounter& GetConstAdaptCounter() RUN_ON(&encoder_queue_);
-  void UpdateAdaptationStats(AdaptReason reason) RUN_ON(&encoder_queue_);
-  AdaptCounts GetActiveCounts(AdaptReason reason) RUN_ON(&encoder_queue_);
+  AdaptCounter& GetAdaptCounter() RTC_RUN_ON(&encoder_queue_);
+  const AdaptCounter& GetConstAdaptCounter() RTC_RUN_ON(&encoder_queue_);
+  void UpdateAdaptationStats(AdaptReason reason) RTC_RUN_ON(&encoder_queue_);
+  AdaptCounts GetActiveCounts(AdaptReason reason) RTC_RUN_ON(&encoder_queue_);
 
   rtc::Event shutdown_event_;
 
@@ -233,10 +228,10 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   const VideoSendStream::Config::EncoderSettings settings_;
   const VideoCodecType codec_type_;
 
-  vcm::VideoSender video_sender_ ACCESS_ON(&encoder_queue_);
+  vcm::VideoSender video_sender_ RTC_ACCESS_ON(&encoder_queue_);
   std::unique_ptr<OveruseFrameDetector> overuse_detector_
-      ACCESS_ON(&encoder_queue_);
-  std::unique_ptr<QualityScaler> quality_scaler_ ACCESS_ON(&encoder_queue_);
+      RTC_ACCESS_ON(&encoder_queue_);
+  std::unique_ptr<QualityScaler> quality_scaler_ RTC_ACCESS_ON(&encoder_queue_);
 
   SendStatisticsProxy* const stats_proxy_;
   rtc::VideoSinkInterface<VideoFrame>* const pre_encode_callback_;
@@ -246,24 +241,24 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   // of VideoStreamEncoder are called on the same thread.
   rtc::ThreadChecker thread_checker_;
 
-  VideoEncoderConfig encoder_config_ ACCESS_ON(&encoder_queue_);
+  VideoEncoderConfig encoder_config_ RTC_ACCESS_ON(&encoder_queue_);
   std::unique_ptr<VideoBitrateAllocator> rate_allocator_
-      ACCESS_ON(&encoder_queue_);
+      RTC_ACCESS_ON(&encoder_queue_);
   // The maximum frame rate of the current codec configuration, as determined
   // at the last ReconfigureEncoder() call.
-  int max_framerate_ ACCESS_ON(&encoder_queue_);
+  int max_framerate_ RTC_ACCESS_ON(&encoder_queue_);
 
   // Set when ConfigureEncoder has been called in order to lazy reconfigure the
   // encoder on the next frame.
-  bool pending_encoder_reconfiguration_ ACCESS_ON(&encoder_queue_);
-  rtc::Optional<VideoFrameInfo> last_frame_info_ ACCESS_ON(&encoder_queue_);
-  int crop_width_ ACCESS_ON(&encoder_queue_);
-  int crop_height_ ACCESS_ON(&encoder_queue_);
-  uint32_t encoder_start_bitrate_bps_ ACCESS_ON(&encoder_queue_);
-  size_t max_data_payload_length_ ACCESS_ON(&encoder_queue_);
-  bool nack_enabled_ ACCESS_ON(&encoder_queue_);
-  uint32_t last_observed_bitrate_bps_ ACCESS_ON(&encoder_queue_);
-  bool encoder_paused_and_dropped_frame_ ACCESS_ON(&encoder_queue_);
+  bool pending_encoder_reconfiguration_ RTC_ACCESS_ON(&encoder_queue_);
+  rtc::Optional<VideoFrameInfo> last_frame_info_ RTC_ACCESS_ON(&encoder_queue_);
+  int crop_width_ RTC_ACCESS_ON(&encoder_queue_);
+  int crop_height_ RTC_ACCESS_ON(&encoder_queue_);
+  uint32_t encoder_start_bitrate_bps_ RTC_ACCESS_ON(&encoder_queue_);
+  size_t max_data_payload_length_ RTC_ACCESS_ON(&encoder_queue_);
+  bool nack_enabled_ RTC_ACCESS_ON(&encoder_queue_);
+  uint32_t last_observed_bitrate_bps_ RTC_ACCESS_ON(&encoder_queue_);
+  bool encoder_paused_and_dropped_frame_ RTC_ACCESS_ON(&encoder_queue_);
   Clock* const clock_;
   // Counters used for deciding if the video resolution or framerate is
   // currently restricted, and if so, why, on a per degradation preference
@@ -271,10 +266,10 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   // TODO(sprang): Replace this with a state holding a relative overuse measure
   // instead, that can be translated into suitable down-scale or fps limit.
   std::map<const VideoSendStream::DegradationPreference, AdaptCounter>
-      adapt_counters_ ACCESS_ON(&encoder_queue_);
+      adapt_counters_ RTC_ACCESS_ON(&encoder_queue_);
   // Set depending on degradation preferences.
   VideoSendStream::DegradationPreference degradation_preference_
-      ACCESS_ON(&encoder_queue_);
+      RTC_ACCESS_ON(&encoder_queue_);
 
   struct AdaptationRequest {
     // The pixel count produced by the source at the time of the adaptation.
@@ -287,22 +282,25 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
   // Stores a snapshot of the last adaptation request triggered by an AdaptUp
   // or AdaptDown signal.
   rtc::Optional<AdaptationRequest> last_adaptation_request_
-      ACCESS_ON(&encoder_queue_);
+      RTC_ACCESS_ON(&encoder_queue_);
 
   rtc::RaceChecker incoming_frame_race_checker_
-      GUARDED_BY(incoming_frame_race_checker_);
+      RTC_GUARDED_BY(incoming_frame_race_checker_);
   Atomic32 posted_frames_waiting_for_encode_;
   // Used to make sure incoming time stamp is increasing for every frame.
-  int64_t last_captured_timestamp_ GUARDED_BY(incoming_frame_race_checker_);
+  int64_t last_captured_timestamp_ RTC_GUARDED_BY(incoming_frame_race_checker_);
   // Delta used for translating between NTP and internal timestamps.
-  const int64_t delta_ntp_internal_ms_ GUARDED_BY(incoming_frame_race_checker_);
+  const int64_t delta_ntp_internal_ms_
+      RTC_GUARDED_BY(incoming_frame_race_checker_);
 
-  int64_t last_frame_log_ms_ GUARDED_BY(incoming_frame_race_checker_);
-  int captured_frame_count_ ACCESS_ON(&encoder_queue_);
-  int dropped_frame_count_ ACCESS_ON(&encoder_queue_);
+  int64_t last_frame_log_ms_ RTC_GUARDED_BY(incoming_frame_race_checker_);
+  int captured_frame_count_ RTC_ACCESS_ON(&encoder_queue_);
+  int dropped_frame_count_ RTC_ACCESS_ON(&encoder_queue_);
 
-  VideoBitrateAllocationObserver* bitrate_observer_ ACCESS_ON(&encoder_queue_);
-  rtc::Optional<int64_t> last_parameters_update_ms_ ACCESS_ON(&encoder_queue_);
+  VideoBitrateAllocationObserver* bitrate_observer_
+      RTC_ACCESS_ON(&encoder_queue_);
+  rtc::Optional<int64_t> last_parameters_update_ms_
+      RTC_ACCESS_ON(&encoder_queue_);
 
   // All public methods are proxied to |encoder_queue_|. It must must be
   // destroyed first to make sure no tasks are run that use other members.
@@ -313,4 +311,4 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_VIDEO_VIDEO_STREAM_ENCODER_H_
+#endif  // VIDEO_VIDEO_STREAM_ENCODER_H_

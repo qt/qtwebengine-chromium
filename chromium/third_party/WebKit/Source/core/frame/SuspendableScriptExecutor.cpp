@@ -172,7 +172,7 @@ SuspendableScriptExecutor::SuspendableScriptExecutor(
     ScriptState* script_state,
     WebScriptExecutionCallback* callback,
     Executor* executor)
-    : SuspendableTimer(frame->GetDocument(), TaskType::kTimer),
+    : SuspendableTimer(frame->GetDocument(), TaskType::kJavascriptTimer),
       script_state_(script_state),
       callback_(callback),
       blocking_option_(kNonBlocking),
@@ -217,7 +217,7 @@ void SuspendableScriptExecutor::ExecuteAndDestroySelf() {
   if (callback_)
     callback_->WillExecute();
 
-  ScriptState::Scope script_scope(script_state_.Get());
+  ScriptState::Scope script_scope(script_state_.get());
   Vector<v8::Local<v8::Value>> results =
       executor_->Execute(ToDocument(GetExecutionContext())->GetFrame());
 

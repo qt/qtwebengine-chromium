@@ -12,6 +12,7 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
+#include "build/build_config.h"
 #include "media/base/cdm_config.h"
 #include "media/base/mock_filters.h"
 #include "media/base/test_helpers.h"
@@ -22,13 +23,20 @@
 #include "media/mojo/interfaces/content_decryption_module.mojom.h"
 #include "media/mojo/interfaces/decryptor.mojom.h"
 #include "media/mojo/interfaces/interface_factory.mojom.h"
-#include "media/mojo/interfaces/media_service.mojom.h"
 #include "media/mojo/interfaces/renderer.mojom.h"
 #include "media/mojo/services/media_interface_provider.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "services/service_manager/public/cpp/service_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "url/gurl.h"
+#include "url/origin.h"
+
+#if defined(OS_MACOSX)
+#include "media/mojo/interfaces/media_service_mac.mojom.h"
+#else
+#include "media/mojo/interfaces/media_service.mojom.h"
+#endif  // defined(OS_MACOSX)
 
 using testing::Exactly;
 using testing::Invoke;
@@ -105,13 +113,13 @@ class MediaServiceTest : public service_manager::test::ServiceTest {
   void InitializeCdm(const std::string& key_system,
                      bool expected_result,
                      int cdm_id) {
-    interface_factory_->CreateCdm(mojo::MakeRequest(&cdm_));
+    interface_factory_->CreateCdm(key_system, mojo::MakeRequest(&cdm_));
 
     EXPECT_CALL(*this, OnCdmInitializedInternal(expected_result, cdm_id))
         .Times(Exactly(1))
         .WillOnce(InvokeWithoutArgs(run_loop_.get(), &base::RunLoop::Quit));
-    cdm_->Initialize(key_system, kSecurityOrigin,
-                     mojom::CdmConfig::From(CdmConfig()),
+    cdm_->Initialize(key_system, url::Origin(GURL(kSecurityOrigin)),
+                     CdmConfig(),
                      base::Bind(&MediaServiceTest::OnCdmInitialized,
                                 base::Unretained(this)));
   }

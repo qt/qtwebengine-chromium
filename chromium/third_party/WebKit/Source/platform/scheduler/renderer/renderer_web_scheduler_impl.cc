@@ -7,7 +7,7 @@
 #include <memory>
 
 #include "base/memory/ptr_util.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/base/task_queue.h"
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
 #include "platform/scheduler/renderer/web_view_scheduler_impl.h"
@@ -28,15 +28,12 @@ RendererWebSchedulerImpl::RendererWebSchedulerImpl(
 RendererWebSchedulerImpl::~RendererWebSchedulerImpl() {}
 
 WebTaskRunner* RendererWebSchedulerImpl::CompositorTaskRunner() {
-  return compositor_task_runner_.Get();
+  return compositor_task_runner_.get();
 }
 
-void RendererWebSchedulerImpl::PauseTimerQueue() {
-  renderer_scheduler_->PauseTimerQueue();
-}
-
-void RendererWebSchedulerImpl::ResumeTimerQueue() {
-  renderer_scheduler_->ResumeTimerQueue();
+std::unique_ptr<RendererWebSchedulerImpl::RendererPauseHandle>
+RendererWebSchedulerImpl::PauseScheduler() {
+  return renderer_scheduler_->PauseRenderer();
 }
 
 std::unique_ptr<blink::WebViewScheduler>

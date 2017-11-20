@@ -12,16 +12,16 @@
 #include <memory>
 #include <set>
 
-#include "webrtc/common_types.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/nack.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
-#include "webrtc/rtc_base/rate_limiter.h"
-#include "webrtc/test/gmock.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/rtcp_packet_parser.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/rtcp_packet.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/nack.h"
+#include "modules/rtp_rtcp/source/rtp_rtcp_impl.h"
+#include "rtc_base/rate_limiter.h"
+#include "test/gmock.h"
+#include "test/gtest.h"
+#include "test/rtcp_packet_parser.h"
 
 using ::testing::_;
 using ::testing::ElementsAre;
@@ -88,7 +88,7 @@ class SendTransport : public Transport,
       clock_->AdvanceTimeMilliseconds(delay_ms_);
     }
     EXPECT_TRUE(receiver_);
-    EXPECT_EQ(0, receiver_->IncomingRtcpPacket(data, len));
+    receiver_->IncomingRtcpPacket(data, len);
     return true;
   }
   int32_t OnReceivedPayloadData(const uint8_t* payload_data,
@@ -255,8 +255,7 @@ class RtpRtcpImplTest : public ::testing::Test {
     nack.SetMediaSsrc(sender ? kSenderSsrc : kReceiverSsrc);
     nack.SetPacketIds(list, kListLength);
     rtc::Buffer packet = nack.Build();
-    EXPECT_EQ(0, module->impl_->IncomingRtcpPacket(packet.data(),
-                                                   packet.size()));
+    module->impl_->IncomingRtcpPacket(packet.data(), packet.size());
   }
 };
 

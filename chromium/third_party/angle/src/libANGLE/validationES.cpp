@@ -21,6 +21,7 @@
 #include "libANGLE/Uniform.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/formatutils.h"
+#include "libANGLE/queryconversions.h"
 #include "libANGLE/validationES2.h"
 #include "libANGLE/validationES3.h"
 
@@ -33,6 +34,7 @@ namespace gl
 {
 namespace
 {
+
 bool ValidateDrawAttribs(ValidationContext *context,
                          GLint primcount,
                          GLint maxVertex,
@@ -176,7 +178,8 @@ bool ValidReadPixelsTypeEnum(ValidationContext *context, GLenum type)
             return context->getClientVersion() >= ES_3_0;
 
         case GL_FLOAT:
-            return context->getClientVersion() >= ES_3_0 || context->getExtensions().textureFloat;
+            return context->getClientVersion() >= ES_3_0 || context->getExtensions().textureFloat ||
+                   context->getExtensions().colorBufferHalfFloat;
 
         case GL_HALF_FLOAT:
             return context->getClientVersion() >= ES_3_0 ||
@@ -436,7 +439,7 @@ bool ValidateUniformCommonBase(ValidationContext *context,
         return false;
     }
 
-    if (!uniformLocation.used)
+    if (!uniformLocation.used())
     {
         context->handleError(InvalidOperation());
         return false;
@@ -1063,7 +1066,8 @@ bool ValidQueryType(const Context *context, GLenum queryType)
     {
         case GL_ANY_SAMPLES_PASSED:
         case GL_ANY_SAMPLES_PASSED_CONSERVATIVE:
-            return true;
+            return context->getClientMajorVersion() >= 3 ||
+                   context->getExtensions().occlusionQueryBoolean;
         case GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN:
             return (context->getClientMajorVersion() >= 3);
         case GL_TIME_ELAPSED_EXT:
@@ -2098,7 +2102,7 @@ bool ValidateProgramUniform(gl::Context *context,
     // Check for ES31 program uniform entry points
     if (context->getClientVersion() < Version(3, 1))
     {
-        context->handleError(InvalidOperation());
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -2117,7 +2121,7 @@ bool ValidateProgramUniform1iv(gl::Context *context,
     // Check for ES31 program uniform entry points
     if (context->getClientVersion() < Version(3, 1))
     {
-        context->handleError(InvalidOperation());
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -2137,7 +2141,7 @@ bool ValidateProgramUniformMatrix(gl::Context *context,
     // Check for ES31 program uniform entry points
     if (context->getClientVersion() < Version(3, 1))
     {
-        context->handleError(InvalidOperation());
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
         return false;
     }
 
@@ -2581,9 +2585,9 @@ bool ValidateDrawBase(ValidationContext *context, GLenum mode, GLsizei count)
 
     if (extensions.multiview)
     {
-        const int programNumViews     = program->getNumViews();
+        const int programNumViews     = program->usesMultiview() ? program->getNumViews() : 1;
         const int framebufferNumViews = framebuffer->getNumViews();
-        if (programNumViews != -1 && framebufferNumViews != programNumViews)
+        if (framebufferNumViews != programNumViews)
         {
             context->handleError(InvalidOperation() << "The number of views in the active program "
                                                        "and draw framebuffer does not match.");
@@ -2616,7 +2620,7 @@ bool ValidateDrawBase(ValidationContext *context, GLenum mode, GLsizei count)
     for (unsigned int uniformBlockIndex = 0;
          uniformBlockIndex < program->getActiveUniformBlockCount(); uniformBlockIndex++)
     {
-        const gl::UniformBlock &uniformBlock = program->getUniformBlockByIndex(uniformBlockIndex);
+        const gl::InterfaceBlock &uniformBlock = program->getUniformBlockByIndex(uniformBlockIndex);
         GLuint blockBinding                  = program->getUniformBlockBinding(uniformBlockIndex);
         const OffsetBindingPointer<Buffer> &uniformBuffer =
             state.getIndexedUniformBuffer(blockBinding);
@@ -2730,6 +2734,12 @@ bool ValidateDrawArraysInstancedANGLE(Context *context,
                                       GLsizei count,
                                       GLsizei primcount)
 {
+    if (!context->getExtensions().instancedArrays)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ExtensionNotEnabled);
+        return false;
+    }
+
     if (!ValidateDrawArraysInstancedBase(context, mode, first, count, primcount))
     {
         return false;
@@ -2871,8 +2881,8 @@ bool ValidateDrawElementsCommon(ValidationContext *context,
                 return false;
             }
 
-            ASSERT(typeSize > 0);
-            if (elementArrayBuffer->getSize() % typeSize != 0)
+            ASSERT(isPow2(typeSize) && typeSize > 0);
+            if ((elementArrayBuffer->getSize() & (typeSize - 1)) != 0)
             {
                 ANGLE_VALIDATION_ERR(context, InvalidOperation(), MismatchedByteCountType);
                 return false;
@@ -2887,34 +2897,46 @@ bool ValidateDrawElementsCommon(ValidationContext *context,
         }
     }
 
-    // Use the parameter buffer to retrieve and cache the index range.
-    // TODO: offer fast path, with disabled index validation.
-    // TODO: also disable index checking on back-ends that are robust to out-of-range accesses.
-    const auto &params        = context->getParams<HasIndexRange>();
-    const auto &indexRangeOpt = params.getIndexRange();
-    if (!indexRangeOpt.valid())
+    if (context->getExtensions().robustBufferAccessBehavior)
     {
-        // Unexpected error.
-        return false;
+        // Here we use maxVertex = 0 and vertexCount = 1 to avoid retrieving IndexRange when robust
+        // access is enabled.
+        if (!ValidateDrawAttribs(context, primcount, 0, 1))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        // Use the parameter buffer to retrieve and cache the index range.
+        const auto &params        = context->getParams<HasIndexRange>();
+        const auto &indexRangeOpt = params.getIndexRange();
+        if (!indexRangeOpt.valid())
+        {
+            // Unexpected error.
+            return false;
+        }
+
+        // If we use an index greater than our maximum supported index range, return an error.
+        // The ES3 spec does not specify behaviour here, it is undefined, but ANGLE should always
+        // return an error if possible here.
+        if (static_cast<GLuint64>(indexRangeOpt.value().end) >= context->getCaps().maxElementIndex)
+        {
+            ANGLE_VALIDATION_ERR(context, InvalidOperation(), ExceedsMaxElement);
+            return false;
+        }
+
+        if (!ValidateDrawAttribs(context, primcount, static_cast<GLint>(indexRangeOpt.value().end),
+                                 static_cast<GLint>(indexRangeOpt.value().vertexCount())))
+        {
+            return false;
+        }
+
+        // No op if there are no real indices in the index data (all are primitive restart).
+        return (indexRangeOpt.value().vertexIndexCount > 0);
     }
 
-    // If we use an index greater than our maximum supported index range, return an error.
-    // The ES3 spec does not specify behaviour here, it is undefined, but ANGLE should always
-    // return an error if possible here.
-    if (static_cast<GLuint64>(indexRangeOpt.value().end) >= context->getCaps().maxElementIndex)
-    {
-        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ExceedsMaxElement);
-        return false;
-    }
-
-    if (!ValidateDrawAttribs(context, primcount, static_cast<GLint>(indexRangeOpt.value().end),
-                             static_cast<GLint>(indexRangeOpt.value().vertexCount())))
-    {
-        return false;
-    }
-
-    // No op if there are no real indices in the index data (all are primitive restart).
-    return (indexRangeOpt.value().vertexIndexCount > 0);
+    return true;
 }
 
 bool ValidateDrawElementsInstancedCommon(ValidationContext *context,
@@ -2934,6 +2956,12 @@ bool ValidateDrawElementsInstancedANGLE(Context *context,
                                         const void *indices,
                                         GLsizei primcount)
 {
+    if (!context->getExtensions().instancedArrays)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ExtensionNotEnabled);
+        return false;
+    }
+
     if (!ValidateDrawElementsInstancedBase(context, mode, count, type, indices, primcount))
     {
         return false;
@@ -3123,7 +3151,7 @@ bool ValidateGetUniformuivRobustANGLE(Context *context,
 
     if (context->getClientMajorVersion() < 3)
     {
-        context->handleError(InvalidOperation() << "Entry point requires at least OpenGL ES 3.0.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES3Required);
         return false;
     }
 
@@ -4117,7 +4145,7 @@ bool ValidateGetProgramivBase(ValidationContext *context,
         case GL_PROGRAM_BINARY_RETRIEVABLE_HINT:
             if (context->getClientMajorVersion() < 3)
             {
-                context->handleError(InvalidEnum() << "Querying requires at least ES 3.0.");
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), ES3Required);
                 return false;
             }
             break;
@@ -4125,7 +4153,7 @@ bool ValidateGetProgramivBase(ValidationContext *context,
         case GL_PROGRAM_SEPARABLE:
             if (context->getClientVersion() < Version(3, 1))
             {
-                context->handleError(InvalidEnum() << "Querying requires at least ES 3.1.");
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), ES31Required);
                 return false;
             }
             break;
@@ -5571,7 +5599,7 @@ bool ValidateGetActiveUniformBlockivBase(Context *context,
     {
         if (pname == GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES)
         {
-            const UniformBlock &uniformBlock =
+            const InterfaceBlock &uniformBlock =
                 programObject->getUniformBlockByIndex(uniformBlockIndex);
             *length = static_cast<GLsizei>(uniformBlock.memberIndexes.size());
         }
@@ -5741,7 +5769,7 @@ bool ValidateGetInternalFormativBase(Context *context,
 
     if (context->getClientMajorVersion() < 3)
     {
-        context->handleError(InvalidOperation() << "Context does not support OpenGL ES 3.0.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES3Required);
         return false;
     }
 

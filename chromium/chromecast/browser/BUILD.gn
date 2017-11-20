@@ -95,15 +95,13 @@ source_set("browser") {
     "//chromecast/common/media:interfaces",
     "//chromecast/graphics",
     "//chromecast/media",
+    "//chromecast/media:libcast_media",
     "//chromecast/media/service",
     "//chromecast/net",
     "//chromecast/service",
-    "//components/crash/content/app",
-    "//components/crash/content/browser",
     "//components/metrics",
     "//components/metrics:gpu",
     "//components/metrics:net",
-    "//components/metrics:profiler",
 
     # TODO(gfhuang): Eliminate this dependency if ScreenInfoMetricsProvider
     # isn't needed. crbug.com/541577
@@ -129,10 +127,33 @@ source_set("browser") {
     "//ui/gl",
   ]
 
+  if (is_android) {
+    sources += [
+      "android/cast_content_window_android.cc",
+      "android/cast_content_window_android.h",
+      "android/cast_metrics_helper_android.cc",
+      "android/cast_web_contents_activity.cc",
+      "android/cast_web_contents_activity.h",
+    ]
+    deps += [
+      ":jni_headers",
+      "//components/cdm/browser",
+    ]
+  } else {
+    sources += [
+      "cast_display_configurator.cc",
+      "cast_display_configurator.h",
+    ]
+
+    deps += [
+      "//chromecast/common:interfaces",
+      "//mojo/public/cpp/bindings",
+      "//ui/aura",
+    ]
+  }
+
   if (is_linux) {
     sources += [
-      "cast_content_window_linux.cc",
-      "cast_content_window_linux.h",
       "cast_memory_pressure_monitor.cc",
       "cast_memory_pressure_monitor.h",
       "memory_pressure_controller_impl.cc",
@@ -142,24 +163,23 @@ source_set("browser") {
     ]
 
     deps += [
-      "//chromecast/common:interfaces",
       "//components/metrics:serialization",
-      "//mojo/public/cpp/bindings",
       "//third_party/fontconfig",
-      "//ui/aura",
     ]
-  } else if (is_android) {
-    sources += [
-      "android/cast_content_window_android.cc",
-      "android/cast_content_window_android.h",
-      "android/cast_metrics_helper_android.cc",
-      "android/cast_web_contents_activity.cc",
-      "android/cast_web_contents_activity.h",
-    ]
+  }
 
+  if (use_aura) {
+    sources += [
+      "cast_content_window_aura.cc",
+      "cast_content_window_aura.h",
+    ]
+  }
+
+  if (!is_fuchsia) {
+    # TODO(crbug.com/753619): Enable crash reporting on Fuchsia.
     deps += [
-      ":jni_headers",
-      "//components/cdm/browser",
+      "//components/crash/content/app",
+      "//components/crash/content/browser",
     ]
   }
 

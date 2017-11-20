@@ -32,8 +32,6 @@ class WorkerFetchContext final : public BaseFetchContext {
   static WorkerFetchContext* Create(WorkerOrWorkletGlobalScope&);
   virtual ~WorkerFetchContext();
 
-  RefPtr<WebTaskRunner> GetTaskRunner() { return loading_task_runner_; }
-
   // BaseFetchContext implementation:
   KURL GetSiteForCookies() const override;
   bool AllowScriptFromSource(const KURL&) const override;
@@ -41,7 +39,8 @@ class WorkerFetchContext final : public BaseFetchContext {
   bool ShouldBlockRequestByInspector(const KURL&) const override;
   void DispatchDidBlockRequest(const ResourceRequest&,
                                const FetchInitiatorInfo&,
-                               ResourceRequestBlockedReason) const override;
+                               ResourceRequestBlockedReason,
+                               Resource::Type) const override;
   bool ShouldBypassMainWorldCSP() const override;
   bool IsSVGImageChromeClient() const override;
   void CountUsage(WebFeature) const override;
@@ -54,6 +53,7 @@ class WorkerFetchContext final : public BaseFetchContext {
       SecurityViolationReportingPolicy) const override;
   bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,
                                                  const KURL&) const override;
+  bool ShouldLoadNewResource(Resource::Type) const override { return true; }
   ReferrerPolicy GetReferrerPolicy() const override;
   String GetOutgoingReferrer() const override;
   const KURL& Url() const override;
@@ -64,8 +64,8 @@ class WorkerFetchContext final : public BaseFetchContext {
 
   // FetchContext implementation:
   SecurityOrigin* GetSecurityOrigin() const override;
-  std::unique_ptr<WebURLLoader> CreateURLLoader(
-      const ResourceRequest&) override;
+  std::unique_ptr<WebURLLoader> CreateURLLoader(const ResourceRequest&,
+                                                WebTaskRunner*) override;
   void PrepareRequest(ResourceRequest&, RedirectType) override;
   bool IsControlledByServiceWorker() const override;
   int ApplicationCacheHostID() const override;
@@ -74,6 +74,7 @@ class WorkerFetchContext final : public BaseFetchContext {
   void DispatchWillSendRequest(unsigned long,
                                ResourceRequest&,
                                const ResourceResponse&,
+                               Resource::Type,
                                const FetchInitiatorInfo&) override;
   void DispatchDidReceiveResponse(unsigned long identifier,
                                   const ResourceResponse&,
@@ -100,6 +101,7 @@ class WorkerFetchContext final : public BaseFetchContext {
                                const FetchParameters::ResourceWidth&,
                                ResourceRequest&) override;
   void SetFirstPartyCookieAndRequestorOrigin(ResourceRequest&) override;
+  RefPtr<WebTaskRunner> GetLoadingTaskRunner() override;
 
   DECLARE_VIRTUAL_TRACE();
 

@@ -9,6 +9,7 @@
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSPathValue.h"
 #include "core/css/resolver/StyleResolverState.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/wtf/PtrUtil.h"
 
 namespace blink {
@@ -63,7 +64,7 @@ class InheritedPathChecker : public CSSInterpolationType::CSSConversionChecker {
 
   bool IsValid(const StyleResolverState& state,
                const InterpolationValue& underlying) const final {
-    return state.ParentStyle()->SvgStyle().D() == style_path_.Get();
+    return state.ParentStyle()->SvgStyle().D() == style_path_.get();
   }
 
   const RefPtr<StylePath> style_path_;

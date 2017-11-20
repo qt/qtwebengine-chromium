@@ -170,10 +170,10 @@ void SerializeV8Value(v8::Local<v8::Value> value,
   //           wire_data[kSSVHeaderV8VersionOffset]);
 }
 
-PassRefPtr<IDBValue> CreateIDBValue(v8::Isolate* isolate,
-                                    Vector<char>& wire_bytes,
-                                    double primary_key,
-                                    const WebString& key_path) {
+RefPtr<IDBValue> CreateIDBValue(v8::Isolate* isolate,
+                                Vector<char>& wire_bytes,
+                                double primary_key,
+                                const WebString& key_path) {
   WebData web_data(SharedBuffer::AdoptVector(wire_bytes));
   Vector<WebBlobInfo> web_blob_info;
   WebIDBKey web_idb_key = WebIDBKey::CreateNumber(primary_key);
@@ -317,7 +317,7 @@ TEST(DeserializeIDBValueTest, CurrentVersions) {
       CreateIDBValue(isolate, object_bytes, 42.0, "foo");
 
   v8::Local<v8::Value> v8_value = DeserializeIDBValue(
-      isolate, scope.GetContext()->Global(), idb_value.Get());
+      isolate, scope.GetContext()->Global(), idb_value.get());
   EXPECT_TRUE(!scope.GetExceptionState().HadException());
 
   ASSERT_TRUE(v8_value->IsObject());
@@ -349,7 +349,7 @@ TEST(DeserializeIDBValueTest, FutureV8Version) {
       CreateIDBValue(isolate, object_bytes, 42.0, "foo");
 
   v8::Local<v8::Value> v8_value = DeserializeIDBValue(
-      isolate, scope.GetContext()->Global(), idb_value.Get());
+      isolate, scope.GetContext()->Global(), idb_value.get());
   EXPECT_TRUE(!scope.GetExceptionState().HadException());
   EXPECT_TRUE(v8_value->IsNull());
 }
@@ -367,7 +367,7 @@ TEST(DeserializeIDBValueTest, InjectionIntoNonObject) {
       CreateIDBValue(isolate, object_bytes, 42.0, "foo");
 
   v8::Local<v8::Value> v8_value = DeserializeIDBValue(
-      isolate, scope.GetContext()->Global(), idb_value.Get());
+      isolate, scope.GetContext()->Global(), idb_value.get());
   EXPECT_TRUE(!scope.GetExceptionState().HadException());
   ASSERT_TRUE(v8_value->IsNumber());
   v8::Local<v8::Number> v8_number = v8_value.As<v8::Number>();
@@ -387,7 +387,7 @@ TEST(DeserializeIDBValueTest, NestedInjectionIntoNonObject) {
       CreateIDBValue(isolate, object_bytes, 42.0, "foo.bar");
 
   v8::Local<v8::Value> v8_value = DeserializeIDBValue(
-      isolate, scope.GetContext()->Global(), idb_value.Get());
+      isolate, scope.GetContext()->Global(), idb_value.get());
   EXPECT_TRUE(!scope.GetExceptionState().HadException());
   ASSERT_TRUE(v8_value->IsNumber());
   v8::Local<v8::Number> v8_number = v8_value.As<v8::Number>();

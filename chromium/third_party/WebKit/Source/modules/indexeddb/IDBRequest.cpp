@@ -40,7 +40,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/events/EventQueue.h"
-#include "modules/IndexedDBNames.h"
+#include "modules/indexed_db_names.h"
 #include "modules/indexeddb/IDBCursorWithValue.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBEventDispatcher.h"
@@ -259,7 +259,6 @@ void IDBRequest::SetResultCursor(IDBCursor* cursor,
   cursor_key_ = key;
   cursor_primary_key_ = primary_key;
   cursor_value_ = std::move(value);
-  AckReceivedBlobs(cursor_value_.Get());
 
   EnqueueResultInternal(IDBAny::Create(cursor));
 }
@@ -274,7 +273,7 @@ void IDBRequest::AckReceivedBlobs(const IDBValue* value) {
 
 void IDBRequest::AckReceivedBlobs(const Vector<RefPtr<IDBValue>>& values) {
   for (size_t i = 0; i < values.size(); ++i)
-    AckReceivedBlobs(values[i].Get());
+    AckReceivedBlobs(values[i].get());
 }
 
 bool IDBRequest::ShouldEnqueueEvent() const {
@@ -347,7 +346,8 @@ void IDBRequest::HandleResponse(std::unique_ptr<WebIDBCursor> backend,
                                 RefPtr<IDBValue>&& value) {
   DCHECK(transit_blob_handles_.IsEmpty());
   DCHECK(transaction_);
-  bool is_wrapped = IDBValueUnwrapper::IsWrapped(value.Get());
+  AckReceivedBlobs(value.get());
+  bool is_wrapped = IDBValueUnwrapper::IsWrapped(value.get());
   if (!transaction_->HasQueuedResults() && !is_wrapped) {
     return EnqueueResponse(std::move(backend), key, primary_key,
                            std::move(value));
@@ -361,7 +361,8 @@ void IDBRequest::HandleResponse(std::unique_ptr<WebIDBCursor> backend,
 void IDBRequest::HandleResponse(RefPtr<IDBValue>&& value) {
   DCHECK(transit_blob_handles_.IsEmpty());
   DCHECK(transaction_);
-  bool is_wrapped = IDBValueUnwrapper::IsWrapped(value.Get());
+  AckReceivedBlobs(value.get());
+  bool is_wrapped = IDBValueUnwrapper::IsWrapped(value.get());
   if (!transaction_->HasQueuedResults() && !is_wrapped)
     return EnqueueResponse(std::move(value));
   transaction_->EnqueueResult(WTF::MakeUnique<IDBRequestQueueItem>(
@@ -373,6 +374,7 @@ void IDBRequest::HandleResponse(RefPtr<IDBValue>&& value) {
 void IDBRequest::HandleResponse(const Vector<RefPtr<IDBValue>>& values) {
   DCHECK(transit_blob_handles_.IsEmpty());
   DCHECK(transaction_);
+  AckReceivedBlobs(values);
   bool is_wrapped = IDBValueUnwrapper::IsWrapped(values);
   if (!transaction_->HasQueuedResults() && !is_wrapped)
     return EnqueueResponse(values);
@@ -387,7 +389,8 @@ void IDBRequest::HandleResponse(IDBKey* key,
                                 RefPtr<IDBValue>&& value) {
   DCHECK(transit_blob_handles_.IsEmpty());
   DCHECK(transaction_);
-  bool is_wrapped = IDBValueUnwrapper::IsWrapped(value.Get());
+  AckReceivedBlobs(value.get());
+  bool is_wrapped = IDBValueUnwrapper::IsWrapped(value.get());
   if (!transaction_->HasQueuedResults() && !is_wrapped)
     return EnqueueResponse(key, primary_key, std::move(value));
 
@@ -486,7 +489,6 @@ void IDBRequest::EnqueueResponse(const Vector<RefPtr<IDBValue>>& values) {
     return;
   }
 
-  AckReceivedBlobs(values);
   EnqueueResultInternal(IDBAny::Create(values));
   metrics_.RecordAndReset();
 }
@@ -510,8 +512,6 @@ void IDBRequest::EnqueueResponse(RefPtr<IDBValue>&& value) {
     metrics_.RecordAndReset();
     return;
   }
-
-  AckReceivedBlobs(value.Get());
 
   if (pending_cursor_) {
     // Value should be null, signifying the end of the cursor's range.
@@ -757,7 +757,7 @@ void IDBRequest::EnqueueEvent(Event* event) {
 void IDBRequest::DequeueEvent(Event* event) {
   for (size_t i = 0; i < enqueued_events_.size(); ++i) {
     if (enqueued_events_[i].Get() == event)
-      enqueued_events_.erase(i);
+      enqueued_events_.EraseAt(i);
   }
 }
 

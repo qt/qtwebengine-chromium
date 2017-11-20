@@ -25,8 +25,10 @@
 
 #include "platform/graphics/Canvas2DLayerBridge.h"
 
-#include "components/viz/common/quads/single_release_callback.h"
+#include "base/run_loop.h"
+#include "build/build_config.h"
 #include "components/viz/common/quads/texture_mailbox.h"
+#include "components/viz/common/resources/single_release_callback.h"
 #include "components/viz/test/test_gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/capabilities.h"
@@ -42,8 +44,8 @@
 #include "platform/graphics/test/FakeGLES2Interface.h"
 #include "platform/graphics/test/FakeWebGraphicsContext3DProvider.h"
 #include "platform/scheduler/child/web_scheduler.h"
+#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/TestingPlatformSupport.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/RefPtr.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
@@ -132,9 +134,9 @@ class Canvas2DLayerBridgeTest : public Test {
   std::unique_ptr<Canvas2DLayerBridge> MakeBridge(
       const IntSize& size,
       Canvas2DLayerBridge::AccelerationMode acceleration_mode) {
-    std::unique_ptr<Canvas2DLayerBridge> bridge = WTF::WrapUnique(
-        new Canvas2DLayerBridge(size, 0, kNonOpaque, acceleration_mode,
-                                CanvasColorParams(), IsUnitTest()));
+    std::unique_ptr<Canvas2DLayerBridge> bridge =
+        WTF::WrapUnique(new Canvas2DLayerBridge(
+            size, 0, acceleration_mode, CanvasColorParams(), IsUnitTest()));
     bridge->DontUseIdleSchedulingForTesting();
     return bridge;
   }
@@ -153,10 +155,9 @@ class Canvas2DLayerBridgeTest : public Test {
   FakeGLES2InterfaceWithImageSupport gl_;
 
   void FullLifecycleTest() {
-    Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-        new Canvas2DLayerBridge(IntSize(300, 150), 0, kNonOpaque,
-                                Canvas2DLayerBridge::kDisableAcceleration,
-                                CanvasColorParams(), IsUnitTest())));
+    Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+        IntSize(300, 150), 0, Canvas2DLayerBridge::kDisableAcceleration,
+        CanvasColorParams(), IsUnitTest())));
 
     const GrGLTextureInfo* texture_info =
         skia::GrBackendObjectToGrGLTextureInfo(
@@ -172,10 +173,9 @@ class Canvas2DLayerBridgeTest : public Test {
 
   void FallbackToSoftwareIfContextLost() {
     gl_.SetIsContextLost(true);
-    Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-        new Canvas2DLayerBridge(IntSize(300, 150), 0, kNonOpaque,
-                                Canvas2DLayerBridge::kEnableAcceleration,
-                                CanvasColorParams(), IsUnitTest())));
+    Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+        IntSize(300, 150), 0, Canvas2DLayerBridge::kEnableAcceleration,
+        CanvasColorParams(), IsUnitTest())));
     EXPECT_TRUE(bridge->IsValid());
     EXPECT_FALSE(bridge->IsAccelerated());
   }
@@ -183,10 +183,9 @@ class Canvas2DLayerBridgeTest : public Test {
   void FallbackToSoftwareOnFailedTextureAlloc() {
     {
       // No fallback case.
-      Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-          new Canvas2DLayerBridge(IntSize(300, 150), 0, kNonOpaque,
-                                  Canvas2DLayerBridge::kEnableAcceleration,
-                                  CanvasColorParams(), IsUnitTest())));
+      Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+          IntSize(300, 150), 0, Canvas2DLayerBridge::kEnableAcceleration,
+          CanvasColorParams(), IsUnitTest())));
       EXPECT_TRUE(bridge->IsValid());
       EXPECT_TRUE(bridge->IsAccelerated());
       RefPtr<StaticBitmapImage> snapshot = bridge->NewImageSnapshot(
@@ -200,10 +199,9 @@ class Canvas2DLayerBridgeTest : public Test {
       GrContext* gr = SharedGpuContext::ContextProviderWrapper()
                           ->ContextProvider()
                           ->GetGrContext();
-      Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-          new Canvas2DLayerBridge(IntSize(300, 150), 0, kNonOpaque,
-                                  Canvas2DLayerBridge::kEnableAcceleration,
-                                  CanvasColorParams(), IsUnitTest())));
+      Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+          IntSize(300, 150), 0, Canvas2DLayerBridge::kEnableAcceleration,
+          CanvasColorParams(), IsUnitTest())));
       EXPECT_TRUE(bridge->IsValid());
       EXPECT_TRUE(bridge->IsAccelerated());  // We don't yet know that
                                              // allocation will fail.
@@ -219,9 +217,8 @@ class Canvas2DLayerBridgeTest : public Test {
 
   void NoDrawOnContextLostTest() {
     Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
-        IntSize(300, 150), 0, kNonOpaque,
-        Canvas2DLayerBridge::kForceAccelerationForTesting, CanvasColorParams(),
-        IsUnitTest())));
+        IntSize(300, 150), 0, Canvas2DLayerBridge::kForceAccelerationForTesting,
+        CanvasColorParams(), IsUnitTest())));
     EXPECT_TRUE(bridge->IsValid());
     PaintFlags flags;
     uint32_t gen_id = bridge->GetOrCreateSurface()->generationID();
@@ -242,9 +239,8 @@ class Canvas2DLayerBridgeTest : public Test {
 
   void PrepareMailboxWhenContextIsLost() {
     Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
-        IntSize(300, 150), 0, kNonOpaque,
-        Canvas2DLayerBridge::kForceAccelerationForTesting, CanvasColorParams(),
-        IsUnitTest())));
+        IntSize(300, 150), 0, Canvas2DLayerBridge::kForceAccelerationForTesting,
+        CanvasColorParams(), IsUnitTest())));
 
     EXPECT_TRUE(bridge->IsAccelerated());
 
@@ -260,9 +256,8 @@ class Canvas2DLayerBridgeTest : public Test {
 
   void PrepareMailboxWhenContextIsLostWithFailedRestore() {
     Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
-        IntSize(300, 150), 0, kNonOpaque,
-        Canvas2DLayerBridge::kForceAccelerationForTesting, CanvasColorParams(),
-        IsUnitTest())));
+        IntSize(300, 150), 0, Canvas2DLayerBridge::kForceAccelerationForTesting,
+        CanvasColorParams(), IsUnitTest())));
 
     bridge->GetOrCreateSurface();
     EXPECT_TRUE(bridge->IsValid());
@@ -289,7 +284,7 @@ class Canvas2DLayerBridgeTest : public Test {
 
     {
       Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
-          IntSize(300, 150), 0, kNonOpaque,
+          IntSize(300, 150), 0,
           Canvas2DLayerBridge::kForceAccelerationForTesting,
           CanvasColorParams())));
       EXPECT_TRUE(
@@ -310,7 +305,7 @@ class Canvas2DLayerBridgeTest : public Test {
     // This test passes by not crashing and not triggering assertions.
     {
       Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
-          IntSize(300, 150), 0, kNonOpaque,
+          IntSize(300, 150), 0,
           Canvas2DLayerBridge::kForceAccelerationForTesting,
           CanvasColorParams(), IsUnitTest())));
 
@@ -330,7 +325,7 @@ class Canvas2DLayerBridgeTest : public Test {
 
       {
         Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
-            IntSize(300, 150), 0, kNonOpaque,
+            IntSize(300, 150), 0,
             Canvas2DLayerBridge::kForceAccelerationForTesting,
             CanvasColorParams(), IsUnitTest())));
         bridge->PrepareTextureMailbox(&texture_mailbox, &release_callback);
@@ -349,10 +344,9 @@ class Canvas2DLayerBridgeTest : public Test {
 
   void AccelerationHintTest() {
     {
-      Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-          new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                                  Canvas2DLayerBridge::kEnableAcceleration,
-                                  CanvasColorParams(), IsUnitTest())));
+      Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+          IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+          CanvasColorParams(), IsUnitTest())));
       PaintFlags flags;
       bridge->Canvas()->drawRect(SkRect::MakeXYWH(0, 0, 1, 1), flags);
       RefPtr<StaticBitmapImage> image = bridge->NewImageSnapshot(
@@ -362,10 +356,9 @@ class Canvas2DLayerBridgeTest : public Test {
     }
 
     {
-      Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-          new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                                  Canvas2DLayerBridge::kEnableAcceleration,
-                                  CanvasColorParams(), IsUnitTest())));
+      Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+          IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+          CanvasColorParams(), IsUnitTest())));
       PaintFlags flags;
       bridge->Canvas()->drawRect(SkRect::MakeXYWH(0, 0, 1, 1), flags);
       RefPtr<StaticBitmapImage> image = bridge->NewImageSnapshot(
@@ -445,10 +438,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_HibernationLifeCycle)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -491,10 +483,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_HibernationReEntry)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -542,10 +533,9 @@ TEST_F(Canvas2DLayerBridgeTest,
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
   bridge->DisableDeferral(kDisableDeferralReasonUnknown);
@@ -592,10 +582,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_BackgroundRenderingWhileHibernating)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -646,10 +635,9 @@ TEST_F(
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
   MockImageBuffer mock_image_buffer;
@@ -707,10 +695,9 @@ TEST_F(Canvas2DLayerBridgeTest,
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -771,10 +758,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_TeardownWhileHibernating)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -810,10 +796,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_SnapshotWhileHibernating)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -838,7 +823,7 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_SnapshotWhileHibernating)
   RefPtr<StaticBitmapImage> image =
       bridge->NewImageSnapshot(kPreferAcceleration, kSnapshotReasonUnitTests);
   EXPECT_FALSE(image->IsTextureBacked());
-  image.Clear();
+  image = nullptr;
 
   // Verify that taking a snapshot did not affect the state of bridge
   EXPECT_FALSE(bridge->IsAccelerated());
@@ -860,10 +845,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_TeardownWhileHibernationIsPending)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -894,10 +878,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_HibernationAbortedDueToPendingTeardown)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -930,10 +913,9 @@ TEST_F(Canvas2DLayerBridgeTest,
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -967,10 +949,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_HibernationAbortedDueToLostContext)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -1003,10 +984,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_PrepareMailboxWhileHibernating)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   bridge->DontUseIdleSchedulingForTesting();
   DrawSomething(bridge);
 
@@ -1047,10 +1027,9 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_PrepareMailboxWhileBackgroundRendering)
 #endif
 {
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 300), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kEnableAcceleration,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 300), 0, Canvas2DLayerBridge::kEnableAcceleration,
+      CanvasColorParams(), IsUnitTest())));
   DrawSomething(bridge);
 
   // Register an alternate Logger for tracking hibernation events
@@ -1060,7 +1039,7 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_PrepareMailboxWhileBackgroundRendering)
 
   // Test entering hibernation
   std::unique_ptr<WaitableEvent> hibernation_started_event =
-      WTF::MakeUnique<WaitableEvent>();
+      std::make_unique<WaitableEvent>();
   EXPECT_CALL(
       *mock_logger_ptr,
       ReportHibernationEvent(Canvas2DLayerBridge::kHibernationScheduled));
@@ -1088,12 +1067,10 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_PrepareMailboxWhileBackgroundRendering)
   EXPECT_TRUE(bridge->IsValid());
 }
 
-#if USE_IOSURFACE_FOR_2D_CANVAS
-TEST_F(Canvas2DLayerBridgeTest, DeleteIOSurfaceAfterTeardown)
-#else
-TEST_F(Canvas2DLayerBridgeTest, DISABLED_DeleteIOSurfaceAfterTeardown)
+TEST_F(Canvas2DLayerBridgeTest, DeleteGpuMemoryBufferAfterTeardown) {
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  ScopedCanvas2dImageChromiumForTest canvas_2d_image_chromium(true);
 #endif
-{
   ScopedTestingPlatformSupport<FakePlatformSupport> platform;
 
   viz::TextureMailbox texture_mailbox;
@@ -1101,25 +1078,27 @@ TEST_F(Canvas2DLayerBridgeTest, DISABLED_DeleteIOSurfaceAfterTeardown)
 
   {
     Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
-        IntSize(300, 150), 0, kNonOpaque,
-        Canvas2DLayerBridge::kForceAccelerationForTesting, CanvasColorParams(),
-        IsUnitTest())));
+        IntSize(300, 150), 0, Canvas2DLayerBridge::kForceAccelerationForTesting,
+        CanvasColorParams(), IsUnitTest())));
     bridge->PrepareTextureMailbox(&texture_mailbox, &release_callback);
   }
 
   bool lost_resource = false;
   release_callback->Run(gpu::SyncToken(), lost_resource);
-
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
   EXPECT_EQ(1u, gl_.CreateImageCount());
   EXPECT_EQ(1u, gl_.DestroyImageCount());
+#else
+  EXPECT_EQ(0u, gl_.CreateImageCount());
+  EXPECT_EQ(0u, gl_.DestroyImageCount());
+#endif
 }
 
 TEST_F(Canvas2DLayerBridgeTest, NoUnnecessaryFlushes) {
   EXPECT_CALL(gl_, Flush()).Times(0);
-  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(
-      new Canvas2DLayerBridge(IntSize(300, 150), 0, kNonOpaque,
-                              Canvas2DLayerBridge::kForceAccelerationForTesting,
-                              CanvasColorParams(), IsUnitTest())));
+  Canvas2DLayerBridgePtr bridge(WTF::WrapUnique(new Canvas2DLayerBridge(
+      IntSize(300, 150), 0, Canvas2DLayerBridge::kForceAccelerationForTesting,
+      CanvasColorParams(), IsUnitTest())));
   EXPECT_FALSE(bridge->HasRecordedDrawCommands());
   ::testing::Mock::VerifyAndClearExpectations(&gl_);
 

@@ -32,6 +32,7 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/host_port_pair.h"
@@ -48,6 +49,13 @@
 #include "url/gurl.h"
 
 namespace net {
+
+// OCSPScopedAllowBaseSyncPrimitives is a friend and derived class of
+// base::ScopedAllowBaseSyncPrimitives which can be instantiated by
+// OCSPRequestSession. OCSPRequestSession can't itself be a friend of
+// base::ScopedAllowBaseSyncPrimitives because it is in the anonymous namespace.
+class OCSPScopedAllowBaseSyncPrimitives
+    : public base::ScopedAllowBaseSyncPrimitives {};
 
 namespace {
 
@@ -83,7 +91,7 @@ class OCSPIOLoop {
   }
 
   // Called from worker thread.
-  void PostTaskToIOLoop(const tracked_objects::Location& from_here,
+  void PostTaskToIOLoop(const base::Location& from_here,
                         const base::Closure& task);
 
   void AddRequest(OCSPRequestSession* request);
@@ -240,6 +248,9 @@ class OCSPRequestSession
   }
 
   bool Wait() {
+    // This method waits on a ConditionVariable from a base::MayBlock task.
+    OCSPScopedAllowBaseSyncPrimitives scoped_allow_base_sync_primitives;
+
     base::TimeDelta timeout = timeout_;
     base::AutoLock autolock(lock_);
     while (!finished_) {
@@ -540,8 +551,8 @@ void OCSPIOLoop::Shutdown() {
   pthread_mutex_unlock(&g_request_context_lock);
 }
 
-void OCSPIOLoop::PostTaskToIOLoop(
-    const tracked_objects::Location& from_here, const base::Closure& task) {
+void OCSPIOLoop::PostTaskToIOLoop(const base::Location& from_here,
+                                  const base::Closure& task) {
   base::AutoLock autolock(lock_);
   if (io_loop_)
     io_loop_->task_runner()->PostTask(from_here, task);

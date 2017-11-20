@@ -32,14 +32,11 @@ class CPDF_Pattern;
 class CPDF_StreamAcc;
 class JBig2_DocumentContext;
 
-#define FPDFPERM_PRINT 0x0004
 #define FPDFPERM_MODIFY 0x0008
-#define FPDFPERM_EXTRACT 0x0010
 #define FPDFPERM_ANNOT_FORM 0x0020
 #define FPDFPERM_FILL_FORM 0x0100
 #define FPDFPERM_EXTRACT_ACCESS 0x0200
-#define FPDFPERM_ASSEMBLE 0x0400
-#define FPDFPERM_PRINT_HIGH 0x0800
+
 #define FPDF_PAGE_MAX_NUM 0xFFFFF
 
 class CPDF_Document : public CPDF_IndirectObjectHolder {
@@ -81,9 +78,9 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
                             bool bShading,
                             const CFX_Matrix& matrix);
 
-  CFX_RetainPtr<CPDF_Image> LoadImageFromPageData(uint32_t dwStreamObjNum);
-  CFX_RetainPtr<CPDF_StreamAcc> LoadFontFile(CPDF_Stream* pStream);
-  CFX_RetainPtr<CPDF_IccProfile> LoadIccProfile(CPDF_Stream* pStream);
+  RetainPtr<CPDF_Image> LoadImageFromPageData(uint32_t dwStreamObjNum);
+  RetainPtr<CPDF_StreamAcc> LoadFontFile(CPDF_Stream* pStream);
+  RetainPtr<CPDF_IccProfile> LoadIccProfile(CPDF_Stream* pStream);
 
   void LoadDoc();
   void LoadLinearizedDoc(const CPDF_LinearizedHeader* pLinearizationParams);
@@ -95,7 +92,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
 
   CPDF_Font* AddStandardFont(const char* font, CPDF_FontEncoding* pEncoding);
   CPDF_Font* AddFont(CFX_Font* pFont, int charset, bool bVert);
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
   CPDF_Font* AddWindowsFont(LOGFONTA* pLogFont,
                             bool bVert,
                             bool bTranslateName = false);
@@ -122,7 +119,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
       CPDF_Dictionary* pBaseDict,
       int charset,
       bool bVert,
-      CFX_ByteString basefont,
+      ByteString basefont,
       std::function<void(wchar_t, wchar_t, CPDF_Array*)> Insert);
   bool InsertDeletePDFPage(CPDF_Dictionary* pPages,
                            int nPagesToGo,
@@ -137,7 +134,7 @@ class CPDF_Document : public CPDF_IndirectObjectHolder {
   // TODO(tsepez): figure out why tests break if this is an UnownedPtr.
   CPDF_Dictionary* m_pRootDict;  // Not owned.
 
-  CFX_UnownedPtr<CPDF_Dictionary> m_pInfoDict;
+  UnownedPtr<CPDF_Dictionary> m_pInfoDict;
 
   // Vector of pairs to know current position in the page tree. The index in the
   // vector corresponds to the level being described. The pair contains a

@@ -35,6 +35,7 @@ class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
   void InspectElement(DevToolsAgentHostClient* client, int x, int y) override;
   std::string GetId() override;
   std::string GetParentId() override;
+  std::string GetOpenerId() override;
   std::string GetDescription() override;
   GURL GetFaviconURL() override;
   std::string GetFrontendURL() override;
@@ -57,10 +58,14 @@ class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
   virtual bool DispatchProtocolMessage(
       DevToolsSession* session,
       const std::string& message) = 0;
+  bool SendProtocolMessageToClient(int session_id,
+                                   const std::string& message) override;
   virtual void InspectElement(DevToolsSession* session, int x, int y);
 
   void NotifyCreated();
+  void NotifyNavigated();
   void ForceDetachAllClients(bool replaced);
+  void ForceDetachSession(DevToolsSession* session);
   DevToolsIOContext* GetIOContext() { return &io_context_; }
 
   base::flat_set<DevToolsSession*>& sessions() { return sessions_; }
@@ -77,13 +82,13 @@ class CONTENT_EXPORT DevToolsAgentHostImpl : public DevToolsAgentHost {
   DevToolsSession* SessionByClient(DevToolsAgentHostClient* client);
 
   const std::string id_;
-  int last_session_id_;
   base::flat_set<DevToolsSession*> sessions_;
   base::flat_map<int, DevToolsSession*> session_by_id_;
   base::flat_map<DevToolsAgentHostClient*, std::unique_ptr<DevToolsSession>>
       session_by_client_;
   DevToolsIOContext io_context_;
   static int s_force_creation_count_;
+  static int s_last_session_id_;
 };
 
 class DevToolsMessageChunkProcessor {

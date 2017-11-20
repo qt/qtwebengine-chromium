@@ -588,7 +588,7 @@ bool GpuCommandBufferStub::Initialize(
     scoped_refptr<gles2::FeatureInfo> feature_info =
         new gles2::FeatureInfo(manager->gpu_driver_bug_workarounds());
     gpu::GpuMemoryBufferFactory* gmb_factory =
-        channel_->gpu_channel_manager()->gpu_memory_buffer_factory();
+        manager->gpu_memory_buffer_factory();
     context_group_ = new gles2::ContextGroup(
         manager->gpu_preferences(), gles2::PassthroughCommandDecoderSupported(),
         manager->mailbox_manager(),
@@ -656,8 +656,8 @@ bool GpuCommandBufferStub::Initialize(
 
   command_buffer_.reset(new CommandBufferService(
       this, context_group_->transfer_buffer_manager()));
-  decoder_.reset(gles2::GLES2Decoder::Create(this, command_buffer_.get(),
-                                             context_group_.get()));
+  decoder_.reset(gles2::GLES2Decoder::Create(
+      this, command_buffer_.get(), manager->outputter(), context_group_.get()));
 
   sync_point_client_state_ =
       channel_->sync_point_manager()->CreateSyncPointClientState(
@@ -919,6 +919,10 @@ void GpuCommandBufferStub::OnWaitForTokenInRange(int32_t start,
   CheckContextLost();
   if (wait_for_token_)
     LOG(ERROR) << "Got WaitForToken command while currently waiting for token.";
+  if (channel_->scheduler()) {
+    channel_->scheduler()->RaisePriorityForClientWait(sequence_id_,
+                                                      command_buffer_id_);
+  }
   wait_for_token_ =
       base::MakeUnique<WaitForCommandState>(start, end, reply_message);
   CheckCompleteWaits();
@@ -936,6 +940,10 @@ void GpuCommandBufferStub::OnWaitForGetOffsetInRange(
     LOG(ERROR)
         << "Got WaitForGetOffset command while currently waiting for offset.";
   }
+  if (channel_->scheduler()) {
+    channel_->scheduler()->RaisePriorityForClientWait(sequence_id_,
+                                                      command_buffer_id_);
+  }
   wait_for_get_offset_ =
       base::MakeUnique<WaitForCommandState>(start, end, reply_message);
   wait_set_get_buffer_count_ = set_get_buffer_count;
@@ -943,7 +951,8 @@ void GpuCommandBufferStub::OnWaitForGetOffsetInRange(
 }
 
 void GpuCommandBufferStub::CheckCompleteWaits() {
-  if (wait_for_token_ || wait_for_get_offset_) {
+  bool has_wait = wait_for_token_ || wait_for_get_offset_;
+  if (has_wait) {
     CommandBuffer::State state = command_buffer_->GetState();
     if (wait_for_token_ &&
         (CommandBuffer::InRange(wait_for_token_->start, wait_for_token_->end,
@@ -967,6 +976,11 @@ void GpuCommandBufferStub::CheckCompleteWaits() {
       Send(wait_for_get_offset_->reply.release());
       wait_for_get_offset_.reset();
     }
+  }
+  if (channel_->scheduler() && has_wait &&
+      !(wait_for_token_ || wait_for_get_offset_)) {
+    channel_->scheduler()->ResetPriorityForClientWait(sequence_id_,
+                                                      command_buffer_id_);
   }
 }
 
@@ -1048,7 +1062,9 @@ void GpuCommandBufferStub::OnSignalSyncToken(const SyncToken& sync_token,
 }
 
 void GpuCommandBufferStub::OnSignalAck(uint32_t id) {
-  Send(new GpuCommandBufferMsg_SignalAck(route_id_, id));
+  CommandBuffer::State state = command_buffer_->GetState();
+  ReportState();
+  Send(new GpuCommandBufferMsg_SignalAck(route_id_, id, state));
 }
 
 void GpuCommandBufferStub::OnSignalQuery(uint32_t query_id, uint32_t id) {

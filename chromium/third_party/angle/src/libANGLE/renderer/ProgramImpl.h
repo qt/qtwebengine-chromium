@@ -86,11 +86,14 @@ class ProgramImpl : angle::NonCopyable
 
     // May only be called after a successful link operation.
     // Return false for inactive blocks.
-    virtual bool getUniformBlockSize(const std::string &blockName, size_t *sizeOut) const = 0;
+    virtual bool getUniformBlockSize(const std::string &blockName,
+                                     const std::string &blockMappedName,
+                                     size_t *sizeOut) const = 0;
 
     // May only be called after a successful link operation.
     // Returns false for inactive members.
     virtual bool getUniformBlockMemberInfo(const std::string &memberUniformName,
+                                           const std::string &memberUniformMappedName,
                                            sh::BlockMemberInfo *memberInfoOut) const = 0;
     // CHROMIUM_path_rendering
     // Set parameters to control fragment shader input variable interpolation
@@ -102,7 +105,10 @@ class ProgramImpl : angle::NonCopyable
     // Implementation-specific method for ignoring unreferenced uniforms. Some implementations may
     // perform more extensive analysis and ignore some locations that ANGLE doesn't detect as
     // unreferenced. This method is not required to be overriden by a back-end.
-    virtual void markUnusedUniformLocations(std::vector<gl::VariableLocation> *uniformLocations) {}
+    virtual void markUnusedUniformLocations(std::vector<gl::VariableLocation> *uniformLocations,
+                                            std::vector<gl::SamplerBinding> *samplerBindings)
+    {
+    }
 
   protected:
     const gl::ProgramState &mState;

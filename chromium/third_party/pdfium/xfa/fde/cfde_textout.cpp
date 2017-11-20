@@ -11,6 +11,7 @@
 
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
@@ -33,7 +34,7 @@ bool IsTextAlignmentTop(const FDE_TextAlignment align) {
 // static
 bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
                               FX_ARGB color,
-                              const CFX_RetainPtr<CFGAS_GEFont>& pFont,
+                              const RetainPtr<CFGAS_GEFont>& pFont,
                               FXTEXT_CHARPOS* pCharPos,
                               int32_t iCount,
                               float fFontSize,
@@ -41,8 +42,7 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
   ASSERT(pFont && pCharPos && iCount > 0);
 
   CFX_Font* pFxFont = pFont->GetDevFont();
-  if ((pFont->GetFontStyles() & FX_FONTSTYLE_Italic) != 0 &&
-      !pFxFont->IsItalic()) {
+  if (FontStyleIsItalic(pFont->GetFontStyles()) && !pFxFont->IsItalic()) {
     for (int32_t i = 0; i < iCount; ++i) {
       static const float mc = 0.267949f;
       float* pAM = pCharPos->m_AdjustMatrix;
@@ -52,22 +52,22 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
     }
   }
 
-#if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
+#if _FX_PLATFORM_ != _FX_PLATFORM_WINDOWS_
   uint32_t dwFontStyle = pFont->GetFontStyles();
   CFX_Font FxFont;
   auto SubstFxFont = pdfium::MakeUnique<CFX_SubstFont>();
-  SubstFxFont->m_Weight = dwFontStyle & FX_FONTSTYLE_Bold ? 700 : 400;
-  SubstFxFont->m_ItalicAngle = dwFontStyle & FX_FONTSTYLE_Italic ? -12 : 0;
+  SubstFxFont->m_Weight = FontStyleIsBold(dwFontStyle) ? 700 : 400;
+  SubstFxFont->m_ItalicAngle = FontStyleIsItalic(dwFontStyle) ? -12 : 0;
   SubstFxFont->m_WeightCJK = SubstFxFont->m_Weight;
-  SubstFxFont->m_bItalicCJK = !!(dwFontStyle & FX_FONTSTYLE_Italic);
+  SubstFxFont->m_bItalicCJK = FontStyleIsItalic(dwFontStyle);
   FxFont.SetSubstFont(std::move(SubstFxFont));
-#endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
+#endif  // _FX_PLATFORM_ != _FX_PLATFORM_WINDOWS_
 
-  CFX_RetainPtr<CFGAS_GEFont> pCurFont;
+  RetainPtr<CFGAS_GEFont> pCurFont;
   FXTEXT_CHARPOS* pCurCP = nullptr;
   int32_t iCurCount = 0;
   for (int32_t i = 0; i < iCount; ++i) {
-    CFX_RetainPtr<CFGAS_GEFont> pSTFont =
+    RetainPtr<CFGAS_GEFont> pSTFont =
         pFont->GetSubstFont(static_cast<int32_t>(pCharPos->m_GlyphIndex));
     pCharPos->m_GlyphIndex &= 0x00FFFFFF;
     pCharPos->m_bFontStyle = false;
@@ -76,12 +76,12 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
         pFxFont = pCurFont->GetDevFont();
 
         CFX_Font* font;
-#if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
+#if _FX_PLATFORM_ != _FX_PLATFORM_WINDOWS_
         FxFont.SetFace(pFxFont->GetFace());
         font = &FxFont;
 #else
         font = pFxFont;
-#endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
+#endif  // _FX_PLATFORM_ != _FX_PLATFORM_WINDOWS_
 
         device->DrawNormalText(iCurCount, pCurCP, font, -fFontSize, pMatrix,
                                color, FXTEXT_CLEARTYPE);
@@ -99,20 +99,20 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
   if (pCurFont && iCurCount) {
     pFxFont = pCurFont->GetDevFont();
     CFX_Font* font;
-#if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
+#if _FX_PLATFORM_ != _FX_PLATFORM_WINDOWS_
     FxFont.SetFace(pFxFont->GetFace());
     font = &FxFont;
 #else
     font = pFxFont;
-#endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
+#endif  // _FX_PLATFORM_ != _FX_PLATFORM_WINDOWS_
 
     bRet = device->DrawNormalText(iCurCount, pCurCP, font, -fFontSize, pMatrix,
                                   color, FXTEXT_CLEARTYPE);
   }
 
-#if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
+#if _FX_PLATFORM_ != _FX_PLATFORM_WINDOWS_
   FxFont.SetFace(nullptr);
-#endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
+#endif  // _FX_PLATFORM_ != _FX_PLATFORM_WINDOWS_
 
   return bRet;
 }
@@ -140,7 +140,7 @@ CFDE_TextOut::CFDE_TextOut()
 
 CFDE_TextOut::~CFDE_TextOut() {}
 
-void CFDE_TextOut::SetFont(const CFX_RetainPtr<CFGAS_GEFont>& pFont) {
+void CFDE_TextOut::SetFont(const RetainPtr<CFGAS_GEFont>& pFont) {
   ASSERT(pFont);
   m_pFont = pFont;
   m_pTxtBreak->SetFont(pFont);
@@ -191,13 +191,13 @@ void CFDE_TextOut::SetLineBreakTolerance(float fTolerance) {
   m_pTxtBreak->SetLineBreakTolerance(m_fTolerance);
 }
 
-void CFDE_TextOut::CalcLogicSize(const CFX_WideString& str, CFX_SizeF& size) {
+void CFDE_TextOut::CalcLogicSize(const WideString& str, CFX_SizeF& size) {
   CFX_RectF rtText(0.0f, 0.0f, size.width, size.height);
   CalcLogicSize(str, rtText);
   size = rtText.Size();
 }
 
-void CFDE_TextOut::CalcLogicSize(const CFX_WideString& str, CFX_RectF& rect) {
+void CFDE_TextOut::CalcLogicSize(const WideString& str, CFX_RectF& rect) {
   if (str.IsEmpty()) {
     rect.width = 0.0f;
     rect.height = 0.0f;
@@ -278,7 +278,7 @@ bool CFDE_TextOut::RetrieveLineWidth(CFX_BreakType dwBreakStatus,
 }
 
 void CFDE_TextOut::DrawLogicText(CFX_RenderDevice* device,
-                                 const CFX_WideStringC& str,
+                                 const WideStringView& str,
                                  const CFX_RectF& rect) {
   ASSERT(m_pFont && m_fFontSize >= 1.0f);
 
@@ -292,7 +292,7 @@ void CFDE_TextOut::DrawLogicText(CFX_RenderDevice* device,
   m_ttoLines.clear();
   m_wsText.clear();
 
-  LoadText(CFX_WideString(str), rect);
+  LoadText(WideString(str), rect);
   Reload(rect);
   DoAlignment(rect);
 
@@ -321,12 +321,12 @@ void CFDE_TextOut::DrawLogicText(CFX_RenderDevice* device,
   device->RestoreState(false);
 }
 
-void CFDE_TextOut::LoadText(const CFX_WideString& str, const CFX_RectF& rect) {
+void CFDE_TextOut::LoadText(const WideString& str, const CFX_RectF& rect) {
   ASSERT(!str.IsEmpty());
 
   m_wsText = str;
 
-  if (pdfium::CollectionSize<FX_STRSIZE>(m_CharWidths) < str.GetLength())
+  if (pdfium::CollectionSize<size_t>(m_CharWidths) < str.GetLength())
     m_CharWidths.resize(str.GetLength(), 0);
 
   float fLineStep = (m_fLineSpace > m_fFontSize) ? m_fLineSpace : m_fFontSize;

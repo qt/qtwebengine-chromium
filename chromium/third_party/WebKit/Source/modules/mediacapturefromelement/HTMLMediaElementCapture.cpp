@@ -59,7 +59,7 @@ void MediaElementEventListener::handleEvent(ExecutionContext* context,
   DCHECK(media_stream_);
 
   if (event->type() == EventTypeNames::ended) {
-    MediaStreamTrackVector tracks = media_stream_->getTracks();
+    const MediaStreamTrackVector tracks = media_stream_->getTracks();
     for (const auto& track : tracks) {
       track->stopTrack(ASSERT_NO_EXCEPTION);
       media_stream_->RemoveTrackByComponent(track->Component());
@@ -70,6 +70,27 @@ void MediaElementEventListener::handleEvent(ExecutionContext* context,
   }
   if (event->type() != EventTypeNames::loadedmetadata)
     return;
+
+  // If |media_element_| is a MediaStream, clone the new tracks.
+  if (media_element_->GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream) {
+    const MediaStreamTrackVector tracks = media_stream_->getTracks();
+    for (const auto& track : tracks) {
+      track->stopTrack(ASSERT_NO_EXCEPTION);
+      media_stream_->RemoveTrackByComponent(track->Component());
+    }
+    MediaStreamDescriptor* const descriptor =
+        media_element_->currentSrc().IsEmpty()
+            ? media_element_->GetSrcObject()
+            : MediaStreamRegistry::Registry().LookupMediaStreamDescriptor(
+                  media_element_->currentSrc().GetString());
+    DCHECK(descriptor);
+    for (size_t i = 0; i < descriptor->NumberOfAudioComponents(); i++)
+      media_stream_->AddTrackByComponent(descriptor->AudioComponent(i));
+    for (size_t i = 0; i < descriptor->NumberOfVideoComponents(); i++)
+      media_stream_->AddTrackByComponent(descriptor->VideoComponent(i));
+    UpdateSources(context);
+    return;
+  }
 
   WebMediaStream web_stream;
   web_stream.Initialize(WebVector<WebMediaStreamTrack>(),
@@ -104,7 +125,8 @@ void MediaElementEventListener::UpdateSources(ExecutionContext* context) {
   for (auto track : media_stream_->getTracks())
     sources_.insert(track->Component()->Source());
 
-  if (!media_element_->IsMediaDataCORSSameOrigin(
+  if (!media_element_->currentSrc().IsEmpty() &&
+      !media_element_->IsMediaDataCORSSameOrigin(
           context->GetSecurityOrigin())) {
     for (auto source : sources_)
       MediaStreamCenter::Instance().DidStopMediaStreamSource(source);
@@ -133,7 +155,7 @@ MediaStream* HTMLMediaElementCapture::captureStream(
     return nullptr;
   }
 
-  if (!(element.currentSrc().IsNull() && !element.GetSrcObject()) &&
+  if (!element.currentSrc().IsEmpty() &&
       !element.IsMediaDataCORSSameOrigin(
           element.GetExecutionContext()->GetSecurityOrigin())) {
     exception_state.ThrowSecurityError(
@@ -157,7 +179,7 @@ MediaStream* HTMLMediaElementCapture::captureStream(
   // If |element| is actually playing a MediaStream, just clone it.
   if (element.GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream) {
     MediaStreamDescriptor* const descriptor =
-        element.currentSrc().IsNull()
+        element.currentSrc().IsEmpty()
             ? element.GetSrcObject()
             : MediaStreamRegistry::Registry().LookupMediaStreamDescriptor(
                   element.currentSrc().GetString());

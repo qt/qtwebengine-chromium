@@ -29,6 +29,7 @@
 #include "core/dom/TaskRunnerHelper.h"
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
+#include "modules/webaudio/AudioWorkletMessagingProxy.h"
 #include "modules/webaudio/AudioWorkletThread.h"
 #include "modules/webaudio/BaseAudioContext.h"
 #include "modules/webaudio/OfflineAudioContext.h"
@@ -60,12 +61,12 @@ OfflineAudioDestinationHandler::OfflineAudioDestinationHandler(
   SetInternalChannelInterpretation(AudioBus::kSpeakers);
 }
 
-PassRefPtr<OfflineAudioDestinationHandler>
-OfflineAudioDestinationHandler::Create(AudioNode& node,
-                                       unsigned number_of_channels,
-                                       size_t frames_to_process,
-                                       float sample_rate) {
-  return AdoptRef(new OfflineAudioDestinationHandler(
+RefPtr<OfflineAudioDestinationHandler> OfflineAudioDestinationHandler::Create(
+    AudioNode& node,
+    unsigned number_of_channels,
+    size_t frames_to_process,
+    float sample_rate) {
+  return WTF::AdoptRef(new OfflineAudioDestinationHandler(
       node, number_of_channels, frames_to_process, sample_rate));
 }
 
@@ -114,7 +115,7 @@ void OfflineAudioDestinationHandler::StartRendering() {
     GetRenderingThread()->GetWebTaskRunner()->PostTask(
         BLINK_FROM_HERE,
         CrossThreadBind(&OfflineAudioDestinationHandler::StartOfflineRendering,
-                        WrapPassRefPtr(this)));
+                        WrapRefPtr(this)));
     return;
   }
 
@@ -123,7 +124,7 @@ void OfflineAudioDestinationHandler::StartRendering() {
   GetRenderingThread()->GetWebTaskRunner()->PostTask(
       BLINK_FROM_HERE,
       CrossThreadBind(&OfflineAudioDestinationHandler::DoOfflineRendering,
-                      WrapPassRefPtr(this)));
+                      WrapRefPtr(this)));
 }
 
 void OfflineAudioDestinationHandler::StopRendering() {
@@ -141,9 +142,13 @@ void OfflineAudioDestinationHandler::InitializeOfflineRenderThread(
     AudioBuffer* render_target) {
   DCHECK(IsMainThread());
 
-  if (RuntimeEnabledFeatures::AudioWorkletEnabled()) {
-    AudioWorkletThread::EnsureSharedBackingThread();
-    worklet_backing_thread_ = AudioWorkletThread::GetSharedBackingThread();
+  // Use Experimental AudioWorkletThread only when AudioWorklet is enabled and
+  // there is an active AudioWorkletGlobalScope.
+  if (RuntimeEnabledFeatures::AudioWorkletEnabled() &&
+      Context()->HasWorkletMessagingProxy()) {
+    DCHECK(Context()->WorkletMessagingProxy()->GetWorkletBackingThread());
+    worklet_backing_thread_ =
+        Context()->WorkletMessagingProxy()->GetWorkletBackingThread();
   } else {
     render_thread_ =
         Platform::Current()->CreateThread("offline audio renderer");
@@ -199,8 +204,8 @@ void OfflineAudioDestinationHandler::DoOfflineRendering() {
       // To ensure that the rendering step eventually happens, repost.
       GetRenderingThread()->GetWebTaskRunner()->PostTask(
           BLINK_FROM_HERE,
-          Bind(&OfflineAudioDestinationHandler::DoOfflineRendering,
-               WrapPassRefPtr(this)));
+          WTF::Bind(&OfflineAudioDestinationHandler::DoOfflineRendering,
+                    WrapRefPtr(this)));
       return;
     }
 
@@ -216,7 +221,7 @@ void OfflineAudioDestinationHandler::DoOfflineRendering() {
   while (frames_to_process_ > 0) {
     // Suspend the rendering if a scheduled suspend found at the current
     // sample frame. Otherwise render one quantum.
-    if (RenderIfNotSuspended(0, render_bus_.Get(),
+    if (RenderIfNotSuspended(0, render_bus_.get(),
                              AudioUtilities::kRenderQuantumFrames))
       return;
 
@@ -248,10 +253,10 @@ void OfflineAudioDestinationHandler::SuspendOfflineRendering() {
   if (Context()->GetExecutionContext()) {
     TaskRunnerHelper::Get(TaskType::kMediaElementEvent,
                           Context()->GetExecutionContext())
-        ->PostTask(BLINK_FROM_HERE,
-                   CrossThreadBind(
-                       &OfflineAudioDestinationHandler::NotifySuspend,
-                       WrapPassRefPtr(this), Context()->CurrentSampleFrame()));
+        ->PostTask(
+            BLINK_FROM_HERE,
+            CrossThreadBind(&OfflineAudioDestinationHandler::NotifySuspend,
+                            WrapRefPtr(this), Context()->CurrentSampleFrame()));
   }
 }
 
@@ -265,7 +270,7 @@ void OfflineAudioDestinationHandler::FinishOfflineRendering() {
         ->PostTask(
             BLINK_FROM_HERE,
             CrossThreadBind(&OfflineAudioDestinationHandler::NotifyComplete,
-                            WrapPassRefPtr(this)));
+                            WrapRefPtr(this)));
   }
 }
 
@@ -364,7 +369,10 @@ bool OfflineAudioDestinationHandler::RenderIfNotSuspended(
 WebThread* OfflineAudioDestinationHandler::GetRenderingThread() {
   DCHECK(IsInitialized());
 
-  if (RuntimeEnabledFeatures::AudioWorkletEnabled()) {
+  // Use Experimental AudioWorkletThread only when AudioWorklet is enabled and
+  // there is an active AudioWorkletGlobalScope.
+  if (RuntimeEnabledFeatures::AudioWorkletEnabled() &&
+      Context()->HasWorkletMessagingProxy()) {
     DCHECK(!render_thread_ && worklet_backing_thread_);
     return worklet_backing_thread_;
   }

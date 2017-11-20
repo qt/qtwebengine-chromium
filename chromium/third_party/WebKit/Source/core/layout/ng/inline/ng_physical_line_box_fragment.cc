@@ -12,14 +12,13 @@ NGPhysicalLineBoxFragment::NGPhysicalLineBoxFragment(
     Vector<RefPtr<NGPhysicalFragment>>& children,
     const NGLineHeightMetrics& metrics,
     RefPtr<NGBreakToken> break_token)
-    : NGPhysicalFragment(nullptr,
-                         style,
-                         size,
-                         kFragmentLineBox,
-                         std::move(break_token)),
-      metrics_(metrics) {
-  children_.swap(children);
-}
+    : NGPhysicalContainerFragment(nullptr,
+                                  style,
+                                  size,
+                                  kFragmentLineBox,
+                                  children,
+                                  std::move(break_token)),
+      metrics_(metrics) {}
 
 LayoutUnit NGPhysicalLineBoxFragment::BaselinePosition(FontBaseline) const {
   // TODO(kojii): Computing other baseline types than the used one is not

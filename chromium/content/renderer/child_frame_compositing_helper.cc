@@ -13,10 +13,10 @@
 #include "cc/layers/surface_layer.h"
 #include "cc/paint/paint_image.h"
 #include "cc/paint/paint_image_builder.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/gpu/context_provider.h"
-#include "components/viz/common/quads/copy_output_request.h"
-#include "components/viz/common/quads/copy_output_result.h"
-#include "components/viz/common/quads/single_release_callback.h"
+#include "components/viz/common/resources/single_release_callback.h"
 #include "components/viz/common/surfaces/sequence_surface_reference_factory.h"
 #include "components/viz/common/surfaces/stub_surface_reference_factory.h"
 #include "components/viz/common/switches.h"
@@ -173,17 +173,19 @@ ChildFrameCompositingHelper::ChildFrameCompositingHelper(
   enable_surface_references_ =
       !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableSurfaceReferences);
-  scoped_refptr<ThreadSafeSender> sender(
-      RenderThreadImpl::current()->thread_safe_sender());
   if (enable_surface_references_) {
     surface_reference_factory_ = new viz::StubSurfaceReferenceFactory();
-  } else if (render_frame_proxy_) {
-    surface_reference_factory_ =
-        new IframeSurfaceReferenceFactory(sender, host_routing_id_);
   } else {
-    surface_reference_factory_ = new BrowserPluginSurfaceReferenceFactory(
-        sender, host_routing_id_,
-        browser_plugin_->browser_plugin_instance_id());
+    scoped_refptr<ThreadSafeSender> sender(
+        RenderThreadImpl::current()->thread_safe_sender());
+    if (render_frame_proxy_) {
+      surface_reference_factory_ =
+          new IframeSurfaceReferenceFactory(sender, host_routing_id_);
+    } else {
+      surface_reference_factory_ = new BrowserPluginSurfaceReferenceFactory(
+          sender, host_routing_id_,
+          browser_plugin_->browser_plugin_instance_id());
+    }
   }
 }
 
@@ -239,7 +241,7 @@ void ChildFrameCompositingHelper::ChildFrameGone() {
         web_layer_->Bounds().height > sad_bitmap->height()) {
       scoped_refptr<cc::PictureImageLayer> sad_layer =
           cc::PictureImageLayer::Create();
-      sad_layer->SetImage(cc::PaintImageBuilder()
+      sad_layer->SetImage(cc::PaintImageBuilder::WithDefault()
                               .set_id(cc::PaintImage::kNonLazyStableId)
                               .set_image(SkImage::MakeFromBitmap(*sad_bitmap))
                               .TakePaintImage());
@@ -271,6 +273,7 @@ void ChildFrameCompositingHelper::SetPrimarySurfaceInfo(
 
   surface_layer_ = cc::SurfaceLayer::Create(surface_reference_factory_);
   surface_layer_->SetMasksToBounds(true);
+  surface_layer_->SetDefaultBackgroundColor(SK_ColorTRANSPARENT);
 
   viz::SurfaceInfo modified_surface_info(surface_info.id(), scale_factor,
                                          surface_info.size_in_pixels());

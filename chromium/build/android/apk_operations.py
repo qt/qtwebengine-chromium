@@ -3,7 +3,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# Using colorama.Fore/Back/Style members
+# pylint: disable=no-member
+
 import argparse
+import collections
 import json
 import logging
 import os
@@ -12,7 +16,6 @@ import posixpath
 import random
 import re
 import shlex
-import subprocess
 import sys
 
 import devil_chromium
@@ -32,12 +35,29 @@ with devil_env.SysPath(os.path.join(os.path.dirname(__file__), '..', '..',
 
 from incremental_install import installer
 from pylib import constants
+from pylib.symbols import deobfuscator
 
 
-def _Colorize(color, text):
-  # |color| as a string to avoid pylint's no-member warning :(.
-  # pylint: disable=no-member
-  return getattr(colorama.Fore, color) + text + colorama.Fore.RESET
+# Matches messages only on pre-L (Dalvik) that are spammy and unimportant.
+_DALVIK_IGNORE_PATTERN = re.compile('|'.join([
+    r'^Added shared lib',
+    r'^Could not find ',
+    r'^DexOpt:',
+    r'^GC_',
+    r'^Late-enabling CheckJNI',
+    r'^Link of class',
+    r'^No JNI_OnLoad found in',
+    r'^Trying to load lib',
+    r'^Unable to resolve superclass',
+    r'^VFY:',
+    r'^WAIT_',
+    ]))
+
+
+def _Colorize(text, style=''):
+  return (style
+      + text
+      + colorama.Style.RESET_ALL)
 
 
 def _InstallApk(devices, apk, install_dict):
@@ -60,31 +80,48 @@ def _UninstallApk(devices, install_dict, package_name):
   device_utils.DeviceUtils.parallel(devices).pMap(uninstall)
 
 
-def _LaunchUrl(devices, input_args, device_args_file, url, apk):
+def _LaunchUrl(devices, input_args, device_args_file, url, apk, package_name,
+               wait_for_java_debugger):
   if input_args and device_args_file is None:
     raise Exception('This apk does not support any flags.')
   if url:
+    # TODO(agrieve): Launch could be changed to require only package name by
+    #     parsing "dumpsys package" rather than relying on the apk.
+    if not apk:
+      raise Exception('Launching with URL is not supported when using '
+                      '--package-name. Use --apk-path instead.')
     view_activity = apk.GetViewActivityName()
     if not view_activity:
       raise Exception('APK does not support launching with URLs.')
 
   def launch(device):
+    # Set debug app in order to enable reading command line flags on user
+    # builds.
+    cmd = ['am', 'set-debug-app', package_name]
+    if wait_for_java_debugger:
+      # To wait for debugging on a non-primary process:
+      #     am set-debug-app org.chromium.chrome:privileged_process0
+      cmd[-1:-1] = ['-w']
+    # Ignore error since it will fail if apk is not debuggable.
+    device.RunShellCommand(cmd, check_return=False)
+
     # The flags are first updated with input args.
-    changer = flag_changer.FlagChanger(device, device_args_file)
-    flags = []
-    if input_args:
-      flags = shlex.split(input_args)
-    changer.ReplaceFlags(flags)
+    if device_args_file:
+      changer = flag_changer.FlagChanger(device, device_args_file)
+      flags = []
+      if input_args:
+        flags = shlex.split(input_args)
+      changer.ReplaceFlags(flags)
     # Then launch the apk.
     if url is None:
       # Simulate app icon click if no url is present.
-      cmd = ['monkey', '-p', apk.GetPackageName(), '-c',
+      cmd = ['monkey', '-p', package_name, '-c',
              'android.intent.category.LAUNCHER', '1']
       device.RunShellCommand(cmd, check_return=True)
     else:
       launch_intent = intent.Intent(action='android.intent.action.VIEW',
                                     activity=view_activity, data=url,
-                                    package=apk.GetPackageName())
+                                    package=package_name)
       device.StartActivity(launch_intent)
   device_utils.DeviceUtils.parallel(devices).pMap(launch)
 
@@ -127,7 +164,8 @@ def _RunGdb(device, package_name, output_directory, target_cpu, extra_args,
     cmd.append('--target-arch=%s' % _TargetCpuToTargetArch(target_cpu))
   cmd.extend(extra_args)
   logging.warning('Running: %s', ' '.join(pipes.quote(x) for x in cmd))
-  print _Colorize('YELLOW', 'All subsequent output is from adb_gdb script.')
+  print _Colorize(
+      'All subsequent output is from adb_gdb script.', colorama.Fore.YELLOW)
   os.execv(gdb_script_path, cmd)
 
 
@@ -136,7 +174,8 @@ def _PrintPerDeviceOutput(devices, results, single_line=False):
     if not single_line and d is not devices[0]:
       sys.stdout.write('\n')
     sys.stdout.write(
-          _Colorize('YELLOW', '%s (%s):' % (d, d.build_description)))
+          _Colorize('{} ({}):'.format(d, d.build_description),
+                    colorama.Fore.YELLOW))
     sys.stdout.write(' ' if single_line else '\n')
     yield result
 
@@ -144,10 +183,11 @@ def _PrintPerDeviceOutput(devices, results, single_line=False):
 def _RunMemUsage(devices, package_name):
   def mem_usage_helper(d):
     ret = []
-    proc_map = d.GetPids(package_name)
-    for name, pids in proc_map.iteritems():
-      for pid in pids:
-        ret.append((name, pid, d.GetMemoryUsageForPid(pid)))
+    proc_map = _GetPackagePids(d, package_name)
+    for name in sorted(proc_map.iterkeys()):
+      for pid in proc_map[name]:
+        ret.append(
+            (name, '\n'.join(d.RunShellCommand(['dumpsys', 'meminfo', pid]))))
     return ret
 
   parallel_devices = device_utils.DeviceUtils.parallel(devices)
@@ -156,11 +196,11 @@ def _RunMemUsage(devices, package_name):
     if not result:
       print 'No processes found.'
     else:
-      for name, pid, usage in sorted(result):
-        print '%s(%s):' % (name, pid)
-        for k, v in sorted(usage.iteritems()):
-          print '    %s=%d' % (k, v)
-        print
+      for name, usage in sorted(result):
+        print _Colorize(
+            '==== Output of "dumpsys meminfo %s" ====' % name,
+            colorama.Fore.GREEN)
+        print usage
 
 
 def _DuHelper(device, path_spec, run_as=None):
@@ -354,60 +394,162 @@ def _RunDiskUsage(devices, package_name, verbose):
     print 'Total: %skb (%.1fmb)' % (total, total / 1024.0)
 
 
-def _RunLogcat(device, package_name, verbose):
-  def get_my_pids():
-    my_pids = []
-    for pids in device.GetPids(package_name).values():
-      my_pids.extend(pids)
-    return [int(pid) for pid in my_pids]
+class _LogcatProcessor(object):
+  ParsedLine = collections.namedtuple(
+      'ParsedLine',
+      ['date', 'invokation_time', 'pid', 'tid', 'priority', 'tag', 'message'])
 
-  def process_line(line, fast=False):
-    if verbose:
-      if not fast:
-        sys.stdout.write(line)
+  def __init__(self, device, package_name, deobfuscate=None, verbose=False):
+    self._device = device
+    self._package_name = package_name
+    self._verbose = verbose
+    self._deobfuscator = deobfuscate
+    self._primary_pid = None
+    self._my_pids = set()
+    self._seen_pids = set()
+    self._UpdateMyPids()
+
+  def _UpdateMyPids(self):
+    package_pids = _GetPackagePids(self._device, self._package_name)
+    for name, pids in package_pids.iteritems():
+      if ':' not in name:
+        self._primary_pid = int(pids[0])
+      self._my_pids.update(int(p) for p in pids)
+
+  def _GetPidStyle(self, pid, dim=False):
+    if pid == self._primary_pid:
+      return colorama.Fore.WHITE
+    elif pid in self._my_pids:
+      # TODO(wnwen): Use one separate persistent color per process, pop LRU
+      return colorama.Fore.YELLOW
+    elif dim:
+      return colorama.Style.DIM
+    return ''
+
+  def _GetPriorityStyle(self, priority, dim=False):
+    # pylint:disable=no-self-use
+    if dim:
+      return ''
+    style = ''
+    if priority == 'E' or priority == 'F':
+      style = colorama.Back.RED
+    elif priority == 'W':
+      style = colorama.Back.YELLOW
+    elif priority == 'I':
+      style = colorama.Back.GREEN
+    elif priority == 'D':
+      style = colorama.Back.BLUE
+    return style + colorama.Fore.BLACK
+
+  def _ParseLine(self, line):
+    tokens = line.split(None, 6)
+    date = tokens[0]
+    invokation_time = tokens[1]
+    pid = int(tokens[2])
+    tid = int(tokens[3])
+    priority = tokens[4]
+    tag = tokens[5]
+    if len(tokens) > 6:
+      original_message = tokens[6]
+    else:  # Empty log message
+      original_message = ''
+    # Example:
+    #   09-19 06:35:51.113  9060  9154 W GCoreFlp: No location...
+    #   09-19 06:01:26.174  9060 10617 I Auth    : [ReflectiveChannelBinder]...
+    # Parsing "GCoreFlp:" vs "Auth    :", we only want tag to contain the word,
+    # and we don't want to keep the colon for the message.
+    if tag[-1] == ':':
+      tag = tag[:-1]
     else:
-      if line.startswith('------'):
-        return
-      tokens = line.split(None, 4)
-      pid = int(tokens[2])
-      priority = tokens[4]
-      if pid in my_pids or (not fast and priority == 'F'):
-        sys.stdout.write(line)
-      elif pid in not_my_pids:
-        return
-      elif fast:
-        # Skip checking whether our package spawned new processes.
-        not_my_pids.add(pid)
-      else:
-        # Check and add the pid if it is a new one from our package.
-        my_pids.update(get_my_pids())
-        if pid in my_pids:
-          sys.stdout.write(line)
-        else:
-          not_my_pids.add(pid)
+      original_message = original_message[2:]
+    return self.ParsedLine(
+        date, invokation_time, pid, tid, priority, tag, original_message)
 
-  adb_path = adb_wrapper.AdbWrapper.GetAdbPath()
-  cmd = [adb_path, '-s', device.serial, 'logcat', '-v', 'threadtime']
-  process = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=1)
-  my_pids = set(get_my_pids())
-  not_my_pids = set()
+  def _PrintParsedLine(self, parsed_line, dim=False):
+    tid_style = ''
+    # Make the main thread bright.
+    if not dim and parsed_line.pid == parsed_line.tid:
+      tid_style = colorama.Style.BRIGHT
+    pid_style = self._GetPidStyle(parsed_line.pid, dim)
+    # We have to pad before adding color as that changes the width of the tag.
+    pid_str = _Colorize('{:5}'.format(parsed_line.pid), pid_style)
+    tid_str = _Colorize('{:5}'.format(parsed_line.tid), tid_style)
+    tag = _Colorize('{:8}'.format(parsed_line.tag),
+                    pid_style + ('' if dim else colorama.Style.BRIGHT))
+    priority = _Colorize(parsed_line.priority,
+                         self._GetPriorityStyle(parsed_line.priority))
+    messages = [parsed_line.message]
+    if self._deobfuscator:
+      messages = self._deobfuscator.TransformLines(messages)
+    for message in messages:
+      message = _Colorize(message, pid_style)
+      sys.stdout.write('{} {} {} {} {} {}: {}\n'.format(
+          parsed_line.date, parsed_line.invokation_time, pid_str, tid_str,
+          priority, tag, message))
 
-  nonce = 'apk_wrappers.py nonce={}'.format(random.random())
-  device.RunShellCommand(['log', nonce])
-  fast = True
+  def ProcessLine(self, line, fast=False):
+    if not line or line.startswith('------'):
+      return
+    log = self._ParseLine(line)
+    if log.pid not in self._seen_pids:
+      self._seen_pids.add(log.pid)
+      if not fast:
+        self._UpdateMyPids()
+
+    owned_pid = log.pid in self._my_pids
+    if fast and not owned_pid:
+      return
+    if owned_pid and not self._verbose and log.tag == 'dalvikvm':
+      if _DALVIK_IGNORE_PATTERN.match(log.message):
+        return
+
+    if owned_pid or self._verbose or (
+        log.priority == 'F' or  # Java crash dump
+        log.tag == 'ActivityManager' or  # Android system
+        log.tag == 'DEBUG'):  # Native crash dump
+      self._PrintParsedLine(log, not owned_pid)
+
+
+def _RunLogcat(device, package_name, mapping_path, verbose):
+  deobfuscate = None
+  if mapping_path:
+    try:
+      deobfuscate = deobfuscator.Deobfuscator(mapping_path)
+    except OSError:
+      sys.stderr.write('Error executing "bin/java_deobfuscate". '
+                       'Did you forget to build it?\n')
+      sys.exit(1)
+
   try:
-    while True:
-      line = process.stdout.readline()
-      process_line(line, fast)
+    logcat_processor = _LogcatProcessor(
+        device, package_name, deobfuscate, verbose)
+    nonce = 'apk_wrappers.py nonce={}'.format(random.random())
+    device.RunShellCommand(['log', nonce])
+    fast = True
+    for line in device.adb.Logcat(logcat_format='threadtime'):
+      try:
+        logcat_processor.ProcessLine(line, fast)
+      except:
+        sys.stderr.write('Failed to process line: ' + line)
+        raise
       if fast and nonce in line:
         fast = False
   except KeyboardInterrupt:
-    process.terminate()
+    pass  # Don't show stack trace upon Ctrl-C
+  finally:
+    if mapping_path:
+      deobfuscate.Close()
+
+
+def _GetPackagePids(device, package_name):
+  return dict((k, v) for k, v in device.GetPids(package_name).iteritems()
+              if k == package_name or k.startswith(package_name + ':'))
 
 
 def _RunPs(devices, package_name):
   parallel_devices = device_utils.DeviceUtils.parallel(devices)
-  all_pids = parallel_devices.GetPids(package_name).pGet(None)
+  all_pids = parallel_devices.pMap(
+      lambda d: _GetPackagePids(d, package_name)).pGet(None)
   for proc_map in _PrintPerDeviceOutput(devices, all_pids):
     if not proc_map:
       print 'No processes found.'
@@ -447,16 +589,20 @@ def _RunCompileDex(devices, package_name, compilation_filter):
       print line
 
 
-# TODO(agrieve):add "--all" in the MultipleDevicesError message and use it here.
-def _GenerateMissingAllFlagMessage(devices):
+def _GenerateAvailableDevicesMessage(devices):
   devices_obj = device_utils.DeviceUtils.parallel(devices)
   descriptions = devices_obj.pMap(lambda d: d.build_description).pGet(None)
-  msg = ('More than one device available. Use --all to select all devices, '
-         'or use --device to select a device by serial.\n\nAvailable '
-         'devices:\n')
+  msg = 'Available devices:\n'
   for d, desc in zip(devices, descriptions):
     msg += '  %s (%s)\n' % (d, desc)
   return msg
+
+
+# TODO(agrieve):add "--all" in the MultipleDevicesError message and use it here.
+def _GenerateMissingAllFlagMessage(devices):
+  return ('More than one device available. Use --all to select all devices, ' +
+          'or use --device to select a device by serial.\n\n' +
+          _GenerateAvailableDevicesMessage(devices))
 
 
 def _DisplayArgs(devices, device_args_file):
@@ -511,9 +657,9 @@ class _Command(object):
   supports_incremental = False
   accepts_command_line_flags = False
   accepts_args = False
-  accepts_url = False
   all_devices_by_default = False
   calls_exec = False
+  supports_multiple_devices = True
 
   def __init__(self, from_wrapper_script):
     self._parser = None
@@ -579,18 +725,17 @@ class _Command(object):
     # accepts_command_line_flags and accepts_args are mutually exclusive.
     # argparse will throw if they are both set.
     if self.accepts_command_line_flags:
-      group.add_argument('--args', help='Command-line flags.')
+      group.add_argument(
+          '--args', help='Command-line flags. Use = to assign args.')
 
     if self.accepts_args:
-      group.add_argument('--args', help='Extra arguments.')
-
-    if self.accepts_url:
-      group.add_argument('url', nargs='?', help='A URL to launch with.')
+      group.add_argument(
+          '--args', help='Extra arguments. Use = to assign args')
 
     if not self._from_wrapper_script and self.accepts_command_line_flags:
       # Provided by wrapper scripts.
       group.add_argument(
-          '--command-line-flags-file-name',
+          '--command-line-flags-file',
           help='Name of the command-line flags file')
 
     self._RegisterExtraArgs(group)
@@ -605,10 +750,14 @@ class _Command(object):
     # TODO(agrieve): Device cache should not depend on output directory.
     #     Maybe put int /tmp?
     _LoadDeviceCaches(devices, args.output_directory)
+    # Ensure these keys always exist. They are set by wrapper scripts, but not
+    # always added when not using wrapper scripts.
+    args.__dict__.setdefault('apk_path', None)
+    args.__dict__.setdefault('incremental_json', None)
 
     try:
       if len(devices) > 1:
-        if self.calls_exec:
+        if not self.supports_multiple_devices:
           self._parser.error(device_errors.MultipleDevicesError(devices))
         if not args.all and not args.devices:
           self._parser.error(_GenerateMissingAllFlagMessage(devices))
@@ -664,6 +813,15 @@ class _Command(object):
       raise
 
 
+class _DevicesCommand(_Command):
+  name = 'devices'
+  description = 'Describe attached devices.'
+  all_devices_by_default = True
+
+  def Run(self):
+    print _GenerateAvailableDevicesMessage(self.devices)
+
+
 class _InstallCommand(_Command):
   name = 'install'
   description = 'Installs the APK to one or more devices.'
@@ -687,33 +845,21 @@ class _LaunchCommand(_Command):
   name = 'launch'
   description = ('Sends a launch intent for the APK after first writing the '
                  'command-line flags file.')
-  # TODO(agrieve): Launch could be changed to require only package name by
-  #     parsing "dumpsys package" for launch & view activities.
-  needs_apk_path = True
-  accepts_command_line_flags = True
-  accepts_url = True
-  all_devices_by_default = True
-
-  def Run(self):
-    _LaunchUrl(self.devices, self.args.args, self.args.command_line_flags_file,
-               self.args.url, self.apk_helper)
-
-
-class _RunCommand(_Command):
-  name = 'run'
-  description = 'Install and then launch.'
-  needs_apk_path = True
-  supports_incremental = True
   needs_package_name = True
   accepts_command_line_flags = True
-  accepts_url = True
+  all_devices_by_default = True
+
+  def _RegisterExtraArgs(self, group):
+    group.add_argument('-w', '--wait-for-java-debugger', action='store_true',
+                       help='Pause execution until debugger attaches. Applies '
+                            'only to the main process. To have renderers wait, '
+                            'use --args="--renderer-wait-for-java-debugger"')
+    group.add_argument('url', nargs='?', help='A URL to launch with.')
 
   def Run(self):
-    logging.warning('Installing...')
-    _InstallApk(self.devices, self.apk_helper, self.install_dict)
-    logging.warning('Sending launch intent...')
     _LaunchUrl(self.devices, self.args.args, self.args.command_line_flags_file,
-               self.args.url, self.apk_helper)
+               self.args.url, self.apk_helper, self.args.package_name,
+               self.args.wait_for_java_debugger)
 
 
 class _StopCommand(_Command):
@@ -757,6 +903,7 @@ class _GdbCommand(_Command):
   needs_output_directory = True
   accepts_args = True
   calls_exec = True
+  supports_multiple_devices = False
 
   def Run(self):
     extra_args = shlex.split(self.args.args or '')
@@ -768,11 +915,23 @@ class _LogcatCommand(_Command):
   name = 'logcat'
   description = 'Runs "adb logcat" filtering to just the current APK processes'
   needs_package_name = True
-  calls_exec = True
+  supports_multiple_devices = False
 
   def Run(self):
-    _RunLogcat(self.devices[0], self.args.package_name,
+    mapping = self.args.proguard_mapping_path
+    if self.args.no_deobfuscate:
+      mapping = None
+    _RunLogcat(self.devices[0], self.args.package_name, mapping,
                bool(self.args.verbose_count))
+
+  def _RegisterExtraArgs(self, group):
+    if self._from_wrapper_script:
+      group.add_argument('--no-deobfuscate', action='store_true',
+          help='Disables ProGuard deobfuscation of logcat.')
+    else:
+      group.set_defaults(no_deobfuscate=False)
+      group.add_argument('--proguard-mapping-path',
+          help='Path to ProGuard map (enables deobfuscation)')
 
 
 class _PsCommand(_Command):
@@ -817,6 +976,10 @@ class _ShellCommand(_Command):
   def calls_exec(self):
     return not self.args.cmd
 
+  @property
+  def supports_multiple_devices(self):
+    return not self.args.cmd
+
   def _RegisterExtraArgs(self, group):
     group.add_argument(
         'cmd', nargs=argparse.REMAINDER, help='Command to run.')
@@ -846,11 +1009,34 @@ class _CompileDexCommand(_Command):
                    self.args.compilation_filter)
 
 
+class _RunCommand(_InstallCommand, _LaunchCommand, _LogcatCommand):
+  name = 'run'
+  description = 'Install, launch, and show logcat (when targeting one device).'
+  all_devices_by_default = False
+  supports_multiple_devices = True
+
+  def _RegisterExtraArgs(self, group):
+    _InstallCommand._RegisterExtraArgs(self, group)
+    _LaunchCommand._RegisterExtraArgs(self, group)
+    _LogcatCommand._RegisterExtraArgs(self, group)
+    group.add_argument('--no-logcat', action='store_true',
+                       help='Install and launch, but do not enter logcat.')
+
+  def Run(self):
+    logging.warning('Installing...')
+    _InstallCommand.Run(self)
+    logging.warning('Sending launch intent...')
+    _LaunchCommand.Run(self)
+    if len(self.devices) == 1 and not self.args.no_logcat:
+      logging.warning('Entering logcat...')
+      _LogcatCommand.Run(self)
+
+
 _COMMANDS = [
+    _DevicesCommand,
     _InstallCommand,
     _UninstallCommand,
     _LaunchCommand,
-    _RunCommand,
     _StopCommand,
     _ClearDataCommand,
     _ArgvCommand,
@@ -861,6 +1047,7 @@ _COMMANDS = [
     _MemUsageCommand,
     _ShellCommand,
     _CompileDexCommand,
+    _RunCommand,
 ]
 
 
@@ -887,13 +1074,15 @@ def _RunInternal(parser, output_directory=None):
   run_tests_helper.SetLogLevel(args.verbose_count)
   args.command.ProcessArgs(args)
   args.command.Run()
-  _SaveDeviceCaches(args.command.devices, output_directory)
+  # Incremental install depends on the cache being cleared when uninstalling.
+  if args.command.name != 'uninstall':
+    _SaveDeviceCaches(args.command.devices, output_directory)
 
 
 # TODO(agrieve): Remove =None from target_cpu on or after October 2017.
 #     It exists only so that stale wrapper scripts continue to work.
 def Run(output_directory, apk_path, incremental_json, command_line_flags_file,
-        target_cpu=None):
+        target_cpu, proguard_mapping_path):
   """Entry point for generated wrapper scripts."""
   constants.SetOutputDirectory(output_directory)
   devil_chromium.Initialize(output_directory=output_directory)
@@ -903,7 +1092,8 @@ def Run(output_directory, apk_path, incremental_json, command_line_flags_file,
       command_line_flags_file=command_line_flags_file,
       target_cpu=target_cpu,
       apk_path=exists_or_none(apk_path),
-      incremental_json=exists_or_none(incremental_json))
+      incremental_json=exists_or_none(incremental_json),
+      proguard_mapping_path=proguard_mapping_path)
   _RunInternal(parser, output_directory=output_directory)
 
 
@@ -913,4 +1103,4 @@ def main():
 
 
 if __name__ == '__main__':
-  sys.exit(main())
+  main()

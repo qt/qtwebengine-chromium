@@ -26,8 +26,7 @@ bool CXFA_FFImage::LoadWidget() {
   if (GetDataAcc()->GetImageImage())
     return true;
 
-  GetDataAcc()->LoadImageImage();
-  return CXFA_FFDraw::LoadWidget();
+  return GetDataAcc()->LoadImageImage() ? CXFA_FFDraw::LoadWidget() : false;
 }
 
 void CXFA_FFImage::UnloadWidget() {
@@ -45,7 +44,7 @@ void CXFA_FFImage::RenderWidget(CXFA_Graphics* pGS,
 
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, dwStatus);
 
-  CFX_RetainPtr<CFX_DIBitmap> pDIBitmap = GetDataAcc()->GetImageImage();
+  RetainPtr<CFX_DIBitmap> pDIBitmap = GetDataAcc()->GetImageImage();
   if (!pDIBitmap)
     return;
 

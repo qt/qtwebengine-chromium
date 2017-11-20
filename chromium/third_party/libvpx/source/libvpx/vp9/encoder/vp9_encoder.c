@@ -798,6 +798,11 @@ static void dealloc_compressor_data(VP9_COMP *cpi) {
   vpx_free(cpi->content_state_sb_fd);
   cpi->content_state_sb_fd = NULL;
 
+  vpx_free(cpi->count_arf_frame_usage);
+  cpi->count_arf_frame_usage = NULL;
+  vpx_free(cpi->count_lastgolden_frame_usage);
+  cpi->count_lastgolden_frame_usage = NULL;
+
   vp9_cyclic_refresh_free(cpi->cyclic_refresh);
   cpi->cyclic_refresh = NULL;
 
@@ -1208,6 +1213,14 @@ static void set_tile_limits(VP9_COMP *cpi) {
     cm->log2_tile_cols =
         clamp(cpi->oxcf.tile_columns, min_log2_tile_cols, max_log2_tile_cols);
     cm->log2_tile_rows = cpi->oxcf.tile_rows;
+  }
+
+  if (cpi->oxcf.target_level == LEVEL_AUTO) {
+    const uint32_t pic_size = cpi->common.width * cpi->common.height;
+    const int level_tile_cols = log_tile_cols_from_picsize_level(pic_size);
+    if (cm->log2_tile_cols > level_tile_cols) {
+      cm->log2_tile_cols = VPXMAX(level_tile_cols, min_log2_tile_cols);
+    }
   }
 }
 
@@ -2645,15 +2658,14 @@ static void scale_and_extend_frame(const YV12_BUFFER_CONFIG *src,
 
         if (src->flags & YV12_FLAG_HIGHBITDEPTH) {
           vpx_highbd_convolve8(CONVERT_TO_SHORTPTR(src_ptr), src_stride,
-                               CONVERT_TO_SHORTPTR(dst_ptr), dst_stride,
-                               kernel[x_q4 & 0xf], 16 * src_w / dst_w,
-                               kernel[y_q4 & 0xf], 16 * src_h / dst_h,
-                               16 / factor, 16 / factor, bd);
+                               CONVERT_TO_SHORTPTR(dst_ptr), dst_stride, kernel,
+                               x_q4 & 0xf, 16 * src_w / dst_w, y_q4 & 0xf,
+                               16 * src_h / dst_h, 16 / factor, 16 / factor,
+                               bd);
         } else {
-          vpx_scaled_2d(src_ptr, src_stride, dst_ptr, dst_stride,
-                        kernel[x_q4 & 0xf], 16 * src_w / dst_w,
-                        kernel[y_q4 & 0xf], 16 * src_h / dst_h, 16 / factor,
-                        16 / factor);
+          vpx_scaled_2d(src_ptr, src_stride, dst_ptr, dst_stride, kernel,
+                        x_q4 & 0xf, 16 * src_w / dst_w, y_q4 & 0xf,
+                        16 * src_h / dst_h, 16 / factor, 16 / factor);
         }
       }
     }
@@ -3130,15 +3142,37 @@ static void output_frame_level_debug_stats(VP9_COMP *cpi) {
     dc_quant_devisor = 4.0;
 #endif
 
-    fprintf(f, "%10u %dx%d %d %d %10d %10d %10d %10d"
-       "%10"PRId64" %10"PRId64" %5d %5d %10"PRId64" "
-       "%10"PRId64" %10"PRId64" %10d "
-       "%7.2lf %7.2lf %7.2lf %7.2lf %7.2lf"
-        "%6d %6d %5d %5d %5d "
-        "%10"PRId64" %10.3lf"
-        "%10lf %8u %10"PRId64" %10d %10d %10d %10d %10d\n",
+    if (!cm->current_video_frame) {
+      fprintf(f, "frame, width, height, last ts, last end ts, "
+          "source_alt_ref_pending, source_alt_ref_active, "
+          "this_frame_target, projected_frame_size, "
+          "projected_frame_size / MBs, "
+          "projected_frame_size - this_frame_target, "
+          "vbr_bits_off_target, vbr_bits_off_target_fast, "
+          "twopass.extend_minq, twopass.extend_minq_fast, "
+          "total_target_vs_actual, "
+          "starting_buffer_level - bits_off_target, "
+          "total_actual_bits, base_qindex, q for base_qindex, "
+          "dc quant, q for active_worst_quality, avg_q, q for oxcf.cq_level, "
+          "refresh_last_frame, refresh_golden_frame, refresh_alt_ref_frame, "
+          "frame_type, gfu_boost, "
+          "twopass.bits_left, "
+          "twopass.total_left_stats.coded_error, "
+          "twopass.bits_left / (1 + twopass.total_left_stats.coded_error), "
+          "tot_recode_hits, recon_err, kf_boost, "
+          "twopass.kf_zeromotion_pct, twopass.fr_content_type, "
+          "filter_level, seg.aq_av_offset\n");
+    }
+
+    fprintf(f, "%10u, %d, %d, %10"PRId64", %10"PRId64", %d, %d, %10d, %10d, "
+        "%10d, %10d, %10"PRId64", %10"PRId64", %5d, %5d, %10"PRId64", "
+        "%10"PRId64", %10"PRId64", %10d, %7.2lf, %7.2lf, %7.2lf, %7.2lf, "
+        "%7.2lf, %6d, %6d, %5d, %5d, %5d, %10"PRId64", %10.3lf, %10lf, %8u, "
+        "%10"PRId64", %10d, %10d, %10d, %10d, %10d\n",
         cpi->common.current_video_frame,
         cm->width, cm->height,
+        cpi->last_time_stamp_seen,
+        cpi->last_end_time_stamp_seen,
         cpi->rc.source_alt_ref_pending,
         cpi->rc.source_alt_ref_active,
         cpi->rc.this_frame_target,
@@ -3405,7 +3439,7 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
   // scene detection and for superblock content state in CBR mode).
   // The flag may get reset below based on SVC or resizing state.
   cpi->compute_source_sad_onepass =
-      cpi->oxcf.mode == REALTIME && cpi->oxcf.speed >= 5 && cm->show_frame;
+      cpi->oxcf.mode == REALTIME && cm->show_frame;
 
   vpx_clear_system_state();
 
@@ -3497,10 +3531,11 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
   // Scene detection is always used for VBR mode or screen-content case.
   // For other cases (e.g., CBR mode) use it for 5 <= speed < 8 for now
   // (need to check encoding time cost for doing this for speed 8).
+  cpi->rc.high_source_sad = 0;
   if (cpi->compute_source_sad_onepass &&
       (cpi->oxcf.rc_mode == VPX_VBR ||
        cpi->oxcf.content == VP9E_CONTENT_SCREEN ||
-       (cpi->oxcf.speed >= 5 && cpi->oxcf.speed < 8)))
+       (cpi->oxcf.speed >= 5 && cpi->oxcf.speed < 8 && !cpi->use_svc)))
     vp9_scene_detection_onepass(cpi);
 
   // For 1 pass CBR SVC, only ZEROMV is allowed for spatial reference frame

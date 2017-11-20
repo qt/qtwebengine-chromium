@@ -4,8 +4,8 @@
 
 #include "core/layout/LayoutTestHelper.h"
 
-#include "bindings/core/v8/StringOrArrayBufferOrArrayBufferView.h"
 #include "bindings/core/v8/V8BindingForCore.h"
+#include "bindings/core/v8/string_or_array_buffer_or_array_buffer_view.h"
 #include "core/css/FontFaceDescriptors.h"
 #include "core/css/FontFaceSetDocument.h"
 #include "core/html/HTMLIFrameElement.h"
@@ -77,7 +77,7 @@ void RenderingTest::TearDown() {
 
 void RenderingTest::SetChildFrameHTML(const String& html) {
   ChildDocument().SetBaseURLOverride(KURL(kParsedURLString, "http://test.com"));
-  ChildDocument().body()->setInnerHTML(html, ASSERT_NO_EXCEPTION);
+  ChildDocument().body()->SetInnerHTMLFromString(html, ASSERT_NO_EXCEPTION);
 }
 
 void RenderingTest::LoadAhem() {
@@ -89,7 +89,7 @@ void RenderingTest::LoadAhem(LocalFrame& frame) {
   RefPtr<SharedBuffer> shared_buffer =
       testing::ReadFromFile(testing::CoreTestDataPath("Ahem.ttf"));
   StringOrArrayBufferOrArrayBufferView buffer =
-      StringOrArrayBufferOrArrayBufferView::fromArrayBuffer(
+      StringOrArrayBufferOrArrayBufferView::FromArrayBuffer(
           DOMArrayBuffer::Create(shared_buffer));
   FontFace* ahem =
       FontFace::Create(&document, "Ahem", buffer, FontFaceDescriptors());

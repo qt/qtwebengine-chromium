@@ -11,30 +11,44 @@ source_set("u2f") {
     "u2f_apdu_command.h",
     "u2f_apdu_response.cc",
     "u2f_apdu_response.h",
+    "u2f_ble_frames.cc",
+    "u2f_ble_frames.h",
+    "u2f_command_type.h",
     "u2f_device.cc",
     "u2f_device.h",
-    "u2f_hid_device.cc",
-    "u2f_hid_device.h",
     "u2f_message.cc",
     "u2f_message.h",
     "u2f_packet.cc",
     "u2f_packet.h",
-    "u2f_register.cc",
-    "u2f_register.h",
-    "u2f_request.cc",
-    "u2f_request.h",
     "u2f_return_code.h",
-    "u2f_sign.cc",
-    "u2f_sign.h",
   ]
 
   deps = [
     "//base",
     "//crypto",
     "//device/base",
-    "//device/hid",
+    "//device/bluetooth",
     "//net",
+    "//services/device/public/interfaces",
+    "//services/service_manager/public/cpp",
+    "//services/service_manager/public/interfaces",
   ]
+
+  # HID is not supported on Android.
+  if (!is_android) {
+    sources += [
+      "u2f_hid_device.cc",
+      "u2f_hid_device.h",
+      "u2f_register.cc",
+      "u2f_register.h",
+      "u2f_request.cc",
+      "u2f_request.h",
+      "u2f_sign.cc",
+      "u2f_sign.h",
+    ]
+
+    deps += [ "//device/hid" ]
+  }
 }
 
 source_set("mocks") {
@@ -72,4 +86,15 @@ fuzzer_test("u2f_message_fuzzer") {
     "//net",
   ]
   libfuzzer_options = [ "max_len=2048" ]
+}
+
+fuzzer_test("u2f_ble_frames_fuzzer") {
+  sources = [
+    "u2f_ble_frames_fuzzer.cc",
+  ]
+  deps = [
+    ":u2f",
+    "//net",
+  ]
+  libfuzzer_options = [ "max_len=65535" ]
 }

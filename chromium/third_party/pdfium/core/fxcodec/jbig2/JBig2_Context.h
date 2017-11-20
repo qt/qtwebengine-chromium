@@ -33,15 +33,13 @@ using CJBig2_CachePair =
 #define JBIG2_ERROR_FATAL -3
 #define JBIG2_END_OF_PAGE 2
 #define JBIG2_END_OF_FILE 3
-#define JBIG2_ERROR_FILE_FORMAT -4
-#define JBIG2_ERROR_STREAM_TYPE -5
 #define JBIG2_ERROR_LIMIT -6
 #define JBIG2_MIN_SEGMENT_SIZE 11
 
 class CJBig2_Context {
  public:
-  CJBig2_Context(const CFX_RetainPtr<CPDF_StreamAcc>& pGlobalStream,
-                 const CFX_RetainPtr<CPDF_StreamAcc>& pSrcStream,
+  CJBig2_Context(const RetainPtr<CPDF_StreamAcc>& pGlobalStream,
+                 const RetainPtr<CPDF_StreamAcc>& pSrcStream,
                  std::list<CJBig2_CachePair>* pSymbolDictCache,
                  bool bIsGlobal);
   ~CJBig2_Context();

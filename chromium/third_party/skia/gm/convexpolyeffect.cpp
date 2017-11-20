@@ -42,17 +42,22 @@ class PolyBoundsOp : public GrMeshDrawOp {
 public:
     DEFINE_OP_CLASS_ID
 
-    const char* name() const override { return "PolyBoundsOp"; }
-
     static std::unique_ptr<GrDrawOp> Make(GrPaint&& paint, const SkRect& rect) {
         return std::unique_ptr<GrDrawOp>(new PolyBoundsOp(std::move(paint), rect));
     }
 
+    const char* name() const override { return "PolyBoundsOp"; }
+
+    void visitProxies(const VisitProxyFunc& func) const override {
+        fProcessors.visitProxies(func);
+    }
+
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        auto analysis = fProcessors.finalize(
-                fColor, GrProcessorAnalysisCoverage::kNone, clip, false, caps, &fColor);
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
+                                GrPixelConfigIsClamped dstIsClamped) override {
+        auto analysis = fProcessors.finalize(fColor, GrProcessorAnalysisCoverage::kNone, clip,
+                                             false, caps, dstIsClamped, &fColor);
         return analysis.requiresDstTexture() ? RequiresDstTexture::kYes : RequiresDstTexture::kNo;
     }
 

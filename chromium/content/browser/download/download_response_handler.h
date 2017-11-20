@@ -5,12 +5,19 @@
 #ifndef CONTENT_BROWSER_DOWNLOAD_RESPONSE_HANDLER_
 #define CONTENT_BROWSER_DOWNLOAD_RESPONSE_HANDLER_
 
+#include <vector>
+
 #include "content/browser/download/download_create_info.h"
+#include "content/public/common/download_stream.mojom.h"
+#include "content/public/common/referrer.h"
+#include "content/public/common/resource_response.h"
 #include "content/public/common/url_loader.mojom.h"
+#include "net/cert/cert_status_flags.h"
 
 namespace content {
 
-class DownloadUrlParameters;
+struct DownloadCreateInfo;
+struct DownloadSaveInfo;
 
 // This class is responsible for handling the server response for a download.
 // It passes the DataPipeConsumerHandle and completion status to the download
@@ -18,20 +25,25 @@ class DownloadUrlParameters;
 // context menu downloads
 class DownloadResponseHandler : public mojom::URLLoaderClient {
  public:
+  // Class for handling the stream once response starts.
   class Delegate {
    public:
     virtual void OnResponseStarted(
         std::unique_ptr<DownloadCreateInfo> download_create_info,
-        mojo::ScopedDataPipeConsumerHandle body) = 0;
+        mojom::DownloadStreamHandlePtr stream_handle) = 0;
+    virtual void OnReceiveRedirect() = 0;
   };
 
-  DownloadResponseHandler(DownloadUrlParameters* params,
+  DownloadResponseHandler(ResourceRequest* resource_request,
                           Delegate* delegate,
-                          bool is_parallel_request);
+                          std::unique_ptr<DownloadSaveInfo> save_info,
+                          bool is_parallel_request,
+                          bool is_transient,
+                          bool fetch_error_body);
   ~DownloadResponseHandler() override;
 
   // mojom::URLLoaderClient
-  void OnReceiveResponse(const content::ResourceResponseHead& head,
+  void OnReceiveResponse(const ResourceResponseHead& head,
                          const base::Optional<net::SSLInfo>& ssl_info,
                          mojom::DownloadedTempFilePtr downloaded_file) override;
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
@@ -48,7 +60,31 @@ class DownloadResponseHandler : public mojom::URLLoaderClient {
                   completion_status) override;
 
  private:
+  std::unique_ptr<DownloadCreateInfo> CreateDownloadCreateInfo(
+      const ResourceResponseHead& head);
+
+  // Helper method that is called when response is received.
+  void OnResponseStarted(mojom::DownloadStreamHandlePtr stream_handle);
+
   Delegate* const delegate_;
+
+  std::unique_ptr<DownloadCreateInfo> create_info_;
+
+  bool started_;
+
+  // Information needed to create DownloadCreateInfo when the time comes.
+  std::unique_ptr<DownloadSaveInfo> save_info_;
+  std::vector<GURL> url_chain_;
+  std::string method_;
+  GURL referrer_;
+  bool is_transient_;
+  bool fetch_error_body_;
+  net::CertStatus cert_status_;
+  bool has_strong_validators_;
+  GURL origin_;
+
+  // Mojo interface ptr to send the completion status to the download sink.
+  mojom::DownloadStreamClientPtr client_ptr_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadResponseHandler);
 };

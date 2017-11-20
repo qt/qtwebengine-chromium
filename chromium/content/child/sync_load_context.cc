@@ -21,17 +21,18 @@ void SyncLoadContext::StartAsyncWithWaitableEvent(
     std::unique_ptr<ResourceRequest> request,
     int routing_id,
     const url::Origin& frame_origin,
+    const net::NetworkTrafficAnnotationTag& traffic_annotation,
     mojom::URLLoaderFactoryPtrInfo url_loader_factory_pipe,
+    std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
     SyncLoadResponse* response,
     base::WaitableEvent* event) {
   auto* context = new SyncLoadContext(
       request.get(), std::move(url_loader_factory_pipe), response, event);
-  // TODO(reillyg): Support throttles.
-  std::vector<std::unique_ptr<URLLoaderThrottle>> throttles;
 
   context->request_id_ = context->resource_dispatcher_->StartAsync(
-      std::move(request), routing_id, nullptr, frame_origin, true /* is_sync */,
-      base::WrapUnique(context), blink::WebURLRequest::LoadingIPCType::kMojo,
+      std::move(request), routing_id, nullptr, frame_origin, traffic_annotation,
+      true /* is_sync */, base::WrapUnique(context),
+      blink::WebURLRequest::LoadingIPCType::kMojo,
       context->url_loader_factory_.get(), std::move(throttles),
       mojo::ScopedDataPipeConsumerHandle());
 }

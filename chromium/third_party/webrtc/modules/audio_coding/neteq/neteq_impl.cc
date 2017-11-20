@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/neteq_impl.h"
+#include "modules/audio_coding/neteq/neteq_impl.h"
 
 #include <assert.h>
 
@@ -16,37 +16,37 @@
 #include <utility>
 #include <vector>
 
-#include "webrtc/api/audio_codecs/audio_decoder.h"
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_coding/neteq/accelerate.h"
-#include "webrtc/modules/audio_coding/neteq/background_noise.h"
-#include "webrtc/modules/audio_coding/neteq/buffer_level_filter.h"
-#include "webrtc/modules/audio_coding/neteq/comfort_noise.h"
-#include "webrtc/modules/audio_coding/neteq/decision_logic.h"
-#include "webrtc/modules/audio_coding/neteq/decoder_database.h"
-#include "webrtc/modules/audio_coding/neteq/defines.h"
-#include "webrtc/modules/audio_coding/neteq/delay_manager.h"
-#include "webrtc/modules/audio_coding/neteq/delay_peak_detector.h"
-#include "webrtc/modules/audio_coding/neteq/dtmf_buffer.h"
-#include "webrtc/modules/audio_coding/neteq/dtmf_tone_generator.h"
-#include "webrtc/modules/audio_coding/neteq/expand.h"
-#include "webrtc/modules/audio_coding/neteq/merge.h"
-#include "webrtc/modules/audio_coding/neteq/nack_tracker.h"
-#include "webrtc/modules/audio_coding/neteq/normal.h"
-#include "webrtc/modules/audio_coding/neteq/packet.h"
-#include "webrtc/modules/audio_coding/neteq/packet_buffer.h"
-#include "webrtc/modules/audio_coding/neteq/post_decode_vad.h"
-#include "webrtc/modules/audio_coding/neteq/preemptive_expand.h"
-#include "webrtc/modules/audio_coding/neteq/red_payload_splitter.h"
-#include "webrtc/modules/audio_coding/neteq/sync_buffer.h"
-#include "webrtc/modules/audio_coding/neteq/tick_timer.h"
-#include "webrtc/modules/audio_coding/neteq/timestamp_scaler.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/safe_conversions.h"
-#include "webrtc/rtc_base/sanitizer.h"
-#include "webrtc/rtc_base/trace_event.h"
+#include "api/audio_codecs/audio_decoder.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_coding/neteq/accelerate.h"
+#include "modules/audio_coding/neteq/background_noise.h"
+#include "modules/audio_coding/neteq/buffer_level_filter.h"
+#include "modules/audio_coding/neteq/comfort_noise.h"
+#include "modules/audio_coding/neteq/decision_logic.h"
+#include "modules/audio_coding/neteq/decoder_database.h"
+#include "modules/audio_coding/neteq/defines.h"
+#include "modules/audio_coding/neteq/delay_manager.h"
+#include "modules/audio_coding/neteq/delay_peak_detector.h"
+#include "modules/audio_coding/neteq/dtmf_buffer.h"
+#include "modules/audio_coding/neteq/dtmf_tone_generator.h"
+#include "modules/audio_coding/neteq/expand.h"
+#include "modules/audio_coding/neteq/merge.h"
+#include "modules/audio_coding/neteq/nack_tracker.h"
+#include "modules/audio_coding/neteq/normal.h"
+#include "modules/audio_coding/neteq/packet.h"
+#include "modules/audio_coding/neteq/packet_buffer.h"
+#include "modules/audio_coding/neteq/post_decode_vad.h"
+#include "modules/audio_coding/neteq/preemptive_expand.h"
+#include "modules/audio_coding/neteq/red_payload_splitter.h"
+#include "modules/audio_coding/neteq/sync_buffer.h"
+#include "modules/audio_coding/neteq/tick_timer.h"
+#include "modules/audio_coding/neteq/timestamp_scaler.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/safe_conversions.h"
+#include "rtc_base/sanitizer.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
@@ -282,7 +282,7 @@ void NetEqImpl::RemoveAllPayloadTypes() {
 
 bool NetEqImpl::SetMinimumDelay(int delay_ms) {
   rtc::CritScope lock(&crit_sect_);
-  if (delay_ms >= 0 && delay_ms < 10000) {
+  if (delay_ms >= 0 && delay_ms <= 10000) {
     assert(delay_manager_.get());
     return delay_manager_->SetMinimumDelay(delay_ms);
   }
@@ -291,7 +291,7 @@ bool NetEqImpl::SetMinimumDelay(int delay_ms) {
 
 bool NetEqImpl::SetMaximumDelay(int delay_ms) {
   rtc::CritScope lock(&crit_sect_);
-  if (delay_ms >= 0 && delay_ms < 10000) {
+  if (delay_ms >= 0 && delay_ms <= 10000) {
     assert(delay_manager_.get());
     return delay_manager_->SetMaximumDelay(delay_ms);
   }
@@ -374,9 +374,11 @@ int NetEqImpl::NetworkStatistics(NetEqNetworkStatistics* stats) {
       sync_buffer_->FutureLength();
   assert(delay_manager_.get());
   assert(decision_logic_.get());
+  const int ms_per_packet = rtc::dchecked_cast<int>(
+      decision_logic_->packet_length_samples() / (fs_hz_ / 1000));
+  stats_.PopulateDelayManagerStats(ms_per_packet, *delay_manager_.get(), stats);
   stats_.GetNetworkStatistics(fs_hz_, total_samples_in_buffers,
-                              decoder_frame_length_, *delay_manager_.get(),
-                              *decision_logic_.get(), stats);
+                              decoder_frame_length_, stats);
   return 0;
 }
 
@@ -847,7 +849,7 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame, bool* muted) {
             : timestamp_scaler_->ToExternal(playout_timestamp_) -
                   static_cast<uint32_t>(audio_frame->samples_per_channel_);
     audio_frame->num_channels_ = sync_buffer_->Channels();
-    stats_.ExpandedNoiseSamples(output_size_samples_);
+    stats_.ExpandedNoiseSamples(output_size_samples_, false);
     *muted = true;
     return 0;
   }
@@ -1573,14 +1575,15 @@ int NetEqImpl::DoExpand(bool play_dtmf) {
     algorithm_buffer_->Clear();
     int return_value = expand_->Process(algorithm_buffer_.get());
     size_t length = algorithm_buffer_->Size();
+    bool is_new_concealment_event = (last_mode_ != kModeExpand);
 
     // Update in-call and post-call statistics.
     if (expand_->MuteFactor(0) == 0) {
       // Expand operation generates only noise.
-      stats_.ExpandedNoiseSamples(length);
+      stats_.ExpandedNoiseSamples(length, is_new_concealment_event);
     } else {
       // Expand operation generates more than only noise.
-      stats_.ExpandedVoiceSamples(length);
+      stats_.ExpandedVoiceSamples(length, is_new_concealment_event);
     }
 
     last_mode_ = kModeExpand;
@@ -1947,7 +1950,8 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
       assert(false);  // Should always be able to extract a packet here.
       return -1;
     }
-    stats_.StoreWaitingTime(packet->waiting_time->ElapsedMs());
+    const uint64_t waiting_time_ms = packet->waiting_time->ElapsedMs();
+    stats_.StoreWaitingTime(waiting_time_ms);
     RTC_DCHECK(!packet->empty());
 
     if (first_packet) {
@@ -1986,6 +1990,8 @@ int NetEqImpl::ExtractPackets(size_t required_samples,
       packet_duration = decoder_frame_length_;
     }
     extracted_samples = packet->timestamp - first_timestamp + packet_duration;
+
+    stats_.JitterBufferDelay(extracted_samples, waiting_time_ms);
 
     packet_list->push_back(std::move(*packet));  // Store packet in list.
     packet = rtc::Optional<Packet>();  // Ensure it's never used after the move.

@@ -50,7 +50,7 @@ class MutablePolicyValueStore : public PolicyValueStore {
   explicit MutablePolicyValueStore(const base::FilePath& path)
       : PolicyValueStore(
             kTestExtensionId,
-            make_scoped_refptr(new SettingsObserverList()),
+            base::MakeRefCounted<SettingsObserverList>(),
             base::MakeUnique<LeveldbValueStore>(kDatabaseUMAClientName, path)) {
   }
   ~MutablePolicyValueStore() override {}
@@ -117,7 +117,7 @@ class PolicyValueStoreTest : public testing::Test {
         FROM_HERE,
         base::Bind(&PolicyValueStoreTest::SetCurrentPolicyOnBackendSequence,
                    base::Unretained(this), base::Passed(policies.DeepCopy())));
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
   }
 
   void SetCurrentPolicyOnBackendSequence(

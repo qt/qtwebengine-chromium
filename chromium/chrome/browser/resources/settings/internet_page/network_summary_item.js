@@ -85,8 +85,11 @@ Polymer({
           return this.i18n('tetherEnableBluetooth');
       }
       // Enabled or enabling states.
-      if (deviceState.State == CrOnc.DeviceState.ENABLED)
-        return CrOncStrings.networkListItemNotConnected;
+      if (deviceState.State == CrOnc.DeviceState.ENABLED) {
+        if (this.networkStateList.length > 0)
+          return CrOncStrings.networkListItemNotConnected;
+        return CrOncStrings.networkListItemNoNetwork;
+      }
       if (deviceState.State == CrOnc.DeviceState.ENABLING)
         return this.i18n('internetDeviceEnabling');
     }
@@ -304,6 +307,15 @@ Polymer({
     this.fire(
         'device-enabled-toggled', {enabled: !deviceIsEnabled, type: type});
     // Make sure this does not propagate to onDetailsTap_.
+    event.stopPropagation();
+  },
+
+  /**
+   * Make sure events in embedded components do not propagate to onDetailsTap_.
+   * @param {!Event} event
+   * @private
+   */
+  doNothing_: function(event) {
     event.stopPropagation();
   },
 });

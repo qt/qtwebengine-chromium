@@ -479,16 +479,8 @@ void PersistentHistogramAllocator::MergeHistogramDeltaToStatisticsRecorder(
     return;
   }
 
-  // TODO(bcwhite): Remove this when crbug/744734 is fixed.
-  histogram->ValidateHistogramContents(true, -1);
-  existing->ValidateHistogramContents(true, -2);
-
   // Merge the delta from the passed object to the one in the SR.
   existing->AddSamples(*histogram->SnapshotDelta());
-
-  // TODO(bcwhite): Remove this when crbug/744734 is fixed.
-  histogram->ValidateHistogramContents(true, -3);
-  existing->ValidateHistogramContents(true, -4);
 }
 
 void PersistentHistogramAllocator::MergeHistogramFinalDeltaToStatisticsRecorder(
@@ -706,7 +698,6 @@ std::unique_ptr<HistogramBase> PersistentHistogramAllocator::CreateHistogram(
     DCHECK_EQ(histogram_type, histogram->GetHistogramType());
     histogram->SetFlags(histogram_flags);
     RecordCreateHistogramResult(CREATE_HISTOGRAM_SUCCESS);
-    histogram->ValidateHistogramContents(true, 0);
   } else {
     RecordCreateHistogramResult(CREATE_HISTOGRAM_UNKNOWN_TYPE);
   }
@@ -733,8 +724,7 @@ PersistentHistogramAllocator::GetOrCreateStatisticsRecorderHistogram(
   // FactoryGet() which will create the histogram in the global persistent-
   // histogram allocator if such is set.
   base::Pickle pickle;
-  if (!histogram->SerializeInfo(&pickle))
-    return nullptr;
+  histogram->SerializeInfo(&pickle);
   PickleIterator iter(pickle);
   existing = DeserializeHistogramInfo(&iter);
   if (!existing)

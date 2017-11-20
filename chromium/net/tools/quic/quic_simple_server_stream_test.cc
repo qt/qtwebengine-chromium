@@ -24,12 +24,12 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using std::string;
-using testing::_;
 using testing::AnyNumber;
-using testing::Invoke;
 using testing::InSequence;
+using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
+using testing::_;
 
 namespace net {
 namespace test {
@@ -45,8 +45,8 @@ class QuicSimpleServerStreamPeer : public QuicSimpleServerStream {
 
   ~QuicSimpleServerStreamPeer() override {}
 
-  using QuicSimpleServerStream::SendResponse;
   using QuicSimpleServerStream::SendErrorResponse;
+  using QuicSimpleServerStream::SendResponse;
 
   SpdyHeaderBlock* mutable_headers() { return &request_headers_; }
 
@@ -166,14 +166,15 @@ class MockQuicSimpleServerSession : public QuicSimpleServerSession {
   DISALLOW_COPY_AND_ASSIGN(MockQuicSimpleServerSession);
 };
 
-class QuicSimpleServerStreamTest : public QuicTestWithParam<QuicVersion> {
+class QuicSimpleServerStreamTest
+    : public QuicTestWithParam<QuicTransportVersion> {
  public:
   QuicSimpleServerStreamTest()
-      : connection_(
-            new StrictMock<MockQuicConnection>(&helper_,
-                                               &alarm_factory_,
-                                               Perspective::IS_SERVER,
-                                               SupportedVersions(GetParam()))),
+      : connection_(new StrictMock<MockQuicConnection>(
+            &helper_,
+            &alarm_factory_,
+            Perspective::IS_SERVER,
+            SupportedTransportVersions(GetParam()))),
         crypto_config_(new QuicCryptoServerConfig(
             QuicCryptoServerConfig::TESTING,
             QuicRandom::GetInstance(),
@@ -227,14 +228,13 @@ class QuicSimpleServerStreamTest : public QuicTestWithParam<QuicVersion> {
   QuicHttpResponseCache response_cache_;
   StrictMock<MockQuicSimpleServerSession> session_;
   QuicSimpleServerStreamPeer* stream_;  // Owned by session_.
-  string headers_string_;
   string body_;
   QuicHeaderList header_list_;
 };
 
 INSTANTIATE_TEST_CASE_P(Tests,
                         QuicSimpleServerStreamTest,
-                        ::testing::ValuesIn(AllSupportedVersions()));
+                        ::testing::ValuesIn(AllSupportedTransportVersions()));
 
 TEST_P(QuicSimpleServerStreamTest, TestFraming) {
   EXPECT_CALL(session_, WritevData(_, _, _, _, _, _))
@@ -525,8 +525,6 @@ TEST_P(QuicSimpleServerStreamTest, InvalidMultipleContentLength) {
   // \000 is a way to write the null byte when followed by a literal digit.
   header_list_.OnHeader("content-length", QuicStringPiece("11\00012", 5));
 
-  headers_string_ = SpdyUtils::SerializeUncompressedHeaders(request_headers);
-
   EXPECT_CALL(session_, WriteHeadersMock(_, _, _, _, _));
   EXPECT_CALL(session_, WritevData(_, _, _, _, _, _))
       .Times(AnyNumber())
@@ -545,8 +543,6 @@ TEST_P(QuicSimpleServerStreamTest, InvalidLeadingNullContentLength) {
   // \000 is a way to write the null byte when followed by a literal digit.
   header_list_.OnHeader("content-length", QuicStringPiece("\00012", 3));
 
-  headers_string_ = SpdyUtils::SerializeUncompressedHeaders(request_headers);
-
   EXPECT_CALL(session_, WriteHeadersMock(_, _, _, _, _));
   EXPECT_CALL(session_, WritevData(_, _, _, _, _, _))
       .Times(AnyNumber())
@@ -562,8 +558,6 @@ TEST_P(QuicSimpleServerStreamTest, ValidMultipleContentLength) {
   SpdyHeaderBlock request_headers;
   // \000 is a way to write the null byte when followed by a literal digit.
   header_list_.OnHeader("content-length", QuicStringPiece("11\00011", 5));
-
-  headers_string_ = SpdyUtils::SerializeUncompressedHeaders(request_headers);
 
   stream_->OnStreamHeaderList(false, kFakeFrameLen, header_list_);
 

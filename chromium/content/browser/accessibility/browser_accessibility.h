@@ -152,7 +152,9 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
 
   // Returns the bounds of this object in coordinates relative to the
   // page (specifically, the top-left corner of the topmost web contents).
-  gfx::Rect GetPageBoundsRect() const;
+  // Optionally updates |offscreen| to be true if the element is offscreen
+  // within its page.
+  gfx::Rect GetPageBoundsRect(bool* offscreen = nullptr) const;
 
   // Returns the bounds of the given range in coordinates relative to the
   // top-left corner of the overall web area. Only valid when the
@@ -166,8 +168,10 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   // (which is relative to its nearest scrollable ancestor) to
   // absolute bounds, either in page coordinates (when |frameOnly| is
   // false), or in frame coordinates (when |frameOnly| is true).
+  // Updates optional |offscreen| to be true if the node is offscreen.
   virtual gfx::Rect RelativeToAbsoluteBounds(gfx::RectF bounds,
-                                             bool frame_only) const;
+                                             bool frame_only,
+                                             bool* offscreen = nullptr) const;
 
   // This is to handle the cases such as ARIA textbox, where the value should
   // be calculated from the object's inner text.
@@ -213,9 +217,7 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   uint32_t InternalChildCount() const;
   BrowserAccessibility* InternalGetChild(uint32_t child_index) const;
   BrowserAccessibility* InternalGetParent() const;
-
   BrowserAccessibility* PlatformGetParent() const;
-  int32_t GetIndexInParent() const;
 
   int32_t GetId() const;
   gfx::RectF GetLocation() const;
@@ -339,9 +341,11 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   gfx::NativeViewAccessible HitTestSync(int x, int y) override;
   gfx::NativeViewAccessible GetFocus() override;
   ui::AXPlatformNode* GetFromNodeID(int32_t id) override;
+  int GetIndexInParent() const override;
   gfx::AcceleratedWidget GetTargetForNativeAccessibilityEvent() override;
   bool AccessibilityPerformAction(const ui::AXActionData& data) override;
   bool ShouldIgnoreHoveredStateForTesting() override;
+  bool IsOffscreen() const override;
 
  protected:
   using AXPlatformPositionInstance = AXPlatformPosition::AXPositionInstance;

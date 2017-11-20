@@ -42,10 +42,10 @@ class StyleDifference;
 class SVGComputedStyle : public RefCounted<SVGComputedStyle> {
  public:
   static RefPtr<SVGComputedStyle> Create() {
-    return AdoptRef(new SVGComputedStyle);
+    return WTF::AdoptRef(new SVGComputedStyle);
   }
   RefPtr<SVGComputedStyle> Copy() const {
-    return AdoptRef(new SVGComputedStyle(*this));
+    return WTF::AdoptRef(new SVGComputedStyle(*this));
   }
   CORE_EXPORT ~SVGComputedStyle();
 
@@ -355,7 +355,7 @@ class SVGComputedStyle : public RefCounted<SVGComputedStyle> {
   const SVGPaintType& StrokePaintType() const { return stroke->paint_type; }
   const Color& StrokePaintColor() const { return stroke->paint_color; }
   const String& StrokePaintUri() const { return stroke->paint_uri; }
-  SVGDashArray* StrokeDashArray() const { return stroke->dash_array.Get(); }
+  SVGDashArray* StrokeDashArray() const { return stroke->dash_array.get(); }
   float StrokeMiterLimit() const { return stroke->miter_limit; }
   const UnzoomedLength& StrokeWidth() const { return stroke->width; }
   const Length& StrokeDashOffset() const { return stroke->dash_offset; }
@@ -367,7 +367,7 @@ class SVGComputedStyle : public RefCounted<SVGComputedStyle> {
   const Length& BaselineShiftValue() const {
     return misc->baseline_shift_value;
   }
-  StylePath* D() const { return geometry->d.Get(); }
+  StylePath* D() const { return geometry->d.get(); }
   const Length& Cx() const { return geometry->cx; }
   const Length& Cy() const { return geometry->cy; }
   const Length& X() const { return geometry->x; }

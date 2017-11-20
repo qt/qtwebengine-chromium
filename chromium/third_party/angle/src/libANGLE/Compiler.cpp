@@ -88,6 +88,8 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const ContextState &state)
     mResources.MaxProgramTexelOffset   = caps.maxProgramTexelOffset;
 
     // GLSL ES 3.1 constants
+    mResources.MaxProgramTextureGatherOffset    = caps.maxProgramTextureGatherOffset;
+    mResources.MinProgramTextureGatherOffset    = caps.minProgramTextureGatherOffset;
     mResources.MaxImageUnits                    = caps.maxImageUnits;
     mResources.MaxVertexImageUniforms           = caps.maxVertexImageUniforms;
     mResources.MaxFragmentImageUniforms         = caps.maxFragmentImageUniforms;
@@ -118,6 +120,7 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const ContextState &state)
     mResources.MaxAtomicCounterBufferSize      = caps.maxAtomicCounterBufferSize;
 
     mResources.MaxUniformBufferBindings = caps.maxUniformBufferBindings;
+    mResources.MaxShaderStorageBufferBindings = caps.maxShaderStorageBufferBindings;
 
     // Needed by point size clamping workaround
     mResources.MaxPointSize = caps.maxAliasedPointSize;
@@ -162,7 +165,7 @@ Compiler::~Compiler()
         sh::Finalize();
     }
 
-    mImplementation->release();
+    ANGLE_SWALLOW_ERR(mImplementation->release());
 }
 
 ShHandle Compiler::getCompilerHandle(GLenum type)

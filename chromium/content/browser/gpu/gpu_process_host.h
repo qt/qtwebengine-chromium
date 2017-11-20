@@ -9,12 +9,12 @@
 
 #include <map>
 #include <memory>
-#include <queue>
 #include <set>
 #include <string>
 
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
+#include "base/containers/queue.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
@@ -31,8 +31,8 @@
 #include "ipc/ipc_sender.h"
 #include "ipc/message_filter.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "services/ui/gpu/interfaces/gpu_host.mojom.h"
 #include "services/ui/gpu/interfaces/gpu_main.mojom.h"
+#include "services/viz/privileged/interfaces/gl/gpu_host.mojom.h"
 #include "services/viz/privileged/interfaces/gl/gpu_service.mojom.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -56,7 +56,7 @@ class BrowserChildProcessHostImpl;
 
 class GpuProcessHost : public BrowserChildProcessHostDelegate,
                        public IPC::Sender,
-                       public ui::mojom::GpuHost {
+                       public viz::mojom::GpuHost {
  public:
   enum GpuProcessKind {
     GPU_PROCESS_KIND_UNSANDBOXED,
@@ -75,6 +75,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   using EstablishChannelCallback =
       base::Callback<void(const IPC::ChannelHandle&,
                           const gpu::GPUInfo&,
+                          const gpu::GpuFeatureInfo&,
                           EstablishChannelStatus status)>;
 
   enum class BufferCreationStatus {
@@ -165,6 +166,10 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   CONTENT_EXPORT viz::mojom::GpuService* gpu_service();
 
+  bool wake_up_gpu_before_drawing() const {
+    return wake_up_gpu_before_drawing_;
+  }
+
  private:
   class ConnectionFilterImpl;
 
@@ -184,7 +189,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void OnProcessLaunchFailed(int error_code) override;
   void OnProcessCrashed(int exit_code) override;
 
-  // ui::mojom::GpuHost:
+  // viz::mojom::GpuHost:
   void DidInitialize(const gpu::GPUInfo& gpu_info,
                      const gpu::GpuFeatureInfo& gpu_feature_info) override;
   void DidFailInitialize() override;
@@ -234,10 +239,10 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   // These are the channel requests that we have already sent to
   // the GPU process, but haven't heard back about yet.
-  std::queue<EstablishChannelCallback> channel_requests_;
+  base::queue<EstablishChannelCallback> channel_requests_;
 
   // The pending create gpu memory buffer requests we need to reply to.
-  std::queue<CreateGpuMemoryBufferCallback> create_gpu_memory_buffer_requests_;
+  base::queue<CreateGpuMemoryBufferCallback> create_gpu_memory_buffer_requests_;
 
   // A callback to signal the completion of a SendDestroyingVideoSurface call.
   base::Closure send_destroying_video_surface_done_cb_;
@@ -245,7 +250,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   std::vector<RequestGPUInfoCallback> request_gpu_info_callbacks_;
 
   // Qeueud messages to send when the process launches.
-  std::queue<IPC::Message*> queued_messages_;
+  base::queue<IPC::Message*> queued_messages_;
 
   // Whether the GPU process is valid, set to false after Send() failed.
   bool valid_;
@@ -294,9 +299,15 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   std::string shader_prefix_key_;
 
+  // The following are a list of driver bug workarounds that will only be
+  // set to true in DidInitialize(), where GPU process has started and GPU
+  // driver bug workarounds have been computed and sent back.
+  bool wake_up_gpu_before_drawing_ = false;
+  bool dont_disable_webgl_when_compositor_context_lost_ = false;
+
   ui::mojom::GpuMainAssociatedPtr gpu_main_ptr_;
   viz::mojom::GpuServicePtr gpu_service_ptr_;
-  mojo::Binding<ui::mojom::GpuHost> gpu_host_binding_;
+  mojo::Binding<viz::mojom::GpuHost> gpu_host_binding_;
   gpu::GpuProcessHostActivityFlags activity_flags_;
 
   SEQUENCE_CHECKER(sequence_checker_);

@@ -15,6 +15,7 @@
 #include "components/subresource_filter/content/browser/content_activation_list_utils.h"
 #include "components/subresource_filter/content/browser/content_subresource_filter_driver_factory.h"
 #include "components/subresource_filter/content/browser/subresource_filter_client.h"
+#include "components/subresource_filter/content/browser/subresource_filter_observer_manager.h"
 #include "components/subresource_filter/content/browser/subresource_filter_safe_browsing_client.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_handle.h"
@@ -47,8 +48,7 @@ SubresourceFilterSafeBrowsingActivationThrottle::
   DCHECK(handle->IsInMainFrame());
 
   CheckCurrentUrl();
-  // Check added to investigate crbug.com/733099.
-  CHECK(!database_client_ || !check_results_.empty());
+  DCHECK(!database_client_ || !check_results_.empty());
 }
 
 SubresourceFilterSafeBrowsingActivationThrottle::
@@ -116,34 +116,24 @@ bool SubresourceFilterSafeBrowsingActivationThrottle::NavigationIsPageReload(
 }
 
 content::NavigationThrottle::ThrottleCheckResult
-SubresourceFilterSafeBrowsingActivationThrottle::WillStartRequest() {
-  will_start_request_called_ = true;
-  return content::NavigationThrottle::ThrottleCheckResult::PROCEED;
-}
-
-content::NavigationThrottle::ThrottleCheckResult
 SubresourceFilterSafeBrowsingActivationThrottle::WillRedirectRequest() {
   CheckCurrentUrl();
-  // Check added to investigate crbug.com/733099.
-  CHECK(!database_client_ || !check_results_.empty());
-  return content::NavigationThrottle::ThrottleCheckResult::PROCEED;
+  DCHECK(!database_client_ || !check_results_.empty());
+  return PROCEED;
 }
 
 content::NavigationThrottle::ThrottleCheckResult
 SubresourceFilterSafeBrowsingActivationThrottle::WillProcessResponse() {
-  // Checks added to investigate crbug.com/733099.
-  CHECK(will_start_request_called_);
-  CHECK(!database_client_ || !check_results_.empty());
-
+  DCHECK(!database_client_ || !check_results_.empty());
   // No need to defer the navigation if the check already happened.
   if (!database_client_ || check_results_.back().finished) {
     NotifyResult();
-    return content::NavigationThrottle::ThrottleCheckResult::PROCEED;
+    return PROCEED;
   }
   CHECK(!deferring_);
   deferring_ = true;
   defer_time_ = base::TimeTicks::Now();
-  return content::NavigationThrottle::ThrottleCheckResult::DEFER;
+  return DEFER;
 }
 
 const char*
@@ -192,6 +182,29 @@ void SubresourceFilterSafeBrowsingActivationThrottle::NotifyResult() {
     client_->WhitelistInCurrentWebContents(navigation_handle()->GetURL());
   }
 
+  // Compute the matched list and notify observers of the check result.
+  DCHECK(!database_client_ || !check_results_.empty());
+  ActivationList matched_list = ActivationList::NONE;
+  bool warning = false;
+  if (!check_results_.empty()) {
+    const auto& check_result = check_results_.back();
+    DCHECK(check_result.finished);
+    matched_list = GetListForThreatTypeAndMetadata(
+        check_result.threat_type, check_result.threat_metadata);
+    // TODO(shivanisha): For now warning is true if at least one matching list
+    // has warning mode set. This needs to change to be able to handle per-list
+    // enforcement level.
+    for (const auto& match :
+         check_result.threat_metadata.subresource_filter_match) {
+      warning |= (match.second == safe_browsing::SubresourceFilterLevel::WARN);
+    }
+    SubresourceFilterObserverManager::FromWebContents(
+        navigation_handle()->GetWebContents())
+        ->NotifySafeBrowsingCheckComplete(navigation_handle(),
+                                          check_result.threat_type,
+                                          check_result.threat_metadata);
+  }
+
   Configuration matched_configuration;
   ActivationDecision activation_decision = ActivationDecision::UNKNOWN;
   if (client_->ForceActivationInCurrentWebContents()) {
@@ -199,7 +212,8 @@ void SubresourceFilterSafeBrowsingActivationThrottle::NotifyResult() {
     activation_decision = ActivationDecision::ACTIVATED;
     matched_configuration = Configuration::MakeForForcedActivation();
   } else {
-    activation_decision = ComputeActivation(&matched_configuration);
+    activation_decision =
+        ComputeActivation(matched_list, &matched_configuration);
   }
   DCHECK_NE(activation_decision, ActivationDecision::UNKNOWN);
 
@@ -209,8 +223,8 @@ void SubresourceFilterSafeBrowsingActivationThrottle::NotifyResult() {
   // activation.
   bool whitelisted = client_->OnPageActivationComputed(
       navigation_handle(),
-      matched_configuration.activation_options.activation_level ==
-          ActivationLevel::ENABLED,
+      !warning && matched_configuration.activation_options.activation_level ==
+                      ActivationLevel::ENABLED,
       matched_configuration.activation_options.should_suppress_notifications);
 
   // Only reset the activation decision reason if we would have activated.
@@ -221,7 +235,7 @@ void SubresourceFilterSafeBrowsingActivationThrottle::NotifyResult() {
   }
 
   driver_factory->NotifyPageActivationComputed(
-      navigation_handle(), activation_decision, matched_configuration);
+      navigation_handle(), activation_decision, matched_configuration, warning);
 
   base::TimeDelta delay = defer_time_.is_null()
                               ? base::TimeDelta::FromMilliseconds(0)
@@ -240,30 +254,20 @@ void SubresourceFilterSafeBrowsingActivationThrottle::NotifyResult() {
 
 ActivationDecision
 SubresourceFilterSafeBrowsingActivationThrottle::ComputeActivation(
+    ActivationList matched_list,
     Configuration* configuration) {
   const GURL& url(navigation_handle()->GetURL());
-  ActivationList matched_list = ActivationList::NONE;
-  DCHECK(!database_client_ || !check_results_.empty());
-  bool experimental_list = false;
-  if (!check_results_.empty()) {
-    const auto& check_result = check_results_.back();
-    DCHECK(check_result.finished);
-    matched_list = GetListForThreatTypeAndMetadata(
-        check_result.threat_type, check_result.threat_metadata);
-    experimental_list = check_result.threat_metadata.experimental;
-  }
-
   const auto config_list = GetEnabledConfigurations();
   bool scheme_is_http_or_https = url.SchemeIsHTTPOrHTTPS();
-  const auto highest_priority_activated_config = std::find_if(
-      config_list->configs_by_decreasing_priority().begin(),
-      config_list->configs_by_decreasing_priority().end(),
-      [&url, scheme_is_http_or_https, matched_list, experimental_list,
-       this](const Configuration& config) {
-        return DoesMainFrameURLSatisfyActivationConditions(
-            url, scheme_is_http_or_https, config.activation_conditions,
-            matched_list, experimental_list);
-      });
+  const auto highest_priority_activated_config =
+      std::find_if(config_list->configs_by_decreasing_priority().begin(),
+                   config_list->configs_by_decreasing_priority().end(),
+                   [&url, scheme_is_http_or_https, matched_list,
+                    this](const Configuration& config) {
+                     return DoesMainFrameURLSatisfyActivationConditions(
+                         url, scheme_is_http_or_https,
+                         config.activation_conditions, matched_list);
+                   });
 
   bool has_activated_config =
       highest_priority_activated_config !=
@@ -297,8 +301,7 @@ bool SubresourceFilterSafeBrowsingActivationThrottle::
         const GURL& url,
         bool scheme_is_http_or_https,
         const Configuration::ActivationConditions& conditions,
-        ActivationList matched_list,
-        bool experimental_list) const {
+        ActivationList matched_list) const {
   // Avoid copies when tracing disabled.
   auto list_to_string = [](ActivationList activation_list) {
     std::ostringstream matched_list_stream;
@@ -319,15 +322,9 @@ bool SubresourceFilterSafeBrowsingActivationThrottle::
         return false;
       if (matched_list == ActivationList::NONE)
         return false;
+      if (conditions.activation_list == matched_list)
+        return true;
 
-      // Normal match. Make sure that if the list is experimental, we only match
-      // if our activation conditions also specify that we support experimental
-      // lists.
-      if (conditions.activation_list == matched_list) {
-        return !experimental_list || conditions.experimental;
-      }
-
-      // Phishing / SocEng lists don't have experimental metadata.
       if (conditions.activation_list == ActivationList::PHISHING_INTERSTITIAL &&
           matched_list == ActivationList::SOCIAL_ENG_ADS_INTERSTITIAL) {
         // Handling special case, where activation on the phishing sites also

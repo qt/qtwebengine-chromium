@@ -144,7 +144,7 @@ CPDF_Font* CPDF_DocPageData::GetFont(CPDF_Dictionary* pFontDict) {
   return pFontData->AddRef();
 }
 
-CPDF_Font* CPDF_DocPageData::GetStandardFont(const CFX_ByteString& fontName,
+CPDF_Font* CPDF_DocPageData::GetStandardFont(const ByteString& fontName,
                                              CPDF_FontEncoding* pEncoding) {
   if (fontName.IsEmpty())
     return nullptr;
@@ -212,10 +212,10 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpace(
     CPDF_Object* pCSObj,
     const CPDF_Dictionary* pResources) {
   std::set<CPDF_Object*> visited;
-  return GetColorSpaceImpl(pCSObj, pResources, &visited);
+  return GetColorSpaceGuarded(pCSObj, pResources, &visited);
 }
 
-CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceImpl(
+CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceGuarded(
     CPDF_Object* pCSObj,
     const CPDF_Dictionary* pResources,
     std::set<CPDF_Object*>* pVisited) {
@@ -225,15 +225,16 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceImpl(
   if (pdfium::ContainsKey(*pVisited, pCSObj))
     return nullptr;
 
+  pdfium::ScopedSetInsertion<CPDF_Object*> insertion(pVisited, pCSObj);
+
   if (pCSObj->IsName()) {
-    CFX_ByteString name = pCSObj->GetString();
+    ByteString name = pCSObj->GetString();
     CPDF_ColorSpace* pCS = CPDF_ColorSpace::ColorspaceFromName(name);
     if (!pCS && pResources) {
       CPDF_Dictionary* pList = pResources->GetDictFor("ColorSpace");
       if (pList) {
-        pdfium::ScopedSetInsertion<CPDF_Object*> insertion(pVisited, pCSObj);
-        return GetColorSpaceImpl(pList->GetDirectObjectFor(name), nullptr,
-                                 pVisited);
+        return GetColorSpaceGuarded(pList->GetDirectObjectFor(name), nullptr,
+                                    pVisited);
       }
     }
     if (!pCS || !pResources)
@@ -258,8 +259,7 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceImpl(
     if (!pDefaultCS)
       return pCS;
 
-    pdfium::ScopedSetInsertion<CPDF_Object*> insertion(pVisited, pCSObj);
-    return GetColorSpaceImpl(pDefaultCS, nullptr, pVisited);
+    return GetColorSpaceGuarded(pDefaultCS, nullptr, pVisited);
   }
 
   CPDF_Array* pArray = pCSObj->AsArray();
@@ -267,9 +267,8 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceImpl(
     return nullptr;
 
   if (pArray->GetCount() == 1) {
-    pdfium::ScopedSetInsertion<CPDF_Object*> insertion(pVisited, pCSObj);
-    return GetColorSpaceImpl(pArray->GetDirectObjectAt(0), pResources,
-                             pVisited);
+    return GetColorSpaceGuarded(pArray->GetDirectObjectAt(0), pResources,
+                                pVisited);
   }
 
   CPDF_CountedColorSpace* csData = nullptr;
@@ -282,7 +281,7 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpaceImpl(
   }
 
   std::unique_ptr<CPDF_ColorSpace> pCS =
-      CPDF_ColorSpace::Load(m_pPDFDoc.Get(), pArray);
+      CPDF_ColorSpace::Load(m_pPDFDoc.Get(), pArray, pVisited);
   if (!pCS)
     return nullptr;
 
@@ -390,7 +389,7 @@ void CPDF_DocPageData::ReleasePattern(const CPDF_Object* pPatternObj) {
   pPattern->clear();
 }
 
-CFX_RetainPtr<CPDF_Image> CPDF_DocPageData::GetImage(uint32_t dwStreamObjNum) {
+RetainPtr<CPDF_Image> CPDF_DocPageData::GetImage(uint32_t dwStreamObjNum) {
   ASSERT(dwStreamObjNum);
   auto it = m_ImageMap.find(dwStreamObjNum);
   if (it != m_ImageMap.end())
@@ -408,7 +407,7 @@ void CPDF_DocPageData::MaybePurgeImage(uint32_t dwStreamObjNum) {
     m_ImageMap.erase(it);
 }
 
-CFX_RetainPtr<CPDF_IccProfile> CPDF_DocPageData::GetIccProfile(
+RetainPtr<CPDF_IccProfile> CPDF_DocPageData::GetIccProfile(
     CPDF_Stream* pProfileStream) {
   if (!pProfileStream)
     return nullptr;
@@ -423,7 +422,7 @@ CFX_RetainPtr<CPDF_IccProfile> CPDF_DocPageData::GetIccProfile(
   uint8_t digest[20];
   CRYPT_SHA1Generate(pAccessor->GetData(), pAccessor->GetSize(), digest);
 
-  CFX_ByteString bsDigest(digest, 20);
+  ByteString bsDigest(digest, 20);
   auto hash_it = m_HashProfileMap.find(bsDigest);
   if (hash_it != m_HashProfileMap.end()) {
     auto it_copied_stream = m_IccProfileMap.find(hash_it->second);
@@ -444,7 +443,7 @@ void CPDF_DocPageData::MaybePurgeIccProfile(CPDF_Stream* pProfileStream) {
     m_IccProfileMap.erase(it);
 }
 
-CFX_RetainPtr<CPDF_StreamAcc> CPDF_DocPageData::GetFontFileStreamAcc(
+RetainPtr<CPDF_StreamAcc> CPDF_DocPageData::GetFontFileStreamAcc(
     CPDF_Stream* pFontStream) {
   ASSERT(pFontStream);
   auto it = m_FontFileMap.find(pFontStream);

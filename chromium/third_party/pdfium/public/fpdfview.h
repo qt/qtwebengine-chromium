@@ -52,6 +52,7 @@ typedef void* FPDF_SCHHANDLE;
 typedef void* FPDF_STRUCTELEMENT;
 typedef void* FPDF_STRUCTTREE;
 typedef void* FPDF_TEXTPAGE;
+typedef void const* FPDF_PATHSEGMENT;
 
 #ifdef PDF_ENABLE_XFA
 typedef void* FPDF_STRINGHANDLE;
@@ -666,7 +667,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
 //                          by FPDFBitmap_Create or retrieved by
 //                          FPDFImageObj_GetBitmap.
 //          page        -   Handle to the page. Returned by FPDF_LoadPage
-//          matrix      -   The transform matrix.
+//          matrix      -   The transform matrix. It must be invertible.
 //          clipping    -   The rect to clip to.
 //          flags       -   0 for normal display, or combination of the Page
 //                          Rendering flags defined above. With the FPDF_ANNOT
@@ -674,7 +675,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
 //                          user-interaction, which are all annotations except
 //                          widget and popup annotations.
 // Return value:
-//          None.
+//          None. Note that behavior is undefined if det of |matrix| is 0.
 FPDF_EXPORT void FPDF_CALLCONV
 FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
                                 FPDF_PAGE page,
@@ -1011,7 +1012,8 @@ FPDF_VIEWERREF_GetDuplex(FPDF_DOCUMENT document);
 //          be of type "name".
 // Parameters:
 //          document    -   Handle to the loaded document.
-//          key         -   Name of the key in the viewer pref dictionary.
+//          key         -   Name of the key in the viewer pref dictionary,
+//                          encoded in UTF-8.
 //          buffer      -   A string to write the contents of the key to.
 //          length      -   Length of the buffer.
 // Return value:

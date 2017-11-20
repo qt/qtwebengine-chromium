@@ -19,7 +19,7 @@ namespace {
 const char* HELP_TEXT = R"(
 Traffic Annotation Auditor
 Extracts network traffic annotaions from the repository, audits them for errors
-and coverage, and produces reports.
+and coverage, produces reports, and updates related files.
 
 Usage: traffic_annotation_auditor [OPTION]... [path_filters]
 
@@ -32,6 +32,9 @@ Options:
   --source-path       Optional path to the src directory. If not provided and
                       build-path is available, assumed to be 'build-path/../..',
                       otherwise current directory.
+  --tool-path         Optional path to traffic_annotation_extractor clang tool.
+                      If not specified, it's assumed to be in the same path as
+                      auditor's executable.
   --extractor-output  Optional path to the temporary file that extracted
                       annotations will be stored into.
   --extracted-input   Optional path to the file that temporary extracted
@@ -40,6 +43,12 @@ Options:
   --full-run          Optional flag asking the tool to run on the whole
                       repository without text filtering files. Using this flag
                       may increase processing time x40.
+  --test-only         Optional flag to request just running tests and not
+                      updating any file. If not specified,
+                      'tools/traffic_annotation/summary/annotations.xml' might
+                      get updated and if it does, 'tools/traffic_annotation/
+                      scripts/annotations_xml_downstream_updater.py will
+                      be called to update downstream files.
   --summary-file      Optional path to the output file with all annotations.
   --annotations-file  Optional path to a TSV output file with all annotations.
   path_filters        Optional paths to filter what files the tool is run on.
@@ -48,10 +57,35 @@ Example:
   traffic_annotation_auditor --build-dir=out/Debug summary-file=report.txt
 )";
 
-const base::FilePath kAnnotationsXmlPath(
-    FILE_PATH_LITERAL("tools/traffic_annotation/summary/annotations.xml"));
+const base::FilePath kDownstreamUpdater =
+    base::FilePath(FILE_PATH_LITERAL("tools"))
+        .Append(FILE_PATH_LITERAL("traffic_annotation"))
+        .Append(FILE_PATH_LITERAL("scripts"))
+        .Append(FILE_PATH_LITERAL("annotations_xml_downstream_caller.py"));
 
 }  // namespace
+
+// Calls |kDownstreamUpdater| script to update files that depend on
+// annotations.xml.
+bool RunAnnotationDownstreamUpdater(const base::FilePath& source_path) {
+  base::CommandLine cmdline(source_path.Append(kDownstreamUpdater));
+  int exit_code;
+
+#if defined(OS_WIN)
+  cmdline.PrependWrapper(L"python");
+  exit_code =
+      system(base::UTF16ToASCII(cmdline.GetCommandLineString()).c_str());
+#else
+  exit_code = system(cmdline.GetCommandLineString().c_str());
+#endif
+
+  if (exit_code) {
+    LOG(ERROR) << "Running " << kDownstreamUpdater.MaybeAsASCII()
+               << " failed with exit code: " << exit_code;
+    return false;
+  }
+  return true;
+}
 
 // Writes a summary of annotations, calls, and errors.
 bool WriteSummaryFile(const base::FilePath& filepath,
@@ -257,11 +291,13 @@ int main(int argc, char* argv[]) {
 
   base::FilePath build_path = command_line.GetSwitchValuePath("build-path");
   base::FilePath source_path = command_line.GetSwitchValuePath("source-path");
+  base::FilePath tool_path = command_line.GetSwitchValuePath("tool-path");
   base::FilePath extractor_output =
       command_line.GetSwitchValuePath("extractor-output");
   base::FilePath extractor_input =
       command_line.GetSwitchValuePath("extractor-input");
   bool full_run = command_line.HasSwitch("full-run");
+  bool test_only = command_line.HasSwitch("test-only");
   base::FilePath summary_file = command_line.GetSwitchValuePath("summary-file");
   base::FilePath annotations_file =
       command_line.GetSwitchValuePath("annotations-file");
@@ -274,6 +310,11 @@ int main(int argc, char* argv[]) {
   path_filters = command_line.GetArgs();
 #endif
 
+  // If tool path is not specified, assume it is in the same path as this
+  // executable.
+  if (tool_path.empty())
+    tool_path = command_line.GetProgram().DirName();
+
   // If source path is not provided, guess it using build path or current
   // directory.
   if (source_path.empty()) {
@@ -284,20 +325,21 @@ int main(int argc, char* argv[]) {
                         .Append(base::FilePath::kParentDirectory);
   }
 
-  TrafficAnnotationAuditor auditor(source_path, build_path);
+  // Get build directory, if it is empty issue an error.
+  if (build_path.empty()) {
+    LOG(ERROR)
+        << "You must specify a compiled build directory to run the auditor.\n";
+    return 1;
+  }
+
+  TrafficAnnotationAuditor auditor(source_path, build_path, tool_path);
 
   // Extract annotations.
   if (extractor_input.empty()) {
-    // Get build directory, if it is empty issue an error.
-    if (build_path.empty()) {
-      LOG(ERROR)
-          << "You must either specify the build directory to run the clang "
-             "tool and extract annotations, or specify the input file where "
-             "extracted annotations already exist.\n";
+    if (!auditor.RunClangTool(path_filters, full_run)) {
+      LOG(ERROR) << "Failed to run clang tool.";
       return 1;
     }
-    if (!auditor.RunClangTool(path_filters, full_run))
-      return 1;
 
     // Write extractor output if requested.
     if (!extractor_output.empty()) {
@@ -321,7 +363,10 @@ int main(int argc, char* argv[]) {
     return 1;
 
   // Perform checks.
-  auditor.RunAllChecks();
+  if (!auditor.RunAllChecks()) {
+    LOG(ERROR) << "Running checks failed.";
+    return 1;
+  }
 
   // Write the summary file.
   if (!summary_file.empty() &&
@@ -331,21 +376,29 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // Update annotations list.
-  if (!TrafficAnnotationExporter().UpdateAnnotationsXML(
-          source_path.Append(kAnnotationsXmlPath),
-          auditor.extracted_annotations(),
-          TrafficAnnotationAuditor::GetReservedUniqueIDs())) {
-    LOG(ERROR) << "Could not update annotations XML.";
-    return 1;
-  }
-
   // Write annotations TSV file.
   if (!annotations_file.empty() &&
       !WriteAnnotationsFile(annotations_file,
                             auditor.extracted_annotations())) {
     LOG(ERROR) << "Could not write TSV file.";
     return 1;
+  }
+
+  // Test/Update annotations.xml.
+  TrafficAnnotationExporter exporter(source_path);
+  if (!exporter.UpdateAnnotations(
+          auditor.extracted_annotations(),
+          TrafficAnnotationAuditor::GetReservedUniqueIDs())) {
+    return 1;
+  }
+  if (exporter.modified()) {
+    if (test_only) {
+      printf("Error: annotation.xml needs update.\n");
+    } else if (!exporter.SaveAnnotationsXML() ||
+               !RunAnnotationDownstreamUpdater(source_path)) {
+      LOG(ERROR) << "Could not update annotations XML or downstream files.";
+      return 1;
+    }
   }
 
   // Dump Errors and Warnings to stdout.

@@ -59,9 +59,7 @@ class CC_EXPORT CheckerImageTracker {
 
   // Returns true if the decode for |image| will be deferred to the image decode
   // service and it should be be skipped during raster.
-  bool ShouldCheckerImage(const DrawImage& image,
-                          WhichTree tree,
-                          bool required_for_activation);
+  bool ShouldCheckerImage(const DrawImage& image, WhichTree tree);
 
   // Provides a prioritized queue of images to decode.
   using ImageDecodeQueue = std::vector<ImageDecodeRequest>;
@@ -130,6 +128,7 @@ class CC_EXPORT CheckerImageTracker {
     SkFilterQuality filter_quality = kNone_SkFilterQuality;
     SkSize scale = SkSize::MakeEmpty();
     gfx::ColorSpace color_space;
+    size_t frame_index = PaintImage::kDefaultFrameIndex;
   };
 
   // Wrapper to unlock an image decode requested from the ImageController on

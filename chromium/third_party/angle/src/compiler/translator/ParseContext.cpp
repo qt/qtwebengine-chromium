@@ -189,7 +189,8 @@ TParseContext::TParseContext(TSymbolTable &symt,
       mUsesSecondaryOutputs(false),
       mMinProgramTexelOffset(resources.MinProgramTexelOffset),
       mMaxProgramTexelOffset(resources.MaxProgramTexelOffset),
-      mMultiviewAvailable(resources.OVR_multiview == 1),
+      mMinProgramTextureGatherOffset(resources.MinProgramTextureGatherOffset),
+      mMaxProgramTextureGatherOffset(resources.MaxProgramTextureGatherOffset),
       mComputeShaderLocalSizeDeclared(false),
       mNumViews(-1),
       mMaxNumViews(resources.MaxViewsOVR),
@@ -900,7 +901,7 @@ void TParseContext::checkLocationIsNotSpecified(const TSourceLoc &location,
         if (mShaderVersion >= 310)
         {
             errorMsg =
-                "invalid layout qualifier: only valid on program inputs, outputs, and uniforms";
+                "invalid layout qualifier: only valid on shader inputs, outputs, and uniforms";
         }
         error(location, errorMsg, "location");
     }
@@ -1146,30 +1147,25 @@ void TParseContext::checkIsParameterQualifierValid(
     }
 }
 
-bool TParseContext::checkCanUseExtension(const TSourceLoc &line, const TString &extension)
+bool TParseContext::checkCanUseExtension(const TSourceLoc &line, TExtension extension)
 {
+    ASSERT(extension != TExtension::UNDEFINED);
     const TExtensionBehavior &extBehavior   = extensionBehavior();
-    TExtensionBehavior::const_iterator iter = extBehavior.find(extension.c_str());
+    TExtensionBehavior::const_iterator iter = extBehavior.find(extension);
     if (iter == extBehavior.end())
     {
-        error(line, "extension is not supported", extension.c_str());
+        error(line, "extension is not supported", GetExtensionNameString(extension));
         return false;
     }
     // In GLSL ES, an extension's default behavior is "disable".
     if (iter->second == EBhDisable || iter->second == EBhUndefined)
     {
-        // TODO(oetuaho@nvidia.com): This is slightly hacky. Might be better if symbols could be
-        // associated with more than one extension.
-        if (extension == "GL_OVR_multiview")
-        {
-            return checkCanUseExtension(line, "GL_OVR_multiview2");
-        }
-        error(line, "extension is disabled", extension.c_str());
+        error(line, "extension is disabled", GetExtensionNameString(extension));
         return false;
     }
     if (iter->second == EBhWarn)
     {
-        warning(line, "extension is being used", extension.c_str());
+        warning(line, "extension is being used", GetExtensionNameString(extension));
         return true;
     }
 
@@ -1218,15 +1214,16 @@ void TParseContext::declarationQualifierErrorCheck(const sh::TQualifier qualifie
 
     // If multiview extension is enabled, "in" qualifier is allowed in the vertex shader in previous
     // parsing steps. So it needs to be checked here.
-    if (isMultiviewExtensionEnabled() && mShaderVersion < 300 && qualifier == EvqVertexIn)
+    if (isExtensionEnabled(TExtension::OVR_multiview) && mShaderVersion < 300 &&
+        qualifier == EvqVertexIn)
     {
         error(location, "storage qualifier supported in GLSL ES 3.00 and above only", "in");
     }
 
     bool canHaveLocation = qualifier == EvqVertexIn || qualifier == EvqFragmentOut;
-    if (mShaderVersion >= 310 && qualifier == EvqUniform)
+    if (mShaderVersion >= 310)
     {
-        canHaveLocation = true;
+        canHaveLocation = canHaveLocation || qualifier == EvqUniform || IsVarying(qualifier);
         // We're not checking whether the uniform location is in range here since that depends on
         // the type of the variable.
         // The type can only be fully determined for non-empty declarations.
@@ -1632,16 +1629,16 @@ void TParseContext::checkInvariantVariableQualifier(bool invariant,
     }
 }
 
-bool TParseContext::supportsExtension(const char *extension)
+bool TParseContext::supportsExtension(TExtension extension)
 {
     const TExtensionBehavior &extbehavior   = extensionBehavior();
     TExtensionBehavior::const_iterator iter = extbehavior.find(extension);
     return (iter != extbehavior.end());
 }
 
-bool TParseContext::isExtensionEnabled(const char *extension) const
+bool TParseContext::isExtensionEnabled(TExtension extension) const
 {
-    return ::IsExtensionEnabled(extensionBehavior(), extension);
+    return IsExtensionEnabled(extensionBehavior(), extension);
 }
 
 void TParseContext::handleExtensionDirective(const TSourceLoc &loc,
@@ -1715,8 +1712,7 @@ const TVariable *TParseContext::getNamedVariable(const TSourceLoc &location,
 
     const TVariable *variable = static_cast<const TVariable *>(symbol);
 
-    if (symbolTable.findBuiltIn(variable->getName(), mShaderVersion) &&
-        !variable->getExtension().empty())
+    if (variable->getExtension() != TExtension::UNDEFINED)
     {
         checkCanUseExtension(location, variable->getExtension());
     }
@@ -1774,14 +1770,6 @@ TIntermTyped *TParseContext::parseVariableIdentifier(const TSourceLoc &location,
         TIntermTyped *node = CreateZeroNode(TType(EbtFloat, EbpHigh, EvqConst));
         node->setLine(location);
         return node;
-    }
-
-    if (variable->getType().getQualifier() == EvqViewIDOVR && IsWebGLBasedSpec(mShaderSpec) &&
-        mShaderType == GL_FRAGMENT_SHADER && !isExtensionEnabled("GL_OVR_multiview2"))
-    {
-        // WEBGL_multiview spec
-        error(location, "Need to enable OVR_multiview2 to use gl_ViewID_OVR in fragment shader",
-              "gl_ViewID_OVR");
     }
 
     TIntermTyped *node = nullptr;
@@ -2968,7 +2956,8 @@ void TParseContext::parseGlobalLayoutQualifier(const TTypeQualifierBuilder &type
             return;
         }
     }
-    else if (isMultiviewExtensionEnabled() && typeQualifier.qualifier == EvqVertexIn)
+    else if (isExtensionEnabled(TExtension::OVR_multiview) &&
+             typeQualifier.qualifier == EvqVertexIn)
     {
         // This error is only specified in WebGL, but tightens unspecified behavior in the native
         // specification.
@@ -3840,7 +3829,7 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
         {
             if (baseExpression->getQualifier() == EvqFragData && index > 0)
             {
-                if (!isExtensionEnabled("GL_EXT_draw_buffers"))
+                if (!isExtensionEnabled(TExtension::EXT_draw_buffers))
                 {
                     outOfRangeError(outOfRangeIndexIsError, location,
                                     "array index for gl_FragData must be zero when "
@@ -4073,7 +4062,7 @@ TLayoutQualifier TParseContext::parseLayoutQualifier(const TString &qualifierTyp
         error(qualifierTypeLine, "invalid layout qualifier: location requires an argument",
               qualifierType.c_str());
     }
-    else if (qualifierType == "yuv" && isExtensionEnabled("GL_EXT_YUV_target") &&
+    else if (qualifierType == "yuv" && isExtensionEnabled(TExtension::EXT_YUV_target) &&
              mShaderType == GL_FRAGMENT_SHADER)
     {
         qualifier.yuv = true;
@@ -4143,43 +4132,46 @@ TLayoutQualifier TParseContext::parseLayoutQualifier(const TString &qualifierTyp
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.imageInternalFormat = EiifR32UI;
     }
-    else if (qualifierType == "points" && isExtensionEnabled("GL_OES_geometry_shader") &&
+    else if (qualifierType == "points" && isExtensionEnabled(TExtension::OES_geometry_shader) &&
              mShaderType == GL_GEOMETRY_SHADER_OES)
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptPoints;
     }
-    else if (qualifierType == "lines" && isExtensionEnabled("GL_OES_geometry_shader") &&
+    else if (qualifierType == "lines" && isExtensionEnabled(TExtension::OES_geometry_shader) &&
              mShaderType == GL_GEOMETRY_SHADER_OES)
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptLines;
     }
-    else if (qualifierType == "lines_adjacency" && isExtensionEnabled("GL_OES_geometry_shader") &&
+    else if (qualifierType == "lines_adjacency" &&
+             isExtensionEnabled(TExtension::OES_geometry_shader) &&
              mShaderType == GL_GEOMETRY_SHADER_OES)
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptLinesAdjacency;
     }
-    else if (qualifierType == "triangles" && isExtensionEnabled("GL_OES_geometry_shader") &&
+    else if (qualifierType == "triangles" && isExtensionEnabled(TExtension::OES_geometry_shader) &&
              mShaderType == GL_GEOMETRY_SHADER_OES)
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptTriangles;
     }
     else if (qualifierType == "triangles_adjacency" &&
-             isExtensionEnabled("GL_OES_geometry_shader") && mShaderType == GL_GEOMETRY_SHADER_OES)
+             isExtensionEnabled(TExtension::OES_geometry_shader) &&
+             mShaderType == GL_GEOMETRY_SHADER_OES)
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptTrianglesAdjacency;
     }
-    else if (qualifierType == "line_strip" && isExtensionEnabled("GL_OES_geometry_shader") &&
+    else if (qualifierType == "line_strip" && isExtensionEnabled(TExtension::OES_geometry_shader) &&
              mShaderType == GL_GEOMETRY_SHADER_OES)
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptLineStrip;
     }
-    else if (qualifierType == "triangle_strip" && isExtensionEnabled("GL_OES_geometry_shader") &&
+    else if (qualifierType == "triangle_strip" &&
+             isExtensionEnabled(TExtension::OES_geometry_shader) &&
              mShaderType == GL_GEOMETRY_SHADER_OES)
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
@@ -4331,17 +4323,19 @@ TLayoutQualifier TParseContext::parseLayoutQualifier(const TString &qualifierTyp
         parseLocalSize(qualifierType, qualifierTypeLine, intValue, intValueLine, intValueString, 2u,
                        &qualifier.localSize);
     }
-    else if (qualifierType == "num_views" && isMultiviewExtensionEnabled() &&
+    else if (qualifierType == "num_views" && isExtensionEnabled(TExtension::OVR_multiview) &&
              mShaderType == GL_VERTEX_SHADER)
     {
         parseNumViews(intValue, intValueLine, intValueString, &qualifier.numViews);
     }
-    else if (qualifierType == "invocations" && isExtensionEnabled("GL_OES_geometry_shader") &&
+    else if (qualifierType == "invocations" &&
+             isExtensionEnabled(TExtension::OES_geometry_shader) &&
              mShaderType == GL_GEOMETRY_SHADER_OES)
     {
         parseInvocations(intValue, intValueLine, intValueString, &qualifier.invocations);
     }
-    else if (qualifierType == "max_vertices" && isExtensionEnabled("GL_OES_geometry_shader") &&
+    else if (qualifierType == "max_vertices" &&
+             isExtensionEnabled(TExtension::OES_geometry_shader) &&
              mShaderType == GL_GEOMETRY_SHADER_OES)
     {
         parseMaxVertices(intValue, intValueLine, intValueString, &qualifier.maxVertices);
@@ -4389,7 +4383,7 @@ TStorageQualifierWrapper *TParseContext::parseInQualifier(const TSourceLoc &loc)
     {
         case GL_VERTEX_SHADER:
         {
-            if (mShaderVersion < 300 && !isMultiviewExtensionEnabled())
+            if (mShaderVersion < 300 && !isExtensionEnabled(TExtension::OVR_multiview))
             {
                 error(loc, "storage qualifier supported in GLSL ES 3.00 and above only", "in");
             }
@@ -4639,12 +4633,10 @@ TIntermSwitch *TParseContext::addSwitch(TIntermTyped *init,
         return nullptr;
     }
 
-    if (statementList)
+    ASSERT(statementList);
+    if (!ValidateSwitchStatementList(switchType, mDiagnostics, statementList, loc))
     {
-        if (!ValidateSwitchStatementList(switchType, mDiagnostics, statementList, loc))
-        {
-            return nullptr;
-        }
+        return nullptr;
     }
 
     TIntermSwitch *node = new TIntermSwitch(init, statementList);
@@ -5275,12 +5267,79 @@ TIntermBranch *TParseContext::addBranch(TOperator op,
     return node;
 }
 
+void TParseContext::checkTextureGather(TIntermAggregate *functionCall)
+{
+    ASSERT(functionCall->getOp() == EOpCallBuiltInFunction);
+    const TString &name        = functionCall->getFunctionSymbolInfo()->getName();
+    bool isTextureGather       = (name == "textureGather");
+    bool isTextureGatherOffset = (name == "textureGatherOffset");
+    if (isTextureGather || isTextureGatherOffset)
+    {
+        TIntermNode *componentNode = nullptr;
+        TIntermSequence *arguments = functionCall->getSequence();
+        ASSERT(arguments->size() >= 2u && arguments->size() <= 4u);
+        const TIntermTyped *sampler = arguments->front()->getAsTyped();
+        ASSERT(sampler != nullptr);
+        switch (sampler->getBasicType())
+        {
+            case EbtSampler2D:
+            case EbtISampler2D:
+            case EbtUSampler2D:
+            case EbtSampler2DArray:
+            case EbtISampler2DArray:
+            case EbtUSampler2DArray:
+                if ((isTextureGather && arguments->size() == 3u) ||
+                    (isTextureGatherOffset && arguments->size() == 4u))
+                {
+                    componentNode = arguments->back();
+                }
+                break;
+            case EbtSamplerCube:
+            case EbtISamplerCube:
+            case EbtUSamplerCube:
+                ASSERT(!isTextureGatherOffset);
+                if (arguments->size() == 3u)
+                {
+                    componentNode = arguments->back();
+                }
+                break;
+            case EbtSampler2DShadow:
+            case EbtSampler2DArrayShadow:
+            case EbtSamplerCubeShadow:
+                break;
+            default:
+                UNREACHABLE();
+                break;
+        }
+        if (componentNode)
+        {
+            const TIntermConstantUnion *componentConstantUnion =
+                componentNode->getAsConstantUnion();
+            if (componentNode->getAsTyped()->getQualifier() != EvqConst || !componentConstantUnion)
+            {
+                error(functionCall->getLine(), "Texture component must be a constant expression",
+                      name.c_str());
+            }
+            else
+            {
+                int component = componentConstantUnion->getIConst(0);
+                if (component < 0 || component > 3)
+                {
+                    error(functionCall->getLine(), "Component must be in the range [0;3]",
+                          name.c_str());
+                }
+            }
+        }
+    }
+}
+
 void TParseContext::checkTextureOffsetConst(TIntermAggregate *functionCall)
 {
     ASSERT(functionCall->getOp() == EOpCallBuiltInFunction);
     const TString &name        = functionCall->getFunctionSymbolInfo()->getName();
     TIntermNode *offset        = nullptr;
     TIntermSequence *arguments = functionCall->getSequence();
+    bool useTextureGatherOffsetConstraints = false;
     if (name == "texelFetchOffset" || name == "textureLodOffset" ||
         name == "textureProjLodOffset" || name == "textureGradOffset" ||
         name == "textureProjGradOffset")
@@ -5292,6 +5351,31 @@ void TParseContext::checkTextureOffsetConst(TIntermAggregate *functionCall)
         // A bias parameter might follow the offset parameter.
         ASSERT(arguments->size() >= 3);
         offset = (*arguments)[2];
+    }
+    else if (name == "textureGatherOffset")
+    {
+        ASSERT(arguments->size() >= 3u);
+        const TIntermTyped *sampler = arguments->front()->getAsTyped();
+        ASSERT(sampler != nullptr);
+        switch (sampler->getBasicType())
+        {
+            case EbtSampler2D:
+            case EbtISampler2D:
+            case EbtUSampler2D:
+            case EbtSampler2DArray:
+            case EbtISampler2DArray:
+            case EbtUSampler2DArray:
+                offset = (*arguments)[2];
+                break;
+            case EbtSampler2DShadow:
+            case EbtSampler2DArrayShadow:
+                offset = (*arguments)[3];
+                break;
+            default:
+                UNREACHABLE();
+                break;
+        }
+        useTextureGatherOffsetConstraints = true;
     }
     if (offset != nullptr)
     {
@@ -5306,10 +5390,14 @@ void TParseContext::checkTextureOffsetConst(TIntermAggregate *functionCall)
             ASSERT(offsetConstantUnion->getBasicType() == EbtInt);
             size_t size                  = offsetConstantUnion->getType().getObjectSize();
             const TConstantUnion *values = offsetConstantUnion->getUnionArrayPointer();
+            int minOffsetValue = useTextureGatherOffsetConstraints ? mMinProgramTextureGatherOffset
+                                                                   : mMinProgramTexelOffset;
+            int maxOffsetValue = useTextureGatherOffsetConstraints ? mMaxProgramTextureGatherOffset
+                                                                   : mMaxProgramTexelOffset;
             for (size_t i = 0u; i < size; ++i)
             {
                 int offsetValue = values[i].getIConst();
-                if (offsetValue > mMaxProgramTexelOffset || offsetValue < mMinProgramTexelOffset)
+                if (offsetValue > maxOffsetValue || offsetValue < minOffsetValue)
                 {
                     std::stringstream tokenStream;
                     tokenStream << offsetValue;
@@ -5447,8 +5535,6 @@ TIntermTyped *TParseContext::addMethod(TFunction *fnCall,
                                        TIntermNode *thisNode,
                                        const TSourceLoc &loc)
 {
-    TConstantUnion *unionArray = new TConstantUnion[1];
-    int arraySize              = 0;
     TIntermTyped *typedThis    = thisNode->getAsTyped();
     // It's possible for the name pointer in the TFunction to be null in case it gets parsed as
     // a constructor. But such a TFunction can't reach here, since the lexer goes into FIELDS
@@ -5473,27 +5559,11 @@ TIntermTyped *TParseContext::addMethod(TFunction *fnCall,
     }
     else
     {
-        arraySize = typedThis->getOutermostArraySize();
-        if (typedThis->getAsSymbolNode() == nullptr)
-        {
-            // This code path can be hit with expressions like these:
-            // (a = b).length()
-            // (func()).length()
-            // (int[3](0, 1, 2)).length()
-            // ESSL 3.00 section 5.9 defines expressions so that this is not actually a valid
-            // expression.
-            // It allows "An array name with the length method applied" in contrast to GLSL 4.4
-            // spec section 5.9 which allows "An array, vector or matrix expression with the
-            // length method applied".
-            error(loc, "length can only be called on array names, not on array expressions",
-                  "length");
-        }
+        TIntermUnary *node = new TIntermUnary(EOpArrayLength, typedThis);
+        node->setLine(loc);
+        return node->fold(mDiagnostics);
     }
-    unionArray->setIConst(arraySize);
-    TIntermConstantUnion *node =
-        new TIntermConstantUnion(unionArray, TType(EbtInt, EbpUndefined, EvqConst));
-    node->setLine(loc);
-    return node;
+    return CreateZeroNode(TType(EbtInt, EbpUndefined, EvqConst));
 }
 
 TIntermTyped *TParseContext::addNonConstructorFunctionCall(TFunction *fnCall,
@@ -5523,7 +5593,7 @@ TIntermTyped *TParseContext::addNonConstructorFunctionCall(TFunction *fnCall,
             //
             // A declared function.
             //
-            if (builtIn && !fnCandidate->getExtension().empty())
+            if (builtIn && fnCandidate->getExtension() != TExtension::UNDEFINED)
             {
                 checkCanUseExtension(loc, fnCandidate->getExtension());
             }
@@ -5573,6 +5643,7 @@ TIntermTyped *TParseContext::addNonConstructorFunctionCall(TFunction *fnCall,
                 {
                     callNode = TIntermAggregate::CreateBuiltInFunctionCall(*fnCandidate, arguments);
                     checkTextureOffsetConst(callNode);
+                    checkTextureGather(callNode);
                     checkImageMemoryAccessForBuiltinFunctions(callNode);
                 }
                 else

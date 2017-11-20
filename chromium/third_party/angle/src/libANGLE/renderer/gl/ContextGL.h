@@ -62,7 +62,10 @@ class ContextGL : public ContextImpl
         const gl::TransformFeedbackState &state) override;
 
     // Sampler object creation
-    SamplerImpl *createSampler() override;
+    SamplerImpl *createSampler(const gl::SamplerState &state) override;
+
+    // Program Pipeline object creation
+    ProgramPipelineImpl *createProgramPipeline(const gl::ProgramPipelineState &data) override;
 
     // Path object creation
     std::vector<PathImpl *> createPaths(GLsizei range) override;

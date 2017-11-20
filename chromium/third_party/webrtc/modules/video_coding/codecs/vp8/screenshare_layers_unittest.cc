@@ -13,14 +13,14 @@
 
 #include "vpx/vp8cx.h"
 #include "vpx/vpx_encoder.h"
-#include "webrtc/modules/video_coding/codecs/vp8/screenshare_layers.h"
-#include "webrtc/modules/video_coding/codecs/vp8/vp8_impl.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
-#include "webrtc/modules/video_coding/utility/mock/mock_frame_dropper.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/metrics.h"
-#include "webrtc/system_wrappers/include/metrics_default.h"
-#include "webrtc/test/gtest.h"
+#include "modules/video_coding/codecs/vp8/screenshare_layers.h"
+#include "modules/video_coding/codecs/vp8/vp8_impl.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "modules/video_coding/utility/mock/mock_frame_dropper.h"
+#include "system_wrappers/include/clock.h"
+#include "system_wrappers/include/metrics.h"
+#include "system_wrappers/include/metrics_default.h"
+#include "test/gtest.h"
 
 using ::testing::_;
 using ::testing::ElementsAre;
@@ -35,8 +35,8 @@ const int kDefaultQp = 54;
 const int kDefaultTl0BitrateKbps = 200;
 const int kDefaultTl1BitrateKbps = 2000;
 const int kFrameRate = 5;
-const int kSyncPeriodSeconds = 5;
-const int kMaxSyncPeriodSeconds = 10;
+const int kSyncPeriodSeconds = 2;
+const int kMaxSyncPeriodSeconds = 4;
 
 // Expected flags for corresponding temporal layers.
 const int kTl0Flags = VP8_EFLAG_NO_UPD_GF | VP8_EFLAG_NO_UPD_ARF |

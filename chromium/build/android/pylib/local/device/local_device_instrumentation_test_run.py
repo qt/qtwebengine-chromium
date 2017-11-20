@@ -22,7 +22,6 @@ from devil.android.tools import system_app
 from devil.utils import reraiser_thread
 from incremental_install import installer
 from pylib import valgrind_tools
-from pylib.android import logdog_logcat_monitor
 from pylib.base import base_test_result
 from pylib.constants import host_paths
 from pylib.instrumentation import instrumentation_test_instance
@@ -73,9 +72,6 @@ EXTRA_TRACE_FILE = ('org.chromium.base.test.BaseJUnit4ClassRunner.TraceFile')
 
 _EXTRA_TEST_LIST = (
     'org.chromium.base.test.BaseChromiumAndroidJUnitRunner.TestList')
-
-_TEST_LIST_JUNIT4_RUNNERS = [
-    'org.chromium.base.test.BaseChromiumAndroidJUnitRunner']
 
 UI_CAPTURE_DIRS = ['chromium_tests_root', 'UiCapture']
 
@@ -168,31 +164,33 @@ class LocalDeviceInstrumentationTestRun(
           d.Install(apk, permissions=permissions)
         return install_helper_internal
 
-      def incremental_install_helper(apk, json_path):
+      def incremental_install_helper(apk, json_path, permissions):
         @trace_event.traced("apk_path")
         def incremental_install_helper_internal(d, apk_path=apk.path):
           # pylint: disable=unused-argument
-          installer.Install(d, json_path, apk=apk)
+          installer.Install(d, json_path, apk=apk, permissions=permissions)
         return incremental_install_helper_internal
 
       if self._test_instance.apk_under_test:
+        permissions = self._test_instance.apk_under_test.GetPermissions()
         if self._test_instance.apk_under_test_incremental_install_json:
           steps.append(incremental_install_helper(
                            self._test_instance.apk_under_test,
                            self._test_instance.
-                               apk_under_test_incremental_install_json))
+                               apk_under_test_incremental_install_json,
+                           permissions))
         else:
-          permissions = self._test_instance.apk_under_test.GetPermissions()
           steps.append(install_helper(self._test_instance.apk_under_test,
                                       permissions))
 
+      permissions = self._test_instance.test_apk.GetPermissions()
       if self._test_instance.test_apk_incremental_install_json:
         steps.append(incremental_install_helper(
                          self._test_instance.test_apk,
                          self._test_instance.
-                             test_apk_incremental_install_json))
+                             test_apk_incremental_install_json,
+                         permissions))
       else:
-        permissions = self._test_instance.test_apk.GetPermissions()
         steps.append(install_helper(self._test_instance.test_apk,
                                     permissions))
 
@@ -203,15 +201,16 @@ class LocalDeviceInstrumentationTestRun(
       def set_debug_app(dev):
         # Set debug app in order to enable reading command line flags on user
         # builds
-        if self._test_instance.flags:
-          if not self._test_instance.package_info:
-            logging.error("Couldn't set debug app: no package info")
-          elif not self._test_instance.package_info.package:
-            logging.error("Couldn't set debug app: no package defined")
-          else:
-            dev.RunShellCommand(['am', 'set-debug-app', '--persistent',
-                               self._test_instance.package_info.package],
-                              check_return=True)
+        if not self._test_instance.package_info:
+          logging.error("Couldn't set debug app: no package info")
+        elif not self._test_instance.package_info.package:
+          logging.error("Couldn't set debug app: no package defined")
+        else:
+          cmd = ['am', 'set-debug-app', '--persistent']
+          if self._test_instance.wait_for_java_debugger:
+            cmd.append('-w')
+          cmd.append(self._test_instance.package_info.package)
+          dev.RunShellCommand(cmd, check_return=True)
 
       @trace_event.traced
       def edit_shared_prefs(dev):
@@ -330,8 +329,7 @@ class LocalDeviceInstrumentationTestRun(
 
   #override
   def _GetTests(self):
-    tests = None
-    if self._test_instance.junit4_runner_class in _TEST_LIST_JUNIT4_RUNNERS:
+    if self._test_instance.junit4_runner_supports_listing:
       raw_tests = self._GetTestsFromRunner()
       tests = self._test_instance.ProcessRawTests(raw_tests)
     else:
@@ -422,6 +420,8 @@ class LocalDeviceInstrumentationTestRun(
         valgrind_tools.SetChromeTimeoutScale(
             device, test_timeout_scale * self._test_instance.timeout_scale)
 
+    if self._test_instance.wait_for_java_debugger:
+      timeout = None
     logging.info('preparing to run %s: %s', test_display_name, test)
 
     render_tests_device_output_dir = None
@@ -440,15 +440,11 @@ class LocalDeviceInstrumentationTestRun(
     time_ms = lambda: int(time.time() * 1e3)
     start_ms = time_ms()
 
-    stream_name = 'logcat_%s_%s_%s' % (
-        test_name.replace('#', '.'),
-        time.strftime('%Y%m%dT%H%M%S-UTC', time.gmtime()),
-        device.serial)
-    logmon = logdog_logcat_monitor.LogdogLogcatMonitor(
-        device.adb, stream_name, filter_specs=LOGCAT_FILTERS)
-
-    with contextlib_ext.Optional(
-        logmon, self._test_instance.should_save_logcat):
+    with local_device_environment.OptionalPerTestLogcat(
+        device, test_name.replace('#', '.'),
+        self._test_instance.should_save_logcat,
+        additional_filter_specs=['%s:I' % _TAG],
+        deobfuscate_func=self._test_instance.MaybeDeobfuscateLines) as logmon:
       with _LogTestEndpoints(device, test_name):
         with contextlib_ext.Optional(
             trace_event.trace(test_name),
@@ -459,16 +455,20 @@ class LocalDeviceInstrumentationTestRun(
     logcat_url = logmon.GetLogcatURL()
     duration_ms = time_ms() - start_ms
 
+    with contextlib_ext.Optional(
+        trace_event.trace('ProcessResults'),
+        self._env.trace_output):
+      output = self._test_instance.MaybeDeobfuscateLines(output)
+      # TODO(jbudorick): Make instrumentation tests output a JSON so this
+      # doesn't have to parse the output.
+      result_code, result_bundle, statuses = (
+          self._test_instance.ParseAmInstrumentRawOutput(output))
+      results = self._test_instance.GenerateTestResults(
+          result_code, result_bundle, statuses, start_ms, duration_ms,
+          device.product_cpu_abi, self._test_instance.symbolizer)
+
     if self._env.trace_output:
       self._SaveTraceData(trace_device_file, device, test['class'])
-
-    # TODO(jbudorick): Make instrumentation tests output a JSON so this
-    # doesn't have to parse the output.
-    result_code, result_bundle, statuses = (
-        self._test_instance.ParseAmInstrumentRawOutput(output))
-    results = self._test_instance.GenerateTestResults(
-        result_code, result_bundle, statuses, start_ms, duration_ms,
-        device.product_cpu_abi, self._test_instance.symbolizer)
 
     def restore_flags():
       if flags_to_add:
@@ -612,8 +612,11 @@ class LocalDeviceInstrumentationTestRun(
           extras['log'] = 'true'
           extras[_EXTRA_TEST_LIST] = dev_test_list_json.name
           target = '%s/%s' % (test_package, junit4_runner_class)
+          kwargs = {}
+          if self._test_instance.wait_for_java_debugger:
+            kwargs['timeout'] = None
           test_list_run_output = dev.StartInstrumentation(
-              target, extras=extras)
+              target, extras=extras, retries=0, **kwargs)
           if any(test_list_run_output):
             logging.error('Unexpected output while listing tests:')
             for line in test_list_run_output:
@@ -866,6 +869,7 @@ class LocalDeviceInstrumentationTestRun(
     timeout *= cls._GetTimeoutScaleFromAnnotations(annotations)
 
     return timeout
+
 
 def _IsRenderTest(test):
   """Determines if a test or list of tests has a RenderTest amongst them."""

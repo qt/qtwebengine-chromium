@@ -44,7 +44,8 @@ inline RefPtr<BidiContext> BidiContext::CreateUncached(
     bool override,
     BidiEmbeddingSource source,
     BidiContext* parent) {
-  return AdoptRef(new BidiContext(level, direction, override, source, parent));
+  return WTF::AdoptRef(
+      new BidiContext(level, direction, override, source, parent));
 }
 
 RefPtr<BidiContext> BidiContext::Create(unsigned char level,
@@ -112,9 +113,10 @@ RefPtr<BidiContext> BidiContext::CopyStackRemovingUnicodeEmbeddingContexts() {
 
   RefPtr<BidiContext> top_context =
       CopyContextAndRebaselineLevel(contexts.back(), 0);
-  for (int i = contexts.size() - 1; i > 0; --i)
+  for (int i = contexts.size() - 1; i > 0; --i) {
     top_context =
-        CopyContextAndRebaselineLevel(contexts[i - 1], top_context.Get());
+        CopyContextAndRebaselineLevel(contexts[i - 1], top_context.get());
+  }
 
   return top_context;
 }

@@ -44,6 +44,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/modules/permissions/permission_status.mojom.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
 namespace content {
 
@@ -84,7 +85,7 @@ void UnregisterServiceWorkerCallback(bool* called,
 void DispatchSyncSuccessfulCallback(
     int* count,
     const scoped_refptr<ServiceWorkerVersion>& active_version,
-    const ServiceWorkerVersion::StatusCallback& callback) {
+    const ServiceWorkerVersion::LegacyStatusCallback& callback) {
   *count += 1;
   callback.Run(SERVICE_WORKER_OK);
 }
@@ -92,16 +93,16 @@ void DispatchSyncSuccessfulCallback(
 void DispatchSyncFailedCallback(
     int* count,
     const scoped_refptr<ServiceWorkerVersion>& active_version,
-    const ServiceWorkerVersion::StatusCallback& callback) {
+    const ServiceWorkerVersion::LegacyStatusCallback& callback) {
   *count += 1;
   callback.Run(SERVICE_WORKER_ERROR_FAILED);
 }
 
 void DispatchSyncDelayedCallback(
     int* count,
-    ServiceWorkerVersion::StatusCallback* out_callback,
+    ServiceWorkerVersion::LegacyStatusCallback* out_callback,
     const scoped_refptr<ServiceWorkerVersion>& active_version,
-    const ServiceWorkerVersion::StatusCallback& callback) {
+    const ServiceWorkerVersion::LegacyStatusCallback& callback) {
   *count += 1;
   *out_callback = callback;
 }
@@ -161,14 +162,16 @@ class BackgroundSyncManagerTest : public testing::Test {
     bool called_1 = false;
     bool called_2 = false;
     helper_->context()->RegisterServiceWorker(
-        GURL(kScript1), ServiceWorkerRegistrationOptions(GURL(kPattern1)),
+        GURL(kScript1),
+        blink::mojom::ServiceWorkerRegistrationOptions(GURL(kPattern1)),
         nullptr,
         base::AdaptCallbackForRepeating(
             base::BindOnce(&RegisterServiceWorkerCallback, &called_1,
                            &sw_registration_id_1_)));
 
     helper_->context()->RegisterServiceWorker(
-        GURL(kScript2), ServiceWorkerRegistrationOptions(GURL(kPattern2)),
+        GURL(kScript2),
+        blink::mojom::ServiceWorkerRegistrationOptions(GURL(kPattern2)),
         nullptr,
         base::AdaptCallbackForRepeating(
             base::BindOnce(&RegisterServiceWorkerCallback, &called_2,
@@ -407,7 +410,7 @@ class BackgroundSyncManagerTest : public testing::Test {
 
   void DeleteServiceWorkerAndStartOver() {
     helper_->context()->ScheduleDeleteAndStartOver();
-    content::RunAllBlockingPoolTasksUntilIdle();
+    content::RunAllTasksUntilIdle();
   }
 
   int MaxTagLength() const { return BackgroundSyncManager::kMaxTagLength; }
@@ -444,7 +447,7 @@ class BackgroundSyncManagerTest : public testing::Test {
       callback_registrations_;
   ServiceWorkerStatusCode callback_sw_status_code_ = SERVICE_WORKER_OK;
   int sync_events_called_ = 0;
-  ServiceWorkerVersion::StatusCallback sync_fired_callback_;
+  ServiceWorkerVersion::LegacyStatusCallback sync_fired_callback_;
 };
 
 TEST_F(BackgroundSyncManagerTest, Register) {
@@ -475,7 +478,8 @@ TEST_F(BackgroundSyncManagerTest, RegisterWithoutLiveSWRegistration) {
   ServiceWorkerRegistrationHandle* handle =
       dispatcher_host->FindRegistrationHandle(provider_id,
                                               sw_registration_1_->id());
-  dispatcher_host->OnDecrementRegistrationRefCount(handle->handle_id());
+  dispatcher_host->UnregisterServiceWorkerRegistrationHandle(
+      handle->handle_id());
 
   // Ensure |sw_registration_1_| is the last reference to the registration.
   ASSERT_TRUE(sw_registration_1_->HasOneRef());

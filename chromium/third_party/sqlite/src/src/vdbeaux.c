@@ -1374,7 +1374,7 @@ static char *displayP4(Op *pOp, char *zTemp, int nTemp){
       int *ai = pOp->p4.ai;
       int n = ai[0];   /* The first element of an INTARRAY is always the
                        ** count of the number of elements to follow */
-      for(i=1; i<n; i++){
+      for(i=1; i<=n; i++){
         sqlite3XPrintf(&x, ",%d", ai[i]);
       }
       zTemp[0] = '[';
@@ -4592,11 +4592,17 @@ void sqlite3VdbeSetVarmask(Vdbe *v, int iVar){
 ** This routine is invoked by date/time functions that use non-deterministic
 ** features such as 'now'.
 */
-void sqlite3VdbePureFuncOnly(sqlite3_context *pCtx){
+int sqlite3NotPureFunc(sqlite3_context *pCtx){
+#ifdef SQLITE_ENABLE_STAT3_OR_STAT4
+  if( pCtx->pVdbe==0 ) return 1;
+#endif
   if( pCtx->pVdbe->aOp[pCtx->iOp].opcode==OP_PureFunc ){
     sqlite3_result_error(pCtx,
-       "non-deterministic functions prohibited in index expressions", -1);
+       "non-deterministic function in index expression or CHECK constraint",
+       -1);
+    return 0;
   }
+  return 1;
 }
 
 #ifndef SQLITE_OMIT_VIRTUALTABLE

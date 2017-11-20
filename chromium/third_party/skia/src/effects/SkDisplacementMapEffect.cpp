@@ -13,7 +13,7 @@
 #include "SkSpecialImage.h"
 #include "SkWriteBuffer.h"
 #include "SkUnPreMultiply.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #if SK_SUPPORT_GPU
 #include "GrClip.h"
 #include "GrContext.h"
@@ -464,7 +464,7 @@ GrDisplacementMapEffect::GrDisplacementMapEffect(
         sk_sp<GrTextureProxy> color,
         sk_sp<GrColorSpaceXform> colorSpaceXform,
         const SkISize& colorDimensions)
-        : INHERITED(OptimizationFlags(color->config()))
+        : INHERITED(kGrDisplacementMapEffect_ClassID, OptimizationFlags(color->config()))
         , fDisplacementTransform(offsetMatrix, displacement.get())
         , fDisplacementSampler(displacement)
         , fColorTransform(color.get())
@@ -475,7 +475,6 @@ GrDisplacementMapEffect::GrDisplacementMapEffect(
         , fXChannelSelector(xChannelSelector)
         , fYChannelSelector(yChannelSelector)
         , fScale(scale) {
-    this->initClassID<GrDisplacementMapEffect>();
     this->addCoordTransform(&fDisplacementTransform);
     this->addTextureSampler(&fDisplacementSampler);
     this->addCoordTransform(&fColorTransform);
@@ -483,7 +482,8 @@ GrDisplacementMapEffect::GrDisplacementMapEffect(
 }
 
 GrDisplacementMapEffect::GrDisplacementMapEffect(const GrDisplacementMapEffect& that)
-        : INHERITED(OptimizationFlags(that.fColorSampler.proxy()->config()))
+        : INHERITED(kGrDisplacementMapEffect_ClassID,
+                    OptimizationFlags(that.fColorSampler.proxy()->config()))
         , fDisplacementTransform(that.fDisplacementTransform)
         , fDisplacementSampler(that.fDisplacementSampler)
         , fColorTransform(that.fColorTransform)
@@ -493,7 +493,6 @@ GrDisplacementMapEffect::GrDisplacementMapEffect(const GrDisplacementMapEffect& 
         , fXChannelSelector(that.fXChannelSelector)
         , fYChannelSelector(that.fYChannelSelector)
         , fScale(that.fScale) {
-    this->initClassID<GrDisplacementMapEffect>();
     this->addCoordTransform(&fDisplacementTransform);
     this->addTextureSampler(&fDisplacementSampler);
     this->addCoordTransform(&fColorTransform);
@@ -552,8 +551,7 @@ void GrGLDisplacementMapEffect::emitCode(EmitArgs& args) {
     const GrDisplacementMapEffect& displacementMap = args.fFp.cast<GrDisplacementMapEffect>();
     const GrTextureDomain& domain = displacementMap.domain();
 
-    fScaleUni = args.fUniformHandler->addUniform(kFragment_GrShaderFlag,
-                                                 kVec2f_GrSLType, kDefault_GrSLPrecision, "Scale");
+    fScaleUni = args.fUniformHandler->addUniform(kFragment_GrShaderFlag, kHalf2_GrSLType, "Scale");
     const char* scaleUni = args.fUniformHandler->getUniformCStr(fScaleUni);
     const char* dColor = "dColor";
     const char* cCoords = "cCoords";
@@ -564,14 +562,14 @@ void GrGLDisplacementMapEffect::emitCode(EmitArgs& args) {
     fColorSpaceHelper.emitCode(args.fUniformHandler, displacementMap.colorSpaceXform());
 
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
-    fragBuilder->codeAppendf("\t\tfloat4 %s = ", dColor);
+    fragBuilder->codeAppendf("\t\thalf4 %s = ", dColor);
     fragBuilder->appendTextureLookup(args.fTexSamplers[0], args.fTransformedCoords[0].c_str(),
                                    args.fTransformedCoords[0].getType());
     fragBuilder->codeAppend(";\n");
 
     // Unpremultiply the displacement
     fragBuilder->codeAppendf(
-        "\t\t%s.rgb = (%s.a < %s) ? float3(0.0) : clamp(%s.rgb / %s.a, 0.0, 1.0);",
+        "\t\t%s.rgb = (%s.a < %s) ? half3(0.0) : clamp(%s.rgb / %s.a, 0.0, 1.0);",
         dColor, dColor, nearZero, dColor, dColor);
     SkString coords2D = fragBuilder->ensureCoords2D(args.fTransformedCoords[1]);
     fragBuilder->codeAppendf("\t\tfloat2 %s = %s + %s*(%s.",
@@ -612,7 +610,7 @@ void GrGLDisplacementMapEffect::emitCode(EmitArgs& args) {
       default:
         SkDEBUGFAIL("Unknown Y channel selector");
     }
-    fragBuilder->codeAppend("-float2(0.5));\t\t");
+    fragBuilder->codeAppend("-half2(0.5));\t\t");
 
     fGLDomain.sampleTexture(fragBuilder,
                             args.fUniformHandler,

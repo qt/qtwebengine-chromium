@@ -88,14 +88,14 @@ UserGestureToken* UserGestureIndicator::root_token_ = nullptr;
 
 void UserGestureIndicator::UpdateRootToken() {
   if (!root_token_) {
-    root_token_ = token_.Get();
+    root_token_ = token_.get();
   } else {
     RecordUserGestureMerge(*root_token_, *token_);
     token_->TransferGestureTo(root_token_);
   }
 }
 
-UserGestureIndicator::UserGestureIndicator(PassRefPtr<UserGestureToken> token) {
+UserGestureIndicator::UserGestureIndicator(RefPtr<UserGestureToken> token) {
   if (!IsMainThread() || !token || token == root_token_)
     return;
   token_ = std::move(token);
@@ -106,7 +106,7 @@ UserGestureIndicator::UserGestureIndicator(PassRefPtr<UserGestureToken> token) {
 UserGestureIndicator::UserGestureIndicator(UserGestureToken::Status status) {
   if (!IsMainThread())
     return;
-  token_ = AdoptRef(new UserGestureToken(status));
+  token_ = WTF::AdoptRef(new UserGestureToken(status));
   UpdateRootToken();
 }
 

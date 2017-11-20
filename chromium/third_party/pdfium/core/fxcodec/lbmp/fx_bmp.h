@@ -23,7 +23,6 @@
 #define BMP_D_STATUS_DATA 0x04
 #define BMP_D_STATUS_TAIL 0x00
 #define BMP_SIGNATURE 0x4D42
-#define BMP_PAL_NEW 0
 #define BMP_PAL_OLD 1
 #define RLE_MARKER 0
 #define RLE_EOL 0
@@ -33,9 +32,6 @@
 #define BMP_RLE8 1L
 #define BMP_RLE4 2L
 #define BMP_BITFIELDS 3L
-#define BMP_BIT_555 0
-#define BMP_BIT_565 1
-#define BMP_MAX_ERROR_SIZE 256
 // Limit width to (MAXINT32 - 31) / 32
 #define BMP_MAX_WIDTH 67108863
 #pragma pack(1)
@@ -73,14 +69,13 @@ class BMPDecompressor {
   BMPDecompressor();
   ~BMPDecompressor();
 
-  void Error(const char* err_msg);
+  void Error();
   int32_t DecodeImage();
   int32_t ReadHeader();
   void SetInputBuffer(uint8_t* src_buf, uint32_t src_size);
   uint32_t GetAvailInput(uint8_t** avail_buf);
 
   jmp_buf jmpbuf;
-  char* err_ptr;
 
   void* context_ptr;
 
@@ -134,11 +129,8 @@ class CBmpContext : public CCodec_BmpModule::Context {
   ~CBmpContext() override;
 
   BMPDecompressor m_Bmp;
-  CFX_UnownedPtr<CCodec_BmpModule> const m_pModule;
-  CFX_UnownedPtr<CCodec_BmpModule::Delegate> const m_pDelegate;
-  char m_szLastError[256];
+  UnownedPtr<CCodec_BmpModule> const m_pModule;
+  UnownedPtr<CCodec_BmpModule::Delegate> const m_pDelegate;
 };
-
-uint16_t GetWord_LSBFirst(uint8_t* p);
 
 #endif  // CORE_FXCODEC_LBMP_FX_BMP_H_

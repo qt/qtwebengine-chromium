@@ -34,10 +34,10 @@
 #define InputType_h
 
 #include "core/CoreExport.h"
-#include "core/frame/UseCounter.h"
-#include "core/html/TextControlElement.h"
+#include "core/frame/WebFeatureForward.h"
 #include "core/html/forms/ColorChooserClient.h"
 #include "core/html/forms/StepRange.h"
+#include "core/html/forms/TextControlElement.h"
 
 namespace blink {
 

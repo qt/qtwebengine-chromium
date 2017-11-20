@@ -7,9 +7,9 @@
 #include <memory>
 #include "core/css/CSSFontSelector.h"
 #include "core/css/OffscreenFontSelector.h"
+#include "core/css/StyleEngine.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/StyleEngine.h"
 #include "core/fileapi/Blob.h"
 #include "core/html/ImageData.h"
 #include "core/html/canvas/CanvasAsyncBlobCreator.h"
@@ -18,12 +18,14 @@
 #include "core/html/canvas/CanvasRenderingContextFactory.h"
 #include "core/imagebitmap/ImageBitmap.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "gpu/config/gpu_feature_info.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/OffscreenCanvasFrameDispatcherImpl.h"
 #include "platform/graphics/StaticBitmapImage.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "platform/graphics/gpu/AcceleratedImageBufferSurface.h"
+#include "platform/graphics/gpu/SharedGpuContext.h"
 #include "platform/image-encoders/ImageEncoderUtils.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/wtf/MathExtras.h"
@@ -244,18 +246,34 @@ void OffscreenCanvas::DiscardImageBuffer() {
 
 ImageBuffer* OffscreenCanvas::GetOrCreateImageBuffer() {
   if (!image_buffer_) {
+    bool is_accelerated_2d_canvas_blacklisted = true;
+    WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper =
+        SharedGpuContext::ContextProviderWrapper();
+    if (context_provider_wrapper) {
+      const gpu::GpuFeatureInfo& gpu_feature_info =
+          context_provider_wrapper->ContextProvider()->GetGpuFeatureInfo();
+      if (gpu::kGpuFeatureStatusEnabled ==
+          gpu_feature_info
+              .status_values[gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS]) {
+        is_accelerated_2d_canvas_blacklisted = false;
+      }
+    }
+
     IntSize surface_size(width(), height());
-    OpacityMode opacity_mode =
-        context_->CreationAttributes().hasAlpha() ? kNonOpaque : kOpaque;
     std::unique_ptr<ImageBufferSurface> surface;
-    if (RuntimeEnabledFeatures::Accelerated2dCanvasEnabled()) {
-      surface.reset(
-          new AcceleratedImageBufferSurface(surface_size, opacity_mode));
+    // TODO(zakerinasab): crbug.com/761424
+    // Remove the check for canvas color extensions to allow OffscreenCanvas
+    // use accelerated code path with color management.
+    if (!RuntimeEnabledFeatures::ColorCanvasExtensionsEnabled() &&
+        RuntimeEnabledFeatures::Accelerated2dCanvasEnabled() &&
+        !is_accelerated_2d_canvas_blacklisted) {
+      surface.reset(new AcceleratedImageBufferSurface(surface_size,
+                                                      context_->ColorParams()));
     }
 
     if (!surface || !surface->IsValid()) {
       surface.reset(new UnacceleratedImageBufferSurface(
-          surface_size, opacity_mode, kInitializeImagePixels));
+          surface_size, kInitializeImagePixels, context_->ColorParams()));
     }
 
     image_buffer_ = ImageBuffer::Create(std::move(surface));
@@ -389,14 +407,9 @@ ScriptPromise OffscreenCanvas::convertToBlob(ScriptState* script_state,
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
 
-  Document* document =
-      ExecutionContext::From(script_state)->IsDocument()
-          ? static_cast<Document*>(ExecutionContext::From(script_state))
-          : nullptr;
-
   CanvasAsyncBlobCreator* async_creator = CanvasAsyncBlobCreator::Create(
       image_data->data(), encoding_mime_type, image_data->Size(), start_time,
-      document, resolver);
+      ExecutionContext::From(script_state), resolver);
 
   async_creator->ScheduleAsyncBlobCreation(options.quality());
 

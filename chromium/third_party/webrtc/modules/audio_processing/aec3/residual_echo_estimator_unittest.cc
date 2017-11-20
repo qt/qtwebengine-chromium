@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/aec3/residual_echo_estimator.h"
+#include "modules/audio_processing/aec3/residual_echo_estimator.h"
 
-#include "webrtc/modules/audio_processing/aec3/aec3_fft.h"
-#include "webrtc/modules/audio_processing/aec3/aec_state.h"
-#include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/modules/audio_processing/test/echo_canceller_test_tools.h"
-#include "webrtc/rtc_base/random.h"
-#include "webrtc/test/gtest.h"
+#include "modules/audio_processing/aec3/aec3_fft.h"
+#include "modules/audio_processing/aec3/aec_state.h"
+#include "modules/audio_processing/include/audio_processing.h"
+#include "modules/audio_processing/test/echo_canceller_test_tools.h"
+#include "rtc_base/random.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 
@@ -29,10 +29,9 @@ TEST(ResidualEchoEstimator, NullResidualEchoPowerOutput) {
   std::vector<std::array<float, kFftLengthBy2Plus1>> H2;
   std::array<float, kFftLengthBy2Plus1> S2_linear;
   std::array<float, kFftLengthBy2Plus1> Y2;
-  EXPECT_DEATH(
-      ResidualEchoEstimator(AudioProcessing::Config::EchoCanceller3{})
-          .Estimate(true, aec_state, render_buffer, S2_linear, Y2, nullptr),
-      "");
+  EXPECT_DEATH(ResidualEchoEstimator(AudioProcessing::Config::EchoCanceller3{})
+                   .Estimate(aec_state, render_buffer, S2_linear, Y2, nullptr),
+               "");
 }
 
 #endif
@@ -87,7 +86,7 @@ TEST(ResidualEchoEstimator, BasicTest) {
     aec_state.Update(H2, h, rtc::Optional<size_t>(2), render_buffer, E2_main,
                      Y2, x[0], s, false);
 
-    estimator.Estimate(true, aec_state, render_buffer, S2_linear, Y2, &R2);
+    estimator.Estimate(aec_state, render_buffer, S2_linear, Y2, &R2);
   }
   std::for_each(R2.begin(), R2.end(),
                 [&](float a) { EXPECT_NEAR(kLevel, a, 0.1f); });

@@ -27,10 +27,9 @@
 #include "core/dom/Node.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "bindings/core/v8/NodeOrString.h"
-#include "core/HTMLNames.h"
-#include "core/MathMLNames.h"
+#include "bindings/core/v8/node_or_string.h"
 #include "core/css/CSSSelector.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/Attr.h"
@@ -56,7 +55,6 @@
 #include "core/dom/ShadowRoot.h"
 #include "core/dom/SlotAssignment.h"
 #include "core/dom/StaticNodeList.h"
-#include "core/dom/StyleEngine.h"
 #include "core/dom/TemplateContentDocumentFragment.h"
 #include "core/dom/Text.h"
 #include "core/dom/TreeScopeAdopter.h"
@@ -88,9 +86,11 @@
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLSlotElement.h"
 #include "core/html/custom/CustomElement.h"
+#include "core/html_names.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutEmbeddedContent.h"
+#include "core/mathml_names.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/Page.h"
 #include "core/plugins/PluginView.h"
@@ -98,13 +98,13 @@
 #include "core/svg/graphics/SVGImage.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/InstanceCounters.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/bindings/DOMDataStore.h"
 #include "platform/bindings/Microtask.h"
 #include "platform/bindings/ScriptWrappableVisitor.h"
 #include "platform/bindings/V8DOMWrapper.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/HashSet.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/allocator/Partitions.h"
@@ -444,6 +444,10 @@ Node* Node::insertBefore(Node* new_child,
   return nullptr;
 }
 
+Node* Node::insertBefore(Node* new_child, Node* ref_child) {
+  return insertBefore(new_child, ref_child, ASSERT_NO_EXCEPTION);
+}
+
 Node* Node::replaceChild(Node* new_child,
                          Node* old_child,
                          ExceptionState& exception_state) {
@@ -456,6 +460,10 @@ Node* Node::replaceChild(Node* new_child,
   return nullptr;
 }
 
+Node* Node::replaceChild(Node* new_child, Node* old_child) {
+  return replaceChild(new_child, old_child, ASSERT_NO_EXCEPTION);
+}
+
 Node* Node::removeChild(Node* old_child, ExceptionState& exception_state) {
   if (IsContainerNode())
     return ToContainerNode(this)->RemoveChild(old_child, exception_state);
@@ -463,6 +471,10 @@ Node* Node::removeChild(Node* old_child, ExceptionState& exception_state) {
   exception_state.ThrowDOMException(
       kNotFoundError, "This node type does not support this method.");
   return nullptr;
+}
+
+Node* Node::removeChild(Node* old_child) {
+  return removeChild(old_child, ASSERT_NO_EXCEPTION);
 }
 
 Node* Node::appendChild(Node* new_child, ExceptionState& exception_state) {
@@ -474,10 +486,14 @@ Node* Node::appendChild(Node* new_child, ExceptionState& exception_state) {
   return nullptr;
 }
 
+Node* Node::appendChild(Node* new_child) {
+  return appendChild(new_child, ASSERT_NO_EXCEPTION);
+}
+
 static bool IsNodeInNodes(const Node* const node,
                           const HeapVector<NodeOrString>& nodes) {
   for (const NodeOrString& node_or_string : nodes) {
-    if (node_or_string.isNode() && node_or_string.getAsNode() == node)
+    if (node_or_string.IsNode() && node_or_string.GetAsNode() == node)
       return true;
   }
   return false;
@@ -505,9 +521,9 @@ static Node* FindViableNextSibling(const Node& node,
 
 static Node* NodeOrStringToNode(const NodeOrString& node_or_string,
                                 Document& document) {
-  if (node_or_string.isNode())
-    return node_or_string.getAsNode();
-  return Text::Create(document, node_or_string.getAsString());
+  if (node_or_string.IsNode())
+    return node_or_string.GetAsNode();
+  return Text::Create(document, node_or_string.GetAsString());
 }
 
 // Returns nullptr if an exception was thrown.
@@ -583,6 +599,14 @@ void Node::remove(ExceptionState& exception_state) {
     parent->RemoveChild(this, exception_state);
 }
 
+void Node::remove() {
+  remove(ASSERT_NO_EXCEPTION);
+}
+
+Node* Node::cloneNode(bool deep) {
+  return cloneNode(deep, ASSERT_NO_EXCEPTION);
+}
+
 void Node::normalize() {
   UpdateDistribution();
 
@@ -605,7 +629,7 @@ void Node::normalize() {
 }
 
 LayoutBox* Node::GetLayoutBox() const {
-  LayoutObject* layout_object = this->GetLayoutObject();
+  LayoutObject* layout_object = GetLayoutObject();
   return layout_object && layout_object->IsBox() ? ToLayoutBox(layout_object)
                                                  : nullptr;
 }
@@ -661,7 +685,7 @@ void Node::SetNonAttachedStyle(RefPtr<ComputedStyle> non_attached_style) {
 }
 
 LayoutBoxModelObject* Node::GetLayoutBoxModelObject() const {
-  LayoutObject* layout_object = this->GetLayoutObject();
+  LayoutObject* layout_object = GetLayoutObject();
   return layout_object && layout_object->IsBoxModelObject()
              ? ToLayoutBoxModelObject(layout_object)
              : nullptr;
@@ -858,7 +882,7 @@ bool Node::InActiveDocument() const {
   return isConnected() && GetDocument().IsActive();
 }
 
-Node* Node::FocusDelegate() {
+const Node* Node::FocusDelegate() const {
   return this;
 }
 
@@ -880,7 +904,7 @@ bool Node::IsInert() const {
   }
 
   if (RuntimeEnabledFeatures::InertAttributeEnabled()) {
-    const Element* element = this->IsElementNode()
+    const Element* element = IsElementNode()
                                  ? ToElement(this)
                                  : FlatTreeTraversal::ParentElement(*this);
     while (element) {
@@ -1099,8 +1123,8 @@ bool Node::CanParticipateInFlatTree() const {
 }
 
 bool Node::IsActiveSlotOrActiveV0InsertionPoint() const {
-  return (isHTMLSlotElement(*this) &&
-          toHTMLSlotElement(*this).SupportsDistribution()) ||
+  return (IsHTMLSlotElement(*this) &&
+          ToHTMLSlotElement(*this).SupportsDistribution()) ||
          IsActiveV0InsertionPoint(*this);
 }
 
@@ -1207,7 +1231,7 @@ bool Node::isEqualNode(Node* other) const {
   if (!other)
     return false;
 
-  NodeType node_type = this->getNodeType();
+  NodeType node_type = getNodeType();
   if (node_type != other->getNodeType())
     return false;
 
@@ -1398,7 +1422,7 @@ String Node::textContent(bool convert_brs_to_newlines) const {
 
   StringBuilder content;
   for (const Node& node : NodeTraversal::InclusiveDescendantsOf(*this)) {
-    if (isHTMLBRElement(node) && convert_brs_to_newlines) {
+    if (IsHTMLBRElement(node) && convert_brs_to_newlines) {
       content.Append('\n');
     } else if (node.IsTextNode()) {
       content.Append(ToText(node).data());
@@ -1819,7 +1843,7 @@ String Node::ToMarkedTreeString(const Node* marked_node1,
                                 const char* marked_label2) const {
   const Node* root_node;
   const Node* node = this;
-  while (node->ParentOrShadowHostNode() && !isHTMLBodyElement(*node))
+  while (node->ParentOrShadowHostNode() && !IsHTMLBodyElement(*node))
     node = node->ParentOrShadowHostNode();
   root_node = node;
 
@@ -1836,7 +1860,7 @@ String Node::ToMarkedFlatTreeString(const Node* marked_node1,
                                     const char* marked_label2) const {
   const Node* root_node;
   const Node* node = this;
-  while (node->ParentOrShadowHostNode() && !isHTMLBodyElement(*node))
+  while (node->ParentOrShadowHostNode() && !IsHTMLBodyElement(*node))
     node = node->ParentOrShadowHostNode();
   root_node = node;
 
@@ -1898,7 +1922,7 @@ Element* Node::EnclosingLinkEventParentOrSelf() const {
     // For imagemaps, the enclosing link node is the associated area element not
     // the image itself.  So we don't let images be the enclosingLinkNode, even
     // though isLink sometimes returns true for them.
-    if (node->IsLink() && !isHTMLImageElement(*node)) {
+    if (node->IsLink() && !IsHTMLImageElement(*node)) {
       // Casting to Element is safe because only HTMLAnchorElement,
       // HTMLImageElement and SVGAElement can return true for isLink().
       result = node;
@@ -1929,7 +1953,7 @@ void Node::WillMoveToNewDocument(Document& old_document,
 void Node::DidMoveToNewDocument(Document& old_document) {
   TreeScopeAdopter::EnsureDidMoveToNewDocumentWasCalled(old_document);
 
-  if (const EventTargetData* event_target_data = this->GetEventTargetData()) {
+  if (const EventTargetData* event_target_data = GetEventTargetData()) {
     const EventListenerMap& listener_map =
         event_target_data->event_listener_map;
     if (!listener_map.IsEmpty()) {
@@ -2346,7 +2370,7 @@ void Node::DefaultEventHandler(Event* event) {
       // remove this synchronous layout if we avoid synchronous layout in
       // LayoutTextControlSingleLine::scrollHeight
       GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
-      LayoutObject* layout_object = this->GetLayoutObject();
+      LayoutObject* layout_object = GetLayoutObject();
       while (
           layout_object &&
           (!layout_object->IsBox() ||
@@ -2599,8 +2623,8 @@ void Node::CheckSlotChange(SlotChangeType slot_change_type) {
   } else if (IsInV1ShadowTree()) {
     // Checking for fallback content if the node is in a v1 shadow tree.
     Element* parent = parentElement();
-    if (parent && isHTMLSlotElement(parent)) {
-      HTMLSlotElement& parent_slot = toHTMLSlotElement(*parent);
+    if (parent && IsHTMLSlotElement(parent)) {
+      HTMLSlotElement& parent_slot = ToHTMLSlotElement(*parent);
       DCHECK(parent_slot.SupportsDistribution());
       // The parent_slot's assigned nodes might not be calculated because they
       // are lazy evaluated later at UpdateDistribution() so we have to check it
@@ -2612,7 +2636,7 @@ void Node::CheckSlotChange(SlotChangeType slot_change_type) {
 }
 
 WebPluginContainerImpl* Node::GetWebPluginContainer() const {
-  if (!isHTMLObjectElement(this) && !isHTMLEmbedElement(this)) {
+  if (!IsHTMLObjectElement(this) && !IsHTMLEmbedElement(this)) {
     return nullptr;
   }
 
@@ -2625,6 +2649,22 @@ WebPluginContainerImpl* Node::GetWebPluginContainer() const {
   }
 
   return nullptr;
+}
+
+bool Node::HasMediaControlAncestor() const {
+  const Node* current = this;
+
+  while (current) {
+    if (current->IsMediaControls() || current->IsMediaControlElement())
+      return true;
+
+    if (current->IsShadowRoot())
+      current = current->OwnerShadowHost();
+    else
+      current = current->ParentOrShadowHostElement();
+  }
+
+  return false;
 }
 
 DEFINE_TRACE(Node) {

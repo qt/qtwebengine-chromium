@@ -16,6 +16,7 @@
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/background_fetch/background_fetch_context.h"
 #include "content/browser/blob_storage/blob_registry_wrapper.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/browser_main_loop.h"
@@ -71,7 +72,7 @@ void OnClearedCookies(const base::Closure& callback, uint32_t num_deleted) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::Bind(&OnClearedCookies, callback, num_deleted));
+        base::BindOnce(&OnClearedCookies, callback, num_deleted));
     return;
   }
 
@@ -92,7 +93,8 @@ void ClearCookiesOnIOThread(
       rq_context->GetURLRequestContext()->cookie_store();
   if (!cookie_matcher.is_null()) {
     cookie_store->DeleteAllCreatedBetweenWithPredicateAsync(
-        begin, end, cookie_matcher, base::Bind(&OnClearedCookies, callback));
+        begin, end, cookie_matcher,
+        base::BindOnce(&OnClearedCookies, callback));
     return;
   }
   if (!storage_origin.is_empty()) {
@@ -102,11 +104,11 @@ void ClearCookiesOnIOThread(
     cookie_store->DeleteAllCreatedBetweenWithPredicateAsync(
         begin, end,
         StoragePartitionImpl::CreatePredicateForHostCookies(storage_origin),
-        base::Bind(&OnClearedCookies, callback));
+        base::BindOnce(&OnClearedCookies, callback));
     return;
   }
   cookie_store->DeleteAllCreatedBetweenAsync(
-      begin, end, base::Bind(&OnClearedCookies, callback));
+      begin, end, base::BindOnce(&OnClearedCookies, callback));
 }
 
 void CheckQuotaManagedDataDeletionStatus(size_t* deletion_task_count,
@@ -136,9 +138,8 @@ void OnQuotaManagedOriginDeleted(const GURL& origin,
 
 void ClearedShaderCache(const base::Closure& callback) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(&ClearedShaderCache, callback));
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::BindOnce(&ClearedShaderCache, callback));
     return;
   }
   callback.Run();
@@ -429,8 +430,8 @@ StoragePartitionImpl::~StoragePartitionImpl() {
 
   if (GetDatabaseTracker()) {
     GetDatabaseTracker()->task_runner()->PostTask(
-        FROM_HERE,
-        base::Bind(&storage::DatabaseTracker::Shutdown, GetDatabaseTracker()));
+        FROM_HERE, base::BindOnce(&storage::DatabaseTracker::Shutdown,
+                                  GetDatabaseTracker()));
   }
 
   if (GetFileSystemContext())
@@ -562,7 +563,7 @@ std::unique_ptr<StoragePartitionImpl> StoragePartitionImpl::Create(
       path, quota_manager_proxy.get(), context->GetSpecialStoragePolicy(),
       blob_context.get(), partition->url_loader_factory_getter_.get());
 
-  if (base::FeatureList::IsEnabled(features::kMojoBlobs)) {
+  if (features::IsMojoBlobsEnabled()) {
     partition->blob_registry_ = BlobRegistryWrapper::Create(
         blob_context, partition->filesystem_context_);
   }
@@ -588,7 +589,7 @@ StoragePartitionImpl::GetMediaURLRequestContext() {
 
 mojom::NetworkContext* StoragePartitionImpl::GetNetworkContext() {
   // Create the NetworkContext as needed, when the network service is disabled.
-  if (!network_context_.get()) {
+  if (!network_context_) {
     DCHECK(!base::FeatureList::IsEnabled(features::kNetworkService));
     DCHECK(!network_context_owner_);
     network_context_owner_ = base::MakeUnique<NetworkContextOwner>();
@@ -599,6 +600,17 @@ mojom::NetworkContext* StoragePartitionImpl::GetNetworkContext() {
                        MakeRequest(&network_context_), url_request_context_));
   }
   return network_context_.get();
+}
+
+mojom::URLLoaderFactory*
+StoragePartitionImpl::GetURLLoaderFactoryForBrowserProcess() {
+  // Create the URLLoaderFactory as needed.
+  if (!url_loader_factory_for_browser_process_) {
+    GetNetworkContext()->CreateURLLoaderFactory(
+        mojo::MakeRequest(&url_loader_factory_for_browser_process_),
+        base::GetUniqueIdForProcess());
+  }
+  return url_loader_factory_for_browser_process_.get();
 }
 
 storage::QuotaManager* StoragePartitionImpl::GetQuotaManager() {
@@ -689,7 +701,7 @@ void StoragePartitionImpl::OpenLocalStorage(
   int process_id = bindings_.dispatch_context();
   if (!ChildProcessSecurityPolicy::GetInstance()->CanAccessDataForOrigin(
           process_id, origin.GetURL())) {
-    mojo::ReportBadMessage("Access denied for localStorage request");
+    bindings_.ReportBadMessage("Access denied for localStorage request");
     return;
   }
   dom_storage_context_->OpenLocalStorage(origin, std::move(request));
@@ -832,8 +844,8 @@ void StoragePartitionImpl::DataDeletionHelper::DecrementTaskCountOnUI() {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        base::Bind(&DataDeletionHelper::DecrementTaskCountOnUI,
-                   base::Unretained(this)));
+        base::BindOnce(&DataDeletionHelper::DecrementTaskCountOnUI,
+                       base::Unretained(this)));
     return;
   }
   DCHECK_GT(task_count, 0);
@@ -868,9 +880,9 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
     IncrementTaskCountOnUI();
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(&ClearCookiesOnIOThread, make_scoped_refptr(rq_context),
-                   begin, end, storage_origin, cookie_matcher,
-                   decrement_callback));
+        base::BindOnce(&ClearCookiesOnIOThread,
+                       base::WrapRefCounted(rq_context), begin, end,
+                       storage_origin, cookie_matcher, decrement_callback));
   }
 
   if (remove_mask & REMOVE_DATA_MASK_INDEXEDDB ||
@@ -882,24 +894,19 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
     IncrementTaskCountOnUI();
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(&DataDeletionHelper::ClearQuotaManagedDataOnIOThread,
-                   base::Unretained(this),
-                   make_scoped_refptr(quota_manager),
-                   begin,
-                   storage_origin,
-                   make_scoped_refptr(special_storage_policy),
-                   origin_matcher,
-                   decrement_callback));
+        base::BindOnce(
+            &DataDeletionHelper::ClearQuotaManagedDataOnIOThread,
+            base::Unretained(this), base::WrapRefCounted(quota_manager), begin,
+            storage_origin, base::WrapRefCounted(special_storage_policy),
+            origin_matcher, decrement_callback));
   }
 
   if (remove_mask & REMOVE_DATA_MASK_LOCAL_STORAGE) {
     IncrementTaskCountOnUI();
-    ClearLocalStorageOnUIThread(
-        make_scoped_refptr(dom_storage_context),
-        make_scoped_refptr(special_storage_policy),
-        origin_matcher,
-        storage_origin, begin, end,
-        decrement_callback);
+    ClearLocalStorageOnUIThread(base::WrapRefCounted(dom_storage_context),
+                                base::WrapRefCounted(special_storage_policy),
+                                origin_matcher, storage_origin, begin, end,
+                                decrement_callback);
 
     // ClearDataImpl cannot clear session storage data when a particular origin
     // is specified. Therefore we ignore clearing session storage in this case.
@@ -907,28 +914,27 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
     if (storage_origin.is_empty()) {
       IncrementTaskCountOnUI();
       ClearSessionStorageOnUIThread(
-          make_scoped_refptr(dom_storage_context),
-          make_scoped_refptr(special_storage_policy),
-          origin_matcher,
+          base::WrapRefCounted(dom_storage_context),
+          base::WrapRefCounted(special_storage_policy), origin_matcher,
           decrement_callback);
     }
   }
 
   if (remove_mask & REMOVE_DATA_MASK_SHADER_CACHE) {
     IncrementTaskCountOnUI();
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&ClearShaderCacheOnIOThread,
-                   path, begin, end, decrement_callback));
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                            base::BindOnce(&ClearShaderCacheOnIOThread, path,
+                                           begin, end, decrement_callback));
   }
 
 #if BUILDFLAG(ENABLE_PLUGINS)
   if (remove_mask & REMOVE_DATA_MASK_PLUGIN_PRIVATE_DATA) {
     IncrementTaskCountOnUI();
     filesystem_context->default_file_task_runner()->PostTask(
-        FROM_HERE, base::Bind(&ClearPluginPrivateDataOnFileTaskRunner,
-                              make_scoped_refptr(filesystem_context),
-                              storage_origin, begin, end, decrement_callback));
+        FROM_HERE,
+        base::BindOnce(&ClearPluginPrivateDataOnFileTaskRunner,
+                       base::WrapRefCounted(filesystem_context), storage_origin,
+                       begin, end, decrement_callback));
   }
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
 
@@ -1003,10 +1009,10 @@ BrowserContext* StoragePartitionImpl::browser_context() const {
   return browser_context_;
 }
 
-void StoragePartitionImpl::Bind(
+mojo::BindingId StoragePartitionImpl::Bind(
     int process_id,
     mojo::InterfaceRequest<mojom::StoragePartitionService> request) {
-  bindings_.AddBinding(this, std::move(request), process_id);
+  return bindings_.AddBinding(this, std::move(request), process_id);
 }
 
 void StoragePartitionImpl::OverrideQuotaManagerForTesting(

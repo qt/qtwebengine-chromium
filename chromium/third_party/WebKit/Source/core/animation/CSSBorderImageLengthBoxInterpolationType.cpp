@@ -79,12 +79,12 @@ class CSSBorderImageLengthBoxNonInterpolableValue
   static RefPtr<CSSBorderImageLengthBoxNonInterpolableValue> Create(
       const SideTypes& side_types,
       Vector<RefPtr<NonInterpolableValue>>&& side_non_interpolable_values) {
-    return AdoptRef(new CSSBorderImageLengthBoxNonInterpolableValue(
+    return WTF::AdoptRef(new CSSBorderImageLengthBoxNonInterpolableValue(
         side_types, std::move(side_non_interpolable_values)));
   }
 
   RefPtr<CSSBorderImageLengthBoxNonInterpolableValue> Clone() {
-    return AdoptRef(new CSSBorderImageLengthBoxNonInterpolableValue(
+    return WTF::AdoptRef(new CSSBorderImageLengthBoxNonInterpolableValue(
         side_types_,
         Vector<RefPtr<NonInterpolableValue>>(side_non_interpolable_values_)));
   }
@@ -357,7 +357,7 @@ void CSSBorderImageLengthBoxInterpolationType::Composite(
         LengthInterpolationFunctions::Composite(
             underlying_list.GetMutable(i),
             underlying_side_non_interpolable_values[i], underlying_fraction,
-            *list.Get(i), side_non_interpolable_values[i].Get());
+            *list.Get(i), side_non_interpolable_values[i].get());
         break;
       case SideType::kAuto:
         break;
@@ -390,7 +390,7 @@ void CSSBorderImageLengthBoxInterpolationType::ApplyStandardPropertyValue(
         return Length(kAuto);
       case SideType::kLength:
         return LengthInterpolationFunctions::CreateLength(
-            *list.Get(index), non_interpolable_values[index].Get(),
+            *list.Get(index), non_interpolable_values[index].get(),
             state.CssToLengthConversionData(), kValueRangeNonNegative);
       default:
         NOTREACHED();

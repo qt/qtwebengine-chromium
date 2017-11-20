@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Multiply-included message header, no traditional include guard.
+#ifndef CONTENT_COMMON_BROWSER_PLUGIN_BROWSER_PLUGIN_MESSAGES_H_
+#define CONTENT_COMMON_BROWSER_PLUGIN_BROWSER_PLUGIN_MESSAGES_H_
 
 #include <string>
 
 #include "base/process/process.h"
+#include "cc/ipc/cc_param_traits.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
@@ -151,9 +153,10 @@ IPC_MESSAGE_CONTROL1(BrowserPluginHostMsg_UnlockMouse_ACK,
                      int /* browser_plugin_instance_id */)
 
 // Sent when plugin's position has changed.
-IPC_MESSAGE_CONTROL2(BrowserPluginHostMsg_UpdateGeometry,
+IPC_MESSAGE_CONTROL3(BrowserPluginHostMsg_UpdateGeometry,
                      int /* browser_plugin_instance_id */,
-                     gfx::Rect /* view_rect */)
+                     gfx::Rect /* view_rect */,
+                     viz::LocalSurfaceId /* local_surface_id */)
 
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SatisfySequence,
                     int /* browser_plugin_instance_id */,
@@ -172,8 +175,9 @@ IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_RequireSequence,
 IPC_MESSAGE_CONTROL1(BrowserPluginMsg_GuestGone,
                      int /* browser_plugin_instance_id */)
 
-IPC_MESSAGE_CONTROL1(BrowserPluginMsg_GuestReady,
-                     int /* browser_plugin_instance_id */)
+IPC_MESSAGE_CONTROL2(BrowserPluginMsg_GuestReady,
+                     int /* browser_plugin_instance_id */,
+                     viz::FrameSinkId /* frame_sink_id */)
 
 // When the user tabs to the end of the tab stops of a guest, the browser
 // process informs the embedder to tab out of the browser plugin.
@@ -206,3 +210,5 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetMouseLock,
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetTooltipText,
                      int /* browser_plugin_instance_id */,
                      base::string16 /* tooltip_text */)
+
+#endif  // CONTENT_COMMON_BROWSER_PLUGIN_BROWSER_PLUGIN_MESSAGES_H_

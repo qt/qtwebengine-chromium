@@ -7,6 +7,7 @@ import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//chrome/process_version_rc_template.gni")
 import("//chrome/test/mini_installer/mini_installer_test.gni")
+import("//components/nacl/features.gni")
 import("//third_party/icu/config.gni")
 import("//ui/base/ui_features.gni")
 import("//v8/gni/v8.gni")
@@ -132,6 +133,7 @@ template("generate_mini_installer") {
       "$root_out_dir/chrome.exe",
       "$root_out_dir/locales/en-US.pak",
       "$root_out_dir/setup.exe",
+      "$root_out_dir/v8_context_snapshot.bin",
       release_file,
     ]
 
@@ -175,6 +177,7 @@ template("generate_mini_installer") {
       "//chrome/browser/extensions/default_extensions",
       "//chrome/installer/setup",
       "//third_party/icu:icudata",
+      "//tools/v8_context_snapshot",
       chrome_dll_target,
     ]
 

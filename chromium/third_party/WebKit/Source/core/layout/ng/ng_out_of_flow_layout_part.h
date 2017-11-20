@@ -27,7 +27,8 @@ class CORE_EXPORT NGOutOfFlowLayoutPart {
   STACK_ALLOCATED();
 
  public:
-  NGOutOfFlowLayoutPart(const NGConstraintSpace& contianer_space,
+  NGOutOfFlowLayoutPart(const NGBlockNode container,
+                        const NGConstraintSpace& container_space,
                         const ComputedStyle& container_style,
                         NGFragmentBuilder* container_builder);
   void Run();
@@ -37,6 +38,8 @@ class CORE_EXPORT NGOutOfFlowLayoutPart {
                                           NGStaticPosition static_position,
                                           NGLogicalOffset* offset);
 
+  bool IsContainingBlockForDescendant(const ComputedStyle& descendant_style);
+
   RefPtr<NGLayoutResult> GenerateFragment(
       NGBlockNode node,
       const Optional<LayoutUnit>& block_estimate,
@@ -45,8 +48,10 @@ class CORE_EXPORT NGOutOfFlowLayoutPart {
   const ComputedStyle& container_style_;
   NGFragmentBuilder* container_builder_;
 
-  NGLogicalOffset container_border_offset_;
-  NGPhysicalOffset container_border_physical_offset_;
+  bool contains_absolute_;
+  bool contains_fixed_;
+  NGLogicalOffset content_offset_;
+  NGPhysicalOffset content_physical_offset_;
   NGLogicalSize container_size_;
   NGPhysicalSize icb_size_;
 };

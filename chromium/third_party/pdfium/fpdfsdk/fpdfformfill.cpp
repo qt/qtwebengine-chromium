@@ -66,11 +66,11 @@ CPDFSDK_PageView* FormHandleToPageView(FPDF_FORMHANDLE hHandle,
 }
 
 #ifdef PDF_ENABLE_XFA
-std::vector<CFX_ByteString>* FromFPDFStringHandle(FPDF_STRINGHANDLE handle) {
-  return static_cast<std::vector<CFX_ByteString>*>(handle);
+std::vector<ByteString>* FromFPDFStringHandle(FPDF_STRINGHANDLE handle) {
+  return static_cast<std::vector<ByteString>*>(handle);
 }
 
-FPDF_STRINGHANDLE ToFPDFStringHandle(std::vector<CFX_ByteString>* strings) {
+FPDF_STRINGHANDLE ToFPDFStringHandle(std::vector<ByteString>* strings) {
   return static_cast<FPDF_STRINGHANDLE>(strings);
 }
 #endif  // PDF_ENABLE_XFA
@@ -113,32 +113,34 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
 #ifdef _SKIA_SUPPORT_
   pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
 #endif
-  CFX_RetainPtr<CFX_DIBitmap> holder(CFXBitmapFromFPDFBitmap(bitmap));
+  RetainPtr<CFX_DIBitmap> holder(CFXBitmapFromFPDFBitmap(bitmap));
   pDevice->Attach(holder, false, nullptr, false);
   {
     CFX_RenderDevice::StateRestorer restorer(pDevice.get());
     pDevice->SetClip_Rect(clip);
 
     CPDF_RenderOptions options;
+    uint32_t option_flags = options.GetFlags();
     if (flags & FPDF_LCD_TEXT)
-      options.m_Flags |= RENDER_CLEARTYPE;
+      option_flags |= RENDER_CLEARTYPE;
     else
-      options.m_Flags &= ~RENDER_CLEARTYPE;
+      option_flags &= ~RENDER_CLEARTYPE;
+    options.SetFlags(option_flags);
 
     // Grayscale output
     if (flags & FPDF_GRAYSCALE)
-      options.m_ColorMode = CPDF_RenderOptions::kGray;
+      options.SetColorMode(CPDF_RenderOptions::kGray);
 
-    options.m_bDrawAnnots = flags & FPDF_ANNOT;
+    options.SetDrawAnnots(flags & FPDF_ANNOT);
 
 #ifdef PDF_ENABLE_XFA
-    options.m_pOCContext =
-        pdfium::MakeRetain<CPDF_OCContext>(pPDFDoc, CPDF_OCContext::View);
+    options.SetOCContext(
+        pdfium::MakeRetain<CPDF_OCContext>(pPDFDoc, CPDF_OCContext::View));
     if (CPDFSDK_PageView* pPageView = pFormFillEnv->GetPageView(pPage, true))
       pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options, clip);
 #else   // PDF_ENABLE_XFA
-    options.m_pOCContext = pdfium::MakeRetain<CPDF_OCContext>(
-        pPage->m_pDocument.Get(), CPDF_OCContext::View);
+    options.SetOCContext(pdfium::MakeRetain<CPDF_OCContext>(
+        pPage->m_pDocument.Get(), CPDF_OCContext::View));
     if (CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, pPage))
       pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options);
 #endif  // PDF_ENABLE_XFA
@@ -387,8 +389,8 @@ FORM_GetSelectedText(FPDF_FORMHANDLE hHandle,
   if (!pPageView)
     return 0;
 
-  CFX_WideString wide_str_form_text = pPageView->GetSelectedText();
-  CFX_ByteString encoded_form_text = wide_str_form_text.UTF16LE_Encode();
+  WideString wide_str_form_text = pPageView->GetSelectedText();
+  ByteString encoded_form_text = wide_str_form_text.UTF16LE_Encode();
   unsigned long form_text_len = encoded_form_text.GetLength();
 
   if (buffer && buflen >= form_text_len)
@@ -404,8 +406,8 @@ FPDF_EXPORT void FPDF_CALLCONV FORM_ReplaceSelection(FPDF_FORMHANDLE hHandle,
   if (!pPageView)
     return;
 
-  FX_STRSIZE len = CFX_WideString::WStringLength(wsText);
-  CFX_WideString wide_str_text = CFX_WideString::FromUTF16LE(wsText, len);
+  size_t len = WideString::WStringLength(wsText);
+  WideString wide_str_text = WideString::FromUTF16LE(wsText, len);
 
   pPageView->ReplaceSelection(wide_str_text);
 }
@@ -500,10 +502,10 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_Widget_Copy(FPDF_DOCUMENT document,
       pContext->GetDocType() != XFA_DocType::Static)
     return;
 
-  CFX_WideString wsCpText;
+  WideString wsCpText;
   static_cast<CXFA_FFWidget*>(hWidget)->Copy(wsCpText);
 
-  CFX_ByteString bsCpText = wsCpText.UTF16LE_Encode();
+  ByteString bsCpText = wsCpText.UTF16LE_Encode();
   uint32_t len = bsCpText.GetLength() / sizeof(unsigned short);
   if (!wsText) {
     *size = len;
@@ -532,10 +534,10 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_Widget_Cut(FPDF_DOCUMENT document,
       pContext->GetDocType() != XFA_DocType::Static)
     return;
 
-  CFX_WideString wsCpText;
+  WideString wsCpText;
   static_cast<CXFA_FFWidget*>(hWidget)->Cut(wsCpText);
 
-  CFX_ByteString bsCpText = wsCpText.UTF16LE_Encode();
+  ByteString bsCpText = wsCpText.UTF16LE_Encode();
   uint32_t len = bsCpText.GetLength() / sizeof(unsigned short);
   if (!wsText) {
     *size = len;
@@ -564,7 +566,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_Widget_Paste(FPDF_DOCUMENT document,
       pContext->GetDocType() != XFA_DocType::Static)
     return;
 
-  CFX_WideString wstr = CFX_WideString::FromUTF16LE(wsText, size);
+  WideString wstr = WideString::FromUTF16LE(wsText, size);
   static_cast<CXFA_FFWidget*>(hWidget)->Paste(wstr);
 }
 
@@ -585,7 +587,7 @@ FPDF_Widget_ReplaceSpellCheckWord(FPDF_DOCUMENT document,
   CFX_PointF ptPopup;
   ptPopup.x = x;
   ptPopup.y = y;
-  CFX_ByteStringC bs(bsText);
+  ByteStringView bs(bsText);
   static_cast<CXFA_FFWidget*>(hWidget)->ReplaceSpellCheckWord(ptPopup, bs);
 }
 
@@ -606,7 +608,7 @@ FPDF_Widget_GetSpellCheckWords(FPDF_DOCUMENT document,
   CFX_PointF ptPopup;
   ptPopup.x = x;
   ptPopup.y = y;
-  auto sSuggestWords = pdfium::MakeUnique<std::vector<CFX_ByteString>>();
+  auto sSuggestWords = pdfium::MakeUnique<std::vector<ByteString>>();
   static_cast<CXFA_FFWidget*>(hWidget)->GetSuggestWords(ptPopup,
                                                         sSuggestWords.get());
 
@@ -616,7 +618,7 @@ FPDF_Widget_GetSpellCheckWords(FPDF_DOCUMENT document,
 
 FPDF_EXPORT int FPDF_CALLCONV
 FPDF_StringHandleCounts(FPDF_STRINGHANDLE sHandle) {
-  std::vector<CFX_ByteString>* sSuggestWords = FromFPDFStringHandle(sHandle);
+  std::vector<ByteString>* sSuggestWords = FromFPDFStringHandle(sHandle);
   return sSuggestWords ? pdfium::CollectionSize<int>(*sSuggestWords) : -1;
 }
 
@@ -632,7 +634,7 @@ FPDF_StringHandleGetStringByIndex(FPDF_STRINGHANDLE sHandle,
   if (index < 0 || index >= count)
     return false;
 
-  std::vector<CFX_ByteString>* sSuggestWords = FromFPDFStringHandle(sHandle);
+  std::vector<ByteString>* sSuggestWords = FromFPDFStringHandle(sHandle);
   uint32_t len = (*sSuggestWords)[index].GetLength();
   if (!bsText) {
     *size = len;
@@ -658,7 +660,7 @@ FPDF_StringHandleAddString(FPDF_STRINGHANDLE stringHandle,
   if (!stringHandle || !bsText || size == 0)
     return false;
 
-  FromFPDFStringHandle(stringHandle)->push_back(CFX_ByteString(bsText, size));
+  FromFPDFStringHandle(stringHandle)->push_back(ByteString(bsText, size));
   return true;
 }
 #endif  // PDF_ENABLE_XFA

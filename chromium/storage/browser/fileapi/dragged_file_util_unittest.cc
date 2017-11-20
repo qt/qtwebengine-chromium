@@ -6,11 +6,11 @@
 
 #include <map>
 #include <memory>
-#include <queue>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "base/containers/queue.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -47,10 +47,8 @@ typedef AsyncFileTestHelper::FileEntryList FileEntryList;
 // Random root paths in which we create each file/directory of the
 // RegularTestCases (so that we can simulate a drop with files/directories
 // from multiple directories).
-static const base::FilePath::CharType* kRootPaths[] = {
-  FILE_PATH_LITERAL("a"),
-  FILE_PATH_LITERAL("b/c"),
-  FILE_PATH_LITERAL("etc"),
+constexpr const base::FilePath::CharType* kRootPaths[] = {
+    FILE_PATH_LITERAL("a"), FILE_PATH_LITERAL("b/c"), FILE_PATH_LITERAL("etc"),
 };
 
 base::FilePath GetTopLevelPath(const base::FilePath& path) {
@@ -201,7 +199,7 @@ class DraggedFileUtilTest : public testing::Test {
     base::FilePath root_path2 = root2.path();
 
     FileEntryList entries;
-    std::queue<FileSystemURL> directories;
+    base::queue<FileSystemURL> directories;
 
     directories.push(root1);
     std::set<base::FilePath> file_set1;
@@ -429,7 +427,7 @@ TEST_F(DraggedFileUtilTest, CopyOutFileTest) {
   FileSystemURL dest_root = GetOtherFileSystemURL(base::FilePath());
 
   FileEntryList entries;
-  std::queue<FileSystemURL> directories;
+  base::queue<FileSystemURL> directories;
   directories.push(src_root);
 
   ASSERT_EQ(base::File::FILE_OK,

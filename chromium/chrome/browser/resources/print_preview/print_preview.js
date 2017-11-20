@@ -390,6 +390,10 @@ cr.define('print_preview', function() {
           this.printIfReady_.bind(this));
       this.tracker.add(
           this.destinationStore_,
+          print_preview.DestinationStore.EventType.SELECTED_DESTINATION_INVALID,
+          this.onSelectedDestinationInvalid_.bind(this));
+      this.tracker.add(
+          this.destinationStore_,
           print_preview.DestinationStore.EventType.DESTINATION_SELECT,
           this.onDestinationSelect_.bind(this));
 
@@ -435,6 +439,15 @@ cr.define('print_preview', function() {
           this.advancedOptionsSettings_,
           print_preview.AdvancedOptionsSettings.EventType.BUTTON_ACTIVATED,
           this.onAdvancedOptionsButtonActivated_.bind(this));
+
+      /* Ticket items that may be invalid. */
+      [this.printTicketStore_.copies, this.printTicketStore_.pageRange,
+       this.printTicketStore_.scaling,
+      ].forEach((item) => {
+        this.tracker.add(
+            item, print_preview.ticket_items.TicketItem.EventType.CHANGE,
+            this.onTicketChange_.bind(this));
+      });
     },
 
     /** @override */
@@ -465,9 +478,9 @@ cr.define('print_preview', function() {
      */
     setIsEnabled_: function(isEnabled) {
       if ($('system-dialog-link'))
-        $('system-dialog-link').classList.toggle('disabled', !isEnabled);
+        $('system-dialog-link').disabled = !isEnabled;
       if ($('open-pdf-in-preview-link'))
-        $('open-pdf-in-preview-link').classList.toggle('disabled', !isEnabled);
+        $('open-pdf-in-preview-link').disabled = !isEnabled;
       this.printHeader_.isEnabled = isEnabled;
       this.destinationSettings_.isEnabled = isEnabled;
       this.pageSettings_.isEnabled = isEnabled;
@@ -584,7 +597,7 @@ cr.define('print_preview', function() {
             print_preview.Destination.GooglePromotedId.SAVE_AS_PDF);
         // Save as PDF resolves when file selection is completed or cancelled.
         whenPrintDone.then(
-            this.onFileSelectionComplete_.bind(this),
+            this.close_.bind(this, false),
             this.onFileSelectionCancel_.bind(this));
       }
 
@@ -645,13 +658,13 @@ cr.define('print_preview', function() {
       // The following components must be initialized in this order.
       this.appState_.init(settings.serializedAppStateStr);
       this.documentInfo_.init(
-          settings.isDocumentModifiable, settings.documentTitle,
+          settings.previewModifiable, settings.documentTitle,
           settings.documentHasSelection);
       this.printTicketStore_.init(
           settings.thousandsDelimeter, settings.decimalDelimeter,
-          settings.unitType, settings.selectionOnly);
+          settings.unitType, settings.shouldPrintSelectionOnly);
       this.destinationStore_.init(
-          settings.isInAppKioskMode, settings.systemDefaultDestinationId,
+          settings.isInAppKioskMode, settings.printerName,
           settings.serializedDefaultDestinationSelectionRulesStr);
       this.appState_.setInitialized();
 
@@ -732,20 +745,6 @@ cr.define('print_preview', function() {
               this.uiState_);
       this.setIsEnabled_(true);
       this.uiState_ = PrintPreviewUiState_.READY;
-    },
-
-    /**
-     * Called from the native layer when save-to-pdf file selection is complete.
-     * @private
-     */
-    onFileSelectionComplete_: function() {
-      assert(
-          this.uiState_ == PrintPreviewUiState_.FILE_SELECTION,
-          'File selection completed when not in file-selection state: ' +
-              this.uiState_);
-      this.previewArea_.showCustomMessage(
-          loadTimeData.getString('printingToPDFInProgress'));
-      this.uiState_ = PrintPreviewUiState_.PRINTING;
     },
 
     /**
@@ -927,6 +926,17 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Called when the destination store fails to fetch capabilities for the
+     * selected printer.
+     * @private
+     */
+    onSelectedDestinationInvalid_: function() {
+      this.previewArea_.showCustomMessage(
+          loadTimeData.getString('invalidPrinterSettings'));
+      this.onSettingsInvalid_();
+    },
+
+    /**
      * Called when native layer receives invalid settings for a print request.
      * @private
      */
@@ -934,6 +944,21 @@ cr.define('print_preview', function() {
       this.uiState_ = PrintPreviewUiState_.ERROR;
       this.isPreviewGenerationInProgress_ = false;
       this.printHeader_.isPrintButtonEnabled = false;
+    },
+
+    /**
+     * Called when a ticket item that can be invalid is updated. Updates the
+     * enabled state of the system dialog link on Windows and the open pdf in
+     * preview link on Mac.
+     * @private
+     */
+    onTicketChange_: function() {
+      this.printHeader_.onTicketChange();
+      var disable = !this.printHeader_.isPrintButtonEnabled;
+      if (cr.isWindows && $('system-dialog-link'))
+        $('system-dialog-link').disabled = disable;
+      if ($('open-pdf-in-preview-link'))
+        $('open-pdf-in-preview-link').disabled = disable;
     },
 
     /**

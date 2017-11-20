@@ -14,20 +14,29 @@
 #include "base/strings/string_piece.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "build/build_config.h"
+#include "chrome/browser/ui/webui/print_preview/printer_handler.h"
 #include "chrome/common/cloud_print/cloud_print_cdd_conversion.h"
 #include "chrome/common/crash_keys.h"
 #include "printing/backend/print_backend.h"
 #include "printing/backend/print_backend_consts.h"
 
+#if defined(OS_WIN)
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
+#endif
+
 namespace printing {
 
-const char kPrinterId[] = "printerId";
-const char kPrinterCapabilities[] = "capabilities";
+const char kPrinter[] = "printer";
 
 namespace {
 
 // Returns a dictionary representing printer capabilities as CDD.  Returns
-// nullptr if a dictionary could not be generated.
+// an empty dictionary if a dictionary could not be generated.
 std::unique_ptr<base::DictionaryValue>
 GetPrinterCapabilitiesOnBlockingPoolThread(const std::string& device_name) {
   base::ThreadRestrictions::AssertIOAllowed();
@@ -40,26 +49,73 @@ GetPrinterCapabilitiesOnBlockingPoolThread(const std::string& device_name) {
   crash_keys::ScopedPrinterInfo crash_key(
       print_backend->GetPrinterDriverInfo(device_name));
 
+  auto empty_capabilities = std::make_unique<base::DictionaryValue>();
   std::unique_ptr<base::DictionaryValue> printer_info;
   if (!print_backend->IsValidPrinter(device_name)) {
     LOG(WARNING) << "Invalid printer " << device_name;
-    return nullptr;
+    return empty_capabilities;
   }
 
   PrinterSemanticCapsAndDefaults info;
   if (!print_backend->GetPrinterSemanticCapsAndDefaults(device_name, &info)) {
     LOG(WARNING) << "Failed to get capabilities for " << device_name;
-    return nullptr;
+    return empty_capabilities;
   }
 
-  std::unique_ptr<base::DictionaryValue> printer_capabilities =
-      cloud_print::PrinterSemanticCapsAndDefaultsToCdd(info);
-  if (!printer_capabilities) {
-    LOG(WARNING) << "Failed to convert capabilities for " << device_name;
-    return nullptr;
+  return cloud_print::PrinterSemanticCapsAndDefaultsToCdd(info);
+}
+
+#if defined(OS_WIN)
+std::string GetUserFriendlyName(const std::string& printer_name) {
+  // |printer_name| may be a UNC path like \\printserver\printername.
+  if (!base::StartsWith(printer_name, "\\\\",
+                        base::CompareCase::INSENSITIVE_ASCII)) {
+    return printer_name;
   }
 
-  return printer_capabilities;
+  // If it is a UNC path, split the "printserver\printername" portion and
+  // generate a friendly name, like Windows does.
+  std::string printer_name_trimmed = printer_name.substr(2);
+  std::vector<std::string> tokens = base::SplitString(
+      printer_name_trimmed, "\\", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
+  if (tokens.size() != 2 || tokens[0].empty() || tokens[1].empty())
+    return printer_name;
+  return l10n_util::GetStringFUTF8(
+      IDS_PRINT_PREVIEW_FRIENDLY_WIN_NETWORK_PRINTER_NAME,
+      base::UTF8ToUTF16(tokens[1]), base::UTF8ToUTF16(tokens[0]));
+}
+#endif
+
+void PrintersToValues(const printing::PrinterList& printer_list,
+                      base::ListValue* printers) {
+  for (const printing::PrinterBasicInfo& printer : printer_list) {
+    auto printer_info = base::MakeUnique<base::DictionaryValue>();
+    printer_info->SetString(printing::kSettingDeviceName, printer.printer_name);
+
+    const auto printer_name_description =
+        printing::GetPrinterNameAndDescription(printer);
+    const std::string& printer_name = printer_name_description.first;
+    const std::string& printer_description = printer_name_description.second;
+    printer_info->SetString(printing::kSettingPrinterName, printer_name);
+    printer_info->SetString(printing::kSettingPrinterDescription,
+                            printer_description);
+
+    auto options = base::MakeUnique<base::DictionaryValue>();
+    for (const auto opt_it : printer.options)
+      options->SetString(opt_it.first, opt_it.second);
+
+    printer_info->SetBoolean(
+        kCUPSEnterprisePrinter,
+        base::ContainsKey(printer.options, kCUPSEnterprisePrinter) &&
+            printer.options.at(kCUPSEnterprisePrinter) == kValueTrue);
+
+    printer_info->Set(printing::kSettingPrinterOptions, std::move(options));
+
+    printers->Append(std::move(printer_info));
+
+    VLOG(1) << "Found printer " << printer_name << " with device name "
+            << printer.printer_name;
+  }
 }
 
 }  // namespace
@@ -76,6 +132,9 @@ std::pair<std::string, std::string> GetPrinterNameAndDescription(
   if (it != printer.options.end())
     real_description = it->second;
   return std::make_pair(real_name, real_description);
+#elif defined(OS_WIN)
+  return std::make_pair(GetUserFriendlyName(printer.printer_name),
+                        printer.printer_description);
 #else
   return std::make_pair(printer.printer_name, printer.printer_description);
 #endif
@@ -92,7 +151,7 @@ std::unique_ptr<base::DictionaryValue> GetSettingsOnBlockingPool(
   const std::string& printer_description = printer_name_description.second;
 
   auto printer_info = base::MakeUnique<base::DictionaryValue>();
-  printer_info->SetString(kPrinterId, device_name);
+  printer_info->SetString(kSettingDeviceName, device_name);
   printer_info->SetString(kSettingPrinterName, printer_name);
   printer_info->SetString(kSettingPrinterDescription, printer_description);
   printer_info->SetBoolean(
@@ -100,12 +159,26 @@ std::unique_ptr<base::DictionaryValue> GetSettingsOnBlockingPool(
       base::ContainsKey(basic_info.options, kCUPSEnterprisePrinter) &&
           basic_info.options.at(kCUPSEnterprisePrinter) == kValueTrue);
 
-  auto capabilities = GetPrinterCapabilitiesOnBlockingPoolThread(device_name);
-  if (!capabilities)
-    capabilities = base::MakeUnique<base::DictionaryValue>();
-  printer_info->Set(kPrinterCapabilities, std::move(capabilities));
+  auto printer_info_capabilities = std::make_unique<base::DictionaryValue>();
+  printer_info_capabilities->SetDictionary(kPrinter, std::move(printer_info));
+  printer_info_capabilities->Set(
+      kSettingCapabilities,
+      GetPrinterCapabilitiesOnBlockingPoolThread(device_name));
 
-  return printer_info;
+  return printer_info_capabilities;
 }
 
+void ConvertPrinterListForCallback(
+    const PrinterHandler::AddedPrintersCallback& callback,
+    const PrinterHandler::GetPrintersDoneCallback& done_callback,
+    const printing::PrinterList& printer_list) {
+  base::ListValue printers;
+  PrintersToValues(printer_list, &printers);
+
+  VLOG(1) << "Enumerate printers finished, found " << printers.GetSize()
+          << " printers";
+  if (!printers.empty())
+    callback.Run(printers);
+  done_callback.Run();
+}
 }  // namespace printing

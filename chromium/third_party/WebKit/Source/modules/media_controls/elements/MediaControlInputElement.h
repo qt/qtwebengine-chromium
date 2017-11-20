@@ -5,7 +5,7 @@
 #ifndef MediaControlInputElement_h
 #define MediaControlInputElement_h
 
-#include "core/html/HTMLInputElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "modules/ModulesExport.h"
 #include "modules/media_controls/elements/MediaControlElementBase.h"
 
@@ -30,6 +30,10 @@ class MODULES_EXPORT MediaControlInputElement : public HTMLInputElement,
   void MaybeRecordDisplayed() final;
 
   DECLARE_VIRTUAL_TRACE();
+
+  MediaControlInputElement* OverflowElementForTests() const {
+    return overflow_element_;
+  }
 
  protected:
   MediaControlInputElement(MediaControlsImpl&, MediaControlElementType);
@@ -59,10 +63,13 @@ class MODULES_EXPORT MediaControlInputElement : public HTMLInputElement,
   // Returns whether this element is used for the overflow menu.
   bool IsOverflowElement() const;
 
- private:
-  friend class MediaControlInputElementTest;
+  // Sets/removes a CSS class from this element based on |should_have_class|.
+  void SetClass(const AtomicString& class_name, bool should_have_class);
 
   virtual void UpdateDisplayType();
+
+ private:
+  friend class MediaControlInputElementTest;
 
   bool IsMouseFocusable() const override;
   bool IsMediaControlElement() const final;

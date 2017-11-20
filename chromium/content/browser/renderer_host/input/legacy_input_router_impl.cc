@@ -36,7 +36,6 @@
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
-using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
 using blink::WebGestureEvent;
@@ -236,6 +235,11 @@ bool LegacyInputRouterImpl::HasPendingEvents() const {
 
 void LegacyInputRouterImpl::SetDeviceScaleFactor(float device_scale_factor) {
   device_scale_factor_ = device_scale_factor;
+}
+
+void LegacyInputRouterImpl::BindHost(
+    mojom::WidgetInputHandlerHostRequest request) {
+  NOTREACHED();
 }
 
 bool LegacyInputRouterImpl::OnMessageReceived(const IPC::Message& message) {

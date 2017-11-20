@@ -82,12 +82,6 @@ const char kTestGLLib[]                     = "test-gl-lib";
 // Use hardware gpu, if available, for tests.
 const char kUseGpuInTests[] = "use-gpu-in-tests";
 
-// Enable OpenGL ES 3 APIs.
-const char kEnableES3APIs[] = "enable-es3-apis";
-
-// Disable OpenGL ES 3 APIs. This in turn will disable WebGL2.
-const char kDisableES3APIs[] = "disable-es3-apis";
-
 // Enable use of the SGI_video_sync extension, which can have
 // driver/sandbox/window manager compatibility issues.
 const char kEnableSgiVideoSync[] = "enable-sgi-video-sync";
@@ -115,9 +109,6 @@ const char kEnableDirectCompositionLayers[] =
 const char kDisableDirectCompositionLayers[] =
     "disable-direct-composition-layers";
 
-// Use the Pass-through command decoder, skipping all validation and state
-// tracking.
-const char kUsePassthroughCmdDecoder[] = "use-passthrough-cmd-decoder";
 
 // This is the list of switches passed from this file that are passed from the
 // GpuProcessHost to the GPU Process. Add your switch to this list if you need
@@ -136,7 +127,6 @@ const char* const kGLSwitchesCopiedFromGpuProcessHost[] = {
     kEnableSwapBuffersWithBounds,
     kEnableDirectCompositionLayers,
     kDisableDirectCompositionLayers,
-    kUsePassthroughCmdDecoder,
 };
 const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches =
     arraysize(kGLSwitchesCopiedFromGpuProcessHost);

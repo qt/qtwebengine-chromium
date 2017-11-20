@@ -408,6 +408,7 @@ class Shell : public i::AllStatic {
     args.GetReturnValue().Set(ReadFromStdin(args.GetIsolate()));
   }
   static void Load(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void WorkerPostMessage(
       const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -447,7 +448,8 @@ class Shell : public i::AllStatic {
   static void MakeDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void RemoveDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
   static MaybeLocal<Promise> HostImportModuleDynamically(
-      Local<Context> context, Local<String> referrer, Local<String> specifier);
+      Local<Context> context, Local<ScriptOrModule> referrer,
+      Local<String> specifier);
 
   // Data is of type DynamicImportData*. We use void* here to be able
   // to conform with MicrotaskCallback interface and enqueue this
@@ -461,7 +463,6 @@ class Shell : public i::AllStatic {
   static ArrayBuffer::Allocator* array_buffer_allocator;
 
   static void SetWaitUntilDone(Isolate* isolate, bool value);
-  static bool IsWaitUntilDone(Isolate* isolate);
 
   static char* ReadCharsFromTcpPort(const char* name, int* size_out);
 

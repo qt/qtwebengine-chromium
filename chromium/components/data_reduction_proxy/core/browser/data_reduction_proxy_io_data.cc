@@ -29,6 +29,7 @@
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
+#include "components/previews/core/previews_decider.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/static_http_user_agent_settings.h"
@@ -338,13 +339,11 @@ void DataReductionProxyIOData::UpdateContentLengths(
                  request_type, mime_type));
 }
 
-void DataReductionProxyIOData::SetLoFiModeActiveOnMainFrame(
-    bool lo_fi_mode_active) {
+void DataReductionProxyIOData::SetLoFiUsedThisSession() {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
   ui_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&DataReductionProxyService::SetLoFiModeActiveOnMainFrame,
-                 service_, lo_fi_mode_active));
+      base::Bind(&DataReductionProxyService::SetLoFiUsedThisSession, service_));
 }
 
 void DataReductionProxyIOData::AddEvent(std::unique_ptr<base::Value> event) {
@@ -419,6 +418,13 @@ void DataReductionProxyIOData::SetDataUseAscriber(
   DCHECK(data_use_ascriber);
   data_use_observer_.reset(
       new DataReductionProxyDataUseObserver(this, data_use_ascriber));
+}
+
+void DataReductionProxyIOData::SetPreviewsDecider(
+    previews::PreviewsDecider* previews_decider) {
+  DCHECK(io_task_runner_->BelongsToCurrentThread());
+  DCHECK(previews_decider);
+  previews_decider_ = previews_decider;
 }
 
 }  // namespace data_reduction_proxy

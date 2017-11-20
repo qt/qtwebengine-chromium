@@ -29,9 +29,9 @@
 
 #include "core/html/track/vtt/VTTCue.h"
 
-#include "bindings/core/v8/DoubleOrAutoKeyword.h"
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/double_or_auto_keyword.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
 #include "core/dom/DocumentFragment.h"
@@ -47,7 +47,7 @@
 #include "core/html/track/vtt/VTTRegion.h"
 #include "core/html/track/vtt/VTTScanner.h"
 #include "core/layout/LayoutVTTCue.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/text/BidiResolver.h"
 #include "platform/text/TextRunIterator.h"
 #include "platform/wtf/MathExtras.h"
@@ -311,9 +311,9 @@ bool VTTCue::LineIsAuto() const {
 
 void VTTCue::line(DoubleOrAutoKeyword& result) const {
   if (LineIsAuto())
-    result.setAutoKeyword(AutoKeyword());
+    result.SetAutoKeyword(AutoKeyword());
   else
-    result.setDouble(line_position_);
+    result.SetDouble(line_position_);
 }
 
 void VTTCue::setLine(const DoubleOrAutoKeyword& position) {
@@ -322,13 +322,13 @@ void VTTCue::setLine(const DoubleOrAutoKeyword& position) {
   // value is the string "auto", then it must be interpreted as the special
   // value auto.  ("auto" is translated to NaN.)
   float float_position;
-  if (position.isAutoKeyword()) {
+  if (position.IsAutoKeyword()) {
     if (LineIsAuto())
       return;
     float_position = std::numeric_limits<float>::quiet_NaN();
   } else {
-    DCHECK(position.isDouble());
-    float_position = clampTo<float>(position.getAsDouble());
+    DCHECK(position.IsDouble());
+    float_position = clampTo<float>(position.GetAsDouble());
     if (line_position_ == float_position)
       return;
   }
@@ -344,9 +344,9 @@ bool VTTCue::TextPositionIsAuto() const {
 
 void VTTCue::position(DoubleOrAutoKeyword& result) const {
   if (TextPositionIsAuto())
-    result.setAutoKeyword(AutoKeyword());
+    result.SetAutoKeyword(AutoKeyword());
   else
-    result.setDouble(text_position_);
+    result.SetDouble(text_position_);
 }
 
 void VTTCue::setPosition(const DoubleOrAutoKeyword& position,
@@ -357,15 +357,15 @@ void VTTCue::setPosition(const DoubleOrAutoKeyword& position,
   // position must be set to the new value; if the new value is the string
   // "auto", then it must be interpreted as the special value auto.
   float float_position;
-  if (position.isAutoKeyword()) {
+  if (position.IsAutoKeyword()) {
     if (TextPositionIsAuto())
       return;
     float_position = std::numeric_limits<float>::quiet_NaN();
   } else {
-    DCHECK(position.isDouble());
-    if (IsInvalidPercentage(position.getAsDouble(), exception_state))
+    DCHECK(position.IsDouble());
+    if (IsInvalidPercentage(position.GetAsDouble(), exception_state))
       return;
-    float_position = clampTo<float>(position.getAsDouble());
+    float_position = clampTo<float>(position.GetAsDouble());
     if (text_position_ == float_position)
       return;
   }
@@ -830,13 +830,14 @@ VTTCueBox* VTTCue::GetDisplayTree() {
 }
 
 void VTTCue::RemoveDisplayTree(RemovalNotification removal_notification) {
-  if (region() && removal_notification == kNotifyRegion) {
+  if (!display_tree_)
+    return;
+  if (removal_notification == kNotifyRegion) {
     // The region needs to be informed about the cue removal.
-    region()->WillRemoveVTTCueBox(display_tree_);
+    if (region())
+      region()->WillRemoveVTTCueBox(display_tree_);
   }
-
-  if (display_tree_)
-    display_tree_->remove(ASSERT_NO_EXCEPTION);
+  display_tree_->remove(ASSERT_NO_EXCEPTION);
 }
 
 void VTTCue::UpdateDisplay(HTMLDivElement& container) {

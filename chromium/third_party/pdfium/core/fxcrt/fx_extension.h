@@ -86,26 +86,6 @@ void FXSYS_IntToFourHexChars(uint16_t c, char* buf);
 
 size_t FXSYS_ToUTF16BE(uint32_t unicode, char* buf);
 
-float FXSYS_FractionalScale(size_t scale_factor, int value);
-int FXSYS_FractionalScaleCount();
-
-void* FX_Random_MT_Start(uint32_t dwSeed);
-void FX_Random_MT_Close(void* pContext);
-uint32_t FX_Random_MT_Generate(void* pContext);
-void FX_Random_GenerateBase(uint32_t* pBuffer, int32_t iCount);
-void FX_Random_GenerateMT(uint32_t* pBuffer, int32_t iCount);
-
-#ifdef PDF_ENABLE_XFA
-struct FX_GUID {
-  uint32_t data1;
-  uint16_t data2;
-  uint16_t data3;
-  uint8_t data4[8];
-};
-void FX_GUID_CreateV4(FX_GUID* pGUID);
-CFX_ByteString FX_GUID_ToString(const FX_GUID* pGUID, bool bSeparator = true);
-#endif  // PDF_ENABLE_XFA
-
 uint32_t GetBits32(const uint8_t* pData, int bitpos, int nbits);
 
 #endif  // CORE_FXCRT_FX_EXTENSION_H_

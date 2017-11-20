@@ -6,6 +6,7 @@
 
 #include <string.h>
 #include <cassert>
+#include <iostream>
 #include <vector>
 
 #include "EGLWindow.h"
@@ -119,6 +120,7 @@ EGLWindow::EGLWindow(EGLint glesMajorVersion,
       mWebGLCompatibility(false),
       mBindGeneratesResource(true),
       mClientArraysEnabled(true),
+      mRobustAccess(false),
       mRobustResourceInit(),
       mSwapInterval(-1),
       mSamples(-1),
@@ -209,20 +211,6 @@ bool EGLWindow::initializeDisplayAndSurface(OSWindow *osWindow)
         displayAttributes.push_back(reinterpret_cast<EGLAttrib>(mPlatformMethods));
     }
 
-    if (mRobustResourceInit.valid() &&
-        !ClientExtensionEnabled("EGL_ANGLE_display_robust_resource_initialization"))
-    {
-        // Non-default state requested without the extension present
-        destroyGL();
-        return false;
-    }
-
-    if (mRobustResourceInit.valid())
-    {
-        displayAttributes.push_back(EGL_DISPLAY_ROBUST_RESOURCE_INITIALIZATION_ANGLE);
-        displayAttributes.push_back(mRobustResourceInit.value() ? EGL_TRUE : EGL_FALSE);
-    }
-
     displayAttributes.push_back(EGL_NONE);
 
     mDisplay = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
@@ -271,6 +259,7 @@ bool EGLWindow::initializeDisplayAndSurface(OSWindow *osWindow)
 
     if (!FindEGLConfig(mDisplay, configAttributes.data(), &mConfig))
     {
+        std::cout << "Could not find a suitable EGL config!" << std::endl;
         destroyGL();
         return false;
     }
@@ -288,6 +277,14 @@ bool EGLWindow::initializeDisplayAndSurface(OSWindow *osWindow)
     {
         surfaceAttributes.push_back(EGL_POST_SUB_BUFFER_SUPPORTED_NV);
         surfaceAttributes.push_back(EGL_TRUE);
+    }
+
+    bool hasRobustResourceInit =
+        strstr(displayExtensions, "EGL_ANGLE_robust_resource_initialization") != nullptr;
+    if (hasRobustResourceInit && mRobustResourceInit.valid())
+    {
+        surfaceAttributes.push_back(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE);
+        surfaceAttributes.push_back(mRobustResourceInit.value() ? EGL_TRUE : EGL_FALSE);
     }
 
     surfaceAttributes.push_back(EGL_NONE);
@@ -318,6 +315,13 @@ bool EGLWindow::initializeContext()
     bool hasWebGLCompatibility =
         strstr(displayExtensions, "EGL_ANGLE_create_context_webgl_compatibility") != nullptr;
     if (mWebGLCompatibility && !hasWebGLCompatibility)
+    {
+        destroyGL();
+        return false;
+    }
+
+    bool hasRobustness = strstr(displayExtensions, "EGL_EXT_create_context_robustness") != nullptr;
+    if (mRobustAccess && !hasRobustness)
     {
         destroyGL();
         return false;
@@ -380,6 +384,12 @@ bool EGLWindow::initializeContext()
             contextAttributes.push_back(mWebGLCompatibility ? EGL_TRUE : EGL_FALSE);
         }
 
+        if (hasRobustness)
+        {
+            contextAttributes.push_back(EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT);
+            contextAttributes.push_back(mRobustAccess ? EGL_TRUE : EGL_FALSE);
+        }
+
         if (hasBindGeneratesResource)
         {
             contextAttributes.push_back(EGL_CONTEXT_BIND_GENERATES_RESOURCE_CHROMIUM);
@@ -396,6 +406,14 @@ bool EGLWindow::initializeContext()
         {
             contextAttributes.push_back(EGL_CONTEXT_PROGRAM_BINARY_CACHE_ENABLED_ANGLE);
             contextAttributes.push_back(mContextProgramCacheEnabled.value() ? EGL_TRUE : EGL_FALSE);
+        }
+
+        bool hasRobustResourceInit =
+            strstr(displayExtensions, "EGL_ANGLE_robust_resource_initialization") != nullptr;
+        if (hasRobustResourceInit && mRobustResourceInit.valid())
+        {
+            contextAttributes.push_back(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE);
+            contextAttributes.push_back(mRobustResourceInit.value() ? EGL_TRUE : EGL_FALSE);
         }
     }
     contextAttributes.push_back(EGL_NONE);

@@ -7,7 +7,7 @@
 
 #include "GrVkCopyManager.h"
 
-#include "GrSamplerParams.h"
+#include "GrSamplerState.h"
 #include "GrShaderCaps.h"
 #include "GrSurface.h"
 #include "GrTexturePriv.h"
@@ -44,17 +44,17 @@ bool GrVkCopyManager::createCopyProgram(GrVkGpu* gpu) {
         "#extension GL_ARB_shading_language_420pack : enable\n"
 
         "layout(set = 0, binding = 0) uniform vertexUniformBuffer {"
-            "mediump float4 uPosXform;"
-            "mediump float4 uTexCoordXform;"
+            "half4 uPosXform;"
+            "half4 uTexCoordXform;"
         "};"
-        "layout(location = 0) in highp float2 inPosition;"
-        "layout(location = 1) out mediump float2 vTexCoord;"
+        "layout(location = 0) in float2 inPosition;"
+        "layout(location = 1) out half2 vTexCoord;"
 
         "// Copy Program VS\n"
         "void main() {"
             "vTexCoord = inPosition * uTexCoordXform.xy + uTexCoordXform.zw;"
-            "gl_Position.xy = inPosition * uPosXform.xy + uPosXform.zw;"
-            "gl_Position.zw = float2(0, 1);"
+            "sk_Position.xy = inPosition * uPosXform.xy + uPosXform.zw;"
+            "sk_Position.zw = half2(0, 1);"
         "}"
     );
 
@@ -63,11 +63,9 @@ bool GrVkCopyManager::createCopyProgram(GrVkGpu* gpu) {
         "#extension GL_ARB_separate_shader_objects : enable\n"
         "#extension GL_ARB_shading_language_420pack : enable\n"
 
-        "precision mediump float;"
-
-        "layout(set = 1, binding = 0) uniform mediump sampler2D uTextureSampler;"
-        "layout(location = 1) in mediump float2 vTexCoord;"
-        "layout(location = 0, index = 0) out mediump float4 fsColorOut;"
+        "layout(set = 1, binding = 0) uniform sampler2D uTextureSampler;"
+        "layout(location = 1) in half2 vTexCoord;"
+        "layout(location = 0, index = 0) out half4 fsColorOut;"
 
         "// Copy Program FS\n"
         "void main() {"
@@ -259,10 +257,10 @@ bool GrVkCopyManager::copySurfaceAsDraw(GrVkGpu* gpu,
     const GrVkDescriptorSet* samplerDS =
         gpu->resourceProvider().getSamplerDescriptorSet(fSamplerDSHandle);
 
-    GrSamplerParams params(SkShader::kClamp_TileMode, GrSamplerParams::kNone_FilterMode);
+    GrSamplerState samplerState = GrSamplerState::ClampNearest();
 
-    GrVkSampler* sampler =
-        resourceProv.findOrCreateCompatibleSampler(params, srcTex->texturePriv().maxMipMapLevel());
+    GrVkSampler* sampler = resourceProv.findOrCreateCompatibleSampler(
+            samplerState, srcTex->texturePriv().maxMipMapLevel());
 
     VkDescriptorImageInfo imageInfo;
     memset(&imageInfo, 0, sizeof(VkDescriptorImageInfo));

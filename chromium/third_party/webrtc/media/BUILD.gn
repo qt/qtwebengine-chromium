@@ -45,6 +45,7 @@ rtc_source_set("rtc_h264_profile_id") {
 
   deps = [
     "..:webrtc_common",
+    "../api:optional",
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_base_approved",
   ]
@@ -133,12 +134,15 @@ rtc_static_library("rtc_media_base") {
 rtc_static_library("rtc_audio_video") {
   defines = []
   libs = []
-  deps = []
+  deps = [
+    "../modules/video_coding:video_coding_utility",
+  ]
   sources = [
     "engine/adm_helpers.cc",
     "engine/adm_helpers.h",
     "engine/apm_helpers.cc",
     "engine/apm_helpers.h",
+    "engine/constants.h",
     "engine/internaldecoderfactory.cc",
     "engine/internaldecoderfactory.h",
     "engine/internalencoderfactory.cc",
@@ -146,6 +150,8 @@ rtc_static_library("rtc_audio_video") {
     "engine/nullwebrtcvideoengine.h",
     "engine/payload_type_mapper.cc",
     "engine/payload_type_mapper.h",
+    "engine/scopedvideodecoder.cc",
+    "engine/scopedvideodecoder.h",
     "engine/scopedvideoencoder.cc",
     "engine/scopedvideoencoder.h",
     "engine/simulcast.cc",
@@ -156,14 +162,15 @@ rtc_static_library("rtc_audio_video") {
     "engine/videodecodersoftwarefallbackwrapper.h",
     "engine/videoencodersoftwarefallbackwrapper.cc",
     "engine/videoencodersoftwarefallbackwrapper.h",
-    "engine/webrtccommon.h",
     "engine/webrtcmediaengine.cc",
     "engine/webrtcmediaengine.h",
     "engine/webrtcvideocapturer.cc",
     "engine/webrtcvideocapturer.h",
     "engine/webrtcvideocapturerfactory.cc",
     "engine/webrtcvideocapturerfactory.h",
+    "engine/webrtcvideodecoderfactory.cc",
     "engine/webrtcvideodecoderfactory.h",
+    "engine/webrtcvideoencoderfactory.cc",
     "engine/webrtcvideoencoderfactory.h",
     "engine/webrtcvideoengine.cc",
     "engine/webrtcvideoengine.h",
@@ -227,6 +234,7 @@ rtc_static_library("rtc_audio_video") {
     "..:webrtc_common",
     "../api:call_api",
     "../api:libjingle_peerconnection_api",
+    "../api:optional",
     "../api:transport_api",
     "../api:video_frame_api",
     "../api/audio_codecs:audio_codecs_api",
@@ -333,6 +341,7 @@ if (rtc_include_tests) {
       "../modules/audio_coding:rent_a_codec",
       "../modules/audio_processing:audio_processing",
       "../modules/rtp_rtcp:rtp_rtcp",
+      "../modules/video_coding:video_coding_utility",
       "../p2p:rtc_p2p",
     ]
     sources = [
@@ -405,13 +414,13 @@ if (rtc_include_tests) {
   }
 
   rtc_media_unittests_resources = [
-    "../../resources/media/captured-320x240-2s-48.frames",
-    "../../resources/media/faces.1280x720_P420.yuv",
-    "../../resources/media/faces_I420.jpg",
-    "../../resources/media/faces_I422.jpg",
-    "../../resources/media/faces_I444.jpg",
-    "../../resources/media/faces_I411.jpg",
-    "../../resources/media/faces_I400.jpg",
+    "../resources/media/captured-320x240-2s-48.frames",
+    "../resources/media/faces.1280x720_P420.yuv",
+    "../resources/media/faces_I420.jpg",
+    "../resources/media/faces_I422.jpg",
+    "../resources/media/faces_I444.jpg",
+    "../resources/media/faces_I411.jpg",
+    "../resources/media/faces_I400.jpg",
   ]
 
   if (is_ios) {

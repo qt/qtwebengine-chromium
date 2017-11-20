@@ -29,9 +29,9 @@
 #include "core/css/CSSCustomPropertyDeclaration.h"
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSPendingSubstitutionValue.h"
-#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/properties/CSSPropertyAPI.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/text/StringBuilder.h"
 
@@ -49,7 +49,8 @@ StylePropertySerializer::StylePropertySetForSerializer::
       property_set_->PropertyAt(all_index_);
   for (unsigned i = 0; i < property_set_->PropertyCount(); ++i) {
     StylePropertySet::PropertyReference property = property_set_->PropertyAt(i);
-    if (CSSProperty::IsAffectedByAllProperty(property.Id())) {
+    if (CSSPropertyAPI::Get(resolveCSSPropertyID(property.Id()))
+            .IsAffectedByAll()) {
       if (all_property.IsImportant() && !property.IsImportant())
         continue;
       if (static_cast<unsigned>(all_index_) >= i)
@@ -111,7 +112,8 @@ bool StylePropertySerializer::StylePropertySetForSerializer::
     StylePropertySet::PropertyReference property =
         property_set_->PropertyAt(index);
     if (property.Id() == CSSPropertyAll ||
-        !CSSProperty::IsAffectedByAllProperty(property.Id()))
+        !CSSPropertyAPI::Get(resolveCSSPropertyID(property.Id()))
+             .IsAffectedByAll())
       return true;
     if (!isCSSPropertyIDWithName(property.Id()))
       return false;
@@ -131,7 +133,7 @@ bool StylePropertySerializer::StylePropertySetForSerializer::
   // The all property is a shorthand that resets all CSS properties except
   // direction and unicode-bidi. It only accepts the CSS-wide keywords.
   // c.f. http://dev.w3.org/csswg/css-cascade/#all-shorthand
-  if (!CSSProperty::IsAffectedByAllProperty(property_id))
+  if (!CSSPropertyAPI::Get(resolveCSSPropertyID(property_id)).IsAffectedByAll())
     return longhand_property_used_.test(index);
 
   return true;
@@ -226,14 +228,16 @@ String StylePropertySerializer::AsText() const {
     StylePropertySerializer::PropertyValueForSerializer property =
         property_set_.PropertyAt(n);
     CSSPropertyID property_id = property.Id();
+#if DCHECK_IS_ON()
+    const CSSPropertyAPI& property_api =
+        CSSPropertyAPI::Get(resolveCSSPropertyID(property_id));
     // Only enabled properties should be part of the style.
-    DCHECK(CSSPropertyMetadata::IsEnabledProperty(property_id));
+    DCHECK(property_api.IsEnabled());
     // All shorthand properties should have been expanded at parse time.
     DCHECK(property_set_.IsDescriptorContext() ||
-           (CSSPropertyAPI::Get(property_id).IsProperty() &&
-            !isShorthandProperty(property_id)));
-    DCHECK(!property_set_.IsDescriptorContext() ||
-           CSSPropertyAPI::Get(property_id).IsDescriptor());
+           (property_api.IsProperty() && !isShorthandProperty(property_id)));
+    DCHECK(!property_set_.IsDescriptorContext() || property_api.IsDescriptor());
+#endif
 
     switch (property_id) {
       case CSSPropertyVariable:
@@ -481,8 +485,8 @@ String StylePropertySerializer::GetPropertyValue(
       return GetShorthandValue(webkitMarginCollapseShorthand());
     case CSSPropertyOverflow:
       return GetCommonValue(overflowShorthand());
-    case CSSPropertyScrollBoundaryBehavior:
-      return GetCommonValue(scrollBoundaryBehaviorShorthand());
+    case CSSPropertyOverscrollBehavior:
+      return GetShorthandValue(overscrollBehaviorShorthand());
     case CSSPropertyPadding:
       return Get4Values(paddingShorthand());
     case CSSPropertyTextDecoration:
@@ -560,6 +564,7 @@ void StylePropertySerializer::AppendFontLonghandValueIfNotNormal(
     case CSSPropertyFontVariantCaps:
     case CSSPropertyFontVariantLigatures:
     case CSSPropertyFontVariantNumeric:
+    case CSSPropertyFontVariantEastAsian:
     case CSSPropertyFontWeight:
       prefix = ' ';
       break;
@@ -600,11 +605,14 @@ String StylePropertySerializer::FontValue() const {
       property_set_.FindPropertyIndex(CSSPropertyFontVariantLigatures);
   int font_variant_numeric_property_index =
       property_set_.FindPropertyIndex(CSSPropertyFontVariantNumeric);
+  int font_variant_east_asian_property_index =
+      property_set_.FindPropertyIndex(CSSPropertyFontVariantEastAsian);
   DCHECK_NE(font_size_property_index, -1);
   DCHECK_NE(font_family_property_index, -1);
   DCHECK_NE(font_variant_caps_property_index, -1);
   DCHECK_NE(font_variant_ligatures_property_index, -1);
   DCHECK_NE(font_variant_numeric_property_index, -1);
+  DCHECK_NE(font_variant_east_asian_property_index, -1);
 
   PropertyValueForSerializer font_size_property =
       property_set_.PropertyAt(font_size_property_index);
@@ -616,17 +624,24 @@ String StylePropertySerializer::FontValue() const {
       property_set_.PropertyAt(font_variant_ligatures_property_index);
   PropertyValueForSerializer font_variant_numeric_property =
       property_set_.PropertyAt(font_variant_numeric_property_index);
+  PropertyValueForSerializer font_variant_east_asian_property =
+      property_set_.PropertyAt(font_variant_east_asian_property_index);
 
   // Check that non-initial font-variant subproperties are not conflicting with
   // this serialization.
   const CSSValue* ligatures_value = font_variant_ligatures_property.Value();
   const CSSValue* numeric_value = font_variant_numeric_property.Value();
+  const CSSValue* east_asian_value = font_variant_east_asian_property.Value();
   if ((ligatures_value->IsIdentifierValue() &&
        ToCSSIdentifierValue(ligatures_value)->GetValueID() != CSSValueNormal) ||
       ligatures_value->IsValueList() ||
       (numeric_value->IsIdentifierValue() &&
        ToCSSIdentifierValue(numeric_value)->GetValueID() != CSSValueNormal) ||
-      numeric_value->IsValueList())
+      numeric_value->IsValueList() ||
+      (east_asian_value->IsIdentifierValue() &&
+       ToCSSIdentifierValue(east_asian_value)->GetValueID() !=
+           CSSValueNormal) ||
+      east_asian_value->IsValueList())
     return g_empty_string;
 
   StringBuilder result;
@@ -660,6 +675,7 @@ String StylePropertySerializer::FontVariantValue() const {
   AppendFontLonghandValueIfNotNormal(CSSPropertyFontVariantLigatures, result);
   AppendFontLonghandValueIfNotNormal(CSSPropertyFontVariantCaps, result);
   AppendFontLonghandValueIfNotNormal(CSSPropertyFontVariantNumeric, result);
+  AppendFontLonghandValueIfNotNormal(CSSPropertyFontVariantEastAsian, result);
 
   if (result.IsEmpty()) {
     return "normal";

@@ -41,14 +41,19 @@ class ResourceSerial
 {
   public:
     constexpr ResourceSerial() : mValue(kDirty) {}
-    constexpr ResourceSerial(uintptr_t value) : mValue(value) {}
+    explicit constexpr ResourceSerial(uintptr_t value) : mValue(value) {}
     constexpr bool operator==(ResourceSerial other) const { return mValue == other.mValue; }
     constexpr bool operator!=(ResourceSerial other) const { return mValue != other.mValue; }
 
     void dirty() { mValue = kDirty; }
+    void clear() { mValue = kEmpty; }
+
+    constexpr bool valid() const { return mValue != kEmpty && mValue != kDirty; }
+    constexpr bool empty() const { return mValue == kEmpty; }
 
   private:
     constexpr static uintptr_t kDirty = std::numeric_limits<uintptr_t>::max();
+    constexpr static uintptr_t kEmpty = 0;
 
     uintptr_t mValue;
 };
@@ -58,12 +63,18 @@ class SerialFactory;
 class Serial final
 {
   public:
-    constexpr Serial() : mValue(0) {}
+    constexpr Serial() : mValue(kInvalid) {}
     constexpr Serial(const Serial &other) = default;
     Serial &operator=(const Serial &other) = default;
 
-    constexpr bool operator==(const Serial &other) const { return mValue == other.mValue; }
-    constexpr bool operator!=(const Serial &other) const { return mValue != other.mValue; }
+    constexpr bool operator==(const Serial &other) const
+    {
+        return mValue != kInvalid && mValue == other.mValue;
+    }
+    constexpr bool operator!=(const Serial &other) const
+    {
+        return mValue == kInvalid || mValue != other.mValue;
+    }
     constexpr bool operator>(const Serial &other) const { return mValue > other.mValue; }
     constexpr bool operator>=(const Serial &other) const { return mValue >= other.mValue; }
     constexpr bool operator<(const Serial &other) const { return mValue < other.mValue; }
@@ -73,6 +84,7 @@ class Serial final
     friend class SerialFactory;
     constexpr explicit Serial(uint64_t value) : mValue(value) {}
     uint64_t mValue;
+    static constexpr uint64_t kInvalid = 0;
 };
 
 class SerialFactory final : angle::NonCopyable

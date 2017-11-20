@@ -104,6 +104,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   ~NavigationRequest() override;
 
   // Called on the UI thread by the Navigator to start the navigation.
+  // The NavigationRequest can be deleted while BeginNavigation() is called.
   void BeginNavigation();
 
   const CommonNavigationParams& common_params() const { return common_params_; }
@@ -316,6 +317,8 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   scoped_refptr<ResourceResponse> response_;
   std::unique_ptr<StreamHandle> body_;
   mojo::ScopedDataPipeConsumerHandle handle_;
+  SSLStatus ssl_status_;
+  bool is_download_;
 
   base::Closure on_start_checks_complete_closure_;
 

@@ -10,9 +10,9 @@
 #include <map>
 #include <memory>
 
-#include "core/fxcrt/cfx_retain_ptr.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/fx_dib.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
 
@@ -32,9 +32,9 @@ class CXFA_TextParser {
   void Reset();
   void DoParse(CFX_XMLNode* pXMLContainer, CXFA_TextProvider* pTextProvider);
 
-  CFX_RetainPtr<CFX_CSSComputedStyle> CreateRootStyle(
+  RetainPtr<CFX_CSSComputedStyle> CreateRootStyle(
       CXFA_TextProvider* pTextProvider);
-  CFX_RetainPtr<CFX_CSSComputedStyle> ComputeStyle(
+  RetainPtr<CFX_CSSComputedStyle> ComputeStyle(
       CFX_XMLNode* pXMLNode,
       CFX_CSSComputedStyle* pParentStyle);
 
@@ -49,8 +49,8 @@ class CXFA_TextParser {
   bool GetTabstops(CFX_CSSComputedStyle* pStyle,
                    CXFA_TextTabstopsContext* pTabstopContext);
 
-  CFX_RetainPtr<CFGAS_GEFont> GetFont(CXFA_TextProvider* pTextProvider,
-                                      CFX_CSSComputedStyle* pStyle) const;
+  RetainPtr<CFGAS_GEFont> GetFont(CXFA_TextProvider* pTextProvider,
+                                  CFX_CSSComputedStyle* pStyle) const;
   float GetFontSize(CXFA_TextProvider* pTextProvider,
                     CFX_CSSComputedStyle* pStyle) const;
 
@@ -78,11 +78,11 @@ class CXFA_TextParser {
 
   bool GetEmbbedObj(CXFA_TextProvider* pTextProvider,
                     CFX_XMLNode* pXMLNode,
-                    CFX_WideString& wsValue);
+                    WideString& wsValue);
   CXFA_TextParseContext* GetParseContextFromMap(CFX_XMLNode* pXMLNode);
 
  protected:
-  bool TagValidate(const CFX_WideString& str) const;
+  bool TagValidate(const WideString& str) const;
 
  private:
   class TagProvider {
@@ -90,15 +90,14 @@ class CXFA_TextParser {
     TagProvider();
     ~TagProvider();
 
-    CFX_WideString GetTagName() { return m_wsTagName; }
+    WideString GetTagName() { return m_wsTagName; }
 
-    void SetTagName(const CFX_WideString& wsName) { m_wsTagName = wsName; }
-    void SetAttribute(const CFX_WideString& wsAttr,
-                      const CFX_WideString& wsValue) {
+    void SetTagName(const WideString& wsName) { m_wsTagName = wsName; }
+    void SetAttribute(const WideString& wsAttr, const WideString& wsValue) {
       m_Attributes.insert({wsAttr, wsValue});
     }
 
-    CFX_WideString GetAttribute(const CFX_WideString& wsAttr) {
+    WideString GetAttribute(const WideString& wsAttr) {
       return m_Attributes[wsAttr];
     }
 
@@ -106,15 +105,15 @@ class CXFA_TextParser {
     bool m_bContent;
 
    private:
-    CFX_WideString m_wsTagName;
-    std::map<CFX_WideString, CFX_WideString> m_Attributes;
+    WideString m_wsTagName;
+    std::map<WideString, WideString> m_Attributes;
   };
 
   void InitCSSData(CXFA_TextProvider* pTextProvider);
   void ParseRichText(CFX_XMLNode* pXMLNode, CFX_CSSComputedStyle* pParentStyle);
   std::unique_ptr<TagProvider> ParseTagInfo(CFX_XMLNode* pXMLNode);
   std::unique_ptr<CFX_CSSStyleSheet> LoadDefaultSheetStyle();
-  CFX_RetainPtr<CFX_CSSComputedStyle> CreateStyle(
+  RetainPtr<CFX_CSSComputedStyle> CreateStyle(
       CFX_CSSComputedStyle* pParentStyle);
 
   bool m_bParsed;

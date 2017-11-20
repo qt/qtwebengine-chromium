@@ -2,12 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "build/build_config.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_controller.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
@@ -95,8 +99,8 @@ class MouseLatencyBrowserTest : public ContentBrowserTest {
 
     GetWidgetHost()->QueueSyntheticGesture(
         std::move(gesture),
-        base::Bind(&MouseLatencyBrowserTest::OnSyntheticGestureCompleted,
-                   base::Unretained(this)));
+        base::BindOnce(&MouseLatencyBrowserTest::OnSyntheticGestureCompleted,
+                       base::Unretained(this)));
 
     // Runs until we get the OnSyntheticGestureCompleted callback
     runner_ = base::MakeUnique<base::RunLoop>();
@@ -121,7 +125,7 @@ class MouseLatencyBrowserTest : public ContentBrowserTest {
 
   const base::Value& StopTracing() {
     bool success = TracingController::GetInstance()->StopTracing(
-        TracingController::CreateStringSink(
+        TracingController::CreateStringEndpoint(
             base::Bind(&MouseLatencyBrowserTest::OnTraceDataCollected,
                        base::Unretained(this))));
     EXPECT_TRUE(success);
@@ -145,8 +149,8 @@ class MouseLatencyBrowserTest : public ContentBrowserTest {
 // MouseDown events in the case where no swap is generated.
 // Disabled on Android because we don't support synthetic mouse input on
 // Android (crbug.com/723618).
-// Test is flaky on Linux (crbug.com/736836).
-#if defined (OS_ANDROID) || defined(OS_LINUX)
+// Flaky on Mac10.10 (crbug.com/774169).
+#if defined(OS_ANDROID) || defined(OS_MACOSX)
 #define MAYBE_MouseDownAndUpRecordedWithoutSwap \
   DISABLED_MouseDownAndUpRecordedWithoutSwap
 #else
@@ -183,10 +187,10 @@ IN_PROC_BROWSER_TEST_F(MouseLatencyBrowserTest,
   }
 
   // We see two events per async slice, a begin and an end.
-  EXPECT_THAT(
-      trace_event_names,
-      testing::ElementsAre("InputLatency::MouseDown", "InputLatency::MouseDown",
-                           "InputLatency::MouseUp", "InputLatency::MouseUp"));
+  EXPECT_THAT(trace_event_names,
+              testing::UnorderedElementsAre(
+                  "InputLatency::MouseDown", "InputLatency::MouseDown",
+                  "InputLatency::MouseUp", "InputLatency::MouseUp"));
 }
 
 }  // namespace content

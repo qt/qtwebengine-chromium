@@ -8,26 +8,26 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/gmock.h"
+#include "test/gtest.h"
+#include "test/gmock.h"
 
-#include "webrtc/common_video/h264/h264_common.h"
-#include "webrtc/media/base/mediaconstants.h"
-#include "webrtc/modules/pacing/packet_router.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_packet_received.h"
-#include "webrtc/modules/utility/include/process_thread.h"
-#include "webrtc/modules/video_coding/frame_object.h"
-#include "webrtc/modules/video_coding/include/video_coding_defines.h"
-#include "webrtc/modules/video_coding/packet.h"
-#include "webrtc/modules/video_coding/rtp_frame_reference_finder.h"
-#include "webrtc/modules/video_coding/timing.h"
-#include "webrtc/rtc_base/bytebuffer.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/field_trial_default.h"
-#include "webrtc/test/field_trial.h"
-#include "webrtc/video/rtp_video_stream_receiver.h"
+#include "common_video/h264/h264_common.h"
+#include "media/base/mediaconstants.h"
+#include "modules/pacing/packet_router.h"
+#include "modules/rtp_rtcp/source/rtp_packet_received.h"
+#include "modules/utility/include/process_thread.h"
+#include "modules/video_coding/frame_object.h"
+#include "modules/video_coding/include/video_coding_defines.h"
+#include "modules/video_coding/packet.h"
+#include "modules/video_coding/rtp_frame_reference_finder.h"
+#include "modules/video_coding/timing.h"
+#include "rtc_base/bytebuffer.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/ptr_util.h"
+#include "system_wrappers/include/clock.h"
+#include "system_wrappers/include/field_trial_default.h"
+#include "test/field_trial.h"
+#include "video/rtp_video_stream_receiver.h"
 
 using testing::_;
 
@@ -126,11 +126,14 @@ class RtpVideoStreamReceiverTest : public testing::Test {
         process_thread_(ProcessThread::Create("TestThread")) {}
 
   void SetUp() {
-    rtp_video_stream_receiver_.reset(new RtpVideoStreamReceiver(
+    rtp_receive_statistics_ =
+        rtc::WrapUnique(ReceiveStatistics::Create(Clock::GetRealTimeClock()));
+    rtp_video_stream_receiver_ = rtc::MakeUnique<RtpVideoStreamReceiver>(
         &mock_transport_, nullptr, &packet_router_, &config_,
-        nullptr, process_thread_.get(), &mock_nack_sender_,
+        rtp_receive_statistics_.get(), nullptr, process_thread_.get(),
+        &mock_nack_sender_,
         &mock_key_frame_request_sender_, &mock_on_complete_frame_callback_,
-        &timing_));
+        &timing_);
   }
 
   WebRtcRTPHeader GetDefaultPacket() {
@@ -196,6 +199,7 @@ class RtpVideoStreamReceiverTest : public testing::Test {
   PacketRouter packet_router_;
   VCMTiming timing_;
   std::unique_ptr<ProcessThread> process_thread_;
+  std::unique_ptr<ReceiveStatistics> rtp_receive_statistics_;
   std::unique_ptr<RtpVideoStreamReceiver> rtp_video_stream_receiver_;
 };
 

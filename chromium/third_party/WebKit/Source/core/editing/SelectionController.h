@@ -28,8 +28,9 @@
 #define SelectionController_h
 
 #include "core/CoreExport.h"
-#include "core/dom/SynchronousMutationObserver.h"
+#include "core/dom/DocumentShutdownObserver.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/PositionWithAffinity.h"
 #include "core/editing/TextGranularity.h"
 #include "core/page/EventWithHitTestResults.h"
 #include "platform/heap/Handle.h"
@@ -41,7 +42,7 @@ class LocalFrame;
 
 class CORE_EXPORT SelectionController final
     : public GarbageCollectedFinalized<SelectionController>,
-      public SynchronousMutationObserver {
+      public DocumentShutdownObserver {
   WTF_MAKE_NONCOPYABLE(SelectionController);
   USING_GARBAGE_COLLECTED_MIXIN(SelectionController);
 
@@ -120,7 +121,7 @@ class CORE_EXPORT SelectionController final
 
   FrameSelection& Selection() const;
 
-  // Implements |SynchronousMutationObserver|.
+  // Implements |DocumentShutdownObserver|.
   // TODO(yosin): We should relocate |m_originalBaseInFlatTree| when DOM tree
   // changed.
   void ContextDestroyed(Document*) final;
@@ -128,6 +129,9 @@ class CORE_EXPORT SelectionController final
   bool HandleSingleClick(const MouseEventWithHitTestResults&);
   bool HandleDoubleClick(const MouseEventWithHitTestResults&);
   bool HandleTripleClick(const MouseEventWithHitTestResults&);
+
+  bool HandleTapInsideSelection(const MouseEventWithHitTestResults&,
+                                const SelectionInFlatTree&);
 
   Member<LocalFrame> const frame_;
   // Used to store base before the adjustment at bidi boundary

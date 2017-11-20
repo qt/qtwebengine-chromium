@@ -54,6 +54,8 @@ const char kZeroResolutionVideoDeviceID[] = "/dev/video2";
 const char* const kDefaultVideoDeviceID = kZeroResolutionVideoDeviceID;
 const char kDefaultAudioDeviceID[] = "fake_audio_input_2";
 
+const auto kIgnoreLogMessageCB = base::BindRepeating([](const std::string&) {});
+
 void PhysicalDevicesEnumerated(base::Closure quit_closure,
                                MediaDeviceEnumeration* out,
                                const MediaDeviceEnumeration& enumeration) {
@@ -91,24 +93,25 @@ class MediaDevicesDispatcherHostTest : public testing::TestWithParam<GURL> {
         base::StringPrintf("video-input-default-id=%s, "
                            "audio-input-default-id=%s",
                            kDefaultVideoDeviceID, kDefaultAudioDeviceID));
-    audio_manager_.reset(new media::MockAudioManager(
-        base::MakeUnique<media::TestAudioThread>()));
-    audio_system_ = media::AudioSystemImpl::Create(audio_manager_.get());
+    audio_manager_ = std::make_unique<media::MockAudioManager>(
+        std::make_unique<media::TestAudioThread>());
+    audio_system_ =
+        std::make_unique<media::AudioSystemImpl>(audio_manager_.get());
 
     auto video_capture_device_factory =
-        base::MakeUnique<media::FakeVideoCaptureDeviceFactory>();
+        std::make_unique<media::FakeVideoCaptureDeviceFactory>();
     video_capture_device_factory_ = video_capture_device_factory.get();
-    auto video_capture_system = base::MakeUnique<media::VideoCaptureSystemImpl>(
+    auto video_capture_system = std::make_unique<media::VideoCaptureSystemImpl>(
         std::move(video_capture_device_factory));
     auto video_capture_provider =
-        base::MakeUnique<InProcessVideoCaptureProvider>(
+        std::make_unique<InProcessVideoCaptureProvider>(
             std::move(video_capture_system),
-            base::ThreadTaskRunnerHandle::Get());
+            base::ThreadTaskRunnerHandle::Get(), kIgnoreLogMessageCB);
 
-    media_stream_manager_ = base::MakeUnique<MediaStreamManager>(
+    media_stream_manager_ = std::make_unique<MediaStreamManager>(
         audio_system_.get(), audio_manager_->GetTaskRunner(),
         std::move(video_capture_provider));
-    host_ = base::MakeUnique<MediaDevicesDispatcherHost>(
+    host_ = std::make_unique<MediaDevicesDispatcherHost>(
         kProcessId, kRenderId, browser_context_.GetMediaDeviceIDSalt(),
         media_stream_manager_.get());
     host_->SetSecurityOriginForTesting(origin_);
@@ -158,6 +161,8 @@ class MediaDevicesDispatcherHostTest : public testing::TestWithParam<GURL> {
                void(const std::vector<std::vector<MediaDeviceInfo>>&));
   MOCK_METHOD0(MockVideoInputCapabilitiesCallback, void());
   MOCK_METHOD0(MockAudioInputCapabilitiesCallback, void());
+  MOCK_METHOD0(MockAllVideoInputDeviceFormatsCallback, void());
+  MOCK_METHOD0(MockAvailableVideoInputDeviceFormatsCallback, void());
 
   void VideoInputCapabilitiesCallback(
       std::vector<::mojom::VideoInputDeviceCapabilitiesPtr> capabilities) {
@@ -196,6 +201,30 @@ class MediaDevicesDispatcherHostTest : public testing::TestWithParam<GURL> {
     EXPECT_EQ(expected_first_device_id, capabilities[0]->device_id);
     for (const auto& capability : capabilities)
       EXPECT_TRUE(capability->parameters.IsValid());
+  }
+
+  void AllVideoInputDeviceFormatsCallback(
+      const std::vector<media::VideoCaptureFormat>& formats) {
+    MockAllVideoInputDeviceFormatsCallback();
+    EXPECT_GT(formats.size(), 0U);
+    for (const auto& format : formats) {
+      EXPECT_GT(format.frame_size.GetArea(), 0);
+      EXPECT_GE(format.frame_rate, 0.0);
+    }
+  }
+
+  void AvailableVideoInputDeviceFormatsCallback(
+      const std::vector<media::VideoCaptureFormat>& formats) {
+    MockAvailableVideoInputDeviceFormatsCallback();
+    EXPECT_EQ(formats.size(), 4U);
+    EXPECT_EQ(formats[0], media::VideoCaptureFormat(gfx::Size(640, 480), 30.0,
+                                                    media::PIXEL_FORMAT_I420));
+    EXPECT_EQ(formats[1], media::VideoCaptureFormat(gfx::Size(800, 600), 30.0,
+                                                    media::PIXEL_FORMAT_I420));
+    EXPECT_EQ(formats[2], media::VideoCaptureFormat(gfx::Size(1020, 780), 30.0,
+                                                    media::PIXEL_FORMAT_I420));
+    EXPECT_EQ(formats[3], media::VideoCaptureFormat(gfx::Size(1920, 1080), 20.0,
+                                                    media::PIXEL_FORMAT_I420));
   }
 
  protected:
@@ -312,7 +341,7 @@ class MediaDevicesDispatcherHostTest : public testing::TestWithParam<GURL> {
 
   void SubscribeAndWaitForResult(bool has_permission) {
     host_->SetPermissionChecker(
-        base::MakeUnique<MediaDevicesPermissionChecker>(has_permission));
+        std::make_unique<MediaDevicesPermissionChecker>(has_permission));
     uint32_t subscription_id = 0u;
     for (size_t i = 0; i < NUM_MEDIA_DEVICE_TYPES; ++i) {
       MediaDeviceType type = static_cast<MediaDeviceType>(i);
@@ -422,6 +451,32 @@ TEST_P(MediaDevicesDispatcherHostTest, GetAudioInputCapabilities) {
   host_->GetAudioInputCapabilities(base::BindOnce(
       &MediaDevicesDispatcherHostTest::AudioInputCapabilitiesCallback,
       base::Unretained(this)));
+  run_loop.Run();
+}
+
+TEST_P(MediaDevicesDispatcherHostTest, GetAllVideoInputDeviceFormats) {
+  base::RunLoop run_loop;
+  EXPECT_CALL(*this, MockAllVideoInputDeviceFormatsCallback())
+      .WillOnce(InvokeWithoutArgs([&run_loop]() { run_loop.Quit(); }));
+  host_->GetAllVideoInputDeviceFormats(
+      GetHMACForMediaDeviceID(browser_context_.GetMediaDeviceIDSalt(), origin_,
+                              kDefaultVideoDeviceID),
+      base::BindOnce(
+          &MediaDevicesDispatcherHostTest::AllVideoInputDeviceFormatsCallback,
+          base::Unretained(this)));
+  run_loop.Run();
+}
+
+TEST_P(MediaDevicesDispatcherHostTest, GetAvailableVideoInputDeviceFormats) {
+  base::RunLoop run_loop;
+  EXPECT_CALL(*this, MockAvailableVideoInputDeviceFormatsCallback())
+      .WillOnce(InvokeWithoutArgs([&run_loop]() { run_loop.Quit(); }));
+  host_->GetAvailableVideoInputDeviceFormats(
+      GetHMACForMediaDeviceID(browser_context_.GetMediaDeviceIDSalt(), origin_,
+                              kNormalVideoDeviceID),
+      base::BindOnce(&MediaDevicesDispatcherHostTest::
+                         AvailableVideoInputDeviceFormatsCallback,
+                     base::Unretained(this)));
   run_loop.Run();
 }
 

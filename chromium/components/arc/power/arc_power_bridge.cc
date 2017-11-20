@@ -71,7 +71,9 @@ void ArcPowerBridge::OnInstanceReady() {
   mojom::PowerHostPtr host_proxy;
   binding_.Bind(mojo::MakeRequest(&host_proxy));
   power_instance->Init(std::move(host_proxy));
-  ash::Shell::Get()->display_configurator()->AddObserver(this);
+  // TODO(mash): Support this functionality without ash::Shell access in Chrome.
+  if (ash::Shell::HasInstance())
+    ash::Shell::Get()->display_configurator()->AddObserver(this);
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
       AddObserver(this);
   chromeos::DBusThreadManager::Get()
@@ -82,7 +84,9 @@ void ArcPowerBridge::OnInstanceReady() {
 }
 
 void ArcPowerBridge::OnInstanceClosed() {
-  ash::Shell::Get()->display_configurator()->RemoveObserver(this);
+  // TODO(mash): Support this functionality without ash::Shell access in Chrome.
+  if (ash::Shell::HasInstance())
+    ash::Shell::Get()->display_configurator()->RemoveObserver(this);
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
       RemoveObserver(this);
   ReleaseAllDisplayWakeLocks();
@@ -182,8 +186,12 @@ void ArcPowerBridge::OnReleaseDisplayWakeLock(mojom::DisplayWakeLockType type) {
   wake_locks_.erase(it);
 }
 
-void ArcPowerBridge::IsDisplayOn(const IsDisplayOnCallback& callback) {
-  callback.Run(ash::Shell::Get()->display_configurator()->IsDisplayOn());
+void ArcPowerBridge::IsDisplayOn(IsDisplayOnCallback callback) {
+  bool is_display_on = false;
+  // TODO(mash): Support this functionality without ash::Shell access in Chrome.
+  if (ash::Shell::HasInstance())
+    is_display_on = ash::Shell::Get()->display_configurator()->IsDisplayOn();
+  std::move(callback).Run(is_display_on);
 }
 
 void ArcPowerBridge::OnScreenBrightnessUpdateRequest(double percent) {

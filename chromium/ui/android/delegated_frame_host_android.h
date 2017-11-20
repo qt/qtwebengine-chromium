@@ -7,23 +7,21 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "components/viz/common/quads/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/resources/returned_resource.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/host/host_frame_sink_client.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
-#include "components/viz/service/frame_sinks/compositor_frame_sink_support_client.h"
+#include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "ui/android/ui_android_export.h"
 
 namespace cc {
-
-class CompositorFrame;
 class SurfaceLayer;
 enum class SurfaceDrawStatus;
-
 }  // namespace cc
 
 namespace viz {
+class CompositorFrame;
 class FrameSinkManagerImpl;
 class HostFrameSinkManager;
 }  // namespace viz
@@ -33,7 +31,7 @@ class ViewAndroid;
 class WindowAndroidCompositor;
 
 class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
-    : public viz::CompositorFrameSinkSupportClient,
+    : public viz::mojom::CompositorFrameSinkClient,
       public viz::ExternalBeginFrameSourceClient,
       public viz::HostFrameSinkClient {
  public:
@@ -55,7 +53,7 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
   ~DelegatedFrameHostAndroid() override;
 
   void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             cc::CompositorFrame frame);
+                             viz::CompositorFrame frame);
   void DidNotProduceFrame(const viz::BeginFrameAck& ack);
 
   void DestroyDelegatedContent();
@@ -64,7 +62,9 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
 
   viz::FrameSinkId GetFrameSinkId() const;
 
-  // Should only be called when the host has a content layer.
+  // Should only be called when the host has a content layer. Use this for one-
+  // off screen capture, not for video. Always provides RGBA_BITMAP
+  // CopyOutputResults.
   void RequestCopyOfSurface(
       WindowAndroidCompositor* compositor,
       const gfx::Rect& src_subrect_in_pixel,
@@ -81,14 +81,12 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
   viz::SurfaceId SurfaceId() const;
 
  private:
-  // viz::CompositorFrameSinkSupportClient implementation.
+  // viz::mojom::CompositorFrameSinkClient implementation.
   void DidReceiveCompositorFrameAck(
       const std::vector<viz::ReturnedResource>& resources) override;
   void OnBeginFrame(const viz::BeginFrameArgs& args) override;
   void ReclaimResources(
       const std::vector<viz::ReturnedResource>& resources) override;
-  void WillDrawSurface(const viz::LocalSurfaceId& local_surface_id,
-                       const gfx::Rect& damage_rect) override;
   void OnBeginFramePausedChanged(bool paused) override;
 
   // viz::ExternalBeginFrameSourceClient implementation.

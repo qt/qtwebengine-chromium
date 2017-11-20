@@ -12,7 +12,6 @@ class SharedBitmapManager;
 }  // namespace viz
 
 namespace cc {
-class BlockingTaskRunner;
 
 // This class is not thread-safe and can only be called from the thread it was
 // created on (in practice, the impl thread).
@@ -22,11 +21,25 @@ class CC_EXPORT LayerTreeResourceProvider : public ResourceProvider {
       viz::ContextProvider* compositor_context_provider,
       viz::SharedBitmapManager* shared_bitmap_manager,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-      BlockingTaskRunner* blocking_main_thread_task_runner,
       bool delegated_sync_points_required,
-      bool enable_color_correct_rasterization,
       const viz::ResourceSettings& resource_settings);
   ~LayerTreeResourceProvider() override;
+
+  // Wraps an external texture mailbox into a GL resource.
+  viz::ResourceId CreateResourceFromTextureMailbox(
+      const viz::TextureMailbox& mailbox,
+      std::unique_ptr<viz::SingleReleaseCallback> release_callback);
+
+  viz::ResourceId CreateResourceFromTextureMailbox(
+      const viz::TextureMailbox& mailbox,
+      std::unique_ptr<viz::SingleReleaseCallback> release_callback,
+      bool read_lock_fences_enabled);
+
+  viz::ResourceId CreateResourceFromTextureMailbox(
+      const viz::TextureMailbox& mailbox,
+      std::unique_ptr<viz::SingleReleaseCallback> release_callback,
+      bool read_lock_fences_enabled,
+      gfx::BufferFormat buffer_format);
 
   // Gets the most recent sync token from the indicated resources.
   gpu::SyncToken GetSyncTokenForResources(const ResourceIdArray& resource_ids);
@@ -56,8 +69,6 @@ class CC_EXPORT LayerTreeResourceProvider : public ResourceProvider {
                                    viz::ResourceId resource_id);
     ~ScopedWriteLockGpuMemoryBuffer();
     gfx::GpuMemoryBuffer* GetGpuMemoryBuffer();
-    // Will return the invalid color space unless
-    // |enable_color_correct_rasterization| is true.
     const gfx::ColorSpace& color_space_for_raster() const {
       return color_space_;
     }

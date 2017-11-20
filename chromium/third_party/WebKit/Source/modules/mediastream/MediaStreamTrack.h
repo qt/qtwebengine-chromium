@@ -35,7 +35,6 @@
 #include "platform/mediastream/MediaStreamDescriptor.h"
 #include "platform/mediastream/MediaStreamSource.h"
 #include "platform/wtf/Forward.h"
-#include "public/platform/WebMediaConstraints.h"
 
 namespace blink {
 
@@ -46,6 +45,7 @@ class MediaTrackCapabilities;
 class MediaTrackConstraints;
 class MediaStream;
 class MediaTrackSettings;
+class ScriptPromiseResolver;
 class ScriptState;
 
 class MODULES_EXPORT MediaStreamTrack
@@ -119,13 +119,14 @@ class MODULES_EXPORT MediaStreamTrack
   void SourceChangedState() override;
 
   void PropagateTrackEnded();
+  void applyConstraintsImageCapture(ScriptPromiseResolver*,
+                                    const MediaTrackConstraints&);
 
   MediaStreamSource::ReadyState ready_state_;
   HeapHashSet<Member<MediaStream>> registered_media_streams_;
   bool is_iterating_registered_media_streams_;
   bool stopped_;
   Member<MediaStreamComponent> component_;
-  WebMediaConstraints constraints_;
   Member<ImageCapture> image_capture_;
 };
 

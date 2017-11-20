@@ -38,13 +38,12 @@ namespace blink {
 
 using namespace HTMLNames;
 
-AXInlineTextBox::AXInlineTextBox(
-    PassRefPtr<AbstractInlineTextBox> inline_text_box,
-    AXObjectCacheImpl& ax_object_cache)
+AXInlineTextBox::AXInlineTextBox(RefPtr<AbstractInlineTextBox> inline_text_box,
+                                 AXObjectCacheImpl& ax_object_cache)
     : AXObject(ax_object_cache), inline_text_box_(std::move(inline_text_box)) {}
 
 AXInlineTextBox* AXInlineTextBox::Create(
-    PassRefPtr<AbstractInlineTextBox> inline_text_box,
+    RefPtr<AbstractInlineTextBox> inline_text_box,
     AXObjectCacheImpl& ax_object_cache) {
   return new AXInlineTextBox(std::move(inline_text_box), ax_object_cache);
 }
@@ -112,7 +111,7 @@ void AXInlineTextBox::TextCharacterOffsets(Vector<int>& offsets) const {
 }
 
 void AXInlineTextBox::GetWordBoundaries(Vector<AXRange>& words) const {
-  if (!inline_text_box_)
+  if (!inline_text_box_ || inline_text_box_->GetText().ContainsOnlyWhitespace())
     return;
 
   Vector<AbstractInlineTextBox::WordBoundaries> word_boundaries;
@@ -172,7 +171,7 @@ Node* AXInlineTextBox::GetNode() const {
 AXObject* AXInlineTextBox::NextOnLine() const {
   RefPtr<AbstractInlineTextBox> next_on_line = inline_text_box_->NextOnLine();
   if (next_on_line)
-    return ax_object_cache_->GetOrCreate(next_on_line.Get());
+    return ax_object_cache_->GetOrCreate(next_on_line.get());
 
   if (!inline_text_box_->IsLast())
     return 0;
@@ -184,7 +183,7 @@ AXObject* AXInlineTextBox::PreviousOnLine() const {
   RefPtr<AbstractInlineTextBox> previous_on_line =
       inline_text_box_->PreviousOnLine();
   if (previous_on_line)
-    return ax_object_cache_->GetOrCreate(previous_on_line.Get());
+    return ax_object_cache_->GetOrCreate(previous_on_line.get());
 
   if (!inline_text_box_->IsFirst())
     return 0;

@@ -45,10 +45,6 @@ bool RenderViewHostDelegate::IsNeverVisible() {
   return false;
 }
 
-bool RenderViewHostDelegate::IsVirtualKeyboardRequested() {
-  return false;
-}
-
 bool RenderViewHostDelegate::IsOverridingUserAgent() {
   return false;
 }
@@ -67,6 +63,10 @@ bool RenderViewHostDelegate::HideDownloadUI() const {
 
 bool RenderViewHostDelegate::HasPersistentVideo() const {
   return false;
+}
+
+RenderFrameHost* RenderViewHostDelegate::GetPendingMainFrame() {
+  return nullptr;
 }
 
 }  // namespace content

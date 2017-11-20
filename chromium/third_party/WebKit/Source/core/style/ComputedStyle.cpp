@@ -50,7 +50,6 @@
 #include "core/style/StyleNonInheritedVariables.h"
 #include "core/style/StyleRay.h"
 #include "platform/LengthFunctions.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontSelector.h"
 #include "platform/geometry/FloatRoundedRect.h"
@@ -93,11 +92,11 @@ struct SameSizeAsComputedStyle : public RefCounted<SameSizeAsComputedStyle> {
 ASSERT_SIZE(ComputedStyle, SameSizeAsComputedStyle);
 
 RefPtr<ComputedStyle> ComputedStyle::Create() {
-  return AdoptRef(new ComputedStyle(InitialStyle()));
+  return WTF::AdoptRef(new ComputedStyle(InitialStyle()));
 }
 
 RefPtr<ComputedStyle> ComputedStyle::CreateInitialStyle() {
-  return AdoptRef(new ComputedStyle());
+  return WTF::AdoptRef(new ComputedStyle());
 }
 
 ComputedStyle& ComputedStyle::MutableInitialStyle() {
@@ -122,7 +121,7 @@ RefPtr<ComputedStyle> ComputedStyle::CreateAnonymousStyleWithDisplay(
 }
 
 RefPtr<ComputedStyle> ComputedStyle::Clone(const ComputedStyle& other) {
-  return AdoptRef(new ComputedStyle(other));
+  return WTF::AdoptRef(new ComputedStyle(other));
 }
 
 ALWAYS_INLINE ComputedStyle::ComputedStyle()
@@ -251,6 +250,29 @@ StyleSelfAlignmentData ComputedStyle::ResolvedJustifySelf(
   return parent_style->ResolvedJustifyItems(normal_value_behaviour);
 }
 
+StyleContentAlignmentData ResolvedContentAlignment(
+    const StyleContentAlignmentData& value,
+    const StyleContentAlignmentData& normal_behaviour) {
+  return (value.GetPosition() == kContentPositionNormal &&
+          value.Distribution() == kContentDistributionDefault)
+             ? normal_behaviour
+             : value;
+}
+
+StyleContentAlignmentData ComputedStyle::ResolvedAlignContent(
+    const StyleContentAlignmentData& normal_behaviour) const {
+  // We will return the behaviour of 'normal' value if needed, which is specific
+  // of each layout model.
+  return ResolvedContentAlignment(AlignContent(), normal_behaviour);
+}
+
+StyleContentAlignmentData ComputedStyle::ResolvedJustifyContent(
+    const StyleContentAlignmentData& normal_behaviour) const {
+  // We will return the behaviour of 'normal' value if needed, which is specific
+  // of each layout model.
+  return ResolvedContentAlignment(JustifyContent(), normal_behaviour);
+}
+
 static inline ContentPosition ResolvedContentAlignmentPosition(
     const StyleContentAlignmentData& value,
     const StyleContentAlignmentData& normal_value_behavior) {
@@ -376,7 +398,7 @@ ComputedStyle* ComputedStyle::GetCachedPseudoStyle(PseudoId pid) const {
     return 0;
 
   for (size_t i = 0; i < cached_pseudo_styles_->size(); ++i) {
-    ComputedStyle* pseudo_style = cached_pseudo_styles_->at(i).Get();
+    ComputedStyle* pseudo_style = cached_pseudo_styles_->at(i).get();
     if (pseudo_style->StyleType() == pid)
       return pseudo_style;
   }
@@ -391,7 +413,7 @@ ComputedStyle* ComputedStyle::AddCachedPseudoStyle(
 
   DCHECK_GT(pseudo->StyleType(), kPseudoIdNone);
 
-  ComputedStyle* result = pseudo.Get();
+  ComputedStyle* result = pseudo.get();
 
   if (!cached_pseudo_styles_)
     cached_pseudo_styles_ = WTF::WrapUnique(new PseudoStyleCache);
@@ -405,9 +427,9 @@ void ComputedStyle::RemoveCachedPseudoStyle(PseudoId pid) {
   if (!cached_pseudo_styles_)
     return;
   for (size_t i = 0; i < cached_pseudo_styles_->size(); ++i) {
-    ComputedStyle* pseudo_style = cached_pseudo_styles_->at(i).Get();
+    ComputedStyle* pseudo_style = cached_pseudo_styles_->at(i).get();
     if (pseudo_style->StyleType() == pid) {
-      cached_pseudo_styles_->erase(i);
+      cached_pseudo_styles_->EraseAt(i);
       return;
     }
   }
@@ -686,9 +708,8 @@ void ComputedStyle::UpdatePropertySpecificDifferences(
     diff.SetTextDecorationOrColorChanged();
   }
 
-  bool has_clip = HasOutOfFlowPosition() && !HasAutoClipInternal();
-  bool other_has_clip =
-      other.HasOutOfFlowPosition() && !other.HasAutoClipInternal();
+  bool has_clip = HasOutOfFlowPosition() && !HasAutoClip();
+  bool other_has_clip = other.HasOutOfFlowPosition() && !other.HasAutoClip();
   if (has_clip != other_has_clip ||
       (has_clip && Clip() != other.Clip()))
     diff.SetCSSClipChanged();
@@ -1257,7 +1278,8 @@ bool ComputedStyle::ShouldUseTextIndent(bool is_first_line,
   bool should_use =
       is_first_line || (is_after_forced_break &&
                         GetTextIndentLine() != TextIndentLine::kFirstLine);
-  return TextIndentType() == TextIndentType::kNormal ? should_use : !should_use;
+  return GetTextIndentType() == TextIndentType::kNormal ? should_use
+                                                        : !should_use;
 }
 
 const AtomicString& ComputedStyle::TextEmphasisMarkString() const {
@@ -1402,7 +1424,7 @@ const Vector<AppliedTextDecoration>& ComputedStyle::AppliedTextDecorations()
 }
 
 StyleInheritedVariables* ComputedStyle::InheritedVariables() const {
-  return InheritedVariablesInternal().Get();
+  return InheritedVariablesInternal().get();
 }
 
 StyleNonInheritedVariables* ComputedStyle::NonInheritedVariables() const {
@@ -1569,10 +1591,6 @@ Length ComputedStyle::LineHeight() const {
   return lh;
 }
 
-void ComputedStyle::SetLineHeight(const Length& specified_line_height) {
-  SetLineHeightInternal(specified_line_height);
-}
-
 int ComputedStyle::ComputedLineHeight() const {
   const Length& lh = LineHeight();
 
@@ -1733,10 +1751,10 @@ void ComputedStyle::ClearMultiCol() {
   SetColumnRuleColorIsCurrentColor(InitialColumnRuleColorIsCurrentColor());
   SetVisitedLinkColumnRuleColorInternal(InitialVisitedLinkColumnRuleColor());
   SetColumnCountInternal(InitialColumnCount());
-  SetColumnAutoCountInternal(InitialColumnAutoCount());
-  SetColumnAutoWidthInternal(InitialColumnAutoWidth());
+  SetHasAutoColumnCountInternal(InitialHasAutoColumnCount());
+  SetHasAutoColumnWidthInternal(InitialHasAutoColumnWidth());
   ResetColumnFill();
-  SetColumnNormalGapInternal(InitialColumnNormalGap());
+  SetHasNormalColumnGapInternal(InitialHasNormalColumnGap());
   ResetColumnSpan();
 }
 

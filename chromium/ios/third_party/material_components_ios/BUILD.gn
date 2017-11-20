@@ -18,6 +18,7 @@ config("config") {
     "src/components/FlexibleHeader/src",
     "src/components/HeaderStackView/src",
     "src/components/Ink/src",
+    "src/components/private/UIMetrics/src",
     "src/components/NavigationBar/src",
     "src/components/OverlayWindow/src",
     "src/components/Palettes/src",
@@ -236,6 +237,9 @@ source_set("material_components_ios") {
     "src/components/private/ThumbTrack/src/MDCThumbView.h",
     "src/components/private/ThumbTrack/src/MDCThumbView.m",
     "src/components/private/ThumbTrack/src/MaterialThumbTrack.h",
+    "src/components/private/UIMetrics/src/MDCLayoutMetrics.h",
+    "src/components/private/UIMetrics/src/MDCLayoutMetrics.m",
+    "src/components/private/UIMetrics/src/MaterialUIMetrics.h",
   ]
   include_dirs = [
     "src/components/ActivityIndicator/src",
@@ -272,8 +276,13 @@ source_set("material_components_ios") {
     ":material_collection_cells_bundle",
     ":material_collections_bundle",
     ":material_component_ic_arrow_back_bundle",
+    "//ios/third_party/material_internationalization_ios:material_internationalization_ios+link",
     "//ios/third_party/material_text_accessibility_ios",
   ]
+
+  if (current_toolchain == default_toolchain) {
+    deps += [ "//ios/third_party/material_internationalization_ios:material_internationalization_ios+bundle" ]
+  }
 
   foreach(icon_name, _icon_names) {
     deps += [ ":material_component_${icon_name}_bundle" ]

@@ -32,6 +32,7 @@
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_targeter.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/base/hit_test.h"
 #include "ui/display/screen.h"
@@ -61,9 +62,11 @@ class NonClientDelegate : public test::TestWindowDelegate {
   ~NonClientDelegate() override {}
 
   int non_client_count() const { return non_client_count_; }
-  gfx::Point non_client_location() const { return non_client_location_; }
+  const gfx::Point& non_client_location() const { return non_client_location_; }
   int mouse_event_count() const { return mouse_event_count_; }
-  gfx::Point mouse_event_location() const { return mouse_event_location_; }
+  const gfx::Point& mouse_event_location() const {
+    return mouse_event_location_;
+  }
   int mouse_event_flags() const { return mouse_event_flags_; }
 
   int GetNonClientComponent(const gfx::Point& location) const override {
@@ -484,7 +487,7 @@ TEST_P(WindowEventDispatcherTest, ScrollEventDispatch) {
 
 namespace {
 
-// FilterFilter that tracks the types of events it's seen.
+// ui::EventHandler that tracks the types of events it's seen.
 class EventFilterRecorder : public ui::EventHandler {
  public:
   typedef std::vector<ui::EventType> Events;
@@ -1985,6 +1988,51 @@ TEST_P(WindowEventDispatcherTest, WindowHideCancelsActiveGestures) {
   root_window()->RemovePreTargetHandler(&recorder);
 }
 
+// Places two windows side by side.  Starts a pinch in one window, then sets
+// capture to the other window.  Ensures that subsequent pinch events are
+// sent to the window which gained capture.
+TEST_P(WindowEventDispatcherTest, TouchpadPinchEventsRetargetOnCapture) {
+  EventFilterRecorder recorder1;
+  EventFilterRecorder recorder2;
+  std::unique_ptr<Window> window1(
+      CreateNormalWindow(1, root_window(), nullptr));
+  window1->SetBounds(gfx::Rect(0, 0, 40, 40));
+
+  std::unique_ptr<Window> window2(
+      CreateNormalWindow(2, root_window(), nullptr));
+  window2->SetBounds(gfx::Rect(40, 0, 40, 40));
+
+  window1->AddPreTargetHandler(&recorder1);
+  window2->AddPreTargetHandler(&recorder2);
+
+  gfx::Point position1 = window1->bounds().CenterPoint();
+
+  ui::GestureEventDetails begin_details(ui::ET_GESTURE_PINCH_BEGIN);
+  begin_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
+  ui::GestureEvent begin(position1.x(), position1.y(), 0, ui::EventTimeForNow(),
+                         begin_details);
+  DispatchEventUsingWindowDispatcher(&begin);
+
+  window2->SetCapture();
+
+  ui::GestureEventDetails update_details(ui::ET_GESTURE_PINCH_UPDATE);
+  update_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
+  ui::GestureEvent update(position1.x(), position1.y(), 0,
+                          ui::EventTimeForNow(), update_details);
+  DispatchEventUsingWindowDispatcher(&update);
+
+  ui::GestureEventDetails end_details(ui::ET_GESTURE_PINCH_END);
+  end_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
+  ui::GestureEvent end(position1.x(), position1.y(), 0, ui::EventTimeForNow(),
+                       end_details);
+  DispatchEventUsingWindowDispatcher(&end);
+
+  EXPECT_EQ("GESTURE_PINCH_BEGIN", EventTypesToString(recorder1.events()));
+
+  EXPECT_EQ("GESTURE_PINCH_UPDATE GESTURE_PINCH_END",
+            EventTypesToString(recorder2.events()));
+}
+
 // Places two windows side by side. Presses down on one window, and starts a
 // scroll. Sets capture on the other window and ensures that the "ending" events
 // aren't sent to the window which gained capture.
@@ -2909,6 +2957,62 @@ TEST_F(WindowEventDispatcherMusTest, UseDefaultTargeterToFindTarget2) {
 
 namespace {
 
+class ExplicitWindowTargeter : public WindowTargeter {
+ public:
+  explicit ExplicitWindowTargeter(Window* target) : target_(target) {}
+  ~ExplicitWindowTargeter() override = default;
+
+  // WindowTargeter:
+  ui::EventTarget* FindTargetForEvent(ui::EventTarget* root,
+                                      ui::Event* event) override {
+    return target_;
+  }
+  ui::EventTarget* FindNextBestTarget(ui::EventTarget* previous_target,
+                                      ui::Event* event) override {
+    return nullptr;
+  }
+
+ private:
+  Window* target_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExplicitWindowTargeter);
+};
+
+}  // namespace
+
+TEST_F(WindowEventDispatcherMusTest, TargetCaptureWindow) {
+  NonClientDelegate w1_delegate;
+  NonClientDelegate w2_delegate;
+  std::unique_ptr<Window> w1(
+      CreateNormalWindow(-1, root_window(), &w1_delegate));
+  std::unique_ptr<Window> w2(
+      CreateNormalWindow(-1, root_window(), &w2_delegate));
+  const gfx::Point w2_origin(10, 11);
+  w2->SetBounds(gfx::Rect(w2_origin, gfx::Size(100, 100)));
+  NonClientDelegate w2_child_delegate;
+  std::unique_ptr<Window> w2_child(
+      CreateNormalWindow(-1, w2.get(), &w2_child_delegate));
+  ExplicitWindowTargeter* w2_targeter =
+      new ExplicitWindowTargeter(w2_child.get());
+  w2->SetEventTargeter(base::WrapUnique(w2_targeter));
+  w2->SetCapture();
+  ASSERT_TRUE(w2->HasCapture());
+  const gfx::Point root_location(100, 200);
+  const gfx::Point mouse_location(15, 25);
+  ui::MouseEvent mouse(ui::ET_MOUSE_PRESSED, mouse_location, root_location,
+                       ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON,
+                       ui::EF_LEFT_MOUSE_BUTTON);
+  ui::Event::DispatcherApi(&mouse).set_target(w1.get());
+  DispatchEventUsingWindowDispatcher(&mouse);
+  EXPECT_EQ(0, w1_delegate.mouse_event_count());
+  EXPECT_EQ(1, w2_delegate.mouse_event_count());
+  EXPECT_EQ(0, w2_child_delegate.mouse_event_count());
+  EXPECT_EQ(mouse_location - w2_origin.OffsetFromOrigin(),
+            w2_delegate.mouse_event_location());
+}
+
+namespace {
+
 class LocationRecordingEventHandler : public ui::EventHandler {
  public:
   LocationRecordingEventHandler() = default;
@@ -2941,12 +3045,12 @@ TEST_F(WindowEventDispatcherMusTest, RootLocationDoesntChange) {
   std::unique_ptr<Window> window(
       test::CreateTestWindowWithBounds(gfx::Rect(0, 0, 10, 20), root_window()));
   std::unique_ptr<Window> child_window(
-      test::CreateTestWindowWithBounds(gfx::Rect(5, 6, 10, 20), window.get()));
+      CreateNormalWindow(-1, window.get(), nullptr));
 
   test::EnvTestHelper().SetAlwaysUseLastMouseLocation(false);
 
   LocationRecordingEventHandler event_handler;
-  root_window()->AddPreTargetHandler(&event_handler);
+  child_window->AddPreTargetHandler(&event_handler);
 
   const gfx::Point mouse_location(1, 2);
   gfx::Point root_location(mouse_location);

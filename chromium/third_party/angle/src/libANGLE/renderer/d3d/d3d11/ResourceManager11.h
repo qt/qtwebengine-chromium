@@ -175,6 +175,7 @@ class Resource11Base : angle::NonCopyable
 {
   public:
     T *get() const { return mData->object; }
+    T *const *getPointer() const { return &mData->object; }
 
     void setDebugName(const char *name) { d3d11::SetDebugName(mData->object, name); }
 
@@ -186,7 +187,11 @@ class Resource11Base : angle::NonCopyable
 
     bool valid() const { return (mData->object != nullptr); }
 
-    void reset() { mData.reset(new DataT()); }
+    void reset()
+    {
+        if (valid())
+            mData.reset(new DataT());
+    }
 
     ResourceSerial getSerial() const
     {
@@ -312,12 +317,16 @@ class ResourceManager11 final : angle::NonCopyable
 
     void onReleaseGeneric(ResourceType resourceType, ID3D11DeviceChild *resource);
 
+    void setAllocationsInitialized(bool initialize);
+
   private:
     void incrResource(ResourceType resourceType, size_t memorySize);
     void decrResource(ResourceType resourceType, size_t memorySize);
 
     template <typename T>
     GetInitDataFromD3D11<T> *createInitDataIfNeeded(const GetDescFromD3D11<T> *desc);
+
+    bool mInitializeAllocations;
 
     std::array<size_t, NumResourceTypes> mAllocatedResourceCounts;
     std::array<size_t, NumResourceTypes> mAllocatedResourceDeviceMemory;

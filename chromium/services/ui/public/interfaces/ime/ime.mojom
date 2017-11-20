@@ -56,14 +56,24 @@ struct CandidateWindowEntry {
   string description_body;
 };
 
+// See comments for ui::ImeTextSpan::Type for more details.
+enum ImeTextSpanType {
+  kComposition,
+  kSuggestion,
+  kMisspellingSuggestion,
+};
+
 // Represents an underlined segment of text currently composed by IME.
 // Corresponds to ui::ImeTextSpan.
 struct ImeTextSpan {
+  ImeTextSpanType type;
   uint32 start_offset;
   uint32 end_offset;
-  bool thick;
   uint32 underline_color;
+  bool thick;
   uint32 background_color;
+  uint32 suggestion_highlight_color;
+  array<string> suggestions;
 };
 
 // Represents a text currently being composed by IME. Corresponds to
@@ -183,6 +193,12 @@ interface TextInputClient {
   // the character is not processed. See ui::TextInputClient::InsertChar()
   // for more details.
   InsertChar(ui.mojom.Event event);
+
+  // Dispatch a key event skipping IME. Returns true if event was consumed.
+  DispatchKeyEventPostIME(ui.mojom.Event event) => (bool stopped_propagation);
+
+  // Sending visibility status of candidate pop up window to client.
+  SetCandidateWindowVisible(bool visible);
 
   // TODO(moshayedi): Add functions corresponding to ui::TextInputClient for:
   // - Input context information

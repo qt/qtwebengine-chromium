@@ -87,8 +87,8 @@ class TypedArrayBase : public ArrayBufferView {
   static RefPtr<Subclass> Create(RefPtr<ArrayBuffer> buffer,
                                  unsigned byte_offset,
                                  unsigned length) {
-    CHECK(VerifySubRange<T>(buffer.Get(), byte_offset, length));
-    return AdoptRef(new Subclass(std::move(buffer), byte_offset, length));
+    CHECK(VerifySubRange<T>(buffer.get(), byte_offset, length));
+    return WTF::AdoptRef(new Subclass(std::move(buffer), byte_offset, length));
   }
 
   template <class Subclass>

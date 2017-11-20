@@ -20,10 +20,25 @@ const base::Feature kAffiliationBasedMatching = {
 const base::Feature kDropSyncCredential = {"drop-sync-credential",
                                            base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Use HTML based username detector.
+const base::Feature kEnableHtmlBasedUsernameDetector = {
+    "EnableHtmlBaseUsernameDetector", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enable additional elements in the form popup UI, which will allow the user to
 // view all saved passwords.
+const base::Feature kEnableManualFallbacksGeneration = {
+    "EnableManualFallbacksGeneration", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enable additional elements in the form popup UI, which will allow the user to
+// trigger generation or view all saved passwords.
 const base::Feature kEnableManualFallbacksFilling = {
-    "EnableManualFallbacksFilling", base::FEATURE_ENABLED_BY_DEFAULT};
+    "EnableManualFallbacksFilling", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enable a standalone popup UI, which will allow the user to view all saved
+// passwords.
+const base::Feature kEnableManualFallbacksFillingStandalone = {
+    "EnableManualFallbacksFillingStandalone",
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable that an omnibox icon is shown when the user types into a password
 // field. When the user clicks on the icon, a password save/update bubble is
@@ -38,7 +53,7 @@ const base::Feature kEnablePasswordForceSaving = {
 
 // Enable the user to trigger password generation manually.
 extern const base::Feature kEnableManualPasswordGeneration = {
-    "enable-manual-password-generation", base::FEATURE_DISABLED_BY_DEFAULT};
+    "enable-manual-password-generation", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables username correction while saving username and password details.
 extern const base::Feature kEnableUsernameCorrection{
@@ -46,7 +61,12 @@ extern const base::Feature kEnableUsernameCorrection{
 
 // Enables password selection while saving username and password details.
 extern const base::Feature kEnablePasswordSelection{
-    "EnablePasswordSelection", base::FEATURE_DISABLED_BY_DEFAULT};
+    "EnablePasswordSelection", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enables the "Show all saved passwords" option in Context Menu.
+extern const base::Feature kEnableShowAllSavedPasswordsContextMenu{
+    "kEnableShowAllSavedPasswordsContextMenu",
+    base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Disallow autofilling of the sync credential.
 const base::Feature kProtectSyncCredential = {

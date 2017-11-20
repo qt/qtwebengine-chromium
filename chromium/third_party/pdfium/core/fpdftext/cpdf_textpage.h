@@ -11,10 +11,10 @@
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_pageobjectlist.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 class CPDF_Font;
 class CPDF_FormObject;
@@ -25,7 +25,6 @@ class CPDF_TextObject;
 #define FPDFTEXT_MATCHWHOLEWORD 0x00000002
 #define FPDFTEXT_CONSECUTIVE 0x00000004
 
-#define FPDFTEXT_CHAR_ERROR -1
 #define FPDFTEXT_CHAR_NORMAL 0
 #define FPDFTEXT_CHAR_GENERATED 1
 #define FPDFTEXT_CHAR_UNUNICODE 2
@@ -37,9 +36,6 @@ class CPDF_TextObject;
 #define TEXT_RETURN_CHAR L'\r'
 #define TEXT_HYPHEN_CHAR L'-'
 #define TEXT_EMPTY L""
-#define TEXT_SPACE L" "
-#define TEXT_RETURN_LINEFEED L"\r\n"
-#define TEXT_LINEFEED L"\n"
 #define TEXT_HYPHEN L"-"
 #define TEXT_CHARRATIO_GAPDELTA 0.070
 
@@ -58,7 +54,7 @@ class FPDF_CHAR_INFO {
   float m_FontSize;
   CFX_PointF m_Origin;
   CFX_FloatRect m_CharBox;
-  CFX_UnownedPtr<CPDF_TextObject> m_pTextObj;
+  UnownedPtr<CPDF_TextObject> m_pTextObj;
   CFX_Matrix m_Matrix;
 };
 
@@ -79,7 +75,7 @@ class PAGECHAR_INFO {
   int32_t m_Flag;
   CFX_PointF m_Origin;
   CFX_FloatRect m_CharBox;
-  CFX_UnownedPtr<CPDF_TextObject> m_pTextObj;
+  UnownedPtr<CPDF_TextObject> m_pTextObj;
   CFX_Matrix m_Matrix;
 };
 
@@ -88,7 +84,7 @@ struct PDFTEXT_Obj {
   PDFTEXT_Obj(const PDFTEXT_Obj& that);
   ~PDFTEXT_Obj();
 
-  CFX_UnownedPtr<CPDF_TextObject> m_pTextObj;
+  UnownedPtr<CPDF_TextObject> m_pTextObj;
   CFX_Matrix m_formMatrix;
 };
 
@@ -106,8 +102,8 @@ class CPDF_TextPage {
   void GetCharInfo(int index, FPDF_CHAR_INFO* info) const;
   std::vector<CFX_FloatRect> GetRectArray(int start, int nCount) const;
   int GetIndexAtPos(const CFX_PointF& point, const CFX_SizeF& tolerance) const;
-  CFX_WideString GetTextByRect(const CFX_FloatRect& rect) const;
-  CFX_WideString GetPageText(int start = 0, int nCount = -1) const;
+  WideString GetTextByRect(const CFX_FloatRect& rect) const;
+  WideString GetPageText(int start = 0, int nCount = -1) const;
   int CountRects(int start, int nCount);
   void GetRect(int rectIndex,
                float& left,
@@ -132,7 +128,7 @@ class CPDF_TextPage {
     Hyphen,
   };
 
-  bool IsHyphen(wchar_t curChar);
+  bool IsHyphen(wchar_t curChar) const;
   bool IsControlChar(const PAGECHAR_INFO& charInfo);
   void ProcessObject();
   void ProcessFormObject(CPDF_FormObject* pFormObj,
@@ -167,14 +163,14 @@ class CPDF_TextPage {
                      const CPDF_Font* pFont,
                      int nItems) const;
 
-  CFX_UnownedPtr<const CPDF_Page> const m_pPage;
+  UnownedPtr<const CPDF_Page> const m_pPage;
   std::vector<uint16_t> m_CharIndex;
   std::deque<PAGECHAR_INFO> m_CharList;
   std::deque<PAGECHAR_INFO> m_TempCharList;
   CFX_WideTextBuf m_TextBuf;
   CFX_WideTextBuf m_TempTextBuf;
   const FPDFText_Direction m_parserflag;
-  CFX_UnownedPtr<CPDF_TextObject> m_pPreTextObj;
+  UnownedPtr<CPDF_TextObject> m_pPreTextObj;
   CFX_Matrix m_perMatrix;
   bool m_bIsParsed;
   CFX_Matrix m_DisplayMatrix;

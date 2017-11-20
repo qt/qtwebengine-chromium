@@ -16,17 +16,18 @@ struct FFL_ComboBoxState {
   int nIndex;
   int nStart;
   int nEnd;
-  CFX_WideString sValue;
+  WideString sValue;
 };
 
-class CFFL_ComboBox : public CFFL_TextObject, public IPWL_FocusHandler {
+class CFFL_ComboBox : public CFFL_TextObject,
+                      public CPWL_Wnd::FocusHandlerIface {
  public:
   CFFL_ComboBox(CPDFSDK_FormFillEnvironment* pApp, CPDFSDK_Widget* pWidget);
   ~CFFL_ComboBox() override;
 
   // CFFL_TextObject:
-  PWL_CREATEPARAM GetCreateParam() override;
-  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp) override;
+  CPWL_Wnd::CreateParams GetCreateParam() override;
+  CPWL_Wnd* NewPDFWindow(const CPWL_Wnd::CreateParams& cp) override;
   bool OnChar(CPDFSDK_Annot* pAnnot, uint32_t nChar, uint32_t nFlags) override;
   bool IsDataChanged(CPDFSDK_PageView* pPageView) override;
   void SaveData(CPDFSDK_PageView* pPageView) override;
@@ -45,11 +46,11 @@ class CFFL_ComboBox : public CFFL_TextObject, public IPWL_FocusHandler {
   bool IsFieldFull(CPDFSDK_PageView* pPageView) override;
 #endif
 
-  // IPWL_FocusHandler:
+  // CPWL_Wnd::FocusHandlerIface:
   void OnSetFocus(CPWL_Edit* pEdit) override;
 
  private:
-  CFX_WideString GetSelectExportText();
+  WideString GetSelectExportText();
 
   FFL_ComboBoxState m_State;
 };

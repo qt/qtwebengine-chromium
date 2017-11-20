@@ -25,10 +25,15 @@ source_set("passwords") {
     "ios_chrome_save_password_infobar_delegate.mm",
     "ios_chrome_update_password_infobar_delegate.h",
     "ios_chrome_update_password_infobar_delegate.mm",
+    "js_credential_manager.h",
+    "js_credential_manager.mm",
     "js_password_manager.h",
     "js_password_manager.mm",
+    "notify_auto_signin_view_controller.h",
+    "notify_auto_signin_view_controller.mm",
     "password_controller.h",
     "password_controller.mm",
+    "password_form_filler.h",
     "password_generation_agent.h",
     "password_generation_agent.mm",
     "password_generation_edit_view.h",
@@ -36,6 +41,8 @@ source_set("passwords") {
     "password_generation_offer_view.h",
     "password_generation_offer_view.mm",
     "password_generation_prompt_delegate.h",
+    "password_tab_helper.h",
+    "password_tab_helper.mm",
     "passwords_ui_delegate.h",
     "update_password_infobar_controller.h",
     "update_password_infobar_controller.mm",
@@ -48,6 +55,8 @@ source_set("passwords") {
     "//components/autofill/core/common",
     "//components/autofill/ios/browser",
     "//components/browser_sync",
+    "//components/image_fetcher/core",
+    "//components/image_fetcher/ios",
     "//components/infobars/core",
     "//components/keyed_service/core",
     "//components/keyed_service/ios",
@@ -67,10 +76,6 @@ source_set("passwords") {
     "//ios/chrome/browser/autofill",
     "//ios/chrome/browser/browser_state",
     "//ios/chrome/browser/infobars",
-
-    # TODO(crbug.com/435048): Remove payments dependency after landing
-    # https://chromium-review.googlesource.com/c/chromium/src/+/631881.
-    "//ios/chrome/browser/payments",
     "//ios/chrome/browser/signin",
     "//ios/chrome/browser/ssl",
     "//ios/chrome/browser/sync/glue",
@@ -78,9 +83,12 @@ source_set("passwords") {
     "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/ui/elements",
     "//ios/chrome/browser/ui/infobars",
+    "//ios/chrome/browser/web",
     "//ios/public/provider/chrome/browser",
     "//ios/public/provider/chrome/browser/ui",
+    "//ios/third_party/material_components_ios:material_components_ios",
     "//ios/web",
+    "//third_party/material_design_icons:ic_account_circle",
     "//ui/base",
     "//url",
   ]
@@ -110,6 +118,7 @@ source_set("unit_tests") {
   sources = [
     "credential_manager_unittest.mm",
     "credential_manager_util_unittest.cc",
+    "js_credential_manager_unittest.mm",
     "password_controller_js_unittest.mm",
     "password_controller_off_the_record_unittest.mm",
     "password_controller_unittest.mm",
@@ -139,6 +148,36 @@ source_set("unit_tests") {
     "//testing/gtest",
     "//third_party/ocmock",
     "//url",
+  ]
+}
+
+source_set("eg_tests") {
+  configs += [ "//build/config/compiler:enable_arc" ]
+  testonly = true
+  sources = [
+    "credential_manager_egtest.mm",
+  ]
+
+  deps = [
+    ":passwords",
+    "//base",
+    "//base/test:test_support",
+    "//components/autofill/core/common",
+    "//components/autofill/ios/browser",
+    "//components/keyed_service/core",
+    "//components/password_manager/core/browser",
+    "//components/password_manager/core/browser:test_support",
+    "//components/password_manager/core/common",
+    "//components/prefs",
+    "//components/prefs:test_support",
+    "//ios/chrome/test/app:test_support",
+    "//ios/chrome/test/earl_grey:test_support",
+    "//ios/testing:ios_test_support",
+    "//ios/web/public/test/http_server",
+  ]
+  libs = [
+    "UIKit.framework",
+    "XCTest.framework",
   ]
 }
 

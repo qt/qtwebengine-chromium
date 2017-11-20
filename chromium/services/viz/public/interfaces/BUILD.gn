@@ -11,8 +11,11 @@ mojom("interfaces") {
     "compositing/compositor_frame_metadata.mojom",
     "compositing/compositor_frame_sink.mojom",
     "compositing/copy_output_request.mojom",
+    "compositing/copy_output_result.mojom",
     "compositing/filter_operation.mojom",
     "compositing/filter_operations.mojom",
+    "compositing/frame_sink_id.mojom",
+    "compositing/local_surface_id.mojom",
     "compositing/quads.mojom",
     "compositing/render_pass.mojom",
     "compositing/resource_settings.mojom",
@@ -23,12 +26,13 @@ mojom("interfaces") {
     "compositing/surface_id.mojom",
     "compositing/surface_info.mojom",
     "compositing/surface_sequence.mojom",
+    "compositing/texture_mailbox.mojom",
+    "compositing/texture_mailbox_releaser.mojom",
     "compositing/transferable_resource.mojom",
     "hit_test/hit_test_region_list.mojom",
   ]
 
   public_deps = [
-    "//cc/ipc:interfaces",
     "//gpu/ipc/common:interfaces",
     "//mojo/common:common_custom_types",
     "//skia/public/interfaces",

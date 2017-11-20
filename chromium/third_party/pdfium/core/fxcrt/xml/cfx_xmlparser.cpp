@@ -13,9 +13,8 @@
 #include "core/fxcrt/xml/cfx_xmltext.h"
 #include "third_party/base/ptr_util.h"
 
-CFX_XMLParser::CFX_XMLParser(
-    CFX_XMLNode* pParent,
-    const CFX_RetainPtr<CFX_SeekableStreamProxy>& pStream)
+CFX_XMLParser::CFX_XMLParser(CFX_XMLNode* pParent,
+                             const RetainPtr<CFX_SeekableStreamProxy>& pStream)
     : m_nElementStart(0),
       m_dwCheckStatus(0),
       m_dwCurrentCheckStatus(0),
@@ -101,7 +100,7 @@ int32_t CFX_XMLParser::DoParser() {
         m_pParent = m_pChild;
 
         if (m_dwCheckStatus != 0x03 && m_NodeStack.size() == 3) {
-          CFX_WideString wsTag =
+          WideString wsTag =
               static_cast<CFX_XMLElement*>(m_pChild)->GetLocalTagName();
           if (wsTag == L"template") {
             m_dwCheckStatus |= 0x01;

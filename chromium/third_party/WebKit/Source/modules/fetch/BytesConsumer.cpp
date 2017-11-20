@@ -13,6 +13,7 @@
 #include "platform/blob/BlobData.h"
 #include "platform/wtf/Functional.h"
 #include "platform/wtf/RefPtr.h"
+#include "platform/wtf/debug/Alias.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -25,6 +26,7 @@ class NoopClient final : public GarbageCollectedFinalized<NoopClient>,
 
  public:
   void OnStateChange() override {}
+  String DebugName() const override { return "NoopClient"; }
 };
 
 class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
@@ -36,6 +38,8 @@ class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
       : src_(consumer),
         destination1_(new Destination(execution_context, this)),
         destination2_(new Destination(execution_context, this)) {
+    // TODO(yhirano): Remove this check once the crash is gone.
+    CHECK(!ThreadState::Current()->IsObjectResurrectionForbidden());
     consumer->SetClient(this);
     // As no client is set to either destinations, Destination::notify() is
     // no-op in this function.
@@ -43,6 +47,8 @@ class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
   }
 
   void OnStateChange() override {
+    // TODO(yhirano): Remove this check once the crash is gone.
+    CHECK(!ThreadState::Current()->IsObjectResurrectionForbidden());
     bool destination1_was_empty = destination1_->IsEmpty();
     bool destination2_was_empty = destination2_->IsEmpty();
     bool has_enqueued = false;
@@ -85,6 +91,7 @@ class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
       }
     }
   }
+  String DebugName() const override { return "TeeHelper"; }
 
   BytesConsumer::PublicState GetPublicState() const {
     return src_->GetPublicState();
@@ -138,6 +145,8 @@ class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
         : execution_context_(execution_context), tee_(tee) {}
 
     Result BeginRead(const char** buffer, size_t* available) override {
+      // TODO(yhirano): Remove this check once the crash is gone.
+      CHECK(!ThreadState::Current()->IsObjectResurrectionForbidden());
       DCHECK(!chunk_in_use_);
       *buffer = nullptr;
       *available = 0;
@@ -169,6 +178,8 @@ class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
     Result EndRead(size_t read) override {
       DCHECK(chunk_in_use_);
       DCHECK(chunks_.IsEmpty() || chunk_in_use_ == chunks_[0]);
+      // TODO(yhirano): Remove this check once the crash is gone.
+      CHECK(!ThreadState::Current()->IsObjectResurrectionForbidden());
       chunk_in_use_ = nullptr;
       if (chunks_.IsEmpty()) {
         // This object becomes errored during the two-phase read.
@@ -194,13 +205,19 @@ class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
     void SetClient(BytesConsumer::Client* client) override {
       DCHECK(!client_);
       DCHECK(client);
+      // TODO(yhirano): Remove this check once the crash is gone.
+      CHECK(!ThreadState::Current()->IsObjectResurrectionForbidden());
       auto state = GetPublicState();
       if (state == PublicState::kClosed || state == PublicState::kErrored)
         return;
       client_ = client;
+      client_name_ = client->DebugName().Utf8();
     }
 
-    void ClearClient() override { client_ = nullptr; }
+    void ClearClient() override {
+      client_ = nullptr;
+      client_name_ = CString();
+    }
 
     void Cancel() override {
       DCHECK(!chunk_in_use_);
@@ -248,6 +265,12 @@ class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
         return;
       }
       if (client_) {
+        char client_name[32];
+        const char* src = client_name_.IsNull() ? "" : client_name_.data();
+        strncpy(client_name, src, sizeof(client_name) - 1);
+        client_name[sizeof(client_name) - 1] = '\0';
+        WTF::debug::Alias(client_name);
+
         client_->OnStateChange();
         if (GetPublicState() == PublicState::kErrored)
           ClearClient();
@@ -257,6 +280,12 @@ class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
     bool IsCancelled() const { return is_cancelled_; }
 
     DEFINE_INLINE_TRACE() {
+      char client_name[32];
+      const char* src = client_name_.IsNull() ? "" : client_name_.data();
+      strncpy(client_name, src, sizeof(client_name) - 1);
+      client_name[sizeof(client_name) - 1] = '\0';
+      WTF::debug::Alias(client_name);
+
       visitor->Trace(execution_context_);
       visitor->Trace(tee_);
       visitor->Trace(client_);
@@ -285,6 +314,8 @@ class TeeHelper final : public GarbageCollectedFinalized<TeeHelper>,
     Member<ExecutionContext> execution_context_;
     Member<TeeHelper> tee_;
     Member<BytesConsumer::Client> client_;
+    // TODO(yhirano): Remove this member once the investigation finishes.
+    CString client_name_;
     HeapDeque<Member<Chunk>> chunks_;
     Member<Chunk> chunk_in_use_;
     size_t offset_ = 0;

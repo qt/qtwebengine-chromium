@@ -53,24 +53,22 @@ void RendererD3D::cleanup()
 {
     for (auto &incompleteTexture : mIncompleteTextures)
     {
-        incompleteTexture.second->onDestroy(mDisplay->getProxyContext());
+        ANGLE_SWALLOW_ERR(incompleteTexture.second->onDestroy(mDisplay->getProxyContext()));
         incompleteTexture.second.set(mDisplay->getProxyContext(), nullptr);
     }
     mIncompleteTextures.clear();
 }
 
-bool RendererD3D::skipDraw(const gl::ContextState &data, GLenum drawMode)
+bool RendererD3D::skipDraw(const gl::State &glState, GLenum drawMode)
 {
-    const gl::State &state = data.getState();
-
     if (drawMode == GL_POINTS)
     {
-        bool usesPointSize = GetImplAs<ProgramD3D>(state.getProgram())->usesPointSize();
+        bool usesPointSize = GetImplAs<ProgramD3D>(glState.getProgram())->usesPointSize();
 
         // ProgramBinary assumes non-point rendering if gl_PointSize isn't written,
         // which affects varying interpolation. Since the value of gl_PointSize is
         // undefined when not written, just skip drawing to avoid unexpected results.
-        if (!usesPointSize && !state.isTransformFeedbackActiveUnpaused())
+        if (!usesPointSize && !glState.isTransformFeedbackActiveUnpaused())
         {
             // Notify developers of risking undefined behavior.
             WARN() << "Point rendering without writing to gl_PointSize.";
@@ -79,31 +77,14 @@ bool RendererD3D::skipDraw(const gl::ContextState &data, GLenum drawMode)
     }
     else if (gl::IsTriangleMode(drawMode))
     {
-        if (state.getRasterizerState().cullFace &&
-            state.getRasterizerState().cullMode == GL_FRONT_AND_BACK)
+        if (glState.getRasterizerState().cullFace &&
+            glState.getRasterizerState().cullMode == GL_FRONT_AND_BACK)
         {
             return true;
         }
     }
 
     return false;
-}
-
-gl::Error RendererD3D::markTransformFeedbackUsage(const gl::ContextState &data)
-{
-    const gl::TransformFeedback *transformFeedback = data.getState().getCurrentTransformFeedback();
-    for (size_t i = 0; i < transformFeedback->getIndexedBufferCount(); i++)
-    {
-        const gl::OffsetBindingPointer<gl::Buffer> &binding =
-            transformFeedback->getIndexedBuffer(i);
-        if (binding.get() != nullptr)
-        {
-            BufferD3D *bufferD3D = GetImplAs<BufferD3D>(binding.get());
-            ANGLE_TRY(bufferD3D->markTransformFeedbackUsage());
-        }
-    }
-
-    return gl::NoError();
 }
 
 size_t RendererD3D::getBoundFramebufferTextures(const gl::ContextState &data,
@@ -133,7 +114,9 @@ size_t RendererD3D::getBoundFramebufferTextures(const gl::ContextState &data,
     return textureCount;
 }
 
-gl::Texture *RendererD3D::getIncompleteTexture(const gl::Context *context, GLenum type)
+gl::Error RendererD3D::getIncompleteTexture(const gl::Context *context,
+                                            GLenum type,
+                                            gl::Texture **textureOut)
 {
     if (mIncompleteTextures.find(type) == mIncompleteTextures.end())
     {
@@ -151,36 +134,37 @@ gl::Texture *RendererD3D::getIncompleteTexture(const gl::Context *context, GLenu
             new gl::Texture(implFactory, std::numeric_limits<GLuint>::max(), createType);
         if (createType == GL_TEXTURE_2D_MULTISAMPLE)
         {
-            t->setStorageMultisample(nullptr, createType, 1, GL_RGBA8, colorSize, true);
+            ANGLE_TRY(t->setStorageMultisample(nullptr, createType, 1, GL_RGBA8, colorSize, true));
         }
         else
         {
-            t->setStorage(nullptr, createType, 1, GL_RGBA8, colorSize);
+            ANGLE_TRY(t->setStorage(nullptr, createType, 1, GL_RGBA8, colorSize));
         }
         if (type == GL_TEXTURE_CUBE_MAP)
         {
             for (GLenum face = GL_TEXTURE_CUBE_MAP_POSITIVE_X;
                  face <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z; face++)
             {
-                t->getImplementation()->setSubImage(nullptr, face, 0, area, GL_RGBA8,
-                                                    GL_UNSIGNED_BYTE, unpack, color);
+                ANGLE_TRY(t->getImplementation()->setSubImage(nullptr, face, 0, area, GL_RGBA8,
+                                                              GL_UNSIGNED_BYTE, unpack, color));
             }
         }
         else if (type == GL_TEXTURE_2D_MULTISAMPLE)
         {
             gl::ColorF clearValue(0, 0, 0, 1);
             gl::ImageIndex index = gl::ImageIndex::Make2DMultisample();
-            GetImplAs<TextureD3D>(t)->clearLevel(context, index, clearValue, 1.0f, 0);
+            ANGLE_TRY(GetImplAs<TextureD3D>(t)->clearLevel(context, index, clearValue, 1.0f, 0));
         }
         else
         {
-            t->getImplementation()->setSubImage(nullptr, createType, 0, area, GL_RGBA8,
-                                                GL_UNSIGNED_BYTE, unpack, color);
+            ANGLE_TRY(t->getImplementation()->setSubImage(nullptr, createType, 0, area, GL_RGBA8,
+                                                          GL_UNSIGNED_BYTE, unpack, color));
         }
         mIncompleteTextures[type].set(context, t);
     }
 
-    return mIncompleteTextures[type].get();
+    *textureOut = mIncompleteTextures[type].get();
+    return gl::NoError();
 }
 
 GLenum RendererD3D::getResetStatus()
@@ -283,11 +267,6 @@ angle::WorkerThreadPool *RendererD3D::getWorkerThreadPool()
     return &mWorkerThreadPool;
 }
 
-bool RendererD3D::isRobustResourceInitEnabled() const
-{
-    return mDisplay->isRobustResourceInitEnabled();
-}
-
 Serial RendererD3D::generateSerial()
 {
     return mSerialFactory.generate();
@@ -297,6 +276,11 @@ bool InstancedPointSpritesActive(ProgramD3D *programD3D, GLenum mode)
 {
     return programD3D->usesPointSize() && programD3D->usesInstancedPointSpriteEmulation() &&
            mode == GL_POINTS;
+}
+
+gl::Error RendererD3D::initRenderTarget(RenderTargetD3D *renderTarget)
+{
+    return clearRenderTarget(renderTarget, gl::ColorF(0, 0, 0, 0), 1, 0);
 }
 
 unsigned int GetBlendSampleMask(const gl::State &glState, int samples)
@@ -330,6 +314,11 @@ unsigned int GetBlendSampleMask(const gl::State &glState, int samples)
     else
     {
         mask = 0xFFFFFFFF;
+    }
+
+    if (glState.isSampleMaskEnabled())
+    {
+        mask &= glState.getSampleMaskWord(0);
     }
 
     return mask;

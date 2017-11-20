@@ -15,7 +15,6 @@
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/sys_info.h"
 #include "base/task_scheduler/post_task.h"
@@ -202,7 +201,9 @@ class ArcSessionImpl : public ArcSession,
   void StartForLoginScreen() override;
   bool IsForLoginScreen() override;
   void Start() override;
+  bool IsRunning() override;
   void Stop() override;
+  bool IsStopRequested() override;
   void OnShutdown() override;
 
  private:
@@ -509,13 +510,11 @@ void ArcSessionImpl::OnMojoConnected(
   mojom::ArcBridgeInstancePtr instance;
   instance.Bind(mojo::InterfacePtrInfo<mojom::ArcBridgeInstance>(
       std::move(server_pipe), 0u));
-  arc_bridge_host_ = base::MakeUnique<ArcBridgeHostImpl>(arc_bridge_service_,
+  arc_bridge_host_ = std::make_unique<ArcBridgeHostImpl>(arc_bridge_service_,
                                                          std::move(instance));
 
-  VLOG(2) << "Mojo is connected. ARC is running.";
+  VLOG(0) << "ARC ready.";
   state_ = State::RUNNING;
-  for (auto& observer : observer_list_)
-    observer.OnSessionReady();
 }
 
 void ArcSessionImpl::Stop() {
@@ -637,15 +636,24 @@ bool ArcSessionImpl::IsForLoginScreen() {
   return login_screen_instance_requested_;
 }
 
+bool ArcSessionImpl::IsRunning() {
+  return state_ == State::RUNNING;
+}
+
+bool ArcSessionImpl::IsStopRequested() {
+  return stop_requested_;
+}
+
 void ArcSessionImpl::OnStopped(ArcStopReason reason) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   // OnStopped() should be called once per instance.
   DCHECK_NE(state_, State::STOPPED);
   VLOG(2) << "ARC session is stopped.";
+  const bool was_running = IsRunning();
   arc_bridge_host_.reset();
   state_ = State::STOPPED;
   for (auto& observer : observer_list_)
-    observer.OnSessionStopped(reason);
+    observer.OnSessionStopped(reason, was_running);
 }
 
 void ArcSessionImpl::OnShutdown() {
@@ -690,7 +698,7 @@ void ArcSession::RemoveObserver(Observer* observer) {
 // static
 std::unique_ptr<ArcSession> ArcSession::Create(
     ArcBridgeService* arc_bridge_service) {
-  return base::MakeUnique<ArcSessionImpl>(arc_bridge_service);
+  return std::make_unique<ArcSessionImpl>(arc_bridge_service);
 }
 
 }  // namespace arc

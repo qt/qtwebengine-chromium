@@ -144,7 +144,7 @@ void SincResampler::ConsumeSource(float* buffer,
   // FIXME: Find a way to make the following const-correct:
   bus->SetChannelMemory(0, buffer, number_of_source_frames);
 
-  source_provider_->ProvideInput(bus.Get(), number_of_source_frames);
+  source_provider_->ProvideInput(bus.get(), number_of_source_frames);
 }
 
 namespace {
@@ -464,6 +464,7 @@ void SincResampler::Process(AudioSourceProvider* source_provider,
         }
 #endif
       }
+#undef CONVOLVE_ONE_SAMPLE
 
       // Linearly interpolate the two "convolutions".
       double result = (1.0 - kernel_interpolation_factor) * sum1 +

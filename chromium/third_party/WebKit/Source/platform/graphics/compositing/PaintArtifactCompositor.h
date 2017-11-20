@@ -8,7 +8,6 @@
 #include <memory>
 #include "base/memory/ref_counted.h"
 #include "platform/PlatformExport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsLayerClient.h"
 #include "platform/graphics/compositing/PropertyTreeManager.h"
 #include "platform/graphics/paint/PaintController.h"
@@ -121,7 +120,7 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
 
     FloatRect bounds;
     Vector<const PaintChunk*> paint_chunks;
-    bool known_to_be_opaque;
+    FloatRect rect_known_to_be_opaque;
     bool backface_hidden;
     PropertyTreeState property_tree_state;
     bool requires_own_layer;
@@ -222,7 +221,7 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   std::unique_ptr<ExtraDataForTesting> extra_data_for_testing_;
 
   friend class StubChromeClientForSPv2;
-  friend class PaintArtifactCompositorTestWithPropertyTrees;
+  friend class PaintArtifactCompositorTest;
 };
 
 }  // namespace blink

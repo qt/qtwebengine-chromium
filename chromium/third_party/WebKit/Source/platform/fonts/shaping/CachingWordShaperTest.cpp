@@ -8,7 +8,6 @@
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/shaping/CachingWordShapeIterator.h"
 #include "platform/fonts/shaping/ShapeResultTestInfo.h"
-#include "platform/wtf/PtrUtil.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
@@ -25,7 +24,7 @@ class CachingWordShaperTest : public ::testing::Test {
     font.Update(nullptr);
     ASSERT_TRUE(font.CanShapeWordByWord());
     fallback_fonts = nullptr;
-    cache = WTF::MakeUnique<ShapeCache>();
+    cache = std::make_unique<ShapeCache>();
   }
 
   FontCachePurgePreventer font_cache_purge_preventer;
@@ -40,7 +39,7 @@ class CachingWordShaperTest : public ::testing::Test {
 
 static inline const ShapeResultTestInfo* TestInfo(
     RefPtr<const ShapeResult>& result) {
-  return static_cast<const ShapeResultTestInfo*>(result.Get());
+  return static_cast<const ShapeResultTestInfo*>(result.get());
 }
 
 TEST_F(CachingWordShaperTest, LatinLeftToRightByWord) {

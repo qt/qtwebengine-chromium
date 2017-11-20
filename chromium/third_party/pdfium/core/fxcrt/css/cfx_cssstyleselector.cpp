@@ -31,7 +31,7 @@ void CFX_CSSStyleSelector::SetDefFontSize(float fFontSize) {
   m_fDefFontSize = fFontSize;
 }
 
-CFX_RetainPtr<CFX_CSSComputedStyle> CFX_CSSStyleSelector::CreateComputedStyle(
+RetainPtr<CFX_CSSComputedStyle> CFX_CSSStyleSelector::CreateComputedStyle(
     CFX_CSSComputedStyle* pParentStyle) {
   auto pStyle = pdfium::MakeRetain<CFX_CSSComputedStyle>();
   if (pParentStyle)
@@ -50,7 +50,7 @@ void CFX_CSSStyleSelector::UpdateStyleIndex() {
 }
 
 std::vector<const CFX_CSSDeclaration*> CFX_CSSStyleSelector::MatchDeclarations(
-    const CFX_WideString& tagname) {
+    const WideString& tagname) {
   std::vector<const CFX_CSSDeclaration*> matchedDecls;
   if (m_UARules.CountSelectors() == 0 || tagname.IsEmpty())
     return matchedDecls;
@@ -66,7 +66,7 @@ std::vector<const CFX_CSSDeclaration*> CFX_CSSStyleSelector::MatchDeclarations(
   return matchedDecls;
 }
 
-bool CFX_CSSStyleSelector::MatchSelector(const CFX_WideString& tagname,
+bool CFX_CSSStyleSelector::MatchSelector(const WideString& tagname,
                                          CFX_CSSSelector* pSel) {
   // TODO(dsinclair): The code only supports a single level of selector at this
   // point. None of the code using selectors required the complexity so lets
@@ -80,8 +80,8 @@ bool CFX_CSSStyleSelector::MatchSelector(const CFX_WideString& tagname,
 
 void CFX_CSSStyleSelector::ComputeStyle(
     const std::vector<const CFX_CSSDeclaration*>& declArray,
-    const CFX_WideString& styleString,
-    const CFX_WideString& alignString,
+    const WideString& styleString,
+    const WideString& alignString,
     CFX_CSSComputedStyle* pDest) {
   std::unique_ptr<CFX_CSSDeclaration> pDecl;
   if (!styleString.IsEmpty() || !alignString.IsEmpty()) {
@@ -91,7 +91,7 @@ void CFX_CSSStyleSelector::ComputeStyle(
       AppendInlineStyle(pDecl.get(), styleString);
     if (!alignString.IsEmpty()) {
       pDecl->AddProperty(CFX_GetCSSPropertyByEnum(CFX_CSSProperty::TextAlign),
-                         alignString.AsStringC());
+                         alignString.AsStringView());
     }
   }
   ApplyDeclarations(declArray, pDecl.get(), pDest);
@@ -137,29 +137,29 @@ void CFX_CSSStyleSelector::ExtractValues(
 }
 
 void CFX_CSSStyleSelector::AppendInlineStyle(CFX_CSSDeclaration* pDecl,
-                                             const CFX_WideString& style) {
+                                             const WideString& style) {
   ASSERT(pDecl && !style.IsEmpty());
 
   auto pSyntax = pdfium::MakeUnique<CFX_CSSSyntaxParser>(
       style.c_str(), style.GetLength(), 32, true);
   int32_t iLen2 = 0;
   const CFX_CSSPropertyTable* table = nullptr;
-  CFX_WideString wsName;
+  WideString wsName;
   while (1) {
     CFX_CSSSyntaxStatus eStatus = pSyntax->DoSyntaxParse();
     if (eStatus == CFX_CSSSyntaxStatus::PropertyName) {
-      CFX_WideStringC strValue = pSyntax->GetCurrentString();
+      WideStringView strValue = pSyntax->GetCurrentString();
       table = CFX_GetCSSPropertyByName(strValue);
       if (!table)
-        wsName = CFX_WideString(strValue);
+        wsName = WideString(strValue);
     } else if (eStatus == CFX_CSSSyntaxStatus::PropertyValue) {
       if (table || iLen2 > 0) {
-        CFX_WideStringC strValue = pSyntax->GetCurrentString();
+        WideStringView strValue = pSyntax->GetCurrentString();
         if (!strValue.IsEmpty()) {
           if (table)
             pDecl->AddProperty(table, strValue);
           else if (iLen2 > 0)
-            pDecl->AddProperty(wsName, CFX_WideString(strValue));
+            pDecl->AddProperty(wsName, WideString(strValue));
         }
       }
     } else {
@@ -168,10 +168,9 @@ void CFX_CSSStyleSelector::AppendInlineStyle(CFX_CSSDeclaration* pDecl,
   }
 }
 
-void CFX_CSSStyleSelector::ApplyProperty(
-    CFX_CSSProperty eProperty,
-    const CFX_RetainPtr<CFX_CSSValue>& pValue,
-    CFX_CSSComputedStyle* pComputedStyle) {
+void CFX_CSSStyleSelector::ApplyProperty(CFX_CSSProperty eProperty,
+                                         const RetainPtr<CFX_CSSValue>& pValue,
+                                         CFX_CSSComputedStyle* pComputedStyle) {
   if (pValue->GetType() != CFX_CSSPrimitiveType::List) {
     CFX_CSSPrimitiveType eType = pValue->GetType();
     switch (eProperty) {
@@ -192,7 +191,7 @@ void CFX_CSSStyleSelector::ApplyProperty(
       } break;
       case CFX_CSSProperty::LineHeight:
         if (eType == CFX_CSSPrimitiveType::Number) {
-          CFX_RetainPtr<CFX_CSSNumberValue> v = pValue.As<CFX_CSSNumberValue>();
+          RetainPtr<CFX_CSSNumberValue> v = pValue.As<CFX_CSSNumberValue>();
           if (v->Kind() == CFX_CSSNumberType::Number) {
             pComputedStyle->m_InheritedData.m_fLineHeight =
                 v->Value() * pComputedStyle->m_InheritedData.m_fFontSize;
@@ -392,7 +391,7 @@ void CFX_CSSStyleSelector::ApplyProperty(
         break;
     }
   } else if (pValue->GetType() == CFX_CSSPrimitiveType::List) {
-    CFX_RetainPtr<CFX_CSSValueList> pList = pValue.As<CFX_CSSValueList>();
+    RetainPtr<CFX_CSSValueList> pList = pValue.As<CFX_CSSValueList>();
     int32_t iCount = pList->CountValues();
     if (iCount > 0) {
       switch (eProperty) {
@@ -473,10 +472,10 @@ CFX_CSSFontStyle CFX_CSSStyleSelector::ToFontStyle(
 bool CFX_CSSStyleSelector::SetLengthWithPercent(
     CFX_CSSLength& width,
     CFX_CSSPrimitiveType eType,
-    const CFX_RetainPtr<CFX_CSSValue>& pValue,
+    const RetainPtr<CFX_CSSValue>& pValue,
     float fFontSize) {
   if (eType == CFX_CSSPrimitiveType::Number) {
-    CFX_RetainPtr<CFX_CSSNumberValue> v = pValue.As<CFX_CSSNumberValue>();
+    RetainPtr<CFX_CSSNumberValue> v = pValue.As<CFX_CSSNumberValue>();
     if (v->Kind() == CFX_CSSNumberType::Percent) {
       width.Set(CFX_CSSLengthUnit::Percent,
                 pValue.As<CFX_CSSNumberValue>()->Value() / 100.0f);
@@ -560,10 +559,10 @@ CFX_CSSVerticalAlign CFX_CSSStyleSelector::ToVerticalAlign(
 }
 
 uint32_t CFX_CSSStyleSelector::ToTextDecoration(
-    const CFX_RetainPtr<CFX_CSSValueList>& pValue) {
+    const RetainPtr<CFX_CSSValueList>& pValue) {
   uint32_t dwDecoration = 0;
   for (int32_t i = pValue->CountValues() - 1; i >= 0; --i) {
-    const CFX_RetainPtr<CFX_CSSValue> pVal = pValue->GetValue(i);
+    const RetainPtr<CFX_CSSValue> pVal = pValue->GetValue(i);
     if (pVal->GetType() != CFX_CSSPrimitiveType::Enum)
       continue;
 

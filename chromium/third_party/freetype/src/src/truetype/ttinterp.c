@@ -5690,7 +5690,11 @@
                    ( B1 & 63 ) != 0                                           &&
                    ( B2 & 63 ) != 0                                           &&
                    B1 != B2                                                   )
-                Move_Zp2_Point( exc, point, -dx, -dy, TRUE );
+                Move_Zp2_Point( exc,
+                                point,
+                                NEG_LONG( dx ),
+                                NEG_LONG( dy ),
+                                TRUE );
             }
           }
           else if ( exc->face->sph_compatibility_mode )
@@ -5722,7 +5726,7 @@
               if ( ( B1 & 63 ) == 0 &&
                    ( B2 & 63 ) != 0 &&
                    B1 != B2         )
-                Move_Zp2_Point( exc, point, 0, -dy, TRUE );
+                Move_Zp2_Point( exc, point, 0, NEG_LONG( dy ), TRUE );
             }
           }
           else if ( exc->sph_in_func_flags & SPH_FDEF_TYPEMAN_DIAGENDCTRL )
@@ -5991,7 +5995,7 @@
                                     exc->tt_metrics.compensations[0] );
     }
 
-    exc->func_move( exc, &exc->zp0, point, distance - org_dist );
+    exc->func_move( exc, &exc->zp0, point, SUB_LONG( distance, org_dist ) );
 
   Fail:
     exc->GS.rp0 = point;
@@ -6074,8 +6078,12 @@
 
     /* single width cut-in test */
 
-    if ( FT_ABS( org_dist - exc->GS.single_width_value ) <
-         exc->GS.single_width_cutin )
+    /* |org_dist - single_width_value| < single_width_cutin */
+    if ( exc->GS.single_width_cutin > 0          &&
+         org_dist < exc->GS.single_width_value +
+                      exc->GS.single_width_cutin &&
+         org_dist > exc->GS.single_width_value -
+                      exc->GS.single_width_cutin )
     {
       if ( org_dist >= 0 )
         org_dist = exc->GS.single_width_value;
@@ -6119,8 +6127,8 @@
       }
       else
       {
-        if ( distance > -minimum_distance )
-          distance = -minimum_distance;
+        if ( distance > NEG_LONG( minimum_distance ) )
+          distance = NEG_LONG( minimum_distance );
       }
     }
 
@@ -6303,8 +6311,8 @@
       }
       else
       {
-        if ( distance > -minimum_distance )
-          distance = -minimum_distance;
+        if ( distance > NEG_LONG( minimum_distance ) )
+          distance = NEG_LONG( minimum_distance );
       }
     }
 
@@ -6355,7 +6363,10 @@
       }
 
       if ( reverse_move )
-        exc->func_move( exc, &exc->zp1, point, -( distance - cur_dist ) );
+        exc->func_move( exc,
+                        &exc->zp1,
+                        point,
+                        SUB_LONG( cur_dist, distance ) );
     }
 
 #endif /* TT_SUPPORT_SUBPIXEL_HINTING_INFINALITY */
@@ -6421,7 +6432,7 @@
         distance = PROJECT( exc->zp1.cur + point,
                             exc->zp0.cur + exc->GS.rp0 );
 
-        exc->func_move( exc, &exc->zp1, point, -distance );
+        exc->func_move( exc, &exc->zp1, point, NEG_LONG( distance ) );
       }
 
       exc->GS.loop--;
@@ -6557,7 +6568,7 @@
     distance = PROJECT( exc->zp0.cur + p2, exc->zp1.cur + p1 ) / 2;
 
     exc->func_move( exc, &exc->zp1, p1, distance );
-    exc->func_move( exc, &exc->zp0, p2, -distance );
+    exc->func_move( exc, &exc->zp0, p2, NEG_LONG( distance ) );
   }
 
 
@@ -7150,7 +7161,7 @@
                          SPH_TWEAK_SKIP_NONPIXEL_Y_MOVES_DELTAP ) &&
                        ( B1 & 63 ) != 0                           &&
                        ( B2 & 63 ) != 0                           ) ) )
-                exc->func_move( exc, &exc->zp0, A, -B );
+                exc->func_move( exc, &exc->zp0, A, NEG_LONG( B ) );
             }
           }
           else
@@ -7357,7 +7368,11 @@
       K |= 1 << 12;
 
 #ifdef TT_SUPPORT_SUBPIXEL_HINTING_MINIMAL
-    if ( SUBPIXEL_HINTING_MINIMAL )
+    /* Toggle the following flags only outside of monochrome mode.      */
+    /* Otherwise, instructions may behave weirdly and rendering results */
+    /* may differ between v35 and v40 mode, e.g., in `Times New Roman   */
+    /* Bold Italic'. */
+    if ( SUBPIXEL_HINTING_MINIMAL && exc->subpixel_hinting_lean )
     {
       /********************************/
       /* HINTING FOR SUBPIXEL         */

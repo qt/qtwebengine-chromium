@@ -24,6 +24,7 @@
 #include "content/public/common/service_names.mojom.h"
 #include "content/public/gpu/content_gpu_client.h"
 #include "gpu/command_buffer/common/activity_flags.h"
+#include "gpu/ipc/service/gpu_init.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/gpu/ipc/service/media_gpu_channel_manager.h"
@@ -42,6 +43,11 @@
 
 namespace content {
 namespace {
+
+bool IsVizEnabled() {
+  // TODO(crbug.com/770833): Look at the --enable-viz flag instead.
+  return false;
+}
 
 ChildThreadImpl::Options GetOptions() {
   ChildThreadImpl::Options::Builder builder;
@@ -128,76 +134,61 @@ class QueueingConnectionFilter : public ConnectionFilter {
   DISALLOW_COPY_AND_ASSIGN(QueueingConnectionFilter);
 };
 
+ui::GpuMain::ExternalDependencies CreateGpuMainDependencies() {
+  ui::GpuMain::ExternalDependencies deps;
+  deps.create_display_compositor = IsVizEnabled();
+  if (GetContentClient()->gpu())
+    deps.sync_point_manager = GetContentClient()->gpu()->GetSyncPointManager();
+  auto* process = ChildProcess::current();
+  deps.shutdown_event = process->GetShutDownEvent();
+  deps.io_thread_task_runner = process->io_task_runner();
+  return deps;
+}
+
 }  // namespace
 
-GpuChildThread::GpuChildThread(
-    std::unique_ptr<gpu::GpuWatchdogThread> watchdog_thread,
-    bool dead_on_arrival,
-    const gpu::GPUInfo& gpu_info,
-    const gpu::GpuFeatureInfo& gpu_feature_info,
-    DeferredMessages deferred_messages)
-    : GpuChildThread(GetOptions(),
-                     std::move(watchdog_thread),
-                     dead_on_arrival,
-                     false /* in_browser_process */,
-                     gpu_info,
-                     gpu_feature_info) {
-  deferred_messages_ = std::move(deferred_messages);
+GpuChildThread::GpuChildThread(std::unique_ptr<gpu::GpuInit> gpu_init,
+                               ui::GpuMain::LogMessages log_messages)
+    : GpuChildThread(GetOptions(), std::move(gpu_init)) {
+  gpu_main_.SetLogMessagesForHost(std::move(log_messages));
 }
 
 GpuChildThread::GpuChildThread(const InProcessChildThreadParams& params,
-                               const gpu::GPUInfo& gpu_info,
-                               const gpu::GpuFeatureInfo& gpu_feature_info)
+                               std::unique_ptr<gpu::GpuInit> gpu_init)
     : GpuChildThread(ChildThreadImpl::Options::Builder()
                          .InBrowserProcess(params)
                          .AutoStartServiceManagerConnection(false)
                          .ConnectToBrowser(true)
                          .Build(),
-                     nullptr /* watchdog_thread */,
-                     false /* dead_on_arrival */,
-                     true /* in_browser_process */,
-                     gpu_info,
-                     gpu_feature_info) {}
+                     std::move(gpu_init)) {}
 
-GpuChildThread::GpuChildThread(
-    const ChildThreadImpl::Options& options,
-    std::unique_ptr<gpu::GpuWatchdogThread> gpu_watchdog_thread,
-    bool dead_on_arrival,
-    bool in_browser_process,
-    const gpu::GPUInfo& gpu_info,
-    const gpu::GpuFeatureInfo& gpu_feature_info)
+GpuChildThread::GpuChildThread(const ChildThreadImpl::Options& options,
+                               std::unique_ptr<gpu::GpuInit> gpu_init)
     : ChildThreadImpl(options),
-      dead_on_arrival_(dead_on_arrival),
-      in_browser_process_(in_browser_process),
-      gpu_service_(
-          new viz::GpuServiceImpl(gpu_info,
-                                  std::move(gpu_watchdog_thread),
-                                  ChildProcess::current()->io_task_runner(),
-                                  gpu_feature_info)),
-      gpu_main_binding_(this),
+      gpu_main_(this, CreateGpuMainDependencies(), std::move(gpu_init)),
       weak_factory_(this) {
-  if (in_browser_process_) {
+  if (in_process_gpu()) {
     DCHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
                switches::kSingleProcess) ||
            base::CommandLine::ForCurrentProcess()->HasSwitch(
                switches::kInProcessGPU));
   }
-  gpu_service_->set_in_host_process(in_browser_process_);
 }
 
-GpuChildThread::~GpuChildThread() {
-}
+GpuChildThread::~GpuChildThread() {}
 
 void GpuChildThread::Init(const base::Time& process_start_time) {
-  gpu_service_->set_start_time(process_start_time);
+  gpu_main_.gpu_service()->set_start_time(process_start_time);
 
-#if defined(OS_ANDROID)
   // When running in in-process mode, this has been set in the browser at
   // ChromeBrowserMainPartsAndroid::PreMainMessageLoopRun().
-  if (!in_browser_process_)
+#if defined(OS_ANDROID)
+  if (!in_process_gpu()) {
     media::SetMediaDrmBridgeClient(
         GetContentClient()->GetMediaDrmBridgeClient());
+  }
 #endif
+
   AssociatedInterfaceRegistry* associated_registry = &associated_interfaces_;
   associated_registry->AddInterface(base::Bind(
       &GpuChildThread::CreateGpuMainService, base::Unretained(this)));
@@ -220,7 +211,11 @@ void GpuChildThread::Init(const base::Time& process_start_time) {
 
 void GpuChildThread::CreateGpuMainService(
     ui::mojom::GpuMainAssociatedRequest request) {
-  gpu_main_binding_.Bind(std::move(request));
+  gpu_main_.BindAssociated(std::move(request));
+}
+
+bool GpuChildThread::in_process_gpu() const {
+  return gpu_main_.gpu_service()->gpu_info().in_process_gpu;
 }
 
 bool GpuChildThread::Send(IPC::Message* msg) {
@@ -240,57 +235,31 @@ void GpuChildThread::OnAssociatedInterfaceRequest(
     ChildThreadImpl::OnAssociatedInterfaceRequest(name, std::move(handle));
 }
 
-void GpuChildThread::CreateGpuService(
-    viz::mojom::GpuServiceRequest request,
-    ui::mojom::GpuHostPtr gpu_host,
-    const gpu::GpuPreferences& gpu_preferences,
-    mojo::ScopedSharedBufferHandle activity_flags) {
-  gpu_service_->UpdateGPUInfoFromPreferences(gpu_preferences);
-  for (const LogMessage& log : deferred_messages_)
-    gpu_host->RecordLogMessage(log.severity, log.header, log.message);
-  deferred_messages_.clear();
+void GpuChildThread::OnInitializationFailed() {
+  OnChannelError();
+}
 
-  if (dead_on_arrival_) {
-    LOG(ERROR) << "Exiting GPU process due to errors during initialization";
-    gpu_service_.reset();
-    gpu_host->DidFailInitialize();
-    base::RunLoop::QuitCurrentWhenIdleDeprecated();
-    return;
-  }
-
-  // Bind should happen only if initialization succeeds (i.e. not dead on
-  // arrival), because otherwise, it can receive requests from the host while in
-  // an uninitialized state.
-  gpu_service_->Bind(std::move(request));
-  gpu::SyncPointManager* sync_point_manager = nullptr;
-  // Note SyncPointManager from ContentGpuClient cannot be owned by this.
-  if (GetContentClient()->gpu())
-    sync_point_manager = GetContentClient()->gpu()->GetSyncPointManager();
-  gpu_service_->InitializeWithHost(
-      std::move(gpu_host),
-      gpu::GpuProcessActivityFlags(std::move(activity_flags)),
-      sync_point_manager, ChildProcess::current()->GetShutDownEvent());
-  CHECK(gpu_service_->media_gpu_channel_manager());
+void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
+  media::AndroidOverlayMojoFactoryCB overlay_factory_cb;
+#if defined(OS_ANDROID)
+  overlay_factory_cb = base::Bind(&GpuChildThread::CreateAndroidOverlay,
+                                  base::ThreadTaskRunnerHandle::Get());
+  gpu_service->media_gpu_channel_manager()->SetOverlayFactory(
+      overlay_factory_cb);
+#endif
 
   // Only set once per process instance.
   service_factory_.reset(new GpuServiceFactory(
-      gpu_service_->media_gpu_channel_manager()->AsWeakPtr()));
+      gpu_service->gpu_preferences(),
+      gpu_service->media_gpu_channel_manager()->AsWeakPtr(),
+      overlay_factory_cb));
 
-#if defined(OS_ANDROID)
-  gpu_service_->media_gpu_channel_manager()->SetOverlayFactory(
-      base::Bind(&GpuChildThread::CreateAndroidOverlay));
-#endif
-
-  if (GetContentClient()->gpu())  // NULL in tests.
-    GetContentClient()->gpu()->GpuServiceInitialized(gpu_preferences);
+  if (GetContentClient()->gpu()) {  // NULL in tests.
+    GetContentClient()->gpu()->GpuServiceInitialized(
+        gpu_service->gpu_preferences());
+  }
 
   release_pending_requests_closure_.Run();
-}
-
-void GpuChildThread::CreateFrameSinkManager(
-    viz::mojom::FrameSinkManagerRequest request,
-    viz::mojom::FrameSinkManagerClientPtr client) {
-  NOTREACHED();
 }
 
 void GpuChildThread::BindServiceFactoryRequest(
@@ -304,13 +273,32 @@ void GpuChildThread::BindServiceFactoryRequest(
 #if defined(OS_ANDROID)
 // static
 std::unique_ptr<media::AndroidOverlay> GpuChildThread::CreateAndroidOverlay(
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+    std::unique_ptr<service_manager::ServiceContextRef> context_ref,
     const base::UnguessableToken& routing_token,
     media::AndroidOverlayConfig config) {
-  media::mojom::AndroidOverlayProviderPtr provider_ptr;
-  ChildThread::Get()->GetConnector()->BindInterface(
-      content::mojom::kBrowserServiceName, &provider_ptr);
+  media::mojom::AndroidOverlayProviderPtr overlay_provider;
+  if (main_task_runner->RunsTasksInCurrentSequence()) {
+    ChildThread::Get()->GetConnector()->BindInterface(
+        content::mojom::kBrowserServiceName, &overlay_provider);
+  } else {
+    // Create a connector on this sequence and bind it on the main thread.
+    service_manager::mojom::ConnectorRequest request;
+    auto connector = service_manager::Connector::Create(&request);
+    connector->BindInterface(content::mojom::kBrowserServiceName,
+                             &overlay_provider);
+    auto bind_connector_request =
+        [](service_manager::mojom::ConnectorRequest request) {
+          ChildThread::Get()->GetConnector()->BindConnectorRequest(
+              std::move(request));
+        };
+    main_task_runner->PostTask(
+        FROM_HERE, base::BindOnce(bind_connector_request, std::move(request)));
+  }
+
   return base::MakeUnique<media::MojoAndroidOverlay>(
-      std::move(provider_ptr), std::move(config), routing_token);
+      std::move(overlay_provider), std::move(config), routing_token,
+      std::move(context_ref));
 }
 #endif
 

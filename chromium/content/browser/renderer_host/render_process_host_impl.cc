@@ -50,7 +50,6 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
-#include "base/tracked_objects.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "components/metrics/single_sample_metrics.h"
@@ -60,6 +59,7 @@
 #include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
 #include "content/browser/appcache/appcache_dispatcher_host.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
+#include "content/browser/background_fetch/background_fetch_context.h"
 #include "content/browser/background_fetch/background_fetch_service_impl.h"
 #include "content/browser/background_sync/background_sync_service_impl.h"
 #include "content/browser/bad_message.h"
@@ -86,6 +86,7 @@
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/shader_cache_factory.h"
+#include "content/browser/histogram_controller.h"
 #include "content/browser/histogram_message_filter.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
@@ -103,12 +104,10 @@
 #include "content/browser/payments/payment_manager.h"
 #include "content/browser/permissions/permission_service_context.h"
 #include "content/browser/permissions/permission_service_impl.h"
-#include "content/browser/profiler_message_filter.h"
 #include "content/browser/push_messaging/push_messaging_manager.h"
 #include "content/browser/quota_dispatcher_host.h"
 #include "content/browser/renderer_host/clipboard_message_filter.h"
-#include "content/browser/renderer_host/database_message_filter.h"
-#include "content/browser/renderer_host/file_utilities_message_filter.h"
+#include "content/browser/renderer_host/file_utilities_host_impl.h"
 #include "content/browser/renderer_host/media/audio_input_renderer_host.h"
 #include "content/browser/renderer_host/media/audio_renderer_host.h"
 #include "content/browser/renderer_host/media/media_stream_dispatcher_host.h"
@@ -124,11 +123,10 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_frame_subscriber.h"
 #include "content/browser/renderer_host/text_input_client_message_filter.h"
+#include "content/browser/renderer_host/web_database_host_impl.h"
 #include "content/browser/resolve_proxy_msg_helper.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
-#include "content/browser/shared_worker/shared_worker_message_filter.h"
-#include "content/browser/shared_worker/worker_storage_partition.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/speech/speech_recognition_dispatcher_host.h"
 #include "content/browser/storage_partition_impl.h"
@@ -158,6 +156,7 @@
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/worker_service.h"
+#include "content/public/common/bind_interface_helpers.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/connection_filter.h"
 #include "content/public/common/content_constants.h"
@@ -183,11 +182,15 @@
 #include "ipc/ipc_logging.h"
 #include "media/base/media_switches.h"
 #include "media/media_features.h"
+#include "media/mojo/services/video_decode_perf_history.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+#include "mojo/public/cpp/system/platform_handle.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/features/features.h"
+#include "services/device/public/interfaces/battery_monitor.mojom.h"
+#include "services/device/public/interfaces/constants.mojom.h"
 #include "services/resource_coordinator/public/cpp/resource_coordinator_features.h"
 #include "services/resource_coordinator/public/cpp/resource_coordinator_interface.h"
 #include "services/service_manager/embedder/switches.h"
@@ -226,7 +229,6 @@
 #endif
 
 #if defined(OS_MACOSX)
-#include "content/browser/bootstrap_sandbox_manager_mac.h"
 #include "content/browser/mach_broker_mac.h"
 #endif
 
@@ -430,7 +432,9 @@ class RendererSandboxedProcessLauncherDelegate
   }
 #endif  // OS_WIN
 
-  SandboxType GetSandboxType() override { return SANDBOX_TYPE_RENDERER; }
+  service_manager::SandboxType GetSandboxType() override {
+    return service_manager::SANDBOX_TYPE_RENDERER;
+  }
 };
 
 const char kSessionStorageHolderKey[] = "kSessionStorageHolderKey";
@@ -690,13 +694,13 @@ void CreateResourceCoordinatorProcessInterface(
 
 // Forwards service requests to Service Manager since the renderer cannot launch
 // out-of-process services on is own.
-template <typename R>
-void ForwardShapeDetectionRequest(R request) {
+template <typename Interface>
+void ForwardRequest(const char* service_name,
+                    mojo::InterfaceRequest<Interface> request) {
   // TODO(beng): This should really be using the per-profile connector.
   service_manager::Connector* connector =
       ServiceManagerConnection::GetForProcess()->GetConnector();
-  connector->BindInterface(shape_detection::mojom::kServiceName,
-                           std::move(request));
+  connector->BindInterface(service_name, std::move(request));
 }
 
 class RenderProcessHostIsReadyObserver : public RenderProcessHostObserver {
@@ -821,6 +825,15 @@ class SiteProcessCountTracker : public base::SupportsUserData::Data,
         NOTREACHED();
         continue;
       }
+
+      // It's possible that |host| has become unsuitable for hosting
+      // |site_url|, for example if it was reused by a navigation to a
+      // different site, and |site_url| requires a dedicated process.  Do not
+      // allow such hosts to be reused.  See https://crbug.com/780661.
+      if (!RenderProcessHostImpl::IsSuitableHost(
+              host, host->GetBrowserContext(), site_url))
+        continue;
+
       if (host->VisibleWidgetCount())
         foreground_processes->insert(host);
       else
@@ -860,9 +873,6 @@ class SiteProcessCountTracker : public base::SupportsUserData::Data,
 bool ShouldUseSiteProcessTracking(BrowserContext* browser_context,
                                   StoragePartition* dest_partition,
                                   const GURL& site_url) {
-  if (site_url.is_empty())
-    return false;
-
   // TODO(alexmos): Sites should be tracked separately for each
   // StoragePartition.  For now, track them only in the default one.
   StoragePartition* default_partition =
@@ -876,12 +886,18 @@ bool ShouldUseSiteProcessTracking(BrowserContext* browser_context,
 bool ShouldTrackProcessForSite(BrowserContext* browser_context,
                                RenderProcessHost* render_process_host,
                                const GURL& site_url) {
+  if (site_url.is_empty())
+    return false;
+
   return ShouldUseSiteProcessTracking(
       browser_context, render_process_host->GetStoragePartition(), site_url);
 }
 
 bool ShouldFindReusableProcessHostForSite(BrowserContext* browser_context,
                                           const GURL& site_url) {
+  if (site_url.is_empty())
+    return false;
+
   return ShouldUseSiteProcessTracking(
       browser_context,
       BrowserContext::GetStoragePartitionForSite(browser_context, site_url),
@@ -1156,6 +1172,14 @@ size_t RenderProcessHost::GetMaxRendererProcessCount() {
       ChildProcessLauncher::GetNumberOfRendererSlots();
   return kNumRendererSlots;
 #endif
+#if defined(OS_CHROMEOS)
+  // On Chrome OS new renderer processes are very cheap and there's no OS
+  // driven constraint on the number of processes, and the effectiveness
+  // of the tab discarder is very poor when we have tabs sharing a
+  // renderer process.  So, set a high limit, and based on UMA stats
+  // for CrOS the 99.9th percentile of Tabs.MaxTabsInADay is around 100.
+  return 100;
+#endif
 
   // On other platforms, we calculate the maximum number of renderer process
   // hosts according to the amount of installed memory as reported by the OS.
@@ -1312,10 +1336,6 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       GetID(), storage_partition_impl_->GetServiceWorkerContext()));
 
   AddObserver(indexed_db_factory_.get());
-#if defined(OS_MACOSX)
-  if (BootstrapSandboxManager::ShouldEnable())
-    AddObserver(BootstrapSandboxManager::GetInstance());
-#endif
 
   InitializeChannelProxy();
 }
@@ -1713,10 +1733,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       blob_storage_context.get()));
   AddFilter(new BlobDispatcherHost(
       GetID(), blob_storage_context,
-      make_scoped_refptr(storage_partition_impl_->GetFileSystemContext())));
-  AddFilter(new FileUtilitiesMessageFilter(GetID()));
-  AddFilter(
-      new DatabaseMessageFilter(storage_partition_impl_->GetDatabaseTracker()));
+      base::WrapRefCounted(storage_partition_impl_->GetFileSystemContext())));
 #if defined(OS_MACOSX)
   AddFilter(new TextInputClientMessageFilter());
 #elif defined(OS_WIN)
@@ -1740,20 +1757,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       storage_partition_impl_->GetServiceWorkerContext());
   AddFilter(service_worker_filter.get());
 
-  AddFilter(new SharedWorkerMessageFilter(
-      GetID(), resource_context,
-      WorkerStoragePartition(
-          storage_partition_impl_->GetURLRequestContext(),
-          storage_partition_impl_->GetMediaURLRequestContext(),
-          storage_partition_impl_->GetAppCacheService(),
-          storage_partition_impl_->GetQuotaManager(),
-          storage_partition_impl_->GetFileSystemContext(),
-          storage_partition_impl_->GetDatabaseTracker(),
-          storage_partition_impl_->GetIndexedDBContext(),
-          storage_partition_impl_->GetServiceWorkerContext()),
-      base::Bind(&RenderWidgetHelper::GetNextRoutingID,
-                 base::Unretained(widget_helper_.get()))));
-
 #if BUILDFLAG(ENABLE_WEBRTC)
   p2p_socket_dispatcher_host_ = new P2PSocketDispatcherHost(
       resource_context, request_context.get());
@@ -1774,7 +1777,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       resource_context, service_worker_context, browser_context);
   AddFilter(notification_message_filter_.get());
 
-  AddFilter(new ProfilerMessageFilter(PROCESS_TYPE_RENDERER));
   AddFilter(new HistogramMessageFilter());
 #if defined(OS_ANDROID)
   synchronous_compositor_filter_ =
@@ -1792,16 +1794,20 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
 
   AddUIThreadInterface(
       registry.get(),
-      base::Bind(&ForwardShapeDetectionRequest<
-                 shape_detection::mojom::BarcodeDetectionRequest>));
+      base::Bind(&ForwardRequest<shape_detection::mojom::BarcodeDetection>,
+                 shape_detection::mojom::kServiceName));
   AddUIThreadInterface(
       registry.get(),
-      base::Bind(&ForwardShapeDetectionRequest<
-                 shape_detection::mojom::FaceDetectionProviderRequest>));
+      base::Bind(&ForwardRequest<shape_detection::mojom::FaceDetectionProvider>,
+                 shape_detection::mojom::kServiceName));
   AddUIThreadInterface(
       registry.get(),
-      base::Bind(&ForwardShapeDetectionRequest<
-                 shape_detection::mojom::TextDetectionRequest>));
+      base::Bind(&ForwardRequest<shape_detection::mojom::TextDetection>,
+                 shape_detection::mojom::kServiceName));
+
+  AddUIThreadInterface(
+      registry.get(), base::Bind(&ForwardRequest<device::mojom::BatteryMonitor>,
+                                 device::mojom::kServiceName));
 
   AddUIThreadInterface(
       registry.get(),
@@ -1876,17 +1882,28 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
 
   registry->AddInterface(
       base::Bind(&BackgroundFetchServiceImpl::Create, GetID(),
-                 make_scoped_refptr(
+                 base::WrapRefCounted(
                      storage_partition_impl_->GetBackgroundFetchContext())));
 
   registry->AddInterface(base::Bind(&RenderProcessHostImpl::CreateMusGpuRequest,
                                     base::Unretained(this)));
+
+  registry->AddInterface(
+      base::Bind(
+          &WebDatabaseHostImpl::Create, GetID(),
+          base::WrapRefCounted(storage_partition_impl_->GetDatabaseTracker())),
+      storage_partition_impl_->GetDatabaseTracker()->task_runner());
 
   MediaStreamManager* media_stream_manager =
       BrowserMainLoop::GetInstance()->media_stream_manager();
 
   registry->AddInterface(
       base::Bind(&VideoCaptureHost::Create, GetID(), media_stream_manager));
+
+  registry->AddInterface(
+      base::Bind(&FileUtilitiesHostImpl::Create, GetID()),
+      base::CreateSequencedTaskRunnerWithTraits(
+          {base::MayBlock(), base::TaskPriority::USER_VISIBLE}));
 
 #if BUILDFLAG(ENABLE_WEBRTC)
   registry->AddInterface(base::Bind(
@@ -1927,11 +1944,14 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
                    base::Unretained(this)));
   }
 
-  if (base::FeatureList::IsEnabled(features::kMojoBlobs)) {
+  if (features::IsMojoBlobsEnabled()) {
     registry->AddInterface(
         base::Bind(&BlobRegistryWrapper::Bind,
                    storage_partition_impl_->GetBlobRegistry(), GetID()));
   }
+
+  registry->AddInterface(
+      base::Bind(&media::VideoDecodePerfHistory::BindRequest));
 
   ServiceManagerConnection* service_manager_connection =
       BrowserContext::GetServiceManagerConnectionFor(browser_context_);
@@ -2193,6 +2213,19 @@ void RenderProcessHostImpl::ShutdownForBadMessage(
   Shutdown(RESULT_CODE_KILLED_BAD_MESSAGE, false);
 
   if (crash_report_mode == CrashReportMode::GENERATE_CRASH_DUMP) {
+    // Set crash keys to understand renderer kills related to site isolation.
+    auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
+    base::debug::SetCrashKeyValue("killed_process_origin_lock",
+                                  policy->GetOriginLock(GetID()).spec());
+    std::string site_isolation_mode;
+    if (SiteIsolationPolicy::UseDedicatedProcessesForAllSites())
+      site_isolation_mode += "spp ";
+    if (SiteIsolationPolicy::IsTopDocumentIsolationEnabled())
+      site_isolation_mode += "tdi ";
+    if (SiteIsolationPolicy::AreIsolatedOriginsEnabled())
+      site_isolation_mode += "io ";
+    base::debug::SetCrashKeyValue("site_isolation_mode", site_isolation_mode);
+
     // Report a crash, since none will be generated by the killed renderer.
     base::debug::DumpWithoutCrashing();
   }
@@ -2406,6 +2439,12 @@ static void AppendCompositorCommandLineFlags(base::CommandLine* command_line) {
   if (IsCheckerImagingEnabled())
     command_line->AppendSwitch(cc::switches::kEnableCheckerImaging);
 
+  if (IsCompositorImageAnimationEnabled())
+    command_line->AppendSwitch(switches::kEnableCompositorImageAnimations);
+
+  if (IsGpuAsyncWorkerContextEnabled())
+    command_line->AppendSwitch(switches::kEnableGpuAsyncWorkerContext);
+
   command_line->AppendSwitchASCII(
       switches::kContentImageTextureTarget,
       viz::BufferToTextureTargetMapToString(CreateBufferToTextureTargetMap()));
@@ -2486,11 +2525,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDefaultTileWidth,
     switches::kDefaultTileHeight,
     switches::kDisable2dCanvasImageChromium,
-    switches::kDisable3DAPIs,
     switches::kDisableAcceleratedJpegDecoding,
     switches::kDisableAcceleratedVideoDecode,
     switches::kDisableBackgroundTimerThrottling,
     switches::kDisableBreakpad,
+    switches::kDisableBrowserSideNavigation,
     switches::kDisablePreferCompositingToLCDText,
     switches::kDisableDatabases,
     switches::kDisableDisplayList2dCanvas,
@@ -2517,7 +2556,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableSeccompFilterSandbox,
     switches::kDisableSharedWorkers,
     switches::kDisableSkiaRuntimeOpts,
-    switches::kDisableSlimmingPaintInvalidation,
     switches::kDisableSmoothScrolling,
     switches::kDisableSpeechAPI,
     switches::kDisableThreadedCompositing,
@@ -2527,6 +2565,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableV8IdleTasks,
     switches::kDisableWebGLImageChromium,
     switches::kDomAutomationController,
+    switches::kEnableAutomation,
     switches::kEnableBrowserSideNavigation,
     switches::kEnableDisplayList2dCanvas,
     switches::kEnableDistanceFieldText,
@@ -2551,8 +2590,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnablePreferCompositingToLCDText,
     switches::kEnableRGBA4444Textures,
     switches::kEnableSkiaBenchmarking,
+    switches::kEnableSlimmingPaintV175,
     switches::kEnableSlimmingPaintV2,
-    switches::kEnableSlimmingPaintInvalidation,
     switches::kEnableSmoothScrolling,
     switches::kEnableStatsTable,
     switches::kEnableThreadedCompositing,
@@ -2560,8 +2599,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableUseZoomForDSF,
     switches::kEnableViewport,
     switches::kEnableVtune,
-    switches::kEnableWebFontsInterventionTrigger,
-    switches::kEnableWebFontsInterventionV2,
     switches::kEnableWebGLDraftExtensions,
     switches::kEnableWebGLImageChromium,
     switches::kEnableWebVR,
@@ -2592,7 +2629,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kOverridePluginPowerSaverForTesting,
     switches::kPassiveListenersDefault,
     switches::kPpapiInProcess,
-    switches::kProfilerTiming,
     switches::kReducedReferrerGranularity,
     switches::kReduceSecurityForTesting,
     switches::kRegisterPepperPlugins,
@@ -2639,6 +2675,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 
 #if BUILDFLAG(ENABLE_PLUGINS)
     switches::kEnablePepperTesting,
+#endif
+#if BUILDFLAG(ENABLE_RUNTIME_MEDIA_RENDERER_SELECTION)
+    switches::kDisableMojoRenderer,
 #endif
 #if BUILDFLAG(ENABLE_WEBRTC)
     switches::kDisableWebRtcHWDecoding,
@@ -2900,10 +2939,6 @@ void RenderProcessHostImpl::OnChannelConnected(int32_t peer_pid) {
   Send(new ChildProcessMsg_SetIPCLoggingEnabled(
       IPC::Logging::GetInstance()->Enabled()));
 #endif
-
-  tracked_objects::ThreadData::Status status =
-      tracked_objects::ThreadData::status();
-  Send(new ChildProcessMsg_SetProfilerStatus(status));
 
   // Inform AudioInputRendererHost about the new render process PID.
   // AudioInputRendererHost is reference counted, so its lifetime is
@@ -3567,7 +3602,8 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
   // Make sure the chosen process is in the correct StoragePartition for the
   // SiteInstance.
   CHECK(render_process_host->InSameStoragePartition(
-      BrowserContext::GetStoragePartition(browser_context, site_instance)));
+      BrowserContext::GetStoragePartition(browser_context, site_instance,
+                                          false /* can_create */)));
 
   return render_process_host;
 }
@@ -3575,8 +3611,13 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
 void RenderProcessHostImpl::CreateSharedRendererHistogramAllocator() {
   // Create a persistent memory segment for renderer histograms only if
   // they're active in the browser.
-  if (!base::GlobalHistogramAllocator::Get())
+  if (!base::GlobalHistogramAllocator::Get()) {
+    if (is_initialized_) {
+      HistogramController::GetInstance()->SetHistogramMemory<RenderProcessHost>(
+          this, mojo::ScopedSharedBufferHandle());
+    }
     return;
+  }
 
   // Get handle to the renderer process. Stop if there is none.
   base::ProcessHandle destination = GetHandle();
@@ -3598,10 +3639,10 @@ void RenderProcessHostImpl::CreateSharedRendererHistogramAllocator() {
         std::move(shm), GetID(), "RendererMetrics", /*readonly=*/false));
   }
 
-  base::SharedMemoryHandle shm_handle =
-      metrics_allocator_->shared_memory()->handle().Duplicate();
-  Send(new ChildProcessMsg_SetHistogramMemory(
-      shm_handle, metrics_allocator_->shared_memory()->mapped_size()));
+  HistogramController::GetInstance()->SetHistogramMemory<RenderProcessHost>(
+      this, mojo::WrapSharedMemoryHandle(
+                metrics_allocator_->shared_memory()->handle().Duplicate(),
+                metrics_allocator_->shared_memory()->mapped_size(), false));
 }
 
 void RenderProcessHostImpl::ProcessDied(bool already_dead,
@@ -3690,6 +3731,7 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead,
 
   shared_bitmap_allocation_notifier_impl_.ChildDied();
 
+  HistogramController::GetInstance()->NotifyChildDied<RenderProcessHost>(this);
   // This object is not deleted at this point and might be reused later.
   // TODO(darin): clean this up
 }

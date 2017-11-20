@@ -160,8 +160,6 @@ const QuicTag kMTUL = TAG('M', 'T', 'U', 'L');  // Low-target MTU discovery.
 const QuicTag kASYN = TAG('A', 'S', 'Y', 'N');  // Perform asynchronous signing
 const QuicTag kSYNC = TAG('S', 'Y', 'N', 'C');  // Perform synchronous signing
 
-const QuicTag kFHL2 = TAG('F', 'H', 'L', '2');   // Force head of line blocking.
-
 // Proof types (i.e. certificate types)
 // NOTE: although it would be silly to do so, specifying both kX509 and kX59R
 // is allowed and is equivalent to specifying only kX509.
@@ -218,6 +216,8 @@ const QuicTag kRCID = TAG('R', 'C', 'I', 'D');   // Server-designated
 const QuicTag kCADR = TAG('C', 'A', 'D', 'R');   // Client IP address and port
 const QuicTag kASAD = TAG('A', 'S', 'A', 'D');   // Alternate Server IP address
                                                  // and port.
+const QuicTag kSRST = TAG('S', 'R', 'S', 'T');   // Stateless reset token used
+                                                 // in IETF public reset packet
 
 // CETV tags
 const QuicTag kCIDK = TAG('C', 'I', 'D', 'K');   // ChannelID key

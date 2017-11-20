@@ -25,9 +25,8 @@
 
 #include "core/html/media/MediaDocument.h"
 
-#include "bindings/core/v8/AddEventListenerOptionsOrBoolean.h"
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/HTMLNames.h"
+#include "bindings/core/v8/add_event_listener_options_or_boolean.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/RawDataDocumentParser.h"
 #include "core/dom/UserGestureIndicator.h"
@@ -44,6 +43,7 @@
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLSourceElement.h"
 #include "core/html/HTMLVideoElement.h"
+#include "core/html_names.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "platform/KeyboardCodes.h"
@@ -134,13 +134,15 @@ void MediaDocumentParser::CreateDocumentStructure() {
     AddEventListenerOptions options;
     options.setOnce(true);
     AddEventListenerOptionsOrBoolean options_or_boolean;
-    options_or_boolean.setAddEventListenerOptions(options);
+    options_or_boolean.SetAddEventListenerOptions(options);
     media->addEventListener(EventTypeNames::loadedmetadata, listener,
                             options_or_boolean);
   }
 
   body->AppendChild(media);
   root_element->AppendChild(head);
+  if (IsDetached())
+    return;  // DOM insertion events can detach the frame.
   root_element->AppendChild(body);
 
   did_build_document_structure_ = true;

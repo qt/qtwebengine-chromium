@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "core/html/HTMLIFrameElement.h"
-#include "core/html/HTMLSelectElement.h"
+#include "core/html/forms/HTMLSelectElement.h"
 #include "core/paint/PaintPropertyTreeBuilderTest.h"
 #include "core/paint/PaintPropertyTreePrinter.h"
 
@@ -12,7 +12,10 @@ namespace blink {
 // Tests covering incremental updates of paint property trees.
 class PaintPropertyTreeUpdateTest : public PaintPropertyTreeBuilderTest {};
 
-INSTANTIATE_TEST_CASE_P(All, PaintPropertyTreeUpdateTest, ::testing::Bool());
+INSTANTIATE_TEST_CASE_P(
+    All,
+    PaintPropertyTreeUpdateTest,
+    ::testing::ValuesIn(kSlimmingPaintV2TestConfigurations));
 
 TEST_P(PaintPropertyTreeUpdateTest,
        ThreadedScrollingDisabledMainThreadScrollReason) {
@@ -376,7 +379,7 @@ TEST_P(PaintPropertyTreeUpdateTest, BuildingStopsAtThrottledFrames) {
       "  style='transform: translate3d(4px, 5px, 6px);'/>");
 
   // Move the child frame offscreen so it becomes available for throttling.
-  auto* iframe = toHTMLIFrameElement(GetDocument().getElementById("iframe"));
+  auto* iframe = ToHTMLIFrameElement(GetDocument().getElementById("iframe"));
   iframe->setAttribute(HTMLNames::styleAttr, "transform: translateY(5555px)");
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Ensure intersection observer notifications get delivered.
@@ -510,7 +513,8 @@ TEST_P(PaintPropertyTreeUpdateTest, ClipChangesUpdateOverflowClip) {
   EXPECT_EQ(FloatRect(0, 0, 800, 0), clip_properties->ClipRect().Rect());
   div->setAttribute(HTMLNames::styleAttr, "overflow:visible;");
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_TRUE(!div->GetLayoutObject()->FirstFragment()->PaintProperties() ||
+
+  EXPECT_TRUE(!div->GetLayoutObject()->FirstFragment() ||
               !div->GetLayoutObject()
                    ->FirstFragment()
                    ->PaintProperties()
@@ -590,8 +594,7 @@ TEST_P(PaintPropertyTreeUpdateTest,
   target->removeAttribute(HTMLNames::classAttr);
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Ensure the paint properties object was cleared as it is no longer needed.
-  EXPECT_EQ(nullptr,
-            target->GetLayoutObject()->FirstFragment()->PaintProperties());
+  EXPECT_EQ(nullptr, target->GetLayoutObject()->FirstFragment());
 }
 
 TEST_P(PaintPropertyTreeUpdateTest,
@@ -605,8 +608,7 @@ TEST_P(PaintPropertyTreeUpdateTest,
   // Removing the animation should remove the effect node.
   target->removeAttribute(HTMLNames::classAttr);
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_EQ(nullptr,
-            target->GetLayoutObject()->FirstFragment()->PaintProperties());
+  EXPECT_EQ(nullptr, target->GetLayoutObject()->FirstFragment());
 }
 
 TEST_P(PaintPropertyTreeUpdateTest,
@@ -754,8 +756,8 @@ TEST_P(PaintPropertyTreeUpdateTest, ScrollBoundsChange) {
                           ->PaintProperties()
                           ->ScrollTranslation()
                           ->ScrollNode();
-  EXPECT_EQ(IntSize(100, 100), scroll_node->ContainerBounds());
-  EXPECT_EQ(IntSize(200, 200), scroll_node->Bounds());
+  EXPECT_EQ(IntRect(0, 0, 100, 100), scroll_node->ContainerRect());
+  EXPECT_EQ(IntRect(0, 0, 200, 200), scroll_node->ContentsRect());
 
   GetDocument().getElementById("content")->setAttribute(
       HTMLNames::styleAttr, "width: 200px; height: 300px");
@@ -764,8 +766,8 @@ TEST_P(PaintPropertyTreeUpdateTest, ScrollBoundsChange) {
                              ->PaintProperties()
                              ->ScrollTranslation()
                              ->ScrollNode());
-  EXPECT_EQ(IntSize(100, 100), scroll_node->ContainerBounds());
-  EXPECT_EQ(IntSize(200, 300), scroll_node->Bounds());
+  EXPECT_EQ(IntRect(0, 0, 100, 100), scroll_node->ContainerRect());
+  EXPECT_EQ(IntRect(0, 0, 200, 300), scroll_node->ContentsRect());
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, ScrollbarWidthChange) {
@@ -820,10 +822,164 @@ TEST_P(PaintPropertyTreeUpdateTest, MenuListControlClipChange) {
             select->FirstFragment()->PaintProperties()->OverflowClip());
 
   // Should not assert in FindPropertiesNeedingUpdate.
-  toHTMLSelectElement(select->GetNode())->setSelectedIndex(1);
+  ToHTMLSelectElement(select->GetNode())->setSelectedIndex(1);
   GetDocument().View()->UpdateAllLifecyclePhases();
   EXPECT_NE(nullptr,
             select->FirstFragment()->PaintProperties()->OverflowClip());
+}
+
+TEST_P(PaintPropertyTreeUpdateTest, BoxAddRemoveMask) {
+  SetBodyInnerHTML(
+      "<style>#target {width: 100px; height: 100px}</style>"
+      "<div id='target'>"
+      "  <div style='width:500px; height:500px; background:green;'></div>"
+      "</div>");
+
+  EXPECT_EQ(nullptr, PaintPropertiesForElement("target"));
+
+  auto* target = GetDocument().getElementById("target");
+  target->setAttribute(HTMLNames::styleAttr,
+                       "-webkit-mask: linear-gradient(red, blue)");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  const auto* properties = PaintPropertiesForElement("target");
+  ASSERT_NE(nullptr, properties);
+  EXPECT_NE(nullptr, properties->Effect());
+  EXPECT_NE(nullptr, properties->Mask());
+  const auto* mask_clip = properties->MaskClip();
+  ASSERT_NE(nullptr, mask_clip);
+  EXPECT_EQ(FloatRoundedRect(8, 8, 100, 100), mask_clip->ClipRect());
+
+  target->setAttribute(HTMLNames::styleAttr, "");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_EQ(nullptr, PaintPropertiesForElement("target"));
+}
+
+TEST_P(PaintPropertyTreeUpdateTest, MaskClipNodeBoxSizeChange) {
+  SetBodyInnerHTML(
+      "<style>"
+      "#target {"
+      "  width: 100px;"
+      "  height: 100px;"
+      "  -webkit-mask: linear-gradient(red, blue);"
+      "}"
+      "</style>"
+      "<div id='target'>"
+      "  <div style='width:500px; height:500px; background:green;'></div>"
+      "</div>");
+
+  const auto* properties = PaintPropertiesForElement("target");
+  ASSERT_NE(nullptr, properties);
+  const auto* mask_clip = properties->MaskClip();
+  ASSERT_NE(nullptr, mask_clip);
+  EXPECT_EQ(FloatRoundedRect(8, 8, 100, 100), mask_clip->ClipRect());
+
+  GetDocument().getElementById("target")->setAttribute(HTMLNames::styleAttr,
+                                                       "height: 200px");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  ASSERT_EQ(mask_clip, properties->MaskClip());
+  EXPECT_EQ(FloatRoundedRect(8, 8, 100, 200), mask_clip->ClipRect());
+}
+
+TEST_P(PaintPropertyTreeUpdateTest, InlineAddRemoveMask) {
+  SetBodyInnerHTML(
+      "<span id='target'><img id='img' style='width: 50px'></span>");
+
+  EXPECT_EQ(nullptr, PaintPropertiesForElement("target"));
+
+  auto* target = GetDocument().getElementById("target");
+  target->setAttribute(HTMLNames::styleAttr,
+                       "-webkit-mask: linear-gradient(red, blue)");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  const auto* properties = PaintPropertiesForElement("target");
+  ASSERT_NE(nullptr, properties);
+  EXPECT_NE(nullptr, properties->Effect());
+  EXPECT_NE(nullptr, properties->Mask());
+  const auto* mask_clip = properties->MaskClip();
+  ASSERT_NE(nullptr, mask_clip);
+  EXPECT_EQ(50, mask_clip->ClipRect().Rect().Width());
+
+  target->setAttribute(HTMLNames::styleAttr, "");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_EQ(nullptr, PaintPropertiesForElement("target"));
+}
+
+TEST_P(PaintPropertyTreeUpdateTest, MaskClipNodeInlineBoundsChange) {
+  SetBodyInnerHTML(
+      "<span id='target' style='-webkit-mask: linear-gradient(red, blue)'>"
+      "  <img id='img' style='width: 50px'>"
+      "</span>");
+
+  const auto* properties = PaintPropertiesForElement("target");
+  ASSERT_NE(nullptr, properties);
+  const auto* mask_clip = properties->MaskClip();
+  ASSERT_NE(nullptr, mask_clip);
+  EXPECT_EQ(50, mask_clip->ClipRect().Rect().Width());
+
+  GetDocument().getElementById("img")->setAttribute(HTMLNames::styleAttr,
+                                                    "width: 100px");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  ASSERT_EQ(mask_clip, properties->MaskClip());
+  EXPECT_EQ(100, mask_clip->ClipRect().Rect().Width());
+}
+
+TEST_P(PaintPropertyTreeUpdateTest, AddRemoveSVGMask) {
+  SetBodyInnerHTML(
+      "<svg width='200' height='200'>"
+      "  <rect id='rect' x='0' y='100' width='100' height='100' fill='blue'/>"
+      "  <defs>"
+      "    <mask id='mask' x='0' y='0' width='100' height='200'>"
+      "      <rect width='100' height='200' fill='red'/>"
+      "    </mask>"
+      "  </defs>"
+      "</svg>");
+
+  EXPECT_EQ(nullptr, PaintPropertiesForElement("rect"));
+
+  GetDocument().getElementById("rect")->setAttribute("mask", "url(#mask)");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  const auto* properties = PaintPropertiesForElement("rect");
+  ASSERT_NE(nullptr, properties);
+  EXPECT_NE(nullptr, properties->Effect());
+  EXPECT_NE(nullptr, properties->Mask());
+  const auto* mask_clip = properties->MaskClip();
+  ASSERT_NE(nullptr, mask_clip);
+  EXPECT_EQ(FloatRoundedRect(0, 100, 100, 100), mask_clip->ClipRect());
+
+  GetDocument().getElementById("rect")->removeAttribute("mask");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_EQ(nullptr, PaintPropertiesForElement("rect"));
+}
+
+TEST_P(PaintPropertyTreeUpdateTest, SVGMaskTargetBoundsChange) {
+  SetBodyInnerHTML(
+      "<svg width='500' height='500'>"
+      "  <g id='target' mask='url(#mask)'>"
+      "    <rect id='rect' x='0' y='50' width='50' height='100' fill='blue'/>"
+      "  </g>"
+      "  <defs>"
+      "    <mask id='mask' x='0' y='0' width='100' height='200'>"
+      "      <rect width='100' height='200' fill='red'/>"
+      "    </mask>"
+      "  </defs>"
+      "</svg>");
+
+  const auto* properties = PaintPropertiesForElement("target");
+  ASSERT_NE(nullptr, properties);
+  EXPECT_NE(nullptr, properties->Effect());
+  EXPECT_NE(nullptr, properties->Mask());
+  const auto* mask_clip = properties->MaskClip();
+  ASSERT_NE(nullptr, mask_clip);
+  EXPECT_EQ(FloatRoundedRect(0, 50, 50, 100), mask_clip->ClipRect());
+
+  GetDocument().getElementById("rect")->setAttribute("width", "200");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_NE(nullptr, properties->Effect());
+  EXPECT_NE(nullptr, properties->Mask());
+  EXPECT_EQ(FloatRoundedRect(0, 50, 200, 100), mask_clip->ClipRect());
 }
 
 }  // namespace blink

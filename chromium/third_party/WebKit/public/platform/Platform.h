@@ -47,7 +47,6 @@
 #include "WebGamepadListener.h"
 #include "WebGestureDevice.h"
 #include "WebLocalizedString.h"
-#include "WebMessagePortChannel.h"
 #include "WebPlatformEventType.h"
 #include "WebSize.h"
 #include "WebSpeechSynthesizer.h"
@@ -63,10 +62,7 @@
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "mojo/public/cpp/system/message_pipe.h"
-
-namespace base {
-class SingleThreadTaskRunner;
-}
+#include "public/platform/scheduler/single_thread_task_runner.h"
 
 namespace device {
 class Gamepads;
@@ -89,6 +85,7 @@ class Local;
 namespace blink {
 
 class InterfaceProvider;
+class TrialPolicy;
 class WebAudioBus;
 class WebAudioLatencyHint;
 class WebBlobRegistry;
@@ -329,24 +326,12 @@ class BLINK_PLATFORM_EXPORT Platform {
   // Returns a unique FrameSinkID for the current renderer process
   virtual viz::FrameSinkId GenerateFrameSinkId() { return viz::FrameSinkId(); }
 
-  // Message Ports -------------------------------------------------------
-
-  // Creates a Message Port Channel pair. This can be called on any thread.
-  // The returned objects should only be used on the thread they were created
-  // on.
-  virtual void CreateMessageChannel(
-      std::unique_ptr<WebMessagePortChannel>* channel1,
-      std::unique_ptr<WebMessagePortChannel>* channel2) {
-    *channel1 = nullptr;
-    *channel2 = nullptr;
-  }
-
   // Network -------------------------------------------------------------
 
   // Returns a new WebURLLoader instance.
   virtual std::unique_ptr<WebURLLoader> CreateURLLoader(
       const WebURLRequest&,
-      base::SingleThreadTaskRunner*) {
+      SingleThreadTaskRunnerRefPtr) {
     return nullptr;
   }
 
@@ -466,7 +451,7 @@ class BLINK_PLATFORM_EXPORT Platform {
 
   // Returns an interface to the file task runner.
   WebTaskRunner* FileTaskRunner() const;
-  base::TaskRunner* BaseFileTaskRunner() const;
+  SingleThreadTaskRunnerRefPtr BaseFileTaskRunner() const;
 
   // Testing -------------------------------------------------------------
 
@@ -697,7 +682,8 @@ class BLINK_PLATFORM_EXPORT Platform {
 
   // Experimental Framework ----------------------------------------------
 
-  virtual WebTrialTokenValidator* TrialTokenValidator() { return nullptr; }
+  virtual std::unique_ptr<WebTrialTokenValidator> TrialTokenValidator();
+  virtual std::unique_ptr<TrialPolicy> OriginTrialPolicy();
 
   // Media Capabilities --------------------------------------------------
 

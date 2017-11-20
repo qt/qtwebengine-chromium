@@ -8,22 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/pc/test/fakeaudiocapturemodule.h"
+#include "pc/test/fakeaudiocapturemodule.h"
 
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/refcount.h"
-#include "webrtc/rtc_base/thread.h"
-#include "webrtc/rtc_base/timeutils.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/refcount.h"
+#include "rtc_base/refcountedobject.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/timeutils.h"
 
 // Audio sample value that is high enough that it doesn't occur naturally when
 // frames are being faked. E.g. NetEq will not generate this large sample value
 // unless it has received an audio frame containing a sample of this value.
 // Even simpler buffers would likely just contain audio sample values of 0.
 static const int kHighSampleValue = 10000;
-
-// Same value as src/modules/audio_device/main/source/audio_device_config.h in
-// https://code.google.com/p/webrtc/
-static const int kAdmMaxIdleTimeProcess = 1000;
 
 // Constants here are derived by running VoE using a real ADM.
 // The constants correspond to 10ms of mono audio at 44kHz.
@@ -40,8 +37,7 @@ enum {
 };
 
 FakeAudioCaptureModule::FakeAudioCaptureModule()
-    : last_process_time_ms_(0),
-      audio_callback_(nullptr),
+    : audio_callback_(nullptr),
       recording_(false),
       playing_(false),
       play_is_initialized_(false),
@@ -72,23 +68,6 @@ int FakeAudioCaptureModule::frames_received() const {
   return frames_received_;
 }
 
-int64_t FakeAudioCaptureModule::TimeUntilNextProcess() {
-  const int64_t current_time = rtc::TimeMillis();
-  if (current_time < last_process_time_ms_) {
-    // TODO: wraparound could be handled more gracefully.
-    return 0;
-  }
-  const int64_t elapsed_time = current_time - last_process_time_ms_;
-  if (kAdmMaxIdleTimeProcess < elapsed_time) {
-    return 0;
-  }
-  return kAdmMaxIdleTimeProcess - elapsed_time;
-}
-
-void FakeAudioCaptureModule::Process() {
-  last_process_time_ms_ = rtc::TimeMillis();
-}
-
 int32_t FakeAudioCaptureModule::ActiveAudioLayer(
     AudioLayer* /*audio_layer*/) const {
   RTC_NOTREACHED();
@@ -98,13 +77,6 @@ int32_t FakeAudioCaptureModule::ActiveAudioLayer(
 webrtc::AudioDeviceModule::ErrorCode FakeAudioCaptureModule::LastError() const {
   RTC_NOTREACHED();
   return webrtc::AudioDeviceModule::kAdmErrNone;
-}
-
-int32_t FakeAudioCaptureModule::RegisterEventObserver(
-    webrtc::AudioDeviceObserver* /*event_callback*/) {
-  // Only used to report warnings and errors. This fake implementation won't
-  // generate any so discard this callback.
-  return 0;
 }
 
 int32_t FakeAudioCaptureModule::RegisterAudioCallback(
@@ -323,12 +295,6 @@ int32_t FakeAudioCaptureModule::MinSpeakerVolume(
   return 0;
 }
 
-int32_t FakeAudioCaptureModule::SpeakerVolumeStepSize(
-    uint16_t* /*step_size*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
 int32_t FakeAudioCaptureModule::MicrophoneVolumeIsAvailable(
     bool* /*available*/) {
   RTC_NOTREACHED();
@@ -359,12 +325,6 @@ int32_t FakeAudioCaptureModule::MinMicrophoneVolume(
   return 0;
 }
 
-int32_t FakeAudioCaptureModule::MicrophoneVolumeStepSize(
-    uint16_t* /*step_size*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
 int32_t FakeAudioCaptureModule::SpeakerMuteIsAvailable(bool* /*available*/) {
   RTC_NOTREACHED();
   return 0;
@@ -391,22 +351,6 @@ int32_t FakeAudioCaptureModule::SetMicrophoneMute(bool /*enable*/) {
 }
 
 int32_t FakeAudioCaptureModule::MicrophoneMute(bool* /*enabled*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::MicrophoneBoostIsAvailable(
-    bool* /*available*/) {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::SetMicrophoneBoost(bool /*enable*/) {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::MicrophoneBoost(bool* /*enabled*/) const {
   RTC_NOTREACHED();
   return 0;
 }
@@ -467,18 +411,6 @@ int32_t FakeAudioCaptureModule::RecordingChannel(ChannelType* channel) const {
   return 0;
 }
 
-int32_t FakeAudioCaptureModule::SetPlayoutBuffer(const BufferType /*type*/,
-                                                 uint16_t /*size_ms*/) {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::PlayoutBuffer(BufferType* /*type*/,
-                                              uint16_t* /*size_ms*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
 int32_t FakeAudioCaptureModule::PlayoutDelay(uint16_t* delay_ms) const {
   // No delay since audio frames are dropped.
   *delay_ms = 0;
@@ -486,33 +418,6 @@ int32_t FakeAudioCaptureModule::PlayoutDelay(uint16_t* delay_ms) const {
 }
 
 int32_t FakeAudioCaptureModule::RecordingDelay(uint16_t* /*delay_ms*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::CPULoad(uint16_t* /*load*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::StartRawOutputFileRecording(
-    const char /*pcm_file_name_utf8*/[webrtc::kAdmMaxFileNameSize]) {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::StopRawOutputFileRecording() {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::StartRawInputFileRecording(
-    const char /*pcm_file_name_utf8*/[webrtc::kAdmMaxFileNameSize]) {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::StopRawInputFileRecording() {
   RTC_NOTREACHED();
   return 0;
 }
@@ -537,11 +442,6 @@ int32_t FakeAudioCaptureModule::SetPlayoutSampleRate(
 
 int32_t FakeAudioCaptureModule::PlayoutSampleRate(
     uint32_t* /*samples_per_sec*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::ResetAudioDevice() {
   RTC_NOTREACHED();
   return 0;
 }
@@ -577,7 +477,6 @@ bool FakeAudioCaptureModule::Initialize() {
   // sent to it. Note that the audio processing pipeline will likely distort the
   // original signal.
   SetSendBuffer(kHighSampleValue);
-  last_process_time_ms_ = rtc::TimeMillis();
   return true;
 }
 

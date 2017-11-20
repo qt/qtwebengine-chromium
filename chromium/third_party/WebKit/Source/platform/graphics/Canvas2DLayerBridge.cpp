@@ -27,13 +27,12 @@
 
 #include <memory>
 #include "base/memory/ptr_util.h"
-#include "components/viz/common/quads/single_release_callback.h"
 #include "components/viz/common/quads/texture_mailbox.h"
+#include "components/viz/common/resources/single_release_callback.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/common/capabilities.h"
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/graphics/AcceleratedStaticBitmapImage.h"
 #include "platform/graphics/CanvasHeuristicParameters.h"
@@ -45,6 +44,7 @@
 #include "platform/graphics/gpu/SharedGpuContext.h"
 #include "platform/graphics/paint/PaintCanvas.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
@@ -136,42 +136,38 @@ struct Canvas2DLayerBridge::ImageInfo : public RefCounted<ImageInfo> {
 static sk_sp<SkSurface> CreateSkSurface(GrContext* gr,
                                         const IntSize& size,
                                         int msaa_sample_count,
-                                        OpacityMode opacity_mode,
                                         const CanvasColorParams& color_params,
                                         bool* surface_is_accelerated) {
   if (gr)
     gr->resetContext();
 
-  SkAlphaType alpha_type =
-      (kOpaque == opacity_mode) ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
   // If we need color correction for all color spaces, we set the proper color
   // space when creating the surface. If color correct rendering is only toward
   // SRGB, we leave the surface with no color space. The painting canvas will
   // get wrapped with a proper SkColorSpaceXformCanvas in GetOrCreateSurface().
   sk_sp<SkColorSpace> color_space = nullptr;
-  if (CanvasColorParams::ColorCorrectRenderingInAnyColorSpace())
+  if (RuntimeEnabledFeatures::ColorCanvasExtensionsEnabled())
     color_space = color_params.GetSkColorSpaceForSkSurfaces();
-  SkImageInfo info =
-      SkImageInfo::Make(size.Width(), size.Height(),
-                        color_params.GetSkColorType(), alpha_type, color_space);
+  SkImageInfo info = SkImageInfo::Make(
+      size.Width(), size.Height(), color_params.GetSkColorType(),
+      color_params.GetSkAlphaType(), color_space);
   SkSurfaceProps disable_lcd_props(0, kUnknown_SkPixelGeometry);
   sk_sp<SkSurface> surface;
 
   if (gr) {
     *surface_is_accelerated = true;
-    surface = SkSurface::MakeRenderTarget(
-        gr, SkBudgeted::kNo, info, msaa_sample_count,
-        kOpaque == opacity_mode ? 0 : &disable_lcd_props);
+    surface = SkSurface::MakeRenderTarget(gr, SkBudgeted::kNo, info,
+                                          msaa_sample_count,
+                                          color_params.GetSkSurfaceProps());
   }
 
   if (!surface) {
     *surface_is_accelerated = false;
-    surface = SkSurface::MakeRaster(
-        info, kOpaque == opacity_mode ? 0 : &disable_lcd_props);
+    surface = SkSurface::MakeRaster(info, color_params.GetSkSurfaceProps());
   }
 
   if (surface) {
-    if (opacity_mode == kOpaque) {
+    if (color_params.GetOpacityMode() == kOpaque) {
       surface->getCanvas()->clear(SK_ColorBLACK);
     } else {
       surface->getCanvas()->clear(SK_ColorTRANSPARENT);
@@ -182,11 +178,10 @@ static sk_sp<SkSurface> CreateSkSurface(GrContext* gr,
 
 Canvas2DLayerBridge::Canvas2DLayerBridge(const IntSize& size,
                                          int msaa_sample_count,
-                                         OpacityMode opacity_mode,
                                          AccelerationMode acceleration_mode,
                                          const CanvasColorParams& color_params,
                                          bool is_unit_test)
-    : ImageBufferSurface(size, opacity_mode, color_params),
+    : ImageBufferSurface(size, color_params),
       logger_(WTF::WrapUnique(new Logger)),
       weak_ptr_factory_(this),
       image_buffer_(0),
@@ -201,7 +196,6 @@ Canvas2DLayerBridge::Canvas2DLayerBridge(const IntSize& size,
       last_image_id_(0),
       last_filter_(GL_LINEAR),
       acceleration_mode_(acceleration_mode),
-      opacity_mode_(opacity_mode),
       size_(size),
       color_params_(color_params) {
   if (acceleration_mode != kDisableAcceleration) {
@@ -210,7 +204,6 @@ Canvas2DLayerBridge::Canvas2DLayerBridge(const IntSize& size,
     DCHECK(
         !context_provider_wrapper_->ContextProvider()->IsSoftwareRendering());
   }
-  DCHECK(color_params_.GetGfxColorSpace().IsValid());
   // Used by browser tests to detect the use of a Canvas2DLayerBridge.
   TRACE_EVENT_INSTANT0("test_gpu", "Canvas2DLayerBridgeCreation",
                        TRACE_EVENT_SCOPE_GLOBAL);
@@ -259,15 +252,16 @@ void Canvas2DLayerBridge::ResetSurface() {
 
 bool Canvas2DLayerBridge::ShouldAccelerate(AccelerationHint hint) const {
   bool accelerate;
-  if (software_rendering_while_hidden_)
+  if (software_rendering_while_hidden_) {
     accelerate = false;
-  else if (acceleration_mode_ == kForceAccelerationForTesting)
+  } else if (acceleration_mode_ == kForceAccelerationForTesting) {
     accelerate = true;
-  else if (acceleration_mode_ == kDisableAcceleration)
+  } else if (acceleration_mode_ == kDisableAcceleration) {
     accelerate = false;
-  else
+  } else {
     accelerate = hint == kPreferAcceleration ||
                  hint == kPreferAccelerationAfterVisibilityChange;
+  }
 
   if (accelerate && (!context_provider_wrapper_ ||
                      context_provider_wrapper_->ContextProvider()
@@ -303,7 +297,7 @@ GLenum Canvas2DLayerBridge::GetGLFilter() {
   return filter_quality_ == kNone_SkFilterQuality ? GL_NEAREST : GL_LINEAR;
 }
 
-bool Canvas2DLayerBridge::PrepareIOSurfaceMailboxFromImage(
+bool Canvas2DLayerBridge::PrepareGpuMemoryBufferMailboxFromImage(
     SkImage* image,
     MailboxInfo* info,
     viz::TextureMailbox* out_mailbox) {
@@ -313,7 +307,7 @@ bool Canvas2DLayerBridge::PrepareIOSurfaceMailboxFromImage(
       context_provider_wrapper_->ContextProvider()->GetGrContext();
   gr_context->flush();
 
-  RefPtr<ImageInfo> image_info = CreateIOSurfaceBackedTexture();
+  RefPtr<ImageInfo> image_info = CreateGpuMemoryBufferBackedTexture();
   if (!image_info)
     return false;
 
@@ -341,16 +335,12 @@ bool Canvas2DLayerBridge::PrepareIOSurfaceMailboxFromImage(
 
   info->image_info_ = image_info;
   bool is_overlay_candidate = true;
-  bool secure_output_only = false;
 
-  *out_mailbox =
-      viz::TextureMailbox(mailbox, sync_token, texture_target, gfx::Size(size_),
-                          is_overlay_candidate, secure_output_only);
-  if (CanvasColorParams::ColorCorrectRenderingEnabled()) {
-    gfx::ColorSpace color_space = color_params_.GetGfxColorSpace();
-    out_mailbox->set_color_space(color_space);
-    image_info->gpu_memory_buffer_->SetColorSpaceForScanout(color_space);
-  }
+  *out_mailbox = viz::TextureMailbox(mailbox, sync_token, texture_target,
+                                     gfx::Size(size_), is_overlay_candidate);
+  out_mailbox->set_color_space(color_params_.GetSamplerGfxColorSpace());
+  image_info->gpu_memory_buffer_->SetColorSpaceForScanout(
+      color_params_.GetStorageGfxColorSpace());
 
   gl->BindTexture(GC3D_TEXTURE_RECTANGLE_ARB, 0);
 
@@ -362,7 +352,7 @@ bool Canvas2DLayerBridge::PrepareIOSurfaceMailboxFromImage(
 }
 
 RefPtr<Canvas2DLayerBridge::ImageInfo>
-Canvas2DLayerBridge::CreateIOSurfaceBackedTexture() {
+Canvas2DLayerBridge::CreateGpuMemoryBufferBackedTexture() {
   if (!image_info_cache_.IsEmpty()) {
     RefPtr<Canvas2DLayerBridge::ImageInfo> info = image_info_cache_.back();
     image_info_cache_.pop_back();
@@ -403,7 +393,7 @@ Canvas2DLayerBridge::CreateIOSurfaceBackedTexture() {
 
   ResetSkiaTextureBinding(context_provider_wrapper_);
 
-  return AdoptRef(new Canvas2DLayerBridge::ImageInfo(
+  return WTF::AdoptRef(new Canvas2DLayerBridge::ImageInfo(
       std::move(gpu_memory_buffer), image_id, texture_id));
 }
 
@@ -434,11 +424,11 @@ bool Canvas2DLayerBridge::PrepareMailboxFromImage(
   sk_sp<SkImage> skia_image = image->PaintImageForCurrentFrame().GetSkImage();
 
   if (RuntimeEnabledFeatures::Canvas2dImageChromiumEnabled()) {
-    if (PrepareIOSurfaceMailboxFromImage(skia_image.get(), mailbox_info,
-                                         out_mailbox))
+    if (PrepareGpuMemoryBufferMailboxFromImage(skia_image.get(), mailbox_info,
+                                               out_mailbox))
       return true;
-    // Note: if IOSurface backed texture creation failed we fall back to the
-    // non-IOSurface path.
+    // Note: if GpuMemoryBuffer-backed texture creation failed we fall back to
+    // the non-GpuMemoryBuffer path.
   }
 
   mailbox_info->image_ = std::move(image);
@@ -603,9 +593,11 @@ SkSurface* Canvas2DLayerBridge::GetOrCreateSurface(AccelerationHint hint) {
           : nullptr;
 
   bool surface_is_accelerated;
-  surface_ = CreateSkSurface(gr, size_, msaa_sample_count_, opacity_mode_,
-                             color_params_, &surface_is_accelerated);
-  if (color_params_.ColorCorrectNoColorSpaceToSRGB()) {
+  surface_ = CreateSkSurface(gr, size_, msaa_sample_count_, color_params_,
+                             &surface_is_accelerated);
+  if (!surface_)
+    return nullptr;
+  if (!color_params_.LinearPixelMath()) {
     surface_paint_canvas_ = WTF::WrapUnique(new SkiaPaintCanvas(
         surface_->getCanvas(), color_params_.GetSkColorSpace()));
   } else {
@@ -625,8 +617,8 @@ SkSurface* Canvas2DLayerBridge::GetOrCreateSurface(AccelerationHint hint) {
     layer_ =
         Platform::Current()->CompositorSupport()->CreateExternalTextureLayer(
             this);
-    layer_->SetOpaque(opacity_mode_ == kOpaque);
-    layer_->SetBlendBackgroundColor(opacity_mode_ != kOpaque);
+    layer_->SetOpaque(ColorParams().GetOpacityMode() == kOpaque);
+    layer_->SetBlendBackgroundColor(ColorParams().GetOpacityMode() != kOpaque);
     GraphicsLayer::RegisterContentsLayer(layer_->Layer());
     layer_->SetNearestNeighbor(filter_quality_ == kNone_SkFilterQuality);
   }
@@ -635,11 +627,12 @@ SkSurface* Canvas2DLayerBridge::GetOrCreateSurface(AccelerationHint hint) {
     if (surface_is_accelerated) {
       logger_->ReportHibernationEvent(kHibernationEndedNormally);
     } else {
-      if (IsHidden())
+      if (IsHidden()) {
         logger_->ReportHibernationEvent(
             kHibernationEndedWithSwitchToBackgroundRendering);
-      else
+      } else {
         logger_->ReportHibernationEvent(kHibernationEndedWithFallbackToSW);
+      }
     }
 
     SkPaint copy_paint;
@@ -831,7 +824,7 @@ void Canvas2DLayerBridge::FlushRecordingOnly() {
     // be done using target space pixel values.
     SkCanvas* canvas = GetOrCreateSurface()->getCanvas();
     std::unique_ptr<SkCanvas> color_transform_canvas;
-    if (color_params_.ColorCorrectNoColorSpaceToSRGB()) {
+    if (!color_params_.LinearPixelMath()) {
       color_transform_canvas = SkCreateColorSpaceXformCanvas(
           canvas, color_params_.GetSkColorSpace());
       canvas = color_transform_canvas.get();
@@ -932,7 +925,7 @@ bool Canvas2DLayerBridge::Restore() {
         context_provider_wrapper_->ContextProvider()->GetGrContext();
     bool surface_is_accelerated;
     sk_sp<SkSurface> surface(CreateSkSurface(gr_ctx, size_, msaa_sample_count_,
-                                             opacity_mode_, color_params_,
+                                             color_params_,
                                              &surface_is_accelerated));
     if (!surface_)
       ReportSurfaceCreationFailure();
@@ -1005,7 +998,7 @@ bool Canvas2DLayerBridge::PrepareTextureMailbox(
   if (!PrepareMailboxFromImage(std::move(image), info.get(), out_mailbox))
     return false;
   out_mailbox->set_nearest_neighbor(GetGLFilter() == GL_NEAREST);
-  out_mailbox->set_color_space(color_params_.GetGfxColorSpace());
+  out_mailbox->set_color_space(color_params_.GetSamplerGfxColorSpace());
 
   auto func =
       WTF::Bind(&ReleaseFrameResources, weak_ptr_factory_.CreateWeakPtr(),
@@ -1043,9 +1036,9 @@ void Canvas2DLayerBridge::ReleaseFrameResources(
   }
 
   if (RuntimeEnabledFeatures::Canvas2dImageChromiumEnabled()) {
-    RefPtr<ImageInfo> info = released_mailbox_info->image_info_;
-    if (info && !lost_resource) {
-      if (context_or_layer_bridge_lost) {
+    RefPtr<ImageInfo>& info = released_mailbox_info->image_info_;
+    if (info) {
+      if (lost_resource || context_or_layer_bridge_lost) {
         DeleteCHROMIUMImage(context_provider_wrapper,
                             std::move(info->gpu_memory_buffer_),
                             info->image_id_, info->texture_id_);
@@ -1082,10 +1075,21 @@ void Canvas2DLayerBridge::DidDraw(const FloatRect& rect) {
   if (is_deferral_enabled_) {
     have_recorded_draw_commands_ = true;
     IntRect pixel_bounds = EnclosingIntRect(rect);
-    recording_pixel_count_ += pixel_bounds.Width() * pixel_bounds.Height();
-    if (recording_pixel_count_ >=
-        (size_.Width() * size_.Height() *
-         CanvasHeuristicParameters::kExpensiveOverdrawThreshold)) {
+    CheckedNumeric<int> pixel_bounds_size = pixel_bounds.Width();
+    pixel_bounds_size *= pixel_bounds.Height();
+    recording_pixel_count_ += pixel_bounds_size;
+    if (!recording_pixel_count_.IsValid()) {
+      DisableDeferral(kDisableDeferralReasonExpensiveOverdrawHeuristic);
+      return;
+    }
+    CheckedNumeric<int> threshold_size = size_.Width();
+    threshold_size *= size_.Height();
+    threshold_size *= CanvasHeuristicParameters::kExpensiveOverdrawThreshold;
+    if (!threshold_size.IsValid()) {
+      DisableDeferral(kDisableDeferralReasonExpensiveOverdrawHeuristic);
+      return;
+    }
+    if (recording_pixel_count_.ValueOrDie() >= threshold_size.ValueOrDie()) {
       DisableDeferral(kDisableDeferralReasonExpensiveOverdrawHeuristic);
     }
   }
@@ -1147,7 +1151,7 @@ RefPtr<StaticBitmapImage> Canvas2DLayerBridge::NewImageSnapshot(
   RefPtr<StaticBitmapImage> image = StaticBitmapImage::Create(
       surface_->makeImageSnapshot(), ContextProviderWrapper());
   if (image->IsTextureBacked()) {
-    static_cast<AcceleratedStaticBitmapImage*>(image.Get())
+    static_cast<AcceleratedStaticBitmapImage*>(image.get())
         ->RetainOriginalSkImageForCopyOnWrite();
   }
   return image;

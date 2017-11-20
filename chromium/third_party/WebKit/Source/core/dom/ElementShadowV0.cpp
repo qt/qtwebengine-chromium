@@ -64,10 +64,10 @@ inline void DistributionPool::Clear() {
 inline void DistributionPool::PopulateChildren(const ContainerNode& parent) {
   Clear();
   for (Node* child = parent.firstChild(); child; child = child->nextSibling()) {
-    if (isHTMLSlotElement(child)) {
-      // TODO(hayato): Support re-distribution across v0 and v1 shadow trees
+    // Re-distribution across v0 and v1 shadow trees is not supported
+    if (IsHTMLSlotElement(child))
       continue;
-    }
+
     if (IsActiveV0InsertionPoint(*child)) {
       V0InsertionPoint* insertion_point = ToV0InsertionPoint(child);
       for (size_t i = 0; i < insertion_point->DistributedNodesSize(); ++i)
@@ -88,8 +88,8 @@ void DistributionPool::DistributeTo(V0InsertionPoint* insertion_point,
     if (distributed_[i])
       continue;
 
-    if (isHTMLContentElement(*insertion_point) &&
-        !toHTMLContentElement(insertion_point)->CanSelectNode(nodes_, i))
+    if (IsHTMLContentElement(*insertion_point) &&
+        !ToHTMLContentElement(insertion_point)->CanSelectNode(nodes_, i))
       continue;
 
     Node* node = nodes_[i];
@@ -168,9 +168,9 @@ void ElementShadowV0::Distribute() {
     for (const auto& point : root->DescendantInsertionPoints()) {
       if (!point->IsActive())
         continue;
-      if (isHTMLShadowElement(*point)) {
+      if (auto* shadow = ToHTMLShadowElementOrNull(*point)) {
         DCHECK(!shadow_insertion_point);
-        shadow_insertion_point = toHTMLShadowElement(point);
+        shadow_insertion_point = shadow;
         shadow_insertion_points.push_back(shadow_insertion_point);
       } else {
         pool.DistributeTo(point, this);
@@ -232,10 +232,8 @@ void ElementShadowV0::CollectSelectFeatureSetFrom(const ShadowRoot& root) {
       if (!shadow->IsV1())
         select_features_.Add(shadow->V0().EnsureSelectFeatureSet());
     }
-    if (!isHTMLContentElement(element))
-      continue;
-    const CSSSelectorList& list = toHTMLContentElement(element).SelectorList();
-    select_features_.CollectFeaturesFromSelectorList(list);
+    if (auto* content = ToHTMLContentElementOrNull(element))
+      select_features_.CollectFeaturesFromSelectorList(content->SelectorList());
   }
 }
 

@@ -49,6 +49,8 @@ class ArcBridgeHostImpl : public mojom::ArcBridgeHost {
       mojom::BootPhaseMonitorInstancePtr boot_phase_monitor_ptr) override;
   void OnCastReceiverInstanceReady(
       mojom::CastReceiverInstancePtr cast_receiver_ptr) override;
+  void OnCertStoreInstanceReady(
+      mojom::CertStoreInstancePtr instance_ptr) override;
   void OnClipboardInstanceReady(
       mojom::ClipboardInstancePtr clipboard_ptr) override;
   void OnCrashCollectorInstanceReady(
@@ -64,6 +66,7 @@ class ArcBridgeHostImpl : public mojom::ArcBridgeHost {
   void OnLockScreenInstanceReady(
       mojom::LockScreenInstancePtr lock_screen_ptr) override;
   void OnMetricsInstanceReady(mojom::MetricsInstancePtr metrics_ptr) override;
+  void OnMidisInstanceReady(mojom::MidisInstancePtr midis_ptr) override;
   void OnNetInstanceReady(mojom::NetInstancePtr net_ptr) override;
   void OnNotificationsInstanceReady(
       mojom::NotificationsInstancePtr notifications_ptr) override;
@@ -75,6 +78,8 @@ class ArcBridgeHostImpl : public mojom::ArcBridgeHost {
   void OnPowerInstanceReady(mojom::PowerInstancePtr power_ptr) override;
   void OnPrintInstanceReady(mojom::PrintInstancePtr print_ptr) override;
   void OnProcessInstanceReady(mojom::ProcessInstancePtr process_ptr) override;
+  void OnRotationLockInstanceReady(
+      mojom::RotationLockInstancePtr rotation_lock_ptr) override;
   void OnStorageManagerInstanceReady(
       mojom::StorageManagerInstancePtr storage_manager_ptr) override;
   void OnTracingInstanceReady(mojom::TracingInstancePtr trace_ptr) override;

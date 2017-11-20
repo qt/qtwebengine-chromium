@@ -8,28 +8,30 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_CODECS_TEST_VIDEOPROCESSOR_H_
-#define WEBRTC_MODULES_VIDEO_CODING_CODECS_TEST_VIDEOPROCESSOR_H_
+#ifndef MODULES_VIDEO_CODING_CODECS_TEST_VIDEOPROCESSOR_H_
+#define MODULES_VIDEO_CODING_CODECS_TEST_VIDEOPROCESSOR_H_
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "webrtc/api/video/video_frame.h"
-#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
-#include "webrtc/modules/video_coding/codecs/test/packet_manipulator.h"
-#include "webrtc/modules/video_coding/codecs/test/stats.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
-#include "webrtc/modules/video_coding/utility/ivf_file_writer.h"
-#include "webrtc/modules/video_coding/utility/vp8_header_parser.h"
-#include "webrtc/modules/video_coding/utility/vp9_uncompressed_header_parser.h"
-#include "webrtc/rtc_base/buffer.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/sequenced_task_checker.h"
-#include "webrtc/rtc_base/task_queue.h"
-#include "webrtc/test/testsupport/frame_reader.h"
-#include "webrtc/test/testsupport/frame_writer.h"
+#include "api/video/video_frame.h"
+#include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "modules/video_coding/codecs/h264/include/h264_globals.h"
+#include "modules/video_coding/codecs/test/packet_manipulator.h"
+#include "modules/video_coding/codecs/test/stats.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "modules/video_coding/utility/ivf_file_writer.h"
+#include "modules/video_coding/utility/vp8_header_parser.h"
+#include "modules/video_coding/utility/vp9_uncompressed_header_parser.h"
+#include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/sequenced_task_checker.h"
+#include "rtc_base/task_queue.h"
+#include "test/testsupport/frame_reader.h"
+#include "test/testsupport/frame_writer.h"
 
 namespace webrtc {
 
@@ -52,17 +54,6 @@ const char* ExcludeFrameTypesToStr(ExcludeFrameTypes e);
 
 // Test configuration for a test run.
 struct TestConfig {
-  // Name of the test. This is purely metadata and does not affect the test.
-  std::string name;
-
-  // More detailed description of the test. This is purely metadata and does
-  // not affect the test.
-  std::string description;
-
-  // Number of this test. Useful if multiple runs of the same test with
-  // different configurations shall be managed.
-  int test_number = 0;
-
   // Plain name of YUV file to process without file extension.
   std::string filename;
 
@@ -73,20 +64,12 @@ struct TestConfig {
   // in the YUV format.
   std::string output_filename;
 
-  // Path to the directory where encoded files will be put
-  // (absolute or relative to the executable).
-  std::string output_dir = "out";
-
   // Configurations related to networking.
   NetworkingConfig networking_config;
 
   // Decides how the packet loss simulations shall exclude certain frames
   // from packet loss.
   ExcludeFrameTypes exclude_frame_types = kExcludeOnlyFirstKeyFrame;
-
-  // The length of a single frame of the input video file. Calculated out of the
-  // width and height according to the video format specification (i.e. YUV).
-  size_t frame_length_in_bytes = 0;
 
   // Force the encoder and decoder to use a single core for processing.
   // Using a single core is necessary to get a deterministic behavior for the
@@ -111,8 +94,17 @@ struct TestConfig {
   // If printing of information to stdout shall be performed during processing.
   bool verbose = true;
 
-  // If HW or SW codec should be used.
-  bool hw_codec = false;
+  // Should hardware accelerated codecs be used?
+  bool hw_encoder = false;
+  bool hw_decoder = false;
+
+  // Should the hardware codecs be wrapped in software fallbacks?
+  bool sw_fallback_encoder = false;
+  bool sw_fallback_decoder = false;
+
+  // RTP H264 packetization mode.
+  H264PacketizationMode packetization_mode =
+      H264PacketizationMode::NonInterleaved;
 };
 
 // Handles encoding/decoding of video using the VideoEncoder/VideoDecoder
@@ -152,32 +144,22 @@ class VideoProcessor {
   // Tears down callbacks and releases the encoder and decoder.
   void Release();
 
-  // Processes a single frame. The frames must be processed in order, and the
-  // VideoProcessor must be initialized first.
-  void ProcessFrame(int frame_number);
+  // Reads a frame from the analysis frame reader and sends it to the encoder.
+  // When the encode callback is received, the encoded frame is sent to the
+  // decoder. The decoded frame is written to disk by the analysis frame writer.
+  // Objective video quality metrics can thus be calculated after the fact.
+  void ProcessFrame();
 
   // Updates the encoder with target rates. Must be called at least once.
   void SetRates(int bitrate_kbps, int framerate_fps);
 
-  // Return the number of dropped frames.
-  int NumberDroppedFrames();
+  // Returns the number of dropped frames.
+  std::vector<int> NumberDroppedFramesPerRateUpdate() const;
 
-  // Return the number of spatial resizes.
-  int NumberSpatialResizes();
+  // Returns the number of spatial resizes.
+  std::vector<int> NumberSpatialResizesPerRateUpdate() const;
 
  private:
-  // Container that holds per-frame information that needs to be stored between
-  // calls to Encode and Decode, as well as the corresponding callbacks. It is
-  // not directly used for statistics -- for that, test::FrameStatistic is used.
-  // TODO(brandtr): Get rid of this struct and use the Stats class instead.
-  struct FrameInfo {
-    int64_t encode_start_ns = 0;
-    int64_t decode_start_ns = 0;
-    int decoded_width = 0;
-    int decoded_height = 0;
-    size_t manipulated_length = 0;
-  };
-
   class VideoProcessorEncodeCompleteCallback
       : public webrtc::EncodedImageCallback {
    public:
@@ -275,15 +257,8 @@ class VideoProcessor {
   // Invoked by the callback adapter when a frame has completed decoding.
   void FrameDecoded(const webrtc::VideoFrame& image);
 
-  // Use the frame number as the basis for timestamp to identify frames. Let the
-  // first timestamp be non-zero, to not make the IvfFileWriter believe that we
-  // want to use capture timestamps in the IVF files.
-  uint32_t FrameNumberToTimestamp(int frame_number) const;
-  int TimestampToFrameNumber(uint32_t timestamp) const;
-
-  bool initialized_ GUARDED_BY(sequence_checker_);
-
-  TestConfig config_ GUARDED_BY(sequence_checker_);
+  bool initialized_ RTC_GUARDED_BY(sequence_checker_);
+  TestConfig config_ RTC_GUARDED_BY(sequence_checker_);
 
   webrtc::VideoEncoder* const encoder_;
   webrtc::VideoDecoder* const decoder_;
@@ -308,24 +283,28 @@ class VideoProcessor {
   IvfFileWriter* const encoded_frame_writer_;
   FrameWriter* const decoded_frame_writer_;
 
-  // Frame metadata for all frames that have been added through a call to
-  // ProcessFrames(). We need to store this metadata over the course of the
-  // test run, to support pipelining HW codecs.
-  std::vector<FrameInfo> frame_infos_ GUARDED_BY(sequence_checker_);
-  int last_encoded_frame_num_ GUARDED_BY(sequence_checker_);
-  int last_decoded_frame_num_ GUARDED_BY(sequence_checker_);
+  // Keep track of inputed/encoded/decoded frames, so we can detect frame drops.
+  int last_inputed_frame_num_ RTC_GUARDED_BY(sequence_checker_);
+  int last_encoded_frame_num_ RTC_GUARDED_BY(sequence_checker_);
+  int last_decoded_frame_num_ RTC_GUARDED_BY(sequence_checker_);
+
+  // Store an RTP timestamp -> frame number map, since the timestamps are
+  // based off of the frame rate, which can change mid-test.
+  std::map<uint32_t, int> rtp_timestamp_to_frame_num_
+      RTC_GUARDED_BY(sequence_checker_);
 
   // Keep track of if we have excluded the first key frame from packet loss.
-  bool first_key_frame_has_been_excluded_ GUARDED_BY(sequence_checker_);
+  bool first_key_frame_has_been_excluded_ RTC_GUARDED_BY(sequence_checker_);
 
   // Keep track of the last successfully decoded frame, since we write that
   // frame to disk when decoding fails.
-  rtc::Buffer last_decoded_frame_buffer_ GUARDED_BY(sequence_checker_);
+  rtc::Buffer last_decoded_frame_buffer_ RTC_GUARDED_BY(sequence_checker_);
 
   // Statistics.
   Stats* stats_;
-  int num_dropped_frames_ GUARDED_BY(sequence_checker_);
-  int num_spatial_resizes_ GUARDED_BY(sequence_checker_);
+  std::vector<int> num_dropped_frames_ RTC_GUARDED_BY(sequence_checker_);
+  std::vector<int> num_spatial_resizes_ RTC_GUARDED_BY(sequence_checker_);
+  int rate_update_index_ RTC_GUARDED_BY(sequence_checker_);
 
   rtc::SequencedTaskChecker sequence_checker_;
 
@@ -335,4 +314,4 @@ class VideoProcessor {
 }  // namespace test
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_VIDEO_CODING_CODECS_TEST_VIDEOPROCESSOR_H_
+#endif  // MODULES_VIDEO_CODING_CODECS_TEST_VIDEOPROCESSOR_H_

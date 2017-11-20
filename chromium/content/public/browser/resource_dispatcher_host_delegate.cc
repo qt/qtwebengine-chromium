@@ -104,9 +104,8 @@ ResourceDispatcherHostDelegate::CreateClientCertStore(
   return std::unique_ptr<net::ClientCertStore>();
 }
 
-void ResourceDispatcherHostDelegate::OnAbortedFrameLoad(
-    const GURL& url,
-    base::TimeDelta request_loading_time) {
+bool ResourceDispatcherHostDelegate::ShouldUseResourceScheduler() const {
+  return true;
 }
 
 ResourceDispatcherHostDelegate::~ResourceDispatcherHostDelegate() {

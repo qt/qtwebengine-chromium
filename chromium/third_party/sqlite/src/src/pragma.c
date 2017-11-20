@@ -1540,12 +1540,12 @@ void sqlite3Pragma(
       for(cnt=0, x=sqliteHashFirst(pTbls); x; x=sqliteHashNext(x)){
         Table *pTab = sqliteHashData(x);
         Index *pIdx;
-        if( HasRowid(pTab) ) aRoot[cnt++] = pTab->tnum;
+        if( HasRowid(pTab) ) aRoot[++cnt] = pTab->tnum;
         for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
-          aRoot[cnt++] = pIdx->tnum;
+          aRoot[++cnt] = pIdx->tnum;
         }
       }
-      aRoot[cnt] = 0;
+      aRoot[0] = cnt;
 
       /* Make sure sufficient number of registers have been allocated */
       pParse->nMem = MAX( pParse->nMem, 8+mxIdx );
@@ -1615,7 +1615,7 @@ void sqlite3Pragma(
             int addrCkOk = sqlite3VdbeMakeLabel(v);
             char *zErr;
             int k;
-            pParse->iSelfTab = iDataCur+1;
+            pParse->iSelfTab = iDataCur + 1;
             sqlite3ExprCachePush(pParse);
             for(k=pCheck->nExpr-1; k>0; k--){
               sqlite3ExprIfFalse(pParse, pCheck->a[k].pExpr, addrCkFault, 0);

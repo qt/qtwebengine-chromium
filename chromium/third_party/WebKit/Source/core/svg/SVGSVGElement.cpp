@@ -23,18 +23,17 @@
 #include "core/svg/SVGSVGElement.h"
 
 #include "bindings/core/v8/ScriptEventListener.h"
-#include "core/HTMLNames.h"
-#include "core/SVGNames.h"
-#include "core/css/CSSHelper.h"
+#include "core/css/CSSResolutionUnits.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/StaticNodeList.h"
-#include "core/dom/StyleChangeReason.h"
 #include "core/dom/events/EventListener.h"
 #include "core/editing/FrameSelection.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
+#include "core/html_names.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/svg/LayoutSVGModelObject.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
@@ -53,6 +52,7 @@
 #include "core/svg/SVGViewElement.h"
 #include "core/svg/SVGViewSpec.h"
 #include "core/svg/animation/SMILTimeContainer.h"
+#include "core/svg_names.h"
 #include "platform/LengthFunctions.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/transforms/AffineTransform.h"
@@ -123,7 +123,7 @@ class SVGCurrentTranslateTearOff : public SVGPointTearOff {
 
   void CommitChange() override {
     DCHECK(contextElement());
-    toSVGSVGElement(contextElement())->UpdateUserTransform();
+    ToSVGSVGElement(contextElement())->UpdateUserTransform();
   }
 
  private:
@@ -317,7 +317,7 @@ static bool IntersectsAllowingEmpty(const FloatRect& r1, const FloatRect& r2) {
 static bool IsIntersectionOrEnclosureTarget(LayoutObject* layout_object) {
   return layout_object->IsSVGShape() || layout_object->IsSVGText() ||
          layout_object->IsSVGImage() ||
-         isSVGUseElement(*layout_object->GetNode());
+         IsSVGUseElement(*layout_object->GetNode());
 }
 
 bool SVGSVGElement::CheckIntersectionOrEnclosure(
@@ -716,10 +716,10 @@ void SVGSVGElement::SetupInitialView(const String& fragment_identifier,
 
   SetViewSpec(nullptr);
 
-  if (!isSVGViewElement(anchor_node))
+  if (!IsSVGViewElement(anchor_node))
     return;
 
-  SVGViewElement& view_element = toSVGViewElement(*anchor_node);
+  SVGViewElement& view_element = ToSVGViewElement(*anchor_node);
 
   // Spec: If the SVG fragment identifier addresses a 'view' element
   // within an SVG document (e.g., MyDrawing.svg#MyView) then the

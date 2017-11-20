@@ -75,7 +75,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // The overhead the framing will add for a packet with one frame.
   static size_t StreamFramePacketOverhead(
-      QuicVersion version,
+      QuicTransportVersion version,
       QuicConnectionIdLength connection_id_length,
       bool include_version,
       bool include_diversification_nonce,
@@ -162,7 +162,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Creates a version negotiation packet which supports |supported_versions|.
   std::unique_ptr<QuicEncryptedPacket> SerializeVersionNegotiationPacket(
-      const QuicVersionVector& supported_versions);
+      const QuicTransportVersionVector& supported_versions);
 
   // Returns a dummy packet that is valid but contains no useful information.
   static SerializedPacket NoPacket();
@@ -207,10 +207,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   void set_debug_delegate(DebugDelegate* debug_delegate) {
     debug_delegate_ = debug_delegate;
-  }
-
-  bool latched_flag_no_stop_waiting_frames() const {
-    return latched_flag_no_stop_waiting_frames_;
   }
 
   QuicByteCount pending_padding_bytes() const { return pending_padding_bytes_; }
@@ -274,11 +270,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Controls whether version should be included while serializing the packet.
   bool send_version_in_packet_;
-  // Staging variable to hold next packet number length. When sequence
-  // number length is to be changed, this variable holds the new length until
-  // a packet boundary, when the creator's packet_number_length_ can be changed
-  // to this new value.
-  QuicPacketNumberLength next_packet_number_length_;
   // If true, then |nonce_for_public_header_| will be included in the public
   // header of all packets created at the initial encryption level.
   bool have_diversification_nonce_;
@@ -300,9 +291,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Packet used to invoke OnSerializedPacket.
   SerializedPacket packet_;
-
-  // The latched value of FLAGS_quic_reloadable_flag_quic_no_stop_waiting_frames
-  bool latched_flag_no_stop_waiting_frames_;
 
   // Pending padding bytes to send. Pending padding bytes will be sent in next
   // packet(s) (after all other frames) if current constructed packet does not

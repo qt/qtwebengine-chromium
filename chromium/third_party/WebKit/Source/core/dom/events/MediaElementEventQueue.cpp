@@ -32,14 +32,16 @@
 
 namespace blink {
 
-MediaElementEventQueue* MediaElementEventQueue::Create(EventTarget* owner) {
-  return new MediaElementEventQueue(owner);
+MediaElementEventQueue* MediaElementEventQueue::Create(
+    EventTarget* owner,
+    ExecutionContext* context) {
+  return new MediaElementEventQueue(owner, context);
 }
 
-MediaElementEventQueue::MediaElementEventQueue(EventTarget* owner)
+MediaElementEventQueue::MediaElementEventQueue(EventTarget* owner,
+                                               ExecutionContext* context)
     : owner_(owner),
-      timer_(TaskRunnerHelper::Get(TaskType::kMediaElementEvent,
-                                   owner->GetExecutionContext()),
+      timer_(TaskRunnerHelper::Get(TaskType::kMediaElementEvent, context),
              this,
              &MediaElementEventQueue::TimerFired),
       is_closed_(false) {}
@@ -79,7 +81,7 @@ bool MediaElementEventQueue::CancelEvent(Event* event) {
   if (found) {
     EventTarget* target = event->target() ? event->target() : owner_.Get();
     probe::AsyncTaskCanceled(target->GetExecutionContext(), event);
-    pending_events_.erase(pending_events_.Find(event));
+    pending_events_.EraseAt(pending_events_.Find(event));
     TRACE_EVENT_ASYNC_END2("event", "MediaElementEventQueue:enqueueEvent",
                            event, "type", event->type().Ascii(), "status",
                            "cancelled");

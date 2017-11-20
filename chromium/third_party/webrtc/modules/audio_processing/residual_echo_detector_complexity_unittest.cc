@@ -11,17 +11,17 @@
 #include <numeric>
 #include <vector>
 
-#include "webrtc/modules/audio_processing/audio_buffer.h"
-#include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/modules/audio_processing/residual_echo_detector.h"
-#include "webrtc/modules/audio_processing/test/audio_buffer_tools.h"
-#include "webrtc/modules/audio_processing/test/performance_timer.h"
-#include "webrtc/modules/audio_processing/test/simulator_buffers.h"
-#include "webrtc/rtc_base/array_view.h"
-#include "webrtc/rtc_base/random.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/testsupport/perf_test.h"
+#include "api/array_view.h"
+#include "modules/audio_processing/audio_buffer.h"
+#include "modules/audio_processing/include/audio_processing.h"
+#include "modules/audio_processing/residual_echo_detector.h"
+#include "modules/audio_processing/test/audio_buffer_tools.h"
+#include "modules/audio_processing/test/performance_timer.h"
+#include "modules/audio_processing/test/simulator_buffers.h"
+#include "rtc_base/random.h"
+#include "system_wrappers/include/clock.h"
+#include "test/gtest.h"
+#include "test/testsupport/perf_test.h"
 
 namespace webrtc {
 namespace {
@@ -89,7 +89,7 @@ void RunStandaloneSubmodule() {
       "us", false);
 }
 
-void RunTogetherWithApm(std::string test_description,
+void RunTogetherWithApm(const std::string& test_description,
                         bool use_mobile_aec,
                         bool include_default_apm_processing) {
   test::SimulatorBuffers buffers(

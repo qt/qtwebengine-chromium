@@ -69,6 +69,7 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager {
   bool IsFeatureBlacklisted(int feature) const override;
   bool IsFeatureEnabled(int feature) const override;
   bool IsWebGLEnabled() const override;
+  bool IsWebGL2Enabled() const override;
   gpu::GPUInfo GetGPUInfo() const override;
   bool GpuAccessAllowed(std::string* reason) const override;
   void RequestCompleteGpuInfoIfNeeded() override;
@@ -113,6 +114,8 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager {
   // Update the GPU feature info. This updates the blacklist and enabled status
   // of GPU rasterization. In the future this will be used for more features.
   void UpdateGpuFeatureInfo(const gpu::GpuFeatureInfo& gpu_feature_info);
+
+  gpu::GpuFeatureInfo GetGpuFeatureInfo() const;
 
   // Insert disable-feature switches corresponding to preliminary gpu feature
   // flags into the renderer process command line.
@@ -185,8 +188,6 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager {
 
   // Called when GPU process initialization failed.
   void OnGpuProcessInitFailure();
-
-  bool IsDriverBugWorkaroundActive(int feature) const;
 
  private:
   friend class GpuDataManagerImplPrivate;

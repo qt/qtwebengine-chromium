@@ -4,8 +4,8 @@
 
 #include "core/timing/Performance.h"
 
-#include "bindings/core/v8/PerformanceObserverCallback.h"
 #include "bindings/core/v8/V8BindingForTesting.h"
+#include "bindings/core/v8/v8_performance_observer_callback.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/TaskRunnerHelper.h"
 #include "core/testing/DummyPageHolder.h"
@@ -46,7 +46,7 @@ class PerformanceBaseTest : public ::testing::Test {
     v8::Local<v8::Function> callback =
         v8::Function::New(script_state->GetContext(), nullptr).ToLocalChecked();
     base_ = new TestPerformanceBase(script_state);
-    cb_ = PerformanceObserverCallback::Create(script_state, callback);
+    cb_ = V8PerformanceObserverCallback::Create(script_state, callback);
     observer_ = new PerformanceObserver(ExecutionContext::From(script_state),
                                         base_, cb_);
   }
@@ -75,7 +75,7 @@ class PerformanceBaseTest : public ::testing::Test {
   Persistent<ExecutionContext> execution_context_;
   Persistent<PerformanceObserver> observer_;
   std::unique_ptr<DummyPageHolder> page_holder_;
-  Persistent<PerformanceObserverCallback> cb_;
+  Persistent<V8PerformanceObserverCallback> cb_;
 };
 
 TEST_F(PerformanceBaseTest, Register) {
@@ -155,11 +155,11 @@ TEST_F(PerformanceBaseTest, AllowsTimingRedirect) {
   RefPtr<SecurityOrigin> security_origin = SecurityOrigin::Create(url);
   // When finalResponse is an empty object.
   EXPECT_FALSE(AllowsTimingRedirect(redirect_chain, final_response,
-                                    *security_origin.Get(),
+                                    *security_origin.get(),
                                     GetExecutionContext()));
   final_response.SetURL(url);
   EXPECT_TRUE(AllowsTimingRedirect(redirect_chain, final_response,
-                                   *security_origin.Get(),
+                                   *security_origin.get(),
                                    GetExecutionContext()));
   // When there exist cross-origin redirects.
   AtomicString cross_origin_domain = "http://126.0.0.1:8000";
@@ -168,14 +168,14 @@ TEST_F(PerformanceBaseTest, AllowsTimingRedirect) {
   redirect_response3.SetURL(redirect_url);
   redirect_chain.push_back(redirect_response3);
   EXPECT_FALSE(AllowsTimingRedirect(redirect_chain, final_response,
-                                    *security_origin.Get(),
+                                    *security_origin.get(),
                                     GetExecutionContext()));
 
   // When cross-origin redirect opts in.
   redirect_chain.back().SetHTTPHeaderField(HTTPNames::Timing_Allow_Origin,
                                            origin_domain);
   EXPECT_TRUE(AllowsTimingRedirect(redirect_chain, final_response,
-                                   *security_origin.Get(),
+                                   *security_origin.get(),
                                    GetExecutionContext()));
 }
 

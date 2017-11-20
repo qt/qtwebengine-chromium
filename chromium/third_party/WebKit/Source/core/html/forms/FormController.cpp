@@ -22,10 +22,10 @@
 
 #include <memory>
 #include "core/dom/events/ScopedEventQueue.h"
-#include "core/html/HTMLFormControlElementWithState.h"
-#include "core/html/HTMLFormElement.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FileChooser.h"
+#include "core/html/forms/HTMLFormControlElementWithState.h"
+#include "core/html/forms/HTMLFormElement.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "platform/wtf/Deque.h"
 #include "platform/wtf/HashTableDeletedValueType.h"
 #include "platform/wtf/PtrUtil.h"
@@ -137,16 +137,16 @@ FormElementKey& FormElementKey::operator=(const FormElementKey& other) {
 
 void FormElementKey::Ref() const {
   if (GetName())
-    GetName()->Ref();
+    GetName()->AddRef();
   if (GetType())
-    GetType()->Ref();
+    GetType()->AddRef();
 }
 
 void FormElementKey::Deref() const {
   if (GetName())
-    GetName()->Deref();
+    GetName()->Release();
   if (GetType())
-    GetType()->Deref();
+    GetType()->Release();
 }
 
 inline bool operator==(const FormElementKey& a, const FormElementKey& b) {

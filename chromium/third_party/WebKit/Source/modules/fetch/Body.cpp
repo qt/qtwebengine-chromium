@@ -9,7 +9,7 @@
 #include "bindings/core/v8/V8ArrayBuffer.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
-#include "core/html/FormData.h"
+#include "core/html/forms/FormData.h"
 #include "core/typed_arrays/DOMArrayBuffer.h"
 #include "core/typed_arrays/DOMTypedArray.h"
 #include "core/url/URLSearchParams.h"
@@ -18,7 +18,6 @@
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/V8ThrowException.h"
 #include "platform/network/ParsedContentType.h"
-#include "platform/wtf/PassRefPtr.h"
 #include "platform/wtf/RefPtr.h"
 #include "public/platform/WebDataConsumerHandle.h"
 
@@ -58,7 +57,7 @@ class BodyBlobConsumer final : public BodyConsumerBase {
       : BodyConsumerBase(resolver) {}
 
   void DidFetchDataLoadedBlobHandle(
-      PassRefPtr<BlobDataHandle> blob_data_handle) override {
+      RefPtr<BlobDataHandle> blob_data_handle) override {
     Resolver()->Resolve(Blob::Create(std::move(blob_data_handle)));
   }
 };

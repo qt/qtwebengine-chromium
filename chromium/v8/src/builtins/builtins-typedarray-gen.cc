@@ -5,9 +5,16 @@
 #include "src/builtins/builtins-utils-gen.h"
 #include "src/builtins/builtins.h"
 #include "src/code-stub-assembler.h"
+#include "src/handles-inl.h"
 
 namespace v8 {
 namespace internal {
+
+// This is needed for gc_mole which will compile this file without the full set
+// of GN defined macros.
+#ifndef V8_TYPED_ARRAY_MAX_SIZE_IN_HEAP
+#define V8_TYPED_ARRAY_MAX_SIZE_IN_HEAP 64
+#endif
 
 // -----------------------------------------------------------------------------
 // ES6 section 22.2 TypedArray Objects
@@ -199,9 +206,9 @@ TF_BUILTIN(TypedArrayInitialize, TypedArrayBuiltinsAssembler) {
 
   Node* fixed_typed_map = LoadMapForType(holder);
   GotoIf(TaggedIsNotSmi(byte_length), &allocate_off_heap);
-  GotoIf(SmiGreaterThan(byte_length,
-                        SmiConstant(FLAG_typed_array_max_size_in_heap)),
-         &allocate_off_heap);
+  GotoIf(
+      SmiGreaterThan(byte_length, SmiConstant(V8_TYPED_ARRAY_MAX_SIZE_IN_HEAP)),
+      &allocate_off_heap);
   Goto(&allocate_on_heap);
 
   BIND(&allocate_on_heap);
@@ -667,6 +674,49 @@ TF_BUILTIN(TypedArrayPrototypeLength, TypedArrayBuiltinsAssembler) {
                                     JSTypedArray::kLengthOffset);
 }
 
+// ES #sec-get-%typedarray%.prototype-@@tostringtag
+TF_BUILTIN(TypedArrayPrototypeToStringTag, TypedArrayBuiltinsAssembler) {
+  Node* receiver = Parameter(Descriptor::kReceiver);
+  Label if_receiverisheapobject(this), return_undefined(this);
+  Branch(TaggedIsSmi(receiver), &return_undefined, &if_receiverisheapobject);
+
+  // Dispatch on the elements kind, offset by
+  // FIRST_FIXED_TYPED_ARRAY_ELEMENTS_KIND.
+  size_t const kTypedElementsKindCount = LAST_FIXED_TYPED_ARRAY_ELEMENTS_KIND -
+                                         FIRST_FIXED_TYPED_ARRAY_ELEMENTS_KIND +
+                                         1;
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size) \
+  Label return_##type##array(this);                     \
+  BIND(&return_##type##array);                          \
+  Return(StringConstant(#Type "Array"));
+  TYPED_ARRAYS(TYPED_ARRAY_CASE)
+#undef TYPED_ARRAY_CASE
+  Label* elements_kind_labels[kTypedElementsKindCount] = {
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size) &return_##type##array,
+      TYPED_ARRAYS(TYPED_ARRAY_CASE)
+#undef TYPED_ARRAY_CASE
+  };
+  int32_t elements_kinds[kTypedElementsKindCount] = {
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size) \
+  TYPE##_ELEMENTS - FIRST_FIXED_TYPED_ARRAY_ELEMENTS_KIND,
+      TYPED_ARRAYS(TYPED_ARRAY_CASE)
+#undef TYPED_ARRAY_CASE
+  };
+
+  // We offset the dispatch by FIRST_FIXED_TYPED_ARRAY_ELEMENTS_KIND, so
+  // that this can be turned into a non-sparse table switch for ideal
+  // performance.
+  BIND(&if_receiverisheapobject);
+  Node* elements_kind =
+      Int32Sub(LoadMapElementsKind(LoadMap(receiver)),
+               Int32Constant(FIRST_FIXED_TYPED_ARRAY_ELEMENTS_KIND));
+  Switch(elements_kind, &return_undefined, elements_kinds, elements_kind_labels,
+         kTypedElementsKindCount);
+
+  BIND(&return_undefined);
+  Return(UndefinedConstant());
+}
+
 void TypedArrayBuiltinsAssembler::GenerateTypedArrayPrototypeIterationMethod(
     Node* context, Node* receiver, const char* method_name,
     IterationKind iteration_kind) {
@@ -732,6 +782,8 @@ TF_BUILTIN(TypedArrayPrototypeKeys, TypedArrayBuiltinsAssembler) {
   GenerateTypedArrayPrototypeIterationMethod(
       context, receiver, "%TypedArray%.prototype.keys()", IterationKind::kKeys);
 }
+
+#undef V8_TYPED_ARRAY_MAX_SIZE_IN_HEAP
 
 }  // namespace internal
 }  // namespace v8

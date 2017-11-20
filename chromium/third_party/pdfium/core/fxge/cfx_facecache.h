@@ -10,13 +10,16 @@
 #include <map>
 #include <memory>
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/fx_freetype.h"
 
 #if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
 #include "third_party/skia/include/core/SkTypeface.h"
 #endif
+
+class CFX_Font;
+class CFX_PathData;
 
 class CFX_FaceCache {
  public:
@@ -38,6 +41,8 @@ class CFX_FaceCache {
 #endif
 
  private:
+  using SizeGlyphCache = std::map<uint32_t, std::unique_ptr<CFX_GlyphBitmap>>;
+
   std::unique_ptr<CFX_GlyphBitmap> RenderGlyph(const CFX_Font* pFont,
                                                uint32_t glyph_index,
                                                bool bFontStyle,
@@ -52,7 +57,7 @@ class CFX_FaceCache {
       int anti_alias);
   CFX_GlyphBitmap* LookUpGlyphBitmap(const CFX_Font* pFont,
                                      const CFX_Matrix* pMatrix,
-                                     const CFX_ByteString& FaceGlyphsKey,
+                                     const ByteString& FaceGlyphsKey,
                                      uint32_t glyph_index,
                                      bool bFontStyle,
                                      int dest_width,
@@ -61,7 +66,7 @@ class CFX_FaceCache {
   void DestroyPlatform();
 
   FXFT_Face const m_Face;
-  std::map<CFX_ByteString, std::unique_ptr<CFX_SizeGlyphCache>> m_SizeMap;
+  std::map<ByteString, SizeGlyphCache> m_SizeMap;
   std::map<uint32_t, std::unique_ptr<CFX_PathData>> m_PathMap;
 #if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
   sk_sp<SkTypeface> m_pTypeface;

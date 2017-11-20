@@ -26,17 +26,21 @@
 #include "core/editing/commands/InsertListCommand.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/EphemeralRange.h"
+#include "core/editing/SelectionTemplate.h"
+#include "core/editing/VisiblePosition.h"
+#include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLLIElement.h"
 #include "core/html/HTMLUListElement.h"
+#include "core/html_names.h"
 
 namespace blink {
 
@@ -68,10 +72,11 @@ HTMLUListElement* InsertListCommand::FixOrphanedListChild(
 HTMLElement* InsertListCommand::MergeWithNeighboringLists(
     HTMLElement* passed_list,
     EditingState* editing_state) {
+  DCHECK(passed_list);
   HTMLElement* list = passed_list;
   Element* previous_list = ElementTraversal::PreviousSibling(*list);
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
-  if (CanMergeLists(previous_list, list)) {
+  if (previous_list && CanMergeLists(*previous_list, *list)) {
     MergeIdenticalElements(previous_list, list, editing_state);
     if (editing_state->IsAborted())
       return nullptr;
@@ -86,7 +91,7 @@ HTMLElement* InsertListCommand::MergeWithNeighboringLists(
 
   HTMLElement* next_list = ToHTMLElement(next_sibling);
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
-  if (CanMergeLists(list, next_list)) {
+  if (CanMergeLists(*list, *next_list)) {
     MergeIdenticalElements(list, next_list, editing_state);
     if (editing_state->IsAborted())
       return nullptr;
@@ -140,16 +145,16 @@ void InsertListCommand::DoApply(EditingState* editing_state) {
   // IndentOutdentCommand::outdentParagraph, both of which ensure clean layout.
   DCHECK(!GetDocument().NeedsLayoutTreeUpdate());
 
-  if (EndingVisibleSelection().IsNone() ||
-      EndingVisibleSelection().Start().IsOrphan() ||
-      EndingVisibleSelection().End().IsOrphan())
+  const VisibleSelection& visible_selection = EndingVisibleSelection();
+  if (visible_selection.IsNone() || visible_selection.Start().IsOrphan() ||
+      visible_selection.End().IsOrphan())
     return;
 
   if (!RootEditableElementOf(EndingSelection().Base()))
     return;
 
-  VisiblePosition visible_end = EndingVisibleSelection().VisibleEnd();
-  VisiblePosition visible_start = EndingVisibleSelection().VisibleStart();
+  VisiblePosition visible_end = visible_selection.VisibleEnd();
+  VisiblePosition visible_start = visible_selection.VisibleStart();
   // When a selection ends at the start of a paragraph, we rarely paint
   // the selection gap before that paragraph, because there often is no gap.
   // In a case like this, it's not obvious to the user that the selection
@@ -466,7 +471,7 @@ void InsertListCommand::UnlistifyParagraph(
   VisiblePosition start;
   VisiblePosition end;
   DCHECK(list_child_node);
-  if (isHTMLLIElement(*list_child_node)) {
+  if (IsHTMLLIElement(*list_child_node)) {
     start = VisiblePosition::FirstPositionInNode(*list_child_node);
     end = VisiblePosition::LastPositionInNode(*list_child_node);
     next_list_child = list_child_node->nextSibling();
@@ -595,7 +600,7 @@ void InsertListCommand::ListifyParagraph(const VisiblePosition& original_start,
       return;
 
     GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
-    if (CanMergeLists(previous_list, next_list))
+    if (previous_list && next_list && CanMergeLists(*previous_list, *next_list))
       MergeIdenticalElements(previous_list, next_list, editing_state);
 
     return;
@@ -631,13 +636,13 @@ void InsertListCommand::ListifyParagraph(const VisiblePosition& original_start,
   // | |-B
   // | +-C (insertion point)
   // |   |-D (*)
-  if (isHTMLSpanElement(insertion_pos.AnchorNode())) {
+  if (IsHTMLSpanElement(insertion_pos.AnchorNode())) {
     insertion_pos =
         Position::InParentBeforeNode(*insertion_pos.ComputeContainerNode());
   }
   // Also avoid the containing list item.
   Node* const list_child = EnclosingListChild(insertion_pos.AnchorNode());
-  if (isHTMLLIElement(list_child))
+  if (IsHTMLLIElement(list_child))
     insertion_pos = Position::InParentBeforeNode(*list_child);
 
   HTMLElement* list_element = CreateHTMLElement(GetDocument(), list_tag);

@@ -10,30 +10,34 @@
 #include <utility>
 
 #include "core/fpdfdoc/cpvt_wordrange.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/pwl/cpwl_edit_ctrl.h"
+
+#define PWL_CLASSNAME_EDIT "CPWL_Edit"
 
 class IPWL_Filler_Notify {
  public:
   virtual ~IPWL_Filler_Notify() {}
 
   // Must write to |bBottom| and |fPopupRet|.
-  virtual void QueryWherePopup(void* pPrivateData,
+  virtual void QueryWherePopup(CPWL_Wnd::PrivateData* pAttached,
                                float fPopupMin,
                                float fPopupMax,
                                bool* bBottom,
                                float* fPopupRet) = 0;
   virtual std::pair<bool, bool> OnBeforeKeyStroke(
-      void* pPrivateData,
-      CFX_WideString& strChange,
-      const CFX_WideString& strChangeEx,
+      CPWL_Wnd::PrivateData* pAttached,
+      WideString& strChange,
+      const WideString& strChangeEx,
       int nSelStart,
       int nSelEnd,
       bool bKeyDown,
       uint32_t nFlag) = 0;
 #ifdef PDF_ENABLE_XFA
-  virtual bool OnPopupPreOpen(void* pPrivateData, uint32_t nFlag) = 0;
-  virtual bool OnPopupPostOpen(void* pPrivateData, uint32_t nFlag) = 0;
+  virtual bool OnPopupPreOpen(CPWL_Wnd::PrivateData* pAttached,
+                              uint32_t nFlag) = 0;
+  virtual bool OnPopupPostOpen(CPWL_Wnd::PrivateData* pAttached,
+                               uint32_t nFlag) = 0;
 #endif  // PDF_ENABLE_XFA
 };
 
@@ -43,9 +47,9 @@ class CPWL_Edit : public CPWL_EditCtrl {
   ~CPWL_Edit() override;
 
   // CPWL_EditCtrl
-  CFX_ByteString GetClassName() const override;
+  ByteString GetClassName() const override;
   void OnCreated() override;
-  void RePosChildWnd() override;
+  bool RePosChildWnd() override;
   CFX_FloatRect GetClientRect() const override;
   void DrawThisAppearance(CFX_RenderDevice* pDevice,
                           const CFX_Matrix& mtUser2Device) override;
@@ -76,8 +80,8 @@ class CPWL_Edit : public CPWL_EditCtrl {
 
   void CutText();
 
-  void SetText(const CFX_WideString& csText);
-  void ReplaceSel(const CFX_WideString& csText);
+  void SetText(const WideString& csText);
+  void ReplaceSel(const WideString& csText);
 
   bool IsTextFull() const;
 
@@ -125,8 +129,8 @@ class CPWL_Edit : public CPWL_EditCtrl {
 
   bool m_bFocus;
   CFX_FloatRect m_rcOldWindow;
-  CFX_UnownedPtr<IPWL_Filler_Notify> m_pFillerNotify;
-  CFX_UnownedPtr<CFFL_FormFiller> m_pFormFiller;
+  UnownedPtr<IPWL_Filler_Notify> m_pFillerNotify;
+  UnownedPtr<CFFL_FormFiller> m_pFormFiller;
 };
 
 #endif  // FPDFSDK_PWL_CPWL_EDIT_H_

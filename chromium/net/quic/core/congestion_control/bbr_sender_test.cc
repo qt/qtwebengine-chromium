@@ -92,7 +92,6 @@ class BbrSenderTest : public QuicTest {
                               {&receiver_, &competing_receiver_}) {
     // These will be changed by the appropriate tests as necessary.
     FLAGS_quic_reloadable_flag_quic_bbr_add_tso_cwnd = false;
-    FLAGS_quic_reloadable_flag_quic_bbr_ack_aggregation_bytes4 = true;
 
     rtt_stats_ = bbr_sender_.connection()->sent_packet_manager().GetRttStats();
     sender_ = SetupBbrSender(&bbr_sender_);
@@ -259,9 +258,9 @@ TEST_F(BbrSenderTest, SimpleTransfer) {
   // At startup make sure we are at the default.
   EXPECT_EQ(kDefaultWindowTCP, sender_->GetCongestionWindow());
   // At startup make sure we can send.
-  EXPECT_TRUE(sender_->TimeUntilSend(clock_->Now(), 0).IsZero());
+  EXPECT_TRUE(sender_->CanSend(0));
   // Make sure we can send.
-  EXPECT_TRUE(sender_->TimeUntilSend(clock_->Now(), 0).IsZero());
+  EXPECT_TRUE(sender_->CanSend(0));
   // And that window is un-affected.
   EXPECT_EQ(kDefaultWindowTCP, sender_->GetCongestionWindow());
 

@@ -27,25 +27,29 @@ class VertexArray11 : public VertexArrayImpl, public OnBufferDataDirtyReceiver
     void syncState(const gl::Context *context,
                    const gl::VertexArray::DirtyBits &dirtyBits) override;
     // This will flush any pending attrib updates and then check the dynamic attribs mask.
-    bool hasDynamicAttrib(const gl::Context *context);
-    bool hasDirtyOrDynamicAttrib(const gl::Context *context);
+    bool hasActiveDynamicAttrib(const gl::Context *context);
     gl::Error updateDirtyAndDynamicAttribs(const gl::Context *context,
                                            VertexDataManager *vertexDataManager,
                                            GLint start,
                                            GLsizei count,
                                            GLsizei instances);
-    void clearDirtyAndPromoteDynamicAttribs(const gl::State &state, GLsizei count);
+    void clearDirtyAndPromoteDynamicAttribs(const gl::Context *context, GLsizei count);
 
     const std::vector<TranslatedAttribute> &getTranslatedAttribs() const;
 
     // SignalReceiver implementation
-    void signal(size_t channelID) override;
+    void signal(size_t channelID, const gl::Context *context) override;
 
     Serial getCurrentStateSerial() const { return mCurrentStateSerial; }
 
+    // In case of a multi-view program change, we have to update all attributes so that the divisor
+    // is adjusted.
+    void markAllAttributeDivisorsForAdjustment(int numViews);
+
+    bool flushAttribUpdates(const gl::Context *context);
+
   private:
     void updateVertexAttribStorage(const gl::Context *context, size_t attribIndex);
-    void flushAttribUpdates(const gl::Context *context);
 
     std::vector<VertexStorageType> mAttributeStorageTypes;
     std::vector<TranslatedAttribute> mTranslatedAttribs;
@@ -65,6 +69,9 @@ class VertexArray11 : public VertexArrayImpl, public OnBufferDataDirtyReceiver
     std::vector<OnBufferDataDirtyBinding> mOnBufferDataDirty;
 
     Serial mCurrentStateSerial;
+
+    // The numViews value used to adjust the divisor.
+    int mAppliedNumViewsToDivisor;
 };
 
 }  // namespace rx

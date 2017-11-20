@@ -123,10 +123,26 @@ class MEDIA_BLINK_EXPORT MultibufferDataSource : public DataSource {
   void CreateResourceLoader(int64_t first_byte_position,
                             int64_t last_byte_position);
 
+  // Same as above, but called with |lock_| held.
+  void CreateResourceLoader_Locked(int64_t first_byte_position,
+                                   int64_t last_byte_position);
+
+  // Set reader_ while asserting proper locking.
+  void SetReader(MultiBufferReader* reader);
+
   friend class MultibufferDataSourceTest;
 
   // Task posted to perform actual reading on the render thread.
   void ReadTask();
+
+  // After a read, this function updates the read position.
+  // It's in a separate function because the read itself can either happen
+  // in ReadTask() or in Read(), both of which call this function afterwards.
+  void SeekTask_Locked();
+
+  // Lock |lock_| lock and call SeekTask_Locked().
+  // Called with PostTask when read() complets on the demuxer thread.
+  void SeekTask();
 
   // Cancels oustanding callbacks and sets |stop_signal_received_|. Safe to call
   // from any thread.
@@ -164,6 +180,15 @@ class MEDIA_BLINK_EXPORT MultibufferDataSource : public DataSource {
   // determined by reaching EOF.
   int64_t total_bytes_;
 
+  // Bytes we've read but not reported to the url_data yet.
+  // SeekTask handles the reporting.
+  int64_t bytes_read_ = 0;
+
+  // Places we might want to seek to. After each read we add another
+  // location here, and when SeekTask() is called, it picks the best
+  // position and then clears it out.
+  std::vector<int64_t> seek_positions_;
+
   // This value will be true if this data source can only support streaming.
   // i.e. range request is not supported.
   bool streaming_;
@@ -192,7 +217,7 @@ class MEDIA_BLINK_EXPORT MultibufferDataSource : public DataSource {
   class ReadOperation;
   std::unique_ptr<ReadOperation> read_op_;
 
-  // Protects |stop_signal_received_|, |read_op_| and |total_bytes_|.
+  // Protects |stop_signal_received_|, |read_op_|, |reader_| and |total_bytes_|.
   base::Lock lock_;
 
   // Whether we've been told to stop via Abort() or Stop().
@@ -220,6 +245,8 @@ class MEDIA_BLINK_EXPORT MultibufferDataSource : public DataSource {
   double playback_rate_;
 
   MediaLog* media_log_;
+
+  int buffer_size_update_counter_;
 
   // Host object to report buffered byte range changes to.
   BufferedDataSourceHost* host_;

@@ -15,22 +15,19 @@ namespace blink {
 class NGPhysicalBoxFragment;
 struct NGBaselineRequest;
 struct NGLineHeightMetrics;
-struct NGLogicalSize;
 
 class CORE_EXPORT NGBoxFragment final : public NGFragment {
  public:
   NGBoxFragment(NGWritingMode writing_mode,
-                const NGPhysicalBoxFragment* physical_fragment)
+                const NGPhysicalBoxFragment& physical_fragment)
       : NGFragment(writing_mode, physical_fragment) {}
-
-  // Returns the total size, including the contents outside of the border-box.
-  NGLogicalSize OverflowSize() const;
 
   // Compute baseline metrics (ascent/descent) for this box.
   //
   // Baseline requests must be added to constraint space when this fragment was
   // laid out.
-  NGLineHeightMetrics BaselineMetrics(const NGBaselineRequest&) const;
+  NGLineHeightMetrics BaselineMetrics(const NGBaselineRequest&,
+                                      const NGConstraintSpace&) const;
 };
 
 DEFINE_TYPE_CASTS(NGBoxFragment,

@@ -10,7 +10,7 @@
 
 #ifdef HAVE_WEBRTC_VOICE
 
-#include "webrtc/media/engine/webrtcvoiceengine.h"
+#include "media/engine/webrtcvoiceengine.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -18,43 +18,36 @@
 #include <string>
 #include <vector>
 
-#include "webrtc/api/call/audio_sink.h"
-#include "webrtc/media/base/audiosource.h"
-#include "webrtc/media/base/mediaconstants.h"
-#include "webrtc/media/base/streamparams.h"
-#include "webrtc/media/engine/adm_helpers.h"
-#include "webrtc/media/engine/apm_helpers.h"
-#include "webrtc/media/engine/payload_type_mapper.h"
-#include "webrtc/media/engine/webrtcmediaengine.h"
-#include "webrtc/media/engine/webrtcvoe.h"
-#include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
-#include "webrtc/modules/audio_processing/aec_dump/aec_dump_factory.h"
-#include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/base64.h"
-#include "webrtc/rtc_base/byteorder.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/race_checker.h"
-#include "webrtc/rtc_base/stringencode.h"
-#include "webrtc/rtc_base/stringutils.h"
-#include "webrtc/rtc_base/trace_event.h"
-#include "webrtc/system_wrappers/include/field_trial.h"
-#include "webrtc/system_wrappers/include/metrics.h"
-#include "webrtc/system_wrappers/include/trace.h"
-#include "webrtc/voice_engine/transmit_mixer.h"
+#include "api/call/audio_sink.h"
+#include "media/base/audiosource.h"
+#include "media/base/mediaconstants.h"
+#include "media/base/streamparams.h"
+#include "media/engine/adm_helpers.h"
+#include "media/engine/apm_helpers.h"
+#include "media/engine/payload_type_mapper.h"
+#include "media/engine/webrtcmediaengine.h"
+#include "media/engine/webrtcvoe.h"
+#include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/audio_processing/aec_dump/aec_dump_factory.h"
+#include "modules/audio_processing/include/audio_processing.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/base64.h"
+#include "rtc_base/byteorder.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/race_checker.h"
+#include "rtc_base/stringencode.h"
+#include "rtc_base/stringutils.h"
+#include "rtc_base/trace_event.h"
+#include "system_wrappers/include/field_trial.h"
+#include "system_wrappers/include/metrics.h"
+#include "voice_engine/transmit_mixer.h"
 
 namespace cricket {
 namespace {
 
 constexpr size_t kMaxUnsignaledRecvStreams = 4;
-
-const int kDefaultTraceFilter = webrtc::kTraceNone | webrtc::kTraceTerseInfo |
-                                webrtc::kTraceWarning | webrtc::kTraceError |
-                                webrtc::kTraceCritical;
-const int kElevatedTraceFilter = kDefaultTraceFilter | webrtc::kTraceStateInfo |
-                                 webrtc::kTraceInfo;
 
 constexpr int kNackRtpHistoryMs = 5000;
 
@@ -254,7 +247,6 @@ WebRtcVoiceEngine::~WebRtcVoiceEngine() {
   if (initialized_) {
     StopAecDump();
     voe_wrapper_->base()->Terminate();
-    webrtc::Trace::SetTraceCallback(nullptr);
   }
 }
 
@@ -287,13 +279,8 @@ void WebRtcVoiceEngine::Init() {
 
   channel_config_.enable_voice_pacing = true;
 
-  // Temporarily turn logging level up for the Init() call.
-  webrtc::Trace::SetTraceCallback(this);
-  webrtc::Trace::set_level_filter(kElevatedTraceFilter);
-  LOG(LS_INFO) << webrtc::VoiceEngine::GetVersionString();
   RTC_CHECK_EQ(0,
                voe_wrapper_->base()->Init(adm_.get(), apm(), decoder_factory_));
-  webrtc::Trace::set_level_filter(kDefaultTraceFilter);
 
   // No ADM supplied? Get the default one from VoE.
   if (!adm_) {
@@ -628,14 +615,18 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     LOG(LS_INFO) << "Recording sample rate is "
                  << *options.recording_sample_rate;
     if (adm()->SetRecordingSampleRate(*options.recording_sample_rate)) {
-      LOG_RTCERR1(SetRecordingSampleRate, *options.recording_sample_rate);
+      LOG(LS_WARNING) << "SetRecordingSampleRate("
+                      << *options.recording_sample_rate << ") failed, err="
+                      << adm()->LastError();
     }
   }
 
   if (options.playout_sample_rate) {
     LOG(LS_INFO) << "Playout sample rate is " << *options.playout_sample_rate;
     if (adm()->SetPlayoutSampleRate(*options.playout_sample_rate)) {
-      LOG_RTCERR1(SetPlayoutSampleRate, *options.playout_sample_rate);
+      LOG(LS_WARNING) << "SetPlayoutSampleRate("
+                      << *options.playout_sample_rate << ") failed, err="
+                      << adm()->LastError();
     }
   }
   return true;
@@ -671,35 +662,6 @@ RtpCapabilities WebRtcVoiceEngine::GetCapabilities() const {
         webrtc::RtpExtension::kTransportSequenceNumberDefaultId));
   }
   return capabilities;
-}
-
-int WebRtcVoiceEngine::GetLastEngineError() {
-  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  return voe_wrapper_->error();
-}
-
-void WebRtcVoiceEngine::Print(webrtc::TraceLevel level, const char* trace,
-                              int length) {
-  // Note: This callback can happen on any thread!
-  rtc::LoggingSeverity sev = rtc::LS_VERBOSE;
-  if (level == webrtc::kTraceError || level == webrtc::kTraceCritical)
-    sev = rtc::LS_ERROR;
-  else if (level == webrtc::kTraceWarning)
-    sev = rtc::LS_WARNING;
-  else if (level == webrtc::kTraceStateInfo || level == webrtc::kTraceInfo)
-    sev = rtc::LS_INFO;
-  else if (level == webrtc::kTraceTerseInfo)
-    sev = rtc::LS_INFO;
-
-  // Skip past boilerplate prefix text.
-  if (length < 72) {
-    std::string msg(trace, length);
-    LOG(LS_ERROR) << "Malformed webrtc log message: ";
-    LOG_V(sev) << msg;
-  } else {
-    std::string msg(trace + 71, length - 72);
-    LOG_V(sev) << "webrtc: " << msg;
-  }
 }
 
 void WebRtcVoiceEngine::RegisterChannel(WebRtcVoiceMediaChannel* channel) {
@@ -1832,7 +1794,7 @@ bool WebRtcVoiceMediaChannel::SetAudioSend(uint32_t ssrc,
 int WebRtcVoiceMediaChannel::CreateVoEChannel() {
   int id = engine()->CreateVoEChannel();
   if (id == -1) {
-    LOG_RTCERR0(CreateVoEChannel);
+    LOG(LS_WARNING) << "CreateVoEChannel() failed.";
     return -1;
   }
 
@@ -1841,7 +1803,7 @@ int WebRtcVoiceMediaChannel::CreateVoEChannel() {
 
 bool WebRtcVoiceMediaChannel::DeleteVoEChannel(int channel) {
   if (engine()->voe()->base()->DeleteChannel(channel) == -1) {
-    LOG_RTCERR1(DeleteChannel, channel);
+    LOG(LS_WARNING) << "DeleteChannel(" << channel << ") failed.";
     return false;
   }
   return true;
@@ -2260,12 +2222,30 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     sinfo.residual_echo_likelihood_recent_max =
         stats.residual_echo_likelihood_recent_max;
     sinfo.typing_noise_detected = (send_ ? stats.typing_noise_detected : false);
+    sinfo.ana_statistics = stats.ana_statistics;
     info->senders.push_back(sinfo);
   }
 
   // Get SSRC and stats for each receiver.
   RTC_DCHECK_EQ(info->receivers.size(), 0U);
   for (const auto& stream : recv_streams_) {
+    uint32_t ssrc = stream.first;
+    // When SSRCs are unsignaled, there's only one audio MediaStreamTrack, but
+    // multiple RTP streams can be received over time (if the SSRC changes for
+    // whatever reason). We only want the RTCMediaStreamTrackStats to represent
+    // the stats for the most recent stream (the one whose audio is actually
+    // routed to the MediaStreamTrack), so here we ignore any unsignaled SSRCs
+    // except for the most recent one (last in the vector). This is somewhat of
+    // a hack, and means you don't get *any* stats for these inactive streams,
+    // but it's slightly better than the previous behavior, which was "highest
+    // SSRC wins".
+    // See: https://bugs.chromium.org/p/webrtc/issues/detail?id=8158
+    if (!unsignaled_recv_ssrcs_.empty()) {
+      auto end_it = --unsignaled_recv_ssrcs_.end();
+      if (std::find(unsignaled_recv_ssrcs_.begin(), end_it, ssrc) != end_it) {
+        continue;
+      }
+    }
     webrtc::AudioReceiveStream::Stats stats = stream.second->GetStats();
     VoiceReceiverInfo rinfo;
     rinfo.add_ssrc(stats.remote_ssrc);
@@ -2285,6 +2265,8 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     rinfo.total_samples_received = stats.total_samples_received;
     rinfo.total_output_duration = stats.total_output_duration;
     rinfo.concealed_samples = stats.concealed_samples;
+    rinfo.concealment_events = stats.concealment_events;
+    rinfo.jitter_buffer_delay_seconds = stats.jitter_buffer_delay_seconds;
     rinfo.expand_rate = stats.expand_rate;
     rinfo.speech_expand_rate = stats.speech_expand_rate;
     rinfo.secondary_decoded_rate = stats.secondary_decoded_rate;

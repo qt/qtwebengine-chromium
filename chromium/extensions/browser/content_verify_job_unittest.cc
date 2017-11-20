@@ -26,11 +26,11 @@ namespace {
 scoped_refptr<ContentHashReader> CreateContentHashReader(
     const Extension& extension,
     const base::FilePath& extension_resource_path) {
-  return make_scoped_refptr(new ContentHashReader(
+  return base::MakeRefCounted<ContentHashReader>(
       extension.id(), *extension.version(), extension.path(),
       extension_resource_path,
       ContentVerifierKey(kWebstoreSignaturesPublicKey,
-                         kWebstoreSignaturesPublicKeySize)));
+                         kWebstoreSignaturesPublicKeySize));
 }
 
 void DoNothingWithReasonParam(ContentVerifyJob::FailureReason reason) {}
@@ -186,6 +186,26 @@ TEST_F(ContentVerifyJobUnittest, DeletedAndMissingFiles) {
     EXPECT_EQ(ContentVerifyJob::NONE,
               RunContentVerifyJob(*extension.get(), non_existent_resource_path,
                                   empty_contents));
+  }
+
+  {
+    // Now create a resource foo.js which exists on disk but is not in the
+    // extension's verified_contents.json. Verification should result in
+    // NO_HASHES_FOR_FILE since the extension is trying to load a file the
+    // extension should not have.
+    const base::FilePath::CharType kUnexpectedResource[] =
+        FILE_PATH_LITERAL("foo.js");
+    base::FilePath unexpected_resource_path(kUnexpectedResource);
+
+    base::FilePath full_path =
+        unzipped_path.Append(base::FilePath(unexpected_resource_path));
+    base::WriteFile(full_path, "42", sizeof("42"));
+
+    std::string contents;
+    base::ReadFileToString(full_path, &contents);
+    EXPECT_EQ(ContentVerifyJob::NO_HASHES_FOR_FILE,
+              RunContentVerifyJob(*extension.get(), unexpected_resource_path,
+                                  contents));
   }
 }
 

@@ -42,11 +42,15 @@
 
 namespace blink {
 
-using PluginSet = HeapHashSet<Member<PluginView>>;
-static PluginSet& PluginsPendingDispose() {
-  DEFINE_STATIC_LOCAL(PluginSet, set, (new PluginSet));
+namespace {
+
+using PluginSet = PersistentHeapHashSet<Member<PluginView>>;
+PluginSet& PluginsPendingDispose() {
+  DEFINE_STATIC_LOCAL(PluginSet, set, ());
   return set;
 }
+
+}  // namespace
 
 SubframeLoadingDisabler::SubtreeRootSet&
 SubframeLoadingDisabler::DisabledSubtreeRoots() {
@@ -54,14 +58,14 @@ SubframeLoadingDisabler::DisabledSubtreeRoots() {
   return nodes;
 }
 
-static unsigned g_plugin_dispose_suspend_count = 0;
-
-HTMLFrameOwnerElement::PluginDisposeSuspendScope::PluginDisposeSuspendScope() {
-  ++g_plugin_dispose_suspend_count;
-}
+// static
+int HTMLFrameOwnerElement::PluginDisposeSuspendScope::suspend_count_ = 0;
 
 void HTMLFrameOwnerElement::PluginDisposeSuspendScope::
     PerformDeferredPluginDispose() {
+  DCHECK_EQ(suspend_count_, 1);
+  suspend_count_ = 0;
+
   PluginSet dispose_set;
   PluginsPendingDispose().swap(dispose_set);
   for (const auto& plugin : dispose_set) {
@@ -69,19 +73,13 @@ void HTMLFrameOwnerElement::PluginDisposeSuspendScope::
   }
 }
 
-HTMLFrameOwnerElement::PluginDisposeSuspendScope::~PluginDisposeSuspendScope() {
-  DCHECK_GT(g_plugin_dispose_suspend_count, 0u);
-  if (g_plugin_dispose_suspend_count == 1)
-    PerformDeferredPluginDispose();
-  --g_plugin_dispose_suspend_count;
-}
-
 HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tag_name,
                                              Document& document)
     : HTMLElement(tag_name, document),
       content_frame_(nullptr),
       embedded_content_view_(nullptr),
-      sandbox_flags_(kSandboxNone) {}
+      sandbox_flags_(kSandboxNone),
+      did_load_non_empty_document_(false) {}
 
 LayoutEmbeddedContent* HTMLFrameOwnerElement::GetLayoutEmbeddedContent() const {
   // HTMLObjectElement and HTMLEmbedElement may return arbitrary layoutObjects
@@ -159,9 +157,10 @@ bool HTMLFrameOwnerElement::IsKeyboardFocusable() const {
 }
 
 void HTMLFrameOwnerElement::DisposePluginSoon(PluginView* plugin) {
-  if (g_plugin_dispose_suspend_count)
+  if (PluginDisposeSuspendScope::suspend_count_) {
     PluginsPendingDispose().insert(plugin);
-  else
+    PluginDisposeSuspendScope::suspend_count_ |= 1;
+  } else
     plugin->Dispose();
 }
 

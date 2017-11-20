@@ -83,7 +83,7 @@ gl::Error Framebuffer9::readPixelsImpl(const gl::Context *context,
                                        GLenum type,
                                        size_t outputPitch,
                                        const gl::PixelPackState &pack,
-                                       uint8_t *pixels) const
+                                       uint8_t *pixels)
 {
     ASSERT(pack.pixelBuffer.get() == nullptr);
 
@@ -403,6 +403,12 @@ GLenum Framebuffer9::getRenderTargetImplementationFormat(RenderTargetD3D *render
     RenderTarget9 *renderTarget9 = GetAs<RenderTarget9>(renderTarget);
     const d3d9::D3DFormat &d3dFormatInfo = d3d9::GetD3DFormatInfo(renderTarget9->getD3DFormat());
     return d3dFormatInfo.info().glInternalFormat;
+}
+
+gl::Error Framebuffer9::getSamplePosition(size_t index, GLfloat *xy) const
+{
+    UNREACHABLE();
+    return gl::InternalError() << "getSamplePosition is unsupported to d3d9.";
 }
 
 }  // namespace rx

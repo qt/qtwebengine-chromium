@@ -35,15 +35,19 @@ cr.define('extensions', function() {
     behaviors: [I18nBehavior],
 
     properties: {
-      /** @type {extensions.Sidebar} */
-      sidebar: Object,
-
       /** @type {extensions.Toolbar} */
       toolbar: Object,
 
       // This is not typed because it implements multiple interfaces, and is
       // passed to different elements as different types.
       delegate: Object,
+
+      isGuest_: {
+        type: Boolean,
+        value: function() {
+          return loadTimeData.getBoolean('isGuest');
+        },
+      },
 
       inDevMode: {
         type: Boolean,
@@ -104,6 +108,20 @@ cr.define('extensions', function() {
         type: Boolean,
         value: false,
       },
+
+      // <if expr="chromeos">
+      /** @private */
+      kioskEnabled_: {
+        type: Boolean,
+        value: false,
+      },
+
+      /** @private */
+      showKioskDialog_: {
+        type: Boolean,
+        value: false,
+      },
+      // </if>
     },
 
     /**
@@ -113,17 +131,44 @@ cr.define('extensions', function() {
      */
     currentPage_: null,
 
+    /**
+     * The ID of the listner on |extensions.navigation|. Stored so that the
+     * listener can be removed when this element is detached (happens in tests).
+     * @private {?number}
+     */
+    navigationListener_: null,
+
+    /** @override */
     created: function() {
       this.readyPromiseResolver = new PromiseResolver();
     },
 
+    /** @override */
     ready: function() {
       this.toolbar =
           /** @type {extensions.Toolbar} */ (this.$$('extensions-toolbar'));
       this.readyPromiseResolver.resolve();
-      extensions.navigation.onRouteChanged(newPage => {
+
+      // <if expr="chromeos">
+      extensions.KioskBrowserProxyImpl.getInstance()
+          .initializeKioskAppSettings()
+          .then(params => {
+            this.kioskEnabled_ = params.kioskEnabled;
+          });
+      // </if>
+    },
+
+    /** @override */
+    attached: function() {
+      this.navigationListener_ = extensions.navigation.addListener(newPage => {
         this.changePage_(newPage);
       });
+    },
+
+    /** @override */
+    detached: function() {
+      assert(extensions.navigation.removeListener(this.navigationListener_));
+      this.navigationListener_ = null;
     },
 
     get keyboardShortcuts() {
@@ -165,7 +210,19 @@ cr.define('extensions', function() {
 
     /** @private */
     onMenuButtonTap_: function() {
-      this.$.drawer.toggle();
+      this.$.drawer.openDrawer();
+
+      // Sidebar needs manager to inform it of what to highlight since it
+      // has no access to item-specific page.
+      let page = extensions.navigation.getCurrentPage();
+      if (page.extensionId) {
+        // Find out what type of item we're looking at, and replace page info
+        // with that list type.
+        const data = assert(this.getData_(page.extensionId));
+        page = {page: Page.LIST, type: extensions.getItemListType(data)};
+      }
+
+      this.$.sidebar.updateSelected(page);
     },
 
     /**
@@ -288,7 +345,7 @@ cr.define('extensions', function() {
      */
     changePage_: function(newPage) {
       this.$.drawer.closeDrawer();
-      if (this.optionsDialog.open)
+      if (this.optionsDialog && this.optionsDialog.open)
         this.optionsDialog.close();
 
       const fromPage = this.currentPage_ ? this.currentPage_.page : null;
@@ -298,7 +355,7 @@ cr.define('extensions', function() {
         data = assert(this.getData_(newPage.extensionId));
 
       if (newPage.hasOwnProperty('type'))
-        this.listType_ = newPage.type;
+        this.listType_ = /** @type {extensions.ShowingType} */ (newPage.type);
 
       if (toPage == Page.DETAILS)
         this.detailViewItem_ = assert(data);
@@ -326,6 +383,17 @@ cr.define('extensions', function() {
     onPackTap_: function() {
       this.$['pack-dialog'].show();
     },
+
+    // <if expr="chromeos">
+    /** @private */
+    onKioskTap_: function() {
+      this.showKioskDialog_ = true;
+    },
+
+    onKioskDialogClose_: function() {
+      this.showKioskDialog_ = false;
+    },
+    // </if>
 
     /**
      * @param {!extensions.ShowingType} listType

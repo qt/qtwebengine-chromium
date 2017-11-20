@@ -7,7 +7,6 @@
 #include <tuple>
 #include <utility>
 
-#include "base/guid.h"
 #include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ptr_util.h"
@@ -43,9 +42,11 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/browser_side_navigation_policy.h"
+#include "content/public/common/content_features.h"
 
 #if defined(OS_ANDROID)
 #include "content/public/browser/render_widget_host_view.h"
@@ -438,7 +439,7 @@ void RenderFrameDevToolsAgentHost::WebContentsCreated(
 
 RenderFrameDevToolsAgentHost::RenderFrameDevToolsAgentHost(
     FrameTreeNode* frame_tree_node)
-    : DevToolsAgentHostImpl(base::GenerateGUID()),
+    : DevToolsAgentHostImpl(frame_tree_node->devtools_frame_token().ToString()),
       frame_trace_recorder_(nullptr),
       handlers_frame_host_(nullptr),
       current_frame_crashed_(false),
@@ -531,7 +532,7 @@ void RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
   session->AddHandler(base::WrapUnique(new protocol::InspectorHandler()));
   session->AddHandler(base::WrapUnique(new protocol::IOHandler(
       GetIOContext())));
-  session->AddHandler(base::WrapUnique(new protocol::NetworkHandler()));
+  session->AddHandler(base::WrapUnique(new protocol::NetworkHandler(GetId())));
   session->AddHandler(base::WrapUnique(new protocol::SchemaHandler()));
   session->AddHandler(base::WrapUnique(new protocol::ServiceWorkerHandler()));
   session->AddHandler(base::WrapUnique(new protocol::StorageHandler()));
@@ -669,6 +670,7 @@ void RenderFrameDevToolsAgentHost::ReadyToCommitNavigation(
 
 void RenderFrameDevToolsAgentHost::DidFinishNavigation(
     NavigationHandle* navigation_handle) {
+  NotifyNavigated();
   if (!IsBrowserSideNavigationEnabled()) {
     // CommitPending may destruct |this|.
     scoped_refptr<RenderFrameDevToolsAgentHost> protect(this);
@@ -771,8 +773,11 @@ void RenderFrameDevToolsAgentHost::MaybeReattachToRenderFrame() {
 void RenderFrameDevToolsAgentHost::GrantPolicy(RenderFrameHostImpl* host) {
   if (!host)
     return;
+  uint32_t process_id = host->GetProcess()->GetID();
+  if (base::FeatureList::IsEnabled(features::kNetworkService))
+    GetNetworkService()->SetRawHeadersAccess(process_id, true);
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadRawCookies(
-      host->GetProcess()->GetID());
+      process_id);
 }
 
 void RenderFrameDevToolsAgentHost::RevokePolicy(RenderFrameHostImpl* host) {
@@ -803,6 +808,8 @@ void RenderFrameDevToolsAgentHost::RevokePolicy(RenderFrameHostImpl* host) {
 
   // We are the last to disconnect from the renderer -> revoke permissions.
   if (!process_has_agents) {
+    if (base::FeatureList::IsEnabled(features::kNetworkService))
+      GetNetworkService()->SetRawHeadersAccess(process_host->GetID(), false);
     ChildProcessSecurityPolicyImpl::GetInstance()->RevokeReadRawCookies(
         process_host->GetID());
   }
@@ -1056,7 +1063,7 @@ void RenderFrameDevToolsAgentHost::WasHidden() {
 }
 
 void RenderFrameDevToolsAgentHost::DidReceiveCompositorFrame() {
-  const cc::CompositorFrameMetadata& metadata =
+  const viz::CompositorFrameMetadata& metadata =
       RenderWidgetHostImpl::From(
           web_contents()->GetRenderViewHost()->GetWidget())
           ->last_frame_metadata();
@@ -1167,6 +1174,11 @@ std::string RenderFrameDevToolsAgentHost::GetParentId() {
   return "";
 }
 
+std::string RenderFrameDevToolsAgentHost::GetOpenerId() {
+  FrameTreeNode* opener = frame_tree_node_->original_opener();
+  return opener ? opener->devtools_frame_token().ToString() : std::string();
+}
+
 std::string RenderFrameDevToolsAgentHost::GetType() {
   if (web_contents() &&
       static_cast<WebContentsImpl*>(web_contents())->GetOuterWebContents()) {
@@ -1260,14 +1272,14 @@ bool RenderFrameDevToolsAgentHost::Close() {
 }
 
 base::TimeTicks RenderFrameDevToolsAgentHost::GetLastActivityTime() {
-  if (content::WebContents* contents = web_contents())
+  if (WebContents* contents = web_contents())
     return contents->GetLastActiveTime();
   return base::TimeTicks();
 }
 
 void RenderFrameDevToolsAgentHost::SignalSynchronousSwapCompositorFrame(
     RenderFrameHost* frame_host,
-    cc::CompositorFrameMetadata frame_metadata) {
+    viz::CompositorFrameMetadata frame_metadata) {
   scoped_refptr<RenderFrameDevToolsAgentHost> dtah(FindAgentHost(
       static_cast<RenderFrameHostImpl*>(frame_host)->frame_tree_node()));
   if (dtah) {
@@ -1281,7 +1293,7 @@ void RenderFrameDevToolsAgentHost::SignalSynchronousSwapCompositorFrame(
 }
 
 void RenderFrameDevToolsAgentHost::SynchronousSwapCompositorFrame(
-    cc::CompositorFrameMetadata frame_metadata) {
+    viz::CompositorFrameMetadata frame_metadata) {
   for (auto* page : protocol::PageHandler::ForAgentHost(this))
     page->OnSynchronousSwapCompositorFrame(frame_metadata.Clone());
   for (auto* input : protocol::InputHandler::ForAgentHost(this))

@@ -8,11 +8,12 @@
 #define CORE_FPDFAPI_PAGE_CPDF_COLORSPACE_H_
 
 #include <memory>
+#include <set>
 
 #include "core/fpdfapi/page/cpdf_pattern.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 #define PDFCS_DEVICEGRAY 1
 #define PDFCS_DEVICERGB 2
@@ -41,9 +42,13 @@ struct PatternValue {
 class CPDF_ColorSpace {
  public:
   static CPDF_ColorSpace* GetStockCS(int Family);
-  static CPDF_ColorSpace* ColorspaceFromName(const CFX_ByteString& name);
+  static CPDF_ColorSpace* ColorspaceFromName(const ByteString& name);
   static std::unique_ptr<CPDF_ColorSpace> Load(CPDF_Document* pDoc,
                                                CPDF_Object* pCSObj);
+  static std::unique_ptr<CPDF_ColorSpace> Load(
+      CPDF_Document* pDoc,
+      CPDF_Object* pCSObj,
+      std::set<CPDF_Object*>* pVisited);
 
   void Release();
 
@@ -74,12 +79,14 @@ class CPDF_ColorSpace {
   CPDF_ColorSpace(CPDF_Document* pDoc, int family, uint32_t nComponents);
   virtual ~CPDF_ColorSpace();
 
-  virtual bool v_Load(CPDF_Document* pDoc, CPDF_Array* pArray);
+  virtual bool v_Load(CPDF_Document* pDoc,
+                      CPDF_Array* pArray,
+                      std::set<CPDF_Object*>* pVisited);
 
-  CFX_UnownedPtr<CPDF_Document> const m_pDocument;
+  UnownedPtr<CPDF_Document> const m_pDocument;
   int m_Family;
   uint32_t m_nComponents;
-  CFX_UnownedPtr<CPDF_Array> m_pArray;
+  UnownedPtr<CPDF_Array> m_pArray;
   uint32_t m_dwStdConversion;
 };
 using CPDF_CountedColorSpace = CPDF_CountedObject<CPDF_ColorSpace>;

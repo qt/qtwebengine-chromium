@@ -21,7 +21,6 @@
 #include "platform/image-decoders/ImageDecoder.h"
 
 #include <memory>
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/BitmapImageMetrics.h"
 #include "platform/image-decoders/FastSharedBufferReader.h"
 #include "platform/image-decoders/bmp/BMPImageDecoder.h"
@@ -69,14 +68,22 @@ std::unique_ptr<ImageDecoder> ImageDecoder::Create(
     RefPtr<SegmentReader> data,
     bool data_complete,
     AlphaOption alpha_option,
-    const ColorBehavior& color_behavior) {
+    const ColorBehavior& color_behavior,
+    const SkISize& desired_size) {
   // At least kLongestSignatureLength bytes are needed to sniff the signature.
   if (data->size() < kLongestSignatureLength)
     return nullptr;
 
-  const size_t max_decoded_bytes =
-      Platform::Current() ? Platform::Current()->MaxDecodedImageBytes()
-                          : kNoDecodedImageByteLimit;
+  size_t max_decoded_bytes = Platform::Current()
+                                 ? Platform::Current()->MaxDecodedImageBytes()
+                                 : kNoDecodedImageByteLimit;
+  if (!desired_size.isEmpty()) {
+    static const size_t kBytesPerPixels = 4;
+    size_t requested_decoded_bytes =
+        kBytesPerPixels * desired_size.width() * desired_size.height();
+    DCHECK(requested_decoded_bytes <= max_decoded_bytes);
+    max_decoded_bytes = requested_decoded_bytes;
+  }
 
   // Access the first kLongestSignatureLength chars to sniff the signature.
   // (note: FastSharedBufferReader only makes a copy if the bytes are segmented)
@@ -508,13 +515,12 @@ SkColorSpaceXform* ImageDecoder::ColorTransform() {
 
   sk_sp<SkColorSpace> src_color_space = nullptr;
   sk_sp<SkColorSpace> dst_color_space = nullptr;
-  if (color_behavior_.IsTransformToTargetColorSpace()) {
+  if (color_behavior_.IsTransformToSRGB()) {
     if (!embedded_color_space_) {
       return nullptr;
     }
-
     src_color_space = embedded_color_space_;
-    dst_color_space = color_behavior_.TargetColorSpace().ToSkColorSpace();
+    dst_color_space = SkColorSpace::MakeSRGB();
   } else {
     DCHECK(color_behavior_.IsTag());
     src_color_space = embedded_color_space_;

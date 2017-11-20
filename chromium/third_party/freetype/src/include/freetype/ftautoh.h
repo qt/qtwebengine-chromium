@@ -106,6 +106,9 @@ FT_BEGIN_HEADER
    *     FT_Load_Glyph( face, ..., FT_LOAD_FORCE_AUTOHINT );
    *   }
    *
+   * @since:
+   *   2.4.11
+   *
    */
 
 
@@ -227,6 +230,9 @@ FT_BEGIN_HEADER
    *     Note that currently Indic support is rudimentary only, missing blue
    *     zone support.
    *
+   * @since:
+   *   2.4.11
+   *
    */
 #define FT_AUTOHINTER_SCRIPT_NONE   0
 #define FT_AUTOHINTER_SCRIPT_LATIN  1
@@ -243,6 +249,9 @@ FT_BEGIN_HEADER
    *   *Experimental* *only*
    *
    *   The data exchange structure for the @glyph-to-script-map property.
+   *
+   * @since:
+   *   2.4.11
    *
    */
   typedef struct  FT_Prop_GlyphToScriptMap_
@@ -288,6 +297,9 @@ FT_BEGIN_HEADER
    *   any glyph from that face.  In particular, if you have already created
    *   an @FT_Face structure but not loaded any glyph (using the
    *   auto-hinter), a change of the fallback script will affect this face.
+   *
+   * @since:
+   *   2.4.11
    *
    */
 
@@ -372,6 +384,9 @@ FT_BEGIN_HEADER
    *   Set this value right after calling @FT_Set_Char_Size, but before
    *   loading any glyph (using the auto-hinter).
    *
+   * @since:
+   *   2.4.11
+   *
    */
 
 
@@ -404,12 +419,12 @@ FT_BEGIN_HEADER
    *   activate the warp hinting code in the auto-hinter, this property
    *   switches warping on and off.
    *
-   *   Warping only works in `light' auto-hinting mode.  The idea of the
-   *   code is to slightly scale and shift a glyph along the non-hinted
-   *   dimension (which is usually the horizontal axis) so that as much of
-   *   its segments are aligned (more or less) to the grid.  To find out a
-   *   glyph's optimal scaling and shifting value, various parameter
-   *   combinations are tried and scored.
+   *   Warping only works in `normal' auto-hinting mode replacing it.
+   *   The idea of the code is to slightly scale and shift a glyph along
+   *   the non-hinted dimension (which is usually the horizontal axis) so
+   *   that as much of its segments are aligned (more or less) to the grid.
+   *   To find out a glyph's optimal scaling and shifting value, various
+   *   parameter combinations are tried and scored.
    *
    *   By default, warping is off.  The example below shows how to switch on
    *   warping (omitting the error handling).
@@ -437,7 +452,7 @@ FT_BEGIN_HEADER
    *
    *   Since warping is a global property of the auto-hinter it is best to
    *   change its value before rendering any face.  Otherwise, you should
-   *   reload all faces that get auto-hinted in `light' hinting mode.
+   *   reload all faces that get auto-hinted in `normal' hinting mode.
    *
    */
 
@@ -480,6 +495,9 @@ FT_BEGIN_HEADER
    *   variable similar to the CFF driver.  It can also be set per face
    *   using @FT_Face_Properties with @FT_PARAM_TAG_STEM_DARKENING.
    *
+   * @since:
+   *   2.6.2
+   *
    */
 
 
@@ -498,6 +516,9 @@ FT_BEGIN_HEADER
    *   This is a passive setting that only takes effect if the font driver
    *   or autohinter honors it, which the CFF driver always does, but the
    *   autohinter only in `light' hinting mode (as of version 2.7.0).
+   *
+   * @since:
+   *   2.8
    *
    */
 #define FT_PARAM_TAG_STEM_DARKENING \
@@ -519,6 +540,10 @@ FT_BEGIN_HEADER
    *
    *   This property can be set via the `FREETYPE_PROPERTIES' environment
    *   variable similar to the CFF driver.
+   *
+   * @since:
+   *   2.6.2
+   *
    */
 
 

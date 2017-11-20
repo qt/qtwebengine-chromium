@@ -80,6 +80,12 @@ bool ValidateGetProgramResourceiv(Context *context,
                                   GLsizei *length,
                                   GLint *params);
 
+bool ValidateGetProgramInterfaceiv(Context *context,
+                                   GLuint program,
+                                   GLenum programInterface,
+                                   GLenum pname,
+                                   GLint *params);
+
 bool ValidateBindVertexBuffer(ValidationContext *context,
                               GLuint bindingIndex,
                               GLuint buffer,
@@ -109,6 +115,13 @@ bool ValidateBindImageTexture(Context *context,
                               GLint layer,
                               GLenum access,
                               GLenum format);
+
+bool ValidateGenProgramPipelines(Context *context, GLint n, GLuint *pipelines);
+bool ValidateDeleteProgramPipelines(Context *context, GLint n, const GLuint *pipelines);
+bool ValidateBindProgramPipeline(Context *context, GLuint pipeline);
+bool ValidateIsProgramPipeline(Context *context, GLuint pipeline);
+
+bool ValidateSampleMaski(Context *context, GLuint maskNumber);
 
 }  // namespace gl
 

@@ -5,9 +5,9 @@
 #ifndef CONTENT_PUBLIC_BROWSER_WORKER_SERVICE_H_
 #define CONTENT_PUBLIC_BROWSER_WORKER_SERVICE_H_
 
+#include <string>
 #include <vector>
 
-#include "base/process/process.h"
 #include "content/common/content_export.h"
 #include "url/gurl.h"
 
@@ -17,24 +17,28 @@ class WorkerServiceObserver;
 
 // A singleton for managing HTML5 shared web workers. These may be run in a
 // separate process, since multiple renderer processes can be talking to a
-// single shared worker. All the methods below can only be called on the IO
+// single shared worker. All the methods below can only be called on the UI
 // thread.
-class WorkerService {
+class CONTENT_EXPORT WorkerService {
  public:
   virtual ~WorkerService() {}
 
   // Returns the WorkerService singleton.
-  CONTENT_EXPORT static WorkerService* GetInstance();
+  static WorkerService* GetInstance();
 
   // Terminates the given worker. Returns true if the process was found.
   virtual bool TerminateWorker(int process_id, int route_id) = 0;
 
+  // Terminates all workers and notifies when complete. This is used for
+  // testing when it is important to make sure that all shared worker activity
+  // has stopped.
+  virtual void TerminateAllWorkersForTesting(base::OnceClosure callback) = 0;
+
   struct WorkerInfo {
     GURL url;
-    base::string16 name;
+    std::string name;
     int process_id;
     int route_id;
-    base::ProcessHandle handle;
   };
 
   // Return information about all the currently running workers.

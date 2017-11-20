@@ -8,11 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/api/statstypes.h"
+#include "api/statstypes.h"
 
 #include <string.h>
 
-#include "webrtc/rtc_base/checks.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/refcountedobject.h"
 
 // TODO(tommi): Could we have a static map of value name -> expected type
 // and use this to RTC_DCHECK on correct usage (somewhat strongly typed values)?
@@ -373,6 +374,8 @@ const char* StatsReport::Value::display_name() const {
       return "bytesSent";
     case kStatsValueNameConcealedSamples:
       return "concealedSamples";
+    case kStatsValueNameConcealmentEvents:
+      return "concealmentEvents";
     case kStatsValueNamePacketsSent:
       return "packetsSent";
     case kStatsValueNameBytesReceived:
@@ -401,6 +404,8 @@ const char* StatsReport::Value::display_name() const {
       return "framesDecoded";
     case kStatsValueNameFramesEncoded:
       return "framesEncoded";
+    case kStatsValueNameJitterBufferDelay:
+      return "jitterBufferDelay";
     case kStatsValueNameCodecImplementationName:
       return "codecImplementationName";
     case kStatsValueNameMediaType:
@@ -586,6 +591,20 @@ const char* StatsReport::Value::display_name() const {
       return "googResidualEchoLikelihood";
     case kStatsValueNameResidualEchoLikelihoodRecentMax:
       return "googResidualEchoLikelihoodRecentMax";
+    case kStatsValueNameAnaBitrateActionCounter:
+      return "googAnaBitrateActionCounter";
+    case kStatsValueNameAnaChannelActionCounter:
+      return "googAnaChannelActionCounter";
+    case kStatsValueNameAnaDtxActionCounter:
+      return "googAnaDtxActionCounter";
+    case kStatsValueNameAnaFecActionCounter:
+      return "googAnaFecActionCounter";
+    case kStatsValueNameAnaFrameLengthIncreaseCounter:
+      return "googAnaFrameLengthIncreaseCounter";
+    case kStatsValueNameAnaFrameLengthDecreaseCounter:
+      return "googAnaFrameLengthDecreaseCounter";
+    case kStatsValueNameAnaUplinkPacketLossFraction:
+      return "googAnaUplinkPacketLossFraction";
     case kStatsValueNameRetransmitBitrate:
       return "googRetransmitBitrate";
     case kStatsValueNameRtt:

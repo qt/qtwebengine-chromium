@@ -7,15 +7,14 @@
 
 #include "GrAtlasGlyphCache.h"
 #include "GrContext.h"
+#include "GrDistanceFieldGenFromVector.h"
 #include "GrGpu.h"
 #include "GrRectanizer.h"
-#include "GrSurfacePriv.h"
+
 #include "SkAutoMalloc.h"
+#include "SkDistanceFieldGen.h"
 #include "SkMathPriv.h"
 #include "SkString.h"
-
-#include "SkDistanceFieldGen.h"
-#include "GrDistanceFieldGenFromVector.h"
 
 bool GrAtlasGlyphCache::initAtlas(GrMaskFormat format) {
     int index = MaskFormatToAtlasIndex(format);
@@ -59,23 +58,17 @@ GrAtlasGlyphCache::GrAtlasGlyphCache(GrContext* context, float maxTextureBytes)
     // format is already very compact.
     fAtlasConfigs[kA8_GrMaskFormat].fWidth = maxDim;
     fAtlasConfigs[kA8_GrMaskFormat].fHeight = maxDim;
-    fAtlasConfigs[kA8_GrMaskFormat].fLog2Width = log2MaxDim;
-    fAtlasConfigs[kA8_GrMaskFormat].fLog2Height = log2MaxDim;
     fAtlasConfigs[kA8_GrMaskFormat].fPlotWidth = maxPlot;
     fAtlasConfigs[kA8_GrMaskFormat].fPlotHeight = minPlot;
 
     // A565 and ARGB use maxDim x minDim.
     fAtlasConfigs[kA565_GrMaskFormat].fWidth = minDim;
     fAtlasConfigs[kA565_GrMaskFormat].fHeight = maxDim;
-    fAtlasConfigs[kA565_GrMaskFormat].fLog2Width = log2MinDim;
-    fAtlasConfigs[kA565_GrMaskFormat].fLog2Height = log2MaxDim;
     fAtlasConfigs[kA565_GrMaskFormat].fPlotWidth = minPlot;
     fAtlasConfigs[kA565_GrMaskFormat].fPlotHeight = minPlot;
 
     fAtlasConfigs[kARGB_GrMaskFormat].fWidth = minDim;
     fAtlasConfigs[kARGB_GrMaskFormat].fHeight = maxDim;
-    fAtlasConfigs[kARGB_GrMaskFormat].fLog2Width = log2MinDim;
-    fAtlasConfigs[kARGB_GrMaskFormat].fLog2Height = log2MaxDim;
     fAtlasConfigs[kARGB_GrMaskFormat].fPlotWidth = minPlot;
     fAtlasConfigs[kARGB_GrMaskFormat].fPlotHeight = minPlot;
 }
@@ -183,16 +176,18 @@ void GrAtlasGlyphCache::dump() const {
     static int gDumpCount = 0;
     for (int i = 0; i < kMaskFormatCount; ++i) {
         if (fAtlases[i]) {
-            sk_sp<GrTextureProxy> proxy = fAtlases[i]->getProxy();
-            if (proxy) {
-                SkString filename;
+            const sk_sp<GrTextureProxy>* proxies = fAtlases[i]->getProxies();
+            for (int pageIdx = 0; pageIdx < GrDrawOpAtlas::kMaxPages; ++pageIdx) {
+                if (proxies[pageIdx]) {
+                    SkString filename;
 #ifdef SK_BUILD_FOR_ANDROID
-                filename.printf("/sdcard/fontcache_%d%d.png", gDumpCount, i);
+                    filename.printf("/sdcard/fontcache_%d%d%d.png", gDumpCount, i, pageIdx);
 #else
-                filename.printf("fontcache_%d%d.png", gDumpCount, i);
+                    filename.printf("fontcache_%d%d%d.png", gDumpCount, i, pageIdx);
 #endif
 
-                save_pixels(fContext, proxy.get(), filename.c_str());
+                    save_pixels(fContext, proxies[pageIdx].get(), filename.c_str());
+                }
             }
         }
     }

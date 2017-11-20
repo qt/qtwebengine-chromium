@@ -27,6 +27,24 @@ bool AbsoluteVerticalNeedsEstimate(const ComputedStyle& style) {
          (height.IsAuto() && (style.Top().IsAuto() || style.Bottom().IsAuto()));
 }
 
+// Dominant side:
+// htb ltr => top left
+// htb rtl => top right
+// vlr ltr => top left
+// vlr rtl => bottom left
+// vrl ltr => top right
+// vrl rtl => bottom right
+bool IsLeftDominant(const NGConstraintSpace& space) {
+  return (space.WritingMode() != kVerticalRightLeft) &&
+         !(space.WritingMode() == kHorizontalTopBottom &&
+           space.Direction() == TextDirection::kRtl);
+}
+
+bool IsTopDominant(const NGConstraintSpace& space) {
+  return (space.WritingMode() == kHorizontalTopBottom) ||
+         (space.Direction() != TextDirection::kRtl);
+}
+
 LayoutUnit ResolveWidth(const Length& width,
                         const NGConstraintSpace& space,
                         const ComputedStyle& style,
@@ -54,6 +72,24 @@ LayoutUnit ResolveHeight(const Length& height,
                             resolve_type);
 }
 
+LayoutUnit HorizontalBorderPadding(const NGConstraintSpace& space,
+                                   const ComputedStyle& style) {
+  NGLogicalSize percentage_logical = space.PercentageResolutionSize();
+  return ValueForLength(style.PaddingLeft(), percentage_logical.inline_size) +
+         ValueForLength(style.PaddingRight(), percentage_logical.inline_size) +
+         LayoutUnit(style.BorderLeftWidth()) +
+         LayoutUnit(style.BorderRightWidth());
+}
+
+LayoutUnit VerticalBorderPadding(const NGConstraintSpace& space,
+                                 const ComputedStyle& style) {
+  NGLogicalSize percentage_logical = space.PercentageResolutionSize();
+  return ValueForLength(style.PaddingTop(), percentage_logical.inline_size) +
+         ValueForLength(style.PaddingBottom(), percentage_logical.inline_size) +
+         LayoutUnit(style.BorderTopWidth()) +
+         LayoutUnit(style.BorderBottomWidth());
+}
+
 // Implement absolute horizontal size resolution algorithm.
 // https://www.w3.org/TR/css-position-3/#abs-non-replaced-width
 void ComputeAbsoluteHorizontal(const NGConstraintSpace& space,
@@ -65,12 +101,6 @@ void ComputeAbsoluteHorizontal(const NGConstraintSpace& space,
   NGLogicalSize percentage_logical = space.PercentageResolutionSize();
   NGPhysicalSize percentage_physical =
       percentage_logical.ConvertToPhysical(space.WritingMode());
-  LayoutUnit border_left(style.BorderLeftWidth());
-  LayoutUnit border_right(style.BorderRightWidth());
-  LayoutUnit padding_left =
-      ValueForLength(style.PaddingLeft(), percentage_logical.inline_size);
-  LayoutUnit padding_right =
-      ValueForLength(style.PaddingRight(), percentage_logical.inline_size);
   Optional<LayoutUnit> margin_left;
   if (!style.MarginLeft().IsAuto())
     margin_left =
@@ -85,8 +115,7 @@ void ComputeAbsoluteHorizontal(const NGConstraintSpace& space,
   Optional<LayoutUnit> right;
   if (!style.Right().IsAuto())
     right = ValueForLength(style.Right(), percentage_physical.width);
-  LayoutUnit border_padding =
-      border_left + border_right + padding_left + padding_right;
+  LayoutUnit border_padding = HorizontalBorderPadding(space, style);
   Optional<LayoutUnit> width = incoming_width;
   NGPhysicalSize container_size =
       space.AvailableSize().ConvertToPhysical(space.WritingMode());
@@ -101,13 +130,13 @@ void ComputeAbsoluteHorizontal(const NGConstraintSpace& space,
     if (!margin_right)
       margin_right = LayoutUnit();
     DCHECK(child_minmax.has_value());
-    width = child_minmax->ShrinkToFit(container_size.width);
-    if (space.Direction() == TextDirection::kLtr) {
-      left = static_position.LeftPosition(container_size.width, *width,
-                                          *margin_left, *margin_right);
+    width = child_minmax->ShrinkToFit(container_size.width) + border_padding;
+    if (IsLeftDominant(space)) {
+      left = static_position.LeftInset(container_size.width, *width,
+                                       *margin_left, *margin_right);
     } else {
-      right = static_position.RightPosition(container_size.width, *width,
-                                            *margin_left, *margin_right);
+      right = static_position.RightInset(container_size.width, *width,
+                                         *margin_left, *margin_right);
     }
   } else if (left && right && width) {
     // Standard: "If left, right, and width are not auto:"
@@ -120,7 +149,7 @@ void ComputeAbsoluteHorizontal(const NGConstraintSpace& space,
         margin_right = margin_space / 2;
       } else {
         // Margins are negative.
-        if (space.Direction() == TextDirection::kLtr) {
+        if (IsLeftDominant(space)) {
           margin_left = LayoutUnit();
           margin_right = margin_space;
         } else {
@@ -137,7 +166,7 @@ void ComputeAbsoluteHorizontal(const NGConstraintSpace& space,
       LayoutUnit margin_extra = margin_space - *margin_left - *margin_right;
       if (margin_extra) {
         // Relax the end.
-        if (space.Direction() == TextDirection::kLtr)
+        if (IsLeftDominant(space))
           right = *right + margin_extra;
         else
           left = *left + margin_extra;
@@ -156,20 +185,20 @@ void ComputeAbsoluteHorizontal(const NGConstraintSpace& space,
     // Rule 1: left/width are unknown.
     DCHECK(right.has_value());
     DCHECK(child_minmax.has_value());
-    width = child_minmax->ShrinkToFit(container_size.width);
+    width = child_minmax->ShrinkToFit(container_size.width) + border_padding;
   } else if (!left && !right) {
     // Rule 2.
     DCHECK(width.has_value());
-    if (space.Direction() == TextDirection::kLtr)
-      left = static_position.LeftPosition(container_size.width, *width,
-                                          *margin_left, *margin_right);
+    if (IsLeftDominant(space))
+      left = static_position.LeftInset(container_size.width, *width,
+                                       *margin_left, *margin_right);
     else
-      right = static_position.RightPosition(container_size.width, *width,
-                                            *margin_left, *margin_right);
+      right = static_position.RightInset(container_size.width, *width,
+                                         *margin_left, *margin_right);
   } else if (!width && !right) {
     // Rule 3.
     DCHECK(child_minmax.has_value());
-    width = child_minmax->ShrinkToFit(container_size.width);
+    width = child_minmax->ShrinkToFit(container_size.width) + border_padding;
   }
 
   // Rules 4 through 6, 1 out of 3 are unknown.
@@ -226,12 +255,6 @@ void ComputeAbsoluteVertical(const NGConstraintSpace& space,
   NGPhysicalSize percentage_physical =
       percentage_logical.ConvertToPhysical(space.WritingMode());
 
-  LayoutUnit border_top(style.BorderTopWidth());
-  LayoutUnit border_bottom(style.BorderBottomWidth());
-  LayoutUnit padding_top =
-      ValueForLength(style.PaddingTop(), percentage_logical.inline_size);
-  LayoutUnit padding_bottom =
-      ValueForLength(style.PaddingBottom(), percentage_logical.inline_size);
   Optional<LayoutUnit> margin_top;
   if (!style.MarginTop().IsAuto())
     margin_top =
@@ -246,8 +269,7 @@ void ComputeAbsoluteVertical(const NGConstraintSpace& space,
   Optional<LayoutUnit> bottom;
   if (!style.Bottom().IsAuto())
     bottom = ValueForLength(style.Bottom(), percentage_physical.height);
-  LayoutUnit border_padding =
-      border_top + border_bottom + padding_top + padding_bottom;
+  LayoutUnit border_padding = VerticalBorderPadding(space, style);
   Optional<LayoutUnit> height = incoming_height;
 
   NGPhysicalSize container_size =
@@ -264,9 +286,14 @@ void ComputeAbsoluteVertical(const NGConstraintSpace& space,
     if (!margin_bottom)
       margin_bottom = LayoutUnit();
     DCHECK(child_minmax.has_value());
-    height = child_minmax->ShrinkToFit(container_size.height);
-    top = static_position.TopPosition(container_size.height, *height,
-                                      *margin_top, *margin_bottom);
+    height = child_minmax->ShrinkToFit(container_size.height) + border_padding;
+    if (IsTopDominant(space)) {
+      top = static_position.TopInset(container_size.height, *height,
+                                     *margin_top, *margin_bottom);
+    } else {
+      bottom = static_position.BottomInset(container_size.height, *height,
+                                           *margin_top, *margin_bottom);
+    }
   } else if (top && bottom && height) {
     // Standard: "If top, bottom, and height are not auto:"
     // Compute margins.
@@ -278,8 +305,13 @@ void ComputeAbsoluteVertical(const NGConstraintSpace& space,
         margin_bottom = margin_space / 2;
       } else {
         // Margin space is over-constrained.
-        margin_top = LayoutUnit();
-        margin_bottom = margin_space;
+        if (IsTopDominant(space)) {
+          margin_top = LayoutUnit();
+          margin_bottom = margin_space;
+        } else {
+          margin_top = margin_space;
+          margin_bottom = LayoutUnit();
+        }
       }
     } else if (!margin_top) {
       margin_top = margin_space - *margin_bottom;
@@ -287,8 +319,12 @@ void ComputeAbsoluteVertical(const NGConstraintSpace& space,
       margin_bottom = margin_space - *margin_top;
     } else {
       LayoutUnit margin_extra = margin_space - *margin_top - *margin_bottom;
-      if (margin_extra)
-        bottom = *bottom + margin_extra;
+      if (margin_extra) {
+        if (IsTopDominant(space))
+          bottom = *bottom + margin_extra;
+        else
+          top = *top + margin_extra;
+      }
     }
   }
 
@@ -303,16 +339,21 @@ void ComputeAbsoluteVertical(const NGConstraintSpace& space,
     // Rule 1.
     DCHECK(bottom.has_value());
     DCHECK(child_minmax.has_value());
-    height = child_minmax->ShrinkToFit(container_size.height);
+    height = child_minmax->ShrinkToFit(container_size.height) + border_padding;
   } else if (!top && !bottom) {
     // Rule 2.
     DCHECK(height.has_value());
-    top = static_position.TopPosition(container_size.height, *height,
-                                      *margin_top, *margin_bottom);
+    if (IsTopDominant(space)) {
+      top = static_position.TopInset(container_size.height, *height,
+                                     *margin_top, *margin_bottom);
+    } else {
+      bottom = static_position.BottomInset(container_size.height, *height,
+                                           *margin_top, *margin_bottom);
+    }
   } else if (!height && !bottom) {
     // Rule 3.
     DCHECK(child_minmax.has_value());
-    height = child_minmax->ShrinkToFit(container_size.height);
+    height = child_minmax->ShrinkToFit(container_size.height) + border_padding;
   }
 
   // Rules 4 through 6, 1 out of 3 are unknown.
@@ -426,6 +467,11 @@ void ComputeFullAbsoluteWithChildBlockSize(
     child_minmax = MinMaxSize{*child_block_size, *child_block_size};
   }
   if (style.IsHorizontalWritingMode()) {
+    if (child_minmax) {
+      LayoutUnit border_padding = VerticalBorderPadding(space, style);
+      child_minmax.value().min_size -= border_padding;
+      child_minmax.value().max_size -= border_padding;
+    }
     Optional<LayoutUnit> height;
     if (!style.Height().IsAuto()) {
       height = ResolveHeight(style.Height(), space, style, child_minmax,
@@ -436,6 +482,11 @@ void ComputeFullAbsoluteWithChildBlockSize(
     ComputeAbsoluteVertical(space, style, height, static_position, child_minmax,
                             position);
   } else {
+    if (child_minmax) {
+      LayoutUnit border_padding = HorizontalBorderPadding(space, style);
+      child_minmax.value().min_size -= border_padding;
+      child_minmax.value().max_size -= border_padding;
+    }
     Optional<LayoutUnit> width;
     if (!style.Width().IsAuto()) {
       width = ResolveWidth(style.Width(), space, style, child_minmax,

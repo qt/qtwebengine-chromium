@@ -32,7 +32,7 @@ QuicSpdyClientBase::QuicDataToResend::~QuicDataToResend() {}
 
 QuicSpdyClientBase::QuicSpdyClientBase(
     const QuicServerId& server_id,
-    const QuicVersionVector& supported_versions,
+    const QuicTransportVersionVector& supported_versions,
     const QuicConfig& config,
     QuicConnectionHelperInterface* helper,
     QuicAlarmFactory* alarm_factory,
@@ -151,8 +151,9 @@ QuicSpdyClientStream* QuicSpdyClientBase::CreateClientStream() {
   }
 
   auto* stream = static_cast<QuicSpdyClientStream*>(
-      client_session()->CreateOutgoingDynamicStream(kDefaultPriority));
+      client_session()->CreateOutgoingDynamicStream());
   if (stream) {
+    stream->SetPriority(kDefaultPriority);
     stream->set_visitor(this);
   }
   return stream;

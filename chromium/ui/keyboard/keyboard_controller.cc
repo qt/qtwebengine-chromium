@@ -33,12 +33,8 @@
 #include "ui/wm/core/window_animations.h"
 
 #if defined(OS_CHROMEOS)
-#include "base/process/launch.h"
-#include "base/sys_info.h"
-#if defined(USE_OZONE)
 #include "ui/ozone/public/input_controller.h"
 #include "ui/ozone/public/ozone_platform.h"
-#endif
 #endif  // if defined(OS_CHROMEOS)
 
 namespace {
@@ -59,7 +55,7 @@ constexpr int kReportLingeringStateDelayMs = 5000;
 constexpr float kAnimationStartOrAfterHideOpacity = 0.01f;
 
 // State transition diagram (document linked from crbug.com/719905)
-bool isAllowedStateStansition(keyboard::KeyboardControllerState from,
+bool isAllowedStateTransition(keyboard::KeyboardControllerState from,
                               keyboard::KeyboardControllerState to) {
   static const std::set<std::pair<keyboard::KeyboardControllerState,
                                   keyboard::KeyboardControllerState>>
@@ -123,7 +119,8 @@ class KeyboardWindowDelegate : public aura::WindowDelegate {
   bool CanFocus() override { return false; }
   void OnCaptureLost() override {}
   void OnPaint(const ui::PaintContext& context) override {}
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+  void OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                  float new_device_scale_factor) override {}
   void OnWindowDestroying(aura::Window* window) override {}
   void OnWindowDestroyed(aura::Window* window) override { delete this; }
   void OnWindowTargetVisibilityChanged(bool visible) override {}
@@ -135,7 +132,6 @@ class KeyboardWindowDelegate : public aura::WindowDelegate {
 
 void ToggleTouchEventLogging(bool enable) {
 #if defined(OS_CHROMEOS)
-#if defined(USE_OZONE)
   // TODO(moshayedi): crbug.com/642863. Revisit when we have mojo interface for
   // InputController for processes that aren't mus-ws.
   if (aura::Env::GetInstance()->mode() == aura::Env::Mode::MUS)
@@ -144,20 +140,6 @@ void ToggleTouchEventLogging(bool enable) {
       ui::OzonePlatform::GetInstance()->GetInputController();
   if (controller)
     controller->SetTouchEventLoggingEnabled(enable);
-#elif defined(USE_X11)
-  if (!base::SysInfo::IsRunningOnChromeOS())
-    return;
-  base::CommandLine command(
-      base::FilePath("/opt/google/touchscreen/toggle_touch_event_logging"));
-  if (enable)
-    command.AppendArg("1");
-  else
-    command.AppendArg("0");
-  VLOG(1) << "Running " << command.GetCommandLineString();
-  base::LaunchOptions options;
-  options.wait = true;
-  base::LaunchProcess(command, options);
-#endif
 #endif  // defined(OS_CHROMEOS)
 }
 
@@ -448,8 +430,8 @@ void KeyboardController::OnWindowBoundsChanged(aura::Window* window,
                                                const gfx::Rect& new_bounds) {
   if (!window->IsRootWindow())
     return;
-  // Keep the same height when window resize. It gets called when screen
-  // rotate.
+  // Keep the same height when window resizes. It gets called when the screen
+  // rotates.
   if (!keyboard_container_initialized() || !ui_->HasContentsWindow())
     return;
 
@@ -463,7 +445,7 @@ void KeyboardController::OnWindowBoundsChanged(aura::Window* window,
 void KeyboardController::Reload() {
   if (ui_->HasContentsWindow()) {
     // A reload should never try to show virtual keyboard. If keyboard is not
-    // visible before reload, it should keep invisible after reload.
+    // visible before reload, it should stay invisible after reload.
     show_on_content_update_ = false;
     ui_->ReloadKeyboardIfNeeded();
   }
@@ -527,7 +509,7 @@ void KeyboardController::LoadKeyboardUiInBackground() {
     return;
 
   // The container window should have been created already when
-  // |Shell::CreateKeyboard| is called.
+  // |Shell::CreateKeyboard| was called.
   DCHECK(container_.get());
 
   PopulateKeyboardContent(display::kInvalidDisplayId, false);
@@ -574,9 +556,9 @@ void KeyboardController::PopulateKeyboardContent(int64_t display_id,
 
   ui::LayerAnimator* container_animator = container_->layer()->GetAnimator();
 
-  // If |container_| has hide animation, its visibility is set to false when
+  // If |container_| has hide animation, its visibility is set to false when the
   // hide animation finished. So even if the container is visible at this
-  // point, it may in the process of hiding. We still need to show keyboard
+  // point, it may be in the process of hiding. We still need to show keyboard
   // container in this case.
   if (container_->IsVisible() && !container_animator->is_animating()) {
     // TODO(oka): This clause is excercised in
@@ -659,6 +641,11 @@ void KeyboardController::
   ui_->EnsureCaretInWorkArea();
 }
 
+void KeyboardController::NotifyKeyboardConfigChanged() {
+  for (KeyboardControllerObserver& observer : observer_list_)
+    observer.OnKeyboardConfigChanged();
+}
+
 void KeyboardController::AdjustKeyboardBounds() {
   int keyboard_height = GetContainerWindow()->bounds().height();
   const gfx::Rect& root_bounds = container_->GetRootWindow()->bounds();
@@ -671,7 +658,7 @@ void KeyboardController::AdjustKeyboardBounds() {
 void KeyboardController::CheckStateTransition(KeyboardControllerState prev,
                                               KeyboardControllerState next) {
   std::stringstream error_message;
-  const bool valid_transition = isAllowedStateStansition(prev, next);
+  const bool valid_transition = isAllowedStateTransition(prev, next);
   if (!valid_transition)
     error_message << "Unexpected transition";
 

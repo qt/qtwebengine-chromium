@@ -7,6 +7,7 @@
 
 #include "SampleApp.h"
 
+#include "SkCommonFlags.h"
 #include "OverView.h"
 #include "Resources.h"
 #include "SampleCode.h"
@@ -74,6 +75,7 @@ const struct {
     const char*         fName;
 } gConfig[] = {
     { kN32_SkColorType,      kLegacy_OutputColorSpace,  "L32" },
+    { kRGB_565_SkColorType,  kLegacy_OutputColorSpace,  "L565" },
     { kN32_SkColorType,      kSRGB_OutputColorSpace,    "S32" },
     { kRGBA_F16_SkColorType, kSRGB_OutputColorSpace,    "F16" },
     { kRGBA_F16_SkColorType, kNarrow_OutputColorSpace,  "F16 Narrow" },
@@ -342,7 +344,7 @@ public:
             // We made/have an off-screen surface. Extract the pixels exactly as we rendered them:
             SkImageInfo info = win->info();
             size_t rowBytes = info.minRowBytes();
-            size_t size = info.getSafeSize(rowBytes);
+            size_t size = info.computeByteSize(rowBytes);
             auto data = SkData::MakeUninitialized(size);
             SkASSERT(data);
 
@@ -756,14 +758,18 @@ DEFINE_pathrenderer_flag;
 DEFINE_int32(msaa, 0, "Request multisampling with this count.");
 DEFINE_bool(deepColor, false, "Request deep color (10-bit/channel or more) display buffer.");
 #endif
+DEFINE_int32(backendTiles, 0, "Number of tiles in the experimental threaded backend.");
+DEFINE_int32(backendThreads, 0, "Number of threads in the experimental threaded backend.");
+DEFINE_int32(measureMS, 0, "Number of miliseconds to measure the FPS before closing the SampleApp. "
+                           "If it's 0, we won't measure the FPS or close SampleApp automatically.");
+DEFINE_int32(width, 1024, "Width of the window");
+DEFINE_int32(height, 768, "Height of the window");
 
 #include "SkTaskGroup.h"
 
 SampleWindow::SampleWindow(void* hwnd, int argc, char** argv, DeviceManager* devManager)
-    : INHERITED(hwnd)
+    : INHERITED(hwnd, FLAGS_width, FLAGS_height)
     , fDevManager(nullptr) {
-
-    SkCommandLineFlags::Parse(argc, argv);
 
     fCurrIndex = -1;
 
@@ -922,6 +928,22 @@ SampleWindow::SampleWindow(void* hwnd, int argc, char** argv, DeviceManager* dev
     fSaveToPdf = false;
     fSaveToSKP = false;
 
+    gSkUseAnalyticAA = FLAGS_analyticAA;
+    gSkUseDeltaAA = FLAGS_deltaAA;
+    if (FLAGS_forceAnalyticAA) {
+        gSkForceAnalyticAA = true;
+    }
+    if (FLAGS_forceDeltaAA) {
+        gSkForceDeltaAA = true;
+    }
+    fTiles = FLAGS_backendTiles;
+    fThreads = FLAGS_backendThreads;
+    fMeasureMS = FLAGS_measureMS;
+    if (FLAGS_measureMS > 0) {
+        SkASSERT(fMeasureFPS == false);
+        toggleFPS();
+    }
+
     if (true) {
         fPipeSerializer.setTypefaceSerializer(new SampleTFSerializer);
         fPipeDeserializer.setTypefaceDeserializer(new SampleTFDeserializer);
@@ -1041,6 +1063,10 @@ SampleWindow::SampleWindow(void* hwnd, int argc, char** argv, DeviceManager* dev
 }
 
 SampleWindow::~SampleWindow() {
+    if (fMeasureFPS) {
+        SkDebugf("Average frame time of the last slide: %.4f ms\n",
+                 fCumulativeFPS_Time / (float)SkTMax(1, fCumulativeFPS_Count));
+    }
     SkSafeUnref(fDevManager);
 }
 
@@ -1096,7 +1122,10 @@ void SampleWindow::draw(SkCanvas* canvas) {
     std::unique_ptr<SkThreadedBMPDevice> tDev;
     std::unique_ptr<SkCanvas> tCanvas;
     if (fTiles > 0 && fDeviceType == kRaster_DeviceType) {
-        tDev.reset(new SkThreadedBMPDevice(this->getBitmap(), fTiles, fThreads));
+        // Temporary hack: let the device create/destroy the thread pool between each frame somehow
+        // makes it faster when we draw the same path 100 times when fMeasureFPS is true.
+        SkExecutor* executor = fMeasureFPS ? nullptr : fExecutor.get();
+        tDev.reset(new SkThreadedBMPDevice(this->getBitmap(), fTiles, fThreads, executor));
         tCanvas.reset(new SkCanvas(tDev.get()));
         canvas = tCanvas.get();
     }
@@ -2257,6 +2286,10 @@ bool SampleWindow::getRawTitle(SkString* title) {
 }
 
 void SampleWindow::updateTitle() {
+    if (fMeasureMS > 0 && (int)gAnimTimer.msec() > fMeasureMS) {
+        this->closeWindow();
+    }
+
     SkString title;
     if (!this->getRawTitle(&title)) {
         title.set("<unknown>");
@@ -2495,19 +2528,12 @@ static void test() {
 // FIXME: this should be in a header
 SkOSWindow* create_sk_window(void* hwnd, int argc, char** argv);
 SkOSWindow* create_sk_window(void* hwnd, int argc, char** argv) {
+    SkCommandLineFlags::Parse(argc, argv);
+
     if (false) { // avoid bit rot, suppress warning
         test();
     }
     return new SampleWindow(hwnd, argc, argv, nullptr);
-}
-
-// FIXME: this should be in a header
-void get_preferred_size(int* x, int* y, int* width, int* height);
-void get_preferred_size(int* x, int* y, int* width, int* height) {
-    *x = 10;
-    *y = 50;
-    *width = 640;
-    *height = 480;
 }
 
 #ifdef SK_BUILD_FOR_IOS

@@ -14,6 +14,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ptr_util.h"
+#include "base/unguessable_token.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
@@ -50,11 +51,11 @@ FrameTree::NodeIterator::NodeIterator(const NodeIterator& other) = default;
 FrameTree::NodeIterator::~NodeIterator() {}
 
 FrameTree::NodeIterator& FrameTree::NodeIterator::operator++() {
-  for (size_t i = 0; i < current_node_->child_count(); ++i) {
-    FrameTreeNode* child = current_node_->child_at(i);
-    if (child == node_to_skip_)
-      continue;
-    queue_.push(child);
+  if (current_node_ != root_of_subtree_to_skip_) {
+    for (size_t i = 0; i < current_node_->child_count(); ++i) {
+      FrameTreeNode* child = current_node_->child_at(i);
+      queue_.push(child);
+    }
   }
 
   if (!queue_.empty()) {
@@ -72,12 +73,12 @@ bool FrameTree::NodeIterator::operator==(const NodeIterator& rhs) const {
 }
 
 FrameTree::NodeIterator::NodeIterator(FrameTreeNode* starting_node,
-                                      FrameTreeNode* node_to_skip)
-    : current_node_(starting_node != node_to_skip ? starting_node : nullptr),
-      node_to_skip_(node_to_skip) {}
+                                      FrameTreeNode* root_of_subtree_to_skip)
+    : current_node_(starting_node),
+      root_of_subtree_to_skip_(root_of_subtree_to_skip) {}
 
 FrameTree::NodeIterator FrameTree::NodeRange::begin() {
-  return NodeIterator(root_, node_to_skip_);
+  return NodeIterator(root_, root_of_subtree_to_skip_);
 }
 
 FrameTree::NodeIterator FrameTree::NodeRange::end() {
@@ -85,8 +86,8 @@ FrameTree::NodeIterator FrameTree::NodeRange::end() {
 }
 
 FrameTree::NodeRange::NodeRange(FrameTreeNode* root,
-                                FrameTreeNode* node_to_skip)
-    : root_(root), node_to_skip_(node_to_skip) {}
+                                FrameTreeNode* root_of_subtree_to_skip)
+    : root_(root), root_of_subtree_to_skip_(root_of_subtree_to_skip) {}
 
 FrameTree::FrameTree(Navigator* navigator,
                      RenderFrameHostDelegate* render_frame_delegate,
@@ -108,6 +109,7 @@ FrameTree::FrameTree(Navigator* navigator,
                               blink::WebTreeScopeType::kDocument,
                               std::string(),
                               std::string(),
+                              base::UnguessableToken::Create(),
                               FrameOwnerProperties())),
       focused_frame_tree_node_id_(FrameTreeNode::kFrameTreeNodeInvalidId),
       load_progress_(0.0) {}
@@ -158,15 +160,15 @@ FrameTreeNode* FrameTree::FindByName(const std::string& name) {
 }
 
 FrameTree::NodeRange FrameTree::Nodes() {
-  return NodesExcept(nullptr);
+  return NodesExceptSubtree(nullptr);
 }
 
 FrameTree::NodeRange FrameTree::SubtreeNodes(FrameTreeNode* subtree_root) {
   return NodeRange(subtree_root, nullptr);
 }
 
-FrameTree::NodeRange FrameTree::NodesExcept(FrameTreeNode* node_to_skip) {
-  return NodeRange(root_, node_to_skip);
+FrameTree::NodeRange FrameTree::NodesExceptSubtree(FrameTreeNode* node) {
+  return NodeRange(root_, node);
 }
 
 bool FrameTree::AddFrame(FrameTreeNode* parent,
@@ -175,6 +177,7 @@ bool FrameTree::AddFrame(FrameTreeNode* parent,
                          blink::WebTreeScopeType scope,
                          const std::string& frame_name,
                          const std::string& frame_unique_name,
+                         const base::UnguessableToken& devtools_frame_token,
                          blink::WebSandboxFlags sandbox_flags,
                          const ParsedFeaturePolicyHeader& container_policy,
                          const FrameOwnerProperties& frame_owner_properties) {
@@ -190,7 +193,7 @@ bool FrameTree::AddFrame(FrameTreeNode* parent,
   std::unique_ptr<FrameTreeNode> new_node = base::WrapUnique(new FrameTreeNode(
       this, parent->navigator(), render_frame_delegate_,
       render_widget_delegate_, manager_delegate_, parent, scope, frame_name,
-      frame_unique_name, frame_owner_properties));
+      frame_unique_name, devtools_frame_token, frame_owner_properties));
 
   // Set sandbox flags and container policy and make them effective immediately,
   // since initial sandbox flags and feature policy should apply to the initial
@@ -247,14 +250,33 @@ void FrameTree::CreateProxiesForSiteInstance(
 
   // Proxies are created in the FrameTree in response to a node navigating to a
   // new SiteInstance. Since |source|'s navigation will replace the currently
-  // loaded document, the entire subtree under |source| will be removed.
-  for (FrameTreeNode* node : NodesExcept(source)) {
+  // loaded document, the entire subtree under |source| will be removed, and
+  // thus proxy creation is skipped for all nodes in that subtree.
+  //
+  // However, a proxy *is* needed for the |source| node itself.  This lets
+  // cross-process navigations in |source| start with a proxy and follow a
+  // remote-to-local transition, which avoids race conditions in cases where
+  // other navigations need to reference |source| before it commits. See
+  // https://crbug.com/756790 for more background.  Therefore,
+  // NodesExceptSubtree(source) will include |source| in the nodes traversed
+  // (see NodeIterator::operator++).
+  for (FrameTreeNode* node : NodesExceptSubtree(source)) {
     // If a new frame is created in the current SiteInstance, other frames in
     // that SiteInstance don't need a proxy for the new frame.
-    SiteInstance* current_instance =
-        node->render_manager()->current_frame_host()->GetSiteInstance();
-    if (current_instance != site_instance)
+    RenderFrameHostImpl* current_host =
+        node->render_manager()->current_frame_host();
+    SiteInstance* current_instance = current_host->GetSiteInstance();
+    if (current_instance != site_instance) {
+      if (node == source && !current_host->IsRenderFrameLive()) {
+        // There's no need to create a proxy at |source| when the current
+        // RenderFrameHost isn't live, as in that case, the pending
+        // RenderFrameHost will be committed immediately, and the proxy
+        // destroyed right away, in GetFrameHostForNavigation.  This makes the
+        // race described above not possible.
+        continue;
+      }
       node->render_manager()->CreateRenderFrameProxy(site_instance);
+    }
   }
 }
 

@@ -22,6 +22,7 @@
 #include "components/viz/common/surfaces/local_surface_id_allocator.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+#include "services/ui/public/interfaces/remote_event_dispatcher.mojom.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
 #include "ui/aura/aura_export.h"
 #include "ui/aura/client/transient_window_client_observer.h"
@@ -151,6 +152,12 @@ class AURA_EXPORT WindowTreeClient
              ui::mojom::WindowTreeClientPtr client,
              uint32_t flags,
              const ui::mojom::WindowTree::EmbedCallback& callback);
+
+  // Schedules an embed of a client. See
+  // mojom::WindowTreeClient::ScheduleEmbed() for details.
+  void ScheduleEmbed(
+      ui::mojom::WindowTreeClientPtr client,
+      base::OnceCallback<void(const base::UnguessableToken&)> callback);
 
   void AttachCompositorFrameSink(
       Id window_id,
@@ -337,6 +344,9 @@ class AURA_EXPORT WindowTreeClient
                                   const void* key,
                                   int64_t old_value,
                                   std::unique_ptr<ui::PropertyData> data);
+  void OnWindowMusDeviceScaleFactorChanged(WindowMus* window,
+                                           float old_scale_factor,
+                                           float new_scale_factor);
 
   // Callback passed from WmPerformMoveLoop().
   void OnWmMoveLoopCompleted(uint32_t change_id, bool completed);
@@ -395,11 +405,13 @@ class AURA_EXPORT WindowTreeClient
       Id window_id,
       const std::string& name,
       const base::Optional<std::vector<uint8_t>>& transport_data) override;
-  void OnWindowInputEvent(uint32_t event_id,
-                          Id window_id,
-                          int64_t display_id,
-                          std::unique_ptr<ui::Event> event,
-                          bool matches_pointer_watcher) override;
+  void OnWindowInputEvent(
+      uint32_t event_id,
+      Id window_id,
+      int64_t display_id,
+      const gfx::PointF& event_location_in_screen_pixel_layout,
+      std::unique_ptr<ui::Event> event,
+      bool matches_pointer_watcher) override;
   void OnPointerEventObserved(std::unique_ptr<ui::Event> event,
                               uint32_t window_id,
                               int64_t display_id) override;
@@ -504,6 +516,7 @@ class AURA_EXPORT WindowTreeClient
   void SetCursorSize(ui::CursorSize cursor_size) override;
   void SetGlobalOverrideCursor(base::Optional<ui::CursorData> cursor) override;
   void SetCursorTouchVisible(bool enabled) override;
+  void InjectEvent(const ui::Event& event, int64_t display_id) override;
   void SetKeyEventsThatDontHideCursor(
       std::vector<ui::mojom::EventMatcherPtr> cursor_key_list) override;
   void RequestClose(Window* window) override;
@@ -558,10 +571,6 @@ class AURA_EXPORT WindowTreeClient
                                    Window* transient_child) override;
   void OnTransientChildWindowRemoved(Window* parent,
                                      Window* transient_child) override;
-  void OnWillRestackTransientChildAbove(Window* parent,
-                                        Window* transient_child) override;
-  void OnDidRestackTransientChildAbove(Window* parent,
-                                       Window* transient_child) override;
 
   // Overriden from DragDropControllerHost:
   uint32_t CreateChangeIdForDrag(WindowMus* window) override;
@@ -635,6 +644,8 @@ class AURA_EXPORT WindowTreeClient
   // |window_manager_internal_client_|) are null. Tests that need to test
   // WindowManagerClient set this, but not |window_manager_internal_client_|.
   ui::mojom::WindowManagerClient* window_manager_client_ = nullptr;
+
+  ui::mojom::RemoteEventDispatcherPtr event_injector_;
 
   bool has_pointer_watcher_ = false;
 

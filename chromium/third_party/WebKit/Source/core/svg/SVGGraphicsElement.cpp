@@ -21,12 +21,12 @@
 
 #include "core/svg/SVGGraphicsElement.h"
 
-#include "core/SVGNames.h"
-#include "core/dom/StyleChangeReason.h"
+#include "core/css/StyleChangeReason.h"
 #include "core/layout/LayoutObject.h"
 #include "core/svg/SVGElementRareData.h"
 #include "core/svg/SVGMatrixTearOff.h"
 #include "core/svg/SVGRectTearOff.h"
+#include "core/svg_names.h"
 #include "platform/transforms/AffineTransform.h"
 
 namespace blink {
@@ -51,8 +51,8 @@ DEFINE_TRACE(SVGGraphicsElement) {
 }
 
 static bool IsViewportElement(const Element& element) {
-  return (isSVGSVGElement(element) || isSVGSymbolElement(element) ||
-          isSVGForeignObjectElement(element) || isSVGImageElement(element));
+  return (IsSVGSVGElement(element) || IsSVGSymbolElement(element) ||
+          IsSVGForeignObjectElement(element) || IsSVGImageElement(element));
 }
 
 AffineTransform SVGGraphicsElement::ComputeCTM(

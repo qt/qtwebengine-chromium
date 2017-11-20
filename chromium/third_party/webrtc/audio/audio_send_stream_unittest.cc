@@ -12,27 +12,27 @@
 #include <utility>
 #include <vector>
 
-#include "webrtc/audio/audio_send_stream.h"
-#include "webrtc/audio/audio_state.h"
-#include "webrtc/audio/conversion.h"
-#include "webrtc/call/fake_rtp_transport_controller_send.h"
-#include "webrtc/call/rtp_transport_controller_send_interface.h"
-#include "webrtc/logging/rtc_event_log/mock/mock_rtc_event_log.h"
-#include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
-#include "webrtc/modules/audio_processing/include/mock_audio_processing.h"
-#include "webrtc/modules/congestion_controller/include/mock/mock_congestion_observer.h"
-#include "webrtc/modules/congestion_controller/include/send_side_congestion_controller.h"
-#include "webrtc/modules/pacing/mock/mock_paced_sender.h"
-#include "webrtc/modules/rtp_rtcp/mocks/mock_rtcp_rtt_stats.h"
-#include "webrtc/modules/rtp_rtcp/mocks/mock_rtp_rtcp.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/rtc_base/task_queue.h"
-#include "webrtc/test/gtest.h"
-#include "webrtc/test/mock_audio_encoder.h"
-#include "webrtc/test/mock_audio_encoder_factory.h"
-#include "webrtc/test/mock_voe_channel_proxy.h"
-#include "webrtc/test/mock_voice_engine.h"
-#include "webrtc/voice_engine/transmit_mixer.h"
+#include "audio/audio_send_stream.h"
+#include "audio/audio_state.h"
+#include "audio/conversion.h"
+#include "call/fake_rtp_transport_controller_send.h"
+#include "call/rtp_transport_controller_send_interface.h"
+#include "logging/rtc_event_log/mock/mock_rtc_event_log.h"
+#include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/audio_processing/include/mock_audio_processing.h"
+#include "modules/congestion_controller/include/mock/mock_congestion_observer.h"
+#include "modules/congestion_controller/include/send_side_congestion_controller.h"
+#include "modules/pacing/mock/mock_paced_sender.h"
+#include "modules/rtp_rtcp/mocks/mock_rtcp_rtt_stats.h"
+#include "modules/rtp_rtcp/mocks/mock_rtp_rtcp.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/task_queue.h"
+#include "test/gtest.h"
+#include "test/mock_audio_encoder.h"
+#include "test/mock_audio_encoder_factory.h"
+#include "test/mock_voe_channel_proxy.h"
+#include "test/mock_voice_engine.h"
+#include "voice_engine/transmit_mixer.h"
 
 namespace webrtc {
 namespace test {
@@ -87,6 +87,7 @@ class MockTransmitMixer : public voe::TransmitMixer {
   MOCK_CONST_METHOD0(AudioLevelFullRange, int16_t());
   MOCK_CONST_METHOD0(GetTotalInputEnergy, double());
   MOCK_CONST_METHOD0(GetTotalInputDuration, double());
+  MOCK_CONST_METHOD0(typing_noise_detected, bool());
 };
 
 std::unique_ptr<MockAudioEncoder> SetupAudioEncoderMock(
@@ -146,10 +147,6 @@ struct ConfigHelper {
         audio_encoder_(nullptr) {
     using testing::Invoke;
 
-    EXPECT_CALL(voice_engine_,
-        RegisterVoiceEngineObserver(_)).WillOnce(Return(0));
-    EXPECT_CALL(voice_engine_,
-        DeRegisterVoiceEngineObserver()).WillOnce(Return(0));
     EXPECT_CALL(voice_engine_, audio_device_module());
     EXPECT_CALL(voice_engine_, audio_transport());
 
@@ -238,8 +235,7 @@ struct ConfigHelper {
         .Times(1);
     EXPECT_CALL(*channel_proxy_, ResetSenderCongestionControlObjects())
         .Times(1);
-    EXPECT_CALL(*channel_proxy_, RegisterExternalTransport(nullptr)).Times(1);
-    EXPECT_CALL(*channel_proxy_, DeRegisterExternalTransport()).Times(1);
+    EXPECT_CALL(*channel_proxy_, RegisterTransport(nullptr)).Times(2);
     EXPECT_CALL(*channel_proxy_, SetRtcEventLog(testing::NotNull())).Times(1);
     EXPECT_CALL(*channel_proxy_, SetRtcEventLog(testing::IsNull()))
         .Times(1);  // Destructor resets the event log
@@ -301,6 +297,8 @@ struct ConfigHelper {
         .WillRepeatedly(Return(kCallStats));
     EXPECT_CALL(*channel_proxy_, GetRemoteRTCPReportBlocks())
         .WillRepeatedly(Return(report_blocks));
+    EXPECT_CALL(*channel_proxy_, GetANAStatistics())
+        .WillRepeatedly(Return(ANAStats()));
     EXPECT_CALL(voice_engine_, transmit_mixer())
         .WillRepeatedly(Return(&transmit_mixer_));
 
@@ -310,6 +308,8 @@ struct ConfigHelper {
         .WillRepeatedly(Return(kTotalInputEnergy));
     EXPECT_CALL(transmit_mixer_, GetTotalInputDuration())
         .WillRepeatedly(Return(kTotalInputDuration));
+    EXPECT_CALL(transmit_mixer_, typing_noise_detected())
+        .WillRepeatedly(Return(true));
 
     // We have to set the instantaneous value, the average, min and max. We only
     // care about the instantaneous value, so we set all to the same value.
@@ -454,26 +454,7 @@ TEST(AudioSendStreamTest, GetStats) {
   EXPECT_EQ(kEchoReturnLoss, stats.echo_return_loss);
   EXPECT_EQ(kEchoReturnLossEnhancement, stats.echo_return_loss_enhancement);
   EXPECT_EQ(kResidualEchoLikelihood, stats.residual_echo_likelihood);
-  EXPECT_FALSE(stats.typing_noise_detected);
-}
-
-TEST(AudioSendStreamTest, GetStatsTypingNoiseDetected) {
-  ConfigHelper helper(false, true);
-  internal::AudioSendStream send_stream(
-      helper.config(), helper.audio_state(), helper.worker_queue(),
-      helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
-  helper.SetupMockForGetStats();
-  EXPECT_FALSE(send_stream.GetStats().typing_noise_detected);
-
-  internal::AudioState* internal_audio_state =
-      static_cast<internal::AudioState*>(helper.audio_state().get());
-  VoiceEngineObserver* voe_observer =
-      static_cast<VoiceEngineObserver*>(internal_audio_state);
-  voe_observer->CallbackOnError(-1, VE_TYPING_NOISE_WARNING);
-  EXPECT_TRUE(send_stream.GetStats().typing_noise_detected);
-  voe_observer->CallbackOnError(-1, VE_TYPING_NOISE_OFF_WARNING);
-  EXPECT_FALSE(send_stream.GetStats().typing_noise_detected);
+  EXPECT_TRUE(stats.typing_noise_detected);
 }
 
 TEST(AudioSendStreamTest, SendCodecAppliesAudioNetworkAdaptor) {

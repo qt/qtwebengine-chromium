@@ -77,7 +77,7 @@ void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     // emit attributes
     varyingHandler->emitAttributes(gp);
 
-    GrGLSLVertToFrag v(kVec4f_GrSLType);
+    GrGLSLVertToFrag v(kFloat4_GrSLType);
     varyingHandler->addVarying("ConicCoeffs", &v, kHigh_GrSLPrecision);
     vertBuilder->codeAppendf("%s = %s;", v.vsOut(), gp.inConicCoeffs()->fName);
 
@@ -102,26 +102,18 @@ void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                          gp.localMatrix(),
                          args.fFPCoordTransformHandler);
 
-    // TODO: this precision check should actually be a check on the number of bits
-    // high and medium provide and the selection of the lowest level that suffices.
-    // Additionally we should assert that the upstream code only lets us get here if
-    // either high or medium provides the required number of bits.
-    GrSLPrecision precision = kHigh_GrSLPrecision;
-    const GrShaderCaps::PrecisionInfo& highP = args.fShaderCaps->getFloatShaderPrecisionInfo(
-                                                             kFragment_GrShaderType,
-                                                             kHigh_GrSLPrecision);
-    if (!highP.supported()) {
-        precision = kMedium_GrSLPrecision;
-    }
+    // TODO: we should check on the number of bits float and half provide and use the smallest one
+    // that suffices. Additionally we should assert that the upstream code only lets us get here if
+    // either float or half provides the required number of bits.
 
-    GrShaderVar edgeAlpha("edgeAlpha", kFloat_GrSLType, 0, precision);
-    GrShaderVar dklmdx("dklmdx", kVec3f_GrSLType, 0, precision);
-    GrShaderVar dklmdy("dklmdy", kVec3f_GrSLType, 0, precision);
-    GrShaderVar dfdx("dfdx", kFloat_GrSLType, 0, precision);
-    GrShaderVar dfdy("dfdy", kFloat_GrSLType, 0, precision);
-    GrShaderVar gF("gF", kVec2f_GrSLType, 0, precision);
-    GrShaderVar gFM("gFM", kFloat_GrSLType, 0, precision);
-    GrShaderVar func("func", kFloat_GrSLType, 0, precision);
+    GrShaderVar edgeAlpha("edgeAlpha", kFloat_GrSLType, 0);
+    GrShaderVar dklmdx("dklmdx", kFloat3_GrSLType, 0);
+    GrShaderVar dklmdy("dklmdy", kFloat3_GrSLType, 0);
+    GrShaderVar dfdx("dfdx", kFloat_GrSLType, 0);
+    GrShaderVar dfdy("dfdy", kFloat_GrSLType, 0);
+    GrShaderVar gF("gF", kFloat2_GrSLType, 0);
+    GrShaderVar gFM("gFM", kFloat_GrSLType, 0);
+    GrShaderVar func("func", kFloat_GrSLType, 0);
 
     fragBuilder->declAppend(edgeAlpha);
     fragBuilder->declAppend(dklmdx);
@@ -146,7 +138,8 @@ void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                                      v.fsIn(), dklmdy.c_str(),
                                      v.fsIn(), dklmdy.c_str(),
                                      v.fsIn(), dklmdy.c_str());
-            fragBuilder->codeAppendf("%s = float2(%s, %s);", gF.c_str(), dfdx.c_str(), dfdy.c_str());
+            fragBuilder->codeAppendf("%s = float2(%s, %s);", gF.c_str(), dfdx.c_str(),
+                                     dfdy.c_str());
             fragBuilder->codeAppendf("%s = sqrt(dot(%s, %s));",
                                      gFM.c_str(), gF.c_str(), gF.c_str());
             fragBuilder->codeAppendf("%s = %s.x*%s.x - %s.y*%s.z;",
@@ -175,7 +168,8 @@ void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                                      v.fsIn(), dklmdy.c_str(),
                                      v.fsIn(), dklmdy.c_str(),
                                      v.fsIn(), dklmdy.c_str());
-            fragBuilder->codeAppendf("%s = float2(%s, %s);", gF.c_str(), dfdx.c_str(), dfdy.c_str());
+            fragBuilder->codeAppendf("%s = float2(%s, %s);", gF.c_str(), dfdx.c_str(),
+                                     dfdy.c_str());
             fragBuilder->codeAppendf("%s = sqrt(dot(%s, %s));",
                                      gFM.c_str(), gF.c_str(), gF.c_str());
             fragBuilder->codeAppendf("%s = %s.x * %s.x - %s.y * %s.z;",
@@ -204,13 +198,12 @@ void GrGLConicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
         const char* coverageScale;
         fCoverageScaleUniform = uniformHandler->addUniform(kFragment_GrShaderFlag,
                                                            kFloat_GrSLType,
-                                                           kHigh_GrSLPrecision,
                                                            "Coverage",
                                                            &coverageScale);
-        fragBuilder->codeAppendf("%s = float4(%s * %s);",
+        fragBuilder->codeAppendf("%s = half4(%s * %s);",
                                  args.fOutputCoverage, coverageScale, edgeAlpha.c_str());
     } else {
-        fragBuilder->codeAppendf("%s = float4(%s);", args.fOutputCoverage, edgeAlpha.c_str());
+        fragBuilder->codeAppendf("%s = half4(%s);", args.fOutputCoverage, edgeAlpha.c_str());
     }
 }
 
@@ -241,16 +234,15 @@ GrGLSLPrimitiveProcessor* GrConicEffect::createGLSLInstance(const GrShaderCaps&)
 GrConicEffect::GrConicEffect(GrColor color, const SkMatrix& viewMatrix, uint8_t coverage,
                              GrPrimitiveEdgeType edgeType, const SkMatrix& localMatrix,
                              bool usesLocalCoords)
-    : fColor(color)
+    : INHERITED(kGrConicEffect_ClassID)
+    , fColor(color)
     , fViewMatrix(viewMatrix)
     , fLocalMatrix(viewMatrix)
     , fUsesLocalCoords(usesLocalCoords)
     , fCoverageScale(coverage)
     , fEdgeType(edgeType) {
-    this->initClassID<GrConicEffect>();
-    fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType,
-                                         kHigh_GrSLPrecision);
-    fInConicCoeffs = &this->addVertexAttrib("inConicCoeffs", kVec4f_GrVertexAttribType);
+    fInPosition = &this->addVertexAttrib("inPosition", kFloat2_GrVertexAttribType);
+    fInConicCoeffs = &this->addVertexAttrib("inConicCoeffs", kHalf4_GrVertexAttribType);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -338,7 +330,7 @@ void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     // emit attributes
     varyingHandler->emitAttributes(gp);
 
-    GrGLSLVertToFrag v(kVec4f_GrSLType);
+    GrGLSLVertToFrag v(kHalf4_GrSLType);
     varyingHandler->addVarying("HairQuadEdge", &v);
     vertBuilder->codeAppendf("%s = %s;", v.vsOut(), gp.inHairQuadEdge()->fName);
 
@@ -363,13 +355,13 @@ void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                          gp.localMatrix(),
                          args.fFPCoordTransformHandler);
 
-    fragBuilder->codeAppendf("float edgeAlpha;");
+    fragBuilder->codeAppendf("half edgeAlpha;");
 
     switch (fEdgeType) {
         case kHairlineAA_GrProcessorEdgeType: {
-            fragBuilder->codeAppendf("float2 duvdx = dFdx(%s.xy);", v.fsIn());
-            fragBuilder->codeAppendf("float2 duvdy = dFdy(%s.xy);", v.fsIn());
-            fragBuilder->codeAppendf("float2 gF = float2(2.0 * %s.x * duvdx.x - duvdx.y,"
+            fragBuilder->codeAppendf("half2 duvdx = dFdx(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("half2 duvdy = dFdy(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("half2 gF = half2(2.0 * %s.x * duvdx.x - duvdx.y,"
                                      "               2.0 * %s.x * duvdy.x - duvdy.y);",
                                      v.fsIn(), v.fsIn());
             fragBuilder->codeAppendf("edgeAlpha = (%s.x * %s.x - %s.y);",
@@ -381,9 +373,9 @@ void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
             break;
         }
         case kFillAA_GrProcessorEdgeType: {
-            fragBuilder->codeAppendf("float2 duvdx = dFdx(%s.xy);", v.fsIn());
-            fragBuilder->codeAppendf("float2 duvdy = dFdy(%s.xy);", v.fsIn());
-            fragBuilder->codeAppendf("float2 gF = float2(2.0 * %s.x * duvdx.x - duvdx.y,"
+            fragBuilder->codeAppendf("half2 duvdx = dFdx(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("half2 duvdy = dFdy(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("half2 gF = half2(2.0 * %s.x * duvdx.x - duvdx.y,"
                                      "               2.0 * %s.x * duvdy.x - duvdy.y);",
                                      v.fsIn(), v.fsIn());
             fragBuilder->codeAppendf("edgeAlpha = (%s.x * %s.x - %s.y);",
@@ -397,7 +389,7 @@ void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
         case kFillBW_GrProcessorEdgeType: {
             fragBuilder->codeAppendf("edgeAlpha = (%s.x * %s.x - %s.y);",
                                      v.fsIn(), v.fsIn(), v.fsIn());
-            fragBuilder->codeAppend("edgeAlpha = float(edgeAlpha < 0.0);");
+            fragBuilder->codeAppend("edgeAlpha = half(edgeAlpha < 0.0);");
             break;
         }
         default:
@@ -407,13 +399,13 @@ void GrGLQuadEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     if (0xff != gp.coverageScale()) {
         const char* coverageScale;
         fCoverageScaleUniform = uniformHandler->addUniform(kFragment_GrShaderFlag,
-                                                           kFloat_GrSLType,
-                                                           kDefault_GrSLPrecision,
+                                                           kHalf_GrSLType,
                                                            "Coverage",
                                                            &coverageScale);
-        fragBuilder->codeAppendf("%s = float4(%s * edgeAlpha);", args.fOutputCoverage, coverageScale);
+        fragBuilder->codeAppendf("%s = half4(%s * edgeAlpha);", args.fOutputCoverage,
+                                 coverageScale);
     } else {
-        fragBuilder->codeAppendf("%s = float4(edgeAlpha);", args.fOutputCoverage);
+        fragBuilder->codeAppendf("%s = half4(edgeAlpha);", args.fOutputCoverage);
     }
 }
 
@@ -444,16 +436,15 @@ GrGLSLPrimitiveProcessor* GrQuadEffect::createGLSLInstance(const GrShaderCaps&) 
 GrQuadEffect::GrQuadEffect(GrColor color, const SkMatrix& viewMatrix, uint8_t coverage,
                            GrPrimitiveEdgeType edgeType, const SkMatrix& localMatrix,
                            bool usesLocalCoords)
-    : fColor(color)
+    : INHERITED(kGrQuadEffect_ClassID)
+    , fColor(color)
     , fViewMatrix(viewMatrix)
     , fLocalMatrix(localMatrix)
     , fUsesLocalCoords(usesLocalCoords)
     , fCoverageScale(coverage)
     , fEdgeType(edgeType) {
-    this->initClassID<GrQuadEffect>();
-    fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType,
-                                                   kHigh_GrSLPrecision);
-    fInHairQuadEdge = &this->addVertexAttrib("inHairQuadEdge", kVec4f_GrVertexAttribType);
+    fInPosition = &this->addVertexAttrib("inPosition", kFloat2_GrVertexAttribType);
+    fInHairQuadEdge = &this->addVertexAttrib("inHairQuadEdge", kHalf4_GrVertexAttribType);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -561,22 +552,22 @@ void GrGLCubicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 
     // Setup KLM
     const char* devkLMMatrixName;
-    fDevKLMUniform = uniformHandler->addUniform(kVertex_GrShaderFlag, kMat33f_GrSLType,
-                                                kHigh_GrSLPrecision, "KLM", &devkLMMatrixName);
-    GrGLSLVertToFrag v(kVec3f_GrSLType);
+    fDevKLMUniform = uniformHandler->addUniform(kVertex_GrShaderFlag, kFloat3x3_GrSLType, "KLM",
+                                                &devkLMMatrixName);
+    GrGLSLVertToFrag v(kFloat3_GrSLType);
     varyingHandler->addVarying("CubicCoeffs", &v, kHigh_GrSLPrecision);
     vertBuilder->codeAppendf("%s = %s * float3(%s, 1);",
                              v.vsOut(), devkLMMatrixName, gpArgs->fPositionVar.c_str());
 
 
-    GrGLSLVertToFrag gradCoeffs(kVec4f_GrSLType);
+    GrGLSLVertToFrag gradCoeffs(kFloat4_GrSLType);
     if (kFillAA_GrProcessorEdgeType == fEdgeType || kHairlineAA_GrProcessorEdgeType == fEdgeType) {
         varyingHandler->addVarying("GradCoeffs", &gradCoeffs, kHigh_GrSLPrecision);
-        vertBuilder->codeAppendf("highp float k = %s[0], l = %s[1], m = %s[2];",
+        vertBuilder->codeAppendf("float k = %s[0], l = %s[1], m = %s[2];",
                                  v.vsOut(), v.vsOut(), v.vsOut());
-        vertBuilder->codeAppendf("highp float2 gk = float2(%s[0][0], %s[1][0]), "
-                                            "gl = float2(%s[0][1], %s[1][1]), "
-                                            "gm = float2(%s[0][2], %s[1][2]);",
+        vertBuilder->codeAppendf("float2 gk = float2(%s[0][0], %s[1][0]), "
+                                        "gl = float2(%s[0][1], %s[1][1]), "
+                                        "gm = float2(%s[0][2], %s[1][2]);",
                                  devkLMMatrixName, devkLMMatrixName, devkLMMatrixName,
                                  devkLMMatrixName, devkLMMatrixName, devkLMMatrixName);
         vertBuilder->codeAppendf("%s = float4(3 * k * gk, -m * gl - l * gm);",
@@ -592,9 +583,9 @@ void GrGLCubicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                          args.fFPCoordTransformHandler);
 
 
-    GrShaderVar edgeAlpha("edgeAlpha", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
-    GrShaderVar gF("gF", kVec2f_GrSLType, 0, kHigh_GrSLPrecision);
-    GrShaderVar func("func", kFloat_GrSLType, 0, kHigh_GrSLPrecision);
+    GrShaderVar edgeAlpha("edgeAlpha", kFloat_GrSLType, 0);
+    GrShaderVar gF("gF", kFloat2_GrSLType, 0);
+    GrShaderVar func("func", kFloat_GrSLType, 0);
 
     fragBuilder->declAppend(edgeAlpha);
     fragBuilder->declAppend(gF);
@@ -638,7 +629,7 @@ void GrGLCubicEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
             fragBuilder->codeAppendf("%s = %s.x * %s.x * %s.x - %s.y * %s.z;",
                                      edgeAlpha.c_str(), v.fsIn(), v.fsIn(),
                                      v.fsIn(), v.fsIn(), v.fsIn());
-            fragBuilder->codeAppendf("%s = float(%s < 0.0);", edgeAlpha.c_str(), edgeAlpha.c_str());
+            fragBuilder->codeAppendf("%s = half(%s < 0.0);", edgeAlpha.c_str(), edgeAlpha.c_str());
             break;
         }
         default:
@@ -672,13 +663,12 @@ GrGLSLPrimitiveProcessor* GrCubicEffect::createGLSLInstance(const GrShaderCaps&)
 
 GrCubicEffect::GrCubicEffect(GrColor color, const SkMatrix& viewMatrix, const SkMatrix&
                              devKLMMatrix, GrPrimitiveEdgeType edgeType)
-    : fColor(color)
+    : INHERITED(kGrCubicEffect_ClassID)
+    , fColor(color)
     , fViewMatrix(viewMatrix)
     , fDevKLMMatrix(devKLMMatrix)
     , fEdgeType(edgeType) {
-    this->initClassID<GrCubicEffect>();
-    fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType,
-                                         kHigh_GrSLPrecision);
+    fInPosition = &this->addVertexAttrib("inPosition", kFloat2_GrVertexAttribType);
 }
 
 //////////////////////////////////////////////////////////////////////////////

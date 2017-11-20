@@ -35,8 +35,11 @@
 #include "core/dom/ShadowRoot.h"
 #include "core/dom/TaskRunnerHelper.h"
 #include "core/editing/Editor.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FindInPageCoordinates.h"
 #include "core/editing/FindOptions.h"
+#include "core/editing/FrameSelection.h"
+#include "core/editing/SelectionTemplate.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/iterators/SearchBuffer.h"
 #include "core/editing/markers/DocumentMarker.h"
@@ -253,7 +256,7 @@ void TextFinder::SetFindEndstateFocusAndSelection() {
   Node* node = active_match->FirstNode();
   if (node && node->IsInShadowTree()) {
     if (Node* host = node->OwnerShadowHost()) {
-      if (isHTMLInputElement(*host) || isHTMLTextAreaElement(*host))
+      if (IsHTMLInputElement(*host) || IsHTMLTextAreaElement(*host))
         node = host;
     }
   }

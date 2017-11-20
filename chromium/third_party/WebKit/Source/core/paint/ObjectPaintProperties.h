@@ -7,11 +7,8 @@
 
 #include <memory>
 #include "core/CoreExport.h"
-#include "platform/geometry/LayoutPoint.h"
 #include "platform/graphics/paint/ClipPaintPropertyNode.h"
 #include "platform/graphics/paint/EffectPaintPropertyNode.h"
-#include "platform/graphics/paint/PaintChunkProperties.h"
-#include "platform/graphics/paint/PropertyTreeState.h"
 #include "platform/graphics/paint/ScrollPaintPropertyNode.h"
 #include "platform/graphics/paint/TransformPaintPropertyNode.h"
 #include "platform/wtf/PtrUtil.h"
@@ -54,7 +51,7 @@ class CORE_EXPORT ObjectPaintProperties {
   //     |                                This is the local border box space.
   //     +---[ perspective ]              The space created by CSS perspective.
   //     |   +---[ svgLocalToBorderBoxTransform ] Additional transform for
-  //                                      children of the outermost root SVG.
+  //     |                                children of the outermost root SVG.
   //     |              OR                (SVG does not support scrolling.)
   //     |   +---[ scrollTranslation ]    The space created by overflow clip.
   //     +---[ scrollbarPaintOffset ]     TODO(trchen): Remove this once we bake
@@ -65,23 +62,23 @@ class CORE_EXPORT ObjectPaintProperties {
   //                                      redundant, but it is a pain to teach
   //                                      scrollbars to paint with an offset.
   const TransformPaintPropertyNode* PaintOffsetTranslation() const {
-    return paint_offset_translation_.Get();
+    return paint_offset_translation_.get();
   }
   const TransformPaintPropertyNode* Transform() const {
-    return transform_.Get();
+    return transform_.get();
   }
   const TransformPaintPropertyNode* Perspective() const {
-    return perspective_.Get();
+    return perspective_.get();
   }
   const TransformPaintPropertyNode* SvgLocalToBorderBoxTransform() const {
-    return svg_local_to_border_box_transform_.Get();
+    return svg_local_to_border_box_transform_.get();
   }
-  const ScrollPaintPropertyNode* Scroll() const { return scroll_.Get(); }
+  const ScrollPaintPropertyNode* Scroll() const { return scroll_.get(); }
   const TransformPaintPropertyNode* ScrollTranslation() const {
-    return scroll_translation_.Get();
+    return scroll_translation_.get();
   }
   const TransformPaintPropertyNode* ScrollbarPaintOffset() const {
-    return scrollbar_paint_offset_.Get();
+    return scrollbar_paint_offset_.get();
   }
 
   // The hierarchy of the effect subtree created by a LayoutObject is as
@@ -95,50 +92,49 @@ class CORE_EXPORT ObjectPaintProperties {
   // +-[ mask ]
   //       Isolated group for painting the CSS mask. This node will have
   //       SkBlendMode::kDstIn and shall paint last, i.e. after masked contents.
-  const EffectPaintPropertyNode* Effect() const { return effect_.Get(); }
-  const EffectPaintPropertyNode* Filter() const { return filter_.Get(); }
-  const EffectPaintPropertyNode* Mask() const { return mask_.Get(); }
+  const EffectPaintPropertyNode* Effect() const { return effect_.get(); }
+  const EffectPaintPropertyNode* Filter() const { return filter_.get(); }
+  const EffectPaintPropertyNode* Mask() const { return mask_.get(); }
 
   // The hierarchy of the clip subtree created by a LayoutObject is as follows:
-  // [ mask clip ]
-  // |   Clip created by CSS mask. It serves two purposes:
-  // |   1. Cull painting of the masked subtree. Because anything outside of
-  // |      the mask is never visible, it is pointless to paint them.
-  // |   2. Raster clip of the masked subtree. Because the mask implemented
-  // |      as SkBlendMode::kDstIn, pixels outside of mask's bound will be
-  // |      intact when they shall be masked out. This clip ensures no pixels
-  // |      leak out.
-  // +-[ css clip ]
-  //   |   Clip created by CSS clip. CSS clip applies to all descendants, this
-  //   |   node only applies to containing block descendants. For descendants
-  //   |   not contained by this object, use [ css clip fixed position ].
-  //   +-[ inner border radius clip]
-  //     |   Clip created by a rounded border with overflow clip. This clip is
-  //     |   not inset by scrollbars.
-  //     +-[ overflow clip ]
-  //           Clip created by overflow clip and is inset by the scrollbar.
-  // [ css clip fixed position ]
-  //     Clip created by CSS clip. Only exists if the current clip includes
-  //     some clip that doesn't apply to our fixed position descendants.
-  const ClipPaintPropertyNode* MaskClip() const { return mask_clip_.Get(); }
-  const ClipPaintPropertyNode* CssClip() const { return css_clip_.Get(); }
+  // [ fragment clip ]
+  // |    Clips to a fragment's bounds.
+  //      This is only present for content under a fragmentation
+  //      container.
+  // +-[ mask clip ]
+  //   |   Clip created by CSS mask. It serves two purposes:
+  //   |   1. Cull painting of the masked subtree. Because anything outside of
+  //   |      the mask is never visible, it is pointless to paint them.
+  //   |   2. Raster clip of the masked subtree. Because the mask implemented
+  //   |      as SkBlendMode::kDstIn, pixels outside of mask's bound will be
+  //   |      intact when they shall be masked out. This clip ensures no pixels
+  //   |      leak out.
+  //   +-[ css clip ]
+  //     |   Clip created by CSS clip. CSS clip applies to all descendants, this
+  //     |   node only applies to containing block descendants. For descendants
+  //     |   not contained by this object, use [ css clip fixed position ].
+  //     +-[ inner border radius clip]
+  //       |   Clip created by a rounded border with overflow clip. This clip is
+  //       |   not inset by scrollbars.
+  //       +-[ overflow clip ]
+  //             Clip created by overflow clip and is inset by the scrollbar.
+  //   [ css clip fixed position ]
+  //       Clip created by CSS clip. Only exists if the current clip includes
+  //       some clip that doesn't apply to our fixed position descendants.
+  const ClipPaintPropertyNode* FragmentClip() const {
+    return fragment_clip_.get();
+  }
+  const ClipPaintPropertyNode* MaskClip() const { return mask_clip_.get(); }
+  const ClipPaintPropertyNode* CssClip() const { return css_clip_.get(); }
   const ClipPaintPropertyNode* CssClipFixedPosition() const {
-    return css_clip_fixed_position_.Get();
+    return css_clip_fixed_position_.get();
   }
   const ClipPaintPropertyNode* InnerBorderRadiusClip() const {
-    return inner_border_radius_clip_.Get();
+    return inner_border_radius_clip_.get();
   }
   const ClipPaintPropertyNode* OverflowClip() const {
-    return overflow_clip_.Get();
+    return overflow_clip_.get();
   }
-
-  // This is the complete set of property nodes that can be used to paint the
-  // contents of this object. It is similar to the local border box properties
-  // but also includes properties (e.g., overflow clip, scroll translation) that
-  // apply to an object's contents.
-  static std::unique_ptr<PropertyTreeState> ContentsProperties(
-      PropertyTreeState* local_border_box_properties,
-      ObjectPaintProperties*);
 
   // The following clear* functions return true if the property tree structure
   // changes (an existing node was deleted), and false otherwise. See the
@@ -151,6 +147,7 @@ class CORE_EXPORT ObjectPaintProperties {
   bool ClearEffect() { return Clear(effect_); }
   bool ClearFilter() { return Clear(filter_); }
   bool ClearMask() { return Clear(mask_); }
+  bool ClearFragmentClip() { return Clear(fragment_clip_); }
   bool ClearMaskClip() { return Clear(mask_clip_); }
   bool ClearCssClip() { return Clear(css_clip_); }
   bool ClearCssClipFixedPosition() { return Clear(css_clip_fixed_position_); }
@@ -224,6 +221,10 @@ class CORE_EXPORT ObjectPaintProperties {
     return Update(mask_, std::forward<Args>(args)...);
   }
   template <typename... Args>
+  UpdateResult UpdateFragmentClip(Args&&... args) {
+    return Update(fragment_clip_, std::forward<Args>(args)...);
+  }
+  template <typename... Args>
   UpdateResult UpdateMaskClip(Args&&... args) {
     return Update(mask_clip_, std::forward<Args>(args)...);
   }
@@ -258,6 +259,8 @@ class CORE_EXPORT ObjectPaintProperties {
       cloned->filter_ = filter_->Clone();
     if (mask_)
       cloned->mask_ = mask_->Clone();
+    if (fragment_clip_)
+      cloned->fragment_clip_ = fragment_clip_->Clone();
     if (mask_clip_)
       cloned->mask_clip_ = mask_clip_->Clone();
     if (css_clip_)
@@ -320,6 +323,7 @@ class CORE_EXPORT ObjectPaintProperties {
   RefPtr<EffectPaintPropertyNode> effect_;
   RefPtr<EffectPaintPropertyNode> filter_;
   RefPtr<EffectPaintPropertyNode> mask_;
+  RefPtr<ClipPaintPropertyNode> fragment_clip_;
   RefPtr<ClipPaintPropertyNode> mask_clip_;
   RefPtr<ClipPaintPropertyNode> css_clip_;
   RefPtr<ClipPaintPropertyNode> css_clip_fixed_position_;

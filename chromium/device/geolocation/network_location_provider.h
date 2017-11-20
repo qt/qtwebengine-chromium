@@ -24,7 +24,6 @@
 #include "device/geolocation/wifi_data_provider_manager.h"
 
 namespace device {
-class AccessTokenStore;
 
 class NetworkLocationProvider : public LocationProvider {
  public:
@@ -62,11 +61,9 @@ class NetworkLocationProvider : public LocationProvider {
     CacheAgeList cache_age_list_;  // Oldest first.
   };
 
-  NetworkLocationProvider(
-      const scoped_refptr<AccessTokenStore>& access_token_store,
-      const scoped_refptr<net::URLRequestContextGetter>& context,
-      const GURL& url,
-      const base::string16& access_token);
+  DEVICE_GEOLOCATION_EXPORT NetworkLocationProvider(
+      scoped_refptr<net::URLRequestContextGetter> context,
+      const std::string& api_key);
   ~NetworkLocationProvider() override;
 
   // LocationProvider implementation
@@ -88,10 +85,7 @@ class NetworkLocationProvider : public LocationProvider {
 
   void OnLocationResponse(const Geoposition& position,
                           bool server_error,
-                          const base::string16& access_token,
                           const WifiData& wifi_data);
-
-  const scoped_refptr<AccessTokenStore> access_token_store_;
 
   // The wifi data provider, acquired via global factories. Valid between
   // StartProvider() and StopProvider(), and checked via IsStarted().
@@ -106,10 +100,6 @@ class NetworkLocationProvider : public LocationProvider {
   // The timestamp for the latest wifi data update.
   base::Time wifi_timestamp_;
 
-  // Cached value loaded from the token store or set by a previous server
-  // response, and sent in each subsequent network request.
-  base::string16 access_token_;
-
   // The current best position estimate.
   Geoposition position_;
 
@@ -121,7 +111,7 @@ class NetworkLocationProvider : public LocationProvider {
 
   bool is_new_data_available_;
 
-  // The network location request object, and the url it uses.
+  // The network location request object.
   const std::unique_ptr<NetworkLocationRequest> request_;
 
   // The cache of positions.
@@ -133,14 +123,6 @@ class NetworkLocationProvider : public LocationProvider {
 
   DISALLOW_COPY_AND_ASSIGN(NetworkLocationProvider);
 };
-
-// Factory functions for the various types of location provider to abstract
-// over the platform-dependent implementations.
-DEVICE_GEOLOCATION_EXPORT LocationProvider* NewNetworkLocationProvider(
-    const scoped_refptr<AccessTokenStore>& access_token_store,
-    const scoped_refptr<net::URLRequestContextGetter>& context,
-    const GURL& url,
-    const base::string16& access_token);
 
 }  // namespace device
 

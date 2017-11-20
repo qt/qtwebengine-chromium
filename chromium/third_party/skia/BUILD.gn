@@ -43,7 +43,9 @@ declare_args() {
   skia_enable_tools = is_skia_dev_build
   skia_enable_vulkan_debug_layers = is_skia_dev_build && is_debug
   skia_vulkan_sdk = getenv("VULKAN_SDK")
+  skia_qt_path = getenv("QT_PATH")
   skia_compile_processors = false
+  skia_lex = false
 
   skia_jumper_clang = ""
   skia_jumper_objdump = ""
@@ -410,6 +412,48 @@ optional("fontmgr_fuchsia") {
   ]
 }
 
+if (skia_lex) {
+  executable("sksllex") {
+    sources = [
+      "src/sksl/lex/Main.cpp",
+      "src/sksl/lex/NFA.cpp",
+      "src/sksl/lex/RegexNode.cpp",
+      "src/sksl/lex/RegexParser.cpp",
+    ]
+    include_dirs = [ "src/sksl/lex" ]
+  }
+
+  action("run_sksllex") {
+    script = "gn/run_sksllex.py"
+    sources = [
+      "src/sksl/lex/layout.lex",
+      "src/sksl/lex/sksl.lex",
+    ]
+
+    # GN insists its outputs should go somewhere underneath target_out_dir, so we trick it with a
+    # path that starts with target_out_dir and then uses ".." to back up into the src dir.
+    outputs = [
+      "$target_out_dir/" +
+          rebase_path("src/sksl/lex/SkSLLexer.h", target_out_dir),
+      # the script also modifies the corresponding .cpp file, but if we tell GN that it gets
+      # confused due to the same file being named by two different paths
+    ]
+    sksllex_path = "$root_out_dir/"
+    sksllex_path += "sksllex"
+    if (host_os == "win") {
+      sksllex_path += ".exe"
+    }
+    args = [
+      rebase_path(sksllex_path),
+      rebase_path("bin/clang-format"),
+      rebase_path("src"),
+    ]
+  }
+} else {
+  group("run_sksllex") {
+  }
+}
+
 if (skia_compile_processors) {
   executable("skslc") {
     defines = [ "SKSL_STANDALONE" ]
@@ -471,6 +515,7 @@ optional("gpu") {
   enabled = skia_enable_gpu
   deps = [
     ":compile_processors",
+    ":run_sksllex",
   ]
   public_defines = []
 
@@ -760,6 +805,7 @@ component("skia") {
       "src/ports/SkOSLibrary_posix.cpp",
       "src/ports/SkTLS_pthread.cpp",
     ]
+    libs += [ "dl" ]
   }
 
   if (is_android) {
@@ -1126,17 +1172,21 @@ if (skia_enable_tools) {
       "experimental/svg/model/SkSVGContainer.cpp",
       "experimental/svg/model/SkSVGDOM.cpp",
       "experimental/svg/model/SkSVGEllipse.cpp",
+      "experimental/svg/model/SkSVGGradient.cpp",
       "experimental/svg/model/SkSVGLine.cpp",
       "experimental/svg/model/SkSVGLinearGradient.cpp",
       "experimental/svg/model/SkSVGNode.cpp",
       "experimental/svg/model/SkSVGPath.cpp",
+      "experimental/svg/model/SkSVGPattern.cpp",
       "experimental/svg/model/SkSVGPoly.cpp",
+      "experimental/svg/model/SkSVGRadialGradient.cpp",
       "experimental/svg/model/SkSVGRect.cpp",
       "experimental/svg/model/SkSVGRenderContext.cpp",
       "experimental/svg/model/SkSVGSVG.cpp",
       "experimental/svg/model/SkSVGShape.cpp",
       "experimental/svg/model/SkSVGStop.cpp",
       "experimental/svg/model/SkSVGTransformableNode.cpp",
+      "experimental/svg/model/SkSVGUse.cpp",
       "experimental/svg/model/SkSVGValue.cpp",
     ]
     deps = [
@@ -1144,49 +1194,53 @@ if (skia_enable_tools) {
     ]
   }
 
-  test_lib("views") {
-    public_include_dirs = [ "include/views" ]
-    sources = [
-      "src/views/SkEvent.cpp",
-      "src/views/SkEventSink.cpp",
-      "src/views/SkOSMenu.cpp",
-      "src/views/SkTagList.cpp",
-      "src/views/SkTouchGesture.cpp",
-      "src/views/SkView.cpp",
-      "src/views/SkViewPriv.cpp",
-    ]
-    libs = []
-    deps = []
-    if (!is_android) {
-      sources += [ "src/views/SkWindow.cpp" ]
-    }
-    if (is_linux) {
-      public_include_dirs += [ "src/views/unix" ]
-      sources += [
-        "src/views/unix/SkOSWindow_Unix.cpp",
-        "src/views/unix/keysym2ucs.c",
+  if (target_cpu != "wasm") {
+    test_lib("views") {
+      public_include_dirs = [ "include/views" ]
+      sources = [
+        "src/views/SkEvent.cpp",
+        "src/views/SkEventSink.cpp",
+        "src/views/SkOSMenu.cpp",
+        "src/views/SkTagList.cpp",
+        "src/views/SkTouchGesture.cpp",
+        "src/views/SkView.cpp",
+        "src/views/SkViewPriv.cpp",
       ]
-      libs += [
-        "GL",
-        "X11",
-      ]
-    } else if (is_mac) {
-      sources += [
-        "src/views/mac/SkEventNotifier.mm",
-        "src/views/mac/SkNSView.mm",
-        "src/views/mac/SkOSWindow_Mac.mm",
-        "src/views/mac/SkTextFieldCell.m",
-      ]
-      libs += [
-        "QuartzCore.framework",
-        "Cocoa.framework",
-        "Foundation.framework",
-      ]
-    } else if (is_win) {
-      sources += [ "src/views/win/SkOSWindow_win.cpp" ]
-    }
-    if (skia_use_angle) {
-      deps += [ "//third_party/angle2" ]
+      libs = []
+      deps = []
+      if (!is_android) {
+        sources += [ "src/views/SkWindow.cpp" ]
+      }
+      if (is_linux) {
+        public_include_dirs += [ "src/views/unix" ]
+        sources += [
+          "src/views/unix/SkOSWindow_Unix.cpp",
+          "src/views/unix/keysym2ucs.c",
+        ]
+        libs += [
+          "GL",
+          "X11",
+        ]
+      } else if (is_mac) {
+        sources += [
+          "src/views/mac/SkEventNotifier.mm",
+          "src/views/mac/SkNSView.mm",
+          "src/views/mac/SkOSWindow_Mac.mm",
+          "src/views/mac/SkTextFieldCell.m",
+        ]
+        libs += [
+          "QuartzCore.framework",
+          "Cocoa.framework",
+          "Foundation.framework",
+        ]
+      } else if (is_win) {
+        sources += [ "src/views/win/SkOSWindow_win.cpp" ]
+      } else if (is_ios) {
+        sources += [ "src/views/mac/SkEventNotifier.mm" ]
+      }
+      if (skia_use_angle) {
+        deps += [ "//third_party/angle2" ]
+      }
     }
   }
 
@@ -1244,58 +1298,60 @@ if (skia_enable_tools) {
     ]
   }
 
-  import("gn/samples.gni")
-  test_lib("samples") {
-    public_include_dirs = [ "samplecode" ]
-    include_dirs = [ "experimental" ]
-    sources = samples_sources + [
-                "experimental/SkSetPoly3To3.cpp",
-                "experimental/SkSetPoly3To3_A.cpp",
-                "experimental/SkSetPoly3To3_D.cpp",
+  if (target_cpu != "wasm") {
+    import("gn/samples.gni")
+    test_lib("samples") {
+      public_include_dirs = [ "samplecode" ]
+      include_dirs = [ "experimental" ]
+      sources = samples_sources + [
+                  "experimental/SkSetPoly3To3.cpp",
+                  "experimental/SkSetPoly3To3_A.cpp",
+                  "experimental/SkSetPoly3To3_D.cpp",
 
-                # Relocating these files here, so that clients don't try to build them while they're
-                # still in active development. Clang's thread safety analysis gets tripped up by
-                # conditional locks.
-                "src/core/SkThreadedBMPDevice.cpp",
-                "src/core/SkThreadedBMPDevice.h",
-              ]
-    deps = [
-      ":experimental_svg_model",
-      ":flags",
-      ":gm",
-      ":tool_utils",
-      ":views",
-      ":xml",
-    ]
+                  # Relocating these files here, so that clients don't try to build them while they're
+                  # still in active development. Clang's thread safety analysis gets tripped up by
+                  # conditional locks.
+                  "src/core/SkThreadedBMPDevice.cpp",
+                  "src/core/SkThreadedBMPDevice.h",
+                ]
+      deps = [
+        ":experimental_svg_model",
+        ":flags",
+        ":gm",
+        ":tool_utils",
+        ":views",
+        ":xml",
+      ]
 
-    if (skia_use_lua) {
-      sources += [ "samplecode/SampleLua.cpp" ]
-      deps += [
-        ":lua",
-        "//third_party/lua",
+      if (skia_use_lua) {
+        sources += [ "samplecode/SampleLua.cpp" ]
+        deps += [
+          ":lua",
+          "//third_party/lua",
+        ]
+      }
+    }
+    test_app("dm") {
+      sources = [
+        "dm/DM.cpp",
+        "dm/DMGpuTestProcs.cpp",
+        "dm/DMJsonWriter.cpp",
+        "dm/DMSrcSink.cpp",
+      ]
+      include_dirs = [ "tests" ]
+      deps = [
+        ":common_flags",
+        ":experimental_svg_model",
+        ":flags",
+        ":gm",
+        ":gpu_tool_utils",
+        ":skia",
+        ":tests",
+        ":tool_utils",
+        "//third_party/jsoncpp",
+        "//third_party/libpng",
       ]
     }
-  }
-
-  test_app("dm") {
-    sources = [
-      "dm/DM.cpp",
-      "dm/DMJsonWriter.cpp",
-      "dm/DMSrcSink.cpp",
-    ]
-    include_dirs = [ "tests" ]
-    deps = [
-      ":common_flags",
-      ":experimental_svg_model",
-      ":flags",
-      ":gm",
-      ":gpu_tool_utils",
-      ":skia",
-      ":tests",
-      ":tool_utils",
-      "//third_party/jsoncpp",
-      "//third_party/libpng",
-    ]
   }
 
   test_app("ok") {
@@ -1315,7 +1371,6 @@ if (skia_enable_tools) {
       ":tool_utils",
     ]
   }
-
   test_app("nanobench") {
     sources = [
       "bench/nanobench.cpp",
@@ -1371,6 +1426,26 @@ if (skia_enable_tools) {
     }
   }
 
+  if (skia_enable_gpu && !skia_use_angle && (is_linux || is_win || is_mac)) {
+    test_app("HelloWorld") {
+      sources = [
+        "example/HelloWorld.cpp",
+      ]
+      if (is_mac) {
+        sources += [ "src/views/mac/skia_mac.mm" ]
+      } else if (is_win) {
+        sources += [ "src/views/win/skia_win.cpp" ]
+      } else if (is_linux) {
+        sources += [ "src/views/unix/skia_unix.cpp" ]
+      }
+      deps = [
+        ":gpu_tool_utils",
+        ":skia",
+        ":views",
+      ]
+    }
+  }
+
   if (skia_enable_gpu) {
     test_app("skpbench") {
       sources = [
@@ -1386,22 +1461,23 @@ if (skia_enable_tools) {
   }
 
   # We can't yet build ICU on iOS or Windows.
-  if (!is_ios && !is_win) {
+  if (!is_ios && !is_win && target_cpu != "wasm") {
     test_app("sktexttopdf-hb") {
       sources = [
-        "tools/SkShaper_harfbuzz.cpp",
-        "tools/using_skia_and_harfbuzz.cpp",
+        "tools/shape/SkShaper_harfbuzz.cpp",
+        "tools/shape/using_skia_and_harfbuzz.cpp",
       ]
       deps = [
         ":skia",
         "//third_party/harfbuzz",
+        "//third_party/icu",
       ]
     }
   }
   test_app("sktexttopdf") {
     sources = [
-      "tools/SkShaper_primitive.cpp",
-      "tools/using_skia_and_harfbuzz.cpp",
+      "tools/shape/SkShaper_primitive.cpp",
+      "tools/shape/using_skia_and_harfbuzz.cpp",
     ]
     deps = [
       ":skia",
@@ -1453,7 +1529,7 @@ if (skia_enable_tools) {
     ]
   }
 
-  if (!is_ios) {
+  if (!is_ios && target_cpu != "wasm") {
     test_app("skiaserve") {
       sources = [
         "tools/skiaserve/Request.cpp",
@@ -1554,7 +1630,7 @@ if (skia_enable_tools) {
     ]
   }
 
-  if (skia_enable_gpu && (is_android || is_linux || is_win || is_mac)) {
+  if (skia_enable_gpu) {
     test_app("viewer") {
       is_shared_library = is_android
       sources = [
@@ -1602,6 +1678,13 @@ if (skia_enable_tools) {
           "tools/viewer/sk_app/mac/Window_mac.cpp",
           "tools/viewer/sk_app/mac/main_mac.cpp",
         ]
+      } else if (is_ios) {
+        sources += [
+          "tools/viewer/sk_app/ios/GLWindowContext_ios.cpp",
+          "tools/viewer/sk_app/ios/RasterWindowContext_ios.cpp",
+          "tools/viewer/sk_app/ios/Window_ios.cpp",
+          "tools/viewer/sk_app/ios/main_ios.cpp",
+        ]
       }
 
       if (skia_use_vulkan) {
@@ -1631,7 +1714,7 @@ if (skia_enable_tools) {
       ]
       if (is_android) {
         deps += [ "//third_party/native_app_glue" ]
-      } else if (is_mac) {
+      } else if (is_mac || is_ios) {
         deps += [ "//third_party/libsdl" ]
       }
       if (skia_use_angle) {
@@ -1655,6 +1738,80 @@ if (skia_enable_tools) {
     }
   }
 
+  if (skia_qt_path != "" && (is_win || is_linux || is_mac)) {
+    action_foreach("generate_mocs") {
+      script = "gn/call.py"
+      sources = [
+        "tools/mdbviz/MainWindow.h",
+      ]
+      outputs = [
+        "$target_gen_dir/mdbviz/{{source_name_part}}_moc.cpp",
+      ]
+      args = [
+        "$skia_qt_path" + "/bin/moc",
+        "{{source}}",
+        "-o",
+        "gen/mdbviz/{{source_name_part}}_moc.cpp",
+      ]
+    }
+    action_foreach("generate_resources") {
+      script = "gn/call.py"
+      sources = [
+        "tools/mdbviz/resources.qrc",
+      ]
+      outputs = [
+        "$target_gen_dir/mdbviz/{{source_name_part}}_res.cpp",
+      ]
+      args = [
+        "$skia_qt_path" + "/bin/rcc",
+        "{{source}}",
+        "-o",
+        "gen/mdbviz/{{source_name_part}}_res.cpp",
+      ]
+    }
+    test_app("mdbviz") {
+      if (is_win) {
+        # on Windows we need to disable some exception handling warnings due to the Qt headers
+        cflags = [ "/Wv:18" ]  # 18 -> VS2013, 19 -> VS2015, 1910 -> VS2017
+      }
+      sources = [
+        "tools/UrlDataManager.cpp",
+        "tools/debugger/SkDebugCanvas.cpp",
+        "tools/debugger/SkDrawCommand.cpp",
+        "tools/debugger/SkJsonWriteBuffer.cpp",
+        "tools/debugger/SkObjectParser.cpp",
+        "tools/mdbviz/MainWindow.cpp",
+        "tools/mdbviz/Model.cpp",
+        "tools/mdbviz/main.cpp",
+        "tools/picture_utils.cpp",
+
+        # generated files
+        "$target_gen_dir/mdbviz/MainWindow_moc.cpp",
+        "$target_gen_dir/mdbviz/resources_res.cpp",
+      ]
+      lib_dirs = [ "$skia_qt_path/lib" ]
+      libs = [
+        "Qt5Core.lib",
+        "Qt5Gui.lib",
+        "Qt5Widgets.lib",
+      ]
+      include_dirs = [
+        "$skia_qt_path/include",
+        "$skia_qt_path/include/QtCore",
+        "$skia_qt_path/include/QtWidgets",
+        "tools",
+        "tools/debugger",
+      ]
+      deps = [
+        ":generate_mocs",
+        ":generate_resources",
+        ":skia",
+        "//third_party/jsoncpp",
+        "//third_party/libpng",
+      ]
+    }
+  }
+
   if (is_android && defined(ndk) && ndk != "") {
     copy("gdbserver") {
       sources = [
@@ -1673,7 +1830,7 @@ if (skia_jumper_clang != "") {
 
     inputs = [
       "src/jumper/SkJumper_stages.cpp",
-      "src/jumper/SkJumper_stages_8bit.cpp",
+      "src/jumper/SkJumper_stages_lowp.cpp",
     ]
 
     # GN insists its outputs should go somewhere underneath target_out_dir, so we trick it.

@@ -52,14 +52,15 @@ bool XFAJSEmbedderTest::OpenDocument(const std::string& filename,
   return true;
 }
 
-bool XFAJSEmbedderTest::Execute(const CFX_ByteStringC& input) {
+bool XFAJSEmbedderTest::Execute(const ByteStringView& input) {
   if (ExecuteHelper(input)) {
     return true;
   }
 
   CFXJSE_Value msg(GetIsolate());
   value_->GetObjectPropertyByIdx(1, &msg);
-  fprintf(stderr, "JS: %.*s\n", input.GetLength(), input.unterminated_c_str());
+  fprintf(stderr, "JS: %.*s\n", static_cast<int>(input.GetLength()),
+          input.unterminated_c_str());
   // If the parsing of the input fails, then v8 will not run, so there will be
   // no value here to print.
   if (msg.IsString() && !msg.ToWideString().IsEmpty())
@@ -67,13 +68,13 @@ bool XFAJSEmbedderTest::Execute(const CFX_ByteStringC& input) {
   return false;
 }
 
-bool XFAJSEmbedderTest::ExecuteSilenceFailure(const CFX_ByteStringC& input) {
+bool XFAJSEmbedderTest::ExecuteSilenceFailure(const ByteStringView& input) {
   return ExecuteHelper(input);
 }
 
-bool XFAJSEmbedderTest::ExecuteHelper(const CFX_ByteStringC& input) {
+bool XFAJSEmbedderTest::ExecuteHelper(const ByteStringView& input) {
   value_ = pdfium::MakeUnique<CFXJSE_Value>(GetIsolate());
   return script_context_->RunScript(XFA_SCRIPTLANGTYPE_Formcalc,
-                                    CFX_WideString::FromUTF8(input).AsStringC(),
+                                    WideString::FromUTF8(input).AsStringView(),
                                     value_.get(), GetXFADocument()->GetRoot());
 }

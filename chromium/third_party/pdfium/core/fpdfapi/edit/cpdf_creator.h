@@ -11,12 +11,14 @@
 #include <memory>
 #include <vector>
 
-#include "core/fxcrt/cfx_retain_ptr.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_stream.h"
+#include "core/fxcrt/maybe_owned.h"
+#include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 class CPDF_Array;
 class CPDF_CryptoHandler;
+class CPDF_SecurityHandler;
 class CPDF_Dictionary;
 class CPDF_Document;
 class CPDF_Object;
@@ -28,7 +30,7 @@ class CPDF_Parser;
 class CPDF_Creator {
  public:
   explicit CPDF_Creator(CPDF_Document* pDoc,
-                        const CFX_RetainPtr<IFX_WriteStream>& archive);
+                        const RetainPtr<IFX_WriteStream>& archive);
   ~CPDF_Creator();
 
   void RemoveSecurity();
@@ -40,7 +42,7 @@ class CPDF_Creator {
 
   uint32_t GetNextObjectNumber() { return ++m_dwLastObjNum; }
   uint32_t GetLastObjectNumber() const { return m_dwLastObjNum; }
-  CPDF_CryptoHandler* GetCryptoHandler() { return m_pCryptoHandler.Get(); }
+  CPDF_CryptoHandler* GetCryptoHandler();
   CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
   CPDF_Array* GetIDArray() const { return m_pIDArray.get(); }
   CPDF_Dictionary* GetEncryptDict() const { return m_pEncryptDict.Get(); }
@@ -80,13 +82,13 @@ class CPDF_Creator {
 
   bool IsXRefNeedEnd();
 
-  CFX_UnownedPtr<CPDF_Document> const m_pDocument;
-  CFX_UnownedPtr<CPDF_Parser> const m_pParser;
+  UnownedPtr<CPDF_Document> const m_pDocument;
+  UnownedPtr<CPDF_Parser> const m_pParser;
   bool m_bSecurityChanged;
-  CFX_UnownedPtr<CPDF_Dictionary> m_pEncryptDict;
+  UnownedPtr<CPDF_Dictionary> m_pEncryptDict;
   uint32_t m_dwEncryptObjNum;
-  CFX_RetainPtr<CPDF_CryptoHandler> m_pCryptoHandler;
-  CFX_UnownedPtr<CPDF_Object> m_pMetadata;
+  fxcrt::MaybeOwned<CPDF_SecurityHandler> m_pSecurityHandler;
+  UnownedPtr<CPDF_Object> m_pMetadata;
   uint32_t m_dwLastObjNum;
   std::unique_ptr<IFX_ArchiveStream> m_Archive;
   FX_FILESIZE m_SavedOffset;

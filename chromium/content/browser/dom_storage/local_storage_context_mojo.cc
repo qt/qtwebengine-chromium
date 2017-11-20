@@ -28,6 +28,7 @@
 #include "sql/connection.h"
 #include "storage/browser/quota/special_storage_policy.h"
 #include "third_party/leveldatabase/env_chromium.h"
+#include "third_party/leveldatabase/leveldb_chrome.h"
 
 namespace content {
 
@@ -536,7 +537,7 @@ bool LocalStorageContextMojo::OnMemoryDump(
     return true;
 
   std::string context_name =
-      base::StringPrintf("dom_storage/localstorage_0x%" PRIXPTR,
+      base::StringPrintf("site_storage/localstorage_0x%" PRIXPTR,
                          reinterpret_cast<uintptr_t>(this));
 
   // Account for leveldb memory usage, which actually lives in the file service.
@@ -673,13 +674,13 @@ void LocalStorageContextMojo::OnDirectoryOpened(
   filesystem::mojom::DirectoryPtr directory_clone;
   directory_->Clone(MakeRequest(&directory_clone));
 
-  auto options = leveldb::mojom::OpenOptions::New();
-  options->create_if_missing = true;
-  options->max_open_files = 0;  // use minimum
+  leveldb_env::Options options;
+  options.create_if_missing = true;
+  options.max_open_files = 0;  // use minimum
   // Default write_buffer_size is 4 MB but that might leave a 3.999
   // memory allocation in RAM from a log file recovery.
-  options->write_buffer_size = 64 * 1024;
-  options->shared_block_read_cache = leveldb::mojom::SharedReadCache::Web;
+  options.write_buffer_size = 64 * 1024;
+  options.block_cache = leveldb_chrome::GetSharedWebBlockCache();
   leveldb_service_->OpenWithOptions(
       std::move(options), std::move(directory_clone), "leveldb",
       memory_dump_id_, MakeRequest(&database_),
@@ -923,6 +924,11 @@ void LocalStorageContextMojo::OnGotMetaData(
   for (const auto& it : level_db_wrappers_) {
     if (origins.find(it.first) != origins.end())
       continue;
+    // Skip any origins that definitely don't have any data.
+    if (!it.second->level_db_wrapper()->has_pending_load_tasks() &&
+        it.second->level_db_wrapper()->empty()) {
+      continue;
+    }
     LocalStorageUsageInfo info;
     info.origin = it.first.GetURL();
     info.last_modified = now;

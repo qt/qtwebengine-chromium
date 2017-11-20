@@ -10,9 +10,11 @@
 #include "core/dom/Modulator.h"
 #include "core/dom/ModuleScript.h"
 #include "core/dom/TaskRunnerHelper.h"
+#include "core/loader/modulescript/DocumentModuleScriptFetcher.h"
 #include "core/loader/modulescript/ModuleScriptFetchRequest.h"
 #include "core/loader/modulescript/ModuleScriptLoaderClient.h"
 #include "core/loader/modulescript/ModuleScriptLoaderRegistry.h"
+#include "core/loader/modulescript/WorkletModuleScriptFetcher.h"
 #include "core/testing/DummyModulator.h"
 #include "core/testing/DummyPageHolder.h"
 #include "core/workers/MainThreadWorkletGlobalScope.h"
@@ -60,26 +62,33 @@ class ModuleScriptLoaderTestModulator final : public DummyModulator {
   ModuleScriptLoaderTestModulator(RefPtr<ScriptState> script_state,
                                   RefPtr<SecurityOrigin> security_origin)
       : script_state_(std::move(script_state)),
-        security_origin_(std::move(security_origin)) {}
+        security_origin_(std::move(security_origin)) {
+    auto* fetch_context =
+        MockFetchContext::Create(MockFetchContext::kShouldLoadNewResource);
+    fetcher_ = ResourceFetcher::Create(fetch_context);
+  }
 
   ~ModuleScriptLoaderTestModulator() override {}
 
   SecurityOrigin* GetSecurityOrigin() override {
-    return security_origin_.Get();
+    return security_origin_.get();
   }
 
-  ScriptState* GetScriptState() override { return script_state_.Get(); }
+  ScriptState* GetScriptState() override { return script_state_.get(); }
 
-  ScriptModule CompileModule(const String& script,
-                             const String& url_str,
-                             AccessControlStatus access_control_status,
-                             const TextPosition& position,
-                             ExceptionState& exception_state) override {
-    ScriptState::Scope scope(script_state_.Get());
-    return ScriptModule::Compile(
-        script_state_->GetIsolate(), "export default 'foo';", "",
-        access_control_status, TextPosition::MinimumPosition(),
-        exception_state);
+  ScriptModule CompileModule(
+      const String& script,
+      const String& url_str,
+      AccessControlStatus access_control_status,
+      WebURLRequest::FetchCredentialsMode credentials_mode,
+      const String& nonce,
+      ParserDisposition parser_state,
+      const TextPosition& position,
+      ExceptionState& exception_state) override {
+    ScriptState::Scope scope(script_state_.get());
+    return ScriptModule::Compile(script_state_->GetIsolate(), script, url_str,
+                                 access_control_status, credentials_mode, nonce,
+                                 parser_state, position, exception_state);
   }
 
   void SetModuleRequests(const Vector<String>& requests) {
@@ -95,15 +104,28 @@ class ModuleScriptLoaderTestModulator final : public DummyModulator {
     return ScriptModuleState::kUninstantiated;
   }
 
+  ModuleScriptFetcher* CreateModuleScriptFetcher() override {
+    auto* execution_context = ExecutionContext::From(script_state_.get());
+    if (execution_context->IsDocument())
+      return new DocumentModuleScriptFetcher(Fetcher());
+    auto* global_scope = ToWorkletGlobalScope(execution_context);
+    return new WorkletModuleScriptFetcher(
+        global_scope->ModuleResponsesMapProxy());
+  }
+
+  ResourceFetcher* Fetcher() const { return fetcher_.Get(); }
+
   DECLARE_TRACE();
 
  private:
   RefPtr<ScriptState> script_state_;
   RefPtr<SecurityOrigin> security_origin_;
+  Member<ResourceFetcher> fetcher_;
   Vector<ModuleRequest> requests_;
 };
 
 DEFINE_TRACE(ModuleScriptLoaderTestModulator) {
+  visitor->Trace(fetcher_);
   DummyModulator::Trace(visitor);
 }
 
@@ -126,14 +148,12 @@ class ModuleScriptLoaderTest : public ::testing::Test {
 
   LocalFrame& GetFrame() { return dummy_page_holder_->GetFrame(); }
   Document& GetDocument() { return dummy_page_holder_->GetDocument(); }
-  ResourceFetcher* Fetcher() { return fetcher_.Get(); }
   ModuleScriptLoaderTestModulator* GetModulator() { return modulator_.Get(); }
 
  protected:
   ScopedTestingPlatformSupport<FetchTestingPlatformSupport> platform_;
   std::unique_ptr<DummyPageHolder> dummy_page_holder_;
   std::unique_ptr<MainThreadWorkletReportingProxy> reporting_proxy_;
-  Persistent<ResourceFetcher> fetcher_;
   Persistent<ModuleScriptLoaderTestModulator> modulator_;
   Persistent<MainThreadWorkletGlobalScope> global_scope_;
 };
@@ -143,9 +163,6 @@ void ModuleScriptLoaderTest::SetUp() {
   dummy_page_holder_ = DummyPageHolder::Create(IntSize(500, 500));
   GetDocument().SetURL(KURL(kParsedURLString, "https://example.test"));
   GetDocument().SetSecurityOrigin(SecurityOrigin::Create(GetDocument().Url()));
-  auto* context =
-      MockFetchContext::Create(MockFetchContext::kShouldLoadNewResource);
-  fetcher_ = ResourceFetcher::Create(context);
 }
 
 void ModuleScriptLoaderTest::InitializeForDocument() {
@@ -162,14 +179,14 @@ void ModuleScriptLoaderTest::InitializeForWorklet() {
       "fake user agent", GetDocument().GetSecurityOrigin(),
       ToIsolate(&GetDocument()), *reporting_proxy_);
   global_scope_->ScriptController()->InitializeContextIfNeeded("Dummy Context");
-  global_scope_->SetModuleResponsesMapProxyForTesting(
-      WorkletModuleResponsesMapProxy::Create(
-          new WorkletModuleResponsesMap(Fetcher()),
-          TaskRunnerHelper::Get(TaskType::kUnspecedLoading, &GetDocument()),
-          TaskRunnerHelper::Get(TaskType::kUnspecedLoading, global_scope_)));
   modulator_ = new ModuleScriptLoaderTestModulator(
       global_scope_->ScriptController()->GetScriptState(),
       GetDocument().GetSecurityOrigin());
+  global_scope_->SetModuleResponsesMapProxyForTesting(
+      WorkletModuleResponsesMapProxy::Create(
+          new WorkletModuleResponsesMap(modulator_->Fetcher()),
+          TaskRunnerHelper::Get(TaskType::kUnspecedLoading, &GetDocument()),
+          TaskRunnerHelper::Get(TaskType::kUnspecedLoading, global_scope_)));
 }
 
 void ModuleScriptLoaderTest::TestFetchDataURL(
@@ -179,7 +196,7 @@ void ModuleScriptLoaderTest::TestFetchDataURL(
   ModuleScriptFetchRequest module_request(
       url, String(), kParserInserted, WebURLRequest::kFetchCredentialsModeOmit);
   registry->Fetch(module_request, ModuleGraphLevel::kTopLevelModuleFetch,
-                  GetModulator(), Fetcher(), client);
+                  GetModulator(), client);
 }
 
 TEST_F(ModuleScriptLoaderTest, FetchDataURL) {
@@ -190,7 +207,7 @@ TEST_F(ModuleScriptLoaderTest, FetchDataURL) {
   EXPECT_TRUE(client->WasNotifyFinished())
       << "ModuleScriptLoader should finish synchronously.";
   ASSERT_TRUE(client->GetModuleScript());
-  EXPECT_FALSE(client->GetModuleScript()->IsErrored());
+  EXPECT_FALSE(client->GetModuleScript()->HasEmptyRecord());
 }
 
 TEST_F(ModuleScriptLoaderTest, FetchDataURL_OnWorklet) {
@@ -204,7 +221,7 @@ TEST_F(ModuleScriptLoaderTest, FetchDataURL_OnWorklet) {
 
   EXPECT_TRUE(client1->WasNotifyFinished());
   ASSERT_TRUE(client1->GetModuleScript());
-  EXPECT_FALSE(client1->GetModuleScript()->IsErrored());
+  EXPECT_FALSE(client1->GetModuleScript()->HasEmptyRecord());
 
   // Try to fetch the same URL again in order to verify the case where
   // WorkletModuleResponsesMap serves a cache.
@@ -217,7 +234,7 @@ TEST_F(ModuleScriptLoaderTest, FetchDataURL_OnWorklet) {
 
   EXPECT_TRUE(client2->WasNotifyFinished());
   ASSERT_TRUE(client2->GetModuleScript());
-  EXPECT_FALSE(client2->GetModuleScript()->IsErrored());
+  EXPECT_FALSE(client2->GetModuleScript()->HasEmptyRecord());
 }
 
 void ModuleScriptLoaderTest::TestInvalidSpecifier(
@@ -229,7 +246,7 @@ void ModuleScriptLoaderTest::TestInvalidSpecifier(
       url, String(), kParserInserted, WebURLRequest::kFetchCredentialsModeOmit);
   GetModulator()->SetModuleRequests({"invalid"});
   registry->Fetch(module_request, ModuleGraphLevel::kTopLevelModuleFetch,
-                  GetModulator(), Fetcher(), client);
+                  GetModulator(), client);
 }
 
 TEST_F(ModuleScriptLoaderTest, InvalidSpecifier) {
@@ -240,7 +257,7 @@ TEST_F(ModuleScriptLoaderTest, InvalidSpecifier) {
   EXPECT_TRUE(client->WasNotifyFinished())
       << "ModuleScriptLoader should finish synchronously.";
   ASSERT_TRUE(client->GetModuleScript());
-  EXPECT_TRUE(client->GetModuleScript()->IsErrored());
+  EXPECT_TRUE(client->GetModuleScript()->HasEmptyRecord());
 }
 
 TEST_F(ModuleScriptLoaderTest, InvalidSpecifier_OnWorklet) {
@@ -254,7 +271,7 @@ TEST_F(ModuleScriptLoaderTest, InvalidSpecifier_OnWorklet) {
 
   EXPECT_TRUE(client->WasNotifyFinished());
   ASSERT_TRUE(client->GetModuleScript());
-  EXPECT_TRUE(client->GetModuleScript()->IsErrored());
+  EXPECT_TRUE(client->GetModuleScript()->HasEmptyRecord());
 }
 
 void ModuleScriptLoaderTest::TestFetchInvalidURL(
@@ -265,7 +282,7 @@ void ModuleScriptLoaderTest::TestFetchInvalidURL(
   ModuleScriptFetchRequest module_request(
       url, String(), kParserInserted, WebURLRequest::kFetchCredentialsModeOmit);
   registry->Fetch(module_request, ModuleGraphLevel::kTopLevelModuleFetch,
-                  GetModulator(), Fetcher(), client);
+                  GetModulator(), client);
 }
 
 TEST_F(ModuleScriptLoaderTest, FetchInvalidURL) {
@@ -301,7 +318,7 @@ void ModuleScriptLoaderTest::TestFetchURL(
   ModuleScriptFetchRequest module_request(
       url, String(), kParserInserted, WebURLRequest::kFetchCredentialsModeOmit);
   registry->Fetch(module_request, ModuleGraphLevel::kTopLevelModuleFetch,
-                  GetModulator(), Fetcher(), client);
+                  GetModulator(), client);
 }
 
 TEST_F(ModuleScriptLoaderTest, FetchURL) {

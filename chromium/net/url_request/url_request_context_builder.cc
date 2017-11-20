@@ -11,7 +11,6 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
@@ -19,7 +18,6 @@
 #include "net/base/cache_type.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate_impl.h"
-#include "net/base/sdch_manager.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/ct_known_logs.h"
 #include "net/cert/ct_log_verifier.h"
@@ -189,8 +187,7 @@ URLRequestContextBuilder::HttpCacheParams::HttpCacheParams()
 URLRequestContextBuilder::HttpCacheParams::~HttpCacheParams() {}
 
 URLRequestContextBuilder::URLRequestContextBuilder()
-    : name_(nullptr),
-      enable_brotli_(false),
+    : enable_brotli_(false),
       network_quality_estimator_(nullptr),
       shared_http_user_agent_settings_(nullptr),
       data_enabled_(false),
@@ -202,7 +199,6 @@ URLRequestContextBuilder::URLRequestContextBuilder()
 #endif
       http_cache_enabled_(true),
       throttling_enabled_(false),
-      sdch_enabled_(false),
       cookie_store_set_by_client_(false),
       transport_security_persister_readonly_(false),
       net_log_(nullptr),
@@ -389,7 +385,8 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
       new ContainerURLRequestContext());
   URLRequestContextStorage* storage = context->storage();
 
-  context->set_name(name_);
+  if (!name_.empty())
+    context->set_name(name_);
   context->set_enable_brotli(enable_brotli_);
   context->set_network_quality_estimator(network_quality_estimator_);
 
@@ -410,7 +407,7 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
     // builder or resulting context.
     context->set_net_log(net_log_);
   } else {
-    storage->set_net_log(base::WrapUnique(new NetLog));
+    storage->set_net_log(std::make_unique<NetLog>());
   }
 
   if (host_resolver_) {
@@ -455,11 +452,6 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
     storage->set_channel_id_service(std::move(channel_id_service));
   }
 
-  if (sdch_enabled_) {
-    storage->set_sdch_manager(
-        std::unique_ptr<net::SdchManager>(new SdchManager()));
-  }
-
   storage->set_transport_security_state(
       std::make_unique<TransportSecurityState>());
   if (!transport_security_persister_path_.empty()) {
@@ -472,11 +464,10 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
              base::TaskShutdownBehavior::BLOCK_SHUTDOWN}));
 
     context->set_transport_security_persister(
-        base::WrapUnique<TransportSecurityPersister>(
-            new TransportSecurityPersister(
-                context->transport_security_state(),
-                transport_security_persister_path_, task_runner,
-                transport_security_persister_readonly_)));
+        std::make_unique<TransportSecurityPersister>(
+            context->transport_security_state(),
+            transport_security_persister_path_, task_runner,
+            transport_security_persister_readonly_));
   }
 
   if (http_server_properties_) {
@@ -601,7 +592,7 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
 
   if (data_enabled_)
     job_factory->SetProtocolHandler(url::kDataScheme,
-                                    base::WrapUnique(new DataProtocolHandler));
+                                    std::make_unique<DataProtocolHandler>());
 
 #if !BUILDFLAG(DISABLE_FILE_SUPPORT)
   if (file_enabled_) {

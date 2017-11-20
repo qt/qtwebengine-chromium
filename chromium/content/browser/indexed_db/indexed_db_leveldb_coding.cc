@@ -998,6 +998,14 @@ int Compare(const StringPiece& a,
   return result;
 }
 
+int CompareKeys(const StringPiece& a, const StringPiece& b) {
+  return Compare(a, b, false /*index_keys*/);
+}
+
+int CompareIndexKeys(const StringPiece& a, const StringPiece& b) {
+  return Compare(a, b, true /*index_keys*/);
+}
+
 KeyPrefix::KeyPrefix()
     : database_id_(INVALID_TYPE),
       object_store_id_(INVALID_TYPE),
@@ -1308,6 +1316,8 @@ std::string DatabaseMetaDataKey::Encode(int64_t database_id,
   ret.push_back(meta_data_type);
   return ret;
 }
+
+const int64_t ObjectStoreMetaDataKey::kKeyGeneratorInitialNumber = 1;
 
 ObjectStoreMetaDataKey::ObjectStoreMetaDataKey()
     : object_store_id_(-1), meta_data_type_(0xFF) {}

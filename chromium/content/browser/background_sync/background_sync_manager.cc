@@ -21,6 +21,7 @@
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_storage.h"
+#include "content/browser/service_worker/service_worker_type_converters.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
 #include "content/common/service_worker/service_worker_utils.h"
@@ -29,6 +30,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/permission_manager.h"
 #include "content/public/browser/permission_type.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_event_status.mojom.h"
 
 #if defined(OS_ANDROID)
 #include "content/browser/android/background_sync_network_observer_android.h"
@@ -146,16 +148,19 @@ std::unique_ptr<BackgroundSyncParameters> GetControllerParameters(
   return parameters;
 }
 
-void OnSyncEventFinished(scoped_refptr<ServiceWorkerVersion> active_version,
-                         int request_id,
-                         const ServiceWorkerVersion::StatusCallback& callback,
-                         ServiceWorkerStatusCode status,
-                         base::Time dispatch_event_time) {
-  if (!active_version->FinishRequest(request_id, status == SERVICE_WORKER_OK,
-                                     dispatch_event_time)) {
+void OnSyncEventFinished(
+    scoped_refptr<ServiceWorkerVersion> active_version,
+    int request_id,
+    const ServiceWorkerVersion::LegacyStatusCallback& callback,
+    blink::mojom::ServiceWorkerEventStatus status,
+    base::Time dispatch_event_time) {
+  if (!active_version->FinishRequest(
+          request_id,
+          status == blink::mojom::ServiceWorkerEventStatus::COMPLETED,
+          dispatch_event_time)) {
     return;
   }
-  callback.Run(status);
+  callback.Run(mojo::ConvertTo<ServiceWorkerStatusCode>(status));
 }
 
 }  // namespace
@@ -263,7 +268,7 @@ void BackgroundSyncManager::EmulateDispatchSyncEvent(
     const std::string& tag,
     scoped_refptr<ServiceWorkerVersion> active_version,
     bool last_chance,
-    const ServiceWorkerVersion::StatusCallback& callback) {
+    const ServiceWorkerVersion::LegacyStatusCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DispatchSyncEvent(
       tag, std::move(active_version),
@@ -756,7 +761,7 @@ void BackgroundSyncManager::DispatchSyncEvent(
     const std::string& tag,
     scoped_refptr<ServiceWorkerVersion> active_version,
     blink::mojom::BackgroundSyncEventLastChance last_chance,
-    const ServiceWorkerVersion::StatusCallback& callback) {
+    const ServiceWorkerVersion::LegacyStatusCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(active_version);
 

@@ -4,17 +4,18 @@
 
 #include "ui/message_center/notification.h"
 
+#include <memory>
+
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/gfx/vector_icon_types.h"
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/message_center_style.h"
 #include "ui/message_center/notification_delegate.h"
 #include "ui/message_center/notification_types.h"
+#include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/strings/grit/ui_strings.h"
 
 namespace message_center {
@@ -183,16 +184,24 @@ bool Notification::UseOriginAsContextMessage() const {
          origin_url_.SchemeIsHTTPOrHTTPS();
 }
 
-gfx::Image Notification::GenerateMaskedSmallIcon(SkColor color) const {
+gfx::Image Notification::GenerateMaskedSmallIcon(int dip_size,
+                                                 SkColor color) const {
   if (!vector_small_image().is_empty())
-    return gfx::Image(gfx::CreateVectorIcon(vector_small_image(), color));
+    return gfx::Image(
+        gfx::CreateVectorIcon(vector_small_image(), dip_size, color));
 
   if (small_image().IsEmpty())
-    return small_image();
+    return gfx::Image();
 
+  // If |vector_small_image| is not available, fallback to raster based
+  // masking and resizing.
   gfx::ImageSkia image = small_image().AsImageSkia();
-  return gfx::Image(gfx::ImageSkiaOperations::CreateMaskedImage(
-      CreateSolidColorImage(image.width(), image.height(), color), image));
+  gfx::ImageSkia masked = gfx::ImageSkiaOperations::CreateMaskedImage(
+      CreateSolidColorImage(image.width(), image.height(), color), image);
+  gfx::ImageSkia resized = gfx::ImageSkiaOperations::CreateResizedImage(
+      masked, skia::ImageOperations::ResizeMethod::RESIZE_BEST,
+      gfx::Size(dip_size, dip_size));
+  return gfx::Image(resized);
 }
 
 // static
@@ -246,14 +255,14 @@ std::unique_ptr<Notification> Notification::CreateSystemNotification(
         IDS_MESSAGE_CENTER_NOTIFICATION_CHROMEOS_SYSTEM,
         MessageCenter::Get()->GetProductOSName());
   }
-  std::unique_ptr<Notification> notification = base::MakeUnique<Notification>(
+  std::unique_ptr<Notification> notification = std::make_unique<Notification>(
       type, id, title, message, icon, display_source_or_default, origin_url,
       notifier_id, optional_fields, delegate);
   notification->set_accent_color(color);
   notification->set_small_image(
-      small_image.is_empty()
-          ? gfx::Image()
-          : gfx::Image(gfx::CreateVectorIcon(small_image, color)));
+      small_image.is_empty() ? gfx::Image()
+                             : gfx::Image(gfx::CreateVectorIcon(
+                                   small_image, kSmallImageSizeMD, color)));
   if (!small_image.is_empty())
     notification->set_vector_small_image(small_image);
   return notification;

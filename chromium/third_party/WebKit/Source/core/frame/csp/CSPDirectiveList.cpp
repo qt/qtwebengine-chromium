@@ -14,7 +14,6 @@
 #include "core/html/HTMLScriptElement.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "platform/Crypto.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/text/Base64.h"
@@ -82,6 +81,7 @@ CSPDirectiveList::CSPDirectiveList(ContentSecurityPolicy* policy,
       strict_mixed_content_checking_enforced_(false),
       upgrade_insecure_requests_(false),
       treat_as_public_address_(false),
+      require_safe_types_(false),
       require_sri_for_(RequireSRIForToken::kNone),
       use_reporting_api_(false) {}
 
@@ -611,8 +611,8 @@ bool CSPDirectiveList::AllowInlineScript(
   SourceListDirective* directive = OperativeDirective(script_src_.Get());
   if (IsMatchingNoncePresent(directive, nonce))
     return true;
-  if (element && isHTMLScriptElement(element) &&
-      !toHTMLScriptElement(element)->Loader()->IsParserInserted() &&
+  if (element && IsHTMLScriptElement(element) &&
+      !ToHTMLScriptElement(element)->Loader()->IsParserInserted() &&
       AllowDynamic()) {
     return true;
   }
@@ -1212,6 +1212,22 @@ void CSPDirectiveList::TreatAsPublicAddress(const String& name,
     policy_->ReportValueForEmptyDirective(name, value);
 }
 
+void CSPDirectiveList::RequireTrustedTypes(const String& name,
+                                           const String& value) {
+  if (IsReportOnly()) {
+    policy_->ReportInvalidInReportOnly(name);
+    return;
+  }
+  if (require_safe_types_) {
+    policy_->ReportDuplicateDirective(name);
+    return;
+  }
+  require_safe_types_ = true;
+  policy_->RequireTrustedTypes();
+  if (!value.IsEmpty())
+    policy_->ReportValueForEmptyDirective(name, value);
+}
+
 void CSPDirectiveList::EnforceStrictMixedContentChecking(const String& name,
                                                          const String& value) {
   if (strict_mixed_content_checking_enforced_) {
@@ -1307,6 +1323,11 @@ void CSPDirectiveList::AddDirective(const String& name, const String& value) {
   } else if (type == ContentSecurityPolicy::DirectiveType::kReportTo &&
              policy_->ExperimentalFeaturesEnabled()) {
     ParseReportTo(name, value);
+  } else if (type ==
+                 ContentSecurityPolicy::DirectiveType::kRequireTrustedTypes &&
+             policy_->ExperimentalFeaturesEnabled() &&
+             RuntimeEnabledFeatures::TrustedDOMTypesEnabled()) {
+    RequireTrustedTypes(name, value);
   } else {
     policy_->ReportUnsupportedDirective(name);
   }

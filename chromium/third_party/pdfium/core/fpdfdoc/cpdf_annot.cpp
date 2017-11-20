@@ -179,12 +179,12 @@ CPDF_Stream* FPDFDOC_GetAnnotAP(const CPDF_Dictionary* pAnnotDict,
     return pStream;
 
   if (CPDF_Dictionary* pDict = psub->AsDictionary()) {
-    CFX_ByteString as = pAnnotDict->GetStringFor("AS");
+    ByteString as = pAnnotDict->GetStringFor("AS");
     if (as.IsEmpty()) {
-      CFX_ByteString value = pAnnotDict->GetStringFor("V");
+      ByteString value = pAnnotDict->GetStringFor("V");
       if (value.IsEmpty()) {
         CPDF_Dictionary* pParentDict = pAnnotDict->GetDictFor("Parent");
-        value = pParentDict ? pParentDict->GetStringFor("V") : CFX_ByteString();
+        value = pParentDict ? pParentDict->GetStringFor("V") : ByteString();
       }
       if (value.IsEmpty() || !pDict->KeyExist(value))
         as = "Off";
@@ -241,7 +241,7 @@ bool CPDF_Annot::IsAnnotationHidden(CPDF_Dictionary* pAnnotDict) {
 
 // Static.
 CPDF_Annot::Subtype CPDF_Annot::StringToAnnotSubtype(
-    const CFX_ByteString& sSubtype) {
+    const ByteString& sSubtype) {
   if (sSubtype == "Text")
     return CPDF_Annot::Subtype::TEXT;
   if (sSubtype == "Link")
@@ -300,7 +300,7 @@ CPDF_Annot::Subtype CPDF_Annot::StringToAnnotSubtype(
 }
 
 // Static.
-CFX_ByteString CPDF_Annot::AnnotSubtypeToString(CPDF_Annot::Subtype nSubtype) {
+ByteString CPDF_Annot::AnnotSubtypeToString(CPDF_Annot::Subtype nSubtype) {
   if (nSubtype == CPDF_Annot::Subtype::TEXT)
     return "Text";
   if (nSubtype == CPDF_Annot::Subtype::LINK)
@@ -418,7 +418,7 @@ void CPDF_Annot::DrawBorder(CFX_RenderDevice* pDevice,
     return;
   }
   bool bPrinting = pDevice->GetDeviceClass() == FXDC_PRINTER ||
-                   (pOptions && (pOptions->m_Flags & RENDER_PRINTPREVIEW));
+                   (pOptions && (pOptions->HasFlag(RENDER_PRINTPREVIEW)));
   if (bPrinting && (annot_flags & ANNOTFLAG_PRINT) == 0) {
     return;
   }
@@ -456,7 +456,7 @@ void CPDF_Annot::DrawBorder(CFX_RenderDevice* pDevice,
       width = 1;
     }
   } else {
-    CFX_ByteString style = pBS->GetStringFor("S");
+    ByteString style = pBS->GetStringFor("S");
     pDashArray = pBS->GetArrayFor("D");
     style_char = style[1];
     width = pBS->GetNumberFor("W");
@@ -501,7 +501,7 @@ void CPDF_Annot::DrawBorder(CFX_RenderDevice* pDevice,
   path.AppendRect(rect.left + width, rect.bottom + width, rect.right - width,
                   rect.top - width);
   int fill_type = 0;
-  if (pOptions && (pOptions->m_Flags & RENDER_NOPATHSMOOTH))
+  if (pOptions && (pOptions->HasFlag(RENDER_NOPATHSMOOTH)))
     fill_type |= FXFILL_NOPATHSMOOTH;
 
   pDevice->DrawPath(&path, pUser2Device, &graph_state, argb, argb, fill_type);

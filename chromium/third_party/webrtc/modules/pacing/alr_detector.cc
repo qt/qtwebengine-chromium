@@ -8,15 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/pacing/alr_detector.h"
+#include "modules/pacing/alr_detector.h"
 
 #include <string>
 
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/format_macros.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/system_wrappers/include/field_trial.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/format_macros.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/timeutils.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 
@@ -67,8 +67,9 @@ void AlrDetector::OnBytesSent(size_t bytes_sent, int64_t delta_time_ms) {
 
 void AlrDetector::SetEstimatedBitrate(int bitrate_bps) {
   RTC_DCHECK(bitrate_bps);
-  alr_budget_.set_target_rate_kbps(bitrate_bps * bandwidth_usage_percent_ /
-                                   (1000 * 100));
+  const auto target_rate_kbps = int64_t{bitrate_bps} *
+                                bandwidth_usage_percent_ / (1000 * 100);
+  alr_budget_.set_target_rate_kbps(rtc::dchecked_cast<int>(target_rate_kbps));
 }
 
 rtc::Optional<int64_t> AlrDetector::GetApplicationLimitedRegionStartTime()
@@ -82,8 +83,9 @@ AlrDetector::ParseAlrSettingsFromFieldTrial(const char* experiment_name) {
   std::string group_name = field_trial::FindFullName(experiment_name);
 
   const std::string kIgnoredSuffix = "_Dogfood";
-  if (group_name.rfind(kIgnoredSuffix) ==
-      group_name.length() - kIgnoredSuffix.length()) {
+  std::string::size_type suffix_pos = group_name.rfind(kIgnoredSuffix);
+  if (suffix_pos != std::string::npos &&
+      suffix_pos == group_name.length() - kIgnoredSuffix.length()) {
     group_name.resize(group_name.length() - kIgnoredSuffix.length());
   }
 

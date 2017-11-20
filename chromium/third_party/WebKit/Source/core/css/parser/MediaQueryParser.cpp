@@ -4,15 +4,16 @@
 
 #include "core/css/parser/MediaQueryParser.h"
 
-#include "core/MediaTypeNames.h"
 #include "core/css/parser/CSSTokenizer.h"
+#include "core/media_type_names.h"
 #include "platform/wtf/Vector.h"
 
 namespace blink {
 
 RefPtr<MediaQuerySet> MediaQueryParser::ParseMediaQuerySet(
     const String& query_string) {
-  return ParseMediaQuerySet(CSSTokenizer(query_string).TokenRange());
+  return ParseMediaQuerySet(
+      CSSParserTokenRange(CSSTokenizer(query_string).TokenizeToEOF()));
 }
 
 RefPtr<MediaQuerySet> MediaQueryParser::ParseMediaQuerySet(

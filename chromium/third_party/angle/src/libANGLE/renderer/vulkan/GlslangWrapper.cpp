@@ -18,6 +18,8 @@
 
 #include <array>
 
+#include "common/string_utils.h"
+
 namespace rx
 {
 
@@ -63,11 +65,46 @@ GlslangWrapper::~GlslangWrapper()
     ASSERT(result != 0);
 }
 
-gl::LinkResult GlslangWrapper::linkProgram(const std::string &vertexSource,
-                                           const std::string &fragmentSource,
+gl::LinkResult GlslangWrapper::linkProgram(const gl::Context *glContext,
+                                           const gl::ProgramState &programState,
                                            std::vector<uint32_t> *vertexCodeOut,
                                            std::vector<uint32_t> *fragmentCodeOut)
 {
+    std::string vertexSource =
+        programState.getAttachedVertexShader()->getTranslatedSource(glContext);
+    std::string fragmentSource =
+        programState.getAttachedFragmentShader()->getTranslatedSource(glContext);
+
+    // Parse attribute locations and replace them in the vertex shader.
+    // See corresponding code in OutputVulkanGLSL.cpp.
+    // TODO(jmadill): Also do the same for ESSL 3 fragment outputs.
+    for (const auto &attribute : programState.getAttributes())
+    {
+        if (!attribute.staticUse)
+            continue;
+
+        std::stringstream searchStringBuilder;
+        searchStringBuilder << "@@ LOCATION-" << attribute.name << " @@";
+        std::string searchString = searchStringBuilder.str();
+
+        std::string locationString = Str(attribute.location);
+
+        bool success = angle::ReplaceSubstring(&vertexSource, searchString, locationString);
+        ASSERT(success);
+    }
+
+    // Bind the default uniforms for vertex and fragment shaders.
+    // See corresponding code in OutputVulkanGLSL.cpp.
+    std::stringstream searchStringBuilder;
+    searchStringBuilder << "@@ DEFAULT-UNIFORMS-SET-BINDING @@";
+    std::string searchString = searchStringBuilder.str();
+
+    std::string vertexDefaultUniformsBinding   = "set = 0, binding = 0";
+    std::string fragmentDefaultUniformsBinding = "set = 0, binding = 1";
+
+    angle::ReplaceSubstring(&vertexSource, searchString, vertexDefaultUniformsBinding);
+    angle::ReplaceSubstring(&fragmentSource, searchString, fragmentDefaultUniformsBinding);
+
     std::array<const char *, 2> strings = {{vertexSource.c_str(), fragmentSource.c_str()}};
 
     std::array<int, 2> lengths = {

@@ -68,7 +68,7 @@ class CORE_EXPORT StyleRuleBase
   StyleRuleBase* Copy() const;
 
   // FIXME: There shouldn't be any need for the null parent version.
-  CSSRule* CreateCSSOMWrapper(CSSStyleSheet* parent_sheet = 0) const;
+  CSSRule* CreateCSSOMWrapper(CSSStyleSheet* parent_sheet = nullptr) const;
   CSSRule* CreateCSSOMWrapper(CSSRule* parent_rule) const;
 
   DECLARE_TRACE();
@@ -108,7 +108,9 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
 
   const CSSSelectorList& SelectorList() const { return selector_list_; }
   const StylePropertySet& Properties() const;
+  const StylePropertySet* ParsedProperties() const { return properties_; }
   MutableStylePropertySet& MutableProperties();
+  CSSLazyPropertyParser* LazyParser() { return lazy_property_parser_.Get(); }
 
   void WrapperAdoptSelectorList(CSSSelectorList selectors) {
     selector_list_ = std::move(selectors);
@@ -244,7 +246,7 @@ class CORE_EXPORT StyleRuleMedia : public StyleRuleCondition {
     return new StyleRuleMedia(media, adopt_rules);
   }
 
-  MediaQuerySet* MediaQueries() const { return media_queries_.Get(); }
+  MediaQuerySet* MediaQueries() const { return media_queries_.get(); }
 
   StyleRuleMedia* Copy() const { return new StyleRuleMedia(*this); }
 

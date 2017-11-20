@@ -60,7 +60,9 @@ extern const char kChromeUIIdentityInternalsURL[];
 extern const char kChromeUIInspectURL[];
 extern const char kChromeUIInstantURL[];
 extern const char kChromeUIInterstitialURL[];
+extern const char kChromeUIInterventionsInternalsURL[];
 extern const char kChromeUIInvalidationsURL[];
+extern const char kChromeUIPolicyToolURL[];
 extern const char kChromeUIMediaEngagementHost[];
 extern const char kChromeUIMemoryInternalsURL[];
 extern const char kChromeUINaClURL[];
@@ -116,11 +118,13 @@ extern const char kChromeUIKeyboardOverlayURL[];
 extern const char kChromeUIMobileSetupURL[];
 extern const char kChromeUIOobeURL[];
 extern const char kChromeUIOSCreditsURL[];
-extern const char kChromeUIProxySettingsURL[];
+extern const char kChromeUIIntenetConfigDialogURL[];
+extern const char kChromeUIIntenetDetailDialogURL[];
 extern const char kChromeUIScreenlockIconURL[];
 extern const char kChromeUISetTimeURL[];
 extern const char kChromeUISimUnlockURL[];
 extern const char kChromeUISlowURL[];
+extern const char kChromeUISysInternalsURL[];
 extern const char kChromeUISystemInfoURL[];
 extern const char kChromeUITermsOemURL[];
 extern const char kChromeUIUserImageURL[];
@@ -173,12 +177,14 @@ extern const char kChromeUIDelayedHangUIHost[];
 extern const char kChromeUIDeviceLogHost[];
 extern const char kChromeUIDevicesHost[];
 extern const char kChromeUIDevToolsHost[];
+extern const char kChromeUIDevToolsBlankPath[];
 extern const char kChromeUIDevToolsBundledPath[];
-extern const char kChromeUIDevToolsRemotePath[];
 extern const char kChromeUIDevToolsCustomPath[];
+extern const char kChromeUIDevToolsRemotePath[];
 extern const char kChromeUIDNSHost[];
 extern const char kChromeUIDomainReliabilityInternalsHost[];
 extern const char kChromeUIDownloadsHost[];
+extern const char kChromeUIDownloadInternalsHost[];
 extern const char kChromeUIDriveInternalsHost[];
 extern const char kChromeUIExtensionIconHost[];
 extern const char kChromeUIExtensionsFrameHost[];
@@ -200,11 +206,13 @@ extern const char kChromeUIIdentityInternalsHost[];
 extern const char kChromeUIInspectHost[];
 extern const char kChromeUIInstantHost[];
 extern const char kChromeUIInterstitialHost[];
+extern const char kChromeUIInterventionsInternalsHost[];
 extern const char kChromeUIInvalidationsHost[];
 extern const char kChromeUIKillHost[];
 extern const char kChromeUILargeIconHost[];
 extern const char kChromeUILocalStateHost[];
 extern const char kChromeUIMemoryInternalsHost[];
+extern const char kChromeUIPolicyToolHost[];
 extern const char kChromeUINaClHost[];
 extern const char kChromeUINetExportHost[];
 extern const char kChromeUINetInternalsHost[];
@@ -217,7 +225,6 @@ extern const char kChromeUIPolicyHost[];
 extern const char kChromeUIPrefsInternalsHost[];
 extern const char kChromeUIMdUserManagerHost[];
 extern const char kChromeUIPredictorsHost[];
-extern const char kChromeUIProfilerHost[];
 extern const char kChromeUIQuotaInternalsHost[];
 extern const char kChromeUIQuitHost[];
 extern const char kChromeUIRestartHost[];
@@ -254,10 +261,6 @@ extern const char kChromeUIWorkersHost[];
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
 extern const char kChromeUIPrintHost[];
 #endif  // ENABLE_PRINT_PREVIEW
-
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-extern const char kChromeUISigninDiceInternalsHost[];
-#endif
 
 #if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
 extern const char kChromeUIDiscardsHost[];
@@ -296,13 +299,15 @@ extern const char kChromeUINetworkHost[];
 extern const char kChromeUIOobeHost[];
 extern const char kChromeUIOSCreditsHost[];
 extern const char kChromeUIPowerHost[];
-extern const char kChromeUIProxySettingsHost[];
+extern const char kChromeUIInternetConfigDialogHost[];
+extern const char kChromeUIInternetDetailDialogHost[];
 extern const char kChromeUIRotateHost[];
 extern const char kChromeUIScreenlockIconHost[];
 extern const char kChromeUISetTimeHost[];
 extern const char kChromeUISimUnlockHost[];
 extern const char kChromeUISlowHost[];
 extern const char kChromeUISlowTraceHost[];
+extern const char kChromeUISysInternalsHost[];
 extern const char kChromeUIUserImageHost[];
 extern const char kChromeUIVoiceSearchHost[];
 
@@ -447,6 +452,9 @@ extern const char kKillReasonURL[];
 // "Learn more" URL for the Privacy section under Options.
 extern const char kPrivacyLearnMoreURL[];
 
+// "myactivity.google.com" URL for the history checkbox in ClearBrowsingData.
+extern const char kMyActivityUrl[];
+
 // "Learn more" URL for the "Do not track" setting in the privacy section.
 extern const char kDoNotTrackLearnMoreURL[];
 
@@ -518,6 +526,9 @@ extern const char kAndroidAppsLearnMoreURL[];
 
 // The URL for the "learn more" link for Instant Tethering.
 extern const char kInstantTetheringLearnMoreURL[];
+
+// The URL for the "learn more" link for TPM firmware update.
+extern const char kTPMFirmwareUpdateLearnMoreURL[];
 #endif
 
 // The URL for the Learn More link of the non-CWS bubble.
@@ -529,9 +540,6 @@ extern const char kNotificationsHelpURL[];
 // The URL for the Learn More link in the Chrome Cleanup settings card.
 extern const char kChromeCleanerLearnMoreURL[];
 #endif
-
-// The Welcome Notification More Info URL.
-extern const char kNotificationWelcomeLearnMoreURL[];
 
 // Gets the hosts/domains that are shown in chrome://chrome-urls.
 extern const char* const kChromeHostURLs[];
@@ -609,10 +617,6 @@ extern const char kMediaAccessLearnMoreUrl[];
 // The URL for the "Learn more" link in the language settings.
 // TODO(michaelpg): Compile on Chrome OS only when Options is removed.
 extern const char kLanguageSettingsLearnMoreUrl[];
-
-#if defined(GOOGLE_CHROME_BUILD) && defined(OS_LINUX) && !defined(OS_CHROMEOS)
-extern const char kLinuxWheezyPreciseDeprecationURL[];
-#endif
 
 #if defined(OS_MACOSX)
 // The URL for the Mac OS X 10.6/10.7/10.8 deprecation help center article.

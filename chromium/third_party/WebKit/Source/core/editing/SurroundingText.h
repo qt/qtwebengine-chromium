@@ -32,12 +32,13 @@
 #define SurroundingText_h
 
 #include "core/CoreExport.h"
-#include "core/editing/EphemeralRange.h"
-#include "core/editing/Position.h"
+#include "core/editing/Forward.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/text/WTFString.h"
 
 namespace blink {
+
+class Range;
 
 class CORE_EXPORT SurroundingText {
   USING_FAST_MALLOC(SurroundingText);

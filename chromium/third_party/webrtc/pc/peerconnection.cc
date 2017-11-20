@@ -8,39 +8,42 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/pc/peerconnection.h"
+#include "pc/peerconnection.h"
 
 #include <algorithm>
 #include <utility>
 #include <vector>
 
-#include "webrtc/api/jsepicecandidate.h"
-#include "webrtc/api/jsepsessiondescription.h"
-#include "webrtc/api/mediaconstraintsinterface.h"
-#include "webrtc/api/mediastreamproxy.h"
-#include "webrtc/api/mediastreamtrackproxy.h"
-#include "webrtc/call/call.h"
-#include "webrtc/logging/rtc_event_log/rtc_event_log.h"
-#include "webrtc/media/sctp/sctptransport.h"
-#include "webrtc/pc/audiotrack.h"
-#include "webrtc/pc/channelmanager.h"
-#include "webrtc/pc/dtmfsender.h"
-#include "webrtc/pc/mediastream.h"
-#include "webrtc/pc/mediastreamobserver.h"
-#include "webrtc/pc/remoteaudiosource.h"
-#include "webrtc/pc/rtpreceiver.h"
-#include "webrtc/pc/rtpsender.h"
-#include "webrtc/pc/streamcollection.h"
-#include "webrtc/pc/videocapturertracksource.h"
-#include "webrtc/pc/videotrack.h"
-#include "webrtc/rtc_base/bind.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/stringencode.h"
-#include "webrtc/rtc_base/stringutils.h"
-#include "webrtc/rtc_base/trace_event.h"
-#include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/field_trial.h"
+#include "api/jsepicecandidate.h"
+#include "api/jsepsessiondescription.h"
+#include "api/mediaconstraintsinterface.h"
+#include "api/mediastreamproxy.h"
+#include "api/mediastreamtrackproxy.h"
+#include "call/call.h"
+#include "logging/rtc_event_log/output/rtc_event_log_output_file.h"
+#include "logging/rtc_event_log/rtc_event_log.h"
+#include "media/sctp/sctptransport.h"
+#include "pc/audiotrack.h"
+#include "pc/channelmanager.h"
+#include "pc/dtmfsender.h"
+#include "pc/mediastream.h"
+#include "pc/mediastreamobserver.h"
+#include "pc/remoteaudiosource.h"
+#include "pc/rtpreceiver.h"
+#include "pc/rtpsender.h"
+#include "pc/streamcollection.h"
+#include "pc/videocapturertracksource.h"
+#include "pc/videotrack.h"
+#include "rtc_base/bind.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/safe_conversions.h"
+#include "rtc_base/stringencode.h"
+#include "rtc_base/stringutils.h"
+#include "rtc_base/trace_event.h"
+#include "system_wrappers/include/clock.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace {
 
@@ -143,13 +146,13 @@ void AddRtpSenderOptions(
     if (sender->media_type() == cricket::MEDIA_TYPE_AUDIO) {
       if (audio_media_description_options) {
         audio_media_description_options->AddAudioSender(
-            sender->id(), sender->internal()->stream_id());
+            sender->id(), sender->internal()->stream_ids());
       }
     } else {
       RTC_DCHECK(sender->media_type() == cricket::MEDIA_TYPE_VIDEO);
       if (video_media_description_options) {
         video_media_description_options->AddVideoSender(
-            sender->id(), sender->internal()->stream_id(), 1);
+            sender->id(), sender->internal()->stream_ids(), 1);
       }
     }
   }
@@ -274,6 +277,7 @@ bool PeerConnectionInterface::RTCConfiguration::operator==(
     bool redetermine_role_on_ice_restart;
     rtc::Optional<int> ice_check_min_interval;
     rtc::Optional<rtc::IntervalRange> ice_regather_interval_range;
+    webrtc::TurnCustomizer* turn_customizer;
   };
   static_assert(sizeof(stuff_being_tested_for_equality) == sizeof(*this),
                 "Did you add something to RTCConfiguration and forget to "
@@ -309,7 +313,8 @@ bool PeerConnectionInterface::RTCConfiguration::operator==(
          enable_ice_renomination == o.enable_ice_renomination &&
          redetermine_role_on_ice_restart == o.redetermine_role_on_ice_restart &&
          ice_check_min_interval == o.ice_check_min_interval &&
-         ice_regather_interval_range == o.ice_regather_interval_range;
+         ice_regather_interval_range == o.ice_regather_interval_range &&
+         turn_customizer == o.turn_customizer;
 }
 
 bool PeerConnectionInterface::RTCConfiguration::operator!=(
@@ -421,13 +426,16 @@ PeerConnection::~PeerConnection() {
   // Now destroy session_ before destroying other members,
   // because its destruction fires signals (such as VoiceChannelDestroyed)
   // which will trigger some final actions in PeerConnection...
-  session_.reset(nullptr);
+  owned_session_.reset(nullptr);
+  session_ = nullptr;
   // port_allocator_ lives on the network thread and should be destroyed there.
   network_thread()->Invoke<void>(RTC_FROM_HERE,
                                  [this] { port_allocator_.reset(); });
-  // call_ must be destroyed on the worker thread.
-  factory_->worker_thread()->Invoke<void>(RTC_FROM_HERE,
-                                          [this] { call_.reset(); });
+  // call_ and event_log_ must be destroyed on the worker thread.
+  worker_thread()->Invoke<void>(RTC_FROM_HERE, [this] {
+    call_.reset();
+    event_log_.reset();
+  });
 }
 
 bool PeerConnection::Initialize(
@@ -448,6 +456,7 @@ bool PeerConnection::Initialize(
                   << "This shouldn't happen if using PeerConnectionFactory.";
     return false;
   }
+
   if (!observer) {
     // TODO(deadbeef): Why do we do this?
     LOG(LS_ERROR) << "PeerConnection initialized without a "
@@ -465,12 +474,9 @@ bool PeerConnection::Initialize(
     return false;
   }
 
-
-  session_.reset(new WebRtcSession(
+  owned_session_.reset(new WebRtcSession(
       call_.get(), factory_->channel_manager(), configuration.media_config,
-      event_log_.get(),
-      factory_->network_thread(),
-      factory_->worker_thread(), factory_->signaling_thread(),
+      event_log_.get(), network_thread(), worker_thread(), signaling_thread(),
       port_allocator_.get(),
       std::unique_ptr<cricket::TransportController>(
           factory_->CreateTransportController(
@@ -478,11 +484,12 @@ bool PeerConnection::Initialize(
               configuration.redetermine_role_on_ice_restart)),
 #ifdef HAVE_SCTP
       std::unique_ptr<cricket::SctpTransportInternalFactory>(
-          new cricket::SctpTransportFactory(factory_->network_thread()))
+          new cricket::SctpTransportFactory(network_thread()))
 #else
       nullptr
 #endif
           ));
+  session_ = owned_session_.get();
 
   stats_.reset(new StatsCollector(this));
   stats_collector_ = RTCStatsCollector::Create(this);
@@ -1143,6 +1150,7 @@ bool PeerConnection::SetConfiguration(const RTCConfiguration& configuration,
       configuration.ice_candidate_pool_size;
   modified_config.prune_turn_ports = configuration.prune_turn_ports;
   modified_config.ice_check_min_interval = configuration.ice_check_min_interval;
+  modified_config.turn_customizer = configuration.turn_customizer;
   if (configuration != modified_config) {
     LOG(LS_ERROR) << "Modifying the configuration in an unsupported way.";
     return SafeSetError(RTCErrorType::INVALID_MODIFICATION, error);
@@ -1176,7 +1184,8 @@ bool PeerConnection::SetConfiguration(const RTCConfiguration& configuration,
           rtc::Bind(&PeerConnection::ReconfigurePortAllocator_n, this,
                     stun_servers, turn_servers, modified_config.type,
                     modified_config.ice_candidate_pool_size,
-                    modified_config.prune_turn_ports))) {
+                    modified_config.prune_turn_ports,
+                    modified_config.turn_customizer))) {
     LOG(LS_ERROR) << "Failed to apply configuration to PortAllocator.";
     return SafeSetError(RTCErrorType::INTERNAL_ERROR, error);
   }
@@ -1238,9 +1247,8 @@ void PeerConnection::RegisterUMAObserver(UMAObserver* observer) {
 }
 
 RTCError PeerConnection::SetBitrate(const BitrateParameters& bitrate) {
-  rtc::Thread* worker_thread = factory_->worker_thread();
-  if (!worker_thread->IsCurrent()) {
-    return worker_thread->Invoke<RTCError>(
+  if (!worker_thread()->IsCurrent()) {
+    return worker_thread()->Invoke<RTCError>(
         RTC_FROM_HERE, rtc::Bind(&PeerConnection::SetBitrate, this, bitrate));
   }
 
@@ -1285,15 +1293,27 @@ RTCError PeerConnection::SetBitrate(const BitrateParameters& bitrate) {
   return RTCError::OK();
 }
 
+std::unique_ptr<rtc::SSLCertificate>
+PeerConnection::GetRemoteAudioSSLCertificate() {
+  if (!session_) {
+    return nullptr;
+  }
+  auto* voice_channel = session_->voice_channel();
+  if (!voice_channel) {
+    return nullptr;
+  }
+  return GetRemoteSSLCertificate(voice_channel->transport_name());
+}
+
 bool PeerConnection::StartRtcEventLog(rtc::PlatformFile file,
                                       int64_t max_size_bytes) {
-  return factory_->worker_thread()->Invoke<bool>(
+  return worker_thread()->Invoke<bool>(
       RTC_FROM_HERE, rtc::Bind(&PeerConnection::StartRtcEventLog_w, this, file,
                                max_size_bytes));
 }
 
 void PeerConnection::StopRtcEventLog() {
-  factory_->worker_thread()->Invoke<void>(
+  worker_thread()->Invoke<void>(
       RTC_FROM_HERE, rtc::Bind(&PeerConnection::StopRtcEventLog_w, this));
 }
 
@@ -1337,11 +1357,11 @@ void PeerConnection::Close() {
       rtc::Bind(&cricket::PortAllocator::DiscardCandidatePool,
                 port_allocator_.get()));
 
-  factory_->worker_thread()->Invoke<void>(RTC_FROM_HERE,
-                                          [this] { call_.reset(); });
-
-  // The event log must outlive call (and any other object that uses it).
-  event_log_.reset();
+  worker_thread()->Invoke<void>(RTC_FROM_HERE, [this] {
+    call_.reset();
+    // The event log must outlive call (and any other object that uses it).
+    event_log_.reset();
+  });
 }
 
 void PeerConnection::OnSessionStateChange(WebRtcSession* /*session*/,
@@ -1435,7 +1455,7 @@ void PeerConnection::CreateVideoReceiver(MediaStreamInterface* stream,
   rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>
       receiver = RtpReceiverProxyWithInternal<RtpReceiverInternal>::Create(
           signaling_thread(),
-          new VideoRtpReceiver(track_id, factory_->worker_thread(), ssrc,
+          new VideoRtpReceiver(track_id, worker_thread(), ssrc,
                                session_->video_channel()));
   stream->AddTrack(
       static_cast<VideoTrackInterface*>(receiver->internal()->track().get()));
@@ -1447,15 +1467,18 @@ void PeerConnection::CreateVideoReceiver(MediaStreamInterface* stream,
 
 // TODO(deadbeef): Keep RtpReceivers around even if track goes away in remote
 // description.
-void PeerConnection::DestroyReceiver(const std::string& track_id) {
+rtc::scoped_refptr<RtpReceiverInterface> PeerConnection::RemoveAndStopReceiver(
+    const std::string& track_id) {
   auto it = FindReceiverForTrack(track_id);
   if (it == receivers_.end()) {
     LOG(LS_WARNING) << "RtpReceiver for track with id " << track_id
                     << " doesn't exist.";
-  } else {
-    (*it)->internal()->Stop();
-    receivers_.erase(it);
+    return nullptr;
   }
+  (*it)->internal()->Stop();
+  rtc::scoped_refptr<RtpReceiverInterface> receiver = *it;
+  receivers_.erase(it);
+  return receiver;
 }
 
 void PeerConnection::AddAudioTrack(AudioTrackInterface* track,
@@ -1473,8 +1496,8 @@ void PeerConnection::AddAudioTrack(AudioTrackInterface* track,
   rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>> new_sender =
       RtpSenderProxyWithInternal<RtpSenderInternal>::Create(
           signaling_thread(),
-          new AudioRtpSender(track, stream->label(), session_->voice_channel(),
-                             stats_.get()));
+          new AudioRtpSender(track, {stream->label()},
+                             session_->voice_channel(), stats_.get()));
   senders_.push_back(new_sender);
   // If the sender has already been configured in SDP, we call SetSsrc,
   // which will connect the sender to the underlying transport. This can
@@ -1518,7 +1541,7 @@ void PeerConnection::AddVideoTrack(VideoTrackInterface* track,
   // Normal case; we've never seen this track before.
   rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>> new_sender =
       RtpSenderProxyWithInternal<RtpSenderInternal>::Create(
-          signaling_thread(), new VideoRtpSender(track, stream->label(),
+          signaling_thread(), new VideoRtpSender(track, {stream->label()},
                                                  session_->video_channel()));
   senders_.push_back(new_sender);
   const TrackInfo* track_info =
@@ -1997,10 +2020,11 @@ void PeerConnection::OnRemoteTrackRemoved(const std::string& stream_label,
                                           cricket::MediaType media_type) {
   MediaStreamInterface* stream = remote_streams_->find(stream_label);
 
+  rtc::scoped_refptr<RtpReceiverInterface> receiver;
   if (media_type == cricket::MEDIA_TYPE_AUDIO) {
     // When the MediaEngine audio channel is destroyed, the RemoteAudioSource
     // will be notified which will end the AudioRtpReceiver::track().
-    DestroyReceiver(track_id);
+    receiver = RemoveAndStopReceiver(track_id);
     rtc::scoped_refptr<AudioTrackInterface> audio_track =
         stream->FindAudioTrack(track_id);
     if (audio_track) {
@@ -2009,7 +2033,7 @@ void PeerConnection::OnRemoteTrackRemoved(const std::string& stream_label,
   } else if (media_type == cricket::MEDIA_TYPE_VIDEO) {
     // Stopping or destroying a VideoRtpReceiver will end the
     // VideoRtpReceiver::track().
-    DestroyReceiver(track_id);
+    receiver = RemoveAndStopReceiver(track_id);
     rtc::scoped_refptr<VideoTrackInterface> video_track =
         stream->FindVideoTrack(track_id);
     if (video_track) {
@@ -2019,6 +2043,9 @@ void PeerConnection::OnRemoteTrackRemoved(const std::string& stream_label,
     }
   } else {
     RTC_NOTREACHED() << "Invalid media type";
+  }
+  if (receiver) {
+    observer_->OnRemoveTrack(receiver);
   }
 }
 
@@ -2239,7 +2266,7 @@ rtc::scoped_refptr<DataChannel> PeerConnection::InternalCreateDataChannel(
   }
 
   rtc::scoped_refptr<DataChannel> channel(DataChannel::Create(
-      session_.get(), session_->data_channel_type(), label, new_config));
+      session_, session_->data_channel_type(), label, new_config));
   if (!channel) {
     sid_allocator_.ReleaseSid(new_config.id);
     return nullptr;
@@ -2498,7 +2525,8 @@ bool PeerConnection::InitializePortAllocator_n(
   // properties set above.
   port_allocator_->SetConfiguration(stun_servers, turn_servers,
                                     configuration.ice_candidate_pool_size,
-                                    configuration.prune_turn_ports);
+                                    configuration.prune_turn_ports,
+                                    configuration.turn_customizer);
   return true;
 }
 
@@ -2507,13 +2535,15 @@ bool PeerConnection::ReconfigurePortAllocator_n(
     const std::vector<cricket::RelayServerConfig>& turn_servers,
     IceTransportsType type,
     int candidate_pool_size,
-    bool prune_turn_ports) {
+    bool prune_turn_ports,
+    webrtc::TurnCustomizer* turn_customizer) {
   port_allocator_->set_candidate_filter(
       ConvertIceTransportTypeToCandidateFilter(type));
   // Call this last since it may create pooled allocator sessions using the
   // candidate filter set above.
   return port_allocator_->SetConfiguration(
-      stun_servers, turn_servers, candidate_pool_size, prune_turn_ports);
+      stun_servers, turn_servers, candidate_pool_size, prune_turn_ports,
+      turn_customizer);
 }
 
 bool PeerConnection::StartRtcEventLog_w(rtc::PlatformFile file,
@@ -2521,7 +2551,14 @@ bool PeerConnection::StartRtcEventLog_w(rtc::PlatformFile file,
   if (!event_log_) {
     return false;
   }
-  return event_log_->StartLogging(file, max_size_bytes);
+
+  // TODO(eladalon): It would be better to not allow negative values into PC.
+  const size_t max_size = (max_size_bytes < 0)
+                              ? RtcEventLog::kUnlimitedOutput
+                              : rtc::saturated_cast<size_t>(max_size_bytes);
+
+  return event_log_->StartLogging(
+      rtc::MakeUnique<RtcEventLogOutputFile>(file, max_size));
 }
 
 void PeerConnection::StopRtcEventLog_w() {

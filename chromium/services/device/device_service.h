@@ -6,6 +6,7 @@
 #define SERVICES_DEVICE_DEVICE_SERVICE_H_
 
 #include "base/memory/ref_counted.h"
+#include "build/build_config.h"
 #include "device/screen_orientation/public/interfaces/screen_orientation.mojom.h"
 #include "device/sensors/public/interfaces/orientation.mojom.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
@@ -25,6 +26,8 @@
 
 #if defined(OS_ANDROID)
 #include "base/android/scoped_java_ref.h"
+#else
+#include "device/hid/public/interfaces/hid.mojom.h"
 #endif
 
 namespace base {
@@ -32,6 +35,10 @@ class SingleThreadTaskRunner;
 }
 
 namespace device {
+
+#if !defined(OS_ANDROID)
+class HidManagerImpl;
+#endif
 
 class PowerMonitorMessageBroadcaster;
 class TimeZoneMonitor;
@@ -80,6 +87,7 @@ class DeviceService : public service_manager::Service {
 
 #if !defined(OS_ANDROID)
   void BindBatteryMonitorRequest(mojom::BatteryMonitorRequest request);
+  void BindHidManagerRequest(mojom::HidManagerRequest request);
   void BindNFCProviderRequest(mojom::NFCProviderRequest request);
   void BindVibrationManagerRequest(mojom::VibrationManagerRequest request);
 #endif
@@ -119,6 +127,8 @@ class DeviceService : public service_manager::Service {
   bool java_interface_provider_initialized_;
 
   base::android::ScopedJavaGlobalRef<jobject> java_nfc_delegate_;
+#else
+  std::unique_ptr<HidManagerImpl> hid_manager_;
 #endif
 
   service_manager::BinderRegistry registry_;

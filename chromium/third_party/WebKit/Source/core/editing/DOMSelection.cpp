@@ -37,9 +37,13 @@
 #include "core/dom/Range.h"
 #include "core/dom/TreeScope.h"
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/Position.h"
 #include "core/editing/SelectionModifier.h"
+#include "core/editing/SelectionTemplate.h"
 #include "core/editing/SetSelectionOptions.h"
+#include "core/editing/VisibleSelection.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/LocalFrame.h"
@@ -100,7 +104,7 @@ void DOMSelection::UpdateFrameSelection(const SelectionInDOMTree& selection,
     UseCounter::Count(GetFrame(), WebFeature::kSelectionFuncionsChangeFocus);
 }
 
-const VisibleSelection& DOMSelection::GetVisibleSelection() const {
+VisibleSelection DOMSelection::GetVisibleSelection() const {
   DCHECK(GetFrame());
   return GetFrame()->Selection().ComputeVisibleSelectionInDOMTreeDeprecated();
 }

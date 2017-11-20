@@ -30,11 +30,12 @@
 
 #include "core/editing/RenderedPosition.h"
 
+#include "core/editing/InlineBoxPosition.h"
 #include "core/editing/InlineBoxTraversal.h"
 #include "core/editing/TextAffinity.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
-#include "core/html/TextControlElement.h"
+#include "core/html/forms/TextControlElement.h"
 #include "core/layout/api/LineLayoutAPIShim.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/compositing/CompositedSelectionBound.h"
@@ -77,11 +78,7 @@ RenderedPosition::RenderedPosition(const VisiblePositionInFlatTree& position)
 
 RenderedPosition::RenderedPosition(const Position& position,
                                    TextAffinity affinity)
-    : layout_object_(nullptr),
-      inline_box_(nullptr),
-      offset_(0),
-      prev_leaf_child_(UncachedInlineBox()),
-      next_leaf_child_(UncachedInlineBox()) {
+    : layout_object_(nullptr), inline_box_(nullptr), offset_(0) {
   if (position.IsNull())
     return;
   InlineBoxPosition box_position = ComputeInlineBoxPosition(position, affinity);
@@ -96,11 +93,7 @@ RenderedPosition::RenderedPosition(const Position& position,
 
 RenderedPosition::RenderedPosition(const PositionInFlatTree& position,
                                    TextAffinity affinity)
-    : layout_object_(nullptr),
-      inline_box_(nullptr),
-      offset_(0),
-      prev_leaf_child_(UncachedInlineBox()),
-      next_leaf_child_(UncachedInlineBox()) {
+    : layout_object_(nullptr), inline_box_(nullptr), offset_(0) {
   if (position.IsNull())
     return;
   InlineBoxPosition box_position = ComputeInlineBoxPosition(position, affinity);
@@ -114,15 +107,15 @@ RenderedPosition::RenderedPosition(const PositionInFlatTree& position,
 }
 
 InlineBox* RenderedPosition::PrevLeafChild() const {
-  if (prev_leaf_child_ == UncachedInlineBox())
+  if (!prev_leaf_child_.has_value())
     prev_leaf_child_ = inline_box_->PrevLeafChildIgnoringLineBreak();
-  return prev_leaf_child_;
+  return prev_leaf_child_.value();
 }
 
 InlineBox* RenderedPosition::NextLeafChild() const {
-  if (next_leaf_child_ == UncachedInlineBox())
+  if (!next_leaf_child_.has_value())
     next_leaf_child_ = inline_box_->NextLeafChildIgnoringLineBreak();
-  return next_leaf_child_;
+  return next_leaf_child_.value();
 }
 
 bool RenderedPosition::IsEquivalent(const RenderedPosition& other) const {
@@ -362,7 +355,7 @@ bool RenderedPosition::IsVisible(bool selection_start) {
   TextControlElement* text_control = EnclosingTextControl(node);
   if (!text_control)
     return true;
-  if (!isHTMLInputElement(text_control))
+  if (!IsHTMLInputElement(text_control))
     return true;
 
   LayoutObject* layout_object = text_control->GetLayoutObject();

@@ -38,14 +38,12 @@
 #include "core/paint/PaintLayer.h"
 #include "core/paint/compositing/CompositedLayerMapping.h"
 #include "platform/LayoutTestSupport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/animation/CompositorAnimation.h"
 #include "platform/animation/CompositorAnimationCurve.h"
 #include "platform/animation/CompositorFloatAnimationCurve.h"
 #include "platform/animation/CompositorTargetProperty.h"
 #include "platform/animation/TimingFunction.h"
 #include "platform/graphics/Color.h"
-#include "platform/graphics/CompositorMutableProperties.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/PaintCanvas.h"
@@ -290,9 +288,7 @@ void LinkHighlightImpl::PaintContents(
   web_display_item_list->AppendDrawingItem(
       WebRect(record_bounds.x(), record_bounds.y(), record_bounds.width(),
               record_bounds.height()),
-      recorder.finishRecordingAsPicture(),
-      WebRect(record_bounds.x(), record_bounds.y(), record_bounds.width(),
-              record_bounds.height()));
+      recorder.finishRecordingAsPicture());
 }
 
 void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {

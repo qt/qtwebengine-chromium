@@ -16,7 +16,7 @@
 class SkScanClipper {
 public:
     SkScanClipper(SkBlitter* blitter, const SkRegion* clip, const SkIRect& bounds,
-                  bool skipRejectTest = false);
+                  bool skipRejectTest = false, bool boundsPreClipped = false);
 
     SkBlitter*      getBlitter() const { return fBlitter; }
     const SkIRect*  getClipRect() const { return fClipRect; }
@@ -117,8 +117,25 @@ static bool safeRoundOut(const SkRect& src, SkIRect* dst, int32_t maxInt) {
     return false;
 }
 
+// Check if the path is a rect and fat enough after clipping; if so, blit it.
+static inline bool TryBlitFatAntiRect(SkBlitter* blitter, const SkPath& path, const SkIRect& clip) {
+    SkRect rect;
+    if (!path.isRect(&rect)) {
+        return false; // not rect
+    }
+    if (!rect.intersect(SkRect::Make(clip))) {
+        return true; // The intersection is empty. Hence consider it done.
+    }
+    SkIRect bounds = rect.roundOut();
+    if (bounds.width() < 3 || bounds.height() < 3) {
+        return false; // not fat
+    }
+    blitter->blitFatAntiRect(rect);
+    return true;
+}
+
 using FillPathFunc = std::function<void(const SkPath& path, SkBlitter* blitter, bool isInverse,
-        const SkIRect& ir, const SkRegion* clipRgn, const SkIRect* clipRect, bool forceRLE)>;
+        const SkIRect& ir, const SkIRect& clipBounds, bool containedInClip, bool forceRLE)>;
 
 static inline void do_fill_path(const SkPath& path, const SkRegion& origClip, SkBlitter* blitter,
         bool forceRLE, const int SHIFT, FillPathFunc fillPathFunc) {
@@ -199,7 +216,7 @@ static inline void do_fill_path(const SkPath& path, const SkRegion& origClip, Sk
 
     SkASSERT(SkIntToScalar(ir.fTop) <= path.getBounds().fTop);
 
-    fillPathFunc(path, blitter, isInverse, ir, clipRgn, clipRect, forceRLE);
+    fillPathFunc(path, blitter, isInverse, ir, clipRgn->getBounds(), clipRect == nullptr, forceRLE);
 
     if (isInverse) {
         sk_blit_below(blitter, ir, *clipRgn);

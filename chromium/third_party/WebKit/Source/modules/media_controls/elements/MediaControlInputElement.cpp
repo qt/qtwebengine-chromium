@@ -4,11 +4,13 @@
 
 #include "modules/media_controls/elements/MediaControlInputElement.h"
 
+#include "core/dom/DOMTokenList.h"
 #include "core/dom/events/Event.h"
-#include "core/html/HTMLLabelElement.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/forms/HTMLLabelElement.h"
 #include "modules/media_controls/MediaControlsImpl.h"
 #include "platform/Histogram.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/text/PlatformLocale.h"
 
 namespace blink {
@@ -113,22 +115,28 @@ void MediaControlInputElement::UpdateShownState() {
   if (is_overflow_element_) {
     Element* parent = parentElement();
     DCHECK(parent);
-    DCHECK(isHTMLLabelElement(parent));
+    DCHECK(IsHTMLLabelElement(parent));
 
     if (IsWanted() && DoesFit())
       parent->RemoveInlineStyleProperty(CSSPropertyDisplay);
     else
       parent->SetInlineStyleProperty(CSSPropertyDisplay, CSSValueNone);
 
-    return;
+    // Don't update the shown state of the element if we want to hide
+    // icons on the overflow menu.
+    if (!RuntimeEnabledFeatures::OverflowIconsForMediaControlsEnabled())
+      return;
   }
 
   MediaControlElementBase::UpdateShownState();
 }
 
 void MediaControlInputElement::DefaultEventHandler(Event* event) {
-  if (event->type() == EventTypeNames::click)
+  if (event->type() == EventTypeNames::click) {
+    if (IsOverflowElement())
+      GetMediaControls().MaybeRecordOverflowTimeToAction();
     MaybeRecordInteracted();
+  }
 
   HTMLInputElement::DefaultEventHandler(event);
 }
@@ -152,8 +160,6 @@ bool MediaControlInputElement::IsOverflowElement() const {
   return is_overflow_element_;
 }
 
-void MediaControlInputElement::UpdateDisplayType() {}
-
 bool MediaControlInputElement::IsMouseFocusable() const {
   return false;
 }
@@ -172,6 +178,19 @@ void MediaControlInputElement::RecordCTREvent(CTREvent event) {
   EnumerationHistogram ctr_histogram(histogram_name.Ascii().data(),
                                      static_cast<int>(CTREvent::kCount));
   ctr_histogram.Count(static_cast<int>(event));
+}
+
+void MediaControlInputElement::SetClass(const AtomicString& class_name,
+                                        bool should_have_class) {
+  if (should_have_class)
+    classList().Add(class_name);
+  else
+    classList().Remove(class_name);
+}
+
+void MediaControlInputElement::UpdateDisplayType() {
+  if (overflow_element_)
+    overflow_element_->UpdateDisplayType();
 }
 
 DEFINE_TRACE(MediaControlInputElement) {

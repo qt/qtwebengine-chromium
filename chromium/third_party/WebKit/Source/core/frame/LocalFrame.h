@@ -33,6 +33,7 @@
 #include "core/CoreExport.h"
 #include "core/dom/UserGestureIndicator.h"
 #include "core/dom/WeakIdentifierMap.h"
+#include "core/editing/Forward.h"
 #include "core/frame/Frame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/loader/FrameLoader.h"
@@ -51,11 +52,7 @@ class Color;
 class ContentSettingsClient;
 class Document;
 class Editor;
-template <typename Traversal>
-class EditingAlgorithm;
 class Element;
-template <typename Strategy>
-class EphemeralRangeTemplate;
 class EventHandler;
 class FetchParameters;
 class FloatSize;
@@ -64,6 +61,7 @@ class FrameResourceCoordinator;
 class FrameSelection;
 class InputMethodController;
 class CoreProbeSink;
+class IdlenessDetector;
 class InterfaceRegistry;
 class IntPoint;
 class IntSize;
@@ -76,8 +74,6 @@ class NavigationScheduler;
 class Node;
 class NodeTraversal;
 class PerformanceMonitor;
-template <typename Strategy>
-class PositionWithAffinityTemplate;
 class PluginData;
 class ResourceRequest;
 class ScriptController;
@@ -234,6 +230,8 @@ class CORE_EXPORT LocalFrame final : public Frame,
   service_manager::InterfaceProvider& GetInterfaceProvider();
   InterfaceRegistry* GetInterfaceRegistry() { return interface_registry_; }
 
+  String GetInstrumentationToken() { return instrumentation_token_; }
+
   LocalFrameClient* Client() const;
 
   ContentSettingsClient* GetContentSettingsClient();
@@ -245,6 +243,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
   PluginData* GetPluginData() const;
 
   PerformanceMonitor* GetPerformanceMonitor() { return performance_monitor_; }
+  IdlenessDetector* GetIdlenessDetector() { return idleness_detector_; }
 
   // Convenience function to allow loading image placeholders for the request if
   // either the flag in Settings() for using image placeholders is set, or if
@@ -278,6 +277,12 @@ class CORE_EXPORT LocalFrame final : public Frame,
   static std::unique_ptr<UserGestureIndicator> CreateUserGesture(
       LocalFrame*,
       UserGestureToken::Status = UserGestureToken::kPossiblyExistingGesture);
+
+  // Replaces the initial empty document with a Document suitable for
+  // |mime_type| and populated with the contents of |data|. Only intended for
+  // use in internal-implementation LocalFrames that aren't in the frame tree.
+  void ForceSynchronousDocumentInstall(const AtomicString& mime_type,
+                                       RefPtr<SharedBuffer> data);
 
  private:
   friend class FrameNavigationDisabler;
@@ -328,8 +333,10 @@ class CORE_EXPORT LocalFrame final : public Frame,
 
   Member<CoreProbeSink> probe_sink_;
   Member<PerformanceMonitor> performance_monitor_;
+  Member<IdlenessDetector> idleness_detector_;
 
   InterfaceRegistry* const interface_registry_;
+  String instrumentation_token_;
 
   IntRect remote_viewport_intersection_;
   std::unique_ptr<FrameResourceCoordinator> frame_resource_coordinator_;

@@ -8,23 +8,23 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/media/engine/videodecodersoftwarefallbackwrapper.h"
+#include "media/engine/videodecodersoftwarefallbackwrapper.h"
 
 #include <string>
 
-#include "webrtc/media/engine/internaldecoderfactory.h"
-#include "webrtc/modules/video_coding/include/video_error_codes.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/trace_event.h"
+#include "media/engine/internaldecoderfactory.h"
+#include "modules/video_coding/include/video_error_codes.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/trace_event.h"
 
 namespace webrtc {
 
 VideoDecoderSoftwareFallbackWrapper::VideoDecoderSoftwareFallbackWrapper(
     VideoCodecType codec_type,
-    VideoDecoder* decoder)
+    std::unique_ptr<VideoDecoder> decoder)
     : codec_type_(codec_type),
-      decoder_(decoder),
+      decoder_(std::move(decoder)),
       decoder_initialized_(false),
       callback_(nullptr) {}
 

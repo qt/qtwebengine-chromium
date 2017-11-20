@@ -14,27 +14,29 @@
 #include <list>
 #include <memory>
 
-#include "webrtc/p2p/base/basicpacketsocketfactory.h"
-#include "webrtc/p2p/base/p2pconstants.h"
-#include "webrtc/p2p/base/portallocator.h"
-#include "webrtc/p2p/base/tcpport.h"
-#include "webrtc/p2p/base/testturnserver.h"
-#include "webrtc/p2p/base/turnport.h"
-#include "webrtc/p2p/base/udpport.h"
-#include "webrtc/rtc_base/asynctcpsocket.h"
-#include "webrtc/rtc_base/buffer.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/dscp.h"
-#include "webrtc/rtc_base/fakeclock.h"
-#include "webrtc/rtc_base/firewallsocketserver.h"
-#include "webrtc/rtc_base/gunit.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/socketadapters.h"
-#include "webrtc/rtc_base/socketaddress.h"
-#include "webrtc/rtc_base/ssladapter.h"
-#include "webrtc/rtc_base/thread.h"
-#include "webrtc/rtc_base/virtualsocketserver.h"
+#include "p2p/base/basicpacketsocketfactory.h"
+#include "p2p/base/p2pconstants.h"
+#include "p2p/base/portallocator.h"
+#include "p2p/base/tcpport.h"
+#include "p2p/base/testturncustomizer.h"
+#include "p2p/base/testturnserver.h"
+#include "p2p/base/turnport.h"
+#include "p2p/base/udpport.h"
+#include "rtc_base/asynctcpsocket.h"
+#include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/dscp.h"
+#include "rtc_base/fakeclock.h"
+#include "rtc_base/firewallsocketserver.h"
+#include "rtc_base/gunit.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/ptr_util.h"
+#include "rtc_base/socketadapters.h"
+#include "rtc_base/socketaddress.h"
+#include "rtc_base/ssladapter.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/virtualsocketserver.h"
 
 using rtc::SocketAddress;
 
@@ -263,7 +265,8 @@ class TurnPortTest : public testing::Test,
     RelayCredentials credentials(username, password);
     turn_port_.reset(TurnPort::Create(
         &main_, &socket_factory_, network, 0, 0, kIceUfrag1, kIcePwd1,
-        server_address, credentials, 0, origin, std::vector<std::string>()));
+        server_address, credentials, 0, origin, std::vector<std::string>(),
+        std::vector<std::string>(), turn_customizer_.get()));
     // This TURN port will be the controlling.
     turn_port_->SetIceRole(ICEROLE_CONTROLLING);
     ConnectSignals();
@@ -293,7 +296,8 @@ class TurnPortTest : public testing::Test,
     RelayCredentials credentials(username, password);
     turn_port_.reset(TurnPort::Create(
         &main_, &socket_factory_, MakeNetwork(kLocalAddr1), socket_.get(),
-        kIceUfrag1, kIcePwd1, server_address, credentials, 0, std::string()));
+        kIceUfrag1, kIcePwd1, server_address, credentials, 0, std::string(),
+        nullptr));
     // This TURN port will be the controlling.
     turn_port_->SetIceRole(ICEROLE_CONTROLLING);
     ConnectSignals();
@@ -694,6 +698,7 @@ class TurnPortTest : public testing::Test,
   std::vector<rtc::Buffer> turn_packets_;
   std::vector<rtc::Buffer> udp_packets_;
   rtc::PacketOptions options;
+  std::unique_ptr<webrtc::TurnCustomizer> turn_customizer_;
 };
 
 TEST_F(TurnPortTest, TestTurnPortType) {
@@ -1422,6 +1427,19 @@ TEST_F(TurnPortTest, TestTurnTLSReleaseAllocation) {
   TestTurnReleaseAllocation(PROTO_TLS);
 }
 
+// Test that nothing bad happens if we try to create a connection to the same
+// remote address twice. Previously there was a bug that caused this to hit a
+// DCHECK.
+TEST_F(TurnPortTest, CanCreateTwoConnectionsToSameAddress) {
+  CreateTurnPort(kTurnUsername, kTurnPassword, kTurnUdpProtoAddr);
+  PrepareTurnAndUdpPorts(PROTO_UDP);
+  Connection* conn1 = turn_port_->CreateConnection(udp_port_->Candidates()[0],
+                                                   Port::ORIGIN_MESSAGE);
+  Connection* conn2 = turn_port_->CreateConnection(udp_port_->Candidates()[0],
+                                                   Port::ORIGIN_MESSAGE);
+  EXPECT_NE(conn1, conn2);
+}
+
 // This test verifies any FD's are not leaked after TurnPort is destroyed.
 // https://code.google.com/p/webrtc/issues/detail?id=2651
 #if defined(WEBRTC_LINUX) && !defined(WEBRTC_ANDROID)
@@ -1443,5 +1461,147 @@ TEST_F(TurnPortTest, TestResolverShutdown) {
   EXPECT_EQ(last_fd_count, GetFDCount());
 }
 #endif
+
+class MessageObserver : public StunMessageObserver{
+ public:
+  MessageObserver(unsigned int *message_counter,
+                  unsigned int* channel_data_counter,
+                  unsigned int *attr_counter)
+      : message_counter_(message_counter),
+        channel_data_counter_(channel_data_counter),
+        attr_counter_(attr_counter) {}
+  virtual ~MessageObserver() {}
+  virtual void ReceivedMessage(const TurnMessage* msg) override {
+    if (message_counter_ != nullptr) {
+      (*message_counter_)++;
+    }
+    // Implementation defined attributes are returned as ByteString
+    const StunByteStringAttribute* attr = msg->GetByteString(
+        TestTurnCustomizer::STUN_ATTR_COUNTER);
+    if (attr != nullptr && attr_counter_ != nullptr) {
+      rtc::ByteBufferReader buf(attr->bytes(), attr->length());
+      unsigned int val = ~0u;
+      buf.ReadUInt32(&val);
+      (*attr_counter_)++;
+    }
+  }
+
+  virtual void ReceivedChannelData(const char* data, size_t size) override {
+    if (channel_data_counter_ != nullptr) {
+      (*channel_data_counter_)++;
+    }
+  }
+
+  // Number of TurnMessages observed.
+  unsigned int* message_counter_ = nullptr;
+
+  // Number of channel data observed.
+  unsigned int* channel_data_counter_ = nullptr;
+
+  // Number of TurnMessages that had STUN_ATTR_COUNTER.
+  unsigned int* attr_counter_ = nullptr;
+};
+
+// Do a TURN allocation, establish a TLS connection, and send some data.
+// Add customizer and check that it get called.
+TEST_F(TurnPortTest, TestTurnCustomizerCount) {
+  unsigned int observer_message_counter = 0;
+  unsigned int observer_channel_data_counter = 0;
+  unsigned int observer_attr_counter = 0;
+  TestTurnCustomizer* customizer = new TestTurnCustomizer();
+  std::unique_ptr<MessageObserver> validator(new MessageObserver(
+      &observer_message_counter,
+      &observer_channel_data_counter,
+      &observer_attr_counter));
+
+  turn_server_.AddInternalSocket(kTurnTcpIntAddr, PROTO_TLS);
+  turn_customizer_.reset(customizer);
+  turn_server_.server()->SetStunMessageObserver(std::move(validator));
+
+  CreateTurnPort(kTurnUsername, kTurnPassword, kTurnTlsProtoAddr);
+  TestTurnSendData(PROTO_TLS);
+  EXPECT_EQ(TLS_PROTOCOL_NAME, turn_port_->Candidates()[0].relay_protocol());
+
+  // There should have been at least turn_packets_.size() calls to |customizer|.
+  EXPECT_GE(customizer->modify_cnt_ + customizer->allow_channel_data_cnt_,
+            turn_packets_.size());
+
+  // Some channel data should be received.
+  EXPECT_GE(observer_channel_data_counter, 0u);
+
+  // Need to release TURN port before the customizer.
+  turn_port_.reset(nullptr);
+}
+
+// Do a TURN allocation, establish a TLS connection, and send some data.
+// Add customizer and check that it can can prevent usage of channel data.
+TEST_F(TurnPortTest, TestTurnCustomizerDisallowChannelData) {
+  unsigned int observer_message_counter = 0;
+  unsigned int observer_channel_data_counter = 0;
+  unsigned int observer_attr_counter = 0;
+  TestTurnCustomizer* customizer = new TestTurnCustomizer();
+  std::unique_ptr<MessageObserver> validator(new MessageObserver(
+      &observer_message_counter,
+      &observer_channel_data_counter,
+      &observer_attr_counter));
+  customizer->allow_channel_data_ = false;
+  turn_server_.AddInternalSocket(kTurnTcpIntAddr, PROTO_TLS);
+  turn_customizer_.reset(customizer);
+  turn_server_.server()->SetStunMessageObserver(std::move(validator));
+
+  CreateTurnPort(kTurnUsername, kTurnPassword, kTurnTlsProtoAddr);
+  TestTurnSendData(PROTO_TLS);
+  EXPECT_EQ(TLS_PROTOCOL_NAME, turn_port_->Candidates()[0].relay_protocol());
+
+  // There should have been at least turn_packets_.size() calls to |customizer|.
+  EXPECT_GE(customizer->modify_cnt_, turn_packets_.size());
+
+  // No channel data should be received.
+  EXPECT_EQ(observer_channel_data_counter, 0u);
+
+  // Need to release TURN port before the customizer.
+  turn_port_.reset(nullptr);
+}
+
+// Do a TURN allocation, establish a TLS connection, and send some data.
+// Add customizer and check that it can add attribute to messages.
+TEST_F(TurnPortTest, TestTurnCustomizerAddAttribute) {
+  unsigned int observer_message_counter = 0;
+  unsigned int observer_channel_data_counter = 0;
+  unsigned int observer_attr_counter = 0;
+  TestTurnCustomizer* customizer = new TestTurnCustomizer();
+  std::unique_ptr<MessageObserver> validator(new MessageObserver(
+      &observer_message_counter,
+      &observer_channel_data_counter,
+      &observer_attr_counter));
+  customizer->allow_channel_data_ = false;
+  customizer->add_counter_ = true;
+  turn_server_.AddInternalSocket(kTurnTcpIntAddr, PROTO_TLS);
+  turn_customizer_.reset(customizer);
+  turn_server_.server()->SetStunMessageObserver(std::move(validator));
+
+  CreateTurnPort(kTurnUsername, kTurnPassword, kTurnTlsProtoAddr);
+  TestTurnSendData(PROTO_TLS);
+  EXPECT_EQ(TLS_PROTOCOL_NAME, turn_port_->Candidates()[0].relay_protocol());
+
+  // There should have been at least turn_packets_.size() calls to |customizer|.
+  EXPECT_GE(customizer->modify_cnt_, turn_packets_.size());
+
+  // Everything will be sent as messages since channel data is disallowed.
+  EXPECT_GE(customizer->modify_cnt_, observer_message_counter);
+
+  // All messages should have attribute.
+  EXPECT_EQ(observer_message_counter, observer_attr_counter);
+
+  // At least allow_channel_data_cnt_ messages should have been sent.
+  EXPECT_GE(customizer->modify_cnt_, customizer->allow_channel_data_cnt_);
+  EXPECT_GE(customizer->allow_channel_data_cnt_, 0u);
+
+  // No channel data should be received.
+  EXPECT_EQ(observer_channel_data_counter, 0u);
+
+  // Need to release TURN port before the customizer.
+  turn_port_.reset(nullptr);
+}
 
 }  // namespace cricket

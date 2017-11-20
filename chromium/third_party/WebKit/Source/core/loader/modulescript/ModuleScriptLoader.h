@@ -53,7 +53,6 @@ class CORE_EXPORT ModuleScriptLoader final
   ~ModuleScriptLoader();
 
   void Fetch(const ModuleScriptFetchRequest&,
-             ResourceFetcher*,
              ModuleGraphLevel);
 
   // Implements ModuleScriptFetcher::Client.

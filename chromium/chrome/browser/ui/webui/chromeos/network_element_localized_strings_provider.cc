@@ -17,7 +17,7 @@ namespace {
 struct {
   const char* name;
   int id;
-} const localized_strings[] = {
+} const element_localized_strings[] = {
     {"OncTypeCellular", IDS_NETWORK_TYPE_MOBILE_DATA},
     {"OncTypeEthernet", IDS_NETWORK_TYPE_ETHERNET},
     {"OncTypeTether", IDS_NETWORK_TYPE_MOBILE_DATA},
@@ -29,39 +29,20 @@ struct {
     {"networkListItemConnectingTo", IDS_NETWORK_LIST_CONNECTING_TO},
     {"networkListItemInitializing", IDS_NETWORK_LIST_INITIALIZING},
     {"networkListItemNotConnected", IDS_NETWORK_LIST_NOT_CONNECTED},
+    {"networkListItemNoNetwork", IDS_NETWORK_LIST_NO_NETWORK},
     {"vpnNameTemplate", IDS_NETWORK_LIST_THIRD_PARTY_VPN_NAME_TEMPLATE},
 };
+
 }  //  namespace
 
 void AddLocalizedStrings(content::WebUIDataSource* html_source) {
-  for (const auto& entry : localized_strings)
+  for (const auto& entry : element_localized_strings)
     html_source->AddLocalizedString(entry.name, entry.id);
 }
 
 void AddLocalizedValuesToBuilder(::login::LocalizedValuesBuilder* builder) {
-  for (const auto& entry : localized_strings)
+  for (const auto& entry : element_localized_strings)
     builder->Add(entry.name, entry.id);
-}
-
-void AddDetailsLocalizedStrings(content::WebUIDataSource* html_source) {
-  struct {
-    const char* name;
-    int id;
-  } localized_strings[] = {
-      {"OncTypeCellular", IDS_NETWORK_TYPE_MOBILE_DATA},
-      {"OncTypeEthernet", IDS_NETWORK_TYPE_ETHERNET},
-      {"OncTypeTether", IDS_NETWORK_TYPE_MOBILE_DATA},
-      {"OncTypeVPN", IDS_NETWORK_TYPE_VPN},
-      {"OncTypeWiFi", IDS_NETWORK_TYPE_WIFI},
-      {"OncTypeWiMAX", IDS_NETWORK_TYPE_WIMAX},
-      {"networkListItemConnected", IDS_STATUSBAR_NETWORK_DEVICE_CONNECTED},
-      {"networkListItemConnecting", IDS_STATUSBAR_NETWORK_DEVICE_CONNECTING},
-      {"networkListItemConnectingTo", IDS_NETWORK_LIST_CONNECTING_TO},
-      {"networkListItemNotConnected", IDS_NETWORK_LIST_NOT_CONNECTED},
-      {"vpnNameTemplate", IDS_NETWORK_LIST_THIRD_PARTY_VPN_NAME_TEMPLATE},
-  };
-  for (const auto& entry : localized_strings)
-    html_source->AddLocalizedString(entry.name, entry.id);
 }
 
 void AddOncLocalizedStrings(content::WebUIDataSource* html_source) {
@@ -125,8 +106,11 @@ void AddOncLocalizedStrings(content::WebUIDataSource* html_source) {
       {"OncEAP-Outer_EAP-TLS", IDS_ONC_EAP_OUTER_TLS},
       {"OncEAP-Outer_EAP-TTLS", IDS_ONC_EAP_OUTER_TTLS},
       {"OncEAP-Password", IDS_ONC_WIFI_PASSWORD},
+      {"OncEAP-ServerCA", IDS_ONC_EAP_SERVER_CA},
       {"OncEAP-SubjectMatch", IDS_ONC_EAP_SUBJECT_MATCH},
+      {"OncEAP-UserCert", IDS_ONC_EAP_USER_CERT},
       {"OncMacAddress", IDS_ONC_MAC_ADDRESS},
+      {"OncName", IDS_ONC_NAME},
       {"OncNotConnected", IDS_ONC_NOT_CONNECTED},
       {"OncRestrictedConnectivity", IDS_ONC_RESTRICTED_CONNECTIVITY},
       {"OncTether-BatteryPercentage", IDS_ONC_TETHER_BATTERY_PERCENTAGE},
@@ -143,11 +127,19 @@ void AddOncLocalizedStrings(content::WebUIDataSource* html_source) {
       {"OncTether-Carrier", IDS_ONC_TETHER_CARRIER},
       {"OncTether-Carrier_Unknown", IDS_ONC_TETHER_CARRIER_UNKNOWN},
       {"OncVPN-Host", IDS_ONC_VPN_HOST},
-      {"OncVPN-L2TP-Username", IDS_ONC_VPN_L2TP_USERNAME},
-      {"OncVPN-OpenVPN-Username", IDS_ONC_VPN_OPEN_VPN_USERNAME},
+      {"OncVPN-IPsec-Group", IDS_ONC_VPN_IPSEC_GROUP},
+      {"OncVPN-IPsec-PSK", IDS_ONC_VPN_IPSEC_PSK},
+      {"OncVPN-OpenVPN-OTP", IDS_ONC_VPN_OPENVPN_OTP},
+      {"OncVPN-Password", IDS_ONC_VPN_PASSWORD},
       {"OncVPN-ThirdPartyVPN-ProviderName",
        IDS_ONC_VPN_THIRD_PARTY_VPN_PROVIDER_NAME},
       {"OncVPN-Type", IDS_ONC_VPN_TYPE},
+      {"OncVPN-Type_L2TP_IPsec", IDS_ONC_VPN_TYPE_L2TP_IPSEC},
+      {"OncVPN-Type_L2TP_IPsec_PSK", IDS_ONC_VPN_TYPE_L2TP_IPSEC_PSK},
+      {"OncVPN-Type_L2TP_IPsec_Cert", IDS_ONC_VPN_TYPE_L2TP_IPSEC_CERT},
+      {"OncVPN-Type_OpenVPN", IDS_ONC_VPN_TYPE_OPENVPN},
+      {"OncVPN-Type_ARCVPN", IDS_ONC_VPN_TYPE_ARCVPN},
+      {"OncVPN-Username", IDS_ONC_VPN_USERNAME},
       {"OncWiFi-Frequency", IDS_ONC_WIFI_FREQUENCY},
       {"OncWiFi-Passphrase", IDS_ONC_WIFI_PASSWORD},
       {"OncWiFi-SSID", IDS_ONC_WIFI_SSID},
@@ -168,7 +160,7 @@ void AddOncLocalizedStrings(content::WebUIDataSource* html_source) {
     html_source->AddLocalizedString(entry.name, entry.id);
 }
 
-void AddConfigLocalizedStrings(content::WebUIDataSource* html_source) {
+void AddDetailsLocalizedStrings(content::WebUIDataSource* html_source) {
   struct {
     const char* name;
     int id;
@@ -178,8 +170,10 @@ void AddConfigLocalizedStrings(content::WebUIDataSource* html_source) {
        IDS_SETTINGS_INTERNET_NETWORK_PROXY_ADD_EXCEPTION},
       {"networkProxyAllowShared",
        IDS_SETTINGS_INTERNET_NETWORK_PROXY_ALLOW_SHARED},
-      {"networkProxyAllowSharedWarningTitle",
-       IDS_SETTINGS_INTERNET_NETWORK_PROXY_ALLOW_SHARED_WARNING_TITLE},
+      {"networkProxyAllowSharedEnableWarningTitle",
+       IDS_SETTINGS_INTERNET_NETWORK_PROXY_ALLOW_SHARED_ENABLE_WARNING_TITLE},
+      {"networkProxyAllowSharedDisableWarningTitle",
+       IDS_SETTINGS_INTERNET_NETWORK_PROXY_ALLOW_SHARED_DISABLE_WARNING_TITLE},
       {"networkProxyAllowSharedWarningMessage",
        IDS_SETTINGS_INTERNET_NETWORK_PROXY_ALLOW_SHARED_WARNING_MESSAGE},
       {"networkProxyAutoConfig",
@@ -203,8 +197,41 @@ void AddConfigLocalizedStrings(content::WebUIDataSource* html_source) {
       {"networkProxyTypeWpad", IDS_SETTINGS_INTERNET_NETWORK_PROXY_TYPE_WPAD},
       {"networkProxyUseSame", IDS_SETTINGS_INTERNET_NETWORK_PROXY_USE_SAME},
       {"networkAccessPoint", IDS_SETTINGS_INTERNET_NETWORK_ACCESS_POINT},
+      {"networkChooseMobile", IDS_SETTINGS_INTERNET_NETWORK_CHOOSE_MOBILE},
+      {"networkCellularScan", IDS_SETTINGS_INTERNET_NETWORK_CELLULAR_SCAN},
+      {"networkCellularScanCompleted",
+       IDS_SETTINGS_INTERNET_NETWORK_CELLULAR_SCAN_COMPLETED},
+      {"networkCellularScanConnectedHelp",
+       IDS_SETTINGS_INTERNET_NETWORK_CELLULAR_SCAN_CONNECTED_HELP},
+      {"networkCellularScanning",
+       IDS_SETTINGS_INTERNET_NETWORK_CELLULAR_SCANNING},
+      {"networkCellularNoNetworks",
+       IDS_SETTINGS_INTERNET_NETWORK_CELLULAR_NO_NETWORKS},
       {"networkNameservers", IDS_SETTINGS_INTERNET_NETWORK_NAMESERVERS},
       {"networkProxyWpad", IDS_SETTINGS_INTERNET_NETWORK_PROXY_WPAD},
+  };
+  for (const auto& entry : localized_strings)
+    html_source->AddLocalizedString(entry.name, entry.id);
+}
+
+void AddConfigLocalizedStrings(content::WebUIDataSource* html_source) {
+  struct {
+    const char* name;
+    int id;
+  } localized_strings[] = {
+      {"networkCAUseDefault", IDS_SETTINGS_INTERNET_NETWORK_CA_USE_DEFAULT},
+      {"networkCADoNotCheck", IDS_SETTINGS_INTERNET_NETWORK_CA_DO_NOT_CHECK},
+      {"networkCertificateName",
+       IDS_SETTINGS_INTERNET_NETWORK_CERTIFICATE_NAME},
+      {"networkCertificateNameHardwareBacked",
+       IDS_SETTINGS_INTERNET_NETWORK_CERTIFICATE_NAME_HARDWARE_BACKED},
+      {"networkCertificateNoneInstalled",
+       IDS_SETTINGS_INTERNET_NETWORK_CERTIFICATE_NONE_INSTALLED},
+      {"networkConfigSaveCredentials",
+       IDS_SETTINGS_INTERNET_CONFIG_SAVE_CREDENTIALS},
+      {"networkConfigShare", IDS_SETTINGS_INTERNET_CONFIG_SHARE},
+      {"hidePassword", IDS_SETTINGS_PASSWORD_HIDE},
+      {"showPassword", IDS_SETTINGS_PASSWORD_SHOW},
   };
   for (const auto& entry : localized_strings)
     html_source->AddLocalizedString(entry.name, entry.id);

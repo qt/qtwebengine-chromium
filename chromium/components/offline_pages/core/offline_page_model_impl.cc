@@ -90,6 +90,8 @@ SavePageResult ToSavePageResult(ArchiverResult archiver_result) {
   return result;
 }
 
+// TODO(carlosk): Canonicalize this suffix adding logic which is already
+// duplicated in many different places around the codebase.
 std::string AddHistogramSuffix(const ClientId& client_id,
                                const char* histogram_name) {
   if (client_id.name_space.empty()) {
@@ -111,7 +113,7 @@ void ReportStorageHistogramsAfterSave(
                               free_disk_space_mb, 1, 500000, 50);
 
   int total_page_size_mb =
-      static_cast<int>(storage_stats.total_archives_size / kMB);
+      static_cast<int>(storage_stats.total_archives_size() / kMB);
   UMA_HISTOGRAM_COUNTS_10000("OfflinePages.TotalPageSize", total_page_size_mb);
 }
 
@@ -124,13 +126,13 @@ void ReportStorageHistogramsAfterDelete(
                               free_disk_space_mb, 1, 500000, 50);
 
   int total_page_size_mb =
-      static_cast<int>(storage_stats.total_archives_size / kMB);
+      static_cast<int>(storage_stats.total_archives_size() / kMB);
   UMA_HISTOGRAM_COUNTS_10000("OfflinePages.TotalPageSize", total_page_size_mb);
 
   if (storage_stats.free_disk_space > 0) {
     int percentage_of_free = static_cast<int>(
-        1.0 * storage_stats.total_archives_size /
-        (storage_stats.total_archives_size + storage_stats.free_disk_space) *
+        1.0 * storage_stats.total_archives_size() /
+        (storage_stats.total_archives_size() + storage_stats.free_disk_space) *
         100);
     UMA_HISTOGRAM_PERCENTAGE(
         "OfflinePages.DeletePage.TotalPageSizeAsPercentageOfFreeSpace",
@@ -388,7 +390,8 @@ void OfflinePageModelImpl::SavePage(
   create_archive_params.use_page_problem_detectors =
       save_page_params.use_page_problem_detectors;
   archiver->CreateArchive(
-      archive_manager_->GetArchivesDir(), create_archive_params,
+      GetArchiveDirectory(save_page_params.client_id.name_space),
+      create_archive_params,
       base::Bind(&OfflinePageModelImpl::OnCreateArchiveDone,
                  weak_ptr_factory_.GetWeakPtr(), save_page_params, offline_id,
                  GetCurrentTime(), callback));
@@ -495,14 +498,6 @@ void OfflinePageModelImpl::DeletePages(
   DoDeletePagesByOfflineId(offline_ids, callback);
 }
 
-void OfflinePageModelImpl::GetPagesMatchingQuery(
-    std::unique_ptr<OfflinePageModelQuery> query,
-    const MultipleOfflinePageItemCallback& callback) {
-  RunWhenLoaded(base::Bind(
-      &OfflinePageModelImpl::GetPagesMatchingQueryWhenLoadDone,
-      weak_ptr_factory_.GetWeakPtr(), base::Passed(&query), callback));
-}
-
 void OfflinePageModelImpl::GetPagesMatchingQueryWhenLoadDone(
     std::unique_ptr<OfflinePageModelQuery> query,
     const MultipleOfflinePageItemCallback& callback) {
@@ -558,7 +553,8 @@ void OfflinePageModelImpl::DoDeleteCachedPagesByURLPredicate(
 
   std::vector<int64_t> offline_ids;
   for (const auto& id_page_pair : offline_pages_) {
-    if (IsRemovedOnCacheReset(id_page_pair.second) &&
+    if (policy_controller_->IsRemovedOnCacheReset(
+            id_page_pair.second.client_id.name_space) &&
         predicate.Run(id_page_pair.second.url)) {
       offline_ids.push_back(id_page_pair.first);
     }
@@ -669,6 +665,46 @@ void OfflinePageModelImpl::GetPagesByURL(
       base::Bind(&OfflinePageModelImpl::GetPagesMatchingQueryWhenLoadDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  base::Passed(builder.Build(GetPolicyController())), callback));
+}
+
+void OfflinePageModelImpl::GetPagesRemovedOnCacheReset(
+    const MultipleOfflinePageItemCallback& callback) {
+  OfflinePageModelQueryBuilder builder;
+  builder.RequireRemovedOnCacheReset(
+      OfflinePageModelQuery::Requirement::INCLUDE_MATCHING);
+  RunWhenLoaded(
+      base::Bind(&OfflinePageModelImpl::GetPagesMatchingQueryWhenLoadDone,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 base::Passed(builder.Build(GetPolicyController())), callback));
+}
+
+void OfflinePageModelImpl::GetPagesByNamespace(
+    const std::string& name_space,
+    const MultipleOfflinePageItemCallback& callback) {
+  OfflinePageModelQueryBuilder builder;
+  builder.RequireNamespace(name_space);
+  RunWhenLoaded(
+      base::Bind(&OfflinePageModelImpl::GetPagesMatchingQueryWhenLoadDone,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 base::Passed(builder.Build(GetPolicyController())), callback));
+}
+
+void OfflinePageModelImpl::GetPagesSupportedByDownloads(
+    const MultipleOfflinePageItemCallback& callback) {
+  OfflinePageModelQueryBuilder builder;
+  builder.RequireSupportedByDownload(
+      OfflinePageModelQuery::Requirement::INCLUDE_MATCHING);
+  RunWhenLoaded(
+      base::Bind(&OfflinePageModelImpl::GetPagesMatchingQueryWhenLoadDone,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 base::Passed(builder.Build(GetPolicyController())), callback));
+}
+
+const base::FilePath& OfflinePageModelImpl::GetArchiveDirectory(
+    const std::string& name_space) const {
+  if (policy_controller_->IsRemovedOnCacheReset(name_space))
+    return archive_manager_->GetTemporaryArchivesDir();
+  return archive_manager_->GetPersistentArchivesDir();
 }
 
 void OfflinePageModelImpl::CheckMetadataConsistency() {
@@ -864,7 +900,7 @@ void OfflinePageModelImpl::RetryDbInitialization(
 
 void OfflinePageModelImpl::OnInitialGetOfflinePagesDone(
     const base::TimeTicks& start_time,
-    const std::vector<OfflinePageItem>& offline_pages) {
+    std::vector<OfflinePageItem> offline_pages) {
   DCHECK(!is_loaded_);
 
   UMA_HISTOGRAM_TIMES("OfflinePages.Model.ConstructionToLoadedEventTime",
@@ -1032,8 +1068,29 @@ void OfflinePageModelImpl::InformDeletePageDone(
 
 void OfflinePageModelImpl::CheckMetadataConsistencyForArchivePaths(
     const std::set<base::FilePath>& archive_paths) {
+  DeleteTemporaryPagesInAbandonedCacheDir();
   DeletePagesMissingArchiveFile(archive_paths);
   DeleteOrphanedArchives(archive_paths);
+}
+
+void OfflinePageModelImpl::DeleteTemporaryPagesInAbandonedCacheDir() {
+  std::vector<int64_t> offline_page_ids;
+  for (const auto& id_page_pair : offline_pages_) {
+    const OfflinePageItem& page = id_page_pair.second;
+    if (policy_controller_->IsRemovedOnCacheReset(page.client_id.name_space) &&
+        !archive_manager_->GetTemporaryArchivesDir().IsParent(page.file_path))
+      offline_page_ids.push_back(id_page_pair.first);
+  }
+
+  if (offline_page_ids.empty())
+    return;
+
+  // This operation fails silently. If it fails, the pages will be deleted
+  // during next consistency check.
+  DeletePagesByOfflineId(offline_page_ids,
+                         base::Bind([](const std::vector<int64_t>& offline_ids,
+                                       DeletePageResult result) {},
+                                    offline_page_ids));
 }
 
 void OfflinePageModelImpl::DeletePagesMissingArchiveFile(
@@ -1129,12 +1186,6 @@ void OfflinePageModelImpl::PostClearStorageIfNeededTask(bool delayed) {
                             base::Bind(&OfflinePageModelImpl::OnStorageCleared,
                                        weak_ptr_factory_.GetWeakPtr())),
       delay);
-}
-
-bool OfflinePageModelImpl::IsRemovedOnCacheReset(
-    const OfflinePageItem& offline_page) const {
-  return policy_controller_->IsRemovedOnCacheReset(
-      offline_page.client_id.name_space);
 }
 
 void OfflinePageModelImpl::RunWhenLoaded(const base::Closure& task) {

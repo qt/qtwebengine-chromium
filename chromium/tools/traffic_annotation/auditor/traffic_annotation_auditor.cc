@@ -4,6 +4,9 @@
 
 #include "tools/traffic_annotation/auditor/traffic_annotation_auditor.h"
 
+#include <stdio.h>
+
+#include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/process/launch.h"
@@ -11,9 +14,11 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "tools/traffic_annotation/auditor/traffic_annotation_exporter.h"
 #include "tools/traffic_annotation/auditor/traffic_annotation_file_filter.h"
 
 namespace {
@@ -48,30 +53,38 @@ struct AnnotationID {
   AnnotationInstance* instance;
 };
 
-// Removes all occurances of a charcter from a string and returns the modified
-// string.
-std::string RemoveChar(const std::string& source, char removee) {
-  std::string output;
-  output.reserve(source.length());
-  for (const char* current = source.data(); *current; current++) {
-    if (*current != removee)
-      output += *current;
-  }
-  return output;
-}
-
 const std::string kBlockTypes[] = {"ASSIGNMENT", "ANNOTATION", "CALL"};
 
-const base::FilePath kSafeListPath(
-    FILE_PATH_LITERAL("tools/traffic_annotation/auditor/safe_list.txt"));
+const base::FilePath kSafeListPath =
+    base::FilePath(FILE_PATH_LITERAL("tools"))
+        .Append(FILE_PATH_LITERAL("traffic_annotation"))
+        .Append(FILE_PATH_LITERAL("auditor"))
+        .Append(FILE_PATH_LITERAL("safe_list.txt"));
+
+// The folder that includes the latest Clang built-in library. Inside this
+// folder, there should be another folder with version number, like
+// '.../lib/clang/6.0.0', which would be passed to the clang tool.
+const base::FilePath kClangLibraryPath =
+    base::FilePath(FILE_PATH_LITERAL("third_party"))
+        .Append(FILE_PATH_LITERAL("llvm-build"))
+        .Append(FILE_PATH_LITERAL("Release+Asserts"))
+        .Append(FILE_PATH_LITERAL("lib"))
+        .Append(FILE_PATH_LITERAL("clang"));
+
 }  // namespace
 
 TrafficAnnotationAuditor::TrafficAnnotationAuditor(
     const base::FilePath& source_path,
-    const base::FilePath& build_path)
+    const base::FilePath& build_path,
+    const base::FilePath& clang_tool_path)
     : source_path_(source_path),
       build_path_(build_path),
-      safe_list_loaded_(false) {}
+      clang_tool_path_(clang_tool_path),
+      safe_list_loaded_(false) {
+  DCHECK(!source_path.empty());
+  DCHECK(!build_path.empty());
+  DCHECK(!clang_tool_path.empty());
+}
 
 TrafficAnnotationAuditor::~TrafficAnnotationAuditor() {}
 
@@ -82,11 +95,19 @@ int TrafficAnnotationAuditor::ComputeHashValue(const std::string& unique_id) {
                             : -1;
 }
 
+base::FilePath TrafficAnnotationAuditor::GetClangLibraryPath() {
+  return base::FileEnumerator(source_path_.Append(kClangLibraryPath), false,
+                              base::FileEnumerator::DIRECTORIES)
+      .Next();
+}
+
 bool TrafficAnnotationAuditor::RunClangTool(
     const std::vector<std::string>& path_filters,
     const bool full_run) {
   if (!safe_list_loaded_ && !LoadSafeList())
     return false;
+
+  // Create a file to pass options to clang scripts.
   base::FilePath options_filepath;
   if (!base::CreateTemporaryFile(&options_filepath)) {
     LOG(ERROR) << "Could not create temporary options file.";
@@ -97,9 +118,17 @@ bool TrafficAnnotationAuditor::RunClangTool(
     LOG(ERROR) << "Could not create temporary options file.";
     return false;
   }
-  fprintf(options_file,
-          "--generate-compdb --tool=traffic_annotation_extractor -p=%s ",
-          build_path_.MaybeAsASCII().c_str());
+
+  // As the checked out clang tool may be in a directory different from the
+  // default one (third_party/llvm-buid/Release+Asserts/bin), its path and
+  // clang's library folder should be passed to the run_tool.py script.
+  fprintf(
+      options_file,
+      "--generate-compdb --tool=traffic_annotation_extractor -p=%s "
+      "--tool-path=%s --tool-args=--extra-arg=-resource-dir=%s ",
+      build_path_.MaybeAsASCII().c_str(),
+      base::MakeAbsoluteFilePath(clang_tool_path_).MaybeAsASCII().c_str(),
+      base::MakeAbsoluteFilePath(GetClangLibraryPath()).MaybeAsASCII().c_str());
 
   // |safe_list_[ALL]| is not passed when |full_run| is happening as there is
   // no way to pass it to run_tools.py except enumerating all alternatives.
@@ -135,10 +164,8 @@ bool TrafficAnnotationAuditor::RunClangTool(
   }
   base::CloseFile(options_file);
 
-  base::CommandLine cmdline(source_path_.Append(FILE_PATH_LITERAL("tools"))
-                                .Append(FILE_PATH_LITERAL("clang"))
-                                .Append(FILE_PATH_LITERAL("scripts"))
-                                .Append(FILE_PATH_LITERAL("run_tool.py")));
+  base::CommandLine cmdline(source_path_.Append(
+      FILE_PATH_LITERAL("tools/clang/scripts/run_tool.py")));
 
 #if defined(OS_WIN)
   cmdline.PrependWrapper(L"python");
@@ -147,6 +174,7 @@ bool TrafficAnnotationAuditor::RunClangTool(
   cmdline.AppendArg(base::StringPrintf(
       "--options-file=%s", options_filepath.MaybeAsASCII().c_str()));
 
+  // Run, and clean after.
   bool result = base::GetAppOutput(cmdline, &clang_tool_raw_output_);
 
   base::DeleteFile(options_filepath, false);
@@ -178,11 +206,10 @@ bool TrafficAnnotationAuditor::ParseClangToolRawOutput() {
   if (!safe_list_loaded_ && !LoadSafeList())
     return false;
   // Remove possible carriage return characters before splitting lines.
-  // Not using base::RemoveChars as the input is ~47M and the implementation is
-  // too slow for it.
-  std::vector<std::string> lines =
-      base::SplitString(RemoveChar(clang_tool_raw_output_, '\r'), "\n",
-                        base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
+  std::string temp_string;
+  base::RemoveChars(clang_tool_raw_output_, "\r", &temp_string);
+  std::vector<std::string> lines = base::SplitString(
+      temp_string, "\n", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
   for (unsigned int current = 0; current < lines.size(); current++) {
     // All blocks reported by clang tool start with '====', so we can ignore
     // all lines that do not start with a '='.
@@ -325,11 +352,18 @@ void TrafficAnnotationAuditor::PurgeAnnotations(
       extracted_annotations_.end());
 }
 
-void TrafficAnnotationAuditor::CheckDuplicateHashes() {
+bool TrafficAnnotationAuditor::CheckDuplicateHashes() {
   const std::map<int, std::string> reserved_ids = GetReservedUniqueIDs();
 
   std::map<int, std::vector<AnnotationID>> collisions;
   std::set<int> to_be_purged;
+  std::set<int> deprecated_ids;
+
+  // Load deprecated Hashcodes.
+  if (!TrafficAnnotationExporter(source_path_)
+           .GetDeprecatedHashCodes(&deprecated_ids)) {
+    return false;
+  }
 
   for (AnnotationInstance& instance : extracted_annotations_) {
     // Check if partial and branched completing annotation have an extra id
@@ -382,6 +416,16 @@ void TrafficAnnotationAuditor::CheckDuplicateHashes() {
         continue;
       }
 
+      // If the id's hash code was formerly used by a deprecated annotation,
+      // add an error.
+      if (base::ContainsKey(deprecated_ids, current.hash)) {
+        errors_.push_back(AuditorResult(
+            AuditorResult::Type::ERROR_DEPRECATED_UNIQUE_ID_HASH_CODE,
+            current.text, instance.proto.source().file(),
+            instance.proto.source().line()));
+        continue;
+      }
+
       // Check for collisions.
       if (!base::ContainsKey(collisions, current.hash)) {
         collisions[current.hash] = std::vector<AnnotationID>();
@@ -425,6 +469,7 @@ void TrafficAnnotationAuditor::CheckDuplicateHashes() {
   }
 
   PurgeAnnotations(to_be_purged);
+  return true;
 }
 
 void TrafficAnnotationAuditor::CheckUniqueIDsFormat() {
@@ -608,10 +653,12 @@ void TrafficAnnotationAuditor::CheckAnnotationsContents() {
                                   new_annotations.end());
 }
 
-void TrafficAnnotationAuditor::RunAllChecks() {
-  CheckDuplicateHashes();
+bool TrafficAnnotationAuditor::RunAllChecks() {
+  if (!CheckDuplicateHashes())
+    return false;
   CheckUniqueIDsFormat();
   CheckAnnotationsContents();
 
   CheckAllRequiredFunctionsAreAnnotated();
+  return true;
 }

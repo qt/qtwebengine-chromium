@@ -14,7 +14,6 @@
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/path_service.h"
 #include "base/values.h"
 #include "net/base/address_list.h"
@@ -260,6 +259,10 @@ BaseTestServer::BaseTestServer(Type type, const SSLOptions& ssl_options)
 
 BaseTestServer::~BaseTestServer() {}
 
+bool BaseTestServer::Start() {
+  return StartInBackground() && BlockUntilStarted();
+}
+
 const HostPortPair& BaseTestServer::host_port_pair() const {
   DCHECK(started_);
   return host_port_pair_;
@@ -463,6 +466,7 @@ bool BaseTestServer::SetAndParseServerData(const std::string& server_data,
 
 bool BaseTestServer::SetupWhenServerStarted() {
   DCHECK(host_port_pair_.port());
+  DCHECK(!started_);
 
   if (UsingSSL(type_) && !LoadTestRootCert())
       return false;

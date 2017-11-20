@@ -6,16 +6,14 @@
 
 #include "base/auto_reset.h"
 #include "base/memory/ptr_util.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/base/devtools_instrumentation.h"
 #include "cc/benchmarks/benchmark_instrumentation.h"
-#include "cc/output/layer_tree_frame_sink.h"
-#include "cc/quads/draw_quad.h"
 #include "cc/resources/ui_resource_manager.h"
 #include "cc/scheduler/commit_earlyout_reason.h"
 #include "cc/scheduler/compositor_timing_history.h"
 #include "cc/scheduler/scheduler.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
@@ -190,12 +188,6 @@ void SingleThreadProxy::DoCommit() {
     DebugScopedSetMainThreadBlocked main_thread_blocked(task_runner_provider_);
     DebugScopedSetImplThread impl(task_runner_provider_);
 
-    // This CapturePostTasks should be destroyed before CommitComplete() is
-    // called since that goes out to the embedder, and we want the embedder
-    // to receive its callbacks before that.
-    commit_blocking_task_runner_.reset(new BlockingTaskRunner::CapturePostTasks(
-        task_runner_provider_->blocking_main_thread_task_runner()));
-
     host_impl_->ReadyToCommit();
     host_impl_->BeginCommit();
 
@@ -233,10 +225,8 @@ void SingleThreadProxy::CommitComplete() {
   // SetNextCommitWaitsForActivation calls.
   DCHECK(!host_impl_->pending_tree())
       << "Activation is expected to have synchronously occurred by now.";
-  DCHECK(commit_blocking_task_runner_);
 
   DebugScopedSetMainThread main(task_runner_provider_);
-  commit_blocking_task_runner_.reset();
   layer_tree_host_->CommitComplete();
   layer_tree_host_->DidBeginMainFrame();
 
@@ -385,9 +375,6 @@ bool SingleThreadProxy::IsInsideDraw() {
 }
 
 void SingleThreadProxy::DidActivateSyncTree() {
-  // Synchronously call to CommitComplete. Resetting
-  // |commit_blocking_task_runner| would make sure all tasks posted during
-  // commit/activation before CommitComplete.
   CommitComplete();
 }
 
@@ -583,8 +570,6 @@ DrawResult SingleThreadProxy::DoComposite(LayerTreeHostImpl::FrameData* frame) {
     // there as the main thread is not blocked, so any posted tasks inside
     // the swap buffers will execute first.
     DebugScopedSetMainThreadBlocked main_thread_blocked(task_runner_provider_);
-    BlockingTaskRunner::CapturePostTasks blocked(
-        task_runner_provider_->blocking_main_thread_task_runner());
 
     draw_result = host_impl_->PrepareToDraw(frame);
     draw_frame = draw_result == DRAW_SUCCESS;
@@ -802,8 +787,6 @@ void SingleThreadProxy::ScheduledActionPerformImplSideInvalidation() {
   DCHECK(scheduler_on_impl_thread_);
 
   DebugScopedSetImplThread impl(task_runner_provider_);
-  commit_blocking_task_runner_.reset(new BlockingTaskRunner::CapturePostTasks(
-      task_runner_provider_->blocking_main_thread_task_runner()));
   host_impl_->InvalidateContentOnImplSide();
 
   // Invalidations go directly to the active tree, so we synchronously call
@@ -812,13 +795,6 @@ void SingleThreadProxy::ScheduledActionPerformImplSideInvalidation() {
   // signal from LTHI, the draw will remain blocked till the invalidated tiles
   // are ready.
   NotifyReadyToActivate();
-}
-
-void SingleThreadProxy::UpdateBrowserControlsState(
-    BrowserControlsState constraints,
-    BrowserControlsState current,
-    bool animate) {
-  NOTREACHED() << "Browser Controls are used only in threaded mode";
 }
 
 void SingleThreadProxy::DidFinishImplFrame() {

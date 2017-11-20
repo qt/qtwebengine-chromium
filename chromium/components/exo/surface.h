@@ -15,11 +15,13 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "components/exo/layer_tree_frame_sink_holder.h"
+#include "components/exo/surface_delegate.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/resources/transferable_resource.h"
 #include "third_party/skia/include/core/SkBlendMode.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_targeter.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/transform.h"
@@ -30,19 +32,18 @@ class TracedValue;
 }
 }
 
-namespace cc {
-class CompositorFrame;
-}
-
 namespace gfx {
 class Path;
+}
+
+namespace viz {
+class CompositorFrame;
 }
 
 namespace exo {
 class Buffer;
 class LayerTreeFrameSinkHolder;
 class Pointer;
-class SurfaceDelegate;
 class SurfaceObserver;
 class Surface;
 
@@ -59,7 +60,7 @@ using CursorProvider = Pointer;
 
 // This class represents a rectangular area that is displayed on the screen.
 // It has a location, size and pixel contents.
-class Surface : public ui::PropertyHandler {
+class Surface final : public ui::PropertyHandler {
  public:
   using PropertyDeallocator = void (*)(int64_t value);
 
@@ -133,6 +134,9 @@ class Surface : public ui::PropertyHandler {
   // This sets the alpha value that will be applied to the whole surface.
   void SetAlpha(float alpha);
 
+  // Request that surface should have the specified frame type.
+  void SetFrame(SurfaceFrameType type);
+
   // Surface state (damage regions, attached buffers, etc.) is double-buffered.
   // A Commit() call atomically applies all pending state, replacing the
   // current state. Commit() is not guaranteed to be synchronous. See
@@ -151,7 +155,7 @@ class Surface : public ui::PropertyHandler {
       const gfx::Point& origin,
       float device_scale_factor,
       LayerTreeFrameSinkHolder* frame_sink_holder,
-      cc::CompositorFrame* frame);
+      viz::CompositorFrame* frame);
 
   // Returns true if surface is in synchronized mode.
   bool IsSynchronized() const;
@@ -168,6 +172,11 @@ class Surface : public ui::PropertyHandler {
 
   // Returns the current input region of surface in the form of a hit-test mask.
   void GetHitTestMask(gfx::Path* mask) const;
+
+  // Returns the current input region of surface in the form of a set of
+  // hit-test rects.
+  std::unique_ptr<aura::WindowTargeter::HitTestRects> GetHitTestShapeRects()
+      const;
 
   // Surface does not own cursor providers. It is the responsibility of the
   // caller to remove the cursor provider before it is destroyed.
@@ -265,7 +274,7 @@ class Surface : public ui::PropertyHandler {
   // the |frame|.
   void AppendContentsToFrame(const gfx::Point& origin,
                              float device_scale_factor,
-                             cc::CompositorFrame* frame);
+                             viz::CompositorFrame* frame);
 
   // Update surface content size base on current buffer size.
   void UpdateContentSize();

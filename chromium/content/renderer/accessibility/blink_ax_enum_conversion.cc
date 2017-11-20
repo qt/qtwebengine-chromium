@@ -40,9 +40,6 @@ uint32_t AXStateFromBlink(const blink::WebAXObject& o) {
   if (o.IsMultiSelectable())
     state |= (1 << ui::AX_STATE_MULTISELECTABLE);
 
-  if (o.IsOffScreen())
-    state |= (1 << ui::AX_STATE_OFFSCREEN);
-
   if (o.IsPasswordField())
     state |= (1 << ui::AX_STATE_PROTECTED);
 
@@ -392,6 +389,8 @@ ui::AXDefaultActionVerb AXDefaultActionVerbFromBlink(
       return ui::AX_DEFAULT_ACTION_VERB_CHECK;
     case blink::WebAXDefaultActionVerb::kClick:
       return ui::AX_DEFAULT_ACTION_VERB_CLICK;
+    case blink::WebAXDefaultActionVerb::kClickAncestor:
+      return ui::AX_DEFAULT_ACTION_VERB_CLICK_ANCESTOR;
     case blink::WebAXDefaultActionVerb::kJump:
       return ui::AX_DEFAULT_ACTION_VERB_JUMP;
     case blink::WebAXDefaultActionVerb::kOpen:

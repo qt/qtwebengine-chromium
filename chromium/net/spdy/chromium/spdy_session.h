@@ -8,12 +8,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <deque>
 #include <map>
 #include <memory>
 #include <set>
 #include <vector>
 
+#include "base/compiler_specific.h"
+#include "base/containers/circular_deque.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -271,10 +272,12 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
 
     size_t erase(const GURL& url);
     iterator erase(const_iterator it);
-    iterator insert(const_iterator position,
-                    const GURL& url,
-                    SpdyStreamId stream_id,
-                    const base::TimeTicks& creation_time);
+
+    // Return true if there was not already an entry with |url|,
+    // in which case the insertion was successful.
+    bool insert(const GURL& url,
+                SpdyStreamId stream_id,
+                const base::TimeTicks& creation_time) WARN_UNUSED_RESULT;
 
     size_t EstimateMemoryUsage() const;
 
@@ -302,7 +305,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   SpdySession(const SpdySessionKey& spdy_session_key,
               HttpServerProperties* http_server_properties,
               TransportSecurityState* transport_security_state,
-              const QuicVersionVector& quic_supported_versions,
+              const QuicTransportVersionVector& quic_supported_versions,
               bool enable_sending_initial_data,
               bool enable_ping_based_connection_checking,
               size_t session_max_recv_window_size,
@@ -537,14 +540,6 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
     return pooled_aliases_;
   }
 
-  size_t GetFrameMaximumSize() const {
-    return buffered_spdy_framer_->GetFrameMaximumSize();
-  }
-
-  size_t GetDataFrameMaximumPayload() const {
-    return buffered_spdy_framer_->GetDataFrameMaximumPayload();
-  }
-
   // https://http2.github.io/http2-spec/#TLSUsage mandates minimum security
   // standards for TLS.
   bool HasAcceptableTransportSecurity() const;
@@ -613,10 +608,10 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   FRIEND_TEST_ALL_PREFIXES(SpdyNetworkTransactionTest,
                            ServerPushValidCrossOriginWithOpenSession);
 
-  typedef std::deque<base::WeakPtr<SpdyStreamRequest>>
-      PendingStreamRequestQueue;
-  typedef std::map<SpdyStreamId, SpdyStream*> ActiveStreamMap;
-  typedef std::set<SpdyStream*> CreatedStreamSet;
+  using PendingStreamRequestQueue =
+      base::circular_deque<base::WeakPtr<SpdyStreamRequest>>;
+  using ActiveStreamMap = std::map<SpdyStreamId, SpdyStream*>;
+  using CreatedStreamSet = std::set<SpdyStream*>;
 
   enum AvailabilityState {
     // The session is available in its socket pool and can be used
@@ -1158,12 +1153,12 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
 
   // A queue of stream IDs that have been send-stalled at some point
   // in the past.
-  std::deque<SpdyStreamId> stream_send_unstall_queue_[NUM_PRIORITIES];
+  base::circular_deque<SpdyStreamId> stream_send_unstall_queue_[NUM_PRIORITIES];
 
   NetLogWithSource net_log_;
 
   // Versions of QUIC which may be used.
-  const QuicVersionVector quic_supported_versions_;
+  const QuicTransportVersionVector quic_supported_versions_;
 
   // Outside of tests, these should always be true.
   bool enable_sending_initial_data_;

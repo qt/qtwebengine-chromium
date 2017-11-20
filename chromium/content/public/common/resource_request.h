@@ -18,6 +18,7 @@
 #include "content/public/common/resource_type.h"
 #include "content/public/common/service_worker_modes.h"
 #include "net/base/request_priority.h"
+#include "net/http/http_request_headers.h"
 #include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
 #include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
@@ -61,12 +62,7 @@ struct CONTENT_EXPORT ResourceRequest {
       blink::kWebPageVisibilityStateVisible;
 
   // Additional HTTP request headers.
-  //
-  // For HTTP(S) requests, the headers parameter can be a \r\n-delimited and
-  // \r\n-terminated list of MIME headers.  They should be ASCII-encoded using
-  // the standard MIME header encoding rules.  The headers parameter can also
-  // be null if no extra request headers need to be set.
-  std::string headers;
+  net::HttpRequestHeaders headers;
 
   // net::URLRequest load flags (0 by default).
   int load_flags = 0;
@@ -135,6 +131,10 @@ struct CONTENT_EXPORT ResourceRequest {
   // to that file will be provided in ResponseInfo::download_file_path.
   bool download_to_file = false;
 
+  // True if the request can work after the fetch group is terminated.
+  // https://fetch.spec.whatwg.org/#request-keepalive-flag
+  bool keepalive = false;
+
   // True if the request was user initiated.
   bool has_user_gesture = false;
 
@@ -155,13 +155,6 @@ struct CONTENT_EXPORT ResourceRequest {
 
   // True if |frame_id| is the main frame of a RenderView.
   bool is_main_frame = false;
-
-  // True if |parent_render_frame_id| is the main frame of a RenderView.
-  bool parent_is_main_frame = false;
-
-  // Identifies the parent frame of the frame that sent the request.
-  // -1 if unknown / invalid.
-  int parent_render_frame_id = -1;
 
   ui::PageTransition transition_type = ui::PAGE_TRANSITION_LINK;
 

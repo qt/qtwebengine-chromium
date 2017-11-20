@@ -7,7 +7,7 @@
 #ifndef FPDFSDK_PWL_CPWL_SCROLL_BAR_H_
 #define FPDFSDK_PWL_CPWL_SCROLL_BAR_H_
 
-#include "core/fxcrt/cfx_unowned_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/pwl/cpwl_wnd.h"
 
 class CPWL_SBButton;
@@ -49,8 +49,8 @@ class CPWL_SBButton : public CPWL_Wnd {
   ~CPWL_SBButton() override;
 
   // CPWL_Wnd
-  CFX_ByteString GetClassName() const override;
-  void OnCreate(PWL_CREATEPARAM& cp) override;
+  ByteString GetClassName() const override;
+  void OnCreate(CreateParams* pParamsToAdjust) override;
   void DrawThisAppearance(CFX_RenderDevice* pDevice,
                           const CFX_Matrix& mtUser2Device) override;
   bool OnLButtonDown(const CFX_PointF& point, uint32_t nFlag) override;
@@ -120,11 +120,11 @@ class CPWL_ScrollBar : public CPWL_Wnd {
   explicit CPWL_ScrollBar(PWL_SCROLLBAR_TYPE sbType = SBT_HSCROLL);
   ~CPWL_ScrollBar() override;
 
-  // CPWL_Wnd
-  CFX_ByteString GetClassName() const override;
-  void OnCreate(PWL_CREATEPARAM& cp) override;
+  // CPWL_Wnd:
+  ByteString GetClassName() const override;
+  void OnCreate(CreateParams* pParamsToAdjust) override;
   void OnDestroy() override;
-  void RePosChildWnd() override;
+  bool RePosChildWnd() override;
   void DrawThisAppearance(CFX_RenderDevice* pDevice,
                           const CFX_Matrix& mtUser2Device) override;
   bool OnLButtonDown(const CFX_PointF& point, uint32_t nFlag) override;
@@ -134,7 +134,7 @@ class CPWL_ScrollBar : public CPWL_Wnd {
   void NotifyLButtonDown(CPWL_Wnd* child, const CFX_PointF& pos) override;
   void NotifyLButtonUp(CPWL_Wnd* child, const CFX_PointF& pos) override;
   void NotifyMouseMove(CPWL_Wnd* child, const CFX_PointF& pos) override;
-  void CreateChildWnd(const PWL_CREATEPARAM& cp) override;
+  void CreateChildWnd(const CreateParams& cp) override;
   void TimerProc() override;
 
   float GetScrollBarWidth() const;
@@ -145,13 +145,15 @@ class CPWL_ScrollBar : public CPWL_Wnd {
  protected:
   void SetScrollRange(float fMin, float fMax, float fClientWidth);
   void SetScrollPos(float fPos);
-  void MovePosButton(bool bRefresh);
+
+  // Returns |true| iff this instance is still allocated.
+  bool MovePosButton(bool bRefresh);
   void SetScrollStep(float fBigStep, float fSmallStep);
   void NotifyScrollWindow();
   CFX_FloatRect GetScrollArea() const;
 
  private:
-  void CreateButtons(const PWL_CREATEPARAM& cp);
+  void CreateButtons(const CreateParams& cp);
 
   void OnMinButtonLBDown(const CFX_PointF& point);
   void OnMinButtonLBUp(const CFX_PointF& point);
@@ -170,9 +172,9 @@ class CPWL_ScrollBar : public CPWL_Wnd {
 
   PWL_SCROLLBAR_TYPE m_sbType;
   PWL_SCROLL_INFO m_OriginInfo;
-  CFX_UnownedPtr<CPWL_SBButton> m_pMinButton;
-  CFX_UnownedPtr<CPWL_SBButton> m_pMaxButton;
-  CFX_UnownedPtr<CPWL_SBButton> m_pPosButton;
+  UnownedPtr<CPWL_SBButton> m_pMinButton;
+  UnownedPtr<CPWL_SBButton> m_pMaxButton;
+  UnownedPtr<CPWL_SBButton> m_pPosButton;
   PWL_SCROLL_PRIVATEDATA m_sData;
   bool m_bMouseDown;
   bool m_bMinOrMax;

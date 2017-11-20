@@ -8,11 +8,9 @@
 #include <limits>
 #include <vector>
 
-#include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/fx_freetype.h"
-#include "core/fxge/fx_text_int.h"
 #include "core/fxge/ifx_renderdevicedriver.h"
 
 namespace {
@@ -103,19 +101,4 @@ FX_RECT FXGE_GetGlyphsBBox(const std::vector<FXTEXT_GLYPHPOS>& glyphs,
     bStarted = true;
   }
   return rect;
-}
-
-CFX_SizeGlyphCache::CFX_SizeGlyphCache() {}
-
-CFX_SizeGlyphCache::~CFX_SizeGlyphCache() {}
-
-void CFX_UniqueKeyGen::Generate(int count, ...) {
-  va_list argList;
-  va_start(argList, count);
-  for (int i = 0; i < count; i++) {
-    int p = va_arg(argList, int);
-    ((uint32_t*)m_Key)[i] = p;
-  }
-  va_end(argList);
-  m_KeyLen = count * sizeof(uint32_t);
 }

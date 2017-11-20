@@ -10,15 +10,18 @@
 #include <sstream>
 
 #include "core/fpdfapi/cpdf_modulemgr.h"
+#include "core/fxcodec/codec/ccodec_basicmodule.h"
+#include "core/fxcodec/codec/ccodec_faxmodule.h"
+#include "core/fxcodec/codec/ccodec_flatemodule.h"
+#include "core/fxcodec/codec/ccodec_jpegmodule.h"
 #include "core/fxcodec/fx_codec.h"
-#include "core/fxcrt/cfx_maybe_owned.h"
+#include "core/fxcrt/maybe_owned.h"
 #include "core/fxge/cfx_facecache.h"
 #include "core/fxge/cfx_fontcache.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibextractor.h"
-#include "core/fxge/fx_text_int.h"
 #include "core/fxge/win32/cpsoutput.h"
 #include "third_party/base/ptr_util.h"
 
@@ -77,7 +80,7 @@ void PSCompressData(int PSLevel,
 }  // namespace
 
 struct PSGlyph {
-  CFX_UnownedPtr<CFX_Font> m_pFont;
+  UnownedPtr<CFX_Font> m_pFont;
   uint32_t m_GlyphIndex;
   bool m_bGlyphAdjust;
   float m_AdjustMatrix[4];
@@ -97,7 +100,7 @@ CFX_PSRenderer::CFX_PSRenderer()
 
 CFX_PSRenderer::~CFX_PSRenderer() {}
 
-void CFX_PSRenderer::Init(const CFX_RetainPtr<IFX_WriteStream>& pStream,
+void CFX_PSRenderer::Init(const RetainPtr<IFX_WriteStream>& pStream,
                           int pslevel,
                           int width,
                           int height,
@@ -338,7 +341,7 @@ void CFX_PSRenderer::SetGraphState(const CFX_GraphStateData* pGraphState) {
     m_pStream->WriteBlock(buf.str().c_str(), buf.tellp());
 }
 
-bool CFX_PSRenderer::SetDIBits(const CFX_RetainPtr<CFX_DIBSource>& pSource,
+bool CFX_PSRenderer::SetDIBits(const RetainPtr<CFX_DIBSource>& pSource,
                                uint32_t color,
                                int left,
                                int top) {
@@ -349,7 +352,7 @@ bool CFX_PSRenderer::SetDIBits(const CFX_RetainPtr<CFX_DIBSource>& pSource,
   return DrawDIBits(pSource, color, &matrix, 0);
 }
 
-bool CFX_PSRenderer::StretchDIBits(const CFX_RetainPtr<CFX_DIBSource>& pSource,
+bool CFX_PSRenderer::StretchDIBits(const RetainPtr<CFX_DIBSource>& pSource,
                                    uint32_t color,
                                    int dest_left,
                                    int dest_top,
@@ -362,7 +365,7 @@ bool CFX_PSRenderer::StretchDIBits(const CFX_RetainPtr<CFX_DIBSource>& pSource,
   return DrawDIBits(pSource, color, &matrix, flags);
 }
 
-bool CFX_PSRenderer::DrawDIBits(const CFX_RetainPtr<CFX_DIBSource>& pSource,
+bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBSource>& pSource,
                                 uint32_t color,
                                 const CFX_Matrix* pMatrix,
                                 uint32_t flags) {
@@ -424,7 +427,7 @@ bool CFX_PSRenderer::DrawDIBits(const CFX_RetainPtr<CFX_DIBSource>& pSource,
     output_buf.release();
   } else {
     CFX_DIBExtractor source_extractor(pSource);
-    CFX_RetainPtr<CFX_DIBSource> pConverted = source_extractor.GetBitmap();
+    RetainPtr<CFX_DIBSource> pConverted = source_extractor.GetBitmap();
     if (!pConverted)
       return false;
     switch (pSource->GetFormat()) {
@@ -455,7 +458,7 @@ bool CFX_PSRenderer::DrawDIBits(const CFX_RetainPtr<CFX_DIBSource>& pSource,
 
     int bpp = pConverted->GetBPP() / 8;
     uint8_t* output_buf = nullptr;
-    FX_STRSIZE output_size = 0;
+    size_t output_size = 0;
     const char* filter = nullptr;
     if ((m_PSLevel == 2 || flags & FXRENDER_IMAGE_LOSSY) &&
         CCodec_JpegModule::JpegEncode(pConverted, &output_buf, &output_size)) {
@@ -669,9 +672,9 @@ bool CFX_PSRenderer::DrawText(int nChars,
       last_fontnum = ps_fontnum;
     }
     buf << pCharPos[i].m_Origin.x << " " << pCharPos[i].m_Origin.y << " m";
-    CFX_ByteString hex;
+    ByteString hex;
     hex.Format("<%02X>", ps_glyphindex);
-    buf << hex.AsStringC() << "Tj\n";
+    buf << hex.AsStringView() << "Tj\n";
   }
   buf << "Q\n";
   m_pStream->WriteBlock(buf.str().c_str(), buf.tellp());

@@ -9,9 +9,9 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/LocalFrameView.h"
-#include "core/html/FormData.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/html/forms/FormController.h"
+#include "core/html/forms/FormData.h"
+#include "core/html/forms/HTMLFormElement.h"
 #include "core/testing/DummyPageHolder.h"
 #include "core/url/URLSearchParams.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -35,10 +35,10 @@ class PasswordCredentialTest : public ::testing::Test {
     b.Append("'>");
     b.Append(html);
     b.Append("</form></body></html>");
-    GetDocument().documentElement()->setInnerHTML(b.ToString());
+    GetDocument().documentElement()->SetInnerHTMLFromString(b.ToString());
     GetDocument().View()->UpdateAllLifecyclePhases();
     HTMLFormElement* form =
-        toHTMLFormElement(GetDocument().getElementById("theForm"));
+        ToHTMLFormElement(GetDocument().getElementById("theForm"));
     EXPECT_NE(nullptr, form);
     return form;
   }
@@ -75,12 +75,12 @@ TEST_F(PasswordCredentialTest, CreateFromMultipartForm) {
 
   FormDataOrURLSearchParams additional_data;
   credential->additionalData(additional_data);
-  ASSERT_TRUE(additional_data.isFormData());
-  EXPECT_TRUE(additional_data.getAsFormData()->has("theId"));
-  EXPECT_TRUE(additional_data.getAsFormData()->has("thePassword"));
-  EXPECT_TRUE(additional_data.getAsFormData()->has("theIcon"));
-  EXPECT_TRUE(additional_data.getAsFormData()->has("theName"));
-  EXPECT_TRUE(additional_data.getAsFormData()->has("theExtraField"));
+  ASSERT_TRUE(additional_data.GetAsFormData());
+  EXPECT_TRUE(additional_data.GetAsFormData()->has("theId"));
+  EXPECT_TRUE(additional_data.GetAsFormData()->has("thePassword"));
+  EXPECT_TRUE(additional_data.GetAsFormData()->has("theIcon"));
+  EXPECT_TRUE(additional_data.GetAsFormData()->has("theName"));
+  EXPECT_TRUE(additional_data.GetAsFormData()->has("theExtraField"));
 }
 
 TEST_F(PasswordCredentialTest, CreateFromURLEncodedForm) {
@@ -110,12 +110,12 @@ TEST_F(PasswordCredentialTest, CreateFromURLEncodedForm) {
 
   FormDataOrURLSearchParams additional_data;
   credential->additionalData(additional_data);
-  ASSERT_TRUE(additional_data.isURLSearchParams());
-  EXPECT_TRUE(additional_data.getAsURLSearchParams()->has("theId"));
-  EXPECT_TRUE(additional_data.getAsURLSearchParams()->has("thePassword"));
-  EXPECT_TRUE(additional_data.getAsURLSearchParams()->has("theIcon"));
-  EXPECT_TRUE(additional_data.getAsURLSearchParams()->has("theName"));
-  EXPECT_TRUE(additional_data.getAsURLSearchParams()->has("theExtraField"));
+  ASSERT_TRUE(additional_data.IsURLSearchParams());
+  EXPECT_TRUE(additional_data.GetAsURLSearchParams()->has("theId"));
+  EXPECT_TRUE(additional_data.GetAsURLSearchParams()->has("thePassword"));
+  EXPECT_TRUE(additional_data.GetAsURLSearchParams()->has("theIcon"));
+  EXPECT_TRUE(additional_data.GetAsURLSearchParams()->has("theName"));
+  EXPECT_TRUE(additional_data.GetAsURLSearchParams()->has("theExtraField"));
 }
 
 TEST_F(PasswordCredentialTest, CreateFromFormNoPassword) {

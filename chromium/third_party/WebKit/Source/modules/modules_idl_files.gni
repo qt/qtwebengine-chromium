@@ -12,14 +12,19 @@ blink_modules_output_dir = "$root_gen_dir/blink/modules"
 
 modules_core_global_constructors_original_interfaces = [
   "AudioWorkletGlobalScope",
-  "CompositorWorkerGlobalScope",
   "PaintWorkletGlobalScope",
   "ServiceWorkerGlobalScope",
 ]
 
+# The size and the order in the following list must match to the previous one.
+modules_core_global_constructors_original_interface_basenames = [
+  "audio_worklet_global_scope",
+  "paint_worklet_global_scope",
+  "service_worker_global_scope",
+]
+
 modules_global_constructors_original_interfaces = [
   "AudioWorkletGlobalScope",
-  "CompositorWorkerGlobalScope",
   "DedicatedWorkerGlobalScope",
   "PaintWorkletGlobalScope",
   "ServiceWorkerGlobalScope",
@@ -27,15 +32,25 @@ modules_global_constructors_original_interfaces = [
   "Window",
 ]
 
+# The size and the order in the following list must match to the previous one.
+modules_global_constructors_original_interface_basenames = [
+  "audio_worklet_global_scope",
+  "dedicated_worker_global_scope",
+  "paint_worklet_global_scope",
+  "service_worker_global_scope",
+  "shared_worker_global_scope",
+  "window",
+]
+
 # The interfaces aren't technically files, but we can treat them as file names
 # to get process_file_template to generate lists of IDL files corresponding
 # to each interface.
 modules_core_global_constructors_generated_idl_files = process_file_template(
-        modules_core_global_constructors_original_interfaces,
-        [ "$blink_modules_output_dir/{{source_name_part}}CoreConstructors.idl" ])
+        modules_core_global_constructors_original_interface_basenames,
+        [ "$blink_modules_output_dir/{{source_name_part}}_core_constructors.idl" ])
 modules_global_constructors_generated_idl_files = process_file_template(
-        modules_global_constructors_original_interfaces,
-        [ "$blink_modules_output_dir/{{source_name_part}}ModulesConstructors.idl" ])
+        modules_global_constructors_original_interface_basenames,
+        [ "$blink_modules_output_dir/{{source_name_part}}_modules_constructors.idl" ])
 
 modules_idl_files =
     get_path_info([
@@ -69,8 +84,8 @@ modules_idl_files =
                     "canvas2d/CanvasRenderingContext2D.idl",
                     "canvas2d/Path2D.idl",
                     "compositorworker/AnimationWorkletGlobalScope.idl",
-                    "compositorworker/CompositorWorker.idl",
-                    "compositorworker/CompositorWorkerGlobalScope.idl",
+                    "compositorworker/WorkletAnimation.idl",
+                    "cookie_store/CookieStore.idl",
                     "credentialmanager/AuthenticatorAssertionResponse.idl",
                     "credentialmanager/AuthenticatorAttestationResponse.idl",
                     "credentialmanager/AuthenticatorResponse.idl",
@@ -130,7 +145,6 @@ modules_idl_files =
                     "geolocation/Coordinates.idl",
                     "geolocation/Geolocation.idl",
                     "geolocation/Position.idl",
-                    "geolocation/PositionCallback.idl",
                     "geolocation/PositionError.idl",
                     "geolocation/PositionErrorCallback.idl",
                     "imagebitmap/ImageBitmapRenderingContext.idl",
@@ -174,6 +188,7 @@ modules_idl_files =
                     "mediastream/NavigatorUserMediaError.idl",
                     "mediastream/NavigatorUserMediaErrorCallback.idl",
                     "mediastream/NavigatorUserMediaSuccessCallback.idl",
+                    "mediastream/OverconstrainedError.idl",
                     "netinfo/NetworkInformation.idl",
                     "nfc/MessageCallback.idl",
                     "nfc/NFC.idl",
@@ -287,6 +302,15 @@ modules_idl_files =
                     "vr/VRFrameData.idl",
                     "vr/VRPose.idl",
                     "vr/VRStageParameters.idl",
+                    "vr/latest/VR.idl",
+                    "vr/latest/VRCoordinateSystem.idl",
+                    "vr/latest/VRDevice.idl",
+                    "vr/latest/VRDeviceEvent.idl",
+                    "vr/latest/VRFrameOfReference.idl",
+                    "vr/latest/VRSession.idl",
+                    "vr/latest/VRSessionEvent.idl",
+                    "vr/latest/VRStageBounds.idl",
+                    "vr/latest/VRStageBoundsPoint.idl",
                     "webaudio/AnalyserNode.idl",
                     "webaudio/AudioBuffer.idl",
                     "webaudio/AudioBufferSourceNode.idl",
@@ -299,6 +323,8 @@ modules_idl_files =
                     "webaudio/AudioProcessingEvent.idl",
                     "webaudio/AudioScheduledSourceNode.idl",
                     "webaudio/AudioWorkletGlobalScope.idl",
+                    "webaudio/AudioWorkletProcessor.idl",
+                    "webaudio/AudioWorkletNode.idl",
                     "webaudio/BaseAudioContext.idl",
                     "webaudio/BiquadFilterNode.idl",
                     "webaudio/ChannelMergerNode.idl",
@@ -332,6 +358,7 @@ modules_idl_files =
                     "webgl/ANGLEInstancedArrays.idl",
                     "webgl/EXTBlendMinMax.idl",
                     "webgl/EXTColorBufferFloat.idl",
+                    "webgl/EXTColorBufferHalfFloat.idl",
                     "webgl/EXTDisjointTimerQuery.idl",
                     "webgl/EXTDisjointTimerQueryWebGL2.idl",
                     "webgl/EXTFragDepth.idl",
@@ -348,6 +375,7 @@ modules_idl_files =
                     "webgl/WebGL2RenderingContext.idl",
                     "webgl/WebGLActiveInfo.idl",
                     "webgl/WebGLBuffer.idl",
+                    "webgl/WebGLColorBufferFloat.idl",
                     "webgl/WebGLCompressedTextureASTC.idl",
                     "webgl/WebGLCompressedTextureATC.idl",
                     "webgl/WebGLCompressedTextureETC.idl",
@@ -419,6 +447,9 @@ modules_dictionary_idl_files =
                     "cachestorage/CacheQueryOptions.idl",
                     "canvas2d/CanvasRenderingContext2DSettings.idl",
                     "canvas2d/HitRegionOptions.idl",
+                    "cookie_store/CookieListItem.idl",
+                    "cookie_store/CookieStoreGetOptions.idl",
+                    "cookie_store/CookieStoreSetOptions.idl",
                     "credentialmanager/AuthenticatorSelectionCriteria.idl",
                     "credentialmanager/CollectedClientData.idl",
                     "credentialmanager/MakeCredentialOptions.idl",
@@ -434,6 +465,7 @@ modules_dictionary_idl_files =
                     "credentialmanager/PublicKeyCredentialParameters.idl",
                     "credentialmanager/PublicKeyCredentialRequestOptions.idl",
                     "credentialmanager/PublicKeyCredentialUserEntity.idl",
+                    "csspaint/PaintRenderingContext2DSettings.idl",
                     "device_orientation/DeviceAccelerationInit.idl",
                     "device_orientation/DeviceMotionEventInit.idl",
                     "device_orientation/DeviceOrientationEventInit.idl",
@@ -544,12 +576,17 @@ modules_dictionary_idl_files =
                     "speech/SpeechRecognitionEventInit.idl",
                     "storage/StorageEventInit.idl",
                     "vr/VRDisplayEventInit.idl",
-                    "vr/VRLayer.idl",
+                    "vr/VRLayerInit.idl",
+                    "vr/latest/VRDeviceEventInit.idl",
+                    "vr/latest/VRFrameOfReferenceOptions.idl",
+                    "vr/latest/VRSessionCreationOptions.idl",
+                    "vr/latest/VRSessionEventInit.idl",
                     "webaudio/AnalyserOptions.idl",
                     "webaudio/AudioBufferOptions.idl",
                     "webaudio/AudioBufferSourceOptions.idl",
                     "webaudio/AudioContextOptions.idl",
                     "webaudio/AudioNodeOptions.idl",
+                    "webaudio/AudioWorkletNodeOptions.idl",
                     "webaudio/AudioParamDescriptor.idl",
                     "webaudio/AudioProcessingEventInit.idl",
                     "webaudio/AudioTimestamp.idl",
@@ -606,6 +643,7 @@ modules_dependency_idl_files =
           "canvas/HTMLCanvasElementModule.idl",
           "canvas2d/CanvasPath.idl",
           "compositorworker/WindowAnimationWorklet.idl",
+          "cookie_store/WindowCookieStore.idl",
           "credentialmanager/CredentialUserData.idl",
           "credentialmanager/NavigatorCredentials.idl",
           "crypto/WindowCrypto.idl",

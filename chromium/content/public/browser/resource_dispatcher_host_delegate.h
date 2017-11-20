@@ -142,11 +142,10 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   virtual std::unique_ptr<net::ClientCertStore> CreateClientCertStore(
       ResourceContext* resource_context);
 
-  // Notification that a main frame load was aborted. The |request_loading_time|
-  // parameter contains the time between the load request start and abort.
-  // Called on the IO thread.
-  virtual void OnAbortedFrameLoad(const GURL& url,
-                                  base::TimeDelta request_loading_time);
+  // Whether or not to enable ResourceScheduling. This will almost always be
+  // enabled, except for some C++ headless embedders who may implement their own
+  // resource scheduling via protocol handlers.
+  virtual bool ShouldUseResourceScheduler() const;
 
  protected:
   virtual ~ResourceDispatcherHostDelegate();

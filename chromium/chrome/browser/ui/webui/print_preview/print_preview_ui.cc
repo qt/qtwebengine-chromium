@@ -166,12 +166,7 @@ bool HandleRequestCallback(
 content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIPrintHost);
-#if defined(OS_CHROMEOS)
-  source->AddLocalizedString("title",
-                             IDS_PRINT_PREVIEW_GOOGLE_CLOUD_PRINT_TITLE);
-#else
   source->AddLocalizedString("title", IDS_PRINT_PREVIEW_TITLE);
-#endif
   source->AddLocalizedString("loading", IDS_PRINT_PREVIEW_LOADING);
   source->AddLocalizedString("noPlugin", IDS_PRINT_PREVIEW_NO_PLUGIN);
   source->AddLocalizedString("launchNativeDialog",
@@ -183,12 +178,6 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
   source->AddLocalizedString("saveButton", IDS_PRINT_PREVIEW_SAVE_BUTTON);
   source->AddLocalizedString("printing", IDS_PRINT_PREVIEW_PRINTING);
   source->AddLocalizedString("saving", IDS_PRINT_PREVIEW_SAVING);
-  source->AddLocalizedString("printingToPDFInProgress",
-                             IDS_PRINT_PREVIEW_PRINTING_TO_PDF_IN_PROGRESS);
-#if defined(OS_MACOSX)
-  source->AddLocalizedString("openingPDFInPreview",
-                             IDS_PRINT_PREVIEW_OPENING_PDF_IN_PREVIEW);
-#endif
   source->AddLocalizedString("destinationLabel",
                              IDS_PRINT_PREVIEW_DESTINATION_LABEL);
   source->AddLocalizedString("copiesLabel", IDS_PRINT_PREVIEW_COPIES_LABEL);
@@ -235,23 +224,6 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
   source->AddLocalizedString(
       "resolveExtensionUSBErrorMessage",
       IDS_PRINT_PREVIEW_RESOLVE_EXTENSION_USB_ERROR_MESSAGE);
-#if defined(OS_CHROMEOS)
-  source->AddLocalizedString("configuringInProgressText",
-                             IDS_PRINT_CONFIGURING_IN_PROGRESS_TEXT);
-  source->AddLocalizedString("configuringFailedText",
-                             IDS_PRINT_CONFIGURING_FAILED_TEXT);
-#else
-  const base::string16 shortcut_text(base::UTF8ToUTF16(kBasicPrintShortcut));
-  source->AddString(
-      "systemDialogOption",
-      l10n_util::GetStringFUTF16(
-          IDS_PRINT_PREVIEW_SYSTEM_DIALOG_OPTION,
-          shortcut_text));
-#endif
-#if defined(OS_MACOSX)
-  source->AddLocalizedString("openPdfInPreviewOption",
-                             IDS_PRINT_PREVIEW_OPEN_PDF_IN_PREVIEW_APP);
-#endif
   source->AddString(
       "printWithCloudPrintWait",
       l10n_util::GetStringFUTF16(
@@ -373,10 +345,14 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
   source->AddResourcePath("print_preview.js", IDR_PRINT_PREVIEW_JS);
   source->AddResourcePath("pdf_preview.html",
                           IDR_PRINT_PREVIEW_PDF_PREVIEW_HTML);
-  source->AddResourcePath("images/printer.png",
-                          IDR_PRINT_PREVIEW_IMAGES_PRINTER);
-  source->AddResourcePath("images/printer_shared.png",
-                          IDR_PRINT_PREVIEW_IMAGES_PRINTER_SHARED);
+  source->AddResourcePath("images/1x/printer.png",
+                          IDR_PRINT_PREVIEW_IMAGES_1X_PRINTER);
+  source->AddResourcePath("images/2x/printer.png",
+                          IDR_PRINT_PREVIEW_IMAGES_2X_PRINTER);
+  source->AddResourcePath("images/1x/printer_shared.png",
+                          IDR_PRINT_PREVIEW_IMAGES_1X_PRINTER_SHARED);
+  source->AddResourcePath("images/2x/printer_shared.png",
+                          IDR_PRINT_PREVIEW_IMAGES_2X_PRINTER_SHARED);
   source->AddResourcePath("images/business.svg",
                           IDR_PRINT_PREVIEW_IMAGES_ENTERPRISE_PRINTER);
   source->AddResourcePath("images/third_party.png",
@@ -398,6 +374,23 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
   source->OverrideContentSecurityPolicyObjectSrc("object-src 'self';");
   source->AddLocalizedString("moreOptionsLabel", IDS_MORE_OPTIONS_LABEL);
   source->AddLocalizedString("lessOptionsLabel", IDS_LESS_OPTIONS_LABEL);
+#if defined(OS_CHROMEOS)
+  source->AddLocalizedString("configuringInProgressText",
+                             IDS_PRINT_CONFIGURING_IN_PROGRESS_TEXT);
+  source->AddLocalizedString("configuringFailedText",
+                             IDS_PRINT_CONFIGURING_FAILED_TEXT);
+#else
+  const base::string16 shortcut_text(base::UTF8ToUTF16(kBasicPrintShortcut));
+  source->AddString("systemDialogOption",
+                    l10n_util::GetStringFUTF16(
+                        IDS_PRINT_PREVIEW_SYSTEM_DIALOG_OPTION, shortcut_text));
+#endif
+#if defined(OS_MACOSX)
+  source->AddLocalizedString("openingPDFInPreview",
+                             IDS_PRINT_PREVIEW_OPENING_PDF_IN_PREVIEW_APP);
+  source->AddLocalizedString("openPdfInPreviewOption",
+                             IDS_PRINT_PREVIEW_OPEN_PDF_IN_PREVIEW_APP);
+#endif
 
 #if !defined(OS_MACOSX) && !defined(OS_WIN)
   bool print_pdf_as_image_enabled = base::FeatureList::IsEnabled(
@@ -419,6 +412,22 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
 }
 
 }  // namespace
+
+PrintPreviewUI::PrintPreviewUI(content::WebUI* web_ui,
+                               std::unique_ptr<PrintPreviewHandler> handler)
+    : ConstrainedWebDialogUI(web_ui),
+      initial_preview_start_time_(base::TimeTicks::Now()),
+      id_(g_print_preview_ui_id_map.Get().Add(this)),
+      handler_(nullptr),
+      source_is_modifiable_(true),
+      source_has_selection_(false),
+      print_selection_only_(false),
+      dialog_closed_(false) {
+  handler_ = handler.get();
+  web_ui->AddMessageHandler(std::move(handler));
+
+  g_print_preview_request_id_map.Get().Set(id_, -1);
+}
 
 PrintPreviewUI::PrintPreviewUI(content::WebUI* web_ui)
     : ConstrainedWebDialogUI(web_ui),
@@ -659,7 +668,7 @@ void PrintPreviewUI::SetDelegateForTesting(TestingDelegate* delegate) {
 }
 
 void PrintPreviewUI::SetSelectedFileForTesting(const base::FilePath& path) {
-  handler_->FileSelected(path, 0, NULL);
+  handler_->FileSelectedForTesting(path, 0, NULL);
 }
 
 void PrintPreviewUI::SetPdfSavedClosureForTesting(

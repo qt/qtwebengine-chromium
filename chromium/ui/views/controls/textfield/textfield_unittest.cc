@@ -3172,13 +3172,8 @@ TEST_F(TextfieldTest, AccessiblePasswordTest) {
   ui::AXNodeData node_data_protected;
   textfield_->GetAccessibleNodeData(&node_data_protected);
   EXPECT_EQ(ui::AX_ROLE_TEXT_FIELD, node_data_protected.role);
-#if defined(OS_MACOSX)
   EXPECT_EQ(UTF8ToUTF16("••••••••"),
             node_data_protected.GetString16Attribute(ui::AX_ATTR_VALUE));
-#else
-  EXPECT_EQ(ASCIIToUTF16("********"),
-            node_data_protected.GetString16Attribute(ui::AX_ATTR_VALUE));
-#endif
   EXPECT_TRUE(node_data_protected.HasState(ui::AX_STATE_PROTECTED));
 }
 
@@ -3330,8 +3325,13 @@ TEST_F(TextfieldTest, FocusChangesScrollToStart) {
   if (!PlatformStyle::kTextfieldScrollsToStartOnFocusChange)
     return;
 
+  // The cursor is at the start (so that it scrolls in to view), but the
+  // "Select All" is currently undirected. Shift+right will give it a direction
+  // and scroll to the end.
   SendKeyEvent(ui::VKEY_RIGHT, true, false);
-  EXPECT_EQ(1U, textfield_->GetCursorPosition());
+  EXPECT_EQ(kText.size(), textfield_->GetCursorPosition());
+
+  // And a focus loss should scroll back to the start.
   textfield_->OnBlur();
   EXPECT_EQ(0U, textfield_->GetCursorPosition());
 }

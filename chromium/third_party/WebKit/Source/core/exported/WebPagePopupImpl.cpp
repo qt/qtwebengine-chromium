@@ -77,6 +77,8 @@ class PagePopupChromeClient final : public EmptyChromeClient {
     popup_->SetWindowRect(rect);
   }
 
+  bool IsPopup() override { return true; }
+
  private:
   explicit PagePopupChromeClient(WebPagePopupImpl* popup) : popup_(popup) {
     DCHECK(popup_->WidgetClient());
@@ -317,11 +319,9 @@ bool WebPagePopupImpl::InitializePage() {
   InitializeLayerTreeView();
 
   RefPtr<SharedBuffer> data = SharedBuffer::Create();
-  popup_client_->WriteDocument(data.Get());
+  popup_client_->WriteDocument(data.get());
   frame->SetPageZoomFactor(popup_client_->ZoomFactor());
-  frame->Loader().Load(
-      FrameLoadRequest(0, ResourceRequest(BlankURL()),
-                       SubstituteData(data, kForceSynchronousLoad)));
+  frame->ForceSynchronousDocumentInstall("text/html", data);
   return true;
 }
 
@@ -522,7 +522,7 @@ void WebPagePopupImpl::Close() {
   if (page_)
     Cancel();
   widget_client_ = nullptr;
-  Deref();
+  Release();
 }
 
 void WebPagePopupImpl::ClosePopup() {
@@ -592,7 +592,9 @@ WebPagePopup* WebPagePopup::Create(WebWidgetClient* client) {
   //    WebPagePopupImpl to close.
   // We need them because the closing operation is asynchronous and the widget
   // can be closed while the WebViewImpl is unaware of it.
-  return AdoptRef(new WebPagePopupImpl(client)).LeakRef();
+  auto popup = WTF::AdoptRef(new WebPagePopupImpl(client));
+  popup->AddRef();
+  return popup.get();
 }
 
 }  // namespace blink

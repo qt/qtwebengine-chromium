@@ -8,16 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_RTP_RTCP_INCLUDE_RECEIVE_STATISTICS_H_
-#define WEBRTC_MODULES_RTP_RTCP_INCLUDE_RECEIVE_STATISTICS_H_
+#ifndef MODULES_RTP_RTCP_INCLUDE_RECEIVE_STATISTICS_H_
+#define MODULES_RTP_RTCP_INCLUDE_RECEIVE_STATISTICS_H_
 
 #include <map>
 #include <vector>
 
-#include "webrtc/modules/include/module.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/report_block.h"
-#include "webrtc/typedefs.h"
+#include "modules/include/module.h"
+#include "modules/include/module_common_types.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/report_block.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -55,8 +55,6 @@ class StreamStatistician {
   virtual bool IsPacketInOrder(uint16_t sequence_number) const = 0;
 };
 
-typedef std::map<uint32_t, StreamStatistician*> StatisticianMap;
-
 class ReceiveStatistics : public ReceiveStatisticsProvider {
  public:
   ~ReceiveStatistics() override = default;
@@ -71,10 +69,6 @@ class ReceiveStatistics : public ReceiveStatisticsProvider {
   // Increment counter for number of FEC packets received.
   virtual void FecPacketReceived(const RTPHeader& header,
                                  size_t packet_length) = 0;
-
-  // Returns a map of all statisticians which have seen an incoming packet
-  // during the last two seconds.
-  virtual StatisticianMap GetActiveStatisticians() const = 0;
 
   // Returns a pointer to the statistician of an ssrc.
   virtual StreamStatistician* GetStatistician(uint32_t ssrc) const = 0;
@@ -92,4 +86,4 @@ class ReceiveStatistics : public ReceiveStatisticsProvider {
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_RTP_RTCP_INCLUDE_RECEIVE_STATISTICS_H_
+#endif  // MODULES_RTP_RTCP_INCLUDE_RECEIVE_STATISTICS_H_

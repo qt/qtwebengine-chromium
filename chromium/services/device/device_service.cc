@@ -29,6 +29,7 @@
 #include "jni/InterfaceRegistrar_jni.h"
 #include "services/device/screen_orientation/screen_orientation_listener_android.h"
 #else
+#include "device/hid/hid_manager_impl.h"  // nogncheck
 #include "services/device/battery/battery_monitor_impl.h"
 #include "services/device/battery/battery_status_service.h"
 #include "services/device/vibration/vibration_manager_impl.h"
@@ -117,6 +118,8 @@ void DeviceService::OnStart() {
 #else
   registry_.AddInterface<mojom::BatteryMonitor>(base::Bind(
       &DeviceService::BindBatteryMonitorRequest, base::Unretained(this)));
+  registry_.AddInterface<mojom::HidManager>(base::Bind(
+      &DeviceService::BindHidManagerRequest, base::Unretained(this)));
   registry_.AddInterface<mojom::NFCProvider>(base::Bind(
       &DeviceService::BindNFCProviderRequest, base::Unretained(this)));
   registry_.AddInterface<mojom::VibrationManager>(base::Bind(
@@ -135,6 +138,12 @@ void DeviceService::OnBindInterface(
 void DeviceService::BindBatteryMonitorRequest(
     mojom::BatteryMonitorRequest request) {
   BatteryMonitorImpl::Create(std::move(request));
+}
+
+void DeviceService::BindHidManagerRequest(mojom::HidManagerRequest request) {
+  if (!hid_manager_)
+    hid_manager_ = base::MakeUnique<HidManagerImpl>();
+  hid_manager_->AddBinding(std::move(request));
 }
 
 void DeviceService::BindNFCProviderRequest(mojom::NFCProviderRequest request) {

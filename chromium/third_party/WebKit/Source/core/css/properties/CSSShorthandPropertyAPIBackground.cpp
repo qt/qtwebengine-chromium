@@ -11,6 +11,7 @@
 #include "core/css/parser/CSSPropertyParserHelpers.h"
 #include "core/css/properties/CSSPropertyBackgroundUtils.h"
 #include "core/css/properties/CSSPropertyPositionUtils.h"
+#include "core/frame/WebFeature.h"
 
 namespace blink {
 
@@ -68,7 +69,6 @@ CSSValue* ConsumeBackgroundComponent(CSSPropertyID resolved_property,
 //   (ii). we split parsing logic of background and -webkit-mask into
 //   different APIs.
 bool CSSShorthandPropertyAPIBackground::ParseShorthand(
-    CSSPropertyID,
     bool important,
     CSSParserTokenRange& range,
     const CSSParserContext& context,

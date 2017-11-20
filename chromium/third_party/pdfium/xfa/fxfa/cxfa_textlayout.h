@@ -33,7 +33,7 @@ class CXFA_TextLayout {
   explicit CXFA_TextLayout(CXFA_TextProvider* pTextProvider);
   ~CXFA_TextLayout();
 
-  int32_t GetText(CFX_WideString& wsText);
+  int32_t GetText(WideString& wsText);
   float GetLayoutHeight();
   float StartLayout(float fWidth = -1);
   bool DoLayout(int32_t iBlockIndex,
@@ -79,13 +79,13 @@ class CXFA_TextLayout {
   bool LoadRichText(CFX_XMLNode* pXMLNode,
                     const CFX_SizeF& szText,
                     float& fLinePos,
-                    const CFX_RetainPtr<CFX_CSSComputedStyle>& pParentStyle,
+                    const RetainPtr<CFX_CSSComputedStyle>& pParentStyle,
                     bool bSavePieces,
-                    CFX_RetainPtr<CXFA_LinkUserData> pLinkData,
+                    RetainPtr<CXFA_LinkUserData> pLinkData,
                     bool bEndBreak = true,
                     bool bIsOl = false,
                     int32_t iLiCount = 0);
-  bool AppendChar(const CFX_WideString& wsText,
+  bool AppendChar(const WideString& wsText,
                   float& fLinePos,
                   float fSpaceAbove,
                   bool bSavePieces);
@@ -95,7 +95,7 @@ class CXFA_TextLayout {
                       bool bEndBreak = false);
   void EndBreak(CFX_BreakType dwStatus, float& fLinePos, bool bDefault);
   bool IsEnd(bool bSavePieces);
-  void ProcessText(CFX_WideString& wsText);
+  void ProcessText(WideString& wsText);
   void UpdateAlign(float fHeight, float fBottom);
   void RenderString(CFX_RenderDevice* pDevice,
                     CXFA_PieceLine* pPieceLine,

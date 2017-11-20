@@ -6,6 +6,7 @@
 
 #include <memory>
 #include "core/css/resolver/StyleBuilderConverter.h"
+#include "core/style/ComputedStyle.h"
 #include "core/style/StyleOffsetRotation.h"
 #include "platform/wtf/PtrUtil.h"
 
@@ -17,7 +18,8 @@ class CSSOffsetRotationNonInterpolableValue : public NonInterpolableValue {
 
   static RefPtr<CSSOffsetRotationNonInterpolableValue> Create(
       OffsetRotationType rotation_type) {
-    return AdoptRef(new CSSOffsetRotationNonInterpolableValue(rotation_type));
+    return WTF::AdoptRef(
+        new CSSOffsetRotationNonInterpolableValue(rotation_type));
   }
 
   OffsetRotationType RotationType() const { return rotation_type_; }

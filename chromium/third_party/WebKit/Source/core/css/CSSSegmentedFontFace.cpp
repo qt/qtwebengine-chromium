@@ -27,7 +27,6 @@
 
 #include "core/css/CSSFontFace.h"
 #include "core/css/CSSFontSelector.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontFaceCreationParams.h"
@@ -131,10 +130,10 @@ RefPtr<FontData> CSSSegmentedFontFace::GetFontData(
             (*it)->CssFontFace()->GetFontData(requested_font_description)) {
       DCHECK(!face_font_data->IsSegmented());
       if (face_font_data->IsCustomFont()) {
-        font_data->AppendFace(AdoptRef(new FontDataForRangeSet(
+        font_data->AppendFace(WTF::AdoptRef(new FontDataForRangeSet(
             std::move(face_font_data), (*it)->CssFontFace()->Ranges())));
       } else {
-        font_data->AppendFace(AdoptRef(new FontDataForRangeSetFromCache(
+        font_data->AppendFace(WTF::AdoptRef(new FontDataForRangeSetFromCache(
             std::move(face_font_data), (*it)->CssFontFace()->Ranges())));
       }
     }

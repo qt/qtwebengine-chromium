@@ -13,7 +13,6 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/profiler/scoped_tracker.h"
 #include "build/build_config.h"
 #include "content/browser/renderer_host/pepper/content_browser_pepper_host_factory.h"
 #include "content/browser/renderer_host/pepper/pepper_socket_utils.h"
@@ -53,7 +52,7 @@ using ppapi::TCPSocketVersion;
 
 namespace {
 
-size_t g_num_instances = 0;
+size_t g_num_tcp_filter_instances = 0;
 
 }  // namespace
 
@@ -88,7 +87,7 @@ PepperTCPSocketMessageFilter::PepperTCPSocketMessageFilter(
   DCHECK(host);
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  ++g_num_instances;
+  ++g_num_tcp_filter_instances;
   host_->AddInstanceObserver(instance_, this);
   if (!host->GetRenderFrameIDsForInstance(
           instance, &render_process_id_, &render_frame_id_)) {
@@ -126,7 +125,7 @@ PepperTCPSocketMessageFilter::PepperTCPSocketMessageFilter(
   DCHECK_NE(version, ppapi::TCP_SOCKET_VERSION_1_0);
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  ++g_num_instances;
+  ++g_num_tcp_filter_instances;
   host_->AddInstanceObserver(instance_, this);
   if (!host->GetRenderFrameIDsForInstance(
           instance, &render_process_id_, &render_frame_id_)) {
@@ -142,12 +141,12 @@ PepperTCPSocketMessageFilter::~PepperTCPSocketMessageFilter() {
     socket_->Close();
   if (ssl_socket_)
     ssl_socket_->Disconnect();
-  --g_num_instances;
+  --g_num_tcp_filter_instances;
 }
 
 // static
 size_t PepperTCPSocketMessageFilter::GetNumInstances() {
-  return g_num_instances;
+  return g_num_tcp_filter_instances;
 }
 
 scoped_refptr<base::TaskRunner>
@@ -798,11 +797,6 @@ void PepperTCPSocketMessageFilter::OnConnectCompleted(
     const ppapi::host::ReplyMessageContext& context,
     int net_result) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  // TODO(rvargas): Remove ScopedTracker below once crbug.com/462784 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "462784 PepperTCPSocketMessageFilter::OnConnectCompleted"));
 
   if (!state_.IsPending(TCPSocketState::CONNECT)) {
     DCHECK(state_.state() == TCPSocketState::CLOSED);

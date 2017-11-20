@@ -46,11 +46,15 @@ class BufferNULL : public BufferImpl
                        void **mapPtr) override;
     gl::Error unmap(const gl::Context *context, GLboolean *result) override;
 
-    gl::Error getIndexRange(GLenum type,
+    gl::Error getIndexRange(const gl::Context *context,
+                            GLenum type,
                             size_t offset,
                             size_t count,
                             bool primitiveRestartEnabled,
                             gl::IndexRange *outRange) override;
+
+    uint8_t *getDataPtr();
+    const uint8_t *getDataPtr() const;
 
   private:
     std::vector<uint8_t> mData;

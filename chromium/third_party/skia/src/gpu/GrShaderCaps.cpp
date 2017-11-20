@@ -43,6 +43,7 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fGLSLGeneration = k330_GrGLSLGeneration;
     fShaderDerivativeSupport = false;
     fGeometryShaderSupport = false;
+    fGSInvocationsSupport = false;
     fPathRenderingSupport = false;
     fDstReadInShaderSupport = false;
     fDualSourceBlendingSupport = false;
@@ -61,10 +62,10 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fMustForceNegatedAtanParamToFloat = false;
     fAtan2ImplementedAsAtanYOverX = false;
     fRequiresLocalOutputColorForFBFetch = false;
-    fMustImplementGSInvocationsWithLoop = false;
     fMustObfuscateUniformColor = false;
     fMustGuardDivisionEvenAfterExplicitZeroCheck = false;
     fFlatInterpolationSupport = false;
+    fPreferFlatInterpolation = false;
     fNoPerspectiveInterpolationSupport = false;
     fMultisampleInterpolationSupport = false;
     fSampleVariablesSupport = false;
@@ -75,6 +76,7 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
 
     fVersionDeclString = nullptr;
     fShaderDerivativeExtensionString = nullptr;
+    fGSInvocationsExtensionString = nullptr;
     fFragCoordConventionsExtensionString = nullptr;
     fSecondaryOutputExtensionString = nullptr;
     fExternalTextureExtensionString = nullptr;
@@ -94,6 +96,12 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fMaxFragmentImageStorages = 0;
     fMaxCombinedImageStorages   = 0;
     fAdvBlendEqInteraction = kNotSupported_AdvBlendEqInteraction;
+
+#if GR_TEST_UTILS
+    fDisableImageMultitexturing = options.fDisableImageMultitexturing;
+#else
+    fDisableImageMultitexturing = false;
+#endif
 }
 
 void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
@@ -101,6 +109,7 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
 
     writer->appendBool("Shader Derivative Support", fShaderDerivativeSupport);
     writer->appendBool("Geometry Shader Support", fGeometryShaderSupport);
+    writer->appendBool("Geometry Shader Invocations Support", fGSInvocationsSupport);
     writer->appendBool("Path Rendering Support", fPathRenderingSupport);
     writer->appendBool("Dst Read In Shader Support", fDstReadInShaderSupport);
     writer->appendBool("Dual Source Blending Support", fDualSourceBlendingSupport);
@@ -149,12 +158,11 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Can use fract() for negative values", fCanUseFractForNegativeValues);
     writer->appendBool("Must force negated atan param to float", fMustForceNegatedAtanParamToFloat);
     writer->appendBool("Must use local out color for FBFetch", fRequiresLocalOutputColorForFBFetch);
-    writer->appendBool("Must implement geo shader invocations with loop",
-                       fMustImplementGSInvocationsWithLoop);
     writer->appendBool("Must obfuscate uniform color", fMustObfuscateUniformColor);
     writer->appendBool("Must guard division even after explicit zero check",
                        fMustGuardDivisionEvenAfterExplicitZeroCheck);
     writer->appendBool("Flat interpolation support", fFlatInterpolationSupport);
+    writer->appendBool("Prefer flat interpolation", fPreferFlatInterpolation);
     writer->appendBool("No perspective interpolation support", fNoPerspectiveInterpolationSupport);
     writer->appendBool("Multisample interpolation support", fMultisampleInterpolationSupport);
     writer->appendBool("Sample variables support", fSampleVariablesSupport);
@@ -173,6 +181,7 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendS32("Max Combined Image Storages", fMaxFragmentImageStorages);
     writer->appendString("Advanced blend equation interaction",
                          kAdvBlendEqInteractionStr[fAdvBlendEqInteraction]);
+    writer->appendBool("Disable image multitexturing", fDisableImageMultitexturing);
 
     writer->endObject();
 }

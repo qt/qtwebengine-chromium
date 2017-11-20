@@ -54,7 +54,7 @@ CFX_SAXFile::CFX_SAXFile()
 
 CFX_SAXFile::~CFX_SAXFile() {}
 
-bool CFX_SAXFile::StartFile(const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
+bool CFX_SAXFile::StartFile(const RetainPtr<IFX_SeekableReadStream>& pFile,
                             uint32_t dwStart,
                             uint32_t dwLen) {
   ASSERT(!m_pFile && pFile);
@@ -186,7 +186,7 @@ bool CFX_SAXReader::SkipSpace(uint8_t ch) {
 }
 
 int32_t CFX_SAXReader::StartParse(
-    const CFX_RetainPtr<IFX_SeekableReadStream>& pFile,
+    const RetainPtr<IFX_SeekableReadStream>& pFile,
     uint32_t dwStart,
     uint32_t dwLen,
     uint32_t dwParseMode) {
@@ -293,8 +293,8 @@ void CFX_SAXReader::ParseChar(uint8_t ch) {
   m_iEntityStart = -1;
 
   // NOTE: Relies on negative lengths being treated as empty strings.
-  CFX_ByteString csEntity(m_Data.data() + iSaveStart + 1,
-                          CurrentDataIndex() - iSaveStart - 1);
+  ByteString csEntity(m_Data.data() + iSaveStart + 1,
+                      CurrentDataIndex() - iSaveStart - 1);
   int32_t iLen = csEntity.GetLength();
   if (iLen == 0)
     return;
@@ -649,7 +649,7 @@ void CFX_SAXReader::NotifyData() {
     m_pHandler->OnTagData(
         pItem->m_pNode,
         m_bCharData ? CFX_SAXItem::Type::CharData : CFX_SAXItem::Type::Text,
-        CFX_ByteStringC(m_Data), m_File.m_dwCur + m_dwDataOffset);
+        ByteStringView(m_Data), m_File.m_dwCur + m_dwDataOffset);
 }
 
 void CFX_SAXReader::NotifyEnter() {
@@ -662,7 +662,7 @@ void CFX_SAXReader::NotifyEnter() {
 
   if (pItem->m_eNode == CFX_SAXItem::Type::Tag ||
       pItem->m_eNode == CFX_SAXItem::Type::Instruction) {
-    pItem->m_pNode = m_pHandler->OnTagEnter(CFX_ByteStringC(m_Data),
+    pItem->m_pNode = m_pHandler->OnTagEnter(ByteStringView(m_Data),
                                             pItem->m_eNode, m_dwNodePos);
   }
 }
@@ -677,8 +677,8 @@ void CFX_SAXReader::NotifyAttribute() {
 
   if (pItem->m_eNode == CFX_SAXItem::Type::Tag ||
       pItem->m_eNode == CFX_SAXItem::Type::Instruction) {
-    m_pHandler->OnTagAttribute(pItem->m_pNode, CFX_ByteStringC(m_Name),
-                               CFX_ByteStringC(m_Data));
+    m_pHandler->OnTagAttribute(pItem->m_pNode, ByteStringView(m_Name),
+                               ByteStringView(m_Data));
   }
 }
 
@@ -717,7 +717,7 @@ void CFX_SAXReader::NotifyEnd() {
     return;
 
   if (pItem->m_eNode == CFX_SAXItem::Type::Tag)
-    m_pHandler->OnTagEnd(pItem->m_pNode, CFX_ByteStringC(m_Data), m_dwNodePos);
+    m_pHandler->OnTagEnd(pItem->m_pNode, ByteStringView(m_Data), m_dwNodePos);
 }
 
 void CFX_SAXReader::NotifyTargetData() {
@@ -730,10 +730,10 @@ void CFX_SAXReader::NotifyTargetData() {
 
   if (pItem->m_eNode == CFX_SAXItem::Type::Instruction) {
     m_pHandler->OnTargetData(pItem->m_pNode, pItem->m_eNode,
-                             CFX_ByteStringC(m_Name), m_dwNodePos);
+                             ByteStringView(m_Name), m_dwNodePos);
   } else if (pItem->m_eNode == CFX_SAXItem::Type::Comment) {
     m_pHandler->OnTargetData(pItem->m_pNode, pItem->m_eNode,
-                             CFX_ByteStringC(m_Data), m_dwNodePos);
+                             ByteStringView(m_Data), m_dwNodePos);
   }
 }
 

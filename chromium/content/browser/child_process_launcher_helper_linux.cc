@@ -7,7 +7,7 @@
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/child_process_launcher_helper.h"
 #include "content/browser/child_process_launcher_helper_posix.h"
-#include "content/browser/renderer_host/render_sandbox_host_linux.h"
+#include "content/browser/sandbox_host_linux.h"
 #include "content/browser/zygote_host/zygote_communication_linux.h"
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
@@ -17,6 +17,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
+#include "gpu/config/gpu_switches.h"
 
 namespace content {
 namespace internal {
@@ -46,9 +47,11 @@ void ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
   options->fds_to_remap = files_to_register.GetMappingWithIDAdjustment(
       base::GlobalDescriptors::kBaseDescriptor);
 
-  if (GetProcessType() == switches::kRendererProcess) {
-    const int sandbox_fd =
-        RenderSandboxHostLinux::GetInstance()->GetRendererSocket();
+  if (GetProcessType() == switches::kRendererProcess ||
+      (GetProcessType() == switches::kGpuProcess &&
+       base::CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kEnableOOPRasterization))) {
+    const int sandbox_fd = SandboxHostLinux::GetInstance()->GetChildSocket();
     options->fds_to_remap.push_back(std::make_pair(sandbox_fd, GetSandboxFD()));
   }
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <memory>
 #include <utility>
 
 // This must be before Windows headers
@@ -70,7 +69,6 @@
 #include "net/cert/multi_log_ct_verifier.h"
 #include "net/cert/signed_certificate_timestamp_and_status.h"
 #include "net/cert/test_root_certs.h"
-#include "net/cert_net/nss_ocsp.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_store_test_helpers.h"
 #include "net/disk_cache/disk_cache.h"
@@ -126,6 +124,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
+#if defined(OS_FUCHSIA)
+#define USE_BUILTIN_CERT_VERIFIER
+#endif
+
 #if !BUILDFLAG(DISABLE_FILE_SUPPORT)
 #include "net/base/filename_util.h"
 #include "net/url_request/file_protocol_handler.h"
@@ -146,6 +148,15 @@
 #include "net/reporting/reporting_service.h"
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
+#if defined(USE_BUILTIN_CERT_VERIFIER)
+#include "net/cert/cert_net_fetcher.h"
+#include "net/cert_net/cert_net_fetcher_impl.h"
+#endif
+
+#if defined(USE_NSS_CERTS)
+#include "net/cert_net/nss_ocsp.h"
+#endif
+
 using net::test::IsError;
 using net::test::IsOk;
 
@@ -157,8 +168,8 @@ namespace net {
 
 namespace {
 
-namespace test0 {
-#include "net/http/transport_security_state_static_unittest0.h"
+namespace test_default {
+#include "net/http/transport_security_state_static_unittest_default.h"
 }
 
 const base::string16 kChrome(ASCIIToUTF16("chrome"));
@@ -168,7 +179,8 @@ const base::string16 kUser(ASCIIToUTF16("user"));
 const base::FilePath::CharType kTestFilePath[] =
     FILE_PATH_LITERAL("net/data/url_request_unittest");
 
-#if !BUILDFLAG(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID)
+#if !BUILDFLAG(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID) && \
+    !defined(OS_FUCHSIA)
 // Test file used in most FTP tests.
 const char kFtpTestFile[] = "BullRunSpeech.txt";
 #endif
@@ -281,7 +293,8 @@ void TestLoadTimingCacheHitNoNetwork(
   EXPECT_TRUE(load_timing_info.proxy_resolve_end.is_null());
 }
 
-#if !BUILDFLAG(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID)
+#if !BUILDFLAG(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID) && \
+    !defined(OS_FUCHSIA)
 // Tests load timing in the case that there is no HTTP response.  This can be
 // used to test in the case of errors or non-HTTP requests.
 void TestLoadTimingNoHttpResponse(
@@ -799,6 +812,8 @@ class URLRequestTest : public PlatformTest {
   ~URLRequestTest() override {
     // URLRequestJobs may post clean-up tasks on destruction.
     base::RunLoop().RunUntilIdle();
+
+    SetTransportSecurityStateSourceForTesting(nullptr);
   }
 
   void SetUp() override {
@@ -810,7 +825,7 @@ class URLRequestTest : public PlatformTest {
 
   virtual void SetUpFactory() {
     job_factory_impl_->SetProtocolHandler(
-        "data", base::WrapUnique(new DataProtocolHandler));
+        "data", std::make_unique<DataProtocolHandler>());
 #if !BUILDFLAG(DISABLE_FILE_SUPPORT)
     job_factory_impl_->SetProtocolHandler(
         "file", std::make_unique<FileProtocolHandler>(
@@ -836,12 +851,29 @@ class URLRequestTest : public PlatformTest {
     return protocol_handler_;
   }
 
+  // Creates a temp test file and writes |data| to the file. The file will be
+  // deleted after the test completes.
+  void CreateTestFile(const char* data,
+                      size_t data_size,
+                      base::FilePath* test_file) {
+    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+    // Get an absolute path since |temp_dir| can contain a symbolic link. As of
+    // now, Mac and Android bots return a path with a symbolic link.
+    base::FilePath absolute_temp_dir =
+        base::MakeAbsoluteFilePath(temp_dir_.GetPath());
+
+    ASSERT_TRUE(base::CreateTemporaryFileInDir(absolute_temp_dir, test_file));
+    ASSERT_EQ(static_cast<int>(data_size),
+              base::WriteFile(*test_file, data, data_size));
+  }
+
  protected:
   TestNetLog net_log_;
   TestNetworkDelegate default_network_delegate_;  // Must outlive URLRequest.
   URLRequestJobFactoryImpl* job_factory_impl_;
   std::unique_ptr<URLRequestJobFactory> job_factory_;
   TestURLRequestContext default_context_;
+  base::ScopedTempDir temp_dir_;
 };
 
 // This NetworkDelegate is picky about what files are accessible. Only
@@ -947,35 +979,27 @@ TEST_F(URLRequestTest, DataURLImageTest) {
 
 #if !BUILDFLAG(DISABLE_FILE_SUPPORT)
 TEST_F(URLRequestTest, FileTest) {
-  base::FilePath app_path;
+  const char kTestFileContent[] = "Hello";
+  base::FilePath test_file;
+  ASSERT_NO_FATAL_FAILURE(
+      CreateTestFile(kTestFileContent, sizeof(kTestFileContent), &test_file));
 
-#if defined(OS_ANDROID)
-  // Android devices are not guaranteed to be able to read /proc/self/exe
-  // Use /etc/hosts instead
-  app_path = base::FilePath("/etc/hosts");
-#else
-  PathService::Get(base::FILE_EXE, &app_path);
-#endif  // OS_ANDROID
-
-  GURL app_url = FilePathToFileURL(app_path);
+  GURL test_url = FilePathToFileURL(test_file);
 
   TestDelegate d;
   {
     std::unique_ptr<URLRequest> r(default_context_.CreateRequest(
-        app_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+        test_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
 
     r->Start();
     EXPECT_TRUE(r->is_pending());
 
     base::RunLoop().Run();
 
-    int64_t file_size = -1;
-    EXPECT_TRUE(base::GetFileSize(app_path, &file_size));
-
     EXPECT_TRUE(!r->is_pending());
     EXPECT_EQ(1, d.response_started_count());
     EXPECT_FALSE(d.received_data_before_response());
-    EXPECT_EQ(d.bytes_received(), static_cast<int>(file_size));
+    EXPECT_EQ(d.bytes_received(), static_cast<int>(sizeof(kTestFileContent)));
     EXPECT_EQ("", r->GetSocketAddress().host());
     EXPECT_EQ(0, r->GetSocketAddress().port());
 
@@ -985,14 +1009,17 @@ TEST_F(URLRequestTest, FileTest) {
 }
 
 TEST_F(URLRequestTest, FileTestCancel) {
-  base::FilePath app_path;
-  PathService::Get(base::FILE_EXE, &app_path);
-  GURL app_url = FilePathToFileURL(app_path);
+  const char kTestFileContent[] = "Hello";
+  base::FilePath test_file;
+  ASSERT_NO_FATAL_FAILURE(
+      CreateTestFile(kTestFileContent, sizeof(kTestFileContent), &test_file));
+
+  GURL test_url = FilePathToFileURL(test_file);
 
   TestDelegate d;
   {
     std::unique_ptr<URLRequest> r(default_context_.CreateRequest(
-        app_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+        test_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
 
     r->Start();
     EXPECT_TRUE(r->is_pending());
@@ -1008,14 +1035,10 @@ TEST_F(URLRequestTest, FileTestFullSpecifiedRange) {
   std::unique_ptr<char[]> buffer(new char[buffer_size]);
   FillBuffer(buffer.get(), buffer_size);
 
-  base::FilePath temp_path;
-  EXPECT_TRUE(base::CreateTemporaryFile(&temp_path));
-  GURL temp_url = FilePathToFileURL(temp_path);
-  EXPECT_EQ(static_cast<int>(buffer_size),
-            base::WriteFile(temp_path, buffer.get(), buffer_size));
-
-  int64_t file_size;
-  EXPECT_TRUE(base::GetFileSize(temp_path, &file_size));
+  base::FilePath test_file;
+  ASSERT_NO_FATAL_FAILURE(
+      CreateTestFile(buffer.get(), buffer_size, &test_file));
+  GURL temp_url = FilePathToFileURL(test_file);
 
   const size_t first_byte_position = 500;
   const size_t last_byte_position = buffer_size - first_byte_position;
@@ -1045,8 +1068,6 @@ TEST_F(URLRequestTest, FileTestFullSpecifiedRange) {
     // Don't use EXPECT_EQ, it will print out a lot of garbage if check failed.
     EXPECT_TRUE(partial_buffer_string == d.data_received());
   }
-
-  EXPECT_TRUE(base::DeleteFile(temp_path, false));
 }
 
 TEST_F(URLRequestTest, FileTestHalfSpecifiedRange) {
@@ -1054,13 +1075,10 @@ TEST_F(URLRequestTest, FileTestHalfSpecifiedRange) {
   std::unique_ptr<char[]> buffer(new char[buffer_size]);
   FillBuffer(buffer.get(), buffer_size);
 
-  base::FilePath temp_path;
-  EXPECT_TRUE(base::CreateTemporaryFile(&temp_path));
-  GURL temp_url = FilePathToFileURL(temp_path);
-  EXPECT_TRUE(base::WriteFile(temp_path, buffer.get(), buffer_size));
-
-  int64_t file_size;
-  EXPECT_TRUE(base::GetFileSize(temp_path, &file_size));
+  base::FilePath test_file;
+  ASSERT_NO_FATAL_FAILURE(
+      CreateTestFile(buffer.get(), buffer_size, &test_file));
+  GURL temp_url = FilePathToFileURL(test_file);
 
   const size_t first_byte_position = 500;
   const size_t last_byte_position = buffer_size - 1;
@@ -1089,8 +1107,6 @@ TEST_F(URLRequestTest, FileTestHalfSpecifiedRange) {
     // Don't use EXPECT_EQ, it will print out a lot of garbage if check failed.
     EXPECT_TRUE(partial_buffer_string == d.data_received());
   }
-
-  EXPECT_TRUE(base::DeleteFile(temp_path, false));
 }
 
 TEST_F(URLRequestTest, FileTestMultipleRanges) {
@@ -1098,13 +1114,10 @@ TEST_F(URLRequestTest, FileTestMultipleRanges) {
   std::unique_ptr<char[]> buffer(new char[buffer_size]);
   FillBuffer(buffer.get(), buffer_size);
 
-  base::FilePath temp_path;
-  EXPECT_TRUE(base::CreateTemporaryFile(&temp_path));
-  GURL temp_url = FilePathToFileURL(temp_path);
-  EXPECT_TRUE(base::WriteFile(temp_path, buffer.get(), buffer_size));
-
-  int64_t file_size;
-  EXPECT_TRUE(base::GetFileSize(temp_path, &file_size));
+  base::FilePath test_file;
+  ASSERT_NO_FATAL_FAILURE(
+      CreateTestFile(buffer.get(), buffer_size, &test_file));
+  GURL temp_url = FilePathToFileURL(test_file);
 
   TestDelegate d;
   {
@@ -1120,28 +1133,20 @@ TEST_F(URLRequestTest, FileTestMultipleRanges) {
     base::RunLoop().Run();
     EXPECT_TRUE(d.request_failed());
   }
-
-  EXPECT_TRUE(base::DeleteFile(temp_path, false));
 }
 
 TEST_F(URLRequestTest, AllowFileURLs) {
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  // Get an absolute path since |temp_dir| can contain a symbolic link. As of
-  // now, Mac and Android bots return a path with a symbolic link.
-  base::FilePath absolute_temp_dir =
-      base::MakeAbsoluteFilePath(temp_dir.GetPath());
-
+  std::string test_data("monkey");
   base::FilePath test_file;
-  ASSERT_TRUE(base::CreateTemporaryFileInDir(absolute_temp_dir, &test_file));
+  ASSERT_NO_FATAL_FAILURE(
+      CreateTestFile(test_data.data(), test_data.size(), &test_file));
+
   // The directory part of the path returned from CreateTemporaryFileInDir()
   // can be slightly different from |absolute_temp_dir| on Windows.
   // Example: C:\\Users\\CHROME~2 -> C:\\Users\\chrome-bot
   // Hence the test should use the directory name of |test_file|, rather than
   // |absolute_temp_dir|, for whitelisting.
   base::FilePath real_temp_dir = test_file.DirName();
-  std::string test_data("monkey");
-  base::WriteFile(test_file, test_data.data(), test_data.size());
   GURL test_file_url = FilePathToFileURL(test_file);
   {
     TestDelegate d;
@@ -1175,11 +1180,10 @@ TEST_F(URLRequestTest, AllowFileURLs) {
 #if defined(OS_POSIX) && !defined(OS_FUCHSIA)  // Because of symbolic links.
 
 TEST_F(URLRequestTest, SymlinksToFiles) {
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   // Get an absolute path since temp_dir can contain a symbolic link.
   base::FilePath absolute_temp_dir =
-      base::MakeAbsoluteFilePath(temp_dir.GetPath());
+      base::MakeAbsoluteFilePath(temp_dir_.GetPath());
 
   // Create a good directory (will be whitelisted) and a good file.
   base::FilePath good_dir = absolute_temp_dir.AppendASCII("good");
@@ -1241,11 +1245,10 @@ TEST_F(URLRequestTest, SymlinksToFiles) {
 }
 
 TEST_F(URLRequestTest, SymlinksToDirs) {
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   // Get an absolute path since temp_dir can contain a symbolic link.
   base::FilePath absolute_temp_dir =
-      base::MakeAbsoluteFilePath(temp_dir.GetPath());
+      base::MakeAbsoluteFilePath(temp_dir_.GetPath());
 
   // Create a good directory (will be whitelisted).
   base::FilePath good_dir = absolute_temp_dir.AppendASCII("good");
@@ -3584,16 +3587,17 @@ class URLRequestTestHTTP : public URLRequestTest {
       LOG(WARNING) << "Request method was: " << request_method;
   }
 
-  // Requests |redirect_url|, which must return a HTTP 3xx redirect.
+  // Requests |redirect_url|, which must return a HTTP 3xx redirect. It's also
+  // used as the initial origin.
   // |request_method| is the method to use for the initial request.
   // |redirect_method| is the method that is expected to be used for the second
   // request, after redirection.
-  // |origin_value| is the expected value for the Origin header after
+  // |expected_origin_value| is the expected value for the Origin header after
   // redirection. If empty, expects that there will be no Origin header.
   void HTTPRedirectOriginHeaderTest(const GURL& redirect_url,
                                     const std::string& request_method,
                                     const std::string& redirect_method,
-                                    const std::string& origin_value) {
+                                    const std::string& expected_origin_value) {
     TestDelegate d;
     std::unique_ptr<URLRequest> req(default_context_.CreateRequest(
         redirect_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
@@ -3611,14 +3615,14 @@ class URLRequestTestHTTP : public URLRequestTest {
     // origin, there is not an HTTPS server in this unit test framework, so the
     // request would fail. However, that's fine, as long as the request headers
     // are in order and pass the checks below.
-    if (origin_value.empty()) {
+    if (expected_origin_value.empty()) {
       EXPECT_FALSE(
           req->extra_request_headers().HasHeader(HttpRequestHeaders::kOrigin));
     } else {
       std::string origin_header;
       EXPECT_TRUE(req->extra_request_headers().GetHeader(
           HttpRequestHeaders::kOrigin, &origin_header));
-      EXPECT_EQ(origin_value, origin_header);
+      EXPECT_EQ(expected_origin_value, origin_header);
     }
   }
 
@@ -4889,7 +4893,7 @@ TEST_F(URLRequestTestHTTP, GetTest_NoCache) {
 // search is used to estimate that maximum number of cookies that are accepted
 // by the browser. Beyond the maximum number, the request will fail with
 // ERR_RESPONSE_HEADERS_TOO_BIG.
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_FUCHSIA)
 // http://crbug.com/177916
 #define MAYBE_GetTest_ManyCookies DISABLED_GetTest_ManyCookies
 #else
@@ -6096,8 +6100,8 @@ TEST_F(URLRequestTestHTTP, PostFileTest) {
     element_readers.push_back(std::make_unique<UploadFileElementReader>(
         base::ThreadTaskRunnerHandle::Get().get(), path, 0,
         std::numeric_limits<uint64_t>::max(), base::Time()));
-    r->set_upload(base::WrapUnique<UploadDataStream>(
-        new ElementsUploadDataStream(std::move(element_readers), 0)));
+    r->set_upload(std::make_unique<ElementsUploadDataStream>(
+        std::move(element_readers), 0));
 
     r->Start();
     EXPECT_TRUE(r->is_pending());
@@ -6139,8 +6143,8 @@ TEST_F(URLRequestTestHTTP, PostUnreadableFileTest) {
         base::FilePath(FILE_PATH_LITERAL(
             "c:\\path\\to\\non\\existant\\file.randomness.12345")),
         0, std::numeric_limits<uint64_t>::max(), base::Time()));
-    r->set_upload(base::WrapUnique<UploadDataStream>(
-        new ElementsUploadDataStream(std::move(element_readers), 0)));
+    r->set_upload(std::make_unique<ElementsUploadDataStream>(
+        std::move(element_readers), 0));
 
     r->Start();
     EXPECT_TRUE(r->is_pending());
@@ -6221,7 +6225,7 @@ TEST_F(URLRequestTestHTTP, TestPostChunkedDataJustAfterStart) {
         new ChunkedUploadDataStream(0));
     std::unique_ptr<ChunkedUploadDataStream::Writer> writer =
         upload_data_stream->CreateWriter();
-    r->set_upload(base::WrapUnique(upload_data_stream.release()));
+    r->set_upload(std::move(upload_data_stream));
     r->set_method("POST");
     r->Start();
     EXPECT_TRUE(r->is_pending());
@@ -6349,9 +6353,10 @@ TEST_F(URLRequestTestHTTP, STSNotProcessedOnIP) {
 }
 
 namespace {
-const char kExpectCTStaticHostname[] = "preloaded-expect-ct.badssl.com";
-const char kExpectStapleStaticHostname[] = "preloaded-expect-staple.badssl.com";
-const char kExpectStapleReportURI[] = "https://report.badssl.com/expect-staple";
+const char kExpectCTStaticHostname[] = "expect-ct.preloaded.test";
+const char kExpectStapleStaticHostname[] = "expect-staple.preloaded.test";
+const char kExpectStapleReportURI[] =
+    "http://report-uri.preloaded.test/expect-staple";
 const char kHPKPReportUri[] = "https://hpkp-report.test";
 }  // namespace
 
@@ -6818,9 +6823,8 @@ class MockCTPolicyEnforcer : public CTPolicyEnforcer {
 
 // Tests that Expect CT headers for the preload list are processed correctly.
 TEST_F(URLRequestTestHTTP, PreloadExpectCTHeader) {
-#if !BUILDFLAG(INCLUDE_TRANSPORT_SECURITY_STATE_PRELOAD_LIST)
-  SetTransportSecurityStateSourceForTesting(&test0::kHSTSSource);
-#endif
+  SetTransportSecurityStateSourceForTesting(&test_default::kHSTSSource);
+
   EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_test_server.SetSSLConfig(
       net::EmbeddedTestServer::CERT_COMMON_NAME_IS_DOMAIN);
@@ -7153,17 +7157,8 @@ class TestNetworkErrorLoggingDelegate : public NetworkErrorLoggingDelegate {
     std::string value;
   };
 
-  struct NetworkError {
-    NetworkError() {}
-    ~NetworkError() {}
-
-    url::Origin origin;
-    Error error;
-    NetworkErrorLoggingDelegate::ErrorDetails details;
-  };
-
   const std::vector<Header>& headers() { return headers_; }
-  const std::vector<NetworkError>& errors() { return errors_; }
+  const std::vector<ErrorDetails>& errors() { return errors_; }
 
   // NetworkErrorLoggingDelegate implementation:
 
@@ -7180,19 +7175,13 @@ class TestNetworkErrorLoggingDelegate : public NetworkErrorLoggingDelegate {
     headers_.push_back(header);
   }
 
-  void OnNetworkError(const url::Origin& origin,
-                      Error error,
-                      ErrorDetailsCallback details_callback) override {
-    NetworkError network_error;
-    network_error.origin = origin;
-    network_error.error = error;
-    std::move(details_callback).Run(&network_error.details);
-    errors_.push_back(network_error);
+  void OnNetworkError(const ErrorDetails& details) override {
+    errors_.push_back(details);
   }
 
  private:
   std::vector<Header> headers_;
-  std::vector<NetworkError> errors_;
+  std::vector<ErrorDetails> errors_;
 };
 
 std::unique_ptr<test_server::HttpResponse> SendNelHeader(
@@ -8095,6 +8084,8 @@ TEST_F(URLRequestTestHTTP, Redirect301Tests) {
   HTTPRedirectOriginHeaderTest(url, "POST", "GET", std::string());
   HTTPRedirectOriginHeaderTest(https_redirect_url, "POST", "GET",
                                std::string());
+  HTTPRedirectOriginHeaderTest(url, "PUT", "PUT", url.GetOrigin().spec());
+  HTTPRedirectOriginHeaderTest(https_redirect_url, "PUT", "PUT", "null");
 }
 
 TEST_F(URLRequestTestHTTP, Redirect302Tests) {
@@ -8113,6 +8104,8 @@ TEST_F(URLRequestTestHTTP, Redirect302Tests) {
   HTTPRedirectOriginHeaderTest(url, "POST", "GET", std::string());
   HTTPRedirectOriginHeaderTest(https_redirect_url, "POST", "GET",
                                std::string());
+  HTTPRedirectOriginHeaderTest(url, "PUT", "PUT", url.GetOrigin().spec());
+  HTTPRedirectOriginHeaderTest(https_redirect_url, "PUT", "PUT", "null");
 }
 
 TEST_F(URLRequestTestHTTP, Redirect303Tests) {
@@ -8126,11 +8119,24 @@ TEST_F(URLRequestTestHTTP, Redirect303Tests) {
   HTTPRedirectMethodTest(url, "PUT", "GET", true);
   HTTPRedirectMethodTest(url, "HEAD", "HEAD", false);
 
+  HTTPRedirectOriginHeaderTest(url, "CONNECT", "GET", std::string());
+  HTTPRedirectOriginHeaderTest(https_redirect_url, "CONNECT", "GET",
+                               std::string());
+  HTTPRedirectOriginHeaderTest(url, "DELETE", "GET", std::string());
+  HTTPRedirectOriginHeaderTest(https_redirect_url, "DELETE", "GET",
+                               std::string());
   HTTPRedirectOriginHeaderTest(url, "GET", "GET", url.GetOrigin().spec());
   HTTPRedirectOriginHeaderTest(https_redirect_url, "GET", "GET", "null");
+  HTTPRedirectOriginHeaderTest(url, "HEAD", "HEAD", url.GetOrigin().spec());
+  HTTPRedirectOriginHeaderTest(https_redirect_url, "HEAD", "HEAD", "null");
+  HTTPRedirectOriginHeaderTest(url, "OPTIONS", "GET", std::string());
+  HTTPRedirectOriginHeaderTest(https_redirect_url, "OPTIONS", "GET",
+                               std::string());
   HTTPRedirectOriginHeaderTest(url, "POST", "GET", std::string());
   HTTPRedirectOriginHeaderTest(https_redirect_url, "POST", "GET",
                                std::string());
+  HTTPRedirectOriginHeaderTest(url, "PUT", "GET", std::string());
+  HTTPRedirectOriginHeaderTest(https_redirect_url, "PUT", "GET", std::string());
 }
 
 TEST_F(URLRequestTestHTTP, Redirect307Tests) {
@@ -8148,6 +8154,8 @@ TEST_F(URLRequestTestHTTP, Redirect307Tests) {
   HTTPRedirectOriginHeaderTest(https_redirect_url, "GET", "GET", "null");
   HTTPRedirectOriginHeaderTest(url, "POST", "POST", url.GetOrigin().spec());
   HTTPRedirectOriginHeaderTest(https_redirect_url, "POST", "POST", "null");
+  HTTPRedirectOriginHeaderTest(url, "PUT", "PUT", url.GetOrigin().spec());
+  HTTPRedirectOriginHeaderTest(https_redirect_url, "PUT", "PUT", "null");
 }
 
 TEST_F(URLRequestTestHTTP, Redirect308Tests) {
@@ -8165,6 +8173,8 @@ TEST_F(URLRequestTestHTTP, Redirect308Tests) {
   HTTPRedirectOriginHeaderTest(https_redirect_url, "GET", "GET", "null");
   HTTPRedirectOriginHeaderTest(url, "POST", "POST", url.GetOrigin().spec());
   HTTPRedirectOriginHeaderTest(https_redirect_url, "POST", "POST", "null");
+  HTTPRedirectOriginHeaderTest(url, "PUT", "PUT", url.GetOrigin().spec());
+  HTTPRedirectOriginHeaderTest(https_redirect_url, "PUT", "PUT", "null");
 }
 
 // Make sure that 308 responses without bodies are not treated as redirects.
@@ -9456,7 +9466,9 @@ class HTTPSRequestTest : public testing::Test {
     default_context_.set_network_delegate(&default_network_delegate_);
     default_context_.Init();
   }
-  ~HTTPSRequestTest() override {}
+  ~HTTPSRequestTest() override {
+    SetTransportSecurityStateSourceForTesting(nullptr);
+  }
 
  protected:
   TestNetworkDelegate default_network_delegate_;  // Must outlive URLRequest.
@@ -9563,22 +9575,22 @@ TEST_F(HTTPSRequestTest, HTTPSExpiredTest) {
 // TODO(svaldez): iOS tests are flaky with EmbeddedTestServer and transport
 // security state. (see http://crbug.com/550977).
 #if !defined(OS_IOS)
-// This tests that a load of www.google.com with a certificate error sets
-// the |certificate_errors_are_fatal| flag correctly. This flag will cause
-// the interstitial to be fatal.
+// This tests that a load of a domain with preloaded HSTS and HPKP with a
+// certificate error sets the |certificate_errors_are_fatal| flag correctly.
+// This flag will cause the interstitial to be fatal.
 TEST_F(HTTPSRequestTest, HTTPSPreloadedHSTSTest) {
-#if !BUILDFLAG(INCLUDE_TRANSPORT_SECURITY_STATE_PRELOAD_LIST)
-  SetTransportSecurityStateSourceForTesting(&test0::kHSTSSource);
-#endif
+  SetTransportSecurityStateSourceForTesting(&test_default::kHSTSSource);
+
   EmbeddedTestServer test_server(net::EmbeddedTestServer::TYPE_HTTPS);
   test_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
   test_server.ServeFilesFromSourceDirectory("net/data/ssl");
   ASSERT_TRUE(test_server.Start());
 
-  // We require that the URL be www.google.com in order to pick up the
-  // preloaded HSTS entries in the TransportSecurityState. This means that we
-  // have to use a MockHostResolver in order to direct www.google.com to the
-  // testserver. By default, MockHostResolver maps all hosts to 127.0.0.1.
+  // We require that the URL be hsts-hpkp-preloaded.test. This is a test domain
+  // that has a preloaded HSTS+HPKP entry in the TransportSecurityState. This
+  // means that we have to use a MockHostResolver in order to direct
+  // hsts-hpkp-preloaded.test to the testserver. By default, MockHostResolver
+  // maps all hosts to 127.0.0.1.
 
   MockHostResolver host_resolver;
   TestNetworkDelegate network_delegate;  // Must outlive URLRequest.
@@ -9591,7 +9603,7 @@ TEST_F(HTTPSRequestTest, HTTPSPreloadedHSTSTest) {
 
   TestDelegate d;
   std::unique_ptr<URLRequest> r(context.CreateRequest(
-      GURL(base::StringPrintf("https://www.google.com:%d",
+      GURL(base::StringPrintf("https://hsts-hpkp-preloaded.test:%d",
                               test_server.host_port_pair().port())),
       DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
 
@@ -9609,9 +9621,8 @@ TEST_F(HTTPSRequestTest, HTTPSPreloadedHSTSTest) {
 // This tests that cached HTTPS page loads do not cause any updates to the
 // TransportSecurityState.
 TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
-#if !BUILDFLAG(INCLUDE_TRANSPORT_SECURITY_STATE_PRELOAD_LIST)
-  SetTransportSecurityStateSourceForTesting(&test0::kHSTSSource);
-#endif
+  SetTransportSecurityStateSourceForTesting(&test_default::kHSTSSource);
+
   // The actual problem -- CERT_MISMATCHED_NAME in this case -- doesn't
   // matter. It just has to be any error.
   EmbeddedTestServer test_server(net::EmbeddedTestServer::TYPE_HTTPS);
@@ -9619,10 +9630,11 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   test_server.ServeFilesFromSourceDirectory("net/data/ssl");
   ASSERT_TRUE(test_server.Start());
 
-  // We require that the URL be www.google.com in order to pick up the static
-  // and dynamic STS and PKP entries in the TransportSecurityState. This means
-  // that we have to use a MockHostResolver in order to direct www.google.com to
-  // the testserver. By default, MockHostResolver maps all hosts to 127.0.0.1.
+  // We require that the URL be hsts-hpkp-preloaded.test. This is a test domain
+  // that has a preloaded HSTS+HPKP entry in the TransportSecurityState. This
+  // means that we have to use a MockHostResolver in order to direct
+  // hsts-hpkp-preloaded.test to the testserver. By default, MockHostResolver
+  // maps all hosts to 127.0.0.1.
 
   MockHostResolver host_resolver;
   TestNetworkDelegate network_delegate;  // Must outlive URLRequest.
@@ -9634,20 +9646,20 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   TransportSecurityState::STSState static_sts_state;
   TransportSecurityState::PKPState static_pkp_state;
   EXPECT_TRUE(transport_security_state.GetStaticDomainState(
-      "www.google.com", &static_sts_state, &static_pkp_state));
+      "hsts-hpkp-preloaded.test", &static_sts_state, &static_pkp_state));
   context.set_transport_security_state(&transport_security_state);
   context.Init();
 
   TransportSecurityState::STSState dynamic_sts_state;
   TransportSecurityState::PKPState dynamic_pkp_state;
-  EXPECT_FALSE(transport_security_state.GetDynamicSTSState("www.google.com",
-                                                           &dynamic_sts_state));
-  EXPECT_FALSE(transport_security_state.GetDynamicPKPState("www.google.com",
-                                                           &dynamic_pkp_state));
+  EXPECT_FALSE(transport_security_state.GetDynamicSTSState(
+      "hsts-hpkp-preloaded.test", &dynamic_sts_state));
+  EXPECT_FALSE(transport_security_state.GetDynamicPKPState(
+      "hsts-hpkp-preloaded.test", &dynamic_pkp_state));
 
   TestDelegate d;
   std::unique_ptr<URLRequest> r(context.CreateRequest(
-      GURL(base::StringPrintf("https://www.google.com:%d",
+      GURL(base::StringPrintf("https://hsts-hpkp-preloaded.test:%d",
                               test_server.host_port_pair().port())),
       DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
 
@@ -9665,13 +9677,14 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   TransportSecurityState::STSState new_static_sts_state;
   TransportSecurityState::PKPState new_static_pkp_state;
   EXPECT_TRUE(transport_security_state.GetStaticDomainState(
-      "www.google.com", &new_static_sts_state, &new_static_pkp_state));
+      "hsts-hpkp-preloaded.test", &new_static_sts_state,
+      &new_static_pkp_state));
   TransportSecurityState::STSState new_dynamic_sts_state;
   TransportSecurityState::PKPState new_dynamic_pkp_state;
   EXPECT_FALSE(transport_security_state.GetDynamicSTSState(
-      "www.google.com", &new_dynamic_sts_state));
+      "hsts-hpkp-preloaded.test", &new_dynamic_sts_state));
   EXPECT_FALSE(transport_security_state.GetDynamicPKPState(
-      "www.google.com", &new_dynamic_pkp_state));
+      "hsts-hpkp-preloaded.test", &new_dynamic_pkp_state));
 
   EXPECT_EQ(new_static_sts_state.upgrade_mode, static_sts_state.upgrade_mode);
   EXPECT_EQ(new_static_sts_state.include_subdomains,
@@ -10255,6 +10268,10 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
     CHECK_NE(static_cast<X509Certificate*>(NULL), root_cert.get());
     test_root_.reset(new ScopedTestRoot(root_cert.get()));
 
+#if defined(USE_BUILTIN_CERT_VERIFIER)
+    SetGlobalCertNetFetcherForTesting(net::CreateCertNetFetcher(&context_));
+#endif
+
 #if defined(USE_NSS_CERTS)
     SetURLRequestContextForNSSHttpIO(&context_);
     EnsureNSSHttpIOInit();
@@ -10300,6 +10317,10 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
   }
 
   ~HTTPSOCSPTest() override {
+#if defined(USE_BUILTIN_CERT_VERIFIER)
+    ShutdownGlobalCertNetFetcher();
+#endif
+
 #if defined(USE_NSS_CERTS)
     ShutdownNSSHttpIO();
 #endif
@@ -10353,6 +10374,7 @@ static CertStatus ExpectedCertStatusForFailedOnlineRevocationCheck() {
 // skipped.
 static bool SystemSupportsHardFailRevocationChecking() {
 #if defined(OS_WIN) || defined(USE_NSS_CERTS)
+  // TODO(crbug.com/762380): Enable on Fuchsia once it's implemented.
   return true;
 #else
   return false;
@@ -10387,8 +10409,9 @@ static CertStatus ExpectedCertStatusForFailedOnlineEVRevocationCheck() {
 }
 
 static bool SystemSupportsOCSP() {
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(USE_BUILTIN_CERT_VERIFIER)
   // TODO(jnd): http://crbug.com/117478 - EV verification is not yet supported.
+  // TODO(crbug.com/762380): Enable on Fuchsia once it's implemented.
   return false;
 #else
   return true;
@@ -10397,6 +10420,7 @@ static bool SystemSupportsOCSP() {
 
 static bool SystemSupportsOCSPStapling() {
 #if defined(USE_NSS_CERTS) || defined(OS_WIN)
+  // TODO(crbug.com/762380): Enable on Fuchsia once it's implemented.
   return true;
 #else
   return false;
@@ -10516,9 +10540,8 @@ TEST_F(HTTPSOCSPTest, MAYBE_RevokedStapled) {
 }
 
 TEST_F(HTTPSOCSPTest, ExpectStapleReportSentOnMissing) {
-#if !BUILDFLAG(INCLUDE_TRANSPORT_SECURITY_STATE_PRELOAD_LIST)
-  SetTransportSecurityStateSourceForTesting(&test0::kHSTSSource);
-#endif
+  SetTransportSecurityStateSourceForTesting(&test_default::kHSTSSource);
+
   EmbeddedTestServer https_test_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_test_server.SetSSLConfig(
       net::EmbeddedTestServer::CERT_COMMON_NAME_IS_DOMAIN);
@@ -10747,7 +10770,7 @@ static const struct OCSPVerifyTestData {
   bool has_revocation_status;
   OCSPRevocationStatus cert_status;
 } kOCSPVerifyData[] = {
-
+    // 0
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10755,6 +10778,7 @@ static const struct OCSPVerifyTestData {
      true,
      OCSPRevocationStatus::GOOD},
 
+    // 1
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_OLD}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10762,6 +10786,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 2
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_EARLY}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10769,6 +10794,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 3
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_LONG}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10776,6 +10802,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 4
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_LONG}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10783,6 +10810,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 5
     {{{SpawnedTestServer::SSLOptions::OCSP_TRY_LATER,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10790,6 +10818,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 6
     {{{SpawnedTestServer::SSLOptions::OCSP_INVALID_RESPONSE,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10797,6 +10826,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 7
     {{{SpawnedTestServer::SSLOptions::OCSP_INVALID_RESPONSE_DATA,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10804,6 +10834,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 8
     {{{SpawnedTestServer::SSLOptions::OCSP_REVOKED,
        SpawnedTestServer::SSLOptions::OCSP_DATE_EARLY}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10811,6 +10842,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 9
     {{{SpawnedTestServer::SSLOptions::OCSP_UNKNOWN,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10818,6 +10850,7 @@ static const struct OCSPVerifyTestData {
      true,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 10
     {{{SpawnedTestServer::SSLOptions::OCSP_UNKNOWN,
        SpawnedTestServer::SSLOptions::OCSP_DATE_OLD}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10825,6 +10858,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 11
     {{{SpawnedTestServer::SSLOptions::OCSP_UNKNOWN,
        SpawnedTestServer::SSLOptions::OCSP_DATE_EARLY}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10832,6 +10866,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 12
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_BEFORE_CERT,
@@ -10839,6 +10874,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 13
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_AFTER_CERT,
@@ -10846,6 +10882,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 14
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_AFTER_CERT,
@@ -10853,27 +10890,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
-    {{{SpawnedTestServer::SSLOptions::OCSP_REVOKED,
-       SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
-     SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
-     OCSPVerifyResult::PROVIDED,
-     true,
-     OCSPRevocationStatus::REVOKED},
-
-    {{{SpawnedTestServer::SSLOptions::OCSP_REVOKED,
-       SpawnedTestServer::SSLOptions::OCSP_DATE_OLD}},
-     SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
-     OCSPVerifyResult::INVALID_DATE,
-     false,
-     OCSPRevocationStatus::UNKNOWN},
-
-    {{{SpawnedTestServer::SSLOptions::OCSP_REVOKED,
-       SpawnedTestServer::SSLOptions::OCSP_DATE_LONG}},
-     SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
-     OCSPVerifyResult::INVALID_DATE,
-     false,
-     OCSPRevocationStatus::UNKNOWN},
-
+    // 15
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10881,6 +10898,7 @@ static const struct OCSPVerifyTestData {
      true,
      OCSPRevocationStatus::GOOD},
 
+    // 16
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_OLD},
       {SpawnedTestServer::SSLOptions::OCSP_OK,
@@ -10890,6 +10908,7 @@ static const struct OCSPVerifyTestData {
      true,
      OCSPRevocationStatus::GOOD},
 
+    // 17
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_EARLY},
       {SpawnedTestServer::SSLOptions::OCSP_OK,
@@ -10899,6 +10918,7 @@ static const struct OCSPVerifyTestData {
      true,
      OCSPRevocationStatus::GOOD},
 
+    // 18
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_LONG},
       {SpawnedTestServer::SSLOptions::OCSP_OK,
@@ -10908,6 +10928,7 @@ static const struct OCSPVerifyTestData {
      true,
      OCSPRevocationStatus::GOOD},
 
+    // 19
     {{{SpawnedTestServer::SSLOptions::OCSP_OK,
        SpawnedTestServer::SSLOptions::OCSP_DATE_EARLY},
       {SpawnedTestServer::SSLOptions::OCSP_OK,
@@ -10919,6 +10940,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 20
     {{{SpawnedTestServer::SSLOptions::OCSP_UNKNOWN,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID},
       {SpawnedTestServer::SSLOptions::OCSP_REVOKED,
@@ -10930,6 +10952,7 @@ static const struct OCSPVerifyTestData {
      true,
      OCSPRevocationStatus::REVOKED},
 
+    // 21
     {{{SpawnedTestServer::SSLOptions::OCSP_UNKNOWN,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID},
       {SpawnedTestServer::SSLOptions::OCSP_OK,
@@ -10939,6 +10962,7 @@ static const struct OCSPVerifyTestData {
      true,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 22
     {{{SpawnedTestServer::SSLOptions::OCSP_UNKNOWN,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID},
       {SpawnedTestServer::SSLOptions::OCSP_REVOKED,
@@ -10950,6 +10974,7 @@ static const struct OCSPVerifyTestData {
      true,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 23
     {{{SpawnedTestServer::SSLOptions::OCSP_MISMATCHED_SERIAL,
        SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10957,6 +10982,7 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+    // 24
     {{{SpawnedTestServer::SSLOptions::OCSP_MISMATCHED_SERIAL,
        SpawnedTestServer::SSLOptions::OCSP_DATE_EARLY}},
      SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
@@ -10964,6 +10990,34 @@ static const struct OCSPVerifyTestData {
      false,
      OCSPRevocationStatus::UNKNOWN},
 
+// These tests fail when using NSS for certificate verification, as NSS fails
+// and doesn't return the partial path. As a result the OCSP checks being done
+// at the CertVerifyProc layer cannot access the issuer certificate.
+#if !defined(USE_NSS_CERTS)
+    // 25
+    {{{SpawnedTestServer::SSLOptions::OCSP_REVOKED,
+       SpawnedTestServer::SSLOptions::OCSP_DATE_VALID}},
+     SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
+     OCSPVerifyResult::PROVIDED,
+     true,
+     OCSPRevocationStatus::REVOKED},
+
+    // 26
+    {{{SpawnedTestServer::SSLOptions::OCSP_REVOKED,
+       SpawnedTestServer::SSLOptions::OCSP_DATE_OLD}},
+     SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
+     OCSPVerifyResult::INVALID_DATE,
+     false,
+     OCSPRevocationStatus::UNKNOWN},
+
+    // 27
+    {{{SpawnedTestServer::SSLOptions::OCSP_REVOKED,
+       SpawnedTestServer::SSLOptions::OCSP_DATE_LONG}},
+     SpawnedTestServer::SSLOptions::OCSP_PRODUCED_VALID,
+     OCSPVerifyResult::INVALID_DATE,
+     false,
+     OCSPRevocationStatus::UNKNOWN},
+#endif
 };
 
 class HTTPSOCSPVerifyTest
@@ -11002,7 +11056,8 @@ INSTANTIATE_TEST_CASE_P(OCSPVerify,
                         testing::ValuesIn(kOCSPVerifyData));
 
 static bool SystemSupportsAIA() {
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(USE_BUILTIN_CERT_VERIFIER)
+  // TODO(crbug.com/762380): Enable on Fuchsia once it's implemented.
   return false;
 #else
   return true;
@@ -11337,10 +11392,12 @@ TEST_F(HTTPSCRLSetTest, CRLSetRevoked) {
 }
 #endif  // !defined(OS_IOS)
 
-#if !BUILDFLAG(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID)
-// These tests aren't passing on Android.  Either the RemoteTestServer isn't
-// starting up successfully, or it can't access the test files.
-// TODO(mmenke):  Fix this.  See http://crbug.com/495220
+#if !BUILDFLAG(DISABLE_FTP_SUPPORT) && !defined(OS_ANDROID) && \
+    !defined(OS_FUCHSIA)
+// FTP uses a second TCP connection with the port number allocated dynamically
+// on the server side, so it would be hard to make RemoteTestServer proxy FTP
+// connections reliably. FTP tests are disabled on platforms that use
+// RemoteTestServer. See http://crbug.com/495220
 class URLRequestTestFTP : public URLRequestTest {
  public:
   URLRequestTestFTP()

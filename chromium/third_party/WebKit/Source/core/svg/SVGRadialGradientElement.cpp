@@ -111,7 +111,7 @@ static void SetGradientAttributes(const SVGGradientElement& element,
 
   if (!is_radial)
     return;
-  const SVGRadialGradientElement& radial = toSVGRadialGradientElement(element);
+  const SVGRadialGradientElement& radial = ToSVGRadialGradientElement(element);
 
   if (!attributes.HasCx() && radial.cx()->IsSpecified())
     attributes.SetCx(radial.cx()->CurrentValue());
@@ -141,7 +141,7 @@ bool SVGRadialGradientElement::CollectGradientAttributes(
 
   while (true) {
     SetGradientAttributes(*current, attributes,
-                          isSVGRadialGradientElement(*current));
+                          IsSVGRadialGradientElement(*current));
     visited.insert(current);
 
     current = current->ReferencedElement();

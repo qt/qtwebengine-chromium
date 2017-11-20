@@ -4,6 +4,7 @@
 
 #include "content/browser/devtools/protocol/target_auto_attacher.h"
 
+#include "base/containers/queue.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "content/browser/devtools/service_worker_devtools_agent_host.h"
 #include "content/browser/frame_host/frame_tree.h"
@@ -112,7 +113,7 @@ void TargetAutoAttacher::UpdateFrames() {
   Hosts new_hosts;
   if (render_frame_host_) {
     FrameTreeNode* root = render_frame_host_->frame_tree_node();
-    std::queue<FrameTreeNode*> queue;
+    base::queue<FrameTreeNode*> queue;
     queue.push(root);
     while (!queue.empty()) {
       FrameTreeNode* node = queue.front();
@@ -134,7 +135,7 @@ void TargetAutoAttacher::UpdateFrames() {
 }
 
 void TargetAutoAttacher::AgentHostClosed(DevToolsAgentHost* host) {
-  auto_attached_hosts_.erase(make_scoped_refptr(host));
+  auto_attached_hosts_.erase(base::WrapRefCounted(host));
 }
 
 void TargetAutoAttacher::ReattachServiceWorkers(bool waiting_for_debugger) {

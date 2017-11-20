@@ -11,14 +11,15 @@
 #import <Foundation/Foundation.h>
 #import <OCMock/OCMock.h>
 
-#include "webrtc/sdk/objc/Framework/Classes/VideoToolbox/objc_video_decoder_factory.h"
+#include "sdk/objc/Framework/Classes/VideoToolbox/objc_video_decoder_factory.h"
 
 #import "WebRTC/RTCVideoCodec.h"
 #import "WebRTC/RTCVideoCodecFactory.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/modules/video_coding/include/video_codec_interface.h"
-#include "webrtc/modules/video_coding/include/video_error_codes.h"
-#include "webrtc/rtc_base/gunit.h"
+#include "media/base/codec.h"
+#include "modules/include/module_common_types.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "modules/video_coding/include/video_error_codes.h"
+#include "rtc_base/gunit.h"
 
 id<RTCVideoDecoderFactory> CreateDecoderFactoryReturning(int return_code) {
   id decoderMock = OCMProtocolMock(@protocol(RTCVideoDecoder));
@@ -49,7 +50,8 @@ id<RTCVideoDecoderFactory> CreateErrorDecoderFactory() {
 
 webrtc::VideoDecoder *GetObjCDecoder(id<RTCVideoDecoderFactory> factory) {
   webrtc::ObjCVideoDecoderFactory decoder_factory(factory);
-  return decoder_factory.CreateVideoDecoder(webrtc::kVideoCodecH264);
+  return decoder_factory.CreateVideoDecoderWithParams(cricket::VideoCodec(cricket::kH264CodecName),
+                                                      {});
 }
 
 #pragma mark -

@@ -29,7 +29,7 @@
 #include "platform/weborigin/SecurityOrigin.h"
 
 #include <memory>
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/KnownPorts.h"
 #include "platform/weborigin/SchemeRegistry.h"
@@ -181,22 +181,22 @@ RefPtr<SecurityOrigin> SecurityOrigin::Create(const KURL& url) {
     return origin;
 
   if (ShouldTreatAsUniqueOrigin(url))
-    return AdoptRef(new SecurityOrigin());
+    return WTF::AdoptRef(new SecurityOrigin());
 
   if (ShouldUseInnerURL(url))
-    return AdoptRef(new SecurityOrigin(ExtractInnerURL(url)));
+    return WTF::AdoptRef(new SecurityOrigin(ExtractInnerURL(url)));
 
-  return AdoptRef(new SecurityOrigin(url));
+  return WTF::AdoptRef(new SecurityOrigin(url));
 }
 
 RefPtr<SecurityOrigin> SecurityOrigin::CreateUnique() {
-  RefPtr<SecurityOrigin> origin = AdoptRef(new SecurityOrigin());
+  RefPtr<SecurityOrigin> origin = WTF::AdoptRef(new SecurityOrigin());
   DCHECK(origin->IsUnique());
   return origin;
 }
 
 RefPtr<SecurityOrigin> SecurityOrigin::IsolatedCopy() const {
-  return AdoptRef(new SecurityOrigin(this));
+  return WTF::AdoptRef(new SecurityOrigin(this));
 }
 
 void SecurityOrigin::SetDomainFromDOM(const String& new_domain) {
@@ -298,10 +298,10 @@ bool SecurityOrigin::CanRequest(const KURL& url) const {
 
   // We call isSameSchemeHostPort here instead of canAccess because we want
   // to ignore document.domain effects.
-  if (IsSameSchemeHostPort(target_origin.Get()))
+  if (IsSameSchemeHostPort(target_origin.get()))
     return true;
 
-  if (SecurityPolicy::IsAccessWhiteListed(this, target_origin.Get()))
+  if (SecurityPolicy::IsAccessWhiteListed(this, target_origin.get()))
     return true;
 
   return false;
@@ -587,13 +587,13 @@ bool SecurityOrigin::HasSuboriginAndShouldAllowCredentialsFor(
     return false;
 
   RefPtr<SecurityOrigin> other = SecurityOrigin::Create(url);
-  return IsSameSchemeHostPort(other.Get());
+  return IsSameSchemeHostPort(other.get());
 }
 
 bool SecurityOrigin::AreSameSchemeHostPort(const KURL& a, const KURL& b) {
   RefPtr<SecurityOrigin> origin_a = SecurityOrigin::Create(a);
   RefPtr<SecurityOrigin> origin_b = SecurityOrigin::Create(b);
-  return origin_b->IsSameSchemeHostPort(origin_a.Get());
+  return origin_b->IsSameSchemeHostPort(origin_a.get());
 }
 
 const KURL& SecurityOrigin::UrlWithUniqueSecurityOrigin() {

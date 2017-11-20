@@ -22,11 +22,10 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/V8BindingForCore.h"
-#include "core/HTMLNames.h"
-#include "core/SVGNames.h"
 #include "core/css/CSSImportRule.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/MediaList.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/parser/CSSParser.h"
@@ -34,7 +33,6 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Node.h"
-#include "core/dom/StyleEngine.h"
 #include "core/frame/Deprecation.h"
 #include "core/html/HTMLStyleElement.h"
 #include "core/probe/CoreProbes.h"
@@ -74,8 +72,8 @@ static bool IsAcceptableCSSStyleSheetParent(const Node& parent_node) {
   // Only these nodes can be parents of StyleSheets, and they need to call
   // clearOwnerNode() when moved out of document. Note that destructor of
   // the nodes don't call clearOwnerNode() with Oilpan.
-  return parent_node.IsDocumentNode() || isHTMLLinkElement(parent_node) ||
-         isHTMLStyleElement(parent_node) || isSVGStyleElement(parent_node) ||
+  return parent_node.IsDocumentNode() || IsHTMLLinkElement(parent_node) ||
+         IsHTMLStyleElement(parent_node) || IsSVGStyleElement(parent_node) ||
          parent_node.getNodeType() == Node::kProcessingInstructionNode;
 }
 #endif
@@ -208,7 +206,7 @@ void CSSStyleSheet::setDisabled(bool disabled) {
 void CSSStyleSheet::SetMediaQueries(RefPtr<MediaQuerySet> media_queries) {
   media_queries_ = std::move(media_queries);
   if (media_cssom_wrapper_ && media_queries_)
-    media_cssom_wrapper_->Reattach(media_queries_.Get());
+    media_cssom_wrapper_->Reattach(media_queries_.get());
 }
 
 bool CSSStyleSheet::MatchesMediaQueries(const MediaQueryEvaluator& evaluator) {
@@ -261,7 +259,7 @@ bool CSSStyleSheet::CanAccessRules() const {
     return true;
   if (allow_rule_access_from_origin_ &&
       document->GetSecurityOrigin()->CanAccess(
-          allow_rule_access_from_origin_.Get())) {
+          allow_rule_access_from_origin_.get())) {
     return true;
   }
   return false;
@@ -336,7 +334,7 @@ void CSSStyleSheet::deleteRule(unsigned index,
   if (!child_rule_cssom_wrappers_.IsEmpty()) {
     if (child_rule_cssom_wrappers_[index])
       child_rule_cssom_wrappers_[index]->SetParentStyleSheet(0);
-    child_rule_cssom_wrappers_.erase(index);
+    child_rule_cssom_wrappers_.EraseAt(index);
   }
 }
 
@@ -388,7 +386,7 @@ MediaList* CSSStyleSheet::media() const {
     return nullptr;
 
   if (!media_cssom_wrapper_)
-    media_cssom_wrapper_ = MediaList::Create(media_queries_.Get(),
+    media_cssom_wrapper_ = MediaList::Create(media_queries_.get(),
                                              const_cast<CSSStyleSheet*>(this));
   return media_cssom_wrapper_.Get();
 }

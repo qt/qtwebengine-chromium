@@ -8,11 +8,11 @@
 
 #include "ash/public/cpp/shell_window_ids.h"
 #include "components/exo/pointer_delegate.h"
-#include "components/exo/pointer_stylus_delegate.h"
+#include "components/exo/pointer_gesture_pinch_delegate.h"
 #include "components/exo/surface.h"
 #include "components/exo/wm_helper.h"
-#include "components/viz/common/quads/copy_output_request.h"
-#include "components/viz/common/quads/copy_output_result.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -96,6 +96,8 @@ Pointer::~Pointer() {
     focus_surface_->RemoveSurfaceObserver(this);
     focus_surface_->UnregisterCursorProvider(this);
   }
+  if (pinch_delegate_)
+    pinch_delegate_->OnPointerDestroying(this);
   auto* helper = WMHelper::GetInstance();
   helper->RemoveDisplayConfigurationObserver(this);
   helper->RemoveCursorObserver(this);
@@ -149,6 +151,10 @@ void Pointer::SetCursor(Surface* surface, const gfx::Point& hotspot) {
 
 gfx::NativeCursor Pointer::GetCursor() {
   return cursor_;
+}
+
+void Pointer::SetGesturePinchDelegate(PointerGesturePinchDelegate* delegate) {
+  pinch_delegate_ = delegate;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -293,6 +299,36 @@ void Pointer::OnScrollEvent(ui::ScrollEvent* event) {
   OnMouseEvent(event);
 }
 
+void Pointer::OnGestureEvent(ui::GestureEvent* event) {
+  // We don't want to handle gestures generated from touchscreen events,
+  // we handle touch events in touch.cc
+  if (event->details().device_type() != ui::GestureDeviceType::DEVICE_TOUCHPAD)
+    return;
+
+  if (!focus_surface_ || !pinch_delegate_)
+    return;
+
+  switch (event->type()) {
+    case ui::ET_GESTURE_PINCH_BEGIN:
+      pinch_delegate_->OnPointerPinchBegin(event->unique_touch_event_id(),
+                                           event->time_stamp(), focus_surface_);
+      delegate_->OnPointerFrame();
+      break;
+    case ui::ET_GESTURE_PINCH_UPDATE:
+      pinch_delegate_->OnPointerPinchUpdate(event->time_stamp(),
+                                            event->details().scale());
+      delegate_->OnPointerFrame();
+      break;
+    case ui::ET_GESTURE_PINCH_END:
+      pinch_delegate_->OnPointerPinchEnd(event->unique_touch_event_id(),
+                                         event->time_stamp());
+      delegate_->OnPointerFrame();
+      break;
+    default:
+      break;
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // WMHelper::CursorObserver overrides:
 
@@ -364,9 +400,11 @@ void Pointer::CaptureCursor(const gfx::Point& hotspot) {
   host_window()->SetTransform(gfx::GetScaleTransform(gfx::Point(), scale));
 
   std::unique_ptr<viz::CopyOutputRequest> request =
-      viz::CopyOutputRequest::CreateBitmapRequest(base::BindOnce(
-          &Pointer::OnCursorCaptured,
-          cursor_capture_weak_ptr_factory_.GetWeakPtr(), hotspot));
+      std::make_unique<viz::CopyOutputRequest>(
+          viz::CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+          base::BindOnce(&Pointer::OnCursorCaptured,
+                         cursor_capture_weak_ptr_factory_.GetWeakPtr(),
+                         hotspot));
 
   request->set_source(cursor_capture_source_id_);
   host_window()->layer()->RequestCopyOfOutput(std::move(request));
@@ -380,8 +418,8 @@ void Pointer::OnCursorCaptured(const gfx::Point& hotspot,
   if (result->IsEmpty()) {
     cursor_bitmap_.reset();
   } else {
-    DCHECK(result->HasBitmap());
-    cursor_bitmap_ = *result->TakeBitmap();
+    cursor_bitmap_ = result->AsSkBitmap();
+    DCHECK(cursor_bitmap_.readyToDraw());
     cursor_hotspot_ = hotspot;
   }
 

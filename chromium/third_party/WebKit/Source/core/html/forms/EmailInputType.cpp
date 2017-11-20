@@ -27,9 +27,10 @@
 #include <unicode/unistr.h>
 #include <unicode/uvernum.h>
 #include "bindings/core/v8/ScriptRegexp.h"
-#include "core/InputTypeNames.h"
-#include "core/html/HTMLInputElement.h"
+#include "core/frame/WebFeature.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/input_type_names.h"
 #include "core/page/ChromeClient.h"
 #include "platform/text/PlatformLocale.h"
 #include "platform/wtf/text/StringBuilder.h"

@@ -150,17 +150,6 @@ class RendererD3D : public BufferFactoryD3D
                                            HANDLE shareHandle,
                                            const egl::AttributeMap &attribs) const = 0;
 
-    virtual gl::Error setUniformBuffers(const gl::ContextState &data,
-                                        const std::vector<GLint> &vertexUniformBuffers,
-                                        const std::vector<GLint> &fragmentUniformBuffers) = 0;
-
-    virtual gl::Error applyUniforms(const ProgramD3D &programD3D,
-                                    GLenum drawMode,
-                                    const std::vector<D3DUniform *> &uniformArray) = 0;
-
-    virtual unsigned int getReservedVertexUniformBuffers() const = 0;
-    virtual unsigned int getReservedFragmentUniformBuffers() const = 0;
-
     virtual int getMajorShaderModel() const = 0;
 
     const angle::WorkaroundsD3D &getWorkarounds() const;
@@ -318,19 +307,20 @@ class RendererD3D : public BufferFactoryD3D
 
     virtual gl::Version getMaxSupportedESVersion() const = 0;
 
+    gl::Error initRenderTarget(RenderTargetD3D *renderTarget);
+
     angle::WorkerThreadPool *getWorkerThreadPool();
-
-    virtual gl::Error applyComputeUniforms(const ProgramD3D &programD3D,
-                                           const std::vector<D3DUniform *> &uniformArray) = 0;
-
-    bool isRobustResourceInitEnabled() const;
 
     size_t getBoundFramebufferTextures(const gl::ContextState &data,
                                        FramebufferTextureArray *outTextureArray);
 
-    gl::Texture *getIncompleteTexture(const gl::Context *context, GLenum type);
+    gl::Error getIncompleteTexture(const gl::Context *context,
+                                   GLenum type,
+                                   gl::Texture **textureOut);
 
     Serial generateSerial();
+
+    virtual bool canSelectViewInVertexShader() const = 0;
 
   protected:
     virtual bool getLUID(LUID *adapterLuid) const = 0;
@@ -343,8 +333,7 @@ class RendererD3D : public BufferFactoryD3D
 
     // dirtyPointer is a special value that will make the comparison with any valid pointer fail and force the renderer to re-apply the state.
 
-    bool skipDraw(const gl::ContextState &data, GLenum drawMode);
-    gl::Error markTransformFeedbackUsage(const gl::ContextState &data);
+    bool skipDraw(const gl::State &glState, GLenum drawMode);
 
     egl::Display *mDisplay;
 

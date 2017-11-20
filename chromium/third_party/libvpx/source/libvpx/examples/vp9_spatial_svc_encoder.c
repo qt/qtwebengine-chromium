@@ -640,8 +640,9 @@ int main(int argc, const char **argv) {
 
 // Allocate image buffer
 #if CONFIG_VP9_HIGHBITDEPTH
-  if (!vpx_img_alloc(&raw, enc_cfg.g_input_bit_depth == 8 ? VPX_IMG_FMT_I420
-                                                          : VPX_IMG_FMT_I42016,
+  if (!vpx_img_alloc(&raw,
+                     enc_cfg.g_input_bit_depth == 8 ? VPX_IMG_FMT_I420
+                                                    : VPX_IMG_FMT_I42016,
                      enc_cfg.g_w, enc_cfg.g_h, 32)) {
     die("Failed to allocate image %dx%d\n", enc_cfg.g_w, enc_cfg.g_h);
   }
@@ -708,6 +709,7 @@ int main(int argc, const char **argv) {
     vpx_codec_control(&codec, VP9E_SET_AQ_MODE, 3);
   if (svc_ctx.speed >= 5)
     vpx_codec_control(&codec, VP8E_SET_STATIC_THRESHOLD, 1);
+  vpx_codec_control(&codec, VP8E_SET_MAX_INTRA_BITRATE_PCT, 900);
 
   // Encode frames
   while (!end_of_stream) {

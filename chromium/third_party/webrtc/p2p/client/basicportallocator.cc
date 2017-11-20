@@ -8,24 +8,24 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/p2p/client/basicportallocator.h"
+#include "p2p/client/basicportallocator.h"
 
 #include <algorithm>
 #include <string>
 #include <vector>
 
-#include "webrtc/api/umametrics.h"
-#include "webrtc/p2p/base/basicpacketsocketfactory.h"
-#include "webrtc/p2p/base/common.h"
-#include "webrtc/p2p/base/port.h"
-#include "webrtc/p2p/base/relayport.h"
-#include "webrtc/p2p/base/stunport.h"
-#include "webrtc/p2p/base/tcpport.h"
-#include "webrtc/p2p/base/turnport.h"
-#include "webrtc/p2p/base/udpport.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/helpers.h"
-#include "webrtc/rtc_base/logging.h"
+#include "api/umametrics.h"
+#include "p2p/base/basicpacketsocketfactory.h"
+#include "p2p/base/common.h"
+#include "p2p/base/port.h"
+#include "p2p/base/relayport.h"
+#include "p2p/base/stunport.h"
+#include "p2p/base/tcpport.h"
+#include "p2p/base/turnport.h"
+#include "p2p/base/udpport.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/logging.h"
 
 using rtc::CreateRandomId;
 
@@ -43,9 +43,8 @@ enum {
 const int PHASE_UDP = 0;
 const int PHASE_RELAY = 1;
 const int PHASE_TCP = 2;
-const int PHASE_SSLTCP = 3;
 
-const int kNumPhases = 4;
+const int kNumPhases = 3;
 
 // Gets protocol priority: UDP > TCP > SSLTCP == TLS.
 int GetProtocolPriority(cricket::ProtocolType protocol) {
@@ -97,11 +96,15 @@ const uint32_t DISABLE_ALL_PHASES =
     PORTALLOCATOR_DISABLE_STUN | PORTALLOCATOR_DISABLE_RELAY;
 
 // BasicPortAllocator
-BasicPortAllocator::BasicPortAllocator(rtc::NetworkManager* network_manager,
-                                       rtc::PacketSocketFactory* socket_factory)
+BasicPortAllocator::BasicPortAllocator(
+    rtc::NetworkManager* network_manager,
+    rtc::PacketSocketFactory* socket_factory,
+    webrtc::TurnCustomizer* customizer)
     : network_manager_(network_manager), socket_factory_(socket_factory) {
   RTC_DCHECK(network_manager_ != nullptr);
   RTC_DCHECK(socket_factory_ != nullptr);
+  SetConfiguration(ServerAddresses(), std::vector<RelayServerConfig>(),
+                   0, false, customizer);
   Construct();
 }
 
@@ -116,7 +119,8 @@ BasicPortAllocator::BasicPortAllocator(rtc::NetworkManager* network_manager,
                                        const ServerAddresses& stun_servers)
     : network_manager_(network_manager), socket_factory_(socket_factory) {
   RTC_DCHECK(socket_factory_ != NULL);
-  SetConfiguration(stun_servers, std::vector<RelayServerConfig>(), 0, false);
+  SetConfiguration(stun_servers, std::vector<RelayServerConfig>(), 0, false,
+                   nullptr);
   Construct();
 }
 
@@ -143,7 +147,7 @@ BasicPortAllocator::BasicPortAllocator(
     turn_servers.push_back(config);
   }
 
-  SetConfiguration(stun_servers, turn_servers, 0, false);
+  SetConfiguration(stun_servers, turn_servers, 0, false, nullptr);
   Construct();
 }
 
@@ -189,7 +193,7 @@ void BasicPortAllocator::AddTurnServer(const RelayServerConfig& turn_server) {
   std::vector<RelayServerConfig> new_turn_servers = turn_servers();
   new_turn_servers.push_back(turn_server);
   SetConfiguration(stun_servers(), new_turn_servers, candidate_pool_size(),
-                   prune_turn_ports());
+                   prune_turn_ports(), turn_customizer());
 }
 
 // BasicPortAllocatorSession
@@ -406,11 +410,6 @@ void BasicPortAllocatorSession::GetCandidatesFromPort(
   RTC_CHECK(candidates != nullptr);
   for (const Candidate& candidate : data.port()->Candidates()) {
     if (!CheckCandidateFilter(candidate)) {
-      continue;
-    }
-    ProtocolType pvalue;
-    if (!StringToProto(candidate.protocol().c_str(), &pvalue) ||
-        !data.sequence()->ProtocolEnabled(pvalue)) {
       continue;
     }
     candidates->push_back(SanitizeRelatedAddress(candidate));
@@ -817,18 +816,10 @@ void BasicPortAllocatorSession::OnCandidateReady(
     }
   }
 
-  ProtocolType pvalue;
-  bool candidate_protocol_enabled =
-      StringToProto(c.protocol().c_str(), &pvalue) &&
-      data->sequence()->ProtocolEnabled(pvalue);
-
-  if (data->ready() && CheckCandidateFilter(c) && candidate_protocol_enabled) {
+  if (data->ready() && CheckCandidateFilter(c)) {
     std::vector<Candidate> candidates;
     candidates.push_back(SanitizeRelatedAddress(c));
     SignalCandidatesReady(this, candidates);
-  } else if (!candidate_protocol_enabled) {
-    LOG(LS_INFO)
-        << "Not yet signaling candidate because protocol is not yet enabled.";
   } else {
     LOG(LS_INFO) << "Discarding candidate because it doesn't match filter.";
   }
@@ -923,36 +914,6 @@ void BasicPortAllocatorSession::OnPortError(Port* port) {
   data->set_error();
   // Send candidate allocation complete signal if this was the last port.
   MaybeSignalCandidatesAllocationDone();
-}
-
-void BasicPortAllocatorSession::OnProtocolEnabled(AllocationSequence* seq,
-                                                  ProtocolType proto) {
-  std::vector<Candidate> candidates;
-  for (std::vector<PortData>::iterator it = ports_.begin();
-       it != ports_.end(); ++it) {
-    if (it->sequence() != seq)
-      continue;
-
-    const std::vector<Candidate>& potentials = it->port()->Candidates();
-    for (size_t i = 0; i < potentials.size(); ++i) {
-      if (!CheckCandidateFilter(potentials[i])) {
-        continue;
-      }
-      ProtocolType pvalue;
-      bool candidate_protocol_enabled =
-          StringToProto(potentials[i].protocol().c_str(), &pvalue) &&
-          pvalue == proto;
-      if (candidate_protocol_enabled) {
-        LOG(LS_INFO) << "Signaling candidate because protocol was enabled: "
-                     << potentials[i].ToSensitiveString();
-        candidates.push_back(potentials[i]);
-      }
-    }
-  }
-
-  if (!candidates.empty()) {
-    SignalCandidatesReady(this, candidates);
-  }
 }
 
 bool BasicPortAllocatorSession::CheckCandidateFilter(const Candidate& c) const {
@@ -1149,9 +1110,29 @@ void AllocationSequence::DisableEquivalentPhases(rtc::Network* network,
 
   // Else turn off the stuff that we've already got covered.
 
-  // Every config implicitly specifies local, so turn that off right away.
-  *flags |= PORTALLOCATOR_DISABLE_UDP;
-  *flags |= PORTALLOCATOR_DISABLE_TCP;
+  // Every config implicitly specifies local, so turn that off right away if we
+  // already have a port of the corresponding type. Look for a port that
+  // matches this AllocationSequence's network, is the right protocol, and
+  // hasn't encountered an error.
+  // TODO(deadbeef): This doesn't take into account that there may be another
+  // AllocationSequence that's ABOUT to allocate a UDP port, but hasn't yet.
+  // This can happen if, say, there's a network change event right before an
+  // application-triggered ICE restart. Hopefully this problem will just go
+  // away if we get rid of the gathering "phases" though, which is planned.
+  if (std::any_of(session_->ports_.begin(), session_->ports_.end(),
+                  [this](const BasicPortAllocatorSession::PortData& p) {
+                    return p.port()->Network() == network_ &&
+                           p.port()->GetProtocol() == PROTO_UDP && !p.error();
+                  })) {
+    *flags |= PORTALLOCATOR_DISABLE_UDP;
+  }
+  if (std::any_of(session_->ports_.begin(), session_->ports_.end(),
+                  [this](const BasicPortAllocatorSession::PortData& p) {
+                    return p.port()->Network() == network_ &&
+                           p.port()->GetProtocol() == PROTO_TCP && !p.error();
+                  })) {
+    *flags |= PORTALLOCATOR_DISABLE_TCP;
+  }
 
   if (config_ && config) {
     if (config_->StunServers() == config->StunServers()) {
@@ -1189,9 +1170,7 @@ void AllocationSequence::OnMessage(rtc::Message* msg) {
   RTC_DCHECK(rtc::Thread::Current() == session_->network_thread());
   RTC_DCHECK(msg->message_id == MSG_ALLOCATION_PHASE);
 
-  const char* const PHASE_NAMES[kNumPhases] = {
-    "Udp", "Relay", "Tcp", "SslTcp"
-  };
+  const char* const PHASE_NAMES[kNumPhases] = {"Udp", "Relay", "Tcp"};
 
   // Perform all of the phases in the current step.
   LOG_J(LS_INFO, network_) << "Allocation Phase="
@@ -1201,7 +1180,6 @@ void AllocationSequence::OnMessage(rtc::Message* msg) {
     case PHASE_UDP:
       CreateUDPPorts();
       CreateStunPorts();
-      EnableProtocol(PROTO_UDP);
       break;
 
     case PHASE_RELAY:
@@ -1210,12 +1188,7 @@ void AllocationSequence::OnMessage(rtc::Message* msg) {
 
     case PHASE_TCP:
       CreateTCPPorts();
-      EnableProtocol(PROTO_TCP);
-      break;
-
-    case PHASE_SSLTCP:
       state_ = kCompleted;
-      EnableProtocol(PROTO_SSLTCP);
       break;
 
     default:
@@ -1233,22 +1206,6 @@ void AllocationSequence::OnMessage(rtc::Message* msg) {
     session_->network_thread()->Clear(this, MSG_ALLOCATION_PHASE);
     SignalPortAllocationComplete(this);
   }
-}
-
-void AllocationSequence::EnableProtocol(ProtocolType proto) {
-  if (!ProtocolEnabled(proto)) {
-    protocols_.push_back(proto);
-    session_->OnProtocolEnabled(this, proto);
-  }
-}
-
-bool AllocationSequence::ProtocolEnabled(ProtocolType proto) const {
-  for (ProtocolList::const_iterator it = protocols_.begin();
-       it != protocols_.end(); ++it) {
-    if (*it == proto)
-      return true;
-  }
-  return false;
 }
 
 void AllocationSequence::CreateUDPPorts() {
@@ -1422,7 +1379,6 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
       continue;
     }
 
-
     // Shared socket mode must be enabled only for UDP based ports. Hence
     // don't pass shared socket for ports which will create TCP sockets.
     // TODO(mallinath) - Enable shared socket mode for TURN ports. Disabled
@@ -1434,7 +1390,8 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
                               network_, udp_socket_.get(),
                               session_->username(), session_->password(),
                               *relay_port, config.credentials, config.priority,
-                              session_->allocator()->origin());
+                              session_->allocator()->origin(),
+                              session_->allocator()->turn_customizer());
       turn_ports_.push_back(port);
       // Listen to the port destroyed signal, to allow AllocationSequence to
       // remove entrt from it's map.
@@ -1445,7 +1402,8 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
           session_->allocator()->min_port(), session_->allocator()->max_port(),
           session_->username(), session_->password(), *relay_port,
           config.credentials, config.priority, session_->allocator()->origin(),
-          config.tls_alpn_protocols);
+          config.tls_alpn_protocols, config.tls_elliptic_curves,
+          session_->allocator()->turn_customizer());
     }
     RTC_DCHECK(port != NULL);
     port->SetTlsCertPolicy(config.tls_cert_policy);

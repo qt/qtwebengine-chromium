@@ -6,6 +6,7 @@
 
 #include <memory>
 #include "bindings/core/v8/V8CacheOptions.h"
+#include "core/frame/Settings.h"
 #include "core/workers/GlobalScopeCreationParams.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThreadTestHelper.h"
@@ -81,7 +82,7 @@ class WorkerThreadTest : public ::testing::Test {
   void TearDown() override {}
 
   void Start() {
-    worker_thread_->StartWithSourceCode(security_origin_.Get(),
+    worker_thread_->StartWithSourceCode(security_origin_.get(),
                                         "//fake source code",
                                         ParentFrameTaskRunners::Create());
   }
@@ -89,7 +90,7 @@ class WorkerThreadTest : public ::testing::Test {
   void StartWithSourceCodeNotToFinish() {
     // Use a JavaScript source code that makes an infinite loop so that we
     // can catch some kind of issues as a timeout.
-    worker_thread_->StartWithSourceCode(security_origin_.Get(),
+    worker_thread_->StartWithSourceCode(security_origin_.get(),
                                         "while(true) {}",
                                         ParentFrameTaskRunners::Create());
   }
@@ -304,9 +305,10 @@ TEST_F(WorkerThreadTest, Terminate_WhileDebuggerTaskIsRunningOnInitialization) {
           KURL(kParsedURLString, "http://fake.url/"), "fake user agent",
           "//fake source code", nullptr, /* cachedMetaData */
           kPauseWorkerGlobalScopeOnStart, headers.get(), "",
-          security_origin_.Get(), nullptr, /* workerClients */
+          security_origin_.get(), nullptr, /* workerClients */
           kWebAddressSpaceLocal, nullptr /* originTrialToken */,
-          nullptr /* WorkerSettings */, kV8CacheOptionsDefault);
+          std::make_unique<WorkerSettings>(Settings::Create().get()),
+          kV8CacheOptionsDefault);
   worker_thread_->Start(std::move(global_scope_creation_params),
                         WorkerBackingThreadStartupData::CreateDefault(),
                         ParentFrameTaskRunners::Create());

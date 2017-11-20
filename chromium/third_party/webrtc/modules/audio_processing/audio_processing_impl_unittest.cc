@@ -8,16 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/audio_processing_impl.h"
+#include "modules/audio_processing/audio_processing_impl.h"
 
-#include "webrtc/config.h"
-#include "webrtc/modules/audio_processing/test/test_utils.h"
-#include "webrtc/modules/include/module_common_types.h"
-#include "webrtc/test/gmock.h"
-#include "webrtc/test/gtest.h"
+#include "modules/audio_processing/test/test_utils.h"
+#include "modules/include/module_common_types.h"
+#include "test/gmock.h"
+#include "test/gtest.h"
 
 using ::testing::Invoke;
-using ::testing::Return;
 
 namespace webrtc {
 namespace {
@@ -28,7 +26,7 @@ class MockInitialize : public AudioProcessingImpl {
       : AudioProcessingImpl(config) {}
 
   MOCK_METHOD0(InitializeLocked, int());
-  int RealInitializeLocked() NO_THREAD_SAFETY_ANALYSIS {
+  int RealInitializeLocked() RTC_NO_THREAD_SAFETY_ANALYSIS {
     return AudioProcessingImpl::InitializeLocked();
   }
 

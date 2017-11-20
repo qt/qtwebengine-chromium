@@ -7,9 +7,11 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <GLES2/gl2extchromium.h>
+
 #include <utility>
 
 #include "base/bind.h"
+#include "base/containers/queue.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -663,7 +665,7 @@ class VideoDecoderShim::DecoderImpl {
   bool initialized_ = false;
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   // Queue of decodes waiting for the decoder.
-  typedef std::queue<PendingDecode> PendingDecodeQueue;
+  using PendingDecodeQueue = base::queue<PendingDecode>;
   PendingDecodeQueue pending_decodes_;
   bool awaiting_decoder_ = false;
   // VideoDecoder returns pictures without information about the decode buffer
@@ -895,7 +897,7 @@ bool VideoDecoderShim::Initialize(const Config& vda_config, Client* client) {
 
   media::VideoDecoderConfig video_decoder_config(
       codec, vda_config.profile, media::PIXEL_FORMAT_YV12,
-      media::COLOR_SPACE_UNSPECIFIED,
+      media::COLOR_SPACE_UNSPECIFIED, media::VIDEO_ROTATION_0,
       gfx::Size(32, 24),  // Small sizes that won't fail.
       gfx::Rect(32, 24), gfx::Size(32, 24),
       // TODO(bbudge): Verify extra data isn't needed.

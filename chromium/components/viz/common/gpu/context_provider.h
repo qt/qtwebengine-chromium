@@ -23,6 +23,7 @@ class Lock;
 
 namespace gpu {
 class ContextSupport;
+struct GpuFeatureInfo;
 namespace gles2 {
 class GLES2Interface;
 }
@@ -71,7 +72,10 @@ class VIZ_COMMON_EXPORT ContextProvider
   virtual void InvalidateGrContext(uint32_t state) = 0;
 
   // Returns the capabilities of the currently bound 3d context.
-  virtual gpu::Capabilities ContextCapabilities() = 0;
+  virtual const gpu::Capabilities& ContextCapabilities() const = 0;
+
+  // Returns feature blacklist decisions and driver bug workarounds info.
+  virtual const gpu::GpuFeatureInfo& GetGpuFeatureInfo() const = 0;
 
   // Sets a callback to be called when the context is lost. This should be
   // called from the same thread that the context is bound to. To avoid races,

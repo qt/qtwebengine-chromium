@@ -45,8 +45,8 @@
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/task_runner_provider.h"
 #include "cc/trees/transform_node.h"
-#include "components/viz/common/quads/copy_output_request.h"
-#include "components/viz/common/quads/copy_output_result.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/effects/SkOffsetImageFilter.h"
@@ -548,10 +548,9 @@ TEST_F(LayerTreeHostCommonTest, TransformsAboutScrollOffset) {
                                  nullptr, nullptr);
   gfx::Transform expected_transform;
   gfx::PointF sub_layer_screen_position = kScrollLayerPosition - kScrollDelta;
-  expected_transform.Translate(MathUtil::Round(sub_layer_screen_position.x() *
-                                               page_scale * kDeviceScale),
-                               MathUtil::Round(sub_layer_screen_position.y() *
-                                               page_scale * kDeviceScale));
+  expected_transform.Translate(
+      std::round(sub_layer_screen_position.x() * page_scale * kDeviceScale),
+      std::round(sub_layer_screen_position.y() * page_scale * kDeviceScale));
   expected_transform.Scale(page_scale * kDeviceScale,
                            page_scale * kDeviceScale);
   EXPECT_TRANSFORMATION_MATRIX_EQ(expected_transform,
@@ -570,12 +569,10 @@ TEST_F(LayerTreeHostCommonTest, TransformsAboutScrollOffset) {
                                  nullptr, nullptr);
   expected_transform.MakeIdentity();
   expected_transform.Translate(
-      MathUtil::Round(kTranslateX * page_scale * kDeviceScale +
-                      sub_layer_screen_position.x() * page_scale *
-                          kDeviceScale),
-      MathUtil::Round(kTranslateY * page_scale * kDeviceScale +
-                      sub_layer_screen_position.y() * page_scale *
-                          kDeviceScale));
+      std::round(kTranslateX * page_scale * kDeviceScale +
+                 sub_layer_screen_position.x() * page_scale * kDeviceScale),
+      std::round(kTranslateY * page_scale * kDeviceScale +
+                 sub_layer_screen_position.y() * page_scale * kDeviceScale));
   expected_transform.Scale(page_scale * kDeviceScale,
                            page_scale * kDeviceScale);
   EXPECT_TRANSFORMATION_MATRIX_EQ(expected_transform,
@@ -595,12 +592,10 @@ TEST_F(LayerTreeHostCommonTest, TransformsAboutScrollOffset) {
 
   expected_transform.MakeIdentity();
   expected_transform.Translate(
-      MathUtil::Round(kTranslateX * page_scale * kDeviceScale +
-                      sub_layer_screen_position.x() * page_scale *
-                          kDeviceScale),
-      MathUtil::Round(kTranslateY * page_scale * kDeviceScale +
-                      sub_layer_screen_position.y() * page_scale *
-                          kDeviceScale));
+      std::round(kTranslateX * page_scale * kDeviceScale +
+                 sub_layer_screen_position.x() * page_scale * kDeviceScale),
+      std::round(kTranslateY * page_scale * kDeviceScale +
+                 sub_layer_screen_position.y() * page_scale * kDeviceScale));
   expected_transform.Scale(page_scale * kDeviceScale,
                            page_scale * kDeviceScale);
   EXPECT_TRANSFORMATION_MATRIX_EQ(expected_transform,
@@ -1399,7 +1394,7 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceListForTransparentChild) {
   ASSERT_TRUE(GetRenderSurface(root));
   EXPECT_EQ(0, GetRenderSurface(root)->num_contributors());
   EXPECT_EQ(1U, render_surface_list.size());
-  EXPECT_EQ(static_cast<RenderPassId>(root->id()),
+  EXPECT_EQ(static_cast<viz::RenderPassId>(root->id()),
             render_surface_list.at(0)->id());
   EXPECT_EQ(gfx::Rect(), root->drawable_content_rect());
 }
@@ -4808,8 +4803,6 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_TwoLayersImpl) {
   EXPECT_FALSE(grand_child_layer->contributes_to_drawn_render_surface());
 }
 
-void EmptyCopyOutputCallback(std::unique_ptr<viz::CopyOutputResult> result) {}
-
 TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   FakeImplTaskRunnerProvider task_runner_provider;
   TestTaskGraphRunner task_graph_runner;
@@ -4889,8 +4882,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   copy_grand_child_layer->test_properties()->hide_layer_and_subtree = true;
 
   copy_layer->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateRequest(
-          base::BindOnce(&EmptyCopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
 
   RenderSurfaceList render_surface_list;
   LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
@@ -4986,8 +4978,7 @@ TEST_F(LayerTreeHostCommonTest, ClippedOutCopyRequest) {
   copy_child->SetDrawsContent(true);
 
   copy_layer->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateRequest(
-          base::BindOnce(&EmptyCopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
 
   copy_layer->test_properties()->AddChild(std::move(copy_child));
   copy_parent->test_properties()->AddChild(std::move(copy_layer));
@@ -5028,8 +5019,7 @@ TEST_F(LayerTreeHostCommonTest, SingularTransformAndCopyRequests) {
   copy_layer->SetBounds(gfx::Size(100, 100));
   copy_layer->SetDrawsContent(true);
   copy_layer->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateRequest(
-          base::BindOnce(&EmptyCopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
 
   LayerImpl* copy_child = AddChild<LayerImpl>(copy_layer);
   copy_child->SetBounds(gfx::Size(100, 100));
@@ -5089,8 +5079,7 @@ TEST_F(LayerTreeHostCommonTest, VisibleRectInNonRootCopyRequest) {
   copy_surface->test_properties()->force_render_surface = true;
 
   copy_layer->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateRequest(
-          base::BindOnce(&EmptyCopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
 
   DCHECK(!copy_layer->test_properties()->copy_requests.empty());
   ExecuteCalculateDrawProperties(root);
@@ -5105,8 +5094,7 @@ TEST_F(LayerTreeHostCommonTest, VisibleRectInNonRootCopyRequest) {
   copy_layer->SetBounds(gfx::Size(50, 50));
   copy_layer->SetMasksToBounds(true);
   copy_layer->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateRequest(
-          base::BindOnce(&EmptyCopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
   root->layer_tree_impl()->property_trees()->needs_rebuild = true;
 
   DCHECK(!copy_layer->test_properties()->copy_requests.empty());
@@ -5121,8 +5109,7 @@ TEST_F(LayerTreeHostCommonTest, VisibleRectInNonRootCopyRequest) {
   // Case 3: When there is device scale factor.
   float device_scale_factor = 2.f;
   copy_layer->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateRequest(
-          base::BindOnce(&EmptyCopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
 
   DCHECK(!copy_layer->test_properties()->copy_requests.empty());
   ExecuteCalculateDrawProperties(root, device_scale_factor);
@@ -8584,8 +8571,6 @@ TEST_F(LayerTreeHostCommonTest, UpdateScrollChildPosition) {
   EXPECT_EQ(gfx::Rect(0, 10, 25, 25), scroll_child->visible_layer_rect());
 }
 
-static void CopyOutputCallback(std::unique_ptr<viz::CopyOutputResult> result) {}
-
 TEST_F(LayerTreeHostCommonTest, HasCopyRequestsInTargetSubtree) {
   scoped_refptr<Layer> root = Layer::Create();
   scoped_refptr<Layer> child1 = Layer::Create();
@@ -8599,11 +8584,9 @@ TEST_F(LayerTreeHostCommonTest, HasCopyRequestsInTargetSubtree) {
   grandchild->AddChild(greatgrandchild);
   host()->SetRootLayer(root);
 
-  child1->RequestCopyOfOutput(viz::CopyOutputRequest::CreateBitmapRequest(
-      base::BindOnce(&CopyOutputCallback)));
+  child1->RequestCopyOfOutput(viz::CopyOutputRequest::CreateStubForTesting());
   greatgrandchild->RequestCopyOfOutput(
-      viz::CopyOutputRequest::CreateBitmapRequest(
-          base::BindOnce(&CopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
   child2->SetOpacity(0.f);
   ExecuteCalculateDrawPropertiesAndSaveUpdateLayerList(root.get());
 
@@ -8619,9 +8602,9 @@ TEST_F(LayerTreeHostCommonTest, SkippingSubtreeMain) {
   FakeContentLayerClient client;
   client.set_bounds(root->bounds());
   scoped_refptr<LayerWithForcedDrawsContent> child =
-      make_scoped_refptr(new LayerWithForcedDrawsContent());
+      base::MakeRefCounted<LayerWithForcedDrawsContent>();
   scoped_refptr<LayerWithForcedDrawsContent> grandchild =
-      make_scoped_refptr(new LayerWithForcedDrawsContent());
+      base::MakeRefCounted<LayerWithForcedDrawsContent>();
   scoped_refptr<FakePictureLayer> greatgrandchild(
       FakePictureLayer::Create(&client));
 
@@ -8678,7 +8661,7 @@ TEST_F(LayerTreeHostCommonTest, SkippingSubtreeMain) {
   update_list = GetUpdateLayerList();
   EXPECT_TRUE(VerifyLayerInList(grandchild, update_list));
 
-  RemoveAnimationFromElementWithExistingPlayer(child->element_id(), timeline(),
+  RemoveAnimationFromElementWithExistingTicker(child->element_id(), timeline(),
                                                animation_id);
   child->SetTransform(gfx::Transform());
   child->SetOpacity(0.f);
@@ -8689,8 +8672,8 @@ TEST_F(LayerTreeHostCommonTest, SkippingSubtreeMain) {
   // Now, even though child has zero opacity, we will configure |grandchild| and
   // |greatgrandchild| in several ways that should force the subtree to be
   // processed anyhow.
-  grandchild->RequestCopyOfOutput(viz::CopyOutputRequest::CreateBitmapRequest(
-      base::BindOnce(&CopyOutputCallback)));
+  grandchild->RequestCopyOfOutput(
+      viz::CopyOutputRequest::CreateStubForTesting());
   ExecuteCalculateDrawPropertiesAndSaveUpdateLayerList(root.get());
   update_list = GetUpdateLayerList();
   EXPECT_TRUE(VerifyLayerInList(grandchild, update_list));
@@ -8702,7 +8685,7 @@ TEST_F(LayerTreeHostCommonTest, SkippingSubtreeMain) {
       animation_id, 1, TargetProperty::OPACITY);
   animation->set_fill_mode(Animation::FillMode::NONE);
   animation->set_time_offset(base::TimeDelta::FromMilliseconds(-1000));
-  AddAnimationToElementWithExistingPlayer(child->element_id(), timeline(),
+  AddAnimationToElementWithExistingTicker(child->element_id(), timeline(),
                                           std::move(animation));
   ExecuteCalculateDrawPropertiesAndSaveUpdateLayerList(root.get());
   update_list = GetUpdateLayerList();
@@ -8803,7 +8786,7 @@ TEST_F(LayerTreeHostCommonTest, SkippingLayerImpl) {
   // |greatgrandchild| in several ways that should force the subtree to be
   // processed anyhow.
   grandchild_ptr->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateEmptyRequest());
+      viz::CopyOutputRequest::CreateStubForTesting());
   root_ptr->layer_tree_impl()->property_trees()->needs_rebuild = true;
   ExecuteCalculateDrawPropertiesAndSaveUpdateLayerList(root_ptr);
   EXPECT_EQ(gfx::Rect(10, 10), grandchild_ptr->visible_layer_rect());
@@ -8836,6 +8819,9 @@ TEST_F(LayerTreeHostCommonTest, SkippingLayerImpl) {
   std::unique_ptr<Animation> transform_animation(
       Animation::Create(std::move(curve), 3, 3, TargetProperty::TRANSFORM));
   scoped_refptr<AnimationPlayer> player(AnimationPlayer::Create(1));
+  timeline()->AttachPlayer(player);
+  // TODO(smcgruer): Should attach a timeline and element rather than call this
+  // directly. See http://crbug.com/771316
   host_impl.animation_host()->RegisterPlayerForElement(root_ptr->element_id(),
                                                        player.get());
   player->AddAnimation(std::move(transform_animation));
@@ -8848,6 +8834,7 @@ TEST_F(LayerTreeHostCommonTest, SkippingLayerImpl) {
 
   host_impl.animation_host()->UnregisterPlayerForElement(root_ptr->element_id(),
                                                          player.get());
+  timeline()->DetachPlayer(player);
 }
 
 TEST_F(LayerTreeHostCommonTest, LayerSkippingInSubtreeOfSingularTransform) {
@@ -8883,6 +8870,9 @@ TEST_F(LayerTreeHostCommonTest, LayerSkippingInSubtreeOfSingularTransform) {
   std::unique_ptr<Animation> transform_animation(
       Animation::Create(std::move(curve), 3, 3, TargetProperty::TRANSFORM));
   scoped_refptr<AnimationPlayer> player(AnimationPlayer::Create(1));
+  timeline()->AttachPlayer(player);
+  // TODO(smcgruer): Should attach a timeline and element rather than call this
+  // directly. See http://crbug.com/771316
   host_impl()->animation_host()->RegisterPlayerForElement(
       grand_child->element_id(), player.get());
   player->AddAnimation(std::move(transform_animation));
@@ -8893,6 +8883,7 @@ TEST_F(LayerTreeHostCommonTest, LayerSkippingInSubtreeOfSingularTransform) {
 
   host_impl()->animation_host()->UnregisterPlayerForElement(
       grand_child->element_id(), player.get());
+  timeline()->DetachPlayer(player);
 }
 
 TEST_F(LayerTreeHostCommonTest, SkippingPendingLayerImpl) {
@@ -8943,6 +8934,9 @@ TEST_F(LayerTreeHostCommonTest, SkippingPendingLayerImpl) {
   std::unique_ptr<Animation> animation(
       Animation::Create(std::move(curve), 3, 3, TargetProperty::OPACITY));
   scoped_refptr<AnimationPlayer> player(AnimationPlayer::Create(1));
+  timeline()->AttachPlayer(player);
+  // TODO(smcgruer): Should attach a timeline and element rather than call this
+  // directly. See http://crbug.com/771316
   host_impl.animation_host()->RegisterPlayerForElement(root_ptr->element_id(),
                                                        player.get());
   player->AddAnimation(std::move(animation));
@@ -8954,6 +8948,7 @@ TEST_F(LayerTreeHostCommonTest, SkippingPendingLayerImpl) {
 
   host_impl.animation_host()->UnregisterPlayerForElement(root_ptr->element_id(),
                                                          player.get());
+  timeline()->DetachPlayer(player);
 }
 
 TEST_F(LayerTreeHostCommonTest, SkippingLayer) {
@@ -9012,8 +9007,7 @@ TEST_F(LayerTreeHostCommonTest, LayerTreeRebuildTest) {
   parent->AddChild(child);
   host()->SetRootLayer(root);
 
-  child->RequestCopyOfOutput(viz::CopyOutputRequest::CreateRequest(
-      base::BindOnce(&EmptyCopyOutputCallback)));
+  child->RequestCopyOfOutput(viz::CopyOutputRequest::CreateStubForTesting());
 
   ExecuteCalculateDrawPropertiesAndSaveUpdateLayerList(root.get());
   EXPECT_TRUE(root->has_copy_requests_in_target_subtree());
@@ -9719,7 +9713,7 @@ TEST_F(LayerTreeHostCommonTest, LargeTransformTest) {
 TEST_F(LayerTreeHostCommonTest, PropertyTreesRebuildWithOpacityChanges) {
   scoped_refptr<Layer> root = Layer::Create();
   scoped_refptr<LayerWithForcedDrawsContent> child =
-      make_scoped_refptr(new LayerWithForcedDrawsContent());
+      base::MakeRefCounted<LayerWithForcedDrawsContent>();
   root->AddChild(child);
   host()->SetRootLayer(root);
 
@@ -9761,7 +9755,7 @@ TEST_F(LayerTreeHostCommonTest, PropertyTreesRebuildWithOpacityChanges) {
 TEST_F(LayerTreeHostCommonTest, OpacityAnimationsTrackingTest) {
   scoped_refptr<Layer> root = Layer::Create();
   scoped_refptr<LayerWithForcedDrawsContent> animated =
-      make_scoped_refptr(new LayerWithForcedDrawsContent());
+      base::MakeRefCounted<LayerWithForcedDrawsContent>();
   root->AddChild(animated);
   host()->SetRootLayer(root);
   host()->SetElementIdsForTesting();
@@ -9784,7 +9778,7 @@ TEST_F(LayerTreeHostCommonTest, OpacityAnimationsTrackingTest) {
   animation->set_fill_mode(Animation::FillMode::NONE);
   animation->set_time_offset(base::TimeDelta::FromMilliseconds(-1000));
   Animation* animation_ptr = animation.get();
-  AddAnimationToElementWithExistingPlayer(animated->element_id(), timeline(),
+  AddAnimationToElementWithExistingTicker(animated->element_id(), timeline(),
                                           std::move(animation));
 
   ExecuteCalculateDrawPropertiesAndSaveUpdateLayerList(root.get());
@@ -9809,7 +9803,7 @@ TEST_F(LayerTreeHostCommonTest, OpacityAnimationsTrackingTest) {
 TEST_F(LayerTreeHostCommonTest, TransformAnimationsTrackingTest) {
   scoped_refptr<Layer> root = Layer::Create();
   scoped_refptr<LayerWithForcedDrawsContent> animated =
-      make_scoped_refptr(new LayerWithForcedDrawsContent());
+      base::MakeRefCounted<LayerWithForcedDrawsContent>();
   root->AddChild(animated);
   host()->SetRootLayer(root);
   host()->SetElementIdsForTesting();
@@ -9840,7 +9834,7 @@ TEST_F(LayerTreeHostCommonTest, TransformAnimationsTrackingTest) {
   animation->set_fill_mode(Animation::FillMode::NONE);
   animation->set_time_offset(base::TimeDelta::FromMilliseconds(-1000));
   Animation* animation_ptr = animation.get();
-  AddAnimationToElementWithExistingPlayer(animated->element_id(), timeline(),
+  AddAnimationToElementWithExistingTicker(animated->element_id(), timeline(),
                                           std::move(animation));
 
   ExecuteCalculateDrawPropertiesAndSaveUpdateLayerList(root.get());
@@ -10116,8 +10110,7 @@ TEST_F(LayerTreeHostCommonTest, SurfaceContentsScaleChangeWithCopyRequestTest) {
   // Need to persist the render surface after copy request is cleared.
   copy_layer->test_properties()->force_render_surface = true;
   copy_layer->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateRequest(
-          base::Bind(&EmptyCopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
 
   clip_layer->SetDrawsContent(true);
   clip_layer->SetMasksToBounds(true);
@@ -10367,8 +10360,7 @@ TEST_F(LayerTreeHostCommonTest, VisibleRectInNonRootCacheRenderSurface) {
   // Case 4: When the non root cache render surface layer is clipped and there
   // is a copy request layer beneath it.
   copy_layer->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateRequest(
-          base::Bind(&EmptyCopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
   root->layer_tree_impl()->property_trees()->needs_rebuild = true;
   DCHECK(!copy_layer->test_properties()->copy_requests.empty());
   ExecuteCalculateDrawProperties(root);
@@ -10384,8 +10376,7 @@ TEST_F(LayerTreeHostCommonTest, VisibleRectInNonRootCacheRenderSurface) {
   // request layer.
   cache_surface->test_properties()->cache_render_surface = true;
   copy_layer->test_properties()->copy_requests.push_back(
-      viz::CopyOutputRequest::CreateRequest(
-          base::Bind(&EmptyCopyOutputCallback)));
+      viz::CopyOutputRequest::CreateStubForTesting());
   root->layer_tree_impl()->property_trees()->needs_rebuild = true;
   DCHECK(!copy_layer->test_properties()->copy_requests.empty());
   ExecuteCalculateDrawProperties(root);
@@ -10442,6 +10433,42 @@ TEST_F(LayerTreeHostCommonTest, BuildPropertyNodesForScrollChildrenInOrder) {
     EXPECT_EQ(scroll_sibling_1->clip_tree_index(),
               clip_escaper->clip_tree_index());
   }
+}
+
+TEST_F(LayerTreeHostCommonTest, RenderSurfaceListForTrilinearFiltering) {
+  LayerImpl* root = root_layer_for_testing();
+  LayerImpl* parent = AddChild<LayerImpl>(root);
+  LayerImpl* child1 = AddChild<LayerImpl>(parent);
+  LayerImpl* child2 = AddChild<LayerImpl>(parent);
+
+  gfx::Transform scale_matrix;
+  scale_matrix.Scale(.25f, .25f);
+
+  root->SetBounds(gfx::Size(200, 200));
+  parent->test_properties()->transform = scale_matrix;
+  parent->test_properties()->trilinear_filtering = true;
+  child1->SetBounds(gfx::Size(50, 50));
+  child1->SetDrawsContent(true);
+  child1->test_properties()->force_render_surface = true;
+  child2->SetPosition(gfx::PointF(50, 50));
+  child2->SetBounds(gfx::Size(50, 50));
+  child2->SetDrawsContent(true);
+  child2->test_properties()->force_render_surface = true;
+
+  RenderSurfaceList render_surface_list;
+  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
+      root, root->bounds(), &render_surface_list);
+  inputs.can_adjust_raster_scales = true;
+  LayerTreeHostCommon::CalculateDrawPropertiesForTesting(&inputs);
+
+  ASSERT_TRUE(GetRenderSurface(parent));
+  EXPECT_EQ(2, GetRenderSurface(parent)->num_contributors());
+  EXPECT_EQ(4U, render_surface_list.size());
+
+  // The rectangle enclosing child1 and child2 (0,0 100x100), scaled by the
+  // scale matrix to (0,0 25x25).
+  EXPECT_EQ(gfx::RectF(0, 0, 25, 25),
+            GetRenderSurface(parent)->DrawableContentRect());
 }
 
 }  // namespace

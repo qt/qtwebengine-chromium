@@ -9,6 +9,7 @@
 """Unit tests for the simulation module.
 """
 
+import logging
 import os
 import shutil
 import sys
@@ -23,9 +24,11 @@ import mock
 import pydub
 
 from . import audioproc_wrapper
+from . import eval_scores_factory
 from . import evaluation
 from . import signal_processing
 from . import simulation
+from . import test_data_generation_factory
 
 
 class TestApmModuleSimulator(unittest.TestCase):
@@ -33,8 +36,9 @@ class TestApmModuleSimulator(unittest.TestCase):
   """
 
   def setUp(self):
-    """Create temporary folder and fake audio track."""
+    """Create temporary folders and fake audio track."""
     self._output_path = tempfile.mkdtemp()
+    self._tmp_path = tempfile.mkdtemp()
 
     silence = pydub.AudioSegment.silent(duration=1000, frame_rate=48000)
     fake_signal = signal_processing.SignalProcessingUtils.GenerateWhiteNoise(
@@ -46,19 +50,29 @@ class TestApmModuleSimulator(unittest.TestCase):
   def tearDown(self):
     """Recursively delete temporary folders."""
     shutil.rmtree(self._output_path)
+    shutil.rmtree(self._tmp_path)
 
   def testSimulation(self):
-    # Instance dependencies to inject and mock.
-    ap_wrapper = audioproc_wrapper.AudioProcWrapper()
+    # Instance dependencies to mock and inject.
+    ap_wrapper = audioproc_wrapper.AudioProcWrapper(
+        audioproc_wrapper.AudioProcWrapper.DEFAULT_APM_SIMULATOR_BIN_PATH)
     evaluator = evaluation.ApmModuleEvaluator()
     ap_wrapper.Run = mock.MagicMock(name='Run')
     evaluator.Run = mock.MagicMock(name='Run')
 
+    # Instance non-mocked dependencies.
+    test_data_generator_factory = (
+        test_data_generation_factory.TestDataGeneratorFactory(
+            aechen_ir_database_path='',
+            noise_tracks_path=''))
+    evaluation_score_factory = eval_scores_factory.EvaluationScoreWorkerFactory(
+        polqa_tool_bin_path=os.path.join(
+            os.path.dirname(__file__), 'fake_polqa'))
+
     # Instance simulator.
     simulator = simulation.ApmModuleSimulator(
-        aechen_ir_database_path='',
-        polqa_tool_bin_path=os.path.join(
-            os.path.dirname(__file__), 'fake_polqa'),
+        test_data_generator_factory=test_data_generator_factory,
+        evaluation_score_factory=evaluation_score_factory,
         ap_wrapper=ap_wrapper,
         evaluator=evaluator)
 
@@ -78,8 +92,8 @@ class TestApmModuleSimulator(unittest.TestCase):
 
     # Check.
     # TODO(alessiob): Once the TestDataGenerator classes can be configured by
-    # the client code (e.g., number of SNR pairs for the white noise teste data
-    # gnerator), the exact number of calls to ap_wrapper.Run and evaluator.Run
+    # the client code (e.g., number of SNR pairs for the white noise test data
+    # generator), the exact number of calls to ap_wrapper.Run and evaluator.Run
     # is known; use that with assertEqual.
     min_number_of_simulations = len(config_files) * len(input_files) * len(
         test_data_generators)
@@ -87,3 +101,45 @@ class TestApmModuleSimulator(unittest.TestCase):
                             min_number_of_simulations)
     self.assertGreaterEqual(len(evaluator.Run.call_args_list),
                             min_number_of_simulations)
+
+  def testPureToneGenerationWithTotalHarmonicDistorsion(self):
+    logging.warning = mock.MagicMock(name='warning')
+
+    # Instance simulator.
+    simulator = simulation.ApmModuleSimulator(
+        test_data_generator_factory=(
+            test_data_generation_factory.TestDataGeneratorFactory(
+                aechen_ir_database_path='',
+                noise_tracks_path='')),
+        evaluation_score_factory=(
+            eval_scores_factory.EvaluationScoreWorkerFactory(
+                polqa_tool_bin_path=os.path.join(
+                    os.path.dirname(__file__), 'fake_polqa'))),
+        ap_wrapper=audioproc_wrapper.AudioProcWrapper(
+            audioproc_wrapper.AudioProcWrapper.DEFAULT_APM_SIMULATOR_BIN_PATH),
+        evaluator=evaluation.ApmModuleEvaluator())
+
+    # What to simulate.
+    config_files = ['apm_configs/default.json']
+    input_files = [os.path.join(self._tmp_path, 'pure_tone-440_1000.wav')]
+    eval_scores = ['thd']
+
+    # Should work.
+    simulator.Run(
+        config_filepaths=config_files,
+        capture_input_filepaths=input_files,
+        test_data_generator_names=['identity'],
+        eval_score_names=eval_scores,
+        output_dir=self._output_path)
+    self.assertFalse(logging.warning.called)
+
+    # Warning expected.
+    simulator.Run(
+        config_filepaths=config_files,
+        capture_input_filepaths=input_files,
+        test_data_generator_names=['white_noise'],  # Not allowed with THD.
+        eval_score_names=eval_scores,
+        output_dir=self._output_path)
+    logging.warning.assert_called_with('the evaluation failed: %s', (
+        'The THD score cannot be used with any test data generator other than '
+        '"identity"'))

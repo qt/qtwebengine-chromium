@@ -6,6 +6,7 @@
 #define COMPONENTS_SUBRESOURCE_FILTER_CORE_BROWSER_SUBRESOURCE_FILTER_FEATURES_H_
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "base/feature_list.h"
@@ -61,9 +62,6 @@ struct Configuration {
     // there are multiple configurations whose activation conditions are
     // otherwise satisfied. A greater value indicates higher priority.
     int priority = 0;
-
-    // Whether to activate on SafeBrowsing lists with experimental metadata.
-    bool experimental = false;
 
     // This boolean is set to true for a navigation which has forced activation,
     // despite other conditions not matching. It should never be possible to set
@@ -136,6 +134,11 @@ struct Configuration {
   //  4.) Update unittests to cover the new preset.
   static Configuration MakePresetForLiveRunOnPhishingSites();
   static Configuration MakePresetForPerformanceTestingDryRunOnAllSites();
+  static Configuration MakePresetForLiveRunForAbusiveAds();
+  static Configuration MakePresetForLiveRunForBetterAds();
+
+  // Site violates abusive and better ads standards.
+  static Configuration MakePresetForLiveRunForAllAds();
 
   // Not really a preset, but used as the configuration for forcing activation
   // (e.g. via devtools).
@@ -222,7 +225,6 @@ extern const char kActivationListAbusiveAds[];
 extern const char kActivationListAllAds[];
 
 extern const char kActivationPriorityParameterName[];
-extern const char kActivationExperimentalParameterName[];
 
 extern const char kPerformanceMeasurementRateParameterName[];
 
@@ -240,6 +242,9 @@ extern const char kEnablePresetsParameterName[];
 extern const char kDisablePresetsParameterName[];
 extern const char kPresetLiveRunOnPhishingSites[];
 extern const char kPresetPerformanceTestingDryRunOnAllSites[];
+extern const char kPresetLiveRunForAbusiveAds[];
+extern const char kPresetLiveRunForBetterAds[];
+extern const char kPresetLiveRunForAllAds[];
 
 }  // namespace subresource_filter
 

@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-
 #include "SkStream.h"
 #include "SkStreamPriv.h"
 #include "SkData.h"
@@ -16,7 +15,6 @@
 #include "SkTypes.h"
 
 ///////////////////////////////////////////////////////////////////////////////
-
 
 int8_t SkStream::readS8() {
     int8_t value;
@@ -216,7 +214,7 @@ bool SkFILEStream::rewind() {
     return true;
 }
 
-SkStreamAsset* SkFILEStream::duplicate() const {
+SkStreamAsset* SkFILEStream::onDuplicate() const {
     // TODO: fOriginalOffset instead of 0.
     return new SkFILEStream(fFILE, fSize, 0, fOriginalOffset);
 }
@@ -234,7 +232,7 @@ bool SkFILEStream::move(long offset) {
     return this->seek(fOffset + offset);
 }
 
-SkStreamAsset* SkFILEStream::fork() const {
+SkStreamAsset* SkFILEStream::onFork() const {
     return new SkFILEStream(fFILE, fSize, fOffset, fOriginalOffset);
 }
 
@@ -342,7 +340,9 @@ bool SkMemoryStream::rewind() {
     return true;
 }
 
-SkMemoryStream* SkMemoryStream::duplicate() const { return new SkMemoryStream(fData); }
+SkMemoryStream* SkMemoryStream::onDuplicate() const {
+    return new SkMemoryStream(fData);
+}
 
 size_t SkMemoryStream::getPosition() const {
     return fOffset;
@@ -359,7 +359,7 @@ bool SkMemoryStream::move(long offset) {
     return this->seek(fOffset + offset);
 }
 
-SkMemoryStream* SkMemoryStream::fork() const {
+SkMemoryStream* SkMemoryStream::onFork() const {
     std::unique_ptr<SkMemoryStream> that(this->duplicate());
     that->seek(fOffset);
     return that.release();
@@ -731,7 +731,7 @@ public:
         return true;
     }
 
-    SkBlockMemoryStream* duplicate() const override {
+    SkBlockMemoryStream* onDuplicate() const override {
         return new SkBlockMemoryStream(fBlockMemory, fSize);
     }
 
@@ -760,12 +760,12 @@ public:
         return seek(fOffset + offset);
     }
 
-    SkBlockMemoryStream* fork() const override {
-        std::unique_ptr<SkBlockMemoryStream> that(this->duplicate());
+    SkBlockMemoryStream* onFork() const override {
+        SkBlockMemoryStream* that = this->onDuplicate();
         that->fCurrent = this->fCurrent;
         that->fOffset = this->fOffset;
         that->fCurrentOffset = this->fCurrentOffset;
-        return that.release();
+        return that;
     }
 
     size_t getLength() const override {

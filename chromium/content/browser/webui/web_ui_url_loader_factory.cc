@@ -109,7 +109,10 @@ void ReadData(scoped_refptr<ResourceResponse> headers,
   CHECK_EQ(result, MOJO_RESULT_OK);
 
   client->OnStartLoadingResponseBody(std::move(data_pipe.consumer_handle));
-  client->OnComplete(ResourceRequestCompletionStatus(output_size));
+  ResourceRequestCompletionStatus status(net::OK);
+  status.encoded_data_length = output_size;
+  status.encoded_body_length = output_size;
+  client->OnComplete(status);
 }
 
 void DataAvailable(scoped_refptr<ResourceResponse> headers,
@@ -156,10 +159,8 @@ void StartURLLoader(const ResourceRequest& request,
   std::string path;
   URLDataManagerBackend::URLToRequestPath(request.url, &path);
 
-  net::HttpRequestHeaders request_headers;
-  request_headers.AddHeadersFromString(request.headers);
   std::string origin_header;
-  request_headers.GetHeader(net::HttpRequestHeaders::kOrigin, &origin_header);
+  request.headers.GetHeader(net::HttpRequestHeaders::kOrigin, &origin_header);
 
   scoped_refptr<net::HttpResponseHeaders> headers =
       URLDataManagerBackend::GetHeaders(source, path, origin_header);

@@ -60,12 +60,6 @@ ContentRendererClient::OverrideCreateWebMediaStreamCenter(
   return nullptr;
 }
 
-std::unique_ptr<blink::WebRTCPeerConnectionHandler>
-ContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
-    blink::WebRTCPeerConnectionHandlerClient* client) {
-  return nullptr;
-}
-
 std::unique_ptr<blink::WebMIDIAccessor>
 ContentRendererClient::OverrideCreateMIDIAccessor(
     blink::WebMIDIAccessorClient* client) {
@@ -101,7 +95,7 @@ bool ContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
   return true;
 }
 
-bool ContentRendererClient::AllowStoppingTimersWhenProcessBackgrounded() {
+bool ContentRendererClient::AllowStoppingWhenProcessBackgrounded() {
   return false;
 }
 
@@ -259,6 +253,13 @@ ContentRendererClient::GetTaskSchedulerInitParams() {
 
 bool ContentRendererClient::AllowIdleMediaSuspend() {
   return true;
+}
+
+bool ContentRendererClient::OverrideLegacySymantecCertConsoleMessage(
+    const GURL& url,
+    base::Time cert_expiration,
+    std::string* console_messsage) {
+  return false;
 }
 
 }  // namespace content

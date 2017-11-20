@@ -1001,8 +1001,8 @@ void DesktopNativeWidgetAura::OnPaint(const ui::PaintContext& context) {
 }
 
 void DesktopNativeWidgetAura::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {
-}
+    float old_device_scale_factor,
+    float new_device_scale_factor) {}
 
 void DesktopNativeWidgetAura::OnWindowDestroying(aura::Window* window) {
   // Cleanup happens in OnHostClosed().
@@ -1103,8 +1103,8 @@ void DesktopNativeWidgetAura::OnWindowActivated(
   }
 
   // Give the native widget a chance to handle any specific changes it needs.
-  desktop_window_tree_host_->OnNativeWidgetActivationChanged(
-      content_window_ == gained_active);
+  desktop_window_tree_host_->OnActiveWindowChanged(content_window_ ==
+                                                   gained_active);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

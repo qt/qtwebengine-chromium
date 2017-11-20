@@ -27,11 +27,76 @@ class BoundedLabel;
 class NotificationHeaderView;
 class ProportionalImageView;
 
-namespace {
-class CompactTitleMessageView;
-class ItemView;
-class LargeImageContainerView;
-}
+// ItemViews are responsible for drawing each list notification item's title and
+// message next to each other within a single column.
+class ItemView : public views::View {
+ public:
+  explicit ItemView(const message_center::NotificationItem& item);
+  ~ItemView() override;
+
+  const char* GetClassName() const override;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ItemView);
+};
+
+// CompactTitleMessageView shows notification title and message in a single
+// line. This view is used for NOTIFICATION_TYPE_PROGRESS.
+class CompactTitleMessageView : public views::View {
+ public:
+  explicit CompactTitleMessageView();
+  ~CompactTitleMessageView() override;
+
+  const char* GetClassName() const override;
+
+  void OnPaint(gfx::Canvas* canvas) override;
+
+  void set_title(const base::string16& title) { title_ = title; }
+  void set_message(const base::string16& message) { message_ = message; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(CompactTitleMessageView);
+
+  base::string16 title_;
+  base::string16 message_;
+
+  views::Label* title_view_ = nullptr;
+  views::Label* message_view_ = nullptr;
+};
+
+class LargeImageView : public views::View {
+ public:
+  LargeImageView();
+  ~LargeImageView() override;
+
+  void SetImage(const gfx::ImageSkia& image);
+
+  void OnPaint(gfx::Canvas* canvas) override;
+  const char* GetClassName() const override;
+
+ private:
+  gfx::Size GetResizedImageSize();
+
+  gfx::ImageSkia image_;
+
+  DISALLOW_COPY_AND_ASSIGN(LargeImageView);
+};
+
+// We have a container view outside LargeImageView, because we want to fill
+// area that is not coverted by the image by background color.
+class LargeImageContainerView : public views::View {
+ public:
+  LargeImageContainerView();
+  ~LargeImageContainerView() override;
+
+  void SetImage(const gfx::ImageSkia& image);
+  const char* GetClassName() const override;
+
+ private:
+  LargeImageView* const image_view_;
+
+  DISALLOW_COPY_AND_ASSIGN(LargeImageContainerView);
+};
 
 // This class is needed in addition to LabelButton mainly becuase we want to set
 // visible_opacity of InkDropHighlight.
@@ -66,6 +131,8 @@ class MESSAGE_CENTER_EXPORT NotificationViewMD
   NotificationViewMD(MessageCenterController* controller,
                      const Notification& notification);
   ~NotificationViewMD() override;
+
+  void Activate();
 
   // Overridden from views::View:
   void Layout() override;
@@ -154,6 +221,8 @@ class MESSAGE_CENTER_EXPORT NotificationViewMD
   std::vector<ItemView*> item_views_;
   views::ProgressBar* progress_bar_view_ = nullptr;
   CompactTitleMessageView* compact_title_message_view_ = nullptr;
+
+  std::unique_ptr<ui::EventHandler> click_activator_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationViewMD);
 };

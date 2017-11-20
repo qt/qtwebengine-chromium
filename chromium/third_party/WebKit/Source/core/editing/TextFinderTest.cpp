@@ -9,6 +9,7 @@
 #include "core/dom/NodeList.h"
 #include "core/dom/Range.h"
 #include "core/dom/ShadowRoot.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/FindInPageCoordinates.h"
 #include "core/frame/FrameTestHelpers.h"
 #include "core/frame/LocalFrameView.h"
@@ -73,7 +74,7 @@ WebFloatRect TextFinderTest::FindInPageRect(Node* start_container,
 }
 
 TEST_F(TextFinderTest, FindTextSimple) {
-  GetDocument().body()->setInnerHTML("XXXXFindMeYYYYfindmeZZZZ");
+  GetDocument().body()->SetInnerHTMLFromString("XXXXFindMeYYYYfindmeZZZZ");
   GetDocument().UpdateStyleAndLayout();
   Node* text_node = GetDocument().body()->firstChild();
 
@@ -147,7 +148,7 @@ TEST_F(TextFinderTest, FindTextSimple) {
 }
 
 TEST_F(TextFinderTest, FindTextAutosizing) {
-  GetDocument().body()->setInnerHTML("XXXXFindMeYYYYfindmeZZZZ");
+  GetDocument().body()->SetInnerHTMLFromString("XXXXFindMeYYYYfindmeZZZZ");
   GetDocument().UpdateStyleAndLayout();
 
   int identifier = 0;
@@ -186,7 +187,7 @@ TEST_F(TextFinderTest, FindTextAutosizing) {
 }
 
 TEST_F(TextFinderTest, FindTextNotFound) {
-  GetDocument().body()->setInnerHTML("XXXXFindMeYYYYfindmeZZZZ");
+  GetDocument().body()->SetInnerHTMLFromString("XXXXFindMeYYYYfindmeZZZZ");
   GetDocument().UpdateStyleAndLayout();
 
   int identifier = 0;
@@ -200,14 +201,13 @@ TEST_F(TextFinderTest, FindTextNotFound) {
 }
 
 TEST_F(TextFinderTest, FindTextInShadowDOM) {
-  GetDocument().body()->setInnerHTML("<b>FOO</b><i>foo</i>");
-  ShadowRoot* shadow_root = GetDocument().body()->CreateShadowRootInternal(
-      ShadowRootType::V0, ASSERT_NO_EXCEPTION);
-  shadow_root->setInnerHTML(
+  GetDocument().body()->SetInnerHTMLFromString("<b>FOO</b><i>foo</i>");
+  ShadowRoot& shadow_root = GetDocument().body()->CreateShadowRootInternal();
+  shadow_root.SetInnerHTMLFromString(
       "<content select=\"i\"></content><u>Foo</u><content></content>");
   Node* text_in_b_element = GetDocument().body()->firstChild()->firstChild();
   Node* text_in_i_element = GetDocument().body()->lastChild()->firstChild();
-  Node* text_in_u_element = shadow_root->childNodes()->item(1)->firstChild();
+  Node* text_in_u_element = shadow_root.childNodes()->item(1)->firstChild();
   GetDocument().UpdateStyleAndLayout();
 
   int identifier = 0;
@@ -301,7 +301,7 @@ TEST_F(TextFinderTest, FindTextInShadowDOM) {
 }
 
 TEST_F(TextFinderTest, ScopeTextMatchesSimple) {
-  GetDocument().body()->setInnerHTML("XXXXFindMeYYYYfindmeZZZZ");
+  GetDocument().body()->SetInnerHTMLFromString("XXXXFindMeYYYYfindmeZZZZ");
   GetDocument().UpdateStyleAndLayout();
 
   Node* text_node = GetDocument().body()->firstChild();
@@ -325,7 +325,7 @@ TEST_F(TextFinderTest, ScopeTextMatchesSimple) {
 }
 
 TEST_F(TextFinderTest, ScopeTextMatchesRepeated) {
-  GetDocument().body()->setInnerHTML("XXXXFindMeYYYYfindmeZZZZ");
+  GetDocument().body()->SetInnerHTMLFromString("XXXXFindMeYYYYfindmeZZZZ");
   GetDocument().UpdateStyleAndLayout();
 
   Node* text_node = GetDocument().body()->firstChild();
@@ -353,14 +353,13 @@ TEST_F(TextFinderTest, ScopeTextMatchesRepeated) {
 }
 
 TEST_F(TextFinderTest, ScopeTextMatchesWithShadowDOM) {
-  GetDocument().body()->setInnerHTML("<b>FOO</b><i>foo</i>");
-  ShadowRoot* shadow_root = GetDocument().body()->CreateShadowRootInternal(
-      ShadowRootType::V0, ASSERT_NO_EXCEPTION);
-  shadow_root->setInnerHTML(
+  GetDocument().body()->SetInnerHTMLFromString("<b>FOO</b><i>foo</i>");
+  ShadowRoot& shadow_root = GetDocument().body()->CreateShadowRootInternal();
+  shadow_root.SetInnerHTMLFromString(
       "<content select=\"i\"></content><u>Foo</u><content></content>");
   Node* text_in_b_element = GetDocument().body()->firstChild()->firstChild();
   Node* text_in_i_element = GetDocument().body()->lastChild()->firstChild();
-  Node* text_in_u_element = shadow_root->childNodes()->item(1)->firstChild();
+  Node* text_in_u_element = shadow_root.childNodes()->item(1)->firstChild();
   GetDocument().UpdateStyleAndLayout();
 
   int identifier = 0;
@@ -389,7 +388,7 @@ TEST_F(TextFinderTest, ScopeTextMatchesWithShadowDOM) {
 }
 
 TEST_F(TextFinderTest, ScopeRepeatPatternTextMatches) {
-  GetDocument().body()->setInnerHTML("ab ab ab ab ab");
+  GetDocument().body()->SetInnerHTMLFromString("ab ab ab ab ab");
   GetDocument().UpdateStyleAndLayout();
 
   Node* text_node = GetDocument().body()->firstChild();
@@ -413,7 +412,7 @@ TEST_F(TextFinderTest, ScopeRepeatPatternTextMatches) {
 }
 
 TEST_F(TextFinderTest, OverlappingMatches) {
-  GetDocument().body()->setInnerHTML("aababaa");
+  GetDocument().body()->SetInnerHTMLFromString("aababaa");
   GetDocument().UpdateStyleAndLayout();
 
   Node* text_node = GetDocument().body()->firstChild();
@@ -437,7 +436,7 @@ TEST_F(TextFinderTest, OverlappingMatches) {
 }
 
 TEST_F(TextFinderTest, SequentialMatches) {
-  GetDocument().body()->setInnerHTML("ababab");
+  GetDocument().body()->SetInnerHTMLFromString("ababab");
   GetDocument().UpdateStyleAndLayout();
 
   Node* text_node = GetDocument().body()->firstChild();
@@ -462,7 +461,7 @@ TEST_F(TextFinderTest, SequentialMatches) {
 }
 
 TEST_F(TextFinderTest, FindTextJavaScriptUpdatesDOM) {
-  GetDocument().body()->setInnerHTML("<b>XXXXFindMeYYYY</b><i></i>");
+  GetDocument().body()->SetInnerHTMLFromString("<b>XXXXFindMeYYYY</b><i></i>");
   GetDocument().UpdateStyleAndLayout();
 
   int identifier = 0;
@@ -488,7 +487,7 @@ TEST_F(TextFinderTest, FindTextJavaScriptUpdatesDOM) {
   // Add new text to DOM and try FindNext.
   Element* i_element = ToElement(GetDocument().body()->lastChild());
   ASSERT_TRUE(i_element);
-  i_element->setInnerHTML("ZZFindMe");
+  i_element->SetInnerHTMLFromString("ZZFindMe");
   GetDocument().UpdateStyleAndLayout();
 
   ASSERT_TRUE(GetTextFinder().Find(identifier, search_text, find_options,
@@ -521,7 +520,7 @@ TEST_F(TextFinderTest, FindTextJavaScriptUpdatesDOM) {
 }
 
 TEST_F(TextFinderTest, FindTextJavaScriptUpdatesDOMAfterNoMatches) {
-  GetDocument().body()->setInnerHTML("<b>XXXXYYYY</b><i></i>");
+  GetDocument().body()->SetInnerHTMLFromString("<b>XXXXYYYY</b><i></i>");
   GetDocument().UpdateStyleAndLayout();
 
   int identifier = 0;
@@ -544,7 +543,7 @@ TEST_F(TextFinderTest, FindTextJavaScriptUpdatesDOMAfterNoMatches) {
   // Add new text to DOM and try FindNext.
   Element* i_element = ToElement(GetDocument().body()->lastChild());
   ASSERT_TRUE(i_element);
-  i_element->setInnerHTML("ZZFindMe");
+  i_element->SetInnerHTMLFromString("ZZFindMe");
   GetDocument().UpdateStyleAndLayout();
 
   ASSERT_TRUE(GetTextFinder().Find(identifier, search_text, find_options,
@@ -607,7 +606,7 @@ TEST_F(TextFinderFakeTimerTest, ScopeWithTimeouts) {
   text.insert(search_pattern, 50);
   text.insert(search_pattern, 90);
 
-  GetDocument().body()->setInnerHTML(text);
+  GetDocument().body()->SetInnerHTMLFromString(text);
   GetDocument().UpdateStyleAndLayout();
 
   int identifier = 0;

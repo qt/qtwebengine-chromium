@@ -27,7 +27,7 @@
 #include "core/dom/SecurityContext.h"
 
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
 
@@ -36,7 +36,8 @@ namespace blink {
 SecurityContext::SecurityContext()
     : sandbox_flags_(kSandboxNone),
       address_space_(kWebAddressSpacePublic),
-      insecure_request_policy_(kLeaveInsecureRequestsAlone) {}
+      insecure_request_policy_(kLeaveInsecureRequestsAlone),
+      require_safe_types_(false) {}
 
 SecurityContext::~SecurityContext() {}
 
@@ -94,7 +95,7 @@ void SecurityContext::EnforceSuborigin(const Suborigin& suborigin) {
 
   DCHECK(!suborigin.GetName().IsEmpty());
   DCHECK(RuntimeEnabledFeatures::SuboriginsEnabled());
-  DCHECK(security_origin_.Get());
+  DCHECK(security_origin_.get());
   DCHECK(!security_origin_->HasSuborigin() ||
          security_origin_->GetSuborigin()->GetName() == suborigin.GetName());
   security_origin_->AddSuborigin(suborigin);

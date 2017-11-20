@@ -49,9 +49,18 @@ struct Renderer11DeviceCaps
     bool supportsDXGI1_2;                // Support for DXGI 1.2
     bool supportsClearView;              // Support for ID3D11DeviceContext1::ClearView
     bool supportsConstantBufferOffsets;  // Support for Constant buffer offset
+    bool supportsVpRtIndexWriteFromVertexShader;  // VP/RT can be selected in the Vertex Shader
+                                                  // stage.
+    bool supportsMultisampledDepthStencilSRVs;  // D3D feature level 10.0 no longer allows creation
+                                                // of textures with both the bind SRV and DSV flags
+                                                // when multisampled.  Textures will need to be
+                                                // resolved before reading. crbug.com/656989
     UINT B5G6R5support;    // Bitfield of D3D11_FORMAT_SUPPORT values for DXGI_FORMAT_B5G6R5_UNORM
+    UINT B5G6R5maxSamples;  // Maximum number of samples supported by DXGI_FORMAT_B5G6R5_UNORM
     UINT B4G4R4A4support;  // Bitfield of D3D11_FORMAT_SUPPORT values for DXGI_FORMAT_B4G4R4A4_UNORM
+    UINT B4G4R4A4maxSamples;  // Maximum number of samples supported by DXGI_FORMAT_B4G4R4A4_UNORM
     UINT B5G5R5A1support;  // Bitfield of D3D11_FORMAT_SUPPORT values for DXGI_FORMAT_B5G5R5A1_UNORM
+    UINT B5G5R5A1maxSamples;  // Maximum number of samples supported by DXGI_FORMAT_B5G5R5A1_UNORM
     Optional<LARGE_INTEGER> driverVersion;  // Four-part driver version number.
 };
 
@@ -137,15 +146,7 @@ class Renderer11 : public RendererD3D
                                    HANDLE shareHandle,
                                    const egl::AttributeMap &attribs) const override;
 
-    gl::Error setUniformBuffers(const gl::ContextState &data,
-                                const std::vector<GLint> &vertexUniformBuffers,
-                                const std::vector<GLint> &fragmentUniformBuffers) override;
-
-    bool applyPrimitiveType(GLenum mode, GLsizei count, bool usesPointSize);
-    gl::Error applyUniforms(const ProgramD3D &programD3D,
-                            GLenum drawMode,
-                            const std::vector<D3DUniform *> &uniformArray) override;
-    gl::Error applyTransformFeedbackBuffers(const gl::ContextState &data);
+    bool applyPrimitiveType(const gl::State &glState, GLenum mode, GLsizei count);
 
     // lost device
     bool testDeviceLost() override;
@@ -156,8 +157,8 @@ class Renderer11 : public RendererD3D
 
     unsigned int getReservedVertexUniformVectors() const;
     unsigned int getReservedFragmentUniformVectors() const;
-    unsigned int getReservedVertexUniformBuffers() const override;
-    unsigned int getReservedFragmentUniformBuffers() const override;
+    unsigned int getReservedVertexUniformBuffers() const;
+    unsigned int getReservedFragmentUniformBuffers() const;
 
     bool getShareHandleSupport() const;
 
@@ -307,12 +308,13 @@ class Renderer11 : public RendererD3D
     ID3D11DeviceContext1 *getDeviceContext1IfSupported() { return mDeviceContext1; };
     IDXGIFactory *getDxgiFactory() { return mDxgiFactory; };
 
-    gl::Error getBlendState(const d3d11::BlendStateKey &key, ID3D11BlendState **outBlendState);
+    gl::Error getBlendState(const d3d11::BlendStateKey &key,
+                            const d3d11::BlendState **outBlendState);
     gl::Error getRasterizerState(const gl::RasterizerState &rasterState,
                                  bool scissorEnabled,
                                  ID3D11RasterizerState **outRasterizerState);
     gl::Error getDepthStencilState(const gl::DepthStencilState &dsState,
-                                   ID3D11DepthStencilState **outDSState);
+                                   const d3d11::DepthStencilState **outDSState);
     gl::Error getSamplerState(const gl::SamplerState &samplerState,
                               ID3D11SamplerState **outSamplerState);
 
@@ -330,7 +332,6 @@ class Renderer11 : public RendererD3D
                                       GLenum sourcePixelsType,
                                       const gl::Box &destArea) override;
 
-    void markAllStateDirty(const gl::Context *context);
     gl::Error packPixels(const TextureHelper11 &textureHelper,
                          const PackPixelsParams &params,
                          uint8_t *pixelsOut);
@@ -379,23 +380,24 @@ class Renderer11 : public RendererD3D
 
     egl::Error getEGLDevice(DeviceImpl **device) override;
 
-    gl::Error genericDrawArrays(const gl::Context *context,
-                                GLenum mode,
-                                GLint first,
-                                GLsizei count,
-                                GLsizei instances);
+    gl::Error drawArrays(const gl::Context *context,
+                         GLenum mode,
+                         GLint startVertex,
+                         GLsizei count,
+                         GLsizei instances);
 
-    gl::Error genericDrawElements(const gl::Context *context,
-                                  GLenum mode,
-                                  GLsizei count,
-                                  GLenum type,
-                                  const void *indices,
-                                  GLsizei instances);
+    gl::Error drawElements(const gl::Context *context,
+                           GLenum mode,
+                           GLsizei count,
+                           GLenum type,
+                           const void *indices,
+                           GLsizei instances);
 
-    gl::Error genericDrawIndirect(const gl::Context *context,
-                                  GLenum mode,
-                                  GLenum type,
-                                  const void *indirect);
+    gl::Error drawArraysIndirect(const gl::Context *context, GLenum mode, const void *indirect);
+    gl::Error drawElementsIndirect(const gl::Context *context,
+                                   GLenum mode,
+                                   GLenum type,
+                                   const void *indirect);
 
     // Necessary hack for default framebuffers in D3D.
     FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
@@ -408,8 +410,6 @@ class Renderer11 : public RendererD3D
                               GLuint numGroupsX,
                               GLuint numGroupsY,
                               GLuint numGroupsZ);
-    gl::Error applyComputeUniforms(const ProgramD3D &programD3D,
-                                   const std::vector<D3DUniform *> &uniformArray) override;
     gl::Error applyComputeShader(const gl::Context *context);
 
     gl::ErrorOrResult<TextureHelper11> createStagingTexture(ResourceType textureType,
@@ -458,24 +458,9 @@ class Renderer11 : public RendererD3D
                                 const float clearDepthValue,
                                 const unsigned int clearStencilValue) override;
 
-  private:
-    gl::Error drawArraysImpl(const gl::Context *context,
-                             GLenum mode,
-                             GLint startVertex,
-                             GLsizei count,
-                             GLsizei instances);
-    gl::Error drawElementsImpl(const gl::Context *context,
-                               GLenum mode,
-                               GLsizei count,
-                               GLenum type,
-                               const void *indices,
-                               GLsizei instances);
-    gl::Error drawArraysIndirectImpl(const gl::Context *context, GLenum mode, const void *indirect);
-    gl::Error drawElementsIndirectImpl(const gl::Context *context,
-                                       GLenum mode,
-                                       GLenum type,
-                                       const void *indirect);
+    bool canSelectViewInVertexShader() const override;
 
+  private:
     void generateCaps(gl::Caps *outCaps,
                       gl::TextureCapsMap *outTextureCaps,
                       gl::Extensions *outExtensions,
@@ -483,22 +468,18 @@ class Renderer11 : public RendererD3D
 
     angle::WorkaroundsD3D generateWorkarounds() const override;
 
-    gl::Error drawLineLoop(const gl::ContextState &data,
+    gl::Error drawLineLoop(const gl::Context *context,
                            GLsizei count,
                            GLenum type,
                            const void *indices,
                            int baseVertex,
                            int instances);
-    gl::Error drawTriangleFan(const gl::ContextState &data,
+    gl::Error drawTriangleFan(const gl::Context *context,
                               GLsizei count,
                               GLenum type,
                               const void *indices,
                               int baseVertex,
                               int instances);
-
-    gl::Error generateSwizzle(const gl::Context *context, gl::Texture *texture);
-    gl::Error generateSwizzles(const gl::Context *context, gl::SamplerType type);
-    gl::Error generateSwizzles(const gl::Context *context);
 
     gl::ErrorOrResult<TextureHelper11> resolveMultisampledTexture(const gl::Context *context,
                                                                   RenderTarget11 *renderTarget,
@@ -508,13 +489,6 @@ class Renderer11 : public RendererD3D
     void populateRenderer11DeviceCaps();
 
     void updateHistograms();
-
-    template <class TShaderConstants>
-    void applyDriverConstantsIfNeeded(TShaderConstants *appliedConstants,
-                                      const TShaderConstants &constants,
-                                      SamplerMetadata11 *samplerMetadata,
-                                      size_t samplerMetadataReferencedBytes,
-                                      const d3d11::Buffer &driverConstantBuffer);
 
     gl::Error copyImageInternal(const gl::Context *context,
                                 const gl::Framebuffer *framebuffer,
@@ -527,12 +501,15 @@ class Renderer11 : public RendererD3D
         const gl::TextureCaps &colorBufferFormatCaps,
         const gl::TextureCaps &depthStencilBufferFormatCaps) const;
 
+    HRESULT callD3D11CreateDevice(PFN_D3D11_CREATE_DEVICE createDevice, bool debug);
     egl::Error initializeD3DDevice();
     egl::Error initializeDevice();
     void releaseDeviceResources();
     void release();
 
     d3d11::ANGLED3D11DeviceType getDeviceType() const;
+
+    gl::Error markTransformFeedbackUsage(const gl::Context *context);
 
     HMODULE mD3d11Module;
     HMODULE mDxgiModule;
@@ -548,29 +525,6 @@ class Renderer11 : public RendererD3D
     RenderStateCache mStateCache;
 
     StateManager11 mStateManager;
-
-    // Currently applied transform feedback buffers
-    uintptr_t mAppliedTFObject;
-
-    dx_VertexConstants11 mAppliedVertexConstants;
-    d3d11::Buffer mDriverConstantBufferVS;
-    uintptr_t mCurrentVertexConstantBuffer;
-    unsigned int mCurrentConstantBufferVS[gl::IMPLEMENTATION_MAX_VERTEX_SHADER_UNIFORM_BUFFERS];
-    GLintptr mCurrentConstantBufferVSOffset[gl::IMPLEMENTATION_MAX_VERTEX_SHADER_UNIFORM_BUFFERS];
-    GLsizeiptr mCurrentConstantBufferVSSize[gl::IMPLEMENTATION_MAX_VERTEX_SHADER_UNIFORM_BUFFERS];
-
-    dx_PixelConstants11 mAppliedPixelConstants;
-    d3d11::Buffer mDriverConstantBufferPS;
-    uintptr_t mCurrentPixelConstantBuffer;
-    unsigned int mCurrentConstantBufferPS[gl::IMPLEMENTATION_MAX_FRAGMENT_SHADER_UNIFORM_BUFFERS];
-    GLintptr mCurrentConstantBufferPSOffset[gl::IMPLEMENTATION_MAX_FRAGMENT_SHADER_UNIFORM_BUFFERS];
-    GLsizeiptr mCurrentConstantBufferPSSize[gl::IMPLEMENTATION_MAX_FRAGMENT_SHADER_UNIFORM_BUFFERS];
-
-    dx_ComputeConstants11 mAppliedComputeConstants;
-    d3d11::Buffer mDriverConstantBufferCS;
-    uintptr_t mCurrentComputeConstantBuffer;
-
-    uintptr_t mCurrentGeometryConstantBuffer;
 
     StreamingIndexBufferInterface *mLineLoopIB;
     StreamingIndexBufferInterface *mTriangleFanIB;
@@ -597,6 +551,7 @@ class Renderer11 : public RendererD3D
     Renderer11DeviceCaps mRenderer11DeviceCaps;
     ID3D11DeviceContext *mDeviceContext;
     ID3D11DeviceContext1 *mDeviceContext1;
+    ID3D11DeviceContext3 *mDeviceContext3;
     IDXGIAdapter *mDxgiAdapter;
     DXGI_ADAPTER_DESC mAdapterDescription;
     char mDescription[128];
@@ -611,6 +566,8 @@ class Renderer11 : public RendererD3D
 
     mutable Optional<bool> mSupportsShareHandles;
     ResourceManager11 mResourceManager11;
+
+    TextureHelper11 mCachedResolveTexture;
 };
 
 }  // namespace rx

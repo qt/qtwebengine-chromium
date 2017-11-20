@@ -26,7 +26,6 @@
 
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
-#include "core/HTMLNames.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
@@ -34,6 +33,7 @@
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/html_names.h"
 #include "platform/weborigin/Referrer.h"
 
 namespace blink {
@@ -109,9 +109,9 @@ void HTMLTablePartElement::CollectStyleForPresentationAttribute(
 
 HTMLTableElement* HTMLTablePartElement::FindParentTable() const {
   ContainerNode* parent = FlatTreeTraversal::Parent(*this);
-  while (parent && !isHTMLTableElement(*parent))
+  while (parent && !IsHTMLTableElement(*parent))
     parent = FlatTreeTraversal::Parent(*parent);
-  return toHTMLTableElement(parent);
+  return ToHTMLTableElement(parent);
 }
 
 }  // namespace blink

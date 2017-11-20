@@ -7,11 +7,12 @@
 Design doc: http://www.chromium.org/developers/design-documents/idl-compiler
 """
 
-from v8_globals import includes  # pylint: disable=W0403
-import v8_utilities  # pylint: disable=W0403
+from utilities import to_snake_case
+from v8_globals import includes
 
 CALLBACK_FUNCTION_H_INCLUDES = frozenset([
     'bindings/core/v8/NativeValueTraits.h',
+    'platform/bindings/CallbackFunctionBase.h',
     'platform/bindings/ScriptWrappable.h',
     'platform/bindings/TraceWrapperV8Reference.h',
     'platform/heap/Handle.h',
@@ -44,11 +45,12 @@ def callback_function_context(callback_function):
         # in the future (e.g. if we support [ImplementedAs=] in callback
         # functions).
         'callback_function_name': callback_function.name,
-        'cpp_class': callback_function.name,
+        'cpp_class': 'V8%s' % callback_function.name,
         'cpp_includes': sorted(includes),
         'forward_declarations': sorted(forward_declarations(callback_function)),
         'header_includes': sorted(CALLBACK_FUNCTION_H_INCLUDES),
         'idl_type': idl_type_str,
+        'this_include_header_name': to_snake_case('V8%s' % callback_function.name),
     }
 
     if idl_type_str != 'void':

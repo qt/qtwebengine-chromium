@@ -26,14 +26,14 @@
 namespace egl
 {
 
-SurfaceState::SurfaceState(const egl::Config *configIn)
-    : defaultFramebuffer(nullptr), config(configIn)
+SurfaceState::SurfaceState(const egl::Config *configIn, const AttributeMap &attributesIn)
+    : defaultFramebuffer(nullptr), config(configIn), attributes(attributesIn)
 {
 }
 
 Surface::Surface(EGLint surfaceType, const egl::Config *config, const AttributeMap &attributes)
     : FramebufferAttachmentObject(),
-      mState(config),
+      mState(config, attributes),
       mImplementation(nullptr),
       mCurrentCount(0),
       mDestroyed(false),
@@ -79,6 +79,9 @@ Surface::Surface(EGLint surfaceType, const egl::Config *config, const AttributeM
     mMipmapTexture = (attributes.get(EGL_MIPMAP_TEXTURE, EGL_FALSE) == EGL_TRUE);
 
     mDirectComposition = (attributes.get(EGL_DIRECT_COMPOSITION_ANGLE, EGL_FALSE) == EGL_TRUE);
+
+    mRobustResourceInitialization =
+        (attributes.get(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE, EGL_FALSE) == EGL_TRUE);
 
     mFixedSize = (attributes.get(EGL_FIXED_SIZE_ANGLE, EGL_FALSE) == EGL_TRUE);
     if (mFixedSize)
@@ -398,6 +401,17 @@ gl::Framebuffer *Surface::createDefaultFramebuffer(const Display *display)
     return new gl::Framebuffer(display, this);
 }
 
+gl::InitState Surface::initState(const gl::ImageIndex & /*imageIndex*/) const
+{
+    // TODO(jmadill): Lazy surface init.
+    return gl::InitState::Initialized;
+}
+
+void Surface::setInitState(const gl::ImageIndex & /*imageIndex*/, gl::InitState /*initState*/)
+{
+    // No-op.
+}
+
 WindowSurface::WindowSurface(rx::EGLImplFactory *implFactory,
                              const egl::Config *config,
                              EGLNativeWindowType window,
@@ -445,6 +459,21 @@ PixmapSurface::PixmapSurface(rx::EGLImplFactory *implFactory,
 
 PixmapSurface::~PixmapSurface()
 {
+}
+
+// SurfaceDeleter implementation.
+
+SurfaceDeleter::SurfaceDeleter(const Display *display) : mDisplay(display)
+{
+}
+
+SurfaceDeleter::~SurfaceDeleter()
+{
+}
+
+void SurfaceDeleter::operator()(Surface *surface)
+{
+    ANGLE_SWALLOW_ERR(surface->onDestroy(mDisplay));
 }
 
 }  // namespace egl

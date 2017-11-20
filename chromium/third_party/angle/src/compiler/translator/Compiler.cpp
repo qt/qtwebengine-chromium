@@ -27,18 +27,21 @@
 #include "compiler/translator/ParseContext.h"
 #include "compiler/translator/PruneEmptyDeclarations.h"
 #include "compiler/translator/RegenerateStructNames.h"
+#include "compiler/translator/RemoveArrayLengthMethod.h"
 #include "compiler/translator/RemoveInvariantDeclaration.h"
+#include "compiler/translator/RemoveNoOpCasesFromEndOfSwitchStatements.h"
 #include "compiler/translator/RemovePow.h"
 #include "compiler/translator/RewriteDoWhile.h"
 #include "compiler/translator/ScalarizeVecAndMatConstructorArgs.h"
 #include "compiler/translator/SeparateDeclarations.h"
 #include "compiler/translator/SimplifyLoopConditions.h"
+#include "compiler/translator/SplitSequenceOperator.h"
 #include "compiler/translator/UnfoldShortCircuitAST.h"
 #include "compiler/translator/UseInterfaceBlockFields.h"
 #include "compiler/translator/ValidateLimitations.h"
 #include "compiler/translator/ValidateMaxParameters.h"
-#include "compiler/translator/ValidateMultiviewWebGL.h"
 #include "compiler/translator/ValidateOutputs.h"
+#include "compiler/translator/ValidateVaryingLocations.h"
 #include "compiler/translator/VariablePacker.h"
 #include "third_party/compiler/ArrayBoundsClamper.h"
 
@@ -359,15 +362,6 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         // Highp might have been auto-enabled based on shader version
         fragmentPrecisionHigh = parseContext.getFragmentPrecisionHigh();
 
-        if (success && (IsWebGLBasedSpec(shaderSpec) &&
-                        IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview") &&
-                        IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview2")))
-        {
-            // Can't enable both extensions at the same time.
-            mDiagnostics.globalError("Can't enable both OVR_multiview and OVR_multiview2");
-            success = false;
-        }
-
         if (success && shaderType == GL_GEOMETRY_SHADER_OES)
         {
             mGeometryShaderInputPrimitiveType = parseContext.getGeometryShaderInputPrimitiveType();
@@ -380,6 +374,20 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         // Disallow expressions deemed too complex.
         if (success && (compileOptions & SH_LIMIT_EXPRESSION_COMPLEXITY))
             success = limitExpressionComplexity(root);
+
+        // Prune empty declarations to work around driver bugs and to keep declaration output
+        // simple. We want to do this before most other operations since TIntermDeclaration nodes
+        // without any children are tricky to work with.
+        if (success)
+            PruneEmptyDeclarations(root);
+
+        // In case the last case inside a switch statement is a certain type of no-op, GLSL
+        // compilers in drivers may not accept it. In this case we clean up the dead code from the
+        // end of switch statements. This is also required because PruneEmptyDeclarations may have
+        // left switch statements that only contained an empty declaration inside the final case in
+        // an invalid state. Relies on that PruneEmptyDeclarations has already been run.
+        if (success)
+            RemoveNoOpCasesFromEndOfSwitchStatements(root, &symbolTable);
 
         // Create the function DAG and check there is no recursion
         if (success)
@@ -399,10 +407,10 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && !(compileOptions & SH_DONT_PRUNE_UNUSED_FUNCTIONS))
             success = pruneUnusedFunctions(root);
 
-        // Prune empty declarations to work around driver bugs and to keep declaration output
-        // simple.
-        if (success)
-            PruneEmptyDeclarations(root);
+        if (success && shaderVersion >= 310)
+        {
+            success = ValidateVaryingLocations(root, &mDiagnostics);
+        }
 
         if (success && shaderVersion >= 300 && shaderType == GL_FRAGMENT_SHADER)
         {
@@ -413,12 +421,6 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && shouldRunLoopAndIndexingValidation(compileOptions))
             success =
                 ValidateLimitations(root, shaderType, &symbolTable, shaderVersion, &mDiagnostics);
-
-        bool multiview2 = IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview2");
-        if (success && compileResources.OVR_multiview && IsWebGLBasedSpec(shaderSpec) &&
-            (IsExtensionEnabled(extensionBehavior, "GL_OVR_multiview") || multiview2))
-            success = ValidateMultiviewWebGL(root, shaderType, symbolTable, shaderVersion,
-                                             multiview2, &mDiagnostics);
 
         // Fail compilation if precision emulation not supported.
         if (success && getResources().WEBGL_debug_shader_precision &&
@@ -446,7 +448,8 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             arrayBoundsClamper.MarkIndirectArrayBoundsForClamping(root);
 
         if (success && (compileOptions & SH_INITIALIZE_BUILTINS_FOR_INSTANCED_MULTIVIEW) &&
-            parseContext.isMultiviewExtensionEnabled() && getShaderType() != GL_COMPUTE_SHADER)
+            parseContext.isExtensionEnabled(TExtension::OVR_multiview) &&
+            getShaderType() != GL_COMPUTE_SHADER)
         {
             DeclareAndInitBuiltinsForInstancedMultiview(root, mNumViews, shaderType, compileOptions,
                                                         outputType, &symbolTable);
@@ -530,7 +533,7 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
 
         if (success && shaderType == GL_FRAGMENT_SHADER && shaderVersion == 100 &&
             compileResources.EXT_draw_buffers && compileResources.MaxDrawBuffers > 1 &&
-            IsExtensionEnabled(extensionBehavior, "GL_EXT_draw_buffers"))
+            IsExtensionEnabled(extensionBehavior, TExtension::EXT_draw_buffers))
         {
             EmulateGLFragColorBroadcast(root, compileResources.MaxDrawBuffers, &outputVariables,
                                         &symbolTable, shaderVersion);
@@ -538,7 +541,27 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
 
         if (success)
         {
-            DeferGlobalInitializers(root, needToInitializeGlobalsInAST());
+            DeferGlobalInitializers(root, needToInitializeGlobalsInAST(), &symbolTable);
+        }
+
+        // Split multi declarations and remove calls to array length().
+        if (success)
+        {
+            // Note that SimplifyLoopConditions needs to be run before any other AST transformations
+            // that may need to generate new statements from loop conditions or loop expressions.
+            SimplifyLoopConditions(root,
+                                   IntermNodePatternMatcher::kMultiDeclaration |
+                                       IntermNodePatternMatcher::kArrayLengthMethod,
+                                   &getSymbolTable(), getShaderVersion());
+
+            // Note that separate declarations need to be run before other AST transformations that
+            // generate new statements from expressions.
+            SeparateDeclarations(root);
+
+            SplitSequenceOperator(root, IntermNodePatternMatcher::kArrayLengthMethod,
+                                  &getSymbolTable(), getShaderVersion());
+
+            RemoveArrayLengthMethod(root);
         }
 
         if (success && (compileOptions & SH_INITIALIZE_UNINITIALIZED_LOCALS) && getOutputType())
@@ -546,21 +569,18 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
             // Initialize uninitialized local variables.
             // In some cases initializing can generate extra statements in the parent block, such as
             // when initializing nameless structs or initializing arrays in ESSL 1.00. In that case
-            // we need to first simplify loop conditions and separate declarations. If we don't
-            // follow the Appendix A limitations, loop init statements can declare arrays or
-            // nameless structs and have multiple declarations.
+            // we need to first simplify loop conditions. We've already separated declarations
+            // earlier, which is also required. If we don't follow the Appendix A limitations, loop
+            // init statements can declare arrays or nameless structs and have multiple
+            // declarations.
 
             if (!shouldRunLoopAndIndexingValidation(compileOptions))
             {
                 SimplifyLoopConditions(root,
-                                       IntermNodePatternMatcher::kMultiDeclaration |
                                            IntermNodePatternMatcher::kArrayDeclaration |
                                            IntermNodePatternMatcher::kNamelessStructDeclaration,
                                        &getSymbolTable(), getShaderVersion());
             }
-            // We only really need to separate array declarations and nameless struct declarations,
-            // but it's simpler to just use the regular SeparateDeclarations.
-            SeparateDeclarations(root);
             InitializeUninitializedLocals(root, getShaderVersion());
         }
 
@@ -717,6 +737,8 @@ void TCompiler::setResourceString()
         << ":MaxViewsOVR:" << compileResources.MaxViewsOVR
         << ":NV_draw_buffers:" << compileResources.NV_draw_buffers
         << ":WEBGL_debug_shader_precision:" << compileResources.WEBGL_debug_shader_precision
+        << ":MinProgramTextureGatherOffset:" << compileResources.MinProgramTextureGatherOffset
+        << ":MaxProgramTextureGatherOffset:" << compileResources.MaxProgramTextureGatherOffset
         << ":MaxImageUnits:" << compileResources.MaxImageUnits
         << ":MaxVertexImageUniforms:" << compileResources.MaxVertexImageUniforms
         << ":MaxFragmentImageUniforms:" << compileResources.MaxFragmentImageUniforms

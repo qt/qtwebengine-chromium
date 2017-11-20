@@ -4,6 +4,7 @@
 
 #include "components/exo/wayland/clients/client_base.h"
 
+#include <aura-shell-client-protocol.h>
 #include <fcntl.h>
 #include <linux-dmabuf-unstable-v1-client-protocol.h>
 #include <presentation-time-client-protocol.h>
@@ -16,6 +17,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -32,7 +34,7 @@
 #include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/init/gl_factory.h"
 
-#if defined(OZONE_PLATFORM_GBM)
+#if defined(USE_GBM)
 #include <drm_fourcc.h>
 #include <gbm.h>
 #include <xf86drm.h>
@@ -70,12 +72,12 @@ namespace {
 // Buffer format.
 const int32_t kShmFormat = WL_SHM_FORMAT_ARGB8888;
 const SkColorType kColorType = kBGRA_8888_SkColorType;
-#if defined(OZONE_PLATFORM_GBM)
+#if defined(USE_GBM)
 const GrPixelConfig kGrPixelConfig = kBGRA_8888_GrPixelConfig;
 #endif
 const size_t kBytesPerPixel = 4;
 
-#if defined(OZONE_PLATFORM_GBM)
+#if defined(USE_GBM)
 // DRI render node path template.
 const char kDriRenderNodeTemplate[] = "/dev/dri/renderD%u";
 #endif
@@ -102,6 +104,9 @@ void RegistryHandler(void* data,
   } else if (strcmp(interface, "wp_presentation") == 0) {
     globals->presentation.reset(static_cast<wp_presentation*>(
         wl_registry_bind(registry, id, &wp_presentation_interface, 1)));
+  } else if (strcmp(interface, "zaura_shell") == 0) {
+    globals->aura_shell.reset(static_cast<zaura_shell*>(
+        wl_registry_bind(registry, id, &zaura_shell_interface, 1)));
   } else if (strcmp(interface, "zwp_linux_dmabuf_v1") == 0) {
     globals->linux_dmabuf.reset(static_cast<zwp_linux_dmabuf_v1*>(
         wl_registry_bind(registry, id, &zwp_linux_dmabuf_v1_interface, 1)));
@@ -120,7 +125,7 @@ void BufferRelease(void* data, wl_buffer* /* buffer */) {
   buffer->busy = false;
 }
 
-#if defined(OZONE_PLATFORM_GBM)
+#if defined(USE_GBM)
 const GrGLInterface* GrGLCreateNativeInterface() {
   return GrGLAssembleInterface(nullptr, [](void* ctx, const char name[]) {
     return eglGetProcAddress(name);
@@ -138,7 +143,7 @@ wl_buffer_listener g_buffer_listener = {BufferRelease};
 // ClientBase::InitParams, public:
 
 ClientBase::InitParams::InitParams() {
-#if defined(OZONE_PLATFORM_GBM)
+#if defined(USE_GBM)
   drm_format = DRM_FORMAT_ABGR8888;
   bo_usage = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING | GBM_BO_USE_TEXTURING;
 #endif
@@ -263,8 +268,12 @@ bool ClientBase::Init(const InitParams& params) {
     LOG(ERROR) << "Can't find seat interface";
     return false;
   }
+  if (!globals_.aura_shell) {
+    LOG(ERROR) << "Can't find aura shell interface";
+    return false;
+  }
 
-#if defined(OZONE_PLATFORM_GBM)
+#if defined(USE_GBM)
   sk_sp<const GrGLInterface> native_interface;
   if (params.use_drm) {
     // Number of files to look for when discovering DRM devices.
@@ -378,6 +387,17 @@ bool ClientBase::Init(const InitParams& params) {
 
   wl_shell_surface_set_title(shell_surface.get(), params.title.c_str());
 
+  std::unique_ptr<zaura_surface> aura_surface(
+      static_cast<zaura_surface*>(
+          zaura_shell_get_aura_surface(globals_.aura_shell.get(),
+                                       surface_.get())));
+  if (!aura_surface) {
+    LOG(ERROR) << "Can't get aura surface";
+    return false;
+  }
+
+  zaura_surface_set_frame(aura_surface.get(), ZAURA_SURFACE_FRAME_TYPE_NORMAL);
+
   if (fullscreen_) {
     wl_shell_surface_set_fullscreen(shell_surface.get(),
                                     WL_SHELL_SURFACE_FULLSCREEN_METHOD_DEFAULT,
@@ -404,11 +424,15 @@ std::unique_ptr<ClientBase::Buffer> ClientBase::CreateBuffer(
     int32_t drm_format,
     int32_t bo_usage) {
   std::unique_ptr<Buffer> buffer;
+#if defined(USE_GBM)
   if (device_) {
     buffer = CreateDrmBuffer(size, drm_format, bo_usage);
     CHECK(buffer) << "Can't create drm buffer";
-  } else {
-    buffer = base::MakeUnique<Buffer>();
+  }
+#endif
+
+  if (!buffer) {
+    buffer = std::make_unique<Buffer>();
 
     size_t stride = size.width() * kBytesPerPixel;
     buffer->shared_memory.reset(new base::SharedMemory());
@@ -442,9 +466,9 @@ std::unique_ptr<ClientBase::Buffer> ClientBase::CreateDrmBuffer(
     int32_t drm_format,
     int32_t bo_usage) {
   std::unique_ptr<Buffer> buffer;
-#if defined(OZONE_PLATFORM_GBM)
+#if defined(USE_GBM)
   if (device_) {
-    buffer = base::MakeUnique<Buffer>();
+    buffer = std::make_unique<Buffer>();
     buffer->bo.reset(gbm_bo_create(device_.get(), size.width(), size.height(),
                                    drm_format, bo_usage));
     if (!buffer->bo) {

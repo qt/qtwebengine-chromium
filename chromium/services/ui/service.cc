@@ -31,6 +31,7 @@
 #include "services/ui/ws/display_creation_config.h"
 #include "services/ui/ws/display_manager.h"
 #include "services/ui/ws/gpu_host.h"
+#include "services/ui/ws/remote_event_dispatcher.h"
 #include "services/ui/ws/threaded_image_cursors.h"
 #include "services/ui/ws/threaded_image_cursors_factory.h"
 #include "services/ui/ws/user_activity_monitor.h"
@@ -155,12 +156,15 @@ Service::~Service() {
   // be destroyed before GpuState as well.
   window_server_.reset();
 
-#if defined(USE_OZONE)
+  // Must be destroyed before calling OzonePlatform::Shutdown().
+  threaded_image_cursors_factory_.reset();
+
 #if defined(OS_CHROMEOS)
   // InputDeviceController uses ozone.
   input_device_controller_.reset();
 #endif
 
+#if defined(USE_OZONE)
   OzonePlatform::Shutdown();
 #endif
 }
@@ -182,7 +186,8 @@ bool Service::InitializeResources(service_manager::Connector* connector) {
     return false;
   }
 
-  ui::RegisterPathProvider();
+  if (running_standalone_)
+    ui::RegisterPathProvider();
 
   // Initialize resource bundle with 1x and 2x cursor bitmaps.
   ui::ResourceBundle::InitSharedInstanceWithPakFileRegion(
@@ -252,11 +257,11 @@ void Service::OnStart() {
   }
 
   DCHECK(gfx::ClientNativePixmapFactory::GetInstance());
+#endif
 
 #if defined(OS_CHROMEOS)
   input_device_controller_ = base::MakeUnique<InputDeviceController>();
   input_device_controller_->AddInterface(&registry_);
-#endif
 #endif
 
 // TODO(rjkroege): Enter sandbox here before we start threads in GpuState
@@ -318,6 +323,8 @@ void Service::OnStart() {
     registry_.AddInterface<WindowServerTest>(base::Bind(
         &Service::BindWindowServerTestRequest, base::Unretained(this)));
   }
+  registry_.AddInterface<mojom::RemoteEventDispatcher>(base::Bind(
+      &Service::BindRemoteEventDispatcherRequest, base::Unretained(this)));
 
   // On non-Linux platforms there will be no DeviceDataManager instance and no
   // purpose in adding the Mojo interface to connect to.
@@ -528,5 +535,11 @@ void Service::BindWindowServerTestRequest(
       std::move(request));
 }
 
+void Service::BindRemoteEventDispatcherRequest(
+    mojom::RemoteEventDispatcherRequest request) {
+  mojo::MakeStrongBinding(
+      base::MakeUnique<ws::RemoteEventDispatcherImpl>(window_server_.get()),
+      std::move(request));
+}
 
 }  // namespace ui

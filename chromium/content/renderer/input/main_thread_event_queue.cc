@@ -4,6 +4,7 @@
 
 #include "content/renderer/input/main_thread_event_queue.h"
 
+#include "base/containers/circular_deque.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
@@ -137,8 +138,14 @@ class QueuedWebInputEvent : public ScopedWebInputEventWithLatencyInfo,
       DCHECK(!overscroll) << "Unexpected overscroll for un-acked event";
     }
 
-    for (auto&& callback : blocking_coalesced_callbacks_)
-      std::move(callback).Run(ack_result, latency_info, nullptr, base::nullopt);
+    if (!blocking_coalesced_callbacks_.empty()) {
+      ui::LatencyInfo coalesced_latency_info = latency_info;
+      coalesced_latency_info.set_coalesced();
+      for (auto&& callback : blocking_coalesced_callbacks_) {
+        std::move(callback).Run(ack_result, coalesced_latency_info, nullptr,
+                                base::nullopt);
+      }
+    }
 
     size_t num_events_handled = 1 + blocking_coalesced_callbacks_.size();
     if (queue->renderer_scheduler_) {
@@ -199,7 +206,7 @@ class QueuedWebInputEvent : public ScopedWebInputEventWithLatencyInfo,
   }
 
   // Contains the pending callbacks to be called.
-  std::deque<HandledEventCallback> blocking_coalesced_callbacks_;
+  base::circular_deque<HandledEventCallback> blocking_coalesced_callbacks_;
   // Contains the number of non-blocking events coalesced.
   size_t non_blocking_coalesced_count_;
   base::TimeTicks creation_timestamp_;

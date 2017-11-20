@@ -12,14 +12,12 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
-#include "base/debug/dump_without_crashing.h"
 #include "base/debug/stack_trace.h"
 #include "base/files/file_path.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task_scheduler/post_task.h"
@@ -221,8 +219,8 @@ void ResourceDispatcher::OnSetDataBuffer(int request_id,
   request_info->buffer.reset(
       new base::SharedMemory(shm_handle, true));  // read only
   request_info->received_data_factory =
-      make_scoped_refptr(new SharedMemoryReceivedDataFactory(
-          message_sender_, request_id, request_info->buffer));
+      base::MakeRefCounted<SharedMemoryReceivedDataFactory>(
+          message_sender_, request_id, request_info->buffer);
 
   bool ok = request_info->buffer->Map(shm_size);
   if (!ok) {
@@ -426,31 +424,9 @@ void ResourceDispatcher::Cancel(int request_id) {
     return;
   }
 
-  // |completion_time.is_null()| is a proxy for OnRequestComplete never being
-  // called.
-  // TODO(csharrison): Remove this code when crbug.com/557430 is resolved.
-  // Sample this enough that this won't dump much more than a hundred times a
-  // day even without the static guard. The guard ensures this dumps much less
-  // frequently, because these aborts frequently come in quick succession.
-  const PendingRequestInfo& info = *it->second;
-  int64_t request_time =
-      (base::TimeTicks::Now() - info.request_start).InMilliseconds();
-  if (info.resource_type == ResourceType::RESOURCE_TYPE_MAIN_FRAME &&
-      info.completion_time.is_null() && request_time < 100 &&
-      base::RandDouble() < .000001) {
-    static bool should_dump = true;
-    if (should_dump) {
-      char url_copy[256] = {0};
-      strncpy(url_copy, info.response_url.spec().c_str(),
-              sizeof(url_copy));
-      base::debug::Alias(&url_copy);
-      base::debug::Alias(&request_time);
-      base::debug::DumpWithoutCrashing();
-      should_dump = false;
-    }
-  }
   // Cancel the request if it didn't complete, and clean it up so the bridge
   // will receive no more messages.
+  const PendingRequestInfo& info = *it->second;
   if (info.completion_time.is_null() && !info.url_loader)
     message_sender_->Send(new ResourceHostMsg_CancelRequest(request_id));
   RemovePendingRequest(request_id);
@@ -581,6 +557,7 @@ void ResourceDispatcher::StartSync(
     std::unique_ptr<ResourceRequest> request,
     int routing_id,
     const url::Origin& frame_origin,
+    const net::NetworkTrafficAnnotationTag& traffic_annotation,
     SyncLoadResponse* response,
     blink::WebURLRequest::LoadingIPCType ipc_type,
     mojom::URLLoaderFactory* url_loader_factory,
@@ -593,8 +570,9 @@ void ResourceDispatcher::StartSync(
     base::WaitableEvent event(base::WaitableEvent::ResetPolicy::MANUAL,
                               base::WaitableEvent::InitialState::NOT_SIGNALED);
 
-    // TODO(reillyg): Support passing URLLoaderThrottles to this task.
-    DCHECK_EQ(0u, throttles.size());
+    // Prepare the configured throttles for use on a separate thread.
+    for (const auto& throttle : throttles)
+      throttle->DetachFromCurrentSequence();
 
     // A task is posted to a separate thread to execute the request so that
     // this thread may block on a waitable event. It is safe to pass raw
@@ -604,8 +582,9 @@ void ResourceDispatcher::StartSync(
         FROM_HERE,
         base::BindOnce(&SyncLoadContext::StartAsyncWithWaitableEvent,
                        std::move(request), routing_id, frame_origin,
-                       std::move(url_loader_factory_copy),
-                       base::Unretained(response), base::Unretained(&event)));
+                       traffic_annotation, std::move(url_loader_factory_copy),
+                       std::move(throttles), base::Unretained(response),
+                       base::Unretained(&event)));
 
     event.Wait();
   } else {
@@ -641,6 +620,7 @@ int ResourceDispatcher::StartAsync(
     int routing_id,
     scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner,
     const url::Origin& frame_origin,
+    const net::NetworkTrafficAnnotationTag& traffic_annotation,
     bool is_sync,
     std::unique_ptr<RequestPeer> peer,
     blink::WebURLRequest::LoadingIPCType ipc_type,
@@ -674,30 +654,6 @@ int ResourceDispatcher::StartAsync(
 
     return request_id;
   }
-
-  net::NetworkTrafficAnnotationTag traffic_annotation =
-      net::DefineNetworkTrafficAnnotation("blink_resource_loader", R"(
-      semantics {
-        sender: "Blink Resource Loader"
-        description:
-          "Blink initiated request, which includes all resources for "
-          "normal page loads, chrome URLs, resources for installed "
-          "extensions, as well as downloads."
-        trigger:
-          "Navigating to a URL or downloading a file. A webpage, "
-          "ServiceWorker, chrome:// page, or extension may also initiate "
-          "requests in the background."
-        data: "Anything the initiator wants to send."
-        destination: OTHER
-      }
-      policy {
-        cookies_allowed: YES
-        cookies_store: "user"
-        setting: "These requests cannot be disabled in settings."
-        policy_exception_justification:
-          "Not implemented. Without these requests, Chrome will be unable "
-          "to load any webpage."
-      })");
 
   if (ipc_type == blink::WebURLRequest::LoadingIPCType::kMojo) {
     scoped_refptr<base::SingleThreadTaskRunner> task_runner =

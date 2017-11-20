@@ -105,10 +105,10 @@ TEST_F(SharedWorkerDevToolsManagerTest, BasicTest) {
   scoped_refptr<DevToolsAgentHostImpl> agent_host;
 
   SharedWorkerInstance instance1(
-      GURL("http://example.com/w.js"), base::string16(), base::string16(),
+      GURL("http://example.com/w.js"), std::string(), std::string(),
       blink::kWebContentSecurityPolicyTypeReport, blink::kWebAddressSpacePublic,
       browser_context_->GetResourceContext(), partition_id_,
-      blink::kWebSharedWorkerCreationContextTypeNonsecure,
+      blink::mojom::SharedWorkerCreationContextType::kNonsecure,
       false /* data_saver_enabled */);
 
   agent_host = manager_->GetDevToolsAgentHostForWorker(1, 1);
@@ -188,16 +188,16 @@ TEST_F(SharedWorkerDevToolsManagerTest, AttachTest) {
   scoped_refptr<DevToolsAgentHostImpl> agent_host2;
 
   SharedWorkerInstance instance1(
-      GURL("http://example.com/w1.js"), base::string16(), base::string16(),
+      GURL("http://example.com/w1.js"), std::string(), std::string(),
       blink::kWebContentSecurityPolicyTypeReport, blink::kWebAddressSpacePublic,
       browser_context_->GetResourceContext(), partition_id_,
-      blink::kWebSharedWorkerCreationContextTypeNonsecure,
+      blink::mojom::SharedWorkerCreationContextType::kNonsecure,
       false /* data_saver_enabled */);
   SharedWorkerInstance instance2(
-      GURL("http://example.com/w2.js"), base::string16(), base::string16(),
+      GURL("http://example.com/w2.js"), std::string(), std::string(),
       blink::kWebContentSecurityPolicyTypeReport, blink::kWebAddressSpacePublic,
       browser_context_->GetResourceContext(), partition_id_,
-      blink::kWebSharedWorkerCreationContextTypeNonsecure,
+      blink::mojom::SharedWorkerCreationContextType::kNonsecure,
       false /* data_saver_enabled */);
 
   // Created -> GetDevToolsAgentHost -> Register -> Started -> Destroyed
@@ -275,10 +275,10 @@ TEST_F(SharedWorkerDevToolsManagerTest, AttachTest) {
 
 TEST_F(SharedWorkerDevToolsManagerTest, ReattachTest) {
   SharedWorkerInstance instance(
-      GURL("http://example.com/w3.js"), base::string16(), base::string16(),
+      GURL("http://example.com/w3.js"), std::string(), std::string(),
       blink::kWebContentSecurityPolicyTypeReport, blink::kWebAddressSpacePublic,
       browser_context_->GetResourceContext(), partition_id_,
-      blink::kWebSharedWorkerCreationContextTypeNonsecure,
+      blink::mojom::SharedWorkerCreationContextType::kNonsecure,
       false /* data_saver_enabled */);
   std::unique_ptr<TestDevToolsClientHost> client_host(
       new TestDevToolsClientHost());
@@ -307,10 +307,10 @@ TEST_F(SharedWorkerDevToolsManagerTest, ReattachTest) {
 
 TEST_F(SharedWorkerDevToolsManagerTest, PauseOnStartTest) {
   SharedWorkerInstance instance(
-      GURL("http://example.com/w3.js"), base::string16(), base::string16(),
+      GURL("http://example.com/w3.js"), std::string(), std::string(),
       blink::kWebContentSecurityPolicyTypeReport, blink::kWebAddressSpacePublic,
       browser_context_->GetResourceContext(), partition_id_,
-      blink::kWebSharedWorkerCreationContextTypeNonsecure,
+      blink::mojom::SharedWorkerCreationContextType::kNonsecure,
       false /* data_saver_enabled */);
   std::unique_ptr<TestDevToolsClientHost> client_host(
       new TestDevToolsClientHost());

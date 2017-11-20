@@ -5,9 +5,9 @@
 #include "public/web/WebEmbeddedWorker.h"
 
 #include <memory>
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/WaitableEvent.h"
 #include "platform/WebTaskRunner.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/wtf/PtrUtil.h"
@@ -23,6 +23,7 @@
 #include "public/web/modules/serviceworker/WebServiceWorkerContextClient.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/common/message_port/message_port_channel.h"
 
 namespace blink {
 namespace {
@@ -72,7 +73,7 @@ class MockServiceWorkerContextClient : public WebServiceWorkerContextClient {
   }
   void PostMessageToClient(const WebString& uuid,
                            const WebString&,
-                           WebMessagePortChannelArray) override {
+                           WebVector<MessagePortChannel>) override {
     NOTREACHED();
   }
   void SkipWaiting(

@@ -472,13 +472,6 @@ int X509_verify_cert(X509_STORE_CTX *ctx)
     if (!ok)
         goto end;
 
-    /* Check name constraints */
-
-    ok = check_name_constraints(ctx);
-
-    if (!ok)
-        goto end;
-
     ok = check_id(ctx);
 
     if (!ok)
@@ -508,6 +501,12 @@ int X509_verify_cert(X509_STORE_CTX *ctx)
         ok = ctx->verify(ctx);
     else
         ok = internal_verify(ctx);
+    if (!ok)
+        goto end;
+
+    /* Check name constraints */
+
+    ok = check_name_constraints(ctx);
     if (!ok)
         goto end;
 
@@ -2175,6 +2174,11 @@ void X509_STORE_CTX_set_cert(X509_STORE_CTX *ctx, X509 *x)
 void X509_STORE_CTX_set_chain(X509_STORE_CTX *ctx, STACK_OF(X509) *sk)
 {
     ctx->untrusted = sk;
+}
+
+STACK_OF(X509) *X509_STORE_CTX_get0_untrusted(X509_STORE_CTX *ctx)
+{
+    return ctx->untrusted;
 }
 
 void X509_STORE_CTX_set0_crls(X509_STORE_CTX *ctx, STACK_OF(X509_CRL) *sk)

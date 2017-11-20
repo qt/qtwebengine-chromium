@@ -8,16 +8,16 @@
 #include <memory>
 
 #include "build/build_config.h"
-#include "core/HTMLNames.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/StyleEngine.h"
 #include "core/dom/events/Event.h"
 #include "core/frame/Settings.h"
 #include "core/geometry/DOMRect.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLVideoElement.h"
+#include "core/html_names.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutObject.h"
 #include "core/loader/EmptyClients.h"
@@ -25,15 +25,17 @@
 #include "modules/media_controls/MediaDownloadInProductHelpManager.h"
 #include "modules/media_controls/elements/MediaControlCurrentTimeDisplayElement.h"
 #include "modules/media_controls/elements/MediaControlDownloadButtonElement.h"
+#include "modules/media_controls/elements/MediaControlMuteButtonElement.h"
+#include "modules/media_controls/elements/MediaControlOverflowMenuListElement.h"
 #include "modules/media_controls/elements/MediaControlRemainingTimeDisplayElement.h"
 #include "modules/media_controls/elements/MediaControlTimelineElement.h"
 #include "modules/media_controls/elements/MediaControlVolumeSliderElement.h"
 #include "modules/remoteplayback/HTMLMediaElementRemotePlayback.h"
 #include "modules/remoteplayback/RemotePlayback.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/heap/Handle.h"
 #include "platform/testing/EmptyWebMediaPlayer.h"
 #include "platform/testing/HistogramTester.h"
+#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/testing/TestingPlatformSupport.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/WebMouseEvent.h"
@@ -164,14 +166,32 @@ enum DownloadActionMetrics {
 
 }  // namespace
 
-class MediaControlsImplTest : public ::testing::Test {
+static const char* kTimeToActionHistogramName =
+    "Media.Controls.Overflow.TimeToAction";
+
+static const char* kTimeToDismissHistogramName =
+    "Media.Controls.Overflow.TimeToDismiss";
+
+static double g_current_time = 1000.0;
+
+static void AdvanceClock(double seconds) {
+  g_current_time += seconds;
+}
+
+class MediaControlsImplTest : public ::testing::Test,
+                              private ScopedMediaCastOverlayButtonForTest {
+ public:
+  MediaControlsImplTest() : ScopedMediaCastOverlayButtonForTest(true) {}
+
  protected:
   virtual void SetUp() {
-    // Enable the cast overlay button as this is enabled by default.
-    RuntimeEnabledFeatures::SetMediaCastOverlayButtonEnabled(true);
+    original_time_function_ =
+        SetTimeFunctionsForTesting([] { return g_current_time; });
 
     InitializePage();
   }
+
+  void TearDown() { SetTimeFunctionsForTesting(original_time_function_); }
 
   void InitializePage() {
     Page::PageClients clients;
@@ -184,7 +204,7 @@ class MediaControlsImplTest : public ::testing::Test {
 
     GetDocument().write("<video>");
     HTMLVideoElement& video =
-        toHTMLVideoElement(*GetDocument().QuerySelector("video"));
+        ToHTMLVideoElement(*GetDocument().QuerySelector("video"));
     media_controls_ = static_cast<MediaControlsImpl*>(video.GetMediaControls());
 
     // If scripts are not enabled, controls will always be shown.
@@ -241,6 +261,13 @@ class MediaControlsImplTest : public ::testing::Test {
     SimulateLoadedMetadata();
   }
 
+  void ClickOverflowButton() {
+    MediaControls()
+        .mute_button_->OverflowElementForTests()
+        ->DispatchSimulatedClick(0, kSendNoEvents,
+                                 SimulatedClickCreationScope::kFromUserAgent);
+  }
+
   void SetReady() {
     MediaControls().MediaElement().SetReadyState(
         HTMLMediaElement::kHaveEnoughData);
@@ -260,10 +287,16 @@ class MediaControlsImplTest : public ::testing::Test {
     return ToText(display->firstChild())->data();
   }
 
+  void ToggleOverflowMenu() {
+    MediaControls().ToggleOverflowMenu();
+    testing::RunPendingTasks();
+  }
+
  private:
   std::unique_ptr<DummyPageHolder> page_holder_;
   Persistent<MediaControlsImpl> media_controls_;
   HistogramTester histogram_tester_;
+  TimeFunction original_time_function_;
 };
 
 void MediaControlsImplTest::MouseDownAt(WebFloatPoint pos) {
@@ -400,7 +433,7 @@ TEST_F(MediaControlsImplTest, CastOverlayDefault) {
 }
 
 TEST_F(MediaControlsImplTest, CastOverlayDisabled) {
-  RuntimeEnabledFeatures::SetMediaCastOverlayButtonEnabled(false);
+  ScopedMediaCastOverlayButtonForTest media_cast_overlay_button(false);
 
   Element* cast_overlay_button = GetElementByShadowPseudoId(
       MediaControls(), "-internal-media-controls-overlay-cast-button");
@@ -447,7 +480,7 @@ TEST_F(MediaControlsImplTest, CastOverlayMediaControlsDisabled) {
 }
 
 TEST_F(MediaControlsImplTest, CastOverlayDisabledMediaControlsDisabled) {
-  RuntimeEnabledFeatures::SetMediaCastOverlayButtonEnabled(false);
+  ScopedMediaCastOverlayButtonForTest media_cast_overlay_button(false);
 
   Element* cast_overlay_button = GetElementByShadowPseudoId(
       MediaControls(), "-internal-media-controls-overlay-cast-button");
@@ -561,7 +594,8 @@ class MediaControlsImplInProductHelpTest : public MediaControlsImplTest {
     return *MediaControls().DownloadInProductHelp();
   }
 
-  void Play() { MediaControls().OnPlay(); }
+  void Play() { MediaControls().OnPlaying(); }
+  void OnTimeUpdate() { MediaControls().OnTimeUpdate(); }
 
   bool EnableDownloadInProductHelp() override { return true; }
 };
@@ -640,6 +674,9 @@ TEST_F(MediaControlsImplInProductHelpTest,
   MediaControls().MaybeShow();
   EXPECT_TRUE(Manager().IsShowingInProductHelp());
 
+  OnTimeUpdate();
+  EXPECT_TRUE(Manager().IsShowingInProductHelp());
+
   // Hiding the controls dismissed in-product-help.
   MediaControls().Hide();
   EXPECT_FALSE(Manager().IsShowingInProductHelp());
@@ -711,36 +748,6 @@ TEST_F(MediaControlsImplTest, TimelineImmediatelyUpdatesCurrentTime) {
   TimelineElement()->setValueAsNumber(duration / 2, ASSERT_NO_EXCEPTION);
   TimelineElement()->DispatchInputEvent();
   EXPECT_EQ(duration / 2, current_time_display->CurrentValue());
-}
-
-TEST_F(MediaControlsImplTest, VolumeSliderPaintInvalidationOnInput) {
-  EnsureSizing();
-
-  Element* volume_slider = VolumeSliderElement();
-
-  MockLayoutObject layout_object(volume_slider);
-  LayoutObject* prev_layout_object = volume_slider->GetLayoutObject();
-  volume_slider->SetLayoutObject(&layout_object);
-
-  layout_object.ClearPaintInvalidationFlags();
-  EXPECT_FALSE(layout_object.ShouldDoFullPaintInvalidation());
-  Event* event = Event::Create(EventTypeNames::input);
-  volume_slider->DefaultEventHandler(event);
-  EXPECT_TRUE(layout_object.ShouldDoFullPaintInvalidation());
-
-  layout_object.ClearPaintInvalidationFlags();
-  EXPECT_FALSE(layout_object.ShouldDoFullPaintInvalidation());
-  event = Event::Create(EventTypeNames::input);
-  volume_slider->DefaultEventHandler(event);
-  EXPECT_TRUE(layout_object.ShouldDoFullPaintInvalidation());
-
-  layout_object.ClearPaintInvalidationFlags();
-  EXPECT_FALSE(layout_object.ShouldDoFullPaintInvalidation());
-  event = Event::Create(EventTypeNames::input);
-  volume_slider->DefaultEventHandler(event);
-  EXPECT_TRUE(layout_object.ShouldDoFullPaintInvalidation());
-
-  volume_slider->SetLayoutObject(prev_layout_object);
 }
 
 TEST_F(MediaControlsImplTest, TimelineMetricsWidth) {
@@ -960,6 +967,13 @@ class MediaControlsImplTestWithMockScheduler : public MediaControlsImplTest {
     MediaControlsImplTest::SetUp();
   }
 
+  bool IsCursorHidden() {
+    const StylePropertySet* style = MediaControls().InlineStyle();
+    if (!style)
+      return false;
+    return style->GetPropertyValue(CSSPropertyCursor) == "none";
+  }
+
   ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
       platform_;
 };
@@ -1001,6 +1015,36 @@ TEST_F(MediaControlsImplTestWithMockScheduler,
   EXPECT_FALSE(IsElementVisible(*panel));
 }
 
+TEST_F(MediaControlsImplTestWithMockScheduler, CursorHidesWhenControlsHide) {
+  EnsureSizing();
+
+  MediaControls().MediaElement().SetBooleanAttribute(HTMLNames::controlsAttr,
+                                                     true);
+  MediaControls().MediaElement().SetSrc("http://example.com");
+
+  // Cursor is not initially hidden.
+  EXPECT_FALSE(IsCursorHidden());
+
+  MediaControls().MediaElement().Play();
+
+  // Tabbing into the controls shows the controls and therefore the cursor.
+  MediaControls().DispatchEvent(Event::Create("focusin"));
+  EXPECT_FALSE(IsCursorHidden());
+
+  // Once the controls hide, the cursor is hidden.
+  platform_->RunForPeriodSeconds(4);
+  EXPECT_TRUE(IsCursorHidden());
+
+  // If the mouse moves, the controls are shown and the cursor is no longer
+  // hidden.
+  MediaControls().DispatchEvent(Event::Create("pointermove"));
+  EXPECT_FALSE(IsCursorHidden());
+
+  // Once the controls hide again, the cursor is hidden again.
+  platform_->RunForPeriodSeconds(4);
+  EXPECT_TRUE(IsCursorHidden());
+}
+
 TEST_F(MediaControlsImplTest,
        RemovingFromDocumentRemovesListenersAndCallbacks) {
   auto page_holder = DummyPageHolder::Create();
@@ -1019,7 +1063,7 @@ TEST_F(MediaControlsImplTest,
   WeakPersistent<HTMLMediaElement> weak_persistent_video = element;
   {
     Persistent<HTMLMediaElement> persistent_video = element;
-    page_holder->GetDocument().body()->setInnerHTML("");
+    page_holder->GetDocument().body()->SetInnerHTMLFromString("");
 
     // When removed from the document, the event listeners should have been
     // dropped.
@@ -1056,6 +1100,107 @@ TEST_F(MediaControlsImplTest,
     EXPECT_TRUE(remote_playback->HasEventListeners());
     EXPECT_TRUE(HasAvailabilityCallbacks(remote_playback));
   }
+}
+
+TEST_F(MediaControlsImplTest, InitialInfinityDurationHidesDurationField) {
+  EnsureSizing();
+
+  LoadMediaWithDuration(std::numeric_limits<double>::infinity());
+
+  MediaControlRemainingTimeDisplayElement* duration_display =
+      GetRemainingTimeDisplayElement();
+
+  EXPECT_FALSE(duration_display->IsWanted());
+  EXPECT_EQ(std::numeric_limits<double>::infinity(),
+            duration_display->CurrentValue());
+}
+
+TEST_F(MediaControlsImplTest, InfinityDurationChangeHidesDurationField) {
+  EnsureSizing();
+
+  LoadMediaWithDuration(42);
+
+  MediaControlRemainingTimeDisplayElement* duration_display =
+      GetRemainingTimeDisplayElement();
+
+  EXPECT_TRUE(duration_display->IsWanted());
+  EXPECT_EQ(42, duration_display->CurrentValue());
+
+  MediaControls().MediaElement().DurationChanged(
+      std::numeric_limits<double>::infinity(), false /* request_seek */);
+  testing::RunPendingTasks();
+
+  EXPECT_FALSE(duration_display->IsWanted());
+  EXPECT_EQ(std::numeric_limits<double>::infinity(),
+            duration_display->CurrentValue());
+}
+
+TEST_F(MediaControlsImplTest, OverflowMenuMetricsTimeToAction) {
+  GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 0);
+  GetHistogramTester().ExpectTotalCount(kTimeToDismissHistogramName, 0);
+
+  // Test with the menu open for 42 seconds.
+  ToggleOverflowMenu();
+  AdvanceClock(42);
+  ClickOverflowButton();
+  GetHistogramTester().ExpectBucketCount(kTimeToActionHistogramName, 42, 1);
+  GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 1);
+
+  // Test with the menu open for 90 seconds.
+  ToggleOverflowMenu();
+  AdvanceClock(90);
+  ClickOverflowButton();
+  GetHistogramTester().ExpectBucketCount(kTimeToActionHistogramName, 90, 1);
+  GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 2);
+
+  // Test with the menu open for 42 seconds.
+  ToggleOverflowMenu();
+  AdvanceClock(42);
+  ClickOverflowButton();
+  GetHistogramTester().ExpectBucketCount(kTimeToActionHistogramName, 42, 2);
+  GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 3);
+
+  // Test with the menu open for 1000 seconds.
+  ToggleOverflowMenu();
+  AdvanceClock(1000);
+  ClickOverflowButton();
+  GetHistogramTester().ExpectBucketCount(kTimeToActionHistogramName, 100, 1);
+  GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 4);
+  GetHistogramTester().ExpectTotalCount(kTimeToDismissHistogramName, 0);
+}
+
+TEST_F(MediaControlsImplTest, OverflowMenuMetricsTimeToDismiss) {
+  GetHistogramTester().ExpectTotalCount(kTimeToDismissHistogramName, 0);
+  GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 0);
+
+  // Test with the menu open for 42 seconds.
+  ToggleOverflowMenu();
+  AdvanceClock(42);
+  ToggleOverflowMenu();
+  GetHistogramTester().ExpectBucketCount(kTimeToDismissHistogramName, 42, 1);
+  GetHistogramTester().ExpectTotalCount(kTimeToDismissHistogramName, 1);
+
+  // Test with the menu open for 90 seconds.
+  ToggleOverflowMenu();
+  AdvanceClock(90);
+  ToggleOverflowMenu();
+  GetHistogramTester().ExpectBucketCount(kTimeToDismissHistogramName, 90, 1);
+  GetHistogramTester().ExpectTotalCount(kTimeToDismissHistogramName, 2);
+
+  // Test with the menu open for 42 seconds.
+  ToggleOverflowMenu();
+  AdvanceClock(42);
+  ToggleOverflowMenu();
+  GetHistogramTester().ExpectBucketCount(kTimeToDismissHistogramName, 42, 2);
+  GetHistogramTester().ExpectTotalCount(kTimeToDismissHistogramName, 3);
+
+  // Test with the menu open for 1000 seconds.
+  ToggleOverflowMenu();
+  AdvanceClock(1000);
+  ToggleOverflowMenu();
+  GetHistogramTester().ExpectBucketCount(kTimeToDismissHistogramName, 100, 1);
+  GetHistogramTester().ExpectTotalCount(kTimeToDismissHistogramName, 4);
+  GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 0);
 }
 
 }  // namespace blink

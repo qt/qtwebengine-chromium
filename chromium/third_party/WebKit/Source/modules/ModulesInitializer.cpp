@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ModulesInitializer.h"
+#include "modules/ModulesInitializer.h"
 
 #include "bindings/modules/v8/ModuleBindingsInitializer.h"
-#include "core/EventTypeNames.h"
 #include "core/css/CSSPaintImageGenerator.h"
 #include "core/dom/ContextFeaturesClientImpl.h"
 #include "core/dom/Document.h"
 #include "core/editing/suggestion/TextSuggestionBackendImpl.h"
+#include "core/event_type_names.h"
 #include "core/exported/WebSharedWorkerImpl.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
@@ -19,15 +19,11 @@
 #include "core/inspector/InspectorSession.h"
 #include "core/leak_detector/BlinkLeakDetector.h"
 #include "core/offscreencanvas/OffscreenCanvas.h"
-#include "core/origin_trials/OriginTrials.h"
+#include "core/origin_trials/origin_trials.h"
 #include "core/page/ChromeClient.h"
-#include "core/workers/Worker.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerContentSettingsClient.h"
 #include "modules/EventModulesFactory.h"
-#include "modules/EventModulesNames.h"
-#include "modules/EventTargetModulesNames.h"
-#include "modules/IndexedDBNames.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "modules/accessibility/InspectorAccessibilityAgent.h"
 #include "modules/app_banner/AppBannerController.h"
@@ -36,8 +32,7 @@
 #include "modules/audio_output_devices/HTMLMediaElementAudioOutputDevice.h"
 #include "modules/cachestorage/InspectorCacheStorageAgent.h"
 #include "modules/canvas2d/CanvasRenderingContext2D.h"
-#include "modules/compositorworker/AbstractAnimationWorkletThread.h"
-#include "modules/compositorworker/CompositorWorkerThread.h"
+#include "modules/compositorworker/AnimationWorkletThread.h"
 #include "modules/credentialmanager/CredentialManagerClient.h"
 #include "modules/csspaint/CSSPaintImageGeneratorImpl.h"
 #include "modules/device_orientation/DeviceMotionController.h"
@@ -47,11 +42,14 @@
 #include "modules/document_metadata/CopylessPasteServer.h"
 #include "modules/encryptedmedia/HTMLMediaElementEncryptedMedia.h"
 #include "modules/encryptedmedia/MediaKeysController.h"
+#include "modules/event_modules_names.h"
+#include "modules/event_target_modules_names.h"
 #include "modules/exported/WebEmbeddedWorkerImpl.h"
 #include "modules/filesystem/DraggedIsolatedFileSystemImpl.h"
 #include "modules/filesystem/LocalFileSystemClient.h"
 #include "modules/gamepad/NavigatorGamepad.h"
 #include "modules/imagebitmap/ImageBitmapRenderingContext.h"
+#include "modules/indexed_db_names.h"
 #include "modules/indexeddb/IndexedDBClient.h"
 #include "modules/indexeddb/InspectorIndexedDBAgent.h"
 #include "modules/installation/InstallationServiceImpl.h"
@@ -278,7 +276,7 @@ void ModulesInitializer::ForceNextWebGLContextCreationToFail() const {
 }
 
 void ModulesInitializer::CollectAllGarbageForAnimationWorklet() const {
-  AbstractAnimationWorkletThread::CollectAllGarbage();
+  AnimationWorkletThread::CollectAllGarbage();
 }
 
 }  // namespace blink

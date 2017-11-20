@@ -53,6 +53,7 @@ struct CC_EXPORT EffectNode {
   bool has_copy_request : 1;
   bool hidden_by_backface_visibility : 1;
   bool double_sided : 1;
+  bool trilinear_filtering : 1;
   bool is_drawn : 1;
   // TODO(jaydasika) : Delete this after implementation of
   // SetHideLayerAndSubtree is cleaned up. (crbug.com/595843)
@@ -67,6 +68,8 @@ struct CC_EXPORT EffectNode {
   bool is_currently_animating_filter : 1;
   // Whether this node has a currently running opacity animation.
   bool is_currently_animating_opacity : 1;
+  // Whether this node has a child node with kDstIn blend mode.
+  bool has_masking_child : 1;
   // Whether this node's effect has been changed since the last
   // frame. Needed in order to compute damage rect.
   bool effect_changed : 1;

@@ -375,6 +375,7 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
  public:
   virtual void PaintObject(const PaintInfo&, const LayoutPoint&) const;
   virtual void PaintChildren(const PaintInfo&, const LayoutPoint&) const;
+  void UpdateAfterLayout() override;
 
  protected:
   virtual void AdjustInlineDirectionLineBounds(
@@ -409,9 +410,6 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
                        const HitTestLocation& location_in_container,
                        const LayoutPoint& accumulated_offset,
                        HitTestAction) override;
-  void UpdateHitTestResult(HitTestResult&, const LayoutPoint&) override;
-
-  void UpdateAfterLayout() override;
 
   void StyleWillChange(StyleDifference,
                        const ComputedStyle& new_style) override;
@@ -497,9 +495,9 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
 
  private:
   LayoutRect LocalCaretRect(
-      InlineBox*,
+      const InlineBox*,
       int caret_offset,
-      LayoutUnit* extra_width_to_end_of_line = nullptr) final;
+      LayoutUnit* extra_width_to_end_of_line = nullptr) const final;
   bool IsInlineBoxWrapperActuallyChild() const;
 
   Position PositionForBox(InlineBox*, bool start = true) const;

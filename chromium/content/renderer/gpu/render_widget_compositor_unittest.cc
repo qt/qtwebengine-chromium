@@ -19,8 +19,7 @@
 #include "cc/test/test_context_provider.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/layer_tree_host.h"
-#include "components/viz/common/frame_sinks/begin_frame_args.h"
-#include "components/viz/common/quads/copy_output_request.h"
+#include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "content/public/common/screen_info.h"
 #include "content/public/test/mock_render_thread.h"
 #include "content/renderer/render_widget.h"
@@ -188,8 +187,8 @@ class RenderWidgetLayerTreeFrameSink : public RenderWidgetCompositor {
       // reentrantly as a part of RequestNewLayerTreeFrameSink.
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
-          base::Bind(&RenderWidgetLayerTreeFrameSink::SynchronousComposite,
-                     base::Unretained(this)));
+          base::BindOnce(&RenderWidgetLayerTreeFrameSink::SynchronousComposite,
+                         base::Unretained(this)));
     }
   }
 
@@ -269,8 +268,8 @@ class RenderWidgetLayerTreeFrameSinkTest : public testing::Test {
     render_widget_compositor_.SetVisible(true);
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
-        base::Bind(&RenderWidgetLayerTreeFrameSink::SynchronousComposite,
-                   base::Unretained(&render_widget_compositor_)));
+        base::BindOnce(&RenderWidgetLayerTreeFrameSink::SynchronousComposite,
+                       base::Unretained(&render_widget_compositor_)));
     base::RunLoop().Run();
     render_widget_compositor_.AfterTest();
   }

@@ -44,6 +44,8 @@
 #include "core/css/MediaList.h"
 #include "core/css/MediaQuery.h"
 #include "core/css/MediaValues.h"
+#include "core/css/StyleChangeReason.h"
+#include "core/css/StyleEngine.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleSheet.h"
@@ -56,8 +58,6 @@
 #include "core/css/resolver/StyleRuleUsageTracker.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Node.h"
-#include "core/dom/StyleChangeReason.h"
-#include "core/dom/StyleEngine.h"
 #include "core/dom/Text.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
@@ -257,10 +257,10 @@ bool GetColorsFromRect(LayoutRect rect,
     if (!layout_object)
       continue;
 
-    if (isHTMLCanvasElement(element) || isHTMLEmbedElement(element) ||
-        isHTMLImageElement(element) || isHTMLObjectElement(element) ||
-        isHTMLPictureElement(element) || element->IsSVGElement() ||
-        isHTMLVideoElement(element)) {
+    if (IsHTMLCanvasElement(element) || IsHTMLEmbedElement(element) ||
+        IsHTMLImageElement(element) || IsHTMLObjectElement(element) ||
+        IsHTMLPictureElement(element) || element->IsSVGElement() ||
+        IsHTMLVideoElement(element)) {
       colors.clear();
       found_opaque_color = false;
       continue;
@@ -1100,9 +1100,10 @@ Response InspectorCSSAgent::getComputedStyleForNode(
   *style = protocol::Array<protocol::CSS::CSSComputedStyleProperty>::create();
   for (int id = firstCSSProperty; id <= lastCSSProperty; ++id) {
     CSSPropertyID property_id = static_cast<CSSPropertyID>(id);
-    if (!CSSPropertyMetadata::IsEnabledProperty(property_id) ||
-        isShorthandProperty(property_id) ||
-        !CSSPropertyAPI::Get(property_id).IsProperty())
+    CSSPropertyAPI property_api =
+        CSSPropertyAPI::Get(resolveCSSPropertyID(property_id));
+    if (!property_api.IsEnabled() || isShorthandProperty(property_id) ||
+        !property_api.IsProperty())
       continue;
     (*style)->addItem(
         protocol::CSS::CSSComputedStyleProperty::create()

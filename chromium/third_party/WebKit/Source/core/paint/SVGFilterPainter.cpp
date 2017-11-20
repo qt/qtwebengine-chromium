@@ -23,7 +23,7 @@ GraphicsContext* SVGFilterRecordingContext::BeginContent() {
 
   // Content painted into a new PaintRecord in SPv2 will have an
   // independent property tree set.
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     paint_controller_->UpdateCurrentPaintChunkProperties(
         nullptr, PropertyTreeState::Root());
   }
@@ -97,7 +97,7 @@ GraphicsContext* SVGFilterPainter::PrepareEffect(
   SVGFilterGraphNodeMap* node_map = SVGFilterGraphNodeMap::Create();
   FilterEffectBuilder builder(nullptr, object.ObjectBoundingBox(), 1);
   Filter* filter = builder.BuildReferenceFilter(
-      toSVGFilterElement(*filter_.GetElement()), nullptr, node_map);
+      ToSVGFilterElement(*filter_.GetElement()), nullptr, node_map);
   if (!filter || !filter->LastEffect())
     return nullptr;
 

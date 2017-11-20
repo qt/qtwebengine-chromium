@@ -16,7 +16,6 @@
 #include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutEmbeddedContent.h"
 #include "core/layout/api/LayoutViewItem.h"
-#include "core/loader/DocumentLoader.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/OverscrollController.h"
@@ -24,7 +23,6 @@
 #include "core/page/scrolling/ScrollState.h"
 #include "core/paint/PaintLayer.h"
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/scroll/ScrollerSizeMetrics.h"
 #include "platform/wtf/CheckedNumeric.h"
 #include "platform/wtf/PtrUtil.h"
@@ -91,10 +89,10 @@ static bool CanPropagate(const ScrollState& scroll_state,
     return true;
 
   return (scroll_state.deltaXHint() == 0 ||
-          element.GetComputedStyle()->ScrollBoundaryBehaviorX() ==
+          element.GetComputedStyle()->OverscrollBehaviorX() ==
               EScrollBoundaryBehavior::kAuto) &&
          (scroll_state.deltaYHint() == 0 ||
-          element.GetComputedStyle()->ScrollBoundaryBehaviorY() ==
+          element.GetComputedStyle()->OverscrollBehaviorY() ==
               EScrollBoundaryBehavior::kAuto);
 }
 
@@ -206,10 +204,8 @@ bool ScrollManager::LogicalScroll(ScrollDirection direction,
     ScrollResult result =
         cur_box->Scroll(granularity, ToScrollDelta(physical_direction, 1));
 
-    if (result.DidScroll()) {
-      SetFrameWasScrolledByUser();
+    if (result.DidScroll())
       return true;
-    }
 
     cur_box = cur_box->ContainingBlock();
   }
@@ -238,11 +234,6 @@ bool ScrollManager::BubblingScroll(ScrollDirection direction,
   return ToLocalFrame(parent_frame)
       ->GetEventHandler()
       .BubblingScroll(direction, granularity, frame_->DeprecatedLocalOwner());
-}
-
-void ScrollManager::SetFrameWasScrolledByUser() {
-  if (DocumentLoader* document_loader = frame_->Loader().GetDocumentLoader())
-    document_loader->GetInitialScrollState().was_scrolled_by_user = true;
 }
 
 void ScrollManager::CustomizedScroll(ScrollState& scroll_state) {
@@ -446,7 +437,6 @@ WebInputEventResult ScrollManager::HandleGestureScrollUpdate(
   scroll_state_data->velocity_y = velocity.Height();
   scroll_state_data->position_x = position.X();
   scroll_state_data->position_y = position.Y();
-  scroll_state_data->should_propagate = !gesture_event.PreventPropagation();
   scroll_state_data->is_in_inertial_phase =
       gesture_event.InertialPhase() == WebGestureEvent::kMomentumPhase;
   scroll_state_data->is_direct_manipulation =
@@ -479,10 +469,8 @@ WebInputEventResult ScrollManager::HandleGestureScrollUpdate(
     GetPage()->GetOverscrollController().ResetAccumulated(did_scroll_x,
                                                           did_scroll_y);
 
-  if (did_scroll_x || did_scroll_y) {
-    SetFrameWasScrolledByUser();
+  if (did_scroll_x || did_scroll_y)
     return WebInputEventResult::kHandledSystem;
-  }
 
   return WebInputEventResult::kNotHandled;
 }

@@ -9,13 +9,15 @@
 
 #include <string>
 
+#include "base/strings/string_util.h"
+
 namespace base {
 namespace trace_event {
 namespace {
 
 // The names of dump providers whitelisted for background tracing. Dump
 // providers can be added here only if the background mode dump has very
-// less performance and memory overhead.
+// little processor and memory overhead.
 const char* const kDumpProviderWhitelist[] = {
     "android::ResourceManagerImpl",
     "BlinkGC",
@@ -66,25 +68,21 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "blink_gc/allocated_objects",
     "discardable",
     "discardable/child_0x?",
-    "dom_storage/0x?/cache_size",
-    "dom_storage/localstorage_0x?/cache_size",
-    "dom_storage/localstorage_0x?/leveldb",
-    "dom_storage/session_storage_0x?",
+    "extensions/value_store/Extensions.Database.Open.Settings/0x?",
+    "extensions/value_store/Extensions.Database.Open.Rules/0x?",
+    "extensions/value_store/Extensions.Database.Open.State/0x?",
+    "extensions/value_store/Extensions.Database.Open/0x?",
+    "extensions/value_store/Extensions.Database.Restore/0x?",
+    "extensions/value_store/Extensions.Database.Value.Restore/0x?",
     "gpu/gl/buffers/share_group_0x?",
     "gpu/gl/renderbuffers/share_group_0x?",
     "gpu/gl/textures/share_group_0x?",
     "java_heap",
     "java_heap/allocated_objects",
-    "leveldb/index_db/0x?",
+    "leveldatabase/0x?",
     "leveldb/leveldb_proto/0x?",
     "leveldb/mojo/0x?",
     "leveldb/mojo/0x?/block_cache",
-    "leveldb/value_store/Extensions.Database.Open.Settings/0x?",
-    "leveldb/value_store/Extensions.Database.Open.Rules/0x?",
-    "leveldb/value_store/Extensions.Database.Open.State/0x?",
-    "leveldb/value_store/Extensions.Database.Open/0x?",
-    "leveldb/value_store/Extensions.Database.Restore/0x?",
-    "leveldb/value_store/Extensions.Database.Value.Restore/0x?",
     "malloc",
     "malloc/allocated_objects",
     "malloc/metadata_fragmentation_caches",
@@ -101,7 +99,6 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "net/http_network_session_0x?/socket_pool",
     "net/http_network_session_0x?/spdy_session_pool",
     "net/http_network_session_0x?/stream_factory",
-    "net/sdch_manager_0x?",
     "net/ssl_session_cache",
     "net/url_request_context",
     "net/url_request_context/app_request",
@@ -110,63 +107,54 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "net/url_request_context/app_request/0x?/http_cache/memory_backend",
     "net/url_request_context/app_request/0x?/http_cache/simple_backend",
     "net/url_request_context/app_request/0x?/http_network_session",
-    "net/url_request_context/app_request/0x?/sdch_manager",
     "net/url_request_context/extensions",
     "net/url_request_context/extensions/0x?",
     "net/url_request_context/extensions/0x?/http_cache",
     "net/url_request_context/extensions/0x?/http_cache/memory_backend",
     "net/url_request_context/extensions/0x?/http_cache/simple_backend",
     "net/url_request_context/extensions/0x?/http_network_session",
-    "net/url_request_context/extensions/0x?/sdch_manager",
     "net/url_request_context/isolated_media",
     "net/url_request_context/isolated_media/0x?",
     "net/url_request_context/isolated_media/0x?/http_cache",
     "net/url_request_context/isolated_media/0x?/http_cache/memory_backend",
     "net/url_request_context/isolated_media/0x?/http_cache/simple_backend",
     "net/url_request_context/isolated_media/0x?/http_network_session",
-    "net/url_request_context/isolated_media/0x?/sdch_manager",
     "net/url_request_context/main",
     "net/url_request_context/main/0x?",
     "net/url_request_context/main/0x?/http_cache",
     "net/url_request_context/main/0x?/http_cache/memory_backend",
     "net/url_request_context/main/0x?/http_cache/simple_backend",
     "net/url_request_context/main/0x?/http_network_session",
-    "net/url_request_context/main/0x?/sdch_manager",
     "net/url_request_context/main_media",
     "net/url_request_context/main_media/0x?",
     "net/url_request_context/main_media/0x?/http_cache",
     "net/url_request_context/main_media/0x?/http_cache/memory_backend",
     "net/url_request_context/main_media/0x?/http_cache/simple_backend",
     "net/url_request_context/main_media/0x?/http_network_session",
-    "net/url_request_context/main_media/0x?/sdch_manager",
     "net/url_request_context/proxy",
     "net/url_request_context/proxy/0x?",
     "net/url_request_context/proxy/0x?/http_cache",
     "net/url_request_context/proxy/0x?/http_cache/memory_backend",
     "net/url_request_context/proxy/0x?/http_cache/simple_backend",
     "net/url_request_context/proxy/0x?/http_network_session",
-    "net/url_request_context/proxy/0x?/sdch_manager",
     "net/url_request_context/safe_browsing",
     "net/url_request_context/safe_browsing/0x?",
     "net/url_request_context/safe_browsing/0x?/http_cache",
     "net/url_request_context/safe_browsing/0x?/http_cache/memory_backend",
     "net/url_request_context/safe_browsing/0x?/http_cache/simple_backend",
     "net/url_request_context/safe_browsing/0x?/http_network_session",
-    "net/url_request_context/safe_browsing/0x?/sdch_manager",
     "net/url_request_context/system",
     "net/url_request_context/system/0x?",
     "net/url_request_context/system/0x?/http_cache",
     "net/url_request_context/system/0x?/http_cache/memory_backend",
     "net/url_request_context/system/0x?/http_cache/simple_backend",
     "net/url_request_context/system/0x?/http_network_session",
-    "net/url_request_context/system/0x?/sdch_manager",
     "net/url_request_context/unknown",
     "net/url_request_context/unknown/0x?",
     "net/url_request_context/unknown/0x?/http_cache",
     "net/url_request_context/unknown/0x?/http_cache/memory_backend",
     "net/url_request_context/unknown/0x?/http_cache/simple_backend",
     "net/url_request_context/unknown/0x?/http_network_session",
-    "net/url_request_context/unknown/0x?/sdch_manager",
     "web_cache/Image_resources",
     "web_cache/CSS stylesheet_resources",
     "web_cache/Script_resources",
@@ -194,6 +182,11 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "v8/isolate_0x?/zapped_for_debug",
     "winheap",
     "winheap/allocated_objects",
+    "site_storage/index_db/0x?",
+    "site_storage/localstorage_0x?/cache_size",
+    "site_storage/localstorage_0x?/leveldb",
+    "site_storage/session_storage_0x?",
+    "site_storage/session_storage_0x?/cache_size",
     "sync/0x?/kernel",
     "sync/0x?/store",
     "sync/0x?/model_type/APP",
@@ -235,6 +228,9 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "tab_restore/service_helper_0x?/entries",
     "tab_restore/service_helper_0x?/entries/tab_0x?",
     "tab_restore/service_helper_0x?/entries/window_0x?",
+    "tracing/heap_profiler_blink_gc/AllocationRegister",
+    "tracing/heap_profiler_malloc/AllocationRegister",
+    "tracing/heap_profiler_partition_alloc/AllocationRegister",
     nullptr  // End of list marker.
 };
 
@@ -264,6 +260,14 @@ bool IsMemoryDumpProviderWhitelistedForSummary(const char* mdp_name) {
 }
 
 bool IsMemoryAllocatorDumpNameWhitelisted(const std::string& name) {
+  // Global dumps are explicitly whitelisted for background use.
+  if (base::StartsWith(name, "global/", CompareCase::SENSITIVE)) {
+    for (size_t i = sizeof("global/"); i < name.size(); i++)
+      if (!base::IsHexDigit(name[i]))
+        return false;
+    return true;
+  }
+
   // Remove special characters, numbers (including hexadecimal which are marked
   // by '0x') from the given string.
   const size_t length = name.size();

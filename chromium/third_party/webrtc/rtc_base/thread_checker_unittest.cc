@@ -12,13 +12,13 @@
 
 #include <memory>
 
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/constructormagic.h"
-#include "webrtc/rtc_base/nullsocketserver.h"
-#include "webrtc/rtc_base/task_queue.h"
-#include "webrtc/rtc_base/thread.h"
-#include "webrtc/rtc_base/thread_checker.h"
-#include "webrtc/test/gtest.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/nullsocketserver.h"
+#include "rtc_base/task_queue.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/thread_checker.h"
+#include "test/gtest.h"
 
 // Duplicated from base/threading/thread_checker.h so that we can be
 // good citizens there and undef the macro.
@@ -241,16 +241,16 @@ class ThreadAnnotateTest {
   }
 
  private:
-  void function() RUN_ON(thread_) {}
-  void fun_acccess_var() RUN_ON(thread_) { var_thread_ = 13; }
+  void function() RTC_RUN_ON(thread_) {}
+  void fun_acccess_var() RTC_RUN_ON(thread_) { var_thread_ = 13; }
 
   rtc::Thread* thread_;
   rtc::ThreadChecker checker_;
   rtc::TaskQueue* queue_;
 
-  int var_thread_ ACCESS_ON(thread_);
-  int var_checker_ GUARDED_BY(checker_);
-  int var_queue_ ACCESS_ON(queue_);
+  int var_thread_ RTC_ACCESS_ON(thread_);
+  int var_checker_ RTC_GUARDED_BY(checker_);
+  int var_queue_ RTC_ACCESS_ON(queue_);
 };
 
 // Just in case we ever get lumped together with other compilation units.

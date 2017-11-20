@@ -13,7 +13,7 @@
 #include "GrPathRenderer.h"
 #include "SkTInternalLList.h"
 #include "ccpr/GrCCPRAtlas.h"
-#include "ccpr/GrCCPRCoverageOpsBuilder.h"
+#include "ccpr/GrCCPRCoverageOp.h"
 #include "ops/GrDrawOp.h"
 #include <map>
 
@@ -38,13 +38,13 @@ public:
     StencilSupport onGetStencilSupport(const GrShape&) const override {
         return GrPathRenderer::kNoSupport_StencilSupport;
     }
-    bool onCanDrawPath(const CanDrawPathArgs& args) const override;
+    CanDrawPath onCanDrawPath(const CanDrawPathArgs& args) const override;
     bool onDrawPath(const DrawPathArgs&) final;
 
     // GrOnFlushCallbackObject overrides.
     void preFlush(GrOnFlushResourceProvider*, const uint32_t* opListIDs, int numOpListIDs,
                   SkTArray<sk_sp<GrRenderTargetContext>>* results) override;
-    void postFlush() override;
+    void postFlush(GrDrawOpUploadToken) override;
 
     // This is the Op that ultimately draws a path into its final destination, using the atlas we
     // generate at flush time.
@@ -55,10 +55,16 @@ public:
 
         DrawPathsOp(GrCoverageCountingPathRenderer*, const DrawPathArgs&, GrColor);
 
-        // GrDrawOp overrides.
         const char* name() const override { return "GrCoverageCountingPathRenderer::DrawPathsOp"; }
+
+        void visitProxies(const VisitProxyFunc& func) const override {
+            fProcessors.visitProxies(func);
+        }
+
+        // GrDrawOp overrides.
         FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-        RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*) override;
+        RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*,
+                                    GrPixelConfigIsClamped) override;
         void wasRecorded(GrRenderTargetOpList*) override;
         bool onCombineIfPossible(GrOp* other, const GrCaps& caps) override;
         void onPrepare(GrOpFlushState*) override {}
@@ -106,6 +112,7 @@ public:
         RTPendingOps*                           fOwningRTPendingOps;
         int                                     fBaseInstance;
         SkDEBUGCODE(int                         fDebugInstanceCount;)
+        SkDEBUGCODE(int                         fDebugSkippedInstances;)
         SkSTArray<1, AtlasBatch, true>          fAtlasBatches;
 
         friend class GrCoverageCountingPathRenderer;
@@ -116,9 +123,14 @@ public:
 private:
     GrCoverageCountingPathRenderer() = default;
 
+    void setupPerFlushResources(GrOnFlushResourceProvider*, const uint32_t* opListIDs,
+                                int numOpListIDs, SkTArray<sk_sp<GrRenderTargetContext>>* results);
+
     struct RTPendingOps {
         SkTInternalLList<DrawPathsOp>                 fOpList;
-        GrCCPRCoverageOpsBuilder::MaxBufferItems      fMaxBufferItems;
+        int                                           fNumTotalPaths = 0;
+        int                                           fNumSkPoints = 0;
+        int                                           fNumSkVerbs = 0;
         GrSTAllocator<256, DrawPathsOp::SingleDraw>   fDrawsAllocator;
     };
 
@@ -129,6 +141,7 @@ private:
     sk_sp<GrBuffer>                    fPerFlushVertexBuffer;
     sk_sp<GrBuffer>                    fPerFlushInstanceBuffer;
     GrSTAllocator<4, GrCCPRAtlas>      fPerFlushAtlases;
+    bool                               fPerFlushResourcesAreValid;
     SkDEBUGCODE(bool                   fFlushing = false;)
 };
 

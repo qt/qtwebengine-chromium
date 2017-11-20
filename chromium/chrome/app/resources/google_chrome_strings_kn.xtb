@@ -7,6 +7,7 @@
 <translation id="1088300314857992706"><ph name="USER_EMAIL_ADDRESS" /> ಅವರು ಈ ಹಿಂದೆ Chrome ಬಳಸುತ್ತಿದ್ದರು</translation>
 <translation id="1104959162601287462">&amp;Chrome OS ಕುರಿತು</translation>
 <translation id="110877069173485804">ಇದು ನಿಮ್ಮ Chrome</translation>
+<translation id="1142745911746664600">Chrome ಅನ್ನು ಅಪ್‌ಡೇಟ್ ಮಾಡಲು ಸಾಧ್ಯವಿಲ್ಲ</translation>
 <translation id="123620459398936149">ನಿಮ್ಮ ಡೇಟಾವನ್ನು Chrome OS ಗೆ ಸಿಂಕ್ ಮಾಡಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ನಿಮ್ಮ ಸಿಂಕ್ ಪಾಸ್‌ಫ್ರೇಸ್ ಅನ್ನು ನವೀಕರಿಸಿ.</translation>
 <translation id="127345590676626841">Chrome ಸ್ವಯಂಚಾಲಿತವಾಗಿ ನವೀಕರಿಸುತ್ತದೆ ಈ ಮೂಲಕ ನೀವು ಯಾವಾಗಲೂ ತಾಜಾ ಆವೃತ್ತಿಯುನ್ನು ಹೊಂದಿರುತ್ತೀರಿ. ಈ ಡೌನ್‌ಲೋಡ್‌ ಸಂಪೂರ್ಣಗೊಂಡಾಗ, Chrome ಮರುಪ್ರಾರಂಭಿಸುತ್ತದೆ ಮತ್ತು ನಿಮ್ಮ ಮಾರ್ಗದಲ್ಲಿ ನೀವು ಇರಬೇಕಾಗುತ್ತದೆ.</translation>
 <translation id="1302523850133262269">ಇತ್ತೀಚಿನ ಸಿಸ್ಟಂ ನವೀಕರಣಗಳನ್ನು Chrome ಸ್ಥಾಪಿಸುವಾಗ ದಯವಿಟ್ಟು ಕಾಯಿರಿ.</translation>
@@ -24,6 +25,7 @@
 <translation id="1628000112320670027">Chrome ಕುರಿತಾಗಿ ಸಹಾಯ ಪಡೆಯಿರಿ</translation>
 <translation id="163860049029591106">Chrome OS ನೊಂದಿಗೆ ಪ್ರಾರಂಭಗೊಳಿಸಿ</translation>
 <translation id="1653828314016431939">ಸರಿ - ಇದೀಗ ಮರುಪ್ರಾಂಭಿಸಿ</translation>
+<translation id="1674870198290878346">ಲಿಂಕ್‌ ಅನ್ನು ಅ&amp;ದೃಶ್ಯ ವಿಂಡೋದಲ್ಲಿ ತೆರೆಯಿರಿ</translation>
 <translation id="1682634494516646069">Google Chrome ಗೆ ಇದರ ಡೇಟಾ ಡೈರೆಕ್ಟರಿಯನ್ನು ಓದಲಾಗುವುದಿಲ್ಲ ಮತ್ತು ಬರೆಯಲಾಗುವುದಿಲ್ಲ:
 
 <ph name="USER_DATA_DIRECTORY" /></translation>
@@ -34,7 +36,6 @@
 <translation id="1759842336958782510">Chrome</translation>
 <translation id="1773601347087397504">Chrome OS ಅನ್ನು ಬಳಸಿಕೊಳ್ಳುವುದರೊಂದಿಗೆ ಸಹಾಯವನ್ನು ಪಡೆಯಿರಿ</translation>
 <translation id="1795405610103747296">ನಿಮ್ಮ ಫೋನ್‌ನಲ್ಲಿ Chrome ಅನ್ನು ಸ್ಥಾಪಿಸಿ. ನಿಮ್ಮ ಫೋನ್‌‌ಗೆ ನಾವು ಎಸ್ಎಂಎಸ್ ಕಳುಹಿಸುತ್ತೇವೆ: <ph name="PHONE_NUMBER" /></translation>
-<translation id="1818142563254268765">Chrome ತಾನಾಗಿಯೇ ಇತ್ತೀಚಿನ ಆವೃತ್ತಿಗೆ ನವೀಕರಣಗೊಳ್ಳುವುದಿಲ್ಲ. ಹೀಗಾಗಿ ನೀವು ಆಕರ್ಷಕವಾದ ಹೊಸ ವೈಶಿಷ್ಟ್ಯಗಳು ಮತ್ತು ಭದ್ರತಾ ಪರಿಹಾರಗಳನ್ನು ತಪ್ಪಿಸಿಕೊಳ್ಳುತ್ತಿರುವಿರಿ. ನೀವು Chrome ಅನ್ನು ನವೀಕರಿಸಬೇಕಾಗಿದೆ.</translation>
 <translation id="1874309113135274312">Google Chrome ಬೀಟಾ (mDNS-In)</translation>
 <translation id="1877026089748256423">Chrome ನ ಅವಧಿ ಮುಗಿದಿದೆ</translation>
 <translation id="2063848847527508675">ಅಪ್‌ಡೇಟ್ ಅನ್ವಯಿಸಲು Chrome OS ಅನ್ನು ಮರುಪ್ರಾರಂಭಿಸಬೇಕಾಗುತ್ತದೆ.</translation>
@@ -60,9 +61,9 @@
 <translation id="2446511512801740068">ದೀರ್ಘ ಸಮಯದ ಕಾಲ Chrome ಅನ್ನು ಮರುಪ್ರಾರಂಭಿಸದೇ ಇರುವ ಕಾರಣದಿಂದ ಅದರ ಅವಧಿ ಮುಗಿದಿದೆ. ಒಂದು ಅಪ್‌ಡೇಟ್ ಲಭ್ಯವಿದ್ದು ನೀವು ಮರುಪ್ರಾರಂಭಿಸಿದ ತಕ್ಷಣವೇ ಅದನ್ನು ಅನ್ವಯಿಸಲಾಗುತ್ತದೆ.</translation>
 <translation id="2485422356828889247">ಅಸ್ಥಾಪಿಸು</translation>
 <translation id="2580411288591421699">ಪ್ರಸ್ತುತ ಚಾಲನೆಯಲ್ಲಿರುವ ಅದೇ Google Chrome ಆವೃತ್ತಿಯನ್ನು ಸ್ಥಾಪಿಸಲಾಗುವುದಿಲ್ಲ. ದಯವಿಟ್ಟು Google Chrome ಮುಚ್ಚಿ ಹಾಗೂ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.</translation>
-<translation id="2582790009689336987">ಈ Linux ಸಿಸ್ಟಂ ಇನ್ನೂ ಬೆಂಬಲಿಸಲ್ಪಡದಿರುವುದರಿಂದ ಈ ಕಂಪ್ಯೂಟರ್ ಶೀಘ್ರದಲ್ಲಿಯೇ Google Chrome ಅಪ್‌ಡೇಟ್‌ಗಳನ್ನು ಸ್ವೀಕರಿಸುವುದನ್ನು ನಿಲ್ಲಿಸುತ್ತದೆ.</translation>
 <translation id="2586406160782125153">ಈ ಸಾಧನದಿಂದ ನಿಮ್ಮ ಬ್ರೌಸಿಂಗ್ ಡೇಟಾವನ್ನು ಇದು ಅಳಿಸುತ್ತದೆ. ನಂತರ ನಿಮ್ಮ ಡೇಟಾವನ್ನು ಮರುಪಡೆಯಲು, <ph name="USER_EMAIL" /> ನಂತೆ Chrome ಗೆ ಸೈನ್‌ ಇನ್ ಮಾಡಿ.</translation>
 <translation id="2588322182880276190">Chrome ಲೋಗೊ</translation>
+<translation id="2652691236519827073">ಹೊಸ Chrome &amp;ಟ್ಯಾಬ್‌ನಲ್ಲಿ ಲಿಂಕ್ ಅನ್ನು ತೆರೆಯಿರಿ</translation>
 <translation id="2664962310688259219">Chrome OS ಮುಕ್ತ ಮೂಲ ಪರವಾನಗಿಗಳು</translation>
 <translation id="2665296953892887393">Google ಗೆ ಕ್ರ್ಯಾಶ್ ವರದಿಗಳನ್ನು ಮತ್ತು <ph name="UMA_LINK" /> ಕಳುಹಿಸುವುದರಿಂದ Google Chrome ಅನ್ನು ಉತ್ತಮಗೊಳಿಸಲು ಸಹಾಯ ಮಾಡಿ</translation>
 <translation id="2689103672227170538">ನೀವು Chrome ಪ್ರಾರಂಭಿಸಿದಾಗ ಯಾವ ಪುಟ ತೋರಿಸಬೇಕು ಎಂಬ ಪುಟವನ್ನು ಈ ವಿಸ್ತರಣೆಯು ಬದಲಾಯಿಸಿದೆ.</translation>
@@ -86,7 +87,6 @@
 
 ಹೆಚ್ಚಿನ ಸೂಚನೆಗಳಿಗಾಗಿ ದಯವಿಟ್ಟು <ph name="ACCOUNT_EMAIL" /> ಗೆ ಬಂದಿರುವ ಇಮೇಲ್ ಅನ್ನು ಪರಿಶೀಲಿಸಿ.</translation>
 <translation id="3282568296779691940">Chrome ಗೆ ಸೈನ್ ಇನ್ ಮಾಡಿ</translation>
-<translation id="3311976847535831054">ಈ ಕಂಪ್ಯೂಟರ್ ಇನ್ನು ಮುಂದೆ 32-ಬಿಟ್ Google Chrome ಅಪ್‌ಡೇಟ್‌ಗಳನ್ನು ಸ್ವೀಕರಿಸುವುದಿಲ್ಲ. 64-ಬಿಟ್ Google Chrome ಗೆ ಅಪ್‌ಗ್ರೇಡ್ ಮಾಡಿ.</translation>
 <translation id="3360895254066713204">Chrome ಸಹಾಯಕ</translation>
 <translation id="3395323229510056640">Chrome OS ನಿಂದ ಸಹಾಯ ಪಡೆಯಿರಿ</translation>
 <translation id="3396977131400919238">ಸ್ಥಾಪನೆ ವೇಳೆ ಆಪರೇಟಿಂಗ್ ಸಿಸ್ಟಂ ದೋಷವು ಸಂಭವಿಸಿದೆ. ದಯವಿಟ್ಟು Google Chrome ಅನ್ನು ಮತ್ತೊಮ್ಮೆ ಡೌನ್ಲೋಡ್ ಮಾಡಿ.</translation>
@@ -101,11 +101,12 @@
 <translation id="3738139272394829648">ಹುಡುಕಲು ಸ್ಪರ್ಶಿಸು</translation>
 <translation id="3780814664026482060">Chrome - <ph name="PAGE_TITLE" /></translation>
 <translation id="3784527566857328444">Chrome ನಿಂದ ತೆಗೆದುಹಾಕು...</translation>
-<translation id="3847841918622877581">ನಿಮ್ಮ ಬ್ರೌಸಿಂಗ್ ಅನುಭವವನ್ನು ಇನ್ನಷ್ಟು ಸುಧಾರಿಸಲು Google Chrome ವೆಬ್ ಸೇವೆಗಳನ್ನು ಬಳಸಿಕೊಳ್ಳಬಹುದು.</translation>
 <translation id="386202838227397562">ದಯವಿಟ್ಟು ಎಲ್ಲಾ Google Chrome ವಿಂಡೋಗಳನ್ನು ಮುಚ್ಚಿ ಹಾಗೂ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.</translation>
 <translation id="3870154837782082782">Google Inc.</translation>
+<translation id="3873044882194371212">ಲಿಂಕ್‌ ಅನ್ನು Chrome ಅ&amp;ದೃಶ್ಯ ವಿಂಡೋದಲ್ಲಿ ತೆರೆಯಿರಿ</translation>
 <translation id="3889417619312448367">Google Chrome ಅನ್ಇನ್‌ಸ್ಟಾಲ್ ಮಾಡಿ</translation>
 <translation id="4028693306634653894">ವೇಗವಾಗಿ Chrome ಗೆ ತೆರಳಿ</translation>
+<translation id="4031074602479304239">ನೀವು ಈ ಸೈಟ್‌ಗೆ ಹೋಗದಂತೆ Chrome ನಿಮ್ಮನ್ನು ತಡೆದಿದೆ</translation>
 <translation id="4042449298237264661">Windows XP ಮತ್ತು Windows Vista ಗಳಿಗೆ ಬೆಂಬಲವಿಲ್ಲದೇ ಇರುವುದರಿಂದ ಈ ಕಂಪ್ಯೂಟರ್‌‌ ಇನ್ನು ಮುಂದೆ Google Chrome ಅಪ್‌ಡೇಟ್‌ಗಳನ್ನು ಸ್ವೀಕರಿಸುವುದಿಲ್ಲ.</translation>
 <translation id="4050175100176540509">ಇತ್ತೀಚಿನ ಆವೃತ್ತಿಯಲ್ಲಿ ಪ್ರಮುಖವಾದ ಭದ್ರತಾ ಸುಧಾರಣೆಗಳು ಮತ್ತು ಹೊಸ ವೈಶಿಷ್ಟ್ಯಗಳು ಲಭ್ಯವಿದೆ.</translation>
 <translation id="4053720452172726777">Google Chrome ಅನ್ನು ಕಸ್ಟಮೈಸ್ ಮಾಡಿ ಮತ್ತು ನಿಯಂತ್ರಿಸಿ</translation>
@@ -116,13 +117,13 @@
 <translation id="4309555186815777032">(Chrome <ph name="BEGIN_BUTTON" />ಮರುಪ್ರಾರಂಭ<ph name="END_BUTTON" /> ಅಗತ್ಯವಿದೆ)</translation>
 <translation id="4328355335528187361">Google Chrome Dev (mDNS-In)</translation>
 <translation id="4331809312908958774">Chrome OS</translation>
-<translation id="437002079035561265">ಈ Linux ಸಿಸ್ಟಂ ಇನ್ನು ಮುಂದೆ ಬೆಂಬಲಿಸಲ್ಪಡದಿರುವುದರಿಂದ ಈ ಕಂಪ್ಯೂಟರ್ ಇನ್ನು ಮುಂದೆ Google Chrome ಅಪ್‌ಡೇಟ್‌ಗಳನ್ನು ಸ್ವೀಕರಿಸುವುದಿಲ್ಲ.</translation>
 <translation id="4407807842708586359">Google Chrome OS</translation>
 <translation id="4458285410772214805">ದಯವಿಟ್ಟು ಈ ಬದಲಾವಣೆಯು ಕಾರ್ಯಗತವಾಗಲು ಸೈನ್ ಔಟ್ ಮಾಡಿ ಹಾಗೂ ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.</translation>
 <translation id="4458462641685292929">Google Chrome ನಲ್ಲಿ ಮತ್ತೊಂದು ಕಾರ್ಯಾಚರಣೆಯು ಪ್ರಗತಿಯಲ್ಲಿದೆ. ದಯವಿಟ್ಟು ನಂತರ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.</translation>
 <translation id="4480040274068703980">ಸೈನ್ ಇನ್ ಮಾಡುವಲ್ಲಿ ದೋಷವಿರುವ ಕಾರಣ ನಿಮ್ಮ ಡೇಟಾವನ್ನು ಸಿಂಕ್ ಮಾಡಲು Chrome OS ಗೆ ಸಾಧ್ಯವಿಲ್ಲ.</translation>
 <translation id="4561051373932531560">Google Chrome ನೀವು ವೆಬ್‌ನಲ್ಲಿ ಫೋನ್ ಸಂಖ್ಯೆಯನ್ನು ಕ್ಲಿಕ್ ಮಾಡಲು ಅವಕಾಶ ಮಾಡುತ್ತದೆ ಮತ್ತು Skype ನೊಂದಿಗೆ ಕರೆ ಮಾಡುತ್ತದೆ!</translation>
 <translation id="4567424176335768812"><ph name="USER_EMAIL_ADDRESS" /> ನಂತೆ ಸೈನ್ ಇನ್ ಮಾಡಿರುವಿರಿ. ನೀವು ಇದೀಗ ನಿಮ್ಮ ಎಲ್ಲಾ ಸೈನ್ ಇನ್ ಮಾಡಿರುವ ಸಾಧನಗಳಲ್ಲಿ ನಿಮ್ಮ ಬುಕ್‌ಮಾರ್ಕ್‌ಗಳು, ಇತಿಹಾಸ ಮತ್ತು ಇತರ ಸೆಟ್ಟಿಂಗ್‌ಗಳನ್ನು ಪ್ರವೇಶಿಸಬಹುದು.</translation>
+<translation id="4600710005438004015">Chrome ಗೆ ಇತ್ತೀಚಿನ ಆವೃತ್ತಿಗೆ ಅಪ್‌ಡೇಟ್ ಮಾಡಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ, ಆದ್ದರಿಂದಾಗಿ ನೀವು ಹೊಸ ವೈಶಿಷ್ಟ್ಯಗಳು ಮತ್ತು ಭದ್ರತೆ ಸರಿಪಡಿಸುವಿಕೆಗಳನ್ನು ಕಳೆದುಕೊಳ್ಳುತ್ತಿರಬಹುದು.</translation>
 <translation id="4631713731678262610">Chrome ಮೆನುವಿನಲ್ಲಿ ಮರೆಮಾಡು</translation>
 <translation id="4633000520311261472">Chrome ಸುರಕ್ಷಿತವಾಗಿರಿಸುವಂತೆ ಮಾಡಲು, <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> ನಲ್ಲಿ ಪಟ್ಟಿ ಮಾಡಲಾದ ಕೆಲವು ವಿಸ್ತರಣೆಗಳನ್ನು ನಾವು ನಿಷ್ಕ್ರಿಯಗೊಳಿಸಿದ್ದೇವೆ ಮತ್ತು ಅವುಗಳನ್ನು ನಿಮ್ಮ ಅರಿವಿಲ್ಲದೆ ಸೇರಿಸಿರಬಹುದು.</translation>
 <translation id="4664415150087723341">Google Chrome ಗೆ ವಿಶೇಷ ಸುರಕ್ಷತೆಯ ಅಪ್‌ಡೇಟ್‌‌ ಅನ್ನು ಈಗ ತಾನೇ ಅನ್ವಯಿಸಲಾಗಿದೆ; ಇದನ್ನು ಪರಿಣಾಮಕಾರಿಯನ್ನಾಗಿಸಲು ಇದೀಗ ನೀವು ಮರುಪ್ರಾರಂಭಿಸಬೇಕಾಗಿರುತ್ತದೆ (ನಿಮ್ಮ ಟ್ಯಾಬ್‌ಗಳನ್ನು ನಾವು ಮರುಸ್ಥಾಪಿಸುತ್ತೇವೆ).</translation>
@@ -130,12 +131,12 @@
 <translation id="4728575227883772061">ಅನಿರ್ದಿಷ್ಟ ದೋಷದಿಂದಾಗಿ ಸ್ಥಾಪನೆ ವಿಫಲವಾಗಿದೆ. Google Chrome ಪ್ರಸ್ತುತ ಚಲಿಸುತ್ತಿದ್ದರೆ, ದಯವಿಟ್ಟು ಇದನ್ನು ಮುಚ್ಚಿ ಮತ್ತು ಮತ್ತೊಮ್ಮೆ ಪ್ರಯತ್ನಿಸಿ.</translation>
 <translation id="4743926867934016338">ಸಮ್ಮತಿಸಿ &amp; ಹುಡುಕಿ</translation>
 <translation id="4750550185319565338"><ph name="PLUGIN_NAME" /> ಸಕ್ರಿಯಗೊಳಿಸಲು Chrome ಮರುಪ್ರಾರಂಭಿಸಿ</translation>
-<translation id="4751441238232965030">ಈ ಕಂಪ್ಯೂಟರ್ ಶೀಘ್ರವೇ 32-ಬಿಟ್ Google Chrome ಅಪ್‌ಡೇಟ್‌ಗಳನ್ನು ಸ್ವೀಕರಿಸುವುದನ್ನು ನಿಲ್ಲಿಸುತ್ತದೆ. 64-ಬಿಟ್ Google Chrome ಗೆ ಅಪ್‌ಗ್ರೇಡ್ ಮಾಡಿ.</translation>
 <translation id="4754614261631455953">Google Chrome ಕ್ಯಾನರಿ (mDNS-In)</translation>
 <translation id="4771048833395599659">ಈ ಫೈಲ್ ಅಪಾಯಕಾರಿಯಾಗಿರಬಹುದು, ಹೀಗಾಗಿ Chrome ಇದನ್ನು ನಿರ್ಬಂಧಿಸಿದೆ.</translation>
 <translation id="4794050651896644714">Chrome ನಲ್ಲಿ ವಿವರಣೆಗಳನ್ನು ಉಳಿಸಿ</translation>
 <translation id="4804732725083176494">ಈ ಸಾಧನದ ನಿರ್ವಾಹಕರಿಂದ Chrome ಗೆ ಸೈನ್ ಇನ್ ಮಾಡುವುದನ್ನು ನಿಷ್ಕ್ರಿಯಗೊಳಿಸಲಾಗಿದೆ.</translation>
 <translation id="4891791193823137474">Google Chrome ಹಿನ್ನೆಲೆಯಲ್ಲಿ ಚಾಲನೆಯಾಗಲು ಅನುಮತಿಸಿ</translation>
+<translation id="4895437082222824641">ಹೊಸ Chrome &amp;ಟ್ಯಾಬ್‌ನಲ್ಲಿ ಲಿಂಕ್ ಅನ್ನು ತೆರೆಯಿರಿ</translation>
 <translation id="4921569541910214635">ಕಂಪ್ಯೂಟರ್‌ ಅನ್ನು ಹಂಚಿಕೊಳ್ಳುವುದೇ? ಇದೀಗ ನೀವು ಇಷ್ಟಪಡುವ ಮಾರ್ಗದ ಮೂಲಕ ಇದೀಗ ನೀವು Chrome ಹೊಂದಿಸಬಹುದು.</translation>
 <translation id="4953650215774548573">Google Chrome ಅನ್ನು ನಿಮ್ಮ ಡಿಫಾಲ್ಟ್ ಬ್ರೌಸರ್‌ ರೂಪದಲ್ಲಿ ಹೊಂದಿಸಿ</translation>
 <translation id="495931528404527476">Chrome ನಲ್ಲಿ</translation>
@@ -157,13 +158,13 @@
 <translation id="5430073640787465221">ನಿಮ್ಮ ಪ್ರಾಶಸ್ತ್ಯಗಳ ಫೈಲ್ ದೋಷಪೂರಿತವಾಗಿದೆ ಅಥವಾ ಅಮಾನ್ಯವಾಗಿದೆ. ನಿಮ್ಮ ಸೆಟ್ಟಿಂಗ್‌ಗಳನ್ನು ಮರುಪಡೆದುಕೊಳ್ಳುವಲ್ಲಿ Google Chrome ವಿಫಲಗೊಂಡಿದೆ.</translation>
 <translation id="5453904507266736060">Google Chrome ಹಿನ್ನೆಲೆಯಲ್ಲಿ ಚಾಲನೆಗೊಳ್ಳಲು ಅನುಮತಿಸಿ</translation>
 <translation id="5495581687705680288">ಮಾಡ್ಯೂಲ್‌ಗಳನ್ನು Google Chrome ನಲ್ಲಿ ಲೋಡ್ ಮಾಡಲಾಗಿದೆ</translation>
+<translation id="5524843473235508879">ಮರುನಿರ್ದೇಶಿಸುವಿಕೆಯನ್ನು ನಿರ್ಬಂಧಿಸಲಾಗಿದೆ.</translation>
 <translation id="556024056938947818">Google Chrome ಪಾಸ್‌ವರ್ಡ್‌ಗಳನ್ನು ತೋರಿಸಲು ಪ್ರಯತ್ನಿಸುತ್ತಿದೆ.</translation>
 <translation id="5563479599352954471">ಒಂದು ಸ್ಪರ್ಶದಲ್ಲಿ ಹುಡುಕಿ</translation>
 <translation id="5566025111015594046">Google Chrome (mDNS-In)</translation>
 <translation id="557283862590186398">ಈ ಸೈಟ್‌ಗೆ ನಿಮ್ಮ ಮೈಕ್ರೊಫೋನ್ ಪ್ರವೇಶಿಸಲು Chrome ಗೆ ಅನುಮತಿಸುವ ಅಗತ್ಯವಿದೆ.</translation>
 <translation id="5620765574781326016">ಪುಟವನ್ನು ಉಳಿಸದೆ ವೆಬ್‌ಸೈಟ್‌ಗಳಲ್ಲಿ ವಿಷಯಗಳ ಕುರಿತು ತಿಳಿಯಿರಿ.</translation>
 <translation id="565744775970812598"><ph name="FILE_NAME" /> ಅಪಾಯಕಾರಿಯಾಗಿರಬಹುದು, ಹಾಗಾಗಿ Chrome ಅದನ್ನು ನಿರ್ಬಂಧಿಸಿದೆ.</translation>
-<translation id="568643307450491754">Chrome ಮೆನು ಅಥವಾ ಬುಕ್‌ಮಾರ್ಕ್‌ಗಳ ಪಟ್ಟಿಯಲ್ಲಿ ನಿಮ್ಮ ಬುಕ್‌ಮಾರ್ಕ್‌ಗಳನ್ನು ಕಂಡುಕೊಳ್ಳಿ.</translation>
 <translation id="573759479754913123">Chrome OS ಕುರಿತು</translation>
 <translation id="5749068826913805084">ಫೈಲ್‌ಗಳನ್ನು ಡೌನ್‌ಲೋಡ್ ಮಾಡಲು Chrome ಗೆ ಸಂಗ್ರಹಣೆ ಪ್ರವೇಶ ಅಗತ್ಯವಿದೆ.</translation>
 <translation id="5774845247549698882">ಈ ಭಾಷೆಯಲ್ಲಿ Chrome OS ಪ್ರದರ್ಶನಗೊಂಡಿದೆ</translation>
@@ -207,7 +208,6 @@
 <translation id="6989339256997917931">Google Chrome ಅಪ್‌ಡೇಟ್‌ ಮಾಡಲಾಗಿದೆ, ಆದರೆ ನೀವು ಕನಿಷ್ಠ 30 ದಿನಗಳವರೆಗಾದರೂ ಇದನ್ನು ಬಳಸಿರಲಿಕ್ಕಿಲ್ಲ. </translation>
 <translation id="7098166902387133879">Google Chrome ನಿಮ್ಮ ಮೈಕ್ರೋಫೋನ್ ಅನ್ನು ಬಳಸುತ್ತಿದೆ.</translation>
 <translation id="7106741999175697885">ಕಾರ್ಯ ನಿರ್ವಾಹಕ - Google Chrome</translation>
-<translation id="7125719106133729027">Chrome ತಾನಾಗಿಯೇ ಇತ್ತೀಚಿನ ಆವೃತ್ತಿಗೆ ನವೀಕರಣಗೊಳ್ಳುವುದಿಲ್ಲ, ಹೀಗಾಗಿ ನೀವು ಆಕರ್ಷಕ ಹೊಸ ವೈಶಿಷ್ಟ್ಯಗಳು ಮತ್ತು ಭದ್ರತಾ ಪರಿಹಾರಗಳನ್ನು ತಪ್ಪಿಸಿಕೊಳ್ಳುತ್ತಿರುವಿರಿ. ನೀವು Chrome ಅನ್ನು ಹಸ್ತಚಾಲಿತವಾಗಿ ಮರುಸ್ಥಾಪಿಸಬೇಕಾಗಿದೆ.</translation>
 <translation id="7161904924553537242">Google Chrome ಗೆ ಸ್ವಾಗತ</translation>
 <translation id="7164397146364144019">ನೀವು Google ಗೆ ಸಂಭಾವ್ಯ ಸುರಕ್ಷತೆಗೆ ಸಂಬಂಧಿಸಿದ ಘಟನೆಗಳ ವಿವರಗಳನ್ನು ಸ್ವಯಂಚಾಲಿತವಾಗಿ ವರದಿ ಮಾಡುವ ಮೂಲಕ Chrome ಅನ್ನು ಸುರಕ್ಷಿತಗೊಳಿಸಲು ಮತ್ತು ಬಳಕೆಗೆ ಸುಲಭಗೊಳಿಸಲು ಸಹಾಯ ಮಾಡಬಹುದು.</translation>
 <translation id="7185038942300673794">Chrome ಗೆ <ph name="EXTENSION_NAME" /> ಅನ್ನು ಸೇರಿಸಲಾಗಿದೆ.</translation>
@@ -217,7 +217,6 @@
 <translation id="7339898014177206373">ಹೊಸ ವಿಂಡೊ</translation>
 <translation id="7369650938475876456">Chrome ಸೃಷ್ಟಿಸಿರುವ ಬಲಿಷ್ಠ ಪಾಸ್‌ವರ್ಡ್‌ ಬಳಸಿ</translation>
 <translation id="7398801000654795464"><ph name="USER_EMAIL_ADDRESS" /> ನಂತೆ Chrome ಅನ್ನು ನೀವು ಸೈನ್ ಇನ್ ಮಾಡಿರುವಿರಿ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಲು ಅದೇ ಖಾತೆಯನ್ನು ಬಳಸಿ.</translation>
-<translation id="7400722733683201933">Google Chrome ಬಗ್ಗೆ</translation>
 <translation id="7408085963519505752">Chrome OS ನಿಯಮಗಳು</translation>
 <translation id="7419046106786626209">ನಿಮ್ಮ ಡೊಮೇನ್‌ನಲ್ಲಿ ಸಿಂಕ್ ಮಾಡುವ ಸೌಲಭ್ಯವಿಲ್ಲದ ಕಾರಣ ನಿಮ್ಮ ಡೇಟಾವನ್ನು ಸಿಂಕ್ ಮಾಡಲು Chrome OS ಗೆ ಸಾಧ್ಯವಾಗುತ್ತಿಲ್ಲ.</translation>
 <translation id="7437998757836447326">Chrome ನಿಂದ ಸೈನ್ ಔಟ್ ಮಾಡಿ</translation>

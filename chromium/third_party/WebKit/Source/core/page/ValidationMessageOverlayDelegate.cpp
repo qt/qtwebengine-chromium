@@ -98,7 +98,9 @@ void ValidationMessageOverlayDelegate::PaintPageOverlay(
   const_cast<ValidationMessageOverlayDelegate*>(this)->UpdateFrameViewState(
       overlay, view_size);
   LocalFrameView& view = FrameView();
-  view.Paint(context, CullRect(IntRect(0, 0, view.Width(), view.Height())));
+  view.PaintWithLifecycleUpdate(
+      context, kGlobalPaintNormalPhase,
+      CullRect(IntRect(0, 0, view.Width(), view.Height())));
 }
 
 void ValidationMessageOverlayDelegate::UpdateFrameViewState(
@@ -146,16 +148,13 @@ void ValidationMessageOverlayDelegate::EnsurePage(const PageOverlay& overlay,
   page_->GetVisualViewport().SetSize(view_size);
 
   RefPtr<SharedBuffer> data = SharedBuffer::Create();
-  WriteDocument(data.Get());
+  WriteDocument(data.get());
   float zoom_factor = anchor_->GetDocument().GetFrame()->PageZoomFactor();
   frame->SetPageZoomFactor(zoom_factor);
   // Propagate deprecated DSF for platforms without use-zoom-for-dsf.
   page_->SetDeviceScaleFactorDeprecated(
       main_page_->DeviceScaleFactorDeprecated());
-  frame->Loader().Load(
-      FrameLoadRequest(nullptr, ResourceRequest(BlankURL()),
-                       SubstituteData(data, "text/html", "UTF-8", KURL(),
-                                      kForceSynchronousLoad)));
+  frame->ForceSynchronousDocumentInstall("text/html", data);
 
   Element& container = GetElementById("container");
   if (LayoutTestSupport::IsRunningLayoutTest()) {

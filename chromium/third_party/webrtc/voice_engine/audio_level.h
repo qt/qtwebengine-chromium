@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_VOICE_ENGINE_AUDIO_LEVEL_H_
-#define WEBRTC_VOICE_ENGINE_AUDIO_LEVEL_H_
+#ifndef VOICE_ENGINE_AUDIO_LEVEL_H_
+#define VOICE_ENGINE_AUDIO_LEVEL_H_
 
-#include "webrtc/rtc_base/criticalsection.h"
-#include "webrtc/rtc_base/thread_annotations.h"
-#include "webrtc/typedefs.h"
+#include "rtc_base/criticalsection.h"
+#include "rtc_base/thread_annotations.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -45,16 +45,16 @@ class AudioLevel {
 
   rtc::CriticalSection crit_sect_;
 
-  int16_t abs_max_ GUARDED_BY(crit_sect_);
-  int16_t count_ GUARDED_BY(crit_sect_);
-  int8_t current_level_ GUARDED_BY(crit_sect_);
-  int16_t current_level_full_range_ GUARDED_BY(crit_sect_);
+  int16_t abs_max_ RTC_GUARDED_BY(crit_sect_);
+  int16_t count_ RTC_GUARDED_BY(crit_sect_);
+  int8_t current_level_ RTC_GUARDED_BY(crit_sect_);
+  int16_t current_level_full_range_ RTC_GUARDED_BY(crit_sect_);
 
-  double total_energy_ GUARDED_BY(crit_sect_) = 0.0;
-  double total_duration_ GUARDED_BY(crit_sect_) = 0.0;
+  double total_energy_ RTC_GUARDED_BY(crit_sect_) = 0.0;
+  double total_duration_ RTC_GUARDED_BY(crit_sect_) = 0.0;
 };
 
 }  // namespace voe
 }  // namespace webrtc
 
-#endif  // WEBRTC_VOICE_ENGINE_AUDIO_LEVEL_H_
+#endif  // VOICE_ENGINE_AUDIO_LEVEL_H_

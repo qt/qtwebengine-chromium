@@ -13,11 +13,11 @@
 #include "content/child/service_worker/service_worker_dispatcher.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_container.mojom.h"
-#include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
 #include "content/common/service_worker/service_worker_provider.mojom.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/child/child_url_loader_factory_getter.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -30,7 +30,6 @@ class URLLoaderFactory;
 }
 
 class ServiceWorkerHandleReference;
-class ServiceWorkerRegistrationHandleReference;
 struct ServiceWorkerProviderContextDeleter;
 
 // ServiceWorkerProviderContext stores common state for service worker
@@ -77,30 +76,34 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
       ServiceWorkerDispatcher* dispatcher,
       scoped_refptr<ChildURLLoaderFactoryGetter> default_loader_factory_getter);
 
+  ServiceWorkerProviderType provider_type() const { return provider_type_; }
+
   int provider_id() const { return provider_id_; }
 
   // For service worker execution contexts. Sets the registration for
-  // ServiceWorkerGlobalScope#registration. Unlike GetRegistration(),
-  // called on the main thread. SetRegistration() is called during
-  // the setup for service worker startup, so it is guaranteed to be called
-  // before GetRegistration().
-  void SetRegistration(
-      std::unique_ptr<ServiceWorkerRegistrationHandleReference> registration,
+  // ServiceWorkerGlobalScope#registration. Unlike
+  // TakeRegistrationForServiceWorkerGlobalScope(), called on the main thread.
+  // SetRegistrationForServiceWorkerGlobalScope() is called during the setup for
+  // service worker startup, so it is guaranteed to be called before
+  // TakeRegistrationForServiceWorkerGlobalScope().
+  void SetRegistrationForServiceWorkerGlobalScope(
+      blink::mojom::ServiceWorkerRegistrationObjectInfoPtr registration,
       std::unique_ptr<ServiceWorkerHandleReference> installing,
       std::unique_ptr<ServiceWorkerHandleReference> waiting,
       std::unique_ptr<ServiceWorkerHandleReference> active);
 
   // For service worker execution contexts. Used for initializing
   // ServiceWorkerGlobalScope#registration. Called on the worker thread.
-  void GetRegistration(ServiceWorkerRegistrationObjectInfo* info,
-                       ServiceWorkerVersionAttributes* attrs);
+  // This takes ServiceWorkerRegistrationObjectHost ptr info from
+  // ControllerState::registration.
+  void TakeRegistrationForServiceWorkerGlobalScope(
+      blink::mojom::ServiceWorkerRegistrationObjectInfoPtr* info,
+      ServiceWorkerVersionAttributes* attrs);
 
   // For service worker clients. The controller for
   // ServiceWorkerContainer#controller.
-  void SetController(
-      std::unique_ptr<ServiceWorkerHandleReference> controller,
-      const std::set<uint32_t>& used_features,
-      mojom::ServiceWorkerEventDispatcherPtrInfo event_dispatcher_ptr_info);
+  void SetController(std::unique_ptr<ServiceWorkerHandleReference> controller,
+                     const std::set<uint32_t>& used_features);
   ServiceWorkerHandleReference* controller();
 
   // S13nServiceWorker:
@@ -132,6 +135,13 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
   // occur and ensuring the Clients API doesn't return the client).
   void OnNetworkProviderDestroyed();
 
+  // Gets the mojom::ServiceWorkerContainerHost* for sending requests to
+  // browser-side ServiceWorkerProviderHost. May be nullptr if
+  // OnNetworkProviderDestroyed() has already been called.
+  // Currently this can be called only for clients that are Documents,
+  // see comments of |container_host_|.
+  mojom::ServiceWorkerContainerHost* container_host() const;
+
  private:
   friend class base::DeleteHelper<ServiceWorkerProviderContext>;
   friend class base::RefCountedThreadSafe<ServiceWorkerProviderContext,
@@ -147,6 +157,7 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
   // shared) worker, when the connection to the worker is disconnected.
   void UnregisterWorkerFetchContext(mojom::ServiceWorkerWorkerClient*);
 
+  const ServiceWorkerProviderType provider_type_;
   const int provider_id_;
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
 
@@ -154,9 +165,16 @@ class CONTENT_EXPORT ServiceWorkerProviderContext
   // connection to the content::ServiceWorkerProviderHost in the browser process
   // alive.
   mojo::AssociatedBinding<mojom::ServiceWorkerContainer> binding_;
-  // |container_host_| is the Mojo endpoint to the browser-side
-  // mojom::ServiceWorkerContainerHost that hosts this
-  // mojom::ServiceWorkerContainer.
+
+  // The |container_host_| interface represents the connection to the
+  // browser-side ServiceWorkerProviderHost, whose lifetime is bound to
+  // |container_host_| via the Mojo connection.
+  // The |container_host_| interface also implements functions for
+  // navigator.serviceWorker, but all the methods that correspond to
+  // navigator.serviceWorker.* can be used only if |this| is a provider
+  // for a Document, as navigator.serviceWorker is currently only implemented
+  // for Document (https://crbug.com/371690).
+  // Note: Currently this is always bound on main thread.
   mojom::ServiceWorkerContainerHostAssociatedPtr container_host_;
 
   // Either |controllee_state_| or |controller_state_| is non-null.

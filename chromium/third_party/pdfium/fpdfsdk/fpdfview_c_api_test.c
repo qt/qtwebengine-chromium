@@ -120,6 +120,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFPage_SetRotation);
     CHK(FPDFPage_InsertObject);
     CHK(FPDFPage_CountObject);
+    CHK(FPDFPage_CountObjects);
     CHK(FPDFPage_GetObject);
     CHK(FPDFPage_HasTransparency);
     CHK(FPDFPage_GenerateContent);
@@ -148,6 +149,11 @@ int CheckPDFiumCApi() {
     CHK(FPDFPath_SetStrokeWidth);
     CHK(FPDFPath_SetFillColor);
     CHK(FPDFPath_GetFillColor);
+    CHK(FPDFPath_CountSegments);
+    CHK(FPDFPath_GetPathSegment);
+    CHK(FPDFPathSegment_GetPoint);
+    CHK(FPDFPathSegment_GetType);
+    CHK(FPDFPathSegment_GetClose);
     CHK(FPDFPath_MoveTo);
     CHK(FPDFPath_LineTo);
     CHK(FPDFPath_BezierTo);

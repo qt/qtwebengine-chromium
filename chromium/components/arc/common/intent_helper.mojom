@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Next MinVersion: 17
+// Next MinVersion: 19
 
 module arc.mojom;
 
@@ -82,9 +82,24 @@ struct UrlWithMimeType {
   string mime_type;
 };
 
+// Describes a specific page in chrome://settings.
+[Extensible]
+enum SettingsPage {
+  MULTIDEVICE,
+  MAIN,
+  POWER,
+  BLUETOOTH,
+  DATETIME,
+  DISPLAY,
+  WIFI,
+  LANGUAGE,
+  PRIVACY,
+  HELP,
+};
+
 // Handles intents from ARC in Chrome.
 // Deprecated method ID: 4
-// Next method ID: 7
+// Next method ID: 8
 interface IntentHelperHost {
   // Called when icons associated with the package are no longer up to date.
   [MinVersion=3] OnIconInvalidated@1(string package_name);
@@ -97,6 +112,8 @@ interface IntentHelperHost {
   [MinVersion=5] OnOpenDownloads@2();
 
   // Opens the url with Chrome for Chrome OS.
+  // This function is intended to only open URLs that other web content in Chrome would be able to
+  // navigate to as well. No special URLs that allow access to privileged functions are allowed.
   OnOpenUrl@0(string url);
 
   // Opens the wallpaper picker dialog.
@@ -108,6 +125,9 @@ interface IntentHelperHost {
 
   // Opens the volume control.
   [MinVersion=16] OpenVolumeControl@6();
+
+  // Opens the specified settings page in the Chrome browser.
+  [MinVersion=17] OnOpenChromeSettings@7([MinVersion=18] SettingsPage page);
 };
 
 // Sends intents to ARC on behalf of Chrome.

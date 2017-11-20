@@ -4,17 +4,24 @@
 
 #include "public/platform/WebVideoFrameSubmitter.h"
 
+#include <memory>
 #include "third_party/WebKit/Source/platform/graphics/VideoFrameSubmitter.h"
 
 namespace cc {
 class VideoFrameProvider;
 }  // namespace cc
 
+namespace viz {
+class ContextProvider;
+}
+
 namespace blink {
 
 std::unique_ptr<WebVideoFrameSubmitter> WebVideoFrameSubmitter::Create(
-    cc::VideoFrameProvider* provider) {
-  return base::MakeUnique<VideoFrameSubmitter>(provider);
+    cc::VideoFrameProvider* provider,
+    WebContextProviderCallback context_provider_callback) {
+  return std::make_unique<VideoFrameSubmitter>(
+      provider, std::move(context_provider_callback));
 }
 
 }  // namespace blink

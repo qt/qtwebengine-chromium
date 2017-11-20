@@ -229,11 +229,10 @@ Polymer({
     if (!this.didSetFocus_) {
       // Focus a button once the initial state is set.
       this.didSetFocus_ = true;
-      var button = this.$$('#titleDiv .primary-button:not([hidden])');
-      if (!button)
-        button = this.$$('#titleDiv paper-button:not([hidden])');
-      assert(button);  // At least one button will always be visible.
-      button.focus();
+      var button = this.$$('#titleDiv .primary-button:not([hidden])') ||
+          this.$$('#titleDiv paper-button:not([hidden])');
+      if (button)
+        button.focus();
     }
 
     if (this.shouldShowConfigureWhenNetworkLoaded_ &&
@@ -371,6 +370,8 @@ Polymer({
    * @private
    */
   getStateText_: function(networkProperties) {
+    if (!networkProperties.ConnectionState)
+      return '';
     return this.i18n('Onc' + networkProperties.ConnectionState);
   },
 
@@ -486,14 +487,14 @@ Polymer({
     if (this.connectNotAllowed_(networkProperties, globalPolicy))
       return false;
     var type = networkProperties.Type;
-    if (type == CrOnc.Type.CELLULAR)
+    if (type == CrOnc.Type.CELLULAR || type == CrOnc.Type.TETHER)
       return false;
     if ((type == CrOnc.Type.WI_FI || type == CrOnc.Type.WI_MAX) &&
         networkProperties.ConnectionState !=
             CrOnc.ConnectionState.NOT_CONNECTED) {
       return false;
     }
-    return this.isRemembered_(networkProperties);
+    return true;
   },
 
   /**
@@ -540,8 +541,9 @@ Polymer({
   enableConnect_: function(networkProperties, defaultNetwork, globalPolicy) {
     if (!this.showConnect_(networkProperties, globalPolicy))
       return false;
-    if (networkProperties.Type == CrOnc.Type.CELLULAR &&
-        CrOnc.isSimLocked(networkProperties)) {
+    if ((networkProperties.Type == CrOnc.Type.CELLULAR) &&
+        (CrOnc.isSimLocked(networkProperties) ||
+         this.get('Cellular.Scanning', networkProperties))) {
       return false;
     }
     if (networkProperties.Type == CrOnc.Type.VPN && !defaultNetwork)
@@ -605,12 +607,6 @@ Polymer({
   onViewAccountTap_: function() {
     // startActivate() will show the account page for activated networks.
     this.networkingPrivate.startActivate(this.guid);
-  },
-
-  /** @private */
-  onChooseMobileTap_: function() {
-    // TODO(stevenjb): Integrate ChooseMobileNetworkDialog with WebUI.
-    chrome.send('addNetwork', [this.networkProperties.Type]);
   },
 
   /** @const {string} */
@@ -1018,8 +1014,8 @@ Polymer({
    */
   showCellularSim_: function(networkProperties) {
     return networkProperties.Type == CrOnc.Type.CELLULAR &&
-        this.get('Cellular.Family', this.networkProperties) ==
-        CrOnc.NetworkTechnology.GSM;
+        !!networkProperties.Cellular &&
+        networkProperties.Cellular.Family != 'CDMA';
   },
 
   /**

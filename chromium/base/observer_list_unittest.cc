@@ -21,6 +21,7 @@
 #include "base/task_scheduler/task_scheduler.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/platform_thread.h"
+#include "base/threading/thread_restrictions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
@@ -532,7 +533,7 @@ TEST(ObserverListThreadSafeTest, NotificationOnValidSequence) {
   auto task_runner_1 = CreateSequencedTaskRunnerWithTraits(TaskTraits());
   auto task_runner_2 = CreateSequencedTaskRunnerWithTraits(TaskTraits());
 
-  auto observer_list = make_scoped_refptr(new ObserverListThreadSafe<Foo>());
+  auto observer_list = MakeRefCounted<ObserverListThreadSafe<Foo>>();
 
   SequenceVerificationObserver observer_1(task_runner_1);
   SequenceVerificationObserver observer_2(task_runner_2);
@@ -558,7 +559,7 @@ TEST(ObserverListThreadSafeTest, NotificationOnValidSequence) {
 // from a notification, it is itself notified.
 TEST(ObserverListThreadSafeTest, AddObserverFromNotificationNotifyAll) {
   test::ScopedTaskEnvironment scoped_task_environment;
-  auto observer_list = make_scoped_refptr(new ObserverListThreadSafe<Foo>());
+  auto observer_list = MakeRefCounted<ObserverListThreadSafe<Foo>>();
 
   Adder observer_added_from_notification(1);
 
@@ -587,6 +588,7 @@ class RemoveWhileNotificationIsRunningObserver : public Foo {
 
   void Observe(int x) override {
     notification_running_.Signal();
+    ScopedAllowBaseSyncPrimitivesForTesting allow_base_sync_primitives;
     barrier_.Wait();
   }
 
@@ -605,7 +607,7 @@ class RemoveWhileNotificationIsRunningObserver : public Foo {
 // Verify that there is no crash when an observer is removed while it is being
 // notified.
 TEST(ObserverListThreadSafeTest, RemoveWhileNotificationIsRunning) {
-  auto observer_list = make_scoped_refptr(new ObserverListThreadSafe<Foo>());
+  auto observer_list = MakeRefCounted<ObserverListThreadSafe<Foo>>();
   RemoveWhileNotificationIsRunningObserver observer;
 
   WaitableEvent task_running(WaitableEvent::ResetPolicy::AUTOMATIC,
@@ -617,9 +619,8 @@ TEST(ObserverListThreadSafeTest, RemoveWhileNotificationIsRunning) {
   // TaskScheduler can safely use |barrier|.
   test::ScopedTaskEnvironment scoped_task_environment;
 
-  CreateSequencedTaskRunnerWithTraits({WithBaseSyncPrimitives()})
-      ->PostTask(FROM_HERE,
-                 base::BindOnce(&ObserverListThreadSafe<Foo>::AddObserver,
+  CreateSequencedTaskRunnerWithTraits({})->PostTask(
+      FROM_HERE, base::BindOnce(&ObserverListThreadSafe<Foo>::AddObserver,
                                 observer_list, Unretained(&observer)));
   TaskScheduler::GetInstance()->FlushForTesting();
 

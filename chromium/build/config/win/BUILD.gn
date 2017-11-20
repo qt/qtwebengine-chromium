@@ -60,7 +60,7 @@ config("compiler") {
   # Building with Clang on Windows is a work in progress and very
   # experimental. See crbug.com/82385.
   if (is_clang) {
-    cflags += [ "-fmsc-version=1900" ]
+    cflags += [ "-fmsc-version=1911" ]
 
     if (current_cpu == "x86") {
       cflags += [ "-m32" ]
@@ -267,8 +267,10 @@ config("cfi_linker") {
   # turned on either.
   # TODO(thakis): Turn this on with lld once supported, https://crbug.com/693709
   if (!is_debug && !use_lld) {
-    # Turn on CFG in msvc linker, regardless of compiler used.
-    ldflags = [ "/guard:cf" ]
+    # Turn on CFG in msvc linker, regardless of compiler used. Turn off CFG for
+    # longjmp (new in VS 2017) because it relies on compiler support which we do
+    # not have enabled.
+    ldflags = [ "/guard:cf,nolongjmp" ]
   }
 }
 
@@ -424,14 +426,4 @@ config("target_winrt") {
     "/ZW",
     "/EHsc",
   ]
-}
-
-# Internal stuff --------------------------------------------------------------
-
-# Config used by the MIDL template to disable warnings.
-config("midl_warnings") {
-  if (is_clang) {
-    # MIDL generates code like "#endif !_MIDL_USE_GUIDDEF_".
-    cflags = [ "-Wno-extra-tokens" ]
-  }
 }

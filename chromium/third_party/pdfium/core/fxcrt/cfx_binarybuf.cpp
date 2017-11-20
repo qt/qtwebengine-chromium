@@ -12,21 +12,24 @@
 CFX_BinaryBuf::CFX_BinaryBuf()
     : m_AllocStep(0), m_AllocSize(0), m_DataSize(0) {}
 
-CFX_BinaryBuf::CFX_BinaryBuf(FX_STRSIZE size)
+CFX_BinaryBuf::CFX_BinaryBuf(size_t size)
     : m_AllocStep(0), m_AllocSize(size), m_DataSize(size) {
   m_pBuffer.reset(FX_Alloc(uint8_t, size));
 }
 
 CFX_BinaryBuf::~CFX_BinaryBuf() {}
 
-void CFX_BinaryBuf::Delete(FX_STRSIZE start_index, FX_STRSIZE count) {
-  if (!m_pBuffer || start_index < 0 || count < 0 || count > m_DataSize ||
-      start_index > m_DataSize - count) {
+void CFX_BinaryBuf::Delete(size_t start_index, size_t count) {
+  if (!m_pBuffer || count > m_DataSize || start_index > m_DataSize - count)
     return;
-  }
+
   memmove(m_pBuffer.get() + start_index, m_pBuffer.get() + start_index + count,
           m_DataSize - start_index - count);
   m_DataSize -= count;
+}
+
+size_t CFX_BinaryBuf::GetLength() const {
+  return m_DataSize;
 }
 
 void CFX_BinaryBuf::Clear() {
@@ -39,19 +42,20 @@ std::unique_ptr<uint8_t, FxFreeDeleter> CFX_BinaryBuf::DetachBuffer() {
   return std::move(m_pBuffer);
 }
 
-void CFX_BinaryBuf::EstimateSize(FX_STRSIZE size, FX_STRSIZE step) {
+void CFX_BinaryBuf::EstimateSize(size_t size, size_t step) {
   m_AllocStep = step;
   if (m_AllocSize < size)
     ExpandBuf(size - m_DataSize);
 }
 
-void CFX_BinaryBuf::ExpandBuf(FX_STRSIZE add_size) {
-  FX_SAFE_STRSIZE new_size = m_DataSize;
+void CFX_BinaryBuf::ExpandBuf(size_t add_size) {
+  FX_SAFE_SIZE_T new_size = m_DataSize;
   new_size += add_size;
   if (m_AllocSize >= new_size.ValueOrDie())
     return;
 
-  int alloc_step = std::max(128, m_AllocStep ? m_AllocStep : m_AllocSize / 4);
+  size_t alloc_step = std::max(static_cast<size_t>(128),
+                               m_AllocStep ? m_AllocStep : m_AllocSize / 4);
   new_size += alloc_step - 1;  // Quantize, don't combine these lines.
   new_size /= alloc_step;
   new_size *= alloc_step;
@@ -61,8 +65,8 @@ void CFX_BinaryBuf::ExpandBuf(FX_STRSIZE add_size) {
                       : FX_Alloc(uint8_t, m_AllocSize));
 }
 
-void CFX_BinaryBuf::AppendBlock(const void* pBuf, FX_STRSIZE size) {
-  if (size <= 0)
+void CFX_BinaryBuf::AppendBlock(const void* pBuf, size_t size) {
+  if (size == 0)
     return;
 
   ExpandBuf(size);
@@ -74,9 +78,7 @@ void CFX_BinaryBuf::AppendBlock(const void* pBuf, FX_STRSIZE size) {
   m_DataSize += size;
 }
 
-void CFX_BinaryBuf::InsertBlock(FX_STRSIZE pos,
-                                const void* pBuf,
-                                FX_STRSIZE size) {
+void CFX_BinaryBuf::InsertBlock(size_t pos, const void* pBuf, size_t size) {
   if (size <= 0)
     return;
 

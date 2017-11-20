@@ -8,20 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/test/call_test.h"
+#include "test/call_test.h"
 
 #include <algorithm>
 
-#include "webrtc/api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "webrtc/api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "webrtc/call/rtp_transport_controller_send.h"
-#include "webrtc/config.h"
-#include "webrtc/modules/audio_mixer/audio_mixer_impl.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/event.h"
-#include "webrtc/rtc_base/ptr_util.h"
-#include "webrtc/test/testsupport/fileutils.h"
-#include "webrtc/voice_engine/include/voe_base.h"
+#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "api/audio_codecs/builtin_audio_encoder_factory.h"
+#include "call/rtp_transport_controller_send.h"
+#include "call/video_config.h"
+#include "modules/audio_mixer/audio_mixer_impl.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/event.h"
+#include "rtc_base/ptr_util.h"
+#include "test/testsupport/fileutils.h"
+#include "voice_engine/include/voe_base.h"
 
 namespace webrtc {
 namespace test {
@@ -153,8 +153,9 @@ void CallTest::RunBaseTest(BaseTest* test) {
 
   test->PerformTest();
 
-  task_queue_.SendTask([this]() {
+  task_queue_.SendTask([this, test]() {
     Stop();
+    test->OnStreamsStopped();
     DestroyStreams();
     send_transport_.reset();
     receive_transport_.reset();
@@ -162,8 +163,6 @@ void CallTest::RunBaseTest(BaseTest* test) {
     if (num_audio_streams_ > 0)
       DestroyVoiceEngines();
   });
-
-  test->OnTestFinished();
 }
 
 void CallTest::CreateCalls(const Call::Config& sender_config,
@@ -223,7 +222,7 @@ void CallTest::CreateSendConfig(size_t num_video_streams,
     audio_send_config_.rtp.ssrc = kAudioSendSsrc;
     audio_send_config_.send_codec_spec =
         rtc::Optional<AudioSendStream::Config::SendCodecSpec>(
-            {kAudioSendPayloadType, {"OPUS", 48000, 2, {{"stereo", "1"}}}});
+            {kAudioSendPayloadType, {"opus", 48000, 2, {{"stereo", "1"}}}});
     audio_send_config_.encoder_factory = encoder_factory_;
   }
 
@@ -257,6 +256,8 @@ void CallTest::CreateMatchingReceiveConfigs(Transport* rtcp_send_transport) {
       video_config.rtp.remote_ssrc = video_send_config_.rtp.ssrcs[i];
       video_receive_configs_.push_back(video_config.Copy());
     }
+    video_receive_configs_[0].rtp.protected_by_flexfec =
+        (num_flexfec_streams_ == 1);
   }
 
   RTC_DCHECK_GE(1, num_audio_streams_);
@@ -590,7 +591,7 @@ void BaseTest::OnFrameGeneratorCapturerCreated(
     FrameGeneratorCapturer* frame_generator_capturer) {
 }
 
-void BaseTest::OnTestFinished() {
+void BaseTest::OnStreamsStopped() {
 }
 
 SendTest::SendTest(unsigned int timeout_ms) : BaseTest(timeout_ms) {

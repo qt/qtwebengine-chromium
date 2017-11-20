@@ -223,20 +223,6 @@ chromium_strings.grd. -->
           Google Chrome <ph name="TERMS_OF_SERVICE_LINK">&lt;a target="_blank" href="$1"&gt;</ph>Terms of Service<ph name="END_TERMS_OF_SERVICE_LINK">&lt;/a&gt;</ph>
         </message>
       </if>
-      <if expr="is_linux and not chromeos">
-        <message name="IDS_LINUX_WHEEZY_PRECISE_OBSOLETE_SOON" desc="A message displayed on an at-launch infobar and about:help warning the user that the computer they are using is about to become unsupported.">
-          This computer will soon stop receiving Google Chrome updates because this Linux system will no longer be supported.
-        </message>
-        <message name="IDS_LINUX_WHEEZY_PRECISE_OBSOLETE_NOW" desc="A message displayed on an at-launch infobar and about:help warning the user that the computer they are using is no longer supported.">
-          This computer will no longer receive Google Chrome updates because this Linux system is no longer supported.
-        </message>
-        <message name="IDS_LINUX_WHEEZY_PRECISE_OBSOLETE_SOON_CAN_UPGRADE" desc="A message displayed on an at-launch infobar and about:help warning the user that the computer they are using is about to become unsupported, unless they upgrade to the 64-bit version.">
-          This computer will soon stop receiving 32-bit Google Chrome updates. Please upgrade to 64-bit Google Chrome.
-        </message>
-        <message name="IDS_LINUX_WHEEZY_PRECISE_OBSOLETE_NOW_CAN_UPGRADE" desc="A message displayed on an at-launch infobar and about:help warning the user that the computer they are using is no longer supported, unless they upgrade to the 64-bit version.">
-          This computer will no longer receive 32-bit Google Chrome updates. Please upgrade to 64-bit Google Chrome.
-        </message>
-      </if>
       <if expr="is_macosx">
         <message name="IDS_MAC_10_678_OBSOLETE_SOON" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the OS version they are using is about to become unsupported.">
           This computer will soon stop receiving Google Chrome updates because Mac OS X 10.6, 10.7, and 10.8 will no longer be supported.
@@ -265,9 +251,6 @@ chromium_strings.grd. -->
           Google Chrome is unresponsive. Relaunch now?
         </message>
       </if>
-      <message name="IDS_IMPORT_FIND_YOUR_BOOKMARKS" desc="Helpful reminder for where to find imported bookmarks">
-        Find your bookmarks in the Chrome menu or on the bookmarks bar.
-      </message>
       <message name="IDS_IMPORTER_LOCK_TEXT" desc="The message to be displayed on dialog">
         Sadly, your Mozilla Firefox settings are not available while that browser is running. To import those settings to Google Chrome, save your work and close all Firefox windows. Then click Continue.
       </message>
@@ -423,9 +406,6 @@ Google Chrome is unable to recover your settings.
         </message>
       </if>
       <!-- Options Dialog -->
-      <message name="IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE" desc="The text in the options panel that describes how we use web services to improve browsing experience.">
-        Google Chrome may use web services to improve your browsing experience.
-      </message>
       <if expr="is_win">
         <message name="IDS_SHORTCUT_TOOLTIP" desc="Text for the hover-on tooltip for the Google Chrome shortcuts.">
           Access the Internet
@@ -446,14 +426,6 @@ Google Chrome is unable to recover your settings.
       <if expr="chromeos">
         <message name="IDS_SYNC_OVERVIEW" desc="Chrome OS: The message that appears in the options dialog when sync has not been set up by the user.">
           Set up Sync to save your personalized browser features to the web and access them from Google Chrome on any computer.
-        </message>
-        <message name="IDS_ABOUT_BUTTON" desc="The label for the button to open the about page.">
-          About Chrome OS
-        </message>
-      </if>
-      <if expr="not chromeos">
-        <message name="IDS_ABOUT_BUTTON" desc="The label for the button to open the about page.">
-          About Google Chrome
         </message>
       </if>
       <if expr="is_win">
@@ -923,13 +895,6 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
         </message>
       </if>
 
-      <!-- chrome://settings. Android uses native UI for settings -->
-      <if expr="not is_android">
-        <message name="IDS_OPTIONS_DEFAULTBROWSER_USEASDEFAULT" desc="The label of the 'Use Chrome as default' browser button">
-          Make Google Chrome the default browser
-        </message>
-      </if>
-
       <!-- Material Design User Manager -->
       <if expr="not is_android and not chromeos">
         <!-- Supervised user create confirmation page -->
@@ -1024,10 +989,30 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@example.com</
         </message>
       </if>
 
+      <!-- content area context menus. Android does not use it -->
       <if expr="not is_android">
         <message name="IDS_CONTENT_CONTEXT_SPELLING_BUBBLE_TEXT" desc="The text of a bubble that confirms users allows integrating the spelling service of Google to Chrome.">
           Google Chrome can provide smarter spell-checking by sending what you type in the browser to Google servers, allowing you to use the same spell-checking technology used by Google search.
         </message>
+        <if expr="not use_titlecase">
+          <message name="IDS_CONTENT_CONTEXT_OPENLINKNEWTAB_INAPP" desc="The name of the command to open a link in a newly created browser tab when the user is in an app window">
+            Open link in new Chrome &amp;tab
+          </message>
+          <message name="IDS_CONTENT_CONTEXT_OPENLINKOFFTHERECORD_INAPP" desc="The name of the command to open a link in an incognito browser window when the user is in an app window">
+            Open link in Chrome inco&amp;gnito window
+          </message>
+        </if>
+        <if expr="use_titlecase">
+          <message name="IDS_CONTENT_CONTEXT_OPENLINKNEWTAB_INAPP" desc="In Title Case: The name of the command to open a link in a newly created browser tab when the user is in an app window">
+            Open Link in New Chrome &amp;tab
+          </message>
+          <message name="IDS_CONTENT_CONTEXT_OPENLINKOFFTHERECORD_INAPP" desc="In Title Case: The name of the command to open a link in an incognito browser window when the user is in an app window">
+            Open Link in Chrome Inco&amp;gnito Window
+          </message>
+        </if>
+      </if>
+
+      <if expr="not is_android">
         <message name="IDS_RESET_PROFILE_SETTINGS_FEEDBACK" desc="Feedback label in the Reset Profile Settings dialog">
           Help make Google Chrome better by reporting the current settings
         </message>
@@ -1089,13 +1074,10 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@example.com</
         </message>
       </if>
       <message name="IDS_UPGRADE_BUBBLE_TITLE" desc="Text for the title of the upgrade bubble view.">
-        Chrome is out of date
+        Can't update Chrome
       </message>
       <message name="IDS_UPGRADE_BUBBLE_TEXT" desc="Text for the upgrade bubble view full description.">
-        Chrome could not update itself to the latest version, so you are missing out on awesome new features and security fixes. You need to manually reinstall Chrome.
-      </message>
-      <message name="IDS_UPGRADE_BUBBLE_REENABLE_TEXT" desc="Text for the upgrade bubble view full description.">
-        Chrome could not update itself to the latest version, so you are missing out on awesome new features and security fixes. You need to update Chrome.
+        Chrome couldn't update to the latest version, so you're missing out on new features and security fixes.
       </message>
 
       <!-- User menu errors -->
@@ -1208,6 +1190,17 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@example.com</
         </message>
         <message name="IDS_MISSING_STORAGE_PERMISSION_DOWNLOAD_EDUCATION_TEXT" desc="Text shown educating the user that Chrome is missing the Android storage permission, which is required to download files.">
           Chrome needs storage access to download files.
+        </message>
+      </if>
+
+      <!-- Framebust / Blocked Redirection intervention message -->
+      <if expr="is_android">
+        <!-- TODO(https://crbug.com/754754) only implemented in Android for now. -->
+        <message name="IDS_REDIRECT_BLOCKED_MESSAGE" desc="The message stating that a redirection was blocked on this page. This will be followed on a separate line with the address the user was being redirected to.">
+           Chrome stopped this site from taking you to
+        </message>
+        <message name="IDS_REDIRECT_BLOCKED_SHORT_MESSAGE" desc="The short message stating that a redirection was blocked on this page.">
+           Redirect blocked.
         </message>
       </if>
 

@@ -31,7 +31,7 @@ from webkitpy.w3c.wpt_manifest import WPTManifest
 
 # Settings for how often to check try job results and how long to wait.
 POLL_DELAY_SECONDS = 2 * 60
-TIMEOUT_SECONDS = 180 * 60
+TIMEOUT_SECONDS = 210 * 60
 
 _log = logging.getLogger(__file__)
 
@@ -117,6 +117,10 @@ class TestImporter(object):
             _log.info('Done: no changes to import.')
             return 0
 
+        if self._only_wpt_manifest_changed():
+            _log.info('Only WPT_BASE_MANIFEST.json was updated; skipping the import.')
+            return 0
+
         self._commit_changes(commit_message)
         _log.info('Changes imported and committed.')
 
@@ -172,6 +176,12 @@ class TestImporter(object):
         try_results = self.git_cl.wait_for_try_jobs(
             poll_delay_seconds=POLL_DELAY_SECONDS,
             timeout_seconds=TIMEOUT_SECONDS)
+
+        if not try_results:
+            self.git_cl.run(['set-close'])
+            _log.error('Timed out waiting for CQ; aborting.')
+            return False
+
         try_results = self.git_cl.filter_latest(try_results)
 
         # We only want to check the status of CQ bots. The set of CQ bots is
@@ -180,18 +190,19 @@ class TestImporter(object):
         # Blink try bots to get the set of CQ try bots.
         # Important: if any CQ bots are added to the builder list
         # (self.host.builders), then this logic will need to be updated.
-        try_results = {build: status for build, status in try_results.items()
-                       if build.builder_name not in self.blink_try_bots()}
+        cq_try_results = {build: status for build, status in try_results.items()
+                          if build.builder_name not in self.blink_try_bots()}
 
-        if not try_results:
+        if not cq_try_results:
+            _log.error('No CQ try results found in try results: %s.', try_results)
             self.git_cl.run(['set-close'])
-            _log.error('No CQ try job results, aborting.')
             return False
 
-        if try_results and self.git_cl.all_success(try_results):
+        if self.git_cl.all_success(cq_try_results):
             _log.info('CQ appears to have passed; trying to commit.')
             self.git_cl.run(['upload', '-f', '--send-mail'])  # Turn off WIP mode.
             self.git_cl.run(['set-commit'])
+            self.git_cl.wait_for_closed_status()
             _log.info('Update completed.')
             return True
 
@@ -289,7 +300,7 @@ class TestImporter(object):
         # irrelevant and ignored here, because it tests patches *individually*
         # while the importer tries to reapply these patches *cumulatively*.
         commits, _ = exportable_commits_over_last_n_commits(
-            self.host, local_wpt, self.wpt_github, require_clean=False)
+            self.host, local_wpt, self.wpt_github, require_clean=False, verify_merged_pr=True)
         return commits
 
     def _generate_manifest(self):
@@ -327,6 +338,13 @@ class TestImporter(object):
     def _has_changes(self):
         return_code, _ = self.run(['git', 'diff', '--quiet', 'HEAD'], exit_on_failure=False)
         return return_code == 1
+
+    def _only_wpt_manifest_changed(self):
+        changed_files = self.host.git().changed_files()
+        wpt_base_manifest = self.fs.relpath(
+            self.fs.join(self.dest_path, '..', 'WPT_BASE_MANIFEST.json'),
+            self.finder.chromium_base())
+        return changed_files == [wpt_base_manifest]
 
     def _commit_message(self, chromium_commit_sha, import_commit_sha,
                         locally_applied_commits=None):
@@ -417,14 +435,11 @@ class TestImporter(object):
             description,
             '--tbrs',
             'qyearsley@chromium.org',
-        ] + self._cc_part(directory_owners))
-
-    @staticmethod
-    def _cc_part(directory_owners):
-        cc_part = []
-        for owner_tuple in sorted(directory_owners):
-            cc_part.extend('--cc=' + owner for owner in owner_tuple)
-        return cc_part
+            # Note: we used to CC all the directory owners, but have stopped
+            # in search of a better notification mechanism. (crbug.com/765334)
+            '--cc',
+            'robertma@chromium.org',
+        ])
 
     def get_directory_owners(self):
         """Returns a mapping of email addresses to owners of changed tests."""

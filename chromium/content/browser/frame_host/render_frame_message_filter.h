@@ -86,10 +86,13 @@ class CONTENT_EXPORT RenderFrameMessageFilter
 
   ~RenderFrameMessageFilter() override;
 
-  void InitializeOnIO(mojom::CookieManagerPtrInfo cookie_manager);
+  void InitializeOnIO(network::mojom::CookieManagerPtrInfo cookie_manager);
 
+  // |new_render_frame_id| and |devtools_frame_token| are out parameters.
+  // Browser process defines them for the renderer process.
   void OnCreateChildFrame(const FrameHostMsg_CreateChildFrame_Params& params,
-                          int* new_render_frame_id);
+                          int* new_render_frame_id,
+                          base::UnguessableToken* devtools_frame_token);
   void OnCookiesEnabled(int render_frame_id,
                         const GURL& url,
                         const GURL& site_for_cookies,
@@ -175,7 +178,7 @@ class CONTENT_EXPORT RenderFrameMessageFilter
   // The ResourceContext which is to be used on the IO thread.
   ResourceContext* resource_context_;
 
-  mojom::CookieManagerPtr cookie_manager_;
+  network::mojom::CookieManagerPtr cookie_manager_;
 
   // Needed for issuing routing ids and surface ids.
   scoped_refptr<RenderWidgetHelper> render_widget_helper_;

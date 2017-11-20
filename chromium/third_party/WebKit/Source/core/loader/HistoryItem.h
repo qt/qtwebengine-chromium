@@ -92,8 +92,8 @@ class CORE_EXPORT HistoryItem final
   void SetURLString(const String&);
   void SetReferrer(const Referrer&);
 
-  void SetStateObject(PassRefPtr<SerializedScriptValue>);
-  SerializedScriptValue* StateObject() const { return state_object_.Get(); }
+  void SetStateObject(RefPtr<SerializedScriptValue>);
+  SerializedScriptValue* StateObject() const { return state_object_.get(); }
 
   void SetItemSequenceNumber(long long number) {
     item_sequence_number_ = number;

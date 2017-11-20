@@ -41,13 +41,13 @@
 #include "cc/blink/web_compositor_support_impl.h"
 #include "components/viz/test/ordered_simple_task_runner.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
-#include "platform/FontFamilyNames.h"
-#include "platform/HTTPNames.h"
 #include "platform/Language.h"
+#include "platform/font_family_names.h"
 #include "platform/heap/Heap.h"
+#include "platform/http_names.h"
 #include "platform/instrumentation/resource_coordinator/BlinkResourceCoordinatorBase.h"
 #include "platform/instrumentation/resource_coordinator/RendererResourceCoordinator.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/network/mime/MockMimeRegistry.h"
 #include "platform/scheduler/base/real_time_domain.h"
 #include "platform/scheduler/base/task_queue_manager.h"
@@ -56,13 +56,13 @@
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
 #include "platform/wtf/CryptographicallyRandomNumber.h"
 #include "platform/wtf/CurrentTime.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/WTF.h"
 #include "platform/wtf/allocator/Partitions.h"
 #include "public/platform/InterfaceProvider.h"
 #include "public/platform/WebContentLayer.h"
 #include "public/platform/WebExternalTextureLayer.h"
 #include "public/platform/WebImageLayer.h"
+#include "public/platform/WebRuntimeFeatures.h"
 #include "public/platform/WebScrollbarLayer.h"
 
 namespace blink {
@@ -77,7 +77,7 @@ class TestingPlatformSupport::TestingInterfaceProvider
                     mojo::ScopedMessagePipeHandle handle) override {
     if (std::string(name) == mojom::blink::MimeRegistry::Name_) {
       mojo::MakeStrongBinding(
-          WTF::MakeUnique<MockMimeRegistry>(),
+          std::make_unique<MockMimeRegistry>(),
           mojom::blink::MimeRegistryRequest(std::move(handle)));
       return;
     }
@@ -196,9 +196,10 @@ WebURLLoaderMockFactory* TestingPlatformSupport::GetURLLoaderMockFactory() {
 
 std::unique_ptr<WebURLLoader> TestingPlatformSupport::CreateURLLoader(
     const WebURLRequest& request,
-    base::SingleThreadTaskRunner* runner) {
-  return old_platform_ ? old_platform_->CreateURLLoader(request, runner)
-                       : nullptr;
+    SingleThreadTaskRunnerRefPtr runner) {
+  return old_platform_
+             ? old_platform_->CreateURLLoader(request, std::move(runner))
+             : nullptr;
 }
 
 WebData TestingPlatformSupport::GetDataResource(const char* name) {
@@ -369,6 +370,8 @@ ScopedUnittestsEnvironmentSetup::ScopedUnittestsEnvironmentSetup(int argc,
 
   InitializePlatformLanguage();
   FontFamilyNames::init();
+  WebRuntimeFeatures::EnableExperimentalFeatures(true);
+  WebRuntimeFeatures::EnableTestOnlyFeatures(true);
 }
 
 ScopedUnittestsEnvironmentSetup::~ScopedUnittestsEnvironmentSetup() {}

@@ -17,8 +17,10 @@
 #include "extensions/renderer/console.h"
 #include "extensions/renderer/content_watcher.h"
 #include "extensions/renderer/dispatcher.h"
-#include "extensions/renderer/messaging_bindings.h"
+#include "extensions/renderer/extension_bindings_system.h"
+#include "extensions/renderer/renderer_messaging_service.h"
 #include "extensions/renderer/script_context.h"
+#include "extensions/renderer/script_context_set.h"
 #include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -257,14 +259,17 @@ bool ExtensionFrameHelper::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ExtensionMsg_Response, OnExtensionResponse)
     IPC_MESSAGE_HANDLER(ExtensionMsg_MessageInvoke, OnExtensionMessageInvoke)
     IPC_MESSAGE_HANDLER(ExtensionMsg_SetFrameName, OnSetFrameName)
+    IPC_MESSAGE_HANDLER(ExtensionMsg_AppWindowClosed, OnAppWindowClosed)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
 void ExtensionFrameHelper::OnExtensionValidateMessagePort(const PortId& id) {
-  MessagingBindings::ValidateMessagePort(
-      extension_dispatcher_->script_context_set(), id, render_frame());
+  extension_dispatcher_->bindings_system()
+      ->GetMessagingService()
+      ->ValidateMessagePort(extension_dispatcher_->script_context_set(), id,
+                            render_frame());
 }
 
 void ExtensionFrameHelper::OnExtensionDispatchOnConnect(
@@ -273,29 +278,28 @@ void ExtensionFrameHelper::OnExtensionDispatchOnConnect(
     const ExtensionMsg_TabConnectionInfo& source,
     const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& tls_channel_id) {
-  MessagingBindings::DispatchOnConnect(
-      extension_dispatcher_->script_context_set(),
-      target_port_id,
-      channel_name,
-      source,
-      info,
-      tls_channel_id,
-      render_frame());
+  extension_dispatcher_->bindings_system()
+      ->GetMessagingService()
+      ->DispatchOnConnect(extension_dispatcher_->script_context_set(),
+                          target_port_id, channel_name, source, info,
+                          tls_channel_id, render_frame());
 }
 
 void ExtensionFrameHelper::OnExtensionDeliverMessage(const PortId& target_id,
                                                      const Message& message) {
-  MessagingBindings::DeliverMessage(
-      extension_dispatcher_->script_context_set(), target_id, message,
-      render_frame());
+  extension_dispatcher_->bindings_system()
+      ->GetMessagingService()
+      ->DeliverMessage(extension_dispatcher_->script_context_set(), target_id,
+                       message, render_frame());
 }
 
 void ExtensionFrameHelper::OnExtensionDispatchOnDisconnect(
     const PortId& id,
     const std::string& error_message) {
-  MessagingBindings::DispatchOnDisconnect(
-      extension_dispatcher_->script_context_set(), id, error_message,
-      render_frame());
+  extension_dispatcher_->bindings_system()
+      ->GetMessagingService()
+      ->DispatchOnDisconnect(extension_dispatcher_->script_context_set(), id,
+                             error_message, render_frame());
 }
 
 void ExtensionFrameHelper::OnExtensionSetTabId(int tab_id) {
@@ -335,6 +339,20 @@ void ExtensionFrameHelper::OnExtensionMessageInvoke(
 
 void ExtensionFrameHelper::OnSetFrameName(const std::string& name) {
   render_frame()->GetWebFrame()->SetName(blink::WebString::FromUTF8(name));
+}
+
+void ExtensionFrameHelper::OnAppWindowClosed() {
+  DCHECK(render_frame()->IsMainFrame());
+
+  v8::HandleScope scope(v8::Isolate::GetCurrent());
+  v8::Local<v8::Context> v8_context =
+      render_frame()->GetWebFrame()->MainWorldScriptContext();
+  ScriptContext* script_context =
+      ScriptContextSet::GetContextByV8Context(v8_context);
+  if (!script_context)
+    return;
+  script_context->module_system()->CallModuleMethodSafe("app.window",
+                                                        "onAppWindowClosed");
 }
 
 void ExtensionFrameHelper::OnDestruct() {

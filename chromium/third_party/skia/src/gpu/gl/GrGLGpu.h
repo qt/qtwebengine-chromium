@@ -59,15 +59,15 @@ public:
     }
 
     // Used by GrGLProgram to configure OpenGL state.
-    void bindTexture(int unitIdx, const GrSamplerParams& params, bool allowSRGBInputs,
+    void bindTexture(int unitIdx, const GrSamplerState& samplerState, bool allowSRGBInputs,
                      GrGLTexture* texture, GrSurfaceOrigin textureOrigin);
 
     void bindTexelBuffer(int unitIdx, GrPixelConfig, GrGLBuffer*);
 
     void bindImageStorage(int unitIdx, GrIOType, GrGLTexture *);
 
-    void generateMipmaps(const GrSamplerParams& params, bool allowSRGBInputs,
-                         GrGLTexture* texture, GrSurfaceOrigin textureOrigin);
+    void generateMipmaps(const GrSamplerState& params, bool allowSRGBInputs, GrGLTexture* texture,
+                         GrSurfaceOrigin textureOrigin);
 
     bool onGetReadPixelsInfo(GrSurface* srcSurface, GrSurfaceOrigin srcOrigin,
                              int readWidth, int readHeight, size_t rowBytes,
@@ -224,9 +224,10 @@ private:
     // The texture parameters are cached in |initialTexParams|.
     bool createTextureImpl(const GrSurfaceDesc& desc, GrGLTextureInfo* info,
                            bool renderTarget, GrGLTexture::TexParams* initialTexParams,
-                           const GrMipLevel texels[], int mipLevelCount);
+                           const GrMipLevel texels[], int mipLevelCount,
+                           bool* wasFullMipMapDataProvided);
 
-    bool onIsACopyNeededForTextureParams(GrTextureProxy*, const GrSamplerParams&,
+    bool onIsACopyNeededForTextureParams(GrTextureProxy*, const GrSamplerState&,
                                          GrTextureProducer::CopyParams*,
                                          SkScalar scaleAdjust[2]) const override;
 
@@ -260,6 +261,10 @@ private:
                           int left, int top, int width, int height,
                           GrPixelConfig config, GrBuffer* transferBuffer,
                           size_t offset, size_t rowBytes) override;
+
+    // Before calling any variation of TexImage, TexSubImage, etc..., call this to ensure that the
+    // PIXEL_UNPACK_BUFFER is unbound.
+    void unbindCpuToGpuXferBuffer();
 
     void onResolveRenderTarget(GrRenderTarget* target, GrSurfaceOrigin) override;
 
@@ -387,7 +392,8 @@ private:
     bool uploadTexData(GrPixelConfig texConfig, int texWidth, int texHeight,
                        GrSurfaceOrigin texOrigin, GrGLenum target, UploadType uploadType, int left,
                        int top, int width, int height, GrPixelConfig dataConfig,
-                       const GrMipLevel texels[], int mipLevelCount);
+                       const GrMipLevel texels[], int mipLevelCount,
+                       bool* wasFullMipMapDataProvided = nullptr);
 
     bool createRenderTargetObjects(const GrSurfaceDesc&, const GrGLTextureInfo& texInfo,
                                    GrGLRenderTarget::IDDesc*);

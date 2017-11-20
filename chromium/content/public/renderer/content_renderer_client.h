@@ -45,8 +45,6 @@ class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
 class WebPlugin;
 class WebPrescientNetworking;
-class WebRTCPeerConnectionHandler;
-class WebRTCPeerConnectionHandlerClient;
 class WebSocketHandshakeThrottle;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
@@ -156,12 +154,6 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual std::unique_ptr<blink::WebMediaStreamCenter>
   OverrideCreateWebMediaStreamCenter(blink::WebMediaStreamCenterClient* client);
 
-  // Allows the embedder to override creating a WebRTCPeerConnectionHandler. If
-  // it returns NULL the content layer will create the connection handler.
-  virtual std::unique_ptr<blink::WebRTCPeerConnectionHandler>
-  OverrideCreateWebRTCPeerConnectionHandler(
-      blink::WebRTCPeerConnectionHandlerClient* client);
-
   // Allows the embedder to override creating a WebMIDIAccessor.  If it
   // returns NULL the content layer will create the MIDI accessor.
   virtual std::unique_ptr<blink::WebMIDIAccessor> OverrideCreateMIDIAccessor(
@@ -194,9 +186,9 @@ class CONTENT_EXPORT ContentRendererClient {
   // all widgets are hidden.
   virtual bool RunIdleHandlerWhenWidgetsHidden();
 
-  // Returns true if the renderer process should allow shared timer suspension
+  // Returns true if the renderer process should allow task suspension
   // after the process has been backgrounded. Defaults to false.
-  virtual bool AllowStoppingTimersWhenProcessBackgrounded();
+  virtual bool AllowStoppingWhenProcessBackgrounded();
 
   // Returns true if a popup window should be allowed.
   virtual bool AllowPopup();
@@ -383,6 +375,17 @@ class CONTENT_EXPORT ContentRendererClient {
   // Whether the renderer allows idle media players to be automatically
   // suspended after a period of inactivity.
   virtual bool AllowIdleMediaSuspend();
+
+  // Called when a resource at |url| is loaded using an otherwise-valid legacy
+  // Symantec certificate that will be distrusted in future. Allows the embedder
+  // to override the message that is added to the console to inform developers
+  // that their certificate will be distrusted in future. If the method returns
+  // true, then |*console_message| will be printed to the console; otherwise a
+  // generic mesage will be used.
+  virtual bool OverrideLegacySymantecCertConsoleMessage(
+      const GURL& url,
+      base::Time cert_validity_start,
+      std::string* console_messsage);
 };
 
 }  // namespace content

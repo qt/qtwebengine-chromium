@@ -5,9 +5,9 @@
 #include "platform/heap/HeapCompact.h"
 
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/heap/Heap.h"
 #include "platform/heap/SparseHeapBitmap.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/HashMap.h"
 #include "platform/wtf/HashSet.h"
@@ -414,7 +414,7 @@ void HeapCompact::StartThreadCompaction() {
     return;
 
   if (!start_compaction_time_ms_)
-    start_compaction_time_ms_ = WTF::CurrentTimeMS();
+    start_compaction_time_ms_ = WTF::MonotonicallyIncreasingTimeMS();
 }
 
 void HeapCompact::FinishThreadCompaction() {
@@ -429,7 +429,7 @@ void HeapCompact::FinishThreadCompaction() {
   do_compact_ = false;
 
   double time_for_heap_compaction =
-      WTF::CurrentTimeMS() - start_compaction_time_ms_;
+      WTF::MonotonicallyIncreasingTimeMS() - start_compaction_time_ms_;
   DEFINE_THREAD_SAFE_STATIC_LOCAL(
       CustomCountHistogram, time_for_heap_compaction_histogram,
       ("BlinkGC.TimeForHeapCompaction", 1, 10 * 1000, 50));

@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_API_STATS_RTCSTATS_OBJECTS_H_
-#define WEBRTC_API_STATS_RTCSTATS_OBJECTS_H_
+#ifndef API_STATS_RTCSTATS_OBJECTS_H_
+#define API_STATS_RTCSTATS_OBJECTS_H_
 
 #include <string>
 #include <vector>
 
-#include "webrtc/api/stats/rtcstats.h"
+#include "api/stats/rtcstats.h"
 
 namespace webrtc {
 
@@ -255,6 +255,10 @@ class RTCMediaStreamTrackStats final : public RTCStats {
   RTCStatsMember<bool> detached;
   // See |RTCMediaStreamTrackKind| for valid values.
   RTCStatsMember<std::string> kind;
+  // TODO(gustaf): Implement jitter_buffer_delay for video (currently
+  // implemented for audio only).
+  // https://crbug.com/webrtc/8318
+  RTCStatsMember<double> jitter_buffer_delay;
   // Video-only members
   RTCStatsMember<uint32_t> frame_width;
   RTCStatsMember<uint32_t> frame_height;
@@ -278,6 +282,7 @@ class RTCMediaStreamTrackStats final : public RTCStats {
   RTCStatsMember<uint64_t> total_samples_received;
   RTCStatsMember<double> total_samples_duration;
   RTCStatsMember<uint64_t> concealed_samples;
+  RTCStatsMember<uint64_t> concealment_events;
 };
 
 // https://w3c.github.io/webrtc-stats/#pcstats-dict*
@@ -415,4 +420,4 @@ class RTCTransportStats final : public RTCStats {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_API_STATS_RTCSTATS_OBJECTS_H_
+#endif  // API_STATS_RTCSTATS_OBJECTS_H_

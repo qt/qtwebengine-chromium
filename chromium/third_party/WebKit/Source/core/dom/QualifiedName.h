@@ -58,7 +58,7 @@ class CORE_EXPORT QualifiedName {
                                             const AtomicString& local_name,
                                             const AtomicString& namespace_uri,
                                             bool is_static) {
-      return AdoptRef(
+      return WTF::AdoptRef(
           new QualifiedNameImpl(prefix, local_name, namespace_uri, is_static));
     }
 
@@ -66,16 +66,16 @@ class CORE_EXPORT QualifiedName {
 
     unsigned ComputeHash() const;
 
-    void Ref() {
+    void AddRef() {
       if (is_static_)
         return;
-      RefCounted<QualifiedNameImpl>::Ref();
+      RefCounted<QualifiedNameImpl>::AddRef();
     }
 
-    void Deref() {
+    void Release() {
       if (is_static_)
         return;
-      RefCounted<QualifiedNameImpl>::Deref();
+      RefCounted<QualifiedNameImpl>::Release();
     }
 
     // We rely on StringHasher's hashMemory clearing out the top 8 bits when
@@ -114,14 +114,6 @@ class CORE_EXPORT QualifiedName {
     return *this;
   }
 
-  // Hash table deleted values, which are only constructed and never copied or
-  // destroyed.
-  QualifiedName(WTF::HashTableDeletedValueType)
-      : impl_(WTF::kHashTableDeletedValue) {}
-  bool IsHashTableDeletedValue() const {
-    return impl_.IsHashTableDeletedValue();
-  }
-
   bool operator==(const QualifiedName& other) const {
     return impl_ == other.impl_;
   }
@@ -148,7 +140,7 @@ class CORE_EXPORT QualifiedName {
 
   String ToString() const;
 
-  QualifiedNameImpl* Impl() const { return impl_.Get(); }
+  QualifiedNameImpl* Impl() const { return impl_.get(); }
 
   // Init routine for globals
   static void InitAndReserveCapacityForSize(unsigned size);
@@ -163,6 +155,8 @@ class CORE_EXPORT QualifiedName {
                            const AtomicString& name_namespace);
 
  private:
+  friend struct WTF::HashTraits<blink::QualifiedName>;
+
   // This constructor is used only to create global/static QNames that don't
   // require any ref counting.
   QualifiedName(const AtomicString& prefix,
@@ -234,7 +228,20 @@ struct HashTraits<blink::QualifiedName>
   static const blink::QualifiedName& EmptyValue() {
     return blink::QualifiedName::Null();
   }
+
+  static bool IsDeletedValue(const blink::QualifiedName& value) {
+    using QualifiedNameImpl = blink::QualifiedName::QualifiedNameImpl;
+    return HashTraits<RefPtr<QualifiedNameImpl>>::IsDeletedValue(value.impl_);
+  }
+
+  static void ConstructDeletedValue(blink::QualifiedName& slot,
+                                    bool zero_value) {
+    using QualifiedNameImpl = blink::QualifiedName::QualifiedNameImpl;
+    HashTraits<RefPtr<QualifiedNameImpl>>::ConstructDeletedValue(slot.impl_,
+                                                                 zero_value);
+  }
 };
+
 }  // namespace WTF
 
 #endif

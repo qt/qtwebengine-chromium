@@ -293,7 +293,9 @@ class CORE_EXPORT EventHandler final
 
   bool ShouldApplyTouchAdjustment(const WebGestureEvent&) const;
 
+  bool IsSelectingLink(const HitTestResult&);
   bool ShouldShowIBeamForNode(const Node*, const HitTestResult&);
+  bool ShouldShowResizeForNode(const Node*, const HitTestResult&);
   OptionalCursor SelectCursor(const HitTestResult&);
   OptionalCursor SelectAutoCursor(const HitTestResult&,
                                   Node*,
@@ -411,6 +413,9 @@ class CORE_EXPORT EventHandler final
                            ShadowChildCanOverrideUserSelectText);
   FRIEND_TEST_ALL_PREFIXES(EventHandlerTest, InputFieldsCanStartSelection);
   FRIEND_TEST_ALL_PREFIXES(EventHandlerTest, ImagesCannotStartSelection);
+  FRIEND_TEST_ALL_PREFIXES(EventHandlerTest, AnchorTextCannotStartSelection);
+  FRIEND_TEST_ALL_PREFIXES(EventHandlerTest,
+                           ReadOnlyInputDoesNotInheritUserSelect);
 };
 
 }  // namespace blink

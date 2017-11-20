@@ -56,8 +56,8 @@ DEFINE_string(svgs, "", "Directory to read SVGs from, or a single SVG file.");
 DEFINE_int32_2(threads, j, -1, "Run threadsafe tests on a threadpool with this many extra threads, "
                                "defaulting to one extra thread per core.");
 
-DEFINE_int32(gpuThreads, 0, "Create this many extra threads to assist with GPU work, "
-                            "including software path rendering.");
+DEFINE_int32(gpuThreads, 2, "Create this many extra threads to assist with GPU work, "
+                            "including software path rendering. Defaults to two.");
 
 DEFINE_bool2(verbose, v, false, "enable verbose output from the test driver.");
 
@@ -93,6 +93,10 @@ bool CollectImages(SkCommandLineFlags::StringArray images, SkTArray<SkString>* o
     static const char* const exts[] = {
         "bmp", "gif", "jpg", "jpeg", "png", "webp", "ktx", "astc", "wbmp", "ico",
         "BMP", "GIF", "JPG", "JPEG", "PNG", "WEBP", "KTX", "ASTC", "WBMP", "ICO",
+#ifdef SK_HAS_HEIF_LIBRARY
+        "heic",
+        "HEIC",
+#endif
 #ifdef SK_CODEC_DECODES_RAW
         "arw", "cr2", "dng", "nef", "nrw", "orf", "raf", "rw2", "pef", "srw",
         "ARW", "CR2", "DNG", "NEF", "NRW", "ORF", "RAF", "RW2", "PEF", "SRW",
@@ -131,6 +135,6 @@ bool CollectImages(SkCommandLineFlags::StringArray images, SkTArray<SkString>* o
 
 SkExecutor* GpuExecutorForTools() {
     static std::unique_ptr<SkExecutor> gGpuExecutor = (0 != FLAGS_gpuThreads)
-        ? SkExecutor::MakeThreadPool(FLAGS_gpuThreads) : nullptr;
+        ? SkExecutor::MakeFIFOThreadPool(FLAGS_gpuThreads) : nullptr;
     return gGpuExecutor.get();
 }

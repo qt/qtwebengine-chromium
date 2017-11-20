@@ -14,6 +14,20 @@ static void add_ref(const string& leadingSpaces, const string& ref, string* resu
     *result += leadingSpaces + ref;
 }
 
+static string preformat(const string& orig) {
+    string result;
+    for (auto c : orig) {
+        if ('<' == c) {
+          result += "&lt;";
+        } else if ('>' == c) {
+          result += "&gt;";
+        } else {
+            result += c;
+        }
+    }
+    return result;
+}
+
 // FIXME: preserve inter-line spaces and don't add new ones
 string MdOut::addReferences(const char* refStart, const char* refEnd,
         BmhParser::Resolvable resolvable) {
@@ -22,7 +36,9 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
     bool lineStart = true;
     string ref;
     string leadingSpaces;
+    int distFromParam = 99;
     do {
+        ++distFromParam;
         const char* base = t.fChar;
         t.skipWhiteSpace();
         const char* wordStart = t.fChar;
@@ -118,19 +134,19 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
 // methods may start with upper (static) or lower (most)
 
         // see if this should have been a findable reference
-                 
+
             // look for Sk / sk / SK ..
         if (!ref.compare(0, 2, "Sk") && ref != "Skew" && ref != "Skews" &&
               ref != "Skip" && ref != "Skips") {
             t.reportError("missed Sk prefixed");
             return result;
-        } 
+        }
         if (!ref.compare(0, 2, "SK")) {
             if (BmhParser::Resolvable::kOut != resolvable) {
                 t.reportError("missed SK prefixed");
             }
             return result;
-        } 
+        }
         if (!isupper(start[0])) {
             // TODO:
             // look for all lowercase w/o trailing parens as mistaken method matches
@@ -138,13 +154,32 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
             const Definition* def;
             if (fMethod && (def = fMethod->hasParam(ref))) {
                 result += linkRef(leadingSpaces, def, ref);
+                fLastParam = def;
+                distFromParam = 0;
                 continue;
-            } else if (!fInDescription && ref[0] != '0' 
+            } else if (!fInDescription && ref[0] != '0'
                     && string::npos != ref.find_first_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ")) {
                 // FIXME: see isDefined(); check to see if fXX is a member of xx.fXX
                 if (('f' != ref[0] && string::npos == ref.find("()"))
 //                        || '.' != t.backup(ref.c_str())
                         && ('k' != ref[0] && string::npos == ref.find("_Private"))) {
+                    if ('.' == wordStart[0] && (distFromParam >= 1 && distFromParam <= 16)) {
+                        const Definition* paramType = this->findParamType();
+                        if (paramType) {
+                            string fullName = paramType->fName + "::" + ref;
+                            bool found = false;
+                            for (auto child : paramType->fChildren) {
+                                if (fullName == child->fName) {
+                                    result += linkRef(leadingSpaces, paramType, ref);
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (found) {
+                                continue;
+                            }
+                        }
+                    }
                     if (BmhParser::Resolvable::kOut != resolvable) {
                         t.reportError("missed camelCase");
                         return result;
@@ -184,7 +219,8 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
             for (string prefix : { "_", "::" } ) {
                 RootDefinition* root = test->asRoot();
                 string prefixed = root->fName + prefix + ref;
-                if (const Definition* def = root->find(prefixed)) {
+                if (const Definition* def = root->find(prefixed,
+                        RootDefinition::AllowParens::kYes)) {
                     result += linkRef(leadingSpaces, def, ref);
                     goto found;
                 }
@@ -241,6 +277,7 @@ bool MdOut::buildRefFromFile(const char* name, const char* outDir) {
     filename = match + ".md";
     match += ".bmh";
     fOut = nullptr;
+    string fullName;
     for (const auto& topic : fBmhParser.fTopicMap) {
         Definition* topicDef = topic.second;
         if (topicDef->fParent) {
@@ -254,7 +291,7 @@ bool MdOut::buildRefFromFile(const char* name, const char* outDir) {
             continue;
         }
         if (!fOut) {
-            string fullName(outDir);
+            fullName = outDir;
             if ('/' != fullName.back()) {
                 fullName += '/';
             }
@@ -278,6 +315,7 @@ bool MdOut::buildRefFromFile(const char* name, const char* outDir) {
     if (fOut) {
         this->writePending();
         fclose(fOut);
+        SkDebugf("wrote %s\n", fullName.c_str());
         fOut = nullptr;
     }
     return true;
@@ -329,6 +367,31 @@ void MdOut::childrenOut(const Definition* def, const char* start) {
     }
 }
 
+const Definition* MdOut::findParamType() {
+    SkASSERT(fMethod);
+    TextParser parser(fMethod->fFileName, fMethod->fStart, fMethod->fContentStart,
+            fMethod->fLineCount);
+    string lastFull;
+    do {
+        parser.skipToAlpha();
+        if (parser.eof()) {
+            return nullptr;
+        }
+        const char* word = parser.fChar;
+        parser.skipFullName();
+        SkASSERT(!parser.eof());
+        string name = string(word, parser.fChar - word);
+        if (fLastParam->fName == name) {
+            const Definition* paramType = this->isDefined(parser, lastFull, false);
+            return paramType;
+        }
+        if (isupper(name[0])) {
+            lastFull = name;
+        }
+    } while (true);
+    return nullptr;
+}
+
 const Definition* MdOut::isDefined(const TextParser& parser, const string& ref, bool report) const {
     auto rootIter = fBmhParser.fClassMap.find(ref);
     if (rootIter != fBmhParser.fClassMap.end()) {
@@ -363,7 +426,7 @@ const Definition* MdOut::isDefined(const TextParser& parser, const string& ref, 
         if (ref == fRoot->fName) {
             return fRoot;
         }
-        if (const Definition* definition = fRoot->find(ref)) {
+        if (const Definition* definition = fRoot->find(ref, RootDefinition::AllowParens::kYes)) {
             return definition;
         }
         Definition* test = fRoot;
@@ -376,14 +439,16 @@ const Definition* MdOut::isDefined(const TextParser& parser, const string& ref, 
                 if (ref == leaf.first) {
                     return leaf.second;
                 }
-                const Definition* definition = leaf.second->find(ref);
+                const Definition* definition = leaf.second->find(ref,
+                        RootDefinition::AllowParens::kYes);
                 if (definition) {
                     return definition;
                 }
             }
             for (string prefix : { "::", "_" } ) {
                 string prefixed = root->fName + prefix + ref;
-                if (const Definition* definition = root->find(prefixed)) {
+                if (const Definition* definition = root->find(prefixed,
+                        RootDefinition::AllowParens::kYes)) {
                     return definition;
                 }
                 if (isupper(prefixed[0])) {
@@ -401,7 +466,7 @@ const Definition* MdOut::isDefined(const TextParser& parser, const string& ref, 
         auto classIter = fBmhParser.fClassMap.find(className);
         if (classIter != fBmhParser.fClassMap.end()) {
             const RootDefinition& classDef = classIter->second;
-            const Definition* result = classDef.find(ref);
+            const Definition* result = classDef.find(ref, RootDefinition::AllowParens::kYes);
             if (result) {
                 return result;
             }
@@ -414,7 +479,7 @@ const Definition* MdOut::isDefined(const TextParser& parser, const string& ref, 
         // try with a prefix
         if ('k' == ref[0]) {
             for (auto const& iter : fBmhParser.fEnumMap) {
-                if (iter.second.find(ref)) {
+                if (iter.second.find(ref, RootDefinition::AllowParens::kYes)) {
                     return &iter.second;
                 }
             }
@@ -456,13 +521,15 @@ const Definition* MdOut::isDefined(const TextParser& parser, const string& ref, 
             string className(ref, 0, pos);
             auto classIter = fBmhParser.fClassMap.find(className);
             if (classIter != fBmhParser.fClassMap.end()) {
-                if (const Definition* definition = classIter->second.find(ref)) {
+                if (const Definition* definition = classIter->second.find(ref,
+                        RootDefinition::AllowParens::kYes)) {
                     return definition;
                 }
             }
             auto enumIter = fBmhParser.fEnumMap.find(className);
             if (enumIter != fBmhParser.fEnumMap.end()) {
-                if (const Definition* definition = enumIter->second.find(ref)) {
+                if (const Definition* definition = enumIter->second.find(ref,
+                        RootDefinition::AllowParens::kYes)) {
                     return definition;
                 }
             }
@@ -682,7 +749,7 @@ void MdOut::markTypeOut(Definition* def) {
             TextParser tp(def->fFileName, def->fStart, def->fContentStart, def->fLineCount);
             tp.skipExact("#Member");
             tp.skipWhiteSpace();
-            const char* end = tp.trimmedBracketEnd('\n', TextParser::OneLine::kYes);
+            const char* end = tp.trimmedBracketEnd('\n');
             this->lfAlways(2);
             fprintf(fOut, "<a name=\"%s\"> <code><strong>%.*s</strong></code> </a>",
                     def->fFiddle.c_str(), (int) (end - tp.fChar), tp.fChar);
@@ -703,10 +770,11 @@ void MdOut::markTypeOut(Definition* def) {
             // TODO: put in css spec that we can define somewhere else (if markup supports that)
             // TODO: 50em below should match limt = 80 in formatFunction()
             this->writePending();
+            string preformattedStr = preformat(formattedStr);
             fprintf(fOut, "<pre style=\"padding: 1em 1em 1em 1em;"
                                     "width: 50em; background-color: #f0f0f0\">\n"
                             "%s\n"
-                            "</pre>",  formattedStr.c_str());
+                            "</pre>",  preformattedStr.c_str());
             this->lf(2);
             fTableState = TableState::kNone;
             fMethod = def;
@@ -716,7 +784,7 @@ void MdOut::markTypeOut(Definition* def) {
         case MarkType::kParam: {
             if (TableState::kNone == fTableState) {
                 this->mdHeaderOut(3);
-                fprintf(fOut, 
+                fprintf(fOut,
                         "Parameters\n"
                         "\n"
                         "<table>"
@@ -743,7 +811,7 @@ void MdOut::markTypeOut(Definition* def) {
                 return;
             }
             string refNameStr = def->fParent->fFiddle + "_" + paramNameStr;
-            fprintf(fOut, 
+            fprintf(fOut,
                     "    <td><a name=\"%s\"> <code><strong>%s </strong></code> </a></td> <td>",
                     refNameStr.c_str(), paramNameStr.c_str());
         } break;
@@ -773,7 +841,7 @@ void MdOut::markTypeOut(Definition* def) {
         case MarkType::kStdOut: {
             TextParser code(def);
             this->mdHeaderOut(4);
-            fprintf(fOut, 
+            fprintf(fOut,
                     "Example Output\n"
                     "\n"
                     "~~~~");

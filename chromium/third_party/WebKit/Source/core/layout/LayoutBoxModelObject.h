@@ -420,7 +420,7 @@ class CORE_EXPORT LayoutBoxModelObject : public LayoutObject {
   void ContentChanged(ContentChangeType);
   bool HasAcceleratedCompositing() const;
 
-  void ComputeLayerHitTestRects(LayerHitTestRects&) const override;
+  void ComputeLayerHitTestRects(LayerHitTestRects&, TouchAction) const override;
 
   // Returns true if the background is painted opaque in the given rect.
   // The query rect is given in local coordinate system.
@@ -470,7 +470,7 @@ class CORE_EXPORT LayoutBoxModelObject : public LayoutObject {
   }
 
   LayoutRect LocalCaretRectForEmptyElement(LayoutUnit width,
-                                           LayoutUnit text_indent_offset);
+                                           LayoutUnit text_indent_offset) const;
 
   bool HasAutoHeightOrContainingBlockWithAutoHeight() const;
   LayoutBlock* ContainingBlockForAutoHeightDetection(
@@ -487,7 +487,9 @@ class CORE_EXPORT LayoutBoxModelObject : public LayoutObject {
   void AddLayerHitTestRects(LayerHitTestRects&,
                             const PaintLayer*,
                             const LayoutPoint&,
-                            const LayoutRect&) const override;
+                            TouchAction,
+                            const LayoutRect&,
+                            TouchAction) const override;
 
   void StyleWillChange(StyleDifference,
                        const ComputedStyle& new_style) override;

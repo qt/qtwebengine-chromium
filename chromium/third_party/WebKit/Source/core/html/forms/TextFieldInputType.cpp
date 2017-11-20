@@ -32,17 +32,17 @@
 #include "core/html/forms/TextFieldInputType.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/HTMLNames.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/TextEvent.h"
 #include "core/frame/LocalFrame.h"
-#include "core/html/FormData.h"
-#include "core/html/HTMLInputElement.h"
+#include "core/html/forms/FormData.h"
+#include "core/html/forms/HTMLInputElement.h"
 #include "core/html/forms/TextControlInnerElements.h"
 #include "core/html/shadow/ShadowElementNames.h"
+#include "core/html_names.h"
 #include "core/layout/LayoutDetailsMarker.h"
 #include "core/layout/LayoutTextControlSingleLine.h"
 #include "core/layout/LayoutTheme.h"
@@ -61,7 +61,7 @@ class DataListIndicatorElement final : public HTMLDivElement {
   inline DataListIndicatorElement(Document& document)
       : HTMLDivElement(document) {}
   inline HTMLInputElement* HostInput() const {
-    return toHTMLInputElement(OwnerShadowHost());
+    return ToHTMLInputElement(OwnerShadowHost());
   }
 
   LayoutObject* CreateLayoutObject(const ComputedStyle&) override {
@@ -249,12 +249,6 @@ void TextFieldInputType::ForwardEvent(Event* event) {
 
     GetElement().ForwardEvent(event);
   }
-}
-
-void TextFieldInputType::HandleFocusEvent(Element* old_focused_node,
-                                          WebFocusType focus_type) {
-  InputTypeView::HandleFocusEvent(old_focused_node, focus_type);
-  GetElement().BeginEditing();
 }
 
 void TextFieldInputType::HandleBlurEvent() {

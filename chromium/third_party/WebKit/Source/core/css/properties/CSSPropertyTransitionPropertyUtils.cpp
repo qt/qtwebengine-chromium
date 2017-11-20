@@ -8,12 +8,12 @@
 #include "core/CSSValueKeywords.h"
 #include "core/css/CSSCustomIdentValue.h"
 #include "core/css/CSSIdentifierValue.h"
-#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/CSSValue.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/parser/CSSParserToken.h"
 #include "core/css/parser/CSSParserTokenRange.h"
 #include "core/css/parser/CSSPropertyParserHelpers.h"
+#include "core/css/properties/CSSPropertyAPI.h"
 
 namespace blink {
 
@@ -27,7 +27,10 @@ CSSValue* CSSPropertyTransitionPropertyUtils::ConsumeTransitionProperty(
   CSSPropertyID unresolved_property = token.ParseAsUnresolvedCSSPropertyID();
   if (unresolved_property != CSSPropertyInvalid &&
       unresolved_property != CSSPropertyVariable) {
-    DCHECK(CSSPropertyMetadata::IsEnabledProperty(unresolved_property));
+#if DCHECK_IS_ON()
+    DCHECK(CSSPropertyAPI::Get(resolveCSSPropertyID(unresolved_property))
+               .IsEnabled());
+#endif
     range.ConsumeIncludingWhitespace();
     return CSSCustomIdentValue::Create(unresolved_property);
   }

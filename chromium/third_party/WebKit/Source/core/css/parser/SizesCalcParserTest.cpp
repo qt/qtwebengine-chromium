@@ -4,11 +4,11 @@
 
 #include "core/css/parser/SizesCalcParser.h"
 
-#include "core/MediaTypeNames.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/MediaValuesCached.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/css/parser/CSSTokenizer.h"
+#include "core/media_type_names.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
@@ -116,8 +116,9 @@ TEST(SizesCalcParserTest, Basic) {
   MediaValues* media_values = MediaValuesCached::Create(data);
 
   for (unsigned i = 0; test_cases[i].input; ++i) {
-    SizesCalcParser calc_parser(CSSTokenizer(test_cases[i].input).TokenRange(),
-                                media_values);
+    SizesCalcParser calc_parser(
+        CSSParserTokenRange(CSSTokenizer(test_cases[i].input).TokenizeToEOF()),
+        media_values);
     ASSERT_EQ(test_cases[i].valid, calc_parser.IsValid());
     if (calc_parser.IsValid())
       ASSERT_EQ(test_cases[i].output, calc_parser.Result());

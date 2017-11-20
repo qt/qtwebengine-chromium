@@ -32,6 +32,19 @@ namespace d3d11_gl
 {
 namespace
 {
+// Standard D3D sample positions from
+// https://msdn.microsoft.com/en-us/library/windows/desktop/ff476218.aspx
+using SamplePositionsArray = std::array<float, 32>;
+static constexpr std::array<SamplePositionsArray, 5> kSamplePositions = {
+    {{{0.5f, 0.5f}},
+     {{0.75f, 0.75f, 0.25f, 0.25f}},
+     {{0.375f, 0.125f, 0.875f, 0.375f, 0.125f, 0.625f, 0.625f, 0.875f}},
+     {{0.5625f, 0.3125f, 0.4375f, 0.6875f, 0.8125f, 0.5625f, 0.3125f, 0.1875f, 0.1875f, 0.8125f,
+       0.0625f, 0.4375f, 0.6875f, 0.9375f, 0.9375f, 0.0625f}},
+     {{0.5625f, 0.5625f, 0.4375f, 0.3125f, 0.3125f, 0.625f,  0.75f,   0.4375f,
+       0.1875f, 0.375f,  0.625f,  0.8125f, 0.8125f, 0.6875f, 0.6875f, 0.1875f,
+       0.375f,  0.875f,  0.5f,    0.0625f, 0.25f,   0.125f,  0.125f,  0.75f,
+       0.0f,    0.5f,    0.9375f, 0.25f,   0.875f,  0.9375f, 0.0625f, 0.0f}}}};
 
 // Helper functor for querying DXGI support. Saves passing the parameters repeatedly.
 class DXGISupportHelper : angle::NonCopyable
@@ -1193,6 +1206,26 @@ bool IsMultiviewSupported(D3D_FEATURE_LEVEL featureLevel)
     }
 }
 
+unsigned int GetMaxSampleMaskWords(D3D_FEATURE_LEVEL featureLevel)
+{
+    switch (featureLevel)
+    {
+        // D3D10+ only allows 1 sample mask.
+        case D3D_FEATURE_LEVEL_11_1:
+        case D3D_FEATURE_LEVEL_11_0:
+        case D3D_FEATURE_LEVEL_10_1:
+        case D3D_FEATURE_LEVEL_10_0:
+            return 1u;
+        case D3D_FEATURE_LEVEL_9_3:
+        case D3D_FEATURE_LEVEL_9_2:
+        case D3D_FEATURE_LEVEL_9_1:
+            return 0u;
+        default:
+            UNREACHABLE();
+            return 0u;
+    }
+}
+
 void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, const Renderer11DeviceCaps &renderer11DeviceCaps, gl::Caps *caps,
                   gl::TextureCapsMap *textureCapsMap, gl::Extensions *extensions, gl::Limitations *limitations)
 {
@@ -1353,6 +1386,9 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
     caps->maxDepthTextureSamples = std::numeric_limits<GLint>::max();
     caps->maxIntegerSamples      = std::numeric_limits<GLint>::max();
 
+    // Sample mask words limits
+    caps->maxSampleMaskWords = GetMaxSampleMaskWords(featureLevel);
+
     // Framebuffer limits
     caps->maxFramebufferSamples = std::numeric_limits<GLint>::max();
     caps->maxFramebufferWidth =
@@ -1375,12 +1411,15 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
     extensions->maxTextureAnisotropy = GetMaximumAnisotropy(featureLevel);
     extensions->occlusionQueryBoolean = GetOcclusionQuerySupport(featureLevel);
     extensions->fence = GetEventQuerySupport(featureLevel);
-    extensions->timerQuery = false; // Unimplemented
     extensions->disjointTimerQuery          = true;
     extensions->queryCounterBitsTimeElapsed = 64;
     extensions->queryCounterBitsTimestamp =
         0;  // Timestamps cannot be supported due to D3D11 limitations
     extensions->robustness = true;
+    // Direct3D guarantees to return zero for any resource that is accessed out of bounds.
+    // See https://msdn.microsoft.com/en-us/library/windows/desktop/ff476332(v=vs.85).aspx
+    // and https://msdn.microsoft.com/en-us/library/windows/desktop/ff476900(v=vs.85).aspx
+    extensions->robustBufferAccessBehavior = true;
     extensions->blendMinMax = true;
     extensions->framebufferBlit = GetFramebufferBlitSupport(featureLevel);
     extensions->framebufferMultisample = GetFramebufferMultisampleSupport(featureLevel);
@@ -1393,8 +1432,9 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
     if (extensions->multiview)
     {
         extensions->maxViews =
-            std::min(static_cast<GLuint>(GetMaximum2DTextureArraySize(featureLevel)),
-                     GetMaxViewportAndScissorRectanglesPerPipeline(featureLevel));
+            std::min(static_cast<GLuint>(gl::IMPLEMENTATION_ANGLE_MULTIVIEW_MAX_VIEWS),
+                     std::min(static_cast<GLuint>(GetMaximum2DTextureArraySize(featureLevel)),
+                              GetMaxViewportAndScissorRectanglesPerPipeline(featureLevel)));
     }
     extensions->textureUsage = true; // This could be false since it has no effect in D3D11
     extensions->discardFramebuffer = true;
@@ -1438,6 +1478,16 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
     // We allow non-zero divisors on attribute zero if the Client Version >= 3, since devices affected by this issue don't support ES3+.
     limitations->attributeZeroRequiresZeroDivisorInEXT = true;
 #endif
+}
+
+void GetSamplePosition(GLsizei sampleCount, size_t index, GLfloat *xy)
+{
+    size_t indexKey = static_cast<size_t>(ceil(log(sampleCount)));
+    ASSERT(indexKey < kSamplePositions.size() &&
+           (2 * index + 1) < kSamplePositions[indexKey].size());
+
+    xy[0] = kSamplePositions[indexKey][2 * index];
+    xy[1] = kSamplePositions[indexKey][2 * index + 1];
 }
 
 }  // namespace d3d11_gl
@@ -2055,7 +2105,9 @@ angle::WorkaroundsD3D GenerateWorkarounds(const Renderer11DeviceCaps &deviceCaps
             d3d11_gl::GetIntelDriverVersion(deviceCaps.driverVersion) < IntelDriverVersion(4539);
         if (IsSkylake(adapterDesc.DeviceId))
         {
-            workarounds.callClearTwiceOnSmallTarget = true;
+            workarounds.callClearTwiceOnSmallTarget =
+                d3d11_gl::GetIntelDriverVersion(deviceCaps.driverVersion) <
+                IntelDriverVersion(4771);
             workarounds.emulateIsnanFloat =
                 d3d11_gl::GetIntelDriverVersion(deviceCaps.driverVersion) <
                 IntelDriverVersion(4542);
@@ -2079,6 +2131,11 @@ angle::WorkaroundsD3D GenerateWorkarounds(const Renderer11DeviceCaps &deviceCaps
     {
         workarounds.emulateTinyStencilTextures = false;
     }
+
+    // If the VPAndRTArrayIndexFromAnyShaderFeedingRasterizer feature is not available, we have to
+    // select the viewport / RT array index in the geometry shader.
+    workarounds.selectViewInGeometryShader =
+        (deviceCaps.supportsVpRtIndexWriteFromVertexShader == false);
 
     // Call platform hooks for testing overrides.
     auto *platform = ANGLEPlatformCurrent();

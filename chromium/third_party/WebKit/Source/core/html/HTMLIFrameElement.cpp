@@ -25,13 +25,13 @@
 #include "core/html/HTMLIFrameElement.h"
 
 #include "core/CSSPropertyNames.h"
-#include "core/HTMLNames.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLDocument.h"
+#include "core/html_names.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutIFrame.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -39,7 +39,6 @@ using namespace HTMLNames;
 
 inline HTMLIFrameElement::HTMLIFrameElement(Document& document)
     : HTMLFrameElementBase(iframeTag, document),
-      did_load_non_empty_document_(false),
       collapsed_by_client_(false),
       sandbox_(HTMLIFrameElementSandbox::Create(this)),
       referrer_policy_(kReferrerPolicyDefault) {}
@@ -186,14 +185,15 @@ void HTMLIFrameElement::ParseAttribute(
               kOtherMessageSource, kWarningMessageLevel, message));
         }
       }
-
-      if (old_syntax) {
-        UseCounter::Count(
-            GetDocument(),
-            WebFeature::kFeaturePolicyAllowAttributeDeprecatedSyntax);
-      } else {
-        UseCounter::Count(GetDocument(),
-                          WebFeature::kFeaturePolicyAllowAttribute);
+      if (!value.IsEmpty()) {
+        if (old_syntax) {
+          UseCounter::Count(
+              GetDocument(),
+              WebFeature::kFeaturePolicyAllowAttributeDeprecatedSyntax);
+        } else {
+          UseCounter::Count(GetDocument(),
+                            WebFeature::kFeaturePolicyAllowAttribute);
+        }
       }
     }
   } else {

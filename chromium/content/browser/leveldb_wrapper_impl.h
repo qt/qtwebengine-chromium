@@ -73,6 +73,10 @@ class CONTENT_EXPORT LevelDBWrapperImpl : public mojom::LevelDBWrapper {
   bool empty() const { return bytes_used_ == 0; }
   size_t bytes_used() const { return bytes_used_; }
 
+  bool has_pending_load_tasks() const {
+    return !on_load_complete_tasks_.empty();
+  }
+
   // Commence aggressive flushing. This should be called early during startup,
   // before any localStorage writing. Currently scheduled writes will not be
   // rescheduled and will be flushed at the scheduled time after which
@@ -97,9 +101,11 @@ class CONTENT_EXPORT LevelDBWrapperImpl : public mojom::LevelDBWrapper {
   void AddObserver(mojom::LevelDBObserverAssociatedPtrInfo observer) override;
   void Put(const std::vector<uint8_t>& key,
            const std::vector<uint8_t>& value,
+           const base::Optional<std::vector<uint8_t>>& client_old_value,
            const std::string& source,
            PutCallback callback) override;
   void Delete(const std::vector<uint8_t>& key,
+              const base::Optional<std::vector<uint8_t>>& client_old_value,
               const std::string& source,
               DeleteCallback callback) override;
   void DeleteAll(const std::string& source,

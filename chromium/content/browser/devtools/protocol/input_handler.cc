@@ -10,7 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
-#include "cc/output/compositor_frame_metadata.h"
+#include "components/viz/common/quads/compositor_frame_metadata.h"
 #include "content/browser/devtools/devtools_session.h"
 #include "content/browser/devtools/protocol/native_input_event_builder.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
@@ -260,8 +260,9 @@ std::vector<InputHandler*> InputHandler::ForAgentHost(
       host, Input::Metainfo::domainName);
 }
 
-void InputHandler::SetRenderFrameHost(RenderFrameHostImpl* host) {
-  if (host == host_)
+void InputHandler::SetRenderer(RenderProcessHost* process_host,
+                               RenderFrameHostImpl* frame_host) {
+  if (frame_host == host_)
     return;
   ClearInputState();
   if (host_) {
@@ -269,9 +270,9 @@ void InputHandler::SetRenderFrameHost(RenderFrameHostImpl* host) {
     if (ignore_input_events_)
       host_->GetRenderWidgetHost()->SetIgnoreInputEvents(false);
   }
-  host_ = host;
-  if (host) {
-    host->GetRenderWidgetHost()->AddInputEventObserver(this);
+  host_ = frame_host;
+  if (host_) {
+    host_->GetRenderWidgetHost()->AddInputEventObserver(this);
     if (ignore_input_events_)
       host_->GetRenderWidgetHost()->SetIgnoreInputEvents(true);
   }
@@ -302,7 +303,7 @@ void InputHandler::Wire(UberDispatcher* dispatcher) {
 }
 
 void InputHandler::OnSwapCompositorFrame(
-    const cc::CompositorFrameMetadata& frame_metadata) {
+    const viz::CompositorFrameMetadata& frame_metadata) {
   page_scale_factor_ = frame_metadata.page_scale_factor;
   scrollable_viewport_size_ = frame_metadata.scrollable_viewport_size;
 }
@@ -547,8 +548,8 @@ void InputHandler::DispatchTouchEvent(
     if (point->HasId())
       with_id++;
     points[id].id = id;
-    points[id].radius_x = point->GetRadiusX(1);
-    points[id].radius_y = point->GetRadiusY(1);
+    points[id].radius_x = point->GetRadiusX(1.0);
+    points[id].radius_y = point->GetRadiusY(1.0);
     points[id].rotation_angle = point->GetRotationAngle(0.0);
     points[id].force = point->GetForce(1.0);
     points[id].pointer_type = blink::WebPointerProperties::PointerType::kTouch;
@@ -745,8 +746,8 @@ void InputHandler::SynthesizePinchGesture(
 
   host_->GetRenderWidgetHost()->QueueSyntheticGesture(
       SyntheticGesture::Create(gesture_params),
-      base::Bind(&SendSynthesizePinchGestureResponse,
-                 base::Passed(std::move(callback))));
+      base::BindOnce(&SendSynthesizePinchGestureResponse,
+                     base::Passed(std::move(callback))));
 }
 
 void InputHandler::SynthesizeScrollGesture(
@@ -823,10 +824,10 @@ void InputHandler::SynthesizeRepeatingScroll(
 
   host_->GetRenderWidgetHost()->QueueSyntheticGesture(
       SyntheticGesture::Create(gesture_params),
-      base::Bind(&InputHandler::OnScrollFinished, weak_factory_.GetWeakPtr(),
-                 gesture_params, repeat_count, repeat_delay,
-                 interaction_marker_name, id,
-                 base::Passed(std::move(callback))));
+      base::BindOnce(&InputHandler::OnScrollFinished,
+                     weak_factory_.GetWeakPtr(), gesture_params, repeat_count,
+                     repeat_delay, interaction_marker_name, id,
+                     base::Passed(std::move(callback))));
 }
 
 void InputHandler::OnScrollFinished(
@@ -898,8 +899,8 @@ void InputHandler::SynthesizeTapGesture(
   for (int i = 0; i < count; i++) {
     host_->GetRenderWidgetHost()->QueueSyntheticGesture(
         SyntheticGesture::Create(gesture_params),
-        base::Bind(&TapGestureResponse::OnGestureResult,
-                   base::Unretained(response)));
+        base::BindOnce(&TapGestureResponse::OnGestureResult,
+                       base::Unretained(response)));
   }
 }
 

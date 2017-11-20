@@ -36,7 +36,6 @@
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/common/sync_token.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/CanvasHeuristicParameters.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -51,6 +50,7 @@
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "platform/image-encoders/ImageEncoder.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/CheckedNumeric.h"
 #include "platform/wtf/MathExtras.h"
 #include "platform/wtf/PtrUtil.h"
@@ -78,12 +78,11 @@ std::unique_ptr<ImageBuffer> ImageBuffer::Create(
 
 std::unique_ptr<ImageBuffer> ImageBuffer::Create(
     const IntSize& size,
-    OpacityMode opacity_mode,
     ImageInitializationMode initialization_mode,
     const CanvasColorParams& color_params) {
   std::unique_ptr<ImageBufferSurface> surface(
       WTF::WrapUnique(new UnacceleratedImageBufferSurface(
-          size, opacity_mode, initialization_mode, color_params)));
+          size, initialization_mode, color_params)));
 
   if (!surface->IsValid())
     return nullptr;
@@ -184,7 +183,7 @@ void ImageBuffer::ResetCanvas(PaintCanvas* canvas) const {
     client_->RestoreCanvasMatrixClipStack(canvas);
 }
 
-PassRefPtr<StaticBitmapImage> ImageBuffer::NewImageSnapshot(
+RefPtr<StaticBitmapImage> ImageBuffer::NewImageSnapshot(
     AccelerationHint hint,
     SnapshotReason reason) const {
   if (snapshot_state_ == kInitialSnapshotState)
@@ -315,7 +314,7 @@ void ImageBuffer::Draw(GraphicsContext& context,
     return;
 
   FloatRect src_rect =
-      src_ptr ? *src_ptr : FloatRect(FloatPoint(), FloatSize(size()));
+      src_ptr ? *src_ptr : FloatRect(FloatPoint(), FloatSize(Size()));
   surface_->Draw(context, dest_rect, src_rect, op);
 }
 
@@ -334,7 +333,7 @@ void ImageBuffer::FlushGpu(FlushReason reason) {
 bool ImageBuffer::GetImageData(Multiply multiplied,
                                const IntRect& rect,
                                WTF::ArrayBufferContents& contents) const {
-  uint8_t bytes_per_pixel = surface_->color_params().BytesPerPixel();
+  uint8_t bytes_per_pixel = surface_->ColorParams().BytesPerPixel();
   CheckedNumeric<int> data_size = bytes_per_pixel;
   data_size *= rect.Width();
   data_size *= rect.Height();
@@ -364,8 +363,8 @@ bool ImageBuffer::GetImageData(Multiply multiplied,
   const bool may_have_stray_area =
       surface_->IsAccelerated()  // GPU readback may fail silently
       || rect.X() < 0 || rect.Y() < 0 ||
-      rect.MaxX() > surface_->size().Width() ||
-      rect.MaxY() > surface_->size().Height();
+      rect.MaxX() > surface_->Size().Width() ||
+      rect.MaxY() > surface_->Size().Height();
   size_t alloc_size_in_bytes = rect.Width() * rect.Height() * bytes_per_pixel;
   WTF::ArrayBufferContents::InitializationPolicy initialization_policy =
       may_have_stray_area ? WTF::ArrayBufferContents::kZeroInitialize
@@ -381,17 +380,17 @@ bool ImageBuffer::GetImageData(Multiply multiplied,
                                ? kPremul_SkAlphaType
                                : kUnpremul_SkAlphaType;
   SkColorType color_type =
-      (surface_->color_params().GetSkColorType() == kRGBA_F16_SkColorType)
+      (surface_->ColorParams().GetSkColorType() == kRGBA_F16_SkColorType)
           ? kRGBA_F16_SkColorType
           : kRGBA_8888_SkColorType;
 
-  SkImageInfo info = SkImageInfo::Make(
-      rect.Width(), rect.Height(), color_type, alpha_type,
-      surface_->color_params().GetSkColorSpaceForSkSurfaces());
+  SkImageInfo info =
+      SkImageInfo::Make(rect.Width(), rect.Height(), color_type, alpha_type,
+                        surface_->ColorParams().GetSkColorSpaceForSkSurfaces());
 
   // If color correct rendering is enabled but color canvas extensions is not,
   // unpremul must be done in gamma encoded color space.
-  if (CanvasColorParams::ColorCorrectRenderingInSRGBOnly())
+  if (!RuntimeEnabledFeatures::ColorCanvasExtensionsEnabled())
     info = info.makeColorSpace(nullptr);
   snapshot->PaintImageForCurrentFrame().GetSkImage()->readPixels(
       info, result.Data(), bytes_per_pixel * rect.Width(), rect.X(), rect.Y());
@@ -407,7 +406,7 @@ void ImageBuffer::PutByteArray(Multiply multiplied,
                                const IntPoint& dest_point) {
   if (!IsSurfaceValid())
     return;
-  uint8_t bytes_per_pixel = surface_->color_params().BytesPerPixel();
+  uint8_t bytes_per_pixel = surface_->ColorParams().BytesPerPixel();
 
   DCHECK_GT(source_rect.Width(), 0);
   DCHECK_GT(source_rect.Height(), 0);
@@ -415,14 +414,14 @@ void ImageBuffer::PutByteArray(Multiply multiplied,
   int origin_x = source_rect.X();
   int dest_x = dest_point.X() + source_rect.X();
   DCHECK_GE(dest_x, 0);
-  DCHECK_LT(dest_x, surface_->size().Width());
+  DCHECK_LT(dest_x, surface_->Size().Width());
   DCHECK_GE(origin_x, 0);
   DCHECK_LT(origin_x, source_rect.MaxX());
 
   int origin_y = source_rect.Y();
   int dest_y = dest_point.Y() + source_rect.Y();
   DCHECK_GE(dest_y, 0);
-  DCHECK_LT(dest_y, surface_->size().Height());
+  DCHECK_LT(dest_y, surface_->Size().Height());
   DCHECK_GE(origin_y, 0);
   DCHECK_LT(origin_y, source_rect.MaxY());
 
@@ -444,11 +443,11 @@ void ImageBuffer::PutByteArray(Multiply multiplied,
   }
 
   SkImageInfo info;
-  if (surface_->color_params().GetSkColorSpaceForSkSurfaces()) {
+  if (surface_->ColorParams().GetSkColorSpaceForSkSurfaces()) {
     info = SkImageInfo::Make(
         source_rect.Width(), source_rect.Height(),
-        surface_->color_params().GetSkColorType(), alpha_type,
-        surface_->color_params().GetSkColorSpaceForSkSurfaces());
+        surface_->ColorParams().GetSkColorType(), alpha_type,
+        surface_->ColorParams().GetSkColorSpaceForSkSurfaces());
     if (info.colorType() == kN32_SkColorType)
       info = info.makeColorType(kRGBA_8888_SkColorType);
   } else {
@@ -463,9 +462,9 @@ void ImageBuffer::UpdateGPUMemoryUsage() const {
     // If image buffer is accelerated, we should keep track of GPU memory usage.
     int gpu_buffer_count = 2;
     CheckedNumeric<intptr_t> checked_gpu_usage =
-        surface_->color_params().BytesPerPixel() * gpu_buffer_count;
-    checked_gpu_usage *= this->size().Width();
-    checked_gpu_usage *= this->size().Height();
+        surface_->ColorParams().BytesPerPixel() * gpu_buffer_count;
+    checked_gpu_usage *= this->Size().Width();
+    checked_gpu_usage *= this->Size().Height();
     intptr_t gpu_memory_usage =
         checked_gpu_usage.ValueOrDefault(std::numeric_limits<intptr_t>::max());
 
@@ -494,8 +493,8 @@ void ImageBuffer::DisableAcceleration() {
   // Create and configure a recording (unaccelerated) surface.
   std::unique_ptr<ImageBufferSurface> surface =
       WTF::WrapUnique(new RecordingImageBufferSurface(
-          surface_->size(), RecordingImageBufferSurface::kAllowFallback,
-          surface_->GetOpacityMode(), surface_->color_params()));
+          surface_->Size(), RecordingImageBufferSurface::kAllowFallback,
+          surface_->ColorParams()));
   SetSurface(std::move(surface));
 }
 
@@ -516,7 +515,7 @@ void ImageBuffer::SetSurface(std::unique_ptr<ImageBufferSurface> surface) {
         image->PaintImageForCurrentFrame().GetSkImage();
     // Must tear down AcceleratedStaticBitmapImage before calling
     // makeNonTextureImage()
-    image.Clear();
+    image = nullptr;
     image = StaticBitmapImage::Create(texture_image->makeNonTextureImage());
   }
   surface->Canvas()->drawImage(image->PaintImageForCurrentFrame(), 0, 0);

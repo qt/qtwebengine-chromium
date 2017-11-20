@@ -18,7 +18,7 @@ class GrProcessorKeyBuilder;
 class GrShaderCaps;
 class GrSwizzle;
 
-/** Provides custom fragment shader code. Fragment processors receive an input color (float4) and
+/** Provides custom fragment shader code. Fragment processors receive an input color (half4) and
     produce an output color. They may reference textures and uniforms. They may use
     GrCoordTransforms to receive a transformation of the local coordinates that map from local space
     to the fragment being processed.
@@ -241,6 +241,13 @@ public:
                                          &GrResourceIOProcessor::numTextureSamplers,
                                          &GrResourceIOProcessor::textureSampler>;
 
+    void visitProxies(const std::function<void(GrSurfaceProxy*)>& func) {
+        GrFragmentProcessor::TextureAccessIter iter(this);
+        while (const GrResourceIOProcessor::TextureSampler* sampler = iter.next()) {
+            func(sampler->proxy());
+        }
+    }
+
 protected:
     enum OptimizationFlags : uint32_t {
         kNone_OptimizationFlags,
@@ -268,7 +275,9 @@ protected:
         }
     }
 
-    GrFragmentProcessor(OptimizationFlags optimizationFlags) : fFlags(optimizationFlags) {
+    GrFragmentProcessor(ClassID classID, OptimizationFlags optimizationFlags)
+    : INHERITED(classID)
+    , fFlags(optimizationFlags) {
         SkASSERT((fFlags & ~kAll_OptimizationFlags) == 0);
     }
 

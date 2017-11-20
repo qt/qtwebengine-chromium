@@ -25,8 +25,10 @@ class CORE_EXPORT PlatformEventController : public PageVisibilityObserver {
   // This is called when new data becomes available.
   virtual void DidUpdateData() = 0;
 
+  DECLARE_VIRTUAL_TRACE();
+
  protected:
-  explicit PlatformEventController(LocalFrame*);
+  explicit PlatformEventController(Document*);
   virtual ~PlatformEventController();
 
   virtual void RegisterWithDispatcher() = 0;
@@ -42,10 +44,11 @@ class CORE_EXPORT PlatformEventController : public PageVisibilityObserver {
   // Inherited from PageVisibilityObserver.
   void PageVisibilityChanged() override;
 
-  void OneShotCallback(TimerBase*);
+  void UpdateCallback();
 
   bool is_active_;
-  TaskRunnerTimer<PlatformEventController> timer_;
+  Member<Document> document_;
+  TaskHandle update_callback_handle_;
 };
 
 }  // namespace blink

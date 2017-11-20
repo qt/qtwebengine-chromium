@@ -10,24 +10,24 @@
 
 // Types and classes used in media session descriptions.
 
-#ifndef WEBRTC_PC_MEDIASESSION_H_
-#define WEBRTC_PC_MEDIASESSION_H_
+#ifndef PC_MEDIASESSION_H_
+#define PC_MEDIASESSION_H_
 
 #include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
 
-#include "webrtc/api/mediatypes.h"
-#include "webrtc/media/base/codec.h"
-#include "webrtc/media/base/cryptoparams.h"
-#include "webrtc/media/base/mediachannel.h"
-#include "webrtc/media/base/mediaconstants.h"
-#include "webrtc/media/base/mediaengine.h"  // For DataChannelType
-#include "webrtc/media/base/streamparams.h"
-#include "webrtc/p2p/base/sessiondescription.h"
-#include "webrtc/p2p/base/jseptransport.h"
-#include "webrtc/p2p/base/transportdescriptionfactory.h"
+#include "api/mediatypes.h"
+#include "media/base/codec.h"
+#include "media/base/cryptoparams.h"
+#include "media/base/mediachannel.h"
+#include "media/base/mediaconstants.h"
+#include "media/base/mediaengine.h"  // For DataChannelType
+#include "media/base/streamparams.h"
+#include "p2p/base/sessiondescription.h"
+#include "p2p/base/jseptransport.h"
+#include "p2p/base/transportdescriptionfactory.h"
 
 namespace cricket {
 
@@ -105,7 +105,9 @@ NegotiateRtpTransceiverDirection(RtpTransceiverDirection offer,
 // Options for an RtpSender contained with an media description/"m=" section.
 struct SenderOptions {
   std::string track_id;
-  std::string stream_id;
+  // TODO(steveanton): As part of work towards Unified Plan, this has been
+  // changed to be a vector. But for now this can only have exactly one.
+  std::vector<std::string> stream_ids;
   int num_sim_layers;
 };
 
@@ -120,9 +122,9 @@ struct MediaDescriptionOptions {
   // TODO(deadbeef): When we don't support Plan B, there will only be one
   // sender per media description and this can be simplified.
   void AddAudioSender(const std::string& track_id,
-                      const std::string& stream_id);
+                      const std::vector<std::string>& stream_ids);
   void AddVideoSender(const std::string& track_id,
-                      const std::string& stream_id,
+                      const std::vector<std::string>& stream_ids,
                       int num_sim_layers);
 
   // Internally just uses sender_options.
@@ -141,7 +143,7 @@ struct MediaDescriptionOptions {
  private:
   // Doesn't DCHECK on |type|.
   void AddSenderInternal(const std::string& track_id,
-                         const std::string& stream_id,
+                         const std::vector<std::string>& stream_ids,
                          int num_sim_layers);
 };
 
@@ -649,4 +651,4 @@ void GetSupportedDataSdesCryptoSuiteNames(
 
 }  // namespace cricket
 
-#endif  // WEBRTC_PC_MEDIASESSION_H_
+#endif  // PC_MEDIASESSION_H_

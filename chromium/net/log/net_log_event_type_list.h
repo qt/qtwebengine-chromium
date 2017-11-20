@@ -2686,42 +2686,6 @@ EVENT_TYPE(DOWNLOAD_FILE_ERROR)
 // information (for Mark Of The Web and anti-virus integration).
 EVENT_TYPE(DOWNLOAD_FILE_ANNOTATED)
 
-// ------------------------------------------------------------------------
-// FileStream events.
-// ------------------------------------------------------------------------
-
-// This event lasts the lifetime of a file stream.
-EVENT_TYPE(FILE_STREAM_ALIVE)
-
-// This event is created when a file stream is associated with a NetLog source.
-// It indicates what file stream event source is used.
-//   {
-//     "source_dependency": <Source id of the file stream>,
-//   }
-EVENT_TYPE(FILE_STREAM_SOURCE)
-
-// This event is created when a file stream is associated with a NetLog source.
-// It indicates what event source owns the file stream source.
-//   {
-//     "source_dependency": <Source id of the owner of the file stream>,
-//   }
-EVENT_TYPE(FILE_STREAM_BOUND_TO_OWNER)
-
-// Mark the opening/closing of a file stream.
-// The BEGIN event has the following parameters:
-//   {
-//     "file_name".
-//   }
-EVENT_TYPE(FILE_STREAM_OPEN)
-
-// This event is created when a file stream operation has an error.
-//   {
-//     "operation": <open, write, close, etc>,
-//     "os_error": <OS-dependent error code>,
-//     "net_error": <net::Error code>,
-//   }
-EVENT_TYPE(FILE_STREAM_ERROR)
-
 // -----------------------------------------------------------------------------
 // FTP events.
 // -----------------------------------------------------------------------------
@@ -2965,49 +2929,6 @@ EVENT_TYPE(SIMPLE_CACHE_ENTRY_CLOSE_BEGIN)
 // This event is created when the Simple Cache finishes a CloseEntry call.  It
 // contains no parameters.
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_CLOSE_END)
-
-// ------------------------------------------------------------------------
-// SDCH
-// ------------------------------------------------------------------------
-
-// This event is created when some problem occurs during sdch-encoded resource
-// handling. It contains the following parameters:
-//   {
-//     "sdch_problem_code": <SDCH problem code>,
-//     "net_error": <Always ERR_FAILED, present just to indicate this is a
-//                   failure>,
-//   }
-EVENT_TYPE(SDCH_DECODING_ERROR)
-
-// This event is created when SdchFilter initialization fails due to the
-// response corruption. It contains the following parameters:
-//   {
-//     "cause": <Response corruption detection cause>,
-//     "cached": <True if response was read from cache>,
-//   }
-EVENT_TYPE(SDCH_RESPONSE_CORRUPTION_DETECTION)
-
-// This event is created when some problem occurs during sdch dictionary fetch.
-// It contains the following parameters:
-//   {
-//     "dictionary_url": <Dictionary url>,
-//     "sdch_problem_code": <SDCH problem code>,
-//     "net_error": <Only present on unexpected errors. Always ERR_FAILED when
-//                   present. Used to indicate this is a real failure>,
-//   }
-EVENT_TYPE(SDCH_DICTIONARY_ERROR)
-
-// This event is created when SdchDictionaryFetcher starts fetch.  It contains
-// no parameters.
-EVENT_TYPE(SDCH_DICTIONARY_FETCH)
-
-// This event is created if the SdchDictionaryFetcher URLRequest returns
-// no error, but signals an error through bytes_read < 0.
-// It contains the following parameters:
-//   {
-//     "net_error": <error created>
-//   }
-EVENT_TYPE(SDCH_DICTIONARY_FETCH_IMPLIED_ERROR)
 
 // -----------------------------------------------------------------------------
 // Data Reduction Proxy events.

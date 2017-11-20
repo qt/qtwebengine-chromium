@@ -50,12 +50,7 @@ SECStatus PR_CALLBACK CollectCertsCallback(void* arg,
 // Parses the Principal attribute from |name| and outputs the result in
 // |principal|. Returns true on success.
 bool ParsePrincipal(CERTName* name, CertPrincipal* principal) {
-// Starting in NSS 3.15, CERTGetNameFunc takes a const CERTName* argument.
-#if NSS_VMINOR >= 15
   typedef char* (*CERTGetNameFunc)(const CERTName* name);
-#else
-  typedef char* (*CERTGetNameFunc)(CERTName * name);
-#endif
 
   // TODO(jcampan): add business_category and serial_number.
   // TODO(wtc): NSS has the CERT_GetOrgName, CERT_GetOrgUnitName, and
@@ -354,17 +349,7 @@ void X509Certificate::FreeOSCertHandle(OSCertHandle cert_handle) {
 
 // static
 SHA256HashValue X509Certificate::CalculateFingerprint256(OSCertHandle cert) {
-  SHA256HashValue sha256;
-  memset(sha256.data, 0, sizeof(sha256.data));
-
-  DCHECK(NULL != cert->derCert.data);
-  DCHECK_NE(0U, cert->derCert.len);
-
-  SECStatus rv = HASH_HashBuf(
-      HASH_AlgSHA256, sha256.data, cert->derCert.data, cert->derCert.len);
-  DCHECK_EQ(SECSuccess, rv);
-
-  return sha256;
+  return x509_util::CalculateFingerprint256(cert);
 }
 
 // static
@@ -401,11 +386,10 @@ X509Certificate::OSCertHandle X509Certificate::ReadOSCertHandleFromPickle(
 }
 
 // static
-bool X509Certificate::WriteOSCertHandleToPickle(OSCertHandle cert_handle,
+void X509Certificate::WriteOSCertHandleToPickle(OSCertHandle cert_handle,
                                                 base::Pickle* pickle) {
-  return pickle->WriteData(
-      reinterpret_cast<const char*>(cert_handle->derCert.data),
-      cert_handle->derCert.len);
+  pickle->WriteData(reinterpret_cast<const char*>(cert_handle->derCert.data),
+                    cert_handle->derCert.len);
 }
 
 // static

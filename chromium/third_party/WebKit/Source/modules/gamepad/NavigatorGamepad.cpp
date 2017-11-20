@@ -94,26 +94,23 @@ GamepadList* NavigatorGamepad::getGamepads(Navigator& navigator) {
 }
 
 GamepadList* NavigatorGamepad::Gamepads() {
-  if (!gamepads_)
-    gamepads_ = GamepadList::Create();
-  if (StartUpdatingIfAttached())
-    SampleGamepads<Gamepad>(gamepads_.Get());
+  SampleAndCheckConnectedGamepads();
   return gamepads_.Get();
 }
 
 DEFINE_TRACE(NavigatorGamepad) {
   visitor->Trace(gamepads_);
+  visitor->Trace(gamepads_back_);
   visitor->Trace(pending_events_);
   visitor->Trace(dispatch_one_event_runner_);
   Supplement<Navigator>::Trace(visitor);
-  ContextLifecycleObserver::Trace(visitor);
+  DOMWindowClient::Trace(visitor);
   PlatformEventController::Trace(visitor);
 }
 
 bool NavigatorGamepad::StartUpdatingIfAttached() {
-  Document* document = static_cast<Document*>(GetExecutionContext());
   // The frame must be attached to start updating.
-  if (document && document->GetFrame()) {
+  if (GetFrame()) {
     StartUpdating();
     return true;
   }
@@ -122,45 +119,26 @@ bool NavigatorGamepad::StartUpdatingIfAttached() {
 
 void NavigatorGamepad::DidUpdateData() {
   // We should stop listening once we detached.
-  Document* document = static_cast<Document*>(GetExecutionContext());
-  DCHECK(document->GetFrame());
-  DCHECK(document->GetFrame()->DomWindow());
+  DCHECK(GetFrame());
+  DCHECK(DomWindow());
 
   // We register to the dispatcher before sampling gamepads so we need to check
   // if we actually have an event listener.
   if (!has_event_listener_)
     return;
 
-  if (document->IsContextDestroyed() || document->IsContextSuspended())
-    return;
-
-  const GamepadDispatcher::ConnectionChange& change =
-      GamepadDispatcher::Instance().LatestConnectionChange();
-
-  if (!gamepads_)
-    gamepads_ = GamepadList::Create();
-
-  Gamepad* gamepad = gamepads_->item(change.index);
-  if (!gamepad)
-    gamepad = Gamepad::Create();
-  SampleGamepad(change.index, *gamepad, change.pad);
-  gamepads_->Set(change.index, gamepad);
-
-  pending_events_.push_back(gamepad);
-  dispatch_one_event_runner_->RunAsync();
+  SampleAndCheckConnectedGamepads();
 }
 
 void NavigatorGamepad::DispatchOneEvent() {
-  Document* document = static_cast<Document*>(GetExecutionContext());
-  DCHECK(document->GetFrame());
-  DCHECK(document->GetFrame()->DomWindow());
+  DCHECK(DomWindow());
   DCHECK(!pending_events_.IsEmpty());
 
   Gamepad* gamepad = pending_events_.TakeFirst();
   const AtomicString& event_name = gamepad->connected()
                                        ? EventTypeNames::gamepadconnected
                                        : EventTypeNames::gamepaddisconnected;
-  document->GetFrame()->DomWindow()->DispatchEvent(
+  DomWindow()->DispatchEvent(
       GamepadEvent::Create(event_name, false, true, gamepad));
 
   if (!pending_events_.IsEmpty())
@@ -169,24 +147,20 @@ void NavigatorGamepad::DispatchOneEvent() {
 
 NavigatorGamepad::NavigatorGamepad(Navigator& navigator)
     : Supplement<Navigator>(navigator),
-      ContextLifecycleObserver(
+      DOMWindowClient(navigator.DomWindow()),
+      PlatformEventController(
           navigator.GetFrame() ? navigator.GetFrame()->GetDocument() : nullptr),
-      PlatformEventController(navigator.GetFrame()),
       dispatch_one_event_runner_(AsyncMethodRunner<NavigatorGamepad>::Create(
           this,
           &NavigatorGamepad::DispatchOneEvent)) {
-  if (navigator.GetFrame())
-    navigator.GetFrame()->DomWindow()->RegisterEventListenerObserver(this);
+  if (navigator.DomWindow())
+    navigator.DomWindow()->RegisterEventListenerObserver(this);
 }
 
 NavigatorGamepad::~NavigatorGamepad() {}
 
 const char* NavigatorGamepad::SupplementName() {
   return "NavigatorGamepad";
-}
-
-void NavigatorGamepad::ContextDestroyed(ExecutionContext*) {
-  StopUpdating();
 }
 
 void NavigatorGamepad::RegisterWithDispatcher() {
@@ -211,10 +185,16 @@ static bool IsGamepadEvent(const AtomicString& event_type) {
 
 void NavigatorGamepad::DidAddEventListener(LocalDOMWindow*,
                                            const AtomicString& event_type) {
-  if (IsGamepadEvent(event_type)) {
-    if (GetPage() && GetPage()->IsPageVisible())
-      StartUpdatingIfAttached();
-    has_event_listener_ = true;
+  if (!IsGamepadEvent(event_type))
+    return;
+
+  bool first_event_listener = !has_event_listener_;
+  has_event_listener_ = true;
+
+  if (GetPage() && GetPage()->IsPageVisible()) {
+    StartUpdatingIfAttached();
+    if (first_event_listener)
+      SampleAndCheckConnectedGamepads();
   }
 }
 
@@ -235,26 +215,37 @@ void NavigatorGamepad::DidRemoveGamepadEventListeners() {
   has_event_listener_ = false;
   dispatch_one_event_runner_->Stop();
   pending_events_.clear();
+  StopUpdating();
 }
 
-void NavigatorGamepad::PageVisibilityChanged() {
-  // Inform the embedder whether it needs to provide gamepad data for us.
-  bool visible = GetPage()->IsPageVisible();
-  if (visible && (has_event_listener_ || gamepads_))
-    StartUpdatingIfAttached();
-  else
-    StopUpdating();
+void NavigatorGamepad::SampleAndCheckConnectedGamepads() {
+  if (StartUpdatingIfAttached()) {
+    if (!gamepads_)
+      gamepads_ = GamepadList::Create();
+    if (GetPage()->IsPageVisible() && has_event_listener_) {
+      if (!gamepads_back_)
+        gamepads_back_ = GamepadList::Create();
 
-  if (!visible || !has_event_listener_)
-    return;
+      // Compare the current sample with the old data and enqueue connection
+      // events for any differences.
+      SampleGamepads<Gamepad>(gamepads_back_.Get());
+      if (CheckConnectedGamepads(gamepads_.Get(), gamepads_back_.Get())) {
+        // If we had any disconnected gamepads, we can't overwrite gamepads_
+        // because the Gamepad object from the old buffer is reused as the
+        // disconnection event and will be overwritten with new data. Instead,
+        // recreate the buffer.
+        gamepads_ = GamepadList::Create();
+      }
+      if (!pending_events_.IsEmpty())
+        dispatch_one_event_runner_->RunAsync();
+    }
+    SampleGamepads<Gamepad>(gamepads_.Get());
+  }
+}
 
-  // Tell the page what has changed. m_gamepads contains the state before we
-  // became hidden.  We create a new snapshot and compare them.
-  GamepadList* old_gamepads = gamepads_.Release();
-  Gamepads();
-  GamepadList* new_gamepads = gamepads_.Get();
-  DCHECK(new_gamepads);
-
+bool NavigatorGamepad::CheckConnectedGamepads(GamepadList* old_gamepads,
+                                              GamepadList* new_gamepads) {
+  int disconnection_count = 0;
   for (unsigned i = 0; i < device::Gamepads::kItemsLengthCap; ++i) {
     Gamepad* old_gamepad = old_gamepads ? old_gamepads->item(i) : 0;
     Gamepad* new_gamepad = new_gamepads->item(i);
@@ -265,14 +256,26 @@ void NavigatorGamepad::PageVisibilityChanged() {
     if (connected_gamepad_changed || (old_was_connected && !new_is_connected)) {
       old_gamepad->SetConnected(false);
       pending_events_.push_back(old_gamepad);
+      disconnection_count++;
     }
     if (connected_gamepad_changed || (!old_was_connected && new_is_connected)) {
       pending_events_.push_back(new_gamepad);
     }
   }
+  return disconnection_count > 0;
+}
 
-  if (!pending_events_.IsEmpty())
-    dispatch_one_event_runner_->RunAsync();
+void NavigatorGamepad::PageVisibilityChanged() {
+  // Inform the embedder whether it needs to provide gamepad data for us.
+  bool visible = GetPage()->IsPageVisible();
+  if (visible && (has_event_listener_ || gamepads_)) {
+    StartUpdatingIfAttached();
+  } else {
+    StopUpdating();
+  }
+
+  if (visible && has_event_listener_)
+    SampleAndCheckConnectedGamepads();
 }
 
 }  // namespace blink

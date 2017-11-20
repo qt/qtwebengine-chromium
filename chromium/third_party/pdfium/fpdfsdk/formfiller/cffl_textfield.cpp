@@ -26,8 +26,8 @@ CFFL_TextField::~CFFL_TextField() {
   DestroyWindows();
 }
 
-PWL_CREATEPARAM CFFL_TextField::GetCreateParam() {
-  PWL_CREATEPARAM cp = CFFL_TextObject::GetCreateParam();
+CPWL_Wnd::CreateParams CFFL_TextField::GetCreateParam() {
+  CPWL_Wnd::CreateParams cp = CFFL_TextObject::GetCreateParam();
   int nFlags = m_pWidget->GetFieldFlags();
   if (nFlags & FIELDFLAG_PASSWORD)
     cp.dwFlags |= PES_PASSWORD;
@@ -67,14 +67,14 @@ PWL_CREATEPARAM CFFL_TextField::GetCreateParam() {
   return cp;
 }
 
-CPWL_Wnd* CFFL_TextField::NewPDFWindow(const PWL_CREATEPARAM& cp) {
-  CPWL_Edit* pWnd = new CPWL_Edit();
+CPWL_Wnd* CFFL_TextField::NewPDFWindow(const CPWL_Wnd::CreateParams& cp) {
+  auto* pWnd = new CPWL_Edit();
   pWnd->AttachFFLData(this);
   pWnd->Create(cp);
   pWnd->SetFillerNotify(m_pFormFillEnv->GetInteractiveFormFiller());
 
   int32_t nMaxLen = m_pWidget->GetMaxLen();
-  CFX_WideString swValue = m_pWidget->GetValue();
+  WideString swValue = m_pWidget->GetValue();
 
   if (nMaxLen > 0) {
     if (pWnd->HasFlag(PES_CHARARRAY)) {
@@ -136,12 +136,21 @@ void CFFL_TextField::SaveData(CPDFSDK_PageView* pPageView) {
   if (!pWnd)
     return;
 
-  CFX_WideString sOldValue = m_pWidget->GetValue();
-  CFX_WideString sNewValue = pWnd->GetText();
+  WideString sOldValue = m_pWidget->GetValue();
+  WideString sNewValue = pWnd->GetText();
+
+  CPDFSDK_Widget::ObservedPtr observed_widget(m_pWidget.Get());
+  CFFL_TextField::ObservedPtr observed_this(this);
 
   m_pWidget->SetValue(sNewValue, false);
+  if (!observed_widget)
+    return;
   m_pWidget->ResetFieldAppearance(true);
+  if (!observed_widget)
+    return;
   m_pWidget->UpdateField();
+  if (!observed_widget || !observed_this)
+    return;
   SetChangeMark();
 }
 
@@ -239,9 +248,9 @@ void CFFL_TextField::OnSetFocus(CPWL_Edit* pEdit) {
   pEdit->SetCharSet(FX_CHARSET_ChineseSimplified);
   pEdit->SetReadyToInput();
 
-  CFX_WideString wsText = pEdit->GetText();
+  WideString wsText = pEdit->GetText();
   int nCharacters = wsText.GetLength();
-  CFX_ByteString bsUTFText = wsText.UTF16LE_Encode();
+  ByteString bsUTFText = wsText.UTF16LE_Encode();
   auto* pBuffer = reinterpret_cast<const unsigned short*>(bsUTFText.c_str());
   m_pFormFillEnv->OnSetFieldInputFocus(pBuffer, nCharacters, true);
 }

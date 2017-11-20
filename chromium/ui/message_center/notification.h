@@ -145,7 +145,7 @@ class MESSAGE_CENTER_EXPORT RichNotificationData {
   bool should_make_spoken_feedback_for_popup_updates = true;
 
   // Whether it should be possible for the user to click on the notification.
-  bool clickable = true;
+  bool clickable = false;
 
 #if defined(OS_CHROMEOS)
   // Flag if the notification is pinned. If true, the notification is pinned
@@ -349,7 +349,7 @@ class MESSAGE_CENTER_EXPORT Notification {
   // filled by the |color|.
   // Otherwise, it uses alpha channel of the rasterized |small_image| for
   // masking.
-  gfx::Image GenerateMaskedSmallIcon(SkColor color) const;
+  gfx::Image GenerateMaskedSmallIcon(int dip_size, SkColor color) const;
 
   // Buttons, with icons fetched asynchronously.
   const std::vector<ButtonInfo>& buttons() const {

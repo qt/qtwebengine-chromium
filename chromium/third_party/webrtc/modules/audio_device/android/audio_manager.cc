@@ -8,16 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_device/android/audio_manager.h"
+#include "modules/audio_device/android/audio_manager.h"
 
 #include <utility>
 
 #include <android/log.h>
 
-#include "webrtc/modules/audio_device/android/audio_common.h"
-#include "webrtc/modules/utility/include/helpers_android.h"
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/checks.h"
+#include "modules/audio_device/android/audio_common.h"
+#include "modules/utility/include/helpers_android.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/checks.h"
 
 #define TAG "AudioManager"
 #define ALOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, TAG, __VA_ARGS__)
@@ -218,6 +218,18 @@ bool AudioManager::IsProAudioSupported() const {
   // blacklisted or not for now. We could use the same approach as in
   // IsLowLatencyPlayoutSupported() but I can't see the need for it yet.
   return pro_audio_;
+}
+
+bool AudioManager::IsStereoPlayoutSupported() const {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  ALOGD("IsStereoPlayoutSupported()");
+  return (playout_parameters_.channels() == 2);
+}
+
+bool AudioManager::IsStereoRecordSupported() const {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  ALOGD("IsStereoRecordSupported()");
+  return (record_parameters_.channels() == 2);
 }
 
 int AudioManager::GetDelayEstimateInMilliseconds() const {

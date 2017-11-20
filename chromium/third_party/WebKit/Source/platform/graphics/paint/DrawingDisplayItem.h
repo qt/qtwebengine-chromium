@@ -7,10 +7,10 @@
 
 #include "base/compiler_specific.h"
 #include "platform/PlatformExport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/paint/DisplayItem.h"
 #include "platform/graphics/paint/PaintRecord.h"
+#include "platform/runtime_enabled_features.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 
 namespace blink {
@@ -58,7 +58,7 @@ class PLATFORM_EXPORT DrawingDisplayItem final : public DisplayItem {
 
  private:
 #ifndef NDEBUG
-  void DumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
+  void PropertiesAsJSON(JSONObject&) const override;
 #endif
   bool Equals(const DisplayItem& other) const final;
 

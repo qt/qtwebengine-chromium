@@ -37,6 +37,9 @@
 #include "core/editing/EditingStyle.h"
 #include "core/editing/EditingStyleUtilities.h"
 #include "core/editing/EditingUtilities.h"
+#include "core/editing/EphemeralRange.h"
+#include "core/editing/SelectionTemplate.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/serializers/Serialization.h"
@@ -146,7 +149,7 @@ static bool NeedInterchangeNewlineAfter(
   // Add an interchange newline if a paragraph break is selected and a br won't
   // already be added to the markup to represent it.
   return IsEndOfParagraph(v) && IsStartOfParagraph(next) &&
-         !(isHTMLBRElement(*upstream_node) && upstream_node == downstream_node);
+         !(IsHTMLBRElement(*upstream_node) && upstream_node == downstream_node);
 }
 
 template <typename Strategy>
@@ -230,7 +233,7 @@ String StyledMarkupSerializer<Strategy>::CreateMarkup() {
     Node* common_ancestor = Strategy::CommonAncestor(
         *start_.ComputeContainerNode(), *end_.ComputeContainerNode());
     DCHECK(common_ancestor);
-    HTMLBodyElement* body = toHTMLBodyElement(EnclosingElementWithTag(
+    HTMLBodyElement* body = ToHTMLBodyElement(EnclosingElementWithTag(
         Position::FirstPositionInNode(*common_ancestor), bodyTag));
     HTMLBodyElement* fully_selected_root = nullptr;
     // FIXME: Do this for all fully selected blocks, not just the body.
@@ -357,7 +360,8 @@ Node* StyledMarkupTraverser<Strategy>::Traverse(Node* start_node,
       }
 
       if (!n->GetLayoutObject() &&
-          !EnclosingElementWithTag(FirstPositionInOrBeforeNode(n), selectTag)) {
+          !EnclosingElementWithTag(FirstPositionInOrBeforeNode(*n),
+                                   selectTag)) {
         next = Strategy::NextSkippingChildren(*n);
         // Don't skip over pastEnd.
         if (past_end && Strategy::IsDescendantOf(*past_end, *n))
@@ -478,7 +482,7 @@ void StyledMarkupTraverser<Strategy>::AppendStartMarkup(Node& node) {
   switch (node.getNodeType()) {
     case Node::kTextNode: {
       Text& text = ToText(node);
-      if (text.parentElement() && isHTMLTextAreaElement(text.parentElement())) {
+      if (text.parentElement() && IsHTMLTextAreaElement(text.parentElement())) {
         accumulator_->AppendText(text);
         break;
       }

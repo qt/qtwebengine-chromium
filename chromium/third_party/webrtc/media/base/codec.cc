@@ -8,16 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/media/base/codec.h"
+#include "media/base/codec.h"
 
 #include <algorithm>
 #include <sstream>
 
-#include "webrtc/media/base/h264_profile_level_id.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/stringencode.h"
-#include "webrtc/rtc_base/stringutils.h"
+#include "media/base/h264_profile_level_id.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/stringencode.h"
+#include "rtc_base/stringutils.h"
 
 namespace cricket {
 
@@ -31,6 +31,8 @@ static bool IsSameH264Profile(const CodecParameterMap& params1,
   return profile_level_id && other_profile_level_id &&
          profile_level_id->profile == other_profile_level_id->profile;
 }
+
+FeedbackParams::FeedbackParams() = default;
 
 bool FeedbackParam::operator==(const FeedbackParam& other) const {
   return _stricmp(other.id().c_str(), id().c_str()) == 0 &&
@@ -227,6 +229,11 @@ VideoCodec::VideoCodec(const std::string& name) : VideoCodec(0 /* id */, name) {
 
 VideoCodec::VideoCodec() : Codec() {
   clockrate = kVideoCodecClockrate;
+}
+
+VideoCodec::VideoCodec(const webrtc::SdpVideoFormat& c)
+    : Codec(0 /* id */, c.name, kVideoCodecClockrate) {
+  params = c.parameters;
 }
 
 VideoCodec::VideoCodec(const VideoCodec& c) = default;

@@ -4,7 +4,6 @@
 
 #include "core/paint/compositing/CompositedLayerMapping.h"
 
-#include "core/frame/FrameTestHelpers.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutTestHelper.h"
@@ -145,8 +144,8 @@ TEST_P(CompositedLayerMappingTest, SimpleInterestRect) {
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(paint_layer->GraphicsLayerBacking());
   ASSERT_TRUE(paint_layer->GetCompositedLayerMapping());
-  EXPECT_RECT_EQ(IntRect(0, 0, 200, 200),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 200, 200),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, TallLayerInterestRect) {
@@ -161,8 +160,8 @@ TEST_P(CompositedLayerMappingTest, TallLayerInterestRect) {
   ASSERT_TRUE(paint_layer->GraphicsLayerBacking());
   // Screen-space visible content rect is [8, 8, 200, 600]. Mapping back to
   // local, adding 4000px in all directions, then clipping, yields this rect.
-  EXPECT_RECT_EQ(IntRect(0, 0, 200, 4592),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 200, 4592),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, TallLayerWholeDocumentInterestRect) {
@@ -179,9 +178,9 @@ TEST_P(CompositedLayerMappingTest, TallLayerWholeDocumentInterestRect) {
   ASSERT_TRUE(paint_layer->GraphicsLayerBacking());
   ASSERT_TRUE(paint_layer->GetCompositedLayerMapping());
   // Clipping is disabled in recomputeInterestRect.
-  EXPECT_RECT_EQ(IntRect(0, 0, 200, 10000),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
-  EXPECT_RECT_EQ(
+  EXPECT_EQ(IntRect(0, 0, 200, 10000),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(
       IntRect(0, 0, 200, 10000),
       ComputeInterestRect(paint_layer->GetCompositedLayerMapping(),
                           paint_layer->GraphicsLayerBacking(), IntRect()));
@@ -204,8 +203,8 @@ TEST_P(CompositedLayerMappingTest, VerticalRightLeftWritingModeDocument) {
   // A scroll by -5000px is equivalent to a scroll by (10000 - 5000 - 800)px =
   // 4200px in non-RTL mode. Expanding the resulting rect by 4000px in each
   // direction yields this result.
-  EXPECT_RECT_EQ(IntRect(200, 0, 8800, 600),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(200, 0, 8800, 600),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, RotatedInterestRect) {
@@ -218,8 +217,8 @@ TEST_P(CompositedLayerMappingTest, RotatedInterestRect) {
   PaintLayer* paint_layer =
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(!!paint_layer->GraphicsLayerBacking());
-  EXPECT_RECT_EQ(IntRect(0, 0, 200, 200),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 200, 200),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, RotatedInterestRectNear90Degrees) {
@@ -236,8 +235,8 @@ TEST_P(CompositedLayerMappingTest, RotatedInterestRectNear90Degrees) {
   // leads to a reverse-projected rect that is much much larger than the
   // original layer size in certain dimensions. In such cases, we often fall
   // back to the 4000px interest rect padding amount.
-  EXPECT_RECT_EQ(IntRect(0, 0, 4000, 200),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 4000, 200),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, LargeScaleInterestRect) {
@@ -278,8 +277,25 @@ TEST_P(CompositedLayerMappingTest, LargeScaleInterestRect) {
   PaintLayer* paint_layer =
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(!!paint_layer->GraphicsLayerBacking());
-  EXPECT_RECT_EQ(IntRect(0, 0, 1920, 5300),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 1920, 5300),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+}
+
+TEST_P(CompositedLayerMappingTest, PerspectiveInterestRect) {
+  SetBodyInnerHTML(R"HTML(<div style='left: 400px; position: absolute;'>
+    <div id=target style='transform: perspective(1000px) rotateX(-100deg);'>
+      <div style='width: 1200px; height: 835px; background: lightblue;
+          border: 1px solid black'></div>
+    </div>
+  )HTML");
+
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  Element* element = GetDocument().getElementById("target");
+  PaintLayer* paint_layer =
+      ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
+  ASSERT_TRUE(!!paint_layer->GraphicsLayerBacking());
+  EXPECT_EQ(IntRect(0, 0, 1202, 837),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, 3D90DegRotatedTallInterestRect) {
@@ -295,8 +311,8 @@ TEST_P(CompositedLayerMappingTest, 3D90DegRotatedTallInterestRect) {
   PaintLayer* paint_layer =
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(!!paint_layer->GraphicsLayerBacking());
-  EXPECT_RECT_EQ(IntRect(0, 0, 200, 4000),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 200, 4000),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, 3D45DegRotatedTallInterestRect) {
@@ -309,8 +325,8 @@ TEST_P(CompositedLayerMappingTest, 3D45DegRotatedTallInterestRect) {
   PaintLayer* paint_layer =
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(!!paint_layer->GraphicsLayerBacking());
-  EXPECT_RECT_EQ(IntRect(0, 0, 200, 4592),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 200, 4592),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, RotatedTallInterestRect) {
@@ -323,8 +339,8 @@ TEST_P(CompositedLayerMappingTest, RotatedTallInterestRect) {
   PaintLayer* paint_layer =
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(!!paint_layer->GraphicsLayerBacking());
-  EXPECT_RECT_EQ(IntRect(0, 0, 200, 4000),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 200, 4000),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, WideLayerInterestRect) {
@@ -340,8 +356,8 @@ TEST_P(CompositedLayerMappingTest, WideLayerInterestRect) {
   // Screen-space visible content rect is [8, 8, 800, 200] (the screen is
   // 800x600).  Mapping back to local, adding 4000px in all directions, then
   // clipping, yields this rect.
-  EXPECT_RECT_EQ(IntRect(0, 0, 4792, 200),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 4792, 200),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, FixedPositionInterestRect) {
@@ -354,8 +370,8 @@ TEST_P(CompositedLayerMappingTest, FixedPositionInterestRect) {
   PaintLayer* paint_layer =
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(!!paint_layer->GraphicsLayerBacking());
-  EXPECT_RECT_EQ(IntRect(0, 0, 300, 400),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 300, 400),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, LayerOffscreenInterestRect) {
@@ -370,8 +386,8 @@ TEST_P(CompositedLayerMappingTest, LayerOffscreenInterestRect) {
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(!!paint_layer->GraphicsLayerBacking());
   // Offscreen layers are painted as usual.
-  EXPECT_RECT_EQ(IntRect(0, 0, 200, 200),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 200, 200),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, ScrollingLayerInterestRect) {
@@ -388,8 +404,8 @@ TEST_P(CompositedLayerMappingTest, ScrollingLayerInterestRect) {
   ASSERT_TRUE(paint_layer->GraphicsLayerBacking());
   // Offscreen layers are painted as usual.
   ASSERT_TRUE(paint_layer->GetCompositedLayerMapping()->ScrollingLayer());
-  EXPECT_RECT_EQ(IntRect(0, 0, 195, 4592),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 195, 4592),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, ClippedBigLayer) {
@@ -404,8 +420,8 @@ TEST_P(CompositedLayerMappingTest, ClippedBigLayer) {
       ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
   ASSERT_TRUE(paint_layer->GraphicsLayerBacking());
   // Offscreen layers are painted as usual.
-  EXPECT_RECT_EQ(IntRect(0, 0, 4001, 4001),
-                 RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 4001, 4001),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, ClippingMaskLayer) {
@@ -565,54 +581,54 @@ TEST_P(CompositedLayerMappingTest, InterestRectChangeOnViewportScroll) {
   GetDocument().View()->UpdateAllLifecyclePhases();
   GraphicsLayer* root_scrolling_layer =
       GetDocument().GetLayoutViewItem().Layer()->GraphicsLayerBacking();
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 4600),
-                 PreviousInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 4600),
+            PreviousInterestRect(root_scrolling_layer));
 
   GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
       ScrollOffset(0, 300), kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Still use the previous interest rect because the recomputed rect hasn't
   // changed enough.
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 4900),
-                 RecomputeInterestRect(root_scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 4600),
-                 PreviousInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 4900),
+            RecomputeInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 4600),
+            PreviousInterestRect(root_scrolling_layer));
 
   GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
       ScrollOffset(0, 600), kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Use recomputed interest rect because it changed enough.
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 5200),
-                 RecomputeInterestRect(root_scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 5200),
-                 PreviousInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 5200),
+            RecomputeInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 5200),
+            PreviousInterestRect(root_scrolling_layer));
 
   GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
       ScrollOffset(0, 5400), kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_RECT_EQ(IntRect(0, 1400, 800, 8600),
-                 RecomputeInterestRect(root_scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 1400, 800, 8600),
-                 PreviousInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 1400, 800, 8600),
+            RecomputeInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 1400, 800, 8600),
+            PreviousInterestRect(root_scrolling_layer));
 
   GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
       ScrollOffset(0, 9000), kProgrammaticScroll);
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Still use the previous interest rect because it contains the recomputed
   // interest rect.
-  EXPECT_RECT_EQ(IntRect(0, 5000, 800, 5000),
-                 RecomputeInterestRect(root_scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 1400, 800, 8600),
-                 PreviousInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 5000, 800, 5000),
+            RecomputeInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 1400, 800, 8600),
+            PreviousInterestRect(root_scrolling_layer));
 
   GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
       ScrollOffset(0, 2000), kProgrammaticScroll);
   // Use recomputed interest rect because it changed enough.
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 6600),
-                 RecomputeInterestRect(root_scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 6600),
-                 PreviousInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 6600),
+            RecomputeInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 6600),
+            PreviousInterestRect(root_scrolling_layer));
 }
 
 TEST_P(CompositedLayerMappingTest, InterestRectChangeOnShrunkenViewport) {
@@ -626,16 +642,16 @@ TEST_P(CompositedLayerMappingTest, InterestRectChangeOnShrunkenViewport) {
   GetDocument().View()->UpdateAllLifecyclePhases();
   GraphicsLayer* root_scrolling_layer =
       GetDocument().GetLayoutViewItem().Layer()->GraphicsLayerBacking();
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 4600),
-                 PreviousInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 4600),
+            PreviousInterestRect(root_scrolling_layer));
 
   GetDocument().View()->SetFrameRect(IntRect(0, 0, 800, 60));
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Repaint required, so interest rect should be updated to shrunken size.
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 4060),
-                 RecomputeInterestRect(root_scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 0, 800, 4060),
-                 PreviousInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 4060),
+            RecomputeInterestRect(root_scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 800, 4060),
+            PreviousInterestRect(root_scrolling_layer));
 }
 
 TEST_P(CompositedLayerMappingTest, InterestRectChangeOnScroll) {
@@ -656,49 +672,40 @@ TEST_P(CompositedLayerMappingTest, InterestRectChangeOnScroll) {
   Element* scroller = GetDocument().getElementById("scroller");
   GraphicsLayer* scrolling_layer =
       scroller->GetLayoutBox()->Layer()->GraphicsLayerBacking();
-  EXPECT_RECT_EQ(IntRect(0, 0, 400, 4600),
-                 PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 4600), PreviousInterestRect(scrolling_layer));
 
   scroller->setScrollTop(300);
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Still use the previous interest rect because the recomputed rect hasn't
   // changed enough.
-  EXPECT_RECT_EQ(IntRect(0, 0, 400, 4900),
-                 RecomputeInterestRect(scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 0, 400, 4600),
-                 PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 4900), RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 4600), PreviousInterestRect(scrolling_layer));
 
   scroller->setScrollTop(600);
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Use recomputed interest rect because it changed enough.
-  EXPECT_RECT_EQ(IntRect(0, 0, 400, 5200),
-                 RecomputeInterestRect(scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 0, 400, 5200),
-                 PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 5200), RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 5200), PreviousInterestRect(scrolling_layer));
 
   scroller->setScrollTop(5400);
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_RECT_EQ(IntRect(0, 1400, 400, 8600),
-                 RecomputeInterestRect(scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 1400, 400, 8600),
-                 PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 1400, 400, 8600),
+            RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 1400, 400, 8600), PreviousInterestRect(scrolling_layer));
 
   scroller->setScrollTop(9000);
   GetDocument().View()->UpdateAllLifecyclePhases();
   // Still use the previous interest rect because it contains the recomputed
   // interest rect.
-  EXPECT_RECT_EQ(IntRect(0, 5000, 400, 5000),
-                 RecomputeInterestRect(scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 1400, 400, 8600),
-                 PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 5000, 400, 5000),
+            RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 1400, 400, 8600), PreviousInterestRect(scrolling_layer));
 
   scroller->setScrollTop(2000);
   // Use recomputed interest rect because it changed enough.
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_RECT_EQ(IntRect(0, 0, 400, 6600),
-                 RecomputeInterestRect(scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 0, 400, 6600),
-                 PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 6600), RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 0, 400, 6600), PreviousInterestRect(scrolling_layer));
 }
 
 TEST_P(CompositedLayerMappingTest,
@@ -727,18 +734,16 @@ TEST_P(CompositedLayerMappingTest,
   // The above code creates an interest rect bigger than the interest rect if
   // recomputed now.
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_RECT_EQ(IntRect(0, 5400, 400, 4600),
-                 RecomputeInterestRect(scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 1400, 400, 8600),
-                 PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 5400, 400, 4600),
+            RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 1400, 400, 8600), PreviousInterestRect(scrolling_layer));
 
   // Paint invalidation and repaint should change previous paint interest rect.
   GetDocument().getElementById("content")->setTextContent("Change");
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_RECT_EQ(IntRect(0, 5400, 400, 4600),
-                 RecomputeInterestRect(scrolling_layer));
-  EXPECT_RECT_EQ(IntRect(0, 5400, 400, 4600),
-                 PreviousInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 5400, 400, 4600),
+            RecomputeInterestRect(scrolling_layer));
+  EXPECT_EQ(IntRect(0, 5400, 400, 4600), PreviousInterestRect(scrolling_layer));
 }
 
 TEST_P(CompositedLayerMappingTest,
@@ -768,9 +773,9 @@ TEST_P(CompositedLayerMappingTest,
   // The squashing layer is at (-10000, 190, 10100, 100) in viewport
   // coordinates.
   // The following rect is at (-4000, 190, 4100, 100) in viewport coordinates.
-  EXPECT_RECT_EQ(IntRect(6000, 0, 4100, 100),
-                 grouped_mapping->ComputeInterestRect(
-                     grouped_mapping->SquashingLayer(), IntRect()));
+  EXPECT_EQ(IntRect(6000, 0, 4100, 100),
+            grouped_mapping->ComputeInterestRect(
+                grouped_mapping->SquashingLayer(), IntRect()));
 }
 
 TEST_P(CompositedLayerMappingTest,
@@ -795,9 +800,9 @@ TEST_P(CompositedLayerMappingTest,
                                                 ->GroupedMapping();
   // The squashing layer is at (-9600, 0, 10000, 1000) in viewport coordinates.
   // The following rect is at (-4000, 0, 4400, 1000) in viewport coordinates.
-  EXPECT_RECT_EQ(IntRect(5600, 0, 4400, 1000),
-                 grouped_mapping->ComputeInterestRect(
-                     grouped_mapping->SquashingLayer(), IntRect()));
+  EXPECT_EQ(IntRect(5600, 0, 4400, 1000),
+            grouped_mapping->ComputeInterestRect(
+                grouped_mapping->SquashingLayer(), IntRect()));
 }
 
 TEST_P(CompositedLayerMappingTest, InterestRectOfIframeInScrolledDiv) {
@@ -820,7 +825,7 @@ TEST_P(CompositedLayerMappingTest, InterestRectOfIframeInScrolledDiv) {
   Element* target = ChildDocument().getElementById("target");
   ASSERT_TRUE(target);
 
-  EXPECT_RECT_EQ(
+  EXPECT_EQ(
       IntRect(0, 0, 200, 200),
       RecomputeInterestRect(
           target->GetLayoutObject()->EnclosingLayer()->GraphicsLayerBacking()));
@@ -848,12 +853,12 @@ TEST_P(CompositedLayerMappingTest, InterestRectOfScrolledIframe) {
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   ASSERT_TRUE(ChildDocument().View()->GetLayoutViewItem().HasLayer());
-  EXPECT_RECT_EQ(IntRect(0, 3500, 500, 4500),
-                 RecomputeInterestRect(ChildDocument()
-                                           .View()
-                                           ->GetLayoutViewItem()
-                                           .EnclosingLayer()
-                                           ->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 3500, 500, 4500),
+            RecomputeInterestRect(ChildDocument()
+                                      .View()
+                                      ->GetLayoutViewItem()
+                                      .EnclosingLayer()
+                                      ->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest, InterestRectOfIframeWithContentBoxOffset) {
@@ -882,12 +887,12 @@ TEST_P(CompositedLayerMappingTest, InterestRectOfIframeWithContentBoxOffset) {
 
   ASSERT_TRUE(ChildDocument().View()->GetLayoutViewItem().HasLayer());
   // The width is 485 pixels due to the size of the scrollbar.
-  EXPECT_RECT_EQ(IntRect(0, 0, 500, 7500),
-                 RecomputeInterestRect(ChildDocument()
-                                           .View()
-                                           ->GetLayoutViewItem()
-                                           .EnclosingLayer()
-                                           ->GraphicsLayerBacking()));
+  EXPECT_EQ(IntRect(0, 0, 500, 7500),
+            RecomputeInterestRect(ChildDocument()
+                                      .View()
+                                      ->GetLayoutViewItem()
+                                      .EnclosingLayer()
+                                      ->GraphicsLayerBacking()));
 }
 
 TEST_P(CompositedLayerMappingTest,
@@ -920,7 +925,8 @@ TEST_P(CompositedLayerMappingTest,
       mapping->ForegroundLayer()->PaintingPhase());
   // Regression test for crbug.com/767908: a foreground layer should also
   // participates hit testing.
-  EXPECT_TRUE(mapping->ForegroundLayer()->GetShouldHitTestForTesting());
+  EXPECT_TRUE(mapping->ForegroundLayer()
+                  ->GetHitTestableWithoutDrawsContentForTesting());
 
   Element* negative_composited_child =
       GetDocument().getElementById("negative-composited-child");
@@ -2028,6 +2034,70 @@ TEST_P(CompositedLayerMappingTest,
   ASSERT_TRUE(child_mapping->AncestorClippingMaskLayer());
 }
 
+TEST_P(CompositedLayerMappingTest,
+       BorderRadiusPreventsSquashingWithInlineTransform) {
+  // When a node with inline transform has siblings with border radius and
+  // composited children, those siblings must not be squashed because it
+  // prevents application of a border radius clip mask.
+  SetBodyInnerHTML(
+      "<style>"
+      "  .precursor {"
+      "    width: 100px;"
+      "    height: 40px;"
+      "  }"
+      "  .container {"
+      "    position: relative;"
+      "    top: 20px;"
+      "    width: 100px;"
+      "    height: 40px;"
+      "    border: 1px solid black;"
+      "    border-radius: 10px;"
+      "    overflow: hidden;"
+      "  }"
+      "  .contents {"
+      "    height: 200px;"
+      "    width: 200px;"
+      "    position: relative;"
+      "    top: -10px;"
+      "    left: -10px;"
+      "  }"
+      "</style>"
+      "<div id='precursor' class='precursor'"
+      " style='transform: translateZ(0);'>"
+      "</div>"
+      "<div id='container1' class='container'>"
+      "  <div id='contents1' class='contents'></div>"
+      "</div>"
+      "<div id='container2' class='container'>"
+      "  <div id='contents2' class='contents'></div>"
+      "</div>");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  Element* first_child = GetDocument().getElementById("contents1");
+  ASSERT_TRUE(first_child);
+  PaintLayer* first_child_paint_layer =
+      ToLayoutBoxModelObject(first_child->GetLayoutObject())->Layer();
+  ASSERT_TRUE(first_child_paint_layer);
+  CompositedLayerMapping* first_child_mapping =
+      first_child_paint_layer->GetCompositedLayerMapping();
+  ASSERT_TRUE(first_child_mapping);
+  ASSERT_TRUE(first_child_mapping->AncestorClippingLayer());
+  EXPECT_TRUE(first_child_mapping->AncestorClippingLayer()->MaskLayer());
+  ASSERT_TRUE(first_child_mapping->AncestorClippingMaskLayer());
+
+  Element* second_child = GetDocument().getElementById("contents2");
+  ASSERT_TRUE(second_child);
+  PaintLayer* second_child_paint_layer =
+      ToLayoutBoxModelObject(second_child->GetLayoutObject())->Layer();
+  ASSERT_TRUE(second_child_paint_layer);
+  CompositedLayerMapping* second_child_mapping =
+      second_child_paint_layer->GetCompositedLayerMapping();
+  ASSERT_TRUE(second_child_mapping);
+  ASSERT_TRUE(second_child_mapping->AncestorClippingLayer());
+  EXPECT_TRUE(second_child_mapping->AncestorClippingLayer()->MaskLayer());
+  ASSERT_TRUE(second_child_mapping->AncestorClippingMaskLayer());
+}
+
 TEST_P(CompositedLayerMappingTest, StickyPositionMainThreadOffset) {
   SetBodyInnerHTML(
       "<style>.composited { backface-visibility: hidden; }"
@@ -2109,21 +2179,26 @@ TEST_P(CompositedLayerMappingTest,
       "<style>"
       " .scroller { overflow: scroll; width: 200px; height: 600px; }"
       " .composited { will-change:transform; }"
+      " .perspective { perspective: 150px; }"
       " .box { position: sticky; width: 185px; height: 50px; top: 0px; }"
       " .container { width: 100%; height: 1000px; }"
       "</style>"
       "<div id='scroller' class='composited scroller'>"
       " <div class='composited container'>"
-      "  <div id='sticky' class='box'></div>"
+      "  <div id='sticky' class='perspective box'></div>"
       " </div>"
       "</div>");
 
+  LayoutBoxModelObject* sticky =
+      ToLayoutBoxModelObject(GetLayoutObjectByElementId("sticky"));
   CompositedLayerMapping* mapping =
-      ToLayoutBlock(GetLayoutObjectByElementId("sticky"))
-          ->Layer()
-          ->GetCompositedLayerMapping();
+      sticky->Layer()->GetCompositedLayerMapping();
   ASSERT_TRUE(mapping);
   GraphicsLayer* main_graphics_layer = mapping->MainGraphicsLayer();
+  GraphicsLayer* child_transform_layer = mapping->ChildTransformLayer();
+
+  ASSERT_TRUE(main_graphics_layer);
+  ASSERT_TRUE(child_transform_layer);
 
   PaintLayer* scroller =
       ToLayoutBlock(GetLayoutObjectByElementId("scroller"))->Layer();
@@ -2132,8 +2207,21 @@ TEST_P(CompositedLayerMappingTest,
       FloatPoint(scrollable_area->ScrollPosition().Y(), 100));
   GetDocument().View()->UpdateAllLifecyclePhases();
 
+  // On the blink side, a sticky offset of (0, 100) should have been applied to
+  // the sticky element.
+  LayoutSize blink_sticky_offset = sticky->StickyPositionOffset();
+  EXPECT_FLOAT_EQ(0, blink_sticky_offset.Width());
+  EXPECT_FLOAT_EQ(100, blink_sticky_offset.Height());
+
+  // On the CompositedLayerMapping side however, the offset should have been
+  // removed so that the compositor can take care of it.
   EXPECT_FLOAT_EQ(0, main_graphics_layer->GetPosition().X());
   EXPECT_FLOAT_EQ(0, main_graphics_layer->GetPosition().Y());
+
+  // The child transform layer for the perspective shifting should also not be
+  // moved by the sticky offset.
+  EXPECT_FLOAT_EQ(0, child_transform_layer->GetPosition().X());
+  EXPECT_FLOAT_EQ(0, child_transform_layer->GetPosition().Y());
 }
 
 TEST_P(CompositedLayerMappingTest,
@@ -2365,6 +2453,42 @@ TEST_P(CompositedLayerMappingTest, ScrollingLayerBackgroundColor) {
   GetDocument().View()->UpdateAllLifecyclePhases();
   EXPECT_EQ(Color(0, 0, 255), graphics_layer->BackgroundColor());
   EXPECT_EQ(Color(0, 0, 255), scrolling_contents_layer->BackgroundColor());
+}
+
+TEST_P(CompositedLayerMappingTest, ClipPathNoChildContainmentLayer) {
+  // This test verifies only the presence of clip path does not induce child
+  // containment layer.
+  SetBodyInnerHTML(
+      "<div id='target' style='width:100px; height:100px; clip-path:circle();'>"
+      "  <div style='will-change:transform; width:200px; height:200px;'></div>"
+      "</div>");
+  auto* mapping = ToLayoutBoxModelObject(GetLayoutObjectByElementId("target"))
+                      ->Layer()
+                      ->GetCompositedLayerMapping();
+  ASSERT_TRUE(mapping);
+  ASSERT_FALSE(mapping->ClippingLayer());
+}
+
+TEST_P(CompositedLayerMappingTest, ForegroundLayerSizing) {
+  // This test verifies the foreground layer is sized to the clip rect.
+  SetBodyInnerHTML(
+      "<div id='target' style='position:relative; z-index:0; width:100px; "
+      "height:100px; border:10px solid black; overflow:hidden;'>"
+      "  <div style='width:200px; height:200px; background:green;'></div>"
+      "  <div style='position:relative; z-index:-1; "
+      "will-change:transform;'></div>"
+      "</div>");
+  auto* mapping = ToLayoutBoxModelObject(GetLayoutObjectByElementId("target"))
+                      ->Layer()
+                      ->GetCompositedLayerMapping();
+  ASSERT_TRUE(mapping);
+  EXPECT_EQ(FloatSize(120, 120), mapping->MainGraphicsLayer()->Size());
+  ASSERT_TRUE(mapping->ClippingLayer());
+  EXPECT_EQ(FloatPoint(10, 10), mapping->ClippingLayer()->GetPosition());
+  EXPECT_EQ(FloatSize(100, 100), mapping->ClippingLayer()->Size());
+  ASSERT_TRUE(mapping->ForegroundLayer());
+  EXPECT_EQ(FloatPoint(0, 0), mapping->ForegroundLayer()->GetPosition());
+  EXPECT_EQ(FloatSize(100, 100), mapping->ForegroundLayer()->Size());
 }
 
 }  // namespace blink

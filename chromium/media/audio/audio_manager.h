@@ -12,7 +12,6 @@
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/strings/string16.h"
 #include "base/threading/thread_checker.h"
 #include "build/build_config.h"
 #include "media/audio/audio_device_description.h"
@@ -210,10 +209,6 @@ class MEDIA_EXPORT AudioManager {
   // sample rates.
   virtual bool HasAudioInputDevices() = 0;
 
-  // Returns a human readable string for the model/make of the active audio
-  // input device for this computer.
-  virtual base::string16 GetAudioInputDeviceModel() = 0;
-
   // Appends a list of available input devices to |device_descriptions|,
   // which must initially be empty. It is not guaranteed that all the
   // devices in the list support all formats and sample rates for
@@ -260,7 +255,7 @@ class MEDIA_EXPORT AudioManager {
       const std::string& input_device_id) = 0;
 
  private:
-  friend class AudioSystemImpl;
+  friend class AudioSystemHelper;
 
   std::unique_ptr<AudioThread> audio_thread_;
   bool shutdown_ = false;  // True after |this| has been shutdown.

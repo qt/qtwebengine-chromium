@@ -38,7 +38,10 @@ void PaintPieces(GraphicsContext& context,
 
     if (draw_info.is_drawable) {
       if (draw_info.is_corner_piece) {
-        context.DrawImage(image, draw_info.destination, &draw_info.source, op);
+        // Since there is no way for the developer to specify decode behavior,
+        // use kSync by default.
+        context.DrawImage(image, Image::kSyncDecode, draw_info.destination,
+                          &draw_info.source, op);
       } else {
         context.DrawTiledImage(image, draw_info.destination, draw_info.source,
                                draw_info.tile_scale,
@@ -89,8 +92,9 @@ bool NinePieceImagePainter::Paint(GraphicsContext& graphics_context,
   // scale of them again.
   IntSize image_size = RoundedIntSize(
       style_image->ImageSize(document, 1, border_image_rect.Size()));
-  RefPtr<Image> image =
-      style_image->GetImage(observer, document, style, image_size);
+  LayoutSize logical_image_size(image_size);
+  RefPtr<Image> image = style_image->GetImage(observer, document, style,
+                                              image_size, &logical_image_size);
 
   InterpolationQuality interpolation_quality = style.GetInterpolationQuality();
   InterpolationQuality previous_interpolation_quality =
@@ -103,7 +107,7 @@ bool NinePieceImagePainter::Paint(GraphicsContext& graphics_context,
                                               FloatRect(border_image_rect)));
 
   PaintPieces(graphics_context, border_image_rect, style, nine_piece_image,
-              image.Get(), image_size, op);
+              image.get(), image_size, op);
 
   graphics_context.SetImageInterpolationQuality(previous_interpolation_quality);
   return true;

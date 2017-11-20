@@ -190,9 +190,21 @@ static GLint QueryGLIntRange(const FunctionsGL *functions, GLenum name, size_t i
 
 static GLint64 QuerySingleGLInt64(const FunctionsGL *functions, GLenum name)
 {
-    GLint64 result = 0;
-    functions->getInteger64v(name, &result);
-    return result;
+    // Fall back to 32-bit int if 64-bit query is not available. This can become relevant for some
+    // caps that are defined as 64-bit values in core spec, but were introduced earlier in
+    // extensions as 32-bit. Triggered in some cases by RenderDoc's emulated OpenGL driver.
+    if (!functions->getInteger64v)
+    {
+        GLint result = 0;
+        functions->getIntegerv(name, &result);
+        return static_cast<GLint64>(result);
+    }
+    else
+    {
+        GLint64 result = 0;
+        functions->getInteger64v(name, &result);
+        return result;
+    }
 }
 
 static GLfloat QuerySingleGLFloat(const FunctionsGL *functions, GLenum name)
@@ -902,7 +914,9 @@ void GenerateCaps(const FunctionsGL *functions,
         const int maxLayers = QuerySingleGLInt(functions, GL_MAX_ARRAY_TEXTURE_LAYERS);
         // GL_MAX_VIEWPORTS is guaranteed to be at least 16.
         const int maxViewports       = QuerySingleGLInt(functions, GL_MAX_VIEWPORTS);
-        extensions->maxViews         = static_cast<GLuint>(std::min(maxLayers, maxViewports));
+        extensions->maxViews         = static_cast<GLuint>(
+            std::min(static_cast<int>(gl::IMPLEMENTATION_ANGLE_MULTIVIEW_MAX_VIEWS),
+                     std::min(maxLayers, maxViewports)));
         *multiviewImplementationType = MultiviewImplementationTypeGL::NV_VIEWPORT_ARRAY2;
     }
 
@@ -950,6 +964,11 @@ void GenerateCaps(const FunctionsGL *functions,
                              functions->isAtLeastGLES(gl::Version(3, 2)) ||
                              functions->hasGLESExtension("GL_KHR_robustness") ||
                              functions->hasGLESExtension("GL_EXT_robustness");
+
+    extensions->robustBufferAccessBehavior =
+        extensions->robustness &&
+        (functions->hasGLExtension("GL_ARB_robust_buffer_access_behavior") ||
+         functions->hasGLESExtension("GL_KHR_robust_buffer_access_behavior"));
 
     extensions->copyTexture = true;
     extensions->syncQuery   = SyncQueryGL::IsSupported(functions);
@@ -1045,11 +1064,12 @@ void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workaround
     workarounds->doWhileGLSLCausesGPUHang = true;
     workarounds->useUnusedBlocksWithStandardOrSharedLayout = true;
     workarounds->rewriteFloatUnaryMinusOperator            = IsIntel(vendor);
-    workarounds->dontInitializeUninitializedLocals         = true;
 #endif
 
 #if defined(ANGLE_PLATFORM_ANDROID)
-    workarounds->dontInitializeUninitializedLocals = true;
+    // Triggers a bug on Marshmallow Adreno (4xx?) driver.
+    // http://anglebug.com/2046
+    workarounds->dontInitializeUninitializedLocals = IsQualcomm(vendor);
 #endif
 
     workarounds->finishDoesNotCauseQueriesToBeAvailable =

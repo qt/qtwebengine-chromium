@@ -11,6 +11,7 @@
 
 #include "common/bitset_utils.h"
 #include "common/debug.h"
+#include "libANGLE/Context.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/renderer/vulkan/BufferVk.h"
 #include "libANGLE/renderer/vulkan/CompilerVk.h"
@@ -19,6 +20,7 @@
 #include "libANGLE/renderer/vulkan/FenceNVVk.h"
 #include "libANGLE/renderer/vulkan/FramebufferVk.h"
 #include "libANGLE/renderer/vulkan/ImageVk.h"
+#include "libANGLE/renderer/vulkan/ProgramPipelineVk.h"
 #include "libANGLE/renderer/vulkan/ProgramVk.h"
 #include "libANGLE/renderer/vulkan/QueryVk.h"
 #include "libANGLE/renderer/vulkan/RenderbufferVk.h"
@@ -33,6 +35,25 @@
 
 namespace rx
 {
+
+namespace
+{
+
+VkIndexType GetVkIndexType(GLenum glIndexType)
+{
+    switch (glIndexType)
+    {
+        case GL_UNSIGNED_SHORT:
+            return VK_INDEX_TYPE_UINT16;
+        case GL_UNSIGNED_INT:
+            return VK_INDEX_TYPE_UINT32;
+        default:
+            UNREACHABLE();
+            return VK_INDEX_TYPE_MAX_ENUM;
+    }
+}
+
+}  // anonymous namespace
 
 ContextVk::ContextVk(const gl::ContextState &state, RendererVk *renderer)
     : ContextImpl(state), mRenderer(renderer), mCurrentDrawMode(GL_NONE)
@@ -57,8 +78,9 @@ gl::Error ContextVk::flush()
 
 gl::Error ContextVk::finish()
 {
-    UNIMPLEMENTED();
-    return gl::InternalError();
+    // TODO(jmadill): Implement finish.
+    // UNIMPLEMENTED();
+    return gl::NoError();
 }
 
 gl::Error ContextVk::initPipeline(const gl::Context *context)
@@ -264,7 +286,7 @@ gl::Error ContextVk::initPipeline(const gl::Context *context)
     return gl::NoError();
 }
 
-gl::Error ContextVk::drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count)
+gl::Error ContextVk::setupDraw(const gl::Context *context, GLenum mode)
 {
     if (mode != mCurrentDrawMode)
     {
@@ -282,47 +304,41 @@ gl::Error ContextVk::drawArrays(const gl::Context *context, GLenum mode, GLint f
     const auto &state     = mState.getState();
     const auto &programGL = state.getProgram();
     const auto &vao       = state.getVertexArray();
-    const auto &attribs   = vao->getVertexAttributes();
-    const auto &bindings  = vao->getVertexBindings();
+    VertexArrayVk *vkVAO  = GetImplAs<VertexArrayVk>(vao);
     const auto *drawFBO   = state.getDrawFramebuffer();
     FramebufferVk *vkFBO  = GetImplAs<FramebufferVk>(drawFBO);
     Serial queueSerial    = mRenderer->getCurrentQueueSerial();
+    uint32_t maxAttrib    = programGL->getState().getMaxActiveAttribLocation();
 
-    // Process vertex attributes
-    // TODO(jmadill): Caching with dirty bits.
-    std::vector<VkBuffer> vertexHandles;
-    std::vector<VkDeviceSize> vertexOffsets;
-
-    for (auto attribIndex : programGL->getActiveAttribLocationsMask())
-    {
-        const auto &attrib  = attribs[attribIndex];
-        const auto &binding = bindings[attrib.bindingIndex];
-        if (attrib.enabled)
-        {
-            // TODO(jmadill): Offset handling.
-            gl::Buffer *bufferGL = binding.getBuffer().get();
-            ASSERT(bufferGL);
-            BufferVk *bufferVk = GetImplAs<BufferVk>(bufferGL);
-            vertexHandles.push_back(bufferVk->getVkBuffer().getHandle());
-            vertexOffsets.push_back(0);
-
-            bufferVk->setQueueSerial(queueSerial);
-        }
-        else
-        {
-            UNIMPLEMENTED();
-        }
-    }
+    // Process vertex attributes. Assume zero offsets for now.
+    // TODO(jmadill): Offset handling.
+    const std::vector<VkBuffer> &vertexHandles = vkVAO->getCurrentVertexBufferHandlesCache();
+    angle::MemoryBuffer *zeroBuf               = nullptr;
+    ANGLE_TRY(context->getZeroFilledBuffer(maxAttrib * sizeof(VkDeviceSize), &zeroBuf));
 
     vk::CommandBuffer *commandBuffer = nullptr;
     ANGLE_TRY(mRenderer->getStartedCommandBuffer(&commandBuffer));
-    ANGLE_TRY(vkFBO->beginRenderPass(context, device, commandBuffer, queueSerial, state));
+    ANGLE_TRY(vkFBO->ensureInRenderPass(context, device, commandBuffer, queueSerial, state));
 
     commandBuffer->bindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, mCurrentPipeline);
-    commandBuffer->bindVertexBuffers(0, vertexHandles, vertexOffsets);
-    commandBuffer->draw(count, 1, first, 0);
-    commandBuffer->endRenderPass();
+    commandBuffer->bindVertexBuffers(0, maxAttrib, vertexHandles.data(),
+                                     reinterpret_cast<const VkDeviceSize *>(zeroBuf->data()));
 
+    // TODO(jmadill): the queue serial should be bound to the pipeline.
+    setQueueSerial(queueSerial);
+    vkVAO->updateCurrentBufferSerials(programGL->getActiveAttribLocationsMask(), queueSerial);
+
+    return gl::NoError();
+}
+
+gl::Error ContextVk::drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count)
+{
+    ANGLE_TRY(setupDraw(context, mode));
+
+    vk::CommandBuffer *commandBuffer = nullptr;
+    ANGLE_TRY(mRenderer->getStartedCommandBuffer(&commandBuffer));
+
+    commandBuffer->draw(count, 1, first, 0);
     return gl::NoError();
 }
 
@@ -342,8 +358,35 @@ gl::Error ContextVk::drawElements(const gl::Context *context,
                                   GLenum type,
                                   const void *indices)
 {
-    UNIMPLEMENTED();
-    return gl::InternalError();
+    ANGLE_TRY(setupDraw(context, mode));
+
+    if (indices)
+    {
+        // TODO(jmadill): Buffer offsets and immediate data.
+        UNIMPLEMENTED();
+        return gl::InternalError() << "Only zero-offset index buffers are currently implemented.";
+    }
+
+    if (type == GL_UNSIGNED_BYTE)
+    {
+        // TODO(jmadill): Index translation.
+        UNIMPLEMENTED();
+        return gl::InternalError() << "Unsigned byte translation is not yet implemented.";
+    }
+
+    vk::CommandBuffer *commandBuffer = nullptr;
+    ANGLE_TRY(mRenderer->getStartedCommandBuffer(&commandBuffer));
+
+    const gl::Buffer *elementArrayBuffer =
+        mState.getState().getVertexArray()->getElementArrayBuffer().get();
+    ASSERT(elementArrayBuffer);
+
+    BufferVk *elementArrayBufferVk = GetImplAs<BufferVk>(elementArrayBuffer);
+
+    commandBuffer->bindIndexBuffer(elementArrayBufferVk->getVkBuffer(), 0, GetVkIndexType(type));
+    commandBuffer->drawIndexed(count, 1, 0, 0, 0);
+
+    return gl::NoError();
 }
 
 gl::Error ContextVk::drawElementsInstanced(const gl::Context *context,
@@ -540,9 +583,14 @@ TransformFeedbackImpl *ContextVk::createTransformFeedback(const gl::TransformFee
     return new TransformFeedbackVk(state);
 }
 
-SamplerImpl *ContextVk::createSampler()
+SamplerImpl *ContextVk::createSampler(const gl::SamplerState &state)
 {
-    return new SamplerVk();
+    return new SamplerVk(state);
+}
+
+ProgramPipelineImpl *ContextVk::createProgramPipeline(const gl::ProgramPipelineState &state)
+{
+    return new ProgramPipelineVk(state);
 }
 
 std::vector<PathImpl *> ContextVk::createPaths(GLsizei)

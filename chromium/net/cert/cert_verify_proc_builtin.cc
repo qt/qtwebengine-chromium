@@ -4,11 +4,11 @@
 
 #include "net/cert/cert_verify_proc_builtin.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/sha1.h"
 #include "base/strings/string_piece.h"
 #include "crypto/sha2.h"
@@ -22,6 +22,7 @@
 #include "net/cert/internal/common_cert_errors.h"
 #include "net/cert/internal/parsed_certificate.h"
 #include "net/cert/internal/path_builder.h"
+#include "net/cert/internal/revocation_checker.h"
 #include "net/cert/internal/simple_path_builder_delegate.h"
 #include "net/cert/internal/system_trust_store.h"
 #include "net/cert/x509_certificate.h"
@@ -31,6 +32,40 @@
 namespace net {
 
 namespace {
+
+// TODO(eroman): The path building code in this file enforces its idea of weak
+// keys, and separately cert_verify_proc.cc also checks the chains with its
+// own policy. These policies should be aligned, to give path building the
+// best chance of finding a good path.
+class PathBuilderDelegateImpl : public SimplePathBuilderDelegate {
+ public:
+  // Uses the default policy from SimplePathBuilderDelegate, which requires RSA
+  // keys to be at least 1024-bits large, and accepts SHA1 certificates.
+  PathBuilderDelegateImpl(CRLSet* crl_set)
+      : SimplePathBuilderDelegate(1024), crl_set_(crl_set) {}
+
+  // This is called for each built chain, including ones which failed. It is
+  // responsible for adding errors to the built chain if it is not acceptable.
+  void CheckPathAfterVerification(CertPathBuilderResultPath* path) override {
+    CheckRevocation(path);
+  }
+
+ private:
+  // This method checks whether a certificate chain has been revoked, and if
+  // so adds errors to the affected certificates.
+  void CheckRevocation(CertPathBuilderResultPath* path) const {
+    // First check for revocations using the CRLSet. This does not require
+    // any network activity.
+    if (crl_set_) {
+      CheckChainRevocationUsingCRLSet(crl_set_, path->certs, &path->errors);
+    }
+
+    // TODO(eroman): Next check revocation using OCSP and CRL.
+  }
+
+  // The CRLSet may be null.
+  CRLSet* crl_set_;
+};
 
 class CertVerifyProcBuiltin : public CertVerifyProc {
  public:
@@ -72,7 +107,8 @@ scoped_refptr<ParsedCertificate> ParseCertificateFromOSHandle(
   if (!X509Certificate::GetDEREncoded(cert_handle, &cert_bytes))
     return nullptr;
   return ParsedCertificate::Create(x509_util::CreateCryptoBuffer(cert_bytes),
-                                   {}, errors);
+                                   x509_util::DefaultParseCertificateOptions(),
+                                   errors);
 }
 
 void AddIntermediatesToIssuerSource(X509Certificate* x509_cert,
@@ -99,10 +135,10 @@ void AppendPublicKeyHashes(const der::Input& spki_bytes,
 }
 
 // Appends the SubjectPublicKeyInfo hashes for all certificates in
-// |partial_path| to |*hashes|.
-void AppendPublicKeyHashes(const CertPathBuilder::ResultPath& partial_path,
+// |path| to |*hashes|.
+void AppendPublicKeyHashes(const CertPathBuilderResultPath& path,
                            HashValueVector* hashes) {
-  for (const scoped_refptr<ParsedCertificate>& cert : partial_path.path.certs)
+  for (const scoped_refptr<ParsedCertificate>& cert : path.certs)
     AppendPublicKeyHashes(cert->tbs().spki_tlv, hashes);
 }
 
@@ -113,6 +149,9 @@ void MapPathBuilderErrorsToCertStatus(const CertPathErrors& errors,
   // If there were no errors, nothing to do.
   if (!errors.ContainsHighSeverityErrors())
     return;
+
+  if (errors.ContainsError(cert_errors::kCertificateRevoked))
+    *cert_status |= CERT_STATUS_REVOKED;
 
   if (errors.ContainsError(cert_errors::kUnacceptablePublicKey))
     *cert_status |= CERT_STATUS_WEAK_KEY;
@@ -144,12 +183,12 @@ X509Certificate::OSCertHandle CreateOSCertHandle(
 //  * |path|: The result (possibly failed) from path building.
 scoped_refptr<X509Certificate> CreateVerifiedCertChain(
     X509Certificate* target_cert,
-    const CertPathBuilder::ResultPath& path) {
+    const CertPathBuilderResultPath& path) {
   X509Certificate::OSCertHandles intermediates;
 
   // Skip the first certificate in the path as that is the target certificate
-  for (size_t i = 1; i < path.path.certs.size(); ++i)
-    intermediates.push_back(CreateOSCertHandle(path.path.certs[i]));
+  for (size_t i = 1; i < path.certs.size(); ++i)
+    intermediates.push_back(CreateOSCertHandle(path.certs[i]));
 
   scoped_refptr<X509Certificate> result = X509Certificate::CreateFromHandle(
       target_cert->os_cert_handle(), intermediates);
@@ -196,11 +235,7 @@ void DoVerify(X509Certificate* input_cert,
     // TODO(eroman): Surface parsing errors of additional trust anchor.
   }
 
-  // TODO(eroman): The path building code in this file enforces its idea of weak
-  // keys, and separately cert_verify_proc.cc also checks the chains with its
-  // own policy. These policies should be aligned, to give path building the
-  // best chance of finding a good path.
-  SimplePathBuilderDelegate path_builder_delegate(1024);
+  PathBuilderDelegateImpl path_builder_delegate(crl_set);
 
   // Use the current time.
   der::GeneralizedTime verification_time;
@@ -242,10 +277,10 @@ void DoVerify(X509Certificate* input_cert,
 
   // Use the best path that was built. This could be a partial path, or it could
   // be a valid complete path.
-  const CertPathBuilder::ResultPath& partial_path =
+  const CertPathBuilderResultPath& partial_path =
       *result.paths[result.best_result_index].get();
 
-  const ParsedCertificate* trusted_cert = partial_path.path.GetTrustedCert();
+  const ParsedCertificate* trusted_cert = partial_path.GetTrustedCert();
   if (trusted_cert) {
     verify_result->is_issued_by_known_root =
         ssl_trust_store->IsKnownRoot(trusted_cert);
@@ -268,7 +303,7 @@ void DoVerify(X509Certificate* input_cert,
 
   if (partial_path.errors.ContainsHighSeverityErrors()) {
     LOG(ERROR) << "CertVerifyProcBuiltin for " << hostname << " failed:\n"
-               << partial_path.errors.ToDebugString(partial_path.path.certs);
+               << partial_path.errors.ToDebugString(partial_path.certs);
   }
 }
 

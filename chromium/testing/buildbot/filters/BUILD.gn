@@ -61,10 +61,32 @@ source_set("interactive_ui_tests_filters") {
   ]
 }
 
+source_set("services_unittests_filters") {
+  testonly = true
+
+  data = [
+    "//testing/buildbot/filters/win10.services_unittests.filter",
+  ]
+}
+
 source_set("unit_tests_filters") {
   testonly = true
 
   data = [
     "//testing/buildbot/filters/unit_tests_cros_asan.filter",
+  ]
+}
+
+source_set("fuchsia_filters") {
+  data = [
+    "//testing/buildbot/filters/fuchsia.base_unittests.filter",
+    "//testing/buildbot/filters/fuchsia.content_unittests.filter",
+    "//testing/buildbot/filters/fuchsia.ipc_tests.filter",
+    "//testing/buildbot/filters/fuchsia.mojo_common_unittests.filter",
+    "//testing/buildbot/filters/fuchsia.mojo_js_unittests.filter",
+    "//testing/buildbot/filters/fuchsia.mojo_system_unittests.filter",
+    "//testing/buildbot/filters/fuchsia.net_unittests.filter",
+    "//testing/buildbot/filters/fuchsia.service_manager_unittests.filter",
+    "//testing/buildbot/filters/fuchsia.ui_base_unittests.filter",
   ]
 }

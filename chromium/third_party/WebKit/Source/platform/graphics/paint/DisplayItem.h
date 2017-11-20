@@ -6,15 +6,15 @@
 #define DisplayItem_h
 
 #include "platform/PlatformExport.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/ContiguousContainer.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/Noncopyable.h"
 
 #ifndef NDEBUG
-#include "platform/wtf/text/StringBuilder.h"
+#include "platform/json/JSONValues.h"
 #include "platform/wtf/text/WTFString.h"
 #endif
 
@@ -343,7 +343,7 @@ class PLATFORM_EXPORT DisplayItem {
   const WTF::String ClientDebugString() const { return client_debug_string_; }
   void SetClientDebugString(const WTF::String& s) { client_debug_string_ = s; }
   WTF::String AsDebugString() const;
-  virtual void DumpPropertiesAsDebugString(WTF::StringBuilder&) const;
+  virtual void PropertiesAsJSON(JSONObject&) const;
 #endif
 
  private:
@@ -389,7 +389,7 @@ class PLATFORM_EXPORT PairedBeginDisplayItem : public DisplayItem {
                          Type type,
                          size_t derived_size)
       : DisplayItem(client, type, derived_size) {
-    DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+    DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
   }
 
  private:
@@ -402,7 +402,7 @@ class PLATFORM_EXPORT PairedEndDisplayItem : public DisplayItem {
                        Type type,
                        size_t derived_size)
       : DisplayItem(client, type, derived_size) {
-    DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+    DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
   }
 
 #if DCHECK_IS_ON()

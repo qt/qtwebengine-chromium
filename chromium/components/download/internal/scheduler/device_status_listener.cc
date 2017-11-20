@@ -44,15 +44,19 @@ NetworkStatus ToNetworkStatus(net::NetworkChangeNotifier::ConnectionType type) {
 
 }  // namespace
 
-DeviceStatusListener::DeviceStatusListener(const base::TimeDelta& delay)
-    : observer_(nullptr), listening_(false), delay_(delay) {}
+DeviceStatusListener::DeviceStatusListener(const base::TimeDelta& startup_delay,
+                                           const base::TimeDelta& online_delay)
+    : observer_(nullptr),
+      listening_(false),
+      is_valid_state_(false),
+      startup_delay_(startup_delay),
+      online_delay_(online_delay) {}
 
 DeviceStatusListener::~DeviceStatusListener() {
   Stop();
 }
 
 const DeviceStatus& DeviceStatusListener::CurrentDeviceStatus() const {
-  DCHECK(listening_) << "Call Start() before querying the status.";
   return status_;
 }
 
@@ -63,6 +67,14 @@ void DeviceStatusListener::Start(DeviceStatusListener::Observer* observer) {
   DCHECK(observer);
   observer_ = observer;
 
+  // Network stack may shake off all connections after getting the IP address,
+  // use a delay to wait for potential network setup.
+  timer_.Start(FROM_HERE, startup_delay_,
+               base::Bind(&DeviceStatusListener::StartAfterDelay,
+                          base::Unretained(this)));
+}
+
+void DeviceStatusListener::StartAfterDelay() {
   // Listen to battery status changes.
   base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
   DCHECK(power_monitor);
@@ -77,9 +89,15 @@ void DeviceStatusListener::Start(DeviceStatusListener::Observer* observer) {
   status_.network_status =
       ToNetworkStatus(network_listener_->GetConnectionType());
   listening_ = true;
+  is_valid_state_ = true;
+
+  // Notify the current status if we are online or charging.
+  NotifyStatusChange();
 }
 
 void DeviceStatusListener::Stop() {
+  timer_.Stop();
+
   if (!listening_)
     return;
 
@@ -93,7 +111,7 @@ void DeviceStatusListener::Stop() {
   observer_ = nullptr;
 }
 
-void DeviceStatusListener::OnConnectionTypeChanged(
+void DeviceStatusListener::OnNetworkChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
   NetworkStatus new_network_status = ToNetworkStatus(type);
   if (status_.network_status == new_network_status)
@@ -104,16 +122,17 @@ void DeviceStatusListener::OnConnectionTypeChanged(
       (new_network_status != NetworkStatus::DISCONNECTED);
 
   // It's unreliable to send requests immediately after the network becomes
-  // online. Notify network change to the observer after a delay.
+  // online that the signal may not fully consider DHCP. Notify network change
+  // to the observer after a delay.
+  // Android network change listener still need this delay.
   if (change_to_online) {
-    timer_.Start(
-        FROM_HERE, delay_,
-        base::Bind(&DeviceStatusListener::NotifyNetworkChangeAfterDelay,
-                   base::Unretained(this), new_network_status));
+    is_valid_state_ = false;
+    timer_.Start(FROM_HERE, online_delay_,
+                 base::Bind(&DeviceStatusListener::NotifyNetworkChange,
+                            base::Unretained(this), new_network_status));
   } else {
-    status_.network_status = new_network_status;
     timer_.Stop();
-    NotifyStatusChange();
+    NotifyNetworkChange(new_network_status);
   }
 }
 
@@ -123,11 +142,12 @@ void DeviceStatusListener::OnPowerStateChange(bool on_battery_power) {
 }
 
 void DeviceStatusListener::NotifyStatusChange() {
+  DCHECK(observer_);
   observer_->OnDeviceStatusChanged(status_);
 }
 
-void DeviceStatusListener::NotifyNetworkChangeAfterDelay(
-    NetworkStatus network_status) {
+void DeviceStatusListener::NotifyNetworkChange(NetworkStatus network_status) {
+  is_valid_state_ = true;
   status_.network_status = network_status;
   NotifyStatusChange();
 }

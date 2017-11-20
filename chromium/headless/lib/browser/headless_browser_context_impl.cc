@@ -84,6 +84,7 @@ HeadlessBrowserContextImpl::HeadlessBrowserContextImpl(
     : browser_(browser),
       context_options_(std::move(context_options)),
       resource_context_(new HeadlessResourceContext),
+      should_remove_headers_(true),
       permission_manager_(new HeadlessPermissionManager()),
       id_(base::GenerateGUID()) {
   InitWhileIOAllowed();
@@ -149,43 +150,48 @@ HeadlessBrowserContextImpl::GetAllWebContents() {
   return result;
 }
 
-void HeadlessBrowserContextImpl::SetFrameTreeNodeId(int render_process_id,
-                                                    int render_frame_routing_id,
-                                                    int frame_tree_node_id) {
-  base::AutoLock lock(frame_tree_node_map_lock_);
-  frame_tree_node_map_[std::make_pair(
-      render_process_id, render_frame_routing_id)] = frame_tree_node_id;
-}
-
-void HeadlessBrowserContextImpl::RemoveFrameTreeNode(
+void HeadlessBrowserContextImpl::SetDevToolsFrameToken(
     int render_process_id,
-    int render_frame_routing_id) {
-  base::AutoLock lock(frame_tree_node_map_lock_);
-  frame_tree_node_map_.erase(
+    int render_frame_routing_id,
+    const base::UnguessableToken& devtools_frame_token,
+    int frame_tree_node_id) {
+  base::AutoLock lock(devtools_frame_token_map_lock_);
+  devtools_frame_token_map_[std::make_pair(
+      render_process_id, render_frame_routing_id)] = devtools_frame_token;
+  frame_tree_node_id_to_devtools_frame_token_map_[frame_tree_node_id] =
+      devtools_frame_token;
+}
+
+void HeadlessBrowserContextImpl::RemoveDevToolsFrameToken(
+    int render_process_id,
+    int render_frame_routing_id,
+    int frame_tree_node_id) {
+  base::AutoLock lock(devtools_frame_token_map_lock_);
+  devtools_frame_token_map_.erase(
       std::make_pair(render_process_id, render_frame_routing_id));
+  frame_tree_node_id_to_devtools_frame_token_map_.erase(frame_tree_node_id);
 }
 
-int HeadlessBrowserContextImpl::GetFrameTreeNodeId(int render_process_id,
-                                                   int render_frame_id) const {
-  base::AutoLock lock(frame_tree_node_map_lock_);
-  const auto& find_it = frame_tree_node_map_.find(
+const base::UnguessableToken* HeadlessBrowserContextImpl::GetDevToolsFrameToken(
+    int render_process_id,
+    int render_frame_id) const {
+  base::AutoLock lock(devtools_frame_token_map_lock_);
+  const auto& find_it = devtools_frame_token_map_.find(
       std::make_pair(render_process_id, render_frame_id));
-  if (find_it == frame_tree_node_map_.end())
-    return -1;
-  return find_it->second;
+  if (find_it == devtools_frame_token_map_.end())
+    return nullptr;
+  return &find_it->second;
 }
 
-int HeadlessBrowserContextImpl::GetFrameTreeNodeIdForDevToolsFrameId(
-    const std::string& devtools_id) const {
-  base::AutoLock lock(frame_tree_node_map_lock_);
-  for (const auto& pair : frame_tree_node_map_) {
-    std::string frame_devtools_id = content::DevToolsAgentHost::
-        GetUntrustedDevToolsFrameIdForFrameTreeNodeId(pair.first.first,
-                                                      pair.second);
-    if (frame_devtools_id == devtools_id)
-      return pair.second;
-  }
-  return -1;
+const base::UnguessableToken*
+HeadlessBrowserContextImpl::GetDevToolsFrameTokenForFrameTreeNodeId(
+    int frame_tree_node_id) const {
+  base::AutoLock lock(devtools_frame_token_map_lock_);
+  const auto& find_it =
+      frame_tree_node_id_to_devtools_frame_token_map_.find(frame_tree_node_id);
+  if (find_it == frame_tree_node_id_to_devtools_frame_token_map_.end())
+    return nullptr;
+  return &find_it->second;
 }
 
 void HeadlessBrowserContextImpl::Close() {
@@ -250,6 +256,11 @@ content::PermissionManager* HeadlessBrowserContextImpl::GetPermissionManager() {
   if (!permission_manager_.get())
     permission_manager_.reset(new HeadlessPermissionManager());
   return permission_manager_.get();
+}
+
+content::BackgroundFetchDelegate*
+HeadlessBrowserContextImpl::GetBackgroundFetchDelegate() {
+  return nullptr;
 }
 
 content::BackgroundSyncController*
@@ -347,6 +358,14 @@ const HeadlessBrowserContextOptions* HeadlessBrowserContextImpl::options()
   return context_options_.get();
 }
 
+void HeadlessBrowserContextImpl::SetRemoveHeaders(bool should_remove_headers) {
+  should_remove_headers_ = should_remove_headers;
+}
+
+bool HeadlessBrowserContextImpl::ShouldRemoveHeaders() const {
+  return should_remove_headers_;
+}
+
 const std::string& HeadlessBrowserContextImpl::Id() const {
   return id_;
 }
@@ -371,10 +390,20 @@ void HeadlessBrowserContextImpl::NotifyChildContentsCreated(
 
 void HeadlessBrowserContextImpl::NotifyUrlRequestFailed(
     net::URLRequest* request,
-    int net_error) {
+    int net_error,
+    bool canceled_by_devtools) {
   base::AutoLock lock(observers_lock_);
   for (auto& observer : observers_)
-    observer.UrlRequestFailed(request, net_error);
+    observer.UrlRequestFailed(request, net_error, canceled_by_devtools);
+}
+
+void HeadlessBrowserContextImpl::SetNetworkConditions(
+    HeadlessNetworkConditions conditions) {
+  network_conditions_ = conditions;
+}
+
+HeadlessNetworkConditions HeadlessBrowserContextImpl::GetNetworkConditions() {
+  return network_conditions_;
 }
 
 HeadlessBrowserContext::Builder::Builder(HeadlessBrowserImpl* browser)

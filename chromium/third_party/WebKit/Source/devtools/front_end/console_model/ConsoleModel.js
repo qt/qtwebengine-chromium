@@ -194,8 +194,9 @@ ConsoleModel.ConsoleModel = class extends Common.Object {
     var data = /** @type {{logModel: !SDK.LogModel, entry: !Protocol.Log.LogEntry}} */ (event.data);
     var consoleMessage = new ConsoleModel.ConsoleMessage(
         data.logModel.target().model(SDK.RuntimeModel), data.entry.source, data.entry.level, data.entry.text, undefined,
-        data.entry.url, data.entry.lineNumber, undefined, data.entry.networkRequestId, undefined, data.entry.stackTrace,
-        data.entry.timestamp, undefined, undefined, data.entry.workerId);
+        data.entry.url, data.entry.lineNumber, undefined, data.entry.networkRequestId,
+        [data.entry.text, ...(data.entry.args || [])], data.entry.stackTrace, data.entry.timestamp, undefined,
+        undefined, data.entry.workerId);
     this.addMessage(consoleMessage);
   }
 
@@ -608,7 +609,7 @@ ConsoleModel.ConsoleMessage = class {
   }
 };
 
-// Note: Keep these constants in sync with the ones in Console.h
+// Note: Keep these constants in sync with the ones in ConsoleTypes.h
 /**
  * @enum {string}
  */
@@ -626,6 +627,7 @@ ConsoleModel.ConsoleMessage.MessageSource = {
   Worker: 'worker',
   Violation: 'violation',
   Intervention: 'intervention',
+  Recommendation: 'recommendation',
   Other: 'other'
 };
 
@@ -662,6 +664,23 @@ ConsoleModel.ConsoleMessage.MessageLevel = {
   Warning: 'warning',
   Error: 'error'
 };
+
+/** @type {!Map<!ConsoleModel.ConsoleMessage.MessageSource, string>} */
+ConsoleModel.ConsoleMessage.MessageSourceDisplayName = new Map([
+  [ConsoleModel.ConsoleMessage.MessageSource.XML, 'xml'], [ConsoleModel.ConsoleMessage.MessageSource.JS, 'javascript'],
+  [ConsoleModel.ConsoleMessage.MessageSource.Network, 'network'],
+  [ConsoleModel.ConsoleMessage.MessageSource.ConsoleAPI, 'console-api'],
+  [ConsoleModel.ConsoleMessage.MessageSource.Storage, 'storage'],
+  [ConsoleModel.ConsoleMessage.MessageSource.AppCache, 'appcache'],
+  [ConsoleModel.ConsoleMessage.MessageSource.Rendering, 'rendering'],
+  [ConsoleModel.ConsoleMessage.MessageSource.CSS, 'css'],
+  [ConsoleModel.ConsoleMessage.MessageSource.Security, 'security'],
+  [ConsoleModel.ConsoleMessage.MessageSource.Deprecation, 'deprecation'],
+  [ConsoleModel.ConsoleMessage.MessageSource.Worker, 'worker'],
+  [ConsoleModel.ConsoleMessage.MessageSource.Violation, 'violation'],
+  [ConsoleModel.ConsoleMessage.MessageSource.Intervention, 'intervention'],
+  [ConsoleModel.ConsoleMessage.MessageSource.Other, 'other']
+]);
 
 ConsoleModel.ConsoleModel._events = Symbol('ConsoleModel.ConsoleModel.events');
 

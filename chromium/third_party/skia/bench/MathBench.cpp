@@ -6,7 +6,7 @@
  */
 
 #include "Benchmark.h"
-#include "SkColorPriv.h"
+#include "SkColorData.h"
 #include "SkFixed.h"
 #include "SkMathPriv.h"
 #include "SkMatrix.h"
@@ -657,7 +657,7 @@ protected:
 
 private:
     const char* fName;
-    
+
     typedef Benchmark INHERITED;
 };
 DEF_BENCH( return new Floor2IntBench(false); )

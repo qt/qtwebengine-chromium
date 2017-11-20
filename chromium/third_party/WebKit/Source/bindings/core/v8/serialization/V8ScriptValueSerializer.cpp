@@ -30,7 +30,6 @@
 #include "core/geometry/DOMRectReadOnly.h"
 #include "core/html/ImageData.h"
 #include "core/typed_arrays/DOMArrayBufferBase.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/wtf/AutoReset.h"
 #include "platform/wtf/DateMath.h"
 #include "platform/wtf/allocator/Partitions.h"
@@ -118,7 +117,7 @@ void V8ScriptValueSerializer::PrepareTransfer(ExceptionState& exception_state) {
   for (uint32_t i = 0; i < transferables_->array_buffers.size(); i++) {
     DOMArrayBufferBase* array_buffer = transferables_->array_buffers[i].Get();
     if (!array_buffer->IsShared()) {
-      v8::Local<v8::Value> wrapper = ToV8(array_buffer, script_state_.Get());
+      v8::Local<v8::Value> wrapper = ToV8(array_buffer, script_state_.get());
       serializer_.TransferArrayBuffer(
           i, v8::Local<v8::ArrayBuffer>::Cast(wrapper));
     } else {
@@ -183,7 +182,8 @@ bool V8ScriptValueSerializer::WriteDOMObject(ScriptWrappable* wrappable,
     if (blob_info_array_) {
       size_t index = blob_info_array_->size();
       DCHECK_LE(index, std::numeric_limits<uint32_t>::max());
-      blob_info_array_->emplace_back(blob->Uuid(), blob->type(), blob->size());
+      blob_info_array_->emplace_back(blob->GetBlobDataHandle(), blob->type(),
+                                     blob->size());
       WriteTag(kBlobIndexTag);
       WriteUint32(static_cast<uint32_t>(index));
     } else {
@@ -238,9 +238,11 @@ bool V8ScriptValueSerializer::WriteDOMObject(ScriptWrappable* wrappable,
     WriteUint32Enum(color_params.GetSerializedColorSpace());
     WriteUint32Enum(ImageSerializationTag::kCanvasPixelFormatTag);
     WriteUint32Enum(color_params.GetSerializedPixelFormat());
-    WriteUint32Enum(ImageSerializationTag::kOriginClean);
+    WriteUint32Enum(ImageSerializationTag::kCanvasOpacityModeTag);
+    WriteUint32Enum(color_params.GetSerializedOpacityMode());
+    WriteUint32Enum(ImageSerializationTag::kOriginCleanTag);
     WriteUint32(image_bitmap->OriginClean());
-    WriteUint32Enum(ImageSerializationTag::kIsPremultiplied);
+    WriteUint32Enum(ImageSerializationTag::kIsPremultipliedTag);
     WriteUint32(image_bitmap->IsPremultiplied());
     WriteUint32Enum(ImageSerializationTag::kEndTag);
     WriteUint32(image_bitmap->width());
@@ -441,8 +443,9 @@ bool V8ScriptValueSerializer::WriteFile(File* file,
     file->CaptureSnapshot(size, last_modified_ms);
     // FIXME: transition WebBlobInfo.lastModified to be milliseconds-based also.
     double last_modified = last_modified_ms / kMsPerSecond;
-    blob_info_array_->emplace_back(file->Uuid(), file->GetPath(), file->name(),
-                                   file->type(), last_modified, size);
+    blob_info_array_->emplace_back(file->GetBlobDataHandle(), file->GetPath(),
+                                   file->name(), file->type(), last_modified,
+                                   size);
     WriteUint32(static_cast<uint32_t>(index));
   } else {
     WriteUTF8String(file->HasBackingFile() ? file->GetPath() : g_empty_string);
@@ -521,7 +524,7 @@ v8::Maybe<uint32_t> V8ScriptValueSerializer::GetSharedArrayBufferId(
   }
 
   DOMSharedArrayBuffer* shared_array_buffer =
-      V8SharedArrayBuffer::toImpl(v8_shared_array_buffer);
+      V8SharedArrayBuffer::ToImpl(v8_shared_array_buffer);
 
   // The index returned from this function will be serialized into the data
   // stream. When deserializing, this will be used to index into the

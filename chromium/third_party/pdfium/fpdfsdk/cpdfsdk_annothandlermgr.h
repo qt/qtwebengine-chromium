@@ -11,8 +11,8 @@
 #include <memory>
 
 #include "core/fpdfdoc/cpdf_annot.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
 
 class CFX_Matrix;
@@ -42,9 +42,8 @@ class CPDFSDK_AnnotHandlerMgr {
   void Annot_OnCreate(CPDFSDK_Annot* pAnnot);
   void Annot_OnLoad(CPDFSDK_Annot* pAnnot);
 
-  CFX_WideString Annot_GetSelectedText(CPDFSDK_Annot* pAnnot);
-  void Annot_ReplaceSelection(CPDFSDK_Annot* pAnnot,
-                              const CFX_WideString& text);
+  WideString Annot_GetSelectedText(CPDFSDK_Annot* pAnnot);
+  void Annot_ReplaceSelection(CPDFSDK_Annot* pAnnot, const WideString& text);
 
   IPDFSDK_AnnotHandler* GetAnnotHandler(CPDFSDK_Annot* pAnnot) const;
   void Annot_OnDraw(CPDFSDK_PageView* pPageView,

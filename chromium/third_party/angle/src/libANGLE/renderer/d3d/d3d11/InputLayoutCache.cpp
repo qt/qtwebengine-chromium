@@ -10,8 +10,8 @@
 #include "libANGLE/renderer/d3d/d3d11/InputLayoutCache.h"
 
 #include "common/bitset_utils.h"
-#include "common/third_party/murmurhash/MurmurHash3.h"
 #include "common/utilities.h"
+#include "libANGLE/Context.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/VertexAttribute.h"
@@ -19,6 +19,7 @@
 #include "libANGLE/renderer/d3d/ProgramD3D.h"
 #include "libANGLE/renderer/d3d/VertexDataManager.h"
 #include "libANGLE/renderer/d3d/d3d11/Buffer11.h"
+#include "libANGLE/renderer/d3d/d3d11/Context11.h"
 #include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
 #include "libANGLE/renderer/d3d/d3d11/ShaderExecutable11.h"
 #include "libANGLE/renderer/d3d/d3d11/VertexBuffer11.h"
@@ -119,16 +120,15 @@ void InputLayoutCache::clear()
 }
 
 gl::Error InputLayoutCache::applyVertexBuffers(
-    Renderer11 *renderer,
-    const gl::State &state,
+    const gl::Context *context,
     const std::vector<const TranslatedAttribute *> &currentAttributes,
     GLenum mode,
     GLint start,
     TranslatedIndexData *indexInfo)
 {
-    ID3D11DeviceContext *deviceContext = renderer->getDeviceContext();
-    auto *stateManager                 = renderer->getStateManager();
-
+    Renderer11 *renderer   = GetImplAs<Context11>(context)->getRenderer();
+    const gl::State &state = context->getGLState();
+    auto *stateManager     = renderer->getStateManager();
     gl::Program *program   = state.getProgram();
     ProgramD3D *programD3D = GetImplAs<ProgramD3D>(program);
 
@@ -164,7 +164,7 @@ gl::Error InputLayoutCache::applyVertexBuffers(
                 if (indexInfo->srcIndexData.srcBuffer != nullptr)
                 {
                     const uint8_t *bufferData = nullptr;
-                    ANGLE_TRY(indexInfo->srcIndexData.srcBuffer->getData(&bufferData));
+                    ANGLE_TRY(indexInfo->srcIndexData.srcBuffer->getData(context, &bufferData));
                     ASSERT(bufferData != nullptr);
 
                     ptrdiff_t offset =
@@ -173,14 +173,15 @@ gl::Error InputLayoutCache::applyVertexBuffers(
                     indexInfo->srcIndexData.srcIndices = bufferData + offset;
                 }
 
-                ANGLE_TRY_RESULT(bufferStorage->getEmulatedIndexedBuffer(&indexInfo->srcIndexData,
-                                                                         attrib, start),
+                ANGLE_TRY_RESULT(bufferStorage->getEmulatedIndexedBuffer(
+                                     context, &indexInfo->srcIndexData, attrib, start),
                                  buffer);
             }
             else
             {
                 ANGLE_TRY_RESULT(
-                    bufferStorage->getBuffer(BUFFER_USAGE_VERTEX_OR_TRANSFORM_FEEDBACK), buffer);
+                    bufferStorage->getBuffer(context, BUFFER_USAGE_VERTEX_OR_TRANSFORM_FEEDBACK),
+                    buffer);
             }
 
             vertexStride = attrib.stride;
@@ -261,7 +262,7 @@ gl::Error InputLayoutCache::applyVertexBuffers(
             // non-indexed rendering path in ANGLE (DrawArrays). This means that applyIndexBuffer()
             // on the renderer will not be called and setting this buffer here ensures that the
             // rendering path will contain the correct index buffers.
-            deviceContext->IASetIndexBuffer(mPointSpriteIndexBuffer.get(), DXGI_FORMAT_R16_UINT, 0);
+            stateManager->setIndexBuffer(mPointSpriteIndexBuffer.get(), DXGI_FORMAT_R16_UINT, 0);
         }
     }
 
@@ -331,6 +332,7 @@ gl::Error InputLayoutCache::updateInputLayout(
     const auto &attribs            = state.getVertexArray()->getVertexAttributes();
     const auto &bindings           = state.getVertexArray()->getVertexBindings();
     const auto &locationToSemantic = programD3D->getAttribLocationToD3DSemantics();
+    int divisorMultiplier          = program->usesMultiview() ? program->getNumViews() : 1;
 
     for (size_t attribIndex : program->getActiveAttribLocationsMask())
     {
@@ -347,7 +349,7 @@ gl::Error InputLayoutCache::updateInputLayout(
         gl::VertexFormatType vertexFormatType = gl::GetVertexFormatType(attrib, currentValue.Type);
 
         layout.addAttributeData(glslElementType, d3dSemantic, vertexFormatType,
-                                binding.getDivisor());
+                                binding.getDivisor() * divisorMultiplier);
     }
 
     const d3d11::InputLayout *inputLayout = nullptr;

@@ -327,7 +327,7 @@ void Histogram::InitializeBucketRanges(Sample minimum,
     // See where the next bucket would start.
     log_next = log_current + log_ratio;
     Sample next;
-    next = static_cast<int>(floor(exp(log_next) + 0.5));
+    next = static_cast<int>(std::round(exp(log_next)));
     if (next > current)
       current = next;
     else
@@ -583,25 +583,24 @@ bool Histogram::ValidateHistogramContents(bool crash_if_invalid,
     return is_valid;
 
   // Abort if a problem is found (except "flags", which could legally be zero).
-  const std::string debug_string = base::StringPrintf(
+  std::string debug_string = base::StringPrintf(
       "%s/%" PRIu32 "#%d", histogram_name().c_str(), bad_fields, identifier);
 #if !defined(OS_NACL)
-  // Temporary for https://crbug.com/736675.
   base::debug::ScopedCrashKey crash_key("bad_histogram", debug_string);
 #endif
-  // CHECK(false) << debug_string;
+  CHECK(false) << debug_string;
   debug::Alias(&bad_fields);
   return false;
 }
 
-bool Histogram::SerializeInfoImpl(Pickle* pickle) const {
+void Histogram::SerializeInfoImpl(Pickle* pickle) const {
   DCHECK(bucket_ranges()->HasValidChecksum());
-  return pickle->WriteString(histogram_name()) &&
-      pickle->WriteInt(flags()) &&
-      pickle->WriteInt(declared_min()) &&
-      pickle->WriteInt(declared_max()) &&
-      pickle->WriteUInt32(bucket_count()) &&
-      pickle->WriteUInt32(bucket_ranges()->checksum());
+  pickle->WriteString(histogram_name());
+  pickle->WriteInt(flags());
+  pickle->WriteInt(declared_min());
+  pickle->WriteInt(declared_max());
+  pickle->WriteUInt32(bucket_count());
+  pickle->WriteUInt32(bucket_ranges()->checksum());
 }
 
 // TODO(bcwhite): Remove minimum/maximum parameters from here and call chain.
@@ -1255,17 +1254,13 @@ CustomHistogram::CustomHistogram(
                 meta,
                 logged_meta) {}
 
-bool CustomHistogram::SerializeInfoImpl(Pickle* pickle) const {
-  if (!Histogram::SerializeInfoImpl(pickle))
-    return false;
+void CustomHistogram::SerializeInfoImpl(Pickle* pickle) const {
+  Histogram::SerializeInfoImpl(pickle);
 
   // Serialize ranges. First and last ranges are alwasy 0 and INT_MAX, so don't
   // write them.
-  for (uint32_t i = 1; i < bucket_ranges()->bucket_count(); ++i) {
-    if (!pickle->WriteInt(bucket_ranges()->range(i)))
-      return false;
-  }
-  return true;
+  for (uint32_t i = 1; i < bucket_ranges()->bucket_count(); ++i)
+    pickle->WriteInt(bucket_ranges()->range(i));
 }
 
 double CustomHistogram::GetBucketSize(Count current, uint32_t i) const {

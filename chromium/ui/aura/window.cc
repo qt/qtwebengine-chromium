@@ -19,7 +19,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "cc/output/layer_tree_frame_sink.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "services/ui/public/interfaces/window_tree_constants.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
@@ -470,6 +470,10 @@ gfx::NativeCursor Window::GetCursor(const gfx::Point& point) const {
   return delegate_ ? delegate_->GetCursor(point) : gfx::kNullCursor;
 }
 
+bool Window::ShouldRestackTransientChildren() {
+  return port_->ShouldRestackTransientChildren();
+}
+
 void Window::AddObserver(WindowObserver* observer) {
   observer->OnObservingWindow(this);
   observers_.AddObserver(observer);
@@ -611,8 +615,10 @@ void* Window::GetNativeWindowProperty(const char* key) const {
   return reinterpret_cast<void*>(GetPropertyInternal(key, 0));
 }
 
-void Window::OnDeviceScaleFactorChanged(float device_scale_factor) {
-  port_->OnDeviceScaleFactorChanged(device_scale_factor);
+void Window::OnDeviceScaleFactorChanged(float old_device_scale_factor,
+                                        float new_device_scale_factor) {
+  port_->OnDeviceScaleFactorChanged(old_device_scale_factor,
+                                    new_device_scale_factor);
 }
 
 #if !defined(NDEBUG)
@@ -1055,6 +1061,11 @@ void Window::OnLayerBoundsChanged(const gfx::Rect& old_bounds) {
     observer.OnWindowBoundsChanged(this, old_bounds, bounds_);
 }
 
+void Window::OnLayerOpacityChanged(float old_opacity, float new_opacity) {
+  for (WindowObserver& observer : observers_)
+    observer.OnWindowOpacityChanged(this, old_opacity, new_opacity);
+}
+
 bool Window::CanAcceptEvent(const ui::Event& event) {
   // The client may forbid certain windows from receiving events at a given
   // point in time.
@@ -1103,6 +1114,18 @@ void Window::ConvertEventToTarget(ui::EventTarget* target,
                                   ui::LocatedEvent* event) {
   event->ConvertLocationToTarget(this,
                                  static_cast<Window*>(target));
+}
+
+std::unique_ptr<ui::Layer> Window::RecreateLayer() {
+  std::unique_ptr<ui::Layer> old_layer = LayerOwner::RecreateLayer();
+
+  // If a frame sink is attached to the window, then allocate a new surface
+  // id when layers are recreated, so the old layer contents are not affected
+  // by a frame sent to the frame sink.
+  if (GetFrameSinkId().is_valid() && old_layer)
+    AllocateLocalSurfaceId();
+
+  return old_layer;
 }
 
 void Window::UpdateLayerName() {

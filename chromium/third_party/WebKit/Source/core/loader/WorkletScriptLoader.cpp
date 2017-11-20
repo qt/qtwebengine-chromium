@@ -6,8 +6,8 @@
 
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "core/loader/FrameFetchContext.h"
-#include "platform/loader/fetch/FetchInitiatorTypeNames.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
+#include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/wtf/WTF.h"
 
 namespace blink {
@@ -52,7 +52,8 @@ void WorkletScriptLoader::NotifyFinished(Resource* resource) {
   } else {
     was_script_load_successful_ = true;
     client_->NotifyWorkletScriptLoadingFinished(
-        this, ScriptSourceCode(static_cast<ScriptResource*>(resource)));
+        this, ScriptSourceCode(static_cast<ScriptResource*>(resource),
+                               String() /* nonce */, kNotParserInserted));
   }
   fetcher_ = nullptr;
   client_ = nullptr;

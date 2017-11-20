@@ -22,7 +22,6 @@
 #include "modules/canvas2d/CanvasStyle.h"
 #include "modules/canvas2d/Path2D.h"
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/graphics/CanvasHeuristicParameters.h"
@@ -33,6 +32,7 @@
 #include "platform/graphics/paint/PaintCanvas.h"
 #include "platform/graphics/paint/PaintFlags.h"
 #include "platform/graphics/skia/SkiaUtils.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/CheckedNumeric.h"
 
 namespace blink {
@@ -44,9 +44,7 @@ const char BaseRenderingContext2D::kLtrDirectionString[] = "ltr";
 const double BaseRenderingContext2D::kCDeviceScaleFactor = 1.0;
 
 BaseRenderingContext2D::BaseRenderingContext2D()
-    : clip_antialiasing_(kNotAntiAliased),
-      color_management_enabled_(
-          RuntimeEnabledFeatures::ColorCorrectRenderingEnabled()) {
+    : clip_antialiasing_(kNotAntiAliased) {
   state_stack_.push_back(CanvasRenderingContext2DState::Create());
 }
 
@@ -158,14 +156,14 @@ static inline void ConvertCanvasStyleToUnionType(
     CanvasStyle* style,
     StringOrCanvasGradientOrCanvasPattern& return_value) {
   if (CanvasGradient* gradient = style->GetCanvasGradient()) {
-    return_value.setCanvasGradient(gradient);
+    return_value.SetCanvasGradient(gradient);
     return;
   }
   if (CanvasPattern* pattern = style->GetCanvasPattern()) {
-    return_value.setCanvasPattern(pattern);
+    return_value.SetCanvasPattern(pattern);
     return;
   }
-  return_value.setString(style->GetColor());
+  return_value.SetString(style->GetColor());
 }
 
 void BaseRenderingContext2D::strokeStyle(
@@ -175,12 +173,12 @@ void BaseRenderingContext2D::strokeStyle(
 
 void BaseRenderingContext2D::setStrokeStyle(
     const StringOrCanvasGradientOrCanvasPattern& style) {
-  DCHECK(!style.isNull());
+  DCHECK(!style.IsNull());
 
   String color_string;
   CanvasStyle* canvas_style = nullptr;
-  if (style.isString()) {
-    color_string = style.getAsString();
+  if (style.IsString()) {
+    color_string = style.GetAsString();
     if (color_string == GetState().UnparsedStrokeColor())
       return;
     Color parsed_color = 0;
@@ -191,10 +189,10 @@ void BaseRenderingContext2D::setStrokeStyle(
       return;
     }
     canvas_style = CanvasStyle::CreateFromRGBA(parsed_color.Rgb());
-  } else if (style.isCanvasGradient()) {
-    canvas_style = CanvasStyle::CreateFromGradient(style.getAsCanvasGradient());
-  } else if (style.isCanvasPattern()) {
-    CanvasPattern* canvas_pattern = style.getAsCanvasPattern();
+  } else if (style.IsCanvasGradient()) {
+    canvas_style = CanvasStyle::CreateFromGradient(style.GetAsCanvasGradient());
+  } else if (style.IsCanvasPattern()) {
+    CanvasPattern* canvas_pattern = style.GetAsCanvasPattern();
 
     if (OriginClean() && !canvas_pattern->OriginClean())
       SetOriginTainted();
@@ -216,12 +214,12 @@ void BaseRenderingContext2D::fillStyle(
 
 void BaseRenderingContext2D::setFillStyle(
     const StringOrCanvasGradientOrCanvasPattern& style) {
-  DCHECK(!style.isNull());
+  DCHECK(!style.IsNull());
   ValidateStateStack();
   String color_string;
   CanvasStyle* canvas_style = nullptr;
-  if (style.isString()) {
-    color_string = style.getAsString();
+  if (style.IsString()) {
+    color_string = style.GetAsString();
     if (color_string == GetState().UnparsedFillColor())
       return;
     Color parsed_color = 0;
@@ -232,10 +230,10 @@ void BaseRenderingContext2D::setFillStyle(
       return;
     }
     canvas_style = CanvasStyle::CreateFromRGBA(parsed_color.Rgb());
-  } else if (style.isCanvasGradient()) {
-    canvas_style = CanvasStyle::CreateFromGradient(style.getAsCanvasGradient());
-  } else if (style.isCanvasPattern()) {
-    CanvasPattern* canvas_pattern = style.getAsCanvasPattern();
+  } else if (style.IsCanvasGradient()) {
+    canvas_style = CanvasStyle::CreateFromGradient(style.GetAsCanvasGradient());
+  } else if (style.IsCanvasPattern()) {
+    CanvasPattern* canvas_pattern = style.GetAsCanvasPattern();
 
     if (OriginClean() && !canvas_pattern->OriginClean())
       SetOriginTainted();
@@ -419,8 +417,7 @@ void BaseRenderingContext2D::setFilter(const String& filter_string) {
       CSSParser::ParseSingleValue(CSSPropertyFilter, filter_string,
                                   CSSParserContext::Create(kHTMLStandardMode));
 
-  if (!filter_value || filter_value->IsInitialValue() ||
-      filter_value->IsInheritedValue())
+  if (!filter_value || filter_value->IsCSSWideKeyword())
     return;
 
   ModifiableState().SetUnparsedFilter(filter_string);
@@ -907,39 +904,39 @@ static inline void ClipRectsToImageRect(const FloatRect& image_rect,
 static inline CanvasImageSource* ToImageSourceInternal(
     const CanvasImageSourceUnion& value,
     ExceptionState& exception_state) {
-  if (value.isCSSImageValue()) {
+  if (value.IsCSSImageValue()) {
     if (RuntimeEnabledFeatures::CSSPaintAPIEnabled())
-      return value.getAsCSSImageValue();
+      return value.GetAsCSSImageValue();
     exception_state.ThrowTypeError("CSSImageValue is not yet supported");
     return nullptr;
   }
-  if (value.isHTMLImageElement())
-    return value.getAsHTMLImageElement();
-  if (value.isHTMLVideoElement()) {
-    HTMLVideoElement* video = value.getAsHTMLVideoElement();
+  if (value.IsHTMLImageElement())
+    return value.GetAsHTMLImageElement();
+  if (value.IsHTMLVideoElement()) {
+    HTMLVideoElement* video = value.GetAsHTMLVideoElement();
     video->VideoWillBeDrawnToCanvas();
     return video;
   }
-  if (value.isSVGImageElement())
-    return value.getAsSVGImageElement();
-  if (value.isHTMLCanvasElement())
-    return value.getAsHTMLCanvasElement();
-  if (value.isImageBitmap()) {
-    if (static_cast<ImageBitmap*>(value.getAsImageBitmap())->IsNeutered()) {
+  if (value.IsSVGImageElement())
+    return value.GetAsSVGImageElement();
+  if (value.IsHTMLCanvasElement())
+    return value.GetAsHTMLCanvasElement();
+  if (value.IsImageBitmap()) {
+    if (static_cast<ImageBitmap*>(value.GetAsImageBitmap())->IsNeutered()) {
       exception_state.ThrowDOMException(
           kInvalidStateError, String::Format("The image source is detached"));
       return nullptr;
     }
-    return value.getAsImageBitmap();
+    return value.GetAsImageBitmap();
   }
-  if (value.isOffscreenCanvas()) {
-    if (static_cast<OffscreenCanvas*>(value.getAsOffscreenCanvas())
+  if (value.IsOffscreenCanvas()) {
+    if (static_cast<OffscreenCanvas*>(value.GetAsOffscreenCanvas())
             ->IsNeutered()) {
       exception_state.ThrowDOMException(
           kInvalidStateError, String::Format("The image source is detached"));
       return nullptr;
     }
-    return value.getAsOffscreenCanvas();
+    return value.GetAsOffscreenCanvas();
   }
   NOTREACHED();
   return nullptr;
@@ -1087,7 +1084,7 @@ void BaseRenderingContext2D::DrawImageInternal(PaintCanvas* c,
     image_flags.setAntiAlias(ShouldDrawImageAntialiased(dst_rect));
     image->Draw(c, image_flags, dst_rect, src_rect,
                 kDoNotRespectImageOrientation,
-                Image::kDoNotClampImageToSourceRect);
+                Image::kDoNotClampImageToSourceRect, Image::kSyncDecode);
   } else {
     c->save();
     c->clipRect(dst_rect);
@@ -1306,7 +1303,7 @@ void BaseRenderingContext2D::drawImage(ScriptState* script_state,
       [this, &image_source, &image, &src_rect, dst_rect](
           PaintCanvas* c, const PaintFlags* flags)  // draw lambda
       {
-        DrawImageInternal(c, image_source, image.Get(), src_rect, dst_rect,
+        DrawImageInternal(c, image_source, image.get(), src_rect, dst_rect,
                           flags);
       },
       [this, &dst_rect](const SkIRect& clip_bounds)  // overdraw test lambda
@@ -1504,13 +1501,9 @@ ImageData* BaseRenderingContext2D::createImageData(
     ImageData* image_data,
     ExceptionState& exception_state) const {
   ImageData* result = nullptr;
-  if (color_management_enabled_) {
-    ImageDataColorSettings color_settings =
-        GetColorSettingsAsImageDataColorSettings();
-    result = ImageData::Create(image_data->Size(), &color_settings);
-  } else {
-    result = ImageData::Create(image_data->Size());
-  }
+  ImageDataColorSettings color_settings =
+      GetColorSettingsAsImageDataColorSettings();
+  result = ImageData::Create(image_data->Size(), &color_settings);
   if (!result)
     exception_state.ThrowRangeError("Out of memory at ImageData creation");
   return result;
@@ -1529,13 +1522,9 @@ ImageData* BaseRenderingContext2D::createImageData(
 
   IntSize size(abs(sw), abs(sh));
   ImageData* result = nullptr;
-  if (color_management_enabled_) {
-    ImageDataColorSettings color_settings =
-        GetColorSettingsAsImageDataColorSettings();
-    result = ImageData::Create(size, &color_settings);
-  } else {
-    result = ImageData::Create(size);
-  }
+  ImageDataColorSettings color_settings =
+      GetColorSettingsAsImageDataColorSettings();
+  result = ImageData::Create(size, &color_settings);
 
   if (!result)
     exception_state.ThrowRangeError("Out of memory at ImageData creation");
@@ -1633,11 +1622,8 @@ ImageData* BaseRenderingContext2D::getImageData(
   ImageDataColorSettings color_settings =
       GetColorSettingsAsImageDataColorSettings();
   if (!buffer || isContextLost()) {
-    ImageData* result = nullptr;
-    if (color_management_enabled_)
-      result = ImageData::Create(image_data_rect.Size(), &color_settings);
-    else
-      result = ImageData::Create(image_data_rect.Size());
+    ImageData* result =
+        ImageData::Create(image_data_rect.Size(), &color_settings);
     if (!result)
       exception_state.ThrowRangeError("Out of memory at ImageData creation");
     return result;
@@ -1652,7 +1638,7 @@ ImageData* BaseRenderingContext2D::getImageData(
   NeedsFinalizeFrame();
 
   // Convert pixels to proper storage format if needed
-  if (color_management_enabled_ && PixelFormat() != kRGBA8CanvasPixelFormat) {
+  if (PixelFormat() != kRGBA8CanvasPixelFormat) {
     ImageDataStorageFormat storage_format =
         ImageData::GetImageDataStorageFormat(color_settings.storageFormat());
     DOMArrayBufferView* array_buffer_view =
@@ -1716,7 +1702,7 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
   dest_rect.Intersect(IntRect(0, 0, data->width(), data->height()));
   IntSize dest_offset(static_cast<int>(dx), static_cast<int>(dy));
   dest_rect.Move(dest_offset);
-  dest_rect.Intersect(IntRect(IntPoint(), buffer->size()));
+  dest_rect.Intersect(IntRect(IntPoint(), buffer->Size()));
   if (dest_rect.IsEmpty())
     return;
 
@@ -1746,9 +1732,8 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
 
   // Color / format convert ImageData to canvas settings if needed
   CanvasColorParams data_color_params = data->GetCanvasColorParams();
-  if (color_management_enabled_ &&
-      (ColorSpace() != data_color_params.color_space() ||
-       PixelFormat() != data_color_params.pixel_format() ||
+  if ((ColorSpace() != data_color_params.ColorSpace() ||
+       PixelFormat() != data_color_params.PixelFormat() ||
        PixelFormat() == kF16CanvasPixelFormat)) {
     unsigned data_length = data->width() * data->height() * 4;
     if (PixelFormat() == kF16CanvasPixelFormat)

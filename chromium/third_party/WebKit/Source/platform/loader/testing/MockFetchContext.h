@@ -10,6 +10,7 @@
 #include "platform/loader/fetch/FetchContext.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/loader/fetch/ResourceTimingInfo.h"
+#include "platform/scheduler/test/fake_web_frame_scheduler.h"
 #include "platform/scheduler/test/fake_web_task_runner.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
@@ -40,7 +41,7 @@ class MockFetchContext : public FetchContext {
   long long GetTransferSize() const { return transfer_size_; }
 
   SecurityOrigin* GetSecurityOrigin() const override {
-    return security_origin_.Get();
+    return security_origin_.get();
   }
 
   void SetSecurityOrigin(RefPtr<SecurityOrigin> security_origin) {
@@ -79,23 +80,26 @@ class MockFetchContext : public FetchContext {
   }
 
   std::unique_ptr<WebURLLoader> CreateURLLoader(
-      const ResourceRequest& request) override {
+      const ResourceRequest& request,
+      WebTaskRunner* task_runner) override {
     WrappedResourceRequest wrapped(request);
     return Platform::Current()->CreateURLLoader(
-        wrapped, runner_->ToSingleThreadTaskRunner());
+        wrapped, task_runner->ToSingleThreadTaskRunner());
   }
 
   WebFrameScheduler* GetFrameScheduler() override {
     return frame_scheduler_.get();
   }
 
+  RefPtr<WebTaskRunner> GetLoadingTaskRunner() override {
+    return frame_scheduler_->LoadingTaskRunner();
+  }
+
  private:
-  class MockFrameScheduler final : public WebFrameScheduler {
+  class MockFrameScheduler final : public scheduler::FakeWebFrameScheduler {
    public:
     MockFrameScheduler(RefPtr<WebTaskRunner> runner)
         : runner_(std::move(runner)) {}
-    void AddThrottlingObserver(ObserverType, Observer*) override {}
-    void RemoveThrottlingObserver(ObserverType, Observer*) override {}
     RefPtr<WebTaskRunner> LoadingTaskRunner() override { return runner_; }
     RefPtr<WebTaskRunner> LoadingControlTaskRunner() override {
       return runner_;
@@ -111,7 +115,7 @@ class MockFetchContext : public FetchContext {
 
   MockFetchContext(LoadPolicy load_policy)
       : load_policy_(load_policy),
-        runner_(AdoptRef(new scheduler::FakeWebTaskRunner)),
+        runner_(WTF::AdoptRef(new scheduler::FakeWebTaskRunner)),
         security_origin_(SecurityOrigin::CreateUnique()),
         frame_scheduler_(new MockFrameScheduler(runner_)),
         complete_(false),

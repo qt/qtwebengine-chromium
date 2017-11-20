@@ -93,30 +93,28 @@ void DeleteDownloadedFileDone(
 // Wrapper around DownloadFile::Detach and DownloadFile::Cancel that
 // takes ownership of the DownloadFile and hence implicitly destroys it
 // at the end of the function.
-static base::FilePath DownloadFileDetach(
-    std::unique_ptr<DownloadFile> download_file) {
+base::FilePath DownloadFileDetach(std::unique_ptr<DownloadFile> download_file) {
   DCHECK(GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
   base::FilePath full_path = download_file->FullPath();
   download_file->Detach();
   return full_path;
 }
 
-static base::FilePath MakeCopyOfDownloadFile(DownloadFile* download_file) {
+base::FilePath MakeCopyOfDownloadFile(DownloadFile* download_file) {
   DCHECK(GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
   base::FilePath temp_file_path;
-  if (base::CreateTemporaryFile(&temp_file_path) &&
-      base::CopyFile(download_file->FullPath(), temp_file_path)) {
-    return temp_file_path;
-  } else {
-    // Deletes the file at |temp_file_path|.
-    if (!base::DirectoryExists(temp_file_path))
-      base::DeleteFile(temp_file_path, false);
-    temp_file_path.clear();
+  if (!base::CreateTemporaryFile(&temp_file_path))
+    return base::FilePath();
+
+  if (!base::CopyFile(download_file->FullPath(), temp_file_path)) {
+    DeleteDownloadedFile(temp_file_path);
     return base::FilePath();
   }
+
+  return temp_file_path;
 }
 
-static void DownloadFileCancel(std::unique_ptr<DownloadFile> download_file) {
+void DownloadFileCancel(std::unique_ptr<DownloadFile> download_file) {
   DCHECK(GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
   download_file->Cancel();
 }
@@ -304,6 +302,7 @@ DownloadItemImpl::DownloadItemImpl(DownloadItemImplDelegate* delegate,
       etag_(info.etag),
       net_log_(net_log),
       is_updating_observers_(false),
+      fetch_error_body_(info.fetch_error_body),
       weak_ptr_factory_(this) {
   delegate_->Attach();
   Init(true /* actively downloading */, SRC_ACTIVE_DOWNLOAD);
@@ -1426,6 +1425,7 @@ void DownloadItemImpl::DetermineDownloadTarget() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DVLOG(20) << __func__ << "() " << DebugString(true);
 
+  RecordDownloadCount(DETERMINE_DOWNLOAD_TARGET_COUNT);
   delegate_->DetermineDownloadTarget(
       this, base::Bind(&DownloadItemImpl::OnDownloadTargetDetermined,
                        weak_ptr_factory_.GetWeakPtr()));
@@ -1447,6 +1447,8 @@ void DownloadItemImpl::OnDownloadTargetDetermined(
             << " interrupt_reason:"
             << DownloadInterruptReasonToString(interrupt_reason)
             << " this:" << DebugString(true);
+
+  RecordDownloadCount(DOWNLOAD_TARGET_DETERMINED_COUNT);
 
   if (IsCancellation(interrupt_reason) || target_path.empty()) {
     Cancel(true);
@@ -2200,6 +2202,7 @@ void DownloadItemImpl::ResumeInterruptedDownload(
   download_params->set_etag(GetETag());
   download_params->set_hash_of_partial_file(GetHash());
   download_params->set_hash_state(std::move(hash_state_));
+  download_params->set_fetch_error_body(fetch_error_body_);
 
   // Note that resumed downloads disallow redirects. Hence the referrer URL
   // (which is the contents of the Referer header for the last download request)

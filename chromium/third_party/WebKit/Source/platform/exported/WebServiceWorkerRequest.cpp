@@ -44,7 +44,7 @@ class WebServiceWorkerRequestPrivate
 };
 
 WebServiceWorkerRequest::WebServiceWorkerRequest()
-    : private_(AdoptRef(new WebServiceWorkerRequestPrivate)) {}
+    : private_(WTF::AdoptRef(new WebServiceWorkerRequestPrivate)) {}
 
 void WebServiceWorkerRequest::Reset() {
   private_.Reset();
@@ -119,7 +119,7 @@ void WebServiceWorkerRequest::SetBlob(
       BlobDataHandle::Create(uuid, String(), size, std::move(blob_info));
 }
 
-PassRefPtr<BlobDataHandle> WebServiceWorkerRequest::GetBlobDataHandle() const {
+RefPtr<BlobDataHandle> WebServiceWorkerRequest::GetBlobDataHandle() const {
   return private_->blob_data_handle;
 }
 

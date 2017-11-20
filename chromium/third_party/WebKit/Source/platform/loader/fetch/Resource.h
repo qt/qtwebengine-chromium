@@ -104,11 +104,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   virtual WTF::TextEncoding Encoding() const { return WTF::TextEncoding(); }
   virtual void AppendData(const char*, size_t);
-  virtual void FinishAsError(const ResourceError&);
-
-  void SetNeedsSynchronousCacheHit(bool needs_synchronous_cache_hit) {
-    needs_synchronous_cache_hit_ = needs_synchronous_cache_hit;
-  }
+  virtual void FinishAsError(const ResourceError&, WebTaskRunner*);
 
   void SetLinkPreload(bool is_link_preload) { link_preload_ = is_link_preload; }
   bool IsLinkPreload() const { return link_preload_; }
@@ -150,7 +146,10 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   void AddClient(ResourceClient*);
   void RemoveClient(ResourceClient*);
 
-  void AddFinishObserver(ResourceFinishObserver*);
+  // If this Resource is already finished when AddFinishObserver is called, the
+  // ResourceFinishObserver will be notified asynchronously by a task scheduled
+  // on the given WebTaskRunner. Otherwise, the given WebTaskRunner is unused.
+  void AddFinishObserver(ResourceFinishObserver*, WebTaskRunner*);
   void RemoveFinishObserver(ResourceFinishObserver*);
 
   bool IsUnusedPreload() const { return is_unused_preload_; }
@@ -193,8 +192,8 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   // Computes the status of an object after loading. Updates the expire date on
   // the cache entry file
-  virtual void Finish(double finish_time);
-  void Finish() { Finish(0.0); }
+  virtual void Finish(double finish_time, WebTaskRunner*);
+  void FinishForTest() { Finish(0.0, nullptr); }
 
   virtual RefPtr<const SharedBuffer> ResourceBuffer() const { return data_; }
   void SetResourceBuffer(RefPtr<SharedBuffer>);
@@ -235,7 +234,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   void MarkAsPreload();
   // Returns true if |this| resource is matched with the given parameters.
-  virtual bool MatchPreload(const FetchParameters&);
+  virtual bool MatchPreload(const FetchParameters&, WebTaskRunner*);
 
   bool CanReuseRedirectChain() const;
   bool MustRevalidateDueToCacheHeaders() const;
@@ -393,10 +392,8 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   void SetPreviewsState(WebURLRequest::PreviewsState);
   void ClearRangeRequestHeader();
 
-  SharedBuffer* Data() const { return data_.Get(); }
+  SharedBuffer* Data() const { return data_.get(); }
   void ClearData();
-
-  void TriggerNotificationForFinishObservers();
 
   virtual void SetEncoding(const String&) {}
 
@@ -407,8 +404,6 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   class CachedMetadataHandlerImpl;
   class ServiceWorkerResponseCachedMetadataHandler;
-
-  void CancelTimerFired(TimerBase*);
 
   void RevalidationSucceeded(const ResourceResponse&);
   void RevalidationFailed();
@@ -425,6 +420,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   void OnPurgeMemory() override;
 
   void CheckResourceIntegrity();
+  void TriggerNotificationForFinishObservers(WebTaskRunner*);
 
   Type type_;
   ResourceStatus status_;
@@ -453,7 +449,6 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   String cache_identifier_;
 
-  bool needs_synchronous_cache_hit_;
   bool link_preload_;
   bool is_revalidating_;
   bool is_alive_;
@@ -477,7 +472,6 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   double response_timestamp_;
 
-  TaskRunnerTimer<Resource> cancel_timer_;
   TaskHandle async_finish_pending_clients_task_;
 
   ResourceRequest resource_request_;

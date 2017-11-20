@@ -132,15 +132,22 @@ class LoadHandler {
   // dictionary.
   static inline Handle<Smi> LoadModuleExport(Isolate* isolate, int index);
 
-  // Sets DoAccessCheckOnReceiverBits in given Smi-handler. The receiver
-  // check is a part of a prototype chain check.
-  static inline Handle<Smi> EnableAccessCheckOnReceiver(
-      Isolate* isolate, Handle<Smi> smi_handler);
+  // Creates a data handler that represents a load of a non-existent property.
+  // {holder} is the object from which the property is loaded. If no holder is
+  // needed (e.g., for "nonexistent"), null_value() may be passed in.
+  static Handle<Object> LoadFullChain(Isolate* isolate,
+                                      Handle<Map> receiver_map,
+                                      Handle<Object> holder, Handle<Name> name,
+                                      Handle<Smi> smi_handler);
 
-  // Sets LookupOnReceiverBits in given Smi-handler. The receiver
-  // check is a part of a prototype chain check.
-  static inline Handle<Smi> EnableLookupOnReceiver(Isolate* isolate,
-                                                   Handle<Smi> smi_handler);
+  // Creates a data handler that represents a prototype chain check followed
+  // by given Smi-handler that encoded a load from the holder.
+  // Can be used only if GetPrototypeCheckCount() returns non negative value.
+  static Handle<Object> LoadFromPrototype(Isolate* isolate,
+                                          Handle<Map> receiver_map,
+                                          Handle<JSReceiver> holder,
+                                          Handle<Name> name,
+                                          Handle<Smi> smi_handler);
 
   // Creates a Smi-handler for loading a non-existent property. Works only as
   // a part of prototype chain check.
@@ -151,6 +158,17 @@ class LoadHandler {
                                         ElementsKind elements_kind,
                                         bool convert_hole_to_undefined,
                                         bool is_js_array);
+
+ private:
+  // Sets DoAccessCheckOnReceiverBits in given Smi-handler. The receiver
+  // check is a part of a prototype chain check.
+  static inline Handle<Smi> EnableAccessCheckOnReceiver(
+      Isolate* isolate, Handle<Smi> smi_handler);
+
+  // Sets LookupOnReceiverBits in given Smi-handler. The receiver
+  // check is a part of a prototype chain check.
+  static inline Handle<Smi> EnableLookupOnReceiver(Isolate* isolate,
+                                                   Handle<Smi> smi_handler);
 };
 
 // A set of bit fields representing Smi handlers for stores.
@@ -160,14 +178,18 @@ class StoreHandler {
     kStoreElement,
     kStoreField,
     kStoreConstField,
-    kStoreNormal,
     kTransitionToField,
+    kStoreNormal,
+    kProxy,
+    kKindsNumber,  // Keep last
     // TODO(ishell): remove once constant field tracking is done.
     kTransitionToConstant = kStoreConstField
   };
   class KindBits : public BitField<Kind, 0, 3> {};
 
   enum FieldRepresentation { kSmi, kDouble, kHeapObject, kTagged };
+
+  static inline bool IsHandler(Object* maybe_handler);
 
   // Applicable to kStoreField, kTransitionToField and kTransitionToConstant
   // kinds.
@@ -203,9 +225,9 @@ class StoreHandler {
   static const int kSmiHandlerOffset = Tuple3::kValue2Offset;
   static const int kValidityCellOffset = Tuple3::kValue3Offset;
 
-  static inline WeakCell* GetTuple3TransitionCell(Object* tuple3_handler);
-  static Object* ValidTuple3HandlerOrNull(Object* handler, Name* name,
-                                          Handle<Map>* out_transition);
+  static inline WeakCell* GetTransitionCell(Object* handler);
+  static Object* ValidHandlerOrNull(Object* handler, Name* name,
+                                    Handle<Map>* out_transition);
 
   // The layout of an array handler representing a transitioning store
   // when prototype chain checks include non-existing lookups and access checks.
@@ -214,18 +236,39 @@ class StoreHandler {
   static const int kTransitionCellIndex = 2;
   static const int kFirstPrototypeIndex = 3;
 
-  static inline WeakCell* GetArrayTransitionCell(Object* array_handler);
-  static Object* ValidFixedArrayHandlerOrNull(Object* raw_handler, Name* name,
-                                              Handle<Map>* out_transition);
-
   // Creates a Smi-handler for storing a field to fast object.
   static inline Handle<Smi> StoreField(Isolate* isolate, int descriptor,
                                        FieldIndex field_index,
                                        PropertyConstness constness,
                                        Representation representation);
 
+  static Handle<Object> StoreTransition(Isolate* isolate,
+                                        Handle<Map> receiver_map,
+                                        Handle<JSObject> holder,
+                                        Handle<Map> transition,
+                                        Handle<Name> name);
+
+  static Handle<Object> StoreElementTransition(Isolate* isolate,
+                                               Handle<Map> receiver_map,
+                                               Handle<Map> transition,
+                                               KeyedAccessStoreMode store_mode);
+
+  static Handle<Object> StoreProxy(Isolate* isolate, Handle<Map> receiver_map,
+                                   Handle<JSProxy> proxy,
+                                   Handle<JSReceiver> receiver,
+                                   Handle<Name> name);
+
   // Creates a Smi-handler for storing a property to a slow object.
   static inline Handle<Smi> StoreNormal(Isolate* isolate);
+
+  // Creates a Smi-handler for storing a property on a proxy.
+  static inline Handle<Smi> StoreProxy(Isolate* isolate);
+
+ private:
+  static inline Handle<Smi> StoreField(Isolate* isolate, Kind kind,
+                                       int descriptor, FieldIndex field_index,
+                                       Representation representation,
+                                       bool extend_storage);
 
   // Creates a Smi-handler for transitioning store to a field.
   static inline Handle<Smi> TransitionToField(Isolate* isolate, int descriptor,
@@ -237,12 +280,6 @@ class StoreHandler {
   // case the only thing that needs to be done is an update of a map).
   static inline Handle<Smi> TransitionToConstant(Isolate* isolate,
                                                  int descriptor);
-
- private:
-  static inline Handle<Smi> StoreField(Isolate* isolate, Kind kind,
-                                       int descriptor, FieldIndex field_index,
-                                       Representation representation,
-                                       bool extend_storage);
 };
 
 }  // namespace internal

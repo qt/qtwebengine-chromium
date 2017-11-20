@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "base/memory/ptr_util.h"
-#include "cc/output/texture_mailbox_deleter.h"
 #include "cc/test/fake_layer_tree_frame_sink_client.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/test_context_provider.h"
@@ -19,6 +18,7 @@
 #include "components/viz/common/surfaces/local_surface_id_allocator.h"
 #include "components/viz/service/display/display.h"
 #include "components/viz/service/display/display_scheduler.h"
+#include "components/viz/service/display/texture_mailbox_deleter.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support_manager.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/test/begin_frame_args_test.h"
@@ -48,7 +48,7 @@ class TestCompositorFrameSinkSupportManager
   ~TestCompositorFrameSinkSupportManager() override = default;
 
   std::unique_ptr<CompositorFrameSinkSupport> CreateCompositorFrameSinkSupport(
-      CompositorFrameSinkSupportClient* client,
+      mojom::CompositorFrameSinkClient* client,
       const FrameSinkId& frame_sink_id,
       bool is_root,
       bool needs_sync_points) override {
@@ -85,7 +85,7 @@ class DirectLayerTreeFrameSinkTest : public testing::Test {
         &bitmap_manager_, &gpu_memory_buffer_manager_, RendererSettings(),
         kArbitraryFrameSinkId, std::move(display_output_surface),
         std::move(scheduler),
-        base::MakeUnique<cc::TextureMailboxDeleter>(task_runner_.get())));
+        base::MakeUnique<TextureMailboxDeleter>(task_runner_.get())));
     layer_tree_frame_sink_ = base::MakeUnique<TestDirectLayerTreeFrameSink>(
         kArbitraryFrameSinkId, &support_manager_, &frame_sink_manager_,
         display_.get(), context_provider_, nullptr, &gpu_memory_buffer_manager_,
@@ -104,10 +104,10 @@ class DirectLayerTreeFrameSinkTest : public testing::Test {
   }
 
   void SwapBuffersWithDamage(const gfx::Rect& damage_rect) {
-    auto render_pass = cc::RenderPass::Create();
+    auto render_pass = RenderPass::Create();
     render_pass->SetNew(1, display_rect_, damage_rect, gfx::Transform());
 
-    cc::CompositorFrame frame = test::MakeEmptyCompositorFrame();
+    CompositorFrame frame = test::MakeEmptyCompositorFrame();
     frame.metadata.begin_frame_ack = BeginFrameAck(0, 1, true);
     frame.render_pass_list.push_back(std::move(render_pass));
 

@@ -33,9 +33,8 @@
 
 #include "base/trace_event/process_memory_dump.h"
 #include "build/build_config.h"
-#include "platform/FontFamilyNames.h"
 #include "platform/Histogram.h"
-#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/font_family_names.h"
 #include "platform/fonts/AcceptLanguagesResolver.h"
 #include "platform/fonts/AlternateFontFamily.h"
 #include "platform/fonts/FontCacheClient.h"
@@ -51,9 +50,9 @@
 #include "platform/fonts/shaping/ShapeCache.h"
 #include "platform/instrumentation/tracing/web_memory_allocator_dump.h"
 #include "platform/instrumentation/tracing/web_process_memory_dump.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/wtf/HashMap.h"
 #include "platform/wtf/ListHashSet.h"
-#include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/debug/Alias.h"
@@ -186,7 +185,7 @@ std::unique_ptr<FontPlatformData> FontCache::ScaleFontPlatformData(
 #if defined(OS_MACOSX)
   return CreateFontPlatformData(font_description, creation_params, font_size);
 #else
-  return WTF::MakeUnique<FontPlatformData>(font_platform_data, font_size);
+  return std::make_unique<FontPlatformData>(font_platform_data, font_size);
 #endif
 }
 
@@ -209,7 +208,7 @@ void FontCache::SetFontManager(sk_sp<SkFontMgr> font_manager) {
   static_font_manager_ = font_manager.release();
 }
 
-PassRefPtr<OpenTypeVerticalData> FontCache::GetVerticalData(
+RefPtr<OpenTypeVerticalData> FontCache::GetVerticalData(
     const FontFileKey& key,
     const FontPlatformData& platform_data) {
   FontVerticalDataCache& font_vertical_data_cache =
@@ -221,7 +220,7 @@ PassRefPtr<OpenTypeVerticalData> FontCache::GetVerticalData(
   RefPtr<OpenTypeVerticalData> vertical_data =
       OpenTypeVerticalData::Create(platform_data);
   if (!vertical_data->IsOpenType())
-    vertical_data.Clear();
+    vertical_data = nullptr;
   font_vertical_data_cache.Set(key, vertical_data);
   return vertical_data;
 }
@@ -231,7 +230,7 @@ void FontCache::AcceptLanguagesChanged(const String& accept_languages) {
   GetFontCache()->InvalidateShapeCache();
 }
 
-PassRefPtr<SimpleFontData> FontCache::GetFontData(
+RefPtr<SimpleFontData> FontCache::GetFontData(
     const FontDescription& font_description,
     const AtomicString& family,
     AlternateFontName altername_font_name,
@@ -248,11 +247,10 @@ PassRefPtr<SimpleFontData> FontCache::GetFontData(
   return nullptr;
 }
 
-PassRefPtr<SimpleFontData> FontCache::FontDataFromFontPlatformData(
+RefPtr<SimpleFontData> FontCache::FontDataFromFontPlatformData(
     const FontPlatformData* platform_data,
     ShouldRetain should_retain,
     bool subpixel_ascent_descent) {
-
 #if DCHECK_IS_ON()
   if (should_retain == kDoNotRetain)
     DCHECK(purge_prevent_count_);
@@ -290,7 +288,10 @@ String FontCache::FirstAvailableOrFirst(const String& families) {
 
 SimpleFontData* FontCache::GetNonRetainedLastResortFallbackFont(
     const FontDescription& font_description) {
-  return GetLastResortFallbackFont(font_description, kDoNotRetain).LeakRef();
+  auto font = GetLastResortFallbackFont(font_description, kDoNotRetain);
+  if (font)
+    font->AddRef();
+  return font.get();
 }
 
 void FontCache::ReleaseFontData(const SimpleFontData* font_data) {
@@ -379,6 +380,7 @@ void FontCache::AddClient(FontCacheClient* client) {
   CHECK(client);
   if (!font_cache_clients_) {
     font_cache_clients_ = new HeapHashSet<WeakMember<FontCacheClient>>();
+    font_cache_clients_.RegisterAsStaticReference();
   }
   DCHECK(!font_cache_clients_->Contains(client));
   font_cache_clients_->insert(client);

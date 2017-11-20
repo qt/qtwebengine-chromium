@@ -152,7 +152,7 @@ public:
         : SkImageGenerator(info)
         , fCtx(SkRef(ctx)) {
 
-        sk_sp<SkSurface> surface(SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, 0,
+        sk_sp<SkSurface> surface(SkSurface::MakeRenderTarget(ctx, SkBudgeted::kYes, info, 0,
                                                              kTopLeft_GrSurfaceOrigin, nullptr));
         if (surface) {
             surface->getCanvas()->clear(0);
@@ -165,7 +165,8 @@ public:
 protected:
     sk_sp<GrTextureProxy> onGenerateTexture(GrContext* ctx, const SkImageInfo& info,
                                             const SkIPoint& origin,
-                                            SkTransferFunctionBehavior) override {
+                                            SkTransferFunctionBehavior,
+                                            bool willBeMipped) override {
         SkASSERT(ctx);
         SkASSERT(ctx == fCtx.get());
 
@@ -188,7 +189,7 @@ protected:
         sk_sp<GrSurfaceContext> dstContext(fCtx->contextPriv().makeDeferredSurfaceContext(
                                                                             desc,
                                                                             SkBackingFit::kExact,
-                                                                            SkBudgeted::kNo));
+                                                                            SkBudgeted::kYes));
         if (!dstContext) {
             return nullptr;
         }
@@ -271,10 +272,9 @@ protected:
     static void draw_as_tex(SkCanvas* canvas, SkImage* image, SkScalar x, SkScalar y) {
 #if SK_SUPPORT_GPU
         sk_sp<SkColorSpace> texColorSpace;
-        sk_sp<GrTextureProxy> proxy(
-            as_IB(image)->asTextureProxyRef(canvas->getGrContext(), GrSamplerParams::ClampBilerp(),
-                                            canvas->imageInfo().colorSpace(), &texColorSpace,
-                                            nullptr));
+        sk_sp<GrTextureProxy> proxy(as_IB(image)->asTextureProxyRef(
+                canvas->getGrContext(), GrSamplerState::ClampBilerp(),
+                canvas->imageInfo().colorSpace(), &texColorSpace, nullptr));
         if (!proxy) {
             // show placeholder if we have no texture
             SkPaint paint;

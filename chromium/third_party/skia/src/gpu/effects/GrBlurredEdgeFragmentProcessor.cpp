@@ -25,12 +25,12 @@ public:
                 args.fFp.cast<GrBlurredEdgeFragmentProcessor>();
         (void)_outer;
         fragBuilder->codeAppendf(
-                "float factor = 1.0 - %s.w;\n@switch (%d) {\n    case 0:\n        factor = "
-                "exp((-factor * factor) * 4.0) - 0.017999999999999999;\n        break;\n    case "
-                "1:\n        factor = smoothstep(1.0, 0.0, factor);\n        break;\n}\n%s = "
-                "float4(factor);\n",
-                args.fInputColor ? args.fInputColor : "float4(1)", _outer.mode(),
-                args.fOutputColor);
+                "half factor = half(1.0 - float(%s.w));\n@switch (%d) {\n    case 0:\n        "
+                "factor = half(exp(float(float(-factor * factor) * 4.0)) - "
+                "0.017999999999999999);\n        break;\n    case 1:\n        factor = "
+                "half(smoothstep(1.0, 0.0, float(factor)));\n        break;\n}\n%s = "
+                "half4(factor);\n",
+                args.fInputColor ? args.fInputColor : "half4(1)", _outer.mode(), args.fOutputColor);
     }
 
 private:
@@ -52,9 +52,8 @@ bool GrBlurredEdgeFragmentProcessor::onIsEqual(const GrFragmentProcessor& other)
 }
 GrBlurredEdgeFragmentProcessor::GrBlurredEdgeFragmentProcessor(
         const GrBlurredEdgeFragmentProcessor& src)
-        : INHERITED(src.optimizationFlags()), fMode(src.fMode) {
-    this->initClassID<GrBlurredEdgeFragmentProcessor>();
-}
+        : INHERITED(kGrBlurredEdgeFragmentProcessor_ClassID, src.optimizationFlags())
+        , fMode(src.fMode) {}
 std::unique_ptr<GrFragmentProcessor> GrBlurredEdgeFragmentProcessor::clone() const {
     return std::unique_ptr<GrFragmentProcessor>(new GrBlurredEdgeFragmentProcessor(*this));
 }

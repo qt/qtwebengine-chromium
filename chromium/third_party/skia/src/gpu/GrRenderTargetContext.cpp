@@ -15,6 +15,7 @@
 #include "GrDrawingManager.h"
 #include "GrFixedClip.h"
 #include "GrGpuResourcePriv.h"
+#include "GrOpList.h"
 #include "GrPathRenderer.h"
 #include "GrRenderTarget.h"
 #include "GrRenderTargetContextPriv.h"
@@ -124,10 +125,12 @@ GrRenderTargetContext::GrRenderTargetContext(GrContext* context,
         fColorXformFromSRGB = GrColorSpaceXform::Make(srgbColorSpace.get(), fColorSpace.get());
     }
 
+#ifndef MDB_ALLOC_RESOURCES
     // MDB TODO: to ensure all resources still get allocated in the correct order in the hybrid
     // world we need to get the correct opList here so that it, in turn, can grab and hold
     // its rendertarget.
     this->getRTOpList();
+#endif
     SkDEBUGCODE(this->validate();)
 }
 
@@ -779,7 +782,7 @@ static bool must_filter(const SkRect& src, const SkRect& dst, const SkMatrix& ct
 }
 
 void GrRenderTargetContext::drawTextureAffine(const GrClip& clip, sk_sp<GrTextureProxy> proxy,
-                                              GrSamplerParams::FilterMode filter, GrColor color,
+                                              GrSamplerState::Filter filter, GrColor color,
                                               const SkRect& srcRect, const SkRect& dstRect,
                                               const SkMatrix& viewMatrix,
                                               sk_sp<GrColorSpaceXform> colorSpaceXform) {
@@ -788,12 +791,20 @@ void GrRenderTargetContext::drawTextureAffine(const GrClip& clip, sk_sp<GrTextur
     SkDEBUGCODE(this->validate();)
     GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "drawTextureAffine", fContext);
     SkASSERT(!viewMatrix.hasPerspective());
-    if (filter != GrSamplerParams::kNone_FilterMode && !must_filter(srcRect, dstRect, viewMatrix)) {
-        filter = GrSamplerParams::kNone_FilterMode;
+    if (filter != GrSamplerState::Filter::kNearest && !must_filter(srcRect, dstRect, viewMatrix)) {
+        filter = GrSamplerState::Filter::kNearest;
     }
+    SkRect clippedDstRect = dstRect;
+    SkRect clippedSrcRect = srcRect;
+    if (!crop_filled_rect(this->width(), this->height(), clip, viewMatrix, &clippedDstRect,
+                          &clippedSrcRect)) {
+        return;
+    }
+
     bool allowSRGB = SkToBool(this->getColorSpace());
-    this->addDrawOp(clip, GrTextureOp::Make(std::move(proxy), filter, color, srcRect, dstRect,
-                                            viewMatrix, std::move(colorSpaceXform), allowSRGB));
+    this->addDrawOp(clip, GrTextureOp::Make(std::move(proxy), filter, color, clippedSrcRect,
+                                            clippedDstRect, viewMatrix, std::move(colorSpaceXform),
+                                            allowSRGB));
 }
 
 void GrRenderTargetContext::fillRectWithLocalMatrix(const GrClip& clip,
@@ -1599,11 +1610,16 @@ bool GrRenderTargetContextPriv::drawAndStencilPath(const GrClip& clip,
     GrAAType aaType = fRenderTargetContext->chooseAAType(aa, GrAllowMixedSamples::kNo);
     bool hasUserStencilSettings = !ss->isUnused();
 
+    SkIRect clipConservativeBounds;
+    clip.getConservativeBounds(fRenderTargetContext->width(), fRenderTargetContext->height(),
+                               &clipConservativeBounds, nullptr);
+
     GrShape shape(path, GrStyle::SimpleFill());
     GrPathRenderer::CanDrawPathArgs canDrawArgs;
     canDrawArgs.fCaps = fRenderTargetContext->drawingManager()->getContext()->caps();
     canDrawArgs.fViewMatrix = &viewMatrix;
     canDrawArgs.fShape = &shape;
+    canDrawArgs.fClipConservativeBounds = &clipConservativeBounds;
     canDrawArgs.fAAType = aaType;
     canDrawArgs.fHasUserStencilSettings = hasUserStencilSettings;
 
@@ -1623,6 +1639,7 @@ bool GrRenderTargetContextPriv::drawAndStencilPath(const GrClip& clip,
             ss,
             fRenderTargetContext,
             &clip,
+            &clipConservativeBounds,
             &viewMatrix,
             &shape,
             aaType,
@@ -1653,6 +1670,9 @@ void GrRenderTargetContext::internalDrawPath(const GrClip& clip,
     RETURN_IF_ABANDONED
     GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "internalDrawPath", fContext);
 
+    SkIRect clipConservativeBounds;
+    clip.getConservativeBounds(this->width(), this->height(), &clipConservativeBounds, nullptr);
+
     SkASSERT(!path.isEmpty());
     GrShape shape;
     // NVPR cannot handle hairlines, so this would get picked up by a different stencil and
@@ -1665,13 +1685,14 @@ void GrRenderTargetContext::internalDrawPath(const GrClip& clip,
     canDrawArgs.fCaps = this->drawingManager()->getContext()->caps();
     canDrawArgs.fViewMatrix = &viewMatrix;
     canDrawArgs.fShape = &shape;
+    canDrawArgs.fClipConservativeBounds = &clipConservativeBounds;
     canDrawArgs.fHasUserStencilSettings = false;
 
     GrPathRenderer* pr;
     static constexpr GrPathRendererChain::DrawType kType = GrPathRendererChain::DrawType::kColor;
     do {
         shape = GrShape(path, style);
-        if (shape.isEmpty()) {
+        if (shape.isEmpty() && !shape.inverseFilled()) {
             return;
         }
 
@@ -1720,6 +1741,7 @@ void GrRenderTargetContext::internalDrawPath(const GrClip& clip,
                                       &GrUserStencilSettings::kUnused,
                                       this,
                                       &clip,
+                                      &clipConservativeBounds,
                                       &viewMatrix,
                                       &shape,
                                       aaType,
@@ -1779,8 +1801,10 @@ uint32_t GrRenderTargetContext::addDrawOp(const GrClip& clip, std::unique_ptr<Gr
         this->setNeedsStencil();
     }
 
+    GrPixelConfigIsClamped dstIsClamped = GrGetPixelConfigIsClamped(this->config());
     GrXferProcessor::DstProxy dstProxy;
-    if (op->finalize(*this->caps(), &appliedClip) == GrDrawOp::RequiresDstTexture::kYes) {
+    if (GrDrawOp::RequiresDstTexture::kYes == op->finalize(*this->caps(), &appliedClip,
+                                                           dstIsClamped)) {
         if (!this->setupDstProxy(this->asRenderTargetProxy(), clip, op->bounds(), &dstProxy)) {
             return SK_InvalidUniqueID;
         }

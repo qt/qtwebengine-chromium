@@ -32,12 +32,12 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/CSSPropertyNames.h"
-#include "core/HTMLNames.h"
-#include "core/InputTypeNames.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/editing/EditingTriState.h"
 #include "core/editing/Editor.h"
+#include "core/editing/FrameSelection.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 #include "core/editing/markers/SpellCheckMarker.h"
 #include "core/editing/spellcheck/SpellChecker.h"
@@ -49,14 +49,16 @@
 #include "core/frame/VisualViewport.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/html/HTMLAnchorElement.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLPlugInElement.h"
+#include "core/html/forms/HTMLFormElement.h"
+#include "core/html/forms/HTMLInputElement.h"
+#include "core/html_names.h"
 #include "core/input/ContextMenuAllowedScope.h"
 #include "core/input/EventHandler.h"
+#include "core/input_type_names.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutEmbeddedContent.h"
 #include "core/loader/DocumentLoader.h"
@@ -145,8 +147,8 @@ bool ContextMenuClient::ShouldShowContextMenuFromTouch(
 }
 
 static HTMLFormElement* AssociatedFormElement(HTMLElement& element) {
-  if (isHTMLFormElement(element))
-    return &toHTMLFormElement(element);
+  if (auto* form = ToHTMLFormElementOrNull(element))
+    return form;
   return element.formOwner();
 }
 
@@ -237,7 +239,7 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
     }
   }
 
-  if (isHTMLCanvasElement(r.InnerNode())) {
+  if (IsHTMLCanvasElement(r.InnerNode())) {
     data.media_type = WebContextMenuData::kMediaTypeCanvas;
     data.has_image_contents = true;
   } else if (!r.AbsoluteImageURL().IsEmpty()) {
@@ -251,9 +253,9 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
     data.is_placeholder_image =
         r.GetImage() && r.GetImage()->IsPlaceholderImage();
     if (data.has_image_contents &&
-        isHTMLImageElement(r.InnerNodeOrImageMapImage())) {
+        IsHTMLImageElement(r.InnerNodeOrImageMapImage())) {
       HTMLImageElement* image_element =
-          toHTMLImageElement(r.InnerNodeOrImageMapImage());
+          ToHTMLImageElement(r.InnerNodeOrImageMapImage());
       if (image_element && image_element->CachedImage()) {
         data.image_response = WrappedResourceResponse(
             image_element->CachedImage()->GetResponse());
@@ -265,9 +267,9 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
     // We know that if absoluteMediaURL() is not empty, then this
     // is a media element.
     HTMLMediaElement* media_element = ToHTMLMediaElement(r.InnerNode());
-    if (isHTMLVideoElement(*media_element))
+    if (IsHTMLVideoElement(*media_element))
       data.media_type = WebContextMenuData::kMediaTypeVideo;
-    else if (isHTMLAudioElement(*media_element))
+    else if (IsHTMLAudioElement(*media_element))
       data.media_type = WebContextMenuData::kMediaTypeAudio;
 
     if (media_element->error())
@@ -291,8 +293,8 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
       data.media_flags |= WebContextMenuData::kMediaCanToggleControls;
     if (media_element->ShouldShowControls())
       data.media_flags |= WebContextMenuData::kMediaControls;
-  } else if (isHTMLObjectElement(*r.InnerNode()) ||
-             isHTMLEmbedElement(*r.InnerNode())) {
+  } else if (IsHTMLObjectElement(*r.InnerNode()) ||
+             IsHTMLEmbedElement(*r.InnerNode())) {
     LayoutObject* object = r.InnerNode()->GetLayoutObject();
     if (object && object->IsLayoutEmbeddedContent()) {
       PluginView* plugin_view = ToLayoutEmbeddedContent(object)->Plugin();
@@ -394,8 +396,8 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
     }
 
     HTMLFormElement* form = CurrentForm(selected_frame->Selection());
-    if (form && isHTMLInputElement(*r.InnerNode())) {
-      HTMLInputElement& selected_element = toHTMLInputElement(*r.InnerNode());
+    if (form && IsHTMLInputElement(*r.InnerNode())) {
+      HTMLInputElement& selected_element = ToHTMLInputElement(*r.InnerNode());
       WebSearchableFormData ws = WebSearchableFormData(
           WebFormElement(form), WebInputElement(&selected_element));
       if (ws.Url().IsValid())
@@ -403,13 +405,13 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
     }
   }
 
-  if (selected_frame->GetEditor().SelectionHasStyle(CSSPropertyDirection,
-                                                    "ltr") != kFalseTriState) {
+  if (selected_frame->GetEditor().SelectionHasStyle(
+          CSSPropertyDirection, "ltr") != EditingTriState::kFalse) {
     data.writing_direction_left_to_right |=
         WebContextMenuData::kCheckableMenuItemChecked;
   }
-  if (selected_frame->GetEditor().SelectionHasStyle(CSSPropertyDirection,
-                                                    "rtl") != kFalseTriState) {
+  if (selected_frame->GetEditor().SelectionHasStyle(
+          CSSPropertyDirection, "rtl") != EditingTriState::kFalse) {
     data.writing_direction_right_to_left |=
         WebContextMenuData::kCheckableMenuItemChecked;
   }
@@ -420,9 +422,7 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
   // Filter out custom menu elements and add them into the data.
   PopulateCustomMenuItems(default_menu, &data);
 
-  if (isHTMLAnchorElement(r.URLElement())) {
-    HTMLAnchorElement* anchor = toHTMLAnchorElement(r.URLElement());
-
+  if (auto* anchor = ToHTMLAnchorElementOrNull(r.URLElement())) {
     // Extract suggested filename for saving file.
     data.suggested_filename = anchor->FastGetAttribute(HTMLNames::downloadAttr);
 
@@ -435,11 +435,10 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
   }
 
   // Find the input field type.
-  if (isHTMLInputElement(r.InnerNode())) {
-    HTMLInputElement* element = toHTMLInputElement(r.InnerNode());
-    if (element->type() == InputTypeNames::password)
+  if (auto* input = ToHTMLInputElementOrNull(r.InnerNode())) {
+    if (input->type() == InputTypeNames::password)
       data.input_field_type = WebContextMenuData::kInputFieldTypePassword;
-    else if (element->IsTextField())
+    else if (input->IsTextField())
       data.input_field_type = WebContextMenuData::kInputFieldTypePlainText;
     else
       data.input_field_type = WebContextMenuData::kInputFieldTypeOther;

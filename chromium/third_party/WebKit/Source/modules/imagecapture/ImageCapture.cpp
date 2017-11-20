@@ -4,6 +4,8 @@
 
 #include "modules/imagecapture/ImageCapture.h"
 
+#include <utility>
+
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMException.h"
@@ -359,10 +361,10 @@ void ImageCapture::SetMediaTrackConstraints(
   // TODO(mcasas): support other Mode types beyond simple string i.e. the
   // equivalents of "sequence<DOMString>"" or "ConstrainDOMStringParameters".
   settings->has_white_balance_mode = constraints.hasWhiteBalanceMode() &&
-                                     constraints.whiteBalanceMode().isString();
+                                     constraints.whiteBalanceMode().IsString();
   if (settings->has_white_balance_mode) {
     const auto white_balance_mode =
-        constraints.whiteBalanceMode().getAsString();
+        constraints.whiteBalanceMode().GetAsString();
     if (capabilities_.whiteBalanceMode().Find(white_balance_mode) ==
         kNotFound) {
       resolver->Reject(DOMException::Create(kNotSupportedError,
@@ -373,9 +375,9 @@ void ImageCapture::SetMediaTrackConstraints(
     settings->white_balance_mode = ParseMeteringMode(white_balance_mode);
   }
   settings->has_exposure_mode =
-      constraints.hasExposureMode() && constraints.exposureMode().isString();
+      constraints.hasExposureMode() && constraints.exposureMode().IsString();
   if (settings->has_exposure_mode) {
-    const auto exposure_mode = constraints.exposureMode().getAsString();
+    const auto exposure_mode = constraints.exposureMode().GetAsString();
     if (capabilities_.exposureMode().Find(exposure_mode) == kNotFound) {
       resolver->Reject(DOMException::Create(kNotSupportedError,
                                             "Unsupported exposureMode."));
@@ -386,9 +388,9 @@ void ImageCapture::SetMediaTrackConstraints(
   }
 
   settings->has_focus_mode =
-      constraints.hasFocusMode() && constraints.focusMode().isString();
+      constraints.hasFocusMode() && constraints.focusMode().IsString();
   if (settings->has_focus_mode) {
-    const auto focus_mode = constraints.focusMode().getAsString();
+    const auto focus_mode = constraints.focusMode().GetAsString();
     if (capabilities_.focusMode().Find(focus_mode) == kNotFound) {
       resolver->Reject(
           DOMException::Create(kNotSupportedError, "Unsupported focusMode."));
@@ -400,9 +402,9 @@ void ImageCapture::SetMediaTrackConstraints(
 
   // TODO(mcasas): support ConstrainPoint2DParameters.
   if (constraints.hasPointsOfInterest() &&
-      constraints.pointsOfInterest().isPoint2DSequence()) {
+      constraints.pointsOfInterest().IsPoint2DSequence()) {
     for (const auto& point :
-         constraints.pointsOfInterest().getAsPoint2DSequence()) {
+         constraints.pointsOfInterest().GetAsPoint2DSequence()) {
       auto mojo_point = media::mojom::blink::Point2D::New();
       mojo_point->x = point.x();
       mojo_point->y = point.y();
@@ -414,10 +416,10 @@ void ImageCapture::SetMediaTrackConstraints(
   // TODO(mcasas): support ConstrainDoubleRange where applicable.
   settings->has_exposure_compensation =
       constraints.hasExposureCompensation() &&
-      constraints.exposureCompensation().isDouble();
+      constraints.exposureCompensation().IsDouble();
   if (settings->has_exposure_compensation) {
     const auto exposure_compensation =
-        constraints.exposureCompensation().getAsDouble();
+        constraints.exposureCompensation().GetAsDouble();
     if (exposure_compensation < capabilities_.exposureCompensation()->min() ||
         exposure_compensation > capabilities_.exposureCompensation()->max()) {
       resolver->Reject(DOMException::Create(
@@ -429,9 +431,9 @@ void ImageCapture::SetMediaTrackConstraints(
     settings->exposure_compensation = exposure_compensation;
   }
   settings->has_color_temperature = constraints.hasColorTemperature() &&
-                                    constraints.colorTemperature().isDouble();
+                                    constraints.colorTemperature().IsDouble();
   if (settings->has_color_temperature) {
-    const auto color_temperature = constraints.colorTemperature().getAsDouble();
+    const auto color_temperature = constraints.colorTemperature().GetAsDouble();
     if (color_temperature < capabilities_.colorTemperature()->min() ||
         color_temperature > capabilities_.colorTemperature()->max()) {
       resolver->Reject(DOMException::Create(
@@ -441,9 +443,9 @@ void ImageCapture::SetMediaTrackConstraints(
     temp_constraints.setColorTemperature(constraints.colorTemperature());
     settings->color_temperature = color_temperature;
   }
-  settings->has_iso = constraints.hasIso() && constraints.iso().isDouble();
+  settings->has_iso = constraints.hasIso() && constraints.iso().IsDouble();
   if (settings->has_iso) {
-    const auto iso = constraints.iso().getAsDouble();
+    const auto iso = constraints.iso().GetAsDouble();
     if (iso < capabilities_.iso()->min() || iso > capabilities_.iso()->max()) {
       resolver->Reject(
           DOMException::Create(kNotSupportedError, "iso setting out of range"));
@@ -454,9 +456,9 @@ void ImageCapture::SetMediaTrackConstraints(
   }
 
   settings->has_brightness =
-      constraints.hasBrightness() && constraints.brightness().isDouble();
+      constraints.hasBrightness() && constraints.brightness().IsDouble();
   if (settings->has_brightness) {
-    const auto brightness = constraints.brightness().getAsDouble();
+    const auto brightness = constraints.brightness().GetAsDouble();
     if (brightness < capabilities_.brightness()->min() ||
         brightness > capabilities_.brightness()->max()) {
       resolver->Reject(DOMException::Create(kNotSupportedError,
@@ -467,9 +469,9 @@ void ImageCapture::SetMediaTrackConstraints(
     settings->brightness = brightness;
   }
   settings->has_contrast =
-      constraints.hasContrast() && constraints.contrast().isDouble();
+      constraints.hasContrast() && constraints.contrast().IsDouble();
   if (settings->has_contrast) {
-    const auto contrast = constraints.contrast().getAsDouble();
+    const auto contrast = constraints.contrast().GetAsDouble();
     if (contrast < capabilities_.contrast()->min() ||
         contrast > capabilities_.contrast()->max()) {
       resolver->Reject(DOMException::Create(kNotSupportedError,
@@ -480,9 +482,9 @@ void ImageCapture::SetMediaTrackConstraints(
     settings->contrast = contrast;
   }
   settings->has_saturation =
-      constraints.hasSaturation() && constraints.saturation().isDouble();
+      constraints.hasSaturation() && constraints.saturation().IsDouble();
   if (settings->has_saturation) {
-    const auto saturation = constraints.saturation().getAsDouble();
+    const auto saturation = constraints.saturation().GetAsDouble();
     if (saturation < capabilities_.saturation()->min() ||
         saturation > capabilities_.saturation()->max()) {
       resolver->Reject(DOMException::Create(kNotSupportedError,
@@ -493,9 +495,9 @@ void ImageCapture::SetMediaTrackConstraints(
     settings->saturation = saturation;
   }
   settings->has_sharpness =
-      constraints.hasSharpness() && constraints.sharpness().isDouble();
+      constraints.hasSharpness() && constraints.sharpness().IsDouble();
   if (settings->has_sharpness) {
-    const auto sharpness = constraints.sharpness().getAsDouble();
+    const auto sharpness = constraints.sharpness().GetAsDouble();
     if (sharpness < capabilities_.sharpness()->min() ||
         sharpness > capabilities_.sharpness()->max()) {
       resolver->Reject(DOMException::Create(kNotSupportedError,
@@ -506,9 +508,9 @@ void ImageCapture::SetMediaTrackConstraints(
     settings->sharpness = sharpness;
   }
 
-  settings->has_zoom = constraints.hasZoom() && constraints.zoom().isDouble();
+  settings->has_zoom = constraints.hasZoom() && constraints.zoom().IsDouble();
   if (settings->has_zoom) {
-    const auto zoom = constraints.zoom().getAsDouble();
+    const auto zoom = constraints.zoom().GetAsDouble();
     if (zoom < capabilities_.zoom()->min() ||
         zoom > capabilities_.zoom()->max()) {
       resolver->Reject(DOMException::Create(kNotSupportedError,
@@ -521,9 +523,9 @@ void ImageCapture::SetMediaTrackConstraints(
 
   // TODO(mcasas): support ConstrainBooleanParameters where applicable.
   settings->has_torch =
-      constraints.hasTorch() && constraints.torch().isBoolean();
+      constraints.hasTorch() && constraints.torch().IsBoolean();
   if (settings->has_torch) {
-    const auto torch = constraints.torch().getAsBoolean();
+    const auto torch = constraints.torch().GetAsBoolean();
     if (torch && !capabilities_.torch()) {
       resolver->Reject(
           DOMException::Create(kNotSupportedError, "torch not supported"));
@@ -558,9 +560,8 @@ const MediaTrackConstraintSet& ImageCapture::GetMediaTrackConstraints() const {
   return current_constraints_;
 }
 
-void ImageCapture::ClearMediaTrackConstraints(ScriptPromiseResolver* resolver) {
+void ImageCapture::ClearMediaTrackConstraints() {
   current_constraints_ = MediaTrackConstraintSet();
-  resolver->Resolve();
 
   // TODO(mcasas): Clear also any PhotoSettings that the device might have got
   // configured, for that we need to know a "default" state of the device; take
@@ -602,26 +603,6 @@ void ImageCapture::GetMediaTrackSettings(MediaTrackSettings& settings) const {
     settings.setZoom(settings_.zoom());
   if (settings_.hasTorch())
     settings.setTorch(settings_.torch());
-}
-
-bool ImageCapture::HasNonImageCaptureConstraints(
-    const MediaTrackConstraints& constraints) const {
-  if (!constraints.hasAdvanced())
-    return false;
-
-  const auto& advanced_constraints = constraints.advanced();
-  for (const auto& constraint : advanced_constraints) {
-    if (!constraint.hasWhiteBalanceMode() && !constraint.hasExposureMode() &&
-        !constraint.hasFocusMode() && !constraint.hasPointsOfInterest() &&
-        !constraint.hasExposureCompensation() &&
-        !constraint.hasColorTemperature() && !constraint.hasIso() &&
-        !constraint.hasBrightness() && !constraint.hasContrast() &&
-        !constraint.hasSaturation() && !constraint.hasSharpness() &&
-        !constraint.hasZoom() && !constraint.hasTorch()) {
-      return true;
-    }
-  }
-  return false;
 }
 
 ImageCapture::ImageCapture(ExecutionContext* context, MediaStreamTrack* track)

@@ -9,9 +9,9 @@
 
 #include <map>
 
-#include "core/fxcrt/cfx_retain_ptr.h"
-#include "core/fxcrt/cfx_unowned_ptr.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 
 class CFX_DIBitmap;
 class CPDF_Image;
@@ -28,14 +28,14 @@ class CPDF_PageRenderCache {
 
   void CacheOptimization(int32_t dwLimitCacheSize);
   uint32_t GetTimeCount() const { return m_nTimeCount; }
-  void ResetBitmap(const CFX_RetainPtr<CPDF_Image>& pImage,
-                   const CFX_RetainPtr<CFX_DIBitmap>& pBitmap);
+  void ResetBitmap(const RetainPtr<CPDF_Image>& pImage,
+                   const RetainPtr<CFX_DIBitmap>& pBitmap);
   CPDF_Page* GetPage() const { return m_pPage.Get(); }
   CPDF_ImageCacheEntry* GetCurImageCacheEntry() const {
     return m_pCurImageCacheEntry;
   }
 
-  bool StartGetCachedBitmap(const CFX_RetainPtr<CPDF_Image>& pImage,
+  bool StartGetCachedBitmap(const RetainPtr<CPDF_Image>& pImage,
                             bool bStdCS,
                             uint32_t GroupFamily,
                             bool bLoadMask,
@@ -46,7 +46,7 @@ class CPDF_PageRenderCache {
  private:
   void ClearImageCacheEntry(CPDF_Stream* pStream);
 
-  CFX_UnownedPtr<CPDF_Page> const m_pPage;
+  UnownedPtr<CPDF_Page> const m_pPage;
   CPDF_ImageCacheEntry* m_pCurImageCacheEntry;
   std::map<CPDF_Stream*, CPDF_ImageCacheEntry*> m_ImageCache;
   uint32_t m_nTimeCount;

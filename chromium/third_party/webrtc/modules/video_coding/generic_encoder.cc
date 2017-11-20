@@ -8,20 +8,20 @@
 *  be found in the AUTHORS file in the root of the source tree.
 */
 
-#include "webrtc/modules/video_coding/generic_encoder.h"
+#include "modules/video_coding/generic_encoder.h"
 
 #include <vector>
 
-#include "webrtc/api/video/i420_buffer.h"
-#include "webrtc/modules/pacing/alr_detector.h"
-#include "webrtc/modules/video_coding/encoded_frame.h"
-#include "webrtc/modules/video_coding/media_optimization.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/optional.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/rtc_base/trace_event.h"
-#include "webrtc/system_wrappers/include/field_trial.h"
+#include "api/optional.h"
+#include "api/video/i420_buffer.h"
+#include "modules/pacing/alr_detector.h"
+#include "modules/video_coding/encoded_frame.h"
+#include "modules/video_coding/media_optimization.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/timeutils.h"
+#include "rtc_base/trace_event.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 
@@ -33,7 +33,6 @@ VCMGenericEncoder::VCMGenericEncoder(
       vcm_encoded_frame_callback_(encoded_frame_callback),
       internal_source_(internal_source),
       encoder_params_({BitrateAllocation(), 0, 0, 0}),
-      is_screenshare_(false),
       streams_or_svc_num_(0) {}
 
 VCMGenericEncoder::~VCMGenericEncoder() {}
@@ -49,7 +48,6 @@ int32_t VCMGenericEncoder::InitEncode(const VideoCodec* settings,
                                       size_t max_payload_size) {
   RTC_DCHECK_RUNS_SERIALIZED(&race_checker_);
   TRACE_EVENT0("webrtc", "VCMGenericEncoder::InitEncode");
-  is_screenshare_ = settings->mode == VideoCodecMode::kScreensharing;
   streams_or_svc_num_ = settings->numberOfSimulcastStreams;
   if (settings->codecType == kVideoCodecVP9) {
     streams_or_svc_num_ = settings->VP9().numberOfSpatialLayers;
@@ -83,15 +81,8 @@ int32_t VCMGenericEncoder::Encode(const VideoFrame& frame,
 
   for (size_t i = 0; i < streams_or_svc_num_; ++i)
     vcm_encoded_frame_callback_->OnEncodeStarted(frame.render_time_ms(), i);
-  int32_t result = encoder_->Encode(frame, codec_specific, &frame_types);
 
-  if (is_screenshare_ &&
-      result == WEBRTC_VIDEO_CODEC_TARGET_BITRATE_OVERSHOOT) {
-    // Target bitrate exceeded, encoder state has been reset - try again.
-    return encoder_->Encode(frame, codec_specific, &frame_types);
-  }
-
-  return result;
+  return encoder_->Encode(frame, codec_specific, &frame_types);
 }
 
 void VCMGenericEncoder::SetEncoderParameters(const EncoderParameters& params) {

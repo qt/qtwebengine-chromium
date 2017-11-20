@@ -32,11 +32,11 @@
 #ifndef ShapeResultInlineHeaders_h
 #define ShapeResultInlineHeaders_h
 
+#include <hb.h>
+#include <memory>
 #include "platform/fonts/shaping/ShapeResult.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Noncopyable.h"
-
-#include <hb.h>
 
 namespace blink {
 
@@ -81,6 +81,8 @@ struct ShapeResult::RunInfo {
 
   bool Rtl() const { return HB_DIRECTION_IS_BACKWARD(direction_); }
   bool IsHorizontal() const { return HB_DIRECTION_IS_HORIZONTAL(direction_); }
+  unsigned NextSafeToBreakOffset(unsigned) const;
+  unsigned PreviousSafeToBreakOffset(unsigned) const;
   float XPositionForVisualOffset(unsigned, AdjustMidCluster) const;
   float XPositionForOffset(unsigned, AdjustMidCluster) const;
   int CharacterIndexForXPosition(float, bool include_partial_glyphs) const;
@@ -122,7 +124,7 @@ struct ShapeResult::RunInfo {
           });
     }
 
-    auto run = base::MakeUnique<RunInfo>(font_data_.Get(), direction_, script_,
+    auto run = std::make_unique<RunInfo>(font_data_.get(), direction_, script_,
                                          start_index_ + start, number_of_glyphs,
                                          number_of_characters);
 
@@ -142,6 +144,12 @@ struct ShapeResult::RunInfo {
 
     run->width_ = total_advance;
     run->num_characters_ = number_of_characters;
+
+    for (unsigned i = 0; i < safe_break_offsets_.size(); i++) {
+      if (safe_break_offsets_[i] >= start && safe_break_offsets_[i] <= end)
+        run->safe_break_offsets_.push_back(safe_break_offsets_[i] - start);
+    }
+
     return run;
   }
 
@@ -203,6 +211,9 @@ struct ShapeResult::RunInfo {
   hb_direction_t direction_;
   hb_script_t script_;
   Vector<HarfBuzzRunGlyphData> glyph_data_;
+  // List of character indecies before which it's safe to break without
+  // reshaping.
+  Vector<uint16_t> safe_break_offsets_;
   unsigned start_index_;
   unsigned num_characters_;
   float width_;

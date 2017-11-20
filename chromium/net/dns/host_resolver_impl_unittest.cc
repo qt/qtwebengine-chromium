@@ -4,7 +4,6 @@
 
 #include "net/dns/host_resolver_impl.h"
 
-#include <memory>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -13,7 +12,6 @@
 #include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -24,6 +22,7 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/test/test_timeouts.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "net/base/address_list.h"
@@ -151,8 +150,12 @@ class MockHostResolverProc : public HostResolverProc {
     capture_list_.push_back(ResolveKey(hostname, address_family));
     ++num_requests_waiting_;
     requests_waiting_.Broadcast();
-    while (!num_slots_available_)
-      slots_available_.Wait();
+    {
+      base::ScopedAllowBaseSyncPrimitivesForTesting
+          scoped_allow_base_sync_primitives;
+      while (!num_slots_available_)
+        slots_available_.Wait();
+    }
     DCHECK_GT(num_requests_waiting_, 0u);
     --num_slots_available_;
     --num_requests_waiting_;
@@ -375,6 +378,8 @@ class LookupAttemptHostResolverProc : public HostResolverProc {
     base::TimeTicks end_time = base::TimeTicks::Now() + wait_time;
     {
       base::AutoLock auto_lock(lock_);
+      base::ScopedAllowBaseSyncPrimitivesForTesting
+          scoped_allow_base_sync_primitives;
       while (resolved_attempt_number_ == 0 && base::TimeTicks::Now() < end_time)
         all_done_.TimedWait(end_time - base::TimeTicks::Now());
     }
@@ -1448,6 +1453,54 @@ TEST_F(HostResolverImplTest, ResolveStaleFromCache) {
   EXPECT_TRUE(requests_[5]->HasOneAddress("192.168.1.42", 80));
   EXPECT_TRUE(requests_[5]->staleness().is_stale());
 }
+
+TEST_F(HostResolverImplTest, ResolveStaleFromCacheError) {
+  proc_->AddRuleForAllFamilies("just.testing", "192.168.1.42");
+  proc_->SignalMultiple(1u);  // Need only one.
+
+  HostResolver::RequestInfo info(HostPortPair("just.testing", 80));
+
+  // First query will miss the cache.
+  EXPECT_EQ(ERR_DNS_CACHE_MISS,
+            CreateRequest(info, DEFAULT_PRIORITY)->ResolveFromCache());
+
+  // This time, we fetch normally.
+  EXPECT_THAT(CreateRequest(info, DEFAULT_PRIORITY)->Resolve(),
+              IsError(ERR_IO_PENDING));
+  EXPECT_THAT(requests_[1]->WaitForResult(), IsOk());
+
+  // Now we should be able to fetch from the cache.
+  EXPECT_THAT(CreateRequest(info, DEFAULT_PRIORITY)->ResolveFromCache(),
+              IsOk());
+  EXPECT_TRUE(requests_[2]->HasOneAddress("192.168.1.42", 80));
+  EXPECT_THAT(CreateRequest(info, DEFAULT_PRIORITY)->ResolveStaleFromCache(),
+              IsOk());
+  EXPECT_TRUE(requests_[3]->HasOneAddress("192.168.1.42", 80));
+  EXPECT_FALSE(requests_[3]->staleness().is_stale());
+
+  MakeCacheStale();
+
+  proc_->AddRuleForAllFamilies("just.testing", "");
+  proc_->SignalMultiple(1u);
+
+  // Now make another query, and return an error this time.
+  EXPECT_THAT(CreateRequest(info, DEFAULT_PRIORITY)->Resolve(),
+              IsError(ERR_IO_PENDING));
+  EXPECT_THAT(requests_[4]->WaitForResult(), IsError(ERR_NAME_NOT_RESOLVED));
+
+  // Now we should be able to fetch from the cache only if we use
+  // ResolveStaleFromCache, and the result should be the older good result, not
+  // the error.
+  EXPECT_EQ(ERR_DNS_CACHE_MISS,
+            CreateRequest(info, DEFAULT_PRIORITY)->ResolveFromCache());
+  EXPECT_THAT(CreateRequest(info, DEFAULT_PRIORITY)->ResolveStaleFromCache(),
+              IsOk());
+  EXPECT_TRUE(requests_[6]->HasOneAddress("192.168.1.42", 80));
+  EXPECT_TRUE(requests_[6]->staleness().is_stale());
+}
+
+// TODO(mgersh): add a test case for errors with positive TTL after
+// https://crbug.com/115051 is fixed.
 
 // Test the retry attempts simulating host resolver proc that takes too long.
 TEST_F(HostResolverImplTest, MultipleAttempts) {

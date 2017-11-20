@@ -8,25 +8,25 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/audio/audio_receive_stream.h"
+#include "audio/audio_receive_stream.h"
 
 #include <string>
 #include <utility>
 
-#include "webrtc/api/call/audio_sink.h"
-#include "webrtc/audio/audio_send_stream.h"
-#include "webrtc/audio/audio_state.h"
-#include "webrtc/audio/conversion.h"
-#include "webrtc/call/rtp_stream_receiver_controller_interface.h"
-#include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_receiver.h"
-#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/logging.h"
-#include "webrtc/rtc_base/timeutils.h"
-#include "webrtc/voice_engine/channel_proxy.h"
-#include "webrtc/voice_engine/include/voe_base.h"
-#include "webrtc/voice_engine/voice_engine_impl.h"
+#include "api/call/audio_sink.h"
+#include "audio/audio_send_stream.h"
+#include "audio/audio_state.h"
+#include "audio/conversion.h"
+#include "call/rtp_stream_receiver_controller_interface.h"
+#include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "modules/rtp_rtcp/include/rtp_receiver.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/timeutils.h"
+#include "voice_engine/channel_proxy.h"
+#include "voice_engine/include/voe_base.h"
+#include "voice_engine/voice_engine_impl.h"
 
 namespace webrtc {
 
@@ -94,7 +94,7 @@ AudioReceiveStream::AudioReceiveStream(
   RTC_CHECK_EQ(config.decoder_factory,
                channel_proxy_->GetAudioDecoderFactory());
 
-  channel_proxy_->RegisterExternalTransport(config.rtcp_send_transport);
+  channel_proxy_->RegisterTransport(config.rtcp_send_transport);
   channel_proxy_->SetReceiveCodecs(config.decoder_map);
 
   for (const auto& extension : config.rtp.extensions) {
@@ -122,7 +122,7 @@ AudioReceiveStream::~AudioReceiveStream() {
     Stop();
   }
   channel_proxy_->DisassociateSendChannel();
-  channel_proxy_->DeRegisterExternalTransport();
+  channel_proxy_->RegisterTransport(nullptr);
   channel_proxy_->ResetReceiverCongestionControlObjects();
   channel_proxy_->SetRtcEventLog(nullptr);
 }
@@ -196,6 +196,10 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   stats.jitter_buffer_preferred_ms = ns.preferredBufferSize;
   stats.total_samples_received = ns.totalSamplesReceived;
   stats.concealed_samples = ns.concealedSamples;
+  stats.concealment_events = ns.concealmentEvents;
+  stats.jitter_buffer_delay_seconds =
+      static_cast<double>(ns.jitterBufferDelayMs) /
+      static_cast<double>(rtc::kNumMillisecsPerSec);
   stats.expand_rate = Q14ToFloat(ns.currentExpandRate);
   stats.speech_expand_rate = Q14ToFloat(ns.currentSpeechExpandRate);
   stats.secondary_decoded_rate = Q14ToFloat(ns.currentSecondaryDecodedRate);
@@ -246,7 +250,7 @@ int AudioReceiveStream::Ssrc() const {
 }
 
 int AudioReceiveStream::PreferredSampleRate() const {
-  return channel_proxy_->NeededFrequency();
+  return channel_proxy_->PreferredSampleRate();
 }
 
 int AudioReceiveStream::id() const {
@@ -264,10 +268,9 @@ rtc::Optional<Syncable::Info> AudioReceiveStream::GetInfo() const {
   RTC_DCHECK(rtp_rtcp);
   RTC_DCHECK(rtp_receiver);
 
-  if (!rtp_receiver->Timestamp(&info.latest_received_capture_timestamp)) {
-    return rtc::Optional<Syncable::Info>();
-  }
-  if (!rtp_receiver->LastReceivedTimeMs(&info.latest_receive_time_ms)) {
+  if (!rtp_receiver->GetLatestTimestamps(
+          &info.latest_received_capture_timestamp,
+          &info.latest_receive_time_ms)) {
     return rtc::Optional<Syncable::Info>();
   }
   if (rtp_rtcp->RemoteNTP(&info.capture_time_ntp_secs,

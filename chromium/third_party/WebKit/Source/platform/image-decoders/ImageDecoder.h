@@ -37,6 +37,7 @@
 #include "platform/image-decoders/SegmentReader.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/RefPtr.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/Platform.h"
@@ -91,17 +92,20 @@ class PLATFORM_EXPORT ImageDecoder {
   // we can't sniff a supported type from the provided data (possibly
   // because there isn't enough data yet).
   // Sets |max_decoded_bytes_| to Platform::MaxImageDecodedBytes().
-  static std::unique_ptr<ImageDecoder> Create(RefPtr<SegmentReader> data,
-                                              bool data_complete,
-                                              AlphaOption,
-                                              const ColorBehavior&);
+  static std::unique_ptr<ImageDecoder> Create(
+      RefPtr<SegmentReader> data,
+      bool data_complete,
+      AlphaOption,
+      const ColorBehavior&,
+      const SkISize& desired_size = SkISize::MakeEmpty());
   static std::unique_ptr<ImageDecoder> Create(
       RefPtr<SharedBuffer> data,
       bool data_complete,
       AlphaOption alpha_option,
-      const ColorBehavior& color_behavior) {
+      const ColorBehavior& color_behavior,
+      const SkISize& desired_size = SkISize::MakeEmpty()) {
     return Create(SegmentReader::CreateFromSharedBuffer(std::move(data)),
-                  data_complete, alpha_option, color_behavior);
+                  data_complete, alpha_option, color_behavior, desired_size);
   }
 
   virtual String FilenameExtension() const = 0;
@@ -113,12 +117,12 @@ class PLATFORM_EXPORT ImageDecoder {
   // failure is due to insufficient or bad data.
   static bool HasSufficientDataToSniffImageType(const SharedBuffer&);
 
-  void SetData(PassRefPtr<SegmentReader> data, bool all_data_received) {
+  void SetData(RefPtr<SegmentReader> data, bool all_data_received) {
     if (failed_)
       return;
     data_ = std::move(data);
     is_all_data_received_ = all_data_received;
-    OnSetData(data_.Get());
+    OnSetData(data_.get());
   }
 
   void SetData(RefPtr<SharedBuffer> data, bool all_data_received) {
@@ -139,7 +143,7 @@ class PLATFORM_EXPORT ImageDecoder {
   bool IsDecodedSizeAvailable() const { return !failed_ && size_available_; }
 
   virtual IntSize Size() const { return size_; }
-  virtual std::vector<SkISize> GetSupportedDecodeSizes() { return {}; };
+  virtual std::vector<SkISize> GetSupportedDecodeSizes() const { return {}; };
 
   // Decoders which downsample images should override this method to
   // return the actual decoded size.
@@ -197,9 +201,9 @@ class PLATFORM_EXPORT ImageDecoder {
   // Returns true if a cached complete decode is available.
   bool FrameIsDecodedAtIndex(size_t) const;
 
-  // Duration for displaying a frame in milliseconds. This method is only used
-  // by animated images.
-  virtual float FrameDurationAtIndex(size_t) const { return 0; }
+  // Duration for displaying a frame. This method is only used by animated
+  // images.
+  virtual TimeDelta FrameDurationAtIndex(size_t) const { return TimeDelta(); }
 
   // Number of bytes in the decoded frame. Returns 0 if the decoder doesn't
   // have this frame cached (either because it hasn't been decoded, or because
@@ -249,6 +253,15 @@ class PLATFORM_EXPORT ImageDecoder {
   // Callers may pass WTF::kNotFound to clear all frames.
   // Note: If |frame_buffer_cache_| contains only one frame, it won't be
   // cleared. Returns the number of bytes of frame data actually cleared.
+  //
+  // This is a virtual method because MockImageDecoder needs to override it in
+  // order to run the test ImageFrameGeneratorTest::ClearMultiFrameDecode.
+  //
+  // @TODO  Let MockImageDecoder override ImageFrame::ClearFrameBuffer instead,
+  //        so this method can be made non-virtual. It is used in the test
+  //        ImageFrameGeneratorTest::ClearMultiFrameDecode. The test needs to
+  //        be modified since two frames may be kept in cache, instead of
+  //        always just one, with this ClearCacheExceptFrame implementation.
   virtual size_t ClearCacheExceptFrame(size_t);
 
   // If the image has a cursor hot-spot, stores it in the argument
@@ -388,9 +401,7 @@ class PLATFORM_EXPORT ImageDecoder {
   // |index| is smaller than |frame_buffer_cache_|.size().
   virtual bool FrameStatusSufficientForSuccessors(size_t index) {
     DCHECK(index < frame_buffer_cache_.size());
-    ImageFrame::Status frame_status = frame_buffer_cache_[index].GetStatus();
-    return frame_status == ImageFrame::kFramePartial ||
-           frame_status == ImageFrame::kFrameComplete;
+    return frame_buffer_cache_[index].GetStatus() != ImageFrame::kFrameEmpty;
   }
 
  private:

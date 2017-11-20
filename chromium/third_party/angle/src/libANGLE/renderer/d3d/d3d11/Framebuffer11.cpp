@@ -33,7 +33,7 @@ namespace
 gl::Error MarkAttachmentsDirty(const gl::Context *context,
                                const gl::FramebufferAttachment *attachment)
 {
-    if (attachment && attachment->type() == GL_TEXTURE)
+    if (attachment->type() == GL_TEXTURE)
     {
         gl::Texture *texture = attachment->getTexture();
 
@@ -98,16 +98,19 @@ Framebuffer11::~Framebuffer11()
 
 gl::Error Framebuffer11::markAttachmentsDirty(const gl::Context *context) const
 {
-    for (const auto &colorAttachment : mState.getColorAttachments())
+    const auto &colorAttachments = mState.getColorAttachments();
+    for (size_t drawBuffer : mState.getEnabledDrawBuffers())
     {
-        if (colorAttachment.isAttached())
-        {
-            ANGLE_TRY(MarkAttachmentsDirty(context, &colorAttachment));
-        }
+        const gl::FramebufferAttachment &colorAttachment = colorAttachments[drawBuffer];
+        ASSERT(colorAttachment.isAttached());
+        ANGLE_TRY(MarkAttachmentsDirty(context, &colorAttachment));
     }
 
-    ANGLE_TRY(MarkAttachmentsDirty(context, mState.getDepthAttachment()));
-    ANGLE_TRY(MarkAttachmentsDirty(context, mState.getStencilAttachment()));
+    auto dsAttachment = mState.getDepthOrStencilAttachment();
+    if (dsAttachment)
+    {
+        ANGLE_TRY(MarkAttachmentsDirty(context, dsAttachment));
+    }
 
     return gl::NoError();
 }
@@ -276,7 +279,7 @@ gl::Error Framebuffer11::readPixelsImpl(const gl::Context *context,
                                         GLenum type,
                                         size_t outputPitch,
                                         const gl::PixelPackState &pack,
-                                        uint8_t *pixels) const
+                                        uint8_t *pixels)
 {
     const gl::FramebufferAttachment *readAttachment = mState.getReadAttachment();
     ASSERT(readAttachment);
@@ -437,7 +440,7 @@ void Framebuffer11::syncState(const gl::Context *context,
     FramebufferD3D::syncState(context, dirtyBits);
 
     // Call this last to allow the state manager to take advantage of the cached render targets.
-    mRenderer->getStateManager()->invalidateRenderTarget(context);
+    mRenderer->getStateManager()->invalidateRenderTarget();
 
     // Call this to syncViewport for framebuffer default parameters.
     if (mState.getDefaultWidth() != 0 || mState.getDefaultHeight() != 0)
@@ -446,7 +449,7 @@ void Framebuffer11::syncState(const gl::Context *context,
     }
 }
 
-void Framebuffer11::signal(size_t channelID)
+void Framebuffer11::signal(size_t channelID, const gl::Context *context)
 {
     if (channelID == gl::IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS)
     {
@@ -459,12 +462,20 @@ void Framebuffer11::signal(size_t channelID)
         mInternalDirtyBits.set(gl::Framebuffer::DIRTY_BIT_COLOR_ATTACHMENT_0 + channelID);
         mCachedColorRenderTargets[channelID] = nullptr;
     }
+
+    // Notify the context we need to re-validate the RenderTarget.
+    // TODO(jmadill): Check that we're the active draw framebuffer.
+    mRenderer->getStateManager()->invalidateRenderTarget();
 }
 
 gl::Error Framebuffer11::getSamplePosition(size_t index, GLfloat *xy) const
 {
-    UNIMPLEMENTED();
-    return gl::InternalError() << "getSamplePosition is unimplemented.";
+    const gl::FramebufferAttachment *attachment = mState.getFirstNonNullAttachment();
+    ASSERT(attachment);
+    GLsizei sampleCount = attachment->getSamples();
+
+    d3d11_gl::GetSamplePosition(sampleCount, index, xy);
+    return gl::NoError();
 }
 
 bool Framebuffer11::hasAnyInternalDirtyBit() const

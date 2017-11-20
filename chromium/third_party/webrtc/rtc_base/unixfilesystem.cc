@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/rtc_base/unixfilesystem.h"
+#include "rtc_base/unixfilesystem.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -20,7 +20,7 @@
 #include <CoreServices/CoreServices.h>
 #include <IOKit/IOCFBundle.h>
 #include <sys/statvfs.h>
-#include "webrtc/rtc_base/macutils.h"
+#include "rtc_base/macutils.h"
 #endif  // WEBRTC_MAC && !defined(WEBRTC_IOS)
 
 #if defined(WEBRTC_POSIX) && !defined(WEBRTC_MAC) || defined(WEBRTC_IOS)
@@ -44,51 +44,18 @@
 #include <sys/syslimits.h>
 #endif
 
-#include "webrtc/rtc_base/arraysize.h"
-#include "webrtc/rtc_base/checks.h"
-#include "webrtc/rtc_base/fileutils.h"
-#include "webrtc/rtc_base/pathutils.h"
-#include "webrtc/rtc_base/stream.h"
-#include "webrtc/rtc_base/stringutils.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/fileutils.h"
+#include "rtc_base/pathutils.h"
+#include "rtc_base/stream.h"
+#include "rtc_base/stringutils.h"
 
 namespace rtc {
 
 UnixFilesystem::UnixFilesystem() {}
 
 UnixFilesystem::~UnixFilesystem() {}
-
-bool UnixFilesystem::CreateFolder(const Pathname &path, mode_t mode) {
-  std::string pathname(path.pathname());
-  int len = pathname.length();
-  if ((len == 0) || (pathname[len - 1] != '/'))
-    return false;
-
-  struct stat st;
-  int res = ::stat(pathname.c_str(), &st);
-  if (res == 0) {
-    // Something exists at this location, check if it is a directory
-    return S_ISDIR(st.st_mode) != 0;
-  } else if (errno != ENOENT) {
-    // Unexpected error
-    return false;
-  }
-
-  // Directory doesn't exist, look up one directory level
-  do {
-    --len;
-  } while ((len > 0) && (pathname[len - 1] != '/'));
-
-  if (!CreateFolder(Pathname(pathname.substr(0, len)), mode)) {
-    return false;
-  }
-
-  LOG(LS_INFO) << "Creating folder: " << pathname;
-  return (0 == ::mkdir(pathname.c_str(), mode));
-}
-
-bool UnixFilesystem::CreateFolder(const Pathname &path) {
-  return CreateFolder(path, 0755);
-}
 
 bool UnixFilesystem::DeleteFile(const Pathname &filename) {
   LOG(LS_INFO) << "Deleting file:" << filename.pathname();
@@ -142,14 +109,6 @@ bool UnixFilesystem::IsFile(const Pathname& pathname) {
   int res = ::stat(pathname.pathname().c_str(), &st);
   // Treat symlinks, named pipes, etc. all as files.
   return res == 0 && !S_ISDIR(st.st_mode);
-}
-
-bool UnixFilesystem::IsAbsent(const Pathname& pathname) {
-  struct stat st;
-  int res = ::stat(pathname.pathname().c_str(), &st);
-  // Note: we specifically maintain ENOTDIR as an error, because that implies
-  // that you could not call CreateFolder(pathname).
-  return res != 0 && ENOENT == errno;
 }
 
 bool UnixFilesystem::GetFileSize(const Pathname& pathname, size_t *size) {

@@ -742,6 +742,10 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   static void UpdateAncestorShouldPaintFloatingObject(
       const LayoutBox& float_box);
 
+  bool ShouldTruncateOverflowingText() const;
+
+  int GetLayoutPassCountForTesting();
+
  protected:
   LayoutUnit MaxPositiveMarginBefore() const {
     return rare_data_
@@ -877,8 +881,6 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   bool IsSelfCollapsingBlock() const override;
   bool CheckIfIsSelfCollapsingBlock() const;
 
-  bool ShouldTruncateOverflowingText(const LayoutBlockFlow*) const;
-
  protected:
   std::unique_ptr<LayoutBlockFlowRareData> rare_data_;
   std::unique_ptr<FloatingObjects> floating_objects_;
@@ -970,12 +972,14 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
                                          LayoutUnit width,
                                          const AtomicString&,
                                          InlineBox*);
+  void ClearTruncationOnAtomicInlines(RootInlineBox*);
   void MarkLinesDirtyInBlockRange(LayoutUnit logical_top,
                                   LayoutUnit logical_bottom,
                                   RootInlineBox* highest = nullptr);
   // Positions new floats and also adjust all floats encountered on the line if
   // any of them have to move to the next page/column.
   void PositionDialog();
+  void IncrementLayoutPassCount();
 
   // END METHODS DEFINED IN LayoutBlockFlowLine
 };

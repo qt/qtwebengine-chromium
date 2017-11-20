@@ -31,14 +31,14 @@ class SVGImageTest : public ::testing::Test {
   }
 
   void PumpFrame() {
-    Image* image = image_.Get();
+    Image* image = image_.get();
     std::unique_ptr<SkCanvas> null_canvas = SkMakeNullCanvas();
     SkiaPaintCanvas canvas(null_canvas.get());
     PaintFlags flags;
     FloatRect dummy_rect(0, 0, 100, 100);
     image->Draw(&canvas, flags, dummy_rect, dummy_rect,
                 kDoNotRespectImageOrientation,
-                Image::kDoNotClampImageToSourceRect);
+                Image::kDoNotClampImageToSourceRect, Image::kSyncDecode);
   }
 
  private:

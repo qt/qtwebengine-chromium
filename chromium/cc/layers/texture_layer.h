@@ -24,8 +24,7 @@ class SingleReleaseCallback;
 }
 
 namespace cc {
-class BlockingTaskRunner;
-class SingleReleaseCallbackImpl;
+class SingleReleaseCallback;
 class TextureLayerClient;
 
 // A Layer containing a the rendered output of a plugin instance.
@@ -50,7 +49,8 @@ class CC_EXPORT TextureLayer : public Layer {
 
     // Gets a viz::ReleaseCallback that can be called from another thread. Note:
     // the caller must ensure the callback is called.
-    std::unique_ptr<SingleReleaseCallbackImpl> GetCallbackForImplThread();
+    std::unique_ptr<viz::SingleReleaseCallback> GetCallbackForImplThread(
+        scoped_refptr<base::SequencedTaskRunner> main_thread_task_runner);
 
    protected:
     friend class TextureLayer;
@@ -71,9 +71,9 @@ class CC_EXPORT TextureLayer : public Layer {
     void InternalAddRef();
     void InternalRelease();
     void ReturnAndReleaseOnImplThread(
+        const scoped_refptr<base::SequencedTaskRunner>& main_thread_task_runner,
         const gpu::SyncToken& sync_token,
-        bool is_lost,
-        BlockingTaskRunner* main_thread_task_runner);
+        bool is_lost);
 
     // These members are only accessed on the main thread, or on the impl thread
     // during commit where the main thread is blocked.
@@ -157,17 +157,17 @@ class CC_EXPORT TextureLayer : public Layer {
 
   TextureLayerClient* client_;
 
-  bool flipped_;
-  bool nearest_neighbor_;
-  gfx::PointF uv_top_left_;
-  gfx::PointF uv_bottom_right_;
+  bool flipped_ = true;
+  bool nearest_neighbor_ = false;
+  gfx::PointF uv_top_left_ = gfx::PointF();
+  gfx::PointF uv_bottom_right_ = gfx::PointF(1.f, 1.f);
   // [bottom left, top left, top right, bottom right]
-  float vertex_opacity_[4];
-  bool premultiplied_alpha_;
-  bool blend_background_color_;
+  float vertex_opacity_[4] = {1.f, 1.f, 1.f, 1.f};
+  bool premultiplied_alpha_ = true;
+  bool blend_background_color_ = false;
 
   std::unique_ptr<TextureMailboxHolder::MainThreadReference> holder_ref_;
-  bool needs_set_mailbox_;
+  bool needs_set_mailbox_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(TextureLayer);
 };

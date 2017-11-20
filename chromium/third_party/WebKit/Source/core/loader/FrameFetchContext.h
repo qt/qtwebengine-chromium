@@ -53,20 +53,19 @@ class LocalFrameClient;
 class ResourceError;
 class ResourceResponse;
 class Settings;
+struct WebEnabledClientHints;
 class WebTaskRunner;
 
 class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
  public:
   static ResourceFetcher* CreateFetcherFromDocumentLoader(
       DocumentLoader* loader) {
-    auto* context = new FrameFetchContext(loader, nullptr);
-    return ResourceFetcher::Create(context, context->GetTaskRunner());
+    return CreateFetcher(loader, nullptr);
   }
   // Used for creating a FrameFetchContext for an imported Document.
   // |document_loader_| will be set to nullptr.
   static ResourceFetcher* CreateFetcherFromDocument(Document* document) {
-    auto* context = new FrameFetchContext(nullptr, document);
-    return ResourceFetcher::Create(context, context->GetTaskRunner());
+    return CreateFetcher(nullptr, document);
   }
 
   static void ProvideDocumentToContext(FetchContext&, Document*);
@@ -89,6 +88,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
       unsigned long identifier,
       ResourceRequest&,
       const ResourceResponse& redirect_response,
+      Resource::Type,
       const FetchInitiatorInfo& = FetchInitiatorInfo()) override;
   void DispatchDidLoadResourceFromMemoryCache(unsigned long identifier,
                                               const ResourceRequest&,
@@ -152,8 +152,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   MHTMLArchive* Archive() const override;
 
-  std::unique_ptr<WebURLLoader> CreateURLLoader(
-      const ResourceRequest&) override;
+  std::unique_ptr<WebURLLoader> CreateURLLoader(const ResourceRequest&,
+                                                WebTaskRunner*) override;
 
   bool IsDetached() const override { return frozen_state_; }
 
@@ -163,6 +163,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
  private:
   struct FrozenState;
+
+  static ResourceFetcher* CreateFetcher(DocumentLoader*, Document*);
 
   FrameFetchContext(DocumentLoader*, Document*);
 
@@ -174,10 +176,10 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   LocalFrame* GetFrame() const;
   LocalFrameClient* GetLocalFrameClient() const;
   LocalFrame* FrameOfImportsController() const;
-  RefPtr<WebTaskRunner> GetTaskRunner() const;
 
   // FetchContext overrides:
   WebFrameScheduler* GetFrameScheduler() override;
+  RefPtr<WebTaskRunner> GetLoadingTaskRunner() override;
 
   // BaseFetchContext overrides:
   KURL GetSiteForCookies() const override;
@@ -186,7 +188,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   bool ShouldBlockRequestByInspector(const KURL&) const override;
   void DispatchDidBlockRequest(const ResourceRequest&,
                                const FetchInitiatorInfo&,
-                               ResourceRequestBlockedReason) const override;
+                               ResourceRequestBlockedReason,
+                               Resource::Type) const override;
   bool ShouldBypassMainWorldCSP() const override;
   bool IsSVGImageChromeClient() const override;
   void CountUsage(WebFeature) const override;
@@ -216,7 +219,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   ClientHintsPreferences GetClientHintsPreferences() const;
   float GetDevicePixelRatio() const;
   bool ShouldSendClientHint(mojom::WebClientHintsType,
-                            const ClientHintsPreferences&) const;
+                            const ClientHintsPreferences&,
+                            const WebEnabledClientHints&) const;
   // Checks if the origin requested persisting the client hints, and notifies
   // the |ContentSettingsClient| with the list of client hints and the
   // persistence duration.

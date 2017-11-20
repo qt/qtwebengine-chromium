@@ -137,8 +137,7 @@ bool Image11::isDirty() const
     // recovered from TextureStorage AND the texture doesn't require init data (i.e. a blank new
     // texture will suffice) AND robust resource initialization is not enabled then isDirty should
     // still return false.
-    if (mDirty && !mStagingTexture.valid() && !mRecoverFromStorage &&
-        !mRenderer->isRobustResourceInitEnabled())
+    if (mDirty && !mStagingTexture.valid() && !mRecoverFromStorage)
     {
         const Renderer11DeviceCaps &deviceCaps = mRenderer->getRenderer11DeviceCaps();
         const auto &formatInfo                 = d3d11::Format::Get(mInternalFormat, deviceCaps);
@@ -255,8 +254,7 @@ bool Image11::redefine(GLenum target,
         mRenderable = (formatInfo.rtvFormat != DXGI_FORMAT_UNKNOWN);
 
         releaseStagingTexture();
-        mDirty = (formatInfo.dataInitializerFunction != nullptr) ||
-                 mRenderer->isRobustResourceInitEnabled();
+        mDirty = (formatInfo.dataInitializerFunction != nullptr);
 
         return true;
     }
@@ -421,16 +419,20 @@ gl::Error Image11::copyFromFramebuffer(const gl::Context *context,
     {
         size_t bufferSize = destFormatInfo.pixelBytes * sourceArea.width * sourceArea.height;
         angle::MemoryBuffer *memoryBuffer = nullptr;
-        mRenderer->getScratchMemoryBuffer(bufferSize, &memoryBuffer);
-        GLuint memoryBufferRowPitch = destFormatInfo.pixelBytes * sourceArea.width;
+        error = mRenderer->getScratchMemoryBuffer(bufferSize, &memoryBuffer);
 
-        error = mRenderer->readFromAttachment(
-            context, *srcAttachment, sourceArea, destFormatInfo.format, destFormatInfo.type,
-            memoryBufferRowPitch, gl::PixelPackState(), memoryBuffer->data());
+        if (!error.isError())
+        {
+            GLuint memoryBufferRowPitch = destFormatInfo.pixelBytes * sourceArea.width;
 
-        loadFunction.loadFunction(sourceArea.width, sourceArea.height, 1, memoryBuffer->data(),
-                                  memoryBufferRowPitch, 0, dataOffset, mappedImage.RowPitch,
-                                  mappedImage.DepthPitch);
+            error = mRenderer->readFromAttachment(
+                context, *srcAttachment, sourceArea, destFormatInfo.format, destFormatInfo.type,
+                memoryBufferRowPitch, gl::PixelPackState(), memoryBuffer->data());
+
+            loadFunction.loadFunction(sourceArea.width, sourceArea.height, 1, memoryBuffer->data(),
+                                      memoryBufferRowPitch, 0, dataOffset, mappedImage.RowPitch,
+                                      mappedImage.DepthPitch);
+        }
     }
     else
     {
@@ -567,6 +569,7 @@ gl::Error Image11::createStagingTexture()
             ANGLE_TRY(mRenderer->allocateTexture(desc, formatInfo, &mStagingTexture));
         }
 
+        mStagingTexture.setDebugName("Image11::StagingTexture3D");
         mStagingSubresource = D3D11CalcSubresource(lodOffset, 0, lodOffset + 1);
     }
     else if (mTarget == GL_TEXTURE_2D || mTarget == GL_TEXTURE_2D_ARRAY ||
@@ -601,6 +604,7 @@ gl::Error Image11::createStagingTexture()
             ANGLE_TRY(mRenderer->allocateTexture(desc, formatInfo, &mStagingTexture));
         }
 
+        mStagingTexture.setDebugName("Image11::StagingTexture2D");
         mStagingSubresource = D3D11CalcSubresource(lodOffset, 0, lodOffset + 1);
     }
     else
