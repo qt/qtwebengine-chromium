@@ -267,7 +267,7 @@ NetworkConfigWatcherMac::NetworkConfigWatcherMac(Delegate* delegate)
   // We create this notifier thread because the notification implementation
   // needs a thread with a CFRunLoop, and there's no guarantee that
   // CurrentThread::Get() meets that criterion.
-  base::Thread::Options thread_options(base::MessagePumpType::UI, 0);
+  base::Thread::Options thread_options(base::MessagePumpType::DEFAULT, 0);
   notifier_thread_->StartWithOptions(thread_options);
 }
 
