@@ -2022,7 +2022,7 @@ jumbo_static_library("browser") {
   if (!is_mac) {
     deps += [ "//sandbox" ]
   }
-  if (!is_android) {
+  if (!is_android && !use_qt) {
     deps += [
       "//components/vector_icons",
       "//content/browser/tracing:resources",
@@ -2688,6 +2688,10 @@ jumbo_static_library("browser") {
   }
 
   if (use_qt) {
+    sources -= [
+      "tracing/tracing_ui.cc",
+      "tracing/tracing_ui.h",
+    ]
     if (is_win) {
       sources -= [
         "accessibility/browser_accessibility_com_win.cc",
