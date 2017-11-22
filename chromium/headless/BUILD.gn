@@ -71,6 +71,15 @@ repack("pak") {
     "//ui/strings",
   ]
 
+  if (use_qt) {
+    sources -= [
+      "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
+    ]
+    deps -= [
+      "//content/browser/tracing:resources",
+    ]
+  }
+
   output = "$root_out_dir/headless_lib.pak"
 }
 
