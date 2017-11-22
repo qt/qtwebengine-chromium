@@ -158,6 +158,15 @@ template("chrome_extra_paks") {
         "//headless:resources",
       ]
     }
+    if (use_qt) {
+      sources -= [
+        "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
+      ]
+      deps -= [
+        "//content/browser/tracing:resources",
+      ]
+    }
+
     if (is_chromeos) {
       sources += [
         "$root_gen_dir/ash/public/cpp/resources/ash_public_unscaled_resources.pak",

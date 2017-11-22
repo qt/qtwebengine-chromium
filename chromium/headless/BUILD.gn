@@ -75,6 +75,15 @@ repack("pak") {
     "//ui/strings",
   ]
 
+  if (use_qt) {
+    sources -= [
+      "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
+    ]
+    deps -= [
+      "//content/browser/tracing:resources",
+    ]
+  }
+
   if (!is_fuchsia) {
     sources +=
         [ "$root_gen_dir/content/browser/devtools/devtools_resources.pak" ]
