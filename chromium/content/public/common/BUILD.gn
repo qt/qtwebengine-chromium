@@ -364,6 +364,8 @@ mojom("interfaces") {
     "//url/mojo:url_mojom_gurl",
     "//url/mojo:url_mojom_origin",
   ]
+  overridden_deps = [ ]
+  component_deps = [ "//ui/accessibility:ax_gen" ]
 
   component_output_prefix = "content_public_common_mojo_bindings"
   export_class_attribute = "CONTENT_EXPORT"
