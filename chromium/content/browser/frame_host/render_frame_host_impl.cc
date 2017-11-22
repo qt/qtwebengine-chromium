@@ -1830,6 +1830,10 @@ void RenderFrameHostImpl::OnRenderProcessGone(int status, int exit_code) {
   javascript_callbacks_.clear();
   visual_state_callbacks_.clear();
 
+  // Any termination disablers in content loaded by the new process will
+  // be sent again.
+  sudden_termination_disabler_types_enabled_ = 0;
+
   // Ensure that future remote interface requests are associated with the new
   // process's channel.
   remote_associated_interfaces_.reset();
