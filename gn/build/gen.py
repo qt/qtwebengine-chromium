@@ -374,10 +374,17 @@ def WriteGNNinja(path, platform, host, options, args_list):
     ld = cxx
     ar = os.environ.get('AR', 'ar')
 
-  cflags = os.environ.get('CFLAGS', '').split()
-  cflags += os.environ.get('CXXFLAGS', '').split()
-  ldflags = os.environ.get('LDFLAGS', '').split()
-  libflags = os.environ.get('LIBFLAGS', '').split()
+  # QTBUG-64759
+  # cflags = os.environ.get('CFLAGS', '').split()
+  # cflags += os.environ.get('CXXFLAGS', '').split()
+  # ldflags = os.environ.get('LDFLAGS', '').split()
+  # libflags = os.environ.get('LIBFLAGS', '').split()
+
+  cflags = []
+  cflags_cc = []
+  ldflags = []
+  libflags = []
+
   include_dirs = [
       os.path.relpath(os.path.join(REPO_ROOT, 'src'), os.path.dirname(path)),
       '.',
