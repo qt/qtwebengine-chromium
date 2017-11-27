@@ -357,9 +357,14 @@ def write_gn_ninja(path, root_gen_dir, options):
     ld = cxx
     ar = os.environ.get('AR', 'ar')
 
-  cflags = os.environ.get('CFLAGS', '').split()
-  cflags_cc = os.environ.get('CXXFLAGS', '').split()
-  ldflags = os.environ.get('LDFLAGS', '').split()
+  # QTBUG-64759
+  # cflags = os.environ.get('CFLAGS', '').split()
+  # cflags_cc = os.environ.get('CXXFLAGS', '').split()
+  # ldflags = os.environ.get('LDFLAGS', '').split()
+  cflags = []
+  cflags_cc = []
+  ldflags = []
+
   include_dirs = [root_gen_dir, SRC_ROOT]
   libs = []
 
