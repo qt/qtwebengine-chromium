@@ -301,9 +301,13 @@ config("compiler") {
       "-Wno-unknown-attributes",
       "-Wno-unknown-warning-option"
     ]
+    cflags_cc += [
+      "-Wno-parentheses-equality",
+      "-Wno-tautological-compare"
+    ]
   }
 
-  if (is_clang && is_debug) {
+  if (is_clang && (is_debug || use_qt)) {
     # Allow comparing the address of references and 'this' against 0
     # in debug builds. Technically, these can never be null in
     # well-defined C/C++ and Clang can optimize such checks away in
