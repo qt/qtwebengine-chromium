@@ -229,9 +229,15 @@ void DevToolsAgentHostImpl::InspectElement(
     DevToolsAgentHostClient* client,
     int x,
     int y) {
-  DevToolsSession* session = SessionByClient(client);
+  DevToolsSession* session = nullptr;
+  if (client)
+    session = SessionByClient(client);
+  else if (sessions_.size() == 1)
+    session = *sessions_.begin();
   if (session)
     InspectElement(session, x, y);
+  else
+    LOG(WARNING) << "InspectElement called with unknown or ambigious client";
 }
 
 std::string DevToolsAgentHostImpl::GetId() {
