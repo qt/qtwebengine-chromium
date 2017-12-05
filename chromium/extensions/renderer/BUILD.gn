@@ -263,6 +263,13 @@ source_set("renderer") {
     "//ui/strings:auto_image_annotation_strings_grit",
   ]
 
+  if (is_qtwebengine) {
+    deps -= [
+      "//chrome:resources",
+      "//third_party/cld_3/src/src:cld_3",
+    ]
+  }
+
   # TODO(https://crbug.com/356905053): The following files don't compile
   # cleanly with the experimental desktop-android build. Either make them
   # compile, or determine they should not be included and place them under a

@@ -1939,7 +1939,6 @@ static_library("browser") {
     "//chrome/browser/profiles:profile_util",
     "//chrome/browser/profiles:profile_util_impl",
     "//chrome/browser/profiles:profiles",
-    "//chrome/browser/profiling_host",
     "//chrome/browser/promos:utils",
     "//chrome/browser/resource_coordinator:tab_manager_features",
     "//chrome/browser/resources/accessibility:resources",
@@ -7682,6 +7681,7 @@ static_library("browser") {
     deps += [
       "//apps",
       "//chrome/browser/web_applications/extensions",
+      "//chrome/browser/profiling_host",
       "//chrome/common/apps/platform_apps",
       "//chrome/common/extensions/api",
       "//chrome/common/extensions/api:extensions_features",

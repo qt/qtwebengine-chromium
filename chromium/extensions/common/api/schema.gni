@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/features.gni")
 import("//extensions/buildflags/buildflags.gni")
 
 # APIs and features included in both normal desktop builds and the experimental
@@ -120,6 +121,21 @@ if (enable_desktop_android_extensions) {
     "storage.json",
     "virtual_keyboard.idl",
     "virtual_keyboard_private.json",
+  ]
+}
+
+if (is_qtwebengine) {
+  extensions_api_schema_files_ -= [
+    "bluetooth.idl",
+    "bluetooth_low_energy.idl",
+    "bluetooth_private.idl",
+    "bluetooth_socket.idl",
+    "feedback_private.idl",
+    "system_cpu.idl",
+    "system_display.idl",
+    "system_memory.idl",
+    "system_network.idl",
+    "system_storage.idl",
   ]
 }
 
