@@ -1954,7 +1954,6 @@ static_library("browser") {
     "//chrome/browser/privacy_budget",
     "//chrome/browser/profiles",
     "//chrome/browser/profiles:profile",
-    "//chrome/browser/profiling_host",
     "//chrome/browser/promo_browser_command:mojo_bindings",
     "//chrome/browser/push_messaging:budget_proto",
     "//chrome/browser/resource_coordinator:mojo_bindings",
@@ -4254,7 +4253,6 @@ static_library("browser") {
       "//chrome/browser/resources:component_extension_resources",
       "//chrome/browser/ui/color:color_headers",
       "//chrome/browser/web_applications/components",
-      "//chrome/common/apps/platform_apps",
       "//chrome/common/cart:mojo_bindings",
       "//chrome/common/importer:interfaces",
       "//chrome/common/search:generate_chrome_colors_info",
@@ -4301,6 +4299,7 @@ static_library("browser") {
     }
     if (enable_extensions) {
       deps += [
+        "//chrome/common/apps/platform_apps",
         "//extensions/browser",
         "//extensions/browser/api:api_implementations",
         "//extensions/common:mojom",
@@ -5956,6 +5955,7 @@ static_library("browser") {
     deps += [
       "//apps",
       "//chrome/browser/sync_file_system/drive_backend:sync_file_system_drive_proto",
+      "//chrome/browser/profiling_host",
       "//chrome/browser/web_applications",
       "//chrome/browser/web_applications/components",
       "//chrome/browser/web_applications/extensions",

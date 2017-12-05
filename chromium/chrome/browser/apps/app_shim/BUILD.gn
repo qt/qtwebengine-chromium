@@ -1,6 +1,7 @@
 # Copyright 2015 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+import("//extensions/buildflags/buildflags.gni")
 
 # This is the part of the Chrome browser process responsible for launching and
 # communicating with app_shim processes on Mac.
@@ -18,16 +19,9 @@ source_set("app_shim") {
     "app_shim_termination_manager.h",
     "mach_bootstrap_acceptor.cc",
     "mach_bootstrap_acceptor.h",
-    "web_app_shim_manager_delegate_mac.cc",
-    "web_app_shim_manager_delegate_mac.h",
   ]
 
   deps = [
-    "//apps",
-    "//chrome/browser:browser_process",
-    "//chrome/browser/profiles:profile",
-    "//chrome/browser/web_applications:web_applications",
-    "//chrome/browser/web_applications/components",
     "//chrome/common",
     "//chrome/common:app_mode_app_support",
     "//chrome/common:constants",
@@ -38,7 +32,22 @@ source_set("app_shim") {
     "//components/version_info",
     "//content/public/browser",
     "//content/public/common",
-    "//services/preferences/public/cpp:cpp",
     "//ui/views:views",
   ]
+
+  if (enable_extensions) {
+    sources += [
+      "web_app_shim_manager_delegate_mac.cc",
+      "web_app_shim_manager_delegate_mac.h",
+    ]
+
+    deps += [
+      "//apps",
+      "//chrome/browser:browser_process",
+      "//chrome/browser/profiles:profile",
+      "//chrome/browser/web_applications:web_applications",
+      "//chrome/browser/web_applications/components",
+      "//services/preferences/public/cpp:cpp",
+    ]
+  }
 }

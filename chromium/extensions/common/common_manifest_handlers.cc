@@ -57,8 +57,10 @@ void RegisterCommonManifestHandlers() {
 #endif
   registry->RegisterHandler(std::make_unique<AutomationHandler>());
   registry->RegisterHandler(std::make_unique<BackgroundManifestHandler>());
+#if !defined(TOOLKIT_QT)
   registry->RegisterHandler(std::make_unique<BluetoothManifestHandler>());
   registry->RegisterHandler(std::make_unique<ContentCapabilitiesHandler>());
+#endif
   registry->RegisterHandler(std::make_unique<ContentScriptsHandler>());
   registry->RegisterHandler(std::make_unique<CSPHandler>());
   registry->RegisterHandler(

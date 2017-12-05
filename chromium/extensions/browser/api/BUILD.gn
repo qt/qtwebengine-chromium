@@ -185,6 +185,21 @@ group("api_implementations") {
       "//extensions/browser/api/webcam_private",
     ]
   }
+
+  if (use_qt) {
+    public_deps -= [
+      "//extensions/browser/api/bluetooth",
+      "//extensions/browser/api/bluetooth_low_energy",
+      "//extensions/browser/api/bluetooth_socket",
+      "//extensions/browser/api/feedback_private",
+      "//extensions/browser/api/system_cpu",
+      "//extensions/browser/api/system_display",
+      "//extensions/browser/api/system_info",
+      "//extensions/browser/api/system_memory",
+      "//extensions/browser/api/system_network",
+      "//extensions/browser/api/system_storage",
+    ]
+  }
 }
 
 function_registration("api_registration") {

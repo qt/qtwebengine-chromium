@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 group("web_app_group") {
   public_configs = [ "//build/config/compiler:wexit_time_destructors" ]
