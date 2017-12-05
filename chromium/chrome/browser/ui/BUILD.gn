@@ -3254,10 +3254,15 @@ static_library("ui") {
       "//components/remote_cocoa/app_shim:features",
       "//components/remote_cocoa/browser",
       "//device/fido/strings:strings_grit",
-      "//extensions/components/native_app_window",
       "//third_party/google_toolbox_for_mac",
       "//ui/accelerated_widget_mac",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//extensions/components/native_app_window",
+      ]
+    }
     include_dirs = [ "$target_gen_dir" ]
     frameworks = [
       "Carbon.framework",

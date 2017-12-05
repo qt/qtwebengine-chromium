@@ -65,7 +65,9 @@ void EnsureCoreBrowserContextKeyedServiceFactoriesBuilt() {
   ServiceWorkerKeepalive::EnsureShutdownNotifierFactoryBuilt();
   ServiceWorkerTaskQueueFactory::GetInstance();
   UnpackedInstaller::EnsureShutdownNotifierFactoryBuilt();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   UpdateServiceFactory::GetInstance();
+#endif
   UserScriptWorldConfigurationManager::GetFactory();
   WebRequestEventRouterFactory::GetInstance();
 }

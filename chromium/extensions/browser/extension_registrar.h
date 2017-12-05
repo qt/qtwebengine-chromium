@@ -17,7 +17,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "components/keyed_service/core/keyed_service.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/model/string_ordinal.h"
+#endif
 #include "extensions/browser/blocklist_state.h"
 #include "extensions/browser/delayed_install_manager.h"
 #include "extensions/browser/disable_reason.h"
@@ -129,11 +131,13 @@ class ExtensionRegistrar : public KeyedService,
     // `install_flags`            a bitmask of InstallFlags
     // `ruleset_install_prefs`    Install prefs needed for the Declarative Net
     //                            Request API.
+#if !BUILDFLAG(IS_QTWEBENGINE)
     virtual void OnExtensionInstalled(
         const Extension* extension,
         const syncer::StringOrdinal& page_ordinal,
         int install_flags,
         base::DictValue ruleset_install_prefs) = 0;
+#endif
   };
 
   explicit ExtensionRegistrar(content::BrowserContext* browser_context);
@@ -173,6 +177,7 @@ class ExtensionRegistrar : public KeyedService,
   // added as enabled, it will be activated.
   void AddExtension(scoped_refptr<const Extension> extension);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Updates preferences for a new or updated extension; notifies observers that
   // the extension is installed, e.g., to update event handlers on background
   // pages; and performs other extension install tasks before calling
@@ -202,6 +207,7 @@ class ExtensionRegistrar : public KeyedService,
     OnExtensionInstalled(extension, page_ordinal,
                          static_cast<int>(kInstallFlagNone));
   }
+#endif
 
   // Removes `extension` from the extension system by deactivating it if it is
   // enabled and removing references to it from the ExtensionRegistry's

@@ -149,6 +149,18 @@ function_registration("api_registration") {
     "//ui/accessibility:ax_enums_mojo",
   ]
 
+  if (is_qtwebengine) {
+     deps -= [
+       "//chrome/browser/ai",
+       "//chrome/common",
+       "//chrome/common:mojo_bindings",
+       "//components/omnibox/browser",
+       "//components/policy/proto",
+       "//components/translate/core/browser",
+       "//components/sync"
+     ]
+  }
+
   if (is_chromeos) {
     deps += [
       "//chrome/browser/ash/extensions/autotest_private",
