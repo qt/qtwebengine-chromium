@@ -888,8 +888,12 @@ class FeatureCompiler(object):
     cc_file = self._out_base_filename + '.cc'
 
     include_file_root = self._out_root[len(self._gen_dir_relpath)+1:]
-    header_file_path = '%s/%s' % (include_file_root, header_file)
+    if include_file_root:
+      header_file_path = '%s/%s' % (include_file_root, header_file)
+    else:
+      header_file_path = header_file
     cc_file_path = '%s/%s' % (include_file_root, cc_file)
+
     substitutions = ({
         'header_file_path': header_file_path,
         'header_guard': (header_file_path.replace('/', '_').

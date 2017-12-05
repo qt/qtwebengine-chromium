@@ -140,6 +140,7 @@ class ExtensionSystem : public KeyedService {
   virtual std::unique_ptr<ExtensionSet> GetDependentExtensions(
       const Extension* extension) = 0;
 
+#if !defined(TOOLKIT_QT)
   // Install an updated version of |extension_id| with the version given in
   // |unpacked_dir|. If |install_immediately| is true, the system will install
   // the given extension immediately instead of waiting until idle. Ownership
@@ -150,6 +151,7 @@ class ExtensionSystem : public KeyedService {
                              const base::FilePath& unpacked_dir,
                              bool install_immediately,
                              InstallUpdateCallback install_update_callback) = 0;
+#endif
 
   // Perform various actions depending on the Omaga attributes on the extension.
   virtual void PerformActionBasedOnOmahaAttributes(

@@ -271,6 +271,13 @@ source_set("renderer") {
 
   # Temporarily allow crash_key; see https://crbug.com/1034755
   deps += [ "//components/crash/core/common:crash_key" ]
+
+  if (use_qt) {
+    deps -= [
+      "//chrome:resources",
+      "//third_party/cld_3/src/src:cld_3",
+    ]
+  }
 }
 
 static_library("unit_test_support") {
