@@ -481,6 +481,20 @@ static_library("common") {
     "//url",
   ]
 
+  if (use_qt) {
+    deps -= [
+      "//components/crx_file"
+    ]
+    sources -= [
+      "api/bluetooth/bluetooth_manifest_data.cc",
+      "api/bluetooth/bluetooth_manifest_data.h",
+      "api/bluetooth/bluetooth_manifest_handler.cc",
+      "api/bluetooth/bluetooth_manifest_handler.h",
+      "api/bluetooth/bluetooth_manifest_permission.cc",
+      "api/bluetooth/bluetooth_manifest_permission.h",
+    ]
+  }
+
   if (enable_nacl) {
     sources += [
       "manifest_handlers/nacl_modules_handler.cc",

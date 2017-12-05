@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -69,7 +70,7 @@ bool IsValidHostName(base::StringPiece host,
   // Remove the trailing dot from tld if present, as for Google domains it's the
   // same page.
   StripTrailingDot(&tld);
-  if (!allowed_tlds.contains(tld))
+  if (allowed_tlds->find(std::string(tld)) == allowed_tlds->end())
     return false;
 
   if (base::LowerCaseEqualsASCII(host_minus_tld, domain_in_lower_case))
@@ -103,16 +104,16 @@ bool IsCanonicalHostGoogleHostname(base::StringPiece canonical_host,
   if (base_url.is_valid() && (canonical_host == base_url.host_piece()))
     return true;
 
-  static constexpr auto google_tlds =
-      base::MakeFixedFlatSet<base::StringPiece>({GOOGLE_TLD_LIST});
+  static base::NoDestructor<std::set<std::string>> google_tlds(
+      std::move(std::set<std::string>{GOOGLE_TLD_LIST}));
   return IsValidHostName(canonical_host, "google", subdomain_permission,
                          google_tlds);
 }
 
 bool IsCanonicalHostYoutubeHostname(base::StringPiece canonical_host,
                                     SubdomainPermission subdomain_permission) {
-  static constexpr auto youtube_tlds =
-      base::MakeFixedFlatSet<base::StringPiece>({YOUTUBE_TLD_LIST});
+  static base::NoDestructor<std::set<std::string>> youtube_tlds(
+      std::move(std::set<std::string>{YOUTUBE_TLD_LIST}));
 
   return IsValidHostName(canonical_host, "youtube", subdomain_permission,
                          youtube_tlds) ||
