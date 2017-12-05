@@ -42,6 +42,11 @@ source_set("browser_context_keyed_service_factories") {
     "//extensions/browser/api:api_implementations",
     "//extensions/browser/updater",
   ]
+  if (use_qt) {
+    deps -= [
+      "//extensions/browser/updater",
+    ]
+  }
 }
 
 source_set("browser_sources") {
@@ -443,6 +448,36 @@ source_set("browser_sources") {
     "//build/config/compiler:no_size_t_to_int_warning",
     "//build/config/compiler:wexit_time_destructors",
   ]
+
+  if (use_qt) {
+    sources -= [
+      "sandboxed_unpacker.cc",
+      "sandboxed_unpacker.h",
+      "uninstall_reason.h",
+      "update_observer.h",
+      "zipfile_installer.cc",
+      "zipfile_installer.h",
+    ]
+
+    public_deps -= [
+      "//extensions/browser/install",
+      "//extensions/browser/kiosk",
+    ]
+
+    deps -= [
+      "//components/cast_certificate",
+      "//components/cast_channel",
+      "//components/crx_file",
+      "//components/crx_file:crx_creator",
+      "//components/pref_registry",
+      "//components/sessions",
+      "//components/sync",
+      "//components/update_client",
+      "//components/variations",
+      "//components/version_info",
+      "//components/web_cache/browser",
+    ]
+  }
 }
 
 # NOTE: This is separate from ":browser" because it depends on
@@ -543,6 +578,17 @@ source_set("browser_tests") {
       "//extensions/common:mojom",
     ]
   }
+
+  if (use_qt) {
+    sources -= [
+      "api/bluetooth/bluetooth_appshell_test.cc",
+      "api/bluetooth_socket/bluetooth_socket_apitest.cc",
+    ]
+
+    deps -= [
+      "//device/bluetooth:mocks",
+    ]
+  }
 }
 
 source_set("test_support") {
@@ -620,8 +666,8 @@ source_set("unit_tests") {
   sources = [
     "api/alarms/alarms_api_unittest.cc",
     "api/api_resource_manager_unittest.cc",
-    "api/bluetooth/bluetooth_event_router_unittest.cc",
-    "api/bluetooth_socket/bluetooth_socket_api_unittest.cc",
+#    "api/bluetooth/bluetooth_event_router_unittest.cc",
+#    "api/bluetooth_socket/bluetooth_socket_api_unittest.cc",
     "api/cast_channel/cast_channel_api_unittest.cc",
     "api/cast_channel/cast_channel_enum_util_unittest.cc",
     "api/declarative/declarative_rule_unittest.cc",

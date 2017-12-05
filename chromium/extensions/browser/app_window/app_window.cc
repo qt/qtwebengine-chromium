@@ -243,7 +243,9 @@ AppWindow::AppWindow(BrowserContext* context,
                      const Extension* extension)
     : browser_context_(context),
       extension_id_(extension->id()),
+#ifndef TOOLKIT_QT
       session_id_(SessionID::NewUnique()),
+#endif
       app_delegate_(app_delegate) {
   ExtensionsBrowserClient* client = ExtensionsBrowserClient::Get();
   CHECK(!client->IsGuestSession(context) || context->IsOffTheRecord())

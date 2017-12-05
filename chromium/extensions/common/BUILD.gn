@@ -406,6 +406,20 @@ if (enable_extensions) {
         "manifest_handlers/action_handlers_handler.h",
       ]
     }
+
+    if (use_qt) {
+      deps -= [
+        "//components/crx_file"
+      ]
+      sources -= [
+        "api/bluetooth/bluetooth_manifest_data.cc",
+        "api/bluetooth/bluetooth_manifest_data.h",
+        "api/bluetooth/bluetooth_manifest_handler.cc",
+        "api/bluetooth/bluetooth_manifest_handler.h",
+        "api/bluetooth/bluetooth_manifest_permission.cc",
+        "api/bluetooth/bluetooth_manifest_permission.h",
+      ]
+    }
   }
 
   # NOTE: This is separate from ":common" because it depends on

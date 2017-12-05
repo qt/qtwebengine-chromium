@@ -590,12 +590,14 @@ void ExtensionDownloader::CreateManifestLoader() {
                                             ? kUpdateInteractivityForeground
                                             : kUpdateInteractivityBackground);
     resource_request->headers.SetHeader(kUpdateAppIdHeader, id_list);
+#if !defined(TOOLKIT_QT)
     resource_request->headers.SetHeader(
         kUpdateUpdaterHeader,
         base::StringPrintf(
             "%s-%s", UpdateQueryParams::GetProdIdString(UpdateQueryParams::CRX),
             UpdateQueryParams::GetProdVersion().c_str()));
     resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+#endif // !defined (TOOLKIT_QT)
   } else {
     // Non-webstore sources may require HTTP auth.
     resource_request->credentials_mode =
