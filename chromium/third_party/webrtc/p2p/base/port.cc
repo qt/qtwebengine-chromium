@@ -11,6 +11,7 @@
 #include "p2p/base/port.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "p2p/base/common.h"
