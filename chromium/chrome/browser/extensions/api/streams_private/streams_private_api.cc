@@ -6,8 +6,10 @@
 
 #include <utility>
 
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/prerender/prerender_contents.h"
+#endif // !defined(TOOLKIT_QT)
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/stream_info.h"
@@ -42,6 +44,7 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
   if (!web_contents)
     return;
 
+#if !defined(TOOLKIT_QT)
   // If the request was for a prerender, abort the prerender and do not
   // continue. This is because plugins cancel prerender, see
   // http://crbug.com/343590.
@@ -51,6 +54,7 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
     prerender_contents->Destroy(prerender::FINAL_STATUS_DOWNLOAD);
     return;
   }
+#endif // !defined(TOOLKIT_QT)
 
   auto* browser_context = web_contents->GetBrowserContext();
 

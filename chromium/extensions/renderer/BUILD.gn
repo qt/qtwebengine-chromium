@@ -374,6 +374,11 @@ jumbo_source_set("renderer") {
       "//third_party/wds:libwds",
     ]
   }
+  if (use_qt) {
+    deps -= [
+      "//chrome:resources"
+    ]
+  }
 }
 
 jumbo_static_library("unit_test_support") {

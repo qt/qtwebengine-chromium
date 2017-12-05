@@ -117,7 +117,7 @@ bool IsCanonicalHostGoogleHostname(base::StringPiece canonical_host,
   StripTrailingDot(&tld);
 
   static base::NoDestructor<std::set<std::string>> google_tlds(
-      {GOOGLE_TLD_LIST});
+      std::move(std::set<std::string>{GOOGLE_TLD_LIST}));
   return base::ContainsKey(*google_tlds, tld.as_string());
 }
 
@@ -132,7 +132,7 @@ bool IsGoogleSearchSubdomainUrl(const GURL& url) {
   StripTrailingDot(&host);
 
   static base::NoDestructor<std::set<std::string>> google_subdomains(
-      {"ipv4.google.com", "ipv6.google.com"});
+      std::move(std::set<std::string>{"ipv4.google.com", "ipv6.google.com"}));
 
   return base::ContainsKey(*google_subdomains, host.as_string());
 }

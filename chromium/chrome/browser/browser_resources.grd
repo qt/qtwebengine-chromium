@@ -687,7 +687,7 @@
       <include name="IDR_CHROME_CONTENT_PACKAGED_SERVICES_MANIFEST_OVERLAY" file="${root_gen_dir}\chrome\app\chrome_content_packaged_services_manifest_overlay.json" type="BINDATA" use_base_dir="false"/>
       <include name="IDR_CHROME_CONTENT_RENDERER_MANIFEST_OVERLAY" file="${root_gen_dir}\chrome\app\chrome_content_renderer_manifest_overlay.json" type="BINDATA" use_base_dir="false" />
       <include name="IDR_CHROME_CONTENT_UTILITY_MANIFEST_OVERLAY" file="${root_gen_dir}\chrome\app\chrome_content_utility_manifest_overlay.json" type="BINDATA" use_base_dir="false" />
-      <include name="IDR_NACL_LOADER_MANIFEST" file="../../components/nacl/loader/nacl_loader_manifest.json" type="BINDATA" />
+      <!--include name="IDR_NACL_LOADER_MANIFEST" file="../../components/nacl/loader/nacl_loader_manifest.json" type="BINDATA" />
       <if expr="is_win">
         <include name="IDR_NACL_BROKER_MANIFEST" file="../../components/nacl/broker/nacl_broker_manifest.json" type="BINDATA" />
       </if>
@@ -714,12 +714,12 @@
         <include name="IDR_NUX_GOOGLE_APPS_TRANSLATE_2X" file="resources\welcome\onboarding_welcome\images\translate_2x.png" type="BINDATA" />
         <include name="IDR_NUX_GOOGLE_APPS_YOUTUBE_1X" file="resources\welcome\onboarding_welcome\images\youtube_1x.png" type="BINDATA" />
         <include name="IDR_NUX_GOOGLE_APPS_YOUTUBE_2X" file="resources\welcome\onboarding_welcome\images\youtube_2x.png" type="BINDATA" />
-      </if>
+      </if-->
       <if expr="is_win">
         <include name="IDR_WELCOME_WIN10_DEFAULT_WEBP" file="resources\welcome\default.webp" type="BINDATA" />
         <include name="IDR_WELCOME_WIN10_PIN_WEBP" file="resources\welcome\pin.webp" type="BINDATA" />
       </if>
-      <include name="IDR_SSL_ERROR_ASSISTANT_PB" file="${root_gen_dir}/chrome/browser/resources/ssl/ssl_error_assistant/ssl_error_assistant.pb" use_base_dir="false" type="BINDATA" />
+      <!--include name="IDR_SSL_ERROR_ASSISTANT_PB" file="${root_gen_dir}/chrome/browser/resources/ssl/ssl_error_assistant/ssl_error_assistant.pb" use_base_dir="false" type="BINDATA" /-->
       <if expr="is_android or is_linux">
         <include name="IDR_SANDBOX_INTERNALS_HTML" file="resources\sandbox_internals\sandbox_internals.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" compress="gzip" />
         <include name="IDR_SANDBOX_INTERNALS_JS" file="resources\sandbox_internals\sandbox_internals.js" type="BINDATA" compress="gzip" />
@@ -748,12 +748,13 @@
         <include name="IDR_RESET_PASSWORD_JS" file="resources\reset_password\reset_password.js" type="BINDATA" compress="gzip" />
         <include name="IDR_RESET_PASSWORD_MOJO_JS" file="${root_gen_dir}\chrome\browser\ui\webui\reset_password\reset_password.mojom.js" use_base_dir="false" type="BINDATA" compress="gzip" />
       </if>
-      <if expr="not is_android">
+      <!-- TO DO mibrunin - find a proper solution to this -->
+      <!--if expr="not is_android">
         <include name="IDR_TAB_RANKER_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="resource_coordinator\tab_ranker\example_preprocessor_config.pb" type="BINDATA" />
       </if>
       <if expr="chromeos">
         <include name="IDR_SMART_DIM_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="chromeos\power\ml\smart_dim\example_preprocessor_config.pb" type="BINDATA" />
-      </if>
+      </if-->
     </includes>
   </release>
 </grit>
