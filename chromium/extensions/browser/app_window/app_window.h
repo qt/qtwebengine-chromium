@@ -14,7 +14,7 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "components/sessions/core/session_id.h"
+// #include "components/sessions/core/session_id.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -234,7 +234,7 @@ class AppWindow : public content::WebContentsDelegate,
             const CreateParams& params);
 
   const std::string& window_key() const { return window_key_; }
-  const SessionID& session_id() const { return session_id_; }
+//   const SessionID& session_id() const { return session_id_; }
   const std::string& extension_id() const { return extension_id_; }
   content::WebContents* web_contents() const;
   WindowType window_type() const { return window_type_; }
@@ -533,7 +533,7 @@ class AppWindow : public content::WebContentsDelegate,
   // window.
   std::string window_key_;
 
-  const SessionID session_id_;
+//   const SessionID session_id_;
   WindowType window_type_ = WINDOW_TYPE_DEFAULT;
 
   // Custom icon shown in the task bar or in Chrome OS shelf.

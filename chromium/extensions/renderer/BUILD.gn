@@ -312,6 +312,12 @@ source_set("renderer") {
       "//third_party/wds:libwds",
     ]
   }
+  if (use_qt) {
+    deps -= [
+      "//chrome:resources",
+      "//third_party/cld_3/src/src:cld_3",
+    ]
+  }
 }
 
 static_library("unit_test_support") {

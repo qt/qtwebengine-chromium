@@ -31,8 +31,15 @@ source_set("qtwebengine_content_browser_overlay_manifest") {
 
   deps = [
     "//base",
+    "//extensions/buildflags",
     "//services/service_manager/public/cpp",
   ]
+  if (enable_extensions) {
+    deps += [
+      "//extensions/common:mojom",
+      "//extensions/common/api:mojom",
+    ]
+  }
 }
 
 source_set("qtwebengine_content_renderer_overlay_manifest") {
@@ -43,8 +50,12 @@ source_set("qtwebengine_content_renderer_overlay_manifest") {
 
   deps = [
     "//base",
+    "//extensions/buildflags",
     "//services/service_manager/public/cpp",
   ]
+  if (enable_extensions) {
+    deps += [ "//extensions/common:mojom" ]
+  }
 }
 
 source_set("service_manifests") {
