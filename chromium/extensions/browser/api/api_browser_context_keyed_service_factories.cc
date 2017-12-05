@@ -8,6 +8,7 @@
 #include "build/chromeos_buildflags.h"
 #include "extensions/browser/api/alarms/alarm_manager.h"
 #include "extensions/browser/api/api_resource_manager.h"
+#if !defined(TOOLKIT_QT)
 #include "extensions/browser/api/audio/audio_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_private_api.h"
@@ -17,9 +18,12 @@
 #include "extensions/browser/api/bluetooth_socket/bluetooth_api_socket.h"
 #include "extensions/browser/api/bluetooth_socket/bluetooth_socket_event_dispatcher.h"
 #include "extensions/browser/api/content_settings/content_settings_service.h"
+#endif // !defined(TOOLKIT_QT)
 #include "extensions/browser/api/declarative/rules_registry_service.h"
 #include "extensions/browser/api/declarative_net_request/rules_monitor_service.h"
+#if !defined(TOOLKIT_QT)
 #include "extensions/browser/api/feedback_private/feedback_private_api.h"
+#endif // !defined(TOOLKIT_QT)
 #include "extensions/browser/api/hid/hid_connection_resource.h"
 #include "extensions/browser/api/hid/hid_device_manager.h"
 #include "extensions/browser/api/idle/idle_manager_factory.h"
@@ -41,8 +45,10 @@
 #include "extensions/browser/api/sockets_udp/udp_socket_event_dispatcher.h"
 #include "extensions/browser/api/storage/session_storage_manager.h"
 #include "extensions/browser/api/storage/storage_frontend.h"
+#if !defined(TOOLKIT_QT)
 #include "extensions/browser/api/system_info/system_info_api.h"
 #include "extensions/browser/api/usb/usb_device_manager.h"
+#endif
 #include "extensions/browser/api/usb/usb_device_resource.h"
 #include "extensions/browser/api/web_request/web_request_api.h"
 #include "extensions/browser/api/web_request/web_request_proxying_url_loader_factory.h"
@@ -64,21 +70,25 @@ namespace extensions {
 
 void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   AlarmManager::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   ApiResourceManager<BluetoothApiAdvertisement>::GetFactoryInstance();
   ApiResourceManager<BluetoothApiSocket>::GetFactoryInstance();
   ApiResourceManager<BluetoothLowEnergyConnection>::GetFactoryInstance();
   ApiResourceManager<BluetoothLowEnergyNotifySession>::GetFactoryInstance();
-  ApiResourceManager<HidConnectionResource>::GetFactoryInstance();
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   ApiResourceManager<LogSourceResource>::GetFactoryInstance();
 #endif
+#endif
+  ApiResourceManager<HidConnectionResource>::GetFactoryInstance();
   ApiResourceManager<ResumableTCPServerSocket>::GetFactoryInstance();
   ApiResourceManager<ResumableTCPSocket>::GetFactoryInstance();
   ApiResourceManager<ResumableUDPSocket>::GetFactoryInstance();
   ApiResourceManager<SerialConnection>::GetFactoryInstance();
   ApiResourceManager<Socket>::GetFactoryInstance();
   ApiResourceManager<UsbDeviceResource>::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   api::BluetoothSocketEventDispatcher::GetFactoryInstance();
+#endif
   api::SerialPortManager::GetFactoryInstance();
   api::TCPServerSocketEventDispatcher::GetFactoryInstance();
   api::TCPSocketEventDispatcher::GetFactoryInstance();
@@ -86,6 +96,7 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
 #if BUILDFLAG(IS_CHROMEOS)
   AppFirewallHoleManager::EnsureFactoryBuilt();
 #endif
+#if !defined(TOOLKIT_QT)
   AudioAPI::GetFactoryInstance();
   BluetoothAPI::GetFactoryInstance();
   BluetoothPrivateAPI::GetFactoryInstance();
@@ -93,10 +104,13 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   ClipboardAPI::GetFactoryInstance();
 #endif
   ContentSettingsService::GetFactoryInstance();
+#endif // !defined(TOOLKIT_QT)
   declarative_net_request::RulesMonitorService::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   FeedbackPrivateAPI::GetFactoryInstance();
   HidDeviceManager::GetFactoryInstance();
   IdleManagerFactory::GetInstance();
+#endif // !defined(TOOLKIT_QT)
   ManagementAPI::GetFactoryInstance();
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   MediaPerceptionAPIManager::GetFactoryInstance();
@@ -114,8 +128,10 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   RuntimeAPI::GetFactoryInstance();
   SessionStorageManager::GetFactory();
   StorageFrontend::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   SystemInfoAPI::GetFactoryInstance();
   UsbDeviceManager::GetFactoryInstance();
+#endif // !defined(TOOLKIT_QT)
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   VirtualKeyboardAPI::GetFactoryInstance();
   WebcamPrivateAPI::GetFactoryInstance();

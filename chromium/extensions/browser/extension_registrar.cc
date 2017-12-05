@@ -60,6 +60,7 @@ void ExtensionRegistrar::Shutdown() {
   extension_system_ = nullptr;
 }
 
+#if !defined(TOOLKIT_QT)
 void ExtensionRegistrar::AddExtension(
     scoped_refptr<const Extension> extension) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -133,6 +134,7 @@ void ExtensionRegistrar::AddNewExtension(
     ActivateExtension(extension.get(), true);
   }
 }
+#endif  // !defined(TOOLKIT_QT)
 
 void ExtensionRegistrar::RemoveExtension(const ExtensionId& extension_id,
                                          UnloadedExtensionReason reason) {
