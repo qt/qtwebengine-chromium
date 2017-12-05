@@ -1,6 +1,7 @@
 # Copyright 2017 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+import("//extensions/buildflags/buildflags.gni")
 
 static_library("common") {
   sources = [
@@ -70,11 +71,15 @@ static_library("test_support") {
   ]
   deps = [
     "//base",
-    "//base/test:test_support",
     "//components/media_router/common/mojom:logger",
     "//components/media_router/common/mojom:media_route_provider_id",
   ]
   public_deps = [ ":common" ]
+  if (enable_extensions) {
+    deps += [
+      "//base/test:test_support",
+    ]
+  }
 }
 
 source_set("unit_tests") {
