@@ -146,7 +146,7 @@
         <include name="IDR_HANGOUT_SERVICES_MANIFEST" file="resources\hangout_services\manifest.json" type="BINDATA" />
       </if>
 
-      <if expr="not is_android">
+      <if expr="not is_android and (not is_linux or is_desktop_linux)">
         <!-- Page not available for guest. -->
         <include name="IDR_PAGE_NOT_AVAILABLE_FOR_GUEST_APP_HTML" file="resources\page_not_available_for_guest\app.html" type="BINDATA" />
         <include name="IDR_INLINE_LOGIN_HTML" file="resources\inline_login\inline_login.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
@@ -183,12 +183,12 @@
       <if expr="desktop_linux">
         <include name="IDR_PLUGIN_DB_JSON" file="resources\plugin_metadata\plugins_linux.json" type="BINDATA" />
       </if>
-      <if expr="not is_android">
+      <!-- if expr="not is_android">
         <include name="IDR_MANAGEMENT_HTML" file="resources\management\management.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
         <include name="IDR_MANAGEMENT_UI_JS" file="${root_gen_dir}/chrome/browser/resources/management/management_ui.js" use_base_dir="false" type="BINDATA" preprocess="true" />
         <include name="IDR_MANAGEMENT_BROWSER_PROXY_JS" file="resources\management\management_browser_proxy.js" type="BINDATA" preprocess="true" />
         <include name="IDR_MANAGEMENT_ICONS_JS" file="${root_gen_dir}/chrome/browser/resources/management/icons.js" use_base_dir="false" type="BINDATA" preprocess="true" />
-      </if>
+      </if -->
       <include name="IDR_URL_MOJOM_LITE_JS" file="${root_gen_dir}\url\mojom\url.mojom-lite.js" use_base_dir="false" type="BINDATA" />
       <if expr="is_win or is_macosx or desktop_linux or chromeos">
         <include name="IDR_SYNC_DISABLED_CONFIRMATION_HTML" file="resources\signin\sync_confirmation\sync_disabled_confirmation.html" type="BINDATA" />
@@ -490,10 +490,11 @@
         <include name="IDR_RESET_PASSWORD_JS" file="resources\reset_password\reset_password.js" type="BINDATA" />
         <include name="IDR_RESET_PASSWORD_MOJOM_LITE_JS" file="${root_gen_dir}\chrome\browser\ui\webui\reset_password\reset_password.mojom-lite.js" use_base_dir="false" type="BINDATA" />
       </if>
-      <if expr="not is_android">
+      <!-- TO DO mibrunin - find a proper solution to this -->
+      <!--if expr="not is_android">
         <include name="IDR_TAB_RANKER_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="resource_coordinator\tab_ranker\example_preprocessor_config.pb" type="BINDATA" />
         <include name="IDR_TAB_RANKER_PAIRWISE_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="resource_coordinator\tab_ranker\pairwise_preprocessor_config.pb" type="BINDATA" />
-      </if>
+      </if-->
       <if expr="chromeos">
         <include name="IDR_SMART_DIM_20181115_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="chromeos\power\ml\smart_dim\20181115_example_preprocessor_config.pb" type="BINDATA" />
         <include name="IDR_SMART_DIM_20190521_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="chromeos\power\ml\smart_dim\20190521_example_preprocessor_config.pb" type="BINDATA" />

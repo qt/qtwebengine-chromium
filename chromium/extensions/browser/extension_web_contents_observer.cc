@@ -159,13 +159,17 @@ void ExtensionWebContentsObserver::ReadyToCommitNavigation(
   const ExtensionRegistry* const registry =
       ExtensionRegistry::Get(browser_context_);
 
+#ifndef TOOLKIT_QT
   const Extension* const extension =
       GetExtensionFromFrame(web_contents()->GetMainFrame(), false);
   KioskDelegate* const kiosk_delegate =
       ExtensionsBrowserClient::Get()->GetKioskDelegate();
   DCHECK(kiosk_delegate);
   bool is_kiosk =
-      extension && kiosk_delegate->IsAutoLaunchedKioskApp(extension->id());
+      extension && kiosk_delegate && kiosk_delegate->IsAutoLaunchedKioskApp(extension->id());
+#else
+  bool is_kiosk = false;
+#endif
 
   // If the top most frame is an extension, packaged app, hosted app, etc. then
   // the main frame and all iframes should be able to autoplay without

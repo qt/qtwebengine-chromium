@@ -6,9 +6,11 @@
 
 #include <utility>
 
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/prefetch/no_state_prefetch/chrome_prerender_contents_delegate.h"
 #include "components/no_state_prefetch/browser/prerender_contents.h"
+#endif // !defined(TOOLKIT_QT)
 #include "components/sessions/core/session_id.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
@@ -42,6 +44,7 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
   if (!web_contents)
     return;
 
+#if !defined(TOOLKIT_QT)
   // If the request was for a prerender, abort the prerender and do not
   // continue. This is because plugins cancel prerender, see
   // http://crbug.com/343590.
@@ -51,6 +54,7 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
     prerender_contents->Destroy(prerender::FINAL_STATUS_DOWNLOAD);
     return;
   }
+#endif // !defined(TOOLKIT_QT)
 
   auto* browser_context = web_contents->GetBrowserContext();
 
@@ -79,7 +83,11 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
   // contents.
   int tab_id = web_contents->GetOuterWebContents()
                    ? SessionID::InvalidValue().id()
+#if !defined(TOOLKIT_QT)
                    : ExtensionTabUtil::GetTabId(web_contents);
+#else
+                   : -1;
+#endif // !defined(TOOLKIT_QT)
 
   std::unique_ptr<StreamContainer> stream_container(
       new StreamContainer(tab_id, embedded, handler_url, extension_id,
