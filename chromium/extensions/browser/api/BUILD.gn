@@ -152,6 +152,22 @@ source_set("api") {
       "//chromeos/services/media_perception/public/mojom:mojom_js_data_deps",
     ]
   }
+
+  if (use_qt) {
+    public_deps -= [
+      "//extensions/browser/api/bluetooth",
+      "//extensions/browser/api/bluetooth_low_energy",
+      "//extensions/browser/api/bluetooth_socket",
+      "//extensions/browser/api/cast_channel",
+      "//extensions/browser/api/feedback_private",
+      "//extensions/browser/api/system_cpu",
+      "//extensions/browser/api/system_display",
+      "//extensions/browser/api/system_info",
+      "//extensions/browser/api/system_memory",
+      "//extensions/browser/api/system_network",
+      "//extensions/browser/api/system_storage",
+    ]
+  }
 }
 
 function_registration("api_registration") {

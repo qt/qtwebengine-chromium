@@ -2006,7 +2006,6 @@ jumbo_static_library("browser") {
     "//chrome/browser/net:probe_message_proto",
     "//chrome/browser/notifications",
     "//chrome/browser/performance_manager:site_data_proto",
-    "//chrome/browser/profiling_host",
     "//chrome/browser/push_messaging:budget_proto",
     "//chrome/browser/reputation:proto",
     "//chrome/browser/resource_coordinator:mojo_bindings",
@@ -4869,6 +4868,7 @@ jumbo_static_library("browser") {
     deps += [
       "//apps",
       "//chrome/browser/sync_file_system/drive_backend:sync_file_system_drive_proto",
+      "//chrome/browser/profiling_host",
       "//chrome/browser/web_applications",
       "//chrome/browser/web_applications:common",
       "//chrome/browser/web_applications:web_applications_on_extensions",

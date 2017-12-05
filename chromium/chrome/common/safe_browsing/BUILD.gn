@@ -169,5 +169,8 @@ source_set("safe_browsing") {
       "//ipc",
       "//third_party/zlib/google:zip",
     ]
+    if (is_mac) {
+      deps += [ ":disk_image_type_sniffer_mac" ]
+    }
   }
 }

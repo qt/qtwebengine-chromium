@@ -64,7 +64,7 @@ void StripTrailingDot(base::StringPiece* host) {
 bool IsValidHostName(base::StringPiece host,
                      base::StringPiece domain_in_lower_case,
                      SubdomainPermission subdomain_permission,
-                     const base::flat_set<base::StringPiece>& allowed_tlds) {
+                     const std::set<std::string>& allowed_tlds) {
   // Fast path to avoid searching the registry set.
   if (host.find(domain_in_lower_case) == base::StringPiece::npos)
     return false;
@@ -84,7 +84,7 @@ bool IsValidHostName(base::StringPiece host,
   // Remove the trailing dot from tld if present, as for Google domains it's the
   // same page.
   StripTrailingDot(&tld);
-  if (!allowed_tlds.contains(tld))
+  if (allowed_tlds.find(std::string(tld)) == allowed_tlds.end())
     return false;
 
   if (base::LowerCaseEqualsASCII(host_minus_tld, domain_in_lower_case))
@@ -115,17 +115,16 @@ bool IsCanonicalHostGoogleHostname(base::StringPiece canonical_host,
   if (base_url.is_valid() && (canonical_host == base_url.host_piece()))
     return true;
 
-  static const base::NoDestructor<base::flat_set<base::StringPiece>>
-      google_tlds(std::initializer_list<base::StringPiece>({GOOGLE_TLD_LIST}));
+  static base::NoDestructor<std::set<std::string>> google_tlds(
+      std::move(std::set<std::string>{GOOGLE_TLD_LIST}));
   return IsValidHostName(canonical_host, "google", subdomain_permission,
                          *google_tlds);
 }
 
 bool IsCanonicalHostYoutubeHostname(base::StringPiece canonical_host,
                                     SubdomainPermission subdomain_permission) {
-  static const base::NoDestructor<base::flat_set<base::StringPiece>>
-      youtube_tlds(
-          std::initializer_list<base::StringPiece>({YOUTUBE_TLD_LIST}));
+  static base::NoDestructor<std::set<std::string>> youtube_tlds(
+      std::move(std::set<std::string>{YOUTUBE_TLD_LIST}));
   return IsValidHostName(canonical_host, "youtube", subdomain_permission,
                          *youtube_tlds);
 }
