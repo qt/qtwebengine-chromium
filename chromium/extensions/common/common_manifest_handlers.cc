@@ -43,8 +43,10 @@ void RegisterCommonManifestHandlers() {
   (new ActionHandlersHandler)->Register();
 #endif
   (new BackgroundManifestHandler)->Register();
+#if !defined(TOOLKIT_QT)
   (new BluetoothManifestHandler)->Register();
   (new ContentCapabilitiesHandler)->Register();
+#endif // !defined(TOOLKIT_QT)
   (new CSPHandler(false))->Register();
   (new CSPHandler(true))->Register();
   (new declarative_net_request::DNRManifestHandler)->Register();

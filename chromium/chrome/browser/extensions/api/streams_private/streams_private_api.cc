@@ -9,8 +9,10 @@
 
 #include "base/lazy_instance.h"
 #include "base/values.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/prerender/prerender_contents.h"
+#endif // !defined(TOOLKIT_QT)
 #include "chrome/common/extensions/api/streams_private.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
@@ -79,6 +81,7 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
   if (!web_contents)
     return;
 
+#if !defined(TOOLKIT_QT)
   // If the request was for a prerender, abort the prerender and do not
   // continue. This is because plugins cancel prerender, see
   // http://crbug.com/343590.
@@ -88,6 +91,7 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
     prerender_contents->Destroy(prerender::FINAL_STATUS_DOWNLOAD);
     return;
   }
+#endif // !defined(TOOLKIT_QT)
 
   auto* browser_context = web_contents->GetBrowserContext();
   StreamsPrivateAPI* streams_private = GetStreamsPrivateAPI(browser_context);
@@ -107,7 +111,11 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
   if (handler->HasPlugin()) {
     GURL handler_url(Extension::GetBaseURLFromExtensionId(extension_id).spec() +
                      handler->handler_url());
+#if !defined(TOOLKIT_QT)
     int tab_id = ExtensionTabUtil::GetTabId(web_contents);
+#else
+    int tab_id = -1;
+#endif // !defined(TOOLKIT_QT)
     std::unique_ptr<StreamContainer> stream_container(new StreamContainer(
         std::move(stream), tab_id, embedded, handler_url, extension_id,
         std::move(transferrable_loader), original_url));
@@ -127,7 +135,11 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
   info.mime_type = stream->mime_type;
   info.original_url = stream->original_url.spec();
   info.stream_url = stream->handle->GetURL().spec();
+#if !defined(TOOLKIT_QT)
   info.tab_id = ExtensionTabUtil::GetTabId(web_contents);
+#else
+  info.tab_id = -1;
+#endif // !defined(TOOLKIT_QT)
   info.embedded = embedded;
 
   if (!view_id.empty()) {

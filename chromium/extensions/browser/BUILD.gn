@@ -373,7 +373,6 @@ jumbo_source_set("browser_sources") {
     "//components/sessions",
     "//components/sync",
     "//components/update_client",
-    "//components/update_client",
     "//components/variations",
     "//components/version_info",
     "//components/web_cache/browser",
@@ -411,6 +410,36 @@ jumbo_source_set("browser_sources") {
     # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
     "//build/config/compiler:no_size_t_to_int_warning",
   ]
+
+  if (use_qt) {
+
+    sources -= [
+      "sandboxed_unpacker.cc",
+      "sandboxed_unpacker.h",
+      "uninstall_ping_sender.cc",
+      "uninstall_ping_sender.h",
+      "uninstall_reason.h",
+      "update_observer.h",
+      "zipfile_installer.cc",
+      "zipfile_installer.h",
+    ]
+
+    public_deps -= [
+      "//extensions/browser/kiosk",
+      "//extensions/browser/updater",
+    ]
+
+    deps -= [
+      "//components/cast_certificate",
+      "//components/cast_channel",
+      "//components/crx_file",
+      "//components/pref_registry",
+      "//components/sync",
+      "//components/update_client",
+      "//components/variations",
+      "//components/web_cache/browser",
+    ]
+  }
 }
 
 source_set("browser_tests") {
@@ -488,6 +517,17 @@ source_set("browser_tests") {
       "//chromeos:power_manager_proto",
     ]
   }
+
+  if (use_qt) {
+    sources -= [
+      "api/bluetooth/bluetooth_appshell_test.cc",
+      "api/bluetooth_socket/bluetooth_socket_apitest.cc",
+    ]
+
+    deps -= [
+      "//device/bluetooth:mocks",
+    ]
+  }
 }
 
 jumbo_source_set("test_support") {
@@ -519,8 +559,8 @@ source_set("unit_tests") {
   sources = [
     "api/alarms/alarms_api_unittest.cc",
     "api/api_resource_manager_unittest.cc",
-    "api/bluetooth/bluetooth_event_router_unittest.cc",
-    "api/bluetooth_socket/bluetooth_socket_api_unittest.cc",
+#    "api/bluetooth/bluetooth_event_router_unittest.cc",
+#    "api/bluetooth_socket/bluetooth_socket_api_unittest.cc",
     "api/cast_channel/cast_channel_api_unittest.cc",
     "api/cast_channel/cast_channel_enum_util_unittest.cc",
     "api/declarative/declarative_rule_unittest.cc",

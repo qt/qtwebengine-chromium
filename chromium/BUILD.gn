@@ -474,6 +474,18 @@ group("gn_all") {
         "//third_party/leveldatabase:env_chromium_unittests",
         "//third_party/libaddressinput:libaddressinput_unittests",
       ]
+      if (use_qt) {
+        deps -= [
+          "//chrome/test:load_library_perf_tests",
+          "//chrome/test:sync_performance_tests",
+          "//chrome/test/chromedriver:chromedriver",
+          "//chrome/test/chromedriver:chromedriver_tests",
+          "//courgette:courgette",
+          "//courgette:courgette_fuzz",
+          "//courgette:courgette_minimal_tool",
+          "//courgette:courgette_unittests",
+        ]
+      }
     }
 
     if (enable_extensions) {

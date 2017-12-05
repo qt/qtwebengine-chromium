@@ -548,10 +548,12 @@ void ExtensionDownloader::CreateManifestFetcher() {
                                            : kUpdateInteractivityBackground));
     manifest_fetcher_->AddExtraRequestHeader(
         base::StringPrintf("%s: %s", kUpdateAppIdHeader, id_list.c_str()));
+#if !defined(TOOLKIT_QT)
     manifest_fetcher_->AddExtraRequestHeader(base::StringPrintf(
         "%s: %s-%s", kUpdateUpdaterHeader,
         UpdateQueryParams::GetProdIdString(UpdateQueryParams::CRX),
         UpdateQueryParams::GetProdVersion().c_str()));
+#endif // !defined (TOOLKIT_QT)
   }
 
   // Update checks can be interrupted if a network change is detected; this is

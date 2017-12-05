@@ -4753,6 +4753,10 @@ grit("resources") {
   if (safe_browsing_mode == 1) {
     deps += [ "//chrome/browser/ui/webui/reset_password:mojo_bindings_js" ]
   }
+
+  if (use_qt) {
+    deps -= [ "//chrome/browser/resources/ssl/ssl_error_assistant:make_ssl_error_assistant_protobuf" ]
+  }
 }
 
 if (is_chrome_branded) {

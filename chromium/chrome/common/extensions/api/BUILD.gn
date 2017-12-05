@@ -7,14 +7,13 @@ import("//build/config/ui.gni")
 import("//chrome/common/extensions/api/api_sources.gni")
 import("//chrome/common/features.gni")
 import("//extensions/buildflags/buildflags.gni")
-import("//media/media_options.gni")
 import("//tools/json_schema_compiler/json_features.gni")
 import("//tools/json_schema_compiler/json_schema_api.gni")
 
 assert(enable_extensions)
 
 json_schema_api("api") {
-  sources = chrome_extensions_api_schema_sources
+  sources = ["streams_private.idl"]
   schemas = true
   bundle = true
   configs = [ "//build/config:precompiled_headers" ]
