@@ -189,7 +189,7 @@ window.PDFMetricsImpl = class {
    * @private
    */
   log_(eventCode) {
-    chrome.metricsPrivate.recordValue(this.actionsMetric_, eventCode);
+    // chrome.metricsPrivate.recordValue(this.actionsMetric_, eventCode);
   }
 
   /**

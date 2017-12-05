@@ -13,7 +13,9 @@
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/message_bundle.h"
 #include "gin/data_object_builder.h"
+#if !defined(TOOLKIT_QT)
 #include "third_party/cld_3/src/src/nnet_language_identifier.h"
+#endif // !defined(TOOLKIT_QT)
 
 namespace extensions {
 namespace i18n_hooks {
@@ -85,6 +87,7 @@ v8::Local<v8::Value> LanguageDetectionResult::ToV8(
       .Build();
 }
 
+#if !defined(TOOLKIT_QT)
 void InitDetectedLanguages(
     const std::vector<chrome_lang_id::NNetLanguageIdentifier::Result>&
         lang_results,
@@ -124,6 +127,7 @@ void InitDetectedLanguages(
   if (detected_languages->empty())
     *is_reliable = false;
 }
+#endif // !defined(TOOLKIT_QT)
 
 }  // namespace
 
@@ -199,6 +203,7 @@ v8::Local<v8::Value> GetI18nMessage(const std::string& message_name,
 
 v8::Local<v8::Value> DetectTextLanguage(v8::Local<v8::Context> context,
                                         const std::string& text) {
+#if !defined(TOOLKIT_QT)
   chrome_lang_id::NNetLanguageIdentifier nnet_lang_id(/*min_num_bytes=*/0,
                                                       /*max_num_bytes=*/512);
   std::vector<chrome_lang_id::NNetLanguageIdentifier::Result> lang_results =
@@ -210,13 +215,16 @@ v8::Local<v8::Value> DetectTextLanguage(v8::Local<v8::Context> context,
     for (auto& result : lang_results)
       result.is_reliable = false;
   }
+#endif // !defined(TOOLKIT_QT)
 
   LanguageDetectionResult result;
 
+#if !defined(TOOLKIT_QT)
   // Populate LanguageDetectionResult with prediction reliability, languages,
   // and the corresponding percentages.
   InitDetectedLanguages(lang_results, &result);
   return result.ToV8(context);
+#endif // !defined(TOOLKIT_QT)
 }
 
 }  // namespace i18n_hooks

@@ -7,7 +7,6 @@ import("//build/config/ui.gni")
 import("//chrome/common/extensions/api/api_sources.gni")
 import("//chrome/common/features.gni")
 import("//extensions/buildflags/buildflags.gni")
-import("//media/media_options.gni")
 import("//tools/json_schema_compiler/json_features.gni")
 import("//tools/json_schema_compiler/json_schema_api.gni")
 
@@ -40,14 +39,11 @@ group("extensions_features") {
 # Private Targets
 
 generated_json_strings("generated_api_json_strings") {
-  sources = chrome_extensions_api_schema_sources +
-            chrome_extensions_api_uncompiled_sources
-
   configs = [ "//build/config:precompiled_headers" ]
   bundle_name = "Chrome"
   schema_include_rules = chrome_extensions_api_schema_include_rules
 
-  sources += [
+  sources = [
     "app.json",
     "browser_action.json",
     "commands.json",
