@@ -1582,6 +1582,7 @@ bool WebViewGuest::RequiresSslInterstitials() const {
 }
 
 bool WebViewGuest::IsPermissionRequestable(ContentSettingsType type) const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   CHECK(permissions::PermissionUtil::IsPermission(type));
   const blink::PermissionType permission_type =
       permissions::PermissionUtil::ContentSettingsTypeToPermissionType(type);
@@ -1606,10 +1607,14 @@ bool WebViewGuest::IsPermissionRequestable(ContentSettingsType type) const {
       // StoragePartitions.
       return false;
   }
+#else
+  return false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 std::optional<content::PermissionResult> WebViewGuest::OverridePermissionResult(
     ContentSettingsType type) const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (IsOwnedByControlledFrameEmbedder()) {
     // Permission of content within a Controlled Frame is isolated.
     // Therefore, Controlled Frame decides what the immediate permission result
@@ -1623,6 +1628,7 @@ std::optional<content::PermissionResult> WebViewGuest::OverridePermissionResult(
     }
     // Returns nullopt for unhandled cases.
   }
+#endif
   return std::nullopt;
 }
 

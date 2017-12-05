@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/features.gni")
 import("//extensions/buildflags/buildflags.gni")
 
 # APIs and features included in both normal desktop builds and the experimental
@@ -94,6 +95,15 @@ if (enable_extensions) {
       "diagnostics.idl",
       "media_perception_private.idl",
       "webcam_private.idl",
+    ]
+  }
+  if (is_qtwebengine) {
+    extensions_api_schema_files_ -= [
+      "bluetooth.idl",
+      "bluetooth_low_energy.idl",
+      "bluetooth_private.idl",
+      "bluetooth_socket.idl",
+      "feedback_private.idl",
     ]
   }
 }

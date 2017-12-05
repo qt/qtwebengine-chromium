@@ -3411,10 +3411,15 @@ static_library("ui") {
       "//components/remote_cocoa/app_shim:features",
       "//components/remote_cocoa/browser",
       "//device/fido/strings:strings_grit",
-      "//extensions/components/native_app_window",
       "//third_party/google_toolbox_for_mac",
       "//ui/accelerated_widget_mac:accelerated_widget_mac",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//extensions/components/native_app_window",
+      ]
+    }
     include_dirs = [ "$target_gen_dir" ]
     frameworks = [
       "Carbon.framework",
@@ -5911,7 +5916,6 @@ static_library("test_support") {
       "//chrome/browser/ui/browser_window:browser_window",
       "//chrome/browser/ui/content_settings:test_support",
       "//chrome/browser/ui/views/toolbar",
-      "//chrome/test:test_support_ui",
       "//components/embedder_support:embedder_support",
       "//components/input",
       "//components/media_message_center:media_message_center",
@@ -5931,7 +5935,10 @@ static_library("test_support") {
       "toolbar/test_toolbar_actions_bar_bubble_delegate.cc",
       "toolbar/test_toolbar_actions_bar_bubble_delegate.h",
     ]
-    deps += [ "//extensions/browser" ]
+    deps += [
+      "//chrome/test:test_support_ui",
+      "//extensions/browser",
+    ]
   }
 }
 
