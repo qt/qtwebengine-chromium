@@ -27,10 +27,12 @@ bool IsOffTheRecordContextAllowed(content::BrowserContext* browser_context) {
   if (ExtensionsBrowserClient::Get()->IsGuestSession(browser_context)) {
     return true;
   }
-#endif
-
+#elif BUILDFLAG(IS_QTWEBENGINE)
+  return true;
+#else
   // In other cases don't create a task queue for OTR profile.
   return false;
+#endif
 }
 #endif  // DCHECK_IS_ON()
 

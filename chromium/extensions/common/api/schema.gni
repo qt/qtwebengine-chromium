@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
 import("//components/guest_view/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
 
@@ -117,6 +118,15 @@ if (enable_extensions) {
     # On non-ChromeOS platforms the USB API is not supported but the types are
     # still used by other APIs (e.g. printerProvider).
     extensions_types_only_schema_files_ += [ "usb.webidl" ]
+  }
+  if (is_qtwebengine) {
+    extensions_api_schema_files_ -= [
+      "bluetooth.webidl",
+      "bluetooth_low_energy.webidl",
+      "bluetooth_private.idl",
+      "bluetooth_socket.webidl",
+      "feedback_private.webidl",
+    ]
   }
 }
 

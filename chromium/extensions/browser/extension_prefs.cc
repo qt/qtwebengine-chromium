@@ -1702,6 +1702,7 @@ ExtensionPrefs::InstallRecord& ExtensionPrefs::InstallRecord::operator=(
 
 ExtensionPrefs::InstallRecord::~InstallRecord() = default;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 ExtensionPrefs::DelayedInstallInfo::DelayedInstallInfo() = default;
 ExtensionPrefs::DelayedInstallInfo::DelayedInstallInfo(
     int install_flags,
@@ -1744,6 +1745,7 @@ void ExtensionPrefs::SetDelayedInstallInfo(const Extension* extension,
                              static_cast<int>(install_info.delay_reason));
   extension_dict->SetInteger(kDelayedInstallFlags, install_info.install_flags);
 }
+#endif
 
 std::optional<ExtensionPrefs::InstallRecord>
 ExtensionPrefs::GetDelayedInstallExtensionInfo(
@@ -1757,6 +1759,7 @@ ExtensionPrefs::GetDelayedInstallExtensionInfo(
                                 /*include_component_extensions = */ false);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 ExtensionPrefs::DelayedInstallInfo ExtensionPrefs::GetDelayedInstallInfo(
     const ExtensionId& extension_id) const {
   const base::DictValue* dict = GetDelayedInstallDict(extension_id);
@@ -1789,6 +1792,7 @@ ExtensionPrefs::DelayedInstallInfo ExtensionPrefs::GetDelayedInstallInfo(
 
   return info;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 ExtensionPrefs::DelayReason ExtensionPrefs::GetDelayedInstallReason(
     const ExtensionId& extension_id) const {

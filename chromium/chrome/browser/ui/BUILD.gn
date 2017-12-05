@@ -3492,9 +3492,14 @@ static_library("ui") {
       "//components/remote_cocoa/app_shim",
       "//components/remote_cocoa/app_shim:features",
       "//components/remote_cocoa/browser",
-      "//extensions/components/native_app_window",
       "//ui/accelerated_widget_mac",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//extensions/components/native_app_window",
+      ]
+    }
     include_dirs = [ "$target_gen_dir" ]
     frameworks = [
       "Carbon.framework",

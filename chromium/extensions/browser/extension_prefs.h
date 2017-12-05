@@ -681,6 +681,7 @@ class ExtensionPrefs : public KeyedService {
       const ExtensionId& extension_id,
       bool include_component_extensions = false) const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Info stored for a delayed extension install.
   // `install_flags` are a bitmask of extension::InstallFlags.
   struct DelayedInstallInfo {
@@ -705,16 +706,19 @@ class ExtensionPrefs : public KeyedService {
   // to install it.
   void SetDelayedInstallInfo(const Extension* extension,
                              DelayedInstallInfo install_info);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns the InstallRecord from the prefs for delayed install information
   // for `extension_id`, if we have any. Otherwise returns std::nullopt.
   std::optional<InstallRecord> GetDelayedInstallExtensionInfo(
       const ExtensionId& extension_id) const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the delayed install info for `extension_id`. Returns a
   // default-constructed DelayedInstallInfo if no delayed install info exists.
   DelayedInstallInfo GetDelayedInstallInfo(
       const ExtensionId& extension_id) const;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   DelayReason GetDelayedInstallReason(const ExtensionId& extension_id) const;
 

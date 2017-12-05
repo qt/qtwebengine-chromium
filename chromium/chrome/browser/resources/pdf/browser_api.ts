@@ -232,15 +232,9 @@ export function createBrowserApiForPrintPreview(): Promise<BrowserApi> {
     mimeType: '',
   };
   return new Promise<void>(function(resolve) {
-           if (!chrome.tabs) {
              resolve();
              return;
-           }
-           chrome.tabs.getCurrent(function(tab) {
-             streamInfo.tabId = tab!.id!;
-             streamInfo.tabUrl = tab!.url;
-             resolve();
-           });
+
          })
       .then(function() {
         return BrowserApi.create(streamInfo, ZoomBehavior.NONE);

@@ -25,7 +25,9 @@
 #include "extensions/renderer/worker_thread_dispatcher.h"
 #include "gin/converter.h"
 #include "gin/data_object_builder.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "third_party/cld_3/src/src/nnet_language_identifier.h"
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 #include "v8/include/v8-container.h"
 #include "v8/include/v8-context.h"
 #include "v8/include/v8-exception.h"
@@ -105,6 +107,7 @@ v8::Local<v8::Value> LanguageDetectionResult::ToV8(
       .Build();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void InitDetectedLanguages(
     const std::vector<chrome_lang_id::NNetLanguageIdentifier::Result>&
         lang_results,
@@ -144,6 +147,7 @@ void InitDetectedLanguages(
   if (detected_languages->empty())
     *is_reliable = false;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 // Returns the localized method for the given |message_name| and
 // substitutions. This can result in a synchronous IPC being sent to the browser
@@ -212,6 +216,7 @@ v8::Local<v8::Value> GetI18nMessage(const std::string& message_name,
 // Returns the detected language for the sample |text|.
 v8::Local<v8::Value> DetectTextLanguage(v8::Local<v8::Context> context,
                                         const std::string& text) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   chrome_lang_id::NNetLanguageIdentifier nnet_lang_id(/*min_num_bytes=*/0,
                                                       /*max_num_bytes=*/512);
   std::vector<chrome_lang_id::NNetLanguageIdentifier::Result> lang_results =
@@ -223,12 +228,15 @@ v8::Local<v8::Value> DetectTextLanguage(v8::Local<v8::Context> context,
     for (auto& result : lang_results)
       result.is_reliable = false;
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   LanguageDetectionResult result;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Populate LanguageDetectionResult with prediction reliability, languages,
   // and the corresponding percentages.
   InitDetectedLanguages(lang_results, &result);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   return result.ToV8(context);
 }
 

@@ -17,7 +17,9 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/safe_browsing/core/browser/db/v4_protocol_config.h"
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 #include "content/public/browser/bluetooth_chooser.h"
 #include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/common/child_process_id.h"
@@ -606,6 +608,7 @@ class ExtensionsBrowserClient {
   // blocklist).
   virtual void CheckManagementPolicy(content::BrowserContext* context);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Get the locally-managed database manager of the safe browsing service.
   virtual scoped_refptr<safe_browsing::SafeBrowsingDatabaseManager>
   GetSafeBrowsingDatabaseManager() const;
@@ -613,6 +616,7 @@ class ExtensionsBrowserClient {
   // Get the default v4 protocol config struct from the safe browsing service.
   virtual std::optional<safe_browsing::V4ProtocolConfig> GetV4ProtocolConfig()
       const;
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Notifies the ExtensionActionRunner that an extension has been granted
   // active tab permissions. This will run any pending injections for that

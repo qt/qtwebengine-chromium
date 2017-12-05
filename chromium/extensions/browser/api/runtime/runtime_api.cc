@@ -928,6 +928,7 @@ RuntimeGetContextsFunction::GetWorkerContext() {
 
 std::vector<api::runtime::ExtensionContext>
 RuntimeGetContextsFunction::GetFrameContexts() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ProcessManager* const process_manager =
       ProcessManager::Get(browser_context());
   CHECK(process_manager);
@@ -1002,6 +1003,9 @@ RuntimeGetContextsFunction::GetFrameContexts() {
   }
 
   return results;
+#else
+  return {};
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 int RuntimeGetContextsFunction::GetTabId(content::WebContents& web_contents) {
@@ -1010,8 +1014,11 @@ int RuntimeGetContextsFunction::GetTabId(content::WebContents& web_contents) {
   if (view_type == extensions::mojom::ViewType::kDeveloperTools) {
     return -1;
   }
-
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return sessions::SessionTabHelper::IdForTab(&web_contents).id();
+#else
+  return extension_misc::kUnknownTabId;
+#endif
 }
 
 int RuntimeGetContextsFunction::GetFrameId(content::RenderFrameHost& host) {
@@ -1029,8 +1036,12 @@ int RuntimeGetContextsFunction::GetWindowId(
   mojom::ViewType view_type = extensions::GetViewType(&web_contents);
 
   if (view_type != extensions::mojom::ViewType::kDeveloperTools) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     return sessions::SessionTabHelper::IdForWindowContainingTab(&web_contents)
         .id();
+#else
+    return extension_misc::kUnknownWindowId;
+#endif
   }
 
   // For developer tools, ask the embedder for the window ID.

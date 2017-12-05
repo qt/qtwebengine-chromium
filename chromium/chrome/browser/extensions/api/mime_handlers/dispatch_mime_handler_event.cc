@@ -6,9 +6,11 @@
 
 #include <utility>
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
 #include "components/no_state_prefetch/browser/no_state_prefetch_contents.h"
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sessions/core/session_id.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
@@ -26,7 +28,9 @@
 #include "pdf/buildflags.h"
 
 #if BUILDFLAG(ENABLE_PDF)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/pdf/pdf_handler_stream_delegate.h"
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 #include "pdf/pdf_features.h"
 #endif  // BUILDFLAG(ENABLE_PDF)
 
@@ -50,6 +54,7 @@ void SendExecuteMimeTypeHandlerEvent(
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If the request was for NoStatePrefetch, abort the prefetcher and do not
   // continue. This is because plugins cancel NoStatePrefetch, see
   // http://crbug.com/40351590.
@@ -60,6 +65,7 @@ void SendExecuteMimeTypeHandlerEvent(
     no_state_prefetch_contents->Destroy(prerender::FINAL_STATUS_DOWNLOAD);
     return;
   }
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
   auto* browser_context = web_contents->GetBrowserContext();
 
@@ -83,7 +89,12 @@ void SendExecuteMimeTypeHandlerEvent(
 
   const bool is_generic_handler = !handler->IsPluginExtension();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   int tab_id = ExtensionTabUtil::GetTabId(web_contents);
+#else
+  int tab_id = -1;
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
+
   std::unique_ptr<StreamContainer> stream_container(
       new StreamContainer(tab_id, embedded, handler_url, extension_id,
                           std::move(transferrable_loader), original_url));
@@ -91,7 +102,7 @@ void SendExecuteMimeTypeHandlerEvent(
     stream_container->SetBodyCache(std::move(body_cache));
   }
 
-#if BUILDFLAG(ENABLE_PDF)
+#if BUILDFLAG(ENABLE_PDF) && !BUILDFLAG(IS_QTWEBENGINE)
   if (chrome_pdf::features::IsOopifPdfEnabled() &&
       extension_id == extension_misc::kPdfExtensionId) {
     extensions::mime_handler::MimeHandlerStreamManager::Create(web_contents);
@@ -102,7 +113,7 @@ void SendExecuteMimeTypeHandlerEvent(
                              std::make_unique<pdf::PdfHandlerStreamDelegate>());
     return;
   }
-#endif  // BUILDFLAG(ENABLE_PDF)
+#endif  // BUILDFLAG(ENABLE_PDF) && !BUILDFLAG(IS_QTWEBENGINE)
 
   // Generic MIME handlers (third-party extensions) use the OOPIF path
   // with the generic delegate.

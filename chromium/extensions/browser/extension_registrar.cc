@@ -269,6 +269,7 @@ void ExtensionRegistrar::AddNewExtension(
   }
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void ExtensionRegistrar::AddNewOrUpdatedExtension(
     const Extension* extension,
     int install_flags,
@@ -298,6 +299,7 @@ void ExtensionRegistrar::OnExtensionInstalled(
   delegate_->OnExtensionInstalled(extension, page_ordinal, install_flags,
                                   std::move(ruleset_install_prefs));
 }
+#endif
 
 void ExtensionRegistrar::RemoveExtension(const ExtensionId& extension_id,
                                          UnloadedExtensionReason reason) {
@@ -587,9 +589,11 @@ void ExtensionRegistrar::AddComponentExtension(const Extension* extension) {
     }
     // TODO(crbug.com/40508457): If needed, add support for Declarative Net
     // Request to component extensions and pass the ruleset install prefs here.
+#if !BUILDFLAG(IS_QTWEBENGINE)
     AddNewOrUpdatedExtension(extension, kInstallFlagNone,
                              syncer::StringOrdinal(), std::string(),
                              /*ruleset_install_prefs=*/{});
+#endif
     return;
   }
 
