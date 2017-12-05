@@ -580,11 +580,13 @@ void ExtensionDownloader::CreateManifestLoader() {
                                             ? kUpdateInteractivityForeground
                                             : kUpdateInteractivityBackground);
     resource_request->headers.SetHeader(kUpdateAppIdHeader, id_list);
+#if !defined(TOOLKIT_QT)
     resource_request->headers.SetHeader(
         kUpdateUpdaterHeader,
         base::StringPrintf(
             "%s-%s", UpdateQueryParams::GetProdIdString(UpdateQueryParams::CRX),
             UpdateQueryParams::GetProdVersion().c_str()));
+#endif // !defined (TOOLKIT_QT)
   }
 
   manifest_loader_ = network::SimpleURLLoader::Create(

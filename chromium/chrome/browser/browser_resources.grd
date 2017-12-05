@@ -109,8 +109,10 @@
       <include name="IDR_UKM_INTERNALS_HTML" file="../../components/ukm/debug/ukm_internals.html" flattenhtml="true" allowexternalscript="true" compress="gzip" type="BINDATA" />
       <include name="IDR_UKM_INTERNALS_JS" file="../../components/ukm/debug/ukm_internals.js" flattenhtml="true" compress="gzip" type="BINDATA" />
       <include name="IDR_UKM_INTERNALS_CSS" file="../../components/ukm/debug/ukm_internals.css" flattenhtml="true" compress="gzip" type="BINDATA" />
+      <!--
       <include name="IDR_TRANSLATE_INTERNALS_HTML" file="../../components/translate/translate_internals/translate_internals.html" flattenhtml="true" allowexternalscript="true" compress="gzip" type="BINDATA" />
       <include name="IDR_TRANSLATE_INTERNALS_JS" file="../../components/translate/translate_internals/translate_internals.js" flattenhtml="true" compress="gzip" type="BINDATA" />
+      -->
       <include name="IDR_FEEDBACK_MANIFEST" file="resources\feedback\manifest.json" type="BINDATA" />
       <if expr="is_android">
         <include name="IDR_DEV_UI_LOADER_ERROR_HTML" file="resources/dev_ui/dev_ui_loader_error.html" compress="gzip" type="BINDATA" />
@@ -173,7 +175,7 @@
       <include name="IDR_INLINE_LOGIN_HTML" file="resources\inline_login\inline_login.html" compress="gzip" flattenhtml="true" allowexternalscript="true" type="BINDATA" preprocess="true" />
       <include name="IDR_INLINE_LOGIN_CSS" file="resources\inline_login\inline_login.css" compress="gzip" flattenhtml="true" type="BINDATA" preprocess="true" />
       <include name="IDR_INLINE_LOGIN_JS" file="resources\inline_login\inline_login.js" compress="gzip" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_GAIA_AUTH_AUTHENTICATOR_JS" file="resources\gaia_auth_host\authenticator.js" compress="gzip" flattenhtml="true" type="BINDATA" />
+      <!-- <include name="IDR_GAIA_AUTH_AUTHENTICATOR_JS" file="resources\gaia_auth_host\authenticator.js" compress="gzip" flattenhtml="true" type="BINDATA" /> -->
 
       <include name="IDR_INSPECT_CSS" file="resources\inspect\inspect.css" compress="gzip" flattenhtml="true" type="BINDATA" />
       <include name="IDR_INSPECT_HTML" file="resources\inspect\inspect.html" compress="gzip" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
@@ -216,12 +218,12 @@
       <if expr="desktop_linux">
         <include name="IDR_PLUGIN_DB_JSON" file="resources\plugin_metadata\plugins_linux.json" type="BINDATA" />
       </if>
-      <if expr="not is_android">
+      <!-- if expr="not is_android">
         <include name="IDR_MANAGEMENT_HTML" file="resources\management\management.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" compress="gzip" />
         <include name="IDR_MANAGEMENT_UI_JS" file="${root_gen_dir}/chrome/browser/resources/management/management_ui.js" use_base_dir="false" type="BINDATA" compress="gzip" preprocess="true" />
         <include name="IDR_MANAGEMENT_BROWSER_PROXY_JS" file="resources\management\management_browser_proxy.js" type="BINDATA" compress="gzip" preprocess="true" />
         <include name="IDR_MANAGEMENT_ICONS_JS" file="${root_gen_dir}/chrome/browser/resources/management/icons.js" use_base_dir="false" type="BINDATA" compress="gzip" preprocess="true" />
-      </if>
+      </if -->
       <include name="IDR_SITE_ENGAGEMENT_HTML" file="resources\engagement\site_engagement.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" compress="gzip" />
       <include name="IDR_SITE_ENGAGEMENT_JS" file="resources\engagement\site_engagement.js" flattenhtml="true" type="BINDATA" compress="gzip" />
       <include name="IDR_SITE_ENGAGEMENT_DETAILS_MOJOM_LITE_JS" file="${root_gen_dir}\chrome\browser\engagement\site_engagement_details.mojom-lite.js" use_base_dir="false" type="BINDATA" compress="gzip" />
@@ -456,7 +458,7 @@
         <include name="IDR_IME_WINDOW_CLOSE_C" file="resources\input_ime\ime_window_close_click.png" type="BINDATA" />
         <include name="IDR_IME_WINDOW_CLOSE_H" file="resources\input_ime\ime_window_close_hover.png" type="BINDATA" />
       </if>
-      <include name="IDR_SSL_ERROR_ASSISTANT_PB" file="${root_gen_dir}/chrome/browser/resources/ssl/ssl_error_assistant/ssl_error_assistant.pb" use_base_dir="false" type="BINDATA" compress="gzip" />
+<!--      <include name="IDR_SSL_ERROR_ASSISTANT_PB" file="${root_gen_dir}/chrome/browser/resources/ssl/ssl_error_assistant/ssl_error_assistant.pb" use_base_dir="false" type="BINDATA" compress="gzip" />-->
       <if expr="is_android or is_linux">
         <include name="IDR_SANDBOX_INTERNALS_HTML" file="resources\sandbox_internals\sandbox_internals.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" compress="gzip" />
         <include name="IDR_SANDBOX_INTERNALS_JS" file="resources\sandbox_internals\sandbox_internals.js" type="BINDATA" compress="gzip" />
@@ -503,10 +505,11 @@
         <include name="IDR_RESET_PASSWORD_JS" file="resources\reset_password\reset_password.js" type="BINDATA" compress="gzip" />
         <include name="IDR_RESET_PASSWORD_MOJOM_LITE_JS" file="${root_gen_dir}\chrome\browser\ui\webui\reset_password\reset_password.mojom-lite.js" use_base_dir="false" type="BINDATA" compress="gzip" />
       </if>
-      <if expr="not is_android">
+      <!-- TO DO mibrunin - find a proper solution to this -->
+      <!--if expr="not is_android">
         <include name="IDR_TAB_RANKER_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="resource_coordinator\tab_ranker\example_preprocessor_config.pb" type="BINDATA" />
         <include name="IDR_TAB_RANKER_PAIRWISE_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="resource_coordinator\tab_ranker\pairwise_preprocessor_config.pb" type="BINDATA" />
-      </if>
+      </if-->
       <if expr="chromeos">
         <include name="IDR_SMART_DIM_20181115_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="chromeos\power\ml\smart_dim\20181115_example_preprocessor_config.pb" type="BINDATA" />
         <include name="IDR_SMART_DIM_20190521_EXAMPLE_PREPROCESSOR_CONFIG_PB" file="chromeos\power\ml\smart_dim\20190521_example_preprocessor_config.pb" type="BINDATA" />

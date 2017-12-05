@@ -781,10 +781,16 @@ class FeatureCompiler(object):
 
     include_file_root = self._out_root
     GEN_DIR_PREFIX = 'gen/'
-    if include_file_root.startswith(GEN_DIR_PREFIX):
+    if include_file_root.startswith(GEN_DIR_PREFIX) and len(include_file_root) >= len(GEN_DIR_PREFIX):
       include_file_root = include_file_root[len(GEN_DIR_PREFIX):]
-    header_file_path = '%s/%s' % (include_file_root, header_file)
+    else:
+      include_file_root = ''
+    if include_file_root:
+      header_file_path = '%s/%s' % (include_file_root, header_file)
+    else:
+      header_file_path = header_file
     cc_file_path = '%s/%s' % (include_file_root, cc_file)
+
     substitutions = ({
         'header_file_path': header_file_path,
         'header_guard': (header_file_path.replace('/', '_').

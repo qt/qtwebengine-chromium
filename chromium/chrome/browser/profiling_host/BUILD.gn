@@ -1,7 +1,7 @@
 # Copyright 2017 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
+import("//extensions/buildflags/buildflags.gni")
 static_library("profiling_host") {
   sources = [
     "background_profiling_triggers.cc",
@@ -41,12 +41,16 @@ if (!is_android) {
     deps = [
       "//base",
       "//base/allocator:buildflags",
-      "//chrome/test:test_support_ui",
       "//components/heap_profiling:test_support",
       "//components/services/heap_profiling/public/cpp",
       "//testing/gmock",
       "//testing/gtest",
     ]
+    if (enable_extensions) {
+      deps += [
+        "//chrome/test:test_support_ui",
+      ]
+    }
   }
 } else {
   import("//build/config/android/rules.gni")

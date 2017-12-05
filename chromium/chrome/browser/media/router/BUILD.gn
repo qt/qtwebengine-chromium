@@ -194,7 +194,6 @@ static_library("router") {
 static_library("test_support") {
   testonly = true
   deps = [
-    "//chrome/test:test_support",
     "//testing/gmock",
   ]
   public_deps = [
@@ -214,6 +213,7 @@ static_library("test_support") {
       "discovery",
       "//chrome/common/media_router/mojom:media_router",
       "//chrome/common/media_router/mojom:media_router_test_interfaces",
+      "//chrome/test:test_support",
       "//extensions/browser",
       "//extensions/common",
     ]
