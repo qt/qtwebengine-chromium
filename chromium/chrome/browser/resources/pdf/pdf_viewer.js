@@ -331,7 +331,7 @@ function PDFViewer(browserApi) {
       new ViewportScroller(this.viewport_, this.plugin_, window);
 
   // Request translated strings.
-  chrome.resourcesPrivate.getStrings('pdf', this.handleStrings_.bind(this));
+  // TO-DO mibrunin: check if this can / needs to be enabled chrome.resourcesPrivate.getStrings('pdf', this.handleStrings_.bind(this));
 
   // Listen for save commands from the browser.
   if (chrome.mimeHandlerPrivate && chrome.mimeHandlerPrivate.onSave) {

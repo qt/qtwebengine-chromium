@@ -2269,11 +2269,16 @@ jumbo_split_static_library("ui") {
       "//chrome/browser/apps/app_shim",
       "//components/remote_cocoa/app_shim",
       "//components/remote_cocoa/browser",
-      "//extensions/components/native_app_window",
       "//third_party/google_toolbox_for_mac",
       "//third_party/mozilla",
       "//ui/accelerated_widget_mac:accelerated_widget_mac",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//extensions/components/native_app_window",
+      ]
+    }
     include_dirs = [ "$target_gen_dir" ]
     libs += [
       "Carbon.framework",
@@ -3973,7 +3978,6 @@ static_library("test_support") {
       "test/test_confirm_bubble_model.h",
     ]
     deps += [
-      "//chrome/test:test_support_ui",
       "//components/signin/core/browser",
       "//components/signin/public/identity_manager",
       "//components/ukm:test_support",
@@ -4001,7 +4005,10 @@ static_library("test_support") {
   }
 
   if (enable_extensions) {
-    deps += [ "//extensions/browser" ]
+    deps += [
+      "//chrome/test:test_support_ui",
+      "//extensions/browser",
+    ]
   }
 }
 
