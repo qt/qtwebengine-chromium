@@ -65,6 +65,7 @@ ExtensionWebContentsObserver::CreateExtensionFrameHost(
 
 void ExtensionWebContentsObserver::ListenToWindowIdChangesFrom(
     sessions::SessionTabHelper* helper) {
+#if !defined(TOOLKIT_QT)
   if (!window_id_subscription_) {
     // We use an unretained receiver here: the callback is inside the
     // subscription, which is a member of |this|, so it can't be run after the
@@ -73,6 +74,7 @@ void ExtensionWebContentsObserver::ListenToWindowIdChangesFrom(
         base::BindRepeating(&ExtensionWebContentsObserver::OnWindowIdChanged,
                             base::Unretained(this)));
   }
+#endif //  !defined(TOOLKIT_QT)
 }
 
 void ExtensionWebContentsObserver::Initialize() {
@@ -91,12 +93,14 @@ void ExtensionWebContentsObserver::Initialize() {
           InitializeRenderFrame(render_frame_host);
       });
 
+#if !defined(TOOLKIT_QT)
   // It would be ideal if SessionTabHelper was created before this object,
   // because then we could start observing it here instead of needing to be
   // externally notified when it is created, but it isn't. If that ordering ever
   // changes, this code can be restructured and ListenToWindowIdChangesFrom()
   // can become private.
   DCHECK(!sessions::SessionTabHelper::FromWebContents(web_contents()));
+#endif //  !defined(TOOLKIT_QT)
 }
 
 ExtensionWebContentsObserver::ExtensionWebContentsObserver(
@@ -217,6 +221,7 @@ void ExtensionWebContentsObserver::ReadyToCommitNavigation(
   content::RenderFrameHost* parent_or_outerdoc =
       navigation_handle->GetParentFrameOrOuterDocument();
 
+#ifndef TOOLKIT_QT
   content::RenderFrameHost* outermost_main_render_frame_host =
       parent_or_outerdoc ? parent_or_outerdoc->GetOutermostMainFrame()
                          : navigation_handle->GetRenderFrameHost();
@@ -227,7 +232,10 @@ void ExtensionWebContentsObserver::ReadyToCommitNavigation(
       ExtensionsBrowserClient::Get()->GetKioskDelegate();
   DCHECK(kiosk_delegate);
   bool is_kiosk =
-      extension && kiosk_delegate->IsAutoLaunchedKioskApp(extension->id());
+      extension && kiosk_delegate && kiosk_delegate->IsAutoLaunchedKioskApp(extension->id());
+#else
+  bool is_kiosk = false;
+#endif
 
   // If the top most frame is an extension, packaged app, hosted app, etc. then
   // the main frame and all iframes should be able to autoplay without

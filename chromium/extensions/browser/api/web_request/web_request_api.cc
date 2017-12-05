@@ -394,6 +394,7 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
       }
     }
 
+#if !defined(TOOLKIT_QT)
     // Create a proxy URLLoader even when there is no CRX
     // installed with webRequest permissions. This allows the extension
     // requests to be intercepted for CRX telemetry service if enabled.
@@ -411,6 +412,7 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
                 kExtensionTelemetryInterceptRemoteHostsContactedInRenderer)) {
       skip_proxy = false;
     }
+#endif  // !defined(TOOLKIT_QT)
     if (skip_proxy) {
       return false;
     }
@@ -549,6 +551,7 @@ bool WebRequestAPI::MayHaveProxies() const {
 bool WebRequestAPI::MayHaveWebsocketProxiesForExtensionTelemetry() const {
   // TODO(crbug.com/1447587): Clean up once new RHC interception logic is fully
   // launched.
+#if !defined(TOOLKIT_QT)
   return ExtensionsBrowserClient::Get()->IsExtensionTelemetryServiceEnabled(
              browser_context_) &&
          base::FeatureList::IsEnabled(
@@ -559,6 +562,9 @@ bool WebRequestAPI::MayHaveWebsocketProxiesForExtensionTelemetry() const {
          !base::FeatureList::IsEnabled(
              safe_browsing::
                  kExtensionTelemetryInterceptRemoteHostsContactedInRenderer);
+#else
+  return false;
+#endif  // !defined(TOOLKIT_QT)
 }
 
 bool WebRequestAPI::HasExtraHeadersListenerForTesting() {

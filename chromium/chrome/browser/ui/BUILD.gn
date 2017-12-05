@@ -4221,10 +4221,15 @@ static_library("ui") {
       "//chrome/updater:browser_sources",
       "//components/remote_cocoa/app_shim",
       "//components/remote_cocoa/browser",
-      "//extensions/components/native_app_window",
       "//third_party/google_toolbox_for_mac",
       "//ui/accelerated_widget_mac:accelerated_widget_mac",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//extensions/components/native_app_window",
+      ]
+    }
     include_dirs = [ "$target_gen_dir" ]
     frameworks = [
       "Carbon.framework",
@@ -6529,7 +6534,6 @@ static_library("test_support") {
       "webui/help/test_version_updater.h",
     ]
     deps += [
-      "//chrome/test:test_support_ui",
       "//components/embedder_support:embedder_support",
       "//components/media_message_center:media_message_center",
       "//components/media_router/browser:browser",
@@ -6592,7 +6596,10 @@ static_library("test_support") {
       "toolbar/test_toolbar_actions_bar_bubble_delegate.cc",
       "toolbar/test_toolbar_actions_bar_bubble_delegate.h",
     ]
-    deps += [ "//extensions/browser" ]
+    deps += [
+      "//chrome/test:test_support_ui",
+      "//extensions/browser",
+    ]
   }
 }
 

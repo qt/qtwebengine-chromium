@@ -861,6 +861,7 @@ RuntimeGetContextsFunction::GetWorkerContext() {
 
 std::vector<api::runtime::ExtensionContext>
 RuntimeGetContextsFunction::GetFrameContexts() {
+#if !defined(TOOLKIT_QT)
   ProcessManager* const process_manager =
       ProcessManager::Get(browser_context());
   CHECK(process_manager);
@@ -933,6 +934,9 @@ RuntimeGetContextsFunction::GetFrameContexts() {
   }
 
   return results;
+#else
+  return {};
+#endif  // !defined(TOOLKIT_QT)
 }
 
 }  // namespace extensions
