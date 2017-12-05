@@ -215,7 +215,7 @@ static_library("router") {
   }
 }
 
-if (!is_android) {
+if (!is_android && enable_extensions) {
   source_set("mojo_impl") {
     sources = [
       "mojo/media_router_debugger_impl.cc",
@@ -239,7 +239,7 @@ if (!is_android) {
   }
 }
 
-if (!is_android) {
+if (!is_android && enable_extensions) {
   source_set("providers_wired_display_impl") {
     sources = [
       "providers/wired_display/wired_display_media_route_provider.cc",
@@ -254,7 +254,7 @@ if (!is_android) {
   }
 }
 
-if (!is_android) {
+if (!is_android && enable_extensions) {
   static_library("test_support") {
     testonly = true
     deps = [
@@ -320,7 +320,7 @@ source_set("unittests") {
     "//ui/display:test_support",
   ]
 
-  if (!is_android) {
+  if (!is_android && enable_extensions) {
     sources += [
       # In-browser discovery is not used by Android for now.
       "discovery/access_code/access_code_cast_discovery_interface_unittest.cc",
