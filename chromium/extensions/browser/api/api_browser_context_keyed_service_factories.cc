@@ -25,6 +25,7 @@
 // TODO(https://crbug.com/356905053): Enable these APIs on desktop-android.
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "extensions/browser/api/api_resource_manager.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "extensions/browser/api/audio/audio_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_private_api.h"
@@ -34,7 +35,11 @@
 #include "extensions/browser/api/bluetooth_socket/bluetooth_api_socket.h"
 #include "extensions/browser/api/bluetooth_socket/bluetooth_socket_event_dispatcher.h"
 #include "extensions/browser/api/content_settings/content_settings_service.h"  // nogncheck
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
+#include "extensions/browser/api/declarative/rules_registry_service.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "extensions/browser/api/feedback_private/feedback_private_api.h"
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 #include "extensions/browser/api/hid/hid_connection_resource.h"
 #include "extensions/browser/api/hid/hid_device_manager.h"
 #include "extensions/browser/api/networking_private/networking_private_event_router_factory.h"
@@ -48,8 +53,10 @@
 #include "extensions/browser/api/sockets_tcp/tcp_socket_event_dispatcher.h"
 #include "extensions/browser/api/sockets_tcp_server/tcp_server_socket_event_dispatcher.h"
 #include "extensions/browser/api/sockets_udp/udp_socket_event_dispatcher.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "extensions/browser/api/system_info/system_info_api.h"
 #include "extensions/browser/api/usb/usb_device_manager.h"
+#endif
 #include "extensions/browser/api/usb/usb_device_resource.h"
 #include "extensions/browser/api/web_request/web_request_proxying_websocket.h"
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
@@ -85,7 +92,7 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
 
 // The following are not supported in the experimental desktop-android build.
 // TODO(https://crbug.com/356905053): Enable these APIs on desktop-android.
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS) && !BUILDFLAG(IS_QTWEBENGINE)
   ApiResourceManager<BluetoothApiAdvertisement>::GetFactoryInstance();
   ApiResourceManager<BluetoothApiSocket>::GetFactoryInstance();
   ApiResourceManager<BluetoothLowEnergyConnection>::GetFactoryInstance();
@@ -94,13 +101,17 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
 #if BUILDFLAG(IS_CHROMEOS)
   ApiResourceManager<LogSourceResource>::GetFactoryInstance();
 #endif
+#endif
+  ApiResourceManager<HidConnectionResource>::GetFactoryInstance();
   ApiResourceManager<ResumableTCPServerSocket>::GetFactoryInstance();
   ApiResourceManager<ResumableTCPSocket>::GetFactoryInstance();
   ApiResourceManager<ResumableUDPSocket>::GetFactoryInstance();
   ApiResourceManager<SerialConnection>::GetFactoryInstance();
   ApiResourceManager<Socket>::GetFactoryInstance();
   ApiResourceManager<UsbDeviceResource>::GetFactoryInstance();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   api::BluetoothSocketEventDispatcher::GetFactoryInstance();
+#endif
   api::SerialPortManager::GetFactoryInstance();
   api::TCPServerSocketEventDispatcher::GetFactoryInstance();
   api::TCPSocketEventDispatcher::GetFactoryInstance();
@@ -108,6 +119,7 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
 #if BUILDFLAG(IS_CHROMEOS)
   AppFirewallHoleManager::EnsureFactoryBuilt();
 #endif
+#if !BUILDFLAG(IS_QTWEBENGINE)
   AudioAPI::GetFactoryInstance();
   BluetoothAPI::GetFactoryInstance();
   BluetoothPrivateAPI::GetFactoryInstance();
@@ -117,6 +129,7 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   ContentSettingsService::GetFactoryInstance();
   FeedbackPrivateAPI::GetFactoryInstance();
   HidDeviceManager::GetFactoryInstance();
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 #if BUILDFLAG(IS_CHROMEOS)
   MediaPerceptionAPIManager::GetFactoryInstance();
 #endif
@@ -125,6 +138,7 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   NetworkingPrivateEventRouterFactory::GetInstance();
 #endif
   PrinterProviderAPIFactory::GetInstance();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   SystemInfoAPI::GetFactoryInstance();
   UsbDeviceManager::GetFactoryInstance();
 #if BUILDFLAG(IS_CHROMEOS)

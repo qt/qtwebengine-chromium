@@ -5,7 +5,22 @@
 #include "extensions/browser/api/extensions_api_client.h"
 
 #include "build/build_config.h"
+#include "extensions/browser/api/declarative_content/content_rules_registry.h"
+#include "extensions/browser/api/device_permissions_prompt.h"
 #include "extensions/browser/api/messaging/native_message_host.h"
+#include "extensions/browser/api/messaging/native_message_port_dispatcher.h"
+#include "extensions/browser/api/system_display/display_info_provider.h"
+#include "extensions/browser/api/virtual_keyboard_private/virtual_keyboard_delegate.h"
+#include "extensions/browser/supervised_user_extensions_delegate.h"
+
+#if BUILDFLAG(ENABLE_GUEST_VIEW)
+#include "components/guest_view/browser/guest_view_manager_delegate.h"
+#include "extensions/browser/guest_view/app_view/app_view_guest_delegate.h"
+#include "extensions/browser/guest_view/extension_options/extension_options_guest_delegate.h"
+#include "extensions/browser/guest_view/mime_handler_view/mime_handler_view_guest_delegate.h"
+#include "extensions/browser/guest_view/web_view/web_view_guest_delegate.h"
+#include "extensions/browser/guest_view/web_view/web_view_permission_helper_delegate.h"
+#endif
 
 namespace extensions {
 

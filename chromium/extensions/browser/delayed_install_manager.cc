@@ -116,9 +116,11 @@ bool DelayedInstallManager::FinishDelayedInstallationIfReady(
   CHECK(delayed_install.get());
   delayed_installs_.Remove(extension_id);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!extension_prefs_->FinishDelayedInstallInfo(extension_id)) {
     NOTREACHED();
   }
+#endif
 
   extension_registrar_->FinishInstallation(delayed_install.get());
   return true;

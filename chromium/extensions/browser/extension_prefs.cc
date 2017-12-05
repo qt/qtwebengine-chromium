@@ -1662,6 +1662,7 @@ ExtensionPrefs::ExtensionsInfo ExtensionPrefs::GetInstalledExtensionsInfo(
   return extensions_info;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void ExtensionPrefs::SetDelayedInstallInfo(
     const Extension* extension,
     const base::flat_set<int>& disable_reasons,
@@ -1757,6 +1758,7 @@ bool ExtensionPrefs::FinishDelayedInstallInfo(const ExtensionId& extension_id) {
                            suggested_page_ordinal, extension_dict.get());
   return true;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 std::optional<ExtensionInfo> ExtensionPrefs::GetDelayedInstallInfo(
     const ExtensionId& extension_id) const {
