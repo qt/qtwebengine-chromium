@@ -7,11 +7,13 @@
 #include "build/build_config.h"
 #include "extensions/browser/api/alarms/alarm_manager.h"
 #include "extensions/browser/api/api_resource_manager.h"
+#if !defined(TOOLKIT_QT)
 #include "extensions/browser/api/audio/audio_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_private_api.h"
 #include "extensions/browser/api/bluetooth_socket/bluetooth_socket_event_dispatcher.h"
 #include "extensions/browser/api/cast_channel/cast_channel_api.h"
+#endif // !defined(TOOLKIT_QT)
 #include "extensions/browser/api/clipboard/clipboard_api.h"
 #include "extensions/browser/api/declarative_net_request/rules_monitor_service.h"
 #include "extensions/browser/api/display_source/display_source_event_router_factory.h"
@@ -59,6 +61,7 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   ApiResourceManager<SerialConnection>::GetFactoryInstance();
   ApiResourceManager<Socket>::GetFactoryInstance();
   ApiResourceManager<UsbDeviceResource>::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   AudioAPI::GetFactoryInstance();
   BluetoothAPI::GetFactoryInstance();
   BluetoothPrivateAPI::GetFactoryInstance();
@@ -68,18 +71,23 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   chromeos::VpnServiceFactory::GetInstance();
 #endif
   api::BluetoothSocketEventDispatcher::GetFactoryInstance();
+#endif // !defined(TOOLKIT_QT)
   api::TCPServerSocketEventDispatcher::GetFactoryInstance();
   api::TCPSocketEventDispatcher::GetFactoryInstance();
   api::UDPSocketEventDispatcher::GetFactoryInstance();
   declarative_net_request::RulesMonitorService::GetFactoryInstance();
   DeclarativeUserScriptManagerFactory::GetInstance();
+#if !defined(TOOLKIT_QT)
   DisplaySourceEventRouterFactory::GetInstance();
+#endif // !defined(TOOLKIT_QT)
   EventRouterFactory::GetInstance();
   ExtensionMessageFilter::EnsureShutdownNotifierFactoryBuilt();
   ExtensionPrefsFactory::GetInstance();
+#if !defined(TOOLKIT_QT)
   FeedbackPrivateAPI::GetFactoryInstance();
   HidDeviceManager::GetFactoryInstance();
   IdleManagerFactory::GetInstance();
+#endif // !defined(TOOLKIT_QT)
   ManagementAPI::GetFactoryInstance();
 #if defined(OS_CHROMEOS)
   NetworkingConfigServiceFactory::GetInstance();
@@ -92,6 +100,7 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   RendererStartupHelperFactory::GetInstance();
   RuntimeAPI::GetFactoryInstance();
   StorageFrontend::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   SystemInfoAPI::GetFactoryInstance();
 #if defined(OS_CHROMEOS)
   SystemPowerSourceAPI::GetFactoryInstance();
@@ -101,6 +110,7 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   VirtualKeyboardAPI::GetFactoryInstance();
   WebcamPrivateAPI::GetFactoryInstance();
 #endif
+#endif // !defined(TOOLKIT_QT)
   WebRequestAPI::GetFactoryInstance();
 }
 

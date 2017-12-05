@@ -220,15 +220,8 @@ function createBrowserApiForPrintPreview() {
     tabId: -1,
   };
   return new Promise(function(resolve, reject) {
-           if (!chrome.tabs) {
              resolve();
              return;
-           }
-           chrome.tabs.getCurrent(function(tab) {
-             streamInfo.tabId = tab.id;
-             streamInfo.tabUrl = tab.url;
-             resolve();
-           });
          })
       .then(function() {
         return BrowserApi.create(streamInfo, BrowserApi.ZoomBehavior.NONE);
@@ -240,9 +233,5 @@ function createBrowserApiForPrintPreview() {
  *     current environment.
  */
 function createBrowserApi() {
-  if (location.origin === 'chrome://print') {
     return createBrowserApiForPrintPreview();
-  }
-
-  return createBrowserApiForMimeHandlerView();
 }

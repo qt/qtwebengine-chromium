@@ -68,6 +68,7 @@ gfx::NativeWindow WebContentsViewGuest::GetTopLevelNativeWindow() const {
 }
 
 void WebContentsViewGuest::OnGuestAttached(WebContentsView* parent_view) {
+#if !defined(TOOLKIT_QT)
 #if defined(USE_AURA)
   // In aura, ScreenPositionClient doesn't work properly if we do
   // not have the native view associated with this WebContentsViewGuest in the
@@ -77,15 +78,18 @@ void WebContentsViewGuest::OnGuestAttached(WebContentsView* parent_view) {
   if (!features::IsMultiProcessMash())
     parent_view->GetNativeView()->AddChild(platform_view_->GetNativeView());
 #endif  // defined(USE_AURA)
+#endif // !defined(TOOLKIT_QT)
 }
 
 void WebContentsViewGuest::OnGuestDetached(WebContentsView* old_parent_view) {
+#if !defined(TOOLKIT_QT)
 #if defined(USE_AURA)
   if (!features::IsMultiProcessMash()) {
     old_parent_view->GetNativeView()->RemoveChild(
         platform_view_->GetNativeView());
   }
 #endif  // defined(USE_AURA)
+#endif // !defined(TOOLKIT_QT)
 }
 
 void WebContentsViewGuest::GetContainerBounds(gfx::Rect* out) const {
