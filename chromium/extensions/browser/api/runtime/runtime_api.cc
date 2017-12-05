@@ -874,6 +874,7 @@ RuntimeGetContextsFunction::GetWorkerContext() {
 
 std::vector<api::runtime::ExtensionContext>
 RuntimeGetContextsFunction::GetFrameContexts() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ProcessManager* const process_manager =
       ProcessManager::Get(browser_context());
   CHECK(process_manager);
@@ -945,6 +946,9 @@ RuntimeGetContextsFunction::GetFrameContexts() {
   }
 
   return results;
+#else
+  return {};
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 }  // namespace extensions

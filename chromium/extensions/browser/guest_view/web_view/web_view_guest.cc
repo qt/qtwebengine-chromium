@@ -1143,6 +1143,7 @@ bool WebViewGuest::RequiresSslInterstitials() const {
 }
 
 bool WebViewGuest::IsPermissionRequestable(ContentSettingsType type) const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   CHECK(permissions::PermissionUtil::IsPermission(type));
   const blink::PermissionType permission_type =
       permissions::PermissionUtil::ContentSettingTypeToPermissionType(type);
@@ -1167,6 +1168,9 @@ bool WebViewGuest::IsPermissionRequestable(ContentSettingsType type) const {
       // StoragePartitions.
       return false;
   }
+#else
+  return false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 content::JavaScriptDialogManager* WebViewGuest::GetJavaScriptDialogManager(

@@ -6,6 +6,7 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//build/util/branding.gni")
 import("//chrome/browser/buildflags.gni")
 import("//chrome/version.gni")
+import("//extensions/buildflags/buildflags.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//testing/test.gni")
 

@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -70,7 +71,7 @@ bool IsValidHostName(std::string_view host,
   // Remove the trailing dot from tld if present, as for Google domains it's the
   // same page.
   StripTrailingDot(&tld);
-  if (!allowed_tlds.contains(tld))
+  if (allowed_tlds.find(std::string(tld)) == allowed_tlds.end())
     return false;
 
   if (base::EqualsCaseInsensitiveASCII(host_minus_tld, domain_in_lower_case))

@@ -280,6 +280,12 @@ source_set("renderer") {
     "//third_party/zlib/google:compression_utils",
   ]
 
+  if (is_qtwebengine) {
+    deps -= [
+      "//chrome:resources",
+      "//third_party/cld_3/src/src:cld_3",
+    ]
+  }
   if (enable_pdf) {
     deps += [
       "//components/pdf/common:util",

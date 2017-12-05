@@ -65,6 +65,7 @@ ExtensionWebContentsObserver::CreateExtensionFrameHost(
 
 void ExtensionWebContentsObserver::ListenToWindowIdChangesFrom(
     sessions::SessionTabHelper* helper) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!window_id_subscription_) {
     // We use an unretained receiver here: the callback is inside the
     // subscription, which is a member of |this|, so it can't be run after the
@@ -73,6 +74,7 @@ void ExtensionWebContentsObserver::ListenToWindowIdChangesFrom(
         base::BindRepeating(&ExtensionWebContentsObserver::OnWindowIdChanged,
                             base::Unretained(this)));
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void ExtensionWebContentsObserver::Initialize() {
@@ -97,12 +99,14 @@ void ExtensionWebContentsObserver::Initialize() {
         CHECK_EQ(render_frame_host, main_frame);
       });
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // It would be ideal if SessionTabHelper was created before this object,
   // because then we could start observing it here instead of needing to be
   // externally notified when it is created, but it isn't. If that ordering ever
   // changes, this code can be restructured and ListenToWindowIdChangesFrom()
   // can become private.
   DCHECK(!sessions::SessionTabHelper::FromWebContents(web_contents()));
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 ExtensionWebContentsObserver::ExtensionWebContentsObserver(
@@ -208,6 +212,7 @@ void ExtensionWebContentsObserver::ReadyToCommitNavigation(
     content::NavigationHandle* navigation_handle) {
   ScriptInjectionTracker::ReadyToCommitNavigation(PassKey(), navigation_handle);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // We don't force autoplay to allow while prerendering.
   if (navigation_handle->GetRenderFrameHost()->GetLifecycleState() ==
           content::RenderFrameHost::LifecycleState::kPrerendering &&
@@ -231,7 +236,7 @@ void ExtensionWebContentsObserver::ReadyToCommitNavigation(
       ExtensionsBrowserClient::Get()->GetKioskDelegate();
   DCHECK(kiosk_delegate);
   bool is_kiosk =
-      extension && kiosk_delegate->IsAutoLaunchedKioskApp(extension->id());
+      extension && kiosk_delegate && kiosk_delegate->IsAutoLaunchedKioskApp(extension->id());
 
   // If the top most frame is an extension, packaged app, hosted app, etc. then
   // the main frame and all iframes should be able to autoplay without
@@ -248,6 +253,7 @@ void ExtensionWebContentsObserver::ReadyToCommitNavigation(
     client->AddAutoplayFlags(url::Origin::Create(navigation_handle->GetURL()),
                              blink::mojom::kAutoplayFlagForceAllow);
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void ExtensionWebContentsObserver::DidFinishNavigation(

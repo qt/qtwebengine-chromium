@@ -6,9 +6,11 @@
 
 #include <utility>
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
 #include "components/no_state_prefetch/browser/no_state_prefetch_contents.h"
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sessions/core/session_id.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
@@ -21,7 +23,9 @@
 #include "pdf/buildflags.h"
 
 #if BUILDFLAG(ENABLE_PDF)
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/pdf/pdf_viewer_stream_manager.h"
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 #include "extensions/common/constants.h"
 #include "pdf/pdf_features.h"
 #endif  // BUILDFLAG(ENABLE_PDF)
@@ -43,6 +47,7 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
   if (!web_contents)
     return;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If the request was for NoStatePrefetch, abort the prefetcher and do not
   // continue. This is because plugins cancel NoStatePrefetch, see
   // http://crbug.com/343590.
@@ -53,6 +58,7 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
     no_state_prefetch_contents->Destroy(prerender::FINAL_STATUS_DOWNLOAD);
     return;
   }
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
   auto* browser_context = web_contents->GetBrowserContext();
 
@@ -81,13 +87,17 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
   // portal contents.
   int tab_id = web_contents->GetOuterWebContents()
                    ? SessionID::InvalidValue().id()
+#if !BUILDFLAG(IS_QTWEBENGINE)
                    : ExtensionTabUtil::GetTabId(web_contents);
+#else
+                   : -1;
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
   std::unique_ptr<StreamContainer> stream_container(
       new StreamContainer(tab_id, embedded, handler_url, extension_id,
                           std::move(transferrable_loader), original_url));
 
-#if BUILDFLAG(ENABLE_PDF)
+#if BUILDFLAG(ENABLE_PDF) && !BUILDFLAG(IS_QTWEBENGINE)
   if (chrome_pdf::features::IsOopifPdfEnabled() &&
       extension_id == extension_misc::kPdfExtensionId) {
     pdf::PdfViewerStreamManager::Create(web_contents);
@@ -96,7 +106,7 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
                              std::move(stream_container));
     return;
   }
-#endif  // BUILDFLAG(ENABLE_PDF)
+#endif  // BUILDFLAG(ENABLE_PDF) && !BUILDFLAG(IS_QTWEBENGINE)
 
   MimeHandlerStreamManager::Get(browser_context)
       ->AddStream(stream_id, std::move(stream_container), frame_tree_node_id);

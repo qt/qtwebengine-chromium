@@ -550,12 +550,14 @@ void ExtensionDownloader::CreateManifestLoader() {
                                             ? kUpdateInteractivityForeground
                                             : kUpdateInteractivityBackground);
     resource_request->headers.SetHeader(kUpdateAppIdHeader, id_list);
+#if !BUILDFLAG(IS_QTWEBENGINE)
     resource_request->headers.SetHeader(
         kUpdateUpdaterHeader,
         base::StringPrintf(
             "%s-%s", UpdateQueryParams::GetProdIdString(UpdateQueryParams::CRX),
             UpdateQueryParams::GetProdVersion().c_str()));
     resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   } else {
     // Non-webstore sources may require HTTP auth.
     resource_request->credentials_mode =
