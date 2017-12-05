@@ -8,6 +8,7 @@
 #include "build/chromeos_buildflags.h"
 #include "extensions/browser/api/alarms/alarm_manager.h"
 #include "extensions/browser/api/api_resource_manager.h"
+#if !defined(TOOLKIT_QT)
 #include "extensions/browser/api/audio/audio_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_private_api.h"
@@ -17,9 +18,12 @@
 #include "extensions/browser/api/bluetooth_socket/bluetooth_api_socket.h"
 #include "extensions/browser/api/bluetooth_socket/bluetooth_socket_event_dispatcher.h"
 #include "extensions/browser/api/content_settings/content_settings_service.h"
+#endif // !defined(TOOLKIT_QT)
 #include "extensions/browser/api/declarative/rules_registry_service.h"
 #include "extensions/browser/api/declarative_net_request/rules_monitor_service.h"
+#if !defined(TOOLKIT_QT)
 #include "extensions/browser/api/feedback_private/feedback_private_api.h"
+#endif // !defined(TOOLKIT_QT)
 #include "extensions/browser/api/hid/hid_device_manager.h"
 #include "extensions/browser/api/idle/idle_manager_factory.h"
 #include "extensions/browser/api/management/management_api.h"
@@ -71,6 +75,7 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   ApiResourceManager<SerialConnection>::GetFactoryInstance();
   ApiResourceManager<Socket>::GetFactoryInstance();
   ApiResourceManager<UsbDeviceResource>::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   api::BluetoothSocketEventDispatcher::GetFactoryInstance();
   api::SerialPortManager::GetFactoryInstance();
   api::TCPServerSocketEventDispatcher::GetFactoryInstance();
@@ -86,10 +91,13 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   ClipboardAPI::GetFactoryInstance();
 #endif
   ContentSettingsService::GetFactoryInstance();
+#endif // !defined(TOOLKIT_QT)
   declarative_net_request::RulesMonitorService::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   FeedbackPrivateAPI::GetFactoryInstance();
   HidDeviceManager::GetFactoryInstance();
   IdleManagerFactory::GetInstance();
+#endif // !defined(TOOLKIT_QT)
   ManagementAPI::GetFactoryInstance();
   MessageService::GetFactoryInstance();
   MessagingAPIMessageFilter::EnsureAssociatedFactoryBuilt();
@@ -104,8 +112,10 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   RuntimeAPI::GetFactoryInstance();
   SessionStorageManager::GetFactory();
   StorageFrontend::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   SystemInfoAPI::GetFactoryInstance();
   UsbDeviceManager::GetFactoryInstance();
+#endif // !defined(TOOLKIT_QT)
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   VirtualKeyboardAPI::GetFactoryInstance();
   WebcamPrivateAPI::GetFactoryInstance();
