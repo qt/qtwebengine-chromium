@@ -120,8 +120,8 @@ bool IsCanonicalHostGoogleHostname(base::StringPiece canonical_host,
   // same page.
   StripTrailingDot(&tld);
 
-  static const base::NoDestructor<base::flat_set<base::StringPiece>>
-      google_tlds(std::initializer_list<base::StringPiece>({GOOGLE_TLD_LIST}));
+  static base::NoDestructor<std::set<std::string>> google_tlds(
+      std::move(std::set<std::string>{GOOGLE_TLD_LIST}));
   return google_tlds->contains(tld);
 }
 

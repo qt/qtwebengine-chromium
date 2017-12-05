@@ -1896,7 +1896,6 @@ jumbo_static_library("browser") {
     "//chrome/browser/net:probe_message_proto",
     "//chrome/browser/notifications",
     "//chrome/browser/performance_manager:site_data_proto",
-    "//chrome/browser/profiling_host",
     "//chrome/browser/push_messaging:budget_proto",
     "//chrome/browser/resource_coordinator:mojo_bindings",
     "//chrome/browser/resource_coordinator:tab_manager_features",
@@ -4534,6 +4533,7 @@ jumbo_static_library("browser") {
     deps += [
       "//apps",
       "//chrome/browser/sync_file_system/drive_backend:sync_file_system_drive_proto",
+      "//chrome/browser/profiling_host",
       "//chrome/browser/web_applications",
       "//chrome/browser/web_applications:web_applications_on_extensions",
       "//chrome/browser/web_applications/components",
@@ -5359,6 +5359,10 @@ grit("resources") {
 
   if (safe_browsing_mode == 1) {
     deps += [ "//chrome/browser/ui/webui/reset_password:mojo_bindings_js" ]
+  }
+
+  if (use_qt) {
+    deps -= [ "//chrome/browser/resources/ssl/ssl_error_assistant:make_ssl_error_assistant_protobuf" ]
   }
 }
 
