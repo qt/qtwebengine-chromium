@@ -941,11 +941,13 @@ int ContentMainRunnerImpl::Initialize(ContentMainParams params) {
   RegisterContentSchemes(delegate_->ShouldLockSchemeRegistry());
   ContentClientInitializer::Set(process_type, delegate_);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If we are on a platform where the default allocator is overridden (e.g.
   // with PartitionAlloc on most platforms) smoke-tests that the overriding
   // logic is working correctly. If not causes a hard crash, as its unexpected
   // absence has security implications.
   CHECK(base::allocator::IsAllocatorInitialized());
+#endif
 
 #if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   if (!process_type.empty()) {
