@@ -190,7 +190,7 @@ static_library("router") {
   }
 }
 
-if (!is_android) {
+if (!is_android && enable_extensions) {
   static_library("test_support") {
     testonly = true
     deps = [
@@ -246,7 +246,7 @@ source_set("unittests") {
     "//ui/display:test_support",
   ]
 
-  if (!is_android) {
+  if (!is_android && enable_extensions) {
     sources += [
       # In-browser discovery is not used by Android for now.
       "discovery/dial/device_description_fetcher_unittest.cc",

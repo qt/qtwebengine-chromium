@@ -78,6 +78,15 @@ source_set("app_shell_lib") {
     "//ui/base/ime/init",
   ]
 
+  if (use_qt) {
+    deps -= [
+      "//components/pref_registry",
+      "//components/sessions",
+      "//components/update_client",
+      "//components/version_info",
+    ]
+  }
+
   # TODO(michaelpg): remove Mac support and always use aura.
   if (use_aura) {
     deps += [ "//ui/aura" ]
