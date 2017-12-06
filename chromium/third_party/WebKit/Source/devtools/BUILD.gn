@@ -1006,6 +1006,10 @@ action("generate_devtools_grd") {
   generated_files =
       generated_resources + [ "$resources_out_dir/devtools_extension_api.js" ]
 
+  if (use_qt) {
+    generated_files += generated_remote_modules
+  }
+
   images_path = "front_end/Images"
 
   inputs += generated_files
