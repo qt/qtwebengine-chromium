@@ -260,11 +260,13 @@ config("compiler") {
   }
 
   if (use_qt && is_clang) {
-    cflags_cc += [
-      "-Wno-parentheses-equality",
-      "-Wno-tautological-compare",
+    cflags += [
       "-Wno-unknown-attributes",
       "-Wno-unknown-warning-option"
+    ]
+    cflags_cc += [
+      "-Wno-parentheses-equality",
+      "-Wno-tautological-compare"
     ]
   }
 
