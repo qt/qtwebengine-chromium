@@ -82,7 +82,7 @@ class __thisIsHereToForceASemicolonAfterThisMacro;
 
 #define STACK_ALLOCATED()                                       \
  public:                                                        \
-  using IsStackAllocatedTypeMarker [[maybe_unused]] = int;      \
+  using IsStackAllocatedTypeMarker = int;                       \
                                                                 \
  private:                                                       \
   ANNOTATE_STACK_ALLOCATED void* operator new(size_t) = delete; \
