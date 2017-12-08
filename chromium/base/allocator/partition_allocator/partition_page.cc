@@ -235,15 +235,15 @@ void UnmapNow(void* reservation_start,
   if (giga_cage_pool == GetBRPPool()) {
     // In 32-bit mode, the beginning of a reservation may be excluded from the
     // BRP pool, so shift the pointer. Non-BRP pool doesn't have logic.
-    PA_DCHECK(IsManagedByPartitionAllocBRPPool(
-#if defined(PA_HAS_64_BITS_POINTERS)
-        reservation_start
-#else
-        reinterpret_cast<char*>(reservation_start) +
-        AddressPoolManagerBitmap::kBytesPer1BitOfBRPPoolBitmap *
-            AddressPoolManagerBitmap::kGuardOffsetOfBRPPoolBitmap
-#endif
-        ));
+//    PA_DCHECK(IsManagedByPartitionAllocBRPPool(
+//#if defined(PA_HAS_64_BITS_POINTERS)
+//        reservation_start
+//#else
+//        reinterpret_cast<char*>(reservation_start) +
+//        AddressPoolManagerBitmap::kBytesPer1BitOfBRPPoolBitmap *
+//            AddressPoolManagerBitmap::kGuardOffsetOfBRPPoolBitmap
+//#endif
+//        ));
   } else {
     PA_DCHECK(giga_cage_pool == GetNonBRPPool());
     // Non-BRP pool doesn't need adjustment that BRP needs in 32-bit mode.

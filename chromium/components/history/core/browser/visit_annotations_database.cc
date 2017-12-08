@@ -484,21 +484,19 @@ void VisitAnnotationsDatabase::AddClusters(
     }
     const int64_t cluster_id = GetDB().GetLastInsertRowId();
     DCHECK(cluster_id);
-    base::ranges::for_each(
-        cluster.scored_annotated_visits,
-        [&](const auto& annotated_visit) {
-          clusters_and_visits_statement.Reset(true);
-          clusters_and_visits_statement.BindInt64(0, cluster_id);
-          clusters_and_visits_statement.BindInt64(
-              1, annotated_visit.visit_row.visit_id);
-          if (!clusters_and_visits_statement.Run()) {
-            DVLOG(0)
-                << "Failed to execute 'clusters_and_visits' insert statement:  "
-                << "cluster_id = " << cluster_id
-                << ", visit_id = " << annotated_visit.visit_row.visit_id;
-          }
-        },
-        &ScoredAnnotatedVisit::annotated_visit);
+    for (const auto& i : cluster.scored_annotated_visits) {
+      const auto& annotated_visit = i.annotated_visit;
+      clusters_and_visits_statement.Reset(true);
+      clusters_and_visits_statement.BindInt64(0, cluster_id);
+      clusters_and_visits_statement.BindInt64(
+          1, annotated_visit.visit_row.visit_id);
+      if (!clusters_and_visits_statement.Run()) {
+        DVLOG(0)
+            << "Failed to execute 'clusters_and_visits' insert statement:  "
+            << "cluster_id = " << cluster_id
+            << ", visit_id = " << annotated_visit.visit_row.visit_id;
+      }
+    }
   }
 }
 

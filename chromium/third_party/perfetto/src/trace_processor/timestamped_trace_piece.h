@@ -203,6 +203,11 @@ struct TimestampedTracePiece {
 
   TimestampedTracePiece(const TimestampedTracePiece&) = delete;
   TimestampedTracePiece& operator=(const TimestampedTracePiece&) = delete;
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
+  TimestampedTracePiece& operator=(TimestampedTracePiece&& ttp) const {
+    return (*const_cast<TimestampedTracePiece*>(this) = std::move(ttp));
+  }
+#endif
 
   ~TimestampedTracePiece() {
     switch (type) {

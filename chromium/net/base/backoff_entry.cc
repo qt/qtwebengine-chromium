@@ -142,7 +142,7 @@ base::TimeTicks BackoffEntry::CalculateReleaseTime() const {
   // accounted for. Both cases are handled by using CheckedNumeric<int64_t> to
   // perform the conversion to integers.
   double delay_ms = policy_->initial_delay_ms;
-  delay_ms *= pow(policy_->multiply_factor, effective_failure_count - 1);
+  delay_ms *= pow(policy_->multiply_factor, double(effective_failure_count) - 1);
   delay_ms -= base::RandDouble() * policy_->jitter_factor * delay_ms;
 
   // Do overflow checking in microseconds, the internal unit of TimeTicks.

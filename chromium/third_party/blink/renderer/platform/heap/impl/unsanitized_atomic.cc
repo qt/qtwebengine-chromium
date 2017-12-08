@@ -15,6 +15,7 @@
 namespace blink {
 namespace internal {
 
+#if !defined(COMPILER_MSVC)
 namespace {
 constexpr int ToGCCMemoryOrder(std::memory_order order) {
   switch (order) {
@@ -33,17 +34,26 @@ constexpr int ToGCCMemoryOrder(std::memory_order order) {
   }
 }
 }  // namespace
+#endif // !defined(COMPILER_MSVC)
 
 template <typename T>
 void UnsanitizedAtomic<T>::store(T desired, std::memory_order order) {
+#if !defined(COMPILER_MSVC)
   __atomic_store(&value_, &desired, ToGCCMemoryOrder(order));
+#else
+  Base::store(desired, order);
+#endif // !defined(COMPILER_MSVC)
 }
 
 template <typename T>
 T UnsanitizedAtomic<T>::load(std::memory_order order) const {
+#if !defined(COMPILER_MSVC)
   T result;
   __atomic_load(&value_, &result, ToGCCMemoryOrder(order));
   return result;
+#else
+  return Base::load(order);
+#endif // !defined(COMPILER_MSVC)
 }
 
 template <typename T>
@@ -59,9 +69,14 @@ bool UnsanitizedAtomic<T>::compare_exchange_strong(
     T desired,
     std::memory_order succ_order,
     std::memory_order fail_order) {
+#if !defined(COMPILER_MSVC)
   return __atomic_compare_exchange(&value_, &expected, &desired, false,
                                    ToGCCMemoryOrder(succ_order),
                                    ToGCCMemoryOrder(fail_order));
+#else
+  return Base::compare_exchange_strong(expected, desired, succ_order,
+                                       fail_order);
+#endif // !defined(COMPILER_MSVC)
 }
 
 template <typename T>
@@ -76,9 +91,13 @@ bool UnsanitizedAtomic<T>::compare_exchange_weak(T& expected,
                                                  T desired,
                                                  std::memory_order succ_order,
                                                  std::memory_order fail_order) {
+#if !defined(COMPILER_MSVC)
   return __atomic_compare_exchange(&value_, &expected, &desired, true,
                                    ToGCCMemoryOrder(succ_order),
                                    ToGCCMemoryOrder(fail_order));
+#else
+  return Base::compare_exchange_weak(expected, desired, succ_order, fail_order);
+#endif // !defined(COMPILER_MSVC)
 }
 
 template class PLATFORM_EXPORT UnsanitizedAtomic<uint16_t>;

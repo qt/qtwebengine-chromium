@@ -7,6 +7,7 @@
 
 #include "content/browser/browser_interface_binders.h"
 #include "content/browser/mojo_binder_policy_applier.h"
+#include "content/browser/service_worker/service_worker_info.h"
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "mojo/public/cpp/bindings/generic_pending_receiver.h"
 #include "third_party/blink/public/common/features.h"

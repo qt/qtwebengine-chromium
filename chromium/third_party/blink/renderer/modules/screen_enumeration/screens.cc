@@ -33,8 +33,14 @@ ScreenAdvanced* Screens::currentScreen() const {
   if (screens_.IsEmpty())
     return nullptr;
 
-  auto* it = base::ranges::find(screens_, current_display_id_,
-                                &ScreenAdvanced::DisplayId);
+  auto it = screens_.begin();
+  for (; it != screens_.end(); ++it) {
+    const auto& screen = *it;
+    if (screen->DisplayId() == current_display_id_)
+      break;
+  }
+//   auto* it = base::ranges::find(screens_, current_display_id_,
+//                                 &ScreenAdvanced::DisplayId);
   DCHECK(it != screens_.end());
   return *it;
 }
@@ -71,8 +77,13 @@ void Screens::UpdateScreenInfos(LocalDOMWindow* window,
   // Check if any screens have been removed and remove them from screens_.
   for (WTF::wtf_size_t i = 0; i < screens_.size();
        /*conditionally incremented*/) {
-    if (base::Contains(new_infos.screen_infos, screens_[i]->DisplayId(),
-                       &display::ScreenInfo::display_id)) {
+    auto it = new_infos.screen_infos.cbegin();
+    bool found = false;
+    for(; it != new_infos.screen_infos.cend() && !found; ++it)
+        found = found || it->display_id == screens_[i]->DisplayId();
+//     if (base::Contains(new_infos.screen_infos, screens_[i]->DisplayId(),
+//                        &display::ScreenInfo::display_id)) {
+    if (found) {
       ++i;
     } else {
       screens_.EraseAt(i);
@@ -84,8 +95,12 @@ void Screens::UpdateScreenInfos(LocalDOMWindow* window,
   // Check if any screens have been added, and append them to the end of
   // screens_.
   for (const auto& info : new_infos.screen_infos) {
-    if (!base::Contains(screens_, info.display_id,
-                        &ScreenAdvanced::DisplayId)) {
+    bool found = false;
+    for(auto it = screens_.begin(); it != screens_.end() && !found; ++it)
+        found = found || (*it)->DisplayId() == info.display_id;
+//     if (!base::Contains(screens_, info.display_id,
+//                         &ScreenAdvanced::DisplayId)) {
+    if (found) {
       screens_.push_back(
           MakeGarbageCollected<ScreenAdvanced>(window, info.display_id));
       added_or_removed = true;
@@ -121,11 +136,21 @@ void Screens::UpdateScreenInfos(LocalDOMWindow* window,
   for (wtf_size_t i = 0; i < screens_.size(); ++i) {
     const auto& screen = screens_[i];
     auto id = screen->DisplayId();
-    auto new_it = base::ranges::find(new_infos.screen_infos, id,
-                                     &display::ScreenInfo::display_id);
+    auto new_it = new_infos.screen_infos.begin();
+    for (; new_it != new_infos.screen_infos.end(); ++new_it) {
+      if (new_it->display_id == id)
+        break;
+    }
+//     base::ranges::find(new_infos.screen_infos, id,
+//                                      &display::ScreenInfo::display_id);
     DCHECK(new_it != new_infos.screen_infos.end());
-    auto old_it = base::ranges::find(prev_screen_infos_.screen_infos, id,
-                                     &display::ScreenInfo::display_id);
+    auto old_it = prev_screen_infos_.screen_infos.begin();
+    for (; old_it != new_infos.screen_infos.end(); ++old_it) {
+      if (old_it->display_id == id)
+        break;
+    }
+//     auto old_it = base::ranges::find(prev_screen_infos_.screen_infos, id,
+//                                      &display::ScreenInfo::display_id);
     if (old_it != prev_screen_infos_.screen_infos.end() && *old_it != *new_it) {
       // TODO(enne): http://crbug.com/1202981 only send this event when
       // properties on ScreenAdvanced (vs anything in ScreenInfo) change.

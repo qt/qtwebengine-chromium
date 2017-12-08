@@ -212,7 +212,7 @@ Env::Env()
   // initialization code.
   if (!features::IsUsingOzonePlatform())
     cursor_factory_ = std::make_unique<ui::X11CursorFactory>();
-#elif defined(OS_WIN)
+#elif defined(OS_WIN) && !defined(TOOLKIT_QT)
   cursor_factory_ = std::make_unique<ui::WinCursorFactory>();
 #endif
 }

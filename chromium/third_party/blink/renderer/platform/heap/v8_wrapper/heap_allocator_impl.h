@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_HEAP_V8_WRAPPER_HEAP_ALLOCATOR_IMPL_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_HEAP_V8_WRAPPER_HEAP_ALLOCATOR_IMPL_H_
 
+#include "base/notreached.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_table_backing.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector_backing.h"
 #include "third_party/blink/renderer/platform/heap/v8_wrapper/heap.h"
@@ -48,6 +49,11 @@ class PLATFORM_EXPORT HeapAllocator {
   static T* AllocateVectorBacking(size_t size) {
     return HeapVectorBacking<T>::ToArray(
         MakeGarbageCollected<HeapVectorBacking<T>>(size / sizeof(T)));
+  }
+
+  template <typename T>
+  static void Free(T* array) {
+    NOTREACHED();
   }
 
   template <typename T>

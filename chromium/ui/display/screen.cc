@@ -163,8 +163,12 @@ DisplayList Screen::GetDisplayListNearestDisplayWithFallbacks(
     // counterpart exists in `displays`. Otherwise, use `display[0]` for both.
     int64_t primary_id = primary.id();
     int64_t nearest_id = nearest.id();
-    const bool has_primary = base::Contains(displays, primary_id, &Display::id);
-    const bool has_nearest = base::Contains(displays, nearest_id, &Display::id);
+    bool has_primary = false; // base::Contains(displays, primary_id, &Display::id);
+    bool has_nearest = false; // base::Contains(displays, nearest_id, &Display::id);
+    for (const auto& display : displays) {
+        has_primary = has_primary || display.id() == primary_id;
+        has_nearest = has_nearest || display.id() == nearest_id;
+    }
     if (!has_primary)
       primary_id = has_nearest ? nearest_id : displays[0].id();
     if (!has_nearest)

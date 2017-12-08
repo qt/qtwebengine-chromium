@@ -114,6 +114,7 @@ class DOMTypedArray final : public DOMArrayBufferView {
   V(int64_t, BigInt64, false)              \
   V(uint64_t, BigUint64, false)
 
+#if !defined(_MSC_VER) || defined(__clang__)
 #define DOMTYPEDARRAY_DECLARE_WRAPPERTYPEINFO(val_t, Type, clamped)            \
   template <>                                                                  \
   const WrapperTypeInfo                                                        \
@@ -123,6 +124,7 @@ class DOMTypedArray final : public DOMArrayBufferView {
       DOMTypedArray<val_t, v8::Type##Array, clamped>::wrapper_type_info_;
 DOMTYPEDARRAY_FOREACH_VIEW_TYPE(DOMTYPEDARRAY_DECLARE_WRAPPERTYPEINFO)
 #undef DOMTYPEDARRAY_DECLARE_WRAPPERTYPEINFO
+#endif
 
 #define DOMTYPEDARRAY_DEFINE_GETTYPE(val_t, Type, clamped)          \
   template <>                                                       \

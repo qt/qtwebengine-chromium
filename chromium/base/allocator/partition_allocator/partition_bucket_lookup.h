@@ -207,7 +207,11 @@ ALWAYS_INLINE constexpr size_t BucketIndexLookup::GetIndex(size_t size) {
   // This forces the bucket table to be constant-initialized and immediately
   // materialized in the binary.
   constexpr BucketIndexLookup lookup{};
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+  const uint8_t order = kBitsPerSizeT - bits::qConstexprCountLeadingZeroBits(size);
+#else
   const uint8_t order = kBitsPerSizeT - bits::CountLeadingZeroBitsSizeT(size);
+#endif
   // The order index is simply the next few bits after the most significant
   // bit.
   const size_t order_index =
@@ -217,7 +221,7 @@ ALWAYS_INLINE constexpr size_t BucketIndexLookup::GetIndex(size_t size) {
   const uint16_t index =
       lookup.bucket_index_lookup_[(order << kNumBucketsPerOrderBits) +
                                   order_index + !!sub_order_index];
-  PA_DCHECK(index <= kNumBuckets);  // Last one is the sentinel bucket.
+//  PA_DCHECK(index <= kNumBuckets);  // Last one is the sentinel bucket.
   return index;
 }
 

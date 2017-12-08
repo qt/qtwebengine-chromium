@@ -20,8 +20,8 @@ namespace torque {
 
 class GlobalContext : public ContextualClass<GlobalContext> {
  public:
-  GlobalContext(GlobalContext&&) V8_NOEXCEPT = default;
-  GlobalContext& operator=(GlobalContext&&) V8_NOEXCEPT = default;
+  GlobalContext(GlobalContext&&) = default;
+  GlobalContext& operator=(GlobalContext&&) = default;
   explicit GlobalContext(Ast ast);
 
   static Namespace* GetDefaultNamespace() { return Get().default_namespace_; }

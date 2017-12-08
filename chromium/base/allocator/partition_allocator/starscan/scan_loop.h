@@ -14,7 +14,8 @@
 #include "base/compiler_specific.h"
 #include "build/build_config.h"
 
-#if defined(ARCH_CPU_X86_64)
+#if defined(ARCH_CPU_X86_64) && !defined(_MSC_VER)
+#define ARCH_CPU_X86_64_WORKS
 // Include order is important, so we disable formatting.
 // clang-format off
 // Including these headers directly should generally be avoided. For the
@@ -57,7 +58,7 @@ class ScanLoop {
   const Derived& derived() const { return static_cast<const Derived&>(*this); }
   Derived& derived() { return static_cast<Derived&>(*this); }
 
-#if defined(ARCH_CPU_X86_64)
+#if defined(ARCH_CPU_X86_64_WORKS)
   __attribute__((target("avx2"))) void RunAVX2(uintptr_t*, uintptr_t*);
   __attribute__((target("sse4.1"))) void RunSSE4(uintptr_t*, uintptr_t*);
 #endif
@@ -74,7 +75,7 @@ template <typename Derived>
 void ScanLoop<Derived>::Run(uintptr_t* begin, uintptr_t* end) {
 // We allow vectorization only for 64bit since they require support of the
 // 64bit cage, and only for x86 because a special instruction set is required.
-#if defined(ARCH_CPU_X86_64)
+#if defined(ARCH_CPU_X86_64_WORKS)
   if (simd_type_ == SimdSupport::kAVX2)
     return RunAVX2(begin, end);
   if (simd_type_ == SimdSupport::kSSE41)
@@ -106,7 +107,7 @@ void ScanLoop<Derived>::RunUnvectorized(uintptr_t* begin, uintptr_t* end) {
   }
 }
 
-#if defined(ARCH_CPU_X86_64)
+#if defined(ARCH_CPU_X86_64_WORKS)
 template <typename Derived>
 __attribute__((target("avx2"))) void ScanLoop<Derived>::RunAVX2(
     uintptr_t* begin,

@@ -478,10 +478,14 @@
 
 #ifdef SK_DEBUG
     #define SkASSERT(cond) SkASSERT_RELEASE(cond)
+#if defined(_MSC_VER) && !defined(__clang__)
+    #define SkASSERTF(cond, fmt, ...) SkASSERT_RELEASE(cond)
+#else
     #define SkASSERTF(cond, fmt, ...) static_cast<void>( (cond) ? (void)0 : [&]{ \
                                           SkDebugf(fmt"\n", ##__VA_ARGS__);      \
                                           SK_ABORT("assert(%s)", #cond);         \
                                       }() )
+#endif
     #define SkDEBUGFAIL(message)        SK_ABORT("%s", message)
     #define SkDEBUGFAILF(fmt, ...)      SK_ABORT(fmt, ##__VA_ARGS__)
     #define SkDEBUGCODE(...)            __VA_ARGS__

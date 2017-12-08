@@ -101,9 +101,9 @@ void GainHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
   DCHECK(Context()->IsAudioThread());
   DCHECK_LE(frames_to_process, GetDeferredTaskHandler().RenderQuantumFrames());
 
-  float values[GetDeferredTaskHandler().RenderQuantumFrames()];
+  std::vector<float> values(GetDeferredTaskHandler().RenderQuantumFrames());
 
-  gain_->CalculateSampleAccurateValues(values, frames_to_process);
+  gain_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 }
 
 // FIXME: this can go away when we do mixing with gain directly in summing

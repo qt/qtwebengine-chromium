@@ -268,22 +268,27 @@ class NoFreeList final : public FreeList {
  public:
   size_t GuaranteedAllocatable(size_t maximum_freed) final {
     FATAL("NoFreeList can't be used as a standard FreeList. ");
+    return 0;
   }
   size_t Free(Address start, size_t size_in_bytes, FreeMode mode) final {
     FATAL("NoFreeList can't be used as a standard FreeList.");
+    return 0;
   }
   V8_WARN_UNUSED_RESULT FreeSpace Allocate(size_t size_in_bytes,
                                            size_t* node_size,
                                            AllocationOrigin origin) final {
     FATAL("NoFreeList can't be used as a standard FreeList.");
+    return FreeSpace();
   }
   Page* GetPageForSize(size_t size_in_bytes) final {
     FATAL("NoFreeList can't be used as a standard FreeList.");
+    return nullptr;
   }
 
  private:
   FreeListCategoryType SelectFreeListCategoryType(size_t size_in_bytes) final {
     FATAL("NoFreeList can't be used as a standard FreeList.");
+    return 0;
   }
 };
 

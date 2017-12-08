@@ -301,9 +301,11 @@ bindings::CallbackInvokeHelper<{template_params}> helper(
         else:
             body.append(T("const int argc = {};".format(len(arguments))))
         if is_variadic and len(arguments) == 1:
-            body.append(T("v8::Local<v8::Value> argv[std::max(1, argc)];"))
+            body.append(T("std::vector<v8::Local<v8::Value>> argva(std::max(1, argc));"))
+            body.append(T("v8::Local<v8::Value>* argv = argva.data();"))
         else:
-            body.append(T("v8::Local<v8::Value> argv[argc];"))
+            body.append(T("std::vector<v8::Local<v8::Value>> argva(argc);"))
+            body.append(T("v8::Local<v8::Value>* argv = argva.data();"))
         for index, arg_type_and_name in enumerate(arg_type_and_names):
             if arguments[index].is_variadic:
                 break
@@ -579,6 +581,8 @@ def generate_callback_function(callback_function_identifier):
         TextNode("#include \"{}\"".format(header_path)),
         EmptyNode(),
         make_header_include_directives(source_node.accumulator),
+        EmptyNode(),
+        TextNode("#include <vector>"),
         EmptyNode(),
         source_blink_ns,
     ])

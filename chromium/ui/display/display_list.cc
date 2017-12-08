@@ -62,7 +62,11 @@ void DisplayList::RemoveObserver(DisplayObserver* observer) {
 
 DisplayList::Displays::const_iterator DisplayList::FindDisplayById(
     int64_t id) const {
-  return base::ranges::find(displays_, id, &Display::id);
+  auto display = displays_.begin();
+  while (display != displays_.end() && display->id() != id)
+    ++display;
+  return display;
+//   return base::ranges::find(displays_, id, &Display::id);
 }
 
 DisplayList::Displays::const_iterator DisplayList::GetPrimaryDisplayIterator()
@@ -220,7 +224,11 @@ DisplayList::Type DisplayList::GetTypeByDisplayId(int64_t display_id) const {
 
 DisplayList::Displays::iterator DisplayList::FindDisplayByIdInternal(
     int64_t id) {
-  return base::ranges::find(displays_, id, &Display::id);
+  auto display = displays_.begin();
+  while (display != displays_.end() && display->id() != id)
+    ++display;
+  return display;
+//   return base::ranges::find(displays_, id, &Display::id);
 }
 
 }  // namespace display

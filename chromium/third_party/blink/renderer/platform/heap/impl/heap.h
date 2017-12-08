@@ -463,7 +463,7 @@ class GarbageCollected {
   void* operator new[](size_t) = delete;
   // The garbage collector is taking care of reclaiming the object. Also,
   // virtual destructor requires an unambiguous, accessible 'operator delete'.
-  void operator delete(void*) { NOTREACHED(); }
+//  void operator delete(void*) { NOTREACHED(); }
   void operator delete[](void*) = delete;
 
   template <typename Derived>

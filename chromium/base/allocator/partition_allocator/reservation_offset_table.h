@@ -116,7 +116,7 @@ ALWAYS_INLINE uint16_t* ReservationOffsetPointer(uintptr_t address) {
 // If the given address doesn't point to direct-map allocated memory,
 // returns 0.
 ALWAYS_INLINE uintptr_t GetDirectMapReservationStart(void* address) {
-#if DCHECK_IS_ON()
+#if DCHECK_IS_ON() && !defined(COMPILER_MSVC)
   bool is_in_brp_pool = IsManagedByPartitionAllocBRPPool(address);
   bool is_in_non_brp_pool = IsManagedByPartitionAllocNonBRPPool(address);
 #endif
@@ -128,7 +128,7 @@ ALWAYS_INLINE uintptr_t GetDirectMapReservationStart(void* address) {
   uintptr_t reservation_start =
       (ptr_as_uintptr & kSuperPageBaseMask) -
       (static_cast<size_t>(*offset_ptr) << kSuperPageShift);
-#if DCHECK_IS_ON()
+#if DCHECK_IS_ON() && !defined(COMPILER_MSVC)
   // Make sure the reservation start is in the same pool as |address|.
   // In the 32-bit mode, the beginning of a reservation may be excluded from the
   // BRP pool, so shift the pointer. Non-BRP pool doesn't have logic.

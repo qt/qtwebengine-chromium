@@ -441,7 +441,7 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
                                            ResultCode* last_warning,
                                            DWORD* last_error,
                                            PROCESS_INFORMATION* target_info) {
-#if DCHECK_IS_ON()
+#if DCHECK_IS_ON() && !defined(TOOLKIT_QT)
   // This code should only be called from the exe, ensure that this is always
   // the case.
   HMODULE exe_module = nullptr;

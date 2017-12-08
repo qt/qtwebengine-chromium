@@ -59,7 +59,7 @@ group("platform_impls") {
   public_deps = [ "//ui/platform_window/stub" ]
   if (use_x11) {
     public_deps += [ "//ui/platform_window/x11" ]
-  } else if (is_win) {
+  } else if (is_win && !use_qt) {
     public_deps += [ "//ui/platform_window/win" ]
   }
 }

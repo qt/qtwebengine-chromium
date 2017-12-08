@@ -6,6 +6,7 @@
 #define BASE_CHECK_H_
 
 #include <iosfwd>
+#include <ostream>
 
 #include "base/base_export.h"
 #include "base/compiler_specific.h"

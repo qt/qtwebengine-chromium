@@ -7,13 +7,13 @@
 
 namespace ui {
 
-const double OneEuroFilter::kDefaultFrequency;
-const double OneEuroFilter::kDefaultMincutoff;
-const double OneEuroFilter::kDefaultBeta;
-const double OneEuroFilter::kDefaultDcutoff;
+constexpr double OneEuroFilter::kDefaultFrequency;
+constexpr double OneEuroFilter::kDefaultMincutoff;
+constexpr double OneEuroFilter::kDefaultBeta;
+constexpr double OneEuroFilter::kDefaultDcutoff;
 
-const char OneEuroFilter::kParamBeta[];
-const char OneEuroFilter::kParamMincutoff[];
+constexpr char OneEuroFilter::kParamBeta[];
+constexpr char OneEuroFilter::kParamMincutoff[];
 
 OneEuroFilter::OneEuroFilter(double mincutoff, double beta) {
   x_filter_ = std::make_unique<one_euro_filter::OneEuroFilter>(

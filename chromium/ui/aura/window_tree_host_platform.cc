@@ -92,7 +92,7 @@ void WindowTreeHostPlatform::CreateAndSetPlatformWindow(
   return;
 #endif
   NOTREACHED();
-#elif defined(OS_WIN)
+#elif defined(OS_WIN) && !defined(TOOLKIT_QT)
   platform_window_ = std::make_unique<ui::WinWindow>(this, properties.bounds);
 #else
   NOTIMPLEMENTED();

@@ -66,10 +66,10 @@ bool DelayDSPKernel::IsAudioRate() {
 void DelayDSPKernel::ProcessOnlyAudioParams(uint32_t frames_to_process) {
   DCHECK_LE(frames_to_process, RenderQuantumFrames());
 
-  float values[RenderQuantumFrames()];
+  Vector<float> values(RenderQuantumFrames());
 
   GetDelayProcessor()->DelayTime().CalculateSampleAccurateValues(
-      values, frames_to_process);
+      values.data(), frames_to_process);
 }
 
 }  // namespace blink

@@ -106,7 +106,16 @@ typedef struct tagMSG MSG, *PMSG, *NPMSG, *LPMSG;
 typedef struct _RTL_SRWLOCK RTL_SRWLOCK;
 typedef RTL_SRWLOCK SRWLOCK, *PSRWLOCK;
 
-typedef struct _GUID GUID;
+#ifndef GUID_DEFINED
+#define GUID_DEFINED
+typedef struct _GUID {
+    unsigned long  Data1;
+    unsigned short Data2;
+    unsigned short Data3;
+    unsigned char  Data4[8];
+} GUID;
+#endif
+
 typedef GUID CLSID;
 typedef GUID IID;
 

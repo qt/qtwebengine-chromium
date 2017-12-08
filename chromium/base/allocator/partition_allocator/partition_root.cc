@@ -1059,6 +1059,13 @@ void* PartitionRoot<internal::ThreadSafe>::MaybeInitThreadCacheAndAlloc(
   return tcache->GetFromCache(bucket_index, slot_size);
 }
 
+template <>
+void* PartitionRoot<internal::NotThreadSafe>::MaybeInitThreadCacheAndAlloc(
+    uint16_t bucket_index,
+    size_t* slot_size) {
+  return nullptr;
+}
+
 template struct BASE_EXPORT PartitionRoot<internal::ThreadSafe>;
 template struct BASE_EXPORT PartitionRoot<internal::NotThreadSafe>;
 

@@ -61,7 +61,7 @@ class DarkModeSRGBColorSpace {
   }
 
   SkV3 FromLinear(const SkV3& v) const {
-    auto OETF = [](float u) {
+    auto OETF = [](float u) -> float {
       return (u < 0.0031308f ? Clamp(12.92f * u, 0.0f, 1.0f)
                              : Clamp(1.055f * std::pow(u, 1.0f / 2.4f) - 0.055f,
                                      0.0f, 1.0f));
@@ -144,7 +144,7 @@ class DarkModeLABColorSpace {
   // See
   // https://en.wikipedia.org/wiki/CIELAB_color_space#Forward_transformation.
   SkV3 ToXYZ(const SkV3& lab) const {
-    auto invf = [](float x) {
+    auto invf = [](float x) -> float {
       return x > kSigma ? pow(x, 3.0f) : 3.0f * kSigma2 * (x - 4.0f / 29.0f);
     };
 

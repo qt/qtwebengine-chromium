@@ -520,7 +520,11 @@ void CanvasPath::roundRect(
   // TODO(crbug.com/1234113): Instrument new canvas APIs.
   identifiability_study_helper_.set_encountered_skipped_ops();
 
+#if !defined(COMPILER_MSVC)
   FloatSize r[num_radii];
+#else
+  FloatSize r[4];
+#endif
   for (int i = 0; i < num_radii; ++i) {
     switch (radii[i]->GetContentType()) {
       case V8UnionDOMPointInitOrUnrestrictedDouble::ContentType::

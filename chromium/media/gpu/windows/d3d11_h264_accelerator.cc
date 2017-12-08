@@ -6,6 +6,7 @@
 
 #include <windows.h>
 
+#include "base/macros.h" // CR_EXPAND_ARG
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
@@ -221,7 +222,7 @@ void D3D11H264Accelerator::FillPicParamsWithConstants(
 
 #define SPS_TO_PP1(a) pic_param->a = sps->a;
 #define SPS_TO_PP2(a, b) pic_param->a = sps->b;
-#define SPS_TO_PP(...) ARG_SEL(__VA_ARGS__, SPS_TO_PP2, SPS_TO_PP1)(__VA_ARGS__)
+#define SPS_TO_PP(...) CR_EXPAND_ARG(ARG_SEL(__VA_ARGS__, SPS_TO_PP2, SPS_TO_PP1)(__VA_ARGS__))
 void D3D11H264Accelerator::PicParamsFromSPS(DXVA_PicParams_H264* pic_param,
                                             const H264SPS* sps,
                                             bool field_pic) {
@@ -253,7 +254,7 @@ void D3D11H264Accelerator::PicParamsFromSPS(DXVA_PicParams_H264* pic_param,
 
 #define PPS_TO_PP1(a) pic_param->a = pps->a;
 #define PPS_TO_PP2(a, b) pic_param->a = pps->b;
-#define PPS_TO_PP(...) ARG_SEL(__VA_ARGS__, PPS_TO_PP2, PPS_TO_PP1)(__VA_ARGS__)
+#define PPS_TO_PP(...) CR_EXPAND_ARG(ARG_SEL(__VA_ARGS__, PPS_TO_PP2, PPS_TO_PP1)(__VA_ARGS__))
 bool D3D11H264Accelerator::PicParamsFromPPS(DXVA_PicParams_H264* pic_param,
                                             const H264PPS* pps) {
   PPS_TO_PP(constrained_intra_pred_flag);

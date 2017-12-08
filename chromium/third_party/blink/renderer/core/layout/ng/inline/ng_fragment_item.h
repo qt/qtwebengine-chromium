@@ -84,6 +84,8 @@ class CORE_EXPORT NGFragmentItem {
 
   enum ItemType { kText, kSvgText, kGeneratedText, kLine, kBox };
 
+  NGFragmentItem() { }
+
   // Create appropriate type for |line_item|.
   NGFragmentItem(NGLogicalLineItem&& line_item, WritingMode writing_mode);
   // Create a box item.

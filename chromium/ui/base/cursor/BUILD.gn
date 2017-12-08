@@ -67,7 +67,7 @@ if (use_aura) {
       "//ui/resources:ui_resources_grd",
     ]
 
-    if (is_win) {
+    if (is_win && !use_qt) {
       sources += [
         "win/win_cursor.cc",
         "win/win_cursor.h",

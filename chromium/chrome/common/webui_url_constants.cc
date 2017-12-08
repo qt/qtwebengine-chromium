@@ -640,10 +640,11 @@ const char* const kChromeHostURLs[] = {
     kCfmNetworkSettingsHost,
 #endif  // BUILDFLAG(PLATFORM_CFM)
 };
-const size_t kNumberOfChromeHostURLs = base::size(kChromeHostURLs);
+const size_t kNumberOfChromeHostURLs = sizeof(kChromeHostURLs) / sizeof(const char*);
 
 // Add chrome://internals/* subpages here to be included in chrome://chrome-urls
 // (about:about).
+#if !defined(COMPILER_MSVC)
 const char* const kChromeInternalsPathURLs[] = {
 #if defined(OS_ANDROID)
     kChromeUIInternalsQueryTilesPath,
@@ -654,6 +655,10 @@ const char* const kChromeInternalsPathURLs[] = {
 };
 const size_t kNumberOfChromeInternalsPathURLs =
     sizeof(kChromeInternalsPathURLs) / sizeof(const char*);
+#else
+const char* const kChromeInternalsPathURLs[1] = { nullptr };
+const size_t kNumberOfChromeInternalsPathURLs = 0;
+#endif // !defined(COMPILER_MSVC)
 
 const char* const kChromeDebugURLs[] = {
     blink::kChromeUIBadCastCrashURL,
