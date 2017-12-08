@@ -7,9 +7,9 @@
 
 #include "build/build_config.h"
 
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-#error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
-#endif
+// #if defined(COMPILER_MSVC) && !defined(__clang__)
+// #error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
+// #endif
 
 // Annotate a variable indicating it's ok if the variable is not used.
 // (Typically used to silence a compiler warning when the assignment
