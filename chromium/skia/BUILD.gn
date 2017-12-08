@@ -132,8 +132,10 @@ config("skia_library_config") {
 
   # Skia uses C++17 language features in its internal code. Previously Skia was built with
   # "-std=c++17". See http://crbug.com/1257145 for why this was a bad idea.
-  cflags_cc = [ "-Wno-c++17-extensions" ]
-  cflags_objcc = [ "-Wno-c++17-extensions" ]
+  if (is_clang || !is_win) {
+    cflags_cc = [ "-Wno-c++17-extensions" ]
+    cflags_objcc = [ "-Wno-c++17-extensions" ]
+  }
 
   if (!is_ios && !use_system_freetype) {
     defines += [ "SK_FREETYPE_MINIMUM_RUNTIME_VERSION=(((FREETYPE_MAJOR) * 0x01000000) | ((FREETYPE_MINOR) * 0x00010000) | ((FREETYPE_PATCH) * 0x00000100))" ]

@@ -88,7 +88,11 @@ Stack::Stack(void* stack_top) : stack_top_(stack_top) {
 }
 
 NOINLINE uintptr_t* GetStackPointer() {
+#if defined(COMPILER_GCC) || defined(__clang__)
   return reinterpret_cast<uintptr_t*>(__builtin_frame_address(0));
+#else
+  return nullptr;
+#endif
 }
 
 namespace {

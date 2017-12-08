@@ -314,7 +314,7 @@ void AXInlineTextBox::SerializeMarkerAttributes(
                                                  markers_used_by_accessibility);
   const int start_text_offset_in_parent = TextOffsetInContainer(0);
   for (const auto& node_marker_pair : node_marker_pairs) {
-    DCHECK_EQ(GetNode(), node_marker_pair.first);
+    DCHECK_EQ(GetNode(), node_marker_pair.first.Get());
     const DocumentMarker* marker = node_marker_pair.second;
 
     if (aria_marker_type == marker->GetType())

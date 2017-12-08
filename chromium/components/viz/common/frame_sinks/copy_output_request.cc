@@ -114,7 +114,7 @@ void CopyOutputRequest::set_blit_request(BlitRequest blit_request) {
 
 #if DCHECK_IS_ON()
   {
-    const gpu::MailboxHolder* first_zeroed_mailbox_it = std::find_if(
+    const auto first_zeroed_mailbox_it = std::find_if(
         blit_request.mailboxes().begin(), blit_request.mailboxes().end(),
         [](const gpu::MailboxHolder& mailbox_holder) {
           return mailbox_holder.mailbox.IsZero();

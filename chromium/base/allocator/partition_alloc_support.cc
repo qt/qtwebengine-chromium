@@ -58,7 +58,10 @@ constexpr const char* ScannerIdToTracingString(
     case internal::StatsCollector::ScannerId::kOverall:
       return "PCScan.Scanner";
     case internal::StatsCollector::ScannerId::kNumIds:
+#if defined(__GNUC__) || defined(__clang__)
       __builtin_unreachable();
+#endif
+      return nullptr;
   }
 }
 
@@ -74,7 +77,10 @@ constexpr const char* MutatorIdToTracingString(
     case internal::StatsCollector::MutatorId::kOverall:
       return "PCScan.Mutator";
     case internal::StatsCollector::MutatorId::kNumIds:
+#if defined(__GNUC__) || defined(__clang__)
       __builtin_unreachable();
+#endif
+      return nullptr;
   }
 }
 

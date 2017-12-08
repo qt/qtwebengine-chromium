@@ -79,7 +79,7 @@ std::string AccessibilityEventToStringUTF8(int32_t event_id) {
 AXEventRecorderWin* AXEventRecorderWin::instance_ = nullptr;
 
 // static
-CALLBACK void AXEventRecorderWin::WinEventHookThunk(HWINEVENTHOOK handle,
+void CALLBACK AXEventRecorderWin::WinEventHookThunk(HWINEVENTHOOK handle,
                                                     DWORD event,
                                                     HWND hwnd,
                                                     LONG obj_id,

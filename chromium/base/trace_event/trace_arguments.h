@@ -16,6 +16,7 @@
 #include "base/base_export.h"
 #include "base/trace_event/common/trace_event_common.h"
 #include "base/tracing_buildflags.h"
+#include "build/build_config.h" // COMPILER_MSVC
 #include "third_party/perfetto/include/perfetto/protozero/scattered_heap_buffer.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
 #include "third_party/perfetto/protos/perfetto/trace/track_event/debug_annotation.pbzero.h"
@@ -332,16 +333,16 @@ union BASE_EXPORT TraceValue {
   template <typename T>
   struct TypeFor<T,
                  typename std::enable_if<HasHelperSupport<
-                     typename InnerType<T>::type>::value>::type> {
+                     T>::value>::type> {
     using ValueType = typename InnerType<T>::type;
     static const unsigned char value = Helper<ValueType>::kType;
   };
   template <typename T>
   struct TypeFor<T,
                  typename std::enable_if<
-                     !HasHelperSupport<typename InnerType<T>::type>::value &&
+                     !HasHelperSupport<T>::value &&
                      perfetto::internal::has_traced_value_support<
-                         typename InnerType<T>::type>::value>::type> {
+                         T>::value>::type> {
     static const unsigned char value = TRACE_VALUE_TYPE_PROTO;
   };
 
@@ -627,7 +628,11 @@ class BASE_EXPORT TraceArguments {
   TraceArguments() : size_(0) {}
 
   // Constructor for a single argument.
+#if defined(COMPILER_MSVC)
+  template <typename T>
+#else
   template <typename T, class = decltype(TraceValue::TypeCheck<T>::value)>
+#endif
   TraceArguments(const char* arg1_name, T&& arg1_value) : size_(1) {
     types_[0] = TraceValue::TypeFor<T>::value;
     names_[0] = arg1_name;
@@ -636,9 +641,13 @@ class BASE_EXPORT TraceArguments {
 
   // Constructor for two arguments.
   template <typename T1,
+#if defined(COMPILER_MSVC)
+            typename T2>
+#else
             typename T2,
             class = decltype(TraceValue::TypeCheck<T1>::value &&
                              TraceValue::TypeCheck<T2>::value)>
+#endif
   TraceArguments(const char* arg1_name,
                  T1&& arg1_value,
                  const char* arg2_name,

@@ -99,6 +99,9 @@ bool EndpointResultIsNonProtocol(const HostResolverEndpointResult& result) {
 const std::vector<bool>*
 HostResolver::ResolveHostRequest::GetExperimentalResultsForTesting() const {
   IMMEDIATE_CRASH();
+  static const base::NoDestructor<std::vector<bool>>
+      nullopt_result;
+  return &(*nullopt_result);
 }
 
 const size_t HostResolver::ManagerOptions::kDefaultRetryAttempts =

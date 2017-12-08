@@ -68,8 +68,8 @@ class StateBitmap final {
 
   using CellType = uintptr_t;
   static constexpr size_t kBitsPerCell = sizeof(CellType) * CHAR_BIT;
-  static constexpr size_t kBitsNeededForAllocation =
-      base::bits::Log2Floor(static_cast<size_t>(State::kNumOfStates));
+  static constexpr size_t kBitsNeededForAllocation = 2;
+//       base::bits::Log2Floor(static_cast<size_t>(State::kNumOfStates));
   static constexpr CellType kStateMask = (1 << kBitsNeededForAllocation) - 1;
 
   static constexpr size_t kBitmapSize =
@@ -234,7 +234,12 @@ StateBitmap<PageSize, PageAlignment, AllocationAlignment>::Quarantine(
   auto& cell = AsAtomicCell(cell_index);
   const CellType cell_before = cell.fetch_and(mask, std::memory_order_relaxed);
   // Check if the previous state was also quarantined.
-  return __builtin_popcount(static_cast<unsigned>((cell_before >> object_bit) &
+#if defined(_MSC_VER)
+  return __popcnt64(
+#else
+  return __builtin_popcount(
+#endif
+              static_cast<unsigned>((cell_before >> object_bit) &
                                                   kStateMask)) != 1;
 }
 
@@ -304,7 +309,11 @@ StateBitmap<PageSize, PageAlignment, AllocationAlignment>::IsQuarantined(
     uintptr_t address) const {
   // On x86 CPI of popcnt is the same as tzcnt, so we use it instead of tzcnt +
   // inversion.
+#if defined(_MSC_VER)
+  return __popcnt64(GetBits(address)) == 1;
+#else
   return __builtin_popcount(GetBits(address)) == 1;
+#endif
 }
 
 template <size_t PageSize, size_t PageAlignment, size_t AllocationAlignment>
@@ -345,7 +354,11 @@ unsigned StateBitmap<PageSize, PageAlignment, AllocationAlignment>::GetBits(
 template <size_t PageSize, size_t PageAlignment, size_t AllocationAlignment>
 bool StateBitmap<PageSize, PageAlignment, AllocationAlignment>::
     FilterQuarantine::operator()(CellType bits) const {
+#if defined(_MSC_VER)
+  return __popcnt64(bits) == 1;
+#else
   return __builtin_popcount(bits) == 1;
+#endif
 }
 
 template <size_t PageSize, size_t PageAlignment, size_t AllocationAlignment>

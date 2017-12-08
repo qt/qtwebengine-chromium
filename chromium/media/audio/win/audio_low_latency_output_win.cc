@@ -305,7 +305,7 @@ bool WASAPIAudioOutputStream::Open() {
   session_listener_ = std::make_unique<AudioSessionEventListener>(
       audio_client_.Get(), BindToCurrentLoop(base::BindOnce(
                                &WASAPIAudioOutputStream::OnDeviceChanged,
-                               weak_factory_.GetWeakPtr())));
+                               weak_factory_.GetWeakPtr()), FROM_HERE));
 
   opened_ = true;
   return true;

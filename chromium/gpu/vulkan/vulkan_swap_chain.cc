@@ -383,13 +383,13 @@ bool VulkanSwapChain::PresentBuffer(const gfx::Rect& rect) {
       present_info.pImageIndices = &acquired_image_.value();
 
   VkQueue queue = device_queue_->GetVulkanQueue();
-  auto result = ({
+  auto result = [&](){
     static auto* kCrashKey = base::debug::AllocateCrashKeyString(
         "inside_queue_present", base::debug::CrashKeySize::Size32);
     base::debug::ScopedCrashKeyString scoped_crash_key(kCrashKey, "1");
 
-    vkQueuePresentKHR(queue, &present_info);
-  });
+    return vkQueuePresentKHR(queue, &present_info);
+  }();
 
   if (UNLIKELY(result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)) {
     LOG(DFATAL) << "vkQueuePresentKHR() failed: " << result;

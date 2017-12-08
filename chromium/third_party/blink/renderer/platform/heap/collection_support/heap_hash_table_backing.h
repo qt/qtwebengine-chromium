@@ -43,6 +43,8 @@ class HeapHashTableBacking final
   ALWAYS_INLINE static ClassType* FromArray(ValueType* array) {
     return reinterpret_cast<ClassType*>(array);
   }
+  void operator delete(void* p) { delete (WTF::ConditionalDestructor<HeapHashTableBacking<Table>,
+              std::is_trivially_destructible<typename Table::ValueType>::value>*)p; }
 
   void Free(cppgc::HeapHandle& heap_handle) {
     cppgc::subtle::FreeUnreferencedObject(heap_handle, *this);

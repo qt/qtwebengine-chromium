@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/features.gni")
 import("//build/config/jumbo.gni")
 import("//testing/test.gni")
 
@@ -208,6 +209,10 @@ jumbo_static_library("metrics") {
 
   if (is_fuchsia) {
     sources += [ "drive_metrics_provider_fuchsia.cc" ]
+  }
+
+  if (use_qt) {
+    deps -= [ "//components/variations/field_trial_config" ]
   }
 }
 

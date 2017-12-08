@@ -698,7 +698,12 @@ scoped_refptr<AudioBus> AudioBus::CreateByMixingToMono(
 }
 
 bool AudioBus::IsSilent() const {
-  return base::ranges::all_of(channels_, &AudioChannel::IsSilent);
+  for (const AudioChannel& channel : channels_) {
+    if (!channel.IsSilent())
+      return false;
+  }
+  return true;
+//  return base::ranges::all_of(channels_, &AudioChannel::IsSilent);
 }
 
 void AudioBus::ClearSilentFlag() {

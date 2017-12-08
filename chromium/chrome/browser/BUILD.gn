@@ -5355,7 +5355,7 @@ static_library("browser") {
     allow_circular_includes_from += [ "//chrome/browser/policy:onc" ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     libs += [
       "secur32.lib",
 

@@ -161,7 +161,7 @@ if (!is_android && !is_mac) {
       data_deps += [ "//chrome:chrome(//build/toolchain/cros:lacros_clang)" ]
     }
 
-    if (is_win) {
+    if (is_win && !use_qt) {
       sources += [
         "app/chrome_exe.rc",
         "app/chrome_exe_main_win.cc",

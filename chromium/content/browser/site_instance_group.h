@@ -125,7 +125,7 @@ class CONTENT_EXPORT SiteInstanceGroup
   void WriteIntoTrace(perfetto::TracedProto<TraceProto> proto) const;
 
  private:
-  friend class RefCounted<SiteInstanceGroup>;
+  friend class base::RefCounted<SiteInstanceGroup>;
   ~SiteInstanceGroup() override;
 
   // RenderProcessHostObserver implementation.

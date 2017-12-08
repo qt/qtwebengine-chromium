@@ -106,7 +106,7 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   USING_PRE_FINALIZER(LocalDOMWindow, Dispose);
 
  public:
-  class CORE_EXPORT EventListenerObserver : public GarbageCollectedMixin {
+  class CORE_EXPORT EventListenerObserver : public cppgc::GarbageCollectedMixin {
    public:
     virtual void DidAddEventListener(LocalDOMWindow*, const AtomicString&) = 0;
     virtual void DidRemoveEventListener(LocalDOMWindow*,

@@ -856,6 +856,15 @@ class TRIVIAL_ABI GSL_POINTER raw_ptr {
     return *this += -delta_elems;
   }
 
+  template<typename U, typename = std::enable_if_t<std::is_integral<U>::value>>
+  ALWAYS_INLINE T* operator+(U delta_elems) const {
+    return get() + delta_elems;
+  }
+  template<typename U, typename = std::enable_if_t<std::is_integral<U>::value>>
+  ALWAYS_INLINE T* operator-(U delta_elems) const {
+    return get() - delta_elems;
+  }
+
   // Stop referencing the underlying pointer and free its memory. Compared to
   // raw delete calls, this avoids the raw_ptr to be temporarily dangling
   // during the free operation, which will lead to taking the slower path that

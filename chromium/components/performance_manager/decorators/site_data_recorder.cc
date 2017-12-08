@@ -57,6 +57,7 @@ class SiteDataNodeData : public NodeAttachedDataImpl<SiteDataNodeData>,
  public:
   struct Traits : public NodeAttachedDataOwnedByNodeType<PageNodeImpl> {};
 
+  SiteDataNodeData() = default;
   explicit SiteDataNodeData(const PageNodeImpl* page_node)
       : page_node_(page_node) {}
 

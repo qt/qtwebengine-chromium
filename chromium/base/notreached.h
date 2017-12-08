@@ -24,10 +24,17 @@ void BASE_EXPORT LogErrorNotReached(const char* file, int line);
 // implemented yet. If output spam is a serious concern,
 // NOTIMPLEMENTED_LOG_ONCE can be used.
 #if DCHECK_IS_ON()
+#ifdef _MSC_VER
+#define NOTIMPLEMENTED()                                     \
+  ::logging::CheckError::NotImplemented(__FILE__, __LINE__,  \
+                                        __FUNCSIG__)         \
+      .stream()
+#else
 #define NOTIMPLEMENTED()                                     \
   ::logging::CheckError::NotImplemented(__FILE__, __LINE__,  \
                                         __PRETTY_FUNCTION__) \
       .stream()
+#endif
 #else
 #define NOTIMPLEMENTED() EAT_CHECK_STREAM_PARAMS()
 #endif

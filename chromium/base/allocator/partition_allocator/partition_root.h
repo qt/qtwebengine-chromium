@@ -1326,7 +1326,11 @@ ALWAYS_INLINE void PartitionRoot<thread_safe>::RawFree(uintptr_t slot_start,
   // OS page. No need to write to the second one as well.
   //
   // Do not move the store above inside the locked section.
+#if defined(__clang__) || defined(COMPILER_GCC)
   __asm__ __volatile__("" : : "r"(slot_start) : "memory");
+#else
+  _ReadBarrier();
+#endif
 
   ::partition_alloc::internal::ScopedGuard guard{lock_};
   FreeInSlotSpan(slot_start, slot_span);

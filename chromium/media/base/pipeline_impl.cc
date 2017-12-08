@@ -610,7 +610,7 @@ void PipelineImpl::RendererWrapper::CreateRendererInternal(
     // BindToCurrentLoop to call OnRendererCreated() on the media task runner.
     auto renderer_created_cb = BindToCurrentLoop(
         base::BindOnce(&RendererWrapper::OnRendererCreated,
-                       weak_factory_.GetWeakPtr(), std::move(done_cb)));
+                       weak_factory_.GetWeakPtr(), std::move(done_cb)), FROM_HERE);
     main_task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(&PipelineImpl::AsyncCreateRenderer, weak_pipeline_,
@@ -684,7 +684,7 @@ void PipelineImpl::OnEnabledAudioTracksChanged(
       base::BindOnce(&RendererWrapper::OnEnabledAudioTracksChanged,
                      base::Unretained(renderer_wrapper_.get()),
                      enabled_track_ids,
-                     BindToCurrentLoop(std::move(change_completed_cb))));
+                     BindToCurrentLoop(std::move(change_completed_cb), FROM_HERE)));
 }
 
 void PipelineImpl::RendererWrapper::OnEnabledAudioTracksChanged(
@@ -725,7 +725,7 @@ void PipelineImpl::OnSelectedVideoTrackChanged(
       base::BindOnce(&RendererWrapper::OnSelectedVideoTrackChanged,
                      base::Unretained(renderer_wrapper_.get()),
                      selected_track_id,
-                     BindToCurrentLoop(std::move(change_completed_cb))));
+                     BindToCurrentLoop(std::move(change_completed_cb), FROM_HERE)));
 }
 
 void PipelineImpl::RendererWrapper::OnSelectedVideoTrackChanged(
@@ -1502,7 +1502,7 @@ void PipelineImpl::SetCdm(CdmContext* cdm_context,
       FROM_HERE,
       base::BindOnce(&RendererWrapper::SetCdm,
                      base::Unretained(renderer_wrapper_.get()), cdm_context,
-                     BindToCurrentLoop(std::move(cdm_attached_cb))));
+                     BindToCurrentLoop(std::move(cdm_attached_cb), FROM_HERE)));
 }
 
 #define RETURN_STRING(state) \

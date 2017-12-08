@@ -242,12 +242,12 @@ const base::Feature kCheckCacheForQueuedRequests{
     "CheckCacheForQueuedRequests", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // The time interval before checking the cache for queued request.
-constexpr base::FeatureParam<base::TimeDelta> kQueuedRequestsCacheCheckInterval{
+const base::FeatureParam<base::TimeDelta> kQueuedRequestsCacheCheckInterval{
     &kCheckCacheForQueuedRequests, "queued_requests_cache_check_interval",
     base::Milliseconds(100)};
 
 // Cache check is only valid for requests queued for long than this threshold.
-constexpr base::FeatureParam<base::TimeDelta>
+const base::FeatureParam<base::TimeDelta>
     kQueuedRequestsCacheCheckTimeThreshold{
         &kCheckCacheForQueuedRequests,
         "queued_requests_cache_check_time_threshold", base::Milliseconds(100)};

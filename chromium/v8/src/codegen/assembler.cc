@@ -128,6 +128,7 @@ class ExternalAssemblerBufferImpl : public AssemblerBuffer {
 
   std::unique_ptr<AssemblerBuffer> Grow(int new_size) override {
     FATAL("Cannot grow external assembler buffer");
+    return nullptr;
   }
 
   void* operator new(std::size_t count);

@@ -1217,7 +1217,7 @@ void WebGPUDecoderImpl::OnRequestDeviceCallback(
   cmds::DawnReturnRequestDeviceInfo* return_request_device_info =
       reinterpret_cast<cmds::DawnReturnRequestDeviceInfo*>(
           serialized_buffer.data());
-  *return_request_device_info = {};
+  *return_request_device_info = cmds::DawnReturnRequestDeviceInfo();
   return_request_device_info->request_device_serial = request_device_serial;
   return_request_device_info->is_request_device_success =
       status == WGPURequestDeviceStatus_Success;

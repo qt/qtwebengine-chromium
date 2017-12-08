@@ -17,7 +17,7 @@ namespace {
 // Feature flags for extension features. These can be used to implement remote
 // kill switches for extension features. Note any such feature flags must
 // generally be removed once the API has been stable for a few releases.
-constexpr std::array<base::Feature, 0> kFeatureFlags{};
+constexpr std::array<base::Feature, 0> kFeatureFlags = {};
 
 const std::vector<base::Feature>* g_feature_flags_test_override = nullptr;
 

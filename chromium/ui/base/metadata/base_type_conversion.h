@@ -168,7 +168,10 @@ struct EnumStringsMap;
       const std::u16string& str) {                                           \
     const auto& map = EnumStringsMap<T>::Get();                              \
     using Pair = base::ranges::range_value_t<decltype(map)>;                 \
-    auto* it = base::ranges::find(map, str, &Pair::second);                  \
+    auto it = map.begin();                                                   \
+    while (it != map.end() && it->second != str)                             \
+      ++it;                                                                  \
+    /*auto* it = base::ranges::find(map, str, &Pair::second);*/                  \
     return it != map.end() ? absl::make_optional(it->first) : absl::nullopt; \
   }                                                                          \
                                                                              \
@@ -318,7 +321,7 @@ MAKE_TYPE_UNIQUE(SkColor);
 
 template <>
 struct COMPONENT_EXPORT(UI_BASE_METADATA)
-    TypeConverter<UNIQUE_TYPE_NAME(SkColor)>
+    TypeConverter<SkColorUnique>
     : BaseTypeConverter<true, false, kSkColorPrefix> {
   static std::u16string ToString(SkColor source_value);
   static absl::optional<SkColor> FromString(const std::u16string& source_value);
@@ -367,7 +370,7 @@ struct COMPONENT_EXPORT(UI_BASE_METADATA)
       const std::u16string& rgb_string);
 };
 
-using SkColorConverter = TypeConverter<UNIQUE_TYPE_NAME(SkColor)>;
+using SkColorConverter = TypeConverter<SkColorUnique>;
 
 }  // namespace metadata
 }  // namespace ui

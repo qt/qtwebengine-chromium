@@ -313,15 +313,15 @@ void UnmapNow(uintptr_t reservation_start,
   if (pool == GetBRPPool()) {
     // In 32-bit mode, the beginning of a reservation may be excluded from the
     // BRP pool, so shift the pointer. Other pools don't have this logic.
-    PA_DCHECK(IsManagedByPartitionAllocBRPPool(
-#if defined(PA_HAS_64_BITS_POINTERS)
-        reservation_start
-#else
-        reservation_start +
-        AddressPoolManagerBitmap::kBytesPer1BitOfBRPPoolBitmap *
-            AddressPoolManagerBitmap::kGuardOffsetOfBRPPoolBitmap
-#endif
-        ));
+//     PA_DCHECK(IsManagedByPartitionAllocBRPPool(
+// #if defined(PA_HAS_64_BITS_POINTERS)
+//         reservation_start
+// #else
+//         reservation_start +
+//         AddressPoolManagerBitmap::kBytesPer1BitOfBRPPoolBitmap *
+//             AddressPoolManagerBitmap::kGuardOffsetOfBRPPoolBitmap
+// #endif
+//         ));
   } else
 #endif  // BUILDFLAG(USE_BACKUP_REF_PTR)
   {

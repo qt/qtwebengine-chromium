@@ -52,10 +52,12 @@
 #include "ui/ozone/public/surface_factory_ozone.h"
 #endif
 
-#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_WIN)
+#if !defined(TOOLKIT_QT)
 #include "gpu/config/gpu_driver_bug_workarounds.h"
-#include "ui/gl/direct_composition_surface_win.h"
 #include "ui/gl/gl_surface_egl.h"
+#endif
+#include "ui/gl/direct_composition_surface_win.h"
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
@@ -94,7 +96,7 @@ bool CollectGraphicsInfo(GPUInfo* gpu_info) {
 
 void InitializePlatformOverlaySettings(GPUInfo* gpu_info,
                                        const GpuFeatureInfo& gpu_feature_info) {
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
   // This has to be called after a context is created, active GPU is identified,
   // and GPU driver bug workarounds are computed again. Otherwise the workaround
   // |disable_direct_composition| may not be correctly applied.
