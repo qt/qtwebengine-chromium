@@ -3664,18 +3664,12 @@ MaybeHandle<Map> Map::CopyWithField(Handle<Map> map, Handle<Name> name,
   int index = map->NextFreePropertyIndex();
 
   if (map->instance_type() == JS_CONTEXT_EXTENSION_OBJECT_TYPE) {
+    constness = kMutable;
     representation = Representation::Tagged();
     type = FieldType::Any(isolate);
-  } else if (IsTransitionableFastElementsKind(map->elements_kind()) &&
-             IsInplaceGeneralizableField(constness, representation, *type)) {
-    // We don't support propagation of field generalization through elements
-    // kind transitions because they are inserted into the transition tree
-    // before field transitions. In order to avoid complexity of handling
-    // such a case we ensure that all maps with transitionable elements kinds
-    // do not have fields that can be generalized in-place (without creation
-    // of a new map).
-    DCHECK(representation.IsHeapObject());
-    type = FieldType::Any(isolate);
+  } else {
+    Map::GeneralizeIfCanHaveTransitionableFastElementsKind(
+        isolate, map->instance_type(), &constness, &representation, &type);
   }
 
   Handle<Object> wrapped_type(WrapFieldType(type));
@@ -4051,9 +4045,7 @@ void MigrateFastToFast(Handle<JSObject> object, Handle<Map> new_map) {
     }
   }
 
-  if (external > 0) {
-    object->SetProperties(*array);
-  }
+  object->SetProperties(*array);
 
   // Create filler object past the new instance size.
   int new_instance_size = new_map->instance_size();
@@ -4255,6 +4247,10 @@ int Map::NumberOfFields() const {
     if (descriptors->GetDetails(i).location() == kField) result++;
   }
   return result;
+}
+
+bool Map::HasOutOfObjectProperties() const {
+  return GetInObjectProperties() < NumberOfFields();
 }
 
 void DescriptorArray::GeneralizeAllFields() {
@@ -5843,10 +5839,8 @@ void JSObject::AllocateStorageForMap(Handle<JSObject> object, Handle<Map> map) {
       storage = isolate->factory()->NewFixedArray(inobject);
     }
 
-    Handle<PropertyArray> array;
-    if (external > 0) {
-      array = isolate->factory()->NewPropertyArray(external);
-    }
+    Handle<PropertyArray> array =
+        isolate->factory()->NewPropertyArray(external);
 
     for (int i = 0; i < map->NumberOfOwnDescriptors(); i++) {
       PropertyDetails details = descriptors->GetDetails(i);
@@ -5862,9 +5856,7 @@ void JSObject::AllocateStorageForMap(Handle<JSObject> object, Handle<Map> map) {
       }
     }
 
-    if (external > 0) {
-      object->SetProperties(*array);
-    }
+    object->SetProperties(*array);
 
     if (!FLAG_unbox_double_fields) {
       for (int i = 0; i < inobject; i++) {
@@ -6231,6 +6223,9 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
   Handle<PropertyArray> fields =
       factory->NewPropertyArray(number_of_allocated_fields);
 
+  bool is_transitionable_elements_kind =
+      IsTransitionableFastElementsKind(old_map->elements_kind());
+
   // Fill in the instance descriptor and the fields.
   int current_offset = 0;
   for (int i = 0; i < instance_descriptor_length; i++) {
@@ -6258,8 +6253,14 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
         d = Descriptor::DataConstant(key, handle(value, isolate),
                                      details.attributes());
       } else {
+        // Ensure that we make constant field only when elements kind is not
+        // transitionable.
+        PropertyConstness constness =
+            FLAG_track_constant_fields && !is_transitionable_elements_kind
+                ? kConst
+                : kMutable;
         d = Descriptor::DataField(
-            key, current_offset, details.attributes(), kDefaultFieldConstness,
+            key, current_offset, details.attributes(), constness,
             // TODO(verwaest): value->OptimalRepresentation();
             Representation::Tagged(), FieldType::Any(isolate));
       }
@@ -6373,22 +6374,25 @@ Handle<SeededNumberDictionary> JSObject::NormalizeElements(
 
 namespace {
 
-Object* SetHashAndUpdateProperties(HeapObject* properties, int masked_hash) {
-  DCHECK_NE(PropertyArray::kNoHashSentinel, masked_hash);
-  DCHECK_EQ(masked_hash & JSReceiver::kHashMask, masked_hash);
+Object* SetHashAndUpdateProperties(HeapObject* properties, int hash) {
+  DCHECK_NE(PropertyArray::kNoHashSentinel, hash);
+  DCHECK(PropertyArray::HashField::is_valid(hash));
 
-  if (properties == properties->GetHeap()->empty_fixed_array() ||
-      properties == properties->GetHeap()->empty_property_dictionary()) {
-    return Smi::FromInt(masked_hash);
+  Heap* heap = properties->GetHeap();
+  if (properties == heap->empty_fixed_array() ||
+      properties == heap->empty_property_array() ||
+      properties == heap->empty_property_dictionary()) {
+    return Smi::FromInt(hash);
   }
 
   if (properties->IsPropertyArray()) {
-    PropertyArray::cast(properties)->SetHash(masked_hash);
+    PropertyArray::cast(properties)->SetHash(hash);
+    DCHECK_LT(0, PropertyArray::cast(properties)->length());
     return properties;
   }
 
   DCHECK(properties->IsDictionary());
-  NameDictionary::cast(properties)->SetHash(masked_hash);
+  NameDictionary::cast(properties)->SetHash(hash);
   return properties;
 }
 
@@ -6419,18 +6423,21 @@ int GetIdentityHashHelper(Isolate* isolate, JSReceiver* object) {
 }
 }  // namespace
 
-void JSReceiver::SetIdentityHash(int masked_hash) {
+void JSReceiver::SetIdentityHash(int hash) {
   DisallowHeapAllocation no_gc;
-  DCHECK_NE(PropertyArray::kNoHashSentinel, masked_hash);
-  DCHECK_EQ(masked_hash & JSReceiver::kHashMask, masked_hash);
+  DCHECK_NE(PropertyArray::kNoHashSentinel, hash);
+  DCHECK(PropertyArray::HashField::is_valid(hash));
 
   HeapObject* existing_properties = HeapObject::cast(raw_properties_or_hash());
   Object* new_properties =
-      SetHashAndUpdateProperties(existing_properties, masked_hash);
+      SetHashAndUpdateProperties(existing_properties, hash);
   set_raw_properties_or_hash(new_properties);
 }
 
 void JSReceiver::SetProperties(HeapObject* properties) {
+  DCHECK_IMPLIES(properties->IsPropertyArray() &&
+                     PropertyArray::cast(properties)->length() == 0,
+                 properties == properties->GetHeap()->empty_property_array());
   DisallowHeapAllocation no_gc;
   Isolate* isolate = properties->GetIsolate();
   int hash = GetIdentityHashHelper(isolate, this);
@@ -6481,11 +6488,11 @@ Smi* JSObject::GetOrCreateIdentityHash(Isolate* isolate) {
     return Smi::cast(hash_obj);
   }
 
-  int masked_hash = isolate->GenerateIdentityHash(JSReceiver::kHashMask);
-  DCHECK_NE(PropertyArray::kNoHashSentinel, masked_hash);
+  int hash = isolate->GenerateIdentityHash(PropertyArray::HashField::kMax);
+  DCHECK_NE(PropertyArray::kNoHashSentinel, hash);
 
-  SetIdentityHash(masked_hash);
-  return Smi::FromInt(masked_hash);
+  SetIdentityHash(hash);
+  return Smi::FromInt(hash);
 }
 
 Object* JSProxy::GetIdentityHash() { return hash(); }
@@ -9397,6 +9404,13 @@ void Map::InstallDescriptors(Handle<Map> parent, Handle<Map> child,
 
 Handle<Map> Map::CopyAsElementsKind(Handle<Map> map, ElementsKind kind,
                                     TransitionFlag flag) {
+  // Only certain objects are allowed to have non-terminal fast transitional
+  // elements kinds.
+  DCHECK(map->IsJSObjectMap());
+  DCHECK_IMPLIES(
+      !map->CanHaveFastTransitionableElementsKind(),
+      IsDictionaryElementsKind(kind) || IsTerminalElementsKind(kind));
+
   Map* maybe_elements_transition_map = NULL;
   if (flag == INSERT_TRANSITION) {
     // Ensure we are requested to add elements kind transition "near the root".
@@ -12779,6 +12793,10 @@ bool CanSubclassHaveInobjectProperties(InstanceType instance_type) {
     case JS_VALUE_TYPE:
     case JS_WEAK_MAP_TYPE:
     case JS_WEAK_SET_TYPE:
+    case WASM_INSTANCE_TYPE:
+    case WASM_MEMORY_TYPE:
+    case WASM_MODULE_TYPE:
+    case WASM_TABLE_TYPE:
       return true;
 
     case BIGINT_TYPE:
@@ -15170,6 +15188,9 @@ bool JSObject::WouldConvertToSlowElements(uint32_t index) {
 
 
 static ElementsKind BestFittingFastElementsKind(JSObject* object) {
+  if (!object->map()->CanHaveFastTransitionableElementsKind()) {
+    return HOLEY_ELEMENTS;
+  }
   if (object->HasSloppyArgumentsElements()) {
     return FAST_SLOPPY_ARGUMENTS_ELEMENTS;
   }

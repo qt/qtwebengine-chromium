@@ -89,6 +89,7 @@
 #include "content/browser/webui/url_data_manager.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/common/task_scheduler.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/content_browser_client.h"
@@ -764,13 +765,6 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
     LevelDBWrapperImpl::EnableAggressiveCommitDelay();
   }
 
-  if (parsed_command_line_.HasSwitch(switches::kIsolateOrigins)) {
-    ChildProcessSecurityPolicyImpl* policy =
-        ChildProcessSecurityPolicyImpl::GetInstance();
-    policy->AddIsolatedOriginsFromCommandLine(
-        parsed_command_line_.GetSwitchValueASCII(switches::kIsolateOrigins));
-  }
-
   // Enable memory-infra dump providers.
   InitSkiaEventTracer();
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
@@ -871,12 +865,11 @@ int BrowserMainLoop::PreCreateThreads() {
   // Initialize origins that are whitelisted for process isolation.  Must be
   // done after base::FeatureList is initialized, but before any navigations
   // can happen.
-  std::vector<url::Origin> origins =
-      GetContentClient()->browser()->GetOriginsRequiringDedicatedProcess();
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  for (auto origin : origins)
-    policy->AddIsolatedOrigin(origin);
+  policy->AddIsolatedOrigins(SiteIsolationPolicy::GetIsolatedOrigins());
+  policy->AddIsolatedOrigins(
+      GetContentClient()->browser()->GetOriginsRequiringDedicatedProcess());
 
   EVP_set_buggy_rsa_parser(
       base::FeatureList::IsEnabled(features::kBuggyRSAParser));

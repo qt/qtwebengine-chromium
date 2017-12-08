@@ -977,7 +977,7 @@
 <translation id="2509495747794740764">Розмір масштабування має бути числом від 10 до 200.</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="251662399991179012">Навчімо ваш пристрій <ph name="DEVICE_TYPE" /></translation>
-<translation id="2517472476991765520">Шукати</translation>
+<translation id="2517472476991765520">Сканувати</translation>
 <translation id="2518024842978892609">Використовувати сертифікати клієнта</translation>
 <translation id="2520644704042891903">Очікування доступного сокета…</translation>
 <translation id="252219247728877310">Компонент не оновлено</translation>
@@ -1012,7 +1012,7 @@
 <translation id="2570000010887652771">Заощадження трафіку.</translation>
 <translation id="2570648609346224037">Під час завантаження образу для відновлення виникла проблема.</translation>
 <translation id="257088987046510401">Теми</translation>
-<translation id="2571964818629181240">Закрити Firefox перед імпортуванням</translation>
+<translation id="2571964818629181240">Закрити Firefox перед імпортом</translation>
 <translation id="2572032849266859634">Надано доступ лише для перегляду (<ph name="VOLUME_NAME" />).</translation>
 <translation id="2573269395582837871">Виберіть зображення та ім’я</translation>
 <translation id="2574102660421949343">Файли cookie з домену <ph name="DOMAIN" /> дозволено.</translation>
@@ -1065,7 +1065,7 @@
 <translation id="2642111877055905627">Футбольний м’яч</translation>
 <translation id="2643698698624765890">Керуйте своїми розширеннями, натиснувши вкладку "Розширення" в меню Window (Вікно).</translation>
 <translation id="2647142853114880570">оновити</translation>
-<translation id="2647269890314209800">Файли cookie, що використовуються</translation>
+<translation id="2647269890314209800">Активні файли cookie</translation>
 <translation id="2648831393319960979">Додавання пристрою в обліковий запис. Це може тривати деякий час…</translation>
 <translation id="2649045351178520408">ASCII Base64-кодування, ланцюжок сертифікатів</translation>
 <translation id="2653266418988778031">Якщо видалити сертифікат Центру сертифікації (ЦС), ваш веб-переглядач більше не буде довіряти жодному сертифікату, виданому цим ЦС.</translation>
@@ -1116,7 +1116,7 @@
 <translation id="2715751256863167692">Це оновлення скидає налаштування Chromebook і вилучає дані поточного користувача.</translation>
 <translation id="2718395828230677721">Нічний режим</translation>
 <translation id="2718998670920917754">Антивірусне програмне забезпечення виявило вірус.</translation>
-<translation id="2719936478972253983">Заблоковано такі файли cookie:</translation>
+<translation id="2719936478972253983">Заблоковані файли cookie</translation>
 <translation id="2721037002783622288">Шукати зображення в <ph name="SEARCH_ENGINE" /></translation>
 <translation id="2721334646575696520">Microsoft Edge</translation>
 <translation id="2721695630904737430">Ваш адміністратор вимкнув контрольованих користувачів.</translation>
@@ -1200,7 +1200,7 @@
 <translation id="2815500128677761940">Панель закладок</translation>
 <translation id="2815693974042551705">Папка із закладками</translation>
 <translation id="2818476747334107629">Дані принтера</translation>
-<translation id="2820957248982571256">Пошук…</translation>
+<translation id="2820957248982571256">Сканування…</translation>
 <translation id="2822634587701817431">Зменшити/збільшити</translation>
 <translation id="2825758591930162672">Відкритий ключ суб'єкта</translation>
 <translation id="2828650939514476812">З’єднання з мережею Wi-Fi</translation>
@@ -2268,7 +2268,7 @@
 <translation id="4514542542275172126">Створити нового контрольованого користувача</translation>
 <translation id="451515744433878153">Видалити</translation>
 <translation id="4518677423782794009">Chrome припиняє роботу, показує незвичні початкові сторінки, панелі інструментів або неочікувані оголошення, яких ви не можете позбутися, тощо? Можливо, вам удасться вирішити цю проблему за допомогою Майстра очищення Chrome.</translation>
-<translation id="4520385623207007473">Файли cookie, що використовуються</translation>
+<translation id="4520385623207007473">Активні файли cookie</translation>
 <translation id="452039078290142656">невідомі пристрої від постачальника <ph name="VENDOR_NAME" /></translation>
 <translation id="4522570452068850558">Деталі</translation>
 <translation id="4530494379350999373">Походження</translation>
@@ -2422,7 +2422,7 @@
 <translation id="4759238208242260848">Завантаження</translation>
 <translation id="4761104368405085019">Використовувати ваш мікрофон</translation>
 <translation id="4762718786438001384">На диску пристрою дуже мало вільного місця</translation>
-<translation id="4763408175235639573">Під час перегляду вами цієї сторінки було створено такі файли cookie:</translation>
+<translation id="4763408175235639573">Файли cookie, створені під час перегляду сторінки</translation>
 <translation id="4763830802490665879">Файли cookie з багатьох сайтів буде очищено під час виходу.</translation>
 <translation id="4768332406694066911">Вас ідентифікують сертифікати від цих організацій</translation>
 <translation id="4776917500594043016">Пароль користувача  <ph name="USER_EMAIL_ADDRESS" /></translation>
@@ -2801,7 +2801,7 @@
 <translation id="5337771866151525739">Встановлено третьою стороною.</translation>
 <translation id="5338503421962489998">Локальна пам’ять</translation>
 <translation id="5340217413897845242">Елемент полиці 6</translation>
-<translation id="5341793073192892252">Заблоковано такі файли cookie (сторонні файли cookie блокуються без винятку):</translation>
+<translation id="5341793073192892252">Заблоковані файли cookie (сторонні файли cookie блокуються без винятку)</translation>
 <translation id="5341980496415249280">Пакування. Зачекайте…</translation>
 <translation id="5342091991439452114">Мінімальна кількість цифр у PIN-коді: <ph name="MINIMUM" /></translation>
 <translation id="534916491091036097">Ліва дужка</translation>
@@ -3025,6 +3025,7 @@
 <translation id="5678955352098267522">Переглядати ваші дані на веб-сайті <ph name="WEBSITE_1" /></translation>
 <translation id="5684661240348539843">Ідентифікатор об’єкта</translation>
 <translation id="5687326903064479980">Часовий пояс</translation>
+<translation id="5689516760719285838">Місцезнаходження</translation>
 <translation id="56907980372820799">Зв’язати облікові записи</translation>
 <translation id="5691511426247308406">Сім’я</translation>
 <translation id="5691596662111998220">На жаль, файл "<ph name="FILE_NAME" />" більше не існує.</translation>
@@ -4713,7 +4714,7 @@
 <translation id="8378285435971754261">Завдяки службі локації Google додатки швидко й точно визначають ваше місцезнаходження та споживають менше заряду акумулятора. Анонімні геодані надсилаються в Google, навіть коли додатки не запущено. <ph name="BEGIN_LINK1" />Докладніше<ph name="END_LINK1" /></translation>
 <translation id="8381179624334829711">Налаштувати камеру…</translation>
 <translation id="8382913212082956454">Копіювати &amp;адресу електронної пошти</translation>
-<translation id="8386903983509584791">Пошук завершено</translation>
+<translation id="8386903983509584791">Сканування завершено</translation>
 <translation id="8390029840652165810">Переконайтеся, що з’єднання з мережею працює. Якщо проблема не зникне, вийдіть з облікового запису й увійдіть знову, щоб оновити облікові дані.</translation>
 <translation id="8390449457866780408">Сервер не доступний.</translation>
 <translation id="8392234662362215700">Натисніть комбінацію клавіш Control-Shift-Space, щоб змінити розкладку клавіатури.</translation>

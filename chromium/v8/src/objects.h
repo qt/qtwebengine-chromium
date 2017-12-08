@@ -1950,17 +1950,10 @@ class PropertyArray : public HeapObject {
   // No weak fields.
   typedef BodyDescriptor BodyDescriptorWeak;
 
-  static const int kLengthMask = 0x3ff;
-#if V8_TARGET_ARCH_64_BIT
-  static const int kHashMask = 0x7ffffc00;
-  STATIC_ASSERT(kLengthMask + kHashMask == 0x7fffffff);
-#else
-  static const int kHashMask = 0x3ffffc00;
-  STATIC_ASSERT(kLengthMask + kHashMask == 0x3fffffff);
-#endif
-
-  static const int kMaxLength = kLengthMask;
-  STATIC_ASSERT(kMaxLength > kMaxNumberOfDescriptors);
+  static const int kLengthFieldSize = 10;
+  class LengthField : public BitField<int, 0, kLengthFieldSize> {};
+  class HashField : public BitField<int, kLengthFieldSize,
+                                    kSmiValueSize - kLengthFieldSize - 1> {};
 
   static const int kNoHashSentinel = 0;
 
@@ -1984,6 +1977,9 @@ class JSReceiver: public HeapObject {
   // Gets slow properties for non-global objects.
   inline NameDictionary* property_dictionary() const;
 
+  // Sets the properties backing store and makes sure any existing hash is moved
+  // to the new properties store. To clear out the properties store, pass in the
+  // empty_fixed_array(), the hash will be maintained in this case as well.
   void SetProperties(HeapObject* properties);
 
   // There are five possible values for the properties offset.
@@ -2187,7 +2183,7 @@ class JSReceiver: public HeapObject {
   MUST_USE_RESULT static MaybeHandle<FixedArray> GetOwnEntries(
       Handle<JSReceiver> object, PropertyFilter filter);
 
-  static const int kHashMask = PropertyArray::kHashMask;
+  static const int kHashMask = PropertyArray::HashField::kMask;
 
   // Layout description.
   static const int kPropertiesOrHashOffset = HeapObject::kHeaderSize;
@@ -6249,10 +6245,8 @@ class JSArrayBuffer: public JSObject {
   inline bool has_guard_region() const;
   inline void set_has_guard_region(bool value);
 
-  // TODO(gdeepti): This flag is introduced to disable asm.js optimizations in
-  // js-typer-lowering.cc, remove when the asm.js case is fixed.
-  inline bool is_wasm_buffer();
-  inline void set_is_wasm_buffer(bool value);
+  inline bool is_growable();
+  inline void set_is_growable(bool value);
 
   DECL_CAST(JSArrayBuffer)
 
@@ -6312,7 +6306,7 @@ class JSArrayBuffer: public JSObject {
   class WasNeutered : public BitField<bool, 3, 1> {};
   class IsShared : public BitField<bool, 4, 1> {};
   class HasGuardRegion : public BitField<bool, 5, 1> {};
-  class IsWasmBuffer : public BitField<bool, 6, 1> {};
+  class IsGrowable : public BitField<bool, 6, 1> {};
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSArrayBuffer);
@@ -6387,7 +6381,7 @@ class JSTypedArray: public JSArrayBufferView {
   DECL_PRINTER(JSTypedArray)
   DECL_VERIFIER(JSTypedArray)
 
-  static const int kLengthOffset = kViewSize + kPointerSize;
+  static const int kLengthOffset = kViewSize;
   static const int kSize = kLengthOffset + kPointerSize;
 
   static const int kSizeWithEmbedderFields =

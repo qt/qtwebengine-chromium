@@ -2423,7 +2423,7 @@
 <translation id="4759238208242260848">다운로드</translation>
 <translation id="4761104368405085019">마이크 사용</translation>
 <translation id="4762718786438001384">기기에 디스크 저장 공간 매우 부족</translation>
-<translation id="4763408175235639573">페이지를 표시했을 때 다음 쿠키가 설정됨</translation>
+<translation id="4763408175235639573">페이지를 열었을 때 다음 쿠키가 설정됨</translation>
 <translation id="4763830802490665879">여러 사이트의 쿠키가 종료 시 삭제됩니다.</translation>
 <translation id="4768332406694066911">다음 기관에 사용자의 신원을 확인하는 인증서가 있습니다.</translation>
 <translation id="4776917500594043016"><ph name="USER_EMAIL_ADDRESS" />의 비밀번호</translation>
@@ -2802,7 +2802,7 @@
 <translation id="5337771866151525739">제3자에 의해 설치되었습니다.</translation>
 <translation id="5338503421962489998">로컬 저장소</translation>
 <translation id="5340217413897845242">서가 항목 6</translation>
-<translation id="5341793073192892252">다음 쿠키가 차단됨(타사 쿠키도 예외 없이 차단됨)</translation>
+<translation id="5341793073192892252">다음 쿠키가 차단됨(타사 쿠키는 예외 없이 차단됨)</translation>
 <translation id="5341980496415249280">잠시 기다려 주세요. 압축 중입니다...</translation>
 <translation id="5342091991439452114">PIN은 <ph name="MINIMUM" />자리 이상이어야 합니다.</translation>
 <translation id="534916491091036097">왼쪽 괄호</translation>
@@ -3026,6 +3026,7 @@
 <translation id="5678955352098267522"><ph name="WEBSITE_1" />에서 데이터 읽기</translation>
 <translation id="5684661240348539843">애셋 식별자</translation>
 <translation id="5687326903064479980">시간대</translation>
+<translation id="5689516760719285838">위치</translation>
 <translation id="56907980372820799">데이터 연결</translation>
 <translation id="5691511426247308406">가족</translation>
 <translation id="5691596662111998220"><ph name="FILE_NAME" />이(가) 더 이상 존재하지 않습니다.</translation>
@@ -4811,7 +4812,7 @@
 <translation id="8546306075665861288">이미지 캐시</translation>
 <translation id="8546541260734613940">[*.]example.com</translation>
 <translation id="854655314928502177">웹 프록시 자동 탐색 URL</translation>
-<translation id="8546930481464505581">터치 바 맞춤설정</translation>
+<translation id="8546930481464505581">Touch Bar 맞춤설정</translation>
 <translation id="85486688517848470">맨 위 키의 동작을 전환하려면 검색 키를 길게 누름</translation>
 <translation id="855081842937141170">탭 고정</translation>
 <translation id="8551388862522347954">라이선스</translation>

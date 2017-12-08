@@ -54,6 +54,21 @@ namespace mediaPerceptionPrivate {
     SERVICE_BUSY_LAUNCHING
   };
 
+  // The parameters for processing a particular video stream.
+  dictionary VideoStreamParam {
+    // Identifies the video stream described by these parameters.
+    DOMString? id;
+
+    // Frame width in pixels.
+    long? width;
+
+    // Frame height in pixels.
+    long? height;
+
+    // The frame rate at which this video stream would be processed.
+    long? frameRate;
+  };
+
   // The system and configuration state of the analytics process.
   dictionary State {
     Status status;
@@ -66,6 +81,10 @@ namespace mediaPerceptionPrivate {
     // Return parameter for $(ref:setState) or $(ref:getState) that
     // specifies the error type for failure cases.
     ServiceError? serviceError;
+
+    // A list of video streams processed by the analytics process. To set this
+    // parameter, status has to be <code>RUNNING</code>.
+    VideoStreamParam[]? videoStreamParam;
   };
 
   dictionary Point {
@@ -104,7 +123,8 @@ namespace mediaPerceptionPrivate {
     UNSPECIFIED,
     FACE,
     PERSON,
-    MOTION_REGION
+    MOTION_REGION,
+    LABELED_REGION
   };
 
   dictionary Entity {
@@ -114,6 +134,9 @@ namespace mediaPerceptionPrivate {
 
     EntityType? type;
 
+    // Label for this entity.
+    DOMString? entityLabel;
+
     // Minimum box which captures entire detected entity.
     BoundingBox? boundingBox;
 
@@ -122,6 +145,14 @@ namespace mediaPerceptionPrivate {
 
     // The estimated depth of the entity from the camera.
     Distance? depth;
+  };
+
+  dictionary PacketLatency {
+    // Label for this packet.
+    DOMString? packetLabel;
+
+    // Packet processing latency in microseconds.
+    long? latencyUsec;
   };
 
   // The set of computer vision metadata for an image frame.
@@ -137,6 +168,9 @@ namespace mediaPerceptionPrivate {
 
     // The list of entities detected in this frame.
     Entity[]? entities;
+
+    // Processing latency for a list of packets.
+    PacketLatency[]? packetLatency;
   };
 
   dictionary MediaPerception {

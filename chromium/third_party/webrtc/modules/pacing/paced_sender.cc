@@ -59,7 +59,9 @@ PacedSender::PacedSender(const Clock* clock,
       pacing_bitrate_kbps_(0),
       time_last_update_us_(clock->TimeInMicroseconds()),
       first_sent_packet_ms_(-1),
-      packets_(new PacketQueue(clock)),
+      packets_(webrtc::field_trial::IsEnabled("WebRTC-RoundRobinPacing")
+                   ? new PacketQueue2(clock)
+                   : new PacketQueue(clock)),
       packet_counter_(0),
       pacing_factor_(kDefaultPaceMultiplier),
       queue_time_limit(kMaxQueueLengthMs) {
@@ -359,6 +361,11 @@ void PacedSender::UpdateBudgetWithBytesSent(size_t bytes_sent) {
 void PacedSender::SetPacingFactor(float pacing_factor) {
   rtc::CritScope cs(&critsect_);
   pacing_factor_ = pacing_factor;
+}
+
+float PacedSender::GetPacingFactor() const {
+  rtc::CritScope cs(&critsect_);
+  return pacing_factor_;
 }
 
 void PacedSender::SetQueueTimeLimit(int limit_ms) {
