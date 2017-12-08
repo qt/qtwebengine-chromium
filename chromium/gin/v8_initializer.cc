@@ -165,7 +165,7 @@ base::File OpenV8File(const char* file_name,
       }
     } else if (file.error_details() != base::File::FILE_ERROR_IN_USE) {
       result = OpenV8FileResult::FAILED_OTHER;
-#ifdef OS_WIN
+#if defined(OS_WIN) && defined(V8_USE_EXTERNAL_STARTUP_DATA)
       // TODO(oth): temporary diagnostics for http://crbug.com/479537
       std::string narrow(kNativesFileName);
       base::FilePath::StringType nativesBlob(narrow.begin(), narrow.end());

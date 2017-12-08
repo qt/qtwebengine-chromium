@@ -69,7 +69,7 @@ bool CollectGraphicsInfo(GPUInfo* gpu_info,
   return success;
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 // This has to be called after a context is created, active GPU is identified,
 // and GPU driver bug workarounds are computed again. Otherwise the workaround
 // |disable_direct_composition| may not be correctly applied.
@@ -303,7 +303,7 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
     }
   }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   InitializeDirectCompositionOverlaySupport(&gpu_info_);
 #endif
 
@@ -485,7 +485,7 @@ void GpuInit::InitializeInProcess(base::CommandLine* command_line,
     }
   }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   InitializeDirectCompositionOverlaySupport(&gpu_info_);
 #endif
 
