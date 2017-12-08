@@ -181,6 +181,7 @@ Handle<FixedArray> Factory::NewFixedArray(int size, PretenureFlag pretenure) {
 Handle<PropertyArray> Factory::NewPropertyArray(int size,
                                                 PretenureFlag pretenure) {
   DCHECK_LE(0, size);
+  if (size == 0) return empty_property_array();
   CALL_HEAP_FUNCTION(isolate(),
                      isolate()->heap()->AllocatePropertyArray(size, pretenure),
                      PropertyArray);
@@ -1331,6 +1332,7 @@ Handle<FixedArray> Factory::CopyFixedArrayAndGrow(Handle<FixedArray> array,
 
 Handle<PropertyArray> Factory::CopyPropertyArrayAndGrow(
     Handle<PropertyArray> array, int grow_by, PretenureFlag pretenure) {
+  DCHECK_LE(0, grow_by);
   CALL_HEAP_FUNCTION(
       isolate(),
       isolate()->heap()->CopyArrayAndGrow(*array, grow_by, pretenure),
@@ -1621,7 +1623,7 @@ Handle<JSFunction> Factory::NewFunction(Handle<String> name, Handle<Code> code,
       NewFunction(name, code, prototype, language_mode, prototype_mutability);
 
   ElementsKind elements_kind =
-      type == JS_ARRAY_TYPE ? PACKED_SMI_ELEMENTS : HOLEY_SMI_ELEMENTS;
+      type == JS_ARRAY_TYPE ? PACKED_SMI_ELEMENTS : TERMINAL_FAST_ELEMENTS_KIND;
   Handle<Map> initial_map = NewMap(type, instance_size, elements_kind);
   // TODO(littledan): Why do we have this is_generator test when
   // NewFunctionPrototype already handles finding an appropriately

@@ -577,6 +577,41 @@ void NavigationRequest::TransferNavigationHandleOwnership(
 void NavigationRequest::OnRequestRedirected(
     const net::RedirectInfo& redirect_info,
     const scoped_refptr<ResourceResponse>& response) {
+#if defined(OS_ANDROID)
+  base::WeakPtr<NavigationRequest> this_ptr(weak_factory_.GetWeakPtr());
+
+  bool should_override_url_loading =
+      GetContentClient()->browser()->ShouldOverrideUrlLoading(
+          frame_tree_node_->frame_tree_node_id(), browser_initiated_,
+          redirect_info.new_url, redirect_info.new_method,
+          // Redirects are always not counted as from user gesture.
+          false, true, frame_tree_node_->IsMainFrame(),
+          common_params_.transition);
+
+  // The content/ embedder might cause |this| to be deleted while
+  // |ShouldOverrideUrlLoading| is called.
+  // See https://crbug.com/770157.
+  if (!this_ptr)
+    return;
+
+  if (should_override_url_loading) {
+    bool is_external_protocol =
+        !GetContentClient()->browser()->IsHandledURL(common_params_.url);
+    navigation_handle_->set_net_error_code(net::ERR_ABORTED);
+    // Update the navigation handle to point to the new url to ensure
+    // AwWebContents sees the new URL and thus passes that URL to onPageFinished
+    // (rather than passing the old URL).
+    navigation_handle_->UpdateStateFollowingRedirect(
+        redirect_info.new_url, redirect_info.new_method,
+        GURL(redirect_info.new_referrer), is_external_protocol,
+        response->head.headers, response->head.connection_info,
+        base::Bind(&NavigationRequest::OnRedirectChecksComplete,
+                   base::Unretained(this)));
+    frame_tree_node_->ResetNavigationRequest(false, true);
+    return;
+  }
+#endif
+
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRedirectToURL(
           redirect_info.new_url)) {
     DVLOG(1) << "Denied redirect for "
@@ -606,8 +641,13 @@ void NavigationRequest::OnRequestRedirected(
   // destination could change.
   dest_site_instance_ = nullptr;
 
+  // For now, DevTools needs the POST data sent to the renderer process even if
+  // it is no longer a POST after the redirect.
+  // TODO(caseq): Send the requestWillBeSent from browser and remove the
+  // IsNetworkHandlerEnabled check here.
   // If the navigation is no longer a POST, the POST data should be reset.
-  if (redirect_info.new_method != "POST")
+  if (redirect_info.new_method != "POST" &&
+      !RenderFrameDevToolsAgentHost::IsNetworkHandlerEnabled(frame_tree_node_))
     common_params_.post_data = nullptr;
 
   // Mark time for the Navigation Timing API.
@@ -670,10 +710,6 @@ void NavigationRequest::OnRequestRedirected(
   RenderProcessHost* expected_process =
       site_instance->HasProcess() ? site_instance->GetProcess() : nullptr;
 
-#if defined(OS_ANDROID)
-  base::WeakPtr<NavigationRequest> this_ptr(weak_factory_.GetWeakPtr());
-#endif
-
   // It's safe to use base::Unretained because this NavigationRequest owns the
   // NavigationHandle where the callback will be stored.
   bool is_external_protocol =
@@ -684,32 +720,6 @@ void NavigationRequest::OnRequestRedirected(
       response->head.connection_info, expected_process,
       base::Bind(&NavigationRequest::OnRedirectChecksComplete,
                  base::Unretained(this)));
-// |this| may be deleted.
-
-#if defined(OS_ANDROID)
-  if (!this_ptr)
-    return;
-
-  bool should_override_url_loading =
-      GetContentClient()->browser()->ShouldOverrideUrlLoading(
-          frame_tree_node_->frame_tree_node_id(), browser_initiated_,
-          redirect_info.new_url, redirect_info.new_method,
-          // Redirects are always not counted as from user gesture.
-          false, true, frame_tree_node_->IsMainFrame(),
-          common_params_.transition);
-
-  // The content/ embedder might cause |this| to be deleted while
-  // |ShouldOverrideUrlLoading| is called.
-  // See https://crbug.com/770157.
-  if (!this_ptr)
-    return;
-
-  if (should_override_url_loading) {
-    navigation_handle_->set_net_error_code(net::ERR_ABORTED);
-    frame_tree_node_->ResetNavigationRequest(false, true);
-    return;
-  }
-#endif
 }
 
 void NavigationRequest::OnResponseStarted(

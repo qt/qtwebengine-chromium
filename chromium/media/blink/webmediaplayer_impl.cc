@@ -2206,48 +2206,23 @@ blink::WebAudioSourceProvider* WebMediaPlayerImpl::GetAudioSourceProvider() {
   return audio_source_provider_.get();
 }
 
-static void GetCurrentFrameAndSignal(VideoFrameCompositor* compositor,
-                                     scoped_refptr<VideoFrame>* video_frame_out,
-                                     base::WaitableEvent* event) {
-  TRACE_EVENT0("media", "GetCurrentFrameAndSignal");
-  *video_frame_out = compositor->GetCurrentFrameAndUpdateIfStale();
-  event->Signal();
-}
-
 scoped_refptr<VideoFrame> WebMediaPlayerImpl::GetCurrentFrameFromCompositor()
     const {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   TRACE_EVENT0("media", "WebMediaPlayerImpl::GetCurrentFrameFromCompositor");
 
-  // Needed when the |main_task_runner_| and |vfc_task_runner_| are the
-  // same to avoid deadlock in the Wait() below.
-  if (vfc_task_runner_->BelongsToCurrentThread()) {
-    scoped_refptr<VideoFrame> video_frame =
-        compositor_->GetCurrentFrameAndUpdateIfStale();
-    if (!video_frame) {
-      return nullptr;
-    }
-    last_uploaded_frame_size_ = video_frame->natural_size();
-    last_uploaded_frame_timestamp_ = video_frame->timestamp();
-    return video_frame;
-  }
+  // Can be null.
+  scoped_refptr<VideoFrame> video_frame =
+      compositor_->GetCurrentFrameOnAnyThread();
 
-  // Use a posted task and waitable event instead of a lock otherwise
-  // WebGL/Canvas can see different content than what the compositor is seeing.
-  scoped_refptr<VideoFrame> video_frame;
-  base::WaitableEvent event(base::WaitableEvent::ResetPolicy::AUTOMATIC,
-                            base::WaitableEvent::InitialState::NOT_SIGNALED);
+  // base::Unretained is safe here because |compositor_| is destroyed on
+  // |vfc_task_runner_|. The destruction is queued from |this|' destructor,
+  // which also runs on |main_task_runner_|, which makes it impossible for
+  // UpdateCurrentFrameIfStale() to be queued after |compositor_|'s dtor.
   vfc_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&GetCurrentFrameAndSignal, base::Unretained(compositor_.get()),
-                 &video_frame, &event));
-  event.Wait();
+      FROM_HERE, base::Bind(&VideoFrameCompositor::UpdateCurrentFrameIfStale,
+                            base::Unretained(compositor_.get())));
 
-  if (!video_frame) {
-    return nullptr;
-  }
-  last_uploaded_frame_size_ = video_frame->natural_size();
-  last_uploaded_frame_timestamp_ = video_frame->timestamp();
   return video_frame;
 }
 
@@ -2567,6 +2542,12 @@ void WebMediaPlayerImpl::CreateWatchTimeReporter() {
   if (!HasVideo() && !HasAudio())
     return;
 
+  // URL is used for UKM reporting. Privacy requires we only report origin of
+  // the top frame. |is_top_frame| signals how to interpret the origin.
+  // TODO(crbug.com/787209): Stop getting origin from the renderer.
+  bool is_top_frame = frame_ == frame_->Top();
+  url::Origin top_origin(frame_->Top()->GetSecurityOrigin());
+
   // Create the watch time reporter and synchronize its initial state.
   watch_time_reporter_.reset(new WatchTimeReporter(
       mojom::PlaybackProperties::New(
@@ -2574,8 +2555,7 @@ void WebMediaPlayerImpl::CreateWatchTimeReporter() {
           pipeline_metadata_.video_decoder_config.codec(),
           pipeline_metadata_.has_audio, pipeline_metadata_.has_video,
           !!chunk_demuxer_, is_encrypted_, embedded_media_experience_enabled_,
-          pipeline_metadata_.natural_size,
-          url::Origin(frame_->GetSecurityOrigin())),
+          pipeline_metadata_.natural_size, top_origin, is_top_frame),
       base::BindRepeating(&WebMediaPlayerImpl::GetCurrentTimeInternal,
                           base::Unretained(this)),
       watch_time_recorder_provider_));

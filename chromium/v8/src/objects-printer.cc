@@ -495,7 +495,12 @@ static void JSObjectPrintHeader(std::ostream& os, JSObject* obj,
 
 static void JSObjectPrintBody(std::ostream& os, JSObject* obj,  // NOLINT
                               bool print_elements = true) {
-  os << "\n - properties = " << Brief(obj->raw_properties_or_hash()) << " {";
+  os << "\n - properties = ";
+  Object* properties_or_hash = obj->raw_properties_or_hash();
+  if (!properties_or_hash->IsSmi()) {
+    os << Brief(properties_or_hash);
+  }
+  os << " {";
   if (obj->PrintProperties(os)) os << "\n ";
   os << "}\n";
   if (print_elements && obj->elements()->length() > 0) {
@@ -972,7 +977,7 @@ void JSArrayBuffer::JSArrayBufferPrint(std::ostream& os) {  // NOLINT
   if (was_neutered()) os << "\n - neutered";
   if (is_shared()) os << "\n - shared";
   if (has_guard_region()) os << "\n - has_guard_region";
-  if (is_wasm_buffer()) os << "\n - wasm_buffer";
+  if (is_growable()) os << "\n - growable";
   JSObjectPrintBody(os, this, !was_neutered());
 }
 

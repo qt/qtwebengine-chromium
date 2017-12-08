@@ -12,6 +12,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -35,6 +36,7 @@
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
+#include "chrome/installer/util/google_update_settings.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/login/auth/authpolicy_login_helper.h"
 #include "chromeos/login/auth/user_context.h"
@@ -212,6 +214,11 @@ bool IsOnline(NetworkPortalDetector::CaptivePortalStatus status) {
   return status == NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE;
 }
 
+void GetVersionAndConsent(std::string* out_version, bool* out_consent) {
+  *out_version = version_loader::GetVersion(version_loader::VERSION_SHORT);
+  *out_consent = GoogleUpdateSettings::GetCollectStatsConsent();
+}
+
 }  // namespace
 
 // A class that's used to specify the way how Gaia should be loaded.
@@ -289,16 +296,24 @@ void GaiaScreenHandler::DisableRestrictiveProxyCheckForTest() {
 }
 
 void GaiaScreenHandler::LoadGaia(const GaiaContext& context) {
-  base::PostTaskWithTraitsAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::BACKGROUND},
-      base::Bind(&version_loader::GetVersion, version_loader::VERSION_SHORT),
-      base::Bind(&GaiaScreenHandler::LoadGaiaWithVersion,
-                 weak_factory_.GetWeakPtr(), context));
+  std::unique_ptr<std::string> version = std::make_unique<std::string>();
+  std::unique_ptr<bool> consent = std::make_unique<bool>();
+  base::OnceClosure get_version_and_consent =
+      base::BindOnce(&GetVersionAndConsent, base::Unretained(version.get()),
+                     base::Unretained(consent.get()));
+  base::OnceClosure load_gaia = base::BindOnce(
+      &GaiaScreenHandler::LoadGaiaWithVersionAndConsent,
+      weak_factory_.GetWeakPtr(), context, base::Owned(version.release()),
+      base::Owned(consent.release()));
+  base::PostTaskWithTraitsAndReply(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      std::move(get_version_and_consent), std::move(load_gaia));
 }
 
-void GaiaScreenHandler::LoadGaiaWithVersion(
+void GaiaScreenHandler::LoadGaiaWithVersionAndConsent(
     const GaiaContext& context,
-    const std::string& platform_version) {
+    const std::string* platform_version,
+    const bool* collect_stats_consent) {
   base::DictionaryValue params;
 
   params.SetBoolean("forceReload", context.force_reload);
@@ -348,8 +363,8 @@ void GaiaScreenHandler::LoadGaiaWithVersion(
   params.SetString("clientId",
                    GaiaUrls::GetInstance()->oauth2_chrome_client_id());
   params.SetString("clientVersion", version_info::GetVersionNumber());
-  if (!platform_version.empty())
-    params.SetString("platformVersion", platform_version);
+  if (!platform_version->empty())
+    params.SetString("platformVersion", *platform_version);
   params.SetString("releaseChannel", chrome::GetChannelString());
   params.SetString("endpointGen", kEndpointGen);
 
@@ -370,6 +385,10 @@ void GaiaScreenHandler::LoadGaiaWithVersion(
     // (see https://crbug.com/709244 ).
     params.SetString("chromeOSApiVersion", "2");
   }
+  // We only send |chromeos_board| Gaia URL parameter if user has opted into
+  // sending device statistics.
+  if (*collect_stats_consent)
+    params.SetString("lsbReleaseBoard", base::SysInfo::GetLsbReleaseBoard());
 
   frame_state_ = FRAME_STATE_LOADING;
   CallJS("loadAuthExtension", params);

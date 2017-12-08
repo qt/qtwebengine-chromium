@@ -318,3 +318,10 @@ D. Local Modifications
     https://ssl.icu-project.org/trac/ticket/12770
 
   - patches/timezone_detection.patch
+
+13. Persian calendar range fix.
+
+    https://ssl.icu-project.org/trac/changeset/40654
+    http://crbug.com/774382
+
+  - patches/persian_cal.patch (fixed in ICU 60.1)

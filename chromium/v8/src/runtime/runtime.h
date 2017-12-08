@@ -252,7 +252,6 @@ namespace internal {
   F(CanonicalizeLanguageTag, 1, 1)           \
   F(AvailableLocalesOf, 1, 1)                \
   F(GetDefaultICULocale, 0, 1)               \
-  F(GetLanguageTagVariants, 1, 1)            \
   F(IsInitializedIntlObject, 1, 1)           \
   F(IsInitializedIntlObjectOfType, 2, 1)     \
   F(MarkAsInitializedIntlObjectOfType, 2, 1) \
@@ -588,6 +587,7 @@ namespace internal {
   F(TraceExit, 1, 1)                          \
   F(HaveSameMap, 2, 1)                        \
   F(InNewSpace, 1, 1)                         \
+  F(HasFastElements, 1, 1)                    \
   F(HasSmiElements, 1, 1)                     \
   F(HasObjectElements, 1, 1)                  \
   F(HasSmiOrObjectElements, 1, 1)             \
@@ -622,7 +622,8 @@ namespace internal {
   F(HeapObjectVerify, 1, 1)                   \
   F(WasmNumInterpretedCalls, 1, 1)            \
   F(RedirectToWasmInterpreter, 2, 1)          \
-  F(WasmTraceMemory, 4, 1)
+  F(WasmTraceMemory, 4, 1)                    \
+  F(CompleteInobjectSlackTracking, 1, 1)
 
 #define FOR_EACH_INTRINSIC_TYPEDARRAY(F) \
   F(ArrayBufferGetByteLength, 1, 1)      \
@@ -634,6 +635,7 @@ namespace internal {
   F(TypedArrayGetLength, 1, 1)           \
   F(TypedArrayGetBuffer, 1, 1)           \
   F(TypedArraySortFast, 1, 1)            \
+  F(TypedArraySet, 2, 1)                 \
   F(IsTypedArray, 1, 1)                  \
   F(IsSharedTypedArray, 1, 1)            \
   F(IsSharedIntegerTypedArray, 1, 1)     \

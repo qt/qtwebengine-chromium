@@ -14,7 +14,7 @@
 <translation id="1016566241875885511">Πρόσθετες πληροφορίες (προαιρετικό)</translation>
 <translation id="1017280919048282932">&amp;Προσθήκη στο λεξικό</translation>
 <translation id="1018656279737460067">Ακυρώθηκε</translation>
-<translation id="102272308210570439">Να χρησιμοποιεί ο Βοηθός το περιεχόμενο της οθόνης σας</translation>
+<translation id="102272308210570439">Επιτρέψτε στον Βοηθό να χρησιμοποιεί το περιεχόμενο της οθόνης σας</translation>
 <translation id="1026822031284433028">Φόρτωση εικόνας</translation>
 <translation id="1029317248976101138">Μεγέθυνση</translation>
 <translation id="1031362278801463162">Φόρτωση προεπισκόπησης</translation>
@@ -799,7 +799,7 @@
 <translation id="222949136907494149">Το <ph name="URL" /> ζητά να χρησιμοποιήσει την τοποθεσία του υπολογιστή σας.</translation>
 <translation id="2230051135190148440">CHAP</translation>
 <translation id="2230062665678605299">Δεν είναι δυνατή η δημιουργία του φακέλου "<ph name="FOLDER_NAME" />". <ph name="ERROR_MESSAGE" /></translation>
-<translation id="223106756035922488">Κάντε κλικ για προβολή του σημερινού doodle</translation>
+<translation id="223106756035922488">Κάντε κλικ για να δείτε το σημερινό doodle</translation>
 <translation id="2231238007119540260">Εάν διαγράψετε ένα πιστοποιητικό διακομιστή, θα επαναφέρετε τους συνήθεις ελέγχους ασφαλείας για αυτό το διακομιστή και θα απαιτείται η χρήση ενός έγκυρου πιστοποιητικού.</translation>
 <translation id="2231990265377706070">Θαυμαστικό</translation>
 <translation id="2232876851878324699">Το αρχείο περιείχε ένα πιστοποιητικό, το οποίο δεν εισάχθηκε: </translation>
@@ -2329,7 +2329,7 @@
 <translation id="4610637590575890427">Μήπως θέλετε να μεταβείτε στο <ph name="SITE" />;</translation>
 <translation id="4611114513649582138">Διαθέσιμα δεδομένα σύνδεσης</translation>
 <translation id="4613271546271159013">Κάποια επέκταση άλλαξε το περιεχόμενο της σελίδας όταν ανοίγετε μια νέα καρτέλα.</translation>
-<translation id="4615586811063744755">δεν έχει επιλεγεί cookie</translation>
+<translation id="4615586811063744755">δεν έχουν επιλεγεί cookie</translation>
 <translation id="4617270414136722281">Επιλογές επεκτάσεων</translation>
 <translation id="4618990963915449444">Όλα τα αρχεία στη συσκευή <ph name="DEVICE_NAME" /> θα διαγραφούν.</translation>
 <translation id="4619615317237390068">Καρτέλες από άλλες συσκευές</translation>
@@ -2424,7 +2424,7 @@
 <translation id="4759238208242260848">Λήψεις</translation>
 <translation id="4761104368405085019">Χρήση του μικροφώνου σας</translation>
 <translation id="4762718786438001384">Ο ελεύθερος χώρος στον δίσκο της συσκευής είναι οριακός</translation>
-<translation id="4763408175235639573">Όταν προβάλατε αυτήν τη σελίδα, ορίστηκαν τα ακόλουθα cookie</translation>
+<translation id="4763408175235639573">Όταν είδατε αυτήν τη σελίδα, ορίστηκαν τα ακόλουθα cookie</translation>
 <translation id="4763830802490665879">Τα cookie που προέρχονται από πολλαπλούς ιστότοπους θα διαγραφούν κατά την έξοδο.</translation>
 <translation id="4768332406694066911">Διαθέτετε πιστοποιητικά από αυτούς τους οργανισμούς που σας προσδιορίζουν</translation>
 <translation id="4776917500594043016">Κωδικός πρόσβασης για <ph name="USER_EMAIL_ADDRESS" /></translation>
@@ -2444,7 +2444,7 @@
 <translation id="4801448226354548035">Απόκρυψη λογαριασμών</translation>
 <translation id="4801512016965057443">Να επιτρέπεται η περιαγωγή δεδομένων κινητών συσκευών</translation>
 <translation id="4801956050125744859">Διατήρηση και των δύο</translation>
-<translation id="4803909571878637176">Κατάργηση εγκατάστασης</translation>
+<translation id="4803909571878637176">Απεγκατάσταση</translation>
 <translation id="4804331037112292643">Παράθυρο διαλόγου ανοίγματος/αποθήκευσης αρχείου</translation>
 <translation id="4804818685124855865">Αποσύνδεση</translation>
 <translation id="4807098396393229769">Όνομα στην κάρτα</translation>
@@ -2723,7 +2723,7 @@
 <translation id="5233638681132016545">Νέα καρτέλα</translation>
 <translation id="5233736638227740678">&amp;Επικόλληση</translation>
 <translation id="5234764350956374838">Παράβλεψη</translation>
-<translation id="5235050375939235066">Κατάργηση εγκατάστασης εφαρμογής;</translation>
+<translation id="5235050375939235066">Απεγκατάσταση εφαρμογής;</translation>
 <translation id="5235750401727657667">Αντικατάσταση της σελίδας που βλέπετε κατά το άνοιγμα νέας καρτέλας</translation>
 <translation id="5238278114306905396">Έχει γίνει αυτόματη κατάργηση της εφαρμογής "<ph name="EXTENSION_NAME" />".</translation>
 <translation id="5238369540257804368">Εύρη</translation>
@@ -3028,6 +3028,7 @@
 <translation id="5678955352098267522">Ανάγνωση των δεδομένων σας στο <ph name="WEBSITE_1" /></translation>
 <translation id="5684661240348539843">Αναγνωριστικό στοιχείου</translation>
 <translation id="5687326903064479980">Ζώνη ώρας</translation>
+<translation id="5689516760719285838">Τοποθεσία</translation>
 <translation id="56907980372820799">Σύνδεση δεδομένων</translation>
 <translation id="5691511426247308406">Οικογένεια</translation>
 <translation id="5691596662111998220">Ωχ! Το αρχείο <ph name="FILE_NAME" /> δεν υπάρχει πια.</translation>
@@ -4623,7 +4624,7 @@
 <translation id="8214489666383623925">Άνοιγμα Αρχείου...</translation>
 <translation id="8214962590150211830">Κατάργηση αυτού του ατόμου</translation>
 <translation id="8217399928341212914">Συνέχιση αποκλεισμού λήψεων πολλών αρχείων</translation>
-<translation id="8222121761382682759">Κατάργηση εγκατάστασης…</translation>
+<translation id="8222121761382682759">Απεγκατάσταση…</translation>
 <translation id="8223479393428528563">Για να αποθηκεύσετε αυτά τα αρχεία για χρήση εκτός σύνδεσης, συνδεθείτε ξανά στο διαδίκτυο, κάντε δεξί κλικ στα αρχεία και ενεργοποιήστε την επιλογή <ph name="OFFLINE_CHECKBOX_NAME" />.</translation>
 <translation id="8225316208047679293">Η μετονομασία ολοκληρώθηκε με επιτυχία!</translation>
 <translation id="8226222018808695353">Απαγορευμένο</translation>

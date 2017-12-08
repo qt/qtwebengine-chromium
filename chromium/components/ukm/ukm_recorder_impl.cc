@@ -13,6 +13,7 @@
 #include "components/metrics/proto/ukm/report.pb.h"
 #include "components/metrics/proto/ukm/source.pb.h"
 #include "components/ukm/ukm_source.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 
 namespace ukm {
 
@@ -25,12 +26,25 @@ std::string GetWhitelistEntries() {
                                                 "WhitelistEntries");
 }
 
+bool IsWhitelistedSourceId(SourceId source_id) {
+  return (static_cast<int64_t>(source_id) &
+          static_cast<int64_t>(SourceIdType::NAVIGATION_ID)) != 0;
+}
+
 // Gets the maximum number of Sources we'll keep in memory before discarding any
 // new ones being added.
 size_t GetMaxSources() {
   constexpr size_t kDefaultMaxSources = 500;
   return static_cast<size_t>(base::GetFieldTrialParamByFeatureAsInt(
       kUkmFeature, "MaxSources", kDefaultMaxSources));
+}
+
+// Gets the maximum number of unferenced Sources kept after purging sources
+// that were added to the log.
+size_t GetMaxKeptSources() {
+  constexpr size_t kDefaultMaxKeptSources = 100;
+  return static_cast<size_t>(base::GetFieldTrialParamByFeatureAsInt(
+      kUkmFeature, "MaxKeptSources", kDefaultMaxKeptSources));
 }
 
 // Gets the maximum number of Entries we'll keep in memory before discarding any
@@ -101,21 +115,61 @@ void UkmRecorderImpl::Purge() {
 }
 
 void UkmRecorderImpl::StoreRecordingsInReport(Report* report) {
-  for (const auto& kv : sources_) {
+  std::set<SourceId> ids_seen;
+  for (const auto& entry : entries_) {
+    Entry* proto_entry = report->add_entries();
+    StoreEntryProto(*entry, proto_entry);
+    ids_seen.insert(entry->source_id);
+  }
+
+  std::vector<std::unique_ptr<UkmSource>> unsent_sources;
+  for (auto& kv : sources_) {
+    // If the source id is not whitelisted, don't send it unless it has
+    // associated entries. Note: If ShouldRestrictToWhitelistedSourceIds() is
+    // true, this logic will not be hit as the source would have already been
+    // filtered in UpdateSourceURL().
+    if (!IsWhitelistedSourceId(kv.first) &&
+        !base::ContainsKey(ids_seen, kv.first)) {
+      unsent_sources.push_back(std::move(kv.second));
+      continue;
+    }
     Source* proto_source = report->add_sources();
     kv.second->PopulateProto(proto_source);
     if (!ShouldRecordInitialUrl())
       proto_source->clear_initial_url();
   }
-  for (const auto& entry : entries_) {
-    Entry* proto_entry = report->add_entries();
-    StoreEntryProto(*entry, proto_entry);
-  }
 
-  UMA_HISTOGRAM_COUNTS_1000("UKM.Sources.SerializedCount", sources_.size());
+  UMA_HISTOGRAM_COUNTS_1000("UKM.Sources.SerializedCount",
+                            sources_.size() - unsent_sources.size());
   UMA_HISTOGRAM_COUNTS_1000("UKM.Entries.SerializedCount", entries_.size());
+  UMA_HISTOGRAM_COUNTS_1000("UKM.Sources.UnsentSourcesCount",
+                            unsent_sources.size());
   sources_.clear();
   entries_.clear();
+
+  // Keep at most |max_kept_sources|, prioritizing most-recent entries (by
+  // creation time).
+  const size_t max_kept_sources = GetMaxKeptSources();
+  if (unsent_sources.size() > max_kept_sources) {
+    std::nth_element(unsent_sources.begin(),
+                     unsent_sources.begin() + max_kept_sources,
+                     unsent_sources.end(),
+                     [](const std::unique_ptr<ukm::UkmSource>& lhs,
+                        const std::unique_ptr<ukm::UkmSource>& rhs) {
+                       return lhs->creation_time() > rhs->creation_time();
+                     });
+    unsent_sources.resize(max_kept_sources);
+  }
+
+  for (auto& source : unsent_sources) {
+    sources_.emplace(source->id(), std::move(source));
+  }
+  UMA_HISTOGRAM_COUNTS_1000("UKM.Sources.KeptSourcesCount", sources_.size());
+}
+
+bool UkmRecorderImpl::ShouldRestrictToWhitelistedSourceIds() const {
+  return base::GetFieldTrialParamByFeatureAsBool(
+      kUkmFeature, "RestrictToWhitelistedSourceIds", true);
 }
 
 void UkmRecorderImpl::UpdateSourceURL(ukm::SourceId source_id,
@@ -124,6 +178,12 @@ void UkmRecorderImpl::UpdateSourceURL(ukm::SourceId source_id,
 
   if (!recording_enabled_) {
     RecordDroppedSource(DroppedDataReason::RECORDING_DISABLED);
+    return;
+  }
+
+  if (ShouldRestrictToWhitelistedSourceIds() &&
+      !IsWhitelistedSourceId(source_id)) {
+    RecordDroppedSource(DroppedDataReason::NOT_WHITELISTED);
     return;
   }
 

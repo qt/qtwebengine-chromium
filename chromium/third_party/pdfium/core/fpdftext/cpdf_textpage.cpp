@@ -1218,25 +1218,26 @@ CPDF_TextPage::TextOrientation CPDF_TextPage::GetTextObjectWritingMode(
 }
 
 bool CPDF_TextPage::IsHyphen(wchar_t curChar) const {
-  WideStringView curText;
-  if (!m_TempTextBuf.IsEmpty())
-    curText = m_TempTextBuf.AsStringView();
-  else if (!m_TextBuf.IsEmpty())
+  WideStringView curText = m_TempTextBuf.AsStringView();
+  if (curText.IsEmpty())
     curText = m_TextBuf.AsStringView();
-  else
+
+  if (curText.IsEmpty())
     return false;
 
-  curText = curText.TrimmedRight(0x20);
-  if (curText.GetLength() < 2)
+  auto iter = curText.rbegin();
+  for (; (iter + 1) != curText.rend() && *iter == 0x20; iter++) {
+    // Do nothing
+  }
+
+  if (!IsHyphenCode(*iter))
     return false;
 
-  // Extracting the last 2 characters, since they are all that matter
-  curText = curText.Right(2);
-  if (!IsHyphenCode(curText.Last()))
-    return false;
-
-  if (FXSYS_iswalpha(curText.First() && FXSYS_iswalnum(curChar)))
-    return true;
+  if ((iter + 1) != curText.rend()) {
+    iter++;
+    if (FXSYS_iswalpha(*iter) && FXSYS_iswalpha(*iter))
+      return true;
+  }
 
   const PAGECHAR_INFO* preInfo;
   if (!m_TempCharList.empty())
@@ -1355,9 +1356,7 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
   }
   WideString PrevStr =
       m_pPreTextObj->GetFont()->UnicodeFromCharCode(PrevItem.m_CharCode);
-  if (PrevStr.IsEmpty())
-    return GenerateCharacter::None;
-  wchar_t preChar = PrevStr[PrevStr.GetLength() - 1];
+  wchar_t preChar = PrevStr.Last();
   CFX_Matrix matrix = pObj->GetTextMatrix();
   matrix.Concat(formMatrix);
 

@@ -892,6 +892,7 @@ RUNTIME_FUNCTION(Runtime_GetWasmRecoveredTrapCount) {
     return isolate->heap()->ToBoolean(obj->Has##Name()); \
   }
 
+ELEMENTS_KIND_CHECK_RUNTIME_FUNCTION(FastElements)
 ELEMENTS_KIND_CHECK_RUNTIME_FUNCTION(SmiElements)
 ELEMENTS_KIND_CHECK_RUNTIME_FUNCTION(ObjectElements)
 ELEMENTS_KIND_CHECK_RUNTIME_FUNCTION(SmiOrObjectElements)
@@ -1069,6 +1070,17 @@ RUNTIME_FUNCTION(Runtime_WasmTraceMemory) {
                                 func_index, pos - func_start, mem_start);
   return isolate->heap()->undefined_value();
 }
+
+RUNTIME_FUNCTION(Runtime_CompleteInobjectSlackTracking) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
+  object->map()->CompleteInobjectSlackTracking();
+
+  return isolate->heap()->undefined_value();
+}
+
 
 }  // namespace internal
 }  // namespace v8

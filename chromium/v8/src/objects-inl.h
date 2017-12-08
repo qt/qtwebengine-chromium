@@ -2654,33 +2654,31 @@ SYNCHRONIZED_SMI_ACCESSORS(FixedArrayBase, length, kLengthOffset)
 int PropertyArray::length() const {
   Object* value_obj = READ_FIELD(this, kLengthAndHashOffset);
   int value = Smi::ToInt(value_obj);
-  return value & kLengthMask;
+  return LengthField::decode(value);
 }
 
 void PropertyArray::initialize_length(int len) {
   SLOW_DCHECK(len >= 0);
-  SLOW_DCHECK(len < kMaxLength);
+  SLOW_DCHECK(len < LengthField::kMax);
   WRITE_FIELD(this, kLengthAndHashOffset, Smi::FromInt(len));
 }
 
 int PropertyArray::synchronized_length() const {
   Object* value_obj = ACQUIRE_READ_FIELD(this, kLengthAndHashOffset);
   int value = Smi::ToInt(value_obj);
-  return value & kLengthMask;
+  return LengthField::decode(value);
 }
 
 int PropertyArray::Hash() const {
   Object* value_obj = READ_FIELD(this, kLengthAndHashOffset);
   int value = Smi::ToInt(value_obj);
-  int hash = value & kHashMask;
-  return hash;
+  return HashField::decode(value);
 }
 
-void PropertyArray::SetHash(int masked_hash) {
-  DCHECK_EQ(masked_hash & JSReceiver::kHashMask, masked_hash);
+void PropertyArray::SetHash(int hash) {
   Object* value_obj = READ_FIELD(this, kLengthAndHashOffset);
   int value = Smi::ToInt(value_obj);
-  value = (value & kLengthMask) | masked_hash;
+  value = HashField::update(value, hash);
   WRITE_FIELD(this, kLengthAndHashOffset, Smi::FromInt(value));
 }
 
@@ -5039,12 +5037,12 @@ void JSArrayBuffer::set_has_guard_region(bool value) {
   set_bit_field(HasGuardRegion::update(bit_field(), value));
 }
 
-bool JSArrayBuffer::is_wasm_buffer() {
-  return IsWasmBuffer::decode(bit_field());
+bool JSArrayBuffer::is_growable() {
+  return IsGrowable::decode(bit_field());
 }
 
-void JSArrayBuffer::set_is_wasm_buffer(bool value) {
-  set_bit_field(IsWasmBuffer::update(bit_field(), value));
+void JSArrayBuffer::set_is_growable(bool value) {
+  set_bit_field(IsGrowable::update(bit_field(), value));
 }
 
 Object* JSArrayBufferView::byte_offset() const {

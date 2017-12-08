@@ -90,7 +90,7 @@
 <translation id="4050175100176540509">Melhorias de segurança importantes e novos recursos estão disponíveis na versão mais recente.</translation>
 <translation id="407254336480250557">Selecione o <ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Chromium<ph name="END_BOLD" /></translation>
 <translation id="4077262827416206768">Feche todas as janelas do Chromium e reinicie o Chromium para que a alteração entre em vigor.</translation>
-<translation id="4207043877577553402"><ph name="BEGIN_BOLD" />Aviso:<ph name="END_BOLD" /> O Chromium não pode impedir que as extensões gravem seu histórico de navegação. Para desativar esta extensão no modo sem rastros, desmarque esta opção.</translation>
+<translation id="4207043877577553402"><ph name="BEGIN_BOLD" />Aviso:<ph name="END_BOLD" /> O Chromium não pode impedir que as extensões gravem seu histórico de navegação. Para desativar esta extensão no modo de navegação anônima, desmarque esta opção.</translation>
 <translation id="421369550622382712">Descubra ótimos aplicativos, jogos, extensões e temas para o Chromium.</translation>
 <translation id="4222580632002216401">Agora, você está conectado ao Chromium. A sincronização está desativada por seu administrador.</translation>
 <translation id="4224199872375172890">O Chromium está atualizado.</translation>
@@ -243,7 +243,7 @@ Verifique seu e-mail em <ph name="ACCOUNT_EMAIL" /> para ver mais instruções.<
 <translation id="8862326446509486874">Você não tem os direitos adequados para instalação no nível do sistema. Tente executar o instalador novamente como administrador.</translation>
 <translation id="8897323336392112261">Controla também qual página deve ser exibida quando você inicia o Chromium ou clica no botão "Página inicial".</translation>
 <translation id="8907580949721785412">O Chromium está tentando mostrar senhas. Digite sua senha do Windows para permitir isso.</translation>
-<translation id="8941642502866065432">Não foi possível atualizar o Chromium</translation>
+<translation id="8941642502866065432">Não é possível atualizar o Chromium</translation>
 <translation id="894903460958736500">O software que está sendo executado em seu computador não é compatível com o Chromium.</translation>
 <translation id="8968921422458636175">O Chromium salvará essa senha com <ph name="SAVED_PASSWORD_LINK" />. Você não precisa se lembrar dela.</translation>
 <translation id="8974095189086268230">O Chromium OS tornou-se possível graças a um <ph name="BEGIN_LINK_CROS_OSS" />software de código aberto<ph name="END_LINK_CROS_OSS" /> adicional.</translation>

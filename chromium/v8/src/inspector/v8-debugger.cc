@@ -669,10 +669,8 @@ v8::MaybeLocal<v8::Array> V8Debugger::internalProperties(
   }
   if (value->IsFunction()) {
     v8::Local<v8::Function> function = value.As<v8::Function>();
-    v8::Local<v8::Value> boundFunction = function->GetBoundFunction();
     v8::Local<v8::Value> scopes;
-    if (boundFunction->IsUndefined() &&
-        functionScopes(context, function).ToLocal(&scopes)) {
+    if (functionScopes(context, function).ToLocal(&scopes)) {
       createDataProperty(context, properties, properties->Length(),
                          toV8StringInternalized(m_isolate, "[[Scopes]]"));
       createDataProperty(context, properties, properties->Length(), scopes);
@@ -720,6 +718,8 @@ void V8Debugger::setAsyncCallStackDepth(V8DebuggerAgentImpl* agent, int depth) {
   if (m_maxAsyncCallStackDepth == maxAsyncCallStackDepth) return;
   // TODO(dgozman): ideally, this should be per context group.
   m_maxAsyncCallStackDepth = maxAsyncCallStackDepth;
+  m_inspector->client()->maxAsyncCallStackDepthChanged(
+      m_maxAsyncCallStackDepth);
   if (!maxAsyncCallStackDepth) allAsyncTasksCanceled();
 }
 

@@ -2759,8 +2759,7 @@ void TranslatedValue::Handlify() {
 
 TranslatedFrame TranslatedFrame::InterpretedFrame(
     BailoutId bytecode_offset, SharedFunctionInfo* shared_info, int height) {
-  TranslatedFrame frame(kInterpretedFunction, shared_info->GetIsolate(),
-                        shared_info, height);
+  TranslatedFrame frame(kInterpretedFunction, shared_info, height);
   frame.node_id_ = bytecode_offset;
   return frame;
 }
@@ -2769,36 +2768,32 @@ TranslatedFrame TranslatedFrame::InterpretedFrame(
 TranslatedFrame TranslatedFrame::AccessorFrame(
     Kind kind, SharedFunctionInfo* shared_info) {
   DCHECK(kind == kSetter || kind == kGetter);
-  return TranslatedFrame(kind, shared_info->GetIsolate(), shared_info);
+  return TranslatedFrame(kind, shared_info);
 }
 
 
 TranslatedFrame TranslatedFrame::ArgumentsAdaptorFrame(
     SharedFunctionInfo* shared_info, int height) {
-  return TranslatedFrame(kArgumentsAdaptor, shared_info->GetIsolate(),
-                         shared_info, height);
+  return TranslatedFrame(kArgumentsAdaptor, shared_info, height);
 }
 
 TranslatedFrame TranslatedFrame::ConstructStubFrame(
     BailoutId bailout_id, SharedFunctionInfo* shared_info, int height) {
-  TranslatedFrame frame(kConstructStub, shared_info->GetIsolate(), shared_info,
-                        height);
+  TranslatedFrame frame(kConstructStub, shared_info, height);
   frame.node_id_ = bailout_id;
   return frame;
 }
 
 TranslatedFrame TranslatedFrame::BuiltinContinuationFrame(
     BailoutId bailout_id, SharedFunctionInfo* shared_info, int height) {
-  TranslatedFrame frame(kBuiltinContinuation, shared_info->GetIsolate(),
-                        shared_info, height);
+  TranslatedFrame frame(kBuiltinContinuation, shared_info, height);
   frame.node_id_ = bailout_id;
   return frame;
 }
 
 TranslatedFrame TranslatedFrame::JavaScriptBuiltinContinuationFrame(
     BailoutId bailout_id, SharedFunctionInfo* shared_info, int height) {
-  TranslatedFrame frame(kJavaScriptBuiltinContinuation,
-                        shared_info->GetIsolate(), shared_info, height);
+  TranslatedFrame frame(kJavaScriptBuiltinContinuation, shared_info, height);
   frame.node_id_ = bailout_id;
   return frame;
 }
@@ -3462,10 +3457,32 @@ class TranslatedState::CapturedObjectMaterializer {
                              int field_count)
       : state_(state), frame_index_(frame_index), field_count_(field_count) {}
 
+  // Ensure the properties never contain mutable heap numbers. This is necessary
+  // because the deoptimizer generalizes all maps to tagged representation
+  // fields (so mutable heap numbers are not allowed).
+  static void EnsurePropertiesGeneralized(Handle<Object> properties_or_hash) {
+    if (properties_or_hash->IsPropertyArray()) {
+      Handle<PropertyArray> properties =
+          Handle<PropertyArray>::cast(properties_or_hash);
+      int length = properties->length();
+      for (int i = 0; i < length; i++) {
+        if (properties->get(i)->IsMutableHeapNumber()) {
+          Handle<HeapObject> box(HeapObject::cast(properties->get(i)));
+          box->set_map(properties->GetIsolate()->heap()->heap_number_map());
+        }
+      }
+    }
+  }
+
   Handle<Object> FieldAt(int* value_index) {
     CHECK(field_count_ > 0);
     --field_count_;
-    return state_->MaterializeAt(frame_index_, value_index);
+    Handle<Object> object = state_->MaterializeAt(frame_index_, value_index);
+    // This is a big hammer to make sure that the materialized objects do not
+    // have property arrays with mutable heap numbers (mutable heap numbers are
+    // bad because we generalize maps for all materialized objects).
+    EnsurePropertiesGeneralized(object);
+    return object;
   }
 
   ~CapturedObjectMaterializer() { CHECK_EQ(0, field_count_); }
