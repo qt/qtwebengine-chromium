@@ -9,9 +9,9 @@
 
 #if defined(COMPILER_MSVC)
 
-#if !defined(__clang__)
-#error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
-#endif
+//#if !defined(__clang__)
+//#error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
+//#endif
 
 // Macros for suppressing and disabling warnings on MSVC.
 //

@@ -73,7 +73,7 @@ bool CollectGraphicsInfo(GPUInfo* gpu_info) {
   return success;
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 OverlaySupport FlagsToOverlaySupport(UINT flags) {
   if (flags & DXGI_OVERLAY_SUPPORT_FLAG_SCALING)
     return OverlaySupport::kScaling;
@@ -84,7 +84,7 @@ OverlaySupport FlagsToOverlaySupport(UINT flags) {
 #endif  // OS_WIN
 
 void InitializePlatformOverlaySettings(GPUInfo* gpu_info) {
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   // This has to be called after a context is created, active GPU is identified,
   // and GPU driver bug workarounds are computed again. Otherwise the workaround
   // |disable_direct_composition| may not be correctly applied.
