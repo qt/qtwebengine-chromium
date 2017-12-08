@@ -70,7 +70,7 @@ HtmlFieldType RationalizeAutocompleteType(HtmlFieldType type,
                HTML_TYPE_CREDIT_CARD_EXP_4_DIGIT_YEAR},
           });
 
-  auto* it = rules.find(std::make_pair(type, field.max_length));
+  auto it = rules.find(std::make_pair(type, field.max_length));
   return it == rules.end() ? type : it->second;
 }
 
@@ -123,7 +123,7 @@ absl::optional<HtmlFieldType> ParseStandardizedAutocompleteAttribute(
           {"transaction-currency", HTML_TYPE_TRANSACTION_CURRENCY},
       });
 
-  auto* it = standardized_attributes.find(value);
+  auto it = standardized_attributes.find(value);
   return it != standardized_attributes.end()
              ? absl::optional<HtmlFieldType>(it->second)
              : absl::nullopt;
@@ -141,7 +141,7 @@ absl::optional<HtmlFieldType> ParseProposedAutocompleteAttribute(
           {"username", HTML_TYPE_EMAIL},
       });
 
-  auto* it = proposed_attributes.find(value);
+  auto it = proposed_attributes.find(value);
   return it != proposed_attributes.end()
              ? absl::optional<HtmlFieldType>(it->second)
              : absl::nullopt;
@@ -167,7 +167,7 @@ absl::optional<HtmlFieldType> ParseNonStandarizedAutocompleteAttribute(
           {"upi-vpa", HTML_TYPE_UPI_VPA},
       });
 
-  auto* it = non_standardized_attributes.find(value);
+  auto it = non_standardized_attributes.find(value);
   return it != non_standardized_attributes.end()
              ? absl::optional<HtmlFieldType>(it->second)
              : absl::nullopt;

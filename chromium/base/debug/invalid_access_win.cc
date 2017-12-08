@@ -29,11 +29,15 @@ static constexpr int kNopInstructionSize = 4;
 #endif
 
 // Function that can be jumped midway into safely.
+#if defined(COMPILER_MSVC)
+int nop_sled() { return 0; }
+#else
 __attribute__((naked)) int nop_sled() {
   asm("nop\n"
       "nop\n"
       "ret\n");
 }
+#endif // defined(COMPILER_MSVC)
 
 using FuncType = decltype(&nop_sled);
 

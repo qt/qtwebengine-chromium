@@ -60,6 +60,7 @@ enum FeatureState {
 // non-readonly memory, therefore requiring a bypass of the "Mutable Constants"
 // check.
 struct BASE_EXPORT LOGICALLY_CONST Feature {
+  constexpr Feature() : name(nullptr), default_state(FEATURE_DISABLED_BY_DEFAULT) {}
   constexpr Feature(const char* name, FeatureState default_state)
       : name(name), default_state(default_state) {
 #if BUILDFLAG(ENABLE_BANNED_BASE_FEATURE_PREFIX)

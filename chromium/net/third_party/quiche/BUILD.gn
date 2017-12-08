@@ -49,7 +49,9 @@ config("quiche_config") {
     "src",
   ]
 
-  cflags = [ "-Wno-shadow" ]
+  if (is_clang || !is_win) {
+    cflags = [ "-Wno-shadow" ]
+  }
 }
 
 component("quiche") {

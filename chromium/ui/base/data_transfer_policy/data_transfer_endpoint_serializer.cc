@@ -80,7 +80,7 @@ absl::optional<EndpointType> EndpointStringToType(
         {kClipboardHistoryString, EndpointType::kClipboardHistory},
       });
 
-  auto* it = kEndpointStringToTypeMap.find(endpoint_string);
+  const auto it = kEndpointStringToTypeMap.find(endpoint_string);
   if (it != kEndpointStringToTypeMap.end())
     return it->second;
 

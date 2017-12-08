@@ -168,7 +168,7 @@ void DeviceMediaToMojoAdapter::Resume() {
 void DeviceMediaToMojoAdapter::GetPhotoState(GetPhotoStateCallback callback) {
   media::VideoCaptureDevice::GetPhotoStateCallback scoped_callback =
       mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-          media::BindToCurrentLoop(std::move(callback)), nullptr);
+          media::BindToCurrentLoop(std::move(callback), FROM_HERE), nullptr);
   device_->GetPhotoState(std::move(scoped_callback));
 }
 
@@ -177,7 +177,7 @@ void DeviceMediaToMojoAdapter::SetPhotoOptions(
     SetPhotoOptionsCallback callback) {
   media::mojom::ImageCapture::SetOptionsCallback scoped_callback =
       mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-          media::BindToCurrentLoop(std::move(callback)), false);
+          media::BindToCurrentLoop(std::move(callback), FROM_HERE), false);
   device_->SetPhotoOptions(std::move(settings), std::move(scoped_callback));
 }
 
@@ -187,7 +187,7 @@ void DeviceMediaToMojoAdapter::TakePhoto(TakePhotoCallback callback) {
       mojo::WrapCallbackWithDefaultInvokeIfNotRun(
           media::BindToCurrentLoop(base::BindOnce(&TakePhotoCallbackTrampoline,
                                                   std::move(callback),
-                                                  std::move(scoped_trace))),
+                                                  std::move(scoped_trace)), FROM_HERE),
           nullptr);
   device_->TakePhoto(std::move(scoped_callback));
 }

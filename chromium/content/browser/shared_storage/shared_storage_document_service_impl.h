@@ -70,7 +70,7 @@ class CONTENT_EXPORT SharedStorageDocumentServiceImpl final
   base::WeakPtr<SharedStorageDocumentServiceImpl> GetWeakPtr();
 
  private:
-  friend class DocumentUserData;
+  friend class DocumentUserData<SharedStorageDocumentServiceImpl>;
 
   static bool& GetBypassIsSharedStorageAllowed();
 

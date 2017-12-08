@@ -358,8 +358,8 @@ const base::Feature kFedCmMultipleIdentityProviders{
     "FedCmMultipleIdentityProviders", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables usage of First Party Sets to determine cookie availability.
-constexpr base::Feature kFirstPartySets{"FirstPartySets",
-                                        base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kFirstPartySets{"FirstPartySets",
+                                     base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Controls whether the client is considered a dogfooder for the FirstPartySets
 // feature.

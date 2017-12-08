@@ -74,7 +74,7 @@ enum ExtensionIndex FileNameToExtensionIndex(const std::u16string& file_name) {
   const std::string& extension = extension_str_lower;
 #endif
 
-  auto* const* it =
+  const auto it =
       std::find(kFileExtensions.begin(), kFileExtensions.end(), extension);
   if (it == kFileExtensions.end())
     return ExtensionIndex::kOtherExt;

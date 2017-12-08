@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+ // Copyright 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,10 +45,18 @@ struct IsStringIter
 
 // An iterator to std::array is contiguous.
 // Reference: https://wg21.link/array.overview#1
-template <typename T, typename ArrayT = std::array<iter_value_t<T>, 1>>
-struct IsArrayIter
+template <typename T, size_t Num, typename ArrayT = std::array<iter_value_t<T>, Num>>
+struct IsArrayIterImpl
     : std::disjunction<std::is_same<T, typename ArrayT::const_iterator>,
-                       std::is_same<T, typename ArrayT::iterator>> {};
+                  std::is_same<T, typename ArrayT::iterator>> {};
+
+template <typename T>
+struct IsArrayIter
+    : std::disjunction<IsArrayIterImpl<T, 1>,
+                       IsArrayIterImpl<T, 8>,
+                       IsArrayIterImpl<T, 16>,
+                       IsArrayIterImpl<T, 32>,
+                       IsArrayIterImpl<T, 64>> {};
 
 // An iterator to a non-bool std::vector is contiguous.
 // Reference: https://wg21.link/vector.overview#2

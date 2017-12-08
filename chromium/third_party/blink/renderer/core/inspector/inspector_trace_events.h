@@ -23,6 +23,10 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "v8/include/v8.h"
 
+#ifndef CR_EXPAND_ARG
+#define CR_EXPAND_ARG(x) x
+#endif
+
 namespace base {
 class UnguessableToken;
 }
@@ -162,12 +166,12 @@ class CORE_EXPORT InspectorTraceEvents
                })
 
 #define DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT(...)                           \
-  DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT_WITH_CATEGORIES("devtools.timeline", \
-                                                        __VA_ARGS__)
+  CR_EXPAND_ARG(DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT_WITH_CATEGORIES("devtools.timeline", \
+                                                        __VA_ARGS__))
 
 #define DEVTOOLS_TIMELINE_TRACE_EVENT(...)                           \
-  DEVTOOLS_TIMELINE_TRACE_EVENT_WITH_CATEGORIES("devtools.timeline", \
-                                                __VA_ARGS__)
+  CR_EXPAND_ARG(DEVTOOLS_TIMELINE_TRACE_EVENT_WITH_CATEGORIES("devtools.timeline", \
+                                                __VA_ARGS__))
 
 namespace inspector_layout_event {
 void BeginData(perfetto::TracedValue context, LocalFrameView*);

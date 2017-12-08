@@ -140,7 +140,7 @@ void AudioManagerWin::InitializeOnAudioThread() {
   output_device_listener_ = std::make_unique<AudioDeviceListenerWin>(
       BindToCurrentLoop(base::BindRepeating(
           &AudioManagerWin::NotifyAllOutputDeviceChangeListeners,
-          base::Unretained(this))));
+          base::Unretained(this)), FROM_HERE));
 }
 
 void AudioManagerWin::GetAudioDeviceNamesImpl(bool input,

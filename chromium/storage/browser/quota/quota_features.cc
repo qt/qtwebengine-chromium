@@ -20,22 +20,22 @@ const base::Feature kStoragePressureEvent{"StoragePressureEvent",
 // Enables customized storage quota settings for embedders.
 const base::Feature kStorageQuotaSettings{"StorageQuotaSettings",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
-constexpr base::FeatureParam<double> kMustRemainAvailableBytes{
+const base::FeatureParam<double> kMustRemainAvailableBytes{
     &kStorageQuotaSettings, "MustRemainAvailableBytes", 1024 * kMBytes /* 1GB */
 };
-constexpr base::FeatureParam<double> kMustRemainAvailableRatio{
+const base::FeatureParam<double> kMustRemainAvailableRatio{
     &kStorageQuotaSettings, "MustRemainAvailableRatio", 0.01 /* 1% */
 };
-constexpr base::FeatureParam<double> kPoolSizeBytes{&kStorageQuotaSettings,
+const base::FeatureParam<double> kPoolSizeBytes{&kStorageQuotaSettings,
                                                     "PoolSizeBytes", 0};
-constexpr base::FeatureParam<double> kPoolSizeRatio{
+const base::FeatureParam<double> kPoolSizeRatio{
     &kStorageQuotaSettings, "PoolSizeRatio", 0.8 /* 80% */
 };
-constexpr base::FeatureParam<double> kShouldRemainAvailableBytes{
+const base::FeatureParam<double> kShouldRemainAvailableBytes{
     &kStorageQuotaSettings, "ShouldRemainAvailableBytes",
     2048 * kMBytes /* 2GB */
 };
-constexpr base::FeatureParam<double> kShouldRemainAvailableRatio{
+const base::FeatureParam<double> kShouldRemainAvailableRatio{
     &kStorageQuotaSettings, "ShouldRemainAvailableRatio", 0.1 /* 10% */
 };
 

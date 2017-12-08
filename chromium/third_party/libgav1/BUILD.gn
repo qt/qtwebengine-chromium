@@ -80,7 +80,9 @@ if (enable_libgav1_decoder || use_libgav1_parser) {
     public_configs = [ ":public_libgav1_config" ]
 
     if (current_cpu == "x86" || current_cpu == "x64") {
-      cflags = [ "-msse4.1" ]
+      if (!is_win || is_clang) {
+        cflags = [ "-msse4.1" ]
+      }
     }
 
     sources = gav1_dsp_sse4_sources + gav1_dsp_sse4_headers_sources +

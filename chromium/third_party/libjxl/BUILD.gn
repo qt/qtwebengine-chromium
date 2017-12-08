@@ -19,10 +19,12 @@ config("libjxl_external_config") {
 source_set("libjxl") {
   sources = rebase_path(libjxl_dec_sources, ".", "src/lib")
 
-  cflags_cc = [
-    "-Wno-shadow",
-    "-Wno-unused-function",
-  ]
+  if (is_clang || !is_win) {
+    cflags_cc = [
+      "-Wno-shadow",
+      "-Wno-unused-function",
+    ]
+  }
 
   defines = libjxl_version_defines + [
               "JPEGXL_ENABLE_SKCMS=1",

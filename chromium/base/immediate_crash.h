@@ -134,7 +134,11 @@
 // calling function, but to this anonymous lambda. This is still useful as the
 // full name of the lambda will typically include the name of the function that
 // calls CHECK() and the debugger will still break at the right line of code.
-#if !defined(COMPILER_GCC) || defined(__clang__)
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+
+#define WRAPPED_TRAP_SEQUENCE_() TRAP_SEQUENCE1_()
+
+#elif !defined(COMPILER_GCC) || defined(__clang__)
 
 #define WRAPPED_TRAP_SEQUENCE_() TRAP_SEQUENCE_()
 

@@ -45,8 +45,13 @@ V8_BASE_EXPORT V8_NOINLINE void V8_Dcheck(const char* file, int line,
 #endif  // !defined(OFFICIAL_BUILD)
 #endif  // DEBUG
 
+#if defined(_MSC_VER)
+#define UNIMPLEMENTED() do { FATAL("unimplemented code"); __assume(0); } while(false)
+#define UNREACHABLE() do { FATAL("unreachable code"); __assume(0); } while(false)
+#else
 #define UNIMPLEMENTED() FATAL("unimplemented code")
 #define UNREACHABLE() FATAL("unreachable code")
+#endif
 
 namespace v8 {
 namespace base {
