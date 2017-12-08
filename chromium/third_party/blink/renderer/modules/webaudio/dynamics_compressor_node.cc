@@ -114,13 +114,13 @@ void DynamicsCompressorHandler::ProcessOnlyAudioParams(
   DCHECK(Context()->IsAudioThread());
   DCHECK_LE(frames_to_process, GetDeferredTaskHandler().RenderQuantumFrames());
 
-  float values[GetDeferredTaskHandler().RenderQuantumFrames()];
+  Vector<float> values(GetDeferredTaskHandler().RenderQuantumFrames());
 
-  threshold_->CalculateSampleAccurateValues(values, frames_to_process);
-  knee_->CalculateSampleAccurateValues(values, frames_to_process);
-  ratio_->CalculateSampleAccurateValues(values, frames_to_process);
-  attack_->CalculateSampleAccurateValues(values, frames_to_process);
-  release_->CalculateSampleAccurateValues(values, frames_to_process);
+  threshold_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  knee_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  ratio_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  attack_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  release_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 }
 
 void DynamicsCompressorHandler::Initialize() {

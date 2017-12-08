@@ -113,7 +113,7 @@ void AudioOpusEncoder::Initialize(const Options& options,
   DCHECK(!output_callback.is_null());
   DCHECK(!done_cb.is_null());
 
-  done_cb = BindToCurrentLoop(std::move(done_cb));
+  done_cb = BindToCurrentLoop(std::move(done_cb), FROM_HERE);
   if (opus_encoder_) {
     std::move(done_cb).Run(StatusCode::kEncoderInitializeTwice);
     return;
@@ -154,7 +154,7 @@ void AudioOpusEncoder::Initialize(const Options& options,
   fifo_->Reset(converter_->GetMaxInputFramesRequested(
       converted_params_.frames_per_buffer()));
 
-  output_cb_ = BindToCurrentLoop(std::move(output_callback));
+  output_cb_ = BindToCurrentLoop(std::move(output_callback), FROM_HERE);
   std::move(done_cb).Run(OkStatus());
 }
 
@@ -213,7 +213,7 @@ void AudioOpusEncoder::Encode(std::unique_ptr<AudioBus> audio_bus,
   DCHECK(!done_cb.is_null());
   DCHECK(timestamp_tracker_);
 
-  current_done_cb_ = BindToCurrentLoop(std::move(done_cb));
+  current_done_cb_ = BindToCurrentLoop(std::move(done_cb), FROM_HERE);
   if (!opus_encoder_) {
     std::move(current_done_cb_)
         .Run(StatusCode::kEncoderInitializeNeverCompleted);
@@ -236,7 +236,7 @@ void AudioOpusEncoder::Encode(std::unique_ptr<AudioBus> audio_bus,
 void AudioOpusEncoder::Flush(StatusCB done_cb) {
   DCHECK(!done_cb.is_null());
 
-  done_cb = BindToCurrentLoop(std::move(done_cb));
+  done_cb = BindToCurrentLoop(std::move(done_cb), FROM_HERE);
   if (!opus_encoder_) {
     std::move(done_cb).Run(StatusCode::kEncoderInitializeNeverCompleted);
     return;

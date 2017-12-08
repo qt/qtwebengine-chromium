@@ -188,7 +188,7 @@ void BrowserAccessibilityStateImpl::UpdateHistogramsOnUIThread() {
 
   UMA_HISTOGRAM_BOOLEAN("Accessibility.ManuallyEnabled",
                         force_renderer_accessibility_);
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   UMA_HISTOGRAM_ENUMERATION(
       "Accessibility.WinHighContrastTheme",
       ui::NativeTheme::GetInstanceForNativeUi()

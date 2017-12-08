@@ -15,7 +15,9 @@ config("quiche_config") {
     "src",
   ]
 
-  cflags = [ "-Wno-shadow" ]
+  if (is_clang || !is_win) {
+    cflags = [ "-Wno-shadow" ]
+  }
 }
 
 # Since //net and //net/third_party/quiche have a circular dependency on each

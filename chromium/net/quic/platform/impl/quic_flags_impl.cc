@@ -39,10 +39,10 @@
 // Select the right macro based on the number of arguments.
 #define GET_6TH_ARG(arg1, arg2, arg3, arg4, arg5, arg6, ...) arg6
 #define QUIC_PROTOCOL_FLAG_MACRO_CHOOSER(...)                    \
-  GET_6TH_ARG(__VA_ARGS__, DEFINE_QUIC_PROTOCOL_FLAG_TWO_VALUES, \
-              DEFINE_QUIC_PROTOCOL_FLAG_SINGLE_VALUE)
+  CR_EXPAND_ARG(GET_6TH_ARG(__VA_ARGS__, DEFINE_QUIC_PROTOCOL_FLAG_TWO_VALUES, \
+              DEFINE_QUIC_PROTOCOL_FLAG_SINGLE_VALUE))
 #define QUIC_PROTOCOL_FLAG(...) \
-  QUIC_PROTOCOL_FLAG_MACRO_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
+  CR_EXPAND_ARG(QUIC_PROTOCOL_FLAG_MACRO_CHOOSER(__VA_ARGS__)(__VA_ARGS__))
 
 #include "net/third_party/quiche/src/quic/core/quic_protocol_flags_list.h"
 

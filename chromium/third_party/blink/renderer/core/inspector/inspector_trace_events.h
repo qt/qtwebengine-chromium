@@ -162,12 +162,12 @@ class CORE_EXPORT InspectorTraceEvents
                })
 
 #define DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT(...)                           \
-  DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT_WITH_CATEGORIES("devtools.timeline", \
-                                                        __VA_ARGS__)
+  CR_EXPAND_ARG(DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT_WITH_CATEGORIES("devtools.timeline", \
+                                                        __VA_ARGS__))
 
 #define DEVTOOLS_TIMELINE_TRACE_EVENT(...)                           \
-  DEVTOOLS_TIMELINE_TRACE_EVENT_WITH_CATEGORIES("devtools.timeline", \
-                                                __VA_ARGS__)
+  CR_EXPAND_ARG(DEVTOOLS_TIMELINE_TRACE_EVENT_WITH_CATEGORIES("devtools.timeline", \
+                                                __VA_ARGS__))
 
 namespace inspector_layout_event {
 void BeginData(perfetto::TracedValue context, LocalFrameView*);

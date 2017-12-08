@@ -198,10 +198,10 @@ bool IsReportTypeComponent(base::StringPiece string) {
 
 }  // namespace
 
-constexpr base::Feature kWebHidBlocklist{"WebHIDBlocklist",
+const base::Feature kWebHidBlocklist{"WebHIDBlocklist",
                                          base::FEATURE_ENABLED_BY_DEFAULT};
 
-constexpr base::FeatureParam<std::string> kWebHidBlocklistAdditions{
+const base::FeatureParam<std::string> kWebHidBlocklistAdditions{
     &kWebHidBlocklist, "blocklist_additions", /*default_value=*/""};
 
 // static

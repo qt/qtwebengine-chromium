@@ -236,22 +236,22 @@ void PannerHandler::ProcessSampleAccurateValues(AudioBus* destination,
 
   // Get the sample accurate values from all of the AudioParams, including the
   // values from the AudioListener.
-  float panner_x[GetDeferredTaskHandler().RenderQuantumFrames()];
-  float panner_y[GetDeferredTaskHandler().RenderQuantumFrames()];
-  float panner_z[GetDeferredTaskHandler().RenderQuantumFrames()];
+  std::vector<float> panner_x(GetDeferredTaskHandler().RenderQuantumFrames());
+  std::vector<float> panner_y(GetDeferredTaskHandler().RenderQuantumFrames());
+  std::vector<float> panner_z(GetDeferredTaskHandler().RenderQuantumFrames());
 
-  float orientation_x[GetDeferredTaskHandler().RenderQuantumFrames()];
-  float orientation_y[GetDeferredTaskHandler().RenderQuantumFrames()];
-  float orientation_z[GetDeferredTaskHandler().RenderQuantumFrames()];
+  std::vector<float> orientation_x(GetDeferredTaskHandler().RenderQuantumFrames());
+  std::vector<float> orientation_y(GetDeferredTaskHandler().RenderQuantumFrames());
+  std::vector<float> orientation_z(GetDeferredTaskHandler().RenderQuantumFrames());
 
-  position_x_->CalculateSampleAccurateValues(panner_x, frames_to_process);
-  position_y_->CalculateSampleAccurateValues(panner_y, frames_to_process);
-  position_z_->CalculateSampleAccurateValues(panner_z, frames_to_process);
-  orientation_x_->CalculateSampleAccurateValues(orientation_x,
+  position_x_->CalculateSampleAccurateValues(panner_x.data(), frames_to_process);
+  position_y_->CalculateSampleAccurateValues(panner_y.data(), frames_to_process);
+  position_z_->CalculateSampleAccurateValues(panner_z.data(), frames_to_process);
+  orientation_x_->CalculateSampleAccurateValues(orientation_x.data(),
                                                 frames_to_process);
-  orientation_y_->CalculateSampleAccurateValues(orientation_y,
+  orientation_y_->CalculateSampleAccurateValues(orientation_y.data(),
                                                 frames_to_process);
-  orientation_z_->CalculateSampleAccurateValues(orientation_z,
+  orientation_z_->CalculateSampleAccurateValues(orientation_z.data(),
                                                 frames_to_process);
 
   // Get the automation values from the listener.
@@ -278,9 +278,9 @@ void PannerHandler::ProcessSampleAccurateValues(AudioBus* destination,
       listener->GetUpZValues(GetDeferredTaskHandler().RenderQuantumFrames());
 
   // Compute the azimuth, elevation, and total gains for each position.
-  double azimuth[GetDeferredTaskHandler().RenderQuantumFrames()];
-  double elevation[GetDeferredTaskHandler().RenderQuantumFrames()];
-  float total_gain[GetDeferredTaskHandler().RenderQuantumFrames()];
+  std::vector<double> azimuth(GetDeferredTaskHandler().RenderQuantumFrames());
+  std::vector<double> elevation(GetDeferredTaskHandler().RenderQuantumFrames());
+  std::vector<float> total_gain(GetDeferredTaskHandler().RenderQuantumFrames());
 
   for (unsigned k = 0; k < frames_to_process; ++k) {
     FloatPoint3D panner_position(panner_x[k], panner_y[k], panner_z[k]);
@@ -305,25 +305,25 @@ void PannerHandler::ProcessSampleAccurateValues(AudioBus* destination,
     cached_distance_cone_gain_ = total_gain[frames_to_process - 1];
   }
 
-  panner_->PanWithSampleAccurateValues(azimuth, elevation, source, destination,
+  panner_->PanWithSampleAccurateValues(azimuth.data(), elevation.data(), source, destination,
                                        frames_to_process,
                                        InternalChannelInterpretation());
-  destination->CopyWithSampleAccurateGainValuesFrom(*destination, total_gain,
+  destination->CopyWithSampleAccurateGainValuesFrom(*destination, total_gain.data(),
                                                     frames_to_process);
 }
 
 void PannerHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
-  float values[GetDeferredTaskHandler().RenderQuantumFrames()];
+  std::vector<float> values(GetDeferredTaskHandler().RenderQuantumFrames());
 
   DCHECK_LE(frames_to_process, GetDeferredTaskHandler().RenderQuantumFrames());
 
-  position_x_->CalculateSampleAccurateValues(values, frames_to_process);
-  position_y_->CalculateSampleAccurateValues(values, frames_to_process);
-  position_z_->CalculateSampleAccurateValues(values, frames_to_process);
+  position_x_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  position_y_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  position_z_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 
-  orientation_x_->CalculateSampleAccurateValues(values, frames_to_process);
-  orientation_y_->CalculateSampleAccurateValues(values, frames_to_process);
-  orientation_z_->CalculateSampleAccurateValues(values, frames_to_process);
+  orientation_x_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  orientation_y_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  orientation_z_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 }
 
 void PannerHandler::Initialize() {

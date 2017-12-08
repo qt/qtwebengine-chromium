@@ -53,9 +53,9 @@ std::unique_ptr<AudioDSPKernel> DelayProcessor::CreateKernel() {
 void DelayProcessor::ProcessOnlyAudioParams(uint32_t frames_to_process) {
   DCHECK_LE(frames_to_process, RenderQuantumFrames());
 
-  float values[RenderQuantumFrames()];
+  Vector<float> values(RenderQuantumFrames());
 
-  delay_time_->CalculateSampleAccurateValues(values, frames_to_process);
+  delay_time_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 }
 
 }  // namespace blink

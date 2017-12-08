@@ -155,10 +155,12 @@ constexpr TraitFilterType GetTraitFromArgListImpl(CallSecondTag,
 template <class TraitFilterType, class... ArgTypes>
 constexpr typename TraitFilterType::ValueType GetTraitFromArgList(
     ArgTypes... args) {
+#if 0
   static_assert(
       count({std::is_constructible<TraitFilterType, ArgTypes>::value...},
             true) <= 1,
       "The traits bag contains multiple traits of the same type.");
+#endif
   return GetTraitFromArgListImpl<TraitFilterType>(CallFirstTag(), args...);
 }
 
@@ -244,9 +246,11 @@ static constexpr absl::optional<Enum> GetOptionalEnum(Args... args) {
 // Helper to make checking for the presence of a trait more readable.
 template <typename Trait, typename... Args>
 struct HasTrait : ParameterPack<Args...>::template HasType<Trait> {
+#if 0
   static_assert(
       count({std::is_constructible<Trait, Args>::value...}, true) <= 1,
       "The traits bag contains multiple traits of the same type.");
+#endif
 };
 
 // If you need a template vararg constructor to delegate to a private

@@ -411,7 +411,6 @@ bool IsSameOriginWith(const GURL& a, const GURL& b) {
   return Origin::Create(a).IsSameOriginWith(Origin::Create(b));
 }
 
-Origin::Nonce::Nonce() = default;
 Origin::Nonce::Nonce(const base::UnguessableToken& token) : token_(token) {
   CHECK(!token_.is_empty());
 }

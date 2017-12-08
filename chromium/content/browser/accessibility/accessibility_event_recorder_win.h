@@ -7,6 +7,7 @@
 
 #include <oleacc.h>
 
+#include "base/win/windows_types.h"
 #include "content/browser/accessibility/accessibility_event_recorder.h"
 #include "content/common/content_export.h"
 
@@ -26,7 +27,7 @@ class CONTENT_EXPORT AccessibilityEventRecorderWin
   ~AccessibilityEventRecorderWin() override;
 
   // Callback registered by SetWinEventHook. Just calls OnWinEventHook.
-  static CALLBACK void WinEventHookThunk(HWINEVENTHOOK handle,
+  static void CALLBACK WinEventHookThunk(HWINEVENTHOOK handle,
                                          DWORD event,
                                          HWND hwnd,
                                          LONG obj_id,

@@ -83,10 +83,11 @@ void StereoPannerHandler::Process(uint32_t frames_to_process) {
 }
 
 void StereoPannerHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
-  float values[GetDeferredTaskHandler().RenderQuantumFrames()];
+  std::vector<float> values(GetDeferredTaskHandler().RenderQuantumFrames());
+  //float values[GetDeferredTaskHandler().RenderQuantumFrames()];
   DCHECK_LE(frames_to_process, GetDeferredTaskHandler().RenderQuantumFrames());
 
-  pan_->CalculateSampleAccurateValues(values, frames_to_process);
+  pan_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 }
 
 void StereoPannerHandler::Initialize() {

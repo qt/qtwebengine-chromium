@@ -795,7 +795,7 @@ jumbo_component("views") {
         "widget/desktop_aura/desktop_window_tree_host.cc",
       ]
       public_deps += [ "//ui/aura/cursor" ]
-      if (is_win) {
+      if (is_win && !use_qt) {
         public += [ "widget/desktop_aura/desktop_window_tree_host_win.h" ]
         sources += [
           "widget/desktop_aura/desktop_drag_drop_client_win.cc",

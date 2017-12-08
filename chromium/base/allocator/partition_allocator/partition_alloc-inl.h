@@ -28,10 +28,14 @@ namespace internal {
 ALWAYS_INLINE void SecureMemset(void* ptr, uint8_t value, size_t size) {
   memset(ptr, value, size);
 
+#if defined(__clang__) || defined(COMPILER_GCC)
   // As best as we can tell, this is sufficient to break any optimisations that
   // might try to eliminate "superfluous" memsets. If there's an easy way to
   // detect memset_s, it would be better to use that.
   __asm__ __volatile__("" : : "r"(ptr) : "memory");
+#else
+  _ReadBarrier();
+#endif
 }
 
 // Returns true if we've hit the end of a random-length period. We don't want to

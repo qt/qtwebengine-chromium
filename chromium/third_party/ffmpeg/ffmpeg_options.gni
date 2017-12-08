@@ -51,7 +51,7 @@ declare_args() {
   # Some background: https://bugs.llvm.org/show_bug.cgi?id=26828
 
   use_system_ffmpeg = false
-  ffmpeg_use_unsafe_atomics = false
+  ffmpeg_use_unsafe_atomics = is_win && !is_clang
 }
 
 assert(ffmpeg_branding == "Chromium" ||

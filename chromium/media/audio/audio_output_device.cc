@@ -163,7 +163,7 @@ void AudioOutputDevice::GetOutputDeviceInfoAsync(OutputDeviceInfoCB info_cb) {
     base::AutoLock auto_lock(device_info_lock_);
     if (!did_receive_auth_.IsSignaled()) {
       DCHECK(!pending_device_info_cb_);
-      pending_device_info_cb_ = BindToCurrentLoop(std::move(info_cb));
+      pending_device_info_cb_ = BindToCurrentLoop(std::move(info_cb), FROM_HERE);
       return;
     }
   }

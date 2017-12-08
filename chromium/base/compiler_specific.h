@@ -7,9 +7,9 @@
 
 #include "build/build_config.h"
 
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-#error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
-#endif
+// #if defined(COMPILER_MSVC) && !defined(__clang__)
+// #error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
+// #endif
 
 // This is a wrapper around `__has_cpp_attribute`, which can be used to test for
 // the presence of an attribute. In case the compiler does not support this
@@ -75,9 +75,12 @@
 // prevent code folding, see NO_CODE_FOLDING() in base/debug/alias.h.
 // Use like:
 //   void NOT_TAIL_CALLED FooBar();
-#if defined(__clang__) && __has_attribute(not_tail_called)
+#if defined(__clang__)
+#if __has_attribute(not_tail_called)
 #define NOT_TAIL_CALLED __attribute__((not_tail_called))
-#else
+#endif
+#endif
+#ifndef NOT_TAIL_CALLED
 #define NOT_TAIL_CALLED
 #endif
 
@@ -208,7 +211,7 @@
 
 // Macro useful for writing cross-platform function pointers.
 #if !defined(CDECL)
-#if defined(OS_WIN)
+#if defined(OS_WIN) && (defined(__i386) || defined(__i386__) || defined(_M_IX86))
 #define CDECL __cdecl
 #else  // defined(OS_WIN)
 #define CDECL
@@ -274,7 +277,8 @@
 #endif
 #endif
 
-#if defined(__clang__) && __has_attribute(uninitialized)
+#if defined(__clang__)
+#if __has_attribute(uninitialized)
 // Attribute "uninitialized" disables -ftrivial-auto-var-init=pattern for
 // the specified variable.
 // Library-wide alternative is
@@ -305,6 +309,9 @@
 // E.g. platform, bot, benchmark or test name in patch description or next to
 // the attribute.
 #define STACK_UNINITIALIZED __attribute__((uninitialized))
+#else
+#define STACK_UNINITIALIZED
+#endif
 #else
 #define STACK_UNINITIALIZED
 #endif
@@ -397,18 +404,24 @@ inline constexpr bool AnalyzerAssumeTrue(bool arg) {
 // See also:
 //   https://clang.llvm.org/docs/AttributeReference.html#trivial-abi
 //   https://libcxx.llvm.org/docs/DesignDocs/UniquePtrTrivialAbi.html
+#if defined(__has_attribute)
 #if defined(__clang__) && __has_attribute(trivial_abi)
 #define TRIVIAL_ABI [[clang::trivial_abi]]
-#else
+#endif
+#endif
+#ifndef TRIVIAL_ABI
 #define TRIVIAL_ABI
 #endif
 
 // Marks a member function as reinitializing a moved-from variable.
 // See also
 // https://clang.llvm.org/extra/clang-tidy/checks/bugprone-use-after-move.html#reinitialization
+#if defined(__has_attribute)
 #if defined(__clang__) && __has_attribute(reinitializes)
 #define REINITIALIZES_AFTER_MOVE [[clang::reinitializes]]
-#else
+#endif
+#endif
+#ifndef REINITIALIZES_AFTER_MOVE
 #define REINITIALIZES_AFTER_MOVE
 #endif
 

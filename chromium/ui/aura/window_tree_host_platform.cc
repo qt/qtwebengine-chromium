@@ -71,7 +71,7 @@ void WindowTreeHostPlatform::CreateAndSetPlatformWindow(
 #if defined(USE_OZONE)
   platform_window_ = ui::OzonePlatform::GetInstance()->CreatePlatformWindow(
       this, std::move(properties));
-#elif defined(OS_WIN)
+#elif defined(OS_WIN) && !defined(TOOLKIT_QT)
   platform_window_ = std::make_unique<ui::WinWindow>(this, properties.bounds);
 #else
   NOTIMPLEMENTED();

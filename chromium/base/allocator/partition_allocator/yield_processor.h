@@ -18,7 +18,10 @@
 #define YIELD_PROCESSOR ((void)0)
 #else
 
-#if defined(ARCH_CPU_X86_64) || defined(ARCH_CPU_X86)
+#if defined(COMPILER_MSVC)
+#include <windows.h>
+#define YIELD_PROCESSOR YieldProcessor()
+#elif defined(ARCH_CPU_X86_64) || defined(ARCH_CPU_X86)
 #define YIELD_PROCESSOR __asm__ __volatile__("pause")
 #elif (defined(ARCH_CPU_ARMEL) && __ARM_ARCH >= 6) || defined(ARCH_CPU_ARM64)
 #define YIELD_PROCESSOR __asm__ __volatile__("yield")

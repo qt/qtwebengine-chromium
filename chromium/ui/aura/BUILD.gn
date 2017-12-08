@@ -150,9 +150,10 @@ jumbo_component("aura") {
       "native_window_occlusion_tracker_win.cc",
       "native_window_occlusion_tracker_win.h",
     ]
+    sources -= [ "input_state_lookup.cc" ]
   }
 
-  if (is_win) {
+  if (is_win && !use_qt) {
     sources -= [ "input_state_lookup.cc" ]
 
     deps += [

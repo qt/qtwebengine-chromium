@@ -343,7 +343,7 @@ group("gn_all") {
     ]
   }
 
-  if (is_win && (target_cpu == "x86" || target_cpu == "x64")) {
+  if (is_win && (target_cpu == "x86" || target_cpu == "x64") && !use_qt) {
     deps += [ "//chrome/browser/browser_switcher/bho:browser_switcher_dlls" ]
   }
 
@@ -667,7 +667,7 @@ group("gn_all") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && !use_qt) {
     deps += [
       "//base:pe_image_test",
       "//chrome/chrome_cleaner",
@@ -701,7 +701,7 @@ group("gn_all") {
         host_os == "win" && !use_qt) {
       deps += [ "//chrome/test/mini_installer:mini_installer_tests" ]
     }
-  } else if (!is_android && !is_ios && !is_fuchsia) {
+  } else if (!is_android && !is_ios && !is_fuchsia && !is_win) {
     deps += [ "//third_party/breakpad:symupload($host_toolchain)" ]
   }
 

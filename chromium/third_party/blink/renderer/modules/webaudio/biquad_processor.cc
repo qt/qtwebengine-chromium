@@ -140,12 +140,12 @@ void BiquadProcessor::Process(const AudioBus* source,
 void BiquadProcessor::ProcessOnlyAudioParams(uint32_t frames_to_process) {
   DCHECK_LE(frames_to_process, RenderQuantumFrames());
 
-  float values[RenderQuantumFrames()];
+  Vector<float> values(RenderQuantumFrames());
 
-  parameter1_->CalculateSampleAccurateValues(values, frames_to_process);
-  parameter2_->CalculateSampleAccurateValues(values, frames_to_process);
-  parameter3_->CalculateSampleAccurateValues(values, frames_to_process);
-  parameter4_->CalculateSampleAccurateValues(values, frames_to_process);
+  parameter1_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  parameter2_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  parameter3_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  parameter4_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 }
 
 void BiquadProcessor::SetType(FilterType type) {
