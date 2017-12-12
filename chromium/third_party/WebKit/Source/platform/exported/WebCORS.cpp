@@ -480,7 +480,7 @@ WebString AccessControlErrorString(
     }
     default:
       NOTREACHED();
-      return "";
+      return WebString("");
   }
 }
 
@@ -512,7 +512,7 @@ WebString PreflightErrorString(const PreflightStatus status,
     }
     default:
       NOTREACHED();
-      return "";
+      return WebString("");
   }
 }
 
@@ -533,7 +533,7 @@ WebString RedirectErrorString(const RedirectStatus status,
     }
     default:
       NOTREACHED();
-      return "";
+      return WebString("");
   }
 }
 
