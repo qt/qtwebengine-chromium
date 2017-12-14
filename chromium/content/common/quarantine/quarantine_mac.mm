@@ -236,7 +236,7 @@ bool AddQuarantineMetadataToFile(const base::FilePath& file,
   base::ThreadRestrictions::AssertIOAllowed();
   base::scoped_nsobject<NSMutableDictionary> properties;
   bool success = false;
-  if (@available(macos 10.10, *)) {
+  if (base::mac::IsAtLeastOS10_10()) {
     success = GetQuarantineProperties(file, &properties);
   } else {
 #if !defined(MAC_OS_X_VERSION_10_10) || \
@@ -283,7 +283,7 @@ bool AddQuarantineMetadataToFile(const base::FilePath& file,
     [properties setValue:origin_url forKey:(NSString*)kLSQuarantineDataURLKey];
   }
 
-  if (@available(macos 10.10, *)) {
+  if (base::mac::IsAtLeastOS10_10()) {
     return SetQuarantineProperties(file, properties);
   } else {
 #if !defined(MAC_OS_X_VERSION_10_10) || \
@@ -322,7 +322,7 @@ bool IsFileQuarantined(const base::FilePath& file,
 
   base::scoped_nsobject<NSMutableDictionary> properties;
   bool success = false;
-  if (@available(macos 10.10, *)) {
+  if (base::mac::IsAtLeastOS10_10()) {
     success = GetQuarantineProperties(file, &properties);
   } else {
 #if !defined(MAC_OS_X_VERSION_10_10) || \

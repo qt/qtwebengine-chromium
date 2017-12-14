@@ -262,6 +262,7 @@ config("compiler") {
   if (use_qt && is_clang) {
     cflags += [
       "-Wno-unknown-attributes",
+      "-Wno-unknown-pragmas",
       "-Wno-unknown-warning-option"
     ]
     cflags_cc += [
@@ -444,7 +445,7 @@ config("compiler") {
   # TODO(hans): Remove this once Clang generates better optimized debug info by
   # default. https://crbug.com/765793
   if (is_clang && !is_nacl && current_toolchain == host_toolchain &&
-      target_os != "chromeos") {
+      target_os != "chromeos" && !use_qt) {
     cflags += [
       "-Xclang",
       "-mllvm",
