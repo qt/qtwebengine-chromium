@@ -72,8 +72,8 @@ enum FlushBehavior {
 };
 
 static_assert(!DoNotFlush, "DoNotFlush should be falsy");
-static_assert(FetchEOF, "FetchEOF should be truthy");
-static_assert(DataEOF, "DataEOF should be truthy");
+//static_assert(FetchEOF, "FetchEOF should be truthy");
+//static_assert(DataEOF, "DataEOF should be truthy");
 
 class WTF_EXPORT TextCodec {
   WTF_MAKE_NONCOPYABLE(TextCodec);

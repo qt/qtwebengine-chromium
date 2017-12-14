@@ -84,8 +84,9 @@ class PlatformGestureEvent : public PlatformEvent {
       ASSERT(!preventPropagation);
     }
 
-    if (type() == PlatformEvent::GestureScrollBegin)
+    if (type() == PlatformEvent::GestureScrollBegin) {
       DCHECK_NE(ScrollInertialPhaseMomentum, inertialPhase);
+    }
 
     m_data.m_scroll.m_deltaX = deltaX;
     m_data.m_scroll.m_deltaY = deltaY;

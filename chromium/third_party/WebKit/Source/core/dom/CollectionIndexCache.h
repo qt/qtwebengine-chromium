@@ -203,8 +203,9 @@ CollectionIndexCache<Collection, NodeType>::nodeAfterCachedNode(
       collection.traverseForwardToOffset(index, *cachedNode(), currentIndex);
   if (!currentNode) {
     // Did not find the node. On plus side, we now know the length.
-    if (isCachedNodeCountValid())
+    if (isCachedNodeCountValid()) {
       DCHECK_EQ(currentIndex + 1, cachedNodeCount());
+    }
     setCachedNodeCount(currentIndex + 1);
     return nullptr;
   }
