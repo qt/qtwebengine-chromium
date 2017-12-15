@@ -556,6 +556,12 @@ GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind, bool force_create) {
                           ? BrowserThread::UI
                           : BrowserThread::IO);
 
+  // Do not create a new process if browser is shutting down.
+  if (BrowserMainRunner::ExitedMainMessageLoop()) {
+    DLOG(ERROR) << "BrowserMainRunner::ExitedMainMessageLoop()";
+    return nullptr;
+  }
+
   // Do not launch the unsandboxed GPU info collection process if GPU is
   // disabled
   if (kind == GPU_PROCESS_KIND_INFO_COLLECTION) {
@@ -571,12 +577,6 @@ GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind, bool force_create) {
 
   if (!force_create)
     return nullptr;
-
-  // Do not create a new process if browser is shutting down.
-  if (BrowserMainRunner::ExitedMainMessageLoop()) {
-    DLOG(ERROR) << "BrowserMainRunner::ExitedMainMessageLoop()";
-    return nullptr;
-  }
 
   static int last_host_id = 0;
   int host_id;
