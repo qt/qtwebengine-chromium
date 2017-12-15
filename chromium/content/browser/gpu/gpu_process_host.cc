@@ -28,6 +28,7 @@
 #include "build/build_config.h"
 #include "components/tracing/common/tracing_switches.h"
 #include "content/browser/browser_child_process_host_impl.h"
+#include "content/browser/browser_main_loop.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
@@ -354,6 +355,10 @@ bool GpuProcessHost::ValidateHost(GpuProcessHost* host) {
 GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind, bool force_create) {
   DCHECK(!service_manager::ServiceManagerIsRemote());
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  // Do not create a new process if browser is shutting down.
+  if (BrowserMainRunner::ExitedMainMessageLoop())
+    return nullptr;
 
   // Don't grant further access to GPU if it is not allowed.
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
