@@ -386,6 +386,10 @@ GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind, bool force_create) {
   DCHECK(!service_manager::ServiceManagerIsRemote());
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
+  // Do not create a new process if browser is shutting down.
+  if (BrowserMainRunner::ExitedMainMessageLoop())
+    return nullptr;
+
   // Don't grant further access to GPU if it is not allowed.
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
   DCHECK(gpu_data_manager);
@@ -396,10 +400,6 @@ GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind, bool force_create) {
     return g_gpu_process_hosts[kind];
 
   if (!force_create)
-    return nullptr;
-
-  // Do not create a new process if browser is shutting down.
-  if (BrowserMainRunner::ExitedMainMessageLoop())
     return nullptr;
 
   static int last_host_id = 0;
