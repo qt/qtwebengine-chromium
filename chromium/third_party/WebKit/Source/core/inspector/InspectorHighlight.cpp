@@ -245,7 +245,7 @@ std::unique_ptr<protocol::Value> BuildGapAndPositions(
   }
   result->setValue("positions", std::move(spans));
 
-  return result;
+  return std::move(result);
 }
 
 std::unique_ptr<protocol::DictionaryValue> BuildGridInfo(

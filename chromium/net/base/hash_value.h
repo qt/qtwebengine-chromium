@@ -84,6 +84,7 @@ typedef std::vector<HashValue> HashValueVector;
 
 class SHA256HashValueLessThan {
  public:
+  SHA256HashValueLessThan() { }
   bool operator()(const SHA256HashValue& lhs,
                   const SHA256HashValue& rhs) const {
     return memcmp(lhs.data, rhs.data, sizeof(lhs.data)) < 0;

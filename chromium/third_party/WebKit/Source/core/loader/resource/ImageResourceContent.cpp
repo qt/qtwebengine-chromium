@@ -28,7 +28,7 @@ class NullImageResourceInfo final
   USING_GARBAGE_COLLECTED_MIXIN(NullImageResourceInfo);
 
  public:
-  NullImageResourceInfo() {}
+  NullImageResourceInfo() : error_() {}
 
   DEFINE_INLINE_VIRTUAL_TRACE() { ImageResourceInfo::Trace(visitor); }
 

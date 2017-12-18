@@ -31,7 +31,7 @@ std::unique_ptr<MultiBuffer::DataProvider> ResourceMultiBuffer::CreateWriter(
   auto writer =
       base::MakeUnique<ResourceMultiBufferDataProvider>(url_data_, pos);
   writer->Start();
-  return writer;
+  return std::move(writer);
 }
 
 bool ResourceMultiBuffer::RangeSupported() const {

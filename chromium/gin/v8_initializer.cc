@@ -26,13 +26,12 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 
-#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
-#if defined(OS_ANDROID)
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA) && defined(OS_ANDROID)
 #include "base/android/apk_assets.h"
-#elif defined(OS_MACOSX)
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#if defined(OS_MACOSX)
 #include "base/mac/foundation_util.h"
 #endif
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
 
 namespace gin {
 
