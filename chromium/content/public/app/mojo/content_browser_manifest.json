@@ -49,6 +49,7 @@
           "payments::mojom::PaymentManager",
           "shape_detection::mojom::BarcodeDetection",
           "shape_detection::mojom::FaceDetectionProvider",
+          "spellcheck::mojom::SpellCheckHost",
           "resource_coordinator::mojom::CoordinationUnit",
           "shape_detection::mojom::TextDetection",
           "storage::mojom::BlobRegistry",
