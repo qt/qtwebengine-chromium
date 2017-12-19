@@ -27,6 +27,15 @@ class CONTENT_EXPORT SiteIsolationPolicy {
   // Returns true if every site should be placed in a dedicated process.
   static bool UseDedicatedProcessesForAllSites();
 
+  // Returns whether cross-site document responses can be blocked.
+  enum CrossSiteDocumentBlockingEnabledState {
+    XSDB_ENABLED_UNCONDITIONALLY,
+    XSDB_ENABLED_IF_ISOLATED,
+    XSDB_DISABLED,
+  };
+  static CrossSiteDocumentBlockingEnabledState
+  IsCrossSiteDocumentBlockingEnabled();
+
   // Returns true if third-party subframes of a page should be kept in a
   // different process from the main frame.
   static bool IsTopDocumentIsolationEnabled();
@@ -39,6 +48,10 @@ class CONTENT_EXPORT SiteIsolationPolicy {
   // TODO(lukasza): Make sure this list also includes the origins returned by
   // ContentBrowserClient::GetOriginsRequiringDedicatedProcess.
   static std::vector<url::Origin> GetIsolatedOrigins();
+
+  // Records metrics about which site isolation command-line flags are present.
+  // This should be called once on browser startup.
+  static void RecordSiteIsolationFlagUsage();
 
  private:
   SiteIsolationPolicy();  // Not instantiable.

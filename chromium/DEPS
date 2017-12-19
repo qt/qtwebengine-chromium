@@ -171,7 +171,7 @@ deps = {
       (Var("chromium_git")) + '/android_tools.git@ca9dc7245b888c75307f0619e4a39fb46a82de66'
   },
   'src/third_party/angle':
-    (Var("chromium_git")) + '/angle/angle.git@9095f2b44801efef46a440c391d89278432169d5',
+    (Var("chromium_git")) + '/angle/angle.git@2ff870db3a3ba33c6dbf4b88c9ec2e52127b7206',
   'src/third_party/apache-portable-runtime/src': {
     'condition':
       'checkout_android',
@@ -529,7 +529,7 @@ deps = {
   'src/tools/swarming_client':
     (Var("chromium_git")) + '/infra/luci/client-py.git@5e8001d9a710121ce7a68efd0804430a34b4f9e4',
   'src/v8':
-    (Var("chromium_git")) + '/v8/v8.git@310263b31fd87280b80e4bdd4ecfba5128b4cda7'
+    (Var("chromium_git")) + '/v8/v8.git@0ffdb062d3ed8067ede1f8771e24dbf822be1a39'
 }
 
 hooks = [
