@@ -107,7 +107,10 @@ QuicErrorCode QuicStreamSequencerBuffer::OnStreamData(
     ++current_gap;
   }
 
-  DCHECK(current_gap != gaps_.end());
+  if (current_gap == gaps_.end()) {
+    *error_details = "Received stream data outside of maximum range.";
+    return QUIC_INTERNAL_ERROR;
+  }
 
   // "duplication": might duplicate with data alread filled,but also might
   // overlap across different base::StringPiece objects already written.
@@ -143,7 +146,8 @@ QuicErrorCode QuicStreamSequencerBuffer::OnStreamData(
   }
 
   // Write beyond the current range this buffer is covering.
-  if (offset + size > total_bytes_read_ + max_buffer_capacity_bytes_) {
+  if (offset + size > total_bytes_read_ + max_buffer_capacity_bytes_ ||
+      offset + size < offset) {
     *error_details = "Received data beyond available range.";
     return QUIC_INTERNAL_ERROR;
   }
