@@ -56,13 +56,13 @@ class CPWL_EditCtrl : public CPWL_Wnd {
   void SetScrollPosition(float pos) override;
   void ScrollWindowVertically(float pos) override;
   void CreateChildWnd(const PWL_CREATEPARAM& cp) override;
-  void RePosChildWnd() override;
+  bool RePosChildWnd() override;
   void SetFontSize(float fFontSize) override;
   float GetFontSize() const override;
   void SetCursor() override;
   CFX_WideString GetSelectedText() override;
 
-  void SetCaret(bool bVisible,
+  bool SetCaret(bool bVisible,
                 const CFX_PointF& ptHead,
                 const CFX_PointF& ptFoot);
 

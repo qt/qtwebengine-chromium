@@ -46,7 +46,7 @@ class CPWL_Edit : public CPWL_EditCtrl {
   // CPWL_EditCtrl
   CFX_ByteString GetClassName() const override;
   void OnCreated() override;
-  void RePosChildWnd() override;
+  bool RePosChildWnd() override;
   CFX_FloatRect GetClientRect() const override;
   void DrawThisAppearance(CFX_RenderDevice* pDevice,
                           CFX_Matrix* pUser2Device) override;

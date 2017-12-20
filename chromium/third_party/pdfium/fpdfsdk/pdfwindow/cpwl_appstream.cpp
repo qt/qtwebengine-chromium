@@ -605,7 +605,8 @@ CFX_ByteString GenerateIconAppStream(CPDF_IconFit& fit,
   icon.Create(cp);
   icon.SetIconFit(&fit);
   icon.SetPDFStream(pIconStream);
-  icon.Move(rcIcon, false, false);
+  if (!icon.Move(rcIcon, false, false))
+    return CFX_ByteString();
 
   CFX_ByteString sAlias = icon.GetImageAlias();
   if (sAlias.GetLength() <= 0)

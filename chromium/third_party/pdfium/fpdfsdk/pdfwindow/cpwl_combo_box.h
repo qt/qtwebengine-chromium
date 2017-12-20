@@ -58,7 +58,7 @@ class CPWL_ComboBox : public CPWL_Wnd {
   void NotifyLButtonDown(CPWL_Wnd* child, const CFX_PointF& pos) override;
   void NotifyLButtonUp(CPWL_Wnd* child, const CFX_PointF& pos) override;
   void CreateChildWnd(const PWL_CREATEPARAM& cp) override;
-  void RePosChildWnd() override;
+  bool RePosChildWnd() override;
   CFX_FloatRect GetFocusRect() const override;
   void SetFocus() override;
   void KillFocus() override;
@@ -86,7 +86,9 @@ class CPWL_ComboBox : public CPWL_Wnd {
   void CreateEdit(const PWL_CREATEPARAM& cp);
   void CreateButton(const PWL_CREATEPARAM& cp);
   void CreateListBox(const PWL_CREATEPARAM& cp);
-  void SetPopup(bool bPopup);
+
+  // Returns |true| iff this instance is still allocated.
+  bool SetPopup(bool bPopup);
 
   CFX_UnownedPtr<CPWL_Edit> m_pEdit;
   CFX_UnownedPtr<CPWL_CBButton> m_pButton;
