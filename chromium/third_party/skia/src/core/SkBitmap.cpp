@@ -982,43 +982,30 @@ void SkBitmap::WriteRawPixels(SkWriteBuffer* buffer, const SkBitmap& bitmap) {
 }
 
 bool SkBitmap::ReadRawPixels(SkReadBuffer* buffer, SkBitmap* bitmap) {
-    const size_t snugRB = buffer->readUInt();
-    if (0 == snugRB) {  // no pixels
-        return false;
+    if (0 == buffer->readUInt()) {
+        return false;  // no pixels
     }
 
     SkImageInfo info;
     info.unflatten(*buffer);
 
     // If there was an error reading "info" or if it is bogus,
-    // don't use it to compute minRowBytes()
+    // don't use it to compute minRowBytes().
     if (!buffer->validate(SkColorTypeValidateAlphaType(info.colorType(),
                                                        info.alphaType()))) {
         return false;
     }
 
-    const size_t ramRB = info.minRowBytes();
-    const int height = SkMax32(info.height(), 0);
-    const uint64_t snugSize = sk_64_mul(snugRB, height);
-    const uint64_t ramSize = sk_64_mul(ramRB, height);
-    static const uint64_t max_size_t = (size_t)(-1);
-    if (!buffer->validate((snugSize <= ramSize) && (ramSize <= max_size_t))) {
+    // write_raw_pixels() always writes snug buffers with rowBytes == minRowBytes().
+    size_t bytes = info.getSafeSize(info.minRowBytes());
+    if (!buffer->validate(bytes != 0)) {
         return false;
     }
 
-    sk_sp<SkData> data(SkData::MakeUninitialized(SkToSizeT(ramSize)));
+    sk_sp<SkData> data(SkData::MakeUninitialized(bytes));
     unsigned char* dst = (unsigned char*)data->writable_data();
-    buffer->readByteArray(dst, SkToSizeT(snugSize));
-
-    if (snugSize != ramSize) {
-        const unsigned char* srcRow = dst + snugRB * (height - 1);
-        unsigned char* dstRow = dst + ramRB * (height - 1);
-        for (int y = height - 1; y >= 1; --y) {
-            memmove(dstRow, srcRow, snugRB);
-            srcRow -= snugRB;
-            dstRow -= ramRB;
-        }
-        SkASSERT(srcRow == dstRow); // first row does not need to be moved
+    if (!buffer->readByteArray(dst, bytes)) {
+        return false;
     }
 
     sk_sp<SkColorTable> ctable;
@@ -1041,7 +1028,7 @@ bool SkBitmap::ReadRawPixels(SkReadBuffer* buffer, SkBitmap* bitmap) {
                 return false;
             }
             unsigned char maxIndex = ctable->count() - 1;
-            for (uint64_t i = 0; i < ramSize; ++i) {
+            for (uint64_t i = 0; i < bytes; ++i) {
                 dst[i] = SkTMin(dst[i], maxIndex);
             }
         }
