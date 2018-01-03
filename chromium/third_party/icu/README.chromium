@@ -278,3 +278,9 @@ D. Local Modifications
     http://crbug.com/770452
 
   - patches/loc_keyvaleu.patch
+
+13. Persian calendar range fix.
+
+    http://crbug.com/774382
+
+  - patches/persian_cal.patch (fixed in ICU 60.1)
