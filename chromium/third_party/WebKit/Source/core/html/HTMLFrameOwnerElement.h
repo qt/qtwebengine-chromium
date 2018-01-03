@@ -57,8 +57,8 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
 
   Document* getSVGDocument(ExceptionState&) const;
 
-  virtual bool loadedNonEmptyDocument() const { return false; }
-  virtual void didLoadNonEmptyDocument() {}
+  bool loadedNonEmptyDocument() const { return did_load_non_empty_document_; }
+  void didLoadNonEmptyDocument() { did_load_non_empty_document_ = true; }
 
   void setWidget(Widget*);
   Widget* releaseWidget();
@@ -118,6 +118,7 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
   Member<Frame> m_contentFrame;
   Member<Widget> m_widget;
   SandboxFlags m_sandboxFlags;
+  bool did_load_non_empty_document_;
 };
 
 DEFINE_ELEMENT_TYPE_CASTS(HTMLFrameOwnerElement, isFrameOwnerElement());

@@ -141,7 +141,8 @@ HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tagName,
     : HTMLElement(tagName, document),
       m_contentFrame(nullptr),
       m_widget(nullptr),
-      m_sandboxFlags(SandboxNone) {}
+      m_sandboxFlags(SandboxNone),
+      did_load_non_empty_document_(false) {}
 
 LayoutPart* HTMLFrameOwnerElement::layoutPart() const {
   // HTMLObjectElement and HTMLEmbedElement may return arbitrary layoutObjects
