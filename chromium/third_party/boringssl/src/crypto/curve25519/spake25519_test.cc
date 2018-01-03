@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include <openssl/curve25519.h>
+#include "internal.h"
 
 
 struct SPAKE2Run {
@@ -38,6 +39,13 @@ struct SPAKE2Run {
 
     if (!alice || !bob) {
       return false;
+    }
+
+    if (alice_disable_password_scalar_hack) {
+      alice->disable_password_scalar_hack = 1;
+    }
+    if (bob_disable_password_scalar_hack) {
+      bob->disable_password_scalar_hack = 1;
     }
 
     uint8_t alice_msg[SPAKE2_MAX_MSG_SIZE];
@@ -84,6 +92,8 @@ struct SPAKE2Run {
   std::string bob_password = "password";
   std::pair<std::string, std::string> alice_names = {"alice", "bob"};
   std::pair<std::string, std::string> bob_names = {"bob", "alice"};
+  bool alice_disable_password_scalar_hack = false;
+  bool bob_disable_password_scalar_hack = false;
   int alice_corrupt_msg_bit = -1;
 
  private:
@@ -105,6 +115,24 @@ static bool TestSPAKE2() {
   }
 
   return true;
+}
+
+TEST(SPAKE25519Test, OldAlice) {
+  for (unsigned i = 0; i < 20; i++) {
+    SPAKE2Run spake2;
+    spake2.alice_disable_password_scalar_hack = true;
+    ASSERT_TRUE(spake2.Run());
+    EXPECT_TRUE(spake2.key_matches());
+  }
+}
+
+TEST(SPAKE25519Test, OldBob) {
+  for (unsigned i = 0; i < 20; i++) {
+    SPAKE2Run spake2;
+    spake2.bob_disable_password_scalar_hack = true;
+    ASSERT_TRUE(spake2.Run());
+    EXPECT_TRUE(spake2.key_matches());
+  }
 }
 
 static bool TestWrongPassword() {
