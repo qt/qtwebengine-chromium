@@ -67,12 +67,6 @@ class CORE_EXPORT HTMLIFrameElement final
   bool LayoutObjectIsNeeded(const ComputedStyle&) override;
   LayoutObject* CreateLayoutObject(const ComputedStyle&) override;
 
-  bool LoadedNonEmptyDocument() const override {
-    return did_load_non_empty_document_;
-  }
-  void DidLoadNonEmptyDocument() override {
-    did_load_non_empty_document_ = true;
-  }
   bool IsInteractiveContent() const override;
 
   ReferrerPolicy ReferrerPolicyAttribute() override;
@@ -87,7 +81,6 @@ class CORE_EXPORT HTMLIFrameElement final
 
   AtomicString name_;
   AtomicString csp_;
-  bool did_load_non_empty_document_;
   bool allow_fullscreen_;
   bool allow_payment_request_;
   bool collapsed_by_client_;
