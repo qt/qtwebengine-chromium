@@ -153,18 +153,17 @@ class CPWL_MsgControl : public CFX_Observable<CPWL_MsgControl> {
 
   void SetFocus(CPWL_Wnd* pWnd) {
     m_aKeyboardPath.RemoveAll();
+    if (!pWnd)
+      return;
 
-    if (pWnd) {
-      m_pMainKeyboardWnd = pWnd;
-
-      CPWL_Wnd* pParent = pWnd;
-      while (pParent) {
+    m_pMainKeyboardWnd = pWnd;
+    CPWL_Wnd* pParent = pWnd;
+    while (pParent) {
         m_aKeyboardPath.Add(pParent);
         pParent = pParent->GetParentWindow();
-      }
-
-      pWnd->OnSetFocus();
     }
+    // Note, pWnd may get destroyed in the OnSetFocus call.
+    pWnd->OnSetFocus();
   }
 
   void KillFocus() {

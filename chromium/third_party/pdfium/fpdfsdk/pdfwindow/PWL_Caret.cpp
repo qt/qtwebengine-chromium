@@ -97,6 +97,8 @@ void CPWL_Caret::TimerProc() {
   } else {
     m_bFlash = !m_bFlash;
     InvalidateRect();
+    // Note, |this| may no longer be viable at this point. If more work needs
+    // to be done, add an observer.
   }
 }
 
@@ -115,15 +117,24 @@ void CPWL_Caret::SetCaret(bool bVisible,
         m_ptFoot = ptFoot;
         m_bFlash = true;
         Move(m_rcInvalid, false, true);
+        // Note, |this| may no longer be viable at this point. If more work
+        // needs to be done, add an observer.
       }
     } else {
       m_ptHead = ptHead;
       m_ptFoot = ptFoot;
       EndTimer();
       BeginTimer(PWL_CARET_FLASHINTERVAL);
+
+      ObservedPtr observer(this);
       CPWL_Wnd::SetVisible(true);
+      if (!observer)
+        return;
+
       m_bFlash = true;
       Move(m_rcInvalid, false, true);
+      // Note, |this| may no longer be viable at this point. If more work needs
+      // to be done, add an observer.
     }
   } else {
     m_ptHead = CFX_FloatPoint();
@@ -132,6 +143,8 @@ void CPWL_Caret::SetCaret(bool bVisible,
     if (IsVisible()) {
       EndTimer();
       CPWL_Wnd::SetVisible(false);
+      // Note, |this| may no longer be viable at this point. If more work needs
+      // to be done, add an observer.
     }
   }
 }
@@ -145,4 +158,6 @@ void CPWL_Caret::InvalidateRect(CFX_FloatRect* pRect) {
   } else {
     CPWL_Wnd::InvalidateRect(pRect);
   }
+  // Note, |this| may no longer be viable at this point. If more work needs
+  // to be done, add an observer.
 }

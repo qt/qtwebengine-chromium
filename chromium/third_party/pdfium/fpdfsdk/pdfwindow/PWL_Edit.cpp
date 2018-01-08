@@ -443,10 +443,17 @@ bool CPWL_Edit::OnRButtonUp(const CFX_FloatPoint& point, uint32_t nFlag) {
 }
 
 void CPWL_Edit::OnSetFocus() {
+  ObservedPtr observed_ptr(this);
   SetEditCaret(true);
+  if (!observed_ptr)
+    return;
+
   if (!IsReadOnly()) {
-    if (IPWL_FocusHandler* pFocusHandler = GetFocusHandler())
+    if (IPWL_FocusHandler* pFocusHandler = GetFocusHandler()) {
       pFocusHandler->OnSetFocus(this);
+      if (!observed_ptr)
+        return;
+    }
   }
   m_bFocus = true;
 }
