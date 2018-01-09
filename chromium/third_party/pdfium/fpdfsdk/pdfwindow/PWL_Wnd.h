@@ -256,8 +256,10 @@ class CPWL_Wnd : public CPWL_TimerHandler, public CFX_Observable<CPWL_Wnd> {
   void InvalidateFocusHandler(IPWL_FocusHandler* handler);
   void InvalidateProvider(IPWL_Provider* provider);
   void Destroy();
-  void Move(const CFX_FloatRect& rcNew, bool bReset, bool bRefresh);
-  virtual void InvalidateRect(CFX_FloatRect* pRect = nullptr);
+  bool Move(const CFX_FloatRect& rcNew, bool bReset, bool bRefresh);
+
+  // Returns |true| iff this instance is still allocated.
+  virtual bool InvalidateRect(CFX_FloatRect* pRect);
 
   void DrawAppearance(CFX_RenderDevice* pDevice, CFX_Matrix* pUser2Device);
 
@@ -288,7 +290,9 @@ class CPWL_Wnd : public CPWL_TimerHandler, public CFX_Observable<CPWL_Wnd> {
                         intptr_t lParam = 0);
   virtual void SetTextColor(const CPWL_Color& color);
   virtual void SetTextStrokeColor(const CPWL_Color& color);
-  virtual void SetVisible(bool bVisible);
+
+  // Returns |true| iff this instance is still allocated.
+  virtual bool SetVisible(bool bVisible);
 
   virtual CFX_FloatRect GetFocusRect() const;
   virtual CPWL_Color GetBackgroundColor() const;
@@ -360,7 +364,9 @@ class CPWL_Wnd : public CPWL_TimerHandler, public CFX_Observable<CPWL_Wnd> {
   CFX_SystemHandler* GetSystemHandler() const override;
 
   virtual void CreateChildWnd(const PWL_CREATEPARAM& cp);
-  virtual void RePosChildWnd();
+
+  // Returns |true| iff this instance is still allocated.
+  virtual bool RePosChildWnd();
   void GetAppearanceStream(CFX_ByteTextBuf& sAppStream);
   virtual void GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream);
   virtual void GetChildAppearanceStream(CFX_ByteTextBuf& sAppStream);
@@ -386,7 +392,8 @@ class CPWL_Wnd : public CPWL_TimerHandler, public CFX_Observable<CPWL_Wnd> {
   const PWL_CREATEPARAM& GetCreationParam() const;
   bool IsNotifying() const { return m_bNotifying; }
 
-  void InvalidateRectMove(const CFX_FloatRect& rcOld,
+  // Returns |true| iff this instance is still allocated.
+  bool InvalidateRectMove(const CFX_FloatRect& rcOld,
                           const CFX_FloatRect& rcNew);
 
   void PWLtoWnd(const CFX_FloatPoint& point, int32_t& x, int32_t& y) const;

@@ -83,7 +83,7 @@ class CPWL_EditCtrl : public CPWL_Wnd {
                 intptr_t wParam = 0,
                 intptr_t lParam = 0) override;
   void CreateChildWnd(const PWL_CREATEPARAM& cp) override;
-  void RePosChildWnd() override;
+  bool RePosChildWnd() override;
   void SetFontSize(FX_FLOAT fFontSize) override;
   FX_FLOAT GetFontSize() const override;
   void SetCursor() override;
@@ -120,7 +120,7 @@ class CPWL_EditCtrl : public CPWL_Wnd {
   void Backspace();
 
   void GetCaretInfo(CFX_FloatPoint& ptHead, CFX_FloatPoint& ptFoot) const;
-  void SetCaret(bool bVisible,
+  bool SetCaret(bool bVisible,
                 const CFX_FloatPoint& ptHead,
                 const CFX_FloatPoint& ptFoot);
 

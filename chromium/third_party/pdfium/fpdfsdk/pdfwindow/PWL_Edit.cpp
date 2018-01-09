@@ -76,20 +76,25 @@ void CPWL_Edit::SetText(const CFX_WideString& csText) {
   m_pEdit->SetText(swText);
 }
 
-void CPWL_Edit::RePosChildWnd() {
+bool CPWL_Edit::RePosChildWnd() {
   if (CPWL_ScrollBar* pVSB = GetVScrollBar()) {
     CFX_FloatRect rcWindow = m_rcOldWindow;
     CFX_FloatRect rcVScroll =
         CFX_FloatRect(rcWindow.right, rcWindow.bottom,
                       rcWindow.right + PWL_SCROLLBAR_WIDTH, rcWindow.top);
+
+    ObservedPtr thisObserved(this);
+
     pVSB->Move(rcVScroll, true, false);
+    if (!thisObserved)
+      return false;
   }
 
   if (m_pEditCaret && !HasFlag(PES_TEXTOVERFLOW))
     m_pEditCaret->SetClipRect(CPWL_Utils::InflateRect(
         GetClientRect(), 1.0f));  // +1 for caret beside border
 
-  CPWL_EditCtrl::RePosChildWnd();
+  return CPWL_EditCtrl::RePosChildWnd();
 }
 
 CFX_FloatRect CPWL_Edit::GetClientRect() const {
@@ -402,8 +407,8 @@ bool CPWL_Edit::OnLButtonDown(const CFX_FloatPoint& point, uint32_t nFlag) {
   CPWL_Wnd::OnLButtonDown(point, nFlag);
 
   if (HasFlag(PES_TEXTOVERFLOW) || ClientHitTest(point)) {
-    if (m_bMouseDown)
-      InvalidateRect();
+    if (m_bMouseDown && !InvalidateRect(nullptr))
+      return true;
 
     m_bMouseDown = true;
     SetCapture();
@@ -468,8 +473,7 @@ void CPWL_Edit::OnKillFocus() {
   if (!observed_ptr)
     return;
 
-  SetCaret(false, CFX_FloatPoint(), CFX_FloatPoint());
-  if (!observed_ptr)
+  if (!SetCaret(false, CFX_FloatPoint(), CFX_FloatPoint()))
     return;
 
   SetCharSet(FXFONT_ANSI_CHARSET);

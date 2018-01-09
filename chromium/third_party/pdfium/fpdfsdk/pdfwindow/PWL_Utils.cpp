@@ -654,7 +654,8 @@ CFX_ByteString CPWL_Utils::GetPushButtonAppStream(const CFX_FloatRect& rcBBox,
   CFX_ByteTextBuf sAppStream, sTemp;
 
   if (!rcIcon.IsEmpty()) {
-    Icon.Move(rcIcon, false, false);
+    if (!Icon.Move(rcIcon, false, false))
+      return CFX_ByteString();
     sTemp << Icon.GetImageAppStream();
   }
 

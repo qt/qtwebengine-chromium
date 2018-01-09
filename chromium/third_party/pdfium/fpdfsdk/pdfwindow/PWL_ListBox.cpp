@@ -334,10 +334,12 @@ void CPWL_ListBox::KillFocus() {
   CPWL_Wnd::KillFocus();
 }
 
-void CPWL_ListBox::RePosChildWnd() {
-  CPWL_Wnd::RePosChildWnd();
+bool CPWL_ListBox::RePosChildWnd() {
+  if (!CPWL_Wnd::RePosChildWnd())
+    return false;
 
   m_pList->SetPlateRect(GetListRect());
+  return true;
 }
 
 void CPWL_ListBox::OnNotifySelChanged(bool bKeyDown,

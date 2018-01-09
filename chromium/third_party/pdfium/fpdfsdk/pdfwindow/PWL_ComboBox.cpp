@@ -207,7 +207,9 @@ void CPWL_ComboBox::SetFocus() {
 }
 
 void CPWL_ComboBox::KillFocus() {
-  SetPopup(false);
+  if (!SetPopup(false))
+    return;
+
   CPWL_Wnd::KillFocus();
 }
 
@@ -333,7 +335,9 @@ void CPWL_ComboBox::CreateListBox(const PWL_CREATEPARAM& cp) {
   }
 }
 
-void CPWL_ComboBox::RePosChildWnd() {
+bool CPWL_ComboBox::RePosChildWnd() {
+  ObservedPtr thisObserved(this);
+
   CFX_FloatRect rcClient = GetClientRect();
 
   if (m_bPopup) {
@@ -390,16 +394,28 @@ void CPWL_ComboBox::RePosChildWnd() {
         break;
     }
 
-    if (m_pButton)
+    if (m_pButton) {
       m_pButton->Move(rcButton, true, false);
+      if (!thisObserved)
+        return false;
+    }
 
-    if (m_pEdit)
+    if (m_pEdit) {
       m_pEdit->Move(rcEdit, true, false);
+      if (!thisObserved)
+        return false;
+    }
 
     if (m_pList) {
-      m_pList->SetVisible(true);
-      m_pList->Move(rcList, true, false);
+      if (!m_pList->SetVisible(true) || !thisObserved)
+        return false;
+
+      if (!m_pList->Move(rcList, true, false) || !thisObserved)
+        return false;
+
       m_pList->ScrollToListItem(m_nSelectItem);
+      if (!thisObserved)
+        return false;
     }
   } else {
     CFX_FloatRect rcButton = rcClient;
@@ -409,8 +425,11 @@ void CPWL_ComboBox::RePosChildWnd() {
     if (rcButton.left < rcClient.left)
       rcButton.left = rcClient.left;
 
-    if (m_pButton)
+    if (m_pButton) {
       m_pButton->Move(rcButton, true, false);
+      if (!thisObserved)
+        return false;
+    }
 
     CFX_FloatRect rcEdit = rcClient;
     rcEdit.right = rcButton.left - 1.0f;
@@ -421,12 +440,19 @@ void CPWL_ComboBox::RePosChildWnd() {
     if (rcEdit.right < rcEdit.left)
       rcEdit.right = rcEdit.left;
 
-    if (m_pEdit)
+    if (m_pEdit) {
       m_pEdit->Move(rcEdit, true, false);
+      if (!thisObserved)
+        return false;
+    }
 
-    if (m_pList)
+    if (m_pList) {
       m_pList->SetVisible(false);
+      if (!thisObserved)
+        return false;
+    }
   }
+  return true;
 }
 
 void CPWL_ComboBox::SelectAll() {
@@ -438,22 +464,25 @@ CFX_FloatRect CPWL_ComboBox::GetFocusRect() const {
   return CFX_FloatRect();
 }
 
-void CPWL_ComboBox::SetPopup(bool bPopup) {
+bool CPWL_ComboBox::SetPopup(bool bPopup) {
   if (!m_pList)
-    return;
+    return true;
   if (bPopup == m_bPopup)
-    return;
+    return true;
   FX_FLOAT fListHeight = m_pList->GetContentRect().Height();
   if (!IsFloatBigger(fListHeight, 0.0f))
-    return;
+    return true;
 
   if (bPopup) {
     if (m_pFillerNotify) {
+      ObservedPtr thisObserved(this);
 #ifdef PDF_ENABLE_XFA
       bool bExit = false;
       m_pFillerNotify->OnPopupPreOpen(GetAttachedData(), bExit, 0);
       if (bExit)
-        return;
+        return !!thisObserved;
+      if (!thisObserved)
+        return false;
 #endif  // PDF_ENABLE_XFA
       int32_t nWhere = 0;
       FX_FLOAT fPopupRet = 0.0f;
@@ -481,19 +510,24 @@ void CPWL_ComboBox::SetPopup(bool bPopup) {
         }
 
         m_nPopupWhere = nWhere;
-        Move(rcWindow, true, true);
+        if (!Move(rcWindow, true, true))
+          return false;
+
 #ifdef PDF_ENABLE_XFA
         bExit = false;
         m_pFillerNotify->OnPopupPostOpen(GetAttachedData(), bExit, 0);
         if (bExit)
-          return;
+          return !!thisObserved;
+        if (!thisObserved)
+          return false;
 #endif  // PDF_ENABLE_XFA
       }
     }
   } else {
     m_bPopup = bPopup;
-    Move(m_rcOldWindow, true, true);
+    return Move(m_rcOldWindow, true, true);
   }
+  return true;
 }
 
 bool CPWL_ComboBox::OnKeyDown(uint16_t nChar, uint32_t nFlag) {
@@ -589,6 +623,8 @@ void CPWL_ComboBox::OnNotify(CPWL_Wnd* pWnd,
     case PNM_LBUTTONDOWN:
       if (pWnd == m_pButton) {
         SetPopup(!m_bPopup);
+        // Note, |this| may no longer be viable at this point. If more work needs to
+        // be done, check the return value of SetPopup().
         return;
       }
       break;
@@ -599,6 +635,8 @@ void CPWL_ComboBox::OnNotify(CPWL_Wnd* pWnd,
           SelectAll();
           m_pEdit->SetFocus();
           SetPopup(false);
+          // Note, |this| may no longer be viable at this point. If more work needs to
+          // be done, check the return value of SetPopup().
           return;
         }
       }

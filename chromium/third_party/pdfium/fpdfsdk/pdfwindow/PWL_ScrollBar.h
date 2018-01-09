@@ -123,7 +123,7 @@ class CPWL_ScrollBar : public CPWL_Wnd {
   // CPWL_Wnd
   CFX_ByteString GetClassName() const override;
   void OnCreate(PWL_CREATEPARAM& cp) override;
-  void RePosChildWnd() override;
+  bool RePosChildWnd() override;
   void GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) override;
   void DrawThisAppearance(CFX_RenderDevice* pDevice,
                           CFX_Matrix* pUser2Device) override;
@@ -144,7 +144,9 @@ class CPWL_ScrollBar : public CPWL_Wnd {
  protected:
   void SetScrollRange(FX_FLOAT fMin, FX_FLOAT fMax, FX_FLOAT fClientWidth);
   void SetScrollPos(FX_FLOAT fPos);
-  void MovePosButton(bool bRefresh);
+
+  // Returns |true| iff this instance is still allocated.
+  bool MovePosButton(bool bRefresh);
   void SetScrollStep(FX_FLOAT fBigStep, FX_FLOAT fSmallStep);
   void NotifyScrollWindow();
   CFX_FloatRect GetScrollArea() const;
