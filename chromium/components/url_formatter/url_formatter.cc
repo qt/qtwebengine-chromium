@@ -291,13 +291,14 @@ IDNSpoofChecker::IDNSpoofChecker() {
   // MIXED_SCRIPT_CONFUSABLE, WHOLE_SCRIPT_CONFUSABLE, MIXED_NUMBERS, ANY_CASE})
   // This default configuration is adjusted below as necessary.
 
-  // Set the restriction level to moderate. It allows mixing Latin with another
-  // script (+ COMMON and INHERITED). Except for Chinese(Han + Bopomofo),
-  // Japanese(Hiragana + Katakana + Han), and Korean(Hangul + Han), only one
-  // script other than Common and Inherited can be mixed with Latin. Cyrillic
-  // and Greek are not allowed to mix with Latin.
+  // Set the restriction level to high. It allows mixing Latin with one logical
+  // CJK script (+ COMMON and INHERITED), but does not allow any other script
+  // mixing (e.g. Latin + Cyrillic, Latin + Armenian, Cyrillic + Greek). Note
+  // that each of {Han + Bopomofo} for Chinese, {Hiragana, Katakana, Han} for
+  // Japanese, and {Hangul, Han} for Korean is treated as a single logical
+  // script.
   // See http://www.unicode.org/reports/tr39/#Restriction_Level_Detection
-  uspoof_setRestrictionLevel(checker_, USPOOF_MODERATELY_RESTRICTIVE);
+  uspoof_setRestrictionLevel(checker_, USPOOF_HIGHLY_RESTRICTIVE);
 
   // Restrict allowed characters in IDN labels and turn on USPOOF_CHAR_LIMIT.
   SetAllowedUnicodeSet(&status);
@@ -411,8 +412,9 @@ bool IDNSpoofChecker::Check(base::StringPiece16 label, bool is_tld_ascii) {
     //   label otherwise entirely in Katakna or Hiragana.
     // - Disallow U+0585 (Armenian Small Letter Oh) and U+0581 (Armenian Small
     //   Letter Co) to be next to Latin.
-    // - Disallow Latin 'o' and 'g' next to Armenian.
-    // - Disalow mixing of Latin and Canadian Syllabary.
+    // - Disallow combining diacritical mark (U+0300-U+0339) after a non-LGC
+    //   character. Other combining diacritical marks are not in the allowed
+    //   character set.
     // - Disallow U+0307 (dot above) after 'i', 'j', 'l' or dotless i (U+0131).
     //   Dotless j (U+0237) is not in the allowed set to begin with.
     dangerous_pattern = new icu::RegexMatcher(
@@ -425,12 +427,7 @@ bool IDNSpoofChecker::Check(base::StringPiece16 label, bool is_tld_ascii) {
             "^[\\p{scx=kana}]+[\\u3078-\\u307a][\\p{scx=kana}]+$|"
             "^[\\p{scx=hira}]+[\\u30d8-\\u30da][\\p{scx=hira}]+$|"
             "[a-z]\\u30fb|\\u30fb[a-z]|"
-            "^[\\u0585\\u0581]+[a-z]|[a-z][\\u0585\\u0581]+$|"
-            "[a-z][\\u0585\\u0581]+[a-z]|"
-            "^[og]+[\\p{scx=armn}]|[\\p{scx=armn}][og]+$|"
-            "[\\p{scx=armn}][og]+[\\p{scx=armn}]|"
-            "[\\p{sc=cans}].*[a-z]|[a-z].*[\\p{sc=cans}]|"
-            "[^\\p{scx=hebr}]\\u05b4|"
+            "[^\\p{scx=latn}\\p{scx=grek}\\p{scx=cyrl}][\\u0300-\\u0339]|"
             "[ijl\\u0131]\\u0307",
             -1, US_INV),
         0, status);
