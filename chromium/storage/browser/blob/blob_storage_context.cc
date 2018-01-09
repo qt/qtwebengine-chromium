@@ -156,7 +156,8 @@ BlobStorageContext::BlobFlattener::BlobFlattener(
       }
 
       // Validate our reference has good offset & length.
-      if (input_element.offset() + length > ref_entry->total_size()) {
+      uint64_t end_byte = input_element.offset() + length;
+      if (end_byte > ref_entry->total_size() || uint64_t(intptr_t(end_byte)) != end_byte || end_byte < input_element.offset()) {
         status = BlobStatus::ERR_INVALID_CONSTRUCTION_ARGUMENTS;
         return;
       }
