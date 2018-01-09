@@ -559,7 +559,10 @@ void GpuMessageHandler::OnGpuInfoUpdate() {
   gpu_info_val->Set("featureStatus", std::move(feature_status));
   gpu_info_val->Set("compositorInfo", CompositorInfo());
   gpu_info_val->Set("gpuMemoryBufferInfo", GpuMemoryBufferInfo());
+#if !defined(TOOLKIT_QT)
+  // DesktopScreenQt::GetAllDisplays() has to be implemented for this
   gpu_info_val->Set("displayInfo", getDisplayInfo());
+#endif
 
   // Send GPU Info to javascript.
   web_ui()->CallJavascriptFunctionUnsafe("browserBridge.onGpuInfoUpdate",
