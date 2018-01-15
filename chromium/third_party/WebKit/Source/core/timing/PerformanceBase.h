@@ -65,7 +65,7 @@ class CORE_EXPORT PerformanceBase : public EventTargetWithInlineData {
 
   virtual void updateLongTaskInstrumentation() {}
 
-  // Reduce the resolution to 5µs to prevent timing attacks. See:
+  // Reduce the resolution to prevent timing attacks. See:
   // http://www.w3.org/TR/hr-time-2/#privacy-security
   static double clampTimeResolution(double timeSeconds);
 

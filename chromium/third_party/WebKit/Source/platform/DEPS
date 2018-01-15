@@ -4,6 +4,7 @@ include_rules = [
     "+base/bind.h",
     "+base/callback.h",
     "+base/callback_forward.h",
+    "+base/bit_cast.h",
     "+base/files",
     "+base/guid.h",
     "+base/json",

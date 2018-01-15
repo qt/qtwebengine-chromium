@@ -39,6 +39,7 @@
 #include "core/timing/PerformanceResourceTiming.h"
 #include "core/timing/PerformanceUserTiming.h"
 #include "platform/network/ResourceTimingInfo.h"
+#include "platform/TimeClamper.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/CurrentTime.h"
 #include <algorithm>
@@ -436,9 +437,9 @@ void PerformanceBase::deliverObservationsTimerFired(TimerBase*) {
 }
 
 // static
-double PerformanceBase::clampTimeResolution(double timeSeconds) {
-  const double resolutionSeconds = 0.000005;
-  return floor(timeSeconds / resolutionSeconds) * resolutionSeconds;
+double PerformanceBase::clampTimeResolution(double time_seconds) {
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(TimeClamper, clamper, new TimeClamper());
+  return clamper.ClampTimeResolution(time_seconds);
 }
 
 DOMHighResTimeStamp PerformanceBase::monotonicTimeToDOMHighResTimeStamp(
@@ -447,9 +448,9 @@ DOMHighResTimeStamp PerformanceBase::monotonicTimeToDOMHighResTimeStamp(
   if (m_timeOrigin == 0.0)
     return 0.0;
 
-  double timeInSeconds = monotonicTime - m_timeOrigin;
-  return convertSecondsToDOMHighResTimeStamp(
-      clampTimeResolution(timeInSeconds));
+  double clamped_time_in_seconds =
+      clampTimeResolution(monotonicTime) - clampTimeResolution(m_timeOrigin);
+  return convertSecondsToDOMHighResTimeStamp(clamped_time_in_seconds);
 }
 
 double PerformanceBase::monotonicTimeToDOMHighResTimeStampInMillis(

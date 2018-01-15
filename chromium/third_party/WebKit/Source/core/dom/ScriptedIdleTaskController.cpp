@@ -34,7 +34,6 @@ class IdleRequestCallbackWrapper
   static void idleTaskFired(
       PassRefPtr<IdleRequestCallbackWrapper> callbackWrapper,
       double deadlineSeconds) {
-    // TODO(rmcilroy): Implement clamping of deadline in some form.
     if (ScriptedIdleTaskController* controller = callbackWrapper->controller())
       controller->callbackFired(callbackWrapper->id(), deadlineSeconds,
                                 IdleDeadline::CallbackType::CalledWhenIdle);

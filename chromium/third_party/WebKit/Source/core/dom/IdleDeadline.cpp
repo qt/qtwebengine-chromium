@@ -15,7 +15,7 @@ IdleDeadline::IdleDeadline(double deadlineSeconds, CallbackType callbackType)
 double IdleDeadline::timeRemaining() const {
   double timeRemaining = m_deadlineSeconds - monotonicallyIncreasingTime();
   if (timeRemaining < 0)
-    timeRemaining = 0;
+    return 0;
 
   return 1000.0 * PerformanceBase::clampTimeResolution(timeRemaining);
 }
