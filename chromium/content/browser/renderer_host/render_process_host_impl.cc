@@ -1917,8 +1917,10 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
   registry->AddInterface(
       base::Bind(&metrics::CreateSingleSampleMetricsProvider));
 
+#if BUILDFLAG(ENABLE_REPORTING)
   registry->AddInterface(
       base::Bind(&CreateReportingServiceProxy, storage_partition_impl_));
+#endif
 
   // This is to support usage of WebSockets in cases in which there is no
   // associated RenderFrame (e.g., Shared Workers).
