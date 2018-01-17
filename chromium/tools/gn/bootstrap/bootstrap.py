@@ -717,10 +717,12 @@ def write_gn_ninja(path, root_gen_dir, options):
         'base/mac/dispatch_source_mach.cc',
         'base/mac/foundation_util.mm',
         'base/mac/mach_logging.cc',
+        'base/mac/mac_logging.cc',
         'base/mac/mac_util.mm',
         'base/mac/scoped_mach_port.cc',
         'base/mac/scoped_mach_vm.cc',
         'base/mac/scoped_nsautorelease_pool.mm',
+        'base/mac/scoped_nsobject.mm',
         'base/memory/shared_memory_handle_mac.cc',
         'base/memory/shared_memory_mac.cc',
         'base/message_loop/message_pump_mac.mm',
@@ -745,6 +747,7 @@ def write_gn_ninja(path, root_gen_dir, options):
         '-framework', 'AppKit',
         '-framework', 'CoreFoundation',
         '-framework', 'Foundation',
+        '-framework', 'IOKit',
         '-framework', 'Security',
     ])
 
