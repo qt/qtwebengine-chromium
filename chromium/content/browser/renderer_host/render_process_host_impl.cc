@@ -1928,8 +1928,10 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       base::WrapRefCounted(
           GetContentClient()->browser()->CreateQuotaPermissionContext())));
 
+#if BUILDFLAG(ENABLE_REPORTING)
   registry->AddInterface(
       base::Bind(&CreateReportingServiceProxy, storage_partition_impl_));
+#endif
 
   registry->AddInterface(base::BindRepeating(
       &AppCacheDispatcherHost::Create,
