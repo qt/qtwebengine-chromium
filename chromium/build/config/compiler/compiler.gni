@@ -115,11 +115,14 @@ declare_args() {
 
 assert(!is_cfi || use_thin_lto, "CFI requires ThinLTO")
 
-# If true, optimize for size. Does not affect windows builds.
-# Linux & Mac favor speed over size.
-# TODO(brettw) it's weird that Mac and desktop Linux are different. We should
-# explore favoring size over speed in this case as well.
-optimize_for_size = is_android || is_chromecast || is_fuchsia || is_ios
+declare_args() {
+
+  # If true, optimize for size. Does not affect windows builds.
+  # Linux & Mac favor speed over size.
+  # TODO(brettw) it's weird that Mac and desktop Linux are different. We should
+  # explore favoring size over speed in this case as well.
+  optimize_for_size = is_android || is_chromecast || is_fuchsia || is_ios
+}
 
 declare_args() {
   # Whether we should consider the profile we're using to be accurate. Accurate
