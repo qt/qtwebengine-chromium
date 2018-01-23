@@ -16,7 +16,6 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/shell_integration.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/browser_thread.h"
@@ -50,12 +49,14 @@ class ProtocolHandlerRegistry : public KeyedService {
     virtual void RegisterExternalHandler(const std::string& protocol);
     virtual void DeregisterExternalHandler(const std::string& protocol);
     virtual bool IsExternalHandlerRegistered(const std::string& protocol);
+#if !defined(TOOLKIT_QT)
     virtual void RegisterWithOSAsDefaultClient(
         const std::string& protocol,
         shell_integration::DefaultWebClientWorkerCallback callback);
     virtual void CheckDefaultClientWithOS(
         const std::string& protocol,
         shell_integration::DefaultWebClientWorkerCallback callback);
+#endif
   };
 
   class Observer : public base::CheckedObserver {
@@ -284,6 +285,7 @@ class ProtocolHandlerRegistry : public KeyedService {
   // Erases the handler that is guaranteed to exist from the list.
   void EraseHandler(const ProtocolHandler& handler, ProtocolHandlerList* list);
 
+#if !defined(TOOLKIT_QT)
   // Called with the default state when the default protocol client worker is
   // done.
   void OnSetAsDefaultProtocolClientFinished(
@@ -293,6 +295,7 @@ class ProtocolHandlerRegistry : public KeyedService {
   // Gets the callback for DefaultProtocolClientWorker.
   shell_integration::DefaultWebClientWorkerCallback GetDefaultWebClientCallback(
       const std::string& protocol);
+#endif
 
   // Map from protocols (strings) to protocol handlers.
   ProtocolHandlerMultiMap protocol_handlers_;
