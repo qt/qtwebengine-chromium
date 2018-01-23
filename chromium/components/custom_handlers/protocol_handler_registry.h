@@ -17,6 +17,7 @@
 #include "base/task/sequenced_task_runner_helpers.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -65,12 +66,14 @@ class ProtocolHandlerRegistry : public KeyedService {
     virtual ~Delegate() = default;
     virtual void RegisterExternalHandler(const std::string& protocol) = 0;
     virtual bool IsExternalHandlerRegistered(const std::string& protocol) = 0;
+#if !BUILDFLAG(IS_QTWEBENGINE)
     virtual void RegisterWithOSAsDefaultClient(
         const std::string& protocol,
         DefaultClientCallback callback) = 0;
     virtual void CheckDefaultClientWithOS(const std::string& protocol,
                                           DefaultClientCallback callback) = 0;
     virtual bool ShouldRemoveHandlersNotInOS() = 0;
+#endif
 
     // Only implemented by TestProtocolHandlerRegistryDelegate and FakeDelegate,
     // hence only used for testing purposes.
@@ -320,6 +323,7 @@ class ProtocolHandlerRegistry : public KeyedService {
   // Erases the handler that is guaranteed to exist from the list.
   void EraseHandler(const ProtocolHandler& handler, ProtocolHandlerList* list);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Called with the default state when the default protocol client worker is
   // done.
   void OnSetAsDefaultProtocolClientFinished(const std::string& protocol,
@@ -329,6 +333,7 @@ class ProtocolHandlerRegistry : public KeyedService {
   // a query on default client state.
   DefaultClientCallback GetDefaultWebClientCallback(
       const std::string& protocol);
+#endif
 
   // Map from protocols (strings) to protocol handlers.
   ProtocolHandlerMultiMap protocol_handlers_;
