@@ -17,13 +17,16 @@
 #include "base/memory/ref_counted.h"
 #include "base/notreached.h"
 #include "base/observer_list.h"
-#include "build/build_config.h"
 #include "components/custom_handlers/pref_names.h"
 #include "components/custom_handlers/protocol_handler.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/user_prefs/user_prefs.h"
+#endif
 #include "content/public/browser/child_process_security_policy.h"
+#include "net/url_request/url_request.h"
+#include "url/url_util_qt.h"
 #include "url/url_util.h"
 
 using content::BrowserThread;
@@ -196,6 +199,7 @@ void ProtocolHandlerRegistry::InitProtocolSettings() {
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (prefs_->HasPrefPath(prefs::kCustomHandlersEnabled)) {
     if (prefs_->GetBoolean(prefs::kCustomHandlersEnabled)) {
       Enable();
@@ -220,6 +224,7 @@ void ProtocolHandlerRegistry::InitProtocolSettings() {
           protocol, GetDefaultWebClientCallback(protocol));
     }
   }
+#endif
 }
 
 int ProtocolHandlerRegistry::GetHandlerIndex(std::string_view scheme) const {
@@ -480,11 +485,13 @@ void ProtocolHandlerRegistry::Shutdown() {
 // static
 void ProtocolHandlerRegistry::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   registry->RegisterListPref(prefs::kRegisteredProtocolHandlers);
   registry->RegisterListPref(prefs::kIgnoredProtocolHandlers);
   registry->RegisterListPref(prefs::kPolicyRegisteredProtocolHandlers);
   registry->RegisterListPref(prefs::kPolicyIgnoredProtocolHandlers);
   registry->RegisterBooleanPref(prefs::kCustomHandlersEnabled, true);
+#endif
 }
 
 ProtocolHandlerRegistry::~ProtocolHandlerRegistry() {
@@ -509,6 +516,7 @@ void ProtocolHandlerRegistry::PromoteHandler(const ProtocolHandler& handler) {
 }
 
 void ProtocolHandlerRegistry::Save() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (is_loading_) {
     return;
@@ -523,6 +531,7 @@ void ProtocolHandlerRegistry::Save() {
   prefs_->Set(prefs::kRegisteredProtocolHandlers, registered_protocol_handlers);
   prefs_->Set(prefs::kIgnoredProtocolHandlers, ignored_protocol_handlers);
   prefs_->SetBoolean(prefs::kCustomHandlersEnabled, enabled_);
+#endif
 }
 
 const ProtocolHandlerRegistry::ProtocolHandlerList*
@@ -539,12 +548,14 @@ void ProtocolHandlerRegistry::SetDefault(const ProtocolHandler& handler) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   const std::string& protocol = handler.protocol();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ProtocolHandlerMap::const_iterator p = default_handlers_.find(protocol);
   // If we're not loading, and we are setting a default for a new protocol,
   // register with the OS.
   if (!is_loading_ && p == default_handlers_.end())
     delegate_->RegisterWithOSAsDefaultClient(
         protocol, GetDefaultWebClientCallback(protocol));
+#endif
   default_handlers_.erase(protocol);
   default_handlers_.insert(std::make_pair(protocol, handler));
 
@@ -621,6 +632,7 @@ bool ProtocolHandlerRegistry::RegisterProtocolHandler(
 
 std::vector<const base::Value::Dict*>
 ProtocolHandlerRegistry::GetHandlersFromPref(const char* pref_name) const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   std::vector<const base::Value::Dict*> result;
   if (!prefs_ || !prefs_->HasPrefPath(pref_name)) {
@@ -638,6 +650,10 @@ ProtocolHandlerRegistry::GetHandlersFromPref(const char* pref_name) const {
   }
 
   return result;
+#else
+  NOTREACHED();
+  return {};
+#endif
 }
 
 void ProtocolHandlerRegistry::RegisterProtocolHandlersFromPref(
@@ -700,6 +716,7 @@ void ProtocolHandlerRegistry::EraseHandler(const ProtocolHandler& handler,
   list->erase(std::ranges::find(*list, handler));
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void ProtocolHandlerRegistry::OnSetAsDefaultProtocolClientFinished(
     const std::string& protocol,
     bool is_default) {
@@ -711,6 +728,7 @@ void ProtocolHandlerRegistry::OnSetAsDefaultProtocolClientFinished(
 void ProtocolHandlerRegistry::SetIsLoading(bool is_loading) {
   is_loading_ = is_loading;
 }
+#endif
 
 base::WeakPtr<ProtocolHandlerRegistry> ProtocolHandlerRegistry::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
@@ -719,16 +737,20 @@ base::WeakPtr<ProtocolHandlerRegistry> ProtocolHandlerRegistry::GetWeakPtr() {
 void ProtocolHandlerRegistry::AddPredefinedHandler(
     const ProtocolHandler& handler) {
   DCHECK(!is_loaded_);  // Must be called prior InitProtocolSettings.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   RegisterProtocolHandler(handler, USER);
+#endif
   SetDefault(handler);
   predefined_protocol_handlers_.push_back(handler);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 DefaultClientCallback ProtocolHandlerRegistry::GetDefaultWebClientCallback(
     const std::string& protocol) {
   return base::BindOnce(
       &ProtocolHandlerRegistry::OnSetAsDefaultProtocolClientFinished,
       weak_ptr_factory_.GetWeakPtr(), protocol);
 }
+#endif
 
 }  // namespace custom_handlers
