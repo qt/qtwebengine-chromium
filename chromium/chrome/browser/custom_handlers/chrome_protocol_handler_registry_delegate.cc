@@ -8,8 +8,11 @@
 
 #include "base/check_op.h"
 #include "base/functional/bind.h"
-#include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profile_io_data.h"
+#else
+#include "url/url_util_qt.h"
+#endif
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/user_prefs/user_prefs.h"
@@ -40,9 +43,14 @@ bool ChromeProtocolHandlerRegistryDelegate::IsExternalHandlerRegistered(
     const std::string& protocol) {
   // NOTE(koz): This function is safe to call from any thread, despite living
   // in ProfileIOData.
+#if BUILDFLAG(IS_QTWEBENGINE)
+  return url::IsHandledProtocol(protocol);
+#else
   return ProfileIOData::IsHandledProtocol(protocol);
+#endif
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void ChromeProtocolHandlerRegistryDelegate::RegisterWithOSAsDefaultClient(
     const std::string& protocol,
     DefaultClientCallback callback) {
@@ -99,3 +107,4 @@ ChromeProtocolHandlerRegistryDelegate::GetDefaultWebClientCallback(
                         weak_ptr_factory_.GetWeakPtr(), protocol,
                         std::move(callback));
 }
+#endif

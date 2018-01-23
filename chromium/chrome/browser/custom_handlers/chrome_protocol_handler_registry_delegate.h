@@ -8,8 +8,11 @@
 #include <set>
 #include <string>
 
+#include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/shell_integration.h"
+#endif
 #include "components/custom_handlers/protocol_handler_registry.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 
@@ -30,13 +33,16 @@ class ChromeProtocolHandlerRegistryDelegate
   // ProtocolHandlerRegistry::Delegate:
   void RegisterExternalHandler(const std::string& protocol) override;
   bool IsExternalHandlerRegistered(const std::string& protocol) override;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void RegisterWithOSAsDefaultClient(const std::string& protocol,
                                      DefaultClientCallback callback) override;
   void CheckDefaultClientWithOS(const std::string& protocol,
                                 DefaultClientCallback callback) override;
   bool ShouldRemoveHandlersNotInOS() override;
+#endif
 
  private:
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Gets the callback for DefaultSchemeClientWorker.
   shell_integration::DefaultWebClientWorkerCallback GetDefaultWebClientCallback(
       const std::string& protocol,
@@ -53,6 +59,7 @@ class ChromeProtocolHandlerRegistryDelegate
   // DefaultSchemeClientWorker.
   base::WeakPtrFactory<ChromeProtocolHandlerRegistryDelegate> weak_ptr_factory_{
       this};
+#endif
 };
 
 #endif  // CHROME_BROWSER_CUSTOM_HANDLERS_CHROME_PROTOCOL_HANDLER_REGISTRY_DELEGATE_H_
