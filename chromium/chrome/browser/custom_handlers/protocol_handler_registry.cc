@@ -18,7 +18,6 @@
 #include "base/task/post_task.h"
 #include "build/build_config.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "chrome/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -45,6 +44,7 @@ const ProtocolHandler& LookupHandler(
   return ProtocolHandler::EmptyProtocolHandler();
 }
 
+#if !defined(TOOLKIT_QT)
 // If true default protocol handlers will be removed if the OS level
 // registration for a protocol is no longer Chrome.
 bool ShouldRemoveHandlersNotInOS() {
@@ -59,6 +59,7 @@ bool ShouldRemoveHandlersNotInOS() {
          shell_integration::SET_DEFAULT_NOT_ALLOWED;
 #endif
 }
+#endif
 
 }  // namespace
 
@@ -215,28 +216,36 @@ bool ProtocolHandlerRegistry::Delegate::IsExternalHandlerRegistered(
     const std::string& protocol) {
   // NOTE(koz): This function is safe to call from any thread, despite living
   // in ProfileIOData.
+#if defined(TOOLKIT_QT)
+  return net::URLRequest::IsHandledProtocol(protocol);
+#else
   return ProfileIOData::IsHandledProtocol(protocol);
+#endif
 }
 
 void ProtocolHandlerRegistry::Delegate::RegisterWithOSAsDefaultClient(
     const std::string& protocol, ProtocolHandlerRegistry* registry) {
+#if !defined(TOOLKIT_QT)
   // The worker pointer is reference counted. While it is running, the
   // sequence it runs on will hold references it will be automatically freed
   // once all its tasks have finished.
   base::MakeRefCounted<shell_integration::DefaultProtocolClientWorker>(
       registry->GetDefaultWebClientCallback(protocol), protocol)
       ->StartSetAsDefault();
+#endif
 }
 
 void ProtocolHandlerRegistry::Delegate::CheckDefaultClientWithOS(
     const std::string& protocol,
     ProtocolHandlerRegistry* registry) {
+#if !defined(TOOLKIT_QT)
   // The worker pointer is reference counted. While it is running, the
   // sequence it runs on will hold references it will be automatically freed
   // once all its tasks have finished.
   base::MakeRefCounted<shell_integration::DefaultProtocolClientWorker>(
       registry->GetDefaultWebClientCallback(protocol), protocol)
       ->StartCheckIsDefault();
+#endif
 }
 
 // ProtocolHandlerRegistry -----------------------------------------------------
@@ -359,6 +368,7 @@ void ProtocolHandlerRegistry::InstallDefaultsForChromeOS() {
 }
 
 void ProtocolHandlerRegistry::InitProtocolSettings() {
+#if !defined(TOOLKIT_QT)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Any further default additions to the table will get rejected from now on.
@@ -390,6 +400,7 @@ void ProtocolHandlerRegistry::InitProtocolSettings() {
       delegate_->CheckDefaultClientWithOS(p->second.protocol(), this);
     }
   }
+#endif
 }
 
 int ProtocolHandlerRegistry::GetHandlerIndex(const std::string& scheme) const {
@@ -667,11 +678,13 @@ void ProtocolHandlerRegistry::Shutdown() {
 // static
 void ProtocolHandlerRegistry::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
+#if !defined(TOOLKIT_QT)
   registry->RegisterListPref(prefs::kRegisteredProtocolHandlers);
   registry->RegisterListPref(prefs::kIgnoredProtocolHandlers);
   registry->RegisterListPref(prefs::kPolicyRegisteredProtocolHandlers);
   registry->RegisterListPref(prefs::kPolicyIgnoredProtocolHandlers);
   registry->RegisterBooleanPref(prefs::kCustomHandlersEnabled, true);
+#endif
 }
 
 ProtocolHandlerRegistry::~ProtocolHandlerRegistry() {
@@ -688,6 +701,7 @@ void ProtocolHandlerRegistry::PromoteHandler(const ProtocolHandler& handler) {
 }
 
 void ProtocolHandlerRegistry::Save() {
+#if !defined(TOOLKIT_QT)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (is_loading_) {
     return;
@@ -703,6 +717,7 @@ void ProtocolHandlerRegistry::Save() {
   prefs->Set(prefs::kIgnoredProtocolHandlers,
       *ignored_protocol_handlers);
   prefs->SetBoolean(prefs::kCustomHandlersEnabled, enabled_);
+#endif
 }
 
 const ProtocolHandlerRegistry::ProtocolHandlerList*
@@ -801,6 +816,7 @@ void ProtocolHandlerRegistry::RegisterProtocolHandler(
 
 std::vector<const base::DictionaryValue*>
 ProtocolHandlerRegistry::GetHandlersFromPref(const char* pref_name) const {
+#if !defined(TOOLKIT_QT)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   std::vector<const base::DictionaryValue*> result;
   PrefService* prefs = user_prefs::UserPrefs::Get(context_);
@@ -820,6 +836,10 @@ ProtocolHandlerRegistry::GetHandlersFromPref(const char* pref_name) const {
     }
   }
   return result;
+#else
+  NOTREACHED();
+  return {};
+#endif
 }
 
 void ProtocolHandlerRegistry::RegisterProtocolHandlersFromPref(
@@ -887,6 +907,7 @@ void ProtocolHandlerRegistry::EraseHandler(const ProtocolHandler& handler,
   list->erase(std::find(list->begin(), list->end(), handler));
 }
 
+#if !defined(TOOLKIT_QT)
 void ProtocolHandlerRegistry::OnSetAsDefaultProtocolClientFinished(
     const std::string& protocol,
     shell_integration::DefaultWebClientState state) {
@@ -897,6 +918,7 @@ void ProtocolHandlerRegistry::OnSetAsDefaultProtocolClientFinished(
     ClearDefault(protocol);
   }
 }
+#endif
 
 void ProtocolHandlerRegistry::AddPredefinedHandler(
     const ProtocolHandler& handler) {
@@ -906,6 +928,7 @@ void ProtocolHandlerRegistry::AddPredefinedHandler(
   predefined_protocol_handlers_.push_back(handler);
 }
 
+#if !defined(TOOLKIT_QT)
 shell_integration::DefaultWebClientWorkerCallback
 ProtocolHandlerRegistry::GetDefaultWebClientCallback(
     const std::string& protocol) {
@@ -913,6 +936,7 @@ ProtocolHandlerRegistry::GetDefaultWebClientCallback(
       &ProtocolHandlerRegistry::OnSetAsDefaultProtocolClientFinished,
       weak_ptr_factory_.GetWeakPtr(), protocol);
 }
+#endif
 
 std::unique_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
 ProtocolHandlerRegistry::CreateJobInterceptorFactory() {
