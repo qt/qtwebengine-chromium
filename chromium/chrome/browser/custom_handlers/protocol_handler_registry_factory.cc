@@ -10,7 +10,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/custom_handlers/chrome_protocol_handler_registry_delegate.h"
-#include "chrome/browser/profiles/incognito_helpers.h"
+// #include "chrome/browser/profiles/incognito_helpers.h"
 #include "components/custom_handlers/protocol_handler_registry.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 
@@ -46,7 +46,11 @@ ProtocolHandlerRegistryFactory::ServiceIsCreatedWithBrowserContext() const {
 // Allows the produced registry to be used in incognito mode.
 content::BrowserContext* ProtocolHandlerRegistryFactory::GetBrowserContextToUse(
     content::BrowserContext* context) const {
+#if defined(TOOLKIT_QT)
+  return context;
+#else
   return chrome::GetBrowserContextRedirectedInIncognito(context);
+#endif
 }
 
 // Do not create this service for tests. MANY tests will fail
