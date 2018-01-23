@@ -16,7 +16,6 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/shell_integration.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/browser_thread.h"
@@ -193,10 +192,12 @@ class ProtocolHandlerRegistry : public KeyedService {
   // load command was issued, otherwise the command will be ignored.
   void AddPredefinedHandler(const ProtocolHandler& handler);
 
+#if !defined(TOOLKIT_QT)
   // Gets the callback for DefaultProtocolClientWorker. Allows the Delegate to
   // create the worker on behalf of ProtocolHandlerRegistry.
   shell_integration::DefaultWebClientWorkerCallback GetDefaultWebClientCallback(
       const std::string& protocol);
+#endif
 
  private:
   friend class base::DeleteHelper<ProtocolHandlerRegistry>;
@@ -287,11 +288,13 @@ class ProtocolHandlerRegistry : public KeyedService {
   // Erases the handler that is guaranteed to exist from the list.
   void EraseHandler(const ProtocolHandler& handler, ProtocolHandlerList* list);
 
+#if !defined(TOOLKIT_QT)
   // Called with the default state when the default protocol client worker is
   // done.
   void OnSetAsDefaultProtocolClientFinished(
       const std::string& protocol,
       shell_integration::DefaultWebClientState state);
+#endif
 
   // Map from protocols (strings) to protocol handlers.
   ProtocolHandlerMultiMap protocol_handlers_;
