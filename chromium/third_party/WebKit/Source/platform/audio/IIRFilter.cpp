@@ -34,9 +34,15 @@ void IIRFilter::Reset() {
   buffer_index_ = 0;
 }
 
-static std::complex<double> EvaluatePolynomial(const double* coef,
-                                               std::complex<double> z,
-                                               int order) {
+#ifdef __GNUC__
+#define noinline __attribute__((noinline))
+#else
+#define noinline
+#endif
+
+static noinline std::complex<double> EvaluatePolynomial(const double* coef,
+                                                        std::complex<double> z,
+                                                        int order) {
   // Use Horner's method to evaluate the polynomial P(z) = sum(coef[k]*z^k, k,
   // 0, order);
   std::complex<double> result = 0;
@@ -46,6 +52,8 @@ static std::complex<double> EvaluatePolynomial(const double* coef,
 
   return result;
 }
+
+#undef noinline
 
 void IIRFilter::Process(const float* source_p,
                         float* dest_p,
